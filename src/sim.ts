@@ -352,6 +352,85 @@ export const THRUST_KMS2 = 2.0;
 export const ASSIST_LATERAL_TAU_S = 1.2;
 
 /**
+ * How fast the ship is turning, radians per second, about its own axes.
+ *
+ * Rotation has **inertia**, and that is not a flourish: the first version set
+ * the rate directly from the key state, so a turn began and ended on the frame
+ * a key went down or up. The principal's words for it were that leaving a key
+ * "stops any motion immediately, not a gentle way of easing out" — which is the
+ * difference between 1984's fixed-rate turret and every space sim since.
+ */
+export interface Angular {
+	pitch: number;
+	yaw: number;
+	roll: number;
+}
+
+/** Peak rate on each axis, radians per second. Roll is faster because it moves
+ *  nothing on screen but the horizon. */
+export const ANGULAR_MAX: Angular = { pitch: 0.9, yaw: 0.9, roll: 1.4 };
+
+/**
+ * Angular acceleration, radians per second².
+ *
+ * About a third of a second from rest to peak rate on the pitch and yaw axes —
+ * fast enough that the ship answers the stick, slow enough that the answer is
+ * something you feel arrive.
+ */
+export const ANGULAR_ACCEL = 3.0;
+
+/**
+ * How quickly the assist stops a turn once the stick is released: an e-folding
+ * time in seconds.
+ *
+ * Only with the assist **on**. With it off the ship keeps tumbling, which is
+ * what Newtonian rotation means and what the assist-off regime is for — and it
+ * is the second place (after lateral drift) where the two regimes visibly part.
+ */
+export const ANGULAR_DAMP_TAU_S = 0.28;
+
+/**
+ * One frame of rotation: the rates the renderer then applies to the quaternion.
+ *
+ * Pure, and here rather than in the renderer, for the same reason the flight
+ * model is: it is dynamics, it decides how the ship *feels*, and something that
+ * load-bearing should be checkable without opening a browser. The orientation
+ * itself stays in the renderer — a quaternion is a thing Three.js already has a
+ * good type for, and this module holds no quaternion of its own.
+ *
+ * `command` is the stick, −1…1 per axis. `impulse` is the mouse: a relative
+ * pointer delta is not a stick position, it is a nudge, so it adds straight to
+ * the rate and is then subject to the same damping.
+ */
+export function stepAngular(
+	rates: Angular,
+	command: Angular,
+	impulse: Angular,
+	assist: boolean,
+	dt: number,
+): Angular {
+	if (dt <= 0) return rates;
+	const decay = Math.exp(-dt / ANGULAR_DAMP_TAU_S);
+	const axis = (rate: number, want: number, kick: number, max: number) => {
+		let next = rate + kick;
+		if (want !== 0) {
+			// Toward the commanded rate at a bounded acceleration — the ease-in.
+			const target = clamp(want, -1, 1) * max;
+			next += clamp(target - next, -ANGULAR_ACCEL * dt, ANGULAR_ACCEL * dt);
+		} else if (assist) {
+			// The ease-*out*, which is the half that was missing.
+			next *= decay;
+		}
+		return clamp(next, -max, max);
+	};
+	return {
+		pitch: axis(rates.pitch, command.pitch, impulse.pitch, ANGULAR_MAX.pitch),
+		yaw: axis(rates.yaw, command.yaw, impulse.yaw, ANGULAR_MAX.yaw),
+		roll: axis(rates.roll, command.roll, impulse.roll, ANGULAR_MAX.roll),
+	};
+}
+
+/**
  * What the player is asking the ship to do this frame.
  *
  * `nose` is a unit vector in sim space — orientation lives in the renderer (see

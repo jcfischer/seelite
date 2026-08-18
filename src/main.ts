@@ -86,12 +86,14 @@ import {
 } from "./hud";
 import {
 	ASSIST_CAP_KMS,
+	type Angular,
 	type Body,
 	type FlightControl,
 	type World,
 	advanceWorldClock,
 	bodyVelocity,
 	makeWorld,
+	stepAngular,
 	stepWorld,
 } from "./sim";
 import { type WarpField, warpField } from "./warp";
@@ -121,12 +123,6 @@ const STAR_COUNT = 4000;
  *  Point sizes are in *pixels* and a fixed value would read differently on
  *  every display, so it scales with the buffer. */
 const STAR_PIXEL_SCALE = 0.35;
-
-/** Radians per second at full deflection, for each rotation axis. Keyboard
- *  only — the mouse has its own sensitivity, below. */
-const YAW_RATE = 0.9;
-const PITCH_RATE = 0.9;
-const ROLL_RATE = 1.4;
 
 /**
  * The chase camera's offset from the ship, in kilometres: behind and above.
@@ -301,6 +297,9 @@ class Game {
 	/** #5 made cockpit the default and chase a toggle. The hull is hidden in
 	 *  cockpit, which is what makes the HUD markers load-bearing. */
 	view: "cockpit" | "chase" = "cockpit";
+	/** How fast the ship is turning, radians per second — rotation has momentum,
+	 *  and `sim.ts`'s `stepAngular` owns the dynamics. */
+	rates: Angular = { pitch: 0, yaw: 0, roll: 0 };
 	/** Pointer movement accumulated since the last step, in pixels. Consumed
 	 *  each frame — a delta applied twice is a ship that turns at the frame
 	 *  rate rather than at the hand's speed. */
@@ -457,6 +456,10 @@ class Game {
 
 		this.overlay = document.getElementById("overlay") as HTMLCanvasElement;
 		this.overlayCtx = this.overlay.getContext("2d") as CanvasRenderingContext2D;
+		// Sized **here** as well as on resize: a canvas that has never seen a
+		// resize event keeps its 300x150 default, and every marker lands inside
+		// that box in the top-left corner while the CSS stretches nothing.
+		this.sizeOverlay();
 		this.hud = document.getElementById("hud") as HTMLElement;
 		window.addEventListener("resize", () => this.onResize());
 		window.addEventListener("keydown", (e) => this.onKey(e, true));
@@ -1085,24 +1088,36 @@ class Game {
 		const roll = this.axis(["e"], ["q"]);
 
 		// The mouse, when it has been captured, and the keyboard always — the
-		// principal's choice of "both, mouse on by default". They add rather than
-		// override, so a hand on each does what it looks like it should.
-		const mousePitch = clampAbs(
-			-this.mouseDy * MOUSE_RAD_PER_PX,
-			MOUSE_MAX_STEP,
-		);
-		const mouseYaw = clampAbs(-this.mouseDx * MOUSE_RAD_PER_PX, MOUSE_MAX_STEP);
+		// principal's choice of "both, mouse on by default". A pointer delta is a
+		// *nudge* rather than a stick position, so it enters as an impulse on the
+		// rate and is then damped like everything else; the keys are the stick.
+		const impulse = {
+			pitch: clampAbs(-this.mouseDy * MOUSE_RAD_PER_PX, MOUSE_MAX_STEP),
+			yaw: clampAbs(-this.mouseDx * MOUSE_RAD_PER_PX, MOUSE_MAX_STEP),
+			roll: 0,
+		};
 		this.mouseDx = 0;
 		this.mouseDy = 0;
+
+		// Rotation carries momentum (`stepAngular`): the ship eases into a turn
+		// and, with the assist on, eases out of it. Setting the rate straight from
+		// the key state is what made this feel like 1984.
+		this.rates = stepAngular(
+			this.rates,
+			{ pitch, yaw, roll },
+			impulse,
+			this.assist,
+			dt,
+		);
 
 		// Rotations composed in the ship's own frame — multiply on the right —
 		// so pitch is about the wing axis wherever the nose happens to point,
 		// rather than about a world axis the player cannot see.
 		const turn = new THREE.Quaternion().setFromEuler(
 			new THREE.Euler(
-				pitch * PITCH_RATE * dt + mousePitch,
-				yaw * YAW_RATE * dt + mouseYaw,
-				roll * ROLL_RATE * dt,
+				this.rates.pitch * dt,
+				this.rates.yaw * dt,
+				this.rates.roll * dt,
 				"XYZ",
 			),
 		);
@@ -1423,6 +1438,23 @@ class Game {
 	}
 
 	/**
+	 * Where a sim-space direction lands, in normalised device coordinates.
+	 *
+	 * The renderer's one call into `hud.ts`, public so a probe can compare it
+	 * against Three.js's own projection of the mesh it is supposed to sit on —
+	 * two independent routes to the same pixel, which is the only way to catch a
+	 * marker that is internally consistent and still in the wrong place.
+	 */
+	markerNdc(dir: Vec3) {
+		return projectDirection(
+			dir,
+			this.orientation,
+			(this.nearCamera.fov * Math.PI) / 180,
+			this.nearCamera.aspect,
+		);
+	}
+
+	/**
 	 * Draw the HUD markers over the rendered frame.
 	 *
 	 * The overlay is a 2D canvas rather than geometry in the near scene, and the
@@ -1440,14 +1472,12 @@ class Game {
 		const w = this.overlay.width;
 		const h = this.overlay.height;
 		ctx.clearRect(0, 0, w, h);
-		const fov = (this.nearCamera.fov * Math.PI) / 180;
-		const aspect = this.nearCamera.aspect;
 		const toPixels = (ndcX: number, ndcY: number) => ({
 			x: (ndcX * 0.5 + 0.5) * w,
 			y: (1 - (ndcY * 0.5 + 0.5)) * h,
 		});
 		const place = (dir: Vec3) => {
-			const m = projectDirection(dir, this.orientation, fov, aspect);
+			const m = this.markerNdc(dir);
 			return m.behind ? null : { ...toPixels(m.ndcX, m.ndcY), on: m.onScreen };
 		};
 
@@ -1580,14 +1610,19 @@ class Game {
 		}
 	}
 
+	/** The overlay's backing store, in CSS pixels — not device pixels: the
+	 *  markers are line work a fraction of a pixel wide, and drawing at the
+	 *  device ratio without scaling the context would halve them on a retina
+	 *  display. */
+	private sizeOverlay() {
+		this.overlay.width = window.innerWidth;
+		this.overlay.height = window.innerHeight;
+	}
+
 	private onResize() {
 		const w = window.innerWidth;
 		const h = window.innerHeight;
-		// CSS pixels, not device pixels: the markers are line work a fraction of a
-		// pixel wide, and drawing them at the device ratio without scaling the
-		// context would put them at half size on a retina display.
-		this.overlay.width = w;
-		this.overlay.height = h;
+		this.sizeOverlay();
 		for (const cam of [this.backdropCamera, this.farCamera, this.nearCamera]) {
 			cam.aspect = w / h;
 			cam.updateProjectionMatrix();

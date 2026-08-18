@@ -18,6 +18,7 @@
  */
 import { expect, test, describe } from "bun:test";
 import {
+	ANGULAR_MAX,
 	ASSIST_CAP_KMS,
 	START_GALAXY,
 	THRUST_KMS2,
@@ -25,6 +26,7 @@ import {
 	bodyVelocity,
 	makeSystem,
 	makeWorld,
+	stepAngular,
 	stepFlight,
 	stepWorld,
 } from "../src/sim";
@@ -498,6 +500,75 @@ describe("vector helpers", () => {
 				sample,
 			).toBe(true);
 		}
+	});
+});
+
+describe("stepAngular — rotation with momentum", () => {
+	const still = { pitch: 0, yaw: 0, roll: 0 };
+	const none = { pitch: 0, yaw: 0, roll: 0 };
+
+	test("a turn eases in rather than snapping to its rate", () => {
+		// One frame at full stick must not already be at the peak rate: the ship
+		// answers the stick over a third of a second, and that ramp is the feel.
+		const first = stepAngular(still, { ...still, yaw: 1 }, none, true, 0.016);
+		expect(first.yaw).toBeGreaterThan(0);
+		expect(first.yaw).toBeLessThan(ANGULAR_MAX.yaw * 0.2);
+
+		let rates = still;
+		for (let i = 0; i < 60; i++) {
+			rates = stepAngular(rates, { ...still, yaw: 1 }, none, true, 0.016);
+		}
+		expect(rates.yaw).toBeCloseTo(ANGULAR_MAX.yaw, 6);
+	});
+
+	test("and eases out when the stick is released, with the assist on", () => {
+		// The half that was missing, in the principal's words: "leaving a key stops
+		// any motion immediately, not a gentle way of easing out".
+		const spinning = { pitch: 0, yaw: ANGULAR_MAX.yaw, roll: 0 };
+		const oneFrame = stepAngular(spinning, none, none, true, 0.016);
+		expect(oneFrame.yaw).toBeGreaterThan(ANGULAR_MAX.yaw * 0.8);
+		expect(oneFrame.yaw).toBeLessThan(ANGULAR_MAX.yaw);
+
+		let rates = spinning;
+		for (let i = 0; i < 120; i++)
+			rates = stepAngular(rates, none, none, true, 0.016);
+		expect(rates.yaw).toBeLessThan(0.01);
+	});
+
+	test("with the assist off the ship keeps tumbling", () => {
+		// Newtonian rotation, and the second place the two regimes visibly part.
+		let rates = { pitch: 0.4, yaw: -0.2, roll: 0.1 };
+		for (let i = 0; i < 200; i++)
+			rates = stepAngular(rates, none, none, false, 0.016);
+		expect(rates.pitch).toBeCloseTo(0.4, 12);
+		expect(rates.yaw).toBeCloseTo(-0.2, 12);
+	});
+
+	test("the mouse enters as an impulse and is capped like everything else", () => {
+		const kicked = stepAngular(
+			still,
+			none,
+			{ ...still, yaw: 0.05 },
+			true,
+			0.016,
+		);
+		expect(kicked.yaw).toBeGreaterThan(0);
+		// A flicked pointer cannot exceed the axis's peak rate.
+		const flicked = stepAngular(
+			still,
+			none,
+			{ ...still, yaw: 99 },
+			true,
+			0.016,
+		);
+		expect(flicked.yaw).toBe(ANGULAR_MAX.yaw);
+	});
+
+	test("a zero delta changes nothing", () => {
+		const rates = { pitch: 0.3, yaw: 0.2, roll: 0.1 };
+		expect(
+			stepAngular(rates, { pitch: 1, yaw: 1, roll: 1 }, none, true, 0),
+		).toBe(rates);
 	});
 });
 
