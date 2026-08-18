@@ -20,6 +20,7 @@ import { expect, test, describe } from "bun:test";
 import {
 	START_GALAXY,
 	advanceSystem,
+	bodyVelocity,
 	makeSystem,
 	makeWorld,
 	stepShip,
@@ -417,5 +418,63 @@ describe("vector helpers", () => {
 				sample,
 			).toBe(true);
 		}
+	});
+});
+
+describe("body velocities, which arrival turned out to depend on", () => {
+	// #14 flew the cruise regime and found that arriving is a *relative* problem:
+	// a station on a 1 AU orbit is carried around the star at ~30 km/s, fifteen
+	// times #5's 2 km/s assist cap. Everything about the drop-out and the exit
+	// clamp is stated in the destination's frame because of it, and that frame
+	// comes from here.
+	const world = makeWorld(SEED);
+
+	test("a body's velocity is the derivative of its position", () => {
+		// The claim that makes the analytic form worth having: it must agree with
+		// what the positions actually do. Compared against a *central* difference
+		// over a second of game time, which for a circular orbit of period hours
+		// or longer is accurate to parts in 10⁻¹⁰.
+		const dt = 1;
+		for (const body of world.system.bodies) {
+			if (body.kind === "star") continue;
+			const before = makeSystem(
+				world.system.record,
+				world.gameTime - dt,
+			).byId.get(body.id);
+			const after = makeSystem(
+				world.system.record,
+				world.gameTime + dt,
+			).byId.get(body.id);
+			if (!before || !after) throw new Error(`no ${body.id}`);
+			const numeric = scale(sub(after.pos, before.pos), 1 / (2 * dt));
+			const analytic = bodyVelocity(world.system, body.id, world.gameTime);
+			const error = length(sub(numeric, analytic));
+			expect(error, body.id).toBeLessThan(1e-6 * Math.max(1, length(analytic)));
+		}
+	});
+
+	test("the star does not move, and a station inherits its planet's motion", () => {
+		expect(
+			length(bodyVelocity(world.system, world.system.contents.star.id, 0)),
+		).toBe(0);
+		const station = world.system.contents.stations.find((s) => s.parentId);
+		if (!station?.parentId) return;
+		const planetKms = length(
+			bodyVelocity(world.system, station.parentId, world.gameTime),
+		);
+		const stationKms = length(
+			bodyVelocity(world.system, station.id, world.gameTime),
+		);
+		// Its own orbit around the planet is small beside the planet's around the
+		// star, so the two are close — and both are far above the 2 km/s assist
+		// cap, which is the whole finding.
+		expect(planetKms).toBeGreaterThan(2);
+		expect(Math.abs(stationKms - planetKms)).toBeLessThan(planetKms);
+	});
+
+	test("an unknown body is an error rather than a zero velocity", () => {
+		// A zero would be a silent claim that the destination is stationary, which
+		// is exactly the assumption that made the first cruise approach unarrivable.
+		expect(() => bodyVelocity(world.system, "no-such-body", 0)).toThrow();
 	});
 });

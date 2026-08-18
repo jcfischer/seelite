@@ -59,6 +59,7 @@ import {
 	arrivalPoint,
 	generateContents,
 	placeBodies,
+	velocityOnOrbit,
 } from "./system";
 import { type Vec3, add, scale, v3 } from "./vec3";
 
@@ -265,6 +266,52 @@ export function advanceSystem(system: System, gameTime: number): void {
 	}
 }
 
+/**
+ * How fast a body is moving through sim space, km/s.
+ *
+ * Composed the same way `placeBodies` composes positions — a station's velocity
+ * is its parent planet's plus its own around it — because the two have to agree
+ * or the ship would be told to match a frame the body is not in.
+ *
+ * Here rather than in `system.ts` because it needs the *contents* to resolve a
+ * parent, which is what this module already holds; `system.ts` supplies the
+ * per-orbit derivative and this composes it. The star does not move: system
+ * frames are star-centred (spec §7.4), so its velocity is zero by construction
+ * rather than by measurement.
+ */
+export function bodyVelocity(
+	system: System,
+	id: string,
+	gameTime: number,
+): Vec3 {
+	const { contents } = system;
+	if (id === contents.star.id) return v3();
+	const planet = contents.planets.find((p) => p.id === id);
+	if (planet) return velocityOnOrbit(planet.orbit, gameTime);
+	for (const p of contents.planets) {
+		const moon = p.moons.find((m) => m.id === id);
+		if (moon) {
+			return add(
+				velocityOnOrbit(p.orbit, gameTime),
+				velocityOnOrbit(moon.orbit, gameTime),
+			);
+		}
+	}
+	const station = contents.stations.find((s) => s.id === id);
+	if (station) {
+		const own = velocityOnOrbit(station.orbit, gameTime);
+		if (!station.parentId) return own;
+		const parent = contents.planets.find((p) => p.id === station.parentId);
+		// A parent that is not in the contents is the two having disagreed about
+		// what is in the system, which is the same throw `colorFor` makes rather
+		// than quietly returning a velocity in the wrong frame.
+		if (!parent)
+			throw new Error(`station ${id} orbits unknown ${station.parentId}`);
+		return add(velocityOnOrbit(parent.orbit, gameTime), own);
+	}
+	throw new Error(`no body ${id} in this system`);
+}
+
 export function makeWorld(seed: number): World {
 	const galaxy = generateGalaxy(seed, START_GALAXY);
 	const record = startSystem(galaxy);
@@ -317,7 +364,24 @@ export function stepShip(ship: Ship, accel: Vec3, dt: number): void {
  * `dt` is seconds of **sim** time and is never scaled (#10).
  */
 export function stepWorld(world: World, accel: Vec3, dt: number): void {
+	advanceWorldClock(world, dt);
+	stepShip(world.ship, accel, dt);
+}
+
+/**
+ * The clock and the bodies, without the ship.
+ *
+ * Split out because cruise (#10, #14) does not integrate the ship the way
+ * `stepShip` does — it is nose-locked and position-dependent, with its own
+ * sub-stepping — but it owes the world the same ordering: bodies at the *new*
+ * time before anything reads their positions. Leaving the two lines inlined in
+ * `stepWorld` meant the cruise path had to restate them, which is how a second
+ * clock gets invented.
+ *
+ * `dt` is seconds of **sim** time and is never scaled (#10). Cruise is
+ * fictional FTL; the world it crosses ticks at real time.
+ */
+export function advanceWorldClock(world: World, dt: number): void {
 	world.gameTime += dt;
 	advanceSystem(world.system, world.gameTime);
-	stepShip(world.ship, accel, dt);
 }
