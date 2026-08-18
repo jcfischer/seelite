@@ -83,6 +83,12 @@ const CDF_BISECTION_STEPS = 40;
  * five layouts in six strand at least one system, which is what a 3:1
  * concentrated 22 LY sphere against a 7 LY jump actually costs at the rim.
  *
+ * Re-run that measurement with `bun scripts/measure-layout-attempts.ts`. It is a
+ * script rather than a test because it takes ~30 s and asserts nothing; §10 says
+ * a sharp rise in these counts is the signal to revisit the profile or the
+ * radius, and a reader acting on that needs to be able to reproduce the baseline
+ * they are comparing against rather than trust a number in a comment.
+ *
  * So this is a ceiling with real margin rather than a plausible-looking round
  * number. A first pass used 64, which sits *below* an observed value: the
  * failure that produces is a thrown error on somebody's world seed and a game
@@ -108,6 +114,12 @@ export const DOMAIN = {
 	BODIES: 4,
 	STATIONS: 5,
 	DESC: 6,
+	/** The new-game arrival bearing (`system.ts`). Not in the spec's list of
+	 *  six: it was added because reusing `POS` for it silently correlated the
+	 *  bearing with the system's own position — the first draw of a replayed
+	 *  stream is the same number both times. Adding a tag is the safe operation
+	 *  this table was designed for; reusing one is the unsafe one. */
+	ARRIVAL: 7,
 } as const;
 
 export type DomainName = keyof typeof DOMAIN;
@@ -196,11 +208,28 @@ export interface Galaxy {
 const dot = (a: Vec3, b: Vec3): number => a.x * b.x + a.y * b.y + a.z * b.z;
 
 /** Distance in light years between two galaxy-space points. */
-export const distanceLy = (a: Vec3, b: Vec3): number => {
+export const distanceLy = (a: Vec3, b: Vec3): number =>
+	Math.sqrt(squaredDistanceLy(a, b));
+
+/**
+ * The same distance, unrooted — what the two O(n²) sweeps in this module
+ * actually need.
+ *
+ * `isConnected` runs up to 256² pairs per attempt, at a mean of 6 attempts per
+ * galaxy, so the square root alone is 400k–1.2M calls per galaxy at start-up
+ * and every one of them feeds a comparison that does not need it.
+ *
+ * The two forms are not bit-identical: `√(d²) ≤ 7` and `d² ≤ 49` can disagree
+ * for a pair sitting within an ulp of the jump range. Both are equally valid
+ * readings of "within 7 LY" and the generator only owes determinism, so the
+ * squared form is the definition — with the pinned attempt counts in the suite
+ * as the record of what it produces.
+ */
+export const squaredDistanceLy = (a: Vec3, b: Vec3): number => {
 	const dx = a.x - b.x;
 	const dy = a.y - b.y;
 	const dz = a.z - b.z;
-	return Math.sqrt(dx * dx + dy * dy + dz * dz);
+	return dx * dx + dy * dy + dz * dz;
 };
 
 /**
@@ -268,11 +297,12 @@ export function isConnected(
 	const queue = [0];
 	seen[0] = 1;
 	let reached = 1;
+	const maxJumpSq = maxJump * maxJump;
 	while (queue.length > 0) {
 		const i = queue.pop() as number;
 		for (let j = 0; j < n; j++) {
 			if (seen[j]) continue;
-			if (distanceLy(positions[i], positions[j]) <= maxJump) {
+			if (squaredDistanceLy(positions[i], positions[j]) <= maxJumpSq) {
 				seen[j] = 1;
 				reached++;
 				queue.push(j);
@@ -295,11 +325,23 @@ export function isConnected(
  * The attempt number goes into the seed, so a resampled galaxy is a *different*
  * galaxy rather than the same one nudged, and it stays a pure function of the
  * world seed.
+ *
+ * **Memoised**, because a layout is expensive and asking for one twice is the
+ * normal case rather than the exception: `systemAt` needs a layout to place one
+ * system, and a galaxy map hovering system by system would otherwise pay a mean
+ * of 6 full resamples — 256 positions × 40 bisection steps each, plus the
+ * connectivity scan — per lookup. Being a pure function of `(worldSeed, galaxy)`
+ * is what makes caching it sound; the cache is keyed on exactly those two.
  */
+const layoutCache = new Map<string, { positions: Vec3[]; attempt: number }>();
+
 export function layoutGalaxy(
 	worldSeed: number,
 	galaxy: number,
 ): { positions: Vec3[]; attempt: number } {
+	const key = `${worldSeed >>> 0}:${galaxy}`;
+	const cached = layoutCache.get(key);
+	if (cached) return cached;
 	for (let attempt = 0; attempt < MAX_LAYOUT_ATTEMPTS; attempt++) {
 		const positions: Vec3[] = [];
 		for (let n = 0; n < SYSTEMS_PER_GALAXY; n++) {
@@ -307,7 +349,15 @@ export function layoutGalaxy(
 				systemPosition(systemSeedFor(worldSeed, galaxy, attempt, n)),
 			);
 		}
-		if (isConnected(positions)) return { positions, attempt };
+		if (isConnected(positions)) {
+			const result = { positions, attempt };
+			// Bounded by 8 entries per world seed, and a session has one world
+			// seed. A world-seed change is a new game, so the stale entries are
+			// eight arrays of 256 points — not worth an eviction policy, and worth
+			// saying so rather than leaving a reader to wonder.
+			layoutCache.set(key, result);
+			return result;
+		}
 	}
 	// Deliberately fatal. If this ever fires, the fix is the density profile
 	// (§3) or the radius (§2.1) — not a bigger retry budget.
@@ -315,6 +365,10 @@ export function layoutGalaxy(
 		`galaxy ${galaxy}: no connected layout in ${MAX_LAYOUT_ATTEMPTS} attempts`,
 	);
 }
+
+/** Drop the memoised layouts. Exists for the measurement script, which times
+ *  layout work and would otherwise measure the cache. */
+export const clearLayoutCache = (): void => layoutCache.clear();
 
 const clamp = (x: number, lo: number, hi: number): number =>
 	Math.min(hi, Math.max(lo, x));
@@ -396,9 +450,15 @@ export function systemFromPosition(
  * One system on its own — the property the hash-per-system substrate exists to
  * provide, and the one that would have failed under Bell's chain.
  *
- * It still lays the galaxy out first, because a system's *position* is a
+ * It still needs the galaxy's layout, because a system's *position* is a
  * galaxy-level fact: the attempt number is part of its seed. What it does not
- * do is generate any other system's record.
+ * do is generate any other system's *record* — no name, no polity, no
+ * description is computed for a system nobody asked for.
+ *
+ * The layout itself is memoised (see `layoutGalaxy`), so the first call in a
+ * session pays for it and the rest do not. Without that this function reads as
+ * per-system and behaves as per-galaxy, which is the more expensive kind of
+ * wrong: the cost is invisible at the call site.
  */
 export function systemAt(
 	worldSeed: number,
@@ -447,14 +507,21 @@ export function startSystem(galaxy: Galaxy): SystemRecord {
 	return best;
 }
 
-/** Systems reachable in one jump from `from`, nearest first. */
+/**
+ * Systems reachable in one jump from `from`, nearest first.
+ *
+ * Identity is `(galaxy, index)`, not `index`: an index is only unique *within*
+ * its galaxy, so filtering on it alone would drop `from`'s seven cross-galaxy
+ * twins from any multi-galaxy list and keep `from` itself. Galaxies are a
+ * namespace (spec §2) and nothing stops two of them being held in one array.
+ */
 export function neighbours(
 	systems: readonly SystemRecord[],
 	from: SystemRecord,
 	maxJump = JUMP_RANGE_LY,
 ): SystemRecord[] {
 	return systems
-		.filter((s) => s.index !== from.index)
+		.filter((s) => s.galaxy !== from.galaxy || s.index !== from.index)
 		.map((s) => ({ s, d: distanceLy(from.pos, s.pos) }))
 		.filter(({ d }) => d <= maxJump)
 		.sort((a, b) => a.d - b.d)
@@ -463,5 +530,4 @@ export function neighbours(
 
 /** Credits to jump a given distance (spec §8). The wind-up, the vulnerability
  *  window and what happens if it is interrupted are combat's business (#8). */
-export const jumpCost = (distanceLy: number): number =>
-	distanceLy * FUEL_COST_PER_LY;
+export const jumpCost = (ly: number): number => ly * FUEL_COST_PER_LY;

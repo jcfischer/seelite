@@ -67,6 +67,22 @@ export const ARRIVAL_CLEARANCE_AU = 0.25;
  *  radial tech gradient teeth, since tech tracks radius. */
 export const SHIPYARD_MIN_TL = 10;
 
+/** Moons per gas giant (spec §6.2), and how many draws each one costs. One
+ *  constant for both the count's upper bound and the size of the roll table, so
+ *  the two cannot drift apart and leave a fallback guarding nothing. */
+export const MAX_MOONS = 3;
+const ROLLS_PER_MOON = 4;
+
+/**
+ * Body sizes and moon orbits — **scenery, not spec** (see the module docstring),
+ * named rather than inline so that the one place a later decision node has to
+ * look is this block, and so the two size bands cannot drift apart unnoticed.
+ */
+const ROCKY_RADIUS_KM = { base: 2400, span: 5600 };
+const GIANT_RADIUS_KM = { base: 25000, span: 50000 };
+const MOON_RADIUS_KM = { base: 800, span: 1700 };
+const MOON_ORBIT_KM = { base: 5e4, span: 3.5e5 };
+
 export type StarClass = "M" | "K" | "G" | "F" | "A";
 
 export interface StarClassDef {
@@ -233,9 +249,12 @@ export function positionOnOrbit(orbit: Orbit, gameTime: number): Vec3 {
 	return { x: x * cn - yi * sn, y: x * sn + yi * cn, z: zi };
 }
 
+/** Summed once. The table is frozen, so recomputing it per system was 2048
+ *  reductions over five constants. */
+const STAR_WEIGHT_TOTAL = STAR_CLASSES.reduce((sum, c) => sum + c.weight, 0);
+
 const pickWeighted = (rand: () => number): StarClassDef => {
-	const total = STAR_CLASSES.reduce((sum, c) => sum + c.weight, 0);
-	let u = rand() * total;
+	let u = rand() * STAR_WEIGHT_TOTAL;
 	for (const c of STAR_CLASSES) {
 		u -= c.weight;
 		if (u <= 0) return c;
@@ -285,30 +304,35 @@ export function generateContents(record: SystemRecord): SystemContents {
 		const theta0 = bodies() * TAU;
 		const inclination = uniform(bodies, 0, (3 * Math.PI) / 180);
 		const node = bodies() * TAU;
-		const moonCount = Math.floor(bodies() * 4);
-		const moonRolls = Array.from({ length: 3 }, () => [
-			bodies(),
-			bodies(),
-			bodies(),
-			bodies(),
-		]);
+		const moonCount = Math.floor(bodies() * (MAX_MOONS + 1));
+		// `MAX_MOONS` rolls are drawn whether or not this rung keeps any of them,
+		// for the same reason the rung's own parameters are: the draw sequence is
+		// the contract, and making it conditional on `moonCount` would couple every
+		// later system parameter to a moon count. Flat rather than nested arrays —
+		// this runs for all 2048 systems and the nesting bought nothing.
+		const moonRolls: number[] = [];
+		for (let r = 0; r < MAX_MOONS * ROLLS_PER_MOON; r++)
+			moonRolls.push(bodies());
 		if (aAu < MIN_ORBIT_AU || aAu > MAX_ORBIT_AU) continue;
 
 		const isGasGiant = aAu > 2 * habitableAu;
-		// Scenery, not spec — see the module docstring.
-		const radiusKm = isGasGiant
-			? 25000 + radiusRoll * 50000
-			: 2400 + radiusRoll * 5600;
+		const size = isGasGiant ? GIANT_RADIUS_KM : ROCKY_RADIUS_KM;
+		const radiusKm = size.base + radiusRoll * size.span;
 		const id = `planet-${i}`;
 		const moons: Moon[] = [];
 		if (isGasGiant) {
 			for (let m = 0; m < moonCount; m++) {
-				const [rRoll, oRoll, pRoll, tRoll] = moonRolls[m] ?? moonRolls[0];
+				const base = m * ROLLS_PER_MOON;
+				const rRoll = moonRolls[base];
+				const oRoll = moonRolls[base + 1];
+				const pRoll = moonRolls[base + 2];
+				const tRoll = moonRolls[base + 3];
 				moons.push({
 					id: `${id}-moon-${m}`,
-					radiusKm: 800 + rRoll * 1700,
+					radiusKm: MOON_RADIUS_KM.base + rRoll * MOON_RADIUS_KM.span,
 					orbit: {
-						radiusKm: radiusKm + 5e4 + oRoll * 3.5e5,
+						radiusKm:
+							radiusKm + MOON_ORBIT_KM.base + oRoll * MOON_ORBIT_KM.span,
 						periodS: (0.5 + pRoll * 14.5) * 86400,
 						theta0: tRoll * TAU,
 						inclination,
@@ -469,7 +493,9 @@ export function placeBodies(
 				? { x: base.x + rel.x, y: base.y + rel.y, z: base.z + rel.z }
 				: rel,
 			// Scenery: a station is a near-layer object and its real geometry is
-			// #9's business. This is only the figure the clearance check reads.
+			// #9's business. Nothing reads it yet — in particular the arrival
+			// clearance is centre-to-centre, per §7.4's "within 0.25 AU of any
+			// body", and at 1.2 km against 0.25 AU the radius would not move it.
 			radiusKm: 1.2,
 		});
 	}
@@ -495,9 +521,19 @@ const norm = (v: Vec3): Vec3 => {
  * `originPos` is `null` on a new game, where there is no previous system; the
  * bearing then comes from the system's own stream so it is still deterministic.
  *
- * The clearance walk is the spec's "push it outward until it is clear", made
- * finite: it steps rather than solving, because a body can be anywhere along the
- * ray and the ray is cheap to walk.
+ * §7.4's "push it outward until it is clear" is **solved rather than stepped**.
+ * The point rides a ray, so each body's exclusion sphere cuts it in exactly one
+ * interval, whose ends are the roots of `d² − 2td + (|b|² − c²)` with
+ * `t = b·bearing`. Pushing to the far root of whichever interval still contains
+ * the point terminates in at most one pass per body — each push leaves that
+ * body's interval for good, and `d` only increases.
+ *
+ * A first version walked outward in 0.05 AU steps and returned a bounded
+ * fallback if it ran out of room, with a comment asserting the fallback was
+ * unreachable. That assertion was probably true and was not *checked* anywhere —
+ * the bound it rested on ignored moon offsets, and the clearance test only
+ * sampled `gameTime` 0. Solving removes both the claim and the fallback: the
+ * returned point clears every body by construction, at every clock value.
  */
 export function arrivalPoint(
 	record: SystemRecord,
@@ -513,7 +549,13 @@ export function arrivalPoint(
 			z: originPos.z - record.pos.z,
 		});
 	} else {
-		const rand = stream(record.seed, DOMAIN.POS);
+		// `ARRIVAL`, not `POS`. Drawing this from `POS` replays the stream
+		// `systemPosition` already consumed, so `cosTheta` becomes `2·u_radius − 1`
+		// and `phi` becomes the position's own polar draw: a rim system (u → 1)
+		// would always arrive within a few degrees of +z, with its azimuth locked
+		// to its polar angle. Deterministic and wrong, and the clearance tests
+		// cannot see it because a correlated bearing still clears every body.
+		const rand = stream(record.seed, DOMAIN.ARRIVAL);
 		// Same construction as a system's own direction draw: uniform on the
 		// sphere, not uniform in the angles.
 		const cosTheta = 2 * rand() - 1;
@@ -528,22 +570,32 @@ export function arrivalPoint(
 
 	const bodies = placeBodies(contents, gameTime);
 	const clearanceKm = ARRIVAL_CLEARANCE_AU * AU_KM;
-	const stepKm = 0.05 * AU_KM;
-	// Bounded by the orbit envelope plus the clearance: past that there is
-	// nothing left to be near.
-	const maxKm = (MAX_ORBIT_AU + 2 * ARRIVAL_CLEARANCE_AU) * AU_KM;
-	for (let d = ARRIVAL_DISTANCE_AU * AU_KM; d <= maxKm; d += stepKm) {
-		const p = { x: bearing.x * d, y: bearing.y * d, z: bearing.z * d };
-		const tooClose = bodies.some((b) => {
-			const dx = b.pos.x - p.x;
-			const dy = b.pos.y - p.y;
-			const dz = b.pos.z - p.z;
-			return Math.sqrt(dx * dx + dy * dy + dz * dz) < clearanceKm;
-		});
-		if (!tooClose) return p;
+	const clearanceSq = clearanceKm * clearanceKm;
+
+	// Each body's interval, computed once. `perpSq` past the clearance means the
+	// ray misses that body's sphere entirely, which is the common case — most of
+	// a system is nowhere near any one bearing.
+	const intervals: { lo: number; hi: number }[] = [];
+	for (const b of bodies) {
+		const t = b.pos.x * bearing.x + b.pos.y * bearing.y + b.pos.z * bearing.z;
+		const distSq = b.pos.x * b.pos.x + b.pos.y * b.pos.y + b.pos.z * b.pos.z;
+		const half = clearanceSq - (distSq - t * t);
+		if (half <= 0) continue;
+		const root = Math.sqrt(half);
+		intervals.push({ lo: t - root, hi: t + root });
 	}
-	// Unreachable while the envelope holds: the last candidate is more than a
-	// clearance beyond the outermost possible body. Returned rather than thrown
-	// so a jump can never strand the player on an arithmetic edge case.
-	return { x: bearing.x * maxKm, y: bearing.y * maxKm, z: bearing.z * maxKm };
+
+	let d = ARRIVAL_DISTANCE_AU * AU_KM;
+	// At most one push per interval, plus one pass to confirm none is left.
+	for (let pass = 0; pass <= intervals.length; pass++) {
+		let pushed = false;
+		for (const { lo, hi } of intervals) {
+			if (d > lo && d < hi) {
+				d = hi;
+				pushed = true;
+			}
+		}
+		if (!pushed) break;
+	}
+	return { x: bearing.x * d, y: bearing.y * d, z: bearing.z * d };
 }

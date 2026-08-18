@@ -32,6 +32,7 @@ import {
 } from "../src/galaxy";
 import {
 	ARRIVAL_CLEARANCE_AU,
+	ARRIVAL_DISTANCE_AU,
 	MAX_ORBIT_AU,
 	MIN_ORBIT_AU,
 	SHIPYARD_MIN_TL,
@@ -40,6 +41,7 @@ import {
 	placeBodies,
 	positionOnOrbit,
 } from "../src/system";
+import { mix, seededRand } from "../src/rng";
 import { AU_KM } from "../src/units";
 
 /** The world every test below reads. One seed, fixed, so a failure is
@@ -161,22 +163,27 @@ describe("connectivity (§9.3)", () => {
 		expect(GALAXIES.map((g) => g.attempt)).toEqual([4, 5, 5, 5, 19, 2, 3, 4]);
 	});
 
-	test("the attempt count stays inside its budget on other world seeds", () => {
-		// The pin above guards one seed, and one seed cannot show a tail. This is
-		// the half that would have caught the first version of `MAX_LAYOUT_ATTEMPTS`
-		// — a ceiling of 64 against a measured worst case of 52, which fails as a
-		// thrown error on some player's world seed and a game that will not start.
+	test("other world seeds also lay out well inside the ceiling", () => {
+		// **What this is and is not.** Forty galaxies cannot observe a tail whose
+		// p95 is 19 and whose worst case is 52 — that measurement is
+		// `scripts/measure-layout-attempts.ts`, and the number it justifies is
+		// recorded on `MAX_LAYOUT_ATTEMPTS`. What forty galaxies *can* do is fail
+		// if the typical cost moves, on seeds other than the one pinned above.
 		//
-		// Five seeds is a sample, not the measurement: the distribution (mean 6.0,
-		// p95 19, max 52 over 200 seeds) is recorded on the constant itself, where
-		// the number it justifies lives.
+		// An earlier version of this comment claimed it "would have caught" the
+		// first ceiling of 64 against a worst case of 52. It would not: the
+		// assertion was relative to the ceiling, so under 64 it would have demanded
+		// max < 16 and failed for a reason unrelated to the tail. The bound below
+		// is absolute for that reason — it says what these seeds actually cost, and
+		// changing the ceiling does not silently change what is being asserted.
 		const attempts = [7, 99, 4242, 123456, 999983].flatMap((world) =>
 			Array.from(
 				{ length: GALAXY_COUNT },
 				(_, g) => layoutGalaxy(world, g).attempt,
 			),
 		);
-		expect(Math.max(...attempts)).toBeLessThan(MAX_LAYOUT_ATTEMPTS / 4);
+		expect(Math.max(...attempts)).toBeLessThan(40);
+		expect(MAX_LAYOUT_ATTEMPTS).toBeGreaterThan(52 * 2);
 	});
 
 	test("a layout is rejected rather than repaired", () => {
@@ -308,6 +315,37 @@ describe("names and descriptions (§9.6)", () => {
 		for (const s of ALL) expect(s.name).toMatch(/^[A-Z]{2,8}$/);
 	});
 
+	test("the degenerate-name rate is what the redraw loop was sized against", () => {
+		// `names.ts` justifies its redraw loop with a rate. Measuring it here means
+		// the justification is checkable rather than asserted — and it is measured
+		// on the *unguarded* emit rule, since the guarded one produces none by
+		// construction.
+		//
+		// A 3-pair name is empty only if all three draws hit `..`; the same three
+		// draws are what `systemName` makes first, so replaying the rule on a fresh
+		// stream measures the population the loop protects.
+		let short = 0;
+		const trials = 200_000;
+		for (let i = 0; i < trials; i++) {
+			const rand = seededRand(mix(0x5ee11e, i));
+			const pairs = rand() < 0.5 ? 3 : 4;
+			let len = 0;
+			for (let p = 0; p < pairs; p++) {
+				// `..` at index 0 emits nothing; `A.` (index 30) emits one character.
+				const draw = Math.floor(rand() * 32);
+				len += draw === 0 ? 0 : draw === 15 ? 1 : 2;
+			}
+			if (len < 2) short++;
+		}
+		const rate = short / trials;
+		// ~1.5·10⁻⁵ expected (half the population is 3-pair, at (1/32)³ each), so
+		// over 2048 systems that is ~3% of worlds carrying one. Asserted as an
+		// order of magnitude, which is all a rate this small supports at 200k
+		// trials.
+		expect(rate).toBeLessThan(1e-4);
+		expect(rate * 2048).toBeLessThan(0.2);
+	});
+
 	test("the duplicate rate is recorded, not asserted away", () => {
 		// Bell's table has 32 digrams and names are 3–4 pairs, so collisions are
 		// expected and are not a defect — Elite shipped with them. What matters is
@@ -395,23 +433,89 @@ describe("system contents", () => {
 		}
 	});
 
-	test("the arrival point clears every body (§9.8)", () => {
+	test("the arrival point clears every body, at every clock value (§9.8)", () => {
+		// **Four clock values, not one.** Bodies move, so a clearance that holds at
+		// `gameTime` 0 says nothing about the arrival a player actually makes.
+		// Testing only t = 0 was the hole that let `arrivalPoint`'s first version
+		// carry an unchecked "this cannot happen" claim; the times below span a
+		// third of a year, several inner-planet periods, and a station orbit.
+		const CLOCKS = [0, 3_600, 5_184_000, 10_000_000];
 		for (const s of SAMPLE) {
 			const c = generateContents(s);
 			// Both bearings the spec defines: a jump from a neighbour, and a new
 			// game with no origin.
 			const origin =
 				GALAXIES[s.galaxy].systems[(s.index + 1) % SYSTEMS_PER_GALAXY];
-			for (const from of [origin.pos, null]) {
-				const p = arrivalPoint(s, c, from, 0);
-				for (const b of placeBodies(c, 0)) {
-					const d = Math.sqrt(
-						(b.pos.x - p.x) ** 2 + (b.pos.y - p.y) ** 2 + (b.pos.z - p.z) ** 2,
-					);
-					expect(d).toBeGreaterThanOrEqual(ARRIVAL_CLEARANCE_AU * AU_KM);
+			for (const t of CLOCKS) {
+				for (const from of [origin.pos, null]) {
+					const p = arrivalPoint(s, c, from, t);
+					for (const b of placeBodies(c, t)) {
+						const d = Math.sqrt(
+							(b.pos.x - p.x) ** 2 +
+								(b.pos.y - p.y) ** 2 +
+								(b.pos.z - p.z) ** 2,
+						);
+						// Relative slack: the clearance is solved in float64 at ~10⁸ km,
+						// so an exact `>=` would be asserting the last ulp of a square
+						// root rather than the geometry.
+						expect(d).toBeGreaterThanOrEqual(
+							ARRIVAL_CLEARANCE_AU * AU_KM * (1 - 1e-12),
+						);
+					}
 				}
 			}
 		}
+	});
+
+	test("the arrival point is never further out than it needs to be", () => {
+		// The other half of the clearance property, and the one a "push it further"
+		// bug passes silently: the point must sit at 1 AU unless something was in
+		// the way, and even then only far enough to clear it.
+		let atExactly1Au = 0;
+		for (const s of SAMPLE) {
+			const c = generateContents(s);
+			const p = arrivalPoint(s, c, null, 0);
+			const d = Math.hypot(p.x, p.y, p.z);
+			expect(d).toBeGreaterThanOrEqual(
+				ARRIVAL_DISTANCE_AU * AU_KM * (1 - 1e-12),
+			);
+			// Past the orbit envelope plus a clearance there is nothing left to be
+			// pushed by, so no arrival can be beyond it.
+			expect(d).toBeLessThanOrEqual(
+				(MAX_ORBIT_AU + 2 * ARRIVAL_CLEARANCE_AU) * AU_KM,
+			);
+			if (d < ARRIVAL_DISTANCE_AU * AU_KM * 1.000001) atExactly1Au++;
+		}
+		// Most arrivals hit clear space immediately — if this collapsed, the
+		// exclusion intervals would be swallowing the whole ray.
+		expect(atExactly1Au / SAMPLE.length).toBeGreaterThan(0.5);
+	});
+
+	test("the new-game bearing is not correlated with the system's position", () => {
+		// The defect this pins was invisible to every other test here: the fallback
+		// bearing was drawn from the `POS` stream, which `systemPosition` has
+		// already consumed, so `cosθ_arrival` was `2·u_radius − 1` — a rim system
+		// always arriving near +z, azimuth locked to its polar angle. Every
+		// clearance assertion still passed, because a correlated bearing clears
+		// bodies just as well as an uncorrelated one.
+		//
+		// Measured as the correlation between the bearing's z and the system's own
+		// normalised z. Under the bug it was ~1 by construction.
+		const sample = ALL.filter((_, i) => i % 7 === 0);
+		const pairs = sample.map((s) => {
+			const p = arrivalPoint(s, generateContents(s), null, 0);
+			const len = Math.hypot(p.x, p.y, p.z);
+			return [s.pos.z / s.radiusLy, p.z / len] as const;
+		});
+		const meanOf = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+		const ax = pairs.map(([a]) => a);
+		const ay = pairs.map(([, b]) => b);
+		const mx = meanOf(ax);
+		const my = meanOf(ay);
+		const cov = meanOf(pairs.map(([a, b]) => (a - mx) * (b - my)));
+		const sx = Math.sqrt(meanOf(ax.map((a) => (a - mx) ** 2)));
+		const sy = Math.sqrt(meanOf(ay.map((b) => (b - my) ** 2)));
+		expect(Math.abs(cov / (sx * sy))).toBeLessThan(0.15);
 	});
 
 	test("the arrival point is on the inbound bearing", () => {

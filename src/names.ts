@@ -75,11 +75,18 @@ const randByte = (rand: () => number): number => Math.floor(rand() * 256);
  * **The redraw loop is ours, and it closes a hole in the spec.** §4.5 describes
  * the emit rule and §9.6 requires every name to be 2–8 characters, and those two
  * do not quite agree: the table contains `..` (emits nothing) and `A.` (emits
- * one character), so three unlucky draws produce an empty name. At 2048 systems
- * that is a ~6% chance per world — rare enough to survive a casual test run and
- * certain enough to bite someone. Extra pairs are appended until the name is
- * long enough, which keeps the generator total and perturbs only the handful of
- * names that were degenerate anyway.
+ * one character), so three unlucky draws produce an empty name.
+ *
+ * The rate, derived rather than asserted: a 3-pair name is empty when all three
+ * draws hit `..`, at (1/32)³ = 3.05·10⁻⁵, and half of all names are 3-pair, so
+ * 2048 · ½ · (1/32)³ ≈ 0.031 expected empties per world — about a **3% chance**
+ * that a given world contains one, and a 4-pair name is 32× rarer again. (The
+ * first version of this docstring said ~6%, from 2048 · (1/32)³, which forgot
+ * that the 4-pair half of the population is effectively immune.) Rare enough to
+ * survive a casual test run, certain enough to bite someone eventually.
+ *
+ * `tests/galaxy.test.ts` measures the pre-fix rate directly rather than trusting
+ * this paragraph.
  */
 export function systemName(rand: () => number): string {
 	const pairCount = rand() < 0.5 ? 3 : 4;
@@ -91,8 +98,10 @@ export function systemName(rand: () => number): string {
 	};
 	for (let i = 0; i < pairCount; i++) appendPair();
 	// Bounded so this is a function rather than a gamble. The cap is unreachable
-	// in practice — every iteration has a 31/32 chance of ending the loop — and
-	// exists so that a future table edit cannot turn this into a hang.
+	// in practice — an iteration fails to end the loop only on `..` (always) or
+	// `A.` (when the name is still empty), so its worst-case exit chance is
+	// 30/32 — and exists so that a future table edit cannot turn this into a
+	// hang.
 	for (let guard = 0; name.length < 2 && guard < 16; guard++) appendPair();
 	return name.length >= 2 ? name : "AB";
 }
