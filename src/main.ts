@@ -79,6 +79,7 @@ import { GOVERNMENT_NAMES } from "./galaxy";
 import {
 	angleOffNose,
 	directionTo,
+	duration,
 	edgeOf,
 	horizonRoll,
 	prograde,
@@ -912,6 +913,26 @@ class Game {
 			: null;
 	}
 
+	/**
+	 * What to do next, in one phrase, or "" when there is nothing to say.
+	 *
+	 * Shown whenever normal flight cannot reasonably reach the selected target —
+	 * which at the 2 km/s assist cap is anything past a few thousand kilometres,
+	 * and is *most of a system*.
+	 */
+	private cruisePrompt(targetKm: number | null): string {
+		if (this.spoolLeftS > 0) return "";
+		if (this.regime === "cruise") return "";
+		if (this.chargeAu <= 0)
+			return "no drive charge — wait for it to regenerate";
+		if (targetKm === null) return "T selects a target";
+		// An hour at the cap, which is 7,200 km. Below that the crawl is the
+		// intended experience — #10 §3 bounds the drop radius by exactly this
+		// argument — and above it the answer is always cruise.
+		if (targetKm < 3600 * ASSIST_CAP_KMS) return "";
+		return "press J to cruise";
+	}
+
 	/** How fast the selected target is moving through sim space, km/s — the frame
 	 *  the arrival is judged in. Zero when nothing is selected. */
 	targetVelocity(): Vec3 {
@@ -1033,20 +1054,34 @@ class Game {
 	 * See `TIME_TO_TARGET_SAMPLES` for why this integrates instead of dividing.
 	 */
 	timeToTarget(): number | null {
-		// Only in cruise, or while the spool-up is running. In normal flight the
-		// integral below is a cruise-law figure for a ship doing 2 km/s — an
-		// answer to a question nobody asked, computed 48 samples at a time, every
-		// frame. The pacing judgement this node collects is read off this panel,
-		// so a number that is quietly about a different regime is worse than a
-		// blank.
-		if (this.regime !== "cruise" && this.spoolLeftS === 0) return null;
 		const target = this.targetBody();
 		if (!target) return null;
 		const from = this.world.ship.pos;
 		const toTarget = sub(target.pos, from);
 		const remaining = length(toTarget);
 		if (remaining <= this.cruiseParams.dropRadiusKm) return 0;
+
+		// **In normal flight the answer is a division, not this integral.** The
+		// cruise law is a different regime's arithmetic and would report a minute
+		// for a crossing that takes two years at the assist cap — which is exactly
+		// the confusion that has to be designed out here rather than papered over:
+		// the first flight of this prototype was spent at full throttle in normal
+		// flight watching 0.837 AU not change, because the panel said nothing.
+		//
+		// A blank was the previous answer and it is worse than a wrong number: it
+		// hides the one fact the player needs, which is that *this regime cannot
+		// get there*.
+		if (this.regime !== "cruise" && this.spoolLeftS === 0) {
+			// At rest with the throttle shut the honest question is not "how long at
+			// zero" — which is a blank, and a blank is what hid this — but "how long
+			// if I flew there", so the figure falls back to the regime's best speed.
+			const speed =
+				Math.max(length(this.world.ship.vel), ASSIST_CAP_KMS * this.throttle) ||
+				ASSIST_CAP_KMS;
+			return remaining / speed;
+		}
 		const throttle = this.regime === "cruise" ? this.throttle : 1;
+		// The integrator below is the cruise law, and only cruise reaches it.
 		if (throttle <= 0) return null;
 		const dir = scale(toTarget, 1 / remaining);
 		const masses = this.masses();
@@ -1408,9 +1443,13 @@ class Game {
 				state,
 				`target ${this.targetId ?? "none"}`,
 				targetKm === null ? "" : range(targetKm),
-				eta === null ? "eta —" : `eta ${eta < 1 ? "<1" : Math.round(eta)}s`,
+				eta === null ? "eta —" : `eta ${duration(eta)}`,
 				closing,
 				`charge ${this.chargeAu.toFixed(1)}/${CHARGE_CAPACITY_AU} AU`,
+				// The prompt. A prototype whose central mechanic is a keypress the
+				// player has not discovered is a prototype that measures the wrong
+				// thing — the first session was flown entirely in normal flight.
+				this.cruisePrompt(targetKm),
 				this.lastLegS === null ? "" : `last leg ${this.lastLegS.toFixed(1)}s`,
 				this.lastExit,
 			]
@@ -1543,6 +1582,22 @@ class Game {
 				ctx.lineTo(back.x - 4, back.y + 4);
 				ctx.stroke();
 			}
+		}
+
+		// The prompt, on the glass rather than only in the corner: the mechanic it
+		// names is the one the whole prototype is about, and the first flight of
+		// this build was spent in normal flight watching a distance not change.
+		const prompt = this.cruisePrompt(
+			this.targetBody()
+				? length(sub((this.targetBody() as Body).pos, camPos))
+				: null,
+		);
+		if (prompt) {
+			ctx.font = "13px ui-monospace, Menlo, monospace";
+			ctx.textAlign = "center";
+			ctx.fillStyle = "rgba(255, 214, 120, 0.9)";
+			ctx.fillText(prompt, w / 2, h * 0.62);
+			ctx.textAlign = "left";
 		}
 
 		// Every selectable body gets a bracket, because "I have no idea where to

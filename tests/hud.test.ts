@@ -12,6 +12,7 @@ import { expect, test } from "bun:test";
 import {
 	angleOffNose,
 	directionTo,
+	duration,
 	edgeOf,
 	horizonRoll,
 	intoCameraFrame,
@@ -157,6 +158,25 @@ test("angleOffNose is stable at both ends", () => {
 	expect(angleOffNose(nose, nose)).toBeCloseTo(0, 9);
 	expect(angleOffNose(v3(0, 0, 1), nose)).toBeCloseTo(Math.PI, 9);
 	expect(Number.isNaN(angleOffNose(scale(nose, 1.0000001), nose))).toBe(false);
+});
+
+test("a duration reads in the unit that means something at its scale", () => {
+	// The readout that makes #10's case: a 68-second cruise leg beside the two
+	// years the same leg takes at the 2 km/s assist cap. A single unit cannot
+	// carry both — "eta 62640000s" is not an argument for anything.
+	expect(duration(68)).toBe("68s");
+	expect(duration(0.4)).toBe("<1s");
+	expect(duration(200)).toBe("3.3min");
+	expect(duration(3 * 3600)).toBe("3.0h");
+	expect(duration(725 * 86400)).toBe("725d");
+	// Each boundary lands in the unit above it rather than reading as 90 of the
+	// unit below.
+	expect(duration(89)).toBe("89s");
+	expect(duration(91)).toBe("1.5min");
+	expect(duration(90 * 60 + 1)).toBe("1.5h");
+	// And nonsense is a dash rather than "NaNs".
+	expect(duration(Number.POSITIVE_INFINITY)).toBe("—");
+	expect(duration(Number.NaN)).toBe("—");
 });
 
 /** Quaternion product, for the roll test — the renderer has Three.js for this;

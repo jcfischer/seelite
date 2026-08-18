@@ -108,7 +108,24 @@ const state = await page.evaluate(async () => {
 		});
 	}
 
+	// What the panel says while the ship sits in normal flight with a distant
+	// target selected — the state the first session was flown in.
+	const hudText = document.getElementById("hud").textContent;
+	const targetKm = (() => {
+		const t = g.world.system.byId.get(g.targetId);
+		if (!t) return null;
+		return Math.hypot(
+			t.pos.x - g.world.ship.pos.x,
+			t.pos.y - g.world.ship.pos.y,
+			t.pos.z - g.world.ship.pos.z,
+		);
+	})();
+
 	return {
+		hudText,
+		targetKm,
+		regime: g.regime,
+		assistCapKms: g.assistCapKms,
 		viewport: { w: window.innerWidth, h: window.innerHeight },
 		backing: { w: overlay.width, h: overlay.height },
 		box: { w: box.width, h: box.height, x: box.x, y: box.y },
@@ -184,6 +201,22 @@ check(
 	target
 		? `${state.targetId} at (${target.marker.ndcX.toFixed(3)}, ${target.marker.ndcY.toFixed(3)})`
 		: `${state.targetId} not among the bodies ahead`,
+);
+
+// The panel has to say that this regime cannot get there, and what to do about
+// it. A blank `eta —` is what the first flight of this build actually saw: full
+// throttle, 0.837 AU, and no indication that normal flight would need two years
+// or that a keypress existed.
+check(
+	"in normal flight the panel names the regime that can get there",
+	state.regime === "normal" && /press J to cruise/.test(state.hudText),
+	state.hudText.split("\n")[1] ?? state.hudText,
+);
+check(
+	"and reports an honest eta for the regime the ship is actually in",
+	// Two years at 2 km/s reads in days, never in seconds and never as a blank.
+	/eta \d+(\.\d+)?d/.test(state.hudText),
+	`${(state.targetKm / state.assistCapKms / 86400).toFixed(0)} d at the assist cap`,
 );
 
 await browser.close();

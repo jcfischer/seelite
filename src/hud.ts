@@ -187,6 +187,24 @@ export function directionTo(from: Vec3, to: Vec3): Vec3 | null {
 	return len === 0 ? null : scale(d, 1 / len);
 }
 
+/**
+ * A duration in the largest unit that still means something.
+ *
+ * Seconds are cruise's unit and days are normal flight's, and the gap between
+ * them is the whole argument of #10: "eta 725d" next to "eta 68s" makes the
+ * case for a third regime in the readout rather than in prose. Formatting it
+ * here rather than in the renderer keeps it checkable, and the boundaries are
+ * where a reader's unit changes rather than round numbers.
+ */
+export function duration(seconds: number): string {
+	if (!Number.isFinite(seconds) || seconds < 0) return "—";
+	if (seconds < 1) return "<1s";
+	if (seconds < 90) return `${Math.round(seconds)}s`;
+	if (seconds < 90 * 60) return `${(seconds / 60).toFixed(1)}min`;
+	if (seconds < 48 * 3600) return `${(seconds / 3600).toFixed(1)}h`;
+	return `${(seconds / 86400).toFixed(0)}d`;
+}
+
 /** How far off the nose a direction is, in radians — what decides whether a
  *  target reticle is "ahead" and whether the off-screen arrow is needed. */
 export function angleOffNose(dir: Vec3, nose: Vec3): number {
