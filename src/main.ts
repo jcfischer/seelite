@@ -176,6 +176,14 @@ class Game {
 	 * second list to maintain: the first version named five constants, and a probe
 	 * wanting `FAR_FAR_UNITS` would have had to edit the renderer to get it.
 	 *
+	 * The cost of that choice, stated so it is a decision rather than an
+	 * accident: **adding an export to `units.ts` widens this page's public
+	 * surface.** Everything that module exports — `layerFor` today, whatever is
+	 * added later — becomes reachable through `window.__seelite`. That is
+	 * acceptable while `units.ts` is a leaf of constants and one pure function;
+	 * the day it gains something that should not be reachable from a page, this
+	 * goes back to a named list.
+	 *
 	 * The trade is worth naming: a probe reading the constant cannot notice the
 	 * constant being *wrong*. That belongs to the headless tests over the scheme's
 	 * own arithmetic — `tests/headless.test.ts` and `sim.test.ts`'s float32 budget.
@@ -557,16 +565,23 @@ class Game {
 		for (const body of this.world.system.bodies) {
 			const mesh = this.meshes.get(body.id);
 			if (!mesh) continue;
-			const rel = sub(body.pos, camPos);
+			// Components rather than a `Vec3`, because this runs per body per frame
+			// and the object would be garbage the moment it is read — the trade
+			// `vec3.ts`'s own docstring calls the wrong one inside a hot loop. Small
+			// N today, and it grows with moons.
+			const dx = body.pos.x - camPos.x;
+			const dy = body.pos.y - camPos.y;
+			const dz = body.pos.z - camPos.z;
 			// The distance is computed here and the layer chosen from it, so the
 			// mesh is placed in the same pass it may have just been reparented by —
 			// a body that changed layer and kept last frame's position would be
 			// drawn at the new scale in the old place, for one frame, in front of
 			// the player.
-			const layer = layerFor(this.layers.get(body.id), length(rel));
-			if (layer !== this.layers.get(body.id)) this.setLayer(body, layer);
+			const was = this.layers.get(body.id);
+			const layer = layerFor(was, Math.hypot(dx, dy, dz));
+			if (layer !== was) this.setLayer(body, layer);
 			const k = layer === "near" ? 1 : FAR_SCALE;
-			mesh.position.set(rel.x * k, rel.y * k, rel.z * k);
+			mesh.position.set(dx * k, dy * k, dz * k);
 		}
 
 		// The star also aims the light, in both scenes. Its direction is the same
@@ -629,11 +644,17 @@ class Game {
 			const km = length(sub(b.pos, ship.pos));
 			if (!nearest || km < nearest.km) nearest = { id: b.id, km };
 		}
-		// The speed is quantised to the resolution it is *displayed* at, so the key
-		// changes exactly when the text would.
-		const key = `${Math.floor(gameTime)}|${Math.round(this.throttle * 100)}|${length(
-			ship.vel,
-		).toFixed(3)}|${nearest ? `${nearest.id}|${range(nearest.km)}` : "-"}`;
+		// Each displayed value computed **once** and used in both the key and the
+		// text. Two spellings of the same quantised number have to stay in step or
+		// the cache skips a frame whose text really did change, and nothing would
+		// report that — the readout would simply lag by an arbitrary number of
+		// frames.
+		const speed = length(ship.vel).toFixed(3);
+		const throttle = (this.throttle * 100).toFixed(0);
+		const station = nearest
+			? `${nearest.id} ${range(nearest.km)}`
+			: "no station in system";
+		const key = `${Math.floor(gameTime)}|${throttle}|${speed}|${station}`;
 		if (key === this.hudKey) return;
 		this.hudKey = key;
 
@@ -641,9 +662,9 @@ class Game {
 		this.hud.textContent = [
 			`${r.name}  TL ${r.displayTL}  ${GOVERNMENT_NAMES[r.government]}`,
 			`t+${clock(gameTime)}`,
-			`throttle ${(this.throttle * 100).toFixed(0)}%`,
-			`${length(ship.vel).toFixed(3)} km/s`,
-			nearest ? `${nearest.id} ${range(nearest.km)}` : "no station in system",
+			`throttle ${throttle}%`,
+			`${speed} km/s`,
+			station,
 			`seed ${this.world.seed}`,
 		].join("   ");
 	}

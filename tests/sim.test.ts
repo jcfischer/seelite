@@ -37,6 +37,9 @@ import { codeOf } from "./lib/source-scan";
 
 const SEED = 20260818;
 
+/** How many of a galaxy's 256 systems the geometry sweeps sample. */
+const SAMPLED_SYSTEMS = 50;
+
 describe("makeWorld", () => {
 	test("it starts in galaxy 0's start system, at t = 0", () => {
 		const world = makeWorld(SEED);
@@ -264,14 +267,18 @@ describe("float64 sim space", () => {
 		// than a limit — and why exceeding it by 1.5% is not a defect.
 		expect(boundUnits).toBeLessThan(1e5);
 
-		// One galaxy, many systems — rather than 120 `makeWorld` calls, each of
-		// which lays out a fresh 256-system galaxy through an O(n²) connectivity
-		// scan to reach a single system. The assertion is per-body geometry, so the
-		// galaxy is incidental; generating it once buys ~200 systems for the cost
-		// of one layout instead of 120 systems for the cost of 120.
+		// One galaxy, many systems — rather than one `makeWorld` call per sample,
+		// each of which lays out a fresh 256-system galaxy through an O(n²)
+		// connectivity scan to reach a single system. The assertion is per-body
+		// geometry, so the galaxy is incidental and one layout serves every sample.
+		//
+		// Fifty of them: the worst case over 50 and over 200 is the same figure
+		// (9,785 far-units at 6.54 AU), measured, so the larger sweep was buying
+		// `generateContents` + `placeBodies` for 150 more systems on every CI run
+		// and finding nothing further.
 		const galaxy = generateGalaxy(SEED, START_GALAXY);
 		let worst = 0;
-		for (const record of galaxy.systems.slice(0, 200)) {
+		for (const record of galaxy.systems.slice(0, SAMPLED_SYSTEMS)) {
 			const system = makeSystem(record, 0);
 			const ship = arrivalPoint(record, system.contents, null, 0);
 			for (const body of system.bodies) {

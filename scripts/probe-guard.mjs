@@ -358,6 +358,12 @@ export function tally() {
 		},
 		watch(page) {
 			page.on("pageerror", (e) => {
+				// Counted as a check too, not just a failure. Incrementing `failures`
+				// alone makes `${checks - failures}/${checks}` report a failing check
+				// that was never run — and with enough page errors the numerator goes
+				// negative. A thrown page error *is* a failed expectation about the
+				// page; it just did not have a label until now.
+				checks++;
 				failures++;
 				console.log(`PAGEERROR ${e.message}`);
 			});

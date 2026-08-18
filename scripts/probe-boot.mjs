@@ -213,6 +213,10 @@ check(
 // check keep working once something can approach.
 const band = state.units.HANDOFF_KM * state.units.HANDOFF_HYSTERESIS;
 
+/** The factor the body's layer draws at. One definition, used by the scale check
+ *  and by the camera-relative placement check below. */
+const scaleOf = (b) => (b.layer === "near" ? 1 : state.units.FAR_SCALE);
+
 /** How far a body is from the ship, in kilometres of sim space. */
 const rangeOf = (b) =>
 	Math.hypot(
@@ -282,7 +286,7 @@ function checkScale(b) {
 	// Position and radius must be scaled by the *same* factor, or the body's
 	// angular size is wrong — which is the property the whole scaled-space trick
 	// buys and the one a handoff can silently break.
-	const k = b.layer === "near" ? 1 : state.units.FAR_SCALE;
+	const k = scaleOf(b);
 	check(
 		`${b.id} is sized for the layer it is in`,
 		b.meshRadius !== null &&
@@ -305,7 +309,11 @@ const drawn = state.bodies.filter((b) => {
 });
 
 for (const b of drawn) {
-	if (!checkLayer(b, rangeOf(b))) continue;
+	// `checkScale` reads the layer the body is *observed* in and needs no arrival
+	// history, so the band ambiguity does not reach it — it only affects which
+	// layer is correct, not which one was drawn. Tying the two together meant a
+	// body in the band lost its scale assertion for no reason.
+	checkLayer(b, rangeOf(b));
 	checkScale(b);
 }
 
@@ -414,12 +422,8 @@ if (state.shipMesh) {
 		check("the star has a mesh", false);
 	}
 
-	for (const b of state.bodies) {
-		if (!b.mesh) {
-			check(`${b.id} has a mesh`, false);
-			continue;
-		}
-		const k = b.layer === "near" ? 1 : state.units.FAR_SCALE;
+	for (const b of drawn) {
+		const k = scaleOf(b);
 		const want = {
 			x: (b.sim.x - camSim.x) * k,
 			y: (b.sim.y - camSim.y) * k,

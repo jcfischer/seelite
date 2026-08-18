@@ -98,11 +98,15 @@ const SAMPLES = [5, 1.2, 1.001, 0.999, 0.5, 0.2, 1.02, 1.2, 5];
 /**
  * Tolerance on the apparent-size agreement, relative.
  *
- * 10⁻³, and it is loose on purpose: the scene graph holds float32, so a
- * far-layer coordinate of ~10³ units resolves to about 10⁻⁴ relative, and the
- * frame loop advances the clock between the write and the read so the body has
- * moved a few metres of its own. The failure this guards against is a factor of
- * 10⁵, not a factor of 1.001.
+ * 10⁻³, and it is loose on purpose: the frame loop advances the clock between
+ * the write and the read, so the station has moved a few metres along its orbit
+ * by the time the numbers come back.
+ *
+ * Not for float32 rounding, which an earlier version of this comment blamed:
+ * `Object3D.position` and `.scale` are `Vector3`s of plain JS doubles, so
+ * everything this probe reads is float64 — the conversion happens on upload,
+ * downstream of anything measured here. The failure it guards against is a
+ * factor of 10⁵, not a factor of 1.001.
  */
 const EPS = 1e-3;
 

@@ -114,15 +114,19 @@ export const HANDOFF_HYSTERESIS = 1.05;
  * is pushed out only far enough to clear the outermost of them, so the ship
  * stays inside `MAX_ORBIT_AU + ARRIVAL_CLEARANCE_AU`. Worst case is a body
  * diametrically opposite: `2·6 + 0.25 = 12.25 AU`, or 1.8·10⁴ far-units.
- * Measured over 120 seeds in `sim.test.ts`, and the largest actually seen in 400
- * was 1.0·10⁴ at 6.78 AU — so the derived bound has real headroom over the
- * observed one, which is the direction a bound should be wrong in.
+ * `sim.test.ts` asserts it over 50 systems of one galaxy, where the largest
+ * actually seen is 9.8·10³ far-units at 6.54 AU — so the derived bound has real
+ * headroom over the observed one, which is the direction a bound should be
+ * wrong in.
  *
  * Note what that means for the "~10⁴ units" figure at the top of this file: it
  * is a comfort target, not a limit. A far-layer coordinate can reach 1.8·10⁴ in
  * a wide system, still an order of magnitude below the 10⁵ where quantisation
- * becomes visible. A test asserting a flat 10⁴ passes or fails on which seed it
- * was given, which is how the first version of that test was written.
+ * becomes visible. A test asserting a flat 10⁴ passes or fails on which sample
+ * it was given — an exploratory sweep during review found 2 world seeds in 400
+ * whose *start* system exceeded it, which is how the first version of that test
+ * came to pass by luck. That sweep was a measurement, not a committed artefact;
+ * what the suite checks is the derived bound above.
  *
  * 4·10⁴ units is 26 AU — headroom on the derived bound — and a near:far ratio
  * of 8·10⁵, *tighter* than the 10⁶ the scaffold ran at with a 1-unit near plane.
