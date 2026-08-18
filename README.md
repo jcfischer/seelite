@@ -1,5 +1,8 @@
 # seelite
 
+**Live: [seelite.pages.dev](https://seelite.pages.dev)** — add `?seed=42` to pin
+a world.
+
 A browser-based game inspired by **Elite (1984)** — trade, fight, and explore a
 seeded procedural galaxy from your ship. No on-foot gameplay; the player is
 always the ship.
@@ -37,6 +40,23 @@ npm run format         # biome
 ```
 
 Both tiers gate on pull requests (`.github/workflows/`).
+
+## Deploying
+
+`main` publishes to [seelite.pages.dev](https://seelite.pages.dev) via
+`.github/workflows/deploy.yml`. The Pages project is **direct upload**, not
+Cloudflare's Git integration — a direct-upload project cannot be converted
+later, so the deploy is driven from CI to get push-to-deploy without committing
+to a project shape.
+
+The deploy step is inert unless `CLOUDFLARE_API_TOKEN` is set as a repository
+secret: it emits a warning and skips, so the build, typecheck and test gates
+work regardless. `CLOUDFLARE_ACCOUNT_ID` is already set. To deploy by hand:
+
+```bash
+npm run build
+npx wrangler pages deploy dist --project-name=seelite --branch=main
+```
 
 ## Architecture
 
