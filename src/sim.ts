@@ -54,15 +54,13 @@ import {
 import { mix, seededRand } from "./rng";
 import {
 	type PlacedBody,
+	type StationType,
 	type SystemContents,
 	arrivalPoint,
 	generateContents,
 	placeBodies,
 } from "./system";
 import { type Vec3, add, scale, v3 } from "./vec3";
-
-export type { Vec3 } from "./vec3";
-export { add, dot, length, lengthSq, scale, sub, v3 } from "./vec3";
 
 /**
  * What a body is for rendering purposes.
@@ -136,12 +134,21 @@ const GIANT_COLORS = [0xd8c49a, 0xc9a26b, 0xb8c4d8, 0xe0d2b4];
 /** Moons: grey, and narrow. A moon that read as colourful as its planet would
  *  compete with it for attention it has not earned. */
 const MOON_COLORS = [0x9a9a9a, 0xb0aaa4, 0x86867e];
-/** Stations by type, so the type is legible before anything else about the
- *  station is. #9 owns their actual geometry. */
-const STATION_COLORS: Record<string, number> = {
-	"station-trade": 0x9aa6b2,
-	"station-refinery": 0xb08a5a,
-	"station-shipyard": 0x8fc0c0,
+/**
+ * Stations by type, so the type is legible before anything else about the
+ * station is. #9 owns their actual geometry.
+ *
+ * Keyed on `StationType`, not on the body id, and the difference is a compile
+ * error rather than a style preference: a `Record<string, number>` keyed on ids
+ * needs a fallback for the unmatched case, and that fallback silently paints a
+ * renamed or newly added station the same grey as a trade post. `Record<
+ * StationType, …>` has no unmatched case to fall back from — adding a fourth
+ * station type stops the build until this table answers for it.
+ */
+const STATION_COLORS: Record<StationType, number> = {
+	trade: 0x9aa6b2,
+	refinery: 0xb08a5a,
+	shipyard: 0x8fc0c0,
 };
 
 /**
@@ -161,7 +168,14 @@ function colorFor(
 	index: number,
 ): number {
 	if (body.kind === "star") return contents.star.color;
-	if (body.kind === "station") return STATION_COLORS[body.id] ?? 0x9aa6b2;
+	if (body.kind === "station") {
+		const station = contents.stations.find((s) => s.id === body.id);
+		// A station in `placeBodies`' output that is not in `contents.stations` is
+		// not a colour problem, it is the two having disagreed about what is in the
+		// system — so it throws rather than picking a grey and carrying on.
+		if (!station) throw new Error(`station ${body.id} is not in the contents`);
+		return STATION_COLORS[station.type];
+	}
 	const rand = seededRand(mix(systemSeed, index));
 	if (body.kind === "moon")
 		return MOON_COLORS[Math.floor(rand() * MOON_COLORS.length)];

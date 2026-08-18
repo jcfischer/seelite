@@ -85,6 +85,23 @@ export const FAR_SCALE = 1e-5;
 export const HANDOFF_KM = 1e4;
 
 /**
+ * The hysteresis on that handoff: a body admitted to the near layer is not
+ * returned to the far one until it is this much further out.
+ *
+ * Not about apparent size, which is identical either side by construction. It is
+ * about *ordering* — the near pass clears depth, so a body oscillating across
+ * the threshold would swap in front of and behind its neighbours on alternate
+ * frames. One band is cheaper than reasoning about when that matters.
+ *
+ * Here rather than in the renderer that applies it, because it widens the reach
+ * the near layer must actually have: the constraint is
+ * `HANDOFF_KM × HANDOFF_HYSTERESIS < NEAR_FAR_KM`, and a constant living in
+ * `main.ts` could only be checked with a browser open. `tests/headless.test.ts`
+ * asserts it as the arithmetic it is.
+ */
+export const HANDOFF_HYSTERESIS = 1.05;
+
+/**
  * The far layer's camera planes, in *far-layer units* (kilometres × FAR_SCALE).
  *
  * The near plane must admit a body that has *not* yet crossed the handoff, or

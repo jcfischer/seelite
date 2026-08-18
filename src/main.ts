@@ -65,23 +65,15 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { starField } from "./backdrop";
 import { AudioFX } from "./audio";
 import { GOVERNMENT_NAMES } from "./galaxy";
-import {
-	type Body,
-	type World,
-	add,
-	length,
-	makeWorld,
-	scale,
-	stepWorld,
-	sub,
-	v3,
-} from "./sim";
+import { type Body, type World, makeWorld, stepWorld } from "./sim";
+import { add, length, scale, sub, v3 } from "./vec3";
 import {
 	AU_KM,
 	BACKDROP_RADIUS,
 	FAR_FAR_UNITS,
 	FAR_NEAR_UNITS,
 	FAR_SCALE,
+	HANDOFF_HYSTERESIS,
 	HANDOFF_KM,
 	NEAR_FAR_KM,
 	NEAR_NEAR_KM,
@@ -122,17 +114,6 @@ const CHASE_UP_KM = 0.04;
  *  puts the ship somewhere absurd. */
 const MAX_DT = 0.1;
 
-/**
- * The hysteresis on the layer handoff: a body admitted to the near layer at
- * `HANDOFF_KM` is not returned to the far layer until 5% further out.
- *
- * Not about the apparent size, which is identical either side by construction.
- * It is about *ordering*: the near pass clears depth, so a body oscillating
- * across the threshold would swap in front of and behind its neighbours on
- * alternate frames. One band is cheaper than reasoning about when that matters.
- */
-const HANDOFF_HYSTERESIS = 1.05;
-
 class Game {
 	readonly world: World;
 	readonly renderer: THREE.WebGLRenderer;
@@ -172,19 +153,34 @@ class Game {
 	private throttle = 0;
 	private lastTime = 0;
 	private hud: HTMLElement;
+	/** The last string written to the HUD, so an unchanged frame writes nothing. */
+	private hudText = "";
 	/** Frames drawn since boot. A probe's cheapest proof that the loop runs. */
 	frames = 0;
 
 	/**
 	 * The unit scheme, reachable from the handle.
 	 *
-	 * A probe that restated `HANDOFF_KM` would be asserting against its own copy
-	 * of the number, and would keep passing after the module changed it — which
-	 * is the one failure a layer-handoff probe must not have. Reading it from the
-	 * page means the probe and the renderer cannot disagree about where the
-	 * threshold is, only about whether the geometry respects it.
+	 * A probe that restated `HANDOFF_KM` would assert against its own copy, and
+	 * the failure that produces is a **false red**: change the module to 5e3 and
+	 * the probe still places the ship at 9,990 km expecting the near layer, gets
+	 * far, and reports a bug in a renderer that is behaving correctly. Reading
+	 * the constant from the page means the probe cannot disagree with the module
+	 * about where the threshold is — only about whether the geometry respects it,
+	 * which is the thing it is for.
+	 *
+	 * The trade is real and worth naming: a probe that reads the constant cannot
+	 * notice the constant being *wrong*. That is covered where it belongs, by the
+	 * headless tests over the unit scheme's own arithmetic — see
+	 * `tests/headless.test.ts` and the float32-budget test in `sim.test.ts`.
 	 */
-	readonly units = { AU_KM, FAR_SCALE, HANDOFF_KM, NEAR_FAR_KM } as const;
+	readonly units = {
+		AU_KM,
+		FAR_SCALE,
+		HANDOFF_KM,
+		HANDOFF_HYSTERESIS,
+		NEAR_FAR_KM,
+	} as const;
 
 	constructor(seed: number) {
 		this.world = makeWorld(seed);
@@ -642,15 +638,24 @@ class Game {
 		}
 
 		const r = system.record;
-		this.hud.textContent =
-			`${r.name}  TL ${r.displayTL}  ${GOVERNMENT_NAMES[r.government]}   ` +
-			`t+${clock(gameTime)}   ` +
-			`throttle ${(this.throttle * 100).toFixed(0)}%   ` +
-			`${speed.toFixed(3)} km/s   ` +
-			(nearest
-				? `${nearest.id} ${range(nearest.km)}`
-				: "no station in system") +
-			`   seed ${this.world.seed}`;
+		const parts = [
+			`${r.name}  TL ${r.displayTL}  ${GOVERNMENT_NAMES[r.government]}`,
+			`t+${clock(gameTime)}`,
+			`throttle ${(this.throttle * 100).toFixed(0)}%`,
+			`${speed.toFixed(3)} km/s`,
+			nearest ? `${nearest.id} ${range(nearest.km)}` : "no station in system",
+			`seed ${this.world.seed}`,
+		];
+		const text = parts.join("   ");
+		// Only write when the text changed. Assigning `textContent` invalidates
+		// style and layout whether or not the string differs, and most of this line
+		// changes at human speed rather than at frame rate — the seed and the
+		// system never, the clock once a second. The comparison is one string
+		// compare against a field already in cache.
+		if (text !== this.hudText) {
+			this.hudText = text;
+			this.hud.textContent = text;
+		}
 	}
 
 	private onResize() {
@@ -675,10 +680,22 @@ function clock(seconds: number): string {
 	return `${Math.floor(s / 3600)}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}`;
 }
 
-/** A distance in the unit that makes it readable: kilometres up close, AU once
- *  the kilometre figure has stopped meaning anything to a human. */
+/**
+ * A distance in the unit that makes it readable: kilometres up close, AU once
+ * the kilometre figure has stopped meaning anything to a human.
+ *
+ * The switch is at 0.01 AU with three decimals on each side, which is a
+ * continuous readout: 1.5·10⁶ km reads as "0.010 AU", and one AU-step is
+ * 1.5·10⁵ km against a last km-step of 0.1 km. An earlier version switched at
+ * 1e5 km — 0.00067 AU — where three AU decimals cannot resolve anything: every
+ * distance from 10⁵ to 2.2·10⁵ km displayed as the same "0.001 AU".
+ */
+const RANGE_AU_SWITCH_KM = 0.01 * AU_KM;
+
 function range(km: number): string {
-	return km < 1e5 ? `${km.toFixed(1)} km` : `${(km / AU_KM).toFixed(3)} AU`;
+	return km < RANGE_AU_SWITCH_KM
+		? `${km.toFixed(1)} km`
+		: `${(km / AU_KM).toFixed(3)} AU`;
 }
 
 /**

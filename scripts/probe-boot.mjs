@@ -34,7 +34,13 @@
  * The camera is asserted to sit at the origin, which is the precondition the
  * other three are only meaningful under.
  */
-import { bootedGame, guardedOrigin, launchChromium } from "./probe-guard.mjs";
+import {
+	bootedGame,
+	guardedOrigin,
+	installCamSim,
+	launchChromium,
+	tally,
+} from "./probe-guard.mjs";
 
 /** Where the game is served. `PROBE_ORIGIN` replaces only the host, so this
  *  probe keeps the seed it chose; `PROBE_URL` replaces the whole thing. The
@@ -57,23 +63,13 @@ const RELATIVE_EPS = 1e-3;
 await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 
-let failures = 0;
-let checks = 0;
-const check = (label, ok, detail) => {
-	checks++;
-	if (!ok) failures++;
-	console.log(
-		`${ok ? "  ok  " : " FAIL "} ${label}${detail ? ` — ${detail}` : ""}`,
-	);
-};
+const { check, watch, exit } = tally();
 
 /** Open one page, wait for a drawn frame, and report page errors as failures. */
 async function open(url) {
 	const page = await browser.newPage({ viewport: { width: 900, height: 620 } });
-	page.on("pageerror", (e) => {
-		failures++;
-		console.log(`PAGEERROR ${e.message}`);
-	});
+	watch(page);
+	await installCamSim(page);
 	await page.goto(url, { waitUntil: "load" });
 	await bootedGame(page);
 	return page;
@@ -140,6 +136,7 @@ const state = await page.evaluate(() => {
 		units: { ...g.units },
 		camPos,
 		shipSim: { x: ship.pos.x, y: ship.pos.y, z: ship.pos.z },
+		camSim: window.__recoverCamSim(),
 		shipMesh: (() => {
 			const m = g.nearScene.getObjectByName("ship");
 			return m ? { x: m.position.x, y: m.position.y, z: m.position.z } : null;
@@ -188,10 +185,18 @@ check(
 	stations.length >= 1 && stations.length <= 3,
 	`${stations.length}: ${stations.map((s) => s.id).join(", ")}`,
 );
+// Named for what it asserts. An earlier version was labelled "planets on a
+// ladder, not a fixed pair" over a `>= 1` predicate that the deleted
+// placeholder's two planets would have satisfied, and reported the total body
+// count rather than the planet count it had just measured — so neither the name
+// nor the output disclosed the gap. The ladder runs 3–7 rungs but drops any
+// falling outside the 0.3–6 AU envelope, so the surviving count has no useful
+// floor; the upper bound is real and is what is checked.
+const planets = state.bodies.filter((b) => b.kind === "planet");
 check(
-	"the system has planets on a ladder, not a fixed pair",
-	state.bodies.filter((b) => b.kind === "planet").length >= 1,
-	`${state.bodies.length} bodies in total`,
+	"the planet count is inside the generator's envelope",
+	planets.length >= 1 && planets.length <= 7,
+	`${planets.length} planet(s): ${planets.map((p) => p.id).join(", ")}`,
 );
 
 // (2) Layer membership, by distance rather than by kind.
@@ -201,18 +206,48 @@ check(
 // from every body, which is four orders of magnitude past the handoff — and
 // asserting the *rule* rather than that expected outcome is what makes this
 // check keep working once something can approach.
+const band = state.units.HANDOFF_KM * state.units.HANDOFF_HYSTERESIS;
 for (const b of state.bodies) {
+	if (!b.mesh) {
+		check(`${b.id} has a mesh`, false);
+		continue;
+	}
 	const d = Math.hypot(
 		b.sim.x - state.shipSim.x,
 		b.sim.y - state.shipSim.y,
 		b.sim.z - state.shipSim.z,
 	);
+	// Inside the hysteresis band the answer depends on which way the body
+	// arrived, which a single-frame probe cannot know — so the band is skipped
+	// rather than guessed at. Asserting the bare threshold here would fail a
+	// correctly-behaving renderer the moment something could approach, which is
+	// the opposite of what this check is for. `probe-handoff.mjs` walks the band
+	// in both directions, where the history is known because it created it.
+	if (d > state.units.HANDOFF_KM && d <= band) {
+		check(
+			`${b.id} sits in the hysteresis band — layer not asserted`,
+			true,
+			`${d.toExponential(2)} km`,
+		);
+		continue;
+	}
 	const want = d <= state.units.HANDOFF_KM ? "near" : "far";
 	check(
 		`${b.id} is in the ${want} layer at ${d.toExponential(2)} km`,
 		b.layer === want,
 		`found in ${b.layer}`,
 	);
+	// The bound `FAR_SCALE` exists to buy, checked in the browser at the
+	// distances that can actually violate it. `sim.test.ts` asserts the same
+	// thing headlessly; this is the half that would notice the renderer using a
+	// different factor from the module.
+	if (b.layer === "far") {
+		check(
+			`${b.id}'s far-layer coordinate fits in float32`,
+			Math.hypot(b.mesh.x, b.mesh.y, b.mesh.z) < 1e4,
+			`|p| = ${Math.hypot(b.mesh.x, b.mesh.y, b.mesh.z).toExponential(2)} units`,
+		);
+	}
 	// Position and radius must be scaled by the *same* factor, or the body's
 	// angular size is wrong — which is the property the whole scaled-space trick
 	// buys and the one a handoff can silently break.
@@ -281,11 +316,9 @@ check(
 // known. The ship is that mesh: `shipMesh = shipSim - camSim`, so
 // `camSim = shipSim - shipMesh`, and every other body must then agree.
 if (state.shipMesh) {
-	const camSim = {
-		x: state.shipSim.x - state.shipMesh.x,
-		y: state.shipSim.y - state.shipMesh.y,
-		z: state.shipSim.z - state.shipMesh.z,
-	};
+	// The shared recovery, read in the same evaluate as the meshes it is checked
+	// against — see `installCamSim` in probe-guard.mjs.
+	const camSim = state.camSim;
 	// A sanity bound on the recovery itself: the chase camera sits a few tens of
 	// metres from the ship, so a recovered offset of kilometres means the ship
 	// mesh is not being placed camera-relatively at all.
@@ -433,5 +466,4 @@ check(
 );
 
 await browser.close();
-console.log(`\n${checks - failures}/${checks} checks passed`);
-process.exit(failures ? 1 : 0);
+exit();

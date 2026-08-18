@@ -20,15 +20,38 @@
  * see it, and the symptom in play is a station that vanishes or fills the
  * screen as you approach.
  *
- * ## How it is measured
+ * ## How it is measured, and what each check can actually catch
  *
- * Not by comparing two screenshots. Apparent size is `drawnRadius /
- * drawnDistance` in whatever units the body's layer draws in, and the assertion
- * is that this equals `radiusKm / trueDistanceKm` — the real angle, computed in
- * float64 from the simulation — at every sampled distance, on both sides of the
- * threshold. That is stronger than "the two frames either side look alike": it
- * catches a scale error that happens to be applied consistently in both layers,
- * which a difference test would wave through.
+ * Not by comparing two screenshots. Two checks per sample, because the obvious
+ * one is weaker than it looks:
+ *
+ * 1. **The two scale factors agree.** `drawnRadius / radiusKm` and
+ *    `drawnDistance / trueDistance` are each the factor its layer applied, and
+ *    they must be the same number. This is the handoff's actual claim, and the
+ *    failure it catches is a mesh reparented without being rescaled, or
+ *    rescaled without being reparented.
+ *
+ *    Note what it does **not** catch, because the first version of this probe
+ *    asserted only `drawnRadius / drawnDistance == radiusKm / trueDistance` and
+ *    claimed it caught "a scale error applied consistently in both layers". It
+ *    does not: that ratio is `(radiusKm·k)/(|rel|·k)`, and `k` cancels. Measured
+ *    rather than reasoned — with `FAR_SCALE` set to 1e-3, a hundred times wrong,
+ *    all sixteen checks passed. The claim was simply false; splitting the ratio
+ *    into its two factors is what makes the weaker, true claim checkable.
+ *
+ * 2. **The factor is the one the layer is supposed to use** — 1 in the near
+ *    layer, `FAR_SCALE` in the far one, both read off the page.
+ *
+ * A `FAR_SCALE` that is simply *wrong* is caught by neither, and deliberately
+ * not chased here. Both checks read the constant, and a third that did not —
+ * asserting the drawn coordinate fits the float32 budget — cannot bite at these
+ * distances: every sample sits within 1.05 × `HANDOFF_KM`, where even a
+ * hundredfold error lands at 50 units against a budget of 10⁴. It was written,
+ * measured, and removed rather than shipped as a check that cannot fail. The
+ * budget is asserted where the distances are astronomical: `sim.test.ts`'s
+ * "a far-layer coordinate stays inside the float32 budget", at the arrival
+ * point, and the same bound in `probe-boot.mjs`. Both go red at 1e-3; this
+ * probe stays green, which is the honest division of labour rather than a gap.
  *
  * The ship is **placed**, not flown. #10's cruise regime is what will eventually
  * cross these distances, and it does not exist; a probe that waited to arrive
@@ -43,20 +66,33 @@
  * the camera is *inside* the sphere before the swap happens — which is a known
  * weak joint recorded in `units.ts` rather than something to measure here.
  */
-import { bootedGame, guardedOrigin, launchChromium } from "./probe-guard.mjs";
+import {
+	installCamSim,
+	bootedGame,
+	guardedOrigin,
+	launchChromium,
+	tally,
+} from "./probe-guard.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
 const URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=42`;
 
 /**
- * Where to stand, as multiples of `HANDOFF_KM`.
+ * Where to stand, as multiples of `HANDOFF_KM`, **in order**.
  *
- * Two clear of the threshold on each side and two within a percent of it. The
- * tight pair is the point: a handoff implemented with the wrong sign, or with a
- * hysteresis band that never releases, still looks correct at 5× and 0.2×.
+ * Inward past the threshold, then back out through it. Both legs are needed and
+ * the first version had only the first: walking strictly inward from a far boot
+ * state takes the far→near transition and nothing else, so a `layerFor` that
+ * admitted a body to the near layer and never released it would have passed
+ * every check, including the one asserting both layers were seen.
+ *
+ * The outward leg is what pins the hysteresis band from the other side. 1.02× is
+ * inside the 5% band, so a body already near must *stay* near — a renderer with
+ * no hysteresis at all swaps there and fails. 1.2× is outside it, so the same
+ * body must be released — a band that never releases fails there instead.
  */
-const SAMPLES = [5, 1.2, 1.001, 0.999, 0.5, 0.2];
+const SAMPLES = [5, 1.2, 1.001, 0.999, 0.5, 0.2, 1.02, 1.2, 5];
 
 /**
  * Tolerance on the apparent-size agreement, relative.
@@ -72,21 +108,11 @@ const EPS = 1e-3;
 await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 
-let failures = 0;
-let checks = 0;
-const check = (label, ok, detail) => {
-	checks++;
-	if (!ok) failures++;
-	console.log(
-		`${ok ? "  ok  " : " FAIL "} ${label}${detail ? ` — ${detail}` : ""}`,
-	);
-};
+const { check, watch, exit } = tally();
 
 const page = await browser.newPage({ viewport: { width: 900, height: 620 } });
-page.on("pageerror", (e) => {
-	failures++;
-	console.log(`PAGEERROR ${e.message}`);
-});
+watch(page);
+await installCamSim(page);
 await page.goto(URL, { waitUntil: "load" });
 await bootedGame(page);
 
@@ -95,6 +121,7 @@ const setup = await page.evaluate(() => {
 	const station = g.world.system.bodies.find((b) => b.kind === "station");
 	return {
 		handoffKm: g.units.HANDOFF_KM,
+		hysteresis: g.units.HANDOFF_HYSTERESIS,
 		farScale: g.units.FAR_SCALE,
 		nearFarKm: g.units.NEAR_FAR_KM,
 		id: station ? station.id : null,
@@ -110,13 +137,20 @@ check(
 );
 if (setup.id === null) {
 	await browser.close();
-	console.log(`\n${checks - failures}/${checks} checks passed`);
-	process.exit(1);
+	exit();
 }
+// The **band**, not the threshold. A body held in the near layer by the
+// hysteresis is held out to `HANDOFF_KM × HANDOFF_HYSTERESIS`, so that product
+// is what has to fit inside the near layer's reach — checking the bare
+// threshold leaves room for `NEAR_FAR_KM` to land between the two, where a body
+// inside the band is drawn at 1:1 past the near camera's far plane and so is
+// not drawn at all. That is exactly the vanishing-between-layers failure the
+// constant's docstring warns about.
 check(
-	"the handoff sits inside the near layer's reach",
-	setup.handoffKm < setup.nearFarKm,
-	`handoff ${setup.handoffKm} km, near layer reaches ${setup.nearFarKm} km`,
+	"the whole hysteresis band sits inside the near layer's reach",
+	setup.handoffKm * setup.hysteresis < setup.nearFarKm,
+	`band reaches ${(setup.handoffKm * setup.hysteresis).toFixed(0)} km, ` +
+		`near layer reaches ${setup.nearFarKm} km`,
 );
 console.log(
 	`\napproaching ${setup.id} (r = ${setup.radiusKm} km) in ${setup.system}, ` +
@@ -155,15 +189,9 @@ async function sampleAt(distanceKm, id) {
 				g.nearScene.getObjectByName(bodyId) ??
 				g.farScene.getObjectByName(bodyId);
 			const layer = g.nearScene.getObjectByName(bodyId) ? "near" : "far";
-			// The camera's sim position, recovered the way probe-boot recovers it:
-			// from the ship mesh, which is drawn at `shipSim - camSim`. Reading a
-			// private field would be asserting on an accessor the probe invented.
-			const shipMesh = g.nearScene.getObjectByName("ship");
-			const camSim = {
-				x: g.world.ship.pos.x - shipMesh.position.x,
-				y: g.world.ship.pos.y - shipMesh.position.y,
-				z: g.world.ship.pos.z - shipMesh.position.z,
-			};
+			// One shared recovery, installed by `probe-guard.mjs` as an init
+			// script — read in this evaluate, so it is the same frame as the mesh.
+			const camSim = window.__recoverCamSim();
 			return {
 				layer,
 				drawnRadius: mesh ? mesh.scale.x : null,
@@ -183,6 +211,12 @@ async function sampleAt(distanceKm, id) {
 }
 
 const seen = [];
+// The expected layer, walked forward the way the renderer walks it: the
+// threshold a body must beat depends on the layer it is already in. Modelled
+// here rather than restated as a fixed list, so both constants come off the
+// page and the band is asserted in the direction each sample approaches from.
+// The boot state is far — the arrival point is four orders past the handoff.
+let expectedLayer = "far";
 for (const multiple of SAMPLES) {
 	const want = setup.handoffKm * multiple;
 	const s = await sampleAt(want, setup.id);
@@ -193,26 +227,31 @@ for (const multiple of SAMPLES) {
 		continue;
 	}
 
-	// The layer the rule asks for. A body already in the near layer is held
-	// there by the hysteresis band until 5% past the threshold, so the samples
-	// are ordered outward-to-inward and only the unambiguous ones are asserted:
-	// 1.001× is approached from outside and so is still far, 0.999× is the first
-	// sample inside and so is near.
-	const wantLayer = multiple < 1 ? "near" : "far";
+	const threshold = expectedLayer === "near" ? setup.hysteresis : 1;
+	expectedLayer = multiple <= threshold ? "near" : "far";
 	check(
-		`${multiple}× handoff: drawn in the ${wantLayer} layer`,
-		s.layer === wantLayer,
+		`${multiple}× handoff: drawn in the ${expectedLayer} layer`,
+		s.layer === expectedLayer,
 		`${s.trueDistance.toFixed(1)} km, found in ${s.layer}`,
 	);
 
-	// The claim itself. `radius / distance` is the small-angle form of the angle
-	// the body subtends, and it must not care which layer drew it.
-	const drawn = s.drawnRadius / s.drawnDistance;
-	const real = s.radiusKm / s.trueDistance;
+	// (1) The two factors the layer applied — to the radius and to the position
+	// — must be the same number. This is the handoff's own claim, and it holds
+	// whatever that number is.
+	const kRadius = s.drawnRadius / s.radiusKm;
+	const kPosition = s.drawnDistance / s.trueDistance;
 	check(
-		`${multiple}× handoff: apparent size is the true one`,
-		Math.abs(drawn - real) <= EPS * real,
-		`drawn ${drawn.toExponential(4)} rad, true ${real.toExponential(4)} rad`,
+		`${multiple}× handoff: radius and position scaled by the same factor`,
+		Math.abs(kRadius - kPosition) <= EPS * Math.max(kRadius, kPosition),
+		`radius ×${kRadius.toExponential(4)}, position ×${kPosition.toExponential(4)}`,
+	);
+
+	// (2) And it must be the factor this layer is supposed to use.
+	const wantK = s.layer === "near" ? 1 : setup.farScale;
+	check(
+		`${multiple}× handoff: the factor is the ${s.layer} layer's`,
+		Math.abs(kPosition - wantK) <= EPS * wantK,
+		`applied ×${kPosition.toExponential(4)}, expected ×${wantK.toExponential(4)}`,
 	);
 }
 
@@ -228,9 +267,12 @@ check(
 );
 
 // And the crossing is continuous: the two samples a thousandth either side of
-// the threshold must agree on apparent size to far better than the 5% their
-// distances differ by. This is the "does not pop" half stated directly, rather
-// than inferred from each sample matching the truth.
+// the threshold sit 0.2% apart in distance, so their apparent sizes must sit
+// 0.2% apart too. The tolerance is 0.5% — twice the real separation rather than
+// the five times an earlier 1% allowed, and the comment then claimed the
+// distances differed by 5%, which was the hysteresis constant misread as a
+// sample spacing. This is the "does not pop" half stated directly, rather than
+// inferred from each sample matching the truth.
 const outer = seen.find((s) => s.multiple === 1.001);
 const inner = seen.find((s) => s.multiple === 0.999);
 if (outer?.drawnRadius && inner?.drawnRadius) {
@@ -238,7 +280,7 @@ if (outer?.drawnRadius && inner?.drawnRadius) {
 	const b = inner.drawnRadius / inner.drawnDistance;
 	check(
 		"apparent size is continuous across the threshold",
-		Math.abs(a - b) <= 0.01 * Math.max(a, b),
+		Math.abs(a - b) <= 0.005 * Math.max(a, b),
 		`${a.toExponential(4)} rad outside, ${b.toExponential(4)} rad inside`,
 	);
 } else {
@@ -246,5 +288,4 @@ if (outer?.drawnRadius && inner?.drawnRadius) {
 }
 
 await browser.close();
-console.log(`\n${checks - failures}/${checks} checks passed`);
-process.exit(failures ? 1 : 0);
+exit();

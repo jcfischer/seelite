@@ -20,24 +20,16 @@ import { expect, test, describe } from "bun:test";
 import {
 	START_GALAXY,
 	advanceSystem,
-	length,
 	makeSystem,
 	makeWorld,
-	scale,
 	stepShip,
 	stepWorld,
-	sub,
-	v3,
 } from "../src/sim";
 import { generateGalaxy, startSystem } from "../src/galaxy";
 import { ARRIVAL_CLEARANCE_AU, MAX_ORBIT_AU } from "../src/system";
 import { AU_KM, FAR_SCALE } from "../src/units";
-import {
-	add,
-	length as vecLength,
-	scale as vecScale,
-	sub as vecSub,
-} from "../src/vec3";
+import { add, length, scale, sub, v3 } from "../src/vec3";
+import { codeOf } from "./lib/source-scan";
 
 const SEED = 20260818;
 
@@ -100,6 +92,28 @@ describe("makeWorld", () => {
 			expect(body.color).toBeGreaterThanOrEqual(0);
 			expect(body.color).toBeLessThanOrEqual(0xffffff);
 		}
+	});
+
+	test("each station type gets its own colour", () => {
+		// The point of colouring a station at all is that its type is legible
+		// before anything else about it. An earlier version keyed the lookup on the
+		// body *id* with a grey fallback, so a renamed or new station id silently
+		// returned the same grey as a trade post — with no type error, and passing
+		// the only colour assertion there was (`Number.isInteger`). Keying on the
+		// type makes an unhandled type a compile error; this asserts the
+		// consequence that error exists to protect.
+		const world = makeWorld(SEED);
+		const stations = world.system.bodies.filter((b) => b.kind === "station");
+		expect(stations.length).toBeGreaterThan(1);
+		const byType = new Map<string, number>();
+		for (const s of stations) {
+			const type = world.system.contents.stations.find(
+				(x) => x.id === s.id,
+			)?.type;
+			expect(type).toBeDefined();
+			byType.set(type!, s.color);
+		}
+		expect(new Set(byType.values()).size).toBe(byType.size);
 	});
 
 	test("moons are carried through as their own bodies", () => {
@@ -316,15 +330,24 @@ describe("vector helpers", () => {
 		expect(a).toEqual(v3(1, 1, 1));
 	});
 
-	test("sim.ts re-exports the leaf rather than owning a second copy", () => {
+	test("vec3.ts is the only path to the vectors", () => {
 		// The vectors moved to `vec3.ts` to break an import cycle, and `sim.ts`
-		// re-exports them so its callers did not all have to change at once. Two
-		// implementations is the failure that refactor could produce, and it would
-		// not show up as a type error — both would satisfy `Vec3`. Asserted as
-		// function identity, which is the only form of it that cannot pass by
-		// coincidence.
-		expect(scale).toBe(vecScale);
-		expect(length).toBe(vecLength);
-		expect(sub).toBe(vecSub);
+		// briefly re-exported them so its callers did not all have to change at
+		// once. That left two public paths to the same symbols and the tree
+		// promptly used both — `main.ts` importing from `./sim` while `system.ts`
+		// imported from `./vec3` — which is the leaf boundary being undermined by
+		// the shim meant to protect it.
+		//
+		// Asserted on the source rather than on the module object, because the
+		// failure is a re-export line reappearing for convenience, and a
+		// re-exported binding is *identical* to the original: no runtime check can
+		// tell the two paths apart. That is exactly why the shim was cheap to add
+		// and invisible once added.
+		expect(codeOf("src/sim.ts")).not.toMatch(
+			/export\s*\{[^}]*\}\s*from\s*["']\.\/vec3["']/,
+		);
+		expect(codeOf("src/sim.ts")).not.toMatch(
+			/export\s+type\s*\{[^}]*\}\s*from\s*["']\.\/vec3["']/,
+		);
 	});
 });

@@ -22,6 +22,13 @@
  */
 import { expect, test } from "bun:test";
 import { codeOf } from "./lib/source-scan";
+import {
+	FAR_NEAR_UNITS,
+	FAR_SCALE,
+	HANDOFF_HYSTERESIS,
+	HANDOFF_KM,
+	NEAR_FAR_KM,
+} from "../src/units";
 
 const HEADLESS = [
 	"audio",
@@ -104,6 +111,30 @@ test("src/units.ts is a leaf, which is the whole of its job", () => {
 	// property — not the prose — is why both `sim.ts` and `main.ts` can read the
 	// unit scheme without either depending on the other.
 	expect(importsIn("units.ts")).toEqual([]);
+});
+
+test("the hysteresis band fits inside the near layer's reach", () => {
+	// The threshold is not what has to fit — the *band* is. A body admitted to
+	// the near layer is held there out to `HANDOFF_KM × HANDOFF_HYSTERESIS`, so
+	// if `NEAR_FAR_KM` ever landed between the two, a body inside the band would
+	// be drawn at 1:1 past the near camera's far plane and so not drawn at all:
+	// the vanishing-between-layers failure `HANDOFF_KM`'s docstring warns about.
+	//
+	// Headless rather than only in the probe, which is why the hysteresis lives
+	// in `units.ts` beside the constant it modifies rather than in the renderer
+	// that applies it — a constant `main.ts` owns cannot be checked without a
+	// browser, and this is arithmetic.
+	expect(HANDOFF_KM * HANDOFF_HYSTERESIS).toBeLessThan(NEAR_FAR_KM);
+	// And the band is a widening, not a narrowing.
+	expect(HANDOFF_HYSTERESIS).toBeGreaterThanOrEqual(1);
+});
+
+test("the far camera's near plane admits a body that has not crossed yet", () => {
+	// The other end of the same seam. A body at `HANDOFF_KM` is still in the far
+	// layer, at `HANDOFF_KM × FAR_SCALE` far-units; if the far camera's near
+	// plane sat beyond that, there would be a band where a body is assigned to
+	// the far layer and clipped out of it.
+	expect(FAR_NEAR_UNITS).toBeLessThan(HANDOFF_KM * FAR_SCALE);
 });
 
 test("src/vec3.ts is a leaf, which is why the import cycle is gone", () => {
