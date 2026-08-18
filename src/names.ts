@@ -77,16 +77,24 @@ const randByte = (rand: () => number): number => Math.floor(rand() * 256);
  * do not quite agree: the table contains `..` (emits nothing) and `A.` (emits
  * one character), so three unlucky draws produce an empty name.
  *
- * The rate, derived rather than asserted: a 3-pair name is empty when all three
- * draws hit `..`, at (1/32)³ = 3.05·10⁻⁵, and half of all names are 3-pair, so
- * 2048 · ½ · (1/32)³ ≈ 0.031 expected empties per world — about a **3% chance**
- * that a given world contains one, and a 4-pair name is 32× rarer again. (The
- * first version of this docstring said ~6%, from 2048 · (1/32)³, which forgot
- * that the 4-pair half of the population is effectively immune.) Rare enough to
- * survive a casual test run, certain enough to bite someone eventually.
+ * The rate, enumerated rather than estimated. Each pair contributes 0 characters
+ * (`..`, 1 way), 1 character (`A.`, 1 way) or 2 (the other 30), and the guard
+ * fires on `length < 2` — so a short name is *any* combination summing under
+ * two, not only the all-`..` one:
  *
- * `tests/galaxy.test.ts` measures the pre-fix rate directly rather than trusting
- * this paragraph.
+ * ```
+ * 3 pairs: 4 / 32³   = 1.221e-4     (one all-`..`, three with a single `A.`)
+ * 4 pairs: 5 / 32⁴   = 4.768e-6
+ * overall: ½·both    = 6.342e-5     → 0.130 expected per 2048-system world
+ *                                   → 12.2% of worlds carry at least one
+ * ```
+ *
+ * **This paragraph has been wrong twice**, in both directions: first ~6% from
+ * `2048·(1/32)³` (ignoring that 4-pair names are near-immune), then ~3% (fixing
+ * that and dropping the `A.` paths, which are 3× the all-`..` term). The
+ * enumeration is now in `tests/galaxy.test.ts`, computed by the same recurrence
+ * and compared against a measured sample — so the next reader gets a checked
+ * number instead of a third plausible one.
  */
 export function systemName(rand: () => number): string {
 	const pairCount = rand() < 0.5 ? 3 : 4;

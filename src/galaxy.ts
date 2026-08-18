@@ -37,7 +37,7 @@
 
 import { mix, seedFor, seededRand } from "./rng";
 import { planetDescription, systemName } from "./names";
-import type { Vec3 } from "./sim";
+import { type Vec3, lengthSq } from "./sim";
 
 /** All eight exist from the start; switching galaxy changes an index and
  *  nothing else (spec §2). The consequence is a save obligation: per-galaxy
@@ -83,18 +83,20 @@ const CDF_BISECTION_STEPS = 40;
  * five layouts in six strand at least one system, which is what a 3:1
  * concentrated 22 LY sphere against a 7 LY jump actually costs at the rim.
  *
- * Re-run that measurement with `bun scripts/measure-layout-attempts.ts`. It is a
- * script rather than a test because it takes ~30 s and asserts nothing; §10 says
- * a sharp rise in these counts is the signal to revisit the profile or the
- * radius, and a reader acting on that needs to be able to reproduce the baseline
- * they are comparing against rather than trust a number in a comment.
+ * Re-run that measurement with `bun scripts/measure-layout-attempts.ts` (~5 s at
+ * the default 200 seeds). It is a script rather than a test because it asserts
+ * nothing; §10 says a sharp rise in these counts is the signal to revisit the
+ * profile or the radius, and a reader acting on that needs to be able to
+ * reproduce the baseline they are comparing against rather than trust a number
+ * in a comment.
  *
  * So this is a ceiling with real margin rather than a plausible-looking round
  * number. A first pass used 64, which sits *below* an observed value: the
  * failure that produces is a thrown error on somebody's world seed and a game
- * that will not start, and it would have been rare enough to ship. 512 attempts
- * is ~50 ms of pure arithmetic in the impossible worst case, and the resampling
- * is a one-off at galaxy generation.
+ * that will not start, and it would have been rare enough to ship. One attempt
+ * measures at 0.38 ms, so the impossible worst case is **~195 ms** of pure
+ * arithmetic, once, at galaxy generation. (An earlier version of this line said
+ * ~50 ms, which was a guess and was out by 4×.)
  *
  * If a change ever pushes the *distribution* up rather than the tail, the fix is
  * the density profile (§3) or the radius (§2.1) — not this number.
@@ -205,8 +207,6 @@ export interface Galaxy {
 	systems: SystemRecord[];
 }
 
-const dot = (a: Vec3, b: Vec3): number => a.x * b.x + a.y * b.y + a.z * b.z;
-
 /** Distance in light years between two galaxy-space points. */
 export const distanceLy = (a: Vec3, b: Vec3): number =>
 	Math.sqrt(squaredDistanceLy(a, b));
@@ -238,11 +238,12 @@ export const squaredDistanceLy = (a: Vec3, b: Vec3): number => {
  * ρ(r) ∝ 1/(1 + (r/r_c)²), so the mass inside radius *x* integrates to
  * `x − r_c·atan(x/r_c)`, normalised at `R`.
  */
+const CDF_NORM =
+	GALAXY_RADIUS_LY -
+	CORE_RADIUS_LY * Math.atan(GALAXY_RADIUS_LY / CORE_RADIUS_LY);
+
 export function radialCdf(x: number): number {
-	const norm =
-		GALAXY_RADIUS_LY -
-		CORE_RADIUS_LY * Math.atan(GALAXY_RADIUS_LY / CORE_RADIUS_LY);
-	return (x - CORE_RADIUS_LY * Math.atan(x / CORE_RADIUS_LY)) / norm;
+	return (x - CORE_RADIUS_LY * Math.atan(x / CORE_RADIUS_LY)) / CDF_NORM;
 }
 
 /**
@@ -317,10 +318,25 @@ export function isConnected(
  *
  * **Guarantee by resampling, not by repair** (spec §5). A 3:1 concentrated
  * sphere leaves only ~3 systems in range at the rim, and a stranded pocket
- * containing the start system is an unwinnable save. Keeping only the samples
- * that were already good distorts the density profile not at all, which is what
- * pulling stragglers inward would have done — and would have done exactly where
- * the profile is most fragile.
+ * containing the start system is an unwinnable save. Rejecting a whole layout
+ * moves no individual system, which is what pulling stragglers inward would
+ * have done — and would have done exactly where the profile is most fragile.
+ *
+ * **It does not leave the profile untouched, though, and §5 says it does.**
+ * Rejection conditions the *joint* distribution: layouts survive because of
+ * where all 256 systems landed together, so the surviving population is not the
+ * unconditioned one. Measured over 3,200 galaxies (`bun
+ * scripts/measure-rejection-bias.ts 400`, ~8 s), accepted layouts run **+0.36%
+ * in mean radius**: the innermost shell is 3.7% under-occupied, the next two
+ * 2.6%, and the 0.75–0.88 R shell 2.4% over. The direction is the intuitive one
+ * on reflection — a layout with a little more mass in the outer-middle shells
+ * bridges the rim, and one that piles into the core strands its outliers.
+ *
+ * That is far below anything a player could perceive and it is not nothing, so
+ * it is written down rather than waved off. The suite's KS test cannot see it —
+ * a 0.4% shift needs on the order of 10⁵ samples to separate from noise, and
+ * the test has 2,048 — which is exactly why the figure lives in a script whose
+ * sample size is large enough to mean something.
  *
  * The attempt number goes into the seed, so a resampled galaxy is a *different*
  * galaxy rather than the same one nudged, and it stays a pure function of the
@@ -332,7 +348,15 @@ export function isConnected(
  * of 6 full resamples — 256 positions × 40 bisection steps each, plus the
  * connectivity scan — per lookup. Being a pure function of `(worldSeed, galaxy)`
  * is what makes caching it sound; the cache is keyed on exactly those two.
+ *
+ * The cache changes *when* work happens and never *what is returned*, so the
+ * module's contract is unchanged — but an unbounded map keyed on world seed is
+ * a leak for any caller that iterates seeds (the measurement scripts do exactly
+ * that), so it is bounded and evicts oldest-first. Eight galaxies is one world,
+ * and two worlds in flight is the realistic maximum: a running game and a
+ * preview.
  */
+const LAYOUT_CACHE_LIMIT = 16;
 const layoutCache = new Map<string, { positions: Vec3[]; attempt: number }>();
 
 export function layoutGalaxy(
@@ -351,10 +375,11 @@ export function layoutGalaxy(
 		}
 		if (isConnected(positions)) {
 			const result = { positions, attempt };
-			// Bounded by 8 entries per world seed, and a session has one world
-			// seed. A world-seed change is a new game, so the stale entries are
-			// eight arrays of 256 points — not worth an eviction policy, and worth
-			// saying so rather than leaving a reader to wonder.
+			if (layoutCache.size >= LAYOUT_CACHE_LIMIT) {
+				// Insertion-ordered, so the first key is the oldest.
+				const oldest = layoutCache.keys().next().value;
+				if (oldest !== undefined) layoutCache.delete(oldest);
+			}
 			layoutCache.set(key, result);
 			return result;
 		}
@@ -366,8 +391,9 @@ export function layoutGalaxy(
 	);
 }
 
-/** Drop the memoised layouts. Exists for the measurement script, which times
- *  layout work and would otherwise measure the cache. */
+/** Drop the memoised layouts. Nothing about correctness depends on it — the
+ *  cached value is the value — but a benchmark that means to time a layout has
+ *  to be able to say "not from the cache". */
 export const clearLayoutCache = (): void => layoutCache.clear();
 
 const clamp = (x: number, lo: number, hi: number): number =>
@@ -393,7 +419,7 @@ export function systemFromPosition(
 	pos: Vec3,
 ): SystemRecord {
 	const seed = systemSeedFor(worldSeed, galaxy, attempt, index);
-	const radiusLy = Math.sqrt(dot(pos, pos));
+	const radiusLy = Math.sqrt(lengthSq(pos));
 	const t = radiusLy / GALAXY_RADIUS_LY;
 
 	const polity = stream(seed, DOMAIN.POLITY);
@@ -520,10 +546,16 @@ export function neighbours(
 	from: SystemRecord,
 	maxJump = JUMP_RANGE_LY,
 ): SystemRecord[] {
+	// Squared first, rooted only for the ~8 survivors — the same reason
+	// `isConnected` does it, and the sort is what needs the true distance.
+	const maxJumpSq = maxJump * maxJump;
 	return systems
-		.filter((s) => s.galaxy !== from.galaxy || s.index !== from.index)
+		.filter(
+			(s) =>
+				(s.galaxy !== from.galaxy || s.index !== from.index) &&
+				squaredDistanceLy(from.pos, s.pos) <= maxJumpSq,
+		)
 		.map((s) => ({ s, d: distanceLy(from.pos, s.pos) }))
-		.filter(({ d }) => d <= maxJump)
 		.sort((a, b) => a.d - b.d)
 		.map(({ s }) => s);
 }

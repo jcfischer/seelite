@@ -57,19 +57,23 @@ const ALL = GALAXIES.flatMap((g) => g.systems);
 
 describe("determinism (§9.1)", () => {
 	/**
-	 * FNV-1a over a canonical rendering of every record.
+	 * FNV-1a over every record's **exact** fields — seeds, names, polity numbers,
+	 * descriptions. All integer or string, so this is bit-identical on any
+	 * platform: the LCG is integer arithmetic and the name tables are indexed by
+	 * a floor.
 	 *
-	 * **Positions are quantised to 10⁻⁶ LY and that is deliberate.** The radial
-	 * inverse-CDF runs through `Math.atan`, whose last ulp is implementation
-	 * defined — JavaScriptCore on two architectures may disagree there without
-	 * either being wrong. A digest over raw doubles would pin the platform's libm
-	 * rather than our generator, and would redden on a machine change while
-	 * saying "the galaxy moved". At 10⁻⁶ LY (~10 metres at interstellar scale,
-	 * nine orders below anything the game reads) a 1-ulp difference crosses a
-	 * quantisation boundary with probability ~10⁻⁹ per value.
+	 * **Positions are not in it, and the first version of this file got that
+	 * badly wrong.** It hashed `pos.toFixed(6)` and justified the quantisation as
+	 * "~10 metres at interstellar scale, nine orders below anything the game
+	 * reads". 10⁻⁶ LY is **9.5 million kilometres** — 0.063 AU, which is very
+	 * much a distance the game reads — so the pin was blind to per-coordinate
+	 * drift the size of an inner solar system while presenting itself as an exact
+	 * regression check. Wrong by nine orders of magnitude, and the sentence
+	 * asserting the care taken is what made it credible.
 	 *
-	 * Everything else in the record is integer or string, and those are exact:
-	 * the LCG is integer arithmetic and the name tables are indexed by a floor.
+	 * Positions are pinned instead by `POSITION_FIXTURE` below, at a stated
+	 * tolerance, which is the honest instrument for a float: the digest catches
+	 * anything discrete, the fixture catches drift down to ~950 km.
 	 */
 	const digest = (): string => {
 		let h = 0x811c9dc5;
@@ -85,9 +89,7 @@ describe("determinism (§9.1)", () => {
 					s.galaxy,
 					s.index,
 					s.attempt,
-					s.pos.x.toFixed(6),
-					s.pos.y.toFixed(6),
-					s.pos.z.toFixed(6),
+					s.seed,
 					s.name,
 					s.government,
 					s.economy,
@@ -106,7 +108,47 @@ describe("determinism (§9.1)", () => {
 		expect(ALL.length).toBe(GALAXY_COUNT * SYSTEMS_PER_GALAXY);
 		// Regenerate this ONLY when a generator change was intended. It moving is
 		// the intended alarm: every seed's output changed.
-		expect(digest()).toBe("f8229c64");
+		expect(digest()).toBe("42012e8f");
+	});
+
+	/**
+	 * Sampled positions, full precision, from `WORLD`.
+	 *
+	 * Why a fixture and not more digest: a float cannot be pinned by equality
+	 * across platforms — `Math.atan`'s last ulp is implementation-defined, and
+	 * JavaScriptCore on two architectures may differ without either being wrong.
+	 * Quantising to dodge that is what produced the 9.5-million-kilometre blind
+	 * spot above. A tolerance says the same thing honestly and says how much.
+	 *
+	 * `toBeCloseTo(v, 9)` is ±5·10⁻¹⁰ LY ≈ **950 km** — four orders tighter than
+	 * the old digest, and four orders looser than the ~10⁻¹⁴ LY of platform
+	 * jitter it has to tolerate.
+	 */
+	const POSITION_FIXTURE: [number, number, [number, number, number]][] = [
+		[0, 0, [17.10849287840576, -5.666474372158571, 9.517887922255094]],
+		[0, 7, [17.28961579032331, 8.368830612005883, -0.584877307533546]],
+		[0, 255, [-0.8217812695608091, -2.136663942731725, -15.365833199837596]],
+		[1, 42, [12.896223202043647, -4.008713230503314, 4.015636648608916]],
+		[2, 100, [0.8102223646675069, 3.6901090139375645, -15.149815994121065]],
+		[2, 255, [0.6247203619016894, -0.9220166404734456, -4.27958636220147]],
+		[3, 3, [9.695589703089722, 7.21798217557434, 4.580782983008728]],
+		[4, 128, [-2.0458037004976357, -2.3347582160278066, 19.357383730729797]],
+		[5, 200, [10.093433779899545, -12.203130792801346, 8.188472073662716]],
+		[6, 17, [-5.190227898412195, 1.4869663512560247, 14.55661051494981]],
+		[7, 0, [3.542105952649244, -0.9403131560370799, -3.1462409122404567]],
+		[7, 254, [-8.45781701638163, 11.730339691656475, -12.75017496517518]],
+	];
+
+	test("sampled positions match a full-precision fixture", () => {
+		for (const [g, n, [x, y, z]] of POSITION_FIXTURE) {
+			const s = GALAXIES[g].systems[n];
+			expect(s.pos.x).toBeCloseTo(x, 9);
+			expect(s.pos.y).toBeCloseTo(y, 9);
+			expect(s.pos.z).toBeCloseTo(z, 9);
+		}
+		// A fixture that emptied itself would pass vacuously, which is the one
+		// failure mode a table of literals actually has.
+		expect(POSITION_FIXTURE.length).toBeGreaterThanOrEqual(12);
 	});
 
 	test("a second generation of the same seed agrees exactly", () => {
@@ -316,34 +358,61 @@ describe("names and descriptions (§9.6)", () => {
 	});
 
 	test("the degenerate-name rate is what the redraw loop was sized against", () => {
-		// `names.ts` justifies its redraw loop with a rate. Measuring it here means
-		// the justification is checkable rather than asserted — and it is measured
-		// on the *unguarded* emit rule, since the guarded one produces none by
-		// construction.
+		// `names.ts` justifies its redraw loop with a rate, and that paragraph was
+		// wrong twice — once too high, once too low. So the rate is **enumerated
+		// here and measured here**, and the two are checked against each other: a
+		// derivation nobody re-derives is how it went wrong both times.
 		//
-		// A 3-pair name is empty only if all three draws hit `..`; the same three
-		// draws are what `systemName` makes first, so replaying the rule on a fresh
-		// stream measures the population the loop protects.
+		// Each pair adds 0 characters (`..`, 1 of 32), 1 (`A.`, index 15, 1 of 32)
+		// or 2 (the other 30). The guard fires on a total under 2 — so the short
+		// cases are every combination summing below two, not only the all-`..` one.
+		const shortRate = (pairs: number): number => {
+			// P(total 0), P(total 1), P(total >= 2)
+			let d = [1, 0, 0];
+			for (let i = 0; i < pairs; i++) {
+				const next = [0, 0, 0];
+				for (let len = 0; len < 3; len++) {
+					if (d[len] === 0) continue;
+					for (const [add, p] of [
+						[0, 1 / 32],
+						[1, 1 / 32],
+						[2, 30 / 32],
+					] as const) {
+						next[Math.min(2, len + add)] += d[len] * p;
+					}
+				}
+				d = next;
+			}
+			return d[0] + d[1];
+		};
+		// The closed forms the docstring quotes, asserted rather than trusted.
+		expect(shortRate(3)).toBeCloseTo(4 / 32 ** 3, 12);
+		expect(shortRate(4)).toBeCloseTo(5 / 32 ** 4, 14);
+		const analytic = 0.5 * shortRate(3) + 0.5 * shortRate(4);
+		expect(analytic * 2048).toBeCloseTo(0.13, 2);
+
+		// Measured on the *unguarded* rule — the guarded one emits none by
+		// construction, so it could not tell a right derivation from a wrong one.
 		let short = 0;
-		const trials = 200_000;
+		const trials = 2_000_000;
 		for (let i = 0; i < trials; i++) {
 			const rand = seededRand(mix(0x5ee11e, i));
 			const pairs = rand() < 0.5 ? 3 : 4;
 			let len = 0;
 			for (let p = 0; p < pairs; p++) {
-				// `..` at index 0 emits nothing; `A.` (index 30) emits one character.
 				const draw = Math.floor(rand() * 32);
 				len += draw === 0 ? 0 : draw === 15 ? 1 : 2;
 			}
 			if (len < 2) short++;
 		}
-		const rate = short / trials;
-		// ~1.5·10⁻⁵ expected (half the population is 3-pair, at (1/32)³ each), so
-		// over 2048 systems that is ~3% of worlds carrying one. Asserted as an
-		// order of magnitude, which is all a rate this small supports at 200k
-		// trials.
-		expect(rate).toBeLessThan(1e-4);
-		expect(rate * 2048).toBeLessThan(0.2);
+		// Two-sided, at ±4σ of the expected Poisson count (~127 at 2M trials). The
+		// first version asserted only an upper bound, which passed just as happily
+		// at four times the derived rate — that is, at exactly the error it existed
+		// to catch.
+		const expected = analytic * trials;
+		const sigma = Math.sqrt(expected);
+		expect(short).toBeGreaterThan(expected - 4 * sigma);
+		expect(short).toBeLessThan(expected + 4 * sigma);
 	});
 
 	test("the duplicate rate is recorded, not asserted away", () => {
@@ -382,10 +451,22 @@ describe("system contents", () => {
 	 *  sample of 200 spread across all eight galaxies is enough for the rules
 	 *  below, which are per-system invariants rather than distributions. */
 	const SAMPLE = ALL.filter((_, i) => i % 10 === 0);
+	/** Generated once for the whole block. `generateContents` is deterministic in
+	 *  its record, so five tests calling it on the same sample were five identical
+	 *  sweeps — and a test that regenerates is also a test that could quietly be
+	 *  asserting against a *different* system than the one it names. */
+	const CONTENTS = new Map(
+		SAMPLE.map((s) => [s, generateContents(s)] as const),
+	);
+	const contentsOf = (s: (typeof SAMPLE)[number]) => {
+		const c = CONTENTS.get(s);
+		if (!c) throw new Error(`no contents for ${s.galaxy}:${s.index}`);
+		return c;
+	};
 
 	test("stations: 1-3, and typed by the rules that gate them (§9.7)", () => {
 		for (const s of SAMPLE) {
-			const c = generateContents(s);
+			const c = contentsOf(s);
 			expect(c.stations.length).toBeGreaterThanOrEqual(1);
 			expect(c.stations.length).toBeLessThanOrEqual(3);
 			const types = c.stations.map((st) => st.type);
@@ -409,7 +490,7 @@ describe("system contents", () => {
 		// Asserted as the gap rather than as a ceiling, because a ceiling here would
 		// be a test asserting the prose over the arithmetic it summarises.
 		const withShipyard = SAMPLE.filter((s) =>
-			generateContents(s).stations.some((st) => st.type === "shipyard"),
+			contentsOf(s).stations.some((st) => st.type === "shipyard"),
 		);
 		expect(withShipyard.length).toBeGreaterThan(0);
 		const meanT = (xs: typeof SAMPLE) =>
@@ -419,7 +500,7 @@ describe("system contents", () => {
 
 	test("scale: every body sits inside the orbit envelope (§9.8)", () => {
 		for (const s of SAMPLE) {
-			const c = generateContents(s);
+			const c = contentsOf(s);
 			expect(c.planets.length).toBeGreaterThan(0);
 			for (const p of c.planets) {
 				expect(p.aAu).toBeGreaterThanOrEqual(MIN_ORBIT_AU - 1e-9);
@@ -441,15 +522,18 @@ describe("system contents", () => {
 		// third of a year, several inner-planet periods, and a station orbit.
 		const CLOCKS = [0, 3_600, 5_184_000, 10_000_000];
 		for (const s of SAMPLE) {
-			const c = generateContents(s);
+			const c = contentsOf(s);
 			// Both bearings the spec defines: a jump from a neighbour, and a new
 			// game with no origin.
 			const origin =
 				GALAXIES[s.galaxy].systems[(s.index + 1) % SYSTEMS_PER_GALAXY];
 			for (const t of CLOCKS) {
+				// Depends on (contents, clock) alone, so it is hoisted out of the
+				// bearing loop rather than rebuilt for each of the two.
+				const bodies = placeBodies(c, t);
 				for (const from of [origin.pos, null]) {
 					const p = arrivalPoint(s, c, from, t);
-					for (const b of placeBodies(c, t)) {
+					for (const b of bodies) {
 						const d = Math.sqrt(
 							(b.pos.x - p.x) ** 2 +
 								(b.pos.y - p.y) ** 2 +
@@ -473,7 +557,7 @@ describe("system contents", () => {
 		// the way, and even then only far enough to clear it.
 		let atExactly1Au = 0;
 		for (const s of SAMPLE) {
-			const c = generateContents(s);
+			const c = contentsOf(s);
 			const p = arrivalPoint(s, c, null, 0);
 			const d = Math.hypot(p.x, p.y, p.z);
 			expect(d).toBeGreaterThanOrEqual(

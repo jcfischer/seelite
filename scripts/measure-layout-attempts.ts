@@ -11,10 +11,11 @@
  * comparing against a baseline you can reproduce rather than against a number
  * in a comment.
  *
- * A script and not a test, deliberately. It takes ~30 s at the default 200
- * seeds and asserts nothing — the suite's job is to catch a *change*, which it
- * does with a pinned attempt vector for one seed plus a five-seed ceiling
- * sweep. This is the instrument, not the alarm.
+ * A script and not a test, deliberately. It asserts nothing — the suite's job is
+ * to catch a *change*, which it does with a pinned attempt vector for one seed
+ * plus a five-seed ceiling sweep. This is the instrument, not the alarm. (It
+ * prints its own elapsed time; ~5 s at the default 200 seeds, which is also
+ * where `MAX_LAYOUT_ATTEMPTS`'s per-attempt cost figure comes from.)
  */
 
 import {

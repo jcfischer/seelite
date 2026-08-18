@@ -42,10 +42,17 @@
  * body colours, moon orbits. They are scenery — nothing reads them but the far
  * layer — and they are marked at each site so a later decision node can take
  * them without having to work out which constants were load-bearing.
+ *
+ * **The scenery constants are outside the draw contract.** Changing a radius
+ * band or a colour changes what a body looks like and moves no draw: the rolls
+ * are taken first and scaled afterwards. So a renderer decision may retune them
+ * without touching a seed's output — which is why they can sit in this module
+ * without making it the renderer's business. The one exception is the gas-giant
+ * *threshold* (`a > 2·a_hab`), which is spec'd (§6.2) and does decide moons.
  */
 
 import { DOMAIN, type SystemRecord, stream } from "./galaxy";
-import type { Vec3 } from "./sim";
+import { type Vec3, dot, lengthSq } from "./sim";
 import { AU_KM } from "./units";
 
 /** Seconds in a Julian year, the unit Kepler III is written in below. */
@@ -319,28 +326,9 @@ export function generateContents(record: SystemRecord): SystemContents {
 		const size = isGasGiant ? GIANT_RADIUS_KM : ROCKY_RADIUS_KM;
 		const radiusKm = size.base + radiusRoll * size.span;
 		const id = `planet-${i}`;
-		const moons: Moon[] = [];
-		if (isGasGiant) {
-			for (let m = 0; m < moonCount; m++) {
-				const base = m * ROLLS_PER_MOON;
-				const rRoll = moonRolls[base];
-				const oRoll = moonRolls[base + 1];
-				const pRoll = moonRolls[base + 2];
-				const tRoll = moonRolls[base + 3];
-				moons.push({
-					id: `${id}-moon-${m}`,
-					radiusKm: MOON_RADIUS_KM.base + rRoll * MOON_RADIUS_KM.span,
-					orbit: {
-						radiusKm:
-							radiusKm + MOON_ORBIT_KM.base + oRoll * MOON_ORBIT_KM.span,
-						periodS: (0.5 + pRoll * 14.5) * 86400,
-						theta0: tRoll * TAU,
-						inclination,
-						node,
-					},
-				});
-			}
-		}
+		const moons = isGasGiant
+			? buildMoons(id, radiusKm, moonCount, moonRolls, inclination, node)
+			: [];
 		planets.push({
 			id,
 			aAu,
@@ -375,12 +363,58 @@ export function generateContents(record: SystemRecord): SystemContents {
 }
 
 /**
+ * A gas giant's moons, from rolls already drawn.
+ *
+ * Extracted from `generateContents` and taking **rolls, not a stream**, which is
+ * the point: it cannot consume a draw, so it cannot move the draw sequence. That
+ * keeps the ordering contract readable top-to-bottom in one function while the
+ * moon assembly — the only genuinely nested part — lives on its own.
+ *
+ * Moon sizes and orbits are scenery. Far-layer only, per §6.2.
+ */
+function buildMoons(
+	planetId: string,
+	planetRadiusKm: number,
+	count: number,
+	rolls: readonly number[],
+	inclination: number,
+	node: number,
+): Moon[] {
+	const moons: Moon[] = [];
+	for (let m = 0; m < count; m++) {
+		const base = m * ROLLS_PER_MOON;
+		moons.push({
+			id: `${planetId}-moon-${m}`,
+			radiusKm: MOON_RADIUS_KM.base + rolls[base] * MOON_RADIUS_KM.span,
+			orbit: {
+				radiusKm:
+					planetRadiusKm +
+					MOON_ORBIT_KM.base +
+					rolls[base + 1] * MOON_ORBIT_KM.span,
+				periodS: (0.5 + rolls[base + 2] * 14.5) * 86400,
+				theta0: rolls[base + 3] * TAU,
+				inclination,
+				node,
+			},
+		});
+	}
+	return moons;
+}
+
+/**
  * 1–3 stations, typed (spec §6.4).
  *
- * The count keys off population and tech exactly as intended: a high-TL core
- * world plausibly supports three, a rim Anarchy one. The trade station is
- * unconditional, so a system always has somewhere to dock — a system with no
- * station would be a dead end the galaxy map has no way to warn about.
+ * **What the count actually keys off.** §6.4's prose says "population and tech";
+ * the rules it then gives — and this code — read `displayTL` and whether the
+ * system has a belt, and nothing reads `population` at all. The effect the spec
+ * describes is real, because tech carries the radial gradient (§4.3) and a
+ * high-TL core world is where both optional stations can land; the mechanism it
+ * names is not. Written the way the code works, so that a later reader
+ * comparing the two finds the difference here rather than in a debugger.
+ *
+ * The trade station is unconditional, so a system always has somewhere to dock —
+ * a system with no station would be a dead end the galaxy map has no way to warn
+ * about.
  */
 function generateStations(
 	record: SystemRecord,
@@ -503,7 +537,7 @@ export function placeBodies(
 }
 
 const norm = (v: Vec3): Vec3 => {
-	const len = Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+	const len = Math.sqrt(lengthSq(v));
 	return len === 0
 		? { x: 1, y: 0, z: 0 }
 		: { x: v.x / len, y: v.y / len, z: v.z / len };
@@ -577,9 +611,8 @@ export function arrivalPoint(
 	// a system is nowhere near any one bearing.
 	const intervals: { lo: number; hi: number }[] = [];
 	for (const b of bodies) {
-		const t = b.pos.x * bearing.x + b.pos.y * bearing.y + b.pos.z * bearing.z;
-		const distSq = b.pos.x * b.pos.x + b.pos.y * b.pos.y + b.pos.z * b.pos.z;
-		const half = clearanceSq - (distSq - t * t);
+		const t = dot(b.pos, bearing);
+		const half = clearanceSq - (lengthSq(b.pos) - t * t);
 		if (half <= 0) continue;
 		const root = Math.sqrt(half);
 		intervals.push({ lo: t - root, hi: t + root });
