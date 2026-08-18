@@ -60,6 +60,18 @@ const OTHER_SEED = 20260818;
  *  further. A real violation is off by orders of magnitude, not by 1e-6. */
 const RELATIVE_EPS = 1e-3;
 
+/**
+ * The largest far-layer coordinate a generated system can produce, in far-layer
+ * units — `(2·MAX_ORBIT_AU + ARRIVAL_CLEARANCE_AU) · AU_KM · FAR_SCALE`.
+ *
+ * Restated here rather than imported because probes are `.mjs` and read no
+ * TypeScript; the derivation and its measurement live in `sim.test.ts`, which
+ * checks it over 120 seeds. Kept deliberately as the *derived* bound rather than
+ * the ~10⁴ comfort figure in `units.ts`: two seeds in 400 put a body past 10⁴,
+ * so a probe pinned to that would go red on a perfectly legitimate world.
+ */
+const FAR_LAYER_BUDGET_UNITS = (2 * 6 + 0.25) * 1.495978707e8 * 1e-5;
+
 await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 
@@ -207,29 +219,34 @@ check(
 // asserting the *rule* rather than that expected outcome is what makes this
 // check keep working once something can approach.
 const band = state.units.HANDOFF_KM * state.units.HANDOFF_HYSTERESIS;
-for (const b of state.bodies) {
-	if (!b.mesh) {
-		check(`${b.id} has a mesh`, false);
-		continue;
-	}
-	const d = Math.hypot(
+
+/** How far a body is from the ship, in kilometres of sim space. */
+const rangeOf = (b) =>
+	Math.hypot(
 		b.sim.x - state.shipSim.x,
 		b.sim.y - state.shipSim.y,
 		b.sim.z - state.shipSim.z,
 	);
-	// Inside the hysteresis band the answer depends on which way the body
-	// arrived, which a single-frame probe cannot know — so the band is skipped
-	// rather than guessed at. Asserting the bare threshold here would fail a
-	// correctly-behaving renderer the moment something could approach, which is
-	// the opposite of what this check is for. `probe-handoff.mjs` walks the band
-	// in both directions, where the history is known because it created it.
+
+/**
+ * Which layer the body is drawn in, against the rule.
+ *
+ * Returns false when the body sits inside the hysteresis band, where the answer
+ * depends on which way it arrived — history a single-frame probe does not have.
+ * Asserting the bare threshold there would fail a correctly-behaving renderer
+ * the moment something could approach, which is the opposite of the point.
+ * `probe-handoff.mjs` walks the band in both directions, where it knows the
+ * history because it created it.
+ */
+function checkLayer(b, d) {
 	if (d > state.units.HANDOFF_KM && d <= band) {
-		check(
-			`${b.id} sits in the hysteresis band — layer not asserted`,
-			true,
-			`${d.toExponential(2)} km`,
+		// A `console.log`, not a passing `check`. A hardcoded pass inflates the
+		// count and reads as coverage — the same thing this probe's sibling had a
+		// check removed for.
+		console.log(
+			`  skip  ${b.id} sits in the hysteresis band at ${d.toExponential(2)} km`,
 		);
-		continue;
+		return false;
 	}
 	const want = d <= state.units.HANDOFF_KM ? "near" : "far";
 	check(
@@ -237,15 +254,27 @@ for (const b of state.bodies) {
 		b.layer === want,
 		`found in ${b.layer}`,
 	);
-	// The bound `FAR_SCALE` exists to buy, checked in the browser at the
-	// distances that can actually violate it. `sim.test.ts` asserts the same
-	// thing headlessly; this is the half that would notice the renderer using a
-	// different factor from the module.
+	return true;
+}
+
+/**
+ * The body is drawn at its layer's scale, in both position and radius.
+ *
+ * The bound on the position is what `FAR_SCALE` exists to buy, checked in the
+ * browser at the distances that can actually violate it — `sim.test.ts` asserts
+ * the same thing headlessly, and this is the half that would notice the renderer
+ * using a different factor from the module. `FAR_LAYER_BUDGET_UNITS` is the
+ * derived worst case (`2·MAX_ORBIT_AU + ARRIVAL_CLEARANCE_AU`), not a flat 10⁴:
+ * two seeds in 400 put a body past 10⁴, so that figure is a comfort target and
+ * a probe asserting it would go red on a legitimate world.
+ */
+function checkScale(b) {
 	if (b.layer === "far") {
+		const drawn = Math.hypot(b.mesh.x, b.mesh.y, b.mesh.z);
 		check(
 			`${b.id}'s far-layer coordinate fits in float32`,
-			Math.hypot(b.mesh.x, b.mesh.y, b.mesh.z) < 1e4,
-			`|p| = ${Math.hypot(b.mesh.x, b.mesh.y, b.mesh.z).toExponential(2)} units`,
+			drawn < FAR_LAYER_BUDGET_UNITS,
+			`|p| = ${drawn.toExponential(2)} units, bound ${FAR_LAYER_BUDGET_UNITS.toExponential(1)}`,
 		);
 	}
 	// Position and radius must be scaled by the *same* factor, or the body's
@@ -259,6 +288,16 @@ for (const b of state.bodies) {
 		`drawn radius ${b.meshRadius}, expected ${b.radiusKm * k}`,
 	);
 }
+
+for (const b of state.bodies) {
+	if (!b.mesh) {
+		check(`${b.id} has a mesh`, false);
+		continue;
+	}
+	if (!checkLayer(b, rangeOf(b))) continue;
+	checkScale(b);
+}
+
 check(
 	"the backdrop holds the star points and nothing else",
 	state.starCount > 0,
@@ -408,7 +447,13 @@ const ticked = await page.evaluate(async () => {
 		bodies: g.world.system.bodies.map((b) => ({ ...b.pos })),
 	});
 	const before = sample();
-	await new Promise((r) => setTimeout(r, 600));
+	// Poll rather than sleep a flat 600 ms on every run. The wait is now however
+	// long the clock actually needs to move, with 600 ms as the timeout — so a
+	// frozen clock still fails, and a healthy one costs a few frames.
+	const deadline = Date.now() + 600;
+	while (g.world.gameTime - before.t <= 0.1 && Date.now() < deadline) {
+		await new Promise((r) => requestAnimationFrame(() => r()));
+	}
 	const after = sample();
 	const moved = after.bodies
 		.map((p, i) =>
@@ -419,12 +464,17 @@ const ticked = await page.evaluate(async () => {
 			),
 		)
 		.filter((d) => d > 0).length;
-	return { dt: after.t - before.t, moved, total: after.bodies.length };
+	return {
+		dt: after.t - before.t,
+		moved,
+		total: after.bodies.length,
+		waitedMs: Math.round(600 - Math.max(0, deadline - Date.now())),
+	};
 });
 check(
 	"the game clock advances with the frame loop",
 	ticked.dt > 0.1,
-	`+${ticked.dt.toFixed(3)} s of sim time over ~0.6 s of wall time`,
+	`+${ticked.dt.toFixed(3)} s of sim time in ${ticked.waitedMs} ms of wall time`,
 );
 check(
 	"the bodies move with the clock",

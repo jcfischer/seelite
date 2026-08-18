@@ -45,13 +45,14 @@
  * A `FAR_SCALE` that is simply *wrong* is caught by neither, and deliberately
  * not chased here. Both checks read the constant, and a third that did not —
  * asserting the drawn coordinate fits the float32 budget — cannot bite at these
- * distances: every sample sits within 1.05 × `HANDOFF_KM`, where even a
- * hundredfold error lands at 50 units against a budget of 10⁴. It was written,
- * measured, and removed rather than shipped as a check that cannot fail. The
- * budget is asserted where the distances are astronomical: `sim.test.ts`'s
- * "a far-layer coordinate stays inside the float32 budget", at the arrival
- * point, and the same bound in `probe-boot.mjs`. Both go red at 1e-3; this
- * probe stays green, which is the honest division of labour rather than a gap.
+ * distances: the farthest sample is 5 × `HANDOFF_KM`, so 5·10⁴ km, where even a
+ * hundredfold scale error lands at 50 units against a budget of 10⁴. It was
+ * written, measured, and removed rather than shipped as a check that cannot
+ * fail. The budget is asserted where the distances are astronomical — bodies an
+ * AU or more away — by `sim.test.ts`'s "a far-layer coordinate stays inside the
+ * float32 budget" and the same bound in `probe-boot.mjs`. Both go red at 1e-3;
+ * this probe stays green, which is the honest division of labour rather than a
+ * gap.
  *
  * The ship is **placed**, not flown. #10's cruise regime is what will eventually
  * cross these distances, and it does not exist; a probe that waited to arrive
@@ -191,7 +192,11 @@ async function sampleAt(distanceKm, id) {
 			const layer = g.nearScene.getObjectByName(bodyId) ? "near" : "far";
 			// One shared recovery, installed by `probe-guard.mjs` as an init
 			// script — read in this evaluate, so it is the same frame as the mesh.
+			// It returns null when the ship mesh is missing; dereferencing that
+			// would throw inside the evaluate and kill the run rather than produce
+			// a FAIL line, so it is returned as a marker and reported by a check.
 			const camSim = window.__recoverCamSim();
+			if (!camSim) return { camSimMissing: true };
 			return {
 				layer,
 				drawnRadius: mesh ? mesh.scale.x : null,
@@ -222,6 +227,13 @@ for (const multiple of SAMPLES) {
 	const s = await sampleAt(want, setup.id);
 	seen.push({ multiple, ...s });
 
+	if (s.camSimMissing) {
+		check(
+			`${multiple}× handoff: the ship has a mesh to recover the camera from`,
+			false,
+		);
+		continue;
+	}
 	if (s.drawnRadius === null) {
 		check(`${multiple}× handoff: the body has a mesh`, false);
 		continue;

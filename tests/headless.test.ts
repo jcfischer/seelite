@@ -28,6 +28,7 @@ import {
 	HANDOFF_HYSTERESIS,
 	HANDOFF_KM,
 	NEAR_FAR_KM,
+	layerFor,
 } from "../src/units";
 
 const HEADLESS = [
@@ -135,6 +136,32 @@ test("the far camera's near plane admits a body that has not crossed yet", () =>
 	// plane sat beyond that, there would be a band where a body is assigned to
 	// the far layer and clipped out of it.
 	expect(FAR_NEAR_UNITS).toBeLessThan(HANDOFF_KM * FAR_SCALE);
+});
+
+test("layerFor holds and releases on the right sides of the band", () => {
+	// The hysteresis state machine itself, which until this round needed a
+	// browser to exercise: it lived in `Game` while both constants it reads lived
+	// here. As a pure function it is arithmetic, and the two failures worth
+	// pinning are the ones `probe-handoff.mjs` had to walk a ship around to find.
+	const inside = HANDOFF_KM * 0.5;
+	const band = HANDOFF_KM * ((1 + HANDOFF_HYSTERESIS) / 2);
+	const outside = HANDOFF_KM * (HANDOFF_HYSTERESIS + 0.1);
+
+	// Coming from far: the threshold is the bare one, so the band is *not* a
+	// second chance to be admitted. A renderer that used the widened threshold in
+	// both directions would admit a body here.
+	expect(layerFor("far", band)).toBe("far");
+	expect(layerFor("far", inside)).toBe("near");
+
+	// Already near: held through the band, released past it. A band that never
+	// releases returns "near" for `outside`; no band at all returns "far" for
+	// `band`.
+	expect(layerFor("near", band)).toBe("near");
+	expect(layerFor("near", outside)).toBe("far");
+
+	// Unplaced bodies start far — nothing is generated inside the handoff.
+	expect(layerFor(undefined, outside)).toBe("far");
+	expect(layerFor(undefined, inside)).toBe("near");
 });
 
 test("src/vec3.ts is a leaf, which is why the import cycle is gone", () => {

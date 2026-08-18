@@ -154,45 +154,73 @@ const STATION_COLORS: Record<StationType, number> = {
 /**
  * A body's colour, from its identity rather than from its draw order.
  *
- * Seeded through `mix(systemSeed, index)` on its own generator rather than
- * drawn from `DOMAIN.BODIES`, and that is the same rule the `ARRIVAL` tag was
- * added for: replaying a stream the generator already consumed correlates the
- * result with whatever that stream produced. Here the consequence would only be
- * ugly rather than wrong, but a private generator costs nothing and needs no
+ * Seeded through `mix(systemSeed, hashId(body.id))` on its own generator rather
+ * than drawn from `DOMAIN.BODIES`, and that is the same rule the `ARRIVAL` tag
+ * was added for: replaying a stream the generator already consumed correlates
+ * the result with whatever that stream produced. Here the consequence would only
+ * be ugly rather than wrong, but a private generator costs nothing and needs no
  * argument.
+ *
+ * **The identity is the id, not the array index.** An earlier version mixed the
+ * position in `placeBodies`' output, which is draw order wearing identity's
+ * name: a planet gaining a moon shifts every later index and re-colours the rest
+ * of the system. The id is stable against exactly that.
+ *
+ * Takes the whole system rather than four positional arguments — two of which
+ * were `number` and adjacent, one slip from silently swapping the seed and the
+ * index.
  */
 function colorFor(
 	body: PlacedBody,
+	record: SystemRecord,
 	contents: SystemContents,
-	systemSeed: number,
-	index: number,
 ): number {
 	if (body.kind === "star") return contents.star.color;
 	if (body.kind === "station") {
 		const station = contents.stations.find((s) => s.id === body.id);
-		// A station in `placeBodies`' output that is not in `contents.stations` is
-		// not a colour problem, it is the two having disagreed about what is in the
-		// system — so it throws rather than picking a grey and carrying on.
+		// A body in `placeBodies`' output that is not in `contents` is not a colour
+		// problem, it is the two having disagreed about what is in the system — so
+		// it throws rather than picking a default and carrying on.
 		if (!station) throw new Error(`station ${body.id} is not in the contents`);
 		return STATION_COLORS[station.type];
 	}
-	const rand = seededRand(mix(systemSeed, index));
+	const rand = seededRand(mix(record.seed, hashId(body.id)));
 	if (body.kind === "moon")
 		return MOON_COLORS[Math.floor(rand() * MOON_COLORS.length)];
-	const giant = contents.planets.find((p) => p.id === body.id)?.isGasGiant;
-	const palette = giant ? GIANT_COLORS : ROCKY_COLORS;
+	// Same rule as the station branch, for the same reason. Falling through to
+	// the rocky palette on an unmatched id would paint a gas giant as a rocky
+	// world and report nothing.
+	const planet = contents.planets.find((p) => p.id === body.id);
+	if (!planet) throw new Error(`planet ${body.id} is not in the contents`);
+	const palette = planet.isGasGiant ? GIANT_COLORS : ROCKY_COLORS;
 	return palette[Math.floor(rand() * palette.length)];
+}
+
+/**
+ * A body id as a number, for `mix`.
+ *
+ * FNV-1a, because it needs to be a stable function of the string and nothing
+ * more — this feeds a colour, not a position, and no property of the world
+ * depends on its distribution.
+ */
+function hashId(id: string): number {
+	let h = 0x811c9dc5;
+	for (let i = 0; i < id.length; i++) {
+		h ^= id.charCodeAt(i);
+		h = Math.imul(h, 0x01000193);
+	}
+	return h >>> 0;
 }
 
 /** Generate a system's contents and position them at `gameTime`. */
 export function makeSystem(record: SystemRecord, gameTime: number): System {
 	const contents = generateContents(record);
-	const bodies = placeBodies(contents, gameTime).map((b, i) => ({
+	const bodies = placeBodies(contents, gameTime).map((b) => ({
 		id: b.id,
 		kind: b.kind,
 		pos: b.pos,
 		radiusKm: b.radiusKm,
-		color: colorFor(b, contents, record.seed, i),
+		color: colorFor(b, record, contents),
 	}));
 	return { record, contents, bodies };
 }
@@ -203,24 +231,31 @@ export function makeSystem(record: SystemRecord, gameTime: number): System {
  * Positions are overwritten in place rather than the array being rebuilt, and
  * the reason is the renderer: it holds one mesh per body id, so a fresh array
  * every frame would either force a lookup per body or invite the id-to-mesh map
- * to drift. The index alignment that makes this safe is `placeBodies` being a
- * pure function of `contents` — its output order is fixed by the structure of
- * the system, which the clock does not touch. `tests/sim.test.ts` pins that.
+ * to drift.
+ *
+ * **Written by id, not by index.** The index form was a positional contract
+ * between two modules enforced only by a test — a `placeBodies` that ever
+ * filtered or sorted its output (skipping a destroyed station, say) would keep
+ * running and assign positions to the wrong bodies, which reads on screen as
+ * planets teleporting rather than as an error. Keying by id makes that a throw.
+ * The cost is a `Map` of a dozen entries per frame, against a mis-assignment
+ * that nothing else would catch.
  */
 export function advanceSystem(system: System, gameTime: number): void {
 	const placed = placeBodies(system.contents, gameTime);
-	for (let i = 0; i < placed.length; i++) system.bodies[i].pos = placed[i].pos;
+	if (placed.length !== system.bodies.length) {
+		throw new Error(
+			`placeBodies returned ${placed.length} bodies, system holds ${system.bodies.length}`,
+		);
+	}
+	const at = new Map(placed.map((p) => [p.id, p.pos]));
+	for (const body of system.bodies) {
+		const pos = at.get(body.id);
+		if (!pos) throw new Error(`placeBodies did not position ${body.id}`);
+		body.pos = pos;
+	}
 }
 
-/**
- * A new game: galaxy 0, its start system, the ship at the arrival point.
- *
- * `arrivalPoint` with a `null` origin is the new-game bearing — there is no
- * previous system to have come from, so the direction is drawn from the
- * system's own `ARRIVAL` stream. That puts the player 1 AU out (further, if a
- * body was in the way), which is a real crossing away from every station in the
- * system: getting to one is #10's cruise regime, not this module's business.
- */
 export function makeWorld(seed: number): World {
 	const galaxy = generateGalaxy(seed, START_GALAXY);
 	const record = startSystem(galaxy);

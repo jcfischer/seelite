@@ -67,16 +67,16 @@ import { AudioFX } from "./audio";
 import { GOVERNMENT_NAMES } from "./galaxy";
 import { type Body, type World, makeWorld, stepWorld } from "./sim";
 import { add, length, scale, sub, v3 } from "./vec3";
+import * as units from "./units";
 import {
 	AU_KM,
 	BACKDROP_RADIUS,
 	FAR_FAR_UNITS,
 	FAR_NEAR_UNITS,
 	FAR_SCALE,
-	HANDOFF_HYSTERESIS,
-	HANDOFF_KM,
 	NEAR_FAR_KM,
 	NEAR_NEAR_KM,
+	layerFor,
 } from "./units";
 
 /** How many stars the backdrop draws. Cheap at this count; the research puts
@@ -153,34 +153,29 @@ class Game {
 	private throttle = 0;
 	private lastTime = 0;
 	private hud: HTMLElement;
-	/** The last string written to the HUD, so an unchanged frame writes nothing. */
-	private hudText = "";
+	/** What the HUD last displayed, quantised to its own resolution — so a frame
+	 *  that would render the same text neither builds nor writes it. */
+	private hudKey = "";
 	/** Frames drawn since boot. A probe's cheapest proof that the loop runs. */
 	frames = 0;
 
 	/**
-	 * The unit scheme, reachable from the handle.
+	 * The unit scheme, reachable from the handle — the whole module, not a copy.
 	 *
 	 * A probe that restated `HANDOFF_KM` would assert against its own copy, and
 	 * the failure that produces is a **false red**: change the module to 5e3 and
 	 * the probe still places the ship at 9,990 km expecting the near layer, gets
-	 * far, and reports a bug in a renderer that is behaving correctly. Reading
-	 * the constant from the page means the probe cannot disagree with the module
-	 * about where the threshold is — only about whether the geometry respects it,
-	 * which is the thing it is for.
+	 * far, and reports a bug in a renderer that is behaving correctly.
 	 *
-	 * The trade is real and worth naming: a probe that reads the constant cannot
-	 * notice the constant being *wrong*. That is covered where it belongs, by the
-	 * headless tests over the unit scheme's own arithmetic — see
-	 * `tests/headless.test.ts` and the float32-budget test in `sim.test.ts`.
+	 * The namespace rather than a hand-picked literal, because a literal is a
+	 * second list to maintain: the first version named five constants, and a probe
+	 * wanting `FAR_FAR_UNITS` would have had to edit the renderer to get it.
+	 *
+	 * The trade is worth naming: a probe reading the constant cannot notice the
+	 * constant being *wrong*. That belongs to the headless tests over the scheme's
+	 * own arithmetic — `tests/headless.test.ts` and `sim.test.ts`'s float32 budget.
 	 */
-	readonly units = {
-		AU_KM,
-		FAR_SCALE,
-		HANDOFF_KM,
-		HANDOFF_HYSTERESIS,
-		NEAR_FAR_KM,
-	} as const;
+	readonly units = units;
 
 	constructor(seed: number) {
 		this.world = makeWorld(seed);
@@ -441,14 +436,6 @@ class Game {
 		this.layers.set(body.id, layer);
 	}
 
-	/** Which layer a body belongs in at `distanceKm`, given where it is now. */
-	private layerFor(id: string, distanceKm: number): "near" | "far" {
-		const current = this.layers.get(id);
-		const threshold =
-			current === "near" ? HANDOFF_KM * HANDOFF_HYSTERESIS : HANDOFF_KM;
-		return distanceKm <= threshold ? "near" : "far";
-	}
-
 	private buildShip() {
 		// A cube, 20 metres on a side, and honestly a cube — the ship roster is an
 		// open decision and a placeholder that looked like a design would be worse
@@ -571,7 +558,7 @@ class Game {
 			// a body that changed layer and kept last frame's position would be
 			// drawn at the new scale in the old place, for one frame, in front of
 			// the player.
-			const layer = this.layerFor(body.id, length(rel));
+			const layer = layerFor(this.layers.get(body.id), length(rel));
 			if (layer !== this.layers.get(body.id)) this.setLayer(body, layer);
 			const k = layer === "near" ? 1 : FAR_SCALE;
 			mesh.position.set(rel.x * k, rel.y * k, rel.z * k);
@@ -624,38 +611,36 @@ class Game {
 	private updateHud() {
 		if (!this.hud) return;
 		const { ship, system, gameTime } = this.world;
-		const speed = length(ship.vel);
 
-		// Nearest station rather than "the" station: a system has 1–3 of them
-		// (#6) and which one is closest changes as they orbit. The range is the
-		// number that makes the scale legible — it is normally an AU or more, which
-		// is the whole reason #10 exists.
+		// Gate on a cheap key before building anything. Every field on this line
+		// changes at human speed — the clock once a second, the throttle when a key
+		// is held, the nearest station when one overtakes another — so at 60 fps the
+		// string is worth composing about once in sixty frames. Caching only the DOM
+		// write still ran six template literals, a `padStart` and two `toFixed` per
+		// frame to discover they produced the same text.
 		let nearest: { id: string; km: number } | null = null;
 		for (const b of system.bodies) {
 			if (b.kind !== "station") continue;
 			const km = length(sub(b.pos, ship.pos));
 			if (!nearest || km < nearest.km) nearest = { id: b.id, km };
 		}
+		// The speed is quantised to the resolution it is *displayed* at, so the key
+		// changes exactly when the text would.
+		const key = `${Math.floor(gameTime)}|${Math.round(this.throttle * 100)}|${length(
+			ship.vel,
+		).toFixed(3)}|${nearest ? `${nearest.id}|${range(nearest.km)}` : "-"}`;
+		if (key === this.hudKey) return;
+		this.hudKey = key;
 
 		const r = system.record;
-		const parts = [
+		this.hud.textContent = [
 			`${r.name}  TL ${r.displayTL}  ${GOVERNMENT_NAMES[r.government]}`,
 			`t+${clock(gameTime)}`,
 			`throttle ${(this.throttle * 100).toFixed(0)}%`,
-			`${speed.toFixed(3)} km/s`,
+			`${length(ship.vel).toFixed(3)} km/s`,
 			nearest ? `${nearest.id} ${range(nearest.km)}` : "no station in system",
 			`seed ${this.world.seed}`,
-		];
-		const text = parts.join("   ");
-		// Only write when the text changed. Assigning `textContent` invalidates
-		// style and layout whether or not the string differs, and most of this line
-		// changes at human speed rather than at frame rate — the seed and the
-		// system never, the clock once a second. The comparison is one string
-		// compare against a field already in cache.
-		if (text !== this.hudText) {
-			this.hudText = text;
-			this.hud.textContent = text;
-		}
+		].join("   ");
 	}
 
 	private onResize() {

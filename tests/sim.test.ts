@@ -113,6 +113,10 @@ describe("makeWorld", () => {
 			expect(type).toBeDefined();
 			byType.set(type!, s.color);
 		}
+		// Without this the assertion below reduces to `1 === 1` whenever the seed's
+		// stations happen to share a type, and a test named for distinguishing
+		// types would prove nothing. SEED's system has a trade post and a refinery.
+		expect(byType.size).toBeGreaterThan(1);
 		expect(new Set(byType.values()).size).toBe(byType.size);
 	});
 
@@ -229,21 +233,43 @@ describe("float64 sim space", () => {
 	test("a far-layer coordinate stays inside the float32 budget", () => {
 		// What the renderer actually hands the GPU, now that the world is real.
 		//
-		// The scaffold's version of this test measured a station 40 km away and
-		// concluded the near layer was fine — a claim about a placeholder's chosen
-		// constant, not about the scheme. The claim worth pinning is the far
-		// layer's, because that is the one with a bound to violate: every body in a
-		// generated system, seen from the arrival point, must land inside ~10⁴
-		// render units or the quantisation is visible as jitter.
-		const world = makeWorld(SEED);
-		for (const body of world.system.bodies) {
-			const rel = scale(sub(body.pos, world.ship.pos), FAR_SCALE);
-			expect(length(rel)).toBeLessThan(1e4);
+		// The scaffold's version measured a station 40 km away and concluded the
+		// near layer was fine — a claim about a placeholder's chosen constant, not
+		// about the scheme. The claim worth pinning is the far layer's, because
+		// that is the one with a bound to violate.
+		//
+		// **Over many seeds, and against the derived bound.** The first version of
+		// this test checked one seed against a flat 10⁴ and passed. Measured over
+		// 400 seeds, two of them exceed 10⁴ — worst 10,150 far-units at 6.78 AU on
+		// seed 350 — so it passed by seed luck, not because the scheme guaranteed
+		// it. Its stated derivation checked `MAX_ORBIT_AU` alone, which is the
+		// distance from the *star*, while the loop measured distance from the
+		// *ship*: a different quantity, and the larger one.
+		//
+		// The real bound is the two summed. Bodies sit inside `MAX_ORBIT_AU` of
+		// the star; the arrival point starts at `ARRIVAL_DISTANCE_AU` and is pushed
+		// outward only far enough to clear the outermost body, so the ship is
+		// inside `MAX_ORBIT_AU + ARRIVAL_CLEARANCE_AU`. Worst case is a body
+		// diametrically opposite.
+		const boundAu = 2 * MAX_ORBIT_AU + ARRIVAL_CLEARANCE_AU;
+		const boundUnits = boundAu * AU_KM * FAR_SCALE;
+		// Still an order of magnitude below where `units.ts` says quantisation
+		// becomes visible (10⁵), which is what makes 10⁴ a comfort target rather
+		// than a limit — and why exceeding it by 1.5% is not a defect.
+		expect(boundUnits).toBeLessThan(1e5);
+
+		let worst = 0;
+		for (let seed = 1; seed <= 120; seed++) {
+			const world = makeWorld(seed);
+			for (const body of world.system.bodies) {
+				const units = length(scale(sub(body.pos, world.ship.pos), FAR_SCALE));
+				worst = Math.max(worst, units);
+				expect(units).toBeLessThan(boundUnits);
+			}
 		}
-		// The bound the constant above is derived from, checked rather than
-		// assumed: nothing orbits outside the envelope, so nothing can be more than
-		// a couple of envelope-widths from the ship.
-		expect(MAX_ORBIT_AU * AU_KM * FAR_SCALE).toBeLessThan(1e4);
+		// And the bound is not vacuous — a derivation nothing comes close to would
+		// pass whatever the generator did.
+		expect(worst).toBeGreaterThan(0.2 * boundUnits);
 	});
 
 	test("a camera-relative difference keeps metre resolution in float32", () => {

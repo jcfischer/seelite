@@ -109,13 +109,25 @@ export const HANDOFF_HYSTERESIS = 1.05;
  * body is in the far layer and clipped out of it. At `HANDOFF_KM` a body sits
  * at 0.1 units, so this is half that.
  *
- * The far plane is bounded by the *content*, which is what makes it affordable:
- * `MAX_ORBIT_AU` is 6 and the arrival point sits inside ~7 AU of the star, so
- * nothing in a system is more than ~13 AU from the camera. 4·10⁴ units is 26 AU
- * — comfortable headroom on that, and a near:far ratio of 8·10⁵, which is
- * *tighter* than the 10⁶ the scaffold ran at with a 1-unit near plane. Dropping
- * the near plane to make room for the handoff costs nothing in depth precision
- * because the far plane came down further.
+ * The far plane is bounded by the *content*, which is what makes it affordable.
+ * Bodies orbit inside `MAX_ORBIT_AU` (6 AU) of the star, and the arrival point
+ * is pushed out only far enough to clear the outermost of them, so the ship
+ * stays inside `MAX_ORBIT_AU + ARRIVAL_CLEARANCE_AU`. Worst case is a body
+ * diametrically opposite: `2·6 + 0.25 = 12.25 AU`, or 1.8·10⁴ far-units.
+ * Measured over 120 seeds in `sim.test.ts`, and the largest actually seen in 400
+ * was 1.0·10⁴ at 6.78 AU — so the derived bound has real headroom over the
+ * observed one, which is the direction a bound should be wrong in.
+ *
+ * Note what that means for the "~10⁴ units" figure at the top of this file: it
+ * is a comfort target, not a limit. A far-layer coordinate can reach 1.8·10⁴ in
+ * a wide system, still an order of magnitude below the 10⁵ where quantisation
+ * becomes visible. A test asserting a flat 10⁴ passes or fails on which seed it
+ * was given, which is how the first version of that test was written.
+ *
+ * 4·10⁴ units is 26 AU — headroom on the derived bound — and a near:far ratio
+ * of 8·10⁵, *tighter* than the 10⁶ the scaffold ran at with a 1-unit near plane.
+ * Dropping the near plane to make room for the handoff costs nothing in depth
+ * precision because the far plane came down further.
  */
 export const FAR_NEAR_UNITS = 0.05;
 export const FAR_FAR_UNITS = 4e4;
@@ -130,3 +142,28 @@ export const FAR_FAR_UNITS = 4e4;
  * near and far planes.
  */
 export const BACKDROP_RADIUS = 5;
+
+/**
+ * Which layer a body belongs in, given how far away it is and where it is drawn
+ * now.
+ *
+ * A pure function, and here rather than in the renderer because everything it
+ * depends on is here: it is the decision `HANDOFF_KM` and `HANDOFF_HYSTERESIS`
+ * exist to make, and leaving it in `Game` meant the two constants were asserted
+ * headlessly while the rule reading them needed a browser. The renderer keeps
+ * the state — which body is in which layer — and asks this what to do with it.
+ *
+ * `current` is what makes the band directional: a body already drawn near is
+ * held there until it is `HANDOFF_HYSTERESIS` past the threshold, so a body
+ * sitting on the line does not swap every frame. Pass `undefined` for a body
+ * that has not been placed yet, which is the far case — nothing starts inside
+ * the handoff.
+ */
+export function layerFor(
+	current: "near" | "far" | undefined,
+	distanceKm: number,
+): "near" | "far" {
+	const threshold =
+		current === "near" ? HANDOFF_KM * HANDOFF_HYSTERESIS : HANDOFF_KM;
+	return distanceKm <= threshold ? "near" : "far";
+}
