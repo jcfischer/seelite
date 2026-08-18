@@ -359,16 +359,36 @@ belongs to #9. This spec places them and names their type.
 
 ### 7.1 The finding that constrains #10
 
+Combat speed is **2 km/s**: `THRUST = 2.0` km/s² (~0.2 g) under #5's assist
+cap, tuned in the prototype so a 40 km station approach takes about twenty
+seconds.
+
 Crossing even the **entire near layer** — `NEAR_FAR_KM` = 20,000 km — in one
-minute demands an average of **333 km/s**. The scaffold thrusts at
-`THRUST = 2.0` km/s² (~0.2 g) and #5's flight model is assist-capped; nothing
-combat-capable goes near 333 km/s, and a cap in that range would make
-dogfights physically impossible.
+minute demands an average of **333 km/s**, already 167× combat speed. A cap
+anywhere near that would make dogfights physically impossible.
 
 **Therefore: no plausible system scale is crossable at combat speeds — not
 even a near-layer-sized one.** In-system travel (#10) must deliver a cruise or
 hop regime whatever it chooses. The only thing this spec changes is the ratio
-it needs, which at astronomical scale is **≈ 1,000× over combat speed**.
+it needs, and at astronomical scale that ratio is large:
+
+| Leg | At 2 km/s | For a 60 s crossing | Ratio |
+|---|---|---|---|
+| 20,000 km (near layer) | 2.8 h | 333 km/s | 1.7 × 10² |
+| 1 AU (1.496 × 10⁸ km) | 866 days | 2.49 × 10⁶ km/s = **8.3 c** | 1.2 × 10⁶ |
+| 1.3 AU (typical leg) | 1,125 days | 3.24 × 10⁶ km/s = **10.8 c** | 1.6 × 10⁶ |
+
+**Required compression is ~10⁶×, and the cruise speed is a single-digit
+multiple of c.** That is a fiction commitment, not just a tuning number: a
+sub-light cruise cannot do this. Even 0.1 c — 30,000 km/s — takes 83 minutes
+to cross 1 AU. So at astronomical scale the cruise regime is necessarily
+superluminal, as Elite Dangerous's supercruise is; the only alternative is to
+shrink the system scale, which would undo §7.2.
+
+*(Corrected 2026-08-18. The #6 receipt and the first version of this spec said
+~1,000×, computed against a placeholder rather than the prototype's measured
+2 km/s cap. The conclusion is unchanged and strengthened; the magnitude was
+wrong by three orders.)*
 
 ### 7.2 Astronomical scale, because the renderer was built for it
 
