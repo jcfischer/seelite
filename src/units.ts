@@ -167,3 +167,21 @@ export function layerFor(
 		current === "near" ? HANDOFF_KM * HANDOFF_HYSTERESIS : HANDOFF_KM;
 	return distanceKm <= threshold ? "near" : "far";
 }
+
+/**
+ * Where float32 quantisation starts showing as jitter, in render units.
+ *
+ * The figure the top of this file quotes, named so it can be asserted rather
+ * than restated. It is a property of the *coordinate space* — how big a number
+ * a float32 still resolves smoothly — so it is independent of `FAR_SCALE` and of
+ * whatever the generator's orbit envelope happens to be. That independence is
+ * the point: a probe checking a far-layer coordinate against this cannot go
+ * falsely red when the generator widens or `FAR_SCALE` is retuned, and it still
+ * catches a `FAR_SCALE` that has stopped doing its job.
+ *
+ * The tighter, content-derived bound — `2·MAX_ORBIT_AU + ARRIVAL_CLEARANCE_AU`
+ * scaled — belongs to the headless tests, which can import the generator's
+ * constants instead of copying them. `~10⁴ units` in the header is that comfort
+ * target; this is the actual ceiling.
+ */
+export const F32_JITTER_UNITS = 1e5;

@@ -26,7 +26,11 @@ import {
 	stepWorld,
 } from "../src/sim";
 import { generateGalaxy, startSystem } from "../src/galaxy";
-import { ARRIVAL_CLEARANCE_AU, MAX_ORBIT_AU } from "../src/system";
+import {
+	ARRIVAL_CLEARANCE_AU,
+	MAX_ORBIT_AU,
+	arrivalPoint,
+} from "../src/system";
 import { AU_KM, FAR_SCALE } from "../src/units";
 import { add, length, scale, sub, v3 } from "../src/vec3";
 import { codeOf } from "./lib/source-scan";
@@ -148,9 +152,11 @@ describe("the game clock", () => {
 	const record = () => startSystem(generateGalaxy(SEED, START_GALAXY));
 
 	test("the body order does not depend on the clock", () => {
-		// The invariant `advanceSystem` rests on: it writes positions back by
-		// index, so a `placeBodies` whose output order varied with `gameTime` would
-		// silently swap two bodies' positions rather than fail.
+		// `advanceSystem` writes by id and throws on a mismatch, so ordering is no
+		// longer load-bearing *there*. It is still load-bearing here: the sibling
+		// tests compare `bodies[i]` against a `before[i]` snapshot, and a
+		// `placeBodies` whose output order varied with `gameTime` would make those
+		// comparisons meaningless while every assertion still passed.
 		const at0 = makeSystem(record(), 0).bodies.map((b) => `${b.kind}:${b.id}`);
 		const at1e7 = makeSystem(record(), 1e7).bodies.map(
 			(b) => `${b.kind}:${b.id}`,
@@ -258,11 +264,18 @@ describe("float64 sim space", () => {
 		// than a limit — and why exceeding it by 1.5% is not a defect.
 		expect(boundUnits).toBeLessThan(1e5);
 
+		// One galaxy, many systems — rather than 120 `makeWorld` calls, each of
+		// which lays out a fresh 256-system galaxy through an O(n²) connectivity
+		// scan to reach a single system. The assertion is per-body geometry, so the
+		// galaxy is incidental; generating it once buys ~200 systems for the cost
+		// of one layout instead of 120 systems for the cost of 120.
+		const galaxy = generateGalaxy(SEED, START_GALAXY);
 		let worst = 0;
-		for (let seed = 1; seed <= 120; seed++) {
-			const world = makeWorld(seed);
-			for (const body of world.system.bodies) {
-				const units = length(scale(sub(body.pos, world.ship.pos), FAR_SCALE));
+		for (const record of galaxy.systems.slice(0, 200)) {
+			const system = makeSystem(record, 0);
+			const ship = arrivalPoint(record, system.contents, null, 0);
+			for (const body of system.bodies) {
+				const units = length(scale(sub(body.pos, ship), FAR_SCALE));
 				worst = Math.max(worst, units);
 				expect(units).toBeLessThan(boundUnits);
 			}
@@ -369,11 +382,33 @@ describe("vector helpers", () => {
 		// re-exported binding is *identical* to the original: no runtime check can
 		// tell the two paths apart. That is exactly why the shim was cheap to add
 		// and invisible once added.
-		expect(codeOf("src/sim.ts")).not.toMatch(
+		// Every spelling, and the star form is the one that matters: the first
+		// version of this guard matched only the named forms, so
+		// `export * from "./vec3"` — the most idiomatic way to reinstate exactly
+		// what it forbids — passed it. A guard that fails open on the natural
+		// spelling of its subject is worse than no guard, because it is also a
+		// claim that the subject is covered.
+		const REEXPORT_FORMS = [
+			/export\s*\*\s*(as\s+\w+\s*)?from\s*["']\.\/vec3["']/,
 			/export\s*\{[^}]*\}\s*from\s*["']\.\/vec3["']/,
-		);
-		expect(codeOf("src/sim.ts")).not.toMatch(
 			/export\s+type\s*\{[^}]*\}\s*from\s*["']\.\/vec3["']/,
-		);
+		];
+		const code = codeOf("src/sim.ts");
+		for (const form of REEXPORT_FORMS) expect(code).not.toMatch(form);
+
+		// And the patterns are exercised against the text they are meant to catch.
+		// A regex asserted only in the negative passes just as well when it matches
+		// nothing at all, which is how the star-form hole survived being written.
+		const samples = [
+			'export * from "./vec3";',
+			'export { add, sub } from "./vec3";',
+			'export type { Vec3 } from "./vec3";',
+		];
+		for (const sample of samples) {
+			expect(
+				REEXPORT_FORMS.some((f) => f.test(sample)),
+				sample,
+			).toBe(true);
+		}
 	});
 });

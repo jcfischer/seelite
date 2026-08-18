@@ -67,8 +67,13 @@ import { AudioFX } from "./audio";
 import { GOVERNMENT_NAMES } from "./galaxy";
 import { type Body, type World, makeWorld, stepWorld } from "./sim";
 import { add, length, scale, sub, v3 } from "./vec3";
+// One path to `./units`, deliberately. Keeping a namespace import beside a named
+// one would let this file reach `FAR_SCALE` and `units.FAR_SCALE` as separate
+// spellings of the same constant — the two-public-paths pattern this branch
+// removed from `sim.ts` and pinned with a source-scan test.
 import * as units from "./units";
-import {
+
+const {
 	AU_KM,
 	BACKDROP_RADIUS,
 	FAR_FAR_UNITS,
@@ -77,7 +82,7 @@ import {
 	NEAR_FAR_KM,
 	NEAR_NEAR_KM,
 	layerFor,
-} from "./units";
+} = units;
 
 /** How many stars the backdrop draws. Cheap at this count; the research puts
  *  the point where a `Points` layer starts costing anything nearer 10⁵. */
@@ -612,12 +617,12 @@ class Game {
 		if (!this.hud) return;
 		const { ship, system, gameTime } = this.world;
 
-		// Gate on a cheap key before building anything. Every field on this line
-		// changes at human speed — the clock once a second, the throttle when a key
-		// is held, the nearest station when one overtakes another — so at 60 fps the
-		// string is worth composing about once in sixty frames. Caching only the DOM
-		// write still ran six template literals, a `padStart` and two `toFixed` per
-		// frame to discover they produced the same text.
+		// The nearest-station scan runs every frame — the key depends on it, so it
+		// cannot be gated. What the gate skips is the string composition and the
+		// DOM write: six template literals, `clock()`'s `padStart`, and the
+		// `textContent` assignment, which invalidates style and layout whether or
+		// not the text differs. Every displayed field changes at human speed, so at
+		// 60 fps that work lands about once in sixty frames instead of every one.
 		let nearest: { id: string; km: number } | null = null;
 		for (const b of system.bodies) {
 			if (b.kind !== "station") continue;

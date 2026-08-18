@@ -60,18 +60,6 @@ const OTHER_SEED = 20260818;
  *  further. A real violation is off by orders of magnitude, not by 1e-6. */
 const RELATIVE_EPS = 1e-3;
 
-/**
- * The largest far-layer coordinate a generated system can produce, in far-layer
- * units — `(2·MAX_ORBIT_AU + ARRIVAL_CLEARANCE_AU) · AU_KM · FAR_SCALE`.
- *
- * Restated here rather than imported because probes are `.mjs` and read no
- * TypeScript; the derivation and its measurement live in `sim.test.ts`, which
- * checks it over 120 seeds. Kept deliberately as the *derived* bound rather than
- * the ~10⁴ comfort figure in `units.ts`: two seeds in 400 put a body past 10⁴,
- * so a probe pinned to that would go red on a perfectly legitimate world.
- */
-const FAR_LAYER_BUDGET_UNITS = (2 * 6 + 0.25) * 1.495978707e8 * 1e-5;
-
 await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 
@@ -201,9 +189,14 @@ check(
 // ladder, not a fixed pair" over a `>= 1` predicate that the deleted
 // placeholder's two planets would have satisfied, and reported the total body
 // count rather than the planet count it had just measured — so neither the name
-// nor the output disclosed the gap. The ladder runs 3–7 rungs but drops any
-// falling outside the 0.3–6 AU envelope, so the surviving count has no useful
-// floor; the upper bound is real and is what is checked.
+// nor the output disclosed the gap.
+//
+// Both bounds are real, and the floor needed checking rather than assuming: the
+// ladder runs 3–7 rungs and drops any outside the 0.3–6 AU envelope, but the
+// ladder is *rescaled* so that one rung lands exactly on `habitableAu`, which is
+// itself clamped into that envelope (system.ts §6.2). That rung therefore always
+// survives, so a generated system has at least one planet — which is also why
+// the unconditional trade station always has something to orbit.
 const planets = state.bodies.filter((b) => b.kind === "planet");
 check(
 	"the planet count is inside the generator's envelope",
@@ -261,20 +254,29 @@ function checkLayer(b, d) {
  * The body is drawn at its layer's scale, in both position and radius.
  *
  * The bound on the position is what `FAR_SCALE` exists to buy, checked in the
- * browser at the distances that can actually violate it — `sim.test.ts` asserts
- * the same thing headlessly, and this is the half that would notice the renderer
- * using a different factor from the module. `FAR_LAYER_BUDGET_UNITS` is the
- * derived worst case (`2·MAX_ORBIT_AU + ARRIVAL_CLEARANCE_AU`), not a flat 10⁴:
- * two seeds in 400 put a body past 10⁴, so that figure is a comfort target and
- * a probe asserting it would go red on a legitimate world.
+ * browser at the distances that can actually violate it.
+ *
+ * Against `F32_JITTER_UNITS`, read off the page — **not** a bound derived from
+ * the generator's envelope. An earlier version restated
+ * `(2·MAX_ORBIT_AU + ARRIVAL_CLEARANCE_AU) · AU_KM · FAR_SCALE` as literals,
+ * which put a second copy of the unit scheme in a file whose whole contract is
+ * to read it off the page: widening `MAX_ORBIT_AU` would have reddened this
+ * probe against a correct renderer, and shrinking `FAR_SCALE` would have made it
+ * pass vacuously.
+ *
+ * The ceiling here is a property of the coordinate space rather than of the
+ * content, so it survives both. The tighter content-derived bound is asserted in
+ * `sim.test.ts`, which can import the generator's constants instead of copying
+ * them.
  */
 function checkScale(b) {
 	if (b.layer === "far") {
 		const drawn = Math.hypot(b.mesh.x, b.mesh.y, b.mesh.z);
+		const ceiling = state.units.F32_JITTER_UNITS;
 		check(
 			`${b.id}'s far-layer coordinate fits in float32`,
-			drawn < FAR_LAYER_BUDGET_UNITS,
-			`|p| = ${drawn.toExponential(2)} units, bound ${FAR_LAYER_BUDGET_UNITS.toExponential(1)}`,
+			drawn < ceiling,
+			`|p| = ${drawn.toExponential(2)} units, ceiling ${ceiling.toExponential(1)}`,
 		);
 	}
 	// Position and radius must be scaled by the *same* factor, or the body's
@@ -289,11 +291,20 @@ function checkScale(b) {
 	);
 }
 
-for (const b of state.bodies) {
-	if (!b.mesh) {
-		check(`${b.id} has a mesh`, false);
-		continue;
-	}
+/**
+ * Bodies with a mesh, checked once.
+ *
+ * Both loops below need this and both used to open with the same guard, so a
+ * body with no mesh produced two FAIL lines and inflated the denominator in the
+ * summary — one defect reported as two.
+ */
+const drawn = state.bodies.filter((b) => {
+	if (b.mesh) return true;
+	check(`${b.id} has a mesh`, false);
+	return false;
+});
+
+for (const b of drawn) {
 	if (!checkLayer(b, rangeOf(b))) continue;
 	checkScale(b);
 }

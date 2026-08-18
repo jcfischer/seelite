@@ -239,8 +239,14 @@ for (const multiple of SAMPLES) {
 		continue;
 	}
 
-	const threshold = expectedLayer === "near" ? setup.hysteresis : 1;
-	expectedLayer = multiple <= threshold ? "near" : "far";
+	// From the distance actually measured, not the one requested. The station is
+	// on an orbit and the read happens two frames after the write, so at the
+	// 1.001×/0.999× samples the ship's requested standoff and its real one differ
+	// by enough (0.1% of 10,000 km is 10 km) for drift to flip the expectation and
+	// produce a false red.
+	const threshold =
+		setup.handoffKm * (expectedLayer === "near" ? setup.hysteresis : 1);
+	expectedLayer = s.trueDistance <= threshold ? "near" : "far";
 	check(
 		`${multiple}× handoff: drawn in the ${expectedLayer} layer`,
 		s.layer === expectedLayer,

@@ -98,6 +98,9 @@ export interface System {
 	contents: SystemContents;
 	/** Those contents positioned at the world's `gameTime`. */
 	bodies: Body[];
+	/** The same bodies by id. Built once — the id set is fixed for a system's
+	 *  lifetime, and `advanceSystem` runs every frame. */
+	byId: Map<string, Body>;
 }
 
 export interface World {
@@ -222,7 +225,12 @@ export function makeSystem(record: SystemRecord, gameTime: number): System {
 		radiusKm: b.radiusKm,
 		color: colorFor(b, record, contents),
 	}));
-	return { record, contents, bodies };
+	return {
+		record,
+		contents,
+		bodies,
+		byId: new Map(bodies.map((b) => [b.id, b])),
+	};
 }
 
 /**
@@ -238,21 +246,22 @@ export function makeSystem(record: SystemRecord, gameTime: number): System {
  * filtered or sorted its output (skipping a destroyed station, say) would keep
  * running and assign positions to the wrong bodies, which reads on screen as
  * planets teleporting rather than as an error. Keying by id makes that a throw.
- * The cost is a `Map` of a dozen entries per frame, against a mis-assignment
- * that nothing else would catch.
+ *
+ * The lookup is built **once**, in `makeSystem`, not per frame: the id set is
+ * fixed for the lifetime of a system, so rebuilding a `Map` sixty times a second
+ * would be paying for a structure that never changes.
  */
 export function advanceSystem(system: System, gameTime: number): void {
 	const placed = placeBodies(system.contents, gameTime);
-	if (placed.length !== system.bodies.length) {
+	if (placed.length !== system.byId.size) {
 		throw new Error(
-			`placeBodies returned ${placed.length} bodies, system holds ${system.bodies.length}`,
+			`placeBodies returned ${placed.length} bodies, system holds ${system.byId.size}`,
 		);
 	}
-	const at = new Map(placed.map((p) => [p.id, p.pos]));
-	for (const body of system.bodies) {
-		const pos = at.get(body.id);
-		if (!pos) throw new Error(`placeBodies did not position ${body.id}`);
-		body.pos = pos;
+	for (const p of placed) {
+		const body = system.byId.get(p.id);
+		if (!body) throw new Error(`placeBodies produced unknown body ${p.id}`);
+		body.pos = p.pos;
 	}
 }
 
