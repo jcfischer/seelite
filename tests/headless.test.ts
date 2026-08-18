@@ -23,7 +23,17 @@
 import { expect, test } from "bun:test";
 import { codeOf } from "./lib/source-scan";
 
-const HEADLESS = ["audio", "backdrop", "noise", "rng", "sim", "units"] as const;
+const HEADLESS = [
+	"audio",
+	"backdrop",
+	"galaxy",
+	"names",
+	"noise",
+	"rng",
+	"sim",
+	"system",
+	"units",
+] as const;
 
 test("no DOM is present in this runtime", () => {
 	// The control. Every assertion below is worthless if something has quietly
@@ -48,7 +58,17 @@ test("no module has been quietly dropped from the list", () => {
 	// module added to `HEADLESS` alone would be listed, loaded, and entirely
 	// unguarded, so deleting it later would leave this test green. That is
 	// exactly how it went wrong in seekolous.
-	const required = ["audio", "backdrop", "noise", "rng", "sim", "units"];
+	const required = [
+		"audio",
+		"backdrop",
+		"galaxy",
+		"names",
+		"noise",
+		"rng",
+		"sim",
+		"system",
+		"units",
+	];
 	const listed = new Set<string>(HEADLESS);
 	for (const name of required) expect(listed.has(name), name).toBe(true);
 	// The other direction, sorted rather than compared as sets so a failure

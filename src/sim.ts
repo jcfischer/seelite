@@ -22,10 +22,15 @@
  * **Placeholders**, and loudly so:
  *
  * - `generateSystem` invents a star, two planets and a station from a seed.
- *   System generation is an open decision on the map ("Galaxy & system
- *   generation spec"), and this is a stand-in so the scaffold has something to
- *   draw — not a proposal. When that node resolves, this function is replaced
- *   wholesale.
+ *   **The real generator now exists** — `galaxy.ts` and `system.ts`, built from
+ *   `docs/specs/galaxy-generation.md` — and this is still what the renderer
+ *   draws. The two are not the same shape: the real one produces 3–7 planets on
+ *   a rescaled orbit ladder, 1–3 typed stations on moving orbits, and positions
+ *   that are a function of a game clock this module does not yet have. Swapping
+ *   it in is a renderer change, not a rename, and it has its own node under
+ *   [#12](https://github.com/jcfischer/seelite/issues/12). Until then: nothing
+ *   here is a proposal about how systems are generated, and nothing new should
+ *   be built on this function.
  * - `stepShip` integrates Newtonian motion with a linear damping term. The
  *   flight model is also an open decision. The damping constant here was
  *   picked so a cube is steerable with a keyboard in a browser, which is not

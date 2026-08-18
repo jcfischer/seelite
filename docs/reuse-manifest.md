@@ -68,3 +68,41 @@ is all borrowed:
 All four come from the scale research
 ([#3](https://github.com/jcfischer/seelite/issues/3), `docs/research/space-scale-rendering.md`),
 not from seekolous.
+
+## Reuse from outside seekolous: Ian Bell's `txtelite.c`
+
+*Added 2026-08-18, executing the galaxy spec's §4.5 instruction as part of
+"Implement galaxy & system generation"
+([#12](https://github.com/jcfischer/seelite/issues/12)).*
+
+Everything above concerns one upstream. This section exists because the
+generator copies from a **second** one, and on different terms: seekolous is our
+own code moving between our own projects, while this is a third party's
+published work.
+
+| What crossed | Where it lives | Terms |
+| --- | --- | --- |
+| The 32-entry digram table (`pairs`) that system names are built from | `src/names.ts` | Ian Bell, `txtelite.c` v1.4 — his own published reference implementation of Elite's generator |
+| The `pairs0` table and its documented run-on into `pairs`, which the random-name token indexes | `src/names.ts` | as above |
+| The "goat soup" description grammar — 36 five-way option lists, the 0x33/0x66/0x99/0xCC thresholds, the `<name>ian` trailing-vowel rule | `src/names.ts` | Bell's file, itself adapted there from Christian Pinder's reverse-engineered sources |
+
+Read from the mirror at <https://github.com/richcarl/txtelite>
+(`txtelite-1.4.c`); Bell's own page is
+<http://www.iancgbell.clara.net/elite/text/>, which 404'd for the direct file
+when node [#4](https://github.com/jcfischer/seelite/issues/4) fetched it.
+
+**Why it is copied data rather than reimplemented technique.** The digram table
+is tuned so that any sequence of pairs is pronounceable, and that tuning is
+invisible in the data — a hand-rolled 32-entry table produces unsayable names
+and no test can tell you why. The grammar's value is likewise its word lists,
+not its recursion. Oolite ships the same tables and Bell published the file
+explicitly as a reference implementation, so this is well-trodden ground; what
+must not happen is the tables appearing in a source file with no attribution,
+which is why `src/names.ts` opens with the provenance and points here.
+
+**What is not Bell's.** Where the randomness comes from. `txtelite` drives all
+of this by advancing its 48-bit chain seed in place; seelite passes in a stream
+drawn from the system's own `NAME` / `DESC` domain, because that chain is the
+one thing the hash-per-system substrate exists to be rid of (spec §1). The
+2-character minimum in `systemName` is also ours — Bell's emit rule can produce
+an empty name, which §9.6 forbids.
