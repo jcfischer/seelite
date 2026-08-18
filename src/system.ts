@@ -52,7 +52,7 @@
  */
 
 import { DOMAIN, type SystemRecord, stream } from "./galaxy";
-import { type Vec3, dot, lengthSq } from "./sim";
+import { type Vec3, dot, lengthSq } from "./vec3";
 import { AU_KM } from "./units";
 
 /** Seconds in a Julian year, the unit Kepler III is written in below. */

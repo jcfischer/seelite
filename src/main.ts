@@ -29,12 +29,31 @@
  * star's glow spilling over a planet's limb is the whole reason bloom is here,
  * and per-layer post-processing would composite the glow behind it.
  *
+ * ## The layer a body draws in
+ *
+ * Its **distance**, not its kind. Every body is drawn in the near layer within
+ * `HANDOFF_KM` of the camera and in the far layer beyond it, with a hysteresis
+ * band so a body sitting on the threshold does not swap every frame.
+ *
+ * This replaced a fixed split — planets far, stations near — which was correct
+ * for a scaffold whose ship was parked 40 km off its only station and wrong the
+ * moment the real generator landed: a system's stations orbit planets an AU or
+ * more from the arrival point, and 1 AU drawn at 1:1 is fifty thousand times
+ * past the near camera's far plane. The fixed rule did not render them badly,
+ * it rendered nothing.
+ *
+ * Apparent size survives the swap because `FAR_SCALE` multiplies a body's
+ * position *and* its radius, so the angle it subtends is the same on both
+ * sides. `scripts/probe-handoff.mjs` is spec §9.10 measuring exactly that, and
+ * it is the check this content finally made possible.
+ *
  * ## What is a placeholder
  *
  * The flight controls. Yaw, pitch, roll and throttle on the keyboard, feeding
- * `stepShip`'s stand-in integrator. The flight model is an open decision on the
- * map; this is what makes the scaffold something you can fly around in while
- * that is unresolved, and it is expected to be deleted rather than tuned.
+ * `stepShip`'s stand-in integrator. #5 resolved the flight model to assisted
+ * Newtonian and none of it is built; this is what makes the game something you
+ * can fly around in meanwhile, and it is expected to be deleted rather than
+ * tuned.
  */
 
 import * as THREE from "three";
@@ -45,17 +64,28 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
 import { starField } from "./backdrop";
 import { AudioFX } from "./audio";
+import { GOVERNMENT_NAMES } from "./galaxy";
 import {
+	type Body,
 	type World,
 	add,
 	length,
 	makeWorld,
 	scale,
-	stepShip,
+	stepWorld,
 	sub,
 	v3,
 } from "./sim";
-import { BACKDROP_RADIUS, FAR_SCALE, NEAR_FAR_KM, NEAR_NEAR_KM } from "./units";
+import {
+	AU_KM,
+	BACKDROP_RADIUS,
+	FAR_FAR_UNITS,
+	FAR_NEAR_UNITS,
+	FAR_SCALE,
+	HANDOFF_KM,
+	NEAR_FAR_KM,
+	NEAR_NEAR_KM,
+} from "./units";
 
 /** How many stars the backdrop draws. Cheap at this count; the research puts
  *  the point where a `Points` layer starts costing anything nearer 10⁵. */
@@ -92,6 +122,17 @@ const CHASE_UP_KM = 0.04;
  *  puts the ship somewhere absurd. */
 const MAX_DT = 0.1;
 
+/**
+ * The hysteresis on the layer handoff: a body admitted to the near layer at
+ * `HANDOFF_KM` is not returned to the far layer until 5% further out.
+ *
+ * Not about the apparent size, which is identical either side by construction.
+ * It is about *ordering*: the near pass clears depth, so a body oscillating
+ * across the threshold would swap in front of and behind its neighbours on
+ * alternate frames. One band is cheaper than reasoning about when that matters.
+ */
+const HANDOFF_HYSTERESIS = 1.05;
+
 class Game {
 	readonly world: World;
 	readonly renderer: THREE.WebGLRenderer;
@@ -112,7 +153,16 @@ class Game {
 	 *  module docstring there says why. */
 	readonly orientation = new THREE.Quaternion();
 
-	private readonly meshes = new Map<string, THREE.Object3D>();
+	private readonly meshes = new Map<string, THREE.Mesh>();
+	/**
+	 * Which layer each body is currently drawn in.
+	 *
+	 * Held rather than recomputed from the scene graph, because reading it back
+	 * out of an `Object3D` is exactly what rule 2 above forbids — and because the
+	 * hysteresis makes the answer depend on the previous frame, which the scene
+	 * graph does not record.
+	 */
+	private readonly layers = new Map<string, "near" | "far">();
 	private shipMesh!: THREE.Mesh;
 	private stars!: THREE.Points;
 	private starMaterial!: THREE.ShaderMaterial;
@@ -125,8 +175,20 @@ class Game {
 	/** Frames drawn since boot. A probe's cheapest proof that the loop runs. */
 	frames = 0;
 
+	/**
+	 * The unit scheme, reachable from the handle.
+	 *
+	 * A probe that restated `HANDOFF_KM` would be asserting against its own copy
+	 * of the number, and would keep passing after the module changed it — which
+	 * is the one failure a layer-handoff probe must not have. Reading it from the
+	 * page means the probe and the renderer cannot disagree about where the
+	 * threshold is, only about whether the geometry respects it.
+	 */
+	readonly units = { AU_KM, FAR_SCALE, HANDOFF_KM, NEAR_FAR_KM } as const;
+
 	constructor(seed: number) {
 		this.world = makeWorld(seed);
+		this.faceTheStar();
 
 		this.renderer = new THREE.WebGLRenderer({
 			antialias: true,
@@ -155,9 +217,15 @@ class Game {
 			0.1,
 			BACKDROP_RADIUS * 2,
 		);
-		// 1 unit = 100,000 km at FAR_SCALE, so a near plane of 1 excludes only
-		// what the near layer is already drawing.
-		this.farCamera = new THREE.PerspectiveCamera(fov, aspect, 1, 1e6);
+		// Both planes come from `units.ts`, which says where they come from: the
+		// near one has to admit a body that has not yet crossed `HANDOFF_KM`, and
+		// the far one is set by the widest orbit the generator can produce.
+		this.farCamera = new THREE.PerspectiveCamera(
+			fov,
+			aspect,
+			FAR_NEAR_UNITS,
+			FAR_FAR_UNITS,
+		);
 		this.nearCamera = new THREE.PerspectiveCamera(
 			fov,
 			aspect,
@@ -207,6 +275,34 @@ class Game {
 		});
 
 		this.animate();
+	}
+
+	/**
+	 * Point the ship inward on a new game.
+	 *
+	 * The arrival bearing is drawn from the system's own stream and points
+	 * *outward* — 1 AU from the star, in an arbitrary direction. A ship left at
+	 * the identity quaternion there is looking at whatever the bearing happens to
+	 * face, which most of the time is empty sky, and the first thing a player sees
+	 * of a newly generated system is nothing in it.
+	 *
+	 * Normalised in float64 before Three sees it: the ship's position is ~1.5·10⁸
+	 * km and a `Vector3` is float32, so handing it the raw coordinates would
+	 * quantise the direction before it was a direction. The magnitude is what does
+	 * not survive float32, and normalising is exactly the operation that discards
+	 * it.
+	 */
+	private faceTheStar() {
+		const d = length(this.world.ship.pos);
+		if (d === 0) return;
+		const inward = scale(this.world.ship.pos, -1 / d);
+		this.orientation.setFromRotationMatrix(
+			new THREE.Matrix4().lookAt(
+				new THREE.Vector3(0, 0, 0),
+				new THREE.Vector3(inward.x, inward.y, inward.z),
+				new THREE.Vector3(0, 1, 0),
+			),
+		);
 	}
 
 	private buildBackdrop() {
@@ -270,10 +366,15 @@ class Game {
 	}
 
 	private buildBodies() {
+		// One unit sphere, shared by every body, sized per body with `mesh.scale`.
+		//
+		// Not a memory saving — it is what makes the handoff a scale assignment
+		// rather than a geometry rebuild. Baking the radius into the geometry means
+		// a body crossing `HANDOFF_KM` has to be re-tessellated at the new scale
+		// mid-flight, which allocates on the frame the player is most likely to be
+		// looking at the thing.
+		const unitSphere = new THREE.SphereGeometry(1, 32, 16);
 		for (const body of this.world.system.bodies) {
-			const far = body.kind !== "station";
-			const radius = far ? body.radiusKm * FAR_SCALE : body.radiusKm;
-			const geometry = new THREE.SphereGeometry(radius, 32, 16);
 			const material =
 				body.kind === "star"
 					? new THREE.MeshBasicMaterial({ color: body.color })
@@ -282,10 +383,14 @@ class Game {
 							roughness: 0.9,
 							metalness: 0.0,
 						});
-			const mesh = new THREE.Mesh(geometry, material);
+			const mesh = new THREE.Mesh(unitSphere, material);
 			mesh.name = body.id;
 			this.meshes.set(body.id, mesh);
-			(far ? this.farScene : this.nearScene).add(mesh);
+			// Everything starts far. The arrival point is 1 AU from the star and a
+			// real crossing from every station, so this is the truth on frame one
+			// rather than a default — and `render` corrects it before the first draw
+			// in any case.
+			this.setLayer(body, "far");
 		}
 
 		// One light per layer, both standing in for the same star. A single light
@@ -318,6 +423,34 @@ class Game {
 		const fill = new THREE.DirectionalLight(0x9fb6d0, 0.9);
 		fill.name = "fill";
 		this.nearScene.add(fill);
+	}
+
+	/**
+	 * Move a body into a layer and size it for that layer's scale.
+	 *
+	 * The two halves are one operation and must stay one: a mesh reparented
+	 * without being rescaled is drawn 10⁵ times too large or too small, which for
+	 * a planet at the near scale fills the screen with a flat colour that reads as
+	 * a shader bug rather than as a misplaced sphere.
+	 *
+	 * `Object3D.add` removes the mesh from its previous parent, so there is no
+	 * `remove` to forget.
+	 */
+	private setLayer(body: Body, layer: "near" | "far") {
+		const mesh = this.meshes.get(body.id);
+		if (!mesh) return;
+		const k = layer === "near" ? 1 : FAR_SCALE;
+		mesh.scale.setScalar(body.radiusKm * k);
+		(layer === "near" ? this.nearScene : this.farScene).add(mesh);
+		this.layers.set(body.id, layer);
+	}
+
+	/** Which layer a body belongs in at `distanceKm`, given where it is now. */
+	private layerFor(id: string, distanceKm: number): "near" | "far" {
+		const current = this.layers.get(id);
+		const threshold =
+			current === "near" ? HANDOFF_KM * HANDOFF_HYSTERESIS : HANDOFF_KM;
+		return distanceKm <= threshold ? "near" : "far";
 	}
 
 	private buildShip() {
@@ -391,7 +524,10 @@ class Game {
 			forward.y * THRUST * this.throttle,
 			forward.z * THRUST * this.throttle,
 		);
-		stepShip(this.world.ship, accel, dt);
+		// The whole world, not just the ship: `dt` is sim seconds and the bodies
+		// are on orbits driven by the same clock. Stepping the ship alone would
+		// freeze the system around it, which is the state the scaffold was in.
+		stepWorld(this.world, accel, dt);
 	}
 
 	/** Where the camera is in *sim* space — behind and above the ship. */
@@ -434,7 +570,14 @@ class Game {
 			const mesh = this.meshes.get(body.id);
 			if (!mesh) continue;
 			const rel = sub(body.pos, camPos);
-			const k = body.kind === "station" ? 1 : FAR_SCALE;
+			// The distance is computed here and the layer chosen from it, so the
+			// mesh is placed in the same pass it may have just been reparented by —
+			// a body that changed layer and kept last frame's position would be
+			// drawn at the new scale in the old place, for one frame, in front of
+			// the player.
+			const layer = this.layerFor(body.id, length(rel));
+			if (layer !== this.layers.get(body.id)) this.setLayer(body, layer);
+			const k = layer === "near" ? 1 : FAR_SCALE;
 			mesh.position.set(rel.x * k, rel.y * k, rel.z * k);
 		}
 
@@ -484,16 +627,30 @@ class Game {
 
 	private updateHud() {
 		if (!this.hud) return;
-		const speed = length(this.world.ship.vel);
-		const station = this.world.system.bodies.find((b) => b.kind === "station");
-		const range = station
-			? length(sub(station.pos, this.world.ship.pos))
-			: Number.NaN;
+		const { ship, system, gameTime } = this.world;
+		const speed = length(ship.vel);
+
+		// Nearest station rather than "the" station: a system has 1–3 of them
+		// (#6) and which one is closest changes as they orbit. The range is the
+		// number that makes the scale legible — it is normally an AU or more, which
+		// is the whole reason #10 exists.
+		let nearest: { id: string; km: number } | null = null;
+		for (const b of system.bodies) {
+			if (b.kind !== "station") continue;
+			const km = length(sub(b.pos, ship.pos));
+			if (!nearest || km < nearest.km) nearest = { id: b.id, km };
+		}
+
+		const r = system.record;
 		this.hud.textContent =
-			`seed ${this.world.seed}   ` +
+			`${r.name}  TL ${r.displayTL}  ${GOVERNMENT_NAMES[r.government]}   ` +
+			`t+${clock(gameTime)}   ` +
 			`throttle ${(this.throttle * 100).toFixed(0)}%   ` +
 			`${speed.toFixed(3)} km/s   ` +
-			`station ${range.toFixed(1)} km`;
+			(nearest
+				? `${nearest.id} ${range(nearest.km)}`
+				: "no station in system") +
+			`   seed ${this.world.seed}`;
 	}
 
 	private onResize() {
@@ -508,6 +665,20 @@ class Game {
 		this.starMaterial.uniforms.uPixelScale.value =
 			this.renderer.domElement.height * STAR_PIXEL_SCALE;
 	}
+}
+
+/** Sim seconds as `h:mm:ss`. The clock is authoritative for body positions
+ *  (spec §7.3), so it is worth being able to read it off the screen. */
+function clock(seconds: number): string {
+	const s = Math.floor(seconds);
+	const pad = (n: number) => String(n).padStart(2, "0");
+	return `${Math.floor(s / 3600)}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}`;
+}
+
+/** A distance in the unit that makes it readable: kilometres up close, AU once
+ *  the kilometre figure has stopped meaning anything to a human. */
+function range(km: number): string {
+	return km < 1e5 ? `${km.toFixed(1)} km` : `${(km / AU_KM).toFixed(3)} AU`;
 }
 
 /**

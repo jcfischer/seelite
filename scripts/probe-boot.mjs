@@ -15,9 +15,12 @@
  * 1. **The page boots without throwing.** A `pageerror` is a failure, not a log
  *    line. Everything below reads numbers off a live game, and a game whose
  *    loop died still answers most of those questions with plausible values.
- * 2. **The layers are populated and separated.** A star in the near scene or a
- *    station in the far scene renders at the wrong scale by a factor of 10⁵,
- *    which on screen looks like "it isn't there" rather than like a bug.
+ * 2. **The layers are populated and separated.** A body in the wrong scene
+ *    renders at the wrong scale by a factor of 10⁵, which on screen looks like
+ *    "it isn't there" rather than like a bug. The rule is distance, not kind —
+ *    within `HANDOFF_KM` of the camera a body is near, beyond it far — and the
+ *    threshold is read off the page rather than restated here. The crossing
+ *    itself is `probe-handoff.mjs`; this checks the standing assignment.
  * 3. **Camera-relative placement holds.** Each mesh's rendered position must
  *    equal `simPos - cameraPos`, scaled by its layer's factor. This is the one
  *    invariant the whole scale design rests on, and the way it breaks — a
@@ -111,10 +114,14 @@ const state = await page.evaluate(() => {
 			id: b.id,
 			kind: b.kind,
 			layer: layerOf(b.id),
+			radiusKm: b.radiusKm,
 			sim: { x: b.pos.x, y: b.pos.y, z: b.pos.z },
 			mesh: mesh
 				? { x: mesh.position.x, y: mesh.position.y, z: mesh.position.z }
 				: null,
+			// The mesh is a unit sphere sized by `scale`, so this is its drawn
+			// radius in whatever units its layer draws in.
+			meshRadius: mesh ? mesh.scale.x : null,
 		};
 	});
 
@@ -126,6 +133,11 @@ const state = await page.evaluate(() => {
 	return {
 		seed: g.world.seed,
 		frames: g.frames,
+		gameTime: g.world.gameTime,
+		systemName: g.world.system.record.name,
+		// The unit scheme, read from the page rather than restated here, so this
+		// probe cannot disagree with the module about what its numbers are.
+		units: { ...g.units },
 		camPos,
 		shipSim: { x: ship.pos.x, y: ship.pos.y, z: ship.pos.z },
 		shipMesh: (() => {
@@ -139,19 +151,6 @@ const state = await page.evaluate(() => {
 			w: g.renderer.domElement.width,
 			h: g.renderer.domElement.height,
 		},
-		// The unit scheme, read from the page rather than restated here, so this
-		// probe cannot disagree with the module about what FAR_SCALE is.
-		farScale:
-			g.world.system.bodies.length > 0
-				? (() => {
-						// Derive it from the star: its mesh radius over its real radius.
-						const star = g.world.system.bodies.find((b) => b.kind === "star");
-						const mesh = g.farScene.getObjectByName(star.id);
-						return mesh
-							? mesh.geometry.parameters.radius / star.radiusKm
-							: null;
-					})()
-				: null,
 	};
 });
 
@@ -172,13 +171,57 @@ check(
 const camLen = Math.hypot(state.camPos.x, state.camPos.y, state.camPos.z);
 check("the camera sits at the origin", camLen === 0, `|camera| = ${camLen}`);
 
-// (2) Layer membership. Stars and planets are far; the station is near.
+// (1b) The world is the generated one, not a stand-in.
+//
+// Cheap, and it is the claim this probe would otherwise be silent about: every
+// geometric check below would pass just as well against two planets at fixed
+// positions. A named system with a full complement of bodies is what says the
+// renderer is drawing `galaxy.ts`'s output.
+check(
+	"the world is a named system from the generator",
+	/^[A-Z]{2,8}$/.test(state.systemName ?? ""),
+	`system ${JSON.stringify(state.systemName)}`,
+);
+const stations = state.bodies.filter((b) => b.kind === "station");
+check(
+	"the system has between one and three stations",
+	stations.length >= 1 && stations.length <= 3,
+	`${stations.length}: ${stations.map((s) => s.id).join(", ")}`,
+);
+check(
+	"the system has planets on a ladder, not a fixed pair",
+	state.bodies.filter((b) => b.kind === "planet").length >= 1,
+	`${state.bodies.length} bodies in total`,
+);
+
+// (2) Layer membership, by distance rather than by kind.
+//
+// The threshold comes off the page, so this cannot drift from `units.ts`. At
+// the arrival point everything is far — §7.4 puts the ship at least 0.25 AU
+// from every body, which is four orders of magnitude past the handoff — and
+// asserting the *rule* rather than that expected outcome is what makes this
+// check keep working once something can approach.
 for (const b of state.bodies) {
-	const want = b.kind === "station" ? "near" : "far";
+	const d = Math.hypot(
+		b.sim.x - state.shipSim.x,
+		b.sim.y - state.shipSim.y,
+		b.sim.z - state.shipSim.z,
+	);
+	const want = d <= state.units.HANDOFF_KM ? "near" : "far";
 	check(
-		`${b.id} is in the ${want} layer`,
+		`${b.id} is in the ${want} layer at ${d.toExponential(2)} km`,
 		b.layer === want,
 		`found in ${b.layer}`,
+	);
+	// Position and radius must be scaled by the *same* factor, or the body's
+	// angular size is wrong — which is the property the whole scaled-space trick
+	// buys and the one a handoff can silently break.
+	const k = b.layer === "near" ? 1 : state.units.FAR_SCALE;
+	check(
+		`${b.id} is sized for the layer it is in`,
+		b.meshRadius !== null &&
+			Math.abs(b.meshRadius - b.radiusKm * k) < 1e-6 * b.radiusKm * k,
+		`drawn radius ${b.meshRadius}, expected ${b.radiusKm * k}`,
 	);
 }
 check(
@@ -260,24 +303,32 @@ if (state.shipMesh) {
 	// An absolute anchor, because everything above is relative to a camera
 	// recovered from one of the meshes it then checks. If every mesh were placed
 	// against the same wrong origin, those checks would agree with each other and
-	// say nothing. This one does not go through `camSim`: the station is 40 km
-	// from the ship in sim space, so it must render about 40 units away — the
-	// chase offset is the only difference, and it is metres.
-	const station = state.bodies.find((b) => b.kind === "station");
-	if (station?.mesh) {
-		const drawn = Math.hypot(station.mesh.x, station.mesh.y, station.mesh.z);
-		const real = Math.hypot(
-			station.sim.x - state.shipSim.x,
-			station.sim.y - state.shipSim.y,
-			station.sim.z - state.shipSim.z,
+	// say nothing.
+	//
+	// The star is that anchor and it needs no `camSim` at all: system frames are
+	// star-centred (§7.4), so its sim position is exactly the origin, and its
+	// drawn distance must therefore be the ship's own distance from the star
+	// times `FAR_SCALE`. The chase camera is the only difference and it is
+	// metres against an AU. The scaffold used the station for this, which worked
+	// only because a placeholder had pinned it 40 km away.
+	const star = state.bodies.find((b) => b.kind === "star");
+	if (star?.mesh) {
+		const drawn = Math.hypot(star.mesh.x, star.mesh.y, star.mesh.z);
+		const real =
+			Math.hypot(state.shipSim.x, state.shipSim.y, state.shipSim.z) *
+			state.units.FAR_SCALE;
+		check(
+			"the star renders at the ship's true distance from it",
+			Math.abs(drawn - real) < 1e-3 * real,
+			`drawn ${drawn.toFixed(3)}, expected ${real.toFixed(3)} far-units`,
 		);
 		check(
-			"the station renders at its true distance from the ship",
-			Math.abs(drawn - real) < 0.2,
-			`drawn ${drawn.toFixed(3)} km, actual ${real.toFixed(3)} km`,
+			"the ship is an astronomical distance out, not a placeholder's 40 km",
+			real / state.units.FAR_SCALE > 0.5 * state.units.AU_KM,
+			`${(real / state.units.FAR_SCALE / state.units.AU_KM).toFixed(3)} AU`,
 		);
 	} else {
-		check("the station has a mesh", false);
+		check("the star has a mesh", false);
 	}
 
 	for (const b of state.bodies) {
@@ -285,7 +336,7 @@ if (state.shipMesh) {
 			check(`${b.id} has a mesh`, false);
 			continue;
 		}
-		const k = b.kind === "station" ? 1 : state.farScale;
+		const k = b.layer === "near" ? 1 : state.units.FAR_SCALE;
 		const want = {
 			x: (b.sim.x - camSim.x) * k,
 			y: (b.sim.y - camSim.y) * k,
@@ -309,6 +360,45 @@ if (state.shipMesh) {
 } else {
 	check("the ship has a mesh", false);
 }
+
+// (3b) The clock runs, and the bodies read it.
+//
+// Body positions are `f(systemSeed, gameTime)` (§7.3), so a renderer that
+// stepped only the ship would show a system frozen mid-orbit — which looks
+// exactly like a correct one in a screenshot, and is the state the scaffold was
+// actually in. Both halves are needed: a clock that advances while nothing moves
+// is the same bug one field further along.
+const ticked = await page.evaluate(async () => {
+	const g = window.__seelite;
+	const sample = () => ({
+		t: g.world.gameTime,
+		bodies: g.world.system.bodies.map((b) => ({ ...b.pos })),
+	});
+	const before = sample();
+	await new Promise((r) => setTimeout(r, 600));
+	const after = sample();
+	const moved = after.bodies
+		.map((p, i) =>
+			Math.hypot(
+				p.x - before.bodies[i].x,
+				p.y - before.bodies[i].y,
+				p.z - before.bodies[i].z,
+			),
+		)
+		.filter((d) => d > 0).length;
+	return { dt: after.t - before.t, moved, total: after.bodies.length };
+});
+check(
+	"the game clock advances with the frame loop",
+	ticked.dt > 0.1,
+	`+${ticked.dt.toFixed(3)} s of sim time over ~0.6 s of wall time`,
+);
+check(
+	"the bodies move with the clock",
+	// Every body but the star, which is pinned to the origin by §7.4.
+	ticked.moved === ticked.total - 1,
+	`${ticked.moved} of ${ticked.total} moved`,
+);
 
 // (4) The seed reaches the backdrop — both halves.
 const reload = await open(URL);

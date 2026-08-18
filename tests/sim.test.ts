@@ -1,5 +1,13 @@
 /**
- * The float64 world: determinism, precision, and the integrator's shape.
+ * The float64 world: the clock, the adapter, and the integrator's shape.
+ *
+ * What this file used to guard was a placeholder generator that invented a star
+ * and two planets. That is gone, and so are its tests — the generator's own
+ * properties are `tests/galaxy.test.ts`'s business and duplicating them here
+ * would mean two files to change when the spec moves. What is left is the part
+ * `sim.ts` actually owns: that the clock drives the bodies, that the adapter
+ * hands the renderer a stable set of them, and that arithmetic at 1 AU still
+ * resolves metres.
  *
  * The precision test is the one worth having. The scale research settles that
  * sim positions are float64 kilometres and *render* positions are the float32
@@ -10,60 +18,178 @@
  */
 import { expect, test, describe } from "bun:test";
 import {
-	SHIP_START,
-	add,
-	generateSystem,
+	START_GALAXY,
+	advanceSystem,
 	length,
+	makeSystem,
 	makeWorld,
 	scale,
 	stepShip,
+	stepWorld,
 	sub,
 	v3,
 } from "../src/sim";
-import { AU_KM } from "../src/units";
+import { generateGalaxy, startSystem } from "../src/galaxy";
+import { ARRIVAL_CLEARANCE_AU, MAX_ORBIT_AU } from "../src/system";
+import { AU_KM, FAR_SCALE } from "../src/units";
+import {
+	add,
+	length as vecLength,
+	scale as vecScale,
+	sub as vecSub,
+} from "../src/vec3";
 
-describe("generateSystem", () => {
-	test("the same seed gives the same system", () => {
-		expect(generateSystem(42)).toEqual(generateSystem(42));
+const SEED = 20260818;
+
+describe("makeWorld", () => {
+	test("it starts in galaxy 0's start system, at t = 0", () => {
+		const world = makeWorld(SEED);
+		const expected = startSystem(generateGalaxy(SEED, START_GALAXY));
+		expect(world.gameTime).toBe(0);
+		expect(world.system.record.seed).toBe(expected.seed);
+		expect(world.system.record.name).toBe(expected.name);
+		// The start rule itself (spec §5.1) is galaxy.test.ts's; what is asserted
+		// here is that the world is wired to it rather than to an index.
+		expect(world.system.record.displayTL).toBeGreaterThanOrEqual(8);
+		expect(world.system.record.government).toBeGreaterThanOrEqual(5);
 	});
 
-	test("a different seed gives a different one", () => {
-		expect(generateSystem(42)).not.toEqual(generateSystem(43));
+	test("the same seed gives the same world, a different seed does not", () => {
+		const a = makeWorld(SEED);
+		const b = makeWorld(SEED);
+		const c = makeWorld(SEED + 1);
+		expect(a.ship.pos).toEqual(b.ship.pos);
+		expect(a.system.bodies).toEqual(b.system.bodies);
+		expect(a.system.record.seed).not.toBe(c.system.record.seed);
 	});
 
-	test("a body's parameters follow its identity, not the draw order", () => {
-		// The reason bodies are seeded through `mix(systemSeed, index)` rather
-		// than drawn in sequence: planet 1 must not move because planet 0 gained a
-		// parameter. Asserted as the property that buys it — the same index in two
-		// systems with the same seed is the same body — since the failure it
-		// guards against (an inserted draw shifting everything downstream) is one
-		// nothing else in the suite would report.
-		const a = generateSystem(4242);
-		const b = generateSystem(4242);
-		for (let i = 0; i < a.bodies.length; i++)
-			expect(a.bodies[i]).toEqual(b.bodies[i]);
-	});
-
-	test("it produces one star, some planets, and a station", () => {
-		const s = generateSystem(2026);
-		const kinds = s.bodies.map((b) => b.kind);
-		expect(kinds.filter((k) => k === "star").length).toBe(1);
-		expect(kinds.filter((k) => k === "planet").length).toBeGreaterThan(0);
-		expect(kinds.filter((k) => k === "station").length).toBe(1);
-	});
-
-	test("planets orbit at plausible distances and have real radii", () => {
-		const s = generateSystem(99);
-		for (const p of s.bodies.filter((b) => b.kind === "planet")) {
-			const au = length(p.pos) / AU_KM;
-			expect(au).toBeGreaterThan(0.5);
-			expect(au).toBeLessThan(4);
-			// Kilometres, not scene units. A radius that had silently been scaled
-			// would still render — at 1/100,000 of the size it should be, which on
-			// screen is indistinguishable from not being drawn.
-			expect(p.radiusKm).toBeGreaterThan(1000);
-			expect(p.radiusKm).toBeLessThan(1e6);
+	test("the ship starts at the arrival point, clear of every body", () => {
+		// §7.4's clearance, asserted through the world rather than through
+		// `arrivalPoint` directly — the value only protects the player if the thing
+		// that positions the ship is the thing that computed it.
+		const world = makeWorld(SEED);
+		const clearanceKm = ARRIVAL_CLEARANCE_AU * AU_KM;
+		for (const body of world.system.bodies) {
+			expect(length(sub(body.pos, world.ship.pos))).toBeGreaterThanOrEqual(
+				clearanceKm,
+			);
 		}
+		// And outside the star rather than merely clear of it, which is the failure
+		// that looks like a rendering bug instead of a placement one.
+		expect(length(world.ship.pos)).toBeGreaterThan(0.5 * AU_KM);
+	});
+
+	test("it produces a real system: one star, planets, at least one station", () => {
+		const kinds = makeWorld(SEED).system.bodies.map((b) => b.kind);
+		expect(kinds.filter((k) => k === "star").length).toBe(1);
+		expect(kinds.filter((k) => k === "planet").length).toBeGreaterThanOrEqual(
+			1,
+		);
+		// The trade station is unconditional (§6.4), so a system with none is a
+		// dead end and this is not a soft expectation.
+		expect(kinds.filter((k) => k === "station").length).toBeGreaterThanOrEqual(
+			1,
+		);
+	});
+
+	test("every body carries a colour the renderer can use", () => {
+		// `PlacedBody` has no appearance; supplying one is this module's job, and a
+		// body that arrived without it would render black rather than throw.
+		for (const body of makeWorld(SEED).system.bodies) {
+			expect(Number.isInteger(body.color)).toBe(true);
+			expect(body.color).toBeGreaterThanOrEqual(0);
+			expect(body.color).toBeLessThanOrEqual(0xffffff);
+		}
+	});
+
+	test("moons are carried through as their own bodies", () => {
+		// A named seed, because `SEED`'s start system happens to have no gas giant
+		// with moons and so exercises none of this. Leaving the moon path to
+		// whichever system a default seed produced is how a branch goes untested
+		// while the suite reads as covering it — the placeholder had no moons at
+		// all, so nothing downstream had ever seen one.
+		const world = makeWorld(1);
+		const moons = world.system.bodies.filter((b) => b.kind === "moon");
+		expect(moons.length).toBeGreaterThan(0);
+		for (const moon of moons) {
+			// `placeBodies` returns a moon's position already offset by its planet's,
+			// so a moon must sit within its own orbit radius of that planet and not
+			// at the system origin — the failure a forgotten offset produces.
+			const planetId = moon.id.replace(/-moon-\d+$/, "");
+			const planet = world.system.bodies.find((b) => b.id === planetId);
+			expect(planet).toBeDefined();
+			const gap = length(sub(moon.pos, planet!.pos));
+			expect(gap).toBeGreaterThan(planet!.radiusKm);
+			expect(gap).toBeLessThan(1e7);
+			expect(Number.isInteger(moon.color)).toBe(true);
+		}
+	});
+});
+
+describe("the game clock", () => {
+	const record = () => startSystem(generateGalaxy(SEED, START_GALAXY));
+
+	test("the body order does not depend on the clock", () => {
+		// The invariant `advanceSystem` rests on: it writes positions back by
+		// index, so a `placeBodies` whose output order varied with `gameTime` would
+		// silently swap two bodies' positions rather than fail.
+		const at0 = makeSystem(record(), 0).bodies.map((b) => `${b.kind}:${b.id}`);
+		const at1e7 = makeSystem(record(), 1e7).bodies.map(
+			(b) => `${b.kind}:${b.id}`,
+		);
+		expect(at1e7).toEqual(at0);
+	});
+
+	test("advancing the clock moves the bodies", () => {
+		const system = makeSystem(record(), 0);
+		const before = system.bodies.map((b) => ({ ...b.pos }));
+		// A quarter of a year: every orbit in the envelope (0.3–6 AU) has moved a
+		// visible fraction of its period by then.
+		advanceSystem(system, 86400 * 91);
+		const moved = system.bodies.filter(
+			(b, i) => length(sub(b.pos, before[i])) > 1,
+		);
+		// Everything but the star, which sits at the origin by construction (§7.4).
+		expect(moved.length).toBe(system.bodies.length - 1);
+		expect(system.bodies.find((b) => b.kind === "star")?.pos).toEqual(
+			v3(0, 0, 0),
+		);
+	});
+
+	test("a position is a function of the clock, not of how it got there", () => {
+		// The property that makes the clock saveable: loading a save jumps straight
+		// to a `gameTime` rather than replaying every frame that produced it.
+		const stepped = makeSystem(record(), 0);
+		for (let t = 0; t <= 5000; t += 250) advanceSystem(stepped, t);
+		const direct = makeSystem(record(), 5000);
+		expect(stepped.bodies.map((b) => b.pos)).toEqual(
+			direct.bodies.map((b) => b.pos),
+		);
+	});
+
+	test("stepWorld advances sim time by exactly dt", () => {
+		// Never compressed (#10). Cruise is fictional FTL, not a time-scale hack,
+		// so a multiplier appearing here is the thing the constraint forbids.
+		const world = makeWorld(SEED);
+		stepWorld(world, v3(0, 0, 0), 0.5);
+		stepWorld(world, v3(0, 0, 0), 0.25);
+		expect(world.gameTime).toBeCloseTo(0.75, 12);
+	});
+
+	test("stepWorld moves the ship and the bodies together", () => {
+		const world = makeWorld(SEED);
+		const bodyBefore = { ...world.system.bodies[1].pos };
+		// Frame-sized steps rather than one 60-second one. `SHIP_DAMPING` is a
+		// per-second linear factor, so a `dt` past 1/0.6 drives it negative and the
+		// clamp zeroes the velocity outright — a step that large is outside what
+		// the stand-in integrator means, and `MAX_DT` is why the game never takes
+		// one.
+		for (let i = 0; i < 100; i++) stepWorld(world, v3(0, 0, -1), 0.1);
+		expect(world.gameTime).toBeCloseTo(10, 9);
+		expect(length(world.ship.vel)).toBeGreaterThan(0);
+		expect(length(sub(world.system.bodies[1].pos, bodyBefore))).toBeGreaterThan(
+			0,
+		);
 	});
 });
 
@@ -86,30 +212,36 @@ describe("float64 sim space", () => {
 		expect(Math.abs(length(sub(b, a)) - 0.001)).toBeLessThan(1e-7);
 	});
 
-	test("a camera-relative difference is small enough for float32", () => {
-		// What the renderer actually hands the GPU. Two bodies 1 AU from the origin
-		// and a few hundred km apart must differ by a few hundred, not by 1.5e8 —
-		// that difference being small is the entire reason the camera sits at the
-		// origin.
-		const world = makeWorld(20260818);
-		const station = world.system.bodies.find((b) => b.kind === "station");
-		expect(station).toBeDefined();
-		const rel = sub(station!.pos, world.ship.pos);
-		expect(length(rel)).toBeLessThan(1e4);
-		// And the round trip through float32 keeps metre resolution at that size.
-		const f32 = Math.fround(rel.z);
-		expect(Math.abs(f32 - rel.z)).toBeLessThan(0.001);
+	test("a far-layer coordinate stays inside the float32 budget", () => {
+		// What the renderer actually hands the GPU, now that the world is real.
+		//
+		// The scaffold's version of this test measured a station 40 km away and
+		// concluded the near layer was fine — a claim about a placeholder's chosen
+		// constant, not about the scheme. The claim worth pinning is the far
+		// layer's, because that is the one with a bound to violate: every body in a
+		// generated system, seen from the arrival point, must land inside ~10⁴
+		// render units or the quantisation is visible as jitter.
+		const world = makeWorld(SEED);
+		for (const body of world.system.bodies) {
+			const rel = scale(sub(body.pos, world.ship.pos), FAR_SCALE);
+			expect(length(rel)).toBeLessThan(1e4);
+		}
+		// The bound the constant above is derived from, checked rather than
+		// assumed: nothing orbits outside the envelope, so nothing can be more than
+		// a couple of envelope-widths from the ship.
+		expect(MAX_ORBIT_AU * AU_KM * FAR_SCALE).toBeLessThan(1e4);
 	});
 
-	test("the ship starts off the station rather than inside the star", () => {
-		const world = makeWorld(1);
-		const star = world.system.bodies.find((b) => b.kind === "star")!;
-		// A ship at the origin would be inside the star, which is both wrong and
-		// the kind of wrong that looks like a rendering bug.
-		expect(length(sub(world.ship.pos, star.pos))).toBeGreaterThan(
-			star.radiusKm * 10,
-		);
-		expect(world.ship.pos).toEqual(SHIP_START);
+	test("a camera-relative difference keeps metre resolution in float32", () => {
+		// The near layer's half. Two points a few hundred metres apart at 1 AU must
+		// still differ by a few hundred metres after the trip through float32 —
+		// that difference being small is the entire reason the camera sits at the
+		// origin.
+		const a = v3(AU_KM, 0, 0);
+		const b = add(a, v3(0, 0, 0.4));
+		const rel = sub(b, a);
+		expect(length(rel)).toBeCloseTo(0.4, 9);
+		expect(Math.abs(Math.fround(rel.z) - rel.z)).toBeLessThan(0.001);
 	});
 });
 
@@ -144,9 +276,9 @@ describe("stepShip", () => {
 
 	test("coasting decays", () => {
 		// The stand-in flight model's one behavioural claim: release the throttle
-		// and you slow down. It is a placeholder — the flight-model node may
-		// delete it outright — so this asserts the direction and nothing about the
-		// rate.
+		// and you slow down. It is a placeholder — the flight-model implementation
+		// may delete it outright — so this asserts the direction and nothing about
+		// the rate.
 		const ship = { pos: v3(0, 0, 0), vel: v3(0, 0, -1) };
 		const before = length(ship.vel);
 		for (let i = 0; i < 10; i++) stepShip(ship, v3(0, 0, 0), 0.1);
@@ -182,5 +314,17 @@ describe("vector helpers", () => {
 		sub(a, v3(5, 5, 5));
 		scale(a, 100);
 		expect(a).toEqual(v3(1, 1, 1));
+	});
+
+	test("sim.ts re-exports the leaf rather than owning a second copy", () => {
+		// The vectors moved to `vec3.ts` to break an import cycle, and `sim.ts`
+		// re-exports them so its callers did not all have to change at once. Two
+		// implementations is the failure that refactor could produce, and it would
+		// not show up as a type error — both would satisfy `Vec3`. Asserted as
+		// function identity, which is the only form of it that cannot pass by
+		// coincidence.
+		expect(scale).toBe(vecScale);
+		expect(length).toBe(vecLength);
+		expect(sub).toBe(vecSub);
 	});
 });
