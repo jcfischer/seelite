@@ -16,18 +16,20 @@
  */
 import { expect, test } from "bun:test";
 import {
-	ASSIST_CAP_KMS,
 	CHARGE_CAPACITY_AU,
+	CHARGE_PER_AU,
 	CHARGE_REGEN_AU_PER_S,
 	DEFAULT_CRUISE,
 	SUBSTEP_FRACTION,
 	advanceCruise,
 	chargeAfterRegen,
+	chargeAfterTravel,
 	closingSpeed,
 	cruiseSpeed,
 	exitVelocity,
 	nearestMass,
 } from "../src/cruise";
+import { ASSIST_CAP_KMS } from "../src/sim";
 import { ARRIVAL_CLEARANCE_AU, MAX_ORBIT_AU } from "../src/system";
 import { AU_KM, HANDOFF_KM } from "../src/units";
 import { type Vec3, add, length, scale, sub, v3 } from "../src/vec3";
@@ -342,18 +344,55 @@ test("exit velocity is along the nose and no faster than the assist cap", () => 
 // --------------------------------------------------------------- §9.6 drive charge
 
 test("charge is spent per AU travelled, not per second", () => {
-	// §7's honest unit: crawling through a gravity well already costs time, and
-	// metering by the second would charge twice for the same detour.
-	const target = { pos: v3(), radiusKm: 6000 };
-	const flight = fly({
-		from: v3(1.3 * AU_KM, 0, 0),
-		target,
-		masses: oneMassAt(target.pos, target.radiusKm),
-		dt: 0.1,
-		limitS: 300,
-	});
-	// Distance travelled is the leg, to within the drop radius it stopped short by.
-	expect(flight.travelledKm / AU_KM).toBeCloseTo(1.3, 2);
+	// §7's honest unit: crawling slowly through a gravity well already costs
+	// time, and metering by the second would charge twice for the same detour.
+	//
+	// Two legs of the **same length** — one crossed in deep space at the cap, one
+	// crawled through a gravity well over many times as long — must cost the same
+	// charge. An earlier version of this test asserted only that the ship covered
+	// the distance it set out to, which a per-second meter would have passed
+	// unchanged.
+	const legKm = 2e6;
+	const spend = (massAt: Vec3) => {
+		const target = { pos: v3(), radiusKm: 6000 };
+		let pos = v3(legKm, 0, 0);
+		let charge = CHARGE_CAPACITY_AU;
+		let seconds = 0;
+		while (seconds < 900 && pos.x > legKm * 0.02) {
+			const step = advanceCruise({
+				pos,
+				nose: v3(-1, 0, 0),
+				throttle: 1,
+				dt: 0.1,
+				masses: oneMassAt(massAt),
+				target,
+				params: { ...P, dropSpeedKms: 0 },
+				chargeAu: charge,
+			});
+			pos = step.pos;
+			charge = chargeAfterTravel(charge, step.travelledKm);
+			seconds += 0.1;
+		}
+		return { spent: CHARGE_CAPACITY_AU - charge, seconds, endX: pos.x };
+	};
+
+	// The well sits just off the line, so the same kilometres take far longer.
+	const fast = spend(v3(0, 30 * AU_KM, 0));
+	const slow = spend(v3(legKm * 0.5, 2e4, 0));
+	expect(slow.seconds).toBeGreaterThan(fast.seconds * 5);
+	// Per kilometre, because the two runs stop on the same *position* test and a
+	// sub-step lands them a little differently — the claim is the rate, not the
+	// total.
+	const rate = (r: typeof fast) => r.spent / (legKm - r.endX);
+	expect(rate(slow)).toBeCloseTo(rate(fast), 12);
+	// And that rate is one unit per AU, not something merely proportional to it.
+	expect(rate(fast)).toBeCloseTo(CHARGE_PER_AU / AU_KM, 12);
+});
+
+test("the meter itself is per AU, and never goes below empty", () => {
+	expect(chargeAfterTravel(12, AU_KM)).toBeCloseTo(12 - CHARGE_PER_AU, 9);
+	expect(chargeAfterTravel(12, 0)).toBe(12);
+	expect(chargeAfterTravel(0.5, 3 * AU_KM)).toBe(0);
 });
 
 test("regeneration restores one AU a minute and stops at capacity", () => {

@@ -17,6 +17,14 @@
       canvas {
         display: block;
       }
+      /* The marker overlay sits on the glass, over the WebGL canvas and under
+         nothing — it never takes a click, so pointer lock still belongs to the
+         renderer's canvas beneath it. */
+      #overlay {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+      }
       #hud {
         position: fixed;
         left: 12px;
@@ -40,10 +48,11 @@
     </style>
   </head>
   <body>
+    <canvas id="overlay"></canvas>
     <div id="hud"></div>
     <div id="keys">
       W/S or ↑/↓ pitch · A/D or ←/→ yaw · Q/E roll · Shift/Ctrl throttle<br />
-      J cruise · T/G target · F face target · 0 reset dials
+      J cruise · T/G target · F face target · X assist · V view · 0 reset dials
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

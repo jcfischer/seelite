@@ -83,16 +83,22 @@ const flight = await page.evaluate(
 		// A station: small enough that every sample sits outside its radius, which
 		// is what keeps `radius / distance` an unambiguous angle. Same subject as
 		// `probe-handoff.mjs`, for the same reason.
+		// Small helpers rather than six spelled-out `Math.hypot` blocks — the
+		// distance between two points and the length of a vector, which is all
+		// this probe ever measures.
+		const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+		const mag = (v) => Math.hypot(v.x, v.y, v.z);
+
 		const station = g.world.system.bodies.find((b) => b.kind === "station");
 		if (!station) return { noStation: true };
 		g.targetId = station.id;
 		g.faceTarget();
 
-		const startKm = Math.hypot(
-			station.pos.x - g.world.ship.pos.x,
-			station.pos.y - g.world.ship.pos.y,
-			station.pos.z - g.world.ship.pos.z,
-		);
+		const startKm = dist(station.pos, g.world.ship.pos);
+		// The tank as the page has it, not as this file remembers it: §7's
+		// capacity is one of the numbers #14 exists to retune, and a probe holding
+		// its own copy goes falsely red the day it moves.
+		const chargeBefore = g.chargeAu;
 
 		g.engageCruise();
 		const samples = [];
@@ -126,11 +132,7 @@ const flight = await page.evaluate(
 			// drop-out will accept once inside the radius.
 			if (g.regime === "cruise") {
 				const body = g.world.system.byId.get(station.id);
-				const remaining = Math.hypot(
-					body.pos.x - g.world.ship.pos.x,
-					body.pos.y - g.world.ship.pos.y,
-					body.pos.z - g.world.ship.pos.z,
-				);
+				const remaining = dist(body.pos, g.world.ship.pos);
 				// The law's speed at full throttle, recovered from what the last
 				// frame actually did — the probe does not restate the curve.
 				const law = Math.max(
@@ -143,11 +145,7 @@ const flight = await page.evaluate(
 				// forever — which is what the second run of this probe did, parked
 				// 173 km out. Closing speed is a relative quantity and has to be
 				// flown as one.
-				const targetKms = Math.hypot(
-					g.targetVelocity().x,
-					g.targetVelocity().y,
-					g.targetVelocity().z,
-				);
+				const targetKms = mag(g.targetVelocity());
 				const closingWant = Math.min(
 					remaining / 6,
 					remaining <= g.cruiseParams.dropRadiusKm * 4
@@ -174,11 +172,7 @@ const flight = await page.evaluate(
 				y: g.world.ship.pos.y - shipMesh.position.y,
 				z: g.world.ship.pos.z - shipMesh.position.z,
 			};
-			const trueDistance = Math.hypot(
-				body.pos.x - cam.x,
-				body.pos.y - cam.y,
-				body.pos.z - cam.z,
-			);
+			const trueDistance = dist(body.pos, cam);
 			// Only the neighbourhood of the seam is worth carrying back: a whole
 			// leg is thousands of samples, and the claim is about the crossing.
 			if (trueDistance > handoffKm * 4 || trueDistance < handoffKm * 0.05)
@@ -200,12 +194,42 @@ const flight = await page.evaluate(
 		}
 
 		const target = g.world.system.byId.get(station.id);
-		const missKm = Math.hypot(
-			target.pos.x - g.world.ship.pos.x,
-			target.pos.y - g.world.ship.pos.y,
-			target.pos.z - g.world.ship.pos.z,
+		const missKm = dist(target.pos, g.world.ship.pos);
+
+		// **After** the drop-out, fly normal flight for a while with the throttle
+		// shut and see whether the station is still there. This is the check the
+		// exit clamp is really making: the previous version compared
+		// `ship.vel` against the cap on the same frame `exitVelocity` wrote it,
+		// which restates the clamp rather than measuring anything. Holding station
+		// under the 2 km/s cap is a property of the *frame* the ship was left in,
+		// and it fails outright against an absolute clamp — the station leaves at
+		// its orbital speed and normal flight cannot follow.
+		// Read **before** the hold loop: `ship.vel` thirty seconds later is what
+		// the assist has made of it, not what cruise left behind.
+		const exitSpeedKms = mag(g.world.ship.vel);
+		const exitClosingKms = mag({
+			x: g.world.ship.vel.x - g.targetVelocity().x,
+			y: g.world.ship.vel.y - g.targetVelocity().y,
+			z: g.world.ship.vel.z - g.targetVelocity().z,
+		});
+
+		// Everything the arrival is judged on is read here, before the hold loop
+		// runs: thirty seconds of normal flight advance the clock and regenerate
+		// the tank (§7), and a check that read them afterwards would be measuring
+		// the hold rather than the leg.
+		const gameTimeAdvanced = g.world.gameTime - startedGameTime;
+		const chargeAfterLeg = g.chargeAu;
+
+		const holdStartKm = missKm;
+		g.setThrottle(0);
+		for (let i = 0; i < 300; i++) {
+			g.step(dt);
+			g.render(dt);
+		}
+		const holdEndKm = dist(
+			g.world.system.byId.get(station.id).pos,
+			g.world.ship.pos,
 		);
-		const nose = { x: 0, y: 0, z: -1 };
 		return {
 			handoffKm,
 			farScale,
@@ -215,30 +239,26 @@ const flight = await page.evaluate(
 			elapsed,
 			engagedAtS,
 			legS: g.lastLegS,
-			gameTimeAdvanced: g.world.gameTime - startedGameTime,
+			gameTimeAdvanced,
 			peakC,
 			regime: g.regime,
 			exit: g.lastExit,
 			missKm,
-			exitSpeedKms: Math.hypot(
-				g.world.ship.vel.x,
-				g.world.ship.vel.y,
-				g.world.ship.vel.z,
-			),
+			exitSpeedKms,
 			// The figure the cap is actually stated against: the ship's velocity in
 			// the destination's frame. The absolute one beside it is ~30 km/s and
 			// always will be — that is the station going round its star, not the
 			// ship going anywhere.
-			exitClosingKms: Math.hypot(
-				g.world.ship.vel.x - g.targetVelocity().x,
-				g.world.ship.vel.y - g.targetVelocity().y,
-				g.world.ship.vel.z - g.targetVelocity().z,
-			),
-			assistCapKms: 2.0,
+			exitClosingKms,
+			holdStartKm,
+			holdEndKm,
+			holdSeconds: 300 * dt,
+			// Off the page, like every other constant here.
+			assistCapKms: g.assistCapKms,
+			chargeBefore,
 			dropRadiusKm: g.cruiseParams.dropRadiusKm,
-			chargeAu: g.chargeAu,
+			chargeAu: chargeAfterLeg,
 			samples,
-			nose,
 		};
 	},
 	[DT, LIMIT_S],
@@ -352,8 +372,20 @@ check(
 );
 check(
 	"the leg cost charge in proportion to its length",
-	Math.abs(12 - flight.chargeAu - flight.startAu) < 0.25,
-	`${(12 - flight.chargeAu).toFixed(2)} AU spent on a ${flight.startAu.toFixed(2)} AU leg`,
+	Math.abs(flight.chargeBefore - flight.chargeAu - flight.startAu) < 0.25,
+	`${(flight.chargeBefore - flight.chargeAu).toFixed(2)} AU spent on a ` +
+		`${flight.startAu.toFixed(2)} AU leg, from a ${flight.chargeBefore} AU tank`,
+);
+
+// And the arrival is one you can stay at. Under an absolute clamp the station
+// simply leaves — at ~30 km/s it is 900 km away after half a minute, and normal
+// flight tops out at 2 km/s.
+check(
+	"the ship can hold station after the drop-out",
+	flight.holdEndKm <
+		flight.holdStartKm + flight.assistCapKms * flight.holdSeconds,
+	`${flight.holdStartKm.toFixed(1)} km → ${flight.holdEndKm.toFixed(1)} km over ` +
+		`${flight.holdSeconds.toFixed(0)} s with the throttle shut`,
 );
 
 console.log(

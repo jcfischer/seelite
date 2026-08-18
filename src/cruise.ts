@@ -27,6 +27,15 @@
  * nearest-mass key, sub-stepping, the exit clamp. Those came out of the
  * argument in #10 and are not tuning questions.
  *
+ * ## Where the assist cap comes from
+ *
+ * `ASSIST_CAP_KMS` is imported from `sim.ts` and **not re-exported**. The cap is
+ * a property of assisted flight (#5), not of cruise — cruise only has to land
+ * inside it (§1) — and a second public spelling of one constant is how two
+ * modules end up disagreeing about what the number is. It lived here for one
+ * round while the flight model was still the scaffold's stand-in, which had the
+ * third regime deciding what the first two were allowed to do.
+ *
  * ## The one place the spec is ambiguous, and what this does about it
  *
  * §2.3's table has the drop-out firing at 50 km while the ship is still doing
@@ -39,6 +48,7 @@
  * by flying, so it is a parameter rather than a decision made here.
  */
 
+import { ASSIST_CAP_KMS } from "./sim";
 import { AU_KM } from "./units";
 import { type Vec3, add, dot, length, scale, sub } from "./vec3";
 
@@ -82,16 +92,13 @@ export const DEFAULT_CRUISE: CruiseParams = {
 };
 
 /**
- * #5's assist cap, km/s — the speed normal flight tops out at, and therefore
- * the speed cruise is allowed to leave the ship at (§1).
+ * #5's assist cap, re-exported from the flight model that owns it.
  *
- * Here rather than in `sim.ts` because the exit clamp is the only thing in the
- * codebase that reads it: the flight model itself is still the scaffold's
- * damped stand-in. When #5's model is built, this moves to it and cruise
- * imports it from there — the direction of that dependency is the flight model
- * owning its own cap, not cruise defining one for it.
+ * The cap is a property of assisted flight, not of cruise — cruise only has to
+ * *land inside* it (§1). It lived here for one round while the flight model was
+ * still the scaffold's stand-in, which had the third regime deciding what the
+ * first two were allowed to do; #21 built the model and it moved.
  */
-export const ASSIST_CAP_KMS = 2.0;
 
 /** §7: the drive charge, in AU of cruise range. */
 export const CHARGE_CAPACITY_AU = 12;
@@ -148,12 +155,24 @@ export function nearestMass(
 	pos: Vec3,
 	masses: readonly Mass[],
 ): { id: string; km: number } | null {
-	let best: { id: string; km: number } | null = null;
+	// Squared distances from inline components, one square root at the end. This
+	// is the innermost operation of both hot paths — up to `MAX_SUBSTEPS` calls a
+	// frame from `advanceCruise` and one per sample from the HUD's ETA integrator
+	// — and the obvious `length(sub(pos, m.pos))` allocates a vector per mass per
+	// call, which at ~9 masses is several hundred short-lived objects a frame.
+	let bestId: string | null = null;
+	let bestSq = Number.POSITIVE_INFINITY;
 	for (const m of masses) {
-		const km = length(sub(pos, m.pos));
-		if (!best || km < best.km) best = { id: m.id, km };
+		const dx = pos.x - m.pos.x;
+		const dy = pos.y - m.pos.y;
+		const dz = pos.z - m.pos.z;
+		const sq = dx * dx + dy * dy + dz * dz;
+		if (sq < bestSq) {
+			bestSq = sq;
+			bestId = m.id;
+		}
 	}
-	return best;
+	return bestId === null ? null : { id: bestId, km: Math.sqrt(bestSq) };
 }
 
 /**
@@ -319,28 +338,21 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 	let closingKms = 0;
 	let charge = input.chargeAu;
 
-	if (charge !== undefined && charge <= 0) {
-		return {
-			pos,
-			travelledKm: 0,
-			dropped: false,
-			speedKms: 0,
-			closingKms: 0,
-			substeps: 0,
-			starved: true,
-		};
-	}
-	if (input.throttle <= 0) {
-		return {
-			pos,
-			travelledKm: 0,
-			dropped: false,
-			speedKms: 0,
-			closingKms: 0,
-			substeps: 0,
-			starved: false,
-		};
-	}
+	// One shape for every exit, so a new field on `CruiseStep` is added once
+	// rather than in the four places this function returns from.
+	const halt = (over: Partial<CruiseStep> = {}): CruiseStep => ({
+		pos,
+		travelledKm,
+		dropped,
+		speedKms,
+		closingKms,
+		substeps,
+		starved: false,
+		...over,
+	});
+
+	if (charge !== undefined && charge <= 0) return halt({ starved: true });
+	if (input.throttle <= 0) return halt();
 
 	while (remaining > 0 && !dropped && substeps < MAX_SUBSTEPS) {
 		const mass = nearestMass(pos, input.masses);
@@ -408,27 +420,9 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 
 		if (charge !== undefined) {
 			charge = chargeAfterTravel(charge, stepKm);
-			if (charge <= 0) {
-				return {
-					pos,
-					travelledKm,
-					dropped,
-					speedKms,
-					closingKms,
-					substeps,
-					starved: true,
-				};
-			}
+			if (charge <= 0) return halt({ starved: true });
 		}
 	}
 
-	return {
-		pos,
-		travelledKm,
-		dropped,
-		speedKms,
-		closingKms,
-		substeps,
-		starved: false,
-	};
+	return halt();
 }

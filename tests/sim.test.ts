@@ -18,12 +18,14 @@
  */
 import { expect, test, describe } from "bun:test";
 import {
+	ASSIST_CAP_KMS,
 	START_GALAXY,
+	THRUST_KMS2,
 	advanceSystem,
 	bodyVelocity,
 	makeSystem,
 	makeWorld,
-	stepShip,
+	stepFlight,
 	stepWorld,
 } from "../src/sim";
 import { generateGalaxy, startSystem } from "../src/galaxy";
@@ -37,6 +39,10 @@ import { add, length, scale, sub, v3 } from "../src/vec3";
 import { codeOf } from "./lib/source-scan";
 
 const SEED = 20260818;
+
+/** Hands off the controls: no throttle, assist on. What `stepWorld`'s clock
+ *  tests want, since none of them is about the ship. */
+const coasting = { nose: v3(0, 0, -1), throttle: 0, assist: true };
 
 /** How many of a galaxy's 256 systems the geometry sweeps sample. */
 const SAMPLED_SYSTEMS = 50;
@@ -199,20 +205,20 @@ describe("the game clock", () => {
 		// Never compressed (#10). Cruise is fictional FTL, not a time-scale hack,
 		// so a multiplier appearing here is the thing the constraint forbids.
 		const world = makeWorld(SEED);
-		stepWorld(world, v3(0, 0, 0), 0.5);
-		stepWorld(world, v3(0, 0, 0), 0.25);
+		stepWorld(world, coasting, 0.5);
+		stepWorld(world, coasting, 0.25);
 		expect(world.gameTime).toBeCloseTo(0.75, 12);
 	});
 
 	test("stepWorld moves the ship and the bodies together", () => {
 		const world = makeWorld(SEED);
 		const bodyBefore = { ...world.system.bodies[1].pos };
-		// Frame-sized steps rather than one 60-second one. `SHIP_DAMPING` is a
-		// per-second linear factor, so a `dt` past 1/0.6 drives it negative and the
-		// clamp zeroes the velocity outright — a step that large is outside what
-		// the stand-in integrator means, and `MAX_DT` is why the game never takes
-		// one.
-		for (let i = 0; i < 100; i++) stepWorld(world, v3(0, 0, -1), 0.1);
+		// Frame-sized steps rather than one 60-second one, which is what the game
+		// takes: `MAX_DT` caps a frame at 0.1 s, and the assist's damping is an
+		// exponential in `dt` that only means anything at that scale.
+		for (let i = 0; i < 100; i++) {
+			stepWorld(world, { nose: v3(0, 0, -1), throttle: 1, assist: true }, 0.1);
+		}
 		expect(world.gameTime).toBeCloseTo(10, 9);
 		expect(length(world.ship.vel)).toBeGreaterThan(0);
 		expect(length(sub(world.system.bodies[1].pos, bodyBefore))).toBeGreaterThan(
@@ -306,53 +312,127 @@ describe("float64 sim space", () => {
 	});
 });
 
-describe("stepShip", () => {
-	test("no acceleration and no velocity leaves the ship where it was", () => {
-		const ship = { pos: v3(AU_KM, 0, 0), vel: v3(0, 0, 0) };
-		stepShip(ship, v3(0, 0, 0), 0.016);
-		expect(ship.pos).toEqual(v3(AU_KM, 0, 0));
-	});
-
-	test("thrust accelerates along the acceleration vector", () => {
-		const ship = { pos: v3(0, 0, 0), vel: v3(0, 0, 0) };
-		stepShip(ship, v3(0, 0, -1), 1);
-		expect(ship.vel.z).toBeLessThan(0);
-		expect(ship.pos.z).toBeLessThan(0);
-		expect(ship.vel.x).toBe(0);
-		expect(ship.vel.y).toBe(0);
-	});
-
-	test("it is semi-implicit — position uses the new velocity", () => {
-		// One line's difference from the explicit form, and the reason it is worth
-		// pinning: under a varying frame delta the explicit version drifts, and the
-		// symptom is a ship that ends up somewhere slightly different depending on
-		// frame rate. After one second at 1 km/s² from rest, semi-implicit Euler
-		// puts the ship at v·dt = 1·1 km (damping aside); explicit Euler leaves it
-		// at 0.
-		const ship = { pos: v3(0, 0, 0), vel: v3(0, 0, 0) };
-		stepShip(ship, v3(1, 0, 0), 1);
-		expect(ship.pos.x).toBeGreaterThan(0);
-		expect(ship.pos.x).toBeCloseTo(ship.vel.x * 1, 9);
-	});
-
-	test("coasting decays", () => {
-		// The stand-in flight model's one behavioural claim: release the throttle
-		// and you slow down. It is a placeholder — the flight-model implementation
-		// may delete it outright — so this asserts the direction and nothing about
-		// the rate.
-		const ship = { pos: v3(0, 0, 0), vel: v3(0, 0, -1) };
-		const before = length(ship.vel);
-		for (let i = 0; i < 10; i++) stepShip(ship, v3(0, 0, 0), 0.1);
-		expect(length(ship.vel)).toBeLessThan(before);
+describe("stepFlight — #5's model, both regimes", () => {
+	const NOSE = v3(0, 0, -1);
+	const assisted = (throttle: number) => ({
+		nose: NOSE,
+		throttle,
+		assist: true,
 	});
 
 	test("a zero delta changes nothing", () => {
 		// A paused tab hands the loop a dt of 0, and an integrator that moved
 		// anything on that would drift while nobody was looking.
 		const ship = { pos: v3(1, 2, 3), vel: v3(4, 5, 6) };
-		stepShip(ship, v3(9, 9, 9), 0);
+		stepFlight(ship, assisted(1), 0);
 		expect(ship.pos).toEqual(v3(1, 2, 3));
 		expect(ship.vel).toEqual(v3(4, 5, 6));
+	});
+
+	test("the throttle commands a speed under assist, and it settles there", () => {
+		// This is what makes it read as a modern space sim rather than as 1984:
+		// half throttle means half the cap, held, not a thrust that accumulates.
+		const ship = { pos: v3(), vel: v3() };
+		for (let i = 0; i < 400; i++) stepFlight(ship, assisted(0.5), 0.05);
+		expect(length(ship.vel)).toBeCloseTo(ASSIST_CAP_KMS * 0.5, 6);
+		// And it is *along the nose*, not merely of that magnitude.
+		expect(ship.vel.z).toBeCloseTo(-ASSIST_CAP_KMS * 0.5, 6);
+	});
+
+	test("assisted flight never exceeds #5's cap", () => {
+		// The cap cruise's exit clamp is stated against (#10 §1), so it is not a
+		// number to be approximately right about.
+		const ship = { pos: v3(), vel: v3(0, 0, -50) };
+		for (let i = 0; i < 200; i++) stepFlight(ship, assisted(1), 0.1);
+		expect(length(ship.vel)).toBeLessThanOrEqual(ASSIST_CAP_KMS + 1e-9);
+	});
+
+	test("the assist kills sideways drift; without it the drift is forever", () => {
+		// The one behaviour that separates the two regimes, and the reason the map
+		// makes a velocity-vector marker load-bearing: with the assist off, the
+		// nose and the velocity disagree permanently.
+		const drifting = { pos: v3(), vel: v3(1, 0, 0) };
+		for (let i = 0; i < 100; i++) stepFlight(drifting, assisted(0), 0.1);
+		expect(Math.abs(drifting.vel.x)).toBeLessThan(0.01);
+
+		const newtonian = { pos: v3(), vel: v3(1, 0, 0) };
+		for (let i = 0; i < 100; i++) {
+			stepFlight(newtonian, { nose: NOSE, throttle: 0, assist: false }, 0.1);
+		}
+		expect(newtonian.vel.x).toBeCloseTo(1, 12);
+	});
+
+	test("assist off is Newtonian: thrust accumulates past the cap", () => {
+		const ship = { pos: v3(), vel: v3() };
+		for (let i = 0; i < 100; i++) {
+			stepFlight(ship, { nose: NOSE, throttle: 1, assist: false }, 0.1);
+		}
+		// Ten seconds at THRUST_KMS2 with nothing taking it away.
+		expect(-ship.vel.z).toBeCloseTo(THRUST_KMS2 * 10, 6);
+		expect(-ship.vel.z).toBeGreaterThan(ASSIST_CAP_KMS);
+	});
+
+	test("it is semi-implicit — position uses the new velocity", () => {
+		// One line's difference from the explicit form, and the reason it is worth
+		// pinning: under a varying frame delta the explicit version drifts, and the
+		// symptom is a ship that ends up somewhere slightly different depending on
+		// frame rate.
+		const ship = { pos: v3(), vel: v3() };
+		stepFlight(ship, { nose: NOSE, throttle: 1, assist: false }, 1);
+		expect(ship.pos.z).toBeLessThan(0);
+		expect(ship.pos.z).toBeCloseTo(ship.vel.z * 1, 9);
+	});
+
+	test("releasing the throttle under assist brings the ship to rest", () => {
+		const ship = { pos: v3(), vel: v3(0, 0, -ASSIST_CAP_KMS) };
+		for (let i = 0; i < 300; i++) stepFlight(ship, assisted(0), 0.1);
+		expect(length(ship.vel)).toBeLessThan(1e-6);
+	});
+
+	test("at rest means at rest in the local frame, not the star's", () => {
+		// #14's second frame finding, and the one that decides whether a station
+		// can be arrived at *and stayed at*. Sim space is star-centred, so a
+		// station on a 1 AU orbit is doing ~30 km/s; an assist that damps toward
+		// the star's zero pushes the ship off the station at orbital speed the
+		// moment the throttle is released.
+		const frameVel = v3(0, 30, 0);
+		const ship = { pos: v3(), vel: frameVel };
+		for (let i = 0; i < 300; i++) {
+			stepFlight(
+				ship,
+				{ nose: NOSE, throttle: 0, assist: true, frameVel },
+				0.1,
+			);
+		}
+		expect(length(sub(ship.vel, frameVel))).toBeLessThan(1e-6);
+		// Thirty seconds of that, and the ship has kept pace rather than drifting
+		// nearly a thousand kilometres behind.
+		expect(ship.pos.y).toBeCloseTo(30 * 30, 0);
+
+		// The cap is on the *relative* speed too: full throttle in the local frame
+		// is the assist cap over the frame, not over the star.
+		const running = { pos: v3(), vel: frameVel };
+		for (let i = 0; i < 300; i++) {
+			stepFlight(
+				running,
+				{ nose: NOSE, throttle: 1, assist: true, frameVel },
+				0.1,
+			);
+		}
+		expect(length(sub(running.vel, frameVel))).toBeCloseTo(ASSIST_CAP_KMS, 6);
+	});
+
+	test("assist off ignores the local frame — that is what unassisted means", () => {
+		const frameVel = v3(0, 30, 0);
+		const ship = { pos: v3(), vel: v3() };
+		for (let i = 0; i < 10; i++) {
+			stepFlight(
+				ship,
+				{ nose: NOSE, throttle: 0, assist: false, frameVel },
+				0.1,
+			);
+		}
+		expect(length(ship.vel)).toBe(0);
 	});
 });
 
