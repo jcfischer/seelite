@@ -1,0 +1,44 @@
+// Why this file exists (2026-08-18):
+//
+// pi-lens auto-formats every edited JS/TS with Biome. With NO formatter config
+// in the repo it does not run Biome on its defaults — it samples the file,
+// guesses the indentation, and forces it onto Biome with `--indent-style space
+// --indent-width 1`. This repo is tab-indented, the guess misfired, and every
+// edited file got rewritten with single-space indentation: ~88k lines of churn
+// across the tree on 2026-08-17 (issue #185 / PR #201). Declaring a Biome
+// config here makes pi-lens defer to it instead (hasBiomeConfig short-circuits
+// the guess), so the formatter always agrees with the codebase.
+//
+// Adoption (2026-08-18): no Biome config is a byte-identical no-op on the
+// repo's pre-existing hand-written style (mixed expanded/inline collections,
+// lines commonly 81-120 chars). lineWidth 80 was measured as the least-churn
+// adoption point (~3.9k lines vs 7.7k at 120); the tree was reformatted once
+// with `biome format --write .` and that commit landed together with this
+// file. From then on, edits are stable: re-check with
+// `npx @biomejs/biome format --write .` and confirm an empty diff.
+//
+// Load-bearing keys (a wrong value silently errors the whole config — Biome
+// then formats nothing, which is easy to misread as "no-op"):
+//   - trailingCommas: "all" — Biome's default is "none" and would strip the
+//     repo's trailing commas. Note the 2.5.x rename: trailingCommas (plural).
+//   - lineWidth: 80 — wrapped by Biome when exceeded; do not change without
+//     re-running the whole-tree format and confirming the diff you expect.
+//   quoteStyle "double" and semicolons "always" match Biome's defaults but are
+//   pinned here as the declared convention.
+//
+// Run it: npx @biomejs/biome format --write .
+{
+	"$schema": "https://biomejs.dev/schemas/2.5.6/schema.json",
+	"formatter": {
+		"indentStyle": "tab",
+		"indentWidth": 2,
+		"lineWidth": 80
+	},
+	"javascript": {
+		"formatter": {
+			"quoteStyle": "double",
+			"semicolons": "always",
+			"trailingCommas": "all"
+		}
+	}
+}

@@ -1,0 +1,81 @@
+# Format, typecheck, unit-test, build — and publish to Cloudflare Pages on
+# every push to main.
+#
+# The split from `probes.yml` is deliberate and inherited from seekolous: this
+# job is the fast gate every pull request waits on, and the browser probes are
+# slow enough that putting them here would train everyone to route around the
+# check. What each tier is for is written up in `probes.yml`.
+#
+# NOTE: this is a GitHub Actions deploy, not Cloudflare's own Git integration.
+# A Pages project created by direct upload cannot be converted to Git
+# integration later — Cloudflare is explicit about that — so driving
+# `wrangler pages deploy` from CI is what gets push-to-deploy behaviour without
+# committing to a project shape before the project exists.
+#
+# The deploy step is inert until `CLOUDFLARE_API_TOKEN` is set: it warns and
+# skips rather than failing, so the build and typecheck gate works from the
+# first commit and the deploy switches on the day the secret lands.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: pages-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # The repo is Biome-formatted (see biome.jsonc at the root; `npm run
+      # format` re-applies it). This gate fails the job if a PR drifts.
+      - run: npm run format:check
+
+      # The headless tier: seeded generation, the float64 sim, the module
+      # boundary that keeps Three.js out of it. Seconds, no browser.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: npm test
+
+      # `npm run build` is `tsc --noEmit && vite build`, so a type error fails
+      # the job before anything is published.
+      - run: npm run build
+
+      # Pull requests get the build and typecheck as a gate, but must not
+      # publish. Only pushes to main deploy.
+      - name: Check deploy credentials
+        id: creds
+        if: github.event_name != 'pull_request'
+        run: |
+          if [ -n "${{ secrets.CLOUDFLARE_API_TOKEN }}" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::CLOUDFLARE_API_TOKEN is not set — deploy skipped."
+          fi
+
+      - name: Publish to Cloudflare Pages
+        if: steps.creds.outputs.ready == 'true'
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=seelite --branch=main

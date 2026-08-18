@@ -1,0 +1,87 @@
+# Run the probe suite against a real browser.
+#
+# ## The two tiers, and why they run in different jobs
+#
+# The unit tier (`npm test`, bun, no browser) covers anything that is
+# arithmetic: seeded generation, the float64 sim, the module boundary. It runs
+# in `deploy.yml` because it costs seconds.
+#
+# The probes cover anything that only means something in front of a running
+# renderer — layer membership, camera-relative placement, the seed actually
+# reaching the page. They boot a browser each, and a GitHub runner has no GPU,
+# so Chromium rasterises in software and everything that renders is several
+# times slower than on a laptop.
+#
+# Seelite has one probe and the suite takes well under a minute, so **it gates
+# on pull requests**. That is a deliberate difference from seekolous, where a
+# ~24-minute suite had to be moved off the pull-request path: a check people
+# route around because it is slow protects nothing. The nightly run is kept
+# alongside, so the day this suite outgrows a pull-request gate the schedule is
+# already there and the change is deleting two lines rather than designing a
+# policy under pressure.
+#
+# When that day comes, the honest version is a *subset* gate — a fast tier
+# named explicitly — not a suite everyone learns to ignore.
+name: Probes
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    # 04:17 UTC — an odd minute on purpose, since everything scheduled on the
+    # hour queues behind everything else scheduled on the hour.
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: probes-${{ github.ref }}
+  # A later run on the same ref supersedes an earlier one; a nightly and a
+  # branch run do not collide, because the ref is in the group.
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    # A backstop against a wedged job, not a target to tune against. Generous
+    # for one probe on purpose — the suite is expected to grow, and a cap that
+    # has to be raised every time a probe lands is a cap nobody trusts.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # Chromium only. The probes launch `chromium` explicitly and nothing here
+      # tests cross-browser behaviour — pulling Firefox and WebKit as well
+      # would triple the download to prove nothing.
+      #
+      # `--with-deps` installs the system libraries headless Chromium needs on
+      # a bare runner; without them the browser downloads fine and then fails
+      # to launch, which reads as a probe failure rather than a setup one.
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # probe-all starts its own Vite dev server on an ephemeral port and shuts
+      # it down afterwards, so there is no port to coordinate here and no
+      # background process to leak if the job is cancelled.
+      #
+      # A *dev* server, not a preview of `dist/`: probe-guard fetches the
+      # TypeScript source by path to confirm the server is serving this
+      # checkout, which only the dev server does. The type check a production
+      # build would have given us is not lost — `deploy.yml` runs `npm run
+      # build` on the same pull request.
+      #
+      # `npm run probe`, not `node scripts/probe-all.mjs`, so the
+      # launcher-wiring gate runs ahead of the suite here too. It costs
+      # milliseconds and catches the one failure a browserless check can catch:
+      # a script that calls the shared launcher without importing it, which
+      # dies at a ReferenceError rather than reporting anything.
+      - name: Run the probes
+        run: npm run probe

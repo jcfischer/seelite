@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>seelite</title>
+    <style>
+      /* Inline and small on purpose. There is one canvas and one line of text;
+         a stylesheet for that would be a file to keep in sync with nothing. */
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #000;
+        overflow: hidden;
+      }
+      canvas {
+        display: block;
+      }
+      #hud {
+        position: fixed;
+        left: 12px;
+        bottom: 10px;
+        color: #9fd4ff;
+        font: 12px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+        letter-spacing: 0.04em;
+        text-shadow: 0 0 6px rgba(0, 0, 0, 0.9);
+        pointer-events: none;
+        white-space: pre;
+      }
+      #keys {
+        position: fixed;
+        right: 12px;
+        bottom: 10px;
+        color: #4d6a80;
+        font: 11px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+        pointer-events: none;
+        text-align: right;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="hud"></div>
+    <div id="keys">
+      W/S or ↑/↓ pitch · A/D or ←/→ yaw · Q/E roll · Shift/Ctrl throttle
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
