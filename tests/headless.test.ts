@@ -22,6 +22,14 @@
  */
 import { expect, test } from "bun:test";
 import { codeOf } from "./lib/source-scan";
+import {
+	FAR_NEAR_UNITS,
+	FAR_SCALE,
+	HANDOFF_HYSTERESIS,
+	HANDOFF_KM,
+	NEAR_FAR_KM,
+	layerFor,
+} from "../src/units";
 
 const HEADLESS = [
 	"audio",
@@ -33,6 +41,7 @@ const HEADLESS = [
 	"sim",
 	"system",
 	"units",
+	"vec3",
 ] as const;
 
 test("no DOM is present in this runtime", () => {
@@ -68,6 +77,7 @@ test("no module has been quietly dropped from the list", () => {
 		"sim",
 		"system",
 		"units",
+		"vec3",
 	];
 	const listed = new Set<string>(HEADLESS);
 	for (const name of required) expect(listed.has(name), name).toBe(true);
@@ -102,6 +112,66 @@ test("src/units.ts is a leaf, which is the whole of its job", () => {
 	// property — not the prose — is why both `sim.ts` and `main.ts` can read the
 	// unit scheme without either depending on the other.
 	expect(importsIn("units.ts")).toEqual([]);
+});
+
+test("the hysteresis band fits inside the near layer's reach", () => {
+	// The threshold is not what has to fit — the *band* is. A body admitted to
+	// the near layer is held there out to `HANDOFF_KM × HANDOFF_HYSTERESIS`, so
+	// if `NEAR_FAR_KM` ever landed between the two, a body inside the band would
+	// be drawn at 1:1 past the near camera's far plane and so not drawn at all:
+	// the vanishing-between-layers failure `HANDOFF_KM`'s docstring warns about.
+	//
+	// Headless rather than only in the probe, which is why the hysteresis lives
+	// in `units.ts` beside the constant it modifies rather than in the renderer
+	// that applies it — a constant `main.ts` owns cannot be checked without a
+	// browser, and this is arithmetic.
+	expect(HANDOFF_KM * HANDOFF_HYSTERESIS).toBeLessThan(NEAR_FAR_KM);
+	// And the band is a widening, not a narrowing.
+	expect(HANDOFF_HYSTERESIS).toBeGreaterThanOrEqual(1);
+});
+
+test("the far camera's near plane admits a body that has not crossed yet", () => {
+	// The other end of the same seam. A body at `HANDOFF_KM` is still in the far
+	// layer, at `HANDOFF_KM × FAR_SCALE` far-units; if the far camera's near
+	// plane sat beyond that, there would be a band where a body is assigned to
+	// the far layer and clipped out of it.
+	expect(FAR_NEAR_UNITS).toBeLessThan(HANDOFF_KM * FAR_SCALE);
+});
+
+test("layerFor holds and releases on the right sides of the band", () => {
+	// The hysteresis state machine itself, which until this round needed a
+	// browser to exercise: it lived in `Game` while both constants it reads lived
+	// here. As a pure function it is arithmetic, and the two failures worth
+	// pinning are the ones `probe-handoff.mjs` had to walk a ship around to find.
+	const inside = HANDOFF_KM * 0.5;
+	const band = HANDOFF_KM * ((1 + HANDOFF_HYSTERESIS) / 2);
+	const outside = HANDOFF_KM * (HANDOFF_HYSTERESIS + 0.1);
+
+	// Coming from far: the threshold is the bare one, so the band is *not* a
+	// second chance to be admitted. A renderer that used the widened threshold in
+	// both directions would admit a body here.
+	expect(layerFor("far", band)).toBe("far");
+	expect(layerFor("far", inside)).toBe("near");
+
+	// Already near: held through the band, released past it. A band that never
+	// releases returns "near" for `outside`; no band at all returns "far" for
+	// `band`.
+	expect(layerFor("near", band)).toBe("near");
+	expect(layerFor("near", outside)).toBe("far");
+
+	// Unplaced bodies start far — nothing is generated inside the handoff.
+	expect(layerFor(undefined, outside)).toBe("far");
+	expect(layerFor(undefined, inside)).toBe("near");
+});
+
+test("src/vec3.ts is a leaf, which is why the import cycle is gone", () => {
+	// The vectors were in `sim.ts` while `sim.ts` was the only module with
+	// positions. `galaxy.ts` and `system.ts` then imported them from there, and
+	// wiring the generator into the world pointed `sim.ts` back at both — a
+	// cycle ESM happens to resolve today because every use sits inside a function
+	// body. Moving the shared half to a leaf is what removed it, and having no
+	// imports is the property that keeps it removed: a leaf cannot close a cycle.
+	expect(importsIn("vec3.ts")).toEqual([]);
 });
 
 test("src/audio.ts stays free of the rest of the game", () => {

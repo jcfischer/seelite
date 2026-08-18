@@ -15,9 +15,12 @@
  * 1. **The page boots without throwing.** A `pageerror` is a failure, not a log
  *    line. Everything below reads numbers off a live game, and a game whose
  *    loop died still answers most of those questions with plausible values.
- * 2. **The layers are populated and separated.** A star in the near scene or a
- *    station in the far scene renders at the wrong scale by a factor of 10⁵,
- *    which on screen looks like "it isn't there" rather than like a bug.
+ * 2. **The layers are populated and separated.** A body in the wrong scene
+ *    renders at the wrong scale by a factor of 10⁵, which on screen looks like
+ *    "it isn't there" rather than like a bug. The rule is distance, not kind —
+ *    within `HANDOFF_KM` of the camera a body is near, beyond it far — and the
+ *    threshold is read off the page rather than restated here. The crossing
+ *    itself is `probe-handoff.mjs`; this checks the standing assignment.
  * 3. **Camera-relative placement holds.** Each mesh's rendered position must
  *    equal `simPos - cameraPos`, scaled by its layer's factor. This is the one
  *    invariant the whole scale design rests on, and the way it breaks — a
@@ -31,7 +34,13 @@
  * The camera is asserted to sit at the origin, which is the precondition the
  * other three are only meaningful under.
  */
-import { bootedGame, guardedOrigin, launchChromium } from "./probe-guard.mjs";
+import {
+	bootedGame,
+	guardedOrigin,
+	installCamSim,
+	launchChromium,
+	tally,
+} from "./probe-guard.mjs";
 
 /** Where the game is served. `PROBE_ORIGIN` replaces only the host, so this
  *  probe keeps the seed it chose; `PROBE_URL` replaces the whole thing. The
@@ -54,23 +63,13 @@ const RELATIVE_EPS = 1e-3;
 await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 
-let failures = 0;
-let checks = 0;
-const check = (label, ok, detail) => {
-	checks++;
-	if (!ok) failures++;
-	console.log(
-		`${ok ? "  ok  " : " FAIL "} ${label}${detail ? ` — ${detail}` : ""}`,
-	);
-};
+const { check, watch, exit } = tally();
 
 /** Open one page, wait for a drawn frame, and report page errors as failures. */
 async function open(url) {
 	const page = await browser.newPage({ viewport: { width: 900, height: 620 } });
-	page.on("pageerror", (e) => {
-		failures++;
-		console.log(`PAGEERROR ${e.message}`);
-	});
+	watch(page);
+	await installCamSim(page);
 	await page.goto(url, { waitUntil: "load" });
 	await bootedGame(page);
 	return page;
@@ -111,10 +110,14 @@ const state = await page.evaluate(() => {
 			id: b.id,
 			kind: b.kind,
 			layer: layerOf(b.id),
+			radiusKm: b.radiusKm,
 			sim: { x: b.pos.x, y: b.pos.y, z: b.pos.z },
 			mesh: mesh
 				? { x: mesh.position.x, y: mesh.position.y, z: mesh.position.z }
 				: null,
+			// The mesh is a unit sphere sized by `scale`, so this is its drawn
+			// radius in whatever units its layer draws in.
+			meshRadius: mesh ? mesh.scale.x : null,
 		};
 	});
 
@@ -126,8 +129,14 @@ const state = await page.evaluate(() => {
 	return {
 		seed: g.world.seed,
 		frames: g.frames,
+		gameTime: g.world.gameTime,
+		systemName: g.world.system.record.name,
+		// The unit scheme, read from the page rather than restated here, so this
+		// probe cannot disagree with the module about what its numbers are.
+		units: { ...g.units },
 		camPos,
 		shipSim: { x: ship.pos.x, y: ship.pos.y, z: ship.pos.z },
+		camSim: window.__recoverCamSim(),
 		shipMesh: (() => {
 			const m = g.nearScene.getObjectByName("ship");
 			return m ? { x: m.position.x, y: m.position.y, z: m.position.z } : null;
@@ -139,19 +148,6 @@ const state = await page.evaluate(() => {
 			w: g.renderer.domElement.width,
 			h: g.renderer.domElement.height,
 		},
-		// The unit scheme, read from the page rather than restated here, so this
-		// probe cannot disagree with the module about what FAR_SCALE is.
-		farScale:
-			g.world.system.bodies.length > 0
-				? (() => {
-						// Derive it from the star: its mesh radius over its real radius.
-						const star = g.world.system.bodies.find((b) => b.kind === "star");
-						const mesh = g.farScene.getObjectByName(star.id);
-						return mesh
-							? mesh.geometry.parameters.radius / star.radiusKm
-							: null;
-					})()
-				: null,
 	};
 });
 
@@ -172,15 +168,155 @@ check(
 const camLen = Math.hypot(state.camPos.x, state.camPos.y, state.camPos.z);
 check("the camera sits at the origin", camLen === 0, `|camera| = ${camLen}`);
 
-// (2) Layer membership. Stars and planets are far; the station is near.
-for (const b of state.bodies) {
-	const want = b.kind === "station" ? "near" : "far";
+// (1b) The world is the generated one, not a stand-in.
+//
+// Cheap, and it is the claim this probe would otherwise be silent about: every
+// geometric check below would pass just as well against two planets at fixed
+// positions. A named system with a full complement of bodies is what says the
+// renderer is drawing `galaxy.ts`'s output.
+check(
+	"the world is a named system from the generator",
+	/^[A-Z]{2,8}$/.test(state.systemName ?? ""),
+	`system ${JSON.stringify(state.systemName)}`,
+);
+const stations = state.bodies.filter((b) => b.kind === "station");
+check(
+	"the system has between one and three stations",
+	stations.length >= 1 && stations.length <= 3,
+	`${stations.length}: ${stations.map((s) => s.id).join(", ")}`,
+);
+// Named for what it asserts. An earlier version was labelled "planets on a
+// ladder, not a fixed pair" over a `>= 1` predicate that the deleted
+// placeholder's two planets would have satisfied, and reported the total body
+// count rather than the planet count it had just measured — so neither the name
+// nor the output disclosed the gap.
+//
+// Both bounds are real, and the floor needed checking rather than assuming: the
+// ladder runs 3–7 rungs and drops any outside the 0.3–6 AU envelope, but the
+// ladder is *rescaled* so that one rung lands exactly on `habitableAu`, which is
+// itself clamped into that envelope (system.ts §6.2). That rung therefore always
+// survives, so a generated system has at least one planet — which is also why
+// the unconditional trade station always has something to orbit.
+const planets = state.bodies.filter((b) => b.kind === "planet");
+check(
+	"the planet count is inside the generator's envelope",
+	planets.length >= 1 && planets.length <= 7,
+	`${planets.length} planet(s): ${planets.map((p) => p.id).join(", ")}`,
+);
+
+// (2) Layer membership, by distance rather than by kind.
+//
+// The threshold comes off the page, so this cannot drift from `units.ts`. At
+// the arrival point everything is far — §7.4 puts the ship at least 0.25 AU
+// from every body, which is four orders of magnitude past the handoff — and
+// asserting the *rule* rather than that expected outcome is what makes this
+// check keep working once something can approach.
+const band = state.units.HANDOFF_KM * state.units.HANDOFF_HYSTERESIS;
+
+/** The factor the body's layer draws at. One definition, used by the scale check
+ *  and by the camera-relative placement check below. */
+const scaleOf = (b) => (b.layer === "near" ? 1 : state.units.FAR_SCALE);
+
+/** How far a body is from the ship, in kilometres of sim space. */
+const rangeOf = (b) =>
+	Math.hypot(
+		b.sim.x - state.shipSim.x,
+		b.sim.y - state.shipSim.y,
+		b.sim.z - state.shipSim.z,
+	);
+
+/**
+ * Which layer the body is drawn in, against the rule.
+ *
+ * Returns false when the body sits inside the hysteresis band, where the answer
+ * depends on which way it arrived — history a single-frame probe does not have.
+ * Asserting the bare threshold there would fail a correctly-behaving renderer
+ * the moment something could approach, which is the opposite of the point.
+ * `probe-handoff.mjs` walks the band in both directions, where it knows the
+ * history because it created it.
+ */
+function checkLayer(b, d) {
+	if (d > state.units.HANDOFF_KM && d <= band) {
+		// A `console.log`, not a passing `check`. A hardcoded pass inflates the
+		// count and reads as coverage — the same thing this probe's sibling had a
+		// check removed for.
+		console.log(
+			`  skip  ${b.id} sits in the hysteresis band at ${d.toExponential(2)} km`,
+		);
+		return false;
+	}
+	const want = d <= state.units.HANDOFF_KM ? "near" : "far";
 	check(
-		`${b.id} is in the ${want} layer`,
+		`${b.id} is in the ${want} layer at ${d.toExponential(2)} km`,
 		b.layer === want,
 		`found in ${b.layer}`,
 	);
+	return true;
 }
+
+/**
+ * The body is drawn at its layer's scale, in both position and radius.
+ *
+ * The bound on the position is what `FAR_SCALE` exists to buy, checked in the
+ * browser at the distances that can actually violate it.
+ *
+ * Against `F32_JITTER_UNITS`, read off the page — **not** a bound derived from
+ * the generator's envelope. An earlier version restated
+ * `(2·MAX_ORBIT_AU + ARRIVAL_CLEARANCE_AU) · AU_KM · FAR_SCALE` as literals,
+ * which put a second copy of the unit scheme in a file whose whole contract is
+ * to read it off the page: widening `MAX_ORBIT_AU` would have reddened this
+ * probe against a correct renderer, and shrinking `FAR_SCALE` would have made it
+ * pass vacuously.
+ *
+ * The ceiling here is a property of the coordinate space rather than of the
+ * content, so it survives both. The tighter content-derived bound is asserted in
+ * `sim.test.ts`, which can import the generator's constants instead of copying
+ * them.
+ */
+function checkScale(b) {
+	if (b.layer === "far") {
+		const drawn = Math.hypot(b.mesh.x, b.mesh.y, b.mesh.z);
+		const ceiling = state.units.F32_JITTER_UNITS;
+		check(
+			`${b.id}'s far-layer coordinate fits in float32`,
+			drawn < ceiling,
+			`|p| = ${drawn.toExponential(2)} units, ceiling ${ceiling.toExponential(1)}`,
+		);
+	}
+	// Position and radius must be scaled by the *same* factor, or the body's
+	// angular size is wrong — which is the property the whole scaled-space trick
+	// buys and the one a handoff can silently break.
+	const k = scaleOf(b);
+	check(
+		`${b.id} is sized for the layer it is in`,
+		b.meshRadius !== null &&
+			Math.abs(b.meshRadius - b.radiusKm * k) < 1e-6 * b.radiusKm * k,
+		`drawn radius ${b.meshRadius}, expected ${b.radiusKm * k}`,
+	);
+}
+
+/**
+ * Bodies with a mesh, checked once.
+ *
+ * Both loops below need this and both used to open with the same guard, so a
+ * body with no mesh produced two FAIL lines and inflated the denominator in the
+ * summary — one defect reported as two.
+ */
+const drawn = state.bodies.filter((b) => {
+	if (b.mesh) return true;
+	check(`${b.id} has a mesh`, false);
+	return false;
+});
+
+for (const b of drawn) {
+	// `checkScale` reads the layer the body is *observed* in and needs no arrival
+	// history, so the band ambiguity does not reach it — it only affects which
+	// layer is correct, not which one was drawn. Tying the two together meant a
+	// body in the band lost its scale assertion for no reason.
+	checkLayer(b, rangeOf(b));
+	checkScale(b);
+}
+
 check(
 	"the backdrop holds the star points and nothing else",
 	state.starCount > 0,
@@ -238,11 +374,9 @@ check(
 // known. The ship is that mesh: `shipMesh = shipSim - camSim`, so
 // `camSim = shipSim - shipMesh`, and every other body must then agree.
 if (state.shipMesh) {
-	const camSim = {
-		x: state.shipSim.x - state.shipMesh.x,
-		y: state.shipSim.y - state.shipMesh.y,
-		z: state.shipSim.z - state.shipMesh.z,
-	};
+	// The shared recovery, read in the same evaluate as the meshes it is checked
+	// against — see `installCamSim` in probe-guard.mjs.
+	const camSim = state.camSim;
 	// A sanity bound on the recovery itself: the chase camera sits a few tens of
 	// metres from the ship, so a recovered offset of kilometres means the ship
 	// mesh is not being placed camera-relatively at all.
@@ -260,32 +394,36 @@ if (state.shipMesh) {
 	// An absolute anchor, because everything above is relative to a camera
 	// recovered from one of the meshes it then checks. If every mesh were placed
 	// against the same wrong origin, those checks would agree with each other and
-	// say nothing. This one does not go through `camSim`: the station is 40 km
-	// from the ship in sim space, so it must render about 40 units away — the
-	// chase offset is the only difference, and it is metres.
-	const station = state.bodies.find((b) => b.kind === "station");
-	if (station?.mesh) {
-		const drawn = Math.hypot(station.mesh.x, station.mesh.y, station.mesh.z);
-		const real = Math.hypot(
-			station.sim.x - state.shipSim.x,
-			station.sim.y - state.shipSim.y,
-			station.sim.z - state.shipSim.z,
+	// say nothing.
+	//
+	// The star is that anchor and it needs no `camSim` at all: system frames are
+	// star-centred (§7.4), so its sim position is exactly the origin, and its
+	// drawn distance must therefore be the ship's own distance from the star
+	// times `FAR_SCALE`. The chase camera is the only difference and it is
+	// metres against an AU. The scaffold used the station for this, which worked
+	// only because a placeholder had pinned it 40 km away.
+	const star = state.bodies.find((b) => b.kind === "star");
+	if (star?.mesh) {
+		const drawn = Math.hypot(star.mesh.x, star.mesh.y, star.mesh.z);
+		const real =
+			Math.hypot(state.shipSim.x, state.shipSim.y, state.shipSim.z) *
+			state.units.FAR_SCALE;
+		check(
+			"the star renders at the ship's true distance from it",
+			Math.abs(drawn - real) < 1e-3 * real,
+			`drawn ${drawn.toFixed(3)}, expected ${real.toFixed(3)} far-units`,
 		);
 		check(
-			"the station renders at its true distance from the ship",
-			Math.abs(drawn - real) < 0.2,
-			`drawn ${drawn.toFixed(3)} km, actual ${real.toFixed(3)} km`,
+			"the ship is an astronomical distance out, not a placeholder's 40 km",
+			real / state.units.FAR_SCALE > 0.5 * state.units.AU_KM,
+			`${(real / state.units.FAR_SCALE / state.units.AU_KM).toFixed(3)} AU`,
 		);
 	} else {
-		check("the station has a mesh", false);
+		check("the star has a mesh", false);
 	}
 
-	for (const b of state.bodies) {
-		if (!b.mesh) {
-			check(`${b.id} has a mesh`, false);
-			continue;
-		}
-		const k = b.kind === "station" ? 1 : state.farScale;
+	for (const b of drawn) {
+		const k = scaleOf(b);
 		const want = {
 			x: (b.sim.x - camSim.x) * k,
 			y: (b.sim.y - camSim.y) * k,
@@ -309,6 +447,56 @@ if (state.shipMesh) {
 } else {
 	check("the ship has a mesh", false);
 }
+
+// (3b) The clock runs, and the bodies read it.
+//
+// Body positions are `f(systemSeed, gameTime)` (§7.3), so a renderer that
+// stepped only the ship would show a system frozen mid-orbit — which looks
+// exactly like a correct one in a screenshot, and is the state the scaffold was
+// actually in. Both halves are needed: a clock that advances while nothing moves
+// is the same bug one field further along.
+const ticked = await page.evaluate(async () => {
+	const g = window.__seelite;
+	const sample = () => ({
+		t: g.world.gameTime,
+		bodies: g.world.system.bodies.map((b) => ({ ...b.pos })),
+	});
+	const before = sample();
+	// Poll rather than sleep a flat 600 ms on every run. The wait is now however
+	// long the clock actually needs to move, with 600 ms as the timeout — so a
+	// frozen clock still fails, and a healthy one costs a few frames.
+	const deadline = Date.now() + 600;
+	while (g.world.gameTime - before.t <= 0.1 && Date.now() < deadline) {
+		await new Promise((r) => requestAnimationFrame(() => r()));
+	}
+	const after = sample();
+	const moved = after.bodies
+		.map((p, i) =>
+			Math.hypot(
+				p.x - before.bodies[i].x,
+				p.y - before.bodies[i].y,
+				p.z - before.bodies[i].z,
+			),
+		)
+		.filter((d) => d > 0).length;
+	return {
+		dt: after.t - before.t,
+		moved,
+		total: after.bodies.length,
+		waitedMs: Math.round(600 - Math.max(0, deadline - Date.now())),
+	};
+});
+check(
+	"the game clock advances with the frame loop",
+	ticked.dt > 0.1,
+	`+${ticked.dt.toFixed(3)} s of sim time in ${ticked.waitedMs} ms of wall time`,
+);
+check(
+	"the bodies move with the clock",
+	// Every body but the star, which is pinned to the origin by §7.4.
+	ticked.moved === ticked.total - 1,
+	`${ticked.moved} of ${ticked.total} moved`,
+);
 
 // (4) The seed reaches the backdrop — both halves.
 const reload = await open(URL);
@@ -343,5 +531,4 @@ check(
 );
 
 await browser.close();
-console.log(`\n${checks - failures}/${checks} checks passed`);
-process.exit(failures ? 1 : 0);
+exit();

@@ -37,7 +37,7 @@
 
 import { mix, seedFor, seededRand } from "./rng";
 import { planetDescription, systemName } from "./names";
-import { type Vec3, lengthSq } from "./sim";
+import { type Vec3, lengthSq } from "./vec3";
 
 /** All eight exist from the start; switching galaxy changes an index and
  *  nothing else (spec §2). The consequence is a save obligation: per-galaxy

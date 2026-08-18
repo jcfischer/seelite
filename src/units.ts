@@ -64,12 +64,77 @@ export const FAR_SCALE = 1e-5;
  * is still inside the near layer's reach, or it would vanish for the span
  * between leaving one layer and being admitted to the other.
  *
- * Nothing crosses it yet — the scaffold's bodies are all far and its ship and
- * station are all near — and the exact distance is one of the open questions
- * the scale research left. It is named here so that when something does cross,
- * there is one number to argue about rather than two call sites to find.
+ * **Now load-bearing.** While the world was a scaffold this was a name with no
+ * call site: bodies were far and the station was near, by kind, forever. Real
+ * content ends that — a system's stations sit on planetary orbits an AU or more
+ * from the arrival point, and a station drawn at 1:1 an AU away is past the near
+ * camera's far plane, which on screen is indistinguishable from the game having
+ * generated nothing. So the layer a body draws in is now its *distance* from
+ * the camera against this number, for every body regardless of kind. "Bodies
+ * far, stations near" is what that rule produces when you are parked at a
+ * station, which is the only situation the scaffold ever had.
+ *
+ * The handoff is measured centre-to-camera. For a gas giant, whose radius can
+ * exceed this distance, that means the swap happens when the camera is already
+ * inside the sphere — a body's *surface* would be the honest test. Nothing can
+ * approach a planet yet (#10's cruise regime is unbuilt) and there is no
+ * collision, so the two rules are indistinguishable in play; the surface form
+ * needs a near layer that reaches past `NEAR_FAR_KM`, which is a real decision
+ * and not one to settle in a renderer.
  */
 export const HANDOFF_KM = 1e4;
+
+/**
+ * The hysteresis on that handoff: a body admitted to the near layer is not
+ * returned to the far one until it is this much further out.
+ *
+ * Not about apparent size, which is identical either side by construction. It is
+ * about *ordering* — the near pass clears depth, so a body oscillating across
+ * the threshold would swap in front of and behind its neighbours on alternate
+ * frames. One band is cheaper than reasoning about when that matters.
+ *
+ * Here rather than in the renderer that applies it, because it widens the reach
+ * the near layer must actually have: the constraint is
+ * `HANDOFF_KM × HANDOFF_HYSTERESIS < NEAR_FAR_KM`, and a constant living in
+ * `main.ts` could only be checked with a browser open. `tests/headless.test.ts`
+ * asserts it as the arithmetic it is.
+ */
+export const HANDOFF_HYSTERESIS = 1.05;
+
+/**
+ * The far layer's camera planes, in *far-layer units* (kilometres × FAR_SCALE).
+ *
+ * The near plane must admit a body that has *not* yet crossed the handoff, or
+ * there is a band between `FAR_NEAR_UNITS / FAR_SCALE` and `HANDOFF_KM` where a
+ * body is in the far layer and clipped out of it. At `HANDOFF_KM` a body sits
+ * at 0.1 units, so this is half that.
+ *
+ * The far plane is bounded by the *content*, which is what makes it affordable.
+ * Bodies orbit inside `MAX_ORBIT_AU` (6 AU) of the star, and the arrival point
+ * is pushed out only far enough to clear the outermost of them, so the ship
+ * stays inside `MAX_ORBIT_AU + ARRIVAL_CLEARANCE_AU`. Worst case is a body
+ * diametrically opposite: `2·6 + 0.25 = 12.25 AU`, or 1.8·10⁴ far-units.
+ * `sim.test.ts` asserts it over 50 systems of one galaxy, where the largest
+ * actually seen is 9.8·10³ far-units at 6.54 AU — so the derived bound has real
+ * headroom over the observed one, which is the direction a bound should be
+ * wrong in.
+ *
+ * Note what that means for the "~10⁴ units" figure at the top of this file: it
+ * is a comfort target, not a limit. A far-layer coordinate can reach 1.8·10⁴ in
+ * a wide system, still an order of magnitude below the 10⁵ where quantisation
+ * becomes visible. A test asserting a flat 10⁴ passes or fails on which sample
+ * it was given — an exploratory sweep during review found 2 world seeds in 400
+ * whose *start* system exceeded it, which is how the first version of that test
+ * came to pass by luck. That sweep was a measurement, not a committed artefact;
+ * what the suite checks is the derived bound above.
+ *
+ * 4·10⁴ units is 26 AU — headroom on the derived bound — and a near:far ratio
+ * of 8·10⁵, *tighter* than the 10⁶ the scaffold ran at with a 1-unit near plane.
+ * Dropping the near plane to make room for the handoff costs nothing in depth
+ * precision because the far plane came down further.
+ */
+export const FAR_NEAR_UNITS = 0.05;
+export const FAR_FAR_UNITS = 4e4;
 
 /**
  * The radius the background star sphere is drawn at, in *background-layer*
@@ -81,3 +146,46 @@ export const HANDOFF_KM = 1e4;
  * near and far planes.
  */
 export const BACKDROP_RADIUS = 5;
+
+/**
+ * Which layer a body belongs in, given how far away it is and where it is drawn
+ * now.
+ *
+ * A pure function, and here rather than in the renderer because everything it
+ * depends on is here: it is the decision `HANDOFF_KM` and `HANDOFF_HYSTERESIS`
+ * exist to make, and leaving it in `Game` meant the two constants were asserted
+ * headlessly while the rule reading them needed a browser. The renderer keeps
+ * the state — which body is in which layer — and asks this what to do with it.
+ *
+ * `current` is what makes the band directional: a body already drawn near is
+ * held there until it is `HANDOFF_HYSTERESIS` past the threshold, so a body
+ * sitting on the line does not swap every frame. Pass `undefined` for a body
+ * that has not been placed yet, which is the far case — nothing starts inside
+ * the handoff.
+ */
+export function layerFor(
+	current: "near" | "far" | undefined,
+	distanceKm: number,
+): "near" | "far" {
+	const threshold =
+		current === "near" ? HANDOFF_KM * HANDOFF_HYSTERESIS : HANDOFF_KM;
+	return distanceKm <= threshold ? "near" : "far";
+}
+
+/**
+ * Where float32 quantisation starts showing as jitter, in render units.
+ *
+ * The figure the top of this file quotes, named so it can be asserted rather
+ * than restated. It is a property of the *coordinate space* — how big a number
+ * a float32 still resolves smoothly — so it is independent of `FAR_SCALE` and of
+ * whatever the generator's orbit envelope happens to be. That independence is
+ * the point: a probe checking a far-layer coordinate against this cannot go
+ * falsely red when the generator widens or `FAR_SCALE` is retuned, and it still
+ * catches a `FAR_SCALE` that has stopped doing its job.
+ *
+ * The tighter, content-derived bound — `2·MAX_ORBIT_AU + ARRIVAL_CLEARANCE_AU`
+ * scaled — belongs to the headless tests, which can import the generator's
+ * constants instead of copying them. `~10⁴ units` in the header is that comfort
+ * target; this is the actual ceiling.
+ */
+export const F32_JITTER_UNITS = 1e5;

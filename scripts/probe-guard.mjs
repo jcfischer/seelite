@@ -324,3 +324,90 @@ export async function bootedGame(page, timeout = 20000) {
  * can pass its own list.
  */
 const FINGERPRINT = ["src/units.ts", "src/main.ts"];
+
+/**
+ * The check counter, the reporter and the exit summary, in one object.
+ *
+ * Every probe needs the same three things and the second one copied them
+ * verbatim: `let failures = 0; let checks = 0; const check = …`, a `pageerror`
+ * handler that counts, and a `${passed}/${total} checks passed` tail with
+ * `process.exit(failures ? 1 : 0)`. A third copy was one probe away, and the
+ * output format is exactly the kind of thing that gets changed in one file and
+ * not the others — after which the runner's summary and the probes' own lines
+ * disagree about what a failure looks like.
+ *
+ * `watch(page)` wires a `pageerror` listener that counts as a failure, because
+ * a probe that reads numbers off a game whose loop has thrown will answer most
+ * questions with plausible values.
+ *
+ *   const t = tally();
+ *   t.watch(page);
+ *   t.check("the thing holds", actual === expected, `got ${actual}`);
+ *   t.exit();   // prints the summary, exits 1 if anything failed
+ */
+export function tally() {
+	let failures = 0;
+	let checks = 0;
+	return {
+		check(label, ok, detail) {
+			checks++;
+			if (!ok) failures++;
+			console.log(
+				`${ok ? "  ok  " : " FAIL "} ${label}${detail ? ` — ${detail}` : ""}`,
+			);
+		},
+		watch(page) {
+			page.on("pageerror", (e) => {
+				// Counted as a check too, not just a failure. Incrementing `failures`
+				// alone makes `${checks - failures}/${checks}` report a failing check
+				// that was never run — and with enough page errors the numerator goes
+				// negative. A thrown page error *is* a failed expectation about the
+				// page; it just did not have a label until now.
+				checks++;
+				failures++;
+				console.log(`PAGEERROR ${e.message}`);
+			});
+		},
+		get failures() {
+			return failures;
+		},
+		exit() {
+			console.log(`\n${checks - failures}/${checks} checks passed`);
+			process.exit(failures ? 1 : 0);
+		},
+	};
+}
+
+/**
+ * Install `window.__recoverCamSim()` in the page: the camera's sim position,
+ * recovered from the ship mesh.
+ *
+ * The camera is at the origin in *render* space and somewhere else entirely in
+ * sim space, and `cameraPos` is private. The only honest recovery from outside
+ * is through a mesh whose sim position is known: the ship is drawn at
+ * `shipSim − camSim`, so `camSim = shipSim − shipMesh`. Both probes need it and
+ * both had their own copy, one of which said in a comment that it was a copy.
+ *
+ * Installed as an **init script** rather than exported as a function to call,
+ * because the recovery has to happen in the *same* `page.evaluate` as the mesh
+ * positions it is compared against — a separate round trip would recover the
+ * camera from one frame and the meshes from the next, and that difference is
+ * exactly the quantity under test. An init script puts one definition inside the
+ * page, where any evaluate can call it without a second crossing.
+ *
+ * Call before `page.goto`; it re-runs on every navigation.
+ */
+export async function installCamSim(page) {
+	await page.addInitScript(() => {
+		window.__recoverCamSim = () => {
+			const g = window.__seelite;
+			const m = g && g.nearScene.getObjectByName("ship");
+			if (!m) return null;
+			return {
+				x: g.world.ship.pos.x - m.position.x,
+				y: g.world.ship.pos.y - m.position.y,
+				z: g.world.ship.pos.z - m.position.z,
+			};
+		};
+	});
+}
