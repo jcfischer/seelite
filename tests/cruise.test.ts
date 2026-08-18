@@ -21,6 +21,7 @@ import {
 	CHARGE_REGEN_AU_PER_S,
 	DEFAULT_CRUISE,
 	SUBSTEP_FRACTION,
+	SURFACE_MARGIN,
 	advanceCruise,
 	chargeAfterRegen,
 	chargeAfterTravel,
@@ -43,9 +44,18 @@ function towards(a: Vec3, b: Vec3): Vec3 {
 	return scale(d, 1 / length(d));
 }
 
-/** A star at the origin and one planet, which is the geometry every pacing
- *  claim in §2.3 is implicitly stated against: one mass, straight at it. */
-function oneMassAt(pos: Vec3, radiusKm = 6000) {
+/**
+ * One mass, which is the geometry every pacing claim in §2.3 is implicitly
+ * stated against: fly straight at it.
+ *
+ * The default radius is **1 km — a point mass**, and deliberately so. §2.3's
+ * table is arithmetic about the *law*, which reads a distance and knows nothing
+ * about radii; giving these fixtures a real 6,000 km planet would have the
+ * surface rule (`SURFACE_MARGIN`) end every run 6,300 km out and the table's
+ * numbers would never be reached. The surface rule has its own tests below,
+ * with a real planet in them.
+ */
+function oneMassAt(pos: Vec3, radiusKm = 1) {
 	return [{ id: "planet", pos, radiusKm }];
 }
 
@@ -157,12 +167,12 @@ test.each([
 	["typical leg", 1.3, 68],
 	["outer planet", 6.0, 186],
 ])("a %s (%p AU) takes about %p s", (_name, legAu, wantS) => {
-	const target = { pos: v3(), radiusKm: 6000 };
+	const target = { pos: v3(), radiusKm: 1.2 };
 	const from = v3(legAu * AU_KM, 0, 0);
 	const flight = fly({
 		from,
 		target,
-		masses: oneMassAt(target.pos, target.radiusKm),
+		masses: oneMassAt(target.pos),
 		dt: 0.1,
 		limitS: wantS * 3,
 	});
@@ -176,14 +186,14 @@ test("the pacing is the same at every frame delta up to MAX_DT", () => {
 	// cannot be tuned by flying it — the number the principal judges would be a
 	// property of his display. Sub-stepping is what makes this hold; it is the
 	// claim §8.1 is really making.
-	const target = { pos: v3(), radiusKm: 6000 };
+	const target = { pos: v3(), radiusKm: 1.2 };
 	const from = v3(1.3 * AU_KM, 0, 0);
 	const times = [0.016, 0.033, 0.1].map(
 		(dt) =>
 			fly({
 				from,
 				target,
-				masses: oneMassAt(target.pos, target.radiusKm),
+				masses: oneMassAt(target.pos),
 				dt,
 				limitS: 300,
 			}).t,
@@ -200,7 +210,10 @@ test("a cruise line past a planet never places the ship inside it", () => {
 	// to step across the body between ticks.
 	const planet = { id: "planet", pos: v3(), radiusKm: 6000 };
 	for (const dt of [0.016, 0.05, 0.1]) {
-		for (const missKm of [6000, 9000, 20000]) {
+		// Outside `SURFACE_MARGIN × radius` (6,300 km): closer than that is not a
+		// pass, it is a collision, and the surface rule ends the run there by
+		// design. §9.3's claim is about lines that *go by*.
+		for (const missKm of [7000, 9000, 20000]) {
 			const flight = fly({
 				from: v3(0.3 * AU_KM, missKm, 0),
 				// A target far past the planet, so nothing drops the ship out early:
@@ -217,45 +230,6 @@ test("a cruise line past a planet never places the ship inside it", () => {
 			).toBeGreaterThan(0);
 		}
 	}
-});
-
-test("flying head-on at a planet crawls in rather than teleporting through", () => {
-	// The case §9.3 does *not* cover, pinned so it is a known behaviour rather
-	// than a surprise: aimed at the centre with the throttle open, the ship
-	// converges on the body asymptotically — each sub-step covers a fixed
-	// fraction of what is left — and there is no collision to stop it. It ends up
-	// inside the sphere at a crawl.
-	//
-	// What must hold is the *tunnelling* claim, which is narrower than "never
-	// inside": no single tick ever moves the ship further than its distance to
-	// the mass, so it never appears on the far side without having been inside.
-	// Collision is #8's, and the drop-out (§3) is what a player aimed at a
-	// station actually meets first.
-	const planet = { id: "planet", pos: v3(), radiusKm: 6000 };
-	let pos = v3(0.05 * AU_KM, 0, 0);
-	const nose = towards(pos, planet.pos);
-	for (let i = 0; i < 600; i++) {
-		const before = length(sub(pos, planet.pos));
-		// Stop once the ship is within a kilometre of the *centre* — six thousand
-		// kilometres inside a planet that has no collision, where the arithmetic is
-		// no longer describing anything a player can do. Below a millimetre the
-		// sub-step floor does eventually carry the ship across the centre point,
-		// which is a property of the epsilon and not a claim about flight.
-		if (before < 1) break;
-		const step = advanceCruise({
-			pos,
-			nose,
-			throttle: 1,
-			dt: 0.1,
-			masses: [planet],
-			target: null,
-			params: P,
-		});
-		expect(step.travelledKm).toBeLessThan(before);
-		pos = step.pos;
-	}
-	// And it really did end up deep inside, which is the honest half of the claim.
-	expect(length(sub(pos, planet.pos))).toBeLessThan(planet.radiusKm);
 });
 
 test("a grazing pass costs time rather than passing through", () => {
@@ -280,11 +254,11 @@ test("the drop-out fires inside the drop radius for every approach speed", () =>
 	// point-sampled test steps clean past the threshold and cruise never ends.
 	for (const legAu of [0.05, 0.2, 0.7, 1.3, 3.0]) {
 		for (const dt of [0.016, 0.1]) {
-			const target = { pos: v3(), radiusKm: 6000 };
+			const target = { pos: v3(), radiusKm: 1.2 };
 			const flight = fly({
 				from: v3(legAu * AU_KM, 0, 0),
 				target,
-				masses: oneMassAt(target.pos, target.radiusKm),
+				masses: oneMassAt(target.pos),
 				dt,
 				limitS: 400,
 			});
@@ -300,7 +274,7 @@ test("the drop-out fires inside the drop radius for every approach speed", () =>
 test("a sub-step never moves further than its fraction of the nearest distance", () => {
 	// The rule itself, rather than one of its consequences: §8.1's
 	// `v·dt > 0.1·d` is what the two claims above both rest on.
-	const target = { pos: v3(), radiusKm: 6000 };
+	const target = { pos: v3(), radiusKm: 1.2 };
 	let pos = v3(0.1 * AU_KM, 0, 0);
 	for (let i = 0; i < 2000; i++) {
 		const before = length(sub(pos, target.pos));
@@ -309,7 +283,7 @@ test("a sub-step never moves further than its fraction of the nearest distance",
 			nose: towards(pos, target.pos),
 			throttle: 1,
 			dt: 0.1,
-			masses: oneMassAt(target.pos, target.radiusKm),
+			masses: oneMassAt(target.pos),
 			target,
 			params: P,
 		});
@@ -354,7 +328,7 @@ test("charge is spent per AU travelled, not per second", () => {
 	// unchanged.
 	const legKm = 2e6;
 	const spend = (massAt: Vec3) => {
-		const target = { pos: v3(), radiusKm: 6000 };
+		const target = { pos: v3(), radiusKm: 1.2 };
 		let pos = v3(legKm, 0, 0);
 		let charge = CHARGE_CAPACITY_AU;
 		let seconds = 0;
@@ -379,7 +353,10 @@ test("charge is spent per AU travelled, not per second", () => {
 	// The well sits just off the line, so the same kilometres take far longer.
 	const fast = spend(v3(0, 30 * AU_KM, 0));
 	const slow = spend(v3(legKm * 0.5, 2e4, 0));
-	expect(slow.seconds).toBeGreaterThan(fast.seconds * 5);
+	// Both legs decelerate near the destination now that the law reads the target
+	// as well as the mass, so the gap is narrower than it was — the claim is that
+	// the well costs time, not how much.
+	expect(slow.seconds).toBeGreaterThan(fast.seconds * 2);
 	// Per kilometre, because the two runs stop on the same *position* test and a
 	// sub-step lands them a little differently — the claim is the rate, not the
 	// total.
@@ -433,13 +410,13 @@ test("cruise does not move a ship with no charge", () => {
 	// The charge is metered by the caller (the renderer holds the tank), so what
 	// this pins is the other half: a zero-charge engage is refused rather than
 	// silently free.
-	const target = { pos: v3(), radiusKm: 6000 };
+	const target = { pos: v3(), radiusKm: 1.2 };
 	const step = advanceCruise({
 		pos: v3(0.5 * AU_KM, 0, 0),
 		nose: towards(v3(0.5 * AU_KM, 0, 0), target.pos),
 		throttle: 1,
 		dt: 0.1,
-		masses: oneMassAt(target.pos, target.radiusKm),
+		masses: oneMassAt(target.pos),
 		target,
 		params: P,
 		chargeAu: 0,
@@ -451,14 +428,14 @@ test("cruise does not move a ship with no charge", () => {
 // ------------------------------------------------------------------- the throttle
 
 test("the throttle sets magnitude only, and zero throttle holds position", () => {
-	const target = { pos: v3(), radiusKm: 6000 };
+	const target = { pos: v3(), radiusKm: 1.2 };
 	const from = v3(1.0 * AU_KM, 0, 0);
 	const still = advanceCruise({
 		pos: from,
 		nose: towards(from, target.pos),
 		throttle: 0,
 		dt: 0.1,
-		masses: oneMassAt(target.pos, target.radiusKm),
+		masses: oneMassAt(target.pos),
 		target,
 		params: P,
 	});
@@ -472,7 +449,7 @@ test("the throttle sets magnitude only, and zero throttle holds position", () =>
 		nose: towards(from, target.pos),
 		throttle: 0.5,
 		dt: 0.1,
-		masses: oneMassAt(target.pos, target.radiusKm),
+		masses: oneMassAt(target.pos),
 		target,
 		params: P,
 	});
@@ -487,13 +464,16 @@ test("the ship overshoots rather than stopping when it arrives too fast", () => 
 	// §3: failure to slow means overshooting and looping back, and it never
 	// causes damage. With the drop-out's speed threshold set below the arrival
 	// speed, the ship must sail past the target rather than be caught by it.
-	const target = { pos: v3(), radiusKm: 6000 };
+	const target = { pos: v3(), radiusKm: 1.2 };
 	const strict = { ...P, dropSpeedKms: 1 };
 	const from = v3(0.2 * AU_KM, 0, 0);
 	const flight = fly({
 		from,
 		target,
-		masses: oneMassAt(target.pos, target.radiusKm),
+		// The mass is elsewhere: a destination that is also a body would end the
+		// run on its surface rather than by sailing past, which is a different
+		// claim (and has its own test).
+		masses: oneMassAt(v3(0, 3 * AU_KM, 0)),
 		dt: 0.1,
 		limitS: 120,
 		params: strict,
@@ -502,6 +482,80 @@ test("the ship overshoots rather than stopping when it arrives too fast", () => 
 	expect(flight.dropped).toBe(false);
 	// Past it: the ship is on the far side of the target from where it started.
 	expect(flight.pos.x).toBeLessThan(0);
+});
+
+// ------------------------------------------ what flying it turned up (#14/#21)
+
+test("the law is keyed to the nearer of the mass and the destination", () => {
+	// §2.1 rejected a destination-*only* law because it tunnels; the minimum of
+	// the two keeps that argument — the speed is still bounded by the mass
+	// distance — and gives the approach its deceleration. Without it a station's
+	// speed is set by its planet tens of thousands of km away and the ship
+	// arrives still doing thousands of km/s.
+	const planet = { id: "planet", pos: v3(), radiusKm: 6000 };
+	// A station 60,000 km from its planet, and the ship 50 km from the station.
+	const station = { pos: v3(6e4, 0, 0), radiusKm: 1.2 };
+	const pos = v3(6e4 + 50, 0, 0);
+	const step = advanceCruise({
+		pos,
+		nose: towards(pos, station.pos),
+		throttle: 1,
+		dt: 0.1,
+		masses: [planet],
+		target: station,
+		params: P,
+	});
+	// §2.3's own figure for 50 km out, rather than the ~44,000 km/s the planet's
+	// distance alone would allow.
+	expect(step.speedKms / 140).toBeCloseTo(1, 1);
+	expect(step.dropped).toBe(true);
+	expect(step.exit).toBe("arrival");
+});
+
+test("a body's surface stops cruise instead of being flown through", () => {
+	// The exploit the principal found: the law slows an approach asymptotically
+	// and nothing collides, so flying through a planet was the most effective
+	// brake in the game. A body has to be an obstacle for the nearest-mass law to
+	// read as gravity.
+	const planet = { id: "planet", pos: v3(), radiusKm: 6000 };
+	let pos = v3(0.05 * AU_KM, 0, 0);
+	const nose = towards(pos, planet.pos);
+	let exit: string | null = null;
+	for (let i = 0; i < 2000 && !exit; i++) {
+		const step = advanceCruise({
+			pos,
+			nose,
+			throttle: 1,
+			dt: 0.1,
+			masses: [planet],
+			target: null,
+			params: P,
+		});
+		pos = step.pos;
+		if (step.dropped) exit = step.exit;
+	}
+	expect(exit).toBe("proximity");
+	// Just clear of the surface, never inside it.
+	const km = length(sub(pos, planet.pos));
+	expect(km).toBeGreaterThanOrEqual(planet.radiusKm);
+	expect(km).toBeLessThan(planet.radiusKm * SURFACE_MARGIN * 1.01);
+});
+
+test("a grazing pass still passes, rather than dropping the ship every time", () => {
+	// The other half of the same rule: `SURFACE_MARGIN` must not turn every
+	// scenery body into a tripwire, or §2.1's "a line that grazes a gas giant
+	// costs time" becomes "a line that grazes a gas giant ends your journey".
+	const planet = { id: "planet", pos: v3(), radiusKm: 6000 };
+	const from = v3(0.2 * AU_KM, planet.radiusKm * 1.4, 0);
+	const flight = fly({
+		from,
+		target: { pos: v3(-0.2 * AU_KM, planet.radiusKm * 1.4, 0), radiusKm: 1 },
+		masses: [planet],
+		dt: 0.1,
+		limitS: 300,
+		fixedNose: true,
+	});
+	expect(flight.minApproach).toBeGreaterThan(0);
 });
 
 // ------------------------------------- arrival is relative (this node's finding)

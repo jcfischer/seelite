@@ -136,6 +136,23 @@ export const SUBSTEP_FRACTION = 0.1;
  */
 export const MAX_SUBSTEPS = 96;
 
+/**
+ * How close to a body's surface cruise is allowed, as a multiple of its radius.
+ *
+ * Crossing it drops the ship into normal flight where it is, rather than
+ * letting it continue. This is not in #10 — it is what flying the prototype
+ * turned up: the speed law slows an approach asymptotically and there is no
+ * collision, so a ship pointed at a planet crawls *inside* it, and the
+ * principal found that the fastest way to shed speed near a station was to fly
+ * through its planet a few times. A body has to be an obstacle for the
+ * nearest-mass law to read as gravity rather than as an exploit.
+ *
+ * 1.05 rather than 1.0 so the drop happens just clear of the surface: the far
+ * layer hands a body over at `HANDOFF_KM`, and dropping *at* the surface would
+ * leave the ship inside a sphere it is being drawn the inside of.
+ */
+export const SURFACE_MARGIN = 1.05;
+
 /** Anything the speed law keys off: §2 counts stars and planets, and
  *  deliberately not moons, stations or belts (§2.1). */
 export interface Mass {
@@ -276,6 +293,9 @@ export function sphereEntry(
 	return entry <= stepKm ? Math.max(0, entry) : null;
 }
 
+/** How a frame of cruise ended, or `null` if it did not. */
+export type CruiseExit = "arrival" | "proximity" | null;
+
 export interface CruiseInput {
 	pos: Vec3;
 	/** Unit vector. §1 nose-locks velocity, so this *is* the direction of
@@ -298,8 +318,11 @@ export interface CruiseStep {
 	pos: Vec3;
 	/** Kilometres covered this frame — what §7 meters the charge against. */
 	travelledKm: number;
-	/** Whether the auto-drop fired this frame (§3). */
+	/** Whether cruise ended this frame — for any of the reasons below. */
 	dropped: boolean;
+	/** *Why* it ended, when it did. `arrival` is §3's drop-out; `proximity` is a
+	 *  body's surface, which cruise refuses to cross. */
+	exit: CruiseExit;
 	/** Speed at the end of the frame, km/s. The HUD's headline number. */
 	speedKms: number;
 	/** The same speed in the destination's frame — what the drop-out is judged
@@ -334,6 +357,7 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 	let travelledKm = 0;
 	let substeps = 0;
 	let dropped = false;
+	let exit: CruiseExit = null;
 	let speedKms = 0;
 	let closingKms = 0;
 	let charge = input.chargeAu;
@@ -348,6 +372,7 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 		closingKms,
 		substeps,
 		starved: false,
+		exit,
 		...over,
 	});
 
@@ -361,8 +386,23 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 			? length(sub(pos, input.target.pos))
 			: Number.POSITIVE_INFINITY;
 
+		// **The law is keyed to the nearer of the mass and the destination.**
+		//
+		// §2.1 rejected a destination-*only* law, and rightly: it flies through
+		// worlds between ticks. Taking the minimum of the two keeps that argument
+		// intact — the speed is still bounded by the mass distance, so nothing
+		// tunnels — while giving the approach the deceleration it obviously needed.
+		//
+		// Found by flying it. Without this, a station's speed is set by its planet
+		// tens of thousands of km away, so the ship arrives at the drop radius
+		// still doing thousands of km/s and sails past; the principal's report was
+		// "overshooting station like crazy", and the way he eventually docked was
+		// to fly *through the planet* repeatedly to use its gravity well as a
+		// brake. With it, the ship is doing §2.3's own 140 km/s at 50 km out and
+		// the drop-out fires the way that table always said it would.
+		const keyedKm = Math.min(massKm, targetKm);
 		speedKms =
-			cruiseSpeed(massKm, p) * Math.min(1, Math.max(0, input.throttle));
+			cruiseSpeed(keyedKm, p) * Math.min(1, Math.max(0, input.throttle));
 		if (speedKms <= 0) break;
 
 		// Speed in the destination's own frame — see `closingSpeed`. Against an
@@ -381,18 +421,18 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 			closing <= p.dropSpeedKms
 		) {
 			dropped = true;
+			exit = "arrival";
 			break;
 		}
 
-		// The sub-step is sized off the **mass** distance alone, which is what the
-		// speed law reads: it keeps `v` accurate along the curve. Sizing it off the
-		// target as well is what the first version did, and it does not work —
-		// at 20 c with the nearest mass an AU away, closing on a 50 km radius needs
-		// more sub-steps every frame than the last, and the run stalls against
-		// `MAX_SUBSTEPS` a few thousand km short of arriving. The drop-out is
+		// The sub-step is sized off whichever distance the law is reading, which is
+		// what keeps `v` accurate along the curve. It is **not** what finds the
+		// drop-out: closing on a 50 km radius at 20 c would need more sub-steps
+		// every frame than the last, and the run stalls against `MAX_SUBSTEPS` a
+		// few thousand km short. Both the drop-out and the surfaces below are
 		// **swept** instead (§8.1's own word), which is exact at any step size.
-		const cap = Number.isFinite(massKm)
-			? (SUBSTEP_FRACTION * massKm) / speedKms
+		const cap = Number.isFinite(keyedKm)
+			? (SUBSTEP_FRACTION * keyedKm) / speedKms
 			: remaining;
 		const dt = Math.min(remaining, Math.max(cap, 1e-9));
 		let stepKm = speedKms * dt;
@@ -410,6 +450,30 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 			if (entryKm !== null) {
 				stepKm = entryKm;
 				dropped = true;
+				exit = "arrival";
+			}
+		}
+
+		// And against every body's surface. A planet has to *stop* you — the law
+		// alone does not, because it slows the ship asymptotically and there is no
+		// collision, so a ship aimed at a world crawls into it and out the far
+		// side. Flying through a planet turned out to be the most effective brake
+		// in the game, which is a mechanic nobody designed.
+		//
+		// Swept, and taken **before** the drop-out if it happens first, so the
+		// nearer event is the one that fires.
+		for (const m of input.masses) {
+			const entryKm = sphereEntry(
+				pos,
+				input.nose,
+				stepKm,
+				m.pos,
+				m.radiusKm * SURFACE_MARGIN,
+			);
+			if (entryKm !== null && entryKm <= stepKm) {
+				stepKm = entryKm;
+				dropped = true;
+				exit = "proximity";
 			}
 		}
 

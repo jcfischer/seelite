@@ -1235,7 +1235,15 @@ class Game {
 			return;
 		}
 		if (step.dropped) {
-			this.dropOut(`arrived at ${this.targetId ?? "target"}`, true);
+			// The frame the ship is left in follows the *reason*: an arrival matches
+			// the destination, a surface drop matches nothing — the ship is beside a
+			// planet it flew at, not at a place it meant to be.
+			this.dropOut(
+				step.exit === "proximity"
+					? "dropped by proximity to a body"
+					: `arrived at ${this.targetId ?? "target"}`,
+				step.exit === "arrival",
+			);
 		}
 	}
 
