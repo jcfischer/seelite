@@ -30,7 +30,10 @@ import {
 	systemPosition,
 	systemSeedFor,
 } from "../src/galaxy";
-import { type Vec3, lengthSq } from "../src/sim";
+// `Vec3` and `lengthSq` live in `src/vec3.ts`, not `src/sim.ts` — this import
+// was wrong and the script could never have run. It went unnoticed because
+// `tsconfig.json` did not include `scripts/`; adding it is what surfaced this.
+import { type Vec3, lengthSq } from "../src/vec3";
 
 const seeds = Number(process.argv[2] ?? 400);
 const SHELLS = 8;

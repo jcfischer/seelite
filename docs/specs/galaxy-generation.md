@@ -89,7 +89,7 @@ this spec and it was accepted deliberately.
 | Radius `R` | 22 LY |
 | Distance metric | true 3D Euclidean, isotropic |
 | Fuel tank | 7.0 LY |
-| Fuel cost | 0.2 Cr / LY (14 Cr full tank) |
+| Fuel cost | 0.2 Cr / 0.1 LY (14 Cr full tank) — §8 |
 
 Galaxies are a **namespace, not a regeneration**: switching galaxy changes
 `g` in the derivation above and nothing else. The Galactic Hyperdrive
@@ -464,11 +464,19 @@ to ~3 AU. A fixed witchpoint would throw that away for no saving.
 | Property | Value |
 |---|---|
 | Range | ≤ 7.0 LY, true 3D distance |
-| Cost | 0.2 Cr / LY |
+| Cost | **0.2 Cr / 0.1 LY — 14 Cr for a full tank** (corrected; see below) |
 | Wind-up | a few seconds, **player is vulnerable** |
 | Interruption | taking damage cancels the charge |
 | Transition | witchspace tunnel |
 | Exit | §7.4 — 1 AU out, on the inbound bearing |
+
+> **The Cost row above was a transcription error and is corrected in place.** It
+> read `0.2 Cr / LY`, dropping the `/0.1` from Elite's PRXS table, which made a
+> full 7 LY tank 1.4 Cr instead of 14 Cr. Fuel pricing belongs to
+> [#7](https://github.com/jcfischer/seelite/issues/7), which adopts that table
+> verbatim; `economy-trade.md` §6.1 owns the figure and the reasoning. The row
+> is now right rather than merely flagged — a reader who never opens #7's spec
+> should not be told the wrong number.
 
 The wind-up is the point. Elite's jump was effectively instant, which made
 hyperspace a guaranteed escape from any fight. A charge window turns "run
