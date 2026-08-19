@@ -65,9 +65,10 @@ is how prose and types drift apart.
   **target**, a dockable object is a **station**, and a system with several is
   **multi-station**. This PR renames every site — `in-system-travel.md`,
   `galaxy-generation.md`, and the comments and test names in `cruise.ts`,
-  `main.ts`, `system.ts`, `backdrop.ts`, `tests/` and `scripts/`. `grep -rn
-  destination src scripts tests docs` is the audit, and it should return only
-  the WebAudio line below. (`AudioContext`'s
+  `main.ts`, `system.ts`, `backdrop.ts`, `tests/` and `scripts/`. The audit is
+  `grep -rn destination src scripts tests docs --exclude=station-types.md`, and
+  its only expected hit is `ctx.destination` in `src/audio.ts` — this file is
+  excluded because the retirement note necessarily names the word it retires. (`AudioContext`'s
   `ctx.destination` in `src/audio.ts` is the WebAudio API and is untouched.)
 
 The station vocabulary matches `StationType = "trade" | "refinery" | "shipyard"`
@@ -221,7 +222,7 @@ at a shipyard therefore has *zero* range in every system where a shipyard can
 occur: a mechanism that reads as a rule while behaving as a constant.
 
 The symmetric case — a *negative* shift at refineries, the counterpart of §3's
-`shipyard −2` — does have range, and is rejected on a different ground. It would
+refinery `+3` — does have range, and is rejected on a different ground. It would
 mean a refinery in a `displayTL = 4` system shows 4 items instead of 7, i.e. the
 place you go for a mining laser is where mining lasers stop being sold. The
 exclusive in the table above is the whole point of the type, and a negative TL
@@ -275,7 +276,7 @@ A linear ramp rather than a curve, because it is the shape a corpus test can
 bound at both ends and check for monotonicity without arguing about a fitted
 constant. It needs no `clamp`: the expression stays inside (0, 1) across the
 whole domain, and a guard that cannot fire is the same dead weight §9.1 objects
-to in assertions. Police presence is `clamp(government − 3, 0, 7)` at every refinery
+to in assertions. Police presence is `max(government − 3, 0)` at every refinery
 regardless of the flag.
 
 The consequence accepted with eyes open: **a fence is not inferable from the
@@ -310,6 +311,43 @@ existing shipyards.
 it.** This is the same operation, for the same reason, as the `ARRIVAL: 7` tag
 already documented there — extending the table is safe, renumbering it is not,
 and reusing an existing tag is the unsafe move `CLAUDE.md` names explicitly.
+
+---
+
+### 5.4 A defect this node found: two systems have nowhere to dock
+
+Not introduced here, and not fixed here. Recorded because the fixture committed
+with this spec is what exposed it, and because §5's whole construction assumes
+every system can be docked at.
+
+`galaxy-generation.md` §6.4 lists the trade station as present **"always"**, and
+`src/system.ts` states it outright: *"The trade station is unconditional, so a
+system always has somewhere to dock — a system with no station would be a dead
+end the galaxy map has no way to warn."* Both are false. The push is guarded by
+`if (primary)`, and §6.2's Titius-Bode ladder discards every rung outside the
+0.3–6 AU envelope, so a system can end up with no planets at all.
+
+Measured across the whole shipped world (`worldSeed = 0x5ee11e`, all 8
+galaxies, 2,048 systems): **2 systems have zero planets, and the same 2 have
+zero stations** — galaxy 0 #110 (EDSOISLA) and galaxy 1 #114 (ORTITEZA). Pinned
+by `tests/station-orbits.test.ts`, which asserts the count is 2 rather than
+asserting the invariant, so the defect is visible and the fix will break the
+test on purpose.
+
+**Why it is not fixed in this PR.** Two reasons, and the second is the
+decisive one:
+
+1. There are three defensible answers and picking one is a decision, not a
+   patch — give a planetless system a **star-orbiting** trade station; force the
+   ladder to keep **at least one** planet; or drop such systems from the galaxy
+   entirely. Each has different consequences for #10's arrival point (which
+   assumes a body to arrive near), for the galaxy map, and for the determinism
+   digest.
+2. Any of the three **moves station placement**, which is precisely what the
+   fixture committed here exists to pin. Landing the fix in the same PR would
+   make the baseline and the change indistinguishable.
+
+Owned by its own node, below this one.
 
 ---
 
@@ -417,8 +455,10 @@ Two tiers, per the repo's culture.
   determinism digest pins the *record* and will legitimately move when the new
   fields land; the orbit fixture pins *placement* and must not move with them.
   Repinning both in one commit destroys the evidence.
-- **`blackMarket` frequency tracks government.** Over a corpus of ≥ 20,000
-  refineries: observed rate at `government = 0` within [0.92, 0.98], at
+- **`blackMarket` frequency tracks government.** One world holds 2,048 systems
+  and well under a thousand refineries, so this corpus **sweeps world seeds**
+  rather than galaxies — the tooling takes a seed list, not the single
+  `WORLD_SEED` the placement fixture is pinned to. Over ≥ 20,000 refineries: observed rate at `government = 0` within [0.92, 0.98], at
   `government = 7` within [0.05, 0.11], and non-increasing across `g` allowing
   for sampling noise. Bounds from §5.2's table.
 - **Incidence is measured, not estimated.** The same corpus reports refinery
@@ -446,6 +486,10 @@ Two tiers, per the repo's culture.
   (Elite's Narcotics, Firearms, Slaves) and a per-commodity legality flag,
   because §5.2 makes the black market load-bearing rather than flavour.
   Equipment prices are TL-gated per §4; hulls price only at shipyards.
+  **Per-station stock** (quantity, and how it regenerates against the #6 game
+  clock) is #7's too — this spec deliberately says nothing about it, and the
+  galaxy spec's original "prices and stock belongs to #7" hand-off is preserved
+  by this sentence rather than lost in the amendment.
 - **#8 (combat)** — owns the **legal status / bounty system**, which §5 now
   requires and which no node currently specifies. It also owns elevated pirate
   presence near refineries and the shipyard's hostile response to a bad legal
@@ -462,11 +506,9 @@ Two tiers, per the repo's culture.
 
 ## 11. Weak joints, recorded not reopened
 
-1. **Commodity differentiation is soft (§3).** Three stations are the same
-   transaction at three prices. Accepted in exchange for never stranding a
-   player's cargo two minutes and a drive charge from the station that would
-   buy it. §4 and §5 carry the differentiation instead, which makes them
-   load-bearing in a way they would not otherwise be.
+1. **Commodity differentiation is soft.** §3.3 — three prices for one
+   transaction, accepted to avoid stranding cargo. §4 and §5 carry the
+   differentiation instead, which is what makes them load-bearing.
 2. **The trade station has no exclusive.** Its identity is "always present,
    safe, busy, and the unmodified voice of the system's economy". That is a
    real role and a quiet one. If multi-station systems ever feel thin in
@@ -479,10 +521,9 @@ Two tiers, per the repo's culture.
    rich core system can hold a fence. §5.2's government weighting makes that
    rare rather than impossible, which is the intended answer: rare and
    memorable, not forbidden.
-5. **A belt refinery sells cheap bread (§3.1).** Staples share the extractive
-   group's negative gradient, so the +3 offset that makes ore cheap makes Food,
-   Furs and Liquor cheap too. Elite's mechanism — one economy scalar, one signed
-   slope per good — cannot express "cheap ore, dear bread", and buying the
-   distinction costs a second pricing mechanism in #7. Taken as flavour debt. If
-   it ever grates, the repair is a per-commodity-group multiplier on top of the
-   offset, which §3.1 records as the option that was declined.
+5. **A belt refinery sells cheap bread.** §3.3 — staples share the extractive
+   gradient, so the +3 that cheapens ore cheapens Food, Furs and Liquor too.
+   Flavour debt; the declined repair is named there.
+6. **Two systems in 2,048 have nowhere to dock.** §5.4 — a pre-existing defect
+   this node measured rather than introduced, with the fix left to its own node
+   because the three candidate answers are a real choice.

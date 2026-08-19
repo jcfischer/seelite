@@ -1,5 +1,5 @@
 /**
- * The station-placement baseline (spec `station-types.md` §5.3, §9.1).
+ * The station-placement baseline (spec `station-types.md` §5.3, §5.4, §9.1).
  *
  * This guards one specific regression. `generateStations` draws trade →
  * refinery → shipyard from a single `DOMAIN.STATIONS` stream, so a draw
@@ -14,52 +14,16 @@
  * generator as it stood before those fields were added.
  *
  * **This fixture is not the galaxy determinism digest.** That one
- * (`galaxy.test.ts`) pins the *record* and will legitimately move when the spec's
- * new fields land. This one pins *placement* and must not move with them — if
- * both are repinned in the same commit, neither is evidence any more.
- *
- * Floats are compared as `toExponential(12)` strings rather than by equality.
- * `galaxy.test.ts` records why a float cannot be pinned exactly across
- * platforms; station orbits are plain arithmetic over `rand()` with no
- * transcendental in the chain, so twelve significant digits is far inside any
- * real divergence while still catching a shifted draw, which changes the first
- * digit.
+ * (`galaxy.test.ts`) pins the *record* and will legitimately move when the
+ * spec's new fields land. This one pins *placement* and must not move with
+ * them — if both are repinned in the same commit, neither is evidence any more.
  */
 
 import { describe, expect, test } from "bun:test";
-import baseline from "./fixtures/station-orbits.json";
 import { GALAXY_COUNT, generateGalaxy } from "../src/galaxy";
 import { generateContents } from "../src/system";
-
-/** Kept identical to `scripts/capture-station-orbits.ts` — the capture script
- *  and the check must serialise a station the same way or the comparison is
- *  meaningless. */
-function rowsForCurrentGenerator(): string[] {
-	const rows: string[] = [];
-	for (const g of baseline.galaxies) {
-		if (g >= GALAXY_COUNT) throw new Error(`galaxy ${g} does not exist`);
-		const galaxy = generateGalaxy(baseline.worldSeed, g);
-		for (const record of galaxy.systems) {
-			for (const s of generateContents(record).stations) {
-				rows.push(
-					[
-						g,
-						record.index,
-						s.id,
-						s.type,
-						s.parentId ?? "-",
-						s.orbit.radiusKm.toExponential(12),
-						s.orbit.periodS.toExponential(12),
-						s.orbit.theta0.toExponential(12),
-						s.orbit.inclination.toExponential(12),
-						s.orbit.node.toExponential(12),
-					].join("\t"),
-				);
-			}
-		}
-	}
-	return rows;
-}
+import { stationRows } from "../scripts/station-rows";
+import baseline from "./fixtures/station-orbits.json";
 
 describe("station placement is stable against added draws", () => {
 	test("the fixture is a real corpus, not an empty pass", () => {
@@ -70,11 +34,47 @@ describe("station placement is stable against added draws", () => {
 	});
 
 	test("every station's type, parent and orbit match the baseline", () => {
-		const now = rowsForCurrentGenerator();
+		const now = stationRows(baseline.worldSeed, baseline.galaxies);
 		// Count first: a length mismatch means stations appeared or vanished, and
 		// the row-by-row diff below would then misalign and report every station
 		// as changed rather than naming the real one.
 		expect(now.length).toBe(baseline.rows.length);
 		expect(now).toEqual(baseline.rows);
+	});
+});
+
+/**
+ * The dead-end defect, pinned rather than left silent (`station-types.md` §5.4).
+ *
+ * `galaxy-generation.md` §6.4 says the trade station is present "always", and
+ * `src/system.ts` says "The trade station is unconditional, so a system always
+ * has somewhere to dock — a system with no station would be a dead end the
+ * galaxy map has no way to warn". Neither is true: the station is guarded by
+ * `if (primary)`, and §6.2's ladder can discard every rung outside the orbit
+ * envelope, leaving a planetless system with nothing to dock at.
+ *
+ * This test asserts the defect's **current** extent rather than the invariant,
+ * because asserting the invariant today would simply fail. It is deliberately
+ * shaped to break when the defect is fixed: the node that fixes it flips these
+ * two expectations to `0` and recaptures the fixture, and until then the number
+ * is measured and visible instead of being a claim nobody checked.
+ */
+describe("undockable systems (known defect, station-types.md §5.4)", () => {
+	test("exactly 2 of 2048 systems generate with no planet and no station", () => {
+		let planetless = 0;
+		let stationless = 0;
+		for (let g = 0; g < GALAXY_COUNT; g++) {
+			for (const record of generateGalaxy(baseline.worldSeed, g).systems) {
+				const contents = generateContents(record);
+				if (contents.planets.length === 0) planetless++;
+				if (contents.stations.length === 0) stationless++;
+			}
+		}
+		expect(planetless).toBe(2);
+		expect(stationless).toBe(2);
+		// Every stationless system is stationless *because* it is planetless —
+		// if these ever diverge, a second cause has appeared and §5.4's analysis
+		// no longer covers it.
+		expect(stationless).toBe(planetless);
 	});
 });

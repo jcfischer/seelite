@@ -342,7 +342,7 @@ orbits, at the geometric mean of the two, width ±10%.
 
 | Type | Present when | Sits at |
 |---|---|---|
-| **trade station** | always | orbit of the primary planet |
+| **trade station** | the system has a planet — see the note below | orbit of the primary planet |
 | **refinery** | the system has a belt (§6.3) | inside the belt |
 | **shipyard** | `displayTL ≥ 10` | orbit of the primary or a gas giant |
 
@@ -357,8 +357,19 @@ offset, equipment exclusives, law and contraband, geometry, silhouette — is
 station from an offset economy), #8 (legal status, pirate presence) and #9 (two
 docking interactions, not three).
 
-The names above were changed by #13 to match `StationType` exactly, and
-"outpost" was retired as a synonym carrying no distinction.
+The names above were changed by #13 to match `StationType` (see
+`station-types.md` §1 for the umbrella/type distinction — the enum value is
+`trade`, the thing is a "trade station"), and "outpost" was retired as a
+synonym carrying no distinction.
+
+> **The trade station is not unconditional.** This table said "always" and
+> `src/system.ts` says the same; both are wrong. §6.2's ladder can discard every
+> rung outside the orbit envelope, and the trade station is guarded by
+> `if (primary)`, so a planetless system has nothing to dock at — measured at
+> **2 systems in 2,048** on the shipped world seed. Recorded and pinned by
+> `station-types.md` §5.4; the fix has its own node, because the three
+> candidate answers differ in what they do to arrival, the galaxy map and the
+> determinism digest.
 
 ---
 
