@@ -32,7 +32,6 @@ import {
 	type Commodity,
 	DEFICIT_HALF_LIFE_MIN,
 	DEFICIT_MAX,
-	HOLD_REFERENCE_T,
 	NARCOTICS_BELL,
 	NARCOTICS_RETUNE,
 	OFFSET_STATIONS,
@@ -53,20 +52,13 @@ import {
 	sweepDomain,
 	surveyResiduals,
 	runValueCr,
+	shelfQuantity,
 	runsToExhaustion,
 	stockResponse,
 } from "./helpers/market-math";
 
 /** The file's short local name; the lookup itself is shared, not copied. */
 const byName = commodity;
-
-/** Buyable, hold-consuming goods — the population §8's pump actually trades. */
-const TRADEABLE = COMMODITIES.filter((c) => !c.sellOnly && c.unit === "t");
-/** …and of those, the ones a shipyard or trade station will actually handle.
- *  §4 scopes contraband to fences, so a shipyard→refinery contraband run is not
- *  a transaction that exists — including it in an intra-system search finds a
- *  "best pair" no player can fly. */
-const LEGAL_TRADEABLE = TRADEABLE.filter((c) => !c.illegal);
 
 describe("the commodity table", () => {
 	test("is Bell's 17 goods", () => {
@@ -318,6 +310,21 @@ describe("§3 the type offset", () => {
 		}
 	});
 
+	test("the shelf stays inside the cap after a deficit, in both directions", () => {
+		// §1's pipeline put `− deficit` *outside* the clamp, so dumping a hold
+		// yielded a 126-unit shelf while §10.1 claimed the cap held everywhere —
+		// on the strength of a test calling `marketRow`, which takes no deficit
+		// and cannot observe the case.
+		expect(shelfQuantity(QUANTITY_CAP, -DEFICIT_MAX)).toBe(QUANTITY_CAP);
+		expect(shelfQuantity(40, -DEFICIT_MAX)).toBe(QUANTITY_CAP);
+		expect(shelfQuantity(40, DEFICIT_MAX)).toBe(0);
+		expect(shelfQuantity(40, 10)).toBe(30);
+		expect(shelfQuantity(40, -10)).toBe(50);
+		// …and a runaway deficit cannot push it out either way.
+		expect(shelfQuantity(40, 10_000)).toBe(0);
+		expect(shelfQuantity(40, -10_000)).toBe(QUANTITY_CAP);
+	});
+
 	test("quantity never exceeds Bell's 63-unit cap", () => {
 		for (const commodity of COMMODITIES)
 			for (const economy of ALL_ECONOMIES)
@@ -526,11 +533,13 @@ describe("§5 the stock deficit", () => {
 		// because it is a 0.4 Cr good. The bound worth guarding is the richest
 		// residual, and it comes from the same survey the instrument prints.
 		const { worst, worstRatio, unclosableRows, rows } = surveyResiduals();
-		// Measured: 7.9 Cr/t (Furs, refinery→shipyard at economy 7) = 158 Cr per
-		// 20 t run. The farm is allowed to exist; it is not allowed to be worth
-		// preferring to a trade route.
+		// Measured over **every** legal good, sub-tonne included: 7.9 Cr/t (Furs,
+		// refinery→shipyard at economy 7) = 158 Cr per run. Ranked by run value,
+		// because Gold's Cr/kg and Furs' Cr/t are not comparable — and because
+		// §2.2 names the sub-tonne goods as the ones the clamp enriched, so a
+		// sweep that excluded them could not support this bound at all.
+		expect(worst.runCr).toBeLessThan(200);
 		expect(worst.residualCr).toBeLessThan(10);
-		expect(worst.residualCr * HOLD_REFERENCE_T).toBeLessThan(200);
 		// …and the ratio view, kept because §5.4 reports it: a real minority of
 		// rows exceed the closable ratio, which is why the residual is the bound.
 		expect(worstRatio.ratio).toBeGreaterThan(CLOSABLE_RATIO);

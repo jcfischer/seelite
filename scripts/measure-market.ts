@@ -28,8 +28,6 @@
  */
 
 import {
-	ALL_ECONOMIES,
-	ALL_FLUCT,
 	ALL_STATIONS,
 	type ByteMode,
 	COMMODITIES,
@@ -37,7 +35,6 @@ import {
 	NARCOTICS_BELL,
 	OFFSET_STATIONS,
 	type StationTypeKey,
-	DEFICIT_MAX,
 	CLOSABLE_RATIO,
 	FLUCT_PAIRS,
 	HOLD_REFERENCE_T,
@@ -45,11 +42,9 @@ import {
 	bestResidualBetween,
 	commodity,
 	marketRow,
-	residualMarginCr,
 	runValueCr,
 	surveyResiduals,
 	runsToExhaustion,
-	stockResponse,
 	sweepDomain,
 } from "../tests/helpers/market-math";
 import {
@@ -83,7 +78,7 @@ const fmt = (s: Span) => `${s.lo.toFixed(1)}–${s.hi.toFixed(1)}`;
 
 /** Measures one good. Printing is the caller's, so `filter(report)` cannot read
  *  as a filter with a side effect. */
-function measure(commodity: Commodity): {
+function measure(good: Commodity): {
 	overflowRate: number;
 	wrapSpan: Span;
 	clampSpan: Span;
@@ -120,10 +115,10 @@ function print(label: string, m: ReturnType<typeof measure>): void {
 }
 
 const flattened: string[] = [];
-for (const commodity of COMMODITIES) {
-	const m = measure(commodity);
-	print(commodity.name, m);
-	if (m.collapsed) flattened.push(commodity.name);
+for (const good of COMMODITIES) {
+	const m = measure(good);
+	print(good.name, m);
+	if (m.collapsed) flattened.push(good.name);
 }
 console.log(
 	`\nshipped table — goods whose price span collapses under the clamp: ${
@@ -146,13 +141,8 @@ const NARCOTICS_ROWS: [string, Commodity, ByteMode][] = [
 	["Bell + clamp", NARCOTICS_BELL, "saturate"],
 	["seelite + clamp", commodity("Narcotics"), "saturate"],
 ];
-for (const [label, commodity, mode] of NARCOTICS_ROWS) {
-	const { margin, inStock } = bestMargin(
-		commodity,
-		"refinery",
-		"refinery",
-		mode,
-	);
+for (const [label, good, mode] of NARCOTICS_ROWS) {
+	const { margin, inStock } = bestMargin(good, "refinery", "refinery", mode);
 	console.log(
 		`${label.padEnd(18)} ${margin.toFixed(1).padStart(6)} Cr/t   in stock ${(
 			100 * inStock
@@ -161,10 +151,10 @@ for (const [label, commodity, mode] of NARCOTICS_ROWS) {
 }
 
 console.log("\nall three illegal goods, shipped table:");
-for (const commodity of COMMODITIES.filter((c) => c.illegal)) {
-	const { margin, inStock } = bestMargin(commodity, "refinery", "refinery");
+for (const good of COMMODITIES.filter((c) => c.illegal)) {
+	const { margin, inStock } = bestMargin(good, "refinery", "refinery");
 	console.log(
-		`  ${commodity.name.padEnd(12)} ${margin.toFixed(1).padStart(6)} Cr/t   in stock ${(
+		`  ${good.name.padEnd(12)} ${margin.toFixed(1).padStart(6)} Cr/t   in stock ${(
 			100 * inStock
 		).toFixed(0)}%`,
 	);
@@ -176,11 +166,10 @@ console.log("\n── §3: how often the 0.4 Cr floor fires ──");
 function floorRate(stations: readonly StationTypeKey[]): string {
 	let fired = 0;
 	let rows = 0;
-	for (const commodity of COMMODITIES)
+	for (const good of COMMODITIES)
 		for (const station of stations) {
 			const swept = sweepDomain(
-				(economy, fluct) =>
-					marketRow(commodity, economy, fluct, station).floorFired,
+				(economy, fluct) => marketRow(good, economy, fluct, station).floorFired,
 			);
 			fired += swept.hits;
 			rows += swept.rows;
@@ -321,10 +310,13 @@ let unreachable = 0;
 for (const bucket of byGalaxy.values()) {
 	// Every 8th system as the origin, which keeps the sweep O(n²/8) per galaxy.
 	// Destinations are the **first four in generation order that fall inside the
-	// jump range** — not the four nearest. Order does not bias the margin here
-	// (it correlates with nothing in the price formula); what the earlier version
-	// got wrong was not the ordering but the absence of any range check at all,
-	// which admitted pairs no ship can fly.
+	// jump range** — not the four nearest, and this is a sample, not a census.
+	// An earlier comment asserted that order "does not bias the margin", which is
+	// an unmeasured claim in a file whose premise is that nothing is trusted
+	// without a re-derivation. What the earlier version actually got wrong was
+	// the absence of any range check, which admitted pairs no ship can fly; the
+	// ordering is a stated sampling choice, and the reported figures should be
+	// read as a sample of reachable routes rather than the best in the galaxy.
 	for (let i = 0; i < bucket.length; i += 8) {
 		const from = bucket[i];
 		let found = 0;
@@ -390,7 +382,7 @@ for (const economy of [0, 3, 7]) {
 // ── 6. Bell's quantity wrap, which §2.2's clamp diverges from ───────────────
 
 console.log("\n── §12: goods whose stock differs from Bell's `& 0x3F` wrap ──");
-for (const commodity of COMMODITIES) {
+for (const good of COMMODITIES) {
 	let worst = 0;
 	const { hits: differing, rows } = sweepDomain((economy, fluct) => {
 		const mine = marketRow(commodity, economy, fluct, "trade").quantity;
@@ -407,7 +399,7 @@ for (const commodity of COMMODITIES) {
 	});
 	if (differing > 0)
 		console.log(
-			`  ${commodity.name.padEnd(14)} differs on ${pct(differing, rows).padStart(7)} of rows, by up to ${worst} units`,
+			`  ${good.name.padEnd(14)} differs on ${pct(differing, rows).padStart(7)} of rows, by up to ${worst} units`,
 		);
 }
 

@@ -292,7 +292,8 @@ station an AU away is an unwinnable save. At 1 AU/min, running dry costs about
 **eighty seconds** of waiting to buy enough range to reach a station, and twelve
 minutes for a full charge. A penalty that is felt and never fatal.
 
-Hyperspace fuel keeps its 1984 meaning untouched: 7 LY tank, 0.2 Cr/LY, a
+Hyperspace fuel keeps its 1984 meaning untouched: 7 LY tank, 0.2 Cr / 0.1 LY
+(14 Cr a full tank — `economy-trade.md` §6.1), a
 jump resource only. Sun-skimming gains the second purpose it wanted.
 
 ---

@@ -89,7 +89,7 @@ this spec and it was accepted deliberately.
 | Radius `R` | 22 LY |
 | Distance metric | true 3D Euclidean, isotropic |
 | Fuel tank | 7.0 LY |
-| Fuel cost | 0.2 Cr / LY (14 Cr full tank) |
+| Fuel cost | 0.2 Cr / 0.1 LY (14 Cr full tank) — §8 |
 
 Galaxies are a **namespace, not a regeneration**: switching galaxy changes
 `g` in the derivation above and nothing else. The Galactic Hyperdrive

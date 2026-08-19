@@ -112,7 +112,10 @@ space — 17 goods × 8 economies × 256 fluctuation bytes — by
 
 - **Sixteen of seventeen goods overflow on 0.00% of rows.** Bell's constants
   simply never leave 0…255 for them, so for all but one good the two
-  arithmetics are the same function.
+  arithmetics agree **on the price byte**. They do not agree on quantity — four
+  goods differ, per the divergence table below — and the distinction matters,
+  because this sentence was previously quotable as though the two arithmetics
+  were the same function outright.
 - **Narcotics overflowed on 97.66%**, and its price span collapsed from
   0.4–101.6 Cr to 94.0–102.0 Cr.
 
@@ -571,8 +574,13 @@ capital and two early jumps are a real cost — which is precisely the early-gam
 pressure Elite was shaped around. By the time a run pays 700 Cr it is noise
 either way.
 
-**`galaxy-generation.md` §8's Cost row has been corrected in place** to
-`0.2 Cr / 0.1 LY (14 Cr full tank)`, with a note there pointing at this section.
+**Three places carried the wrong figure and all three are corrected**:
+`galaxy-generation.md` §8's Cost row (with a note there pointing at this
+section), its §2 summary table, and `in-system-travel.md`'s hyperspace-fuel
+line. Fixing only the first — which a draft of this section claimed was enough —
+left two specs still telling a reader a full tank costs 1.4 Cr, which is exactly
+the failure the correction existed to prevent. A repo-wide grep for `0.2 Cr` is
+the check.
 Recording the error only here — which the first draft did — left a closed spec
 still telling its readers a full tank costs 1.4 Cr, which is worse than the
 tidiness it was protecting. Fixing a transcription under this node's ownership
@@ -685,7 +693,9 @@ All headless `bun` — none of §1–§9 may require a browser, per #7's own fra
    0.4` exactly at every point in the domain; the floor fires on <1% of the rows
    it can reach and never at a trade station; quantity is never *below* the
    trade station's; all three illegal goods still stock at a refinery; the
-   63-unit cap holds everywhere.
+   63-unit cap holds **after the deficit as well as before it** — §1 put the
+   subtraction outside the clamp, so dumping a hold yielded a 126-unit shelf that
+   no test could observe, `marketRow` taking no deficit.
 6. **The quantity clamp's divergence from Bell** — the set of goods that read
    differently from `& 0x3F` is pinned at exactly {Furs, Gold, Narcotics,
    Platinum}, and Gold's permanent cap is asserted against Bell's under-20

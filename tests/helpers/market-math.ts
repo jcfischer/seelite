@@ -493,6 +493,26 @@ export function runsToExhaustion(opts: {
 export const shelfPriceCr = (basePriceCr: number, deficit: number): number =>
 	stockResponse(basePriceCr, deficit);
 
+/**
+ * The units actually on the shelf once the deficit is applied.
+ *
+ * **Clamped at both ends, and the upper one is not decorative.** A deficit runs
+ * to −63 when the player dumps cargo, so `generatedQuantity − deficit` reaches
+ * 126 — twice Bell's cap — and §1's pipeline had the subtraction outside the
+ * clamp. Selling into an already-full shelf therefore adds nothing visible,
+ * which is right: the cap is a shelf, not an accumulator. The *price* still
+ * falls, because §5's response is what carries the effect.
+ */
+export const shelfQuantity = (
+	generatedQuantity: number,
+	deficit: number,
+): number =>
+	clamp(
+		generatedQuantity - clamp(deficit, -DEFICIT_MAX, DEFICIT_MAX),
+		0,
+		QUANTITY_CAP,
+	);
+
 /** One legal intra-system trade: buy at one station type, sell at another. */
 export interface LegalPair {
 	good: Commodity;
@@ -519,34 +539,28 @@ export function forEachLegalPair(
 	visit: (pair: LegalPair) => void,
 	fluctPairs?: readonly (readonly [number, number])[],
 ): void {
-	const legal = COMMODITIES.filter(
-		(c) => !c.sellOnly && c.unit === "t" && !c.illegal,
-	);
+	// **Sub-tonne goods are in.** An earlier version filtered `unit === "t"`,
+	// which left weak joint 8's "richest surviving farm" claim swept over a
+	// domain excluding Gold, Platinum and Gem-Stones — the goods §2.2 of the
+	// same spec calls the ones the quantity clamp enriched. Callers that need
+	// per-run comparability use `runValueCr`.
+	const legal = COMMODITIES.filter((c) => !c.sellOnly && !c.illegal);
+	// One byte source, resolved once: the two branches this replaced built an
+	// identical visit payload and repeated the same stock check.
+	const pairsFor = (buyFluct: number): readonly number[] =>
+		fluctPairs
+			? fluctPairs.filter(([b]) => b === buyFluct).map(([, sell]) => sell)
+			: ALL_FLUCT;
+	const buyBytes = fluctPairs ? fluctPairs.map(([buy]) => buy) : ALL_FLUCT;
 	for (const good of legal)
 		for (const economy of ALL_ECONOMIES)
 			for (const buyStation of ALL_STATIONS)
 				for (const sellStation of ALL_STATIONS) {
 					if (buyStation === sellStation) continue;
-					if (fluctPairs) {
-						for (const [buyFluct, sellFluct] of fluctPairs) {
-							const buy = marketRow(good, economy, buyFluct, buyStation);
-							if (buy.quantity === 0) continue;
-							visit({
-								good,
-								economy,
-								buyStation,
-								sellStation,
-								buyCr: buy.priceCr,
-								sellCr: marketRow(good, economy, sellFluct, sellStation)
-									.priceCr,
-							});
-						}
-						continue;
-					}
-					for (const buyFluct of ALL_FLUCT) {
+					for (const buyFluct of buyBytes) {
 						const buy = marketRow(good, economy, buyFluct, buyStation);
 						if (buy.quantity === 0) continue;
-						for (const sellFluct of ALL_FLUCT)
+						for (const sellFluct of pairsFor(buyFluct))
 							visit({
 								good,
 								economy,
@@ -565,8 +579,10 @@ export const CLOSABLE_RATIO =
 	(2 - MIN_STOCK_RESPONSE_FACTOR) / MIN_STOCK_RESPONSE_FACTOR;
 
 export interface ResidualSurvey {
-	/** The richest margin any legal intra-system pair still pays at the ±63 cap. */
-	worst: LegalPair & { residualCr: number };
+	/** The richest *run* any legal intra-system pair still pays at the ±63 cap.
+	 *  Ranked by run value, not per-unit margin: the sweep now includes sub-tonne
+	 *  goods, whose Cr/kg is not comparable with a tonne good's Cr/t. */
+	worst: LegalPair & { residualCr: number; runCr: number };
 	/** Ratio-based view, kept because §5.4 reports both. */
 	worstRatio: LegalPair & { ratio: number };
 	unclosableRows: number;
@@ -592,6 +608,7 @@ export function surveyResiduals(): ResidualSurvey {
 		buyCr: 0,
 		sellCr: 0,
 		residualCr: 0,
+		runCr: 0,
 	};
 	let worstRatio: LegalPair & { ratio: number } = { ...worst, ratio: 0 };
 	let unclosableRows = 0;
@@ -599,7 +616,8 @@ export function surveyResiduals(): ResidualSurvey {
 	forEachLegalPair((pair) => {
 		rows++;
 		const residualCr = residualMarginCr(pair.buyCr, pair.sellCr);
-		if (residualCr > worst.residualCr) worst = { ...pair, residualCr };
+		const runCr = runValueCr(pair.good, residualCr);
+		if (runCr > worst.runCr) worst = { ...pair, residualCr, runCr };
 		const ratio = pair.sellCr / pair.buyCr;
 		if (ratio > CLOSABLE_RATIO) unclosableRows++;
 		if (ratio > worstRatio.ratio) worstRatio = { ...pair, ratio };
