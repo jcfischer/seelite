@@ -40,6 +40,7 @@ import {
 	HOLD_REFERENCE_T,
 	bestMargin,
 	bestResidualBetween,
+	bestRunValueCr,
 	commodity,
 	marketRow,
 	runValueCr,
@@ -55,7 +56,22 @@ import {
 import { JUMP_RANGE_LY, distanceLy } from "../src/galaxy";
 import type { Vec3 } from "../src/vec3";
 
-const pct = (n: number, d: number) => `${((100 * n) / d).toFixed(2)}%`;
+/**
+ * Every number printed goes through here.
+ *
+ * A rename once left `marketRow` reading a *function* as its commodity, so
+ * every field was `undefined`, every price was NaN, and the table printed
+ * "NaN–NaN" with a 100% overflow rate while the suite stayed green — the
+ * instrument's whole claim to re-derive §2.2's figures, quietly false. A
+ * reported NaN is now a crash rather than a row.
+ */
+function fixed(value: number, places: number): string {
+	if (!Number.isFinite(value))
+		throw new Error(`instrument produced a non-finite figure: ${value}`);
+	return value.toFixed(places);
+}
+
+const pct = (n: number, d: number) => `${fixed((100 * n) / d, 2)}%`;
 
 // ── 1. What the clamp costs, per good ───────────────────────────────────────
 //
@@ -74,7 +90,7 @@ const widen = (s: Span, v: number) => {
 	s.lo = Math.min(s.lo, v);
 	s.hi = Math.max(s.hi, v);
 };
-const fmt = (s: Span) => `${s.lo.toFixed(1)}–${s.hi.toFixed(1)}`;
+const fmt = (s: Span) => `${fixed(s.lo, 1)}–${fixed(s.hi, 1)}`;
 
 /** Measures one good. Printing is the caller's, so `filter(report)` cannot read
  *  as a filter with a side effect. */
@@ -87,11 +103,8 @@ function measure(good: Commodity): {
 	const wrapSpan = span();
 	const clampSpan = span();
 	const { hits, rows } = sweepDomain((economy, fluct) => {
-		widen(
-			wrapSpan,
-			marketRow(commodity, economy, fluct, "trade", "wrap").priceCr,
-		);
-		const clamped = marketRow(commodity, economy, fluct, "trade", "saturate");
+		widen(wrapSpan, marketRow(good, economy, fluct, "trade", "wrap").priceCr);
+		const clamped = marketRow(good, economy, fluct, "trade", "saturate");
 		widen(clampSpan, clamped.priceCr);
 		return clamped.priceOverflowed;
 	});
@@ -109,7 +122,7 @@ function measure(good: Commodity): {
 
 function print(label: string, m: ReturnType<typeof measure>): void {
 	console.log(
-		`${label.padEnd(16)}  ${`${(100 * m.overflowRate).toFixed(2)}%`.padStart(7)}   ` +
+		`${label.padEnd(16)}  ${`${fixed(100 * m.overflowRate, 2)}%`.padStart(7)}   ` +
 			`${fmt(m.wrapSpan).padStart(13)}     ${fmt(m.clampSpan).padStart(13)}`,
 	);
 }
@@ -233,15 +246,15 @@ function pairMargin(
 	legalOnly = true,
 ): { margin: number; good: string } {
 	let best = { margin: 0, good: "—" };
-	for (const commodity of COMMODITIES) {
-		if (commodity.sellOnly) continue;
-		if (legalOnly && commodity.illegal) continue;
-		if (commodity.unit !== "t") continue; // §6: sub-tonne goods skip the hold
-		const b = marketRow(commodity, buy.economy, buy.fluct, buy.station);
+	for (const candidate of COMMODITIES) {
+		if (candidate.sellOnly) continue;
+		if (legalOnly && candidate.illegal) continue;
+		if (candidate.unit !== "t") continue; // §6: sub-tonne goods skip the hold
+		const b = marketRow(candidate, buy.economy, buy.fluct, buy.station);
 		if (b.quantity === 0) continue;
-		const s = marketRow(commodity, sell.economy, sell.fluct, sell.station);
+		const s = marketRow(candidate, sell.economy, sell.fluct, sell.station);
 		if (s.priceCr - b.priceCr > best.margin)
-			best = { margin: s.priceCr - b.priceCr, good: commodity.name };
+			best = { margin: s.priceCr - b.priceCr, good: candidate.name };
 	}
 	return best;
 }
@@ -385,21 +398,15 @@ console.log("\n── §12: goods whose stock differs from Bell's `& 0x3F` wrap 
 for (const good of COMMODITIES) {
 	let worst = 0;
 	const { hits: differing, rows } = sweepDomain((economy, fluct) => {
-		const mine = marketRow(commodity, economy, fluct, "trade").quantity;
-		const theirs = marketRow(
-			commodity,
-			economy,
-			fluct,
-			"trade",
-			"wrap",
-		).quantity;
+		const mine = marketRow(good, economy, fluct, "trade").quantity;
+		const theirs = marketRow(good, economy, fluct, "trade", "wrap").quantity;
 		if (mine === theirs) return false;
 		worst = Math.max(worst, Math.abs(mine - theirs));
 		return true;
 	});
 	if (differing > 0)
 		console.log(
-			`  ${good.name.padEnd(14)} differs on ${pct(differing, rows).padStart(7)} of rows, by up to ${worst} units`,
+			`  ${good.name.padEnd(14)} differs on ${pct(differing, rows).padStart(7)} of rows, by up to ${fixed(worst, 0)} units`,
 		);
 }
 
@@ -473,13 +480,19 @@ console.log(
 // 63 units of a sub-tonne good riding free beside it (research §2.2).
 
 console.log("\n── §4: best margin and run value, every good ──");
+console.log(
+	"  (legal goods over every ordered leg; contraband held to the fence leg, which §4 scopes it to)",
+);
 const valued = COMMODITIES.filter((c) => !c.sellOnly)
-	.map((c) => {
-		const marginCr = bestMargin(c, "refinery", "refinery").margin;
-		return { good: c, marginCr, runCr: runValueCr(c, marginCr) };
-	})
+	.map((c) => ({ good: c, ...bestRunValueCr(c) }))
 	.sort((a, b) => b.runCr - a.runCr);
 for (const row of valued)
 	console.log(
-		`  ${row.good.name.padEnd(14)} ${row.good.illegal ? "illegal" : "legal  "} ${row.marginCr.toFixed(1).padStart(6)} Cr/${row.good.unit.padEnd(2)}   run value ${row.runCr.toFixed(0).padStart(6)} Cr`,
+		`  ${row.good.name.padEnd(14)} ${row.good.illegal ? "illegal" : "legal  "} ${fixed(row.marginCr, 1).padStart(6)} Cr/${row.good.unit.padEnd(2)} ${row.leg.padEnd(21)} run ${fixed(row.runCr, 0).padStart(5)} Cr`,
+	);
+const topLegal = valued.find((r) => !r.good.illegal);
+const topIllegal = valued.find((r) => r.good.illegal);
+if (topLegal && topIllegal)
+	console.log(
+		`\ncontraband premium over the best legal good: ${fixed((100 * (topIllegal.runCr - topLegal.runCr)) / topLegal.runCr, 0)}% (${topIllegal.good.name} ${fixed(topIllegal.runCr, 0)} Cr vs ${topLegal.good.name} ${fixed(topLegal.runCr, 0)} Cr)`,
 	);

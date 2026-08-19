@@ -42,10 +42,11 @@ priceCr   = max(PRICE_STEP_CR,                                 // §5.3's floor 
                                × clamp(deficit, ±63)
                                / HOLD_REFERENCE_T))
 
-quantity  = clamp(clamp(baseQuantity + changing − product, 0, 63)
-                    + max(0, −typeOffset × gradient),          // §3.2
-                  0, 63)
-          − deficit                                             // §5.2
+quantity  = clamp(clamp(clamp(baseQuantity + changing − product, 0, 63)
+                          + max(0, −typeOffset × gradient),    // §3.2
+                        0, 63)
+                    − clamp(deficit, ±63),                     // §5.2 — inside
+                  0, 63)                                       //   the clamp
 ```
 
 | Constant | Value | Source |
@@ -138,8 +139,9 @@ Gold is the extreme: `baseQuantity` 0x42 = 66 never leaves 66…80, so txtelite
 shows 2–16 units and seelite shows a permanent 63. **This makes a precious metal
 abundant that Bell made scarce**, and since Gold is sub-tonne (§6) it skips the
 hold check entirely — 63 units ride free *beside* a full cargo hold. Measured,
-that is **353 Cr a run** at its 5.6 Cr/kg spread, and **Platinum is the bigger
-beneficiary at 1,134 Cr** (18.0 Cr/kg). Both figures are printed by the
+that is **353 Cr a run** at its 5.6 Cr/kg spread on the fence leg — 479 Cr over
+every leg — and **Platinum is the bigger beneficiary at 1,134 Cr**, rising to
+**1,386 Cr** across all legs, which is where §4's table ranks it. Both figures are printed by the
 instrument's run-value table and pinned by the suite, because every other sweep
 in this spec drops non-tonne goods and the numbers would otherwise have nothing
 behind them. Clamping is chosen for
@@ -337,18 +339,30 @@ ranking of margins is measuring unit scale. What makes goods commensurable is
 what one trip can carry: a hold of tonne goods, or 63 units of a sub-tonne good
 riding free beside it.
 
-| | margin | run value |
-|---|---|---|
-| **Narcotics** (illegal) | 81.2 Cr/t | **1,624 Cr** |
-| Platinum | 18.0 Cr/kg | 1,134 Cr |
-| Furs | 50.4 Cr/t | 1,008 Cr |
-| Computers | 40.4 Cr/t | 808 Cr |
-| Firearms (illegal) | 39.2 Cr/t | 784 Cr |
+**And each good is ranked on the legs it may actually use.** Contraband is held
+to the fence leg because §4 scopes it there; a legal good is not, and a draft of
+this table held both to refinery→refinery — a restriction §4 imposes on
+contraband by design and on nothing else. That understated every legal good and
+so overstated the premium the section exists to justify.
 
-Contraband holds the top of the table, but by 43% over Platinum rather than the
-2× a per-tonne comparison implies — and Platinum is legal, needs no fence, and
-costs no hold space. The premium is real and it is thinner than it looks; the
-suite asserts it on run value, which is the comparison that can actually fail.
+| | margin | best leg | run value |
+|---|---|---|---|
+| **Narcotics** (illegal) | 81.2 Cr/t | refinery→refinery | **1,624 Cr** |
+| Platinum | 22.0 Cr/kg | refinery→shipyard | 1,386 Cr |
+| Computers | 68.4 Cr/t | shipyard→refinery | 1,368 Cr |
+| Furs | 68.4 Cr/t | refinery→shipyard | 1,368 Cr |
+| Firearms (illegal) | 39.2 Cr/t | refinery→refinery | 784 Cr |
+
+Contraband holds the top of the table, but **by 17%** — not the 43% the earlier
+comparison produced, and not the 2× a per-unit ranking implies. Platinum is
+legal, needs no fence, costs no hold space, and comes within 15% of the best
+smuggling run in the game.
+
+**That is thin, and it is recorded rather than tuned away** (weak joint 10): it
+is #13's smuggling design that the premium is meant to pay for, and 17% is a
+number a later reader should be able to weigh against the risk #8 will attach to
+carrying contraband. Raising it means changing Narcotics' constants again or
+scoping the sub-tonne goods, neither of which is #7's to decide unprompted.
 
 ---
 
@@ -389,9 +403,17 @@ selling n units at a station:  deficit −= n
 deficit(t) = deficit₀ × 2^(−(t − t₀) / DEFICIT_HALF_LIFE),  clamped to ±63
 DEFICIT_HALF_LIFE = 20 min game time
 
-effectiveQuantity = max(0, generatedQuantity − deficit)
+effectiveQuantity = clamp(generatedQuantity − deficit, 0, 63)
 priceCr          ×= 1 + PRICE_ELASTICITY × deficit / HOLD_REFERENCE_T
 ```
+
+**The upper clamp is not decorative.** A deficit reaches −63 when the player
+dumps cargo, so `generatedQuantity − deficit` reaches 126 — twice Bell's cap —
+and a draft of this spec left the subtraction outside the clamp in both §1 and
+here, while §10.1 claimed the cap held everywhere. Selling into an already-full
+shelf therefore adds nothing *visible*, which is right: the cap is a shelf, not
+an accumulator. The price still falls, because §5's response is what carries the
+effect.
 
 Buying thins the shelf and raises the price; selling fattens it and lowers what
 it pays. It is Bell's coupling a third time — price and quantity moving opposite
@@ -501,6 +523,15 @@ which nothing measures, and §12.5 concedes as much. The honest comparison needs
 no time argument at all: **the interstellar route wins by 1.85× with both sides
 farmed flat, and by 8.6× before either is.**
 
+**The two sides are not swept to the same depth**, and the label should not hide
+it. The intra-system figure is exhaustive — every legal good, all six legs, all
+256×256 byte pairs. The interstellar one samples: every 64th origin, one
+reachable neighbour, five byte pairs, tonne goods only. A sample understates a
+maximum, so the interstellar number is a **lower bound** and the true gap is
+wider than 1.85×, not narrower — which is the direction that leaves the
+conclusion safe. Stated because "like with like" otherwise reads as equal
+coverage, which it is not.
+
 **The farm is allowed to exist; it is not allowed to be worth preferring**, and
 that is what the suite asserts — a bound on the residual, not on the ratio. A
 run-count test alone would have reported "more than four" without ever saying
@@ -572,15 +603,16 @@ seelite takes the PRXS figure, per §7's decision to adopt that table verbatim.
 It matters only at the very start, where 14 Cr is 14% of the player's opening
 capital and two early jumps are a real cost — which is precisely the early-game
 pressure Elite was shaped around. By the time a run pays 700 Cr it is noise
-either way.
+either way. Correcting a transcription under this node's ownership of the
+constant is not overturning #6's decision, and the notes at each site say so.
 
 **Three places carried the wrong figure and all three are corrected**:
 `galaxy-generation.md` §8's Cost row (with a note there pointing at this
 section), its §2 summary table, and `in-system-travel.md`'s hyperspace-fuel
-line. Fixing only the first — which a draft of this section claimed was enough —
-left two specs still telling a reader a full tank costs 1.4 Cr, which is exactly
-the failure the correction existed to prevent. A repo-wide grep for `0.2 Cr` is
-the check.
+line. Two drafts of this section each claimed a completeness they did not have —
+the first recorded the error here only, the second fixed one of the three sites.
+A repo-wide grep for `0.2 Cr` is the check, and the only matches left are the
+two that quote the error in context.
 Recording the error only here — which the first draft did — left a closed spec
 still telling its readers a full tank costs 1.4 Cr, which is worse than the
 tidiness it was protecting. Fixing a transcription under this node's ownership
@@ -791,13 +823,14 @@ second measurement that could drift from `TYPE_OFFSET` without failing anything.
 1. **One divergence from Bell's table.** §2.3. Narcotics is retuned because its
    constants require overflow. Every other row is verbatim, and the rejected
    alternatives are on the page with their measurements.
-2. **The clamp is a guard that never fires — by one point.** §2.2. After the
-   retune the shipped table never overflows, so §2.2's price arithmetic is a
-   definition rather than a behaviour. But the margin is zero, not comfortable:
-   **Computers reaches exactly 255** at economy 7 (`154 + 3 + 7×14`), so one
-   point of `basePrice`, `gradient` or `mask` on that good makes it fire. Kept
-   for that reason as much as for the boundary being undefined otherwise, and
-   the suite pins the 255.
+2. **The clamp is a guard that never fires — by one point, on two goods.**
+   §2.2. After the retune the shipped table never overflows, so §2.2's price
+   arithmetic is a definition rather than a behaviour. But the margin is zero,
+   not comfortable: **Computers** (`154 + 3 + 7×14`) **and Luxuries**
+   (`196 + 3 + 7×8`) both reach exactly 255 at economy 7, so one point of
+   `basePrice`, `gradient` or `mask` on either makes it fire. Kept for that
+   reason as much as for the boundary being undefined otherwise; the suite pins
+   both, and asserts that no third good comes within ten of the ceiling.
 3. **Type differentiation on commodities is still soft.** Inherited from
    `station-types.md` §3.3 — three prices for one transaction. §3.2's quantity
    delta strengthens it slightly; it does not fix it.
@@ -824,15 +857,22 @@ second measurement that could drift from `TYPE_OFFSET` without failing anything.
 8. **The intra-system farm is bounded, not eliminated.** §5.4. The deficit
    cannot close a pair whose sell/buy ratio exceeds 1.920, and 2.32% of legal
    intra-system rows are above it — mostly cheap goods the floor pins at
-   0.4 Cr. The richest surviving farm is 7.9 Cr/t (158 Cr a run), well under an
-   interstellar run's ~380 Cr, so it is a poor use of time rather than an
-   exploit. What the design relies on is that bound, and the suite guards it.
+   0.4 Cr. The richest surviving farm is 7.9 Cr/t (158 Cr a run), against
+   291 Cr for an interstellar route farmed to the same saturation, so it is a
+   poor use of time rather than an exploit. What the design relies on is that bound, and the suite guards it.
 9. **The quantity clamp diverges from Bell, and the sub-tonne goods profit.** §2.2. Four
    goods read differently from `& 0x3F`; Gold is at a permanent 63 where
    txtelite shows 2–16, which makes a sub-tonne precious metal abundant that
    Bell made scarce. Measured, it hands the player 353 Cr a run in Gold and
-   1,134 Cr in Platinum, free of the hold — enough that Platinum is the closest
-   competitor to contraband in §4's run-value table. Chosen for consistency with
+   1,386 Cr in Platinum, free of the hold — enough that Platinum is the closest
+   competitor to contraband in §4's run-value table, 15% behind it. Chosen for consistency with
    the price clamp, recorded because it is a design change rather than a
    transcription, and cheap to revisit: wrapping the quantity byte alone would
    restore Bell exactly.
+10. **The contraband premium is 17%.** §4. Narcotics tops the run-value table at
+   1,624 Cr against Platinum's 1,386 — a legal good needing no fence and no
+   hold space, within 15% of the best smuggling run in the game. #13 §5.2 built
+   a rim-weighted fence geography on contraband being worth carrying, and 17%
+   is what that geography currently buys. Recorded rather than tuned away:
+   raising it means changing Narcotics' constants again or scoping the
+   sub-tonne goods, and neither is #7's to decide unprompted.

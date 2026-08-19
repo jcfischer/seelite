@@ -51,6 +51,7 @@ import {
 	residualMarginCr,
 	sweepDomain,
 	surveyResiduals,
+	bestRunValueCr,
 	runValueCr,
 	shelfQuantity,
 	runsToExhaustion,
@@ -160,14 +161,23 @@ describe("§2.2 overflow is confined to Bell's Narcotics row", () => {
 						).toBe(false);
 	});
 
-	test("Computers sits exactly on the ceiling, with no headroom", () => {
+	test("two goods sit exactly on the ceiling, with no headroom", () => {
 		// §12 weak joint 2 calls the clamp "a guard that cannot fire". That is
 		// true of the table as shipped, but the margin is zero, not comfortable:
-		// one point of basePrice, gradient or mask on this good and it fires.
-		const computers = byName("Computers");
-		expect(computers.basePrice + computers.mask + 7 * computers.gradient).toBe(
-			255,
-		);
+		// one point of basePrice, gradient or mask on either good and it fires.
+		// **Luxuries as well as Computers** — an earlier version pinned only the
+		// one it happened to notice, so a Luxuries retune would have fired the
+		// clamp unannounced.
+		for (const name of ["Computers", "Luxuries"]) {
+			const good = byName(name);
+			expect(good.basePrice + good.mask + 7 * good.gradient).toBe(255);
+		}
+		// …and nothing else in the table is within 10 of it, so the pair is the
+		// whole population this weak joint is about.
+		const nearCeiling = COMMODITIES.filter(
+			(c) => c.basePrice + c.mask + 7 * Math.max(0, c.gradient) > 245,
+		).map((c) => c.name);
+		expect(nearCeiling.sort()).toEqual(["Computers", "Luxuries"]);
 	});
 
 	test("the retuned Narcotics row cannot overflow, by construction", () => {
@@ -220,14 +230,22 @@ describe("§2.3 the retuned Narcotics keeps the smuggling trade alive", () => {
 		// spread is 5,600 Cr per tonne-equivalent. `runValueCr` is what makes them
 		// commensurable: a hold of tonne goods, or 63 units of a sub-tonne good
 		// riding free alongside it.
-		const value = (c: Commodity) =>
-			runValueCr(c, bestMargin(c, "refinery", "refinery").margin);
+		// …and over **every leg a legal good may use**, not the fence's own.
+		// Restricting legal goods to refinery→refinery is a rule §4 imposes on
+		// contraband by design and on nothing else: Computers bought at a shipyard
+		// and sold at a refinery picks up the full five-step type spread. Ranking
+		// legal goods on the contraband leg understated them, and so overstated
+		// the premium this test exists to establish.
 		const bestLegal = COMMODITIES.filter((c) => !c.illegal && !c.sellOnly)
-			.map(value)
+			.map((c) => bestRunValueCr(c).runCr)
 			.reduce((a, b) => Math.max(a, b), 0);
-		// Measured: Narcotics 1,624 Cr a run, against Platinum's 1,134 — the
-		// closest legal good, and closer than a per-tonne comparison suggests.
-		expect(value(byName("Narcotics"))).toBeGreaterThan(bestLegal);
+		// Measured: Narcotics 1,624 Cr a run against Platinum's 1,386 — a 17%
+		// premium, not the 43% an earlier version claimed by holding legal goods
+		// to the fence leg. The claim survives; the margin is thin, and §12
+		// records that rather than the comfortable number.
+		expect(bestRunValueCr(byName("Narcotics")).runCr).toBeGreaterThan(
+			bestLegal,
+		);
 	});
 });
 
@@ -361,14 +379,14 @@ describe("§2.2 the clamp applies to quantity too, and diverges from Bell there"
 		// §2.2 puts a number on what the divergence hands the player. Committed
 		// here because every other sweep in the suite drops non-tonne goods, so
 		// the figure had no measurement behind it at all.
-		const value = (name: string) =>
+		const fenceValue = (name: string) =>
 			runValueCr(
 				byName(name),
 				bestMargin(byName(name), "refinery", "refinery").margin,
 			);
-		expect(value("Gold")).toBeGreaterThan(300);
-		expect(value("Gold")).toBeLessThan(400);
-		expect(value("Platinum")).toBeGreaterThan(1000);
+		expect(fenceValue("Gold")).toBeGreaterThan(300);
+		expect(fenceValue("Gold")).toBeLessThan(400);
+		expect(fenceValue("Platinum")).toBeGreaterThan(1000);
 	});
 
 	test("Gold is the extreme case — always capped where Bell keeps it scarce", () => {

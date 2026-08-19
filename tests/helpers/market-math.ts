@@ -682,3 +682,60 @@ export function bestResidualBetween(
 	}
 	return { freshCr, saturatedCr };
 }
+
+/**
+ * Best margin for one good over **all six ordered station legs**, not just
+ * refinery→refinery.
+ *
+ * §4's run-value table compared legal goods on the fence's own leg, which is a
+ * restriction §4 imposes on *contraband* by design and on nothing else: a legal
+ * good bought at a shipyard and sold at a refinery picks up the full five-step
+ * type spread. Ranking legal goods on the contraband leg understated them and
+ * so overstated the premium the section exists to justify.
+ */
+export function bestMarginAnyLeg(
+	good: Commodity,
+	mode: ByteMode = "saturate",
+): { margin: number; buyStation: StationTypeKey; sellStation: StationTypeKey } {
+	let best = {
+		margin: 0,
+		buyStation: "trade" as StationTypeKey,
+		sellStation: "trade" as StationTypeKey,
+	};
+	for (const buyStation of ALL_STATIONS)
+		for (const sellStation of ALL_STATIONS) {
+			if (buyStation === sellStation) continue;
+			const { margin } = bestMargin(good, buyStation, sellStation, mode);
+			if (margin > best.margin) best = { margin, buyStation, sellStation };
+		}
+	return best;
+}
+
+/**
+ * The run value §4 ranks on: best margin over every leg the good may legally
+ * trade on, times what one trip carries.
+ *
+ * **Contraband is held to the fence leg**, because §4 scopes it there — a
+ * shipyard will not buy it at any price. Everything else is free to use the
+ * whole table, which is what makes the comparison a fair one.
+ */
+export function bestRunValueCr(good: Commodity): {
+	runCr: number;
+	marginCr: number;
+	leg: string;
+} {
+	if (good.illegal) {
+		const { margin } = bestMargin(good, "refinery", "refinery");
+		return {
+			runCr: runValueCr(good, margin),
+			marginCr: margin,
+			leg: "refinery→refinery",
+		};
+	}
+	const { margin, buyStation, sellStation } = bestMarginAnyLeg(good);
+	return {
+		runCr: runValueCr(good, margin),
+		marginCr: margin,
+		leg: `${buyStation}→${sellStation}`,
+	};
+}
