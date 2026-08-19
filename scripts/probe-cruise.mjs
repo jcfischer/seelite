@@ -117,43 +117,14 @@ const flight = await page.evaluate(
 			// radius over a 68 s leg. A player watching the HUD does the same thing
 			// with the stick.
 			g.faceTarget();
-			// A reference pilot, and it has to exist: §3 makes deceleration
-			// player-managed, and the drop-out only fires below a speed threshold.
-			// Flying a station approach at full throttle does not arrive — the
-			// speed law keys off the station's *planet*, which is tens of thousands
-			// of km away, so the ship is still doing thousands of km/s at the hull
-			// and sails past forever. That is a finding about the spec (§2.3's
-			// arrival table is stated against a planet, not a station), and the
-			// probe's job here is to show the approach is flyable *with* a throttle
-			// rather than to re-find the same overshoot on every run.
-			//
-			// The rule is the simplest one a human would use: aim to be `LEAD_S`
-			// seconds from the target at all times, and never faster than the
-			// drop-out will accept once inside the radius.
-			if (g.regime === "cruise") {
-				const body = g.world.system.byId.get(station.id);
-				const remaining = dist(body.pos, g.world.ship.pos);
-				// The law's speed at full throttle, recovered from what the last
-				// frame actually did — the probe does not restate the curve.
-				const law = Math.max(
-					1e-9,
-					g.cruiseSpeedKms / Math.max(g.throttleNow(), 1e-6),
-				);
-				// **Plus the target's own speed.** A station is carried around the
-				// star at ~30 km/s, so a pilot aiming for `remaining / LEAD_S`
-				// absolute converges on hovering `LEAD_S × 30 km/s` short of it
-				// forever — which is what the second run of this probe did, parked
-				// 173 km out. Closing speed is a relative quantity and has to be
-				// flown as one.
-				const targetKms = mag(g.targetVelocity());
-				const closingWant = Math.min(
-					remaining / 6,
-					remaining <= g.cruiseParams.dropRadiusKm * 4
-						? g.cruiseParams.dropSpeedKms * 0.6
-						: Number.POSITIVE_INFINITY,
-				);
-				g.setThrottle(Math.min(1, (targetKms + closingWant) / law));
-			}
+			// **No reference pilot.** Full throttle, nose on the target, nothing
+			// else — and it arrives. Two rounds ago this loop carried a
+			// hand-written approach controller (lead pursuit, a throttle curve, a
+			// closing-speed budget) because without one the ship sailed past the
+			// drop radius at thousands of km/s every time. The approach clamp
+			// inside `cruise.ts` is what replaced it, and *this* is the check that
+			// it did: if the clamp regresses, the probe stops arriving.
+			g.setThrottle(1);
 			g.step(dt);
 			g.render(dt);
 			elapsed += dt;

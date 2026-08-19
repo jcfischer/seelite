@@ -201,6 +201,10 @@ const DROP_RADIUS_DIAL_KM = [20, 50, 100, 250, 1000];
 /** §3's speed threshold — the dial between §2.3's arrive-for-you drop-out and
  *  §3's cut-the-throttle one. `cruise.ts` explains why both are implemented. */
 const DROP_SPEED_DIAL_KMS = [2, 20, 200, 2000];
+/** The approach clamp's two numbers, both of them findings rather than spec —
+ *  see `cruise.ts`'s `vicinityKm`. */
+const VICINITY_DIAL_KM = [2000, 5000, 10000, 25000, 50000];
+const APPROACH_LEAD_DIAL_S = [1.5, 3, 5, 8];
 
 /** The one dial whose list is not in the parameter's own unit: `v_max` is
  *  argued in multiples of c, and stored in km/s. */
@@ -781,6 +785,18 @@ class Game {
 			case ",":
 				this.dial("dropSpeedKms", DROP_SPEED_DIAL_KMS, -1);
 				return;
+			case "m":
+				this.dial("vicinityKm", VICINITY_DIAL_KM, 1);
+				return;
+			case "n":
+				this.dial("vicinityKm", VICINITY_DIAL_KM, -1);
+				return;
+			case "l":
+				this.dial("approachLeadS", APPROACH_LEAD_DIAL_S, 1);
+				return;
+			case "k":
+				this.dial("approachLeadS", APPROACH_LEAD_DIAL_S, -1);
+				return;
 			default:
 		}
 	}
@@ -797,7 +813,13 @@ class Game {
 	 * behaves after a reset or a value set from elsewhere.
 	 */
 	private dial(
-		field: "exponent" | "dropRadiusKm" | "dropSpeedKms" | "vMaxKms",
+		field:
+			| "exponent"
+			| "dropRadiusKm"
+			| "dropSpeedKms"
+			| "vMaxKms"
+			| "vicinityKm"
+			| "approachLeadS",
 		values: number[],
 		step: number,
 		scale: { display: (v: number) => number; store: (v: number) => number } = {
@@ -1471,7 +1493,8 @@ class Game {
 				`exp ${p.exponent.toFixed(2)} [ [ / ] ]`,
 				`drop ${p.dropRadiusKm} km [;/']`,
 				`below ${p.dropSpeedKms} km/s [,/.]`,
-				`assist cap ${ASSIST_CAP_KMS} km/s`,
+				`vicinity ${range(p.vicinityKm)} [n/m]`,
+				`lead ${p.approachLeadS}s [k/l]`,
 			].join("   "),
 		];
 		// The clock is quantised into the key separately because it is *not* on

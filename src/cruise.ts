@@ -76,6 +76,33 @@ export interface CruiseParams {
 	/** §3: and how slow. See the module docstring — this is the dial between
 	 *  §2.3's arrive-for-you and §3's cut-the-throttle. */
 	dropSpeedKms: number;
+	/**
+	 * How close counts as *arriving*, km — where the approach clamp takes over
+	 * and where a closest-approach pass is enough to end cruise.
+	 *
+	 * **Not in #10.** It comes from flying: a 50 km sphere seen from 60,000 km
+	 * subtends 0.05°, and a nose-locked ship doing hundreds of km/s cannot be
+	 * hand-aimed at it — the principal's third session ended with him using a
+	 * planet as a brake, and his fourth with "the drop out doesn't happen
+	 * automatically, I guess I never hit within 50 km".
+	 *
+	 * Widening `dropRadiusKm` to 10,000 km instead would have collided with §3's
+	 * own argument, which bounds that radius *from below* by normal flight: at
+	 * the 2 km/s assist cap, being dropped 10,000 km out is an eighty-minute
+	 * crawl — far worse than the problem it solves. So the vicinity is where the
+	 * regime starts *flying you in*, and the drop still happens at 50 km.
+	 */
+	vicinityKm: number;
+	/**
+	 * Inside the vicinity, the seconds-to-target the approach clamp holds you to.
+	 *
+	 * The clamp is the whole fix: speed is capped at `distance / this`, so the
+	 * ship decelerates continuously into the capture instead of arriving at
+	 * hundreds of km/s and needing to hit a 50 km sphere by hand. Steering stays
+	 * the player's — this is a speed governor, not an autopilot, and #9's docking
+	 * is still the skill gate the trade loop is built around.
+	 */
+	approachLeadS: number;
 }
 
 /** The spec's own figures, §2 and §3. The starting point of the tuning, not
@@ -89,6 +116,15 @@ export const DEFAULT_CRUISE: CruiseParams = {
 	// Above the 140 km/s §2.3's table arrives at, so the default is the table's
 	// behaviour: the drop fires on proximity. Lower it to demand a throttle.
 	dropSpeedKms: 200,
+	// The principal's own figure, and it happens to be `HANDOFF_KM` — the
+	// distance at which a body stops being a light in the distance and starts
+	// being drawn at 1:1. That is the same moment it stops being a destination
+	// and starts being a place.
+	vicinityKm: 1e4,
+	// Three seconds, which costs `3 · ln(10⁴/50)` ≈ 16 s of deceleration on every
+	// arrival. That is the price of the clamp and it is not small beside a 68 s
+	// leg — hence the dial.
+	approachLeadS: 3,
 };
 
 /**
@@ -403,6 +439,19 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 		const keyedKm = Math.min(massKm, targetKm);
 		speedKms =
 			cruiseSpeed(keyedKm, p) * Math.min(1, Math.max(0, input.throttle));
+
+		// The approach clamp — see `vicinityKm`. Inside it, speed is held to
+		// `distance / approachLeadS` *over the target's own motion*, so the ship
+		// decelerates continuously into the capture rather than needing to be
+		// hand-flown onto a 50 km sphere at hundreds of km/s.
+		//
+		// Over the target's motion, not absolutely: a station is carried around
+		// its star at ~30 km/s, and a clamp that ignored that would ask the ship
+		// to fly *slower than its destination* and never arrive.
+		if (targetKm <= p.vicinityKm) {
+			const carried = input.target?.vel ? length(input.target.vel) : 0;
+			speedKms = Math.min(speedKms, carried + targetKm / p.approachLeadS);
+		}
 		if (speedKms <= 0) break;
 
 		// Speed in the destination's own frame — see `closingSpeed`. Against an
@@ -481,6 +530,19 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 		travelledKm += stepKm;
 		remaining -= dt;
 		substeps++;
+
+		// Closest approach, inside the vicinity: the range stopped falling, so
+		// this is as near as this pass gets. Ending cruise here is what turns an
+		// overshoot into an arrival — the alternative is the loop the principal
+		// described, sailing past and coming round again. Outside the vicinity a
+		// receding range is just a course change, and means nothing.
+		if (!dropped && input.target && closing <= p.dropSpeedKms) {
+			const now = length(sub(pos, input.target.pos));
+			if (now <= p.vicinityKm && now > targetKm) {
+				dropped = true;
+				exit = "arrival";
+			}
+		}
 
 		if (charge !== undefined) {
 			charge = chargeAfterTravel(charge, stepKm);

@@ -159,6 +159,19 @@ test("speed keys off the nearest star or planet, never a moon or a station", () 
 
 // ------------------------------------------------------------------ §9.2 pacing
 
+/**
+ * §2.3's table is a claim about the **law**, so it is measured with the
+ * approach clamp switched off (`vicinityKm: 0`).
+ *
+ * The clamp is not in #10 — it came out of flying (see `vicinityKm`) — and it
+ * adds a deliberate `approachLeadS · ln(vicinityKm / dropRadiusKm)` of
+ * deceleration to every arrival, about 16 s at the defaults. Folding that into
+ * these numbers would quietly restate the spec's pacing as whatever the clamp
+ * happens to cost; the honest split is the law here, and the arrival cost
+ * asserted on its own below.
+ */
+const NO_CLAMP = { ...DEFAULT_CRUISE, vicinityKm: 0 };
+
 // §2.3's table, with the geometry it is stated against: one mass at the
 // destination, the ship flying straight in from `legAu` away. The tolerance is
 // the spec's own 10%.
@@ -175,6 +188,7 @@ test.each([
 		masses: oneMassAt(target.pos),
 		dt: 0.1,
 		limitS: wantS * 3,
+		params: NO_CLAMP,
 	});
 	expect(flight.dropped).toBe(true);
 	expect(flight.t).toBeGreaterThan(wantS * 0.9);
@@ -196,6 +210,7 @@ test("the pacing is the same at every frame delta up to MAX_DT", () => {
 				masses: oneMassAt(target.pos),
 				dt,
 				limitS: 300,
+				params: NO_CLAMP,
 			}).t,
 	);
 	for (const t of times) expect(Math.abs(t - times[0])).toBeLessThan(1.0);
@@ -465,7 +480,10 @@ test("the ship overshoots rather than stopping when it arrives too fast", () => 
 	// causes damage. With the drop-out's speed threshold set below the arrival
 	// speed, the ship must sail past the target rather than be caught by it.
 	const target = { pos: v3(), radiusKm: 1.2 };
-	const strict = { ...P, dropSpeedKms: 1 };
+	// §3's claim, measured against the law it was written about: the clamp is off
+	// here, because the clamp is precisely what removes this failure in play —
+	// a straight-in run can no longer arrive too fast to be caught.
+	const strict = { ...NO_CLAMP, dropSpeedKms: 1 };
 	const from = v3(0.2 * AU_KM, 0, 0);
 	const flight = fly({
 		from,
@@ -503,7 +521,11 @@ test("the law is keyed to the nearer of the mass and the destination", () => {
 		dt: 0.1,
 		masses: [planet],
 		target: station,
-		params: P,
+		// Clamp off: this is the *law's* claim. In play the approach clamp is
+		// slower still — it governs everything inside `vicinityKm` — and it has
+		// its own tests; what is being pinned here is that the law reads the
+		// destination at all.
+		params: NO_CLAMP,
 	});
 	// §2.3's own figure for 50 km out, rather than the ~44,000 km/s the planet's
 	// distance alone would allow.
@@ -635,4 +657,127 @@ test("a moving target is arrived at, not chased forever", () => {
 	expect(length(sub(pos, targetPos))).toBeLessThanOrEqual(
 		params.dropRadiusKm + 5,
 	);
+});
+
+// --------------------------------- the approach clamp (the principal's fourth flight)
+
+test("inside the vicinity the speed is held to the seconds-to-target", () => {
+	// The fix for "the drop out doesn't happen automatically, I guess I never hit
+	// within 50 km": a 50 km sphere seen from 60,000 km subtends 0.05°, and a
+	// nose-locked ship doing hundreds of km/s cannot be hand-aimed at it.
+	const station = { pos: v3(), radiusKm: 1.2 };
+	const at = (km: number) => {
+		const pos = v3(km, 0, 0);
+		return advanceCruise({
+			pos,
+			nose: towards(pos, station.pos),
+			throttle: 1,
+			dt: 0.1,
+			masses: oneMassAt(v3(0, 6e4, 0)),
+			target: station,
+			params: P,
+		}).speedKms;
+	};
+	// Outside the vicinity the law is untouched — the clamp is an approach rule,
+	// not a global speed limit.
+	expect(at(P.vicinityKm * 4)).toBeCloseTo(cruiseSpeed(P.vicinityKm * 4, P), 0);
+	// Inside it, distance over the lead time, all the way down.
+	expect(at(P.vicinityKm)).toBeCloseTo(P.vicinityKm / P.approachLeadS, 0);
+	expect(at(1000)).toBeCloseTo(1000 / P.approachLeadS, 0);
+	expect(at(200)).toBeCloseTo(200 / P.approachLeadS, 0);
+});
+
+test("a straight-in approach at full throttle now arrives by itself", () => {
+	// End to end, and the claim that matters: no throttle management, no lead
+	// pursuit, no reference pilot — point the nose at a moving station from
+	// outside the vicinity and hold the throttle open. Before the clamp this
+	// sailed past at thousands of km/s, every time.
+	const stationVel = v3(0, 30, 0);
+	let targetPos = v3();
+	let pos = v3(6e4, 0, 0);
+	let t = 0;
+	let exit: string | null = null;
+	const dt = 0.1;
+	while (t < 300 && !exit) {
+		const step = advanceCruise({
+			pos,
+			nose: towards(pos, targetPos),
+			throttle: 1,
+			dt,
+			masses: oneMassAt(v3(0, 2e6, 0)),
+			target: { pos: targetPos, radiusKm: 1.2, vel: stationVel },
+			params: P,
+		});
+		pos = step.pos;
+		if (step.dropped) exit = step.exit;
+		targetPos = add(targetPos, scale(stationVel, dt));
+		t += dt;
+	}
+	expect(exit).toBe("arrival");
+	// And it ends up somewhere a 2 km/s ship can finish from: §3 bounds the drop
+	// radius from below by exactly this argument, so a capture that left the ship
+	// thousands of km out would have solved nothing.
+	expect(length(sub(pos, targetPos))).toBeLessThan(P.dropRadiusKm * 2);
+});
+
+test("a pass that misses ends at closest approach rather than looping", () => {
+	// The other half: aimed a few hundred km off, the ship still ends its run at
+	// the nearest point of the pass instead of sailing on and coming round again
+	// — which is the loop the fourth session described as "overshooting like
+	// crazy".
+	const station = { pos: v3(), radiusKm: 1.2 };
+	const missKm = 400;
+	let pos = v3(6e4, missKm, 0);
+	const nose = towards(pos, v3(0, missKm, 0));
+	let t = 0;
+	let exit: string | null = null;
+	while (t < 300 && !exit) {
+		const step = advanceCruise({
+			pos,
+			nose,
+			throttle: 1,
+			dt: 0.1,
+			masses: oneMassAt(v3(0, 2e6, 0)),
+			target: station,
+			params: P,
+		});
+		pos = step.pos;
+		if (step.dropped) exit = step.exit;
+		t += 0.1;
+	}
+	expect(exit).toBe("arrival");
+	const endKm = length(sub(pos, station.pos));
+	// At the miss distance, not at the drop radius — the ship was never going to
+	// get closer on that line, and it is left where its own flying put it.
+	expect(endKm).toBeGreaterThan(missKm * 0.9);
+	expect(endKm).toBeLessThan(missKm * 1.5);
+});
+
+test("the clamp's cost is what the arithmetic says it is", () => {
+	// The clamp buys a capture the player can actually hit, and it is paid for in
+	// seconds — `approachLeadS · ln(vicinityKm / dropRadiusKm)`, about 16 s at
+	// the defaults. Stated here because #10's §2.3 pacing no longer includes it
+	// and the difference is a third of a short hop.
+	const target = { pos: v3(), radiusKm: 1.2 };
+	const from = v3(0.2 * AU_KM, 0, 0);
+	const run = (params: typeof DEFAULT_CRUISE) =>
+		fly({
+			from,
+			target,
+			masses: oneMassAt(target.pos),
+			dt: 0.1,
+			limitS: 300,
+			params,
+		});
+	const clamped = run(P);
+	const bare = run({ ...P, vicinityKm: 0 });
+	expect(clamped.dropped).toBe(true);
+	expect(bare.dropped).toBe(true);
+
+	// What the clamp adds is the integral of `distance / lead` from the vicinity
+	// down to the drop radius, less the time the law would have taken over the
+	// same stretch. The first term dominates and is worth stating exactly.
+	const clampS = P.approachLeadS * Math.log(P.vicinityKm / P.dropRadiusKm);
+	expect(clamped.t - bare.t).toBeGreaterThan(clampS * 0.6);
+	expect(clamped.t - bare.t).toBeLessThan(clampS * 1.4);
 });
