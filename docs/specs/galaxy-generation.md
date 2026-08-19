@@ -354,7 +354,8 @@ This spec places stations and names their type. **What a type *is* — market
 offset, equipment exclusives, law and contraband, geometry, silhouette — is
 [#13](https://github.com/jcfischer/seelite/issues/13) and lives in
 `docs/specs/station-types.md`.** From there it reaches #7 (prices generate per
-station from an offset economy), #8 (legal status, pirate presence) and #9 (two
+station as a delta on the system's price — §3.2 explicitly rejects an offset
+*economy*), #8 (legal status, pirate presence) and #9 (two
 docking interactions, not three).
 
 The names above were changed by #13 to match `StationType` (see

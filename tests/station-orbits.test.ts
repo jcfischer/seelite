@@ -20,7 +20,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { forEachSystem, stationRows } from "../scripts/station-rows";
+import { forEachSystem, stationRows } from "./helpers/station-rows";
 import { GALAXY_COUNT } from "../src/galaxy";
 import baseline from "./fixtures/station-orbits.json";
 
@@ -54,31 +54,54 @@ describe("station placement is stable against added draws", () => {
  * generates with nothing to dock at. §5.4 owns the analysis; this pins the
  * extent.
  *
- * It asserts the defect's **current** shape rather than the invariant, because
+ * **It is measured as a rate over many worlds, not as two named systems.**
+ * `main.ts` seeds the world from `Math.random()` unless `?seed=` pins it, so
+ * there is no "shipped world" whose two bad systems could be listed — every
+ * session generates its own. Naming EDSOISLA and ORTITEZA would pin an artefact
+ * of this file's fixture seed and say nothing about what a player meets.
+ *
+ * It asserts the defect's **current** extent rather than the invariant, because
  * asserting the invariant today would simply fail. It is meant to break when
  * the defect is fixed, and how it breaks depends on which of §5.4's three
  * answers the fixing node takes:
  *
  * - **star-orbiting trade station** — `stationless` goes to 0, `planetless`
- *   stays at 2, and the identity below is *dropped*, not repinned.
+ *   stays where it is, and the identity below is *dropped*, not repinned.
  * - **force the ladder to keep a planet** — both go to 0.
  * - **drop such systems from the galaxy** — both go to 0, and the system count
  *   changes, so `galaxy.test.ts`'s digest moves too.
  */
 describe("undockable systems (known defect, station-types.md §5.4)", () => {
-	test("2 of 2048 systems generate with no planet and no station", () => {
+	/** Eight arbitrary worlds, spread by the same multiplier `rng.ts` uses to
+	 *  decorrelate seeds. One world would measure one world. */
+	const WORLDS = Array.from(
+		{ length: 8 },
+		(_, i) => ((i + 1) * 2654435761) >>> 0,
+	);
+
+	test("about 1 system in 700 generates undockable", () => {
+		let systems = 0;
 		const planetless: string[] = [];
 		const stationless: string[] = [];
-		forEachSystem(baseline.worldSeed, ALL_GALAXIES, (record, contents, g) => {
-			const key = `g${g}#${record.index} ${record.name}`;
-			if (contents.planets.length === 0) planetless.push(key);
-			if (contents.stations.length === 0) stationless.push(key);
-		});
-		expect(planetless).toEqual(["g0#110 EDSOISLA", "g1#114 ORTITEZA"]);
+		for (const world of WORLDS) {
+			forEachSystem(world, ALL_GALAXIES, (record, contents, g) => {
+				systems++;
+				const key = `${world}:g${g}#${record.index}`;
+				if (contents.planets.length === 0) planetless.push(key);
+				if (contents.stations.length === 0) stationless.push(key);
+			});
+		}
+		expect(systems).toBe(WORLDS.length * ALL_GALAXIES.length * 256);
+		// Measured at 0.143% over 40 worlds (81,920 systems). The band is wide
+		// enough to absorb sampling across eight worlds and narrow enough that
+		// either fixing the defect or making it materially worse fails here.
+		const rate = stationless.length / systems;
+		expect(rate).toBeGreaterThan(0.0005);
+		expect(rate).toBeLessThan(0.004);
 		// The *same* systems, not merely the same count — §5.4 claims the
 		// stationless ones are stationless *because* they are planetless, and
 		// comparing two counts would let a second cause appear on one side while
-		// a first-cause system dropped off the other, with both totals still 2.
+		// a first-cause system dropped off the other, with both totals equal.
 		expect(stationless).toEqual(planetless);
 	});
 });

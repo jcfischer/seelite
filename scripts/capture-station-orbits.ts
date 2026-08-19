@@ -24,7 +24,7 @@
  * whitespace biome would collapse.
  */
 
-import { stationRows } from "./station-rows";
+import { stationRows } from "../tests/helpers/station-rows";
 
 const WORLD_SEED = 0x5ee11e;
 /** Every system of two galaxies: enough that a shifted draw cannot hide in an

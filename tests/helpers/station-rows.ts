@@ -2,6 +2,10 @@
  * One serialisation of a station's placement, shared by the capture script and
  * the guard that checks against what it captured.
  *
+ * It lives under `tests/helpers/` rather than in `scripts/` because the guard is
+ * the thing that must not drift: the dependency should point from the operator
+ * tooling into shared test code, not from the guarded tier out into tooling.
+ *
  * It lives in its own module because the two sides must agree exactly. The
  * first version copied the row builder into `tests/station-orbits.test.ts` with
  * a comment asking the next editor to keep them identical — which is a
@@ -10,8 +14,12 @@
  * nothing fails.
  */
 
-import { GALAXY_COUNT, generateGalaxy, type SystemRecord } from "../src/galaxy";
-import { type SystemContents, generateContents } from "../src/system";
+import {
+	GALAXY_COUNT,
+	generateGalaxy,
+	type SystemRecord,
+} from "../../src/galaxy";
+import { type SystemContents, generateContents } from "../../src/system";
 
 /**
  * Walks `galaxies` of one world, generating each system's contents once.
@@ -30,7 +38,11 @@ export function forEachSystem(
 	) => void,
 ): void {
 	for (const g of galaxies) {
-		if (g >= GALAXY_COUNT) throw new Error(`galaxy ${g} does not exist`);
+		// Both bounds and integrality: `generateGalaxy` will derive a seed for a
+		// negative or fractional index and cheerfully return systems belonging to
+		// no galaxy, which is a silently wrong corpus rather than an error.
+		if (!Number.isInteger(g) || g < 0 || g >= GALAXY_COUNT)
+			throw new Error(`galaxy ${g} does not exist`);
 		for (const record of generateGalaxy(worldSeed, g).systems) {
 			visit(record, generateContents(record), g);
 		}

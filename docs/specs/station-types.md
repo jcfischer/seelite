@@ -54,7 +54,7 @@ Fixed here, and these words mean exactly one thing from now on across #6, #7,
 | **target** | any endpoint a cruise leg can be aimed at. `cruise.ts`'s speed law reads the nearest star or planet; the selected target may also be a station, moon or belt. |
 | **fence** | a refinery whose `blackMarket` flag is true (§5.2). Not a separate object — the word is shorter than "a refinery with a black market" and is used only in that sense. |
 | **the target's frame** | the selected target's *velocity* frame, in which cruise exit and docking are judged (§6, `cruise.ts`). Declared here rather than left inferred, since it is the one place "target" means a reference frame and not a place. |
-| **system** | 1–3 stations plus its bodies. "**multi-station**", never "multi-destination". |
+| **system** | 0–3 stations plus its bodies — 0 is §5.4's defect, not the intent. "**multi-station**", never "multi-destination". |
 
 Two words are **retired**, for the same reason: a synonym with no distinct job
 is how prose and types drift apart.
@@ -149,13 +149,25 @@ The obvious implementation — `stationEconomy = clamp(system.economy + offset,
 hardest to see. **The clamp eats the offset exactly where each type lives.**
 
 Shipyards require `displayTL ≥ 10`, and `tech = … + (economy ^ 7) + …` means a
-high tech level *requires* a low economy number; shipyard systems therefore sit
-at economy 0–3, where `−2` clamps to 0 and the shipyard prices identically to
-the trade station beside it. Symmetrically, a refinery in a Poor Agricultural
-system (economy 7) clamps at 7 and prices identically too. The price axis would
-stop differentiating precisely in the systems where each type is most at home —
-the same "reads as a rule while behaving as a constant" failure §4 rejects for
-equipment.
+high tech level *requires* a low economy number, so shipyards crowd the bottom
+of the economy scale. **Measured over 40 worlds — 81,920 systems, 14,035
+shipyards, 31,169 refineries:**
+
+| | share where the clamp bites |
+|---|---|
+| shipyards (`economy − 2 < 0`) | **79.0%** |
+| refineries (`economy + 3 > 7`) | **41.1%** |
+
+Shipyard economies run 0: 6,523 · 1: 4,568 · 2: 1,979 · 3: 849 · 4: 98 · 5: 18 —
+so the offset survives at economy ≥ 2, and dies for four shipyards in five. The
+price axis would stop differentiating in the majority of the systems where each
+type is most at home, which is the "reads as a rule while behaving as a
+constant" failure §4.2 rejects for equipment.
+
+(The first draft of this section asserted "shipyard systems sit at economy 0–3,
+where −2 clamps to 0", which is not true of economy 2 or 3 and ignores the
+shipyards at 4 and 5. The measurement replaced the assertion, and made the case
+stronger rather than weaker.)
 
 Applying the offset as a **price delta after the formula** produces the same
 shift wherever the price formula is linear, and cannot clamp, because it acts on
@@ -294,11 +306,22 @@ typeFactor = { trade: 1.0, refinery: 2.0, shipyard: 0.5 }
 | refinery | 0.222 | 0.400 | 0.667 | 0.857 | 0.933 | 1.000 |
 | shipyard | 0.067 | 0.143 | 0.333 | 0.600 | 0.778 | 1.000 |
 
-**Every column moves.** The only place the three converge is `government = 0`,
-where #6's own rule already puts the system at certainty — `rand(0–7) < 0` is
-never true, so an Anarchy system always spawns hostiles whatever sits in orbit.
-That is not a clamp eating a rule; it is the base rule's own endpoint, and no
-per-station factor can or should reach past it.
+**Every column moves except the last, and the last is a special case the
+implementation must handle explicitly:** at `government = 0`, `p = 1`, so
+`odds = p / (1 − p)` divides by zero. The formula is *undefined* there, not
+equal to 1 — an implementation that evaluates it naively gets `NaN` for all
+three types, including the trade station at factor 1.0.
+
+```
+p_st = p === 1 ? 1 : odds_st / (1 + odds_st)
+```
+
+The special case is also the right answer rather than a patch: #6's rule already
+puts an Anarchy system at certainty — `rand(0–7) < 0` is never true, so it always
+spawns hostiles whatever sits in orbit. That is the base rule's own endpoint, and
+no per-station factor can or should reach past it. §9.1 requires the
+`government = 0` row to be in the test, because it is the one input that returns
+`NaN` if the guard is forgotten.
 
 An odds ratio is also the honest object here: "twice as likely to be jumped" is
 a statement about odds, not about probability, and doubling a probability is
@@ -389,12 +412,14 @@ end the galaxy map has no way to warn."* Both are false. The push is guarded by
 `if (primary)`, and §6.2's Titius-Bode ladder discards every rung outside the
 0.3–6 AU envelope, so a system can end up with no planets at all.
 
-Measured across the whole shipped world (`worldSeed = 0x5ee11e`, all 8
-galaxies, 2,048 systems): **2 systems have zero planets, and the same 2 have
-zero stations** — galaxy 0 #110 (EDSOISLA) and galaxy 1 #114 (ORTITEZA). Pinned
-by `tests/station-orbits.test.ts`, which asserts the count is 2 rather than
-asserting the invariant, so the defect is visible and the fix will break the
-test on purpose.
+**It is a rate, not two named systems.** `src/main.ts` seeds the world from
+`Math.random()` unless `?seed=` pins it, so there is no single shipped world
+whose bad systems could be listed — every session generates its own. Measured
+across **40 worlds, 81,920 systems: 117 are planetless, and the same 117 are
+stationless — 0.143%, about one in 700, or roughly three per 2,048-system
+world.** Pinned by `tests/station-orbits.test.ts` as a rate over eight worlds
+with a band around that figure, asserting the defect's extent rather than the
+invariant, so the fix breaks the test on purpose.
 
 **Why it is not fixed in this PR.** Two reasons, and the second is the
 decisive one:
@@ -504,6 +529,10 @@ Two tiers, per the repo's culture.
   every system in the corpus — including economy 0 and economy 7, which is where
   the rejected `clamp(…, 0, 7)` implementation would have collapsed them (§3.2).
   This is the test that would have caught the first draft.
+- **`government = 0` returns 1.0, not `NaN`.** §5.1's odds form divides by zero
+  there, and the guard is a special case that a reimplementation will drop.
+  Every type at `government = 0` must be asserted, trade station included — it
+  is the factor-1.0 case that looks safest and fails identically.
 - **The extremes behave as #7 decides.** Whatever #7 settles for a delta that
   pushes a price below zero or past the byte range (§3.2), the corpus must
   exercise it — Narcotics at a refinery (`+3 × 29 × 0.4` = +34.8 Cr) is the
