@@ -157,21 +157,28 @@ of the economy scale. **Measured over 40 worlds — 81,920 systems, 14,035
 shipyards, 31,169 refineries — by `scripts/measure-clamp-bite.ts`, committed so
 the number can be re-derived rather than trusted:**
 
-| | share where the clamp bites |
-|---|---|
-| shipyards (`economy − 2 < 0`) | **79.0%** |
-| refineries (`economy + 3 > 7`) | **41.1%** |
+| | offset **reduced** | offset **dead** |
+|---|---|---|
+| shipyards (`clamp(economy − 2, 0, 7)`) | 79.0% | **46.5%** |
+| refineries (`clamp(economy + 3, 0, 7)`) | 41.1% | **16.3%** |
 
-Shipyard economies run 0: 6,523 · 1: 4,568 · 2: 1,979 · 3: 849 · 4: 98 · 5: 18 —
-so the offset survives at economy ≥ 2, and dies for four shipyards in five. The
-price axis would stop differentiating in the majority of the systems where each
-type is most at home, which is the "reads as a rule while behaving as a
-constant" failure §4.2 rejects for equipment.
+The two columns are different questions and the distinction matters. At economy
+1 a shipyard's `−2` clamps to 0 — one step of shift instead of two, so it is
+halved, not lost. It dies only at economy 0, where the station prices exactly
+like the system beside it. Shipyard economies run 0: 6,523 · 1: 4,568 · 2: 1,979
+· 3: 849 · 4: 98 · 5: 18.
 
-(The first draft of this section asserted "shipyard systems sit at economy 0–3,
-where −2 clamps to 0", which is not true of economy 2 or 3 and ignores the
-shipyards at 4 and 5. The measurement replaced the assertion, and made the case
-stronger rather than weaker.)
+So: **the offset is silently degraded for four shipyards in five and erased
+outright for nearly half of them**, in the type whose entire placement rule puts
+it there. That is enough to disqualify the mechanism — a price rule that is a
+constant for 46.5% of the stations it governs is not a price rule — without
+needing the stronger claim.
+
+(The first draft asserted "shipyard systems sit at economy 0–3, where −2 clamps
+to 0", which is false of economy 2 and 3 and ignores the shipyards at 4 and 5;
+the second draft then reported the 79.0% "reduced" figure as though it were
+collapse. Both are recorded rather than quietly replaced, because the measurement
+is the thing carrying the decision and it took two tries to state honestly.)
 
 Applying the offset as a **price delta after the formula** produces the same
 shift wherever the price formula is linear, and cannot clamp, because it acts on

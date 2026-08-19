@@ -73,12 +73,9 @@ describe("station placement is stable against added draws", () => {
  *   changes, so `galaxy.test.ts`'s digest moves too.
  */
 describe("undockable systems (known defect, station-types.md §5.4)", () => {
-	/** Eight arbitrary worlds, spread by the same multiplier `rng.ts` uses to
-	 *  decorrelate seeds. One world would measure one world. */
-	const WORLDS = Array.from(
-		{ length: 8 },
-		(_, i) => ((i + 1) * 2654435761) >>> 0,
-	);
+	/** Eight arbitrary worlds. One world would measure one world, and
+	 *  `scripts/measure-clamp-bite.ts` sweeps the same series. */
+	const WORLDS = worldSeeds(8);
 
 	test("about 1 system in 700 generates undockable", () => {
 		let systems = 0;
@@ -93,12 +90,13 @@ describe("undockable systems (known defect, station-types.md §5.4)", () => {
 			});
 		}
 		expect(systems).toBe(WORLDS.length * ALL_GALAXIES.length * 256);
-		// Measured at 0.143% over 40 worlds (81,920 systems). The band is wide
-		// enough to absorb sampling across eight worlds and narrow enough that
-		// either fixing the defect or making it materially worse fails here.
+		// Measured at 0.143% over 40 worlds (81,920 systems). The band is ±50%
+		// around that: wide enough to absorb sampling over eight worlds, narrow
+		// enough that fixing the defect fails the lower bound and roughly
+		// doubling it fails the upper. It does not claim to catch a 10% drift.
 		const rate = stationless.length / systems;
-		expect(rate).toBeGreaterThan(0.0005);
-		expect(rate).toBeLessThan(0.004);
+		expect(rate).toBeGreaterThan(0.0007);
+		expect(rate).toBeLessThan(0.0022);
 		// The *same* systems, not merely the same count — §5.4 claims the
 		// stationless ones are stationless *because* they are planetless, and
 		// comparing two counts would let a second cause appear on one side while
