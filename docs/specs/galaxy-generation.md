@@ -362,14 +362,10 @@ The names above were changed by #13 to match `StationType` (see
 `trade`, the thing is a "trade station"), and "outpost" was retired as a
 synonym carrying no distinction.
 
-> **The trade station is not unconditional.** This table said "always" and
-> `src/system.ts` says the same; both are wrong. §6.2's ladder can discard every
-> rung outside the orbit envelope, and the trade station is guarded by
-> `if (primary)`, so a planetless system has nothing to dock at. Measured,
-> recorded and pinned by `station-types.md` §5.4 — the count lives there and in
-> `tests/station-orbits.test.ts`, not here. The fix has its own node, because the three
-> candidate answers differ in what they do to arrival, the galaxy map and the
-> determinism digest.
+> **The trade station is not unconditional**, though this table once said
+> "always". A planetless system has nothing to dock at. The measurement, the
+> reasoning and the fix's ownership are in `station-types.md` §5.4; they are not
+> repeated here.
 
 ---
 

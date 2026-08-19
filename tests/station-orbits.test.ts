@@ -20,12 +20,13 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import {
-	ALL_GALAXIES,
-	forEachSystem,
-	stationRows,
-} from "../scripts/station-rows";
+import { forEachSystem, stationRows } from "../scripts/station-rows";
+import { GALAXY_COUNT } from "../src/galaxy";
 import baseline from "./fixtures/station-orbits.json";
+
+/** Every galaxy of the world: the census sweeps all 8, where the placement
+ *  fixture pins only the two the capture script names. */
+const ALL_GALAXIES = Array.from({ length: GALAXY_COUNT }, (_, i) => i);
 
 describe("station placement is stable against added draws", () => {
 	test("the fixture is a real corpus, not an empty pass", () => {
@@ -48,32 +49,36 @@ describe("station placement is stable against added draws", () => {
 /**
  * The dead-end defect, pinned rather than left silent (`station-types.md` §5.4).
  *
- * `galaxy-generation.md` §6.4 says the trade station is present "always", and
- * `src/system.ts` says "The trade station is unconditional, so a system always
- * has somewhere to dock — a system with no station would be a dead end the
- * galaxy map has no way to warn". Neither is true: the station is guarded by
- * `if (primary)`, and §6.2's ladder can discard every rung outside the orbit
- * envelope, leaving a planetless system with nothing to dock at.
+ * The trade station is guarded by `if (primary)` while §6.2's ladder can
+ * discard every rung outside the orbit envelope, so a planetless system
+ * generates with nothing to dock at. §5.4 owns the analysis; this pins the
+ * extent.
  *
- * This test asserts the defect's **current** extent rather than the invariant,
- * because asserting the invariant today would simply fail. It is deliberately
- * shaped to break when the defect is fixed: the node that fixes it flips these
- * two expectations to `0` and recaptures the fixture, and until then the number
- * is measured and visible instead of being a claim nobody checked.
+ * It asserts the defect's **current** shape rather than the invariant, because
+ * asserting the invariant today would simply fail. It is meant to break when
+ * the defect is fixed, and how it breaks depends on which of §5.4's three
+ * answers the fixing node takes:
+ *
+ * - **star-orbiting trade station** — `stationless` goes to 0, `planetless`
+ *   stays at 2, and the identity below is *dropped*, not repinned.
+ * - **force the ladder to keep a planet** — both go to 0.
+ * - **drop such systems from the galaxy** — both go to 0, and the system count
+ *   changes, so `galaxy.test.ts`'s digest moves too.
  */
 describe("undockable systems (known defect, station-types.md §5.4)", () => {
-	test("exactly 2 of 2048 systems generate with no planet and no station", () => {
-		let planetless = 0;
-		let stationless = 0;
-		forEachSystem(baseline.worldSeed, ALL_GALAXIES, (_record, contents) => {
-			if (contents.planets.length === 0) planetless++;
-			if (contents.stations.length === 0) stationless++;
+	test("2 of 2048 systems generate with no planet and no station", () => {
+		const planetless: string[] = [];
+		const stationless: string[] = [];
+		forEachSystem(baseline.worldSeed, ALL_GALAXIES, (record, contents, g) => {
+			const key = `g${g}#${record.index} ${record.name}`;
+			if (contents.planets.length === 0) planetless.push(key);
+			if (contents.stations.length === 0) stationless.push(key);
 		});
-		expect(planetless).toBe(2);
-		expect(stationless).toBe(2);
-		// Every stationless system is stationless *because* it is planetless —
-		// if these ever diverge, a second cause has appeared and §5.4's analysis
-		// no longer covers it.
-		expect(stationless).toBe(planetless);
+		expect(planetless).toEqual(["g0#110 EDSOISLA", "g1#114 ORTITEZA"]);
+		// The *same* systems, not merely the same count — §5.4 claims the
+		// stationless ones are stationless *because* they are planetless, and
+		// comparing two counts would let a second cause appear on one side while
+		// a first-cause system dropped off the other, with both totals still 2.
+		expect(stationless).toEqual(planetless);
 	});
 });

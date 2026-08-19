@@ -52,6 +52,7 @@ Fixed here, and these words mean exactly one thing from now on across #6, #7,
 | **refinery** | the `refinery` type. |
 | **shipyard** | the `shipyard` type. |
 | **target** | any endpoint a cruise leg can be aimed at. `cruise.ts`'s speed law reads the nearest star or planet; the selected target may also be a station, moon or belt. |
+| **fence** | a refinery whose `blackMarket` flag is true (§5.2). Not a separate object — the word is shorter than "a refinery with a black market" and is used only in that sense. |
 | **the target's frame** | the selected target's *velocity* frame, in which cruise exit and docking are judged (§6, `cruise.ts`). Declared here rather than left inferred, since it is the one place "target" means a reference frame and not a place. |
 | **system** | 1–3 stations plus its bodies. "**multi-station**", never "multi-destination". |
 
@@ -97,7 +98,7 @@ Every other row names the section that owns it, for the same reason.
 | Price offset → §3 | 0 | **+3** | **−2** |
 | Equipment → §4 | system's `min(displayTL + 3, 10)` | same | same |
 | Exclusives → §4.1, §5.2 | — | fuel scoops, mining laser; contraband if `blackMarket` | hulls, military laser, energy unit |
-| Law → §5.1 | hostile ×1.0 | hostile ×2.0 | hostile ×0.5 + scan |
+| Law → §5.1 | hostile odds ×1.0 | ×2.0 | ×0.5 + scan |
 | Docking → §6 | rotating slot | pad | rotating slot |
 | Silhouette → §7 | Coriolis octahedron | drum in an asteroid | Coriolis + drydock frame |
 
@@ -258,37 +259,50 @@ requires. That is #6's risk/reward geography, unchanged.
 
 This is where the three types stop being interchangeable.
 
-### 5.1 Per type: a factor on the hostile chance, not an offset on government
+### 5.1 Per type: a factor on the odds, not on the probability
 
 #6's spawn rule is `rand(0–7) < government ⇒ no spawn`, so a system's hostile
-chance is `(8 − government) / 8`. The obvious per-type expression — shift
-`government` by ±3 — **fails §3.2's own test**, and the failure is identical:
-`min(government + 3, 7)` is a flat 7 for every core system with
-`government ≥ 4`, which is exactly where shipyards generate, and
-`max(government − 3, 0)` is a flat 0 across the whole `government ≤ 3` rim band
-where §5.2 concentrates fences. The clamp would eat the offset precisely where
-each type lives — the defect §3.2 rejects, reintroduced two sections later.
+chance is `p = (8 − government) / 8`.
 
-So the type applies a **factor to the hostile chance**, which saturates only at
-a genuine extreme:
+Two expressions were tried and both saturated, which is this spec's recurring
+failure mode:
+
+- **An offset on `government`** — `min(government + 3, 7)` is a flat 7 for every
+  core system with `government ≥ 4`, exactly where shipyards generate, and
+  `max(government − 3, 0)` a flat 0 across the whole `government ≤ 3` rim band.
+  The same defect §3.2 rejects for prices.
+- **A factor on `p`** — `2 × p` reaches 1.0 at `government = 4` and stays there
+  all the way down, which is a *wider* flat band than the offset had. Caught in
+  review, and worth recording rather than quietly replacing: it looked like the
+  fix and was the same bug.
+
+The form that does not saturate is a factor on the **odds**:
 
 ```
-hostileChance(station) = clamp(typeFactor · (8 - government) / 8, 0, 1)
+p        = (8 - government) / 8          // #6's rule, unchanged
+odds     = p / (1 - p)
+odds_st  = typeFactor · odds
+p_st     = odds_st / (1 + odds_st)
 
 typeFactor = { trade: 1.0, refinery: 2.0, shipyard: 0.5 }
 ```
 
-| government | 6 (core) | 4 | 2 | 1 (rim) |
-|---|---|---|---|---|
-| trade station | 0.25 | 0.50 | 0.75 | 0.875 |
-| refinery | 0.50 | 1.00 | 1.00 | 1.00 |
-| shipyard | 0.125 | 0.25 | 0.375 | 0.44 |
+| government | 7 | 6 | 4 | 2 | 1 | 0 |
+|---|---|---|---|---|---|---|
+| system `p` | 0.125 | 0.250 | 0.500 | 0.750 | 0.875 | 1.000 |
+| trade station | 0.125 | 0.250 | 0.500 | 0.750 | 0.875 | 1.000 |
+| refinery | 0.222 | 0.400 | 0.667 | 0.857 | 0.933 | 1.000 |
+| shipyard | 0.067 | 0.143 | 0.333 | 0.600 | 0.778 | 1.000 |
 
-It saturates in one place only: a refinery at `government ≤ 3` reaches certainty.
-That is not a clamp eating a rule, it is the rule arriving at its endpoint —
-a system that is already fully hostile cannot be made more so, and an Anarchy
-refinery *should* be the worst place in the galaxy. The shipyard's factor never
-saturates at all, and the shipyard is the type whose whole placement is core-ward.
+**Every column moves.** The only place the three converge is `government = 0`,
+where #6's own rule already puts the system at certainty — `rand(0–7) < 0` is
+never true, so an Anarchy system always spawns hostiles whatever sits in orbit.
+That is not a clamp eating a rule; it is the base rule's own endpoint, and no
+per-station factor can or should reach past it.
+
+An odds ratio is also the honest object here: "twice as likely to be jumped" is
+a statement about odds, not about probability, and doubling a probability is
+only an approximation of it that breaks down exactly where it matters.
 
 ### 5.1.1 What each type is on arrival
 
@@ -296,9 +310,9 @@ saturates at all, and the shipyard is the type whose whole placement is core-war
   unmodified. Its identity is that it is *the safe one with the traffic*: it has
   no exclusive, and it is the station that expresses the system unmodified,
   which is what makes inter-system comparison legible.
-- **Refinery** — thin law. Twice the hostile chance, and — conditionally, see
+- **Refinery** — thin law. Twice the hostile *odds*, and — conditionally, see
   §5.2 — the only place illegal goods can be bought or sold.
-- **Shipyard** — naval. Half the hostile chance, plus a **contraband scan on
+- **Shipyard** — naval. Half the hostile odds, plus a **contraband scan on
   approach**; a poor legal status makes arrival hostile rather than merely
   expensive.
 

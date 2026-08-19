@@ -440,14 +440,10 @@ function buildMoons(
  * names is not. Written the way the code works, so that a later reader
  * comparing the two finds the difference here rather than in a debugger.
  *
- * **The trade station is meant to be unconditional and is not.** It is guarded
- * by `if (primary)`, and §6.2's orbit ladder can discard every rung outside the
- * envelope, so a planetless system generates with nothing to dock at — a dead
- * end the galaxy map has no way to warn about. Two systems in the shipped
- * world do this today; `tests/station-orbits.test.ts` pins the count, and
- * `docs/specs/station-types.md` §5.4 records why the fix is its own node rather
- * than a patch here (three defensible answers, and any of them moves station
- * placement, which the orbit fixture exists to pin).
+ * **The trade station is meant to be unconditional and is not** — it is guarded
+ * by `if (primary)`, so a planetless system generates undockable. Measured and
+ * owned by `docs/specs/station-types.md` §5.4; pinned by
+ * `tests/station-orbits.test.ts`.
  */
 function generateStations(
 	record: SystemRecord,

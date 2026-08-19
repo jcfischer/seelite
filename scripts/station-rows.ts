@@ -37,13 +37,6 @@ export function forEachSystem(
 	}
 }
 
-/** Every galaxy index of a world — the census walks all of them, the placement
- *  fixture only a couple. */
-export const ALL_GALAXIES: readonly number[] = Array.from(
-	{ length: GALAXY_COUNT },
-	(_, i) => i,
-);
-
 /**
  * Every station of every system in `galaxies`, one tab-separated row each.
  *
