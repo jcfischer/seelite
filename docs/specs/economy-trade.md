@@ -1,0 +1,599 @@
+# Economy and trade
+
+> Resolves [#7](https://github.com/jcfischer/seelite/issues/7). Nine decisions,
+> taken one at a time with the principal, plus one forced by a measurement that
+> overturned the second of them.
+
+## 0. What this owns, and what it does not
+
+**Owns:** the commodity table and its legality flags; the price and stock
+arithmetic; how a station's type shifts both; how stock regenerates against the
+#6 game clock and how it remembers the player; cargo, credits and fuel prices;
+equipment prices; the trade→upgrade progression; the economic half of death.
+
+**Does not own**, and deliberately says nothing about:
+
+| | Owner |
+|---|---|
+| Which stations exist, where, and of what type | `galaxy-generation.md` §6.4 |
+| What a station type *is* — exclusives, law, geometry, the `blackMarket` flag | `station-types.md` |
+| Legal status, bounties, police, contraband *consequences* | #8 |
+| The market screen's layout | the unowned HUD node |
+| Hull roster and prices | the ship-roster node (still fog on the map) |
+| Save format, slots, permadeath | the save/load node (still fog) |
+
+Terminology is `station-types.md` §1's, unchanged: a **station** is any dockable
+object, a **fence** is a refinery whose `blackMarket` flag is set.
+
+---
+
+## 1. The shape, in one place
+
+```
+product   = economy × gradient                    // Bell's slope
+changing  = fluct & maskbyte                      // the visit's noise
+
+priceByte = clamp(basePrice + changing + product, 0, 255)
+priceCr   = max(PRICE_STEP_CR,
+                priceByte × PRICE_STEP_CR
+                  + typeOffset × gradient × PRICE_STEP_CR)   // §3.1
+priceCr  ×= 1 + PRICE_ELASTICITY × deficit / HOLD_REFERENCE_T // §5.2
+
+quantity  = clamp(baseQuantity + changing − product, 0, 63)
+          + max(0, −typeOffset × gradient)                    // §3.2
+          − deficit                                            // §5.2
+```
+
+| Constant | Value | Source |
+|---|---|---|
+| `PRICE_STEP_CR` | 0.4 Cr | Bell's byte→credits step |
+| quantity cap | 63 (`& 0x3F`) | Bell |
+| `typeOffset` | trade 0, refinery +3, shipyard −2 | `station-types.md` §3 |
+| `MARKET_PERIOD` | 30 min game time | §5.1 |
+| `DEFICIT_HALF_LIFE` | 20 min game time | §5.2 |
+| `PRICE_ELASTICITY` | 0.10 per `HOLD_REFERENCE_T` | §5.3 |
+| `HOLD_REFERENCE_T` | 20 t | §6 |
+
+The executable copy is `tests/helpers/market-math.ts`; the implement node moves
+it to `src/market.ts`. There is one copy, imported by both the suite and
+`scripts/measure-market.ts`, so no number in this document can drift from the
+number under test.
+
+---
+
+## 2. Prices: Bell's arithmetic, closed differently
+
+### 2.1 The formula is Bell's
+
+`genmarket` from `txtelite.c`, recorded in `docs/research/elite-1984-mechanics.md`
+§2.1. Four constants per good — `basePrice`, `gradient`, `baseQuantity`,
+`maskbyte` — one fluctuation byte per market, and the signed `product` term
+entering price *added* and quantity *subtracted*. That opposite sign is the
+whole mechanism: **cheap implies plentiful**, in one line of arithmetic.
+
+It is reused twice more in this spec rather than replaced — by the type offset
+(§3) and by the stock deficit (§5). Neither introduces a pricing mechanism of
+its own, which is the discipline `station-types.md` §3.3 set.
+
+**`baseQuantity` is a signed byte.** Liquor `0xFB`, Slaves `0xE2`, Furs `0xDC`,
+Gem-Stones `0xFA` and Alien Items `0xC0` are −5, −30, −36, −6 and −64; the 6502
+reads them as two's complement. Read them unsigned and all five sit at the
+63-unit cap in every system, which inverts the trade lanes the economy is built
+on. `basePrice` is genuinely unsigned. This is written down because it is a
+transcription trap that produces a plausible-looking table, and
+`tests/market.test.ts` pins all five values.
+
+### 2.2 Saturating, not wrapping
+
+Bell does the arithmetic in 8 bits with deliberate overflow — "overflow 'errors'
+are extremely frequent and exploited". seelite **clamps at 0 and 255 instead**.
+
+The case for wrapping is that the overflow is a feature, and research §6.2
+recommends adopting it exactly. The case against is that a good which wraps from
+254 to 2 Cr is inexplicable at the market screen, and #13's type delta already
+sits on top of this formula — which is why `station-types.md` §3.2 deferred the
+byte extremes here.
+
+**What that choice costs was measured, not argued.** Swept over the entire input
+space — 17 goods × 8 economies × 256 fluctuation bytes — by
+`scripts/measure-market.ts`:
+
+- **Sixteen of seventeen goods saturate on 0.00% of rows.** Bell's constants
+  simply never overflow for them, so for all but one good the two arithmetics
+  are the same function.
+- **Narcotics saturated on 97.66%**, and its price span collapsed from
+  0.4–101.6 Cr to 94.0–102.0 Cr.
+
+So the entire disagreement between wrap and clamp lived in one good — and in
+that good it was fatal. §2.3 is what was done about it.
+
+**After §2.3, the table never overflows at all: the measured saturation rate is
+0.00% across every good.** The clamp is therefore a *guarantee* rather than a
+behaviour — it fires nowhere in the shipped table. It is kept, and named as a
+guard that currently cannot fire, because the alternative is leaving the
+boundary undefined for the first good a later node adds or retunes.
+
+### 2.3 The one divergence: Narcotics
+
+Every constant in the table is Bell's except this row:
+
+| | basePrice | gradient | baseQuantity | mask |
+|---|---|---|---|---|
+| Bell | `0xEB` | +29 | `0x08` | `0x78` |
+| **seelite** | **`0x14`** | **+13** | `0x08` | **`0x70`** |
+
+**Bell's row cannot stay inside a byte, by construction**: `235 + 120 + 7×29` is
+558. He chose those constants *to* overflow, and the wrap is where the good's
+entire price variation lives. Under §2.2's clamp it flattens, and a flat
+contraband price is not a survivable outcome — `station-types.md` §3.4 makes
+Narcotics the centrepiece of the smuggling loop, and §5.2 there builds a
+rim-weighted fence geography on it being worth carrying.
+
+Measured fence→fence, with **independent fluctuation bytes per station** (two
+stations have different seeds; pairing them on one byte understates every
+margin):
+
+| Narcotics row | Best margin | In stock | Saturates |
+|---|---|---|---|
+| Bell + wrap | 100.4 Cr/t | 36% | 97.7% |
+| Bell + clamp | **8.0 Cr/t** | 36% | 97.7% |
+| **seelite + clamp** | **81.2 Cr/t** | **64%** | **0%** |
+
+Firearms (36.4 Cr/t) and Slaves (19.2 Cr/t) are untouched by any of this — they
+never overflowed.
+
+The retuned row keeps everything the good is for: a positive gradient, so it is
+cheap in Rich Industrial and dear in Poor Agricultural; the largest mask in the
+table at `0x70`, so it stays the volatile gamble; and a margin within a fifth of
+Bell's. It is *more* available than Bell's row, not less.
+
+**Three alternatives were considered and are recorded rather than deleted**,
+because the failure is easy to reintroduce:
+
+1. **Revert to wrapping everywhere.** Defensible — the "reads as a bug" cost is
+   confined to the one good whose character is the wild swing, and it keeps an
+   exact txtelite oracle. Rejected because the type delta then needs a defined
+   wrap order and a 0.4 Cr Narcotics is a farmable artefact.
+2. **Wrap for illegal goods only.** Keeps every constant verbatim and the gamble
+   exactly as built. Rejected: two arithmetics in one formula selected by a flag
+   is the second mechanism §3.3 of `station-types.md` worked to avoid.
+3. **Accept a flat Narcotics** and move contraband's value to #8's risk side.
+   Rejected: that mechanism does not exist, is not #7's, and would leave #13's
+   smuggling design with no economic basis at all.
+
+### 2.4 The lanes, unchanged
+
+| Group | Goods | Gradient | Cheap and plentiful at |
+|---|---|---|---|
+| Extractive | Minerals −1, Gold −1, Platinum −2, Gem-Stones −1, Radioactives −3, Alloys +1 | mostly negative | Poor Agricultural |
+| Staple | Food −2, Textiles −1, Liquor −5, Furs −9, Slaves −5 | negative | Poor Agricultural |
+| Manufactured | Computers +14, Machinery +6, Luxuries +8, Firearms +13, Narcotics +13 | positive | Rich Industrial |
+
+The canonical loop survives: Computers outward from Rich Industrial (+39.2 Cr/t at
+zero fluctuation), Furs homeward (+25.2 Cr/t). `tests/market.test.ts` asserts
+the direction for every good rather than for the two named ones, so a retune
+that inverts a lane fails the suite.
+
+**Alien Items** keep Bell's sell-only rule — quantity forced to 0, so the row
+exists and is always empty until #8 provides combat scooping. **Gold, Platinum
+and Gem-Stones** keep the sub-tonne unit that bypasses the hold check;
+`station-types.md` §3.4 depends on all three being legal, and the suite asserts
+that the sub-tonne set and the illegal set do not intersect.
+
+---
+
+## 3. Station type, applied to price and stock
+
+### 3.1 Price: a delta in credits, after the clamp
+
+```
+priceCr = max(PRICE_STEP_CR, priceByte × 0.4 + typeOffset × gradient × 0.4)
+```
+
+The offset lands **after** the byte closes, in credits — not inside the byte and
+not as an economy shift. The map's constraint from #13 is explicit that a
+per-type modifier must be expressed where it cannot saturate, and it was written
+after three separate measured collapses. Adding `typeOffset × gradient` into the
+byte would reintroduce exactly that: the delta would be eaten at both ends.
+
+**The floor.** A delta can in principle push a price to or below zero, so it is
+floored at one price step. Measured across 17 goods × 3 station types × 8
+economies × 256 fluctuation bytes — 104,448 rows — **the floor fires on 0.54%**.
+That is the number that makes the mechanism a price rule rather than a constant,
+and `tests/market.test.ts` fails if it ever exceeds 1%.
+
+The suite also asserts the stronger property directly: at every point in the
+domain the observed delta equals `typeOffset × gradient × 0.4` exactly, except
+where the floor legitimately intervenes.
+
+### 3.2 Quantity: one-sided
+
+```
+quantity += max(0, −typeOffset × gradient)
+```
+
+`station-types.md` §3 shifts price only, which leaves a refinery with cheaper
+ore but no more of it — a fiction §3.3 there already flagged as a wart. Bell's
+own arithmetic couples the two, so the symmetric fix is obvious:
+`quantityDelta = −typeOffset × gradient`.
+
+**The symmetric form deletes the contraband trade.** Narcotics' gradient is
+positive, so a refinery's `+3` gives a quantity delta of **−39 units** (−87
+under Bell's +29) against a `baseQuantity` of 8. It clips to zero. The refinery
+is the *only* place contraband is traded, so symmetric coupling empties the
+shelf at the fence.
+
+Applying the delta **only where it is positive** has no such failure, and states
+one rule: *a station type never makes a good scarcer — where its offset makes
+something cheap, it also makes it plentiful.*
+
+| Station | Good | Price | Quantity |
+|---|---|---|---|
+| refinery | Minerals (−1) | −1.2 Cr | **+3 units** |
+| refinery | Radioactives (−3) | −3.6 Cr | **+9 units** |
+| refinery | Narcotics (+13) | +15.6 Cr | unchanged (would be −39) |
+| shipyard | Computers (+14) | −11.2 Cr | **+28 units** |
+| shipyard | Food (−2) | +1.6 Cr | unchanged (would be −4) |
+
+The refinery becomes a real ore source and the shipyard a real electronics
+source, with no new table and no new mechanism. The 63-unit cap still binds.
+
+---
+
+## 4. Legality: the one scoped class
+
+`station-types.md` §3.4 scopes the market by **legality**, not by station type:
+Narcotics, Firearms and Slaves trade only at a fence; everything else trades
+everywhere. That section obliges #7 to supply two things, and this is them.
+
+1. **A per-commodity `illegal` flag**, carried on the commodity row itself
+   rather than derived from a name list. Exactly three goods carry it, and the
+   suite asserts the set.
+2. **A visible marker on the market screen**, wherever an illegal good is
+   listed, at a fence and in the player's own hold. This is stated as an
+   obligation on the HUD node rather than a layout: `station-types.md` §3.4 is
+   explicit that without it the exception degenerates into the unread-screen tax
+   the unscoped table exists to avoid.
+
+**Consequences are #8's**, not this spec's: legal status, scans, police
+response, and the shipyard's reaction to contraband in the hold. This spec
+prices contraband and marks it; it says nothing about what happens when you are
+caught with it.
+
+**Contraband must out-earn every legal good**, or the fence geography buys
+nothing. Measured, Narcotics' 81.2 Cr/t is the highest per-tonne margin in the
+table, and the suite asserts it against the best legal good rather than against
+a constant.
+
+---
+
+## 5. Stock over time: the clock, and the memory of you
+
+### 5.1 The base market is `f(seed, gameTime)`
+
+Elite re-rolls the fluctuation byte on every hyperspace jump and stores it in
+the save. seelite cannot inherit that unchanged: #6 made the game clock
+authoritative, #10 forbids compressing sim time, and a system now holds up to
+three stations separated by ~68 s cruise legs, so "regenerates on jump" would
+freeze all three together for as long as the player is in the system.
+
+```
+fluct(station, t) = hash(stationSeed, floor((t + phase(station)) / MARKET_PERIOD))
+phase(station)    = hash(stationSeed) mod MARKET_PERIOD
+MARKET_PERIOD     = 30 min game time
+```
+
+No stored fluctuation byte: the base market is derivable from the seed and the
+clock, which satisfies the map's determinism constraint rather than carving an
+exception from it. The `phase` term staggers stations so markets do not all flip
+on the same boundary.
+
+**The stream needs its own domain tag.** `galaxy.ts`'s `DOMAIN` table gains
+`MARKET`, for the reason `station-types.md` §5.3 gives about `STATION_FLAGS` and
+the map's constraint about per-system RNG streams: reusing an existing tag
+silently correlates the market with whatever else draws from it.
+
+### 5.2 The deficit: what the market remembers
+
+Elite's market forgets you the moment you leave. seelite's does not.
+
+```
+buying  n units at a station:  deficit += n
+selling n units at a station:  deficit −= n
+
+deficit(t) = deficit₀ × 2^(−(t − t₀) / DEFICIT_HALF_LIFE),  clamped to ±63
+DEFICIT_HALF_LIFE = 20 min game time
+
+effectiveQuantity = max(0, generatedQuantity − deficit)
+priceCr          ×= 1 + PRICE_ELASTICITY × deficit / HOLD_REFERENCE_T
+```
+
+Buying thins the shelf and raises the price; selling fattens it and lowers what
+it pays. It is Bell's coupling a third time — price and quantity moving opposite
+— rather than a new mechanism.
+
+**The scale is the point.** Bell's cap is 63 units and the starting hold is 20 t,
+so one purchase takes 30–55% of a station's stock of that good. In a
+single-player game nothing dilutes that, which is the whole reason the mechanic
+is worth having: the player is the only actor, so the effect is legible as
+theirs.
+
+### 5.3 Why the response is proportional, not a flat byte
+
+The obvious reading of "the deficit behaves like `product`" is a flat byte
+shift: ±1 byte per unit, so a 20 t purchase moves the price 8 Cr. **It breaks
+the cheap goods.** Food prices at 2.0–8.0 Cr across the entire economy sweep; a
+flat 8 Cr shift for one hold would move it further than the whole
+Rich→Poor geography does, and more than double it.
+
+Scaling by the price instead is scale-free and legible at both ends: a full
+reference hold moves any good by **10%**, whatever it costs. It applies in
+credits, after §3.1's delta, and is floored the same way — the suite asserts
+that no deficit, however large, prices a good below one price step.
+
+### 5.4 The brake, which is load-bearing
+
+Economy is a *system* property, so within one system all stations share it and
+only the type offset separates them — but that offset spans 5 steps, and on
+Computers that is `5 × 14 × 0.4` = **28 Cr/t** for a 68 s cruise leg instead of
+a hyperspace round trip. If that were repeatable it would collapse the galaxy
+into single-system loops.
+
+Measured over 8 worlds, 16,359 docked systems (7,919 of them multi-station),
+legal goods only, with independent fluctuation bytes:
+
+| | mean | median | p95 | max |
+|---|---|---|---|---|
+| intra-system | 15.2 | 11.4 | 28.0 | 28.0 |
+| interstellar | 19.3 | 16.0 | 44.8 | 67.2 |
+
+Interstellar trade wins on every statistic, so the risk is real but weaker than
+it first appeared. **And the deficit closes it outright.** The best
+shipyard→refinery pair, run repeatedly:
+
+| System economy | Margins per run (Cr/t) | Runs until unprofitable |
+|---|---|---|
+| 0 | 27.2 → 14.2 → 1.3 | 3 |
+| 3 | 27.2 → 10.9 | 2 |
+| 7 | 27.2 → 6.4 | 2 |
+
+**The deficit is therefore not tuning — it is the reason the intra-system pair
+is safe.** A later reader tempted to simplify it away should read this section
+first; `tests/market.test.ts` asserts exhaustion within four runs so the removal
+fails rather than merely regressing the feel.
+
+### 5.5 Determinism, and where state begins
+
+The base market is pure. The deficit is **save state**, and it is the first
+world state in seelite that is not derivable from the seed. The map already
+permits this — per-galaxy state (visited flags, legal status) is saved
+separately — but it is worth naming plainly:
+
+- **Sparse.** Only stations actually traded at get a row: `{stationId → {good →
+  units}, updatedAt}`. Untouched stations cost nothing.
+- **Per galaxy**, per the map's constraint that galaxies are a namespace.
+- **Decayed lazily** on read from `updatedAt` and the clock, not by a tick.
+- **Dropped** when `|deficit| < 1` unit, so the save does not grow without bound
+  across a long game.
+
+**Waiting must never beat flying.** `MARKET_PERIOD` 30 min and
+`DEFICIT_HALF_LIFE` 20 min exist to enforce that against a full trade run of
+3–5 minutes: parking for a re-roll or a recovery is always dominated by going
+somewhere else. Changing either constant re-opens that exploit, and §10 requires
+the pump measurement to be re-run when they move.
+
+---
+
+## 6. Cargo, credits, and fuel
+
+| | Value | Source |
+|---|---|---|
+| Starting credits | 100 Cr | Elite |
+| Hold | 20 t | Cobra Mk III |
+| Large Cargo Bay | +15 t → 35 t | PRXS, 400 Cr |
+| Sub-tonne goods | Gold, Platinum, Gem-Stones bypass the hold check | research §2.2 |
+
+The 20 t figure is a **v1 default that the ship-roster node inherits**, not a
+decision about hulls. It is fixed here because §8's pump cannot be computed
+without it.
+
+The compounding from 100 Cr is faster than the stingy reputation suggests: at
+the canonical lane's margin the player is capital-limited for about five runs
+and hold-limited after that — 15–25 minutes at seelite's pace.
+
+### 6.1 A correction to `galaxy-generation.md` §8
+
+That spec prices hyperspace fuel at **0.2 Cr / LY**, which makes a full 7 LY
+tank 1.4 Cr. Elite's PRXS table charges **0.2 Cr per 0.1 LY** — 2 Cr/LY, and
+**14 Cr for a full tank** (research §3.1). The `/0.1` was dropped in
+transcription.
+
+seelite takes the PRXS figure, per §7's decision to adopt that table verbatim.
+It matters only at the very start, where 14 Cr is 14% of the player's opening
+capital and two early jumps are a real cost — which is precisely the early-game
+pressure Elite was shaped around. By the time a run pays 700 Cr it is noise
+either way.
+
+**`galaxy-generation.md` §8's Cost row is wrong and should be corrected to
+`0.2 Cr / 0.1 LY (14 Cr full tank)`.** It is recorded here rather than silently
+edited there because it is a closed node's content.
+
+The cruise drive charge is **not** a second fuel cost: #10 makes it a free
+refill on docking with passive regeneration. Nothing in the economy prices it.
+
+---
+
+## 7. Equipment and hulls
+
+**Prices are Elite's PRXS table, flat everywhere.** Tech level and
+`station-types.md` §4's type exclusives gate *availability*; they do not shift
+price.
+
+| Item | Price | Where |
+|---|---|---|
+| Fuel | 0.2 Cr / 0.1 LY | universal |
+| Missile (max 4) | 30 Cr | universal |
+| Large Cargo Bay | 400 Cr | universal |
+| Extra Pulse Laser | 400 Cr | universal |
+| E.C.M. System | 600 Cr | universal |
+| Extra Beam Laser | 1,000 Cr | universal |
+| Escape Pod | 1,000 Cr | universal |
+| Energy Bomb | 900 Cr | universal |
+| Docking Computer | 1,000 Cr | universal |
+| Galactic Hyperdrive | 5,000 Cr | universal |
+| Fuel Scoops | 525 Cr | **refinery** |
+| Mining Laser | 800 Cr | **refinery** |
+| Extra Energy Unit | 1,500 Cr | **shipyard** |
+| Military Laser | 6,000 Cr | **shipyard** |
+
+The ten universal items are gated at `min(displayTL + 3, 10)` per
+`station-types.md` §4.1. Mining and military lasers are not in Elite's cassette
+list — `station-types.md` §4.1 introduced them and left the price here; the
+figures are the disc/Master ones research §3.1 cites. seelite is therefore on
+**cassette economy plus disc laser tiers**, which is what research §6's open
+question recommended.
+
+**Type does not discount.** It would need a second pricing mechanism —
+equipment has no gradient for §3's delta to multiply — and the exploration
+incentive is already carried by availability: shipyards exist only at
+`displayTL ≥ 10`, so hulls and military hardware are a core-ward good and the
+frontier is where you cannot buy what the frontier requires
+(`station-types.md` §4.2). Discounting on top applies the same gradient twice.
+
+**Hull prices are not specified here.** `station-types.md` §4.1 puts hulls at
+shipyards, but "one hull with modules vs multiple hulls" is still fog. Whatever
+node graduates it prices them.
+
+---
+
+## 8. The progression pump
+
+A full 20 t hold on the canonical lane is ~700 Cr per run at 3–5 minutes. The
+Large Cargo Bay is the first purchase and lifts that to ~1,225 Cr.
+
+The twelve items above total **19,125 Cr** — 19,245 with a full missile rack.
+That is about fifteen clean runs, and realistically **1.5–2.5 hours** of trading
+once §5.2's deficit forces route rotation.
+
+**This is a target, not an assertion.** `scripts/measure-market.ts` reports the
+margins the real generator actually produces; §10 requires a greedy-trader
+measurement to report Cr/min and time-to-each-upgrade before the number above is
+believed. It is stated so a later reader knows what the design was aiming at and
+can tell a tuning drift from a bug.
+
+---
+
+## 9. Death economics
+
+**The escape pod is death insurance at 1,000 Cr**, Elite's price and Elite's
+semantics: you eject, you lose the entire hold, you keep the hull and everything
+fitted to it, and you resume at the last station you docked at.
+
+One consequence is recorded because #8 has to reckon with it: **ejecting dumps
+contraband**, which makes the pod a panic-button disposal route ahead of a
+shipyard scan. Whether that is a legitimate tactic or wants a cost is #8's, not
+this spec's.
+
+**What happens without a pod is not decided here.** That is the save/permadeath
+question, still fog on the map, and it reaches far past the economy.
+
+---
+
+## 10. Verification obligations
+
+All headless `bun` — none of §1–§9 may require a browser, per #7's own framing.
+
+### 10.1 Suite (`tests/market.test.ts`, 23 tests)
+
+1. **Table integrity** — 17 goods; `baseQuantity` signed for all five negative
+   rows; exactly three illegal; the sub-tonne set is Gold/Platinum/Gem-Stones
+   and disjoint from the illegal set; Alien Items never stock.
+2. **Lane direction, every good** — negative gradient ⇒ cheaper *and* no
+   scarcer at Poor Agricultural; positive gradient ⇒ the mirror. Asserted over
+   the table, not over two named goods.
+3. **Saturation** — no legal good reaches a byte end anywhere in the domain; the
+   retuned Narcotics row does not either; **Bell's own row does**, on >90% of
+   rows, so the divergence's justification is runnable rather than prose.
+4. **Contraband viability** — the retuned row clears 75 Cr/t and stocks at >50%
+   of rows; Bell's row under the clamp falls below 10 Cr/t; Narcotics out-earns
+   the best legal good.
+5. **The type offset** — equals `typeOffset × gradient × 0.4` exactly at every
+   point except where the floor intervenes; the floor fires on <1% of rows;
+   quantity is never *below* the trade station's; the fence still stocks
+   contraband; the 63-unit cap holds everywhere.
+6. **The deficit** — proportional at 7, 61 and 100 Cr; never below the floor;
+   **the best intra-system pair is exhausted within four runs**.
+
+### 10.2 Instrument (`scripts/measure-market.ts`)
+
+Committed so every number in this document can be re-derived rather than
+trusted, in the discipline `scripts/measure-clamp-bite.ts` established:
+
+```
+bun run scripts/measure-market.ts [worldCount]     # default 8 worlds
+```
+
+Reports per-good saturation and price spans under both arithmetics; the floor's
+firing rate; intra-system vs interstellar margins over the real generator; runs
+to exhaustion on the best intra-system pair; and contraband margins under wrap
+and clamp.
+
+### 10.3 Owed by the implement node
+
+- A **greedy-trader sim** reporting Cr/min and time-to-each-upgrade against the
+  generated galaxy, so §8's 1.5–2.5 h is measured. It must be re-run whenever
+  `MARKET_PERIOD`, `DEFICIT_HALF_LIFE` or `PRICE_ELASTICITY` move.
+- A **determinism test**: the base market is byte-identical for a fixed
+  `(stationSeed, floor(t / MARKET_PERIOD))`, and independent of draw order
+  elsewhere — the property the `DOMAIN.MARKET` tag exists to provide.
+- A **save round-trip test** over the sparse deficit map, including lazy decay
+  and the drop-below-one-unit rule.
+
+---
+
+## 11. What this obliges of other nodes
+
+- **#8 (combat)** — owns legal status, scans, police, and the consequences of
+  carrying contraband; owes a ruling on the escape-pod dump (§9). Alien Items
+  (§2.4) have no source until combat scooping exists.
+- **#9 (docking)** — nothing. Market state is read at the station, not during
+  the approach.
+- **The HUD node** — owes the illegal-goods marker (§4) and a stock/price
+  display that can show a deficit-moved price without implying a bug.
+- **`galaxy-generation.md`** — §8's fuel Cost row is wrong; §6.1.
+- **`station-types.md`** — §3's price-only offset is extended by §3.2 here, and
+  §3.2's deferred question about the byte extremes is answered by §2.2 and §3.1.
+  The `blackMarket` flag §5.2 specifies is **not yet implemented** in
+  `src/system.ts`; contraband trading cannot ship before it does.
+- **The ship-roster node** — inherits 20 t and 100 Cr as v1 defaults (§6) and
+  owes hull prices (§7).
+- **The save/load node** — owes the format the sparse deficit map lives in
+  (§5.5) and the permadeath stance (§9).
+
+---
+
+## 12. Weak joints, recorded not reopened
+
+1. **One divergence from Bell's table.** §2.3. Narcotics is retuned because its
+   constants require overflow. Every other row is verbatim, and the rejected
+   alternatives are on the page with their measurements.
+2. **The clamp is a guard that never fires.** §2.2. After the retune the shipped
+   table never overflows, so §2.2's arithmetic is a definition rather than a
+   behaviour. Kept because the boundary would otherwise be undefined for the
+   first good a later node adds.
+3. **Type differentiation on commodities is still soft.** Inherited from
+   `station-types.md` §3.3 — three prices for one transaction. §3.2's quantity
+   delta strengthens it slightly; it does not fix it.
+4. **The refinery's staple wart survives.** §3.2 makes Food and Furs *more*
+   plentiful at a belt refinery as well as cheaper, because staples share the
+   extractives' negative gradient. One scalar and a signed slope cannot express
+   "cheap ore, dear bread". Recorded in `station-types.md` §3.3 as weak joint 5;
+   this spec deepens it rather than introducing it.
+5. **`PRICE_ELASTICITY`, `MARKET_PERIOD` and `DEFICIT_HALF_LIFE` are chosen, not
+   derived.** They are set so that waiting never beats flying and the
+   intra-system pair exhausts in 2–3 runs, both of which are measured. The
+   specific values are a first cut, and §10.3's greedy-trader measurement is
+   what should move them.
+6. **The deficit makes market state unreproducible from the seed.** §5.5. The
+   first such state in seelite. It is sparse and bounded, but it is a door that
+   is now open.
