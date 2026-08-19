@@ -56,6 +56,11 @@ Fixed here, and these words mean exactly one thing from now on across #6, #7,
 | **the target's frame** | the selected target's *velocity* frame, in which cruise exit and docking are judged (§6, `cruise.ts`). Declared here rather than left inferred, since it is the one place "target" means a reference frame and not a place. |
 | **system** | 0–3 stations plus its bodies — 0 is §5.4's defect, not the intent. "**multi-station**", never "multi-destination". |
 
+These words hold across the specs and the code. **They do not rewrite the
+tracker**: #6's node text says "multi-destination" and will keep saying it,
+because a closed node is a record of what was decided, not a document to
+maintain. Where the two disagree, this spec is later and wins.
+
 Two words are **retired**, for the same reason: a synonym with no distinct job
 is how prose and types drift apart.
 
@@ -157,12 +162,13 @@ of the economy scale. **Measured over 40 worlds — 81,920 systems, 14,035
 shipyards, 31,169 refineries — by `scripts/measure-clamp-bite.ts`, committed so
 the number can be re-derived rather than trusted:**
 
-| | offset **reduced** | offset **dead** |
+| | offset **clamped at all** | of which, offset **erased** |
 |---|---|---|
 | shipyards (`clamp(economy − 2, 0, 7)`) | 79.0% | **46.5%** |
 | refineries (`clamp(economy + 3, 0, 7)`) | 41.1% | **16.3%** |
 
-The two columns are different questions and the distinction matters. At economy
+The second column is a subset of the first, not a separate population — and the
+distinction matters. At economy
 1 a shipyard's `−2` clamps to 0 — one step of shift instead of two, so it is
 halved, not lost. It dies only at economy 0, where the station prices exactly
 like the system beside it. Shipyard economies run 0: 6,523 · 1: 4,568 · 2: 1,979
@@ -257,13 +263,17 @@ So the rule is scoped by **legality**, not by station type as such:
 
 **The counter-case, engaged rather than waved past.** Fences are a minority of
 systems and rim-weighted (§5.2), so a player who buys contraband may carry it a
-long way. That is the risk being sold, and it has two mitigations already in the
-design: contraband is the high-value-density cargo (Gold, Platinum and Gems are
-sub-tonne and skip the hold check — research §2.2), so carrying it costs little
-capacity, and nothing forces the purchase. What it must **not** become is a
-surprise: #7 owes a legality flag per commodity and the market screen owes a
-visible marker, or the exception degenerates into exactly the unread-screen tax
-§3.3 rejects.
+long way. That is the risk being sold, and it is **not** mitigated by cargo
+density: Narcotics, Firearms and Slaves are all tonne goods, so contraband
+occupies the hold exactly as ordinary cargo does. (The sub-tonne goods that skip
+the hold check are Gold, Platinum and Gem-Stones — research §2.2 — and all three
+are legal here.) The only real mitigation is that nothing forces the purchase.
+
+What the exception must **not** become is a surprise: #7 owes a legality flag
+per commodity and the market screen owes a visible marker, or it degenerates
+into exactly the unread-screen tax §3.3 rejects. That obligation is doing the
+work a density argument would have done, which is why it is stated as an
+obligation rather than as a hope.
 
 ---
 
@@ -411,8 +421,9 @@ A linear ramp rather than a curve, because it is the shape a corpus test can
 bound at both ends and check for monotonicity without arguing about a fitted
 constant. It needs no `clamp`: the expression stays inside (0, 1) across the
 whole domain, and a guard that cannot fire is the same dead weight §9.1 objects
-to in assertions. Police presence is `max(government − 3, 0)` at every refinery
-regardless of the flag.
+to in assertions. §5.1's hostile-odds factor of 2.0 applies at every refinery
+regardless of the flag: a fence is not what makes a refinery dangerous, and this
+spec states no police rule of its own — spawning is #8's (§0).
 
 The consequence accepted with eyes open: **a fence is not inferable from the
 galaxy map.** You find one by visiting, and then you remember it. That is the
@@ -562,7 +573,7 @@ load, no downloaded assets.
    answers for it, where a defaulted field would silently inherit `false` and
    `0`. The same argument applies here and the same shape should be used —
    otherwise §7's build-breaking guarantee covers colour and nothing else.
-6. The **price offset** (§3) and **police presence** (§5.1) are derived
+6. The **price offset** (§3) and the **hostile-odds factor** (§5.1) are derived
    accessors, not stored fields, so they cannot drift from the commodity table's
    gradients and from `system.government`.
 

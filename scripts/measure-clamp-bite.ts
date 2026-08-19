@@ -11,61 +11,63 @@
  *   bun run scripts/measure-clamp-bite.ts [worldCount]
  */
 
-import { GALAXY_COUNT, generateGalaxy } from "../src/galaxy";
-import { generateContents } from "../src/system";
-import { ALL_GALAXIES, worldSeeds } from "../tests/helpers/station-rows";
+import {
+	ALL_GALAXIES,
+	forEachSystem,
+	worldSeeds,
+} from "../tests/helpers/station-rows";
 
 const worlds = worldSeeds(Number(process.argv[2] ?? 40));
 
 let systems = 0;
 let shipyards = 0;
-/** The offset is reduced but survives — `economy 1 − 2` clamps to 0, one step
- *  rather than two. */
-let shipyardPartial = 0;
-/** The offset is lost entirely: the station prices exactly like its system. */
-let shipyardDead = 0;
+/** The clamp changed the result at all — at economy 1 a `−2` lands on 0, one
+ *  step of shift instead of two. **Includes the erased case below**: these are
+ *  nested populations, not disjoint ones. */
+let shipyardClamped = 0;
+/** The offset is gone: the station prices exactly like the system beside it. */
+let shipyardErased = 0;
 let refineries = 0;
-let refineryPartial = 0;
-let refineryDead = 0;
+let refineryClamped = 0;
+let refineryErased = 0;
 const shipyardEconomy = new Map<number, number>();
 
 for (const world of worlds) {
-	for (const g of ALL_GALAXIES) {
-		if (g >= GALAXY_COUNT) throw new Error(`galaxy ${g} does not exist`);
-		for (const record of generateGalaxy(world, g).systems) {
-			systems++;
-			for (const station of generateContents(record).stations) {
-				if (station.type === "shipyard") {
-					shipyards++;
-					shipyardEconomy.set(
-						record.economy,
-						(shipyardEconomy.get(record.economy) ?? 0) + 1,
-					);
-					// The rejected implementation: `clamp(economy - 2, 0, 7)`.
-					// "Bites at all" and "kills the offset" are different questions, and
-					// conflating them overstated the case in this spec's first draft.
-					const effective = Math.max(record.economy - 2, 0);
-					if (effective !== record.economy - 2) shipyardPartial++;
-					if (effective === record.economy) shipyardDead++;
-				}
-				if (station.type === "refinery") {
-					refineries++;
-					const effective = Math.min(record.economy + 3, 7);
-					if (effective !== record.economy + 3) refineryPartial++;
-					if (effective === record.economy) refineryDead++;
-				}
+	// The same traversal the guard uses, rather than a second walk with a weaker
+	// galaxy-index check — see that helper's header for why.
+	forEachSystem(world, ALL_GALAXIES, (record, contents) => {
+		systems++;
+		for (const station of contents.stations) {
+			if (station.type === "shipyard") {
+				shipyards++;
+				shipyardEconomy.set(
+					record.economy,
+					(shipyardEconomy.get(record.economy) ?? 0) + 1,
+				);
+				// The rejected implementation: `clamp(economy - 2, 0, 7)`. "Clamped at
+				// all" and "offset erased" are different questions, and conflating them
+				// overstated the case in two successive drafts of §3.2.
+				const effective = Math.max(record.economy - 2, 0);
+				if (effective !== record.economy - 2) shipyardClamped++;
+				if (effective === record.economy) shipyardErased++;
+			}
+			if (station.type === "refinery") {
+				refineries++;
+				const effective = Math.min(record.economy + 3, 7);
+				if (effective !== record.economy + 3) refineryClamped++;
+				if (effective === record.economy) refineryErased++;
 			}
 		}
-	}
+	});
 }
 
 const pct = (n: number, d: number) => `${((100 * n) / d).toFixed(1)}%`;
 console.log(`worlds ${worlds.length}, systems ${systems}`);
 console.log(
-	`shipyards  ${shipyards}\treduced ${pct(shipyardPartial, shipyards)}\tdead ${pct(shipyardDead, shipyards)}`,
+	`shipyards  ${shipyards}\tclamped ${pct(shipyardClamped, shipyards)}\tof which erased ${pct(shipyardErased, shipyards)}`,
 );
 console.log(
-	`refineries ${refineries}\treduced ${pct(refineryPartial, refineries)}\tdead ${pct(refineryDead, refineries)}`,
+	`refineries ${refineries}\tclamped ${pct(refineryClamped, refineries)}\tof which erased ${pct(refineryErased, refineries)}`,
 );
 console.log(
 	`shipyard economies: ${[...shipyardEconomy.entries()]
