@@ -569,9 +569,14 @@ export const CLOSABLE_RATIO =
 
 export interface ResidualSurvey {
 	/** The richest *run* any legal intra-system pair still pays at the ±63 cap.
-	 *  Ranked by run value, not per-unit margin: the sweep now includes sub-tonne
+	 *  Ranked by run value, not per-unit margin: the sweep includes sub-tonne
 	 *  goods, whose Cr/kg is not comparable with a tonne good's Cr/t. */
 	worst: LegalPair & { residualCr: number; runCr: number };
+	/** The largest *per-unit* residual, which is a different argmax — §10.1
+	 *  bounds both, and asserting one against the other's winner was guarding
+	 *  the wrong pair. It only looked right because sub-tonne residuals are
+	 *  non-positive today, so the two happen to coincide. */
+	worstPerUnit: LegalPair & { residualCr: number };
 	/** Ratio-based view, kept because §5.4 reports both. */
 	worstRatio: LegalPair & { ratio: number };
 	unclosableRows: number;
@@ -599,6 +604,7 @@ export function surveyResiduals(): ResidualSurvey {
 		residualCr: 0,
 		runCr: 0,
 	};
+	let worstPerUnit: LegalPair & { residualCr: number } = { ...worst };
 	let worstRatio: LegalPair & { ratio: number } = { ...worst, ratio: 0 };
 	let unclosableRows = 0;
 	let rows = 0;
@@ -607,11 +613,13 @@ export function surveyResiduals(): ResidualSurvey {
 		const residualCr = residualMarginCr(pair.buyCr, pair.sellCr);
 		const runCr = runValueCr(pair.good, residualCr);
 		if (runCr > worst.runCr) worst = { ...pair, residualCr, runCr };
+		if (residualCr > worstPerUnit.residualCr)
+			worstPerUnit = { ...pair, residualCr };
 		const ratio = pair.sellCr / pair.buyCr;
 		if (ratio > CLOSABLE_RATIO) unclosableRows++;
 		if (ratio > worstRatio.ratio) worstRatio = { ...pair, ratio };
 	});
-	return { worst, worstRatio, unclosableRows, rows };
+	return { worst, worstPerUnit, worstRatio, unclosableRows, rows };
 }
 
 /**
@@ -840,3 +848,55 @@ export const fullKitCr = (opts: { withMissiles?: boolean } = {}): number =>
 		? MAX_MISSILES *
 			(EQUIPMENT.find((e) => e.name === "Missile") as Equipment).priceCr
 		: 0);
+
+/**
+ * How often §3.1's floor fires across a set of station types.
+ *
+ * Shared, because the suite's assertion and the instrument's reported figure
+ * were the same two-line nest in two files — the duplication `surveyResiduals`
+ * was extracted to collapse, still standing one measurement over.
+ */
+export function floorRate(stations: readonly StationTypeKey[]): {
+	fired: number;
+	rows: number;
+} {
+	let fired = 0;
+	let rows = 0;
+	for (const good of COMMODITIES)
+		for (const station of stations) {
+			const swept = sweepDomain(
+				(economy, fluct) => marketRow(good, economy, fluct, station).floorFired,
+			);
+			fired += swept.hits;
+			rows += swept.rows;
+		}
+	return { fired, rows };
+}
+
+/**
+ * §6's compounding: how many runs before the hold, rather than capital, is what
+ * limits a trade.
+ *
+ * Derived rather than asserted — §1's rule is that a quoted figure has a
+ * re-derivation path, and this one was prose arithmetic that came out one run
+ * short. The lane is research §2.3's canonical one, priced at zero fluctuation:
+ * Computers out of Rich Industrial into Poor Agricultural.
+ */
+export function runsUntilHoldLimited(opts: {
+	startCr: number;
+	buyCr: number;
+	sellCr: number;
+	holdT?: number;
+	maxRuns?: number;
+}): number {
+	const holdT = opts.holdT ?? HOLD_REFERENCE_T;
+	let capital = opts.startCr;
+	let runs = 0;
+	while (runs < (opts.maxRuns ?? 50)) {
+		const tonnes = capital / opts.buyCr;
+		if (tonnes >= holdT) return runs;
+		capital += tonnes * (opts.sellCr - opts.buyCr);
+		runs++;
+	}
+	return runs;
+}

@@ -49,6 +49,7 @@ import {
 	bestMargin,
 	commodity,
 	decayDeficit,
+	floorRate,
 	forEachLegalPair,
 	marketEpoch,
 	marketRow,
@@ -57,6 +58,7 @@ import {
 	surveyResiduals,
 	bestRunValueCr,
 	runTotalCr,
+	runsUntilHoldLimited,
 	runValueCr,
 	shelfQuantity,
 	runsToExhaustion,
@@ -299,17 +301,7 @@ describe("§3 the type offset", () => {
 		// Measured over the two types the rule applies to. Including `trade`
 		// pads the denominator with rows where the offset is 0 and the floor is
 		// unreachable by construction, which flatters the figure.
-		let fired = 0;
-		let rows = 0;
-		for (const good of COMMODITIES)
-			for (const station of OFFSET_STATIONS) {
-				const swept = sweepDomain(
-					(economy, fluct) =>
-						marketRow(good, economy, fluct, station).floorFired,
-				);
-				fired += swept.hits;
-				rows += swept.rows;
-			}
+		const { fired, rows } = floorRate(OFFSET_STATIONS);
 		expect(fired / rows).toBeLessThan(0.01);
 		// The trade station's offset is zero, so its floor can never fire.
 		for (const good of COMMODITIES)
@@ -385,6 +377,54 @@ describe("§2.2 the clamp applies to quantity too, and diverges from Bell there"
 		expect(diverging.sort()).toEqual(["Furs", "Gold", "Narcotics", "Platinum"]);
 	});
 
+	test("Gold is the extreme case — always capped where Bell keeps it scarce", () => {
+		// baseQuantity 0x42 = 66 never leaves 66…80, so Bell's mask reads 2…16
+		// units and the clamp reads a permanent 63. Named because it makes a
+		// precious metal abundant that Bell made scarce.
+		const gold = byName("Gold");
+		for (const economy of ALL_ECONOMIES)
+			for (const fluct of ALL_FLUCT) {
+				expect(marketRow(gold, economy, fluct, "trade").quantity).toBe(
+					QUANTITY_CAP,
+				);
+				expect(
+					marketRow(gold, economy, fluct, "trade", "wrap").quantity,
+				).toBeLessThan(20);
+			}
+	});
+});
+
+describe('§2.2 "wrap" mode is Bell on both bytes, not just on price', () => {
+	test("wrap mode wraps the quantity byte too", () => {
+		// An earlier version clamped quantity regardless of mode, so every
+		// "Bell + wrap" figure was a hybrid — his price arithmetic with seelite's
+		// shelf — quoted in the very table justifying the divergence from him.
+		const gold = byName("Gold");
+		expect(marketRow(gold, 0, 0, "trade", "wrap").quantity).toBe(
+			(0x42 + 0 - 0) & QUANTITY_CAP,
+		);
+		expect(marketRow(gold, 0, 0, "trade", "saturate").quantity).toBe(
+			QUANTITY_CAP,
+		);
+	});
+
+	test("Bell's Narcotics row is more scarce under the clamp than under his wrap", () => {
+		// The figure §2.3 quotes. Measured with the clamp applied to quantity it
+		// read 36% for both Bell rows, which was seelite's shelf wearing Bell's
+		// name; his own arithmetic stocks the good on ~47% of rows.
+		const wrapped = bestMargin(NARCOTICS_BELL, "refinery", "refinery", "wrap");
+		const clamped = bestMargin(
+			NARCOTICS_BELL,
+			"refinery",
+			"refinery",
+			"saturate",
+		);
+		expect(wrapped.inStock).toBeGreaterThan(clamped.inStock);
+		expect(wrapped.inStock).toBeGreaterThan(0.4);
+	});
+});
+
+describe("§4/§4.1 run value", () => {
 	test("a legal run out-earns a smuggling run once sub-tonne goods stack", () => {
 		// The finding §4 and weak joint 11 record, pinned so it cannot drift
 		// silently in either direction — including back to "contraband wins",
@@ -449,52 +489,6 @@ describe("§2.2 the clamp applies to quantity too, and diverges from Bell there"
 		expect(fenceValue("Gold")).toBeLessThan(400);
 		expect(fenceValue("Platinum")).toBeGreaterThan(1000);
 	});
-
-	test("Gold is the extreme case — always capped where Bell keeps it scarce", () => {
-		// baseQuantity 0x42 = 66 never leaves 66…80, so Bell's mask reads 2…16
-		// units and the clamp reads a permanent 63. Named because it makes a
-		// precious metal abundant that Bell made scarce.
-		const gold = byName("Gold");
-		for (const economy of ALL_ECONOMIES)
-			for (const fluct of ALL_FLUCT) {
-				expect(marketRow(gold, economy, fluct, "trade").quantity).toBe(
-					QUANTITY_CAP,
-				);
-				expect(
-					marketRow(gold, economy, fluct, "trade", "wrap").quantity,
-				).toBeLessThan(20);
-			}
-	});
-});
-
-describe('§2.2 "wrap" mode is Bell on both bytes, not just on price', () => {
-	test("wrap mode wraps the quantity byte too", () => {
-		// An earlier version clamped quantity regardless of mode, so every
-		// "Bell + wrap" figure was a hybrid — his price arithmetic with seelite's
-		// shelf — quoted in the very table justifying the divergence from him.
-		const gold = byName("Gold");
-		expect(marketRow(gold, 0, 0, "trade", "wrap").quantity).toBe(
-			(0x42 + 0 - 0) & QUANTITY_CAP,
-		);
-		expect(marketRow(gold, 0, 0, "trade", "saturate").quantity).toBe(
-			QUANTITY_CAP,
-		);
-	});
-
-	test("Bell's Narcotics row is more scarce under the clamp than under his wrap", () => {
-		// The figure §2.3 quotes. Measured with the clamp applied to quantity it
-		// read 36% for both Bell rows, which was seelite's shelf wearing Bell's
-		// name; his own arithmetic stocks the good on ~47% of rows.
-		const wrapped = bestMargin(NARCOTICS_BELL, "refinery", "refinery", "wrap");
-		const clamped = bestMargin(
-			NARCOTICS_BELL,
-			"refinery",
-			"refinery",
-			"saturate",
-		);
-		expect(wrapped.inStock).toBeGreaterThan(clamped.inStock);
-		expect(wrapped.inStock).toBeGreaterThan(0.4);
-	});
 });
 
 describe("§5.1 the market epoch", () => {
@@ -507,6 +501,21 @@ describe("§5.1 the market epoch", () => {
 		// point: markets in one system must not all re-roll together.
 		expect(marketEpoch(MARKET_PERIOD_MIN - 1, 1)).toBe(1);
 		expect(marketEpoch(1, 1)).toBe(0);
+	});
+});
+
+describe("§6 compounding out of the starting capital", () => {
+	test("the player is capital-limited for six runs, not five", () => {
+		// §6 said five and called it arithmetic while committing none. It is six
+		// on the canonical lane at zero fluctuation, and §1's rule is that a
+		// quoted figure has a re-derivation path.
+		const computers = byName("Computers");
+		const runs = runsUntilHoldLimited({
+			startCr: 100,
+			buyCr: marketRow(computers, 0, 0, "trade").priceCr,
+			sellCr: marketRow(computers, 7, 0, "trade").priceCr,
+		});
+		expect(runs).toBe(6);
 	});
 });
 
@@ -611,14 +620,20 @@ describe("§5 the stock deficit", () => {
 		// pays at the ±63 steady state. Food's ratio of 12 leaves pocket change
 		// because it is a 0.4 Cr good. The bound worth guarding is the richest
 		// residual, and it comes from the same survey the instrument prints.
-		const { worst, worstRatio, unclosableRows, rows } = surveyResiduals();
+		const { worst, worstPerUnit, worstRatio, unclosableRows, rows } =
+			surveyResiduals();
 		// Measured over **every** legal good, sub-tonne included: 7.9 Cr/t (Furs,
 		// refinery→shipyard at economy 7) = 158 Cr per run. Ranked by run value,
 		// because Gold's Cr/kg and Furs' Cr/t are not comparable — and because
 		// §2.2 names the sub-tonne goods as the ones the clamp enriched, so a
 		// sweep that excluded them could not support this bound at all.
 		expect(worst.runCr).toBeLessThan(200);
-		expect(worst.residualCr).toBeLessThan(10);
+		// …and the per-unit bound on the pair that actually maximises *it*. The
+		// two argmaxes differ — run value scales by 63 for sub-tonne goods and 20
+		// for tonne goods — so asserting one against the other's winner guarded
+		// the wrong pair, and only looked right because sub-tonne residuals are
+		// non-positive today.
+		expect(worstPerUnit.residualCr).toBeLessThan(10);
 		// …and the ratio view, kept because §5.4 reports it: a real minority of
 		// rows exceed the closable ratio, which is why the residual is the bound.
 		expect(worstRatio.ratio).toBeGreaterThan(CLOSABLE_RATIO);

@@ -41,6 +41,7 @@ import {
 	bestMargin,
 	bestResidualBetween,
 	bestRunValueCr,
+	floorRate,
 	commodity,
 	forEachLegalPair,
 	residualMarginCr,
@@ -177,26 +178,17 @@ for (const good of COMMODITIES.filter((c) => c.illegal)) {
 // ── 3. Does the §3 price floor bite? ────────────────────────────────────────
 
 console.log("\n── §3: how often the 0.4 Cr floor fires ──");
-function floorRate(stations: readonly StationTypeKey[]): string {
-	let fired = 0;
-	let rows = 0;
-	for (const good of COMMODITIES)
-		for (const station of stations) {
-			const swept = sweepDomain(
-				(economy, fluct) => marketRow(good, economy, fluct, station).floorFired,
-			);
-			fired += swept.hits;
-			rows += swept.rows;
-		}
+const floorRateLine = (stations: readonly StationTypeKey[]): string => {
+	const { fired, rows } = floorRate(stations);
 	return `${pct(fired, rows)} of ${rows} rows`;
-}
+};
 // The two figures differ because the trade station's offset is zero, so its
 // rows can never fire and only pad the denominator. The first is the honest one.
 console.log(
-	`offset types only (refinery, shipyard): ${floorRate(OFFSET_STATIONS)}`,
+	`offset types only (refinery, shipyard): ${floorRateLine(OFFSET_STATIONS)}`,
 );
 console.log(
-	`all three types:                        ${floorRate(ALL_STATIONS)}`,
+	`all three types:                        ${floorRateLine(ALL_STATIONS)}`,
 );
 
 // ── 4. Intra-system vs interstellar margin, on the real galaxy ──────────────
@@ -294,6 +286,38 @@ function bestBetween(
 	);
 }
 
+/**
+ * Every sampled origin paired with reachable destinations inside one galaxy.
+ *
+ * §4's route-margin sweep and §8's saturated comparison each had this walk
+ * written out — same bucket loop, same `distanceLy > JUMP_RANGE_LY` skip,
+ * differing only in stride and destination cap. A change to the reachability
+ * rule had to land in both, or the two reported figures would sample different
+ * route sets while claiming to be comparable.
+ */
+function forEachReachablePair(
+	opts: { stride: number; maxDest: number },
+	visit: (from: SystemMarket, to: SystemMarket) => void,
+): { origins: number; unreachable: number } {
+	let origins = 0;
+	let unreachable = 0;
+	for (const bucket of byGalaxy.values())
+		for (let i = 0; i < bucket.length; i += opts.stride) {
+			const from = bucket[i];
+			origins++;
+			let paired = 0;
+			for (let j = 0; j < bucket.length && paired < opts.maxDest; j++) {
+				if (j === i) continue;
+				const to = bucket[j];
+				if (distanceLy(from.pos, to.pos) > JUMP_RANGE_LY) continue;
+				paired++;
+				visit(from, to);
+			}
+			if (paired === 0) unreachable++;
+		}
+	return { origins, unreachable };
+}
+
 const intra: number[] = [];
 let multiStation = 0;
 for (const system of systems) {
@@ -322,30 +346,14 @@ for (const system of systems) {
  * hyperspace jump actually offers.
  */
 const inter: number[] = [];
-let unreachable = 0;
-for (const bucket of byGalaxy.values()) {
-	// Every 8th system as the origin, which keeps the sweep O(n²/8) per galaxy.
-	// Destinations are the **first four in generation order that fall inside the
-	// jump range** — not the four nearest, and this is a sample, not a census.
-	// An earlier comment asserted that order "does not bias the margin", which is
-	// an unmeasured claim in a file whose premise is that nothing is trusted
-	// without a re-derivation. What the earlier version actually got wrong was
-	// the absence of any range check, which admitted pairs no ship can fly; the
-	// ordering is a stated sampling choice, and the reported figures should be
-	// read as a sample of reachable routes rather than the best in the galaxy.
-	for (let i = 0; i < bucket.length; i += 8) {
-		const from = bucket[i];
-		let found = 0;
-		for (let j = 0; j < bucket.length && found < 4; j++) {
-			if (j === i) continue;
-			const to = bucket[j];
-			if (distanceLy(from.pos, to.pos) > JUMP_RANGE_LY) continue;
-			found++;
-			inter.push(bestBetween(from, to, false));
-		}
-		if (found === 0) unreachable++;
-	}
-}
+// Destinations are the first `maxDest` in generation order that fall inside the
+// jump range — a sample, not a census, and not the nearest four. An earlier
+// version had no range check at all, which admitted pairs no ship can fly.
+const interSample = forEachReachablePair(
+	{ stride: 8, maxDest: 4 },
+	(from, to) => inter.push(bestBetween(from, to, false)),
+);
+const unreachable = interSample.unreachable;
 
 const quantile = (xs: number[], q: number) =>
 	[...xs].sort((a, b) => a - b)[Math.floor(q * (xs.length - 1))] ?? 0;
@@ -471,20 +479,12 @@ console.log(
 console.log("\n── §5.4: the same comparison, both sides saturated ──");
 let bestInterFresh = 0;
 let bestInterSaturated = 0;
-for (const bucket of byGalaxy.values())
-	for (let i = 0; i < bucket.length; i += 64) {
-		const from = bucket[i];
-		let paired = 0;
-		for (let j = 0; j < bucket.length && paired < 1; j++) {
-			if (j === i) continue;
-			const to = bucket[j];
-			if (distanceLy(from.pos, to.pos) > JUMP_RANGE_LY) continue;
-			paired++;
-			const { freshCr, saturatedCr } = bestResidualBetween(from, to);
-			bestInterFresh = Math.max(bestInterFresh, freshCr);
-			bestInterSaturated = Math.max(bestInterSaturated, saturatedCr);
-		}
-	}
+forEachReachablePair({ stride: 64, maxDest: 1 }, (from, to) => {
+	const { freshCr, saturatedCr } = bestResidualBetween(from, to);
+	bestInterFresh = Math.max(bestInterFresh, freshCr);
+	bestInterSaturated = Math.max(bestInterSaturated, saturatedCr);
+});
+
 console.log(
 	`intra-system, saturated: ${survey.worst.residualCr.toFixed(1)} Cr/t (${(survey.worst.residualCr * HOLD_REFERENCE_T).toFixed(0)} Cr per run)`,
 );

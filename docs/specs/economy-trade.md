@@ -620,11 +620,14 @@ The 20 t figure is a **v1 default that the ship-roster node inherits**, not a
 decision about hulls. It is fixed here because §8's pump cannot be computed
 without it.
 
-The compounding from 100 Cr is faster than the stingy reputation suggests: at
-the canonical lane's margin the player is capital-limited for about five runs
-and hold-limited after that. **The five runs are arithmetic; the minutes are
-not** — a wall-clock figure needs the run length §12.5 records as unmeasured, so
-none is claimed here. §10.3's greedy-trader sim is what would supply one.
+The compounding from 100 Cr is faster than the stingy reputation suggests: on
+the canonical lane at zero fluctuation — Computers bought at 61.6 Cr and sold at
+100.8 — the player is capital-limited for **six runs** and hold-limited from the
+seventh. A draft of this section said five and called it arithmetic while
+committing none; `runsUntilHoldLimited` derives it now and the suite pins the
+six. **The minutes are still not claimed**: a wall-clock figure needs the run
+length §12.5 records as unmeasured, and §10.3's greedy-trader sim is what would
+supply one.
 
 ### 6.1 A correction to `galaxy-generation.md` §8
 
@@ -748,7 +751,7 @@ question, still fog on the map, and it reaches far past the economy.
 
 All headless `bun` — none of §1–§9 may require a browser, per #7's own framing.
 
-### 10.1 Suite (`tests/market.test.ts`, 37 tests)
+### 10.1 Suite (`tests/market.test.ts`, 38 tests)
 
 1. **Table integrity** — 17 goods; `baseQuantity` signed for all five negative
    rows; exactly three illegal; the sub-tonne set is Gold/Platinum/Gem-Stones
@@ -791,7 +794,10 @@ All headless `bun` — none of §1–§9 may require a browser, per #7's own fra
    sits on the excluded direction. The exhaustion claim is deliberately
    conditional — a pair above the closable ratio never reaches zero — and the
    companion assertion bounds what those keep paying: **no intra-system pair
-   leaves more than 10 Cr/t once both deficits saturate.**
+   leaves more than 10 Cr/t once both deficits saturate**, and no run leaves more
+   than 200 Cr — **each bound asserted on the pair that maximises it**, which
+   are different pairs: run value scales by 63 for sub-tonne goods and 20 for
+   tonne goods, so a single argmax cannot guard both.
 
 ### 10.2 Instrument (`scripts/measure-market.ts`)
 
