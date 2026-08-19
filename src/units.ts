@@ -27,6 +27,28 @@
 export const AU_KM = 1.495978707e8;
 
 /**
+ * The speed of light, km/s.
+ *
+ * Here because it is a *unit*, and because three files were spelling it out
+ * independently — the renderer's HUD, a probe, and the pacing sweep. #10 argues
+ * the cruise regime in multiples of c (§0, §2.3) and #14 tuned it in them, so
+ * the conversion is load-bearing prose as well as arithmetic: a probe with its
+ * own copy is a probe that can disagree with the page about how fast 20 c is.
+ */
+export const C_KMS = 299792.458;
+
+/**
+ * The largest frame delta the simulation will accept, in seconds.
+ *
+ * A backgrounded tab returns with a delta of whole seconds, and integrating that
+ * in one step puts the ship somewhere absurd. It lives in the unit scheme rather
+ * than in the renderer that enforces it because the probes step the world
+ * themselves and have to know what a worst-case frame *is* — the cruise probe
+ * flies its leg at exactly this delta, on purpose.
+ */
+export const MAX_DT = 0.1;
+
+/**
  * How far out the near layer reaches, in kilometres.
  *
  * Ships, stations, cargo, weapons fire — anything drawn at 1:1 — lives inside

@@ -97,7 +97,7 @@ import {
 	stepWorld,
 } from "./sim";
 import { type WarpField, warpField } from "./warp";
-import { type Vec3, add, length, scale, sub, v3 } from "./vec3";
+import { type Vec3, add, dot, length, scale, sub, v3 } from "./vec3";
 // One path to `./units`, deliberately. Keeping a namespace import beside a named
 // one would let this file reach `FAR_SCALE` and `units.FAR_SCALE` as separate
 // spellings of the same constant — the two-public-paths pattern this branch
@@ -107,6 +107,8 @@ import * as units from "./units";
 const {
 	AU_KM,
 	BACKDROP_RADIUS,
+	C_KMS,
+	MAX_DT,
 	FAR_FAR_UNITS,
 	FAR_NEAR_UNITS,
 	FAR_SCALE,
@@ -136,11 +138,6 @@ const STAR_PIXEL_SCALE = 0.35;
 const CHASE_BACK_KM = 0.14;
 const CHASE_UP_KM = 0.04;
 
-/** Largest frame delta the simulation will accept, in seconds. A backgrounded
- *  tab returns with a delta of whole seconds, and integrating that in one step
- *  puts the ship somewhere absurd. */
-const MAX_DT = 0.1;
-
 /**
  * Mouse sensitivity: radians of rotation per pixel of pointer movement.
  *
@@ -168,10 +165,6 @@ const PROGRADE_MIN_KMS = 0.02;
 /** How far inside the viewport an off-screen target arrow sits, as a fraction
  *  of the half-width. */
 const EDGE_MARGIN = 0.07;
-
-/** Kilometres per second, so the HUD can report speed in multiples of c the
- *  way §5.1 asks for. */
-const C_KMS = 299792.458;
 
 /**
  * §4's spool-up, seconds — reused here for the voluntary case.
@@ -212,19 +205,6 @@ const IN_C = {
 	store: (c: number) => c * C_KMS,
 };
 
-/**
- * How many samples the HUD's time-to-target estimate integrates over.
- *
- * §5.1 makes time-to-target the cruise panel's headline, because the question
- * the panel answers is *when do I cut the throttle*. It cannot be
- * `distance / speed`: the speed law is position-dependent and the last tenth of
- * the distance takes most of the time, so that figure would read "4 seconds"
- * for most of an approach and be wrong by an order of magnitude at the moment
- * it matters. So the estimate walks the remaining line, geometrically spaced,
- * evaluating the real law at each sample against the real masses. 48 samples of
- * a handful of bodies is nothing per frame, and it is the same law the
- * integrator flies rather than a second closed form to keep in step with it.
- */
 /** How often the time-to-target estimate is recomputed, in sim seconds. Four a
  *  second — far faster than the readout's own resolution, and a sixteenth of
  *  the work. */
@@ -902,16 +882,26 @@ class Game {
 		return this.massesCache;
 	}
 
-	/** Everything selectable, in a stable order — stations first, then planets,
-	 *  each by id. Stable so that cycling is a walk rather than a reshuffle as
-	 *  the ship moves. */
+	/**
+	 * Everything selectable, in a stable order — stations first, then planets,
+	 * each by id. Stable so that cycling is a walk rather than a reshuffle as the
+	 * ship moves.
+	 *
+	 * Built **once**. The marker overlay walks this every frame and the set it
+	 * walks changes only when the system does; the sort is the expensive half,
+	 * because `localeCompare` is ICU collation rather than a comparison. The
+	 * order is position-independent, which is what makes one build enough.
+	 */
 	private selectable(): Body[] {
-		const order = { station: 0, planet: 1, star: 2, moon: 3 } as const;
-		return this.world.system.bodies
-			.filter((b) => b.kind !== "moon")
-			.sort(
-				(a, b) => order[a.kind] - order[b.kind] || a.id.localeCompare(b.id),
-			);
+		if (!this.selectableCache) {
+			const order = { station: 0, planet: 1, star: 2, moon: 3 } as const;
+			this.selectableCache = this.world.system.bodies
+				.filter((b) => b.kind !== "moon")
+				.sort(
+					(a, b) => order[a.kind] - order[b.kind] || a.id.localeCompare(b.id),
+				);
+		}
+		return this.selectableCache;
 	}
 
 	cycleTarget(step: number) {
@@ -934,11 +924,6 @@ class Game {
 	 */
 	setThrottle(value: number) {
 		this.throttle = Math.min(1, Math.max(0, value));
-	}
-
-	/** What the throttle is now — the other half of the same contract. */
-	throttleNow(): number {
-		return this.throttle;
 	}
 
 	targetBody(): Body | null {
@@ -1108,10 +1093,31 @@ class Game {
 		// "how long at zero" but "how long if I flew there", so the figure falls
 		// back to the regime's best speed.
 		if (this.regime !== "cruise" && this.spoolLeftS === 0) {
-			const speed =
-				Math.max(length(this.world.ship.vel), ASSIST_CAP_KMS * this.throttle) ||
-				ASSIST_CAP_KMS;
-			return remaining / speed;
+			// **Progress along the line of sight, not absolute speed.** Flying
+			// across a target at 20 km/s with the assist off is not approaching it,
+			// and an absolute figure reported that leg ten times faster than the
+			// ship was actually closing — the same mistake the speed readout below
+			// argues against, made by the line beside it.
+			//
+			// The target's *own* motion is deliberately **not** subtracted here,
+			// which is the opposite of what the drop-out does, because the two
+			// answer different questions. The drop-out asks "am I arriving", and a
+			// station's 30 km/s is the frame that decides it. This asks "how long
+			// if I fly there", and a station's orbit is not progress the pilot can
+			// spend: subtracting it would swing the readout between 48 days and
+			// never as the station came round, while the ship sat still.
+			//
+			// The floor is the assist cap, because at rest with the throttle shut
+			// the honest answer is what the trip would cost, not infinity. A blank
+			// is what hid this regime's two-year crossings for a whole session.
+			const progress = dot(
+				this.world.ship.vel,
+				scale(sub(target.pos, from), 1 / remaining),
+			);
+			return (
+				remaining /
+				Math.max(progress, ASSIST_CAP_KMS * this.throttle, ASSIST_CAP_KMS)
+			);
 		}
 
 		// In cruise, `cruise.ts` owns the arithmetic — `legSeconds` integrates the
@@ -1626,10 +1632,9 @@ class Game {
 		// The prompt, on the glass rather than only in the corner: the mechanic it
 		// names is the one the whole prototype is about, and the first flight of
 		// this build was spent in normal flight watching a distance not change.
+		const promptTarget = this.targetBody();
 		const prompt = this.cruisePrompt(
-			this.targetBody()
-				? length(sub((this.targetBody() as Body).pos, camPos))
-				: null,
+			promptTarget ? length(sub(promptTarget.pos, camPos)) : null,
 		);
 		if (prompt) {
 			ctx.font = "13px ui-monospace, Menlo, monospace";

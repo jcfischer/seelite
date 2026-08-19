@@ -30,18 +30,23 @@ import {
 	type CruiseParams,
 	advanceCruise,
 } from "../src/cruise";
-import { AU_KM } from "../src/units";
+import { AU_KM, C_KMS, MAX_DT } from "../src/units";
 import { type Vec3, length, scale, sub, v3 } from "../src/vec3";
 
-const C_KMS = 299792.458;
-/** Frame delta, seconds — the game's `MAX_DT`, so the sweep is the worst case
- *  for anything that sub-steps. */
-const DT = 0.1;
+/** Frame delta, seconds — the game's own `MAX_DT`, so the sweep is the worst
+ *  case for anything that sub-steps. Read from the unit scheme rather than
+ *  restated, for the same reason the probes read their constants off the page. */
+const DT = MAX_DT;
 
 /** Straight-in, full throttle, one mass at the destination: the geometry §2.3's
  *  table is stated against, flown with the clamp in force the way the game
- *  flies it. Returns the seconds elapsed, or `null` if it never arrived. */
-function legSeconds(legAu: number, params: CruiseParams): number | null {
+ *  flies it. Returns the seconds elapsed, or `null` if it never arrived.
+ *
+ *  Deliberately **flies** rather than calling `cruise.ts`'s `legSeconds`: that
+ *  is the estimate the HUD shows, and a sweep that measured the estimate would
+ *  be tuning the readout rather than the game. The two are checked against each
+ *  other in `tests/cruise.test.ts`. */
+function flownSeconds(legAu: number, params: CruiseParams): number | null {
 	const target = { pos: v3(), radiusKm: 1.2 };
 	// A point-like mass at the destination: the law reads distances, not radii,
 	// and a real planet radius would end the run on its surface (`SURFACE_MARGIN`)
@@ -86,7 +91,7 @@ for (const [name, legAu] of LEGS) {
 	console.log(header.join(""));
 	for (const exponent of EXPONENTS) {
 		const cells = V_MAX_C.map((c) => {
-			const seconds = legSeconds(legAu, {
+			const seconds = flownSeconds(legAu, {
 				...DEFAULT_CRUISE,
 				exponent,
 				vMaxKms: c * C_KMS,

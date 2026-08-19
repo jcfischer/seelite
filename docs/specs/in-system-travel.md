@@ -436,7 +436,7 @@ dropped 10,000 km out at 2 km/s is an eighty-minute crawl. So:
 | Vicinity | 10,000 km (`vicinityKm`) — and it is `HANDOFF_KM`, where a body starts being drawn at 1:1 |
 | Inside it | speed held to `distance / approachLeadS` **over the target's own motion** |
 | Lead time | 3 s (`approachLeadS`) |
-| Capture | a range that stops falling ends cruise there — an overshoot becomes an arrival rather than another lap |
+| Capture | a range that stops falling ends cruise there, **while closing speed is under the drop threshold** — at the defaults that is a pass inside ~600 km, not the whole vicinity. A wider miss is a course that did not go there, and the ship carries on |
 | Cost | `lead · ln(vicinity / drop radius)` ≈ **15.9 s of every arrival** |
 
 Steering stays the player's: this is a speed governor, not an autopilot, and #9's
@@ -455,8 +455,11 @@ what the capture rule catches.
 
 Measured against §2.3's own 1.3 AU typical leg, with the clamp in force:
 **59.0 s**. #10 predicted 23 c for a 60-second leg and rounded to 20 c on the
-grounds that the figure would be tuned by flying; it was, and the prediction
-held. The exponent matters less than §2.2 assumed, because the clamp now governs
+grounds that the figure would be tuned by flying; it was, and it landed on 23 c.
+That is a coincidence worth naming rather than a vindication: the prediction was
+made at exponent 0.75 with no approach clamp, and the 59.0 s was flown at 0.60
+with a clamp that costs ~15.9 s — two different models agreeing on one number,
+which is agreement, not confirmation. The exponent matters less than §2.2 assumed, because the clamp now governs
 everything inside the vicinity — it shapes the mid-flight stretch, not the
 arrival.
 

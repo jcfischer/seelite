@@ -653,11 +653,17 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 		remaining -= dt;
 		substeps++;
 
-		// Closest approach, inside the vicinity: the range stopped falling, so
-		// this is as near as this pass gets. Ending cruise here is what turns an
-		// overshoot into an arrival — the alternative is the loop the principal
-		// described, sailing past and coming round again. Outside the vicinity a
-		// receding range is just a course change, and means nothing.
+		// Closest approach: the range stopped falling, so this is as near as this
+		// pass gets, and ending cruise here turns an overshoot into an arrival
+		// rather than another lap.
+		//
+		// Gated on **`closing <= dropSpeedKms`**, which is narrower than "inside
+		// the vicinity" and worth being exact about: the clamp holds closing speed
+		// to roughly `distance / approachLeadS`, so at the defaults the gate is
+		// satisfied inside ~600 km, a sixteenth of `vicinityKm`. A pass that misses
+		// by more than that is not a near-miss the regime should end on — it is a
+		// course that did not go there, and the ship carries on. Outside the
+		// vicinity a receding range means nothing at all.
 		if (!dropped && input.target && closing <= p.dropSpeedKms) {
 			const now = length(sub(pos, input.target.pos));
 			if (now <= p.vicinityKm && now > targetKm) {

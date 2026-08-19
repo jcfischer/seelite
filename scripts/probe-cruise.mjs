@@ -59,9 +59,9 @@ const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
 const URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=42`;
 
-/** Sim seconds per stepped frame — `MAX_DT`, the largest delta the game
- *  accepts, so the run is the worst case for anything that sub-steps. */
-const DT = 0.1;
+/** Sim seconds per stepped frame — the game's own `MAX_DT`, read off the page
+ *  below rather than restated here. The run is therefore the worst case for
+ *  anything that sub-steps, whatever that constant becomes. */
 /** Sim seconds the leg is given before the run is called a failure. Generous
  *  against the spec's 68 s typical leg and its 186 s outer-planet one. */
 const LIMIT_S = 400;
@@ -78,6 +78,8 @@ page.on("pageerror", (e) => check(`no page error (${e.message})`, false));
 await installCamSim(page);
 await page.goto(URL, { waitUntil: "load" });
 await bootedGame(page);
+
+const dt = await page.evaluate(() => window.__seelite.units.MAX_DT);
 
 const flight = await page.evaluate(
 	async ([dt, limitS]) => {
@@ -134,7 +136,7 @@ const flight = await page.evaluate(
 			g.render(dt);
 			elapsed += dt;
 			if (g.regime === "cruise" && engagedAtS === null) engagedAtS = elapsed;
-			peakC = Math.max(peakC, g.cruiseSpeedKms / 299792.458);
+			peakC = Math.max(peakC, g.cruiseSpeedKms / g.units.C_KMS);
 
 			const body = g.world.system.byId.get(station.id);
 			if (!body) continue;
@@ -231,7 +233,7 @@ const flight = await page.evaluate(
 			samples,
 		};
 	},
-	[DT, LIMIT_S],
+	[dt, LIMIT_S],
 );
 
 if (flight.noStation) {

@@ -111,18 +111,50 @@ const state = await page.evaluate(async () => {
 	// What the panel says while the ship sits in normal flight with a distant
 	// target selected — the state the first session was flown in.
 	const hudText = document.getElementById("hud").textContent;
-	const targetKm = (() => {
-		const t = g.world.system.byId.get(g.targetId);
-		if (!t) return null;
-		return Math.hypot(
-			t.pos.x - g.world.ship.pos.x,
-			t.pos.y - g.world.ship.pos.y,
-			t.pos.z - g.world.ship.pos.z,
-		);
-	})();
+	const t = g.world.system.byId.get(g.targetId);
+	const targetKm = t
+		? Math.hypot(
+				t.pos.x - g.world.ship.pos.x,
+				t.pos.y - g.world.ship.pos.y,
+				t.pos.z - g.world.ship.pos.z,
+			)
+		: null;
+
+	// And the same readout in the one state where an *absolute* speed flatters
+	// it: **assist off**, flying fast across the target rather than towards it.
+	//
+	// The construction matters. With the assist on, `stepFlight` caps total
+	// velocity at 2 km/s, which is also the estimate's floor — so absolute and
+	// closing agree there and no test built on that state can tell them apart.
+	// The first version of this check was built on it and passed against the bug
+	// it was written for. Assist off is Newtonian and uncapped, which is exactly
+	// how the principal was flying when he first met this panel.
+	const to = {
+		x: t.pos.x - g.world.ship.pos.x,
+		y: t.pos.y - g.world.ship.pos.y,
+		z: t.pos.z - g.world.ship.pos.z,
+	};
+	const len = Math.hypot(to.x, to.y, to.z);
+	// A vector across the line of sight: fast, and closing on nothing.
+	const across = { x: -to.y / len, y: to.x / len, z: 0 };
+	const crossKms = 20;
+	g.assist = false;
+	g.setThrottle(0);
+	g.world.ship.vel = {
+		x: across.x * crossKms,
+		y: across.y * crossKms,
+		z: across.z * crossKms,
+	};
+	g.world.gameTime += 1;
+	await new Promise((r) => requestAnimationFrame(() => r()));
+	await new Promise((r) => requestAnimationFrame(() => r()));
+	const hudTextMatched = document.getElementById("hud").textContent;
+	const carriedKms = crossKms;
 
 	return {
 		hudText,
+		hudTextMatched,
+		carriedKms,
 		targetKm,
 		regime: g.regime,
 		assistCapKms: g.assistCapKms,
@@ -217,6 +249,24 @@ check(
 	// Two years at 2 km/s reads in days, never in seconds and never as a blank.
 	/eta \d+(\.\d+)?d/.test(state.hudText),
 	`${(state.targetKm / state.assistCapKms / 86400).toFixed(0)} d at the assist cap`,
+);
+
+// The blocker this check was written for: `timeToTarget` computed the
+// normal-flight estimate from the ship's *absolute* speed, while the panel
+// beside it argues — correctly — that only closing speed answers "will I
+// arrive". Flying across the target at 20 km/s with the assist off closes on it
+// at nothing, and an absolute figure reports the leg ten times faster than the
+// ship is actually approaching. Neither the boot state nor a velocity-matched
+// one can catch that: both sit at or under the estimate's own 2 km/s floor.
+const daysMatched = /eta (\d+)d/.exec(state.hudTextMatched);
+const capDays = state.targetKm / state.assistCapKms / 86400;
+const absoluteDays = state.targetKm / state.carriedKms / 86400;
+check(
+	"the eta counts progress toward the target, not speed — flying across it",
+	daysMatched !== null && Number(daysMatched[1]) > absoluteDays * 2,
+	`reads ${daysMatched?.[1] ?? "—"}d; the cap says ${capDays.toFixed(0)}d, ` +
+		`and ${state.carriedKms.toFixed(0)} km/s of crossing motion would say ` +
+		`${absoluteDays.toFixed(0)}d if it counted as progress`,
 );
 
 await browser.close();

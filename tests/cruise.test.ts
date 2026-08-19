@@ -17,6 +17,7 @@
 import { expect, test } from "bun:test";
 import {
 	CHARGE_CAPACITY_AU,
+	type CruiseParams,
 	CHARGE_PER_AU,
 	CHARGE_REGEN_AU_PER_S,
 	DEFAULT_CRUISE,
@@ -49,7 +50,23 @@ const P = DEFAULT_CRUISE;
  * against whatever the defaults happen to be would turn a check of the spec
  * into a check that the file agrees with itself.
  */
-const SPEC_LAW = { ...DEFAULT_CRUISE, vMaxKms: 6.0e6, exponent: 0.75 };
+const SPEC_LAW: CruiseParams = {
+	// Every field written out, not spread from `DEFAULT_CRUISE`. A fixture that
+	// inherited `dRefKm`, `vMinKms`, `dropRadiusKm` and `dropSpeedKms` from the
+	// values it is supposed to be pinned against would let a retune of any of
+	// them silently move the table it is checking — which is the exact failure
+	// this fixture exists to prevent, and it had it for one round.
+	vMaxKms: 6.0e6, // §2: 20 c
+	exponent: 0.75, // §2.2
+	dRefKm: 0.5 * AU_KM, // §2
+	vMinKms: 100, // §2, the safety floor
+	dropRadiusKm: 50, // §3
+	dropSpeedKms: 200, // not in #10 — see `cruise.ts` on §2.3 vs §3
+	// Both #14's, and switched off here: the clamp is not something #10 argued,
+	// so a claim about #10's law is measured without it.
+	vicinityKm: 0,
+	approachLeadS: 3,
+};
 
 /** A unit vector from `a` to `b`, in float64 — the ship's nose, in the tests
  *  that fly straight at something. */
@@ -184,7 +201,10 @@ test("speed keys off the nearest star or planet, never a moon or a station", () 
  * happens to cost; the honest split is the law here, and the arrival cost
  * asserted on its own below.
  */
-const NO_CLAMP = { ...SPEC_LAW, vicinityKm: 0 };
+/** #10's law, with the clamp already off — `SPEC_LAW` is that. Kept as a name
+ *  because the tests that use it are making a point about the *clamp* rather
+ *  than about the spec's parameters. */
+const NO_CLAMP = SPEC_LAW;
 
 // §2.3's table, with the geometry it is stated against: one mass at the
 // destination, the ship flying straight in from `legAu` away. The tolerance is
@@ -910,4 +930,42 @@ test("speedFor is the whole law, clamp included", () => {
 		cruiseSpeed(1e6, P) * 0.5,
 		6,
 	);
+});
+
+test("the capture is a near miss, not the whole vicinity", () => {
+	// §11.5's table used to state the capture unconditionally; the gate is
+	// `closing <= dropSpeedKms`, and under the clamp closing speed is roughly
+	// `distance / approachLeadS` — so the band is ~600 km at the defaults, not
+	// the 10,000 km vicinity. Both sides of that boundary, because a rule whose
+	// extent is only asserted from inside is a rule whose extent is unknown.
+	const station = { pos: v3(), radiusKm: 1.2 };
+	const passAt = (missKm: number) => {
+		let pos = v3(6e4, missKm, 0);
+		const nose = towards(pos, v3(0, missKm, 0));
+		let t = 0;
+		let exit: string | null = null;
+		while (t < 300 && !exit) {
+			const step = advanceCruise({
+				pos,
+				nose,
+				throttle: 1,
+				dt: 0.1,
+				masses: oneMassAt(v3(0, 2e6, 0)),
+				target: station,
+				params: P,
+			});
+			pos = step.pos;
+			if (step.dropped) exit = step.exit;
+			t += 0.1;
+		}
+		return exit;
+	};
+	// Inside the band: the pass ends as an arrival.
+	expect(passAt(400)).toBe("arrival");
+	// The band itself, stated as the arithmetic it is.
+	const bandKm = P.dropSpeedKms * P.approachLeadS;
+	expect(bandKm).toBeCloseTo(600, 0);
+	// Outside it — still well inside the vicinity — the ship flies on, which is
+	// the honest behaviour for a course that was never going to arrive.
+	expect(passAt(P.vicinityKm * 0.5)).toBe(null);
 });
