@@ -37,10 +37,10 @@ import {
 	NARCOTICS_BELL,
 	OFFSET_STATIONS,
 	type StationTypeKey,
-	bellQuantity,
 	bestMargin,
 	marketRow,
 	runsToExhaustion,
+	sweepDomain,
 } from "../tests/helpers/market-math";
 import {
 	ALL_GALAXIES,
@@ -73,34 +73,50 @@ const widen = (s: Span, v: number) => {
 };
 const fmt = (s: Span) => `${s.lo.toFixed(1)}–${s.hi.toFixed(1)}`;
 
-/** Prints one row and returns whether the clamp collapsed the good's span. */
-function report(commodity: Commodity, label = commodity.name): boolean {
-	let overflows = 0;
-	let rows = 0;
+/** Measures one good. Printing is the caller's, so `filter(report)` cannot read
+ *  as a filter with a side effect. */
+function measure(commodity: Commodity): {
+	overflowRate: number;
+	wrapSpan: Span;
+	clampSpan: Span;
+	collapsed: boolean;
+} {
 	const wrapSpan = span();
 	const clampSpan = span();
-	for (const economy of ALL_ECONOMIES)
-		for (const fluct of ALL_FLUCT) {
-			widen(
-				wrapSpan,
-				marketRow(commodity, economy, fluct, "trade", "wrap").priceCr,
-			);
-			const clamped = marketRow(commodity, economy, fluct, "trade", "saturate");
-			widen(clampSpan, clamped.priceCr);
-			if (clamped.priceOverflowed) overflows++;
-			rows++;
-		}
-	console.log(
-		`${label.padEnd(16)}  ${pct(overflows, rows).padStart(7)}   ` +
-			`${fmt(wrapSpan).padStart(13)}     ${fmt(clampSpan).padStart(13)}`,
-	);
+	const { hits, rows } = sweepDomain((economy, fluct) => {
+		widen(
+			wrapSpan,
+			marketRow(commodity, economy, fluct, "trade", "wrap").priceCr,
+		);
+		const clamped = marketRow(commodity, economy, fluct, "trade", "saturate");
+		widen(clampSpan, clamped.priceCr);
+		return clamped.priceOverflowed;
+	});
 	// A good whose clamped span is a small fraction of its wrapped span has had
 	// its price variation removed, not merely tidied.
 	const wrapWidth = wrapSpan.hi - wrapSpan.lo;
-	return wrapWidth > 0 && (clampSpan.hi - clampSpan.lo) / wrapWidth < 0.25;
+	return {
+		overflowRate: hits / rows,
+		wrapSpan,
+		clampSpan,
+		collapsed:
+			wrapWidth > 0 && (clampSpan.hi - clampSpan.lo) / wrapWidth < 0.25,
+	};
 }
 
-const flattened = COMMODITIES.filter((c) => report(c)).map((c) => c.name);
+function print(label: string, m: ReturnType<typeof measure>): void {
+	console.log(
+		`${label.padEnd(16)}  ${`${(100 * m.overflowRate).toFixed(2)}%`.padStart(7)}   ` +
+			`${fmt(m.wrapSpan).padStart(13)}     ${fmt(m.clampSpan).padStart(13)}`,
+	);
+}
+
+const flattened: string[] = [];
+for (const commodity of COMMODITIES) {
+	const m = measure(commodity);
+	print(commodity.name, m);
+	if (m.collapsed) flattened.push(commodity.name);
+}
 console.log(
 	`\nshipped table — goods whose price span collapses under the clamp: ${
 		flattened.join(", ") || "none"
@@ -110,9 +126,9 @@ console.log(
 // ── 2. Bell's Narcotics row, which the retune replaced ──────────────────────
 
 console.log("\n── §2.3: the row the retune replaced ──");
-console.log(
-	`Bell's row collapses under the clamp: ${report(NARCOTICS_BELL, "Narcotics (Bell)")}`,
-);
+const bell = measure(NARCOTICS_BELL);
+print("Narcotics (Bell)", bell);
+console.log(`Bell's row collapses under the clamp: ${bell.collapsed}`);
 
 console.log(
 	"\nbest margin, refinery → refinery (a fence is a refinery; blackMarket does not price)",
@@ -153,12 +169,14 @@ function floorRate(stations: readonly StationTypeKey[]): string {
 	let fired = 0;
 	let rows = 0;
 	for (const commodity of COMMODITIES)
-		for (const station of stations)
-			for (const economy of ALL_ECONOMIES)
-				for (const fluct of ALL_FLUCT) {
-					if (marketRow(commodity, economy, fluct, station).floorFired) fired++;
-					rows++;
-				}
+		for (const station of stations) {
+			const swept = sweepDomain(
+				(economy, fluct) =>
+					marketRow(commodity, economy, fluct, station).floorFired,
+			);
+			fired += swept.hits;
+			rows += swept.rows;
+		}
 	return `${pct(fired, rows)} of ${rows} rows`;
 }
 // The two figures differ because the trade station's offset is zero, so its
@@ -275,6 +293,15 @@ const intra: number[] = [];
 let multiStation = 0;
 for (const system of systems) {
 	if (system.stations.length < 2) continue;
+	// `bestBetween(..., skipSelf)` compares station *types*, which is only the
+	// same as comparing identities because `generateStations` emits at most one
+	// station per type (`src/system.ts`: fixed ids station-trade /
+	// station-refinery / station-shipyard). If that ever changes, same-type
+	// pairs would silently score 0 and drag the intra-system mean down.
+	if (new Set(system.stations).size !== system.stations.length)
+		throw new Error(
+			"a system has two stations of one type — bestBetween's self-check is no longer identity",
+		);
 	multiStation++;
 	intra.push(bestBetween(system, system, true));
 }
@@ -292,8 +319,12 @@ for (const system of systems) {
 const inter: number[] = [];
 let unreachable = 0;
 for (const bucket of byGalaxy.values()) {
-	// Every 8th system as the origin; its nearest in-range neighbours as the
-	// destinations. Sampling the origin keeps the sweep O(n²/8) per galaxy.
+	// Every 8th system as the origin, which keeps the sweep O(n²/8) per galaxy.
+	// Destinations are the **first four in generation order that fall inside the
+	// jump range** — not the four nearest. Order does not bias the margin here
+	// (it correlates with nothing in the price formula); what the earlier version
+	// got wrong was not the ordering but the absence of any range check at all,
+	// which admitted pairs no ship can fly.
 	for (let i = 0; i < bucket.length; i += 8) {
 		const from = bucket[i];
 		let found = 0;
@@ -360,19 +391,20 @@ for (const economy of [0, 3, 7]) {
 
 console.log("\n── §12: goods whose stock differs from Bell's `& 0x3F` wrap ──");
 for (const commodity of COMMODITIES) {
-	let differing = 0;
-	let rows = 0;
 	let worst = 0;
-	for (const economy of ALL_ECONOMIES)
-		for (const fluct of ALL_FLUCT) {
-			const mine = marketRow(commodity, economy, fluct, "trade").quantity;
-			const bell = bellQuantity(commodity, economy, fluct);
-			if (mine !== bell) {
-				differing++;
-				worst = Math.max(worst, Math.abs(mine - bell));
-			}
-			rows++;
-		}
+	const { hits: differing, rows } = sweepDomain((economy, fluct) => {
+		const mine = marketRow(commodity, economy, fluct, "trade").quantity;
+		const theirs = marketRow(
+			commodity,
+			economy,
+			fluct,
+			"trade",
+			"wrap",
+		).quantity;
+		if (mine === theirs) return false;
+		worst = Math.max(worst, Math.abs(mine - theirs));
+		return true;
+	});
 	if (differing > 0)
 		console.log(
 			`  ${commodity.name.padEnd(14)} differs on ${pct(differing, rows).padStart(7)} of rows, by up to ${worst} units`,

@@ -148,25 +148,6 @@ export const NARCOTICS_RETUNE = {
 	minInStock: 0.5,
 } as const;
 
-/**
- * Bell's own quantity close: clip negatives to zero, then `& 0x3F` — which
- * **wraps** 64…127 back down rather than capping there. Kept so §12's recorded
- * divergence can be measured instead of asserted.
- */
-export function bellQuantity(
-	commodity: Commodity,
-	economy: number,
-	fluct: number,
-): number {
-	if (commodity.sellOnly) return 0; // Bell forces Alien Items to zero too.
-	const raw =
-		(commodity.baseQuantity +
-			(fluct & commodity.mask) -
-			economy * commodity.gradient) &
-		0xff;
-	return raw & 0x80 ? 0 : raw & 0x3f;
-}
-
 /** §3: the per-station-type price offset, in economy-equivalent steps. */
 export const TYPE_OFFSET = { trade: 0, refinery: 3, shipyard: -2 } as const;
 export type StationTypeKey = keyof typeof TYPE_OFFSET;
@@ -188,6 +169,24 @@ const closeByte = (v: number, mode: ByteMode): number =>
 	mode === "wrap" ? ((v % 256) + 256) % 256 : clamp(v, 0, 255);
 
 /**
+ * The quantity byte's close — and **`mode` governs it too**.
+ *
+ * An earlier version clamped the quantity regardless of mode, which made every
+ * `"wrap"` measurement a hybrid: Bell's price arithmetic with seelite's shelf.
+ * §2.3's "Bell + wrap" row was quoting an availability figure that was never
+ * Bell's, in a table written to justify diverging from him.
+ *
+ * `wrap` is his: clip a negative to zero, then `& 0x3F`, which folds 64…127
+ * back down. `saturate` caps at the same 63 instead — §2.2's choice, and a
+ * recorded divergence (§12 weak joint 8) rather than a transcription.
+ */
+const closeQuantity = (v: number, mode: ByteMode): number => {
+	if (mode === "saturate") return clamp(v, 0, QUANTITY_CAP);
+	const byte = ((v % 256) + 256) % 256;
+	return byte & 0x80 ? 0 : byte & QUANTITY_CAP;
+};
+
+/**
  * The whole fluctuation domain.
  *
  * **Sweep this, not a stride.** The first version of the suite swept every 8th
@@ -202,8 +201,11 @@ export const ALL_FLUCT: readonly number[] = Array.from(
 	(_, i) => i,
 );
 
-/** Economy runs 0…7, and every sweep in the suite covers all of it. */
-export const ALL_ECONOMIES: readonly number[] = [0, 1, 2, 3, 4, 5, 6, 7];
+/** Every sweep in the suite and the instrument covers the whole range. */
+export const ALL_ECONOMIES: readonly number[] = Array.from(
+	{ length: ECONOMY_MAX - ECONOMY_MIN + 1 },
+	(_, i) => ECONOMY_MIN + i,
+);
 
 /** The two types whose offset is non-zero — the only ones §3's floor can reach. */
 export const OFFSET_STATIONS: readonly StationTypeKey[] = [
@@ -215,6 +217,26 @@ export const ALL_STATIONS: readonly StationTypeKey[] = [
 	"refinery",
 	"shipyard",
 ];
+
+/**
+ * The full (economy, fluct) domain, walked once.
+ *
+ * Four measurements had this nest written out by hand, each with its own
+ * `rows++` accumulator — a fifth would have been a fifth chance to forget one.
+ * `hit` is counted when the callback returns true.
+ */
+export function sweepDomain(
+	visit: (economy: number, fluct: number) => boolean | void,
+): { hits: number; rows: number } {
+	let hits = 0;
+	let rows = 0;
+	for (const economy of ALL_ECONOMIES)
+		for (const fluct of ALL_FLUCT) {
+			if (visit(economy, fluct) === true) hits++;
+			rows++;
+		}
+	return { hits, rows };
+}
 
 export interface MarketRow {
 	commodity: Commodity;
@@ -268,17 +290,13 @@ export function marketRow(
 		closedPrice * PRICE_STEP_CR + offset * commodity.gradient * PRICE_STEP_CR;
 	const priceCr = Math.max(PRICE_STEP_CR, unflooredPriceCr);
 
-	// §2.2's clamp applies to the quantity byte too, and **this is a divergence
-	// from Bell, not a transcription of him.** He clips negatives to zero and
-	// then masks with `& 0x3F`, which *wraps* 64…127 back down: Gold's raw
+	// §2.2's clamp applies to the quantity byte too, and **that is a divergence
+	// from Bell, not a transcription of him** — see `closeQuantity`. Gold's raw
 	// quantity is always 66–80, so txtelite shows 2–16 units where seelite shows
-	// a permanent 63. Clamping is the same choice §2.2 makes for price — a
-	// wrapped shelf is as inexplicable as a wrapped price — and it is recorded
-	// in the spec's weak joints rather than passed off as Bell's.
-	const baseQuantity = clamp(
+	// a permanent 63.
+	const baseQuantity = closeQuantity(
 		commodity.baseQuantity + changing - product,
-		0,
-		QUANTITY_CAP,
+		mode,
 	);
 	const quantityDelta = Math.max(0, -offset * commodity.gradient);
 	const quantity = commodity.sellOnly
@@ -316,21 +334,16 @@ export function bestMargin(
 ): { margin: number; inStock: number } {
 	let minBuy = Number.POSITIVE_INFINITY;
 	let maxSell = 0;
-	let stocked = 0;
-	let rows = 0;
-	for (const economy of ALL_ECONOMIES)
-		for (const fluct of ALL_FLUCT) {
-			const buy = marketRow(commodity, economy, fluct, buyStation, mode);
-			rows++;
-			if (buy.quantity > 0) {
-				stocked++;
-				minBuy = Math.min(minBuy, buy.priceCr);
-			}
-			maxSell = Math.max(
-				maxSell,
-				marketRow(commodity, economy, fluct, sellStation, mode).priceCr,
-			);
-		}
+	const { hits: stocked, rows } = sweepDomain((economy, fluct) => {
+		const buy = marketRow(commodity, economy, fluct, buyStation, mode);
+		maxSell = Math.max(
+			maxSell,
+			marketRow(commodity, economy, fluct, sellStation, mode).priceCr,
+		);
+		if (buy.quantity === 0) return false;
+		minBuy = Math.min(minBuy, buy.priceCr);
+		return true;
+	});
 	return {
 		margin: stocked === 0 ? 0 : maxSell - minBuy,
 		inStock: stocked / rows,

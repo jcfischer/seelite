@@ -35,14 +35,14 @@ import {
 	OFFSET_STATIONS,
 	PRICE_ELASTICITY,
 	MIN_STOCK_RESPONSE_FACTOR,
+	MARKET_PERIOD_MIN,
 	PRICE_STEP_CR,
-	RUN_MINUTES,
 	QUANTITY_CAP,
 	TYPE_OFFSET,
 	addDeficit,
-	bellQuantity,
 	bestMargin,
 	decayDeficit,
+	marketEpoch,
 	marketRow,
 	runsToExhaustion,
 	stockResponse,
@@ -53,6 +53,11 @@ const byName = (name: string): Commodity =>
 
 /** Buyable, hold-consuming goods — the population §8's pump actually trades. */
 const TRADEABLE = COMMODITIES.filter((c) => !c.sellOnly && c.unit === "t");
+/** …and of those, the ones a shipyard or trade station will actually handle.
+ *  §4 scopes contraband to fences, so a shipyard→refinery contraband run is not
+ *  a transaction that exists — including it in an intra-system search finds a
+ *  "best pair" no player can fly. */
+const LEGAL_TRADEABLE = TRADEABLE.filter((c) => !c.illegal);
 
 describe("the commodity table", () => {
 	test("is Bell's 17 goods", () => {
@@ -301,7 +306,7 @@ describe("§3 the type offset", () => {
 });
 
 describe("§2.2 the clamp applies to quantity too, and diverges from Bell there", () => {
-	test("five goods read differently from txtelite, and the set is pinned", () => {
+	test("four goods read differently from txtelite, and the set is pinned", () => {
 		// Bell's `& 0x3F` wraps 64…127 back down; §2.2 clamps. The spec records
 		// this in §12 rather than claiming the table is Bell's throughout, and
 		// this test is what stops the recorded set drifting from the real one.
@@ -312,7 +317,7 @@ describe("§2.2 the clamp applies to quantity too, and diverges from Bell there"
 				for (const fluct of ALL_FLUCT)
 					if (
 						marketRow(commodity, economy, fluct, "trade").quantity !==
-						bellQuantity(commodity, economy, fluct)
+						marketRow(commodity, economy, fluct, "trade", "wrap").quantity
 					)
 						differs = true;
 			if (differs) diverging.push(commodity.name);
@@ -330,8 +335,53 @@ describe("§2.2 the clamp applies to quantity too, and diverges from Bell there"
 				expect(marketRow(gold, economy, fluct, "trade").quantity).toBe(
 					QUANTITY_CAP,
 				);
-				expect(bellQuantity(gold, economy, fluct)).toBeLessThan(20);
+				expect(
+					marketRow(gold, economy, fluct, "trade", "wrap").quantity,
+				).toBeLessThan(20);
 			}
+	});
+});
+
+describe('§2.2 "wrap" mode is Bell on both bytes, not just on price', () => {
+	test("wrap mode wraps the quantity byte too", () => {
+		// An earlier version clamped quantity regardless of mode, so every
+		// "Bell + wrap" figure was a hybrid — his price arithmetic with seelite's
+		// shelf — quoted in the very table justifying the divergence from him.
+		const gold = COMMODITIES.find((c) => c.name === "Gold") as Commodity;
+		expect(marketRow(gold, 0, 0, "trade", "wrap").quantity).toBe(
+			(0x42 + 0 - 0) & QUANTITY_CAP,
+		);
+		expect(marketRow(gold, 0, 0, "trade", "saturate").quantity).toBe(
+			QUANTITY_CAP,
+		);
+	});
+
+	test("Bell's Narcotics row is more scarce under the clamp than under his wrap", () => {
+		// The figure §2.3 quotes. Measured with the clamp applied to quantity it
+		// read 36% for both Bell rows, which was seelite's shelf wearing Bell's
+		// name; his own arithmetic stocks the good on ~47% of rows.
+		const wrapped = bestMargin(NARCOTICS_BELL, "refinery", "refinery", "wrap");
+		const clamped = bestMargin(
+			NARCOTICS_BELL,
+			"refinery",
+			"refinery",
+			"saturate",
+		);
+		expect(wrapped.inStock).toBeGreaterThan(clamped.inStock);
+		expect(wrapped.inStock).toBeGreaterThan(0.4);
+	});
+});
+
+describe("§5.1 the market epoch", () => {
+	test("advances once per period, and phase staggers the boundary", () => {
+		expect(marketEpoch(0, 0)).toBe(0);
+		expect(marketEpoch(0, MARKET_PERIOD_MIN - 1)).toBe(0);
+		expect(marketEpoch(0, MARKET_PERIOD_MIN)).toBe(1);
+		expect(marketEpoch(0, 3 * MARKET_PERIOD_MIN)).toBe(3);
+		// A station with a phase offset flips earlier in wall time, which is the
+		// point: markets in one system must not all re-roll together.
+		expect(marketEpoch(MARKET_PERIOD_MIN - 1, 1)).toBe(1);
+		expect(marketEpoch(1, 1)).toBe(0);
 	});
 });
 
@@ -402,34 +452,74 @@ describe("§5 the stock deficit", () => {
 		// single-system trading (§5.4). The pair is *searched*, not hardcoded, so
 		// a retune that promotes another good keeps this pointed at the real
 		// best arb rather than at a stale one.
-		// Independent fluctuation bytes, as §2.3 requires: pairing both stations on
-		// one byte understates the margin, and an understated margin exhausts
-		// sooner — which would make this assertion easier to pass than the real
-		// two-seed case.
-		const BUY_FLUCT = 0x7a;
-		const SELL_FLUCT = 0x1c;
-		const ECONOMY = 3;
-
-		let bestGood = TRADEABLE[0];
-		let bestSpread = Number.NEGATIVE_INFINITY;
-		for (const commodity of TRADEABLE) {
-			const buy = marketRow(commodity, ECONOMY, BUY_FLUCT, "shipyard");
-			if (buy.quantity === 0) continue;
-			const spread =
-				marketRow(commodity, ECONOMY, SELL_FLUCT, "refinery").priceCr -
-				buy.priceCr;
-			if (spread > bestSpread) {
-				bestSpread = spread;
-				bestGood = commodity;
-			}
-		}
-		expect(bestSpread).toBeGreaterThan(0);
+		// Searched across goods, economies **and** fluctuation-byte pairs, because
+		// §10.1 claims the *best* pair is exhausted and a fixed configuration is
+		// not it: the instrument reports an intra-system max of 28.0 Cr/t while
+		// one hardcoded setup started at 27.2, so the pair the brake most has to
+		// survive was never the pair asserted. Bytes are independent — pairing
+		// them understates the margin, and an understated margin exhausts sooner.
+		const FLUCT_PAIRS: [number, number][] = [
+			[0x00, 0x91],
+			[0x3d, 0x1c],
+			[0x7a, 0xc6],
+			[0xb1, 0x58],
+			[0xee, 0x2f],
+		];
+		let worst = { spread: Number.NEGATIVE_INFINITY, buyCr: 0, sellCr: 0 };
+		for (const commodity of LEGAL_TRADEABLE)
+			for (const economy of ALL_ECONOMIES)
+				for (const [buyFluct, sellFluct] of FLUCT_PAIRS) {
+					const buy = marketRow(commodity, economy, buyFluct, "shipyard");
+					if (buy.quantity === 0) continue;
+					const sellCr = marketRow(
+						commodity,
+						economy,
+						sellFluct,
+						"refinery",
+					).priceCr;
+					if (sellCr - buy.priceCr > worst.spread)
+						worst = {
+							spread: sellCr - buy.priceCr,
+							buyCr: buy.priceCr,
+							sellCr,
+						};
+				}
+		expect(worst.spread).toBeGreaterThan(0);
 
 		const { runs } = runsToExhaustion({
-			buyBaseCr: marketRow(bestGood, ECONOMY, BUY_FLUCT, "shipyard").priceCr,
-			sellBaseCr: marketRow(bestGood, ECONOMY, SELL_FLUCT, "refinery").priceCr,
+			buyBaseCr: worst.buyCr,
+			sellBaseCr: worst.sellCr,
 		});
 		expect(runs).toBeGreaterThan(0);
 		expect(runs).toBeLessThanOrEqual(4);
+	});
+
+	test("the brake's reach exceeds the worst legal intra-system spread", () => {
+		// Stronger than counting runs, and the property the run count depends on.
+		// At the ±63 cap the multipliers are 1.315 and 0.685, so the deficit can
+		// close any pair whose sell/buy ratio is below 1.315/0.685 = 1.920 and
+		// **no** pair above it, however many runs are flown. The worst legal
+		// intra-system ratio is 1.571 (Computers at economy 0), leaving 18%
+		// headroom. If a retune pushes a pair past 1.920 the loop stops being a
+		// burst and becomes a farm, and the run-count test alone would only say
+		// "more than four".
+		const closable =
+			(2 - MIN_STOCK_RESPONSE_FACTOR) / MIN_STOCK_RESPONSE_FACTOR;
+		expect(closable).toBeCloseTo(1.92, 2);
+
+		let worstRatio = 0;
+		for (const commodity of LEGAL_TRADEABLE)
+			for (const economy of ALL_ECONOMIES)
+				for (const buyFluct of ALL_FLUCT) {
+					const buy = marketRow(commodity, economy, buyFluct, "shipyard");
+					if (buy.quantity === 0) continue;
+					for (const sellFluct of ALL_FLUCT)
+						worstRatio = Math.max(
+							worstRatio,
+							marketRow(commodity, economy, sellFluct, "refinery").priceCr /
+								buy.priceCr,
+						);
+				}
+		expect(worstRatio).toBeLessThan(closable);
 	});
 });

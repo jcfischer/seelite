@@ -34,14 +34,18 @@ product   = economy × gradient                    // Bell's slope
 changing  = fluct & maskbyte                      // the visit's noise
 
 priceByte = clamp(basePrice + changing + product, 0, 255)
-priceCr   = max(PRICE_STEP_CR,
+priceCr   = max(PRICE_STEP_CR,                                 // §3.1's floor
                 priceByte × PRICE_STEP_CR
-                  + typeOffset × gradient × PRICE_STEP_CR)   // §3.1
-priceCr  ×= 1 + PRICE_ELASTICITY × deficit / HOLD_REFERENCE_T // §5.2
+                  + typeOffset × gradient × PRICE_STEP_CR)
+priceCr   = max(PRICE_STEP_CR,                                 // §5.3's floor —
+                priceCr × (1 + PRICE_ELASTICITY                //   not redundant
+                               × clamp(deficit, ±63)
+                               / HOLD_REFERENCE_T))
 
-quantity  = clamp(baseQuantity + changing − product, 0, 63)
-          + max(0, −typeOffset × gradient)                    // §3.2
-          − deficit                                            // §5.2
+quantity  = clamp(clamp(baseQuantity + changing − product, 0, 63)
+                    + max(0, −typeOffset × gradient),          // §3.2
+                  0, 63)
+          − deficit                                             // §5.2
 ```
 
 | Constant | Value | Source |
@@ -166,9 +170,15 @@ margin):
 
 | Narcotics row | Best margin | In stock | Overflows |
 |---|---|---|---|
-| Bell + wrap | 100.4 Cr/t | 36% | 97.7% |
+| Bell + wrap | 100.4 Cr/t | 47% | 97.7% |
 | Bell + clamp | **8.0 Cr/t** | 36% | 97.7% |
 | **seelite + clamp** | **81.2 Cr/t** | **64%** | **0%** |
+
+The 47% is Bell's own, and an earlier draft of this table said 36% for both of
+his rows. That was seelite's shelf wearing his name: the arithmetic clamped
+quantity regardless of mode, so the "Bell + wrap" row was his price formula with
+seelite's quantity close — quoted in the very table written to justify diverging
+from him. `wrap` now wraps both bytes, and the suite pins that it does.
 
 Firearms (39.2 Cr/t, stocked at 38%) and Slaves (22.0 Cr/t, stocked at 100%)
 are untouched by any of this — they never overflowed.
@@ -182,7 +192,8 @@ what it sweeps rather than for what the fiction calls it.
 The retuned row keeps everything the good is for: a positive gradient, so it is
 cheap in Rich Industrial and dear in Poor Agricultural; the largest mask in the
 table at `0x70`, so it stays the volatile gamble; and a margin within a fifth of
-Bell's. It is *more* available than Bell's row, not less.
+Bell's. It is more available than his row — 64% against 47% — though the honest
+gap is narrower than the 36% figure this section first claimed.
 
 **Three alternatives were considered and are recorded rather than deleted**,
 because the failure is easy to reintroduce:
@@ -419,10 +430,26 @@ already fading rather than one that only accumulates:
 | 3 | 27.2 → 10.9 | 2 |
 | 7 | 27.2 → 6.4 | 2 |
 
+**The brake has a reach, and it is worth stating as a ratio rather than as a run
+count.** At the ±63 cap the multipliers are 1.315 on the buy side and 0.685 on
+the sell side, so the deficit can close any pair whose sell/buy ratio is below
+**1.920** — and *no* pair above it, however many runs are flown. The worst legal
+intra-system ratio is **1.571** (Computers at economy 0), leaving 18% headroom.
+
+That is the property the run counts depend on, so the suite asserts both: the
+ratio bound, and exhaustion within four runs. A retune that pushed a pair past
+1.920 would turn the loop from a burst into a farm, and a run-count test alone
+would report only "more than four" without saying why.
+
 **The deficit is therefore not tuning — it is the reason the intra-system pair
 is safe.** A later reader tempted to simplify it away should read this section
-first; `tests/market.test.ts` asserts exhaustion within four runs so the removal
-fails rather than merely regressing the feel.
+first.
+
+One scope note, because a draft of the test got it wrong: **contraband cannot
+run this loop at all.** §4 scopes illegal goods to fences, so shipyard→refinery
+is not a transaction that exists for them. Searching for the "best intra-system
+pair" without that filter finds Narcotics at a ratio of 59 and concludes the
+brake fails — against a route no player can fly.
 
 ### 5.5 Determinism, and where state begins
 
@@ -568,7 +595,7 @@ question, still fog on the map, and it reaches far past the economy.
 
 All headless `bun` — none of §1–§9 may require a browser, per #7's own framing.
 
-### 10.1 Suite (`tests/market.test.ts`, 27 tests)
+### 10.1 Suite (`tests/market.test.ts`, 31 tests)
 
 1. **Table integrity** — 17 goods; `baseQuantity` signed for all five negative
    rows; exactly three illegal; the sub-tonne set is Gold/Platinum/Gem-Stones
@@ -592,12 +619,17 @@ All headless `bun` — none of §1–§9 may require a browser, per #7's own fra
    differently from `& 0x3F` is pinned at exactly {Furs, Gold, Narcotics,
    Platinum}, and Gold's permanent cap is asserted against Bell's under-20
    reading, so §2.2's recorded divergence cannot drift from the real one.
-7. **The deficit** — proportional at 7, 61 and 100 Cr; saturates at ±63 rather
+7. **`wrap` is Bell on both bytes** — quantity included, so no measurement
+   labelled "Bell" is silently using seelite's shelf.
+8. **The market epoch** — advances once per `MARKET_PERIOD_MIN`, and a phase
+   offset shifts the boundary, which is §5.1's only executable claim.
+9. **The deficit** — proportional at 7, 61 and 100 Cr; saturates at ±63 rather
    than running away; halves over one half-life; **never prices any good the
-   table can produce below one price step**; and **the best intra-system pair —
-   searched, not hardcoded, on independent fluctuation bytes — is exhausted
-   within four runs**, with the decay applied across the minutes each run takes
-   to fly.
+   table can produce below one price step**; **the best legal intra-system pair
+   — searched across goods, economies and independent fluctuation-byte pairs —
+   is exhausted within four runs**, with decay applied across the minutes each
+   run takes to fly; and **the brake's 1.920 reach exceeds the worst legal
+   intra-system ratio of 1.571**.
 
 ### 10.2 Instrument (`scripts/measure-market.ts`)
 
