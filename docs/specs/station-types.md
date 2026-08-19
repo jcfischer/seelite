@@ -70,11 +70,13 @@ is how prose and types drift apart.
   `main.ts`, `system.ts`, `backdrop.ts`, `tests/` and `scripts/`. The audit is
 
   ```
-  grep -rn destination src scripts tests docs --exclude='station-types.md'
+  grep -rniE 'destination|outpost' src scripts tests docs --exclude='station-types.md'
   ```
 
   and it should return **exactly one line**: `ctx.destination` in
-  `src/audio.ts`, which is the WebAudio API. This file is excluded by name
+  `src/audio.ts`, which is the WebAudio API. Both retired words, and
+  case-insensitive: the sweep had capitalised occurrences ("Destination-only
+  law"), and a lowercase pattern cannot see a capitalised survivor. This file is excluded by name
   because a retirement note necessarily contains the word it retires; `grep`'s
   `--exclude` matches the basename, which is why the pattern is written that
   way. (`AudioContext`'s
@@ -106,8 +108,9 @@ Every other row names the section that owns it, for the same reason.
 
 ## 3. Commodity markets: type as a price offset
 
-**Every station trades the full commodity table.** Type does not scope *what*
-is traded; it shifts *at what price*.
+**Every station trades the full *legal* commodity table.** Type does not scope
+what is traded; it shifts at what price. **Illegal goods are the one exception,
+and it is a deliberate one — see §3.4.**
 
 ```
 priceOffsetCr(good) = typeOffset · good.gradient · PRICE_STEP_CR
@@ -151,7 +154,8 @@ hardest to see. **The clamp eats the offset exactly where each type lives.**
 Shipyards require `displayTL ≥ 10`, and `tech = … + (economy ^ 7) + …` means a
 high tech level *requires* a low economy number, so shipyards crowd the bottom
 of the economy scale. **Measured over 40 worlds — 81,920 systems, 14,035
-shipyards, 31,169 refineries:**
+shipyards, 31,169 refineries — by `scripts/measure-clamp-bite.ts`, committed so
+the number can be re-derived rather than trusted:**
 
 | | share where the clamp bites |
 |---|---|
@@ -180,7 +184,7 @@ is a claim about the ordinary range, not about the overflow. Worked:
 | shipyard | Computers | +14 | `−2 × 14 × 0.4` = **−11.2 Cr** | always cheaper, in every system |
 | shipyard | Food | −2 | `−2 × −2 × 0.4` = **+1.6 Cr** | always dearer |
 | refinery | Radioactives | −3 | `+3 × −3 × 0.4` = **−3.6 Cr** | always cheaper |
-| refinery | Narcotics | +29 | `+3 × 29 × 0.4` = **+34.8 Cr** | always dearer |
+| refinery | Computers | +14 | `+3 × 14 × 0.4` = **+16.8 Cr** | always dearer |
 | trade | anything | any | 0 | the system's own price |
 
 No new mechanism and no new table: one scalar per type, multiplied by a gradient
@@ -188,7 +192,8 @@ the commodity table already carries. There is no `stationEconomy` field — a
 station has an offset, not an economy.
 
 **What #7 must decide:** the deltas can push a price below zero or past the
-byte range at the extremes (Narcotics' +29 gradient is the outlier). Elite's
+byte range at the extremes (Narcotics' +29 gradient is the outlier, and it is a
+fence-only good — §3.4). Elite's
 formula wraps at 8 bits by design and its overflow is part of the Narcotics
 gamble; whether the delta wraps with it or is floored is #7's to settle, and §9
 requires whichever it picks to be tested.
@@ -216,6 +221,44 @@ per good is exactly Elite's mechanism, and it cannot express "cheap ore, dear
 bread". The alternative was a per-commodity-group multiplier table, declined
 because it adds a second pricing mechanism to #7 for one item of flavour.
 Recorded as weak joint 5.
+
+### 3.4 The one exception: illegal goods
+
+§3.3 rejects scoping the commodity table because it strands a player's cargo a
+multi-minute round trip from anywhere that would buy it. **Illegal goods are
+scoped anyway**, and the two positions are consistent because the stranding is
+the point in one case and an accident in the other.
+
+- **Legal cargo.** Being unable to sell furs at a refinery punishes not reading
+  a market screen. The player learns nothing, and pays two minutes and a fifth
+  of the drive charge for it. Rejected.
+- **Contraband.** Being unable to sell Narcotics anywhere but a fence *is* the
+  mechanic. A smuggling run is precisely the bet that you can reach a buyer that
+  most stations are not; §5.1.1's shipyard scan is what makes carrying it costly
+  in the meantime, and §5.2's rim-weighted fence distribution is what makes the
+  route worth learning. Remove the scoping and contraband becomes an ordinary
+  commodity with a worse gradient.
+
+So the rule is scoped by **legality**, not by station type as such:
+
+| | legal goods | illegal goods (Narcotics, Firearms, Slaves) |
+|---|---|---|
+| trade station | full table | not traded |
+| refinery, `blackMarket: false` | full table | not traded |
+| refinery, `blackMarket: true` (a *fence*) | full table | **traded** |
+| shipyard | full table | not traded, **and scanned for** |
+
+**The counter-case, engaged rather than waved past.** Fences are a minority of
+systems and rim-weighted (§5.2), so a player who buys contraband may carry it a
+long way. That is the risk being sold, and it has two mitigations already in the
+design: contraband is the high-value-density cargo (Gold, Platinum and Gems are
+sub-tonne and skip the hold check — research §2.2), so carrying it costs little
+capacity, and nothing forces the purchase. What it must **not** become is a
+surprise: #7 owes a legality flag per commodity and the market screen owes a
+visible marker, or the exception degenerates into exactly the unread-screen tax
+§3.3 rejects.
+
+---
 
 ---
 
@@ -399,7 +442,7 @@ and reusing an existing tag is the unsafe move `CLAUDE.md` names explicitly.
 
 ---
 
-### 5.4 A defect this node found: two systems have nowhere to dock
+### 5.4 A defect this node found: about one system in 700 has nowhere to dock
 
 Not introduced here, and not fixed here. Recorded because the fixture committed
 with this spec is what exposed it, and because §5's whole construction assumes
@@ -536,7 +579,8 @@ Two tiers, per the repo's culture.
 - **The extremes behave as #7 decides.** Whatever #7 settles for a delta that
   pushes a price below zero or past the byte range (§3.2), the corpus must
   exercise it — Narcotics at a refinery (`+3 × 29 × 0.4` = +34.8 Cr) is the
-  worst case and belongs in the test by name.
+  worst case and belongs in the test by name, priced at a fence since that is
+  the only place it trades.
 - **`blackMarket` and `spinRpm` move no station.** Guarded by
   `tests/station-orbits.test.ts` against `tests/fixtures/station-orbits.json` —
   791 stations across two full galaxies, captured by
@@ -620,6 +664,7 @@ Two tiers, per the repo's culture.
 5. **A belt refinery sells cheap bread.** §3.3 — staples share the extractive
    gradient, so the +3 that cheapens ore cheapens Food, Furs and Liquor too.
    Flavour debt; the declined repair is named there.
-6. **Two systems in 2,048 have nowhere to dock.** §5.4 — a pre-existing defect
+6. **About one system in 700 has nowhere to dock** — 0.143% measured over 40
+   worlds, roughly three per 2,048-system world. §5.4 — a pre-existing defect
    this node measured rather than introduced, with the fix left to its own node
    because the three candidate answers are a real choice.

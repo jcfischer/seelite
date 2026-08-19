@@ -20,13 +20,13 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { forEachSystem, stationRows } from "./helpers/station-rows";
-import { GALAXY_COUNT } from "../src/galaxy";
+import {
+	ALL_GALAXIES,
+	forEachSystem,
+	stationRows,
+	worldSeeds,
+} from "./helpers/station-rows";
 import baseline from "./fixtures/station-orbits.json";
-
-/** Every galaxy of the world: the census sweeps all 8, where the placement
- *  fixture pins only the two the capture script names. */
-const ALL_GALAXIES = Array.from({ length: GALAXY_COUNT }, (_, i) => i);
 
 describe("station placement is stable against added draws", () => {
 	test("the fixture is a real corpus, not an empty pass", () => {
@@ -56,9 +56,10 @@ describe("station placement is stable against added draws", () => {
  *
  * **It is measured as a rate over many worlds, not as two named systems.**
  * `main.ts` seeds the world from `Math.random()` unless `?seed=` pins it, so
- * there is no "shipped world" whose two bad systems could be listed — every
- * session generates its own. Naming EDSOISLA and ORTITEZA would pin an artefact
- * of this file's fixture seed and say nothing about what a player meets.
+ * there is no "shipped world" whose bad systems could be listed — every session
+ * generates its own. Naming two would pin an artefact of this file's fixture
+ * seed and say nothing about what a player meets. Measured at 0.143% over 40
+ * worlds, roughly three per world.
  *
  * It asserts the defect's **current** extent rather than the invariant, because
  * asserting the invariant today would simply fail. It is meant to break when

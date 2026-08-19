@@ -360,8 +360,9 @@ docking interactions, not three).
 
 The names above were changed by #13 to match `StationType` (see
 `station-types.md` §1 for the umbrella/type distinction — the enum value is
-`trade`, the thing is a "trade station"), and "outpost" was retired as a
-synonym carrying no distinction.
+`trade`, the thing is a "trade station"). The former synonym for the refinery
+type was retired at the same time as a word carrying no distinction — §1 there
+names it and holds the audit.
 
 > **The trade station is not unconditional**, though this table once said
 > "always". A planetless system has nothing to dock at. The measurement, the

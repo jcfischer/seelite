@@ -84,3 +84,23 @@ export function stationRows(
 	});
 	return rows;
 }
+
+/** Every galaxy of a world. The census and the clamp measurement sweep all of
+ *  them; the placement fixture pins only the two its capture script names. */
+export const ALL_GALAXIES: readonly number[] = Array.from(
+	{ length: GALAXY_COUNT },
+	(_, i) => i,
+);
+
+/**
+ * `n` arbitrary but reproducible world seeds.
+ *
+ * Spread by Knuth's multiplicative constant, the same decorrelation `rng.ts`
+ * relies on, because consecutive integers make poor seeds — a generator's first
+ * draw from seeds one apart is nearly the same number, which `rng.ts` documents
+ * at length. Measuring one world would measure one world; `main.ts` picks the
+ * real one with `Math.random()`.
+ */
+export function worldSeeds(n: number): number[] {
+	return Array.from({ length: n }, (_, i) => ((i + 1) * 2654435761) >>> 0);
+}

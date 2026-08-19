@@ -8,7 +8,8 @@
  *
  * ## Two decisions from the spec drive everything here
  *
- * **Systems are multi-station.** 1–3 typed stations, and the types are not
+ * **Systems are multi-station.** 0–3 typed stations — 0 only through the
+ * undockable defect noted on `generateStations` below — and the types are not
  * interchangeable: two identical trade stations 200,000 km apart is just a
  * longer commute for the same transaction. That is what turns in-system travel
  * (#10) from a single crossing into a routing problem and obliges #7 to price
