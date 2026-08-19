@@ -98,16 +98,16 @@ byte extremes here.
 space — 17 goods × 8 economies × 256 fluctuation bytes — by
 `scripts/measure-market.ts`:
 
-- **Sixteen of seventeen goods saturate on 0.00% of rows.** Bell's constants
-  simply never overflow for them, so for all but one good the two arithmetics
-  are the same function.
-- **Narcotics saturated on 97.66%**, and its price span collapsed from
+- **Sixteen of seventeen goods overflow on 0.00% of rows.** Bell's constants
+  simply never leave 0…255 for them, so for all but one good the two
+  arithmetics are the same function.
+- **Narcotics overflowed on 97.66%**, and its price span collapsed from
   0.4–101.6 Cr to 94.0–102.0 Cr.
 
 So the entire disagreement between wrap and clamp lived in one good — and in
 that good it was fatal. §2.3 is what was done about it.
 
-**After §2.3, the table never overflows at all: the measured saturation rate is
+**After §2.3, the table never overflows at all: the measured overflow rate is
 0.00% across every good.** The clamp is therefore a *guarantee* rather than a
 behaviour — it fires nowhere in the shipped table. It is kept, and named as a
 guard that currently cannot fire, because the alternative is leaving the
@@ -133,14 +133,20 @@ Measured fence→fence, with **independent fluctuation bytes per station** (two
 stations have different seeds; pairing them on one byte understates every
 margin):
 
-| Narcotics row | Best margin | In stock | Saturates |
+| Narcotics row | Best margin | In stock | Overflows |
 |---|---|---|---|
 | Bell + wrap | 100.4 Cr/t | 36% | 97.7% |
 | Bell + clamp | **8.0 Cr/t** | 36% | 97.7% |
 | **seelite + clamp** | **81.2 Cr/t** | **64%** | **0%** |
 
-Firearms (36.4 Cr/t) and Slaves (19.2 Cr/t) are untouched by any of this — they
-never overflowed.
+Firearms (39.2 Cr/t, stocked at 38%) and Slaves (22.0 Cr/t, stocked at 100%)
+are untouched by any of this — they never overflowed.
+
+**These are refinery→refinery figures.** A fence is a refinery whose
+`blackMarket` flag is set (`station-types.md` §5.2), and the flag does not enter
+pricing at all — `typeOffset` is a property of the *type* — so fence and
+refinery prices coincide everywhere in this table. The measurement is named for
+what it sweeps rather than for what the fiction calls it.
 
 The retuned row keeps everything the good is for: a positive gradient, so it is
 cheap in Rich Industrial and dear in Poor Agricultural; the largest mask in the
@@ -197,10 +203,16 @@ after three separate measured collapses. Adding `typeOffset × gradient` into th
 byte would reintroduce exactly that: the delta would be eaten at both ends.
 
 **The floor.** A delta can in principle push a price to or below zero, so it is
-floored at one price step. Measured across 17 goods × 3 station types × 8
-economies × 256 fluctuation bytes — 104,448 rows — **the floor fires on 0.54%**.
-That is the number that makes the mechanism a price rule rather than a constant,
-and `tests/market.test.ts` fails if it ever exceeds 1%.
+floored at one price step. Measured across 17 goods × 8 economies × 256
+fluctuation bytes at **the two station types whose offset is non-zero** —
+69,632 rows — **the floor fires on 0.80%**. `tests/market.test.ts` fails if it
+exceeds 1%.
+
+The trade station is excluded from that denominator on purpose. Its offset is
+zero, so its rows *cannot* fire and including them only pads the figure: over
+all three types the same measurement reads 0.54%, which flatters the mechanism
+by a third. The instrument prints both, and the suite asserts separately that a
+trade station's floor never fires.
 
 The suite also asserts the stronger property directly: at every point in the
 domain the observed delta equals `typeOffset × gradient × 0.4` exactly, except
@@ -349,11 +361,13 @@ legal goods only, with independent fluctuation bytes:
 
 Interstellar trade wins on every statistic, so the risk is real but weaker than
 it first appeared. **And the deficit closes it outright.** The best
-shipyard→refinery pair, run repeatedly:
+shipyard→refinery pair, run repeatedly — with §5.2's decay applied across the
+4 minutes each run takes to fly, so the brake is measured against a mark that is
+already fading rather than one that only accumulates:
 
 | System economy | Margins per run (Cr/t) | Runs until unprofitable |
 |---|---|---|
-| 0 | 27.2 → 14.2 → 1.3 | 3 |
+| 0 | 27.2 → 14.2 → 3.0 | 3 |
 | 3 | 27.2 → 10.9 | 2 |
 | 7 | 27.2 → 6.4 | 2 |
 
@@ -376,11 +390,14 @@ separately — but it is worth naming plainly:
 - **Dropped** when `|deficit| < 1` unit, so the save does not grow without bound
   across a long game.
 
-**Waiting must never beat flying.** `MARKET_PERIOD` 30 min and
-`DEFICIT_HALF_LIFE` 20 min exist to enforce that against a full trade run of
-3–5 minutes: parking for a re-roll or a recovery is always dominated by going
-somewhere else. Changing either constant re-opens that exploit, and §10 requires
-the pump measurement to be re-run when they move.
+**Waiting must never beat flying** — stated as the design intent the two
+constants were chosen for, not as a measured result. `MARKET_PERIOD` 30 min and
+`DEFICIT_HALF_LIFE` 20 min are set against a full trade run of 3–5 minutes so
+that parking for a re-roll or a recovery is dominated by going somewhere else.
+**Nothing committed proves it**: the exhaustion measurement exercises the decay
+but not the choice between waiting and flying, which needs the time-aware
+greedy-trader sim §10.3 requires. Until that exists this is an assumption, and
+changing either constant re-opens the exploit with nothing to catch it.
 
 ---
 
@@ -503,7 +520,7 @@ question, still fog on the map, and it reaches far past the economy.
 
 All headless `bun` — none of §1–§9 may require a browser, per #7's own framing.
 
-### 10.1 Suite (`tests/market.test.ts`, 23 tests)
+### 10.1 Suite (`tests/market.test.ts`, 25 tests)
 
 1. **Table integrity** — 17 goods; `baseQuantity` signed for all five negative
    rows; exactly three illegal; the sub-tonne set is Gold/Platinum/Gem-Stones
@@ -511,18 +528,23 @@ All headless `bun` — none of §1–§9 may require a browser, per #7's own fra
 2. **Lane direction, every good** — negative gradient ⇒ cheaper *and* no
    scarcer at Poor Agricultural; positive gradient ⇒ the mirror. Asserted over
    the table, not over two named goods.
-3. **Saturation** — no legal good reaches a byte end anywhere in the domain; the
-   retuned Narcotics row does not either; **Bell's own row does**, on >90% of
-   rows, so the divergence's justification is runnable rather than prose.
+3. **Overflow** — no good in the shipped table reaches a byte end anywhere in
+   the domain, illegal ones included; the retuned Narcotics row cannot, by
+   construction; **Bell's own row does**, on >90% of rows, so the divergence's
+   justification is runnable rather than prose.
 4. **Contraband viability** — the retuned row clears 75 Cr/t and stocks at >50%
    of rows; Bell's row under the clamp falls below 10 Cr/t; Narcotics out-earns
    the best legal good.
-5. **The type offset** — equals `typeOffset × gradient × 0.4` exactly at every
-   point except where the floor intervenes; the floor fires on <1% of rows;
-   quantity is never *below* the trade station's; the fence still stocks
-   contraband; the 63-unit cap holds everywhere.
-6. **The deficit** — proportional at 7, 61 and 100 Cr; never below the floor;
-   **the best intra-system pair is exhausted within four runs**.
+5. **The type offset** — the *unfloored* delta equals `typeOffset × gradient ×
+   0.4` exactly at every point in the domain; the floor fires on <1% of the rows
+   it can reach and never at a trade station; quantity is never *below* the
+   trade station's; all three illegal goods still stock at a refinery; the
+   63-unit cap holds everywhere.
+6. **The deficit** — proportional at 7, 61 and 100 Cr; saturates at ±63 rather
+   than running away; halves over one half-life; cannot invert or zero a price,
+   so it needs no floor of its own; and **the best intra-system pair — searched,
+   not hardcoded — is exhausted within four runs**, with the decay applied
+   across the minutes each run takes to fly.
 
 ### 10.2 Instrument (`scripts/measure-market.ts`)
 
@@ -533,10 +555,15 @@ trusted, in the discipline `scripts/measure-clamp-bite.ts` established:
 bun run scripts/measure-market.ts [worldCount]     # default 8 worlds
 ```
 
-Reports per-good saturation and price spans under both arithmetics; the floor's
-firing rate; intra-system vs interstellar margins over the real generator; runs
-to exhaustion on the best intra-system pair; and contraband margins under wrap
-and clamp.
+Reports per-good overflow rates and price spans under both arithmetics —
+including **Bell's own Narcotics row**, so §2.2's 97.66% and §2.3's whole table
+come from committed code rather than from prose; the floor's firing rate at both
+denominators; intra-system vs interstellar margins over the real generator; and
+runs to exhaustion on the best intra-system pair.
+
+Every figure is computed through `market-math.ts`. Nothing here re-implements
+the price pipeline — an earlier version did, and its floor rate was therefore a
+second measurement that could drift from `TYPE_OFFSET` without failing anything.
 
 ### 10.3 Owed by the implement node
 
@@ -569,6 +596,11 @@ and clamp.
   owes hull prices (§7).
 - **The save/load node** — owes the format the sparse deficit map lives in
   (§5.5) and the permadeath stance (§9).
+- **The implement node** — owes the move of `tests/helpers/market-math.ts` to
+  `src/market.ts`, **and the import rewrite that goes with it**. Today
+  `scripts/` depends on `tests/` for shipping game arithmetic; that direction
+  inverts the moment `src/market.ts` exists, and every importer changes with it.
+  Named here so the move is owned rather than discovered.
 
 ---
 
@@ -590,10 +622,18 @@ and clamp.
    "cheap ore, dear bread". Recorded in `station-types.md` §3.3 as weak joint 5;
    this spec deepens it rather than introducing it.
 5. **`PRICE_ELASTICITY`, `MARKET_PERIOD` and `DEFICIT_HALF_LIFE` are chosen, not
-   derived.** They are set so that waiting never beats flying and the
-   intra-system pair exhausts in 2–3 runs, both of which are measured. The
-   specific values are a first cut, and §10.3's greedy-trader measurement is
-   what should move them.
+   derived**, and only one of their two justifications is measured. The
+   intra-system exhaustion in 2–3 runs *is* measured, with `DEFICIT_HALF_LIFE`
+   in the loop. **"Waiting never beats flying" is not**: no committed code has a
+   time dimension over the whole loop, so §5.5 states a design intent, not a
+   verified exploit boundary. §10.3's greedy-trader sim is what turns it into
+   evidence, and until it exists a later reader should treat that sentence as an
+   assumption.
 6. **The deficit makes market state unreproducible from the seed.** §5.5. The
    first such state in seelite. It is sparse and bounded, but it is a door that
    is now open.
+7. **`stockResponse` carries no floor of its own**, because the ±63 deficit
+   clamp bounds its multiplier at 0.685 and a floor there provably could not
+   fire. The bound is asserted in the suite instead. This is the same objection
+   as weak joint 2 above, resolved the other way — there the unfirable guard is
+   kept because a later good could reach it; here nothing can, so it is gone.

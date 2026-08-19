@@ -11,35 +11,45 @@
  * later edit that breaks one fails here rather than in play:
  *
  * - the trade lanes run the researched direction (§2.4);
- * - saturation touches no good but Narcotics (§2.2);
+ * - overflow touches no good but Bell's Narcotics row (§2.2);
  * - the retuned Narcotics row still pays and still stocks (§2.3);
  * - the type offset survives at the extremes and never empties a shelf (§3);
  * - the stock deficit brakes a repeated run rather than merely nudging it (§5).
+ *
+ * Every sweep covers the **whole** fluctuation domain. An earlier version
+ * strided by 8 and so tested nine of the seventeen goods at zero fluctuation
+ * only — see `ALL_FLUCT` in `helpers/market-math.ts`.
  */
 
 import { describe, expect, test } from "bun:test";
 import {
+	ALL_ECONOMIES,
+	ALL_FLUCT,
+	ALL_STATIONS,
 	COMMODITIES,
 	type Commodity,
+	DEFICIT_HALF_LIFE_MIN,
+	DEFICIT_MAX,
 	NARCOTICS_BELL,
 	NARCOTICS_RETUNE,
+	OFFSET_STATIONS,
 	PRICE_ELASTICITY,
+	MIN_STOCK_RESPONSE_FACTOR,
 	PRICE_STEP_CR,
 	QUANTITY_CAP,
 	TYPE_OFFSET,
+	addDeficit,
+	bestMargin,
+	decayDeficit,
 	marketRow,
 	stockResponse,
 } from "./helpers/market-math";
 
-const ECONOMIES = [0, 1, 2, 3, 4, 5, 6, 7];
-/** Every 8th byte. Every mask in the table is a run of low bits, and the
- *  coarsest of them (0x70, 0x78) steps by 8, so this sweep is exact for them
- *  and a strict superset of the finer masks' behaviour. */
-const FLUCT = Array.from({ length: 32 }, (_, i) => i * 8);
-const ALL_FLUCT = Array.from({ length: 256 }, (_, i) => i);
-
 const byName = (name: string): Commodity =>
 	COMMODITIES.find((c) => c.name === name) as Commodity;
+
+/** Buyable, hold-consuming goods — the population §8's pump actually trades. */
+const TRADEABLE = COMMODITIES.filter((c) => !c.sellOnly && c.unit === "t");
 
 describe("the commodity table", () => {
 	test("is Bell's 17 goods", () => {
@@ -80,8 +90,8 @@ describe("the commodity table", () => {
 	test("Alien Items can be sold but never bought", () => {
 		const alien = byName("Alien Items");
 		expect(alien.sellOnly).toBe(true);
-		for (const economy of ECONOMIES)
-			for (const fluct of FLUCT)
+		for (const economy of ALL_ECONOMIES)
+			for (const fluct of ALL_FLUCT)
 				expect(marketRow(alien, economy, fluct, "trade").quantity).toBe(0);
 	});
 });
@@ -90,20 +100,24 @@ describe("the trade lanes run the researched direction", () => {
 	test("negative-gradient goods are cheap and plentiful at Poor Agricultural", () => {
 		for (const commodity of COMMODITIES) {
 			if (commodity.gradient >= 0 || commodity.sellOnly) continue;
-			const rich = marketRow(commodity, 0, 0, "trade");
-			const poor = marketRow(commodity, 7, 0, "trade");
-			expect(poor.priceCr).toBeLessThan(rich.priceCr);
-			expect(poor.quantity).toBeGreaterThanOrEqual(rich.quantity);
+			for (const fluct of ALL_FLUCT) {
+				const rich = marketRow(commodity, 0, fluct, "trade");
+				const poor = marketRow(commodity, 7, fluct, "trade");
+				expect(poor.priceCr).toBeLessThan(rich.priceCr);
+				expect(poor.quantity).toBeGreaterThanOrEqual(rich.quantity);
+			}
 		}
 	});
 
 	test("positive-gradient goods are cheap and plentiful at Rich Industrial", () => {
 		for (const commodity of COMMODITIES) {
 			if (commodity.gradient <= 0 || commodity.sellOnly) continue;
-			const rich = marketRow(commodity, 0, 0, "trade");
-			const poor = marketRow(commodity, 7, 0, "trade");
-			expect(rich.priceCr).toBeLessThan(poor.priceCr);
-			expect(rich.quantity).toBeGreaterThanOrEqual(poor.quantity);
+			for (const fluct of ALL_FLUCT) {
+				const rich = marketRow(commodity, 0, fluct, "trade");
+				const poor = marketRow(commodity, 7, fluct, "trade");
+				expect(rich.priceCr).toBeLessThan(poor.priceCr);
+				expect(rich.quantity).toBeGreaterThanOrEqual(poor.quantity);
+			}
 		}
 	});
 
@@ -116,96 +130,78 @@ describe("the trade lanes run the researched direction", () => {
 		const homeward =
 			marketRow(furs, 0, 0, "trade").priceCr -
 			marketRow(furs, 7, 0, "trade").priceCr;
-		expect(outward).toBeGreaterThan(30);
-		expect(homeward).toBeGreaterThan(20);
+		expect(outward).toBeCloseTo(39.2, 1);
+		expect(homeward).toBeCloseTo(25.2, 1);
 	});
 });
 
-describe("§2.2 saturation is confined to one good", () => {
-	test("no legal good ever reaches a byte end", () => {
-		for (const commodity of COMMODITIES) {
-			if (commodity.name === "Narcotics") continue;
-			for (const economy of ECONOMIES)
+describe("§2.2 overflow is confined to Bell's Narcotics row", () => {
+	test("no good in the shipped table reaches a byte end", () => {
+		// Not "no legal good": Slaves and Firearms are illegal and are inside
+		// this assertion, which is the point — the retune left them alone.
+		for (const commodity of COMMODITIES)
+			for (const economy of ALL_ECONOMIES)
 				for (const fluct of ALL_FLUCT)
-					expect(
-						marketRow(commodity, economy, fluct, "trade").priceSaturated,
-					).toBe(false);
-		}
+					for (const station of ALL_STATIONS)
+						expect(
+							marketRow(commodity, economy, fluct, station).priceOverflowed,
+						).toBe(false);
 	});
 
-	test("the retuned Narcotics row does not saturate either", () => {
+	test("the retuned Narcotics row cannot overflow, by construction", () => {
 		const narcotics = byName("Narcotics");
 		const worst = narcotics.basePrice + narcotics.mask + 7 * narcotics.gradient;
 		expect(worst).toBe(NARCOTICS_RETUNE.maxPriceByte);
 		expect(worst).toBeLessThanOrEqual(255);
-		for (const economy of ECONOMIES)
-			for (const fluct of ALL_FLUCT)
-				expect(
-					marketRow(narcotics, economy, fluct, "trade").priceSaturated,
-				).toBe(false);
 	});
 
-	test("Bell's own row does saturate — the reason for the divergence", () => {
+	test("Bell's own row does overflow — the reason for the divergence", () => {
 		// The rejected form, scored. Without this the spec's case for retuning is
 		// prose, and a later editor restoring Bell's constants gets no warning.
-		let saturated = 0;
+		let overflowed = 0;
 		let rows = 0;
-		for (const economy of ECONOMIES)
+		for (const economy of ALL_ECONOMIES)
 			for (const fluct of ALL_FLUCT) {
-				if (marketRow(NARCOTICS_BELL, economy, fluct, "trade").priceSaturated)
-					saturated++;
+				if (marketRow(NARCOTICS_BELL, economy, fluct, "trade").priceOverflowed)
+					overflowed++;
 				rows++;
 			}
-		expect(saturated / rows).toBeGreaterThan(0.9);
+		expect(overflowed / rows).toBeGreaterThan(0.9);
 	});
 });
 
-/** Best fence→fence margin, with independent fluctuation bytes per station —
- *  two stations have different seeds, so pairing them on one byte understates
- *  every margin. */
-function fenceMargin(commodity: Commodity): {
-	margin: number;
-	inStock: number;
-} {
-	let margin = 0;
-	let inStock = 0;
-	let rows = 0;
-	for (const buyEconomy of ECONOMIES)
-		for (const buyFluct of FLUCT) {
-			const buy = marketRow(commodity, buyEconomy, buyFluct, "refinery");
-			rows++;
-			if (buy.quantity === 0) continue;
-			inStock++;
-			for (const sellEconomy of ECONOMIES)
-				for (const sellFluct of FLUCT) {
-					const sell = marketRow(commodity, sellEconomy, sellFluct, "refinery");
-					margin = Math.max(margin, sell.priceCr - buy.priceCr);
-				}
-		}
-	return { margin, inStock: inStock / rows };
-}
-
 describe("§2.3 the retuned Narcotics keeps the smuggling trade alive", () => {
+	// These are refinery→refinery numbers. A fence is a refinery whose
+	// `blackMarket` flag is set (station-types.md §5.2), and the flag does not
+	// enter pricing at all — `typeOffset` is a property of the type — so the two
+	// coincide for every figure here. Named for what is measured.
 	test("it pays, and it is stocked", () => {
-		const { margin, inStock } = fenceMargin(byName("Narcotics"));
+		const { margin, inStock } = bestMargin(
+			byName("Narcotics"),
+			"refinery",
+			"refinery",
+		);
 		expect(margin).toBeGreaterThan(NARCOTICS_RETUNE.minMarginCr);
 		expect(inStock).toBeGreaterThan(NARCOTICS_RETUNE.minInStock);
 	});
 
-	test("Bell's row under saturation would not — the collapse being avoided", () => {
-		const { margin } = fenceMargin(NARCOTICS_BELL);
-		expect(margin).toBeLessThan(10);
+	test("Bell's row under the clamp would not — the collapse being avoided", () => {
+		expect(
+			bestMargin(NARCOTICS_BELL, "refinery", "refinery").margin,
+		).toBeLessThan(10);
 	});
 
 	test("contraband stays worth more than the best legal good", () => {
 		// station-types.md §3.4 sells contraband as a risk premium. If an
 		// ordinary good out-earns it, the fence geography buys nothing.
-		const best = Math.max(
-			...COMMODITIES.filter(
-				(c) => !c.illegal && !c.sellOnly && c.unit === "t",
-			).map((c) => fenceMargin(c).margin),
+		const bestLegal = Math.max(
+			...TRADEABLE.filter((c) => !c.illegal).map(
+				(c) => bestMargin(c, "refinery", "refinery").margin,
+			),
 		);
-		expect(fenceMargin(byName("Narcotics")).margin).toBeGreaterThan(best);
+		expect(
+			bestMargin(byName("Narcotics"), "refinery", "refinery").margin,
+		).toBeGreaterThan(bestLegal);
 	});
 });
 
@@ -227,52 +223,55 @@ describe("§3 the type offset", () => {
 		// The property that disqualified the economy-shift form (#13 §3.2): at
 		// every point in the domain, the delta is exactly what the offset says.
 		for (const commodity of COMMODITIES)
-			for (const economy of ECONOMIES)
-				for (const fluct of FLUCT) {
-					const base = marketRow(commodity, economy, fluct, "trade").priceCr;
-					for (const station of ["refinery", "shipyard"] as const) {
-						const shifted = marketRow(
-							commodity,
-							economy,
-							fluct,
-							station,
-						).priceCr;
+			for (const economy of ALL_ECONOMIES)
+				for (const fluct of ALL_FLUCT) {
+					const base = marketRow(commodity, economy, fluct, "trade");
+					for (const station of OFFSET_STATIONS) {
+						const shifted = marketRow(commodity, economy, fluct, station);
 						const expected =
 							TYPE_OFFSET[station] * commodity.gradient * PRICE_STEP_CR;
-						// Equality except where the floor legitimately intervenes.
-						if (base + expected >= PRICE_STEP_CR)
-							expect(shifted - base).toBeCloseTo(expected, 6);
-						else expect(shifted).toBeCloseTo(PRICE_STEP_CR, 6);
+						expect(
+							shifted.unflooredPriceCr - base.unflooredPriceCr,
+						).toBeCloseTo(expected, 6);
+						// …and the floor is the only thing that ever intervenes.
+						if (!shifted.floorFired)
+							expect(shifted.priceCr - base.priceCr).toBeCloseTo(expected, 6);
+						else expect(shifted.priceCr).toBeCloseTo(PRICE_STEP_CR, 6);
 					}
 				}
 	});
 
-	test("the floor fires on well under 1% of rows", () => {
-		// A floor that fires often is a price rule that is a constant, which is
-		// the failure #13 measured and wrote into the map's constraints.
+	test("the floor fires on well under 1% of the rows it can reach", () => {
+		// Measured over the two types the rule applies to. Including `trade`
+		// pads the denominator with rows where the offset is 0 and the floor is
+		// unreachable by construction, which flatters the figure.
 		let fired = 0;
 		let rows = 0;
 		for (const commodity of COMMODITIES)
-			for (const station of ["trade", "refinery", "shipyard"] as const)
-				for (const economy of ECONOMIES)
+			for (const station of OFFSET_STATIONS)
+				for (const economy of ALL_ECONOMIES)
 					for (const fluct of ALL_FLUCT) {
-						const base = marketRow(commodity, economy, fluct, "trade").priceCr;
-						const delta =
-							TYPE_OFFSET[station] * commodity.gradient * PRICE_STEP_CR;
-						if (base + delta < PRICE_STEP_CR) fired++;
+						if (marketRow(commodity, economy, fluct, station).floorFired)
+							fired++;
 						rows++;
 					}
 		expect(fired / rows).toBeLessThan(0.01);
+		// The trade station's offset is zero, so its floor can never fire.
+		for (const commodity of COMMODITIES)
+			for (const economy of ALL_ECONOMIES)
+				expect(marketRow(commodity, economy, 0, "trade").floorFired).toBe(
+					false,
+				);
 	});
 
 	test("never makes a good scarcer than the trade station", () => {
 		// The one-sided quantity delta. The symmetric form empties the fence's
 		// contraband shelf, which is the reason it is one-sided.
 		for (const commodity of COMMODITIES)
-			for (const economy of ECONOMIES)
-				for (const fluct of FLUCT) {
+			for (const economy of ALL_ECONOMIES)
+				for (const fluct of ALL_FLUCT) {
 					const base = marketRow(commodity, economy, fluct, "trade").quantity;
-					for (const station of ["refinery", "shipyard"] as const)
+					for (const station of OFFSET_STATIONS)
 						expect(
 							marketRow(commodity, economy, fluct, station).quantity,
 						).toBeGreaterThanOrEqual(base);
@@ -280,20 +279,17 @@ describe("§3 the type offset", () => {
 	});
 
 	test("the fence still stocks contraband under the quantity delta", () => {
-		const narcotics = byName("Narcotics");
-		const stocked = ECONOMIES.flatMap((economy) =>
-			FLUCT.map(
-				(fluct) => marketRow(narcotics, economy, fluct, "refinery").quantity,
-			),
-		).filter((q) => q > 0);
-		expect(stocked.length).toBeGreaterThan(0);
+		for (const good of ["Narcotics", "Firearms", "Slaves"]) {
+			const { inStock } = bestMargin(byName(good), "refinery", "refinery");
+			expect(inStock).toBeGreaterThan(0);
+		}
 	});
 
 	test("quantity never exceeds Bell's 63-unit cap", () => {
 		for (const commodity of COMMODITIES)
-			for (const economy of ECONOMIES)
+			for (const economy of ALL_ECONOMIES)
 				for (const fluct of ALL_FLUCT)
-					for (const station of ["trade", "refinery", "shipyard"] as const) {
+					for (const station of ALL_STATIONS) {
 						const q = marketRow(commodity, economy, fluct, station).quantity;
 						expect(q).toBeGreaterThanOrEqual(0);
 						expect(q).toBeLessThanOrEqual(QUANTITY_CAP);
@@ -301,10 +297,10 @@ describe("§3 the type offset", () => {
 	});
 });
 
-describe("§5 the stock deficit brakes a repeated run", () => {
-	test("buying raises the price and selling lowers it, proportionally", () => {
-		// Proportional, not a flat byte: a flat shift would move a ~7 Cr good by
-		// more than its entire economy sweep for one hold of cargo.
+describe("§5 the stock deficit", () => {
+	test("moves price proportionally, so cheap goods are not wrecked", () => {
+		// A flat byte shift would move a ~7 Cr good by more than its entire
+		// economy sweep for one hold of cargo.
 		for (const price of [7, 61, 100]) {
 			expect(stockResponse(price, 20)).toBeCloseTo(
 				price * (1 + PRICE_ELASTICITY),
@@ -318,32 +314,71 @@ describe("§5 the stock deficit brakes a repeated run", () => {
 		}
 	});
 
-	test("it never prices a good below the floor", () => {
-		expect(stockResponse(5, -1000)).toBeCloseTo(PRICE_STEP_CR, 6);
+	test("saturates at the cap rather than running away", () => {
+		expect(addDeficit(60, 40)).toBe(DEFICIT_MAX);
+		expect(addDeficit(-60, -40)).toBe(-DEFICIT_MAX);
+		// …and a price built from a runaway deficit is still bounded.
+		expect(stockResponse(61, 10_000)).toBeCloseTo(
+			stockResponse(61, DEFICIT_MAX),
+			6,
+		);
 	});
 
-	test("the best intra-system pair is exhausted within four runs", () => {
+	test("cannot invert or zero a price, so it needs no floor of its own", () => {
+		// The ±63 clamp bounds the multiplier at 0.685, so §3's floor is the only
+		// one in the pipeline. Asserted rather than guarded against.
+		expect(MIN_STOCK_RESPONSE_FACTOR).toBeCloseTo(0.685, 6);
+		expect(MIN_STOCK_RESPONSE_FACTOR).toBeGreaterThan(0);
+		for (const price of [PRICE_STEP_CR, 5, 61, 102])
+			expect(stockResponse(price, -1000)).toBeCloseTo(
+				price * MIN_STOCK_RESPONSE_FACTOR,
+				6,
+			);
+	});
+
+	test("decays by half over one half-life", () => {
+		expect(decayDeficit(40, DEFICIT_HALF_LIFE_MIN)).toBeCloseTo(20, 6);
+		expect(decayDeficit(40, 2 * DEFICIT_HALF_LIFE_MIN)).toBeCloseTo(10, 6);
+		expect(decayDeficit(40, 0)).toBeCloseTo(40, 6);
+	});
+
+	test("exhausts the best intra-system pair within four runs", () => {
 		// The reason the shipyard→refinery loop does not collapse the galaxy into
-		// single-system trading. Removing the deficit reopens that, which is why
-		// this is a test and not a comment.
-		const computers = byName("Computers");
+		// single-system trading (§5.4). The pair is *searched*, not hardcoded, so
+		// a retune that promotes another good keeps this pointed at the real
+		// best arb rather than at a stale one.
 		const HOLD_T = 20;
+		const RUN_MINUTES = 4; // §8: a full run is 3–5 minutes.
+		const ECONOMY = 3;
+
+		let bestGood = TRADEABLE[0];
+		let bestSpread = Number.NEGATIVE_INFINITY;
+		for (const commodity of TRADEABLE) {
+			const buy = marketRow(commodity, ECONOMY, 0, "shipyard");
+			if (buy.quantity === 0) continue;
+			const spread =
+				marketRow(commodity, ECONOMY, 0, "refinery").priceCr - buy.priceCr;
+			if (spread > bestSpread) {
+				bestSpread = spread;
+				bestGood = commodity;
+			}
+		}
+		expect(bestSpread).toBeGreaterThan(0);
+
+		const buyBase = marketRow(bestGood, ECONOMY, 0, "shipyard").priceCr;
+		const sellBase = marketRow(bestGood, ECONOMY, 0, "refinery").priceCr;
 		let bought = 0;
 		let sold = 0;
 		let runs = 0;
 		while (runs < 20) {
-			const buy = stockResponse(
-				marketRow(computers, 3, 0x7a, "shipyard").priceCr,
-				bought,
-			);
-			const sell = stockResponse(
-				marketRow(computers, 3, 0x1c, "refinery").priceCr,
-				-sold,
-			);
-			if (sell - buy <= 0) break;
+			if (stockResponse(sellBase, -sold) - stockResponse(buyBase, bought) <= 0)
+				break;
 			runs++;
-			bought += HOLD_T;
-			sold += HOLD_T;
+			// Time passes while the run is flown, so the mark left by the previous
+			// run has already begun to fade. Without this the exhaustion count is
+			// independent of DEFICIT_HALF_LIFE, and the constant is untested.
+			bought = addDeficit(decayDeficit(bought, RUN_MINUTES), HOLD_T);
+			sold = addDeficit(decayDeficit(sold, RUN_MINUTES), HOLD_T);
 		}
 		expect(runs).toBeGreaterThan(0);
 		expect(runs).toBeLessThanOrEqual(4);

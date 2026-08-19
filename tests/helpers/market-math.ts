@@ -288,14 +288,49 @@ export type ByteMode = "wrap" | "saturate";
 const closeByte = (v: number, mode: ByteMode): number =>
 	mode === "wrap" ? ((v % 256) + 256) % 256 : clamp(v, 0, 255);
 
+/**
+ * The whole fluctuation domain.
+ *
+ * **Sweep this, not a stride.** The first version of the suite swept every 8th
+ * byte on the reasoning that the coarse masks (0x70, 0x78) step by 8 — but
+ * `8k & 0x01`, `& 0x03` and `& 0x07` are identically zero, so nine of the
+ * seventeen goods were exercised at zero fluctuation only, and the comment
+ * claiming a "strict superset" had it exactly backwards. 256 values is cheap;
+ * the shortcut cost more than it saved.
+ */
+export const ALL_FLUCT: readonly number[] = Array.from(
+	{ length: 256 },
+	(_, i) => i,
+);
+
+/** Economy runs 0…7, and every sweep in the suite covers all of it. */
+export const ALL_ECONOMIES: readonly number[] = [0, 1, 2, 3, 4, 5, 6, 7];
+
+/** The two types whose offset is non-zero — the only ones §3's floor can reach. */
+export const OFFSET_STATIONS: readonly StationTypeKey[] = [
+	"refinery",
+	"shipyard",
+];
+export const ALL_STATIONS: readonly StationTypeKey[] = [
+	"trade",
+	"refinery",
+	"shipyard",
+];
+
 export interface MarketRow {
 	commodity: Commodity;
 	/** Credits per unit, before any stock-deficit response. */
 	priceCr: number;
+	/** The same price before §3's floor — what the floor is measured against. */
+	unflooredPriceCr: number;
 	/** Units on the shelf, 0…63. */
 	quantity: number;
-	/** True when the byte hit an end and the mode changed the result. */
-	priceSaturated: boolean;
+	/** True when the raw byte left 0…255, whichever mode closed it.
+	 *  Named for the *input* condition rather than for what `saturate` does to
+	 *  it, because it is set under `wrap` too. */
+	priceOverflowed: boolean;
+	/** True when §3's floor changed the price. */
+	floorFired: boolean;
 }
 
 /**
@@ -308,6 +343,11 @@ export interface MarketRow {
  * - **quantity** in units, and **only when it is positive**, so a type never
  *   makes a good scarcer. The symmetric form empties the fence's contraband
  *   shelf, which is measured rather than argued in the instrument.
+ *
+ * Everything a caller might want to measure is returned from here rather than
+ * recomputed outside. The first instrument hand-rolled the floor check from the
+ * raw byte with its own copy of `TYPE_OFFSET`, which is precisely the second
+ * copy this module exists to prevent.
  */
 export function marketRow(
 	commodity: Commodity,
@@ -322,13 +362,12 @@ export function marketRow(
 
 	const rawPrice = commodity.basePrice + changing + product;
 	const closedPrice = closeByte(rawPrice, mode);
-	const priceSaturated = closedPrice !== rawPrice;
+	const priceOverflowed = closedPrice !== rawPrice;
 
 	// §3: credits, after the clamp, floored at one price step.
-	const priceCr = Math.max(
-		PRICE_STEP_CR,
-		closedPrice * PRICE_STEP_CR + offset * commodity.gradient * PRICE_STEP_CR,
-	);
+	const unflooredPriceCr =
+		closedPrice * PRICE_STEP_CR + offset * commodity.gradient * PRICE_STEP_CR;
+	const priceCr = Math.max(PRICE_STEP_CR, unflooredPriceCr);
 
 	// Bell clips a negative quantity to zero and caps at 63; the saturating read
 	// of that is a straight clamp.
@@ -342,7 +381,56 @@ export function marketRow(
 		? 0
 		: clamp(baseQuantity + quantityDelta, 0, QUANTITY_CAP);
 
-	return { commodity, priceCr, quantity, priceSaturated };
+	return {
+		commodity,
+		priceCr,
+		unflooredPriceCr,
+		quantity,
+		priceOverflowed,
+		floorFired: unflooredPriceCr < PRICE_STEP_CR,
+	};
+}
+
+/**
+ * Best per-unit margin buying one good at a station of `buyStation` type and
+ * selling it at a `sellStation` one, over the whole (economy, fluct) domain.
+ *
+ * The buy and sell sides are searched **independently** — two stations have
+ * different seeds, so their fluctuation bytes are unrelated, and a paired sweep
+ * both understates the margin and costs a 4-million-iteration cross product for
+ * no gain. `minBuy` is restricted to rows that actually carry stock; `maxSell`
+ * is not, because selling needs no shelf.
+ *
+ * Shared by the suite and the instrument so §2.3's table and the test guarding
+ * it are the same measurement rather than two that agree today.
+ */
+export function bestMargin(
+	commodity: Commodity,
+	buyStation: StationTypeKey,
+	sellStation: StationTypeKey,
+	mode: ByteMode = "saturate",
+): { margin: number; inStock: number } {
+	let minBuy = Number.POSITIVE_INFINITY;
+	let maxSell = 0;
+	let stocked = 0;
+	let rows = 0;
+	for (const economy of ALL_ECONOMIES)
+		for (const fluct of ALL_FLUCT) {
+			const buy = marketRow(commodity, economy, fluct, buyStation, mode);
+			rows++;
+			if (buy.quantity > 0) {
+				stocked++;
+				minBuy = Math.min(minBuy, buy.priceCr);
+			}
+			maxSell = Math.max(
+				maxSell,
+				marketRow(commodity, economy, fluct, sellStation, mode).priceCr,
+			);
+		}
+	return {
+		margin: stocked === 0 ? 0 : maxSell - minBuy,
+		inStock: stocked / rows,
+	};
 }
 
 /**
@@ -357,8 +445,42 @@ export function marketRow(
 export const PRICE_ELASTICITY = 0.1;
 export const HOLD_REFERENCE_T = 20;
 
+/** §5.1: how often the base market re-rolls, in minutes of game time. */
+export const MARKET_PERIOD_MIN = 30;
+/** §5.2: how fast the player's mark on a market fades, in minutes. */
+export const DEFICIT_HALF_LIFE_MIN = 20;
+/** §5.2: the deficit cannot exceed Bell's quantity cap in either direction. */
+export const DEFICIT_MAX = QUANTITY_CAP;
+
+/** §5.2's exponential decay, applied lazily on read from `updatedAt`. */
+export const decayDeficit = (deficit: number, elapsedMin: number): number =>
+	deficit * 2 ** (-elapsedMin / DEFICIT_HALF_LIFE_MIN);
+
+/** §5.2's accumulation, which saturates at the cap rather than running away. */
+export const addDeficit = (deficit: number, units: number): number =>
+	clamp(deficit + units, -DEFICIT_MAX, DEFICIT_MAX);
+
+/**
+ * §5.1: which market epoch a game time falls in for one station. The `phase`
+ * term staggers stations so every market in a system does not flip together.
+ */
+export const marketEpoch = (phaseMin: number, gameTimeMin: number): number =>
+	Math.floor((gameTimeMin + phaseMin) / MARKET_PERIOD_MIN);
+
+/**
+ * **No floor here, deliberately.** The ±`DEFICIT_MAX` clamp bounds the
+ * multiplier at `1 − 0.1 × 63 / 20` = 0.685, so the response can never invert,
+ * zero, or push a price below §3's floor — it can only ever scale it by between
+ * 0.685 and 1.315. A `Math.max(PRICE_STEP_CR, …)` here would be a guard that
+ * provably cannot fire, which is the dead weight `station-types.md` §5.2
+ * objects to. The bound is asserted in the suite instead.
+ */
 export const stockResponse = (priceCr: number, deficit: number): number =>
-	Math.max(
-		PRICE_STEP_CR,
-		priceCr * (1 + (PRICE_ELASTICITY * deficit) / HOLD_REFERENCE_T),
-	);
+	priceCr *
+	(1 +
+		(PRICE_ELASTICITY * clamp(deficit, -DEFICIT_MAX, DEFICIT_MAX)) /
+			HOLD_REFERENCE_T);
+
+/** The tightest the response can ever squeeze a price — see `stockResponse`. */
+export const MIN_STOCK_RESPONSE_FACTOR =
+	1 - (PRICE_ELASTICITY * DEFICIT_MAX) / HOLD_REFERENCE_T;
