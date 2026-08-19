@@ -38,7 +38,7 @@ import { type Vec3, length, scale, sub, v3 } from "../src/vec3";
  *  restated, for the same reason the probes read their constants off the page. */
 const DT = MAX_DT;
 
-/** Straight-in, full throttle, one mass at the destination: the geometry §2.3's
+/** Straight-in, full throttle, one mass at the target: the geometry §2.3's
  *  table is stated against, flown with the clamp in force the way the game
  *  flies it. Returns the seconds elapsed, or `null` if it never arrived.
  *
@@ -48,7 +48,7 @@ const DT = MAX_DT;
  *  other in `tests/cruise.test.ts`. */
 function flownSeconds(legAu: number, params: CruiseParams): number | null {
 	const target = { pos: v3(), radiusKm: 1.2 };
-	// A point-like mass at the destination: the law reads distances, not radii,
+	// A point-like mass at the target: the law reads distances, not radii,
 	// and a real planet radius would end the run on its surface (`SURFACE_MARGIN`)
 	// before the drop radius was reached.
 	const masses = [{ id: "body", pos: v3(), radiusKm: 1 }];

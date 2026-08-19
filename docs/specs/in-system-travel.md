@@ -54,7 +54,7 @@ travel-pacing choice.
 ## 1. The regime
 
 > **Amended by #14 (§11.1).** The exit clamp is on velocity **relative to the
-> destination**, not absolute.
+> target**, not absolute.
 
 **Cruise is a third flight regime**, alongside #5's assist-on and assist-off.
 It is not a mode of either.
@@ -84,11 +84,11 @@ assist-on and assist-off; cruise is a distinct dynamic that owes its own.
 ## 2. The speed law
 
 > **Amended by #14 (§11.2, §11.4, §11.6).** The law is keyed to the *nearer* of
-> the mass and the destination; a body's surface ends cruise; `v_max` and the
+> the mass and the target; a body's surface ends cruise; `v_max` and the
 > exponent are now 23 c and 0.60.
 
 Speed scales with distance to the **nearest star or planet** — not to the
-destination, and not counting moons, stations or belts.
+target, and not counting moons, stations or belts.
 
 ```
 v(d) = clamp(v_max · (d / d_ref)^0.75, v_min, v_max)
@@ -99,10 +99,10 @@ v(d) = clamp(v_max · (d / d_ref)^0.75, v_min, v_max)
   v_min  = 100 km/s          (safety floor; the drop-out fires well above it)
 ```
 
-### 2.1 Why nearest-mass and not destination
+### 2.1 Why nearest-mass and not target
 
 At 20 c the ship covers **600,000 km per 0.1 s tick** (`MAX_DT` in `main.ts`).
-A planet is ~6,000 km across. Under a destination-only law the ship would
+A planet is ~6,000 km across. Under a target-only law the ship would
 routinely pass clean through worlds between simulation steps, and preserving
 that requires swept collision tests to defend behaviour nobody wants.
 
@@ -249,13 +249,13 @@ symmetric interdiction (§4) has no targets in either direction.
 **Free cruise**: the ship can point anywhere and go. Target selection is a
 convenience that drives the readouts and the auto-drop, never a rail.
 
-Destination-locked cruise was rejected: it would make the system a menu with
+Target-locked cruise was rejected: it would make the system a menu with
 scenery, and it forecloses three things already committed — chasing an NPC to
 interdict it, running somewhere arbitrary to evade one, and choosing to go look
 at a scenery body.
 
 **An in-system map panel** provides selection and route preview. #6 made systems
-multi-destination (up to three stations plus 3–7 planets and a belt), which is
+multi-station (up to three stations plus 3–7 planets and a belt), which is
 more than a target-cycling key handles well.
 
 > **Scope note for #11.** The in-system map and the galaxy map are the same
@@ -380,7 +380,7 @@ A station on a 1 AU orbit is carried around its star at **~30 km/s** — fifteen
 times #5's 2 km/s assist cap. Two consequences, both load-bearing:
 
 - The drop-out threshold and §1's exit clamp are measured **in the
-  destination's frame**. Clamping absolute velocity leaves the destination
+  target's frame**. Clamping absolute velocity leaves the target
   receding at 28 km/s, which normal flight can never close: the arrival
   succeeds and docking becomes impossible.
 - The **flight assist** damps toward the nearest body within `NEAR_FAR_KM`
@@ -392,9 +392,9 @@ times #5's 2 km/s assist cap. Two consequences, both load-bearing:
 in that frame, and a docking spec written in star-centred velocities would be
 describing a different problem.
 
-### 11.2 The law reads the destination too
+### 11.2 The law reads the target too
 
-§2.1's argument against a destination-keyed law stands — it flies through worlds
+§2.1's argument against a target-keyed law stands — it flies through worlds
 between ticks — but the law is now `min` of the two distances. The mass distance
 still bounds the curve, so nothing tunnels; the target distance only ever makes
 the ship slower.

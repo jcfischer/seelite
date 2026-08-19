@@ -297,7 +297,7 @@ outward — the direction of increasing profit and increasing danger.
 
 ## 6. System contents
 
-Systems are **multi-destination**. This was the most consequential choice on
+Systems are **multi-station**. This was the most consequential choice on
 the node: it converts in-system travel (#10) from a single crossing into a
 routing problem, and obliges #7 to price per *station* rather than per system.
 
@@ -512,7 +512,7 @@ Recorded deliberately, not to reopen:
 
 - **No correctness oracle.** Dropping Bell's seed cost the best verification
   asset available (§1.1). Property tests are weaker than a byte-exact diff.
-- **Multi-destination systems are the expensive choice.** They enlarge #7
+- **Multi-station systems are the expensive choice.** They enlarge #7
   (per-station markets), #9 (per-type docking) and #10 (routing, not a single
   crossing) simultaneously. This is the decision most likely to feel costly
   later.

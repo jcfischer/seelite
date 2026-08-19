@@ -576,7 +576,7 @@ describe("body velocities, which arrival turned out to depend on", () => {
 	// #14 flew the cruise regime and found that arriving is a *relative* problem:
 	// a station on a 1 AU orbit is carried around the star at ~30 km/s, fifteen
 	// times #5's 2 km/s assist cap. Everything about the drop-out and the exit
-	// clamp is stated in the destination's frame because of it, and that frame
+	// clamp is stated in the target's frame because of it, and that frame
 	// comes from here.
 	const world = makeWorld(SEED);
 
@@ -629,7 +629,7 @@ describe("body velocities, which arrival turned out to depend on", () => {
 	});
 
 	test("an unknown body is an error rather than a zero velocity", () => {
-		// A zero would be a silent claim that the destination is stationary, which
+		// A zero would be a silent claim that the target is stationary, which
 		// is exactly the assumption that made the first cruise approach unarrivable.
 		expect(() => bodyVelocity(world.system, "no-such-body", 0)).toThrow();
 	});

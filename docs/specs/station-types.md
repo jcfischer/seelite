@@ -10,18 +10,20 @@
 [#9](https://github.com/jcfischer/seelite/issues/9) (docking)
 
 [#6](https://github.com/jcfischer/seelite/issues/6) made systems
-multi-destination and named three station types, deciding only that they exist,
+multi-station and named three station types, deciding only that they exist,
 what generates them and where they sit. This spec decides what a type *is*.
 
 The standard it has to meet is #6's own sentence: *multiple stations only pay
 for themselves if they are not interchangeable — two identical trade stations
 200,000 km apart is just a longer commute for the same transaction.*
 
-The cost of getting that wrong is measurable rather than aesthetic. Legs run
-0.2–3 AU, about 68 s of cruise each way (#10), against a finite 12 AU drive
-charge regenerating at ~1 AU/min. **A trip to the wrong station costs roughly
-two minutes and a fifth of the charge.** Every decision below was weighed with
-that number in hand.
+The cost of getting that wrong is measurable rather than aesthetic. #10
+tabulates cruise legs at **38 s for 0.2 AU, 68 s for a typical 1.3 AU, and
+3.1 min for 6 AU** (`docs/specs/in-system-travel.md` §3), against a finite 12 AU
+drive charge regenerating at ~1 AU/min. **A round trip to the wrong station
+costs a typical 2.3 minutes and about a fifth of the charge**, and up to 6
+minutes on an outer-planet leg. Every decision below was weighed against those
+figures.
 
 ---
 
@@ -49,17 +51,26 @@ Fixed here, and these words mean exactly one thing from now on across #6, #7,
 | **trade station** | the `trade` type. Never "main station", never "the station". |
 | **refinery** | the `refinery` type. |
 | **shipyard** | the `shipyard` type. |
-| **destination** | a station, i.e. a dockable object. "1–3 destinations" and "1–3 stations" are the same claim. |
-| **target** | any endpoint a cruise leg can be aimed at — station, planet, moon, star or belt. |
+| **target** | any endpoint a cruise leg can be aimed at. `cruise.ts`'s speed law reads the nearest star or planet; the selected target may also be a station, moon or belt. |
+| **system** | 1–3 stations plus its bodies. "**multi-station**", never "multi-destination". |
 
-**"Outpost" is retired.** The galaxy-generation spec's "Refinery outpost" is
-now "refinery". The word carried no distinction that `refinery` does not carry
-already, and a synonym with no job is how prose and types drift apart.
+Two words are **retired**, for the same reason: a synonym with no distinct job
+is how prose and types drift apart.
 
-This vocabulary matches `StationType = "trade" | "refinery" | "shipyard"`
+- **"Outpost"** — the galaxy-generation spec's "Refinery outpost" is now
+  "refinery". The word carried no distinction `refinery` does not carry already.
+- **"Destination"** — it had acquired two meanings at once. `in-system-travel.md`
+  and `src/cruise.ts` used it for a cruise endpoint; #6 used "multi-destination"
+  to mean "more than one station". Neither survives: a cruise endpoint is a
+  **target**, a dockable object is a **station**, and a system with several is
+  **multi-station**. This PR renames all 30 sites — `in-system-travel.md`,
+  `galaxy-generation.md`, and the comments and test names in `cruise.ts`,
+  `main.ts`, `system.ts`, `backdrop.ts`, `tests/` and `scripts/`. (`AudioContext`'s
+  `ctx.destination` in `src/audio.ts` is the WebAudio API and is untouched.)
+
+The station vocabulary matches `StationType = "trade" | "refinery" | "shipyard"`
 (`src/system.ts`) exactly, which is the point: **the prose was renamed to the
-code, not the code to the prose**, so this costs no churn and closes the gap
-permanently.
+code, not the code to the prose**.
 
 ---
 
@@ -69,7 +80,7 @@ permanently.
 |---|---|---|---|
 | Present when | always | system has a belt (P = 0.45) | `displayTL ≥ 10` |
 | Sits at | orbit of the primary planet | inside the belt, star-centric | orbit of the primary or a gas giant |
-| Commodities | full table, system economy | full table, economy −3 | full table, economy −2 |
+| Commodities | full table, system economy | full table, economy **+3** | full table, economy **−2** |
 | Equipment | `min(displayTL + 3, ALL)` | same | same |
 | Exclusives | — | mining laser, fuel scoop; contraband if `blackMarket` | hulls, military laser, energy unit |
 | Police | `government` | `clamp(government − 3, 0, 7)` | `min(government + 3, 7)`, plus a contraband scan |
@@ -87,34 +98,67 @@ is traded; it shifts *at what price*, by offsetting the economy value that
 ```
 stationEconomy = clamp(system.economy + typeOffset, 0, 7)
 
-typeOffset = { trade: 0, refinery: -3, shipyard: -2 }
+typeOffset = { trade: 0, refinery: +3, shipyard: -2 }
 ```
 
-Economy runs 0 = Rich Industrial → 7 = Poor Agricultural, the Elite convention
-already in `src/galaxy.ts` (`tech = … + (economy ^ 7) + …`). A negative offset
-is therefore a shift *toward* industrial: a refinery reads three steps richer
-and more industrial than the system it sits in, which is what makes its
-minerals, metals and radioactives cheap and its food dear. The shipyard shifts
-two.
+### 3.1 Which direction, and why — the correction that matters
 
-**Why not scope the table.** Scoping — a refinery that buys ore and refuses
-furs — differentiates harder, and it was rejected because of the number in the
-preamble: it converts "I did not read the market screen" into a two-minute
-penalty and a spent drive charge. Under an offset the player is never stranded
-holding cargo, and the routing decision survives as *where do I get the best
-price*, which is the decision Elite actually ran on.
+Economy runs **0 = Rich Industrial → 7 = Poor Agricultural**, the Elite
+convention already in `src/galaxy.ts` (`tech = … + (economy ^ 7) + …`), and
+`product = economy × gradient`. The gradients are Bell's, recorded in
+`docs/research/elite-1984-mechanics.md` §2.2–2.3:
 
-**The cost, stated plainly.** This is the weakest form of non-interchangeability
-of the options considered. On commodities alone, three stations are the same
-transaction at three prices. Sections 4 and 5 are where the types are actually
-made distinct, and they carry a load they would not have carried under a scoped
-market. **A later reader tempted to weaken §5 should read §3 first** — the two
-were decided together and §5 is not decoration.
+| Group | Goods | Gradient | Cheap at |
+|---|---|---|---|
+| Extractive | Minerals −1, Gold −1, Platinum −2, Gem-Stones −1, Radioactives −3, Alloys +1 | mostly **negative** | high economy (Poor Agricultural) |
+| Staple | Food −2, Textiles −1, Liquor −5, Furs −9, Slaves −5 | negative | high economy (Poor Agricultural) |
+| Manufactured | Computers +14, Machinery +6, Luxuries +8, Firearms +13, Narcotics +29 | positive | low economy (Rich Industrial) |
 
-**What #7 inherits:** prices are generated per station from `stationEconomy`
-and the station's own id, not from `system.economy`. Everything else about the
-price formula — base prices, gradients, the fluctuation byte, quantity masks —
-remains #7's.
+**The refinery therefore offsets +3, toward Poor Agricultural.** The first draft
+of this spec said −3 "which is what makes its minerals cheap"; that was
+backwards, and sage's review caught it. Minerals, Gold, Platinum, Gems and
+Radioactives are negative-gradient, so a shift toward Rich Industrial makes the
+refinery's own product *dearer*. +3 makes extractives cheap — which is the
+point — and manufactured goods dear, which is right for a remote outpost with
+nothing but a smelter.
+
+**The shipyard offsets −2, toward Rich Industrial**, and that was correct as
+first written: manufactured goods cheap, staples dear.
+
+An unlooked-for benefit of the correction: the two now sit **five steps apart**
+on an eight-step scale, at opposite ends with the trade station between them.
+Under the original −3 / −2 they were one step apart and the price axis
+differentiated them by almost nothing.
+
+**The wart, named rather than hidden.** Staples share the extractive group's
+negative gradient, so +3 also makes Food, Furs and Liquor cheap at a belt
+refinery — fictionally odd. No single economy scalar can do otherwise: one
+scalar and a signed slope per good is exactly Elite's mechanism, and it cannot
+express "cheap ore, dear bread". The alternative was a per-commodity-group
+multiplier table, rejected because it adds a second pricing mechanism to #7 for
+one item of flavour. Recorded as weak joint 5.
+
+### 3.2 Why the table is not scoped
+
+Scoping — a refinery that buys ore and refuses furs — differentiates harder,
+and it was rejected on the number in the preamble: it converts "I did not read
+the market screen" into a multi-minute round trip and a spent drive charge.
+Under an offset the player is never stranded holding cargo, and the routing
+decision survives as *where do I get the best price*, which is the decision
+Elite actually ran on.
+
+**The cost, stated plainly.** This is still the weakest form of
+non-interchangeability of the options considered: on commodities alone, three
+stations are the same transaction at three prices. Sections 4 and 5 carry
+differentiation they would not have had to carry under a scoped market. **A
+later reader tempted to weaken §5 should read §3 first** — the two were decided
+together.
+
+### 3.3 What #7 inherits
+
+Prices generate per station from `stationEconomy` and the station's own id, not
+from `system.economy` per system. Everything else about the price formula —
+base prices, gradients, the fluctuation byte, quantity masks — remains #7's.
 
 ---
 
@@ -134,10 +178,14 @@ Type adds an exclusive class on top, and adds nothing else:
 | shipyard | **hulls** (the only place ships are sold), military laser, energy unit |
 
 Rejected: making type shift the effective tech level. It would have been
-consistent with §3's offset shape, and it was rejected because the shipyard's
-`displayTL ≥ 10` floor plus a `+3` puts every shipyard at the full list —
-the modifier would have had no range to act in, so it would have been a
-mechanism that reads as a rule while behaving as a constant.
+consistent with §3's offset shape, and the arithmetic kills it. The equipment
+list is **12 items** (`docs/research/elite-1984-mechanics.md` §3.1, the PRXS
+table: fuel, missiles, large cargo bay, extra pulse laser, ECM, extra beam
+laser, fuel scoops, escape pod, energy bomb, extra energy unit, docking
+computer, galactic hyperdrive), so `min(displayTL + 3, 12)` **saturates at
+`displayTL = 9`** — and shipyards do not exist below `displayTL = 10`. A `+3`
+at a shipyard therefore has *zero* range in every system where a shipyard can
+occur: a mechanism that reads as a rule while behaving as a constant.
 
 **Where the tech gradient's teeth actually are**, therefore: not in item counts
 per station, but in *where shipyards exist at all*. They generate only at
@@ -171,11 +219,22 @@ Not every refinery is a den, and that is deliberate:
 
 ```
 blackMarket: boolean = rand() < P(government)
+
+P(g) = clamp(0.95 - 0.125·g, 0.05, 0.95)
 ```
 
-drawn per refinery, weighted so it is near-certain at Anarchy and rare at a
-Corporate State. Police presence is `clamp(government − 3, 0, 7)` at every
-refinery regardless of the flag.
+drawn per refinery from its own stream (§5.3). Government runs 0 = Anarchy →
+7 = Corporate State, and `rand(0–7) < government ⇒ no spawn` is the existing
+safety polarity, so higher means more law:
+
+| government | 0 Anarchy | 1 | 2 | 3 | 4 | 5 | 6 | 7 Corporate |
+|---|---|---|---|---|---|---|---|---|
+| P(fence) | 0.95 | 0.83 | 0.70 | 0.58 | 0.45 | 0.33 | 0.20 | 0.08 |
+
+A linear ramp rather than a curve, because it is the shape a corpus test can
+bound at both ends and check for monotonicity without arguing about a fitted
+constant. Police presence is `clamp(government − 3, 0, 7)` at every refinery
+regardless of the flag.
 
 The consequence accepted with eyes open: **a fence is not inferable from the
 galaxy map.** You find one by visiting, and then you remember it. That is the
@@ -183,9 +242,14 @@ texture being bought — specific places worth knowing — and it is also the
 strongest argument for a rumour or bulletin system later, which is not
 specified here and is not promised.
 
-Geography follows for free: refineries need a belt (P = 0.45), so **roughly
-half of all systems have no black market at any price**. Smuggling routes are
-therefore a thing to be learnt rather than a menu option.
+Geography follows for free, and it is scarcer than "about half". A refinery
+needs a belt, `BELT_PROBABILITY = 0.45`, so **at least 55% of systems have no
+refinery at all**; the government weighting then removes a further share of the
+remaining 45%. Government is radially biased (core mean 6, rim mean 1), so the
+galaxy-wide fence rate lands somewhere near **one system in five**, and it is
+concentrated at the rim where government is low. The exact figure is for §9's
+corpus test to measure rather than for this spec to assert. Smuggling routes
+are therefore a thing to be learnt, not a menu option.
 
 ### 5.3 Determinism: the flag needs its own domain tag
 
@@ -274,26 +338,40 @@ load, no downloaded assets.
 
 Two tiers, per the repo's culture.
 
-**Headless (`bun`):**
+### 9.1 Headless (`bun`)
 
-- `stationEconomy` clamps at both ends: a Poor Agricultural system's refinery
-  does not wrap past 0, a Rich Industrial system's does not go negative.
-- The `blackMarket` draw moves no station position — generate a corpus of
-  systems before and after the `STATION_FLAGS` tag is introduced and assert
-  every station's orbit is byte-identical. This is the test §5.3 exists for and
-  it is the one that would have caught the mistake.
-- `blackMarket` frequency across a large corpus tracks `government` in the
-  intended direction, with bounds rather than an exact figure.
-- Determinism digest over a fixed seed corpus, extended to the new fields.
+- **`stationEconomy` clamps at both ends, and both are now reachable.** With
+  `refinery +3` a Poor Agricultural system (economy 7) clamps at 7 rather than
+  running to 10; with `shipyard −2` a Rich Industrial system (economy 0) clamps
+  at 0 rather than going negative. Assert both, by name. (Under the first
+  draft's all-negative offsets the upper bound was unreachable and half this
+  test would have asserted nothing — sage's finding, kept as a note because it
+  is the kind of dead assertion that survives review by looking busy.)
+- **The `blackMarket` draw moves no station.** This needs a baseline that
+  exists *before* the tag does, so: **commit `tests/fixtures/station-orbits.json`
+  — a digest of every station's `id`, `parentId` and orbit for a fixed seed
+  corpus, generated on the current generator in the commit that precedes the
+  `STATION_FLAGS` change.** The test then asserts the post-change generator
+  reproduces that fixture exactly. Without the fixture there is no before-state
+  to generate once the tag exists, and the test is unrunnable. This is the
+  regression §5.3 exists for.
+- **The existing golden digest is separate.** `tests/galaxy.test.ts` pins a
+  determinism digest that §8's new fields will legitimately change; repinning it
+  is expected. The orbit fixture above must *not* be repinned in the same
+  commit, or it stops being evidence.
+- **`blackMarket` frequency tracks government.** Over a corpus of ≥ 20,000
+  refineries: observed rate at `government = 0` within [0.92, 0.98], at
+  `government = 7` within [0.05, 0.11], and non-increasing across `g` allowing
+  for sampling noise. Bounds come from §5.2's table.
 - Every shipyard-bearing system has `displayTL ≥ 10`; every refinery-bearing
   system has a belt.
 
-**Browser probe:**
+### 9.2 Browser probe
 
 - The three silhouettes are distinguishable: render one of each at a fixed
   distance and assert their projected outlines differ by more than a
-  colour-only threshold. A colour-blind check of the same frames is the honest
-  version of "tell them apart".
+  colour-only threshold. Running the same frames desaturated is the honest
+  version of "tell them apart", since §7 claims outline and not colour.
 - Reading constants off `window.__seelite`, never restating them.
 
 ---
@@ -338,3 +416,10 @@ Two tiers, per the repo's culture.
    rich core system can hold a fence. §5.2's government weighting makes that
    rare rather than impossible, which is the intended answer: rare and
    memorable, not forbidden.
+5. **A belt refinery sells cheap bread (§3.1).** Staples share the extractive
+   group's negative gradient, so the +3 offset that makes ore cheap makes Food,
+   Furs and Liquor cheap too. Elite's mechanism — one economy scalar, one signed
+   slope per good — cannot express "cheap ore, dear bread", and buying the
+   distinction costs a second pricing mechanism in #7. Taken as flavour debt. If
+   it ever grates, the repair is a per-commodity-group multiplier on top of the
+   offset, which §3.1 records as the option that was declined.
