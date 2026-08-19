@@ -27,6 +27,8 @@ import {
 	chargeAfterTravel,
 	closingSpeed,
 	cruiseSpeed,
+	legSeconds,
+	speedFor,
 	exitVelocity,
 	nearestMass,
 } from "../src/cruise";
@@ -827,4 +829,85 @@ test("the tuned defaults put a typical leg just under a minute", () => {
 	// exponent and the clamp decide together.
 	expect(leg(0.2).t).toBeGreaterThan(20);
 	expect(leg(6).t).toBeLessThan(200);
+});
+
+test("a shut throttle still arrives, and reports the honest closing speed", () => {
+	// §3's cut-the-throttle mode is what the `dropSpeedKms` dial exists to
+	// evaluate, and for one round it could not happen: the zero-throttle branch
+	// returned before the arrival test, so a ship sitting inside the drop radius
+	// with the throttle closed never dropped out.
+	const stationVel = v3(0, 30, 0);
+	const target = { pos: v3(), radiusKm: 1.2, vel: stationVel };
+	const pos = v3(20, 0, 0);
+	const step = advanceCruise({
+		pos,
+		nose: towards(pos, target.pos),
+		throttle: 0,
+		dt: 0.1,
+		masses: oneMassAt(v3(0, 6e4, 0)),
+		target,
+		params: P,
+	});
+	expect(step.dropped).toBe(true);
+	expect(step.exit).toBe("arrival");
+	expect(step.travelledKm).toBe(0);
+	// Not zero: nose-locked and stationary beside a station doing 30 km/s is not
+	// station-keeping, it is being left behind, and the panel says so.
+	expect(step.closingKms).toBeCloseTo(30, 6);
+
+	// With the dial tightened below the station's own motion, the same state is
+	// *not* an arrival — which is the mode being evaluated, working.
+	const strict = advanceCruise({
+		pos,
+		nose: towards(pos, target.pos),
+		throttle: 0,
+		dt: 0.1,
+		masses: oneMassAt(v3(0, 6e4, 0)),
+		target,
+		params: { ...P, dropSpeedKms: 2 },
+	});
+	expect(strict.dropped).toBe(false);
+});
+
+test("the leg estimate agrees with the leg actually flown", () => {
+	// The HUD's headline number (§5.1) against the ship's own arithmetic. The
+	// renderer held a second copy of the law for one round and it had already
+	// diverged — keyed to the nearest mass alone, it read ~30× too fast over a
+	// station's final approach and omitted the clamp's 16 s. `legSeconds` and
+	// `advanceCruise` now call the same `speedFor`, and this is the check that
+	// they keep agreeing.
+	const target = { pos: v3(), radiusKm: 1.2 };
+	const masses = oneMassAt(v3(0, 3e5, 0));
+	for (const legAu of [0.2, 0.84, 1.3, 6]) {
+		const from = v3(legAu * AU_KM, 0, 0);
+		const estimate = legSeconds(from, target, masses, P);
+		const flown = fly({ from, target, masses, dt: 0.1, limitS: 600 });
+		expect(flown.dropped, `${legAu} AU`).toBe(true);
+		// Within 5%: the estimate integrates a straight line while the flight
+		// sub-steps one, so they are the same arithmetic sampled differently.
+		expect(Math.abs(estimate - flown.t) / flown.t, `${legAu} AU`).toBeLessThan(
+			0.05,
+		);
+	}
+});
+
+test("speedFor is the whole law, clamp included", () => {
+	// The single definition both of them read. Outside the vicinity it is §2's
+	// curve keyed to the nearer distance; inside, the clamp governs.
+	const far = speedFor(1e6, 5e6, P);
+	expect(far).toBeCloseTo(cruiseSpeed(1e6, P), 6);
+	// Keyed to the target when the target is nearer — §2.1's law is a bound, not
+	// a target-blind rule.
+	expect(speedFor(5e6, 1e6, P)).toBeCloseTo(cruiseSpeed(1e6, P), 6);
+	// Inside the vicinity, distance over the lead time, plus what the
+	// destination itself is doing.
+	expect(speedFor(1e9, 1000, P, 30)).toBeCloseTo(
+		30 + 1000 / P.approachLeadS,
+		6,
+	);
+	// And the throttle is a multiplier on the law, never on the clamp's floor.
+	expect(speedFor(1e6, 5e6, P, 0, 0.5)).toBeCloseTo(
+		cruiseSpeed(1e6, P) * 0.5,
+		6,
+	);
 });

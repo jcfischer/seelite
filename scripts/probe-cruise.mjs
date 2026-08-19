@@ -50,6 +50,7 @@
 import {
 	bootedGame,
 	guardedOrigin,
+	installCamSim,
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
@@ -71,6 +72,10 @@ const { check, exit } = tally();
 
 const page = await browser.newPage({ viewport: { width: 900, height: 620 } });
 page.on("pageerror", (e) => check(`no page error (${e.message})`, false));
+// The shared camera recovery, installed as an init script — `probe-boot.mjs`
+// uses the same one, and re-deriving `shipSim - shipMesh` in each probe is one
+// more place for the camera-relative contract to be restated slightly wrong.
+await installCamSim(page);
 await page.goto(URL, { waitUntil: "load" });
 await bootedGame(page);
 
@@ -132,17 +137,11 @@ const flight = await page.evaluate(
 			peakC = Math.max(peakC, g.cruiseSpeedKms / 299792.458);
 
 			const body = g.world.system.byId.get(station.id);
-			const shipMesh = g.nearScene.getObjectByName("ship");
-			if (!shipMesh || !body) continue;
-			// The camera's sim position, recovered the way `probe-guard`'s helper
-			// does it: the ship mesh is drawn at `shipPos - camPos`, so subtracting
-			// it from the sim position gives the camera back. Read in the same
-			// evaluate as everything else, so it is the same frame.
-			const cam = {
-				x: g.world.ship.pos.x - shipMesh.position.x,
-				y: g.world.ship.pos.y - shipMesh.position.y,
-				z: g.world.ship.pos.z - shipMesh.position.z,
-			};
+			if (!body) continue;
+			// The camera's sim position, from `probe-guard`'s shared recovery — read
+			// in the same evaluate as everything else, so it is the same frame.
+			const cam = window.__recoverCamSim();
+			if (!cam) continue;
 			const trueDistance = dist(body.pos, cam);
 			// Only the neighbourhood of the seam is worth carrying back: a whole
 			// leg is thousands of samples, and the claim is about the crossing.

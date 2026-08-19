@@ -40,6 +40,7 @@
 import {
 	bootedGame,
 	guardedOrigin,
+	installCamSim,
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
@@ -60,6 +61,10 @@ const { check, exit } = tally();
 
 const page = await browser.newPage({ viewport: VIEWPORT });
 page.on("pageerror", (e) => check(`no page error (${e.message})`, false));
+// The shared camera recovery, installed as an init script — `probe-boot.mjs`
+// uses the same one, and re-deriving `shipSim - shipMesh` in each probe is one
+// more place for the camera-relative contract to be restated slightly wrong.
+await installCamSim(page);
 await page.goto(URL, { waitUntil: "load" });
 await bootedGame(page);
 
@@ -74,12 +79,7 @@ const state = await page.evaluate(async () => {
 
 	const overlay = document.getElementById("overlay");
 	const box = overlay.getBoundingClientRect();
-	const shipMesh = g.nearScene.getObjectByName("ship");
-	const cam = {
-		x: g.world.ship.pos.x - shipMesh.position.x,
-		y: g.world.ship.pos.y - shipMesh.position.y,
-		z: g.world.ship.pos.z - shipMesh.position.z,
-	};
+	const cam = window.__recoverCamSim();
 
 	const bodies = [];
 	for (const body of g.world.system.bodies) {

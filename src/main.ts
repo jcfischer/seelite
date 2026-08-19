@@ -71,9 +71,8 @@ import {
 	advanceCruise,
 	chargeAfterRegen,
 	chargeAfterTravel,
-	cruiseSpeed,
 	exitVelocity,
-	nearestMass,
+	legSeconds,
 } from "./cruise";
 import { GOVERNMENT_NAMES } from "./galaxy";
 import {
@@ -226,7 +225,10 @@ const IN_C = {
  * a handful of bodies is nothing per frame, and it is the same law the
  * integrator flies rather than a second closed form to keep in step with it.
  */
-const TIME_TO_TARGET_SAMPLES = 48;
+/** How often the time-to-target estimate is recomputed, in sim seconds. Four a
+ *  second — far faster than the readout's own resolution, and a sixteenth of
+ *  the work. */
+const ETA_INTERVAL_S = 0.25;
 
 /** What the ship is doing: #5's two regimes are one state here (the flight
  *  model is still the scaffold's stand-in) and cruise is the other. */
@@ -310,6 +312,10 @@ class Game {
 	 *  rate rather than at the hand's speed. */
 	private mouseDx = 0;
 	private mouseDy = 0;
+	/** The selectable bodies, in display order. Invalidated by changing system —
+	 *  which nothing does yet, and which is why this is a field rather than a
+	 *  `readonly` built in the constructor. */
+	private selectableCache: Body[] | null = null;
 	/** The speed law's masses, rebuilt once per clock value. See `masses()`. */
 	private massesCache: { id: string; pos: Vec3; radiusKm: number }[] | null =
 		null;
@@ -336,6 +342,9 @@ class Game {
 	private warp!: WarpField;
 	private lastTime = 0;
 	private hud: HTMLElement;
+	/** The last time-to-target estimate, and the clock value it was made at. */
+	private etaCache: number | null = null;
+	private etaAt = Number.NEGATIVE_INFINITY;
 	/** What the HUD last displayed, quantised to its own resolution — so a frame
 	 *  that would render the same text neither builds nor writes it. */
 	private hudKey = "";
@@ -822,7 +831,10 @@ class Game {
 			| "approachLeadS",
 		values: number[],
 		step: number,
-		scale: { display: (v: number) => number; store: (v: number) => number } = {
+		// Named `unit`, not `scale`: `scale` is the vector helper this file uses
+		// everywhere, and a parameter by that name would silently capture it for
+		// any vector arithmetic added inside this method.
+		unit: { display: (v: number) => number; store: (v: number) => number } = {
 			display: (v) => v,
 			store: (v) => v,
 		},
@@ -832,7 +844,7 @@ class Game {
 		// serve it and the three that are already in their stored units. Two
 		// copies of the clamp rule is how one dial's edge behaviour gets fixed and
 		// the other's does not.
-		const current = scale.display(this.cruiseParams[field]);
+		const current = unit.display(this.cruiseParams[field]);
 		let at = 0;
 		for (let i = 1; i < values.length; i++) {
 			if (Math.abs(values[i] - current) < Math.abs(values[at] - current))
@@ -841,7 +853,7 @@ class Game {
 		const next = Math.min(values.length - 1, Math.max(0, at + step));
 		this.cruiseParams = {
 			...this.cruiseParams,
-			[field]: scale.store(values[next]),
+			[field]: unit.store(values[next]),
 		};
 	}
 
@@ -1073,62 +1085,51 @@ class Game {
 	 * How long the rest of the approach takes at the current throttle, seconds —
 	 * §5.1's headline readout. `null` when nothing is selected.
 	 *
-	 * See `TIME_TO_TARGET_SAMPLES` for why this integrates instead of dividing.
+	 * See `cruise.ts`'s `legSeconds` for why the cruise case integrates instead
+	 * of dividing.
 	 */
 	timeToTarget(): number | null {
 		const target = this.targetBody();
 		if (!target) return null;
 		const from = this.world.ship.pos;
-		const toTarget = sub(target.pos, from);
-		const remaining = length(toTarget);
+		const remaining = length(sub(target.pos, from));
 		if (remaining <= this.cruiseParams.dropRadiusKm) return 0;
 
-		// **In normal flight the answer is a division, not this integral.** The
+		// **In normal flight the answer is a division, not an integral.** The
 		// cruise law is a different regime's arithmetic and would report a minute
 		// for a crossing that takes two years at the assist cap — which is exactly
 		// the confusion that has to be designed out here rather than papered over:
-		// the first flight of this prototype was spent at full throttle in normal
-		// flight watching 0.837 AU not change, because the panel said nothing.
+		// a whole session was spent at full throttle in normal flight watching
+		// 0.837 AU not change, because the panel said nothing.
 		//
 		// A blank was the previous answer and it is worse than a wrong number: it
 		// hides the one fact the player needs, which is that *this regime cannot
-		// get there*.
+		// get there*. At rest with the throttle shut the honest question is not
+		// "how long at zero" but "how long if I flew there", so the figure falls
+		// back to the regime's best speed.
 		if (this.regime !== "cruise" && this.spoolLeftS === 0) {
-			// At rest with the throttle shut the honest question is not "how long at
-			// zero" — which is a blank, and a blank is what hid this — but "how long
-			// if I flew there", so the figure falls back to the regime's best speed.
 			const speed =
 				Math.max(length(this.world.ship.vel), ASSIST_CAP_KMS * this.throttle) ||
 				ASSIST_CAP_KMS;
 			return remaining / speed;
 		}
-		const throttle = this.regime === "cruise" ? this.throttle : 1;
-		// The integrator below is the cruise law, and only cruise reaches it.
-		if (throttle <= 0) return null;
-		const dir = scale(toTarget, 1 / remaining);
-		const masses = this.masses();
-		const span = remaining - this.cruiseParams.dropRadiusKm;
-		let seconds = 0;
-		// Spaced so the samples bunch at the *end* of the run, which is where the
-		// law is steep: an even split spends most of them in the deep-space
-		// stretch where the speed is constant and the estimate needs no help, and
-		// resolves the ramp — which is most of the elapsed time — with a handful.
-		let travelled = 0;
-		for (let i = 1; i <= TIME_TO_TARGET_SAMPLES; i++) {
-			const at = span * (1 - (1 - i / TIME_TO_TARGET_SAMPLES) ** 3);
-			const segment = at - travelled;
-			if (segment <= 0) continue;
-			const mid = add(from, scale(dir, travelled + segment / 2));
-			const near = nearestMass(mid, masses);
-			const v =
-				cruiseSpeed(
-					near ? near.km : Number.POSITIVE_INFINITY,
-					this.cruiseParams,
-				) * throttle;
-			seconds += segment / v;
-			travelled = at;
-		}
-		return seconds;
+
+		// In cruise, `cruise.ts` owns the arithmetic — `legSeconds` integrates the
+		// same `speedFor` the ship is flown by, clamp included. The renderer held
+		// its own copy of that integration for one round and it had already
+		// diverged: keyed to the nearest mass alone, it read ~30× too fast over a
+		// station's final approach and omitted the clamp's 16 s entirely.
+		return legSeconds(
+			from,
+			{
+				pos: target.pos,
+				radiusKm: target.radiusKm,
+				vel: this.targetVelocity(),
+			},
+			this.masses(),
+			this.cruiseParams,
+			this.regime === "cruise" ? this.throttle : 1,
+		);
 	}
 
 	/**
@@ -1433,7 +1434,14 @@ class Game {
 		// text really did change.
 		const target = this.targetBody();
 		const targetKm = target ? length(sub(target.pos, ship.pos)) : null;
-		const eta = this.timeToTarget();
+		// The estimate integrates 64 samples of the speed law, and the readout it
+		// feeds is quantised to tenths of a minute. Recomputing that every frame is
+		// paying sixty times over for a number that cannot change that fast.
+		if (gameTime - this.etaAt >= ETA_INTERVAL_S) {
+			this.etaCache = this.timeToTarget();
+			this.etaAt = gameTime;
+		}
+		const eta = this.etaCache;
 		const p = this.cruiseParams;
 		const state =
 			this.spoolLeftS > 0
@@ -1441,7 +1449,7 @@ class Game {
 				: this.regime === "cruise"
 					? "CRUISE"
 					: "normal flight";
-		const cruiseSpeed =
+		const speedText =
 			this.regime === "cruise"
 				? `${(this.cruiseSpeedKms / C_KMS).toFixed(2)} c`
 				: `${speed} km/s`;
@@ -1465,7 +1473,7 @@ class Game {
 				`t+${clock(gameTime)}`,
 				`${this.view}  assist ${this.assist ? "on" : "off"}`,
 				`throttle ${throttle}%`,
-				cruiseSpeed,
+				speedText,
 				station,
 				`seed ${this.world.seed}`,
 			].join("   "),

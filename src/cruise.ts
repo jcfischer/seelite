@@ -147,15 +147,6 @@ export const DEFAULT_CRUISE: CruiseParams = {
 	approachLeadS: 3,
 };
 
-/**
- * #5's assist cap, re-exported from the flight model that owns it.
- *
- * The cap is a property of assisted flight, not of cruise — cruise only has to
- * *land inside* it (§1). It lived here for one round while the flight model was
- * still the scaffold's stand-in, which had the third regime deciding what the
- * first two were allowed to do; #21 built the model and it moved.
- */
-
 /** §7: the drive charge, in AU of cruise range. */
 export const CHARGE_CAPACITY_AU = 12;
 /** §7: passive regeneration, ~1 AU/min, in AU per second. The anti-stranding
@@ -251,9 +242,12 @@ export function nearestMass(
 /**
  * §2's law: `v(d) = clamp(v_max · (d/d_ref)^exponent, v_min, v_max)`.
  *
- * `d` is the distance to the nearest star or planet, never to the destination —
- * §2.1 argues that at length, and the short version is that a destination-keyed
- * law flies through worlds between ticks and a mass-keyed one cannot.
+ * `d` is **a** distance and this function does not know whose: §2.1 argues at
+ * length that a destination-keyed law flies through worlds between ticks, and
+ * its conclusion survives — but as `speedFor`'s `min(massKm, targetKm)` rather
+ * than as "mass only", which is what this docstring used to claim while its one
+ * caller passed the minimum. The mass distance is what bounds the curve; the
+ * target distance only ever makes it slower.
  */
 export function cruiseSpeed(distanceKm: number, p: CruiseParams): number {
 	if (!(distanceKm > 0)) return p.vMinKms;
@@ -262,7 +256,13 @@ export function cruiseSpeed(distanceKm: number, p: CruiseParams): number {
 }
 
 /**
- * §1's exit: velocity along the nose, clamped to the assist cap.
+ * §1's exit: velocity clamped to the assist cap **in the destination's frame**.
+ *
+ * Not "along the nose", which is what this said for two rounds and what §1
+ * itself says: beside a station carried around its star at 30 km/s the exit
+ * velocity points along that orbit, and the nose contributes at most the 2 km/s
+ * cap on top. The nose form is what you get when `targetVel` is zero, which is
+ * every case except the one the player actually flies.
  *
  * A clamp rather than an assignment — a ship that dropped out below the cap is
  * not accelerated to it by the act of dropping out, which would be the regime
@@ -352,6 +352,97 @@ export function sphereEntry(
 /** How a frame of cruise ended, or `null` if it did not. */
 export type CruiseExit = "arrival" | "proximity" | null;
 
+/**
+ * The speed the regime flies at, given where the ship is — **the** law, in one
+ * place.
+ *
+ * Extracted because there were briefly two: `advanceCruise` flew
+ * `min(mass, target)` with the approach clamp on top, while the HUD's
+ * time-to-target integrator sampled `cruiseSpeed(massKm)` alone. For a station
+ * 60,000 km from its planet that estimate was ~30× too fast over the final
+ * approach and omitted the clamp's 16 s outright — the panel's headline number
+ * wrong exactly where §5.1 says the player reads it. A law with two
+ * implementations has one that is wrong; which one is a matter of time.
+ *
+ * `carriedKms` is the destination's own speed (a station is carried around its
+ * star at ~30 km/s), because the clamp is stated over the target's motion —
+ * see `vicinityKm`.
+ */
+export function speedFor(
+	massKm: number,
+	targetKm: number,
+	p: CruiseParams,
+	carriedKms = 0,
+	throttle = 1,
+): number {
+	// §2.1's law, keyed to the nearer of the two — see `advanceCruise`.
+	const keyedKm = Math.min(massKm, targetKm);
+	let v = cruiseSpeed(keyedKm, p) * Math.min(1, Math.max(0, throttle));
+	if (targetKm <= p.vicinityKm) {
+		v = Math.min(v, carriedKms + targetKm / p.approachLeadS);
+	}
+	return v;
+}
+
+/**
+ * How long the rest of a leg takes, seconds — the same law, integrated.
+ *
+ * §5.1 makes time-to-target the cruise panel's headline, because the question
+ * it answers is *when do I cut the throttle*. It cannot be `distance / speed`:
+ * the law is position-dependent and the last tenth of the distance takes most
+ * of the time, so that figure reads "4 seconds" for most of an approach and is
+ * wrong by an order of magnitude at the moment it matters.
+ *
+ * Lives here rather than in the renderer so that it cannot drift from what the
+ * ship actually flies — it calls `speedFor`, which is what `advanceCruise`
+ * calls.
+ *
+ * Sampled **geometrically in distance**, not evenly along the leg: the approach
+ * clamp governs the last `vicinityKm` of every arrival and costs about 16 s,
+ * which on a 1.3 AU leg is 5·10⁻⁵ of the distance and a quarter of the time. An
+ * evenly-spaced sweep puts one or two samples in that stretch and lands ~9%
+ * fast — measured, by the test that compares this against a flown leg. Halving
+ * the distance each step spends samples where the time is.
+ */
+export function legSeconds(
+	from: Vec3,
+	target: { pos: Vec3; radiusKm: number; vel?: Vec3 },
+	masses: readonly Mass[],
+	p: CruiseParams,
+	throttle = 1,
+	samples = 64,
+): number {
+	const toTarget = sub(target.pos, from);
+	const remaining = length(toTarget);
+	if (remaining <= p.dropRadiusKm) return 0;
+	if (throttle <= 0) return Number.POSITIVE_INFINITY;
+	const dir = scale(toTarget, 1 / remaining);
+	const carried = target.vel ? length(target.vel) : 0;
+
+	// Geometric from the current range down to the drop radius.
+	const ratio = (p.dropRadiusKm / remaining) ** (1 / samples);
+	let seconds = 0;
+	let outer = remaining;
+	for (let i = 0; i < samples; i++) {
+		const inner = outer * ratio;
+		// The midpoint of the segment, in distance and in position — the two agree
+		// because the leg is a straight line.
+		const midKm = (outer + inner) / 2;
+		const mid = add(from, scale(dir, remaining - midKm));
+		const near = nearestMass(mid, masses);
+		const v = speedFor(
+			near ? near.km : Number.POSITIVE_INFINITY,
+			midKm,
+			p,
+			carried,
+			throttle,
+		);
+		seconds += (outer - inner) / v;
+		outer = inner;
+	}
+	return seconds;
+}
+
 export interface CruiseInput {
 	pos: Vec3;
 	/** Unit vector. §1 nose-locks velocity, so this *is* the direction of
@@ -433,7 +524,26 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 	});
 
 	if (charge !== undefined && charge <= 0) return halt({ starved: true });
-	if (input.throttle <= 0) return halt();
+	if (input.throttle <= 0) {
+		// A shut throttle still *arrives*: §3's cut-the-throttle mode is the whole
+		// point of the `dropSpeedKms` dial, and returning here before the arrival
+		// test meant a ship sitting inside the drop radius with the throttle
+		// closed never dropped out — the one state that mode consists of.
+		//
+		// Closing speed at zero throttle is the destination's own motion, not
+		// zero: nose-locked and stationary beside a station doing 30 km/s is not
+		// station-keeping, it is being left behind. Reporting 0 there was the
+		// panel's honest-arrival readout lying in exactly that state.
+		if (input.target) {
+			closingKms = closingSpeed(input.nose, 0, input.target.vel);
+			const km = length(sub(pos, input.target.pos));
+			if (km <= p.dropRadiusKm && closingKms <= p.dropSpeedKms) {
+				dropped = true;
+				exit = "arrival";
+			}
+		}
+		return halt();
+	}
 
 	while (remaining > 0 && !dropped && substeps < MAX_SUBSTEPS) {
 		const mass = nearestMass(pos, input.masses);
@@ -457,21 +567,13 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 		// brake. With it, the ship is doing §2.3's own 140 km/s at 50 km out and
 		// the drop-out fires the way that table always said it would.
 		const keyedKm = Math.min(massKm, targetKm);
-		speedKms =
-			cruiseSpeed(keyedKm, p) * Math.min(1, Math.max(0, input.throttle));
-
-		// The approach clamp — see `vicinityKm`. Inside it, speed is held to
-		// `distance / approachLeadS` *over the target's own motion*, so the ship
-		// decelerates continuously into the capture rather than needing to be
-		// hand-flown onto a 50 km sphere at hundreds of km/s.
-		//
-		// Over the target's motion, not absolutely: a station is carried around
-		// its star at ~30 km/s, and a clamp that ignored that would ask the ship
-		// to fly *slower than its destination* and never arrive.
-		if (targetKm <= p.vicinityKm) {
-			const carried = input.target?.vel ? length(input.target.vel) : 0;
-			speedKms = Math.min(speedKms, carried + targetKm / p.approachLeadS);
-		}
+		speedKms = speedFor(
+			massKm,
+			targetKm,
+			p,
+			input.target?.vel ? length(input.target.vel) : 0,
+			input.throttle,
+		);
 		if (speedKms <= 0) break;
 
 		// Speed in the destination's own frame — see `closingSpeed`. Against an
