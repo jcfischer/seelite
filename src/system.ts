@@ -256,6 +256,34 @@ export function positionOnOrbit(orbit: Orbit, gameTime: number): Vec3 {
 	return { x: x * cn - yi * sn, y: x * sn + yi * cn, z: zi };
 }
 
+/**
+ * How fast a body on that orbit is moving, km/s — the exact derivative of
+ * `positionOnOrbit` with respect to `gameTime`.
+ *
+ * Analytic rather than a finite difference of two positions, because the two
+ * positions are ~10⁸ km numbers differing by a few km: the subtraction is
+ * where the precision goes, and it is avoidable. Same transform as the position
+ * — tilt by the inclination, rotate to the node — applied to the tangential
+ * velocity instead of the radius, because both transforms are linear.
+ *
+ * It exists because #14 found that arrival is a *relative* problem: a station
+ * on a 1 AU orbit is carried along at ~30 km/s, fifteen times #5's 2 km/s
+ * assist cap. Dropping out of cruise into a frame where the destination is
+ * receding at 28 km/s leaves it permanently unreachable, so the drop-out and
+ * the exit clamp have to be measured against this rather than against zero.
+ */
+export function velocityOnOrbit(orbit: Orbit, gameTime: number): Vec3 {
+	const omega = TAU / orbit.periodS;
+	const theta = orbit.theta0 + omega * gameTime;
+	const vx = -orbit.radiusKm * omega * Math.sin(theta);
+	const vy = orbit.radiusKm * omega * Math.cos(theta);
+	const vyi = vy * Math.cos(orbit.inclination);
+	const vzi = vy * Math.sin(orbit.inclination);
+	const cn = Math.cos(orbit.node);
+	const sn = Math.sin(orbit.node);
+	return { x: vx * cn - vyi * sn, y: vx * sn + vyi * cn, z: vzi };
+}
+
 /** Summed once. The table is frozen, so recomputing it per system was 2048
  *  reductions over five constants. */
 const STAR_WEIGHT_TOTAL = STAR_CLASSES.reduce((sum, c) => sum + c.weight, 0);

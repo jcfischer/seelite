@@ -33,10 +33,11 @@
  *
  * ## What is still a placeholder
  *
- * `stepShip` integrates Newtonian motion with a linear damping term. The
- * flight model resolved to assisted Newtonian (#5) but is not built; the
- * damping constant here was picked so a cube is steerable with a keyboard in a
- * browser, which is not an argument for anything.
+ * Nothing about the *ship* is: `stepFlight` is #5's assisted-Newtonian model
+ * with the assist a player toggle, built under #21 because #14's cruise numbers
+ * cannot be judged from a ship that does not fly the way #5 decided. What
+ * remains a placeholder is the hull — a 20-metre cube — and the ship roster it
+ * stands in for, which is still an open decision on the map.
  *
  * Orientation deliberately does **not** live here. It is a quaternion the
  * renderer already owns a good type for, and inventing a second quaternion
@@ -59,8 +60,9 @@ import {
 	arrivalPoint,
 	generateContents,
 	placeBodies,
+	velocityOnOrbit,
 } from "./system";
-import { type Vec3, add, scale, v3 } from "./vec3";
+import { type Vec3, add, dot, length, scale, sub, v3 } from "./vec3";
 
 /**
  * What a body is for rendering purposes.
@@ -265,6 +267,52 @@ export function advanceSystem(system: System, gameTime: number): void {
 	}
 }
 
+/**
+ * How fast a body is moving through sim space, km/s.
+ *
+ * Composed the same way `placeBodies` composes positions — a station's velocity
+ * is its parent planet's plus its own around it — because the two have to agree
+ * or the ship would be told to match a frame the body is not in.
+ *
+ * Here rather than in `system.ts` because it needs the *contents* to resolve a
+ * parent, which is what this module already holds; `system.ts` supplies the
+ * per-orbit derivative and this composes it. The star does not move: system
+ * frames are star-centred (spec §7.4), so its velocity is zero by construction
+ * rather than by measurement.
+ */
+export function bodyVelocity(
+	system: System,
+	id: string,
+	gameTime: number,
+): Vec3 {
+	const { contents } = system;
+	if (id === contents.star.id) return v3();
+	const planet = contents.planets.find((p) => p.id === id);
+	if (planet) return velocityOnOrbit(planet.orbit, gameTime);
+	for (const p of contents.planets) {
+		const moon = p.moons.find((m) => m.id === id);
+		if (moon) {
+			return add(
+				velocityOnOrbit(p.orbit, gameTime),
+				velocityOnOrbit(moon.orbit, gameTime),
+			);
+		}
+	}
+	const station = contents.stations.find((s) => s.id === id);
+	if (station) {
+		const own = velocityOnOrbit(station.orbit, gameTime);
+		if (!station.parentId) return own;
+		const parent = contents.planets.find((p) => p.id === station.parentId);
+		// A parent that is not in the contents is the two having disagreed about
+		// what is in the system, which is the same throw `colorFor` makes rather
+		// than quietly returning a velocity in the wrong frame.
+		if (!parent)
+			throw new Error(`station ${id} orbits unknown ${station.parentId}`);
+		return add(velocityOnOrbit(parent.orbit, gameTime), own);
+	}
+	throw new Error(`no body ${id} in this system`);
+}
+
 export function makeWorld(seed: number): World {
 	const galaxy = generateGalaxy(seed, START_GALAXY);
 	const record = startSystem(galaxy);
@@ -279,31 +327,203 @@ export function makeWorld(seed: number): World {
 }
 
 /**
- * Linear damping, per second, applied to the ship's velocity.
+ * #5's assist cap, km/s — the speed assisted flight tops out at.
  *
- * **Not the flight model.** #5 resolved on assisted Newtonian with the assist a
- * player toggle; none of that is built. This constant exists so a cube can be
- * steered with a keyboard until it is, and the flight-model implementation is
- * free to delete it.
+ * It lives here, in the flight model, rather than beside the code that reads it
+ * most: cruise's exit clamp (#10 §1) is stated *against* this number, and a cap
+ * defined in `cruise.ts` would have the third regime deciding what the first
+ * two are allowed to do.
  */
-export const SHIP_DAMPING = 0.6;
+export const ASSIST_CAP_KMS = 2.0;
+
+/** Thrust, km/s² — about 0.2 g. Tuned in #5's prototype so a 40 km station
+ *  approach takes about twenty seconds. */
+export const THRUST_KMS2 = 2.0;
 
 /**
- * Advance the ship by `dt` seconds under an acceleration in km/s².
+ * How fast the assist kills sideways drift: an e-folding time in seconds.
  *
- * Semi-implicit Euler — velocity first, then position from the *new* velocity.
- * It is one line different from the explicit form and noticeably better
- * behaved under a varying frame delta, which is what a browser gives you.
+ * This is the whole difference between the two regimes, so it is the one number
+ * that decides whether assisted flight feels like a plane or like a puck. Short
+ * enough that a turn ends pointed where you are going; long enough that a hard
+ * turn still slides, which is what stops the assist from reading as being on
+ * rails.
+ */
+export const ASSIST_LATERAL_TAU_S = 1.2;
+
+/**
+ * How fast the ship is turning, radians per second, about its own axes.
+ *
+ * Rotation has **inertia**, and that is not a flourish: the first version set
+ * the rate directly from the key state, so a turn began and ended on the frame
+ * a key went down or up. The principal's words for it were that leaving a key
+ * "stops any motion immediately, not a gentle way of easing out" — which is the
+ * difference between 1984's fixed-rate turret and every space sim since.
+ */
+export interface Angular {
+	pitch: number;
+	yaw: number;
+	roll: number;
+}
+
+/** Peak rate on each axis, radians per second. Roll is faster because it moves
+ *  nothing on screen but the horizon. */
+export const ANGULAR_MAX: Angular = { pitch: 0.9, yaw: 0.9, roll: 1.4 };
+
+/**
+ * Angular acceleration, radians per second².
+ *
+ * About a third of a second from rest to peak rate on the pitch and yaw axes —
+ * fast enough that the ship answers the stick, slow enough that the answer is
+ * something you feel arrive.
+ */
+export const ANGULAR_ACCEL = 3.0;
+
+/**
+ * How quickly the assist stops a turn once the stick is released: an e-folding
+ * time in seconds.
+ *
+ * Only with the assist **on**. With it off the ship keeps tumbling, which is
+ * what Newtonian rotation means and what the assist-off regime is for — and it
+ * is the second place (after lateral drift) where the two regimes visibly part.
+ */
+export const ANGULAR_DAMP_TAU_S = 0.28;
+
+/**
+ * One frame of rotation: the rates the renderer then applies to the quaternion.
+ *
+ * Pure, and here rather than in the renderer, for the same reason the flight
+ * model is: it is dynamics, it decides how the ship *feels*, and something that
+ * load-bearing should be checkable without opening a browser. The orientation
+ * itself stays in the renderer — a quaternion is a thing Three.js already has a
+ * good type for, and this module holds no quaternion of its own.
+ *
+ * `command` is the stick, −1…1 per axis. `impulse` is the mouse: a relative
+ * pointer delta is not a stick position, it is a nudge, so it adds straight to
+ * the rate and is then subject to the same damping.
+ */
+export function stepAngular(
+	rates: Angular,
+	command: Angular,
+	impulse: Angular,
+	assist: boolean,
+	dt: number,
+): Angular {
+	if (dt <= 0) return rates;
+	const decay = Math.exp(-dt / ANGULAR_DAMP_TAU_S);
+	const axis = (rate: number, want: number, kick: number, max: number) => {
+		let next = rate + kick;
+		if (want !== 0) {
+			// Toward the commanded rate at a bounded acceleration — the ease-in.
+			const target = clamp(want, -1, 1) * max;
+			next += clamp(target - next, -ANGULAR_ACCEL * dt, ANGULAR_ACCEL * dt);
+		} else if (assist) {
+			// The ease-*out*, which is the half that was missing.
+			next *= decay;
+		}
+		return clamp(next, -max, max);
+	};
+	return {
+		pitch: axis(rates.pitch, command.pitch, impulse.pitch, ANGULAR_MAX.pitch),
+		yaw: axis(rates.yaw, command.yaw, impulse.yaw, ANGULAR_MAX.yaw),
+		roll: axis(rates.roll, command.roll, impulse.roll, ANGULAR_MAX.roll),
+	};
+}
+
+/**
+ * What the player is asking the ship to do this frame.
+ *
+ * `nose` is a unit vector in sim space — orientation lives in the renderer (see
+ * the module docstring), so the flight model is handed the direction rather
+ * than the quaternion. `throttle` is 0…1 and means different things in the two
+ * regimes, which is the point of the flag beside it.
+ */
+export interface FlightControl {
+	nose: Vec3;
+	throttle: number;
+	/** #5's flight assist, a player toggle defaulting on. */
+	assist: boolean;
+	/**
+	 * The velocity the assist treats as **at rest**, km/s. Omit for the star's
+	 * frame, which is what the sim's coordinates are stated in.
+	 *
+	 * This exists because #14 flew an arrival and could not stay at it. Sim
+	 * space is star-centred, so "stopped" means stopped relative to the star —
+	 * but a station on a 1 AU orbit is doing ~30 km/s, fifteen times the assist
+	 * cap. Cutting the throttle beside one therefore *pushes off* it at orbital
+	 * speed, and nothing in normal flight can catch it again. Every space game
+	 * that has stations solves this somehow; here the frame is passed in, and
+	 * the renderer picks the nearest body as the local one.
+	 *
+	 * Assist **off** ignores it: unassisted flight is Newtonian in the world's
+	 * own frame, which is the whole of what makes it unassisted.
+	 */
+	frameVel?: Vec3;
+}
+
+/**
+ * #5's model, built: assisted Newtonian, with the assist a toggle.
+ *
+ * **Assist on** — the throttle commands a *speed*, not a thrust: the ship
+ * accelerates toward `throttle × ASSIST_CAP_KMS` along the nose at `THRUST_KMS2`
+ * and holds it, and sideways velocity decays with `ASSIST_LATERAL_TAU_S`. That
+ * is what makes it fly like a modern space sim rather than like 1984: releasing
+ * the stick mid-turn settles onto the new heading instead of continuing to
+ * drift sideways forever.
+ *
+ * **Assist off** — thrust along the nose and nothing else. No cap, no damping,
+ * no help: velocity and nose disagree permanently, which is the whole reason
+ * the map's HUD constraint requires a velocity-vector marker.
+ *
+ * Semi-implicit Euler in both cases — velocity first, then position from the
+ * *new* velocity. One line's difference from the explicit form, and noticeably
+ * better behaved under the varying frame delta a browser gives you.
  *
  * `dt` is passed in rather than read from a clock, so a probe can step this
- * with a fixed delta and get the same answer twice. A simulation that reads
- * wall time inside itself is one that cannot be replayed, whatever its seed.
+ * with a fixed delta and get the same answer twice.
  */
-export function stepShip(ship: Ship, accel: Vec3, dt: number): void {
-	const damp = Math.max(0, 1 - SHIP_DAMPING * dt);
-	ship.vel = scale(add(ship.vel, scale(accel, dt)), damp);
+export function stepFlight(
+	ship: Ship,
+	control: FlightControl,
+	dt: number,
+): void {
+	if (dt <= 0) return;
+	const throttle = Math.min(1, Math.max(0, control.throttle));
+
+	if (!control.assist) {
+		ship.vel = add(ship.vel, scale(control.nose, THRUST_KMS2 * throttle * dt));
+		ship.pos = add(ship.pos, scale(ship.vel, dt));
+		return;
+	}
+
+	// Everything the assist does happens in the local frame — see `frameVel`.
+	const frame = control.frameVel ?? v3();
+	const relative = sub(ship.vel, frame);
+
+	// Split it about the nose: the component along it is what the throttle
+	// governs, and everything perpendicular is drift the assist exists to remove.
+	const along = dot(relative, control.nose);
+	const lateral = sub(relative, scale(control.nose, along));
+	const damped = scale(lateral, Math.exp(-dt / ASSIST_LATERAL_TAU_S));
+
+	const want = throttle * ASSIST_CAP_KMS;
+	const authority = THRUST_KMS2 * dt;
+	const next = along + clamp(want - along, -authority, authority);
+
+	let assisted = add(scale(control.nose, next), damped);
+	// The cap is on the *total*, not on the commanded component: a ship that
+	// enters a turn at the cap would otherwise briefly exceed it, since the
+	// lateral remainder is still there while it decays.
+	const speed = length(assisted);
+	if (speed > ASSIST_CAP_KMS)
+		assisted = scale(assisted, ASSIST_CAP_KMS / speed);
+
+	ship.vel = add(frame, assisted);
 	ship.pos = add(ship.pos, scale(ship.vel, dt));
 }
+
+const clamp = (v: number, lo: number, hi: number): number =>
+	Math.min(hi, Math.max(lo, v));
 
 /**
  * One step of the whole world: the clock, then the bodies, then the ship.
@@ -316,8 +536,29 @@ export function stepShip(ship: Ship, accel: Vec3, dt: number): void {
  *
  * `dt` is seconds of **sim** time and is never scaled (#10).
  */
-export function stepWorld(world: World, accel: Vec3, dt: number): void {
+export function stepWorld(
+	world: World,
+	control: FlightControl,
+	dt: number,
+): void {
+	advanceWorldClock(world, dt);
+	stepFlight(world.ship, control, dt);
+}
+
+/**
+ * The clock and the bodies, without the ship.
+ *
+ * Split out because cruise (#10, #14) does not integrate the ship the way
+ * `stepFlight` does — it is nose-locked and position-dependent, with its own
+ * sub-stepping — but it owes the world the same ordering: bodies at the *new*
+ * time before anything reads their positions. Leaving the two lines inlined in
+ * `stepWorld` meant the cruise path had to restate them, which is how a second
+ * clock gets invented.
+ *
+ * `dt` is seconds of **sim** time and is never scaled (#10). Cruise is
+ * fictional FTL; the world it crosses ticks at real time.
+ */
+export function advanceWorldClock(world: World, dt: number): void {
 	world.gameTime += dt;
 	advanceSystem(world.system, world.gameTime);
-	stepShip(world.ship, accel, dt);
 }

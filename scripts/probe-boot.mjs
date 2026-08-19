@@ -136,6 +136,7 @@ const state = await page.evaluate(() => {
 		units: { ...g.units },
 		camPos,
 		shipSim: { x: ship.pos.x, y: ship.pos.y, z: ship.pos.z },
+		view: g.view,
 		camSim: window.__recoverCamSim(),
 		shipMesh: (() => {
 			const m = g.nearScene.getObjectByName("ship");
@@ -377,18 +378,21 @@ if (state.shipMesh) {
 	// The shared recovery, read in the same evaluate as the meshes it is checked
 	// against — see `installCamSim` in probe-guard.mjs.
 	const camSim = state.camSim;
-	// A sanity bound on the recovery itself: the chase camera sits a few tens of
-	// metres from the ship, so a recovered offset of kilometres means the ship
-	// mesh is not being placed camera-relatively at all.
-	const chase = Math.hypot(
+	// A sanity bound on the recovery itself: both cameras sit metres to tens of
+	// metres from the hull — cockpit a few metres ahead of it (#5 made cockpit the
+	// default under #21), chase a hundred-odd behind — so a recovered offset of
+	// kilometres means the ship mesh is not being placed camera-relatively at all.
+	// The bound spans both rather than naming one, because which view is default
+	// is a design decision and this check is about the arithmetic.
+	const offset = Math.hypot(
 		state.shipSim.x - camSim.x,
 		state.shipSim.y - camSim.y,
 		state.shipSim.z - camSim.z,
 	);
 	check(
-		"the ship is drawn a chase-camera's distance from the origin",
-		chase > 0.01 && chase < 0.5,
-		`${chase.toFixed(4)} km`,
+		"the ship is drawn a camera's-length from the origin",
+		offset > 0.001 && offset < 0.5,
+		`${offset.toFixed(4)} km in ${state.view} view`,
 	);
 
 	// An absolute anchor, because everything above is relative to a camera

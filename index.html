@@ -17,6 +17,22 @@
       canvas {
         display: block;
       }
+      /* The marker overlay sits on the glass, over the WebGL canvas and under
+         nothing — it never takes a click, so pointer lock still belongs to the
+         renderer's canvas beneath it. */
+      #overlay {
+        position: fixed;
+        left: 0;
+        top: 0;
+        /* Explicit, not `inset: 0`. A canvas is a replaced element, so with
+           `width: auto` it takes its intrinsic size — the 300x150 default — and
+           the `right`/`bottom` insets are simply dropped as over-constrained.
+           The markers then draw into a small box in the corner, which is exactly
+           what the first version of this did. */
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+      }
       #hud {
         position: fixed;
         left: 12px;
@@ -40,9 +56,13 @@
     </style>
   </head>
   <body>
+    <canvas id="overlay"></canvas>
     <div id="hud"></div>
     <div id="keys">
-      W/S or ↑/↓ pitch · A/D or ←/→ yaw · Q/E roll · Shift/Ctrl throttle
+      W/S or ↑/↓ pitch · A/D or ←/→ yaw · Q/E roll · Shift/Ctrl throttle<br />
+      J cruise · T/G target · F face target · X assist · V view · 0 reset dials<br />
+      dials: −/= v_max · [ / ] exponent · ; / ' drop · , / . below · n/m vicinity
+      · k/l lead
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

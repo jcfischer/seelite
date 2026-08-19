@@ -64,9 +64,40 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
 import { starField } from "./backdrop";
 import { AudioFX } from "./audio";
+import {
+	CHARGE_CAPACITY_AU,
+	type CruiseParams,
+	DEFAULT_CRUISE,
+	advanceCruise,
+	chargeAfterRegen,
+	chargeAfterTravel,
+	exitVelocity,
+	legSeconds,
+} from "./cruise";
 import { GOVERNMENT_NAMES } from "./galaxy";
-import { type Body, type World, makeWorld, stepWorld } from "./sim";
-import { add, length, scale, sub, v3 } from "./vec3";
+import {
+	angleOffNose,
+	directionTo,
+	duration,
+	edgeOf,
+	horizonRoll,
+	prograde,
+	projectDirection,
+} from "./hud";
+import {
+	ASSIST_CAP_KMS,
+	type Angular,
+	type Body,
+	type FlightControl,
+	type World,
+	advanceWorldClock,
+	bodyVelocity,
+	makeWorld,
+	stepAngular,
+	stepWorld,
+} from "./sim";
+import { type WarpField, warpField } from "./warp";
+import { type Vec3, add, dot, length, scale, sub, v3 } from "./vec3";
 // One path to `./units`, deliberately. Keeping a namespace import beside a named
 // one would let this file reach `FAR_SCALE` and `units.FAR_SCALE` as separate
 // spellings of the same constant — the two-public-paths pattern this branch
@@ -76,6 +107,8 @@ import * as units from "./units";
 const {
 	AU_KM,
 	BACKDROP_RADIUS,
+	C_KMS,
+	MAX_DT,
 	FAR_FAR_UNITS,
 	FAR_NEAR_UNITS,
 	FAR_SCALE,
@@ -93,15 +126,6 @@ const STAR_COUNT = 4000;
  *  every display, so it scales with the buffer. */
 const STAR_PIXEL_SCALE = 0.35;
 
-/** Ship thrust, km/s². About 0.2 g — enough to feel responsive at the scale the
- *  station sits at, and not a flight-model claim. */
-const THRUST = 2.0;
-
-/** Radians per second at full deflection, for each rotation axis. */
-const YAW_RATE = 0.9;
-const PITCH_RATE = 0.9;
-const ROLL_RATE = 1.4;
-
 /**
  * The chase camera's offset from the ship, in kilometres: behind and above.
  *
@@ -114,10 +138,81 @@ const ROLL_RATE = 1.4;
 const CHASE_BACK_KM = 0.14;
 const CHASE_UP_KM = 0.04;
 
-/** Largest frame delta the simulation will accept, in seconds. A backgrounded
- *  tab returns with a delta of whole seconds, and integrating that in one step
- *  puts the ship somewhere absurd. */
-const MAX_DT = 0.1;
+/**
+ * Mouse sensitivity: radians of rotation per pixel of pointer movement.
+ *
+ * Relative deltas under pointer lock rather than an absolute virtual stick,
+ * which is what "like E:D" means in practice for mouse: the pointer has no
+ * position to return to, so the ship holds an attitude when the hand stops
+ * rather than springing back to centre.
+ */
+const MOUSE_RAD_PER_PX = 0.0022;
+
+/** How far a single frame's mouse movement may turn the ship, radians. A
+ *  flicked pointer or a re-focused window can deliver a delta of hundreds of
+ *  pixels in one event, and without this the ship spins. */
+const MOUSE_MAX_STEP = 0.12;
+
+/** The cockpit camera's offset from the hull's centre, kilometres — 8 metres
+ *  forward, so the view is from the nose rather than from inside the cube. */
+const COCKPIT_FORWARD_KM = 0.008;
+
+/** Below this speed the prograde marker is hidden: the velocity is noise, and a
+ *  marker chasing it would swing around a screen belonging to a ship that is
+ *  effectively stationary. */
+const PROGRADE_MIN_KMS = 0.02;
+
+/** How far inside the viewport an off-screen target arrow sits, as a fraction
+ *  of the half-width. */
+const EDGE_MARGIN = 0.07;
+
+/**
+ * §4's spool-up, seconds — reused here for the voluntary case.
+ *
+ * The spec introduces it for re-entry after an interdiction, deliberately
+ * borrowing #6's hyperspace wind-up rather than inventing a second escape
+ * mechanic. Applying it to every entry is this prototype's reading: the wind-up
+ * is what makes engaging cruise a commitment rather than a reflex, and whether
+ * three seconds is the right commitment is one of the things flying it answers.
+ */
+const SPOOL_S = 3;
+
+/**
+ * The dials, and why they are lists rather than a slider.
+ *
+ * This node's whole question is which of the spec's derived numbers survive
+ * being flown (§10). A judgement like "23 c or 20 c" is made by *comparing*,
+ * and comparing means being able to step to the next value and back on the same
+ * leg — not typing a number, and not restarting with a different query string.
+ * Each list is centred on the spec's own figure so that "what the spec says" is
+ * always one keypress from wherever the tuning has wandered.
+ */
+const V_MAX_DIAL_C = [5, 10, 15, 20, 23, 30, 50];
+const EXPONENT_DIAL = [0.5, 0.6, 0.75, 0.9, 1.0];
+const DROP_RADIUS_DIAL_KM = [20, 50, 100, 250, 1000];
+/** §3's speed threshold — the dial between §2.3's arrive-for-you drop-out and
+ *  §3's cut-the-throttle one. `cruise.ts` explains why both are implemented. */
+const DROP_SPEED_DIAL_KMS = [2, 20, 200, 2000];
+/** The approach clamp's two numbers, both of them findings rather than spec —
+ *  see `cruise.ts`'s `vicinityKm`. */
+const VICINITY_DIAL_KM = [2000, 5000, 10000, 25000, 50000];
+const APPROACH_LEAD_DIAL_S = [1.5, 3, 5, 8];
+
+/** The one dial whose list is not in the parameter's own unit: `v_max` is
+ *  argued in multiples of c, and stored in km/s. */
+const IN_C = {
+	display: (kms: number) => kms / C_KMS,
+	store: (c: number) => c * C_KMS,
+};
+
+/** How often the time-to-target estimate is recomputed, in sim seconds. Four a
+ *  second — far faster than the readout's own resolution, and a sixteenth of
+ *  the work. */
+const ETA_INTERVAL_S = 0.25;
+
+/** What the ship is doing: #5's two regimes are one state here (the flight
+ *  model is still the scaffold's stand-in) and cruise is the other. */
+type Regime = "normal" | "cruise";
 
 class Game {
 	readonly world: World;
@@ -156,8 +251,80 @@ class Game {
 	private readonly keys = new Set<string>();
 	readonly audio = new AudioFX();
 	private throttle = 0;
+
+	/**
+	 * The cruise regime's whole state, public because a probe has to be able to
+	 * drive it and read it.
+	 *
+	 * Held on the renderer rather than in `cruise.ts` deliberately: that module
+	 * is a pure law with no memory, which is what lets a headless test replay a
+	 * leg at three frame rates and demand the same answer. The *session* — which
+	 * regime, how much charge, what is selected, how long the last leg took — is
+	 * the game's, and it is the half that a save file will eventually carry.
+	 */
+	regime: Regime = "normal";
+	/** A copy, not the module's object: the dials mutate this, and the spec's
+	 *  own figures stay reachable as `DEFAULT_CRUISE` for the reset key. */
+	cruiseParams: CruiseParams = { ...DEFAULT_CRUISE };
+	/** §7's drive charge, AU. Starts full — a new game docks first. */
+	chargeAu = CHARGE_CAPACITY_AU;
+	/** Seconds left of §4's spool-up before cruise actually engages. */
+	spoolLeftS = 0;
+	/** What the drop-out and the readouts are measured against (§6: selection is
+	 *  a convenience, never a rail). */
+	targetId: string | null = null;
+	/**
+	 * #5's flight assist, a player toggle defaulting on.
+	 *
+	 * Remembered rather than applied inside cruise, which is a distinct dynamic
+	 * that does not honour it (#10 §1) — so leaving cruise puts the ship back in
+	 * whichever regime it was flying before.
+	 */
+	assist = true;
+	/** #5 made cockpit the default and chase a toggle. The hull is hidden in
+	 *  cockpit, which is what makes the HUD markers load-bearing. */
+	view: "cockpit" | "chase" = "cockpit";
+	/** How fast the ship is turning, radians per second — rotation has momentum,
+	 *  and `sim.ts`'s `stepAngular` owns the dynamics. */
+	rates: Angular = { pitch: 0, yaw: 0, roll: 0 };
+	/** Pointer movement accumulated since the last step, in pixels. Consumed
+	 *  each frame — a delta applied twice is a ship that turns at the frame
+	 *  rate rather than at the hand's speed. */
+	private mouseDx = 0;
+	private mouseDy = 0;
+	/** The selectable bodies, in display order. Invalidated by changing system —
+	 *  which nothing does yet, and which is why this is a field rather than a
+	 *  `readonly` built in the constructor. */
+	private selectableCache: Body[] | null = null;
+	/** The speed law's masses, rebuilt once per clock value. See `masses()`. */
+	private massesCache: { id: string; pos: Vec3; radiusKm: number }[] | null =
+		null;
+	private massesAt = Number.NaN;
+	/** The overlay the markers are drawn on: a 2D canvas over the WebGL one. */
+	private overlay!: HTMLCanvasElement;
+	private overlayCtx!: CanvasRenderingContext2D;
+
+	/** Speed the cruise integrator reported last frame, km/s. */
+	cruiseSpeedKms = 0;
+	/** And the same speed in the target's frame — the one that decides whether
+	 *  the approach arrives or sails past. */
+	closingKms = 0;
+	/** `gameTime` at which the current leg's spool-up finished, and how long the
+	 *  last completed leg took. The number this node exists to judge: 68 s on a
+	 *  typical leg is either a journey or dead time, and nothing but the clock
+	 *  can say which. */
+	legStartedAtS: number | null = null;
+	lastLegS: number | null = null;
+	/** Why cruise ended last time — shown on the HUD, so an overshoot is legible
+	 *  as an overshoot rather than as the regime having dropped out for no
+	 *  visible reason. */
+	lastExit = "";
+	private warp!: WarpField;
 	private lastTime = 0;
 	private hud: HTMLElement;
+	/** The last time-to-target estimate, and the clock value it was made at. */
+	private etaCache: number | null = null;
+	private etaAt = Number.NEGATIVE_INFINITY;
 	/** What the HUD last displayed, quantised to its own resolution — so a frame
 	 *  that would render the same text neither builds nor writes it. */
 	private hudKey = "";
@@ -189,6 +356,11 @@ class Game {
 	 * own arithmetic — `tests/headless.test.ts` and `sim.test.ts`'s float32 budget.
 	 */
 	readonly units = units;
+
+	/** #5's assist cap, reachable from the handle for the same reason the unit
+	 *  scheme is: a probe that restated it would assert against its own copy and
+	 *  go falsely red the day the flight model retunes it. */
+	readonly assistCapKms = ASSIST_CAP_KMS;
 
 	constructor(seed: number) {
 		this.world = makeWorld(seed);
@@ -240,6 +412,13 @@ class Game {
 		this.buildBackdrop();
 		this.buildBodies();
 		this.buildShip();
+		this.warp = warpField(this.world.seed);
+		this.nearScene.add(this.warp.object);
+		// Something is selected on frame one. §6 makes selection a convenience
+		// rather than a rail, but a cruise panel with an empty target field on
+		// boot reads as broken, and the nearest station is what a ship at the
+		// arrival point is there to reach.
+		this.targetId = this.nearestOfKind("station")?.id ?? null;
 
 		this.composer = new EffectComposer(this.renderer);
 		// Back to front. The first pass clears colour; the third clears *depth*
@@ -269,6 +448,12 @@ class Game {
 		);
 		this.composer.addPass(new OutputPass());
 
+		this.overlay = document.getElementById("overlay") as HTMLCanvasElement;
+		this.overlayCtx = this.overlay.getContext("2d") as CanvasRenderingContext2D;
+		// Sized **here** as well as on resize: a canvas that has never seen a
+		// resize event keeps its 300x150 default, and every marker lands inside
+		// that box in the top-left corner while the CSS stretches nothing.
+		this.sizeOverlay();
 		this.hud = document.getElementById("hud") as HTMLElement;
 		window.addEventListener("resize", () => this.onResize());
 		window.addEventListener("keydown", (e) => this.onKey(e, true));
@@ -276,6 +461,20 @@ class Game {
 		// Audio cannot open before a gesture, so it opens on the first one.
 		window.addEventListener("pointerdown", () => this.audio.ensure(), {
 			once: true,
+		});
+		// Pointer lock on click, Escape to release — the browser's own contract,
+		// and the only way to get relative mouse deltas that do not stop at the
+		// edge of the window. Keyboard steering stays live throughout, so a
+		// player who never clicks can still fly.
+		this.renderer.domElement.addEventListener("click", () => {
+			if (document.pointerLockElement !== this.renderer.domElement) {
+				this.renderer.domElement.requestPointerLock();
+			}
+		});
+		window.addEventListener("mousemove", (e) => {
+			if (document.pointerLockElement !== this.renderer.domElement) return;
+			this.mouseDx += e.movementX;
+			this.mouseDy += e.movementY;
 		});
 
 		this.animate();
@@ -299,11 +498,43 @@ class Game {
 	private faceTheStar() {
 		const d = length(this.world.ship.pos);
 		if (d === 0) return;
-		const inward = scale(this.world.ship.pos, -1 / d);
+		this.face(scale(this.world.ship.pos, -1 / d));
+	}
+
+	/**
+	 * Point the nose at the selected target.
+	 *
+	 * A **prototype aid**, and worth saying so plainly: §6 makes cruise free —
+	 * you point anywhere and go — and an aiming key is one step from the
+	 * destination-locked cruise the spec rejected. It is here because the
+	 * judgement this node is collecting is about *pacing*, and hand-aiming a
+	 * 20-metre nose at a 50 km sphere an AU away is a different skill that would
+	 * dominate every measurement. Whether the shipped game offers an aiming
+	 * assist is a HUD question, and #11 owns the screen it would live on.
+	 */
+	faceTarget() {
+		const target = this.targetBody();
+		if (!target) return;
+		const to = sub(target.pos, this.world.ship.pos);
+		const d = length(to);
+		if (d === 0) return;
+		this.face(scale(to, 1 / d));
+	}
+
+	/**
+	 * Aim the ship down a sim-space unit vector.
+	 *
+	 * Normalised by the caller in float64 before Three sees it: sim positions run
+	 * to 10⁸ km and a `Vector3` is float32, so handing it raw coordinates would
+	 * quantise the direction before it was a direction. The magnitude is what
+	 * does not survive float32, and normalising is exactly the operation that
+	 * discards it.
+	 */
+	private face(unit: Vec3) {
 		this.orientation.setFromRotationMatrix(
 			new THREE.Matrix4().lookAt(
 				new THREE.Vector3(0, 0, 0),
-				new THREE.Vector3(inward.x, inward.y, inward.z),
+				new THREE.Vector3(unit.x, unit.y, unit.z),
 				new THREE.Vector3(0, 1, 0),
 			),
 		);
@@ -468,15 +699,442 @@ class Game {
 		const key = e.key.toLowerCase();
 		if (down) this.keys.add(key);
 		else this.keys.delete(key);
+		// One-shot commands fire on the press, not on the held state: engaging
+		// cruise and stepping a dial are events, and reading them out of `keys`
+		// each frame would repeat them sixty times a second.
+		if (down && !e.repeat) this.command(key);
 		// Arrow keys and space scroll the page otherwise, which under a
 		// full-viewport canvas looks like the controls simply not working.
 		if (key.startsWith("arrow") || key === " ") e.preventDefault();
+	}
+
+	/**
+	 * The discrete controls: the regime, the target, and the tuning dials.
+	 *
+	 * The dials are why this node is a prototype rather than an implementation.
+	 * Every one of them steps a number the spec *derived* (§10 lists the two most
+	 * likely to be wrong), and the judgement being asked for — is a 68-second leg
+	 * a journey or dead time — can only be made by flying the same leg at two
+	 * settings and preferring one. Rebuilding between them would put a minute
+	 * and a page reload between the two things being compared, which is exactly
+	 * long enough to forget what the first one felt like.
+	 */
+	private command(key: string) {
+		switch (key) {
+			case "j":
+				if (this.regime === "cruise") this.dropOut("dropped by the player");
+				else if (this.spoolLeftS > 0) {
+					this.spoolLeftS = 0;
+					this.lastExit = "spool-up cancelled";
+				} else this.engageCruise();
+				return;
+			case "t":
+				this.cycleTarget(1);
+				return;
+			case "g":
+				this.cycleTarget(-1);
+				return;
+			case "f":
+				this.faceTarget();
+				return;
+			case "x":
+				// #5's assist toggle. Not in force inside cruise (#10 §1), where the
+				// regime is nose-locked — the state is kept and applied on exit.
+				this.assist = !this.assist;
+				return;
+			case "v":
+				this.view = this.view === "cockpit" ? "chase" : "cockpit";
+				return;
+			case "0":
+				// Back to the spec's own figures, from wherever the tuning has got
+				// to. The reset is what makes the dials safe to wander with.
+				this.cruiseParams = { ...DEFAULT_CRUISE };
+				return;
+			case "]":
+				this.dial("exponent", EXPONENT_DIAL, 1);
+				return;
+			case "[":
+				this.dial("exponent", EXPONENT_DIAL, -1);
+				return;
+			case "=":
+				this.dial("vMaxKms", V_MAX_DIAL_C, 1, IN_C);
+				return;
+			case "-":
+				this.dial("vMaxKms", V_MAX_DIAL_C, -1, IN_C);
+				return;
+			case "'":
+				this.dial("dropRadiusKm", DROP_RADIUS_DIAL_KM, 1);
+				return;
+			case ";":
+				this.dial("dropRadiusKm", DROP_RADIUS_DIAL_KM, -1);
+				return;
+			case ".":
+				this.dial("dropSpeedKms", DROP_SPEED_DIAL_KMS, 1);
+				return;
+			case ",":
+				this.dial("dropSpeedKms", DROP_SPEED_DIAL_KMS, -1);
+				return;
+			case "m":
+				this.dial("vicinityKm", VICINITY_DIAL_KM, 1);
+				return;
+			case "n":
+				this.dial("vicinityKm", VICINITY_DIAL_KM, -1);
+				return;
+			case "l":
+				this.dial("approachLeadS", APPROACH_LEAD_DIAL_S, 1);
+				return;
+			case "k":
+				this.dial("approachLeadS", APPROACH_LEAD_DIAL_S, -1);
+				return;
+			default:
+		}
+	}
+
+	/**
+	 * Step one dial to its neighbouring value, clamped at the ends.
+	 *
+	 * Clamped rather than wrapping: a dial that wraps from 50 c to 5 c on one
+	 * keypress too many changes the thing being judged by a factor of ten
+	 * without the player having asked to, and at these speeds that is the
+	 * difference between an approach and a system crossing.
+	 *
+	 * The nearest current value rather than a held index, so the dial still
+	 * behaves after a reset or a value set from elsewhere.
+	 */
+	private dial(
+		field:
+			| "exponent"
+			| "dropRadiusKm"
+			| "dropSpeedKms"
+			| "vMaxKms"
+			| "vicinityKm"
+			| "approachLeadS",
+		values: number[],
+		step: number,
+		// Named `unit`, not `scale`: `scale` is the vector helper this file uses
+		// everywhere, and a parameter by that name would silently capture it for
+		// any vector arithmetic added inside this method.
+		unit: { display: (v: number) => number; store: (v: number) => number } = {
+			display: (v) => v,
+			store: (v) => v,
+		},
+	) {
+		// `v_max`'s list is written in multiples of c, because that is the unit
+		// #10 argues the decision in (§0, §2.3) — the scale is what lets one dial
+		// serve it and the three that are already in their stored units. Two
+		// copies of the clamp rule is how one dial's edge behaviour gets fixed and
+		// the other's does not.
+		const current = unit.display(this.cruiseParams[field]);
+		let at = 0;
+		for (let i = 1; i < values.length; i++) {
+			if (Math.abs(values[i] - current) < Math.abs(values[at] - current))
+				at = i;
+		}
+		const next = Math.min(values.length - 1, Math.max(0, at + step));
+		this.cruiseParams = {
+			...this.cruiseParams,
+			[field]: unit.store(values[next]),
+		};
 	}
 
 	private axis(negative: string[], positive: string[]): number {
 		const neg = negative.some((k) => this.keys.has(k)) ? 1 : 0;
 		const pos = positive.some((k) => this.keys.has(k)) ? 1 : 0;
 		return pos - neg;
+	}
+
+	/** The nearest body of a kind, by centre distance — what picks the boot-time
+	 *  target, so the panel names something reachable on frame one. */
+	private nearestOfKind(kind: Body["kind"]): Body | null {
+		let best: Body | null = null;
+		let bestKm = Number.POSITIVE_INFINITY;
+		for (const b of this.world.system.bodies) {
+			if (b.kind !== kind) continue;
+			const km = length(sub(b.pos, this.world.ship.pos));
+			if (km < bestKm) {
+				best = b;
+				bestKm = km;
+			}
+		}
+		return best;
+	}
+
+	/**
+	 * What the speed law keys off: stars and planets only (§2.1).
+	 *
+	 * Rebuilt each frame from the live body list rather than cached, because the
+	 * bodies move — the whole point of #6's clock — and a cached array of
+	 * positions would be a second copy of the world going stale at orbital
+	 * speed. The list is a handful of entries; the cost is nothing beside what
+	 * the sub-step loop then does with it.
+	 */
+	private masses() {
+		// Cached on the clock, not on the frame counter: body positions are
+		// `f(seed, gameTime)` (#6 §7.3), so two calls at the same `gameTime` are
+		// asking about the same world and the second is pure allocation. Both
+		// callers — the cruise step and the ETA integrator — run inside one frame.
+		if (this.massesAt !== this.world.gameTime || !this.massesCache) {
+			this.massesCache = this.world.system.bodies
+				.filter((b) => b.kind === "star" || b.kind === "planet")
+				.map((b) => ({ id: b.id, pos: b.pos, radiusKm: b.radiusKm }));
+			this.massesAt = this.world.gameTime;
+		}
+		return this.massesCache;
+	}
+
+	/**
+	 * Everything selectable, in a stable order — stations first, then planets,
+	 * each by id. Stable so that cycling is a walk rather than a reshuffle as the
+	 * ship moves.
+	 *
+	 * Built **once**. The marker overlay walks this every frame and the set it
+	 * walks changes only when the system does; the sort is the expensive half,
+	 * because `localeCompare` is ICU collation rather than a comparison. The
+	 * order is position-independent, which is what makes one build enough.
+	 */
+	private selectable(): Body[] {
+		if (!this.selectableCache) {
+			const order = { station: 0, planet: 1, star: 2, moon: 3 } as const;
+			this.selectableCache = this.world.system.bodies
+				.filter((b) => b.kind !== "moon")
+				.sort(
+					(a, b) => order[a.kind] - order[b.kind] || a.id.localeCompare(b.id),
+				);
+		}
+		return this.selectableCache;
+	}
+
+	cycleTarget(step: number) {
+		const list = this.selectable();
+		if (list.length === 0) return;
+		const at = list.findIndex((b) => b.id === this.targetId);
+		const next = (at + step + list.length * 2) % list.length;
+		this.targetId = list[next].id;
+	}
+
+	/**
+	 * Set the throttle directly, 0…1.
+	 *
+	 * Public because §3 makes deceleration **player-managed** — the throttle is
+	 * the whole of the arrival skill — and a probe that cannot work it can only
+	 * measure a ship flying into its destination at full power. That is not a
+	 * hypothetical: the first run of `probe-cruise.mjs` did exactly that and
+	 * never arrived, because a station's speed is keyed to its *planet's*
+	 * distance and stays in the thousands of km/s right up to the hull.
+	 */
+	setThrottle(value: number) {
+		this.throttle = Math.min(1, Math.max(0, value));
+	}
+
+	targetBody(): Body | null {
+		return this.targetId
+			? (this.world.system.byId.get(this.targetId) ?? null)
+			: null;
+	}
+
+	/**
+	 * What to do next, in one phrase, or "" when there is nothing to say.
+	 *
+	 * Shown whenever normal flight cannot reasonably reach the selected target —
+	 * which at the 2 km/s assist cap is anything past a few thousand kilometres,
+	 * and is *most of a system*.
+	 */
+	private cruisePrompt(targetKm: number | null): string {
+		if (this.spoolLeftS > 0) return "";
+		if (this.regime === "cruise") return "";
+		if (this.chargeAu <= 0)
+			return "no drive charge — wait for it to regenerate";
+		if (targetKm === null) return "T selects a target";
+		// An hour at the cap, which is 7,200 km. Below that the crawl is the
+		// intended experience — #10 §3 bounds the drop radius by exactly this
+		// argument — and above it the answer is always cruise.
+		if (targetKm < 3600 * ASSIST_CAP_KMS) return "";
+		return "press J to cruise";
+	}
+
+	/** How fast the selected target is moving through sim space, km/s — the frame
+	 *  the arrival is judged in. Zero when nothing is selected. */
+	targetVelocity(): Vec3 {
+		return this.targetId
+			? bodyVelocity(this.world.system, this.targetId, this.world.gameTime)
+			: v3();
+	}
+
+	/** What the player is asking of the flight model this frame (#5's model, in
+	 *  `sim.ts`). The assist is a toggle and its state is remembered through
+	 *  cruise, which does not honour it (#10 §1). */
+	private control(): FlightControl {
+		return {
+			nose: this.nose(),
+			throttle: this.throttle,
+			assist: this.assist,
+			frameVel: this.localFrame(),
+		};
+	}
+
+	/**
+	 * The velocity the assist treats as at rest — the nearest body's, if the ship
+	 * is close enough to be *at* it, and the star's otherwise.
+	 *
+	 * The threshold is `NEAR_FAR_KM`, the reach of the near layer, and that is
+	 * not a coincidence: inside it a body is drawn at 1:1 and is a place the ship
+	 * is at rather than a light in the distance, which is exactly when its frame
+	 * is the one the player is flying in.
+	 *
+	 * This is a **finding of the prototype**, not something #10 specified. Sim
+	 * space is star-centred, so without it "throttle to zero" beside a station
+	 * means stopping relative to the star while the station leaves at 30 km/s —
+	 * measured in `probe-cruise.mjs`, which could not hold station after a
+	 * perfectly good arrival. It binds #9: docking happens in this frame.
+	 */
+	private localFrame(): Vec3 {
+		let best: Body | null = null;
+		let bestKm = NEAR_FAR_KM;
+		for (const b of this.world.system.bodies) {
+			const km = length(sub(b.pos, this.world.ship.pos));
+			if (km < bestKm) {
+				best = b;
+				bestKm = km;
+			}
+		}
+		return best
+			? bodyVelocity(this.world.system, best.id, this.world.gameTime)
+			: v3();
+	}
+
+	/** The nose, as a sim-space unit vector. In cruise this *is* the direction of
+	 *  travel (§1). */
+	private nose() {
+		const f = new THREE.Vector3(0, 0, -1).applyQuaternion(this.orientation);
+		return v3(f.x, f.y, f.z);
+	}
+
+	/**
+	 * Ask for cruise. It arrives `SPOOL_S` later, or not at all.
+	 *
+	 * Refused with no charge, because §7 meters cruise by the AU and a regime
+	 * that engages on an empty tank would drop out on its first frame — the
+	 * player would see a flicker rather than a refusal.
+	 */
+	engageCruise() {
+		if (this.regime === "cruise" || this.spoolLeftS > 0) return;
+		if (this.chargeAu <= 0) {
+			this.lastExit = "no drive charge";
+			return;
+		}
+		this.spoolLeftS = SPOOL_S;
+		this.lastExit = "";
+	}
+
+	/**
+	 * Leave cruise, for whatever reason, and land in normal flight the way §1
+	 * says: velocity along the nose, clamped to the assist cap.
+	 *
+	 * One method rather than a clamp at each exit site, because there are three
+	 * of them — the auto-drop, the player's key and an empty tank — and the exit
+	 * rule is the same for all three. A per-site clamp is how one of them ends up
+	 * leaving the ship at 140 km/s.
+	 *
+	 * `matchTarget` is what separates them. **Only an arrival** leaves the ship in
+	 * the destination's frame: dropping out half an AU away and inheriting the
+	 * station's 30 km/s would fling the ship across the system in a direction it
+	 * never asked to go, and the 2 km/s assist cap cannot take it back off. Away
+	 * from the target the frame is the star's, which is what the sim's
+	 * coordinates are stated in anyway.
+	 */
+	dropOut(reason: string, matchTarget = false) {
+		if (this.regime !== "cruise") {
+			this.spoolLeftS = 0;
+			return;
+		}
+		// In the destination's frame (`cruise.ts`'s `exitVelocity`): a station on a
+		// 1 AU orbit moves at ~30 km/s, so an absolute clamp to the 2 km/s assist
+		// cap would drop the player next to a target already leaving at fifteen
+		// times the speed normal flight can manage.
+		this.world.ship.vel = exitVelocity(
+			this.nose(),
+			this.cruiseSpeedKms,
+			matchTarget ? this.targetVelocity() : v3(),
+		);
+		this.regime = "normal";
+		this.cruiseSpeedKms = 0;
+		this.throttle = 0;
+		this.lastExit = reason;
+		if (this.legStartedAtS !== null) {
+			this.lastLegS = this.world.gameTime - this.legStartedAtS;
+			this.legStartedAtS = null;
+		}
+	}
+
+	/**
+	 * How long the rest of the approach takes at the current throttle, seconds —
+	 * §5.1's headline readout. `null` when nothing is selected.
+	 *
+	 * See `cruise.ts`'s `legSeconds` for why the cruise case integrates instead
+	 * of dividing.
+	 */
+	timeToTarget(): number | null {
+		const target = this.targetBody();
+		if (!target) return null;
+		const from = this.world.ship.pos;
+		const remaining = length(sub(target.pos, from));
+		if (remaining <= this.cruiseParams.dropRadiusKm) return 0;
+
+		// **In normal flight the answer is a division, not an integral.** The
+		// cruise law is a different regime's arithmetic and would report a minute
+		// for a crossing that takes two years at the assist cap — which is exactly
+		// the confusion that has to be designed out here rather than papered over:
+		// a whole session was spent at full throttle in normal flight watching
+		// 0.837 AU not change, because the panel said nothing.
+		//
+		// A blank was the previous answer and it is worse than a wrong number: it
+		// hides the one fact the player needs, which is that *this regime cannot
+		// get there*. At rest with the throttle shut the honest question is not
+		// "how long at zero" but "how long if I flew there", so the figure falls
+		// back to the regime's best speed.
+		if (this.regime !== "cruise" && this.spoolLeftS === 0) {
+			// **Progress along the line of sight, not absolute speed.** Flying
+			// across a target at 20 km/s with the assist off is not approaching it,
+			// and an absolute figure reported that leg ten times faster than the
+			// ship was actually closing — the same mistake the speed readout below
+			// argues against, made by the line beside it.
+			//
+			// The target's *own* motion is deliberately **not** subtracted here,
+			// which is the opposite of what the drop-out does, because the two
+			// answer different questions. The drop-out asks "am I arriving", and a
+			// station's 30 km/s is the frame that decides it. This asks "how long
+			// if I fly there", and a station's orbit is not progress the pilot can
+			// spend: subtracting it would swing the readout between 48 days and
+			// never as the station came round, while the ship sat still.
+			//
+			// The floor is the assist cap, because at rest with the throttle shut
+			// the honest answer is what the trip would cost, not infinity. A blank
+			// is what hid this regime's two-year crossings for a whole session.
+			const progress = dot(
+				this.world.ship.vel,
+				scale(sub(target.pos, from), 1 / remaining),
+			);
+			// The floor is the cap itself: `cap × throttle` can never exceed it, so a
+			// third term for the throttle was arithmetic that could not fire.
+			return remaining / Math.max(progress, ASSIST_CAP_KMS);
+		}
+
+		// In cruise, `cruise.ts` owns the arithmetic — `legSeconds` integrates the
+		// same `speedFor` the ship is flown by, clamp included. The renderer held
+		// its own copy of that integration for one round and it had already
+		// diverged: keyed to the nearest mass alone, it read ~30× too fast over a
+		// station's final approach and omitted the clamp's 16 s entirely.
+		return legSeconds(
+			from,
+			{
+				pos: target.pos,
+				radiusKm: target.radiusKm,
+				vel: this.targetVelocity(),
+			},
+			this.masses(),
+			this.cruiseParams,
+			this.regime === "cruise" ? this.throttle : 1,
+		);
 	}
 
 	/**
@@ -492,14 +1150,37 @@ class Game {
 		const pitch = this.axis(["arrowdown", "s"], ["arrowup", "w"]);
 		const roll = this.axis(["e"], ["q"]);
 
+		// The mouse, when it has been captured, and the keyboard always — the
+		// principal's choice of "both, mouse on by default". A pointer delta is a
+		// *nudge* rather than a stick position, so it enters as an impulse on the
+		// rate and is then damped like everything else; the keys are the stick.
+		const impulse = {
+			pitch: clampAbs(-this.mouseDy * MOUSE_RAD_PER_PX, MOUSE_MAX_STEP),
+			yaw: clampAbs(-this.mouseDx * MOUSE_RAD_PER_PX, MOUSE_MAX_STEP),
+			roll: 0,
+		};
+		this.mouseDx = 0;
+		this.mouseDy = 0;
+
+		// Rotation carries momentum (`stepAngular`): the ship eases into a turn
+		// and, with the assist on, eases out of it. Setting the rate straight from
+		// the key state is what made this feel like 1984.
+		this.rates = stepAngular(
+			this.rates,
+			{ pitch, yaw, roll },
+			impulse,
+			this.assist,
+			dt,
+		);
+
 		// Rotations composed in the ship's own frame — multiply on the right —
 		// so pitch is about the wing axis wherever the nose happens to point,
 		// rather than about a world axis the player cannot see.
 		const turn = new THREE.Quaternion().setFromEuler(
 			new THREE.Euler(
-				pitch * PITCH_RATE * dt,
-				yaw * YAW_RATE * dt,
-				roll * ROLL_RATE * dt,
+				this.rates.pitch * dt,
+				this.rates.yaw * dt,
+				this.rates.roll * dt,
 				"XYZ",
 			),
 		);
@@ -510,30 +1191,118 @@ class Game {
 			this.throttle = Math.max(0, this.throttle - dt);
 		this.audio.ambient(this.throttle);
 
-		// -Z is forward, which is Three.js's own convention for a camera and for
-		// anything that is going to be looked along.
-		const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
-			this.orientation,
-		);
-		const accel = v3(
-			forward.x * THRUST * this.throttle,
-			forward.y * THRUST * this.throttle,
-			forward.z * THRUST * this.throttle,
-		);
+		// The spool-up runs in whichever regime the ship is in, and hands over at
+		// zero. Cruise begins at full throttle, because a wind-up that ends with
+		// the ship still stationary is a wind-up the player has to follow with a
+		// second input for no reason.
+		if (this.spoolLeftS > 0) {
+			this.spoolLeftS = Math.max(0, this.spoolLeftS - dt);
+			if (this.spoolLeftS === 0) {
+				this.regime = "cruise";
+				this.throttle = 1;
+				this.legStartedAtS = this.world.gameTime;
+			}
+		}
+
+		if (this.regime === "cruise") {
+			this.stepCruise(dt);
+			return;
+		}
+
 		// The whole world, not just the ship: `dt` is sim seconds and the bodies
 		// are on orbits driven by the same clock. Stepping the ship alone would
 		// freeze the system around it, which is the state the scaffold was in.
-		stepWorld(this.world, accel, dt);
+		stepWorld(this.world, this.control(), dt);
+		// §7: the tank refills passively in normal flight, and that is the
+		// anti-stranding rule rather than a convenience.
+		this.chargeAu = chargeAfterRegen(this.chargeAu, dt);
 	}
 
-	/** Where the camera is in *sim* space — behind and above the ship. */
+	/**
+	 * One frame of cruise.
+	 *
+	 * The clock and the bodies move first, exactly as `stepWorld` does it and
+	 * for the same reason — a frame must not mix a body position from one clock
+	 * value with a ship position from another. Then the ship is *placed* rather
+	 * than integrated: §1 nose-locks velocity, so there is no momentum here to
+	 * carry across frames, and `cruise.ts` computes the whole displacement from
+	 * where the ship is.
+	 *
+	 * `ship.vel` is still written, because the HUD and everything downstream read
+	 * it — but it is a **report** of this frame's motion, not a state the next
+	 * frame integrates. That is the difference between the two regimes stated in
+	 * one line of code.
+	 */
+	private stepCruise(dt: number) {
+		advanceWorldClock(this.world, dt);
+		const nose = this.nose();
+		const target = this.targetBody();
+		const step = advanceCruise({
+			pos: this.world.ship.pos,
+			nose,
+			throttle: this.throttle,
+			dt,
+			masses: this.masses(),
+			target: target
+				? {
+						pos: target.pos,
+						radiusKm: target.radiusKm,
+						vel: this.targetVelocity(),
+					}
+				: null,
+			params: this.cruiseParams,
+			chargeAu: this.chargeAu,
+		});
+		this.world.ship.pos = step.pos;
+		this.cruiseSpeedKms = step.speedKms;
+		this.closingKms = step.closingKms;
+		this.world.ship.vel = scale(nose, step.speedKms);
+		this.chargeAu = chargeAfterTravel(this.chargeAu, step.travelledKm);
+		if (step.dropped) {
+			// The frame the ship is left in follows the *reason*. An arrival matches
+			// the destination. A surface drop matches it too **when the body is the
+			// one selected** — cruising to a planet is a destination like any other,
+			// and leaving the ship in the star's frame beside it would strand it the
+			// same way an absolute clamp strands an arrival at a station. Against
+			// some other body it was flown at by accident, the star's frame is right.
+			const atTarget =
+				step.exit === "arrival" || step.exitBodyId === this.targetId;
+			this.dropOut(
+				step.exit === "proximity"
+					? `dropped by proximity to ${step.exitBodyId ?? "a body"}`
+					: `arrived at ${this.targetId ?? "target"}`,
+				atTarget,
+			);
+			return;
+		}
+		// **After** the arrival test: a frame that both arrives and runs the tank
+		// dry is an arrival — the ship is at its destination, and reporting an
+		// empty tank instead would drop it there in the wrong frame.
+		if (step.starved) this.dropOut("drive charge exhausted");
+	}
+
+	/**
+	 * Where the camera is in *sim* space.
+	 *
+	 * Cockpit by default (#5): a few metres ahead of the hull's centre, so the
+	 * view is from the nose and the cube is not in it. Chase is the toggle, and
+	 * keeps the offsets the scaffold tuned by eye.
+	 */
 	private cameraPos() {
-		const back = new THREE.Vector3(0, 0, 1).applyQuaternion(this.orientation);
+		const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
+			this.orientation,
+		);
+		if (this.view === "cockpit") {
+			return add(
+				this.world.ship.pos,
+				scale(v3(forward.x, forward.y, forward.z), COCKPIT_FORWARD_KM),
+			);
+		}
 		const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.orientation);
 		return add(
 			this.world.ship.pos,
 			add(
-				scale(v3(back.x, back.y, back.z), CHASE_BACK_KM),
+				scale(v3(-forward.x, -forward.y, -forward.z), CHASE_BACK_KM),
 				scale(v3(up.x, up.y, up.z), CHASE_UP_KM),
 			),
 		);
@@ -547,8 +1316,19 @@ class Game {
 	 * *difference* of two sim positions, which is small, rather than a sim
 	 * position, which is not.
 	 */
-	render() {
+	render(dt = 0) {
 		const camPos = this.cameraPos();
+
+		// §5: the streaks are a marker on the regime, keyed to the *log* of the
+		// speed. A linear fraction of `v_max` sits at nearly zero for the whole
+		// approach and then snaps on, which is the one thing a cue must not do.
+		const p = this.cruiseParams;
+		const span = Math.log(p.vMaxKms / p.vMinKms);
+		const intensity =
+			this.regime === "cruise" && this.cruiseSpeedKms > p.vMinKms
+				? Math.log(this.cruiseSpeedKms / p.vMinKms) / span
+				: 0;
+		this.warp.update(intensity, this.orientation, dt);
 
 		// All three cameras share the ship's orientation and sit at the origin.
 		for (const cam of [this.backdropCamera, this.farCamera, this.nearCamera]) {
@@ -611,8 +1391,12 @@ class Game {
 		const shipRel = sub(this.world.ship.pos, camPos);
 		this.shipMesh.position.set(shipRel.x, shipRel.y, shipRel.z);
 		this.shipMesh.quaternion.copy(this.orientation);
+		// The hull is the camera in cockpit view, and drawing a cube around the
+		// near plane fills the screen with its inside faces.
+		this.shipMesh.visible = this.view === "chase";
 
 		this.composer.render();
+		this.drawMarkers(camPos);
 		this.frames++;
 	}
 
@@ -624,7 +1408,7 @@ class Game {
 			: 0;
 		this.lastTime = now;
 		if (dt > 0) this.step(dt);
-		this.render();
+		this.render(dt);
 		this.updateHud();
 	};
 
@@ -654,24 +1438,295 @@ class Game {
 		const station = nearest
 			? `${nearest.id} ${range(nearest.km)}`
 			: "no station in system";
-		const key = `${Math.floor(gameTime)}|${throttle}|${speed}|${station}`;
+
+		// §5.1's panel: selected target, distance, time-to-target, speed in
+		// multiples of c, and the drop-out. Quantised into the key at the
+		// resolution it is displayed at, so the gate never skips a frame whose
+		// text really did change.
+		const target = this.targetBody();
+		const targetKm = target ? length(sub(target.pos, ship.pos)) : null;
+		// The estimate integrates 64 samples of the speed law, and the readout it
+		// feeds is quantised to tenths of a minute. Recomputing that every frame is
+		// paying sixty times over for a number that cannot change that fast.
+		if (gameTime - this.etaAt >= ETA_INTERVAL_S) {
+			this.etaCache = this.timeToTarget();
+			this.etaAt = gameTime;
+		}
+		const eta = this.etaCache;
+		const p = this.cruiseParams;
+		const state =
+			this.spoolLeftS > 0
+				? `SPOOLING ${this.spoolLeftS.toFixed(1)}s`
+				: this.regime === "cruise"
+					? "CRUISE"
+					: "normal flight";
+		const speedText =
+			this.regime === "cruise"
+				? `${(this.cruiseSpeedKms / C_KMS).toFixed(2)} c`
+				: `${speed} km/s`;
+		// Closing speed, not absolute — the panel's job is to answer "will I
+		// arrive", and against a station carried around its star at ~30 km/s the
+		// absolute figure cannot. This readout is a finding of the prototype
+		// rather than something §5.1 asked for.
+		const closing =
+			this.regime === "cruise" && target
+				? `closing ${this.closingKms < 10 ? this.closingKms.toFixed(2) : this.closingKms.toFixed(0)} km/s`
+				: "";
+		const r = system.record;
+		// Built **first**, and the change-key derived from them. The key used to be
+		// a hand-written mirror of these lines — a field added to one and not the
+		// other freezes on screen, and the eta field did exactly that: the key held
+		// `Math.round(eta)` while the line rendered "<1", so the last second of
+		// every approach never redrew. Deriving it cannot drift.
+		const lines = [
+			[
+				`${r.name}  TL ${r.displayTL}  ${GOVERNMENT_NAMES[r.government]}`,
+				`t+${clock(gameTime)}`,
+				`${this.view}  assist ${this.assist ? "on" : "off"}`,
+				`throttle ${throttle}%`,
+				speedText,
+				station,
+				`seed ${this.world.seed}`,
+			].join("   "),
+			[
+				state,
+				`target ${this.targetId ?? "none"}`,
+				targetKm === null ? "" : range(targetKm),
+				eta === null ? "eta —" : `eta ${duration(eta)}`,
+				closing,
+				`charge ${this.chargeAu.toFixed(1)}/${CHARGE_CAPACITY_AU} AU`,
+				// The prompt. A prototype whose central mechanic is a keypress the
+				// player has not discovered is a prototype that measures the wrong
+				// thing — the first session was flown entirely in normal flight.
+				this.cruisePrompt(targetKm),
+				this.lastLegS === null ? "" : `last leg ${this.lastLegS.toFixed(1)}s`,
+				this.lastExit,
+			]
+				.filter(Boolean)
+				.join("   "),
+			// The dials, always on screen. A tuning session where the current
+			// setting is not visible produces judgements that cannot be written
+			// down afterwards, which is the one thing this node has to deliver.
+			[
+				`v_max ${(p.vMaxKms / C_KMS).toFixed(0)} c [-/=]`,
+				`exp ${p.exponent.toFixed(2)} [ [ / ] ]`,
+				`drop ${p.dropRadiusKm} km [;/']`,
+				`below ${p.dropSpeedKms} km/s [,/.]`,
+				`vicinity ${range(p.vicinityKm)} [n/m]`,
+				`lead ${p.approachLeadS}s [k/l]`,
+			].join("   "),
+		];
+		// The clock is quantised into the key separately because it is *not* on
+		// the first line at full resolution — `clock()` prints whole seconds, and
+		// without this the gate would compare a string that changes 60 times a
+		// second against itself.
+		const key = `${Math.floor(gameTime)}|${lines.join("|")}`;
 		if (key === this.hudKey) return;
 		this.hudKey = key;
+		this.hud.textContent = lines.join("\n");
+	}
 
-		const r = system.record;
-		this.hud.textContent = [
-			`${r.name}  TL ${r.displayTL}  ${GOVERNMENT_NAMES[r.government]}`,
-			`t+${clock(gameTime)}`,
-			`throttle ${throttle}%`,
-			`${speed} km/s`,
-			station,
-			`seed ${this.world.seed}`,
-		].join("   ");
+	/**
+	 * Where a sim-space direction lands, in normalised device coordinates.
+	 *
+	 * The renderer's one call into `hud.ts`, public so a probe can compare it
+	 * against Three.js's own projection of the mesh it is supposed to sit on —
+	 * two independent routes to the same pixel, which is the only way to catch a
+	 * marker that is internally consistent and still in the wrong place.
+	 */
+	markerNdc(dir: Vec3) {
+		return projectDirection(
+			dir,
+			this.orientation,
+			(this.nearCamera.fov * Math.PI) / 180,
+			this.nearCamera.aspect,
+		);
+	}
+
+	/**
+	 * Draw the HUD markers over the rendered frame.
+	 *
+	 * The overlay is a 2D canvas rather than geometry in the near scene, and the
+	 * reason is the layering: a marker drawn as a world object would have to pick
+	 * a layer and a scale, and a reticle is neither near nor far — it is on the
+	 * glass. `hud.ts` does the projection, which is why it can be checked without
+	 * any of this.
+	 *
+	 * Everything is placed by **direction**, so a body draws its bracket in the
+	 * same place whichever layer rendered it — see that module's docstring.
+	 */
+	private drawMarkers(camPos: Vec3) {
+		const ctx = this.overlayCtx;
+		if (!ctx) return;
+		const w = this.overlay.width;
+		const h = this.overlay.height;
+		ctx.clearRect(0, 0, w, h);
+		const toPixels = (ndcX: number, ndcY: number) => ({
+			x: (ndcX * 0.5 + 0.5) * w,
+			y: (1 - (ndcY * 0.5 + 0.5)) * h,
+		});
+		const place = (dir: Vec3) => {
+			const m = this.markerNdc(dir);
+			return m.behind ? null : { ...toPixels(m.ndcX, m.ndcY), on: m.onScreen };
+		};
+
+		// The attitude reference: a short level line rolled to the system's
+		// reference plane. Faint, because it is a background fact rather than
+		// something to look at — but present, because in cockpit view there is no
+		// hull left to read attitude off.
+		const roll = horizonRoll(this.orientation, v3(0, 0, 1));
+		if (roll !== null) {
+			ctx.save();
+			ctx.translate(w / 2, h / 2);
+			ctx.rotate(roll);
+			ctx.strokeStyle = "rgba(120, 190, 235, 0.28)";
+			ctx.lineWidth = 1;
+			ctx.beginPath();
+			ctx.moveTo(-h * 0.16, 0);
+			ctx.lineTo(-h * 0.05, 0);
+			ctx.moveTo(h * 0.05, 0);
+			ctx.lineTo(h * 0.16, 0);
+			ctx.stroke();
+			ctx.restore();
+		}
+
+		// The nose: where the ship points, which in cruise is also where it goes.
+		ctx.strokeStyle = "rgba(200, 230, 255, 0.55)";
+		ctx.lineWidth = 1;
+		ctx.beginPath();
+		ctx.moveTo(w / 2 - 7, h / 2);
+		ctx.lineTo(w / 2 - 2, h / 2);
+		ctx.moveTo(w / 2 + 2, h / 2);
+		ctx.lineTo(w / 2 + 7, h / 2);
+		ctx.moveTo(w / 2, h / 2 - 7);
+		ctx.lineTo(w / 2, h / 2 - 2);
+		ctx.stroke();
+
+		// Prograde and retrograde — the map's HUD constraint, and the thing that
+		// makes assist-off flyable at all: with the assist off the nose and the
+		// velocity disagree permanently, and this is the only thing on screen that
+		// says which way the ship is actually moving.
+		const vel = prograde(this.world.ship.vel, PROGRADE_MIN_KMS);
+		if (vel) {
+			const fwd = place(vel);
+			if (fwd?.on) {
+				ctx.strokeStyle = "rgba(150, 255, 190, 0.85)";
+				ctx.beginPath();
+				ctx.arc(fwd.x, fwd.y, 6, 0, Math.PI * 2);
+				ctx.moveTo(fwd.x - 10, fwd.y);
+				ctx.lineTo(fwd.x - 6, fwd.y);
+				ctx.moveTo(fwd.x + 6, fwd.y);
+				ctx.lineTo(fwd.x + 10, fwd.y);
+				ctx.moveTo(fwd.x, fwd.y - 10);
+				ctx.lineTo(fwd.x, fwd.y - 6);
+				ctx.stroke();
+			}
+			const back = place(scale(vel, -1));
+			if (back?.on) {
+				ctx.strokeStyle = "rgba(255, 160, 150, 0.7)";
+				ctx.beginPath();
+				ctx.arc(back.x, back.y, 6, 0, Math.PI * 2);
+				ctx.moveTo(back.x - 4, back.y - 4);
+				ctx.lineTo(back.x + 4, back.y + 4);
+				ctx.moveTo(back.x + 4, back.y - 4);
+				ctx.lineTo(back.x - 4, back.y + 4);
+				ctx.stroke();
+			}
+		}
+
+		// The prompt, on the glass rather than only in the corner: the mechanic it
+		// names is the one the whole prototype is about, and the first flight of
+		// this build was spent in normal flight watching a distance not change.
+		const promptTarget = this.targetBody();
+		const prompt = this.cruisePrompt(
+			promptTarget ? length(sub(promptTarget.pos, camPos)) : null,
+		);
+		if (prompt) {
+			ctx.font = "13px ui-monospace, Menlo, monospace";
+			ctx.textAlign = "center";
+			ctx.fillStyle = "rgba(255, 214, 120, 0.9)";
+			ctx.fillText(prompt, w / 2, h * 0.62);
+			ctx.textAlign = "left";
+		}
+
+		// Every selectable body gets a bracket, because "I have no idea where to
+		// fly to" is answered by seeing the destinations, not by naming one of
+		// them in a text field.
+		ctx.font = "11px ui-monospace, Menlo, monospace";
+		for (const body of this.selectable()) {
+			const dir = directionTo(camPos, body.pos);
+			if (!dir) continue;
+			const selected = body.id === this.targetId;
+			const at = place(dir);
+			if (at?.on) {
+				const r = selected ? 13 : 7;
+				ctx.strokeStyle = selected
+					? "rgba(255, 214, 120, 0.95)"
+					: "rgba(140, 190, 220, 0.4)";
+				ctx.lineWidth = selected ? 1.5 : 1;
+				// Corner brackets rather than a box: a closed square over a distant
+				// station hides the thing it is marking.
+				for (const [sx, sy] of [
+					[-1, -1],
+					[1, -1],
+					[-1, 1],
+					[1, 1],
+				]) {
+					ctx.beginPath();
+					ctx.moveTo(at.x + sx * r, at.y + sy * r - sy * (r * 0.45));
+					ctx.lineTo(at.x + sx * r, at.y + sy * r);
+					ctx.lineTo(at.x + sx * r - sx * (r * 0.45), at.y + sy * r);
+					ctx.stroke();
+				}
+				if (selected || body.kind === "station") {
+					const km = length(sub(body.pos, camPos));
+					ctx.fillStyle = selected
+						? "rgba(255, 214, 120, 0.95)"
+						: "rgba(140, 190, 220, 0.55)";
+					ctx.fillText(`${body.id}  ${range(km)}`, at.x + r + 6, at.y + 4);
+				}
+				continue;
+			}
+			// Off screen: only the selected target gets an arrow. Twelve of them
+			// around the rim would be noise, and the question being answered is
+			// "which way to the place I picked".
+			if (!selected) continue;
+			const e = edgeOf(dir, this.orientation, EDGE_MARGIN);
+			const p = toPixels(e.ndcX, e.ndcY);
+			ctx.save();
+			ctx.translate(p.x, p.y);
+			ctx.rotate(-e.angleRad);
+			ctx.fillStyle = "rgba(255, 214, 120, 0.95)";
+			ctx.beginPath();
+			ctx.moveTo(11, 0);
+			ctx.lineTo(-6, 6);
+			ctx.lineTo(-6, -6);
+			ctx.closePath();
+			ctx.fill();
+			ctx.restore();
+			const off = angleOffNose(dir, this.nose());
+			ctx.fillStyle = "rgba(255, 214, 120, 0.8)";
+			ctx.fillText(
+				`${this.targetId}  ${((off * 180) / Math.PI).toFixed(0)}° off`,
+				Math.min(w - 150, Math.max(10, p.x - 60)),
+				Math.min(h - 10, Math.max(20, p.y + 22)),
+			);
+		}
+	}
+
+	/** The overlay's backing store, in CSS pixels — not device pixels: the
+	 *  markers are line work a fraction of a pixel wide, and drawing at the
+	 *  device ratio without scaling the context would halve them on a retina
+	 *  display. */
+	private sizeOverlay() {
+		this.overlay.width = window.innerWidth;
+		this.overlay.height = window.innerHeight;
 	}
 
 	private onResize() {
 		const w = window.innerWidth;
 		const h = window.innerHeight;
+		this.sizeOverlay();
 		for (const cam of [this.backdropCamera, this.farCamera, this.nearCamera]) {
 			cam.aspect = w / h;
 			cam.updateProjectionMatrix();
@@ -682,6 +1737,10 @@ class Game {
 			this.renderer.domElement.height * STAR_PIXEL_SCALE;
 	}
 }
+
+/** Clamp a signed value to ±`limit` — the mouse's per-frame guard. */
+const clampAbs = (v: number, limit: number): number =>
+	Math.min(limit, Math.max(-limit, v));
 
 /** Sim seconds as `h:mm:ss`. The clock is authoritative for body positions
  *  (spec §7.3), so it is worth being able to read it off the screen. */

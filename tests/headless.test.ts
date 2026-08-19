@@ -34,7 +34,9 @@ import {
 const HEADLESS = [
 	"audio",
 	"backdrop",
+	"cruise",
 	"galaxy",
+	"hud",
 	"names",
 	"noise",
 	"rng",
@@ -70,7 +72,9 @@ test("no module has been quietly dropped from the list", () => {
 	const required = [
 		"audio",
 		"backdrop",
+		"cruise",
 		"galaxy",
+		"hud",
 		"names",
 		"noise",
 		"rng",

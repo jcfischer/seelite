@@ -1,6 +1,9 @@
 # Spec: in-system travel
 
 **Status:** resolved decision node — [#10](https://github.com/jcfischer/seelite/issues/10)
+**Amended:** 2026-08-19 by [#14](https://github.com/jcfischer/seelite/issues/14) — flown, and six
+things changed. See [§11](#11-amendments-from-14-flown); each affected section
+below carries a pointer.
 **Date:** 2026-08-18
 **Inputs:** [#3](https://github.com/jcfischer/seelite/issues/3) (space-scale rendering),
 [#4](https://github.com/jcfischer/seelite/issues/4) (Elite-1984 mechanics),
@@ -50,6 +53,9 @@ travel-pacing choice.
 
 ## 1. The regime
 
+> **Amended by #14 (§11.1).** The exit clamp is on velocity **relative to the
+> destination**, not absolute.
+
 **Cruise is a third flight regime**, alongside #5's assist-on and assist-off.
 It is not a mode of either.
 
@@ -76,6 +82,10 @@ assist-on and assist-off; cruise is a distinct dynamic that owes its own.
 ---
 
 ## 2. The speed law
+
+> **Amended by #14 (§11.2, §11.4, §11.6).** The law is keyed to the *nearer* of
+> the mass and the destination; a body's surface ends cruise; `v_max` and the
+> exponent are now 23 c and 0.60.
 
 Speed scales with distance to the **nearest star or planet** — not to the
 destination, and not counting moons, stations or belts.
@@ -150,6 +160,9 @@ a round figure is a better starting point than a false precision.
 ---
 
 ## 3. Arrival
+
+> **Amended by #14 (§11.5).** An approach clamp flies the last 10,000 km, so
+> "failure to slow means overshooting" no longer describes a straight-in run.
 
 **Player-managed deceleration with an automatic drop-out.**
 
@@ -348,3 +361,121 @@ revisiting `HANDOFF_KM` itself.
   over jump-only knowing that.
 - **The in-system map is a second UI surface** committed before #11 has
   established what that screen family looks like. See the scope note in §6.
+
+
+---
+
+## 11. Amendments from #14 (flown)
+
+#10 §10 said every number here was derived rather than felt, and named the
+exponent and the 68-second leg as the two most likely to be wrong. Five flying
+sessions with the principal produced six changes. They are recorded here rather
+than by editing the arguments above, because what the spec *argued* is still the
+reasoning the code answers to — and a spec quietly rewritten to match its
+implementation records nothing.
+
+### 11.1 Arrival is relative, and so is being stopped
+
+A station on a 1 AU orbit is carried around its star at **~30 km/s** — fifteen
+times #5's 2 km/s assist cap. Two consequences, both load-bearing:
+
+- The drop-out threshold and §1's exit clamp are measured **in the
+  destination's frame**. Clamping absolute velocity leaves the destination
+  receding at 28 km/s, which normal flight can never close: the arrival
+  succeeds and docking becomes impossible.
+- The **flight assist** damps toward the nearest body within `NEAR_FAR_KM`
+  rather than toward the star. Sim space is star-centred, so otherwise
+  "throttle to zero" beside a station means stopping relative to the star while
+  the station leaves.
+
+**Binds [#9](https://github.com/jcfischer/seelite/issues/9):** docking happens
+in that frame, and a docking spec written in star-centred velocities would be
+describing a different problem.
+
+### 11.2 The law reads the destination too
+
+§2.1's argument against a destination-keyed law stands — it flies through worlds
+between ticks — but the law is now `min` of the two distances. The mass distance
+still bounds the curve, so nothing tunnels; the target distance only ever makes
+the ship slower.
+
+Without it, a station's approach speed is set by its *planet* tens of thousands
+of km away, so the ship reaches the 50 km drop radius still doing thousands of
+km/s. §2.3's arrival table is stated against a planet and does not describe an
+arrival at a station.
+
+### 11.3 The drop-out is swept, not sub-stepped
+
+§8.1 already says "swept, not point-sampled"; this records what that costs.
+Sizing the sub-step off the target as well as the mass does *not* work: closing
+on a 50 km radius at 20 c needs more sub-steps every frame than the last, and
+the run stalls a few thousand km short. The sub-step is sized for the speed
+law's accuracy; the drop-out is a ray–sphere entry test.
+
+### 11.4 A body's surface ends cruise
+
+Not in #10 at all. The law slows an approach asymptotically and there is no
+collision, so a ship pointed at a planet crawls inside it and out the far side —
+which made flying through a planet the most effective brake in the game. Cruise
+now drops out at `SURFACE_MARGIN × radius` (1.05), swept like the drop-out. A
+grazing pass still passes, which is the other half of the rule.
+
+### 11.5 The approach clamp — the last 10,000 km
+
+The largest mechanic #14 added, and the principal's own diagnosis: *"the drop out
+doesn't happen automatically. I guess I never hit within 50 km."* A 50 km sphere
+seen from 60,000 km subtends 0.05°, and a nose-locked ship cannot be hand-aimed
+at it.
+
+Widening the **drop radius** to 10,000 km was the obvious fix and is wrong for
+§3's own reason — that radius is bounded from *below* by normal flight, and being
+dropped 10,000 km out at 2 km/s is an eighty-minute crawl. So:
+
+| Property | Value |
+|---|---|
+| Vicinity | 10,000 km (`vicinityKm`) — and it is `HANDOFF_KM`, where a body starts being drawn at 1:1 |
+| Inside it | speed held to `distance / approachLeadS` **over the target's own motion** |
+| Lead time | 3 s (`approachLeadS`) |
+| Capture | a range that stops falling ends cruise there, **while closing speed is under the drop threshold** — at the defaults that is a pass inside ~600 km, not the whole vicinity. A wider miss is a course that did not go there, and the ship carries on |
+| Cost | `lead · ln(vicinity / drop radius)` ≈ **15.9 s of every arrival** |
+
+Steering stays the player's: this is a speed governor, not an autopilot, and #9's
+docking is still the skill gate the trade loop is built around.
+
+§3's "failure to slow means overshooting and looping back" therefore no longer
+describes a straight-in approach. It still describes a pass that misses, which is
+what the capture rule catches.
+
+### 11.6 The tuned numbers
+
+| Number | #10 derived | #14 flew | Why |
+|---|---|---|---|
+| `v_max` | 6.0 × 10⁶ km/s (20 c) | **23 c** | "nudge it so that time is slightly less than 60 s" |
+| exponent | 0.75 | **0.60** | "0.6 or 0.75, but definitely not higher" |
+
+Measured against §2.3's own 1.3 AU typical leg, with the clamp in force:
+**59.0 s**. #10 predicted 23 c for a 60-second leg and rounded to 20 c on the
+grounds that the figure would be tuned by flying; it was, and it landed on 23 c.
+That is a coincidence worth naming rather than a vindication: the prediction was
+made at exponent 0.75 with no approach clamp, and the 59.0 s was flown at 0.60
+with a clamp that costs ~15.9 s — two different models agreeing on one number,
+which is agreement, not confirmation. The exponent matters less than §2.2 assumed, because the clamp now governs
+everything inside the vicinity — it shapes the mid-flight stretch, not the
+arrival.
+
+Which leg to benchmark was the principal's call: the leg he had been flying is
+0.84 AU (49 s at these numbers), the spec's typical is 1.3 AU, and they are 55%
+apart. `scripts/measure-cruise-pacing.ts` is the sweep both figures came from.
+
+§2.3's table is still checked as *this document's* claim — `tests/cruise.test.ts`
+keeps #10's parameters as a fixture — so retuning the defaults cannot quietly
+restate what was argued here.
+
+### 11.7 What #14 did not answer
+
+- Whether the drop radius wants to be tighter or looser than 50 km now that the
+  clamp flies the approach. It is a dial; nobody has preferred a value.
+- Whether nearest-mass throttling reads as texture or nuisance. It never became
+  a nuisance in five sessions, but it was also never the thing being judged.
+- §5.2's scanner requirement, untouched: interdiction is
+  [#8](https://github.com/jcfischer/seelite/issues/8)'s and stayed out of scope.
