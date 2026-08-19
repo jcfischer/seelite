@@ -93,8 +93,9 @@ import {
 	advanceWorldClock,
 	bodyVelocity,
 	makeWorld,
-	stepAngular,
+	stationOf,
 	stationPose,
+	stepAngular,
 	stepWorld,
 } from "./sim";
 import { buildStationMesh } from "./station-mesh";
@@ -646,18 +647,21 @@ class Game {
 			// A station is the one body that is not a sphere: #13 §7's three
 			// silhouettes, built in kilometres. Everything else — star, planet,
 			// moon — shares the unit sphere above.
+			// The placed-body → station join lives in sim, like the pose: the two
+			// representations disagreeing is a generator fault, not a rendering
+			// question, and `stationOf` throws where `colorFor` already does.
 			const station =
 				body.kind === "station"
-					? this.world.system.contents.stations.find((s) => s.id === body.id)
+					? stationOf(this.world.system, body.id)
 					: undefined;
-			if (body.kind === "station" && !station)
-				throw new Error(`station ${body.id} is not in the contents`);
 
 			let mesh: THREE.Object3D;
 			if (station) {
 				// One core radius across, like the unit sphere — so the scaling rule
 				// below is the same for every body regardless of kind.
-				const built = buildStationMesh(station.type);
+				// `body.color` is `STATION_COLORS[station.type]` — §7's secondary
+				// cue, which the mesh paints its hull with.
+				const built = buildStationMesh(station.type, body.color);
 				mesh = built.root;
 				this.stationSpinners.set(body.id, built.spinner);
 			} else {

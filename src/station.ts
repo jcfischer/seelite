@@ -1,6 +1,6 @@
 /**
- * What a station *is*, physically: its type, its dockable geometry, its spin,
- * and the two seeded fields that hang off the type.
+ * What a station *is*, physically: its type, its dockable geometry, and the
+ * rules its two seeded fields follow.
  *
  * `docs/specs/docking.md` §4 and §5 and `docs/specs/station-types.md` §5 and §8
  * between them fix every number here. This module exists so that those numbers
@@ -10,6 +10,12 @@
  * A copy in the renderer is the failure this prevents — a slot drawn at a size
  * the docking checks do not use is invisible to every headless test and is
  * exactly the class of error the two-tier verification split exists for.
+ *
+ * **The draws themselves live in `system.ts`**, next to the streams they consume:
+ * how many numbers a station takes from `DOMAIN.STATION_FLAGS` and
+ * `DOMAIN.STATION_SPIN`, and in what order, is generator discipline rather than
+ * a property of a station — and `station-mesh.ts` imports this module without
+ * wanting any of it.
  *
  * **No Three.js here**, deliberately. `sim.ts` imports this, and the repo's rule
  * is that the authoritative world is float64 kilometres outside the scene graph.
@@ -47,17 +53,17 @@ export interface StationGeometry {
 	 */
 	axis: "parent" | "outward";
 	/**
-	 * How far the *drawn* object reaches, kilometres — the drydock frame, the
-	 * captured asteroid, the flare stacks.
+	 * Whether the station rotates about that axis (`docking.md` §4).
 	 *
-	 * Not dockable geometry (`docking.md` §5) and nothing about docking may read
-	 * it. It is a **budget, not a description**: `tests/station-mesh.test.ts`
-	 * asserts that no vertex of the built mesh lies outside it, so a frame or a
-	 * flare stack cannot quietly grow. The shipyard's 1.5 km is §5's own figure;
-	 * the refinery's is this build's, set from what the mesh measures so that
-	 * later growth is a failing test rather than a discovery.
+	 * Here rather than in a second `Record<StationType, boolean>` beside this
+	 * one: spin is a physical property of the object, and a parallel table keyed
+	 * on the same union costs a second edit for every new type — which is the
+	 * build-breaking guarantee working half as hard as it should.
+	 *
+	 * `false` for the refinery's fixed pad, which is what removes the roll match
+	 * from its docking interaction (`station-types.md` §6).
 	 */
-	silhouetteRadiusKm: number;
+	spins: boolean;
 }
 
 /**
@@ -78,7 +84,7 @@ export const STATION_GEOMETRY: Record<StationType, StationGeometry> = {
 		coreRadiusKm: 0.6,
 		aperture: { kind: "slot", widthKm: 0.2, heightKm: 0.07 },
 		axis: "parent",
-		silhouetteRadiusKm: 0.6,
+		spins: true,
 	},
 	shipyard: {
 		// The same Coriolis core as the trade station — the drydock frame beside it
@@ -87,15 +93,13 @@ export const STATION_GEOMETRY: Record<StationType, StationGeometry> = {
 		coreRadiusKm: 0.6,
 		aperture: { kind: "slot", widthKm: 0.2, heightKm: 0.07 },
 		axis: "parent",
-		silhouetteRadiusKm: 1.5,
+		spins: true,
 	},
 	refinery: {
 		coreRadiusKm: 0.4,
 		aperture: { kind: "pad", widthKm: 0.15, heightKm: 0.15 },
 		axis: "outward",
-		// The captured asteroid the drum is sunk into, plus the flare stacks —
-		// measured at 0.848 km on the built mesh, and rounded up to a budget.
-		silhouetteRadiusKm: 0.9,
+		spins: false,
 	},
 };
 
@@ -108,16 +112,15 @@ export const STATION_GEOMETRY: Record<StationType, StationGeometry> = {
  */
 export const SPIN_RPM_RANGE = { minRpm: 0.6, maxRpm: 3.0 } as const;
 
-/** Which types rotate. The refinery's pad is fixed, which is what removes the
- *  roll match from its docking interaction (`station-types.md` §6). */
-export const STATION_SPINS: Record<StationType, boolean> = {
-	trade: true,
-	shipyard: true,
-	refinery: false,
-};
-
-/** Which types can be a fence (`station-types.md` §5.2). The refinery is the
- *  seeded contraband market; nothing else trades illegal goods. */
+/**
+ * Which types can be a fence (`station-types.md` §5.2). The refinery is the
+ * seeded contraband market; nothing else trades illegal goods.
+ *
+ * Its own table rather than a field on `STATION_GEOMETRY`, where `spins` went:
+ * this is an economy fact, and #9's docking checks read that record. Folding an
+ * economy flag into the geometry the checks read is the same mistake as leaving
+ * the display budget there, which this round moved out.
+ */
 export const STATION_FENCE_ELIGIBLE: Record<StationType, boolean> = {
 	trade: false,
 	shipyard: false,
@@ -133,35 +136,6 @@ export const STATION_FENCE_ELIGIBLE: Record<StationType, boolean> = {
  */
 export const fenceProbability = (government: number): number =>
 	0.95 - 0.125 * government;
-
-/**
- * Draw a station's spin, consuming exactly one number whatever its type.
- *
- * **The refinery draws and discards** (`docking.md` §5). Skipping the draw would
- * make the draw count depend on station type, so inserting a refinery would
- * shift the spin of every station generated after it — the stream coupling the
- * per-domain tags exist to prevent, reintroduced inside a single tag. The
- * discard is therefore the point of this function, not an inefficiency in it.
- */
-export function drawSpinRpm(rand: () => number, type: StationType): number {
-	const roll = rand();
-	if (!STATION_SPINS[type]) return 0;
-	return (
-		SPIN_RPM_RANGE.minRpm +
-		roll * (SPIN_RPM_RANGE.maxRpm - SPIN_RPM_RANGE.minRpm)
-	);
-}
-
-/** Draw the fence flag, on the same draw-and-discard rule and for the same
- *  reason: every station consumes one number from `DOMAIN.STATION_FLAGS`. */
-export function drawBlackMarket(
-	rand: () => number,
-	type: StationType,
-	government: number,
-): boolean {
-	const roll = rand();
-	return STATION_FENCE_ELIGIBLE[type] && roll < fenceProbability(government);
-}
 
 /**
  * Where the slot has rotated to at `gameTime`, radians (`docking.md` §4.1).

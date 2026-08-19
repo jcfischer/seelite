@@ -22,6 +22,14 @@
  * comparing `drawnRadius / radiusKm` against the layer's factor. One rule keeps
  * that probe true; two would have made it read a station as a scale error.
  *
+ * **Colour is the secondary cue and this module applies it** (§7). The hull
+ * material is painted from the colour the caller passes — `sim.ts`'s
+ * `STATION_COLORS[type]`, reached as `body.color` — so a trade station and a
+ * shipyard, which share a Coriolis outline at long range, still differ at the
+ * range where colour resolves. Building both from one literal is what the first
+ * version of this file did, and it removed a per-type cue that two docstrings
+ * went on claiming was live.
+ *
  * **The spinner is separated from the root** because the shipyard's drydock
  * frame does not rotate (§7). Callers rotate `spinner` by the phase sim gives
  * them and leave `root` to the aperture axis; a station that rotated whole would
@@ -37,6 +45,27 @@
 
 import * as THREE from "three";
 import { STATION_GEOMETRY, type StationType } from "./station";
+
+/**
+ * How far the *drawn* object reaches, kilometres — the drydock frame, the
+ * captured asteroid, the flare stacks.
+ *
+ * Here rather than in `STATION_GEOMETRY`, and that is the point: `docking.md`
+ * §5 says the frame is silhouette and not dockable geometry, and #9's checks
+ * read the geometry record. An invariant enforced by a comment inside the
+ * struct it forbids is one edit from being false; a separate table that docking
+ * never imports cannot be read by accident.
+ *
+ * A **budget, not a description**: `tests/station-mesh.test.ts` asserts no
+ * vertex of a built station lies outside it, so a frame or a flare stack cannot
+ * quietly grow. The shipyard's 1.5 km is §5's own figure; the refinery's is this
+ * build's, set from what its mesh measures.
+ */
+export const STATION_SILHOUETTE_KM: Record<StationType, number> = {
+	trade: 0.6,
+	shipyard: 1.5,
+	refinery: 0.9,
+};
 
 /** What the renderer gets back: a root oriented to the aperture axis, and the
  *  part of it that spins. */
@@ -88,15 +117,18 @@ const emissiveMaterial = (color: number, intensity: number) =>
  * station in the game.
  *
  * A window pane is one box and one emissive material, and there are 28 of them
- * per Coriolis station — built inside the loop, that is 28 geometries and 28
- * materials *per station instance*, each its own draw call with its own uniform
- * upload every frame. Three.js batches by (geometry, material) identity, so
- * sharing them is the difference between one draw call per station's windows
- * and twenty-eight.
+ * per Coriolis station. Building them inside the loop gave every station its own
+ * 28 geometries and 28 materials — that is buffer uploads and material state
+ * changes, **not** draw calls: `WebGLRenderer` issues one draw per `Mesh`
+ * whatever geometry it holds, so sharing saves GPU memory and state churn and
+ * nothing else. The draw calls are dealt with separately, by drawing the panes
+ * as a single `InstancedMesh`.
  *
  * Shared, so **never mutated after construction** — a caller that recoloured a
- * pane would recolour every window in the galaxy.
+ * pane would recolour every window in the galaxy. The hull materials are the
+ * exception and are built per station, because §7's colour cue is per type.
  */
+const PANE_COUNT = 28;
 const PANE_GEOMETRY = new THREE.BoxGeometry(0.03, 0.012, 0.004);
 const PANE_MATERIAL = emissiveMaterial(0xdfe8ff, 1.4);
 const APERTURE_LIGHT_MATERIAL = emissiveMaterial(0xffb347, 2.2);
@@ -119,18 +151,21 @@ function buildAperture(type: StationType, faceZ: number): THREE.Group {
 	const w = aperture.widthKm;
 	const h = aperture.heightKm;
 	const depth = Math.min(w, h) * 0.8;
+	const bar = 0.012;
 
 	const mouth = new THREE.Mesh(
 		new THREE.BoxGeometry(w, h, depth),
 		new THREE.MeshBasicMaterial({ color: 0x05070a }),
 	);
-	mouth.position.z = faceZ - depth / 2;
+	// Sunk *and* clear of the face: at `faceZ - depth/2` the mouth's front face is
+	// exactly coplanar with the surface it is cut into, which z-fights — a slot
+	// that flickers as the station turns, which reads as no slot at all.
+	mouth.position.z = faceZ + bar / 2 - depth / 2;
 	mouth.name = "aperture-mouth";
 	group.add(mouth);
 
 	// Four bars around the mouth rather than a ring: the slot is a rectangle, and
 	// its long axis is what the roll match is matched *to*.
-	const bar = 0.012;
 	const lights: [number, number, number, number][] = [
 		[w + bar * 2, bar, 0, (h + bar) / 2],
 		[w + bar * 2, bar, 0, -(h + bar) / 2],
@@ -152,13 +187,16 @@ function buildAperture(type: StationType, faceZ: number): THREE.Group {
 /** The Coriolis body: an octahedron whose ±Z vertices are the spin axis, so the
  *  slot sits on the axis and rotates in place (`docking.md` §4.2) rather than
  *  sweeping a circle the ship would have to intercept. */
-function buildCoriolisCore(type: StationType): THREE.Group {
+function buildCoriolisCore(type: StationType, color: number): THREE.Group {
 	const { coreRadiusKm } = STATION_GEOMETRY[type];
 	const group = new THREE.Group();
 
+	// §7's secondary cue, applied: `color` is `STATION_COLORS[type]`, so the
+	// trade station and the shipyard — which share this outline at any range
+	// where the drydock frame has not resolved — still read apart.
 	const hull = new THREE.Mesh(
 		new THREE.OctahedronGeometry(coreRadiusKm, 0),
-		hullMaterial(0x8d97a5),
+		hullMaterial(color),
 	);
 	hull.name = "core";
 	group.add(hull);
@@ -181,17 +219,48 @@ function buildCoriolisCore(type: StationType): THREE.Group {
 	// Window grids: detail, explicitly not identity. They resolve at medium range
 	// and are gone at scanner range, which is why §7 rests the identity on the
 	// outline instead.
+	//
+	// **On the hull, not inside it.** An octahedron's surface is the plane
+	// |x| + |y| + |z| = r, so a pane placed on a circle of radius 0.62r sits tens
+	// of metres *behind* an opaque face at every angle — invisible, which the
+	// first version was. The radius is solved from the face plane instead, and
+	// nudged a hair proud.
+	//
+	// One `InstancedMesh` rather than 28 `Mesh`es: this is the one place a
+	// station's detail multiplies, and each `Mesh` is its own draw call.
 	const rand = displayRand(`${type}-windows`);
-	const windows = new THREE.Group();
-	for (let i = 0; i < 28; i++) {
-		const pane = new THREE.Mesh(PANE_GEOMETRY, PANE_MATERIAL);
+	const panes = new THREE.InstancedMesh(
+		PANE_GEOMETRY,
+		PANE_MATERIAL,
+		PANE_COUNT,
+	);
+	panes.name = "windows";
+	const matrix = new THREE.Matrix4();
+	const quaternion = new THREE.Quaternion();
+	const position = new THREE.Vector3();
+	const normal = new THREE.Vector3();
+	const unitZ = new THREE.Vector3(0, 0, 1);
+	const one = new THREE.Vector3(1, 1, 1);
+	for (let i = 0; i < PANE_COUNT; i++) {
 		const theta = rand() * Math.PI * 2;
 		const band = (rand() - 0.5) * coreRadiusKm * 0.7;
-		const r = coreRadiusKm * 0.62 * (1 - Math.abs(band) / coreRadiusKm);
-		pane.position.set(Math.cos(theta) * r, Math.sin(theta) * r, band);
-		pane.lookAt(0, 0, band);
-		windows.add(pane);
+		const cos = Math.cos(theta);
+		const sin = Math.sin(theta);
+		// |x| + |y| = r − |z| on the face, so ρ(|cos| + |sin|) = r − |band|.
+		const rho =
+			((coreRadiusKm - Math.abs(band)) / (Math.abs(cos) + Math.abs(sin))) *
+			1.002;
+		position.set(rho * cos, rho * sin, band);
+		// The face normal of the octant the pane landed in — `lookAt(0, 0, band)`
+		// aimed it at the axis instead, which is not the surface it lies on.
+		normal
+			.set(Math.sign(position.x), Math.sign(position.y), Math.sign(band) || 1)
+			.normalize();
+		quaternion.setFromUnitVectors(unitZ, normal);
+		panes.setMatrixAt(i, matrix.compose(position, quaternion, one));
 	}
+	panes.instanceMatrix.needsUpdate = true;
+	const windows = panes;
 	group.add(windows);
 	return group;
 }
@@ -211,7 +280,7 @@ function buildDrydock(): THREE.Group {
 	// farthest vertex is the hypotenuse of the two. The first version put that at
 	// 2.0 km against a declared 1.5 — a silhouette budget nothing measured, which
 	// `tests/station-mesh.test.ts` now does.
-	const reach = STATION_GEOMETRY.shipyard.silhouetteRadiusKm;
+	const reach = STATION_SILHOUETTE_KM.shipyard;
 	const length = reach * 0.96;
 	const half = 0.28;
 	const strut = 0.035;
@@ -260,7 +329,7 @@ function buildDrydock(): THREE.Group {
 
 /** The refinery: a squat drum sunk into a captured asteroid, with flare stacks
  *  (`station-types.md` §7). Nothing here rotates. */
-function buildRefinery(): THREE.Group {
+function buildRefinery(color: number): THREE.Group {
 	const geometry = STATION_GEOMETRY.refinery;
 	const group = new THREE.Group();
 	const r = geometry.coreRadiusKm;
@@ -293,11 +362,13 @@ function buildRefinery(): THREE.Group {
 	// The drum, sunk in: only its lit face and the pad on it clear the rock.
 	const drum = new THREE.Mesh(
 		new THREE.CylinderGeometry(r * 0.62, r * 0.62, r * 0.9, 16),
-		hullMaterial(0xa8895f),
+		hullMaterial(color),
 	);
 	drum.rotation.x = Math.PI / 2;
 	drum.position.z = r * 0.45;
-	drum.name = "drum";
+	// Named `core` like the Coriolis hull, so one probe check can read every
+	// type's painted surface rather than three names' worth of special case.
+	drum.name = "core";
 	group.add(drum);
 
 	group.add(buildAperture("refinery", r * 0.9));
@@ -336,25 +407,25 @@ function buildRefinery(): THREE.Group {
  * `switch` with a default would silently give it a trade station's outline —
  * which is precisely the identity §7 rests on.
  */
-const BUILDERS: Record<StationType, () => StationMesh> = {
-	trade: () => {
-		const spinner = buildCoriolisCore("trade");
+const BUILDERS: Record<StationType, (color: number) => StationMesh> = {
+	trade: (color) => {
+		const spinner = buildCoriolisCore("trade", color);
 		return { root: normalise("trade", [spinner]), spinner };
 	},
-	shipyard: () => {
-		const spinner = buildCoriolisCore("shipyard");
+	shipyard: (color) => {
+		const spinner = buildCoriolisCore("shipyard", color);
 		// The frame is a sibling of the spinner, not a child: §7's drydock is
 		// explicitly non-rotating, and a station that turned whole would make it a
 		// fairground ride.
 		return { root: normalise("shipyard", [spinner, buildDrydock()]), spinner };
 	},
-	refinery: () => {
+	refinery: (color) => {
 		// An empty spinner rather than `null`: the caller writes a phase of 0 into
 		// it every frame, and a null case in the render loop is a branch that
 		// exists only to be forgotten.
 		const spinner = new THREE.Group();
 		return {
-			root: normalise("refinery", [buildRefinery(), spinner]),
+			root: normalise("refinery", [buildRefinery(color), spinner]),
 			spinner,
 		};
 	},
@@ -380,6 +451,14 @@ function normalise(type: StationType, parts: THREE.Object3D[]): THREE.Group {
 	return root;
 }
 
-export function buildStationMesh(type: StationType): StationMesh {
-	return BUILDERS[type]();
+/**
+ * Build one station's mesh. `color` is the type's colour from `STATION_COLORS`
+ * (`sim.ts`), reached by the renderer as `body.color` — §7's secondary cue, and
+ * the reason this takes an argument at all.
+ */
+export function buildStationMesh(
+	type: StationType,
+	color: number,
+): StationMesh {
+	return BUILDERS[type](color);
 }

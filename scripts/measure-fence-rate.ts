@@ -7,8 +7,8 @@
  * assertion is the rate at `government = 7`, and a `government = 7` system that
  * also has a belt is rare: over 200 worlds (409,600 systems, 156,388
  * refineries) only 735 refineries sat at `g = 7`, against 16,647 at `g = 0`. At
- * §9.1's 20,000 total the `g = 7` bucket holds about 120 refineries, where the
- * standard error on a rate of 0.075 is 0.024 — the whole width of the
+ * §9.1's 20,000 total the `g = 7` bucket holds about 95 refineries, where the
+ * standard error on a rate of 0.075 is 0.027 — wider than the half-width of the
  * [0.05, 0.11] band the spec asks to be inside. A test written that way passes
  * or fails on the seed set it happens to use, which is the "assertion that
  * cannot fail" defect §9.1 objects to, wearing the opposite face.
@@ -92,7 +92,7 @@ for (let g = 0; g < 8; g++) {
 
 /** §5.2's two named bands, which is what §9.1 actually asks to be checked. */
 const band = (g: number, lo: number, hi: number) => {
-	const rate = fences[g] / total[g];
+	const rate = finite(`band rate at g=${g}`, fences[g] / total[g]);
 	const ok = rate > lo && rate < hi;
 	if (!ok) failures++;
 	console.log(
@@ -101,6 +101,17 @@ const band = (g: number, lo: number, hi: number) => {
 };
 band(0, 0.92, 0.98);
 band(7, 0.05, 0.11);
+
+// The ceiling was reached without filling the bucket, which is the one way this
+// instrument can report a pass over a corpus too small to mean anything — the
+// defect it exists to correct, arriving through its own back door.
+if (total[7] < MIN_G7) {
+	console.error(
+		`\nswept ${worlds} worlds and the g=7 bucket holds ${total[7]}, ` +
+			`short of the ${MIN_G7} asked for — the bands above are not carried`,
+	);
+	failures++;
+}
 
 if (failures > 0) {
 	console.error(`\n${failures} bucket(s) failed`);

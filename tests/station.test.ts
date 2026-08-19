@@ -19,7 +19,6 @@ import {
 	SPIN_RPM_RANGE,
 	STATION_FENCE_ELIGIBLE,
 	STATION_GEOMETRY,
-	STATION_SPINS,
 	type StationType,
 	fenceProbability,
 	slotPhaseRad,
@@ -76,13 +75,16 @@ describe("the geometry table (docking.md §5)", () => {
 		}
 	});
 
-	test("the shipyard's drydock frame is silhouette, not dockable geometry", () => {
-		// §5: the frame reaches ~1.5 km and does not enlarge what you dock with.
-		expect(STATION_GEOMETRY.shipyard.silhouetteRadiusKm).toBeGreaterThan(
-			STATION_GEOMETRY.shipyard.coreRadiusKm,
-		);
+	test("the shipyard docks exactly like the trade station", () => {
+		// §5: the drydock frame is silhouette, so it changes nothing about what you
+		// fly into. The frame's own reach is `station-mesh.ts`'s table and
+		// `tests/station-mesh.test.ts` asserts it — deliberately not reachable from
+		// the record #9's checks read.
 		expect(STATION_GEOMETRY.shipyard.coreRadiusKm).toBe(
 			STATION_GEOMETRY.trade.coreRadiusKm,
+		);
+		expect(STATION_GEOMETRY.shipyard.aperture).toEqual(
+			STATION_GEOMETRY.trade.aperture,
 		);
 	});
 });
@@ -126,7 +128,7 @@ describe("both new fields draw once per station, from their own tags", () => {
 			const rand = stream(record.seed, DOMAIN.STATION_SPIN);
 			for (const station of contents.stations) {
 				const draw = rand();
-				const expected = STATION_SPINS[station.type]
+				const expected = STATION_GEOMETRY[station.type].spins
 					? SPIN_RPM_RANGE.minRpm +
 						draw * (SPIN_RPM_RANGE.maxRpm - SPIN_RPM_RANGE.minRpm)
 					: 0;
@@ -202,7 +204,7 @@ describe("the spin range (docking.md §4)", () => {
 			if (spins.length >= SAMPLE) break;
 			forEachSystem(world, ALL_GALAXIES, (_record, contents) => {
 				for (const station of contents.stations)
-					if (STATION_SPINS[station.type]) spins.push(station.spinRpm);
+					if (STATION_GEOMETRY[station.type].spins) spins.push(station.spinRpm);
 			});
 		}
 		expect(spins.length).toBeGreaterThanOrEqual(SAMPLE);
@@ -222,8 +224,8 @@ describe("the spin range (docking.md §4)", () => {
  * the corpus by *total* refineries — "over ≥ 20,000" — and the binding claim is
  * the rate at `government = 7`, which is the rarest bucket by two orders of
  * magnitude: over 200 worlds, 156,388 refineries held 16,647 at `g = 0` and 735
- * at `g = 7`. At §9.1's 20,000 total the `g = 7` bucket holds about 120, where
- * the standard error on a rate of 0.075 is 0.024 — the entire half-width of the
+ * at `g = 7`. At §9.1's 20,000 total the `g = 7` bucket holds about 95, where
+ * the standard error on a rate of 0.075 is 0.027 — wider than the half-width of the
  * [0.05, 0.11] band it asks to be inside. Asserting that band here would pass or
  * fail on the seed set, which is §9.1's own "assertion that cannot fail" defect
  * seen from the other side.
@@ -274,12 +276,44 @@ describe("blackMarket frequency tracks government", () => {
 		}
 		expect(asserted).toBeGreaterThanOrEqual(6);
 
-		// The sparse end, asserted at the strength its ~120 samples support: it is
-		// recognisably the low end of a ramp, which a flipped or flattened one is
-		// not. The band itself belongs to `scripts/measure-fence-rate.ts`.
+		// The sparse end is not asserted here — this corpus holds about 95 of them,
+		// where four standard errors is ±0.11 and every ramp shape passes. It gets
+		// its own sweep below.
 		expect(total[7]).toBeGreaterThan(30);
-		expect(rate[7]).toBeLessThan(0.25);
-		expect(rate[7]).toBeLessThan(rate[6]);
+	});
+
+	/**
+	 * The `government = 7` end, gated rather than delegated.
+	 *
+	 * The first version of this file left §5.2's [0.05, 0.11] band to
+	 * `scripts/measure-fence-rate.ts`, which nothing runs — so a ramp putting the
+	 * fence rate at 0.20 would have passed `npm test` while `station-types.md`
+	 * §9.1 read as a satisfied obligation. That is worse than the defect the
+	 * amendment was written to fix, and it was this node that rewrote the
+	 * obligation.
+	 *
+	 * So the bucket is swept for directly, sized to what it must catch rather
+	 * than to what the spec's band needs: at 400 refineries the standard error is
+	 * 0.013, so 4σ is ±0.052 — wide enough not to flake, and 9σ away from the
+	 * 0.20 a broken ramp produces. §5.2's band itself still needs 2,000, which
+	 * costs 541 worlds and a quarter of a minute; that stays in the instrument,
+	 * and the spec now says so rather than claiming the band is checked here.
+	 */
+	test("the sparse government = 7 bucket sits on the ramp too", () => {
+		const MIN = 400;
+		const tally = fenceTally(
+			worldSeeds(400),
+			ALL_GALAXIES,
+			(t) => t.total[7] >= MIN,
+		);
+		expect(tally.total[7]).toBeGreaterThanOrEqual(MIN);
+		const rate = tally.fences[7] / tally.total[7];
+		const sigma = sigmaOff(rate, fenceProbability(7), tally.total[7]);
+		console.log(
+			`g=7: ${rate.toFixed(4)} over ${tally.total[7]} refineries from ` +
+				`${tally.worlds} worlds (${sigma >= 0 ? "+" : ""}${sigma.toFixed(2)}σ)`,
+		);
+		expect(Math.abs(sigma)).toBeLessThan(4);
 	});
 
 	test("the probability is the spec's ramp and needs no clamp", () => {

@@ -55,10 +55,11 @@
 import { DOMAIN, type SystemRecord, stream } from "./galaxy";
 import { type Vec3, dot, lengthSq } from "./vec3";
 import {
+	SPIN_RPM_RANGE,
+	STATION_FENCE_ELIGIBLE,
 	STATION_GEOMETRY,
 	type StationType,
-	drawBlackMarket,
-	drawSpinRpm,
+	fenceProbability,
 } from "./station";
 import { AU_KM } from "./units";
 
@@ -472,6 +473,39 @@ function buildMoons(
  * and owned by `docs/specs/station-types.md` §5.4; pinned by
  * `tests/station-orbits.test.ts`.
  */
+/**
+ * Draw a station's spin, consuming exactly one number whatever its type.
+ *
+ * **The refinery draws and discards** (`docking.md` §5). Skipping the draw would
+ * make the draw count depend on station type, so inserting a refinery would
+ * shift the spin of every station generated after it — the stream coupling the
+ * per-domain tags exist to prevent, reintroduced inside a single tag. The
+ * discard is therefore the point of this function, not an inefficiency in it.
+ *
+ * Here rather than in `station.ts` because it is *stream discipline*, and the
+ * streams are this module's: what a station is stays in the table, how many
+ * numbers generating one costs stays beside the generator.
+ */
+function drawSpinRpm(rand: () => number, type: StationType): number {
+	const roll = rand();
+	if (!STATION_GEOMETRY[type].spins) return 0;
+	return (
+		SPIN_RPM_RANGE.minRpm +
+		roll * (SPIN_RPM_RANGE.maxRpm - SPIN_RPM_RANGE.minRpm)
+	);
+}
+
+/** The fence flag, on the same draw-and-discard rule and for the same reason:
+ *  every station consumes one number from `DOMAIN.STATION_FLAGS`. */
+function drawBlackMarket(
+	rand: () => number,
+	type: StationType,
+	government: number,
+): boolean {
+	const roll = rand();
+	return STATION_FENCE_ELIGIBLE[type] && roll < fenceProbability(government);
+}
+
 function generateStations(
 	record: SystemRecord,
 	star: StarClassDef,

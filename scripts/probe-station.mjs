@@ -67,6 +67,17 @@ const URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=1`;
  *  refinery's 0.4 km drum is hundreds of pixels across. */
 const RANGE_KM = 5;
 
+/**
+ * The second range, kilometres — where detail has resolved away.
+ *
+ * 60 km puts a 0.6 km station at about a hundredth of a radian: the window
+ * grid, the aperture lights and the frame's struts are all gone, and what is
+ * left is an outline of a few hundred pixels. That is the state §7's "before any
+ * detail resolves" is about, and a probe that only measured 5 km answered the
+ * colour half of the standard and assumed the rest.
+ */
+const FAR_RANGE_KM = 60;
+
 /** The mask is resampled to this grid before shapes are compared. */
 const GRID = 24;
 
@@ -92,6 +103,22 @@ const MAX_CONTROL_DIFFERENCE = 0.05;
  *  loop decides when the samples land rather than the probe. */
 const SPIN_TOLERANCE = 0.06;
 
+/**
+ * One layer-agnostic mesh lookup for every evaluate in this file.
+ *
+ * Installed as an init script rather than repeated three times: the rule "a
+ * body is drawn in whichever layer its distance puts it in" is the renderer's,
+ * and a probe that states it three times has three places to get it wrong. The
+ * same pattern `probe-guard.mjs` uses for `__recoverCamSim`.
+ */
+const installMeshLookup = (page) =>
+	page.addInitScript(() => {
+		window.__meshOfBody = (id) =>
+			window.__seelite.nearScene.getObjectByName(id) ??
+			window.__seelite.farScene.getObjectByName(id) ??
+			null;
+	});
+
 await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 
@@ -99,6 +126,7 @@ const { check, watch, exit } = tally();
 
 const page = await browser.newPage({ viewport: { width: 900, height: 620 } });
 watch(page);
+await installMeshLookup(page);
 await page.goto(URL, { waitUntil: "load" });
 await bootedGame(page);
 
@@ -123,12 +151,13 @@ console.log(
 		.join(", ")}\n`,
 );
 
+const allThree = new Set(setup.stations.map((s) => s.type)).size === 3;
 check(
 	"the system holds all three station types",
-	new Set(setup.stations.map((s) => s.type)).size === 3,
+	allThree,
 	setup.stations.map((s) => s.type).join(", "),
 );
-if (new Set(setup.stations.map((s) => s.type)).size !== 3) {
+if (!allThree) {
 	await browser.close();
 	exit();
 }
@@ -205,9 +234,7 @@ async function silhouette(id) {
 				return out;
 			};
 
-			const mesh =
-				g.nearScene.getObjectByName(bodyId) ??
-				g.farScene.getObjectByName(bodyId);
+			const mesh = window.__meshOfBody(bodyId);
 			if (!mesh) return { missing: true };
 			const withIt = luma();
 			mesh.visible = false;
@@ -301,30 +328,6 @@ async function silhouette(id) {
 	);
 }
 
-const shapes = new Map();
-for (const station of setup.stations) {
-	await viewAlongAxis(station.id, RANGE_KM);
-	const shape = await silhouette(station.id);
-	check(
-		`${station.type}: the station is drawn and has a silhouette to measure`,
-		!shape.missing && !shape.empty && shape.pixels > 500,
-		shape.missing
-			? "no mesh"
-			: shape.empty
-				? "no pixels changed"
-				: `${shape.pixels} px, box ${shape.box.w}×${shape.box.h}, ` +
-					`fill ${(100 * shape.coverage).toFixed(0)}%`,
-	);
-	if (shape.cells) shapes.set(station.type, shape);
-	// The control, captured back to back from the same viewpoint: it measures the
-	// metric's noise and nothing else. Re-aiming first would fold in a second of
-	// spin and orbit, which is a real change of shape rather than instability —
-	// the first version did that and read 0.05, indistinguishable from a flaky
-	// mask.
-	if (station.type === "trade" && shape.cells)
-		shapes.set("trade-again", await silhouette(station.id));
-}
-
 /** Intersection over union on the resampled masks. 1 is identical. */
 const iou = (a, b) => {
 	let inter = 0;
@@ -336,43 +339,66 @@ const iou = (a, b) => {
 	return union === 0 ? 1 : inter / union;
 };
 
-const types = [...shapes.keys()].filter((t) => t !== "trade-again");
-console.log(
-	`\nsilhouettes at ${RANGE_KM} km, desaturated, ${GRID}×${GRID} after crop:`,
-);
-for (let i = 0; i < types.length; i++) {
-	for (let j = i + 1; j < types.length; j++) {
-		const difference =
-			1 - iou(shapes.get(types[i]).cells, shapes.get(types[j]).cells);
-		console.log(
-			`  ${types[i]} vs ${types[j]}: 1 − IoU = ${difference.toFixed(3)}`,
-		);
-		check(
-			`${types[i]} and ${types[j]} differ by outline alone`,
-			difference > MIN_DIFFERENCE,
-			`1 − IoU = ${difference.toFixed(3)} (floor ${MIN_DIFFERENCE})`,
-		);
-	}
-}
-
 /**
- * The control: one station measured twice.
+ * Capture all three silhouettes at one range and compare them pairwise.
  *
- * Without it the floor above is a number in a comment. This puts the metric's
- * noise in the same run as the claim it supports — and it fails loudly if the
- * mask ever becomes unstable frame to frame, which would make every pairwise
- * figure above meaningless rather than merely noisy.
+ * Run at two ranges, because §7's standard has two halves and desaturation only
+ * answers one: identity must hold *before colour* and *before detail resolves*.
+ * A single close range answers the first and quietly assumes the second.
  */
-{
+async function silhouettesAt(rangeKm, floor, gate) {
+	const shapes = new Map();
+	for (const station of setup.stations) {
+		await viewAlongAxis(station.id, rangeKm);
+		const shape = await silhouette(station.id);
+		check(
+			`${rangeKm} km — ${station.type}: the station is drawn and has a silhouette`,
+			!shape.missing && !shape.empty && shape.pixels > 20,
+			shape.missing
+				? "no mesh"
+				: shape.empty
+					? "no pixels changed"
+					: `${shape.pixels} px, box ${shape.box.w}×${shape.box.h}, ` +
+						`fill ${(100 * shape.coverage).toFixed(0)}%`,
+		);
+		if (shape.cells) shapes.set(station.type, shape);
+		// The control, captured back to back from the same viewpoint: it measures
+		// the metric's noise and nothing else. Re-aiming first would fold in a
+		// second of spin and orbit, which is a real change of shape rather than
+		// instability — the first version did that and read 0.05,
+		// indistinguishable from a flaky mask.
+		if (station.type === "trade" && shape.cells)
+			shapes.set("trade-again", await silhouette(station.id));
+	}
+
+	const types = [...shapes.keys()].filter((t) => t !== "trade-again");
+	console.log(
+		`\nsilhouettes at ${rangeKm} km, desaturated, ${GRID}×${GRID} after crop:`,
+	);
+	for (let i = 0; i < types.length; i++) {
+		for (let j = i + 1; j < types.length; j++) {
+			const difference =
+				1 - iou(shapes.get(types[i]).cells, shapes.get(types[j]).cells);
+			console.log(
+				`  ${types[i]} vs ${types[j]}: 1 − IoU = ${difference.toFixed(3)}`,
+			);
+			if (gate)
+				check(
+					`${rangeKm} km — ${types[i]} and ${types[j]} differ by outline alone`,
+					difference > floor,
+					`1 − IoU = ${difference.toFixed(3)} (floor ${floor})`,
+				);
+		}
+	}
+
 	const first = shapes.get("trade");
 	const again = shapes.get("trade-again");
 	if (!first?.cells || !again?.cells) {
 		// Reported rather than thrown: an empty second capture would otherwise
 		// dereference `undefined` inside `iou` and kill the run before a single
-		// FAIL line was printed — the failure `probe-handoff.mjs` guards against
-		// with its `camSimMissing` marker.
+		// FAIL line was printed.
 		check(
-			"re-measuring one station reproduces its silhouette",
+			`${rangeKm} km — re-measuring one station reproduces its silhouette`,
 			false,
 			"no second silhouette to compare",
 		);
@@ -381,12 +407,80 @@ for (let i = 0; i < types.length; i++) {
 		console.log(
 			`  control (trade measured twice): 1 − IoU = ${control.toFixed(3)}`,
 		);
-		check(
-			"re-measuring one station reproduces its silhouette",
-			control < MAX_CONTROL_DIFFERENCE,
-			`1 − IoU = ${control.toFixed(3)} (ceiling ${MAX_CONTROL_DIFFERENCE})`,
-		);
+		// Gated only where the shape comparison is. At the far range the mask is a
+		// few dozen pixels and the control reads about 0.17 — measured, printed,
+		// and the reason the far-range pairwise figures above are reported rather
+		// than asserted: a metric whose noise is half its signal is not evidence,
+		// and the honest far-range claim is the extent one below.
+		if (gate)
+			check(
+				`${rangeKm} km — re-measuring one station reproduces its silhouette`,
+				control < MAX_CONTROL_DIFFERENCE,
+				`1 − IoU = ${control.toFixed(3)} (ceiling ${MAX_CONTROL_DIFFERENCE})`,
+			);
 	}
+	return shapes;
+}
+
+const near = await silhouettesAt(RANGE_KM, MIN_DIFFERENCE, true);
+const far = await silhouettesAt(FAR_RANGE_KM, MIN_DIFFERENCE, false);
+
+/**
+ * The half desaturation does not answer: **does it survive range?**
+ *
+ * At `FAR_RANGE_KM` the shape comparison above is reported and not gated, and
+ * deliberately so — the mask is a couple of hundred pixels and the crop-and-
+ * resample throws away the cue that actually survives out there, which is
+ * **extent**. So the far-range claim is made on the thing a player has at that
+ * distance: the shipyard's drydock frame makes it visibly wider than a Coriolis
+ * station that is otherwise its twin, and the refinery is squatter than either.
+ */
+console.log(`\nextent at ${FAR_RANGE_KM} km (the cue that survives range):`);
+for (const type of ["trade", "shipyard", "refinery"]) {
+	const shape = far.get(type);
+	console.log(
+		`  ${type}: box ${shape.box.w}×${shape.box.h} px, ${shape.pixels} px lit`,
+	);
+}
+const aspect = (t) => far.get(t).box.w / far.get(t).box.h;
+check(
+	`at ${FAR_RANGE_KM} km the shipyard is visibly wider than the trade station`,
+	aspect("shipyard") > aspect("trade") * 1.5,
+	`aspect ${aspect("shipyard").toFixed(2)} against ${aspect("trade").toFixed(2)}`,
+);
+
+/**
+ * §7's secondary cue, which the renderer must actually apply.
+ *
+ * The hull is painted `STATION_COLORS[type]`, reached as `body.color`. The
+ * headless tier asserts the mesh takes the colour it is given; only the page
+ * can say the renderer gives it the right one — and the first version of this
+ * build gave it none, so a trade station and a shipyard rendered identically.
+ */
+console.log("\nper-type colour (§7's secondary cue):");
+for (const station of setup.stations) {
+	const painted = await page.evaluate(
+		([id]) => {
+			const g = window.__seelite;
+			const mesh = window.__meshOfBody(id);
+			const core = mesh?.getObjectByName("core");
+			const body = g.world.system.bodies.find((b) => b.id === id);
+			return {
+				hull: core ? core.material.color.getHex() : null,
+				body: body.color,
+			};
+		},
+		[station.id],
+	);
+	console.log(
+		`  ${station.type}: hull #${(painted.hull ?? 0).toString(16)}, ` +
+			`body #${painted.body.toString(16)}`,
+	);
+	check(
+		`${station.type}'s hull is painted its own type's colour`,
+		painted.hull === painted.body,
+		`hull #${(painted.hull ?? 0).toString(16)} against body #${painted.body.toString(16)}`,
+	);
 }
 
 /**
@@ -401,9 +495,7 @@ async function slotAngle(id) {
 	return page.evaluate(
 		([bodyId]) => {
 			const g = window.__seelite;
-			const mesh =
-				g.nearScene.getObjectByName(bodyId) ??
-				g.farScene.getObjectByName(bodyId);
+			const mesh = window.__meshOfBody(bodyId);
 			const aperture = mesh?.getObjectByName("aperture");
 			if (!aperture) return { missing: true };
 			g.render(0);
@@ -433,12 +525,31 @@ const wrap = (d) => {
 	return x;
 };
 
+/**
+ * View a station along its axis, sample the slot's screen angle twice, and
+ * report the **signed** rate.
+ *
+ * One helper for both the spinning and the fixed case: the sequence is the same
+ * and only the assertion differs, and a change to how the delta is taken should
+ * land in one place.
+ */
+async function angleRateRadS(id, waitMs) {
+	await viewAlongAxis(id, RANGE_KM);
+	const first = await slotAngle(id);
+	if (first.missing) return { missing: true };
+	await page.waitForTimeout(waitMs);
+	const second = await slotAngle(id);
+	const dt = second.gameTime - first.gameTime;
+	return { rate: wrap(second.angle - first.angle) / dt, dt };
+}
+
 console.log("\nspin tracking:");
 for (const station of setup.stations) {
 	if (station.spinRpm === 0) continue;
-	await viewAlongAxis(station.id, RANGE_KM);
-	const first = await slotAngle(station.id);
-	if (first.missing) {
+	// Long enough to measure, short enough that the fastest station turns well
+	// under half a revolution — past π the wrap makes the direction ambiguous.
+	const sample = await angleRateRadS(station.id, 1500);
+	if (sample.missing) {
 		check(
 			`${station.type}: the slot is drawn`,
 			false,
@@ -446,40 +557,46 @@ for (const station of setup.stations) {
 		);
 		continue;
 	}
-	// Long enough to measure, short enough that the fastest station turns well
-	// under half a revolution — past π the wrap makes the direction ambiguous.
-	await page.waitForTimeout(1500);
-	const second = await slotAngle(station.id);
 
-	const dt = second.gameTime - first.gameTime;
-	const measured = Math.abs(wrap(second.angle - first.angle)) / dt;
+	/**
+	 * **Signed**, and that is the point of the sign rather than pedantry.
+	 *
+	 * `spinner.rotation.z = -pose.phaseRad` would measure identically under an
+	 * absolute value and pass, and nothing headless covers the renderer applying
+	 * the phase — so a slot rotating the wrong way would reach the player, with
+	 * check 4's roll match (`docking.md` §4.2) matched against it.
+	 *
+	 * The expected sign is `+`: the camera is placed on the aperture axis
+	 * looking back down it, so the station's local +Z points at the viewer, and
+	 * a positive rotation about a viewer-facing axis reads counter-clockwise —
+	 * increasing `atan2` in the y-up frame the angle is measured in.
+	 */
 	const expected = (2 * Math.PI * station.spinRpm) / 60;
 	console.log(
 		`  ${station.type} at ${station.spinRpm.toFixed(2)} rpm: ` +
-			`${measured.toFixed(4)} rad/s measured, ${expected.toFixed(4)} expected ` +
-			`over ${dt.toFixed(2)} s of game time`,
+			`${sample.rate.toFixed(4)} rad/s measured, +${expected.toFixed(4)} expected ` +
+			`over ${sample.dt.toFixed(2)} s of game time`,
 	);
 	check(
-		`${station.type}'s slot turns at its own ${station.spinRpm.toFixed(2)} rpm`,
-		Math.abs(measured - expected) / expected < SPIN_TOLERANCE,
-		`${((100 * (measured - expected)) / expected).toFixed(1)}% off`,
+		`${station.type}'s slot turns at its own ${station.spinRpm.toFixed(2)} rpm, the right way`,
+		Math.abs(sample.rate - expected) / expected < SPIN_TOLERANCE,
+		`${((100 * (sample.rate - expected)) / expected).toFixed(1)}% off`,
 	);
 }
 
 const pad = setup.stations.find((s) => s.spinRpm === 0);
 if (pad) {
-	await viewAlongAxis(pad.id, RANGE_KM);
-	const first = await slotAngle(pad.id);
-	await page.waitForTimeout(1200);
-	const second = await slotAngle(pad.id);
+	const sample = await angleRateRadS(pad.id, 1200);
 	// The refinery's pad does not rotate at all (§4), which is what removes the
 	// roll match from its docking interaction. A pad that crept would make that
 	// a different game without failing any headless test.
 	check(
 		"the refinery's pad does not turn",
-		Math.abs(wrap(second.angle - first.angle)) < 0.02,
-		`${Math.abs(wrap(second.angle - first.angle)).toFixed(4)} rad over ` +
-			`${(second.gameTime - first.gameTime).toFixed(2)} s`,
+		!sample.missing && Math.abs(sample.rate * sample.dt) < 0.02,
+		sample.missing
+			? "no aperture in the mesh"
+			: `${Math.abs(sample.rate * sample.dt).toFixed(4)} rad over ` +
+					`${sample.dt.toFixed(2)} s`,
 	);
 }
 

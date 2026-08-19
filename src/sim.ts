@@ -56,6 +56,7 @@ import { mix, seededRand } from "./rng";
 import { STATION_GEOMETRY, slotPhaseRad } from "./station";
 import {
 	type PlacedBody,
+	type Station,
 	type StationType,
 	type SystemContents,
 	arrivalPoint,
@@ -344,13 +345,27 @@ export interface StationPose {
 	phaseRad: number;
 }
 
+/**
+ * The generated station behind a placed body, or a throw.
+ *
+ * A join between the two representations of one thing — `contents.stations` and
+ * the placed `Body` — and it belongs here for the same reason `stationPose`
+ * does: the renderer holds neither authoritatively, and a body that is not in
+ * the contents is the generator and the placement having disagreed, which is
+ * the error `colorFor` already throws on rather than defaulting past.
+ */
+export function stationOf(system: System, id: string): Station {
+	const station = system.contents.stations.find((s) => s.id === id);
+	if (!station) throw new Error(`station ${id} is not in the contents`);
+	return station;
+}
+
 export function stationPose(
 	system: System,
 	stationId: string,
 	gameTime: number,
 ): StationPose {
-	const station = system.contents.stations.find((s) => s.id === stationId);
-	if (!station) throw new Error(`no station ${stationId} in this system`);
+	const station = stationOf(system, stationId);
 	const body = system.byId.get(stationId);
 	if (!body) throw new Error(`station ${stationId} has no placed body`);
 
