@@ -52,6 +52,7 @@ Fixed here, and these words mean exactly one thing from now on across #6, #7,
 | **refinery** | the `refinery` type. |
 | **shipyard** | the `shipyard` type. |
 | **target** | any endpoint a cruise leg can be aimed at. `cruise.ts`'s speed law reads the nearest star or planet; the selected target may also be a station, moon or belt. |
+| **the target's frame** | the selected target's *velocity* frame, in which cruise exit and docking are judged (§6, `cruise.ts`). Declared here rather than left inferred, since it is the one place "target" means a reference frame and not a place. |
 | **system** | 1–3 stations plus its bodies. "**multi-station**", never "multi-destination". |
 
 Two words are **retired**, for the same reason: a synonym with no distinct job
@@ -66,9 +67,16 @@ is how prose and types drift apart.
   **multi-station**. This PR renames every site — `in-system-travel.md`,
   `galaxy-generation.md`, and the comments and test names in `cruise.ts`,
   `main.ts`, `system.ts`, `backdrop.ts`, `tests/` and `scripts/`. The audit is
-  `grep -rn destination src scripts tests docs --exclude=station-types.md`, and
-  its only expected hit is `ctx.destination` in `src/audio.ts` — this file is
-  excluded because the retirement note necessarily names the word it retires. (`AudioContext`'s
+
+  ```
+  grep -rn destination src scripts tests docs --exclude='station-types.md'
+  ```
+
+  and it should return **exactly one line**: `ctx.destination` in
+  `src/audio.ts`, which is the WebAudio API. This file is excluded by name
+  because a retirement note necessarily contains the word it retires; `grep`'s
+  `--exclude` matches the basename, which is why the pattern is written that
+  way. (`AudioContext`'s
   `ctx.destination` in `src/audio.ts` is the WebAudio API and is untouched.)
 
 The station vocabulary matches `StationType = "trade" | "refinery" | "shipyard"`
@@ -87,9 +95,9 @@ Every other row names the section that owns it, for the same reason.
 |---|---|---|---|
 | Presence, location | *galaxy-generation.md §6.4* | *ibid.* | *ibid.* |
 | Price offset → §3 | 0 | **+3** | **−2** |
-| Equipment → §4 | system's `min(displayTL + 3, 12)` | same | same |
-| Exclusives → §4, §5.2 | — | mining gear; contraband if `blackMarket` | hulls, military |
-| Law → §5.1 | `government` | `max(government − 3, 0)` | `min(government + 3, 7)` + scan |
+| Equipment → §4 | system's `min(displayTL + 3, 10)` | same | same |
+| Exclusives → §4.1, §5.2 | — | fuel scoops, mining laser; contraband if `blackMarket` | hulls, military laser, energy unit |
+| Law → §5.1 | hostile ×1.0 | hostile ×2.0 | hostile ×0.5 + scan |
 | Docking → §6 | rotating slot | pad | rotating slot |
 | Silhouette → §7 | Coriolis octahedron | drum in an asteroid | Coriolis + drydock frame |
 
@@ -148,9 +156,11 @@ stop differentiating precisely in the systems where each type is most at home �
 the same "reads as a rule while behaving as a constant" failure §4 rejects for
 equipment.
 
-Applying the offset as a **price delta after the formula** is arithmetically the
-same shift, and cannot clamp, because it acts on a price rather than on a 0–7
-index. Worked:
+Applying the offset as a **price delta after the formula** produces the same
+shift wherever the price formula is linear, and cannot clamp, because it acts on
+a price rather than on a 0–7 index. The two forms part company only at the byte
+extremes, which is precisely what #7 has to settle below — so "the same shift"
+is a claim about the ordinary range, not about the overflow. Worked:
 
 | Station | Good | Gradient | Delta | Effect |
 |---|---|---|---|---|
@@ -199,34 +209,42 @@ Recorded as weak joint 5.
 ## 4. Equipment and hulls
 
 **The tech-level gate stays a property of the system, as in 1984.** Every
-station in a system shows the same list: roughly `min(displayTL + 3, ALL)`
-items, matching the cassette `EQSHP` behaviour recorded in
-`docs/research/elite-1984-mechanics.md` §3.1.
+station in a system shows the same list, and type adds an exclusive class on
+top — but the two sets must be **disjoint**, or an item is both universal and
+exclusive and #7 cannot price it.
 
-Type adds an exclusive class on top, and adds nothing else:
+### 4.1 The split
 
-| Type | Exclusive |
+Elite's cassette list is 12 items (`docs/research/elite-1984-mechanics.md` §3.1,
+the PRXS table). Two of them are pulled out as type exclusives, leaving **10
+universal**:
+
+| Universal — `min(displayTL + 3, 10)` | Type-exclusive |
 |---|---|
-| trade station | — |
-| refinery | mining laser, fuel scoop |
-| shipyard | **hulls** (the only place ships are sold), military laser, energy unit |
+| fuel, missiles, large cargo bay, extra pulse laser, ECM, extra beam laser, escape pod, energy bomb, docking computer, galactic hyperdrive | **refinery:** fuel scoops, mining laser¹ · **shipyard:** extra energy unit, military laser¹, **hulls** |
 
-Rejected: making type shift the effective tech level. It would have been
-consistent with §3's offset shape, and the arithmetic kills it. The equipment
-list is **12 items** (`docs/research/elite-1984-mechanics.md` §3.1, the PRXS
-table: fuel, missiles, large cargo bay, extra pulse laser, ECM, extra beam
-laser, fuel scoops, escape pod, energy bomb, extra energy unit, docking
-computer, galactic hyperdrive), so `min(displayTL + 3, 12)` **saturates at
-`displayTL = 9`** — and shipyards do not exist below `displayTL = 10`. A `+3`
+¹ Not in Elite's 12 — new to seelite, and priced by #7 alongside the rest.
+
+Fuel scoops go to the refinery because scooping is the mining trade's tool, and
+the extra energy unit to the shipyard because it is the heaviest hull-work
+upgrade on the list. Every other item is available anywhere the system's tech
+level reaches it.
+
+### 4.2 Why type does not shift the tech level
+
+It would have been consistent with §3's offset shape, and the arithmetic kills
+it. With 10 universal items, `min(displayTL + 3, 10)` **saturates at
+`displayTL = 7`** — and shipyards do not exist below `displayTL = 10`. A `+3`
 at a shipyard therefore has *zero* range in every system where a shipyard can
-occur: a mechanism that reads as a rule while behaving as a constant.
+occur: a mechanism that reads as a rule while behaving as a constant, and the
+same failure §3.2 and §5.1 each had to be rewritten to avoid.
 
 The symmetric case — a *negative* shift at refineries, the counterpart of §3's
 refinery `+3` — does have range, and is rejected on a different ground. It would
 mean a refinery in a `displayTL = 4` system shows 4 items instead of 7, i.e. the
-place you go for a mining laser is where mining lasers stop being sold. The
-exclusive in the table above is the whole point of the type, and a negative TL
-shift is the one modifier that can take it away.
+place you go for a mining laser is where equipment stops being sold. The
+exclusive is the whole point of the type, and a negative TL shift is the one
+modifier that can hollow it out.
 
 **Where the tech gradient's teeth actually are**, therefore: not in item counts
 per station, but in *where shipyards exist at all*. They generate only at
@@ -240,19 +258,49 @@ requires. That is #6's risk/reward geography, unchanged.
 
 This is where the three types stop being interchangeable.
 
-### 5.1 Per type
+### 5.1 Per type: a factor on the hostile chance, not an offset on government
 
-- **Trade station** — busy. Civilian traffic, and police presence scaling with
-  the system's `government`. Its identity is that it is *the safe one with the
-  traffic*: it has no exclusive, and it is the station that expresses the
-  system's own economy unmodified, which is what makes inter-system arbitrage
-  legible.
-- **Refinery** — thin law. Police presence `max(government − 3, 0)`,
-  elevated pirate presence, and — conditionally, see §5.2 — the only place
-  illegal goods can be bought or sold.
-- **Shipyard** — naval. Police presence `min(government + 3, 7)` and a
-  **contraband scan on approach**; a poor legal status makes arrival hostile
-  rather than merely expensive.
+#6's spawn rule is `rand(0–7) < government ⇒ no spawn`, so a system's hostile
+chance is `(8 − government) / 8`. The obvious per-type expression — shift
+`government` by ±3 — **fails §3.2's own test**, and the failure is identical:
+`min(government + 3, 7)` is a flat 7 for every core system with
+`government ≥ 4`, which is exactly where shipyards generate, and
+`max(government − 3, 0)` is a flat 0 across the whole `government ≤ 3` rim band
+where §5.2 concentrates fences. The clamp would eat the offset precisely where
+each type lives — the defect §3.2 rejects, reintroduced two sections later.
+
+So the type applies a **factor to the hostile chance**, which saturates only at
+a genuine extreme:
+
+```
+hostileChance(station) = clamp(typeFactor · (8 - government) / 8, 0, 1)
+
+typeFactor = { trade: 1.0, refinery: 2.0, shipyard: 0.5 }
+```
+
+| government | 6 (core) | 4 | 2 | 1 (rim) |
+|---|---|---|---|---|
+| trade station | 0.25 | 0.50 | 0.75 | 0.875 |
+| refinery | 0.50 | 1.00 | 1.00 | 1.00 |
+| shipyard | 0.125 | 0.25 | 0.375 | 0.44 |
+
+It saturates in one place only: a refinery at `government ≤ 3` reaches certainty.
+That is not a clamp eating a rule, it is the rule arriving at its endpoint —
+a system that is already fully hostile cannot be made more so, and an Anarchy
+refinery *should* be the worst place in the galaxy. The shipyard's factor never
+saturates at all, and the shipyard is the type whose whole placement is core-ward.
+
+### 5.1.1 What each type is on arrival
+
+- **Trade station** — busy. Civilian traffic and the system's own hostile chance,
+  unmodified. Its identity is that it is *the safe one with the traffic*: it has
+  no exclusive, and it is the station that expresses the system unmodified,
+  which is what makes inter-system comparison legible.
+- **Refinery** — thin law. Twice the hostile chance, and — conditionally, see
+  §5.2 — the only place illegal goods can be bought or sold.
+- **Shipyard** — naval. Half the hostile chance, plus a **contraband scan on
+  approach**; a poor legal status makes arrival hostile rather than merely
+  expensive.
 
 ### 5.2 The black market is a seeded per-station flag
 
@@ -408,11 +456,13 @@ load, no downloaded assets.
 ## 8. Generator changes this requires
 
 1. **`DOMAIN.STATION_FLAGS = 8`** in `src/galaxy.ts` (§5.3).
-2. **Both new per-station draws come from that tag, in this order:**
-   `blackMarket` first, then `spinRpm`. Neither may be drawn from
-   `DOMAIN.STATIONS` — that is the regression §5.3 exists for, and pinning the
-   order here is what makes the fixture in §9.1 reproducible rather than
-   accidental.
+2. **`DOMAIN.STATION_SPIN = 9`**, and `spinRpm` draws from it. One tag for both
+   new fields would reproduce inside `STATION_FLAGS` exactly the coupling §5.3
+   created the tag to escape: `spinRpm` is drawn conditionally on type, so a
+   third flag added later would shift it. The orbit fixture pins type, parent
+   and orbit only, so a shifted flag stream has no guard — which is the argument
+   for separating them rather than for ordering them carefully.
+   Neither field may be drawn from `DOMAIN.STATIONS`.
 3. `Station` gains **`blackMarket: boolean`** — §5.2.
 4. `Station` gains **`spinRpm: number`** — 0 for the pad type, drawn for the two
    Coriolis types from a range #9 fixes.
@@ -448,8 +498,11 @@ Two tiers, per the repo's culture.
   `tests/station-orbits.test.ts` against `tests/fixtures/station-orbits.json` —
   791 stations across two full galaxies, captured by
   `scripts/capture-station-orbits.ts` on the generator as it stood *before*
-  those fields existed. The fixture is committed in this PR precisely because
-  the before-state stops being obtainable once `STATION_FLAGS` lands. Verified
+  those fields existed. The fixture is committed in this PR because that is the last
+  moment the baseline is *cheap*. Strictly it stays recoverable — this commit's
+  `src/` plus the capture script reproduce it — so the honest argument is not
+  "impossible later" but "nobody will remember to, and the guard is worthless
+  unless the baseline predates the change". Verified
   to fail on an inserted `DOMAIN.STATIONS` draw and pass on its removal.
 - **The two golden files are not interchangeable.** `galaxy.test.ts`'s
   determinism digest pins the *record* and will legitimately move when the new

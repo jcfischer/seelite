@@ -6,9 +6,11 @@
  * station generator draws trade → refinery → shipyard from one
  * `DOMAIN.STATIONS` stream, so inserting a draw anywhere in that sequence
  * shifts every station after it, in every system. The test that catches it
- * needs a *before* state, and once the offending draw is added there is no
- * before state left to generate. So the baseline is captured here, on the
- * generator as it stands, and committed.
+ * needs a *before* state, and the baseline stops being cheap to obtain the
+ * moment that draw lands. It stays *recoverable* — checking out this commit's
+ * `src/` and re-running this script reproduces it — so the real argument for
+ * committing it now is that nobody will remember to later, and a guard whose
+ * baseline postdates the change it guards is worthless.
  *
  * Run it again only when a station-placement change was **intended** — the
  * dead-end fix of `station-types.md` §5.4 is one such change. It moving

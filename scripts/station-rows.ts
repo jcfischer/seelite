@@ -10,8 +10,39 @@
  * nothing fails.
  */
 
-import { GALAXY_COUNT, generateGalaxy } from "../src/galaxy";
-import { generateContents } from "../src/system";
+import { GALAXY_COUNT, generateGalaxy, type SystemRecord } from "../src/galaxy";
+import { type SystemContents, generateContents } from "../src/system";
+
+/**
+ * Walks `galaxies` of one world, generating each system's contents once.
+ *
+ * The single traversal both the row builder and the undockable-systems census
+ * go through, for the reason in this module's header: two hand-copied walks
+ * over the same generator entry points drift, and nothing fails when they do.
+ */
+export function forEachSystem(
+	worldSeed: number,
+	galaxies: readonly number[],
+	visit: (
+		record: SystemRecord,
+		contents: SystemContents,
+		galaxy: number,
+	) => void,
+): void {
+	for (const g of galaxies) {
+		if (g >= GALAXY_COUNT) throw new Error(`galaxy ${g} does not exist`);
+		for (const record of generateGalaxy(worldSeed, g).systems) {
+			visit(record, generateContents(record), g);
+		}
+	}
+}
+
+/** Every galaxy index of a world — the census walks all of them, the placement
+ *  fixture only a couple. */
+export const ALL_GALAXIES: readonly number[] = Array.from(
+	{ length: GALAXY_COUNT },
+	(_, i) => i,
+);
 
 /**
  * Every station of every system in `galaxies`, one tab-separated row each.
@@ -28,27 +59,23 @@ export function stationRows(
 	galaxies: readonly number[],
 ): string[] {
 	const rows: string[] = [];
-	for (const g of galaxies) {
-		if (g >= GALAXY_COUNT) throw new Error(`galaxy ${g} does not exist`);
-		const galaxy = generateGalaxy(worldSeed, g);
-		for (const record of galaxy.systems) {
-			for (const s of generateContents(record).stations) {
-				rows.push(
-					[
-						g,
-						record.index,
-						s.id,
-						s.type,
-						s.parentId ?? "-",
-						s.orbit.radiusKm.toExponential(12),
-						s.orbit.periodS.toExponential(12),
-						s.orbit.theta0.toExponential(12),
-						s.orbit.inclination.toExponential(12),
-						s.orbit.node.toExponential(12),
-					].join("\t"),
-				);
-			}
+	forEachSystem(worldSeed, galaxies, (record, contents, g) => {
+		for (const s of contents.stations) {
+			rows.push(
+				[
+					g,
+					record.index,
+					s.id,
+					s.type,
+					s.parentId ?? "-",
+					s.orbit.radiusKm.toExponential(12),
+					s.orbit.periodS.toExponential(12),
+					s.orbit.theta0.toExponential(12),
+					s.orbit.inclination.toExponential(12),
+					s.orbit.node.toExponential(12),
+				].join("\t"),
+			);
 		}
-	}
+	});
 	return rows;
 }

@@ -365,9 +365,9 @@ synonym carrying no distinction.
 > **The trade station is not unconditional.** This table said "always" and
 > `src/system.ts` says the same; both are wrong. §6.2's ladder can discard every
 > rung outside the orbit envelope, and the trade station is guarded by
-> `if (primary)`, so a planetless system has nothing to dock at — measured at
-> **2 systems in 2,048** on the shipped world seed. Recorded and pinned by
-> `station-types.md` §5.4; the fix has its own node, because the three
+> `if (primary)`, so a planetless system has nothing to dock at. Measured,
+> recorded and pinned by `station-types.md` §5.4 — the count lives there and in
+> `tests/station-orbits.test.ts`, not here. The fix has its own node, because the three
 > candidate answers differ in what they do to arrival, the galaxy map and the
 > determinism digest.
 

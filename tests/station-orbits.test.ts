@@ -20,9 +20,11 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { GALAXY_COUNT, generateGalaxy } from "../src/galaxy";
-import { generateContents } from "../src/system";
-import { stationRows } from "../scripts/station-rows";
+import {
+	ALL_GALAXIES,
+	forEachSystem,
+	stationRows,
+} from "../scripts/station-rows";
 import baseline from "./fixtures/station-orbits.json";
 
 describe("station placement is stable against added draws", () => {
@@ -63,13 +65,10 @@ describe("undockable systems (known defect, station-types.md §5.4)", () => {
 	test("exactly 2 of 2048 systems generate with no planet and no station", () => {
 		let planetless = 0;
 		let stationless = 0;
-		for (let g = 0; g < GALAXY_COUNT; g++) {
-			for (const record of generateGalaxy(baseline.worldSeed, g).systems) {
-				const contents = generateContents(record);
-				if (contents.planets.length === 0) planetless++;
-				if (contents.stations.length === 0) stationless++;
-			}
-		}
+		forEachSystem(baseline.worldSeed, ALL_GALAXIES, (_record, contents) => {
+			if (contents.planets.length === 0) planetless++;
+			if (contents.stations.length === 0) stationless++;
+		});
 		expect(planetless).toBe(2);
 		expect(stationless).toBe(2);
 		// Every stationless system is stationless *because* it is planetless —
