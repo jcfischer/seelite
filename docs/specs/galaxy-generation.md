@@ -342,16 +342,23 @@ orbits, at the geometric mean of the two, width ±10%.
 
 | Type | Present when | Sits at |
 |---|---|---|
-| **Main trade station** | always | orbit of the primary planet |
-| **Refinery outpost** | the system has a belt (§6.3) | inside the belt |
-| **Shipyard / naval station** | `displayTL ≥ 10` | orbit of the primary or a gas giant |
+| **trade station** | always | orbit of the primary planet |
+| **refinery** | the system has a belt (§6.3) | inside the belt |
+| **shipyard** | `displayTL ≥ 10` | orbit of the primary or a gas giant |
 
 Count therefore keys off population and tech exactly as intended: a high-TL
 core world plausibly supports three, a rim Anarchy one. **Shipyards generate
 only in the core**, which is what gives the tech gradient teeth.
 
-What a type does to prices and stock belongs to #7; its docking geometry
-belongs to #9. This spec places them and names their type.
+This spec places stations and names their type. **What a type *is* — market
+offset, equipment exclusives, law and contraband, geometry, silhouette — is
+[#13](https://github.com/jcfischer/seelite/issues/13) and lives in
+`docs/specs/station-types.md`.** From there it reaches #7 (prices generate per
+station from an offset economy), #8 (legal status, pirate presence) and #9 (two
+docking interactions, not three).
+
+The names above were changed by #13 to match `StationType` exactly, and
+"outpost" was retired as a synonym carrying no distinction.
 
 ---
 
