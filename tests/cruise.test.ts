@@ -37,6 +37,18 @@ import { type Vec3, add, length, scale, sub, v3 } from "../src/vec3";
 
 const P = DEFAULT_CRUISE;
 
+/**
+ * #10's own parameters, kept as a fixture.
+ *
+ * The defaults have moved: #14 flew them and the principal ruled on both the
+ * exponent and the leg time, so `DEFAULT_CRUISE` is now 23 c at 0.60. §2.3's
+ * table is still a claim worth checking — it is the arithmetic the spec was
+ * argued from — but it is a claim about *these* numbers, and asserting it
+ * against whatever the defaults happen to be would turn a check of the spec
+ * into a check that the file agrees with itself.
+ */
+const SPEC_LAW = { ...DEFAULT_CRUISE, vMaxKms: 6.0e6, exponent: 0.75 };
+
 /** A unit vector from `a` to `b`, in float64 — the ship's nose, in the tests
  *  that fly straight at something. */
 function towards(a: Vec3, b: Vec3): Vec3 {
@@ -120,9 +132,9 @@ test("the speed law matches the spec's table at every sampled distance", () => {
 	// §2.3's key speeds, which are the spec's own arithmetic — so this is the
 	// check that the implementation is the law that was argued, not a different
 	// curve that happens to feel similar.
-	const at = (km: number) => cruiseSpeed(km, P);
-	expect(at(AU_KM)).toBeCloseTo(P.vMaxKms, 0); // ≥ d_ref: capped
-	expect(at(P.dRefKm)).toBeCloseTo(P.vMaxKms, 0);
+	const at = (km: number) => cruiseSpeed(km, SPEC_LAW);
+	expect(at(AU_KM)).toBeCloseTo(SPEC_LAW.vMaxKms, 0); // ≥ d_ref: capped
+	expect(at(SPEC_LAW.dRefKm)).toBeCloseTo(SPEC_LAW.vMaxKms, 0);
 	expect(at(HANDOFF_KM) / 7450).toBeCloseTo(1, 1); // the layer handoff
 	expect(at(1000) / 1327).toBeCloseTo(1, 1);
 	expect(at(50) / 140).toBeCloseTo(1, 1); // where the drop-out fires
@@ -170,7 +182,7 @@ test("speed keys off the nearest star or planet, never a moon or a station", () 
  * happens to cost; the honest split is the law here, and the arrival cost
  * asserted on its own below.
  */
-const NO_CLAMP = { ...DEFAULT_CRUISE, vicinityKm: 0 };
+const NO_CLAMP = { ...SPEC_LAW, vicinityKm: 0 };
 
 // §2.3's table, with the geometry it is stated against: one mass at the
 // destination, the ship flying straight in from `legAu` away. The tolerance is
@@ -369,9 +381,10 @@ test("charge is spent per AU travelled, not per second", () => {
 	const fast = spend(v3(0, 30 * AU_KM, 0));
 	const slow = spend(v3(legKm * 0.5, 2e4, 0));
 	// Both legs decelerate near the destination now that the law reads the target
-	// as well as the mass, so the gap is narrower than it was — the claim is that
-	// the well costs time, not how much.
-	expect(slow.seconds).toBeGreaterThan(fast.seconds * 2);
+	// as well as the mass, and the tuned exponent (0.60, shallower than the
+	// spec's 0.75) narrows the gap further — the claim is that the well costs
+	// time, not how much.
+	expect(slow.seconds).toBeGreaterThan(fast.seconds * 1.5);
 	// Per kilometre, because the two runs stop on the same *position* test and a
 	// sub-step lands them a little differently — the claim is the rate, not the
 	// total.
@@ -666,13 +679,17 @@ test("inside the vicinity the speed is held to the seconds-to-target", () => {
 	// within 50 km": a 50 km sphere seen from 60,000 km subtends 0.05°, and a
 	// nose-locked ship doing hundreds of km/s cannot be hand-aimed at it.
 	const station = { pos: v3(), radiusKm: 1.2 };
+	// A frame short enough to be one sub-step: `speedKms` reports the *last*
+	// sub-step of the frame, and at these speeds a 0.1 s frame is several,
+	// each one closer and therefore slower. The rule being checked is the speed
+	// at a distance, not the speed at the end of a tenth of a second.
 	const at = (km: number) => {
 		const pos = v3(km, 0, 0);
 		return advanceCruise({
 			pos,
 			nose: towards(pos, station.pos),
 			throttle: 1,
-			dt: 0.1,
+			dt: 1e-4,
 			masses: oneMassAt(v3(0, 6e4, 0)),
 			target: station,
 			params: P,
@@ -780,4 +797,34 @@ test("the clamp's cost is what the arithmetic says it is", () => {
 	const clampS = P.approachLeadS * Math.log(P.vicinityKm / P.dropRadiusKm);
 	expect(clamped.t - bare.t).toBeGreaterThan(clampS * 0.6);
 	expect(clamped.t - bare.t).toBeLessThan(clampS * 1.4);
+});
+
+test("the tuned defaults put a typical leg just under a minute", () => {
+	// #14's conclusion, as arithmetic. The principal flew four sessions and
+	// asked for "slightly less than 60 s"; the benchmark is §2.3's own 1.3 AU
+	// typical leg rather than the 0.84 AU one he happened to be flying, because
+	// legs across a system run 0.2–6 AU and the median is the more general fit —
+	// his own call, made against the table in `scripts/measure-cruise-pacing.ts`.
+	//
+	// Measured with the clamp **on**, because that is the leg the player flies.
+	const target = { pos: v3(), radiusKm: 1.2 };
+	const leg = (au: number) =>
+		fly({
+			from: v3(au * AU_KM, 0, 0),
+			target,
+			masses: oneMassAt(target.pos),
+			dt: 0.1,
+			limitS: 400,
+		});
+
+	const typical = leg(1.3);
+	expect(typical.dropped).toBe(true);
+	expect(typical.t).toBeGreaterThan(54);
+	expect(typical.t).toBeLessThan(60);
+
+	// And the shape of the curve either side of it: a short hop is not
+	// instantaneous and the outer system is a real trip, both of which the
+	// exponent and the clamp decide together.
+	expect(leg(0.2).t).toBeGreaterThan(20);
+	expect(leg(6).t).toBeLessThan(200);
 });

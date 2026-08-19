@@ -105,11 +105,31 @@ export interface CruiseParams {
 	approachLeadS: number;
 }
 
-/** The spec's own figures, §2 and §3. The starting point of the tuning, not
- *  its conclusion (§10). */
+/**
+ * The figures **as flown**, which is what #14 was for.
+ *
+ * #10 §10 said in as many words that every number in it was derived rather than
+ * felt, and named the exponent and the 68-second leg as the two most likely to
+ * be wrong. Four sessions with the principal settled both:
+ *
+ * - **`exponent: 0.60`**, from "not sure where it should be, 0.6 or 0.75, but
+ *   definitely not higher". The spec derived 0.75. It matters less than it did,
+ *   because the approach clamp now governs everything inside `vicinityKm` —
+ *   the exponent shapes the mid-flight stretch, not the arrival.
+ * - **`vMaxKms: 23 c`**, from "nudge it so that time is slightly less than
+ *   60 s", measured against §2.3's own 1.3 AU typical leg:
+ *   `scripts/measure-cruise-pacing.ts` puts that pair at 59.0 s with the clamp
+ *   in force. The spec predicted 23 c for a 60-second leg and then rounded to
+ *   20 c on the grounds that the figure would be tuned by flying; it was, and
+ *   the prediction was right.
+ *
+ * §2.3's table is still checkable as *the spec's* claim — `tests/cruise.test.ts`
+ * keeps its parameters as a fixture and asserts the table against them, so
+ * retuning the defaults cannot quietly restate what #10 argued.
+ */
 export const DEFAULT_CRUISE: CruiseParams = {
-	vMaxKms: 6.0e6,
-	exponent: 0.75,
+	vMaxKms: 23 * 299792.458,
+	exponent: 0.6,
 	dRefKm: 0.5 * AU_KM,
 	vMinKms: 100,
 	dropRadiusKm: 50,
