@@ -54,6 +54,13 @@
 
 import { DOMAIN, type SystemRecord, stream } from "./galaxy";
 import { type Vec3, dot, lengthSq } from "./vec3";
+import {
+	SPIN_RPM_RANGE,
+	STATION_FENCE_ELIGIBLE,
+	STATION_GEOMETRY,
+	type StationType,
+	fenceProbability,
+} from "./station";
 import { AU_KM } from "./units";
 
 /** Seconds in a Julian year, the unit Kepler III is written in below. */
@@ -200,7 +207,16 @@ export interface Belt {
 	halfWidthAu: number;
 }
 
-export type StationType = "trade" | "refinery" | "shipyard";
+/**
+ * Re-exported from `station.ts`, which owns the type and every table keyed on
+ * it.
+ *
+ * @deprecated Import `StationType` from `./station`. This alias exists so #28
+ * did not have to touch every importer in one commit; it is a migration
+ * convenience, not a boundary, and two paths to one type give new code no
+ * signal about which is canonical.
+ */
+export type { StationType };
 
 export interface Station {
 	id: string;
@@ -209,6 +225,23 @@ export interface Station {
 	 *  which sits in the belt). */
 	parentId: string | null;
 	orbit: Orbit;
+	/**
+	 * Whether this station trades illegal goods (`station-types.md` §5.2). Only
+	 * a refinery can be one, and only some are; it is not inferable from the
+	 * galaxy map, which is the texture being bought.
+	 *
+	 * **The only economy field that belongs on this record, and it is here
+	 * because it is generated.** It is drawn once from the seed and never
+	 * changes, exactly like `type` and `orbit`. Prices, stock and the saved
+	 * stock deficit (#7) are all functions of the clock or of what the player
+	 * did, so they belong to the market module keyed by station id — putting
+	 * them here would make a station record something that has to be saved.
+	 */
+	blackMarket: boolean;
+	/** Rotation about the aperture axis, rpm (`docking.md` §4). 0 for the
+	 *  refinery's fixed pad; [0.6, 3.0] for the two Coriolis types, where it is
+	 *  the difficulty dial rather than decoration. */
+	spinRpm: number;
 }
 
 export interface SystemContents {
@@ -447,6 +480,39 @@ function buildMoons(
  * and owned by `docs/specs/station-types.md` §5.4; pinned by
  * `tests/station-orbits.test.ts`.
  */
+/**
+ * Draw a station's spin, consuming exactly one number whatever its type.
+ *
+ * **The refinery draws and discards** (`docking.md` §5). Skipping the draw would
+ * make the draw count depend on station type, so inserting a refinery would
+ * shift the spin of every station generated after it — the stream coupling the
+ * per-domain tags exist to prevent, reintroduced inside a single tag. The
+ * discard is therefore the point of this function, not an inefficiency in it.
+ *
+ * Here rather than in `station.ts` because it is *stream discipline*, and the
+ * streams are this module's: what a station is stays in the table, how many
+ * numbers generating one costs stays beside the generator.
+ */
+function drawSpinRpm(rand: () => number, type: StationType): number {
+	const roll = rand();
+	if (!STATION_GEOMETRY[type].spins) return 0;
+	return (
+		SPIN_RPM_RANGE.minRpm +
+		roll * (SPIN_RPM_RANGE.maxRpm - SPIN_RPM_RANGE.minRpm)
+	);
+}
+
+/** The fence flag, on the same draw-and-discard rule and for the same reason:
+ *  every station consumes one number from `DOMAIN.STATION_FLAGS`. */
+function drawBlackMarket(
+	rand: () => number,
+	type: StationType,
+	government: number,
+): boolean {
+	const roll = rand();
+	return STATION_FENCE_ELIGIBLE[type] && roll < fenceProbability(government);
+}
+
 function generateStations(
 	record: SystemRecord,
 	star: StarClassDef,
@@ -454,8 +520,29 @@ function generateStations(
 	belt: Belt | null,
 ): Station[] {
 	const rand = stream(record.seed, DOMAIN.STATIONS);
+	// Two more streams, one per new field, and never `rand` above: a draw
+	// inserted into the placement stream shifts every station after it, which is
+	// what `tests/station-orbits.test.ts` exists to catch (§5.3).
+	const flagRand = stream(record.seed, DOMAIN.STATION_FLAGS);
+	const spinRand = stream(record.seed, DOMAIN.STATION_SPIN);
 	const stations: Station[] = [];
 	const primary = planets.find((p) => p.isPrimary) ?? planets[0];
+
+	/**
+	 * The two seeded fields, in station order, one draw each from each stream.
+	 *
+	 * Every station consumes both draws whatever its type — the refinery keeps
+	 * its flag and discards its spin, the other two the reverse. Drawing
+	 * conditionally would make the draw count depend on type, so a system that
+	 * happens to have a refinery would spin its shipyard differently from one
+	 * that does not (`docking.md` §5).
+	 */
+	const fields = (
+		type: StationType,
+	): Pick<Station, "blackMarket" | "spinRpm"> => ({
+		blackMarket: drawBlackMarket(flagRand, type, record.government),
+		spinRpm: drawSpinRpm(spinRand, type),
+	});
 
 	/** Station orbits are low and fast (§7.3): a few hundred to a couple of
 	 *  thousand km up, 90–240 minutes round. Spin, which docking has to match,
@@ -474,6 +561,7 @@ function generateStations(
 			type: "trade",
 			parentId: primary.id,
 			orbit: aroundBody(primary),
+			...fields("trade"),
 		});
 	}
 
@@ -492,6 +580,7 @@ function generateStations(
 				inclination: uniform(rand, 0, (3 * Math.PI) / 180),
 				node: rand() * TAU,
 			},
+			...fields("refinery"),
 		});
 	}
 
@@ -507,6 +596,7 @@ function generateStations(
 				type: "shipyard",
 				parentId: host.id,
 				orbit: aroundBody(host),
+				...fields("shipyard"),
 			});
 		}
 	}
@@ -557,11 +647,10 @@ export function placeBodies(
 			pos: base
 				? { x: base.x + rel.x, y: base.y + rel.y, z: base.z + rel.z }
 				: rel,
-			// Scenery: a station is a near-layer object and its real geometry is
-			// #9's business. Nothing reads it yet — in particular the arrival
-			// clearance is centre-to-centre, per §7.4's "within 0.25 AU of any
-			// body", and at 1.2 km against 0.25 AU the radius would not move it.
-			radiusKm: 1.2,
+			// The dockable core, per type (`docking.md` §5). A table read with no
+			// RNG call, so adding it shifted no stream and the placement fixture
+			// is byte-identical — `spinRpm` is the only field here that draws.
+			radiusKm: STATION_GEOMETRY[station.type].coreRadiusKm,
 		});
 	}
 	return placed;

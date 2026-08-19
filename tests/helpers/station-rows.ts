@@ -106,3 +106,95 @@ export const ALL_GALAXIES: readonly number[] = Array.from(
 export function worldSeeds(n: number): number[] {
 	return Array.from({ length: n }, (_, i) => ((i + 1) * 2654435761) >>> 0);
 }
+
+/**
+ * Every station's *generated fields*, one row each — the companion to
+ * `stationRows` for node #28's `blackMarket` and `spinRpm`.
+ *
+ * Separate from `stationRows` rather than columns added to it, because the two
+ * fixtures make opposite claims and must be able to move independently: the
+ * placement rows are pinned to a world captured *before* these fields existed
+ * and must not move when they land, while these rows can only be captured
+ * after. Widening the placement row would have made repinning one an alarm on
+ * the other, which is the failure `station-orbits.test.ts` warns about between
+ * itself and the galaxy digest.
+ */
+export function stationFieldRows(
+	worldSeed: number,
+	galaxies: readonly number[],
+): string[] {
+	const rows: string[] = [];
+	forEachSystem(worldSeed, galaxies, (record, contents, g) => {
+		for (const s of contents.stations) {
+			rows.push(
+				[
+					g,
+					record.index,
+					s.id,
+					s.type,
+					record.government,
+					s.blackMarket ? "fence" : "-",
+					s.spinRpm.toExponential(12),
+				].join("\t"),
+			);
+		}
+	});
+	return rows;
+}
+
+/**
+ * Refineries by government, and how many of them are fences.
+ *
+ * Shared by `tests/station.test.ts` and `scripts/measure-fence-rate.ts` for the
+ * reason in this module's header: the two sweep different corpora on purpose —
+ * a second and a quarter of a minute — but they must agree exactly on *what a
+ * fence rate is*. Two hand-copied tallies drift, and nothing fails when they do.
+ *
+ * `stopAt` ends the sweep early: the test wants a refinery total, the instrument
+ * wants the `government = 7` bucket alone, and neither wants the other's cost.
+ */
+export interface FenceTally {
+	/** Refineries seen, by government 0–7. */
+	total: number[];
+	/** How many of those were fences. */
+	fences: number[];
+	refineries: number;
+	systems: number;
+	worlds: number;
+}
+
+export function fenceTally(
+	worlds: readonly number[],
+	galaxies: readonly number[],
+	stopAt: (tally: FenceTally) => boolean,
+): FenceTally {
+	const tally: FenceTally = {
+		total: new Array(8).fill(0),
+		fences: new Array(8).fill(0),
+		refineries: 0,
+		systems: 0,
+		worlds: 0,
+	};
+	for (const world of worlds) {
+		if (stopAt(tally)) break;
+		tally.worlds++;
+		forEachSystem(world, galaxies, (record, contents) => {
+			tally.systems++;
+			for (const station of contents.stations) {
+				if (station.type !== "refinery") continue;
+				tally.refineries++;
+				tally.total[record.government]++;
+				if (station.blackMarket) tally.fences[record.government]++;
+			}
+		});
+	}
+	return tally;
+}
+
+/** How many standard errors an observed rate sits from the ramp's `p`, over
+ *  `n` samples. Shared for the same reason as the tally: the test and the
+ *  instrument both gate on 4σ, and a bucket that "passes" under two different
+ *  definitions of σ is evidence of nothing. */
+export function sigmaOff(rate: number, p: number, n: number): number {
+	return (rate - p) / Math.sqrt((p * (1 - p)) / n);
+}

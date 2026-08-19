@@ -62,6 +62,12 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
 - **A body's render layer is its distance, not its kind** — near within
   `HANDOFF_KM` of the camera, far beyond it, with a hysteresis band. Anything
   that adds a drawn object inherits this rather than picking a layer.
+- **A station mesh is one core radius across, not kilometres.** Every body is
+  drawn by `mesh.scale = radiusKm × layerFactor`, so `station-mesh.ts` authors
+  in kilometres from `STATION_GEOMETRY` and then divides by the core radius on
+  an inner group. Hand back kilometres instead and the station is drawn
+  `radiusKm` times too large — and `probe-handoff.mjs`, which measures the
+  handoff as `drawnRadius / radiusKm`, reads it as a scale error.
 - **Per-system RNG streams.** One shared generator couples every system to every
   other system's draw count. Add a domain tag rather than reusing one; reusing a
   tag silently correlates the two draws.

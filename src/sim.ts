@@ -53,8 +53,10 @@ import {
 	startSystem,
 } from "./galaxy";
 import { mix, seededRand } from "./rng";
+import { STATION_GEOMETRY, slotPhaseRad } from "./station";
 import {
 	type PlacedBody,
+	type Station,
 	type StationType,
 	type SystemContents,
 	arrivalPoint,
@@ -311,6 +313,82 @@ export function bodyVelocity(
 		return add(velocityOnOrbit(parent.orbit, gameTime), own);
 	}
 	throw new Error(`no body ${id} in this system`);
+}
+
+/**
+ * Where a station's aperture points, and how far its slot has rotated
+ * (`docking.md` §4.1, §5).
+ *
+ * **In sim, not in the renderer.** The repo's rule is that the scene graph is
+ * display only and nothing reads a position back out of an `Object3D`; without
+ * this function the obvious implementation of check 4 (the roll match, #9's own
+ * node) reads the slot's phase off the rendered station, which makes a docking
+ * check depend on frame timing. The renderer mirrors what this returns.
+ *
+ * The axis is a *unit* vector in sim space:
+ *
+ * - `parent` — from the station toward the planet it orbits, 1984's "face
+ *   nearest the planet". It swings as the station goes round, which is the
+ *   whole reason it is computed per call rather than stored at generation.
+ * - `outward` — radially away from the star for the star-centric refinery,
+ *   which has no parent to face. System frames are star-centred (§7.4), so
+ *   that is the station's own position normalised.
+ *
+ * The degenerate case — a station exactly on top of what it faces — cannot
+ * arise from the generator (station orbits are 400–2,000 km up) but is answered
+ * rather than left to produce a `NaN` quaternion in the renderer.
+ */
+export interface StationPose {
+	/** Unit vector along the aperture axis, sim space. */
+	axis: Vec3;
+	/** Slot rotation about that axis, radians in [0, 2π). Always 0 for a pad. */
+	phaseRad: number;
+}
+
+/**
+ * The generated station behind a placed body, or a throw.
+ *
+ * A join between the two representations of one thing — `contents.stations` and
+ * the placed `Body` — and it belongs here for the same reason `stationPose`
+ * does: the renderer holds neither authoritatively, and a body that is not in
+ * the contents is the generator and the placement having disagreed, which is
+ * the error `colorFor` already throws on rather than defaulting past.
+ */
+export function stationOf(system: System, id: string): Station {
+	const station = system.contents.stations.find((s) => s.id === id);
+	if (!station) throw new Error(`station ${id} is not in the contents`);
+	return station;
+}
+
+export function stationPose(
+	system: System,
+	stationId: string,
+	gameTime: number,
+): StationPose {
+	const station = stationOf(system, stationId);
+	const body = system.byId.get(stationId);
+	if (!body) throw new Error(`station ${stationId} has no placed body`);
+
+	const geometry = STATION_GEOMETRY[station.type];
+	let toward: Vec3;
+	if (geometry.axis === "parent") {
+		const parent = station.parentId ? system.byId.get(station.parentId) : null;
+		// Same throw `bodyVelocity` makes: a parent missing from the system is the
+		// generator and the placement having disagreed, not a geometry question.
+		if (!parent)
+			throw new Error(
+				`station ${stationId} orbits unknown ${station.parentId}`,
+			);
+		toward = sub(parent.pos, body.pos);
+	} else {
+		toward = body.pos;
+	}
+
+	const len = length(toward);
+	return {
+		axis: len === 0 ? v3(1, 0, 0) : scale(toward, 1 / len),
+		phaseRad: slotPhaseRad(station.spinRpm, gameTime),
+	};
 }
 
 export function makeWorld(seed: number): World {

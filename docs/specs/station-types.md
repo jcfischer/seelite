@@ -2,6 +2,9 @@
 
 **Status:** resolved decision node — [#13](https://github.com/jcfischer/seelite/issues/13)
 **Date:** 2026-08-19
+**Amended:** 2026-08-19 by [#28](https://github.com/jcfischer/seelite/issues/28),
+which built §7 and §8 — one verification obligation in §9.1 was sized on the
+wrong quantity. The amendment is inline, in that section.
 **Inputs:** [#6](https://github.com/jcfischer/seelite/issues/6) (galaxy & system generation),
 [#4](https://github.com/jcfischer/seelite/issues/4) (Elite-1984 mechanics),
 [#10](https://github.com/jcfischer/seelite/issues/10) (in-system travel)
@@ -650,10 +653,40 @@ Two tiers, per the repo's culture.
   `WORLD_SEED` the placement fixture is pinned to. Over ≥ 20,000 refineries: observed rate at `government = 0` within [0.92, 0.98], at
   `government = 7` within [0.05, 0.11], and non-increasing across `g` allowing
   for sampling noise. Bounds from §5.2's table.
+
+  > **Amended by [#28](https://github.com/jcfischer/seelite/issues/28), which
+  > built it.** *≥ 20,000 refineries* sizes the wrong quantity. The binding
+  > assertion is the `government = 7` rate, and that bucket is two orders of
+  > magnitude rarer than the others: over 200 worlds, 156,388 refineries held
+  > 16,647 at `g = 0` and **735 at `g = 7`**. At 20,000 total the `g = 7` bucket
+  > holds about **95** refineries, where the standard error on a rate of 0.075 is
+  > 0.027 — wider than the half-width of the band it is asked to be inside. A
+  > test written to that number passes or fails on its seed set, which is this
+  > section's own "assertion that cannot fail" defect wearing the other face.
+  >
+  > **Size the sparse bucket, not the total.** The obligation is now, and this is
+  > written as *what is gated where* because the first draft of this amendment
+  > claimed a band that nothing enforced:
+  >
+  > - **Gated, `npm test`.** Every bucket holding ≥ 500 refineries is within four
+  >   standard errors of §5.2's ramp, over a ~20,000-refinery corpus; and the
+  >   `g = 7` bucket is swept for **separately** until it holds 400, then held to
+  >   the same 4σ — ±0.052 there, which is nine standard errors clear of the 0.20
+  >   a broken ramp produces. Costs about four seconds.
+  > - **Not gated — `scripts/measure-fence-rate.ts`, run by hand.** §5.2's
+  >   [0.05, 0.11] band at `g = 7` needs 2,000 refineries in that bucket, which
+  >   takes 541 worlds and a quarter of a minute. Run it when the ramp changes.
+  >   Measured: **0.9501 at `g = 0` over 45,347 and 0.0830 at `g = 7` over
+  >   2,000**, every bucket inside 4σ, both bands held.
+  >
+  > The distinction matters because a band checked only by a script no CI job
+  > and no suite invokes is a band nothing checks.
 - **Incidence is measured, not estimated.** The same corpus reports refinery
   incidence and fence incidence per galaxy, and asserts only the shape §5.2
   commits to — a minority of systems, higher at the rim than the core. The
   figures go in the test's output so the number is evidence rather than prose.
+  Measured by #28: **37.9%** of systems hold a refinery over 53,248 systems,
+  against §5.2's strictly-below-45% argument.
 - Every shipyard-bearing system has `displayTL ≥ 10`; every refinery-bearing
   system has a belt.
 
