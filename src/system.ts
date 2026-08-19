@@ -442,8 +442,9 @@ function buildMoons(
  * comparing the two finds the difference here rather than in a debugger.
  *
  * **The trade station is meant to be unconditional and is not** — it is guarded
- * by `if (primary)`, so a planetless system generates undockable. Measured and
- * owned by `docs/specs/station-types.md` §5.4; pinned by
+ * by `if (primary)`, so a planetless system generates unreachable — no station
+ * to dock at, and no body for #10's arrival point either. The rate is measured
+ * and owned by `docs/specs/station-types.md` §5.4; pinned by
  * `tests/station-orbits.test.ts`.
  */
 function generateStations(

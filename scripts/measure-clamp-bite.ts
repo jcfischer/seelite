@@ -25,8 +25,10 @@ import {
 const worlds = worldSeeds(Number(process.argv[2] ?? 40));
 
 let systems = 0;
-let planetless = 0;
-let stationless = 0;
+/** Keyed, not counted: §5.4 claims the stationless systems are *the same* ones
+ *  that are planetless, and two independent counters cannot show that. */
+const planetless = new Set<string>();
+const stationless = new Set<string>();
 let shipyards = 0;
 
 interface Acc {
@@ -58,8 +60,10 @@ for (const world of worlds) {
 	// galaxy-index check — see that helper's header for why.
 	forEachSystem(world, ALL_GALAXIES, (record, contents) => {
 		systems++;
-		if (contents.planets.length === 0) planetless++;
-		if (contents.stations.length === 0) stationless++;
+		if (contents.planets.length === 0)
+			planetless.add(`${world}:${record.seed}`);
+		if (contents.stations.length === 0)
+			stationless.add(`${world}:${record.seed}`);
 		for (const station of contents.stations) {
 			if (station.type === "shipyard") {
 				shipyards++;
@@ -86,7 +90,13 @@ console.log(
 	`refineries ${refineries}\tclamped ${pct(refineryAcc.clamped, refineries)}\tof which erased ${pct(refineryAcc.erased, refineries)}`,
 );
 console.log(
-	`undockable ${stationless}\t(${((100 * stationless) / systems).toFixed(3)}% of systems; planetless ${planetless})`,
+	`undockable ${stationless.size}\t(${((100 * stationless.size) / systems).toFixed(3)}% of systems)`,
+);
+const sameSets =
+	planetless.size === stationless.size &&
+	[...stationless].every((k) => planetless.has(k));
+console.log(
+	`planetless ${planetless.size}\tsame systems as the undockable set: ${sameSets}`,
 );
 console.log(
 	`shipyard economies: ${[...shipyardEconomy.entries()]

@@ -72,12 +72,16 @@ describe("station placement is stable against added draws", () => {
  * - **drop such systems from the galaxy** — both go to 0, and the system count
  *   changes, so `galaxy.test.ts`'s digest moves too.
  */
-describe("undockable systems (known defect, station-types.md §5.4)", () => {
+/** `station-types.md` §5.4's measurement, over 40 worlds. Not re-derived here —
+ *  eight worlds would measure eight worlds. */
+const MEASURED_RATE = 0.00143;
+
+describe("unreachable systems (known defect, station-types.md §5.4)", () => {
 	/** Eight arbitrary worlds. One world would measure one world, and
 	 *  `scripts/measure-clamp-bite.ts` sweeps the same series. */
 	const WORLDS = worldSeeds(8);
 
-	test("about 1 system in 700 generates undockable", () => {
+	test("about 1 system in 700 generates with no planet and no station", () => {
 		let systems = 0;
 		const planetless: string[] = [];
 		const stationless: string[] = [];

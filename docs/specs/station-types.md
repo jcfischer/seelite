@@ -435,8 +435,9 @@ Geography follows for free, and it is scarcer than "about half". A refinery
 needs a belt, and a belt needs **both** a roll under `BELT_PROBABILITY = 0.45`
 **and** at least two planets to put a gap between (`src/system.ts`:
 `if (wantsBelt && planets.length >= 2)`), so the refinery rate is strictly below
-45%. The government weighting then removes a further share, and government is
-radially biased (core mean 6, rim mean 1), so fences concentrate at the rim.
+45%. The government weighting then removes a further share, and government is radially
+biased — `galaxy-generation.md` §4.1 sets the core mean at 6 (range 4–7) and the
+rim mean at 1 (range 0–3) — so fences concentrate at the rim.
 
 **This spec deliberately asserts no galaxy-wide figure**, because both inputs
 are generator properties rather than constants — the first draft's "roughly
@@ -460,7 +461,11 @@ and reusing an existing tag is the unsafe move `CLAUDE.md` names explicitly.
 
 ---
 
-### 5.4 A defect this node found: about one system in 700 has nowhere to dock
+### 5.4 A defect this node found: about one system in 700 is unreachable
+
+**This section owns the figure.** Every other mention — §11.6,
+`src/system.ts`, `tests/station-orbits.test.ts` — points here rather than
+restating it, so fixing the defect moves one number.
 
 Not introduced here, and not fixed here. Recorded because the fixture committed
 with this spec is what exposed it, and because §5's whole construction assumes
@@ -479,7 +484,14 @@ whose bad systems could be listed — every session generates its own. Measured
 across **40 worlds, 81,920 systems: 117 are planetless, and the same 117 are
 stationless — 0.143%, about one in 700, or roughly three per 2,048-system
 world** (`scripts/measure-clamp-bite.ts`, which reports this alongside §3.2's
-table so both figures come from one reproducible sweep). Pinned by `tests/station-orbits.test.ts` as a rate over eight worlds
+table so both figures come from one reproducible sweep). It compares the two as
+*sets* rather than as counts, and prints whether they match, because the whole
+fix menu below rests on planetlessness being the sole cause.
+
+**It is not only a docking problem.** A planetless system has no body to arrive
+near either, and #10's arrival point assumes one — so the deferred node is
+scoped to *reachability*, not to docking. Reading "nowhere to dock" as the whole
+defect would under-scope it. Pinned by `tests/station-orbits.test.ts` as a rate over eight worlds
 with a band around that figure, asserting the defect's extent rather than the
 invariant, so the fix breaks the test on purpose.
 
@@ -622,8 +634,12 @@ Two tiers, per the repo's culture.
   moment the baseline is *cheap*. Strictly it stays recoverable — this commit's
   `src/` plus the capture script reproduce it — so the honest argument is not
   "impossible later" but "nobody will remember to, and the guard is worthless
-  unless the baseline predates the change". Verified
-  to fail on an inserted `DOMAIN.STATIONS` draw and pass on its removal.
+  unless the baseline predates the change". Its ability to
+  fail was checked by hand, by inserting a throwaway `DOMAIN.STATIONS` draw and
+  watching it go red, then removing it. **That experiment left no committed
+  artifact** — it cannot, without shipping a deliberately broken generator — so
+  it is evidence about a run, not a reproducible check, and is stated that way
+  rather than as a passing test.
 - **The two golden files are not interchangeable.** `galaxy.test.ts`'s
   determinism digest pins the *record* and will legitimately move when the new
   fields land; the orbit fixture pins *placement* and must not move with them.
@@ -697,7 +713,7 @@ Two tiers, per the repo's culture.
 5. **A belt refinery sells cheap bread.** §3.3 — staples share the extractive
    gradient, so the +3 that cheapens ore cheapens Food, Furs and Liquor too.
    Flavour debt; the declined repair is named there.
-6. **About one system in 700 has nowhere to dock** — 0.143% measured over 40
-   worlds, roughly three per 2,048-system world. §5.4 — a pre-existing defect
-   this node measured rather than introduced, with the fix left to its own node
+6. **A small fraction of systems generate unreachable** — no planet, so no
+   station and no arrival body. §5.4 owns the measurement; a pre-existing defect
+   this node found rather than introduced, with the fix left to its own node
    because the three candidate answers are a real choice.
