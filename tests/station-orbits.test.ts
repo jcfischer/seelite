@@ -84,13 +84,17 @@ describe("undockable systems (known defect, station-types.md §5.4)", () => {
 		for (const world of WORLDS) {
 			forEachSystem(world, ALL_GALAXIES, (record, contents, g) => {
 				systems++;
-				const key = `${world}:g${g}#${record.index}`;
-				if (contents.planets.length === 0) planetless.push(key);
-				if (contents.stations.length === 0) stationless.push(key);
+				// Built inside the branches: ~0.14% of 16,384 systems keep it.
+				if (contents.planets.length === 0)
+					planetless.push(`${world}:g${g}#${record.index}`);
+				if (contents.stations.length === 0)
+					stationless.push(`${world}:g${g}#${record.index}`);
 			});
 		}
 		expect(systems).toBe(WORLDS.length * ALL_GALAXIES.length * 256);
-		// Measured at 0.143% over 40 worlds (81,920 systems). The band is ±50%
+		// Measured at 0.143% over 40 worlds (81,920 systems) by
+		// `scripts/measure-clamp-bite.ts`, which reports the same figure. The band
+		// is ±50%
 		// around that: wide enough to absorb sampling over eight worlds, narrow
 		// enough that fixing the defect fails the lower bound and roughly
 		// doubling it fails the upper. It does not claim to catch a 10% drift.

@@ -1,6 +1,8 @@
 /**
- * One serialisation of a station's placement, shared by the capture script and
- * the guard that checks against what it captured.
+ * Shared corpus machinery for the generator tests and the measurement scripts:
+ * one traversal, one set of world seeds, and one serialisation of a station's
+ * placement used by both the capture script and the guard that checks against
+ * what it captured.
  *
  * It lives under `tests/helpers/` rather than in `scripts/` because the guard is
  * the thing that must not drift: the dependency should point from the operator

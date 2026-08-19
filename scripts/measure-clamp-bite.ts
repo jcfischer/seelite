@@ -8,6 +8,11 @@
  * step later — a later reader re-deciding this has the number but no way to
  * check it.
  *
+ * It also reports the undockable rate behind §5.4, for the same reason: that
+ * figure sets `tests/station-orbits.test.ts`'s band, §5.4's prose and
+ * `src/system.ts`'s comment, and the committed test sweeps eight worlds where
+ * the quoted number is forty. One sweep, both numbers, reproducible.
+ *
  *   bun run scripts/measure-clamp-bite.ts [worldCount]
  */
 
@@ -20,23 +25,41 @@ import {
 const worlds = worldSeeds(Number(process.argv[2] ?? 40));
 
 let systems = 0;
+let planetless = 0;
+let stationless = 0;
 let shipyards = 0;
-/** The clamp changed the result at all — at economy 1 a `−2` lands on 0, one
- *  step of shift instead of two. **Includes the erased case below**: these are
- *  nested populations, not disjoint ones. */
-let shipyardClamped = 0;
-/** The offset is gone: the station prices exactly like the system beside it. */
-let shipyardErased = 0;
+
+interface Acc {
+	clamped: number;
+	erased: number;
+}
+const shipyardAcc: Acc = { clamped: 0, erased: 0 };
+const refineryAcc: Acc = { clamped: 0, erased: 0 };
 let refineries = 0;
-let refineryClamped = 0;
-let refineryErased = 0;
 const shipyardEconomy = new Map<number, number>();
+
+/**
+ * The rejected implementation, scored: `clamp(economy + offset, 0, 7)`.
+ *
+ * One function rather than one block per station type, so the two arms cannot
+ * drift and the explanation is not attached to only one of them. **`clamped`
+ * and `erased` are nested populations, not disjoint ones** — every erased
+ * offset is also a clamped one, and conflating the two overstated §3.2's case
+ * in two successive drafts.
+ */
+function tally(economy: number, offset: number, acc: Acc): void {
+	const effective = Math.min(Math.max(economy + offset, 0), 7);
+	if (effective !== economy + offset) acc.clamped++;
+	if (effective === economy) acc.erased++;
+}
 
 for (const world of worlds) {
 	// The same traversal the guard uses, rather than a second walk with a weaker
 	// galaxy-index check — see that helper's header for why.
 	forEachSystem(world, ALL_GALAXIES, (record, contents) => {
 		systems++;
+		if (contents.planets.length === 0) planetless++;
+		if (contents.stations.length === 0) stationless++;
 		for (const station of contents.stations) {
 			if (station.type === "shipyard") {
 				shipyards++;
@@ -44,18 +67,11 @@ for (const world of worlds) {
 					record.economy,
 					(shipyardEconomy.get(record.economy) ?? 0) + 1,
 				);
-				// The rejected implementation: `clamp(economy - 2, 0, 7)`. "Clamped at
-				// all" and "offset erased" are different questions, and conflating them
-				// overstated the case in two successive drafts of §3.2.
-				const effective = Math.max(record.economy - 2, 0);
-				if (effective !== record.economy - 2) shipyardClamped++;
-				if (effective === record.economy) shipyardErased++;
+				tally(record.economy, -2, shipyardAcc);
 			}
 			if (station.type === "refinery") {
 				refineries++;
-				const effective = Math.min(record.economy + 3, 7);
-				if (effective !== record.economy + 3) refineryClamped++;
-				if (effective === record.economy) refineryErased++;
+				tally(record.economy, +3, refineryAcc);
 			}
 		}
 	});
@@ -64,10 +80,13 @@ for (const world of worlds) {
 const pct = (n: number, d: number) => `${((100 * n) / d).toFixed(1)}%`;
 console.log(`worlds ${worlds.length}, systems ${systems}`);
 console.log(
-	`shipyards  ${shipyards}\tclamped ${pct(shipyardClamped, shipyards)}\tof which erased ${pct(shipyardErased, shipyards)}`,
+	`shipyards  ${shipyards}\tclamped ${pct(shipyardAcc.clamped, shipyards)}\tof which erased ${pct(shipyardAcc.erased, shipyards)}`,
 );
 console.log(
-	`refineries ${refineries}\tclamped ${pct(refineryClamped, refineries)}\tof which erased ${pct(refineryErased, refineries)}`,
+	`refineries ${refineries}\tclamped ${pct(refineryAcc.clamped, refineries)}\tof which erased ${pct(refineryAcc.erased, refineries)}`,
+);
+console.log(
+	`undockable ${stationless}\t(${((100 * stationless) / systems).toFixed(3)}% of systems; planetless ${planetless})`,
 );
 console.log(
 	`shipyard economies: ${[...shipyardEconomy.entries()]

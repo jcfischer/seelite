@@ -478,7 +478,8 @@ end the galaxy map has no way to warn."* Both are false. The push is guarded by
 whose bad systems could be listed — every session generates its own. Measured
 across **40 worlds, 81,920 systems: 117 are planetless, and the same 117 are
 stationless — 0.143%, about one in 700, or roughly three per 2,048-system
-world.** Pinned by `tests/station-orbits.test.ts` as a rate over eight worlds
+world** (`scripts/measure-clamp-bite.ts`, which reports this alongside §3.2's
+table so both figures come from one reproducible sweep). Pinned by `tests/station-orbits.test.ts` as a rate over eight worlds
 with a band around that figure, asserting the defect's extent rather than the
 invariant, so the fix breaks the test on purpose.
 
@@ -589,7 +590,21 @@ Two tiers, per the repo's culture.
   gradient, the refinery and shipyard prices differ from the trade station's in
   every system in the corpus — including economy 0 and economy 7, which is where
   the rejected `clamp(…, 0, 7)` implementation would have collapsed them (§3.2).
-  This is the test that would have caught the first draft.
+- **The offset points the right way**, which is a *separate* obligation and the
+  one that matters most. The test above passes just as happily with a refinery
+  offset of −3 — the backwards value §3.1 records as this spec's largest
+  correction — so it must be pinned by direction, not merely by difference:
+
+  | assertion | why |
+  |---|---|
+  | a refinery's **Minerals** are cheaper than the trade station's | the refinery's own product; the −3 draft made them dearer |
+  | a refinery's **Computers** are dearer | positive gradient, remote outpost |
+  | a shipyard's **Computers** are cheaper | manufacturing hub |
+  | a shipyard's **Minerals** are dearer | the mirror of the above |
+
+  Each holds in **every** system of the corpus, since §3.2's delta form has no
+  system-dependent behaviour. A sign error anywhere in the chain — the offset,
+  the gradient, the price step — fails at least two of the four.
 - **`government = 0` returns 1.0, not `NaN`.** §5.1's odds form divides by zero
   there, and the guard is a special case that a reimplementation will drop.
   Every type at `government = 0` must be asserted, trade station included — it
