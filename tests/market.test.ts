@@ -27,6 +27,7 @@ import {
 	ALL_FLUCT,
 	ALL_STATIONS,
 	COMMODITIES,
+	CLOSABLE_RATIO,
 	FLUCT_PAIRS,
 	type Commodity,
 	DEFICIT_HALF_LIFE_MIN,
@@ -45,10 +46,12 @@ import {
 	bestMargin,
 	commodity,
 	decayDeficit,
+	forEachLegalPair,
 	marketEpoch,
 	marketRow,
 	residualMarginCr,
 	sweepDomain,
+	surveyResiduals,
 	runsToExhaustion,
 	stockResponse,
 } from "./helpers/market-math";
@@ -216,11 +219,13 @@ describe("§2.3 the retuned Narcotics keeps the smuggling trade alive", () => {
 	test("contraband stays worth more than the best legal good", () => {
 		// station-types.md §3.4 sells contraband as a risk premium. If an
 		// ordinary good out-earns it, the fence geography buys nothing.
-		const bestLegal = Math.max(
-			...TRADEABLE.filter((c) => !c.illegal).map(
-				(c) => bestMargin(c, "refinery", "refinery").margin,
-			),
-		);
+		// Over **every** legal good, sub-tonne included. Filtering to tonne goods
+		// excluded Gold, Platinum and Gem-Stones — and Gold is precisely the good
+		// §2.2 admits the quantity clamp enriched, so the one this PR made better
+		// off was sitting outside the assertion that contraband beats them all.
+		const bestLegal = COMMODITIES.filter((c) => !c.illegal && !c.sellOnly)
+			.map((c) => bestMargin(c, "refinery", "refinery").margin)
+			.reduce((a, b) => Math.max(a, b), 0);
 		expect(
 			bestMargin(byName("Narcotics"), "refinery", "refinery").margin,
 		).toBeGreaterThan(bestLegal);
@@ -460,44 +465,32 @@ describe("§5 the stock deficit", () => {
 		expect(decayDeficit(40, 0)).toBeCloseTo(40, 6);
 	});
 
-	test("exhausts the best intra-system pair within four runs", () => {
-		// The reason the shipyard→refinery loop does not collapse the galaxy into
-		// single-system trading (§5.4). The pair is *searched*, not hardcoded, so
-		// a retune that promotes another good keeps this pointed at the real
-		// best arb rather than at a stale one.
-		// Searched across goods, economies **and** fluctuation-byte pairs, because
-		// §10.1 claims the *best* pair is exhausted and a fixed configuration is
-		// not it: the instrument reports an intra-system max of 28.0 Cr/t while
-		// one hardcoded setup started at 27.2, so the pair the brake most has to
-		// survive was never the pair asserted. Bytes are independent — pairing
-		// them understates the margin, and an understated margin exhausts sooner.
-		let worst = { spread: Number.NEGATIVE_INFINITY, buyCr: 0, sellCr: 0 };
-		for (const commodity of LEGAL_TRADEABLE)
-			for (const economy of ALL_ECONOMIES)
-				for (const [buyFluct, sellFluct] of FLUCT_PAIRS) {
-					const buy = marketRow(commodity, economy, buyFluct, "shipyard");
-					if (buy.quantity === 0) continue;
-					const sellCr = marketRow(
-						commodity,
-						economy,
-						sellFluct,
-						"refinery",
-					).priceCr;
-					if (sellCr - buy.priceCr > worst.spread)
-						worst = {
-							spread: sellCr - buy.priceCr,
-							buyCr: buy.priceCr,
-							sellCr,
-						};
-				}
-		expect(worst.spread).toBeGreaterThan(0);
-
-		const { runs } = runsToExhaustion({
-			buyBaseCr: worst.buyCr,
-			sellBaseCr: worst.sellCr,
-		});
-		expect(runs).toBeGreaterThan(0);
-		expect(runs).toBeLessThanOrEqual(4);
+	test("every closable intra-system pair is exhausted within four runs", () => {
+		// **All six ordered station legs**, not the one written first. An earlier
+		// version searched shipyard→refinery only — and §5.4's richest residual
+		// sits on refinery→shipyard, the excluded direction, so the leg asserted
+		// was provably not the one the brake most has to survive.
+		//
+		// The claim is necessarily conditional, and saying so is the point: a pair
+		// above CLOSABLE_RATIO never reaches zero however many runs are flown, so
+		// "every pair exhausts" would be false. What holds is that every pair the
+		// deficit *can* close, closes fast — and the test below bounds what the
+		// rest keep paying.
+		let checked = 0;
+		let slowest = 0;
+		forEachLegalPair((pair) => {
+			if (pair.sellCr <= pair.buyCr) return; // never profitable to begin with
+			if (residualMarginCr(pair.buyCr, pair.sellCr) > 0) return; // unclosable
+			checked++;
+			const { runs } = runsToExhaustion({
+				buyBaseCr: pair.buyCr,
+				sellBaseCr: pair.sellCr,
+			});
+			slowest = Math.max(slowest, runs);
+		}, FLUCT_PAIRS);
+		expect(checked).toBeGreaterThan(100);
+		expect(slowest).toBeGreaterThan(0);
+		expect(slowest).toBeLessThanOrEqual(4);
 	});
 
 	test("no intra-system pair stays worth farming once the deficit saturates", () => {
@@ -508,35 +501,18 @@ describe("§5 the stock deficit", () => {
 		// shipyard, a ratio of 12, so "the deficit closes every pair" is false.
 		//
 		// What matters is not whether a pair reaches exactly zero but what it still
-		// pays at the ±63 steady state. Food's ratio of 12 leaves 2.8 Cr/t because
-		// it is a 0.4 Cr good. The bound worth guarding is the richest residual.
-		let worst = { cr: 0, good: "—", leg: "" };
-		for (const good of LEGAL_TRADEABLE)
-			for (const economy of ALL_ECONOMIES)
-				for (const buyStation of ALL_STATIONS)
-					for (const sellStation of ALL_STATIONS) {
-						if (buyStation === sellStation) continue;
-						for (const buyFluct of ALL_FLUCT) {
-							const buy = marketRow(good, economy, buyFluct, buyStation);
-							if (buy.quantity === 0) continue;
-							for (const sellFluct of ALL_FLUCT) {
-								const cr = residualMarginCr(
-									buy.priceCr,
-									marketRow(good, economy, sellFluct, sellStation).priceCr,
-								);
-								if (cr > worst.cr)
-									worst = {
-										cr,
-										good: good.name,
-										leg: `${buyStation}→${sellStation}`,
-									};
-							}
-						}
-					}
+		// pays at the ±63 steady state. Food's ratio of 12 leaves pocket change
+		// because it is a 0.4 Cr good. The bound worth guarding is the richest
+		// residual, and it comes from the same survey the instrument prints.
+		const { worst, worstRatio, unclosableRows, rows } = surveyResiduals();
 		// Measured: 7.9 Cr/t (Furs, refinery→shipyard at economy 7) = 158 Cr per
-		// 20 t run, against ~380 Cr for a typical interstellar run. The farm is
-		// allowed to exist; it is not allowed to beat flying somewhere else.
-		expect(worst.cr).toBeLessThan(10);
-		expect(worst.cr * HOLD_REFERENCE_T).toBeLessThan(200);
+		// 20 t run. The farm is allowed to exist; it is not allowed to be worth
+		// preferring to a trade route.
+		expect(worst.residualCr).toBeLessThan(10);
+		expect(worst.residualCr * HOLD_REFERENCE_T).toBeLessThan(200);
+		// …and the ratio view, kept because §5.4 reports it: a real minority of
+		// rows exceed the closable ratio, which is why the residual is the bound.
+		expect(worstRatio.ratio).toBeGreaterThan(CLOSABLE_RATIO);
+		expect(unclosableRows / rows).toBeLessThan(0.05);
 	});
 });

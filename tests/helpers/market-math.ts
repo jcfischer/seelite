@@ -36,10 +36,10 @@ export const PRICE_STEP_CR = 0.4;
 export const QUANTITY_CAP = 0x3f;
 
 /** Economy runs 0 = Rich Industrial → 7 = Poor Agricultural. */
-export const ECONOMY_MIN = 0;
-export const ECONOMY_MAX = 7;
+const ECONOMY_MIN = 0;
+const ECONOMY_MAX = 7;
 
-export type CommodityUnit = "t" | "kg" | "g";
+type CommodityUnit = "t" | "kg" | "g";
 
 export interface Commodity {
 	name: string;
@@ -172,7 +172,7 @@ export const commodity = (name: string): Commodity => {
  * real money, and this is the number that answers it.
  */
 export const residualMarginCr = (buyCr: number, sellCr: number): number =>
-	stockResponse(sellCr, -DEFICIT_MAX) - stockResponse(buyCr, DEFICIT_MAX);
+	shelfPriceCr(sellCr, -DEFICIT_MAX) - shelfPriceCr(buyCr, DEFICIT_MAX);
 
 /**
  * The two arithmetics, kept side by side because §2 rejects one of them and a
@@ -480,4 +480,129 @@ export function runsToExhaustion(opts: {
 		sold = addDeficit(decayDeficit(sold, runMinutes), holdT);
 	}
 	return { runs: margins.length, margins, profitCr };
+}
+
+/**
+ * §1's pipeline, composed: the price actually shown on the shelf.
+ *
+ * `marketRow().priceCr` is the price *before* §5's stock response, which is a
+ * trap for a consumer that reads the field and stops. Every caller that wants
+ * what the player pays goes through here, and §5's response is not exported for
+ * direct use by anything but this.
+ */
+export const shelfPriceCr = (basePriceCr: number, deficit: number): number =>
+	stockResponse(basePriceCr, deficit);
+
+/** One legal intra-system trade: buy at one station type, sell at another. */
+export interface LegalPair {
+	good: Commodity;
+	economy: number;
+	buyStation: StationTypeKey;
+	sellStation: StationTypeKey;
+	buyCr: number;
+	sellCr: number;
+}
+
+/**
+ * Every legal intra-system (good, economy, buy-leg, sell-leg, byte, byte) tuple
+ * whose buy side actually carries stock.
+ *
+ * **All six ordered station legs**, because the direction matters and two
+ * separate measurements each searched only the one written first: the richest
+ * residual sits on refinery→shipyard, the leg both of them excluded.
+ *
+ * Illegal goods are out by construction — §4 scopes contraband to fences, so a
+ * shipyard leg is not a transaction that exists, and including them finds a
+ * "best pair" at a ratio of 59 that no player can fly.
+ */
+export function forEachLegalPair(
+	visit: (pair: LegalPair) => void,
+	fluctPairs?: readonly (readonly [number, number])[],
+): void {
+	const legal = COMMODITIES.filter(
+		(c) => !c.sellOnly && c.unit === "t" && !c.illegal,
+	);
+	for (const good of legal)
+		for (const economy of ALL_ECONOMIES)
+			for (const buyStation of ALL_STATIONS)
+				for (const sellStation of ALL_STATIONS) {
+					if (buyStation === sellStation) continue;
+					if (fluctPairs) {
+						for (const [buyFluct, sellFluct] of fluctPairs) {
+							const buy = marketRow(good, economy, buyFluct, buyStation);
+							if (buy.quantity === 0) continue;
+							visit({
+								good,
+								economy,
+								buyStation,
+								sellStation,
+								buyCr: buy.priceCr,
+								sellCr: marketRow(good, economy, sellFluct, sellStation)
+									.priceCr,
+							});
+						}
+						continue;
+					}
+					for (const buyFluct of ALL_FLUCT) {
+						const buy = marketRow(good, economy, buyFluct, buyStation);
+						if (buy.quantity === 0) continue;
+						for (const sellFluct of ALL_FLUCT)
+							visit({
+								good,
+								economy,
+								buyStation,
+								sellStation,
+								buyCr: buy.priceCr,
+								sellCr: marketRow(good, economy, sellFluct, sellStation)
+									.priceCr,
+							});
+					}
+				}
+}
+
+/** The ratio the deficit can drive to zero: 1.315 / 0.685. */
+export const CLOSABLE_RATIO =
+	(2 - MIN_STOCK_RESPONSE_FACTOR) / MIN_STOCK_RESPONSE_FACTOR;
+
+export interface ResidualSurvey {
+	/** The richest margin any legal intra-system pair still pays at the ±63 cap. */
+	worst: LegalPair & { residualCr: number };
+	/** Ratio-based view, kept because §5.4 reports both. */
+	worstRatio: LegalPair & { ratio: number };
+	unclosableRows: number;
+	rows: number;
+}
+
+/**
+ * The §5.4 survey: how much an intra-system farm still earns once both deficits
+ * saturate, and how often the ratio bound is exceeded at all.
+ *
+ * One body, called by the suite and the instrument. Two near-identical
+ * six-level nests lived in those two files and differed only in what they
+ * accumulated, so a change to the domain had to be made twice or the two
+ * reported figures would silently disagree.
+ */
+export function surveyResiduals(): ResidualSurvey {
+	const empty = COMMODITIES[0];
+	let worst = {
+		good: empty,
+		economy: 0,
+		buyStation: "trade" as StationTypeKey,
+		sellStation: "trade" as StationTypeKey,
+		buyCr: 0,
+		sellCr: 0,
+		residualCr: 0,
+	};
+	let worstRatio: LegalPair & { ratio: number } = { ...worst, ratio: 0 };
+	let unclosableRows = 0;
+	let rows = 0;
+	forEachLegalPair((pair) => {
+		rows++;
+		const residualCr = residualMarginCr(pair.buyCr, pair.sellCr);
+		if (residualCr > worst.residualCr) worst = { ...pair, residualCr };
+		const ratio = pair.sellCr / pair.buyCr;
+		if (ratio > CLOSABLE_RATIO) unclosableRows++;
+		if (ratio > worstRatio.ratio) worstRatio = { ...pair, ratio };
+	});
+	return { worst, worstRatio, unclosableRows, rows };
 }

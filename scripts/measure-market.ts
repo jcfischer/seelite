@@ -38,12 +38,14 @@ import {
 	OFFSET_STATIONS,
 	type StationTypeKey,
 	DEFICIT_MAX,
+	CLOSABLE_RATIO,
 	FLUCT_PAIRS,
-	MIN_STOCK_RESPONSE_FACTOR,
+	HOLD_REFERENCE_T,
 	bestMargin,
 	commodity,
 	marketRow,
 	residualMarginCr,
+	surveyResiduals,
 	runsToExhaustion,
 	stockResponse,
 	sweepDomain,
@@ -413,100 +415,74 @@ for (const commodity of COMMODITIES) {
 // and 0.685, so the deficit closes any pair below 1.315/0.685 and none above
 // it. An earlier version measured that bound **buying at a shipyard and selling
 // at a refinery only** — one of six ordered station pairs — and reported a
-// comfortable 1.571 worst case. The reverse legs are where the cheap goods sit,
-// and they are the ones the floor pins at 0.4 Cr.
+// comfortable 1.571 worst case. The reverse legs hold the cheap goods, the ones
+// §3.1's floor pins at 0.4 Cr.
+//
+// The survey itself lives in `market-math.ts`: this block and the suite's
+// residual test were two verbatim six-level nests differing only in what they
+// accumulated, so a change to the domain had to land in both or the two
+// reported figures would quietly disagree.
 
 console.log("\n── §5.4: sell/buy ratios the deficit cannot close ──");
-const CLOSABLE_RATIO =
-	(2 - MIN_STOCK_RESPONSE_FACTOR) / MIN_STOCK_RESPONSE_FACTOR;
-const LEGAL_TRADEABLE = COMMODITIES.filter(
-	(c) => !c.sellOnly && c.unit === "t" && !c.illegal,
-);
-let worstRatio = { ratio: 0, good: "—", economy: 0, leg: "", marginCr: 0 };
-let bestUnclosableMargin = { marginCr: 0, good: "—", leg: "", ratio: 0 };
-let unclosableRows = 0;
-let ratioRows = 0;
-for (const good of LEGAL_TRADEABLE)
-	for (const economy of ALL_ECONOMIES)
-		for (const buyStation of ALL_STATIONS)
-			for (const sellStation of ALL_STATIONS) {
-				if (buyStation === sellStation) continue;
-				for (const buyFluct of ALL_FLUCT) {
-					const buy = marketRow(good, economy, buyFluct, buyStation);
-					if (buy.quantity === 0) continue;
-					for (const sellFluct of ALL_FLUCT) {
-						const sellCr = marketRow(
-							good,
-							economy,
-							sellFluct,
-							sellStation,
-						).priceCr;
-						const ratio = sellCr / buy.priceCr;
-						const leg = `${buyStation}→${sellStation}`;
-						ratioRows++;
-						if (ratio > CLOSABLE_RATIO) {
-							unclosableRows++;
-							if (sellCr - buy.priceCr > bestUnclosableMargin.marginCr)
-								bestUnclosableMargin = {
-									marginCr: sellCr - buy.priceCr,
-									good: good.name,
-									leg,
-									ratio,
-								};
-						}
-						if (ratio > worstRatio.ratio)
-							worstRatio = {
-								ratio,
-								good: good.name,
-								economy,
-								leg,
-								marginCr: sellCr - buy.priceCr,
-							};
-					}
-				}
-			}
+const survey = surveyResiduals();
 console.log(`the deficit closes any ratio below ${CLOSABLE_RATIO.toFixed(3)}`);
 console.log(
-	`worst legal intra-system ratio: ${worstRatio.ratio.toFixed(2)} — ${worstRatio.good} at economy ${worstRatio.economy}, ${worstRatio.leg}, margin only ${worstRatio.marginCr.toFixed(1)} Cr/t`,
+	`worst legal intra-system ratio: ${survey.worstRatio.ratio.toFixed(2)} — ${survey.worstRatio.good.name} at economy ${survey.worstRatio.economy}, ${survey.worstRatio.buyStation}→${survey.worstRatio.sellStation}, margin only ${(survey.worstRatio.sellCr - survey.worstRatio.buyCr).toFixed(1)} Cr/t`,
 );
 console.log(
-	`rows above the closable ratio: ${pct(unclosableRows, ratioRows)} of ${ratioRows}`,
+	`rows above the closable ratio: ${pct(survey.unclosableRows, survey.rows)} of ${survey.rows}`,
 );
 console.log(
-	`richest unclosable pair: ${bestUnclosableMargin.marginCr.toFixed(1)} Cr/t — ${bestUnclosableMargin.good}, ${bestUnclosableMargin.leg}, ratio ${bestUnclosableMargin.ratio.toFixed(2)}`,
+	`richest steady-state residual: ${survey.worst.residualCr.toFixed(1)} Cr/t — ${survey.worst.good.name} at economy ${survey.worst.economy}, ${survey.worst.buyStation}→${survey.worst.sellStation} (${(survey.worst.residualCr * HOLD_REFERENCE_T).toFixed(0)} Cr per ${HOLD_REFERENCE_T} t run)`,
 );
 
-// The ratio is the wrong headline. What a farmer actually earns is the margin
-// that survives once both deficits sit at the ±63 cap — the *steady state*,
-// not whether it reached exactly zero. A ratio of 12 on a 0.4 Cr good leaves
-// pocket change; the question is whether any pair leaves real money.
-let worstResidual = { cr: 0, good: "—", economy: 0, leg: "" };
-for (const good of LEGAL_TRADEABLE)
-	for (const economy of ALL_ECONOMIES)
-		for (const buyStation of ALL_STATIONS)
-			for (const sellStation of ALL_STATIONS) {
-				if (buyStation === sellStation) continue;
-				for (const buyFluct of ALL_FLUCT) {
-					const buy = marketRow(good, economy, buyFluct, buyStation);
-					if (buy.quantity === 0) continue;
-					for (const sellFluct of ALL_FLUCT) {
-						const sellCr = marketRow(
-							good,
-							economy,
-							sellFluct,
-							sellStation,
-						).priceCr;
-						const residual = residualMarginCr(buy.priceCr, sellCr);
-						if (residual > worstResidual.cr)
-							worstResidual = {
-								cr: residual,
-								good: good.name,
-								economy,
-								leg: `${buyStation}→${sellStation}`,
-							};
-					}
+// ── 8. The same steady state, applied to an interstellar route ──────────────
+//
+// §5.4 compares a saturated intra-system residual against a *fresh* interstellar
+// margin, which is not like for like: one side has been farmed to the ±63 cap
+// and the other has not. This measures the interstellar route under the same
+// saturation, so the farm-versus-fly comparison is between two numbers of the
+// same kind.
+
+console.log("\n── §5.4: the same comparison, both sides saturated ──");
+let bestInterFresh = 0;
+let bestInterSaturated = 0;
+for (const bucket of byGalaxy.values())
+	for (let i = 0; i < bucket.length; i += 64) {
+		const from = bucket[i];
+		for (let j = 0; j < bucket.length; j++) {
+			if (j === i) continue;
+			const to = bucket[j];
+			if (distanceLy(from.pos, to.pos) > JUMP_RANGE_LY) continue;
+			for (const [buyFluct, sellFluct] of FLUCT_PAIRS)
+				for (const good of COMMODITIES) {
+					if (good.sellOnly || good.illegal || good.unit !== "t") continue;
+					for (const buyStation of from.stations)
+						for (const sellStation of to.stations) {
+							const buy = marketRow(good, from.economy, buyFluct, buyStation);
+							if (buy.quantity === 0) continue;
+							const sellCr = marketRow(
+								good,
+								to.economy,
+								sellFluct,
+								sellStation,
+							).priceCr;
+							bestInterFresh = Math.max(bestInterFresh, sellCr - buy.priceCr);
+							bestInterSaturated = Math.max(
+								bestInterSaturated,
+								residualMarginCr(buy.priceCr, sellCr),
+							);
+						}
 				}
-			}
+			break; // one reachable neighbour per sampled origin is enough here
+		}
+	}
 console.log(
-	`richest steady-state residual: ${worstResidual.cr.toFixed(1)} Cr/t — ${worstResidual.good} at economy ${worstResidual.economy}, ${worstResidual.leg} (${(worstResidual.cr * 20).toFixed(0)} Cr per 20 t run)`,
+	`intra-system, saturated: ${survey.worst.residualCr.toFixed(1)} Cr/t (${(survey.worst.residualCr * HOLD_REFERENCE_T).toFixed(0)} Cr per run)`,
+);
+console.log(
+	`interstellar, saturated: ${bestInterSaturated.toFixed(1)} Cr/t (${(bestInterSaturated * HOLD_REFERENCE_T).toFixed(0)} Cr per run)`,
+);
+console.log(
+	`interstellar, fresh:     ${bestInterFresh.toFixed(1)} Cr/t (${(bestInterFresh * HOLD_REFERENCE_T).toFixed(0)} Cr per run)`,
 );

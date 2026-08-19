@@ -465,12 +465,25 @@ what the spec should bound:
 | **richest steady-state residual** | **7.9 Cr/t** — Furs at economy 7, refinery→shipyard |
 | …per 20 t run | **158 Cr** |
 
-So a sustained intra-system farm nets **158 Cr a run against roughly 380 Cr for
-an interstellar one**, on a leg that is shorter but not four times shorter.
-**The farm is allowed to exist; it is not allowed to beat flying somewhere
-else**, and that is what the suite asserts — a bound on the residual, not on the
-ratio. A run-count test alone would have reported "more than four" without ever
-saying why.
+**Compared like with like** — an interstellar route farmed to the same ±63
+saturation, rather than a fresh one:
+
+| | Cr/t | per 20 t run |
+|---|---|---|
+| intra-system, saturated | 7.9 | 158 Cr |
+| **interstellar, saturated** | **14.6** | **291 Cr** |
+| interstellar, fresh | 67.6 | 1,352 Cr |
+
+An earlier version of this section set the saturated intra-system figure against
+a *fresh* interstellar one and then argued the gap away on relative leg times —
+which nothing measures, and §12.5 concedes as much. The honest comparison needs
+no time argument at all: **the interstellar route wins by 1.85× with both sides
+farmed flat, and by 8.6× before either is.**
+
+**The farm is allowed to exist; it is not allowed to be worth preferring**, and
+that is what the suite asserts — a bound on the residual, not on the ratio. A
+run-count test alone would have reported "more than four" without ever saying
+why.
 
 **The deficit is therefore not tuning — it is the reason the intra-system pair
 is safe.** A later reader tempted to simplify it away should read this section
@@ -538,9 +551,12 @@ capital and two early jumps are a real cost — which is precisely the early-gam
 pressure Elite was shaped around. By the time a run pays 700 Cr it is noise
 either way.
 
-**`galaxy-generation.md` §8's Cost row is wrong and should be corrected to
-`0.2 Cr / 0.1 LY (14 Cr full tank)`.** It is recorded here rather than silently
-edited there because it is a closed node's content.
+**`galaxy-generation.md` §8's Cost row has been corrected in place** to
+`0.2 Cr / 0.1 LY (14 Cr full tank)`, with a note there pointing at this section.
+Recording the error only here — which the first draft did — left a closed spec
+still telling its readers a full tank costs 1.4 Cr, which is worse than the
+tidiness it was protecting. Fixing a transcription under this node's ownership
+of the constant is not overturning #6's decision, and the note says so.
 
 The cruise drive charge is **not** a second fuel cost: #10 makes it a free
 refill on docking with passive regeneration. Nothing in the economy prices it.
@@ -635,10 +651,13 @@ All headless `bun` — none of §1–§9 may require a browser, per #7's own fra
 2. **Lane direction, every good** — negative gradient ⇒ cheaper *and* no
    scarcer at Poor Agricultural; positive gradient ⇒ the mirror. Asserted over
    the table, not over two named goods.
-3. **Overflow** — no good in the shipped table reaches a byte end anywhere in
-   the domain, illegal ones included; the retuned Narcotics row cannot, by
-   construction; **Bell's own row does**, on >90% of rows, so the divergence's
-   justification is runnable rather than prose.
+3. **Overflow** — no good in the shipped table *overflows* the byte anywhere in
+   the domain, illegal ones included. Not "reaches a byte end": **Computers sits
+   exactly on 255** at economy 7, which the suite pins, and §12 weak joint 2
+   records that the guard's margin is one point rather than comfortable. The
+   retuned Narcotics row cannot overflow by construction; **Bell's own row
+   does**, on >90% of rows, so the divergence's justification is runnable rather
+   than prose.
 4. **Contraband viability** — the retuned row clears 75 Cr/t and stocks at >50%
    of rows; Bell's row under the clamp falls below 10 Cr/t; Narcotics out-earns
    the best legal good.
@@ -660,10 +679,12 @@ All headless `bun` — none of §1–§9 may require a browser, per #7's own fra
    table can produce below one price step**; **the best legal intra-system pair
    — searched across goods, economies and independent fluctuation-byte pairs —
    is exhausted within four runs**, with decay applied across the minutes each
-   run takes to fly; and **no intra-system pair, over all six ordered station
-   legs, leaves more than 10 Cr/t once both deficits saturate** — the property
-   that matters, in place of the ratio bound an earlier draft asserted in one
-   direction only.
+   run takes to fly. Both searches cover **all six ordered station legs**; an
+   earlier draft searched only shipyard→refinery, and §5.4's richest residual
+   sits on the excluded direction. The exhaustion claim is deliberately
+   conditional — a pair above the closable ratio never reaches zero — and the
+   companion assertion bounds what those keep paying: **no intra-system pair
+   leaves more than 10 Cr/t once both deficits saturate.**
 
 ### 10.2 Instrument (`scripts/measure-market.ts`)
 
@@ -706,7 +727,8 @@ second measurement that could drift from `TYPE_OFFSET` without failing anything.
   the approach.
 - **The HUD node** — owes the illegal-goods marker (§4) and a stock/price
   display that can show a deficit-moved price without implying a bug.
-- **`galaxy-generation.md`** — §8's fuel Cost row is wrong; §6.1.
+- **`galaxy-generation.md`** — §8's fuel Cost row was wrong and is corrected in
+  place, pointing here; §6.1.
 - **`station-types.md`** — §3's price-only offset is extended by §3.2 here, and
   §3.2's deferred question about the byte extremes is answered by §2.2 and §3.1.
   The `blackMarket` flag §5.2 specifies is **not yet implemented** in
@@ -715,8 +737,15 @@ second measurement that could drift from `TYPE_OFFSET` without failing anything.
   owes hull prices (§7).
 - **The save/load node** — owes the format the sparse deficit map lives in
   (§5.5) and the permadeath stance (§9).
-- **The implement node** — owes the move of `tests/helpers/market-math.ts` to
-  `src/market.ts`, **and the import rewrite that goes with it**. It also owes
+- **The implement node** — owes a **split**, not a move.
+  `tests/helpers/market-math.ts` currently holds two things: the shipped
+  arithmetic (the table, `marketRow`, `shelfPriceCr`, the deficit functions) and
+  measurement scaffolding the game never calls (`NARCOTICS_BELL`, the `"wrap"`
+  mode, `ALL_FLUCT`, `FLUCT_PAIRS`, `sweepDomain`, `bestMargin`,
+  `runsToExhaustion`, `forEachLegalPair`, `surveyResiduals`). Only the first
+  belongs in `src/market.ts`; moving the file wholesale would ship the
+  instrument inside the runtime module. The rest stays a test fixture, **and the
+  import rewrite goes with the split**. It also owes
   **widening `marketRow`'s signature**: it is keyed on station *type*, which is
   all this spec's arithmetic needs, but §5.1's fluctuation hash and §5.2's
   deficit are both keyed on station *identity*, so the parameter becomes a
