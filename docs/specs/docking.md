@@ -69,12 +69,26 @@ This has a consequence the tolerances then have to carry: **with failure
 survivable, the tolerances are the only thing left holding the skill tax.** They
 are not free to be generous merely because failure is now cheap.
 
+### 2.0 What a failed entry *does*
+
+Damage is not the whole outcome, and leaving the rest unstated would let two
+implementations disagree about where the ship ends up while both satisfying this
+spec. A failed entry:
+
+- **repels**: the ship is placed just outside the slot plane with `v_axial`
+  reversed and halved, in the station's frame — it bounces off, it does not pass
+  through and it is never left inside the station;
+- **keeps the clearance grant**, if one was live and unexpired. Failing the
+  geometry is a piloting error, not a protocol violation, and making the player
+  re-request after every bounce would turn §6 into paperwork;
+- **does not turn the station hostile** — only the missing-grant case does (§6).
+
 ### 2.1 Damage shape (derived), scale (#8's)
 
 On a failed entry, damage is applied to shields first and hull after:
 
 ```
-damage = DAMAGE_SCALE · (v_rel / V_GATE)²
+damage = DAMAGE_SCALE · max(FLOOR, (|v_rel| / V_GATE)²)      FLOOR = 0.25
 ```
 
 `DAMAGE_SCALE` is #8's, because it is denominated in #8's shield and energy
@@ -85,7 +99,15 @@ makes D1 true rather than aspirational:
    margin** — at most a quarter of the combined shield-and-hull pool. This is
    D1 as a checkable predicate, and #8 inherits it as a bound on
    `DAMAGE_SCALE`, not as advice.
-2. **It is quadratic, so recklessness still kills.** Hitting the slot at the
+2. **There is a floor, because pure quadratic scaling makes failure free.** A
+   90°-mis-rolled entry at 0.01 km/s would otherwise cost 1% of the gate-speed
+   damage — under a quarter of a percent of the pool — so a patient pilot could
+   fail checks 2, 4 and 5 indefinitely at no cost, and §2's claim that the
+   tolerances carry the skill tax would be false for anyone who crawled. The
+   floor puts a failed entry at a minimum of a quarter of the gate-speed damage
+   whatever the speed, so **the alignment checks cost something on their own**
+   rather than only in combination with speed.
+3. **It is quadratic above the floor, so recklessness still kills.** Hitting the slot at the
    2 km/s assist cap is 20× the gate and therefore 400× the damage. Death
    returns as the outcome of flying at a station rather than as the default
    outcome of a missed roll — which is the distinction D1 was actually drawing.
@@ -97,19 +119,42 @@ makes D1 true rather than aspirational:
 **Decision D2: four checks, widened, plus a closing-speed gate.**
 
 1984 ran five (research §4). Two of them — the ~26° nose-vector test and the
-~22° approach cone — are near-duplicates: both ask *am I on the axis*, one from
-the station's side and one from the player's. They merge.
+~22° approach cone — ask the same question, *am I on the axis*, one from the
+station's side and one from the player's, so D2 folded them into a single
+alignment concern. **They fold, they do not collapse**: §3's check 2 still
+evaluates attitude and position separately, at one shared tolerance, because a
+cone that constrains only position says nothing about where the ship points.
+Two further rows below were not in D2 and are not decisions — check 5 closes a
+hole in the checks as decided, and §3.1's gate is D2's own.
+
+Throughout, **`v_rel` is the relative velocity *vector* in the station's frame**,
+`v_axial` its component along the docking axis, and `|v_rel|` its magnitude. The
+gate and the damage formula both read `|v_rel|`; check 3 reads the sign of
+`v_axial`. Naming them apart matters: an entry at 0.05 km/s axial and 1 km/s
+lateral passes one reading and fails the other, and takes 0.25× or 100× the
+damage depending on which an implementer picks.
 
 | # | Check | Tolerance | 1984 |
 |---|---|---|---|
 | 1 | **Not hostile** | `station.hostile === false` | bit 7 of byte 32 |
 | 2 | **Axis alignment** — **both** the station→ship vector **and** the ship's nose, each against the docking axis | ≤ **35°** each | 26° nose + 22° cone, merged |
 | 3 | **Inbound** — the axial component of `v_rel` points into the slot | sign test | sign of z |
-| 4 | **Roll match** — ship's up-vector against the slot's long axis, in the slot plane | ≤ **50°** | 33.6° |
-| 5 | **Closing speed**, in the station's frame, at the moment of slot-plane crossing | ≤ **0.10 km/s** | *had no such check* |
+| 4 | **Roll match** — ship's up-vector against the slot's long **axis-line**, in the slot plane, acute angle mod 180° | ≤ **50°** | 33.6° |
+| 5 | **Containment** — the crossing point lies inside the aperture rectangle, in the slot's rolled frame | inside | implicit in the hull |
+| 6 | **Closing speed** `|v_rel|`, in the station's frame, at the moment of slot-plane crossing | ≤ **0.10 km/s** | *had no such check* |
 
-All five are evaluated **at the instant the ship crosses the slot plane**. A
-failure of any one is a failed entry (§2). Two consequences of *that instant*
+All six are evaluated **at the instant the ship crosses the slot plane**. A
+failure of any one is a failed entry (§2).
+
+**Check 5 is not redundant with check 2, and its absence was a hole.** An angular
+cone is not a containment test: at §5's 0.6 km core radius, check 2's 35° admits
+about 0.42 km of lateral offset — four times the slot's half-length — so without
+check 5 a ship flying squarely into the *hull face* satisfies every angle, every
+sign and the gate, and docks through solid structure.
+
+**Check 4 compares against the axis-*line*, not an oriented vector.** The slot is
+a 0.20 × 0.07 km rectangle, so a ship rolled 180° is a geometrically identical
+entry; an oriented-vector comparison would reject it for no physical reason. Two consequences of *that instant*
 being the evaluation point, both of which decide implementations:
 
 - **Check 2 is two angles, not one.** A purely positional cone constrains where
@@ -129,14 +174,16 @@ interaction is this table minus one row. Removing the roll match from the *slot*
 would collapse the two interactions into one and reopen #13 §6; it is not
 available as a later simplification.
 
-### 3.1 Why 0.10 km/s (derived)
+### 3.1 Why 0.10 km/s (a mnemonic, not a mechanism)
 
 The gate is the one dimension 1984 never tested, and it is added because #5's
 flight model made it testable: throttle commands speed, so "arrive slow" is a
 thing a player can actually do rather than a thing they can only hope for.
 
-`0.10 km/s` is not arbitrary. It is #14's own approach clamp —
-`targetKm / approachLeadS` (`src/cruise.ts:382`), with `approachLeadS = 3` —
+`0.10 km/s` is chosen, not derived — but it is chosen to *rhyme* with #14's
+approach clamp rather than picked off a shelf. The clamp is
+
+`targetKm / approachLeadS` (`approachLeadS`, `src/cruise.ts`, = 3) —
 evaluated at a target range of 300 m, extended past the vicinity into the last
 three hundred metres. A player who flies the final approach under the same law
 cruise used to deliver them passes the gate without being told the number.
@@ -154,21 +201,30 @@ it is the number in this spec most likely to move.
 
 Stated plainly because §2 claims the tolerances now carry the whole skill tax,
 and a claim like that cannot rest on numbers with no account of themselves.
-They are **1.35× and 1.5× the 1984 widths**, and neither falls out of anything:
+**This is a loosening, and an earlier draft of this section obscured it.** That
+draft argued 35° was the price of *merging* two checks into one — but §3 does not
+merge them: check 2 tests position and nose separately, at 35° each. So the real
+change is **26° → 35° on attitude (+35%) and 22° → 35° on position (+59%)**, and
+50° is 33.6° + 49%. Nothing derives those.
 
-- **35°** has to cover what *two* checks covered. 1984's 26° and 22° tested the
-  same axis from opposite ends and a ship could sit near the limit of both at
-  once, so one merged 26° cone would be *tighter* than the pair it replaces,
-  not equal to it.
-- **50°** is where the roll match stops being a reflex and stays a tracking
-  problem. At §4's fastest spinner it is still only a 5.6 s non-tracking window,
-  so widening it did not remove the test.
+What can honestly be said for them:
 
-**The counter-reading is live**: that D1 made failure cheap and every tolerance
-loosened in the same breath. Nothing in this section refutes it — the answer is
-that these get flown, not argued, and §11 records both numbers alongside the
-0.10 km/s gate as provisional for exactly that reason. If flying says the merged
-check should be 28° and the roll 40°, the spec was wrong here and nowhere else.
+- The 1984 widths were tuned for a keyboard-flown ship in an exterior-ish view
+  with a dedicated docking display. seelite defaults to the cockpit with the hull
+  hidden (#5), flies on mouse (#21), and — until the HUD node lands (§8) — offers
+  **no visual referent for either angle at all**. Tolerances set against
+  instruments that do not exist yet should be set wide and tightened later, not
+  the reverse.
+- 50° survives §4's arithmetic as a test: at the fastest spinner it is still a
+  5.6 s non-tracking window, so widening it did not remove the skill.
+- Check 5's containment row (new in §3) takes some load off check 2 that the
+  angular cone was carrying alone — which is an argument for the wider cone
+  rather than a coincidence.
+
+**The counter-reading stays live**: that D1 made failure cheap and every
+tolerance loosened in the same breath. This section does not refute it. §11
+records all three numbers as provisional, and if flying says 28° and 40°, the
+spec was wrong here and nowhere else.
 
 ---
 
@@ -204,7 +260,16 @@ rather than the run, and the correlation cascade (#6) is already dense enough
 that adding difficulty to it would make one more thing predictable from the
 system record. **What that damage then costs to undo is unowned** — see §11.5.
 
-### 4.1 The slot spins in place
+### 4.1 Slot phase is a sim quantity
+
+Check 4 needs the slot's current roll, and the repo's rule is that *the scene
+graph is display only, and nothing reads a position back out of an `Object3D`*.
+So: **slot phase is `f(spinRpm, gameTime)`, computed in sim, and the renderer
+mirrors it.** Without this sentence the obvious implementation is to read the
+phase off the rendered station, which is the same class of error the rule exists
+to prevent — and here it would make the docking checks depend on frame timing.
+
+### 4.2 The slot spins in place
 
 Worth stating because it decides whether the roll match is a match or a chase:
 the Coriolis rotates **about the axis through the slot face**, so the slot's
@@ -257,8 +322,12 @@ RNG stream and the `tests/station-orbits.test.ts` fixture is unaffected. Only
 **Decision D5: Oolite's full protocol — granted, queued, or denied — and
 barging in turns the station hostile.**
 
-Requestable when a station is the selected target and range is inside the
-vicinity (10,000 km = `HANDOFF_KM`).
+Requestable when a station is the selected target and range is inside
+**`VICINITY_KM`**, a gameplay constant set to 10,000 km — numerically
+`HANDOFF_KM` today, and deliberately a separate name. `HANDOFF_KM` is the
+*render* handoff distance (§5); binding clearance range and §7's docking-computer
+engagement to it directly would mean retuning the layer split for a visual reason
+silently retunes both. Same value, two reasons, two constants.
 
 | Reply | When | Effect |
 |---|---|---|
@@ -279,8 +348,17 @@ station hostile, and the ordering has to be written down because the flip and
 check 1 would otherwise resolve at the same instant: an implementation that read
 `station.hostile` before applying the flip would let barging dock cleanly, and
 clearance would stop being mandatory through a read ordering nobody chose. So
-the entry condition is `grantLive && !hostile`, in that order, and #8's
-legal-status decay is what later clears the hostility. There is no fine, no soft path,
+the entry condition is `grantLive && !hostile`, in that order.
+
+**Hostility must expire, and #8 is not here yet.** The flip ships in this node;
+the decay that clears it is #8's, and #8 is unbuilt — so as written a player who
+lets a 600 s window lapse and crosses the plane anyway would be locked out of
+that station *permanently*, on a map where a system may have only one. That is
+an unwinnable-save shape, and #10's drive-charge regeneration is the precedent
+for refusing one. So this spec fixes an **interim cooldown of 600 s** on station
+hostility, matching the grant window. #8 replaces it with legal-status decay and
+may make it longer, conditional, or bounty-bearing; what #8 may not do is remove
+it without supplying another exit. There is no fine, no soft path,
 and no new economic object: one rule, Elite's own (shoot near the station and
 you cannot dock there), reached by a different route.
 
@@ -309,11 +387,11 @@ implement the branch.
 **Decision D4: 1,000 Cr, universal availability, fast and clean. #7's
 equipment table is unamended.**
 
-It engages inside the vicinity with a grant in hand, flies the approach, and
+It engages inside `VICINITY_KM` with a grant in hand, flies the approach, and
 docks — roughly the profile a competent pilot flies, no ceremony and no penalty.
 Any control input cancels it.
 
-**It never bypasses a check.** It satisfies §3's five conditions like anything
+**It never bypasses a check.** It satisfies §3's six conditions like anything
 else, so it cannot dock at a hostile station, cannot skip §6's clearance, and
 cannot enter above the gate speed. A computer that could dock where a pilot
 could not would make the checks decoration.
@@ -361,32 +439,46 @@ anything rendered or spatial gets a browser probe.
 
 ### 9.1 Headless (`bun`)
 
-1. **The five checks as pure functions**, table-driven over relative pose and
-   velocity, including the boundary rows at exactly 35°, exactly 50° and exactly
-   0.10 km/s. Tolerances are data, not literals repeated per test.
+1. **The six checks as pure functions**, table-driven over relative pose and
+   velocity, including the boundary rows at exactly 35°, exactly 50°, exactly
+   0.10 km/s, and a crossing point exactly on the aperture edge. Tolerances are
+   data, not literals repeated per test. Two rows exist because the checks were
+   wrong without them: a crossing at 0.42 km lateral offset — inside check 2's
+   cone, outside the aperture — **fails**, and a ship rolled exactly 180°
+   **passes**.
 2. **The frame regression.** A station at 1 AU moving at 30 km/s star-centric:
    a ship co-moving with it at 0.05 km/s relative **passes** the gate; a ship
    stationary in star-centred coordinates **fails** it. This is #10 §11.1's
    warning turned into a test rather than left as prose.
-3. **The pad is the slot minus check 4** — the same fixture run against both
+3. **`v_rel` is read consistently** — an entry at 0.05 km/s axial and 1 km/s
+   lateral is a single fixture asserting the gate reads `|v_rel|` and fails it,
+   and that the damage formula reads the same scalar. The two readings differ by
+   400× in damage, which is why this is a test and not a comment.
+4. **A failed entry repels and keeps its grant** (§2.0): the ship ends outside
+   the slot plane with `v_axial` reversed and halved, never inside the station,
+   and a live grant survives the bounce.
+5. **The damage floor bites** — a 90°-mis-rolled entry at 0.01 km/s costs at
+   least a quarter of the gate-speed damage, not 1% of it. Without this the
+   alignment checks are free to anyone who crawls.
+6. **The pad is the slot minus check 4** — the same fixture run against both
    interactions, asserting the only differing outcome is the roll row.
-4. **Spin generation**: range `[0.6, 3.0]` for the two Coriolis types, exactly
+7. **Spin generation**: range `[0.6, 3.0]` for the two Coriolis types, exactly
    0 for the refinery, drawn from `DOMAIN.STATION_SPIN` and from no other tag;
    a determinism fixture; and the measured fraction above 2 rpm asserted over
    **10,000 stations drawn from a fixed seed set, `|p̂ − 0.417| < 0.015`**.
    §4's "the hard end is common" is a claim about a distribution, and a
    distribution claim with no N and no bound is an assertion that cannot fail —
-   the defect §9.1.5's "byte-identical" exists to avoid.
-5. **`radiusKm` shifts no stream** — the existing `tests/station-orbits.test.ts`
+   the defect §9.1.8's "byte-identical" exists to avoid.
+8. **`radiusKm` shifts no stream** — the existing `tests/station-orbits.test.ts`
    fixture is byte-identical before and after the field is added.
-6. **The clearance state machine**, including `queued` and `denied`, driven by
+9. **The clearance state machine**, including `queued` and `denied`, driven by
    an injected occupancy input (§6.1). Barging without a grant asserts both
    outcomes: failed entry *and* station hostile.
-7. **The damage predicate**: monotonic in closing speed, and a failed entry at
+10. **The damage predicate**: monotonic in closing speed, and a failed entry at
    exactly `V_GATE` from full health leaves at least three quarters of the pool.
    The test is written against #8's scale as a parameter, so it constrains #8
    rather than waiting for it.
-8. **The docking computer satisfies §3** — a headless run from the vicinity to
+11. **The docking computer satisfies §3** — a headless run from the vicinity to
    docked that asserts no check was ever violated, plus a run at a hostile
    station that asserts it refuses.
 
@@ -400,7 +492,11 @@ anything rendered or spatial gets a browser probe.
    `spinRpm` over a measured interval, at both ends of the range.
 3. **A scripted approach docks** — driven from the vicinity through a correct
    profile, asserting `docked`.
-4. **A scripted mis-rolled approach fails and survives** — the same profile with
+4. **A hull-face approach is refused** — a scripted run aimed squarely at the
+   station's face, inside check 2's cone but outside the aperture, asserts a
+   failed entry rather than a dock. This is round 2's blocker as a probe: it is
+   a spatial claim, so it gets the spatial tier.
+5. **A scripted mis-rolled approach fails and survives** — the same profile with
    the roll deliberately 90° out asserts a failed entry, non-zero damage, and a
    living ship. D1 is a rendered, spatial claim and gets a probe, not a unit
    test.
@@ -416,14 +512,21 @@ before merge.
   costs damage rather than the run, and no repair, refit or hull-restore mechanic
   exists anywhere in this repo. Whatever #8 chooses — restoration on docking, a
   priced repair, or nothing at all — D1's "costs you something, not everything"
-  is only true once it exists. It also owns `DAMAGE_SCALE` under §2.1's two
-  bounds; the
+  is only true once it exists. It also owns `DAMAGE_SCALE` under §2.1's bounds
+  — and owes a test that asserts the **exported constant** satisfies the
+  quarter-pool bound at `V_GATE`, not a parameter substituted for it. §9.1.10's
+  parameterised test can never fail on the value #8 actually ships, so without
+  that obligation D1's survivability guarantee crosses a node boundary with an
+  owner on neither side. #8 also owns replacing §6's interim hostility cooldown;
+  the
   legal-status predicate behind §6's shipyard scan and the decay that clears
   station hostility; and the NPC traffic that replaces §6.1's injected
-  occupancy. It inherits §9.1.7 as a test it must satisfy, not author.
+  occupancy. It inherits §9.1.10 as a test it must satisfy, not author.
 - **The HUD node** — inherits §8's two cues.
 - **#26 (ship roster)** — the slot at 0.20 × 0.07 km must admit the largest hull
-  it introduces; if it does not, the aperture moves, not the tolerance.
+  it introduces **at check 4's 50° roll limit**, not merely axis-aligned: a hull
+  that fits the 70 m short dimension square does not fit it rolled 50°. If it
+  does not, the aperture moves, not the tolerance.
 - **#7 (economy)** — unamended. The docking computer stays 1,000 Cr, universal.
 
 ---
@@ -436,10 +539,14 @@ before merge.
    mitigated by injected-occupancy tests rather than by a promise.
 3. **A 3 rpm station can be anyone's second dock** (§4). Accepted as the cost of
    an uncorrelated dial.
-4. **Three numbers are derived or chosen, not flown** — the 0.10 km/s gate
+4. **Three numbers are chosen, not flown** — the 0.10 km/s gate
    (§3.1), and check 2's 35° and check 4's 50° (§3.2). They are where this spec
    is most likely to be wrong, and §9.2's probes are where that shows up.
-5. **Nothing owns repairing the damage D1 inflicts.** Handed to #8 (§10) rather
+5. **Station hostility exits on an interim timer this node invented** (§6). The
+   flip ships now and its real exit — legal-status decay — is #8's. A 600 s
+   cooldown stands in, because without one a lapsed grant plus one barge would
+   lock a player out of a system's only station permanently.
+6. **Nothing owns repairing the damage D1 inflicts.** Handed to #8 (§10) rather
    than invented here, because it is denominated in #8's pools and #7's table is
    deliberately unamended. Until it lands, D1's failure model is *survivable*
    but not yet *costly* — the punishment is real and the bill is unwritten.
