@@ -42,9 +42,11 @@ import {
 	FLUCT_PAIRS,
 	HOLD_REFERENCE_T,
 	bestMargin,
+	bestResidualBetween,
 	commodity,
 	marketRow,
 	residualMarginCr,
+	runValueCr,
 	surveyResiduals,
 	runsToExhaustion,
 	stockResponse,
@@ -450,31 +452,15 @@ let bestInterSaturated = 0;
 for (const bucket of byGalaxy.values())
 	for (let i = 0; i < bucket.length; i += 64) {
 		const from = bucket[i];
-		for (let j = 0; j < bucket.length; j++) {
+		let paired = 0;
+		for (let j = 0; j < bucket.length && paired < 1; j++) {
 			if (j === i) continue;
 			const to = bucket[j];
 			if (distanceLy(from.pos, to.pos) > JUMP_RANGE_LY) continue;
-			for (const [buyFluct, sellFluct] of FLUCT_PAIRS)
-				for (const good of COMMODITIES) {
-					if (good.sellOnly || good.illegal || good.unit !== "t") continue;
-					for (const buyStation of from.stations)
-						for (const sellStation of to.stations) {
-							const buy = marketRow(good, from.economy, buyFluct, buyStation);
-							if (buy.quantity === 0) continue;
-							const sellCr = marketRow(
-								good,
-								to.economy,
-								sellFluct,
-								sellStation,
-							).priceCr;
-							bestInterFresh = Math.max(bestInterFresh, sellCr - buy.priceCr);
-							bestInterSaturated = Math.max(
-								bestInterSaturated,
-								residualMarginCr(buy.priceCr, sellCr),
-							);
-						}
-				}
-			break; // one reachable neighbour per sampled origin is enough here
+			paired++;
+			const { freshCr, saturatedCr } = bestResidualBetween(from, to);
+			bestInterFresh = Math.max(bestInterFresh, freshCr);
+			bestInterSaturated = Math.max(bestInterSaturated, saturatedCr);
 		}
 	}
 console.log(
@@ -486,3 +472,22 @@ console.log(
 console.log(
 	`interstellar, fresh:     ${bestInterFresh.toFixed(1)} Cr/t (${(bestInterFresh * HOLD_REFERENCE_T).toFixed(0)} Cr per run)`,
 );
+
+// ── 9. Run value: what a good is worth per trip ─────────────────────────────
+//
+// §4 claims contraband out-earns every legal good. Per-unit margins cannot
+// establish that — Gold's 5.6 Cr/kg is 5,600 Cr per tonne-equivalent — and the
+// commensurable quantity is what one run can carry: a hold of tonne goods, or
+// 63 units of a sub-tonne good riding free beside it (research §2.2).
+
+console.log("\n── §4: best margin and run value, every good ──");
+const valued = COMMODITIES.filter((c) => !c.sellOnly)
+	.map((c) => {
+		const marginCr = bestMargin(c, "refinery", "refinery").margin;
+		return { good: c, marginCr, runCr: runValueCr(c, marginCr) };
+	})
+	.sort((a, b) => b.runCr - a.runCr);
+for (const row of valued)
+	console.log(
+		`  ${row.good.name.padEnd(14)} ${row.good.illegal ? "illegal" : "legal  "} ${row.marginCr.toFixed(1).padStart(6)} Cr/${row.good.unit.padEnd(2)}   run value ${row.runCr.toFixed(0).padStart(6)} Cr`,
+	);

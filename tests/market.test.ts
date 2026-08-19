@@ -52,6 +52,7 @@ import {
 	residualMarginCr,
 	sweepDomain,
 	surveyResiduals,
+	runValueCr,
 	runsToExhaustion,
 	stockResponse,
 } from "./helpers/market-math";
@@ -219,16 +220,22 @@ describe("§2.3 the retuned Narcotics keeps the smuggling trade alive", () => {
 	test("contraband stays worth more than the best legal good", () => {
 		// station-types.md §3.4 sells contraband as a risk premium. If an
 		// ordinary good out-earns it, the fence geography buys nothing.
-		// Over **every** legal good, sub-tonne included. Filtering to tonne goods
-		// excluded Gold, Platinum and Gem-Stones — and Gold is precisely the good
-		// §2.2 admits the quantity clamp enriched, so the one this PR made better
-		// off was sitting outside the assertion that contraband beats them all.
+		// Compared as **run value**, not per-unit margin. Two earlier versions got
+		// this wrong in opposite directions: the first ranked only tonne goods,
+		// excluding the sub-tonne ones the quantity clamp enriched; the second
+		// included them but ranked Gold's Cr/**kg** against Narcotics' Cr/**t**,
+		// so they cleared the bar on unit scale rather than economics — Gold's
+		// spread is 5,600 Cr per tonne-equivalent. `runValueCr` is what makes them
+		// commensurable: a hold of tonne goods, or 63 units of a sub-tonne good
+		// riding free alongside it.
+		const value = (c: Commodity) =>
+			runValueCr(c, bestMargin(c, "refinery", "refinery").margin);
 		const bestLegal = COMMODITIES.filter((c) => !c.illegal && !c.sellOnly)
-			.map((c) => bestMargin(c, "refinery", "refinery").margin)
+			.map(value)
 			.reduce((a, b) => Math.max(a, b), 0);
-		expect(
-			bestMargin(byName("Narcotics"), "refinery", "refinery").margin,
-		).toBeGreaterThan(bestLegal);
+		// Measured: Narcotics 1,624 Cr a run, against Platinum's 1,134 — the
+		// closest legal good, and closer than a per-tonne comparison suggests.
+		expect(value(byName("Narcotics"))).toBeGreaterThan(bestLegal);
 	});
 });
 
@@ -341,6 +348,20 @@ describe("§2.2 the clamp applies to quantity too, and diverges from Bell there"
 			if (differs) diverging.push(commodity.name);
 		}
 		expect(diverging.sort()).toEqual(["Furs", "Gold", "Narcotics", "Platinum"]);
+	});
+
+	test("the sub-tonne goods the clamp enriched are worth what §2.2 claims", () => {
+		// §2.2 puts a number on what the divergence hands the player. Committed
+		// here because every other sweep in the suite drops non-tonne goods, so
+		// the figure had no measurement behind it at all.
+		const value = (name: string) =>
+			runValueCr(
+				byName(name),
+				bestMargin(byName(name), "refinery", "refinery").margin,
+			);
+		expect(value("Gold")).toBeGreaterThan(300);
+		expect(value("Gold")).toBeLessThan(400);
+		expect(value("Platinum")).toBeGreaterThan(1000);
 	});
 
 	test("Gold is the extreme case — always capped where Bell keeps it scarce", () => {

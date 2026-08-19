@@ -133,10 +133,13 @@ result, measured over the whole domain:
 
 Gold is the extreme: `baseQuantity` 0x42 = 66 never leaves 66…80, so txtelite
 shows 2–16 units and seelite shows a permanent 63. **This makes a precious metal
-abundant that Bell made scarce**, and since Gold is sub-tonne (§6) it is free
-hold space — worth roughly 350 Cr a run at its ~5.6 Cr/kg spread. It is not
-large next to a 700 Cr cargo run, but it is not nothing, and it is recorded as
-weak joint 8 rather than presented as Bell's behaviour. Clamping is chosen for
+abundant that Bell made scarce**, and since Gold is sub-tonne (§6) it skips the
+hold check entirely — 63 units ride free *beside* a full cargo hold. Measured,
+that is **353 Cr a run** at its 5.6 Cr/kg spread, and **Platinum is the bigger
+beneficiary at 1,134 Cr** (18.0 Cr/kg). Both figures are printed by the
+instrument's run-value table and pinned by the suite, because every other sweep
+in this spec drops non-tonne goods and the numbers would otherwise have nothing
+behind them. Clamping is chosen for
 the same reason as on price — a shelf that jumps from 63 units to 2 when the
 fluctuation byte ticks up by one reads as a bug — but the consequence is a
 design change, not a transcription.
@@ -325,9 +328,24 @@ prices contraband and marks it; it says nothing about what happens when you are
 caught with it.
 
 **Contraband must out-earn every legal good**, or the fence geography buys
-nothing. Measured, Narcotics' 81.2 Cr/t is the highest per-tonne margin in the
-table, and the suite asserts it against the best legal good rather than against
-a constant.
+nothing — and that has to be measured as **value per run**, not as a per-unit
+margin. Gold's 5.6 Cr/kg is 5,600 Cr per tonne-equivalent, so any straight
+ranking of margins is measuring unit scale. What makes goods commensurable is
+what one trip can carry: a hold of tonne goods, or 63 units of a sub-tonne good
+riding free beside it.
+
+| | margin | run value |
+|---|---|---|
+| **Narcotics** (illegal) | 81.2 Cr/t | **1,624 Cr** |
+| Platinum | 18.0 Cr/kg | 1,134 Cr |
+| Furs | 50.4 Cr/t | 1,008 Cr |
+| Computers | 40.4 Cr/t | 808 Cr |
+| Firearms (illegal) | 39.2 Cr/t | 784 Cr |
+
+Contraband holds the top of the table, but by 43% over Platinum rather than the
+2× a per-tonne comparison implies — and Platinum is legal, needs no fence, and
+costs no hold space. The premium is real and it is thinner than it looks; the
+suite asserts it on run value, which is the comparison that can actually fail.
 
 ---
 
@@ -536,7 +554,9 @@ without it.
 
 The compounding from 100 Cr is faster than the stingy reputation suggests: at
 the canonical lane's margin the player is capital-limited for about five runs
-and hold-limited after that — 15–25 minutes at seelite's pace.
+and hold-limited after that. **The five runs are arithmetic; the minutes are
+not** — a wall-clock figure needs the run length §12.5 records as unmeasured, so
+none is claimed here. §10.3's greedy-trader sim is what would supply one.
 
 ### 6.1 A correction to `galaxy-generation.md` §8
 
@@ -643,7 +663,7 @@ question, still fog on the map, and it reaches far past the economy.
 
 All headless `bun` — none of §1–§9 may require a browser, per #7's own framing.
 
-### 10.1 Suite (`tests/market.test.ts`, 32 tests)
+### 10.1 Suite (`tests/market.test.ts`, 34 tests)
 
 1. **Table integrity** — 17 goods; `baseQuantity` signed for all five negative
    rows; exactly three illegal; the sub-tonne set is Gold/Platinum/Gem-Stones
@@ -797,9 +817,12 @@ second measurement that could drift from `TYPE_OFFSET` without failing anything.
    0.4 Cr. The richest surviving farm is 7.9 Cr/t (158 Cr a run), well under an
    interstellar run's ~380 Cr, so it is a poor use of time rather than an
    exploit. What the design relies on is that bound, and the suite guards it.
-9. **The quantity clamp diverges from Bell, and Gold pays for it.** §2.2. Four
+9. **The quantity clamp diverges from Bell, and the sub-tonne goods profit.** §2.2. Four
    goods read differently from `& 0x3F`; Gold is at a permanent 63 where
    txtelite shows 2–16, which makes a sub-tonne precious metal abundant that
-   Bell made scarce. Chosen for consistency with the price clamp, recorded
-   because it is a design change rather than a transcription, and cheap to
-   revisit — wrapping the quantity byte alone would restore Bell exactly.
+   Bell made scarce. Measured, it hands the player 353 Cr a run in Gold and
+   1,134 Cr in Platinum, free of the hold — enough that Platinum is the closest
+   competitor to contraband in §4's run-value table. Chosen for consistency with
+   the price clamp, recorded because it is a design change rather than a
+   transcription, and cheap to revisit: wrapping the quantity byte alone would
+   restore Bell exactly.

@@ -606,3 +606,61 @@ export function surveyResiduals(): ResidualSurvey {
 	});
 	return { worst, worstRatio, unclosableRows, rows };
 }
+
+/**
+ * What one run of a good is actually worth, in credits.
+ *
+ * **Per-unit margins are not comparable across the table**, and a test that
+ * ranked them was measuring unit scale rather than economics: Gold's ~5.6 Cr/kg
+ * is 5,600 Cr per tonne-equivalent beside Narcotics' 81.2 Cr/t, so sub-tonne
+ * goods "win" any straight comparison of `bestMargin`.
+ *
+ * The quantity a run can carry differs by unit, and that is what makes them
+ * commensurable:
+ *
+ * - **tonne goods** fill the hold, so a run carries `HOLD_REFERENCE_T` of them;
+ * - **sub-tonne goods** (Gold, Platinum, Gem-Stones) skip the hold check
+ *   entirely — research §2.2 — so a run is limited only by Bell's 63-unit
+ *   shelf cap, and rides *alongside* a full hold rather than inside it.
+ */
+export const runValueCr = (good: Commodity, marginCr: number): number =>
+	marginCr * (good.unit === "t" ? HOLD_REFERENCE_T : QUANTITY_CAP);
+
+/**
+ * Best fresh and saturated margin between two concrete endpoints, over every
+ * legal tonne good and a set of independent fluctuation-byte pairs.
+ *
+ * Shared with the interstellar sweep in the instrument, which had its own copy
+ * of the legal-good filter, the stock check and the residual accumulation —
+ * the same duplication `forEachLegalPair` was extracted to remove for the
+ * intra-system case, reintroduced one section further down the same file.
+ */
+export function bestResidualBetween(
+	from: { economy: number; stations: readonly StationTypeKey[] },
+	to: { economy: number; stations: readonly StationTypeKey[] },
+	fluctPairs: readonly (readonly [number, number])[] = FLUCT_PAIRS,
+): { freshCr: number; saturatedCr: number } {
+	let freshCr = 0;
+	let saturatedCr = 0;
+	for (const good of COMMODITIES) {
+		if (good.sellOnly || good.illegal || good.unit !== "t") continue;
+		for (const [buyFluct, sellFluct] of fluctPairs)
+			for (const buyStation of from.stations)
+				for (const sellStation of to.stations) {
+					const buy = marketRow(good, from.economy, buyFluct, buyStation);
+					if (buy.quantity === 0) continue;
+					const sellCr = marketRow(
+						good,
+						to.economy,
+						sellFluct,
+						sellStation,
+					).priceCr;
+					freshCr = Math.max(freshCr, sellCr - buy.priceCr);
+					saturatedCr = Math.max(
+						saturatedCr,
+						residualMarginCr(buy.priceCr, sellCr),
+					);
+				}
+	}
+	return { freshCr, saturatedCr };
+}
