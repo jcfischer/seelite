@@ -609,6 +609,11 @@ describe("body velocities, which arrival turned out to depend on", () => {
 			length(bodyVelocity(world.system, world.system.contents.star.id, 0)),
 		).toBe(0);
 		const station = world.system.contents.stations.find((s) => s.parentId);
+		// Asserted rather than skipped: `if (!station?.parentId) return` made this
+		// test pass on a system that happened to generate no parented station,
+		// which is the shape of a test that reports green for having found
+		// nothing to check.
+		expect(station?.parentId).toBeTruthy();
 		if (!station?.parentId) return;
 		const planetKms = length(
 			bodyVelocity(world.system, station.parentId, world.gameTime),

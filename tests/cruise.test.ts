@@ -969,3 +969,37 @@ test("the capture is a near miss, not the whole vicinity", () => {
 	// the honest behaviour for a course that was never going to arrive.
 	expect(passAt(P.vicinityKm * 0.5)).toBe(null);
 });
+
+test("a proximity drop names the body, so an intended one can be arrived at", () => {
+	// Cruising *to* a planet is a destination like any other. The exit reports
+	// which body's surface ended the run, because dropping against the selected
+	// one should leave the ship in that body's frame — leaving it in the star's
+	// beside a planet moving at 30 km/s strands it exactly the way an absolute
+	// clamp strands an arrival at a station.
+	const planet = { id: "planet-3", pos: v3(), radiusKm: 6000 };
+	let pos = v3(0.05 * AU_KM, 0, 0);
+	const nose = towards(pos, planet.pos);
+	let step = advanceCruise({
+		pos,
+		nose,
+		throttle: 1,
+		dt: 0.1,
+		masses: [planet],
+		target: null,
+		params: P,
+	});
+	for (let i = 0; i < 2000 && !step.dropped; i++) {
+		pos = step.pos;
+		step = advanceCruise({
+			pos,
+			nose,
+			throttle: 1,
+			dt: 0.1,
+			masses: [planet],
+			target: null,
+			params: P,
+		});
+	}
+	expect(step.exit).toBe("proximity");
+	expect(step.exitBodyId).toBe("planet-3");
+});

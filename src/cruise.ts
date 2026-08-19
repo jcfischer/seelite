@@ -470,6 +470,11 @@ export interface CruiseStep {
 	/** *Why* it ended, when it did. `arrival` is §3's drop-out; `proximity` is a
 	 *  body's surface, which cruise refuses to cross. */
 	exit: CruiseExit;
+	/** Which body's surface ended it, for a `proximity` exit. The caller needs
+	 *  it because dropping against the *selected target* is an arrival at that
+	 *  body in every sense that matters — a planet is a destination too — and it
+	 *  should leave the ship in the body's frame rather than the star's. */
+	exitBodyId?: string;
 	/** Speed at the end of the frame, km/s. The HUD's headline number. */
 	speedKms: number;
 	/** The same speed in the destination's frame — what the drop-out is judged
@@ -505,6 +510,7 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 	let substeps = 0;
 	let dropped = false;
 	let exit: CruiseExit = null;
+	let exitBodyId: string | undefined;
 	let speedKms = 0;
 	let closingKms = 0;
 	let charge = input.chargeAu;
@@ -520,6 +526,7 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 		substeps,
 		starved: false,
 		exit,
+		...(exitBodyId !== undefined ? { exitBodyId } : {}),
 		...over,
 	});
 
@@ -645,6 +652,7 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 				stepKm = entryKm;
 				dropped = true;
 				exit = "proximity";
+				exitBodyId = m.id;
 			}
 		}
 

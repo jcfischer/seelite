@@ -112,13 +112,16 @@ const state = await page.evaluate(async () => {
 	// target selected — the state the first session was flown in.
 	const hudText = document.getElementById("hud").textContent;
 	const t = g.world.system.byId.get(g.targetId);
-	const targetKm = t
-		? Math.hypot(
-				t.pos.x - g.world.ship.pos.x,
-				t.pos.y - g.world.ship.pos.y,
-				t.pos.z - g.world.ship.pos.z,
-			)
-		: null;
+	// Reported rather than assumed: everything below dereferences this, and a
+	// run with nothing selected would throw inside the evaluate and kill the
+	// probe instead of producing a FAIL line — the same reason `probe-cruise`
+	// returns `noStation`.
+	if (!t) return { noTarget: true, targetId: g.targetId };
+	const targetKm = Math.hypot(
+		t.pos.x - g.world.ship.pos.x,
+		t.pos.y - g.world.ship.pos.y,
+		t.pos.z - g.world.ship.pos.z,
+	);
 
 	// And the same readout in the one state where an *absolute* speed flatters
 	// it: **assist off**, flying fast across the target rather than towards it.
@@ -165,6 +168,16 @@ const state = await page.evaluate(async () => {
 		bodies,
 	};
 });
+
+if (state.noTarget) {
+	check(
+		"something is selected to measure the markers against",
+		false,
+		`targetId ${state.targetId ?? "none"}`,
+	);
+	await browser.close();
+	exit();
+}
 
 // (1) The backing store is the viewport. This is the number the drawing code
 // divides by, so a mismatch puts every marker in a scaled corner of the screen.

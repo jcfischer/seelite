@@ -1114,10 +1114,9 @@ class Game {
 				this.world.ship.vel,
 				scale(sub(target.pos, from), 1 / remaining),
 			);
-			return (
-				remaining /
-				Math.max(progress, ASSIST_CAP_KMS * this.throttle, ASSIST_CAP_KMS)
-			);
+			// The floor is the cap itself: `cap × throttle` can never exceed it, so a
+			// third term for the throttle was arithmetic that could not fire.
+			return remaining / Math.max(progress, ASSIST_CAP_KMS);
 		}
 
 		// In cruise, `cruise.ts` owns the arithmetic — `legSeconds` integrates the
@@ -1259,21 +1258,27 @@ class Game {
 		this.closingKms = step.closingKms;
 		this.world.ship.vel = scale(nose, step.speedKms);
 		this.chargeAu = chargeAfterTravel(this.chargeAu, step.travelledKm);
-		if (step.starved) {
-			this.dropOut("drive charge exhausted");
-			return;
-		}
 		if (step.dropped) {
-			// The frame the ship is left in follows the *reason*: an arrival matches
-			// the destination, a surface drop matches nothing — the ship is beside a
-			// planet it flew at, not at a place it meant to be.
+			// The frame the ship is left in follows the *reason*. An arrival matches
+			// the destination. A surface drop matches it too **when the body is the
+			// one selected** — cruising to a planet is a destination like any other,
+			// and leaving the ship in the star's frame beside it would strand it the
+			// same way an absolute clamp strands an arrival at a station. Against
+			// some other body it was flown at by accident, the star's frame is right.
+			const atTarget =
+				step.exit === "arrival" || step.exitBodyId === this.targetId;
 			this.dropOut(
 				step.exit === "proximity"
-					? "dropped by proximity to a body"
+					? `dropped by proximity to ${step.exitBodyId ?? "a body"}`
 					: `arrived at ${this.targetId ?? "target"}`,
-				step.exit === "arrival",
+				atTarget,
 			);
+			return;
 		}
+		// **After** the arrival test: a frame that both arrives and runs the tank
+		// dry is an arrival — the ship is at its destination, and reporting an
+		// empty tank instead would drop it there in the wrong frame.
+		if (step.starved) this.dropOut("drive charge exhausted");
 	}
 
 	/**
