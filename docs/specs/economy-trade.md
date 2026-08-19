@@ -55,9 +55,17 @@ quantity  = clamp(baseQuantity + changing − product, 0, 63)
 | `HOLD_REFERENCE_T` | 20 t | §6 |
 
 The executable copy is `tests/helpers/market-math.ts`; the implement node moves
-it to `src/market.ts`. There is one copy, imported by both the suite and
-`scripts/measure-market.ts`, so no number in this document can drift from the
-number under test.
+it to `src/market.ts`. There is one copy of the **formula**, imported by both
+the suite and `scripts/measure-market.ts`, so the two never measure different
+arithmetic.
+
+**The figures quoted below are transcribed script output, not pinned values.**
+The suite asserts *thresholds* — margin above 75 Cr/t, floor under 1%, exhaustion
+within four runs — deliberately, because a pinned figure would fail on every
+legitimate retune and teach the next reader to re-pin it without thinking. The
+cost is that a number in this prose can go stale while the suite stays green;
+§10.2 is how it gets re-derived, and it should be re-run whenever a constant in
+the table above moves.
 
 ---
 
@@ -107,15 +115,38 @@ space — 17 goods × 8 economies × 256 fluctuation bytes — by
 So the entire disagreement between wrap and clamp lived in one good — and in
 that good it was fatal. §2.3 is what was done about it.
 
-**After §2.3, the table never overflows at all: the measured overflow rate is
-0.00% across every good.** The clamp is therefore a *guarantee* rather than a
+**The clamp applies to the quantity byte too, and there it *is* a divergence
+from Bell.** He clips negatives to zero and then masks with `& 0x3F`, which
+wraps 64…127 back down rather than capping. Four goods read differently as a
+result, measured over the whole domain:
+
+| Good | Rows differing | By up to |
+|---|---|---|
+| Gold | **100%** | 61 units |
+| Platinum | 90.2% | 63 units |
+| Narcotics | 18.8% | 62 units |
+| Furs | 10.6% | 63 units |
+
+Gold is the extreme: `baseQuantity` 0x42 = 66 never leaves 66…80, so txtelite
+shows 2–16 units and seelite shows a permanent 63. **This makes a precious metal
+abundant that Bell made scarce**, and since Gold is sub-tonne (§6) it is free
+hold space — worth roughly 350 Cr a run at its ~5.6 Cr/kg spread. It is not
+large next to a 700 Cr cargo run, but it is not nothing, and it is recorded as
+weak joint 8 rather than presented as Bell's behaviour. Clamping is chosen for
+the same reason as on price — a shelf that jumps from 63 units to 2 when the
+fluctuation byte ticks up by one reads as a bug — but the consequence is a
+design change, not a transcription.
+
+**After §2.3, the price side never overflows at all: the measured overflow rate
+is 0.00% across every good.** The clamp is therefore a *guarantee* rather than a
 behaviour — it fires nowhere in the shipped table. It is kept, and named as a
 guard that currently cannot fire, because the alternative is leaving the
 boundary undefined for the first good a later node adds or retunes.
 
 ### 2.3 The one divergence: Narcotics
 
-Every constant in the table is Bell's except this row:
+Every *constant* in the table is Bell's except this row (the arithmetic around
+them diverges in two places — §2.2's two clamps):
 
 | | basePrice | gradient | baseQuantity | mask |
 |---|---|---|---|---|
@@ -340,8 +371,16 @@ Rich→Poor geography does, and more than double it.
 
 Scaling by the price instead is scale-free and legible at both ends: a full
 reference hold moves any good by **10%**, whatever it costs. It applies in
-credits, after §3.1's delta, and is floored the same way — the suite asserts
-that no deficit, however large, prices a good below one price step.
+credits, after §3.1's delta, **and is floored the same way**.
+
+That floor is not redundant, though a draft of this spec removed it as though it
+were. The ±63 clamp bounds the multiplier at 0.685, which was taken to mean the
+result could never fall below one price step — true only above
+`0.4 / 0.685` ≈ 0.584 Cr, and the rows §3.1's floor pins at exactly 0.4 Cr are
+the population underneath it. `0.4 × 0.685` = 0.274 Cr, below the floor the row
+had just been given. The suite now asserts the floor holds for every price the
+table can actually produce, rather than asserting the bound that failed to
+imply it.
 
 ### 5.4 The brake, which is load-bearing
 
@@ -351,13 +390,22 @@ Computers that is `5 × 14 × 0.4` = **28 Cr/t** for a 68 s cruise leg instead o
 a hyperspace round trip. If that were repeatable it would collapse the galaxy
 into single-system loops.
 
-Measured over 8 worlds, 16,359 docked systems (7,919 of them multi-station),
-legal goods only, with independent fluctuation bytes:
+Measured over 8 worlds and 16,359 docked systems, legal goods only, with
+independent fluctuation bytes per station — **7,919 intra-system pairs against
+7,780 interstellar pairs**:
 
 | | mean | median | p95 | max |
 |---|---|---|---|---|
 | intra-system | 15.2 | 11.4 | 28.0 | 28.0 |
-| interstellar | 19.3 | 16.0 | 44.8 | 67.2 |
+| interstellar | 19.0 | 16.0 | 44.8 | 67.2 |
+
+**The interstellar sample is restricted to pairs a ship can reach**: same
+galaxy, within `JUMP_RANGE_LY` (7 LY), i.e. one hyperspace jump. An earlier
+version of the instrument paired systems *adjacent in generation order* across
+every world and galaxy — about 169 samples, no distance check — which is a
+baseline no player can fly, and this section's entire conclusion rests on the
+comparison. The figures barely moved (interstellar mean 19.3 → 19.0), but the
+first version was not evidence for the claim it was supporting.
 
 Interstellar trade wins on every statistic, so the risk is real but weaker than
 it first appeared. **And the deficit closes it outright.** The best
@@ -520,7 +568,7 @@ question, still fog on the map, and it reaches far past the economy.
 
 All headless `bun` — none of §1–§9 may require a browser, per #7's own framing.
 
-### 10.1 Suite (`tests/market.test.ts`, 25 tests)
+### 10.1 Suite (`tests/market.test.ts`, 27 tests)
 
 1. **Table integrity** — 17 goods; `baseQuantity` signed for all five negative
    rows; exactly three illegal; the sub-tonne set is Gold/Platinum/Gem-Stones
@@ -540,11 +588,16 @@ All headless `bun` — none of §1–§9 may require a browser, per #7's own fra
    it can reach and never at a trade station; quantity is never *below* the
    trade station's; all three illegal goods still stock at a refinery; the
    63-unit cap holds everywhere.
-6. **The deficit** — proportional at 7, 61 and 100 Cr; saturates at ±63 rather
-   than running away; halves over one half-life; cannot invert or zero a price,
-   so it needs no floor of its own; and **the best intra-system pair — searched,
-   not hardcoded — is exhausted within four runs**, with the decay applied
-   across the minutes each run takes to fly.
+6. **The quantity clamp's divergence from Bell** — the set of goods that read
+   differently from `& 0x3F` is pinned at exactly {Furs, Gold, Narcotics,
+   Platinum}, and Gold's permanent cap is asserted against Bell's under-20
+   reading, so §2.2's recorded divergence cannot drift from the real one.
+7. **The deficit** — proportional at 7, 61 and 100 Cr; saturates at ±63 rather
+   than running away; halves over one half-life; **never prices any good the
+   table can produce below one price step**; and **the best intra-system pair —
+   searched, not hardcoded, on independent fluctuation bytes — is exhausted
+   within four runs**, with the decay applied across the minutes each run takes
+   to fly.
 
 ### 10.2 Instrument (`scripts/measure-market.ts`)
 
@@ -597,7 +650,11 @@ second measurement that could drift from `TYPE_OFFSET` without failing anything.
 - **The save/load node** — owes the format the sparse deficit map lives in
   (§5.5) and the permadeath stance (§9).
 - **The implement node** — owes the move of `tests/helpers/market-math.ts` to
-  `src/market.ts`, **and the import rewrite that goes with it**. Today
+  `src/market.ts`, **and the import rewrite that goes with it**. It also owes
+  **widening `marketRow`'s signature**: it is keyed on station *type*, which is
+  all this spec's arithmetic needs, but §5.1's fluctuation hash and §5.2's
+  deficit are both keyed on station *identity*, so the parameter becomes a
+  `{ type, seed }` struct and every call site changes with it. Today
   `scripts/` depends on `tests/` for shipping game arithmetic; that direction
   inverts the moment `src/market.ts` exists, and every importer changes with it.
   Named here so the move is owned rather than discovered.
@@ -632,8 +689,13 @@ second measurement that could drift from `TYPE_OFFSET` without failing anything.
 6. **The deficit makes market state unreproducible from the seed.** §5.5. The
    first such state in seelite. It is sparse and bounded, but it is a door that
    is now open.
-7. **`stockResponse` carries no floor of its own**, because the ±63 deficit
-   clamp bounds its multiplier at 0.685 and a floor there provably could not
-   fire. The bound is asserted in the suite instead. This is the same objection
-   as weak joint 2 above, resolved the other way — there the unfirable guard is
-   kept because a later good could reach it; here nothing can, so it is gone.
+7. **The prose carries figures the suite does not pin.** §1. The suite asserts
+   thresholds so that a legitimate retune does not fail on a stale constant;
+   the consequence is that a quoted number can go stale while everything stays
+   green. §10.2 is the remedy and it has to actually be run.
+8. **The quantity clamp diverges from Bell, and Gold pays for it.** §2.2. Four
+   goods read differently from `& 0x3F`; Gold is at a permanent 63 where
+   txtelite shows 2–16, which makes a sub-tonne precious metal abundant that
+   Bell made scarce. Chosen for consistency with the price clamp, recorded
+   because it is a design change rather than a transcription, and cheap to
+   revisit — wrapping the quantity byte alone would restore Bell exactly.

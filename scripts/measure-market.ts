@@ -37,17 +37,18 @@ import {
 	NARCOTICS_BELL,
 	OFFSET_STATIONS,
 	type StationTypeKey,
-	addDeficit,
+	bellQuantity,
 	bestMargin,
-	decayDeficit,
 	marketRow,
-	stockResponse,
+	runsToExhaustion,
 } from "../tests/helpers/market-math";
 import {
 	ALL_GALAXIES,
 	forEachSystem,
 	worldSeeds,
 } from "../tests/helpers/station-rows";
+import { JUMP_RANGE_LY, distanceLy } from "../src/galaxy";
+import type { Vec3 } from "../src/vec3";
 
 const pct = (n: number, d: number) => `${((100 * n) / d).toFixed(2)}%`;
 const named = (name: string): Commodity =>
@@ -176,16 +177,25 @@ const worlds = worldSeeds(Number(process.argv[2] ?? 8));
 interface SystemMarket {
 	economy: number;
 	stations: StationTypeKey[];
+	pos: Vec3;
 }
 const systems: SystemMarket[] = [];
+/** Keyed by world and galaxy: a jump never crosses either. */
+const byGalaxy = new Map<string, SystemMarket[]>();
 
 for (const world of worlds) {
-	forEachSystem(world, ALL_GALAXIES, (record, contents) => {
+	forEachSystem(world, ALL_GALAXIES, (record, contents, galaxy) => {
 		if (contents.stations.length === 0) return;
-		systems.push({
+		const entry: SystemMarket = {
 			economy: record.economy,
 			stations: contents.stations.map((s) => s.type as StationTypeKey),
-		});
+			pos: record.pos,
+		};
+		systems.push(entry);
+		const key = `${world}:${galaxy}`;
+		const bucket = byGalaxy.get(key);
+		if (bucket) bucket.push(entry);
+		else byGalaxy.set(key, [entry]);
 	});
 }
 
@@ -231,55 +241,71 @@ const FLUCT_PAIRS: [number, number][] = [
 ];
 const avg = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / (xs.length || 1);
 
+/**
+ * Best margin over every station pairing between two systems, averaged across
+ * the independent fluctuation draws. `skipSelf` excludes a station trading with
+ * itself, which is the only difference between the intra- and inter-system
+ * sweeps — they were two near-identical blocks before.
+ */
+function bestBetween(
+	from: SystemMarket,
+	to: SystemMarket,
+	skipSelf: boolean,
+): number {
+	return avg(
+		FLUCT_PAIRS.map(([buyFluct, sellFluct]) => {
+			let best = 0;
+			for (const buy of from.stations)
+				for (const sell of to.stations) {
+					if (skipSelf && buy === sell) continue;
+					best = Math.max(
+						best,
+						pairMargin(
+							{ economy: from.economy, station: buy, fluct: buyFluct },
+							{ economy: to.economy, station: sell, fluct: sellFluct },
+						).margin,
+					);
+				}
+			return best;
+		}),
+	);
+}
+
 const intra: number[] = [];
 let multiStation = 0;
 for (const system of systems) {
 	if (system.stations.length < 2) continue;
 	multiStation++;
-	intra.push(
-		avg(
-			FLUCT_PAIRS.map(([buyFluct, sellFluct]) => {
-				let best = 0;
-				for (const buy of system.stations)
-					for (const sell of system.stations) {
-						if (buy === sell) continue;
-						best = Math.max(
-							best,
-							pairMargin(
-								{ economy: system.economy, station: buy, fluct: buyFluct },
-								{ economy: system.economy, station: sell, fluct: sellFluct },
-							).margin,
-						);
-					}
-				return best;
-			}),
-		),
-	);
+	intra.push(bestBetween(system, system, true));
 }
 
-// Interstellar: the same measurement across system pairs, which is what the
-// galaxy is supposed to be built around.
+/**
+ * Interstellar, over pairs a player can actually fly.
+ *
+ * **An earlier version paired systems adjacent in generation order** with
+ * `i += 97`, across every world and galaxy and with no jump-range check. That
+ * is a baseline no ship can reach — and §5.4's whole "interstellar trade wins,
+ * so intra-system loops are safe" conclusion rests on this number. Pairs are
+ * now drawn within `JUMP_RANGE_LY` inside a single galaxy, which is what one
+ * hyperspace jump actually offers.
+ */
 const inter: number[] = [];
-for (let i = 0; i + 1 < systems.length; i += 97) {
-	const from = systems[i];
-	const to = systems[i + 1];
-	inter.push(
-		avg(
-			FLUCT_PAIRS.map(([buyFluct, sellFluct]) => {
-				let best = 0;
-				for (const buy of from.stations)
-					for (const sell of to.stations)
-						best = Math.max(
-							best,
-							pairMargin(
-								{ economy: from.economy, station: buy, fluct: buyFluct },
-								{ economy: to.economy, station: sell, fluct: sellFluct },
-							).margin,
-						);
-				return best;
-			}),
-		),
-	);
+let unreachable = 0;
+for (const bucket of byGalaxy.values()) {
+	// Every 8th system as the origin; its nearest in-range neighbours as the
+	// destinations. Sampling the origin keeps the sweep O(n²/8) per galaxy.
+	for (let i = 0; i < bucket.length; i += 8) {
+		const from = bucket[i];
+		let found = 0;
+		for (let j = 0; j < bucket.length && found < 4; j++) {
+			if (j === i) continue;
+			const to = bucket[j];
+			if (distanceLy(from.pos, to.pos) > JUMP_RANGE_LY) continue;
+			found++;
+			inter.push(bestBetween(from, to, false));
+		}
+		if (found === 0) unreachable++;
+	}
 }
 
 const quantile = (xs: number[], q: number) =>
@@ -290,6 +316,9 @@ console.log(
 );
 console.log(
 	`worlds ${worlds.length}, docked systems ${systems.length}, multi-station ${multiStation}`,
+);
+console.log(
+	`intra-system pairs ${intra.length}, interstellar pairs ${inter.length} (within ${JUMP_RANGE_LY} LY, same galaxy; ${unreachable} sampled origins had no docked neighbour in range)`,
 );
 for (const [label, xs] of [
 	["intra-system", intra],
@@ -305,11 +334,6 @@ for (const [label, xs] of [
 // ── 5. Does the deficit brake exhaust the intra-system loop? ────────────────
 
 console.log("\n── §5.4: runs to exhaustion on the best intra-system pair ──");
-const HOLD_T = 20;
-/** §8: a full run is 3–5 minutes, so the previous run's mark is already fading
- *  by the time you dock again. Without this the count is independent of
- *  DEFICIT_HALF_LIFE and the constant is unexercised. */
-const RUN_MINUTES = 4;
 for (const economy of [0, 3, 7]) {
 	const pair = pairMargin(
 		{ economy, station: "shipyard", fluct: 0x7a },
@@ -320,26 +344,37 @@ for (const economy of [0, 3, 7]) {
 		continue;
 	}
 	const commodity = named(pair.good);
-	const buyBase = marketRow(commodity, economy, 0x7a, "shipyard").priceCr;
-	const sellBase = marketRow(commodity, economy, 0x1c, "refinery").priceCr;
-	let bought = 0;
-	let sold = 0;
-	let runs = 0;
-	let profit = 0;
-	const legs: string[] = [];
-	while (runs < 12) {
-		const margin =
-			stockResponse(sellBase, -sold) - stockResponse(buyBase, bought);
-		if (margin <= 0) break;
-		runs++;
-		profit += margin * HOLD_T;
-		legs.push(margin.toFixed(1));
-		bought = addDeficit(decayDeficit(bought, RUN_MINUTES), HOLD_T);
-		sold = addDeficit(decayDeficit(sold, RUN_MINUTES), HOLD_T);
-	}
+	const { runs, margins, profitCr } = runsToExhaustion({
+		buyBaseCr: marketRow(commodity, economy, 0x7a, "shipyard").priceCr,
+		sellBaseCr: marketRow(commodity, economy, 0x1c, "refinery").priceCr,
+		maxRuns: 12,
+	});
 	console.log(
-		`economy ${economy}: ${pair.good.padEnd(13)} runs ${runs}\tmargins ${legs.join(
-			" → ",
-		)}\ttotal ${profit.toFixed(0)} Cr`,
+		`economy ${economy}: ${pair.good.padEnd(13)} runs ${runs}\tmargins ${margins
+			.map((m) => m.toFixed(1))
+			.join(" → ")}\ttotal ${profitCr.toFixed(0)} Cr`,
 	);
+}
+
+// ── 6. Bell's quantity wrap, which §2.2's clamp diverges from ───────────────
+
+console.log("\n── §12: goods whose stock differs from Bell's `& 0x3F` wrap ──");
+for (const commodity of COMMODITIES) {
+	let differing = 0;
+	let rows = 0;
+	let worst = 0;
+	for (const economy of ALL_ECONOMIES)
+		for (const fluct of ALL_FLUCT) {
+			const mine = marketRow(commodity, economy, fluct, "trade").quantity;
+			const bell = bellQuantity(commodity, economy, fluct);
+			if (mine !== bell) {
+				differing++;
+				worst = Math.max(worst, Math.abs(mine - bell));
+			}
+			rows++;
+		}
+	if (differing > 0)
+		console.log(
+			`  ${commodity.name.padEnd(14)} differs on ${pct(differing, rows).padStart(7)} of rows, by up to ${worst} units`,
+		);
 }

@@ -36,12 +36,15 @@ import {
 	PRICE_ELASTICITY,
 	MIN_STOCK_RESPONSE_FACTOR,
 	PRICE_STEP_CR,
+	RUN_MINUTES,
 	QUANTITY_CAP,
 	TYPE_OFFSET,
 	addDeficit,
+	bellQuantity,
 	bestMargin,
 	decayDeficit,
 	marketRow,
+	runsToExhaustion,
 	stockResponse,
 } from "./helpers/market-math";
 
@@ -297,6 +300,41 @@ describe("§3 the type offset", () => {
 	});
 });
 
+describe("§2.2 the clamp applies to quantity too, and diverges from Bell there", () => {
+	test("five goods read differently from txtelite, and the set is pinned", () => {
+		// Bell's `& 0x3F` wraps 64…127 back down; §2.2 clamps. The spec records
+		// this in §12 rather than claiming the table is Bell's throughout, and
+		// this test is what stops the recorded set drifting from the real one.
+		const diverging: string[] = [];
+		for (const commodity of COMMODITIES) {
+			let differs = false;
+			for (const economy of ALL_ECONOMIES)
+				for (const fluct of ALL_FLUCT)
+					if (
+						marketRow(commodity, economy, fluct, "trade").quantity !==
+						bellQuantity(commodity, economy, fluct)
+					)
+						differs = true;
+			if (differs) diverging.push(commodity.name);
+		}
+		expect(diverging.sort()).toEqual(["Furs", "Gold", "Narcotics", "Platinum"]);
+	});
+
+	test("Gold is the extreme case — always capped where Bell keeps it scarce", () => {
+		// baseQuantity 0x42 = 66 never leaves 66…80, so Bell's mask reads 2…16
+		// units and the clamp reads a permanent 63. Named because it makes a
+		// precious metal abundant that Bell made scarce.
+		const gold = COMMODITIES.find((c) => c.name === "Gold") as Commodity;
+		for (const economy of ALL_ECONOMIES)
+			for (const fluct of ALL_FLUCT) {
+				expect(marketRow(gold, economy, fluct, "trade").quantity).toBe(
+					QUANTITY_CAP,
+				);
+				expect(bellQuantity(gold, economy, fluct)).toBeLessThan(20);
+			}
+	});
+});
+
 describe("§5 the stock deficit", () => {
 	test("moves price proportionally, so cheap goods are not wrecked", () => {
 		// A flat byte shift would move a ~7 Cr good by more than its entire
@@ -324,16 +362,33 @@ describe("§5 the stock deficit", () => {
 		);
 	});
 
-	test("cannot invert or zero a price, so it needs no floor of its own", () => {
-		// The ±63 clamp bounds the multiplier at 0.685, so §3's floor is the only
-		// one in the pipeline. Asserted rather than guarded against.
+	test("never prices a good below §3's floor", () => {
+		// An earlier version removed this floor, reasoning that the ±63 clamp
+		// bounds the multiplier at 0.685 so it could never fire. That holds only
+		// above 0.4 / 0.685 ≈ 0.584 Cr — and the rows §3's floor pins at exactly
+		// 0.4 Cr are the population below it. A bound that holds for most of the
+		// domain is not a bound.
 		expect(MIN_STOCK_RESPONSE_FACTOR).toBeCloseTo(0.685, 6);
-		expect(MIN_STOCK_RESPONSE_FACTOR).toBeGreaterThan(0);
-		for (const price of [PRICE_STEP_CR, 5, 61, 102])
-			expect(stockResponse(price, -1000)).toBeCloseTo(
+		expect(stockResponse(PRICE_STEP_CR, -DEFICIT_MAX)).toBeCloseTo(
+			PRICE_STEP_CR,
+			6,
+		);
+		expect(stockResponse(0.5, -DEFICIT_MAX)).toBeCloseTo(PRICE_STEP_CR, 6);
+		// …and above the crossover it is the multiplier, not the floor, that binds.
+		for (const price of [5, 61, 102])
+			expect(stockResponse(price, -DEFICIT_MAX)).toBeCloseTo(
 				price * MIN_STOCK_RESPONSE_FACTOR,
 				6,
 			);
+		// The strong claim, over every price the table can actually produce.
+		for (const commodity of COMMODITIES)
+			for (const economy of ALL_ECONOMIES)
+				for (const station of ALL_STATIONS) {
+					const row = marketRow(commodity, economy, 0, station);
+					expect(
+						stockResponse(row.priceCr, -DEFICIT_MAX),
+					).toBeGreaterThanOrEqual(PRICE_STEP_CR);
+				}
 	});
 
 	test("decays by half over one half-life", () => {
@@ -347,17 +402,22 @@ describe("§5 the stock deficit", () => {
 		// single-system trading (§5.4). The pair is *searched*, not hardcoded, so
 		// a retune that promotes another good keeps this pointed at the real
 		// best arb rather than at a stale one.
-		const HOLD_T = 20;
-		const RUN_MINUTES = 4; // §8: a full run is 3–5 minutes.
+		// Independent fluctuation bytes, as §2.3 requires: pairing both stations on
+		// one byte understates the margin, and an understated margin exhausts
+		// sooner — which would make this assertion easier to pass than the real
+		// two-seed case.
+		const BUY_FLUCT = 0x7a;
+		const SELL_FLUCT = 0x1c;
 		const ECONOMY = 3;
 
 		let bestGood = TRADEABLE[0];
 		let bestSpread = Number.NEGATIVE_INFINITY;
 		for (const commodity of TRADEABLE) {
-			const buy = marketRow(commodity, ECONOMY, 0, "shipyard");
+			const buy = marketRow(commodity, ECONOMY, BUY_FLUCT, "shipyard");
 			if (buy.quantity === 0) continue;
 			const spread =
-				marketRow(commodity, ECONOMY, 0, "refinery").priceCr - buy.priceCr;
+				marketRow(commodity, ECONOMY, SELL_FLUCT, "refinery").priceCr -
+				buy.priceCr;
 			if (spread > bestSpread) {
 				bestSpread = spread;
 				bestGood = commodity;
@@ -365,21 +425,10 @@ describe("§5 the stock deficit", () => {
 		}
 		expect(bestSpread).toBeGreaterThan(0);
 
-		const buyBase = marketRow(bestGood, ECONOMY, 0, "shipyard").priceCr;
-		const sellBase = marketRow(bestGood, ECONOMY, 0, "refinery").priceCr;
-		let bought = 0;
-		let sold = 0;
-		let runs = 0;
-		while (runs < 20) {
-			if (stockResponse(sellBase, -sold) - stockResponse(buyBase, bought) <= 0)
-				break;
-			runs++;
-			// Time passes while the run is flown, so the mark left by the previous
-			// run has already begun to fade. Without this the exhaustion count is
-			// independent of DEFICIT_HALF_LIFE, and the constant is untested.
-			bought = addDeficit(decayDeficit(bought, RUN_MINUTES), HOLD_T);
-			sold = addDeficit(decayDeficit(sold, RUN_MINUTES), HOLD_T);
-		}
+		const { runs } = runsToExhaustion({
+			buyBaseCr: marketRow(bestGood, ECONOMY, BUY_FLUCT, "shipyard").priceCr,
+			sellBaseCr: marketRow(bestGood, ECONOMY, SELL_FLUCT, "refinery").priceCr,
+		});
 		expect(runs).toBeGreaterThan(0);
 		expect(runs).toBeLessThanOrEqual(4);
 	});

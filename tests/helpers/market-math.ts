@@ -20,6 +20,13 @@
  *    *added* and to quantity *subtracted*. That opposite sign is what makes
  *    cheap imply plentiful, and it is the mechanism the type offset (§3) and
  *    the stock deficit (§5) each reuse rather than inventing their own.
+ *
+ * **`marketRow` is keyed on station *type*, and must widen.** §5.1 derives the
+ * fluctuation byte from `hash(stationSeed, epoch)` and §5.2 keys the deficit per
+ * station, so both need station *identity*. Type is all this spec's arithmetic
+ * needs and all the measurements exercise, so the narrower signature stands
+ * here; the implement node widens it to a `{ type, seed }` struct along with
+ * every call site, and §11 records that as owed.
  */
 
 /** Elite's byte→credits step: a price byte is 0.4 Cr. */
@@ -55,183 +62,56 @@ export interface Commodity {
 const i8 = (byte: number): number => (byte << 24) >> 24;
 
 /**
+ * Builds one row. The four numeric columns are what a reader checks against
+ * `txtelite.c`, so they are positional and aligned; the three flags are
+ * defaults on fourteen of the seventeen rows and are named only where they
+ * differ. Spelling them out on every row buried the table's real content in
+ * boilerplate the spec asks readers to verify column by column.
+ */
+const good = (
+	name: string,
+	basePrice: number,
+	gradient: number,
+	baseQuantityByte: number,
+	mask: number,
+	extra: Partial<Pick<Commodity, "unit" | "illegal" | "sellOnly">> = {},
+): Commodity => ({
+	name,
+	basePrice,
+	gradient,
+	baseQuantity: i8(baseQuantityByte),
+	mask,
+	unit: "t",
+	illegal: false,
+	sellOnly: false,
+	...extra,
+});
+
+/**
  * Research §2.2's table, hex literals kept so the transcription can be checked
- * against the source column by column. `Gem-Strones` is Bell's own typo and is
- * spelled correctly here; nothing else is changed.
+ * against the source column by column: name, basePrice, gradient, baseQuantity,
+ * mask. `Gem-Strones` is Bell's own typo and is spelled correctly here.
  */
 export const COMMODITIES: readonly Commodity[] = [
-	{
-		name: "Food",
-		basePrice: 0x13,
-		gradient: -2,
-		baseQuantity: i8(0x06),
-		mask: 0x01,
-		unit: "t",
-		illegal: false,
-		sellOnly: false,
-	},
-	{
-		name: "Textiles",
-		basePrice: 0x14,
-		gradient: -1,
-		baseQuantity: i8(0x0a),
-		mask: 0x03,
-		unit: "t",
-		illegal: false,
-		sellOnly: false,
-	},
-	{
-		name: "Radioactives",
-		basePrice: 0x41,
-		gradient: -3,
-		baseQuantity: i8(0x02),
-		mask: 0x07,
-		unit: "t",
-		illegal: false,
-		sellOnly: false,
-	},
-	{
-		name: "Slaves",
-		basePrice: 0x28,
-		gradient: -5,
-		baseQuantity: i8(0xe2),
-		mask: 0x1f,
-		unit: "t",
-		illegal: true,
-		sellOnly: false,
-	},
-	{
-		name: "Liquor/Wines",
-		basePrice: 0x53,
-		gradient: -5,
-		baseQuantity: i8(0xfb),
-		mask: 0x0f,
-		unit: "t",
-		illegal: false,
-		sellOnly: false,
-	},
-	{
-		name: "Luxuries",
-		basePrice: 0xc4,
-		gradient: 8,
-		baseQuantity: i8(0x36),
-		mask: 0x03,
-		unit: "t",
-		illegal: false,
-		sellOnly: false,
-	},
-	// The one divergence from Bell's column — see NARCOTICS_RETUNE below.
-	{
-		name: "Narcotics",
-		basePrice: 0x14,
-		gradient: 13,
-		baseQuantity: i8(0x08),
-		mask: 0x70,
-		unit: "t",
-		illegal: true,
-		sellOnly: false,
-	},
-	{
-		name: "Computers",
-		basePrice: 0x9a,
-		gradient: 14,
-		baseQuantity: i8(0x38),
-		mask: 0x03,
-		unit: "t",
-		illegal: false,
-		sellOnly: false,
-	},
-	{
-		name: "Machinery",
-		basePrice: 0x75,
-		gradient: 6,
-		baseQuantity: i8(0x28),
-		mask: 0x07,
-		unit: "t",
-		illegal: false,
-		sellOnly: false,
-	},
-	{
-		name: "Alloys",
-		basePrice: 0x4e,
-		gradient: 1,
-		baseQuantity: i8(0x11),
-		mask: 0x1f,
-		unit: "t",
-		illegal: false,
-		sellOnly: false,
-	},
-	{
-		name: "Firearms",
-		basePrice: 0x7c,
-		gradient: 13,
-		baseQuantity: i8(0x1d),
-		mask: 0x07,
-		unit: "t",
-		illegal: true,
-		sellOnly: false,
-	},
-	{
-		name: "Furs",
-		basePrice: 0xb0,
-		gradient: -9,
-		baseQuantity: i8(0xdc),
-		mask: 0x3f,
-		unit: "t",
-		illegal: false,
-		sellOnly: false,
-	},
-	{
-		name: "Minerals",
-		basePrice: 0x20,
-		gradient: -1,
-		baseQuantity: i8(0x35),
-		mask: 0x03,
-		unit: "t",
-		illegal: false,
-		sellOnly: false,
-	},
-	{
-		name: "Gold",
-		basePrice: 0x61,
-		gradient: -1,
-		baseQuantity: i8(0x42),
-		mask: 0x07,
-		unit: "kg",
-		illegal: false,
-		sellOnly: false,
-	},
-	{
-		name: "Platinum",
-		basePrice: 0xab,
-		gradient: -2,
-		baseQuantity: i8(0x37),
-		mask: 0x1f,
-		unit: "kg",
-		illegal: false,
-		sellOnly: false,
-	},
-	{
-		name: "Gem-Stones",
-		basePrice: 0x2d,
-		gradient: -1,
-		baseQuantity: i8(0xfa),
-		mask: 0x0f,
-		unit: "g",
-		illegal: false,
-		sellOnly: false,
-	},
-	{
-		name: "Alien Items",
-		basePrice: 0x35,
-		gradient: 15,
-		baseQuantity: i8(0xc0),
-		mask: 0x07,
-		unit: "t",
-		illegal: false,
-		sellOnly: true,
-	},
-] as const;
+	good("Food", 0x13, -2, 0x06, 0x01),
+	good("Textiles", 0x14, -1, 0x0a, 0x03),
+	good("Radioactives", 0x41, -3, 0x02, 0x07),
+	good("Slaves", 0x28, -5, 0xe2, 0x1f, { illegal: true }),
+	good("Liquor/Wines", 0x53, -5, 0xfb, 0x0f),
+	good("Luxuries", 0xc4, 8, 0x36, 0x03),
+	// The one divergence from Bell's column — see NARCOTICS_BELL below.
+	good("Narcotics", 0x14, 13, 0x08, 0x70, { illegal: true }),
+	good("Computers", 0x9a, 14, 0x38, 0x03),
+	good("Machinery", 0x75, 6, 0x28, 0x07),
+	good("Alloys", 0x4e, 1, 0x11, 0x1f),
+	good("Firearms", 0x7c, 13, 0x1d, 0x07, { illegal: true }),
+	good("Furs", 0xb0, -9, 0xdc, 0x3f),
+	good("Minerals", 0x20, -1, 0x35, 0x03),
+	good("Gold", 0x61, -1, 0x42, 0x07, { unit: "kg" }),
+	good("Platinum", 0xab, -2, 0x37, 0x1f, { unit: "kg" }),
+	good("Gem-Stones", 0x2d, -1, 0xfa, 0x0f, { unit: "g" }),
+	good("Alien Items", 0x35, 15, 0xc0, 0x07, { sellOnly: true }),
+];
 
 /**
  * Bell's own Narcotics row, kept so the divergence can be re-measured rather
@@ -267,6 +147,25 @@ export const NARCOTICS_RETUNE = {
 	/** Fraction of (economy, fluct) rows carrying stock. Bell's row gives 36%. */
 	minInStock: 0.5,
 } as const;
+
+/**
+ * Bell's own quantity close: clip negatives to zero, then `& 0x3F` — which
+ * **wraps** 64…127 back down rather than capping there. Kept so §12's recorded
+ * divergence can be measured instead of asserted.
+ */
+export function bellQuantity(
+	commodity: Commodity,
+	economy: number,
+	fluct: number,
+): number {
+	if (commodity.sellOnly) return 0; // Bell forces Alien Items to zero too.
+	const raw =
+		(commodity.baseQuantity +
+			(fluct & commodity.mask) -
+			economy * commodity.gradient) &
+		0xff;
+	return raw & 0x80 ? 0 : raw & 0x3f;
+}
 
 /** §3: the per-station-type price offset, in economy-equivalent steps. */
 export const TYPE_OFFSET = { trade: 0, refinery: 3, shipyard: -2 } as const;
@@ -369,8 +268,13 @@ export function marketRow(
 		closedPrice * PRICE_STEP_CR + offset * commodity.gradient * PRICE_STEP_CR;
 	const priceCr = Math.max(PRICE_STEP_CR, unflooredPriceCr);
 
-	// Bell clips a negative quantity to zero and caps at 63; the saturating read
-	// of that is a straight clamp.
+	// §2.2's clamp applies to the quantity byte too, and **this is a divergence
+	// from Bell, not a transcription of him.** He clips negatives to zero and
+	// then masks with `& 0x3F`, which *wraps* 64…127 back down: Gold's raw
+	// quantity is always 66–80, so txtelite shows 2–16 units where seelite shows
+	// a permanent 63. Clamping is the same choice §2.2 makes for price — a
+	// wrapped shelf is as inexplicable as a wrapped price — and it is recorded
+	// in the spec's weak joints rather than passed off as Bell's.
 	const baseQuantity = clamp(
 		commodity.baseQuantity + changing - product,
 		0,
@@ -451,6 +355,9 @@ export const MARKET_PERIOD_MIN = 30;
 export const DEFICIT_HALF_LIFE_MIN = 20;
 /** §5.2: the deficit cannot exceed Bell's quantity cap in either direction. */
 export const DEFICIT_MAX = QUANTITY_CAP;
+/** §8: a full trade run is 3–5 minutes, so the previous run's mark is already
+ *  fading by the time you dock again. */
+export const RUN_MINUTES = 4;
 
 /** §5.2's exponential decay, applied lazily on read from `updatedAt`. */
 export const decayDeficit = (deficit: number, elapsedMin: number): number =>
@@ -467,20 +374,62 @@ export const addDeficit = (deficit: number, units: number): number =>
 export const marketEpoch = (phaseMin: number, gameTimeMin: number): number =>
 	Math.floor((gameTimeMin + phaseMin) / MARKET_PERIOD_MIN);
 
-/**
- * **No floor here, deliberately.** The ±`DEFICIT_MAX` clamp bounds the
- * multiplier at `1 − 0.1 × 63 / 20` = 0.685, so the response can never invert,
- * zero, or push a price below §3's floor — it can only ever scale it by between
- * 0.685 and 1.315. A `Math.max(PRICE_STEP_CR, …)` here would be a guard that
- * provably cannot fire, which is the dead weight `station-types.md` §5.2
- * objects to. The bound is asserted in the suite instead.
- */
-export const stockResponse = (priceCr: number, deficit: number): number =>
-	priceCr *
-	(1 +
-		(PRICE_ELASTICITY * clamp(deficit, -DEFICIT_MAX, DEFICIT_MAX)) /
-			HOLD_REFERENCE_T);
-
-/** The tightest the response can ever squeeze a price — see `stockResponse`. */
+/** The tightest the response can squeeze a price *before* the floor: the
+ *  ±`DEFICIT_MAX` clamp bounds the multiplier at `1 − 0.1 × 63 / 20`. */
 export const MIN_STOCK_RESPONSE_FACTOR =
 	1 - (PRICE_ELASTICITY * DEFICIT_MAX) / HOLD_REFERENCE_T;
+
+/**
+ * **The floor is needed here, and an earlier version removed it on a false
+ * premise.** The reasoning was that the ±63 clamp bounds the multiplier at
+ * 0.685, so the result could never fall below §3's floor. That is true only for
+ * prices at or above `PRICE_STEP_CR / MIN_STOCK_RESPONSE_FACTOR` ≈ 0.584 Cr —
+ * and the rows §3's floor pins at exactly 0.4 Cr are precisely the population
+ * below it: 0.4 × 0.685 = 0.274 Cr, under the floor the row was just given.
+ * A bound that holds for most of the domain is not a bound.
+ */
+export const stockResponse = (priceCr: number, deficit: number): number =>
+	Math.max(
+		PRICE_STEP_CR,
+		priceCr *
+			(1 +
+				(PRICE_ELASTICITY * clamp(deficit, -DEFICIT_MAX, DEFICIT_MAX)) /
+					HOLD_REFERENCE_T),
+	);
+
+/**
+ * §5.4's brake, measured: how many times the same station pair can be run
+ * before the deficit closes the margin.
+ *
+ * Shared by the suite and the instrument, for the reason `bestMargin` is — an
+ * earlier version had the loop written out in both, including its own copies of
+ * `holdT` and `runMinutes`, so "the same measurement" was a claim about two
+ * bodies of code that happened to agree.
+ */
+export function runsToExhaustion(opts: {
+	buyBaseCr: number;
+	sellBaseCr: number;
+	holdT?: number;
+	/** Game minutes a full run takes to fly — the mark fades while you do. */
+	runMinutes?: number;
+	maxRuns?: number;
+}): { runs: number; margins: number[]; profitCr: number } {
+	const holdT = opts.holdT ?? HOLD_REFERENCE_T;
+	const runMinutes = opts.runMinutes ?? RUN_MINUTES;
+	const maxRuns = opts.maxRuns ?? 20;
+	const margins: number[] = [];
+	let bought = 0;
+	let sold = 0;
+	let profitCr = 0;
+	while (margins.length < maxRuns) {
+		const margin =
+			stockResponse(opts.sellBaseCr, -sold) -
+			stockResponse(opts.buyBaseCr, bought);
+		if (margin <= 0) break;
+		margins.push(margin);
+		profitCr += margin * holdT;
+		bought = addDeficit(decayDeficit(bought, runMinutes), holdT);
+		sold = addDeficit(decayDeficit(sold, runMinutes), holdT);
+	}
+	return { runs: margins.length, margins, profitCr };
+}
