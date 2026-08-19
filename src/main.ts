@@ -506,7 +506,7 @@ class Game {
 	 *
 	 * A **prototype aid**, and worth saying so plainly: §6 makes cruise free —
 	 * you point anywhere and go — and an aiming key is one step from the
-	 * destination-locked cruise the spec rejected. It is here because the
+	 * target-locked cruise the spec rejected. It is here because the
 	 * judgement this node is collecting is about *pacing*, and hand-aiming a
 	 * 20-metre nose at a 50 km sphere an AU away is a different skill that would
 	 * dominate every measurement. Whether the shipped game offers an aiming
@@ -917,7 +917,7 @@ class Game {
 	 *
 	 * Public because §3 makes deceleration **player-managed** — the throttle is
 	 * the whole of the arrival skill — and a probe that cannot work it can only
-	 * measure a ship flying into its destination at full power. That is not a
+	 * measure a ship flying into its target at full power. That is not a
 	 * hypothetical: the first run of `probe-cruise.mjs` did exactly that and
 	 * never arrived, because a station's speed is keyed to its *planet's*
 	 * distance and stays in the thousands of km/s right up to the hull.
@@ -1036,7 +1036,7 @@ class Game {
 	 * leaving the ship at 140 km/s.
 	 *
 	 * `matchTarget` is what separates them. **Only an arrival** leaves the ship in
-	 * the destination's frame: dropping out half an AU away and inheriting the
+	 * the target's frame: dropping out half an AU away and inheriting the
 	 * station's 30 km/s would fling the ship across the system in a direction it
 	 * never asked to go, and the 2 km/s assist cap cannot take it back off. Away
 	 * from the target the frame is the star's, which is what the sim's
@@ -1047,7 +1047,7 @@ class Game {
 			this.spoolLeftS = 0;
 			return;
 		}
-		// In the destination's frame (`cruise.ts`'s `exitVelocity`): a station on a
+		// In the target's frame (`cruise.ts`'s `exitVelocity`): a station on a
 		// 1 AU orbit moves at ~30 km/s, so an absolute clamp to the 2 km/s assist
 		// cap would drop the player next to a target already leaving at fifteen
 		// times the speed normal flight can manage.
@@ -1260,8 +1260,8 @@ class Game {
 		this.chargeAu = chargeAfterTravel(this.chargeAu, step.travelledKm);
 		if (step.dropped) {
 			// The frame the ship is left in follows the *reason*. An arrival matches
-			// the destination. A surface drop matches it too **when the body is the
-			// one selected** — cruising to a planet is a destination like any other,
+			// the target. A surface drop matches it too **when the body is the
+			// one selected** — cruising to a planet is a target like any other,
 			// and leaving the ship in the star's frame beside it would strand it the
 			// same way an absolute clamp strands an arrival at a station. Against
 			// some other body it was flown at by accident, the star's frame is right.
@@ -1276,7 +1276,7 @@ class Game {
 			return;
 		}
 		// **After** the arrival test: a frame that both arrives and runs the tank
-		// dry is an arrival — the ship is at its destination, and reporting an
+		// dry is an arrival — the ship is at its target, and reporting an
 		// empty tank instead would drop it there in the wrong frame.
 		if (step.starved) this.dropOut("drive charge exhausted");
 	}
@@ -1650,7 +1650,7 @@ class Game {
 		}
 
 		// Every selectable body gets a bracket, because "I have no idea where to
-		// fly to" is answered by seeing the destinations, not by naming one of
+		// fly to" is answered by seeing the targets, not by naming one of
 		// them in a text field.
 		ctx.font = "11px ui-monospace, Menlo, monospace";
 		for (const body of this.selectable()) {

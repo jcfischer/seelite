@@ -207,7 +207,7 @@ test("speed keys off the nearest star or planet, never a moon or a station", () 
 const NO_CLAMP = SPEC_LAW;
 
 // §2.3's table, with the geometry it is stated against: one mass at the
-// destination, the ship flying straight in from `legAu` away. The tolerance is
+// target, the ship flying straight in from `legAu` away. The tolerance is
 // the spec's own 10%.
 test.each([
 	["short hop", 0.2, 38],
@@ -402,7 +402,7 @@ test("charge is spent per AU travelled, not per second", () => {
 	// The well sits just off the line, so the same kilometres take far longer.
 	const fast = spend(v3(0, 30 * AU_KM, 0));
 	const slow = spend(v3(legKm * 0.5, 2e4, 0));
-	// Both legs decelerate near the destination now that the law reads the target
+	// Both legs decelerate near the target now that the law reads the target
 	// as well as the mass, and the tuned exponent (0.60, shallower than the
 	// spec's 0.75) narrows the gap further — the claim is that the well costs
 	// time, not how much.
@@ -523,7 +523,7 @@ test("the ship overshoots rather than stopping when it arrives too fast", () => 
 	const flight = fly({
 		from,
 		target,
-		// The mass is elsewhere: a destination that is also a body would end the
+		// The mass is elsewhere: a target that is also a body would end the
 		// run on its surface rather than by sailing past, which is a different
 		// claim (and has its own test).
 		masses: oneMassAt(v3(0, 3 * AU_KM, 0)),
@@ -539,8 +539,8 @@ test("the ship overshoots rather than stopping when it arrives too fast", () => 
 
 // ------------------------------------------ what flying it turned up (#14/#21)
 
-test("the law is keyed to the nearer of the mass and the destination", () => {
-	// §2.1 rejected a destination-*only* law because it tunnels; the minimum of
+test("the law is keyed to the nearer of the mass and the target", () => {
+	// §2.1 rejected a target-*only* law because it tunnels; the minimum of
 	// the two keeps that argument — the speed is still bounded by the mass
 	// distance — and gives the approach its deceleration. Without it a station's
 	// speed is set by its planet tens of thousands of km away and the ship
@@ -559,7 +559,7 @@ test("the law is keyed to the nearer of the mass and the destination", () => {
 		// Clamp off: this is the *law's* claim. In play the approach clamp is
 		// slower still — it governs everything inside `vicinityKm` — and it has
 		// its own tests; what is being pinned here is that the law reads the
-		// destination at all.
+		// target at all.
 		params: NO_CLAMP,
 	});
 	// §2.3's own figure for 50 km out, rather than the ~44,000 km/s the planet's
@@ -617,10 +617,10 @@ test("a grazing pass still passes, rather than dropping the ship every time", ()
 
 // ------------------------------------- arrival is relative (this node's finding)
 
-test("the exit clamp is on the velocity relative to the destination", () => {
+test("the exit clamp is on the velocity relative to the target", () => {
 	// The largest thing flying this found. A station on a 1 AU orbit moves at
 	// ~30 km/s; clamping the ship's *absolute* velocity to the 2 km/s assist cap
-	// at the drop-out leaves the destination receding at 28 km/s, which normal
+	// at the drop-out leaves the target receding at 28 km/s, which normal
 	// flight can never close. The arrival succeeds and docking becomes
 	// impossible — a failure that looks like a win.
 	const nose = towards(v3(), v3(0, 0, -1));
@@ -631,12 +631,12 @@ test("the exit clamp is on the velocity relative to the destination", () => {
 	// the station's plus at most the cap.
 	expect(length(v)).toBeGreaterThan(ASSIST_CAP_KMS);
 	expect(length(v)).toBeLessThanOrEqual(length(stationVel) + ASSIST_CAP_KMS);
-	// With a stationary destination the two forms agree, which is why every
+	// With a stationary target the two forms agree, which is why every
 	// earlier assertion in this file still stands.
 	expect(length(exitVelocity(nose, 1e6))).toBeCloseTo(ASSIST_CAP_KMS, 9);
 });
 
-test("the drop-out threshold is judged in the destination's frame too", () => {
+test("the drop-out threshold is judged in the target's frame too", () => {
 	// Matching velocities counts as slow, however fast both are going; sitting
 	// still while the station leaves at 30 km/s does not.
 	const nose = towards(v3(), v3(0, 0, -1));
@@ -920,7 +920,7 @@ test("speedFor is the whole law, clamp included", () => {
 	// a target-blind rule.
 	expect(speedFor(5e6, 1e6, P)).toBeCloseTo(cruiseSpeed(1e6, P), 6);
 	// Inside the vicinity, distance over the lead time, plus what the
-	// destination itself is doing.
+	// target itself is doing.
 	expect(speedFor(1e9, 1000, P, 30)).toBeCloseTo(
 		30 + 1000 / P.approachLeadS,
 		6,
@@ -971,7 +971,7 @@ test("the capture is a near miss, not the whole vicinity", () => {
 });
 
 test("a proximity drop names the body, so an intended one can be arrived at", () => {
-	// Cruising *to* a planet is a destination like any other. The exit reports
+	// Cruising *to* a planet is a target like any other. The exit reports
 	// which body's surface ended the run, because dropping against the selected
 	// one should leave the ship in that body's frame — leaving it in the star's
 	// beside a planet moving at 30 km/s strands it exactly the way an absolute

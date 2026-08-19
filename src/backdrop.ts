@@ -13,9 +13,9 @@
  *
  * The scale research recommends a hybrid backdrop: a baked cubemap for galaxy
  * haze and nebulae, with a points layer on top for the bright, nameable stars —
- * the ones that are also destinations. Only the points layer exists here. The
- * nebula bake needs a galaxy to be a picture *of*, and the galaxy is an open
- * decision on the map.
+ * the ones that are also systems you can jump to. Only the points layer exists
+ * here. The nebula bake needs a galaxy to be a picture *of*, and the galaxy is
+ * an open decision on the map.
  */
 
 import { streamFor } from "./rng";

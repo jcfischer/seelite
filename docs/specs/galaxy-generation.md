@@ -297,7 +297,7 @@ outward — the direction of increasing profit and increasing danger.
 
 ## 6. System contents
 
-Systems are **multi-destination**. This was the most consequential choice on
+Systems are **multi-station**. This was the most consequential choice on
 the node: it converts in-system travel (#10) from a single crossing into a
 routing problem, and obliges #7 to price per *station* rather than per system.
 
@@ -342,16 +342,32 @@ orbits, at the geometric mean of the two, width ±10%.
 
 | Type | Present when | Sits at |
 |---|---|---|
-| **Main trade station** | always | orbit of the primary planet |
-| **Refinery outpost** | the system has a belt (§6.3) | inside the belt |
-| **Shipyard / naval station** | `displayTL ≥ 10` | orbit of the primary or a gas giant |
+| **trade station** | the system has a planet — see the note below | orbit of the primary planet |
+| **refinery** | the system has a belt (§6.3) | inside the belt |
+| **shipyard** | `displayTL ≥ 10` | orbit of the primary or a gas giant |
 
 Count therefore keys off population and tech exactly as intended: a high-TL
 core world plausibly supports three, a rim Anarchy one. **Shipyards generate
 only in the core**, which is what gives the tech gradient teeth.
 
-What a type does to prices and stock belongs to #7; its docking geometry
-belongs to #9. This spec places them and names their type.
+This spec places stations and names their type. **What a type *is* — market
+offset, equipment exclusives, law and contraband, geometry, silhouette — is
+[#13](https://github.com/jcfischer/seelite/issues/13) and lives in
+`docs/specs/station-types.md`.** From there it reaches #7 (prices generate per
+station as a delta on the system's price — §3.2 explicitly rejects an offset
+*economy*), #8 (legal status, pirate presence) and #9 (two
+docking interactions, not three).
+
+The names above were changed by #13 to match `StationType` (see
+`station-types.md` §1 for the umbrella/type distinction — the enum value is
+`trade`, the thing is a "trade station"). The former synonym for the refinery
+type was retired at the same time as a word carrying no distinction — §1 there
+names it and holds the audit.
+
+> **The trade station is not unconditional**, though this table once said
+> "always". A planetless system has nothing to dock at. The measurement, the
+> reasoning and the fix's ownership are in `station-types.md` §5.4; they are not
+> repeated here.
 
 ---
 
@@ -505,7 +521,7 @@ Recorded deliberately, not to reopen:
 
 - **No correctness oracle.** Dropping Bell's seed cost the best verification
   asset available (§1.1). Property tests are weaker than a byte-exact diff.
-- **Multi-destination systems are the expensive choice.** They enlarge #7
+- **Multi-station systems are the expensive choice.** They enlarge #7
   (per-station markets), #9 (per-type docking) and #10 (routing, not a single
   crossing) simultaneously. This is the decision most likely to feel costly
   later.

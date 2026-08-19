@@ -138,7 +138,7 @@ export const DEFAULT_CRUISE: CruiseParams = {
 	dropSpeedKms: 200,
 	// The principal's own figure, and it happens to be `HANDOFF_KM` — the
 	// distance at which a body stops being a light in the distance and starts
-	// being drawn at 1:1. That is the same moment it stops being a destination
+	// being drawn at 1:1. That is the same moment it stops being a target
 	// and starts being a place.
 	vicinityKm: 1e4,
 	// Three seconds, which costs `3 · ln(10⁴/50)` ≈ 16 s of deceleration on every
@@ -243,7 +243,7 @@ export function nearestMass(
  * §2's law: `v(d) = clamp(v_max · (d/d_ref)^exponent, v_min, v_max)`.
  *
  * `d` is **a** distance and this function does not know whose: §2.1 argues at
- * length that a destination-keyed law flies through worlds between ticks, and
+ * length that a target-keyed law flies through worlds between ticks, and
  * its conclusion survives — but as `speedFor`'s `min(massKm, targetKm)` rather
  * than as "mass only", which is what this docstring used to claim while its one
  * caller passed the minimum. The mass distance is what bounds the curve; the
@@ -256,7 +256,7 @@ export function cruiseSpeed(distanceKm: number, p: CruiseParams): number {
 }
 
 /**
- * §1's exit: velocity clamped to the assist cap **in the destination's frame**.
+ * §1's exit: velocity clamped to the assist cap **in the target's frame**.
  *
  * Not "along the nose", which is what this said for two rounds and what §1
  * itself says: beside a station carried around its star at 30 km/s the exit
@@ -273,11 +273,11 @@ export function exitVelocity(
 	speedKms: number,
 	targetVel: Vec3 = { x: 0, y: 0, z: 0 },
 ): Vec3 {
-	// The clamp is on the velocity **relative to the destination**, and that is
+	// The clamp is on the velocity **relative to the target**, and that is
 	// this node's largest finding rather than a detail. A station on a 1 AU
 	// orbit is carried around the star at ~30 km/s — fifteen times the assist
 	// cap. Clamping the ship's *absolute* velocity to 2 km/s at the drop-out
-	// hands the player a destination receding at 28 km/s, which normal flight
+	// hands the player a target receding at 28 km/s, which normal flight
 	// can never close: the arrival works and docking is then impossible, which
 	// is the worst shape a bug can have. Measured in `probe-cruise.mjs`, which
 	// could not complete an approach until this changed.
@@ -288,7 +288,7 @@ export function exitVelocity(
 }
 
 /**
- * The speed the drop-out is judged at: the ship's, in the destination's frame.
+ * The speed the drop-out is judged at: the ship's, in the target's frame.
  *
  * Same argument as `exitVelocity`. Against an absolute threshold, a station's
  * orbital motion alone exceeds any threshold worth having, so the drop-out
@@ -364,7 +364,7 @@ export type CruiseExit = "arrival" | "proximity" | null;
  * wrong exactly where §5.1 says the player reads it. A law with two
  * implementations has one that is wrong; which one is a matter of time.
  *
- * `carriedKms` is the destination's own speed (a station is carried around its
+ * `carriedKms` is the target's own speed (a station is carried around its
  * star at ~30 km/s), because the clamp is stated over the target's motion —
  * see `vicinityKm`.
  */
@@ -472,12 +472,12 @@ export interface CruiseStep {
 	exit: CruiseExit;
 	/** Which body's surface ended it, for a `proximity` exit. The caller needs
 	 *  it because dropping against the *selected target* is an arrival at that
-	 *  body in every sense that matters — a planet is a destination too — and it
+	 *  body in every sense that matters — a planet is a target too — and it
 	 *  should leave the ship in the body's frame rather than the star's. */
 	exitBodyId?: string;
 	/** Speed at the end of the frame, km/s. The HUD's headline number. */
 	speedKms: number;
-	/** The same speed in the destination's frame — what the drop-out is judged
+	/** The same speed in the target's frame — what the drop-out is judged
 	 *  at, and the honest figure for "am I going to arrive or sail past". */
 	closingKms: number;
 	/** How many sub-steps the frame took. Read by a probe to show §8.1's rule
@@ -537,7 +537,7 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 		// test meant a ship sitting inside the drop radius with the throttle
 		// closed never dropped out — the one state that mode consists of.
 		//
-		// Closing speed at zero throttle is the destination's own motion, not
+		// Closing speed at zero throttle is the target's own motion, not
 		// zero: nose-locked and stationary beside a station doing 30 km/s is not
 		// station-keeping, it is being left behind. Reporting 0 there was the
 		// panel's honest-arrival readout lying in exactly that state.
@@ -559,9 +559,9 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 			? length(sub(pos, input.target.pos))
 			: Number.POSITIVE_INFINITY;
 
-		// **The law is keyed to the nearer of the mass and the destination.**
+		// **The law is keyed to the nearer of the mass and the target.**
 		//
-		// §2.1 rejected a destination-*only* law, and rightly: it flies through
+		// §2.1 rejected a target-*only* law, and rightly: it flies through
 		// worlds between ticks. Taking the minimum of the two keeps that argument
 		// intact — the speed is still bounded by the mass distance, so nothing
 		// tunnels — while giving the approach the deceleration it obviously needed.
@@ -583,7 +583,7 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 		);
 		if (speedKms <= 0) break;
 
-		// Speed in the destination's own frame — see `closingSpeed`. Against an
+		// Speed in the target's own frame — see `closingSpeed`. Against an
 		// absolute threshold a station's 30 km/s orbital motion decides the
 		// drop-out on its own.
 		const closing = input.target

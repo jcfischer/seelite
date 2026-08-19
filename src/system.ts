@@ -8,7 +8,8 @@
  *
  * ## Two decisions from the spec drive everything here
  *
- * **Systems are multi-destination.** 1–3 typed stations, and the types are not
+ * **Systems are multi-station.** 0–3 typed stations — 0 only through the
+ * undockable defect noted on `generateStations` below — and the types are not
  * interchangeable: two identical trade stations 200,000 km apart is just a
  * longer commute for the same transaction. That is what turns in-system travel
  * (#10) from a single crossing into a routing problem and obliges #7 to price
@@ -268,7 +269,7 @@ export function positionOnOrbit(orbit: Orbit, gameTime: number): Vec3 {
  *
  * It exists because #14 found that arrival is a *relative* problem: a station
  * on a 1 AU orbit is carried along at ~30 km/s, fifteen times #5's 2 km/s
- * assist cap. Dropping out of cruise into a frame where the destination is
+ * assist cap. Dropping out of cruise into a frame where the target is
  * receding at 28 km/s leaves it permanently unreachable, so the drop-out and
  * the exit clamp have to be measured against this rather than against zero.
  */
@@ -440,9 +441,11 @@ function buildMoons(
  * names is not. Written the way the code works, so that a later reader
  * comparing the two finds the difference here rather than in a debugger.
  *
- * The trade station is unconditional, so a system always has somewhere to dock —
- * a system with no station would be a dead end the galaxy map has no way to warn
- * about.
+ * **The trade station is meant to be unconditional and is not** — it is guarded
+ * by `if (primary)`, so a planetless system generates unreachable — no station
+ * to dock at, and no body for #10's arrival point either. The rate is measured
+ * and owned by `docs/specs/station-types.md` §5.4; pinned by
+ * `tests/station-orbits.test.ts`.
  */
 function generateStations(
 	record: SystemRecord,

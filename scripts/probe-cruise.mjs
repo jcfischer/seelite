@@ -218,7 +218,7 @@ const flight = await page.evaluate(
 			missKm,
 			exitSpeedKms,
 			// The figure the cap is actually stated against: the ship's velocity in
-			// the destination's frame. The absolute one beside it is ~30 km/s and
+			// the target's frame. The absolute one beside it is ~30 km/s and
 			// always will be — that is the station going round its star, not the
 			// ship going anywhere.
 			exitClosingKms,
@@ -337,7 +337,7 @@ check(
 		`(radius ${flight.dropRadiusKm} km)`,
 );
 check(
-	"the ship left cruise at or below the assist cap, relative to its destination",
+	"the ship left cruise at or below the assist cap, relative to its target",
 	flight.exitClosingKms <= flight.assistCapKms + 1e-6,
 	`${flight.exitClosingKms.toFixed(3)} km/s closing against a ${flight.assistCapKms} km/s cap ` +
 		`(${flight.exitSpeedKms.toFixed(1)} km/s absolute — the station's own orbit)`,
