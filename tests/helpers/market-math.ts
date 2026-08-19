@@ -172,7 +172,7 @@ export const commodity = (name: string): Commodity => {
  * real money, and this is the number that answers it.
  */
 export const residualMarginCr = (buyCr: number, sellCr: number): number =>
-	shelfPriceCr(sellCr, -DEFICIT_MAX) - shelfPriceCr(buyCr, DEFICIT_MAX);
+	stockResponse(sellCr, -DEFICIT_MAX) - stockResponse(buyCr, DEFICIT_MAX);
 
 /**
  * The two arithmetics, kept side by side because §2 rejects one of them and a
@@ -483,17 +483,6 @@ export function runsToExhaustion(opts: {
 }
 
 /**
- * §1's pipeline, composed: the price actually shown on the shelf.
- *
- * `marketRow().priceCr` is the price *before* §5's stock response, which is a
- * trap for a consumer that reads the field and stops. Every caller that wants
- * what the player pays goes through here, and §5's response is not exported for
- * direct use by anything but this.
- */
-export const shelfPriceCr = (basePriceCr: number, deficit: number): number =>
-	stockResponse(basePriceCr, deficit);
-
-/**
  * The units actually on the shelf once the deficit is applied.
  *
  * **Clamped at both ends, and the upper one is not decorative.** A deficit runs
@@ -739,3 +728,115 @@ export function bestRunValueCr(good: Commodity): {
 		leg: `${buyStation}→${sellStation}`,
 	};
 }
+
+/**
+ * What **one run** is worth, carrying the best legal cargo available on a leg.
+ *
+ * `runValueCr` prices one good in isolation, and reading §4's table as a ranking
+ * of *runs* was the error it hid: a run carries a full hold **and** all three
+ * sub-tonne goods, because Gold, Platinum and Gem-Stones skip the hold check
+ * (research §2.2). The "or" in that sentence is inclusive, and treating it as
+ * exclusive understated every route that can stack.
+ *
+ * `holdGood` restricts what fills the hold — contraband for a smuggling run,
+ * any legal tonne good otherwise — while the metals ride along either way.
+ */
+export function runTotalCr(opts: {
+	buyEconomy: number;
+	sellEconomy: number;
+	buyStation: StationTypeKey;
+	sellStation: StationTypeKey;
+	buyFluct: number;
+	sellFluct: number;
+	holdGood: (good: Commodity) => boolean;
+}): { totalCr: number; holdCr: number; subTonneCr: number } {
+	let holdCr = 0;
+	let subTonneCr = 0;
+	for (const good of COMMODITIES) {
+		if (good.sellOnly) continue;
+		const buy = marketRow(
+			good,
+			opts.buyEconomy,
+			opts.buyFluct,
+			opts.buyStation,
+		);
+		if (buy.quantity === 0) continue;
+		const margin =
+			marketRow(good, opts.sellEconomy, opts.sellFluct, opts.sellStation)
+				.priceCr - buy.priceCr;
+		if (margin <= 0) continue;
+		const value = runValueCr(good, margin);
+		if (good.unit === "t") {
+			if (opts.holdGood(good)) holdCr = Math.max(holdCr, value);
+		} else if (!good.illegal) {
+			// Every sub-tonne good rides, and they are all legal (§3.4).
+			subTonneCr += value;
+		}
+	}
+	return { totalCr: holdCr + subTonneCr, holdCr, subTonneCr };
+}
+
+/**
+ * §7's equipment prices, as data rather than as a table only prose carries.
+ *
+ * This was the one number block in the spec with no re-derivation path, in a
+ * document whose §1 makes re-derivability the rule — and §6.1 exists precisely
+ * because an unpinned transcribed constant already propagated wrong into three
+ * files. §8's fitting-out total is now computed from these rows instead of
+ * being an arithmetic claim in prose.
+ *
+ * **Prices are the BBC cassette PRXS table** as recorded in
+ * `docs/research/elite-1984-mechanics.md` §3.1. That section explicitly notes
+ * that the *Elite Players Guide* publishes different figures for some items
+ * (ECM 500, Beam 750) and adjudicates in favour of what the cassette code
+ * charges; #4 closed on that reading, so it is the one used here.
+ *
+ * `scope` is `station-types.md` §4.1's: ten universal items gated by tech
+ * level, four exclusive to a station type. Hulls are absent because §7 does not
+ * price them — the ship-roster node does.
+ */
+export interface Equipment {
+	name: string;
+	priceCr: number;
+	scope: "universal" | "refinery" | "shipyard";
+	/** Not in Elite's cassette list — introduced by station-types.md §4.1 and
+	 *  priced here from the disc/Master figures research §3.1 cites. */
+	newToSeelite?: boolean;
+}
+
+export const EQUIPMENT: readonly Equipment[] = [
+	{ name: "Missile", priceCr: 30, scope: "universal" },
+	{ name: "Large Cargo Bay", priceCr: 400, scope: "universal" },
+	{ name: "Extra Pulse Laser", priceCr: 400, scope: "universal" },
+	{ name: "E.C.M. System", priceCr: 600, scope: "universal" },
+	{ name: "Extra Beam Laser", priceCr: 1000, scope: "universal" },
+	{ name: "Escape Pod", priceCr: 1000, scope: "universal" },
+	{ name: "Energy Bomb", priceCr: 900, scope: "universal" },
+	{ name: "Docking Computer", priceCr: 1000, scope: "universal" },
+	{ name: "Galactic Hyperdrive", priceCr: 5000, scope: "universal" },
+	{ name: "Fuel Scoops", priceCr: 525, scope: "refinery" },
+	{ name: "Mining Laser", priceCr: 800, scope: "refinery", newToSeelite: true },
+	{ name: "Extra Energy Unit", priceCr: 1500, scope: "shipyard" },
+	{
+		name: "Military Laser",
+		priceCr: 6000,
+		scope: "shipyard",
+		newToSeelite: true,
+	},
+];
+
+/** §6.1: 0.2 Cr per 0.1 LY — 2 Cr/LY, 14 Cr for the 7 LY tank. */
+export const FUEL_CR_PER_LY = 2;
+export const FUEL_TANK_LY = 7;
+export const MAX_MISSILES = 4;
+
+/** §8's fitting-out cost, derived rather than asserted. */
+export const fullKitCr = (opts: { withMissiles?: boolean } = {}): number =>
+	EQUIPMENT.filter((e) => e.name !== "Missile").reduce(
+		(sum, e) => sum + e.priceCr,
+		0,
+	) +
+	(opts.withMissiles
+		? MAX_MISSILES *
+			(EQUIPMENT.find((e) => e.name === "Missile") as Equipment).priceCr
+		: 0);

@@ -24,6 +24,10 @@
 import { describe, expect, test } from "bun:test";
 import {
 	ALL_ECONOMIES,
+	EQUIPMENT,
+	FUEL_CR_PER_LY,
+	FUEL_TANK_LY,
+	fullKitCr,
 	ALL_FLUCT,
 	ALL_STATIONS,
 	COMMODITIES,
@@ -52,6 +56,7 @@ import {
 	sweepDomain,
 	surveyResiduals,
 	bestRunValueCr,
+	runTotalCr,
 	runValueCr,
 	shelfQuantity,
 	runsToExhaustion,
@@ -241,8 +246,13 @@ describe("§2.3 the retuned Narcotics keeps the smuggling trade alive", () => {
 			.reduce((a, b) => Math.max(a, b), 0);
 		// Measured: Narcotics 1,624 Cr a run against Platinum's 1,386 — a 17%
 		// premium, not the 43% an earlier version claimed by holding legal goods
-		// to the fence leg. The claim survives; the margin is thin, and §12
-		// records that rather than the comfortable number.
+		// to the fence leg.
+		//
+		// **This is a per-good comparison and it is not the whole story.** A run
+		// carries a hold *and* every sub-tonne good, and the test below measures
+		// that — where the ordering reverses. Kept because §4's table is a
+		// per-good ranking and this is what guards it; the run-level truth is
+		// weak joint 11 rather than something hidden behind this assertion.
 		expect(bestRunValueCr(byName("Narcotics")).runCr).toBeGreaterThan(
 			bestLegal,
 		);
@@ -373,6 +383,57 @@ describe("§2.2 the clamp applies to quantity too, and diverges from Bell there"
 			if (differs) diverging.push(commodity.name);
 		}
 		expect(diverging.sort()).toEqual(["Furs", "Gold", "Narcotics", "Platinum"]);
+	});
+
+	test("a legal run out-earns a smuggling run once sub-tonne goods stack", () => {
+		// The finding §4 and weak joint 11 record, pinned so it cannot drift
+		// silently in either direction — including back to "contraband wins",
+		// which would mean the premium was restored without anyone deciding to.
+		//
+		// The cause is structural: Narcotics has a **positive** gradient, so it
+		// buys at low economy and sells at high; the metals are negative-gradient
+		// and want exactly the opposite leg. A smuggling route therefore cannot
+		// also carry peak-value metals.
+		const BYTES = [0x00, 0x3d, 0x7a, 0xb1, 0xee];
+		let bestLegalRun = 0;
+		let bestSmugglingRun = 0;
+		for (const buyEconomy of ALL_ECONOMIES)
+			for (const sellEconomy of ALL_ECONOMIES)
+				for (const buyFluct of BYTES)
+					for (const sellFluct of BYTES) {
+						for (const buyStation of ALL_STATIONS)
+							for (const sellStation of ALL_STATIONS) {
+								if (buyStation === sellStation) continue;
+								bestLegalRun = Math.max(
+									bestLegalRun,
+									runTotalCr({
+										buyEconomy,
+										sellEconomy,
+										buyStation,
+										sellStation,
+										buyFluct,
+										sellFluct,
+										holdGood: (g) => !g.illegal,
+									}).totalCr,
+								);
+							}
+						// Contraband trades only fence→fence (§4).
+						bestSmugglingRun = Math.max(
+							bestSmugglingRun,
+							runTotalCr({
+								buyEconomy,
+								sellEconomy,
+								buyStation: "refinery",
+								sellStation: "refinery",
+								buyFluct,
+								sellFluct,
+								holdGood: (g) => g.illegal,
+							}).totalCr,
+						);
+					}
+		// Measured: 3,746 Cr legal against 2,314 Cr smuggling.
+		expect(bestLegalRun).toBeGreaterThan(3000);
+		expect(bestSmugglingRun).toBeLessThan(bestLegalRun);
 	});
 
 	test("the sub-tonne goods the clamp enriched are worth what §2.2 claims", () => {
@@ -562,5 +623,29 @@ describe("§5 the stock deficit", () => {
 		// rows exceed the closable ratio, which is why the residual is the bound.
 		expect(worstRatio.ratio).toBeGreaterThan(CLOSABLE_RATIO);
 		expect(unclosableRows / rows).toBeLessThan(0.05);
+	});
+});
+
+describe("§7/§8 equipment prices and the fitting-out total", () => {
+	test("the price list is station-types.md §4.1's scope, and the two new items", () => {
+		// The one number block that used to live only in prose. §6.1 is what an
+		// unpinned transcribed constant costs.
+		expect(EQUIPMENT.filter((e) => e.scope === "universal").length).toBe(9);
+		expect(EQUIPMENT.filter((e) => e.scope === "refinery").length).toBe(2);
+		expect(EQUIPMENT.filter((e) => e.scope === "shipyard").length).toBe(2);
+		// Fuel is the tenth universal item; it is priced per LY, not per unit,
+		// so it lives in its own constants rather than in the list.
+		expect(FUEL_CR_PER_LY * FUEL_TANK_LY).toBe(14);
+		// The two items Elite's cassette never had.
+		expect(
+			EQUIPMENT.filter((e) => e.newToSeelite)
+				.map((e) => e.name)
+				.sort(),
+		).toEqual(["Military Laser", "Mining Laser"]);
+	});
+
+	test("§8's fitting-out total is derived from the list", () => {
+		expect(fullKitCr()).toBe(19125);
+		expect(fullKitCr({ withMissiles: true })).toBe(19245);
 	});
 });

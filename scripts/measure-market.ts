@@ -42,8 +42,9 @@ import {
 	bestResidualBetween,
 	bestRunValueCr,
 	commodity,
+	forEachLegalPair,
+	residualMarginCr,
 	marketRow,
-	runValueCr,
 	surveyResiduals,
 	runsToExhaustion,
 	sweepDomain,
@@ -243,12 +244,14 @@ interface Endpoint {
 function pairMargin(
 	buy: Endpoint,
 	sell: Endpoint,
-	legalOnly = true,
 ): { margin: number; good: string } {
+	// Illegal goods are excluded unconditionally: §4 scopes contraband to
+	// fences, so it cannot fly these legs at any price. This was a `legalOnly`
+	// parameter that all three call sites left at its default.
 	let best = { margin: 0, good: "—" };
 	for (const candidate of COMMODITIES) {
 		if (candidate.sellOnly) continue;
-		if (legalOnly && candidate.illegal) continue;
+		if (candidate.illegal) continue;
 		if (candidate.unit !== "t") continue; // §6: sub-tonne goods skip the hold
 		const b = marketRow(candidate, buy.economy, buy.fluct, buy.station);
 		if (b.quantity === 0) continue;
@@ -369,28 +372,48 @@ for (const [label, xs] of [
 
 // ── 5. Does the deficit brake exhaust the intra-system loop? ────────────────
 
-console.log("\n── §5.4: runs to exhaustion on the best intra-system pair ──");
-for (const economy of [0, 3, 7]) {
-	const pair = pairMargin(
-		{ economy, station: "shipyard", fluct: 0x7a },
-		{ economy, station: "refinery", fluct: 0x1c },
-	);
-	if (pair.margin <= 0) {
-		console.log(`economy ${economy}: no profitable shipyard→refinery pair`);
-		continue;
-	}
-	const good = commodity(pair.good);
-	const { runs, margins, profitCr } = runsToExhaustion({
-		buyBaseCr: marketRow(good, economy, 0x7a, "shipyard").priceCr,
-		sellBaseCr: marketRow(good, economy, 0x1c, "refinery").priceCr,
-		maxRuns: 12,
-	});
-	console.log(
-		`economy ${economy}: ${pair.good.padEnd(13)} runs ${runs}\tmargins ${margins
-			.map((m) => m.toFixed(1))
-			.join(" → ")}\ttotal ${profitCr.toFixed(0)} Cr`,
-	);
-}
+console.log(
+	"\n── §5.4: runs to exhaustion on the richest *closable* intra-system pair ──",
+);
+// **Searched, not hardcoded.** An earlier version fixed fluct 0x7a / 0x1c on
+// the shipyard→refinery leg and called the result "the best pair" — which it
+// was not: the 27.2 Cr/t it reported was purely the Computers type spread at
+// those two constants, identical at every economy, while §5.4's own residual
+// table names the richest pairs as the unclosable ones on the excluded
+// direction. The pair that matters here is the richest one the deficit *can*
+// close, since the unclosable ones are bounded by the residual instead.
+let richestClosable = {
+	buyCr: 0,
+	sellCr: 0,
+	margin: 0,
+	good: "—",
+	leg: "",
+	economy: 0,
+};
+forEachLegalPair((pair) => {
+	const margin = pair.sellCr - pair.buyCr;
+	if (margin <= richestClosable.margin) return;
+	if (residualMarginCr(pair.buyCr, pair.sellCr) > 0) return; // unclosable
+	richestClosable = {
+		buyCr: pair.buyCr,
+		sellCr: pair.sellCr,
+		margin,
+		good: pair.good.name,
+		leg: `${pair.buyStation}→${pair.sellStation}`,
+		economy: pair.economy,
+	};
+}, FLUCT_PAIRS);
+const exhaustion = runsToExhaustion({
+	buyBaseCr: richestClosable.buyCr,
+	sellBaseCr: richestClosable.sellCr,
+	maxRuns: 12,
+});
+console.log(
+	`${richestClosable.good} at economy ${richestClosable.economy}, ${richestClosable.leg}: opens at ${fixed(richestClosable.margin, 1)} Cr/t`,
+);
+console.log(
+	`runs ${exhaustion.runs}\tmargins ${exhaustion.margins.map((m) => fixed(m, 1)).join(" → ")}\ttotal ${fixed(exhaustion.profitCr, 0)} Cr`,
+);
 
 // ── 6. Bell's quantity wrap, which §2.2's clamp diverges from ───────────────
 

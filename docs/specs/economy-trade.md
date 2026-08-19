@@ -141,7 +141,9 @@ abundant that Bell made scarce**, and since Gold is sub-tonne (§6) it skips the
 hold check entirely — 63 units ride free *beside* a full cargo hold. Measured,
 that is **353 Cr a run** at its 5.6 Cr/kg spread on the fence leg — 479 Cr over
 every leg — and **Platinum is the bigger beneficiary at 1,134 Cr**, rising to
-**1,386 Cr** across all legs, which is where §4's table ranks it. Both figures are printed by the
+**1,386 Cr** across all legs, which is where §4's table ranks it. The instrument
+prints the all-leg figures and the suite pins the fence-leg ones; §4.1's run
+totals are where the two combine, and they are pinned too. Both figures are printed by the
 instrument's run-value table and pinned by the suite, because every other sweep
 in this spec drops non-tonne goods and the numbers would otherwise have nothing
 behind them. Clamping is chosen for
@@ -353,16 +355,39 @@ so overstated the premium the section exists to justify.
 | Furs | 68.4 Cr/t | refinery→shipyard | 1,368 Cr |
 | Firearms (illegal) | 39.2 Cr/t | refinery→refinery | 784 Cr |
 
-Contraband holds the top of the table, but **by 17%** — not the 43% the earlier
-comparison produced, and not the 2× a per-unit ranking implies. Platinum is
-legal, needs no fence, costs no hold space, and comes within 15% of the best
-smuggling run in the game.
+Contraband holds the top of the *per-good* table, but **by 17%** — not the 43%
+the earlier comparison produced, and not the 2× a per-unit ranking implies.
 
-**That is thin, and it is recorded rather than tuned away** (weak joint 10): it
-is #13's smuggling design that the premium is meant to pay for, and 17% is a
-number a later reader should be able to weigh against the risk #8 will attach to
-carrying contraband. Raising it means changing Narcotics' constants again or
-scoping the sub-tonne goods, neither of which is #7's to decide unprompted.
+### 4.1 And per *run*, contraband loses
+
+A per-good ranking is not what a player optimises. **A single run carries a full
+hold *and* all three sub-tonne goods**, because Gold, Platinum and Gem-Stones
+skip the hold check (§6) — the "or" in the paragraph above is inclusive, and a
+draft of this section priced it as exclusive. Measured over every leg, economy
+pair and byte pair:
+
+| | best single run |
+|---|---|
+| legal — refinery→shipyard, economy 7→0 | **3,746 Cr** (Furs 1,352 + Gold, Platinum, Gem-Stones 2,394) |
+| smuggling — fence→fence | **2,314 Cr** |
+
+**So a legal run out-earns a smuggling run by 62%, and §4's opening requirement
+is not met.** The cause is structural rather than a tuning miss: Narcotics has a
+**positive** gradient, so it buys at low economy and sells at high; the metals
+are negative-gradient and want precisely the opposite leg. **A smuggling route
+cannot also carry peak-value metals**, so contraband does not add to the best
+run — it displaces most of it.
+
+This is recorded, not fixed here (weak joint 11), on the principal's call. It
+touches #13 §5.2's rim-weighted fence geography, which was built on contraband
+being worth carrying, and every available repair — dropping Bell's hold-check
+bypass, retuning Narcotics a second time, or capping sub-tonne stacking — is a
+design decision with reach past this node. **#8 owns contraband's risk side and
+is where the premium can be priced**; it should read this section before
+assuming the economy already pays for the danger it adds.
+
+The suite pins both facts: the per-good ranking §4's table states, and the
+run-level reversal, so neither can drift without failing.
 
 ---
 
@@ -477,11 +502,20 @@ shipyard→refinery pair, run repeatedly — with §5.2's decay applied across t
 4 minutes each run takes to fly, so the brake is measured against a mark that is
 already fading rather than one that only accumulates:
 
-| System economy | Margins per run (Cr/t) | Runs until unprofitable |
-|---|---|---|
-| 0 | 27.2 → 14.2 → 3.0 | 3 |
-| 3 | 27.2 → 10.9 | 2 |
-| 7 | 27.2 → 6.4 | 2 |
+**Searched, not sampled at two convenient bytes.** A draft of this table fixed
+the fluctuation bytes at `0x7a`/`0x1c` on one leg and called the result "the
+best pair"; the 27.2 Cr/t it reported was purely the Computers type spread at
+those constants, identical at every economy. The pair that belongs here is the
+richest one the deficit *can* close — the unclosable ones are bounded by the
+residual above instead:
+
+| | |
+|---|---|
+| richest closable pair | Computers, economy 0, shipyard→refinery |
+| opening margin | 28.4 Cr/t |
+| margins per run | 28.4 → 15.3 → 3.9 |
+| runs until unprofitable | **3** |
+| total take | 953 Cr |
 
 **The brake does not close every pair, and an earlier draft of this section
 claimed it did.** At the ±63 cap the multipliers are 1.315 on the buy side and
@@ -625,7 +659,16 @@ refill on docking with passive regeneration. Nothing in the economy prices it.
 
 ## 7. Equipment and hulls
 
-**Prices are Elite's PRXS table, flat everywhere.** Tech level and
+**Prices are Elite's PRXS table, flat everywhere**, and they live in
+`market-math.ts` as data rather than only in the table below — this was the one
+number block in the spec with no re-derivation path, which is exactly what §6.1
+records the cost of. §8's total is computed from that list, and the suite pins
+both.
+
+A note on the source, because two published figure sets exist: these are the
+**BBC cassette PRXS** prices as recorded in research §3.1, which also documents
+that the *Elite Players Guide* lists others (ECM 500, Beam 750) and adjudicates
+in favour of what the cassette code charges. #4 closed on that reading. Tech level and
 `station-types.md` §4's type exclusives gate *availability*; they do not shift
 price.
 
@@ -672,6 +715,8 @@ A full 20 t hold on the canonical lane is ~700 Cr per run at 3–5 minutes. The
 Large Cargo Bay is the first purchase and lifts that to ~1,225 Cr.
 
 The twelve items above total **19,125 Cr** — 19,245 with a full missile rack.
+Both are `fullKitCr()`, derived from the price list rather than added up in
+prose, and asserted.
 That is about fifteen clean runs, and realistically **1.5–2.5 hours** of trading
 once §5.2's deficit forces route rotation.
 
@@ -703,7 +748,7 @@ question, still fog on the map, and it reaches far past the economy.
 
 All headless `bun` — none of §1–§9 may require a browser, per #7's own framing.
 
-### 10.1 Suite (`tests/market.test.ts`, 34 tests)
+### 10.1 Suite (`tests/market.test.ts`, 37 tests)
 
 1. **Table integrity** — 17 goods; `baseQuantity` signed for all five negative
    rows; exactly three illegal; the sub-tonne set is Gold/Platinum/Gem-Stones
@@ -756,6 +801,15 @@ trusted, in the discipline `scripts/measure-clamp-bite.ts` established:
 ```
 bun run scripts/measure-market.ts [worldCount]     # default 8 worlds
 ```
+
+**`tsconfig.json` now includes `scripts/`.** It did not, so `npx tsc --noEmit`
+— one of the repo's four gates — never looked at the instrument. Two bugs shipped
+through that hole during this node's review: a rename left `marketRow` reading a
+*function*, printing NaN across every row while the suite stayed green, and a
+dropped import produced a `ReferenceError` at load. Closing it also surfaced a
+pre-existing break in `scripts/measure-rejection-bias.ts`, which imported `Vec3`
+and `lengthSq` from `src/sim.ts` — where neither is exported — and so could
+never have run. Fixed here because this node moved the gate.
 
 Reports per-good overflow rates and price spans under both arithmetics —
 including **Bell's own Narcotics row**, so §2.2's 97.66% and §2.3's whole table
@@ -876,3 +930,11 @@ second measurement that could drift from `TYPE_OFFSET` without failing anything.
    is what that geography currently buys. Recorded rather than tuned away:
    raising it means changing Narcotics' constants again or scoping the
    sub-tonne goods, and neither is #7's to decide unprompted.
+11. **Per run, a legal cargo out-earns a smuggling cargo.** §4.1. 3,746 Cr
+    against 2,314 Cr, because sub-tonne goods stack with a full hold and want
+    the opposite economy direction to Narcotics. §4's stated requirement —
+    "contraband must out-earn every legal good" — is therefore **not met at the
+    run level**, only per good. Left recorded rather than repaired on the
+    principal's call: it reaches into #13 §5.2's fence geography and #8's risk
+    pricing, and every fix (dropping the hold-check bypass, a second Narcotics
+    retune, capping sub-tonne stacking) is a decision past this node's scope.
