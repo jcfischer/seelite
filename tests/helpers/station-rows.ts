@@ -106,3 +106,38 @@ export const ALL_GALAXIES: readonly number[] = Array.from(
 export function worldSeeds(n: number): number[] {
 	return Array.from({ length: n }, (_, i) => ((i + 1) * 2654435761) >>> 0);
 }
+
+/**
+ * Every station's *generated fields*, one row each — the companion to
+ * `stationRows` for node #28's `blackMarket` and `spinRpm`.
+ *
+ * Separate from `stationRows` rather than columns added to it, because the two
+ * fixtures make opposite claims and must be able to move independently: the
+ * placement rows are pinned to a world captured *before* these fields existed
+ * and must not move when they land, while these rows can only be captured
+ * after. Widening the placement row would have made repinning one an alarm on
+ * the other, which is the failure `station-orbits.test.ts` warns about between
+ * itself and the galaxy digest.
+ */
+export function stationFieldRows(
+	worldSeed: number,
+	galaxies: readonly number[],
+): string[] {
+	const rows: string[] = [];
+	forEachSystem(worldSeed, galaxies, (record, contents, g) => {
+		for (const s of contents.stations) {
+			rows.push(
+				[
+					g,
+					record.index,
+					s.id,
+					s.type,
+					record.government,
+					s.blackMarket ? "fence" : "-",
+					s.spinRpm.toExponential(12),
+				].join("\t"),
+			);
+		}
+	});
+	return rows;
+}

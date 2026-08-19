@@ -94,8 +94,10 @@ import {
 	bodyVelocity,
 	makeWorld,
 	stepAngular,
+	stationPose,
 	stepWorld,
 } from "./sim";
+import { buildStationMesh } from "./station-mesh";
 import { type WarpField, warpField } from "./warp";
 import { type Vec3, add, dot, length, scale, sub, v3 } from "./vec3";
 // One path to `./units`, deliberately. Keeping a namespace import beside a named
@@ -103,6 +105,12 @@ import { type Vec3, add, dot, length, scale, sub, v3 } from "./vec3";
 // spellings of the same constant — the two-public-paths pattern this branch
 // removed from `sim.ts` and pinned with a source-scan test.
 import * as units from "./units";
+
+/** Scratch vectors for aiming a station's aperture, allocated once: the render
+ *  loop runs per body per frame, and a `Vector3` built there is garbage by the
+ *  time it is read — the same trade `vec3.ts` names for `Vec3`. */
+const MESH_AXIS = new THREE.Vector3(0, 0, 1);
+const STATION_AXIS = new THREE.Vector3();
 
 const {
 	AU_KM,
@@ -234,7 +242,19 @@ class Game {
 	 *  module docstring there says why. */
 	readonly orientation = new THREE.Quaternion();
 
-	private readonly meshes = new Map<string, THREE.Mesh>();
+	/**
+	 * The drawn object per body id — a `Mesh` for a sphere, a `Group` for a
+	 * station, which is why this is typed as `Object3D` rather than `Mesh`.
+	 *
+	 * A station is not a sphere any more (#28): three procedural silhouettes,
+	 * built in kilometres by `station-mesh.ts`. That is what `meshScale` below
+	 * exists for.
+	 */
+	private readonly meshes = new Map<string, THREE.Object3D>();
+	/** The rotating part of each station, and the phase it is currently drawn
+	 *  at. The phase comes from `stationPose` in sim; nothing reads it back off
+	 *  the `Object3D` (`docking.md` §4.1). */
+	private readonly stationSpinners = new Map<string, THREE.Object3D>();
 	/**
 	 * Which layer each body is currently drawn in.
 	 *
@@ -361,6 +381,19 @@ class Game {
 	 *  scheme is: a probe that restated it would assert against its own copy and
 	 *  go falsely red the day the flight model retunes it. */
 	readonly assistCapKms = ASSIST_CAP_KMS;
+
+	/**
+	 * The pose the renderer is mirroring for one station, at the current clock.
+	 *
+	 * Reachable from the handle for the same reason the unit scheme is: the
+	 * spin probe has to know which way a station's aperture faces to view it
+	 * face-on, and a probe that derived the axis itself would be asserting its
+	 * own copy of the rule rather than the renderer's. It reads sim, never the
+	 * scene graph (`docking.md` §4.1).
+	 */
+	poseOfStation(id: string) {
+		return stationPose(this.world.system, id, this.world.gameTime);
+	}
 
 	constructor(seed: number) {
 		this.world = makeWorld(seed);
@@ -610,15 +643,34 @@ class Game {
 		// looking at the thing.
 		const unitSphere = new THREE.SphereGeometry(1, 32, 16);
 		for (const body of this.world.system.bodies) {
-			const material =
-				body.kind === "star"
-					? new THREE.MeshBasicMaterial({ color: body.color })
-					: new THREE.MeshStandardMaterial({
-							color: body.color,
-							roughness: 0.9,
-							metalness: 0.0,
-						});
-			const mesh = new THREE.Mesh(unitSphere, material);
+			// A station is the one body that is not a sphere: #13 §7's three
+			// silhouettes, built in kilometres. Everything else — star, planet,
+			// moon — shares the unit sphere above.
+			const station =
+				body.kind === "station"
+					? this.world.system.contents.stations.find((s) => s.id === body.id)
+					: undefined;
+			if (body.kind === "station" && !station)
+				throw new Error(`station ${body.id} is not in the contents`);
+
+			let mesh: THREE.Object3D;
+			if (station) {
+				// One core radius across, like the unit sphere — so the scaling rule
+				// below is the same for every body regardless of kind.
+				const built = buildStationMesh(station.type);
+				mesh = built.root;
+				this.stationSpinners.set(body.id, built.spinner);
+			} else {
+				const material =
+					body.kind === "star"
+						? new THREE.MeshBasicMaterial({ color: body.color })
+						: new THREE.MeshStandardMaterial({
+								color: body.color,
+								roughness: 0.9,
+								metalness: 0.0,
+							});
+				mesh = new THREE.Mesh(unitSphere, material);
+			}
 			mesh.name = body.id;
 			this.meshes.set(body.id, mesh);
 			// Everything starts far. The arrival point is 1 AU from the star and a
@@ -1362,6 +1414,25 @@ class Game {
 			if (layer !== was) this.setLayer(body, layer);
 			const k = layer === "near" ? 1 : FAR_SCALE;
 			mesh.position.set(dx * k, dy * k, dz * k);
+
+			// Stations are aimed and spun; everything else is a sphere and has no
+			// orientation worth writing. Both numbers come from `stationPose` in
+			// sim — the renderer mirrors the slot's phase rather than owning it
+			// (`docking.md` §4.1), so a docking check never depends on frame
+			// timing.
+			const spinner = this.stationSpinners.get(body.id);
+			if (spinner) {
+				const pose = stationPose(
+					this.world.system,
+					body.id,
+					this.world.gameTime,
+				);
+				// Local +Z is the aperture axis, which is the contract
+				// `station-mesh.ts` is built to.
+				STATION_AXIS.set(pose.axis.x, pose.axis.y, pose.axis.z);
+				mesh.quaternion.setFromUnitVectors(MESH_AXIS, STATION_AXIS);
+				spinner.rotation.z = pose.phaseRad;
+			}
 		}
 
 		// The star also aims the light, in both scenes. Its direction is the same

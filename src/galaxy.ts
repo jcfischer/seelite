@@ -122,6 +122,16 @@ export const DOMAIN = {
 	 *  stream is the same number both times. Adding a tag is the safe operation
 	 *  this table was designed for; reusing one is the unsafe one. */
 	ARRIVAL: 7,
+	/** The per-station flags — today just `blackMarket` (`station-types.md`
+	 *  §5.3). Its own tag rather than a draw inside `STATIONS`, because that
+	 *  stream is consumed in station order and an inserted draw re-places every
+	 *  station after it. */
+	STATION_FLAGS: 8,
+	/** Station spin (`station-types.md` §8.2). Separate from `STATION_FLAGS`
+	 *  rather than sharing it: `spinRpm` is kept conditionally on type, so a
+	 *  third flag added later would shift it — reproducing inside one tag
+	 *  exactly the coupling the tags exist to escape. */
+	STATION_SPIN: 9,
 } as const;
 
 export type DomainName = keyof typeof DOMAIN;
