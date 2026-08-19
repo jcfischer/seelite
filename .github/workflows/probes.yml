@@ -12,27 +12,33 @@
 # so Chromium rasterises in software and everything that renders is several
 # times slower than on a laptop.
 #
-# Seelite has one probe and the suite takes well under a minute, so **it gates
-# on pull requests**. That is a deliberate difference from seekolous, where a
-# ~24-minute suite had to be moved off the pull-request path: a check people
-# route around because it is slow protects nothing. The nightly run is kept
-# alongside, so the day this suite outgrows a pull-request gate the schedule is
-# already there and the change is deleting two lines rather than designing a
-# policy under pressure.
+# ## Manual only, as of #14
 #
-# When that day comes, the honest version is a *subset* gate — a fast tier
-# named explicitly — not a suite everyone learns to ignore.
+# This gated pull requests until the cruise branch, and the day the header
+# above anticipated arrived early — for the reason it did not anticipate.
+#
+# The suite is still fast: four probes, ~20 s on a laptop. What is not fast is
+# the runner. `npx playwright install --with-deps chromium` downloads a browser
+# on every run, and on #20 it **hung for twenty-five minutes** before being
+# cancelled — a stalled download, not a slow suite. That is minutes of billed
+# runner time per push to install a browser that then rasterises in software
+# because the runner has no GPU.
+#
+# So the triggers are gone: no pull request, no push, no nightly. The probes
+# run where they are cheap and where the renderer is real — on a laptop, via
+# `npm run probe`, which `CLAUDE.md` already makes the standard before any
+# change lands. `workflow_dispatch` stays so the suite can be run here by hand
+# when a machine-specific failure needs a second environment to compare with.
+#
+# The trade, stated plainly: nothing on GitHub now proves the browser tier was
+# run. That check moves to the person merging, which is a real loss of
+# enforcement and a deliberate one — the enforcement was costing more than it
+# was catching, and a gate that hangs for twenty-five minutes is one people
+# learn to route around, which is the failure this file's original header
+# warned about in the other direction.
 name: Probes
 
 on:
-  pull_request:
-    branches: [main]
-  push:
-    branches: [main]
-  schedule:
-    # 04:17 UTC — an odd minute on purpose, since everything scheduled on the
-    # hour queues behind everything else scheduled on the hour.
-    - cron: "17 4 * * *"
   workflow_dispatch:
 
 concurrency:
