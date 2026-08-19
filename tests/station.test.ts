@@ -236,16 +236,32 @@ describe("the spin range (docking.md §4)", () => {
  * worlds, 2,000 refineries at `g = 7`, rate 0.0830, inside §5.2's band. That
  * instrument takes a quarter of a minute; this takes about a second.
  */
+/**
+ * The `g = 7` bucket size the gate below needs. At 400 refineries the standard
+ * error on 0.075 is 0.013, so four of them is ±0.052 — wide enough not to
+ * flake, and nine standard errors clear of the 0.20 a broken ramp produces.
+ */
+const MIN_G7 = 400;
+
+/**
+ * One sweep, both assertions.
+ *
+ * `worldSeeds` is a deterministic prefix, so two sweeps of 40 and 400 worlds
+ * regenerate the first 40 twice — about 26 worlds of 2,048 systems built for
+ * nothing, in a suite `CLAUDE.md` says is run on every edit. The deeper sweep
+ * subsumes the shallower one: it passes §9.1's 20,000-refinery floor long before
+ * the `g = 7` bucket fills, so the wide-bucket test reads the same corpus rather
+ * than its own.
+ */
+const CORPUS = fenceTally(
+	worldSeeds(400),
+	ALL_GALAXIES,
+	(t) => t.total[7] >= MIN_G7,
+);
+
 describe("blackMarket frequency tracks government", () => {
 	test("every populated bucket sits on §5.2's ramp", () => {
-		// The same tally the instrument runs, over a corpus a suite can afford —
-		// shared so the two cannot disagree about what a fence rate is.
-		const tally = fenceTally(
-			worldSeeds(40),
-			ALL_GALAXIES,
-			(t) => t.refineries >= 20_000,
-		);
-		const { total, fences, refineries, systems } = tally;
+		const { total, fences, refineries, systems } = CORPUS;
 		// §9.1's floor, kept: it is the corpus incidence is reported over, even
 		// though it is not what sizes the assertions.
 		expect(refineries).toBeGreaterThanOrEqual(20_000);
@@ -300,18 +316,12 @@ describe("blackMarket frequency tracks government", () => {
 	 * and the spec now says so rather than claiming the band is checked here.
 	 */
 	test("the sparse government = 7 bucket sits on the ramp too", () => {
-		const MIN = 400;
-		const tally = fenceTally(
-			worldSeeds(400),
-			ALL_GALAXIES,
-			(t) => t.total[7] >= MIN,
-		);
-		expect(tally.total[7]).toBeGreaterThanOrEqual(MIN);
-		const rate = tally.fences[7] / tally.total[7];
-		const sigma = sigmaOff(rate, fenceProbability(7), tally.total[7]);
+		expect(CORPUS.total[7]).toBeGreaterThanOrEqual(MIN_G7);
+		const rate = CORPUS.fences[7] / CORPUS.total[7];
+		const sigma = sigmaOff(rate, fenceProbability(7), CORPUS.total[7]);
 		console.log(
-			`g=7: ${rate.toFixed(4)} over ${tally.total[7]} refineries from ` +
-				`${tally.worlds} worlds (${sigma >= 0 ? "+" : ""}${sigma.toFixed(2)}σ)`,
+			`g=7: ${rate.toFixed(4)} over ${CORPUS.total[7]} refineries from ` +
+				`${CORPUS.worlds} worlds (${sigma >= 0 ? "+" : ""}${sigma.toFixed(2)}σ)`,
 		);
 		expect(Math.abs(sigma)).toBeLessThan(4);
 	});

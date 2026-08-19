@@ -16,9 +16,18 @@
  *    which is exactly the failure §7 is a decision about.
  *
  * 2. **The slot tracks the spin.** Its screen-space orientation advances at the
- *    station's own `spinRpm`, measured at both ends of §4's range — this world
- *    holds a 0.91 rpm trade station and a 2.95 rpm shipyard, so the two ends are
- *    the generator's own values rather than ones written in by the probe.
+ *    station's own `spinRpm`, and it is measured twice over:
+ *
+ *    - at the two spins this world **generated** — 0.91 rpm and 2.95 rpm — which
+ *      is the renderer tracking values nothing here chose;
+ *    - and at §4's actual **ends**, 0.6 and 3.0 rpm, written onto a station the
+ *      way the ship is placed rather than flown. The generated pair does not
+ *      reach them: 0.91 sits 13% into [0.6, 3.0], so calling it "both ends" —
+ *      which an earlier version of this header did — skipped the slow end
+ *      entirely, and the slow end is where the smallest rotation is measured
+ *      against the tolerance.
+ *
+ *    The ends are read off the page (`spinRange`), never restated here.
  *
  * 3. **The assembly obeys the distance rule**, drydock frame and all: near
  *    within `HANDOFF_KM`, far beyond it, read off the page.
@@ -104,7 +113,8 @@ const MAX_CONTROL_DIFFERENCE = 0.05;
 const SPIN_TOLERANCE = 0.06;
 
 /**
- * One layer-agnostic mesh lookup for every evaluate in this file.
+ * One layer-agnostic mesh lookup and one "settle two frames" for every evaluate
+ * in this file.
  *
  * Installed as an init script rather than repeated three times: the rule "a
  * body is drawn in whichever layer its distance puts it in" is the renderer's,
@@ -117,6 +127,21 @@ const installMeshLookup = (page) =>
 			window.__seelite.nearScene.getObjectByName(id) ??
 			window.__seelite.farScene.getObjectByName(id) ??
 			null;
+		/**
+		 * Place the ship and let the renderer catch up.
+		 *
+		 * **Two** frames, not one: the first may already be in flight when the
+		 * position is written, so it can compose from a mix of the old and new
+		 * ship positions. The second is unambiguously after the write. Written
+		 * once because two copies drift the day that count changes.
+		 */
+		window.__placeShipAt = async (pos) => {
+			const g = window.__seelite;
+			g.world.ship.pos = pos;
+			g.world.ship.vel = { x: 0, y: 0, z: 0 };
+			await new Promise((r) => requestAnimationFrame(() => r()));
+			await new Promise((r) => requestAnimationFrame(() => r()));
+		};
 	});
 
 await guardedOrigin(ORIGIN);
@@ -179,12 +204,11 @@ async function viewAlongAxis(id, rangeKm) {
 			const g = window.__seelite;
 			const body = g.world.system.bodies.find((b) => b.id === bodyId);
 			const pose = g.poseOfStation(bodyId);
-			g.world.ship.pos = {
+			await window.__placeShipAt({
 				x: body.pos.x + pose.axis.x * range,
 				y: body.pos.y + pose.axis.y * range,
 				z: body.pos.z + pose.axis.z * range,
-			};
-			g.world.ship.vel = { x: 0, y: 0, z: 0 };
+			});
 			// A camera looks down its own −Z, so aiming at the station means
 			// mapping −Z onto −axis. `Vector3` is not reachable from the page, so
 			// the two vectors are borrowed from an object that already holds some.
@@ -193,8 +217,6 @@ async function viewAlongAxis(id, rangeKm) {
 				.clone()
 				.set(-pose.axis.x, -pose.axis.y, -pose.axis.z);
 			g.orientation.setFromUnitVectors(from, to);
-			await new Promise((r) => requestAnimationFrame(() => r()));
-			await new Promise((r) => requestAnimationFrame(() => r()));
 		},
 		[id, rangeKm],
 	);
@@ -348,6 +370,10 @@ const iou = (a, b) => {
  */
 async function silhouettesAt(rangeKm, floor, gate) {
 	const shapes = new Map();
+	/** The control capture, kept beside the map rather than inside it: a type-keyed
+	 *  map holding one entry that is not a type makes every consumer filter it
+	 *  back out. */
+	let control = null;
 	for (const station of setup.stations) {
 		await viewAlongAxis(station.id, rangeKm);
 		const shape = await silhouette(station.id);
@@ -368,10 +394,10 @@ async function silhouettesAt(rangeKm, floor, gate) {
 		// instability — the first version did that and read 0.05,
 		// indistinguishable from a flaky mask.
 		if (station.type === "trade" && shape.cells)
-			shapes.set("trade-again", await silhouette(station.id));
+			control = await silhouette(station.id);
 	}
 
-	const types = [...shapes.keys()].filter((t) => t !== "trade-again");
+	const types = [...shapes.keys()];
 	console.log(
 		`\nsilhouettes at ${rangeKm} km, desaturated, ${GRID}×${GRID} after crop:`,
 	);
@@ -392,8 +418,7 @@ async function silhouettesAt(rangeKm, floor, gate) {
 	}
 
 	const first = shapes.get("trade");
-	const again = shapes.get("trade-again");
-	if (!first?.cells || !again?.cells) {
+	if (!first?.cells || !control?.cells) {
 		// Reported rather than thrown: an empty second capture would otherwise
 		// dereference `undefined` inside `iou` and kill the run before a single
 		// FAIL line was printed.
@@ -403,9 +428,9 @@ async function silhouettesAt(rangeKm, floor, gate) {
 			"no second silhouette to compare",
 		);
 	} else {
-		const control = 1 - iou(first.cells, again.cells);
+		const drift = 1 - iou(first.cells, control.cells);
 		console.log(
-			`  control (trade measured twice): 1 − IoU = ${control.toFixed(3)}`,
+			`  control (trade measured twice): 1 − IoU = ${drift.toFixed(3)}`,
 		);
 		// Gated only where the shape comparison is. At the far range the mask is a
 		// few dozen pixels and the control reads about 0.17 — measured, printed,
@@ -415,8 +440,8 @@ async function silhouettesAt(rangeKm, floor, gate) {
 		if (gate)
 			check(
 				`${rangeKm} km — re-measuring one station reproduces its silhouette`,
-				control < MAX_CONTROL_DIFFERENCE,
-				`1 − IoU = ${control.toFixed(3)} (ceiling ${MAX_CONTROL_DIFFERENCE})`,
+				drift < MAX_CONTROL_DIFFERENCE,
+				`1 − IoU = ${drift.toFixed(3)} (ceiling ${MAX_CONTROL_DIFFERENCE})`,
 			);
 	}
 	return shapes;
@@ -439,14 +464,26 @@ console.log(`\nextent at ${FAR_RANGE_KM} km (the cue that survives range):`);
 for (const type of ["trade", "shipyard", "refinery"]) {
 	const shape = far.get(type);
 	console.log(
-		`  ${type}: box ${shape.box.w}×${shape.box.h} px, ${shape.pixels} px lit`,
+		shape
+			? `  ${type}: box ${shape.box.w}×${shape.box.h} px, ${shape.pixels} px lit`
+			: `  ${type}: not captured`,
 	);
 }
-const aspect = (t) => far.get(t).box.w / far.get(t).box.h;
+// Guarded, for the reason the control block gives: a station missing at 60 km
+// is never stored, and dereferencing it here would kill the run with a
+// TypeError on exactly the run that most needed its checks reported.
+const aspect = (t) => {
+	const shape = far.get(t);
+	return shape ? shape.box.w / shape.box.h : null;
+};
+const wide = aspect("shipyard");
+const narrow = aspect("trade");
 check(
 	`at ${FAR_RANGE_KM} km the shipyard is visibly wider than the trade station`,
-	aspect("shipyard") > aspect("trade") * 1.5,
-	`aspect ${aspect("shipyard").toFixed(2)} against ${aspect("trade").toFixed(2)}`,
+	wide !== null && narrow !== null && wide > narrow * 1.5,
+	wide === null || narrow === null
+		? "a station was not captured at range"
+		: `aspect ${wide.toFixed(2)} against ${narrow.toFixed(2)}`,
 );
 
 /**
@@ -584,6 +621,58 @@ for (const station of setup.stations) {
 	);
 }
 
+/**
+ * §4's actual ends, 0.6 and 3.0 rpm, driven onto a station.
+ *
+ * The generated pair above is the renderer tracking values the probe did not
+ * choose, which is the stronger claim — but it does not reach either end, and
+ * the slow end is where the rotation measured in a fixed interval is smallest
+ * against `SPIN_TOLERANCE`. So the spin is written the way the ship is placed:
+ * a state the game could have generated, set directly.
+ *
+ * The two values come off the page (`spinRange`), so a retune of §4's range
+ * moves this probe with it rather than against it. The station's own spin is
+ * restored afterwards — a probe that left the world altered would make every
+ * check after it read a world nobody generated.
+ */
+const ends = await page.evaluate(() => {
+	const g = window.__seelite;
+	return [g.spinRange.minRpm, g.spinRange.maxRpm];
+});
+const spinner = setup.stations.find((s) => s.spinRpm > 0);
+for (const rpm of ends) {
+	await page.evaluate(
+		([id, value]) => {
+			const g = window.__seelite;
+			const station = g.world.system.contents.stations.find((s) => s.id === id);
+			station.spinRpm = value;
+		},
+		[spinner.id, rpm],
+	);
+	const sample = await angleRateRadS(spinner.id, 1500);
+	const expected = (2 * Math.PI * rpm) / 60;
+	console.log(
+		`  ${spinner.type} driven to ${rpm.toFixed(2)} rpm (§4's ` +
+			`${rpm === ends[0] ? "slow" : "fast"} end): ${sample.rate.toFixed(4)} rad/s ` +
+			`measured, +${expected.toFixed(4)} expected`,
+	);
+	check(
+		`the slot tracks §4's ${rpm === ends[0] ? "slow" : "fast"} end, ${rpm.toFixed(2)} rpm`,
+		!sample.missing &&
+			Math.abs(sample.rate - expected) / expected < SPIN_TOLERANCE,
+		sample.missing
+			? "no aperture in the mesh"
+			: `${((100 * (sample.rate - expected)) / expected).toFixed(1)}% off`,
+	);
+}
+await page.evaluate(
+	([id, value]) => {
+		const g = window.__seelite;
+		g.world.system.contents.stations.find((s) => s.id === id).spinRpm = value;
+	},
+	[spinner.id, spinner.spinRpm],
+);
+
 const pad = setup.stations.find((s) => s.spinRpm === 0);
 if (pad) {
 	const sample = await angleRateRadS(pad.id, 1200);
@@ -622,14 +711,11 @@ if (shipyard) {
 				const g = window.__seelite;
 				const body = g.world.system.bodies.find((b) => b.id === id);
 				const n = Math.hypot(body.pos.x, body.pos.y, body.pos.z);
-				g.world.ship.pos = {
+				await window.__placeShipAt({
 					x: body.pos.x * (1 + distanceKm / n),
 					y: body.pos.y * (1 + distanceKm / n),
 					z: body.pos.z * (1 + distanceKm / n),
-				};
-				g.world.ship.vel = { x: 0, y: 0, z: 0 };
-				await new Promise((r) => requestAnimationFrame(() => r()));
-				await new Promise((r) => requestAnimationFrame(() => r()));
+				});
 				const near = g.nearScene.getObjectByName(id);
 				const far = g.farScene.getObjectByName(id);
 				const mesh = near ?? far;

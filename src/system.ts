@@ -207,8 +207,15 @@ export interface Belt {
 	halfWidthAu: number;
 }
 
-/** Re-exported from `station.ts`, which owns the type and every table keyed on
- *  it. Importers here are unchanged; the tables live next to the type. */
+/**
+ * Re-exported from `station.ts`, which owns the type and every table keyed on
+ * it.
+ *
+ * @deprecated Import `StationType` from `./station`. This alias exists so #28
+ * did not have to touch every importer in one commit; it is a migration
+ * convenience, not a boundary, and two paths to one type give new code no
+ * signal about which is canonical.
+ */
 export type { StationType };
 
 export interface Station {

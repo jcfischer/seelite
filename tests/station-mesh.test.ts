@@ -7,10 +7,18 @@
  * this cannot see — whether the three read *apart* on screen, and whether the
  * slot turns.
  *
- * The claim being guarded is `STATION_GEOMETRY.silhouetteRadiusKm`, which was a
- * number nothing checked until sage's review of #28 measured it: the drydock
- * frame reached 2.0 km against a declared 1.5, and the refinery's flare stacks
- * 0.85 against 0.75. A budget with no test is a comment.
+ * The claim being guarded is `STATION_SILHOUETTE_KM` (`station-mesh.ts`), which
+ * was a number nothing checked until sage's review of #28 measured it: the
+ * drydock frame reached 2.0 km against §5's declared 1.5, and the refinery's
+ * stacks 0.85 against a then-declared 0.75. A budget with no test is a comment.
+ *
+ * The two rows are different kinds of claim and the assertions below cannot tell
+ * them apart, so it is said here instead: the shipyard's 1.5 km comes from
+ * `docking.md` §5, and its overrun was fixed by **resizing the frame**. The
+ * refinery has no spec figure, so its 0.9 was set from the mesh's own 0.837 —
+ * the overrun there was fixed by **raising the number**, and on the day it was
+ * written that row could not have failed. It is a ratchet against future growth,
+ * not a design constraint.
  */
 
 import { describe, expect, test } from "bun:test";

@@ -67,6 +67,19 @@ export interface StationGeometry {
 }
 
 /**
+ * **The display budget is not here.** How far a station's *drawn* object
+ * reaches — the drydock frame, the asteroid, the flare stacks — is
+ * `STATION_SILHOUETTE_KM` in `station-mesh.ts`, keyed on the same union.
+ *
+ * Two tables in two files, deliberately: `docking.md` §5 says the frame is
+ * silhouette and not dockable geometry, and this record is what #9's checks
+ * read. The separation is what makes "docking may not read it" a fact about
+ * imports rather than a comment. The cost is that a fourth station type is two
+ * edits, which is why this paragraph is here — so the second one is findable
+ * from the first.
+ */
+
+/**
  * Per-type geometry (`docking.md` §5).
  *
  * A `Record<StationType, …>` rather than a lookup with a default, for

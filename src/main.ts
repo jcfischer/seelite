@@ -98,6 +98,7 @@ import {
 	stepAngular,
 	stepWorld,
 } from "./sim";
+import { SPIN_RPM_RANGE } from "./station";
 import { buildStationMesh } from "./station-mesh";
 import { type WarpField, warpField } from "./warp";
 import { type Vec3, add, dot, length, scale, sub, v3 } from "./vec3";
@@ -382,6 +383,11 @@ class Game {
 	 *  scheme is: a probe that restated it would assert against its own copy and
 	 *  go falsely red the day the flight model retunes it. */
 	readonly assistCapKms = ASSIST_CAP_KMS;
+
+	/** §4's spin range, reachable from the handle for the same reason: the spin
+	 *  probe drives a station to both ends of it, and a probe that restated
+	 *  0.6 and 3.0 would assert against its own copy. */
+	readonly spinRange = SPIN_RPM_RANGE;
 
 	/**
 	 * The pose the renderer is mirroring for one station, at the current clock.

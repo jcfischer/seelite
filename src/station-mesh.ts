@@ -58,8 +58,16 @@ import { STATION_GEOMETRY, type StationType } from "./station";
  *
  * A **budget, not a description**: `tests/station-mesh.test.ts` asserts no
  * vertex of a built station lies outside it, so a frame or a flare stack cannot
- * quietly grow. The shipyard's 1.5 km is §5's own figure; the refinery's is this
- * build's, set from what its mesh measures.
+ * quietly grow.
+ *
+ * The two rows are not the same kind of number, and it is worth being plain
+ * about it. The shipyard's 1.5 km is `docking.md` §5's own figure, so its test
+ * can fail against the spec and did — the frame reached 2.0 km and was resized.
+ * The refinery's 0.9 is a **ratchet**: there is no spec figure for it, so it was
+ * set from what the mesh measures (0.837 km) plus a little headroom, and on the
+ * day it was written it could not have failed. It catches growth from here, and
+ * nothing else. Reading it as a design constraint would be reading a
+ * measurement as an intention.
  */
 export const STATION_SILHOUETTE_KM: Record<StationType, number> = {
 	trade: 0.6,
@@ -260,8 +268,7 @@ function buildCoriolisCore(type: StationType, color: number): THREE.Group {
 		panes.setMatrixAt(i, matrix.compose(position, quaternion, one));
 	}
 	panes.instanceMatrix.needsUpdate = true;
-	const windows = panes;
-	group.add(windows);
+	group.add(panes);
 	return group;
 }
 
