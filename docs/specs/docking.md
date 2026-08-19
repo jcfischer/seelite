@@ -103,13 +103,24 @@ the station's side and one from the player's. They merge.
 | # | Check | Tolerance | 1984 |
 |---|---|---|---|
 | 1 | **Not hostile** | `station.hostile === false` | bit 7 of byte 32 |
-| 2 | **Axis alignment** — angle between the docking axis and the station→ship vector | ≤ **35°** | 26° nose + 22° cone, merged |
-| 3 | **Inbound** — on the outer side of the slot plane, and closing | sign test | sign of z |
+| 2 | **Axis alignment** — **both** the station→ship vector **and** the ship's nose, each against the docking axis | ≤ **35°** each | 26° nose + 22° cone, merged |
+| 3 | **Inbound** — the axial component of `v_rel` points into the slot | sign test | sign of z |
 | 4 | **Roll match** — ship's up-vector against the slot's long axis, in the slot plane | ≤ **50°** | 33.6° |
 | 5 | **Closing speed**, in the station's frame, at the moment of slot-plane crossing | ≤ **0.10 km/s** | *had no such check* |
 
 All five are evaluated **at the instant the ship crosses the slot plane**. A
-failure of any one is a failed entry (§2).
+failure of any one is a failed entry (§2). Two consequences of *that instant*
+being the evaluation point, both of which decide implementations:
+
+- **Check 2 is two angles, not one.** A purely positional cone constrains where
+  the ship *is* and says nothing about where it points, so a ship translating up
+  the axis while facing 90° off would pass everything — check 4 only measures
+  roll. Under #5's assist, lateral drift decays and velocity tends to follow the
+  nose, which is exactly why the attitude term must be written down rather than
+  assumed: it is a property of one flight mode, not of the geometry.
+- **Check 3 is a velocity sign, not a position sign.** At the crossing instant
+  the axial *position* is zero by construction, so a side-of-plane test has no
+  defined answer there — and §9.1.1 requires boundary rows.
 
 **Check 4 does not apply to the refinery pad** — that is the whole of #13 §6's
 "the second is *genuinely easier* rather than merely different". Dropping the
@@ -124,17 +135,40 @@ The gate is the one dimension 1984 never tested, and it is added because #5's
 flight model made it testable: throttle commands speed, so "arrive slow" is a
 thing a player can actually do rather than a thing they can only hope for.
 
-`0.10 km/s` is not arbitrary. It is `vicinityKm / approachLeadS` evaluated at
-300 m — #14's own approach clamp, extended to the last three hundred metres. A
-player who flies the final approach at the same law cruise used to deliver them
-passes the gate without being told the number. Braking to it from the 2 km/s
-assist cap costs `(2² − 0.1²) / (2 · 2)` = **1.0 km**, which at §5's 0.6 km
-station radius is a station-and-a-half of runway — visible, and the reason the
-number is not tighter.
+`0.10 km/s` is not arbitrary. It is #14's own approach clamp —
+`targetKm / approachLeadS` (`src/cruise.ts:382`), with `approachLeadS = 3` —
+evaluated at a target range of 300 m, extended past the vicinity into the last
+three hundred metres. A player who flies the final approach under the same law
+cruise used to deliver them passes the gate without being told the number.
+
+Braking to it from the 2 km/s assist cap costs `(2² − 0.1²) / (2 · THRUST_KMS2)`
+with `THRUST_KMS2 = 2.0` km/s² (`src/sim.ts`, tuned in #5's prototype) =
+**1.0 km** — most of a trade station's 1.2 km width of runway. That is visible
+at approach range, and it is the reason the number is not tighter.
 
 The clamp itself is cruise-only, so this coherence is a mnemonic, not a
-mechanism. **Confirm by flying it** (§7.2) before treating 0.10 as settled;
+mechanism. **Confirm by flying it** (§9.2) before treating 0.10 as settled;
 it is the number in this spec most likely to move.
+
+### 3.2 Why 35° and 50° (chosen, not derived)
+
+Stated plainly because §2 claims the tolerances now carry the whole skill tax,
+and a claim like that cannot rest on numbers with no account of themselves.
+They are **1.35× and 1.5× the 1984 widths**, and neither falls out of anything:
+
+- **35°** has to cover what *two* checks covered. 1984's 26° and 22° tested the
+  same axis from opposite ends and a ship could sit near the limit of both at
+  once, so one merged 26° cone would be *tighter* than the pair it replaces,
+  not equal to it.
+- **50°** is where the roll match stops being a reflex and stays a tracking
+  problem. At §4's fastest spinner it is still only a 5.6 s non-tracking window,
+  so widening it did not remove the test.
+
+**The counter-reading is live**: that D1 made failure cheap and every tolerance
+loosened in the same breath. Nothing in this section refutes it — the answer is
+that these get flown, not argued, and §11 records both numbers alongside the
+0.10 km/s gate as provisional for exactly that reason. If flying says the merged
+check should be 28° and the roll 40°, the spec was wrong here and nowhere else.
 
 ---
 
@@ -143,8 +177,8 @@ it is the number in this spec most likely to move.
 **Decision D3: `spinRpm` draws uniform on [0.6, 3.0] for the two Coriolis
 types, 0 for the refinery pad — wide, and uncorrelated with anything.**
 
-#13 §8.4 required the field and handed its range here, saying the range *is* the
-difficulty dial. What spin costs is that the roll match must be **tracked**
+#13 §6 required the field and handed its range here, saying the range *is* the
+difficulty dial (#13 §8.4 restates the obligation). What spin costs is that the roll match must be **tracked**
 through the final approach rather than set once:
 
 | spin | °/s | Non-tracking roll window (100° of arc) |
@@ -165,10 +199,10 @@ place you notice. `uniform(0.6, 3.0)` puts **41.7%** of Coriolis stations above
 
 **It is uncorrelated with tech level or government** — a correlation was on the
 table and was rejected. So a 3 rpm station can be the player's second-ever dock.
-That is accepted, not overlooked: with D1's damage-not-death it costs a repair
-and a second attempt, and the correlation cascade (#6) is already dense enough
+That is accepted, not overlooked: under D1 it costs damage and a second attempt
+rather than the run, and the correlation cascade (#6) is already dense enough
 that adding difficulty to it would make one more thing predictable from the
-system record.
+system record. **What that damage then costs to undo is unowned** — see §11.5.
 
 ### 4.1 The slot spins in place
 
@@ -194,11 +228,22 @@ answers for it.
 | shipyard | 0.6 km (Coriolis core) | identical slot | toward the parent body |
 | refinery | 0.4 km (drum) | pad, 0.15 × 0.15 km | radially outward from the star |
 
+**Aperture dimensions are provisional**, on the same footing as §3's tolerances:
+#26 has not fixed a hull, and §10 requires the slot to admit the largest one it
+introduces. Probe fixtures read the aperture from the geometry constant rather
+than restating it, so a later widening moves one table and no tests.
+
 The shipyard's drydock frame (#13 §7) extends to roughly 1.5 km and is **not
 dockable geometry** — it is silhouette. Docking geometry is a drawn object and
 inherits the map's distance rule (#13 §6, *Layering*): near layer within
 `HANDOFF_KM` of the camera, far beyond it, hysteresis band. It does not get a
 fixed layer for being "close by".
+
+**Every station draws once from `DOMAIN.STATION_SPIN`; the refinery discards the
+value and stores 0.** Skipping the draw for refineries would make the draw count
+depend on station type, so inserting a refinery would shift the spin of every
+station generated after it — the stream coupling the per-domain tags exist to
+prevent, reintroduced inside a single tag.
 
 **`radiusKm` is a per-type constant, not a draw.** It reads from the table with
 no call into `DOMAIN.STATION_SPIN` or any other stream, so adding it shifts no
@@ -217,14 +262,25 @@ vicinity (10,000 km = `HANDOFF_KM`).
 
 | Reply | When | Effect |
 |---|---|---|
-| **granted** | slot free, station not hostile, scan passed | a 180 s window in which check 1 can pass. Expiry returns to `none`; re-request is free |
+| **granted** | slot free, station not hostile, scan passed | a **600 s** window. Expiry returns to `none`; re-request is free |
 | **queued (n)** | slot occupied | promoted when a slot frees |
 | **denied** | station already hostile, or #13 §5.1.1's shipyard contraband scan fails | no window; the reason is #8's to compute |
 
-**Clearance is mandatory in effect, and that is deliberate.** Crossing the slot
-plane without a live grant turns the station hostile at that instant — which
-fails check 1 — so the entry is a failed dock under §2 *and* the station is now
-hostile until #8's legal-status decay clears it. There is no fine, no soft path,
+**600 s, because a shorter window expires before the approach can be flown.**
+§1 hands the player control at a pass inside ~600 km, and normal flight is
+capped at 2 km/s, so closing that gap is **300 s at best**, before any braking
+or missed pass. A 180 s window — the first figure written here — would have
+expired on every grant taken where the player is actually flying, which is the
+failure mode of a timer sized against nothing.
+
+**Clearance is a precondition, evaluated before §3's checks — not check 1.**
+Crossing the slot plane without a live grant is a failed entry *and* turns the
+station hostile, and the ordering has to be written down because the flip and
+check 1 would otherwise resolve at the same instant: an implementation that read
+`station.hostile` before applying the flip would let barging dock cleanly, and
+clearance would stop being mandatory through a read ordering nobody chose. So
+the entry condition is `grantLive && !hostile`, in that order, and #8's
+legal-status decay is what later clears the hostility. There is no fine, no soft path,
 and no new economic object: one rule, Elite's own (shoot near the station and
 you cannot dock there), reached by a different route.
 
@@ -242,7 +298,7 @@ NPC traffic is #8's and unbuilt, so slot occupancy is always zero in the live
 game and every request is granted at once. The objection to this is that an
 unexercised branch rots, and the answer is a build obligation rather than a
 promise: **the queued and denied branches are driven by an injected occupancy
-input in the headless tests** (§7.1), so they are exercised code from the day
+input in the headless tests** (§9.1), so they are exercised code from the day
 they are written. #8 replaces the injection with real ships; it does not
 implement the branch.
 
@@ -316,9 +372,11 @@ anything rendered or spatial gets a browser probe.
    interactions, asserting the only differing outcome is the roll row.
 4. **Spin generation**: range `[0.6, 3.0]` for the two Coriolis types, exactly
    0 for the refinery, drawn from `DOMAIN.STATION_SPIN` and from no other tag;
-   a determinism fixture; and the measured fraction above 2 rpm pinned at
-   41.7% ± sampling error, because §4's "the hard end is common" is a claim
-   about a distribution and claims about distributions get measured.
+   a determinism fixture; and the measured fraction above 2 rpm asserted over
+   **10,000 stations drawn from a fixed seed set, `|p̂ − 0.417| < 0.015`**.
+   §4's "the hard end is common" is a claim about a distribution, and a
+   distribution claim with no N and no bound is an assertion that cannot fail —
+   the defect §9.1.5's "byte-identical" exists to avoid.
 5. **`radiusKm` shifts no stream** — the existing `tests/station-orbits.test.ts`
    fixture is byte-identical before and after the field is added.
 6. **The clearance state machine**, including `queued` and `denied`, driven by
@@ -354,7 +412,12 @@ before merge.
 
 ## 10. Hand-offs
 
-- **#8 (combat)** — owns `DAMAGE_SCALE` under §2.1's two bounds; the
+- **#8 (combat)** — owns **how damage is undone** (§11.5): D1 says a failed dock
+  costs damage rather than the run, and no repair, refit or hull-restore mechanic
+  exists anywhere in this repo. Whatever #8 chooses — restoration on docking, a
+  priced repair, or nothing at all — D1's "costs you something, not everything"
+  is only true once it exists. It also owns `DAMAGE_SCALE` under §2.1's two
+  bounds; the
   legal-status predicate behind §6's shipyard scan and the decay that clears
   station hostility; and the NPC traffic that replaces §6.1's injected
   occupancy. It inherits §9.1.7 as a test it must satisfy, not author.
@@ -373,5 +436,10 @@ before merge.
    mitigated by injected-occupancy tests rather than by a promise.
 3. **A 3 rpm station can be anyone's second dock** (§4). Accepted as the cost of
    an uncorrelated dial.
-4. **0.10 km/s is derived, not flown** (§3.1). It is the number in this spec
-   most likely to move, and §9.2's probes are where it will move.
+4. **Three numbers are derived or chosen, not flown** — the 0.10 km/s gate
+   (§3.1), and check 2's 35° and check 4's 50° (§3.2). They are where this spec
+   is most likely to be wrong, and §9.2's probes are where that shows up.
+5. **Nothing owns repairing the damage D1 inflicts.** Handed to #8 (§10) rather
+   than invented here, because it is denominated in #8's pools and #7's table is
+   deliberately unamended. Until it lands, D1's failure model is *survivable*
+   but not yet *costly* — the punishment is real and the bill is unwritten.
