@@ -140,6 +140,9 @@ if (new Set(setup.stations.map((s) => s.type)).size !== 3) {
  * The ship is placed rather than flown, for `probe-handoff.mjs`'s reason: the
  * distances involved take hours under thrust, and the renderer cannot tell a
  * placed ship from a flown one.
+ *
+ * Returns nothing: every caller's next act reads the page itself, and a payload
+ * none of them used read as one they were meant to.
  */
 async function viewAlongAxis(id, rangeKm) {
 	return page.evaluate(
@@ -163,7 +166,6 @@ async function viewAlongAxis(id, rangeKm) {
 			g.orientation.setFromUnitVectors(from, to);
 			await new Promise((r) => requestAnimationFrame(() => r()));
 			await new Promise((r) => requestAnimationFrame(() => r()));
-			return { axis: pose.axis, gameTime: g.world.gameTime };
 		},
 		[id, rangeKm],
 	);
@@ -213,64 +215,81 @@ async function silhouette(id) {
 			mesh.visible = true;
 			g.render(0);
 
-			// Anything that changed by more than a JPEG-ish nudge is the station.
-			// The threshold is on a difference of two frames of the same scene, so
-			// it is not a lighting guess.
-			const mask = new Uint8Array(W * H);
-			let count = 0;
-			let minX = W;
-			let maxX = -1;
-			let minY = H;
-			let maxY = -1;
-			for (let i = 0; i < W * H; i++) {
-				if (Math.abs(withIt[i] - without[i]) <= 6) continue;
-				mask[i] = 1;
-				count++;
-				const x = i % W;
-				const y = (i / W) | 0;
-				if (x < minX) minX = x;
-				if (x > maxX) maxX = x;
-				if (y < minY) minY = y;
-				if (y > maxY) maxY = y;
-			}
-			if (count === 0) return { empty: true, W, H };
-
-			// Crop to the station's own bounding box and resample, so the shapes are
-			// compared and their apparent sizes are not.
-			const bw = maxX - minX + 1;
-			const bh = maxY - minY + 1;
-			const cells = [];
-			for (let gy = 0; gy < grid; gy++) {
-				for (let gx = 0; gx < grid; gx++) {
-					let hits = 0;
-					let seen = 0;
-					// Both ends relative to the box, then offset once. Adding `minX`
-					// to a value that already carried it is how the first version of
-					// this loop sampled a strip miles off the station and scored
-					// every pair identical — at zero, which is what an empty mask
-					// scores and so looked like a shape claim rather than a bug.
-					const x0 = minX + Math.floor((gx * bw) / grid);
-					const x1 =
-						minX +
-						Math.max(
-							Math.floor((gx * bw) / grid) + 1,
-							Math.floor(((gx + 1) * bw) / grid),
-						);
-					const y0 = minY + Math.floor((gy * bh) / grid);
-					const y1 =
-						minY +
-						Math.max(
-							Math.floor((gy * bh) / grid) + 1,
-							Math.floor(((gy + 1) * bh) / grid),
-						);
-					for (let y = y0; y < Math.min(y1, H); y++)
-						for (let x = x0; x < Math.min(x1, W); x++) {
-							seen++;
-							hits += mask[y * W + x];
-						}
-					cells.push(seen > 0 && hits / seen > 0.5 ? 1 : 0);
+			/**
+			 * The changed pixels, and the box around them.
+			 *
+			 * Anything that moved by more than a nudge between the two frames is
+			 * the station: the threshold is on a difference of two renders of the
+			 * same scene, so it is not a lighting guess.
+			 */
+			const maskAndBox = (a, b) => {
+				const mask = new Uint8Array(W * H);
+				let count = 0;
+				let minX = W;
+				let maxX = -1;
+				let minY = H;
+				let maxY = -1;
+				for (let i = 0; i < W * H; i++) {
+					if (Math.abs(a[i] - b[i]) <= 6) continue;
+					mask[i] = 1;
+					count++;
+					const x = i % W;
+					const y = (i / W) | 0;
+					if (x < minX) minX = x;
+					if (x > maxX) maxX = x;
+					if (y < minY) minY = y;
+					if (y > maxY) maxY = y;
 				}
-			}
+				return {
+					mask,
+					count,
+					minX,
+					minY,
+					w: maxX - minX + 1,
+					h: maxY - minY + 1,
+				};
+			};
+
+			/**
+			 * Crop to the box and resample, so shapes are compared and apparent
+			 * sizes are not.
+			 *
+			 * Its own function because the index arithmetic here already produced
+			 * one silent bug: both cell edges are computed **relative to the box**
+			 * and offset once. The first version added `minX` to a value that had
+			 * already carried it, sampled a strip well off the station, and scored
+			 * every pair at zero — which is also what an empty mask scores, so it
+			 * read as a claim about shape rather than as a defect.
+			 */
+			const resample = (box, grid) => {
+				const edge = (i, span) => Math.floor((i * span) / grid);
+				const cells = [];
+				for (let gy = 0; gy < grid; gy++) {
+					for (let gx = 0; gx < grid; gx++) {
+						const x0 = edge(gx, box.w);
+						const x1 = Math.max(x0 + 1, edge(gx + 1, box.w));
+						const y0 = edge(gy, box.h);
+						const y1 = Math.max(y0 + 1, edge(gy + 1, box.h));
+						let hits = 0;
+						let seen = 0;
+						for (let y = box.minY + y0; y < Math.min(box.minY + y1, H); y++)
+							for (let x = box.minX + x0; x < Math.min(box.minX + x1, W); x++) {
+								seen++;
+								hits += box.mask[y * W + x];
+							}
+						cells.push(seen > 0 && hits / seen > 0.5 ? 1 : 0);
+					}
+				}
+				return cells;
+			};
+
+			const box = maskAndBox(withIt, without);
+			if (box.count === 0) return { empty: true, W, H };
+			const cells = resample(box, grid);
+			const count = box.count;
+			const bw = box.w;
+			const bh = box.h;
+
 			return {
 				cells,
 				pixels: count,
@@ -345,16 +364,29 @@ for (let i = 0; i < types.length; i++) {
  * figure above meaningless rather than merely noisy.
  */
 {
-	const control =
-		1 - iou(shapes.get("trade").cells, shapes.get("trade-again").cells);
-	console.log(
-		`  control (trade measured twice): 1 − IoU = ${control.toFixed(3)}`,
-	);
-	check(
-		"re-measuring one station reproduces its silhouette",
-		control < MAX_CONTROL_DIFFERENCE,
-		`1 − IoU = ${control.toFixed(3)} (ceiling ${MAX_CONTROL_DIFFERENCE})`,
-	);
+	const first = shapes.get("trade");
+	const again = shapes.get("trade-again");
+	if (!first?.cells || !again?.cells) {
+		// Reported rather than thrown: an empty second capture would otherwise
+		// dereference `undefined` inside `iou` and kill the run before a single
+		// FAIL line was printed — the failure `probe-handoff.mjs` guards against
+		// with its `camSimMissing` marker.
+		check(
+			"re-measuring one station reproduces its silhouette",
+			false,
+			"no second silhouette to compare",
+		);
+	} else {
+		const control = 1 - iou(first.cells, again.cells);
+		console.log(
+			`  control (trade measured twice): 1 − IoU = ${control.toFixed(3)}`,
+		);
+		check(
+			"re-measuring one station reproduces its silhouette",
+			control < MAX_CONTROL_DIFFERENCE,
+			`1 − IoU = ${control.toFixed(3)} (ceiling ${MAX_CONTROL_DIFFERENCE})`,
+		);
+	}
 }
 
 /**

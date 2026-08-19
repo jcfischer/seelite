@@ -51,9 +51,11 @@ export interface StationGeometry {
 	 * captured asteroid, the flare stacks.
 	 *
 	 * Not dockable geometry (`docking.md` §5) and nothing about docking may read
-	 * it. It is here because the renderer needs to know how big the object it is
-	 * drawing is, and because a silhouette that is smaller than the core would be
-	 * a mistake nothing else would catch.
+	 * it. It is a **budget, not a description**: `tests/station-mesh.test.ts`
+	 * asserts that no vertex of the built mesh lies outside it, so a frame or a
+	 * flare stack cannot quietly grow. The shipyard's 1.5 km is §5's own figure;
+	 * the refinery's is this build's, set from what the mesh measures so that
+	 * later growth is a failing test rather than a discovery.
 	 */
 	silhouetteRadiusKm: number;
 }
@@ -91,8 +93,9 @@ export const STATION_GEOMETRY: Record<StationType, StationGeometry> = {
 		coreRadiusKm: 0.4,
 		aperture: { kind: "pad", widthKm: 0.15, heightKm: 0.15 },
 		axis: "outward",
-		// The captured asteroid the drum is sunk into, plus the flare stacks.
-		silhouetteRadiusKm: 0.75,
+		// The captured asteroid the drum is sunk into, plus the flare stacks —
+		// measured at 0.848 km on the built mesh, and rounded up to a budget.
+		silhouetteRadiusKm: 0.9,
 	},
 };
 

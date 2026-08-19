@@ -25,14 +25,23 @@
  * errors of `fenceProbability(g)`, or if the two ends miss §5.2's bands.
  */
 
-import { GALAXY_COUNT, generateGalaxy } from "../src/galaxy";
+import { GALAXY_COUNT } from "../src/galaxy";
 import { fenceProbability } from "../src/station";
-import { generateContents } from "../src/system";
-import { worldSeeds } from "../tests/helpers/station-rows";
+import {
+	fenceTally,
+	sigmaOff,
+	worldSeeds,
+} from "../tests/helpers/station-rows";
 
 /** The `g = 7` bucket size to sweep for. 2,000 puts the standard error at
  *  0.0059, so §5.2's ±0.025 band is a little over four of them. */
 const MIN_G7 = Number(process.argv[2] ?? 2000);
+if (!Number.isFinite(MIN_G7) || MIN_G7 <= 0) {
+	// Same rule as `finite()` below: a NaN here would never satisfy the stop
+	// condition, so the run would grind silently through every world of the
+	// ceiling and report a corpus nobody asked for.
+	throw new Error(`minG7 must be a positive number, got ${process.argv[2]}`);
+}
 /** A ceiling, so a change that stops generating refineries at all reports that
  *  rather than sweeping for ever. */
 const MAX_WORLDS = 2000;
@@ -45,27 +54,15 @@ function finite(label: string, x: number): number {
 	return x;
 }
 
-const total = new Array(8).fill(0);
-const fences = new Array(8).fill(0);
-let worlds = 0;
-let systems = 0;
+const ALL_GALAXIES = Array.from({ length: GALAXY_COUNT }, (_, i) => i);
+const tally = fenceTally(
+	worldSeeds(MAX_WORLDS),
+	ALL_GALAXIES,
+	(t) => t.total[7] >= MIN_G7,
+);
+const { total, fences, systems, worlds } = tally;
 
-for (const world of worldSeeds(MAX_WORLDS)) {
-	worlds++;
-	for (let g = 0; g < GALAXY_COUNT; g++) {
-		for (const record of generateGalaxy(world, g).systems) {
-			systems++;
-			for (const station of generateContents(record).stations) {
-				if (station.type !== "refinery") continue;
-				total[record.government]++;
-				if (station.blackMarket) fences[record.government]++;
-			}
-		}
-	}
-	if (total[7] >= MIN_G7) break;
-}
-
-const refineries = total.reduce((a, b) => a + b, 0);
+const refineries = tally.refineries;
 console.log(
 	`${worlds} worlds, ${systems} systems, ${refineries} refineries ` +
 		`(${((100 * refineries) / systems).toFixed(1)}% of systems)\n`,
@@ -84,8 +81,7 @@ for (let g = 0; g < 8; g++) {
 	}
 	const rate = finite(`rate at g=${g}`, fences[g] / n);
 	const expected = fenceProbability(g);
-	const se = finite(`SE at g=${g}`, Math.sqrt((expected * (1 - expected)) / n));
-	const z = finite(`z at g=${g}`, (rate - expected) / se);
+	const z = finite(`z at g=${g}`, sigmaOff(rate, expected, n));
 	const bad = Math.abs(z) > 4;
 	if (bad) failures++;
 	console.log(

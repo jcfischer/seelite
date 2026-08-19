@@ -29,7 +29,9 @@ import { dot, length, sub } from "../src/vec3";
 import baseline from "./fixtures/station-fields.json";
 import {
 	ALL_GALAXIES,
+	fenceTally,
 	forEachSystem,
+	sigmaOff,
 	stationFieldRows,
 	worldSeeds,
 } from "./helpers/station-rows";
@@ -234,22 +236,14 @@ describe("the spin range (docking.md §4)", () => {
  */
 describe("blackMarket frequency tracks government", () => {
 	test("every populated bucket sits on §5.2's ramp", () => {
-		const total = new Array(8).fill(0);
-		const fences = new Array(8).fill(0);
-		let refineries = 0;
-		let systems = 0;
-		for (const world of worldSeeds(40)) {
-			if (refineries >= 20_000) break;
-			forEachSystem(world, ALL_GALAXIES, (record, contents) => {
-				systems++;
-				for (const station of contents.stations) {
-					if (station.type !== "refinery") continue;
-					refineries++;
-					total[record.government]++;
-					if (station.blackMarket) fences[record.government]++;
-				}
-			});
-		}
+		// The same tally the instrument runs, over a corpus a suite can afford —
+		// shared so the two cannot disagree about what a fence rate is.
+		const tally = fenceTally(
+			worldSeeds(40),
+			ALL_GALAXIES,
+			(t) => t.refineries >= 20_000,
+		);
+		const { total, fences, refineries, systems } = tally;
 		// §9.1's floor, kept: it is the corpus incidence is reported over, even
 		// though it is not what sizes the assertions.
 		expect(refineries).toBeGreaterThanOrEqual(20_000);
@@ -273,9 +267,9 @@ describe("blackMarket frequency tracks government", () => {
 		let asserted = 0;
 		for (let g = 0; g < 8; g++) {
 			if (total[g] < 500) continue;
-			const p = fenceProbability(g);
-			const se = Math.sqrt((p * (1 - p)) / total[g]);
-			expect(Math.abs(rate[g] - p)).toBeLessThan(4 * se);
+			expect(
+				Math.abs(sigmaOff(rate[g], fenceProbability(g), total[g])),
+			).toBeLessThan(4);
 			asserted++;
 		}
 		expect(asserted).toBeGreaterThanOrEqual(6);

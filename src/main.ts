@@ -1422,11 +1422,11 @@ class Game {
 			// timing.
 			const spinner = this.stationSpinners.get(body.id);
 			if (spinner) {
-				const pose = stationPose(
-					this.world.system,
-					body.id,
-					this.world.gameTime,
-				);
+				// Through the handle's own accessor, not a second copy of the same
+				// argument triple: `poseOfStation` is documented as "the pose the
+				// renderer is mirroring", and a probe asserting through it has to be
+				// asserting the path the renderer actually takes.
+				const pose = this.poseOfStation(body.id);
 				// Local +Z is the aperture axis, which is the contract
 				// `station-mesh.ts` is built to.
 				STATION_AXIS.set(pose.axis.x, pose.axis.y, pose.axis.z);

@@ -141,3 +141,60 @@ export function stationFieldRows(
 	});
 	return rows;
 }
+
+/**
+ * Refineries by government, and how many of them are fences.
+ *
+ * Shared by `tests/station.test.ts` and `scripts/measure-fence-rate.ts` for the
+ * reason in this module's header: the two sweep different corpora on purpose —
+ * a second and a quarter of a minute — but they must agree exactly on *what a
+ * fence rate is*. Two hand-copied tallies drift, and nothing fails when they do.
+ *
+ * `stopAt` ends the sweep early: the test wants a refinery total, the instrument
+ * wants the `government = 7` bucket alone, and neither wants the other's cost.
+ */
+export interface FenceTally {
+	/** Refineries seen, by government 0–7. */
+	total: number[];
+	/** How many of those were fences. */
+	fences: number[];
+	refineries: number;
+	systems: number;
+	worlds: number;
+}
+
+export function fenceTally(
+	worlds: readonly number[],
+	galaxies: readonly number[],
+	stopAt: (tally: FenceTally) => boolean,
+): FenceTally {
+	const tally: FenceTally = {
+		total: new Array(8).fill(0),
+		fences: new Array(8).fill(0),
+		refineries: 0,
+		systems: 0,
+		worlds: 0,
+	};
+	for (const world of worlds) {
+		if (stopAt(tally)) break;
+		tally.worlds++;
+		forEachSystem(world, galaxies, (record, contents) => {
+			tally.systems++;
+			for (const station of contents.stations) {
+				if (station.type !== "refinery") continue;
+				tally.refineries++;
+				tally.total[record.government]++;
+				if (station.blackMarket) tally.fences[record.government]++;
+			}
+		});
+	}
+	return tally;
+}
+
+/** How many standard errors an observed rate sits from the ramp's `p`, over
+ *  `n` samples. Shared for the same reason as the tally: the test and the
+ *  instrument both gate on 4σ, and a bucket that "passes" under two different
+ *  definitions of σ is evidence of nothing. */
+export function sigmaOff(rate: number, p: number, n: number): number {
+	return (rate - p) / Math.sqrt((p * (1 - p)) / n);
+}

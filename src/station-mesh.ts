@@ -27,9 +27,12 @@
  * them and leave `root` to the aperture axis; a station that rotated whole would
  * make the frame a fairground ride.
  *
- * No downloaded assets, per the map constraint. The only randomness is the
- * asteroid's shape, seeded from the station id so a system looks the same on
- * every load.
+ * No downloaded assets, per the map constraint. Two features are randomised —
+ * the asteroid's vertices and the window grid — and both are seeded from the
+ * station **type**, not from an id: `buildStationMesh` takes a type, so every
+ * trade station in the galaxy is drawn identically. That is a display decision
+ * and not a generator one; per-station variation would need an id passed in and
+ * would buy nothing §7 rests identity on.
  */
 
 import * as THREE from "three";
@@ -53,7 +56,8 @@ export interface StationMesh {
  * Its own, rather than one of `rng.ts`'s domain streams, and the difference is
  * the point: this feeds a *shape on screen* and nothing in the simulation, so
  * drawing it from a world stream would couple a display detail to the
- * generator's draw counts. Seeded from the id so it is stable across loads.
+ * generator's draw counts. The key is a constant string per feature, so the
+ * shape is the same on every load and in every system.
  */
 function displayRand(id: string): () => number {
 	let h = 0x811c9dc5;
@@ -78,6 +82,25 @@ const emissiveMaterial = (color: number, intensity: number) =>
 		emissiveIntensity: intensity,
 		roughness: 0.4,
 	});
+
+/**
+ * The small repeated parts, built once at module load and shared by every
+ * station in the game.
+ *
+ * A window pane is one box and one emissive material, and there are 28 of them
+ * per Coriolis station — built inside the loop, that is 28 geometries and 28
+ * materials *per station instance*, each its own draw call with its own uniform
+ * upload every frame. Three.js batches by (geometry, material) identity, so
+ * sharing them is the difference between one draw call per station's windows
+ * and twenty-eight.
+ *
+ * Shared, so **never mutated after construction** — a caller that recoloured a
+ * pane would recolour every window in the galaxy.
+ */
+const PANE_GEOMETRY = new THREE.BoxGeometry(0.03, 0.012, 0.004);
+const PANE_MATERIAL = emissiveMaterial(0xdfe8ff, 1.4);
+const APERTURE_LIGHT_MATERIAL = emissiveMaterial(0xffb347, 2.2);
+const FLOOD_MATERIAL = emissiveMaterial(0xbfe4ff, 2.0);
 
 /**
  * The aperture, drawn as a lit recess on the +Z face.
@@ -117,7 +140,7 @@ function buildAperture(type: StationType, faceZ: number): THREE.Group {
 	for (const [bw, bh, x, y] of lights) {
 		const light = new THREE.Mesh(
 			new THREE.BoxGeometry(bw, bh, bar),
-			emissiveMaterial(0xffb347, 2.2),
+			APERTURE_LIGHT_MATERIAL,
 		);
 		light.position.set(x, y, faceZ + bar / 2);
 		group.add(light);
@@ -161,10 +184,7 @@ function buildCoriolisCore(type: StationType): THREE.Group {
 	const rand = displayRand(`${type}-windows`);
 	const windows = new THREE.Group();
 	for (let i = 0; i < 28; i++) {
-		const pane = new THREE.Mesh(
-			new THREE.BoxGeometry(0.03, 0.012, 0.004),
-			emissiveMaterial(0xdfe8ff, 1.4),
-		);
+		const pane = new THREE.Mesh(PANE_GEOMETRY, PANE_MATERIAL);
 		const theta = rand() * Math.PI * 2;
 		const band = (rand() - 0.5) * coreRadiusKm * 0.7;
 		const r = coreRadiusKm * 0.62 * (1 - Math.abs(band) / coreRadiusKm);
@@ -186,8 +206,13 @@ function buildCoriolisCore(type: StationType): THREE.Group {
  */
 function buildDrydock(): THREE.Group {
 	const group = new THREE.Group();
+	// Sized to fit inside the declared reach rather than by eye: the frame's far
+	// end sits at `offset + length/2`, and its rings stick out sideways, so the
+	// farthest vertex is the hypotenuse of the two. The first version put that at
+	// 2.0 km against a declared 1.5 — a silhouette budget nothing measured, which
+	// `tests/station-mesh.test.ts` now does.
 	const reach = STATION_GEOMETRY.shipyard.silhouetteRadiusKm;
-	const length = reach * 1.4;
+	const length = reach * 0.96;
 	const half = 0.28;
 	const strut = 0.035;
 	const material = hullMaterial(0x6f7d88);
@@ -219,7 +244,7 @@ function buildDrydock(): THREE.Group {
 	for (const z of [-length / 3, 0, length / 3]) {
 		const flood = new THREE.Mesh(
 			new THREE.BoxGeometry(half * 1.6, 0.02, 0.05),
-			emissiveMaterial(0xbfe4ff, 2.0),
+			FLOOD_MATERIAL,
 		);
 		flood.position.set(0, -half, z);
 		group.add(flood);
@@ -227,7 +252,7 @@ function buildDrydock(): THREE.Group {
 
 	// Clamped alongside and offset, not concentric: a frame centred on the core
 	// would read as a bigger trade station rather than as a second object.
-	group.position.set(reach * 0.62, 0, 0);
+	group.position.set(reach * 0.42, 0, 0);
 	group.rotation.y = Math.PI / 2;
 	group.name = "drydock";
 	return group;
