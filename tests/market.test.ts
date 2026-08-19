@@ -27,9 +27,11 @@ import {
 	ALL_FLUCT,
 	ALL_STATIONS,
 	COMMODITIES,
+	FLUCT_PAIRS,
 	type Commodity,
 	DEFICIT_HALF_LIFE_MIN,
 	DEFICIT_MAX,
+	HOLD_REFERENCE_T,
 	NARCOTICS_BELL,
 	NARCOTICS_RETUNE,
 	OFFSET_STATIONS,
@@ -41,15 +43,18 @@ import {
 	TYPE_OFFSET,
 	addDeficit,
 	bestMargin,
+	commodity,
 	decayDeficit,
 	marketEpoch,
 	marketRow,
+	residualMarginCr,
+	sweepDomain,
 	runsToExhaustion,
 	stockResponse,
 } from "./helpers/market-math";
 
-const byName = (name: string): Commodity =>
-	COMMODITIES.find((c) => c.name === name) as Commodity;
+/** The file's short local name; the lookup itself is shared, not copied. */
+const byName = commodity;
 
 /** Buyable, hold-consuming goods — the population §8's pump actually trades. */
 const TRADEABLE = COMMODITIES.filter((c) => !c.sellOnly && c.unit === "t");
@@ -144,9 +149,12 @@ describe("the trade lanes run the researched direction", () => {
 });
 
 describe("§2.2 overflow is confined to Bell's Narcotics row", () => {
-	test("no good in the shipped table reaches a byte end", () => {
-		// Not "no legal good": Slaves and Firearms are illegal and are inside
-		// this assertion, which is the point — the retune left them alone.
+	test("no good in the shipped table overflows the byte", () => {
+		// Named for overflow, not for "reaching a byte end" — Computers reaches
+		// exactly 255 at economy 7 (154 + 3 + 7×14) without overflowing, so the
+		// stronger-sounding claim would be false. Not "no *legal* good" either:
+		// Slaves and Firearms are illegal and inside this assertion, which is the
+		// point — the retune left them alone.
 		for (const commodity of COMMODITIES)
 			for (const economy of ALL_ECONOMIES)
 				for (const fluct of ALL_FLUCT)
@@ -154,6 +162,16 @@ describe("§2.2 overflow is confined to Bell's Narcotics row", () => {
 						expect(
 							marketRow(commodity, economy, fluct, station).priceOverflowed,
 						).toBe(false);
+	});
+
+	test("Computers sits exactly on the ceiling, with no headroom", () => {
+		// §12 weak joint 2 calls the clamp "a guard that cannot fire". That is
+		// true of the table as shipped, but the margin is zero, not comfortable:
+		// one point of basePrice, gradient or mask on this good and it fires.
+		const computers = byName("Computers");
+		expect(computers.basePrice + computers.mask + 7 * computers.gradient).toBe(
+			255,
+		);
 	});
 
 	test("the retuned Narcotics row cannot overflow, by construction", () => {
@@ -166,15 +184,11 @@ describe("§2.2 overflow is confined to Bell's Narcotics row", () => {
 	test("Bell's own row does overflow — the reason for the divergence", () => {
 		// The rejected form, scored. Without this the spec's case for retuning is
 		// prose, and a later editor restoring Bell's constants gets no warning.
-		let overflowed = 0;
-		let rows = 0;
-		for (const economy of ALL_ECONOMIES)
-			for (const fluct of ALL_FLUCT) {
-				if (marketRow(NARCOTICS_BELL, economy, fluct, "trade").priceOverflowed)
-					overflowed++;
-				rows++;
-			}
-		expect(overflowed / rows).toBeGreaterThan(0.9);
+		const { hits, rows } = sweepDomain(
+			(economy, fluct) =>
+				marketRow(NARCOTICS_BELL, economy, fluct, "trade").priceOverflowed,
+		);
+		expect(hits / rows).toBeGreaterThan(0.9);
 	});
 });
 
@@ -255,21 +269,20 @@ describe("§3 the type offset", () => {
 		// unreachable by construction, which flatters the figure.
 		let fired = 0;
 		let rows = 0;
-		for (const commodity of COMMODITIES)
-			for (const station of OFFSET_STATIONS)
-				for (const economy of ALL_ECONOMIES)
-					for (const fluct of ALL_FLUCT) {
-						if (marketRow(commodity, economy, fluct, station).floorFired)
-							fired++;
-						rows++;
-					}
+		for (const good of COMMODITIES)
+			for (const station of OFFSET_STATIONS) {
+				const swept = sweepDomain(
+					(economy, fluct) =>
+						marketRow(good, economy, fluct, station).floorFired,
+				);
+				fired += swept.hits;
+				rows += swept.rows;
+			}
 		expect(fired / rows).toBeLessThan(0.01);
 		// The trade station's offset is zero, so its floor can never fire.
-		for (const commodity of COMMODITIES)
+		for (const good of COMMODITIES)
 			for (const economy of ALL_ECONOMIES)
-				expect(marketRow(commodity, economy, 0, "trade").floorFired).toBe(
-					false,
-				);
+				expect(marketRow(good, economy, 0, "trade").floorFired).toBe(false);
 	});
 
 	test("never makes a good scarcer than the trade station", () => {
@@ -329,7 +342,7 @@ describe("§2.2 the clamp applies to quantity too, and diverges from Bell there"
 		// baseQuantity 0x42 = 66 never leaves 66…80, so Bell's mask reads 2…16
 		// units and the clamp reads a permanent 63. Named because it makes a
 		// precious metal abundant that Bell made scarce.
-		const gold = COMMODITIES.find((c) => c.name === "Gold") as Commodity;
+		const gold = byName("Gold");
 		for (const economy of ALL_ECONOMIES)
 			for (const fluct of ALL_FLUCT) {
 				expect(marketRow(gold, economy, fluct, "trade").quantity).toBe(
@@ -347,7 +360,7 @@ describe('§2.2 "wrap" mode is Bell on both bytes, not just on price', () => {
 		// An earlier version clamped quantity regardless of mode, so every
 		// "Bell + wrap" figure was a hybrid — his price arithmetic with seelite's
 		// shelf — quoted in the very table justifying the divergence from him.
-		const gold = COMMODITIES.find((c) => c.name === "Gold") as Commodity;
+		const gold = byName("Gold");
 		expect(marketRow(gold, 0, 0, "trade", "wrap").quantity).toBe(
 			(0x42 + 0 - 0) & QUANTITY_CAP,
 		);
@@ -458,13 +471,6 @@ describe("§5 the stock deficit", () => {
 		// one hardcoded setup started at 27.2, so the pair the brake most has to
 		// survive was never the pair asserted. Bytes are independent — pairing
 		// them understates the margin, and an understated margin exhausts sooner.
-		const FLUCT_PAIRS: [number, number][] = [
-			[0x00, 0x91],
-			[0x3d, 0x1c],
-			[0x7a, 0xc6],
-			[0xb1, 0x58],
-			[0xee, 0x2f],
-		];
 		let worst = { spread: Number.NEGATIVE_INFINITY, buyCr: 0, sellCr: 0 };
 		for (const commodity of LEGAL_TRADEABLE)
 			for (const economy of ALL_ECONOMIES)
@@ -494,32 +500,43 @@ describe("§5 the stock deficit", () => {
 		expect(runs).toBeLessThanOrEqual(4);
 	});
 
-	test("the brake's reach exceeds the worst legal intra-system spread", () => {
-		// Stronger than counting runs, and the property the run count depends on.
-		// At the ±63 cap the multipliers are 1.315 and 0.685, so the deficit can
-		// close any pair whose sell/buy ratio is below 1.315/0.685 = 1.920 and
-		// **no** pair above it, however many runs are flown. The worst legal
-		// intra-system ratio is 1.571 (Computers at economy 0), leaving 18%
-		// headroom. If a retune pushes a pair past 1.920 the loop stops being a
-		// burst and becomes a farm, and the run-count test alone would only say
-		// "more than four".
-		const closable =
-			(2 - MIN_STOCK_RESPONSE_FACTOR) / MIN_STOCK_RESPONSE_FACTOR;
-		expect(closable).toBeCloseTo(1.92, 2);
-
-		let worstRatio = 0;
-		for (const commodity of LEGAL_TRADEABLE)
+	test("no intra-system pair stays worth farming once the deficit saturates", () => {
+		// **The ratio bound is the wrong property**, and an earlier version of this
+		// test asserted it in one direction only — buying at a shipyard, selling at
+		// a refinery, one of six ordered pairs. The reverse legs hold the cheap
+		// goods: Food at economy 6 is 0.4 Cr at a refinery and 4.8 Cr at a
+		// shipyard, a ratio of 12, so "the deficit closes every pair" is false.
+		//
+		// What matters is not whether a pair reaches exactly zero but what it still
+		// pays at the ±63 steady state. Food's ratio of 12 leaves 2.8 Cr/t because
+		// it is a 0.4 Cr good. The bound worth guarding is the richest residual.
+		let worst = { cr: 0, good: "—", leg: "" };
+		for (const good of LEGAL_TRADEABLE)
 			for (const economy of ALL_ECONOMIES)
-				for (const buyFluct of ALL_FLUCT) {
-					const buy = marketRow(commodity, economy, buyFluct, "shipyard");
-					if (buy.quantity === 0) continue;
-					for (const sellFluct of ALL_FLUCT)
-						worstRatio = Math.max(
-							worstRatio,
-							marketRow(commodity, economy, sellFluct, "refinery").priceCr /
-								buy.priceCr,
-						);
-				}
-		expect(worstRatio).toBeLessThan(closable);
+				for (const buyStation of ALL_STATIONS)
+					for (const sellStation of ALL_STATIONS) {
+						if (buyStation === sellStation) continue;
+						for (const buyFluct of ALL_FLUCT) {
+							const buy = marketRow(good, economy, buyFluct, buyStation);
+							if (buy.quantity === 0) continue;
+							for (const sellFluct of ALL_FLUCT) {
+								const cr = residualMarginCr(
+									buy.priceCr,
+									marketRow(good, economy, sellFluct, sellStation).priceCr,
+								);
+								if (cr > worst.cr)
+									worst = {
+										cr,
+										good: good.name,
+										leg: `${buyStation}→${sellStation}`,
+									};
+							}
+						}
+					}
+		// Measured: 7.9 Cr/t (Furs, refinery→shipyard at economy 7) = 158 Cr per
+		// 20 t run, against ~380 Cr for a typical interstellar run. The farm is
+		// allowed to exist; it is not allowed to beat flying somewhere else.
+		expect(worst.cr).toBeLessThan(10);
+		expect(worst.cr * HOLD_REFERENCE_T).toBeLessThan(200);
 	});
 });

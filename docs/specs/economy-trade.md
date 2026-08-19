@@ -189,6 +189,16 @@ pricing at all — `typeOffset` is a property of the *type* — so fence and
 refinery prices coincide everywhere in this table. The measurement is named for
 what it sweeps rather than for what the fiction calls it.
 
+**And it sweeps economies independently, which means a multi-jump route.** Buy
+and sell are maximised over the whole (economy, fluct) domain, so 81.2 Cr/t is
+the best pair of fences *anywhere in a galaxy* — not one jump apart, and with no
+guarantee two such fences are neighbours. Unlike §5.4's interstellar baseline,
+that is the right measurement here rather than a defect: `station-types.md` §5.2
+makes fences a rim-weighted minority you find by visiting and then remember, so
+a smuggling route is explicitly a thing to be learnt and flown, not a next-door
+arbitrage. The figure is an upper bound on what the trade can pay, and it should
+be read as one.
+
 The retuned row keeps everything the good is for: a positive gradient, so it is
 cheap in Rich Industrial and dear in Poor Agricultural; the largest mask in the
 table at `0x70`, so it stays the volatile gamble; and a margin within a fifth of
@@ -430,26 +440,48 @@ already fading rather than one that only accumulates:
 | 3 | 27.2 → 10.9 | 2 |
 | 7 | 27.2 → 6.4 | 2 |
 
-**The brake has a reach, and it is worth stating as a ratio rather than as a run
-count.** At the ±63 cap the multipliers are 1.315 on the buy side and 0.685 on
-the sell side, so the deficit can close any pair whose sell/buy ratio is below
-**1.920** — and *no* pair above it, however many runs are flown. The worst legal
-intra-system ratio is **1.571** (Computers at economy 0), leaving 18% headroom.
+**The brake does not close every pair, and an earlier draft of this section
+claimed it did.** At the ±63 cap the multipliers are 1.315 on the buy side and
+0.685 on the sell side, so the deficit drives a pair to zero only if its
+sell/buy ratio is below **1.920**. That draft reported a comfortable worst case
+of 1.571 — measured buying at a shipyard and selling at a refinery, **one of six
+ordered station pairs**. The reverse legs are where the cheap goods sit, and
+they are the ones §3.1's floor pins at 0.4 Cr:
 
-That is the property the run counts depend on, so the suite asserts both: the
-ratio bound, and exhaustion within four runs. A retune that pushed a pair past
-1.920 would turn the loop from a burst into a farm, and a run-count test alone
-would report only "more than four" without saying why.
+| | measured |
+|---|---|
+| ratio the deficit can close | 1.920 |
+| worst legal intra-system ratio | **12.00** — Food at economy 6, refinery→shipyard |
+| rows above the closable ratio | 2.32% of 29.8 M |
+
+**The ratio was the wrong metric.** Food reaches a ratio of 12 by being a 0.4 Cr
+good; what it pays is 4.4 Cr/t. The question a farmer asks is not whether the
+margin reaches exactly zero but what survives at the steady state, and that is
+what the spec should bound:
+
+| | measured |
+|---|---|
+| richest unclosable pair | 43.2 Cr/t — Furs, refinery→shipyard, ratio 1.96 |
+| **richest steady-state residual** | **7.9 Cr/t** — Furs at economy 7, refinery→shipyard |
+| …per 20 t run | **158 Cr** |
+
+So a sustained intra-system farm nets **158 Cr a run against roughly 380 Cr for
+an interstellar one**, on a leg that is shorter but not four times shorter.
+**The farm is allowed to exist; it is not allowed to beat flying somewhere
+else**, and that is what the suite asserts — a bound on the residual, not on the
+ratio. A run-count test alone would have reported "more than four" without ever
+saying why.
 
 **The deficit is therefore not tuning — it is the reason the intra-system pair
 is safe.** A later reader tempted to simplify it away should read this section
 first.
 
-One scope note, because a draft of the test got it wrong: **contraband cannot
+Two scope notes, because drafts of the test got both wrong. **Contraband cannot
 run this loop at all.** §4 scopes illegal goods to fences, so shipyard→refinery
 is not a transaction that exists for them. Searching for the "best intra-system
 pair" without that filter finds Narcotics at a ratio of 59 and concludes the
-brake fails — against a route no player can fly.
+brake fails — against a route no player can fly. And **all six ordered station
+pairs have to be searched**, not the one that happens to be written first.
 
 ### 5.5 Determinism, and where state begins
 
@@ -595,7 +627,7 @@ question, still fog on the map, and it reaches far past the economy.
 
 All headless `bun` — none of §1–§9 may require a browser, per #7's own framing.
 
-### 10.1 Suite (`tests/market.test.ts`, 31 tests)
+### 10.1 Suite (`tests/market.test.ts`, 32 tests)
 
 1. **Table integrity** — 17 goods; `baseQuantity` signed for all five negative
    rows; exactly three illegal; the sub-tonne set is Gold/Platinum/Gem-Stones
@@ -628,8 +660,10 @@ All headless `bun` — none of §1–§9 may require a browser, per #7's own fra
    table can produce below one price step**; **the best legal intra-system pair
    — searched across goods, economies and independent fluctuation-byte pairs —
    is exhausted within four runs**, with decay applied across the minutes each
-   run takes to fly; and **the brake's 1.920 reach exceeds the worst legal
-   intra-system ratio of 1.571**.
+   run takes to fly; and **no intra-system pair, over all six ordered station
+   legs, leaves more than 10 Cr/t once both deficits saturate** — the property
+   that matters, in place of the ratio bound an earlier draft asserted in one
+   direction only.
 
 ### 10.2 Instrument (`scripts/measure-market.ts`)
 
@@ -698,10 +732,13 @@ second measurement that could drift from `TYPE_OFFSET` without failing anything.
 1. **One divergence from Bell's table.** §2.3. Narcotics is retuned because its
    constants require overflow. Every other row is verbatim, and the rejected
    alternatives are on the page with their measurements.
-2. **The clamp is a guard that never fires.** §2.2. After the retune the shipped
-   table never overflows, so §2.2's arithmetic is a definition rather than a
-   behaviour. Kept because the boundary would otherwise be undefined for the
-   first good a later node adds.
+2. **The clamp is a guard that never fires — by one point.** §2.2. After the
+   retune the shipped table never overflows, so §2.2's price arithmetic is a
+   definition rather than a behaviour. But the margin is zero, not comfortable:
+   **Computers reaches exactly 255** at economy 7 (`154 + 3 + 7×14`), so one
+   point of `basePrice`, `gradient` or `mask` on that good makes it fire. Kept
+   for that reason as much as for the boundary being undefined otherwise, and
+   the suite pins the 255.
 3. **Type differentiation on commodities is still soft.** Inherited from
    `station-types.md` §3.3 — three prices for one transaction. §3.2's quantity
    delta strengthens it slightly; it does not fix it.
@@ -725,7 +762,13 @@ second measurement that could drift from `TYPE_OFFSET` without failing anything.
    thresholds so that a legitimate retune does not fail on a stale constant;
    the consequence is that a quoted number can go stale while everything stays
    green. §10.2 is the remedy and it has to actually be run.
-8. **The quantity clamp diverges from Bell, and Gold pays for it.** §2.2. Four
+8. **The intra-system farm is bounded, not eliminated.** §5.4. The deficit
+   cannot close a pair whose sell/buy ratio exceeds 1.920, and 2.32% of legal
+   intra-system rows are above it — mostly cheap goods the floor pins at
+   0.4 Cr. The richest surviving farm is 7.9 Cr/t (158 Cr a run), well under an
+   interstellar run's ~380 Cr, so it is a poor use of time rather than an
+   exploit. What the design relies on is that bound, and the suite guards it.
+9. **The quantity clamp diverges from Bell, and Gold pays for it.** §2.2. Four
    goods read differently from `& 0x3F`; Gold is at a permanent 63 where
    txtelite shows 2–16, which makes a sub-tonne precious metal abundant that
    Bell made scarce. Chosen for consistency with the price clamp, recorded

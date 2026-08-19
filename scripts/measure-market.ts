@@ -37,9 +37,15 @@ import {
 	NARCOTICS_BELL,
 	OFFSET_STATIONS,
 	type StationTypeKey,
+	DEFICIT_MAX,
+	FLUCT_PAIRS,
+	MIN_STOCK_RESPONSE_FACTOR,
 	bestMargin,
+	commodity,
 	marketRow,
+	residualMarginCr,
 	runsToExhaustion,
+	stockResponse,
 	sweepDomain,
 } from "../tests/helpers/market-math";
 import {
@@ -51,8 +57,6 @@ import { JUMP_RANGE_LY, distanceLy } from "../src/galaxy";
 import type { Vec3 } from "../src/vec3";
 
 const pct = (n: number, d: number) => `${((100 * n) / d).toFixed(2)}%`;
-const named = (name: string): Commodity =>
-	COMMODITIES.find((c) => c.name === name) as Commodity;
 
 // ── 1. What the clamp costs, per good ───────────────────────────────────────
 //
@@ -136,7 +140,7 @@ console.log(
 const NARCOTICS_ROWS: [string, Commodity, ByteMode][] = [
 	["Bell + wrap", NARCOTICS_BELL, "wrap"],
 	["Bell + clamp", NARCOTICS_BELL, "saturate"],
-	["seelite + clamp", named("Narcotics"), "saturate"],
+	["seelite + clamp", commodity("Narcotics"), "saturate"],
 ];
 for (const [label, commodity, mode] of NARCOTICS_ROWS) {
 	const { margin, inStock } = bestMargin(
@@ -249,14 +253,6 @@ function pairMargin(
 	return best;
 }
 
-/** Five independent byte pairs — one station's draw is not its neighbour's. */
-const FLUCT_PAIRS: [number, number][] = [
-	[0x00, 0x91],
-	[0x3d, 0x1c],
-	[0x7a, 0xc6],
-	[0xb1, 0x58],
-	[0xee, 0x2f],
-];
 const avg = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / (xs.length || 1);
 
 /**
@@ -359,7 +355,7 @@ for (const [label, xs] of [
 		`${label}   mean ${avg(xs).toFixed(1)}\tmedian ${quantile(xs, 0.5).toFixed(1)}\tp95 ${quantile(
 			xs,
 			0.95,
-		).toFixed(1)}\tmax ${Math.max(...xs).toFixed(1)}`,
+		).toFixed(1)}\tmax ${xs.reduce((a, b) => Math.max(a, b), 0).toFixed(1)}`,
 	);
 
 // ── 5. Does the deficit brake exhaust the intra-system loop? ────────────────
@@ -374,10 +370,10 @@ for (const economy of [0, 3, 7]) {
 		console.log(`economy ${economy}: no profitable shipyard→refinery pair`);
 		continue;
 	}
-	const commodity = named(pair.good);
+	const good = commodity(pair.good);
 	const { runs, margins, profitCr } = runsToExhaustion({
-		buyBaseCr: marketRow(commodity, economy, 0x7a, "shipyard").priceCr,
-		sellBaseCr: marketRow(commodity, economy, 0x1c, "refinery").priceCr,
+		buyBaseCr: marketRow(good, economy, 0x7a, "shipyard").priceCr,
+		sellBaseCr: marketRow(good, economy, 0x1c, "refinery").priceCr,
 		maxRuns: 12,
 	});
 	console.log(
@@ -410,3 +406,107 @@ for (const commodity of COMMODITIES) {
 			`  ${commodity.name.padEnd(14)} differs on ${pct(differing, rows).padStart(7)} of rows, by up to ${worst} units`,
 		);
 }
+
+// ── 7. The brake's reach, in every direction ────────────────────────────────
+//
+// §5.4 states the brake as a ratio: at the ±63 cap the multipliers are 1.315
+// and 0.685, so the deficit closes any pair below 1.315/0.685 and none above
+// it. An earlier version measured that bound **buying at a shipyard and selling
+// at a refinery only** — one of six ordered station pairs — and reported a
+// comfortable 1.571 worst case. The reverse legs are where the cheap goods sit,
+// and they are the ones the floor pins at 0.4 Cr.
+
+console.log("\n── §5.4: sell/buy ratios the deficit cannot close ──");
+const CLOSABLE_RATIO =
+	(2 - MIN_STOCK_RESPONSE_FACTOR) / MIN_STOCK_RESPONSE_FACTOR;
+const LEGAL_TRADEABLE = COMMODITIES.filter(
+	(c) => !c.sellOnly && c.unit === "t" && !c.illegal,
+);
+let worstRatio = { ratio: 0, good: "—", economy: 0, leg: "", marginCr: 0 };
+let bestUnclosableMargin = { marginCr: 0, good: "—", leg: "", ratio: 0 };
+let unclosableRows = 0;
+let ratioRows = 0;
+for (const good of LEGAL_TRADEABLE)
+	for (const economy of ALL_ECONOMIES)
+		for (const buyStation of ALL_STATIONS)
+			for (const sellStation of ALL_STATIONS) {
+				if (buyStation === sellStation) continue;
+				for (const buyFluct of ALL_FLUCT) {
+					const buy = marketRow(good, economy, buyFluct, buyStation);
+					if (buy.quantity === 0) continue;
+					for (const sellFluct of ALL_FLUCT) {
+						const sellCr = marketRow(
+							good,
+							economy,
+							sellFluct,
+							sellStation,
+						).priceCr;
+						const ratio = sellCr / buy.priceCr;
+						const leg = `${buyStation}→${sellStation}`;
+						ratioRows++;
+						if (ratio > CLOSABLE_RATIO) {
+							unclosableRows++;
+							if (sellCr - buy.priceCr > bestUnclosableMargin.marginCr)
+								bestUnclosableMargin = {
+									marginCr: sellCr - buy.priceCr,
+									good: good.name,
+									leg,
+									ratio,
+								};
+						}
+						if (ratio > worstRatio.ratio)
+							worstRatio = {
+								ratio,
+								good: good.name,
+								economy,
+								leg,
+								marginCr: sellCr - buy.priceCr,
+							};
+					}
+				}
+			}
+console.log(`the deficit closes any ratio below ${CLOSABLE_RATIO.toFixed(3)}`);
+console.log(
+	`worst legal intra-system ratio: ${worstRatio.ratio.toFixed(2)} — ${worstRatio.good} at economy ${worstRatio.economy}, ${worstRatio.leg}, margin only ${worstRatio.marginCr.toFixed(1)} Cr/t`,
+);
+console.log(
+	`rows above the closable ratio: ${pct(unclosableRows, ratioRows)} of ${ratioRows}`,
+);
+console.log(
+	`richest unclosable pair: ${bestUnclosableMargin.marginCr.toFixed(1)} Cr/t — ${bestUnclosableMargin.good}, ${bestUnclosableMargin.leg}, ratio ${bestUnclosableMargin.ratio.toFixed(2)}`,
+);
+
+// The ratio is the wrong headline. What a farmer actually earns is the margin
+// that survives once both deficits sit at the ±63 cap — the *steady state*,
+// not whether it reached exactly zero. A ratio of 12 on a 0.4 Cr good leaves
+// pocket change; the question is whether any pair leaves real money.
+let worstResidual = { cr: 0, good: "—", economy: 0, leg: "" };
+for (const good of LEGAL_TRADEABLE)
+	for (const economy of ALL_ECONOMIES)
+		for (const buyStation of ALL_STATIONS)
+			for (const sellStation of ALL_STATIONS) {
+				if (buyStation === sellStation) continue;
+				for (const buyFluct of ALL_FLUCT) {
+					const buy = marketRow(good, economy, buyFluct, buyStation);
+					if (buy.quantity === 0) continue;
+					for (const sellFluct of ALL_FLUCT) {
+						const sellCr = marketRow(
+							good,
+							economy,
+							sellFluct,
+							sellStation,
+						).priceCr;
+						const residual = residualMarginCr(buy.priceCr, sellCr);
+						if (residual > worstResidual.cr)
+							worstResidual = {
+								cr: residual,
+								good: good.name,
+								economy,
+								leg: `${buyStation}→${sellStation}`,
+							};
+					}
+				}
+			}
+console.log(
+	`richest steady-state residual: ${worstResidual.cr.toFixed(1)} Cr/t — ${worstResidual.good} at economy ${worstResidual.economy}, ${worstResidual.leg} (${(worstResidual.cr * 20).toFixed(0)} Cr per 20 t run)`,
+);

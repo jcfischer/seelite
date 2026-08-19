@@ -155,6 +155,25 @@ export type StationTypeKey = keyof typeof TYPE_OFFSET;
 const clamp = (v: number, lo: number, hi: number): number =>
 	Math.min(Math.max(v, lo), hi);
 
+/** One good by name. Both consumers had their own copy of this lookup. */
+export const commodity = (name: string): Commodity => {
+	const found = COMMODITIES.find((c) => c.name === name);
+	if (!found) throw new Error(`no commodity named ${name}`);
+	return found;
+};
+
+/**
+ * The margin a pair still pays once **both** deficits sit at the ±63 cap — the
+ * steady state a farmer actually earns, which is what §5.4 turns on.
+ *
+ * The ratio bound (`1.315 / 0.685` = 1.920) says only whether a pair reaches
+ * exactly zero, and that is the wrong question: Food at a ratio of 12 leaves
+ * 2.8 Cr/t because it is a 0.4 Cr good. What matters is whether any pair leaves
+ * real money, and this is the number that answers it.
+ */
+export const residualMarginCr = (buyCr: number, sellCr: number): number =>
+	stockResponse(sellCr, -DEFICIT_MAX) - stockResponse(buyCr, DEFICIT_MAX);
+
 /**
  * The two arithmetics, kept side by side because §2 rejects one of them and a
  * rejection with no runnable counterpart is an assertion.
@@ -206,6 +225,22 @@ export const ALL_ECONOMIES: readonly number[] = Array.from(
 	{ length: ECONOMY_MAX - ECONOMY_MIN + 1 },
 	(_, i) => ECONOMY_MIN + i,
 );
+
+/**
+ * Five independent (buy, sell) fluctuation pairs.
+ *
+ * Shared rather than written out in both consumers: two stations have different
+ * seeds, so their bytes are unrelated, and a byte changed in one copy would
+ * silently make §5.4's reported margins and the suite's assertions two
+ * different measurements.
+ */
+export const FLUCT_PAIRS: readonly [number, number][] = [
+	[0x00, 0x91],
+	[0x3d, 0x1c],
+	[0x7a, 0xc6],
+	[0xb1, 0x58],
+	[0xee, 0x2f],
+];
 
 /** The two types whose offset is non-zero — the only ones §3's floor can reach. */
 export const OFFSET_STATIONS: readonly StationTypeKey[] = [
