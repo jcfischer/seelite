@@ -215,10 +215,8 @@ export const MAX_SUBSTEPS = 96;
  * body. Every other mass keeps the margin, or selecting a station would turn
  * the whole system permeable.
  *
- * "Keeps the margin" is true of a ship approaching from outside it, which is
- * the case that sentence is about. It is **not** a wall a ship already inside
- * can re-cross: see `guardStopKm`, and §12.2 for why the narrower promise is
- * the one this can make.
+ * "Keeps the margin" is about a ship approaching from outside it. What the
+ * guard promises a ship already inside is narrower — §12.2.
  *
  * The host is not dropped *at* its true surface, though: the paragraph above
  * is the reason for 1.05 rather than 1.0, and it does not stop being true for
@@ -563,11 +561,9 @@ export interface CruiseStep {
  * How near a straight run of `lenKm` from `from` along `nose` comes to
  * `centre`, in kilometres.
  *
- * One spelling, exported, because three places ask it: `rayGoesDeeper` just
- * below — which is what the guard reaches it through — the measurement sweep's
- * penetration column, and `probe-arrival.mjs`, which reaches it through the
- * `Game` handle. Three hand-rolled copies of a clamped projection is three
- * chances for the instrument to agree with itself and disagree with the game.
+ * Exported because two places outside this module ask it: the measurement
+ * sweep's penetration column, and `probe-arrival.mjs` through the `Game`
+ * handle. Hand-rolled copies of a clamped projection are chances to disagree.
  *
  * Pass `Infinity` for an unbounded forward ray.
  */
@@ -583,22 +579,17 @@ export function closestApproachKm(
 }
 
 /**
- * Does a forward ray from `from` along `nose` get **deeper than `radiusKm`**
- * from `centre`?
+ * Does a forward ray from `from` along `nose` get deeper than `radiusKm` from
+ * `centre`?
  *
- * Named for the question rather than for the shape, because `sphereEntry` sits
- * beside it and answers a different one: that returns 0 for a ray which merely
- * *starts* on or inside the sphere, which is every heading from a drop point on
- * a surface — so a ship left beside a planet would read as flying into it
- * whichever way it turned. This asks whether the ray gets *closer than* the
- * radius, which is the question a guard actually has.
+ * Named for the question, not the shape, because `sphereEntry` sits beside it
+ * and answers a different one: that returns 0 for a ray which merely *starts*
+ * on or inside the sphere — every heading from a drop point on a surface — so a
+ * ship left beside a planet would read as flying into it whichever way it
+ * turned.
  *
- * Built on `closestApproachKm` rather than repeating its arithmetic, so the
- * guard, the sweep and the probe are one spelling and not three.
- *
- * Exported because the measurement sweep asks it too, and a rule the instrument
- * states slightly differently from the game is an instrument that can go green
- * on a game that is wrong.
+ * The squared form of `closestApproachKm`, which is the same geometry with the
+ * sqrt — this one is on the flight loop.
  */
 export function rayGoesDeeper(
 	from: Vec3,
@@ -606,9 +597,13 @@ export function rayGoesDeeper(
 	centre: Vec3,
 	radiusKm: number,
 ): boolean {
-	return (
-		closestApproachKm(from, nose, Number.POSITIVE_INFINITY, centre) < radiusKm
-	);
+	// Squared, and allocation-free: this runs per mass per sub-step, up to
+	// `MAX_SUBSTEPS` times a frame. `closestApproachKm` is the same geometry with
+	// the sqrt and the vectors the sweep and the probe want.
+	const toCentre = sub(centre, from);
+	const ahead = dot(toCentre, nose);
+	if (ahead <= 0) return false;
+	return lengthSq(toCentre) - ahead * ahead < radiusKm * radiusKm;
 }
 
 /**
@@ -638,30 +633,14 @@ function guardStopKm(
 	if (entryKm > 0) return entryKm;
 
 	// Already inside this guard volume, where `sphereEntry`'s 0 means "starts
-	// inside" rather than "stop here". Two things follow, and #30 needed both.
+	// inside" rather than "stop here". §12.2 has the argument; the two branches:
 	//
-	// A heading that does not get deeper is **released** — from inside, a body
-	// subtends less than a hemisphere, so a centre-ahead test would pin every
-	// heading around the limb, which are the ones a ship beside a world wants.
-	//
-	// Measured against the **bare radius**, and it has to be: a stop leaves the
-	// ship *on* the guard volume's boundary, so testing the release against that
-	// same boundary is a tangent test at the start point — every heading reads as
-	// entering, and the ship that was just stopped can never leave. Flown, that
-	// was 43 of 90 legs with no way out at all.
-	//
-	// The cost is that a released chord can graze the surface: a heading aimed
-	// to pass a metre above a 6,000 km planet is released and flies it. That is
-	// the same "a grazing pass still passes" `SURFACE_MARGIN` is written to
-	// allow, and nothing collides — so the promise stays the narrow one, and
-	// §12.2 states it as such: **never lets a ship inside the body**, not "never
-	// lets it near one".
+	// A heading that does not get deeper is released — measured against the bare
+	// radius, because a stop leaves the ship *on* the boundary and testing that
+	// same boundary is a tangent test at the start point.
 	if (!rayGoesDeeper(from, nose, m.pos, m.radiusKm)) return null;
-	// And one that does is stopped **here**, at the altitude the ship already
-	// has — not at the surface the ray meets, which walked a ship inside a shell
-	// down to zero altitude. §12.2 has the argument, and states the narrower
-	// promise this can make: the guard never lets a ship reach the body, and
-	// never takes away clearance the ship still has when it stops.
+	// One that does is stopped here, at the altitude the ship already has, not
+	// at the surface the ray meets.
 	return 0;
 }
 

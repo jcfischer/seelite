@@ -505,8 +505,10 @@ three separate facts, of which §11.4's rule is only the first.
 The instrument is `scripts/measure-cruise-arrival.ts`. The four-candidate
 comparison #30 chose from is §12.1 below; re-running it needs the switch that
 was not kept in the flight loop, and the **`node-30-candidates`** tag is where
-that tree lives — `f85cdf0b6f54dd478ee7e311abe96d8d8de8ecae`, recorded here
-because a tag can be moved and a SHA cannot.
+that tree lives — commit
+`a6359bec9c4d2f4634e8ec96f410971823b941b8`, recorded here because a tag can be
+moved and a commit cannot. (The tag *object* is `f85cdf0b`, which is not the
+same thing and does not survive the tag being deleted.)
 
 ### 12.1 A shell is scaled to the obstacle; a station is not
 
@@ -583,33 +585,32 @@ assist cap**.
 
 So the guard fires on **crossing inward**, not on being inside — and "inward"
 is *does this heading go deeper into the body*, not *is the centre ahead of me*.
-The difference is the whole of it: from inside a shell the surface subtends less
-than a hemisphere, so a centre-ahead test releases the radial heading and pins
-every one around the limb — which are the headings a ship beside a world wants.
-The corpus is flown on six headings from 0° to 110° off the outward radial, and
-those that enter the surface are excluded rather than counted, because they are
-supposed to stop. After: **0 of 92 pinned**, median 1.3 million km in five
-seconds on the worst heading that clears the body. The instrument reports
-separately any leg whose ship ends inside a surface, where no heading could
-clear it; with the 5 km standoff there are none.
+From inside a shell the surface subtends less than a hemisphere, so a
+centre-ahead test releases the radial heading and pins every heading around the
+limb, which are the ones a ship beside a world wants.
 
-Aimed back at a station behind its planet, a re-engagement is still stopped, and
-should be: the planet is in the way.
+It is measured against the bare radius. A stop leaves the ship *on* the guard
+volume's boundary, so testing the release against that same boundary is a
+tangent test at the start point: every heading reads as entering and nothing can
+leave — 43 of 90 legs, flown. The cost is that a released chord may graze the
+surface, which is the grazing pass §11.4's margin is written to allow.
 
 A heading that *does* go deeper is stopped **where the ship already is**, not
 where the ray meets the surface. Stopping at the surface was #30's own blocker,
-caught in review: it walked a ship inside a shell down to zero altitude, which
-is exactly what both constants exist to prevent.
+caught in review: it walked a ship inside a shell down to zero altitude.
 
-Say what that buys without overstating it, because the obvious phrasing does.
-It is **not** "a ship inside a volume never gets deeper into it": a chord that
-dips toward the body and misses it is released, correctly, and loses altitude on
-the way — `tests/cruise.test.ts` flies exactly that. What holds is narrower still: **the guard never lets a ship inside the body**,
-and it never takes away clearance the ship still has at the moment it stops. Not
-"never lets it near one" — a chord released from inside a shell may graze the
-surface, which is the same grazing pass §11.4's margin is written to allow, and
-nothing collides. The margin is a floor on
-where a stop happens, not a wall a ship already past can re-cross.
+So the promise is narrow, and worth stating as such: **the guard never lets a
+ship inside the body**, and never takes away clearance the ship still has when
+it stops. Not "never lets it near one", and not "a ship inside a volume never
+gets deeper into it" — a chord that dips and misses is released and does lose
+altitude, which `tests/cruise.test.ts` flies.
+
+The corpus flies six headings from 0° to 110° off the outward radial and counts
+what happens rather than predicting what should: **0 of 90 stopped legs have no
+way out**, a median of 3 headings fly, and the best covers 1.4 million km in
+five seconds. Aimed back at the occluded station a re-engagement is still
+stopped, and should be — that is also the one leg that exercises the in-place
+stop, and it leaves **5.000 km** of clearance where the blocker left none.
 
 **What this is not.** From the radial heading alone it looked like "being
 stopped is terminal" — a second cruise there covers 1 km, in 124 legs out of 124. It is

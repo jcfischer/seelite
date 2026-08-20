@@ -231,9 +231,10 @@ type Regime = "normal" | "cruise";
 /**
  * The `cruise.ts` functions a probe may call through `window.__seelite`.
  *
- * Declared rather than inferred from the object literal, so adding a second one
- * is an edit to a named surface — the point at which "what may a probe compose
- * out of game internals" is decided — instead of an append nobody reviews.
+ * Declared rather than inferred from the object literal, so adding one is an
+ * edit to a named surface rather than an append. The admission test: a pure
+ * function already exported from `cruise.ts` whose rule a probe would otherwise
+ * restate. Anything that reads or writes game state does not belong here.
  */
 interface ProbeGeometry {
 	closestApproachKm: typeof closestApproachKm;

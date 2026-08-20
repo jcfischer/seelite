@@ -47,7 +47,6 @@ import {
 	SURFACE_MARGIN,
 	advanceCruise,
 	closestApproachKm,
-	rayGoesDeeper,
 } from "../src/cruise";
 import {
 	ASSIST_CAP_KMS,
@@ -116,62 +115,35 @@ interface LegResult {
 	/** Where the ship was left, and when — so a re-engagement can start there. */
 	pos: Vec3;
 	gameTime: number;
-	/**
-	 * Kilometres a fresh cruise engagement covers **toward the same station**.
-	 *
-	 * Expected to be ~0 for an occluded leg and to stay that way: the station is
-	 * behind a planet, and flying at it is flying into the planet. Reported so
-	 * that a rule which quietly started tunnelling would show up here.
-	 */
+	/** Kilometres a fresh cruise covers toward the same station. ~0 for an
+	 *  occluded leg and should stay that way — flying at it is flying into the
+	 *  planet — so a rule that started tunnelling would show up here. */
 	reengagedKm: number;
+	/** Kilometres the best of `ESCAPE_HEADINGS_DEG` covers in `ESCAPE_S` s. */
+	bestEscapeKm: number;
+	/** How many of them moved the ship more than 100 km. Zero is a pin. */
+	flyableHeadings: number;
 	/**
-	 * Kilometres the *worst* heading that clears the body covers in `ESCAPE_S`
-	 * seconds — see `ESCAPE_HEADINGS_DEG`. Zero when no sampled heading clears
-	 * it, which means the ship ended inside the surface; `escapeHeadings` says
-	 * which of the two a zero is.
+	 * Clearance left after that second cruise, km.
 	 *
-	 * This is the trap the report describes, and the honest measure of it:
-	 * dropped at a planet, can the player leave? `sphereEntry` returns 0 for a
-	 * step that starts inside a sphere, so before #30 the sweep fired on the
-	 * first sub-step of *every* engagement afterwards regardless of heading —
-	 * 124 legs out of 124 covered 1 km — and the only way on was the 2 km/s
-	 * crawl. The guard now fires on crossing inward, so a ship pointed away is
-	 * not stopped.
-	 */
-	escapeKm: number;
-	/** How many of `ESCAPE_HEADINGS_DEG` cleared the body and were flown. */
-	escapeHeadings: number;
-	/**
-	 * The clearance the ship still has after a **second** cruise aimed back at
-	 * the occluded station, km.
-	 *
-	 * This is the one leg in the corpus that exercises the in-place stop: the
-	 * ship is beside its host, inside the guard volume, aiming through it. The
-	 * fix says it keeps the altitude it had; the bug it replaced walked it down
-	 * to the surface, so a build with that bug reports ~0 here and this build
-	 * reports the standoff. Ordinary legs never reach that branch — they start
-	 * an AU out — so without this row the corpus cannot see the fix at all.
+	 * The one leg in the corpus that flies the in-place stop: the ship is beside
+	 * its host, inside the guard volume, aiming through it. A build with the
+	 * zero-clearance bug reports ~0 here; ordinary legs start an AU out and never
+	 * reach that branch, so without this row the corpus cannot see the fix.
 	 */
 	reengagedClearanceKm: number;
 }
 
-/** Headings the escape is flown on, degrees off the outward radial.
- *
- *  Not just 0: the release rule is "this heading does not enter the body", and
- *  a radial-only sweep cannot tell that from "the centre is behind me". The
- *  band past 90° is where the two differ, and it is the useful one — a ship
- *  beside a world wants to go *around* it, not straight up.
- *
- *  A heading that genuinely enters the surface is **skipped rather than
- *  counted**: it is supposed to be stopped, and how many of these clear the
- *  body depends on how far up the ship is. At a drop point *on* the surface,
- *  only the outward hemisphere clears it. */
+/** Headings the escape is flown on, degrees off the outward radial. Not just 0:
+ *  the band past 90° is the useful one, since a ship beside a world wants to go
+ *  around it rather than straight up. Most of these point into the planet and
+ *  are supposed to be stopped; the question is whether *any* of them fly. */
 const ESCAPE_HEADINGS_DEG = [0, 45, 89, 95, 100, 110];
 
 /**
- * The worst of `ESCAPE_S` seconds of cruise from a point beside a body, over
- * every heading in `ESCAPE_HEADINGS_DEG` — "can the player leave?", flown
- * rather than argued.
+ * `ESCAPE_S` seconds of cruise from a point beside a body, on every heading in
+ * `ESCAPE_HEADINGS_DEG` — "can the player leave?", flown rather than argued.
+ * Returns the best distance and how many headings moved at all.
  *
  * The target is a point 1 AU along the heading, which is a free cruise with
  * something selected: the drop sphere is 50 km and the ship is heading away
@@ -182,16 +154,16 @@ function flyAway(
 	gameTime: number,
 	from: Vec3,
 	bodyId: string | undefined,
-): { worstKm: number; headings: number } {
-	if (!bodyId) return { worstKm: 0, headings: 0 };
+): { bestKm: number; flyable: number } {
+	if (!bodyId) return { bestKm: 0, flyable: 0 };
 	const world = makeWorld(seed);
 	world.gameTime = gameTime;
 	advanceWorldClock(world, 0);
 	const body = world.system.byId.get(bodyId);
-	if (!body) return { worstKm: 0, headings: 0 };
+	if (!body) return { bestKm: 0, flyable: 0 };
 	const out = sub(from, body.pos);
 	const len = length(out);
-	if (len === 0) return { worstKm: 0, headings: 0 };
+	if (len === 0) return { bestKm: 0, flyable: 0 };
 	// The tolerance-free predicate below needs the ship to start strictly above
 	// the surface. Every rule in `guardStopKm` leaves it there — but silently, so
 	// this says it out loud and dies rather than reporting pins it does not have.
@@ -209,7 +181,7 @@ function flyAway(
 	const axis = v3(radial.y, radial.z, radial.x);
 	const raw = sub(axis, scale(radial, dot(radial, axis)));
 	const acrossLen = length(raw);
-	if (acrossLen === 0) return { worstKm: 0, headings: 0 };
+	if (acrossLen === 0) return { bestKm: 0, flyable: 0 };
 	const across = scale(raw, 1 / acrossLen);
 
 	let best = 0;
@@ -227,17 +199,10 @@ function flyAway(
 			scale(radial, Math.cos(rad)),
 			scale(across, Math.sin(rad)),
 		);
-		// **No prediction.** An earlier version tried to skip the headings the
-		// guard ought to stop, which meant restating the guard's floor here — and
-		// got it wrong the first time that floor moved, reporting 43 correct stops
-		// as pins. Worse, at a drop point sitting exactly *on* the floor sphere
-		// the question is a tangent test, so it cannot be answered robustly from
-		// outside the guard at all.
-		//
-		// So this flies every heading and counts what happens, which is also the
-		// question a player has: **is there a way out of here**. A pin is not "one
-		// heading was stopped" — most of them should be, since most of them point
-		// into the planet — it is "none of them moved".
+		// Every heading is flown and counted. Predicting which ones the guard
+		// ought to release meant restating its floor here, which went wrong the
+		// first time that floor moved — and at a drop point sitting on the floor
+		// it is a tangent test, so it cannot be answered from outside the guard.
 		const target = { pos: add(from, scale(nose, AU_KM)), radiusKm: 1 };
 		let pos = from;
 		let travelled = 0;
@@ -260,7 +225,7 @@ function flyAway(
 		best = Math.max(best, travelled);
 		if (travelled > 100) flyable++;
 	}
-	return { worstKm: best, headings: flyable };
+	return { bestKm: best, flyable };
 }
 
 /**
@@ -323,8 +288,8 @@ function flyLeg(
 			const rangeKm = length(sub(end.pos, pos));
 			// A second engagement from exactly here, flown by the same code.
 			let reengagedKm = 0;
-			let escapeKm = 0;
-			let escapeHeadings = 0;
+			let bestEscapeKm = 0;
+			let flyableHeadings = 0;
 			let reengagedClearanceKm = Number.POSITIVE_INFINITY;
 			if (measureReengage && rangeKm > DEFAULT_CRUISE.dropRadiusKm) {
 				const again = makeWorld(world.seed);
@@ -335,8 +300,8 @@ function flyLeg(
 				reengagedKm = Math.max(0, rangeKm - second.rangeKm);
 				reengagedClearanceKm = second.clearanceKm;
 				const away = flyAway(world.seed, world.gameTime, pos, step.exitBodyId);
-				escapeKm = away.worstKm;
-				escapeHeadings = away.headings;
+				bestEscapeKm = away.bestKm;
+				flyableHeadings = away.flyable;
 			}
 			return {
 				exit: step.starved ? "starved" : (step.exit ?? "none"),
@@ -349,8 +314,8 @@ function flyLeg(
 				pos,
 				gameTime: world.gameTime,
 				reengagedKm: finite("reengaged", reengagedKm),
-				escapeKm: finite("escape", escapeKm),
-				escapeHeadings,
+				bestEscapeKm: finite("escape", bestEscapeKm),
+				flyableHeadings,
 				reengagedClearanceKm,
 			};
 		}
@@ -372,8 +337,8 @@ function flyLeg(
 		pos,
 		gameTime: world.gameTime,
 		reengagedKm: 0,
-		escapeKm: 0,
-		escapeHeadings: 0,
+		bestEscapeKm: 0,
+		flyableHeadings: 0,
 		reengagedClearanceKm: Number.POSITIVE_INFINITY,
 	};
 }
@@ -531,22 +496,27 @@ const stopped = rows.filter(
 );
 const stuck = stopped.filter((r) => r.result.reengagedKm < 100);
 const gained = stopped.map((r) => r.result.reengagedKm).sort((a, b) => a - b);
-const pinned = stopped.filter((r) => r.result.escapeHeadings === 0);
-const escapes = stopped.map((r) => r.result.escapeKm).sort((a, b) => a - b);
+const pinned = stopped.filter((r) => r.result.flyableHeadings === 0);
+const escapes = stopped.map((r) => r.result.bestEscapeKm).sort((a, b) => a - b);
 const headingCounts = stopped
-	.map((r) => r.result.escapeHeadings)
+	.map((r) => r.result.flyableHeadings)
 	.sort((a, b) => a - b);
+const reengagedClearances = stopped
+	.map((r) => r.result.reengagedClearanceKm)
+	.filter((x) => Number.isFinite(x))
+	.sort((a, b) => a - b);
+console.log("after a stop — can the player cruise on?\n");
+if (timedOut.length)
+	console.log(
+		`  ${timedOut.length} leg(s) neither arrived nor were stopped inside ${LEG_TIMEOUT_S} s ` +
+			"— excluded from the counts below, which are about being stopped\n",
+	);
 console.log(
 	`  stopped legs ${stopped.length}\n` +
 		"  back at the same station, which is behind the planet: median " +
 		`${km(median(gained))} km, still stopped ${stuck.length}/${stopped.length} — as it should be,\n` +
 		"    and it is the one leg that flies the in-place stop: least clearance left after it, " +
-		`${median(
-			stopped
-				.map((r) => r.result.reengagedClearanceKm)
-				.filter((x) => Number.isFinite(x))
-				.sort((a, b) => a - b),
-		).toFixed(3)} km\n` +
+		`${median(reengagedClearances).toFixed(3)} km\n` +
 		`  a way out, over ${ESCAPE_HEADINGS_DEG.length} headings from 0° to ` +
 		`${ESCAPE_HEADINGS_DEG[ESCAPE_HEADINGS_DEG.length - 1]}° off the outward radial:\n` +
 		`    ${median(headingCounts)} of them fly (median), best covers ${km(median(escapes))} km in ${ESCAPE_S} s\n` +

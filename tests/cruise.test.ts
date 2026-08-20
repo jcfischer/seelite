@@ -1216,14 +1216,10 @@ test("being inside a shell does not pin the ship there", () => {
 });
 
 test("a stop from inside a guard volume keeps the clearance it started with", () => {
-	// The blocker sage found in #30's own fix. The inward-crossing branch stopped
-	// the ship where the ray met the body's **true surface**, so a ship inside a
-	// shell that turned toward the body was walked down to altitude zero — the
-	// one outcome `HOST_CLEARANCE_KM` and `SURFACE_MARGIN` both exist to prevent, and
-	// the one their own docstrings promise not to allow.
-	//
-	// A guard cannot let a ship deeper into a volume it is already inside, so
-	// the stop is *here*: whatever altitude the ship had, it keeps.
+	// The blocker in #30's own fix: the inward branch stopped the ship where the
+	// ray met the body's true surface, so a ship inside a shell that turned
+	// toward the body was walked down to altitude zero. It keeps the altitude it
+	// had instead. §12.2 has the argument.
 	const planet = { id: "planet", pos: v3(), radiusKm: PLANET_R };
 	for (const [label, startRatio, host] of [
 		["inside the shell, not the host", 1.02, false],
@@ -1249,16 +1245,10 @@ test("a stop from inside a guard volume keeps the clearance it started with", ()
 });
 
 test("a body inside whose shell the ship sits is still not enterable", () => {
-	// The invariant sage found only held outside the shell: the inward test reads
-	// the *true radius* for every mass, so once a step began inside some body's
-	// 1.05 shell that body stopped projecting one. "Every other mass keeps
-	// `SURFACE_MARGIN`" was true only of ships that had not got in yet — and the
-	// test named for the invariant starts 0.3 AU out, so it could never reach the
-	// branch that broke it.
-	//
-	// What holds instead, and is what the guard can promise: a ship inside a
-	// shell is never let *further* in. The margin is a floor on where a stop
-	// happens, not a wall a ship already past can re-cross.
+	// "Every other mass keeps `SURFACE_MARGIN`" holds for a ship approaching from
+	// outside it; the test named for that invariant starts 0.3 AU out and cannot
+	// reach this branch. What the guard promises a ship already inside is in
+	// §12.2, and this is the case that pins it.
 	const planet = { id: "planet", pos: v3(), radiusKm: PLANET_R };
 	const inside = v3(PLANET_R * 1.03, 0, 0);
 	const flight = fly({
@@ -1275,9 +1265,8 @@ test("a body inside whose shell the ship sits is still not enterable", () => {
 });
 
 test("a chord that misses the body is released, and does lose altitude", () => {
-	// §12.2's narrower promise, flown: the guard never lets a ship reach the
-	// body, which is not the same as never letting it get deeper into a volume.
-	// Both tests above fly straight at the centre, so neither can see this case.
+	// §12.2's narrow promise, flown. Both tests above fly straight at the centre,
+	// so neither can see this case.
 	const planet = { id: "planet", pos: v3(), radiusKm: PLANET_R };
 	const from = v3(PLANET_R * 1.04, 0, 0);
 	// A chord whose closest approach is inside the shell and outside the surface:
@@ -1303,15 +1292,11 @@ test("a chord that misses the body is released, and does lose altitude", () => {
 });
 
 test("a ship stopped at the guard boundary can still leave it", () => {
-	// The regression that a stricter release floor introduces, pinned so it
-	// cannot come back. A stop leaves the ship *on* the guard volume's boundary,
-	// so a release test measured against that same boundary is a tangent test at
-	// the start point: every heading reads as entering, and the ship that was
-	// just stopped can never leave. Flown over the corpus that was 43 of 90 legs
-	// with no way out at all.
-	//
-	// So the release is measured against the bare radius, and this is the case
-	// that says so.
+	// The regression a stricter release floor introduces: a stop leaves the ship
+	// on the boundary, so measuring the release against that same boundary is a
+	// tangent test at the start point and nothing can leave. 43 of 90 legs, when
+	// it was flown. The release is measured against the bare radius; this says
+	// so.
 	const planet = { id: "planet", pos: v3(), radiusKm: PLANET_R };
 	const atBoundary = v3(PLANET_R + HOST_CLEARANCE_KM, 0, 0);
 	const away = fly({
