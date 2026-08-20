@@ -215,6 +215,11 @@ export const MAX_SUBSTEPS = 96;
  * body. Every other mass keeps the margin, or selecting a station would turn
  * the whole system permeable.
  *
+ * "Keeps the margin" is true of a ship approaching from outside it, which is
+ * the case that sentence is about. It is **not** a wall a ship already inside
+ * can re-cross: see `guardStopKm`, and §12.2 for why the narrower promise is
+ * the one this can make.
+ *
  * The host is not dropped *at* its true surface, though: the paragraph above
  * is the reason for 1.05 rather than 1.0, and it does not stop being true for
  * the body a
@@ -641,13 +646,11 @@ function guardStopKm(
 	// down to zero altitude, which is precisely what these two constants exist
 	// to prevent, and it is what their docstrings promise not to do.
 	//
-	// Say exactly what this buys, because the obvious phrasing overstates it. It
-	// is **not** "a ship inside a volume never gets deeper into it": a chord
-	// that dips toward the body and misses it is released, and loses altitude
-	// on the way — correctly, since it is not flying into anything. What holds
-	// is narrower and is the part that matters: **the guard never lets a ship
-	// reach the body**, and it never *takes away* clearance the ship still has
-	// by walking it down at the moment it stops.
+	// The promise here is narrower than it looks, and §12.2 has the argument:
+	// **the guard never lets a ship reach the body**, and never takes away
+	// clearance the ship still has at the moment it stops. It does not keep a
+	// ship inside a volume from getting deeper into it — a chord that dips and
+	// misses is released, correctly.
 	return 0;
 }
 

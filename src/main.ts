@@ -396,10 +396,17 @@ class Game {
 	 *  rather than restating 5 km. */
 	readonly hostClearanceKm = HOST_CLEARANCE_KM;
 
-	/** `cruise.ts`'s closest-approach geometry, reachable from the page so
-	 *  `probe-arrival.mjs` measures a swept path with the same arithmetic the
-	 *  guard and the sweep use rather than a third hand-rolled copy. */
-	readonly closestApproachKm = closestApproachKm;
+	/**
+	 * `cruise.ts` geometry a probe may call, so `probe-arrival.mjs` measures a
+	 * swept path with the same arithmetic the guard and the sweep use rather
+	 * than a third hand-rolled copy.
+	 *
+	 * Under its own key rather than beside `assistCapKms` and `units`, because
+	 * it is a different contract: a constant can be diffed and versioned, while
+	 * exported arithmetic invites probes to compose game internals. Keeping the
+	 * callable surface distinguishable is what lets that stay a decision.
+	 */
+	readonly geometry = { closestApproachKm };
 
 	/** §4's spin range, reachable from the handle for the same reason: the spin
 	 *  probe drives a station to both ends of it, and a probe that restated

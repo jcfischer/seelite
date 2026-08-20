@@ -17,7 +17,9 @@
  * `git checkout node-30-candidates -- src/cruise.ts scripts/`. A tag rather
  * than a bare SHA because the PR branch was deleted on merge and a squash
  * commit leaves the original unreachable — which is the difference between
- * "recoverable" and "recoverable until someone garbage-collects". Carrying four rules in the flight loop forever to keep a decided
+ * "recoverable" and "recoverable until someone garbage-collects".
+ *
+ * Carrying four rules in the flight loop forever to keep a decided
  * question re-runnable is the cost this repo does not pay; the numbers stay
  * written down and the sweep stays recoverable, the way
  * `capture-station-orbits.ts` keeps its baseline recoverable.
@@ -166,12 +168,13 @@ function flyAway(
 	const out = sub(from, body.pos);
 	const len = length(out);
 	if (len === 0) return { worstKm: 0, headings: 0 };
-	// See the throw below: the tolerance-free predicate needs the ship to start
-	// clear of the surface, and `HOST_CLEARANCE_KM` is what makes that true.
+	// The tolerance-free predicate below needs the ship to start strictly above
+	// the surface. Every rule in `guardStopKm` leaves it there — but silently, so
+	// this says it out loud and dies rather than reporting pins it does not have.
 	if (len - body.radiusKm <= 1e-6)
 		throw new Error(
 			`escape flown from ${(len - body.radiusKm).toFixed(6)} km above a ` +
-				`${body.radiusKm.toFixed(0)} km body — with no clearance the tangent ` +
+				`${body.radiusKm.toFixed(0)} km body — at no clearance the tangent ` +
 				"case is back, and this sweep would report pins it does not have",
 		);
 	const radial = scale(out, 1 / len);
@@ -206,12 +209,17 @@ function flyAway(
 		// decides it differently.
 		//
 		// It has no tangent tolerance, and an earlier version of this line needed
-		// one: when a stop left the ship *on* the surface, a bare `<` read a
-		// tangent as an entry on whichever side the rounding fell, and half the
-		// corpus reported pins it did not have. `HOST_CLEARANCE_KM` removed the
-		// case rather than a tolerance papering over it — a stop now leaves the
-		// ship 5 km up on a host and 5% of a radius on anything else — and the
-		// guard above throws rather than letting that assumption go quiet.
+		// one: when a stop left the ship *on* a surface, a bare `<` read a tangent
+		// as an entry on whichever side the rounding fell, and half the corpus
+		// reported pins it did not have.
+		//
+		// What the predicate needs is only that the ship starts **strictly above**
+		// the surface, which is what the guard above enforces. Not a fixed
+		// altitude: a stop at a guard volume leaves the ship at
+		// `HOST_CLEARANCE_KM` or at the shell, but a stop from *inside* one
+		// preserves whatever altitude the ship had, which can be far less — 2.5 km
+		// in `tests/cruise.test.ts`. Strictly above is the whole invariant, and
+		// it is all this needs.
 		if (entersSphere(from, nose, body.pos, body.radiusKm)) continue;
 		flown++;
 		const target = { pos: add(from, scale(nose, AU_KM)), radiusKm: 1 };
@@ -603,9 +611,11 @@ console.log("occlusion by host size, over 64 phases of each real orbit\n");
 		["large   10–30k km", (r) => r >= 1e4 && r < 3e4],
 		["giant   R > 30k km", (r) => r >= 3e4],
 	];
+	/** One row per station, for the per-station predictions below — the same
+	 *  population `samples` is built from, recorded once rather than recovered
+	 *  by de-duplicating 64 phases of it. */
+	const stations: { ratio: number; cos: number }[] = [];
 	const samples: {
-		/** One station, so the per-station rows below can de-duplicate phases. */
-		key: string;
 		hostRadiusKm: number;
 		ratio: number;
 		/** `|cos|` between the line of sight and this orbit's normal. */
@@ -637,6 +647,7 @@ console.log("occlusion by host size, over 64 phases of each real orbit\n");
 				Math.cos(inc),
 			);
 			const cos = Math.abs(dot(los, normal));
+			stations.push({ ratio: station.orbit.radiusKm / hostBody.radiusKm, cos });
 			for (let i = 0; i < 64; i++) {
 				at.gameTime = (i / 64) * station.orbit.periodS;
 				advanceWorldClock(at, 0);
@@ -647,7 +658,6 @@ console.log("occlusion by host size, over 64 phases of each real orbit\n");
 				const along = dot(o, los);
 				const perp = length(sub(o, scale(los, along)));
 				samples.push({
-					key: `${seed}:${station.id}`,
 					hostRadiusKm: hostBody.radiusKm,
 					ratio: station.orbit.radiusKm / hostBody.radiusKm,
 					cos,
@@ -676,22 +686,20 @@ console.log("occlusion by host size, over 64 phases of each real orbit\n");
 	{
 		// Accumulated over the **same stations the samples come from**, so the
 		// three rows below are three answers to one question rather than three
-		// questions. An earlier version walked its own loop and silently dropped
-		// stations whose parent is missing from `contents.planets`, which is a
-		// difference no number of decimals would have shown.
+		// questions that happen to agree. An earlier version walked its own loop
+		// with its own host filter; the two filters did in fact match — the
+		// station count and the sample count are unchanged by this — but that
+		// was a property of two loops agreeing rather than one the reader could
+		// check, and it is the sort of difference no number of decimals shows.
 		let cosSum = 0;
 		let geometric = 0;
 		let isotropic = 0;
-		let n = 0;
-		const seen = new Set<string>();
-		for (const x of samples) {
-			if (seen.has(x.key)) continue;
-			seen.add(x.key);
+		for (const x of stations) {
 			cosSum += x.cos;
 			geometric += geometricRate(x.ratio, x.cos);
 			isotropic += occlusionRate(x.ratio);
-			n++;
 		}
+		const n = stations.length;
 		const sampledPct =
 			(100 * samples.filter((x) => x.occluded).length) / samples.length;
 		console.log(

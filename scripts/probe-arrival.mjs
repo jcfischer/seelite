@@ -141,7 +141,8 @@ async function flyTo(stationId) {
 				for (const b of g.world.system.bodies) {
 					if (b.kind !== "planet" && b.kind !== "star") continue;
 					const ratio =
-						g.closestApproachKm(previous, nose, segLen, b.pos) / b.radiusKm;
+						g.geometry.closestApproachKm(previous, nose, segLen, b.pos) /
+						b.radiusKm;
 					if (ratio < closestRatio) {
 						closestRatio = ratio;
 						closestId = b.id;

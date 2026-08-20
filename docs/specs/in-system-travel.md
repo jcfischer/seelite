@@ -640,7 +640,9 @@ The second row is the first with the assumption removed and nothing else
 changed, over the same 337 stations, and it agrees with the measurement to
 **0.01 of a point** where the first is 2.04 under. That is what makes the gap
 the isotropy assumption rather than something unexplained — and the rows are
-printed to two places precisely because their agreement is the claim. For one circular orbit the fraction is `arccos(k)/π` with
+printed to two places precisely because their agreement is the claim.
+
+For one circular orbit the fraction is `arccos(k)/π` with
 `k = √(r²−R²)/(r·√(1−c²))` and `c = |cos|` between the sight line and the orbit
 normal — zero once `k ≥ 1`, because a sight line near the pole never passes
 behind. Averaged over an isotropic `c` it collapses back to the row above it.
@@ -658,8 +660,11 @@ at station scale against 1 AU the correction would be ~0.05 points rather than
 2–4.)
 
 The projection table below uses the **isotropic** form, so read it as a lower
-bound — about two points under at these radii — and re-measure before committing
-to a number from it.
+bound. *How much* of a lower bound varies by radius and is not the corpus-wide
+2.04: the by-host-size table above prints the sampled rate and the prediction
+side by side, so the correction at a given `r/R` is the difference on that row —
+2.0 points on rocky worlds, 3.6 on the 10,000–30,000 km band, 1.9 on giants.
+Re-measure before committing to a number from it.
 
 `system.ts`'s 400–2,000 km altitude lands very differently by host size:
 
