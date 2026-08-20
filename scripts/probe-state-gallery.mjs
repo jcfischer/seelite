@@ -53,6 +53,19 @@ function measureGalleryState() {
 		panels: [
 			...document.querySelectorAll('[data-gallery-panel][data-active="true"]'),
 		],
+		panelBoxes: [
+			...document.querySelectorAll('[data-gallery-panel][data-active="true"]'),
+		].map((element) => {
+			const rect = element.getBoundingClientRect();
+			return {
+				left: rect.left,
+				top: rect.top,
+				right: rect.right,
+				bottom: rect.bottom,
+			};
+		}),
+		leftWorkSurface: box('[data-gallery-panel="left"][data-active="true"]'),
+		rightWorkSurface: box('[data-gallery-panel="right"][data-active="true"]'),
 		docking: Boolean(document.querySelector("[data-gallery-docking]")),
 		targetArrow: Boolean(document.querySelector("[data-gallery-target-arrow]")),
 		targetArrowBearing: document
@@ -160,20 +173,51 @@ for (const viewport of VIEWPORTS) {
 				measured.panels.length <= 1,
 				`${measured.panels.length} active panels`,
 			);
+		if (viewport.name === "narrow") {
+			const scannerIsBottomCentre =
+				measured.scanner &&
+				Math.abs(
+					measured.scanner.left +
+						measured.scanner.width / 2 -
+						measured.viewport.width / 2,
+				) <= 12 &&
+				measured.scanner.bottom > measured.viewport.height * 0.55;
+			const scannerIsUnobscured =
+				measured.scanner &&
+				!measured.panelBoxes.some(
+					(panel) =>
+						measured.scanner.left < panel.right &&
+						measured.scanner.right > panel.left &&
+						measured.scanner.top < panel.bottom &&
+						measured.scanner.bottom > panel.top,
+				);
+			check(
+				`narrow: ${state} keeps the scanner bottom-centre and clear of the active panel`,
+				scannerIsBottomCentre && scannerIsUnobscured,
+			);
+		}
 	}
 	await page.locator('[data-gallery-state="assist-on"]').click();
-	await page
-		.locator('[data-gallery-right-tab="Tuning"]')
-		.evaluate((element) => element.click());
-	check(
-		`${viewport.name}: developer tuning remains available in the physical right-console view`,
-		(await page.locator("[data-gallery-tuning]").count()) === 1,
-	);
 	await page.locator('[data-gallery-look="left"]').click();
 	const leftLook = await page.evaluate(measureGalleryState);
 	check(
-		`${viewport.name}: left console is selected by turning the cockpit view left`,
-		leftLook.headLook === "left" && leftLook.cockpitCanvas,
+		`${viewport.name}: left head-look brings the full Navigation console into the working field`,
+		leftLook.headLook === "left" &&
+			leftLook.cockpitCanvas &&
+			leftLook.leftWorkSurface?.width > leftLook.viewport.width * 0.7 &&
+			leftLook.leftWorkSurface?.height > 180,
+	);
+	await page.locator('[data-gallery-look="right"]').click();
+	await page
+		.locator('[data-gallery-right-tab="Tuning"]')
+		.evaluate((element) => element.click());
+	const rightLook = await page.evaluate(measureGalleryState);
+	check(
+		`${viewport.name}: right head-look brings the full Tuning console into the working field`,
+		rightLook.headLook === "right" &&
+			rightLook.rightWorkSurface?.width > rightLook.viewport.width * 0.7 &&
+			rightLook.rightWorkSurface?.height > 180 &&
+			(await page.locator("[data-gallery-tuning]").count()) === 1,
 	);
 	await page.close();
 }

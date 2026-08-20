@@ -10,7 +10,7 @@ import {
 const read = (path: string) =>
 	readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
-test("the HUD and scanner specification records every confirmed design boundary", () => {
+test("the HUD and scanner document retains the agreed decision vocabulary", () => {
 	const prose = read("docs/specs/hud-and-scanner.md").replace(/\s+/g, " ");
 	for (const decision of [
 		"target-primary cockpit",
@@ -54,4 +54,20 @@ test("the rendered target state makes bearing, cockpit depth, radar masts, and t
 	expect(target).toContain("data-gallery-3d-prototype");
 	expect(tuning).toContain("data-gallery-tuning");
 	expect(leftLook).toContain('data-gallery-look="left"');
+});
+
+test("head-look reserves full console work surfaces for the matching side view", () => {
+	const forward = renderGalleryState(galleryState("assist-on"), "Flight");
+	const left = renderGalleryState(galleryState("assist-on"), "Flight", "left");
+	const right = renderGalleryState(
+		galleryState("assist-on"),
+		"Tuning",
+		"right",
+	);
+	expect(forward).toContain('data-gallery-panel="left" data-active="false"');
+	expect(forward).toContain('data-gallery-panel="right" data-active="false"');
+	expect(left).toContain('data-gallery-panel="left" data-active="true"');
+	expect(left).toContain("NAVIGATION");
+	expect(right).toContain('data-gallery-panel="right" data-active="true"');
+	expect(right).toContain("TUNING");
 });

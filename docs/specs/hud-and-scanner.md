@@ -74,7 +74,8 @@ states use shape, text, and restrained motion as well as colour:
 - green: confirmed or clear state;
 - red: blocking danger or refusal.
 
-This preserves contrast and meaning for a player who cannot rely on colour.
+The design deliberately carries meaning through shape and text as well as
+colour; a future accessibility pass must validate contrast and non-colour cues.
 
 ## 5. Persistent floor and side panels
 
@@ -92,9 +93,11 @@ reference guides the presentation only; simulation ownership remains with the
 existing flight, target, and docking work.
 
 Navigation/Communications and Flight/Drive/Tuning are **separate physical
-consoles**, not persistent sidebars. Turning the cockpit view left or right
-makes the corresponding large console display the primary view; looking forward
-returns to flying glass and the lower-centre radar.
+consoles**, not persistent sidebars. The forward view deliberately leaves their
+readable surfaces out of the working field (only their cockpit structure may sit
+at the edges). Turning the cockpit view left or right makes the corresponding
+large console display the primary view; looking forward returns to flying glass
+and the lower-centre radar.
 
 Navigation lists filterable targets with type, range, ETA, and the expanded
 scanner. Communications carries clearance requests and replies, hostile/legal

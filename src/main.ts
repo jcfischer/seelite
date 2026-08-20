@@ -106,7 +106,6 @@ import { SPIN_RPM_RANGE } from "./station";
 import { buildStationMesh } from "./station-mesh";
 import { type WarpField, warpField } from "./warp";
 import { type Vec3, add, dot, length, scale, sub, v3 } from "./vec3";
-import { mountStateGallery } from "./state-gallery";
 // One path to `./units`, deliberately. Keeping a namespace import beside a named
 // one would let this file reach `FAR_SCALE` and `units.FAR_SCALE` as separate
 // spellings of the same constant — the two-public-paths pattern this branch
@@ -1943,6 +1942,9 @@ const game = new Game(seedFromQuery());
 // a probe needs to assert on has to be reachable from here, or the probe ends
 // up asserting on pixels for want of a number.
 (window as unknown as { __seelite: Game }).__seelite = game;
-mountStateGallery();
+if (new URLSearchParams(window.location.search).has("hud-gallery")) {
+	const { mountStateGallery } = await import("./state-gallery");
+	mountStateGallery();
+}
 
 export type { Game };
