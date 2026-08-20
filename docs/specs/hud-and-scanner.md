@@ -123,8 +123,8 @@ hooks. The browser state-gallery probe exercises **assist-on, assist-off,
 cruise, target acquisition, granted docking, and denied docking** at desktop and
 narrow viewport sizes. It asserts the forward target director, local scanner,
 and flight floor; each head turn exposes exactly one large console, replaces
-those forward instruments, uses the gallery's only renderer, and returns to the
-live game route on exit.
+those forward instruments, uses one non-overlay gallery canvas without a live
+game instance, and returns to the live game route on exit.
 
 `?hud-gallery=<state>` is the low-risk browser prototype for these checks. It is
 a design surface, not a claim that unbuilt docking, communications, or scanner

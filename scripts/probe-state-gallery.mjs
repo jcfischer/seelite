@@ -84,6 +84,7 @@ function measureGalleryState() {
 		})(),
 		galleryRendererCount: document.querySelectorAll("canvas:not(#overlay)")
 			.length,
+		liveGameRunning: Boolean(window.__seelite),
 		panels: [
 			...document.querySelectorAll('[data-gallery-panel][data-active="true"]'),
 		],
@@ -98,6 +99,20 @@ function measureGalleryState() {
 				'[data-gallery-panel="right"][data-active="true"]',
 			),
 		),
+		leftPanelVisible: (() => {
+			const panel = document.querySelector('[data-gallery-panel="left"]');
+			return (
+				panel instanceof HTMLElement &&
+				getComputedStyle(panel).display !== "none"
+			);
+		})(),
+		rightPanelVisible: (() => {
+			const panel = document.querySelector('[data-gallery-panel="right"]');
+			return (
+				panel instanceof HTMLElement &&
+				getComputedStyle(panel).display !== "none"
+			);
+		})(),
 		docking: Boolean(document.querySelector("[data-gallery-docking]")),
 		targetArrow: Boolean(document.querySelector("[data-gallery-target-arrow]")),
 		targetArrowBearing: document
@@ -194,9 +209,9 @@ for (const viewport of VIEWPORTS) {
 			measured.cockpitCanvas,
 		);
 		check(
-			`${viewport.name}: ${state} gallery mode owns the only renderer`,
-			measured.galleryRendererCount === 1,
-			`${measured.galleryRendererCount} non-overlay canvases found`,
+			`${viewport.name}: ${state} gallery mode uses one non-overlay canvas without a live game`,
+			measured.galleryRendererCount === 1 && !measured.liveGameRunning,
+			`${measured.galleryRendererCount} non-overlay canvases; game running: ${measured.liveGameRunning}`,
 		);
 		if (state === "assist-on")
 			check(
@@ -244,6 +259,8 @@ for (const viewport of VIEWPORTS) {
 			leftLook.cockpitCanvas &&
 			!leftLook.scannerVisible &&
 			!leftLook.floorVisible &&
+			leftLook.leftPanelVisible &&
+			!leftLook.rightPanelVisible &&
 			leftLook.leftWorkSurface?.width > leftLook.viewport.width * 0.7 &&
 			leftLook.leftWorkSurface?.height > 180,
 	);
@@ -257,6 +274,8 @@ for (const viewport of VIEWPORTS) {
 		rightLook.headLook === "right" &&
 			!rightLook.scannerVisible &&
 			!rightLook.floorVisible &&
+			rightLook.rightPanelVisible &&
+			!rightLook.leftPanelVisible &&
 			rightLook.rightWorkSurface?.width > rightLook.viewport.width * 0.7 &&
 			rightLook.rightWorkSurface?.height > 180 &&
 			(await page.locator("[data-gallery-tuning]").count()) === 1,
