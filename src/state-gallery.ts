@@ -39,16 +39,16 @@ const RIGHT_DEFAULT_DETAIL =
 const TUNING_DETAIL =
 	"v_max 20 c · exponent 0.60 · drop 50 km · vicinity 10,000 km · lead 3 s";
 
+function isLeftConsolePanel(state: GalleryState): boolean {
+	return state.panel === "Navigation" || state.panel === "Communications";
+}
+
 function leftPanelBody(state: GalleryState): string {
-	return state.panel === "Navigation" || state.panel === "Communications"
-		? state.panelDetail
-		: LEFT_DEFAULT_DETAIL;
+	return isLeftConsolePanel(state) ? state.panelDetail : LEFT_DEFAULT_DETAIL;
 }
 
 function leftPanelTitle(state: GalleryState): string {
-	return state.panel === "Navigation" || state.panel === "Communications"
-		? state.panel
-		: "Navigation";
+	return isLeftConsolePanel(state) ? state.panel : "Navigation";
 }
 
 function rightPanelBody(state: GalleryState, rightTab: RightTab): string {
