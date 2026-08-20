@@ -45,6 +45,12 @@ function leftPanelBody(state: GalleryState): string {
 		: LEFT_DEFAULT_DETAIL;
 }
 
+function leftPanelTitle(state: GalleryState): string {
+	return state.panel === "Navigation" || state.panel === "Communications"
+		? state.panel
+		: "Navigation";
+}
+
 function rightPanelBody(state: GalleryState, rightTab: RightTab): string {
 	if (rightTab === "Tuning") return TUNING_DETAIL;
 	return rightTab === state.panel ? state.panelDetail : RIGHT_DEFAULT_DETAIL;
@@ -270,12 +276,21 @@ function buildCanopyFrame(
 
 function addConsoleDisplay(
 	cockpit: THREE.Group,
-	headLook: HeadLook,
-	title: string,
-	body: string,
-	x: number,
-	rotationY: number,
-	accent: string,
+	{
+		headLook,
+		title,
+		body,
+		x,
+		rotationY,
+		accent,
+	}: {
+		headLook: HeadLook;
+		title: string;
+		body: string;
+		x: number;
+		rotationY: number;
+		accent: string;
+	},
 ): THREE.Mesh | null {
 	const textureCanvas = document.createElement("canvas");
 	textureCanvas.width = 680;
@@ -335,28 +350,23 @@ function buildConsoleDisplays(
 	state: GalleryState,
 	rightTab: RightTab,
 ): THREE.Mesh[] {
-	const leftTitle =
-		state.panel === "Navigation" || state.panel === "Communications"
-			? state.panel.toUpperCase()
-			: "NAVIGATION";
-	const left = addConsoleDisplay(
-		cockpit,
+	const leftTitle = leftPanelTitle(state).toUpperCase();
+	const left = addConsoleDisplay(cockpit, {
 		headLook,
-		leftTitle,
-		leftPanelBody(state),
-		-3.4,
-		0.32,
-		"#7ac5e8",
-	);
-	const right = addConsoleDisplay(
-		cockpit,
+		title: leftTitle,
+		body: leftPanelBody(state),
+		x: -3.4,
+		rotationY: 0.32,
+		accent: "#7ac5e8",
+	});
+	const right = addConsoleDisplay(cockpit, {
 		headLook,
-		rightTab.toUpperCase(),
-		rightPanelBody(state, rightTab),
-		3.4,
-		-0.32,
-		"#e5aa52",
-	);
+		title: rightTab.toUpperCase(),
+		body: rightPanelBody(state, rightTab),
+		x: 3.4,
+		rotationY: -0.32,
+		accent: "#e5aa52",
+	});
 	return [left, right].filter(
 		(screen): screen is THREE.Mesh => screen !== null,
 	);
@@ -620,10 +630,7 @@ export function renderGalleryState(
 ): string {
 	const isLeft = headLook === "left";
 	const isRight = headLook === "right";
-	const leftTitle =
-		state.panel === "Navigation" || state.panel === "Communications"
-			? state.panel
-			: "Navigation";
+	const leftTitle = leftPanelTitle(state);
 	const leftConsole = renderConsolePanel({
 		side: "left",
 		active: isLeft,

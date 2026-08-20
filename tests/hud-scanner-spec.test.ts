@@ -37,7 +37,7 @@ test("the gallery resolves every inspectable flight state and defaults safely", 
 	expect(galleryState("target-acquisition").targetBearingDeg).toBe(-112);
 });
 
-test("the rendered target state makes bearing, cockpit depth, radar masts, and tuning inspectable", () => {
+test("the rendered target state exposes the gallery hooks used by browser checks", () => {
 	const target = renderGalleryState(
 		galleryState("target-acquisition"),
 		"Flight",
