@@ -87,10 +87,12 @@ cockpit flyable and honest about cruise charge.
 The browser prototype renders this language as a **3D cockpit**, not as a set of
 flat application cards: a framed canopy opens on the flight glass, faceted side
 consoles recede toward the pilot, and a physical lower-centre dash deck carries
-the scanner. The gallery renders those physical cockpit surfaces in its own
-Three.js scene, with a cockpit camera and shallow idle parallax. The modern
-spaceflight reference guides the presentation only; simulation ownership remains
-with the existing flight, target, and docking work.
+the scanner. The gallery renders canopy, deck, and console housings in its own
+Three.js scene, with a cockpit camera and shallow idle parallax. The lower radar
+is a DOM/CSS instrument positioned on that physical deck, so its rings, masts,
+and anchor discs remain independently inspectable. The modern spaceflight
+reference guides the presentation only; simulation ownership remains with the
+existing flight, target, and docking work.
 
 Navigation/Communications and Flight/Drive/Tuning are **separate physical
 consoles**, not persistent sidebars. The forward view deliberately leaves their
@@ -115,12 +117,13 @@ scanner; looking forward restores both to their stable lower-centre positions.
 
 ## 7. Verification plan
 
-Headless checks pin the state inventory and the deterministic state-to-instrument
-mapping. The browser state-gallery probe exercises **assist-on, assist-off,
+Headless checks pin the state inventory, safe fallback, and rendered gallery
+hooks. The browser state-gallery probe exercises **assist-on, assist-off,
 cruise, target acquisition, granted docking, and denied docking** at desktop and
 narrow viewport sizes. It asserts the forward target director, local scanner,
 and flight floor; each head turn exposes exactly one large console, replaces
-those forward instruments, and uses the gallery's only renderer.
+those forward instruments, uses the gallery's only renderer, and returns to the
+live game route on exit.
 
 `?hud-gallery=<state>` is the low-risk browser prototype for these checks. It is
 a design surface, not a claim that unbuilt docking, communications, or scanner

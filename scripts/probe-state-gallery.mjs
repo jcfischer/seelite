@@ -260,6 +260,24 @@ for (const viewport of VIEWPORTS) {
 			rightLook.rightWorkSurface?.height > 180 &&
 			(await page.locator("[data-gallery-tuning]").count()) === 1,
 	);
+	await page.locator(".sg-close").click();
+	const returnedToFlight = await page
+		.waitForFunction(
+			() =>
+				!new URLSearchParams(location.search).has("hud-gallery") &&
+				document.querySelector("#state-gallery") === null &&
+				Boolean(window.__seelite),
+			undefined,
+			{ timeout: 5_000 },
+		)
+		.then(
+			() => true,
+			() => false,
+		);
+	check(
+		`${viewport.name}: return to flight restores the live game route`,
+		returnedToFlight,
+	);
 	await page.close();
 }
 

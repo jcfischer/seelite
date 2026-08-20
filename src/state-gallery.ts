@@ -674,9 +674,9 @@ export function mountStateGallery(): void {
 		}
 		if (target.closest(".sg-close")) {
 			cockpitScene?.dispose();
-			cockpitScene = null;
-			style.remove();
-			root.remove();
+			const flightUrl = new URL(window.location.href);
+			flightUrl.searchParams.delete("hud-gallery");
+			window.location.assign(flightUrl);
 			return;
 		}
 	});
