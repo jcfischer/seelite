@@ -1,40 +1,41 @@
 /**
- * Where each of #30's arrival-guard candidates drops you, and at what speed.
+ * Whether cruise actually arrives at a station, and where it leaves you when
+ * it does not.
  *
- *   bun run scripts/measure-arrival-guard.ts [seeds]
+ *   bun run scripts/measure-cruise-arrival.ts [seeds]
  *
- * #30 is a rule that is wrong at any tuning: `SURFACE_MARGIN` scales the
- * clearance to the *planet*, while `system.ts` puts a station 400–2,000 km
- * above one, so a big enough world projects a shell its own station is inside
- * and the surface sweep fires before the drop sweep can. The node names three
- * candidates and asks for measurements rather than an argument, so this flies
- * every candidate through the **real** `advanceCruise` — the guard is a field
- * on its input, not a copy of the function — and prints where each one ends.
+ * #30's defect was a rule that was wrong at any tuning: `SURFACE_MARGIN` scaled
+ * the clearance to the *planet*, while `system.ts` puts a station 400–2,000 km
+ * above one, so a big enough world projected a shell its own station was inside
+ * and the surface sweep fired before the drop sweep could. This is the
+ * instrument that decided it and the one that keeps it decided.
  *
- * Three things are measured per leg, because the node's warning is that a
- * candidate can "arrive" by breaking the thing the guard exists for:
+ * The candidate comparison that #30 chose from — four rules flown side by side
+ * — lives in that node's resolution rather than here. It is reproducible:
+ * `git checkout a6359be -- src/cruise.ts scripts/` restores the switch and the
+ * sweep that printed the table. Carrying four rules in the flight loop forever
+ * to keep a decided question re-runnable is the cost this repo does not pay;
+ * the numbers stay recoverable instead, the way `capture-station-orbits.ts`
+ * keeps its baseline recoverable.
+ *
+ * What is measured, per leg, flown through the real `advanceCruise`:
  *
  * - **where it drops**: the range to the station when cruise ends, and the
- *   closing speed there. A drop 9,000 km out at 3,000 km/s is the defect.
+ *   closing speed there. A drop 9,000 km out at 3,000 km/s was the defect.
  * - **whether it tunnelled**: the deepest the flown path went inside any
  *   planet's true surface, swept per frame rather than sampled at the
- *   endpoints. A candidate that arrives by flying through worlds has not
- *   solved this.
+ *   endpoints. Arriving by flying through worlds is not arriving.
+ * - **whether being stopped is terminal**: kilometres a *second* cruise
+ *   engagement covers from the drop point. This read 1 km in 124 legs out of
+ *   124 before #30, which is what "dropped at 10k km, not ok to fly to" was.
  * - **the planet control**: the same ship aimed at a planet with the throttle
- *   open must still be stopped by it. `tests/cruise.test.ts` pins this for the
- *   default; here it is re-flown under every candidate.
+ *   open must still be stopped by it. `tests/cruise.test.ts` pins this; here it
+ *   is re-flown across the corpus.
  *
- * A sweep, not a test: nothing here asserts. It is committed so #30's numbers
- * can be re-derived rather than believed.
+ * A sweep, not a test: nothing here asserts.
  */
 
-import {
-	type ArrivalGuard,
-	CLEARANCE_KM,
-	DEFAULT_CRUISE,
-	SURFACE_MARGIN,
-	advanceCruise,
-} from "../src/cruise";
+import { DEFAULT_CRUISE, SURFACE_MARGIN, advanceCruise } from "../src/cruise";
 import {
 	type World,
 	advanceWorldClock,
@@ -50,14 +51,6 @@ const DT = MAX_DT;
 /** Sim seconds a leg is given before it counts as never arriving. A typical
  *  leg is ~60 s (#14); an hour is the 2 km/s crawl this node is about. */
 const LEG_TIMEOUT_S = 1200;
-
-const GUARDS: ArrivalGuard[] = [
-	"shell",
-	"clearance",
-	"parent-exempt",
-	"target-first",
-	"parent-surface",
-];
 
 /** Every figure printed goes through this: an instrument that quietly reports
  *  garbage is worse than one that dies (#7's rule, `measure-market.ts`). */
@@ -81,15 +74,74 @@ interface LegResult {
 	pos: Vec3;
 	gameTime: number;
 	/**
-	 * Kilometres a **fresh** cruise engagement from that state covers before it
-	 * is stopped again.
+	 * Kilometres a fresh cruise engagement covers **toward the same station**.
 	 *
-	 * This is the trap the report describes: dropped 9,000 km out at the shell,
-	 * the player presses J again and the sweep fires from inside the shell on
-	 * the first sub-step, so the only way in is the 2 km/s crawl. A guard that
-	 * leaves this near zero has not fixed the leg it appears to shorten.
+	 * Expected to be ~0 for an occluded leg and to stay that way: the station is
+	 * behind a planet, and flying at it is flying into the planet. Reported so
+	 * that a rule which quietly started tunnelling would show up here.
 	 */
 	reengagedKm: number;
+	/**
+	 * Kilometres a fresh engagement covers **away from the host**, in five
+	 * seconds.
+	 *
+	 * This is the trap the report describes, and the honest measure of it:
+	 * dropped at a planet, can the player leave? `sphereEntry` returns 0 for a
+	 * step that starts inside a sphere, so before #30 the sweep fired on the
+	 * first sub-step of *every* engagement afterwards regardless of heading —
+	 * 124 legs out of 124 covered 1 km — and the only way on was the 2 km/s
+	 * crawl. The guard now fires on crossing inward, so a ship pointed away is
+	 * not stopped.
+	 */
+	escapeKm: number;
+}
+
+/**
+ * Five seconds of cruise straight out from a body, from where a leg was
+ * stopped — "can the player leave?", flown rather than argued.
+ *
+ * The target is a point 1 AU further out along the same radial, which is a free
+ * cruise with something selected: the drop sphere is 50 km and the ship is
+ * heading away from it, so nothing here ends the run except the guard.
+ */
+function flyAway(
+	seed: number,
+	gameTime: number,
+	from: Vec3,
+	bodyId: string | undefined,
+): number {
+	if (!bodyId) return 0;
+	const world = makeWorld(seed);
+	world.gameTime = gameTime;
+	advanceWorldClock(world, 0);
+	const body = world.system.byId.get(bodyId);
+	if (!body) return 0;
+	const out = sub(from, body.pos);
+	const len = length(out);
+	if (len === 0) return 0;
+	const nose = scale(out, 1 / len);
+	const target = { pos: add(from, scale(nose, AU_KM)), radiusKm: 1 };
+	let pos = from;
+	let travelled = 0;
+	for (let i = 0; i < 50; i++) {
+		const masses = world.system.bodies
+			.filter((b) => b.kind === "star" || b.kind === "planet")
+			.map((b) => ({ id: b.id, pos: b.pos, radiusKm: b.radiusKm }));
+		const step = advanceCruise({
+			pos,
+			nose,
+			throttle: 1,
+			dt: DT,
+			masses,
+			target,
+			params: DEFAULT_CRUISE,
+		});
+		pos = step.pos;
+		travelled += step.travelledKm;
+		advanceWorldClock(world, DT);
+		if (step.dropped) break;
+	}
+	return travelled;
 }
 
 /**
@@ -102,7 +154,6 @@ interface LegResult {
 function flyLeg(
 	world: World,
 	targetId: string,
-	guard: ArrivalGuard,
 	measureReengage = true,
 ): LegResult {
 	const contents = world.system.contents;
@@ -136,7 +187,6 @@ function flyLeg(
 				vel: bodyVelocity(world.system, targetId, world.gameTime),
 			},
 			params: DEFAULT_CRUISE,
-			guard,
 			targetParentId,
 		});
 
@@ -161,13 +211,15 @@ function flyLeg(
 			const rangeKm = length(sub(end.pos, pos));
 			// A second engagement from exactly here, flown by the same code.
 			let reengagedKm = 0;
+			let escapeKm = 0;
 			if (measureReengage && rangeKm > DEFAULT_CRUISE.dropRadiusKm) {
 				const again = makeWorld(world.seed);
 				again.gameTime = world.gameTime;
 				again.ship.pos = pos;
 				advanceWorldClock(again, 0);
-				const second = flyLeg(again, targetId, guard, false);
+				const second = flyLeg(again, targetId, false);
 				reengagedKm = Math.max(0, rangeKm - second.rangeKm);
+				escapeKm = flyAway(world.seed, world.gameTime, pos, step.exitBodyId);
 			}
 			return {
 				exit: step.starved ? "starved" : (step.exit ?? "none"),
@@ -179,6 +231,7 @@ function flyLeg(
 				pos,
 				gameTime: world.gameTime,
 				reengagedKm: finite("reengaged", reengagedKm),
+				escapeKm: finite("escape", escapeKm),
 			};
 		}
 	}
@@ -194,6 +247,7 @@ function flyLeg(
 		pos,
 		gameTime: world.gameTime,
 		reengagedKm: 0,
+		escapeKm: 0,
 	};
 }
 
@@ -262,14 +316,13 @@ function casesFor(seed: number): Case[] {
  *  Flown per candidate against the largest planet in the system. */
 function planetControl(
 	seed: number,
-	guard: ArrivalGuard,
 ): { result: LegResult; radiusKm: number } | null {
 	const world = makeWorld(seed);
 	const planets = world.system.bodies.filter((b) => b.kind === "planet");
 	if (planets.length === 0) return null;
 	const biggest = planets.reduce((a, b) => (b.radiusKm > a.radiusKm ? b : a));
 	return {
-		result: flyLeg(world, biggest.id, guard, false),
+		result: flyLeg(world, biggest.id, false),
 		radiusKm: biggest.radiusKm,
 	};
 }
@@ -280,26 +333,19 @@ if (!Number.isFinite(seedCount) || seedCount < 1)
 const SEEDS = Array.from({ length: seedCount }, (_, i) => i + 1);
 
 console.log(
-	`guards: shell = ${SURFACE_MARGIN}×radius (today) · clearance = radius + ${CLEARANCE_KM} km · ` +
-		"parent-exempt · target-first\n" +
+	`rule: the target's host guards at its true surface, every other body at ${SURFACE_MARGIN}×radius; ` +
+		"the guard fires on crossing inward, not on being inside\n" +
 		`corpus: start system of seeds 1…${seedCount}, drop radius ${DEFAULT_CRUISE.dropRadiusKm} km, ` +
 		`drop speed ${DEFAULT_CRUISE.dropSpeedKms} km/s\n`,
 );
 
 interface Row extends Case {
-	guard: ArrivalGuard;
 	result: LegResult;
 }
 const rows: Row[] = [];
 for (const seed of SEEDS) {
 	for (const c of casesFor(seed)) {
-		for (const guard of GUARDS) {
-			rows.push({
-				...c,
-				guard,
-				result: flyLeg(makeWorld(seed), c.targetId, guard),
-			});
-		}
+		rows.push({ ...c, result: flyLeg(makeWorld(seed), c.targetId) });
 	}
 }
 
@@ -308,76 +354,65 @@ const pct = (n: number, d: number) =>
 const km = (n: number) =>
 	n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n.toFixed(0);
 
-// ── How many legs are even reachable in a straight line.
-const planetOrbiting = rows.filter(
-	(r) => r.guard === "shell" && r.hostId !== null,
-);
-const occludedCount = planetOrbiting.filter((r) => r.occluded).length;
-console.log(
-	`geometry: ${planetOrbiting.length} planet-orbiting legs, of which ${occludedCount} ` +
-		`(${pct(occludedCount, planetOrbiting.length)}) have the host between the ship and the station ` +
-		"at leg start — no straight-line rule reaches those without flying through a world.\n",
-);
+// ── Arrival rate, split by the discriminator: is the host in the way at all?
+const clear = rows.filter((r) => r.hostId !== null && !r.occluded);
+const occluded = rows.filter((r) => r.hostId !== null && r.occluded);
+const starCentric = rows.filter((r) => r.hostId === null);
+const arrived = (rs: Row[]) => rs.filter((r) => r.result.exit === "arrival");
+const tunnelled = rows.filter((r) => r.result.penetrationKm > 1);
 
-// ── Per-guard summary, split by the discriminator.
-console.log("summary — legs that end at the station's 50 km drop radius\n");
-console.log(
-	"  guard           clear of host      occluded by host    star-centric    tunnelled   median drop range",
-);
-for (const guard of GUARDS) {
-	const mine = rows.filter((r) => r.guard === guard);
-	const clear = mine.filter((r) => r.hostId !== null && !r.occluded);
-	const occl = mine.filter((r) => r.hostId !== null && r.occluded);
-	const star = mine.filter((r) => r.hostId === null);
-	const arrived = (rs: Row[]) => rs.filter((r) => r.result.exit === "arrival");
-	const tunnelled = mine.filter((r) => r.result.penetrationKm > 1);
-	const ranges = mine
-		.filter((r) => r.hostId !== null)
-		.map((r) => r.result.rangeKm)
-		.sort((a, b) => a - b);
-	const median = ranges.length
-		? ranges[Math.floor(ranges.length / 2)]
-		: Number.NaN;
-	const cell = (rs: Row[]) =>
-		`${`${arrived(rs).length}/${rs.length}`.padStart(9)} ${pct(arrived(rs).length, rs.length).padStart(7)}`;
+console.log("arrivals at the station's 50 km drop radius\n");
+console.log("  leg class                    arrived         n");
+for (const [label, rs] of [
+	["clear of the host", clear],
+	["occluded by the host", occluded],
+	["star-centric (no host)", starCentric],
+] as [string, Row[]][]) {
 	console.log(
-		`  ${guard.padEnd(15)}${cell(clear)}  ${cell(occl)}  ${cell(star)}  ` +
-			`${`${tunnelled.length}/${mine.length}`.padStart(9)}   ${Number.isFinite(median) ? `${km(median)} km` : "—"}`,
+		`  ${label.padEnd(26)} ${pct(arrived(rs).length, rs.length).padStart(7)}   ${String(rs.length).padStart(7)}`,
 	);
 }
+console.log(
+	`\n  occluded legs are ${pct(occluded.length, clear.length + occluded.length)} of all legs to a ` +
+		"planet-orbiting station — the host is between the ship and the station at\n" +
+		"  leg start, and no straight-line rule reaches those without flying through a world.",
+);
+console.log(
+	`\n  paths that went inside a planet's true surface: ${tunnelled.length}/${rows.length}` +
+		`${tunnelled.length ? ` (deepest ${km(Math.max(...tunnelled.map((r) => r.result.penetrationKm)))} km)` : ""}\n`,
+);
 
-// ── The trap: can the player press J again and make progress?
-console.log(
-	"\nre-engagement — km a second cruise covers from where the first was stopped\n",
+// ── Is being stopped terminal?
+const stopped = rows.filter(
+	(r) => r.hostId !== null && r.result.exit !== "arrival",
 );
+const stuck = stopped.filter((r) => r.result.reengagedKm < 100);
+const gained = stopped.map((r) => r.result.reengagedKm).sort((a, b) => a - b);
+const escapes = stopped.map((r) => r.result.escapeKm).sort((a, b) => a - b);
+const pinned = stopped.filter((r) => r.result.escapeKm < 100);
+console.log("after a stop — can the player cruise on?\n");
 console.log(
-	"  guard           stopped legs   median re-engaged   stuck (< 100 km)",
-);
-for (const guard of GUARDS) {
-	const stopped = rows.filter(
-		(r) =>
-			r.guard === guard && r.hostId !== null && r.result.exit !== "arrival",
-	);
-	const gained = stopped.map((r) => r.result.reengagedKm).sort((a, b) => a - b);
-	const stuck = stopped.filter((r) => r.result.reengagedKm < 100);
-	console.log(
-		`  ${guard.padEnd(15)}${String(stopped.length).padStart(12)}   ${
+	`  stopped legs ${stopped.length}\n` +
+		`  back at the same station, which is behind the planet: median ${
 			gained.length
 				? `${km(gained[Math.floor(gained.length / 2)] ?? 0)} km`
 				: "—"
-		}`.padEnd(56) + `${`${stuck.length}/${stopped.length}`.padStart(10)}`,
-	);
-}
-console.log("");
+		}, still stopped ${stuck.length}/${stopped.length} — as it should be\n` +
+		`  away from the planet, five seconds: median ${
+			escapes.length
+				? `${km(escapes[Math.floor(escapes.length / 2)] ?? 0)} km`
+				: "—"
+		}, pinned ${pinned.length}/${stopped.length}\n`,
+);
 
-// ── The dimension no guard reaches: how low the orbits are.
+// ── The dimension the guard cannot reach: how low the orbits are.
 //
 // A station at orbital radius r above a planet of radius R is hidden whenever it
 // is on the far side and its offset projected across the line of sight is under
 // R. For a bearing that is effectively parallel at 1 AU that is
 // `1 − sqrt(r² − R²)/r`, halved for "behind" — so the whole occlusion rate is a
 // function of `r/R` alone, and `system.ts`'s 400–2,000 km altitude puts a gas
-// giant at r/R ≈ 1.01. Sampled here over real orbits rather than asserted.
+// giant at r/R ≈ 1.03. Sampled here over real orbits rather than asserted.
 console.log("occlusion by host size, over 64 phases of each real orbit\n");
 {
 	const buckets: [string, (r: number) => boolean][] = [
@@ -395,27 +430,22 @@ console.log("occlusion by host size, over 64 phases of each real orbit\n");
 			const host = contents.planets.find((p) => p.id === station.parentId);
 			const hostBody = world.system.byId.get(station.parentId);
 			if (!host || !hostBody) continue;
-			const r = station.orbit.radiusKm;
-			// A bearing is effectively parallel at 1 AU, so the ship's own direction
-			// from the host is the line of sight.
 			const toShip = sub(world.ship.pos, hostBody.pos);
 			const los = scale(toShip, 1 / length(toShip));
 			for (let i = 0; i < 64; i++) {
-				const phase = (i / 64) * station.orbit.periodS;
-				// Re-place the station at this phase, host held still.
 				const w2 = makeWorld(seed);
-				w2.gameTime = phase;
+				w2.gameTime = (i / 64) * station.orbit.periodS;
 				advanceWorldClock(w2, 0);
 				const moved = w2.system.byId.get(station.id);
 				const movedHost = w2.system.byId.get(station.parentId);
 				if (!moved || !movedHost) continue;
 				const o = sub(moved.pos, movedHost.pos);
-				const behind = dot(o, los) < 0;
-				const perp = length(sub(o, scale(los, dot(o, los))));
+				const along = dot(o, los);
+				const perp = length(sub(o, scale(los, along)));
 				samples.push({
 					hostRadiusKm: host.radiusKm,
-					ratio: r / host.radiusKm,
-					occluded: behind && perp < host.radiusKm,
+					ratio: station.orbit.radiusKm / host.radiusKm,
+					occluded: along < 0 && perp < host.radiusKm,
 				});
 			}
 		}
@@ -430,7 +460,6 @@ console.log("occlusion by host size, over 64 phases of each real orbit\n");
 			`  ${label.padEnd(20)}  ${(ratios[Math.floor(ratios.length / 2)] ?? Number.NaN).toFixed(3)}       ${pct(occ, mine.length).padStart(6)}  (n=${mine.length})`,
 		);
 	}
-	// What raising the orbit would buy, from the closed form above.
 	console.log("\n  if every station orbited at r/R:   occluded");
 	for (const k of [1.05, 1.1, 1.25, 1.5, 2, 3]) {
 		const rate = 0.5 * (1 - Math.sqrt(k * k - 1) / k);
@@ -441,16 +470,13 @@ console.log("occlusion by host size, over 64 phases of each real orbit\n");
 	console.log("");
 }
 
-// ── The planet control, per guard.
-console.log("\nplanet control — nose on the biggest planet, throttle open\n");
-console.log(
-	"  guard           stopped   median stop range / radius   deepest penetration",
-);
-for (const guard of GUARDS) {
-	const results = SEEDS.map((s) => planetControl(s, guard)).filter(
+// ── The control: a planet still stops a ship flown at it.
+console.log("planet control — nose on the biggest planet, throttle open\n");
+{
+	const results = SEEDS.map((s) => planetControl(s)).filter(
 		(r): r is { result: LegResult; radiusKm: number } => r !== null,
 	);
-	const stopped = results.filter(
+	const held = results.filter(
 		(r) => r.result.exit === "proximity" || r.result.exit === "arrival",
 	);
 	const deepest = results.reduce(
@@ -461,21 +487,25 @@ for (const guard of GUARDS) {
 		.map((r) => r.result.rangeKm / r.radiusKm)
 		.sort((a, b) => a - b);
 	console.log(
-		`  ${guard.padEnd(15)}${`${stopped.length}/${results.length}`.padStart(7)}   ${(ratios[Math.floor(ratios.length / 2)] ?? Number.NaN).toFixed(3).padStart(24)}   ${km(deepest).padStart(10)} km`,
+		`  stopped ${held.length}/${results.length}   median stop range / radius ` +
+			`${(ratios[Math.floor(ratios.length / 2)] ?? Number.NaN).toFixed(3)}   ` +
+			`deepest penetration ${km(deepest)} km\n`,
 	);
 }
 
-// ── The named cases from the node body, in full.
-console.log("\nthe node's cases, leg by leg\n");
+// ── The cases #30 was reported from, leg by leg.
+console.log("the node's cases, leg by leg\n");
 const NAMED: [number, string][] = [
 	[1, "station-trade"],
 	[1, "station-shipyard"],
 	[1, "station-refinery"],
 	[7, "station-trade"],
 	[42, "station-trade"],
+	[47, "station-trade"],
+	[47, "station-shipyard"],
 ];
 console.log(
-	"  seed  target             host        R (km)  alt (km)  occl  guard           exit                   drop range   closing   time     tunnel    re-engaged",
+	"  seed  target             host        R (km)  alt (km)  occl   exit                 drop range   closing   time     tunnel",
 );
 for (const [seed, targetId] of NAMED) {
 	const c = casesFor(seed).find((x) => x.targetId === targetId);
@@ -485,33 +515,26 @@ for (const [seed, targetId] of NAMED) {
 		);
 		continue;
 	}
-	for (const guard of GUARDS) {
-		const r = flyLeg(makeWorld(seed), targetId, guard);
-		console.log(
-			`  ${String(seed).padStart(4)}  ${targetId.padEnd(18)} ${(c.hostId ?? "star").padEnd(10)} ` +
-				`${km(c.hostRadiusKm).padStart(7)} ${km(c.altitudeKm).padStart(9)}  ${(c.occluded ? "yes" : "no").padEnd(5)} ${guard.padEnd(15)} ` +
-				`${(r.exitBodyId ? `${r.exit}:${r.exitBodyId}` : r.exit).padEnd(20)} ` +
-				`${`${km(r.rangeKm)} km`.padStart(9)} ${`${r.closingKms.toFixed(0)} km/s`.padStart(11)} ` +
-				`${`${r.seconds.toFixed(0)}s`.padStart(7)} ${`${km(r.penetrationKm)} km`.padStart(9)} ${`${km(r.reengagedKm)} km`.padStart(11)}`,
-		);
-	}
-	console.log("");
+	const r = flyLeg(makeWorld(seed), targetId);
+	console.log(
+		`  ${String(seed).padStart(4)}  ${targetId.padEnd(18)} ${(c.hostId ?? "star").padEnd(10)} ` +
+			`${km(c.hostRadiusKm).padStart(7)} ${km(c.altitudeKm).padStart(9)}  ${(c.occluded ? "yes" : "no").padEnd(5)} ` +
+			`${(r.exitBodyId ? `${r.exit}:${r.exitBodyId}` : r.exit).padEnd(20)} ` +
+			`${`${km(r.rangeKm)} km`.padStart(9)} ${`${r.closingKms.toFixed(0)} km/s`.padStart(11)} ` +
+			`${`${r.seconds.toFixed(0)}s`.padStart(7)} ${`${km(r.penetrationKm)} km`.padStart(9)}`,
+	);
 }
 
-// ── Worst remaining shortfalls per guard: what a player would still meet.
-console.log("worst drop range per guard, planet-orbiting targets\n");
-for (const guard of GUARDS) {
-	const worst = rows
-		.filter((r) => r.guard === guard && r.hostId !== null)
-		.sort((a, b) => b.result.rangeKm - a.result.rangeKm)
-		.slice(0, 5);
-	console.log(`  ${guard}`);
-	for (const r of worst) {
-		console.log(
-			`    seed ${String(r.seed).padStart(4)}  ${r.targetId.padEnd(17)} ${r.hostIsGiant ? "giant" : "rocky"} R=${km(r.hostRadiusKm)} km ${r.occluded ? "occluded" : "clear   "}  ` +
-				`${r.result.exit === "arrival" ? "arrival" : `${r.result.exit}:${r.result.exitBodyId ?? "—"}`}  ` +
-				`${km(r.result.rangeKm)} km at ${r.result.closingKms.toFixed(0)} km/s`,
-		);
-	}
-	console.log("");
+// ── What a player still meets: the worst legs the rule leaves.
+console.log("\nworst drop range, planet-orbiting targets\n");
+for (const r of [...rows]
+	.filter((x) => x.hostId !== null)
+	.sort((a, b) => b.result.rangeKm - a.result.rangeKm)
+	.slice(0, 8)) {
+	console.log(
+		`  seed ${String(r.seed).padStart(4)}  ${r.targetId.padEnd(17)} ${r.hostIsGiant ? "giant" : "rocky"} R=${km(r.hostRadiusKm)} km ${r.occluded ? "occluded" : "clear   "}  ` +
+			`${r.result.exit === "arrival" ? "arrival" : `${r.result.exit}:${r.result.exitBodyId ?? "—"}`}  ` +
+			`${km(r.result.rangeKm)} km at ${r.result.closingKms.toFixed(0)} km/s`,
+	);
 }
+console.log("");

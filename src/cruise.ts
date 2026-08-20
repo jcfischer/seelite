@@ -201,38 +201,32 @@ export const MAX_SUBSTEPS = 96;
 export const SURFACE_MARGIN = 1.05;
 
 /**
- * Which arrival-geometry rule `advanceCruise` flies — #30's candidates, so the
- * measurement script can fly each one through *this* function rather than a
- * copy of it.
+ * Why the shell does not apply to the body the selected target orbits (#30).
  *
- * `shell` is the rule as #14 shipped it and stays the default, so nothing that
- * does not name a guard changes behaviour.
- */
-export type ArrivalGuard =
-	/** #14's rule: the shell is `SURFACE_MARGIN × radius`. */
-	| "shell"
-	/** Candidate 1: `radius + CLEARANCE_KM`, so the clearance stops scaling
-	 *  with the planet. */
-	| "clearance"
-	/** Candidate 2: the body the selected target orbits does not block it.
-	 *  Every other body still does. */
-	| "parent-exempt"
-	/** Candidate 3: keep the shell, but a body does not stop a pass whose
-	 *  target lies nearer along the ray than that body's surface entry. */
-	| "target-first"
-	/** Candidate 4, added by the measurement: the target's parent keeps a
-	 *  guard, but at its **true** surface rather than at the shell — so a
-	 *  grazing approach is let through and an occluded one is still stopped. */
-	| "parent-surface";
-
-/**
- * Candidate 1's absolute clearance, km.
+ * `SURFACE_MARGIN` scales the clearance to the *obstacle*, and `system.ts`
+ * puts a station 400–2,000 km above its planet. What decides whether a distant
+ * ship can reach one in a straight line is the station's offset **across** the
+ * line of sight, and between `radius` and `1.05 × radius` that offset is clear
+ * space the planet's shell nonetheless claims. Flown over 200 systems, that
+ * band alone cost 15% of all legs to a planet-orbiting station: the sweep fired
+ * against the planet thousands of kilometres short, at thousands of km/s.
  *
- * Sized under `system.ts`'s 400 km minimum station altitude, with room to
- * spare: a station has to sit outside its planet's shell or the shell fires
- * first, which is the whole of #30.
+ * So the host guards at its **true surface** instead. It is still an obstacle —
+ * a station genuinely behind its planet is still unreachable in a straight line,
+ * and the measured 26% of legs in that position still stop — but it no longer
+ * projects a shell its own station is inside.
+ *
+ * The exemption is scoped to the *selected target's* host and to nothing else.
+ * Every other body keeps `SURFACE_MARGIN`, or selecting a station would turn
+ * the whole system permeable.
+ *
+ * Rejected alongside it, with the numbers in #30's resolution: an absolute
+ * `radius + 300 km` clearance (reaches 96% of clear legs against this rule's
+ * 98%, and is a second constant to size); exempting the host entirely (100%
+ * arrival, by flying up to 6,900 km inside the planet on 22% of legs); and
+ * letting the drop sphere win when it lies nearer along the ray (measured a
+ * no-op — the station is never nearer, it is *behind*).
  */
-export const CLEARANCE_KM = 300;
 
 /** Anything the speed law keys off: §2 counts stars and planets, and
  *  deliberately not moons, stations or belts (§2.1). */
@@ -493,10 +487,13 @@ export interface CruiseInput {
 	/** Remaining drive charge, AU. Omitted means "not metered", which is what
 	 *  the tests of the speed law want; the renderer always passes it. */
 	chargeAu?: number;
-	/** #30's arrival-geometry rule. Omitted is `shell` — #14's behaviour. */
-	guard?: ArrivalGuard;
-	/** The id of the mass the selected target orbits, for `parent-exempt`.
-	 *  Star-centric targets have none. */
+	/**
+	 * The id of the mass the selected target orbits, if any — #30's rule.
+	 *
+	 * A star-centric target has none, and neither does a target that *is* a
+	 * mass: cruising to a planet must still be stopped by that planet, which is
+	 * what leaves the ship above its surface rather than inside it.
+	 */
 	targetParentId?: string | null;
 }
 
@@ -543,7 +540,6 @@ export interface CruiseStep {
  */
 export function advanceCruise(input: CruiseInput): CruiseStep {
 	const p = input.params;
-	const guard: ArrivalGuard = input.guard ?? "shell";
 	let pos = input.pos;
 	let remaining = input.dt;
 	let travelledKm = 0;
@@ -655,19 +651,6 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 		const dt = Math.min(remaining, Math.max(cap, 1e-9));
 		let stepKm = speedKms * dt;
 
-		// How far along the ray the target's drop sphere lies, unbounded by this
-		// step — candidate 3's comparison, and only computed for it.
-		const targetRayKm =
-			guard === "target-first" && input.target
-				? sphereEntry(
-						pos,
-						input.nose,
-						Number.POSITIVE_INFINITY,
-						input.target.pos,
-						p.dropRadiusKm,
-					)
-				: null;
-
 		// Sweep the step against the drop sphere: where along this segment, if
 		// anywhere, does the ship first come within the drop radius of the target?
 		if (input.target && closing <= p.dropSpeedKms) {
@@ -694,29 +677,38 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 		// Swept, and taken **before** the drop-out if it happens first, so the
 		// nearer event is the one that fires.
 		for (const m of input.masses) {
-			// Candidate 2: the body the target orbits is not an obstacle to it.
-			if (guard === "parent-exempt" && m.id === input.targetParentId) continue;
+			// #30: the host guards at its true surface, everything else at the shell.
 			const shellKm =
-				guard === "clearance"
-					? m.radiusKm + CLEARANCE_KM
-					: guard === "parent-surface" && m.id === input.targetParentId
-						? m.radiusKm
-						: m.radiusKm * SURFACE_MARGIN;
+				m.id === input.targetParentId
+					? m.radiusKm
+					: m.radiusKm * SURFACE_MARGIN;
 			const entryKm = sphereEntry(pos, input.nose, stepKm, m.pos, shellKm);
-			if (entryKm !== null && entryKm <= stepKm) {
-				// Candidate 3: a body only stops a pass that was not going past it to
-				// the target anyway.
-				if (
-					guard === "target-first" &&
-					targetRayKm !== null &&
-					targetRayKm <= entryKm
-				)
-					continue;
-				stepKm = entryKm;
-				dropped = true;
-				exit = "proximity";
-				exitBodyId = m.id;
-			}
+			if (entryKm === null || entryKm > stepKm) continue;
+			// **Crossing inward, not being inside.**
+			//
+			// `sphereEntry` returns 0 for a step that starts within the sphere, so
+			// a ship already inside a shell was dropped on the first sub-step of
+			// every engagement, whatever heading it took. That is not a corner
+			// case: a station's orbit is 400–2,000 km up and the shell is 5% of a
+			// planet's radius, so **49 of 337 stations in the corpus sit inside
+			// their own host's shell** — every one of them a place cruise could not
+			// be engaged from. Undocking from the worst of them and aiming straight
+			// out, cruise covered 0 km until normal flight had crawled the 2,784 km
+			// to the shell: 23 minutes at the 2 km/s assist cap.
+			//
+			// A ship pointed away from the body it is beside is not flying into
+			// anything, so it is not stopped. Same corpus, after: 0 of 49 stuck.
+			//
+			// This is a smaller claim than "being stopped is terminal", which is
+			// what it looked like from the drop point alone. A ship dropped *at* a
+			// shell is on its boundary, and the 2.5 s spool-up carries it clear
+			// before cruise takes — measured in `probe-arrival.mjs`, which found
+			// that check green against the old rule too.
+			if (entryKm === 0 && dot(sub(m.pos, pos), input.nose) <= 0) continue;
+			stepKm = entryKm;
+			dropped = true;
+			exit = "proximity";
+			exitBodyId = m.id;
 		}
 
 		pos = add(pos, scale(input.nose, stepKm));

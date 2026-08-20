@@ -68,6 +68,7 @@ import {
 	CHARGE_CAPACITY_AU,
 	type CruiseParams,
 	DEFAULT_CRUISE,
+	SURFACE_MARGIN,
 	advanceCruise,
 	chargeAfterRegen,
 	chargeAfterTravel,
@@ -384,6 +385,10 @@ class Game {
 	 *  go falsely red the day the flight model retunes it. */
 	readonly assistCapKms = ASSIST_CAP_KMS;
 
+	/** #14's shell, on the handle for the same reason: `probe-arrival.mjs` states
+	 *  its bound as a fraction of this rather than as its own 1.05. */
+	readonly surfaceMargin = SURFACE_MARGIN;
+
 	/** §4's spin range, reachable from the handle for the same reason: the spin
 	 *  probe drives a station to both ends of it, and a probe that restated
 	 *  0.6 and 3.0 would assert against its own copy. */
@@ -559,6 +564,27 @@ class Game {
 		const d = length(to);
 		if (d === 0) return;
 		this.face(scale(to, 1 / d));
+	}
+
+	/**
+	 * Point the nose straight out from a body, along the radial.
+	 *
+	 * The move a player makes when a planet has stopped them and they want to be
+	 * anywhere else — and, since #30, one cruise honours: the surface guard fires
+	 * on crossing *inward*, so a ship pointed away from the body it is beside is
+	 * not stopped by it. `probe-arrival.mjs` flies exactly this to check that the
+	 * release is real in the browser and not only in the sweep.
+	 *
+	 * Named for the manoeuvre rather than exposing `face`, which would let the
+	 * ship's orientation be set from anywhere.
+	 */
+	faceAway(bodyId: string) {
+		const body = this.world.system.byId.get(bodyId);
+		if (!body) return;
+		const out = sub(this.world.ship.pos, body.pos);
+		const d = length(out);
+		if (d === 0) return;
+		this.face(scale(out, 1 / d));
 	}
 
 	/**
@@ -1014,6 +1040,22 @@ class Game {
 		return "press J to cruise";
 	}
 
+	/**
+	 * The body the selected target orbits, if any — #30's arrival rule reads it.
+	 *
+	 * Only a station has one: a planet or moon selected as a target is a mass in
+	 * its own right, and cruise to it must still be stopped *by* it. Reading the
+	 * generator's `parentId` rather than inferring a host from proximity, so the
+	 * exemption is the placement's own claim about what orbits what.
+	 */
+	targetParentId(): string | null {
+		if (!this.targetId) return null;
+		const station = this.world.system.contents.stations.find(
+			(s) => s.id === this.targetId,
+		);
+		return station ? station.parentId : null;
+	}
+
 	/** How fast the selected target is moving through sim space, km/s — the frame
 	 *  the arrival is judged in. Zero when nothing is selected. */
 	targetVelocity(): Vec3 {
@@ -1314,6 +1356,7 @@ class Game {
 				: null,
 			params: this.cruiseParams,
 			chargeAu: this.chargeAu,
+			targetParentId: this.targetParentId(),
 		});
 		this.world.ship.pos = step.pos;
 		this.cruiseSpeedKms = step.speedKms;
