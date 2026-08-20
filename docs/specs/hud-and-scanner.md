@@ -86,8 +86,10 @@ cockpit flyable and honest about cruise charge.
 The browser prototype renders this language as a **3D cockpit**, not as a set of
 flat application cards: a framed canopy opens on the flight glass, faceted side
 consoles recede toward the pilot, and a physical lower-centre dash deck carries
-the scanner. The modern Elite reference guides the presentation only; simulation
-ownership remains with the existing flight, target, and docking work.
+the scanner. The gallery renders those physical cockpit surfaces in its own
+Three.js scene, with a cockpit camera and shallow idle parallax. The modern Elite
+reference guides the presentation only; simulation ownership remains with the
+existing flight, target, and docking work.
 
 Navigation lists filterable targets with type, range, ETA, and the expanded
 scanner. Communications carries clearance requests and replies, hostile/legal

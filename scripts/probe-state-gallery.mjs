@@ -72,6 +72,15 @@ function measureGalleryState() {
 					getComputedStyle(element).getPropertyValue("--height"),
 				) > 0,
 		),
+		cockpitCanvas: (() => {
+			const canvas = document.querySelector("[data-gallery-3d-canvas]");
+			return (
+				canvas instanceof HTMLCanvasElement &&
+				canvas.width > 0 &&
+				canvas.height > 0 &&
+				Boolean(canvas.getContext("webgl2") || canvas.getContext("webgl"))
+			);
+		})(),
 		viewport: { width: innerWidth, height: innerHeight },
 	};
 }
@@ -129,6 +138,11 @@ for (const viewport of VIEWPORTS) {
 				measured.targetArrow &&
 					measured.targetArrowBearing !== null &&
 					measured.targetArrowAroundCircle,
+			);
+		if (state === "target-acquisition")
+			check(
+				`${viewport.name}: target acquisition renders a live Three.js cockpit canvas`,
+				measured.cockpitCanvas,
 			);
 		if (state === "assist-on")
 			check(
