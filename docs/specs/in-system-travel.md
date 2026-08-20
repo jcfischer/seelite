@@ -505,7 +505,8 @@ three separate facts, of which §11.4's rule is only the first.
 The instrument is `scripts/measure-cruise-arrival.ts`. The four-candidate
 comparison #30 chose from is §12.1 below; re-running it needs the switch that
 was not kept in the flight loop, and the **`node-30-candidates`** tag is where
-that tree lives.
+that tree lives — `f85cdf0b6f54dd478ee7e311abe96d8d8de8ecae`, recorded here
+because a tag can be moved and a SHA cannot.
 
 ### 12.1 A shell is scaled to the obstacle; a station is not
 
@@ -520,7 +521,7 @@ Measured: 36 of the 249 legs whose station was clear of its host ended against
 the host anyway — 14% of those, 11% of every planet-orbiting leg — thousands of
 km short and still doing thousands of km/s.
 
-**The body a selected target orbits guards at `radius + CLEARANCE_KM` instead**
+**The body a selected target orbits guards at `radius + HOST_CLEARANCE_KM` instead**
 — 5 km, absolute, where every other body keeps `1.05 × radius`. It is
 still an obstacle — a station genuinely behind its planet is still stopped — but
 it no longer projects a shell its own station is inside. The exemption is scoped
@@ -603,9 +604,11 @@ is exactly what both constants exist to prevent.
 Say what that buys without overstating it, because the obvious phrasing does.
 It is **not** "a ship inside a volume never gets deeper into it": a chord that
 dips toward the body and misses it is released, correctly, and loses altitude on
-the way — `tests/cruise.test.ts` flies exactly that. What holds is narrower:
-**the guard never lets a ship reach the body**, and it never takes away
-clearance the ship still has at the moment it stops. The margin is a floor on
+the way — `tests/cruise.test.ts` flies exactly that. What holds is narrower still: **the guard never lets a ship inside the body**,
+and it never takes away clearance the ship still has at the moment it stops. Not
+"never lets it near one" — a chord released from inside a shell may graze the
+surface, which is the same grazing pass §11.4's margin is written to allow, and
+nothing collides. The margin is a floor on
 where a stop happens, not a wall a ship already past can re-cross.
 
 **What this is not.** From the radial heading alone it looked like "being
@@ -662,8 +665,11 @@ at station scale against 1 AU the correction would be ~0.05 points rather than
 The projection table below uses the **isotropic** form, so read it as a lower
 bound. *How much* of a lower bound varies by radius and is not the corpus-wide
 2.04: the by-host-size table above prints the sampled rate and the prediction
-side by side, so the correction at a given `r/R` is the difference on that row —
-2.0 points on rocky worlds, 3.6 on the 10,000–30,000 km band, 1.9 on giants.
+side by side, so the correction for a given host is the difference on
+its row — 2.0 points on rocky worlds, 3.6 on the 10,000–30,000 km band, 1.9 on
+giants. Those rows are **host-radius** bands, not `r/R` bands, and `r/R` varies
+inside each one because the altitude is absolute; they bound the correction
+rather than key it.
 Re-measure before committing to a number from it.
 
 `system.ts`'s 400–2,000 km altitude lands very differently by host size:

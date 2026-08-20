@@ -88,7 +88,7 @@ async function flyTo(stationId) {
 			g.targetId = stationId;
 			g.faceTarget();
 			// The host, asked of the page rather than re-derived here: `sim.ts`'s
-			// `hostIdOf` owns the rule and `targetParentId()` is the handle's
+			// `stationHostIdOf` owns the rule and `targetParentId()` is the handle's
 			// spelling of it, so this probe cannot state it differently from the
 			// game it is checking.
 			const hostId = g.targetParentId();

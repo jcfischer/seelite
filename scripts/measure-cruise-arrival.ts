@@ -47,7 +47,7 @@ import {
 	SURFACE_MARGIN,
 	advanceCruise,
 	closestApproachKm,
-	entersSphere,
+	rayGoesDeeper,
 } from "../src/cruise";
 import {
 	ASSIST_CAP_KMS,
@@ -57,6 +57,7 @@ import {
 	stationHostIdOf,
 	makeWorld,
 } from "../src/sim";
+import { orbitNormal } from "../src/system";
 import { AU_KM, MAX_DT } from "../src/units";
 import { type Vec3, add, dot, length, scale, sub, v3 } from "../src/vec3";
 
@@ -101,6 +102,17 @@ interface LegResult {
 	seconds: number;
 	/** How far inside any planet's true surface the flown path went, km. */
 	penetrationKm: number;
+	/**
+	 * The **least clearance** the flown path had above any planet's surface, km
+	 * — signed, so a stop on the skin is 0 and a stop inside is negative.
+	 *
+	 * `penetrationKm` alone cannot verify #30's fix: it floors at zero, so a
+	 * ship walked exactly onto a surface reports the same `0.000` as one stopped
+	 * 5 km clear, and the build with the zero-clearance bug printed that figure
+	 * too. Where a stop leaves the ship is the whole subject, so the instrument
+	 * has to report the distance rather than its absence.
+	 */
+	clearanceKm: number;
 	/** Where the ship was left, and when — so a re-engagement can start there. */
 	pos: Vec3;
 	gameTime: number;
@@ -129,6 +141,18 @@ interface LegResult {
 	escapeKm: number;
 	/** How many of `ESCAPE_HEADINGS_DEG` cleared the body and were flown. */
 	escapeHeadings: number;
+	/**
+	 * The clearance the ship still has after a **second** cruise aimed back at
+	 * the occluded station, km.
+	 *
+	 * This is the one leg in the corpus that exercises the in-place stop: the
+	 * ship is beside its host, inside the guard volume, aiming through it. The
+	 * fix says it keeps the altitude it had; the bug it replaced walked it down
+	 * to the surface, so a build with that bug reports ~0 here and this build
+	 * reports the standoff. Ordinary legs never reach that branch — they start
+	 * an AU out — so without this row the corpus cannot see the fix at all.
+	 */
+	reengagedClearanceKm: number;
 }
 
 /** Headings the escape is flown on, degrees off the outward radial.
@@ -188,8 +212,8 @@ function flyAway(
 	if (acrossLen === 0) return { worstKm: 0, headings: 0 };
 	const across = scale(raw, 1 / acrossLen);
 
-	let worst = Number.POSITIVE_INFINITY;
-	let flown = 0;
+	let best = 0;
+	let flyable = 0;
 	for (const deg of ESCAPE_HEADINGS_DEG) {
 		// Every heading starts from the same clock. `advanceWorldClock` writes body
 		// positions in place, so a shared world would hand the second heading a
@@ -203,25 +227,17 @@ function flyAway(
 			scale(radial, Math.cos(rad)),
 			scale(across, Math.sin(rad)),
 		);
-		// Skip the headings that fly into the body: those are stops, not pins.
-		// **`entersSphere` is `cruise.ts`'s own predicate**, not a restatement of
-		// it — a sweep that decided this its own way could pass a game that
-		// decides it differently.
+		// **No prediction.** An earlier version tried to skip the headings the
+		// guard ought to stop, which meant restating the guard's floor here — and
+		// got it wrong the first time that floor moved, reporting 43 correct stops
+		// as pins. Worse, at a drop point sitting exactly *on* the floor sphere
+		// the question is a tangent test, so it cannot be answered robustly from
+		// outside the guard at all.
 		//
-		// It has no tangent tolerance, and an earlier version of this line needed
-		// one: when a stop left the ship *on* a surface, a bare `<` read a tangent
-		// as an entry on whichever side the rounding fell, and half the corpus
-		// reported pins it did not have.
-		//
-		// What the predicate needs is only that the ship starts **strictly above**
-		// the surface, which is what the guard above enforces. Not a fixed
-		// altitude: a stop at a guard volume leaves the ship at
-		// `HOST_CLEARANCE_KM` or at the shell, but a stop from *inside* one
-		// preserves whatever altitude the ship had, which can be far less — 2.5 km
-		// in `tests/cruise.test.ts`. Strictly above is the whole invariant, and
-		// it is all this needs.
-		if (entersSphere(from, nose, body.pos, body.radiusKm)) continue;
-		flown++;
+		// So this flies every heading and counts what happens, which is also the
+		// question a player has: **is there a way out of here**. A pin is not "one
+		// heading was stopped" — most of them should be, since most of them point
+		// into the planet — it is "none of them moved".
 		const target = { pos: add(from, scale(nose, AU_KM)), radiusKm: 1 };
 		let pos = from;
 		let travelled = 0;
@@ -241,9 +257,10 @@ function flyAway(
 			advanceWorldClock(world, DT);
 			if (step.dropped) break;
 		}
-		worst = Math.min(worst, travelled);
+		best = Math.max(best, travelled);
+		if (travelled > 100) flyable++;
 	}
-	return { worstKm: flown === 0 ? 0 : worst, headings: flown };
+	return { worstKm: best, headings: flyable };
 }
 
 /**
@@ -262,6 +279,7 @@ function flyLeg(
 	let pos = world.ship.pos;
 	let t = 0;
 	let penetrationKm = 0;
+	let clearanceKm = Number.POSITIVE_INFINITY;
 
 	while (t < LEG_TIMEOUT_S) {
 		advanceWorldClock(world, DT);
@@ -294,6 +312,7 @@ function flyLeg(
 		for (const m of masses) {
 			const closest = closestApproachKm(pos, nose, step.travelledKm, m.pos);
 			penetrationKm = Math.max(penetrationKm, m.radiusKm - closest);
+			clearanceKm = Math.min(clearanceKm, closest - m.radiusKm);
 		}
 
 		pos = step.pos;
@@ -306,6 +325,7 @@ function flyLeg(
 			let reengagedKm = 0;
 			let escapeKm = 0;
 			let escapeHeadings = 0;
+			let reengagedClearanceKm = Number.POSITIVE_INFINITY;
 			if (measureReengage && rangeKm > DEFAULT_CRUISE.dropRadiusKm) {
 				const again = makeWorld(world.seed);
 				again.gameTime = world.gameTime;
@@ -313,6 +333,7 @@ function flyLeg(
 				advanceWorldClock(again, 0);
 				const second = flyLeg(again, targetId, false);
 				reengagedKm = Math.max(0, rangeKm - second.rangeKm);
+				reengagedClearanceKm = second.clearanceKm;
 				const away = flyAway(world.seed, world.gameTime, pos, step.exitBodyId);
 				escapeKm = away.worstKm;
 				escapeHeadings = away.headings;
@@ -324,11 +345,13 @@ function flyLeg(
 				closingKms: finite("closing", step.closingKms),
 				seconds: finite("seconds", t),
 				penetrationKm: finite("penetration", Math.max(0, penetrationKm)),
+				clearanceKm: finite("clearance", clearanceKm),
 				pos,
 				gameTime: world.gameTime,
 				reengagedKm: finite("reengaged", reengagedKm),
 				escapeKm: finite("escape", escapeKm),
 				escapeHeadings,
+				reengagedClearanceKm,
 			};
 		}
 	}
@@ -345,11 +368,13 @@ function flyLeg(
 		closingKms: 0,
 		seconds: LEG_TIMEOUT_S,
 		penetrationKm: finite("penetration", Math.max(0, penetrationKm)),
+		clearanceKm: finite("clearance", clearanceKm),
 		pos,
 		gameTime: world.gameTime,
 		reengagedKm: 0,
 		escapeKm: 0,
 		escapeHeadings: 0,
+		reengagedClearanceKm: Number.POSITIVE_INFINITY,
 	};
 }
 
@@ -483,9 +508,17 @@ console.log(
 // column that only prints what exceeds 1 km cannot support "no other leg went
 // inside a planet".
 const deepest = rows.reduce((a, r) => Math.max(a, r.result.penetrationKm), 0);
+// And the figure that actually verifies where a stop leaves the ship: the least
+// clearance any flown path had. A penetration column floors at zero and cannot
+// tell a stop 5 km up from one on the skin, which is #30's whole subject.
+const tightest = rows.reduce(
+	(a, r) => Math.min(a, r.result.clearanceKm),
+	Number.POSITIVE_INFINITY,
+);
 console.log(
 	`\n  paths that went inside a planet's true surface: ${tunnelled.length}/${rows.length} past 1 km, ` +
-		`deepest ${deepest.toFixed(3)} km over all ${rows.length}\n`,
+		`deepest ${deepest.toFixed(3)} km over all ${rows.length}\n` +
+		`  least clearance any path had above a surface: ${tightest.toFixed(3)} km\n`,
 );
 
 // ── Is being stopped terminal?
@@ -498,25 +531,26 @@ const stopped = rows.filter(
 );
 const stuck = stopped.filter((r) => r.result.reengagedKm < 100);
 const gained = stopped.map((r) => r.result.reengagedKm).sort((a, b) => a - b);
-// A leg whose ship ended inside a surface has no heading that clears the body,
-// so it is not evidence about the guard either way — reported, not folded in.
-const enclosed = stopped.filter((r) => r.result.escapeHeadings === 0);
-const escapable = stopped.filter((r) => r.result.escapeHeadings > 0);
-const escapes = escapable.map((r) => r.result.escapeKm).sort((a, b) => a - b);
-const pinned = escapable.filter((r) => r.result.escapeKm < 100);
-console.log("after a stop — can the player cruise on?\n");
-if (timedOut.length)
-	console.log(
-		`  ${timedOut.length} leg(s) neither arrived nor were stopped inside ${LEG_TIMEOUT_S} s ` +
-			"— excluded from the counts below, which are about being stopped\n",
-	);
+const pinned = stopped.filter((r) => r.result.escapeHeadings === 0);
+const escapes = stopped.map((r) => r.result.escapeKm).sort((a, b) => a - b);
+const headingCounts = stopped
+	.map((r) => r.result.escapeHeadings)
+	.sort((a, b) => a - b);
 console.log(
 	`  stopped legs ${stopped.length}\n` +
 		"  back at the same station, which is behind the planet: median " +
-		`${km(median(gained))} km, still stopped ${stuck.length}/${stopped.length} — as it should be\n` +
-		`  on the worst heading that clears the planet, ${ESCAPE_S} seconds: median ` +
-		`${km(median(escapes))} km, pinned ${pinned.length}/${escapable.length}\n` +
-		`  legs whose ship ended inside a surface, so no heading clears it: ${enclosed.length}\n`,
+		`${km(median(gained))} km, still stopped ${stuck.length}/${stopped.length} — as it should be,\n` +
+		"    and it is the one leg that flies the in-place stop: least clearance left after it, " +
+		`${median(
+			stopped
+				.map((r) => r.result.reengagedClearanceKm)
+				.filter((x) => Number.isFinite(x))
+				.sort((a, b) => a - b),
+		).toFixed(3)} km\n` +
+		`  a way out, over ${ESCAPE_HEADINGS_DEG.length} headings from 0° to ` +
+		`${ESCAPE_HEADINGS_DEG[ESCAPE_HEADINGS_DEG.length - 1]}° off the outward radial:\n` +
+		`    ${median(headingCounts)} of them fly (median), best covers ${km(median(escapes))} km in ${ESCAPE_S} s\n` +
+		`    legs with no way out at all: ${pinned.length}/${stopped.length}\n`,
 );
 
 // ── Stations that sit inside their own host's shell.
@@ -618,8 +652,6 @@ console.log("occlusion by host size, over 64 phases of each real orbit\n");
 	const samples: {
 		hostRadiusKm: number;
 		ratio: number;
-		/** `|cos|` between the line of sight and this orbit's normal. */
-		cos: number;
 		occluded: boolean;
 	}[] = [];
 	for (const seed of SEEDS) {
@@ -634,19 +666,14 @@ console.log("occlusion by host size, over 64 phases of each real orbit\n");
 			// `byId` resolves the same body in O(1); a linear `planets.find` per
 			// station said the same thing more slowly.
 			const hostBody = world.system.byId.get(station.parentId);
-			if (!hostBody) continue;
+			// A station's parent is a planet by construction; asserted rather than
+			// assumed, so a moon-parented station could not enter this corpus with
+			// a moon's radius standing in for a host's.
+			if (!hostBody || hostBody.kind !== "planet") continue;
 			const toShip = sub(world.ship.pos, hostBody.pos);
 			const los = scale(toShip, 1 / length(toShip));
-			// The orbit's normal, from the same inclination and node
-			// `positionOnOrbit` builds the position from.
-			const inc = station.orbit.inclination;
-			const node = station.orbit.node;
-			const normal = v3(
-				Math.sin(inc) * Math.sin(node),
-				-Math.sin(inc) * Math.cos(node),
-				Math.cos(inc),
-			);
-			const cos = Math.abs(dot(los, normal));
+			// `system.ts` owns the inclination/node convention; this asks it.
+			const cos = Math.abs(dot(los, orbitNormal(station.orbit)));
 			stations.push({ ratio: station.orbit.radiusKm / hostBody.radiusKm, cos });
 			for (let i = 0; i < 64; i++) {
 				at.gameTime = (i / 64) * station.orbit.periodS;
@@ -660,7 +687,6 @@ console.log("occlusion by host size, over 64 phases of each real orbit\n");
 				samples.push({
 					hostRadiusKm: hostBody.radiusKm,
 					ratio: station.orbit.radiusKm / hostBody.radiusKm,
-					cos,
 					occluded: along < 0 && perp < hostBody.radiusKm,
 				});
 			}
@@ -686,11 +712,8 @@ console.log("occlusion by host size, over 64 phases of each real orbit\n");
 	{
 		// Accumulated over the **same stations the samples come from**, so the
 		// three rows below are three answers to one question rather than three
-		// questions that happen to agree. An earlier version walked its own loop
-		// with its own host filter; the two filters did in fact match — the
-		// station count and the sample count are unchanged by this — but that
-		// was a property of two loops agreeing rather than one the reader could
-		// check, and it is the sort of difference no number of decimals shows.
+		// questions that happen to agree — which is a property a reader can check
+		// here, rather than one resting on two loops having matching filters.
 		let cosSum = 0;
 		let geometric = 0;
 		let isotropic = 0;

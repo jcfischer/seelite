@@ -228,6 +228,17 @@ const ETA_INTERVAL_S = 0.25;
  *  model is still the scaffold's stand-in) and cruise is the other. */
 type Regime = "normal" | "cruise";
 
+/**
+ * The `cruise.ts` functions a probe may call through `window.__seelite`.
+ *
+ * Declared rather than inferred from the object literal, so adding a second one
+ * is an edit to a named surface — the point at which "what may a probe compose
+ * out of game internals" is decided — instead of an append nobody reviews.
+ */
+interface ProbeGeometry {
+	closestApproachKm: typeof closestApproachKm;
+}
+
 class Game {
 	readonly world: World;
 	readonly renderer: THREE.WebGLRenderer;
@@ -396,17 +407,9 @@ class Game {
 	 *  rather than restating 5 km. */
 	readonly hostClearanceKm = HOST_CLEARANCE_KM;
 
-	/**
-	 * `cruise.ts` geometry a probe may call, so `probe-arrival.mjs` measures a
-	 * swept path with the same arithmetic the guard and the sweep use rather
-	 * than a third hand-rolled copy.
-	 *
-	 * Under its own key rather than beside `assistCapKms` and `units`, because
-	 * it is a different contract: a constant can be diffed and versioned, while
-	 * exported arithmetic invites probes to compose game internals. Keeping the
-	 * callable surface distinguishable is what lets that stay a decision.
-	 */
-	readonly geometry = { closestApproachKm };
+	/** Probe-callable cruise geometry, kept separate from the constant handles:
+	 *  a constant can be diffed and versioned, exported arithmetic cannot. */
+	readonly geometry: ProbeGeometry = { closestApproachKm };
 
 	/** §4's spin range, reachable from the handle for the same reason: the spin
 	 *  probe drives a station to both ends of it, and a probe that restated

@@ -1215,7 +1215,7 @@ test("being inside a shell does not pin the ship there", () => {
 	expect(length(sub(into.pos, planet.pos)) / PLANET_R).toBeCloseTo(1.02, 4);
 });
 
-test("a stop from inside a shell keeps the clearance it started with", () => {
+test("a stop from inside a guard volume keeps the clearance it started with", () => {
 	// The blocker sage found in #30's own fix. The inward-crossing branch stopped
 	// the ship where the ray met the body's **true surface**, so a ship inside a
 	// shell that turned toward the body was walked down to altitude zero — the
@@ -1300,4 +1300,28 @@ test("a chord that misses the body is released, and does lose altitude", () => {
 	// It went lower than it began — inside the shell, never inside the body.
 	expect(flight.minApproach).toBeLessThan(PLANET_R * 0.04);
 	expect(flight.minApproach).toBeGreaterThan(0);
+});
+
+test("a ship stopped at the guard boundary can still leave it", () => {
+	// The regression that a stricter release floor introduces, pinned so it
+	// cannot come back. A stop leaves the ship *on* the guard volume's boundary,
+	// so a release test measured against that same boundary is a tangent test at
+	// the start point: every heading reads as entering, and the ship that was
+	// just stopped can never leave. Flown over the corpus that was 43 of 90 legs
+	// with no way out at all.
+	//
+	// So the release is measured against the bare radius, and this is the case
+	// that says so.
+	const planet = { id: "planet", pos: v3(), radiusKm: PLANET_R };
+	const atBoundary = v3(PLANET_R + HOST_CLEARANCE_KM, 0, 0);
+	const away = fly({
+		from: atBoundary,
+		target: { pos: v3(0.3 * AU_KM, 0, 0), radiusKm: 1 },
+		masses: [planet],
+		dt: 0.1,
+		limitS: 5,
+		targetParentId: "planet",
+	});
+	expect(away.exit).not.toBe("proximity");
+	expect(away.travelledKm).toBeGreaterThan(1000);
 });

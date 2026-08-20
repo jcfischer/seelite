@@ -271,6 +271,23 @@ export const orbitalPeriodS = (aAu: number, massSolar: number): number =>
 	YEAR_S * Math.sqrt((aAu * aAu * aAu) / massSolar);
 
 /**
+ * The unit normal of an orbital plane, from the same `inclination` and `node`
+ * `positionOnOrbit` builds a position from.
+ *
+ * Exported so a measurement does not restate the convention: the two have to
+ * agree about which way the plane tilts, and a script with its own copy of the
+ * rotation is a script that can report a geometry the generator does not have.
+ */
+export function orbitNormal(orbit: Orbit): Vec3 {
+	const sinI = Math.sin(orbit.inclination);
+	return {
+		x: sinI * Math.sin(orbit.node),
+		y: -sinI * Math.cos(orbit.node),
+		z: Math.cos(orbit.inclination),
+	};
+}
+
+/**
  * Where a circular orbit is at `gameTime`, relative to whatever it orbits.
  *
  * `θ(t) = θ₀ + 2πt/T` in the orbital plane, then tilted by the inclination and
