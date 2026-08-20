@@ -82,6 +82,20 @@ async function flyTo(stationId) {
 		async ([stationId, dt, limitS]) => {
 			const g = window.__seelite;
 			const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+			// The ray a frame's displacement traces. Declared inside the evaluate
+			// callback because that is the scope it runs in — the page's, not
+			// Node's.
+			const segmentRay = (from, to) => {
+				const seg = { x: to.x - from.x, y: to.y - from.y, z: to.z - from.z };
+				const segLen = Math.hypot(seg.x, seg.y, seg.z);
+				return {
+					segLen,
+					nose:
+						segLen === 0
+							? { x: 1, y: 0, z: 0 }
+							: { x: seg.x / segLen, y: seg.y / segLen, z: seg.z / segLen },
+				};
+			};
 			const station = g.world.system.byId.get(stationId);
 			if (!station) return { missing: true };
 
@@ -128,16 +142,7 @@ async function flyTo(stationId) {
 				// through the handle: a probe with its own copy of the geometry can
 				// go green on a game whose copy differs.
 				const now = g.world.ship.pos;
-				const seg = {
-					x: now.x - previous.x,
-					y: now.y - previous.y,
-					z: now.z - previous.z,
-				};
-				const segLen = Math.hypot(seg.x, seg.y, seg.z);
-				const nose =
-					segLen === 0
-						? { x: 1, y: 0, z: 0 }
-						: { x: seg.x / segLen, y: seg.y / segLen, z: seg.z / segLen };
+				const { nose, segLen } = segmentRay(previous, now);
 				for (const b of g.world.system.bodies) {
 					if (b.kind !== "planet" && b.kind !== "star") continue;
 					const ratio =

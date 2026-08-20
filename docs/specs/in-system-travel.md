@@ -506,9 +506,9 @@ The instrument is `scripts/measure-cruise-arrival.ts`. The four-candidate
 comparison #30 chose from is §12.1 below; re-running it needs the switch that
 was not kept in the flight loop, and the **`node-30-candidates`** tag is where
 that tree lives — commit
-`a6359bec9c4d2f4634e8ec96f410971823b941b8`, recorded here because a tag can be
-moved and a commit cannot. (The tag *object* is `f85cdf0b`, which is not the
-same thing and does not survive the tag being deleted.)
+`a6359bec9c4d2f4634e8ec96f410971823b941b8`. The SHA names it; the tag is what
+*keeps* it, since the branch was deleted on merge — delete the tag and the
+commit is collectable and the SHA resolves to nothing.
 
 ### 12.1 A shell is scaled to the obstacle; a station is not
 
@@ -592,7 +592,7 @@ limb, which are the ones a ship beside a world wants.
 It is measured against the bare radius. A stop leaves the ship *on* the guard
 volume's boundary, so testing the release against that same boundary is a
 tangent test at the start point: every heading with the centre ahead reads as
-entering, and the outward hemisphere is all that is left. `tests/cruise.test.ts` pins that case, which is the durable form of it —
+entering, and the outward hemisphere is all that is left. `tests/cruise.test.ts` covers that case, which is the durable form of it —
 the variant that showed it across most of the corpus was measured and discarded,
 so no figure from it is quoted here. The cost is that a released chord may graze
 the surface, which is the grazing pass §11.4's margin is written to allow.
@@ -613,12 +613,16 @@ measured. A rule about rays cannot promise an outcome about a moving world.
 
 The corpus flies six headings from 0° to 110° off the outward radial and counts
 what happens rather than predicting what should: **0 of 90 stopped legs have no
-way out**, a median of 3 headings fly, and the best covers 1.4 million km in
-five seconds. Aimed back at the occluded station a re-engagement is still
+way out**, a median of 3 headings fly, and the best of them covers a
+median 1.4 million km in five seconds. Aimed back at the occluded station a re-engagement is still
 stopped, and should be — that is also the one leg that exercises the in-place
-stop. The clearance figures come from two populations and are worth keeping
-apart: **5.000 km** is the least any *primary* leg had above a surface, while
-the re-engagement legs bottom out at **−1.041 km** for §12.4's reason.
+stop.
+
+What that leg shows, and it is the figure this amendment rests on: **43 of 90
+re-engagements used to end on a surface; 1 does now**, and that 1 is §12.4's.
+The *minimum* clearance cannot show it — §12.4's leg pins it at −1.041 km on
+both builds — which is why the count is the number to read. Primary legs are a
+separate population and bottom out at 5.000 km.
 
 **What this is not.** From the radial heading alone it looked like "being
 stopped is terminal" — a second cruise there covers 1 km, in 124 legs out of 124. It is
@@ -708,15 +712,17 @@ A body on a 30 km/s orbit moves ~3 km in one frame, so a chord released with
 stopped at the next, already inside.
 
 `measure-cruise-arrival.ts` prints it: **1 of 90 re-engagement legs, worst
-−1.041 km, seed 51's shipyard over a 5,146 km host.** It reports a *minimum*
-rather than a median, which is how it was found — a median had been sitting on
-it.
+−1.041 km, seed 51's shipyard over a 5,146 km host.** It surfaced when the row
+was changed from a median to a minimum — the median had been sitting on it.
 
 It is **not** §12.1's or §12.2's doing: running this column against `main`'s
 `cruise.ts` gives the identical figure on the identical leg. That is an ad-hoc
-port, because the column itself is new here — `main`'s sweep has no
-`reengagedClearanceKm` — so the check is reproducible but not a `main` command
-someone can run today.
+port, because the column is new here — `main`'s sweep has no
+`reengagedClearanceKm` — so the check is reproducible by hand and is not a
+`main` command someone can run today.
+
+It is also why the minimum is the wrong figure to verify §12.2 by: this leg
+dominates it identically on both builds.
 
 
 - The occluded quarter. Raising station orbits is measured above but not
