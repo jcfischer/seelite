@@ -13,8 +13,11 @@
  * The candidate comparison that #30 chose from — four rules flown side by side
  * — is **recorded in `docs/specs/in-system-travel.md` §12.1**, which ships in
  * the tree: each rejected rule with the figure that rejected it. Re-running it
- * needs the switch back, and `git checkout a6359be -- src/cruise.ts scripts/`
- * restores it. Carrying four rules in the flight loop forever to keep a decided
+ * needs the switch back, and the **`node-30-candidates` tag** is where it lives:
+ * `git checkout node-30-candidates -- src/cruise.ts scripts/`. A tag rather
+ * than a bare SHA because the PR branch was deleted on merge and a squash
+ * commit leaves the original unreachable — which is the difference between
+ * "recoverable" and "recoverable until someone garbage-collects". Carrying four rules in the flight loop forever to keep a decided
  * question re-runnable is the cost this repo does not pay; the numbers stay
  * written down and the sweep stays recoverable, the way
  * `capture-station-orbits.ts` keeps its baseline recoverable.
@@ -37,17 +40,18 @@
  */
 
 import {
-	CLEARANCE_KM,
 	DEFAULT_CRUISE,
+	HOST_CLEARANCE_KM,
 	SURFACE_MARGIN,
 	advanceCruise,
+	entersSphere,
 } from "../src/cruise";
 import {
 	ASSIST_CAP_KMS,
 	type World,
 	advanceWorldClock,
 	bodyVelocity,
-	hostIdOf,
+	stationHostIdOf,
 	makeWorld,
 } from "../src/sim";
 import { AU_KM, MAX_DT } from "../src/units";
@@ -177,10 +181,10 @@ function flyAway(
 	const radial = scale(out, 1 / len);
 	// Any unit vector across the radial serves to sweep the heading through;
 	// the geometry is symmetric about it, so one suffices.
-	const raw = sub(
-		v3(radial.y, radial.z, radial.x),
-		scale(radial, dot(radial, v3(radial.y, radial.z, radial.x))),
-	);
+	// Gram-Schmidt against the radial. The axis is hoisted because the two uses
+	// of it have to be the same vector for that to be what this is.
+	const axis = v3(radial.y, radial.z, radial.x);
+	const raw = sub(axis, scale(radial, dot(radial, axis)));
 	const acrossLen = length(raw);
 	if (acrossLen === 0) return { worstKm: 0, headings: 0 };
 	const across = scale(raw, 1 / acrossLen);
@@ -201,21 +205,10 @@ function flyAway(
 			scale(across, Math.sin(rad)),
 		);
 		// Skip the headings that fly into the body: those are stops, not pins.
-		//
-		// `sphereEntry` cannot answer this — it returns 0 for a ray that *starts*
-		// on or inside the sphere, which is every heading from a drop point on the
-		// surface. The question is whether the ray goes deeper, so it is the
-		// closest approach along the forward ray that decides.
-		//
-		// The tolerance is not cosmetic: the start point *is* the surface for a
-		// leg stopped by its host, so a bare `<` reads a tangent as an entry on
-		// whichever side of the last bit the rounding fell, and half the corpus
-		// then reports a pin it does not have.
-		if (
-			closestApproachKm(from, nose, Number.POSITIVE_INFINITY, body.pos) <
-			body.radiusKm * (1 - 1e-9)
-		)
-			continue;
+		// **`entersSphere` is `cruise.ts`'s own predicate**, not a restatement of
+		// it — a sweep that decided this its own way could pass a game that
+		// decides it differently.
+		if (entersSphere(from, nose, body.pos, body.radiusKm)) continue;
 		flown++;
 		const target = { pos: add(from, scale(nose, AU_KM)), radiusKm: 1 };
 		let pos = from;
@@ -253,7 +246,7 @@ function flyLeg(
 	targetId: string,
 	measureReengage = true,
 ): LegResult {
-	const targetParentId = hostIdOf(world.system, targetId);
+	const targetParentId = stationHostIdOf(world.system, targetId);
 	let pos = world.ship.pos;
 	let t = 0;
 	let penetrationKm = 0;
@@ -287,12 +280,7 @@ function flyLeg(
 		// km, so endpoint tests would miss a planet the path went straight
 		// through — the exact failure this column exists to catch.
 		for (const m of masses) {
-			const toCentre = sub(m.pos, pos);
-			const along = Math.min(
-				Math.max(dot(toCentre, nose), 0),
-				step.travelledKm,
-			);
-			const closest = length(sub(m.pos, add(pos, scale(nose, along))));
+			const closest = closestApproachKm(pos, nose, step.travelledKm, m.pos);
 			penetrationKm = Math.max(penetrationKm, m.radiusKm - closest);
 		}
 
@@ -435,7 +423,7 @@ if (!Number.isFinite(seedCount) || seedCount < 1)
 const SEEDS = Array.from({ length: seedCount }, (_, i) => i + 1);
 
 console.log(
-	`rule: the target's host guards at radius + ${CLEARANCE_KM} km, every other body at ${SURFACE_MARGIN}×radius; ` +
+	`rule: the target's host guards at radius + ${HOST_CLEARANCE_KM} km, every other body at ${SURFACE_MARGIN}×radius; ` +
 		"the guard fires on crossing inward, not on being inside\n" +
 		`corpus: start system of seeds 1…${seedCount}, drop radius ${DEFAULT_CRUISE.dropRadiusKm} km, ` +
 		`drop speed ${DEFAULT_CRUISE.dropSpeedKms} km/s\n`,
@@ -644,16 +632,37 @@ console.log("occlusion by host size, over 64 phases of each real orbit\n");
 			}
 		}
 	}
-	// The isotropy the closed form assumes, checked rather than assumed.
+	// The isotropy the closed form assumes, checked rather than assumed — and
+	// then the gap it leaves attributed rather than asserted.
+	//
+	// For one circular orbit the occluded fraction is exact, and it is not the
+	// isotropic form: with `c = |cos|` between the line of sight and the orbit
+	// normal, the in-plane component of the sight line is `s = √(1−c²)`, the
+	// station is hidden while `r·s·cos ψ < −√(r²−R²)`, and the fraction of the
+	// orbit that satisfies it is `arccos(k)/π` for `k = √(r²−R²)/(r·s)` — zero
+	// once `k ≥ 1`, because a sight line near the pole never passes behind.
+	// Averaged over an isotropic `c` this collapses to the isotropic form, so
+	// the two differ by exactly the thing being tested.
+	const geometricRate = (rOverR: number, c: number) => {
+		const sin = Math.sqrt(Math.max(0, 1 - c * c));
+		if (sin === 0) return 0;
+		const k = Math.sqrt(Math.max(0, rOverR * rOverR - 1)) / (rOverR * sin);
+		return k >= 1 ? 0 : Math.acos(k) / Math.PI;
+	};
 	{
 		let sum = 0;
+		let geometric = 0;
+		let isotropic = 0;
 		let n = 0;
 		for (const seed of SEEDS) {
 			const world = makeWorld(seed);
 			for (const station of world.system.contents.stations) {
 				if (!station.parentId) continue;
+				const host = world.system.contents.planets.find(
+					(p) => p.id === station.parentId,
+				);
 				const hostBody = world.system.byId.get(station.parentId);
-				if (!hostBody) continue;
+				if (!host || !hostBody) continue;
 				// The orbit's normal, from the same inclination and node
 				// `positionOnOrbit` builds the position from.
 				const inc = station.orbit.inclination;
@@ -664,14 +673,22 @@ console.log("occlusion by host size, over 64 phases of each real orbit\n");
 					Math.cos(inc),
 				);
 				const toShip = sub(world.ship.pos, hostBody.pos);
-				sum += Math.abs(dot(scale(toShip, 1 / length(toShip)), normal));
+				const c = Math.abs(dot(scale(toShip, 1 / length(toShip)), normal));
+				const ratio = station.orbit.radiusKm / host.radiusKm;
+				sum += c;
+				geometric += geometricRate(ratio, c);
+				isotropic += occlusionRate(ratio);
 				n++;
 			}
 		}
 		console.log(
 			`  line of sight vs orbit normal: mean |cos| = ${(sum / n).toFixed(3)} over ${n} stations.\n` +
-				"  An isotropic bearing gives 0.500; lower is edge-on, where occlusion is highest — which is\n" +
-				"  why the sampled rate runs above the closed form rather than on it.\n",
+				"  An isotropic bearing gives 0.500; lower is edge-on, where occlusion is highest.\n\n" +
+				`  predicted occlusion, isotropic form:            ${(100 * (isotropic / n)).toFixed(1)}%\n` +
+				`  predicted using each station's own sight line:  ${(100 * (geometric / n)).toFixed(1)}%\n` +
+				`  sampled over every orbit phase:                ${(100 * samples.filter((x) => x.occluded).length) / samples.length < 0 ? 0 : ((100 * samples.filter((x) => x.occluded).length) / samples.length).toFixed(1)}%\n` +
+				"  — the per-station form is the isotropic one with the assumption removed and nothing\n" +
+				"    else changed, so the distance it closes is what the assumption was costing.\n",
 		);
 	}
 	console.log(

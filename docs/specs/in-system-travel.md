@@ -167,9 +167,10 @@ a round figure is a better starting point than a false precision.
 > **Amended by #30 (§12).** The surface rule below scaled its clearance to the
 > planet rather than to what orbits it, so a station in clear space was
 > unreachable — cruise ended thousands of km short at thousands of km/s. The
-> body a selected target orbits now guards at its **true surface**, and the
-> guard fires on crossing *inward* rather than on being inside, so a station
-> that sits inside its host's shell can be cruised out of.
+> body a selected target orbits now guards at an absolute standoff of
+> `HOST_CLEARANCE_KM` above its true surface rather than at a proportional
+> shell, and the guard fires on crossing *inward* rather than on being inside,
+> so a station that sits inside its host's shell can be cruised out of.
 
 **Player-managed deceleration with an automatic drop-out.**
 
@@ -502,8 +503,9 @@ Reported from play: *"I always get dropped at 10k km distance from the stations
 three separate facts, of which §11.4's rule is only the first.
 
 The instrument is `scripts/measure-cruise-arrival.ts`. The four-candidate
-comparison #30 chose from is in that node's resolution; it is reproducible from
-the commit named there rather than carried in the flight loop.
+comparison #30 chose from is §12.1 below; re-running it needs the switch that
+was not kept in the flight loop, and the **`node-30-candidates`** tag is where
+that tree lives.
 
 ### 12.1 A shell is scaled to the obstacle; a station is not
 
@@ -593,6 +595,14 @@ clear it; with the 5 km standoff there are none.
 Aimed back at a station behind its planet, a re-engagement is still stopped, and
 should be: the planet is in the way.
 
+A heading that *does* go deeper is stopped **where the ship already is**, not
+where the ray meets the surface. Stopping at the surface was #30's own blocker,
+caught in review: it walked a ship inside a shell down to zero altitude, which
+is exactly what both constants exist to prevent. So the margin is a **floor on
+where a stop happens, not a wall a ship already past can re-cross** — a guard
+cannot let a ship deeper into a volume it is inside, and it cannot put back
+clearance the ship never had.
+
 **What this is not.** From the radial heading alone it looked like "being
 stopped is terminal" — a second cruise there covers 1 km, in 124 legs out of 124. It is
 not: a ship dropped *at* a shell sits on its boundary, and the 2.5 s spool-up
@@ -610,20 +620,29 @@ The rate is a function of `r/R` alone: for an effectively parallel bearing the
 station is hidden when it is behind and its offset across the line of sight is
 under `R`, which is `½·(1 − √(r²−R²)/r)`.
 
-That closed form assumes the line of sight is **isotropic** to the orbit, and
-the orbits are not: `aroundBody` copies the planet's own inclination, so every
-station in a system orbits in nearly one plane. What carries the form is the
-other side of the same angle — §7.4 draws the arrival bearing uniformly on the
-sphere, so the line of sight is isotropic even where the orbits are coplanar.
+**That closed form assumes the line of sight is isotropic to the orbit, and it
+is not.** The instrument prints the prediction beside the sampled rate rather
+than instead of it, and they part by 2–4 points, consistently and in one
+direction. The mechanism is not asserted — it is isolated:
 
-The instrument prints the prediction beside the sampled rate rather than instead
-of it, and they part: **the form runs 2–4 points under** what the corpus
-measures, consistently. The mechanism is the assumption, and it is measured
-rather than argued — the line of sight is *not* isotropic to these orbits. A host
-sits near its system's plane and the ship arrives only ~1 AU out, so `host → ship`
-tends to lie near that plane too, which is where the near-coplanar orbits are:
-edge-on, where occlusion is highest. The mean `|cos|` between the line of sight
-and the orbit normal is **0.429** against the 0.500 an isotropic bearing gives.
+| | Occluded |
+|---|---|
+| Isotropic form, `½·(1 − √(r²−R²)/r)` | 23.8% |
+| Same form with each station's own sight line | **25.8%** |
+| Sampled over every orbit phase | **25.8%** |
+
+The second row is the first with the assumption removed and nothing else
+changed, and it lands on the measurement exactly, so the gap *is* the isotropy
+assumption. For one circular orbit the fraction is `arccos(k)/π` with
+`k = √(r²−R²)/(r·√(1−c²))` and `c = |cos|` between the sight line and the orbit
+normal — zero once `k ≥ 1`, because a sight line near the pole never passes
+behind. Averaged over an isotropic `c` it collapses back to the row above it.
+
+Why the sight line is not isotropic: `aroundBody` copies the planet's own
+inclination, so every station in a system orbits in nearly one plane, and the
+host sits near that plane while the ship arrives only ~1 AU out — so
+`host → ship` lies near it too. Edge-on, which is where occlusion is highest.
+Mean `|cos|` is **0.429** against 0.500.
 
 (The first answer written here was finite-distance geometry — "the shadow is a
 cone rather than a cylinder". That is wrong and worth recording as wrong: the
@@ -631,8 +650,9 @@ sampled test is itself a parallel-ray one, so cone geometry cannot enter it, and
 at station scale against 1 AU the correction would be ~0.05 points rather than
 2–4.)
 
-Read the projection table below as a lower bound, and re-measure before
-committing to a number from it.
+The projection table below uses the **isotropic** form, so read it as a lower
+bound — about two points under at these radii — and re-measure before committing
+to a number from it.
 
 `system.ts`'s 400–2,000 km altitude lands very differently by host size:
 

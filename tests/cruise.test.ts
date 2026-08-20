@@ -17,7 +17,7 @@
 import { expect, test } from "bun:test";
 import {
 	CHARGE_CAPACITY_AU,
-	CLEARANCE_KM,
+	HOST_CLEARANCE_KM,
 	type CruiseParams,
 	CHARGE_PER_AU,
 	CHARGE_REGEN_AU_PER_S,
@@ -1104,13 +1104,13 @@ test("a host still stops a ship aimed at a station behind it", () => {
 	});
 	expect(flight.exit).toBe("proximity");
 	expect(flight.exitBodyId).toBe("planet");
-	// Stopped at `CLEARANCE_KM` rather than 5% out — the host has no shell to
+	// Stopped at `HOST_CLEARANCE_KM` rather than 5% out — the host has no shell to
 	// project against its own station, only the absolute standoff that keeps the
 	// ship off a sphere it is being drawn the inside of. 300 km becomes 5, which
 	// is what makes this an assertion about the new rule rather than one the old
 	// rule also satisfied.
 	expect(flight.minApproach).toBeGreaterThanOrEqual(0);
-	expect(flight.minApproach).toBeLessThan(2 * CLEARANCE_KM);
+	expect(flight.minApproach).toBeLessThan(2 * HOST_CLEARANCE_KM);
 });
 
 test("every body that is not the host keeps its shell", () => {
@@ -1209,4 +1209,66 @@ test("being inside a shell does not pin the ship there", () => {
 	});
 	expect(into.exit).toBe("proximity");
 	expect(into.exitBodyId).toBe("planet");
+	// And it was stopped rather than walked down to the skin: asserting only the
+	// exit is what let a zero-altitude stop ship green.
+	expect(into.minApproach).toBeGreaterThan(0);
+});
+
+test("a stop from inside a shell keeps the clearance it started with", () => {
+	// The blocker sage found in #30's own fix. The inward-crossing branch stopped
+	// the ship where the ray met the body's **true surface**, so a ship inside a
+	// shell that turned toward the body was walked down to altitude zero — the
+	// one outcome `HOST_CLEARANCE_KM` and `SURFACE_MARGIN` both exist to prevent, and
+	// the one their own docstrings promise not to allow.
+	//
+	// A guard cannot let a ship deeper into a volume it is already inside, so
+	// the stop is *here*: whatever altitude the ship had, it keeps.
+	const planet = { id: "planet", pos: v3(), radiusKm: PLANET_R };
+	for (const [label, startRatio, host] of [
+		["inside the shell, not the host", 1.02, false],
+		["inside the host's standoff", 1 + HOST_CLEARANCE_KM / PLANET_R / 2, true],
+	] as [string, number, boolean][]) {
+		const from = v3(PLANET_R * startRatio, 0, 0);
+		const flight = fly({
+			from,
+			// Straight through the centre and out the far side.
+			target: { pos: v3(-0.3 * AU_KM, 0, 0), radiusKm: 1 },
+			masses: [planet],
+			dt: 0.1,
+			limitS: 5,
+			targetParentId: host ? "planet" : null,
+		});
+		expect(`${label}: ${flight.exit}`).toBe(`${label}: proximity`);
+		// It kept its altitude rather than descending to the skin.
+		const endKm = length(sub(flight.pos, planet.pos));
+		expect(`${label}: ${(endKm / PLANET_R).toFixed(4)}`).toBe(
+			`${label}: ${startRatio.toFixed(4)}`,
+		);
+	}
+});
+
+test("a body inside whose shell the ship sits is still not enterable", () => {
+	// The invariant sage found only held outside the shell: the inward test reads
+	// the *true radius* for every mass, so once a step began inside some body's
+	// 1.05 shell that body stopped projecting one. "Every other mass keeps
+	// `SURFACE_MARGIN`" was true only of ships that had not got in yet — and the
+	// test named for the invariant starts 0.3 AU out, so it could never reach the
+	// branch that broke it.
+	//
+	// What holds instead, and is what the guard can promise: a ship inside a
+	// shell is never let *further* in. The margin is a floor on where a stop
+	// happens, not a wall a ship already past can re-cross.
+	const planet = { id: "planet", pos: v3(), radiusKm: PLANET_R };
+	const inside = v3(PLANET_R * 1.03, 0, 0);
+	const flight = fly({
+		from: inside,
+		target: { pos: v3(-0.3 * AU_KM, 0, 0), radiusKm: 1 },
+		masses: [planet],
+		dt: 0.1,
+		limitS: 5,
+		targetParentId: null,
+	});
+	expect(flight.exit).toBe("proximity");
+	expect(flight.minApproach).toBeGreaterThan(0);
+	expect(length(sub(flight.pos, planet.pos)) / PLANET_R).toBeCloseTo(1.03, 4);
 });

@@ -68,7 +68,7 @@ import {
 	CHARGE_CAPACITY_AU,
 	type CruiseParams,
 	DEFAULT_CRUISE,
-	CLEARANCE_KM,
+	HOST_CLEARANCE_KM,
 	SURFACE_MARGIN,
 	advanceCruise,
 	chargeAfterRegen,
@@ -94,7 +94,7 @@ import {
 	type World,
 	advanceWorldClock,
 	bodyVelocity,
-	hostIdOf,
+	stationHostIdOf,
 	makeWorld,
 	stationOf,
 	stationPose,
@@ -393,7 +393,7 @@ class Game {
 
 	/** #30's host standoff, likewise — the probe reports the stop against this
 	 *  rather than restating 5 km. */
-	readonly hostClearanceKm = CLEARANCE_KM;
+	readonly hostClearanceKm = HOST_CLEARANCE_KM;
 
 	/** §4's spin range, reachable from the handle for the same reason: the spin
 	 *  probe drives a station to both ends of it, and a probe that restated
@@ -1057,7 +1057,9 @@ class Game {
 	 * than keeping its own copy.
 	 */
 	targetParentId(): string | null {
-		return this.targetId ? hostIdOf(this.world.system, this.targetId) : null;
+		return this.targetId
+			? stationHostIdOf(this.world.system, this.targetId)
+			: null;
 	}
 
 	/** How fast the selected target is moving through sim space, km/s — the frame
