@@ -33,8 +33,7 @@ function isInsideViewport(box, viewport) {
 
 function measureGalleryState() {
 	const root = document.querySelector("#state-gallery");
-	const box = (selector) => {
-		const element = document.querySelector(selector);
+	const boxFor = (element) => {
 		if (!element) return null;
 		const rect = element.getBoundingClientRect();
 		return {
@@ -46,6 +45,7 @@ function measureGalleryState() {
 			height: rect.height,
 		};
 	};
+	const box = (selector) => boxFor(document.querySelector(selector));
 	const director = box("[data-gallery-director]");
 	const arrow = box("[data-gallery-target-arrow]");
 	const arrowIsAroundCircle = (() => {
@@ -77,17 +77,15 @@ function measureGalleryState() {
 		],
 		panelBoxes: [
 			...document.querySelectorAll('[data-gallery-panel][data-active="true"]'),
-		].map((element) => {
-			const rect = element.getBoundingClientRect();
-			return {
-				left: rect.left,
-				top: rect.top,
-				right: rect.right,
-				bottom: rect.bottom,
-			};
-		}),
-		leftWorkSurface: box('[data-gallery-panel="left"][data-active="true"]'),
-		rightWorkSurface: box('[data-gallery-panel="right"][data-active="true"]'),
+		].map(boxFor),
+		leftWorkSurface: boxFor(
+			document.querySelector('[data-gallery-panel="left"][data-active="true"]'),
+		),
+		rightWorkSurface: boxFor(
+			document.querySelector(
+				'[data-gallery-panel="right"][data-active="true"]',
+			),
+		),
 		docking: Boolean(document.querySelector("[data-gallery-docking]")),
 		targetArrow: Boolean(document.querySelector("[data-gallery-target-arrow]")),
 		targetArrowBearing: document
@@ -100,6 +98,7 @@ function measureGalleryState() {
 		radarAnchors: document.querySelectorAll("[data-gallery-contact-anchor]")
 			.length,
 		radarMasts: (() => {
+			// Matches the three contact stems in renderGalleryState.
 			const stems = [
 				...document.querySelectorAll("[data-gallery-contact-stem]"),
 			];
@@ -176,11 +175,10 @@ for (const viewport of VIEWPORTS) {
 					measured.targetArrowBearing !== null &&
 					measured.targetArrowAroundCircle,
 			);
-		if (state === "target-acquisition")
-			check(
-				`${viewport.name}: target acquisition renders a live Three.js cockpit canvas`,
-				measured.cockpitCanvas,
-			);
+		check(
+			`${viewport.name}: ${state} renders a live Three.js cockpit canvas`,
+			measured.cockpitCanvas,
+		);
 		if (state === "assist-on")
 			check(
 				`${viewport.name}: assist-on describes the Elite-style 3D local radar with anchored vertical masts`,

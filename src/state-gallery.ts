@@ -173,11 +173,12 @@ function buildRadar(
 
 function buildStarfield(scene: THREE.Scene): THREE.BufferGeometry {
 	const positions = new Float32Array(480 * 3);
+	const randomAt = (index: number) =>
+		((Math.imul(index + 1, 1_103_515_245) + 12_345) >>> 0) / 2 ** 32;
 	for (let index = 0; index < 480; index += 1) {
-		const seed = (index * 9301 + 49297) % 233280;
-		positions[index * 3] = ((seed % 100) / 50 - 1) * 18;
-		positions[index * 3 + 1] = (((seed / 100) % 100) / 50 - 1) * 10;
-		positions[index * 3 + 2] = -14 - (seed % 50);
+		positions[index * 3] = (randomAt(index * 3) * 2 - 1) * 18;
+		positions[index * 3 + 1] = (randomAt(index * 3 + 1) * 2 - 1) * 10;
+		positions[index * 3 + 2] = -14 - randomAt(index * 3 + 2) * 50;
 	}
 	const geometry = new THREE.BufferGeometry();
 	geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
@@ -201,12 +202,15 @@ function disposeCockpitScene(
 	canvas: HTMLCanvasElement,
 ): void {
 	scene.traverse((object) => {
-		if (!(object instanceof THREE.Mesh || object instanceof THREE.Points))
-			return;
-		object.geometry.dispose();
-		const materials = Array.isArray(object.material)
-			? object.material
-			: [object.material];
+		const drawable = object as THREE.Object3D & {
+			geometry?: THREE.BufferGeometry;
+			material?: THREE.Material | THREE.Material[];
+		};
+		if (!drawable.geometry || !drawable.material) return;
+		drawable.geometry.dispose();
+		const materials = Array.isArray(drawable.material)
+			? drawable.material
+			: [drawable.material];
 		for (const material of materials) {
 			if ("map" in material && material.map instanceof THREE.Texture)
 				material.map.dispose();
@@ -244,31 +248,120 @@ function buildCanopyFrame(
 	addBox(1.65, 0.08, 0.82, 3.4, -0.52, -1.44, 0.42, -0.16, 0, metal);
 }
 
-type ConsoleDisplay = (
+function addConsoleDisplay(
+	cockpit: THREE.Group,
+	headLook: HeadLook,
 	title: string,
 	body: string,
 	x: number,
 	rotationY: number,
 	accent: string,
-) => void;
+): THREE.Mesh | null {
+	const textureCanvas = document.createElement("canvas");
+	textureCanvas.width = 680;
+	textureCanvas.height = 512;
+	const context = textureCanvas.getContext("2d");
+	if (!context) return null;
+	context.strokeStyle = accent;
+	context.lineWidth = 7;
+	context.strokeRect(8, 8, textureCanvas.width - 16, textureCanvas.height - 16);
+	context.fillStyle = accent;
+	context.font = "600 34px ui-monospace, monospace";
+	context.fillText(title, 36, 66);
+	context.fillStyle = "#d4efff";
+	context.font = "24px ui-monospace, monospace";
+	context.globalAlpha = 0.5;
+	for (let row = 0; row < 7; row += 1) {
+		context.fillRect(34, 158 + row * 42, 548 - row * 26, 2);
+		context.fillRect(34, 175 + row * 42, 16 + (row % 3) * 46, 9);
+	}
+	context.globalAlpha = 1;
+	const words = body.split(" ");
+	let line = "";
+	let y = 122;
+	for (const word of words) {
+		const next = `${line}${line ? " " : ""}${word}`;
+		if (context.measureText(next).width > 430) {
+			context.fillText(line, 36, y);
+			line = word;
+			y += 38;
+		} else line = next;
+	}
+	context.fillText(line, 36, y);
+	const texture = new THREE.CanvasTexture(textureCanvas);
+	texture.colorSpace = THREE.SRGBColorSpace;
+	const side: HeadLook = x < 0 ? "left" : "right";
+	const displayOpacity =
+		headLook === "forward" ? 0.13 : headLook === side ? 0.82 : 0.16;
+	const screen = new THREE.Mesh(
+		new THREE.PlaneGeometry(3.4, 2.55),
+		new THREE.MeshBasicMaterial({
+			map: texture,
+			transparent: true,
+			opacity: displayOpacity,
+			blending: THREE.AdditiveBlending,
+			depthWrite: false,
+		}),
+	);
+	screen.position.set(x, -0.14, -1.16);
+	screen.rotation.set(-0.4, rotationY, 0);
+	cockpit.add(screen);
+	return screen;
+}
 
 function buildConsoleDisplays(
-	addConsoleDisplay: ConsoleDisplay,
+	cockpit: THREE.Group,
+	headLook: HeadLook,
 	state: GalleryState,
 	rightTab: RightTab,
-): void {
+): THREE.Mesh[] {
 	const leftTitle =
 		state.panel === "Navigation" || state.panel === "Communications"
 			? state.panel.toUpperCase()
 			: "NAVIGATION";
-	addConsoleDisplay(leftTitle, leftPanelBody(state), -3.4, 0.32, "#7ac5e8");
-	addConsoleDisplay(
+	const left = addConsoleDisplay(
+		cockpit,
+		headLook,
+		leftTitle,
+		leftPanelBody(state),
+		-3.4,
+		0.32,
+		"#7ac5e8",
+	);
+	const right = addConsoleDisplay(
+		cockpit,
+		headLook,
 		rightTab.toUpperCase(),
 		rightPanelBody(state, rightTab),
 		3.4,
 		-0.32,
 		"#e5aa52",
 	);
+	return [left, right].filter(
+		(screen): screen is THREE.Mesh => screen !== null,
+	);
+}
+
+type CockpitScene = {
+	attach(
+		stage: HTMLElement,
+		state: GalleryState,
+		rightTab: RightTab,
+		headLook: HeadLook,
+	): void;
+	dispose(): void;
+};
+
+function disposeConsoleDisplay(display: THREE.Mesh): void {
+	display.geometry.dispose();
+	const materials = Array.isArray(display.material)
+		? display.material
+		: [display.material];
+	for (const material of materials) {
+		if ("map" in material && material.map instanceof THREE.Texture)
+			material.map.dispose();
+		material.dispose();
+	}
 }
 
 /** A self-contained rendered cockpit, kept separate from the game scene. */
@@ -277,7 +370,7 @@ function mountCockpit3D(
 	state: GalleryState,
 	rightTab: RightTab,
 	headLook: HeadLook,
-): () => void {
+): CockpitScene {
 	const canvas = document.createElement("canvas");
 	canvas.className = "sg-3d-canvas";
 	canvas.setAttribute("data-gallery-3d-canvas", "true");
@@ -333,85 +426,28 @@ function mountCockpit3D(
 		return mesh;
 	};
 	buildCanopyFrame(addBox, metal, trim);
-	const addConsoleDisplay = (
-		title: string,
-		body: string,
-		x: number,
-		rotationY: number,
-		accent: string,
-	) => {
-		const textureCanvas = document.createElement("canvas");
-		textureCanvas.width = 680;
-		textureCanvas.height = 512;
-		const context = textureCanvas.getContext("2d");
-		if (!context) return;
-		// The consoles are projected HUD glass, not opaque televisions. Leaving
-		// the canvas transparent keeps the physical cockpit visible beneath it.
-		context.strokeStyle = accent;
-		context.lineWidth = 7;
-		context.strokeRect(
-			8,
-			8,
-			textureCanvas.width - 16,
-			textureCanvas.height - 16,
-		);
-		context.fillStyle = accent;
-		context.font = "600 34px ui-monospace, monospace";
-		context.fillText(title, 36, 66);
-		context.fillStyle = "#d4efff";
-		context.font = "24px ui-monospace, monospace";
-		context.globalAlpha = 0.5;
-		for (let row = 0; row < 7; row += 1) {
-			context.fillRect(34, 158 + row * 42, 548 - row * 26, 2);
-			context.fillRect(34, 175 + row * 42, 16 + (row % 3) * 46, 9);
-		}
-		context.globalAlpha = 1;
-		const words = body.split(" ");
-		let line = "";
-		let y = 122;
-		for (const word of words) {
-			const next = `${line}${line ? " " : ""}${word}`;
-			if (context.measureText(next).width > 430) {
-				context.fillText(line, 36, y);
-				line = word;
-				y += 38;
-			} else line = next;
-		}
-		context.fillText(line, 36, y);
-		const texture = new THREE.CanvasTexture(textureCanvas);
-		texture.colorSpace = THREE.SRGBColorSpace;
-		const side: HeadLook = x < 0 ? "left" : "right";
-		const displayOpacity =
-			headLook === "forward" ? 0.13 : headLook === side ? 0.82 : 0.16;
-		const screen = new THREE.Mesh(
-			new THREE.PlaneGeometry(3.4, 2.55),
-			new THREE.MeshBasicMaterial({
-				map: texture,
-				transparent: true,
-				opacity: displayOpacity,
-				blending: THREE.AdditiveBlending,
-				depthWrite: false,
-			}),
-		);
-		screen.position.set(x, -0.14, -1.16);
-		screen.rotation.set(-0.4, rotationY, 0);
-		cockpit.add(screen);
-	};
-	buildConsoleDisplays(addConsoleDisplay, state, rightTab);
+	let consoleDisplays = buildConsoleDisplays(
+		cockpit,
+		headLook,
+		state,
+		rightTab,
+	);
 
 	buildRadar(cockpit, glow, cyan);
 	const stars = buildStarfield(scene);
 
+	let mountedStage = stage;
 	const resize = () => {
-		const { width, height } = stage.getBoundingClientRect();
+		const { width, height } = mountedStage.getBoundingClientRect();
 		renderer.setSize(width, height, false);
 		camera.aspect = width / height;
 		camera.updateProjectionMatrix();
 	};
 	const resizeObserver = new ResizeObserver(resize);
-	resizeObserver.observe(stage);
+	resizeObserver.observe(mountedStage);
 	resize();
 	let frame = 0;
+	let currentHeadLook = headLook;
 	const headYaw: Record<HeadLook, number> = {
 		left: -1.05,
 		forward: 0,
@@ -421,18 +457,38 @@ function mountCockpit3D(
 		camera.position.x = Math.sin(time * 0.00018) * 0.035;
 		camera.position.y = 0.4 + Math.sin(time * 0.00013) * 0.012;
 		camera.lookAt(
-			Math.sin(headYaw[headLook]) * 5,
+			Math.sin(headYaw[currentHeadLook]) * 5,
 			-0.28,
-			2.7 - Math.cos(headYaw[headLook]) * 5,
+			2.7 - Math.cos(headYaw[currentHeadLook]) * 5,
 		);
 		renderer.render(scene, camera);
 		frame = requestAnimationFrame(render);
 	};
 	frame = requestAnimationFrame(render);
-	return () => {
-		cancelAnimationFrame(frame);
-		resizeObserver.disconnect();
-		disposeCockpitScene(scene, stars, renderer, canvas);
+	return {
+		attach(nextStage, nextState, nextRightTab, nextHeadLook) {
+			resizeObserver.unobserve(mountedStage);
+			mountedStage = nextStage;
+			mountedStage.prepend(canvas);
+			resizeObserver.observe(mountedStage);
+			for (const display of consoleDisplays) {
+				cockpit.remove(display);
+				disposeConsoleDisplay(display);
+			}
+			currentHeadLook = nextHeadLook;
+			consoleDisplays = buildConsoleDisplays(
+				cockpit,
+				currentHeadLook,
+				nextState,
+				nextRightTab,
+			);
+			resize();
+		},
+		dispose() {
+			cancelAnimationFrame(frame);
+			resizeObserver.disconnect();
+			disposeCockpitScene(scene, stars, renderer, canvas);
+		},
 	};
 }
 
@@ -522,6 +578,32 @@ const STYLE = `
 }
 `;
 
+function renderConsolePanel({
+	side,
+	active,
+	title,
+	subtitle,
+	tabs,
+	rail,
+	heading,
+	body,
+	list,
+	footer,
+}: {
+	side: "left" | "right";
+	active: boolean;
+	title: string;
+	subtitle: string;
+	tabs: string;
+	rail: string[];
+	heading: string;
+	body: string;
+	list: readonly [string, string][];
+	footer: string;
+}): string {
+	return `<aside class="sg-panel" data-gallery-panel="${side}" data-active="${active}"><header class="sg-console-top"><h2>${title}</h2><small>${subtitle}</small></header><nav class="sg-tabs" aria-label="${side} console tabs">${tabs}</nav><div class="sg-console-layout"><div class="sg-console-rail">${rail.map((item, index) => (index === 0 ? `<b>${item}</b>` : `<span>${item}</span>`)).join("")}</div><div class="sg-console-data"><h3>${heading}</h3><p ${title === "TUNING" ? "data-gallery-tuning" : ""}>${body}</p><div class="sg-console-list">${list.map(([label, value]) => `<span><b>${label}</b><em>${value}</em></span>`).join("")}</div></div></div><small>${footer}</small></aside>`;
+}
+
 export function renderGalleryState(
 	state: GalleryState,
 	rightTab: RightTab,
@@ -533,14 +615,52 @@ export function renderGalleryState(
 		state.panel === "Navigation" || state.panel === "Communications"
 			? state.panel
 			: "Navigation";
+	const leftConsole = renderConsolePanel({
+		side: "left",
+		active: isLeft,
+		title: leftTitle.toUpperCase(),
+		subtitle: "LOCAL · 24",
+		tabs: '<span class="sg-tab" aria-current="page">Navigation</span><span class="sg-tab">Transactions</span><span class="sg-tab">Contacts</span>',
+		rail: ["SYSTEM", "SEELITE", "SET FILTERS", "GALAXY MAP", "SYSTEM MAP"],
+		heading: `${leftTitle.toUpperCase()} / ROUTE`,
+		body: leftPanelBody(state),
+		list: [
+			["VETIN", "0.837 AU"],
+			["TRADE STATION", "6,240 km"],
+			["LAST CONTACT", "08:41"],
+		],
+		footer: "Simulation continues while this console is open.",
+	});
+	const rightConsole = renderConsolePanel({
+		side: "right",
+		active: isRight,
+		title: rightTab.toUpperCase(),
+		subtitle: "CMDR · SEELITE",
+		tabs: (["Flight", "Drive", "Tuning"] as RightTab[])
+			.map(
+				(tab) =>
+					`<button class="sg-tab" type="button" data-gallery-right-tab="${tab}" aria-selected="${rightTab === tab}">${tab}</button>`,
+			)
+			.join(""),
+		rail: ["SHIP", "POWER", "MODULES", "INVENTORY", "STATUS"],
+		heading: `${rightTab.toUpperCase()} / CONTROL`,
+		body: rightPanelBody(state, rightTab),
+		list: [
+			["THROTTLE", "62%"],
+			["HEAT", "18%"],
+			["FUEL", "92%"],
+		],
+		footer:
+			"Tuning stays on this right-console tab, never on the flight floor.",
+	});
 	return `<div class="sg-wrap" data-gallery-state-active="${state.id}">
 		<header class="sg-head"><div><h1>SEELITE · COCKPIT STATE GALLERY</h1><p>Issue #34 prototype — visual contract, not simulated docking.</p></div><div class="sg-head-actions"><nav class="sg-look" aria-label="Cockpit head direction">${(["left", "forward", "right"] as HeadLook[]).map((look) => `<button type="button" data-gallery-look="${look}" aria-pressed="${headLook === look}">look ${look}</button>`).join("")}</nav><button class="sg-close" type="button">return to flight</button></div></header>
 		<nav class="sg-states" aria-label="Cockpit states">${GALLERY_STATES.map((candidate) => `<button class="sg-state" type="button" data-gallery-state="${candidate.id}" aria-pressed="${candidate.id === state.id}">${candidate.label}</button>`).join("")}</nav>
 		<div class="sg-shell" data-gallery-3d-prototype>
 			<div class="sg-cockpit" data-gallery-cockpit data-gallery-head-look="${headLook}"><div class="sg-canopy" aria-hidden="true"></div>
-			<aside class="sg-panel" data-gallery-panel="left" data-active="${isLeft}"><header class="sg-console-top"><h2>${leftTitle.toUpperCase()}</h2><small>LOCAL · 24</small></header><nav class="sg-tabs" aria-label="Left console tabs"><span class="sg-tab" aria-current="page">Navigation</span><span class="sg-tab">Transactions</span><span class="sg-tab">Contacts</span></nav><div class="sg-console-layout"><div class="sg-console-rail"><b>SYSTEM</b><span>SEELITE</span><span>SET FILTERS</span><span>GALAXY MAP</span><span>SYSTEM MAP</span></div><div class="sg-console-data"><h3>${leftTitle.toUpperCase()} / ROUTE</h3><p>${leftPanelBody(state)}</p><div class="sg-console-list"><span><b>VETIN</b><em>0.837 AU</em></span><span><b>TRADE STATION</b><em>6,240 km</em></span><span><b>LAST CONTACT</b><em>08:41</em></span></div></div></div><small>Simulation continues while this console is open.</small></aside>
+			${leftConsole}
 			<main class="sg-glass" aria-live="polite"><div class="sg-stars"></div><div class="sg-dash-deck" aria-hidden="true"></div><div class="sg-director" data-gallery-director data-accent="${state.accent}">${state.targetBearingDeg === undefined ? "" : `<i class="sg-target-arrow" data-gallery-target-arrow data-gallery-target-bearing="${state.targetBearingDeg}" style="--target-bearing:${state.targetBearingDeg}deg" aria-label="turn toward target bearing">➤</i>`}${state.director}${state.id.startsWith("docking-") ? `<div class="sg-docking" data-gallery-docking>AXIS FUNNEL · ROLL RING · ${state.id === "docking-granted" ? "CLEAR TO APPROACH" : "DO NOT ENTER"}</div>` : ""}</div><div class="sg-scanner" data-gallery-scanner aria-label="Elite-style 3D local radar, 10,000 kilometre vicinity"><i class="sg-contact one" data-gallery-contact-stem></i><i class="sg-contact-anchor one" data-gallery-contact-anchor></i><i class="sg-contact two" data-gallery-contact-stem></i><i class="sg-contact-anchor two" data-gallery-contact-anchor></i><i class="sg-contact three" data-gallery-contact-stem></i><i class="sg-contact-anchor three" data-gallery-contact-anchor></i><span class="sg-scanner-label">ELITE 3D RADAR · 10,000 km</span></div><div class="sg-floor" data-gallery-floor><span>${state.mode}</span><strong>${state.target}</strong></div></main>
-			<aside class="sg-panel" data-gallery-panel="right" data-active="${isRight}"><header class="sg-console-top"><h2>${rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="sg-tabs" aria-label="Right panel tabs">${(["Flight", "Drive", "Tuning"] as RightTab[]).map((tab) => `<button class="sg-tab" type="button" data-gallery-right-tab="${tab}" aria-selected="${rightTab === tab}">${tab}</button>`).join("")}</nav><div class="sg-console-layout"><div class="sg-console-rail"><b>SHIP</b><span>POWER</span><span>MODULES</span><span>INVENTORY</span><span>STATUS</span></div><div class="sg-console-data"><h3>${rightTab.toUpperCase()} / CONTROL</h3><p ${rightTab === "Tuning" ? "data-gallery-tuning" : ""}>${rightPanelBody(state, rightTab)}</p><div class="sg-console-list"><span><b>THROTTLE</b><em>62%</em></span><span><b>HEAT</b><em>18%</em></span><span><b>FUEL</b><em>92%</em></span></div></div></div><small>Tuning stays on this right-console tab, never on the flight floor.</small></aside>
+			${rightConsole}
 			</div>
 		</div><p class="sg-note" data-gallery-notice>${state.notice}</p>
 	</div>`;
@@ -561,13 +681,13 @@ export function mountStateGallery(): void {
 	let current = galleryState(requested === "1" ? "assist-on" : requested);
 	let rightTab: RightTab = current.panel === "Drive" ? "Drive" : "Flight";
 	let headLook: HeadLook = "forward";
-	let unmountCockpit = () => {};
+	let cockpitScene: CockpitScene | null = null;
 	const paint = () => {
-		unmountCockpit();
 		root.innerHTML = renderGalleryState(current, rightTab, headLook);
 		const cockpit = root.querySelector<HTMLElement>("[data-gallery-cockpit]");
-		if (cockpit)
-			unmountCockpit = mountCockpit3D(cockpit, current, rightTab, headLook);
+		if (!cockpit) return;
+		if (cockpitScene) cockpitScene.attach(cockpit, current, rightTab, headLook);
+		else cockpitScene = mountCockpit3D(cockpit, current, rightTab, headLook);
 	};
 	const setState = (id: string) => {
 		current = galleryState(id);
@@ -598,7 +718,8 @@ export function mountStateGallery(): void {
 			return;
 		}
 		if (target.closest(".sg-close")) {
-			unmountCockpit();
+			cockpitScene?.dispose();
+			cockpitScene = null;
 			style.remove();
 			root.remove();
 			return;
