@@ -44,6 +44,7 @@ import {
 	HOST_CLEARANCE_KM,
 	SURFACE_MARGIN,
 	advanceCruise,
+	closestApproachKm,
 	entersSphere,
 } from "../src/cruise";
 import {
@@ -82,19 +83,6 @@ function massesOf(world: World) {
 	return world.system.bodies
 		.filter((b) => b.kind === "star" || b.kind === "planet")
 		.map((b) => ({ id: b.id, pos: b.pos, radiusKm: b.radiusKm }));
-}
-
-/** How near a straight step of `lenKm` from `from` along `nose` comes to
- *  `centre`. The one spelling of it in this file. */
-function closestApproachKm(
-	from: Vec3,
-	nose: Vec3,
-	lenKm: number,
-	centre: Vec3,
-): number {
-	const toCentre = sub(centre, from);
-	const along = Math.min(Math.max(dot(toCentre, nose), 0), lenKm);
-	return length(sub(centre, add(from, scale(nose, along))));
 }
 
 const median = (xs: number[]): number =>
@@ -178,6 +166,14 @@ function flyAway(
 	const out = sub(from, body.pos);
 	const len = length(out);
 	if (len === 0) return { worstKm: 0, headings: 0 };
+	// See the throw below: the tolerance-free predicate needs the ship to start
+	// clear of the surface, and `HOST_CLEARANCE_KM` is what makes that true.
+	if (len - body.radiusKm <= 1e-6)
+		throw new Error(
+			`escape flown from ${(len - body.radiusKm).toFixed(6)} km above a ` +
+				`${body.radiusKm.toFixed(0)} km body — with no clearance the tangent ` +
+				"case is back, and this sweep would report pins it does not have",
+		);
 	const radial = scale(out, 1 / len);
 	// Any unit vector across the radial serves to sweep the heading through;
 	// the geometry is symmetric about it, so one suffices.
@@ -208,6 +204,14 @@ function flyAway(
 		// **`entersSphere` is `cruise.ts`'s own predicate**, not a restatement of
 		// it — a sweep that decided this its own way could pass a game that
 		// decides it differently.
+		//
+		// It has no tangent tolerance, and an earlier version of this line needed
+		// one: when a stop left the ship *on* the surface, a bare `<` read a
+		// tangent as an entry on whichever side the rounding fell, and half the
+		// corpus reported pins it did not have. `HOST_CLEARANCE_KM` removed the
+		// case rather than a tolerance papering over it — a stop now leaves the
+		// ship 5 km up on a host and 5% of a radius on anything else — and the
+		// guard above throws rather than letting that assumption go quiet.
 		if (entersSphere(from, nose, body.pos, body.radiusKm)) continue;
 		flown++;
 		const target = { pos: add(from, scale(nose, AU_KM)), radiusKm: 1 };
@@ -599,8 +603,15 @@ console.log("occlusion by host size, over 64 phases of each real orbit\n");
 		["large   10–30k km", (r) => r >= 1e4 && r < 3e4],
 		["giant   R > 30k km", (r) => r >= 3e4],
 	];
-	const samples: { hostRadiusKm: number; ratio: number; occluded: boolean }[] =
-		[];
+	const samples: {
+		/** One station, so the per-station rows below can de-duplicate phases. */
+		key: string;
+		hostRadiusKm: number;
+		ratio: number;
+		/** `|cos|` between the line of sight and this orbit's normal. */
+		cos: number;
+		occluded: boolean;
+	}[] = [];
 	for (const seed of SEEDS) {
 		const world = makeWorld(seed);
 		const { contents } = world.system;
@@ -610,11 +621,22 @@ console.log("occlusion by host size, over 64 phases of each real orbit\n");
 		const at = makeWorld(seed);
 		for (const station of contents.stations) {
 			if (!station.parentId) continue;
-			const host = contents.planets.find((p) => p.id === station.parentId);
+			// `byId` resolves the same body in O(1); a linear `planets.find` per
+			// station said the same thing more slowly.
 			const hostBody = world.system.byId.get(station.parentId);
-			if (!host || !hostBody) continue;
+			if (!hostBody) continue;
 			const toShip = sub(world.ship.pos, hostBody.pos);
 			const los = scale(toShip, 1 / length(toShip));
+			// The orbit's normal, from the same inclination and node
+			// `positionOnOrbit` builds the position from.
+			const inc = station.orbit.inclination;
+			const node = station.orbit.node;
+			const normal = v3(
+				Math.sin(inc) * Math.sin(node),
+				-Math.sin(inc) * Math.cos(node),
+				Math.cos(inc),
+			);
+			const cos = Math.abs(dot(los, normal));
 			for (let i = 0; i < 64; i++) {
 				at.gameTime = (i / 64) * station.orbit.periodS;
 				advanceWorldClock(at, 0);
@@ -625,9 +647,11 @@ console.log("occlusion by host size, over 64 phases of each real orbit\n");
 				const along = dot(o, los);
 				const perp = length(sub(o, scale(los, along)));
 				samples.push({
-					hostRadiusKm: host.radiusKm,
-					ratio: station.orbit.radiusKm / host.radiusKm,
-					occluded: along < 0 && perp < host.radiusKm,
+					key: `${seed}:${station.id}`,
+					hostRadiusKm: hostBody.radiusKm,
+					ratio: station.orbit.radiusKm / hostBody.radiusKm,
+					cos,
+					occluded: along < 0 && perp < hostBody.radiusKm,
 				});
 			}
 		}
@@ -650,45 +674,35 @@ console.log("occlusion by host size, over 64 phases of each real orbit\n");
 		return k >= 1 ? 0 : Math.acos(k) / Math.PI;
 	};
 	{
-		let sum = 0;
+		// Accumulated over the **same stations the samples come from**, so the
+		// three rows below are three answers to one question rather than three
+		// questions. An earlier version walked its own loop and silently dropped
+		// stations whose parent is missing from `contents.planets`, which is a
+		// difference no number of decimals would have shown.
+		let cosSum = 0;
 		let geometric = 0;
 		let isotropic = 0;
 		let n = 0;
-		for (const seed of SEEDS) {
-			const world = makeWorld(seed);
-			for (const station of world.system.contents.stations) {
-				if (!station.parentId) continue;
-				const host = world.system.contents.planets.find(
-					(p) => p.id === station.parentId,
-				);
-				const hostBody = world.system.byId.get(station.parentId);
-				if (!host || !hostBody) continue;
-				// The orbit's normal, from the same inclination and node
-				// `positionOnOrbit` builds the position from.
-				const inc = station.orbit.inclination;
-				const node = station.orbit.node;
-				const normal = v3(
-					Math.sin(inc) * Math.sin(node),
-					-Math.sin(inc) * Math.cos(node),
-					Math.cos(inc),
-				);
-				const toShip = sub(world.ship.pos, hostBody.pos);
-				const c = Math.abs(dot(scale(toShip, 1 / length(toShip)), normal));
-				const ratio = station.orbit.radiusKm / host.radiusKm;
-				sum += c;
-				geometric += geometricRate(ratio, c);
-				isotropic += occlusionRate(ratio);
-				n++;
-			}
+		const seen = new Set<string>();
+		for (const x of samples) {
+			if (seen.has(x.key)) continue;
+			seen.add(x.key);
+			cosSum += x.cos;
+			geometric += geometricRate(x.ratio, x.cos);
+			isotropic += occlusionRate(x.ratio);
+			n++;
 		}
+		const sampledPct =
+			(100 * samples.filter((x) => x.occluded).length) / samples.length;
 		console.log(
-			`  line of sight vs orbit normal: mean |cos| = ${(sum / n).toFixed(3)} over ${n} stations.\n` +
+			`  line of sight vs orbit normal: mean |cos| = ${(cosSum / n).toFixed(3)} over ${n} stations.\n` +
 				"  An isotropic bearing gives 0.500; lower is edge-on, where occlusion is highest.\n\n" +
-				`  predicted occlusion, isotropic form:            ${(100 * (isotropic / n)).toFixed(1)}%\n` +
-				`  predicted using each station's own sight line:  ${(100 * (geometric / n)).toFixed(1)}%\n` +
-				`  sampled over every orbit phase:                ${(100 * samples.filter((x) => x.occluded).length) / samples.length < 0 ? 0 : ((100 * samples.filter((x) => x.occluded).length) / samples.length).toFixed(1)}%\n` +
+				`  predicted occlusion, isotropic form:            ${((100 * isotropic) / n).toFixed(2)}%\n` +
+				`  predicted using each station's own sight line:  ${((100 * geometric) / n).toFixed(2)}%\n` +
+				`  sampled over every orbit phase:                 ${sampledPct.toFixed(2)}%\n` +
 				"  — the per-station form is the isotropic one with the assumption removed and nothing\n" +
-				"    else changed, so the distance it closes is what the assumption was costing.\n",
+				"    else changed, over the same stations, so the distance it closes is what the\n" +
+				"    assumption was costing. Printed to two places because 'they agree' is the claim.\n",
 		);
 	}
 	console.log(

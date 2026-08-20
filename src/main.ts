@@ -71,6 +71,7 @@ import {
 	HOST_CLEARANCE_KM,
 	SURFACE_MARGIN,
 	advanceCruise,
+	closestApproachKm,
 	chargeAfterRegen,
 	chargeAfterTravel,
 	exitVelocity,
@@ -394,6 +395,11 @@ class Game {
 	/** #30's host standoff, likewise — the probe reports the stop against this
 	 *  rather than restating 5 km. */
 	readonly hostClearanceKm = HOST_CLEARANCE_KM;
+
+	/** `cruise.ts`'s closest-approach geometry, reachable from the page so
+	 *  `probe-arrival.mjs` measures a swept path with the same arithmetic the
+	 *  guard and the sweep use rather than a third hand-rolled copy. */
+	readonly closestApproachKm = closestApproachKm;
 
 	/** §4's spin range, reachable from the handle for the same reason: the spin
 	 *  probe drives a station to both ends of it, and a probe that restated

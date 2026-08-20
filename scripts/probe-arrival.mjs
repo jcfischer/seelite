@@ -122,9 +122,11 @@ async function flyTo(stationId) {
 				// **Swept, not sampled at the endpoints.** One cruise frame covers
 				// hundreds of thousands of km, so reading the range once per frame
 				// would miss a planet the ship went straight through — the same
-				// argument §8.1 makes for the drop-out being a ray test. The
-				// closest approach of this frame's segment to each centre is what
-				// "the path stayed outside every planet" actually needs.
+				// argument §8.1 makes for the drop-out being a ray test.
+				//
+				// The arithmetic is `cruise.ts`'s own `closestApproachKm`, reached
+				// through the handle: a probe with its own copy of the geometry can
+				// go green on a game whose copy differs.
 				const now = g.world.ship.pos;
 				const seg = {
 					x: now.x - previous.x,
@@ -132,33 +134,14 @@ async function flyTo(stationId) {
 					z: now.z - previous.z,
 				};
 				const segLen = Math.hypot(seg.x, seg.y, seg.z);
+				const nose =
+					segLen === 0
+						? { x: 1, y: 0, z: 0 }
+						: { x: seg.x / segLen, y: seg.y / segLen, z: seg.z / segLen };
 				for (const b of g.world.system.bodies) {
 					if (b.kind !== "planet" && b.kind !== "star") continue;
-					let closest;
-					if (segLen === 0) {
-						closest = dist(b.pos, now);
-					} else {
-						const u = {
-							x: seg.x / segLen,
-							y: seg.y / segLen,
-							z: seg.z / segLen,
-						};
-						const to = {
-							x: b.pos.x - previous.x,
-							y: b.pos.y - previous.y,
-							z: b.pos.z - previous.z,
-						};
-						const along = Math.min(
-							Math.max(to.x * u.x + to.y * u.y + to.z * u.z, 0),
-							segLen,
-						);
-						closest = dist(b.pos, {
-							x: previous.x + u.x * along,
-							y: previous.y + u.y * along,
-							z: previous.z + u.z * along,
-						});
-					}
-					const ratio = closest / b.radiusKm;
+					const ratio =
+						g.closestApproachKm(previous, nose, segLen, b.pos) / b.radiusKm;
 					if (ratio < closestRatio) {
 						closestRatio = ratio;
 						closestId = b.id;

@@ -598,10 +598,15 @@ should be: the planet is in the way.
 A heading that *does* go deeper is stopped **where the ship already is**, not
 where the ray meets the surface. Stopping at the surface was #30's own blocker,
 caught in review: it walked a ship inside a shell down to zero altitude, which
-is exactly what both constants exist to prevent. So the margin is a **floor on
-where a stop happens, not a wall a ship already past can re-cross** — a guard
-cannot let a ship deeper into a volume it is inside, and it cannot put back
-clearance the ship never had.
+is exactly what both constants exist to prevent.
+
+Say what that buys without overstating it, because the obvious phrasing does.
+It is **not** "a ship inside a volume never gets deeper into it": a chord that
+dips toward the body and misses it is released, correctly, and loses altitude on
+the way — `tests/cruise.test.ts` flies exactly that. What holds is narrower:
+**the guard never lets a ship reach the body**, and it never takes away
+clearance the ship still has at the moment it stops. The margin is a floor on
+where a stop happens, not a wall a ship already past can re-cross.
 
 **What this is not.** From the radial heading alone it looked like "being
 stopped is terminal" — a second cruise there covers 1 km, in 124 legs out of 124. It is
@@ -627,13 +632,15 @@ direction. The mechanism is not asserted — it is isolated:
 
 | | Occluded |
 |---|---|
-| Isotropic form, `½·(1 − √(r²−R²)/r)` | 23.8% |
-| Same form with each station's own sight line | **25.8%** |
-| Sampled over every orbit phase | **25.8%** |
+| Isotropic form, `½·(1 − √(r²−R²)/r)` | 23.80% |
+| Same form with each station's own sight line | **25.85%** |
+| Sampled over every orbit phase | **25.84%** |
 
 The second row is the first with the assumption removed and nothing else
-changed, and it lands on the measurement exactly, so the gap *is* the isotropy
-assumption. For one circular orbit the fraction is `arccos(k)/π` with
+changed, over the same 337 stations, and it agrees with the measurement to
+**0.01 of a point** where the first is 2.04 under. That is what makes the gap
+the isotropy assumption rather than something unexplained — and the rows are
+printed to two places precisely because their agreement is the claim. For one circular orbit the fraction is `arccos(k)/π` with
 `k = √(r²−R²)/(r·√(1−c²))` and `c = |cos|` between the sight line and the orbit
 normal — zero once `k ≥ 1`, because a sight line near the pole never passes
 behind. Averaged over an isotropic `c` it collapses back to the row above it.

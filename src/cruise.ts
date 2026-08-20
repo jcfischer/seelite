@@ -215,9 +215,9 @@ export const MAX_SUBSTEPS = 96;
  * body. Every other mass keeps the margin, or selecting a station would turn
  * the whole system permeable.
  *
- * The host is not dropped *at* its true surface, though: the paragraph above is
- * the
- * reason 1.05 rather than 1.0, and it does not stop being true for the body a
+ * The host is not dropped *at* its true surface, though: the paragraph above
+ * is the reason for 1.05 rather than 1.0, and it does not stop being true for
+ * the body a
  * station orbits — a ship left exactly on a sphere it is being drawn the inside
  * of is the failure that margin exists to avoid. It gets `HOST_CLEARANCE_KM`
  * instead, which is absolute rather than proportional and therefore cannot grow
@@ -556,6 +556,29 @@ export interface CruiseStep {
 }
 
 /**
+ * How near a straight run of `lenKm` from `from` along `nose` comes to
+ * `centre`, in kilometres.
+ *
+ * One spelling, exported, because three places ask it: this module's guard, the
+ * measurement sweep's penetration column, and `probe-arrival.mjs` — which
+ * reaches it through the `Game` handle. Three hand-rolled copies of a clamped
+ * projection is three chances for the instrument to agree with itself and
+ * disagree with the game.
+ *
+ * Pass `Infinity` for an unbounded forward ray.
+ */
+export function closestApproachKm(
+	from: Vec3,
+	nose: Vec3,
+	lenKm: number,
+	centre: Vec3,
+): number {
+	const toCentre = sub(centre, from);
+	const along = Math.min(Math.max(dot(toCentre, nose), 0), lenKm);
+	return length(sub(centre, add(from, scale(nose, along))));
+}
+
+/**
  * Does a forward ray from `from` along `nose` go **inside** the sphere?
  *
  * Not `sphereEntry`, and the difference is the whole of #30's second half:
@@ -618,10 +641,13 @@ function guardStopKm(
 	// down to zero altitude, which is precisely what these two constants exist
 	// to prevent, and it is what their docstrings promise not to do.
 	//
-	// So the margin is a **floor on where a stop happens, not a wall a ship
-	// already past can re-cross**. A guard cannot let a ship deeper into a
-	// volume it is already inside; it cannot put back clearance the ship never
-	// had.
+	// Say exactly what this buys, because the obvious phrasing overstates it. It
+	// is **not** "a ship inside a volume never gets deeper into it": a chord
+	// that dips toward the body and misses it is released, and loses altitude
+	// on the way — correctly, since it is not flying into anything. What holds
+	// is narrower and is the part that matters: **the guard never lets a ship
+	// reach the body**, and it never *takes away* clearance the ship still has
+	// by walking it down at the moment it stops.
 	return 0;
 }
 

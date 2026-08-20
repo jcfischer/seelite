@@ -1209,9 +1209,10 @@ test("being inside a shell does not pin the ship there", () => {
 	});
 	expect(into.exit).toBe("proximity");
 	expect(into.exitBodyId).toBe("planet");
-	// And it was stopped rather than walked down to the skin: asserting only the
-	// exit is what let a zero-altitude stop ship green.
-	expect(into.minApproach).toBeGreaterThan(0);
+	// And it was stopped rather than walked down to the skin. `minApproach > 0`
+	// is not that assertion — it passes at 10⁻⁹ km, which *is* the skin — so it
+	// is the altitude the ship started with that has to be pinned.
+	expect(length(sub(into.pos, planet.pos)) / PLANET_R).toBeCloseTo(1.02, 4);
 });
 
 test("a stop from inside a shell keeps the clearance it started with", () => {
@@ -1271,4 +1272,36 @@ test("a body inside whose shell the ship sits is still not enterable", () => {
 	expect(flight.exit).toBe("proximity");
 	expect(flight.minApproach).toBeGreaterThan(0);
 	expect(length(sub(flight.pos, planet.pos)) / PLANET_R).toBeCloseTo(1.03, 4);
+});
+
+test("a chord that misses the body is released, and does lose altitude", () => {
+	// The narrower truth, flown, because the obvious phrasing of the rule above
+	// overstates it. "A ship inside a volume never gets deeper into it" is false:
+	// a heading that dips toward the body and misses it is released — correctly,
+	// since it is not flying into anything — and it loses altitude on the way.
+	//
+	// What holds is that the guard never lets the ship reach the body. Both of
+	// the tests above fly straight at the centre, so neither can see this case.
+	const planet = { id: "planet", pos: v3(), radiusKm: PLANET_R };
+	const from = v3(PLANET_R * 1.04, 0, 0);
+	// A chord whose closest approach is inside the shell and outside the surface:
+	// aimed to pass 1.01 radii from the centre.
+	const missKm = PLANET_R * 1.01;
+	const startKm = length(sub(from, planet.pos));
+	// Perpendicular distance is `startKm · sin(turn)` from the line to the
+	// centre, so the turn is the arcsine, not the arccosine.
+	const turn = Math.asin(missKm / startKm);
+	const heading = v3(-Math.cos(turn), Math.sin(turn), 0);
+	const flight = fly({
+		from,
+		target: { pos: add(from, scale(heading, 0.3 * AU_KM)), radiusKm: 1 },
+		masses: [planet],
+		dt: 0.1,
+		limitS: 5,
+		targetParentId: null,
+	});
+	expect(flight.exit).not.toBe("proximity");
+	// It went lower than it began — inside the shell, never inside the body.
+	expect(flight.minApproach).toBeLessThan(PLANET_R * 0.04);
+	expect(flight.minApproach).toBeGreaterThan(0);
 });
