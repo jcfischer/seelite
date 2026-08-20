@@ -204,7 +204,6 @@ function buildStarfield(scene: THREE.Scene): THREE.BufferGeometry {
 
 function disposeCockpitScene(
 	scene: THREE.Scene,
-	stars: THREE.BufferGeometry,
 	renderer: THREE.WebGLRenderer,
 	canvas: HTMLCanvasElement,
 ): void {
@@ -217,7 +216,6 @@ function disposeCockpitScene(
 		drawable.geometry.dispose();
 		disposeMeshMaterials(drawable.material);
 	});
-	stars.dispose();
 	renderer.dispose();
 	canvas.remove();
 }
@@ -450,7 +448,7 @@ function mountCockpit3D(
 	);
 
 	buildRadar(cockpit, glow, cyan, green);
-	const stars = buildStarfield(scene);
+	buildStarfield(scene);
 
 	let mountedStage = stage;
 	const resize = () => {
@@ -506,7 +504,7 @@ function mountCockpit3D(
 		dispose() {
 			cancelAnimationFrame(frame);
 			resizeObserver.disconnect();
-			disposeCockpitScene(scene, stars, renderer, canvas);
+			disposeCockpitScene(scene, renderer, canvas);
 		},
 	};
 }
@@ -669,7 +667,7 @@ export function renderGalleryState(
 		footer:
 			"Tuning stays on this right-console tab, never on the flight floor.",
 	});
-	return `<div class="sg-wrap" data-gallery-state-active="${state.id}">
+	return `<div class="sg-wrap" data-gallery-version="${GALLERY_VERSION}" data-gallery-state-active="${state.id}">
 		<header class="sg-head"><div><h1>SEELITE · COCKPIT STATE GALLERY</h1><p>Issue #34 prototype — visual contract, not simulated docking.</p></div><div class="sg-head-actions"><nav class="sg-look" aria-label="Cockpit head direction">${(["left", "forward", "right"] as HeadLook[]).map((look) => `<button type="button" data-gallery-look="${look}" aria-pressed="${headLook === look}">look ${look}</button>`).join("")}</nav><button class="sg-close" type="button">return to flight</button></div></header>
 		<nav class="sg-states" aria-label="Cockpit states">${GALLERY_STATES.map((candidate) => `<button class="sg-state" type="button" data-gallery-state="${candidate.id}" aria-pressed="${candidate.id === state.id}">${candidate.label}</button>`).join("")}</nav>
 		<div class="sg-shell" data-gallery-3d-prototype>
