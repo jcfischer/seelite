@@ -131,6 +131,7 @@ function buildRadar(
 	cockpit: THREE.Group,
 	glow: THREE.MeshBasicMaterial,
 	cyan: THREE.MeshBasicMaterial,
+	green: THREE.MeshBasicMaterial,
 ): void {
 	const radar = new THREE.Group();
 	radar.position.set(0, -0.5, -1.62);
@@ -145,7 +146,7 @@ function buildRadar(
 		radar.add(mesh);
 	}
 	for (const [x, z, height, material] of [
-		[-0.58, 0.21, 0.42, new THREE.MeshBasicMaterial({ color: 0x9df5aa })],
+		[-0.58, 0.21, 0.42, green],
 		[0.12, -0.08, 0.68, cyan],
 		[0.57, 0.16, 0.53, glow],
 	] as const) {
@@ -208,44 +209,63 @@ function disposeCockpitScene(
 		};
 		if (!drawable.geometry || !drawable.material) return;
 		drawable.geometry.dispose();
-		const materials = Array.isArray(drawable.material)
-			? drawable.material
-			: [drawable.material];
-		for (const material of materials) {
-			if ("map" in material && material.map instanceof THREE.Texture)
-				material.map.dispose();
-			material.dispose();
-		}
+		disposeMeshMaterials(drawable.material);
 	});
 	stars.dispose();
 	renderer.dispose();
 	canvas.remove();
 }
 
-type CockpitBox = (
-	width: number,
-	height: number,
-	depth: number,
-	x: number,
-	y: number,
-	z: number,
-	rx?: number,
-	ry?: number,
-	rz?: number,
-	material?: THREE.Material,
-) => THREE.Mesh;
+function disposeMeshMaterials(
+	material: THREE.Material | THREE.Material[],
+): void {
+	for (const item of Array.isArray(material) ? material : [material]) {
+		if ("map" in item && item.map instanceof THREE.Texture) item.map.dispose();
+		item.dispose();
+	}
+}
+
+type CockpitBox = (frame: {
+	size: [number, number, number];
+	position: [number, number, number];
+	rotation?: [number, number, number];
+	material?: THREE.Material;
+}) => THREE.Mesh;
 
 function buildCanopyFrame(
 	addBox: CockpitBox,
 	metal: THREE.Material,
 	trim: THREE.Material,
 ): void {
-	addBox(5.7, 0.14, 0.18, 0, 1.55, -0.8);
-	addBox(0.18, 2.8, 0.22, -2.55, 0.12, -0.9, 0, 0, -0.24);
-	addBox(0.18, 2.8, 0.22, 2.55, 0.12, -0.9, 0, 0, 0.24);
-	addBox(4.4, 0.24, 1.45, 0, -0.88, -1.85, 0.42, 0, 0, trim);
-	addBox(1.65, 0.08, 0.82, -3.4, -0.52, -1.44, 0.42, 0.16, 0, metal);
-	addBox(1.65, 0.08, 0.82, 3.4, -0.52, -1.44, 0.42, -0.16, 0, metal);
+	addBox({ size: [5.7, 0.14, 0.18], position: [0, 1.55, -0.8] });
+	addBox({
+		size: [0.18, 2.8, 0.22],
+		position: [-2.55, 0.12, -0.9],
+		rotation: [0, 0, -0.24],
+	});
+	addBox({
+		size: [0.18, 2.8, 0.22],
+		position: [2.55, 0.12, -0.9],
+		rotation: [0, 0, 0.24],
+	});
+	addBox({
+		size: [4.4, 0.24, 1.45],
+		position: [0, -0.88, -1.85],
+		rotation: [0.42, 0, 0],
+		material: trim,
+	});
+	addBox({
+		size: [1.65, 0.08, 0.82],
+		position: [-3.4, -0.52, -1.44],
+		rotation: [0.42, 0.16, 0],
+		material: metal,
+	});
+	addBox({
+		size: [1.65, 0.08, 0.82],
+		position: [3.4, -0.52, -1.44],
+		rotation: [0.42, -0.16, 0],
+		material: metal,
+	});
 }
 
 function addConsoleDisplay(
@@ -343,6 +363,7 @@ function buildConsoleDisplays(
 }
 
 type CockpitScene = {
+	detach(): void;
 	attach(
 		stage: HTMLElement,
 		state: GalleryState,
@@ -354,14 +375,7 @@ type CockpitScene = {
 
 function disposeConsoleDisplay(display: THREE.Mesh): void {
 	display.geometry.dispose();
-	const materials = Array.isArray(display.material)
-		? display.material
-		: [display.material];
-	for (const material of materials) {
-		if ("map" in material && material.map instanceof THREE.Texture)
-			material.map.dispose();
-		material.dispose();
-	}
+	disposeMeshMaterials(display.material);
 }
 
 /** A self-contained rendered cockpit, kept separate from the game scene. */
@@ -404,24 +418,16 @@ function mountCockpit3D(
 	});
 	const glow = new THREE.MeshBasicMaterial({ color: 0xe6a23c });
 	const cyan = new THREE.MeshBasicMaterial({ color: 0x78cbed });
-	const addBox = (
-		width: number,
-		height: number,
-		depth: number,
-		x: number,
-		y: number,
-		z: number,
-		rx = 0,
-		ry = 0,
-		rz = 0,
-		material: THREE.Material = metal,
-	) => {
-		const mesh = new THREE.Mesh(
-			new THREE.BoxGeometry(width, height, depth),
-			material,
-		);
-		mesh.position.set(x, y, z);
-		mesh.rotation.set(rx, ry, rz);
+	const green = new THREE.MeshBasicMaterial({ color: 0x9df5aa });
+	const addBox: CockpitBox = ({
+		size,
+		position,
+		rotation = [0, 0, 0],
+		material = metal,
+	}) => {
+		const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material);
+		mesh.position.set(...position);
+		mesh.rotation.set(...rotation);
 		cockpit.add(mesh);
 		return mesh;
 	};
@@ -433,7 +439,7 @@ function mountCockpit3D(
 		rightTab,
 	);
 
-	buildRadar(cockpit, glow, cyan);
+	buildRadar(cockpit, glow, cyan, green);
 	const stars = buildStarfield(scene);
 
 	let mountedStage = stage;
@@ -462,12 +468,15 @@ function mountCockpit3D(
 			2.7 - Math.cos(headYaw[currentHeadLook]) * 5,
 		);
 		renderer.render(scene, camera);
+		canvas.dataset.galleryRenderedFrame = "true";
 		frame = requestAnimationFrame(render);
 	};
 	frame = requestAnimationFrame(render);
 	return {
-		attach(nextStage, nextState, nextRightTab, nextHeadLook) {
+		detach() {
 			resizeObserver.unobserve(mountedStage);
+		},
+		attach(nextStage, nextState, nextRightTab, nextHeadLook) {
 			mountedStage = nextStage;
 			mountedStage.prepend(canvas);
 			resizeObserver.observe(mountedStage);
@@ -683,6 +692,7 @@ export function mountStateGallery(): void {
 	let headLook: HeadLook = "forward";
 	let cockpitScene: CockpitScene | null = null;
 	const paint = () => {
+		cockpitScene?.detach();
 		root.innerHTML = renderGalleryState(current, rightTab, headLook);
 		const cockpit = root.querySelector<HTMLElement>("[data-gallery-cockpit]");
 		if (!cockpit) return;

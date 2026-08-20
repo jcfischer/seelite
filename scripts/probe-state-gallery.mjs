@@ -118,6 +118,7 @@ function measureGalleryState() {
 				canvas instanceof HTMLCanvasElement &&
 				canvas.width > 0 &&
 				canvas.height > 0 &&
+				canvas.dataset.galleryRenderedFrame === "true" &&
 				Boolean(canvas.getContext("webgl2") || canvas.getContext("webgl"))
 			);
 		})(),
