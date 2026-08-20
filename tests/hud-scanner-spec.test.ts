@@ -56,7 +56,7 @@ test("the rendered target state exposes the gallery hooks used by browser checks
 	expect(leftLook).toContain('data-gallery-look="left"');
 });
 
-test("head-look reserves full console work surfaces for the matching side view", () => {
+test("head-look selects a physical console camera without rendering an HTML console overlay", () => {
 	const forward = renderGalleryState(galleryState("assist-on"), "Flight");
 	const left = renderGalleryState(galleryState("assist-on"), "Flight", "left");
 	const right = renderGalleryState(
@@ -64,10 +64,8 @@ test("head-look reserves full console work surfaces for the matching side view",
 		"Tuning",
 		"right",
 	);
-	expect(forward).toContain('data-gallery-panel="left" data-active="false"');
-	expect(forward).toContain('data-gallery-panel="right" data-active="false"');
-	expect(left).toContain('data-gallery-panel="left" data-active="true"');
-	expect(left).toContain("NAVIGATION");
-	expect(right).toContain('data-gallery-panel="right" data-active="true"');
-	expect(right).toContain("TUNING");
+	expect(forward).toContain('data-gallery-physical-console="forward"');
+	expect(left).toContain('data-gallery-physical-console="left"');
+	expect(right).toContain('data-gallery-physical-console="right"');
+	expect(forward).not.toContain('class="sg-panel"');
 });

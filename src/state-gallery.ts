@@ -244,12 +244,12 @@ function buildCanopyFrame(
 	addBox({ size: [5.7, 0.14, 0.18], position: [0, 1.55, -0.8] });
 	addBox({
 		size: [0.18, 2.8, 0.22],
-		position: [-2.55, 0.12, -0.9],
+		position: [-4.05, 0.12, -0.9],
 		rotation: [0, 0, -0.24],
 	});
 	addBox({
 		size: [0.18, 2.8, 0.22],
-		position: [2.55, 0.12, -0.9],
+		position: [4.05, 0.12, -0.9],
 		rotation: [0, 0, 0.24],
 	});
 	addBox({
@@ -327,7 +327,7 @@ function addConsoleDisplay(
 	const displayOpacity =
 		headLook === "forward" ? 0.13 : headLook === side ? 0.82 : 0.16;
 	const screen = new THREE.Mesh(
-		new THREE.PlaneGeometry(3.4, 2.55),
+		new THREE.PlaneGeometry(4.5, 3.35),
 		new THREE.MeshBasicMaterial({
 			map: texture,
 			transparent: true,
@@ -336,7 +336,7 @@ function addConsoleDisplay(
 			depthWrite: false,
 		}),
 	);
-	screen.position.set(x, -0.14, -1.16);
+	screen.position.set(x, -0.05, -1.28);
 	screen.rotation.set(-0.4, rotationY, 0);
 	cockpit.add(screen);
 	return screen;
@@ -353,16 +353,16 @@ function buildConsoleDisplays(
 		headLook,
 		title: leftTitle,
 		body: leftPanelBody(state),
-		x: -3.4,
-		rotationY: 0.32,
+		x: -3.15,
+		rotationY: 0.48,
 		accent: "#7ac5e8",
 	});
 	const right = addConsoleDisplay(cockpit, {
 		headLook,
 		title: rightTab.toUpperCase(),
 		body: rightPanelBody(state, rightTab),
-		x: 3.4,
-		rotationY: -0.32,
+		x: 3.15,
+		rotationY: -0.48,
 		accent: "#e5aa52",
 	});
 	return [left, right].filter(
@@ -462,19 +462,29 @@ function mountCockpit3D(
 	resize();
 	let frame = 0;
 	let currentHeadLook = headLook;
-	const headYaw: Record<HeadLook, number> = {
-		left: -1.05,
-		forward: 0,
-		right: 1.05,
+	const cameraPose: Record<
+		HeadLook,
+		{ position: THREE.Vector3; target: THREE.Vector3 }
+	> = {
+		forward: {
+			position: new THREE.Vector3(0, 0.4, 2.7),
+			target: new THREE.Vector3(0, -0.28, -2.3),
+		},
+		left: {
+			position: new THREE.Vector3(-1.9, 0.25, 2.15),
+			target: new THREE.Vector3(-3.15, -0.05, -1.28),
+		},
+		right: {
+			position: new THREE.Vector3(1.9, 0.25, 2.15),
+			target: new THREE.Vector3(3.15, -0.05, -1.28),
+		},
 	};
 	const render = (time: number) => {
-		camera.position.x = Math.sin(time * 0.00018) * 0.035;
-		camera.position.y = 0.4 + Math.sin(time * 0.00013) * 0.012;
-		camera.lookAt(
-			Math.sin(headYaw[currentHeadLook]) * 5,
-			-0.28,
-			2.7 - Math.cos(headYaw[currentHeadLook]) * 5,
-		);
+		const pose = cameraPose[currentHeadLook];
+		camera.position.copy(pose.position);
+		camera.position.x += Math.sin(time * 0.00018) * 0.018;
+		camera.position.y += Math.sin(time * 0.00013) * 0.008;
+		camera.lookAt(pose.target);
 		renderer.render(scene, camera);
 		canvas.dataset.galleryRenderedFrame = "true";
 		frame = requestAnimationFrame(render);
@@ -557,6 +567,7 @@ const STYLE = `
 .sg-stars, .sg-dash-deck { display: none; }
 .sg-director { position: absolute; z-index: 2; left: 50%; top: 42%; width: 185px; transform: translate(-50%, -50%); color: #ffe0a2; text-align: center; text-shadow: 0 0 14px rgba(229, 170, 82, .65); transition: opacity 120ms linear; }
 .sg-cockpit[data-gallery-head-look="left"] .sg-director, .sg-cockpit[data-gallery-head-look="right"] .sg-director { opacity: .12; }
+.sg-cockpit[data-gallery-head-look="left"] .sg-glass, .sg-cockpit[data-gallery-head-look="right"] .sg-glass { opacity: 0; }
 .sg-director::before { content: ""; display: block; width: 68px; height: 68px; margin: 0 auto 9px; border: 2px solid currentColor; border-radius: 50%; box-shadow: 0 0 18px currentColor; }
 .sg-target-arrow { position: absolute; left: 50%; top: 23px; color: #ffe0a2; font-size: 24px; line-height: 1; text-shadow: 0 0 12px rgba(229, 170, 82, .9); transform: rotate(var(--target-bearing)) translateX(48px); transform-origin: 0 50%; }
 .sg-director[data-accent="green"] { color: #a8ffbf; }
@@ -564,7 +575,7 @@ const STYLE = `
 .sg-director[data-accent="cyan"] { color: #a7dcff; }
 .sg-docking { margin-top: 8px; color: inherit; font-size: 11px; }
 .sg-dash-deck { position: absolute; z-index: 1; left: 50%; bottom: -27px; width: 500px; height: 220px; border: 2px solid rgba(202, 153, 67, .5); background: linear-gradient(160deg, rgba(71, 47, 24, .82), rgba(9, 15, 19, .96) 45%, rgba(1, 5, 8, .98)); box-shadow: inset 0 1px 0 rgba(255, 205, 119, .28), 0 0 40px rgba(0, 0, 0, .55); clip-path: polygon(18% 0, 82% 0, 100% 100%, 0 100%); transform: translateX(-50%) perspective(430px) rotateX(57deg); transform-origin: bottom; }
-.sg-scanner { position: absolute; z-index: 2; left: 50%; bottom: 65px; width: 330px; height: 156px; opacity: .92; pointer-events: none; transform: translateX(-50%); }
+.sg-scanner { position: absolute; z-index: 2; left: 50%; bottom: 65px; width: 330px; height: 156px; opacity: 0; pointer-events: none; transform: translateX(-50%); }
 .sg-scanner::before { content: ""; position: absolute; inset: 25px 5px 10px; border: 2px solid #eaa632; border-radius: 50%; background: repeating-radial-gradient(ellipse at center, transparent 0 12px, rgba(234, 166, 50, .65) 13px 14px); box-shadow: 0 0 18px rgba(234, 166, 50, .35), inset 0 0 18px rgba(234, 166, 50, .15); }
 .sg-scanner::after { content: ""; position: absolute; left: 50%; top: 15px; bottom: 14px; width: 1px; background: #eaa632; opacity: .65; }
 .sg-contact { position: absolute; width: 9px; height: 9px; border: 1px solid #ffd274; border-radius: 50%; background: #221b08; z-index: 1; }
@@ -671,10 +682,9 @@ export function renderGalleryState(
 		<header class="sg-head"><div><h1>SEELITE · COCKPIT STATE GALLERY</h1><p>Issue #34 prototype — visual contract, not simulated docking.</p></div><div class="sg-head-actions"><nav class="sg-look" aria-label="Cockpit head direction">${(["left", "forward", "right"] as HeadLook[]).map((look) => `<button type="button" data-gallery-look="${look}" aria-pressed="${headLook === look}">look ${look}</button>`).join("")}</nav><button class="sg-close" type="button">return to flight</button></div></header>
 		<nav class="sg-states" aria-label="Cockpit states">${GALLERY_STATES.map((candidate) => `<button class="sg-state" type="button" data-gallery-state="${candidate.id}" aria-pressed="${candidate.id === state.id}">${candidate.label}</button>`).join("")}</nav>
 		<div class="sg-shell" data-gallery-3d-prototype>
-			<div class="sg-cockpit" data-gallery-cockpit data-gallery-head-look="${headLook}"><div class="sg-canopy" aria-hidden="true"></div>
-			${leftConsole}
+			<div class="sg-cockpit" data-gallery-cockpit data-gallery-head-look="${headLook}" data-gallery-physical-console="${headLook}"><div class="sg-canopy" aria-hidden="true"></div>
 			<main class="sg-glass" aria-live="polite"><div class="sg-stars"></div><div class="sg-dash-deck" aria-hidden="true"></div><div class="sg-director" data-gallery-director data-accent="${state.accent}">${state.targetBearingDeg === undefined ? "" : `<i class="sg-target-arrow" data-gallery-target-arrow data-gallery-target-bearing="${state.targetBearingDeg}" style="--target-bearing:${state.targetBearingDeg}deg" aria-label="turn toward target bearing">➤</i>`}${state.director}${state.id.startsWith("docking-") ? `<div class="sg-docking" data-gallery-docking>AXIS FUNNEL · ROLL RING · ${state.id === "docking-granted" ? "CLEAR TO APPROACH" : "DO NOT ENTER"}</div>` : ""}</div><div class="sg-scanner" data-gallery-scanner aria-label="Elite-style 3D local radar, 10,000 kilometre vicinity"><i class="sg-contact one" data-gallery-contact-stem></i><i class="sg-contact-anchor one" data-gallery-contact-anchor></i><i class="sg-contact two" data-gallery-contact-stem></i><i class="sg-contact-anchor two" data-gallery-contact-anchor></i><i class="sg-contact three" data-gallery-contact-stem></i><i class="sg-contact-anchor three" data-gallery-contact-anchor></i><span class="sg-scanner-label">ELITE 3D RADAR · 10,000 km</span></div><div class="sg-floor" data-gallery-floor><span>${state.mode}</span><strong>${state.target}</strong></div></main>
-			${rightConsole}
+			<nav class="sg-physical-controls" aria-label="Physical right console tabs">${(["Flight", "Drive", "Tuning"] as RightTab[]).map((tab) => `<button type="button" data-gallery-right-tab="${tab}" ${tab === "Tuning" ? "data-gallery-tuning" : ""} aria-selected="${rightTab === tab}">${tab}</button>`).join("")}</nav>
 			</div>
 		</div><p class="sg-note" data-gallery-notice>${state.notice}</p>
 	</div>`;
