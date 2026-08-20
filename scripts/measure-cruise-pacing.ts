@@ -65,6 +65,7 @@ function flownSeconds(legAu: number, params: CruiseParams): number | null {
 			masses,
 			target,
 			params,
+			targetParentId: null,
 		});
 		pos = step.pos;
 		t += DT;

@@ -272,9 +272,15 @@ export function advanceSystem(system: System, gameTime: number): void {
 /**
  * The body a station orbits, or `null` — #30's arrival rule reads it.
  *
- * Only a station has one. A planet or moon selected as a target is a mass in its
- * own right, and cruise to it must still be stopped *by* it, which is what
- * leaves the ship above its surface rather than inside it.
+ * Only a station has one, because only a station is placed relative to another
+ * body. A *planet* selected as a target returns null and is right to: it is a
+ * mass in its own right, and cruise to it must still be stopped by it, which is
+ * what leaves the ship above its surface rather than inside it.
+ *
+ * A **moon** returns null and is not so clearly right. `advanceCruise` counts
+ * only stars and planets as masses (#10 §2.1), so a moon is neither an obstacle
+ * nor a host — and a moon low over a large planet is the same geometry #30 is
+ * about, unmeasured because nothing targets a moon yet.
  *
  * One function rather than three copies of `station.parentId`: the renderer, the
  * measurement sweep and the browser probe all ask this question, and a rule the

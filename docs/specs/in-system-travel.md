@@ -518,18 +518,28 @@ Measured: 36 of the 249 legs whose station was clear of its host ended against
 the host anyway — 14% of those, 11% of every planet-orbiting leg — thousands of
 km short and still doing thousands of km/s.
 
-**The body a selected target orbits guards at its true surface instead.** It is
+**The body a selected target orbits guards at `radius + CLEARANCE_KM` instead**
+— 5 km, absolute, where every other body keeps `1.05 × radius`. It is
 still an obstacle — a station genuinely behind its planet is still stopped — but
 it no longer projects a shell its own station is inside. The exemption is scoped
 to that one body: every other mass keeps `SURFACE_MARGIN`, or selecting a
 station would make the whole system permeable.
 
+The clearance is not zero, and §11.4's reason is why: the margin is 1.05 rather
+than 1.0 so the ship is not left standing on a sphere it is being drawn the
+inside of, and that does not stop being true for the body a station orbits. What
+changes is that it is **absolute**, so it cannot scale into the altitude a
+station is placed at. 5 km is 500× the near camera's 10 m near plane
+(`NEAR_NEAR_KM`); swept against the corpus, 5 and 20 km cost nothing and 50 km
+costs two of 249 clear legs, so it sits at the small end of the range that does
+the job.
+
 Two of the 88 occluded legs (2.3%) do now arrive. They are grazes: the geometry
 calls them occluded because the straight line at leg start clips the host, and
 the flown path — re-aimed at a moving station every frame — clears it by all but
-**under 2 km**. The instrument reports the penetration rather than hiding it, and
-2 km against a 6,000 km world is a tangent, not a tunnel. No other leg in the
-corpus goes inside a planet at all.
+**under 2 km**. The instrument reports the deepest penetration over *every* leg,
+not only over the ones past a threshold, and 2 km against a 6,000 km world is a
+tangent rather than a tunnel.
 
 | Leg class | Arrived before | Arrived after | n |
 |---|---|---|---|
@@ -566,15 +576,23 @@ from. Leaving the worst — a shipyard 2,784 km inside a 65,977 km giant's shell
 meant crawling that gap in normal flight first: **23 minutes at the 2 km/s
 assist cap**.
 
-So the guard fires on **crossing inward**, not on being inside. A ship pointed
-away from the body it is beside is not flying into anything. Same corpus, after:
-0 of 49 stuck, median 8.5 million km in ten seconds.
+So the guard fires on **crossing inward**, not on being inside — and "inward"
+is *does this heading go deeper into the body*, not *is the centre ahead of me*.
+The difference is the whole of it: from inside a shell the surface subtends less
+than a hemisphere, so a centre-ahead test releases the radial heading and pins
+every one around the limb — which are the headings a ship beside a world wants.
+The corpus is flown on six headings from 0° to 110° off the outward radial, and
+those that enter the surface are excluded rather than counted, because they are
+supposed to stop. After: **0 of 92 pinned**, median 1.3 million km in five
+seconds on the worst heading that clears the body. Two stopped legs end a hair
+inside a surface, where no heading clears it; they are reported separately
+rather than folded in.
 
 Aimed back at a station behind its planet, a re-engagement is still stopped, and
 should be: the planet is in the way.
 
-**What this is not.** From the drop point alone it looked like "being stopped is
-terminal" — a second cruise there covers 1 km, in 124 legs out of 124. It is
+**What this is not.** From the radial heading alone it looked like "being
+stopped is terminal" — a second cruise there covers 1 km, in 124 legs out of 124. It is
 not: a ship dropped *at* a shell sits on its boundary, and the 2.5 s spool-up
 carries it clear before cruise takes. `probe-arrival.mjs` found that check green
 against the old rule too, which is how the overclaim was caught. The drop-point
@@ -598,9 +616,21 @@ sphere, so the line of sight is isotropic even where the orbits are coplanar.
 
 The instrument prints the prediction beside the sampled rate rather than instead
 of it, and they part: **the form runs 2–4 points under** what the corpus
-measures, consistently, because the ship is ~1 AU out rather than infinitely far
-and the shadow is a cone rather than a cylinder. Read the projection table below
-as a lower bound, and re-measure before committing to a number from it.
+measures, consistently. The mechanism is the assumption, and it is measured
+rather than argued — the line of sight is *not* isotropic to these orbits. A host
+sits near its system's plane and the ship arrives only ~1 AU out, so `host → ship`
+tends to lie near that plane too, which is where the near-coplanar orbits are:
+edge-on, where occlusion is highest. The mean `|cos|` between the line of sight
+and the orbit normal is **0.429** against the 0.500 an isotropic bearing gives.
+
+(The first answer written here was finite-distance geometry — "the shadow is a
+cone rather than a cylinder". That is wrong and worth recording as wrong: the
+sampled test is itself a parallel-ray one, so cone geometry cannot enter it, and
+at station scale against 1 AU the correction would be ~0.05 points rather than
+2–4.)
+
+Read the projection table below as a lower bound, and re-measure before
+committing to a number from it.
 
 `system.ts`'s 400–2,000 km altitude lands very differently by host size:
 

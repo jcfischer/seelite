@@ -58,6 +58,15 @@ await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 const { check, exit } = tally();
 
+/** Every fixture in this probe is a named body in a named seed, so a missing
+ *  one is a broken probe rather than a failing game — reported once, here. */
+async function bailIfMissing(result, label) {
+	if (!result.missing) return;
+	check(label, false);
+	await browser.close();
+	exit();
+}
+
 const page = await browser.newPage({ viewport: { width: 900, height: 620 } });
 page.on("pageerror", (e) => check(`no page error (${e.message})`, false));
 await installCamSim(page);
@@ -137,6 +146,7 @@ async function flyTo(stationId) {
 				closestId,
 				dropRadiusKm: g.cruiseParams.dropRadiusKm,
 				surfaceMargin: g.surfaceMargin,
+				clearanceKm: g.hostClearanceKm,
 			};
 		},
 		[stationId, dt, LIMIT_S],
@@ -146,11 +156,10 @@ async function flyTo(stationId) {
 // ---------------------------------------------------------------- clear space
 
 const clear = await flyTo("station-trade");
-if (clear.missing) {
-	check("seed 47 has the trade station this probe is written against", false);
-	await browser.close();
-	exit();
-}
+await bailIfMissing(
+	clear,
+	"seed 47 has the trade station this probe is written against",
+);
 console.log(
 	`\nstation-trade: host ${clear.hostId}, ${(clear.startKm / 1e6).toFixed(2)}M km leg, ` +
 		`${clear.elapsed.toFixed(1)} s, exit ${clear.exit}\n`,
@@ -172,11 +181,10 @@ check(
 await page.reload({ waitUntil: "load" });
 await bootedGame(page);
 const behind = await flyTo("station-shipyard");
-if (behind.missing) {
-	check("seed 47 has the shipyard this probe is written against", false);
-	await browser.close();
-	exit();
-}
+await bailIfMissing(
+	behind,
+	"seed 47 has the shipyard this probe is written against",
+);
 console.log(
 	`\nstation-shipyard: host ${behind.hostId}, ${(behind.startKm / 1e6).toFixed(2)}M km leg, ` +
 		`${behind.elapsed.toFixed(1)} s, exit ${behind.exit}\n`,
@@ -188,12 +196,13 @@ check(
 	`${behind.exit} at ${(behind.missKm / 1000).toFixed(0)}k km from the station`,
 );
 check(
-	"the stop is at the host's surface, not at the shell it no longer projects there",
+	"the stop is at the host's standoff, not at the shell it no longer projects there",
 	behind.hostRangeRatio !== null &&
-		behind.hostRangeRatio >= 1 - 1e-6 &&
+		behind.hostRangeRatio >= 1 &&
 		behind.hostRangeRatio < 1 + (behind.surfaceMargin - 1) / 10,
-	`${behind.hostRangeRatio?.toFixed(4)} × the host's radius ` +
-		`(the shell every other body keeps is ${behind.surfaceMargin})`,
+	`${behind.hostRangeRatio?.toFixed(5)} × the host's radius — the standoff is ` +
+		`${behind.clearanceKm} km on a ${(behind.hostRadiusKm / 1000).toFixed(0)}k km world, ` +
+		`against the ${behind.surfaceMargin} shell every other body keeps`,
 );
 check(
 	"and that path stayed outside every planet too",
@@ -253,11 +262,10 @@ const escape = await page.evaluate(
 	[dt],
 );
 
-if (escape.missing) {
-	check("seed 118 has the shipyard this probe is written against", false);
-	await browser.close();
-	exit();
-}
+await bailIfMissing(
+	escape,
+	"seed 118 has the shipyard this probe is written against",
+);
 
 check(
 	"the fixture station really is inside its host's shell",

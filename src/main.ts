@@ -68,6 +68,7 @@ import {
 	CHARGE_CAPACITY_AU,
 	type CruiseParams,
 	DEFAULT_CRUISE,
+	CLEARANCE_KM,
 	SURFACE_MARGIN,
 	advanceCruise,
 	chargeAfterRegen,
@@ -390,6 +391,10 @@ class Game {
 	 *  its bound as a fraction of this rather than as its own 1.05. */
 	readonly surfaceMargin = SURFACE_MARGIN;
 
+	/** #30's host standoff, likewise — the probe reports the stop against this
+	 *  rather than restating 5 km. */
+	readonly hostClearanceKm = CLEARANCE_KM;
+
 	/** §4's spin range, reachable from the handle for the same reason: the spin
 	 *  probe drives a station to both ends of it, and a probe that restated
 	 *  0.6 and 3.0 would assert against its own copy. */
@@ -576,10 +581,11 @@ class Game {
 	 * not stopped by it. `probe-arrival.mjs` flies exactly this to check that the
 	 * release is real in the browser and not only in the sweep.
 	 *
-	 * **Probe affordance, not an input path.** No key is bound to it — it is on
-	 * the handle for the same reason `assistCapKms` and `surfaceMargin` are, so
-	 * a probe can fly a manoeuvre the game allows without a probe reaching into
-	 * `face`, which would let the ship's orientation be set from anywhere.
+	 * **Probe affordance, not an input path.** No key is bound to it. It is here
+	 * so the manoeuvre has one spelling rather than a probe's own — not as
+	 * encapsulation, which it would not buy: `probe-arrival.mjs` writes
+	 * `world.ship.pos` directly two lines later, and a handle that hands out the
+	 * world is not protecting the orientation.
 	 */
 	faceAway(bodyId: string) {
 		const body = this.world.system.byId.get(bodyId);

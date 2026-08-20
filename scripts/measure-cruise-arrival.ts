@@ -45,7 +45,7 @@ import {
 	makeWorld,
 } from "../src/sim";
 import { AU_KM, MAX_DT } from "../src/units";
-import { type Vec3, add, dot, length, scale, sub } from "../src/vec3";
+import { type Vec3, add, dot, length, scale, sub, v3 } from "../src/vec3";
 
 /** The game's own frame cap, so the sweep is the worst case for anything that
  *  sub-steps — read from the unit scheme rather than restated. */
@@ -113,8 +113,10 @@ interface LegResult {
 	 */
 	reengagedKm: number;
 	/**
-	 * Kilometres a fresh engagement covers **away from the host**, in five
-	 * seconds.
+	 * Kilometres the *worst* heading that clears the body covers in `ESCAPE_S`
+	 * seconds — see `ESCAPE_HEADINGS_DEG`. Zero when no sampled heading clears
+	 * it, which means the ship ended inside the surface; `escapeHeadings` says
+	 * which of the two a zero is.
 	 *
 	 * This is the trap the report describes, and the honest measure of it:
 	 * dropped at a planet, can the player leave? `sphereEntry` returns 0 for a
@@ -125,53 +127,112 @@ interface LegResult {
 	 * not stopped.
 	 */
 	escapeKm: number;
+	/** How many of `ESCAPE_HEADINGS_DEG` cleared the body and were flown. */
+	escapeHeadings: number;
 }
 
-/**
- * Five seconds of cruise straight out from a body, from where a leg was
- * stopped — "can the player leave?", flown rather than argued.
+/** Headings the escape is flown on, degrees off the outward radial.
  *
- * The target is a point 1 AU further out along the same radial, which is a free
- * cruise with something selected: the drop sphere is 50 km and the ship is
- * heading away from it, so nothing here ends the run except the guard.
+ *  Not just 0: the release rule is "this heading does not enter the body", and
+ *  a radial-only sweep cannot tell that from "the centre is behind me". The
+ *  band past 90° is where the two differ, and it is the useful one — a ship
+ *  beside a world wants to go *around* it, not straight up.
+ *
+ *  A heading that genuinely enters the surface is **skipped rather than
+ *  counted**: it is supposed to be stopped, and how many of these clear the
+ *  body depends on how far up the ship is. At a drop point *on* the surface,
+ *  only the outward hemisphere clears it. */
+const ESCAPE_HEADINGS_DEG = [0, 45, 89, 95, 100, 110];
+
+/**
+ * The worst of `ESCAPE_S` seconds of cruise from a point beside a body, over
+ * every heading in `ESCAPE_HEADINGS_DEG` — "can the player leave?", flown
+ * rather than argued.
+ *
+ * The target is a point 1 AU along the heading, which is a free cruise with
+ * something selected: the drop sphere is 50 km and the ship is heading away
+ * from it, so nothing here ends the run except the guard.
  */
 function flyAway(
 	seed: number,
 	gameTime: number,
 	from: Vec3,
 	bodyId: string | undefined,
-): number {
-	if (!bodyId) return 0;
+): { worstKm: number; headings: number } {
+	if (!bodyId) return { worstKm: 0, headings: 0 };
 	const world = makeWorld(seed);
 	world.gameTime = gameTime;
 	advanceWorldClock(world, 0);
 	const body = world.system.byId.get(bodyId);
-	if (!body) return 0;
+	if (!body) return { worstKm: 0, headings: 0 };
 	const out = sub(from, body.pos);
 	const len = length(out);
-	if (len === 0) return 0;
-	const nose = scale(out, 1 / len);
-	const target = { pos: add(from, scale(nose, AU_KM)), radiusKm: 1 };
-	let pos = from;
-	let travelled = 0;
-	for (let i = 0; i < ESCAPE_S / DT; i++) {
-		const step = advanceCruise({
-			// Rebuilt per frame: `advanceWorldClock` moves the bodies, and the
-			// wrapper objects carry the positions the sweep reads.
-			pos,
-			nose,
-			throttle: 1,
-			dt: DT,
-			masses: massesOf(world),
-			target,
-			params: DEFAULT_CRUISE,
-		});
-		pos = step.pos;
-		travelled += step.travelledKm;
-		advanceWorldClock(world, DT);
-		if (step.dropped) break;
+	if (len === 0) return { worstKm: 0, headings: 0 };
+	const radial = scale(out, 1 / len);
+	// Any unit vector across the radial serves to sweep the heading through;
+	// the geometry is symmetric about it, so one suffices.
+	const raw = sub(
+		v3(radial.y, radial.z, radial.x),
+		scale(radial, dot(radial, v3(radial.y, radial.z, radial.x))),
+	);
+	const acrossLen = length(raw);
+	if (acrossLen === 0) return { worstKm: 0, headings: 0 };
+	const across = scale(raw, 1 / acrossLen);
+
+	let worst = Number.POSITIVE_INFINITY;
+	let flown = 0;
+	for (const deg of ESCAPE_HEADINGS_DEG) {
+		// Every heading starts from the same clock. `advanceWorldClock` writes body
+		// positions in place, so a shared world would hand the second heading a
+		// planet that had moved five seconds — 150 km at a station's orbital speed,
+		// which is enough to put the start point inside it and report a pin that
+		// is really a stale fixture.
+		world.gameTime = gameTime;
+		advanceWorldClock(world, 0);
+		const rad = (deg * Math.PI) / 180;
+		const nose = add(
+			scale(radial, Math.cos(rad)),
+			scale(across, Math.sin(rad)),
+		);
+		// Skip the headings that fly into the body: those are stops, not pins.
+		//
+		// `sphereEntry` cannot answer this — it returns 0 for a ray that *starts*
+		// on or inside the sphere, which is every heading from a drop point on the
+		// surface. The question is whether the ray goes deeper, so it is the
+		// closest approach along the forward ray that decides.
+		//
+		// The tolerance is not cosmetic: the start point *is* the surface for a
+		// leg stopped by its host, so a bare `<` reads a tangent as an entry on
+		// whichever side of the last bit the rounding fell, and half the corpus
+		// then reports a pin it does not have.
+		if (
+			closestApproachKm(from, nose, Number.POSITIVE_INFINITY, body.pos) <
+			body.radiusKm * (1 - 1e-9)
+		)
+			continue;
+		flown++;
+		const target = { pos: add(from, scale(nose, AU_KM)), radiusKm: 1 };
+		let pos = from;
+		let travelled = 0;
+		for (let i = 0; i < ESCAPE_S / DT; i++) {
+			const step = advanceCruise({
+				pos,
+				nose,
+				throttle: 1,
+				dt: DT,
+				masses: massesOf(world),
+				target,
+				params: DEFAULT_CRUISE,
+				targetParentId: null,
+			});
+			pos = step.pos;
+			travelled += step.travelledKm;
+			advanceWorldClock(world, DT);
+			if (step.dropped) break;
+		}
+		worst = Math.min(worst, travelled);
 	}
-	return travelled;
+	return { worstKm: flown === 0 ? 0 : worst, headings: flown };
 }
 
 /**
@@ -238,6 +299,7 @@ function flyLeg(
 			// A second engagement from exactly here, flown by the same code.
 			let reengagedKm = 0;
 			let escapeKm = 0;
+			let escapeHeadings = 0;
 			if (measureReengage && rangeKm > DEFAULT_CRUISE.dropRadiusKm) {
 				const again = makeWorld(world.seed);
 				again.gameTime = world.gameTime;
@@ -245,7 +307,9 @@ function flyLeg(
 				advanceWorldClock(again, 0);
 				const second = flyLeg(again, targetId, false);
 				reengagedKm = Math.max(0, rangeKm - second.rangeKm);
-				escapeKm = flyAway(world.seed, world.gameTime, pos, step.exitBodyId);
+				const away = flyAway(world.seed, world.gameTime, pos, step.exitBodyId);
+				escapeKm = away.worstKm;
+				escapeHeadings = away.headings;
 			}
 			return {
 				exit: step.starved ? "starved" : (step.exit ?? "none"),
@@ -258,6 +322,7 @@ function flyLeg(
 				gameTime: world.gameTime,
 				reengagedKm: finite("reengaged", reengagedKm),
 				escapeKm: finite("escape", escapeKm),
+				escapeHeadings,
 			};
 		}
 	}
@@ -278,6 +343,7 @@ function flyLeg(
 		gameTime: world.gameTime,
 		reengagedKm: 0,
 		escapeKm: 0,
+		escapeHeadings: 0,
 	};
 }
 
@@ -354,7 +420,10 @@ function planetControl(
 	};
 }
 
-const seedCount = Number(process.argv[2] ?? 60);
+/** 200 by default, because that is the corpus every figure in §12 is stated
+ *  against: a shipped default that reproduces something else means the numbers
+ *  in the spec cannot be checked by running the instrument. */
+const seedCount = Number(process.argv[2] ?? 200);
 if (!Number.isFinite(seedCount) || seedCount < 1)
 	throw new Error(`unusable seed count ${process.argv[2]}`);
 const SEEDS = Array.from({ length: seedCount }, (_, i) => i + 1);
@@ -404,9 +473,13 @@ console.log(
 		"planet-orbiting station — the host is between the ship and the station at\n" +
 		"  leg start, and no straight-line rule reaches those without flying through a world.",
 );
+// Ungated: the deepest of *every* leg, not of the ones over a threshold. A
+// column that only prints what exceeds 1 km cannot support "no other leg went
+// inside a planet".
+const deepest = rows.reduce((a, r) => Math.max(a, r.result.penetrationKm), 0);
 console.log(
-	`\n  paths that went inside a planet's true surface: ${tunnelled.length}/${rows.length}` +
-		`${tunnelled.length ? ` (deepest ${km(Math.max(...tunnelled.map((r) => r.result.penetrationKm)))} km)` : ""}\n`,
+	`\n  paths that went inside a planet's true surface: ${tunnelled.length}/${rows.length} past 1 km, ` +
+		`deepest ${deepest.toFixed(3)} km over all ${rows.length}\n`,
 );
 
 // ── Is being stopped terminal?
@@ -419,8 +492,12 @@ const stopped = rows.filter(
 );
 const stuck = stopped.filter((r) => r.result.reengagedKm < 100);
 const gained = stopped.map((r) => r.result.reengagedKm).sort((a, b) => a - b);
-const escapes = stopped.map((r) => r.result.escapeKm).sort((a, b) => a - b);
-const pinned = stopped.filter((r) => r.result.escapeKm < 100);
+// A leg whose ship ended inside a surface has no heading that clears the body,
+// so it is not evidence about the guard either way — reported, not folded in.
+const enclosed = stopped.filter((r) => r.result.escapeHeadings === 0);
+const escapable = stopped.filter((r) => r.result.escapeHeadings > 0);
+const escapes = escapable.map((r) => r.result.escapeKm).sort((a, b) => a - b);
+const pinned = escapable.filter((r) => r.result.escapeKm < 100);
 console.log("after a stop — can the player cruise on?\n");
 if (timedOut.length)
 	console.log(
@@ -431,8 +508,9 @@ console.log(
 	`  stopped legs ${stopped.length}\n` +
 		"  back at the same station, which is behind the planet: median " +
 		`${km(median(gained))} km, still stopped ${stuck.length}/${stopped.length} — as it should be\n` +
-		`  away from the planet, ${ESCAPE_S} seconds: median ` +
-		`${km(median(escapes))} km, pinned ${pinned.length}/${stopped.length}\n`,
+		`  on the worst heading that clears the planet, ${ESCAPE_S} seconds: median ` +
+		`${km(median(escapes))} km, pinned ${pinned.length}/${escapable.length}\n` +
+		`  legs whose ship ended inside a surface, so no heading clears it: ${enclosed.length}\n`,
 );
 
 // ── The dimension the guard cannot reach: how low the orbits are.
@@ -453,11 +531,22 @@ console.log(
 // rather than in place of it.
 //
 // They part, consistently and in one direction: the form runs 2–4 points under
-// what the corpus measures. It assumes parallel rays, and the ship is ~1 AU out
-// rather than infinitely far, so the shadow is a cone and not a cylinder. The
-// projection table below is therefore a **lower bound** on the occlusion at a
-// given r/R, not a point estimate — read it as "at least this good", and
-// re-measure before committing to a number from it.
+// what the corpus measures. The mechanism is measured below rather than
+// asserted — the line of sight is **not** isotropic to these orbits. A host sits
+// near its system's plane and the ship arrives only ~1 AU out, so `host → ship`
+// tends to lie near that plane too, which is where the near-coplanar orbits
+// are: edge-on, where occlusion is highest. `mean |cos|` between the line of
+// sight and the orbit normal comes out at 0.43 against the 0.50 an isotropic
+// bearing would give.
+//
+// (The finite-distance "shadow is a cone" story is *not* the mechanism, and was
+// the first answer written here: the sampled test is itself a parallel-ray one,
+// so cone geometry cannot enter it, and at station scale against 1 AU the
+// correction would be ~0.05 points rather than 2–4.)
+//
+// The projection table below therefore reads as a **lower bound** on occlusion
+// at a given r/R — "at least this good" — and wants re-measuring before any
+// number is taken from it.
 const occlusionRate = (k: number) => 0.5 * (1 - Math.sqrt(k * k - 1) / k);
 console.log("occlusion by host size, over 64 phases of each real orbit\n");
 {
@@ -498,6 +587,36 @@ console.log("occlusion by host size, over 64 phases of each real orbit\n");
 				});
 			}
 		}
+	}
+	// The isotropy the closed form assumes, checked rather than assumed.
+	{
+		let sum = 0;
+		let n = 0;
+		for (const seed of SEEDS) {
+			const world = makeWorld(seed);
+			for (const station of world.system.contents.stations) {
+				if (!station.parentId) continue;
+				const hostBody = world.system.byId.get(station.parentId);
+				if (!hostBody) continue;
+				// The orbit's normal, from the same inclination and node
+				// `positionOnOrbit` builds the position from.
+				const inc = station.orbit.inclination;
+				const node = station.orbit.node;
+				const normal = v3(
+					Math.sin(inc) * Math.sin(node),
+					-Math.sin(inc) * Math.cos(node),
+					Math.cos(inc),
+				);
+				const toShip = sub(world.ship.pos, hostBody.pos);
+				sum += Math.abs(dot(scale(toShip, 1 / length(toShip)), normal));
+				n++;
+			}
+		}
+		console.log(
+			`  line of sight vs orbit normal: mean |cos| = ${(sum / n).toFixed(3)} over ${n} stations.\n` +
+				"  An isotropic bearing gives 0.500; lower is edge-on, where occlusion is highest — which is\n" +
+				"  why the sampled rate runs above the closed form rather than on it.\n",
+		);
 	}
 	console.log(
 		"  host class            median r/R   occluded   the form predicts",
