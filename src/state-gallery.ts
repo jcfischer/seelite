@@ -15,7 +15,7 @@ export type GalleryStateId =
 	| "docking-granted"
 	| "docking-denied";
 
-type GalleryState = {
+export type GalleryState = {
 	id: GalleryStateId;
 	label: string;
 	mode: string;
@@ -28,7 +28,7 @@ type GalleryState = {
 	accent: "cyan" | "amber" | "green" | "red";
 };
 
-type RightTab = "Flight" | "Drive" | "Tuning";
+export type RightTab = "Flight" | "Drive" | "Tuning";
 
 /** The six states Jens-Christian asked the gallery to make inspectable. */
 export const GALLERY_STATES: readonly GalleryState[] = [
@@ -117,35 +117,44 @@ const STYLE = `
 .sg-close, .sg-state { border: 1px solid #355369; border-radius: 3px; background: #07121c; color: #b8dfff; cursor: pointer; font: inherit; padding: 7px 9px; }
 .sg-close:hover, .sg-state:hover, .sg-state[aria-pressed="true"] { border-color: #e5aa52; color: #ffe0a2; }
 .sg-states { display: flex; flex-wrap: wrap; gap: 6px; }
-.sg-shell { min-height: 470px; display: grid; grid-template-columns: minmax(180px, .85fr) minmax(330px, 1.7fr) minmax(180px, .85fr); gap: 12px; }
+.sg-shell { min-height: 540px; perspective: 1200px; }
+.sg-cockpit { position: relative; height: 540px; overflow: hidden; border: 1px solid #355369; background: linear-gradient(160deg, #111b24 0%, #030a10 55%); box-shadow: inset 0 0 70px rgba(60, 162, 220, .1), 0 24px 40px rgba(0, 0, 0, .45); transform-style: preserve-3d; }
+.sg-cockpit::before { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(108deg, rgba(104, 129, 145, .22), transparent 18%, transparent 82%, rgba(104, 129, 145, .22)), linear-gradient(to bottom, rgba(189, 222, 242, .12), transparent 10%, transparent 74%, rgba(0, 0, 0, .8)); z-index: 3; }
+.sg-canopy { position: absolute; z-index: 0; inset: 0; pointer-events: none; border: 30px solid rgba(7, 13, 19, .9); border-bottom-width: 68px; clip-path: polygon(0 0, 100% 0, 91% 100%, 9% 100%); box-shadow: inset 0 0 0 2px rgba(102, 135, 153, .38), inset 0 0 36px rgba(0, 0, 0, .9); }
 .sg-panel, .sg-glass { border: 1px solid #355369; background: linear-gradient(145deg, rgba(13, 36, 53, .82), rgba(2, 9, 15, .96)); box-shadow: inset 0 0 42px rgba(60, 162, 220, .08); }
-.sg-panel { padding: 14px; }
+.sg-panel { position: absolute; z-index: 5; bottom: 14px; width: 224px; min-height: 164px; padding: 14px; background: linear-gradient(160deg, rgba(20, 39, 52, .98), rgba(3, 9, 14, .98)); box-shadow: inset 0 1px 0 rgba(177, 219, 240, .2), 0 12px 25px rgba(0, 0, 0, .5); }
+.sg-panel[data-gallery-panel="left"] { left: 13px; transform: rotateY(26deg) rotateX(4deg); transform-origin: bottom left; }
+.sg-panel[data-gallery-panel="right"] { right: 13px; transform: rotateY(-26deg) rotateX(4deg); transform-origin: bottom right; }
 .sg-panel h2 { margin: 0 0 10px; color: #9fd4ff; font-size: 12px; letter-spacing: .1em; }
 .sg-panel p { color: #bed4e2; margin: 0; }
 .sg-panel small { display: block; color: #7893a6; margin-top: 14px; }
 .sg-tabs { display: flex; gap: 4px; margin: 0 0 10px; }
 .sg-tab { border: 0; border-bottom: 1px solid #355369; background: transparent; color: #7795aa; cursor: pointer; font: inherit; font-size: 10px; padding: 4px 6px; }
 .sg-tab[aria-selected="true"] { border-color: #e5aa52; color: #ffe0a2; }
-.sg-glass { position: relative; overflow: hidden; min-height: 470px; }
+.sg-glass { position: absolute; z-index: 1; inset: 26px 72px 0; overflow: hidden; min-height: 470px; clip-path: polygon(8% 0, 92% 0, 100% 100%, 0 100%); transform: translateZ(-12px); }
 .sg-stars { position: absolute; inset: 0; opacity: .72; background-image: radial-gradient(circle at 17% 23%, #fff 0 1px, transparent 1.5px), radial-gradient(circle at 76% 16%, #bde7ff 0 1px, transparent 1.5px), radial-gradient(circle at 61% 64%, #fff 0 1px, transparent 1.5px), radial-gradient(circle at 28% 71%, #85c8f7 0 1px, transparent 1.5px); background-size: 127px 101px, 163px 149px, 109px 173px, 211px 191px; }
-.sg-director { position: absolute; left: 50%; top: 42%; width: 185px; transform: translate(-50%, -50%); color: #ffe0a2; text-align: center; text-shadow: 0 0 14px rgba(229, 170, 82, .65); }
+.sg-director { position: absolute; z-index: 2; left: 50%; top: 42%; width: 185px; transform: translate(-50%, -50%); color: #ffe0a2; text-align: center; text-shadow: 0 0 14px rgba(229, 170, 82, .65); }
 .sg-director::before { content: ""; display: block; width: 68px; height: 68px; margin: 0 auto 9px; border: 2px solid currentColor; border-radius: 50%; box-shadow: 0 0 18px currentColor; }
 .sg-target-arrow { position: absolute; left: 50%; top: 23px; color: #ffe0a2; font-size: 24px; line-height: 1; text-shadow: 0 0 12px rgba(229, 170, 82, .9); transform: rotate(var(--target-bearing)) translateX(48px); transform-origin: 0 50%; }
 .sg-director[data-accent="green"] { color: #a8ffbf; } .sg-director[data-accent="red"] { color: #ff9c8e; } .sg-director[data-accent="cyan"] { color: #a7dcff; }
 .sg-docking { margin-top: 8px; color: inherit; font-size: 11px; }
-.sg-scanner { position: absolute; left: 50%; bottom: 65px; width: 330px; height: 156px; transform: translateX(-50%); }
+.sg-dash-deck { position: absolute; z-index: 1; left: 50%; bottom: -27px; width: 500px; height: 220px; border: 2px solid rgba(202, 153, 67, .5); background: linear-gradient(160deg, rgba(71, 47, 24, .82), rgba(9, 15, 19, .96) 45%, rgba(1, 5, 8, .98)); box-shadow: inset 0 1px 0 rgba(255, 205, 119, .28), 0 0 40px rgba(0, 0, 0, .55); clip-path: polygon(18% 0, 82% 0, 100% 100%, 0 100%); transform: translateX(-50%) perspective(430px) rotateX(57deg); transform-origin: bottom; }
+.sg-scanner { position: absolute; z-index: 2; left: 50%; bottom: 65px; width: 330px; height: 156px; transform: translateX(-50%); }
 .sg-scanner::before { content: ""; position: absolute; inset: 25px 5px 10px; border: 2px solid #eaa632; border-radius: 50%; background: repeating-radial-gradient(ellipse at center, transparent 0 12px, rgba(234, 166, 50, .65) 13px 14px); box-shadow: 0 0 18px rgba(234, 166, 50, .35), inset 0 0 18px rgba(234, 166, 50, .15); }
 .sg-scanner::after { content: ""; position: absolute; left: 50%; top: 15px; bottom: 14px; width: 1px; background: #eaa632; opacity: .65; }
 .sg-contact { position: absolute; width: 9px; height: 9px; border: 1px solid #ffd274; border-radius: 50%; background: #221b08; z-index: 1; } .sg-contact::after { content: ""; position: absolute; top: 7px; left: 3px; width: 2px; height: var(--height); background: currentColor; box-shadow: 0 0 5px currentColor; opacity: .9; }
 .sg-contact-anchor { position: absolute; width: 28px; height: 9px; border: 1px solid currentColor; border-radius: 50%; background: rgba(15, 25, 12, .5); box-shadow: 0 0 8px currentColor; opacity: .85; }
 .sg-contact.one { left: 68%; top: 40%; color: #ffd274; --height: 47px; } .sg-contact-anchor.one { left: calc(68% - 9px); top: 72%; color: #ffd274; } .sg-contact.two { left: 24%; top: 62%; border-color: #a6ffbf; color: #a6ffbf; --height: 34px; } .sg-contact-anchor.two { left: calc(24% - 9px); top: 85%; color: #a6ffbf; } .sg-contact.three { left: 52%; top: 32%; border-color: #81c9ef; color: #81c9ef; --height: 60px; } .sg-contact-anchor.three { left: calc(52% - 9px); top: 73%; color: #81c9ef; }
 .sg-scanner-label { position: absolute; left: 50%; top: 2px; color: #d2a860; font-size: 10px; transform: translateX(-50%); white-space: nowrap; }
-.sg-floor { position: absolute; left: 14px; right: 14px; bottom: 14px; display: flex; justify-content: space-between; gap: 12px; padding: 9px; border: 1px solid #355369; background: rgba(3, 14, 23, .82); color: #9fd4ff; font-size: 11px; }
+.sg-floor { position: absolute; z-index: 6; left: 14px; right: 14px; bottom: 14px; display: flex; justify-content: space-between; gap: 12px; padding: 9px; border: 1px solid #355369; background: rgba(3, 14, 23, .94); color: #9fd4ff; font-size: 11px; }
 .sg-floor strong { color: #ffe0a2; font-weight: 600; } .sg-note { margin: 0; color: #b4c8d4; }
-@media (max-width: 600px) { .sg-wrap { padding: 12px; } .sg-head { align-items: flex-start; } .sg-states { display: grid; grid-template-columns: 1fr 1fr; } .sg-shell { position: relative; min-height: 480px; display: block; } .sg-panel { display: none; } .sg-panel[data-active="true"] { position: absolute; z-index: 2; left: 8px; right: 8px; top: 8px; display: block; } .sg-glass { min-height: 480px; } .sg-scanner { width: min(330px, calc(100% - 24px)); bottom: 65px; } .sg-floor { bottom: 12px; font-size: 10px; flex-direction: column; gap: 3px; } }
+@media (max-width: 600px) { .sg-wrap { padding: 12px; } .sg-head { align-items: flex-start; } .sg-states { display: grid; grid-template-columns: 1fr 1fr; } .sg-shell, .sg-cockpit { min-height: 500px; height: 500px; } .sg-canopy { border-width: 16px; border-bottom-width: 48px; } .sg-panel { display: none; transform: none !important; } .sg-panel[data-active="true"] { position: absolute; z-index: 6; left: 8px; right: 8px; top: 8px; width: auto; display: block; } .sg-glass { inset: 18px 12px 0; min-height: 480px; clip-path: none; } .sg-scanner { width: min(330px, calc(100% - 24px)); bottom: 65px; } .sg-floor { bottom: 12px; font-size: 10px; flex-direction: column; gap: 3px; } }
 `;
 
-function render(state: GalleryState, rightTab: RightTab): string {
+export function renderGalleryState(
+	state: GalleryState,
+	rightTab: RightTab,
+): string {
 	const isLeft =
 		state.panel === "Navigation" || state.panel === "Communications";
 	const isRight = state.panel === "Flight" || state.panel === "Drive";
@@ -158,10 +167,12 @@ function render(state: GalleryState, rightTab: RightTab): string {
 	return `<div class="sg-wrap" data-gallery-state-active="${state.id}">
 		<header class="sg-head"><div><h1>SEELITE · COCKPIT STATE GALLERY</h1><p>Issue #34 prototype — visual contract, not simulated docking.</p></div><button class="sg-close" type="button">return to flight</button></header>
 		<nav class="sg-states" aria-label="Cockpit states">${GALLERY_STATES.map((candidate) => `<button class="sg-state" type="button" data-gallery-state="${candidate.id}" aria-pressed="${candidate.id === state.id}">${candidate.label}</button>`).join("")}</nav>
-		<div class="sg-shell">
+		<div class="sg-shell" data-gallery-3d-prototype>
+			<div class="sg-cockpit" data-gallery-cockpit><div class="sg-canopy" aria-hidden="true"></div>
 			<aside class="sg-panel" data-gallery-panel="left" data-active="${isLeft}"><h2>${isLeft ? state.panel : "NAVIGATION"}</h2><p>${isLeft ? state.panelDetail : sideDetail}</p><small>Simulation continues while this panel is open.</small></aside>
-			<main class="sg-glass" aria-live="polite"><div class="sg-stars"></div><div class="sg-director" data-gallery-director data-accent="${state.accent}">${state.targetBearingDeg === undefined ? "" : `<i class="sg-target-arrow" data-gallery-target-arrow data-gallery-target-bearing="${state.targetBearingDeg}" style="--target-bearing:${state.targetBearingDeg}deg" aria-label="turn toward target bearing">➤</i>`}${state.director}${state.id.startsWith("docking-") ? `<div class="sg-docking" data-gallery-docking>AXIS FUNNEL · ROLL RING · ${state.id === "docking-granted" ? "CLEAR TO APPROACH" : "DO NOT ENTER"}</div>` : ""}</div><div class="sg-scanner" data-gallery-scanner aria-label="Elite-style 3D local radar, 10,000 kilometre vicinity"><i class="sg-contact one" data-gallery-contact-stem></i><i class="sg-contact-anchor one" data-gallery-contact-anchor></i><i class="sg-contact two" data-gallery-contact-stem></i><i class="sg-contact-anchor two" data-gallery-contact-anchor></i><i class="sg-contact three" data-gallery-contact-stem></i><i class="sg-contact-anchor three" data-gallery-contact-anchor></i><span class="sg-scanner-label">ELITE 3D RADAR · 10,000 km</span></div><div class="sg-floor" data-gallery-floor><span>${state.mode}</span><strong>${state.target}</strong></div></main>
+			<main class="sg-glass" aria-live="polite"><div class="sg-stars"></div><div class="sg-dash-deck" aria-hidden="true"></div><div class="sg-director" data-gallery-director data-accent="${state.accent}">${state.targetBearingDeg === undefined ? "" : `<i class="sg-target-arrow" data-gallery-target-arrow data-gallery-target-bearing="${state.targetBearingDeg}" style="--target-bearing:${state.targetBearingDeg}deg" aria-label="turn toward target bearing">➤</i>`}${state.director}${state.id.startsWith("docking-") ? `<div class="sg-docking" data-gallery-docking>AXIS FUNNEL · ROLL RING · ${state.id === "docking-granted" ? "CLEAR TO APPROACH" : "DO NOT ENTER"}</div>` : ""}</div><div class="sg-scanner" data-gallery-scanner aria-label="Elite-style 3D local radar, 10,000 kilometre vicinity"><i class="sg-contact one" data-gallery-contact-stem></i><i class="sg-contact-anchor one" data-gallery-contact-anchor></i><i class="sg-contact two" data-gallery-contact-stem></i><i class="sg-contact-anchor two" data-gallery-contact-anchor></i><i class="sg-contact three" data-gallery-contact-stem></i><i class="sg-contact-anchor three" data-gallery-contact-anchor></i><span class="sg-scanner-label">ELITE 3D RADAR · 10,000 km</span></div><div class="sg-floor" data-gallery-floor><span>${state.mode}</span><strong>${state.target}</strong></div></main>
 			<aside class="sg-panel" data-gallery-panel="right" data-active="${isRight}"><nav class="sg-tabs" aria-label="Right panel tabs">${(["Flight", "Drive", "Tuning"] as RightTab[]).map((tab) => `<button class="sg-tab" type="button" data-gallery-right-tab="${tab}" aria-selected="${rightTab === tab}">${tab}</button>`).join("")}</nav><h2>${rightTab.toUpperCase()}</h2><p ${rightTab === "Tuning" ? "data-gallery-tuning" : ""}>${rightTab === "Tuning" ? tuningDetail : rightTab === state.panel ? state.panelDetail : technicalDetail}</p><small>Tuning stays in this right-panel tab, never on the flight floor.</small></aside>
+			</div>
 		</div><p class="sg-note" data-gallery-notice>${state.notice}</p>
 	</div>`;
 }
@@ -180,7 +191,7 @@ export function mountStateGallery(): void {
 	document.body.append(root);
 	let current = galleryState(requested === "1" ? "assist-on" : requested);
 	let rightTab: RightTab = current.panel === "Drive" ? "Drive" : "Flight";
-	const paint = () => (root.innerHTML = render(current, rightTab));
+	const paint = () => (root.innerHTML = renderGalleryState(current, rightTab));
 	const setState = (id: string) => {
 		current = galleryState(id);
 		rightTab = current.panel === "Drive" ? "Drive" : "Flight";
@@ -199,6 +210,9 @@ export function mountStateGallery(): void {
 			rightTab = tab.dataset.galleryRightTab as RightTab;
 			paint();
 		}
-		if (target.closest(".sg-close")) root.remove();
+		if (target.closest(".sg-close")) {
+			style.remove();
+			root.remove();
+		}
 	});
 }

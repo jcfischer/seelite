@@ -2,8 +2,8 @@
 
 **Status:** resolved design decision — [#34](https://github.com/jcfischer/seelite/issues/34)  
 **Date:** 2026-08-20  
-**Depends on:** [#5](https://github.com/jcfischer/seelite/issues/5), [#9](https://github.com/jcfischer/seelite/issues/9), [#10](https://github.com/jcfischer/seelite/issues/10), [#21](https://github.com/jcfischer/seelite/issues/21)  
-**Unblocks:** ship and station visual tasks
+**Context:** flight (#5 and #21), docking (#9), and target-marker (#10) work
+provide the simulation surfaces this visual contract will eventually consume.
 
 ## 0. Scope and vocabulary
 
@@ -82,6 +82,12 @@ The persistent flight floor contains attitude/nose/prograde-retrograde, the
 compact scanner, selected-target or docking director, and a compact
 mode/throttle/assist/charge strip. This is the minimum that keeps a hull-hidden
 cockpit flyable and honest about cruise charge.
+
+The browser prototype renders this language as a **3D cockpit**, not as a set of
+flat application cards: a framed canopy opens on the flight glass, faceted side
+consoles recede toward the pilot, and a physical lower-centre dash deck carries
+the scanner. The modern Elite reference guides the presentation only; simulation
+ownership remains with the existing flight, target, and docking work.
 
 Navigation lists filterable targets with type, range, ETA, and the expanded
 scanner. Communications carries clearance requests and replies, hostile/legal

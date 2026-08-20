@@ -19,6 +19,63 @@ const VIEWPORTS = [
 	{ name: "narrow", width: 390, height: 844 },
 ];
 
+function measureGalleryState() {
+	const root = document.querySelector("#state-gallery");
+	const box = (selector) => {
+		const element = document.querySelector(selector);
+		if (!element) return null;
+		const rect = element.getBoundingClientRect();
+		return {
+			left: rect.left,
+			top: rect.top,
+			right: rect.right,
+			bottom: rect.bottom,
+			width: rect.width,
+			height: rect.height,
+		};
+	};
+	const director = box("[data-gallery-director]");
+	const arrow = box("[data-gallery-target-arrow]");
+	const arrowIsAroundCircle = (() => {
+		if (!director || !arrow) return false;
+		const dx =
+			arrow.left + arrow.width / 2 - (director.left + director.width / 2);
+		const dy = arrow.top + arrow.height / 2 - (director.top + 34);
+		return Math.hypot(dx, dy) > 35;
+	})();
+	return {
+		active: root
+			?.querySelector("[data-gallery-state-active]")
+			?.getAttribute("data-gallery-state-active"),
+		director,
+		scanner: box("[data-gallery-scanner]"),
+		floor: box("[data-gallery-floor]"),
+		panels: [
+			...document.querySelectorAll('[data-gallery-panel][data-active="true"]'),
+		],
+		docking: Boolean(document.querySelector("[data-gallery-docking]")),
+		targetArrow: Boolean(document.querySelector("[data-gallery-target-arrow]")),
+		targetArrowBearing: document
+			.querySelector("[data-gallery-target-arrow]")
+			?.getAttribute("data-gallery-target-bearing"),
+		targetArrowAroundCircle: arrowIsAroundCircle,
+		radar: document
+			.querySelector("[data-gallery-scanner]")
+			?.getAttribute("aria-label"),
+		radarAnchors: document.querySelectorAll("[data-gallery-contact-anchor]")
+			.length,
+		radarMasts: [
+			...document.querySelectorAll("[data-gallery-contact-stem]"),
+		].every(
+			(element) =>
+				Number.parseFloat(
+					getComputedStyle(element).getPropertyValue("--height"),
+				) > 0,
+		),
+		viewport: { width: innerWidth, height: innerHeight },
+	};
+}
+
 await guardedOrigin(ORIGIN, ["src/units.ts", "src/state-gallery.ts"]);
 const browser = await launchChromium();
 const { check, exit } = tally();
@@ -35,63 +92,7 @@ for (const viewport of VIEWPORTS) {
 
 	for (const state of STATES) {
 		await page.locator(`[data-gallery-state="${state}"]`).click();
-		const measured = await page.evaluate(() => {
-			const root = document.querySelector("#state-gallery");
-			const box = (selector) => {
-				const element = document.querySelector(selector);
-				if (!element) return null;
-				const rect = element.getBoundingClientRect();
-				return {
-					left: rect.left,
-					top: rect.top,
-					right: rect.right,
-					bottom: rect.bottom,
-					width: rect.width,
-					height: rect.height,
-				};
-			};
-			return {
-				active: root
-					?.querySelector("[data-gallery-state-active]")
-					?.getAttribute("data-gallery-state-active"),
-				director: box("[data-gallery-director]"),
-				scanner: box("[data-gallery-scanner]"),
-				floor: box("[data-gallery-floor]"),
-				panels: [
-					...document.querySelectorAll(
-						'[data-gallery-panel][data-active="true"]',
-					),
-				],
-				docking: Boolean(document.querySelector("[data-gallery-docking]")),
-				targetArrow: Boolean(
-					document.querySelector("[data-gallery-target-arrow]"),
-				),
-				targetArrowBearing: document
-					.querySelector("[data-gallery-target-arrow]")
-					?.getAttribute("data-gallery-target-bearing"),
-				targetArrowAroundCircle: (() => {
-					const director = box("[data-gallery-director]");
-					const arrow = box("[data-gallery-target-arrow]");
-					if (!director || !arrow) return false;
-					const dx =
-						arrow.left + arrow.width / 2 - (director.left + director.width / 2);
-					const dy = arrow.top + arrow.height / 2 - (director.top + 34);
-					return Math.hypot(dx, dy) > 35;
-				})(),
-				radar: document
-					.querySelector("[data-gallery-scanner]")
-					?.getAttribute("aria-label"),
-				radarAnchors: document.querySelectorAll("[data-gallery-contact-anchor]")
-					.length,
-				radarVerticalStems: [
-					...document.querySelectorAll("[data-gallery-contact-stem]"),
-				].every(
-					(element) =>
-						getComputedStyle(element, "::after").transform === "none",
-				),
-				viewport: { width: innerWidth, height: innerHeight },
-			};
-		});
+		const measured = await page.evaluate(measureGalleryState);
 		const inside = (box) =>
 			box &&
 			box.width > 0 &&
@@ -134,7 +135,7 @@ for (const viewport of VIEWPORTS) {
 				`${viewport.name}: assist-on describes the Elite-style 3D local radar with anchored vertical masts`,
 				measured.radar?.includes("Elite-style 3D local radar") &&
 					measured.radarAnchors === 3 &&
-					measured.radarVerticalStems,
+					measured.radarMasts,
 			);
 		if (viewport.name === "narrow")
 			check(
