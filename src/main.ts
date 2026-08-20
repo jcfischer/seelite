@@ -68,6 +68,8 @@ import {
 	CHARGE_CAPACITY_AU,
 	type CruiseParams,
 	DEFAULT_CRUISE,
+	CLEARANCE_KM,
+	SURFACE_MARGIN,
 	advanceCruise,
 	chargeAfterRegen,
 	chargeAfterTravel,
@@ -92,6 +94,7 @@ import {
 	type World,
 	advanceWorldClock,
 	bodyVelocity,
+	hostIdOf,
 	makeWorld,
 	stationOf,
 	stationPose,
@@ -384,6 +387,14 @@ class Game {
 	 *  go falsely red the day the flight model retunes it. */
 	readonly assistCapKms = ASSIST_CAP_KMS;
 
+	/** #14's shell, on the handle for the same reason: `probe-arrival.mjs` states
+	 *  its bound as a fraction of this rather than as its own 1.05. */
+	readonly surfaceMargin = SURFACE_MARGIN;
+
+	/** #30's host standoff, likewise — the probe reports the stop against this
+	 *  rather than restating 5 km. */
+	readonly hostClearanceKm = CLEARANCE_KM;
+
 	/** §4's spin range, reachable from the handle for the same reason: the spin
 	 *  probe drives a station to both ends of it, and a probe that restated
 	 *  0.6 and 3.0 would assert against its own copy. */
@@ -559,6 +570,30 @@ class Game {
 		const d = length(to);
 		if (d === 0) return;
 		this.face(scale(to, 1 / d));
+	}
+
+	/**
+	 * Point the nose straight out from a body, along the radial.
+	 *
+	 * The move a player makes when a planet has stopped them and they want to be
+	 * anywhere else — and, since #30, one cruise honours: the surface guard fires
+	 * on crossing *inward*, so a ship pointed away from the body it is beside is
+	 * not stopped by it. `probe-arrival.mjs` flies exactly this to check that the
+	 * release is real in the browser and not only in the sweep.
+	 *
+	 * **Probe affordance, not an input path.** No key is bound to it. It is here
+	 * so the manoeuvre has one spelling rather than a probe's own — not as
+	 * encapsulation, which it would not buy: `probe-arrival.mjs` writes
+	 * `world.ship.pos` directly two lines later, and a handle that hands out the
+	 * world is not protecting the orientation.
+	 */
+	faceAway(bodyId: string) {
+		const body = this.world.system.byId.get(bodyId);
+		if (!body) return;
+		const out = sub(this.world.ship.pos, body.pos);
+		const d = length(out);
+		if (d === 0) return;
+		this.face(scale(out, 1 / d));
 	}
 
 	/**
@@ -1014,6 +1049,17 @@ class Game {
 		return "press J to cruise";
 	}
 
+	/**
+	 * The body the selected target orbits, if any — #30's arrival rule reads it.
+	 *
+	 * `sim.ts` owns the rule; this is the handle's spelling of it, and it is
+	 * public because `probe-arrival.mjs` asks the page the same question rather
+	 * than keeping its own copy.
+	 */
+	targetParentId(): string | null {
+		return this.targetId ? hostIdOf(this.world.system, this.targetId) : null;
+	}
+
 	/** How fast the selected target is moving through sim space, km/s — the frame
 	 *  the arrival is judged in. Zero when nothing is selected. */
 	targetVelocity(): Vec3 {
@@ -1314,6 +1360,7 @@ class Game {
 				: null,
 			params: this.cruiseParams,
 			chargeAu: this.chargeAu,
+			targetParentId: this.targetParentId(),
 		});
 		this.world.ship.pos = step.pos;
 		this.cruiseSpeedKms = step.speedKms;

@@ -163,6 +163,13 @@ a round figure is a better starting point than a false precision.
 
 > **Amended by #14 (§11.5).** An approach clamp flies the last 10,000 km, so
 > "failure to slow means overshooting" no longer describes a straight-in run.
+>
+> **Amended by #30 (§12).** The surface rule below scaled its clearance to the
+> planet rather than to what orbits it, so a station in clear space was
+> unreachable — cruise ended thousands of km short at thousands of km/s. The
+> body a selected target orbits now guards at its **true surface**, and the
+> guard fires on crossing *inward* rather than on being inside, so a station
+> that sits inside its host's shell can be cruised out of.
 
 **Player-managed deceleration with an automatic drop-out.**
 
@@ -421,6 +428,9 @@ which made flying through a planet the most effective brake in the game. Cruise
 now drops out at `SURFACE_MARGIN × radius` (1.05), swept like the drop-out. A
 grazing pass still passes, which is the other half of the rule.
 
+> **Amended by #30 (§12.1).** The margin is right for scenery and wrong for the
+> body a station orbits: 1.05 × radius is a shell the station itself is inside.
+
 ### 11.5 The approach clamp — the last 10,000 km
 
 The largest mechanic #14 added, and the principal's own diagnosis: *"the drop out
@@ -480,3 +490,172 @@ restate what was argued here.
   a nuisance in five sessions, but it was also never the thing being judged.
 - §5.2's scanner requirement, untouched: interdiction is
   [#8](https://github.com/jcfischer/seelite/issues/8)'s and stayed out of scope.
+
+
+---
+
+## 12. Amendments from #30 (flown)
+
+Reported from play: *"I always get dropped at 10k km distance from the stations
+— that's not ok to fly to."* Replaying full legs headlessly through the real
+`advanceCruise` — the start system of 200 seeds, 417 legs — turned that into
+three separate facts, of which §11.4's rule is only the first.
+
+The instrument is `scripts/measure-cruise-arrival.ts`. The four-candidate
+comparison #30 chose from is in that node's resolution; it is reproducible from
+the commit named there rather than carried in the flight loop.
+
+### 12.1 A shell is scaled to the obstacle; a station is not
+
+`SURFACE_MARGIN` clears the ship of a *planet* by 5% of that planet's radius,
+while §7.3 of `galaxy-generation.md` puts a station 400–2,000 km above one. What
+decides whether a distant ship can reach a station in a straight line is not its
+orbital radius but its offset **across** the line of sight — an inbound leg at
+1 AU is effectively parallel — and between `radius` and `1.05 × radius` that
+offset is clear space the planet's shell nonetheless claims.
+
+Measured: 36 of the 249 legs whose station was clear of its host ended against
+the host anyway — 14% of those, 11% of every planet-orbiting leg — thousands of
+km short and still doing thousands of km/s.
+
+**The body a selected target orbits guards at `radius + CLEARANCE_KM` instead**
+— 5 km, absolute, where every other body keeps `1.05 × radius`. It is
+still an obstacle — a station genuinely behind its planet is still stopped — but
+it no longer projects a shell its own station is inside. The exemption is scoped
+to that one body: every other mass keeps `SURFACE_MARGIN`, or selecting a
+station would make the whole system permeable.
+
+The clearance is not zero, and §11.4's reason is why: the margin is 1.05 rather
+than 1.0 so the ship is not left standing on a sphere it is being drawn the
+inside of, and that does not stop being true for the body a station orbits. What
+changes is that it is **absolute**, so it cannot scale into the altitude a
+station is placed at. 5 km is 500× the near camera's 10 m near plane
+(`NEAR_NEAR_KM`); swept against the corpus, 5 and 20 km cost nothing and 50 km
+costs two of 249 clear legs, so it sits at the small end of the range that does
+the job.
+
+Two of the 88 occluded legs (2.3%) do now arrive, and it is worth saying why
+rather than filing them as slop. The classification is a **snapshot at leg
+start**, and both are marginal: the straight line clips its host by 7 km and by
+61 km, against hosts of 5,866 and 7,300 km. Over a ~70 s crossing the station
+moves out from behind, and by the end of the leg the same line passes 132 km and
+81 km *clear*. Nothing tunnels to reach them — the instrument reports the
+deepest penetration over every leg, ungated, and it is **0.000 km across all
+417**.
+
+| Leg class | Arrived before | Arrived after | n |
+|---|---|---|---|
+| Station clear of its host | 85.5% | **98.4%** | 249 |
+| Station occluded by its host | 0% | 2.3% | 88 |
+| Star-centric (no host) | 100% | 100% | 80 |
+
+Three candidates were flown and rejected, with the figures in #30:
+
+- **`radius + 300 km`**, an absolute clearance. Reaches 96.0% of clear legs
+  against 98.4%, and is a second constant to size against a minimum altitude
+  that `system.ts` owns.
+- **Exempting the host entirely.** 100% arrival, by flying up to 6,900 km inside
+  the planet on 22% of legs — §11.4's brake, handed back for exactly the world
+  the player most wants to shed speed at.
+- **Letting the drop sphere win where it lies nearer along the ray.** Measured a
+  **no-op**: byte-identical in every column, because an unreachable station is
+  never nearer along the ray. It is *behind*.
+
+### 12.2 A station inside its own host's shell could not cruise out of it
+
+`sphereEntry` returns 0 for a step that *starts* inside the sphere, so a ship
+already inside a shell was dropped on the first sub-step of every engagement,
+**whatever heading it took**.
+
+That is not a corner case. A station orbits 400–2,000 km up and the shell is 5%
+of the planet's radius, so a station is inside its own host's shell whenever its
+altitude is under `0.05 · R` — which is a draw, not a threshold: it depends on
+where in 400–2,000 km the altitude landed as well as on `R`. Measured rather
+than derived: **49 of 337 planet-orbiting stations in the corpus**, hosts from
+25,611 to 70,305 km, all of them gas giants — though not *every* gas-giant
+station, which is 49 of 55. Every one is a place cruise could not be engaged
+from. Leaving the worst — a shipyard 2,784 km inside a 65,977 km giant's shell —
+meant crawling that gap in normal flight first: **23 minutes at the 2 km/s
+assist cap**.
+
+So the guard fires on **crossing inward**, not on being inside — and "inward"
+is *does this heading go deeper into the body*, not *is the centre ahead of me*.
+The difference is the whole of it: from inside a shell the surface subtends less
+than a hemisphere, so a centre-ahead test releases the radial heading and pins
+every one around the limb — which are the headings a ship beside a world wants.
+The corpus is flown on six headings from 0° to 110° off the outward radial, and
+those that enter the surface are excluded rather than counted, because they are
+supposed to stop. After: **0 of 92 pinned**, median 1.3 million km in five
+seconds on the worst heading that clears the body. The instrument reports
+separately any leg whose ship ends inside a surface, where no heading could
+clear it; with the 5 km standoff there are none.
+
+Aimed back at a station behind its planet, a re-engagement is still stopped, and
+should be: the planet is in the way.
+
+**What this is not.** From the radial heading alone it looked like "being
+stopped is terminal" — a second cruise there covers 1 km, in 124 legs out of 124. It is
+not: a ship dropped *at* a shell sits on its boundary, and the 2.5 s spool-up
+carries it clear before cruise takes. `probe-arrival.mjs` found that check green
+against the old rule too, which is how the overclaim was caught. The drop-point
+figure measures the sweep, not the game.
+
+### 12.3 A quarter of all legs are occluded, and no straight-line rule reaches them
+
+**26.1%** of legs to a planet-orbiting station have the host between the ship
+and the station at leg start. That is not a tuning failure; it is where the
+station is.
+
+The rate is a function of `r/R` alone: for an effectively parallel bearing the
+station is hidden when it is behind and its offset across the line of sight is
+under `R`, which is `½·(1 − √(r²−R²)/r)`.
+
+That closed form assumes the line of sight is **isotropic** to the orbit, and
+the orbits are not: `aroundBody` copies the planet's own inclination, so every
+station in a system orbits in nearly one plane. What carries the form is the
+other side of the same angle — §7.4 draws the arrival bearing uniformly on the
+sphere, so the line of sight is isotropic even where the orbits are coplanar.
+
+The instrument prints the prediction beside the sampled rate rather than instead
+of it, and they part: **the form runs 2–4 points under** what the corpus
+measures, consistently. The mechanism is the assumption, and it is measured
+rather than argued — the line of sight is *not* isotropic to these orbits. A host
+sits near its system's plane and the ship arrives only ~1 AU out, so `host → ship`
+tends to lie near that plane too, which is where the near-coplanar orbits are:
+edge-on, where occlusion is highest. The mean `|cos|` between the line of sight
+and the orbit normal is **0.429** against the 0.500 an isotropic bearing gives.
+
+(The first answer written here was finite-distance geometry — "the shadow is a
+cone rather than a cylinder". That is wrong and worth recording as wrong: the
+sampled test is itself a parallel-ray one, so cone geometry cannot enter it, and
+at station scale against 1 AU the correction would be ~0.05 points rather than
+2–4.)
+
+Read the projection table below as a lower bound, and re-measure before
+committing to a number from it.
+
+`system.ts`'s 400–2,000 km altitude lands very differently by host size:
+
+| Host | Median r/R | Occluded, sampled | The form predicts |
+|---|---|---|---|
+| Rocky, R < 10,000 km | 1.239 | 22.9% | 20.9% |
+| 10,000–30,000 km | 1.050 | 39.1% | 35.5% |
+| Gas giant, R > 30,000 km | 1.026 | 41.2% | 39.3% |
+
+| If every station orbited at r/R | 1.05 | 1.25 | 1.5 | 2.0 | 3.0 |
+|---|---|---|---|---|---|
+| Occluded, at least | 34.8% | 20.0% | 12.7% | 6.7% | 2.9% |
+
+Every worst-case leg in the corpus is a gas-giant shipyard, up to 141,000 km
+short. **The lever is the orbital altitude, which belongs to the generator, not
+to cruise** — carried as its own node under #30 rather than resolved here.
+
+### 12.4 What #30 did not answer
+
+- The occluded quarter. Raising station orbits is measured above but not
+  decided, and it moves the `station-orbits.json` baseline.
+- What the player should be *told* when a planet stops them. The drop is honest
+  and unexplained; the HUD says nothing about why.
+- Whether the 2 km/s assist cap is the right speed to be left with beside a
+  planet. §3 bounds the drop radius by that cap, and every argument about the
+  crawl is really an argument about it.

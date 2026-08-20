@@ -17,6 +17,7 @@
 import { expect, test } from "bun:test";
 import {
 	CHARGE_CAPACITY_AU,
+	CLEARANCE_KM,
 	type CruiseParams,
 	CHARGE_PER_AU,
 	CHARGE_REGEN_AU_PER_S,
@@ -111,6 +112,8 @@ function fly(opts: {
 	 *  frame. What an overshoot actually looks like: the player was pointed at
 	 *  the station and sailed past it, not a homing missile. */
 	fixedNose?: boolean;
+	/** The body the target orbits — #30's rule reads it. */
+	targetParentId?: string | null;
 }) {
 	const params = opts.params ?? P;
 	const limitS = opts.limitS ?? 600;
@@ -121,6 +124,8 @@ function fly(opts: {
 	let minApproach = Number.POSITIVE_INFINITY;
 	let maxSubsteps = 0;
 	let speedKms = 0;
+	let exit: string | null = null;
+	let exitBodyId: string | undefined;
 	const startNose = towards(opts.from, opts.target.pos);
 	while (t < limitS && !dropped) {
 		const step = advanceCruise({
@@ -131,10 +136,15 @@ function fly(opts: {
 			masses: opts.masses,
 			target: opts.target,
 			params,
+			targetParentId: opts.targetParentId ?? null,
 		});
 		pos = step.pos;
 		travelledKm += step.travelledKm;
 		dropped = step.dropped;
+		if (step.dropped) {
+			exit = step.exit;
+			exitBodyId = step.exitBodyId;
+		}
 		speedKms = step.speedKms;
 		maxSubsteps = Math.max(maxSubsteps, step.substeps);
 		t += opts.dt;
@@ -142,7 +152,17 @@ function fly(opts: {
 			minApproach = Math.min(minApproach, length(sub(pos, m.pos)) - m.radiusKm);
 		}
 	}
-	return { t, pos, travelledKm, dropped, minApproach, maxSubsteps, speedKms };
+	return {
+		t,
+		pos,
+		travelledKm,
+		dropped,
+		minApproach,
+		maxSubsteps,
+		speedKms,
+		exit,
+		exitBodyId,
+	};
 }
 
 // ---------------------------------------------------------------- §9.1 speed law
@@ -335,6 +355,7 @@ test("a sub-step never moves further than its fraction of the nearest distance",
 			masses: oneMassAt(target.pos),
 			target,
 			params: P,
+			targetParentId: null,
 		});
 		// Each *whole frame* may cover more than the fraction — that is what
 		// sub-stepping is for — but never more than the fraction times the number
@@ -391,6 +412,7 @@ test("charge is spent per AU travelled, not per second", () => {
 				target,
 				params: { ...P, dropSpeedKms: 0 },
 				chargeAu: charge,
+				targetParentId: null,
 			});
 			pos = step.pos;
 			charge = chargeAfterTravel(charge, step.travelledKm);
@@ -470,6 +492,7 @@ test("cruise does not move a ship with no charge", () => {
 		target,
 		params: P,
 		chargeAu: 0,
+		targetParentId: null,
 	});
 	expect(step.travelledKm).toBe(0);
 	expect(step.starved).toBe(true);
@@ -488,6 +511,7 @@ test("the throttle sets magnitude only, and zero throttle holds position", () =>
 		masses: oneMassAt(target.pos),
 		target,
 		params: P,
+		targetParentId: null,
 	});
 	expect(still.travelledKm).toBe(0);
 	expect(still.pos).toEqual(from);
@@ -502,6 +526,7 @@ test("the throttle sets magnitude only, and zero throttle holds position", () =>
 		masses: oneMassAt(target.pos),
 		target,
 		params: P,
+		targetParentId: null,
 	});
 	expect(half.speedKms / cruiseSpeed(length(from), P)).toBeCloseTo(0.5, 3);
 	const moved = sub(half.pos, from);
@@ -561,6 +586,7 @@ test("the law is keyed to the nearer of the mass and the target", () => {
 		// its own tests; what is being pinned here is that the law reads the
 		// target at all.
 		params: NO_CLAMP,
+		targetParentId: null,
 	});
 	// §2.3's own figure for 50 km out, rather than the ~44,000 km/s the planet's
 	// distance alone would allow.
@@ -587,6 +613,7 @@ test("a body's surface stops cruise instead of being flown through", () => {
 			masses: [planet],
 			target: null,
 			params: P,
+			targetParentId: null,
 		});
 		pos = step.pos;
 		if (step.dropped) exit = step.exit;
@@ -682,6 +709,7 @@ test("a moving target is arrived at, not chased forever", () => {
 			masses: oneMassAt(targetPos, 1.2),
 			target,
 			params,
+			targetParentId: null,
 		});
 		pos = step.pos;
 		dropped = step.dropped;
@@ -715,6 +743,7 @@ test("inside the vicinity the speed is held to the seconds-to-target", () => {
 			masses: oneMassAt(v3(0, 6e4, 0)),
 			target: station,
 			params: P,
+			targetParentId: null,
 		}).speedKms;
 	};
 	// Outside the vicinity the law is untouched — the clamp is an approach rule,
@@ -746,6 +775,7 @@ test("a straight-in approach at full throttle now arrives by itself", () => {
 			masses: oneMassAt(v3(0, 2e6, 0)),
 			target: { pos: targetPos, radiusKm: 1.2, vel: stationVel },
 			params: P,
+			targetParentId: null,
 		});
 		pos = step.pos;
 		if (step.dropped) exit = step.exit;
@@ -779,6 +809,7 @@ test("a pass that misses ends at closest approach rather than looping", () => {
 			masses: oneMassAt(v3(0, 2e6, 0)),
 			target: station,
 			params: P,
+			targetParentId: null,
 		});
 		pos = step.pos;
 		if (step.dropped) exit = step.exit;
@@ -867,6 +898,7 @@ test("a shut throttle still arrives, and reports the honest closing speed", () =
 		masses: oneMassAt(v3(0, 6e4, 0)),
 		target,
 		params: P,
+		targetParentId: null,
 	});
 	expect(step.dropped).toBe(true);
 	expect(step.exit).toBe("arrival");
@@ -885,6 +917,7 @@ test("a shut throttle still arrives, and reports the honest closing speed", () =
 		masses: oneMassAt(v3(0, 6e4, 0)),
 		target,
 		params: { ...P, dropSpeedKms: 2 },
+		targetParentId: null,
 	});
 	expect(strict.dropped).toBe(false);
 });
@@ -953,6 +986,7 @@ test("the capture is a near miss, not the whole vicinity", () => {
 				masses: oneMassAt(v3(0, 2e6, 0)),
 				target: station,
 				params: P,
+				targetParentId: null,
 			});
 			pos = step.pos;
 			if (step.dropped) exit = step.exit;
@@ -987,6 +1021,7 @@ test("a proximity drop names the body, so an intended one can be arrived at", ()
 		masses: [planet],
 		target: null,
 		params: P,
+		targetParentId: null,
 	});
 	for (let i = 0; i < 2000 && !step.dropped; i++) {
 		pos = step.pos;
@@ -998,8 +1033,180 @@ test("a proximity drop names the body, so an intended one can be arrived at", ()
 			masses: [planet],
 			target: null,
 			params: P,
+			targetParentId: null,
 		});
 	}
 	expect(step.exit).toBe("proximity");
 	expect(step.exitBodyId).toBe("planet-3");
+});
+
+// ----------------------------------------- #30: the guard is scaled to the wrong thing
+
+/**
+ * The geometry every test below is built on.
+ *
+ * A station orbits at `|o|` from its host's centre, and what decides whether a
+ * distant ship can reach it in a straight line is not that distance but its
+ * **perpendicular offset** `o⊥` from the line of sight: an inbound leg at 1 AU
+ * is effectively parallel, so the host hides the station exactly when
+ * `o⊥ < radius` and it is on the far side. Between `radius` and
+ * `SURFACE_MARGIN × radius` is the band #30 is about — the station is in clear
+ * space and the shell its planet projects is not.
+ *
+ * `PLANET_R` and an altitude of 400 km are `system.ts`'s own minimum, so the
+ * band is not a contrivance: it is where a real station sits.
+ */
+const PLANET_R = 6000;
+const ORBIT_R = PLANET_R + 400;
+
+/** A station at perpendicular offset `perp`, on the far side of its host by
+ *  whatever the orbital radius has left over. The ship comes in along +x. */
+function stationAt(perp: number) {
+	const behind = Math.sqrt(ORBIT_R * ORBIT_R - perp * perp);
+	return { pos: v3(-behind, perp, 0), radiusKm: 1 };
+}
+
+test("a station in clear space is reached, not stopped by its host's shell", () => {
+	// The defect, in its simplest form: `o⊥` is 6,150 km — outside the planet
+	// and inside `1.05 × 6,000 = 6,300`. The station is in clear space and the
+	// sweep against its own host fires first, thousands of km short and still
+	// doing thousands of km/s. How often that happens across the corpus is in
+	// `in-system-travel.md` §12.1, so re-measuring edits one place.
+	const planet = { id: "planet", pos: v3(), radiusKm: PLANET_R };
+	const station = stationAt(6150);
+	expect(station.pos.x).toBeLessThan(0); // genuinely on the far side
+	const flight = fly({
+		from: v3(0.3 * AU_KM, 0, 0),
+		target: station,
+		masses: [planet],
+		dt: 0.1,
+		targetParentId: "planet",
+	});
+	expect(flight.exit).toBe("arrival");
+	expect(length(sub(flight.pos, station.pos))).toBeLessThanOrEqual(
+		P.dropRadiusKm,
+	);
+});
+
+test("a host still stops a ship aimed at a station behind it", () => {
+	// The other half, and why the host cannot simply be exempted: at `o⊥` of
+	// 3,000 km the station is *behind six thousand kilometres of planet*, and a
+	// rule that arrives there is one that flies through worlds — which is the
+	// brake #14 closed, handed back for the one world the player most wants to
+	// shed speed at.
+	const planet = { id: "planet", pos: v3(), radiusKm: PLANET_R };
+	const flight = fly({
+		from: v3(0.3 * AU_KM, 0, 0),
+		target: stationAt(3000),
+		masses: [planet],
+		dt: 0.1,
+		targetParentId: "planet",
+	});
+	expect(flight.exit).toBe("proximity");
+	expect(flight.exitBodyId).toBe("planet");
+	// Stopped at `CLEARANCE_KM` rather than 5% out — the host has no shell to
+	// project against its own station, only the absolute standoff that keeps the
+	// ship off a sphere it is being drawn the inside of. 300 km becomes 5, which
+	// is what makes this an assertion about the new rule rather than one the old
+	// rule also satisfied.
+	expect(flight.minApproach).toBeGreaterThanOrEqual(0);
+	expect(flight.minApproach).toBeLessThan(2 * CLEARANCE_KM);
+});
+
+test("every body that is not the host keeps its shell", () => {
+	// The exemption is scoped to the body the target orbits, and to nothing
+	// else. A planet the leg happens to graze is still an obstacle, or selecting
+	// a station anywhere in the system would turn the whole map permeable.
+	//
+	// The second body is placed **in the same band the host is exempted in** —
+	// its true surface is clear of the ray and its shell is not. A body simply
+	// sitting on the ray would be stopped by its surface alone, and the test
+	// would pass with `SURFACE_MARGIN` deleted.
+	const planet = { id: "planet", pos: v3(), radiusKm: PLANET_R };
+	const from = v3(0.3 * AU_KM, 0, 0);
+	const station = stationAt(6150);
+	const nose = towards(from, station.pos);
+	const otherR = 4000;
+	// Halfway along the leg, offset across it by a distance inside the shell and
+	// outside the surface. Computed from the ray rather than guessed, so it
+	// survives the fixture's geometry being retuned.
+	const midpoint = add(from, scale(nose, 0.5 * length(sub(station.pos, from))));
+	// The whole fixture lies in z = 0, so "across the ray" is the in-plane
+	// perpendicular, and it is already unit because `nose` is.
+	const across = v3(-nose.y, nose.x, 0);
+	const perpKm = otherR * (1 + (SURFACE_MARGIN - 1) / 2);
+	const other = {
+		id: "other",
+		pos: add(midpoint, scale(across, perpKm)),
+		radiusKm: otherR,
+	};
+	const flight = fly({
+		from,
+		target: station,
+		masses: [planet, other],
+		dt: 0.1,
+		targetParentId: "planet",
+	});
+	expect(flight.exit).toBe("proximity");
+	expect(flight.exitBodyId).toBe("other");
+	// And it was the shell that stopped it, not the surface: the ship never got
+	// within `other`'s radius, so deleting the margin would let this pass.
+	expect(length(sub(flight.pos, other.pos))).toBeGreaterThan(otherR);
+});
+
+test("being inside a shell does not pin the ship there", () => {
+	// What the report was actually about. `sphereEntry` returns 0 for a step
+	// that *starts* inside the sphere, so a ship dropped at a shell was dropped
+	// again on the first sub-step of every engagement after it: measured over
+	// 200 systems, a second cruise from the drop point covered 1 km before it
+	// was stopped, in 124 legs out of 124. Being stopped by a planet was
+	// terminal rather than a detour, and the only way on was the 2 km/s crawl
+	// the drop radius is bounded from below to avoid.
+	//
+	// So the guard fires on **crossing inward**, not on being inside: a ship
+	// pointed away from the body it is beside is not flying into anything.
+	const planet = { id: "planet", pos: v3(), radiusKm: PLANET_R };
+	const inside = v3(PLANET_R * 1.02, 0, 0); // inside the shell, clear of the surface
+	const away = fly({
+		from: inside,
+		target: { pos: v3(0.3 * AU_KM, 0, 0), radiusKm: 1 },
+		masses: [planet],
+		dt: 0.1,
+		limitS: 5,
+	});
+	expect(away.travelledKm).toBeGreaterThan(1000);
+	expect(away.exit).not.toBe("proximity");
+
+	// **Every** heading that does not enter the body, not just the outward ones.
+	// A hemisphere test — "is the centre ahead of me?" — passes the radial case
+	// and pins the grazing ones, because from inside a shell the surface
+	// subtends *less* than a hemisphere: at 2% up it subtends 78.6°, so every
+	// heading between 90° and 101.4° off the outward radial has the centre ahead
+	// and misses the planet entirely. Those are the bearings a ship beside a
+	// world actually wants — around its limb, not straight up.
+	for (const deg of [45, 92, 95, 100]) {
+		const rad = (deg * Math.PI) / 180;
+		const heading = v3(Math.cos(rad), Math.sin(rad), 0);
+		const grazing = fly({
+			from: inside,
+			target: { pos: add(inside, scale(heading, 0.3 * AU_KM)), radiusKm: 1 },
+			masses: [planet],
+			dt: 0.1,
+			limitS: 5,
+		});
+		expect(grazing.exit).not.toBe("proximity");
+		expect(grazing.travelledKm).toBeGreaterThan(1000);
+	}
+
+	// And the converse, or the rule would be an exemption rather than a
+	// direction: still pointed at the body, still stopped.
+	const into = fly({
+		from: inside,
+		target: { pos: v3(-0.3 * AU_KM, 0, 0), radiusKm: 1 },
+		masses: [planet],
+		dt: 0.1,
+		limitS: 5,
+	});
+	expect(into.exit).toBe("proximity");
+	expect(into.exitBodyId).toBe("planet");
 });
