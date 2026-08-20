@@ -589,13 +589,20 @@ From inside a shell the surface subtends less than a hemisphere, so a
 centre-ahead test releases the radial heading and pins every heading around the
 limb, which are the ones a ship beside a world wants.
 
-It is measured against the bare radius. A stop leaves the ship *on* the guard
-volume's boundary, so testing the release against that same boundary is a
+It is measured against the **true surface**. A stop leaves the ship *on* the
+guard volume's boundary, so testing the release against that same boundary is a
 tangent test at the start point: every heading with the centre ahead reads as
-entering, and the outward hemisphere is all that is left. `tests/cruise.test.ts` covers that case, which is the durable form of it —
-the variant that showed it across most of the corpus was measured and discarded,
-so no figure from it is quoted here. The cost is that a released chord may graze
-the surface, which is the grazing pass §11.4's margin is written to allow.
+entering, and the outward hemisphere is all that is left. `tests/cruise.test.ts`
+covers that case, which is the durable form of it — the variant that showed it
+across most of the corpus was measured and discarded, so no figure from it is
+quoted here.
+
+**The cost is new, and it is not §11.4's grazing pass.** That one is a pass
+*outside* the 1.05 shell, which the shell was never going to stop. This is a
+ship already inside a shell, released onto a chord that dips toward the true
+surface — `tests/cruise.test.ts` pins one at 1.01 radii, well inside the shell
+§11.4 stops at. #30 admits that where §11.4 did not; the trade is that the
+alternative pins a stopped ship where it stands.
 
 A heading that *does* go deeper is stopped **where the ship already is**, not
 where the ray meets the surface. Stopping at the surface was #30's own blocker,
@@ -620,9 +627,14 @@ stop.
 
 What that leg shows, and it is the figure this amendment rests on: **43 of 90
 re-engagements used to end on a surface; 1 does now**, and that 1 is §12.4's.
-The *minimum* clearance cannot show it — §12.4's leg pins it at −1.041 km on
-both builds — which is why the count is the number to read. Primary legs are a
-separate population and bottom out at 5.000 km.
+Measured at 200 seeds, on clearance **at the point the leg ended** — not the
+minimum over its path, which is a different question. The before-figure came
+from running this column against `main`'s `cruise.ts` by hand, since the column
+is new here; the sweep prints only the live one and points here for the rest.
+
+The *minimum* clearance cannot show any of this: §12.4's leg pins it at
+−1.041 km on both builds. Primary legs are a separate population and bottom out
+at 5.000 km.
 
 **What this is not.** From the radial heading alone it looked like "being
 stopped is terminal" — a second cruise there covers 1 km, in 124 legs out of 124. It is

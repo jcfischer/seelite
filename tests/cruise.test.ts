@@ -1215,26 +1215,40 @@ test("being inside a shell does not pin the ship there", () => {
 	expect(length(sub(into.pos, planet.pos)) / PLANET_R).toBeCloseTo(1.02, 4);
 });
 
+/** The four #30 guard tests differ only in where they start and which body is
+ *  the host, so the fixture is written once. `heading` defaults to straight
+ *  through the centre. */
+function flyFromRatio(
+	ratio: number,
+	opts: { host?: boolean; heading?: Vec3 } = {},
+) {
+	const planet = { id: "planet", pos: v3(), radiusKm: PLANET_R };
+	const from = v3(PLANET_R * ratio, 0, 0);
+	const heading = opts.heading ?? v3(-1, 0, 0);
+	return {
+		planet,
+		from,
+		flight: fly({
+			from,
+			target: { pos: add(from, scale(heading, 0.3 * AU_KM)), radiusKm: 1 },
+			masses: [planet],
+			dt: 0.1,
+			limitS: 5,
+			targetParentId: opts.host ? "planet" : null,
+		}),
+	};
+}
+
 test("a stop from inside a guard volume keeps the clearance it started with", () => {
 	// The blocker in #30's own fix: the inward branch stopped the ship where the
 	// ray met the body's true surface, so a ship inside a shell that turned
 	// toward the body was walked down to altitude zero. It keeps the altitude it
 	// had instead. §12.2 has the argument.
-	const planet = { id: "planet", pos: v3(), radiusKm: PLANET_R };
 	for (const [label, startRatio, host] of [
 		["inside the shell, not the host", 1.02, false],
 		["inside the host's standoff", 1 + HOST_CLEARANCE_KM / PLANET_R / 2, true],
 	] as [string, number, boolean][]) {
-		const from = v3(PLANET_R * startRatio, 0, 0);
-		const flight = fly({
-			from,
-			// Straight through the centre and out the far side.
-			target: { pos: v3(-0.3 * AU_KM, 0, 0), radiusKm: 1 },
-			masses: [planet],
-			dt: 0.1,
-			limitS: 5,
-			targetParentId: host ? "planet" : null,
-		});
+		const { planet, flight } = flyFromRatio(startRatio, { host });
 		expect(`${label}: ${flight.exit}`).toBe(`${label}: proximity`);
 		// It kept its altitude rather than descending to the skin.
 		const endKm = length(sub(flight.pos, planet.pos));
@@ -1249,16 +1263,7 @@ test("a body inside whose shell the ship sits is still not enterable", () => {
 	// outside it; the test named for that invariant starts 0.3 AU out and cannot
 	// reach this branch. What the guard promises a ship already inside is in
 	// §12.2, and this is the case that pins it.
-	const planet = { id: "planet", pos: v3(), radiusKm: PLANET_R };
-	const inside = v3(PLANET_R * 1.03, 0, 0);
-	const flight = fly({
-		from: inside,
-		target: { pos: v3(-0.3 * AU_KM, 0, 0), radiusKm: 1 },
-		masses: [planet],
-		dt: 0.1,
-		limitS: 5,
-		targetParentId: null,
-	});
+	const { planet, flight } = flyFromRatio(1.03);
 	expect(flight.exit).toBe("proximity");
 	expect(flight.minApproach).toBeGreaterThan(0);
 	expect(length(sub(flight.pos, planet.pos)) / PLANET_R).toBeCloseTo(1.03, 4);
@@ -1295,16 +1300,10 @@ test("a ship stopped at the guard boundary can still leave it", () => {
 	// The regression a stricter release floor introduces: a stop leaves the ship
 	// on the boundary, so measuring the release against that same boundary is a
 	// tangent test at the start point and nothing can leave. The release is
-	// measured against the bare radius; this is what says so.
-	const planet = { id: "planet", pos: v3(), radiusKm: PLANET_R };
-	const atBoundary = v3(PLANET_R + HOST_CLEARANCE_KM, 0, 0);
-	const away = fly({
-		from: atBoundary,
-		target: { pos: v3(0.3 * AU_KM, 0, 0), radiusKm: 1 },
-		masses: [planet],
-		dt: 0.1,
-		limitS: 5,
-		targetParentId: "planet",
+	// measured against the true surface; this is what says so.
+	const { flight: away } = flyFromRatio(1 + HOST_CLEARANCE_KM / PLANET_R, {
+		host: true,
+		heading: v3(1, 0, 0),
 	});
 	expect(away.exit).not.toBe("proximity");
 	expect(away.travelledKm).toBeGreaterThan(1000);

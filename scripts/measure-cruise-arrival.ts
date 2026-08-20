@@ -101,6 +101,10 @@ interface LegResult {
 	seconds: number;
 	/** How far inside any planet's true surface the flown path went, km. */
 	penetrationKm: number;
+	/** Clearance above the nearest surface **where the leg ended**, km. Distinct
+	 *  from `clearanceKm`, which is the minimum over the whole flown path: where
+	 *  a stop leaves the ship is an endpoint question. */
+	endClearanceKm: number;
 	/**
 	 * The **least clearance** the flown path had above any planet's surface, km
 	 * — signed, so a stop on the skin is 0 and a stop inside is negative.
@@ -121,11 +125,12 @@ interface LegResult {
 	reengagedKm: number;
 	/** Kilometres the best of `ESCAPE_HEADINGS_DEG` covers in `ESCAPE_S` s. */
 	bestEscapeKm: number;
-	/** How many of them moved the ship more than 100 km. Zero is a pin; −1 means
-	 *  the leg could not be flown (§12.4's case — the ship ended inside). */
+	/** How many of them moved the ship more than 100 km. Zero is a pin. */
 	flyableHeadings: number;
+	/** Whether any heading was flown at all, and why not when it was not. */
+	escape: Escape["why"];
 	/**
-	 * Clearance left after that second cruise, km — signed.
+	 * Clearance **where that second cruise ended**, km — signed.
 	 *
 	 * The one leg in the corpus that flies the in-place stop: the ship is beside
 	 * its host, inside the guard volume, aiming through it. Ordinary legs start
@@ -134,7 +139,7 @@ interface LegResult {
 	 * Read as a **count near zero**, not as a minimum. The minimum is −1.041 km
 	 * on this build *and* on the pre-fix one — §12.4's snapshot leg dominates it,
 	 * so it cannot see the fix at all. What can is how many legs end on a
-	 * surface: 43 of 90 before, 1 of 90 after, and that 1 is §12.4's leg.
+	 * surface; §12.2 has the before-and-after and how the before was obtained.
 	 */
 	reengagedClearanceKm: number;
 }
@@ -154,29 +159,44 @@ const ESCAPE_HEADINGS_DEG = [0, 45, 89, 95, 100, 110];
  * something selected: the drop sphere is 50 km and the ship is heading away
  * from it, so nothing here ends the run except the guard.
  */
-/** Nothing to measure: no body to leave, or a degenerate frame. Distinct from
- *  `{ flyable: -1 }`, which is §12.4's case. */
-const UNMEASURED = { bestKm: 0, flyable: 0 } as const;
+/** An escape result. `measurable: false` means no heading was flown, and `why`
+ *  says which of the two reasons — they are different facts and are counted
+ *  apart. */
+interface Escape {
+	bestKm: number;
+	flyable: number;
+	measurable: boolean;
+	why: "flown" | "no-body" | "ended-inside";
+}
+
+/** No body to leave, or a degenerate frame: nothing was flown. */
+const NO_BODY: Escape = {
+	bestKm: 0,
+	flyable: 0,
+	measurable: false,
+	why: "no-body",
+};
 
 function flyAway(
 	seed: number,
 	gameTime: number,
 	from: Vec3,
 	bodyId: string | undefined,
-): { bestKm: number; flyable: number } {
-	if (!bodyId) return UNMEASURED;
+): Escape {
+	if (!bodyId) return NO_BODY;
 	const world = makeWorld(seed);
 	world.gameTime = gameTime;
 	advanceWorldClock(world, 0);
 	const body = world.system.byId.get(bodyId);
-	if (!body) return UNMEASURED;
+	if (!body) return NO_BODY;
 	const out = sub(from, body.pos);
 	const len = length(out);
-	if (len === 0) return UNMEASURED;
+	if (len === 0) return NO_BODY;
 	// The predicate below needs the ship to start strictly above the surface.
 	// Usually it is — but §12.4's snapshot hole means it need not be, so this
 	// reports the leg as unmeasurable rather than aborting the run over it.
-	if (len - body.radiusKm <= 1e-6) return { bestKm: 0, flyable: -1 };
+	if (len - body.radiusKm <= 1e-6)
+		return { bestKm: 0, flyable: 0, measurable: false, why: "ended-inside" };
 	const radial = scale(out, 1 / len);
 	// Any unit vector across the radial serves to sweep the heading through;
 	// the geometry is symmetric about it, so one suffices.
@@ -185,7 +205,7 @@ function flyAway(
 	const axis = v3(radial.y, radial.z, radial.x);
 	const raw = sub(axis, scale(radial, dot(radial, axis)));
 	const acrossLen = length(raw);
-	if (acrossLen === 0) return UNMEASURED;
+	if (acrossLen === 0) return NO_BODY;
 	const across = scale(raw, 1 / acrossLen);
 
 	let best = 0;
@@ -229,7 +249,7 @@ function flyAway(
 		best = Math.max(best, travelled);
 		if (travelled > 100) flyable++;
 	}
-	return { bestKm: best, flyable };
+	return { bestKm: best, flyable, measurable: true, why: "flown" };
 }
 
 /**
@@ -249,6 +269,11 @@ function flyLeg(
 	let t = 0;
 	let penetrationKm = 0;
 	let clearanceKm = Number.POSITIVE_INFINITY;
+	const endClearance = (at: Vec3, ms: ReturnType<typeof massesOf>) =>
+		ms.reduce(
+			(a, m) => Math.min(a, length(sub(m.pos, at)) - m.radiusKm),
+			Number.POSITIVE_INFINITY,
+		);
 
 	while (t < LEG_TIMEOUT_S) {
 		advanceWorldClock(world, DT);
@@ -294,6 +319,7 @@ function flyLeg(
 			let reengagedKm = 0;
 			let bestEscapeKm = 0;
 			let flyableHeadings = 0;
+			let escape: Escape["why"] = "no-body";
 			let reengagedClearanceKm = Number.POSITIVE_INFINITY;
 			if (measureReengage && rangeKm > DEFAULT_CRUISE.dropRadiusKm) {
 				const again = makeWorld(world.seed);
@@ -302,10 +328,11 @@ function flyLeg(
 				advanceWorldClock(again, 0);
 				const second = flyLeg(again, targetId, false);
 				reengagedKm = Math.max(0, rangeKm - second.rangeKm);
-				reengagedClearanceKm = second.clearanceKm;
+				reengagedClearanceKm = second.endClearanceKm;
 				const away = flyAway(world.seed, world.gameTime, pos, step.exitBodyId);
 				bestEscapeKm = away.bestKm;
 				flyableHeadings = away.flyable;
+				escape = away.why;
 			}
 			return {
 				exit: step.starved ? "starved" : (step.exit ?? "none"),
@@ -315,11 +342,13 @@ function flyLeg(
 				seconds: finite("seconds", t),
 				penetrationKm: finite("penetration", Math.max(0, penetrationKm)),
 				clearanceKm: finite("clearance", clearanceKm),
+				endClearanceKm: finite("end clearance", endClearance(pos, masses)),
 				pos,
 				gameTime: world.gameTime,
 				reengagedKm: finite("reengaged", reengagedKm),
 				bestEscapeKm: finite("escape", bestEscapeKm),
 				flyableHeadings,
+				escape,
 				reengagedClearanceKm,
 			};
 		}
@@ -336,6 +365,7 @@ function flyLeg(
 		rangeKm: finite("range", length(sub(end.pos, pos))),
 		penetrationKm: finite("penetration", Math.max(0, penetrationKm)),
 		clearanceKm: finite("clearance", clearanceKm),
+		endClearanceKm: finite("end clearance", endClearance(pos, massesOf(world))),
 		pos,
 		gameTime: world.gameTime,
 	};
@@ -350,6 +380,7 @@ const TIMEOUT_DEFAULTS = {
 	reengagedKm: 0,
 	bestEscapeKm: 0,
 	flyableHeadings: 0,
+	escape: "no-body" as const,
 	reengagedClearanceKm: Number.POSITIVE_INFINITY,
 } as const;
 
@@ -508,17 +539,12 @@ const stopped = rows.filter(
 );
 const stuck = stopped.filter((r) => r.result.reengagedKm < 100);
 const gained = stopped.map((r) => r.result.reengagedKm).sort((a, b) => a - b);
-// Legs whose escape was measurable. Two ways it is not, and they are different
-// facts, so they are counted apart: no body to leave (a starved leg carries no
-// `exitBodyId`), and §12.4's case, where the ship ended inside one. Folding
-// either into `pinned` would report a guard failure where nothing was measured.
-const enclosed = stopped.filter((r) => r.result.flyableHeadings === -1);
-const noBody = stopped.filter(
-	(r) => r.result.exitBodyId === undefined && r.result.flyableHeadings !== -1,
-);
-const measured = stopped.filter(
-	(r) => r.result.exitBodyId !== undefined && r.result.flyableHeadings >= 0,
-);
+// `flyAway` says which of the three a leg is, so each of these is one predicate
+// rather than a sentinel decoded four ways. Folding an unflown leg into `pinned`
+// would report a guard failure where nothing was measured.
+const enclosed = stopped.filter((r) => r.result.escape === "ended-inside");
+const noBody = stopped.filter((r) => r.result.escape === "no-body");
+const measured = stopped.filter((r) => r.result.escape === "flown");
 const pinned = measured.filter((r) => r.result.flyableHeadings === 0);
 const escapes = measured
 	.map((r) => r.result.bestEscapeKm)
@@ -539,30 +565,45 @@ const onTheSurface = reengagedClearances.filter((c) => c < 0.1).length;
 const leastReengaged = reengagedClearances.length
 	? Math.min(...reengagedClearances)
 	: Number.NaN;
-const reengageNote = insideAfterReengage.length
-	? ` — ${insideAfterReengage.length} inside a surface (worst: seed ${insideAfterReengage[0]?.seed}, ` +
-		`${insideAfterReengage[0]?.targetId}, host ${km(insideAfterReengage[0]?.hostRadiusKm ?? 0)} km). §12.4`
-	: "";
-console.log("after a stop — can the player cruise on?\n");
-if (timedOut.length)
-	console.log(
-		`  ${timedOut.length} leg(s) neither arrived nor were stopped inside ${LEG_TIMEOUT_S} s ` +
-			"— excluded from the counts below, which are about being stopped\n",
-	);
-console.log(
-	`  stopped legs ${stopped.length}\n` +
-		"  back at the same station, which is behind the planet: median " +
-		`${km(median(gained))} km, still stopped ${stuck.length}/${stopped.length} — as it should be,\n` +
-		"    and it is the one leg that flies the in-place stop:\n" +
-		`      ${onTheSurface}/${reengagedClearances.length} end on a surface (< 0.1 km) — 43/90 before this rule\n` +
-		`      least clearance ${Number.isFinite(leastReengaged) ? leastReengaged.toFixed(3) : "—"} km${reengageNote}\n` +
-		`  a way out, over ${ESCAPE_HEADINGS_DEG.length} headings from 0° to ` +
-		`${ESCAPE_HEADINGS_DEG[ESCAPE_HEADINGS_DEG.length - 1]}° off the outward radial:\n` +
-		`    ${median(headingCounts)} fly, best covers ${km(median(escapes))} km in ${ESCAPE_S} s — both medians over legs\n` +
-		`    legs with no way out at all: ${pinned.length}/${measured.length}\n` +
-		`${noBody.length ? `    not flown, no body to leave: ${noBody.length}\n` : ""}` +
-		`${enclosed.length ? `    not flown, ship ended inside a surface (§12.4): ${enclosed.length}\n` : ""}`,
+const worstInside = insideAfterReengage.reduce<Row | null>(
+	(a, r) =>
+		a === null || r.result.reengagedClearanceKm < a.result.reengagedClearanceKm
+			? r
+			: a,
+	null,
 );
+const reengageNote = worstInside
+	? ` — ${insideAfterReengage.length} inside a surface (worst: seed ${worstInside.seed}, ` +
+		`${worstInside.targetId}, host ${km(worstInside.hostRadiusKm)} km). §12.4`
+	: "";
+// One list, pushed conditionally, rather than a template with a ternary in it.
+{
+	const lines = [`  stopped legs ${stopped.length}`];
+	if (timedOut.length)
+		lines.push(
+			`  ${timedOut.length} leg(s) neither arrived nor were stopped inside ${LEG_TIMEOUT_S} s,` +
+				" excluded below",
+		);
+	lines.push(
+		"  back at the same station, which is behind the planet: median " +
+			`${km(median(gained))} km, still stopped ${stuck.length}/${stopped.length} — as it should be,`,
+		"    and it is the one leg that flies the in-place stop:",
+		`      ${onTheSurface}/${reengagedClearances.length} end on a surface (< 0.1 km) — §12.2 has what this was before`,
+		`      least clearance ${Number.isFinite(leastReengaged) ? leastReengaged.toFixed(3) : "—"} km${reengageNote}`,
+		`  a way out, over ${ESCAPE_HEADINGS_DEG.length} headings from 0° to ` +
+			`${ESCAPE_HEADINGS_DEG[ESCAPE_HEADINGS_DEG.length - 1]}° off the outward radial:`,
+		`    ${median(headingCounts)} fly, best covers ${km(median(escapes))} km in ${ESCAPE_S} s — both medians over legs`,
+		`    legs with no way out at all: ${pinned.length}/${measured.length}`,
+	);
+	if (noBody.length)
+		lines.push(`    not flown, no body to leave: ${noBody.length}`);
+	if (enclosed.length)
+		lines.push(
+			`    not flown, ship ended inside a surface (§12.4): ${enclosed.length}`,
+		);
+	console.log("after a stop — can the player cruise on?\n");
+	console.log(`${lines.join("\n")}\n`);
+}
 
 // ── Stations that sit inside their own host's shell.
 //

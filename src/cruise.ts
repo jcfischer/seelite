@@ -612,21 +612,23 @@ function rayGoesDeeper(
  * Extracted from `advanceCruise`'s sub-step loop because it had become a
  * ternary, a branch and two sphere tests nested four scopes deep inside the
  * flight loop, while being one cohesive question: *does this body end the step,
- * and where*.
+ * and where*. It takes the host id rather than a boolean so that both halves of
+ * #30's rule — which body is exempt, and what the exemption is — live here.
  */
 function guardStopKm(
 	from: Vec3,
 	nose: Vec3,
 	stepKm: number,
 	m: Mass,
-	isHost: boolean,
+	targetParentId: string | null | undefined,
 ): number | null {
 	// #30: the host guards at an absolute standoff, everything else at the
 	// proportional shell. See `SURFACE_MARGIN` and `HOST_CLEARANCE_KM` above for
 	// why, and `in-system-travel.md` §12.1 for what it cost and bought.
-	const guardKm = isHost
-		? m.radiusKm + HOST_CLEARANCE_KM
-		: m.radiusKm * SURFACE_MARGIN;
+	const guardKm =
+		m.id === targetParentId
+			? m.radiusKm + HOST_CLEARANCE_KM
+			: m.radiusKm * SURFACE_MARGIN;
 	const entryKm = sphereEntry(from, nose, stepKm, m.pos, guardKm);
 	if (entryKm === null || entryKm > stepKm) return null;
 	if (entryKm > 0) return entryKm;
@@ -634,9 +636,10 @@ function guardStopKm(
 	// Already inside this guard volume, where `sphereEntry`'s 0 means "starts
 	// inside" rather than "stop here". §12.2 has the argument; the two branches:
 	//
-	// A heading that does not get deeper is released — measured against the bare
-	// radius, because a stop leaves the ship *on* the boundary and testing that
-	// same boundary is a tangent test at the start point.
+	// A heading that does not get deeper is released — measured against the true
+	// surface, because a stop leaves the ship *on* the guard boundary and testing
+	// that same boundary is a tangent test at the start point. §12.2 has what
+	// that admits, which is more than §11.4's grazing pass did.
 	if (!rayGoesDeeper(from, nose, m.pos, m.radiusKm)) return null;
 	// One that does is stopped here, at the altitude the ship already has, not
 	// at the surface the ray meets.
@@ -801,7 +804,7 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 				input.nose,
 				stepKm,
 				m,
-				m.id === input.targetParentId,
+				input.targetParentId,
 			);
 			if (stopKm === null) continue;
 			stepKm = stopKm;
