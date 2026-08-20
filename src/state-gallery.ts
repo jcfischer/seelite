@@ -133,52 +133,6 @@ export function galleryState(id: string | null): GalleryState {
 	return GALLERY_STATES.find((state) => state.id === id) ?? GALLERY_STATES[0];
 }
 
-function buildRadar(
-	cockpit: THREE.Group,
-	glow: THREE.MeshBasicMaterial,
-	cyan: THREE.MeshBasicMaterial,
-	green: THREE.MeshBasicMaterial,
-): THREE.Group {
-	const radar = new THREE.Group();
-	radar.position.set(0, -0.5, -1.62);
-	radar.rotation.x = -Math.PI / 2;
-	cockpit.add(radar);
-	for (let ring = 0; ring < 8; ring += 1) {
-		const mesh = new THREE.Mesh(
-			new THREE.TorusGeometry(0.22 + ring * 0.12, 0.012, 8, 64),
-			glow,
-		);
-		mesh.scale.y = 0.52;
-		radar.add(mesh);
-	}
-	for (const [x, z, height, material] of [
-		[-0.58, 0.21, 0.42, green],
-		[0.12, -0.08, 0.68, cyan],
-		[0.57, 0.16, 0.53, glow],
-	] as const) {
-		const anchor = new THREE.Mesh(
-			new THREE.CylinderGeometry(0.12, 0.12, 0.022, 32),
-			material,
-		);
-		anchor.position.set(x, z, 0);
-		radar.add(anchor);
-		const mast = new THREE.Mesh(
-			new THREE.CylinderGeometry(0.018, 0.018, height, 12),
-			material,
-		);
-		mast.position.set(x, z, height / 2);
-		mast.rotation.x = Math.PI / 2;
-		radar.add(mast);
-		const contact = new THREE.Mesh(
-			new THREE.SphereGeometry(0.05, 16, 12),
-			material,
-		);
-		contact.position.set(x, z, height);
-		radar.add(contact);
-	}
-	return radar;
-}
-
 function buildStarfield(scene: THREE.Scene): THREE.BufferGeometry {
 	const positions = new Float32Array(480 * 3);
 	const randomAt = (index: number) =>
@@ -373,125 +327,14 @@ function buildInstrumentDeck(
 	}
 }
 
-function addConsoleDisplay(
-	cockpit: THREE.Group,
-	{
-		headLook,
-		title,
-		body,
-		x,
-		rotationY,
-		accent,
-	}: {
-		headLook: HeadLook;
-		title: string;
-		body: string;
-		x: number;
-		rotationY: number;
-		accent: string;
-	},
-): THREE.Mesh | null {
-	const textureCanvas = document.createElement("canvas");
-	textureCanvas.width = 680;
-	textureCanvas.height = 512;
-	const context = textureCanvas.getContext("2d");
-	if (!context) return null;
-	context.strokeStyle = accent;
-	context.lineWidth = 7;
-	context.strokeRect(8, 8, textureCanvas.width - 16, textureCanvas.height - 16);
-	context.fillStyle = accent;
-	context.font = "600 34px ui-monospace, monospace";
-	context.fillText(title, 36, 66);
-	context.fillStyle = "#d4efff";
-	context.font = "24px ui-monospace, monospace";
-	context.globalAlpha = 0.5;
-	for (let row = 0; row < 7; row += 1) {
-		context.fillRect(34, 158 + row * 42, 548 - row * 26, 2);
-		context.fillRect(34, 175 + row * 42, 16 + (row % 3) * 46, 9);
-	}
-	context.globalAlpha = 1;
-	const words = body.split(" ");
-	let line = "";
-	let y = 122;
-	for (const word of words) {
-		const next = `${line}${line ? " " : ""}${word}`;
-		if (context.measureText(next).width > 430) {
-			context.fillText(line, 36, y);
-			line = word;
-			y += 38;
-		} else line = next;
-	}
-	context.fillText(line, 36, y);
-	const texture = new THREE.CanvasTexture(textureCanvas);
-	texture.colorSpace = THREE.SRGBColorSpace;
-	const displayOpacity = 0;
-	const screen = new THREE.Mesh(
-		new THREE.PlaneGeometry(4.5, 3.35),
-		new THREE.MeshBasicMaterial({
-			map: texture,
-			transparent: true,
-			opacity: displayOpacity,
-			blending: THREE.AdditiveBlending,
-			depthWrite: false,
-		}),
-	);
-	screen.position.set(x, -0.05, -1.28);
-	screen.rotation.set(-0.4, rotationY, 0);
-	cockpit.add(screen);
-	return screen;
-}
-
-function buildConsoleDisplays(
-	cockpit: THREE.Group,
-	headLook: HeadLook,
-	state: GalleryState,
-	rightTab: RightTab,
-): THREE.Mesh[] {
-	const leftTitle = leftPanelTitle(state).toUpperCase();
-	const left = addConsoleDisplay(cockpit, {
-		headLook,
-		title: leftTitle,
-		body: leftPanelBody(state),
-		x: -3.15,
-		rotationY: 0.48,
-		accent: "#7ac5e8",
-	});
-	const right = addConsoleDisplay(cockpit, {
-		headLook,
-		title: rightTab.toUpperCase(),
-		body: rightPanelBody(state, rightTab),
-		x: 3.15,
-		rotationY: -0.48,
-		accent: "#e5aa52",
-	});
-	return [left, right].filter(
-		(screen): screen is THREE.Mesh => screen !== null,
-	);
-}
-
 type CockpitScene = {
 	detach(): void;
-	attach(
-		stage: HTMLElement,
-		state: GalleryState,
-		rightTab: RightTab,
-		headLook: HeadLook,
-	): void;
+	attach(stage: HTMLElement, headLook: HeadLook): void;
 	dispose(): void;
 };
 
-function disposeConsoleDisplay(display: THREE.Mesh): void {
-	display.geometry.dispose();
-	disposeMeshMaterials(display.material);
-}
-
 /** A self-contained rendered cockpit, kept separate from the game scene. */
-function mountCockpit3D(
-	stage: HTMLElement,
-	state: GalleryState,
-	rightTab: RightTab,
-	headLook: HeadLook,
-): CockpitScene {
+function mountCockpit3D(stage: HTMLElement, headLook: HeadLook): CockpitScene {
 	const canvas = document.createElement("canvas");
 	canvas.className = "sg-3d-canvas";
 	canvas.setAttribute("data-gallery-3d-canvas", "true");
@@ -528,7 +371,6 @@ function mountCockpit3D(
 	});
 	const glow = new THREE.MeshBasicMaterial({ color: 0xe6a23c });
 	const cyan = new THREE.MeshBasicMaterial({ color: 0x78cbed });
-	const green = new THREE.MeshBasicMaterial({ color: 0x9df5aa });
 	const addBox: CockpitBox = ({
 		size,
 		position,
@@ -543,15 +385,6 @@ function mountCockpit3D(
 	};
 	buildCanopyFrame(addBox, metal, trim);
 	buildInstrumentDeck(addBox, metal, trim, cyan, glow);
-	let consoleDisplays = buildConsoleDisplays(
-		cockpit,
-		headLook,
-		state,
-		rightTab,
-	);
-
-	const radar = buildRadar(cockpit, glow, cyan, green);
-	radar.visible = false;
 	buildStarfield(scene);
 
 	let mountedStage = stage;
@@ -598,21 +431,11 @@ function mountCockpit3D(
 		detach() {
 			resizeObserver.unobserve(mountedStage);
 		},
-		attach(nextStage, nextState, nextRightTab, nextHeadLook) {
+		attach(nextStage, nextHeadLook) {
 			mountedStage = nextStage;
 			mountedStage.prepend(canvas);
 			resizeObserver.observe(mountedStage);
-			for (const display of consoleDisplays) {
-				cockpit.remove(display);
-				disposeConsoleDisplay(display);
-			}
 			currentHeadLook = nextHeadLook;
-			consoleDisplays = buildConsoleDisplays(
-				cockpit,
-				currentHeadLook,
-				nextState,
-				nextRightTab,
-			);
 			resize();
 		},
 		dispose() {
@@ -818,8 +641,8 @@ export function mountStateGallery(): void {
 		root.innerHTML = renderGalleryState(current, rightTab, headLook);
 		const cockpit = root.querySelector<HTMLElement>("[data-gallery-cockpit]");
 		if (!cockpit) return;
-		if (cockpitScene) cockpitScene.attach(cockpit, current, rightTab, headLook);
-		else cockpitScene = mountCockpit3D(cockpit, current, rightTab, headLook);
+		if (cockpitScene) cockpitScene.attach(cockpit, headLook);
+		else cockpitScene = mountCockpit3D(cockpit, headLook);
 	};
 	const setState = (id: string) => {
 		current = galleryState(id);

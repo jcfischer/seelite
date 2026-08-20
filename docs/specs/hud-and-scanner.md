@@ -109,18 +109,18 @@ occupy the persistent player flight floor.
 
 ## 6. Responsive behaviour
 
-On narrow viewports, one side panel at a time becomes a wide overlay. The compact
-flight floor remains visible, and the scanner moves to a stable bottom-center
-position rather than disappearing behind a panel.
+On narrow viewports, one side panel at a time becomes a wide overlay. In either
+head-turn view, that focused console temporarily replaces the flight floor and
+scanner; looking forward restores both to their stable lower-centre positions.
 
 ## 7. Verification plan
 
 Headless checks pin the state inventory and the deterministic state-to-instrument
 mapping. The browser state-gallery probe exercises **assist-on, assist-off,
 cruise, target acquisition, granted docking, and denied docking** at desktop and
-narrow viewport sizes. It asserts that the target director, local scanner, and
-persistent floor remain visible, and that a narrow view exposes at most one side
-panel.
+narrow viewport sizes. It asserts the forward target director, local scanner,
+and flight floor; each head turn exposes exactly one large console, replaces
+those forward instruments, and uses the gallery's only renderer.
 
 `?hud-gallery=<state>` is the low-risk browser prototype for these checks. It is
 a design surface, not a claim that unbuilt docking, communications, or scanner

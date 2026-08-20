@@ -72,6 +72,18 @@ function measureGalleryState() {
 			);
 		})(),
 		floor: box("[data-gallery-floor]"),
+		floorVisible: (() => {
+			const floor = document.querySelector("[data-gallery-floor]");
+			if (!(floor instanceof HTMLElement)) return false;
+			const style = getComputedStyle(floor);
+			return (
+				style.display !== "none" &&
+				style.visibility !== "hidden" &&
+				Number(style.opacity) > 0
+			);
+		})(),
+		galleryRendererCount: document.querySelectorAll("canvas:not(#overlay)")
+			.length,
 		panels: [
 			...document.querySelectorAll('[data-gallery-panel][data-active="true"]'),
 		],
@@ -180,6 +192,11 @@ for (const viewport of VIEWPORTS) {
 			`${viewport.name}: ${state} renders a live Three.js cockpit canvas`,
 			measured.cockpitCanvas,
 		);
+		check(
+			`${viewport.name}: ${state} gallery mode owns the only renderer`,
+			measured.galleryRendererCount === 1,
+			`${measured.galleryRendererCount} non-overlay canvases found`,
+		);
 		if (state === "assist-on")
 			check(
 				`${viewport.name}: assist-on describes the local radar with anchored vertical masts`,
@@ -224,6 +241,8 @@ for (const viewport of VIEWPORTS) {
 		`${viewport.name}: left head-look brings the full Navigation console into the working field`,
 		leftLook.headLook === "left" &&
 			leftLook.cockpitCanvas &&
+			!leftLook.scannerVisible &&
+			!leftLook.floorVisible &&
 			leftLook.leftWorkSurface?.width > leftLook.viewport.width * 0.7 &&
 			leftLook.leftWorkSurface?.height > 180,
 	);
@@ -235,6 +254,8 @@ for (const viewport of VIEWPORTS) {
 	check(
 		`${viewport.name}: right head-look brings the full Tuning console into the working field`,
 		rightLook.headLook === "right" &&
+			!rightLook.scannerVisible &&
+			!rightLook.floorVisible &&
 			rightLook.rightWorkSurface?.width > rightLook.viewport.width * 0.7 &&
 			rightLook.rightWorkSurface?.height > 180 &&
 			(await page.locator("[data-gallery-tuning]").count()) === 1,

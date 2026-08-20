@@ -1937,14 +1937,17 @@ function seedFromQuery(): number {
 	return (Math.random() * 0x1_0000_0000) >>> 0;
 }
 
-const game = new Game(seedFromQuery());
-// The handle probes and the browser console reach the game through. Everything
-// a probe needs to assert on has to be reachable from here, or the probe ends
-// up asserting on pixels for want of a number.
-(window as unknown as { __seelite: Game }).__seelite = game;
 if (new URLSearchParams(window.location.search).has("hud-gallery")) {
 	const { mountStateGallery } = await import("./state-gallery");
 	mountStateGallery();
+	// The gallery owns its own Three.js scene. Do not build the live game behind
+	// it: that would leave two hidden render loops spending CPU and GPU.
+} else {
+	const game = new Game(seedFromQuery());
+	// The handle probes and the browser console reach the game through. Everything
+	// a probe needs to assert on has to be reachable from here, or the probe ends
+	// up asserting on pixels for want of a number.
+	(window as unknown as { __seelite: Game }).__seelite = game;
 }
 
 export type { Game };
