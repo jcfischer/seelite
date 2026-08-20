@@ -17,7 +17,7 @@
 import { expect, test } from "bun:test";
 import {
 	CHARGE_CAPACITY_AU,
-	CLEARANCE_KM,
+	HOST_CLEARANCE_KM,
 	type CruiseParams,
 	CHARGE_PER_AU,
 	CHARGE_REGEN_AU_PER_S,
@@ -1104,13 +1104,13 @@ test("a host still stops a ship aimed at a station behind it", () => {
 	});
 	expect(flight.exit).toBe("proximity");
 	expect(flight.exitBodyId).toBe("planet");
-	// Stopped at `CLEARANCE_KM` rather than 5% out — the host has no shell to
+	// Stopped at `HOST_CLEARANCE_KM` rather than 5% out — the host has no shell to
 	// project against its own station, only the absolute standoff that keeps the
 	// ship off a sphere it is being drawn the inside of. 300 km becomes 5, which
 	// is what makes this an assertion about the new rule rather than one the old
 	// rule also satisfied.
 	expect(flight.minApproach).toBeGreaterThanOrEqual(0);
-	expect(flight.minApproach).toBeLessThan(2 * CLEARANCE_KM);
+	expect(flight.minApproach).toBeLessThan(2 * HOST_CLEARANCE_KM);
 });
 
 test("every body that is not the host keeps its shell", () => {
@@ -1209,4 +1209,102 @@ test("being inside a shell does not pin the ship there", () => {
 	});
 	expect(into.exit).toBe("proximity");
 	expect(into.exitBodyId).toBe("planet");
+	// And it was stopped rather than walked down to the skin. `minApproach > 0`
+	// is not that assertion — it passes at 10⁻⁹ km, which *is* the skin — so it
+	// is the altitude the ship started with that has to be pinned.
+	expect(length(sub(into.pos, planet.pos)) / PLANET_R).toBeCloseTo(1.02, 4);
+});
+
+/** The four #30 guard tests differ only in where they start and which body is
+ *  the host, so the fixture is written once. `heading` defaults to straight
+ *  through the centre. */
+function flyFromRatio(
+	ratio: number,
+	opts: { host?: boolean; heading?: Vec3 } = {},
+) {
+	const planet = { id: "planet", pos: v3(), radiusKm: PLANET_R };
+	const from = v3(PLANET_R * ratio, 0, 0);
+	const heading = opts.heading ?? v3(-1, 0, 0);
+	return {
+		planet,
+		from,
+		flight: fly({
+			from,
+			target: { pos: add(from, scale(heading, 0.3 * AU_KM)), radiusKm: 1 },
+			masses: [planet],
+			dt: 0.1,
+			limitS: 5,
+			targetParentId: opts.host ? "planet" : null,
+		}),
+	};
+}
+
+test("a stop from inside a guard volume keeps the clearance it started with", () => {
+	// The blocker in #30's own fix: the inward branch stopped the ship where the
+	// ray met the body's true surface, so a ship inside a shell that turned
+	// toward the body was walked down to altitude zero. It keeps the altitude it
+	// had instead. §12.2 has the argument.
+	for (const [label, startRatio, host] of [
+		["inside the shell, not the host", 1.02, false],
+		["inside the host's standoff", 1 + HOST_CLEARANCE_KM / PLANET_R / 2, true],
+	] as [string, number, boolean][]) {
+		const { planet, flight } = flyFromRatio(startRatio, { host });
+		expect(`${label}: ${flight.exit}`).toBe(`${label}: proximity`);
+		// It kept its altitude rather than descending to the skin.
+		const endKm = length(sub(flight.pos, planet.pos));
+		expect(`${label}: ${(endKm / PLANET_R).toFixed(4)}`).toBe(
+			`${label}: ${startRatio.toFixed(4)}`,
+		);
+	}
+});
+
+test("a body inside whose shell the ship sits is still not enterable", () => {
+	// "Every other mass keeps `SURFACE_MARGIN`" holds for a ship approaching from
+	// outside it; the test named for that invariant starts 0.3 AU out and cannot
+	// reach this branch. What the guard promises a ship already inside is in
+	// §12.2, and this is the case that pins it.
+	const { planet, flight } = flyFromRatio(1.03);
+	expect(flight.exit).toBe("proximity");
+	expect(flight.minApproach).toBeGreaterThan(0);
+	expect(length(sub(flight.pos, planet.pos)) / PLANET_R).toBeCloseTo(1.03, 4);
+});
+
+test("a chord that misses the body is released, and does lose altitude", () => {
+	// §12.2's narrow promise, flown. Both tests above fly straight at the centre,
+	// so neither can see this case.
+	const planet = { id: "planet", pos: v3(), radiusKm: PLANET_R };
+	const from = v3(PLANET_R * 1.04, 0, 0);
+	// A chord whose closest approach is inside the shell and outside the surface:
+	// aimed to pass 1.01 radii from the centre.
+	const missKm = PLANET_R * 1.01;
+	const startKm = length(sub(from, planet.pos));
+	// Perpendicular distance is `startKm · sin(turn)` from the line to the
+	// centre, so the turn is the arcsine, not the arccosine.
+	const turn = Math.asin(missKm / startKm);
+	const heading = v3(-Math.cos(turn), Math.sin(turn), 0);
+	const flight = fly({
+		from,
+		target: { pos: add(from, scale(heading, 0.3 * AU_KM)), radiusKm: 1 },
+		masses: [planet],
+		dt: 0.1,
+		limitS: 5,
+		targetParentId: null,
+	});
+	expect(flight.exit).not.toBe("proximity");
+	// It went lower than it began — inside the shell, never inside the body.
+	expect(flight.minApproach).toBeLessThan(PLANET_R * 0.04);
+	expect(flight.minApproach).toBeGreaterThan(0);
+});
+
+test("a ship stopped at the guard boundary can still leave it", () => {
+	// The regression a stricter release floor introduces: a stop leaves the ship
+	// on the boundary, so measuring the release against that same boundary is a
+	// tangent test at the start point and nothing can leave. The release is
+	// measured against the true surface; this is what says so.
+	const { flight: away } = flyFromRatio(1 + HOST_CLEARANCE_KM / PLANET_R, {
+		host: true,
+		heading: v3(1, 0, 0),
+	});
+	expect(away.exit).not.toBe("proximity");
+	expect(away.travelledKm).toBeGreaterThan(1000);
 });

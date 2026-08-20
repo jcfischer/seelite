@@ -167,9 +167,10 @@ a round figure is a better starting point than a false precision.
 > **Amended by #30 (§12).** The surface rule below scaled its clearance to the
 > planet rather than to what orbits it, so a station in clear space was
 > unreachable — cruise ended thousands of km short at thousands of km/s. The
-> body a selected target orbits now guards at its **true surface**, and the
-> guard fires on crossing *inward* rather than on being inside, so a station
-> that sits inside its host's shell can be cruised out of.
+> body a selected target orbits now guards at an absolute standoff of
+> `HOST_CLEARANCE_KM` above its true surface rather than at a proportional
+> shell, and the guard fires on crossing *inward* rather than on being inside,
+> so a station that sits inside its host's shell can be cruised out of.
 
 **Player-managed deceleration with an automatic drop-out.**
 
@@ -502,8 +503,12 @@ Reported from play: *"I always get dropped at 10k km distance from the stations
 three separate facts, of which §11.4's rule is only the first.
 
 The instrument is `scripts/measure-cruise-arrival.ts`. The four-candidate
-comparison #30 chose from is in that node's resolution; it is reproducible from
-the commit named there rather than carried in the flight loop.
+comparison #30 chose from is §12.1 below; re-running it needs the switch that
+was not kept in the flight loop, and the **`node-30-candidates`** tag is where
+that tree lives — commit
+`a6359bec9c4d2f4634e8ec96f410971823b941b8`. The SHA names it; the tag is what
+*keeps* it, since the branch was deleted on merge — delete the tag and the
+commit is collectable and the SHA resolves to nothing.
 
 ### 12.1 A shell is scaled to the obstacle; a station is not
 
@@ -518,7 +523,7 @@ Measured: 36 of the 249 legs whose station was clear of its host ended against
 the host anyway — 14% of those, 11% of every planet-orbiting leg — thousands of
 km short and still doing thousands of km/s.
 
-**The body a selected target orbits guards at `radius + CLEARANCE_KM` instead**
+**The body a selected target orbits guards at `radius + HOST_CLEARANCE_KM` instead**
 — 5 km, absolute, where every other body keeps `1.05 × radius`. It is
 still an obstacle — a station genuinely behind its planet is still stopped — but
 it no longer projects a shell its own station is inside. The exemption is scoped
@@ -580,18 +585,56 @@ assist cap**.
 
 So the guard fires on **crossing inward**, not on being inside — and "inward"
 is *does this heading go deeper into the body*, not *is the centre ahead of me*.
-The difference is the whole of it: from inside a shell the surface subtends less
-than a hemisphere, so a centre-ahead test releases the radial heading and pins
-every one around the limb — which are the headings a ship beside a world wants.
-The corpus is flown on six headings from 0° to 110° off the outward radial, and
-those that enter the surface are excluded rather than counted, because they are
-supposed to stop. After: **0 of 92 pinned**, median 1.3 million km in five
-seconds on the worst heading that clears the body. The instrument reports
-separately any leg whose ship ends inside a surface, where no heading could
-clear it; with the 5 km standoff there are none.
+From inside a shell the surface subtends less than a hemisphere, so a
+centre-ahead test releases the radial heading and pins every heading around the
+limb, which are the ones a ship beside a world wants.
 
-Aimed back at a station behind its planet, a re-engagement is still stopped, and
-should be: the planet is in the way.
+It is measured against the **true surface**. A stop leaves the ship *on* the
+guard volume's boundary, so testing the release against that same boundary is a
+tangent test at the start point: every heading with the centre ahead reads as
+entering, and the outward hemisphere is all that is left. `tests/cruise.test.ts`
+covers that case, which is the durable form of it — the variant that showed it
+across most of the corpus was measured and discarded, so no figure from it is
+quoted here.
+
+**The cost is new, and it is not §11.4's grazing pass.** That one is a pass
+*outside* the 1.05 shell, which the shell was never going to stop. This is a
+ship already inside a shell, released onto a chord that dips toward the true
+surface — `tests/cruise.test.ts` pins one at 1.01 radii, well inside the shell
+§11.4 stops at. #30 admits that where §11.4 did not; the trade is that the
+alternative pins a stopped ship where it stands.
+
+A heading that *does* go deeper is stopped **where the ship already is**, not
+where the ray meets the surface. Stopping at the surface was #30's own blocker,
+caught in review: it walked a ship inside a shell down to zero altitude.
+
+So the promise is narrow, and worth stating as such: **the guard never aims a
+ship inside the body, and never takes away clearance the ship still has when it
+stops.** Not "never lets it near one", and not "a ship inside a volume never
+gets deeper into it" — a chord that dips and misses is released and does lose
+altitude, which `tests/cruise.test.ts` flies.
+
+*Aims*, not *lets*, and §12.4 is why: the test is a snapshot, so a released
+chord can still end up inside a body that moved into it. One leg in 90 does,
+measured. A rule about rays cannot promise an outcome about a moving world.
+
+The corpus flies six headings from 0° to 110° off the outward radial and counts
+what happens rather than predicting what should: **0 of 90 stopped legs have no
+way out**, a median of 3 headings fly, and the best of them covers a
+median 1.4 million km in five seconds. Aimed back at the occluded station a re-engagement is still
+stopped, and should be — that is also the one leg that exercises the in-place
+stop.
+
+What that leg shows, and it is the figure this amendment rests on: **43 of 90
+re-engagements used to end on a surface; 1 does now**, and that 1 is §12.4's.
+Measured at 200 seeds, on clearance **at the point the leg ended** — not the
+minimum over its path, which is a different question. The before-figure came
+from running this column against `main`'s `cruise.ts` by hand, since the column
+is new here; the sweep prints only the live one and points here for the rest.
+
+The *minimum* clearance cannot show any of this: §12.4's leg pins it at
+−1.041 km on both builds. Primary legs are a separate population and bottom out
+at 5.000 km.
 
 **What this is not.** From the radial heading alone it looked like "being
 stopped is terminal" — a second cruise there covers 1 km, in 124 legs out of 124. It is
@@ -610,20 +653,35 @@ The rate is a function of `r/R` alone: for an effectively parallel bearing the
 station is hidden when it is behind and its offset across the line of sight is
 under `R`, which is `½·(1 − √(r²−R²)/r)`.
 
-That closed form assumes the line of sight is **isotropic** to the orbit, and
-the orbits are not: `aroundBody` copies the planet's own inclination, so every
-station in a system orbits in nearly one plane. What carries the form is the
-other side of the same angle — §7.4 draws the arrival bearing uniformly on the
-sphere, so the line of sight is isotropic even where the orbits are coplanar.
+**That closed form assumes the line of sight is isotropic to the orbit, and it
+is not.** The instrument prints the prediction beside the sampled rate rather
+than instead of it, and they part by 2–4 points, consistently and in one
+direction. The mechanism is not asserted — it is isolated:
 
-The instrument prints the prediction beside the sampled rate rather than instead
-of it, and they part: **the form runs 2–4 points under** what the corpus
-measures, consistently. The mechanism is the assumption, and it is measured
-rather than argued — the line of sight is *not* isotropic to these orbits. A host
-sits near its system's plane and the ship arrives only ~1 AU out, so `host → ship`
-tends to lie near that plane too, which is where the near-coplanar orbits are:
-edge-on, where occlusion is highest. The mean `|cos|` between the line of sight
-and the orbit normal is **0.429** against the 0.500 an isotropic bearing gives.
+| | Occluded |
+|---|---|
+| Isotropic form, `½·(1 − √(r²−R²)/r)` | 23.80% |
+| Same form with each station's own sight line | **25.85%** |
+| Sampled over every orbit phase | **25.84%** |
+
+The informative comparison is **row 1 against row 3**: 2.04 points, and that is
+what the assumption costs. Row 2 is the same closed form with the assumption
+removed, evaluated per station, and its agreement with row 3 to 0.01 of a point
+is *self-consistency* — an exact integral against a 64-phase sample of the same
+geometry, which could only diverge through a convention bug. It is worth
+printing for that reason and not as independent confirmation: it says the 2.04
+is attributable to the assumption rather than to an error in either.
+
+For one circular orbit the fraction is `arccos(k)/π` with
+`k = √(r²−R²)/(r·√(1−c²))` and `c = |cos|` between the sight line and the orbit
+normal — zero once `k ≥ 1`, because a sight line near the pole never passes
+behind. Averaged over an isotropic `c` it collapses back to the row above it.
+
+Why the sight line is not isotropic: `aroundBody` copies the planet's own
+inclination, so every station in a system orbits in nearly one plane, and the
+host sits near that plane while the ship arrives only ~1 AU out — so
+`host → ship` lies near it too. Edge-on, which is where occlusion is highest.
+Mean `|cos|` is **0.429** against 0.500.
 
 (The first answer written here was finite-distance geometry — "the shadow is a
 cone rather than a cylinder". That is wrong and worth recording as wrong: the
@@ -631,8 +689,15 @@ sampled test is itself a parallel-ray one, so cone geometry cannot enter it, and
 at station scale against 1 AU the correction would be ~0.05 points rather than
 2–4.)
 
-Read the projection table below as a lower bound, and re-measure before
-committing to a number from it.
+The projection table below uses the **isotropic** form, so read it as a lower
+bound. *How much* of a lower bound varies by radius and is not the corpus-wide
+2.04: the by-host-size table above prints the sampled rate and the prediction
+side by side, so the correction for a given host is the difference on
+its row — 2.0 points on rocky worlds, 3.6 on the 10,000–30,000 km band, 1.9 on
+giants. Those rows are **host-radius** bands, not `r/R` bands, and `r/R` varies
+inside each one because the altitude is absolute; they bound the correction
+rather than key it.
+Re-measure before committing to a number from it.
 
 `system.ts`'s 400–2,000 km altitude lands very differently by host size:
 
@@ -651,6 +716,26 @@ short. **The lever is the orbital altitude, which belongs to the generator, not
 to cruise** — carried as its own node under #30 rather than resolved here.
 
 ### 12.4 What #30 did not answer
+
+**A released chord can end inside a body that moved into it.** The guard is a
+snapshot: it tests a ray against where the masses are at the top of the frame.
+A body on a 30 km/s orbit moves ~3 km in one frame, so a chord released with
+3 km of clearance can be 1 km inside by the next test — released at one frame,
+stopped at the next, already inside.
+
+`measure-cruise-arrival.ts` prints it: **1 of 90 re-engagement legs, worst
+−1.041 km, seed 51's shipyard over a 5,146 km host.** It surfaced when the row
+was changed from a median to a minimum — the median had been sitting on it.
+
+It is **not** §12.1's or §12.2's doing: running this column against `main`'s
+`cruise.ts` gives the identical figure on the identical leg. That is an ad-hoc
+port, because the column is new here — `main`'s sweep has no
+`reengagedClearanceKm` — so the check is reproducible by hand and is not a
+`main` command someone can run today.
+
+It is also why the minimum is the wrong figure to verify §12.2 by: this leg
+dominates it identically on both builds.
+
 
 - The occluded quarter. Raising station orbits is measured above but not
   decided, and it moves the `station-orbits.json` baseline.

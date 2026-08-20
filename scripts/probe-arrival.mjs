@@ -82,13 +82,27 @@ async function flyTo(stationId) {
 		async ([stationId, dt, limitS]) => {
 			const g = window.__seelite;
 			const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+			// The ray a frame's displacement traces. Declared inside the evaluate
+			// callback because that is the scope it runs in — the page's, not
+			// Node's.
+			const segmentRay = (from, to) => {
+				const seg = { x: to.x - from.x, y: to.y - from.y, z: to.z - from.z };
+				const segLen = Math.hypot(seg.x, seg.y, seg.z);
+				return {
+					segLen,
+					nose:
+						segLen === 0
+							? { x: 1, y: 0, z: 0 }
+							: { x: seg.x / segLen, y: seg.y / segLen, z: seg.z / segLen },
+				};
+			};
 			const station = g.world.system.byId.get(stationId);
 			if (!station) return { missing: true };
 
 			g.targetId = stationId;
 			g.faceTarget();
 			// The host, asked of the page rather than re-derived here: `sim.ts`'s
-			// `hostIdOf` owns the rule and `targetParentId()` is the handle's
+			// `stationHostIdOf` owns the rule and `targetParentId()` is the handle's
 			// spelling of it, so this probe cannot state it differently from the
 			// game it is checking.
 			const hostId = g.targetParentId();
@@ -107,6 +121,7 @@ async function flyTo(stationId) {
 			let closestId = null;
 			let elapsed = 0;
 			let everCruised = false;
+			let previous = { ...g.world.ship.pos };
 			for (let i = 0; i < limitS / dt; i++) {
 				// Re-aimed every frame: the perfect pilot, so that what this probe
 				// reports is the geometry and not a steering error. A player steers
@@ -118,14 +133,27 @@ async function flyTo(stationId) {
 				g.render(dt);
 				elapsed += dt;
 				if (g.regime === "cruise") everCruised = true;
+				// **Swept, not sampled at the endpoints.** One cruise frame covers
+				// hundreds of thousands of km, so reading the range once per frame
+				// would miss a planet the ship went straight through — the same
+				// argument §8.1 makes for the drop-out being a ray test.
+				//
+				// The arithmetic is `cruise.ts`'s own `closestApproachKm`, reached
+				// through the handle: a probe with its own copy of the geometry can
+				// go green on a game whose copy differs.
+				const now = g.world.ship.pos;
+				const { nose, segLen } = segmentRay(previous, now);
 				for (const b of g.world.system.bodies) {
 					if (b.kind !== "planet" && b.kind !== "star") continue;
-					const ratio = dist(b.pos, g.world.ship.pos) / b.radiusKm;
+					const ratio =
+						g.rayMath.closestApproachKm(previous, nose, segLen, b.pos) /
+						b.radiusKm;
 					if (ratio < closestRatio) {
 						closestRatio = ratio;
 						closestId = b.id;
 					}
 				}
+				previous = { ...now };
 				if (everCruised && g.regime === "normal") break;
 			}
 
@@ -255,6 +283,7 @@ const escape = await page.evaluate(
 		}
 		return {
 			shellGapKm,
+			assistCapKms: g.assistCapKms,
 			hostRadiusKm: host.radiusKm,
 			travelledKm: dist(start, g.world.ship.pos),
 			regime: g.regime,
@@ -273,7 +302,8 @@ check(
 	escape.shellGapKm > 1000,
 	`${escape.shellGapKm.toFixed(0)} km inside the shell of a ` +
 		`${(escape.hostRadiusKm / 1000).toFixed(0)}k km giant — ` +
-		`${(escape.shellGapKm / 2 / 60).toFixed(0)} minutes of crawling at the assist cap`,
+		`${(escape.shellGapKm / escape.assistCapKms / 60).toFixed(0)} minutes of crawling at the ` +
+		`${escape.assistCapKms} km/s assist cap`,
 );
 check(
 	"and cruise engages from it, aimed outward",

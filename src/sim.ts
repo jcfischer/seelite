@@ -272,6 +272,10 @@ export function advanceSystem(system: System, gameTime: number): void {
 /**
  * The body a station orbits, or `null` — #30's arrival rule reads it.
  *
+ * Named for stations because it answers for stations and nothing else: it looks
+ * only in `contents.stations`, so the gap below is in the signature rather than
+ * only in this comment.
+ *
  * Only a station has one, because only a station is placed relative to another
  * body. A *planet* selected as a target returns null and is right to: it is a
  * mass in its own right, and cruise to it must still be stopped by it, which is
@@ -287,7 +291,7 @@ export function advanceSystem(system: System, gameTime: number): void {
  * instrument states slightly differently from the game is an instrument that can
  * go green on a game that is wrong.
  */
-export function hostIdOf(system: System, id: string): string | null {
+export function stationHostIdOf(system: System, id: string): string | null {
 	const station = system.contents.stations.find((s) => s.id === id);
 	return station ? station.parentId : null;
 }

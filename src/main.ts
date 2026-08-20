@@ -68,9 +68,10 @@ import {
 	CHARGE_CAPACITY_AU,
 	type CruiseParams,
 	DEFAULT_CRUISE,
-	CLEARANCE_KM,
+	HOST_CLEARANCE_KM,
 	SURFACE_MARGIN,
 	advanceCruise,
+	closestApproachKm,
 	chargeAfterRegen,
 	chargeAfterTravel,
 	exitVelocity,
@@ -94,7 +95,7 @@ import {
 	type World,
 	advanceWorldClock,
 	bodyVelocity,
-	hostIdOf,
+	stationHostIdOf,
 	makeWorld,
 	stationOf,
 	stationPose,
@@ -226,6 +227,21 @@ const ETA_INTERVAL_S = 0.25;
 /** What the ship is doing: #5's two regimes are one state here (the flight
  *  model is still the scaffold's stand-in) and cruise is the other. */
 type Regime = "normal" | "cruise";
+
+/**
+ * The `cruise.ts` ray arithmetic a probe may call through `window.__seelite`.
+ *
+ * Not `geometry`: this repo uses that for drawn shape (`STATION_GEOMETRY`, a
+ * `BufferGeometry`), and this is sim-space maths.
+ *
+ * Declared rather than inferred from the object literal, so adding one is an
+ * edit to a named surface rather than an append. The admission test: a pure
+ * function already exported from `cruise.ts` whose rule a probe would otherwise
+ * restate. Anything that reads or writes game state does not belong here.
+ */
+interface ProbeRayMath {
+	closestApproachKm: typeof closestApproachKm;
+}
 
 class Game {
 	readonly world: World;
@@ -393,7 +409,11 @@ class Game {
 
 	/** #30's host standoff, likewise — the probe reports the stop against this
 	 *  rather than restating 5 km. */
-	readonly hostClearanceKm = CLEARANCE_KM;
+	readonly hostClearanceKm = HOST_CLEARANCE_KM;
+
+	/** Probe-callable ray arithmetic, kept apart from the constant handles: a
+	 *  constant can be diffed and versioned, exported arithmetic cannot. */
+	readonly rayMath: ProbeRayMath = { closestApproachKm };
 
 	/** §4's spin range, reachable from the handle for the same reason: the spin
 	 *  probe drives a station to both ends of it, and a probe that restated
@@ -1057,7 +1077,9 @@ class Game {
 	 * than keeping its own copy.
 	 */
 	targetParentId(): string | null {
-		return this.targetId ? hostIdOf(this.world.system, this.targetId) : null;
+		return this.targetId
+			? stationHostIdOf(this.world.system, this.targetId)
+			: null;
 	}
 
 	/** How fast the selected target is moving through sim space, km/s — the frame
