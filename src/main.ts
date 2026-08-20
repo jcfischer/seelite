@@ -229,14 +229,17 @@ const ETA_INTERVAL_S = 0.25;
 type Regime = "normal" | "cruise";
 
 /**
- * The `cruise.ts` functions a probe may call through `window.__seelite`.
+ * The `cruise.ts` ray arithmetic a probe may call through `window.__seelite`.
+ *
+ * Not `geometry`: this repo uses that for drawn shape (`STATION_GEOMETRY`, a
+ * `BufferGeometry`), and this is sim-space maths.
  *
  * Declared rather than inferred from the object literal, so adding one is an
  * edit to a named surface rather than an append. The admission test: a pure
  * function already exported from `cruise.ts` whose rule a probe would otherwise
  * restate. Anything that reads or writes game state does not belong here.
  */
-interface ProbeGeometry {
+interface ProbeRayMath {
 	closestApproachKm: typeof closestApproachKm;
 }
 
@@ -408,9 +411,9 @@ class Game {
 	 *  rather than restating 5 km. */
 	readonly hostClearanceKm = HOST_CLEARANCE_KM;
 
-	/** Probe-callable cruise geometry, kept separate from the constant handles:
-	 *  a constant can be diffed and versioned, exported arithmetic cannot. */
-	readonly geometry: ProbeGeometry = { closestApproachKm };
+	/** Probe-callable ray arithmetic, kept apart from the constant handles: a
+	 *  constant can be diffed and versioned, exported arithmetic cannot. */
+	readonly rayMath: ProbeRayMath = { closestApproachKm };
 
 	/** §4's spin range, reachable from the handle for the same reason: the spin
 	 *  probe drives a station to both ends of it, and a probe that restated

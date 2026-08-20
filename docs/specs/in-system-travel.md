@@ -591,8 +591,8 @@ limb, which are the ones a ship beside a world wants.
 
 It is measured against the bare radius. A stop leaves the ship *on* the guard
 volume's boundary, so testing the release against that same boundary is a
-tangent test at the start point: every heading reads as entering and nothing can
-leave. `tests/cruise.test.ts` pins that case, which is the durable form of it —
+tangent test at the start point: every heading with the centre ahead reads as
+entering, and the outward hemisphere is all that is left. `tests/cruise.test.ts` pins that case, which is the durable form of it —
 the variant that showed it across most of the corpus was measured and discarded,
 so no figure from it is quoted here. The cost is that a released chord may graze
 the surface, which is the grazing pass §11.4's margin is written to allow.
@@ -601,18 +601,24 @@ A heading that *does* go deeper is stopped **where the ship already is**, not
 where the ray meets the surface. Stopping at the surface was #30's own blocker,
 caught in review: it walked a ship inside a shell down to zero altitude.
 
-So the promise is narrow, and worth stating as such: **the guard never lets a
-ship inside the body**, and never takes away clearance the ship still has when
-it stops. Not "never lets it near one", and not "a ship inside a volume never
+So the promise is narrow, and worth stating as such: **the guard never aims a
+ship inside the body, and never takes away clearance the ship still has when it
+stops.** Not "never lets it near one", and not "a ship inside a volume never
 gets deeper into it" — a chord that dips and misses is released and does lose
 altitude, which `tests/cruise.test.ts` flies.
+
+*Aims*, not *lets*, and §12.4 is why: the test is a snapshot, so a released
+chord can still end up inside a body that moved into it. One leg in 90 does,
+measured. A rule about rays cannot promise an outcome about a moving world.
 
 The corpus flies six headings from 0° to 110° off the outward radial and counts
 what happens rather than predicting what should: **0 of 90 stopped legs have no
 way out**, a median of 3 headings fly, and the best covers 1.4 million km in
 five seconds. Aimed back at the occluded station a re-engagement is still
 stopped, and should be — that is also the one leg that exercises the in-place
-stop, and it leaves **5.000 km** of clearance where the blocker left none.
+stop. The clearance figures come from two populations and are worth keeping
+apart: **5.000 km** is the least any *primary* leg had above a surface, while
+the re-engagement legs bottom out at **−1.041 km** for §12.4's reason.
 
 **What this is not.** From the radial heading alone it looked like "being
 stopped is terminal" — a second cruise there covers 1 km, in 124 legs out of 124. It is
@@ -698,14 +704,21 @@ to cruise** — carried as its own node under #30 rather than resolved here.
 **A released chord can end inside a body that moved into it.** The guard is a
 snapshot: it tests a ray against where the masses are at the top of the frame.
 A body on a 30 km/s orbit moves ~3 km in one frame, so a chord released with
-3 km of clearance can be 1 km inside by the next test. Measured, one leg in 90
-does this — 1.041 km into a 5,146 km planet — and `main` produces the same
-figure, so it is #14's sweep meeting moving bodies rather than anything §12.1 or
-§12.2 introduced. The instrument reports it as a **minimum** rather than a
-median, which is how it was found; a median had been hiding it.
+3 km of clearance can be 1 km inside by the next test — released at one frame,
+stopped at the next, already inside.
+
+`measure-cruise-arrival.ts` prints it: **1 of 90 re-engagement legs, worst
+−1.041 km, seed 51's shipyard over a 5,146 km host.** It reports a *minimum*
+rather than a median, which is how it was found — a median had been sitting on
+it.
+
+It is **not** §12.1's or §12.2's doing: running this column against `main`'s
+`cruise.ts` gives the identical figure on the identical leg. That is an ad-hoc
+port, because the column itself is new here — `main`'s sweep has no
+`reengagedClearanceKm` — so the check is reproducible but not a `main` command
+someone can run today.
 
 
-- That snapshot hole, above.
 - The occluded quarter. Raising station orbits is measured above but not
   decided, and it moves the `station-orbits.json` baseline.
 - What the player should be *told* when a planet stops them. The drop is honest

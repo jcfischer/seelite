@@ -591,7 +591,7 @@ export function closestApproachKm(
  * The squared form of `closestApproachKm`, which is the same geometry with the
  * sqrt — this one is on the flight loop.
  */
-export function rayGoesDeeper(
+function rayGoesDeeper(
 	from: Vec3,
 	nose: Vec3,
 	centre: Vec3,
