@@ -218,6 +218,59 @@ function disposeCockpitScene(
 	canvas.remove();
 }
 
+type CockpitBox = (
+	width: number,
+	height: number,
+	depth: number,
+	x: number,
+	y: number,
+	z: number,
+	rx?: number,
+	ry?: number,
+	rz?: number,
+	material?: THREE.Material,
+) => THREE.Mesh;
+
+function buildCanopyFrame(
+	addBox: CockpitBox,
+	metal: THREE.Material,
+	trim: THREE.Material,
+): void {
+	addBox(5.7, 0.14, 0.18, 0, 1.55, -0.8);
+	addBox(0.18, 2.8, 0.22, -2.55, 0.12, -0.9, 0, 0, -0.24);
+	addBox(0.18, 2.8, 0.22, 2.55, 0.12, -0.9, 0, 0, 0.24);
+	addBox(4.4, 0.24, 1.45, 0, -0.88, -1.85, 0.42, 0, 0, trim);
+	addBox(1.65, 0.08, 0.82, -3.4, -0.52, -1.44, 0.42, 0.16, 0, metal);
+	addBox(1.65, 0.08, 0.82, 3.4, -0.52, -1.44, 0.42, -0.16, 0, metal);
+}
+
+type ConsoleDisplay = (
+	title: string,
+	body: string,
+	x: number,
+	rotationY: number,
+	accent: string,
+) => void;
+
+function buildConsoleDisplays(
+	addConsoleDisplay: ConsoleDisplay,
+	state: GalleryState,
+	rightTab: RightTab,
+): void {
+	const leftTitle =
+		state.panel === "Navigation" || state.panel === "Communications"
+			? state.panel.toUpperCase()
+			: "NAVIGATION";
+	addConsoleDisplay(leftTitle, leftPanelBody(state), -3.4, 0.32, "#7ac5e8");
+	addConsoleDisplay(
+		rightTab.toUpperCase(),
+		rightPanelBody(state, rightTab),
+		3.4,
+		-0.32,
+		"#e5aa52",
+	);
+}
+
 /** A self-contained rendered cockpit, kept separate from the game scene. */
 function mountCockpit3D(
 	stage: HTMLElement,
@@ -279,13 +332,7 @@ function mountCockpit3D(
 		cockpit.add(mesh);
 		return mesh;
 	};
-	// Canopy structure and recessed physical instrument deck.
-	addBox(5.7, 0.14, 0.18, 0, 1.55, -0.8);
-	addBox(0.18, 2.8, 0.22, -2.55, 0.12, -0.9, 0, 0, -0.24);
-	addBox(0.18, 2.8, 0.22, 2.55, 0.12, -0.9, 0, 0, 0.24);
-	addBox(4.4, 0.24, 1.45, 0, -0.88, -1.85, 0.42, 0, 0, trim);
-	addBox(1.65, 0.08, 0.82, -3.4, -0.52, -1.44, 0.42, 0.16, 0, metal);
-	addBox(1.65, 0.08, 0.82, 3.4, -0.52, -1.44, 0.42, -0.16, 0, metal);
+	buildCanopyFrame(addBox, metal, trim);
 	const addConsoleDisplay = (
 		title: string,
 		body: string,
@@ -350,17 +397,7 @@ function mountCockpit3D(
 		screen.rotation.set(-0.4, rotationY, 0);
 		cockpit.add(screen);
 	};
-	const leftIsActive =
-		state.panel === "Navigation" || state.panel === "Communications";
-	addConsoleDisplay(
-		leftIsActive ? state.panel.toUpperCase() : "NAVIGATION",
-		leftPanelBody(state),
-		-3.4,
-		0.32,
-		"#7ac5e8",
-	);
-	const rightDetail = rightPanelBody(state, rightTab);
-	addConsoleDisplay(rightTab.toUpperCase(), rightDetail, 3.4, -0.32, "#e5aa52");
+	buildConsoleDisplays(addConsoleDisplay, state, rightTab);
 
 	buildRadar(cockpit, glow, cyan);
 	const stars = buildStarfield(scene);
@@ -406,21 +443,27 @@ const STYLE = `
 .sg-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; border-bottom: 1px solid #355369; padding-bottom: 12px; }
 .sg-head h1 { margin: 0; color: #9fd4ff; font-size: 16px; letter-spacing: .08em; }
 .sg-head p { margin: 4px 0 0; color: #8299aa; font-size: 11px; }
-.sg-head-actions, .sg-look { display: flex; align-items: center; gap: 6px; }
+.sg-head-actions,
+.sg-look { display: flex; align-items: center; gap: 6px; }
 .sg-look button { border: 1px solid #355369; background: #07121c; color: #8eb8cf; cursor: pointer; font: inherit; font-size: 10px; padding: 5px 6px; }
 .sg-look button[aria-pressed="true"] { border-color: #e5aa52; color: #ffe0a2; }
-.sg-close, .sg-state { border: 1px solid #355369; border-radius: 3px; background: #07121c; color: #b8dfff; cursor: pointer; font: inherit; padding: 7px 9px; }
-.sg-close:hover, .sg-state:hover, .sg-state[aria-pressed="true"] { border-color: #e5aa52; color: #ffe0a2; }
+.sg-close,
+.sg-state { border: 1px solid #355369; border-radius: 3px; background: #07121c; color: #b8dfff; cursor: pointer; font: inherit; padding: 7px 9px; }
+.sg-close:hover,
+.sg-state:hover,
+.sg-state[aria-pressed="true"] { border-color: #e5aa52; color: #ffe0a2; }
 .sg-states { display: flex; flex-wrap: wrap; gap: 6px; }
 .sg-shell { min-height: 540px; perspective: 1200px; }
 .sg-cockpit { position: relative; height: 540px; overflow: hidden; border: 1px solid #355369; background: #02080e; box-shadow: 0 24px 40px rgba(0, 0, 0, .45); transform-style: preserve-3d; }
 .sg-3d-canvas { position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%; }
 .sg-canopy { display: none; }
-.sg-panel, .sg-glass { border: 1px solid #355369; background: linear-gradient(145deg, rgba(13, 36, 53, .82), rgba(2, 9, 15, .96)); box-shadow: inset 0 0 42px rgba(60, 162, 220, .08); }
+.sg-panel,
+.sg-glass { border: 1px solid #355369; background: linear-gradient(145deg, rgba(13, 36, 53, .82), rgba(2, 9, 15, .96)); box-shadow: inset 0 0 42px rgba(60, 162, 220, .08); }
 /* The side displays are cockpit-projected work surfaces. Forward flight leaves
    them peripheral; a head turn makes exactly one fill the useful field. */
 .sg-panel { display: none; position: absolute; z-index: 5; inset: 31px 5.5% 70px; overflow: hidden; padding: 18px 22px; border-color: rgba(229, 170, 82, .88); background: linear-gradient(104deg, rgba(46, 18, 5, .72), rgba(16, 8, 5, .47) 58%, rgba(6, 9, 12, .24)); box-shadow: inset 0 0 68px rgba(231, 123, 31, .16), 0 0 28px rgba(227, 133, 39, .15); color: #ffd48c; clip-path: polygon(3% 0, 97% 0, 100% 93%, 92% 100%, 6% 100%, 0 93%); }
-.sg-cockpit[data-gallery-head-look="left"] .sg-panel[data-gallery-panel="left"][data-active="true"], .sg-cockpit[data-gallery-head-look="right"] .sg-panel[data-gallery-panel="right"][data-active="true"] { display: block; }
+.sg-cockpit[data-gallery-head-look="left"] .sg-panel[data-gallery-panel="left"][data-active="true"],
+.sg-cockpit[data-gallery-head-look="right"] .sg-panel[data-gallery-panel="right"][data-active="true"] { display: block; }
 .sg-console-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 0 3px 11px; border-bottom: 2px solid #e5aa52; color: #ffe1a9; font-size: 18px; letter-spacing: .08em; }
 .sg-console-top small { color: #d8833b; font-size: 10px; }
 .sg-panel h2 { margin: 0; color: #ffe1a9; font-size: 18px; letter-spacing: .1em; }
@@ -443,19 +486,40 @@ const STYLE = `
 .sg-cockpit[data-gallery-head-look="left"] .sg-director, .sg-cockpit[data-gallery-head-look="right"] .sg-director { opacity: .12; }
 .sg-director::before { content: ""; display: block; width: 68px; height: 68px; margin: 0 auto 9px; border: 2px solid currentColor; border-radius: 50%; box-shadow: 0 0 18px currentColor; }
 .sg-target-arrow { position: absolute; left: 50%; top: 23px; color: #ffe0a2; font-size: 24px; line-height: 1; text-shadow: 0 0 12px rgba(229, 170, 82, .9); transform: rotate(var(--target-bearing)) translateX(48px); transform-origin: 0 50%; }
-.sg-director[data-accent="green"] { color: #a8ffbf; } .sg-director[data-accent="red"] { color: #ff9c8e; } .sg-director[data-accent="cyan"] { color: #a7dcff; }
+.sg-director[data-accent="green"] { color: #a8ffbf; }
+.sg-director[data-accent="red"] { color: #ff9c8e; }
+.sg-director[data-accent="cyan"] { color: #a7dcff; }
 .sg-docking { margin-top: 8px; color: inherit; font-size: 11px; }
 .sg-dash-deck { position: absolute; z-index: 1; left: 50%; bottom: -27px; width: 500px; height: 220px; border: 2px solid rgba(202, 153, 67, .5); background: linear-gradient(160deg, rgba(71, 47, 24, .82), rgba(9, 15, 19, .96) 45%, rgba(1, 5, 8, .98)); box-shadow: inset 0 1px 0 rgba(255, 205, 119, .28), 0 0 40px rgba(0, 0, 0, .55); clip-path: polygon(18% 0, 82% 0, 100% 100%, 0 100%); transform: translateX(-50%) perspective(430px) rotateX(57deg); transform-origin: bottom; }
-.sg-scanner { position: absolute; z-index: 2; left: 50%; bottom: 65px; width: 330px; height: 156px; opacity: 0; pointer-events: none; transform: translateX(-50%); }
+.sg-scanner { position: absolute; z-index: 2; left: 50%; bottom: 65px; width: 330px; height: 156px; opacity: .92; pointer-events: none; transform: translateX(-50%); }
 .sg-scanner::before { content: ""; position: absolute; inset: 25px 5px 10px; border: 2px solid #eaa632; border-radius: 50%; background: repeating-radial-gradient(ellipse at center, transparent 0 12px, rgba(234, 166, 50, .65) 13px 14px); box-shadow: 0 0 18px rgba(234, 166, 50, .35), inset 0 0 18px rgba(234, 166, 50, .15); }
 .sg-scanner::after { content: ""; position: absolute; left: 50%; top: 15px; bottom: 14px; width: 1px; background: #eaa632; opacity: .65; }
-.sg-contact { position: absolute; width: 9px; height: 9px; border: 1px solid #ffd274; border-radius: 50%; background: #221b08; z-index: 1; } .sg-contact::after { content: ""; position: absolute; top: 7px; left: 3px; width: 2px; height: var(--height); background: currentColor; box-shadow: 0 0 5px currentColor; opacity: .9; }
+.sg-contact { position: absolute; width: 9px; height: 9px; border: 1px solid #ffd274; border-radius: 50%; background: #221b08; z-index: 1; }
+.sg-contact::after { content: ""; position: absolute; top: 7px; left: 3px; width: 2px; height: var(--height); background: currentColor; box-shadow: 0 0 5px currentColor; opacity: .9; }
 .sg-contact-anchor { position: absolute; width: 28px; height: 9px; border: 1px solid currentColor; border-radius: 50%; background: rgba(15, 25, 12, .5); box-shadow: 0 0 8px currentColor; opacity: .85; }
 .sg-contact.one { left: 68%; top: 40%; color: #ffd274; --height: 47px; } .sg-contact-anchor.one { left: calc(68% - 9px); top: 72%; color: #ffd274; } .sg-contact.two { left: 24%; top: 62%; border-color: #a6ffbf; color: #a6ffbf; --height: 34px; } .sg-contact-anchor.two { left: calc(24% - 9px); top: 85%; color: #a6ffbf; } .sg-contact.three { left: 52%; top: 32%; border-color: #81c9ef; color: #81c9ef; --height: 60px; } .sg-contact-anchor.three { left: calc(52% - 9px); top: 73%; color: #81c9ef; }
 .sg-scanner-label { position: absolute; left: 50%; top: 2px; color: #d2a860; font-size: 10px; transform: translateX(-50%); white-space: nowrap; }
 .sg-floor { position: absolute; z-index: 6; left: 14px; right: 14px; bottom: 14px; display: flex; justify-content: space-between; gap: 12px; padding: 9px; border: 1px solid #355369; background: rgba(3, 14, 23, .94); color: #9fd4ff; font-size: 11px; }
-.sg-floor strong { color: #ffe0a2; font-weight: 600; } .sg-note { margin: 0; color: #b4c8d4; }
-@media (max-width: 600px) { .sg-wrap { padding: 12px; } .sg-head { align-items: flex-start; } .sg-states { display: grid; grid-template-columns: 1fr 1fr; } .sg-shell, .sg-cockpit { min-height: 500px; height: 500px; } .sg-canopy { border-width: 16px; border-bottom-width: 48px; } .sg-panel { inset: 8px; max-height: 190px; padding: 12px; clip-path: none; } .sg-console-top { padding-bottom: 7px; font-size: 13px; } .sg-console-layout { grid-template-columns: .45fr 1fr; gap: 8px; min-height: 0; } .sg-console-rail, .sg-console-data { padding-top: 7px; } .sg-console-data p { font-size: 11px; line-height: 1.35; } .sg-console-list { display: none; } .sg-glass { inset: 18px 12px 0; min-height: 480px; clip-path: none; } .sg-scanner { width: min(330px, calc(100% - 24px)); bottom: 65px; } .sg-floor { bottom: 12px; font-size: 10px; flex-direction: column; gap: 3px; } }
+.sg-floor strong { color: #ffe0a2; font-weight: 600; }
+.sg-note { margin: 0; color: #b4c8d4; }
+@media (max-width: 600px) {
+	.sg-wrap { padding: 12px; }
+	.sg-head { align-items: flex-start; }
+	.sg-states { display: grid; grid-template-columns: 1fr 1fr; }
+	.sg-shell,
+	.sg-cockpit { min-height: 500px; height: 500px; }
+	.sg-canopy { border-width: 16px; border-bottom-width: 48px; }
+	.sg-panel { inset: 8px; max-height: 190px; padding: 12px; clip-path: none; }
+	.sg-console-top { padding-bottom: 7px; font-size: 13px; }
+	.sg-console-layout { grid-template-columns: .45fr 1fr; gap: 8px; min-height: 0; }
+	.sg-console-rail,
+	.sg-console-data { padding-top: 7px; }
+	.sg-console-data p { font-size: 11px; line-height: 1.35; }
+	.sg-console-list { display: none; }
+	.sg-glass { inset: 18px 12px 0; min-height: 480px; clip-path: none; }
+	.sg-scanner { width: min(330px, calc(100% - 24px)); bottom: 65px; }
+	.sg-floor { bottom: 12px; font-size: 10px; flex-direction: column; gap: 3px; }
+}
 `;
 
 export function renderGalleryState(

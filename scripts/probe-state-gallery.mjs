@@ -19,6 +19,18 @@ const VIEWPORTS = [
 	{ name: "narrow", width: 390, height: 844 },
 ];
 
+function isInsideViewport(box, viewport) {
+	return (
+		box &&
+		box.width > 0 &&
+		box.height > 0 &&
+		box.left >= 0 &&
+		box.top >= 0 &&
+		box.right <= viewport.width &&
+		box.bottom <= viewport.height
+	);
+}
+
 function measureGalleryState() {
 	const root = document.querySelector("#state-gallery");
 	const box = (selector) => {
@@ -49,6 +61,16 @@ function measureGalleryState() {
 			?.getAttribute("data-gallery-state-active"),
 		director,
 		scanner: box("[data-gallery-scanner]"),
+		scannerVisible: (() => {
+			const scanner = document.querySelector("[data-gallery-scanner]");
+			if (!(scanner instanceof HTMLElement)) return false;
+			const style = getComputedStyle(scanner);
+			return (
+				style.display !== "none" &&
+				style.visibility !== "hidden" &&
+				Number(style.opacity) > 0
+			);
+		})(),
 		floor: box("[data-gallery-floor]"),
 		panels: [
 			...document.querySelectorAll('[data-gallery-panel][data-active="true"]'),
@@ -77,14 +99,20 @@ function measureGalleryState() {
 			?.getAttribute("aria-label"),
 		radarAnchors: document.querySelectorAll("[data-gallery-contact-anchor]")
 			.length,
-		radarMasts: [
-			...document.querySelectorAll("[data-gallery-contact-stem]"),
-		].every(
-			(element) =>
-				Number.parseFloat(
-					getComputedStyle(element).getPropertyValue("--height"),
-				) > 0,
-		),
+		radarMasts: (() => {
+			const stems = [
+				...document.querySelectorAll("[data-gallery-contact-stem]"),
+			];
+			return (
+				stems.length === 3 &&
+				stems.every(
+					(element) =>
+						Number.parseFloat(
+							getComputedStyle(element).getPropertyValue("--height"),
+						) > 0,
+				)
+			);
+		})(),
 		cockpitCanvas: (() => {
 			const canvas = document.querySelector("[data-gallery-3d-canvas]");
 			return (
@@ -118,25 +146,18 @@ for (const viewport of VIEWPORTS) {
 	for (const state of STATES) {
 		await page.locator(`[data-gallery-state="${state}"]`).click();
 		const measured = await page.evaluate(measureGalleryState);
-		const inside = (box) =>
-			box &&
-			box.width > 0 &&
-			box.height > 0 &&
-			box.left >= 0 &&
-			box.top >= 0 &&
-			box.right <= measured.viewport.width &&
-			box.bottom <= measured.viewport.height;
 		check(
 			`${viewport.name}: ${state} keeps the target director on the glass`,
-			inside(measured.director),
+			isInsideViewport(measured.director, measured.viewport),
 		);
 		check(
 			`${viewport.name}: ${state} keeps the local scanner visible`,
-			inside(measured.scanner),
+			isInsideViewport(measured.scanner, measured.viewport) &&
+				measured.scannerVisible,
 		);
 		check(
 			`${viewport.name}: ${state} keeps the persistent flight floor visible`,
-			inside(measured.floor),
+			isInsideViewport(measured.floor, measured.viewport),
 		);
 		check(
 			`${viewport.name}: ${state} is the state actually displayed`,
