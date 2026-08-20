@@ -534,12 +534,14 @@ station is placed at. 5 km is 500× the near camera's 10 m near plane
 costs two of 249 clear legs, so it sits at the small end of the range that does
 the job.
 
-Two of the 88 occluded legs (2.3%) do now arrive. They are grazes: the geometry
-calls them occluded because the straight line at leg start clips the host, and
-the flown path — re-aimed at a moving station every frame — clears it by all but
-**under 2 km**. The instrument reports the deepest penetration over *every* leg,
-not only over the ones past a threshold, and 2 km against a 6,000 km world is a
-tangent rather than a tunnel.
+Two of the 88 occluded legs (2.3%) do now arrive, and it is worth saying why
+rather than filing them as slop. The classification is a **snapshot at leg
+start**, and both are marginal: the straight line clips its host by 7 km and by
+61 km, against hosts of 5,866 and 7,300 km. Over a ~70 s crossing the station
+moves out from behind, and by the end of the leg the same line passes 132 km and
+81 km *clear*. Nothing tunnels to reach them — the instrument reports the
+deepest penetration over every leg, ungated, and it is **0.000 km across all
+417**.
 
 | Leg class | Arrived before | Arrived after | n |
 |---|---|---|---|
@@ -584,9 +586,9 @@ every one around the limb — which are the headings a ship beside a world wants
 The corpus is flown on six headings from 0° to 110° off the outward radial, and
 those that enter the surface are excluded rather than counted, because they are
 supposed to stop. After: **0 of 92 pinned**, median 1.3 million km in five
-seconds on the worst heading that clears the body. Two stopped legs end a hair
-inside a surface, where no heading clears it; they are reported separately
-rather than folded in.
+seconds on the worst heading that clears the body. The instrument reports
+separately any leg whose ship ends inside a surface, where no heading could
+clear it; with the 5 km standoff there are none.
 
 Aimed back at a station behind its planet, a re-engagement is still stopped, and
 should be: the planet is in the way.

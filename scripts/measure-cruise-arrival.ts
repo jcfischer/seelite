@@ -36,7 +36,12 @@
  * A sweep, not a test: nothing here asserts.
  */
 
-import { DEFAULT_CRUISE, SURFACE_MARGIN, advanceCruise } from "../src/cruise";
+import {
+	CLEARANCE_KM,
+	DEFAULT_CRUISE,
+	SURFACE_MARGIN,
+	advanceCruise,
+} from "../src/cruise";
 import {
 	ASSIST_CAP_KMS,
 	type World,
@@ -430,7 +435,7 @@ if (!Number.isFinite(seedCount) || seedCount < 1)
 const SEEDS = Array.from({ length: seedCount }, (_, i) => i + 1);
 
 console.log(
-	`rule: the target's host guards at its true surface, every other body at ${SURFACE_MARGIN}×radius; ` +
+	`rule: the target's host guards at radius + ${CLEARANCE_KM} km, every other body at ${SURFACE_MARGIN}×radius; ` +
 		"the guard fires on crossing inward, not on being inside\n" +
 		`corpus: start system of seeds 1…${seedCount}, drop radius ${DEFAULT_CRUISE.dropRadiusKm} km, ` +
 		`drop speed ${DEFAULT_CRUISE.dropSpeedKms} km/s\n`,
