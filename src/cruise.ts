@@ -200,6 +200,40 @@ export const MAX_SUBSTEPS = 96;
  */
 export const SURFACE_MARGIN = 1.05;
 
+/**
+ * Which arrival-geometry rule `advanceCruise` flies — #30's candidates, so the
+ * measurement script can fly each one through *this* function rather than a
+ * copy of it.
+ *
+ * `shell` is the rule as #14 shipped it and stays the default, so nothing that
+ * does not name a guard changes behaviour.
+ */
+export type ArrivalGuard =
+	/** #14's rule: the shell is `SURFACE_MARGIN × radius`. */
+	| "shell"
+	/** Candidate 1: `radius + CLEARANCE_KM`, so the clearance stops scaling
+	 *  with the planet. */
+	| "clearance"
+	/** Candidate 2: the body the selected target orbits does not block it.
+	 *  Every other body still does. */
+	| "parent-exempt"
+	/** Candidate 3: keep the shell, but a body does not stop a pass whose
+	 *  target lies nearer along the ray than that body's surface entry. */
+	| "target-first"
+	/** Candidate 4, added by the measurement: the target's parent keeps a
+	 *  guard, but at its **true** surface rather than at the shell — so a
+	 *  grazing approach is let through and an occluded one is still stopped. */
+	| "parent-surface";
+
+/**
+ * Candidate 1's absolute clearance, km.
+ *
+ * Sized under `system.ts`'s 400 km minimum station altitude, with room to
+ * spare: a station has to sit outside its planet's shell or the shell fires
+ * first, which is the whole of #30.
+ */
+export const CLEARANCE_KM = 300;
+
 /** Anything the speed law keys off: §2 counts stars and planets, and
  *  deliberately not moons, stations or belts (§2.1). */
 export interface Mass {
@@ -459,6 +493,11 @@ export interface CruiseInput {
 	/** Remaining drive charge, AU. Omitted means "not metered", which is what
 	 *  the tests of the speed law want; the renderer always passes it. */
 	chargeAu?: number;
+	/** #30's arrival-geometry rule. Omitted is `shell` — #14's behaviour. */
+	guard?: ArrivalGuard;
+	/** The id of the mass the selected target orbits, for `parent-exempt`.
+	 *  Star-centric targets have none. */
+	targetParentId?: string | null;
 }
 
 export interface CruiseStep {
@@ -504,6 +543,7 @@ export interface CruiseStep {
  */
 export function advanceCruise(input: CruiseInput): CruiseStep {
 	const p = input.params;
+	const guard: ArrivalGuard = input.guard ?? "shell";
 	let pos = input.pos;
 	let remaining = input.dt;
 	let travelledKm = 0;
@@ -615,6 +655,19 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 		const dt = Math.min(remaining, Math.max(cap, 1e-9));
 		let stepKm = speedKms * dt;
 
+		// How far along the ray the target's drop sphere lies, unbounded by this
+		// step — candidate 3's comparison, and only computed for it.
+		const targetRayKm =
+			guard === "target-first" && input.target
+				? sphereEntry(
+						pos,
+						input.nose,
+						Number.POSITIVE_INFINITY,
+						input.target.pos,
+						p.dropRadiusKm,
+					)
+				: null;
+
 		// Sweep the step against the drop sphere: where along this segment, if
 		// anywhere, does the ship first come within the drop radius of the target?
 		if (input.target && closing <= p.dropSpeedKms) {
@@ -641,14 +694,24 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 		// Swept, and taken **before** the drop-out if it happens first, so the
 		// nearer event is the one that fires.
 		for (const m of input.masses) {
-			const entryKm = sphereEntry(
-				pos,
-				input.nose,
-				stepKm,
-				m.pos,
-				m.radiusKm * SURFACE_MARGIN,
-			);
+			// Candidate 2: the body the target orbits is not an obstacle to it.
+			if (guard === "parent-exempt" && m.id === input.targetParentId) continue;
+			const shellKm =
+				guard === "clearance"
+					? m.radiusKm + CLEARANCE_KM
+					: guard === "parent-surface" && m.id === input.targetParentId
+						? m.radiusKm
+						: m.radiusKm * SURFACE_MARGIN;
+			const entryKm = sphereEntry(pos, input.nose, stepKm, m.pos, shellKm);
 			if (entryKm !== null && entryKm <= stepKm) {
+				// Candidate 3: a body only stops a pass that was not going past it to
+				// the target anyway.
+				if (
+					guard === "target-first" &&
+					targetRayKm !== null &&
+					targetRayKm <= entryKm
+				)
+					continue;
 				stepKm = entryKm;
 				dropped = true;
 				exit = "proximity";
