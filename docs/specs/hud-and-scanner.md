@@ -91,6 +91,11 @@ Three.js scene, with a cockpit camera and shallow idle parallax. The modern Elit
 reference guides the presentation only; simulation ownership remains with the
 existing flight, target, and docking work.
 
+Navigation/Communications and Flight/Drive/Tuning are **separate physical
+consoles**, not persistent sidebars. Turning the cockpit view left or right
+makes the corresponding large console display the primary view; looking forward
+returns to flying glass and the lower-centre radar.
+
 Navigation lists filterable targets with type, range, ETA, and the expanded
 scanner. Communications carries clearance requests and replies, hostile/legal
 status, and actionable messages. Flight presents speed, throttle, assist, current

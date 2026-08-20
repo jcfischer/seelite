@@ -43,9 +43,15 @@ test("the rendered target state makes bearing, cockpit depth, radar masts, and t
 		"Flight",
 	);
 	const tuning = renderGalleryState(galleryState("assist-on"), "Tuning");
+	const leftLook = renderGalleryState(
+		galleryState("assist-on"),
+		"Flight",
+		"left",
+	);
 	expect(target).toContain("data-gallery-cockpit");
 	expect(target).toContain('data-gallery-target-bearing="-112"');
 	expect(target).toContain("data-gallery-contact-anchor");
 	expect(target).toContain("data-gallery-3d-prototype");
 	expect(tuning).toContain("data-gallery-tuning");
+	expect(leftLook).toContain('data-gallery-look="left"');
 });

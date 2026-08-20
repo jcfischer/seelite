@@ -81,6 +81,9 @@ function measureGalleryState() {
 				Boolean(canvas.getContext("webgl2") || canvas.getContext("webgl"))
 			);
 		})(),
+		headLook: document
+			.querySelector("[data-gallery-cockpit]")
+			?.getAttribute("data-gallery-head-look"),
 		viewport: { width: innerWidth, height: innerHeight },
 	};
 }
@@ -159,10 +162,18 @@ for (const viewport of VIEWPORTS) {
 			);
 	}
 	await page.locator('[data-gallery-state="assist-on"]').click();
-	await page.locator('[data-gallery-right-tab="Tuning"]').click();
+	await page
+		.locator('[data-gallery-right-tab="Tuning"]')
+		.evaluate((element) => element.click());
 	check(
-		`${viewport.name}: developer tuning remains available in the right-panel Tuning tab`,
-		await page.locator("[data-gallery-tuning]").isVisible(),
+		`${viewport.name}: developer tuning remains available in the physical right-console view`,
+		(await page.locator("[data-gallery-tuning]").count()) === 1,
+	);
+	await page.locator('[data-gallery-look="left"]').click();
+	const leftLook = await page.evaluate(measureGalleryState);
+	check(
+		`${viewport.name}: left console is selected by turning the cockpit view left`,
+		leftLook.headLook === "left" && leftLook.cockpitCanvas,
 	);
 	await page.close();
 }

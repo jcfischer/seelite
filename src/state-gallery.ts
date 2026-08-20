@@ -30,6 +30,7 @@ export type GalleryState = {
 };
 
 export type RightTab = "Flight" | "Drive" | "Tuning";
+export type HeadLook = "left" | "forward" | "right";
 
 /** The six states Jens-Christian asked the gallery to make inspectable. */
 export const GALLERY_STATES: readonly GalleryState[] = [
@@ -109,7 +110,12 @@ export function galleryState(id: string | null): GalleryState {
 }
 
 /** A self-contained rendered cockpit, kept separate from the game scene. */
-function mountCockpit3D(stage: HTMLElement): () => void {
+function mountCockpit3D(
+	stage: HTMLElement,
+	state: GalleryState,
+	rightTab: RightTab,
+	headLook: HeadLook,
+): () => void {
 	const canvas = document.createElement("canvas");
 	canvas.className = "sg-3d-canvas";
 	canvas.setAttribute("data-gallery-3d-canvas", "true");
@@ -143,13 +149,6 @@ function mountCockpit3D(stage: HTMLElement): () => void {
 	});
 	const glow = new THREE.MeshBasicMaterial({ color: 0xe6a23c });
 	const cyan = new THREE.MeshBasicMaterial({ color: 0x78cbed });
-	const display = new THREE.MeshStandardMaterial({
-		color: 0x122b38,
-		emissive: 0x0c7da2,
-		emissiveIntensity: 1.3,
-		roughness: 0.2,
-		metalness: 0.1,
-	});
 	const addBox = (
 		width: number,
 		height: number,
@@ -176,10 +175,75 @@ function mountCockpit3D(stage: HTMLElement): () => void {
 	addBox(0.18, 2.8, 0.22, -2.55, 0.12, -0.9, 0, 0, -0.24);
 	addBox(0.18, 2.8, 0.22, 2.55, 0.12, -0.9, 0, 0, 0.24);
 	addBox(4.4, 0.24, 1.45, 0, -0.88, -1.85, 0.42, 0, 0, trim);
-	addBox(1.65, 0.08, 0.82, -1.62, -0.52, -1.44, 0.42, 0.16, 0, metal);
-	addBox(1.65, 0.08, 0.82, 1.62, -0.52, -1.44, 0.42, -0.16, 0, metal);
-	addBox(1.16, 0.026, 0.48, -1.62, -0.45, -1.3, 0.42, 0.16, 0, display);
-	addBox(1.16, 0.026, 0.48, 1.62, -0.45, -1.3, 0.42, -0.16, 0, display);
+	addBox(1.65, 0.08, 0.82, -3.4, -0.52, -1.44, 0.42, 0.16, 0, metal);
+	addBox(1.65, 0.08, 0.82, 3.4, -0.52, -1.44, 0.42, -0.16, 0, metal);
+	const addConsoleDisplay = (
+		title: string,
+		body: string,
+		x: number,
+		rotationY: number,
+		accent: string,
+	) => {
+		const textureCanvas = document.createElement("canvas");
+		textureCanvas.width = 680;
+		textureCanvas.height = 512;
+		const context = textureCanvas.getContext("2d");
+		if (!context) return;
+		context.fillStyle = "#06121c";
+		context.fillRect(0, 0, textureCanvas.width, textureCanvas.height);
+		context.strokeStyle = accent;
+		context.lineWidth = 7;
+		context.strokeRect(
+			8,
+			8,
+			textureCanvas.width - 16,
+			textureCanvas.height - 16,
+		);
+		context.fillStyle = accent;
+		context.font = "600 34px ui-monospace, monospace";
+		context.fillText(title, 36, 66);
+		context.fillStyle = "#d4efff";
+		context.font = "24px ui-monospace, monospace";
+		const words = body.split(" ");
+		let line = "";
+		let y = 122;
+		for (const word of words) {
+			const next = `${line}${line ? " " : ""}${word}`;
+			if (context.measureText(next).width > 430) {
+				context.fillText(line, 36, y);
+				line = word;
+				y += 38;
+			} else line = next;
+		}
+		context.fillText(line, 36, y);
+		const texture = new THREE.CanvasTexture(textureCanvas);
+		texture.colorSpace = THREE.SRGBColorSpace;
+		const screen = new THREE.Mesh(
+			new THREE.PlaneGeometry(3.4, 2.55),
+			new THREE.MeshBasicMaterial({ map: texture }),
+		);
+		screen.position.set(x, -0.14, -1.16);
+		screen.rotation.set(-0.4, rotationY, 0);
+		cockpit.add(screen);
+	};
+	const leftIsActive =
+		state.panel === "Navigation" || state.panel === "Communications";
+	addConsoleDisplay(
+		leftIsActive ? state.panel.toUpperCase() : "NAVIGATION",
+		leftIsActive
+			? state.panelDetail
+			: "Target discovery, filters, clearance requests, and replies.",
+		-3.4,
+		0.32,
+		"#7ac5e8",
+	);
+	const rightDetail =
+		rightTab === "Tuning"
+			? "v_max 20 c · exponent 0.60 · drop 50 km · vicinity 10,000 km"
+			: rightTab === state.panel
+				? state.panelDetail
+				: "Speed, throttle, assist, relative motion, charge and drive state.";
+	addConsoleDisplay(rightTab.toUpperCase(), rightDetail, 3.4, -0.32, "#e5aa52");
 
 	const radar = new THREE.Group();
 	radar.position.set(0, -0.5, -1.62);
@@ -249,10 +313,19 @@ function mountCockpit3D(stage: HTMLElement): () => void {
 	resizeObserver.observe(stage);
 	resize();
 	let frame = 0;
+	const headYaw: Record<HeadLook, number> = {
+		left: -0.68,
+		forward: 0,
+		right: 0.68,
+	};
 	const render = (time: number) => {
 		camera.position.x = Math.sin(time * 0.00018) * 0.035;
 		camera.position.y = 0.4 + Math.sin(time * 0.00013) * 0.012;
-		camera.lookAt(0, -0.28, -2.1);
+		camera.lookAt(
+			Math.sin(headYaw[headLook]) * 5,
+			-0.28,
+			2.7 - Math.cos(headYaw[headLook]) * 5,
+		);
 		renderer.render(scene, camera);
 		frame = requestAnimationFrame(render);
 	};
@@ -261,12 +334,16 @@ function mountCockpit3D(stage: HTMLElement): () => void {
 		cancelAnimationFrame(frame);
 		resizeObserver.disconnect();
 		scene.traverse((object) => {
-			if (!(object instanceof THREE.Mesh)) return;
+			if (!(object instanceof THREE.Mesh || object instanceof THREE.Points))
+				return;
 			object.geometry.dispose();
 			const materials = Array.isArray(object.material)
 				? object.material
 				: [object.material];
-			for (const material of materials) material.dispose();
+			for (const material of materials) {
+				material.map?.dispose();
+				material.dispose();
+			}
 		});
 		stars.dispose();
 		renderer.dispose();
@@ -281,6 +358,9 @@ const STYLE = `
 .sg-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; border-bottom: 1px solid #355369; padding-bottom: 12px; }
 .sg-head h1 { margin: 0; color: #9fd4ff; font-size: 16px; letter-spacing: .08em; }
 .sg-head p { margin: 4px 0 0; color: #8299aa; font-size: 11px; }
+.sg-head-actions, .sg-look { display: flex; align-items: center; gap: 6px; }
+.sg-look button { border: 1px solid #355369; background: #07121c; color: #8eb8cf; cursor: pointer; font: inherit; font-size: 10px; padding: 5px 6px; }
+.sg-look button[aria-pressed="true"] { border-color: #e5aa52; color: #ffe0a2; }
 .sg-close, .sg-state { border: 1px solid #355369; border-radius: 3px; background: #07121c; color: #b8dfff; cursor: pointer; font: inherit; padding: 7px 9px; }
 .sg-close:hover, .sg-state:hover, .sg-state[aria-pressed="true"] { border-color: #e5aa52; color: #ffe0a2; }
 .sg-states { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -289,7 +369,7 @@ const STYLE = `
 .sg-3d-canvas { position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%; }
 .sg-canopy { display: none; }
 .sg-panel, .sg-glass { border: 1px solid #355369; background: linear-gradient(145deg, rgba(13, 36, 53, .82), rgba(2, 9, 15, .96)); box-shadow: inset 0 0 42px rgba(60, 162, 220, .08); }
-.sg-panel { position: absolute; z-index: 5; bottom: 14px; width: 224px; min-height: 164px; padding: 14px; background: linear-gradient(160deg, rgba(20, 39, 52, .98), rgba(3, 9, 14, .98)); box-shadow: inset 0 1px 0 rgba(177, 219, 240, .2), 0 12px 25px rgba(0, 0, 0, .5); }
+.sg-panel { display: none; position: absolute; z-index: 5; bottom: 14px; width: 224px; min-height: 164px; padding: 14px; background: linear-gradient(160deg, rgba(20, 39, 52, .98), rgba(3, 9, 14, .98)); box-shadow: inset 0 1px 0 rgba(177, 219, 240, .2), 0 12px 25px rgba(0, 0, 0, .5); }
 .sg-panel[data-gallery-panel="left"] { left: 13px; transform: rotateY(26deg) rotateX(4deg); transform-origin: bottom left; }
 .sg-panel[data-gallery-panel="right"] { right: 13px; transform: rotateY(-26deg) rotateX(4deg); transform-origin: bottom right; }
 .sg-panel h2 { margin: 0 0 10px; color: #9fd4ff; font-size: 12px; letter-spacing: .1em; }
@@ -300,7 +380,8 @@ const STYLE = `
 .sg-tab[aria-selected="true"] { border-color: #e5aa52; color: #ffe0a2; }
 .sg-glass { position: absolute; z-index: 2; inset: 26px 72px 0; overflow: hidden; min-height: 470px; border: 0; background: transparent; box-shadow: none; clip-path: polygon(8% 0, 92% 0, 100% 100%, 0 100%); }
 .sg-stars, .sg-dash-deck { display: none; }
-.sg-director { position: absolute; z-index: 2; left: 50%; top: 42%; width: 185px; transform: translate(-50%, -50%); color: #ffe0a2; text-align: center; text-shadow: 0 0 14px rgba(229, 170, 82, .65); }
+.sg-director { position: absolute; z-index: 2; left: 50%; top: 42%; width: 185px; transform: translate(-50%, -50%); color: #ffe0a2; text-align: center; text-shadow: 0 0 14px rgba(229, 170, 82, .65); transition: opacity 120ms linear; }
+.sg-cockpit[data-gallery-head-look="left"] .sg-director, .sg-cockpit[data-gallery-head-look="right"] .sg-director { opacity: .12; }
 .sg-director::before { content: ""; display: block; width: 68px; height: 68px; margin: 0 auto 9px; border: 2px solid currentColor; border-radius: 50%; box-shadow: 0 0 18px currentColor; }
 .sg-target-arrow { position: absolute; left: 50%; top: 23px; color: #ffe0a2; font-size: 24px; line-height: 1; text-shadow: 0 0 12px rgba(229, 170, 82, .9); transform: rotate(var(--target-bearing)) translateX(48px); transform-origin: 0 50%; }
 .sg-director[data-accent="green"] { color: #a8ffbf; } .sg-director[data-accent="red"] { color: #ff9c8e; } .sg-director[data-accent="cyan"] { color: #a7dcff; }
@@ -321,6 +402,7 @@ const STYLE = `
 export function renderGalleryState(
 	state: GalleryState,
 	rightTab: RightTab,
+	headLook: HeadLook = "forward",
 ): string {
 	const isLeft =
 		state.panel === "Navigation" || state.panel === "Communications";
@@ -332,10 +414,10 @@ export function renderGalleryState(
 	const tuningDetail =
 		"v_max 20 c · exponent 0.60 · drop 50 km · vicinity 10,000 km · lead 3 s";
 	return `<div class="sg-wrap" data-gallery-state-active="${state.id}">
-		<header class="sg-head"><div><h1>SEELITE · COCKPIT STATE GALLERY</h1><p>Issue #34 prototype — visual contract, not simulated docking.</p></div><button class="sg-close" type="button">return to flight</button></header>
+		<header class="sg-head"><div><h1>SEELITE · COCKPIT STATE GALLERY</h1><p>Issue #34 prototype — visual contract, not simulated docking.</p></div><div class="sg-head-actions"><nav class="sg-look" aria-label="Cockpit head direction">${(["left", "forward", "right"] as HeadLook[]).map((look) => `<button type="button" data-gallery-look="${look}" aria-pressed="${headLook === look}">look ${look}</button>`).join("")}</nav><button class="sg-close" type="button">return to flight</button></div></header>
 		<nav class="sg-states" aria-label="Cockpit states">${GALLERY_STATES.map((candidate) => `<button class="sg-state" type="button" data-gallery-state="${candidate.id}" aria-pressed="${candidate.id === state.id}">${candidate.label}</button>`).join("")}</nav>
 		<div class="sg-shell" data-gallery-3d-prototype>
-			<div class="sg-cockpit" data-gallery-cockpit><div class="sg-canopy" aria-hidden="true"></div>
+			<div class="sg-cockpit" data-gallery-cockpit data-gallery-head-look="${headLook}"><div class="sg-canopy" aria-hidden="true"></div>
 			<aside class="sg-panel" data-gallery-panel="left" data-active="${isLeft}"><h2>${isLeft ? state.panel : "NAVIGATION"}</h2><p>${isLeft ? state.panelDetail : sideDetail}</p><small>Simulation continues while this panel is open.</small></aside>
 			<main class="sg-glass" aria-live="polite"><div class="sg-stars"></div><div class="sg-dash-deck" aria-hidden="true"></div><div class="sg-director" data-gallery-director data-accent="${state.accent}">${state.targetBearingDeg === undefined ? "" : `<i class="sg-target-arrow" data-gallery-target-arrow data-gallery-target-bearing="${state.targetBearingDeg}" style="--target-bearing:${state.targetBearingDeg}deg" aria-label="turn toward target bearing">➤</i>`}${state.director}${state.id.startsWith("docking-") ? `<div class="sg-docking" data-gallery-docking>AXIS FUNNEL · ROLL RING · ${state.id === "docking-granted" ? "CLEAR TO APPROACH" : "DO NOT ENTER"}</div>` : ""}</div><div class="sg-scanner" data-gallery-scanner aria-label="Elite-style 3D local radar, 10,000 kilometre vicinity"><i class="sg-contact one" data-gallery-contact-stem></i><i class="sg-contact-anchor one" data-gallery-contact-anchor></i><i class="sg-contact two" data-gallery-contact-stem></i><i class="sg-contact-anchor two" data-gallery-contact-anchor></i><i class="sg-contact three" data-gallery-contact-stem></i><i class="sg-contact-anchor three" data-gallery-contact-anchor></i><span class="sg-scanner-label">ELITE 3D RADAR · 10,000 km</span></div><div class="sg-floor" data-gallery-floor><span>${state.mode}</span><strong>${state.target}</strong></div></main>
 			<aside class="sg-panel" data-gallery-panel="right" data-active="${isRight}"><nav class="sg-tabs" aria-label="Right panel tabs">${(["Flight", "Drive", "Tuning"] as RightTab[]).map((tab) => `<button class="sg-tab" type="button" data-gallery-right-tab="${tab}" aria-selected="${rightTab === tab}">${tab}</button>`).join("")}</nav><h2>${rightTab.toUpperCase()}</h2><p ${rightTab === "Tuning" ? "data-gallery-tuning" : ""}>${rightTab === "Tuning" ? tuningDetail : rightTab === state.panel ? state.panelDetail : technicalDetail}</p><small>Tuning stays in this right-panel tab, never on the flight floor.</small></aside>
@@ -358,12 +440,14 @@ export function mountStateGallery(): void {
 	document.body.append(root);
 	let current = galleryState(requested === "1" ? "assist-on" : requested);
 	let rightTab: RightTab = current.panel === "Drive" ? "Drive" : "Flight";
+	let headLook: HeadLook = "forward";
 	let unmountCockpit = () => {};
 	const paint = () => {
 		unmountCockpit();
-		root.innerHTML = renderGalleryState(current, rightTab);
+		root.innerHTML = renderGalleryState(current, rightTab, headLook);
 		const cockpit = root.querySelector<HTMLElement>("[data-gallery-cockpit]");
-		if (cockpit) unmountCockpit = mountCockpit3D(cockpit);
+		if (cockpit)
+			unmountCockpit = mountCockpit3D(cockpit, current, rightTab, headLook);
 	};
 	const setState = (id: string) => {
 		current = galleryState(id);
@@ -373,6 +457,12 @@ export function mountStateGallery(): void {
 	paint();
 	root.addEventListener("click", (event) => {
 		const target = event.target as HTMLElement;
+		const look = target.closest<HTMLElement>("[data-gallery-look]");
+		if (look) {
+			headLook = look.dataset.galleryLook as HeadLook;
+			paint();
+			return;
+		}
 		const state = target.closest<HTMLElement>("[data-gallery-state]");
 		if (state) setState(state.dataset.galleryState ?? "assist-on");
 		const tab = target.closest<HTMLElement>("[data-gallery-right-tab]");
