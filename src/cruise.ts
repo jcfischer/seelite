@@ -706,10 +706,9 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 		// Swept, and taken **before** the drop-out if it happens first, so the
 		// nearer event is the one that fires.
 		for (const m of input.masses) {
-			// #30: the host guards at its true surface, everything else at the shell.
-			// Two legs in 417 arrive at a station the geometry calls occluded — a
-			// graze that clips the surface by under 2 km, which the instrument's
-			// penetration column reports rather than hides.
+			// #30: the host guards at an absolute standoff, everything else at the
+			// proportional shell. See `SURFACE_MARGIN` and `CLEARANCE_KM` above for
+			// why, and `in-system-travel.md` §12.1 for what it cost and bought.
 			const shellKm =
 				m.id === input.targetParentId
 					? m.radiusKm + CLEARANCE_KM
@@ -720,22 +719,13 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 			//
 			// `sphereEntry` returns 0 for a step that starts within the sphere, so
 			// a ship already inside a shell was dropped on the first sub-step of
-			// every engagement, whatever heading it took. That is not a corner
-			// case: a station's orbit is 400–2,000 km up and the shell is 5% of a
-			// planet's radius, so **49 of 337 stations in the corpus sit inside
-			// their own host's shell** — every one of them a place cruise could not
-			// be engaged from. Undocking from the worst of them and aiming straight
-			// out, cruise covered 0 km until normal flight had crawled the 2,784 km
-			// to the shell: 23 minutes at the 2 km/s assist cap.
+			// every engagement, whatever heading it took — and a station orbits low
+			// enough that being inside its own host's shell is a common place to
+			// start from, not a corner case. §12.2 has the corpus figures and what
+			// the crawl out of one costs.
 			//
 			// A ship pointed away from the body it is beside is not flying into
-			// anything, so it is not stopped. Same corpus, after: 0 of 49 stuck.
-			//
-			// This is a smaller claim than "being stopped is terminal", which is
-			// what it looked like from the drop point alone. A ship dropped *at* a
-			// shell is on its boundary, and the 2.5 s spool-up carries it clear
-			// before cruise takes — measured in `probe-arrival.mjs`, which found
-			// that check green against the old rule too.
+			// anything, so it is not stopped.
 			if (entryKm === 0) {
 				// Already inside this shell, so what decides is whether this heading
 				// goes **deeper into the body** — not which hemisphere the centre is

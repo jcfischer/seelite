@@ -38,6 +38,7 @@
 
 import { DEFAULT_CRUISE, SURFACE_MARGIN, advanceCruise } from "../src/cruise";
 import {
+	ASSIST_CAP_KMS,
 	type World,
 	advanceWorldClock,
 	bodyVelocity,
@@ -512,6 +513,56 @@ console.log(
 		`${km(median(escapes))} km, pinned ${pinned.length}/${escapable.length}\n` +
 		`  legs whose ship ended inside a surface, so no heading clears it: ${enclosed.length}\n`,
 );
+
+// ── Stations that sit inside their own host's shell.
+//
+// §12.2's figures, printed by the instrument that is shipped rather than by a
+// script that was thrown away: a spec number nothing reproduces is a number
+// nobody can check.
+console.log("stations inside their host's shell\n");
+{
+	const insides: {
+		seed: number;
+		id: string;
+		gapKm: number;
+		hostRadiusKm: number;
+	}[] = [];
+	let planetOrbiting = 0;
+	for (const seed of SEEDS) {
+		const world = makeWorld(seed);
+		for (const station of world.system.contents.stations) {
+			if (!station.parentId) continue;
+			const host = world.system.contents.planets.find(
+				(p) => p.id === station.parentId,
+			);
+			if (!host) continue;
+			planetOrbiting++;
+			const gapKm = host.radiusKm * SURFACE_MARGIN - station.orbit.radiusKm;
+			if (gapKm > 0)
+				insides.push({
+					seed,
+					id: station.id,
+					gapKm,
+					hostRadiusKm: host.radiusKm,
+				});
+		}
+	}
+	const giants = insides.filter((x) => x.hostRadiusKm >= 3e4).length;
+	const radii = insides.map((x) => x.hostRadiusKm).sort((a, b) => a - b);
+	console.log(
+		`  ${insides.length}/${planetOrbiting} planet-orbiting stations, ` +
+			`hosts ${km(radii[0] ?? 0)}–${km(radii[radii.length - 1] ?? 0)} km, ` +
+			`${giants} of them over 30k km\n`,
+	);
+	console.log("  the deepest, and what leaving one costs in normal flight\n");
+	for (const x of [...insides].sort((a, b) => b.gapKm - a.gapKm).slice(0, 3)) {
+		console.log(
+			`    seed ${String(x.seed).padStart(4)}  ${x.id.padEnd(17)} ${km(x.gapKm)} km inside a ` +
+				`${km(x.hostRadiusKm)} km host — ${(x.gapKm / ASSIST_CAP_KMS / 60).toFixed(0)} min at the assist cap`,
+		);
+	}
+	console.log("");
+}
 
 // ── The dimension the guard cannot reach: how low the orbits are.
 //

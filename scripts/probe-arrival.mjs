@@ -215,11 +215,12 @@ check(
 /**
  * A different seed, because the case is a different geometry.
  *
- * `?seed=118`'s shipyard orbits a 65,977 km gas giant 2,784 km *inside* the
- * 1.05 shell that giant projects — the worst of the 49 such stations in the
- * corpus. Before #30 the sweep fired on the first sub-step of every engagement
- * from there, whatever heading the ship took, and the only way out was to crawl
- * those 2,784 km at the 2 km/s assist cap: twenty-three minutes.
+ * `?seed=118`'s shipyard is the deepest such station the sweep finds: it orbits
+ * a gas giant well inside the 1.05 shell that giant projects. Before #30 the
+ * sweep fired on the first sub-step of every engagement from there, whatever
+ * heading the ship took, and the only way out was to crawl the gap at the
+ * 2 km/s assist cap. The gap and the crawl are **measured on the page** below
+ * rather than restated here, so this comment cannot drift from the fixture.
  *
  * Flown from the station rather than from a drop point, and that distinction is
  * the check: a ship dropped *at* a shell sits on its boundary and the spool-up
