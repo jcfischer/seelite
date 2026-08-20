@@ -270,6 +270,23 @@ export function advanceSystem(system: System, gameTime: number): void {
 }
 
 /**
+ * The body a station orbits, or `null` — #30's arrival rule reads it.
+ *
+ * Only a station has one. A planet or moon selected as a target is a mass in its
+ * own right, and cruise to it must still be stopped *by* it, which is what
+ * leaves the ship above its surface rather than inside it.
+ *
+ * One function rather than three copies of `station.parentId`: the renderer, the
+ * measurement sweep and the browser probe all ask this question, and a rule the
+ * instrument states slightly differently from the game is an instrument that can
+ * go green on a game that is wrong.
+ */
+export function hostIdOf(system: System, id: string): string | null {
+	const station = system.contents.stations.find((s) => s.id === id);
+	return station ? station.parentId : null;
+}
+
+/**
  * How fast a body is moving through sim space, km/s.
  *
  * Composed the same way `placeBodies` composes positions — a station's velocity

@@ -197,36 +197,31 @@ export const MAX_SUBSTEPS = 96;
  * 1.05 rather than 1.0 so the drop happens just clear of the surface: the far
  * layer hands a body over at `HANDOFF_KM`, and dropping *at* the surface would
  * leave the ship inside a sphere it is being drawn the inside of.
- */
-export const SURFACE_MARGIN = 1.05;
-
-/**
- * Why the shell does not apply to the body the selected target orbits (#30).
  *
- * `SURFACE_MARGIN` scales the clearance to the *obstacle*, and `system.ts`
- * puts a station 400–2,000 km above its planet. What decides whether a distant
- * ship can reach one in a straight line is the station's offset **across** the
- * line of sight, and between `radius` and `1.05 × radius` that offset is clear
- * space the planet's shell nonetheless claims. Flown over 200 systems, that
- * band alone cost 15% of all legs to a planet-orbiting station: the sweep fired
- * against the planet thousands of kilometres short, at thousands of km/s.
+ * **#30: the body a selected target orbits is exempt from this, and guards at
+ * its true surface instead.** The margin scales the clearance to the
+ * *obstacle*, and `system.ts` puts a station 400–2,000 km above its planet.
+ * What decides whether a distant ship can reach one in a straight line is the
+ * station's offset **across** the line of sight — an inbound leg at 1 AU is
+ * effectively parallel — and between `radius` and `1.05 × radius` that offset
+ * is clear space this shell nonetheless claims. Flown over 200 systems, that
+ * band cost **36 of the 249 legs whose station was clear of its host**: the
+ * sweep fired against the planet thousands of kilometres short, at thousands
+ * of km/s.
  *
- * So the host guards at its **true surface** instead. It is still an obstacle —
- * a station genuinely behind its planet is still unreachable in a straight line,
- * and the measured 26% of legs in that position still stop — but it no longer
- * projects a shell its own station is inside.
- *
- * The exemption is scoped to the *selected target's* host and to nothing else.
- * Every other body keeps `SURFACE_MARGIN`, or selecting a station would turn
+ * The host is still an obstacle — a station genuinely behind its planet is
+ * still stopped, which is 26% of legs — and the exemption is scoped to that one
+ * body. Every other mass keeps the margin, or selecting a station would turn
  * the whole system permeable.
  *
- * Rejected alongside it, with the numbers in #30's resolution: an absolute
- * `radius + 300 km` clearance (reaches 96% of clear legs against this rule's
- * 98%, and is a second constant to size); exempting the host entirely (100%
- * arrival, by flying up to 6,900 km inside the planet on 22% of legs); and
- * letting the drop sphere win when it lies nearer along the ray (measured a
- * no-op — the station is never nearer, it is *behind*).
+ * Rejected alongside it, with the numbers in `in-system-travel.md` §12.1: an
+ * absolute `radius + 300 km` clearance (96% of clear legs against 98%, and a
+ * second constant to size); exempting the host entirely (100% arrival, by
+ * flying up to 6,900 km inside the planet on 22% of legs); and letting the drop
+ * sphere win where it lies nearer along the ray (measured a no-op — an
+ * unreachable station is never nearer, it is *behind*).
  */
+export const SURFACE_MARGIN = 1.05;
 
 /** Anything the speed law keys off: §2 counts stars and planets, and
  *  deliberately not moons, stations or belts (§2.1). */
@@ -678,6 +673,9 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 		// nearer event is the one that fires.
 		for (const m of input.masses) {
 			// #30: the host guards at its true surface, everything else at the shell.
+			// Two legs in 417 arrive at a station the geometry calls occluded — a
+			// graze that clips the surface by under 2 km, which the instrument's
+			// penetration column reports rather than hides.
 			const shellKm =
 				m.id === input.targetParentId
 					? m.radiusKm

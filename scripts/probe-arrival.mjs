@@ -76,23 +76,24 @@ async function flyTo(stationId) {
 			const station = g.world.system.byId.get(stationId);
 			if (!station) return { missing: true };
 
-			// The host, from the generator's own placement rather than by
-			// proximity — the same claim `main.ts` reads.
-			const record = g.world.system.contents.stations.find(
-				(s) => s.id === stationId,
-			);
-			const hostId = record ? record.parentId : null;
-			const host = hostId ? g.world.system.byId.get(hostId) : null;
-
 			g.targetId = stationId;
 			g.faceTarget();
+			// The host, asked of the page rather than re-derived here: `sim.ts`'s
+			// `hostIdOf` owns the rule and `targetParentId()` is the handle's
+			// spelling of it, so this probe cannot state it differently from the
+			// game it is checking.
+			const hostId = g.targetParentId();
+			const host = hostId ? g.world.system.byId.get(hostId) : null;
 			const startKm = dist(station.pos, g.world.ship.pos);
 			g.engageCruise();
 
 			// The closest the flown path came to each planet's centre, as a
-			// multiple of its radius. Sampled per stepped frame: inside cruise the
-			// sweep is exact, and what is being checked here is the trajectory the
-			// renderer actually produced.
+			// multiple of its radius, sampled per stepped frame from the **sim**
+			// position — nothing reads a position back out of an `Object3D`, and a
+			// probe that claimed to be measuring the scene graph would be lying
+			// about where its numbers come from. `render` is still called every
+			// frame because that is the loop the game runs, and it is what makes
+			// the page-error handler above worth having.
 			let closestRatio = Number.POSITIVE_INFINITY;
 			let closestId = null;
 			let elapsed = 0;
@@ -222,12 +223,11 @@ await bootedGame(page);
 const escape = await page.evaluate(
 	async ([dt]) => {
 		const g = window.__seelite;
-		const record = g.world.system.contents.stations.find(
-			(s) => s.id === "station-shipyard",
-		);
-		if (!record || !record.parentId) return { missing: true };
-		const station = g.world.system.byId.get(record.id);
-		const host = g.world.system.byId.get(record.parentId);
+		g.targetId = "station-shipyard";
+		const hostId = g.targetParentId();
+		if (!hostId) return { missing: true };
+		const station = g.world.system.byId.get("station-shipyard");
+		const host = g.world.system.byId.get(hostId);
 		const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 		const shellGapKm =
 			host.radiusKm * g.surfaceMargin - dist(station.pos, host.pos);
@@ -236,7 +236,7 @@ const escape = await page.evaluate(
 		// and what is measured is whether the guard releases the ship.
 		g.world.ship.pos = { ...station.pos };
 		g.targetId = null;
-		g.faceAway(record.parentId);
+		g.faceAway(hostId);
 		g.engageCruise();
 		const start = { ...g.world.ship.pos };
 		for (let i = 0; i < 10 / dt; i++) {

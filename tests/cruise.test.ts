@@ -1099,20 +1099,43 @@ test("a host still stops a ship aimed at a station behind it", () => {
 
 test("every body that is not the host keeps its shell", () => {
 	// The exemption is scoped to the body the target orbits, and to nothing
-	// else. A planet the leg happens to pass through is still an obstacle, or
-	// selecting a station anywhere in the system would turn the whole map
-	// permeable.
+	// else. A planet the leg happens to graze is still an obstacle, or selecting
+	// a station anywhere in the system would turn the whole map permeable.
+	//
+	// The second body is placed **in the same band the host is exempted in** —
+	// its true surface is clear of the ray and its shell is not. A body simply
+	// sitting on the ray would be stopped by its surface alone, and the test
+	// would pass with `SURFACE_MARGIN` deleted.
 	const planet = { id: "planet", pos: v3(), radiusKm: PLANET_R };
-	const other = { id: "other", pos: v3(0.15 * AU_KM, 0, 0), radiusKm: 4000 };
+	const from = v3(0.3 * AU_KM, 0, 0);
+	const station = stationAt(6150);
+	const nose = towards(from, station.pos);
+	const otherR = 4000;
+	// Halfway along the leg, offset across it by a distance inside the shell and
+	// outside the surface. Computed from the ray rather than guessed, so it
+	// survives the fixture's geometry being retuned.
+	const midpoint = add(from, scale(nose, 0.5 * length(sub(station.pos, from))));
+	// The whole fixture lies in z = 0, so "across the ray" is the in-plane
+	// perpendicular, and it is already unit because `nose` is.
+	const across = v3(-nose.y, nose.x, 0);
+	const perpKm = otherR * (1 + (SURFACE_MARGIN - 1) / 2);
+	const other = {
+		id: "other",
+		pos: add(midpoint, scale(across, perpKm)),
+		radiusKm: otherR,
+	};
 	const flight = fly({
-		from: v3(0.3 * AU_KM, 0, 0),
-		target: stationAt(6150),
+		from,
+		target: station,
 		masses: [planet, other],
 		dt: 0.1,
 		targetParentId: "planet",
 	});
 	expect(flight.exit).toBe("proximity");
 	expect(flight.exitBodyId).toBe("other");
+	// And it was the shell that stopped it, not the surface: the ship never got
+	// within `other`'s radius, so deleting the margin would let this pass.
+	expect(length(sub(flight.pos, other.pos))).toBeGreaterThan(otherR);
 });
 
 test("being inside a shell does not pin the ship there", () => {

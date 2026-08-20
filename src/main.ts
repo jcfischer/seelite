@@ -93,6 +93,7 @@ import {
 	type World,
 	advanceWorldClock,
 	bodyVelocity,
+	hostIdOf,
 	makeWorld,
 	stationOf,
 	stationPose,
@@ -575,8 +576,10 @@ class Game {
 	 * not stopped by it. `probe-arrival.mjs` flies exactly this to check that the
 	 * release is real in the browser and not only in the sweep.
 	 *
-	 * Named for the manoeuvre rather than exposing `face`, which would let the
-	 * ship's orientation be set from anywhere.
+	 * **Probe affordance, not an input path.** No key is bound to it — it is on
+	 * the handle for the same reason `assistCapKms` and `surfaceMargin` are, so
+	 * a probe can fly a manoeuvre the game allows without a probe reaching into
+	 * `face`, which would let the ship's orientation be set from anywhere.
 	 */
 	faceAway(bodyId: string) {
 		const body = this.world.system.byId.get(bodyId);
@@ -1043,17 +1046,12 @@ class Game {
 	/**
 	 * The body the selected target orbits, if any — #30's arrival rule reads it.
 	 *
-	 * Only a station has one: a planet or moon selected as a target is a mass in
-	 * its own right, and cruise to it must still be stopped *by* it. Reading the
-	 * generator's `parentId` rather than inferring a host from proximity, so the
-	 * exemption is the placement's own claim about what orbits what.
+	 * `sim.ts` owns the rule; this is the handle's spelling of it, and it is
+	 * public because `probe-arrival.mjs` asks the page the same question rather
+	 * than keeping its own copy.
 	 */
 	targetParentId(): string | null {
-		if (!this.targetId) return null;
-		const station = this.world.system.contents.stations.find(
-			(s) => s.id === this.targetId,
-		);
-		return station ? station.parentId : null;
+		return this.targetId ? hostIdOf(this.world.system, this.targetId) : null;
 	}
 
 	/** How fast the selected target is moving through sim space, km/s — the frame

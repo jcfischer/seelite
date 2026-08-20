@@ -11,12 +11,13 @@
  * instrument that decided it and the one that keeps it decided.
  *
  * The candidate comparison that #30 chose from — four rules flown side by side
- * — lives in that node's resolution rather than here. It is reproducible:
- * `git checkout a6359be -- src/cruise.ts scripts/` restores the switch and the
- * sweep that printed the table. Carrying four rules in the flight loop forever
- * to keep a decided question re-runnable is the cost this repo does not pay;
- * the numbers stay recoverable instead, the way `capture-station-orbits.ts`
- * keeps its baseline recoverable.
+ * — is **recorded in `docs/specs/in-system-travel.md` §12.1**, which ships in
+ * the tree: each rejected rule with the figure that rejected it. Re-running it
+ * needs the switch back, and `git checkout a6359be -- src/cruise.ts scripts/`
+ * restores it. Carrying four rules in the flight loop forever to keep a decided
+ * question re-runnable is the cost this repo does not pay; the numbers stay
+ * written down and the sweep stays recoverable, the way
+ * `capture-station-orbits.ts` keeps its baseline recoverable.
  *
  * What is measured, per leg, flown through the real `advanceCruise`:
  *
@@ -40,6 +41,7 @@ import {
 	type World,
 	advanceWorldClock,
 	bodyVelocity,
+	hostIdOf,
 	makeWorld,
 } from "../src/sim";
 import { AU_KM, MAX_DT } from "../src/units";
@@ -48,9 +50,13 @@ import { type Vec3, add, dot, length, scale, sub } from "../src/vec3";
 /** The game's own frame cap, so the sweep is the worst case for anything that
  *  sub-steps — read from the unit scheme rather than restated. */
 const DT = MAX_DT;
-/** Sim seconds a leg is given before it counts as never arriving. A typical
- *  leg is ~60 s (#14); an hour is the 2 km/s crawl this node is about. */
+/** Sim seconds a leg is given before it counts as never arriving — twenty
+ *  minutes against a typical leg of ~60 s (#14). A leg that hits this was not
+ *  stopped by anything, so it is reported as its own row rather than counted
+ *  among the stopped ones. */
 const LEG_TIMEOUT_S = 1200;
+/** How long the escape measurement flies, seconds. */
+const ESCAPE_S = 5;
 
 /** Every figure printed goes through this: an instrument that quietly reports
  *  garbage is worse than one that dies (#7's rule, `measure-market.ts`). */
@@ -58,6 +64,31 @@ function finite(label: string, value: number): number {
 	if (!Number.isFinite(value)) throw new Error(`${label} is ${value}`);
 	return value;
 }
+
+/** The speed law's masses: §2 counts stars and planets, and deliberately not
+ *  moons, stations or belts (§2.1). The set is fixed for a system's lifetime;
+ *  only the positions move, and those are mutated in place. */
+function massesOf(world: World) {
+	return world.system.bodies
+		.filter((b) => b.kind === "star" || b.kind === "planet")
+		.map((b) => ({ id: b.id, pos: b.pos, radiusKm: b.radiusKm }));
+}
+
+/** How near a straight step of `lenKm` from `from` along `nose` comes to
+ *  `centre`. The one spelling of it in this file. */
+function closestApproachKm(
+	from: Vec3,
+	nose: Vec3,
+	lenKm: number,
+	centre: Vec3,
+): number {
+	const toCentre = sub(centre, from);
+	const along = Math.min(Math.max(dot(toCentre, nose), 0), lenKm);
+	return length(sub(centre, add(from, scale(nose, along))));
+}
+
+const median = (xs: number[]): number =>
+	xs.length ? (xs[Math.floor(xs.length / 2)] ?? Number.NaN) : Number.NaN;
 
 interface LegResult {
 	exit: string;
@@ -123,16 +154,15 @@ function flyAway(
 	const target = { pos: add(from, scale(nose, AU_KM)), radiusKm: 1 };
 	let pos = from;
 	let travelled = 0;
-	for (let i = 0; i < 50; i++) {
-		const masses = world.system.bodies
-			.filter((b) => b.kind === "star" || b.kind === "planet")
-			.map((b) => ({ id: b.id, pos: b.pos, radiusKm: b.radiusKm }));
+	for (let i = 0; i < ESCAPE_S / DT; i++) {
 		const step = advanceCruise({
+			// Rebuilt per frame: `advanceWorldClock` moves the bodies, and the
+			// wrapper objects carry the positions the sweep reads.
 			pos,
 			nose,
 			throttle: 1,
 			dt: DT,
-			masses,
+			masses: massesOf(world),
 			target,
 			params: DEFAULT_CRUISE,
 		});
@@ -156,9 +186,7 @@ function flyLeg(
 	targetId: string,
 	measureReengage = true,
 ): LegResult {
-	const contents = world.system.contents;
-	const station = contents.stations.find((s) => s.id === targetId);
-	const targetParentId = station ? station.parentId : null;
+	const targetParentId = hostIdOf(world.system, targetId);
 	let pos = world.ship.pos;
 	let t = 0;
 	let penetrationKm = 0;
@@ -171,9 +199,7 @@ function flyLeg(
 		const range = length(to);
 		if (range === 0) break;
 		const nose = scale(to, 1 / range);
-		const masses = world.system.bodies
-			.filter((b) => b.kind === "star" || b.kind === "planet")
-			.map((b) => ({ id: b.id, pos: b.pos, radiusKm: b.radiusKm }));
+		const masses = massesOf(world);
 
 		const step = advanceCruise({
 			pos,
@@ -237,11 +263,15 @@ function flyLeg(
 	}
 	const end = world.system.byId.get(targetId);
 	if (!end) throw new Error(`no body ${targetId}`);
+	// A timeout was not *stopped* by anything, so it carries no closing speed to
+	// report and is excluded from the stopped cohort below rather than counted
+	// as pinned. `finite()` still guards every number that is printed — a NaN in
+	// a column is the failure this file's own rule forbids.
 	return {
 		exit: "timeout",
 		exitBodyId: undefined,
 		rangeKm: finite("range", length(sub(end.pos, pos))),
-		closingKms: Number.NaN,
+		closingKms: 0,
 		seconds: LEG_TIMEOUT_S,
 		penetrationKm: finite("penetration", Math.max(0, penetrationKm)),
 		pos,
@@ -291,12 +321,9 @@ function casesFor(seed: number): Case[] {
 			const to = sub(body.pos, world.ship.pos);
 			const legKm = length(to);
 			const nose = scale(to, 1 / legKm);
-			const toCentre = sub(hostBody.pos, world.ship.pos);
-			const along = Math.min(Math.max(dot(toCentre, nose), 0), legKm);
-			const closest = length(
-				sub(hostBody.pos, add(world.ship.pos, scale(nose, along))),
-			);
-			occluded = closest < hostBody.radiusKm;
+			occluded =
+				closestApproachKm(world.ship.pos, nose, legKm, hostBody.pos) <
+				hostBody.radiusKm;
 		}
 		out.push({
 			seed,
@@ -383,26 +410,29 @@ console.log(
 );
 
 // ── Is being stopped terminal?
+const timedOut = rows.filter((r) => r.result.exit === "timeout");
 const stopped = rows.filter(
-	(r) => r.hostId !== null && r.result.exit !== "arrival",
+	(r) =>
+		r.hostId !== null &&
+		r.result.exit !== "arrival" &&
+		r.result.exit !== "timeout",
 );
 const stuck = stopped.filter((r) => r.result.reengagedKm < 100);
 const gained = stopped.map((r) => r.result.reengagedKm).sort((a, b) => a - b);
 const escapes = stopped.map((r) => r.result.escapeKm).sort((a, b) => a - b);
 const pinned = stopped.filter((r) => r.result.escapeKm < 100);
 console.log("after a stop — can the player cruise on?\n");
+if (timedOut.length)
+	console.log(
+		`  ${timedOut.length} leg(s) neither arrived nor were stopped inside ${LEG_TIMEOUT_S} s ` +
+			"— excluded from the counts below, which are about being stopped\n",
+	);
 console.log(
 	`  stopped legs ${stopped.length}\n` +
-		`  back at the same station, which is behind the planet: median ${
-			gained.length
-				? `${km(gained[Math.floor(gained.length / 2)] ?? 0)} km`
-				: "—"
-		}, still stopped ${stuck.length}/${stopped.length} — as it should be\n` +
-		`  away from the planet, five seconds: median ${
-			escapes.length
-				? `${km(escapes[Math.floor(escapes.length / 2)] ?? 0)} km`
-				: "—"
-		}, pinned ${pinned.length}/${stopped.length}\n`,
+		"  back at the same station, which is behind the planet: median " +
+		`${km(median(gained))} km, still stopped ${stuck.length}/${stopped.length} — as it should be\n` +
+		`  away from the planet, ${ESCAPE_S} seconds: median ` +
+		`${km(median(escapes))} km, pinned ${pinned.length}/${stopped.length}\n`,
 );
 
 // ── The dimension the guard cannot reach: how low the orbits are.
@@ -410,9 +440,25 @@ console.log(
 // A station at orbital radius r above a planet of radius R is hidden whenever it
 // is on the far side and its offset projected across the line of sight is under
 // R. For a bearing that is effectively parallel at 1 AU that is
-// `1 − sqrt(r² − R²)/r`, halved for "behind" — so the whole occlusion rate is a
-// function of `r/R` alone, and `system.ts`'s 400–2,000 km altitude puts a gas
-// giant at r/R ≈ 1.03. Sampled here over real orbits rather than asserted.
+// `1 − √(r²−R²)/r`, halved for "behind" — a function of `r/R` alone, and
+// `system.ts`'s 400–2,000 km altitude puts a gas giant at r/R ≈ 1.03.
+//
+// **That closed form assumes the line of sight is isotropic to the orbit**, and
+// the orbits here are not isotropic at all: `aroundBody` copies the *planet's*
+// inclination, so every station in a system orbits in nearly one plane. What
+// makes the form hold anyway is the other side of the same angle — the arrival
+// bearing is drawn uniformly on the sphere (§7.4), so the line of sight is
+// isotropic even where the orbits are coplanar. An assumption worth stating is
+// worth checking, so the sampled rate is printed **beside** the prediction
+// rather than in place of it.
+//
+// They part, consistently and in one direction: the form runs 2–4 points under
+// what the corpus measures. It assumes parallel rays, and the ship is ~1 AU out
+// rather than infinitely far, so the shadow is a cone and not a cylinder. The
+// projection table below is therefore a **lower bound** on the occlusion at a
+// given r/R, not a point estimate — read it as "at least this good", and
+// re-measure before committing to a number from it.
+const occlusionRate = (k: number) => 0.5 * (1 - Math.sqrt(k * k - 1) / k);
 console.log("occlusion by host size, over 64 phases of each real orbit\n");
 {
 	const buckets: [string, (r: number) => boolean][] = [
@@ -425,6 +471,10 @@ console.log("occlusion by host size, over 64 phases of each real orbit\n");
 	for (const seed of SEEDS) {
 		const world = makeWorld(seed);
 		const { contents } = world.system;
+		// One world per seed: `gameTime` is absolute, so re-placing the bodies at
+		// each phase is an `advanceWorldClock`, not a regeneration. Building one
+		// per phase cost ~21,000 full system generations.
+		const at = makeWorld(seed);
 		for (const station of contents.stations) {
 			if (!station.parentId) continue;
 			const host = contents.planets.find((p) => p.id === station.parentId);
@@ -433,11 +483,10 @@ console.log("occlusion by host size, over 64 phases of each real orbit\n");
 			const toShip = sub(world.ship.pos, hostBody.pos);
 			const los = scale(toShip, 1 / length(toShip));
 			for (let i = 0; i < 64; i++) {
-				const w2 = makeWorld(seed);
-				w2.gameTime = (i / 64) * station.orbit.periodS;
-				advanceWorldClock(w2, 0);
-				const moved = w2.system.byId.get(station.id);
-				const movedHost = w2.system.byId.get(station.parentId);
+				at.gameTime = (i / 64) * station.orbit.periodS;
+				advanceWorldClock(at, 0);
+				const moved = at.system.byId.get(station.id);
+				const movedHost = at.system.byId.get(station.parentId);
 				if (!moved || !movedHost) continue;
 				const o = sub(moved.pos, movedHost.pos);
 				const along = dot(o, los);
@@ -450,21 +499,28 @@ console.log("occlusion by host size, over 64 phases of each real orbit\n");
 			}
 		}
 	}
-	console.log("  host class            median r/R   occluded");
+	console.log(
+		"  host class            median r/R   occluded   the form predicts",
+	);
 	for (const [label, test] of buckets) {
 		const mine = samples.filter((x) => test(x.hostRadiusKm));
 		if (mine.length === 0) continue;
 		const ratios = mine.map((x) => x.ratio).sort((a, b) => a - b);
 		const occ = mine.filter((x) => x.occluded).length;
+		// The prediction is evaluated per sample and averaged, not at the median
+		// r/R: the rate is convex in r/R, so the two differ by more than rounding
+		// on a bucket as wide as "rocky".
+		const predicted =
+			mine.reduce((a, x) => a + occlusionRate(x.ratio), 0) / mine.length;
 		console.log(
-			`  ${label.padEnd(20)}  ${(ratios[Math.floor(ratios.length / 2)] ?? Number.NaN).toFixed(3)}       ${pct(occ, mine.length).padStart(6)}  (n=${mine.length})`,
+			`  ${label.padEnd(20)}  ${median(ratios).toFixed(3)}       ${pct(occ, mine.length).padStart(6)}   ` +
+				`${`${(100 * predicted).toFixed(1)}%`.padStart(10)}  (n=${mine.length})`,
 		);
 	}
 	console.log("\n  if every station orbited at r/R:   occluded");
 	for (const k of [1.05, 1.1, 1.25, 1.5, 2, 3]) {
-		const rate = 0.5 * (1 - Math.sqrt(k * k - 1) / k);
 		console.log(
-			`    r/R = ${k.toFixed(2).padStart(5)}                     ${(100 * rate).toFixed(1).padStart(5)}%`,
+			`    r/R = ${k.toFixed(2).padStart(5)}                     ${(100 * occlusionRate(k)).toFixed(1).padStart(5)}%`,
 		);
 	}
 	console.log("");
@@ -488,7 +544,7 @@ console.log("planet control — nose on the biggest planet, throttle open\n");
 		.sort((a, b) => a - b);
 	console.log(
 		`  stopped ${held.length}/${results.length}   median stop range / radius ` +
-			`${(ratios[Math.floor(ratios.length / 2)] ?? Number.NaN).toFixed(3)}   ` +
+			`${median(ratios).toFixed(3)}   ` +
 			`deepest penetration ${km(deepest)} km\n`,
 	);
 }
