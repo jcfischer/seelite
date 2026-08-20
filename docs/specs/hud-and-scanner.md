@@ -36,10 +36,11 @@ cockpit**. It is a **local radar**: a large, shallow concentric
 elliptical base. Each contact uses a **vertical mast** anchored to a small
 **anchor disc** on that plane, so the separation is read as height rather than a
 slanted vector. Bearing and range read from the base, not a detached top-down
-map.
-Contacts derive from true simulation positions, not from the camera-relative
-near/far render layers. It is read-only: its job is spatial awareness while the
-pilot flies, not accidental target selection under mouse control.
+map. The gallery uses fixed review fixtures for its contacts; the integrated HUD
+must derive contacts from true simulation positions rather than the
+camera-relative near/far render layers. It is read-only: its job is spatial
+awareness while the pilot flies, not accidental target selection under mouse
+control.
 
 It is strictly local, with deliberate fixed range steps up to the **10,000 km
 vicinity**. Navigation is authoritative for target selection and filters, while

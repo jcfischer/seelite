@@ -169,7 +169,8 @@ for (const viewport of VIEWPORTS) {
 		);
 		check(
 			`${viewport.name}: ${state} keeps the persistent flight floor visible`,
-			isInsideViewport(measured.floor, measured.viewport),
+			isInsideViewport(measured.floor, measured.viewport) &&
+				measured.floorVisible,
 		);
 		check(
 			`${viewport.name}: ${state} is the state actually displayed`,
