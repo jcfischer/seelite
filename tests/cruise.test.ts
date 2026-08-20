@@ -1294,9 +1294,8 @@ test("a chord that misses the body is released, and does lose altitude", () => {
 test("a ship stopped at the guard boundary can still leave it", () => {
 	// The regression a stricter release floor introduces: a stop leaves the ship
 	// on the boundary, so measuring the release against that same boundary is a
-	// tangent test at the start point and nothing can leave. 43 of 90 legs, when
-	// it was flown. The release is measured against the bare radius; this says
-	// so.
+	// tangent test at the start point and nothing can leave. The release is
+	// measured against the bare radius; this is what says so.
 	const planet = { id: "planet", pos: v3(), radiusKm: PLANET_R };
 	const atBoundary = v3(PLANET_R + HOST_CLEARANCE_KM, 0, 0);
 	const away = fly({

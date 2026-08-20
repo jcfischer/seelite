@@ -592,8 +592,10 @@ limb, which are the ones a ship beside a world wants.
 It is measured against the bare radius. A stop leaves the ship *on* the guard
 volume's boundary, so testing the release against that same boundary is a
 tangent test at the start point: every heading reads as entering and nothing can
-leave — 43 of 90 legs, flown. The cost is that a released chord may graze the
-surface, which is the grazing pass §11.4's margin is written to allow.
+leave. `tests/cruise.test.ts` pins that case, which is the durable form of it —
+the variant that showed it across most of the corpus was measured and discarded,
+so no figure from it is quoted here. The cost is that a released chord may graze
+the surface, which is the grazing pass §11.4's margin is written to allow.
 
 A heading that *does* go deeper is stopped **where the ship already is**, not
 where the ray meets the surface. Stopping at the surface was #30's own blocker,
@@ -640,11 +642,13 @@ direction. The mechanism is not asserted — it is isolated:
 | Same form with each station's own sight line | **25.85%** |
 | Sampled over every orbit phase | **25.84%** |
 
-The second row is the first with the assumption removed and nothing else
-changed, over the same 337 stations, and it agrees with the measurement to
-**0.01 of a point** where the first is 2.04 under. That is what makes the gap
-the isotropy assumption rather than something unexplained — and the rows are
-printed to two places precisely because their agreement is the claim.
+The informative comparison is **row 1 against row 3**: 2.04 points, and that is
+what the assumption costs. Row 2 is the same closed form with the assumption
+removed, evaluated per station, and its agreement with row 3 to 0.01 of a point
+is *self-consistency* — an exact integral against a 64-phase sample of the same
+geometry, which could only diverge through a convention bug. It is worth
+printing for that reason and not as independent confirmation: it says the 2.04
+is attributable to the assumption rather than to an error in either.
 
 For one circular orbit the fraction is `arccos(k)/π` with
 `k = √(r²−R²)/(r·√(1−c²))` and `c = |cos|` between the sight line and the orbit
@@ -691,6 +695,17 @@ to cruise** — carried as its own node under #30 rather than resolved here.
 
 ### 12.4 What #30 did not answer
 
+**A released chord can end inside a body that moved into it.** The guard is a
+snapshot: it tests a ray against where the masses are at the top of the frame.
+A body on a 30 km/s orbit moves ~3 km in one frame, so a chord released with
+3 km of clearance can be 1 km inside by the next test. Measured, one leg in 90
+does this — 1.041 km into a 5,146 km planet — and `main` produces the same
+figure, so it is #14's sweep meeting moving bodies rather than anything §12.1 or
+§12.2 introduced. The instrument reports it as a **minimum** rather than a
+median, which is how it was found; a median had been hiding it.
+
+
+- That snapshot hole, above.
 - The occluded quarter. Raising station orbits is measured above but not
   decided, and it moves the `station-orbits.json` baseline.
 - What the player should be *told* when a planet stops them. The drop is honest

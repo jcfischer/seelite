@@ -597,9 +597,8 @@ export function rayGoesDeeper(
 	centre: Vec3,
 	radiusKm: number,
 ): boolean {
-	// Squared, and allocation-free: this runs per mass per sub-step, up to
-	// `MAX_SUBSTEPS` times a frame. `closestApproachKm` is the same geometry with
-	// the sqrt and the vectors the sweep and the probe want.
+	// Squared rather than `closestApproachKm`'s sqrt: this is on the flight loop,
+	// on the branch where the ship is already inside a guard volume.
 	const toCentre = sub(centre, from);
 	const ahead = dot(toCentre, nose);
 	if (ahead <= 0) return false;

@@ -124,12 +124,17 @@ interface LegResult {
 	/** How many of them moved the ship more than 100 km. Zero is a pin. */
 	flyableHeadings: number;
 	/**
-	 * Clearance left after that second cruise, km.
+	 * Clearance left after that second cruise, km — **signed**, and reported as a
+	 * minimum, never a median. A median hid a leg that ends inside a surface.
 	 *
 	 * The one leg in the corpus that flies the in-place stop: the ship is beside
 	 * its host, inside the guard volume, aiming through it. A build with the
 	 * zero-clearance bug reports ~0 here; ordinary legs start an AU out and never
 	 * reach that branch, so without this row the corpus cannot see the fix.
+	 *
+	 * It currently reports **−1.041 km**, and that is not this rule's doing: the
+	 * same figure comes out of `main`. §12.4 has it — a chord released against a
+	 * snapshot can end inside a body that moved into it during the frame.
 	 */
 	reengagedClearanceKm: number;
 }
@@ -496,9 +501,16 @@ const stopped = rows.filter(
 );
 const stuck = stopped.filter((r) => r.result.reengagedKm < 100);
 const gained = stopped.map((r) => r.result.reengagedKm).sort((a, b) => a - b);
-const pinned = stopped.filter((r) => r.result.flyableHeadings === 0);
-const escapes = stopped.map((r) => r.result.bestEscapeKm).sort((a, b) => a - b);
-const headingCounts = stopped
+// Only legs `flyAway` actually flew. A starved leg has no `exitBodyId`, so it
+// returns zero headings without flying one, and counting it as pinned would
+// report a guard failure where nothing was measured.
+const measured = stopped.filter((r) => r.result.exitBodyId !== undefined);
+const unmeasured = stopped.length - measured.length;
+const pinned = measured.filter((r) => r.result.flyableHeadings === 0);
+const escapes = measured
+	.map((r) => r.result.bestEscapeKm)
+	.sort((a, b) => a - b);
+const headingCounts = measured
 	.map((r) => r.result.flyableHeadings)
 	.sort((a, b) => a - b);
 const reengagedClearances = stopped
@@ -515,12 +527,17 @@ console.log(
 	`  stopped legs ${stopped.length}\n` +
 		"  back at the same station, which is behind the planet: median " +
 		`${km(median(gained))} km, still stopped ${stuck.length}/${stopped.length} — as it should be,\n` +
-		"    and it is the one leg that flies the in-place stop: least clearance left after it, " +
-		`${median(reengagedClearances).toFixed(3)} km\n` +
+		"    and it is the one leg that flies the in-place stop. Least clearance left after it, " +
+		`${
+			reengagedClearances.length
+				? Math.min(...reengagedClearances).toFixed(3)
+				: "—"
+		} km\n` +
 		`  a way out, over ${ESCAPE_HEADINGS_DEG.length} headings from 0° to ` +
 		`${ESCAPE_HEADINGS_DEG[ESCAPE_HEADINGS_DEG.length - 1]}° off the outward radial:\n` +
-		`    ${median(headingCounts)} of them fly (median), best covers ${km(median(escapes))} km in ${ESCAPE_S} s\n` +
-		`    legs with no way out at all: ${pinned.length}/${stopped.length}\n`,
+		`    ${median(headingCounts)} fly, best covers ${km(median(escapes))} km in ${ESCAPE_S} s — both medians over legs\n` +
+		`    legs with no way out at all: ${pinned.length}/${measured.length}` +
+		`${unmeasured ? ` (${unmeasured} not flown — no body to leave)` : ""}\n`,
 );
 
 // ── Stations that sit inside their own host's shell.
