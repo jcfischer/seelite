@@ -73,11 +73,14 @@ test("head-look activates exactly the readable console overlay for that side", (
 	expect(right).toContain('data-gallery-panel="right" data-active="true"');
 });
 
-test("the gallery uses the project radar name rather than an external-game label", () => {
+test("the gallery keeps the scanner self-explanatory without a visible title", () => {
 	const target = renderGalleryState(
 		galleryState("target-acquisition"),
 		"Flight",
 	);
-	expect(target).toContain("LOCAL RADAR");
+	expect(target).toContain(
+		'aria-label="Local radar, 10,000 kilometre vicinity"',
+	);
+	expect(target).not.toContain("LOCAL RADAR");
 	expect(target).not.toContain("ELITE 3D RADAR");
 });

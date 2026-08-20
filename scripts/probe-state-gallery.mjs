@@ -32,6 +32,16 @@ function isInsideViewport(box, viewport) {
 }
 
 function measureGalleryState() {
+	const isVisible = (selector) => {
+		const element = document.querySelector(selector);
+		if (!(element instanceof HTMLElement)) return false;
+		const style = getComputedStyle(element);
+		return (
+			style.display !== "none" &&
+			style.visibility !== "hidden" &&
+			Number(style.opacity) > 0
+		);
+	};
 	const root = document.querySelector("#state-gallery");
 	const boxFor = (element) => {
 		if (!element) return null;
@@ -61,27 +71,9 @@ function measureGalleryState() {
 			?.getAttribute("data-gallery-state-active"),
 		director,
 		scanner: box("[data-gallery-scanner]"),
-		scannerVisible: (() => {
-			const scanner = document.querySelector("[data-gallery-scanner]");
-			if (!(scanner instanceof HTMLElement)) return false;
-			const style = getComputedStyle(scanner);
-			return (
-				style.display !== "none" &&
-				style.visibility !== "hidden" &&
-				Number(style.opacity) > 0
-			);
-		})(),
+		scannerVisible: isVisible("[data-gallery-scanner]"),
 		floor: box("[data-gallery-floor]"),
-		floorVisible: (() => {
-			const floor = document.querySelector("[data-gallery-floor]");
-			if (!(floor instanceof HTMLElement)) return false;
-			const style = getComputedStyle(floor);
-			return (
-				style.display !== "none" &&
-				style.visibility !== "hidden" &&
-				Number(style.opacity) > 0
-			);
-		})(),
+		floorVisible: isVisible("[data-gallery-floor]"),
 		galleryRendererCount: document.querySelectorAll("canvas:not(#overlay)")
 			.length,
 		liveGameRunning: Boolean(window.__seelite),

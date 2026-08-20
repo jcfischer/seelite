@@ -1,6 +1,6 @@
 # Spec: HUD, scanner, and cockpit
 
-**Status:** resolved design decision — [#34](https://github.com/jcfischer/seelite/issues/34)  
+**Status:** proposed design decision — [#34](https://github.com/jcfischer/seelite/issues/34)  
 **Date:** 2026-08-20  
 **Context:** flight (#5 and #21), docking (#9), and target-marker (#10) work
 provide the simulation surfaces this visual contract will eventually consume.
