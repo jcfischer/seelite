@@ -242,7 +242,15 @@ function buildCanopyFrame(
 	metal: THREE.Material,
 	trim: THREE.Material,
 ): void {
+	// The forward view needs a shallow physical frame, not flat panels at its
+	// edges. Keep the heavier console faces outside the forward camera, while
+	// its braces, sill, and deck establish the pilot's point of view.
 	addBox({ size: [5.7, 0.14, 0.18], position: [0, 1.55, -0.8] });
+	addBox({
+		size: [5.15, 0.1, 0.16],
+		position: [0, 1.04, -1.28],
+		material: trim,
+	});
 	addBox({
 		size: [0.18, 2.8, 0.22],
 		position: [-4.05, 0.12, -0.9],
@@ -252,6 +260,18 @@ function buildCanopyFrame(
 		size: [0.18, 2.8, 0.22],
 		position: [4.05, 0.12, -0.9],
 		rotation: [0, 0, 0.24],
+	});
+	addBox({
+		size: [0.12, 1.72, 0.16],
+		position: [-2.72, 0.34, -1.3],
+		rotation: [0, 0, -0.42],
+		material: trim,
+	});
+	addBox({
+		size: [0.12, 1.72, 0.16],
+		position: [2.72, 0.34, -1.3],
+		rotation: [0, 0, 0.42],
+		material: trim,
 	});
 	addBox({
 		size: [4.4, 0.24, 1.45],
@@ -271,6 +291,86 @@ function buildCanopyFrame(
 		rotation: [0.42, -0.16, 0],
 		material: metal,
 	});
+}
+
+function buildInstrumentDeck(
+	addBox: CockpitBox,
+	metal: THREE.Material,
+	trim: THREE.Material,
+	cyan: THREE.Material,
+	amber: THREE.Material,
+): void {
+	// A layered, sloped centre stack catches the light as actual cockpit
+	// hardware. The small emissive blocks are status instruments, not a second
+	// radar or a replacement for the side-console work surfaces.
+	addBox({
+		size: [2.45, 0.24, 0.92],
+		position: [0, -0.68, -1.7],
+		rotation: [0.43, 0, 0],
+		material: trim,
+	});
+	addBox({
+		size: [1.76, 0.13, 0.64],
+		position: [0, -0.48, -1.57],
+		rotation: [0.43, 0, 0],
+		material: metal,
+	});
+	addBox({
+		size: [0.98, 0.04, 0.34],
+		position: [0, -0.39, -1.45],
+		rotation: [0.43, 0, 0],
+		material: cyan,
+	});
+	addBox({
+		size: [0.23, 0.05, 0.2],
+		position: [-0.63, -0.37, -1.42],
+		rotation: [0.43, 0, 0],
+		material: cyan,
+	});
+	addBox({
+		size: [0.23, 0.05, 0.2],
+		position: [0.63, -0.37, -1.42],
+		rotation: [0.43, 0, 0],
+		material: amber,
+	});
+	addBox({
+		size: [0.12, 0.42, 0.26],
+		position: [-1.18, -0.43, -1.58],
+		rotation: [0.22, 0, 0.32],
+		material: trim,
+	});
+	addBox({
+		size: [0.12, 0.42, 0.26],
+		position: [1.18, -0.43, -1.58],
+		rotation: [0.22, 0, -0.32],
+		material: trim,
+	});
+
+	// These are opaque housings only. The detailed and legible console content
+	// belongs to the HTML overlays that appear after a head turn.
+	for (const [x, yaw, accent] of [
+		[-3.12, 0.15, cyan],
+		[3.12, -0.15, amber],
+	] as const) {
+		addBox({
+			size: [1.7, 0.22, 1.08],
+			position: [x, -0.68, -1.77],
+			rotation: [0.48, yaw, 0],
+			material: metal,
+		});
+		addBox({
+			size: [1.3, 0.05, 0.7],
+			position: [x, -0.49, -1.61],
+			rotation: [0.48, yaw, 0],
+			material: trim,
+		});
+		addBox({
+			size: [0.8, 0.035, 0.08],
+			position: [x, -0.43, -1.49],
+			rotation: [0.48, yaw, 0],
+			material: accent,
+		});
+	}
 }
 
 function addConsoleDisplay(
@@ -404,24 +504,27 @@ function mountCockpit3D(
 	camera.position.set(0, 0.4, 2.7);
 	const cockpit = new THREE.Group();
 	scene.add(cockpit);
-	scene.add(new THREE.HemisphereLight(0x88b8d8, 0x05080b, 1.8));
-	const lamp = new THREE.PointLight(0xe5a244, 18, 12);
+	scene.add(new THREE.HemisphereLight(0xa8d7f2, 0x071118, 2.6));
+	const lamp = new THREE.PointLight(0xf2b459, 28, 12);
 	lamp.position.set(0, 0.4, 0.6);
 	scene.add(lamp);
+	const instrumentLamp = new THREE.PointLight(0x75cbed, 8, 7);
+	instrumentLamp.position.set(-1.4, -0.08, 0.3);
+	scene.add(instrumentLamp);
 
 	const metal = new THREE.MeshStandardMaterial({
-		color: 0x355267,
-		roughness: 0.38,
-		metalness: 0.82,
-		emissive: 0x07131d,
-		emissiveIntensity: 0.75,
+		color: 0x426d84,
+		roughness: 0.3,
+		metalness: 0.8,
+		emissive: 0x0a2737,
+		emissiveIntensity: 1.15,
 	});
 	const trim = new THREE.MeshStandardMaterial({
-		color: 0x3e2b12,
-		roughness: 0.26,
-		metalness: 0.66,
-		emissive: 0x120900,
-		emissiveIntensity: 0.55,
+		color: 0x664827,
+		roughness: 0.23,
+		metalness: 0.68,
+		emissive: 0x281407,
+		emissiveIntensity: 0.8,
 	});
 	const glow = new THREE.MeshBasicMaterial({ color: 0xe6a23c });
 	const cyan = new THREE.MeshBasicMaterial({ color: 0x78cbed });
@@ -439,6 +542,7 @@ function mountCockpit3D(
 		return mesh;
 	};
 	buildCanopyFrame(addBox, metal, trim);
+	buildInstrumentDeck(addBox, metal, trim, cyan, glow);
 	let consoleDisplays = buildConsoleDisplays(
 		cockpit,
 		headLook,
@@ -539,12 +643,14 @@ const STYLE = `
 .sg-shell { min-height: 540px; perspective: 1200px; }
 .sg-cockpit { position: relative; height: 540px; overflow: hidden; border: 1px solid #355369; background: #02080e; box-shadow: 0 24px 40px rgba(0, 0, 0, .45); transform-style: preserve-3d; }
 .sg-3d-canvas { position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%; }
+.sg-cockpit[data-gallery-head-look="left"]::after,
+.sg-cockpit[data-gallery-head-look="right"]::after { content: ""; position: absolute; z-index: 4; inset: 0; background: rgba(2, 8, 14, .72); pointer-events: none; }
 .sg-canopy { display: none; }
 .sg-panel,
 .sg-glass { border: 1px solid #355369; background: linear-gradient(145deg, rgba(13, 36, 53, .82), rgba(2, 9, 15, .96)); box-shadow: inset 0 0 42px rgba(60, 162, 220, .08); }
 /* The side displays are cockpit-projected work surfaces. Forward flight leaves
    them peripheral; a head turn makes exactly one fill the useful field. */
-.sg-panel { display: none; position: absolute; z-index: 5; inset: 31px 5.5% 70px; overflow: hidden; padding: 18px 22px; border-color: rgba(229, 170, 82, .88); background: linear-gradient(104deg, rgba(46, 18, 5, .72), rgba(16, 8, 5, .47) 58%, rgba(6, 9, 12, .24)); box-shadow: inset 0 0 68px rgba(231, 123, 31, .16), 0 0 28px rgba(227, 133, 39, .15); color: #ffd48c; clip-path: polygon(3% 0, 97% 0, 100% 93%, 92% 100%, 6% 100%, 0 93%); }
+.sg-panel { display: none; position: absolute; z-index: 5; inset: 31px 5.5% 70px; overflow: hidden; padding: 18px 22px; border-color: rgba(229, 170, 82, .88); background: linear-gradient(104deg, rgba(46, 18, 5, .94), rgba(16, 8, 5, .88) 58%, rgba(6, 9, 12, .8)); box-shadow: inset 0 0 68px rgba(231, 123, 31, .16), 0 0 28px rgba(227, 133, 39, .15); color: #ffd48c; clip-path: polygon(3% 0, 97% 0, 100% 93%, 92% 100%, 6% 100%, 0 93%); }
 .sg-cockpit[data-gallery-head-look="left"] .sg-panel[data-gallery-panel="left"][data-active="true"],
 .sg-cockpit[data-gallery-head-look="right"] .sg-panel[data-gallery-panel="right"][data-active="true"] { display: block; }
 .sg-console-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 0 3px 11px; border-bottom: 2px solid #e5aa52; color: #ffe1a9; font-size: 18px; letter-spacing: .08em; }
@@ -684,7 +790,7 @@ export function renderGalleryState(
 		<div class="sg-shell" data-gallery-3d-prototype>
 			<div class="sg-cockpit" data-gallery-cockpit data-gallery-head-look="${headLook}" data-gallery-physical-console="${headLook}"><div class="sg-canopy" aria-hidden="true"></div>
 			${leftConsole}
-			<main class="sg-glass" aria-live="polite"><div class="sg-stars"></div><div class="sg-dash-deck" aria-hidden="true"></div><div class="sg-director" data-gallery-director data-accent="${state.accent}">${state.targetBearingDeg === undefined ? "" : `<i class="sg-target-arrow" data-gallery-target-arrow data-gallery-target-bearing="${state.targetBearingDeg}" style="--target-bearing:${state.targetBearingDeg}deg" aria-label="turn toward target bearing">➤</i>`}${state.director}${state.id.startsWith("docking-") ? `<div class="sg-docking" data-gallery-docking>AXIS FUNNEL · ROLL RING · ${state.id === "docking-granted" ? "CLEAR TO APPROACH" : "DO NOT ENTER"}</div>` : ""}</div><div class="sg-scanner" data-gallery-scanner aria-label="Elite-style 3D local radar, 10,000 kilometre vicinity"><i class="sg-contact one" data-gallery-contact-stem></i><i class="sg-contact-anchor one" data-gallery-contact-anchor></i><i class="sg-contact two" data-gallery-contact-stem></i><i class="sg-contact-anchor two" data-gallery-contact-anchor></i><i class="sg-contact three" data-gallery-contact-stem></i><i class="sg-contact-anchor three" data-gallery-contact-anchor></i><span class="sg-scanner-label">ELITE 3D RADAR · 10,000 km</span></div><div class="sg-floor" data-gallery-floor><span>${state.mode}</span><strong>${state.target}</strong></div></main>
+			<main class="sg-glass" aria-live="polite"><div class="sg-stars"></div><div class="sg-dash-deck" aria-hidden="true"></div><div class="sg-director" data-gallery-director data-accent="${state.accent}">${state.targetBearingDeg === undefined ? "" : `<i class="sg-target-arrow" data-gallery-target-arrow data-gallery-target-bearing="${state.targetBearingDeg}" style="--target-bearing:${state.targetBearingDeg}deg" aria-label="turn toward target bearing">➤</i>`}${state.director}${state.id.startsWith("docking-") ? `<div class="sg-docking" data-gallery-docking>AXIS FUNNEL · ROLL RING · ${state.id === "docking-granted" ? "CLEAR TO APPROACH" : "DO NOT ENTER"}</div>` : ""}</div><div class="sg-scanner" data-gallery-scanner aria-label="Local radar, 10,000 kilometre vicinity"><i class="sg-contact one" data-gallery-contact-stem></i><i class="sg-contact-anchor one" data-gallery-contact-anchor></i><i class="sg-contact two" data-gallery-contact-stem></i><i class="sg-contact-anchor two" data-gallery-contact-anchor></i><i class="sg-contact three" data-gallery-contact-stem></i><i class="sg-contact-anchor three" data-gallery-contact-anchor></i><span class="sg-scanner-label">LOCAL RADAR · 10,000 km</span></div><div class="sg-floor" data-gallery-floor><span>${state.mode}</span><strong>${state.target}</strong></div></main>
 			${rightConsole}
 			</div>
 		</div><p class="sg-note" data-gallery-notice>${state.notice}</p>

@@ -32,7 +32,7 @@ returns to an unobscured cockpit.
 ## 2. Compact scanner
 
 The compact scanner is persistently visible at the **lower centre of the
-cockpit**. It is an **Elite-style 3D radar**: a large, shallow concentric
+cockpit**. It is a **local radar**: a large, shallow concentric
 elliptical base. Each contact uses a **vertical mast** anchored to a small
 **anchor disc** on that plane, so the separation is read as height rather than a
 slanted vector. Bearing and range read from the base, not a detached top-down
@@ -88,9 +88,9 @@ The browser prototype renders this language as a **3D cockpit**, not as a set of
 flat application cards: a framed canopy opens on the flight glass, faceted side
 consoles recede toward the pilot, and a physical lower-centre dash deck carries
 the scanner. The gallery renders those physical cockpit surfaces in its own
-Three.js scene, with a cockpit camera and shallow idle parallax. The modern Elite
-reference guides the presentation only; simulation ownership remains with the
-existing flight, target, and docking work.
+Three.js scene, with a cockpit camera and shallow idle parallax. The modern
+spaceflight reference guides the presentation only; simulation ownership remains
+with the existing flight, target, and docking work.
 
 Navigation/Communications and Flight/Drive/Tuning are **separate physical
 consoles**, not persistent sidebars. The forward view deliberately leaves their

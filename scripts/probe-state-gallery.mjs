@@ -182,8 +182,8 @@ for (const viewport of VIEWPORTS) {
 		);
 		if (state === "assist-on")
 			check(
-				`${viewport.name}: assist-on describes the Elite-style 3D local radar with anchored vertical masts`,
-				measured.radar?.includes("Elite-style 3D local radar") &&
+				`${viewport.name}: assist-on describes the local radar with anchored vertical masts`,
+				measured.radar?.includes("Local radar") &&
 					measured.radarAnchors === 3 &&
 					measured.radarMasts,
 			);

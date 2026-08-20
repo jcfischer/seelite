@@ -14,7 +14,7 @@ test("the HUD and scanner document retains the agreed decision vocabulary", () =
 	const prose = read("docs/specs/hud-and-scanner.md").replace(/\s+/g, " ");
 	for (const decision of [
 		"target-primary cockpit",
-		"Elite-style 3D radar",
+		"local radar",
 		"lower centre of the cockpit",
 		"vertical mast",
 		"anchor disc",
@@ -71,4 +71,13 @@ test("head-look activates exactly the readable console overlay for that side", (
 	expect(forward).toContain('data-gallery-panel="right" data-active="false"');
 	expect(left).toContain('data-gallery-panel="left" data-active="true"');
 	expect(right).toContain('data-gallery-panel="right" data-active="true"');
+});
+
+test("the gallery uses the project radar name rather than an external-game label", () => {
+	const target = renderGalleryState(
+		galleryState("target-acquisition"),
+		"Flight",
+	);
+	expect(target).toContain("LOCAL RADAR");
+	expect(target).not.toContain("ELITE 3D RADAR");
 });
