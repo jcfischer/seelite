@@ -14,6 +14,7 @@ export interface LiveCockpitState {
 	headLook: HeadLook;
 	rightTab: RightTab;
 	contacts: readonly ScannerContact[];
+	targetId: string | null;
 	target: string;
 	targetBearingDeg: number | null;
 	mode: string;
@@ -108,6 +109,7 @@ export class LiveCockpit {
 		this.root = document.createElement("section");
 		this.root.id = "live-cockpit";
 		this.root.setAttribute("data-live-cockpit", "true");
+		// Delegation keeps tab clicks live after a structural render is replaced.
 		this.root.addEventListener("click", (event) => {
 			const tab = (event.target as HTMLElement).closest<HTMLElement>(
 				"[data-live-right-tab]",
@@ -128,7 +130,7 @@ export class LiveCockpit {
 
 	update(state: LiveCockpitState) {
 		const view = cockpitView(state.headLook);
-		const targetId = state.target.split(" · ")[0];
+		const targetId = state.targetId ?? "NO TARGET SELECTED";
 		const key = `${state.visible}|${state.headLook}|${state.rightTab}|${targetId}`;
 		this.setVisible(state.visible);
 		this.root.dataset.liveHeadLook = state.headLook;

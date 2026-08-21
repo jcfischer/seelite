@@ -47,7 +47,7 @@ import {
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
-const URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=42&legacy-hud=1`;
+const URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=42`;
 
 /** How far a marker may sit from the mesh it marks, in NDC. 0.002 of a 900-pixel
  *  viewport is under a pixel; the failure this catches is half a screen. */
@@ -108,59 +108,16 @@ const state = await page.evaluate(async () => {
 		});
 	}
 
-	// What the panel says while the ship sits in normal flight with a distant
-	// target selected — the state the first session was flown in.
-	const hudText = document.getElementById("hud").textContent;
 	const t = g.world.system.byId.get(g.targetId);
 	// Reported rather than assumed: everything below dereferences this, and a
 	// run with nothing selected would throw inside the evaluate and kill the
 	// probe instead of producing a FAIL line — the same reason `probe-cruise`
 	// returns `noStation`.
 	if (!t) return { noTarget: true, targetId: g.targetId };
-	const targetKm = Math.hypot(
-		t.pos.x - g.world.ship.pos.x,
-		t.pos.y - g.world.ship.pos.y,
-		t.pos.z - g.world.ship.pos.z,
-	);
-
-	// And the same readout in the one state where an *absolute* speed flatters
-	// it: **assist off**, flying fast across the target rather than towards it.
-	//
-	// The construction matters. With the assist on, `stepFlight` caps total
-	// velocity at 2 km/s, which is also the estimate's floor — so absolute and
-	// closing agree there and no test built on that state can tell them apart.
-	// The first version of this check was built on it and passed against the bug
-	// it was written for. Assist off is Newtonian and uncapped, which is exactly
-	// how the principal was flying when he first met this panel.
-	const to = {
-		x: t.pos.x - g.world.ship.pos.x,
-		y: t.pos.y - g.world.ship.pos.y,
-		z: t.pos.z - g.world.ship.pos.z,
-	};
-	const len = Math.hypot(to.x, to.y, to.z);
-	// A vector across the line of sight: fast, and closing on nothing.
-	const across = { x: -to.y / len, y: to.x / len, z: 0 };
-	const crossKms = 20;
-	g.assist = false;
-	g.setThrottle(0);
-	g.world.ship.vel = {
-		x: across.x * crossKms,
-		y: across.y * crossKms,
-		z: across.z * crossKms,
-	};
-	g.world.gameTime += 1;
-	await new Promise((r) => requestAnimationFrame(() => r()));
-	await new Promise((r) => requestAnimationFrame(() => r()));
-	const hudTextMatched = document.getElementById("hud").textContent;
-	const carriedKms = crossKms;
-
 	return {
-		hudText,
-		hudTextMatched,
-		carriedKms,
-		targetKm,
-		regime: g.regime,
-		assistCapKms: g.assistCapKms,
+		liveCockpit: document
+			.querySelector("[data-live-cockpit]")
+			?.getAttribute("data-live-active"),
 		viewport: { w: window.innerWidth, h: window.innerHeight },
 		backing: { w: overlay.width, h: overlay.height },
 		box: { w: box.width, h: box.height, x: box.x, y: box.y },
@@ -248,39 +205,79 @@ check(
 		: `${state.targetId} not among the bodies ahead`,
 );
 
-// The panel has to say that this regime cannot get there, and what to do about
-// it. A blank `eta —` is what the first flight of this build actually saw: full
-// throttle, 0.837 AU, and no indication that normal flight would need two years
-// or that a keypress existed.
 check(
-	"in normal flight the panel names the regime that can get there",
-	state.regime === "normal" && /press J to cruise/.test(state.hudText),
-	state.hudText.split("\n")[1] ?? state.hudText,
-);
-check(
-	"and reports an honest eta for the regime the ship is actually in",
-	// Two years at 2 km/s reads in days, never in seconds and never as a blank.
-	/eta \d+(\.\d+)?d/.test(state.hudText),
-	`${(state.targetKm / state.assistCapKms / 86400).toFixed(0)} d at the assist cap`,
+	"the default route mounts the live cockpit",
+	state.liveCockpit === "true",
+	`live cockpit active: ${state.liveCockpit ?? "absent"}`,
 );
 
-// The blocker this check was written for: `timeToTarget` computed the
-// normal-flight estimate from the ship's *absolute* speed, while the panel
-// beside it argues — correctly — that only closing speed answers "will I
-// arrive". Flying across the target at 20 km/s with the assist off closes on it
-// at nothing, and an absolute figure reports the leg ten times faster than the
-// ship is actually approaching. Neither the boot state nor a velocity-matched
-// one can catch that: both sit at or under the estimate's own 2 km/s floor.
-const daysMatched = /eta (\d+)d/.exec(state.hudTextMatched);
-const capDays = state.targetKm / state.assistCapKms / 86400;
-const absoluteDays = state.targetKm / state.carriedKms / 86400;
-check(
-	"the eta counts progress toward the target, not speed — flying across it",
-	daysMatched !== null && Number(daysMatched[1]) > absoluteDays * 2,
-	`reads ${daysMatched?.[1] ?? "—"}d; the cap says ${capDays.toFixed(0)}d, ` +
-		`and ${state.carriedKms.toFixed(0)} km/s of crossing motion would say ` +
-		`${absoluteDays.toFixed(0)}d if it counted as progress`,
-);
+// The overlay assertions above deliberately use the default live-cockpit route.
+// Keep this older legacy-HUD ETA check as a separate compatibility pass.
+await page.goto(`${ORIGIN}/?seed=42&legacy-hud=1`, { waitUntil: "load" });
+await bootedGame(page);
+const legacyEta = await page.evaluate(async () => {
+	const g = window.__seelite;
+	const target = g.world.system.byId.get(g.targetId);
+	if (!target) return { noTarget: true, targetId: g.targetId };
+	const targetKm = Math.hypot(
+		target.pos.x - g.world.ship.pos.x,
+		target.pos.y - g.world.ship.pos.y,
+		target.pos.z - g.world.ship.pos.z,
+	);
+	const bootText = document.getElementById("hud").textContent;
+	const to = {
+		x: target.pos.x - g.world.ship.pos.x,
+		y: target.pos.y - g.world.ship.pos.y,
+		z: target.pos.z - g.world.ship.pos.z,
+	};
+	const length = Math.hypot(to.x, to.y, to.z);
+	const crossingKms = 20;
+	g.assist = false;
+	g.setThrottle(0);
+	g.world.ship.vel = {
+		x: (-to.y / length) * crossingKms,
+		y: (to.x / length) * crossingKms,
+		z: 0,
+	};
+	g.world.gameTime += 1;
+	await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+	await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+	return {
+		bootText,
+		crossingText: document.getElementById("hud").textContent,
+		crossingKms,
+		targetKm,
+		regime: g.regime,
+		assistCapKms: g.assistCapKms,
+	};
+});
+
+if (legacyEta.noTarget) {
+	check(
+		"the legacy compatibility route selects a target",
+		false,
+		`targetId ${legacyEta.targetId ?? "none"}`,
+	);
+} else {
+	check(
+		"the legacy compatibility panel names the regime that can get there",
+		legacyEta.regime === "normal" &&
+			/press J to cruise/.test(legacyEta.bootText),
+		legacyEta.bootText.split("\n")[1] ?? legacyEta.bootText,
+	);
+	check(
+		"the legacy compatibility panel reports an honest normal-flight eta",
+		/eta \d+(\.\d+)?d/.test(legacyEta.bootText),
+		`${(legacyEta.targetKm / legacyEta.assistCapKms / 86400).toFixed(0)} d at the assist cap`,
+	);
+	const daysMatched = /eta (\d+)d/.exec(legacyEta.crossingText);
+	const absoluteDays = legacyEta.targetKm / legacyEta.crossingKms / 86400;
+	check(
+		"the legacy compatibility eta counts closing progress, not crossing speed",
+		daysMatched !== null && Number(daysMatched[1]) > absoluteDays * 2,
+		`reads ${daysMatched?.[1] ?? "—"}d; crossing speed would say ${absoluteDays.toFixed(0)}d`,
+	);
+}
 
 await browser.close();
 exit();

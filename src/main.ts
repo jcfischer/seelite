@@ -554,6 +554,7 @@ class Game {
 		// boot reads as broken, and the nearest station is what a ship at the
 		// arrival point is there to reach.
 		this.targetId = this.nearestOfKind("station")?.id ?? null;
+		this.refreshScannerContacts();
 
 		this.composer = new EffectComposer(this.renderer);
 		// Back to front. The first pass clears colour; the third clears *depth*
@@ -1401,7 +1402,7 @@ class Game {
 		// The low end is nearest/lower on the sloped deck. Keep it anchored there
 		// and extend toward the windscreen as throttle rises; the old fill started
 		// at the top and slid down, the inverse of a physical throttle cue.
-		this.cockpit.throttleFill.scale.z = Math.max(0.04, this.throttle);
+		this.cockpit.throttleFill.scale.z = Math.max(0.08, this.throttle);
 		this.cockpit.throttleFill.position.z = (1 - this.throttle) * 0.006;
 		this.cockpit.throttleFillMaterial.emissiveIntensity =
 			0.04 + this.throttle * 0.28;
@@ -2245,12 +2246,7 @@ class Game {
 		const target = this.targetBody();
 		const targetKm = target ? length(sub(target.pos, this.world.ship.pos)) : 0;
 		const velocity = this.velocityReadout();
-		projectScannerContacts(
-			this.world.ship.pos,
-			this.world.system.bodies,
-			this.targetId,
-			{ orientation: this.orientation, output: this.scannerContactBuffer },
-		);
+		this.refreshScannerContacts();
 		this.updateHologramContacts(this.scannerContacts);
 		this.updateInstruments(target, targetKm, velocity);
 		this.liveCockpit.update({
@@ -2258,6 +2254,7 @@ class Game {
 			headLook: this.headLook,
 			rightTab: this.rightTab,
 			contacts: this.scannerContacts,
+			targetId: target?.id ?? null,
 			target: target
 				? `${target.id} · ${range(targetKm)}`
 				: "NO TARGET SELECTED",
@@ -2279,6 +2276,15 @@ class Game {
 		});
 	}
 
+	private refreshScannerContacts() {
+		projectScannerContacts(
+			this.world.ship.pos,
+			this.world.system.bodies,
+			this.targetId,
+			{ orientation: this.orientation, output: this.scannerContactBuffer },
+		);
+	}
+
 	private tuningSummary() {
 		const p = this.cruiseParams;
 		const key = `${p.vMaxKms}|${p.exponent}|${p.dropRadiusKm}|${p.dropSpeedKms}|${p.vicinityKm}|${p.approachLeadS}`;
@@ -2290,6 +2296,7 @@ class Game {
 	}
 
 	private updateHud() {
+		this.updateEtaEstimate();
 		if (!this.hud) return;
 		const { ship, system, gameTime } = this.world;
 

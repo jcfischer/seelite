@@ -223,6 +223,8 @@ for (const viewport of VIEWPORTS) {
 		forward.canopyHeaderBraces === 2 &&
 			forward.scannerWell &&
 			forward.scannerBezels === 4 &&
+			throttleClosed.throttleFill >= 0.08 &&
+			throttleClosed.throttleFill < 0.1 &&
 			throttleClosed.throttleFillZ > throttleOpen.throttleFillZ &&
 			throttleOpen.throttleFill > 0.99,
 		`${forward.canopyHeaderBraces} braces; well: ${forward.scannerWell}; bezels: ${forward.scannerBezels}; throttle z ${throttleClosed.throttleFillZ} → ${throttleOpen.throttleFillZ}`,
