@@ -47,7 +47,7 @@ import {
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
-const URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=42`;
+const URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=42&legacy-hud=1`;
 
 /** How far a marker may sit from the mesh it marks, in NDC. 0.002 of a 900-pixel
  *  viewport is under a pixel; the failure this catches is half a screen. */

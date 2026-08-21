@@ -401,6 +401,10 @@ class Game {
 	private warp!: WarpField;
 	private lastTime = 0;
 	private hud: HTMLElement;
+	/** The old text HUD stays probe-addressable without taxing the live cockpit. */
+	private readonly legacyHud = new URLSearchParams(window.location.search).has(
+		"legacy-hud",
+	);
 	/** The last time-to-target estimate, and the clock value it was made at. */
 	private etaCache: number | null = null;
 	private etaAt = Number.NEGATIVE_INFINITY;
@@ -1041,14 +1045,26 @@ class Game {
 		scannerMount.position.set(0, -0.014, -0.038);
 		scannerMount.rotation.x = dashboardPitch;
 		cockpit.add(scannerMount);
+		this.buildScannerAssembly(scannerMount, metal, trim, inset);
+
+		this.buildHologramSystem(scannerMount);
+		this.cockpitMesh = cockpit;
+		this.nearScene.add(cockpit);
+	}
+
+	/** Build the fitted scanner plate, instrument canvases, and throttle hardware. */
+	private buildScannerAssembly(
+		scannerMount: THREE.Group,
+		metal: THREE.MeshStandardMaterial,
+		trim: THREE.MeshStandardMaterial,
+		inset: THREE.MeshStandardMaterial,
+	) {
 		const deck = new THREE.Mesh(
 			new THREE.BoxGeometry(0.032, 0.0016, 0.022),
 			metal,
 		);
 		deck.name = "scanner-deck";
 		scannerMount.add(deck);
-		// The scanner itself sits in a shallow black well. A raised bezel makes it
-		// read as a fitted instrument rather than a disc printed over the deck.
 		const scannerWell = new THREE.Mesh(
 			new THREE.BoxGeometry(0.029, 0.00025, 0.0155),
 			inset,
@@ -1070,7 +1086,6 @@ class Game {
 			bezel.position.set(x, 0.00145, z);
 			scannerMount.add(bezel);
 		}
-
 		const scannerCanvas = document.createElement("canvas");
 		scannerCanvas.width = 800;
 		scannerCanvas.height = 400;
@@ -1090,18 +1105,10 @@ class Game {
 			}),
 		);
 		scanner.name = "scanner";
-		// A PlaneGeometry begins camera-facing. Within the dashboard mount a
-		// quarter turn lays it flat, and a one-millimetre lift keeps it clear of
-		// the deck. The mount owns the deck's slope, so every hologram and gauge
-		// shares one physical surface rather than approximating it in screen space.
 		scanner.position.y = 0.00108;
 		scanner.rotation.x = -Math.PI / 2;
 		scannerMount.add(scanner);
-
-		const makeInstrument = (
-			name: string,
-			x: number,
-		): { ctx: CanvasRenderingContext2D; texture: THREE.CanvasTexture } => {
+		const makeInstrument = (name: string, x: number) => {
 			const backing = new THREE.Mesh(
 				new THREE.BoxGeometry(0.014, 0.0014, 0.011),
 				trim,
@@ -1134,7 +1141,6 @@ class Game {
 		const targetInstrument = makeInstrument("target-instrument", 0.025);
 		this.targetInstrumentCtx = targetInstrument.ctx;
 		this.targetInstrumentTexture = targetInstrument.texture;
-
 		const throttleTrack = new THREE.Mesh(
 			new THREE.BoxGeometry(0.0022, 0.0014, 0.014),
 			inset,
@@ -1154,11 +1160,10 @@ class Game {
 		this.throttleFill.name = "throttle-fill";
 		this.throttleFill.position.set(-0.0168, 0.0018, 0.006);
 		scannerMount.add(this.throttleFill);
+	}
 
-		// The scanner's dark plate only catches a little reflected light. Its
-		// range rings, axes, and contact stems are actual line objects lifted above
-		// it, so the display has an occupied holographic volume instead of a clean
-		// 2D diagram.
+	/** Create the static radar geometry and the reusable live-contact pool. */
+	private buildHologramSystem(scannerMount: THREE.Group) {
 		this.scannerHologram = new THREE.Group();
 		this.scannerHologram.name = "scanner-hologram";
 		this.scannerHologram.position.y = 0.0013;
@@ -1197,8 +1202,6 @@ class Game {
 			const fraction = ring / 5;
 			for (let step = 0; step < 33; step++) {
 				const angle = (step / 32) * Math.PI * 2;
-				// Match the contact projection's full range: the shallow axis is
-				// deliberately flatter so the outer ring fits the physical well.
 				points.push(
 					new THREE.Vector3(
 						Math.cos(angle) * 0.0105 * fraction,
@@ -1226,8 +1229,6 @@ class Game {
 		this.scannerContactGlyphs = new THREE.Group();
 		this.scannerContactGlyphs.name = "scanner-contact-glyphs";
 		this.scannerHologram.add(this.scannerContactGlyphs);
-		this.cockpitMesh = cockpit;
-		this.nearScene.add(cockpit);
 	}
 
 	/** Paint the scanner's unchanging dark surface once, before the first draw. */
@@ -1299,11 +1300,21 @@ class Game {
 		}
 	}
 
-	private updateInstruments(target: Body | null, targetKm: number | null) {
-		const velocity = this.velocityReadout();
+	/** Refresh the shared target estimate at the resolution either HUD can show. */
+	private updateEtaEstimate() {
+		if (this.world.gameTime - this.etaAt < ETA_INTERVAL_S) return;
+		this.etaCache = this.timeToTarget();
+		this.etaAt = this.world.gameTime;
+	}
+
+	private updateInstruments(
+		target: Body | null,
+		targetKm: number,
+		velocity: ReturnType<Game["velocityReadout"]>,
+	) {
 		const speed = velocity.speed;
 		const targetText = target
-			? `${target.id.toUpperCase()}  ${range(targetKm as number)}`
+			? `${target.id.toUpperCase()}  ${range(targetKm)}`
 			: "NO TARGET";
 		const eta = this.etaCache === null ? "CALC" : duration(this.etaCache);
 		const key = `${speed}|${velocity.context}|${targetText}|${eta}|${this.throttle}|${this.assist}|${this.chargeAu}`;
@@ -1731,7 +1742,10 @@ class Game {
 				context: "NOSE-LOCKED CRUISE",
 			};
 		const frameBody = this.localFrameBody();
-		const relativeKms = length(sub(this.world.ship.vel, this.localFrame()));
+		const frameVelocity = frameBody
+			? bodyVelocity(this.world.system, frameBody.id, this.world.gameTime)
+			: v3();
+		const relativeKms = length(sub(this.world.ship.vel, frameVelocity));
 		const inertialKms = length(this.world.ship.vel);
 		return {
 			title: "REL. VELOCITY",
@@ -2173,7 +2187,7 @@ class Game {
 		if (dt > 0) this.step(dt);
 		this.render(dt);
 		this.updateCockpit();
-		if (this.view === "cockpit") this.updateHud();
+		if (this.legacyHud) this.updateHud();
 	};
 
 	private cameraRotation() {
@@ -2195,11 +2209,10 @@ class Game {
 			return;
 		}
 		const target = this.targetBody();
-		const targetKm = target
-			? length(sub(target.pos, this.world.ship.pos))
-			: null;
+		const targetKm = target ? length(sub(target.pos, this.world.ship.pos)) : 0;
 		const p = this.cruiseParams;
 		const velocity = this.velocityReadout();
+		this.updateEtaEstimate();
 		this.scannerContacts = projectScannerContacts(
 			this.world.ship.pos,
 			this.world.system.bodies,
@@ -2207,14 +2220,14 @@ class Game {
 			this.orientation,
 		);
 		this.updateHologramContacts(this.scannerContacts);
-		this.updateInstruments(target, targetKm);
+		this.updateInstruments(target, targetKm, velocity);
 		this.liveCockpit.update({
 			visible: true,
 			headLook: this.headLook,
 			rightTab: this.rightTab,
 			contacts: this.scannerContacts,
 			target: target
-				? `${target.id} · ${range(targetKm as number)}`
+				? `${target.id} · ${range(targetKm)}`
 				: "NO TARGET SELECTED",
 			targetBearingDeg: target
 				? targetArrowBearingDeg(
@@ -2267,13 +2280,6 @@ class Game {
 		// text really did change.
 		const target = this.targetBody();
 		const targetKm = target ? length(sub(target.pos, ship.pos)) : null;
-		// The estimate integrates 64 samples of the speed law, and the readout it
-		// feeds is quantised to tenths of a minute. Recomputing that every frame is
-		// paying sixty times over for a number that cannot change that fast.
-		if (gameTime - this.etaAt >= ETA_INTERVAL_S) {
-			this.etaCache = this.timeToTarget();
-			this.etaAt = gameTime;
-		}
 		const eta = this.etaCache;
 		const p = this.cruiseParams;
 		const state =

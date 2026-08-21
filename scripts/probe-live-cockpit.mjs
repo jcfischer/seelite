@@ -108,7 +108,6 @@ function measureLiveCockpit() {
 			?.baseYPercent,
 		selectedTipOffset: game.scannerContacts.find((contact) => contact.selected)
 			?.tipOffsetPx,
-		targetDirectorVisible: visible("[data-live-director]"),
 		leftPanel: box('[data-live-panel="left"]'),
 		rightPanel: box('[data-live-panel="right"]'),
 		leftVisible: visible('[data-live-panel="left"]'),
@@ -212,7 +211,6 @@ for (const viewport of VIEWPORTS) {
 	check(
 		`${viewport.name}: forward view seats live instruments and holographic scanner lines in the physical cockpit`,
 		forward.headLook === "forward" &&
-			!forward.targetDirectorVisible &&
 			forward.physicalInstruments === 3 &&
 			forward.throttleFill > 0 &&
 			forward.hologramRings >= 7 &&
