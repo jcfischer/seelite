@@ -85,6 +85,7 @@ import {
 } from "./cruise";
 import { GOVERNMENT_NAMES } from "./galaxy";
 import {
+	angleOffNose,
 	directionTo,
 	duration,
 	edgeOf,
@@ -298,6 +299,12 @@ class Game {
 	private scannerCtx!: CanvasRenderingContext2D;
 	private scannerHologram!: THREE.Group;
 	private scannerContactGlyphs!: THREE.Group;
+	private hologramMastGeometry!: THREE.CylinderGeometry;
+	private hologramDiamondGeometry!: THREE.BufferGeometry;
+	private readonly hologramGlyphPool: {
+		mast: THREE.Mesh<THREE.CylinderGeometry, THREE.MeshBasicMaterial>;
+		diamond: THREE.LineLoop<THREE.BufferGeometry, THREE.LineBasicMaterial>;
+	}[] = [];
 	private hologramContactMaterial!: THREE.LineBasicMaterial;
 	private hologramTargetMaterial!: THREE.LineBasicMaterial;
 	private hologramContactMastMaterial!: THREE.MeshBasicMaterial;
@@ -1072,6 +1079,7 @@ class Game {
 		) as CanvasRenderingContext2D;
 		this.scannerTexture = new THREE.CanvasTexture(scannerCanvas);
 		this.scannerTexture.colorSpace = THREE.SRGBColorSpace;
+		this.paintScannerBackground();
 		const scanner = new THREE.Mesh(
 			new THREE.PlaneGeometry(0.027, 0.0135),
 			new THREE.MeshBasicMaterial({
@@ -1162,38 +1170,28 @@ class Game {
 			blending: THREE.AdditiveBlending,
 			depthWrite: false,
 		});
-		this.hologramContactMaterial = new THREE.LineBasicMaterial({
-			color: 0x74d9ff,
+		const hologramOptions = {
 			transparent: true,
-			opacity: 0.85,
 			blending: THREE.AdditiveBlending,
 			depthTest: false,
 			depthWrite: false,
-		});
-		this.hologramTargetMaterial = new THREE.LineBasicMaterial({
-			color: 0xffd26b,
-			transparent: true,
-			opacity: 1,
-			blending: THREE.AdditiveBlending,
-			depthTest: false,
-			depthWrite: false,
-		});
-		this.hologramContactMastMaterial = new THREE.MeshBasicMaterial({
-			color: 0x74d9ff,
-			transparent: true,
-			opacity: 0.78,
-			blending: THREE.AdditiveBlending,
-			depthTest: false,
-			depthWrite: false,
-		});
-		this.hologramTargetMastMaterial = new THREE.MeshBasicMaterial({
-			color: 0xffd26b,
-			transparent: true,
-			opacity: 0.92,
-			blending: THREE.AdditiveBlending,
-			depthTest: false,
-			depthWrite: false,
-		});
+		};
+		const lineHologram = (color: number, opacity: number) =>
+			new THREE.LineBasicMaterial({ color, opacity, ...hologramOptions });
+		const mastHologram = (color: number, opacity: number) =>
+			new THREE.MeshBasicMaterial({ color, opacity, ...hologramOptions });
+		this.hologramContactMaterial = lineHologram(0x74d9ff, 0.85);
+		this.hologramTargetMaterial = lineHologram(0xffd26b, 1);
+		this.hologramContactMastMaterial = mastHologram(0x74d9ff, 0.78);
+		this.hologramTargetMastMaterial = mastHologram(0xffd26b, 0.92);
+		this.hologramMastGeometry = new THREE.CylinderGeometry(1, 1, 1, 6);
+		this.hologramDiamondGeometry = new THREE.BufferGeometry().setFromPoints([
+			new THREE.Vector3(-1, 0, 0),
+			new THREE.Vector3(0, 0, -0.5),
+			new THREE.Vector3(1, 0, 0),
+			new THREE.Vector3(0, 0, 0.5),
+			new THREE.Vector3(-1, 0, 0),
+		]);
 		for (let ring = 1; ring <= 5; ring++) {
 			const points: THREE.Vector3[] = [];
 			const fraction = ring / 5;
@@ -1232,8 +1230,8 @@ class Game {
 		this.nearScene.add(cockpit);
 	}
 
-	/** Keep the scanner plate dark; the live marks are line objects above it. */
-	private updateScanner(contacts: readonly ScannerContact[]) {
+	/** Paint the scanner's unchanging dark surface once, before the first draw. */
+	private paintScannerBackground() {
 		const ctx = this.scannerCtx;
 		const w = ctx.canvas.width;
 		const h = ctx.canvas.height;
@@ -1252,53 +1250,52 @@ class Game {
 		ctx.fillStyle = shade;
 		ctx.fillRect(0, 0, w, h);
 		this.scannerTexture.needsUpdate = true;
-		this.updateHologramContacts(contacts);
 	}
 
 	private updateHologramContacts(contacts: readonly ScannerContact[]) {
-		for (const child of this.scannerContactGlyphs.children) {
-			const line = child as THREE.Line;
-			line.geometry.dispose();
-		}
-		this.scannerContactGlyphs.clear();
-		for (const contact of contacts) {
+		for (const glyph of this.hologramGlyphPool)
+			glyph.mast.visible = glyph.diamond.visible = false;
+		for (const [index, contact] of contacts.entries()) {
 			const x = ((contact.baseXPercent - 50) / 42) * 0.0105;
 			const z = ((contact.baseYPercent - 50) / 31) * 0.0052;
 			const height =
 				0.0009 +
 				Math.min(0.0036, (Math.abs(contact.tipOffsetPx) / 54) * 0.0036);
 			const signedHeight = (Math.sign(contact.tipOffsetPx) || 1) * height;
-			const material = contact.selected
-				? this.hologramTargetMaterial
-				: this.hologramContactMaterial;
-			const mast = new THREE.Mesh(
-				new THREE.CylinderGeometry(
-					contact.selected ? 0.00009 : 0.00007,
-					contact.selected ? 0.00009 : 0.00007,
-					height,
-					6,
-				),
-				contact.selected
-					? this.hologramTargetMastMaterial
-					: this.hologramContactMastMaterial,
-			);
+			let glyph = this.hologramGlyphPool[index];
+			if (!glyph) {
+				const mast = new THREE.Mesh(
+					this.hologramMastGeometry,
+					this.hologramContactMastMaterial,
+				);
+				const diamond = new THREE.LineLoop(
+					this.hologramDiamondGeometry,
+					this.hologramContactMaterial,
+				);
+				glyph = { mast, diamond };
+				this.hologramGlyphPool.push(glyph);
+				this.scannerContactGlyphs.add(mast, diamond);
+			}
+			const { mast, diamond } = glyph;
 			mast.name = `scanner-contact-mast-${contact.id}`;
 			mast.position.set(x, signedHeight / 2, z);
-			this.scannerContactGlyphs.add(mast);
-			const r = contact.selected ? 0.00065 : 0.0004;
-			const diamond = [
-				new THREE.Vector3(x - r, signedHeight, z),
-				new THREE.Vector3(x, signedHeight, z - r * 0.5),
-				new THREE.Vector3(x + r, signedHeight, z),
-				new THREE.Vector3(x, signedHeight, z + r * 0.5),
-				new THREE.Vector3(x - r, signedHeight, z),
-			];
-			this.scannerContactGlyphs.add(
-				new THREE.LineLoop(
-					new THREE.BufferGeometry().setFromPoints(diamond),
-					material,
-				),
+			mast.scale.set(
+				contact.selected ? 0.00009 : 0.00007,
+				height,
+				contact.selected ? 0.00009 : 0.00007,
 			);
+			mast.material = contact.selected
+				? this.hologramTargetMastMaterial
+				: this.hologramContactMastMaterial;
+			mast.visible = true;
+			const r = contact.selected ? 0.00065 : 0.0004;
+			diamond.name = `scanner-contact-diamond-${contact.id}`;
+			diamond.position.set(x, signedHeight, z);
+			diamond.scale.set(r, 1, r);
+			diamond.material = contact.selected
+				? this.hologramTargetMaterial
+				: this.hologramContactMaterial;
+			diamond.visible = true;
 		}
 	}
 
@@ -2175,8 +2172,8 @@ class Game {
 		this.lastTime = now;
 		if (dt > 0) this.step(dt);
 		this.render(dt);
-		this.updateHud();
 		this.updateCockpit();
+		if (this.view === "cockpit") this.updateHud();
 	};
 
 	private cameraRotation() {
@@ -2193,6 +2190,10 @@ class Game {
 	}
 
 	private updateCockpit() {
+		if (this.view !== "cockpit") {
+			this.liveCockpit.setVisible(false);
+			return;
+		}
 		const target = this.targetBody();
 		const targetKm = target
 			? length(sub(target.pos, this.world.ship.pos))
@@ -2205,10 +2206,10 @@ class Game {
 			this.targetId,
 			this.orientation,
 		);
-		this.updateScanner(this.scannerContacts);
+		this.updateHologramContacts(this.scannerContacts);
 		this.updateInstruments(target, targetKm);
 		this.liveCockpit.update({
-			visible: this.view === "cockpit",
+			visible: true,
 			headLook: this.headLook,
 			rightTab: this.rightTab,
 			contacts: this.scannerContacts,
@@ -2534,7 +2535,7 @@ class Game {
 			ctx.restore();
 			ctx.fillStyle = "rgba(255, 214, 120, 0.8)";
 			ctx.fillText(
-				this.targetId ?? "target",
+				`${body.id}  ${((angleOffNose(dir, this.nose()) * 180) / Math.PI).toFixed(0)}° off`,
 				Math.min(w - 120, Math.max(10, p.x - 48)),
 				Math.min(h - 10, Math.max(20, p.y + 22)),
 			);

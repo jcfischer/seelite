@@ -93,8 +93,9 @@ function measureLiveCockpit() {
 		hologramRings:
 			game.nearScene.getObjectByName("scanner-hologram")?.children.length ?? 0,
 		hologramContacts:
-			game.nearScene.getObjectByName("scanner-contact-glyphs")?.children
-				.length ?? 0,
+			game.nearScene
+				.getObjectByName("scanner-contact-glyphs")
+				?.children.filter((glyph) => glyph.visible).length ?? 0,
 		rangeRingFootprint,
 		selectedMastY:
 			game.nearScene.getObjectByName(`scanner-contact-mast-${game.targetId}`)
@@ -117,6 +118,31 @@ function measureLiveCockpit() {
 		).length,
 		viewport: { width: innerWidth, height: innerHeight },
 	};
+}
+
+async function placeShipAtLocalOffset(page, local) {
+	await page.evaluate((offset) => {
+		const game = window.__seelite;
+		const target = game.targetId
+			? game.world.system.byId.get(game.targetId)
+			: null;
+		if (!target) throw new Error("expected a selected target");
+		const q = game.orientation;
+		const ix = q.w * offset.x + q.y * offset.z - q.z * offset.y;
+		const iy = q.w * offset.y + q.z * offset.x - q.x * offset.z;
+		const iz = q.w * offset.z + q.x * offset.y - q.y * offset.x;
+		const iw = -q.x * offset.x - q.y * offset.y - q.z * offset.z;
+		const world = {
+			x: ix * q.w + iw * -q.x + iy * -q.z - iz * -q.y,
+			y: iy * q.w + iw * -q.y + iz * -q.x - ix * -q.z,
+			z: iz * q.w + iw * -q.z + ix * -q.y - iy * -q.x,
+		};
+		game.world.ship.pos = {
+			x: target.pos.x - world.x,
+			y: target.pos.y - world.y,
+			z: target.pos.z - world.z,
+		};
+	}, local);
 }
 
 // The guard fingerprints numeric constants. `cockpit.ts` intentionally has no
@@ -142,29 +168,7 @@ for (const viewport of VIEWPORTS) {
 	// the physical screen honours the same near-field projection as the unit
 	// seam. Convert the camera-local literal through the ship quaternion so this
 	// stays true for the boot orientation as well as any future one.
-	await page.evaluate(() => {
-		const game = window.__seelite;
-		const target = game.targetId
-			? game.world.system.byId.get(game.targetId)
-			: null;
-		if (!target) throw new Error("expected a selected target");
-		const q = game.orientation;
-		const local = { x: -1_000, y: 1_000, z: -1_000 };
-		const ix = q.w * local.x + q.y * local.z - q.z * local.y;
-		const iy = q.w * local.y + q.z * local.x - q.x * local.z;
-		const iz = q.w * local.z + q.x * local.y - q.y * local.x;
-		const iw = -q.x * local.x - q.y * local.y - q.z * local.z;
-		const world = {
-			x: ix * q.w + iw * -q.x + iy * -q.z - iz * -q.y,
-			y: iy * q.w + iw * -q.y + iz * -q.x - ix * -q.z,
-			z: iz * q.w + iw * -q.z + ix * -q.y - iy * -q.x,
-		};
-		game.world.ship.pos = {
-			x: target.pos.x - world.x,
-			y: target.pos.y - world.y,
-			z: target.pos.z - world.z,
-		};
-	});
+	await placeShipAtLocalOffset(page, { x: -1_000, y: 1_000, z: -1_000 });
 	await page.waitForFunction(() =>
 		window.__seelite?.scannerContacts.some((contact) => contact.selected),
 	);
@@ -227,29 +231,7 @@ for (const viewport of VIEWPORTS) {
 		`${forward.canopyHeaderBraces} braces; well: ${forward.scannerWell}; bezels: ${forward.scannerBezels}; throttle z ${throttleClosed.throttleFillZ} → ${throttleOpen.throttleFillZ}`,
 	);
 
-	await page.evaluate(() => {
-		const game = window.__seelite;
-		const target = game.targetId
-			? game.world.system.byId.get(game.targetId)
-			: null;
-		if (!target) throw new Error("expected a selected target");
-		const q = game.orientation;
-		const local = { x: 0, y: 0, z: 2_500 };
-		const ix = q.w * local.x + q.y * local.z - q.z * local.y;
-		const iy = q.w * local.y + q.z * local.x - q.x * local.z;
-		const iz = q.w * local.z + q.x * local.y - q.y * local.x;
-		const iw = -q.x * local.x - q.y * local.y - q.z * local.z;
-		const world = {
-			x: ix * q.w + iw * -q.x + iy * -q.z - iz * -q.y,
-			y: iy * q.w + iw * -q.y + iz * -q.x - ix * -q.z,
-			z: iz * q.w + iw * -q.z + ix * -q.y - iy * -q.x,
-		};
-		game.world.ship.pos = {
-			x: target.pos.x - world.x,
-			y: target.pos.y - world.y,
-			z: target.pos.z - world.z,
-		};
-	});
+	await placeShipAtLocalOffset(page, { x: 0, y: 0, z: 2_500 });
 	await page.waitForFunction(
 		() =>
 			window.__seelite.scannerContacts.find((contact) => contact.selected)
@@ -265,29 +247,7 @@ for (const viewport of VIEWPORTS) {
 		`selected x: ${astern.selectedBaseX}; y: ${astern.selectedBaseY}`,
 	);
 
-	await page.evaluate(() => {
-		const game = window.__seelite;
-		const target = game.targetId
-			? game.world.system.byId.get(game.targetId)
-			: null;
-		if (!target) throw new Error("expected a selected target");
-		const q = game.orientation;
-		const local = { x: -1_000, y: -1_000, z: -1_000 };
-		const ix = q.w * local.x + q.y * local.z - q.z * local.y;
-		const iy = q.w * local.y + q.z * local.x - q.x * local.z;
-		const iz = q.w * local.z + q.x * local.y - q.y * local.x;
-		const iw = -q.x * local.x - q.y * local.y - q.z * local.z;
-		const world = {
-			x: ix * q.w + iw * -q.x + iy * -q.z - iz * -q.y,
-			y: iy * q.w + iw * -q.y + iz * -q.x - ix * -q.z,
-			z: iz * q.w + iw * -q.z + ix * -q.y - iy * -q.x,
-		};
-		game.world.ship.pos = {
-			x: target.pos.x - world.x,
-			y: target.pos.y - world.y,
-			z: target.pos.z - world.z,
-		};
-	});
+	await placeShipAtLocalOffset(page, { x: -1_000, y: -1_000, z: -1_000 });
 	await page.waitForFunction(() => {
 		const game = window.__seelite;
 		const contact = game.scannerContacts.find((item) => item.selected);
