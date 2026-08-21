@@ -35,14 +35,11 @@
       }
       #hud {
         position: fixed;
-        left: 12px;
-        bottom: 10px;
-        color: #9fd4ff;
-        font: 12px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
-        letter-spacing: 0.04em;
-        text-shadow: 0 0 6px rgba(0, 0, 0, 0.9);
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
         pointer-events: none;
-        white-space: pre;
       }
       #keys {
         position: fixed;
@@ -60,9 +57,7 @@
     <div id="hud"></div>
     <div id="keys">
       W/S or ↑/↓ pitch · A/D or ←/→ yaw · Q/E roll · Shift/Ctrl throttle<br />
-      J cruise · T/G target · F face target · X assist · V view · 0 reset dials<br />
-      dials: −/= v_max · [ / ] exponent · ; / ' drop · , / . below · n/m vicinity
-      · k/l lead
+      J cruise · T/G target · F face target · X assist · V view · 1/2/3 left/forward/right panel · Alt+←/→ head turn
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
