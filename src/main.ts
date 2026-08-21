@@ -1288,7 +1288,7 @@ class Game {
 			const height =
 				0.0009 +
 				Math.min(0.0036, (Math.abs(contact.tipOffsetPx) / 54) * 0.0036);
-			const signedHeight = (Math.sign(contact.tipOffsetPx) || 1) * height;
+			const signedHeight = Math.sign(contact.tipOffsetPx) * height;
 			let glyph = hologram.glyphPool[index];
 			if (!glyph) {
 				const mast = new THREE.Mesh(

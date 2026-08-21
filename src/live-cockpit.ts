@@ -45,6 +45,16 @@ interface CockpitElements {
 
 const STYLE_ID = "seelite-live-cockpit-style";
 
+function escapeHtml(value: string) {
+	return value.replace(
+		/[&<>"']/g,
+		(character) =>
+			({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
+				character
+			] as string,
+	);
+}
+
 const STYLE = `
 #live-cockpit { position: fixed; inset: 0; z-index: 4; pointer-events: none; color: #c8e7f7; font: 12px/1.35 ui-monospace, "SF Mono", Menlo, monospace; text-shadow: 0 0 8px rgba(0, 0, 0, .92); }
 #live-cockpit[data-live-active="false"] { display: none; }
@@ -132,7 +142,7 @@ export class LiveCockpit {
 
 	update(state: LiveCockpitState) {
 		const view = cockpitView(state.headLook);
-		const targetId = state.targetId ?? "NO TARGET SELECTED";
+		const targetId = escapeHtml(state.targetId ?? "NO TARGET SELECTED");
 		const key = `${state.visible}|${state.headLook}|${state.rightTab}|${targetId}`;
 		this.setVisible(state.visible);
 		this.root.dataset.liveHeadLook = state.headLook;
