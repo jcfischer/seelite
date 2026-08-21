@@ -334,7 +334,7 @@ class Game {
 	private tuningText = "";
 	/** Exposed for the browser probe; sourced fresh from simulation every frame. */
 	private readonly scannerContactBuffer: ScannerContact[] = [];
-	scannerContacts: readonly ScannerContact[] = this.scannerContactBuffer;
+	scannerContacts: ScannerContact[] = this.scannerContactBuffer;
 	/** The browser probe reads this live value instead of copying scanner range. */
 	readonly scannerRangeKm = SCANNER_RANGE_KM;
 	private stars!: THREE.Points;
