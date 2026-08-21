@@ -1402,6 +1402,10 @@ class Game {
 	private onKey(e: KeyboardEvent, down: boolean) {
 		const key = e.key.toLowerCase();
 		if (down && !e.repeat && e.altKey) {
+			if (this.view !== "cockpit") {
+				e.preventDefault();
+				return;
+			}
 			if (key === "arrowleft") this.setHeadLook("left");
 			else if (key === "arrowright") this.setHeadLook("right");
 			else if (key === "arrowup") this.setHeadLook("forward");
@@ -2237,9 +2241,7 @@ class Game {
 			this.world.ship.pos,
 			this.world.system.bodies,
 			this.targetId,
-			this.orientation,
-			SCANNER_RANGE_KM,
-			this.scannerContactBuffer,
+			{ orientation: this.orientation, output: this.scannerContactBuffer },
 		);
 		this.updateHologramContacts(this.scannerContacts);
 		this.updateInstruments(target, targetKm, velocity);

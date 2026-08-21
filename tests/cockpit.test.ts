@@ -25,8 +25,6 @@ test("the local scanner projects nearby live bodies with vertical separation", (
 
 test("only a head turn exposes a readable console", () => {
 	expect(cockpitView("forward")).toEqual({
-		scannerVisible: true,
-		floorVisible: true,
 		activePanel: null,
 		targetDirectorVisible: false,
 	});
@@ -39,7 +37,7 @@ test("scanner contacts move in ship-local coordinates as the ship turns", () => 
 		v3(),
 		[{ id: "ahead", pos: v3(0, 0, -5_000) }],
 		"ahead",
-		{ x: 0, y: Math.SQRT1_2, z: 0, w: Math.SQRT1_2 },
+		{ orientation: { x: 0, y: Math.SQRT1_2, z: 0, w: Math.SQRT1_2 } },
 	);
 	expect(contacts).toHaveLength(1);
 	// A world-forward contact is off the starboard side after a 90 degree yaw.

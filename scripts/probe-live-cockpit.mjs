@@ -74,7 +74,6 @@ function measureLiveCockpit() {
 			Math.abs(scanner.position.x) < 1e-6 &&
 			scannerOffset > 0 &&
 			Math.abs(scanner.rotation.x + Math.PI / 2 - pitch) < 1e-6,
-		floorVisible: visible("[data-live-floor]"),
 		physicalInstruments: [
 			"flight-instrument",
 			"throttle-track",
@@ -272,7 +271,6 @@ for (const viewport of VIEWPORTS) {
 	check(
 		`${viewport.name}: left head turn reveals only a large Navigation console`,
 		left.headLook === "left" &&
-			!left.floorVisible &&
 			left.leftVisible &&
 			!left.rightVisible &&
 			left.activePanels === 1 &&
@@ -290,7 +288,6 @@ for (const viewport of VIEWPORTS) {
 	check(
 		`${viewport.name}: right head turn reveals the readable Tuning console`,
 		right.headLook === "right" &&
-			!right.floorVisible &&
 			right.rightVisible &&
 			!right.leftVisible &&
 			right.activePanels === 1 &&

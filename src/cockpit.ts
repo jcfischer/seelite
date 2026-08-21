@@ -26,6 +26,12 @@ export interface ScannerContact {
 	tipOffsetPx: number;
 }
 
+export interface ScannerProjectionOptions {
+	orientation?: Quat;
+	rangeKm?: number;
+	output?: ScannerContact[];
+}
+
 export const SCANNER_RANGE_KM = 10_000;
 
 const clamp = (n: number, low: number, high: number) =>
@@ -40,9 +46,11 @@ export function projectScannerContacts(
 	shipPos: Vec3,
 	bodies: readonly ScannerBody[],
 	targetId: string | null,
-	orientation?: Quat,
-	rangeKm = SCANNER_RANGE_KM,
-	output?: ScannerContact[],
+	{
+		orientation,
+		rangeKm = SCANNER_RANGE_KM,
+		output,
+	}: ScannerProjectionOptions = {},
 ): ScannerContact[] {
 	const contacts = output ?? [];
 	let count = 0;
@@ -107,14 +115,10 @@ export function targetArrowBearingDeg(
 export const screenArrowBearingDeg = (bearingDeg: number) => -bearingDeg;
 
 export function cockpitView(headLook: HeadLook): {
-	scannerVisible: boolean;
-	floorVisible: boolean;
 	activePanel: "left" | "right" | null;
 	targetDirectorVisible: boolean;
 } {
 	return {
-		scannerVisible: headLook === "forward",
-		floorVisible: headLook === "forward",
 		activePanel: headLook === "forward" ? null : headLook,
 		targetDirectorVisible: headLook !== "forward",
 	};
