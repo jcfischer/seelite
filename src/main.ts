@@ -273,6 +273,18 @@ interface HologramSystem {
 	targetMastMaterial: THREE.MeshBasicMaterial;
 }
 
+interface CockpitHardware {
+	mesh: THREE.Group;
+	scannerTexture: THREE.CanvasTexture;
+	scannerCtx: CanvasRenderingContext2D;
+	hologram: HologramSystem;
+	flightInstrument: Instrument;
+	targetInstrument: Instrument;
+	throttleFill: THREE.Mesh;
+	throttleFillMaterial: THREE.MeshStandardMaterial;
+	instrumentKey: string;
+}
+
 class Game {
 	readonly world: World;
 	readonly renderer: THREE.WebGLRenderer;
@@ -317,15 +329,7 @@ class Game {
 	private readonly layers = new Map<string, "near" | "far">();
 	private shipMesh!: THREE.Mesh;
 	/** Cockpit structure follows the ship, while the camera pans within it. */
-	private cockpitMesh!: THREE.Group;
-	private scannerTexture!: THREE.CanvasTexture;
-	private scannerCtx!: CanvasRenderingContext2D;
-	private hologram!: HologramSystem;
-	private flightInstrument!: Instrument;
-	private targetInstrument!: Instrument;
-	private throttleFill!: THREE.Mesh;
-	private throttleFillMaterial!: THREE.MeshStandardMaterial;
-	private instrumentKey = "";
+	private cockpit!: CockpitHardware;
 	private tuningKey = "";
 	private tuningText = "";
 	/** Exposed for the browser probe; sourced fresh from simulation every frame. */
@@ -878,6 +882,7 @@ class Game {
 
 	/** The physical cockpit and its one, deck-mounted scanner. */
 	private buildCockpit() {
+		this.cockpit = {} as CockpitHardware;
 		// The first pass used a repeated cyan grid. It read as wallpaper at this
 		// distance, not a manufactured cabin. Let the hard edges and separate
 		// fittings carry the construction instead of printing a texture onto every
@@ -1060,7 +1065,7 @@ class Game {
 		this.buildScannerAssembly(scannerMount, metal, trim, inset);
 
 		this.buildHologramSystem(scannerMount);
-		this.cockpitMesh = cockpit;
+		this.cockpit.mesh = cockpit;
 		this.nearScene.add(cockpit);
 	}
 
@@ -1101,16 +1106,16 @@ class Game {
 		const scannerCanvas = document.createElement("canvas");
 		scannerCanvas.width = 800;
 		scannerCanvas.height = 400;
-		this.scannerCtx = scannerCanvas.getContext(
+		this.cockpit.scannerCtx = scannerCanvas.getContext(
 			"2d",
 		) as CanvasRenderingContext2D;
-		this.scannerTexture = new THREE.CanvasTexture(scannerCanvas);
-		this.scannerTexture.colorSpace = THREE.SRGBColorSpace;
+		this.cockpit.scannerTexture = new THREE.CanvasTexture(scannerCanvas);
+		this.cockpit.scannerTexture.colorSpace = THREE.SRGBColorSpace;
 		this.paintScannerBackground();
 		const scanner = new THREE.Mesh(
 			new THREE.PlaneGeometry(0.027, 0.0135),
 			new THREE.MeshBasicMaterial({
-				map: this.scannerTexture,
+				map: this.cockpit.scannerTexture,
 				polygonOffset: true,
 				polygonOffsetFactor: -1,
 				polygonOffsetUnits: -1,
@@ -1147,8 +1152,8 @@ class Game {
 			scannerMount.add(face);
 			return { ctx, texture };
 		};
-		this.flightInstrument = makeInstrument("flight-instrument", -0.025);
-		this.targetInstrument = makeInstrument("target-instrument", 0.025);
+		this.cockpit.flightInstrument = makeInstrument("flight-instrument", -0.025);
+		this.cockpit.targetInstrument = makeInstrument("target-instrument", 0.025);
 		const throttleTrack = new THREE.Mesh(
 			new THREE.BoxGeometry(0.0022, 0.0014, 0.014),
 			inset,
@@ -1156,18 +1161,18 @@ class Game {
 		throttleTrack.name = "throttle-track";
 		throttleTrack.position.set(-0.0168, 0.0008, 0);
 		scannerMount.add(throttleTrack);
-		this.throttleFillMaterial = new THREE.MeshStandardMaterial({
+		this.cockpit.throttleFillMaterial = new THREE.MeshStandardMaterial({
 			color: 0x9b5a20,
 			emissive: 0x4a1905,
 			emissiveIntensity: 0.04,
 		});
-		this.throttleFill = new THREE.Mesh(
+		this.cockpit.throttleFill = new THREE.Mesh(
 			new THREE.BoxGeometry(0.0011, 0.0017, 0.012),
-			this.throttleFillMaterial,
+			this.cockpit.throttleFillMaterial,
 		);
-		this.throttleFill.name = "throttle-fill";
-		this.throttleFill.position.set(-0.0168, 0.0018, 0.006);
-		scannerMount.add(this.throttleFill);
+		this.cockpit.throttleFill.name = "throttle-fill";
+		this.cockpit.throttleFill.position.set(-0.0168, 0.0018, 0.006);
+		scannerMount.add(this.cockpit.throttleFill);
 	}
 
 	/** Create the static radar geometry and the reusable live-contact pool. */
@@ -1237,7 +1242,7 @@ class Game {
 		const contactGlyphs = new THREE.Group();
 		contactGlyphs.name = "scanner-contact-glyphs";
 		root.add(contactGlyphs);
-		this.hologram = {
+		this.cockpit.hologram = {
 			root,
 			contactGlyphs,
 			mastGeometry,
@@ -1252,7 +1257,7 @@ class Game {
 
 	/** Paint the scanner's unchanging dark surface once, before the first draw. */
 	private paintScannerBackground() {
-		const ctx = this.scannerCtx;
+		const ctx = this.cockpit.scannerCtx;
 		const w = ctx.canvas.width;
 		const h = ctx.canvas.height;
 		ctx.fillStyle = "#010506";
@@ -1269,11 +1274,11 @@ class Game {
 		shade.addColorStop(1, "rgba(0, 0, 0, 0)");
 		ctx.fillStyle = shade;
 		ctx.fillRect(0, 0, w, h);
-		this.scannerTexture.needsUpdate = true;
+		this.cockpit.scannerTexture.needsUpdate = true;
 	}
 
 	private updateHologramContacts(contacts: readonly ScannerContact[]) {
-		const hologram = this.hologram;
+		const hologram = this.cockpit.hologram;
 		for (const glyph of hologram.glyphPool)
 			glyph.mast.visible = glyph.diamond.visible = false;
 		for (const [index, contact] of contacts.entries()) {
@@ -1338,8 +1343,8 @@ class Game {
 			: "NO TARGET";
 		const eta = this.etaCache === null ? "CALC" : duration(this.etaCache);
 		const key = `${speed}|${velocity.context}|${targetText}|${eta}|${this.throttle}|${this.assist}|${this.chargeAu}`;
-		if (key === this.instrumentKey) return;
-		this.instrumentKey = key;
+		if (key === this.cockpit.instrumentKey) return;
+		this.cockpit.instrumentKey = key;
 		const paint = (
 			ctx: CanvasRenderingContext2D,
 			title: string,
@@ -1376,27 +1381,28 @@ class Game {
 			ctx.fillText(secondary, 28, 192);
 		};
 		paint(
-			this.flightInstrument.ctx,
+			this.cockpit.flightInstrument.ctx,
 			velocity.title,
 			speed,
 			velocity.context,
 			"#75d7ff",
 		);
 		paint(
-			this.targetInstrument.ctx,
+			this.cockpit.targetInstrument.ctx,
 			"TARGET",
 			targetText,
 			`ETA ${eta}  CHARGE ${this.chargeAu.toFixed(1)} AU`,
 			"#ffd17a",
 		);
-		this.flightInstrument.texture.needsUpdate = true;
-		this.targetInstrument.texture.needsUpdate = true;
+		this.cockpit.flightInstrument.texture.needsUpdate = true;
+		this.cockpit.targetInstrument.texture.needsUpdate = true;
 		// The low end is nearest/lower on the sloped deck. Keep it anchored there
 		// and extend toward the windscreen as throttle rises; the old fill started
 		// at the top and slid down, the inverse of a physical throttle cue.
-		this.throttleFill.scale.z = Math.max(0.04, this.throttle);
-		this.throttleFill.position.z = (1 - this.throttle) * 0.006;
-		this.throttleFillMaterial.emissiveIntensity = 0.04 + this.throttle * 0.28;
+		this.cockpit.throttleFill.scale.z = Math.max(0.04, this.throttle);
+		this.cockpit.throttleFill.position.z = (1 - this.throttle) * 0.006;
+		this.cockpit.throttleFillMaterial.emissiveIntensity =
+			0.04 + this.throttle * 0.28;
 	}
 
 	private onKey(e: KeyboardEvent, down: boolean) {
@@ -2116,8 +2122,8 @@ class Game {
 			cam.position.set(0, 0, 0);
 			cam.quaternion.copy(viewRotation);
 		}
-		this.cockpitMesh.quaternion.copy(this.orientation);
-		this.cockpitMesh.visible = this.view === "cockpit";
+		this.cockpit.mesh.quaternion.copy(this.orientation);
+		this.cockpit.mesh.visible = this.view === "cockpit";
 		// The star sphere follows the camera so it never parallaxes — which is
 		// what makes it read as infinitely far away rather than as a small ball
 		// the ship is inside. The camera being at the origin means this is a
