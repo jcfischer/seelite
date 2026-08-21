@@ -42,8 +42,10 @@ export function projectScannerContacts(
 	targetId: string | null,
 	orientation?: Quat,
 	rangeKm = SCANNER_RANGE_KM,
+	output?: ScannerContact[],
 ): ScannerContact[] {
-	const contacts: ScannerContact[] = [];
+	const contacts = output ?? [];
+	let count = 0;
 	for (const body of bodies) {
 		const worldRelative = sub(body.pos, shipPos);
 		// The scope is ship-local, not a tiny top-down map of the solar system.
@@ -65,23 +67,28 @@ export function projectScannerContacts(
 		const planarZ =
 			planarDistanceKm === 0 ? 0 : (relative.z / planarDistanceKm) * radius;
 		const verticalFraction = clamp(relative.y / rangeKm, -1, 1);
-		contacts.push({
-			id: body.id,
-			selected: body.id === targetId,
-			distanceKm,
-			baseXPercent: clamp(50 + planarX * 42, 8, 92),
-			baseYPercent: clamp(50 + planarZ * 31, 18, 82),
-			// The oblique scanner puts an overhead contact into its lower/near
-			// half. Near-field expansion makes a meaningful vertical separation
-			// legible before it has covered thousands of kilometres.
-			tipOffsetPx:
-				verticalFraction === 0
-					? 0
-					: Math.sign(verticalFraction) *
-						Math.sqrt(Math.abs(verticalFraction)) *
-						54,
-		});
+		let contact = contacts[count];
+		if (!contact) {
+			contact = {} as ScannerContact;
+			contacts[count] = contact;
+		}
+		count += 1;
+		contact.id = body.id;
+		contact.selected = body.id === targetId;
+		contact.distanceKm = distanceKm;
+		contact.baseXPercent = clamp(50 + planarX * 42, 8, 92);
+		contact.baseYPercent = clamp(50 + planarZ * 31, 18, 82);
+		// The oblique scanner puts an overhead contact into its lower/near
+		// half. Near-field expansion makes a meaningful vertical separation
+		// legible before it has covered thousands of kilometres.
+		contact.tipOffsetPx =
+			verticalFraction === 0
+				? 0
+				: Math.sign(verticalFraction) *
+					Math.sqrt(Math.abs(verticalFraction)) *
+					54;
 	}
+	contacts.length = count;
 	return contacts;
 }
 

@@ -326,8 +326,11 @@ class Game {
 	private throttleFill!: THREE.Mesh;
 	private throttleFillMaterial!: THREE.MeshStandardMaterial;
 	private instrumentKey = "";
+	private tuningKey = "";
+	private tuningText = "";
 	/** Exposed for the browser probe; sourced fresh from simulation every frame. */
-	scannerContacts: readonly ScannerContact[] = [];
+	private readonly scannerContactBuffer: ScannerContact[] = [];
+	scannerContacts: readonly ScannerContact[] = this.scannerContactBuffer;
 	/** The browser probe reads this live value instead of copying scanner range. */
 	readonly scannerRangeKm = SCANNER_RANGE_KM;
 	private stars!: THREE.Points;
@@ -1034,25 +1037,20 @@ class Game {
 					trim,
 				);
 		}
-		addBox(
-			[0.001, 0.0028, 0.019],
-			[-0.038, -0.0184, -0.047],
-			[0.24, 0, 0.06],
-			trim,
-		);
-		addBox(
-			[0.001, 0.0028, 0.019],
-			[0.038, -0.0184, -0.047],
-			[0.24, 0, -0.06],
-			trim,
-		);
-		addBox(
-			[0.003, 0.0032, 0.019],
-			[-0.012, -0.015, -0.052],
-			[0.24, 0, 0],
-			trim,
-		);
-		addBox([0.003, 0.0032, 0.019], [0.012, -0.015, -0.052], [0.24, 0, 0], trim);
+		for (const side of [-1, 1]) {
+			addBox(
+				[0.001, 0.0028, 0.019],
+				[side * 0.038, -0.0184, -0.047],
+				[0.24, 0, side * -0.06],
+				trim,
+			);
+			addBox(
+				[0.003, 0.0032, 0.019],
+				[side * 0.012, -0.015, -0.052],
+				[0.24, 0, 0],
+				trim,
+			);
+		}
 		const dashboardPitch = 0.58;
 		const scannerMount = new THREE.Group();
 		scannerMount.name = "scanner-mount";
@@ -2234,13 +2232,14 @@ class Game {
 		}
 		const target = this.targetBody();
 		const targetKm = target ? length(sub(target.pos, this.world.ship.pos)) : 0;
-		const p = this.cruiseParams;
 		const velocity = this.velocityReadout();
-		this.scannerContacts = projectScannerContacts(
+		projectScannerContacts(
 			this.world.ship.pos,
 			this.world.system.bodies,
 			this.targetId,
 			this.orientation,
+			SCANNER_RANGE_KM,
+			this.scannerContactBuffer,
 		);
 		this.updateHologramContacts(this.scannerContacts);
 		this.updateInstruments(target, targetKm, velocity);
@@ -2266,8 +2265,18 @@ class Game {
 			charge: `${this.chargeAu.toFixed(1)}/${CHARGE_CAPACITY_AU} AU`,
 			speed: velocity.speed,
 			eta: this.etaCache === null ? "CALC" : duration(this.etaCache),
-			tuning: `v_max ${(p.vMaxKms / C_KMS).toFixed(0)} c · exponent ${p.exponent.toFixed(2)} · drop ${p.dropRadiusKm} km · vicinity ${range(p.vicinityKm)} · lead ${p.approachLeadS}s`,
+			tuning: this.tuningSummary(),
 		});
+	}
+
+	private tuningSummary() {
+		const p = this.cruiseParams;
+		const key = `${p.vMaxKms}|${p.exponent}|${p.dropRadiusKm}|${p.vicinityKm}|${p.approachLeadS}`;
+		if (key !== this.tuningKey) {
+			this.tuningKey = key;
+			this.tuningText = `v_max ${(p.vMaxKms / C_KMS).toFixed(0)} c · exponent ${p.exponent.toFixed(2)} · drop ${p.dropRadiusKm} km · vicinity ${range(p.vicinityKm)} · lead ${p.approachLeadS}s`;
+		}
+		return this.tuningText;
 	}
 
 	private updateHud() {
