@@ -67,7 +67,10 @@ function measureLiveCockpit() {
 			.querySelector("[data-live-cockpit]")
 			?.getAttribute("data-live-head-look"),
 		cockpitMesh: Boolean(game.nearScene.getObjectByName("cockpit")?.visible),
-		rendererCount: document.querySelectorAll("canvas:not(#overlay)").length,
+		rendererIsOnlyVisibleCanvas:
+			game.renderer.domElement.parentElement === document.body &&
+			document.querySelectorAll("canvas:not(#overlay)").length === 1,
+		eta: document.querySelector(".lc-target-meta strong")?.textContent,
 		scannerMounted:
 			Boolean(scanner?.visible) &&
 			scanner?.parent === deck?.parent &&
@@ -187,8 +190,8 @@ for (const viewport of VIEWPORTS) {
 	const throttleOpen = await page.evaluate(measureLiveCockpit);
 	check(
 		`${viewport.name}: normal flight uses one Game renderer with a physical cockpit mesh`,
-		forward.rendererCount === 1 && forward.cockpitMesh,
-		`${forward.rendererCount} non-overlay canvases; cockpit mesh: ${forward.cockpitMesh}`,
+		forward.rendererIsOnlyVisibleCanvas && forward.cockpitMesh,
+		`renderer is sole visible canvas: ${forward.rendererIsOnlyVisibleCanvas}; cockpit mesh: ${forward.cockpitMesh}`,
 	);
 	check(
 		`${viewport.name}: the one scanner is physically mounted to its lower-centre deck and mirrors true simulation contacts`,
@@ -211,12 +214,13 @@ for (const viewport of VIEWPORTS) {
 		`${viewport.name}: forward view seats live instruments and holographic scanner lines in the physical cockpit`,
 		forward.headLook === "forward" &&
 			forward.physicalInstruments === 3 &&
+			/^\d+(\.\d+)?(s|min|h|d)$/.test(forward.eta ?? "") &&
 			forward.throttleFill > 0 &&
 			forward.hologramRings >= 7 &&
 			forward.hologramContacts === forward.contacts * 2 &&
 			!forward.leftVisible &&
 			!forward.rightVisible,
-		`${forward.physicalInstruments} instruments; ${forward.hologramRings} static lines; ${forward.hologramContacts} live hologram glyphs`,
+		`${forward.physicalInstruments} instruments; ETA ${forward.eta}; ${forward.hologramRings} static lines; ${forward.hologramContacts} live hologram glyphs`,
 	);
 	check(
 		`${viewport.name}: canopy braces, inset scanner well, and full-height throttle read as fitted hardware`,

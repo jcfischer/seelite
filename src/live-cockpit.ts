@@ -52,7 +52,7 @@ const STYLE = `
 #live-cockpit[data-live-target-director="false"] .lc-director { display: none; }
 .lc-director::before { content: ""; display: block; width: 66px; height: 66px; margin: 0 auto 8px; border: 2px solid currentColor; border-radius: 50%; box-shadow: 0 0 18px currentColor; }
 .lc-target-arrow { position: absolute; left: 50%; top: 21px; color: #ffe0a2; font-size: 24px; line-height: 1; transform: rotate(var(--target-bearing)) translateX(48px); transform-origin: 0 50%; }
-.lc-forward { display: none; }
+.lc-forward { position: absolute; right: 8%; bottom: 7%; left: 8%; display: grid; grid-template-columns: minmax(160px, 1fr) 42px minmax(100px, .72fr) minmax(180px, 1fr); gap: 10px; align-items: end; }
 .lc-surface { position: relative; min-height: 76px; padding: 11px 14px; overflow: hidden; clip-path: polygon(7% 0, 93% 0, 100% 17%, 93% 100%, 7% 100%, 0 17%); border: 1px solid rgba(119, 191, 224, .34); background: linear-gradient(145deg, rgba(20, 45, 56, .9), rgba(3, 11, 17, .96) 55%, rgba(8, 24, 31, .92)); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .55), inset 0 12px 20px rgba(113, 193, 230, .05), 0 10px 22px rgba(0, 0, 0, .36); }
 .lc-surface::before { content: ""; position: absolute; inset: 6px; border-top: 1px solid rgba(156, 219, 242, .17); border-bottom: 1px solid rgba(0, 0, 0, .64); pointer-events: none; }
 .lc-surface-label { display: block; color: #72aec6; font-size: 9px; letter-spacing: .18em; }
