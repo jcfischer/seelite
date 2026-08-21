@@ -65,6 +65,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { starField } from "./backdrop";
 import { AudioFX } from "./audio";
 import {
+	SCANNER_RANGE_KM,
 	type HeadLook,
 	type ScannerContact,
 	projectScannerContacts,
@@ -318,6 +319,8 @@ class Game {
 	private instrumentKey = "";
 	/** Exposed for the browser probe; sourced fresh from simulation every frame. */
 	scannerContacts: readonly ScannerContact[] = [];
+	/** The browser probe reads this live value instead of copying scanner range. */
+	readonly scannerRangeKm = SCANNER_RANGE_KM;
 	private stars!: THREE.Points;
 	private starMaterial!: THREE.ShaderMaterial;
 
@@ -2204,6 +2207,7 @@ class Game {
 	}
 
 	private updateCockpit() {
+		this.updateEtaEstimate();
 		if (this.view !== "cockpit") {
 			this.liveCockpit.setVisible(false);
 			return;
@@ -2212,7 +2216,6 @@ class Game {
 		const targetKm = target ? length(sub(target.pos, this.world.ship.pos)) : 0;
 		const p = this.cruiseParams;
 		const velocity = this.velocityReadout();
-		this.updateEtaEstimate();
 		this.scannerContacts = projectScannerContacts(
 			this.world.ship.pos,
 			this.world.system.bodies,

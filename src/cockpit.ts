@@ -103,12 +103,12 @@ export function cockpitView(headLook: HeadLook): {
 	scannerVisible: boolean;
 	floorVisible: boolean;
 	activePanel: "left" | "right" | null;
-	targetDirectorVisible: false;
+	targetDirectorVisible: boolean;
 } {
 	return {
 		scannerVisible: headLook === "forward",
 		floorVisible: headLook === "forward",
 		activePanel: headLook === "forward" ? null : headLook,
-		targetDirectorVisible: false,
+		targetDirectorVisible: headLook !== "forward",
 	};
 }

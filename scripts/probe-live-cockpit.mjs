@@ -48,7 +48,7 @@ function measureLiveCockpit() {
 				body.pos.x - game.world.ship.pos.x,
 				body.pos.y - game.world.ship.pos.y,
 				body.pos.z - game.world.ship.pos.z,
-			) <= 10_000,
+			) <= game.scannerRangeKm,
 	).length;
 	const rangeRingFootprint = game.nearScene
 		.getObjectsByProperty("name", "scanner-range-ring")

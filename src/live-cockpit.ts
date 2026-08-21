@@ -112,24 +112,39 @@ export class LiveCockpit {
 
 	update(state: LiveCockpitState) {
 		const view = cockpitView(state.headLook);
-		// The DOM only renders the contact count. Including each live contact's
-		// float distance here rebuilt the entire console every animation frame,
-		// which could detach a right-panel tab between pointer-down and click.
-		// The director changes visually at whole degrees, so quantise its bearing
-		// to that same resolution before using it as a render-cache input.
-		const key = JSON.stringify({
-			...state,
-			targetBearingDeg:
-				state.targetBearingDeg === null
-					? null
-					: Math.round(state.targetBearingDeg),
-			contacts: state.contacts.length,
-		});
-		if (key === this.lastKey) return;
-		this.lastKey = key;
+		const targetId = state.target.split(" · ")[0];
+		const key = `${state.visible}|${state.headLook}|${state.rightTab}|${state.contacts.length}|${targetId}`;
 		this.setVisible(state.visible);
 		this.root.dataset.liveHeadLook = state.headLook;
 		this.root.dataset.liveTargetDirector = String(view.targetDirectorVisible);
-		this.root.innerHTML = `<main class="lc-director" data-live-director><i class="lc-target-arrow" data-live-target-arrow style="--target-bearing:${screenArrowBearingDeg(state.targetBearingDeg ?? 0)}deg" aria-label="turn toward selected target">➤</i><strong>${state.target}</strong></main><footer class="lc-forward" data-live-floor><section class="lc-surface lc-flight-surface" data-live-flight-surface><span class="lc-surface-label">VELOCITY</span><strong class="lc-speed-value">${state.speed}</strong><span class="lc-flight-meta"><span>${state.mode}</span><strong>ASSIST ${state.assist}</strong></span></section><section class="lc-surface lc-throttle" data-live-throttle-surface><span class="lc-surface-label">THROTTLE</span><span class="lc-throttle-track"><i class="lc-throttle-fill" style="--throttle:${state.throttle}"></i><b class="lc-throttle-value">${state.throttle}</b></span></section><div class="lc-scanner-space" aria-hidden="true"></div><section class="lc-surface lc-target" data-live-target-surface><span class="lc-surface-label">TARGET SOLUTION</span><strong class="lc-target-value">${state.target}</strong><span class="lc-target-meta"><span>ETA</span><strong>${state.eta}</strong><span>CHARGE ${state.charge}</span></span></section></footer><aside class="lc-panel" data-live-panel="left" data-active="${view.activePanel === "left"}"><header><h2>NAVIGATION</h2><small>LOCAL · 24</small></header><div class="lc-tabs"><span class="lc-tab" aria-current="page">Navigation</span><span class="lc-tab">Communications</span></div><div class="lc-panel-body"><div class="lc-rail"><b>SYSTEM</b><span>SEELITE</span><span>SET FILTERS</span><span>GALAXY MAP</span><span>SYSTEM MAP</span></div><div class="lc-panel-copy"><h3>SELECTED TARGET</h3><p>${state.target}</p><div class="lc-readout"><span><b>SCANNER RANGE</b><em>10,000 km</em></span><span><b>CONTACTS</b><em>${state.contacts.length}</em></span></div></div></div><footer>Simulation continues while this console is open.</footer></aside><aside class="lc-panel" data-live-panel="right" data-active="${view.activePanel === "right"}"><header><h2>${state.rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="lc-tabs" aria-label="right console tabs">${(["Flight", "Drive", "Tuning"] as RightTab[]).map((tab) => `<button class="lc-tab" type="button" data-live-right-tab="${tab}" aria-selected="${state.rightTab === tab}">${tab}</button>`).join("")}</nav><div class="lc-panel-body"><div class="lc-rail"><b>SHIP</b><span>POWER</span><span>MODULES</span><span>INVENTORY</span><span>STATUS</span></div><div class="lc-panel-copy"><h3>${state.rightTab.toUpperCase()} / CONTROL</h3><p ${state.rightTab === "Tuning" ? "data-live-tuning" : ""}>${state.rightTab === "Tuning" ? state.tuning : `${state.mode} · ${state.speed} · throttle ${state.throttle}`}</p><div class="lc-readout"><span><b>ASSIST</b><em>${state.assist}</em></span><span><b>CHARGE</b><em>${state.charge}</em></span></div></div></div><footer>Tuning remains on this right-console tab, never on the flight floor.</footer></aside>`;
+		if (key !== this.lastKey) {
+			this.lastKey = key;
+			this.root.innerHTML = `<main class="lc-director" data-live-director><i class="lc-target-arrow" data-live-target-arrow aria-label="turn toward selected target">➤</i><strong>${targetId}</strong></main><footer class="lc-forward" data-live-floor><section class="lc-surface lc-flight-surface" data-live-flight-surface><span class="lc-surface-label">VELOCITY</span><strong class="lc-speed-value"></strong><span class="lc-flight-meta"><span></span><strong></strong></span></section><section class="lc-surface lc-throttle" data-live-throttle-surface><span class="lc-surface-label">THROTTLE</span><span class="lc-throttle-track"><i class="lc-throttle-fill"></i><b class="lc-throttle-value"></b></span></section><div class="lc-scanner-space" aria-hidden="true"></div><section class="lc-surface lc-target" data-live-target-surface><span class="lc-surface-label">TARGET SOLUTION</span><strong class="lc-target-value"></strong><span class="lc-target-meta"><span>ETA</span><strong></strong><span></span></span></section></footer><aside class="lc-panel" data-live-panel="left" data-active="${view.activePanel === "left"}"><header><h2>NAVIGATION</h2><small>LOCAL · 24</small></header><div class="lc-tabs"><span class="lc-tab" aria-current="page">Navigation</span><span class="lc-tab">Communications</span></div><div class="lc-panel-body"><div class="lc-rail"><b>SYSTEM</b><span>SEELITE</span><span>SET FILTERS</span><span>GALAXY MAP</span><span>SYSTEM MAP</span></div><div class="lc-panel-copy"><h3>SELECTED TARGET</h3><p></p><div class="lc-readout"><span><b>SCANNER RANGE</b><em>10,000 km</em></span><span><b>CONTACTS</b><em>${state.contacts.length}</em></span></div></div></div><footer>Simulation continues while this console is open.</footer></aside><aside class="lc-panel" data-live-panel="right" data-active="${view.activePanel === "right"}"><header><h2>${state.rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="lc-tabs" aria-label="right console tabs">${(["Flight", "Drive", "Tuning"] as RightTab[]).map((tab) => `<button class="lc-tab" type="button" data-live-right-tab="${tab}" aria-selected="${state.rightTab === tab}">${tab}</button>`).join("")}</nav><div class="lc-panel-body"><div class="lc-rail"><b>SHIP</b><span>POWER</span><span>MODULES</span><span>INVENTORY</span><span>STATUS</span></div><div class="lc-panel-copy"><h3>${state.rightTab.toUpperCase()} / CONTROL</h3><p ${state.rightTab === "Tuning" ? "data-live-tuning" : ""}></p><div class="lc-readout"><span><b>ASSIST</b><em></em></span><span><b>CHARGE</b><em></em></span></div></div></div><footer>Tuning remains on this right-console tab, never on the flight floor.</footer></aside>`;
+		}
+		const text = (selector: string, value: string) => {
+			const element = this.root.querySelector<HTMLElement>(selector);
+			if (element) element.textContent = value;
+		};
+		text(".lc-speed-value", state.speed);
+		text(".lc-flight-meta span", state.mode);
+		text(".lc-flight-meta strong", `ASSIST ${state.assist}`);
+		text(".lc-throttle-value", state.throttle);
+		text(".lc-target-value", state.target);
+		text(".lc-target-meta strong", state.eta);
+		text(".lc-target-meta span:last-child", `CHARGE ${state.charge}`);
+		text('[data-live-panel="left"] .lc-panel-copy > p', state.target);
+		text(
+			'[data-live-panel="right"] .lc-panel-copy > p',
+			state.rightTab === "Tuning"
+				? state.tuning
+				: `${state.mode} · ${state.speed} · throttle ${state.throttle}`,
+		);
+		const fill = this.root.querySelector<HTMLElement>(".lc-throttle-fill");
+		fill?.style.setProperty("--throttle", state.throttle);
+		const arrow = this.root.querySelector<HTMLElement>(".lc-target-arrow");
+		arrow?.style.setProperty(
+			"--target-bearing",
+			`${screenArrowBearingDeg(state.targetBearingDeg ?? 0)}deg`,
+		);
 	}
 }
