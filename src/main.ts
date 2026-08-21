@@ -1303,7 +1303,8 @@ class Game {
 				hologram.contactGlyphs.add(mast, diamond);
 			}
 			const { mast, diamond } = glyph;
-			mast.name = `scanner-contact-mast-${contact.id}`;
+			const mastName = `scanner-contact-mast-${contact.id}`;
+			if (mast.name !== mastName) mast.name = mastName;
 			mast.position.set(x, signedHeight / 2, z);
 			mast.scale.set(
 				contact.selected ? 0.00009 : 0.00007,
@@ -1315,7 +1316,8 @@ class Game {
 				: hologram.contactMastMaterial;
 			mast.visible = true;
 			const r = contact.selected ? 0.00065 : 0.0004;
-			diamond.name = `scanner-contact-diamond-${contact.id}`;
+			const diamondName = `scanner-contact-diamond-${contact.id}`;
+			if (diamond.name !== diamondName) diamond.name = diamondName;
 			diamond.position.set(x, signedHeight, z);
 			diamond.scale.set(r, 1, r);
 			diamond.material = contact.selected
@@ -2279,10 +2281,10 @@ class Game {
 
 	private tuningSummary() {
 		const p = this.cruiseParams;
-		const key = `${p.vMaxKms}|${p.exponent}|${p.dropRadiusKm}|${p.vicinityKm}|${p.approachLeadS}`;
+		const key = `${p.vMaxKms}|${p.exponent}|${p.dropRadiusKm}|${p.dropSpeedKms}|${p.vicinityKm}|${p.approachLeadS}`;
 		if (key !== this.tuningKey) {
 			this.tuningKey = key;
-			this.tuningText = `v_max ${(p.vMaxKms / C_KMS).toFixed(0)} c · exponent ${p.exponent.toFixed(2)} · drop ${p.dropRadiusKm} km · vicinity ${range(p.vicinityKm)} · lead ${p.approachLeadS}s`;
+			this.tuningText = `v_max ${(p.vMaxKms / C_KMS).toFixed(0)} c · exponent ${p.exponent.toFixed(2)} · drop ${p.dropRadiusKm} km · drop speed ${p.dropSpeedKms.toFixed(1)} km/s · vicinity ${range(p.vicinityKm)} · lead ${p.approachLeadS}s`;
 		}
 		return this.tuningText;
 	}
