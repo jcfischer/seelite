@@ -26,6 +26,20 @@ export interface LiveCockpitState {
 	tuning: string;
 }
 
+interface CockpitElements {
+	speed: HTMLElement;
+	mode: HTMLElement;
+	assist: HTMLElement;
+	throttle: HTMLElement;
+	target: HTMLElement;
+	eta: HTMLElement;
+	charge: HTMLElement;
+	leftPanelCopy: HTMLElement;
+	rightPanelCopy: HTMLElement;
+	fill: HTMLElement;
+	arrow: HTMLElement;
+}
+
 const STYLE_ID = "seelite-live-cockpit-style";
 
 const STYLE = `
@@ -86,6 +100,7 @@ function installStyle() {
 export class LiveCockpit {
 	private readonly root: HTMLElement;
 	private lastKey = "";
+	private elements: CockpitElements | null = null;
 
 	constructor(private readonly onRightTab: (tab: RightTab) => void) {
 		installStyle();
@@ -120,29 +135,38 @@ export class LiveCockpit {
 		if (key !== this.lastKey) {
 			this.lastKey = key;
 			this.root.innerHTML = `<main class="lc-director" data-live-director><i class="lc-target-arrow" data-live-target-arrow aria-label="turn toward selected target">➤</i><strong>${targetId}</strong></main><footer class="lc-forward" data-live-floor><section class="lc-surface lc-flight-surface" data-live-flight-surface><span class="lc-surface-label">VELOCITY</span><strong class="lc-speed-value"></strong><span class="lc-flight-meta"><span></span><strong></strong></span></section><section class="lc-surface lc-throttle" data-live-throttle-surface><span class="lc-surface-label">THROTTLE</span><span class="lc-throttle-track"><i class="lc-throttle-fill"></i><b class="lc-throttle-value"></b></span></section><div class="lc-scanner-space" aria-hidden="true"></div><section class="lc-surface lc-target" data-live-target-surface><span class="lc-surface-label">TARGET SOLUTION</span><strong class="lc-target-value"></strong><span class="lc-target-meta"><span>ETA</span><strong></strong><span></span></span></section></footer><aside class="lc-panel" data-live-panel="left" data-active="${view.activePanel === "left"}"><header><h2>NAVIGATION</h2><small>LOCAL · 24</small></header><div class="lc-tabs"><span class="lc-tab" aria-current="page">Navigation</span><span class="lc-tab">Communications</span></div><div class="lc-panel-body"><div class="lc-rail"><b>SYSTEM</b><span>SEELITE</span><span>SET FILTERS</span><span>GALAXY MAP</span><span>SYSTEM MAP</span></div><div class="lc-panel-copy"><h3>SELECTED TARGET</h3><p></p><div class="lc-readout"><span><b>SCANNER RANGE</b><em>10,000 km</em></span><span><b>CONTACTS</b><em>${state.contacts.length}</em></span></div></div></div><footer>Simulation continues while this console is open.</footer></aside><aside class="lc-panel" data-live-panel="right" data-active="${view.activePanel === "right"}"><header><h2>${state.rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="lc-tabs" aria-label="right console tabs">${(["Flight", "Drive", "Tuning"] as RightTab[]).map((tab) => `<button class="lc-tab" type="button" data-live-right-tab="${tab}" aria-selected="${state.rightTab === tab}">${tab}</button>`).join("")}</nav><div class="lc-panel-body"><div class="lc-rail"><b>SHIP</b><span>POWER</span><span>MODULES</span><span>INVENTORY</span><span>STATUS</span></div><div class="lc-panel-copy"><h3>${state.rightTab.toUpperCase()} / CONTROL</h3><p ${state.rightTab === "Tuning" ? "data-live-tuning" : ""}></p><div class="lc-readout"><span><b>ASSIST</b><em></em></span><span><b>CHARGE</b><em></em></span></div></div></div><footer>Tuning remains on this right-console tab, never on the flight floor.</footer></aside>`;
+			const find = (selector: string) =>
+				this.root.querySelector<HTMLElement>(selector) as HTMLElement;
+			this.elements = {
+				speed: find(".lc-speed-value"),
+				mode: find(".lc-flight-meta span"),
+				assist: find(".lc-flight-meta strong"),
+				throttle: find(".lc-throttle-value"),
+				target: find(".lc-target-value"),
+				eta: find(".lc-target-meta strong"),
+				charge: find(".lc-target-meta span:last-child"),
+				leftPanelCopy: find('[data-live-panel="left"] .lc-panel-copy > p'),
+				rightPanelCopy: find('[data-live-panel="right"] .lc-panel-copy > p'),
+				fill: find(".lc-throttle-fill"),
+				arrow: find(".lc-target-arrow"),
+			};
 		}
-		const text = (selector: string, value: string) => {
-			const element = this.root.querySelector<HTMLElement>(selector);
-			if (element) element.textContent = value;
-		};
-		text(".lc-speed-value", state.speed);
-		text(".lc-flight-meta span", state.mode);
-		text(".lc-flight-meta strong", `ASSIST ${state.assist}`);
-		text(".lc-throttle-value", state.throttle);
-		text(".lc-target-value", state.target);
-		text(".lc-target-meta strong", state.eta);
-		text(".lc-target-meta span:last-child", `CHARGE ${state.charge}`);
-		text('[data-live-panel="left"] .lc-panel-copy > p', state.target);
-		text(
-			'[data-live-panel="right"] .lc-panel-copy > p',
+		const elements = this.elements;
+		if (!elements) return;
+		elements.speed.textContent = state.speed;
+		elements.mode.textContent = state.mode;
+		elements.assist.textContent = `ASSIST ${state.assist}`;
+		elements.throttle.textContent = state.throttle;
+		elements.target.textContent = state.target;
+		elements.eta.textContent = state.eta;
+		elements.charge.textContent = `CHARGE ${state.charge}`;
+		elements.leftPanelCopy.textContent = state.target;
+		elements.rightPanelCopy.textContent =
 			state.rightTab === "Tuning"
 				? state.tuning
-				: `${state.mode} · ${state.speed} · throttle ${state.throttle}`,
-		);
-		const fill = this.root.querySelector<HTMLElement>(".lc-throttle-fill");
-		fill?.style.setProperty("--throttle", state.throttle);
-		const arrow = this.root.querySelector<HTMLElement>(".lc-target-arrow");
-		arrow?.style.setProperty(
+				: `${state.mode} · ${state.speed} · throttle ${state.throttle}`;
+		elements.fill.style.setProperty("--throttle", state.throttle);
+		elements.arrow.style.setProperty(
 			"--target-bearing",
 			`${screenArrowBearingDeg(state.targetBearingDeg ?? 0)}deg`,
 		);

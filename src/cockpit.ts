@@ -43,7 +43,8 @@ export function projectScannerContacts(
 	orientation?: Quat,
 	rangeKm = SCANNER_RANGE_KM,
 ): ScannerContact[] {
-	return bodies.flatMap((body) => {
+	const contacts: ScannerContact[] = [];
+	for (const body of bodies) {
 		const worldRelative = sub(body.pos, shipPos);
 		// The scope is ship-local, not a tiny top-down map of the solar system.
 		// A contact must walk around the plate when the pilot turns, otherwise the
@@ -52,7 +53,7 @@ export function projectScannerContacts(
 			? intoCameraFrame(worldRelative, orientation)
 			: worldRelative;
 		const distanceKm = length(relative);
-		if (distanceKm > rangeKm) return [];
+		if (distanceKm > rangeKm) continue;
 		const planarDistanceKm = Math.hypot(relative.x, relative.z);
 		// A 10,000-km scanner needs to retain the outer boundary, but a linear
 		// scale makes a nearby contact at a pronounced bearing look centred. The
@@ -64,25 +65,24 @@ export function projectScannerContacts(
 		const planarZ =
 			planarDistanceKm === 0 ? 0 : (relative.z / planarDistanceKm) * radius;
 		const verticalFraction = clamp(relative.y / rangeKm, -1, 1);
-		return [
-			{
-				id: body.id,
-				selected: body.id === targetId,
-				distanceKm,
-				baseXPercent: clamp(50 + planarX * 42, 8, 92),
-				baseYPercent: clamp(50 + planarZ * 31, 18, 82),
-				// The oblique scanner puts an overhead contact into its lower/near
-				// half. Near-field expansion makes a meaningful vertical separation
-				// legible before it has covered thousands of kilometres.
-				tipOffsetPx:
-					verticalFraction === 0
-						? 0
-						: Math.sign(verticalFraction) *
-							Math.sqrt(Math.abs(verticalFraction)) *
-							54,
-			},
-		];
-	});
+		contacts.push({
+			id: body.id,
+			selected: body.id === targetId,
+			distanceKm,
+			baseXPercent: clamp(50 + planarX * 42, 8, 92),
+			baseYPercent: clamp(50 + planarZ * 31, 18, 82),
+			// The oblique scanner puts an overhead contact into its lower/near
+			// half. Near-field expansion makes a meaningful vertical separation
+			// legible before it has covered thousands of kilometres.
+			tipOffsetPx:
+				verticalFraction === 0
+					? 0
+					: Math.sign(verticalFraction) *
+						Math.sqrt(Math.abs(verticalFraction)) *
+						54,
+		});
+	}
+	return contacts;
 }
 
 /** The arrow glyph faces right at 0°, matching CSS's rotation convention. */

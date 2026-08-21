@@ -251,6 +251,28 @@ interface ProbeRayMath {
 	closestApproachKm: typeof closestApproachKm;
 }
 
+interface Instrument {
+	ctx: CanvasRenderingContext2D;
+	texture: THREE.CanvasTexture;
+}
+
+interface HologramGlyph {
+	mast: THREE.Mesh<THREE.CylinderGeometry, THREE.MeshBasicMaterial>;
+	diamond: THREE.LineLoop<THREE.BufferGeometry, THREE.LineBasicMaterial>;
+}
+
+interface HologramSystem {
+	root: THREE.Group;
+	contactGlyphs: THREE.Group;
+	mastGeometry: THREE.CylinderGeometry;
+	diamondGeometry: THREE.BufferGeometry;
+	glyphPool: HologramGlyph[];
+	contactMaterial: THREE.LineBasicMaterial;
+	targetMaterial: THREE.LineBasicMaterial;
+	contactMastMaterial: THREE.MeshBasicMaterial;
+	targetMastMaterial: THREE.MeshBasicMaterial;
+}
+
 class Game {
 	readonly world: World;
 	readonly renderer: THREE.WebGLRenderer;
@@ -298,22 +320,9 @@ class Game {
 	private cockpitMesh!: THREE.Group;
 	private scannerTexture!: THREE.CanvasTexture;
 	private scannerCtx!: CanvasRenderingContext2D;
-	private scannerHologram!: THREE.Group;
-	private scannerContactGlyphs!: THREE.Group;
-	private hologramMastGeometry!: THREE.CylinderGeometry;
-	private hologramDiamondGeometry!: THREE.BufferGeometry;
-	private readonly hologramGlyphPool: {
-		mast: THREE.Mesh<THREE.CylinderGeometry, THREE.MeshBasicMaterial>;
-		diamond: THREE.LineLoop<THREE.BufferGeometry, THREE.LineBasicMaterial>;
-	}[] = [];
-	private hologramContactMaterial!: THREE.LineBasicMaterial;
-	private hologramTargetMaterial!: THREE.LineBasicMaterial;
-	private hologramContactMastMaterial!: THREE.MeshBasicMaterial;
-	private hologramTargetMastMaterial!: THREE.MeshBasicMaterial;
-	private flightInstrumentCtx!: CanvasRenderingContext2D;
-	private flightInstrumentTexture!: THREE.CanvasTexture;
-	private targetInstrumentCtx!: CanvasRenderingContext2D;
-	private targetInstrumentTexture!: THREE.CanvasTexture;
+	private hologram!: HologramSystem;
+	private flightInstrument!: Instrument;
+	private targetInstrument!: Instrument;
 	private throttleFill!: THREE.Mesh;
 	private throttleFillMaterial!: THREE.MeshStandardMaterial;
 	private instrumentKey = "";
@@ -327,6 +336,7 @@ class Game {
 	private readonly keys = new Set<string>();
 	readonly audio = new AudioFX();
 	private throttle = 0;
+	private frameBody: Body | null = null;
 	/** View-local head direction. It does not change the ship's orientation. */
 	headLook: HeadLook = "forward";
 	private rightTab: RightTab = "Flight";
@@ -480,6 +490,7 @@ class Game {
 
 	constructor(seed: number) {
 		this.world = makeWorld(seed);
+		this.updateLocalFrameBody();
 		this.faceTheStar();
 
 		this.renderer = new THREE.WebGLRenderer({
@@ -1138,12 +1149,8 @@ class Game {
 			scannerMount.add(face);
 			return { ctx, texture };
 		};
-		const flightInstrument = makeInstrument("flight-instrument", -0.025);
-		this.flightInstrumentCtx = flightInstrument.ctx;
-		this.flightInstrumentTexture = flightInstrument.texture;
-		const targetInstrument = makeInstrument("target-instrument", 0.025);
-		this.targetInstrumentCtx = targetInstrument.ctx;
-		this.targetInstrumentTexture = targetInstrument.texture;
+		this.flightInstrument = makeInstrument("flight-instrument", -0.025);
+		this.targetInstrument = makeInstrument("target-instrument", 0.025);
 		const throttleTrack = new THREE.Mesh(
 			new THREE.BoxGeometry(0.0022, 0.0014, 0.014),
 			inset,
@@ -1167,10 +1174,10 @@ class Game {
 
 	/** Create the static radar geometry and the reusable live-contact pool. */
 	private buildHologramSystem(scannerMount: THREE.Group) {
-		this.scannerHologram = new THREE.Group();
-		this.scannerHologram.name = "scanner-hologram";
-		this.scannerHologram.position.y = 0.0013;
-		scannerMount.add(this.scannerHologram);
+		const root = new THREE.Group();
+		root.name = "scanner-hologram";
+		root.position.y = 0.0013;
+		scannerMount.add(root);
 		const hologramMaterial = new THREE.LineBasicMaterial({
 			color: 0xf1ab38,
 			transparent: true,
@@ -1188,12 +1195,12 @@ class Game {
 			new THREE.LineBasicMaterial({ color, opacity, ...hologramOptions });
 		const mastHologram = (color: number, opacity: number) =>
 			new THREE.MeshBasicMaterial({ color, opacity, ...hologramOptions });
-		this.hologramContactMaterial = lineHologram(0x74d9ff, 0.85);
-		this.hologramTargetMaterial = lineHologram(0xffd26b, 1);
-		this.hologramContactMastMaterial = mastHologram(0x74d9ff, 0.78);
-		this.hologramTargetMastMaterial = mastHologram(0xffd26b, 0.92);
-		this.hologramMastGeometry = new THREE.CylinderGeometry(1, 1, 1, 6);
-		this.hologramDiamondGeometry = new THREE.BufferGeometry().setFromPoints([
+		const contactMaterial = lineHologram(0x74d9ff, 0.85);
+		const targetMaterial = lineHologram(0xffd26b, 1);
+		const contactMastMaterial = mastHologram(0x74d9ff, 0.78);
+		const targetMastMaterial = mastHologram(0xffd26b, 0.92);
+		const mastGeometry = new THREE.CylinderGeometry(1, 1, 1, 6);
+		const diamondGeometry = new THREE.BufferGeometry().setFromPoints([
 			new THREE.Vector3(-1, 0, 0),
 			new THREE.Vector3(0, 0, -0.5),
 			new THREE.Vector3(1, 0, 0),
@@ -1218,9 +1225,9 @@ class Game {
 				hologramMaterial,
 			);
 			rangeRing.name = "scanner-range-ring";
-			this.scannerHologram.add(rangeRing);
+			root.add(rangeRing);
 		}
-		this.scannerHologram.add(
+		root.add(
 			new THREE.Line(
 				new THREE.BufferGeometry().setFromPoints([
 					new THREE.Vector3(0, 0, -0.006),
@@ -1229,9 +1236,20 @@ class Game {
 				hologramMaterial,
 			),
 		);
-		this.scannerContactGlyphs = new THREE.Group();
-		this.scannerContactGlyphs.name = "scanner-contact-glyphs";
-		this.scannerHologram.add(this.scannerContactGlyphs);
+		const contactGlyphs = new THREE.Group();
+		contactGlyphs.name = "scanner-contact-glyphs";
+		root.add(contactGlyphs);
+		this.hologram = {
+			root,
+			contactGlyphs,
+			mastGeometry,
+			diamondGeometry,
+			glyphPool: [],
+			contactMaterial,
+			targetMaterial,
+			contactMastMaterial,
+			targetMastMaterial,
+		};
 	}
 
 	/** Paint the scanner's unchanging dark surface once, before the first draw. */
@@ -1257,7 +1275,8 @@ class Game {
 	}
 
 	private updateHologramContacts(contacts: readonly ScannerContact[]) {
-		for (const glyph of this.hologramGlyphPool)
+		const hologram = this.hologram;
+		for (const glyph of hologram.glyphPool)
 			glyph.mast.visible = glyph.diamond.visible = false;
 		for (const [index, contact] of contacts.entries()) {
 			const x = ((contact.baseXPercent - 50) / 42) * 0.0105;
@@ -1266,19 +1285,19 @@ class Game {
 				0.0009 +
 				Math.min(0.0036, (Math.abs(contact.tipOffsetPx) / 54) * 0.0036);
 			const signedHeight = (Math.sign(contact.tipOffsetPx) || 1) * height;
-			let glyph = this.hologramGlyphPool[index];
+			let glyph = hologram.glyphPool[index];
 			if (!glyph) {
 				const mast = new THREE.Mesh(
-					this.hologramMastGeometry,
-					this.hologramContactMastMaterial,
+					hologram.mastGeometry,
+					hologram.contactMastMaterial,
 				);
 				const diamond = new THREE.LineLoop(
-					this.hologramDiamondGeometry,
-					this.hologramContactMaterial,
+					hologram.diamondGeometry,
+					hologram.contactMaterial,
 				);
 				glyph = { mast, diamond };
-				this.hologramGlyphPool.push(glyph);
-				this.scannerContactGlyphs.add(mast, diamond);
+				hologram.glyphPool.push(glyph);
+				hologram.contactGlyphs.add(mast, diamond);
 			}
 			const { mast, diamond } = glyph;
 			mast.name = `scanner-contact-mast-${contact.id}`;
@@ -1289,16 +1308,16 @@ class Game {
 				contact.selected ? 0.00009 : 0.00007,
 			);
 			mast.material = contact.selected
-				? this.hologramTargetMastMaterial
-				: this.hologramContactMastMaterial;
+				? hologram.targetMastMaterial
+				: hologram.contactMastMaterial;
 			mast.visible = true;
 			const r = contact.selected ? 0.00065 : 0.0004;
 			diamond.name = `scanner-contact-diamond-${contact.id}`;
 			diamond.position.set(x, signedHeight, z);
 			diamond.scale.set(r, 1, r);
 			diamond.material = contact.selected
-				? this.hologramTargetMaterial
-				: this.hologramContactMaterial;
+				? hologram.targetMaterial
+				: hologram.contactMaterial;
 			diamond.visible = true;
 		}
 	}
@@ -1359,21 +1378,21 @@ class Game {
 			ctx.fillText(secondary, 28, 192);
 		};
 		paint(
-			this.flightInstrumentCtx,
+			this.flightInstrument.ctx,
 			velocity.title,
 			speed,
 			velocity.context,
 			"#75d7ff",
 		);
 		paint(
-			this.targetInstrumentCtx,
+			this.targetInstrument.ctx,
 			"TARGET",
 			targetText,
 			`ETA ${eta}  CHARGE ${this.chargeAu.toFixed(1)} AU`,
 			"#ffd17a",
 		);
-		this.flightInstrumentTexture.needsUpdate = true;
-		this.targetInstrumentTexture.needsUpdate = true;
+		this.flightInstrument.texture.needsUpdate = true;
+		this.targetInstrument.texture.needsUpdate = true;
 		// The low end is nearest/lower on the sloped deck. Keep it anchored there
 		// and extend toward the windscreen as throttle rises; the old fill started
 		// at the top and slid down, the inverse of a physical throttle cue.
@@ -1712,14 +1731,14 @@ class Game {
 	 * perfectly good arrival. It binds #9: docking happens in this frame.
 	 */
 	private localFrame(): Vec3 {
-		const body = this.localFrameBody();
+		const body = this.frameBody;
 		return body
 			? bodyVelocity(this.world.system, body.id, this.world.gameTime)
 			: v3();
 	}
 
 	/** The nearby body's inertial frame makes station-keeping legible at idle. */
-	private localFrameBody(): Body | null {
+	private updateLocalFrameBody() {
 		let best: Body | null = null;
 		let bestKm = NEAR_FAR_KM;
 		for (const b of this.world.system.bodies) {
@@ -1729,7 +1748,7 @@ class Game {
 				bestKm = km;
 			}
 		}
-		return best;
+		this.frameBody = best;
 	}
 
 	/**
@@ -1744,7 +1763,7 @@ class Game {
 				speed: `${(this.cruiseSpeedKms / C_KMS).toFixed(2)} c`,
 				context: "NOSE-LOCKED CRUISE",
 			};
-		const frameBody = this.localFrameBody();
+		const frameBody = this.frameBody;
 		const frameVelocity = frameBody
 			? bodyVelocity(this.world.system, frameBody.id, this.world.gameTime)
 			: v3();
@@ -1901,6 +1920,7 @@ class Game {
 	 * exactly what the game runs rather than its own copy of the order.
 	 */
 	step(dt: number) {
+		this.updateLocalFrameBody();
 		const yaw = this.axis(["arrowright", "d"], ["arrowleft", "a"]);
 		const pitch = this.axis(["arrowdown", "s"], ["arrowup", "w"]);
 		const roll = this.axis(["e"], ["q"]);
