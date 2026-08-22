@@ -1,11 +1,6 @@
 /** The crisp DOM instruments that sit over Game's one WebGL renderer. */
 
-import {
-	type HeadLook,
-	type ScannerContact,
-	cockpitView,
-	screenArrowBearingDeg,
-} from "./cockpit";
+import { type HeadLook, type ScannerContact, cockpitView } from "./cockpit";
 
 export type RightTab = "Flight" | "Drive" | "Tuning";
 const RIGHT_TABS: readonly RightTab[] = ["Flight", "Drive", "Tuning"];
@@ -19,7 +14,6 @@ export interface LiveCockpitState {
 	target: string;
 	targetBearingDeg: number | null;
 	mode: string;
-	velocityContext: string;
 	throttle: string;
 	assist: string;
 	charge: string;
@@ -190,7 +184,7 @@ export class LiveCockpit {
 		if (state.targetBearingDeg !== null)
 			elements.arrow.style.setProperty(
 				"--target-bearing",
-				`${screenArrowBearingDeg(state.targetBearingDeg)}deg`,
+				`${-state.targetBearingDeg}deg`,
 			);
 	}
 }

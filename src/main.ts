@@ -2268,7 +2268,6 @@ class Game {
 					)
 				: null,
 			mode: this.regime === "cruise" ? "CRUISE" : "NORMAL FLIGHT",
-			velocityContext: velocity.context,
 			throttle: `${(this.throttle * 100).toFixed(0)}%`,
 			assist: this.assist ? "ON" : "OFF",
 			charge: `${this.chargeAu.toFixed(1)}/${CHARGE_CAPACITY_AU} AU`,

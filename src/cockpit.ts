@@ -111,9 +111,6 @@ export function targetArrowBearingDeg(
 	return (edgeOf(direction, orientation, 0.08).angleRad * 180) / Math.PI;
 }
 
-/** CSS screen coordinates grow downwards, unlike HUD's camera-frame y axis. */
-export const screenArrowBearingDeg = (bearingDeg: number) => -bearingDeg;
-
 export function cockpitView(headLook: HeadLook): {
 	activePanel: "left" | "right" | null;
 	targetDirectorVisible: boolean;
