@@ -86,8 +86,8 @@ export function projectScannerContacts(
 		contact.distanceKm = distanceKm;
 		contact.baseXPercent = clamp(50 + planarX * 42, 8, 92);
 		contact.baseYPercent = clamp(50 + planarZ * 31, 18, 82);
-		// The oblique scanner puts an overhead contact into its lower/near
-		// half. Near-field expansion makes a meaningful vertical separation
+		// On the forward-pitched plate, an overhead contact extends toward the
+		// pilot above the scan plane. Near-field expansion makes separation
 		// legible before it has covered thousands of kilometres.
 		contact.tipOffsetPx =
 			verticalFraction === 0

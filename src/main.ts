@@ -497,6 +497,8 @@ class Game {
 
 	constructor(seed: number) {
 		this.world = makeWorld(seed);
+		for (const _body of this.world.system.bodies)
+			this.scannerContactBuffer.push({} as ScannerContact);
 		this.updateLocalFrameBody();
 		this.faceTheStar();
 

@@ -146,9 +146,8 @@ async function placeShipAtLocalOffset(page, local) {
 	}, local);
 }
 
-// The guard fingerprints numeric constants. `cockpit.ts` intentionally has no
-// such literal contract beyond the imported unit projection, so fingerprint the
-// existing renderer and unit surfaces before probing the live DOM it mounts.
+// The guard compares top-level numeric declarations in the renderer and unit
+// surfaces; scanner projection terms are covered by cockpit's unit tests.
 await guardedOrigin(ORIGIN, ["src/main.ts", "src/units.ts"]);
 const browser = await launchChromium();
 const { check, exit } = tally();
