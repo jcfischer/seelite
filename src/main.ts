@@ -260,29 +260,48 @@ interface Instrument {
 const INSTRUMENT_SECONDARY_FONT = "20px ui-monospace, monospace";
 const PROMPT_FONT = "13px ui-monospace, Menlo, monospace";
 const PROMPT_FILL = "rgba(255, 214, 120, 0.9)";
+const TEXT_RASTER_DEFAULTS: Readonly<{
+	text: string;
+	font: string;
+	fillStyle: string;
+	textAlign: CanvasTextAlign;
+	x: number;
+	y: number;
+	background: string | undefined;
+}> = Object.freeze({
+	text: "",
+	font: "",
+	fillStyle: "",
+	textAlign: "left" as CanvasTextAlign,
+	x: 0,
+	y: 0,
+	background: undefined as string | undefined,
+});
+const TEXT_RASTER_BOUNDS_DEFAULTS: Readonly<{
+	left: number;
+	top: number;
+	width: number;
+	height: number;
+}> = Object.freeze({
+	left: 0,
+	top: 0,
+	width: 0,
+	height: 0,
+});
 
 class TextRaster {
-	text = "";
-	font = "";
-	fillStyle = "";
-	textAlign: CanvasTextAlign = "left";
-	x = 0;
-	y = 0;
-	bounds = { left: 0, top: 0, width: 0, height: 0 };
-	background: string | undefined = undefined;
+	text = TEXT_RASTER_DEFAULTS.text;
+	font = TEXT_RASTER_DEFAULTS.font;
+	fillStyle = TEXT_RASTER_DEFAULTS.fillStyle;
+	textAlign = TEXT_RASTER_DEFAULTS.textAlign;
+	x = TEXT_RASTER_DEFAULTS.x;
+	y = TEXT_RASTER_DEFAULTS.y;
+	bounds = { ...TEXT_RASTER_BOUNDS_DEFAULTS };
+	background = TEXT_RASTER_DEFAULTS.background;
 
 	reset() {
-		this.text = "";
-		this.font = "";
-		this.fillStyle = "";
-		this.textAlign = "left";
-		this.x = 0;
-		this.y = 0;
-		this.bounds.left = 0;
-		this.bounds.top = 0;
-		this.bounds.width = 0;
-		this.bounds.height = 0;
-		this.background = undefined;
+		Object.assign(this, TEXT_RASTER_DEFAULTS);
+		Object.assign(this.bounds, TEXT_RASTER_BOUNDS_DEFAULTS);
 	}
 
 	setInstrumentSecondary(text: string, accent: string, canvasWidth: number) {
@@ -1414,13 +1433,13 @@ class Game {
 		if (key === this.cockpit.instrumentKey) return;
 		this.cockpit.instrumentKey = key;
 		const paint = (
-			ctx: CanvasRenderingContext2D,
+			instrument: Instrument,
 			title: string,
 			primary: string,
 			secondary: string,
 			accent: string,
-			raster: TextRaster,
 		) => {
+			const { ctx, secondaryText: raster } = instrument;
 			const { width, height } = ctx.canvas;
 			ctx.clearRect(0, 0, width, height);
 			ctx.fillStyle = "rgba(1, 8, 11, .9)";
@@ -1451,20 +1470,18 @@ class Game {
 			ctx.fillText(secondary, 28, 192);
 		};
 		paint(
-			this.cockpit.flightInstrument.ctx,
+			this.cockpit.flightInstrument,
 			velocity.title,
 			speed,
 			velocity.context,
 			"#75d7ff",
-			this.cockpit.flightInstrument.secondaryText,
 		);
 		paint(
-			this.cockpit.targetInstrument.ctx,
+			this.cockpit.targetInstrument,
 			"TARGET",
 			targetText,
 			`ETA ${eta}  CHARGE ${this.chargeAu.toFixed(1)} AU`,
 			"#ffd17a",
-			this.cockpit.targetInstrument.secondaryText,
 		);
 		this.cockpit.flightInstrument.texture.needsUpdate = true;
 		this.cockpit.targetInstrument.texture.needsUpdate = true;
