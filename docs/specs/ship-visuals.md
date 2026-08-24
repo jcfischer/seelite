@@ -8,10 +8,12 @@ procedural hull language. It supplies three **visual archetypes** — `courier`,
 the only owner of which purchasable or NPC ship selects an archetype; a future
 roster must choose one explicitly and never receive a silent default.
 
-`courier` is the player baseline: a broad multipurpose wedge with an integrated
-dorsal hull, canopy, wing panels, and paired engine nacelles. `interceptor` is a
-long dart with a rear-swept lifting body; `freighter` is a deep narrow keel with
-an offset bridge and side cargo pods. Their silhouette and engine placement are
+Each archetype has three deliberately different construction concepts for
+design selection. The courier round spans a broad armored flying wing, a split
+bow with long engine shoulders, and a compact offset-cockpit diamond. The
+interceptor round spans a dart fuselage, a cropped delta, and an open-rear
+twin-boom frame. The freighter round spans asymmetric side pods, an open-spine
+catamaran, and a rear-heavy tug. Their silhouette and engine placement are
 motion-relevant cues; exhaust is deliberately compact and secondary to hull
 mass.
 
@@ -23,6 +25,12 @@ paint/material variation, and Star Citizen/Starfield contribute layered
 industrial construction. Primary mass must remain continuous; secondary panels
 may explain structure but must never return to an assembly of disconnected
 boxes.
+
+The query-gated `?model-viewer=ship` workbench exposes all nine candidates
+without constructing `Game`. A designer can orbit each candidate, apply
+temporary proportion controls, and rank A/B/C in preference order per role.
+The ranking summary is an iteration input, not persistent game state: it guides
+the next three concepts but does not select a roster hull or alter flight.
 
 ## 2. Rendering contract
 
@@ -44,8 +52,10 @@ kilometre-scale body handoff stays untouched.
 
 ## 3. Verification contract
 
-Headless tests assert stable hull names, deterministic bounds, declared reach,
-distinct gross proportions, compact exhausts, and continuous beveled primary
-silhouettes. A browser probe verifies that the live courier is present only in
-chase view and that returning to cockpit restores the live cockpit instruments
-and overlay.
+Headless tests assert all nine candidates have stable hull and variant identity,
+deterministic bounds, declared reach, distinct design theses, compact exhausts,
+intersecting canopy fairings and structurally mounted nacelles. A viewer probe
+verifies all nine candidates, per-role ranking, isolated draft controls, and the
+absence of `Game`. A live browser probe verifies that the courier is present
+only in chase view and that returning to cockpit restores the live cockpit
+instruments and overlay.

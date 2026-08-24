@@ -7,8 +7,10 @@ import * as THREE from "three";
 
 import {
 	HULL_IDS,
+	HULL_VARIANTS,
 	HULL_VISUALS,
 	type HullId,
+	type HullVariantId,
 	buildShipMesh,
 } from "./ship-mesh";
 
@@ -16,6 +18,9 @@ export const MODEL_VIEWER_VERSION = 1;
 
 type ViewerState = {
 	asset: HullId;
+	variant: HullVariantId;
+	selectedVariants: Record<HullId, HullVariantId>;
+	rankings: Record<HullId, HullVariantId[]>;
 	beam: number;
 	length: number;
 	engine: number;
@@ -30,7 +35,7 @@ const STYLE_ID = "seelite-model-viewer-style";
 const STYLE = `
 #model-viewer { position: fixed; inset: 0; z-index: 20; overflow: auto; color: #d7e9f2; background: radial-gradient(circle at 50% 38%, #132735, #030609 62%); font: 12px/1.35 ui-monospace, "SF Mono", Menlo, monospace; }
 #model-viewer * { box-sizing: border-box; }
-.mv-wrap { min-height: 100%; max-width: 1180px; margin: auto; padding: 18px; display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 14px; }
+.mv-wrap { min-height: 100%; max-width: 1240px; margin: auto; padding: 18px; display: grid; grid-template-columns: minmax(0, 1fr) 310px; gap: 14px; }
 .mv-stage { position: relative; min-height: 620px; overflow: hidden; border: 1px solid rgba(124, 183, 211, .35); background: radial-gradient(circle at 50% 48%, rgba(23, 58, 76, .55), rgba(2, 5, 8, .85) 66%); }
 .mv-stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 .mv-axis { position: absolute; left: 14px; bottom: 12px; color: #7aa8ba; letter-spacing: .08em; pointer-events: none; }
@@ -42,6 +47,19 @@ const STYLE = `
 .mv-assets { display: grid; gap: 5px; }
 .mv-button { border: 1px solid rgba(124, 183, 211, .34); background: #0a1820; color: #b9dce9; padding: 8px; font: inherit; text-align: left; cursor: pointer; }
 .mv-button[aria-pressed="true"] { border-color: #f0bc67; background: #34230e; color: #ffe0a2; }
+.mv-role-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.mv-role-tabs .mv-button { padding: 7px 4px; text-align: center; text-transform: uppercase; font-size: 10px; }
+.mv-variants[hidden] { display: none; }
+.mv-variants { display: grid; gap: 6px; }
+.mv-variant { display: grid; grid-template-columns: minmax(0, 1fr) 44px; gap: 5px; }
+.mv-concept { display: grid; gap: 2px; }
+.mv-concept strong { color: inherit; font-size: 12px; }
+.mv-concept small { color: #7899a7; line-height: 1.25; }
+.mv-concept[aria-pressed="true"] small { color: #d4b77f; }
+.mv-rank { display: grid; place-items: center; border: 1px solid rgba(124, 183, 211, .28); background: #071116; color: #7fa2b1; font: inherit; cursor: pointer; }
+.mv-rank[data-rank-position] { border-color: #73aee0; color: #d5ecff; background: #102638; }
+.mv-ranking { min-height: 5.5em; margin: 0; padding: 8px; white-space: pre-wrap; color: #9fc0ce; background: rgba(2, 8, 11, .7); border: 1px solid rgba(124, 183, 211, .18); }
+.mv-reset { border: 0; padding: 0; background: transparent; color: #f0bc67; font: inherit; cursor: pointer; text-align: left; }
 .mv-control { display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: center; color: #b9dce9; }
 .mv-control input[type="range"] { grid-column: 1 / -1; width: 100%; accent-color: #e9ac58; }
 .mv-check { display: flex; gap: 7px; align-items: center; color: #b9dce9; }
@@ -61,6 +79,17 @@ function displayName(id: HullId) {
 	return `${id === "courier" ? "Courier Mk I" : id[0].toUpperCase() + id.slice(1)} · ${HULL_VISUALS[id].role}`;
 }
 
+function variantMarkup(role: HullId) {
+	return `<div class="mv-variants" data-model-variants="${role}"${role === "courier" ? "" : " hidden"}>${HULL_VARIANTS[
+		role
+	]
+		.map(
+			(variant) =>
+				`<div class="mv-variant"><button class="mv-button mv-concept" type="button" data-model-role="${role}" data-model-variant="${variant.id}" aria-pressed="${role === "courier" && variant.id === "a"}"><strong>${variant.id.toUpperCase()} · ${variant.name}</strong><small>${variant.thesis}</small></button><button class="mv-rank" type="button" data-model-role="${role}" data-model-rank="${variant.id}" aria-label="rank ${variant.name}">rank</button></div>`,
+		)
+		.join("")}</div>`;
+}
+
 /** Mount only when a designer explicitly requests `?model-viewer=ship`. */
 export function mountModelViewer(): void {
 	if (
@@ -70,7 +99,7 @@ export function mountModelViewer(): void {
 	installStyle();
 	const root = document.createElement("section");
 	root.id = "model-viewer";
-	root.innerHTML = `<div class="mv-wrap"><main class="mv-stage" data-model-stage aria-label="procedural model preview"><span class="mv-axis">DRAG TO ORBIT · WHEEL TO ZOOM</span></main><aside class="mv-panel"><h1 class="mv-title">MODEL WORKBENCH</h1><p class="mv-copy">Render-only studies combining an iconic role silhouette, coherent hull mass, functional landmarks, and restrained material breakup. References inform the grammar; no ship is a replica.</p><fieldset class="mv-set"><legend>Asset</legend><div class="mv-assets">${HULL_IDS.map((id) => `<button class="mv-button" type="button" data-model-asset="${id}" aria-pressed="${id === "courier"}">${displayName(id)}</button>`).join("")}</div></fieldset><fieldset class="mv-set"><legend>Draft controls</legend><label class="mv-control">Beam <output data-model-output="beam">100%</output><input data-model-control="beam" type="range" min="70" max="145" value="100" /></label><label class="mv-control">Length <output data-model-output="length">100%</output><input data-model-control="length" type="range" min="70" max="145" value="100" /></label><label class="mv-control">Engine cue <output data-model-output="engine">70%</output><input data-model-control="engine" type="range" min="0" max="140" value="70" /></label><label class="mv-check"><input data-model-control="wireframe" type="checkbox" /> wireframe</label></fieldset><button class="mv-close" type="button" data-model-close>return to flight</button></aside></div>`;
+	root.innerHTML = `<div class="mv-wrap"><main class="mv-stage" data-model-stage aria-label="procedural model preview"><span class="mv-axis">DRAG TO ORBIT · WHEEL TO ZOOM</span></main><aside class="mv-panel"><h1 class="mv-title">SHIP DESIGN TOURNAMENT</h1><p class="mv-copy">Inspect three different construction ideas per role. Use <b>rank</b> in preference order; click a numbered rank to remove it.</p><fieldset class="mv-set"><legend>Role</legend><div class="mv-role-tabs">${HULL_IDS.map((id) => `<button class="mv-button" type="button" data-model-asset="${id}" aria-pressed="${id === "courier"}">${id}</button>`).join("")}</div></fieldset><fieldset class="mv-set"><legend>Concepts</legend>${HULL_IDS.map(variantMarkup).join("")}</fieldset><fieldset class="mv-set"><legend>Your ranking</legend><pre class="mv-ranking" data-model-ranking></pre><button class="mv-reset" type="button" data-model-reset-ranking>clear current role</button></fieldset><fieldset class="mv-set"><legend>Draft controls</legend><label class="mv-control">Beam <output data-model-output="beam">100%</output><input data-model-control="beam" type="range" min="70" max="145" value="100" /></label><label class="mv-control">Length <output data-model-output="length">100%</output><input data-model-control="length" type="range" min="70" max="145" value="100" /></label><label class="mv-control">Engine cue <output data-model-output="engine">70%</output><input data-model-control="engine" type="range" min="0" max="140" value="70" /></label><label class="mv-check"><input data-model-control="wireframe" type="checkbox" /> wireframe</label></fieldset><button class="mv-close" type="button" data-model-close>return to flight</button></aside></div>`;
 	document.body.append(root);
 	document.querySelector("#keys")?.remove();
 
@@ -97,6 +126,9 @@ export function mountModelViewer(): void {
 	scene.add(holder);
 	const state: ViewerState = {
 		asset: "courier",
+		variant: "a",
+		selectedVariants: { courier: "a", interceptor: "a", freighter: "a" },
+		rankings: { courier: [], interceptor: [], freighter: [] },
 		beam: 1,
 		length: 1,
 		engine: 0.7,
@@ -121,9 +153,45 @@ export function mountModelViewer(): void {
 				for (const material of materials) material.dispose();
 			});
 		}
-		mesh = buildShipMesh(state.asset).root;
+		mesh = buildShipMesh(state.asset, state.variant).root;
 		holder.add(mesh);
 		applyDraft();
+	};
+	const updateTournament = () => {
+		root
+			.querySelectorAll<HTMLElement>("[data-model-variants]")
+			.forEach((panel) => {
+				panel.hidden = panel.dataset.modelVariants !== state.asset;
+			});
+		root
+			.querySelectorAll<HTMLElement>("[data-model-variant]")
+			.forEach((button) => {
+				button.setAttribute(
+					"aria-pressed",
+					String(
+						button.dataset.modelRole === state.asset &&
+							button.dataset.modelVariant === state.variant,
+					),
+				);
+			});
+		root
+			.querySelectorAll<HTMLElement>("[data-model-rank]")
+			.forEach((button) => {
+				const role = button.dataset.modelRole as HullId;
+				const variant = button.dataset.modelRank as HullVariantId;
+				const position = state.rankings[role].indexOf(variant);
+				button.textContent = position < 0 ? "rank" : `#${position + 1}`;
+				if (position < 0) button.removeAttribute("data-rank-position");
+				else button.dataset.rankPosition = String(position + 1);
+			});
+		const summary = root.querySelector<HTMLElement>("[data-model-ranking]");
+		if (summary)
+			summary.textContent = HULL_IDS.map((role) => {
+				const order = state.rankings[role]
+					.map((variant) => variant.toUpperCase())
+					.join(" > ");
+				return `${role}: ${order || "—"}`;
+			}).join("\n");
 	};
 	const applyDraft = () => {
 		mesh.scale.set(state.beam, 1, state.length);
@@ -171,6 +239,7 @@ export function mountModelViewer(): void {
 			.modelAsset as HullId | undefined;
 		if (asset && HULL_IDS.includes(asset)) {
 			state.asset = asset;
+			state.variant = state.selectedVariants[asset];
 			root
 				.querySelectorAll<HTMLElement>("[data-model-asset]")
 				.forEach((button) => {
@@ -179,7 +248,35 @@ export function mountModelViewer(): void {
 						String(button.dataset.modelAsset === asset),
 					);
 				});
+			updateTournament();
 			rebuild();
+		}
+		const variantButton = target.closest<HTMLElement>("[data-model-variant]");
+		const variant = variantButton?.dataset.modelVariant as
+			| HullVariantId
+			| undefined;
+		const variantRole = variantButton?.dataset.modelRole as HullId | undefined;
+		if (variant && variantRole === state.asset) {
+			state.variant = variant;
+			state.selectedVariants[state.asset] = variant;
+			updateTournament();
+			rebuild();
+		}
+		const rankButton = target.closest<HTMLElement>("[data-model-rank]");
+		const rankedVariant = rankButton?.dataset.modelRank as
+			| HullVariantId
+			| undefined;
+		const rankedRole = rankButton?.dataset.modelRole as HullId | undefined;
+		if (rankedVariant && rankedRole === state.asset) {
+			const ranking = state.rankings[rankedRole];
+			const position = ranking.indexOf(rankedVariant);
+			if (position < 0) ranking.push(rankedVariant);
+			else ranking.splice(position, 1);
+			updateTournament();
+		}
+		if (target.closest("[data-model-reset-ranking]")) {
+			state.rankings[state.asset] = [];
+			updateTournament();
 		}
 		if (target.closest("[data-model-close]")) {
 			const flightUrl = new URL(window.location.href);
@@ -227,6 +324,7 @@ export function mountModelViewer(): void {
 	(
 		window as unknown as { __seeliteModelViewer: { state: ViewerState } }
 	).__seeliteModelViewer = { state };
+	updateTournament();
 	rebuild();
 	resize();
 	frame();
