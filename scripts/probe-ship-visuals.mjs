@@ -24,7 +24,7 @@ function state() {
 		view: game.view,
 		shipVisible: ship.visible,
 		hullId: ship.userData.hullId,
-		courierCore: Boolean(ship.getObjectByName("courier-core")),
+		courierCore: Boolean(ship.getObjectByName("courier-dorsal-hull")),
 		exhausts: ship.children.filter((child) => child.name.includes("exhaust"))
 			.length,
 		trafficDisplayOnly:

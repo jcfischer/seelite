@@ -2783,7 +2783,14 @@ function seedFromQuery(): number {
 	return (Math.random() * 0x1_0000_0000) >>> 0;
 }
 
-if (new URLSearchParams(window.location.search).has("hud-gallery")) {
+if (
+	new URLSearchParams(window.location.search).get("model-viewer") === "ship"
+) {
+	const { mountModelViewer } = await import("./model-viewer");
+	mountModelViewer();
+	// The workbench owns an isolated render loop, so no live simulation is built
+	// behind it. It is a visual asset tool rather than a second game mode.
+} else if (new URLSearchParams(window.location.search).has("hud-gallery")) {
 	const { mountStateGallery } = await import("./state-gallery");
 	mountStateGallery();
 	// The gallery owns its own Three.js scene. Do not build the live game behind

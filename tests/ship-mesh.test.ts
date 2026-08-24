@@ -49,4 +49,48 @@ describe("procedural ship visual language", () => {
 			).toBe(true);
 		}
 	});
+
+	test("hulls carry visible mass before their compact exhaust cues", () => {
+		for (const id of HULL_IDS) {
+			const root = buildShipMesh(id).root;
+			const fuselage = root.children.find((child) =>
+				child.name.includes("fuselage"),
+			);
+			const bridge = root.children.find(
+				(child) =>
+					child.name.includes("cockpit") || child.name.includes("bridge"),
+			);
+			const nacelle = root.children.find((child) =>
+				child.name.includes("nacelle"),
+			);
+			const exhaust = root.children.find((child) =>
+				child.name.includes("exhaust"),
+			);
+			expect(fuselage).toBeDefined();
+			expect(bridge).toBeDefined();
+			expect(nacelle).toBeDefined();
+			expect(exhaust).toBeDefined();
+			const nacelleSize = new THREE.Box3()
+				.setFromObject(nacelle as THREE.Object3D)
+				.getSize(new THREE.Vector3());
+			const exhaustSize = new THREE.Box3()
+				.setFromObject(exhaust as THREE.Object3D)
+				.getSize(new THREE.Vector3());
+			expect(Math.max(...exhaustSize.toArray())).toBeLessThan(
+				Math.max(...nacelleSize.toArray()) * 0.5,
+			);
+		}
+	});
+
+	test("primary silhouettes are continuous beveled planforms, not primitive stacks", () => {
+		for (const id of HULL_IDS) {
+			const fuselage = buildShipMesh(id).root.getObjectByName(
+				id + "-fuselage",
+			) as THREE.Mesh;
+			expect(fuselage.geometry.type).toBe("ExtrudeGeometry");
+			expect(
+				fuselage.geometry.getAttribute("position").count,
+			).toBeGreaterThanOrEqual(40);
+		}
+	});
 });

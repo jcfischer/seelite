@@ -8,18 +8,29 @@ procedural hull language. It supplies three **visual archetypes** — `courier`,
 the only owner of which purchasable or NPC ship selects an archetype; a future
 roster must choose one explicitly and never receive a silent default.
 
-`courier` is the player baseline: a compact faceted nose, a low wing, and paired
-exhausts. `interceptor` is a fast-looking spear with a broad delta plane;
-`freighter` is a deeper spine with twin cargo pods. Their silhouette and exhaust
-placement are motion-relevant cues; colour and metal/emissive detail are
-secondary.
+`courier` is the player baseline: a broad multipurpose wedge with an integrated
+dorsal hull, canopy, wing panels, and paired engine nacelles. `interceptor` is a
+long dart with a rear-swept lifting body; `freighter` is a deep narrow keel with
+an offset bridge and side cargo pods. Their silhouette and engine placement are
+motion-relevant cues; exhaust is deliberately compact and secondary to hull
+mass.
+
+The visual grammar synthesises current space-game practice without copying a
+specific craft: Elite contributes the iconic low planform, Star Wars contributes
+role-readable functional landmarks and controlled asymmetry, EVERSPACE
+contributes class-specific rules over modular parts, No Man's Sky contributes
+paint/material variation, and Star Citizen/Starfield contribute layered
+industrial construction. Primary mass must remain continuous; secondary panels
+may explain structure but must never return to an assembly of disconnected
+boxes.
 
 ## 2. Rendering contract
 
-All hull geometry is generated at load from Three.js primitives. It is
-deterministic, has a tested local reach budget, needs no downloaded asset, and
-contains no simulation position, collision, target, or AI data. `sim.ts`
-remains the float64 authority; renderer objects are its camera-relative shadow.
+All hull geometry is generated at load from beveled planform extrusions,
+longitudinal lofts, and compact engine rings. It is deterministic, has a tested
+local reach budget, needs no downloaded asset, and contains no simulation
+position, collision, target, or AI data. `sim.ts` remains the float64 authority;
+renderer objects are its camera-relative shadow.
 
 The player hull is a near-scene object. It is hidden in cockpit view because the
 cockpit HUD, attitude floor, target director, and scanner remain the primary
@@ -34,6 +45,7 @@ kilometre-scale body handoff stays untouched.
 ## 3. Verification contract
 
 Headless tests assert stable hull names, deterministic bounds, declared reach,
-and distinct gross proportions. A browser probe verifies that the live courier
-is present only in chase view and that returning to cockpit restores the live
-cockpit instruments and overlay.
+distinct gross proportions, compact exhausts, and continuous beveled primary
+silhouettes. A browser probe verifies that the live courier is present only in
+chase view and that returning to cockpit restores the live cockpit instruments
+and overlay.
