@@ -34,7 +34,12 @@ function state() {
 		liveCockpit:
 			cockpit instanceof HTMLElement &&
 			getComputedStyle(cockpit).display !== "none",
-		flightFloor: Boolean(document.querySelector("[data-live-floor]")),
+		physicalCockpit:
+			Boolean(game.nearScene.getObjectByName("cockpit")?.visible) &&
+			["flight-instrument", "target-instrument", "scanner"].every((name) =>
+				Boolean(game.nearScene.getObjectByName(name)),
+			),
+		duplicateDomFloor: Boolean(document.querySelector("[data-live-floor]")),
 	};
 }
 
@@ -51,7 +56,8 @@ for (const viewport of VIEWPORTS) {
 		cockpit.view === "cockpit" &&
 			!cockpit.shipVisible &&
 			cockpit.liveCockpit &&
-			cockpit.flightFloor,
+			cockpit.physicalCockpit &&
+			!cockpit.duplicateDomFloor,
 	);
 	await page.keyboard.press("v");
 	await page.waitForFunction(() => window.__seelite?.view === "chase");
@@ -76,7 +82,8 @@ for (const viewport of VIEWPORTS) {
 		returned.view === "cockpit" &&
 			!returned.shipVisible &&
 			returned.liveCockpit &&
-			returned.flightFloor,
+			returned.physicalCockpit &&
+			!returned.duplicateDomFloor,
 	);
 	await page.close();
 }

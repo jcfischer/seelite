@@ -11,6 +11,68 @@ const VIEWPORTS = [
 	{ name: "desktop", width: 1280, height: 760 },
 	{ name: "narrow", width: 390, height: 844 },
 ];
+const PIXEL_CHANNEL_TOLERANCE = 3;
+const ETA_READOUT =
+	/^ETA (?:<1s|\d+(?:\.\d+)?(?:s|min|h|d))  CHARGE \d+\.\d AU$/;
+const ETA_READOUT_SOURCE = ETA_READOUT.source;
+
+function textPixelsMatch(canvas, renderedText) {
+	if (!canvas || !renderedText) return false;
+	const { bounds, text, font, fillStyle, textAlign } = renderedText;
+	const context = canvas.getContext("2d");
+	if (!context || !bounds || !text) return false;
+	const expectedCanvas = document.createElement("canvas");
+	expectedCanvas.width = canvas.width;
+	expectedCanvas.height = canvas.height;
+	const expectedContext = expectedCanvas.getContext("2d");
+	const backgroundCanvas = document.createElement("canvas");
+	backgroundCanvas.width = canvas.width;
+	backgroundCanvas.height = canvas.height;
+	const backgroundContext = backgroundCanvas.getContext("2d");
+	if (!expectedContext || !backgroundContext) return false;
+	if (renderedText.background) {
+		expectedContext.fillStyle = renderedText.background;
+		expectedContext.fillRect(0, 0, expectedCanvas.width, expectedCanvas.height);
+		backgroundContext.fillStyle = renderedText.background;
+		backgroundContext.fillRect(
+			0,
+			0,
+			backgroundCanvas.width,
+			backgroundCanvas.height,
+		);
+	}
+	expectedContext.font = font;
+	expectedContext.fillStyle = fillStyle;
+	expectedContext.textAlign = textAlign;
+	expectedContext.fillText(text, renderedText.x, renderedText.y);
+	const grab = (source) =>
+		source.getImageData(bounds.left, bounds.top, bounds.width, bounds.height)
+			.data;
+	const actual = grab(context);
+	const expected = grab(expectedContext);
+	const background = grab(backgroundContext);
+	let glyphPixels = 0;
+	for (let index = 0; index < expected.length; index += 4) {
+		const glyphPixel =
+			expected[index] !== background[index] ||
+			expected[index + 1] !== background[index + 1] ||
+			expected[index + 2] !== background[index + 2];
+		if (!glyphPixel) continue;
+		glyphPixels++;
+		if (
+			Math.abs(actual[index] - expected[index]) > PIXEL_CHANNEL_TOLERANCE ||
+			Math.abs(actual[index + 1] - expected[index + 1]) >
+				PIXEL_CHANNEL_TOLERANCE ||
+			Math.abs(actual[index + 2] - expected[index + 2]) >
+				PIXEL_CHANNEL_TOLERANCE
+		) {
+			return false;
+		}
+	}
+	return glyphPixels > 0;
+}
+
+const PROBE_MATCHERS_SCRIPT = `const PIXEL_CHANNEL_TOLERANCE = ${PIXEL_CHANNEL_TOLERANCE}; globalThis.__seeliteTextPixelsMatch = ${textPixelsMatch}; globalThis.__seeliteEtaReadout = new RegExp(${JSON.stringify(ETA_READOUT_SOURCE)});`;
 
 function measureLiveCockpit() {
 	const visible = (selector) => {
@@ -35,6 +97,13 @@ function measureLiveCockpit() {
 	const game = window.__seelite;
 	const scanner = game.nearScene.getObjectByName("scanner");
 	const deck = game.nearScene.getObjectByName("scanner-deck");
+	const scannerReferenceLine = game.nearScene.getObjectByName(
+		"scanner-reference-line",
+	);
+	const targetInstrumentCanvas = game.cockpit.targetInstrument?.ctx?.canvas;
+	const overlayCanvas = document.querySelector("#overlay");
+	const referenceLinePoints =
+		scannerReferenceLine?.geometry?.getAttribute("position");
 	const pitch = deck?.rotation.x ?? 0;
 	const deckNormal = { y: Math.cos(pitch), z: Math.sin(pitch) };
 	const scannerOffset =
@@ -70,9 +139,18 @@ function measureLiveCockpit() {
 		rendererIsOnlyVisibleCanvas:
 			game.renderer.domElement.parentElement === document.body &&
 			document.querySelectorAll("canvas:not(#overlay)").length === 1,
-		eta: document.querySelector(".lc-target-meta strong")?.textContent,
-		guidance: document.querySelector(".lc-target-meta span:last-child")
-			?.textContent,
+		targetRangeKm: game.targetRange(),
+		targetInstrumentSecondaryText: globalThis.__seeliteTextPixelsMatch(
+			targetInstrumentCanvas,
+			game.cockpit.targetInstrument?.secondaryText,
+		),
+		cruisePromptText: globalThis.__seeliteTextPixelsMatch(
+			overlayCanvas,
+			game.cockpitPrompt,
+		),
+		targetInstrumentSecondaryReadout:
+			game.cockpit.targetInstrument?.secondaryText.text,
+		cruisePromptReadout: game.cockpitPrompt.text,
 		scannerMounted:
 			Boolean(scanner?.visible) &&
 			scanner?.parent === deck?.parent &&
@@ -84,6 +162,14 @@ function measureLiveCockpit() {
 			"throttle-track",
 			"target-instrument",
 		].filter((name) => Boolean(game.nearScene.getObjectByName(name))).length,
+		forwardFloor: Boolean(document.querySelector("[data-live-floor]")),
+		scannerReferenceLine: referenceLinePoints
+			? Array.from({ length: referenceLinePoints.count }, (_, index) => ({
+					x: referenceLinePoints.getX(index),
+					y: referenceLinePoints.getY(index),
+					z: referenceLinePoints.getZ(index),
+				}))
+			: null,
 		throttleFill: game.nearScene.getObjectByName("throttle-fill")?.scale.z ?? 0,
 		throttleFillZ:
 			game.nearScene.getObjectByName("throttle-fill")?.position.z ?? 0,
@@ -160,10 +246,14 @@ for (const viewport of VIEWPORTS) {
 		check(`${viewport.name}: no page error (${error.message})`, false),
 	);
 	await page.goto(`${ORIGIN}/?seed=42`, { waitUntil: "load" });
+	await page.addScriptTag({ content: PROBE_MATCHERS_SCRIPT });
 	await page.waitForFunction(
 		() =>
 			window.__seelite?.frames > 1 &&
-			document.querySelector("[data-live-cockpit]"),
+			document.querySelector("[data-live-cockpit]") &&
+			globalThis.__seeliteEtaReadout.test(
+				window.__seelite.cockpit.targetInstrument.secondaryText.text,
+			),
 	);
 	// Put the selected station at a known ship-local port-bow bearing. This is a
 	// live simulation state (not a mock contact) and lets the browser prove that
@@ -215,13 +305,28 @@ for (const viewport of VIEWPORTS) {
 		`${viewport.name}: forward view seats live instruments and holographic scanner lines in the physical cockpit`,
 		forward.headLook === "forward" &&
 			forward.physicalInstruments === 3 &&
-			/^\d+(\.\d+)?(s|min|h|d)$/.test(forward.eta ?? "") &&
+			!forward.forwardFloor &&
+			forward.targetInstrumentSecondaryText &&
+			ETA_READOUT.test(forward.targetInstrumentSecondaryReadout ?? "") &&
 			forward.throttleFill > 0 &&
 			forward.hologramRings >= 7 &&
 			forward.hologramContacts === forward.contacts * 2 &&
 			!forward.leftVisible &&
 			!forward.rightVisible,
-		`${forward.physicalInstruments} instruments; ETA ${forward.eta}; ${forward.hologramRings} static lines; ${forward.hologramContacts} live hologram glyphs`,
+		`${forward.physicalInstruments} physical instruments; DOM forward floor: ${forward.forwardFloor}; ${forward.hologramRings} static lines; ${forward.hologramContacts} live hologram glyphs`,
+	);
+	check(
+		`${viewport.name}: scanner reference line is a full centred diameter in the scan plane`,
+		forward.scannerReferenceLine?.length === 2 &&
+			forward.scannerReferenceLine.every(
+				(point) => Math.abs(point.x) < 1e-6 && Math.abs(point.y) < 1e-6,
+			) &&
+			forward.scannerReferenceLine[0].z < -0.00519 &&
+			forward.scannerReferenceLine[1].z > 0.00519 &&
+			Math.abs(
+				forward.scannerReferenceLine[0].z + forward.scannerReferenceLine[1].z,
+			) < 1e-6,
+		JSON.stringify(forward.scannerReferenceLine),
 	);
 	check(
 		`${viewport.name}: canopy braces, inset scanner well, and full-height throttle read as fitted hardware`,
@@ -268,15 +373,25 @@ for (const viewport of VIEWPORTS) {
 	);
 
 	await placeShipAtLocalOffset(page, { x: -80_000, y: 0, z: -80_000 });
-	await page.waitForFunction(() =>
-		document.body.textContent?.includes("press J to cruise"),
-	);
+	await page.waitForFunction(() => {
+		const game = window.__seelite;
+		return (
+			game.targetRange() > 3600 * 2 &&
+			globalThis.__seeliteEtaReadout.test(
+				game.cockpit.targetInstrument.secondaryText.text,
+			) &&
+			game.cockpitPrompt.text.includes("press J to cruise")
+		);
+	});
 	const distant = await page.evaluate(measureLiveCockpit);
 	check(
-		`${viewport.name}: a distant default-route target exposes the cruise guidance beside its ETA`,
-		distant.guidance?.includes("press J to cruise") &&
-			/^\d+(\.\d+)?(s|min|h|d)$/.test(distant.eta ?? ""),
-		`ETA ${distant.eta}; guidance ${distant.guidance}`,
+		`${viewport.name}: a distant target renders ETA on its physical panel and cruise guidance on the glass`,
+		distant.targetRangeKm > 3600 * 2 &&
+			distant.targetInstrumentSecondaryText &&
+			distant.cruisePromptText &&
+			ETA_READOUT.test(distant.targetInstrumentSecondaryReadout ?? "") &&
+			distant.cruisePromptReadout.includes("press J to cruise"),
+		`range ${distant.targetRangeKm}; target-panel ${distant.targetInstrumentSecondaryReadout}; prompt ${distant.cruisePromptReadout}; text match ${distant.targetInstrumentSecondaryText}/${distant.cruisePromptText}`,
 	);
 
 	await page.evaluate(() => window.__seelite.setHeadLook("left"));
