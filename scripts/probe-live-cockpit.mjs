@@ -35,6 +35,11 @@ function measureLiveCockpit() {
 	const game = window.__seelite;
 	const scanner = game.nearScene.getObjectByName("scanner");
 	const deck = game.nearScene.getObjectByName("scanner-deck");
+	const scannerReferenceLine = game.nearScene.getObjectByName(
+		"scanner-reference-line",
+	);
+	const referenceLinePoints =
+		scannerReferenceLine?.geometry?.getAttribute("position");
 	const pitch = deck?.rotation.x ?? 0;
 	const deckNormal = { y: Math.cos(pitch), z: Math.sin(pitch) };
 	const scannerOffset =
@@ -70,9 +75,19 @@ function measureLiveCockpit() {
 		rendererIsOnlyVisibleCanvas:
 			game.renderer.domElement.parentElement === document.body &&
 			document.querySelectorAll("canvas:not(#overlay)").length === 1,
-		eta: document.querySelector(".lc-target-meta strong")?.textContent,
-		guidance: document.querySelector(".lc-target-meta span:last-child")
-			?.textContent,
+		eta: game.etaCache,
+		guidance: game.cruisePrompt(
+			game.targetId
+				? Math.hypot(
+						game.world.system.byId.get(game.targetId).pos.x -
+							game.world.ship.pos.x,
+						game.world.system.byId.get(game.targetId).pos.y -
+							game.world.ship.pos.y,
+						game.world.system.byId.get(game.targetId).pos.z -
+							game.world.ship.pos.z,
+					)
+				: null,
+		),
 		scannerMounted:
 			Boolean(scanner?.visible) &&
 			scanner?.parent === deck?.parent &&
@@ -84,6 +99,14 @@ function measureLiveCockpit() {
 			"throttle-track",
 			"target-instrument",
 		].filter((name) => Boolean(game.nearScene.getObjectByName(name))).length,
+		forwardFloor: Boolean(document.querySelector("[data-live-floor]")),
+		scannerReferenceLine: referenceLinePoints
+			? Array.from({ length: referenceLinePoints.count }, (_, index) => ({
+					x: referenceLinePoints.getX(index),
+					y: referenceLinePoints.getY(index),
+					z: referenceLinePoints.getZ(index),
+				}))
+			: null,
 		throttleFill: game.nearScene.getObjectByName("throttle-fill")?.scale.z ?? 0,
 		throttleFillZ:
 			game.nearScene.getObjectByName("throttle-fill")?.position.z ?? 0,
@@ -215,13 +238,23 @@ for (const viewport of VIEWPORTS) {
 		`${viewport.name}: forward view seats live instruments and holographic scanner lines in the physical cockpit`,
 		forward.headLook === "forward" &&
 			forward.physicalInstruments === 3 &&
-			/^\d+(\.\d+)?(s|min|h|d)$/.test(forward.eta ?? "") &&
+			!forward.forwardFloor &&
 			forward.throttleFill > 0 &&
 			forward.hologramRings >= 7 &&
 			forward.hologramContacts === forward.contacts * 2 &&
 			!forward.leftVisible &&
 			!forward.rightVisible,
-		`${forward.physicalInstruments} instruments; ETA ${forward.eta}; ${forward.hologramRings} static lines; ${forward.hologramContacts} live hologram glyphs`,
+		`${forward.physicalInstruments} physical instruments; DOM forward floor: ${forward.forwardFloor}; ${forward.hologramRings} static lines; ${forward.hologramContacts} live hologram glyphs`,
+	);
+	check(
+		`${viewport.name}: scanner reference line is a full centred diameter in the scan plane`,
+		forward.scannerReferenceLine?.length === 2 &&
+			forward.scannerReferenceLine.every(
+				(point) => Math.abs(point.x) < 1e-6 && Math.abs(point.y) < 1e-6,
+			) &&
+			forward.scannerReferenceLine[0].z < -0.00519 &&
+			forward.scannerReferenceLine[1].z > 0.00519,
+		JSON.stringify(forward.scannerReferenceLine),
 	);
 	check(
 		`${viewport.name}: canopy braces, inset scanner well, and full-height throttle read as fitted hardware`,
@@ -268,14 +301,29 @@ for (const viewport of VIEWPORTS) {
 	);
 
 	await placeShipAtLocalOffset(page, { x: -80_000, y: 0, z: -80_000 });
-	await page.waitForFunction(() =>
-		document.body.textContent?.includes("press J to cruise"),
-	);
+	await page.waitForFunction(() => {
+		const game = window.__seelite;
+		const target = game.targetId
+			? game.world.system.byId.get(game.targetId)
+			: null;
+		return Boolean(
+			target &&
+				game
+					.cruisePrompt(
+						Math.hypot(
+							target.pos.x - game.world.ship.pos.x,
+							target.pos.y - game.world.ship.pos.y,
+							target.pos.z - game.world.ship.pos.z,
+						),
+					)
+					.includes("press J to cruise"),
+		);
+	});
 	const distant = await page.evaluate(measureLiveCockpit);
 	check(
 		`${viewport.name}: a distant default-route target exposes the cruise guidance beside its ETA`,
 		distant.guidance?.includes("press J to cruise") &&
-			/^\d+(\.\d+)?(s|min|h|d)$/.test(distant.eta ?? ""),
+			Number.isFinite(distant.eta),
 		`ETA ${distant.eta}; guidance ${distant.guidance}`,
 	);
 

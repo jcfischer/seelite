@@ -1233,15 +1233,15 @@ class Game {
 			rangeRing.name = "scanner-range-ring";
 			root.add(rangeRing);
 		}
-		root.add(
-			new THREE.Line(
-				new THREE.BufferGeometry().setFromPoints([
-					new THREE.Vector3(0, 0, -0.006),
-					new THREE.Vector3(0, 0.003, 0.006),
-				]),
-				hologramMaterial,
-			),
+		const referenceLine = new THREE.Line(
+			new THREE.BufferGeometry().setFromPoints([
+				new THREE.Vector3(0, 0, -0.0052),
+				new THREE.Vector3(0, 0, 0.0052),
+			]),
+			hologramMaterial,
 		);
+		referenceLine.name = "scanner-reference-line";
+		root.add(referenceLine);
 		const contactGlyphs = new THREE.Group();
 		contactGlyphs.name = "scanner-contact-glyphs";
 		root.add(contactGlyphs);
