@@ -277,7 +277,35 @@ function createTextRaster(): TextRaster {
 		x: 0,
 		y: 0,
 		bounds: { left: 0, top: 0, width: 0, height: 0 },
+		background: undefined,
 	};
+}
+
+function updateTextRaster(
+	raster: TextRaster,
+	text: string,
+	font: string,
+	fillStyle: string,
+	textAlign: CanvasTextAlign,
+	x: number,
+	y: number,
+	left: number,
+	top: number,
+	width: number,
+	height: number,
+	background: string | undefined,
+) {
+	raster.text = text;
+	raster.font = font;
+	raster.fillStyle = fillStyle;
+	raster.textAlign = textAlign;
+	raster.x = x;
+	raster.y = y;
+	raster.bounds.left = left;
+	raster.bounds.top = top;
+	raster.bounds.width = width;
+	raster.bounds.height = height;
+	raster.background = background;
 }
 
 interface HologramGlyph {
@@ -1413,17 +1441,20 @@ class Game {
 			ctx.font = secondaryFont;
 			ctx.fillStyle = accent;
 			ctx.fillText(secondary, 28, 192);
-			raster.text = secondary;
-			raster.font = secondaryFont;
-			raster.fillStyle = accent;
-			raster.textAlign = "left";
-			raster.x = 28;
-			raster.y = 192;
-			raster.bounds.left = 28;
-			raster.bounds.top = 168;
-			raster.bounds.width = width - 56;
-			raster.bounds.height = 30;
-			raster.background = "rgba(1, 8, 11, .9)";
+			updateTextRaster(
+				raster,
+				secondary,
+				secondaryFont,
+				accent,
+				"left",
+				28,
+				192,
+				28,
+				168,
+				width - 56,
+				30,
+				"rgba(1, 8, 11, .9)",
+			);
 		};
 		paint(
 			this.cockpit.flightInstrument.ctx,
@@ -2579,17 +2610,20 @@ class Game {
 			const y = h * 0.62;
 			ctx.fillText(prompt, x, y);
 			const promptWidth = ctx.measureText(prompt).width;
-			this.cockpitPrompt.text = prompt;
-			this.cockpitPrompt.font = promptFont;
-			this.cockpitPrompt.fillStyle = promptFill;
-			this.cockpitPrompt.textAlign = "center";
-			this.cockpitPrompt.x = x;
-			this.cockpitPrompt.y = y;
-			this.cockpitPrompt.bounds.left = Math.floor(x - promptWidth / 2);
-			this.cockpitPrompt.bounds.top = Math.floor(y - 14);
-			this.cockpitPrompt.bounds.width = Math.ceil(promptWidth);
-			this.cockpitPrompt.bounds.height = 18;
-			delete this.cockpitPrompt.background;
+			updateTextRaster(
+				this.cockpitPrompt,
+				prompt,
+				promptFont,
+				promptFill,
+				"center",
+				x,
+				y,
+				Math.floor(x - promptWidth / 2),
+				Math.floor(y - 14),
+				Math.ceil(promptWidth),
+				18,
+				undefined,
+			);
 			ctx.textAlign = "left";
 		}
 

@@ -14,6 +14,7 @@ const VIEWPORTS = [
 const PIXEL_CHANNEL_TOLERANCE = 3;
 const ETA_READOUT =
 	/^ETA (?:<1s|\d+(?:\.\d+)?(?:s|min|h|d))  CHARGE \d+\.\d AU$/;
+const ETA_READOUT_SOURCE = ETA_READOUT.source;
 
 function textPixelsMatch(canvas, renderedText) {
 	if (!canvas || !renderedText) return false;
@@ -83,7 +84,7 @@ function textPixelsMatch(canvas, renderedText) {
 	return glyphPixels > 0;
 }
 
-const TEXT_PIXEL_MATCHER_SCRIPT = `const PIXEL_CHANNEL_TOLERANCE = ${PIXEL_CHANNEL_TOLERANCE}; globalThis.__seeliteTextPixelsMatch = ${textPixelsMatch};`;
+const PROBE_MATCHERS_SCRIPT = `const PIXEL_CHANNEL_TOLERANCE = ${PIXEL_CHANNEL_TOLERANCE}; globalThis.__seeliteTextPixelsMatch = ${textPixelsMatch}; globalThis.__seeliteEtaReadout = new RegExp(${JSON.stringify(ETA_READOUT_SOURCE)});`;
 
 function measureLiveCockpit() {
 	const visible = (selector) => {
@@ -257,11 +258,14 @@ for (const viewport of VIEWPORTS) {
 		check(`${viewport.name}: no page error (${error.message})`, false),
 	);
 	await page.goto(`${ORIGIN}/?seed=42`, { waitUntil: "load" });
-	await page.addScriptTag({ content: TEXT_PIXEL_MATCHER_SCRIPT });
+	await page.addScriptTag({ content: PROBE_MATCHERS_SCRIPT });
 	await page.waitForFunction(
 		() =>
 			window.__seelite?.frames > 1 &&
-			document.querySelector("[data-live-cockpit]"),
+			document.querySelector("[data-live-cockpit]") &&
+			globalThis.__seeliteEtaReadout.test(
+				window.__seelite.cockpit.targetInstrument.secondaryText.text,
+			),
 	);
 	// Put the selected station at a known ship-local port-bow bearing. This is a
 	// live simulation state (not a mock contact) and lets the browser prove that
@@ -314,6 +318,8 @@ for (const viewport of VIEWPORTS) {
 		forward.headLook === "forward" &&
 			forward.physicalInstruments === 3 &&
 			!forward.forwardFloor &&
+			forward.targetInstrumentSecondaryText &&
+			ETA_READOUT.test(forward.targetInstrumentSecondaryReadout ?? "") &&
 			forward.throttleFill > 0 &&
 			forward.hologramRings >= 7 &&
 			forward.hologramContacts === forward.contacts * 2 &&
@@ -380,7 +386,7 @@ for (const viewport of VIEWPORTS) {
 		const game = window.__seelite;
 		return (
 			game.targetRange() > 3600 * 2 &&
-			/^ETA (?:<1s|\d+(?:\.\d+)?(?:s|min|h|d))  CHARGE \d+\.\d AU$/.test(
+			globalThis.__seeliteEtaReadout.test(
 				game.cockpit.targetInstrument.secondaryText.text,
 			) &&
 			game.cockpitPrompt.text.includes("press J to cruise")
