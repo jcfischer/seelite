@@ -257,44 +257,57 @@ interface Instrument {
 	secondaryText: TextRaster;
 }
 
-interface TextRaster {
-	text: string;
-	font: string;
-	fillStyle: string;
-	textAlign: CanvasTextAlign;
-	x: number;
-	y: number;
-	bounds: { left: number; top: number; width: number; height: number };
-	background?: string;
-}
+class TextRaster {
+	text = "";
+	font = "";
+	fillStyle = "";
+	textAlign: CanvasTextAlign = "left";
+	x = 0;
+	y = 0;
+	bounds = { left: 0, top: 0, width: 0, height: 0 };
+	background: string | undefined = undefined;
 
-function createTextRaster(): TextRaster {
-	return {
-		text: "",
-		font: "",
-		fillStyle: "",
-		textAlign: "left",
-		x: 0,
-		y: 0,
-		bounds: { left: 0, top: 0, width: 0, height: 0 },
-		background: undefined,
-	};
-}
+	reset() {
+		this.text = "";
+		this.font = "";
+		this.fillStyle = "";
+		this.textAlign = "left";
+		this.x = 0;
+		this.y = 0;
+		this.bounds.left = 0;
+		this.bounds.top = 0;
+		this.bounds.width = 0;
+		this.bounds.height = 0;
+		this.background = undefined;
+	}
 
-const EMPTY_TEXT_RASTER = createTextRaster();
+	setInstrumentSecondary(text: string, accent: string, canvasWidth: number) {
+		this.text = text;
+		this.font = "20px ui-monospace, monospace";
+		this.fillStyle = accent;
+		this.textAlign = "left";
+		this.x = 28;
+		this.y = 192;
+		this.bounds.left = 28;
+		this.bounds.top = 168;
+		this.bounds.width = canvasWidth - 56;
+		this.bounds.height = 30;
+		this.background = "rgba(1, 8, 11, .9)";
+	}
 
-function updateTextRaster(raster: TextRaster, update: TextRaster) {
-	raster.text = update.text;
-	raster.font = update.font;
-	raster.fillStyle = update.fillStyle;
-	raster.textAlign = update.textAlign;
-	raster.x = update.x;
-	raster.y = update.y;
-	raster.bounds.left = update.bounds.left;
-	raster.bounds.top = update.bounds.top;
-	raster.bounds.width = update.bounds.width;
-	raster.bounds.height = update.bounds.height;
-	raster.background = update.background;
+	setCenteredPrompt(text: string, x: number, y: number, width: number) {
+		this.text = text;
+		this.font = "13px ui-monospace, Menlo, monospace";
+		this.fillStyle = "rgba(255, 214, 120, 0.9)";
+		this.textAlign = "center";
+		this.x = x;
+		this.y = y;
+		this.bounds.left = Math.floor(x - width / 2);
+		this.bounds.top = Math.floor(y - 14);
+		this.bounds.width = Math.ceil(width);
+		this.bounds.height = 18;
+		this.background = undefined;
+	}
 }
 
 interface HologramGlyph {
@@ -471,7 +484,7 @@ class Game {
 	private etaAt = Number.NEGATIVE_INFINITY;
 	/** Text geometry from the current glass pass, exposed so the visual probe can
 	 * compare the rendered glyphs with the renderer's own placement contract. */
-	readonly cockpitPrompt = createTextRaster();
+	readonly cockpitPrompt = new TextRaster();
 	/** What the HUD last displayed, quantised to its own resolution — so a frame
 	 *  that would render the same text neither builds nor writes it. */
 	private hudKey = "";
@@ -1197,7 +1210,7 @@ class Game {
 			face.position.set(x, 0.001, 0);
 			face.rotation.x = -Math.PI / 2;
 			scannerMount.add(face);
-			return { ctx, texture, secondaryText: createTextRaster() };
+			return { ctx, texture, secondaryText: new TextRaster() };
 		};
 		this.cockpit.flightInstrument = makeInstrument("flight-instrument", -0.025);
 		this.cockpit.targetInstrument = makeInstrument("target-instrument", 0.025);
@@ -1426,20 +1439,10 @@ class Game {
 			}
 			ctx.fillStyle = "#e7f6ff";
 			ctx.fillText(primary, 28, 128);
-			const secondaryFont = "20px ui-monospace, monospace";
-			ctx.font = secondaryFont;
+			raster.setInstrumentSecondary(secondary, accent, width);
+			ctx.font = raster.font;
 			ctx.fillStyle = accent;
 			ctx.fillText(secondary, 28, 192);
-			updateTextRaster(raster, {
-				text: secondary,
-				font: secondaryFont,
-				fillStyle: accent,
-				textAlign: "left",
-				x: 28,
-				y: 192,
-				bounds: { left: 28, top: 168, width: width - 56, height: 30 },
-				background: "rgba(1, 8, 11, .9)",
-			});
 		};
 		paint(
 			this.cockpit.flightInstrument.ctx,
@@ -2500,7 +2503,7 @@ class Game {
 		const w = this.overlay.width;
 		const h = this.overlay.height;
 		ctx.clearRect(0, 0, w, h);
-		updateTextRaster(this.cockpitPrompt, EMPTY_TEXT_RASTER);
+		this.cockpitPrompt.reset();
 		// A focused console replaces the forward glass. Leaving target brackets
 		// here would make an HTML panel look like an accidental overlay rather
 		// than the deliberate head-turn view the cockpit contract calls for.
@@ -2586,30 +2589,15 @@ class Game {
 			promptTarget ? length(sub(promptTarget.pos, camPos)) : null,
 		);
 		if (prompt) {
-			const promptFont = "13px ui-monospace, Menlo, monospace";
-			const promptFill = "rgba(255, 214, 120, 0.9)";
-			ctx.font = promptFont;
-			ctx.textAlign = "center";
-			ctx.fillStyle = promptFill;
 			const x = w / 2;
 			const y = h * 0.62;
+			this.cockpitPrompt.setCenteredPrompt(prompt, x, y, 0);
+			ctx.font = this.cockpitPrompt.font;
+			ctx.textAlign = "center";
+			ctx.fillStyle = this.cockpitPrompt.fillStyle;
 			ctx.fillText(prompt, x, y);
 			const promptWidth = ctx.measureText(prompt).width;
-			updateTextRaster(this.cockpitPrompt, {
-				text: prompt,
-				font: promptFont,
-				fillStyle: promptFill,
-				textAlign: "center",
-				x,
-				y,
-				bounds: {
-					left: Math.floor(x - promptWidth / 2),
-					top: Math.floor(y - 14),
-					width: Math.ceil(promptWidth),
-					height: 18,
-				},
-				background: undefined,
-			});
+			this.cockpitPrompt.setCenteredPrompt(prompt, x, y, promptWidth);
 			ctx.textAlign = "left";
 		}
 
