@@ -19,6 +19,7 @@ export interface LiveCockpitState {
 	charge: string;
 	speed: string;
 	eta: string;
+	guidance: string;
 	tuning: string;
 }
 
@@ -172,7 +173,9 @@ export class LiveCockpit {
 		elements.throttle.textContent = state.throttle;
 		elements.target.textContent = state.target;
 		elements.eta.textContent = state.eta;
-		elements.charge.textContent = `CHARGE ${state.charge}`;
+		elements.charge.textContent = state.guidance
+			? `${state.guidance} · CHARGE ${state.charge}`
+			: `CHARGE ${state.charge}`;
 		elements.leftPanelCopy.textContent = state.target;
 		elements.rightPanelCopy.textContent =
 			state.rightTab === "Tuning"

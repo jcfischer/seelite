@@ -71,6 +71,8 @@ function measureLiveCockpit() {
 			game.renderer.domElement.parentElement === document.body &&
 			document.querySelectorAll("canvas:not(#overlay)").length === 1,
 		eta: document.querySelector(".lc-target-meta strong")?.textContent,
+		guidance: document.querySelector(".lc-target-meta span:last-child")
+			?.textContent,
 		scannerMounted:
 			Boolean(scanner?.visible) &&
 			scanner?.parent === deck?.parent &&
@@ -263,6 +265,18 @@ for (const viewport of VIEWPORTS) {
 		`${viewport.name}: a below-ship target extends its stilt beneath the scan plane`,
 		below.selectedTipOffset < 0 && below.selectedMastY < 0,
 		`tip: ${below.selectedTipOffset}; mast y: ${below.selectedMastY}`,
+	);
+
+	await placeShipAtLocalOffset(page, { x: -80_000, y: 0, z: -80_000 });
+	await page.waitForFunction(() =>
+		document.body.textContent?.includes("press J to cruise"),
+	);
+	const distant = await page.evaluate(measureLiveCockpit);
+	check(
+		`${viewport.name}: a distant default-route target exposes the cruise guidance beside its ETA`,
+		distant.guidance?.includes("press J to cruise") &&
+			/^\d+(\.\d+)?(s|min|h|d)$/.test(distant.eta ?? ""),
+		`ETA ${distant.eta}; guidance ${distant.guidance}`,
 	);
 
 	await page.evaluate(() => window.__seelite.setHeadLook("left"));

@@ -2273,6 +2273,7 @@ class Game {
 			charge: `${this.chargeAu.toFixed(1)}/${CHARGE_CAPACITY_AU} AU`,
 			speed: velocity.speed,
 			eta: this.etaCache === null ? "CALC" : duration(this.etaCache),
+			guidance: this.cruisePrompt(target ? targetKm : null),
 			tuning: this.tuningSummary(),
 		});
 	}
