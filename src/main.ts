@@ -65,6 +65,13 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { starField } from "./backdrop";
 import { AudioFX } from "./audio";
 import {
+	SCANNER_RANGE_KM,
+	type HeadLook,
+	type ScannerContact,
+	projectScannerContacts,
+	targetArrowBearingDeg,
+} from "./cockpit";
+import {
 	CHARGE_CAPACITY_AU,
 	type CruiseParams,
 	DEFAULT_CRUISE,
@@ -104,6 +111,7 @@ import {
 } from "./sim";
 import { SPIN_RPM_RANGE } from "./station";
 import { buildStationMesh } from "./station-mesh";
+import { LiveCockpit, type RightTab } from "./live-cockpit";
 import { type WarpField, warpField } from "./warp";
 import { type Vec3, add, dot, length, scale, sub, v3 } from "./vec3";
 // One path to `./units`, deliberately. Keeping a namespace import beside a named
@@ -117,6 +125,7 @@ import * as units from "./units";
  *  time it is read — the same trade `vec3.ts` names for `Vec3`. */
 const MESH_AXIS = new THREE.Vector3(0, 0, 1);
 const STATION_AXIS = new THREE.Vector3();
+const HEAD_AXIS = new THREE.Vector3(0, 1, 0);
 
 const {
 	AU_KM,
@@ -176,8 +185,7 @@ const COCKPIT_FORWARD_KM = 0.008;
  *  effectively stationary. */
 const PROGRADE_MIN_KMS = 0.02;
 
-/** How far inside the viewport an off-screen target arrow sits, as a fraction
- *  of the half-width. */
+/** How far inside the viewport the selected target's sky arrow sits. */
 const EDGE_MARGIN = 0.07;
 
 /**
@@ -243,6 +251,40 @@ interface ProbeRayMath {
 	closestApproachKm: typeof closestApproachKm;
 }
 
+interface Instrument {
+	ctx: CanvasRenderingContext2D;
+	texture: THREE.CanvasTexture;
+}
+
+interface HologramGlyph {
+	mast: THREE.Mesh<THREE.CylinderGeometry, THREE.MeshBasicMaterial>;
+	diamond: THREE.LineLoop<THREE.BufferGeometry, THREE.LineBasicMaterial>;
+}
+
+interface HologramSystem {
+	root: THREE.Group;
+	contactGlyphs: THREE.Group;
+	mastGeometry: THREE.CylinderGeometry;
+	diamondGeometry: THREE.BufferGeometry;
+	glyphPool: HologramGlyph[];
+	contactMaterial: THREE.LineBasicMaterial;
+	targetMaterial: THREE.LineBasicMaterial;
+	contactMastMaterial: THREE.MeshBasicMaterial;
+	targetMastMaterial: THREE.MeshBasicMaterial;
+}
+
+interface CockpitHardware {
+	mesh: THREE.Group;
+	scannerTexture: THREE.CanvasTexture;
+	scannerCtx: CanvasRenderingContext2D;
+	hologram: HologramSystem;
+	flightInstrument: Instrument;
+	targetInstrument: Instrument;
+	throttleFill: THREE.Mesh;
+	throttleFillMaterial: THREE.MeshStandardMaterial;
+	instrumentKey: string;
+}
+
 class Game {
 	readonly world: World;
 	readonly renderer: THREE.WebGLRenderer;
@@ -286,12 +328,28 @@ class Game {
 	 */
 	private readonly layers = new Map<string, "near" | "far">();
 	private shipMesh!: THREE.Mesh;
+	/** Cockpit structure follows the ship, while the camera pans within it. */
+	private cockpit!: CockpitHardware;
+	private tuningKey = "";
+	private tuningText = "";
+	/** Exposed for the browser probe; sourced fresh from simulation every frame. */
+	private readonly scannerContactBuffer: ScannerContact[] = [];
+	scannerContacts: ScannerContact[] = this.scannerContactBuffer;
+	/** The browser probe reads this live value instead of copying scanner range. */
+	readonly scannerRangeKm = SCANNER_RANGE_KM;
 	private stars!: THREE.Points;
 	private starMaterial!: THREE.ShaderMaterial;
 
 	private readonly keys = new Set<string>();
 	readonly audio = new AudioFX();
 	private throttle = 0;
+	private frameBody: Body | null = null;
+	/** View-local head direction. It does not change the ship's orientation. */
+	headLook: HeadLook = "forward";
+	private rightTab: RightTab = "Flight";
+	private readonly headRotation = new THREE.Quaternion();
+	private readonly viewRotation = new THREE.Quaternion();
+	private readonly liveCockpit: LiveCockpit;
 
 	/**
 	 * The cruise regime's whole state, public because a probe has to be able to
@@ -363,6 +421,10 @@ class Game {
 	private warp!: WarpField;
 	private lastTime = 0;
 	private hud: HTMLElement;
+	/** The old text HUD stays probe-addressable without taxing the live cockpit. */
+	private readonly legacyHud = new URLSearchParams(window.location.search).has(
+		"legacy-hud",
+	);
 	/** The last time-to-target estimate, and the clock value it was made at. */
 	private etaCache: number | null = null;
 	private etaAt = Number.NEGATIVE_INFINITY;
@@ -435,6 +497,9 @@ class Game {
 
 	constructor(seed: number) {
 		this.world = makeWorld(seed);
+		for (const _body of this.world.system.bodies)
+			this.scannerContactBuffer.push({} as ScannerContact);
+		this.updateLocalFrameBody();
 		this.faceTheStar();
 
 		this.renderer = new THREE.WebGLRenderer({
@@ -483,6 +548,7 @@ class Game {
 		this.buildBackdrop();
 		this.buildBodies();
 		this.buildShip();
+		this.buildCockpit();
 		this.warp = warpField(this.world.seed);
 		this.nearScene.add(this.warp.object);
 		// Something is selected on frame one. §6 makes selection a convenience
@@ -490,6 +556,7 @@ class Game {
 		// boot reads as broken, and the nearest station is what a ship at the
 		// arrival point is there to reach.
 		this.targetId = this.nearestOfKind("station")?.id ?? null;
+		this.refreshScannerContacts();
 
 		this.composer = new EffectComposer(this.renderer);
 		// Back to front. The first pass clears colour; the third clears *depth*
@@ -526,6 +593,10 @@ class Game {
 		// that box in the top-left corner while the CSS stretches nothing.
 		this.sizeOverlay();
 		this.hud = document.getElementById("hud") as HTMLElement;
+		this.liveCockpit = new LiveCockpit((tab) => {
+			this.rightTab = tab;
+			this.updateCockpit();
+		});
 		window.addEventListener("resize", () => this.onResize());
 		window.addEventListener("keydown", (e) => this.onKey(e, true));
 		window.addEventListener("keyup", (e) => this.onKey(e, false));
@@ -812,8 +883,547 @@ class Game {
 		this.nearScene.add(this.shipMesh);
 	}
 
+	/** The physical cockpit and its one, deck-mounted scanner. */
+	private buildCockpit() {
+		this.cockpit = {} as CockpitHardware;
+		// The first pass used a repeated cyan grid. It read as wallpaper at this
+		// distance, not a manufactured cabin. Let the hard edges and separate
+		// fittings carry the construction instead of printing a texture onto every
+		// surface.
+		const metal = new THREE.MeshStandardMaterial({
+			color: 0x0a1114,
+			roughness: 0.72,
+			metalness: 0.48,
+			emissive: 0x010304,
+			emissiveIntensity: 0.08,
+		});
+		const trim = new THREE.MeshStandardMaterial({
+			color: 0x1a2c32,
+			roughness: 0.46,
+			metalness: 0.72,
+			emissive: 0x03090b,
+			emissiveIntensity: 0.14,
+		});
+		const inset = new THREE.MeshStandardMaterial({
+			color: 0x020607,
+			roughness: 0.48,
+			metalness: 0.3,
+		});
+		const canopyGlass = new THREE.MeshBasicMaterial({
+			color: 0x0a2635,
+			transparent: true,
+			opacity: 0.08,
+			side: THREE.DoubleSide,
+			depthWrite: false,
+		});
+		const cockpit = new THREE.Group();
+		cockpit.name = "cockpit";
+		// Space remains black, but the pilot's own instruments should not. This
+		// lamp is parented to the cockpit, so it illuminates the cabin alone as
+		// the ship turns rather than behaving like a second sun in the scene.
+		const interiorLight = new THREE.PointLight(0x9bc5dc, 0.35, 0.065, 2);
+		interiorLight.name = "cockpit-light";
+		interiorLight.position.set(0, 0.004, -0.029);
+		cockpit.add(interiorLight);
+		const addBox = (
+			size: [number, number, number],
+			position: [number, number, number],
+			rotation: [number, number, number] = [0, 0, 0],
+			material: THREE.Material = metal,
+		) => {
+			const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material);
+			mesh.position.set(...position);
+			mesh.rotation.set(...rotation);
+			cockpit.add(mesh);
+		};
+		const addStrut = (
+			from: [number, number, number],
+			to: [number, number, number],
+			radius = 0.00045,
+			name?: string,
+		) => {
+			const start = new THREE.Vector3(...from);
+			const end = new THREE.Vector3(...to);
+			const direction = end.clone().sub(start);
+			const mesh = new THREE.Mesh(
+				new THREE.CylinderGeometry(
+					radius * 0.82,
+					radius,
+					direction.length(),
+					8,
+				),
+				metal,
+			);
+			mesh.position.copy(start.add(end).multiplyScalar(0.5));
+			mesh.quaternion.setFromUnitVectors(HEAD_AXIS, direction.normalize());
+			if (name) mesh.name = name;
+			cockpit.add(mesh);
+		};
+		// These are kilometres because they live in the normal near scene. The
+		// closest face stays beyond the 10 m near plane, which avoids the camera
+		// slicing the cockpit open as a pilot turns their head.
+		// A real windscreen frame: the former rails did not meet a sill or header,
+		// so they read as objects floating in space. The glass stays subtle, while
+		// the connected trapezoid gives the player a stable cockpit boundary.
+		const canopyShape = new THREE.Shape();
+		canopyShape.moveTo(-0.043, -0.013);
+		canopyShape.lineTo(-0.05, 0.018);
+		canopyShape.lineTo(0.05, 0.018);
+		canopyShape.lineTo(0.043, -0.013);
+		canopyShape.closePath();
+		const canopyPane = new THREE.Mesh(
+			new THREE.ShapeGeometry(canopyShape),
+			canopyGlass,
+		);
+		canopyPane.name = "canopy-glass";
+		canopyPane.position.z = -0.065;
+		cockpit.add(canopyPane);
+		addStrut(
+			[-0.043, -0.013, -0.065],
+			[-0.05, 0.018, -0.065],
+			0.00125,
+			"canopy-side-rail-port",
+		);
+		addStrut(
+			[0.043, -0.013, -0.065],
+			[0.05, 0.018, -0.065],
+			0.00125,
+			"canopy-side-rail-starboard",
+		);
+		addBox([0.102, 0.0013, 0.002], [0, 0.018, -0.065], [0, 0, 0], trim);
+		addBox([0.088, 0.002, 0.004], [0, -0.013, -0.065], [0, 0, 0], trim);
+		// Header braces close the upper corners into the nearer cockpit frame. The
+		// former side rails only framed the pane itself, leaving the windscreen
+		// visually detached from the overhead cockpit boundary.
+		addStrut(
+			[-0.05, 0.018, -0.065],
+			[-0.042, 0.028, -0.032],
+			0.0011,
+			"canopy-header-brace-port",
+		);
+		addStrut(
+			[0.05, 0.018, -0.065],
+			[0.042, 0.028, -0.032],
+			0.0011,
+			"canopy-header-brace-starboard",
+		);
+		// The canopy runs into light A-pillars, not opaque corner blocks. The
+		// cockpit boundary should give scale and framing while preserving a broad
+		// flight view.
+		for (const side of [-1, 1]) {
+			addStrut(
+				[side * 0.043, -0.013, -0.065],
+				[side * 0.032, -0.015, -0.034],
+				0.0009,
+			);
+		}
+		// Layered side consoles, structural seams, and a raised centre deck give
+		// the cabin a constructed spacecraft language without closing the pilot's
+		// forward sightline.
+		addBox([0.01, 0.0022, 0.022], [-0.038, -0.019, -0.047], [0.24, 0, 0.06]);
+		addBox([0.01, 0.0022, 0.022], [0.038, -0.019, -0.047], [0.24, 0, -0.06]);
+		addBox(
+			[0.006, 0.0008, 0.014],
+			[-0.038, -0.0179, -0.047],
+			[0.24, 0, 0.06],
+			inset,
+		);
+		addBox(
+			[0.006, 0.0008, 0.014],
+			[0.038, -0.0179, -0.047],
+			[0.24, 0, -0.06],
+			inset,
+		);
+		for (const side of [-1, 1]) {
+			const x = side * 0.038;
+			const roll = side * -0.06;
+			for (const z of [-0.05, -0.045])
+				addBox(
+					[0.005, 0.00035, 0.0006],
+					[x, -0.0171, z],
+					[0.24, 0, roll],
+					trim,
+				);
+		}
+		for (const side of [-1, 1]) {
+			addBox(
+				[0.001, 0.0028, 0.019],
+				[side * 0.038, -0.0184, -0.047],
+				[0.24, 0, side * -0.06],
+				trim,
+			);
+			addBox(
+				[0.003, 0.0032, 0.019],
+				[side * 0.012, -0.015, -0.052],
+				[0.24, 0, 0],
+				trim,
+			);
+		}
+		const dashboardPitch = 0.58;
+		const scannerMount = new THREE.Group();
+		scannerMount.name = "scanner-mount";
+		scannerMount.position.set(0, -0.014, -0.038);
+		scannerMount.rotation.x = dashboardPitch;
+		cockpit.add(scannerMount);
+		this.buildScannerAssembly(scannerMount, metal, trim, inset);
+
+		this.buildHologramSystem(scannerMount);
+		this.cockpit.mesh = cockpit;
+		this.nearScene.add(cockpit);
+	}
+
+	/** Build the fitted scanner plate, instrument canvases, and throttle hardware. */
+	private buildScannerAssembly(
+		scannerMount: THREE.Group,
+		metal: THREE.MeshStandardMaterial,
+		trim: THREE.MeshStandardMaterial,
+		inset: THREE.MeshStandardMaterial,
+	) {
+		const deck = new THREE.Mesh(
+			new THREE.BoxGeometry(0.032, 0.0016, 0.022),
+			metal,
+		);
+		deck.name = "scanner-deck";
+		scannerMount.add(deck);
+		const scannerWell = new THREE.Mesh(
+			new THREE.BoxGeometry(0.029, 0.00025, 0.0155),
+			inset,
+		);
+		scannerWell.name = "scanner-well";
+		scannerWell.position.y = 0.00093;
+		scannerMount.add(scannerWell);
+		for (const [x, z, sx, sz] of [
+			[0, -0.0083, 0.0308, 0.0008],
+			[0, 0.0083, 0.0308, 0.0008],
+			[-0.015, 0, 0.0008, 0.0168],
+			[0.015, 0, 0.0008, 0.0168],
+		] as const) {
+			const bezel = new THREE.Mesh(
+				new THREE.BoxGeometry(sx, 0.00075, sz),
+				trim,
+			);
+			bezel.name = "scanner-bezel";
+			bezel.position.set(x, 0.00145, z);
+			scannerMount.add(bezel);
+		}
+		const scannerCanvas = document.createElement("canvas");
+		scannerCanvas.width = 800;
+		scannerCanvas.height = 400;
+		this.cockpit.scannerCtx = scannerCanvas.getContext(
+			"2d",
+		) as CanvasRenderingContext2D;
+		this.cockpit.scannerTexture = new THREE.CanvasTexture(scannerCanvas);
+		this.cockpit.scannerTexture.colorSpace = THREE.SRGBColorSpace;
+		this.paintScannerBackground();
+		const scanner = new THREE.Mesh(
+			new THREE.PlaneGeometry(0.027, 0.0135),
+			new THREE.MeshBasicMaterial({
+				map: this.cockpit.scannerTexture,
+				polygonOffset: true,
+				polygonOffsetFactor: -1,
+				polygonOffsetUnits: -1,
+			}),
+		);
+		scanner.name = "scanner";
+		scanner.position.y = 0.00108;
+		scanner.rotation.x = -Math.PI / 2;
+		scannerMount.add(scanner);
+		const makeInstrument = (name: string, x: number) => {
+			const backing = new THREE.Mesh(
+				new THREE.BoxGeometry(0.014, 0.0014, 0.011),
+				trim,
+			);
+			backing.position.set(x, 0.0002, 0);
+			scannerMount.add(backing);
+			const canvas = document.createElement("canvas");
+			canvas.width = 512;
+			canvas.height = 256;
+			const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+			const texture = new THREE.CanvasTexture(canvas);
+			texture.colorSpace = THREE.SRGBColorSpace;
+			const face = new THREE.Mesh(
+				new THREE.PlaneGeometry(0.0118, 0.0059),
+				new THREE.MeshBasicMaterial({
+					map: texture,
+					transparent: true,
+					depthWrite: false,
+				}),
+			);
+			face.name = name;
+			face.position.set(x, 0.001, 0);
+			face.rotation.x = -Math.PI / 2;
+			scannerMount.add(face);
+			return { ctx, texture };
+		};
+		this.cockpit.flightInstrument = makeInstrument("flight-instrument", -0.025);
+		this.cockpit.targetInstrument = makeInstrument("target-instrument", 0.025);
+		const throttleTrack = new THREE.Mesh(
+			new THREE.BoxGeometry(0.0022, 0.0014, 0.014),
+			inset,
+		);
+		throttleTrack.name = "throttle-track";
+		throttleTrack.position.set(-0.0168, 0.0008, 0);
+		scannerMount.add(throttleTrack);
+		this.cockpit.throttleFillMaterial = new THREE.MeshStandardMaterial({
+			color: 0x9b5a20,
+			emissive: 0x4a1905,
+			emissiveIntensity: 0.04,
+		});
+		this.cockpit.throttleFill = new THREE.Mesh(
+			new THREE.BoxGeometry(0.0011, 0.0017, 0.012),
+			this.cockpit.throttleFillMaterial,
+		);
+		this.cockpit.throttleFill.name = "throttle-fill";
+		this.cockpit.throttleFill.position.set(-0.0168, 0.0018, 0.006);
+		scannerMount.add(this.cockpit.throttleFill);
+	}
+
+	/** Create the static radar geometry and the reusable live-contact pool. */
+	private buildHologramSystem(scannerMount: THREE.Group) {
+		const root = new THREE.Group();
+		root.name = "scanner-hologram";
+		root.position.y = 0.0013;
+		scannerMount.add(root);
+		const hologramMaterial = new THREE.LineBasicMaterial({
+			color: 0xf1ab38,
+			transparent: true,
+			opacity: 0.7,
+			blending: THREE.AdditiveBlending,
+			depthWrite: false,
+		});
+		const hologramOptions = {
+			transparent: true,
+			blending: THREE.AdditiveBlending,
+			depthTest: false,
+			depthWrite: false,
+		};
+		const lineHologram = (color: number, opacity: number) =>
+			new THREE.LineBasicMaterial({ color, opacity, ...hologramOptions });
+		const mastHologram = (color: number, opacity: number) =>
+			new THREE.MeshBasicMaterial({ color, opacity, ...hologramOptions });
+		const contactMaterial = lineHologram(0x74d9ff, 0.85);
+		const targetMaterial = lineHologram(0xffd26b, 1);
+		const contactMastMaterial = mastHologram(0x74d9ff, 0.78);
+		const targetMastMaterial = mastHologram(0xffd26b, 0.92);
+		const mastGeometry = new THREE.CylinderGeometry(1, 1, 1, 6);
+		const diamondGeometry = new THREE.BufferGeometry().setFromPoints([
+			new THREE.Vector3(-1, 0, 0),
+			new THREE.Vector3(0, 0, -0.5),
+			new THREE.Vector3(1, 0, 0),
+			new THREE.Vector3(0, 0, 0.5),
+			new THREE.Vector3(-1, 0, 0),
+		]);
+		for (let ring = 1; ring <= 5; ring++) {
+			const points: THREE.Vector3[] = [];
+			const fraction = ring / 5;
+			for (let step = 0; step < 33; step++) {
+				const angle = (step / 32) * Math.PI * 2;
+				points.push(
+					new THREE.Vector3(
+						Math.cos(angle) * 0.0105 * fraction,
+						0,
+						Math.sin(angle) * 0.0052 * fraction,
+					),
+				);
+			}
+			const rangeRing = new THREE.LineLoop(
+				new THREE.BufferGeometry().setFromPoints(points),
+				hologramMaterial,
+			);
+			rangeRing.name = "scanner-range-ring";
+			root.add(rangeRing);
+		}
+		root.add(
+			new THREE.Line(
+				new THREE.BufferGeometry().setFromPoints([
+					new THREE.Vector3(0, 0, -0.006),
+					new THREE.Vector3(0, 0.003, 0.006),
+				]),
+				hologramMaterial,
+			),
+		);
+		const contactGlyphs = new THREE.Group();
+		contactGlyphs.name = "scanner-contact-glyphs";
+		root.add(contactGlyphs);
+		this.cockpit.hologram = {
+			root,
+			contactGlyphs,
+			mastGeometry,
+			diamondGeometry,
+			glyphPool: [],
+			contactMaterial,
+			targetMaterial,
+			contactMastMaterial,
+			targetMastMaterial,
+		};
+	}
+
+	/** Paint the scanner's unchanging dark surface once, before the first draw. */
+	private paintScannerBackground() {
+		const ctx = this.cockpit.scannerCtx;
+		const w = ctx.canvas.width;
+		const h = ctx.canvas.height;
+		ctx.fillStyle = "#010506";
+		ctx.fillRect(0, 0, w, h);
+		const shade = ctx.createRadialGradient(
+			w / 2,
+			h / 2,
+			0,
+			w / 2,
+			h / 2,
+			w / 2,
+		);
+		shade.addColorStop(0, "rgba(30, 59, 48, .16)");
+		shade.addColorStop(1, "rgba(0, 0, 0, 0)");
+		ctx.fillStyle = shade;
+		ctx.fillRect(0, 0, w, h);
+		this.cockpit.scannerTexture.needsUpdate = true;
+	}
+
+	private updateHologramContacts(contacts: readonly ScannerContact[]) {
+		const hologram = this.cockpit.hologram;
+		for (const glyph of hologram.glyphPool)
+			glyph.mast.visible = glyph.diamond.visible = false;
+		for (const [index, contact] of contacts.entries()) {
+			const x = ((contact.baseXPercent - 50) / 42) * 0.0105;
+			const z = ((contact.baseYPercent - 50) / 31) * 0.0052;
+			const height =
+				0.0009 +
+				Math.min(0.0036, (Math.abs(contact.tipOffsetPx) / 54) * 0.0036);
+			const signedHeight = Math.sign(contact.tipOffsetPx) * height;
+			let glyph = hologram.glyphPool[index];
+			if (!glyph) {
+				const mast = new THREE.Mesh(
+					hologram.mastGeometry,
+					hologram.contactMastMaterial,
+				);
+				const diamond = new THREE.LineLoop(
+					hologram.diamondGeometry,
+					hologram.contactMaterial,
+				);
+				glyph = { mast, diamond };
+				hologram.glyphPool.push(glyph);
+				hologram.contactGlyphs.add(mast, diamond);
+			}
+			const { mast, diamond } = glyph;
+			const mastName = `scanner-contact-mast-${contact.id}`;
+			if (mast.name !== mastName) mast.name = mastName;
+			mast.position.set(x, signedHeight / 2, z);
+			mast.scale.set(
+				contact.selected ? 0.00009 : 0.00007,
+				height,
+				contact.selected ? 0.00009 : 0.00007,
+			);
+			mast.material = contact.selected
+				? hologram.targetMastMaterial
+				: hologram.contactMastMaterial;
+			mast.visible = true;
+			const r = contact.selected ? 0.00065 : 0.0004;
+			const diamondName = `scanner-contact-diamond-${contact.id}`;
+			if (diamond.name !== diamondName) diamond.name = diamondName;
+			diamond.position.set(x, signedHeight, z);
+			diamond.scale.set(r, 1, r);
+			diamond.material = contact.selected
+				? hologram.targetMaterial
+				: hologram.contactMaterial;
+			diamond.visible = true;
+		}
+	}
+
+	/** Refresh the shared target estimate at the resolution either HUD can show. */
+	private updateEtaEstimate() {
+		if (this.world.gameTime - this.etaAt < ETA_INTERVAL_S) return;
+		this.etaCache = this.timeToTarget();
+		this.etaAt = this.world.gameTime;
+	}
+
+	private updateInstruments(
+		target: Body | null,
+		targetKm: number,
+		velocity: ReturnType<Game["velocityReadout"]>,
+	) {
+		const speed = velocity.speed;
+		const targetText = target
+			? `${target.id.toUpperCase()}  ${range(targetKm)}`
+			: "NO TARGET";
+		const eta = this.etaCache === null ? "CALC" : duration(this.etaCache);
+		const key = `${speed}|${velocity.context}|${targetText}|${eta}|${this.throttle}|${this.assist}|${this.chargeAu}`;
+		if (key === this.cockpit.instrumentKey) return;
+		this.cockpit.instrumentKey = key;
+		const paint = (
+			ctx: CanvasRenderingContext2D,
+			title: string,
+			primary: string,
+			secondary: string,
+			accent: string,
+		) => {
+			const { width, height } = ctx.canvas;
+			ctx.clearRect(0, 0, width, height);
+			ctx.fillStyle = "rgba(1, 8, 11, .9)";
+			ctx.fillRect(0, 0, width, height);
+			ctx.strokeStyle = accent;
+			ctx.globalAlpha = 0.72;
+			ctx.lineWidth = 4;
+			ctx.strokeRect(12, 12, width - 24, height - 24);
+			ctx.globalAlpha = 1;
+			ctx.fillStyle = accent;
+			ctx.font = "22px ui-monospace, monospace";
+			ctx.fillText(title, 28, 46);
+			let primarySize = 42;
+			const primaryWidth = width - 56;
+			ctx.font = `${primarySize}px ui-monospace, monospace`;
+			while (
+				primarySize > 24 &&
+				ctx.measureText(primary).width > primaryWidth
+			) {
+				primarySize -= 1;
+				ctx.font = `${primarySize}px ui-monospace, monospace`;
+			}
+			ctx.fillStyle = "#e7f6ff";
+			ctx.fillText(primary, 28, 128);
+			ctx.font = "20px ui-monospace, monospace";
+			ctx.fillStyle = accent;
+			ctx.fillText(secondary, 28, 192);
+		};
+		paint(
+			this.cockpit.flightInstrument.ctx,
+			velocity.title,
+			speed,
+			velocity.context,
+			"#75d7ff",
+		);
+		paint(
+			this.cockpit.targetInstrument.ctx,
+			"TARGET",
+			targetText,
+			`ETA ${eta}  CHARGE ${this.chargeAu.toFixed(1)} AU`,
+			"#ffd17a",
+		);
+		this.cockpit.flightInstrument.texture.needsUpdate = true;
+		this.cockpit.targetInstrument.texture.needsUpdate = true;
+		// The low end is nearest/lower on the sloped deck. Keep it anchored there
+		// and extend toward the windscreen as throttle rises; the old fill started
+		// at the top and slid down, the inverse of a physical throttle cue.
+		this.cockpit.throttleFill.scale.z = Math.max(0.08, this.throttle);
+		this.cockpit.throttleFill.position.z = (1 - this.throttle) * 0.006;
+		this.cockpit.throttleFillMaterial.emissiveIntensity =
+			0.04 + this.throttle * 0.28;
+	}
+
 	private onKey(e: KeyboardEvent, down: boolean) {
 		const key = e.key.toLowerCase();
+		if (down && !e.repeat && e.altKey) {
+			if (this.view !== "cockpit") {
+				e.preventDefault();
+				return;
+			}
+			if (key === "arrowleft") this.setHeadLook("left");
+			else if (key === "arrowright") this.setHeadLook("right");
+			else if (key === "arrowup") this.setHeadLook("forward");
+			else return;
+			e.preventDefault();
+			return;
+		}
 		if (down) this.keys.add(key);
 		else this.keys.delete(key);
 		// One-shot commands fire on the press, not on the held state: engaging
@@ -838,6 +1448,15 @@ class Game {
 	 */
 	private command(key: string) {
 		switch (key) {
+			case "1":
+				if (this.view === "cockpit") this.setHeadLook("left");
+				return;
+			case "2":
+				if (this.view === "cockpit") this.setHeadLook("forward");
+				return;
+			case "3":
+				if (this.view === "cockpit") this.setHeadLook("right");
+				return;
 			case "j":
 				if (this.regime === "cruise") this.dropOut("dropped by the player");
 				else if (this.spoolLeftS > 0) {
@@ -861,6 +1480,7 @@ class Game {
 				return;
 			case "v":
 				this.view = this.view === "cockpit" ? "chase" : "cockpit";
+				if (this.view === "chase") this.setHeadLook("forward");
 				return;
 			case "0":
 				// Back to the spec's own figures, from wherever the tuning has got
@@ -905,6 +1525,12 @@ class Game {
 				return;
 			default:
 		}
+	}
+
+	/** A camera pan only: flight controls and the ship's nose stay live. */
+	setHeadLook(headLook: HeadLook) {
+		this.headLook = headLook;
+		this.updateCockpit();
 	}
 
 	/**
@@ -1118,6 +1744,14 @@ class Game {
 	 * perfectly good arrival. It binds #9: docking happens in this frame.
 	 */
 	private localFrame(): Vec3 {
+		const body = this.frameBody;
+		return body
+			? bodyVelocity(this.world.system, body.id, this.world.gameTime)
+			: v3();
+	}
+
+	/** The nearby body's inertial frame makes station-keeping legible at idle. */
+	private updateLocalFrameBody() {
 		let best: Body | null = null;
 		let bestKm = NEAR_FAR_KM;
 		for (const b of this.world.system.bodies) {
@@ -1127,9 +1761,32 @@ class Game {
 				bestKm = km;
 			}
 		}
-		return best
-			? bodyVelocity(this.world.system, best.id, this.world.gameTime)
+		this.frameBody = best;
+	}
+
+	/**
+	 * Normal flight is displayed relative to the body whose frame assist uses.
+	 * The inertial value remains visible as context: near a station it is mostly
+	 * orbital drift, not an implication that an idle throttle is still burning.
+	 */
+	private velocityReadout() {
+		if (this.regime === "cruise")
+			return {
+				title: "CRUISE VELOCITY",
+				speed: `${(this.cruiseSpeedKms / C_KMS).toFixed(2)} c`,
+				context: "NOSE-LOCKED CRUISE",
+			};
+		const frameBody = this.frameBody;
+		const frameVelocity = frameBody
+			? bodyVelocity(this.world.system, frameBody.id, this.world.gameTime)
 			: v3();
+		const relativeKms = length(sub(this.world.ship.vel, frameVelocity));
+		const inertialKms = length(this.world.ship.vel);
+		return {
+			title: "REL. VELOCITY",
+			speed: `${relativeKms.toFixed(3)} km/s`,
+			context: `${frameBody ? `${frameBody.kind.toUpperCase()} FRAME` : "STAR FRAME"} · INERTIAL ${inertialKms.toFixed(0)} km/s`,
+		};
 	}
 
 	/** The nose, as a sim-space unit vector. In cruise this *is* the direction of
@@ -1276,6 +1933,7 @@ class Game {
 	 * exactly what the game runs rather than its own copy of the order.
 	 */
 	step(dt: number) {
+		this.updateLocalFrameBody();
 		const yaw = this.axis(["arrowright", "d"], ["arrowleft", "a"]);
 		const pitch = this.axis(["arrowdown", "s"], ["arrowup", "w"]);
 		const roll = this.axis(["e"], ["q"]);
@@ -1461,11 +2119,16 @@ class Game {
 				: 0;
 		this.warp.update(intensity, this.orientation, dt);
 
-		// All three cameras share the ship's orientation and sit at the origin.
+		const viewRotation = this.cameraRotation();
+		// All three cameras share the ship's head-look orientation and sit at the
+		// origin. The cockpit mesh keeps the ship orientation, so this is a pan
+		// inside the hull rather than a yaw of the world or a flight-control input.
 		for (const cam of [this.backdropCamera, this.farCamera, this.nearCamera]) {
 			cam.position.set(0, 0, 0);
-			cam.quaternion.copy(this.orientation);
+			cam.quaternion.copy(viewRotation);
 		}
+		this.cockpit.mesh.quaternion.copy(this.orientation);
+		this.cockpit.mesh.visible = this.view === "cockpit";
 		// The star sphere follows the camera so it never parallaxes — which is
 		// what makes it read as infinitely far away rather than as a small ball
 		// the ship is inside. The camera being at the origin means this is a
@@ -1559,10 +2222,83 @@ class Game {
 		this.lastTime = now;
 		if (dt > 0) this.step(dt);
 		this.render(dt);
-		this.updateHud();
+		this.updateCockpit();
+		if (this.legacyHud) this.updateHud();
 	};
 
+	private cameraRotation() {
+		const yaw =
+			this.view === "cockpit"
+				? this.headLook === "left"
+					? Math.PI / 2.7
+					: this.headLook === "right"
+						? -Math.PI / 2.7
+						: 0
+				: 0;
+		this.headRotation.setFromAxisAngle(HEAD_AXIS, yaw);
+		return this.viewRotation.copy(this.orientation).multiply(this.headRotation);
+	}
+
+	private updateCockpit() {
+		this.updateEtaEstimate();
+		if (this.view !== "cockpit") {
+			this.liveCockpit.setVisible(false);
+			return;
+		}
+		const target = this.targetBody();
+		const targetKm = target ? length(sub(target.pos, this.world.ship.pos)) : 0;
+		const velocity = this.velocityReadout();
+		this.refreshScannerContacts();
+		this.updateHologramContacts(this.scannerContacts);
+		this.updateInstruments(target, targetKm, velocity);
+		this.liveCockpit.update({
+			visible: true,
+			headLook: this.headLook,
+			rightTab: this.rightTab,
+			contacts: this.scannerContacts,
+			targetId: target?.id ?? null,
+			target: target
+				? `${target.id} · ${range(targetKm)}`
+				: "NO TARGET SELECTED",
+			targetBearingDeg: target
+				? targetArrowBearingDeg(
+						this.world.ship.pos,
+						target.pos,
+						this.orientation,
+					)
+				: null,
+			mode: this.regime === "cruise" ? "CRUISE" : "NORMAL FLIGHT",
+			throttle: `${(this.throttle * 100).toFixed(0)}%`,
+			assist: this.assist ? "ON" : "OFF",
+			charge: `${this.chargeAu.toFixed(1)}/${CHARGE_CAPACITY_AU} AU`,
+			speed: velocity.speed,
+			eta: this.etaCache === null ? "CALC" : duration(this.etaCache),
+			guidance: this.cruisePrompt(target ? targetKm : null),
+			tuning: this.tuningSummary(),
+		});
+	}
+
+	private refreshScannerContacts() {
+		projectScannerContacts(
+			this.world.ship.pos,
+			this.world.system.bodies,
+			this.targetId,
+			{ orientation: this.orientation, output: this.scannerContactBuffer },
+		);
+	}
+
+	private tuningSummary() {
+		const p = this.cruiseParams;
+		const key = `${p.vMaxKms}|${p.exponent}|${p.dropRadiusKm}|${p.dropSpeedKms}|${p.vicinityKm}|${p.approachLeadS}`;
+		if (key !== this.tuningKey) {
+			this.tuningKey = key;
+			this.tuningText = `v_max ${(p.vMaxKms / C_KMS).toFixed(0)} c · exponent ${p.exponent.toFixed(2)} · drop ${p.dropRadiusKm} km · drop speed ${p.dropSpeedKms.toFixed(1)} km/s · vicinity ${range(p.vicinityKm)} · lead ${p.approachLeadS}s`;
+		}
+		return this.tuningText;
+	}
+
 	private updateHud() {
+		this.updateEtaEstimate();
 		if (!this.hud) return;
 		const { ship, system, gameTime } = this.world;
 
@@ -1595,13 +2331,6 @@ class Game {
 		// text really did change.
 		const target = this.targetBody();
 		const targetKm = target ? length(sub(target.pos, ship.pos)) : null;
-		// The estimate integrates 64 samples of the speed law, and the readout it
-		// feeds is quantised to tenths of a minute. Recomputing that every frame is
-		// paying sixty times over for a number that cannot change that fast.
-		if (gameTime - this.etaAt >= ETA_INTERVAL_S) {
-			this.etaCache = this.timeToTarget();
-			this.etaAt = gameTime;
-		}
 		const eta = this.etaCache;
 		const p = this.cruiseParams;
 		const state =
@@ -1711,6 +2440,10 @@ class Game {
 		const w = this.overlay.width;
 		const h = this.overlay.height;
 		ctx.clearRect(0, 0, w, h);
+		// A focused console replaces the forward glass. Leaving target brackets
+		// here would make an HTML panel look like an accidental overlay rather
+		// than the deliberate head-turn view the cockpit contract calls for.
+		if (this.view === "cockpit" && this.headLook !== "forward") return;
 		const toPixels = (ndcX: number, ndcY: number) => ({
 			x: (ndcX * 0.5 + 0.5) * w,
 			y: (1 - (ndcY * 0.5 + 0.5)) * h,
@@ -1799,9 +2532,8 @@ class Game {
 			ctx.textAlign = "left";
 		}
 
-		// Every selectable body gets a bracket, because "I have no idea where to
-		// fly to" is answered by seeing the targets, not by naming one of
-		// them in a text field.
+		// The selected target owns the amber sky marker. Green remains prograde,
+		// and the other bodies stay cool blue navigation context.
 		ctx.font = "11px ui-monospace, Menlo, monospace";
 		for (const body of this.selectable()) {
 			const dir = directionTo(camPos, body.pos);
@@ -1809,11 +2541,20 @@ class Game {
 			const selected = body.id === this.targetId;
 			const at = place(dir);
 			if (at?.on) {
-				const r = selected ? 13 : 7;
+				const r = selected ? 14 : 7;
 				ctx.strokeStyle = selected
 					? "rgba(255, 214, 120, 0.95)"
 					: "rgba(140, 190, 220, 0.4)";
 				ctx.lineWidth = selected ? 1.5 : 1;
+				if (selected) {
+					ctx.beginPath();
+					ctx.arc(at.x, at.y, r, 0, Math.PI * 2);
+					ctx.stroke();
+					const km = length(sub(body.pos, camPos));
+					ctx.fillStyle = "rgba(255, 214, 120, 0.95)";
+					ctx.fillText(`${body.id}  ${range(km)}`, at.x + r + 6, at.y + 4);
+					continue;
+				}
 				// Corner brackets rather than a box: a closed square over a distant
 				// station hides the thing it is marking.
 				for (const [sx, sy] of [
@@ -1828,24 +2569,19 @@ class Game {
 					ctx.lineTo(at.x + sx * r - sx * (r * 0.45), at.y + sy * r);
 					ctx.stroke();
 				}
-				if (selected || body.kind === "station") {
+				if (body.kind === "station") {
 					const km = length(sub(body.pos, camPos));
-					ctx.fillStyle = selected
-						? "rgba(255, 214, 120, 0.95)"
-						: "rgba(140, 190, 220, 0.55)";
+					ctx.fillStyle = "rgba(140, 190, 220, 0.55)";
 					ctx.fillText(`${body.id}  ${range(km)}`, at.x + r + 6, at.y + 4);
 				}
 				continue;
 			}
-			// Off screen: only the selected target gets an arrow. Twelve of them
-			// around the rim would be noise, and the question being answered is
-			// "which way to the place I picked".
 			if (!selected) continue;
-			const e = edgeOf(dir, this.orientation, EDGE_MARGIN);
-			const p = toPixels(e.ndcX, e.ndcY);
+			const edge = edgeOf(dir, this.orientation, EDGE_MARGIN);
+			const p = toPixels(edge.ndcX, edge.ndcY);
 			ctx.save();
 			ctx.translate(p.x, p.y);
-			ctx.rotate(-e.angleRad);
+			ctx.rotate(-edge.angleRad);
 			ctx.fillStyle = "rgba(255, 214, 120, 0.95)";
 			ctx.beginPath();
 			ctx.moveTo(11, 0);
@@ -1854,11 +2590,10 @@ class Game {
 			ctx.closePath();
 			ctx.fill();
 			ctx.restore();
-			const off = angleOffNose(dir, this.nose());
 			ctx.fillStyle = "rgba(255, 214, 120, 0.8)";
 			ctx.fillText(
-				`${this.targetId}  ${((off * 180) / Math.PI).toFixed(0)}° off`,
-				Math.min(w - 150, Math.max(10, p.x - 60)),
+				`${body.id}  ${((angleOffNose(dir, this.nose()) * 180) / Math.PI).toFixed(0)}° off`,
+				Math.min(w - 120, Math.max(10, p.x - 48)),
 				Math.min(h - 10, Math.max(20, p.y + 22)),
 			);
 		}
