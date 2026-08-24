@@ -322,7 +322,10 @@ for (const viewport of VIEWPORTS) {
 				(point) => Math.abs(point.x) < 1e-6 && Math.abs(point.y) < 1e-6,
 			) &&
 			forward.scannerReferenceLine[0].z < -0.00519 &&
-			forward.scannerReferenceLine[1].z > 0.00519,
+			forward.scannerReferenceLine[1].z > 0.00519 &&
+			Math.abs(
+				forward.scannerReferenceLine[0].z + forward.scannerReferenceLine[1].z,
+			) < 1e-6,
 		JSON.stringify(forward.scannerReferenceLine),
 	);
 	check(
