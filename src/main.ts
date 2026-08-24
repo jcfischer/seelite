@@ -254,6 +254,85 @@ interface ProbeRayMath {
 interface Instrument {
 	ctx: CanvasRenderingContext2D;
 	texture: THREE.CanvasTexture;
+	secondaryText: TextRaster;
+}
+
+const INSTRUMENT_SECONDARY_FONT = "20px ui-monospace, monospace";
+const PROMPT_FONT = "13px ui-monospace, Menlo, monospace";
+const PROMPT_FILL = "rgba(255, 214, 120, 0.9)";
+const TEXT_RASTER_DEFAULTS: Readonly<{
+	text: string;
+	font: string;
+	fillStyle: string;
+	textAlign: CanvasTextAlign;
+	x: number;
+	y: number;
+	background: string | undefined;
+}> = Object.freeze({
+	text: "",
+	font: "",
+	fillStyle: "",
+	textAlign: "left" as CanvasTextAlign,
+	x: 0,
+	y: 0,
+	background: undefined as string | undefined,
+});
+const TEXT_RASTER_BOUNDS_DEFAULTS: Readonly<{
+	left: number;
+	top: number;
+	width: number;
+	height: number;
+}> = Object.freeze({
+	left: 0,
+	top: 0,
+	width: 0,
+	height: 0,
+});
+
+class TextRaster {
+	text = TEXT_RASTER_DEFAULTS.text;
+	font = TEXT_RASTER_DEFAULTS.font;
+	fillStyle = TEXT_RASTER_DEFAULTS.fillStyle;
+	textAlign = TEXT_RASTER_DEFAULTS.textAlign;
+	x = TEXT_RASTER_DEFAULTS.x;
+	y = TEXT_RASTER_DEFAULTS.y;
+	bounds = { ...TEXT_RASTER_BOUNDS_DEFAULTS };
+	background = TEXT_RASTER_DEFAULTS.background;
+
+	reset() {
+		Object.assign(this, TEXT_RASTER_DEFAULTS);
+		Object.assign(this.bounds, TEXT_RASTER_BOUNDS_DEFAULTS);
+	}
+
+	setInstrumentSecondary(text: string, accent: string, canvasWidth: number) {
+		this.reset();
+		this.text = text;
+		this.font = INSTRUMENT_SECONDARY_FONT;
+		this.fillStyle = accent;
+		this.textAlign = "left";
+		this.x = 28;
+		this.y = 192;
+		this.bounds.left = 28;
+		this.bounds.top = 168;
+		this.bounds.width = canvasWidth - 56;
+		this.bounds.height = 30;
+		this.background = "rgba(1, 8, 11, .9)";
+	}
+
+	setCenteredPrompt(text: string, x: number, y: number, width: number) {
+		this.reset();
+		this.text = text;
+		this.font = PROMPT_FONT;
+		this.fillStyle = PROMPT_FILL;
+		this.textAlign = "center";
+		this.x = x;
+		this.y = y;
+		this.bounds.left = Math.floor(x - width / 2);
+		this.bounds.top = Math.floor(y - 14);
+		this.bounds.width = Math.ceil(width);
+		this.bounds.height = 18;
+		this.background = undefined;
+	}
 }
 
 interface HologramGlyph {
@@ -428,6 +507,9 @@ class Game {
 	/** The last time-to-target estimate, and the clock value it was made at. */
 	private etaCache: number | null = null;
 	private etaAt = Number.NEGATIVE_INFINITY;
+	/** Text geometry from the current glass pass, exposed so the visual probe can
+	 * compare the rendered glyphs with the renderer's own placement contract. */
+	readonly cockpitPrompt = new TextRaster();
 	/** What the HUD last displayed, quantised to its own resolution — so a frame
 	 *  that would render the same text neither builds nor writes it. */
 	private hudKey = "";
@@ -1153,7 +1235,7 @@ class Game {
 			face.position.set(x, 0.001, 0);
 			face.rotation.x = -Math.PI / 2;
 			scannerMount.add(face);
-			return { ctx, texture };
+			return { ctx, texture, secondaryText: new TextRaster() };
 		};
 		this.cockpit.flightInstrument = makeInstrument("flight-instrument", -0.025);
 		this.cockpit.targetInstrument = makeInstrument("target-instrument", 0.025);
@@ -1233,15 +1315,15 @@ class Game {
 			rangeRing.name = "scanner-range-ring";
 			root.add(rangeRing);
 		}
-		root.add(
-			new THREE.Line(
-				new THREE.BufferGeometry().setFromPoints([
-					new THREE.Vector3(0, 0, -0.006),
-					new THREE.Vector3(0, 0.003, 0.006),
-				]),
-				hologramMaterial,
-			),
+		const referenceLine = new THREE.Line(
+			new THREE.BufferGeometry().setFromPoints([
+				new THREE.Vector3(0, 0, -0.0052),
+				new THREE.Vector3(0, 0, 0.0052),
+			]),
+			hologramMaterial,
 		);
+		referenceLine.name = "scanner-reference-line";
+		root.add(referenceLine);
 		const contactGlyphs = new THREE.Group();
 		contactGlyphs.name = "scanner-contact-glyphs";
 		root.add(contactGlyphs);
@@ -1351,12 +1433,13 @@ class Game {
 		if (key === this.cockpit.instrumentKey) return;
 		this.cockpit.instrumentKey = key;
 		const paint = (
-			ctx: CanvasRenderingContext2D,
+			instrument: Instrument,
 			title: string,
 			primary: string,
 			secondary: string,
 			accent: string,
 		) => {
+			const { ctx, secondaryText: raster } = instrument;
 			const { width, height } = ctx.canvas;
 			ctx.clearRect(0, 0, width, height);
 			ctx.fillStyle = "rgba(1, 8, 11, .9)";
@@ -1381,19 +1464,20 @@ class Game {
 			}
 			ctx.fillStyle = "#e7f6ff";
 			ctx.fillText(primary, 28, 128);
-			ctx.font = "20px ui-monospace, monospace";
+			raster.setInstrumentSecondary(secondary, accent, width);
+			ctx.font = raster.font;
 			ctx.fillStyle = accent;
 			ctx.fillText(secondary, 28, 192);
 		};
 		paint(
-			this.cockpit.flightInstrument.ctx,
+			this.cockpit.flightInstrument,
 			velocity.title,
 			speed,
 			velocity.context,
 			"#75d7ff",
 		);
 		paint(
-			this.cockpit.targetInstrument.ctx,
+			this.cockpit.targetInstrument,
 			"TARGET",
 			targetText,
 			`ETA ${eta}  CHARGE ${this.chargeAu.toFixed(1)} AU`,
@@ -1673,6 +1757,12 @@ class Game {
 		return this.targetId
 			? (this.world.system.byId.get(this.targetId) ?? null)
 			: null;
+	}
+
+	/** The selected target's current range in simulation kilometres, if any. */
+	targetRange(): number | null {
+		const target = this.targetBody();
+		return target ? length(sub(target.pos, this.world.ship.pos)) : null;
 	}
 
 	/**
@@ -2269,11 +2359,7 @@ class Game {
 				: null,
 			mode: this.regime === "cruise" ? "CRUISE" : "NORMAL FLIGHT",
 			throttle: `${(this.throttle * 100).toFixed(0)}%`,
-			assist: this.assist ? "ON" : "OFF",
-			charge: `${this.chargeAu.toFixed(1)}/${CHARGE_CAPACITY_AU} AU`,
 			speed: velocity.speed,
-			eta: this.etaCache === null ? "CALC" : duration(this.etaCache),
-			guidance: this.cruisePrompt(target ? targetKm : null),
 			tuning: this.tuningSummary(),
 		});
 	}
@@ -2443,7 +2529,10 @@ class Game {
 		// A focused console replaces the forward glass. Leaving target brackets
 		// here would make an HTML panel look like an accidental overlay rather
 		// than the deliberate head-turn view the cockpit contract calls for.
-		if (this.view === "cockpit" && this.headLook !== "forward") return;
+		if (this.view === "cockpit" && this.headLook !== "forward") {
+			this.cockpitPrompt.reset();
+			return;
+		}
 		const toPixels = (ndcX: number, ndcY: number) => ({
 			x: (ndcX * 0.5 + 0.5) * w,
 			y: (1 - (ndcY * 0.5 + 0.5)) * h,
@@ -2525,11 +2614,17 @@ class Game {
 			promptTarget ? length(sub(promptTarget.pos, camPos)) : null,
 		);
 		if (prompt) {
-			ctx.font = "13px ui-monospace, Menlo, monospace";
+			const x = w / 2;
+			const y = h * 0.62;
+			ctx.font = PROMPT_FONT;
 			ctx.textAlign = "center";
-			ctx.fillStyle = "rgba(255, 214, 120, 0.9)";
-			ctx.fillText(prompt, w / 2, h * 0.62);
+			ctx.fillStyle = PROMPT_FILL;
+			ctx.fillText(prompt, x, y);
+			const promptWidth = ctx.measureText(prompt).width;
+			this.cockpitPrompt.setCenteredPrompt(prompt, x, y, promptWidth);
 			ctx.textAlign = "left";
+		} else {
+			this.cockpitPrompt.reset();
 		}
 
 		// The selected target owns the amber sky marker. Green remains prograde,
