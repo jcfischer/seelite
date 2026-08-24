@@ -20,7 +20,8 @@ A generated carrier has a structured identity:
 
 - `galaxyIndex` is in `0..7`.
 - `systemIndex` is in `0..255`.
-- `localCarrierId` is the stable ID emitted by that system's generator, such as `station-trade`.
+- `localCarrierId` is the system-local ID emitted by the generator. Current stations use fixed IDs in `src/system.ts`, including `station-trade`, `station-refinery`, and `station-shipyard`.
+- Persistence makes those IDs a stability contract: renaming one requires an explicit save migration.
 - Display names, positions, array order, and raw seeds are not identities.
 
 The key names a **carrier slot**, not one lifetime of an object. The original carrier has `instanceOrdinal = 0`; each completed replacement increments that ordinal. A replacement can later be disabled, destroyed, or repaired without losing the fact that it is a replacement.
@@ -49,7 +50,7 @@ A carrier instance has one operational condition:
 - **destroyed** — the instance is wreckage and its capability is unavailable;
 - **repairing** — a named recovery process is active and the capability remains unavailable.
 
-**Replaced** is retained as a player-facing lifecycle concept and a provenance-bearing transition, but not as an exclusive physical condition. Replacement completion increments `instanceOrdinal`; the new instance is then operational and can enter the other conditions normally.
+**Replaced** is retained as a player-facing carrier-instance concept and a provenance-bearing transition, but not as an exclusive physical condition. Replacement completion increments `instanceOrdinal`; the new instance is then operational and can enter the other conditions normally.
 
 No generic “partly operational” state exists in v1. A carrier that needs degradation expresses it as a concrete per-capability projection while retaining one objective condition; it does not add a percentage-health condition to this model.
 
@@ -59,7 +60,7 @@ Allowed transition families are:
 
 - operational → disabled or destroyed;
 - disabled → operational, destroyed, or repairing;
-- destroyed → repairing;
+- destroyed → repairing through `replacement-start`; a destroyed instance returns to operational only through the later `replacement-complete`;
 - repairing → operational through `repair-complete`, retaining `instanceOrdinal`;
 - repairing → operational through `replacement-complete`, incrementing `instanceOrdinal`;
 - repairing → repairing when assistance, opposition, or another intervention changes the active recovery descriptor;
@@ -70,7 +71,7 @@ A repair or replacement stores a recovery-process descriptor: process kind, dete
 
 The initiating operational transition that opens a causal episode allocates the next monotonically increasing ordinal for that carrier slot. A recovery started to address that transition remains in the same episode and derives its process identity from that ordinal. Assistance, opposition, or rescheduling that continues the same uninterrupted process retains both identities. Interruption closes the process and episode; any later restart opens the next episode and therefore gets a new deterministic process identity, even when its kind is unchanged.
 
-Recovery is derived lazily from the authoritative `gameTime`. There is no ticking countdown and no continuous simulation of unvisited systems. Reading or serializing at or after `completesAt` materializes the deterministic completion before applying a new event at that same timestamp. The completion's `occurredAt` is exactly `completesAt`; access or serialization time is never persisted and cannot alter process identity, provenance, episode ordinal, or canonical output. Interruption or assistance changes the schedule through another explicit transition.
+Recovery is derived lazily from the authoritative `gameTime`. There is no ticking countdown and no continuous simulation of unvisited systems. Reading or serializing at or after `completesAt` materializes the deterministic completion before applying a new event at that same timestamp. Completions sharing a timestamp materialize in canonical `CarrierKey` order before any new explicit event at that timestamp. The completion's `occurredAt` is exactly `completesAt`; access or serialization time is never persisted and cannot alter process identity, provenance, episode ordinal, or canonical output. Interruption or assistance changes the schedule through another explicit transition.
 
 Because the process is named, later flight can expose a convoy, repair ship, construction stage, or equivalent target. A timestamp without an interruptible process does not satisfy the operational-consequence doctrine.
 
@@ -92,16 +93,16 @@ The authoritative world state is not a full event log. Each carrier slot retains
 
 ## 6. Bounds and compaction
 
-State growth is bounded by the finite generated carrier set, not by hours played:
+Authoritative carrier-state growth is bounded by the finite generated carrier set, not by hours played:
 
 - at most one current objective delta per carrier key;
 - at most one latest causal-episode summary per carrier key;
 - at most one last-known knowledge row per carrier key;
 - no persistent row for a derived recovery actor.
 
-Superseded transitions collapse into the latest episode summary. An original carrier that is operational again with no scheduled process drops its current objective delta. A replacement keeps its instance ordinal, and disabled, destroyed, or repairing state never expires merely to reduce save size.
+Superseded transitions collapse into the latest episode summary. An original carrier that is operational again with no scheduled process drops its current objective delta. A carrier with an active recovery descriptor always retains its objective delta. A replacement keeps its instance ordinal, and disabled, destroyed, or repairing state never expires merely to reduce save size.
 
-A recent chronological ship-log ring may provide UI history, but it is bounded and non-authoritative. Dropping a log line cannot change mechanics or erase the latest per-carrier attribution.
+A recent chronological ship-log ring may provide UI history, but it is non-authoritative and belongs to the later save/UI decision, which must declare a fixed capacity before adopting it. Dropping a log line cannot change mechanics or erase the latest per-carrier attribution.
 
 Existing domains keep their own bounds. Economy §5.5 already makes market deficits decay lazily and drop below one unit. The save/load decision owes fixed bounds for the map's per-galaxy visited and legal-status state. Carrier compaction does not rewrite or duplicate any of those facts.
 
@@ -115,7 +116,7 @@ Each galaxy owns separate typed domains for:
 - player legal status;
 - later explicitly approved domains.
 
-The galaxy envelope supplies `galaxyIndex`. Every station-keyed domain uses `(systemIndex, localCarrierId)` inside that envelope, equivalent to the full `CarrierKey`; `economy-trade.md` §5.5 records the same `stationKey` convention. A bare `Station.id` is not persistent identity. Any serialized embedded galaxy index must match its containing envelope or fail loudly.
+The galaxy envelope supplies `galaxyIndex`. Every station-keyed domain uses `(systemIndex, localCarrierId)` inside that envelope, equivalent to the full `CarrierKey`; `economy-trade.md` §5.5 records the same `stationKey` convention. A bare `Station.id` is not persistent identity. Any serialized embedded galaxy index must match its containing envelope or fail loudly. Sparse absence is meaningful, so the save format must carry domain integrity validation and reject a truncated or partially written snapshot atomically; the model must not reinterpret corruption as an untouched healthy carrier.
 
 The domains share the galaxy namespace and authoritative game clock but not a generic lowest-common-denominator event schema. Capabilities and UI projections may read multiple domains; they do not save duplicate capability projections.
 
@@ -131,15 +132,15 @@ A wider effect still requires a carrier whose fiction defines that consequence a
 
 The implementation node owes headless tests proving:
 
-1. **Namespace uniqueness:** every generated carrier across all eight galaxies has one unique structured key; local IDs may repeat only across different system keys; station-keyed market rows use the same composite namespace; and repeated interrupt/restart cycles produce distinct recovery-process identities.
-2. **Baseline purity:** an empty overlay reproduces the generated world byte-for-byte at the model boundary and never mutates generated records.
-3. **Transition table:** every allowed transition works, every invalid transition fails loudly, knowledge combines independently with every objective condition, and repeated destroy/replace cycles preserve instance ordinals. The sequence destroyed → repairing → assisted or rescheduled → replacement complete retains one episode ordinal and the original player attribution through completion.
+1. **Namespace uniqueness:** every generated carrier across all eight galaxies has one unique structured key; local IDs may repeat only across different system keys; and station-keyed market rows use the same composite namespace.
+2. **Baseline purity:** an empty overlay produces structurally identical generated records at the model boundary and never mutates generated records.
+3. **Transition table:** every allowed transition works, every invalid transition fails loudly, knowledge combines independently with every objective condition, repeated destroy/replace cycles preserve instance ordinals, and repeated interrupt/restart cycles produce distinct recovery-process identities. The sequence destroyed → repairing → assisted or rescheduled → replacement complete retains one episode ordinal and the original player attribution through completion.
 4. **Lazy recovery boundaries:** immediately before, exactly at, and after `completesAt` produce the specified condition and replacement ordinal without a tick loop. A due completion first materialized at different later access times always records `occurredAt = completesAt` and produces identical canonical snapshots.
-5. **Order independence:** the same seed, snapshot, and `gameTime` yield the same effective state and canonical sorted projection regardless of map insertion order, access order, or which systems were visited first.
+5. **Order independence:** the same seed, snapshot, and `gameTime` yield the same effective state and canonical sorted projection regardless of map insertion order, access order, or which systems were visited first; same-timestamp completions resolve in canonical `CarrierKey` order.
 6. **Round trip:** model serialization and deserialization preserve objective state, last-known state including `observedRecovery`, recovery descriptors, provenance, market deficits, visited flags, legal status, and all eight galaxy namespaces. Byte-format compatibility is deferred to the save-format decision.
 7. **Compaction equivalence:** compacting transitions cannot change effective capabilities, scheduled recovery, latest attribution, or last-known information including `observedRecovery`.
 8. **Hard bounds:** active objective rows, causal summaries, and knowledge rows never exceed one each per generated carrier; repeated destroy/replace and interrupt/restart cycles do not increase that bound.
-9. **Atomicity:** a round trip cannot combine `gameTime` or one galaxy envelope from one snapshot with state from another.
+9. **Atomicity and integrity:** a round trip cannot combine `gameTime` or one galaxy envelope from one snapshot with state from another, and truncated or partially written typed domains fail validation rather than reading as absent rows.
 
 All arithmetic and state-machine checks are headless. A later carrier's visible world evidence or map/HUD presentation also owes the repository's browser probe tier.
 

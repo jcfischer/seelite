@@ -9,7 +9,7 @@ A named physical asset, actor, or situation whose operational condition enables 
 _Avoid_: Modifier, influence point
 
 **Carrier slot**:
-A stable generated place in the universe identified by galaxy, system, and the sanctioned `localCarrierId` component. A slot survives destruction and replacement of the carrier instance occupying it.
+The persistent identity for a generated place that survives destruction and replacement of its occupying carrier instance. `docs/specs/persistent-world-state.md` §2 owns its key structure.
 _Avoid_: Bare global object ID, display name
 
 **Carrier instance**:
@@ -37,7 +37,7 @@ A named, visible, and interruptible in-world process that repairs a carrier inst
 _Avoid_: Respawn timer
 
 **Causal episode**:
-The bounded summary of the latest related operational transitions for one carrier slot, preserving why it changed and the player's role.
+The bounded provenance unit for the latest related operational transitions at one carrier slot. `docs/specs/persistent-world-state.md` §5 owns its retained facts and compaction rule.
 _Avoid_: Full event log
 
 **Consequence area**:
