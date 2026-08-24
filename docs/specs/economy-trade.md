@@ -589,12 +589,11 @@ world state in seelite that is not derivable from the seed. The map already
 permits this — per-galaxy state (visited flags, legal status) is saved
 separately — but it is worth naming plainly:
 
-- **Sparse.** Only stations actually traded at get a row. Inside a galaxy's
-  state envelope the key is `(systemIndex, localCarrierId)`, where
-  `localCarrierId` is the generated station persistence ID:
-  `{carrierKey → {goods: {good → units}, updatedAt}}`. A bare `Station.id` is
-  only system-local and is not a save key.
-  Untouched stations cost nothing.
+- **Sparse.** Only stations actually traded at get a row; untouched stations
+  cost nothing. Inside a galaxy's state envelope, each row is
+  `{(systemIndex, localCarrierId) → {goods: {good → units}, updatedAt}}`, where
+  `localCarrierId` is the system-local carrier-slot persistence ID. A bare
+  `Station.id` is only system-local and is not a save key.
 - **Per galaxy**, per the map's constraint that galaxies are a namespace.
 - **Decayed lazily** on read from `updatedAt` and the clock, not by a tick.
 - **Dropped** when `|deficit| < 1` unit, so the save does not grow without bound
