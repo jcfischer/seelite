@@ -45,24 +45,12 @@ function textPixelsMatch(canvas, renderedText) {
 	expectedContext.fillStyle = fillStyle;
 	expectedContext.textAlign = textAlign;
 	expectedContext.fillText(text, renderedText.x, renderedText.y);
-	const actual = context.getImageData(
-		bounds.left,
-		bounds.top,
-		bounds.width,
-		bounds.height,
-	).data;
-	const expected = expectedContext.getImageData(
-		bounds.left,
-		bounds.top,
-		bounds.width,
-		bounds.height,
-	).data;
-	const background = backgroundContext.getImageData(
-		bounds.left,
-		bounds.top,
-		bounds.width,
-		bounds.height,
-	).data;
+	const grab = (source) =>
+		source.getImageData(bounds.left, bounds.top, bounds.width, bounds.height)
+			.data;
+	const actual = grab(context);
+	const expected = grab(expectedContext);
+	const background = grab(backgroundContext);
 	let glyphPixels = 0;
 	for (let index = 0; index < expected.length; index += 4) {
 		const glyphPixel =

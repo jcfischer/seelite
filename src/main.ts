@@ -257,6 +257,10 @@ interface Instrument {
 	secondaryText: TextRaster;
 }
 
+const INSTRUMENT_SECONDARY_FONT = "20px ui-monospace, monospace";
+const PROMPT_FONT = "13px ui-monospace, Menlo, monospace";
+const PROMPT_FILL = "rgba(255, 214, 120, 0.9)";
+
 class TextRaster {
 	text = "";
 	font = "";
@@ -282,8 +286,9 @@ class TextRaster {
 	}
 
 	setInstrumentSecondary(text: string, accent: string, canvasWidth: number) {
+		this.reset();
 		this.text = text;
-		this.font = "20px ui-monospace, monospace";
+		this.font = INSTRUMENT_SECONDARY_FONT;
 		this.fillStyle = accent;
 		this.textAlign = "left";
 		this.x = 28;
@@ -296,9 +301,10 @@ class TextRaster {
 	}
 
 	setCenteredPrompt(text: string, x: number, y: number, width: number) {
+		this.reset();
 		this.text = text;
-		this.font = "13px ui-monospace, Menlo, monospace";
-		this.fillStyle = "rgba(255, 214, 120, 0.9)";
+		this.font = PROMPT_FONT;
+		this.fillStyle = PROMPT_FILL;
 		this.textAlign = "center";
 		this.x = x;
 		this.y = y;
@@ -2503,11 +2509,13 @@ class Game {
 		const w = this.overlay.width;
 		const h = this.overlay.height;
 		ctx.clearRect(0, 0, w, h);
-		this.cockpitPrompt.reset();
 		// A focused console replaces the forward glass. Leaving target brackets
 		// here would make an HTML panel look like an accidental overlay rather
 		// than the deliberate head-turn view the cockpit contract calls for.
-		if (this.view === "cockpit" && this.headLook !== "forward") return;
+		if (this.view === "cockpit" && this.headLook !== "forward") {
+			this.cockpitPrompt.reset();
+			return;
+		}
 		const toPixels = (ndcX: number, ndcY: number) => ({
 			x: (ndcX * 0.5 + 0.5) * w,
 			y: (1 - (ndcY * 0.5 + 0.5)) * h,
@@ -2591,14 +2599,15 @@ class Game {
 		if (prompt) {
 			const x = w / 2;
 			const y = h * 0.62;
-			this.cockpitPrompt.setCenteredPrompt(prompt, x, y, 0);
-			ctx.font = this.cockpitPrompt.font;
+			ctx.font = PROMPT_FONT;
 			ctx.textAlign = "center";
-			ctx.fillStyle = this.cockpitPrompt.fillStyle;
+			ctx.fillStyle = PROMPT_FILL;
 			ctx.fillText(prompt, x, y);
 			const promptWidth = ctx.measureText(prompt).width;
 			this.cockpitPrompt.setCenteredPrompt(prompt, x, y, promptWidth);
 			ctx.textAlign = "left";
+		} else {
+			this.cockpitPrompt.reset();
 		}
 
 		// The selected target owns the amber sky marker. Green remains prograde,
