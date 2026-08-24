@@ -13,15 +13,53 @@ const VIEWPORTS = [
 ];
 
 function measureLiveCockpit() {
-	const brightPixels = (canvas, left, top, width, height) => {
-		const context = canvas?.getContext("2d");
-		if (!context) return 0;
-		const image = context.getImageData(left, top, width, height).data;
-		let count = 0;
-		for (let index = 0; index < image.length; index += 4) {
-			if (image[index] > 100 && image[index + 1] > 70) count++;
+	const textPixelsMatch = (canvas, renderedText) => {
+		if (!canvas || !renderedText) return false;
+		const { bounds, text, font, fillStyle, textAlign } = renderedText;
+		const context = canvas.getContext("2d");
+		if (!context || !bounds || !text) return false;
+		const reference = document.createElement("canvas");
+		reference.width = canvas.width;
+		reference.height = canvas.height;
+		const expectedContext = reference.getContext("2d");
+		if (!expectedContext) return false;
+		if (renderedText.background) {
+			expectedContext.fillStyle = renderedText.background;
+			expectedContext.fillRect(0, 0, reference.width, reference.height);
 		}
-		return count;
+		expectedContext.font = font;
+		expectedContext.fillStyle = fillStyle;
+		expectedContext.textAlign = textAlign;
+		expectedContext.fillText(text, renderedText.x, renderedText.y);
+		const actual = context.getImageData(
+			bounds.left,
+			bounds.top,
+			bounds.width,
+			bounds.height,
+		).data;
+		const expected = expectedContext.getImageData(
+			bounds.left,
+			bounds.top,
+			bounds.width,
+			bounds.height,
+		).data;
+		let glyphPixels = 0;
+		for (let index = 0; index < expected.length; index += 4) {
+			const foreground =
+				expected[index] !== 0 ||
+				expected[index + 1] !== 0 ||
+				expected[index + 2] !== 0;
+			if (!foreground) continue;
+			glyphPixels++;
+			if (
+				Math.abs(actual[index] - expected[index]) > 3 ||
+				Math.abs(actual[index + 1] - expected[index + 1]) > 3 ||
+				Math.abs(actual[index + 2] - expected[index + 2]) > 3
+			) {
+				return false;
+			}
+		}
+		return glyphPixels > 0;
 	};
 	const visible = (selector) => {
 		const element = document.querySelector(selector);
@@ -88,20 +126,11 @@ function measureLiveCockpit() {
 			game.renderer.domElement.parentElement === document.body &&
 			document.querySelectorAll("canvas:not(#overlay)").length === 1,
 		targetRangeKm: game.targetRange(),
-		targetInstrumentSecondaryInk: brightPixels(
+		targetInstrumentSecondaryText: textPixelsMatch(
 			targetInstrumentCanvas,
-			20,
-			160,
-			Math.max(0, (targetInstrumentCanvas?.width ?? 0) - 40),
-			60,
+			game.cockpit.targetInstrument?.secondaryText,
 		),
-		cruisePromptInk: brightPixels(
-			overlayCanvas,
-			Math.floor((overlayCanvas?.width ?? 0) * 0.43),
-			Math.floor((overlayCanvas?.height ?? 0) * 0.58),
-			Math.floor((overlayCanvas?.width ?? 0) * 0.14),
-			Math.floor((overlayCanvas?.height ?? 0) * 0.07),
-		),
+		cruisePromptText: textPixelsMatch(overlayCanvas, game.cockpitPrompt),
 		scannerMounted:
 			Boolean(scanner?.visible) &&
 			scanner?.parent === deck?.parent &&
@@ -320,9 +349,9 @@ for (const viewport of VIEWPORTS) {
 	check(
 		`${viewport.name}: a distant target renders ETA on its physical panel and cruise guidance on the glass`,
 		distant.targetRangeKm > 3600 * 2 &&
-			distant.targetInstrumentSecondaryInk > 100 &&
-			distant.cruisePromptInk > 20,
-		`range ${distant.targetRangeKm}; target-panel ink ${distant.targetInstrumentSecondaryInk}; prompt ink ${distant.cruisePromptInk}`,
+			distant.targetInstrumentSecondaryText &&
+			distant.cruisePromptText,
+		`range ${distant.targetRangeKm}; target-panel text ${distant.targetInstrumentSecondaryText}; prompt text ${distant.cruisePromptText}`,
 	);
 
 	await page.evaluate(() => window.__seelite.setHeadLook("left"));
