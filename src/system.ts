@@ -234,8 +234,9 @@ export interface Station {
 	 * because it is generated.** It is drawn once from the seed and never
 	 * changes, exactly like `type` and `orbit`. Prices, stock and the saved
 	 * stock deficit (#7) are all functions of the clock or of what the player
-	 * did, so they belong to the market module keyed by station id — putting
-	 * them here would make a station record something that has to be saved.
+	 * did, so they belong to the market module keyed by the composite carrier
+	 * slot identity — putting them here would make a station record something
+	 * that has to be saved.
 	 */
 	blackMarket: boolean;
 	/** Rotation about the aperture axis, rpm (`docking.md` §4). 0 for the
