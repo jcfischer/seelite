@@ -7,6 +7,7 @@ import {
 	HULL_VARIANTS,
 	HULL_VARIANT_IDS,
 	HULL_VISUALS,
+	SHIP_DESIGN_ROUND,
 	type HullVariantId,
 	buildShipMesh,
 } from "../src/ship-mesh";
@@ -70,9 +71,39 @@ describe("procedural ship visual language", () => {
 				expect(root.name).toBe(`hull-${id}`);
 				expect(root.userData.role).toBe(HULL_VISUALS[id].role);
 				expect(root.userData.variant).toBe(variant);
+				expect(root.userData.designRound).toBe(SHIP_DESIGN_ROUND);
 				expect(
 					root.children.some((child) => child.name.includes("exhaust")),
 				).toBe(true);
+			}
+		}
+	});
+
+	test("lofted command and fuselage volumes have both end caps", () => {
+		for (const id of HULL_IDS) {
+			for (const variant of HULL_VARIANT_IDS) {
+				const root = buildShipMesh(id, variant).root;
+				root.traverse((object) => {
+					if (
+						!(object instanceof THREE.Mesh) ||
+						!object.geometry.index ||
+						object.geometry.type !== "BufferGeometry"
+					)
+						return;
+					if (
+						!object.name.includes("fuselage") &&
+						!object.name.includes("cockpit") &&
+						!object.name.includes("bridge") &&
+						!object.name.includes("nacelle")
+					)
+						return;
+					const vertexCount = object.geometry.getAttribute("position").count;
+					const indices = [...object.geometry.index.array];
+					for (const capCenter of [vertexCount - 2, vertexCount - 1])
+						expect(indices.filter((index) => index === capCenter).length).toBe(
+							8,
+						);
+				});
 			}
 		}
 	});

@@ -32,6 +32,14 @@ temporary proportion controls, and rank A/B/C in preference order per role.
 The ranking summary is an iteration input, not persistent game state: it guides
 the next three concepts but does not select a roster hull or alter flight.
 
+Round two is derived from the first recorded ranking: courier `B > A > C`,
+interceptor `C > B > A`, and freighter `A > B > C`. It therefore explores
+divided courier prows and long engine shoulders, closed-belly twin-engine
+interceptor frames, and asymmetric or rail-built cargo hulls. Compact diamond
+couriers, generic dart-and-wing interceptors, and rear-heavy tug silhouettes do
+not carry forward. The workbench labels the active round and resets its ranking
+state between rounds.
+
 ## 2. Rendering contract
 
 All hull geometry is generated at load from beveled planform extrusions,
@@ -59,3 +67,8 @@ verifies all nine candidates, per-role ranking, isolated draft controls, and the
 absence of `Game`. A live browser probe verifies that the courier is present
 only in chase view and that returning to cockpit restores the live cockpit
 instruments and overlay.
+
+Lofted command bodies, nacelles, and fuselages must contain indexed front and
+rear caps. Concepts with visual negative space must still expose a continuous
+ventral structure, and the inspection viewer supplies neutral underside fill so
+solid geometry does not read as a missing face.

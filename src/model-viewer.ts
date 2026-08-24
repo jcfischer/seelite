@@ -9,6 +9,7 @@ import {
 	HULL_IDS,
 	HULL_VARIANTS,
 	HULL_VISUALS,
+	SHIP_DESIGN_ROUND,
 	type HullId,
 	type HullVariantId,
 	buildShipMesh,
@@ -99,7 +100,7 @@ export function mountModelViewer(): void {
 	installStyle();
 	const root = document.createElement("section");
 	root.id = "model-viewer";
-	root.innerHTML = `<div class="mv-wrap"><main class="mv-stage" data-model-stage aria-label="procedural model preview"><span class="mv-axis">DRAG TO ORBIT · WHEEL TO ZOOM</span></main><aside class="mv-panel"><h1 class="mv-title">SHIP DESIGN TOURNAMENT</h1><p class="mv-copy">Inspect three different construction ideas per role. Use <b>rank</b> in preference order; click a numbered rank to remove it.</p><fieldset class="mv-set"><legend>Role</legend><div class="mv-role-tabs">${HULL_IDS.map((id) => `<button class="mv-button" type="button" data-model-asset="${id}" aria-pressed="${id === "courier"}">${id}</button>`).join("")}</div></fieldset><fieldset class="mv-set"><legend>Concepts</legend>${HULL_IDS.map(variantMarkup).join("")}</fieldset><fieldset class="mv-set"><legend>Your ranking</legend><pre class="mv-ranking" data-model-ranking></pre><button class="mv-reset" type="button" data-model-reset-ranking>clear current role</button></fieldset><fieldset class="mv-set"><legend>Draft controls</legend><label class="mv-control">Beam <output data-model-output="beam">100%</output><input data-model-control="beam" type="range" min="70" max="145" value="100" /></label><label class="mv-control">Length <output data-model-output="length">100%</output><input data-model-control="length" type="range" min="70" max="145" value="100" /></label><label class="mv-control">Engine cue <output data-model-output="engine">70%</output><input data-model-control="engine" type="range" min="0" max="140" value="70" /></label><label class="mv-check"><input data-model-control="wireframe" type="checkbox" /> wireframe</label></fieldset><button class="mv-close" type="button" data-model-close>return to flight</button></aside></div>`;
+	root.innerHTML = `<div class="mv-wrap"><main class="mv-stage" data-model-stage aria-label="procedural model preview"><span class="mv-axis">DRAG TO ORBIT · WHEEL TO ZOOM</span></main><aside class="mv-panel"><h1 class="mv-title">SHIP TOURNAMENT · ROUND ${SHIP_DESIGN_ROUND}</h1><p class="mv-copy">Ranking-guided descendants of round one. Use <b>rank</b> in preference order; click a numbered rank to remove it.</p><fieldset class="mv-set"><legend>Role</legend><div class="mv-role-tabs">${HULL_IDS.map((id) => `<button class="mv-button" type="button" data-model-asset="${id}" aria-pressed="${id === "courier"}">${id}</button>`).join("")}</div></fieldset><fieldset class="mv-set"><legend>Concepts</legend>${HULL_IDS.map(variantMarkup).join("")}</fieldset><fieldset class="mv-set"><legend>Your ranking</legend><pre class="mv-ranking" data-model-ranking></pre><button class="mv-reset" type="button" data-model-reset-ranking>clear current role</button></fieldset><fieldset class="mv-set"><legend>Draft controls</legend><label class="mv-control">Beam <output data-model-output="beam">100%</output><input data-model-control="beam" type="range" min="70" max="145" value="100" /></label><label class="mv-control">Length <output data-model-output="length">100%</output><input data-model-control="length" type="range" min="70" max="145" value="100" /></label><label class="mv-control">Engine cue <output data-model-output="engine">70%</output><input data-model-control="engine" type="range" min="0" max="140" value="70" /></label><label class="mv-check"><input data-model-control="wireframe" type="checkbox" /> wireframe</label></fieldset><button class="mv-close" type="button" data-model-close>return to flight</button></aside></div>`;
 	document.body.append(root);
 	document.querySelector("#keys")?.remove();
 
@@ -118,7 +119,14 @@ export function mountModelViewer(): void {
 	key.position.set(0.13, 0.16, 0.12);
 	const rim = new THREE.DirectionalLight(0x75b7d8, 2.1);
 	rim.position.set(-0.1, 0.05, -0.12);
-	scene.add(key, rim, new THREE.HemisphereLight(0x5c89a2, 0x050709, 2.8));
+	const inspectionFill = new THREE.DirectionalLight(0x7899ad, 2.2);
+	inspectionFill.position.set(0.04, -0.12, 0.03);
+	scene.add(
+		key,
+		rim,
+		inspectionFill,
+		new THREE.HemisphereLight(0x5c89a2, 0x263845, 2.8),
+	);
 	const grid = new THREE.GridHelper(0.18, 12, 0x356274, 0x152d38);
 	grid.position.y = -0.021;
 	scene.add(grid);
