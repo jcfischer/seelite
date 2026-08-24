@@ -281,31 +281,20 @@ function createTextRaster(): TextRaster {
 	};
 }
 
-function updateTextRaster(
-	raster: TextRaster,
-	text: string,
-	font: string,
-	fillStyle: string,
-	textAlign: CanvasTextAlign,
-	x: number,
-	y: number,
-	left: number,
-	top: number,
-	width: number,
-	height: number,
-	background: string | undefined,
-) {
-	raster.text = text;
-	raster.font = font;
-	raster.fillStyle = fillStyle;
-	raster.textAlign = textAlign;
-	raster.x = x;
-	raster.y = y;
-	raster.bounds.left = left;
-	raster.bounds.top = top;
-	raster.bounds.width = width;
-	raster.bounds.height = height;
-	raster.background = background;
+const EMPTY_TEXT_RASTER = createTextRaster();
+
+function updateTextRaster(raster: TextRaster, update: TextRaster) {
+	raster.text = update.text;
+	raster.font = update.font;
+	raster.fillStyle = update.fillStyle;
+	raster.textAlign = update.textAlign;
+	raster.x = update.x;
+	raster.y = update.y;
+	raster.bounds.left = update.bounds.left;
+	raster.bounds.top = update.bounds.top;
+	raster.bounds.width = update.bounds.width;
+	raster.bounds.height = update.bounds.height;
+	raster.background = update.background;
 }
 
 interface HologramGlyph {
@@ -1441,20 +1430,16 @@ class Game {
 			ctx.font = secondaryFont;
 			ctx.fillStyle = accent;
 			ctx.fillText(secondary, 28, 192);
-			updateTextRaster(
-				raster,
-				secondary,
-				secondaryFont,
-				accent,
-				"left",
-				28,
-				192,
-				28,
-				168,
-				width - 56,
-				30,
-				"rgba(1, 8, 11, .9)",
-			);
+			updateTextRaster(raster, {
+				text: secondary,
+				font: secondaryFont,
+				fillStyle: accent,
+				textAlign: "left",
+				x: 28,
+				y: 192,
+				bounds: { left: 28, top: 168, width: width - 56, height: 30 },
+				background: "rgba(1, 8, 11, .9)",
+			});
 		};
 		paint(
 			this.cockpit.flightInstrument.ctx,
@@ -2515,7 +2500,7 @@ class Game {
 		const w = this.overlay.width;
 		const h = this.overlay.height;
 		ctx.clearRect(0, 0, w, h);
-		this.cockpitPrompt.text = "";
+		updateTextRaster(this.cockpitPrompt, EMPTY_TEXT_RASTER);
 		// A focused console replaces the forward glass. Leaving target brackets
 		// here would make an HTML panel look like an accidental overlay rather
 		// than the deliberate head-turn view the cockpit contract calls for.
@@ -2610,20 +2595,21 @@ class Game {
 			const y = h * 0.62;
 			ctx.fillText(prompt, x, y);
 			const promptWidth = ctx.measureText(prompt).width;
-			updateTextRaster(
-				this.cockpitPrompt,
-				prompt,
-				promptFont,
-				promptFill,
-				"center",
+			updateTextRaster(this.cockpitPrompt, {
+				text: prompt,
+				font: promptFont,
+				fillStyle: promptFill,
+				textAlign: "center",
 				x,
 				y,
-				Math.floor(x - promptWidth / 2),
-				Math.floor(y - 14),
-				Math.ceil(promptWidth),
-				18,
-				undefined,
-			);
+				bounds: {
+					left: Math.floor(x - promptWidth / 2),
+					top: Math.floor(y - 14),
+					width: Math.ceil(promptWidth),
+					height: 18,
+				},
+				background: undefined,
+			});
 			ctx.textAlign = "left";
 		}
 
