@@ -13,6 +13,16 @@ const VIEWPORTS = [
 ];
 
 function measureLiveCockpit() {
+	const brightPixels = (canvas, left, top, width, height) => {
+		const context = canvas?.getContext("2d");
+		if (!context) return 0;
+		const image = context.getImageData(left, top, width, height).data;
+		let count = 0;
+		for (let index = 0; index < image.length; index += 4) {
+			if (image[index] > 100 && image[index + 1] > 70) count++;
+		}
+		return count;
+	};
 	const visible = (selector) => {
 		const element = document.querySelector(selector);
 		if (!(element instanceof HTMLElement)) return false;
@@ -38,6 +48,8 @@ function measureLiveCockpit() {
 	const scannerReferenceLine = game.nearScene.getObjectByName(
 		"scanner-reference-line",
 	);
+	const targetInstrumentCanvas = game.cockpit.targetInstrument?.ctx?.canvas;
+	const overlayCanvas = document.querySelector("#overlay");
 	const referenceLinePoints =
 		scannerReferenceLine?.geometry?.getAttribute("position");
 	const pitch = deck?.rotation.x ?? 0;
@@ -75,18 +87,20 @@ function measureLiveCockpit() {
 		rendererIsOnlyVisibleCanvas:
 			game.renderer.domElement.parentElement === document.body &&
 			document.querySelectorAll("canvas:not(#overlay)").length === 1,
-		eta: game.etaCache,
-		guidance: game.cruisePrompt(
-			game.targetId
-				? Math.hypot(
-						game.world.system.byId.get(game.targetId).pos.x -
-							game.world.ship.pos.x,
-						game.world.system.byId.get(game.targetId).pos.y -
-							game.world.ship.pos.y,
-						game.world.system.byId.get(game.targetId).pos.z -
-							game.world.ship.pos.z,
-					)
-				: null,
+		targetRangeKm: game.targetRange(),
+		targetInstrumentSecondaryInk: brightPixels(
+			targetInstrumentCanvas,
+			20,
+			160,
+			Math.max(0, (targetInstrumentCanvas?.width ?? 0) - 40),
+			60,
+		),
+		cruisePromptInk: brightPixels(
+			overlayCanvas,
+			Math.floor((overlayCanvas?.width ?? 0) * 0.43),
+			Math.floor((overlayCanvas?.height ?? 0) * 0.58),
+			Math.floor((overlayCanvas?.width ?? 0) * 0.14),
+			Math.floor((overlayCanvas?.height ?? 0) * 0.07),
 		),
 		scannerMounted:
 			Boolean(scanner?.visible) &&
@@ -301,30 +315,14 @@ for (const viewport of VIEWPORTS) {
 	);
 
 	await placeShipAtLocalOffset(page, { x: -80_000, y: 0, z: -80_000 });
-	await page.waitForFunction(() => {
-		const game = window.__seelite;
-		const target = game.targetId
-			? game.world.system.byId.get(game.targetId)
-			: null;
-		return Boolean(
-			target &&
-				game
-					.cruisePrompt(
-						Math.hypot(
-							target.pos.x - game.world.ship.pos.x,
-							target.pos.y - game.world.ship.pos.y,
-							target.pos.z - game.world.ship.pos.z,
-						),
-					)
-					.includes("press J to cruise"),
-		);
-	});
+	await page.waitForFunction(() => window.__seelite.targetRange() > 3600 * 2);
 	const distant = await page.evaluate(measureLiveCockpit);
 	check(
-		`${viewport.name}: a distant default-route target exposes the cruise guidance beside its ETA`,
-		distant.guidance?.includes("press J to cruise") &&
-			Number.isFinite(distant.eta),
-		`ETA ${distant.eta}; guidance ${distant.guidance}`,
+		`${viewport.name}: a distant target renders ETA on its physical panel and cruise guidance on the glass`,
+		distant.targetRangeKm > 3600 * 2 &&
+			distant.targetInstrumentSecondaryInk > 100 &&
+			distant.cruisePromptInk > 20,
+		`range ${distant.targetRangeKm}; target-panel ink ${distant.targetInstrumentSecondaryInk}; prompt ink ${distant.cruisePromptInk}`,
 	);
 
 	await page.evaluate(() => window.__seelite.setHeadLook("left"));

@@ -15,11 +15,7 @@ export interface LiveCockpitState {
 	targetBearingDeg: number | null;
 	mode: string;
 	throttle: string;
-	assist: string;
-	charge: string;
 	speed: string;
-	eta: string;
-	guidance: string;
 	tuning: string;
 }
 
@@ -129,7 +125,7 @@ export class LiveCockpit {
 		}
 		const elements = this.elements;
 		if (!elements) return;
-		const valueKey = `${state.speed}|${state.mode}|${state.assist}|${state.throttle}|${state.target}|${state.eta}|${state.charge}|${state.rightTab}|${state.tuning}|${state.contacts.length}`;
+		const valueKey = `${state.speed}|${state.mode}|${state.throttle}|${state.target}|${state.rightTab}|${state.tuning}|${state.contacts.length}`;
 		if (valueKey === this.lastValueKey) return;
 		this.lastValueKey = valueKey;
 		elements.leftPanelCopy.textContent = state.target;

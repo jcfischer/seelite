@@ -1675,6 +1675,12 @@ class Game {
 			: null;
 	}
 
+	/** The selected target's current range in simulation kilometres, if any. */
+	targetRange(): number | null {
+		const target = this.targetBody();
+		return target ? length(sub(target.pos, this.world.ship.pos)) : null;
+	}
+
 	/**
 	 * What to do next, in one phrase, or "" when there is nothing to say.
 	 *
@@ -2246,7 +2252,7 @@ class Game {
 			return;
 		}
 		const target = this.targetBody();
-		const targetKm = target ? length(sub(target.pos, this.world.ship.pos)) : 0;
+		const targetKm = this.targetRange() ?? 0;
 		const velocity = this.velocityReadout();
 		this.refreshScannerContacts();
 		this.updateHologramContacts(this.scannerContacts);
@@ -2269,11 +2275,7 @@ class Game {
 				: null,
 			mode: this.regime === "cruise" ? "CRUISE" : "NORMAL FLIGHT",
 			throttle: `${(this.throttle * 100).toFixed(0)}%`,
-			assist: this.assist ? "ON" : "OFF",
-			charge: `${this.chargeAu.toFixed(1)}/${CHARGE_CAPACITY_AU} AU`,
 			speed: velocity.speed,
-			eta: this.etaCache === null ? "CALC" : duration(this.etaCache),
-			guidance: this.cruisePrompt(target ? targetKm : null),
 			tuning: this.tuningSummary(),
 		});
 	}
