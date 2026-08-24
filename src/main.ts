@@ -111,6 +111,7 @@ import {
 } from "./sim";
 import { SPIN_RPM_RANGE } from "./station";
 import { buildStationMesh } from "./station-mesh";
+import { buildShipMesh } from "./ship-mesh";
 import { LiveCockpit, type RightTab } from "./live-cockpit";
 import { type WarpField, warpField } from "./warp";
 import { type Vec3, add, dot, length, scale, sub, v3 } from "./vec3";
@@ -327,7 +328,10 @@ class Game {
 	 * graph does not record.
 	 */
 	private readonly layers = new Map<string, "near" | "far">();
-	private shipMesh!: THREE.Mesh;
+	private shipMesh!: THREE.Group;
+	/** Chase-only visual traffic samples. They are child display meshes, not
+	 * simulation actors: #26 will replace them with an explicit roster source. */
+	private visualTraffic!: THREE.Group;
 	/** Cockpit structure follows the ship, while the camera pans within it. */
 	private cockpit!: CockpitHardware;
 	private tuningKey = "";
@@ -869,17 +873,22 @@ class Game {
 	}
 
 	private buildShip() {
-		// A cube, 20 metres on a side, and honestly a cube — the ship roster is an
-		// open decision and a placeholder that looked like a design would be worse
-		// than one that plainly is not.
-		const geometry = new THREE.BoxGeometry(0.02, 0.012, 0.03);
-		const material = new THREE.MeshStandardMaterial({
-			color: 0xc8ccd4,
-			roughness: 0.45,
-			metalness: 0.55,
-		});
-		this.shipMesh = new THREE.Mesh(geometry, material);
+		// #35 establishes the visual language only. #26 will choose the actual
+		// roster, so the player selects the explicit courier baseline rather than
+		// making an unlabelled shape into a silent global default.
+		this.shipMesh = buildShipMesh("courier").root;
 		this.shipMesh.name = "ship";
+		this.visualTraffic = new THREE.Group();
+		this.visualTraffic.name = "visual-traffic";
+		this.visualTraffic.userData.displayOnly = true;
+		const interceptor = buildShipMesh("interceptor").root;
+		interceptor.name = "traffic-interceptor";
+		interceptor.position.set(-0.07, 0.018, -0.12);
+		const freighter = buildShipMesh("freighter").root;
+		freighter.name = "traffic-freighter";
+		freighter.position.set(0.09, 0.004, -0.18);
+		this.visualTraffic.add(interceptor, freighter);
+		this.shipMesh.add(this.visualTraffic);
 		this.nearScene.add(this.shipMesh);
 	}
 
@@ -2204,6 +2213,13 @@ class Game {
 		const shipRel = sub(this.world.ship.pos, camPos);
 		this.shipMesh.position.set(shipRel.x, shipRel.y, shipRel.z);
 		this.shipMesh.quaternion.copy(this.orientation);
+		// These are flight-distance visual samples, not bodies. A small formation
+		// drift makes their exhaust-end cues readable in chase without inventing
+		// simulation positions, scanner contacts, AI, or a default #26 roster.
+		this.visualTraffic.children[0].position.y =
+			0.018 + Math.sin(this.world.gameTime * 0.7) * 0.004;
+		this.visualTraffic.children[1].position.y =
+			0.004 + Math.sin(this.world.gameTime * 0.45 + 1.1) * 0.003;
 		// The hull is the camera in cockpit view, and drawing a cube around the
 		// near plane fills the screen with its inside faces.
 		this.shipMesh.visible = this.view === "chase";
