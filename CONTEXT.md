@@ -1,6 +1,6 @@
 # seelite Domain Language
 
-This glossary defines domain language for seelite's planned causal world model. It is vocabulary only; the work-graph map (`soma graph node 1`) remains authoritative for constraints and delivery rules.
+This glossary defines vocabulary for seelite's planned causal world model and points to the specs that own structural details. The work-graph map (`soma graph node 1`) remains authoritative for constraints and delivery rules.
 
 ## Language
 
@@ -15,6 +15,9 @@ _Avoid_: Bare global object ID, display name
 **Carrier instance**:
 The original or a numbered replacement occupying a carrier slot.
 _Avoid_: Replacement state
+
+**Instance ordinal**:
+The stable sequence number distinguishing the original carrier instance from its replacements. `docs/specs/persistent-world-state.md` §2 owns its allocation rule.
 
 **Capability**:
 What a carrier enables while it has a particular operational condition.
@@ -39,6 +42,9 @@ _Avoid_: Respawn timer
 **Causal episode**:
 The bounded provenance unit for the latest related operational transitions at one carrier slot. `docs/specs/persistent-world-state.md` §5 owns its retained facts and compaction rule.
 _Avoid_: Full event log
+
+**Causal-episode ordinal**:
+The stable sequence number distinguishing successive causal episodes at one carrier slot. `docs/specs/persistent-world-state.md` §4 owns its allocation rule.
 
 **Consequence area**:
 The station, system, or named route affected by a carrier's capability.
