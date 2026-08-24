@@ -15,7 +15,7 @@ export const HULL_IDS = ["courier", "interceptor", "freighter"] as const;
 export type HullId = (typeof HULL_IDS)[number];
 export const HULL_VARIANT_IDS = ["a", "b", "c"] as const;
 export type HullVariantId = (typeof HULL_VARIANT_IDS)[number];
-export const SHIP_DESIGN_ROUND = 2;
+export const SHIP_DESIGN_ROUND = 3;
 
 export interface HullVariant {
 	readonly id: HullVariantId;
@@ -27,52 +27,52 @@ export const HULL_VARIANTS: Record<HullId, readonly HullVariant[]> = {
 	courier: [
 		{
 			id: "a",
-			name: "Longbow",
-			thesis: "armored shoulder wing around a divided prow",
+			name: "Bowguard",
+			thesis: "broad shoulder armor feeding twin forward blades",
 		},
 		{
 			id: "b",
-			name: "Cutwater",
-			thesis: "deep center keel between extended bow blades",
+			name: "Sundiver",
+			thesis: "long divided prow wrapped around a recessed command keel",
 		},
 		{
 			id: "c",
-			name: "Ranger",
-			thesis: "long utility arrow with asymmetric mission hardware",
+			name: "Wayfarer",
+			thesis: "lean shoulder wing with paired utility prongs",
 		},
 	],
 	interceptor: [
 		{
 			id: "a",
-			name: "Railfork",
-			thesis: "single spear nose inside armored engine rails",
+			name: "Glaive",
+			thesis: "single spear suspended between swept engine rails",
 		},
 		{
 			id: "b",
-			name: "Razorback",
-			thesis: "cropped delta over a recessed twin-engine deck",
+			name: "Trident",
+			thesis: "three longitudinal spines tied by a low ventral deck",
 		},
 		{
 			id: "c",
-			name: "Needleframe",
-			thesis: "closed-belly twin boom around a narrow command spine",
+			name: "Shrike",
+			thesis: "close-coupled twin boom around a buried command spine",
 		},
 	],
 	freighter: [
 		{
 			id: "a",
-			name: "Outrigger",
-			thesis: "unequal cargo hulls around an offset command keel",
+			name: "Porter",
+			thesis: "dominant cargo outrigger beside a compact command keel",
 		},
 		{
 			id: "b",
-			name: "Splitrail",
-			thesis: "staggered cargo rails joined by visible crossbeams",
+			name: "Gantry",
+			thesis: "staggered load rails around an offset bridge module",
 		},
 		{
 			id: "c",
-			name: "Crane",
-			thesis: "one heavy container bank balanced by a service frame",
+			name: "Lifter",
+			thesis: "one deep cargo bank balanced by an exposed service rail",
 		},
 	],
 };
@@ -229,7 +229,7 @@ function loft(sections: ReadonlyArray<Section>) {
 			const b = section * ringSize + next;
 			const c = (section + 1) * ringSize + next;
 			const d = (section + 1) * ringSize + point;
-			indices.push(a, b, d, b, c, d);
+			indices.push(a, d, b, b, d, c);
 		}
 	}
 	const front = vertices.length / 3;
@@ -239,8 +239,8 @@ function loft(sections: ReadonlyArray<Section>) {
 	const rearOffset = (sections.length - 1) * ringSize;
 	for (let point = 0; point < ringSize; point += 1) {
 		const next = (point + 1) % ringSize;
-		indices.push(front, next, point);
-		indices.push(rear, rearOffset + point, rearOffset + next);
+		indices.push(front, point, next);
+		indices.push(rear, rearOffset + next, rearOffset + point);
 	}
 	const geometry = new THREE.BufferGeometry();
 	geometry.setAttribute(
@@ -387,6 +387,23 @@ function buildCourierA(root: THREE.Group, p: Palette) {
 		["port", -1],
 		["starboard", 1],
 	] as const) {
+		add(
+			root,
+			"courier-shoulder-armor-" + side,
+			sidePlanform(
+				[
+					[0.01, -0.005],
+					[0.021, -0.001],
+					[0.021, 0.015],
+					[0.012, 0.019],
+				],
+				sign,
+				0.0012,
+				0.00015,
+			),
+			p.panel,
+			[0, 0.0044, 0],
+		);
 		add(
 			root,
 			"courier-nacelle-mount-" + side,
@@ -607,8 +624,8 @@ function buildCourierC(root: THREE.Group, p: Palette) {
 		"courier-fuselage",
 		planform(
 			[
-				[0, -0.034],
-				[0.009, -0.024],
+				[0, -0.022],
+				[0.01, -0.019],
 				[0.021, -0.008],
 				[0.023, 0.016],
 				[0.013, 0.03],
@@ -621,6 +638,27 @@ function buildCourierC(root: THREE.Group, p: Palette) {
 		),
 		p.hull,
 	);
+	for (const [side, sign] of [
+		["port", -1],
+		["starboard", 1],
+	] as const)
+		add(
+			root,
+			"courier-utility-prong-" + side,
+			sidePlanform(
+				[
+					[0.003, -0.033],
+					[0.007, -0.032],
+					[0.012, -0.01],
+					[0.008, -0.002],
+					[0.004, -0.013],
+				],
+				sign,
+				0.0032,
+			),
+			p.panel,
+			[0, 0.0008, 0],
+		);
 	add(
 		root,
 		"courier-dorsal-hull",
@@ -692,23 +730,27 @@ function buildCourierC(root: THREE.Group, p: Palette) {
 			p,
 		);
 	}
-	add(
-		root,
-		"courier-mission-pod-port",
-		planform(
-			[
-				[-0.023, -0.011],
-				[-0.013, -0.013],
-				[-0.01, 0.014],
-				[-0.019, 0.022],
-				[-0.024, 0.014],
-			],
-			0.003,
-			0.00045,
-		),
-		p.panel,
-		[0, 0.003, 0],
-	);
+	for (const [side, sign] of [
+		["port", -1],
+		["starboard", 1],
+	] as const)
+		add(
+			root,
+			"courier-utility-shoulder-" + side,
+			sidePlanform(
+				[
+					[0.011, -0.006],
+					[0.019, -0.003],
+					[0.019, 0.015],
+					[0.011, 0.018],
+				],
+				sign,
+				0.0014,
+				0.0002,
+			),
+			p.panel,
+			[0, 0.0036, 0],
+		);
 	add(
 		root,
 		"courier-sensor-housing",
@@ -928,11 +970,12 @@ function buildInterceptorB(root: THREE.Group, p: Palette) {
 			"interceptor-wing-" + side,
 			sidePlanform(
 				[
-					[0.004, -0.012],
-					[0.012, -0.008],
-					[0.024, 0.003],
-					[0.023, 0.014],
-					[0.008, 0.018],
+					[0.006, -0.009],
+					[0.01, -0.007],
+					[0.017, -0.002],
+					[0.019, 0.022],
+					[0.011, 0.028],
+					[0.007, 0.012],
 				],
 				sign,
 				0.003,
@@ -1095,9 +1138,9 @@ function buildInterceptorC(root: THREE.Group, p: Palette) {
 			sidePlanform(
 				[
 					[0.004, -0.01],
-					[0.016, -0.004],
-					[0.022, 0.008],
-					[0.017, 0.018],
+					[0.014, -0.004],
+					[0.019, 0.008],
+					[0.015, 0.018],
 					[0.006, 0.01],
 				],
 				sign,
@@ -1111,17 +1154,17 @@ function buildInterceptorC(root: THREE.Group, p: Palette) {
 			"interceptor-nacelle-mount-" + side,
 			sidePlanform(
 				[
-					[0.011, -0.005],
-					[0.017, -0.005],
-					[0.018, 0.03],
-					[0.011, 0.03],
+					[0.009, -0.005],
+					[0.015, -0.005],
+					[0.016, 0.03],
+					[0.009, 0.03],
 				],
 				sign,
 				0.0042,
 			),
 			p.hull,
 		);
-		const x = 0.014 * sign;
+		const x = 0.012 * sign;
 		enginePod(
 			root,
 			"interceptor-" + side,
@@ -1507,10 +1550,10 @@ function buildFreighterC(root: THREE.Group, p: Palette) {
 		root,
 		"freighter-fuselage",
 		loft([
-			{ z: -0.033, width: 0.0008, top: 0.0008, bottom: 0.0006 },
-			{ z: -0.021, width: 0.006, top: 0.0045, bottom: 0.003 },
-			{ z: -0.005, width: 0.0085, top: 0.0055, bottom: 0.0038 },
-			{ z: 0.014, width: 0.007, top: 0.004, bottom: 0.0035 },
+			{ z: -0.029, width: 0.0008, top: 0.0008, bottom: 0.0006 },
+			{ z: -0.019, width: 0.0042, top: 0.0033, bottom: 0.0028 },
+			{ z: -0.004, width: 0.0055, top: 0.0042, bottom: 0.0034 },
+			{ z: 0.014, width: 0.0052, top: 0.0038, bottom: 0.0034 },
 			{ z: 0.026, width: 0.004, top: 0.0025, bottom: 0.0025 },
 		]),
 		p.hull,

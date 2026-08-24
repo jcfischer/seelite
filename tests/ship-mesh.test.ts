@@ -79,7 +79,7 @@ describe("procedural ship visual language", () => {
 		}
 	});
 
-	test("lofted command and fuselage volumes have both end caps", () => {
+	test("lofted volumes are capped and every triangle faces outward", () => {
 		for (const id of HULL_IDS) {
 			for (const variant of HULL_VARIANT_IDS) {
 				const root = buildShipMesh(id, variant).root;
@@ -97,12 +97,33 @@ describe("procedural ship visual language", () => {
 						!object.name.includes("nacelle")
 					)
 						return;
-					const vertexCount = object.geometry.getAttribute("position").count;
+					const positions = object.geometry.getAttribute("position");
+					const vertexCount = positions.count;
 					const indices = [...object.geometry.index.array];
-					for (const capCenter of [vertexCount - 2, vertexCount - 1])
+					const front = vertexCount - 2;
+					const rear = vertexCount - 1;
+					for (const capCenter of [front, rear])
 						expect(indices.filter((index) => index === capCenter).length).toBe(
 							8,
 						);
+					for (let index = 0; index < indices.length; index += 3) {
+						const triangle = indices.slice(index, index + 3);
+						const [a, b, c] = triangle.map((vertex) =>
+							new THREE.Vector3().fromBufferAttribute(positions, vertex),
+						);
+						const normal = new THREE.Vector3()
+							.crossVectors(b.clone().sub(a), c.clone().sub(a))
+							.normalize();
+						if (triangle.includes(front)) expect(normal.z).toBeLessThan(-0.99);
+						else if (triangle.includes(rear))
+							expect(normal.z).toBeGreaterThan(0.99);
+						else {
+							const center = a.add(b).add(c).divideScalar(3);
+							expect(normal.x * center.x + normal.y * center.y).toBeGreaterThan(
+								0,
+							);
+						}
+					}
 				});
 			}
 		}

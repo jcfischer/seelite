@@ -40,6 +40,13 @@ couriers, generic dart-and-wing interceptors, and rear-heavy tug silhouettes do
 not carry forward. The workbench labels the active round and resets its ranking
 state between rounds.
 
+Round three is derived from the second ranking: courier `A > B > C`,
+interceptor `C > A > B`, and freighter `A > B > C`. It tightens the search
+around broad divided-prow couriers, close-coupled rail interceptors, and dominant
+cargo outriggers. The lowest-ranked Ranger slab, Razorback delta, and Crane
+command spear are replaced by paired utility prongs, a three-spine rail frame,
+and a cargo-first service-rail freighter respectively.
+
 ## 2. Rendering contract
 
 All hull geometry is generated at load from beveled planform extrusions,
@@ -69,6 +76,8 @@ only in chase view and that returning to cockpit restores the live cockpit
 instruments and overlay.
 
 Lofted command bodies, nacelles, and fuselages must contain indexed front and
-rear caps. Concepts with visual negative space must still expose a continuous
-ventral structure, and the inspection viewer supplies neutral underside fill so
-solid geometry does not read as a missing face.
+rear caps, and every side and cap triangle must face outward. This winding is a
+rendering contract: an inward near wall is culled and exposes the far wall as a
+false transparent cone. Concepts with visual negative space must still expose a
+continuous ventral structure, and the inspection viewer supplies neutral
+underside fill so solid geometry does not read as a missing face.
