@@ -17,7 +17,8 @@ Its **Constraints** section binds every answer — an option that violates one i
 not on the table. Its **Notes** section carries the delivery SOP (claim →
 branch → worktree → TDD → PR → sage review → merge), when to stop reviewing, and
 the repo's verification culture. Do not restate either here; read them there, so
-there is one authoritative copy rather than two that drift.
+there is one authoritative copy rather than two that drift. `CONTEXT.md` defines
+domain language only and does not override the map.
 
 The `orienteer` skill walks the map. Every graph operation is a `soma graph`
 verb — never reach past them to `gh issue` for node lifecycle, because the verbs

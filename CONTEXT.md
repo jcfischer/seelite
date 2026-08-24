@@ -1,16 +1,16 @@
 # seelite Domain Language
 
-This glossary names the causal world model used by seelite. It keeps player-visible consequences tied to concrete things in the generated universe rather than abstract strategy modifiers.
+This glossary defines domain language for seelite's planned causal world model. It is vocabulary only; the work-graph map (`soma graph node 1`) remains authoritative for constraints and delivery rules.
 
 ## Language
 
 **Carrier**:
-A named physical asset, actor, or condition whose operational condition enables a capability in a bounded consequence area.
+A named physical asset, actor, or situation whose operational condition enables a capability in a bounded consequence area.
 _Avoid_: Modifier, influence point
 
 **Carrier slot**:
-A stable generated place in the universe identified by galaxy, system, and local carrier identity. A slot survives destruction and replacement of the carrier instance occupying it.
-_Avoid_: Global object ID, station name
+A stable generated place in the universe identified by galaxy, system, and the sanctioned `localCarrierId` component. A slot survives destruction and replacement of the carrier instance occupying it.
+_Avoid_: Bare global object ID, display name
 
 **Carrier instance**:
 The original or a numbered replacement occupying a carrier slot.

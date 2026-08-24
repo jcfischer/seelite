@@ -1,12 +1,12 @@
 # Persistent world state
 
-**Status:** Ratified decision for work-graph node “Persistent world changes: what state survives?”  
+**Status:** Decision record for work-graph node “Persistent world changes: what state survives?”  
 **Binds:** the operational-consequence doctrine; later carrier, combat, mission, save/load, map, and HUD work  
 **Does not decide:** save encoding or slots, permadeath, carrier-specific repair durations, general faction simulation
 
 ## 1. Decision
 
-seelite regenerates its immutable universe from the world seed and authoritative game clock, then overlays sparse player-relevant state. The save never copies generated carrier geometry, type, orbit, capability tables, positions, or derived downstream modifiers.
+seelite regenerates its immutable universe from the world seed and authoritative game clock, then overlays sparse player-relevant state. The save never copies generated carrier geometry, type, orbit, capability tables, positions, or derived capability projections.
 
 The overlay is a canonical snapshot, not an event-sourced second universe. It stores only facts that cannot be recovered from the seed and clock: player knowledge, current carrier deviations, bounded causal provenance, market deficits, visited flags, legal status, and other typed domains approved later.
 
@@ -47,11 +47,11 @@ A carrier instance has one operational condition:
 - **operational** — its generated capability is available;
 - **disabled** — it remains present but its capability is unavailable;
 - **destroyed** — the instance is wreckage and its capability is unavailable;
-- **repairing** — a named recovery process is active and the capability remains unavailable unless a later carrier specification explicitly defines a partial capability.
+- **repairing** — a named recovery process is active and the capability remains unavailable.
 
 **Replaced** is retained as a player-facing lifecycle concept and a provenance-bearing transition, but not as an exclusive physical condition. Replacement completion increments `instanceOrdinal`; the new instance is then operational and can enter the other conditions normally.
 
-No generic “partly operational” state exists in v1. A future carrier that needs degradation must define the concrete capability split rather than add a percentage health modifier to this model.
+No generic “partly operational” state exists in v1. A carrier that needs degradation expresses it as a concrete per-capability projection while retaining one objective condition; it does not add a percentage-health condition to this model.
 
 ## 4. Transitions and recovery
 
@@ -60,7 +60,8 @@ Allowed transition families are:
 - operational → disabled or destroyed;
 - disabled → operational, destroyed, or repairing;
 - destroyed → repairing;
-- repairing → operational after repair, or operational on the next instance ordinal after replacement;
+- repairing → operational through `repair-complete`, retaining `instanceOrdinal`;
+- repairing → operational through `replacement-complete`, incrementing `instanceOrdinal`;
 - repairing → repairing when assistance, opposition, or another intervention changes the active recovery descriptor;
 - repairing → disabled or destroyed when the recovery process is interrupted;
 - any operational replacement instance may repeat the same cycle.
@@ -102,7 +103,7 @@ Superseded transitions collapse into the latest episode summary. An original car
 
 A recent chronological ship-log ring may provide UI history, but it is bounded and non-authoritative. Dropping a log line cannot change mechanics or erase the latest per-carrier attribution.
 
-Existing domains keep their own bounds: market deficits decay lazily and drop below one unit; visited state has a fixed system-sized representation; legal status has a fixed per-galaxy representation. Carrier compaction does not rewrite or duplicate those facts.
+Existing domains keep their own bounds. Economy §5.5 already makes market deficits decay lazily and drop below one unit. The save/load decision owes fixed bounds for the map's per-galaxy visited and legal-status state. Carrier compaction does not rewrite or duplicate any of those facts.
 
 ## 7. Typed per-galaxy persistence envelope
 
@@ -114,9 +115,9 @@ Each galaxy owns separate typed domains for:
 - player legal status;
 - later explicitly approved domains.
 
-The galaxy envelope supplies `galaxyIndex`. Every station-keyed domain uses `(systemIndex, localStationId)` inside that envelope, equivalent to the full `CarrierKey`; `economy-trade.md` §5.5's `stationId` therefore means this composite identity, never `Station.id` alone. Any serialized embedded galaxy index must match its containing envelope or fail loudly.
+The galaxy envelope supplies `galaxyIndex`. Every station-keyed domain uses `(systemIndex, localCarrierId)` inside that envelope, equivalent to the full `CarrierKey`; `economy-trade.md` §5.5 records the same `stationKey` convention. A bare `Station.id` is not persistent identity. Any serialized embedded galaxy index must match its containing envelope or fail loudly.
 
-The domains share the galaxy namespace and authoritative game clock but not a generic lowest-common-denominator event schema. Capabilities and UI projections may read multiple domains; they do not save duplicate modifier flags.
+The domains share the galaxy namespace and authoritative game clock but not a generic lowest-common-denominator event schema. Capabilities and UI projections may read multiple domains; they do not save duplicate capability projections.
 
 The eventual save system must snapshot world seed, `gameTime`, current location/player state, and all eight galaxy envelopes atomically. Save slots, autosave cadence, rollback, and permadeath remain undecided. Any later policy may retain, rewind, or delete a whole snapshot, but may not selectively reset carrier consequences while retaining the rest of that timeline.
 
