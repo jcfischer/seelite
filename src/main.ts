@@ -254,7 +254,7 @@ interface ProbeRayMath {
 interface Instrument {
 	ctx: CanvasRenderingContext2D;
 	texture: THREE.CanvasTexture;
-	secondaryText: TextRaster | null;
+	secondaryText: TextRaster;
 }
 
 interface TextRaster {
@@ -266,6 +266,18 @@ interface TextRaster {
 	y: number;
 	bounds: { left: number; top: number; width: number; height: number };
 	background?: string;
+}
+
+function createTextRaster(): TextRaster {
+	return {
+		text: "",
+		font: "",
+		fillStyle: "",
+		textAlign: "left",
+		x: 0,
+		y: 0,
+		bounds: { left: 0, top: 0, width: 0, height: 0 },
+	};
 }
 
 interface HologramGlyph {
@@ -442,7 +454,7 @@ class Game {
 	private etaAt = Number.NEGATIVE_INFINITY;
 	/** Text geometry from the current glass pass, exposed so the visual probe can
 	 * compare the rendered glyphs with the renderer's own placement contract. */
-	cockpitPrompt: TextRaster | null = null;
+	readonly cockpitPrompt = createTextRaster();
 	/** What the HUD last displayed, quantised to its own resolution — so a frame
 	 *  that would render the same text neither builds nor writes it. */
 	private hudKey = "";
@@ -1168,7 +1180,7 @@ class Game {
 			face.position.set(x, 0.001, 0);
 			face.rotation.x = -Math.PI / 2;
 			scannerMount.add(face);
-			return { ctx, texture, secondaryText: null };
+			return { ctx, texture, secondaryText: createTextRaster() };
 		};
 		this.cockpit.flightInstrument = makeInstrument("flight-instrument", -0.025);
 		this.cockpit.targetInstrument = makeInstrument("target-instrument", 0.025);
@@ -1371,7 +1383,8 @@ class Game {
 			primary: string,
 			secondary: string,
 			accent: string,
-		): TextRaster => {
+			raster: TextRaster,
+		) => {
 			const { width, height } = ctx.canvas;
 			ctx.clearRect(0, 0, width, height);
 			ctx.fillStyle = "rgba(1, 8, 11, .9)";
@@ -1400,16 +1413,17 @@ class Game {
 			ctx.font = secondaryFont;
 			ctx.fillStyle = accent;
 			ctx.fillText(secondary, 28, 192);
-			return {
-				text: secondary,
-				font: secondaryFont,
-				fillStyle: accent,
-				textAlign: "left",
-				x: 28,
-				y: 192,
-				bounds: { left: 28, top: 168, width: width - 56, height: 30 },
-				background: "rgba(1, 8, 11, .9)",
-			};
+			raster.text = secondary;
+			raster.font = secondaryFont;
+			raster.fillStyle = accent;
+			raster.textAlign = "left";
+			raster.x = 28;
+			raster.y = 192;
+			raster.bounds.left = 28;
+			raster.bounds.top = 168;
+			raster.bounds.width = width - 56;
+			raster.bounds.height = 30;
+			raster.background = "rgba(1, 8, 11, .9)";
 		};
 		paint(
 			this.cockpit.flightInstrument.ctx,
@@ -1417,13 +1431,15 @@ class Game {
 			speed,
 			velocity.context,
 			"#75d7ff",
+			this.cockpit.flightInstrument.secondaryText,
 		);
-		this.cockpit.targetInstrument.secondaryText = paint(
+		paint(
 			this.cockpit.targetInstrument.ctx,
 			"TARGET",
 			targetText,
 			`ETA ${eta}  CHARGE ${this.chargeAu.toFixed(1)} AU`,
 			"#ffd17a",
+			this.cockpit.targetInstrument.secondaryText,
 		);
 		this.cockpit.flightInstrument.texture.needsUpdate = true;
 		this.cockpit.targetInstrument.texture.needsUpdate = true;
@@ -2468,7 +2484,7 @@ class Game {
 		const w = this.overlay.width;
 		const h = this.overlay.height;
 		ctx.clearRect(0, 0, w, h);
-		this.cockpitPrompt = null;
+		this.cockpitPrompt.text = "";
 		// A focused console replaces the forward glass. Leaving target brackets
 		// here would make an HTML panel look like an accidental overlay rather
 		// than the deliberate head-turn view the cockpit contract calls for.
@@ -2563,20 +2579,17 @@ class Game {
 			const y = h * 0.62;
 			ctx.fillText(prompt, x, y);
 			const promptWidth = ctx.measureText(prompt).width;
-			this.cockpitPrompt = {
-				text: prompt,
-				font: promptFont,
-				fillStyle: promptFill,
-				textAlign: "center",
-				x,
-				y,
-				bounds: {
-					left: Math.floor(x - promptWidth / 2),
-					top: Math.floor(y - 14),
-					width: Math.ceil(promptWidth),
-					height: 18,
-				},
-			};
+			this.cockpitPrompt.text = prompt;
+			this.cockpitPrompt.font = promptFont;
+			this.cockpitPrompt.fillStyle = promptFill;
+			this.cockpitPrompt.textAlign = "center";
+			this.cockpitPrompt.x = x;
+			this.cockpitPrompt.y = y;
+			this.cockpitPrompt.bounds.left = Math.floor(x - promptWidth / 2);
+			this.cockpitPrompt.bounds.top = Math.floor(y - 14);
+			this.cockpitPrompt.bounds.width = Math.ceil(promptWidth);
+			this.cockpitPrompt.bounds.height = 18;
+			delete this.cockpitPrompt.background;
 			ctx.textAlign = "left";
 		}
 
