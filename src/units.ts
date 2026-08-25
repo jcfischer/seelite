@@ -79,6 +79,16 @@ export const NEAR_NEAR_KM = 0.01;
  */
 export const FAR_SCALE = 1e-5;
 
+/** The intermediate scale for close stars, planets, and moons. It keeps their
+ * centres and radii small enough for float32 while leaving local gameplay at
+ * the 1:1 near scale. */
+export const APPROACH_SCALE = 1e-3;
+
+/** Camera planes in approach-scale units. Five physical kilometres fit before
+ * the near clip, while the 400,000:1 ratio stays below the near layer's budget. */
+export const APPROACH_NEAR_UNITS = 0.005;
+export const APPROACH_FAR_UNITS = 2e3;
+
 /**
  * Where an approaching body changes layers, in kilometres.
  *
@@ -192,6 +202,37 @@ export function layerFor(
 	const threshold =
 		current === "near" ? HANDOFF_KM * HANDOFF_HYSTERESIS : HANDOFF_KM;
 	return distanceKm <= threshold ? "near" : "far";
+}
+
+/** The generated body kinds that use surface-relative scaled-space approach. */
+export function isMassive(kind: string): boolean {
+	return kind === "star" || kind === "planet" || kind === "moon";
+}
+
+/**
+ * The scaled-space layer for a massive body's close approach. Unlike local
+ * objects, its seam is measured from the surface: a gas giant's centre may sit
+ * well past the 1:1 near camera while the pilot is only 10,000 km from its
+ * surface. The outward hysteresis is the same state machine as `layerFor`. The
+ * renderer dispatches massive kinds only through this function, so they never
+ * consume the local 1:1 depth budget.
+ */
+export function massiveLayerFor(
+	current: "approach" | "far" | undefined,
+	surfaceDistanceKm: number,
+): "approach" | "far" {
+	const threshold =
+		current === "approach" ? HANDOFF_KM * HANDOFF_HYSTERESIS : HANDOFF_KM;
+	return surfaceDistanceKm <= threshold ? "approach" : "far";
+}
+
+/** The one scale factor used when a mesh occupies each render layer. */
+export function scaleFor(layer: "near" | "approach" | "far"): number {
+	return layer === "near"
+		? 1
+		: layer === "approach"
+			? APPROACH_SCALE
+			: FAR_SCALE;
 }
 
 /**
