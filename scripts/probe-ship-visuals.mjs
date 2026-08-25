@@ -24,6 +24,13 @@ function state() {
 		view: game.view,
 		shipVisible: ship.visible,
 		hullId: ship.userData.hullId,
+		variant: ship.userData.variant,
+		chaseYaw: game.chaseYaw,
+		// The near camera sits at the origin, so the hull's own position is the
+		// camera-relative one. That makes it the honest observable for an orbit:
+		// a camera swinging round the ship must turn this vector without
+		// changing its length.
+		shipOffset: ship.position.toArray(),
 		courierCore: Boolean(ship.getObjectByName("courier-dorsal-hull")),
 		exhausts: ship.children.filter((child) => child.name.includes("exhaust"))
 			.length,
@@ -67,6 +74,7 @@ for (const viewport of VIEWPORTS) {
 		chase.view === "chase" &&
 			chase.shipVisible &&
 			chase.hullId === "courier" &&
+			chase.variant === "a" &&
 			chase.courierCore &&
 			chase.exhausts === 2 &&
 			chase.trafficDisplayOnly &&
@@ -74,9 +82,55 @@ for (const viewport of VIEWPORTS) {
 			chase.freighter &&
 			!chase.liveCockpit,
 	);
+	// Orbit to port and hold until the camera has swung a good part of a
+	// quarter turn, rather than sleeping for a guessed number of frames.
+	await page.keyboard.down("1");
+	const orbitMoved = await page
+		.waitForFunction(() => window.__seelite?.chaseYaw < -0.6, null, {
+			timeout: 4000,
+		})
+		.then(
+			() => true,
+			() => false,
+		);
+	await page.keyboard.up("1");
+	const orbited = await page.evaluate(state);
+	const length = (v) => Math.hypot(v[0], v[1], v[2]);
+	const alignment =
+		orbited.shipOffset.reduce((sum, n, i) => sum + n * chase.shipOffset[i], 0) /
+		(length(orbited.shipOffset) * length(chase.shipOffset));
+	check(
+		`${viewport.name}: chase orbit turns the camera round the hull at a fixed range`,
+		orbitMoved &&
+			orbited.view === "chase" &&
+			orbited.shipVisible &&
+			orbited.chaseYaw < -0.6 &&
+			alignment < 0.95 &&
+			Math.abs(length(orbited.shipOffset) - length(chase.shipOffset)) < 1e-6,
+	);
+
+	await page.keyboard.press("2");
+	const centred = await page.evaluate(state);
+	check(
+		`${viewport.name}: 2 returns the chase camera astern`,
+		centred.chaseYaw === 0 &&
+			centred.shipOffset.every(
+				(n, i) => Math.abs(n - chase.shipOffset[i]) < 1e-6,
+			),
+	);
+
 	await page.keyboard.press("v");
 	await page.waitForFunction(() => window.__seelite?.view === "cockpit");
+	// The orbit is a chase control. Holding it in the cockpit must not quietly
+	// steer a camera the player cannot see moving.
+	await page.keyboard.down("1");
+	await page.waitForTimeout(220);
+	await page.keyboard.up("1");
 	const returned = await page.evaluate(state);
+	check(
+		`${viewport.name}: the orbit key does not move the camera in cockpit view`,
+		returned.chaseYaw === 0,
+	);
 	check(
 		`${viewport.name}: returning to cockpit restores instrument priority`,
 		returned.view === "cockpit" &&

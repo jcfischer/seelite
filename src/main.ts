@@ -111,7 +111,7 @@ import {
 } from "./sim";
 import { SPIN_RPM_RANGE } from "./station";
 import { buildStationMesh } from "./station-mesh";
-import { buildShipMesh } from "./ship-mesh";
+import { type HullId, type HullVariantId, buildShipMesh } from "./ship-mesh";
 import { LiveCockpit, type RightTab } from "./live-cockpit";
 import { type WarpField, warpField } from "./warp";
 import { type Vec3, add, dot, length, scale, sub, v3 } from "./vec3";
@@ -161,6 +161,38 @@ const STAR_PIXEL_SCALE = 0.35;
  */
 const CHASE_BACK_KM = 0.14;
 const CHASE_UP_KM = 0.04;
+
+/**
+ * The hull the player flies: the courier `Kestrel`.
+ *
+ * Named as a pair because `buildShipMesh("courier")` defaults its variant, and
+ * a default is exactly what the spec forbids a roster to take — the comment
+ * that used to sit here claimed the choice was explicit while the code let the
+ * builder pick. #26 still owns the roster; when it arrives it replaces this
+ * constant, and it will be able to see what it is replacing.
+ */
+const PLAYER_HULL: readonly [HullId, HullVariantId] = ["courier", "a"];
+
+/**
+ * How fast the chase camera swings round the hull while a key is held.
+ *
+ * A full circle in a little over five seconds. Faster and the hull's far side
+ * arrives before the eye has read the near one; slower and checking what is off
+ * the port quarter costs more attention than the look is worth.
+ */
+const CHASE_ORBIT_RATE = 1.2;
+
+/**
+ * Fold an angle back into (-π, π].
+ *
+ * Local rather than in `units.ts` because that file is a leaf of the unit
+ * scheme and `tests/headless.test.ts` asserts it imports nothing; a camera
+ * convenience does not belong in the scheme the sim is measured in.
+ */
+function wrapAngle(radians: number) {
+	const turn = Math.PI * 2;
+	return ((((radians + Math.PI) % turn) + turn) % turn) - Math.PI;
+}
 
 /**
  * Mouse sensitivity: radians of rotation per pixel of pointer movement.
@@ -466,6 +498,9 @@ class Game {
 	/** #5 made cockpit the default and chase a toggle. The hull is hidden in
 	 *  cockpit, which is what makes the HUD markers load-bearing. */
 	view: "cockpit" | "chase" = "cockpit";
+	/** Chase orbit about the ship's own up axis; zero is directly astern. Held
+	 *  across a view toggle, because a look you set up is a look you meant. */
+	chaseYaw = 0;
 	/** How fast the ship is turning, radians per second — rotation has momentum,
 	 *  and `sim.ts`'s `stepAngular` owns the dynamics. */
 	rates: Angular = { pitch: 0, yaw: 0, roll: 0 };
@@ -955,18 +990,15 @@ class Game {
 	}
 
 	private buildShip() {
-		// #35 establishes the visual language only. #26 will choose the actual
-		// roster, so the player selects the explicit courier baseline rather than
-		// making an unlabelled shape into a silent global default.
-		this.shipMesh = buildShipMesh("courier").root;
+		this.shipMesh = buildShipMesh(...PLAYER_HULL).root;
 		this.shipMesh.name = "ship";
 		this.visualTraffic = new THREE.Group();
 		this.visualTraffic.name = "visual-traffic";
 		this.visualTraffic.userData.displayOnly = true;
-		const interceptor = buildShipMesh("interceptor").root;
+		const interceptor = buildShipMesh("interceptor", "a").root;
 		interceptor.name = "traffic-interceptor";
 		interceptor.position.set(-0.07, 0.018, -0.12);
-		const freighter = buildShipMesh("freighter").root;
+		const freighter = buildShipMesh("freighter", "a").root;
 		freighter.name = "traffic-freighter";
 		freighter.position.set(0.09, 0.004, -0.18);
 		this.visualTraffic.add(interceptor, freighter);
@@ -1546,6 +1578,7 @@ class Game {
 				return;
 			case "2":
 				if (this.view === "cockpit") this.setHeadLook("forward");
+				else this.chaseYaw = 0;
 				return;
 			case "3":
 				if (this.view === "cockpit") this.setHeadLook("right");
@@ -1671,6 +1704,12 @@ class Game {
 			...this.cruiseParams,
 			[field]: unit.store(values[next]),
 		};
+	}
+
+	/** `1` swings to port and `3` to starboard, matching the panel keys those
+	 *  two are in the cockpit — left is left in both views. */
+	private chaseOrbitInput(): number {
+		return this.axis(["1"], ["3"]);
 	}
 
 	private axis(negative: string[], positive: string[]): number {
@@ -2073,6 +2112,12 @@ class Game {
 		);
 		this.orientation.multiply(turn).normalize();
 
+		// Held rather than stepped, for the same reason throttle is: an angle the
+		// player is choosing by eye wants a rate, not a ladder of fixed stops.
+		const orbit = this.view === "chase" ? this.chaseOrbitInput() : 0;
+		if (orbit !== 0)
+			this.chaseYaw = wrapAngle(this.chaseYaw + orbit * CHASE_ORBIT_RATE * dt);
+
 		if (this.keys.has("shift")) this.throttle = Math.min(1, this.throttle + dt);
 		if (this.keys.has("control"))
 			this.throttle = Math.max(0, this.throttle - dt);
@@ -2186,14 +2231,14 @@ class Game {
 				scale(v3(forward.x, forward.y, forward.z), COCKPIT_FORWARD_KM),
 			);
 		}
-		const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.orientation);
-		return add(
-			this.world.ship.pos,
-			add(
-				scale(v3(-forward.x, -forward.y, -forward.z), CHASE_BACK_KM),
-				scale(v3(up.x, up.y, up.z), CHASE_UP_KM),
-			),
-		);
+		// Behind and above in the ship's own frame, then swung round its up axis
+		// by the orbit. `cameraRotation` applies the same yaw, so the rig turns
+		// as one piece and the hull stays where it was in frame.
+		const offset = this.chaseOffset
+			.set(0, CHASE_UP_KM, CHASE_BACK_KM)
+			.applyAxisAngle(HEAD_AXIS, this.chaseYaw)
+			.applyQuaternion(this.orientation);
+		return add(this.world.ship.pos, v3(offset.x, offset.y, offset.z));
 	}
 
 	/**
@@ -2332,6 +2377,8 @@ class Game {
 		if (this.legacyHud) this.updateHud();
 	};
 
+	private readonly chaseOffset = new THREE.Vector3();
+
 	private cameraRotation() {
 		const yaw =
 			this.view === "cockpit"
@@ -2340,7 +2387,7 @@ class Game {
 					: this.headLook === "right"
 						? -Math.PI / 2.7
 						: 0
-				: 0;
+				: this.chaseYaw;
 		this.headRotation.setFromAxisAngle(HEAD_AXIS, yaw);
 		return this.viewRotation.copy(this.orientation).multiply(this.headRotation);
 	}

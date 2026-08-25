@@ -166,10 +166,20 @@ local reach budget, needs no downloaded asset, and contains no simulation
 position, collision, target, or AI data. `sim.ts` remains the float64 authority;
 renderer objects are its camera-relative shadow.
 
+The player hull is the courier `Kestrel`, named in `main.ts` as an explicit
+`(id, variant)` pair. `buildShipMesh` defaults its variant, and a default is
+what this spec forbids a roster to take; naming both halves means #26 can see
+what it is replacing when it arrives to own the choice properly.
+
 The player hull is a near-scene object. It is hidden in cockpit view because the
 cockpit HUD, attitude floor, target director, and scanner remain the primary
 flight references. Chase view makes that same hull visible as an external
-orientation check. Chase also includes one interceptor and freighter formation
+orientation check, and the chase camera orbits it: `1` and `3` swing the camera
+to port and starboard while held, `2` returns it astern. The orbit turns the
+whole rig — position and look direction share one yaw about the ship's own up
+axis — so the range to the hull never changes, which is what a browser probe
+asserts rather than trusting the arithmetic. The angle survives a view toggle,
+because a look the player set up is a look they meant. Chase also includes one interceptor and freighter formation
 sample at flight distance, giving the archetypes an honest relative-scale check.
 Those samples are child display meshes, not simulation actors: they have no
 position in `sim.ts`, target identity, scanner contact, AI, collision, or roster
