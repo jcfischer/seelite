@@ -20,7 +20,9 @@ await bootedGame(page);
 const setup = await page.evaluate(() => {
 	const g = window.__seelite;
 	const body = g.world.system.bodies
-		.filter((b) => b.kind === "planet" || b.kind === "moon")
+		.filter(
+			(b) => b.kind === "star" || b.kind === "planet" || b.kind === "moon",
+		)
 		.sort((a, b) => b.radiusKm - a.radiusKm)[0];
 	return {
 		id: body?.id ?? null,
@@ -37,10 +39,13 @@ async function sample(surfaceKm) {
 			const body = g.world.system.bodies.find((b) => b.id === id);
 			const n = Math.hypot(body.pos.x, body.pos.y, body.pos.z);
 			const d = body.radiusKm + surface;
+			const ux = n ? body.pos.x / n : 1;
+			const uy = n ? body.pos.y / n : 0;
+			const uz = n ? body.pos.z / n : 0;
 			g.world.ship.pos = {
-				x: body.pos.x * (1 + d / n),
-				y: body.pos.y * (1 + d / n),
-				z: body.pos.z * (1 + d / n),
+				x: body.pos.x + ux * d,
+				y: body.pos.y + uy * d,
+				z: body.pos.z + uz * d,
 			};
 			g.world.ship.vel = { x: 0, y: 0, z: 0 };
 			await new Promise((resolve) => requestAnimationFrame(resolve));
