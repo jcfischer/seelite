@@ -128,6 +128,9 @@ const STATION_AXIS = new THREE.Vector3();
 const HEAD_AXIS = new THREE.Vector3(0, 1, 0);
 
 const {
+	APPROACH_FAR_UNITS,
+	APPROACH_NEAR_UNITS,
+	APPROACH_SCALE,
 	AU_KM,
 	BACKDROP_RADIUS,
 	C_KMS,
@@ -138,6 +141,7 @@ const {
 	NEAR_FAR_KM,
 	NEAR_NEAR_KM,
 	layerFor,
+	massiveLayerFor,
 } = units;
 
 /** How many stars the backdrop draws. Cheap at this count; the research puts
@@ -294,11 +298,14 @@ class Game {
 	readonly backdropScene = new THREE.Scene();
 	/** Far: system bodies at `FAR_SCALE`, angular size preserved. */
 	readonly farScene = new THREE.Scene();
+	/** Approach: close stars, planets, and moons at intermediate scale. */
+	readonly approachScene = new THREE.Scene();
 	/** Near: ships, stations, anything at 1:1 kilometres. */
 	readonly nearScene = new THREE.Scene();
 
 	readonly backdropCamera: THREE.PerspectiveCamera;
 	readonly farCamera: THREE.PerspectiveCamera;
+	readonly approachCamera: THREE.PerspectiveCamera;
 	readonly nearCamera: THREE.PerspectiveCamera;
 
 	/** Ship orientation. Positions live in `sim.ts`; this does not, and the
@@ -326,7 +333,7 @@ class Game {
 	 * hysteresis makes the answer depend on the previous frame, which the scene
 	 * graph does not record.
 	 */
-	private readonly layers = new Map<string, "near" | "far">();
+	private readonly layers = new Map<string, "near" | "approach" | "far">();
 	private shipMesh!: THREE.Mesh;
 	/** Cockpit structure follows the ship, while the camera pans within it. */
 	private cockpit!: CockpitHardware;
@@ -538,6 +545,12 @@ class Game {
 			FAR_NEAR_UNITS,
 			FAR_FAR_UNITS,
 		);
+		this.approachCamera = new THREE.PerspectiveCamera(
+			fov,
+			aspect,
+			APPROACH_NEAR_UNITS,
+			APPROACH_FAR_UNITS,
+		);
 		this.nearCamera = new THREE.PerspectiveCamera(
 			fov,
 			aspect,
@@ -570,11 +583,18 @@ class Game {
 		backdropPass.clear = true;
 		const farPass = new RenderPass(this.farScene, this.farCamera);
 		farPass.clear = false;
+		const approachPass = new RenderPass(
+			this.approachScene,
+			this.approachCamera,
+		);
+		approachPass.clear = false;
+		approachPass.clearDepth = true;
 		const nearPass = new RenderPass(this.nearScene, this.nearCamera);
 		nearPass.clear = false;
 		nearPass.clearDepth = true;
 		this.composer.addPass(backdropPass);
 		this.composer.addPass(farPass);
+		this.composer.addPass(approachPass);
 		this.composer.addPass(nearPass);
 		this.composer.addPass(
 			new UnrealBloomPass(
@@ -822,7 +842,7 @@ class Game {
 		// here, and its falloff would be wrong in whichever scene it was not
 		// authored for. Directional light sidesteps that: it has no position, only
 		// a direction, and the direction is the same in both.
-		for (const scene of [this.farScene, this.nearScene]) {
+		for (const scene of [this.farScene, this.approachScene, this.nearScene]) {
 			const sun = new THREE.DirectionalLight(0xfff0d8, 3.0);
 			sun.name = "sun";
 			scene.add(sun);
@@ -859,12 +879,18 @@ class Game {
 	 * `Object3D.add` removes the mesh from its previous parent, so there is no
 	 * `remove` to forget.
 	 */
-	private setLayer(body: Body, layer: "near" | "far") {
+	private setLayer(body: Body, layer: "near" | "approach" | "far") {
 		const mesh = this.meshes.get(body.id);
 		if (!mesh) return;
-		const k = layer === "near" ? 1 : FAR_SCALE;
+		const k =
+			layer === "near" ? 1 : layer === "approach" ? APPROACH_SCALE : FAR_SCALE;
 		mesh.scale.setScalar(body.radiusKm * k);
-		(layer === "near" ? this.nearScene : this.farScene).add(mesh);
+		(layer === "near"
+			? this.nearScene
+			: layer === "approach"
+				? this.approachScene
+				: this.farScene
+		).add(mesh);
 		this.layers.set(body.id, layer);
 	}
 
@@ -2123,7 +2149,12 @@ class Game {
 		// All three cameras share the ship's head-look orientation and sit at the
 		// origin. The cockpit mesh keeps the ship orientation, so this is a pan
 		// inside the hull rather than a yaw of the world or a flight-control input.
-		for (const cam of [this.backdropCamera, this.farCamera, this.nearCamera]) {
+		for (const cam of [
+			this.backdropCamera,
+			this.farCamera,
+			this.approachCamera,
+			this.nearCamera,
+		]) {
 			cam.position.set(0, 0, 0);
 			cam.quaternion.copy(viewRotation);
 		}
@@ -2152,9 +2183,22 @@ class Game {
 			// drawn at the new scale in the old place, for one frame, in front of
 			// the player.
 			const was = this.layers.get(body.id);
-			const layer = layerFor(was, Math.hypot(dx, dy, dz));
+			const distanceKm = Math.hypot(dx, dy, dz);
+			const massive =
+				body.kind === "star" || body.kind === "planet" || body.kind === "moon";
+			const layer = massive
+				? massiveLayerFor(
+						was === "approach" ? "approach" : "far",
+						distanceKm - body.radiusKm,
+					)
+				: layerFor(was === "near" ? "near" : "far", distanceKm);
 			if (layer !== was) this.setLayer(body, layer);
-			const k = layer === "near" ? 1 : FAR_SCALE;
+			const k =
+				layer === "near"
+					? 1
+					: layer === "approach"
+						? APPROACH_SCALE
+						: FAR_SCALE;
 			mesh.position.set(dx * k, dy * k, dz * k);
 
 			// Stations are aimed and spun; everything else is a sphere and has no
@@ -2183,7 +2227,7 @@ class Game {
 		if (star) {
 			const toStar = sub(star.pos, camPos);
 			const d = Math.max(1e-9, length(toStar));
-			for (const scene of [this.farScene, this.nearScene]) {
+			for (const scene of [this.farScene, this.approachScene, this.nearScene]) {
 				const sun = scene.getObjectByName("sun") as THREE.DirectionalLight;
 				if (sun) sun.position.set(toStar.x / d, toStar.y / d, toStar.z / d);
 			}
@@ -2612,7 +2656,12 @@ class Game {
 		const w = window.innerWidth;
 		const h = window.innerHeight;
 		this.sizeOverlay();
-		for (const cam of [this.backdropCamera, this.farCamera, this.nearCamera]) {
+		for (const cam of [
+			this.backdropCamera,
+			this.farCamera,
+			this.approachCamera,
+			this.nearCamera,
+		]) {
 			cam.aspect = w / h;
 			cam.updateProjectionMatrix();
 		}
