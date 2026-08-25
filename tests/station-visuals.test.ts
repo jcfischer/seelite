@@ -24,6 +24,7 @@ import {
 	STATION_SILHOUETTE_KM,
 	buildStationMesh,
 	setStationDetail,
+	updateStationVisuals,
 } from "../src/station-mesh";
 import {
 	DETAIL_RADII,
@@ -322,5 +323,56 @@ describe("activity is a pure function of the game clock", () => {
 		expect(values("refinery")).toBeGreaterThan(20);
 		expect(STATION_VISUALS.trade.activity.flickerDepth).toBe(0);
 		expect(values("trade")).toBe(1);
+	});
+});
+
+describe("what the renderer drives, at every range", () => {
+	test("the refinery's flare keeps tracking the clock at outline range", () => {
+		// The blocker sage's HonestOracle lens caught. The update skipped the
+		// waveforms once a station reached `outline`, on the reasoning that
+		// nothing clock-driven is drawn out there — but the flare is deliberately
+		// *untagged*, because its tip is the refinery's outermost vertex and
+		// hiding it would change the outline. So it stayed on screen with a frozen
+		// intensity: a distant refinery's flare depended on how close that client
+		// had been, which is precisely what §5.2 promises it does not.
+		const mesh = buildStationMesh("refinery", GREY);
+		const flare = () =>
+			mesh.fixtures.find((f) => f.kind === "flare")?.material
+				.emissiveIntensity ?? Number.NaN;
+		const farKm = STATION_SILHOUETTE_KM.refinery * DETAIL_RADII.reduced * 4;
+		updateStationVisuals(mesh, 11.3, farKm);
+		expect(mesh.detail).toBe("outline");
+		const a = flare();
+		updateStationVisuals(mesh, 11.9, farKm);
+		const b = flare();
+		updateStationVisuals(mesh, 11.3, farKm);
+		// Moving, and a pure function of the clock rather than of the approach —
+		// the same clock value gives the same light however it was reached.
+		expect(a).not.toBe(b);
+		expect(flare()).toBe(a);
+	});
+
+	test("a fixture's intensity is its base times its own waveform", () => {
+		// The wiring between the two modules, which neither one can assert alone:
+		// a fixture driven by the wrong waveform is a light that animates and is
+		// still wrong, and nothing about the shape of the frame says so.
+		const mesh = buildStationMesh("trade", GREY);
+		const closeKm = STATION_SILHOUETTE_KM.trade;
+		for (const t of [0.03, 1.1, 7.42]) {
+			updateStationVisuals(mesh, t, closeKm);
+			const port = mesh.fixtures.find((f) => f.kind === "beacon-port");
+			const starboard = mesh.fixtures.find(
+				(f) => f.kind === "beacon-starboard",
+			);
+			const { beaconPeriodS } = STATION_VISUALS.trade.activity;
+			expect(port?.material.emissiveIntensity).toBeCloseTo(
+				(port?.base ?? 0) * beaconIntensity("trade", t, 0),
+				9,
+			);
+			expect(starboard?.material.emissiveIntensity).toBeCloseTo(
+				(starboard?.base ?? 0) * beaconIntensity("trade", t, beaconPeriodS / 2),
+				9,
+			);
+		}
 	});
 });

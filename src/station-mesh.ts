@@ -160,14 +160,18 @@ function displayRand(id: string): () => number {
  * through because the albedo map is greyscale.
  */
 const surfaceMaps = (type: StationType) => {
+	// Generated once and handed to both textures: `surfaceTexels` derives its
+	// wear from the albedo, so regenerating it would run the plating loop twice
+	// per role and leave two buffers that only happen to agree.
+	const plate = platingTexels(type);
 	const albedo = new THREE.DataTexture(
-		platingTexels(type),
+		plate,
 		PLATE_TEXTURE_SIZE,
 		PLATE_TEXTURE_SIZE,
 		THREE.RGBAFormat,
 	);
 	const wear = new THREE.DataTexture(
-		surfaceTexels(type),
+		surfaceTexels(type, PLATE_TEXTURE_SIZE, plate),
 		PLATE_TEXTURE_SIZE,
 		PLATE_TEXTURE_SIZE,
 		THREE.RGBAFormat,
@@ -409,11 +413,12 @@ function buildCoriolisCore(
 		// `STATION_SILHOUETTE_KM.trade` is 0.6 km and the octahedron's own vertex
 		// is at 0.6 km, so the budget is exactly the hull and there is nothing
 		// spare (`station-visuals.md` §2.1): a pane drawn near θ = 0 lands at
-		// 1.002·r and is outside it. One octant per pane, placed in the middle
-		// 70% of it, bounds the worst case at 0.83·r — and spreads the grid over
-		// the hull rather than clustering it wherever the stream happened to draw.
-		const octant = (i % 4) * (Math.PI / 2);
-		const theta = octant + (0.15 + rand() * 0.7) * (Math.PI / 2);
+		// 1.002·r and is outside it. Each pane takes a quadrant by index — seven
+		// panes to each of the four — and lands in the middle 70% of it, which
+		// bounds the worst case at 0.83·r and spreads the grid over the hull
+		// rather than clustering it wherever the stream happened to draw.
+		const quadrant = (i % 4) * (Math.PI / 2);
+		const theta = quadrant + (0.15 + rand() * 0.7) * (Math.PI / 2);
 		const band = (rand() - 0.5) * coreRadiusKm * 0.7;
 		const cos = Math.cos(theta);
 		const sin = Math.sin(theta);
@@ -456,9 +461,11 @@ function buildCoriolisCore(
 		// inside the hull geometrically and still pushed the *rendered* outline
 		// 7 px wider at docking range: the bloom pass spreads an emissive halo
 		// past the surface it is mounted on, and on the trade station the hull is
-		// the whole silhouette. Tilted toward +Z as well, so the pair reads from
-		// the aperture axis, which is the one viewpoint every type shares.
-		lamp.position.set(side * coreRadiusKm * 0.55, 0, coreRadiusKm * 0.45);
+		// the whole silhouette. 0.55·r still crossed the limb by a pixel at the
+		// larger viewport, so the pair sits at 0.45·r. Tilted toward +Z as well,
+		// so it reads from the aperture axis, the one viewpoint every type
+		// shares.
+		lamp.position.set(side * coreRadiusKm * 0.45, 0, coreRadiusKm * 0.45);
 		lamp.name = `beacon-${side < 0 ? "port" : "starboard"}`;
 		detail(lamp, "reduced");
 		group.add(lamp);
@@ -518,6 +525,7 @@ function buildDrydock(fixtures: StationFixture[]): THREE.Group {
 			FLOOD_MATERIAL,
 		);
 		flood.position.set(0, -half, z);
+		flood.name = "bay-flood";
 		detail(flood, "reduced");
 		group.add(flood);
 	}
@@ -650,10 +658,11 @@ function buildRefinery(color: number, fixtures: StationFixture[]): THREE.Group {
 	ports.name = "windows";
 	detail(ports, "full");
 	const portMatrix = new THREE.Matrix4();
-	const portQuat = new THREE.Quaternion();
 	const portPos = new THREE.Vector3();
-	const portNormal = new THREE.Vector3();
-	const portUnitZ = new THREE.Vector3(0, 0, 1);
+	// Every port faces +Z, so the rotation is the identity rather than something
+	// solved per port. Written as a constant because `setFromUnitVectors(z, z)`
+	// is the identity computed the long way round, which reads as a rule.
+	const portFacing = new THREE.Quaternion();
 	const portScale = new THREE.Vector3(1, 1, 1);
 	for (let i = 0; i < 8; i++) {
 		const theta = (i / 8) * Math.PI * 2;
@@ -666,9 +675,7 @@ function buildRefinery(color: number, fixtures: StationFixture[]): THREE.Group {
 			Math.sin(theta) * r * 0.42,
 			r * 0.9,
 		);
-		portNormal.copy(portUnitZ);
-		portQuat.setFromUnitVectors(portUnitZ, portNormal);
-		ports.setMatrixAt(i, portMatrix.compose(portPos, portQuat, portScale));
+		ports.setMatrixAt(i, portMatrix.compose(portPos, portFacing, portScale));
 	}
 	ports.instanceMatrix.needsUpdate = true;
 	group.add(ports);
@@ -685,16 +692,15 @@ function buildRefinery(color: number, fixtures: StationFixture[]): THREE.Group {
  */
 const BUILDERS: Record<
 	StationType,
-	(
-		color: number,
-		fixtures: StationFixture[],
-	) => Omit<StationMesh, "type" | "detail" | "fixtures">
+	(color: number) => Omit<StationMesh, "type" | "detail">
 > = {
-	trade: (color, fixtures) => {
+	trade: (color) => {
+		const fixtures: StationFixture[] = [];
 		const spinner = buildCoriolisCore("trade", color, fixtures);
-		return { root: normalise("trade", [spinner]), spinner };
+		return { root: normalise("trade", [spinner]), spinner, fixtures };
 	},
-	shipyard: (color, fixtures) => {
+	shipyard: (color) => {
+		const fixtures: StationFixture[] = [];
 		const spinner = buildCoriolisCore("shipyard", color, fixtures);
 		// The frame is a sibling of the spinner, not a child: §7's drydock is
 		// explicitly non-rotating, and a station that turned whole would make it a
@@ -702,9 +708,11 @@ const BUILDERS: Record<
 		return {
 			root: normalise("shipyard", [spinner, buildDrydock(fixtures)]),
 			spinner,
+			fixtures,
 		};
 	},
-	refinery: (color, fixtures) => {
+	refinery: (color) => {
+		const fixtures: StationFixture[] = [];
 		// An empty spinner rather than `null`: the caller writes a phase of 0 into
 		// it every frame, and a null case in the render loop is a branch that
 		// exists only to be forgotten.
@@ -712,6 +720,7 @@ const BUILDERS: Record<
 		return {
 			root: normalise("refinery", [buildRefinery(color, fixtures), spinner]),
 			spinner,
+			fixtures,
 		};
 	},
 };
@@ -745,9 +754,12 @@ export function buildStationMesh(
 	type: StationType,
 	color: number,
 ): StationMesh {
-	const fixtures: StationFixture[] = [];
-	const built = BUILDERS[type](color, fixtures);
-	const mesh: StationMesh = { ...built, type, detail: "full", fixtures };
+	// The builder returns its own fixtures rather than filling an array handed
+	// to it: with an out-parameter the return type said a builder produced no
+	// lights while it in fact produced most of them, so a fourth station type
+	// would have compiled with none and lit nothing.
+	const built = BUILDERS[type](color);
+	const mesh: StationMesh = { ...built, type, detail: "full" };
 	// Built at `full` and then set, so the tagged accessories are in a state that
 	// matches the field rather than merely defaulting to visible. The renderer
 	// corrects it on the first frame in any case; a station that disagreed with
@@ -799,20 +811,33 @@ export function updateStationVisuals(
 		distanceKm / STATION_SILHOUETTE_KM[mesh.type],
 	);
 	if (level !== mesh.detail) setStationDetail(mesh, level);
-	// Nothing driven by the clock is drawn at `outline`, so the waveforms are not
-	// evaluated there. This is the common case — most stations in a system are
-	// far away — and it is the reason the early return is worth the line.
-	if (level === "outline") return;
 
+	// **Every fixture, at every level.** An earlier version returned early at
+	// `outline` on the reasoning that nothing clock-driven is drawn there — which
+	// is false for the refinery's flare, the one fixture deliberately left
+	// untagged because its tip is the station's outermost point. Its intensity
+	// froze at whatever the last near-range frame wrote, so a distant refinery's
+	// flare depended on that client's approach history rather than on the clock,
+	// and §5.2's "two clients at one seed draw the same frame" was not true of
+	// it. Driving the hidden ones too costs a couple of float writes a frame.
 	const { beaconPeriodS } = STATION_VISUALS[mesh.type].activity;
 	const flicker = flickerIntensity(mesh.type, gameTime);
 	for (const fixture of mesh.fixtures) {
-		const scale =
-			fixture.kind === "beacon-port"
-				? beaconIntensity(mesh.type, gameTime, 0)
-				: fixture.kind === "beacon-starboard"
-					? beaconIntensity(mesh.type, gameTime, beaconPeriodS / 2)
-					: flicker;
+		// A switch, not a ternary chain: a fifth kind is then a compile error
+		// here rather than something that silently inherits the flicker.
+		let scale: number;
+		switch (fixture.kind) {
+			case "beacon-port":
+				scale = beaconIntensity(mesh.type, gameTime, 0);
+				break;
+			case "beacon-starboard":
+				scale = beaconIntensity(mesh.type, gameTime, beaconPeriodS / 2);
+				break;
+			case "work":
+			case "flare":
+				scale = flicker;
+				break;
+		}
 		fixture.material.emissiveIntensity = fixture.base * scale;
 	}
 }

@@ -10,13 +10,20 @@
  *
  * 1. **Each role's lit signature is its own.** §5 gives the trade station warm
  *    habitation light with a red/green beacon pair, the shipyard cold bays and a
- *    white arc, and the refinery a warm flare. Measured as the warmth —
- *    mean `R − B` — of the brightest pixels *inside the station's own mask*, so
- *    the starfield and the sunlit planet behind it cannot contribute. It is
- *    asserted as an **ordering**, refinery warmer than trade warmer than
- *    shipyard, rather than as three absolute figures: the sun's direction
- *    depends on where in its orbit a station is, and an absolute threshold would
- *    be measuring the orbit.
+ *    white arc, and the refinery a warm flare.
+ *
+ *    Measured on the pixels the role's **own fixtures** contribute — the frame
+ *    as drawn, differenced against the same frame with every fixture switched
+ *    off — and not on the station's lit pixels generally. The first version did
+ *    the latter and could not tell this pass's light from two things it does not
+ *    own: `STATION_COLORS`' hull paint, which differs per type by design, and
+ *    the sun, whose direction depends on where in its orbit that station is.
+ *    Differencing against a lights-off render removes both, because both are
+ *    present in each capture.
+ *
+ *    #28's amber aperture frame is left *out* of the fixture set. It is not this
+ *    pass's light and it is the same colour on all three, so including it would
+ *    only dilute the three signatures toward each other.
  *
  * 2. **The aperture is the brightest thing on the station.** The four emissive
  *    bars are hidden and the frame re-rendered; the pixels that changed are the
@@ -24,19 +31,21 @@
  *    bars are hidden, never the dark mouth they surround — hiding both moves the
  *    brightness in two directions at once and nets out to nothing.
  *
- * 3. **Detail falls with range and the outline does not move.** The ship is
- *    placed at three ranges chosen from the station's own silhouette budget and
- *    the level the renderer settled on is read off the page at each.
+ * 3. **Detail falls with range, and the outline does not move when it does.**
+ *    Two separate measurements, because they are not measurable at the same
+ *    range.
  *
- *    The shape comparison is made between the `full` and `reduced` captures, not
- *    between `full` and `outline`, and that is a limit rather than a choice: at
- *    the `outline` band a station is a *handful of pixels* — 900 of its own
- *    radii away — so resampling that mask to a 24 × 24 grid measures the
- *    sampler and not the station. Measured, the far masks scored `1 − IoU` of
- *    1.000 against a correct build. The headless tier owns this claim in the
- *    form that holds at every level: the mesh's vertex reach is *identical* at
- *    all three, which is the property a rendered comparison is only ever
- *    approximating.
+ *    The band is read as a level string at three ranges chosen from the
+ *    station's own silhouette budget — no pixels involved.
+ *
+ *    The outline is compared at **one** range, docking range, between the
+ *    station as drawn and the same station with every accessory hidden. Not
+ *    between a near and a far capture, which is what an earlier version did: at
+ *    the `outline` band a station is a handful of pixels, so resampling that
+ *    mask to a 24 × 24 grid measures the sampler rather than the station, and
+ *    the far masks scored a `1 − IoU` of 1.000 against a build whose vertex
+ *    reach was provably identical at every level. Both captures here come from
+ *    one evaluate, so the station cannot move between them.
  *
  * 4. **The beacons flash, and they flash on the game clock.** §5.2 makes every
  *    intensity a pure function of `gameTime`, so this writes a clock value and
@@ -84,10 +93,17 @@ const GRID = 24;
  * How much the silhouette may move when every accessory is switched off, as
  * `1 − IoU` on the resampled masks.
  *
- * `probe-station.mjs`'s own control — re-measuring one station back to back —
- * comes out at 0.02, so this is the noise floor and not a tolerance for a real
- * difference. Both captures here are at the same range and the same clock, so
- * anything above this is an accessory that was carrying part of the outline.
+ * Not a noise floor: both captures come from one evaluate at one range and one
+ * clock, so the only noise left is the resampling of two masks that differ by a
+ * bloom halo. Measured on a passing build, the three types come out at 0.000,
+ * 0.000 and 0.026 — the 0.026 being the trade station, whose hull *is* its
+ * silhouette and whose beacons therefore bloom closest to the limb. 0.05 is
+ * about twice that and an order below the 0.5 a genuinely different shape
+ * scores, so it separates the two without being tuned to either.
+ *
+ * The exact form of this claim is headless — the mesh's vertex reach is
+ * identical at all three levels — and this is the rendered half, which is the
+ * one that also sees the bloom pass.
  */
 const MAX_OUTLINE_DRIFT = 0.05;
 
@@ -134,20 +150,11 @@ const browser = await launchChromium();
 const { check, watch, exit } = tally();
 
 /**
- * Two renders of the same scene, one with some objects hidden, differenced.
- *
- * The station is isolated by what *changed* rather than by thresholding the
- * frame: a starfield puts lit pixels everywhere and the sun's direction depends
- * on the station's place in its orbit, so any absolute threshold would be tuned
- * to one moment of one orbit. Both renders happen inside one evaluate, so no
- * frame can land between them and move the station.
- */
-/**
  * Everything this probe needs about one station, from **one** evaluate.
  *
- * Four renders of the same scene — the station as drawn, the station with its
- * aperture bars hidden, the station with every accessory switched off, and the
- * station hidden altogether — differenced against each other.
+ * Five renders of the same scene — the station as drawn, with its aperture bars
+ * hidden, with every role fixture unlit, with every accessory switched off, and
+ * hidden altogether — differenced against each other.
  *
  * One evaluate and not four, and that is not a tidiness point. Between two
  * evaluates the frame loop runs: the station spins, its orbit carries it, and
@@ -200,6 +207,22 @@ const measure = (page, bodyId) =>
 			const bars = hideWhere((c) => c.name === "aperture-light");
 			const noAperture = frame();
 			show(bars);
+			// Every light §5 gives a role, by name. #28's amber aperture frame is
+			// **not** in the list: it is not this pass's light and it is the same
+			// colour on all three, so including it would dilute the three
+			// signatures toward each other.
+			const fixtureNames = [
+				"windows",
+				"beacon-port",
+				"beacon-starboard",
+				"bay-flood",
+				"weld-arc",
+				"heat-glow",
+				"flare",
+			];
+			const lights = hideWhere((c) => fixtureNames.includes(c.name));
+			const unlit = frame();
+			show(lights);
 			// By `userData.minDetail` and not by a list of names: that tag is what
 			// `setStationDetail` itself reads, so this hides exactly the set the
 			// detail bands hide. A name list here would be a second copy of the
@@ -237,7 +260,18 @@ const measure = (page, bodyId) =>
 					if (y < minY) minY = y;
 					if (y > maxY) maxY = y;
 				}
-				if (!lit.length) return { count: 0 };
+				// A shaped zero rather than a bare one: every caller reads `cells`
+				// and `box`, and a station that failed to render should produce a
+				// named red check rather than a TypeError with no check name on it.
+				if (!lit.length)
+					return {
+						count: 0,
+						warmth: 0,
+						topLuma: 0,
+						meanLuma: 0,
+						box: { w: 0, h: 0 },
+						cells: Array.from(new Uint8Array(grid * grid)),
+					};
 				const w = maxX - minX + 1;
 				const h = maxY - minY + 1;
 				const cells = new Uint8Array(grid * grid);
@@ -248,21 +282,21 @@ const measure = (page, bodyId) =>
 						cells[gy * grid + gx] = mask[y * W + x];
 					}
 				}
-				// The brightest fifth of the masked pixels — the lights, not the
-				// hull they are mounted on.
+				// `warmth` is over the whole mask, because for the mask that
+				// matters — the fixtures' own contribution — every pixel in it is
+				// light this pass put there. `topLuma` stays on the brightest fifth,
+				// which is what "brighter than the hull around it" is asking about.
 				lit.sort((p, q) => luma(drawn, q) - luma(drawn, p));
 				const top = lit.slice(0, Math.max(1, Math.floor(lit.length * 0.2)));
 				let warmth = 0;
 				let topLuma = 0;
-				for (const i of top) {
-					warmth += (drawn[i * 4] - drawn[i * 4 + 2]) / 255;
-					topLuma += luma(drawn, i);
-				}
+				for (const i of lit) warmth += (drawn[i * 4] - drawn[i * 4 + 2]) / 255;
+				for (const i of top) topLuma += luma(drawn, i);
 				let meanLuma = 0;
 				for (const i of lit) meanLuma += luma(drawn, i);
 				return {
 					count: lit.length,
-					warmth: warmth / top.length,
+					warmth: warmth / lit.length,
 					topLuma: topLuma / top.length,
 					meanLuma: meanLuma / lit.length,
 					box: { w, h },
@@ -273,6 +307,9 @@ const measure = (page, bodyId) =>
 			return {
 				station: maskOf(drawn, empty),
 				aperture: maskOf(drawn, noAperture),
+				// What this pass's own fixtures put on screen — hull paint and
+				// sunlight are in both captures and difference away.
+				lights: maskOf(drawn, unlit),
 				bare: maskOf(bare, empty),
 				// What the accessories themselves contribute, measured directly
 				// rather than as a difference of two counts.
@@ -371,16 +408,24 @@ for (const viewport of VIEWPORTS) {
 	console.log(
 		`\n[${viewport.name}] warmth: ` +
 			Object.entries(lit)
-				.map(([t, m]) => `${t} ${m.station.warmth.toFixed(3)}`)
+				.map(([t, m]) => `${t} ${m.lights.warmth.toFixed(3)}`)
 				.join(", "),
+	);
+	const roleLight = (type) => lit[type].lights;
+	check(
+		`${viewport.name}: every role puts its own light on screen`,
+		["trade", "shipyard", "refinery"].every((t) => roleLight(t).count > 0),
+		["trade", "shipyard", "refinery"]
+			.map((t) => `${t} ${roleLight(t).count}px`)
+			.join(", "),
 	);
 	check(
 		`${viewport.name}: the three roles light differently, warm to cold`,
-		lit.refinery.station.warmth > lit.trade.station.warmth &&
-			lit.trade.station.warmth > lit.shipyard.station.warmth,
-		`refinery ${lit.refinery.station.warmth.toFixed(3)} > trade ` +
-			`${lit.trade.station.warmth.toFixed(3)} > shipyard ` +
-			`${lit.shipyard.station.warmth.toFixed(3)}`,
+		roleLight("refinery").warmth > roleLight("trade").warmth &&
+			roleLight("trade").warmth > roleLight("shipyard").warmth,
+		`refinery ${roleLight("refinery").warmth.toFixed(3)} > trade ` +
+			`${roleLight("trade").warmth.toFixed(3)} > shipyard ` +
+			`${roleLight("shipyard").warmth.toFixed(3)}`,
 	);
 
 	// --- 3: detail falls with range ------------------------------------------

@@ -121,6 +121,17 @@ export interface StationVisualProfile {
  * and work light, warm for habitation and heat — rather than from a second
  * palette that would then have to be kept in step with it.
  */
+/**
+ * The navigation-light grammar, shared by every role that carries it.
+ *
+ * One definition rather than three identical literals: these are a *convention*
+ * — port red, starboard green, work light cold — and retuning a convention by
+ * editing it in three places is how two of the three end up retuned.
+ */
+const NAV_PORT = 0xff4d4d;
+const NAV_STARBOARD = 0x53ff8a;
+const WORK_FLOOD = 0xbfe4ff;
+
 export const STATION_VISUALS: Record<StationType, StationVisualProfile> = {
 	trade: {
 		plating: {
@@ -137,10 +148,15 @@ export const STATION_VISUALS: Record<StationType, StationVisualProfile> = {
 			flickerDepth: 0,
 			flickerSmooth: false,
 		},
-		windowColor: 0xdfe8ff,
-		beaconPortColor: 0xff4d4d,
-		beaconStarboardColor: 0x53ff8a,
-		floodColor: 0xbfe4ff,
+		// **Warm**, which the first version was not: 0xdfe8ff is a blue-white, and
+		// §5 calls the trade station's window grid habitation light. The probe reads
+		// warmth as `R − B` over the role's own fixtures, and a blue-white grid put
+		// the trade station on the cold side of the ordering it is meant to sit warm
+		// of — the spec said one thing and the literal said the other.
+		windowColor: 0xffe3b8,
+		beaconPortColor: NAV_PORT,
+		beaconStarboardColor: NAV_STARBOARD,
+		floodColor: WORK_FLOOD,
 		heatColor: 0xffb347,
 	},
 	shipyard: {
@@ -161,9 +177,9 @@ export const STATION_VISUALS: Record<StationType, StationVisualProfile> = {
 			flickerSmooth: false,
 		},
 		windowColor: 0xdfe8ff,
-		beaconPortColor: 0xff4d4d,
-		beaconStarboardColor: 0x53ff8a,
-		floodColor: 0xbfe4ff,
+		beaconPortColor: NAV_PORT,
+		beaconStarboardColor: NAV_STARBOARD,
+		floodColor: WORK_FLOOD,
 		heatColor: 0xffb347,
 	},
 	refinery: {
@@ -188,9 +204,9 @@ export const STATION_VISUALS: Record<StationType, StationVisualProfile> = {
 			flickerSmooth: true,
 		},
 		windowColor: 0xffcf9a,
-		beaconPortColor: 0xff4d4d,
-		beaconStarboardColor: 0x53ff8a,
-		floodColor: 0xbfe4ff,
+		beaconPortColor: NAV_PORT,
+		beaconStarboardColor: NAV_STARBOARD,
+		floodColor: WORK_FLOOD,
 		heatColor: 0xff7a2a,
 	},
 };
@@ -250,9 +266,12 @@ export function platingTexels(type: StationType, size = PLATE_TEXTURE_SIZE) {
 	const { pitchPx, seam, weathering } = STATION_VISUALS[type].plating;
 	const out = new Uint8Array(size * size * 4);
 	for (let y = 0; y < size; y++) {
-		// Streaks run down the hull, so they vary with x and persist in y.
-		const grime = streak(`${type}-grime`, y, 9) * weathering;
 		for (let x = 0; x < size; x++) {
+			// Streaks run *down* the hull: the envelope varies with x and persists
+			// in y, so a run of soot is a vertical band. Sampled from y — as the
+			// first version did — it bands horizontally instead and chops the
+			// finer streak below into segments, which reads as dirt in rows.
+			const grime = streak(`${type}-grime`, x, 9) * weathering;
 			const plate = hash01(
 				`${type}-plate`,
 				Math.floor(x / pitchPx),
@@ -293,9 +312,17 @@ export function platingTexels(type: StationType, size = PLATE_TEXTURE_SIZE) {
  * which is what stops a station reading as one moulded object under a moving
  * sun.
  */
-export function surfaceTexels(type: StationType, size = PLATE_TEXTURE_SIZE) {
+export function surfaceTexels(
+	type: StationType,
+	size = PLATE_TEXTURE_SIZE,
+	/** The role's albedo, if the caller already has it. Generating both maps
+	 *  for three roles otherwise runs the plating loop six times where three
+	 *  will do — and the two must be derived from the *same* buffer in any case,
+	 *  or a shine can miss its own seam. */
+	precomputed?: Uint8Array,
+) {
 	const { roughness, metalness } = STATION_VISUALS[type].plating;
-	const albedo = platingTexels(type, size);
+	const albedo = precomputed ?? platingTexels(type, size);
 	const out = new Uint8Array(size * size * 4);
 	for (let i = 0; i < size * size; i++) {
 		// Darker plate means seam or grime, both of which are rougher. Derived

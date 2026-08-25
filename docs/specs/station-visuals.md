@@ -130,7 +130,7 @@ Each role carries one emissive signature and one motion:
 | Role | Light | Activity |
 |---|---|---|
 | trade | warm window grid, plus red/green navigation beacons on the spin axis | beacons flash on a 2 s period at a 12% duty cycle |
-| shipyard | cold blue-white floodlit bays on the drydock frame | one bay carries a welding arc — a fast, deep flicker |
+| shipyard | cool window grid, cold blue-white floodlit bays, and the same beacon pair | one bay carries a welding arc — a fast, deep flicker; the beacons flash as the trade station's do |
 | refinery | warm flare over the stacks, a heat ring and lit ports on the drum's face | the flare and the ring breathe on a slow shallow flicker |
 
 The colours are drawn from `hud-and-scanner.md` §4's grammar rather than a
@@ -143,6 +143,16 @@ refinery's lit ports were first put round the drum's side, where they are edge-o
 from that axis and drew *zero pixels* — a crewed station reading as an unlit tank
 from the only direction anyone approaches it. They are on the drum's face now,
 round the pad.
+
+The beacon pair belongs to the **Coriolis hull**, not to the trade station: the
+shipyard is the same spinning octahedron with the same spin axis, so marking it
+is the same problem with the same answer. What separates the two roles is the
+work light — the shipyard's cold bays and its arc against the trade station's
+warm grid — and the drydock frame that is already carrying the outline.
+
+The trade station's window grid is a **warm** white and the shipyard's a cool
+one. That is the pair's finest distinction and it is deliberate: it is what makes
+the two Coriolis hulls read apart in the one measurement that ignores shape.
 
 The refinery carries no navigation beacons. It does not spin and its pad faces
 outward, so a spin-axis pair would be marking an axis nothing turns about; its
