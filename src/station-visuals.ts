@@ -219,6 +219,35 @@ export const STATION_VISUALS: Record<StationType, StationVisualProfile> = {
 		floodColor: WORK_FLOOD,
 		heatColor: 0xff7a2a,
 	},
+	outpost: {
+		plating: {
+			// A coarse plate on a small structure, which is what makes it read as
+			// *small*: the panel size is the only ruler a lone machine in the dark
+			// has, and fine plating on a 0.15 km hull says "big object, far away".
+			pitchPx: 44,
+			seam: 0.5,
+			weathering: 0.62,
+			roughness: 0.86,
+			metalness: 0.3,
+		},
+		activity: {
+			// No strobes: an outpost does not spin, and a rotation marker on
+			// something that does not rotate marks nothing — the refinery's rule,
+			// applied to the other type that stands still.
+			strobePeriodS: 0,
+			strobeDuty: 0,
+			// A pad light that pulses slowly, which is the one motion it has. Not
+			// a docking cue: §5.1 keeps clearance and refusal with the HUD, and
+			// this says only that the machine is running.
+			flickerHz: 0.5,
+			flickerDepth: 0.28,
+			flickerSmooth: true,
+		},
+		windowColor: 0xffcf9a,
+		strobeColor: STROBE_WHITE,
+		floodColor: WORK_FLOOD,
+		heatColor: 0xff9a3c,
+	},
 };
 
 /** The generated maps are square and this is the side, texels. Small on

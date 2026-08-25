@@ -156,6 +156,10 @@ const STATION_COLORS: Record<StationType, number> = {
 	trade: 0x9aa6b2,
 	refinery: 0xb08a5a,
 	shipyard: 0x8fc0c0,
+	// An industrial ochre, and deliberately the warmest of the four: an outpost
+	// is a small machine in the dark, and the type's whole job at range is to
+	// not be mistaken for a station you can trade at.
+	outpost: 0xb08a52,
 };
 
 /**

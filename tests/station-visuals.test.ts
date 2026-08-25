@@ -19,7 +19,11 @@
 
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
-import { STATION_GEOMETRY, type StationType } from "../src/station";
+import {
+	STATION_GEOMETRY,
+	STATION_TYPES,
+	type StationType,
+} from "../src/station";
 import {
 	STATION_FORMS,
 	STATION_SILHOUETTE_KM,
@@ -41,7 +45,9 @@ import {
 } from "../src/station-visuals";
 import { HANDOFF_HYSTERESIS, HANDOFF_KM } from "../src/units";
 
-const TYPES: StationType[] = ["trade", "shipyard", "refinery"];
+// From `station.ts`, not a literal: a fourth station type must reach every
+// loop in this file, and a hand-written list is exactly the place it would not.
+const TYPES: StationType[] = STATION_TYPES;
 const LEVELS: StationDetailLevel[] = ["full", "reduced", "outline"];
 const GREY = 0x9aa6b2;
 
@@ -100,8 +106,8 @@ describe("a detail level may not change the outline", () => {
 			// difference of any size means an accessory is carrying the outline —
 			// which is #28's silhouette probe measuring a different object at 60 km
 			// than at 5 km.
-			expect(measured[1]).toBe(measured[0]);
-			expect(measured[2]).toBe(measured[0]);
+			expect([type, measured[1]]).toEqual([type, measured[0]]);
+			expect([type, measured[2]]).toEqual([type, measured[0]]);
 		}
 	});
 
@@ -260,12 +266,12 @@ describe("the plating is generated, not downloaded, and sized for RGBAFormat", (
 	});
 
 	test("the three roles do not share a surface", () => {
-		// §4's whole claim. Three identical maps would pass every other assertion
+		// §4's whole claim. Identical maps would pass every other assertion
 		// here and deliver no surface language at all.
 		const seen = new Set(
 			TYPES.map((t) => Buffer.from(platingTexels(t)).toString("base64")),
 		);
-		expect(seen.size).toBe(3);
+		expect(seen.size).toBe(TYPES.length);
 	});
 
 	test("the albedo is greyscale, so the type colour still multiplies through", () => {

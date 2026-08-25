@@ -23,7 +23,11 @@
 
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
-import { STATION_GEOMETRY, type StationType } from "../src/station";
+import {
+	STATION_GEOMETRY,
+	STATION_TYPES,
+	type StationType,
+} from "../src/station";
 import {
 	STATION_FORMS,
 	STATION_SILHOUETTE_KM,
@@ -31,7 +35,9 @@ import {
 	buildStationMesh,
 } from "../src/station-mesh";
 
-const TYPES: StationType[] = ["trade", "shipyard", "refinery"];
+// From `station.ts`, not a literal: a fourth station type must reach every
+// loop in this file, and a hand-written list is exactly the place it would not.
+const TYPES: StationType[] = STATION_TYPES;
 
 /** Any colour: these tests are about geometry. The two that are about the
  *  colour cue pass their own and say so. */

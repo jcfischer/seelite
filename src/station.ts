@@ -28,8 +28,19 @@
  * to each other. `system.ts` re-exports it, so existing importers are unchanged.
  */
 
-/** The three types #6 named and #13 specified. */
-export type StationType = "trade" | "refinery" | "shipyard";
+/**
+ * The three types #6 named and #13 specified, plus #56's outpost.
+ *
+ * **The outpost is a form and a geometry, not yet an economy.** #13 fixed what
+ * a station type means for the market, for equipment and for law, and it did so
+ * for three types; nothing here decides what an outpost sells, whether it can
+ * be a fence, or how often the generator places one. Those are #13's and #6's
+ * questions and they need their own node. Until then `system.ts` places none,
+ * so no outpost exists in a running game and every table below answers for it
+ * conservatively — which is visible rather than assumed, because a
+ * `Record<StationType, …>` cannot compile without an answer.
+ */
+export type StationType = "trade" | "refinery" | "shipyard" | "outpost";
 
 /**
  * The same three, as a value.
@@ -40,7 +51,12 @@ export type StationType = "trade" | "refinery" | "shipyard";
  * and it is here rather than written out at each of them so there is one list
  * to extend rather than several to remember.
  */
-export const STATION_TYPES: StationType[] = ["trade", "shipyard", "refinery"];
+export const STATION_TYPES: StationType[] = [
+	"trade",
+	"shipyard",
+	"refinery",
+	"outpost",
+];
 
 /** What you fly through, and how big it is (`docking.md` §5). */
 export interface StationAperture {
@@ -125,6 +141,19 @@ export const STATION_GEOMETRY: Record<StationType, StationGeometry> = {
 		axis: "outward",
 		spins: false,
 	},
+	outpost: {
+		// A quarter of a trade station's core, which is the point of it: an
+		// industrial structure rather than a habitat, small enough that its whole
+		// silhouette is a machine.
+		coreRadiusKm: 0.15,
+		// A **pad**, and nothing else. It does not spin, so `docking.md` §4's roll
+		// match does not apply to it, exactly as it does not to the refinery — and
+		// the pad is what the whole category is built around rather than a
+		// consequence of the shape.
+		aperture: { kind: "pad", widthKm: 0.12, heightKm: 0.12 },
+		axis: "outward",
+		spins: false,
+	},
 };
 
 /**
@@ -149,6 +178,11 @@ export const STATION_FENCE_ELIGIBLE: Record<StationType, boolean> = {
 	trade: false,
 	shipyard: false,
 	refinery: true,
+	// Conservative, and deliberately so: #13 made the refinery *the* seeded
+	// contraband market, and a second fence would change the geography that
+	// decision rests on. Whether a remote industrial outpost is the better fence
+	// is a real question and it belongs to #13, not to a visual round.
+	outpost: false,
 };
 
 /**

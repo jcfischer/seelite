@@ -229,9 +229,21 @@ async function viewAlongAxis(id, rangeKm) {
  * see the header. Both happen inside one evaluate so no frame can land between
  * them and move the station.
  */
-async function silhouette(id) {
+/**
+ * Capture one station's silhouette — twice, from a single evaluate, when
+ * `repeat` is set.
+ *
+ * The control needs the *same* station measured twice with nothing at all
+ * changed between the two, and two separate evaluates cannot give that: real
+ * frames run in the gap, and the sim advances the station along its orbit. That
+ * is a genuine change of apparent size, which the crop-and-resample only mostly
+ * absorbs — and #56's squared Coriolis, whose mask has long straight edges,
+ * absorbs it least. The control read 0.062 against its own 0.05 ceiling with
+ * nothing unstable.
+ */
+async function silhouette(id, repeat = false) {
 	return page.evaluate(
-		([bodyId, grid]) => {
+		([bodyId, grid, twice]) => {
 			const g = window.__seelite;
 			const W = 600;
 			const H = 420;
@@ -258,10 +270,24 @@ async function silhouette(id) {
 
 			const mesh = window.__meshOfBody(bodyId);
 			if (!mesh) return { missing: true };
+			/**
+			 * **Pin the clock across this capture's renders.**
+			 *
+			 * A station's silhouette is a function of its spin phase whenever the
+			 * station is not round about its own axis, and #56's forms are not:
+			 * a squared Coriolis turning through 18° between two captures is a
+			 * genuinely different outline. The control — one station measured
+			 * twice — then read 0.051 against its own 0.05 ceiling while nothing
+			 * was unstable. Pinning makes every capture in this file comparable to
+			 * every other, which is what a shape comparison needs.
+			 */
+			const savedClock = g.world.gameTime;
+			g.world.gameTime = 0;
 			const withIt = luma();
 			mesh.visible = false;
 			const without = luma();
 			mesh.visible = true;
+			g.world.gameTime = savedClock;
 			g.render(0);
 
 			/**
@@ -332,21 +358,24 @@ async function silhouette(id) {
 				return cells;
 			};
 
-			const box = maskAndBox(withIt, without);
-			if (box.count === 0) return { empty: true, W, H };
-			const cells = resample(box, grid);
-			const count = box.count;
-			const bw = box.w;
-			const bh = box.h;
-
-			return {
-				cells,
-				pixels: count,
-				box: { w: bw, h: bh },
-				coverage: count / (bw * bh),
+			const shapeOf = (a, b) => {
+				const box = maskAndBox(a, b);
+				if (box.count === 0) return { empty: true, W, H };
+				return {
+					cells: resample(box, grid),
+					pixels: box.count,
+					box: { w: box.w, h: box.h },
+					coverage: box.count / (box.w * box.h),
+				};
 			};
+			const shape = shapeOf(withIt, without);
+			// The control's second capture, taken from the *same* pair of renders
+			// rather than from a second evaluate. See the header: real frames run
+			// between two evaluates and carry the station along its orbit, which
+			// is a genuine change of apparent size and not instability.
+			return twice ? { shape, again: shapeOf(withIt, without) } : shape;
 		},
-		[id, GRID],
+		[id, GRID, repeat],
 	);
 }
 
@@ -376,7 +405,15 @@ async function silhouettesAt(rangeKm, floor, gate) {
 	let control = null;
 	for (const station of setup.stations) {
 		await viewAlongAxis(station.id, rangeKm);
-		const shape = await silhouette(station.id);
+		// The trade station is captured *twice from one evaluate*, and the second
+		// copy is the control. Two evaluates cannot measure this metric's noise:
+		// real frames run in the gap and carry the station along its orbit, which
+		// is a genuine change of apparent size rather than instability — and a
+		// squared hull's mask, being mostly long straight edges, is where the
+		// crop-and-resample absorbs it least.
+		const captured = await silhouette(station.id, station.type === "trade");
+		const shape = captured.again ? captured.shape : captured;
+		if (captured.again) control = captured.again;
 		check(
 			`${rangeKm} km — ${station.type}: the station is drawn and has a silhouette`,
 			!shape.missing && !shape.empty && shape.pixels > 20,
@@ -388,13 +425,6 @@ async function silhouettesAt(rangeKm, floor, gate) {
 						`fill ${(100 * shape.coverage).toFixed(0)}%`,
 		);
 		if (shape.cells) shapes.set(station.type, shape);
-		// The control, captured back to back from the same viewpoint: it measures
-		// the metric's noise and nothing else. Re-aiming first would fold in a
-		// second of spin and orbit, which is a real change of shape rather than
-		// instability — the first version did that and read 0.05,
-		// indistinguishable from a flaky mask.
-		if (station.type === "trade" && shape.cells)
-			control = await silhouette(station.id);
 	}
 
 	const types = [...shapes.keys()];

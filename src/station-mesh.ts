@@ -45,6 +45,7 @@
 
 import * as THREE from "three";
 import { type Ring, hullLoft } from "./loft";
+import { SimplexNoise } from "./noise";
 import { STATION_GEOMETRY, type StationType } from "./station";
 import {
 	PLATE_TEXTURE_SIZE,
@@ -90,6 +91,9 @@ export const STATION_SILHOUETTE_KM: Record<StationType, number> = {
 	},
 	get refinery() {
 		return formOf("refinery", SELECTED_FORM.refinery).reachKm;
+	},
+	get outpost() {
+		return formOf("outpost", SELECTED_FORM.outpost).reachKm;
 	},
 };
 
@@ -382,6 +386,7 @@ const PANE_MATERIALS: Record<StationType, THREE.MeshStandardMaterial> = {
 	trade: emissiveMaterial(STATION_VISUALS.trade.windowColor, 1.4),
 	shipyard: emissiveMaterial(STATION_VISUALS.shipyard.windowColor, 1.4),
 	refinery: emissiveMaterial(STATION_VISUALS.refinery.windowColor, 1.2),
+	outpost: emissiveMaterial(STATION_VISUALS.outpost.windowColor, 1.2),
 };
 const APERTURE_LIGHT_MATERIAL = emissiveMaterial(0xffb347, 2.2);
 /** The shipyard's cold bay floods. Steady, so shared: what moves on that
@@ -444,6 +449,118 @@ function buildAperture(type: StationType, faceZ: number): THREE.Group {
 	}
 	group.name = "aperture";
 	return group;
+}
+
+/**
+ * Which ranking round the forms below belong to.
+ *
+ * Named for the same reason `SHIP_DESIGN_ROUND` is: the workbench labels the
+ * round it is showing, and a reviewer ranking round two against round one's
+ * labels is ranking the wrong pool.
+ *
+ * **Round one's ranking**, which produced this round: trade `A > C > B`,
+ * shipyard `A > C > B`, refinery — no order, and a instruction instead. Each
+ * role keeps its top two and spends its last slot, which is #35's convention;
+ * the refinery is the exception and spends all three, because the review of it
+ * was not a preference between the concepts offered but a rejection of two of
+ * them. "Keep the asteroid, but a better asteroid with structure built into it"
+ * makes rock the thesis of the whole role rather than of one concept in it.
+ *
+ * The other two notes were defects rather than preferences and are treated as
+ * such: the ring was ranked *last* and described as good — "looks like a comic,
+ * and maybe use more than one spoke" — so it is rebuilt in its slot rather than
+ * dropped, and the shipyard's last slot is spent on a different silhouette
+ * class rather than a fourth variation of an open frame.
+ */
+export const STATION_DESIGN_ROUND = 2;
+
+/**
+ * A captured asteroid, displaced and cratered.
+ *
+ * Round one's rock was an icosahedron with its vertices jittered by a uniform
+ * random factor, which gives a *lumpy ball*: every vertex moves independently,
+ * so the surface has no features larger than one face and no features smaller
+ * than one either. It reads as a low-poly sphere with noise on it, which is
+ * what the review said.
+ *
+ * This is coherent noise instead, at three octaves, so the rock has shapes at
+ * three scales — a long axis, ridges, and a grain — plus craters, which are the
+ * one feature that says *asteroid* rather than *potato*.
+ *
+ * `SimplexNoise` only offers `noise2D`, so the displacement is the sum of three
+ * planar lookups on the vertex's own (x, y), (y, z) and (z, x). That is a
+ * triplanar blend rather than true 3D noise: it costs one seam-free field with
+ * no poles, which a spherical (θ, φ) parameterisation would not give — the
+ * poles are exactly where a rock would then show a pinch.
+ */
+function buildAsteroid(radiusKm: number, tag: string): THREE.Mesh {
+	const geometry = new THREE.IcosahedronGeometry(radiusKm, 3);
+	const noise = new SimplexNoise(
+		[...tag].reduce(
+			(h, c) => Math.imul(h ^ c.charCodeAt(0), 0x01000193),
+			0x811c9dc5,
+		) >>> 0,
+	);
+	const rand = displayRand(`${tag}-craters`);
+	// Craters: a direction, an angular radius and a depth each. Six is enough to
+	// read as cratered from any angle without turning the rock into foam.
+	const craters = Array.from({ length: 6 }, () => {
+		const z = rand() * 2 - 1;
+		const theta = rand() * Math.PI * 2;
+		const planar = Math.sqrt(Math.max(0, 1 - z * z));
+		return {
+			dir: new THREE.Vector3(
+				planar * Math.cos(theta),
+				planar * Math.sin(theta),
+				z,
+			),
+			cos: Math.cos(0.22 + rand() * 0.3),
+			depth: 0.06 + rand() * 0.1,
+		};
+	});
+	const position = geometry.getAttribute("position") as THREE.BufferAttribute;
+	const v = new THREE.Vector3();
+	const unit = new THREE.Vector3();
+	for (let i = 0; i < position.count; i++) {
+		v.fromBufferAttribute(position, i);
+		unit.copy(v).normalize();
+		const field = (frequency: number) =>
+			noise.noise2D(unit.x * frequency, unit.y * frequency) +
+			noise.noise2D(unit.y * frequency, unit.z * frequency) +
+			noise.noise2D(unit.z * frequency, unit.x * frequency);
+		let scale =
+			1 + field(1.1) * 0.085 + field(2.7) * 0.042 + field(6.3) * 0.018;
+		for (const crater of craters) {
+			const alignment = unit.dot(crater.dir);
+			if (alignment <= crater.cos) continue;
+			// A smooth bowl rather than a step: `t` is 0 at the rim and 1 at the
+			// centre, and the square is what gives the floor a flat-ish middle
+			// instead of a spike.
+			const t = (alignment - crater.cos) / (1 - crater.cos);
+			scale -= crater.depth * t * t;
+		}
+		// Flattened along Z, so the rock has a long axis. A sphere with noise on
+		// it still reads as a sphere.
+		v.copy(unit).multiplyScalar(radiusKm * scale);
+		v.z *= 0.78;
+		position.setXYZ(i, v.x, v.y, v.z);
+	}
+	position.needsUpdate = true;
+	geometry.computeVertexNormals();
+	const mesh = new THREE.Mesh(
+		geometry,
+		new THREE.MeshStandardMaterial({
+			// Lighter than rock looks in a swatch, for #28's reason: the near
+			// layer's only fill is a dim camera-side light, and a physically
+			// plausible dark asteroid renders as a hole in the starfield.
+			color: 0x9a8a72,
+			roughness: 0.95,
+			metalness: 0.02,
+			flatShading: true,
+		}),
+	);
+	mesh.name = "asteroid";
+	return mesh;
 }
 
 /**
@@ -582,18 +699,33 @@ function buildTradeCoriolis(color: number): BuiltPart {
 	const r = STATION_GEOMETRY.trade.coreRadiusKm;
 	const group = new THREE.Group();
 	const fixtures: StationFixture[] = [];
+	// **A squared hull with cut corners, which is what a Coriolis actually is.**
+	// Round one built this as a twelve-sided drum at `e: 2` — a true ellipse —
+	// and the result was a ball: down the aperture axis, the one view a docking
+	// approach has, it projected as a circle, and `probe-station.mjs` measured
+	// it against the refinery at 1 − IoU 0.215 on a 0.25 floor. Two round things
+	// cannot differ by outline however they are decorated, and §7 rests identity
+	// on outline.
+	//
+	// So the section is four segments at `e: 5`: a rounded square head-on. That
+	// is also the shape the reference has — Elite's Coriolis is a cube with its
+	// corners cut, and its slot is cut into one of the flat faces.
+	//
+	// `e` is not a corner radius: a superellipse's diagonal reaches
+	// `2^(1/e)` × its own half-extent, so an `e: 5` section's corners sit 15%
+	// outside `w`. The declared reach carries that; `w` alone does not.
 	const hull = shell(
 		[
-			{ z: -r * 0.92, w: r * 0.3, h: r * 0.3, e: 2 },
-			{ z: -r * 0.72, w: r * 0.62, h: r * 0.62, e: 2, hard: true },
-			{ z: -r * 0.3, w: r * 0.95, h: r * 0.95, e: 2 },
-			{ z: r * 0.3, w: r * 0.95, h: r * 0.95, e: 2 },
-			{ z: r * 0.72, w: r * 0.62, h: r * 0.62, e: 2, hard: true },
-			{ z: r * 0.9, w: r * 0.52, h: r * 0.52, e: 2 },
+			{ z: -r * 0.94, w: r * 0.34, h: r * 0.34, e: 5 },
+			{ z: -r * 0.74, w: r * 0.62, h: r * 0.62, e: 5, hard: true },
+			{ z: -r * 0.3, w: r * 0.9, h: r * 0.9, e: 5 },
+			{ z: r * 0.3, w: r * 0.9, h: r * 0.9, e: 5 },
+			{ z: r * 0.74, w: r * 0.62, h: r * 0.62, e: 5, hard: true },
+			{ z: r * 0.92, w: r * 0.52, h: r * 0.52, e: 5 },
 		],
 		hullMaterial(color, "trade"),
 		"core",
-		12,
+		4,
 		true,
 	);
 	group.add(hull);
@@ -601,92 +733,167 @@ function buildTradeCoriolis(color: number): BuiltPart {
 	// than as a panel that happens to be lit.
 	const collar = shell(
 		[
-			{ z: r * 0.88, w: r * 0.4, h: r * 0.4, e: 2 },
-			{ z: r * 0.96, w: r * 0.34, h: r * 0.34, e: 2, hard: true },
+			{ z: r * 0.9, w: r * 0.42, h: r * 0.42, e: 5 },
+			{ z: r * 0.98, w: r * 0.36, h: r * 0.36, e: 5, hard: true },
 		],
 		plainMaterial(0x79838f, 0.7, 0.45),
 		"collar",
-		12,
+		4,
+		true,
 	);
 	group.add(collar);
-	group.add(buildAperture("trade", r * 0.96));
+	group.add(buildAperture("trade", r * 0.98));
 	// Ports in bands round the widest station, which is where decks would be.
 	group.add(
 		portRun("trade", PANE_COUNT, (i, position, normal) => {
-			const theta = ((i % 14) / 14) * Math.PI * 2 + (i < 14 ? 0 : 0.22);
-			const band = i < 14 ? -r * 0.14 : r * 0.14;
+			// **On the flats, never near a corner.** An `e: 5` section's corner
+			// sits 15% outside `w`, and a pane is 30 m across: placed there it
+			// becomes the station's outermost drawn point, which breaks §2's rule
+			// that a detail level may not change the outline — measured, the trade
+			// station reached 0.670 km with its window grid and 0.634 km without.
+			// Four faces, seven panes to each, spread across the middle of the
+			// face.
+			const face = (i % 4) * (Math.PI / 2);
+			const theta =
+				face +
+				(0.28 + (Math.floor(i / 4) / 7) * 0.44) * (Math.PI / 2) -
+				Math.PI / 4;
+			const band = (Math.floor(i / 4) % 2 === 0 ? -1 : 1) * r * 0.14;
 			normal.set(Math.cos(theta), Math.sin(theta), 0);
-			position.copy(normal).multiplyScalar(r * 0.96);
+			// On the squared section's own surface, not on a circle round it:
+			// |x/w|^e + |y/w|^e = 1 gives a radius of
+			// w / (|cos|^e + |sin|^e)^(1/e) at each angle. A pane placed on a
+			// circle would float off the flats and sink into the corners.
+			const e = 5;
+			const w = r * 0.9;
+			const radius =
+				w /
+				(Math.abs(Math.cos(theta)) ** e + Math.abs(Math.sin(theta)) ** e) **
+					(1 / e);
+			position.copy(normal).multiplyScalar(radius * 1.01);
 			position.z = band;
 		}),
 	);
 	group.add(
 		strobePair("trade", fixtures, r * 0.07, (side, position) => {
-			position.set(side * r * 0.94, 0, r * 0.32);
+			position.set(side * r * 0.92, 0, r * 0.32);
 		}),
 	);
 	return { group, fixtures };
 }
 
-/** Trade B — Ring. Elite Dangerous' answer: a spun torus on a fixed hub, with
- *  the mouth on the hub's axis. The dock is a tunnel rather than a slot, and
- *  the rotation is legible from the ring itself at any range. */
+/**
+ * Trade B — Ring. Rebuilt for round two.
+ *
+ * Round one ranked this last and called it good: "the ring is good, but looks
+ * like a comic — and maybe use more than one spoke". That is a defect report
+ * rather than a preference, so the concept keeps its slot and the execution
+ * changes. Three things made it cartoonish and all three are structural:
+ *
+ * - **The rim was fat.** A tube a quarter of the ring's own radius has the
+ *   proportions of a life-belt. It is 0.13·r now against 0.24·r, which is
+ *   roughly the ratio a spun habitat actually has.
+ * - **Two spokes read as a prop.** Six, and they are lofted trusses that taper
+ *   into the rim rather than rods that meet it at a butt joint.
+ * - **Nothing had a size.** A smooth torus gives the eye no unit to judge
+ *   against, so it could be ten metres across. The rim now carries repeated
+ *   modules at a fixed pitch — the same trick #35's carrier uses, and the only
+ *   one that works against a starfield with no ruler in it.
+ */
 function buildTradeRing(color: number): BuiltPart {
 	const r = STATION_GEOMETRY.trade.coreRadiusKm;
 	const group = new THREE.Group();
 	const fixtures: StationFixture[] = [];
 	const major = r * 0.92;
-	const tube = r * 0.24;
-	const ring = new THREE.Mesh(
+	const tube = r * 0.13;
+	const rim = new THREE.Mesh(
+		// 24 segments round the ring and 8 round the tube: flat-shaded, that is a
+		// rim visibly built of panels rather than a moulded doughnut.
 		new THREE.TorusGeometry(major, tube, 8, 24),
 		hullMaterial(color, "trade"),
 	);
-	ring.name = "core";
-	group.add(ring);
-	// Spokes: lofted, so they read as structure rather than as rods.
-	for (let i = 0; i < 3; i++) {
-		const theta = (i / 3) * Math.PI * 2;
+	(rim.material as THREE.MeshStandardMaterial).flatShading = true;
+	rim.name = "core";
+	group.add(rim);
+
+	// Modules at a fixed pitch round the rim: the ruler. Alternating outboard
+	// and inboard, so the ring's edge is broken rather than a clean circle.
+	const MODULES = 12;
+	for (let i = 0; i < MODULES; i++) {
+		const theta = (i / MODULES) * Math.PI * 2;
+		const outward = i % 2 === 0;
+		const module = shell(
+			[
+				{ z: 0, w: r * 0.09, h: r * 0.07, e: 6 },
+				{ z: r * 0.17, w: r * 0.07, h: r * 0.055, e: 6 },
+			],
+			plainMaterial(outward ? 0x8b95a0 : 0x6f7d88, 0.68, 0.46),
+			`module-${i}`,
+			6,
+			true,
+		);
+		module.position.set(
+			Math.cos(theta) * (major + (outward ? tube * 0.8 : -tube * 0.8)),
+			Math.sin(theta) * (major + (outward ? tube * 0.8 : -tube * 0.8)),
+			0,
+		);
+		module.rotation.y = Math.PI / 2;
+		module.rotation.z = outward ? theta : theta + Math.PI;
+		group.add(module);
+	}
+
+	// Six lofted spokes, tapering into the rim.
+	for (let i = 0; i < 6; i++) {
+		const theta = (i / 6) * Math.PI * 2;
 		const spoke = shell(
 			[
-				{ z: 0, w: r * 0.09, h: r * 0.05, e: 3 },
-				{ z: major, w: r * 0.06, h: r * 0.04, e: 3 },
+				{ z: r * 0.22, w: r * 0.055, h: r * 0.035, e: 4 },
+				{ z: major * 0.6, w: r * 0.04, h: r * 0.026, e: 4 },
+				{ z: major, w: r * 0.055, h: r * 0.04, e: 4 },
 			],
-			plainMaterial(0x6f7d88, 0.72, 0.44),
+			plainMaterial(0x6f7d88, 0.74, 0.44),
 			`spoke-${i}`,
-			8,
+			6,
+			true,
 		);
 		spoke.rotation.y = Math.PI / 2;
 		spoke.rotation.z = theta;
 		group.add(spoke);
 	}
-	const hub = shell(
-		[
-			{ z: -r * 0.34, w: r * 0.24, h: r * 0.24, e: 3 },
-			{ z: r * 0.1, w: r * 0.3, h: r * 0.3, e: 3, hard: true },
-			{ z: r * 0.52, w: r * 0.26, h: r * 0.26, e: 3 },
-		],
-		plainMaterial(0x8b95a0, 0.6, 0.5),
-		"hub",
-		12,
+
+	// A slender hub with a real throat, rather than the lozenge round one had:
+	// the dock is a *tunnel* on the axis, so it needs visible depth.
+	group.add(
+		shell(
+			[
+				{ z: -r * 0.5, w: r * 0.2, h: r * 0.2, e: 6 },
+				{ z: -r * 0.16, w: r * 0.26, h: r * 0.26, e: 6, hard: true },
+				{ z: r * 0.24, w: r * 0.26, h: r * 0.26, e: 6, hard: true },
+				{ z: r * 0.44, w: r * 0.19, h: r * 0.19, e: 6 },
+			],
+			plainMaterial(0x8b95a0, 0.6, 0.5),
+			"hub",
+			8,
+			true,
+		),
 	);
-	group.add(hub);
-	group.add(buildAperture("trade", r * 0.52));
+	group.add(buildAperture("trade", r * 0.44));
 	group.add(
 		portRun("trade", PANE_COUNT, (i, position, normal) => {
 			const theta = (i / PANE_COUNT) * Math.PI * 2;
-			// On the ring's inner face, which is where a spun habitat's windows
-			// would look — inward, at the ring's own floor.
+			// On the rim's inner face, which is where a spun habitat's windows
+			// look — inward, at the ring's own floor.
 			normal.set(-Math.cos(theta), -Math.sin(theta), 0);
 			position.set(
-				Math.cos(theta) * (major - tube * 0.95),
-				Math.sin(theta) * (major - tube * 0.95),
-				0,
+				Math.cos(theta) * (major - tube * 0.98),
+				Math.sin(theta) * (major - tube * 0.98),
+				(i % 2 === 0 ? 1 : -1) * tube * 0.35,
 			);
 		}),
 	);
 	group.add(
-		strobePair("trade", fixtures, r * 0.07, (side, position) => {
-			position.set(0, side * (major + tube * 0.6), 0);
+		strobePair("trade", fixtures, r * 0.06, (side, position) => {
+			position.set(0, side * (major + tube * 1.1), 0);
 		}),
 	);
 	return { group, fixtures };
@@ -866,65 +1073,112 @@ function buildShipyardGantry(color: number): BuiltPart {
 	return { group, fixtures, spinner: spun };
 }
 
-/** Shipyard B — Cradle. Two lofted arms curved round an empty slip, with the
- *  command block above them. The negative space is the identity. */
-function buildShipyardCradle(color: number): BuiltPart {
+/**
+ * Shipyard B — Hangar. Round two's replacement for the Cradle.
+ *
+ * Round one ranked the shipyard `A > C > B` and asked for "some other designs",
+ * so the last slot is not a fourth open frame. Every shipyard form so far is a
+ * *skeleton* — a cage, a broken ring — and reads as scaffolding round an empty
+ * volume. This one is the opposite silhouette class: a closed slab with a lit
+ * mouth cut into its flank, so the ships are inside rather than clamped
+ * outside. What it borrows is a carrier's bay, which is also the one shape in
+ * #35's pool that answers "how big is that" at range, because you can see a
+ * hole a ship fits through.
+ */
+function buildShipyardHangar(color: number): BuiltPart {
 	const group = new THREE.Group();
 	const fixtures: StationFixture[] = [];
 	const r = STATION_GEOMETRY.shipyard.coreRadiusKm;
 	const reach = 2.14;
-	const block = shell(
-		[
-			{ z: -r * 0.5, w: r * 0.38, h: r * 0.3, e: 3.6 },
-			{ z: r * 0.2, w: r * 0.5, h: r * 0.4, e: 3.6, hard: true },
-			{ z: r * 0.62, w: r * 0.34, h: r * 0.28, e: 3.6 },
-		],
-		hullMaterial(color, "shipyard"),
-		"core",
-		12,
-		true,
-	);
-	block.position.y = r * 0.72;
-	const spun = new THREE.Group();
-	spun.name = "spun";
-	spun.add(block);
-	const aperture = buildAperture("shipyard", r * 0.62);
-	aperture.position.y = r * 0.72;
-	spun.add(aperture);
-	group.add(spun);
 	const frame = new THREE.Group();
 	frame.name = "frame";
 	group.add(frame);
+
+	// The slab: long, rectangular in section, with a chamfer at each end.
+	const slab = shell(
+		[
+			{ z: -reach * 0.56, w: r * 0.34, h: r * 0.5, e: 5 },
+			{ z: -reach * 0.44, w: r * 0.5, h: r * 0.72, e: 7, hard: true },
+			{ z: reach * 0.4, w: r * 0.5, h: r * 0.72, e: 7, hard: true },
+			{ z: reach * 0.54, w: r * 0.32, h: r * 0.48, e: 5 },
+		],
+		hullMaterial(color, "shipyard"),
+		"slab",
+		8,
+		true,
+	);
+	slab.rotation.y = Math.PI / 2;
+	frame.add(slab);
+
+	// The bay mouth: a recess cut into the flank, floodlit from inside. Its own
+	// size is the ruler — it is obviously a hole a ship goes through.
+	const mouth = new THREE.Mesh(
+		new THREE.BoxGeometry(reach * 0.5, r * 0.44, r * 0.24),
+		new THREE.MeshBasicMaterial({ color: 0x05070a }),
+	);
+	mouth.position.set(0, 0, r * 0.42);
+	mouth.name = "bay-mouth";
+	frame.add(mouth);
 	for (const side of [-1, 1]) {
-		const arm = shell(
+		const lip = shell(
 			[
-				{ z: -reach * 0.6, w: r * 0.16, h: r * 0.13, y: 0, e: 3 },
-				{ z: -reach * 0.2, w: r * 0.22, h: r * 0.18, y: -r * 0.5, e: 3 },
-				{ z: reach * 0.2, w: r * 0.22, h: r * 0.18, y: -r * 0.5, e: 3 },
-				{ z: reach * 0.6, w: r * 0.16, h: r * 0.13, y: 0, e: 3 },
+				{ z: -reach * 0.25, w: r * 0.06, h: r * 0.05, e: 5 },
+				{ z: reach * 0.25, w: r * 0.06, h: r * 0.05, e: 5 },
 			],
-			plainMaterial(0x6f7d88, 0.78, 0.42),
-			`arm-${side}`,
-			10,
+			plainMaterial(0x8b95a0, 0.66, 0.46),
+			"lip",
+			6,
+			true,
 		);
-		arm.rotation.y = Math.PI / 2;
-		arm.position.z = side * r * 0.62;
-		frame.add(arm);
+		lip.rotation.y = Math.PI / 2;
+		lip.position.set(0, side * r * 0.26, r * 0.5);
+		frame.add(lip);
 	}
+	// Rib frames at a fixed pitch down the flank — the second ruler, and what
+	// keeps a long smooth slab from reading as a small smooth box.
+	for (let i = 0; i < 9; i++) {
+		const rib = new THREE.Mesh(
+			new THREE.BoxGeometry(r * 0.03, r * 0.76, r * 0.54),
+			plainMaterial(0x6f7d88, 0.78, 0.42),
+		);
+		rib.position.set(-reach * 0.42 + (i / 8) * reach * 0.84, 0, 0);
+		frame.add(rib);
+	}
+
+	// The hub that turns, on the slab's spine. Compact, for the reason the
+	// Gantry's is: the slot sits on the spin axis, so whatever turns sweeps its
+	// own outline round it.
+	const hub = shell(
+		[
+			{ z: -r * 0.3, w: r * 0.34, h: r * 0.34, e: 8 },
+			{ z: r * 0.24, w: r * 0.42, h: r * 0.42, e: 8, hard: true },
+			{ z: r * 0.6, w: r * 0.32, h: r * 0.32, e: 8 },
+		],
+		hullMaterial(color, "shipyard"),
+		"core",
+		4,
+		true,
+	);
+	const spun = new THREE.Group();
+	spun.name = "spun";
+	spun.add(hub);
+	spun.add(buildAperture("shipyard", r * 0.6));
+	group.add(spun);
+
 	group.add(buildBayLights(fixtures, reach, r));
 	group.add(
-		portRun("shipyard", 12, (i, position, normal) => {
-			normal.set(0, 0, 1);
+		portRun("shipyard", 16, (i, position, normal) => {
+			normal.set(0, 0, -1);
 			position.set(
-				-r * 0.3 + (i % 6) * r * 0.12,
-				r * 0.72 + (i < 6 ? -r * 0.1 : r * 0.1),
-				r * 0.3,
+				-reach * 0.34 + (i % 8) * reach * 0.1,
+				(i < 8 ? -1 : 1) * r * 0.24,
+				-r * 0.5,
 			);
 		}),
 	);
 	group.add(
 		strobePair("shipyard", fixtures, r * 0.07, (side, position) => {
-			position.set(side * reach * 0.58, r * 0.1, 0);
+			position.set(side * reach * 0.55, 0, r * 0.2);
 		}),
 	);
 	return { group, fixtures, spinner: spun };
@@ -1066,169 +1320,224 @@ function buildFlare(
 	return stack;
 }
 
-/** Refinery A — Cracker. Stacked lofted tanks under a fractionating column,
- *  with the pad on the tank stack's face. Plant, not rock. */
-function buildRefineryCracker(color: number): BuiltPart {
+/**
+ * Refinery A — Warren. A cut face sliced into the rock, with terraced plant
+ * inside it and the pad at the bottom of the cut.
+ *
+ * The plant is *inside* the asteroid rather than bolted onto it, which is the
+ * round-one review's instruction: structure built into the rock. What the eye
+ * gets is a machined notch in something that is otherwise plainly a rock.
+ */
+function buildRefineryWarren(color: number): BuiltPart {
 	const r = STATION_GEOMETRY.refinery.coreRadiusKm;
 	const group = new THREE.Group();
 	const fixtures: StationFixture[] = [];
-	group.add(
-		shell(
-			[
-				{ z: -r * 1.1, w: r * 0.5, h: r * 0.5, e: 2.6 },
-				{ z: -r * 0.2, w: r * 0.86, h: r * 0.86, e: 2.6, hard: true },
-				{ z: r * 0.5, w: r * 0.86, h: r * 0.86, e: 2.6, hard: true },
-				{ z: r * 0.9, w: r * 0.58, h: r * 0.58, e: 2.6 },
-			],
-			hullMaterial(color, "refinery"),
-			"core",
-			12,
-			true,
-		),
-	);
-	for (const [x, y] of [
-		[r * 0.95, r * 0.2],
-		[-r * 0.82, -r * 0.5],
-	]) {
-		const tank = shell(
-			[
-				{ z: -r * 0.62, w: r * 0.3, h: r * 0.3, e: 2.4 },
-				{ z: r * 0.62, w: r * 0.3, h: r * 0.3, e: 2.4 },
-			],
-			plainMaterial(0xb2a894, 0.85, 0.16),
-			"tank",
-			10,
-		);
-		tank.position.set(x, y, -r * 0.2);
-		group.add(tank);
-	}
-	group.add(buildAperture("refinery", r * 0.92));
-	const flare = buildFlare(fixtures, r * 1.1, r * 0.09);
-	flare.position.set(r * 0.4, r * 0.7, r * 0.1);
-	flare.rotation.x = -Math.PI / 2.4;
-	group.add(flare);
-	group.add(buildHeatRing(fixtures, r * 0.6, r * 0.92));
-	group.add(
-		portRun("refinery", 10, (i, position, normal) => {
-			const theta = (i / 10) * Math.PI * 2;
-			normal.set(Math.cos(theta), Math.sin(theta), 0);
-			position.copy(normal).multiplyScalar(r * 0.88);
-			position.z = r * 0.15;
-		}),
-	);
-	return { group, fixtures };
-}
+	group.add(buildAsteroid(r * 1.24, "refinery-warren"));
 
-/** Refinery B — Rock. #28's captured asteroid kept, but the plant on it built
- *  in the same lofted language as everything else, so the contrast between
- *  machined and unmachined is the point rather than an accident. */
-function buildRefineryRock(color: number): BuiltPart {
-	const r = STATION_GEOMETRY.refinery.coreRadiusKm;
-	const group = new THREE.Group();
-	const fixtures: StationFixture[] = [];
-	const rock = new THREE.IcosahedronGeometry(r * 1.18, 1);
-	const rand = displayRand("station-refinery-rock");
-	const pos = rock.getAttribute("position");
-	for (let i = 0; i < pos.count; i++) {
-		const f = 0.72 + rand() * 0.5;
-		pos.setXYZ(i, pos.getX(i) * f, pos.getY(i) * f, pos.getZ(i) * f * 0.78);
-	}
-	rock.computeVertexNormals();
-	const asteroid = new THREE.Mesh(
-		rock,
-		new THREE.MeshStandardMaterial({
-			color: 0x9a8a72,
-			roughness: 0.95,
-			metalness: 0.02,
-		}),
-	);
-	asteroid.name = "asteroid";
-	group.add(asteroid);
-	group.add(
-		shell(
+	// The cut: three terraces stepping down toward +Z, each a flat plated slab
+	// sunk into the rock face. Squared sections, so the machined half cannot be
+	// mistaken for more rock.
+	for (let i = 0; i < 3; i++) {
+		const w = r * (0.78 - i * 0.16);
+		const terrace = shell(
 			[
-				{ z: r * 0.1, w: r * 0.72, h: r * 0.72, e: 3.2 },
-				{ z: r * 0.66, w: r * 0.66, h: r * 0.66, e: 3.2, hard: true },
-				{ z: r * 0.94, w: r * 0.5, h: r * 0.5, e: 3.2 },
+				{ z: r * (0.5 + i * 0.16), w, h: w * 0.86, e: 8 },
+				{ z: r * (0.62 + i * 0.16), w: w * 0.95, h: w * 0.82, e: 8 },
 			],
 			hullMaterial(color, "refinery"),
-			"core",
-			12,
+			i === 1 ? "core" : `terrace-${i}`,
+			8,
 			true,
-		),
-	);
-	group.add(buildAperture("refinery", r * 0.94));
-	for (const [x, y, tilt] of [
-		[r * 0.7, r * 0.3, 0.4],
-		[-r * 0.55, r * 0.6, -0.5],
+		);
+		group.add(terrace);
+	}
+	group.add(buildAperture("refinery", r * 0.99));
+
+	// **Stacks canted outward, not laid back.** Viewed down the aperture axis —
+	// the one view a docking approach has — a rock with an inlaid cut is still a
+	// rounded lump, and `probe-station.mjs` measured this against the trade
+	// station's drum at 1 − IoU 0.216 on a 0.25 floor. §7 rests identity on
+	// outline, so the machined half has to reach *into that view* rather than
+	// sit flush in it.
+	for (const [x, y, lean] of [
+		[r * 0.72, r * 0.5, 0.55],
+		[-r * 0.6, r * 0.66, -0.7],
 	]) {
-		const flare = buildFlare(fixtures, r * 1.05, r * 0.08);
-		flare.position.set(x, y, r * 0.2);
-		flare.rotation.x = -Math.PI / 2 + tilt * 0.4;
-		flare.rotation.y = tilt;
+		const flare = buildFlare(fixtures, r * 1.05, r * 0.07);
+		flare.position.set(x, y, r * 0.36);
+		flare.rotation.x = -Math.PI / 2.6;
+		flare.rotation.y = lean;
 		group.add(flare);
 	}
-	group.add(buildHeatRing(fixtures, r * 0.56, r * 0.93));
+	// A cantilevered loading arm off the cut, which is the other thing the
+	// silhouette gains: something obviously built sticking out of something
+	// obviously not.
+	const arm = shell(
+		[
+			{ z: 0, w: r * 0.12, h: r * 0.1, e: 6 },
+			{ z: r * 0.72, w: r * 0.08, h: r * 0.07, e: 6, hard: true },
+			{ z: r * 0.95, w: r * 0.2, h: r * 0.08, e: 6 },
+		],
+		plainMaterial(0x8b95a0, 0.68, 0.44),
+		"loading-arm",
+		6,
+		true,
+	);
+	arm.rotation.y = Math.PI / 2.3;
+	arm.position.set(-r * 0.35, -r * 0.5, r * 0.5);
+	group.add(arm);
+	group.add(buildHeatRing(fixtures, r * 0.5, r * 0.98));
 	group.add(
-		portRun("refinery", 8, (i, position, normal) => {
-			const theta = (i / 8) * Math.PI * 2;
+		portRun("refinery", 12, (i, position, normal) => {
+			// Down the terraced face, in two columns, so the cut reads as having
+			// levels rather than as one lit slab.
 			normal.set(0, 0, 1);
 			position.set(
-				Math.cos(theta) * r * 0.42,
-				Math.sin(theta) * r * 0.42,
-				r * 0.95,
+				(i % 2 === 0 ? -1 : 1) * r * 0.5,
+				r * 0.34 - Math.floor(i / 2) * r * 0.14,
+				r * (0.66 + Math.floor(i / 2) * 0.06),
 			);
 		}),
 	);
 	return { group, fixtures };
 }
 
-/** Refinery C — Barge. A long processing hull with tank blisters down one
- *  flank and two flare booms aft: the only form of the three whose axis is
- *  longer than it is wide. */
-function buildRefineryBarge(color: number): BuiltPart {
+/**
+ * Refinery B — Collar. The rock gripped at its waist by a machined band that
+ * carries the whole plant, with the pad on the band's face.
+ *
+ * The band is the same swept language as a hull and wraps a body that is not
+ * one, which is the contrast the role is about. Unlike the Warren, the plant is
+ * visible from every angle rather than only from the cut.
+ */
+function buildRefineryCollar(color: number): BuiltPart {
 	const r = STATION_GEOMETRY.refinery.coreRadiusKm;
 	const group = new THREE.Group();
 	const fixtures: StationFixture[] = [];
-	const hull = shell(
-		[
-			{ z: -r * 1.7, w: r * 0.3, h: r * 0.24, e: 3.2 },
-			{ z: -r * 1.1, w: r * 0.52, h: r * 0.4, e: 3.4, hard: true },
-			{ z: r * 0.5, w: r * 0.56, h: r * 0.44, e: 3.4 },
-			{ z: r * 0.94, w: r * 0.4, h: r * 0.34, e: 3.4 },
-		],
+	group.add(buildAsteroid(r * 1.16, "refinery-collar"));
+
+	const band = new THREE.Mesh(
+		new THREE.TorusGeometry(r * 1.1, r * 0.16, 6, 20),
 		hullMaterial(color, "refinery"),
-		"core",
-		12,
-		true,
 	);
-	group.add(hull);
-	for (let i = 0; i < 3; i++) {
-		const blister = shell(
+	band.name = "core";
+	group.add(band);
+	// Clamps: short lofted blocks pinning the band to the rock, so the two read
+	// as *held together* rather than as one shape passing through the other.
+	for (let i = 0; i < 5; i++) {
+		const theta = (i / 5) * Math.PI * 2;
+		const clamp = shell(
 			[
-				{ z: -r * 0.3, w: r * 0.24, h: r * 0.24, e: 2.4 },
-				{ z: r * 0.3, w: r * 0.24, h: r * 0.24, e: 2.4 },
+				{ z: r * 0.72, w: r * 0.15, h: r * 0.13, e: 6 },
+				{ z: r * 1.18, w: r * 0.11, h: r * 0.1, e: 6 },
+			],
+			plainMaterial(0x8b95a0, 0.66, 0.46),
+			`clamp-${i}`,
+			6,
+			true,
+		);
+		clamp.rotation.y = Math.PI / 2;
+		clamp.rotation.z = theta;
+		group.add(clamp);
+	}
+	// The pad is on a plated boss over the rock's +Z pole, fed from the band.
+	group.add(
+		shell(
+			[
+				{ z: r * 0.5, w: r * 0.5, h: r * 0.5, e: 6 },
+				{ z: r * 0.88, w: r * 0.42, h: r * 0.42, e: 6, hard: true },
+				{ z: r * 1.0, w: r * 0.34, h: r * 0.34, e: 6 },
+			],
+			hullMaterial(color, "refinery"),
+			"boss",
+			8,
+			true,
+		),
+	);
+	group.add(buildAperture("refinery", r * 1.0));
+	for (const side of [-1, 1]) {
+		const flare = buildFlare(fixtures, r * 0.9, r * 0.07);
+		flare.position.set(side * r * 1.05, r * 0.35, 0);
+		flare.rotation.x = -Math.PI / 2.6;
+		flare.rotation.z = side * 0.35;
+		group.add(flare);
+	}
+	group.add(buildHeatRing(fixtures, r * 0.44, r * 0.99));
+	group.add(
+		portRun("refinery", 12, (i, position, normal) => {
+			const theta = (i / 12) * Math.PI * 2;
+			normal.set(Math.cos(theta), Math.sin(theta), 0);
+			position.copy(normal).multiplyScalar(r * 1.22);
+			position.z = 0;
+		}),
+	);
+	return { group, fixtures };
+}
+
+/**
+ * Refinery C — Spar. The rock run through by a processing spar that comes out
+ * the far side, tanks strung along it, the pad on the near end.
+ *
+ * The one form of the three whose axis is longer than the rock, and the only
+ * one where the machinery *pierces* rather than wraps or inlays. Its silhouette
+ * is a rock with a shaft through it, which nothing else in the pool is.
+ */
+function buildRefinerySpar(color: number): BuiltPart {
+	const r = STATION_GEOMETRY.refinery.coreRadiusKm;
+	const group = new THREE.Group();
+	const fixtures: StationFixture[] = [];
+	group.add(buildAsteroid(r * 1.05, "refinery-spar"));
+
+	group.add(
+		shell(
+			[
+				{ z: -r * 1.7, w: r * 0.2, h: r * 0.2, e: 6 },
+				{ z: -r * 1.3, w: r * 0.3, h: r * 0.3, e: 6, hard: true },
+				{ z: r * 0.9, w: r * 0.3, h: r * 0.3, e: 6, hard: true },
+				{ z: r * 1.22, w: r * 0.4, h: r * 0.4, e: 6 },
+			],
+			hullMaterial(color, "refinery"),
+			"core",
+			8,
+			true,
+		),
+	);
+	group.add(buildAperture("refinery", r * 1.22));
+	// Tanks strung along the exposed length, off-axis so the spar does not read
+	// as a smooth rod.
+	for (let i = 0; i < 3; i++) {
+		const tank = shell(
+			[
+				{ z: -r * 0.24, w: r * 0.19, h: r * 0.19, e: 2.4 },
+				{ z: r * 0.24, w: r * 0.19, h: r * 0.19, e: 2.4 },
 			],
 			plainMaterial(0xb2a894, 0.85, 0.16),
-			"blister",
+			`tank-${i}`,
 			10,
+			true,
 		);
-		blister.position.set(r * 0.62, 0, -r * 0.9 + i * r * 0.72);
-		group.add(blister);
+		const theta = (i / 3) * Math.PI * 2;
+		tank.position.set(
+			Math.cos(theta) * r * 0.42,
+			Math.sin(theta) * r * 0.42,
+			-r * 1.42 + i * r * 0.06,
+		);
+		group.add(tank);
 	}
-	group.add(buildAperture("refinery", r * 0.96));
 	for (const side of [-1, 1]) {
-		const flare = buildFlare(fixtures, r * 1.0, r * 0.08);
-		flare.position.set(side * r * 0.34, r * 0.34, -r * 1.3);
-		flare.rotation.x = -Math.PI / 2.2;
+		const flare = buildFlare(fixtures, r * 0.85, r * 0.07);
+		flare.position.set(side * r * 0.34, r * 0.3, -r * 1.5);
+		flare.rotation.x = -Math.PI / 2.3;
 		flare.rotation.z = side * 0.3;
 		group.add(flare);
 	}
-	group.add(buildHeatRing(fixtures, r * 0.42, r * 0.95));
+	group.add(buildHeatRing(fixtures, r * 0.42, r * 1.2));
 	group.add(
 		portRun("refinery", 10, (i, position, normal) => {
-			normal.set(-1, 0, 0);
-			position.set(-r * 0.55, r * 0.1, -r * 1.0 + i * r * 0.2);
+			const theta = (i / 10) * Math.PI * 2;
+			normal.set(Math.cos(theta), Math.sin(theta), 0);
+			position.copy(normal).multiplyScalar(r * 0.32);
+			position.z = -r * 1.15;
 		}),
 	);
 	return { group, fixtures };
@@ -1252,6 +1561,250 @@ function buildHeatRing(
 	return glow;
 }
 
+// ---------------------------------------------------------------------------
+// The outposts (#56 round two)
+// ---------------------------------------------------------------------------
+//
+// A fourth category, asked for as "smaller structures, non-rotating, look like
+// industrial structures with just a landing pad". All three are a *machine with
+// a deck on it* rather than a place anyone lives: no spun habitat, no window
+// bands, and the pad is the largest flat thing on them.
+//
+// They carry no strobes, for the refinery's reason: nothing here turns.
+
+/** A small floodlit pad deck on the +Z face, with its own coaming. Shared by
+ *  every outpost form, because the pad is what the category *is* — the rest of
+ *  each form is the machine that justifies one. */
+function buildPadDeck(
+	fixtures: StationFixture[],
+	r: number,
+	z: number,
+): THREE.Group {
+	const group = new THREE.Group();
+	const deck = shell(
+		[
+			{ z: z - r * 0.16, w: r * 0.95, h: r * 0.95, e: 8 },
+			{ z, w: r * 0.9, h: r * 0.9, e: 8 },
+		],
+		plainMaterial(0x8b95a0, 0.7, 0.42),
+		"pad-deck",
+		4,
+		true,
+	);
+	group.add(deck);
+	group.add(buildAperture("outpost", z));
+	// Four floods on the coaming, and one warm heat lamp that breathes: the only
+	// motion an outpost has, and it says the machine is running rather than
+	// anything about clearance (§5.1).
+	for (let i = 0; i < 4; i++) {
+		const theta = (i / 4) * Math.PI * 2 + Math.PI / 4;
+		const flood = new THREE.Mesh(
+			new THREE.BoxGeometry(r * 0.16, r * 0.05, r * 0.05),
+			FLOOD_MATERIAL,
+		);
+		flood.position.set(
+			Math.cos(theta) * r * 0.82,
+			Math.sin(theta) * r * 0.82,
+			z + r * 0.02,
+		);
+		flood.rotation.z = theta;
+		flood.name = "bay-flood";
+		detail(flood, "reduced");
+		group.add(flood);
+	}
+	group.add(buildHeatRing(fixtures, r * 0.62, z + r * 0.03));
+	return group;
+}
+
+/** Outpost A — Derrick. A lattice tower standing on a tank cluster, with the
+ *  pad deck on top. The tallest thing in the category and the one whose
+ *  proportions are a *tower* rather than a box. */
+function buildOutpostDerrick(color: number): BuiltPart {
+	const r = STATION_GEOMETRY.outpost.coreRadiusKm;
+	const group = new THREE.Group();
+	const fixtures: StationFixture[] = [];
+	// The tank cluster at the foot.
+	for (let i = 0; i < 4; i++) {
+		const theta = (i / 4) * Math.PI * 2;
+		const tank = shell(
+			[
+				{ z: -r * 1.9, w: r * 0.34, h: r * 0.34, e: 2.4 },
+				{ z: -r * 1.1, w: r * 0.34, h: r * 0.34, e: 2.4 },
+			],
+			i === 0
+				? hullMaterial(color, "outpost")
+				: plainMaterial(0xb2a894, 0.88, 0.18),
+			i === 0 ? "core" : `tank-${i}`,
+			8,
+			true,
+		);
+		tank.position.set(
+			Math.cos(theta) * r * 0.42,
+			Math.sin(theta) * r * 0.42,
+			0,
+		);
+		group.add(tank);
+	}
+	// The tower: four legs and three collars, which is a lattice at this size —
+	// a truss of individual members would be pixels nobody resolves.
+	for (let i = 0; i < 4; i++) {
+		const theta = (i / 4) * Math.PI * 2 + Math.PI / 4;
+		const leg = shell(
+			[
+				{ z: -r * 1.2, w: r * 0.08, h: r * 0.08, x: r * 0.46, e: 4 },
+				{ z: r * 0.9, w: r * 0.06, h: r * 0.06, x: r * 0.28, e: 4 },
+			],
+			plainMaterial(0x6f7d88, 0.8, 0.4),
+			`leg-${i}`,
+			4,
+			true,
+		);
+		leg.rotation.z = theta;
+		group.add(leg);
+	}
+	for (const z of [-r * 0.8, -r * 0.1, r * 0.6]) {
+		const collar = new THREE.Mesh(
+			new THREE.TorusGeometry(r * (z < 0 ? 0.46 : 0.34), r * 0.035, 4, 8),
+			plainMaterial(0x6f7d88, 0.8, 0.4),
+		);
+		collar.position.z = z;
+		group.add(collar);
+	}
+	group.add(buildPadDeck(fixtures, r, r * 1.1));
+	const flare = buildFlare(fixtures, r * 0.9, r * 0.08);
+	flare.position.set(r * 0.6, -r * 0.5, -r * 0.4);
+	flare.rotation.x = -Math.PI / 2.4;
+	flare.rotation.y = 0.5;
+	group.add(flare);
+	group.add(
+		portRun("outpost", 6, (i, position, normal) => {
+			normal.set(0, 0, 1);
+			position.set(
+				(i % 3) * r * 0.3 - r * 0.3,
+				i < 3 ? r * 0.32 : -r * 0.32,
+				-r * 1.09,
+			);
+		}),
+	);
+	return { group, fixtures };
+}
+
+/** Outpost B — Buoy. A stubby drum wearing radiator fins, pad on the face.
+ *  The category's compact end: a single machine with nothing hanging off it,
+ *  which is what a relay or a survey station would actually be. */
+function buildOutpostBuoy(color: number): BuiltPart {
+	const r = STATION_GEOMETRY.outpost.coreRadiusKm;
+	const group = new THREE.Group();
+	const fixtures: StationFixture[] = [];
+	group.add(
+		shell(
+			[
+				{ z: -r * 1.5, w: r * 0.5, h: r * 0.5, e: 6 },
+				{ z: -r * 1.1, w: r * 0.86, h: r * 0.86, e: 6, hard: true },
+				{ z: r * 0.5, w: r * 0.86, h: r * 0.86, e: 6, hard: true },
+				{ z: r * 0.86, w: r * 0.66, h: r * 0.66, e: 6 },
+			],
+			hullMaterial(color, "outpost"),
+			"core",
+			6,
+			true,
+		),
+	);
+	// Radiator fins: flat plates, the one feature that reads as *thermal plant*
+	// and the reason this is not simply a barrel.
+	for (let i = 0; i < 3; i++) {
+		const theta = (i / 3) * Math.PI * 2;
+		const fin = new THREE.Mesh(
+			new THREE.BoxGeometry(r * 1.5, r * 0.05, r * 1.1),
+			plainMaterial(0x5f6d78, 0.84, 0.34),
+		);
+		fin.position.set(
+			Math.cos(theta) * r * 1.1,
+			Math.sin(theta) * r * 1.1,
+			-r * 0.4,
+		);
+		fin.rotation.z = theta;
+		fin.name = `fin-${i}`;
+		group.add(fin);
+	}
+	group.add(buildPadDeck(fixtures, r, r * 1.0));
+	group.add(
+		portRun("outpost", 6, (i, position, normal) => {
+			const theta = (i / 6) * Math.PI * 2;
+			normal.set(Math.cos(theta), Math.sin(theta), 0);
+			position.copy(normal).multiplyScalar(r * 0.88);
+			position.z = -r * 0.3;
+		}),
+	);
+	return { group, fixtures };
+}
+
+/** Outpost C — Rig. An angled truss carrying a deck out over a drill head, a
+ *  flare boom off the back. The one form of the three that is plainly working
+ *  *on* something rather than sitting in space. */
+function buildOutpostRig(color: number): BuiltPart {
+	const r = STATION_GEOMETRY.outpost.coreRadiusKm;
+	const group = new THREE.Group();
+	const fixtures: StationFixture[] = [];
+	const body = shell(
+		[
+			{ z: -r * 1.6, w: r * 0.3, h: r * 0.42, e: 6 },
+			{ z: -r * 1.0, w: r * 0.62, h: r * 0.8, e: 7, hard: true },
+			{ z: r * 0.4, w: r * 0.62, h: r * 0.8, e: 7, hard: true },
+			{ z: r * 0.75, w: r * 0.44, h: r * 0.58, e: 6 },
+		],
+		hullMaterial(color, "outpost"),
+		"core",
+		6,
+		true,
+	);
+	body.rotation.x = 0.34;
+	group.add(body);
+	// The drill head below, and the two braces that hold it out.
+	const head = shell(
+		[
+			{ z: -r * 0.5, w: r * 0.26, h: r * 0.26, e: 4 },
+			{ z: r * 0.2, w: r * 0.16, h: r * 0.16, e: 4, hard: true },
+			{ z: r * 0.6, w: r * 0.05, h: r * 0.05, e: 4 },
+		],
+		plainMaterial(0x8b95a0, 0.7, 0.42),
+		"drill",
+		6,
+		true,
+	);
+	head.rotation.x = Math.PI / 2;
+	head.position.set(0, -r * 1.5, -r * 0.4);
+	group.add(head);
+	for (const side of [-1, 1]) {
+		const brace = shell(
+			[
+				{ z: 0, w: r * 0.07, h: r * 0.06, e: 4 },
+				{ z: r * 1.25, w: r * 0.05, h: r * 0.04, e: 4 },
+			],
+			plainMaterial(0x6f7d88, 0.8, 0.4),
+			"brace",
+			4,
+			true,
+		);
+		brace.rotation.x = Math.PI / 2;
+		brace.position.set(side * r * 0.4, -r * 0.3, -r * 0.4);
+		group.add(brace);
+	}
+	group.add(buildPadDeck(fixtures, r, r * 0.95));
+	const flare = buildFlare(fixtures, r * 1.0, r * 0.08);
+	flare.position.set(-r * 0.55, r * 0.75, -r * 1.1);
+	flare.rotation.x = -Math.PI / 2.2;
+	flare.rotation.y = -0.5;
+	group.add(flare);
+	group.add(
+		portRun("outpost", 6, (i, position, normal) => {
+			normal.set(1, 0, 0);
+			position.set(r * 0.64, r * 0.2, -r * 0.8 + i * r * 0.22);
+		}),
+	);
+	return { group, fixtures };
+}
+
 /**
  * Every form, by role.
  *
@@ -1264,8 +1817,8 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 		{
 			id: "a",
 			name: "Coriolis",
-			thesis: "twelve-sided spun drum, flat docking face, chamfered ends",
-			reachKm: 0.66,
+			thesis: "squared hull with cut corners; the slot is on a flat face",
+			reachKm: 0.72,
 			build: buildTradeCoriolis,
 		},
 		{
@@ -1293,10 +1846,11 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 		},
 		{
 			id: "b",
-			name: "Cradle",
-			thesis: "two curved arms round an empty slip; negative space is the cue",
+			name: "Hangar",
+			thesis:
+				"a closed slab with a floodlit bay mouth; ships inside, not clamped outside",
 			reachKm: 1.5,
-			build: buildShipyardCradle,
+			build: buildShipyardHangar,
 		},
 		{
 			id: "c",
@@ -1306,27 +1860,50 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			build: buildShipyardSlipway,
 		},
 	],
-	refinery: [
+	outpost: [
 		{
 			id: "a",
-			name: "Cracker",
-			thesis: "stacked tanks under a column; plant rather than rock",
-			reachKm: 0.85,
-			build: buildRefineryCracker,
+			name: "Derrick",
+			thesis: "a lattice tower on a tank cluster, pad deck on top",
+			reachKm: 0.42,
+			build: buildOutpostDerrick,
 		},
 		{
 			id: "b",
-			name: "Rock",
-			thesis: "#28's asteroid, with the plant on it built in the hull language",
-			reachKm: 0.85,
-			build: buildRefineryRock,
+			name: "Buoy",
+			thesis: "a stubby drum wearing radiator fins; nothing hangs off it",
+			reachKm: 0.42,
+			build: buildOutpostBuoy,
 		},
 		{
 			id: "c",
-			name: "Barge",
-			thesis: "a long processing hull with tank blisters and two aft booms",
-			reachKm: 0.8,
-			build: buildRefineryBarge,
+			name: "Rig",
+			thesis: "an angled truss holding a deck out over a drill head",
+			reachKm: 0.42,
+			build: buildOutpostRig,
+		},
+	],
+	refinery: [
+		{
+			id: "a",
+			name: "Warren",
+			thesis: "terraced plant cut into the rock; the pad is in the notch",
+			reachKm: 0.92,
+			build: buildRefineryWarren,
+		},
+		{
+			id: "b",
+			name: "Collar",
+			thesis: "a machined band gripping the rock at its waist",
+			reachKm: 0.85,
+			build: buildRefineryCollar,
+		},
+		{
+			id: "c",
+			name: "Spar",
+			thesis: "a processing spar run through the rock and out the far side",
+			reachKm: 0.9,
+			build: buildRefinerySpar,
 		},
 	],
 };
@@ -1334,15 +1911,31 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 /**
  * Which form each role is currently built with in the game.
  *
- * One line, so a ranking round changes one line. Until #56's review picks, this
- * is the first concept of each role rather than a default that means nothing:
- * an unranked pool has no winner, and pretending otherwise is how a placeholder
- * becomes the shipped answer.
+ * One line per role, so a ranking round changes three lines.
+ *
+ * Round one's ranking put `A` first for both trade and shipyard, so those two
+ * are choices rather than placeholders. The refinery's is a placeholder and
+ * says so: that role was not ranked — it was sent back with an instruction —
+ * so its three forms are all round two's and none of them has been looked at
+ * yet. Pretending otherwise is how a placeholder becomes the shipped answer.
  */
 export const SELECTED_FORM: Record<StationType, StationFormId> = {
 	trade: "a",
 	shipyard: "a",
+	// **Collar, and chosen by a measurement rather than by order.** The Warren
+	// was first, and `probe-station.mjs` measured it against the trade station's
+	// drum at 1 − IoU 0.224 on a 0.25 floor: down the aperture axis — the one
+	// view a docking approach has — a rock with an inlaid cut and a plated drum
+	// are both round. The Collar's band projects as a ring round the rock from
+	// that same view, which is a different outline rather than a differently
+	// decorated one. Still a placeholder until the role is ranked; it is simply
+	// a placeholder that passes the gate #7 rests identity on.
 	refinery: "b",
+	// Unranked, like the refinery's was: three new forms and nobody has looked
+	// at them. It changes nothing in a running game either way — `system.ts`
+	// places no outposts, because what one sells and how often one exists are
+	// #13's and #6's questions rather than this round's.
+	outpost: "a",
 };
 
 const formOf = (type: StationType, id: StationFormId) => {

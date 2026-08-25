@@ -22,6 +22,7 @@ import {
 	buildShipMesh,
 } from "./ship-mesh";
 import {
+	STATION_DESIGN_ROUND,
 	STATION_FORMS,
 	STATION_FORM_IDS,
 	type StationFormId,
@@ -75,8 +76,8 @@ const SHIP_FAMILY: ModelFamily = {
 
 const STATION_FAMILY: ModelFamily = {
 	id: "station",
-	title: "STATION FORMS · ROUND 1",
-	copy: "#28's three outlines rebuilt in the ship hulls' swept-loft language. Use <b>rank</b> in preference order; click a numbered rank to remove it.",
+	title: `STATION FORMS · ROUND ${STATION_DESIGN_ROUND}`,
+	copy: "#28's three outlines rebuilt in the ship hulls' swept-loft language. Each role keeps its ranked top two and spends its last slot; the refinery spent all three. Use <b>rank</b> in preference order; click a numbered rank to remove it.",
 	assets: STATION_TYPES,
 	variantIds: STATION_FORM_IDS,
 	variants: (asset) => STATION_FORMS[asset as StationType],
