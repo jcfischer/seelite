@@ -3821,6 +3821,17 @@ class Game {
 		ctx.lineTo(w / 2, h / 2 - 2);
 		ctx.stroke();
 
+		// The Three line is spatial reference; this glass tracer is the readable
+		// weapon feedback at every viewport and cannot disappear behind cockpit mesh.
+		if (this.keys.has(" ") || this.keys.has("b")) {
+			ctx.strokeStyle = "rgba(116, 234, 255, 0.98)";
+			ctx.lineWidth = 3;
+			ctx.beginPath();
+			ctx.moveTo(w / 2, h / 2);
+			ctx.lineTo(w / 2, h * 0.28);
+			ctx.stroke();
+		}
+
 		// Prograde and retrograde — the map's HUD constraint, and the thing that
 		// makes assist-off flyable at all: with the assist off the nose and the
 		// velocity disagree permanently, and this is the only thing on screen that
