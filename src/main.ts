@@ -47,6 +47,15 @@
  * sides. `scripts/probe-handoff.mjs` is spec §9.10 measuring exactly that, and
  * it is the check this content finally made possible.
  *
+ * ## Cross-scale visibility
+ *
+ * The approach pass clears far depth and the near pass clears approach depth. A
+ * local ship or station therefore always draws over a close massive body; exact
+ * physical occlusion across scales needs depth reconstruction and is outside
+ * Issue #47. Cruise stops well outside surface gameplay, including the 5 km
+ * approach-camera near clip, so this pass is an approach view rather than a
+ * landing renderer.
+ *
  * ## What is a placeholder
  *
  * The flight controls. Yaw, pitch, roll and throttle on the keyboard, feeding
@@ -140,6 +149,7 @@ const {
 	FAR_SCALE,
 	NEAR_FAR_KM,
 	NEAR_NEAR_KM,
+	isMassive,
 	layerFor,
 	massiveLayerFor,
 } = units;
@@ -2184,8 +2194,7 @@ class Game {
 			// the player.
 			const was = this.layers.get(body.id);
 			const distanceKm = Math.hypot(dx, dy, dz);
-			const massive =
-				body.kind === "star" || body.kind === "planet" || body.kind === "moon";
+			const massive = isMassive(body.kind);
 			const layer = massive
 				? massiveLayerFor(
 						was === "approach" ? "approach" : "far",

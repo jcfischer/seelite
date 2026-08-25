@@ -212,6 +212,11 @@ export function layerFor(
  * there is deliberately no near result: massive bodies never consume the local
  * 1:1 depth budget.
  */
+/** The generated body kinds that use surface-relative scaled-space approach. */
+export function isMassive(kind: string): boolean {
+	return kind === "star" || kind === "planet" || kind === "moon";
+}
+
 export function massiveLayerFor(
 	current: "approach" | "far" | undefined,
 	surfaceDistanceKm: number,
