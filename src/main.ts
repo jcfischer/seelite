@@ -3383,6 +3383,12 @@ class Game {
 		// without borrowing #35's display-only traffic as a combat entity.
 		this.combatTargetMesh.position.set(0, 0, -12).applyQuaternion(viewRotation);
 		this.combatTargetMesh.visible = this.view === "cockpit";
+		const targetMaterial = this.combatTargetMesh
+			.material as THREE.MeshStandardMaterial;
+		const firingWeapon = this.keys.has(" ") || this.keys.has("b");
+		targetMaterial.emissive.setHex(firingWeapon ? 0x9df6ff : 0x450308);
+		targetMaterial.emissiveIntensity = firingWeapon ? 4 : 1.2;
+		this.combatTargetMesh.scale.setScalar(firingWeapon ? 1.25 : 1);
 		this.combatLaser.quaternion.copy(viewRotation);
 		this.combatLaser.visible =
 			this.view === "cockpit" && (this.keys.has(" ") || this.keys.has("b"));
@@ -3895,6 +3901,12 @@ class Game {
 			"COMBAT PROTOTYPE — hold SPACE pulse · B beam · Z warning · R ECM",
 			w / 2,
 			h * 0.72,
+		);
+		ctx.fillStyle = "rgba(255, 115, 130, 0.95)";
+		ctx.fillText(
+			`TARGET  SHIELD ${(this.combat.targetForeShield + this.combat.targetAftShield).toFixed(0)}  HULL ${this.combat.targetHull.toFixed(0)}`,
+			w / 2,
+			h * 0.76,
 		);
 		ctx.textAlign = "left";
 
