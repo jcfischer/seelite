@@ -3,6 +3,7 @@ import {
 	COMBAT_PROTOTYPE_DEFAULTS,
 	createCombatPrototype,
 	stepCombatPrototype,
+	duelTargetInCone,
 } from "../src/combat-prototype";
 
 test("starter pulse fire destroys an unshielded hull within the pacing target", () => {
@@ -41,6 +42,11 @@ test("a broken acquisition cone clears missile lock and ECM clears a warning", (
 	expect(state.incomingMissile).toBe(true);
 	state = stepCombatPrototype(state, { dt: 0.1, ecm: true });
 	expect(state.incomingMissile).toBe(false);
+});
+
+test("a strafing duel target can leave the line of fire", () => {
+	expect(duelTargetInCone(0)).toBe(false);
+	expect(duelTargetInCone(Math.PI / (2 * 0.7))).toBe(false);
 });
 
 test("an enemy barrage depletes the player fore shield before damaging hull", () => {

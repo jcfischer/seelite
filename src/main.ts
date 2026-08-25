@@ -76,6 +76,7 @@ import { SettingsStore } from "./settings";
 import { AudioFX } from "./audio";
 import {
 	createCombatPrototype,
+	duelTargetInCone,
 	stepCombatPrototype,
 	type CombatPrototypeState,
 } from "./combat-prototype";
@@ -3085,7 +3086,7 @@ class Game {
 		this.combat = stepCombatPrototype(this.combat, {
 			dt,
 			firing: this.keys.has("b") ? "beam" : this.keys.has(" ") ? "pulse" : null,
-			targetInCone: this.targetId !== null,
+			targetInCone: duelTargetInCone(this.combat.elapsed),
 			incomingMissile: this.combatIncoming,
 			ecm: this.combatEcm,
 			interdicting: this.regime === "cruise",

@@ -77,6 +77,14 @@ export function createCombatPrototype(
 
 const clamp = (value: number, max: number) => Math.max(0, Math.min(max, value));
 
+/** The prototype enemy's deterministic strafe crosses the sight line briefly. */
+export function duelTargetInCone(elapsed: number) {
+	return (
+		Math.abs(3 * Math.sin(elapsed * 0.7)) < 0.7 &&
+		Math.abs(1.2 * Math.cos(elapsed * 1.1)) < 0.7
+	);
+}
+
 export function stepCombatPrototype(
 	state: CombatPrototypeState,
 	input: CombatPrototypeInput,
