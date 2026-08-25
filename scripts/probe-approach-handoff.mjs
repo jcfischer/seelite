@@ -8,14 +8,14 @@ import {
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
-const URL = process.env.PROBE_URL ?? ORIGIN + "/?seed=1";
+const PAGE_URL = process.env.PROBE_URL ?? ORIGIN + "/?seed=1";
 const EPS = 0.005;
 await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 const { check, exit } = tally();
 const page = await browser.newPage({ viewport: { width: 900, height: 620 } });
 await installCamSim(page);
-await page.goto(URL, { waitUntil: "load" });
+await page.goto(PAGE_URL, { waitUntil: "load" });
 await bootedGame(page);
 const setup = await page.evaluate(() => {
 	const g = window.__seelite;
@@ -49,11 +49,12 @@ async function sample(surfaceKm) {
 			await new Promise((resolve) => requestAnimationFrame(resolve));
 			await new Promise((resolve) => requestAnimationFrame(resolve));
 			const now = g.world.system.bodies.find((b) => b.id === id);
-			const mesh =
-				g.approachScene.getObjectByName(id) ?? g.farScene.getObjectByName(id);
+			const approachMesh = g.approachScene.getObjectByName(id);
+			const farMesh = g.farScene.getObjectByName(id);
+			const mesh = approachMesh ?? farMesh;
 			const cam = window.__recoverCamSim();
 			return {
-				layer: g.approachScene.getObjectByName(id) ? "approach" : "far",
+				layer: approachMesh ? "approach" : farMesh ? "far" : "missing",
 				radiusKm: now.radiusKm,
 				drawnRadius: mesh?.scale.x ?? null,
 				drawnDistance: mesh
@@ -70,6 +71,8 @@ async function sample(surfaceKm) {
 	);
 }
 if (setup.id) {
+	// Reset hysteresis before sampling its outward side.
+	await sample(setup.handoffKm * (setup.handoffKm > 0 ? 2 : 1));
 	const outer = await sample(setup.handoffKm * 1.001);
 	const inner = await sample(setup.handoffKm * 0.999);
 	for (const [name, s, scale, layer] of [
