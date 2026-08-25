@@ -20,9 +20,7 @@ await bootedGame(page);
 const setup = await page.evaluate(() => {
 	const g = window.__seelite;
 	const body = g.world.system.bodies
-		.filter(
-			(b) => b.kind === "star" || b.kind === "planet" || b.kind === "moon",
-		)
+		.filter((b) => g.units.isMassive(b.kind))
 		.sort((a, b) => b.radiusKm - a.radiusKm)[0];
 	return {
 		id: body?.id ?? null,

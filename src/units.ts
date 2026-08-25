@@ -204,19 +204,19 @@ export function layerFor(
 	return distanceKm <= threshold ? "near" : "far";
 }
 
-/**
- * The scaled-space layer for a massive body's close approach. Unlike local
- * objects, its seam is measured from the surface: a gas giant's centre may sit
- * well past the 1:1 near camera while the pilot is only 10,000 km from its
- * surface. The outward hysteresis is the same state machine as `layerFor`, but
- * there is deliberately no near result: massive bodies never consume the local
- * 1:1 depth budget.
- */
 /** The generated body kinds that use surface-relative scaled-space approach. */
 export function isMassive(kind: string): boolean {
 	return kind === "star" || kind === "planet" || kind === "moon";
 }
 
+/**
+ * The scaled-space layer for a massive body's close approach. Unlike local
+ * objects, its seam is measured from the surface: a gas giant's centre may sit
+ * well past the 1:1 near camera while the pilot is only 10,000 km from its
+ * surface. The outward hysteresis is the same state machine as `layerFor`. The
+ * renderer dispatches massive kinds only through this function, so they never
+ * consume the local 1:1 depth budget.
+ */
 export function massiveLayerFor(
 	current: "approach" | "far" | undefined,
 	surfaceDistanceKm: number,
@@ -224,6 +224,15 @@ export function massiveLayerFor(
 	const threshold =
 		current === "approach" ? HANDOFF_KM * HANDOFF_HYSTERESIS : HANDOFF_KM;
 	return surfaceDistanceKm <= threshold ? "approach" : "far";
+}
+
+/** The one scale factor used when a mesh occupies each render layer. */
+export function scaleFor(layer: "near" | "approach" | "far"): number {
+	return layer === "near"
+		? 1
+		: layer === "approach"
+			? APPROACH_SCALE
+			: FAR_SCALE;
 }
 
 /**

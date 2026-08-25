@@ -152,6 +152,7 @@ const {
 	isMassive,
 	layerFor,
 	massiveLayerFor,
+	scaleFor,
 } = units;
 
 /** How many stars the backdrop draws. Cheap at this count; the research puts
@@ -892,15 +893,14 @@ class Game {
 	private setLayer(body: Body, layer: "near" | "approach" | "far") {
 		const mesh = this.meshes.get(body.id);
 		if (!mesh) return;
-		const k =
-			layer === "near" ? 1 : layer === "approach" ? APPROACH_SCALE : FAR_SCALE;
-		mesh.scale.setScalar(body.radiusKm * k);
-		(layer === "near"
-			? this.nearScene
-			: layer === "approach"
-				? this.approachScene
-				: this.farScene
-		).add(mesh);
+		mesh.scale.setScalar(body.radiusKm * scaleFor(layer));
+		const scene =
+			layer === "near"
+				? this.nearScene
+				: layer === "approach"
+					? this.approachScene
+					: this.farScene;
+		scene.add(mesh);
 		this.layers.set(body.id, layer);
 	}
 
@@ -2202,12 +2202,7 @@ class Game {
 					)
 				: layerFor(was === "near" ? "near" : "far", distanceKm);
 			if (layer !== was) this.setLayer(body, layer);
-			const k =
-				layer === "near"
-					? 1
-					: layer === "approach"
-						? APPROACH_SCALE
-						: FAR_SCALE;
+			const k = scaleFor(layer);
 			mesh.position.set(dx * k, dy * k, dz * k);
 
 			// Stations are aimed and spun; everything else is a sphere and has no

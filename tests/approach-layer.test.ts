@@ -32,8 +32,8 @@ test("massive-body approach hysteresis holds until surface distance leaves its b
 	expect(massiveLayerFor("approach", outsideKm)).toBe("far");
 });
 
-test("approach camera covers the close surface without spending the near budget", () => {
-	expect(APPROACH_NEAR_UNITS).toBeLessThan(HANDOFF_KM * APPROACH_SCALE);
+test("approach camera reaches the five-kilometre surface floor without spending the near budget", () => {
+	expect(APPROACH_NEAR_UNITS / APPROACH_SCALE).toBeLessThanOrEqual(5);
 	expect(APPROACH_FAR_UNITS / APPROACH_NEAR_UNITS).toBeLessThanOrEqual(
 		NEAR_FAR_KM / NEAR_NEAR_KM,
 	);
