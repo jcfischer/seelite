@@ -471,12 +471,9 @@ function catmullRom(p0: number, p1: number, p2: number, p3: number, t: number) {
 }
 
 /**
- * Resample control stations onto a smooth spline.
- *
- * The curvature the eye reads as "not a box" lives between the stations, not in
- * them: five hand-placed rings joined by straight edges still shade as facets.
- * Half-extents are clamped at zero because Catmull-Rom overshoots an inflection
- * and a negative half-extent turns the hull inside out at that station.
+ * One spline's worth of stations. Half-extents are clamped at zero because
+ * Catmull-Rom overshoots an inflection, and a negative half-extent turns the
+ * hull inside out at that station.
  */
 function run(controls: ReadonlyArray<Ring>, subdivisions: number) {
 	const rings = controls.map(solid);
@@ -903,6 +900,25 @@ function canopy(
 	add(root, id + "-cockpit", hullLoft(glass), p.canopy);
 }
 
+/**
+ * A bridge tower and its glass, for hulls too big for a cockpit blister.
+ *
+ * The sibling of `canopy()`. Fifteen builders wrote this pair out by hand, and
+ * the test that checks a canopy is set into painted structure had to fall back
+ * from `-cockpit-fairing` to `-bridge` on a guess. Emitting the pair from one
+ * place makes that fallback a contract instead.
+ */
+function bridge(
+	root: THREE.Group,
+	id: HullId,
+	tower: ReadonlyArray<Ring>,
+	glass: ReadonlyArray<Ring>,
+	p: Palette,
+) {
+	add(root, id + "-bridge", hullLoft(tower), p.panel);
+	add(root, id + "-cockpit", hullLoft(glass), p.canopy);
+}
+
 function buildCourierA(root: THREE.Group, p: Palette) {
 	add(
 		root,
@@ -1137,9 +1153,9 @@ function buildCourierB(root: THREE.Group, p: Palette) {
 		root,
 		"courier-nacelle-mount-starboard",
 		blade([
-			{ z: 0.001, w: 0.0044, h: 0.0092, b: 0.009, y: -0.0015, e: 4.2 },
-			{ z: 0.008, w: 0.0042, h: 0.0088, b: 0.0086, y: 0.0005, e: 4.4 },
-			{ z: 0.0152, w: 0.0036, h: 0.0072, b: 0.007, y: 0.0025, e: 4 },
+			{ z: 0.001, w: 0.0072, h: 0.0092, b: 0.009, y: -0.0015, e: 4.2 },
+			{ z: 0.008, w: 0.007, h: 0.0088, b: 0.0086, y: 0.0005, e: 4.4 },
+			{ z: 0.0152, w: 0.006, h: 0.0072, b: 0.007, y: 0.0025, e: 4 },
 		]),
 		p.hull,
 	);
@@ -1210,8 +1226,8 @@ function buildCourierB(root: THREE.Group, p: Palette) {
 		root,
 		"courier-load-rail",
 		[
-			{ z: -0.004, w: 0.0034, h: 0.0005, x: 0.0132, y: 0.0058, e: 3.4 },
-			{ z: 0.012, w: 0.003, h: 0.0005, x: 0.0142, y: 0.0064, e: 3.4 },
+			{ z: -0.004, w: 0.0034, h: 0.0005, x: 0.0132, y: 0.0086, e: 3.4 },
+			{ z: 0.012, w: 0.003, h: 0.0005, x: 0.0142, y: 0.0092, e: 3.4 },
 		],
 		p,
 	);
@@ -1219,8 +1235,8 @@ function buildCourierB(root: THREE.Group, p: Palette) {
 		root,
 		"courier-load-stripe",
 		[
-			{ z: -0.002, w: 0.0011, h: 0.0004, x: 0.0132, y: 0.0064, e: 2 },
-			{ z: 0.011, w: 0.001, h: 0.0004, x: 0.0142, y: 0.007, e: 2 },
+			{ z: -0.002, w: 0.0011, h: 0.0004, x: 0.0132, y: 0.0092, e: 2 },
+			{ z: 0.011, w: 0.001, h: 0.0004, x: 0.0142, y: 0.0098, e: 2 },
 		],
 		{ ...p, panel: p.accent },
 	);
@@ -1713,27 +1729,22 @@ function buildFreighterA(root: THREE.Group, p: Palette) {
 		]),
 		p.hull,
 	);
-	add(
+	bridge(
 		root,
-		"freighter-bridge",
-		hullLoft([
+		"freighter",
+		[
 			{ z: -0.0325, w: 0.004, h: 0.0018, b: 0.002, y: deck + 0.0038, e: 3 },
 			{ z: -0.0275, w: 0.0065, h: 0.0033, b: 0.0026, y: deck + 0.0049, e: 3.4 },
 			{ z: -0.0215, w: 0.0061, h: 0.0029, b: 0.0026, y: deck + 0.0053, e: 3.4 },
 			{ z: -0.0175, w: 0.0043, h: 0.0018, b: 0.002, y: deck + 0.0049, e: 3 },
-		]),
-		p.panel,
-	);
-	add(
-		root,
-		"freighter-cockpit",
-		hullLoft([
+		],
+		[
 			{ z: -0.0315, w: 0.0027, h: 0.0013, b: 0.0014, y: deck + 0.0051, e: 2.7 },
 			{ z: -0.0275, w: 0.0046, h: 0.0026, b: 0.0018, y: deck + 0.006, e: 3 },
 			{ z: -0.0225, w: 0.0043, h: 0.0022, b: 0.0017, y: deck + 0.0064, e: 3 },
 			{ z: -0.0195, w: 0.003, h: 0.0013, b: 0.0014, y: deck + 0.006, e: 2.7 },
-		]),
-		p.canopy,
+		],
+		p,
 	);
 	// Cargo hangs off the gantry instead of being wrapped in hull.
 	for (const [side, sign] of [
@@ -1882,10 +1893,10 @@ function buildFreighterB(root: THREE.Group, p: Palette) {
 		]),
 		p.hull,
 	);
-	add(
+	bridge(
 		root,
-		"freighter-bridge",
-		hullLoft([
+		"freighter",
+		[
 			{ z: -0.0315, w: 0.004, h: 0.0018, b: 0.002, x: keel, y: 0.0038, e: 3 },
 			{
 				z: -0.0265,
@@ -1906,13 +1917,8 @@ function buildFreighterB(root: THREE.Group, p: Palette) {
 				e: 3.4,
 			},
 			{ z: -0.0165, w: 0.0043, h: 0.0018, b: 0.002, x: keel, y: 0.0049, e: 3 },
-		]),
-		p.panel,
-	);
-	add(
-		root,
-		"freighter-cockpit",
-		hullLoft([
+		],
+		[
 			{
 				z: -0.0305,
 				w: 0.0027,
@@ -1925,8 +1931,8 @@ function buildFreighterB(root: THREE.Group, p: Palette) {
 			{ z: -0.0265, w: 0.0046, h: 0.0026, b: 0.0018, x: keel, y: 0.006, e: 3 },
 			{ z: -0.0215, w: 0.0043, h: 0.0022, b: 0.0017, x: keel, y: 0.0064, e: 3 },
 			{ z: -0.0185, w: 0.003, h: 0.0013, b: 0.0014, x: keel, y: 0.006, e: 2.7 },
-		]),
-		p.canopy,
+		],
+		p,
 	);
 	// The cargo outrigger is the ship; the keel beside it is the crew's corner.
 	add(
@@ -2057,27 +2063,22 @@ function buildFreighterC(root: THREE.Group, p: Palette) {
 		]),
 		p.hull,
 	);
-	add(
+	bridge(
 		root,
-		"freighter-bridge",
-		hullLoft([
+		"freighter",
+		[
 			{ z: -0.0305, w: 0.0039, h: 0.002, b: 0.0021, y: 0.0078, e: 3 },
 			{ z: -0.0255, w: 0.0064, h: 0.0035, b: 0.0028, y: 0.0092, e: 3.4 },
 			{ z: -0.0195, w: 0.006, h: 0.0031, b: 0.0028, y: 0.0099, e: 3.4 },
 			{ z: -0.0155, w: 0.0042, h: 0.002, b: 0.0022, y: 0.0094, e: 3 },
-		]),
-		p.panel,
-	);
-	add(
-		root,
-		"freighter-cockpit",
-		hullLoft([
+		],
+		[
 			{ z: -0.0295, w: 0.0026, h: 0.0015, b: 0.0015, y: 0.0092, e: 2.7 },
 			{ z: -0.0255, w: 0.0046, h: 0.0028, b: 0.002, y: 0.0104, e: 3 },
 			{ z: -0.0205, w: 0.0042, h: 0.0024, b: 0.0018, y: 0.0111, e: 3 },
 			{ z: -0.0175, w: 0.003, h: 0.0015, b: 0.0016, y: 0.0106, e: 2.7 },
-		]),
-		p.canopy,
+		],
+		p,
 	);
 	add(
 		root,
@@ -2261,27 +2262,22 @@ function buildMinerA(root: THREE.Group, p: Palette) {
 		strut([0, -0.0068, -0.0235], [0, -0.0112, -0.0295], 0.0038, 0.0028),
 		p.trim,
 	);
-	add(
+	bridge(
 		root,
-		"miner-bridge",
-		hullLoft([
+		"miner",
+		[
 			{ z: -0.0225, w: 0.0046, h: 0.0022, b: 0.0024, y: 0.0082, e: 3 },
 			{ z: -0.0175, w: 0.0074, h: 0.004, b: 0.0031, y: 0.0098, e: 3.4 },
 			{ z: -0.0115, w: 0.007, h: 0.0036, b: 0.0031, y: 0.0106, e: 3.4 },
 			{ z: -0.0075, w: 0.0049, h: 0.0022, b: 0.0025, y: 0.01, e: 3 },
-		]),
-		p.panel,
-	);
-	add(
-		root,
-		"miner-cockpit",
-		hullLoft([
+		],
+		[
 			{ z: -0.0215, w: 0.0031, h: 0.0016, b: 0.0017, y: 0.0098, e: 2.7 },
 			{ z: -0.0175, w: 0.0053, h: 0.0032, b: 0.0022, y: 0.0114, e: 3 },
 			{ z: -0.0125, w: 0.0049, h: 0.0028, b: 0.0021, y: 0.0124, e: 3 },
 			{ z: -0.0095, w: 0.0034, h: 0.0016, b: 0.0017, y: 0.0118, e: 2.7 },
-		]),
-		p.canopy,
+		],
+		p,
 	);
 	for (const [side, sign] of [
 		["starboard", 1],
@@ -2375,27 +2371,22 @@ function buildMinerB(root: THREE.Group, p: Palette) {
 		]),
 		p.hull,
 	);
-	add(
+	bridge(
 		root,
-		"miner-bridge",
-		hullLoft([
+		"miner",
+		[
 			{ z: -0.0245, w: 0.0044, h: 0.0022, b: 0.0024, y: 0.0044, e: 3 },
 			{ z: -0.0195, w: 0.0072, h: 0.0038, b: 0.003, y: 0.0058, e: 3.4 },
 			{ z: -0.0135, w: 0.0068, h: 0.0034, b: 0.003, y: 0.0064, e: 3.4 },
 			{ z: -0.0095, w: 0.0048, h: 0.0022, b: 0.0024, y: 0.0058, e: 3 },
-		]),
-		p.panel,
-	);
-	add(
-		root,
-		"miner-cockpit",
-		hullLoft([
+		],
+		[
 			{ z: -0.0235, w: 0.003, h: 0.0016, b: 0.0016, y: 0.0058, e: 2.7 },
 			{ z: -0.0195, w: 0.0051, h: 0.003, b: 0.0021, y: 0.007, e: 3 },
 			{ z: -0.0145, w: 0.0047, h: 0.0026, b: 0.002, y: 0.0076, e: 3 },
 			{ z: -0.0115, w: 0.0033, h: 0.0016, b: 0.0016, y: 0.007, e: 2.7 },
-		]),
-		p.canopy,
+		],
+		p,
 	);
 	// The cutter works below the bow so the bridge keeps a clear forward cone.
 	cutterHead(root, "miner-cutter", 0.0104, -0.0325, p, -0.0108);
@@ -2434,7 +2425,7 @@ function buildMinerB(root: THREE.Group, p: Palette) {
 			mirroredBlade(
 				[
 					{ z: 0.0068, w: 0.0028, h: 0.0068, b: 0.0064, y: 0.0265, e: 3.2 },
-					{ z: 0.0148, w: 0.0024, h: 0.006, b: 0.0056, y: 0.0305, e: 3 },
+					{ z: 0.019, w: 0.0024, h: 0.006, b: 0.0056, y: 0.0305, e: 3 },
 				],
 				sign,
 			),
@@ -2443,18 +2434,18 @@ function buildMinerB(root: THREE.Group, p: Palette) {
 		add(
 			root,
 			"miner-" + side + "-nacelle",
-			hullLoft(pod(0.018, 0.0355, 0.0048, { x: sign * 0.0172 })),
+			hullLoft(pod(0.018, 0.0355, 0.0048, { x: sign * 0.0202 })),
 			p.panel,
 		);
 		add(root, "miner-collar-" + side, hoop(0.0051, 0.0006), p.accent, [
-			sign * 0.0172,
+			sign * 0.0202,
 			0,
 			0.031,
 		]);
 		engineBell(
 			root,
 			"miner-" + side,
-			[sign * 0.0172, 0, 0.0395],
+			[sign * 0.0202, 0, 0.0395],
 			0.0042,
 			0.0044,
 			p,
@@ -2521,27 +2512,22 @@ function buildMinerC(root: THREE.Group, p: Palette) {
 		]),
 		p.hull,
 	);
-	add(
+	bridge(
 		root,
-		"miner-bridge",
-		hullLoft([
+		"miner",
+		[
 			{ z: -0.025, w: 0.0044, h: 0.0022, b: 0.0024, y: deck + 0.0044, e: 3 },
 			{ z: -0.02, w: 0.0072, h: 0.0038, b: 0.003, y: deck + 0.0056, e: 3.4 },
 			{ z: -0.014, w: 0.0068, h: 0.0034, b: 0.003, y: deck + 0.006, e: 3.4 },
 			{ z: -0.01, w: 0.0048, h: 0.0022, b: 0.0024, y: deck + 0.0056, e: 3 },
-		]),
-		p.panel,
-	);
-	add(
-		root,
-		"miner-cockpit",
-		hullLoft([
+		],
+		[
 			{ z: -0.024, w: 0.003, h: 0.0016, b: 0.0016, y: deck + 0.0057, e: 2.7 },
 			{ z: -0.02, w: 0.0051, h: 0.003, b: 0.0021, y: deck + 0.0068, e: 3 },
 			{ z: -0.015, w: 0.0047, h: 0.0026, b: 0.002, y: deck + 0.0072, e: 3 },
 			{ z: -0.012, w: 0.0033, h: 0.0016, b: 0.0016, y: deck + 0.0068, e: 2.7 },
-		]),
-		p.canopy,
+		],
+		p,
 	);
 	// The cutter works below the keel; the refinery drum rides above it.
 	cutterHead(root, "miner-cutter", 0.0118, -0.0305, p, -0.0052);
@@ -2869,11 +2855,11 @@ function buildPatrolB(root: THREE.Group, p: Palette) {
 	add(
 		root,
 		"patrol-port-nacelle",
-		hullLoft(pod(-0.004, 0.024, 0.0042, { x: keel - 0.0134 })),
+		hullLoft(pod(-0.004, 0.024, 0.0042, { x: keel - 0.0104 })),
 		p.panel,
 	);
 	add(root, "patrol-collar-port", hoop(0.0045, 0.0005), p.accent, [
-		keel - 0.0134,
+		keel - 0.0104,
 		0,
 		0.0185,
 	]);
@@ -2987,7 +2973,7 @@ function buildPatrolC(root: THREE.Group, p: Palette) {
 			mirroredBlade(
 				[
 					{ z: 0.005, w: 0.0026, h: 0.0062, b: 0.0058, y: 0.0155, e: 3.2 },
-					{ z: 0.0122, w: 0.0022, h: 0.0054, b: 0.005, y: 0.0195, e: 3 },
+					{ z: 0.0098, w: 0.0022, h: 0.0054, b: 0.005, y: 0.0195, e: 3 },
 				],
 				sign,
 			),
@@ -2996,18 +2982,18 @@ function buildPatrolC(root: THREE.Group, p: Palette) {
 		add(
 			root,
 			"patrol-" + side + "-nacelle",
-			hullLoft(pod(0.003, 0.0265, 0.0038, { x: sign * 0.0142 })),
+			hullLoft(pod(0.003, 0.0265, 0.0038, { x: sign * 0.0112 })),
 			p.panel,
 		);
 		add(root, "patrol-collar-" + side, hoop(0.0041, 0.0005), p.accent, [
-			sign * 0.0142,
+			sign * 0.0112,
 			0,
 			0.021,
 		]);
 		engineBell(
 			root,
 			"patrol-" + side,
-			[sign * 0.0142, 0, 0.0295],
+			[sign * 0.0112, 0, 0.0295],
 			0.0033,
 			0.0035,
 			p,
@@ -3033,27 +3019,22 @@ function buildExplorerA(root: THREE.Group, p: Palette) {
 		]),
 		p.hull,
 	);
-	add(
+	bridge(
 		root,
-		"explorer-bridge",
-		hullLoft([
+		"explorer",
+		[
 			{ z: -0.0295, w: 0.0042, h: 0.002, b: 0.0022, y: 0.0042, e: 3 },
 			{ z: -0.0245, w: 0.0068, h: 0.0036, b: 0.0028, y: 0.0054, e: 3.4 },
 			{ z: -0.0185, w: 0.0064, h: 0.0032, b: 0.0028, y: 0.006, e: 3.4 },
 			{ z: -0.0145, w: 0.0045, h: 0.002, b: 0.0022, y: 0.0054, e: 3 },
-		]),
-		p.panel,
-	);
-	add(
-		root,
-		"explorer-cockpit",
-		hullLoft([
+		],
+		[
 			{ z: -0.0285, w: 0.0028, h: 0.0014, b: 0.0015, y: 0.0055, e: 2.7 },
 			{ z: -0.0245, w: 0.0048, h: 0.0028, b: 0.002, y: 0.0066, e: 3 },
 			{ z: -0.0195, w: 0.0045, h: 0.0024, b: 0.0018, y: 0.0072, e: 3 },
 			{ z: -0.0165, w: 0.0031, h: 0.0014, b: 0.0015, y: 0.0066, e: 2.7 },
-		]),
-		p.canopy,
+		],
+		p,
 	);
 	// A habitat ring around the keel: months of endurance without a metre of it
 	// in front of the windows.
@@ -3189,10 +3170,10 @@ function buildExplorerB(root: THREE.Group, p: Palette) {
 		]),
 		p.hull,
 	);
-	add(
+	bridge(
 		root,
-		"explorer-bridge",
-		hullLoft([
+		"explorer",
+		[
 			{ z: -0.0215, w: 0.0042, h: 0.002, b: 0.0022, x: keel, y: 0.0042, e: 3 },
 			{
 				z: -0.0165,
@@ -3213,13 +3194,8 @@ function buildExplorerB(root: THREE.Group, p: Palette) {
 				e: 3.4,
 			},
 			{ z: -0.0065, w: 0.0045, h: 0.002, b: 0.0022, x: keel, y: 0.0054, e: 3 },
-		]),
-		p.panel,
-	);
-	add(
-		root,
-		"explorer-cockpit",
-		hullLoft([
+		],
+		[
 			{
 				z: -0.0205,
 				w: 0.0028,
@@ -3240,8 +3216,8 @@ function buildExplorerB(root: THREE.Group, p: Palette) {
 				y: 0.0066,
 				e: 2.7,
 			},
-		]),
-		p.canopy,
+		],
+		p,
 	);
 	// Habitat to port, bunkerage and the dish to starboard: a ship packed for
 	// months out, not one balanced for a drawing.
@@ -3250,12 +3226,12 @@ function buildExplorerB(root: THREE.Group, p: Palette) {
 		"explorer-habitat",
 		revolve(drumProfile(0.0152, 0.0086)),
 		p.panel,
-		[-0.0128, 0.0006, -0.001],
+		[-0.0128, -0.0056, -0.001],
 	);
 	for (const band of [-0.008, 0.008])
 		add(root, `explorer-hab-band-${band}`, hoop(0.0088, 0.0009), p.accent, [
 			-0.0128,
-			0.0006,
+			-0.0056,
 			-0.001 + band,
 		]);
 	for (const [tag, cz] of [
@@ -3265,7 +3241,12 @@ function buildExplorerB(root: THREE.Group, p: Palette) {
 		add(
 			root,
 			`explorer-hab-stay-${tag}`,
-			strut([keel - 0.0028, 0.0006, cz], [-0.0128, 0.0006, cz], 0.0016, 0.0014),
+			strut(
+				[keel - 0.0028, 0.0006, cz],
+				[-0.0128, -0.0056, cz],
+				0.0016,
+				0.0014,
+			),
 			p.trim,
 		);
 	add(
@@ -3348,27 +3329,22 @@ function buildExplorerC(root: THREE.Group, p: Palette) {
 		]),
 		p.hull,
 	);
-	add(
+	bridge(
 		root,
-		"explorer-bridge",
-		hullLoft([
+		"explorer",
+		[
 			{ z: -0.0255, w: 0.0042, h: 0.002, b: 0.0022, y: 0.004, e: 3 },
 			{ z: -0.0205, w: 0.0068, h: 0.0036, b: 0.0028, y: 0.0052, e: 3.4 },
 			{ z: -0.0145, w: 0.0064, h: 0.0032, b: 0.0028, y: 0.0056, e: 3.4 },
 			{ z: -0.0105, w: 0.0045, h: 0.002, b: 0.0022, y: 0.0052, e: 3 },
-		]),
-		p.panel,
-	);
-	add(
-		root,
-		"explorer-cockpit",
-		hullLoft([
+		],
+		[
 			{ z: -0.0245, w: 0.0028, h: 0.0014, b: 0.0015, y: 0.0053, e: 2.7 },
 			{ z: -0.0205, w: 0.0048, h: 0.0028, b: 0.002, y: 0.0064, e: 3 },
 			{ z: -0.0155, w: 0.0045, h: 0.0024, b: 0.0018, y: 0.0068, e: 3 },
 			{ z: -0.0125, w: 0.0031, h: 0.0014, b: 0.0015, y: 0.0064, e: 2.7 },
-		]),
-		p.canopy,
+		],
+		p,
 	);
 	// The dish looks up and the habitat hangs down, so the keel between them
 	// stays clear for the drives.
@@ -3731,12 +3707,12 @@ function buildRaiderB(root: THREE.Group, p: Palette) {
 		"raider-prize-pod",
 		revolve(drumProfile(0.0138, 0.0074)),
 		p.panel,
-		[-0.0128, -0.0012, -0.0025],
+		[-0.0128, -0.0062, -0.0025],
 	);
 	for (const band of [-0.007, 0.007])
 		add(root, `raider-prize-band-${band}`, hoop(0.0076, 0.0007), p.accent, [
 			-0.0128,
-			-0.0012,
+			-0.0062,
 			-0.0025 + band,
 		]);
 	for (const [tag, cz] of [
@@ -3748,7 +3724,7 @@ function buildRaiderB(root: THREE.Group, p: Palette) {
 			`raider-prize-clamp-${tag}`,
 			strut(
 				[keel - 0.0042, -0.0012, cz],
-				[-0.0128, -0.0012, cz],
+				[-0.0128, -0.0062, cz],
 				0.0015,
 				0.0013,
 			),
@@ -3791,10 +3767,10 @@ function buildRaiderB(root: THREE.Group, p: Palette) {
 	add(
 		root,
 		"raider-port-nacelle",
-		hullLoft(pod(0.012, 0.024, 0.0028, { x: -0.0212 })),
+		hullLoft(pod(0.012, 0.024, 0.0028, { x: -0.0178 })),
 		p.panel,
 	);
-	engineBell(root, "raider-port", [-0.0212, 0, 0.0265], 0.0024, 0.0026, p);
+	engineBell(root, "raider-port", [-0.0178, 0, 0.0265], 0.0024, 0.0026, p);
 	greebleStrip(
 		root,
 		"raider-warpaint",
@@ -3985,27 +3961,22 @@ function buildCarrierA(root: THREE.Group, p: Palette) {
 		p.accent,
 		[0, -0.004, -0.166],
 	);
-	add(
+	bridge(
 		root,
-		"carrier-bridge",
-		hullLoft([
+		"carrier",
+		[
 			{ z: -0.09, w: 0.014, h: 0.008, b: 0.009, y: 0.062, e: 3.4 },
 			{ z: -0.072, w: 0.022, h: 0.013, b: 0.011, y: 0.068, e: 4 },
 			{ z: -0.048, w: 0.021, h: 0.012, b: 0.011, y: 0.07, e: 4 },
 			{ z: -0.032, w: 0.015, h: 0.008, b: 0.009, y: 0.068, e: 3.4 },
-		]),
-		p.panel,
-	);
-	add(
-		root,
-		"carrier-cockpit",
-		hullLoft([
+		],
+		[
 			{ z: -0.086, w: 0.0098, h: 0.0056, b: 0.006, y: 0.0685, e: 3 },
 			{ z: -0.072, w: 0.0158, h: 0.0102, b: 0.0078, y: 0.0742, e: 3.4 },
 			{ z: -0.054, w: 0.0148, h: 0.009, b: 0.0072, y: 0.0764, e: 3.4 },
 			{ z: -0.042, w: 0.0104, h: 0.0056, b: 0.006, y: 0.0742, e: 3 },
-		]),
-		p.canopy,
+		],
+		p,
 	);
 	for (const [tag, cz] of [
 		["fore", -0.082],
@@ -4162,27 +4133,22 @@ function buildCarrierB(root: THREE.Group, p: Palette) {
 		p.canopy,
 	);
 	add(root, "carrier-bay-lip", hoop(0.035, 0.004), p.accent, [0.044, 0, -0.16]);
-	add(
+	bridge(
 		root,
-		"carrier-bridge",
-		hullLoft([
+		"carrier",
+		[
 			{ z: -0.108, w: 0.014, h: 0.008, b: 0.009, x: keel, y: 0.046, e: 3.4 },
 			{ z: -0.09, w: 0.022, h: 0.013, b: 0.011, x: keel, y: 0.052, e: 4 },
 			{ z: -0.066, w: 0.021, h: 0.012, b: 0.011, x: keel, y: 0.054, e: 4 },
 			{ z: -0.05, w: 0.015, h: 0.008, b: 0.009, x: keel, y: 0.052, e: 3.4 },
-		]),
-		p.panel,
-	);
-	add(
-		root,
-		"carrier-cockpit",
-		hullLoft([
+		],
+		[
 			{ z: -0.104, w: 0.0098, h: 0.0056, b: 0.006, x: keel, y: 0.0465, e: 3 },
 			{ z: -0.09, w: 0.0158, h: 0.0102, b: 0.0078, x: keel, y: 0.0522, e: 3.4 },
 			{ z: -0.072, w: 0.0148, h: 0.009, b: 0.0072, x: keel, y: 0.0544, e: 3.4 },
 			{ z: -0.06, w: 0.0104, h: 0.0056, b: 0.006, x: keel, y: 0.0522, e: 3 },
-		]),
-		p.canopy,
+		],
+		p,
 	);
 	for (const [tag, cz] of [
 		["fore", -0.1],
@@ -4334,27 +4300,22 @@ function buildCarrierC(root: THREE.Group, p: Palette) {
 			strut([0, deck - 0.026, cz], [0, -0.026, cz], 0.011, 0.0092),
 			p.trim,
 		);
-	add(
+	bridge(
 		root,
-		"carrier-bridge",
-		hullLoft([
+		"carrier",
+		[
 			{ z: -0.11, w: 0.014, h: 0.008, b: 0.009, y: deck + 0.042, e: 3.4 },
 			{ z: -0.092, w: 0.022, h: 0.013, b: 0.011, y: deck + 0.048, e: 4 },
 			{ z: -0.068, w: 0.021, h: 0.012, b: 0.011, y: deck + 0.05, e: 4 },
 			{ z: -0.052, w: 0.015, h: 0.008, b: 0.009, y: deck + 0.048, e: 3.4 },
-		]),
-		p.panel,
-	);
-	add(
-		root,
-		"carrier-cockpit",
-		hullLoft([
+		],
+		[
 			{ z: -0.106, w: 0.0098, h: 0.0056, b: 0.006, y: deck + 0.0425, e: 3 },
 			{ z: -0.092, w: 0.0158, h: 0.0102, b: 0.0078, y: deck + 0.0482, e: 3.4 },
 			{ z: -0.074, w: 0.0148, h: 0.009, b: 0.0072, y: deck + 0.0504, e: 3.4 },
 			{ z: -0.062, w: 0.0104, h: 0.0056, b: 0.006, y: deck + 0.0482, e: 3 },
-		]),
-		p.canopy,
+		],
+		p,
 	);
 	for (const [tag, cz] of [
 		["fore", -0.102],
@@ -5391,27 +5352,22 @@ function buildDreadnoughtA(root: THREE.Group, p: Palette) {
 		p.accent,
 		[0, 0.004, -0.198],
 	);
-	add(
+	bridge(
 		root,
-		"dreadnought-bridge",
-		hullLoft([
+		"dreadnought",
+		[
 			{ z: -0.03, w: 0.013, h: 0.008, b: 0.009, y: 0.044, e: 3.4 },
 			{ z: -0.012, w: 0.021, h: 0.013, b: 0.011, y: 0.05, e: 4 },
 			{ z: 0.012, w: 0.02, h: 0.012, b: 0.011, y: 0.052, e: 4 },
 			{ z: 0.028, w: 0.014, h: 0.008, b: 0.009, y: 0.05, e: 3.4 },
-		]),
-		p.panel,
-	);
-	add(
-		root,
-		"dreadnought-cockpit",
-		hullLoft([
+		],
+		[
 			{ z: -0.026, w: 0.0092, h: 0.0056, b: 0.006, y: 0.0445, e: 3 },
 			{ z: -0.012, w: 0.0148, h: 0.0102, b: 0.0078, y: 0.0502, e: 3.4 },
 			{ z: 0.006, w: 0.0138, h: 0.009, b: 0.0072, y: 0.0524, e: 3.4 },
 			{ z: 0.018, w: 0.0098, h: 0.0056, b: 0.006, y: 0.0502, e: 3 },
-		]),
-		p.canopy,
+		],
+		p,
 	);
 	for (const [tag, cz] of [
 		["fore", -0.022],
@@ -5534,27 +5490,22 @@ function buildDreadnoughtB(root: THREE.Group, p: Palette) {
 		["four", 0.078],
 	] as const)
 		turret(root, `dreadnought-turret-${tag}`, 0.0128, [0.03, 0.03, cz], p);
-	add(
+	bridge(
 		root,
-		"dreadnought-bridge",
-		hullLoft([
+		"dreadnought",
+		[
 			{ z: -0.088, w: 0.013, h: 0.008, b: 0.009, x: keel, y: 0.046, e: 3.4 },
 			{ z: -0.07, w: 0.021, h: 0.013, b: 0.011, x: keel, y: 0.052, e: 4 },
 			{ z: -0.046, w: 0.02, h: 0.012, b: 0.011, x: keel, y: 0.054, e: 4 },
 			{ z: -0.03, w: 0.014, h: 0.008, b: 0.009, x: keel, y: 0.052, e: 3.4 },
-		]),
-		p.panel,
-	);
-	add(
-		root,
-		"dreadnought-cockpit",
-		hullLoft([
+		],
+		[
 			{ z: -0.084, w: 0.0092, h: 0.0056, b: 0.006, x: keel, y: 0.0465, e: 3 },
 			{ z: -0.07, w: 0.0148, h: 0.0102, b: 0.0078, x: keel, y: 0.0522, e: 3.4 },
 			{ z: -0.052, w: 0.0138, h: 0.009, b: 0.0072, x: keel, y: 0.0544, e: 3.4 },
 			{ z: -0.04, w: 0.0098, h: 0.0056, b: 0.006, x: keel, y: 0.0522, e: 3 },
-		]),
-		p.canopy,
+		],
+		p,
 	);
 	for (const [tag, cz] of [
 		["fore", -0.08],
@@ -5684,27 +5635,22 @@ function buildDreadnoughtC(root: THREE.Group, p: Palette) {
 		["four", 0.064],
 	] as const)
 		turret(root, `dreadnought-turret-${tag}`, 0.0132, [0, deck + 0.032, cz], p);
-	add(
+	bridge(
 		root,
-		"dreadnought-bridge",
-		hullLoft([
+		"dreadnought",
+		[
 			{ z: -0.148, w: 0.013, h: 0.008, b: 0.009, y: deck + 0.038, e: 3.4 },
 			{ z: -0.13, w: 0.021, h: 0.013, b: 0.011, y: deck + 0.044, e: 4 },
 			{ z: -0.106, w: 0.02, h: 0.012, b: 0.011, y: deck + 0.046, e: 4 },
 			{ z: -0.09, w: 0.014, h: 0.008, b: 0.009, y: deck + 0.044, e: 3.4 },
-		]),
-		p.panel,
-	);
-	add(
-		root,
-		"dreadnought-cockpit",
-		hullLoft([
+		],
+		[
 			{ z: -0.144, w: 0.0092, h: 0.0056, b: 0.006, y: deck + 0.0385, e: 3 },
 			{ z: -0.13, w: 0.0148, h: 0.0102, b: 0.0078, y: deck + 0.0442, e: 3.4 },
 			{ z: -0.112, w: 0.0138, h: 0.009, b: 0.0072, y: deck + 0.0464, e: 3.4 },
 			{ z: -0.1, w: 0.0098, h: 0.0056, b: 0.006, y: deck + 0.0442, e: 3 },
-		]),
-		p.canopy,
+		],
+		p,
 	);
 	for (const [tag, cz] of [
 		["fore", -0.14],

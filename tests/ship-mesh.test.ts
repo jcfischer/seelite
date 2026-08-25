@@ -44,29 +44,70 @@ describe("procedural ship visual language", () => {
 			expect(new Set(HULL_VARIANTS[id].map(({ thesis }) => thesis)).size).toBe(
 				3,
 			);
-			const proportions = HULL_VARIANT_IDS.map((variant) => {
-				const size = bounds(id, variant).getSize(new THREE.Vector3());
-				return `${(size.x / size.z).toFixed(2)}:${(size.y / size.z).toFixed(2)}`;
-			});
-			expect(new Set(proportions).size).toBeGreaterThanOrEqual(2);
+			// All three, not two of three: the thesis text being different is a
+			// claim about prose, and the spec's claim is about geometry.
+			const shapes = HULL_VARIANT_IDS.map((variant) =>
+				bounds(id, variant).getSize(new THREE.Vector3()),
+			);
+			for (const a of shapes)
+				for (const b of shapes) {
+					if (a === b) continue;
+					const apart =
+						Math.abs(a.x / a.z - b.x / b.z) > 0.02 ||
+						Math.abs(a.y / a.z - b.y / b.z) > 0.02;
+					expect(`${id} variants differ: ${apart}`).toBe(
+						`${id} variants differ: true`,
+					);
+				}
 		}
 	});
 
-	test("roles have visibly different long-axis proportions before detail resolves", () => {
-		// Every role, not just the first three: a new role that happens to share a
-		// silhouette with an existing one gives the player two names for one ship.
-		const ratios = HULL_IDS.map((id) => {
-			const size = bounds(id).getSize(new THREE.Vector3());
-			return { id, slenderness: size.z / size.x, depth: size.y / size.z };
-		});
-		for (const a of ratios)
-			for (const b of ratios) {
-				if (a.id >= b.id) continue;
-				const apart =
-					Math.abs(a.slenderness - b.slenderness) > 0.08 ||
-					Math.abs(a.depth - b.depth) > 0.04;
-				expect(`${a.id} vs ${b.id}: ${apart}`).toBe(`${a.id} vs ${b.id}: true`);
+	test("hulls of comparable size have visibly different proportions", () => {
+		// Every hull, not just variant "a". Review pointed out that comparing one
+		// variant per role left twenty-two of thirty-three never compared with
+		// anything, while the spec insists variants name distinct ship models.
+		//
+		// Two guards keep the comparison meaningful. Variants of one role are
+		// meant to read as the same class, so only cross-role pairs are checked.
+		// And only pairs of comparable size: a capital hull and an interceptor
+		// can share a ratio exactly and never be confused, because one of them
+		// fills the canopy.
+		//
+		// The bar is a normalised distance rather than two independent
+		// thresholds, and 1.0 is measured rather than chosen. Across the 333
+		// pairs this compares, the closest is 1.21; the next tier down was a
+		// single pair at 0.90, which was fixed rather than tolerated. What this
+		// does *not* prove is that two hulls look different — a bounding box
+		// cannot see an offset keel or a boarding tube. It catches the failure
+		// that prompted it: a raider that read as a patrol hull at range.
+		const hulls = HULL_IDS.flatMap((id) =>
+			HULL_VARIANT_IDS.map((variant) => {
+				const size = bounds(id, variant).getSize(new THREE.Vector3());
+				return {
+					id: `${id}/${variant}`,
+					role: id,
+					slenderness: size.z / size.x,
+					depth: size.y / size.z,
+				};
+			}),
+		);
+		let compared = 0;
+		for (const a of hulls)
+			for (const b of hulls) {
+				if (a.id >= b.id || a.role === b.role) continue;
+				const sizeRatio =
+					HULL_VISUALS[a.role].reachKm / HULL_VISUALS[b.role].reachKm;
+				if (sizeRatio > 2 || sizeRatio < 0.5) continue;
+				compared += 1;
+				const separation = Math.hypot(
+					(a.slenderness - b.slenderness) / 0.08,
+					(a.depth - b.depth) / 0.04,
+				);
+				expect(`${a.id} vs ${b.id}: ${separation >= 1}`).toBe(
+					`${a.id} vs ${b.id}: true`,
+				);
 			}
+		expect(compared).toBeGreaterThan(300);
 	});
 
 	test("each hull has stable identity and motion-direction exhaust cues", () => {
@@ -265,7 +306,9 @@ describe("procedural ship visual language", () => {
 			for (const variant of HULL_VARIANT_IDS) {
 				const root = buildShipMesh(id, variant).root;
 				// Small hulls fair their glass into a cockpit blister, big ones into
-				// a bridge. Either is the painted structure the canopy sets into.
+				// a bridge tower. `canopy()` and `bridge()` each emit their pair,
+				// so which of the two names exists is a contract rather than the
+				// coincidence this fallback used to rest on.
 				const fairing = (root.getObjectByName(id + "-cockpit-fairing") ??
 					root.getObjectByName(id + "-bridge")) as THREE.Mesh;
 				expect(fairing).toBeDefined();
@@ -299,7 +342,7 @@ describe("procedural ship visual language", () => {
 		//
 		// The hull the glass is set into is named, because no property tells it
 		// apart: the pilot looks over their own nose.
-		const OWN_HULL = /fuselage|cockpit|bridge|dorsal-hull|promenade/;
+		const OWN_HULL = /fuselage|cockpit|bridge|dorsal-hull/;
 		for (const id of HULL_IDS) {
 			for (const variant of HULL_VARIANT_IDS) {
 				const root = buildShipMesh(id, variant).root;

@@ -38,9 +38,13 @@ function state() {
 		// Chase shows the player's hull and nothing else. The count is asserted
 		// rather than the absence of two old names, so a future extra hull
 		// parented here has to be a deliberate change to this line.
-		hulls: game.nearScene.children.filter(
-			(child) => child.userData.hullId !== undefined,
-		).length,
+		hulls: (() => {
+			let found = 0;
+			game.nearScene.traverse((child) => {
+				if (child.userData.hullId !== undefined) found += 1;
+			});
+			return found;
+		})(),
 		fleet: game.nearScene.getObjectByName("fleet-review")?.children.length ?? 0,
 		liveCockpit:
 			cockpit instanceof HTMLElement &&

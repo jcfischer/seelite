@@ -531,8 +531,8 @@ class Game {
 	private readonly fleetReview = new URLSearchParams(
 		window.location.search,
 	).has("fleet");
-	private fleet: { mesh: THREE.Object3D; slot: FleetSlot; pos: Vec3 | null }[] =
-		[];
+	private fleet: { mesh: THREE.Object3D; slot: FleetSlot; pos: Vec3 }[] = [];
+	private fleetAnchored = false;
 	/** The speed law's masses, rebuilt once per clock value. See `masses()`. */
 	private massesCache: { id: string; pos: Vec3; radiusKm: number }[] | null =
 		null;
@@ -1035,7 +1035,7 @@ class Game {
 			const hull = buildShipMesh(slot.id, slot.variant).root;
 			hull.name = `fleet-${slot.id}-${slot.variant}`;
 			group.add(hull);
-			this.fleet.push({ mesh: hull, slot, pos: null });
+			this.fleet.push({ mesh: hull, slot, pos: v3(0, 0, 0) });
 		}
 		this.nearScene.add(group);
 	}
@@ -2384,12 +2384,11 @@ class Game {
 		this.shipMesh.quaternion.copy(this.orientation);
 		this.anchorFleet();
 		for (const parked of this.fleet)
-			if (parked.pos)
-				parked.mesh.position.set(
-					parked.pos.x - camPos.x,
-					parked.pos.y - camPos.y,
-					parked.pos.z - camPos.z,
-				);
+			parked.mesh.position.set(
+				parked.pos.x - camPos.x,
+				parked.pos.y - camPos.y,
+				parked.pos.z - camPos.z,
+			);
 		// The hull is the camera in cockpit view, and drawing a cube around the
 		// near plane fills the screen with its inside faces.
 		this.shipMesh.visible = this.view === "chase";
@@ -2425,7 +2424,8 @@ class Game {
 	 * the identity one and quietly wrong.
 	 */
 	private anchorFleet() {
-		if (!this.fleet.length || this.fleet[0].pos) return;
+		if (this.fleetAnchored || !this.fleet.length) return;
+		this.fleetAnchored = true;
 		const anchor = this.world.ship.pos;
 		const facing = this.orientation;
 		// Nose back down the avenue, so the player meets bows rather than tails.

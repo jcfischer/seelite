@@ -18,12 +18,13 @@ import {
 /**
  * The workbench's only top-level numeric constant, and it exists for that.
  *
- * `probe-guard.mjs` proves a probe is talking to a dev server serving *this*
- * checkout by comparing top-level numeric literals in the guarded module, and
- * `probe-model-viewer.mjs` guards on this file. All of the workbench's tuning
- * lives inside `mountModelViewer`, so without one constant out here the guard
- * has nothing to compare and refuses to run. Review read this as an unused
- * export; deleting it took the probe red on the next run.
+ * `probe-model-viewer.mjs` calls `guardedOrigin(ORIGIN, ["src/model-viewer.ts"])`,
+ * and `probe-guard.mjs` proves the dev server is serving *this* checkout by
+ * comparing the top-level numeric literals it can parse out of that file. All
+ * of the workbench's tuning lives inside `mountModelViewer`, so this is the
+ * only literal it can see; without it the guard throws
+ * "declares no top-level numeric constants, so there is nothing to compare".
+ * Read the guard's own rule before deleting this as unused.
  */
 export const MODEL_VIEWER_VERSION = 1;
 
@@ -176,7 +177,7 @@ export function mountModelViewer(): void {
 		elevation: 0.38,
 		distance: framing("courier"),
 	};
-	let mesh: THREE.Group;
+	let mesh: THREE.Group | undefined;
 	let dragging = false;
 	let previous = { x: 0, y: 0 };
 
@@ -189,6 +190,9 @@ export function mountModelViewer(): void {
 			mesh.traverse((object) => {
 				if (object instanceof THREE.Mesh) object.geometry.dispose();
 			});
+			// Dropped after disposal so the old tree is unreachable rather than
+			// held alive by this closure until the next rebuild replaces it.
+			mesh = undefined;
 		}
 		mesh = buildShipMesh(state.asset, state.variant).root;
 		holder.add(mesh);
@@ -231,6 +235,7 @@ export function mountModelViewer(): void {
 			}).join("\n");
 	};
 	const applyDraft = () => {
+		if (!mesh) return;
 		mesh.scale.set(state.beam, 1, state.length);
 		mesh.traverse((object) => {
 			if (!(object instanceof THREE.Mesh)) return;
@@ -357,7 +362,7 @@ export function mountModelViewer(): void {
 		event.preventDefault();
 		const reach = HULL_VISUALS[state.asset].reachKm;
 		state.distance = THREE.MathUtils.clamp(
-			state.distance + event.deltaY * 0.00008 * (reach / 0.036),
+			state.distance * (1 + event.deltaY * 0.0009),
 			reach * 1.5,
 			reach * 9,
 		);
