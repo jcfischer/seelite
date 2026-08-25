@@ -32,6 +32,11 @@ import { HANDOFF_HYSTERESIS } from "./units";
  */
 export type StationDetailLevel = "full" | "reduced" | "outline";
 
+/** What kind of light a fixture is, which is what decides its waveform. Here
+ *  rather than in `station-mesh.ts` because `fixtureIntensity` below is the
+ *  function that answers for every member. */
+export type StationFixtureKind = "strobe-a" | "strobe-b" | "work" | "flare";
+
 /**
  * The band edges, in **the station's own silhouette radii** (§3).
  *
@@ -102,7 +107,9 @@ export interface StationVisualProfile {
 	/** The two hull strobes. Present for every role so the record answers for
 	 *  each; a role with a zero strobe period never lights them. */
 	strobeColor: number;
-	/** Work light: the shipyard's cold bays, the refinery's arc. */
+	/** Work light: the shipyard's cold floodlit bays and its welding arc. The
+	 *  refinery's work light is heat, so it draws `heatColor` instead and never
+	 *  reads this. */
 	floodColor: number;
 	/** Heat: the refinery's flare and the dull glow at its drum. */
 	heatColor: number;
@@ -330,6 +337,13 @@ export function surfaceTexels(
 	precomputed?: Uint8Array,
 ) {
 	const { roughness, metalness } = STATION_VISUALS[type].plating;
+	// A buffer of the wrong length would be read past its end by the loop below
+	// and produce a map that is garbage from some row down — the same failure
+	// mode as a short `DataTexture`, one step earlier.
+	if (precomputed && precomputed.length !== size * size * 4)
+		throw new Error(
+			`precomputed albedo is ${precomputed.length} texels, expected ${size * size * 4}`,
+		);
 	const albedo = precomputed ?? platingTexels(type, size);
 	const out = new Uint8Array(size * size * 4);
 	for (let i = 0; i < size * size; i++) {
@@ -407,4 +421,37 @@ export function flickerIntensity(type: StationType, gameTime: number): number {
 		n = n * (1 - smooth) + hash01(`${type}-flicker`, tick + 1, 0) * smooth;
 	}
 	return 1 - flickerDepth * n;
+}
+
+/**
+ * The waveform one fixture kind rides, 0–1 (§5.2).
+ *
+ * Here rather than in `station-mesh.ts`, which was deciding that `work` and
+ * `flare` share the flicker while the strobes read `strobeIntensity`. This
+ * module is documented as owning the one signature and the one motion a role
+ * carries, so a role that wants its flare and its work light on different
+ * waveforms should be editable here rather than in the Three-side module.
+ *
+ * A switch with a return in every arm: a fifth kind falls off the end with no
+ * return, which is a compile error rather than a light that silently inherits
+ * the flicker.
+ */
+export function fixtureIntensity(
+	type: StationType,
+	kind: StationFixtureKind,
+	gameTime: number,
+): number {
+	switch (kind) {
+		case "strobe-a":
+			return strobeIntensity(type, gameTime, 0);
+		case "strobe-b":
+			return strobeIntensity(
+				type,
+				gameTime,
+				STATION_VISUALS[type].activity.strobePeriodS / 2,
+			);
+		case "work":
+		case "flare":
+			return flickerIntensity(type, gameTime);
+	}
 }

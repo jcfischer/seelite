@@ -31,21 +31,26 @@
  *    bars are hidden, never the dark mouth they surround — hiding both moves the
  *    brightness in two directions at once and nets out to nothing.
  *
- * 3. **Detail falls with range, and the outline does not move when it does.**
- *    Two separate measurements, because they are not measurable at the same
- *    range.
+ * 3. **Detail falls with range.** The band is read as a level string at three
+ *    ranges chosen from the station's own silhouette budget. No pixels are
+ *    involved, and deliberately so.
  *
- *    The band is read as a level string at three ranges chosen from the
- *    station's own silhouette budget — no pixels involved.
+ *    §2's rule — a detail level may not change the outline — is **not** checked
+ *    here, and that is a finding rather than an omission. Three rendered forms
+ *    of it were tried: a near-versus-far mask comparison (the far mask is a
+ *    handful of pixels and scored `1 − IoU` of 1.000 against a provably correct
+ *    build), a same-range `1 − IoU` between the station drawn and stripped, and
+ *    a bounding-box growth budget in pixels and then in per cent. All three
+ *    measure the **bloom pass** rather than the geometry: an emissive accessory
+ *    near a thin structure haloes outside it, and with the clock pinned so the
+ *    strobes are actually lit that halo reaches 24 px on the shipyard's 98 px
+ *    box — 32%, against the 170% a strobe deliberately moved to 2.5·r produces.
+ *    Those two are not an order apart, so no threshold between them is honest.
  *
- *    The outline is compared at **one** range, docking range, between the
- *    station as drawn and the same station with every accessory hidden. Not
- *    between a near and a far capture, which is what an earlier version did: at
- *    the `outline` band a station is a handful of pixels, so resampling that
- *    mask to a 24 × 24 grid measures the sampler rather than the station, and
- *    the far masks scored a `1 − IoU` of 1.000 against a build whose vertex
- *    reach was provably identical at every level. Both captures here come from
- *    one evaluate, so the station cannot move between them.
+ *    The claim is owned headless, where it holds exactly: `station-visuals.test.ts`
+ *    asserts the mesh's vertex reach is *identical* at all three detail levels.
+ *    A rendered check that cannot discriminate is worse than none, because it
+ *    reports a colour for a question it did not answer.
  *
  * 4. **The strobes flash, and they flash on the game clock.** §5.2 makes every
  *    intensity a pure function of `gameTime`, so this writes a clock value and
@@ -79,7 +84,7 @@ const VIEWPORTS = [
 /** Docking range, in the station's own silhouette radii — inside the `full`
  *  band by a wide margin, and read as radii so the refinery's 0.4 km drum and
  *  the shipyard's 1.5 km frame are looked at from the same apparent size. */
-const CLOSE_RADII = 8;
+const CLOSE_RADII = 3;
 /** Two ranges either side of the far band edge, likewise in radii. The band
  *  edges themselves come off the page; these only have to be clear of them. */
 const REDUCED_RADII = 48;
@@ -89,44 +94,6 @@ const OUTLINE_RADII = 900;
  *  `probe-station.mjs`'s grid, for the same reason: the comparison must be of
  *  shape and not of apparent size. */
 const GRID = 24;
-/**
- * How much the silhouette may move when every accessory is switched off, as
- * `1 − IoU` on the resampled masks.
- *
- * **Measured from both sides.** A passing build scores 0.000, 0.000 and 0.026 —
- * the 0.026 being the trade station, whose hull *is* its silhouette. A build
- * deliberately broken by moving one strobe to 2.5·r, so that an accessory
- * genuinely does escape the outline, scores **0.628** at the desktop viewport.
- * 0.05 sits an order above the one and an order below the other, which is what
- * a threshold has to do and is not something the passing side alone can show.
- *
- * One honest limit came out of that run: the same broken build scored 0.003 at
- * the narrow viewport and passed. The escaped lamp fell outside a 390 px frame
- * altogether, so it contributed no pixels to either mask. This check reaches
- * only as far as the viewport does, and the desktop capture is what caught it.
- *
- * The exact form of the claim is headless — the mesh's vertex reach is identical
- * at all three levels — and this is the rendered half, which is the one that
- * also sees the bloom pass.
- */
-const MAX_OUTLINE_DRIFT = 0.05;
-
-/**
- * How much wider the station's rendered bounding box may get when the
- * accessories are drawn, as a fraction of its own width.
- *
- * Not zero, and the reason is the bloom pass rather than the geometry: bloom is
- * a screen-space post-process, so an emissive fixture near the limb adds a pixel
- * or two of halo outside the surface it is mounted on. Measured, that is 1 px on
- * a 268 px box — 0.4% — and it comes and goes with the strobe's own phase.
- *
- * What the check is for is an accessory whose *shape* leaves the silhouette, and
- * that is not a marginal signal: the deliberately broken build above measured
- * 219 px against 82 px bare, a box 2.7× wider. 1% separates the two by two
- * orders of magnitude.
- */
-const MAX_BOX_GROWTH = 0.01;
-
 const installHelpers = (page) =>
 	page.addInitScript(() => {
 		window.__meshOfBody = (id) =>
@@ -174,7 +141,8 @@ const { check, watch, exit } = tally();
  *
  * Five renders of the same scene — the station as drawn, with its aperture bars
  * hidden, with every role fixture unlit, with every accessory switched off, and
- * hidden altogether — differenced against each other.
+ * hidden altogether — differenced against each other, all at one pinned clock
+ * value chosen so the strobes are lit.
  *
  * One evaluate and not four, and that is not a tidiness point. Between two
  * evaluates the frame loop runs: the station spins, its orbit carries it, and
@@ -208,6 +176,18 @@ const measure = (page, bodyId) =>
 			};
 			const mesh = window.__meshOfBody(id);
 			if (!mesh) return { missing: true };
+
+			/**
+			 * **Pin the clock with the strobes lit**, for the five renders below.
+			 *
+			 * Left free, `gameTime` is wherever the frame loop has got to, and at a
+			 * 12% duty the strobes are dark in about seven captures out of eight.
+			 * The lit-signature measurement would then be sampling a station whose
+			 * strobes happen to be off, and would report a different warmth run to
+			 * run. 0.05 s lands inside the first flash of a 2 s period.
+			 */
+			const savedClock = g.world.gameTime;
+			g.world.gameTime = 0.05;
 
 			const hideWhere = (predicate) => {
 				const hidden = [];
@@ -254,6 +234,7 @@ const measure = (page, bodyId) =>
 			mesh.visible = false;
 			const empty = frame();
 			mesh.visible = true;
+			g.world.gameTime = savedClock;
 			g.render(0);
 
 			const luma = (d, i) =>
@@ -339,17 +320,6 @@ const measure = (page, bodyId) =>
 		[bodyId, GRID],
 	);
 
-/** `1 − IoU` over two resampled masks. Zero is the same shape. */
-const shapeDifference = (a, b) => {
-	let union = 0;
-	let both = 0;
-	for (let i = 0; i < a.length; i++) {
-		if (a[i] || b[i]) union++;
-		if (a[i] && b[i]) both++;
-	}
-	return union ? 1 - both / union : 1;
-};
-
 for (const viewport of VIEWPORTS) {
 	const page = await browser.newPage({
 		viewport: { width: viewport.width, height: viewport.height },
@@ -398,31 +368,8 @@ for (const viewport of VIEWPORTS) {
 				`${m.station.meanLuma?.toFixed(1)}`,
 		);
 
-		// §2's rule, on screen: switching every accessory off must leave the same
-		// outline behind. The headless tier owns the exact form of this — vertex
-		// reach, identical at all three levels — and this is the rendered half,
-		// which is what a player actually sees change.
-		const drift = shapeDifference(m.station.cells, m.bare.cells);
-		check(
-			`${viewport.name}: ${type} keeps its outline when the detail goes`,
-			m.bare.count > 0 && drift <= MAX_OUTLINE_DRIFT,
-			`1 − IoU = ${drift.toFixed(3)} against ${MAX_OUTLINE_DRIFT}`,
-		);
-		const grew = (a, b) => (b > 0 ? (a - b) / b : 1);
-		const growth = Math.max(
-			grew(m.station.box.w, m.bare.box.w),
-			grew(m.station.box.h, m.bare.box.h),
-		);
-		check(
-			`${viewport.name}: ${type}'s accessories are inside its silhouette`,
-			m.bare.count > 0 && growth <= MAX_BOX_GROWTH,
-			`${m.station.box.w}×${m.station.box.h} drawn, ` +
-				`${m.bare.box.w}×${m.bare.box.h} bare — ` +
-				`${(growth * 100).toFixed(1)}% against ` +
-				`${(MAX_BOX_GROWTH * 100).toFixed(0)}%`,
-		);
-		// And the accessories are really drawn, or the two checks above are
-		// comparing a capture with itself and prove nothing.
+		// The accessories are drawn at all — which is what the lit-signature
+		// measurement below rests on, since it differences them away.
 		check(
 			`${viewport.name}: ${type} draws accessories at docking range`,
 			m.accessories.count > 0,

@@ -49,7 +49,8 @@ import {
 	PLATE_TEXTURE_SIZE,
 	STATION_VISUALS,
 	type StationDetailLevel,
-	strobeIntensity,
+	type StationFixtureKind,
+	fixtureIntensity,
 	flickerIntensity,
 	platingTexels,
 	stationDetailLevel,
@@ -129,7 +130,7 @@ export interface StationMesh {
 export interface StationFixture {
 	material: THREE.MeshStandardMaterial;
 	base: number;
-	kind: "strobe-a" | "strobe-b" | "work" | "flare";
+	kind: StationFixtureKind;
 }
 
 /**
@@ -266,16 +267,6 @@ const emissiveMaterial = (color: number, intensity: number) =>
 		roughness: 0.4,
 	});
 
-/**
- * Mark an object as accessory detail, drawn only from `minLevel` inward.
- *
- * The rule it serves is §2's: **a detail level may not change the outline.**
- * Nothing tagged here may be the farthest vertex of its station — the flare
- * flame is the refinery's outermost point and is therefore silhouette rather
- * than detail, and is deliberately not tagged. `tests/station-visuals.test.ts`
- * asserts the reach is identical at all three levels, which is what stops that
- * from being a rule kept by hand.
- */
 /** What a part builder hands back: its group, and whatever clock-driven
  *  materials it created. Returned rather than pushed into an array the caller
  *  owns — an out-parameter let the return type say a builder produced no lights
@@ -325,6 +316,16 @@ function buildWindowGrid(
 	return panes;
 }
 
+/**
+ * Mark an object as accessory detail, drawn only from `minLevel` inward.
+ *
+ * The rule it serves is §2's: **a detail level may not change the outline.**
+ * Nothing tagged here may be the farthest vertex of its station — the flare
+ * flame is the refinery's outermost point and is therefore silhouette rather
+ * than detail, and is deliberately not tagged. `tests/station-visuals.test.ts`
+ * asserts the reach is identical at all three levels, which is what stops that
+ * from being a rule kept by hand.
+ */
 function detail<T extends THREE.Object3D>(
 	object: T,
 	minLevel: Exclude<StationDetailLevel, "outline">,
@@ -499,16 +500,9 @@ function buildCoriolisCore(type: StationType, color: number): BuiltPart {
 		}),
 	);
 
-	// The two hull strobes (§5), half a period apart on the beam.
-	//
-	// **Not a port/starboard pair.** They were red and green, and described as
-	// marking port and starboard — but this group *is* the spinner, so both
-	// lamps orbit Z and exchange sides every half rotation. A red/green
-	// convention that inverts twice a revolution is worse than none, and a
-	// station that spins has no fixed port side to mark. What the alternation
-	// honestly carries, sweeping round with the hull, is that the station turns
-	// and how fast — which is the fact `docking.md` §4's roll match is matched
-	// against. Same white on both, therefore.
+	// The two hull strobes, half a period apart on the beam. Deliberately *not*
+	// a port/starboard pair — this group is the spinner, so they exchange sides
+	// twice a revolution; the argument is `station-visuals.md` §5.
 	const fixtures: StationFixture[] = [];
 	const strobes: [StationFixture["kind"], number][] = [
 		["strobe-a", -1],
@@ -524,16 +518,10 @@ function buildCoriolisCore(type: StationType, color: number): BuiltPart {
 			),
 			material,
 		);
-		// **On the face plane, and inboard of the limb.** Both halves matter and
-		// the second one hid a failure of the first: an octahedron's surface is
-		// |x| + |y| + |z| = r, so a lamp is on the hull only if its coordinates
-		// sum to r. Chasing a one-pixel bloom overshoot, this pair was moved from
-		// (0.8, 0, 0.2)·r to (0.55, 0, 0.45)·r — both on the plane — and then to
-		// (0.45, 0, 0.45)·r, which sums to 0.9·r and is **buried inside the
-		// hull**, invisible. The overshoot did not go away because it was never
-		// these lamps: it is the window grid, whose panes sit on the same plane
-		// out to 0.83·r. `tests/station-visuals.test.ts` asserts the sum now, so
-		// a buried fixture is a red test rather than a light nobody sees.
+		// On the face plane — |x| + |y| + |z| = r — and inboard of the limb, so
+		// the bloom halo stays inside the silhouette (`station-visuals.md` §2.2).
+		// Both halves are asserted in `tests/station-visuals.test.ts`, which
+		// carries the story of how each was got wrong.
 		lamp.position.set(side * coreRadiusKm * 0.55, 0, coreRadiusKm * 0.45);
 		lamp.name = kind;
 		detail(lamp, "reduced");
@@ -883,25 +871,12 @@ export function updateStationVisuals(
 	// flare depended on that client's approach history rather than on the clock,
 	// and §5.2's "two clients at one seed draw the same frame" was not true of
 	// it. Driving the hidden ones too costs a couple of float writes a frame.
-	const { strobePeriodS } = STATION_VISUALS[mesh.type].activity;
-	const flicker = flickerIntensity(mesh.type, gameTime);
-	// A switch with a return in every arm, not a chain of ternaries and not a
-	// `default`: this way a fifth fixture kind is a compile error here — the
-	// function would fall off its end with no return — rather than something that
-	// silently inherits the flicker.
-	const scaleOf = (kind: StationFixture["kind"]): number => {
-		switch (kind) {
-			case "strobe-a":
-				return strobeIntensity(mesh.type, gameTime, 0);
-			case "strobe-b":
-				return strobeIntensity(mesh.type, gameTime, strobePeriodS / 2);
-			case "work":
-			case "flare":
-				return flicker;
-		}
-	};
+	// The kind → waveform mapping is `station-visuals.ts`'s, which owns the one
+	// signature and the one motion a role carries. This module only multiplies
+	// by the fixture's own lit intensity.
 	for (const fixture of mesh.fixtures) {
-		fixture.material.emissiveIntensity = fixture.base * scaleOf(fixture.kind);
+		fixture.material.emissiveIntensity =
+			fixture.base * fixtureIntensity(mesh.type, fixture.kind, gameTime);
 	}
 }
 

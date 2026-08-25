@@ -64,10 +64,18 @@ while the mesh's vertex reach was unchanged to the last bit.
 
 The geometric budget cannot see this: it is a post-process on the frame, not a
 vertex. So the rule for an emissive accessory is **inboard of the limb**, not
-merely inside the vertex — the strobes sit at (0.55, 0, 0.45)·r — and the check
-is the browser probe's, which compares the station's rendered bounding box with
-its accessories drawn against the same box with them switched off, allowing 1%
-for the halo itself.
+merely inside the vertex — the strobes sit at (0.55, 0, 0.45)·r.
+
+**This half is not gated, and it is worth being plain about why.** Three
+rendered forms of the check were tried and all three measure the bloom pass
+rather than the geometry: with the clock pinned so the strobes are lit, the halo
+reaches 24 px on the shipyard's 98 px bounding box — 32% — against the 170% a
+strobe deliberately moved to 2.5·r produces. Those are not an order apart, so no
+threshold between them is honest, and a check that cannot discriminate reports a
+colour for a question it did not answer. §2's rule is gated where it holds
+exactly: the mesh's vertex reach, identical at all three levels, in the headless
+tier. What the bloom does on top of that is documented here and looked at, not
+asserted.
 
 **And it must still be on the plane.** An octahedron's surface is
 `|x| + |y| + |z| = r`, so a fixture is on the hull only if its coordinates sum to
@@ -129,9 +137,15 @@ replace that cue with a painted-on one.
 | refinery | wide plating under heavy vertical streaking — soot from its own stacks |
 
 A second `DataTexture` per role carries roughness in green and metalness in
-blue, which is the channel layout `MeshStandardMaterial` reads. Both maps are
-built once at module load and **shared by every station in the galaxy**, like
-#28's pane geometry, and so are never mutated after construction.
+blue, which is the channel layout `MeshStandardMaterial` reads. Both are derived
+from one generated buffer, so a shine cannot miss its own seam.
+
+A role's pair is built **on first use and then shared by every station of that
+role**, and never mutated after construction. Built eagerly for all three at
+module load first, which is what the ratified version of this paragraph said:
+measured, that is 18–22 ms paid by every importer of `station-mesh.ts` —
+including headless tests that never render — and paid for roles a given system
+may not hold.
 
 **The texel buffer length must be exactly `4 × width × height` for
 `RGBAFormat`.** A mismatch does not throw; it reads out of bounds and renders as
@@ -227,8 +241,8 @@ replays exactly.
   close range, measured the same differenced-mask way #28 measures outline;
 - the aperture is the brightest feature on the station at docking range, at both
   a desktop and a narrow viewport;
-- the detail level actually falls with range, and the silhouette does not change
-  when it does;
+- the detail level actually falls with range (the silhouette half of §2's rule
+  is headless, for §2.2's reason);
 - the strobes alternate — each is lit at a moment the other is dark — and the
   same clock value replays the same state.
 
