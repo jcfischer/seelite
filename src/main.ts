@@ -119,7 +119,12 @@ import {
 	stepWorld,
 } from "./sim";
 import { SPIN_RPM_RANGE } from "./station";
-import { buildStationMesh } from "./station-mesh";
+import {
+	STATION_SILHOUETTE_KM,
+	type StationMesh,
+	buildStationMesh,
+	updateStationVisuals,
+} from "./station-mesh";
 import {
 	type HullId,
 	type HullVariantId,
@@ -450,10 +455,17 @@ class Game {
 	 * exists for.
 	 */
 	private readonly meshes = new Map<string, THREE.Object3D>();
-	/** The rotating part of each station, and the phase it is currently drawn
-	 *  at. The phase comes from `stationPose` in sim; nothing reads it back off
-	 *  the `Object3D` (`docking.md` §4.1). */
-	private readonly stationSpinners = new Map<string, THREE.Object3D>();
+	/**
+	 * Each station's built mesh handle: the rotating part, the detail level it is
+	 * currently drawn at, and the materials the clock drives (#36).
+	 *
+	 * The whole handle rather than just the spinner, because the render loop now
+	 * has two things to write per station and they are computed from the same
+	 * distance. The spin phase comes from `stationPose` in sim and nothing reads
+	 * it back off the `Object3D` (`docking.md` §4.1); the detail level and the
+	 * lights come from `station-mesh.ts`, driven by the same game clock.
+	 */
+	private readonly stationVisuals = new Map<string, StationMesh>();
 	/**
 	 * Which layer each body is currently drawn in.
 	 *
@@ -650,6 +662,31 @@ class Game {
 	 */
 	poseOfStation(id: string) {
 		return stationPose(this.world.system, id, this.world.gameTime);
+	}
+
+	/**
+	 * What #36's visual pass is currently drawing for one station.
+	 *
+	 * A snapshot of the handle the render loop writes, for the same reason
+	 * `poseOfStation` exists: `probe-station-visuals.mjs` has to know which
+	 * detail band a station is in and how bright its beacons are at this clock,
+	 * and a probe that recomputed either would be asserting its own copy of the
+	 * rule. `detail` is the level the renderer settled on, not the level the band
+	 * arithmetic would return from scratch — the band is directional, so those are
+	 * different questions and this one is the one that is on screen.
+	 */
+	visualOfStation(id: string) {
+		const station = this.stationVisuals.get(id);
+		if (!station) return null;
+		return {
+			type: station.type,
+			detail: station.detail,
+			silhouetteKm: STATION_SILHOUETTE_KM[station.type],
+			fixtures: station.fixtures.map((fixture) => ({
+				kind: fixture.kind,
+				intensity: fixture.material.emissiveIntensity,
+			})),
+		};
 	}
 
 	constructor(seed: number) {
@@ -965,7 +1002,7 @@ class Game {
 				// cue, which the mesh paints its hull with.
 				const built = buildStationMesh(station.type, body.color);
 				mesh = built.root;
-				this.stationSpinners.set(body.id, built.spinner);
+				this.stationVisuals.set(body.id, built);
 			} else {
 				const material =
 					body.kind === "star"
@@ -2386,8 +2423,14 @@ class Game {
 			// sim — the renderer mirrors the slot's phase rather than owning it
 			// (`docking.md` §4.1), so a docking check never depends on frame
 			// timing.
-			const spinner = this.stationSpinners.get(body.id);
-			if (spinner) {
+			const station = this.stationVisuals.get(body.id);
+			if (station) {
+				const spinner = station.spinner;
+				// Detail and lights, from the same distance the layer above was
+				// chosen with and the same clock the pose is read at. A second
+				// distance computed here would be one more thing to keep in step
+				// with the layer rule.
+				updateStationVisuals(station, this.world.gameTime, distanceKm);
 				// Through the handle's own accessor, not a second copy of the same
 				// argument triple: `poseOfStation` is documented as "the pose the
 				// renderer is mirroring", and a probe asserting through it has to be
