@@ -647,6 +647,8 @@ class Game {
 	private shipMesh!: THREE.Group;
 	/** Throwaway #48 target: a renderer-only silhouette, never a #35 traffic actor. */
 	private combatTargetMesh!: THREE.Mesh;
+	/** Bright, camera-local tracer shown only while the throwaway weapon is held. */
+	private combatLaser!: THREE.Line;
 	/** Cockpit structure follows the ship, while the camera pans within it. */
 	private cockpit!: CockpitHardware;
 	private tuningKey = "";
@@ -1162,6 +1164,19 @@ class Game {
 		this.combatTargetMesh.name = "combat-prototype-target";
 		this.combatTargetMesh.rotation.x = Math.PI / 2;
 		this.nearScene.add(this.combatTargetMesh);
+		this.combatLaser = new THREE.Line(
+			new THREE.BufferGeometry().setFromPoints([
+				new THREE.Vector3(0, 0, -0.6),
+				new THREE.Vector3(0, 0, -12),
+			]),
+			new THREE.LineBasicMaterial({
+				color: 0x74eaff,
+				transparent: true,
+				opacity: 0.95,
+			}),
+		);
+		this.combatLaser.name = "combat-prototype-laser";
+		this.nearScene.add(this.combatLaser);
 		this.warp = warpField(this.world.seed);
 		this.nearScene.add(this.warp.object);
 		// Something is selected on frame one. §6 makes selection a convenience
@@ -3368,6 +3383,9 @@ class Game {
 		// without borrowing #35's display-only traffic as a combat entity.
 		this.combatTargetMesh.position.set(0, 0, -12).applyQuaternion(viewRotation);
 		this.combatTargetMesh.visible = this.view === "cockpit";
+		this.combatLaser.quaternion.copy(viewRotation);
+		this.combatLaser.visible =
+			this.view === "cockpit" && (this.keys.has(" ") || this.keys.has("b"));
 
 		// The star, resolved once at build time rather than scanned for per frame:
 		// every body's sun direction is measured from it, and there is no path
