@@ -75,6 +75,11 @@ import { starField } from "./backdrop";
 import { SettingsStore } from "./settings";
 import { AudioFX } from "./audio";
 import {
+	createCombatPrototype,
+	stepCombatPrototype,
+	type CombatPrototypeState,
+} from "./combat-prototype";
+import {
 	SCANNER_RANGE_KM,
 	type HeadLook,
 	type ScannerContact,
@@ -653,6 +658,10 @@ class Game {
 	private starMaterial!: THREE.ShaderMaterial;
 
 	private readonly keys = new Set<string>();
+	/** Throwaway #48 balance state: it is not world or persistent combat state. */
+	combat: CombatPrototypeState = createCombatPrototype();
+	private combatIncoming = false;
+	private combatEcm = false;
 	readonly audio = new AudioFX();
 	private throttle = 0;
 	private frameBody: Body | null = null;
@@ -2036,7 +2045,10 @@ class Game {
 			? `${target.id.toUpperCase()}  ${range(targetKm)}`
 			: "NO TARGET";
 		const eta = this.etaCache === null ? "CALC" : duration(this.etaCache);
-		const key = `${speed}|${velocity.context}|${targetText}|${eta}|${this.throttle}|${this.assist}|${this.chargeAu}`;
+		const combat = this.combat;
+		const combatText = `F ${combat.foreShield.toFixed(0)} A ${combat.aftShield.toFixed(0)} · E ${combat.energy.toFixed(0)} · H ${combat.heat.toFixed(0)}${combat.heatLocked ? " LOCK" : ""}`;
+		const targetCombat = `ETA ${eta} · LOCK ${combat.missileLock ? "READY" : `${((combat.lockProgress * 100) / 1.5).toFixed(0)}%`} · ${combat.incomingMissile ? "MISSILE WARNING" : "CLEAR"}`;
+		const key = `${speed}|${velocity.context}|${targetText}|${eta}|${this.throttle}|${this.assist}|${this.chargeAu}|${combatText}|${targetCombat}`;
 		if (key === this.cockpit.instrumentKey) return;
 		this.cockpit.instrumentKey = key;
 		const paint = (
@@ -2080,7 +2092,7 @@ class Game {
 			this.cockpit.flightInstrument,
 			velocity.title,
 			speed,
-			velocity.context,
+			combatText,
 			"#75d7ff",
 		);
 		paint(
@@ -2148,6 +2160,12 @@ class Game {
 				return;
 			case "3":
 				if (this.view === "cockpit") this.setHeadLook("right");
+				return;
+			case "z":
+				this.combatIncoming = true;
+				return;
+			case "r":
+				this.combatEcm = true;
 				return;
 			case "j":
 				if (this.regime === "cruise") this.dropOut("dropped by the player");
@@ -3029,6 +3047,19 @@ class Game {
 	 */
 	step(dt: number) {
 		this.updateLocalFrameBody();
+		// #48 deliberately couples no combat entity to the world yet: this is a
+		// flyable balance rig over the shared flight loop, not production combat.
+		this.combat = stepCombatPrototype(this.combat, {
+			dt,
+			firing: this.keys.has("b") ? "beam" : this.keys.has(" ") ? "pulse" : null,
+			targetInCone: this.targetId !== null,
+			incomingMissile: this.combatIncoming,
+			ecm: this.combatEcm,
+			interdicting: this.regime === "cruise",
+			breakAngle: this.keys.has("q") || this.keys.has("e"),
+		});
+		this.combatIncoming = false;
+		this.combatEcm = false;
 		const yaw = this.axis(["arrowright", "d"], ["arrowleft", "a"]);
 		const pitch = this.axis(["arrowdown", "s"], ["arrowup", "w"]);
 		const roll = this.axis(["e"], ["q"]);

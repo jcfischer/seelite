@@ -263,6 +263,25 @@ for (const viewport of VIEWPORTS) {
 		window.__seelite?.scannerContacts.some((contact) => contact.selected),
 	);
 	const forward = await page.evaluate(measureLiveCockpit);
+	const combatReadout = await page.evaluate(() => {
+		const game = window.__seelite;
+		game.combat = {
+			...game.combat,
+			foreShield: 41,
+			aftShield: 23,
+			energy: 77,
+			heat: 12,
+		};
+		game.step(0);
+		game.render(0);
+		game.updateCockpit();
+		return game.cockpit.flightInstrument.secondaryText.text;
+	});
+	check(
+		`${viewport.name}: physical flight instrument renders live combat shields, energy, and heat`,
+		combatReadout === "F 41 A 23 · E 77 · H 12",
+		combatReadout,
+	);
 	await page.evaluate(() => window.__seelite.setThrottle(0));
 	await page.waitForFunction(
 		() =>
