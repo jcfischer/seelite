@@ -842,34 +842,97 @@ function buildTradeRing(color: number): BuiltPart {
 		group.add(module);
 	}
 
-	// Six lofted spokes, tapering into the rim.
-	for (let i = 0; i < 6; i++) {
-		const theta = (i / 6) * Math.PI * 2;
-		const spoke = shell(
-			[
-				{ z: r * 0.22, w: r * 0.055, h: r * 0.035, e: 4 },
-				{ z: major * 0.6, w: r * 0.04, h: r * 0.026, e: 4 },
-				{ z: major, w: r * 0.055, h: r * 0.04, e: 4 },
-			],
-			plainMaterial(0x6f7d88, 0.74, 0.44),
-			`spoke-${i}`,
-			6,
-			true,
-		);
-		spoke.rotation.y = Math.PI / 2;
-		spoke.rotation.z = theta;
-		group.add(spoke);
+	// **A-frame trusses, not radial bars.**
+	//
+	// Round two's first attempt ran six single square members from the hub to
+	// `major` — the rim's *centreline* — with a control station in the middle.
+	// Two things came out of that and both are visible from any angle: a
+	// Catmull-Rom run overshoots between control stations, so the members pushed
+	// through the rim and out the far side, and a lone bar between two round
+	// things reads as the spoke of a steering wheel rather than as structure.
+	//
+	// Each spoke is a pair now, splayed from a single root on the hub to two
+	// feet on the rim, which is what a real tension member looks like and gives
+	// the eye a triangle to read. Two control stations per member, so there is
+	// no interior to overshoot, and they stop at the rim's **inner face** rather
+	// than at its centre.
+	const SPOKES = 6;
+	const foot = major - tube * 0.94;
+	for (let i = 0; i < SPOKES; i++) {
+		const theta = (i / SPOKES) * Math.PI * 2;
+		// A group per spoke, rotated about Z, with the member turned inside it.
+		// Setting both angles on one object leaves the result to `Euler`'s order
+		// — the members came out clustered on one side of the ring rather than
+		// spaced round it, which is what composing two axes on one Euler does
+		// when you are thinking of them as applied in sequence. Nested frames
+		// compose in the order they are nested and there is nothing to reason
+		// about.
+		const arm = new THREE.Group();
+		arm.rotation.z = theta;
+		arm.name = `spoke-${i}`;
+		group.add(arm);
+		for (const splay of [-1, 1]) {
+			const member = shell(
+				[
+					// Rooted on the hub's own surface at this spoke's angle, not at
+					// the axis: six pairs sharing one apex is a bundle of wires.
+					{
+						z: r * 0.14,
+						w: r * 0.026,
+						h: r * 0.019,
+						y: splay * r * 0.04,
+						e: 3,
+					},
+					{
+						z: foot,
+						w: r * 0.022,
+						h: r * 0.016,
+						// **`y`, not `x`.** The member is rotated `Ry(π/2)` so its own
+						// +Z runs radially; that same rotation sends its local +X to
+						// the station's *axis*, so an `x` offset splays the pair
+						// front-to-back rather than sideways and the six of them read
+						// as a cone of wires from one point. Local +Y survives the
+						// rotation as the tangential direction, which is the one a
+						// truss actually splays along.
+						y: splay * r * 0.16,
+						e: 3,
+					},
+				],
+				plainMaterial(0x6f7d88, 0.74, 0.44),
+				`member-${i}${splay < 0 ? "a" : "b"}`,
+				4,
+				true,
+			);
+			member.rotation.y = Math.PI / 2;
+			arm.add(member);
+		}
 	}
+	// A brace ring at mid-radius, tying the trusses together. It is what stops
+	// the web reading as twelve unrelated sticks, and it is the third repeated
+	// element at a fixed pitch — another ruler.
+	const brace = new THREE.Mesh(
+		new THREE.TorusGeometry(major * 0.56, r * 0.016, 4, 24),
+		plainMaterial(0x5f6d78, 0.8, 0.4),
+	);
+	brace.name = "brace";
+	group.add(brace);
 
 	// A slender hub with a real throat, rather than the lozenge round one had:
 	// the dock is a *tunnel* on the axis, so it needs visible depth.
 	group.add(
 		shell(
 			[
-				{ z: -r * 0.5, w: r * 0.2, h: r * 0.2, e: 6 },
-				{ z: -r * 0.16, w: r * 0.26, h: r * 0.26, e: 6, hard: true },
-				{ z: r * 0.24, w: r * 0.26, h: r * 0.26, e: 6, hard: true },
-				{ z: r * 0.44, w: r * 0.19, h: r * 0.19, e: 6 },
+				// **Small.** Round two's first hub was a lozenge as wide as it was
+				// long; the second was slimmer but 0.65 km end to end against a
+				// 1.1 km ring — 60% of the ring's diameter, which fills the middle
+				// and hides the trusses behind it. The ring is the station and the
+				// hub is the thing you dock into: it is a third of that length now
+				// and a seventh of the ring's radius across.
+				{ z: -r * 0.26, w: r * 0.1, h: r * 0.1, e: 6 },
+				{ z: -r * 0.13, w: r * 0.14, h: r * 0.14, e: 6, hard: true },
+				{ z: r * 0.12, w: r * 0.14, h: r * 0.14, e: 6, hard: true },
+				{ z: r * 0.2, w: r * 0.115, h: r * 0.115, e: 6, hard: true },
+				{ z: r * 0.3, w: r * 0.115, h: r * 0.115, e: 6 },
 			],
 			plainMaterial(0x8b95a0, 0.6, 0.5),
 			"hub",
@@ -877,7 +940,7 @@ function buildTradeRing(color: number): BuiltPart {
 			true,
 		),
 	);
-	group.add(buildAperture("trade", r * 0.44));
+	group.add(buildAperture("trade", r * 0.3));
 	group.add(
 		portRun("trade", PANE_COUNT, (i, position, normal) => {
 			const theta = (i / PANE_COUNT) * Math.PI * 2;
