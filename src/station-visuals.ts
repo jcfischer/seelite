@@ -81,10 +81,10 @@ export interface PlatingProfile {
 
 /** The one emissive signature and the one motion a role carries (§5). */
 export interface ActivityProfile {
-	/** Beacon flash period, seconds. Zero for a role with no beacons. */
-	beaconPeriodS: number;
-	/** Fraction of the period a beacon is lit. */
-	beaconDuty: number;
+	/** Strobe flash period, seconds. Zero for a role with no strobes. */
+	strobePeriodS: number;
+	/** Fraction of the period a strobe is lit. */
+	strobeDuty: number;
 	/** Flicker rate, Hz. */
 	flickerHz: number;
 	/** How deep the flicker cuts, 0–1. Zero is a steady light. */
@@ -99,11 +99,9 @@ export interface StationVisualProfile {
 	activity: ActivityProfile;
 	/** Habitation light behind the window grid. */
 	windowColor: number;
-	/** The two navigation beacons on the spin axis, port and starboard. Both
-	 *  present for every role so the record answers for each; a role with a zero
-	 *  beacon period never lights them. */
-	beaconPortColor: number;
-	beaconStarboardColor: number;
+	/** The two hull strobes. Present for every role so the record answers for
+	 *  each; a role with a zero strobe period never lights them. */
+	strobeColor: number;
 	/** Work light: the shipyard's cold bays, the refinery's arc. */
 	floodColor: number;
 	/** Heat: the refinery's flare and the dull glow at its drum. */
@@ -122,14 +120,23 @@ export interface StationVisualProfile {
  * palette that would then have to be kept in step with it.
  */
 /**
- * The navigation-light grammar, shared by every role that carries it.
+ * The strobe and work-light grammar, shared by every role that carries it.
  *
- * One definition rather than three identical literals: these are a *convention*
- * — port red, starboard green, work light cold — and retuning a convention by
- * editing it in three places is how two of the three end up retuned.
+ * One definition rather than repeated literals: these are a *convention*, and
+ * retuning a convention by editing it in three places is how two of the three
+ * end up retuned.
+ *
+ * **Not a port/starboard pair, and that was a real error.** The strobes were
+ * first red and green, described as marking port and starboard on the spin
+ * axis' beam — but they sit inside the spinner, so they orbit Z and exchange
+ * sides every half rotation. A red/green convention that inverts twice a
+ * revolution is worse than none: a Coriolis station spins, so it has no fixed
+ * port side to mark. What the pair honestly carries is the **rotation** — that
+ * the station turns, and how fast — which is the physical fact `docking.md`
+ * §4's roll match is matched against. So both are the same white, half a period
+ * apart, and the colour claim is gone.
  */
-const NAV_PORT = 0xff4d4d;
-const NAV_STARBOARD = 0x53ff8a;
+const STROBE_WHITE = 0xf4f9ff;
 const WORK_FLOOD = 0xbfe4ff;
 
 export const STATION_VISUALS: Record<StationType, StationVisualProfile> = {
@@ -142,8 +149,8 @@ export const STATION_VISUALS: Record<StationType, StationVisualProfile> = {
 			metalness: 0.42,
 		},
 		activity: {
-			beaconPeriodS: 2,
-			beaconDuty: 0.12,
+			strobePeriodS: 2,
+			strobeDuty: 0.12,
 			flickerHz: 0,
 			flickerDepth: 0,
 			flickerSmooth: false,
@@ -154,8 +161,7 @@ export const STATION_VISUALS: Record<StationType, StationVisualProfile> = {
 		// the trade station on the cold side of the ordering it is meant to sit warm
 		// of — the spec said one thing and the literal said the other.
 		windowColor: 0xffe3b8,
-		beaconPortColor: NAV_PORT,
-		beaconStarboardColor: NAV_STARBOARD,
+		strobeColor: STROBE_WHITE,
 		floodColor: WORK_FLOOD,
 		heatColor: 0xffb347,
 	},
@@ -168,8 +174,8 @@ export const STATION_VISUALS: Record<StationType, StationVisualProfile> = {
 			metalness: 0.5,
 		},
 		activity: {
-			beaconPeriodS: 2,
-			beaconDuty: 0.12,
+			strobePeriodS: 2,
+			strobeDuty: 0.12,
 			// A welding arc: fast, deep, and stepped. It is the one motion on the
 			// station that is meant to read as work rather than as signalling.
 			flickerHz: 7,
@@ -177,8 +183,7 @@ export const STATION_VISUALS: Record<StationType, StationVisualProfile> = {
 			flickerSmooth: false,
 		},
 		windowColor: 0xdfe8ff,
-		beaconPortColor: NAV_PORT,
-		beaconStarboardColor: NAV_STARBOARD,
+		strobeColor: STROBE_WHITE,
 		floodColor: WORK_FLOOD,
 		heatColor: 0xffb347,
 	},
@@ -194,18 +199,16 @@ export const STATION_VISUALS: Record<StationType, StationVisualProfile> = {
 			metalness: 0.14,
 		},
 		activity: {
-			// No navigation beacons: the refinery does not spin and its pad faces
-			// outward, so a spin-axis pair would be marking an axis nothing turns
-			// about. The flare is its light.
-			beaconPeriodS: 0,
-			beaconDuty: 0,
+			// No strobes: the refinery does not spin, and a rotation marker on a
+			// station that does not rotate marks nothing. The flare is its light.
+			strobePeriodS: 0,
+			strobeDuty: 0,
 			flickerHz: 1.7,
 			flickerDepth: 0.32,
 			flickerSmooth: true,
 		},
 		windowColor: 0xffcf9a,
-		beaconPortColor: NAV_PORT,
-		beaconStarboardColor: NAV_STARBOARD,
+		strobeColor: STROBE_WHITE,
 		floodColor: WORK_FLOOD,
 		heatColor: 0xff7a2a,
 	},
@@ -351,27 +354,28 @@ export function surfaceTexels(
 }
 
 /**
- * A navigation beacon's brightness at `gameTime`, 0–1 (§5.2).
+ * A hull strobe's brightness at `gameTime`, 0–1 (§5.2).
  *
- * `offsetS` puts the starboard light half a period behind the port one: two
- * beacons flashing together read as a single light, and the pair is what gives
- * the spin axis a direction at the range where the slot itself has not
- * resolved.
+ * `offsetS` puts the second strobe half a period behind the first: two lights
+ * flashing together read as one light, and it is the *alternation* sweeping
+ * round with the hull that shows the station is turning and how fast — the
+ * physical fact `docking.md` §4's roll match is matched against, at the range
+ * where the slot itself has not resolved.
  *
  * A short ramp at each edge of the flash rather than a hard square: at 60 fps a
- * square pulse of this duty is a strobe that a frame can miss entirely, and the
- * symptom is a beacon that looks like it is failing.
+ * square pulse of this duty is a flash a frame can miss entirely, and the
+ * symptom is a strobe that looks like it is failing.
  */
-export function beaconIntensity(
+export function strobeIntensity(
 	type: StationType,
 	gameTime: number,
 	offsetS: number,
 ): number {
-	const { beaconPeriodS, beaconDuty } = STATION_VISUALS[type].activity;
-	if (beaconPeriodS <= 0 || beaconDuty <= 0) return 0;
-	const phase = ((((gameTime + offsetS) / beaconPeriodS) % 1) + 1) % 1;
-	if (phase >= beaconDuty) return 0;
-	const p = phase / beaconDuty;
+	const { strobePeriodS, strobeDuty } = STATION_VISUALS[type].activity;
+	if (strobePeriodS <= 0 || strobeDuty <= 0) return 0;
+	const phase = ((((gameTime + offsetS) / strobePeriodS) % 1) + 1) % 1;
+	if (phase >= strobeDuty) return 0;
+	const p = phase / strobeDuty;
 	const ramp = 0.08;
 	if (p < ramp) return p / ramp;
 	if (p > 1 - ramp) return (1 - p) / ramp;

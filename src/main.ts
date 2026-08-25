@@ -120,9 +120,9 @@ import {
 } from "./sim";
 import { SPIN_RPM_RANGE } from "./station";
 import {
-	STATION_SILHOUETTE_KM,
 	type StationMesh,
 	buildStationMesh,
+	stationVisualSnapshot,
 	updateStationVisuals,
 } from "./station-mesh";
 import {
@@ -669,24 +669,19 @@ class Game {
 	 *
 	 * A snapshot of the handle the render loop writes, for the same reason
 	 * `poseOfStation` exists: `probe-station-visuals.mjs` has to know which
-	 * detail band a station is in and how bright its beacons are at this clock,
+	 * detail band a station is in and how bright its strobes are at this clock,
 	 * and a probe that recomputed either would be asserting its own copy of the
 	 * rule. `detail` is the level the renderer settled on, not the level the band
 	 * arithmetic would return from scratch — the band is directional, so those are
 	 * different questions and this one is the one that is on screen.
+	 *
+	 * The snapshot itself is `station-mesh.ts`'s, not assembled here: reading
+	 * `fixture.material.emissiveIntensity` from the game shell made this depend
+	 * on how a fixture stores its drive.
 	 */
 	visualOfStation(id: string) {
 		const station = this.stationVisuals.get(id);
-		if (!station) return null;
-		return {
-			type: station.type,
-			detail: station.detail,
-			silhouetteKm: STATION_SILHOUETTE_KM[station.type],
-			fixtures: station.fixtures.map((fixture) => ({
-				kind: fixture.kind,
-				intensity: fixture.material.emissiveIntensity,
-			})),
-		};
+		return station ? stationVisualSnapshot(station) : null;
 	}
 
 	constructor(seed: number) {

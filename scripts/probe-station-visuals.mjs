@@ -9,8 +9,8 @@
  * outline. What is left for a browser is what none of that can see.
  *
  * 1. **Each role's lit signature is its own.** §5 gives the trade station warm
- *    habitation light with a red/green beacon pair, the shipyard cold bays and a
- *    white arc, and the refinery a warm flare.
+ *    habitation light and a pair of alternating hull strobes, the shipyard cold
+ *    bays and a white arc, and the refinery a warm flare.
  *
  *    Measured on the pixels the role's **own fixtures** contribute — the frame
  *    as drawn, differenced against the same frame with every fixture switched
@@ -47,7 +47,7 @@
  *    reach was provably identical at every level. Both captures here come from
  *    one evaluate, so the station cannot move between them.
  *
- * 4. **The beacons flash, and they flash on the game clock.** §5.2 makes every
+ * 4. **The strobes flash, and they flash on the game clock.** §5.2 makes every
  *    intensity a pure function of `gameTime`, so this writes a clock value and
  *    renders rather than waiting for a flash to happen. A probe that waited
  *    would be timing the frame loop.
@@ -93,25 +93,39 @@ const GRID = 24;
  * How much the silhouette may move when every accessory is switched off, as
  * `1 − IoU` on the resampled masks.
  *
- * Not a noise floor: both captures come from one evaluate at one range and one
- * clock, so the only noise left is the resampling of two masks that differ by a
- * bloom halo. Measured on a passing build, the three types come out at 0.000,
- * 0.000 and 0.026 — the 0.026 being the trade station, whose hull *is* its
- * silhouette and whose beacons therefore bloom closest to the limb.
+ * **Measured from both sides.** A passing build scores 0.000, 0.000 and 0.026 —
+ * the 0.026 being the trade station, whose hull *is* its silhouette. A build
+ * deliberately broken by moving one strobe to 2.5·r, so that an accessory
+ * genuinely does escape the outline, scores **0.628** at the desktop viewport.
+ * 0.05 sits an order above the one and an order below the other, which is what
+ * a threshold has to do and is not something the passing side alone can show.
  *
- * Be plain about which side that derivation comes from: 0.05 is twice the worst
- * value a **passing** build produces, and nothing here has measured a build
- * where an accessory really does carry the outline. What sets the other end of
- * the scale is `probe-station.mjs`, which measures this same `1 − IoU` between
- * *different* station types on the same resampled grid and records 0.35, 0.61
- * and 0.62. Two shapes that genuinely differ score an order of magnitude above
- * this line; a build that keeps its outline sits at least an order below it.
+ * One honest limit came out of that run: the same broken build scored 0.003 at
+ * the narrow viewport and passed. The escaped lamp fell outside a 390 px frame
+ * altogether, so it contributed no pixels to either mask. This check reaches
+ * only as far as the viewport does, and the desktop capture is what caught it.
  *
- * The exact form of this claim is headless — the mesh's vertex reach is
- * identical at all three levels — and this is the rendered half, which is the
- * one that also sees the bloom pass.
+ * The exact form of the claim is headless — the mesh's vertex reach is identical
+ * at all three levels — and this is the rendered half, which is the one that
+ * also sees the bloom pass.
  */
 const MAX_OUTLINE_DRIFT = 0.05;
+
+/**
+ * How much wider the station's rendered bounding box may get when the
+ * accessories are drawn, as a fraction of its own width.
+ *
+ * Not zero, and the reason is the bloom pass rather than the geometry: bloom is
+ * a screen-space post-process, so an emissive fixture near the limb adds a pixel
+ * or two of halo outside the surface it is mounted on. Measured, that is 1 px on
+ * a 268 px box — 0.4% — and it comes and goes with the strobe's own phase.
+ *
+ * What the check is for is an accessory whose *shape* leaves the silhouette, and
+ * that is not a marginal signal: the deliberately broken build above measured
+ * 219 px against 82 px bare, a box 2.7× wider. 1% separates the two by two
+ * orders of magnitude.
+ */
+const MAX_BOX_GROWTH = 0.01;
 
 const installHelpers = (page) =>
 	page.addInitScript(() => {
@@ -219,8 +233,8 @@ const measure = (page, bodyId) =>
 			// signatures toward each other.
 			const fixtureNames = [
 				"windows",
-				"beacon-port",
-				"beacon-starboard",
+				"strobe-a",
+				"strobe-b",
 				"bay-flood",
 				"weld-arc",
 				"heat-glow",
@@ -394,13 +408,18 @@ for (const viewport of VIEWPORTS) {
 			m.bare.count > 0 && drift <= MAX_OUTLINE_DRIFT,
 			`1 − IoU = ${drift.toFixed(3)} against ${MAX_OUTLINE_DRIFT}`,
 		);
+		const grew = (a, b) => (b > 0 ? (a - b) / b : 1);
+		const growth = Math.max(
+			grew(m.station.box.w, m.bare.box.w),
+			grew(m.station.box.h, m.bare.box.h),
+		);
 		check(
 			`${viewport.name}: ${type}'s accessories are inside its silhouette`,
-			m.bare.count > 0 &&
-				m.bare.box.w === m.station.box.w &&
-				m.bare.box.h === m.station.box.h,
+			m.bare.count > 0 && growth <= MAX_BOX_GROWTH,
 			`${m.station.box.w}×${m.station.box.h} drawn, ` +
-				`${m.bare.box.w}×${m.bare.box.h} bare`,
+				`${m.bare.box.w}×${m.bare.box.h} bare — ` +
+				`${(growth * 100).toFixed(1)}% against ` +
+				`${(MAX_BOX_GROWTH * 100).toFixed(0)}%`,
 		);
 		// And the accessories are really drawn, or the two checks above are
 		// comparing a capture with itself and prove nothing.
@@ -459,7 +478,7 @@ for (const viewport of VIEWPORTS) {
 	await page.close();
 }
 
-// --- 4: the beacons flash, on the game clock ---------------------------------
+// --- 4: the strobes flash, on the game clock ---------------------------------
 {
 	const page = await browser.newPage({
 		viewport: { width: 1100, height: 720 },
@@ -485,7 +504,7 @@ for (const viewport of VIEWPORTS) {
 	);
 
 	/**
-	 * Sample the beacons across one period by *writing the clock*.
+	 * Sample the strobes across one period by *writing the clock*.
 	 *
 	 * §5.2's whole point: every intensity is a pure function of `gameTime`, so
 	 * the flash can be sampled rather than waited for. Waiting would be timing
@@ -500,9 +519,8 @@ for (const viewport of VIEWPORTS) {
 			g.render(0);
 			const v = g.visualOfStation(id);
 			out.push({
-				port: v.fixtures.find((f) => f.kind === "beacon-port").intensity,
-				starboard: v.fixtures.find((f) => f.kind === "beacon-starboard")
-					.intensity,
+				a: v.fixtures.find((f) => f.kind === "strobe-a").intensity,
+				b: v.fixtures.find((f) => f.kind === "strobe-b").intensity,
 			});
 		}
 		g.world.gameTime = saved;
@@ -510,20 +528,29 @@ for (const viewport of VIEWPORTS) {
 		return out;
 	}, trade);
 
-	const port = samples.map((s) => s.port);
-	const starboard = samples.map((s) => s.starboard);
+	const a = samples.map((s) => s.a);
+	const b = samples.map((s) => s.b);
 	check(
-		"the trade beacons flash on the game clock",
-		Math.max(...port) > 1 && Math.min(...port) === 0,
-		`port ${Math.min(...port).toFixed(2)}–${Math.max(...port).toFixed(2)}`,
+		"the trade strobes flash on the game clock",
+		Math.max(...a) > 1 && Math.min(...a) === 0,
+		`strobe-a ${Math.min(...a).toFixed(2)}–${Math.max(...a).toFixed(2)}`,
+	);
+	// **Alternation, not absence of overlap.** The earlier check asserted that
+	// the two are never lit together, which at a 12% duty and a half-period
+	// offset cannot fail: the lit windows are 0.24 s apart in a 2 s period, so
+	// no sampling of a correct build *or* of one broken up to a 50% duty would
+	// ever overlap. It read as evidence for the pair reading as two lights while
+	// proving only that the duty is under half. What actually carries that claim
+	// is that each strobe is lit at some moment the other is dark.
+	check(
+		"the two strobes alternate rather than reading as one light",
+		samples.some((s) => s.a > 1 && s.b === 0) &&
+			samples.some((s) => s.b > 1 && s.a === 0),
+		`${samples.filter((s) => s.a > 1 && s.b === 0).length} a-only, ` +
+			`${samples.filter((s) => s.b > 1 && s.a === 0).length} b-only`,
 	);
 	check(
-		"the two beacons are never lit together",
-		samples.every((s) => s.port === 0 || s.starboard === 0),
-		`${samples.filter((s) => s.port > 0 && s.starboard > 0).length} overlaps`,
-	);
-	check(
-		"the same clock value gives the same beacon state",
+		"the same clock value gives the same strobe state",
 		await page.evaluate((id) => {
 			const g = window.__seelite;
 			const at = (t) => {
@@ -534,19 +561,15 @@ for (const viewport of VIEWPORTS) {
 			// 20.05 s lands inside a flash and 93.5 s does not, which is what
 			// makes the inequality below non-vacuous: two dark samples would
 			// compare equal and the check would pass having proved nothing.
-			const a = at(20.05);
-			const b = at(93.5);
-			const c = at(20.05);
+			const first = at(20.05);
+			const other = at(93.5);
+			const again = at(20.05);
 			return (
-				JSON.stringify(a) === JSON.stringify(c) &&
-				JSON.stringify(a) !== JSON.stringify(b)
+				JSON.stringify(first) === JSON.stringify(again) &&
+				JSON.stringify(first) !== JSON.stringify(other)
 			);
 		}, trade),
 		"sampled 20.05 s, 93.5 s, 20.05 s",
-	);
-	check(
-		"the starboard beacon is not a copy of the port one",
-		JSON.stringify(port) !== JSON.stringify(starboard),
 	);
 	await page.close();
 }

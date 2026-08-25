@@ -31,7 +31,7 @@ import {
 	PLATE_TEXTURE_SIZE,
 	STATION_VISUALS,
 	type StationDetailLevel,
-	beaconIntensity,
+	strobeIntensity,
 	flickerIntensity,
 	platingTexels,
 	stationDetailLevel,
@@ -53,14 +53,23 @@ function reachKm(root: THREE.Object3D, type: StationType): number {
 	let maxSq = 0;
 	const v = new THREE.Vector3();
 	const instance = new THREE.Matrix4();
-	root.traverse((object) => {
+	// An explicit stack rather than `traverse`, because the two behave
+	// differently at the point this test rests on: returning early from a
+	// `traverse` callback skips that node and **still visits its children**, so a
+	// hidden group with drawn-looking descendants would have been measured. That
+	// holds today only because every tagged accessory happens to be a leaf, which
+	// is not something this assertion should depend on.
+	const stack: THREE.Object3D[] = [root];
+	while (stack.length) {
+		const object = stack.pop() as THREE.Object3D;
+		// Hidden parts are not drawn, so neither they nor anything under them is
+		// part of the outline. This is what lets the assertion below be an
+		// equality rather than a tolerance.
+		if (!object.visible) continue;
+		for (const child of object.children) stack.push(child);
 		const mesh = object as THREE.Mesh;
-		// Hidden parts are not drawn, so they are not part of the outline. This is
-		// the whole reason the assertion below can be an equality: an accessory
-		// that was switched off has left the silhouette.
-		if (!object.visible) return;
 		const position = mesh.geometry?.getAttribute?.("position");
-		if (!position) return;
+		if (!position) continue;
 		const instanced = object as THREE.InstancedMesh;
 		const count = instanced.isInstancedMesh ? instanced.count : 1;
 		for (let n = 0; n < count; n++) {
@@ -73,7 +82,7 @@ function reachKm(root: THREE.Object3D, type: StationType): number {
 				maxSq = Math.max(maxSq, v.lengthSq());
 			}
 		}
-	});
+	}
 	return Math.sqrt(maxSq) * STATION_GEOMETRY[type].coreRadiusKm;
 }
 
@@ -153,10 +162,36 @@ describe("a detail level may not change the outline", () => {
 	});
 });
 
+describe("a fixture on a Coriolis hull is on the hull", () => {
+	test("both strobes lie on the octahedron's face plane", () => {
+		// An octahedron's surface is |x| + |y| + |z| = r, so a lamp is on the hull
+		// only if its coordinates sum to r. Moved to (0.45, 0, 0.45)·r while
+		// chasing a bloom overshoot, this pair summed to 0.9·r and was **inside**
+		// the hull — invisible, and the overshoot it was moved for turned out to
+		// be the window grid all along. Nothing rendered says "this light is
+		// buried"; the arithmetic does.
+		for (const type of ["trade", "shipyard"] as StationType[]) {
+			const { root } = buildStationMesh(type, GREY);
+			const r = STATION_GEOMETRY[type].coreRadiusKm;
+			for (const kind of ["strobe-a", "strobe-b"]) {
+				const lamp = root.getObjectByName(kind);
+				expect(lamp).toBeDefined();
+				const p = (lamp as THREE.Object3D).position;
+				expect(Math.abs(p.x) + Math.abs(p.y) + Math.abs(p.z)).toBeCloseTo(r, 9);
+			}
+		}
+	});
+});
+
 describe("detail is chosen by apparent size, with the render layer's hysteresis", () => {
 	test("the bands are the spec's, measured in the station's own radii", () => {
 		expect(stationDetailLevel(undefined, 1)).toBe("full");
 		expect(stationDetailLevel(undefined, DETAIL_RADII.full - 1)).toBe("full");
+		// The edges themselves, which the spec's table states as `≤`. Asserted
+		// either side only, an off-by-one in the comparison would leave the
+		// documented boundary unverified while everything else stayed green.
+		expect(stationDetailLevel(undefined, DETAIL_RADII.full)).toBe("full");
+		expect(stationDetailLevel(undefined, DETAIL_RADII.reduced)).toBe("reduced");
 		expect(stationDetailLevel(undefined, DETAIL_RADII.full + 1)).toBe(
 			"reduced",
 		);
@@ -258,7 +293,7 @@ describe("activity is a pure function of the game clock", () => {
 		// able to sample a flicker rather than wait for one.
 		for (const type of TYPES) {
 			for (const t of [0, 1.7, 93.25, 3600.5]) {
-				expect(beaconIntensity(type, t, 0)).toBe(beaconIntensity(type, t, 0));
+				expect(strobeIntensity(type, t, 0)).toBe(strobeIntensity(type, t, 0));
 				expect(flickerIntensity(type, t)).toBe(flickerIntensity(type, t));
 			}
 		}
@@ -269,23 +304,23 @@ describe("activity is a pure function of the game clock", () => {
 		// An unbounded return there is a fixture that blows out the bloom pass.
 		for (const type of TYPES) {
 			for (let t = 0; t < 40; t += 0.013) {
-				const beacon = beaconIntensity(type, t, 0);
+				const strobe = strobeIntensity(type, t, 0);
 				const flicker = flickerIntensity(type, t);
-				expect(beacon).toBeGreaterThanOrEqual(0);
-				expect(beacon).toBeLessThanOrEqual(1);
+				expect(strobe).toBeGreaterThanOrEqual(0);
+				expect(strobe).toBeLessThanOrEqual(1);
 				expect(flicker).toBeGreaterThanOrEqual(0);
 				expect(flicker).toBeLessThanOrEqual(1);
 			}
 		}
 	});
 
-	test("the trade beacon flashes at the declared duty cycle", () => {
-		const { beaconPeriodS, beaconDuty } = STATION_VISUALS.trade.activity;
-		const step = beaconPeriodS / 2000;
+	test("the trade strobe flashes at the declared duty cycle", () => {
+		const { strobePeriodS, strobeDuty } = STATION_VISUALS.trade.activity;
+		const step = strobePeriodS / 2000;
 		let lit = 0;
 		let n = 0;
-		for (let t = 0; t < beaconPeriodS * 3; t += step) {
-			if (beaconIntensity("trade", t, 0) > 0.5) lit++;
+		for (let t = 0; t < strobePeriodS * 3; t += step) {
+			if (strobeIntensity("trade", t, 0) > 0.5) lit++;
 			n++;
 		}
 		// Within a tenth either way. The ramp at each end of the flash costs a
@@ -293,21 +328,21 @@ describe("activity is a pure function of the game clock", () => {
 		// exact fraction would be asserting the ramp's shape. A looser upper
 		// bound would let the duty cycle grow by half before this noticed, which
 		// is the failure a duty-cycle test exists to catch.
-		expect(lit / n).toBeGreaterThan(beaconDuty * 0.9);
-		expect(lit / n).toBeLessThan(beaconDuty * 1.1);
+		expect(lit / n).toBeGreaterThan(strobeDuty * 0.9);
+		expect(lit / n).toBeLessThan(strobeDuty * 1.1);
 	});
 
-	test("the port and starboard beacons are out of phase", () => {
-		// One offset argument, and this is what it is for: two beacons flashing
-		// together read as one light, and the pair is what gives the spin axis a
-		// direction at range.
-		const { beaconPeriodS } = STATION_VISUALS.trade.activity;
+	test("the two strobes are out of phase", () => {
+		// One offset argument, and this is what it is for: two lights flashing
+		// together read as one light, and it is the alternation — sweeping round
+		// with the spinning hull — that shows the station turns and how fast.
+		const { strobePeriodS } = STATION_VISUALS.trade.activity;
 		let differed = false;
-		for (let t = 0; t < beaconPeriodS; t += beaconPeriodS / 400) {
+		for (let t = 0; t < strobePeriodS; t += strobePeriodS / 400) {
 			if (
 				Math.abs(
-					beaconIntensity("trade", t, 0) -
-						beaconIntensity("trade", t, beaconPeriodS / 2),
+					strobeIntensity("trade", t, 0) -
+						strobeIntensity("trade", t, strobePeriodS / 2),
 				) > 0.5
 			)
 				differed = true;
@@ -365,17 +400,15 @@ describe("what the renderer drives, at every range", () => {
 		const closeKm = STATION_SILHOUETTE_KM.trade;
 		for (const t of [0.03, 1.1, 7.42]) {
 			updateStationVisuals(mesh, t, closeKm);
-			const port = mesh.fixtures.find((f) => f.kind === "beacon-port");
-			const starboard = mesh.fixtures.find(
-				(f) => f.kind === "beacon-starboard",
-			);
-			const { beaconPeriodS } = STATION_VISUALS.trade.activity;
-			expect(port?.material.emissiveIntensity).toBeCloseTo(
-				(port?.base ?? 0) * beaconIntensity("trade", t, 0),
+			const first = mesh.fixtures.find((f) => f.kind === "strobe-a");
+			const second = mesh.fixtures.find((f) => f.kind === "strobe-b");
+			const { strobePeriodS } = STATION_VISUALS.trade.activity;
+			expect(first?.material.emissiveIntensity).toBeCloseTo(
+				(first?.base ?? 0) * strobeIntensity("trade", t, 0),
 				9,
 			);
-			expect(starboard?.material.emissiveIntensity).toBeCloseTo(
-				(starboard?.base ?? 0) * beaconIntensity("trade", t, beaconPeriodS / 2),
+			expect(second?.material.emissiveIntensity).toBeCloseTo(
+				(second?.base ?? 0) * strobeIntensity("trade", t, strobePeriodS / 2),
 				9,
 			);
 		}

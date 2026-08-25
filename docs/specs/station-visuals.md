@@ -35,7 +35,7 @@ That gives the pass its one hard structural rule:
 
 > **A detail level may not change the outline.**
 
-The plating, the fixtures, the beacons and the flare are drawn inside the
+The plating, the fixtures, the strobes and the flare are drawn inside the
 silhouette the outline already has. Turning them off at range must leave the
 same shape behind, or #28's desaturated silhouette probe starts measuring a
 different object at 60 km than at 5 km and its finding decays into noise. The
@@ -46,7 +46,7 @@ whole enforcement.
 
 `STATION_SILHOUETTE_KM.trade` is 0.6 km and the Coriolis octahedron's own vertex
 is at 0.6 km. The budget is not slack the pass may spend: it is exactly the
-hull. So every fixture added to a Coriolis core — beacon, strobe housing, panel
+hull. So every fixture added to a Coriolis core — strobe, housing, panel
 trim — is solved onto the face plane `|x| + |y| + |z| = r` and sits *inside* the
 convex outline, the way #28's window panes already do. A mast, a boom or an
 antenna on the trade station is not a tuning question; there is no room for one.
@@ -58,15 +58,24 @@ per cent, which is a ratchet against growth and not an allowance either.
 
 Inside the hull is not far enough for a light. The renderer runs a bloom pass,
 so an emissive surface spreads a halo past the geometry it is mounted on — and
-on the trade station, whose hull *is* the whole silhouette, a beacon sitting at
+on the trade station, whose hull *is* the whole silhouette, a strobe sitting at
 0.8·r on the face plane pushed the rendered outline 7 px wider at docking range
 while the mesh's vertex reach was unchanged to the last bit.
 
 The geometric budget cannot see this: it is a post-process on the frame, not a
 vertex. So the rule for an emissive accessory is **inboard of the limb**, not
-merely inside the vertex — the beacons sit at 0.55·r — and the check is the
-browser probe's, which compares the station's rendered bounding box with its
-accessories drawn against the same box with them switched off.
+merely inside the vertex — the strobes sit at (0.55, 0, 0.45)·r — and the check
+is the browser probe's, which compares the station's rendered bounding box with
+its accessories drawn against the same box with them switched off, allowing 1%
+for the halo itself.
+
+**And it must still be on the plane.** An octahedron's surface is
+`|x| + |y| + |z| = r`, so a fixture is on the hull only if its coordinates sum to
+`r`. Chasing a residual one-pixel overshoot, the pair was moved to
+`(0.45, 0, 0.45)·r` — a sum of 0.9·r, which is *inside* the hull and invisible.
+The overshoot did not go away, because it was never the strobes: it is the window
+grid, whose panes sit on the same plane out to 0.83·r. Nothing rendered says "the
+lights are buried", so the headless tier asserts the sum.
 
 ## 3. The three reading distances
 
@@ -80,8 +89,8 @@ many of its own radii away the camera is.
 
 | Level | Apparent radii | What is drawn |
 |---|---|---|
-| `full` | ≤ 40 | plating, window grid, fixtures, beacons, flare, aperture recess |
-| `reduced` | ≤ 400 | hull, aperture, and the emissive lights only |
+| `full` | ≤ 40 | plating, window grid, fixtures, strobes, flare, aperture recess |
+| `reduced` | ≤ 400 | hull, aperture, strobes, bay floods and heat glow — no window grid |
 | `outline` | > 400 | hull and aperture; every accessory off |
 
 **The table is the undirected reading.** The bands switch with the same 5%
@@ -135,8 +144,8 @@ Each role carries one emissive signature and one motion:
 
 | Role | Light | Activity |
 |---|---|---|
-| trade | warm window grid, plus red/green navigation beacons on the spin axis | beacons flash on a 2 s period at a 12% duty cycle |
-| shipyard | cool window grid, cold blue-white floodlit bays, and the same beacon pair | one bay carries a welding arc — a fast, deep flicker; the beacons flash as the trade station's do |
+| trade | warm window grid, plus a pair of hull strobes on the beam | the strobes alternate on a 2 s period at a 12% duty cycle |
+| shipyard | cool window grid, cold blue-white floodlit bays, and the same strobe pair | one bay carries a welding arc — a fast, deep flicker; the strobes alternate as the trade station's do |
 | refinery | warm flare over the stacks, a heat ring and lit ports on the drum's face | the flare and the ring breathe on a slow shallow flicker |
 
 The colours are drawn from `hud-and-scanner.md` §4's grammar rather than a
@@ -150,19 +159,28 @@ from that axis and drew *zero pixels* — a crewed station reading as an unlit t
 from the only direction anyone approaches it. They are on the drum's face now,
 round the pad.
 
-The beacon pair belongs to the **Coriolis hull**, not to the trade station: the
-shipyard is the same spinning octahedron with the same spin axis, so marking it
-is the same problem with the same answer. What separates the two roles is the
-work light — the shipyard's cold bays and its arc against the trade station's
-warm grid — and the drydock frame that is already carrying the outline.
+The strobe pair belongs to the **Coriolis hull**, not to the trade station: the
+shipyard is the same spinning octahedron, so marking it is the same problem with
+the same answer. What separates the two roles is the work light — the shipyard's
+cold bays and its arc against the trade station's warm grid — and the drydock
+frame that is already carrying the outline.
+
+**They are not a port/starboard pair, and they are not coloured as one.** The
+first version made them red and green and described them as marking port and
+starboard on the spin axis' beam. They sit inside the spinner, so both orbit the
+axis and exchange sides every half revolution: a convention that inverts twice a
+rotation is worse than none, and a station that spins has no fixed port side to
+mark in the first place. What the alternation honestly carries is that the
+station **turns, and how fast** — the physical fact `docking.md` §4's roll match
+is matched against, readable at ranges where the slot itself has not resolved.
+Both strobes are therefore the same white.
 
 The trade station's window grid is a **warm** white and the shipyard's a cool
 one. That is the pair's finest distinction and it is deliberate: it is what makes
 the two Coriolis hulls read apart in the one measurement that ignores shape.
 
-The refinery carries no navigation beacons. It does not spin and its pad faces
-outward, so a spin-axis pair would be marking an axis nothing turns about; its
-flare is its light.
+The refinery carries no strobes: it does not spin, and a rotation marker on a
+station that does not rotate marks nothing. Its flare is its light.
 
 ### 5.1 The prohibition
 
@@ -199,7 +217,9 @@ replays exactly.
 - texel buffers are `4 × w × h`, deterministic across builds, and different per
   role;
 - activity intensities are pure in `gameTime`, bounded to [0, 1], and the
-  beacon's duty cycle is the declared one.
+  strobe's duty cycle is the declared one;
+- every fixture on a Coriolis hull sums to `r` on the face plane, so a light
+  cannot be buried inside the hull it is meant to sit on.
 
 **Browser** (`scripts/probe-station-visuals.mjs`) — what no arithmetic reaches:
 
@@ -209,8 +229,8 @@ replays exactly.
   a desktop and a narrow viewport;
 - the detail level actually falls with range, and the silhouette does not change
   when it does;
-- the beacons flash — the same station sampled at two clock values differs in
-  emitted light and not in shape.
+- the strobes alternate — each is lit at a moment the other is dark — and the
+  same clock value replays the same state.
 
 Both tiers are green before this merges; the browser tier does not run in CI
 (#14) and is the closer's own obligation.
