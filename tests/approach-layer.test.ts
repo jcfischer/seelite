@@ -6,6 +6,7 @@ import {
 	HANDOFF_HYSTERESIS,
 	HANDOFF_KM,
 	NEAR_FAR_KM,
+	NEAR_NEAR_KM,
 	massiveLayerFor,
 } from "../src/units";
 
@@ -33,5 +34,7 @@ test("massive-body approach hysteresis holds until surface distance leaves its b
 
 test("approach camera covers the close surface without spending the near budget", () => {
 	expect(APPROACH_NEAR_UNITS).toBeLessThan(HANDOFF_KM * APPROACH_SCALE);
-	expect(APPROACH_FAR_UNITS / APPROACH_NEAR_UNITS).toBeLessThanOrEqual(2e6);
+	expect(APPROACH_FAR_UNITS / APPROACH_NEAR_UNITS).toBeLessThanOrEqual(
+		NEAR_FAR_KM / NEAR_NEAR_KM,
+	);
 });
