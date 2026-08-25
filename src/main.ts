@@ -645,6 +645,8 @@ class Game {
 	 */
 	private readonly layers = new Map<string, "near" | "approach" | "far">();
 	private shipMesh!: THREE.Group;
+	/** Throwaway #48 target: a renderer-only silhouette, never a #35 traffic actor. */
+	private combatTargetMesh!: THREE.Mesh;
 	/** Cockpit structure follows the ship, while the camera pans within it. */
 	private cockpit!: CockpitHardware;
 	private tuningKey = "";
@@ -1149,6 +1151,17 @@ class Game {
 		this.buildBodies();
 		this.buildShip();
 		this.buildCockpit();
+		this.combatTargetMesh = new THREE.Mesh(
+			new THREE.ConeGeometry(0.45, 1.3, 4),
+			new THREE.MeshStandardMaterial({
+				color: 0x9d2f35,
+				emissive: 0x450308,
+				emissiveIntensity: 1.2,
+			}),
+		);
+		this.combatTargetMesh.name = "combat-prototype-target";
+		this.combatTargetMesh.rotation.x = Math.PI / 2;
+		this.nearScene.add(this.combatTargetMesh);
 		this.warp = warpField(this.world.seed);
 		this.nearScene.add(this.warp.object);
 		// Something is selected on frame one. §6 makes selection a convenience
@@ -2046,7 +2059,12 @@ class Game {
 			: "NO TARGET";
 		const eta = this.etaCache === null ? "CALC" : duration(this.etaCache);
 		const combat = this.combat;
-		const combatText = `F ${combat.foreShield.toFixed(0)} A ${combat.aftShield.toFixed(0)} · E ${combat.energy.toFixed(0)} · H ${combat.heat.toFixed(0)}${combat.heatLocked ? " LOCK" : ""}`;
+		const firing = this.keys.has("b")
+			? " BEAM"
+			: this.keys.has(" ")
+				? " PULSE"
+				: "";
+		const combatText = `F ${combat.foreShield.toFixed(0)} A ${combat.aftShield.toFixed(0)} · E ${combat.energy.toFixed(0)} · H ${combat.heat.toFixed(0)}${combat.heatLocked ? " LOCK" : ""}${firing}`;
 		const targetCombat = `ETA ${eta} · LOCK ${combat.missileLock ? "READY" : `${((combat.lockProgress * 100) / 1.5).toFixed(0)}%`} · ${combat.incomingMissile ? "MISSILE WARNING" : "CLEAR"}`;
 		const key = `${speed}|${velocity.context}|${targetText}|${eta}|${this.throttle}|${this.assist}|${this.chargeAu}|${combatText}|${targetCombat}`;
 		if (key === this.cockpit.instrumentKey) return;
@@ -3346,6 +3364,10 @@ class Game {
 		// no-op today; it is written out because the moment the camera stops
 		// being pinned there, its absence is a bug that takes an hour to see.
 		this.stars.position.copy(this.backdropCamera.position);
+		// A deliberate prototype target gives the balance controls a visible object
+		// without borrowing #35's display-only traffic as a combat entity.
+		this.combatTargetMesh.position.set(0, 0, -12).applyQuaternion(viewRotation);
+		this.combatTargetMesh.visible = this.view === "cockpit";
 
 		// The star, resolved once at build time rather than scanned for per frame:
 		// every body's sun direction is measured from it, and there is no path
@@ -3833,6 +3855,15 @@ class Game {
 		} else {
 			this.cockpitPrompt.reset();
 		}
+		ctx.font = "12px ui-monospace, monospace";
+		ctx.fillStyle = "rgba(255, 214, 120, 0.9)";
+		ctx.textAlign = "center";
+		ctx.fillText(
+			"COMBAT PROTOTYPE — hold SPACE pulse · B beam · Z warning · R ECM",
+			w / 2,
+			h * 0.72,
+		);
+		ctx.textAlign = "left";
 
 		// The selected target owns the amber sky marker. Green remains prograde,
 		// and the other bodies stay cool blue navigation context.

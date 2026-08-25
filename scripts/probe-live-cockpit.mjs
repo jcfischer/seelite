@@ -263,23 +263,21 @@ for (const viewport of VIEWPORTS) {
 		window.__seelite?.scannerContacts.some((contact) => contact.selected),
 	);
 	const forward = await page.evaluate(measureLiveCockpit);
-	const combatReadout = await page.evaluate(() => {
-		const game = window.__seelite;
-		game.combat = {
-			...game.combat,
-			foreShield: 41,
-			aftShield: 23,
-			energy: 77,
-			heat: 12,
-		};
-		game.step(0);
-		game.render(0);
-		game.updateCockpit();
-		return game.cockpit.flightInstrument.secondaryText.text;
-	});
+	const energyBeforePulse = await page.evaluate(
+		() => window.__seelite.combat.energy,
+	);
+	await page.keyboard.down("Space");
+	await page.waitForFunction(
+		(before) => window.__seelite.combat.energy < before,
+		energyBeforePulse,
+	);
+	const combatReadout = await page.evaluate(
+		() => window.__seelite.cockpit.flightInstrument.secondaryText.text,
+	);
+	await page.keyboard.up("Space");
 	check(
-		`${viewport.name}: physical flight instrument renders live combat shields, energy, and heat`,
-		combatReadout === "F 41 A 23 · E 77 · H 12",
+		`${viewport.name}: holding Space drains pulse energy and exposes immediate PULSE feedback on the physical instrument`,
+		combatReadout.includes("F 60 A 60") && combatReadout.endsWith(" PULSE"),
 		combatReadout,
 	);
 	await page.evaluate(() => window.__seelite.setThrottle(0));
