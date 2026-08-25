@@ -2985,9 +2985,11 @@ function seedFromQuery(): number {
 	return (Math.random() * 0x1_0000_0000) >>> 0;
 }
 
-if (
-	new URLSearchParams(window.location.search).get("model-viewer") === "ship"
-) {
+// Any family the workbench knows — `ship` (#35) or `station` (#56). The gate
+// is presence rather than a name comparison, so adding a third family is one
+// edit in `model-viewer.ts` rather than two files' worth; the workbench itself
+// mounts nothing for a name it does not recognise.
+if (new URLSearchParams(window.location.search).has("model-viewer")) {
 	const { mountModelViewer } = await import("./model-viewer");
 	mountModelViewer();
 	// The workbench owns an isolated render loop, so no live simulation is built

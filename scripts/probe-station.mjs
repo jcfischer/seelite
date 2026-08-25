@@ -457,7 +457,7 @@ const far = await silhouettesAt(FAR_RANGE_KM, MIN_DIFFERENCE, false);
  * deliberately so — the mask is a couple of hundred pixels and the crop-and-
  * resample throws away the cue that actually survives out there, which is
  * **extent**. So the far-range claim is made on the thing a player has at that
- * distance: the shipyard's drydock frame makes it visibly wider than a Coriolis
+ * distance: the shipyard's outboard frame makes it visibly wider than a Coriolis
  * station that is otherwise its twin, and the refinery is squatter than either.
  */
 console.log(`\nextent at ${FAR_RANGE_KM} km (the cue that survives range):`);
@@ -722,7 +722,7 @@ if (shipyard) {
 				return {
 					layer: near ? "near" : far ? "far" : "none",
 					hasAperture: !!mesh?.getObjectByName("aperture"),
-					hasDrydock: !!mesh?.getObjectByName("drydock"),
+					hasFrame: !!mesh?.getObjectByName("frame"),
 				};
 			},
 			[shipyard.id, setup.handoffKm * multiple],
@@ -734,8 +734,8 @@ if (shipyard) {
 		);
 		check(
 			`at ${multiple}× handoff the assembly moved whole`,
-			state.hasAperture && state.hasDrydock,
-			`aperture ${state.hasAperture}, drydock ${state.hasDrydock}`,
+			state.hasAperture && state.hasFrame,
+			`aperture ${state.hasAperture}, frame ${state.hasFrame}`,
 		);
 	}
 }

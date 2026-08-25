@@ -21,7 +21,9 @@ import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import { STATION_GEOMETRY, type StationType } from "../src/station";
 import {
+	STATION_FORMS,
 	STATION_SILHOUETTE_KM,
+	buildStationForm,
 	buildStationMesh,
 	setStationDetail,
 	updateStationVisuals,
@@ -162,22 +164,28 @@ describe("a detail level may not change the outline", () => {
 	});
 });
 
-describe("a fixture on a Coriolis hull is on the hull", () => {
-	test("both strobes lie on the octahedron's face plane", () => {
-		// An octahedron's surface is |x| + |y| + |z| = r, so a lamp is on the hull
-		// only if its coordinates sum to r. Moved to (0.45, 0, 0.45)·r while
-		// chasing a bloom overshoot, this pair summed to 0.9·r and was **inside**
-		// the hull — invisible, and the overshoot it was moved for turned out to
-		// be the window grid all along. Nothing rendered says "this light is
-		// buried"; the arithmetic does.
-		for (const type of ["trade", "shipyard"] as StationType[]) {
-			const { root } = buildStationMesh(type, GREY);
-			const r = STATION_GEOMETRY[type].coreRadiusKm;
-			for (const kind of ["strobe-a", "strobe-b"]) {
-				const lamp = root.getObjectByName(kind);
-				expect(lamp).toBeDefined();
-				const p = (lamp as THREE.Object3D).position;
-				expect(Math.abs(p.x) + Math.abs(p.y) + Math.abs(p.z)).toBeCloseTo(r, 9);
+describe("a fixture is on the station it is mounted on", () => {
+	test("both strobes sit out on the hull, in every form", () => {
+		// The failure: chasing a bloom overshoot on #28's octahedron, the pair was
+		// moved to a point whose coordinates summed to 0.9·r on a surface defined
+		// by |x| + |y| + |z| = r — **inside** the hull, invisible, and the
+		// overshoot it was moved for turned out to be the window grid. That test
+		// was exact because the surface had one equation; the forms do not share
+		// one, so what is asserted is the property that survives a redesign: a
+		// strobe is out near the shell and inside the declared reach. Both ends
+		// matter — the centre buries it and past the reach breaks §2.
+		for (const type of TYPES) {
+			for (const form of STATION_FORMS[type]) {
+				const { root } = buildStationForm(type, form.id, GREY);
+				root.updateMatrixWorld(true);
+				const core = STATION_GEOMETRY[type].coreRadiusKm;
+				for (const kind of ["strobe-a", "strobe-b"]) {
+					const lamp = root.getObjectByName(kind);
+					if (!lamp) continue;
+					const p = (lamp as THREE.Object3D).position;
+					expect(p.length()).toBeGreaterThan(core * 0.3);
+					expect(p.length()).toBeLessThanOrEqual(form.reachKm);
+				}
 			}
 		}
 	});

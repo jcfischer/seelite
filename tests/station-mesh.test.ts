@@ -24,7 +24,12 @@
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import { STATION_GEOMETRY, type StationType } from "../src/station";
-import { STATION_SILHOUETTE_KM, buildStationMesh } from "../src/station-mesh";
+import {
+	STATION_FORMS,
+	STATION_SILHOUETTE_KM,
+	buildStationForm,
+	buildStationMesh,
+} from "../src/station-mesh";
 
 const TYPES: StationType[] = ["trade", "shipyard", "refinery"];
 
@@ -45,7 +50,11 @@ const GREY = 0x9aa6b2;
  * table is written in.
  */
 function reachKm(type: StationType): number {
-	const { root } = buildStationMesh(type, GREY);
+	return reachOf(buildStationMesh(type, GREY).root, type);
+}
+
+/** The farthest drawn vertex of an already-built station, kilometres. */
+function reachOf(root: THREE.Object3D, type: StationType): number {
 	root.updateMatrixWorld(true);
 	let maxSq = 0;
 	const v = new THREE.Vector3();
@@ -91,6 +100,26 @@ describe("the silhouette budget is a budget", () => {
 		}
 	});
 
+	test("every form is inside its own declared reach", () => {
+		// Per *form*, not per role. The selected forms are what the two
+		// assertions around this one measure, and a form nobody has ranked yet is
+		// exactly where an overrun hides: the previewer draws it, nothing else
+		// does, and its number would drift until the day it was chosen.
+		for (const type of TYPES) {
+			for (const form of STATION_FORMS[type]) {
+				const { root } = buildStationForm(type, form.id, GREY);
+				const reach = reachOf(root, type);
+				console.log(
+					`${type} ${form.id} ${form.name}: reaches ${reach.toFixed(3)} km, ` +
+						`declared ${form.reachKm} km`,
+				);
+				expect(reach).toBeLessThanOrEqual(form.reachKm * (1 + 1e-6));
+				// And not slack: a declaration nothing approaches catches nothing.
+				expect(reach).toBeGreaterThan(form.reachKm * 0.6);
+			}
+		}
+	});
+
 	test("the budget is not slack enough to hide a doubling", () => {
 		// A ceiling nothing approaches is a ceiling that catches nothing: the
 		// shipyard's frame could grow by half again inside a 3 km budget and no
@@ -116,27 +145,43 @@ describe("the silhouette budget is a budget", () => {
 });
 
 describe("the parts the probe and the renderer look up by name", () => {
-	test("every type has an aperture, and only the shipyard a drydock", () => {
+	test("every form of every role has a core and an aperture", () => {
+		// `probe-station.mjs` and `probe-station-visuals.mjs` find these by name;
+		// a rename that only broke a probe would show up as a browser-tier
+		// failure with no headless signal. Asserted over every *form*, not only
+		// the selected one, because the previewer builds them all and a form that
+		// cannot be probed is a form that cannot be ranked honestly.
 		for (const type of TYPES) {
-			const { root } = buildStationMesh(type, GREY);
-			// `probe-station.mjs` finds these by name; a rename that only broke the
-			// probe would show up as a browser-tier failure with no headless signal.
-			expect(root.getObjectByName("aperture")).toBeDefined();
-			expect(!!root.getObjectByName("drydock")).toBe(type === "shipyard");
+			for (const form of STATION_FORMS[type]) {
+				const { root } = buildStationForm(type, form.id, GREY);
+				expect(root.getObjectByName("core")).toBeDefined();
+				expect(root.getObjectByName("aperture")).toBeDefined();
+				expect(root.getObjectByName("aperture-mouth")).toBeDefined();
+			}
 		}
 	});
 
-	test("the drydock is a sibling of the spinner, never inside it", () => {
+	test("a shipyard's outboard frame is never inside its spinner", () => {
 		// §7's frame does not rotate. Inside the spinner it would, and the only
-		// symptom is a shipyard whose frame swings — which no arithmetic sees.
-		const { root, spinner } = buildStationMesh("shipyard", GREY);
-		expect(spinner.getObjectByName("drydock")).toBeUndefined();
-		expect(root.getObjectByName("drydock")).toBeDefined();
+		// symptoms are a fairground ride and — measurably — `probe-station.mjs`'s
+		// far-range width check becoming a function of the clock, because the
+		// outboard structure swings through the view.
+		for (const form of STATION_FORMS.shipyard) {
+			const { root, spinner } = buildStationForm("shipyard", form.id, GREY);
+			expect(root.getObjectByName("frame")).toBeDefined();
+			expect(spinner.getObjectByName("frame")).toBeUndefined();
+			// And the slot *is* inside it, or the phase drives nothing.
+			expect(spinner.getObjectByName("aperture-mouth")).toBeDefined();
+		}
 	});
 
-	test("the refinery's spinner is empty, so a phase written into it draws nothing", () => {
-		const { spinner } = buildStationMesh("refinery", GREY);
-		expect(spinner.children.length).toBe(0);
+	test("only a role that spins hands back a spinner with anything in it", () => {
+		// `docking.md` §4: the refinery's pad does not turn, and a station that
+		// rotated whole would sweep its own pad away from the ship lined up on it.
+		for (const type of TYPES) {
+			const { spinner } = buildStationMesh(type, GREY);
+			expect(spinner.children.length > 0).toBe(STATION_GEOMETRY[type].spins);
+		}
 	});
 });
 
@@ -212,26 +257,30 @@ describe("§7's secondary cue, and the detail that is not the identity", () => {
 	});
 
 	test("window panes lie on the hull, not buried inside it", () => {
-		// An octahedron's surface is |x| + |y| + |z| = r, so a pane placed on a
-		// circle sits tens of metres behind an opaque face at every angle — which
-		// is invisible, and which no rendered check would report as anything but
-		// "the windows do not show".
-		for (const type of ["trade", "shipyard"] as StationType[]) {
-			const { root } = buildStationMesh(type, GREY);
-			root.updateMatrixWorld(true);
-			const panes = root.getObjectByName("windows") as THREE.InstancedMesh;
-			expect(panes.isInstancedMesh).toBe(true);
-			const r = STATION_GEOMETRY[type].coreRadiusKm;
-			const m = new THREE.Matrix4();
-			const p = new THREE.Vector3();
-			for (let i = 0; i < panes.count; i++) {
-				panes.getMatrixAt(i, m);
-				p.setFromMatrixPosition(m);
-				// The core is built in kilometres — the normalisation happens at the
-				// root, above this group — so the face plane is at `r` directly.
-				const face = Math.abs(p.x) + Math.abs(p.y) + Math.abs(p.z);
-				expect(face).toBeGreaterThanOrEqual(r);
-				expect(face).toBeLessThan(r * 1.02);
+		// The failure this guards is invisible on screen: a pane inside an opaque
+		// hull renders as nothing, and reads only as "the windows do not show".
+		// #28 could test it exactly — an octahedron's surface is the plane
+		// |x| + |y| + |z| = r — and the forms have no single such expression
+		// between them, so what is asserted is the property that survives:
+		// a pane is out near the shell it belongs to, and not inside the middle
+		// of the station or outside its declared reach.
+		for (const type of TYPES) {
+			for (const form of STATION_FORMS[type]) {
+				const { root } = buildStationForm(type, form.id, GREY);
+				root.updateMatrixWorld(true);
+				const panes = root.getObjectByName("windows") as THREE.InstancedMesh;
+				expect(panes?.isInstancedMesh).toBe(true);
+				const core = STATION_GEOMETRY[type].coreRadiusKm;
+				const m = new THREE.Matrix4();
+				const p = new THREE.Vector3();
+				for (let i = 0; i < panes.count; i++) {
+					panes.getMatrixAt(i, m);
+					p.setFromMatrixPosition(m);
+					// The group is authored in kilometres — the normalisation happens
+					// at the root, above this — so these are kilometres already.
+					expect(p.length()).toBeGreaterThan(core * 0.25);
+					expect(p.length()).toBeLessThanOrEqual(form.reachKm);
+				}
 			}
 		}
 	});

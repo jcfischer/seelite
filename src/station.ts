@@ -31,6 +31,17 @@
 /** The three types #6 named and #13 specified. */
 export type StationType = "trade" | "refinery" | "shipyard";
 
+/**
+ * The same three, as a value.
+ *
+ * Every table below is a `Record<StationType, …>`, so the *type* is already the
+ * thing a fourth station type breaks the build against. This is for the callers
+ * that need to iterate — the model workbench's role tabs, the tests' loops —
+ * and it is here rather than written out at each of them so there is one list
+ * to extend rather than several to remember.
+ */
+export const STATION_TYPES: StationType[] = ["trade", "shipyard", "refinery"];
+
 /** What you fly through, and how big it is (`docking.md` §5). */
 export interface StationAperture {
 	/** A slot is cut in the spin axis and rotates with the station; a pad does
