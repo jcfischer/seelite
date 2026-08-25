@@ -43,12 +43,12 @@ const STYLE = `
 .mv-panel { display: grid; align-content: start; gap: 12px; padding: 4px 0; }
 .mv-title { margin: 0; color: #e6f7ff; font-size: 15px; letter-spacing: .08em; }
 .mv-copy { margin: 0; color: #8fb2c1; }
-.mv-set { display: grid; gap: 6px; padding: 10px; border: 1px solid rgba(124, 183, 211, .24); background: rgba(5, 13, 18, .6); }
+.mv-set { display: grid; gap: 6px; min-width: 0; padding: 10px; border: 1px solid rgba(124, 183, 211, .24); background: rgba(5, 13, 18, .6); }
 .mv-set legend { color: #86bdd4; padding: 0 5px; }
 .mv-assets { display: grid; gap: 5px; }
 .mv-button { border: 1px solid rgba(124, 183, 211, .34); background: #0a1820; color: #b9dce9; padding: 8px; font: inherit; text-align: left; cursor: pointer; }
 .mv-button[aria-pressed="true"] { border-color: #f0bc67; background: #34230e; color: #ffe0a2; }
-.mv-role-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.mv-role-tabs { display: grid; grid-template-columns: repeat(auto-fit, minmax(68px, 1fr)); gap: 4px; }
 .mv-role-tabs .mv-button { padding: 7px 4px; text-align: center; text-transform: uppercase; font-size: 10px; }
 .mv-variants[hidden] { display: none; }
 .mv-variants { display: grid; gap: 6px; }
@@ -65,7 +65,7 @@ const STYLE = `
 .mv-control input[type="range"] { grid-column: 1 / -1; width: 100%; accent-color: #e9ac58; }
 .mv-check { display: flex; gap: 7px; align-items: center; color: #b9dce9; }
 .mv-close { justify-self: start; border: 0; padding: 0; background: transparent; color: #f0bc67; font: inherit; cursor: pointer; }
-@media (max-width: 720px) { .mv-wrap { grid-template-columns: 1fr; padding: 10px; } .mv-stage { min-height: 440px; } .mv-panel { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; } .mv-title, .mv-copy, .mv-close { grid-column: 1 / -1; } }
+@media (max-width: 720px) { .mv-wrap { grid-template-columns: 1fr; padding: 10px; } .mv-stage { min-height: 440px; } .mv-panel { grid-template-columns: 1fr; } .mv-title, .mv-copy, .mv-close { grid-column: 1 / -1; } }
 `;
 
 function installStyle() {
@@ -127,23 +127,44 @@ export function mountModelViewer(): void {
 		inspectionFill,
 		new THREE.HemisphereLight(0x5c89a2, 0x263845, 2.8),
 	);
-	const grid = new THREE.GridHelper(0.18, 12, 0x356274, 0x152d38);
-	grid.position.y = -0.021;
+	// The stage is framed from the hull's own reach. A fixed camera distance and
+	// a fixed grid worked while every hull was within a factor of two of the
+	// next; a capital hull is several times the largest of them, and a constant
+	// 0.12 km orbit would put the camera inside it.
+	const framing = (id: HullId) => HULL_VISUALS[id].reachKm * 3.2;
+	let grid = new THREE.GridHelper(0.18, 12, 0x356274, 0x152d38);
 	scene.add(grid);
+	const reframe = (id: HullId) => {
+		const reach = HULL_VISUALS[id].reachKm;
+		scene.remove(grid);
+		grid.dispose();
+		grid = new THREE.GridHelper(reach * 6, 12, 0x356274, 0x152d38);
+		grid.position.y = -reach * 0.7;
+		scene.add(grid);
+		camera.far = reach * 40;
+		camera.near = reach * 0.004;
+		camera.updateProjectionMatrix();
+	};
 	const holder = new THREE.Group();
 	scene.add(holder);
 	const state: ViewerState = {
 		asset: "courier",
 		variant: "a",
-		selectedVariants: { courier: "a", interceptor: "a", freighter: "a" },
-		rankings: { courier: [], interceptor: [], freighter: [] },
+		// Derived from HULL_IDS so adding a role cannot leave a hole here that
+		// only shows up as an undefined ranking at click time.
+		selectedVariants: Object.fromEntries(
+			HULL_IDS.map((id) => [id, "a"]),
+		) as ViewerState["selectedVariants"],
+		rankings: Object.fromEntries(
+			HULL_IDS.map((id) => [id, [] as HullVariantId[]]),
+		) as ViewerState["rankings"],
 		beam: 1,
 		length: 1,
 		engine: 0.7,
 		wireframe: false,
 		azimuth: 2.55,
 		elevation: 0.38,
-		distance: 0.12,
+		distance: framing("courier"),
 	};
 	let mesh: THREE.Group;
 	let dragging = false;
@@ -248,6 +269,10 @@ export function mountModelViewer(): void {
 		if (asset && HULL_IDS.includes(asset)) {
 			state.asset = asset;
 			state.variant = state.selectedVariants[asset];
+			// A capital hull and a courier cannot share an orbit radius, so the
+			// stage reframes rather than leaving the camera inside the new ship.
+			state.distance = framing(asset);
+			reframe(asset);
 			root
 				.querySelectorAll<HTMLElement>("[data-model-asset]")
 				.forEach((button) => {
@@ -322,10 +347,11 @@ export function mountModelViewer(): void {
 	renderer.domElement.addEventListener("pointerup", () => (dragging = false));
 	renderer.domElement.addEventListener("wheel", (event) => {
 		event.preventDefault();
+		const reach = HULL_VISUALS[state.asset].reachKm;
 		state.distance = THREE.MathUtils.clamp(
-			state.distance + event.deltaY * 0.00008,
-			0.055,
-			0.22,
+			state.distance + event.deltaY * 0.00008 * (reach / 0.036),
+			reach * 1.5,
+			reach * 9,
 		);
 	});
 	window.addEventListener("resize", resize);
@@ -333,6 +359,7 @@ export function mountModelViewer(): void {
 		window as unknown as { __seeliteModelViewer: { state: ViewerState } }
 	).__seeliteModelViewer = { state };
 	updateTournament();
+	reframe(state.asset);
 	rebuild();
 	resize();
 	frame();

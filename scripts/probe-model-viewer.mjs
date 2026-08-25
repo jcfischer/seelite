@@ -48,11 +48,12 @@ for (const viewport of VIEWPORTS) {
 	await page.waitForSelector("#model-viewer canvas");
 	const initial = await page.evaluate(state);
 	check(
-		`${viewport.name}: model viewer presents nine ranked candidates without Game`,
+		`${viewport.name}: model viewer presents every ranked candidate without Game`,
 		initial.root &&
 			initial.canvas &&
-			initial.assets.join(",") === "courier,interceptor,freighter" &&
-			initial.variants.length === 9 &&
+			initial.assets.join(",") ===
+				"courier,interceptor,freighter,miner,patrol,explorer,raider,carrier,tug,prospector,dreadnought" &&
+			initial.variants.length === 33 &&
 			initial.selected === "courier" &&
 			initial.selectedVariant === "a" &&
 			!initial.gameConstructed,
