@@ -45,6 +45,17 @@
 
 import * as THREE from "three";
 import { STATION_GEOMETRY, type StationType } from "./station";
+import {
+	PLATE_TEXTURE_SIZE,
+	STATION_VISUALS,
+	type StationDetailLevel,
+	type StationFixtureKind,
+	fixtureIntensity,
+	flickerIntensity,
+	platingTexels,
+	stationDetailLevel,
+	surfaceTexels,
+} from "./station-visuals";
 
 /**
  * How far the *drawn* object reaches, kilometres — the drydock frame, the
@@ -85,6 +96,41 @@ export interface StationMesh {
 	/** Rotated about local Z by the phase from `stationPose`. For the refinery
 	 *  this is an empty group: the pad does not turn. */
 	spinner: THREE.Object3D;
+	/** Which type built it, so `updateStationVisuals` can reach the profile and
+	 *  the silhouette budget without the caller carrying either. */
+	type: StationType;
+	/** The detail level currently drawn. Held on the handle rather than
+	 *  recomputed, because `stationDetailLevel` is directional — the previous
+	 *  level is half of its input (`station-visuals.ts` §3). */
+	detail: StationDetailLevel;
+	/**
+	 * The materials the clock drives (`station-visuals.md` §5).
+	 *
+	 * Per station rather than shared per type, even though every station of a
+	 * type animates identically: these are the one thing here that is *mutated*
+	 * after construction, and the shared parts below are documented as never
+	 * being. A shared animated material would work until something wanted one
+	 * station lit differently, and would then fail across the whole galaxy.
+	 */
+	fixtures: StationFixture[];
+	/**
+	 * The tagged accessories, collected once at build.
+	 *
+	 * `setStationDetail` walked the whole graph — struts, rings, panes, stacks —
+	 * to flip visibility on the handful of nodes that carry a tag. The set is
+	 * known at construction, so it is gathered there. The `userData` tag stays on
+	 * each object as well, because that is what `probe-station-visuals.mjs`
+	 * reads to hide exactly the set the bands hide; both come from `detail()`, so
+	 * they cannot disagree.
+	 */
+	accessories: THREE.Object3D[];
+}
+
+/** One clock-driven light. `base` is its lit intensity; the waveform scales it. */
+export interface StationFixture {
+	material: THREE.MeshStandardMaterial;
+	base: number;
+	kind: StationFixtureKind;
 }
 
 /**
@@ -109,8 +155,109 @@ function displayRand(id: string): () => number {
 	};
 }
 
-const hullMaterial = (color: number) =>
-	new THREE.MeshStandardMaterial({ color, roughness: 0.65, metalness: 0.35 });
+/**
+ * The generated surface maps, one pair per role, built once at module load.
+ *
+ * `DataTexture` and not `CanvasTexture`, for `station-visuals.ts`'s reason: this
+ * module is imported by the headless tier, which has no `document`. The texels
+ * come from arithmetic, so the same code path runs in both tiers and the buffer
+ * length is a headless assertion rather than something a player notices.
+ *
+ * `RGBAFormat` with a `4 × w × h` buffer. A short buffer does not throw — it
+ * samples past its end and draws garbage — which is why the length is asserted
+ * on the generator rather than trusted here.
+ *
+ * Shared by every station in the galaxy, and so **never mutated**: the plating
+ * carries no per-station information, and `STATION_COLORS` still multiplies
+ * through because the albedo map is greyscale.
+ */
+const surfaceMaps = (type: StationType) => {
+	// Generated once and handed to both textures: `surfaceTexels` derives its
+	// wear from the albedo, so regenerating it would run the plating loop twice
+	// per role and leave two buffers that only happen to agree.
+	const plate = platingTexels(type);
+	const albedo = new THREE.DataTexture(
+		plate,
+		PLATE_TEXTURE_SIZE,
+		PLATE_TEXTURE_SIZE,
+		THREE.RGBAFormat,
+	);
+	const wear = new THREE.DataTexture(
+		surfaceTexels(type, PLATE_TEXTURE_SIZE, plate),
+		PLATE_TEXTURE_SIZE,
+		PLATE_TEXTURE_SIZE,
+		THREE.RGBAFormat,
+	);
+	// **sRGB on the albedo, linear on the wear map.** three.js reads a `map` as
+	// sRGB-encoded and a roughness/metalness map as linear data. Left at the
+	// default `NoColorSpace` the authored plate value of 196 is taken as linear
+	// 0.77 rather than sRGB 0.55, and every hull renders materially darker than
+	// the plating arithmetic says — a whole-pass brightness error with no symptom
+	// but "the stations look dark".
+	albedo.colorSpace = THREE.SRGBColorSpace;
+	for (const map of [albedo, wear]) {
+		map.wrapS = THREE.RepeatWrapping;
+		map.wrapT = THREE.RepeatWrapping;
+		// Plating is a surface language, not a photograph: nearest sampling keeps
+		// the seams as seams instead of blurring them into a grey wash at the
+		// range where the station is a few hundred pixels across.
+		map.magFilter = THREE.NearestFilter;
+		map.minFilter = THREE.LinearMipmapLinearFilter;
+		map.generateMipmaps = true;
+		map.needsUpdate = true;
+	}
+	return { albedo, wear };
+};
+
+/**
+ * The maps for one role, built on first use and kept.
+ *
+ * Built eagerly for all three at module load first, which was **declined once
+ * and then measured**: three plating passes and three wear passes over a 128²
+ * map cost 18–22 ms, paid by every importer — including `tests/headless.test.ts`
+ * and every other headless test that touches this file, none of which renders —
+ * and paid for roles a given system may not hold. The guess behind the decline
+ * was about a millisecond.
+ *
+ * A `Map` rather than a `Record`, and that does not lose the fourth-type
+ * guarantee: `surfaceMaps` reads `STATION_VISUALS[type]`, which is the `Record`
+ * that stops the build.
+ */
+const surfaceMapCache = new Map<StationType, ReturnType<typeof surfaceMaps>>();
+const mapsFor = (type: StationType) => {
+	const cached = surfaceMapCache.get(type);
+	if (cached) return cached;
+	const built = surfaceMaps(type);
+	surfaceMapCache.set(type, built);
+	return built;
+};
+
+/**
+ * A painted hull carrying its role's plating.
+ *
+ * `type` decides the surface and `color` decides the paint — the two cues are
+ * deliberately separate, because §7 rests identity on outline with colour as the
+ * secondary cue, and a per-role *coloured* map would quietly become a third.
+ */
+const hullMaterial = (color: number, type: StationType) => {
+	const { albedo, wear } = mapsFor(type);
+	return new THREE.MeshStandardMaterial({
+		color,
+		map: albedo,
+		roughnessMap: wear,
+		metalnessMap: wear,
+		// Multiplied by the map's green and blue channels, so these are the
+		// ceilings rather than the values. Left at 1 the map would be the whole
+		// answer and the profile's figures would be decoration.
+		roughness: 1,
+		metalness: 1,
+	});
+};
+
+/** An unplated structural part — a strut, a collar, a stack. Small, and lit
+ *  from every angle, so a plating map on it is texels nobody resolves. */
+const plainMaterial = (color: number, roughness = 0.65, metalness = 0.35) =>
+	new THREE.MeshStandardMaterial({ color, roughness, metalness });
 
 const emissiveMaterial = (color: number, intensity: number) =>
 	new THREE.MeshStandardMaterial({
@@ -119,6 +266,73 @@ const emissiveMaterial = (color: number, intensity: number) =>
 		emissiveIntensity: intensity,
 		roughness: 0.4,
 	});
+
+/** What a part builder hands back: its group, and whatever clock-driven
+ *  materials it created. Returned rather than pushed into an array the caller
+ *  owns — an out-parameter let the return type say a builder produced no lights
+ *  while it produced most of them. */
+interface BuiltPart {
+	group: THREE.Group;
+	fixtures: StationFixture[];
+}
+
+/**
+ * A lit window grid as one `InstancedMesh`, placed by the caller's rule.
+ *
+ * Both grids in this file — the Coriolis hull's 28 panes solved onto the face
+ * plane, and the refinery's 8 ports on the drum's end face — were the same
+ * fifteen lines of `Matrix4`/`Quaternion`/`compose`/`needsUpdate` around one
+ * differing line. `place` is that line.
+ *
+ * One `InstancedMesh` rather than N `Mesh`es because this is the one place a
+ * station's detail multiplies, and each `Mesh` is its own draw call. Tagged as
+ * `full` detail: the grid resolves away long before the outline does, and 28
+ * instances of it at scanner range is state churn for pixels nobody has.
+ */
+function buildWindowGrid(
+	type: StationType,
+	count: number,
+	place: (i: number, position: THREE.Vector3, normal: THREE.Vector3) => void,
+): THREE.InstancedMesh {
+	const panes = new THREE.InstancedMesh(
+		PANE_GEOMETRY,
+		PANE_MATERIALS[type],
+		count,
+	);
+	panes.name = "windows";
+	detail(panes, "full");
+	const matrix = new THREE.Matrix4();
+	const quaternion = new THREE.Quaternion();
+	const position = new THREE.Vector3();
+	const normal = new THREE.Vector3();
+	const unitZ = new THREE.Vector3(0, 0, 1);
+	const one = new THREE.Vector3(1, 1, 1);
+	for (let i = 0; i < count; i++) {
+		place(i, position, normal);
+		quaternion.setFromUnitVectors(unitZ, normal);
+		panes.setMatrixAt(i, matrix.compose(position, quaternion, one));
+	}
+	panes.instanceMatrix.needsUpdate = true;
+	return panes;
+}
+
+/**
+ * Mark an object as accessory detail, drawn only from `minLevel` inward.
+ *
+ * The rule it serves is §2's: **a detail level may not change the outline.**
+ * Nothing tagged here may be the farthest vertex of its station — the flare
+ * flame is the refinery's outermost point and is therefore silhouette rather
+ * than detail, and is deliberately not tagged. `tests/station-visuals.test.ts`
+ * asserts the reach is identical at all three levels, which is what stops that
+ * from being a rule kept by hand.
+ */
+function detail<T extends THREE.Object3D>(
+	object: T,
+	minLevel: Exclude<StationDetailLevel, "outline">,
+): T {
+	object.userData.minDetail = minLevel;
+	return object;
+}
 
 /**
  * The small repeated parts, built once at module load and shared by every
@@ -138,9 +352,26 @@ const emissiveMaterial = (color: number, intensity: number) =>
  */
 const PANE_COUNT = 28;
 const PANE_GEOMETRY = new THREE.BoxGeometry(0.03, 0.012, 0.004);
-const PANE_MATERIAL = emissiveMaterial(0xdfe8ff, 1.4);
+/**
+ * One pane material per role, from the profile's `windowColor` — habitation
+ * light is warmer on the refinery than on the two Coriolis hulls.
+ *
+ * Shared across every station of a role and never mutated. The window grid is
+ * the one light on a station that does *not* animate: a flashing window reads as
+ * a fault, and §5's motion belongs to the strobes, the arc and the flare.
+ */
+const PANE_MATERIALS: Record<StationType, THREE.MeshStandardMaterial> = {
+	trade: emissiveMaterial(STATION_VISUALS.trade.windowColor, 1.4),
+	shipyard: emissiveMaterial(STATION_VISUALS.shipyard.windowColor, 1.4),
+	refinery: emissiveMaterial(STATION_VISUALS.refinery.windowColor, 1.2),
+};
 const APERTURE_LIGHT_MATERIAL = emissiveMaterial(0xffb347, 2.2);
-const FLOOD_MATERIAL = emissiveMaterial(0xbfe4ff, 2.0);
+/** The shipyard's cold bay floods. Steady, so shared: what moves on that
+ *  station is the welding arc, and it gets its own material per station. */
+const FLOOD_MATERIAL = emissiveMaterial(
+	STATION_VISUALS.shipyard.floodColor,
+	2.0,
+);
 
 /**
  * The aperture, drawn as a lit recess on the +Z face.
@@ -186,6 +417,11 @@ function buildAperture(type: StationType, faceZ: number): THREE.Group {
 			APERTURE_LIGHT_MATERIAL,
 		);
 		light.position.set(x, y, faceZ + bar / 2);
+		// Named so `probe-station-visuals.mjs` can hide the four bars and measure
+		// what they contribute, without also hiding the dark mouth they surround —
+		// which would change the station's brightness in the other direction and
+		// net out to nothing.
+		light.name = "aperture-light";
 		group.add(light);
 	}
 	group.name = "aperture";
@@ -195,7 +431,7 @@ function buildAperture(type: StationType, faceZ: number): THREE.Group {
 /** The Coriolis body: an octahedron whose ±Z vertices are the spin axis, so the
  *  slot sits on the axis and rotates in place (`docking.md` §4.2) rather than
  *  sweeping a circle the ship would have to intercept. */
-function buildCoriolisCore(type: StationType, color: number): THREE.Group {
+function buildCoriolisCore(type: StationType, color: number): BuiltPart {
 	const { coreRadiusKm } = STATION_GEOMETRY[type];
 	const group = new THREE.Group();
 
@@ -204,7 +440,7 @@ function buildCoriolisCore(type: StationType, color: number): THREE.Group {
 	// where the drydock frame has not resolved — still read apart.
 	const hull = new THREE.Mesh(
 		new THREE.OctahedronGeometry(coreRadiusKm, 0),
-		hullMaterial(color),
+		hullMaterial(color, type),
 	);
 	hull.name = "core";
 	group.add(hull);
@@ -215,7 +451,7 @@ function buildCoriolisCore(type: StationType, color: number): THREE.Group {
 	const flat = coreRadiusKm * 0.34;
 	const collar = new THREE.Mesh(
 		new THREE.CylinderGeometry(flat, flat * 1.25, coreRadiusKm * 0.22, 4),
-		hullMaterial(0x79838f),
+		plainMaterial(0x79838f),
 	);
 	collar.rotation.x = Math.PI / 2;
 	collar.rotation.y = Math.PI / 4;
@@ -233,43 +469,66 @@ function buildCoriolisCore(type: StationType, color: number): THREE.Group {
 	// of metres *behind* an opaque face at every angle — invisible, which the
 	// first version was. The radius is solved from the face plane instead, and
 	// nudged a hair proud.
-	//
-	// One `InstancedMesh` rather than 28 `Mesh`es: this is the one place a
-	// station's detail multiplies, and each `Mesh` is its own draw call.
 	const rand = displayRand(`${type}-windows`);
-	const panes = new THREE.InstancedMesh(
-		PANE_GEOMETRY,
-		PANE_MATERIAL,
-		PANE_COUNT,
+	group.add(
+		buildWindowGrid(type, PANE_COUNT, (i, position, normal) => {
+			// **Kept away from the vertices**, which a uniform angle does not do.
+			// `STATION_SILHOUETTE_KM.trade` is 0.6 km and the octahedron's own
+			// vertex is at 0.6 km, so the budget is exactly the hull and there is
+			// nothing spare (`station-visuals.md` §2.1): a pane drawn near θ = 0
+			// lands at 1.002·r and is outside it. Each pane takes a quadrant by
+			// index — seven panes to each of the four — and lands in the middle
+			// 70% of it, which bounds the worst case at 0.83·r and spreads the
+			// grid over the hull rather than clustering it wherever the stream
+			// happened to draw.
+			const quadrant = (i % 4) * (Math.PI / 2);
+			const theta = quadrant + (0.15 + rand() * 0.7) * (Math.PI / 2);
+			const band = (rand() - 0.5) * coreRadiusKm * 0.7;
+			const cos = Math.cos(theta);
+			const sin = Math.sin(theta);
+			// |x| + |y| = r − |z| on the face, so ρ(|cos| + |sin|) = r − |band|.
+			const rho =
+				((coreRadiusKm - Math.abs(band)) / (Math.abs(cos) + Math.abs(sin))) *
+				1.002;
+			position.set(rho * cos, rho * sin, band);
+			// The face normal of the octant the pane landed in — `lookAt(0, 0,
+			// band)` aimed it at the axis instead, which is not the surface it
+			// lies on.
+			normal
+				.set(Math.sign(position.x), Math.sign(position.y), Math.sign(band) || 1)
+				.normalize();
+		}),
 	);
-	panes.name = "windows";
-	const matrix = new THREE.Matrix4();
-	const quaternion = new THREE.Quaternion();
-	const position = new THREE.Vector3();
-	const normal = new THREE.Vector3();
-	const unitZ = new THREE.Vector3(0, 0, 1);
-	const one = new THREE.Vector3(1, 1, 1);
-	for (let i = 0; i < PANE_COUNT; i++) {
-		const theta = rand() * Math.PI * 2;
-		const band = (rand() - 0.5) * coreRadiusKm * 0.7;
-		const cos = Math.cos(theta);
-		const sin = Math.sin(theta);
-		// |x| + |y| = r − |z| on the face, so ρ(|cos| + |sin|) = r − |band|.
-		const rho =
-			((coreRadiusKm - Math.abs(band)) / (Math.abs(cos) + Math.abs(sin))) *
-			1.002;
-		position.set(rho * cos, rho * sin, band);
-		// The face normal of the octant the pane landed in — `lookAt(0, 0, band)`
-		// aimed it at the axis instead, which is not the surface it lies on.
-		normal
-			.set(Math.sign(position.x), Math.sign(position.y), Math.sign(band) || 1)
-			.normalize();
-		quaternion.setFromUnitVectors(unitZ, normal);
-		panes.setMatrixAt(i, matrix.compose(position, quaternion, one));
+
+	// The two hull strobes, half a period apart on the beam. Deliberately *not*
+	// a port/starboard pair — this group is the spinner, so they exchange sides
+	// twice a revolution; the argument is `station-visuals.md` §5.
+	const fixtures: StationFixture[] = [];
+	const strobes: [StationFixture["kind"], number][] = [
+		["strobe-a", -1],
+		["strobe-b", 1],
+	];
+	for (const [kind, side] of strobes) {
+		const material = emissiveMaterial(STATION_VISUALS[type].strobeColor, 0);
+		const lamp = new THREE.Mesh(
+			new THREE.BoxGeometry(
+				coreRadiusKm * 0.05,
+				coreRadiusKm * 0.05,
+				coreRadiusKm * 0.03,
+			),
+			material,
+		);
+		// On the face plane — |x| + |y| + |z| = r — and inboard of the limb, so
+		// the bloom halo stays inside the silhouette (`station-visuals.md` §2.2).
+		// Both halves are asserted in `tests/station-visuals.test.ts`, which
+		// carries the story of how each was got wrong.
+		lamp.position.set(side * coreRadiusKm * 0.55, 0, coreRadiusKm * 0.45);
+		lamp.name = kind;
+		detail(lamp, "reduced");
+		group.add(lamp);
+		fixtures.push({ material, base: 2.6, kind });
 	}
-	panes.instanceMatrix.needsUpdate = true;
-	group.add(panes);
-	return group;
+	return { group, fixtures };
 }
 
 /**
@@ -280,7 +539,7 @@ function buildCoriolisCore(type: StationType, color: number): THREE.Group {
  * being reduced to an outline: the shipyard reads as a different *object* at the
  * range where the trade station is still a lit dot.
  */
-function buildDrydock(): THREE.Group {
+function buildDrydock(): BuiltPart {
 	const group = new THREE.Group();
 	// Sized to fit inside the declared reach rather than by eye: the frame's far
 	// end sits at `offset + length/2`, and its rings stick out sideways, so the
@@ -291,7 +550,7 @@ function buildDrydock(): THREE.Group {
 	const length = reach * 0.96;
 	const half = 0.28;
 	const strut = 0.035;
-	const material = hullMaterial(0x6f7d88);
+	const material = plainMaterial(0x6f7d88, 0.78, 0.42);
 
 	for (const [x, y] of [
 		[half, half],
@@ -323,22 +582,38 @@ function buildDrydock(): THREE.Group {
 			FLOOD_MATERIAL,
 		);
 		flood.position.set(0, -half, z);
+		flood.name = "bay-flood";
+		detail(flood, "reduced");
 		group.add(flood);
 	}
+
+	// The welding arc (§5): one bay under work, struck and dying at 7 Hz. It is
+	// the only motion on the shipyard, which is what makes a *working* yard read
+	// differently from a lit one — and it is inside the frame, so switching it
+	// off at range cannot touch the 1.429 km reach the frame itself sets.
+	const fixtures: StationFixture[] = [];
+	const arcMaterial = emissiveMaterial(STATION_VISUALS.shipyard.floodColor, 0);
+	const arc = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), arcMaterial);
+	arc.position.set(0, -half * 0.45, length / 6);
+	arc.name = "weld-arc";
+	detail(arc, "reduced");
+	group.add(arc);
+	fixtures.push({ material: arcMaterial, base: 4.5, kind: "work" });
 
 	// Clamped alongside and offset, not concentric: a frame centred on the core
 	// would read as a bigger trade station rather than as a second object.
 	group.position.set(reach * 0.42, 0, 0);
 	group.rotation.y = Math.PI / 2;
 	group.name = "drydock";
-	return group;
+	return { group, fixtures };
 }
 
 /** The refinery: a squat drum sunk into a captured asteroid, with flare stacks
  *  (`station-types.md` §7). Nothing here rotates. */
-function buildRefinery(color: number): THREE.Group {
+function buildRefinery(color: number): BuiltPart {
 	const geometry = STATION_GEOMETRY.refinery;
 	const group = new THREE.Group();
+	const fixtures: StationFixture[] = [];
 	const r = geometry.coreRadiusKm;
 
 	// The asteroid: an icosahedron with its vertices pushed about, which is the
@@ -369,7 +644,7 @@ function buildRefinery(color: number): THREE.Group {
 	// The drum, sunk in: only its lit face and the pad on it clear the rock.
 	const drum = new THREE.Mesh(
 		new THREE.CylinderGeometry(r * 0.62, r * 0.62, r * 0.9, 16),
-		hullMaterial(color),
+		hullMaterial(color, "refinery"),
 	);
 	drum.rotation.x = Math.PI / 2;
 	drum.position.z = r * 0.45;
@@ -389,21 +664,67 @@ function buildRefinery(color: number): THREE.Group {
 		const stack = new THREE.Group();
 		const tube = new THREE.Mesh(
 			new THREE.CylinderGeometry(r * 0.07, r * 0.1, r * 1.3, 8),
-			hullMaterial(0x8a7a66),
+			plainMaterial(0x8a7a66, 0.9, 0.1),
 		);
 		tube.position.y = (r * 1.3) / 2;
 		stack.add(tube);
+		const flameMaterial = emissiveMaterial(
+			STATION_VISUALS.refinery.heatColor,
+			3.0,
+		);
 		const flame = new THREE.Mesh(
 			new THREE.ConeGeometry(r * 0.09, r * 0.35, 8),
-			emissiveMaterial(0xff7a2a, 3.0),
+			flameMaterial,
 		);
 		flame.position.y = r * 1.3 + r * 0.15;
+		flame.name = "flare";
+		// **Not tagged as detail**, deliberately. The flame's tip is the
+		// refinery's farthest vertex — it is what sets the 0.837 km reach — so
+		// hiding it at range would change the outline, which is the one thing
+		// §2 forbids. §7 already calls the stacks silhouette; the flame on top of
+		// one is the same claim.
 		stack.add(flame);
+		fixtures.push({ material: flameMaterial, base: 3.0, kind: "flare" });
 		stack.position.set(x, y, r * 0.2);
 		stack.rotation.z = tilt;
 		group.add(stack);
 	}
-	return group;
+
+	// A dull heat glow round the drum's base, breathing with the flare: the
+	// refinery is the one station whose light is a by-product of what it does.
+	const glowMaterial = emissiveMaterial(STATION_VISUALS.refinery.heatColor, 0);
+	const glow = new THREE.Mesh(
+		new THREE.TorusGeometry(r * 0.55, r * 0.035, 6, 20),
+		glowMaterial,
+	);
+	// On the drum's lit face, round the pad, rather than at its base sunk in the
+	// asteroid. Viewed along the aperture axis — which is how a pilot arrives —
+	// a ring at the base is edge-on and contributes nothing.
+	glow.position.z = r * 0.905;
+	glow.name = "heat-glow";
+	detail(glow, "reduced");
+	group.add(glow);
+	fixtures.push({ material: glowMaterial, base: 1.1, kind: "work" });
+
+	// Lit ports round the drum. The refinery had no habitation light at all,
+	// which left a crewed station reading as an unmanned tank at close range —
+	// the range where §7's outline has stopped being the cue.
+	group.add(
+		buildWindowGrid("refinery", 8, (i, position, normal) => {
+			const theta = (i / 8) * Math.PI * 2;
+			// On the drum's **end face**, not round its side. Side ports are
+			// edge-on from the aperture axis and drew zero pixels there —
+			// measured — which left the refinery reading as an unlit tank from the
+			// one direction a pilot approaches it.
+			position.set(
+				Math.cos(theta) * r * 0.42,
+				Math.sin(theta) * r * 0.42,
+				r * 0.9,
+			);
+			normal.set(0, 0, 1);
+		}),
+	);
+	return { group, fixtures };
 }
 
 /**
@@ -414,26 +735,40 @@ function buildRefinery(color: number): THREE.Group {
  * `switch` with a default would silently give it a trade station's outline —
  * which is precisely the identity §7 rests on.
  */
-const BUILDERS: Record<StationType, (color: number) => StationMesh> = {
+const BUILDERS: Record<
+	StationType,
+	(color: number) => Omit<StationMesh, "type" | "detail" | "accessories">
+> = {
 	trade: (color) => {
-		const spinner = buildCoriolisCore("trade", color);
-		return { root: normalise("trade", [spinner]), spinner };
+		const core = buildCoriolisCore("trade", color);
+		return {
+			root: normalise("trade", [core.group]),
+			spinner: core.group,
+			fixtures: core.fixtures,
+		};
 	},
 	shipyard: (color) => {
-		const spinner = buildCoriolisCore("shipyard", color);
+		const core = buildCoriolisCore("shipyard", color);
 		// The frame is a sibling of the spinner, not a child: §7's drydock is
 		// explicitly non-rotating, and a station that turned whole would make it a
 		// fairground ride.
-		return { root: normalise("shipyard", [spinner, buildDrydock()]), spinner };
+		const drydock = buildDrydock();
+		return {
+			root: normalise("shipyard", [core.group, drydock.group]),
+			spinner: core.group,
+			fixtures: [...core.fixtures, ...drydock.fixtures],
+		};
 	},
 	refinery: (color) => {
 		// An empty spinner rather than `null`: the caller writes a phase of 0 into
 		// it every frame, and a null case in the render loop is a branch that
 		// exists only to be forgotten.
 		const spinner = new THREE.Group();
+		const body = buildRefinery(color);
 		return {
-			root: normalise("refinery", [buildRefinery(color), spinner]),
+			root: normalise("refinery", [body.group, spinner]),
 			spinner,
+			fixtures: body.fixtures,
 		};
 	},
 };
@@ -467,5 +802,101 @@ export function buildStationMesh(
 	type: StationType,
 	color: number,
 ): StationMesh {
-	return BUILDERS[type](color);
+	// The builder returns its own fixtures rather than filling an array handed
+	// to it: with an out-parameter the return type said a builder produced no
+	// lights while it in fact produced most of them, so a fourth station type
+	// would have compiled with none and lit nothing.
+	const built = BUILDERS[type](color);
+	const accessories: THREE.Object3D[] = [];
+	built.root.traverse((object) => {
+		if (object.userData.minDetail) accessories.push(object);
+	});
+	const mesh: StationMesh = { ...built, type, detail: "full", accessories };
+	// Built at `full` and then set, so the tagged accessories are in a state that
+	// matches the field rather than merely defaulting to visible. The renderer
+	// corrects it on the first frame in any case; a station that disagreed with
+	// its own handle for one frame is the sort of thing that shows up as a flash.
+	setStationDetail(mesh, "full");
+	return mesh;
+}
+
+/**
+ * Show the accessories that belong at `level`, and hide the rest.
+ *
+ * Nothing here moves a vertex or rebuilds a geometry: the whole switch is
+ * `visible` flags on objects tagged by `detail`, which is what makes §2's rule —
+ * a detail level may not change the outline — checkable as an equality on the
+ * mesh's reach rather than argued about.
+ */
+export function setStationDetail(
+	mesh: StationMesh,
+	level: StationDetailLevel,
+): void {
+	mesh.detail = level;
+	for (const object of mesh.accessories) {
+		const min = object.userData.minDetail as StationDetailLevel;
+		object.visible = min === "full" ? level === "full" : level !== "outline";
+	}
+}
+
+/**
+ * Drive one station's detail and lights from the clock and the camera range.
+ *
+ * Called once per station per frame by the renderer, beside the spin phase it
+ * already mirrors. `gameTime` is #6's clock — not `performance.now()` — so two
+ * clients at one seed and one time draw the same frame, and a probe can sample
+ * a flash by writing a clock value instead of waiting for one
+ * (`station-visuals.md` §5.2).
+ *
+ * The band is measured in the station's own silhouette radii, so a 0.4 km
+ * refinery and a 1.5 km shipyard drop detail at the apparent size rather than
+ * at the same kilometre.
+ */
+export function updateStationVisuals(
+	mesh: StationMesh,
+	gameTime: number,
+	distanceKm: number,
+): void {
+	const level = stationDetailLevel(
+		mesh.detail,
+		distanceKm / STATION_SILHOUETTE_KM[mesh.type],
+	);
+	if (level !== mesh.detail) setStationDetail(mesh, level);
+
+	// **Every fixture, at every level.** An earlier version returned early at
+	// `outline` on the reasoning that nothing clock-driven is drawn there — which
+	// is false for the refinery's flare, the one fixture deliberately left
+	// untagged because its tip is the station's outermost point. Its intensity
+	// froze at whatever the last near-range frame wrote, so a distant refinery's
+	// flare depended on that client's approach history rather than on the clock,
+	// and §5.2's "two clients at one seed draw the same frame" was not true of
+	// it. Driving the hidden ones too costs a couple of float writes a frame.
+	// The kind → waveform mapping is `station-visuals.ts`'s, which owns the one
+	// signature and the one motion a role carries. This module only multiplies
+	// by the fixture's own lit intensity.
+	for (const fixture of mesh.fixtures) {
+		fixture.material.emissiveIntensity =
+			fixture.base * fixtureIntensity(mesh.type, fixture.kind, gameTime);
+	}
+}
+
+/**
+ * A plain snapshot of what one station is currently drawing.
+ *
+ * Here rather than assembled in `main.ts`, which was reading
+ * `fixture.material.emissiveIntensity` directly: that made the game shell
+ * depend on how a fixture happens to *store* its drive, so changing a fixture
+ * to a `Light` or to a non-emissive channel would break the renderer and the
+ * probe together. This module owns the representation, so it owns the readout.
+ */
+export function stationVisualSnapshot(mesh: StationMesh) {
+	return {
+		type: mesh.type,
+		detail: mesh.detail,
+		silhouetteKm: STATION_SILHOUETTE_KM[mesh.type],
+		fixtures: mesh.fixtures.map((fixture) => ({
+			kind: fixture.kind,
+			intensity: fixture.material.emissiveIntensity,
+		})),
+	};
 }
