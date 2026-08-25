@@ -42,3 +42,10 @@ test("a broken acquisition cone clears missile lock and ECM clears a warning", (
 	state = stepCombatPrototype(state, { dt: 0.1, ecm: true });
 	expect(state.incomingMissile).toBe(false);
 });
+
+test("an enemy barrage depletes the player fore shield before damaging hull", () => {
+	let state = createCombatPrototype({ foreShield: 1 });
+	state = stepCombatPrototype(state, { dt: 1, enemyFiring: true });
+	expect(state.foreShield).toBe(0);
+	expect(state.playerHull).toBeLessThan(COMBAT_PROTOTYPE_DEFAULTS.hull);
+});

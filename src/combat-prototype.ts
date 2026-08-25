@@ -17,6 +17,7 @@ export const COMBAT_PROTOTYPE_DEFAULTS = {
 	energyRegenPerSecond: 12,
 	heatCoolPerSecond: 16,
 	shieldRechargePerSecond: 6,
+	enemyDamagePerSecond: 8,
 	lockSeconds: 1.5,
 	interdictionSeconds: 2.5,
 } as const;
@@ -29,6 +30,7 @@ export interface CombatPrototypeState {
 	heatLocked: boolean;
 	foreShield: number;
 	aftShield: number;
+	playerHull: number;
 	targetForeShield: number;
 	targetAftShield: number;
 	targetHull: number;
@@ -47,6 +49,7 @@ export interface CombatPrototypeInput {
 	ecm?: boolean;
 	interdicting?: boolean;
 	breakAngle?: boolean;
+	enemyFiring?: boolean;
 }
 
 export function createCombatPrototype(
@@ -59,6 +62,7 @@ export function createCombatPrototype(
 		heatLocked: false,
 		foreShield: COMBAT_PROTOTYPE_DEFAULTS.shield,
 		aftShield: COMBAT_PROTOTYPE_DEFAULTS.shield,
+		playerHull: COMBAT_PROTOTYPE_DEFAULTS.hull,
 		targetForeShield: COMBAT_PROTOTYPE_DEFAULTS.shield,
 		targetAftShield: COMBAT_PROTOTYPE_DEFAULTS.shield,
 		targetHull: COMBAT_PROTOTYPE_DEFAULTS.hull,
@@ -138,9 +142,21 @@ export function stepCombatPrototype(
 		next.heat >= COMBAT_PROTOTYPE_DEFAULTS.heatLock ||
 		(next.heatLocked && next.heat > COMBAT_PROTOTYPE_DEFAULTS.heatLock * 0.5);
 	const lower = next.foreShield <= next.aftShield ? "foreShield" : "aftShield";
-	next[lower] = clamp(
-		next[lower] + COMBAT_PROTOTYPE_DEFAULTS.shieldRechargePerSecond * dt,
-		COMBAT_PROTOTYPE_DEFAULTS.shield,
-	);
+	if (input.enemyFiring) {
+		const damage = COMBAT_PROTOTYPE_DEFAULTS.enemyDamagePerSecond * dt;
+		const shield = next.foreShield;
+		next.foreShield = clamp(shield - damage, COMBAT_PROTOTYPE_DEFAULTS.shield);
+		next.playerHull = clamp(
+			next.playerHull - Math.max(0, damage - shield),
+			COMBAT_PROTOTYPE_DEFAULTS.hull,
+		);
+	} else {
+		const lower =
+			next.foreShield <= next.aftShield ? "foreShield" : "aftShield";
+		next[lower] = clamp(
+			next[lower] + COMBAT_PROTOTYPE_DEFAULTS.shieldRechargePerSecond * dt,
+			COMBAT_PROTOTYPE_DEFAULTS.shield,
+		);
+	}
 	return next;
 }

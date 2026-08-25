@@ -3090,6 +3090,7 @@ class Game {
 			ecm: this.combatEcm,
 			interdicting: this.regime === "cruise",
 			breakAngle: this.keys.has("q") || this.keys.has("e"),
+			enemyFiring: this.combat.targetHull > 0,
 		});
 		this.combatIncoming = false;
 		this.combatEcm = false;
@@ -3381,7 +3382,13 @@ class Game {
 		this.stars.position.copy(this.backdropCamera.position);
 		// A deliberate prototype target gives the balance controls a visible object
 		// without borrowing #35's display-only traffic as a combat entity.
-		this.combatTargetMesh.position.set(0, 0, -12).applyQuaternion(viewRotation);
+		this.combatTargetMesh.position
+			.set(
+				3 * Math.sin(this.combat.elapsed * 0.7),
+				1.2 * Math.cos(this.combat.elapsed * 1.1),
+				-12,
+			)
+			.applyQuaternion(viewRotation);
 		this.combatTargetMesh.visible = this.view === "cockpit";
 		const targetMaterial = this.combatTargetMesh
 			.material as THREE.MeshStandardMaterial;
@@ -3830,16 +3837,21 @@ class Game {
 		// The Three line is spatial reference; this glass tracer is the readable
 		// weapon feedback at every viewport and cannot disappear behind cockpit mesh.
 		if (this.keys.has(" ") || this.keys.has("b")) {
+			ctx.save();
+			// The lower third is physical cockpit hardware. Clip the glass effect to
+			// the windscreen rather than drawing a laser over an instrument panel.
+			ctx.beginPath();
+			ctx.rect(0, 0, w, h * 0.66);
+			ctx.clip();
 			ctx.strokeStyle = "rgba(116, 234, 255, 0.98)";
 			ctx.lineWidth = 3;
-			// Twin lower-hull mounts converge on the target reticle; a centre-to-top
-			// line reads as a HUD pointer, not a laser fired from the ship.
 			ctx.beginPath();
-			ctx.moveTo(w * 0.39, h * 0.82);
+			ctx.moveTo(w * 0.24, h * 0.64);
 			ctx.lineTo(w / 2, h * 0.46);
-			ctx.moveTo(w * 0.61, h * 0.82);
+			ctx.moveTo(w * 0.76, h * 0.64);
 			ctx.lineTo(w / 2, h * 0.46);
 			ctx.stroke();
+			ctx.restore();
 		}
 
 		// Prograde and retrograde — the map's HUD constraint, and the thing that
@@ -3904,9 +3916,15 @@ class Game {
 		);
 		ctx.fillStyle = "rgba(255, 115, 130, 0.95)";
 		ctx.fillText(
-			`TARGET  SHIELD ${(this.combat.targetForeShield + this.combat.targetAftShield).toFixed(0)}  HULL ${this.combat.targetHull.toFixed(0)}`,
+			`TARGET  SHIELDS F ${this.combat.targetForeShield.toFixed(0)}  A ${this.combat.targetAftShield.toFixed(0)}  HULL ${this.combat.targetHull.toFixed(0)}`,
 			w / 2,
 			h * 0.76,
+		);
+		ctx.fillStyle = "rgba(116, 234, 255, 0.95)";
+		ctx.fillText(
+			`PLAYER  SHIELDS F ${this.combat.foreShield.toFixed(0)}  A ${this.combat.aftShield.toFixed(0)}  HULL ${this.combat.playerHull.toFixed(0)}`,
+			w / 2,
+			h * 0.8,
 		);
 		ctx.textAlign = "left";
 
