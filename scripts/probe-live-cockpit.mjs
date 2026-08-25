@@ -274,10 +274,17 @@ for (const viewport of VIEWPORTS) {
 	const combatReadout = await page.evaluate(
 		() => window.__seelite.cockpit.flightInstrument.secondaryText.text,
 	);
+	const laserVisible = await page.evaluate(
+		() =>
+			window.__seelite.nearScene.getObjectByName("combat-prototype-laser")
+				?.visible,
+	);
 	await page.keyboard.up("Space");
 	check(
-		`${viewport.name}: holding Space drains pulse energy and exposes immediate PULSE feedback on the physical instrument`,
-		combatReadout.includes("F 60 A 60") && combatReadout.endsWith(" PULSE"),
+		`${viewport.name}: holding Space draws a prototype laser and exposes immediate PULSE feedback on the physical instrument`,
+		laserVisible &&
+			combatReadout.includes("F 60 A 60") &&
+			combatReadout.endsWith(" PULSE"),
 		combatReadout,
 	);
 	await page.evaluate(() => window.__seelite.setThrottle(0));
