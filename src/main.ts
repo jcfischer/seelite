@@ -3826,9 +3826,13 @@ class Game {
 		if (this.keys.has(" ") || this.keys.has("b")) {
 			ctx.strokeStyle = "rgba(116, 234, 255, 0.98)";
 			ctx.lineWidth = 3;
+			// Twin lower-hull mounts converge on the target reticle; a centre-to-top
+			// line reads as a HUD pointer, not a laser fired from the ship.
 			ctx.beginPath();
-			ctx.moveTo(w / 2, h / 2);
-			ctx.lineTo(w / 2, h * 0.28);
+			ctx.moveTo(w * 0.39, h * 0.82);
+			ctx.lineTo(w / 2, h * 0.46);
+			ctx.moveTo(w * 0.61, h * 0.82);
+			ctx.lineTo(w / 2, h * 0.46);
 			ctx.stroke();
 		}
 
