@@ -1,0 +1,463 @@
+/** The hull language is display geometry, so its identity and bounds are cheap
+ * to prove without a browser. Browser probes own the camera/HUD experience. */
+import { describe, expect, test } from "bun:test";
+import * as THREE from "three";
+import {
+	HULL_IDS,
+	HULL_VARIANTS,
+	HULL_VARIANT_IDS,
+	HULL_VISUALS,
+	SHIP_DESIGN_ROUND,
+	type HullVariantId,
+	buildShipMesh,
+	fleetLayout,
+} from "../src/ship-mesh";
+
+function bounds(id: (typeof HULL_IDS)[number], variant: HullVariantId = "a") {
+	const root = buildShipMesh(id, variant).root;
+	root.updateMatrixWorld(true);
+	return new THREE.Box3().setFromObject(root);
+}
+
+describe("procedural ship visual language", () => {
+	test("each explicit visual archetype is deterministic and bounded", () => {
+		for (const id of HULL_IDS) {
+			for (const variant of HULL_VARIANT_IDS) {
+				const first = bounds(id, variant);
+				const second = bounds(id, variant);
+				expect(first.min.toArray()).toEqual(second.min.toArray());
+				expect(first.max.toArray()).toEqual(second.max.toArray());
+				const reach = Math.max(
+					...first.min.toArray().map(Math.abs),
+					...first.max.toArray().map(Math.abs),
+				);
+				expect(reach).toBeLessThanOrEqual(HULL_VISUALS[id].reachKm * 1.00001);
+				expect(reach).toBeGreaterThan(HULL_VISUALS[id].reachKm * 0.5);
+			}
+		}
+	});
+
+	test("each role offers three named and genuinely distinct design theses", () => {
+		for (const id of HULL_IDS) {
+			expect(HULL_VARIANTS[id].map(({ id }) => id)).toEqual(["a", "b", "c"]);
+			expect(new Set(HULL_VARIANTS[id].map(({ name }) => name)).size).toBe(3);
+			expect(new Set(HULL_VARIANTS[id].map(({ thesis }) => thesis)).size).toBe(
+				3,
+			);
+			// All three, not two of three: the thesis text being different is a
+			// claim about prose, and the spec's claim is about geometry.
+			const shapes = HULL_VARIANT_IDS.map((variant) =>
+				bounds(id, variant).getSize(new THREE.Vector3()),
+			);
+			for (const a of shapes)
+				for (const b of shapes) {
+					if (a === b) continue;
+					const apart =
+						Math.abs(a.x / a.z - b.x / b.z) > 0.02 ||
+						Math.abs(a.y / a.z - b.y / b.z) > 0.02;
+					expect(`${id} variants differ: ${apart}`).toBe(
+						`${id} variants differ: true`,
+					);
+				}
+		}
+	});
+
+	test("hulls of comparable size have visibly different proportions", () => {
+		// Every hull, not just variant "a". Review pointed out that comparing one
+		// variant per role left twenty-two of thirty-three never compared with
+		// anything, while the spec insists variants name distinct ship models.
+		//
+		// Two guards keep the comparison meaningful. Variants of one role are
+		// meant to read as the same class, so only cross-role pairs are checked.
+		// And only pairs of comparable size: a capital hull and an interceptor
+		// can share a ratio exactly and never be confused, because one of them
+		// fills the canopy.
+		//
+		// The bar is a normalised distance rather than two independent
+		// thresholds, and 1.0 is measured rather than chosen. Across the 333
+		// pairs this compares, the closest is 1.21; the next tier down was a
+		// single pair at 0.90, which was fixed rather than tolerated. What this
+		// does *not* prove is that two hulls look different — a bounding box
+		// cannot see an offset keel or a boarding tube. It catches the failure
+		// that prompted it: a raider that read as a patrol hull at range.
+		const hulls = HULL_IDS.flatMap((id) =>
+			HULL_VARIANT_IDS.map((variant) => {
+				const size = bounds(id, variant).getSize(new THREE.Vector3());
+				return {
+					id: `${id}/${variant}`,
+					role: id,
+					slenderness: size.z / size.x,
+					depth: size.y / size.z,
+				};
+			}),
+		);
+		let compared = 0;
+		for (const a of hulls)
+			for (const b of hulls) {
+				if (a.id >= b.id || a.role === b.role) continue;
+				const sizeRatio =
+					HULL_VISUALS[a.role].reachKm / HULL_VISUALS[b.role].reachKm;
+				if (sizeRatio > 2 || sizeRatio < 0.5) continue;
+				compared += 1;
+				const separation = Math.hypot(
+					(a.slenderness - b.slenderness) / 0.08,
+					(a.depth - b.depth) / 0.04,
+				);
+				expect(`${a.id} vs ${b.id}: ${separation >= 1}`).toBe(
+					`${a.id} vs ${b.id}: true`,
+				);
+			}
+		expect(compared).toBeGreaterThan(300);
+	});
+
+	test("each hull has stable identity and motion-direction exhaust cues", () => {
+		for (const id of HULL_IDS) {
+			for (const variant of HULL_VARIANT_IDS) {
+				const root = buildShipMesh(id, variant).root;
+				expect(root.name).toBe(`hull-${id}`);
+				expect(root.userData.role).toBe(HULL_VISUALS[id].role);
+				expect(root.userData.variant).toBe(variant);
+				expect(root.userData.designRound).toBe(SHIP_DESIGN_ROUND);
+				expect(
+					root.children.some((child) => child.name.includes("exhaust")),
+				).toBe(true);
+			}
+		}
+	});
+
+	test("lofted volumes are capped and every triangle faces outward", () => {
+		for (const id of HULL_IDS) {
+			for (const variant of HULL_VARIANT_IDS) {
+				const root = buildShipMesh(id, variant).root;
+				let inspected = 0;
+				root.traverse((object) => {
+					if (!(object instanceof THREE.Mesh) || !object.geometry.index) return;
+					const axis = object.geometry.userData.axis as number[][] | undefined;
+					const ringSize = object.geometry.userData.ringSize as
+						| number
+						| undefined;
+					if (!axis || !ringSize) return;
+					if (
+						!object.name.includes("fuselage") &&
+						!object.name.includes("cockpit") &&
+						!object.name.includes("bridge") &&
+						!object.name.includes("nacelle")
+					)
+						return;
+					inspected += 1;
+					const positions = object.geometry.getAttribute("position");
+					const indices = [...object.geometry.index.array];
+					const front = positions.count - 2;
+					const rear = positions.count - 1;
+					// A cap is a closed fan over the whole end ring, not a hole: one
+					// triangle per ring segment, no more and no fewer.
+					for (const capCenter of [front, rear])
+						expect(indices.filter((index) => index === capCenter).length).toBe(
+							ringSize,
+						);
+					const point = (index: number) =>
+						new THREE.Vector3().fromBufferAttribute(positions, index);
+					const centreline = axis.map(
+						([x, y, z]) => new THREE.Vector3(x, y, z),
+					);
+					// A cap is perpendicular to its own station plane, and a swept
+					// blade tilts that plane away from the centreline, so neither Z nor
+					// the sweep direction is a fixed reference. What holds for every
+					// part is that each cap faces away from the body it closes. The
+					// failure this catches is an inverted cap, which scores near -1;
+					// the bar is set low because an honest cap on a steeply raked
+					// blade only reaches about 0.7.
+					const middle = centreline
+						.reduce((sum, point) => sum.add(point), new THREE.Vector3())
+						.divideScalar(centreline.length);
+					const noseOut = centreline[0].clone().sub(middle).normalize();
+					const tailOut = centreline[centreline.length - 1]
+						.clone()
+						.sub(middle)
+						.normalize();
+					for (let index = 0; index < indices.length; index += 3) {
+						const triangle = indices.slice(index, index + 3);
+						const [a, b, c] = triangle.map(point);
+						const normal = new THREE.Vector3()
+							.crossVectors(b.clone().sub(a), c.clone().sub(a))
+							.normalize();
+						if (triangle.includes(front))
+							expect(normal.dot(noseOut)).toBeGreaterThan(0.25);
+						else if (triangle.includes(rear))
+							expect(normal.dot(tailOut)).toBeGreaterThan(0.25);
+						else {
+							const centre = a.add(b).add(c).divideScalar(3);
+							const nearest = centreline.reduce((best, candidate) =>
+								candidate.distanceToSquared(centre) <
+								best.distanceToSquared(centre)
+									? candidate
+									: best,
+							);
+							expect(
+								normal.dot(centre.clone().sub(nearest).normalize()),
+							).toBeGreaterThan(0);
+						}
+					}
+				});
+				expect(inspected).toBeGreaterThanOrEqual(4);
+			}
+		}
+	});
+
+	test("hulls carry visible mass before their compact exhaust cues", () => {
+		for (const id of HULL_IDS) {
+			for (const variant of HULL_VARIANT_IDS) {
+				const root = buildShipMesh(id, variant).root;
+				const fuselage = root.children.find((child) =>
+					child.name.includes("fuselage"),
+				);
+				const bridge = root.children.find(
+					(child) =>
+						child.name.includes("cockpit") || child.name.includes("bridge"),
+				);
+				// Every drive, paired with its own exhaust by name. Taking the
+				// first of each happened to pair correctly, but nothing made it
+				// so — a reordering would have compared a trim drive against an
+				// oversized bell and passed or failed for an unrelated reason.
+				const nacelle = root.children.find((child) =>
+					child.name.endsWith("-nacelle"),
+				);
+				const exhaust = root.children.find((child) =>
+					child.name.includes("exhaust"),
+				);
+				expect(fuselage).toBeDefined();
+				expect(bridge).toBeDefined();
+				expect(nacelle).toBeDefined();
+				expect(exhaust).toBeDefined();
+				const span = (object: THREE.Object3D) =>
+					Math.max(
+						...new THREE.Box3()
+							.setFromObject(object)
+							.getSize(new THREE.Vector3())
+							.toArray(),
+					);
+				let pairs = 0;
+				for (const drive of root.children) {
+					if (!drive.name.endsWith("-nacelle")) continue;
+					const stem = drive.name.slice(0, -"-nacelle".length);
+					const bell = root.children.find(
+						(child) => child.name === `${stem}-exhaust`,
+					);
+					if (!bell) continue;
+					pairs += 1;
+					expect(`${drive.name}: ${span(bell) < span(drive) * 0.5}`).toBe(
+						`${drive.name}: true`,
+					);
+				}
+				expect(pairs).toBeGreaterThanOrEqual(2);
+			}
+		}
+	});
+
+	test("primary masses are authored surfaces rather than stock primitive stacks", () => {
+		const silhouettes = new Set<string>();
+		for (const id of HULL_IDS) {
+			for (const variant of HULL_VARIANT_IDS) {
+				const fuselage = buildShipMesh(id, variant).root.getObjectByName(
+					id + "-fuselage",
+				) as THREE.Mesh;
+				expect([
+					"BoxGeometry",
+					"ConeGeometry",
+					"CylinderGeometry",
+				]).not.toContain(fuselage.geometry.type);
+				expect(
+					fuselage.geometry.getAttribute("position").count,
+				).toBeGreaterThan(30);
+				const size = new THREE.Box3()
+					.setFromObject(fuselage)
+					.getSize(new THREE.Vector3());
+				silhouettes.add(
+					`${(size.x / size.z).toFixed(2)}:${(size.y / size.z).toFixed(2)}`,
+				);
+			}
+		}
+		// Nine hulls sharing one primary mass would be one hull in nine paint jobs.
+		expect(silhouettes.size).toBeGreaterThanOrEqual(HULL_IDS.length * 2);
+	});
+
+	test("primary surfaces are swept rather than extruded from a flat plate", () => {
+		// A plate extrusion gives every part a vertical side wall, which is the
+		// shape the round-three review rejected. Curvature shows up as the number
+		// of distinct surface normals around the beam; a slab has four.
+		for (const id of HULL_IDS) {
+			for (const variant of HULL_VARIANT_IDS) {
+				const fuselage = buildShipMesh(id, variant).root.getObjectByName(
+					id + "-fuselage",
+				) as THREE.Mesh;
+				const normals = fuselage.geometry.getAttribute("normal");
+				const directions = new Set<string>();
+				for (let index = 0; index < normals.count; index += 1)
+					directions.add(
+						`${normals.getX(index).toFixed(1)}:${normals.getY(index).toFixed(1)}`,
+					);
+				expect(directions.size).toBeGreaterThan(12);
+			}
+		}
+	});
+
+	test("canopies intersect painted fairings instead of floating above them", () => {
+		for (const id of HULL_IDS) {
+			for (const variant of HULL_VARIANT_IDS) {
+				const root = buildShipMesh(id, variant).root;
+				// Small hulls fair their glass into a cockpit blister, big ones into
+				// a bridge tower. `canopy()` and `bridge()` each emit their pair,
+				// so which of the two names exists is a contract rather than the
+				// coincidence this fallback used to rest on.
+				const fairing = (root.getObjectByName(id + "-cockpit-fairing") ??
+					root.getObjectByName(id + "-bridge")) as THREE.Mesh;
+				expect(fairing).toBeDefined();
+				const canopy = root.getObjectByName(id + "-cockpit") as THREE.Mesh;
+				const overlap = new THREE.Box3()
+					.setFromObject(fairing)
+					.intersect(new THREE.Box3().setFromObject(canopy))
+					.getSize(new THREE.Vector3());
+				expect(overlap.x).toBeGreaterThan(0.001);
+				expect(overlap.y).toBeGreaterThan(0.0005);
+				expect(overlap.z).toBeGreaterThan(0.003);
+			}
+		}
+	});
+
+	test("no solid module sits in the pilot's forward view", () => {
+		// Two explorer hulls shipped with the survey dish parked directly ahead of
+		// the canopy, which nothing caught because every other check measures a
+		// part against the hull rather than against the view out of it.
+		//
+		// This was first written as an allowlist of part names, which is the
+		// wrong shape: it passed anything nobody had thought to add, and review
+		// named four such parts that slipped through. Everything is checked now
+		// but two exemptions, both decided by construction rather than by
+		// matching words that go stale the moment a part is renamed.
+		//
+		// A torus is open, and an axis-aligned box cannot see the hole in the
+		// middle of one. A strut is thin — `strut()` stamps `userData.thin` —
+		// and a pylon or a stay is something the pilot sees past rather than
+		// through.
+		//
+		// The hull the glass is set into is named, because no property tells it
+		// apart: the pilot looks over their own nose.
+		const OWN_HULL = /fuselage|cockpit|bridge|dorsal-hull/;
+		for (const id of HULL_IDS) {
+			for (const variant of HULL_VARIANT_IDS) {
+				const root = buildShipMesh(id, variant).root;
+				root.updateMatrixWorld(true);
+				const canopy = root.getObjectByName(id + "-cockpit") as THREE.Mesh;
+				const glass = new THREE.Box3().setFromObject(canopy);
+				const eye = glass.getCenter(new THREE.Vector3());
+				// The sightline is as wide as the glass, not an infinitely thin
+				// line — the pilot sees a cone, and a hull parked just beside the
+				// axis blocks as much of it as one parked on the axis. Spread
+				// sideways only: sampling below the eye finds the structure the
+				// canopy stands on, which is not a blocked view on any ship.
+				const halfWidth = (glass.max.x - glass.min.x) / 2;
+				const reach = HULL_VISUALS[id].reachKm;
+				let checked = 0;
+				for (const child of root.children) {
+					if (!(child instanceof THREE.Mesh)) continue;
+					if (
+						child.geometry.type === "TorusGeometry" ||
+						child.geometry.userData.thin === true ||
+						OWN_HULL.test(child.name)
+					)
+						continue;
+					checked += 1;
+					const box = new THREE.Box3().setFromObject(child);
+					let blocked = false;
+					for (let step = 0; step <= 60; step += 1) {
+						const ahead = eye.z - (step / 60) * (reach + Math.abs(eye.z));
+						for (const dx of [0, halfWidth, -halfWidth])
+							if (
+								box.containsPoint(new THREE.Vector3(eye.x + dx, eye.y, ahead))
+							)
+								blocked = true;
+					}
+					expect(`${id}/${variant} ${child.name} blocks view: ${blocked}`).toBe(
+						`${id}/${variant} ${child.name} blocks view: false`,
+					);
+				}
+				expect(checked).toBeGreaterThan(0);
+				// A cutter head is exempt from the solid rule because it is a ring,
+				// but a ring the pilot has to look through is still the wrong place
+				// for it: its top arc must clear the eye line.
+				for (const child of root.children) {
+					if (!(child instanceof THREE.Mesh) || !/cutter-ring/.test(child.name))
+						continue;
+					const top = new THREE.Box3().setFromObject(child).max.y;
+					expect(`${id}/${variant} cutter clears the eye: ${top < eye.y}`).toBe(
+						`${id}/${variant} cutter clears the eye: true`,
+					);
+				}
+			}
+		}
+	});
+
+	test("the fleet review parks every model clear of its neighbours", () => {
+		const slots = fleetLayout();
+		expect(slots.length).toBe(HULL_IDS.length * HULL_VARIANT_IDS.length);
+		// Every hull exactly once, so a role added later cannot be silently left
+		// out of the avenue.
+		expect(
+			new Set(slots.map((slot) => `${slot.id}/${slot.variant}`)).size,
+		).toBe(slots.length);
+		for (const a of slots)
+			for (const b of slots) {
+				if (a === b) continue;
+				const gap = Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+				// Reach is a radius, so touching is the sum of the two. The margin
+				// on top is the room to fly between them, which is the whole point
+				// of parking them in a line rather than listing them in a viewer.
+				const clear = HULL_VISUALS[a.id].reachKm + HULL_VISUALS[b.id].reachKm;
+				expect(
+					`${a.id}/${a.variant} to ${b.id}/${b.variant}: ${gap > clear * 1.8}`,
+				).toBe(`${a.id}/${a.variant} to ${b.id}/${b.variant}: true`);
+			}
+		// The lane down the middle has to stay open. Nothing in the scaffold
+		// collides, so a hull parked on the flight line is one the player passes
+		// straight through, which reads as a rendering fault rather than a fleet.
+		for (const slot of slots) {
+			const offAxis = Math.hypot(slot.x, slot.y);
+			expect(
+				`${slot.id}/${slot.variant} clears the lane: ${offAxis > HULL_VISUALS[slot.id].reachKm * 1.8}`,
+			).toBe(`${slot.id}/${slot.variant} clears the lane: true`);
+		}
+		// Smallest first: the size range only reads as deliberate if it grows.
+		const rows = [...new Set(slots.map((slot) => slot.z))];
+		expect(rows).toEqual([...rows].sort((a, b) => b - a));
+	});
+
+	test("every nacelle intersects a named structural mount", () => {
+		// Named port and starboard, once. That spelling outlawed a drive layout
+		// that is not laterally paired, which is the direction the rankings kept
+		// choosing — so the contract now says what it always meant: a nacelle
+		// hangs off structure rather than floating beside the hull.
+		for (const id of HULL_IDS) {
+			for (const variant of HULL_VARIANT_IDS) {
+				const root = buildShipMesh(id, variant).root;
+				const named = (test: (name: string) => boolean) =>
+					root.children.filter(
+						(child) => child instanceof THREE.Mesh && test(child.name),
+					);
+				const mounts = named((name) => name.includes("-mount-")).map((mount) =>
+					new THREE.Box3().setFromObject(mount),
+				);
+				const nacelles = named(
+					(name) => name.endsWith("-nacelle") && !name.includes("-mount-"),
+				);
+				expect(nacelles.length).toBeGreaterThanOrEqual(2);
+				expect(mounts.length).toBeGreaterThanOrEqual(2);
+				for (const nacelle of nacelles) {
+					const box = new THREE.Box3().setFromObject(nacelle);
+					expect(
+						`${nacelle.name}: ${mounts.some((mount) => mount.intersectsBox(box))}`,
+					).toBe(`${nacelle.name}: true`);
+				}
+			}
+		}
+	});
+});

@@ -120,6 +120,13 @@ import {
 } from "./sim";
 import { SPIN_RPM_RANGE } from "./station";
 import { buildStationMesh } from "./station-mesh";
+import {
+	type HullId,
+	type HullVariantId,
+	type FleetSlot,
+	buildShipMesh,
+	fleetLayout,
+} from "./ship-mesh";
 import { LiveCockpit, type RightTab } from "./live-cockpit";
 import { type WarpField, warpField } from "./warp";
 import { type Vec3, add, dot, length, scale, sub, v3 } from "./vec3";
@@ -175,6 +182,38 @@ const STAR_PIXEL_SCALE = 0.35;
  */
 const CHASE_BACK_KM = 0.14;
 const CHASE_UP_KM = 0.04;
+
+/**
+ * The hull the player flies: the courier `Kestrel`.
+ *
+ * Named as a pair because `buildShipMesh("courier")` defaults its variant, and
+ * a default is exactly what the spec forbids a roster to take — the comment
+ * that used to sit here claimed the choice was explicit while the code let the
+ * builder pick. #26 still owns the roster; when it arrives it replaces this
+ * constant, and it will be able to see what it is replacing.
+ */
+const PLAYER_HULL: readonly [HullId, HullVariantId] = ["courier", "a"];
+
+/**
+ * How fast the chase camera swings round the hull while a key is held.
+ *
+ * A full circle in a little over five seconds. Faster and the hull's far side
+ * arrives before the eye has read the near one; slower and checking what is off
+ * the port quarter costs more attention than the look is worth.
+ */
+const CHASE_ORBIT_RATE = 1.2;
+
+/**
+ * Fold an angle back into (-π, π].
+ *
+ * Local rather than in `units.ts` because that file is a leaf of the unit
+ * scheme and `tests/headless.test.ts` asserts it imports nothing; a camera
+ * convenience does not belong in the scheme the sim is measured in.
+ */
+function wrapAngle(radians: number) {
+	const turn = Math.PI * 2;
+	return ((((radians + Math.PI) % turn) + turn) % turn) - Math.PI;
+}
 
 /**
  * Mouse sensitivity: radians of rotation per pixel of pointer movement.
@@ -269,6 +308,85 @@ interface ProbeRayMath {
 interface Instrument {
 	ctx: CanvasRenderingContext2D;
 	texture: THREE.CanvasTexture;
+	secondaryText: TextRaster;
+}
+
+const INSTRUMENT_SECONDARY_FONT = "20px ui-monospace, monospace";
+const PROMPT_FONT = "13px ui-monospace, Menlo, monospace";
+const PROMPT_FILL = "rgba(255, 214, 120, 0.9)";
+const TEXT_RASTER_DEFAULTS: Readonly<{
+	text: string;
+	font: string;
+	fillStyle: string;
+	textAlign: CanvasTextAlign;
+	x: number;
+	y: number;
+	background: string | undefined;
+}> = Object.freeze({
+	text: "",
+	font: "",
+	fillStyle: "",
+	textAlign: "left" as CanvasTextAlign,
+	x: 0,
+	y: 0,
+	background: undefined as string | undefined,
+});
+const TEXT_RASTER_BOUNDS_DEFAULTS: Readonly<{
+	left: number;
+	top: number;
+	width: number;
+	height: number;
+}> = Object.freeze({
+	left: 0,
+	top: 0,
+	width: 0,
+	height: 0,
+});
+
+class TextRaster {
+	text = TEXT_RASTER_DEFAULTS.text;
+	font = TEXT_RASTER_DEFAULTS.font;
+	fillStyle = TEXT_RASTER_DEFAULTS.fillStyle;
+	textAlign = TEXT_RASTER_DEFAULTS.textAlign;
+	x = TEXT_RASTER_DEFAULTS.x;
+	y = TEXT_RASTER_DEFAULTS.y;
+	bounds = { ...TEXT_RASTER_BOUNDS_DEFAULTS };
+	background = TEXT_RASTER_DEFAULTS.background;
+
+	reset() {
+		Object.assign(this, TEXT_RASTER_DEFAULTS);
+		Object.assign(this.bounds, TEXT_RASTER_BOUNDS_DEFAULTS);
+	}
+
+	setInstrumentSecondary(text: string, accent: string, canvasWidth: number) {
+		this.reset();
+		this.text = text;
+		this.font = INSTRUMENT_SECONDARY_FONT;
+		this.fillStyle = accent;
+		this.textAlign = "left";
+		this.x = 28;
+		this.y = 192;
+		this.bounds.left = 28;
+		this.bounds.top = 168;
+		this.bounds.width = canvasWidth - 56;
+		this.bounds.height = 30;
+		this.background = "rgba(1, 8, 11, .9)";
+	}
+
+	setCenteredPrompt(text: string, x: number, y: number, width: number) {
+		this.reset();
+		this.text = text;
+		this.font = PROMPT_FONT;
+		this.fillStyle = PROMPT_FILL;
+		this.textAlign = "center";
+		this.x = x;
+		this.y = y;
+		this.bounds.left = Math.floor(x - width / 2);
+		this.bounds.top = Math.floor(y - 14);
+		this.bounds.width = Math.ceil(width);
+		this.bounds.height = 18;
+		this.background = undefined;
+	}
 }
 
 interface HologramGlyph {
@@ -345,7 +463,7 @@ class Game {
 	 * graph does not record.
 	 */
 	private readonly layers = new Map<string, "near" | "approach" | "far">();
-	private shipMesh!: THREE.Mesh;
+	private shipMesh!: THREE.Group;
 	/** Cockpit structure follows the ship, while the camera pans within it. */
 	private cockpit!: CockpitHardware;
 	private tuningKey = "";
@@ -401,6 +519,9 @@ class Game {
 	/** #5 made cockpit the default and chase a toggle. The hull is hidden in
 	 *  cockpit, which is what makes the HUD markers load-bearing. */
 	view: "cockpit" | "chase" = "cockpit";
+	/** Chase orbit about the ship's own up axis; zero is directly astern. Held
+	 *  across a view toggle, because a look you set up is a look you meant. */
+	chaseYaw = 0;
 	/** How fast the ship is turning, radians per second — rotation has momentum,
 	 *  and `sim.ts`'s `stepAngular` owns the dynamics. */
 	rates: Angular = { pitch: 0, yaw: 0, roll: 0 };
@@ -413,6 +534,21 @@ class Game {
 	 *  which nothing does yet, and which is why this is a field rather than a
 	 *  `readonly` built in the constructor. */
 	private selectableCache: Body[] | null = null;
+	/**
+	 * The parked review fleet, gated on `?fleet`.
+	 *
+	 * Off by default because thirty-three hulls is a showroom, not a star
+	 * system: it is a lot of geometry, and a hull the player can fly past but
+	 * never scan, target or collide with would be a lie in the shipped game.
+	 * Behind the gate it is honest — a static display arrangement, anchored
+	 * once, with no entry in `sim.ts` and no roster meaning. #26 still owns
+	 * anything that is meant to be a ship rather than a picture of one.
+	 */
+	private readonly fleetReview = new URLSearchParams(
+		window.location.search,
+	).has("fleet");
+	private fleet: { mesh: THREE.Object3D; slot: FleetSlot; pos: Vec3 }[] = [];
+	private fleetAnchored = false;
 	/** The speed law's masses, rebuilt once per clock value. See `masses()`. */
 	private massesCache: { id: string; pos: Vec3; radiusKm: number }[] | null =
 		null;
@@ -446,6 +582,9 @@ class Game {
 	/** The last time-to-target estimate, and the clock value it was made at. */
 	private etaCache: number | null = null;
 	private etaAt = Number.NEGATIVE_INFINITY;
+	/** Text geometry from the current glass pass, exposed so the visual probe can
+	 * compare the rendered glyphs with the renderer's own placement contract. */
+	readonly cockpitPrompt = new TextRaster();
 	/** What the HUD last displayed, quantised to its own resolution — so a frame
 	 *  that would render the same text neither builds nor writes it. */
 	private hudKey = "";
@@ -905,18 +1044,34 @@ class Game {
 	}
 
 	private buildShip() {
-		// A cube, 20 metres on a side, and honestly a cube — the ship roster is an
-		// open decision and a placeholder that looked like a design would be worse
-		// than one that plainly is not.
-		const geometry = new THREE.BoxGeometry(0.02, 0.012, 0.03);
-		const material = new THREE.MeshStandardMaterial({
-			color: 0xc8ccd4,
-			roughness: 0.45,
-			metalness: 0.55,
-		});
-		this.shipMesh = new THREE.Mesh(geometry, material);
+		// One hull, and it is the player's.
+		//
+		// Chase used to carry an interceptor and a freighter alongside, as a
+		// relative-scale check while the archetypes were being designed. They
+		// were children of this mesh, so they inherited the player's orientation
+		// and turned with it exactly — glued to the hull rather than flying
+		// beside it, which the chase orbit made impossible to miss. Their job
+		// belongs to `?model-viewer=ship`, which frames each hull against its own
+		// declared reach; real traffic needs simulation positions, and those are
+		// #26's to give.
+		this.shipMesh = buildShipMesh(...PLAYER_HULL).root;
 		this.shipMesh.name = "ship";
 		this.nearScene.add(this.shipMesh);
+		if (this.fleetReview) this.buildFleetReview();
+	}
+
+	/** Build the review hulls. Where they go is settled on the first frame. */
+	private buildFleetReview() {
+		const group = new THREE.Group();
+		group.name = "fleet-review";
+		group.userData.displayOnly = true;
+		for (const slot of fleetLayout()) {
+			const hull = buildShipMesh(slot.id, slot.variant).root;
+			hull.name = `fleet-${slot.id}-${slot.variant}`;
+			group.add(hull);
+			this.fleet.push({ mesh: hull, slot, pos: v3(0, 0, 0) });
+		}
+		this.nearScene.add(group);
 	}
 
 	/** The physical cockpit and its one, deck-mounted scanner. */
@@ -1189,7 +1344,7 @@ class Game {
 			face.position.set(x, 0.001, 0);
 			face.rotation.x = -Math.PI / 2;
 			scannerMount.add(face);
-			return { ctx, texture };
+			return { ctx, texture, secondaryText: new TextRaster() };
 		};
 		this.cockpit.flightInstrument = makeInstrument("flight-instrument", -0.025);
 		this.cockpit.targetInstrument = makeInstrument("target-instrument", 0.025);
@@ -1269,15 +1424,15 @@ class Game {
 			rangeRing.name = "scanner-range-ring";
 			root.add(rangeRing);
 		}
-		root.add(
-			new THREE.Line(
-				new THREE.BufferGeometry().setFromPoints([
-					new THREE.Vector3(0, 0, -0.006),
-					new THREE.Vector3(0, 0.003, 0.006),
-				]),
-				hologramMaterial,
-			),
+		const referenceLine = new THREE.Line(
+			new THREE.BufferGeometry().setFromPoints([
+				new THREE.Vector3(0, 0, -0.0052),
+				new THREE.Vector3(0, 0, 0.0052),
+			]),
+			hologramMaterial,
 		);
+		referenceLine.name = "scanner-reference-line";
+		root.add(referenceLine);
 		const contactGlyphs = new THREE.Group();
 		contactGlyphs.name = "scanner-contact-glyphs";
 		root.add(contactGlyphs);
@@ -1387,12 +1542,13 @@ class Game {
 		if (key === this.cockpit.instrumentKey) return;
 		this.cockpit.instrumentKey = key;
 		const paint = (
-			ctx: CanvasRenderingContext2D,
+			instrument: Instrument,
 			title: string,
 			primary: string,
 			secondary: string,
 			accent: string,
 		) => {
+			const { ctx, secondaryText: raster } = instrument;
 			const { width, height } = ctx.canvas;
 			ctx.clearRect(0, 0, width, height);
 			ctx.fillStyle = "rgba(1, 8, 11, .9)";
@@ -1417,19 +1573,20 @@ class Game {
 			}
 			ctx.fillStyle = "#e7f6ff";
 			ctx.fillText(primary, 28, 128);
-			ctx.font = "20px ui-monospace, monospace";
+			raster.setInstrumentSecondary(secondary, accent, width);
+			ctx.font = raster.font;
 			ctx.fillStyle = accent;
 			ctx.fillText(secondary, 28, 192);
 		};
 		paint(
-			this.cockpit.flightInstrument.ctx,
+			this.cockpit.flightInstrument,
 			velocity.title,
 			speed,
 			velocity.context,
 			"#75d7ff",
 		);
 		paint(
-			this.cockpit.targetInstrument.ctx,
+			this.cockpit.targetInstrument,
 			"TARGET",
 			targetText,
 			`ETA ${eta}  CHARGE ${this.chargeAu.toFixed(1)} AU`,
@@ -1489,6 +1646,7 @@ class Game {
 				return;
 			case "2":
 				if (this.view === "cockpit") this.setHeadLook("forward");
+				else this.chaseYaw = 0;
 				return;
 			case "3":
 				if (this.view === "cockpit") this.setHeadLook("right");
@@ -1616,6 +1774,12 @@ class Game {
 		};
 	}
 
+	/** `1` swings to port and `3` to starboard, matching the panel keys those
+	 *  two are in the cockpit — left is left in both views. */
+	private chaseOrbitInput(): number {
+		return this.axis(["1"], ["3"]);
+	}
+
 	private axis(negative: string[], positive: string[]): number {
 		const neg = negative.some((k) => this.keys.has(k)) ? 1 : 0;
 		const pos = positive.some((k) => this.keys.has(k)) ? 1 : 0;
@@ -1709,6 +1873,12 @@ class Game {
 		return this.targetId
 			? (this.world.system.byId.get(this.targetId) ?? null)
 			: null;
+	}
+
+	/** The selected target's current range in simulation kilometres, if any. */
+	targetRange(): number | null {
+		const target = this.targetBody();
+		return target ? length(sub(target.pos, this.world.ship.pos)) : null;
 	}
 
 	/**
@@ -2010,6 +2180,12 @@ class Game {
 		);
 		this.orientation.multiply(turn).normalize();
 
+		// Held rather than stepped, for the same reason throttle is: an angle the
+		// player is choosing by eye wants a rate, not a ladder of fixed stops.
+		const orbit = this.view === "chase" ? this.chaseOrbitInput() : 0;
+		if (orbit !== 0)
+			this.chaseYaw = wrapAngle(this.chaseYaw + orbit * CHASE_ORBIT_RATE * dt);
+
 		if (this.keys.has("shift")) this.throttle = Math.min(1, this.throttle + dt);
 		if (this.keys.has("control"))
 			this.throttle = Math.max(0, this.throttle - dt);
@@ -2123,14 +2299,14 @@ class Game {
 				scale(v3(forward.x, forward.y, forward.z), COCKPIT_FORWARD_KM),
 			);
 		}
-		const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.orientation);
-		return add(
-			this.world.ship.pos,
-			add(
-				scale(v3(-forward.x, -forward.y, -forward.z), CHASE_BACK_KM),
-				scale(v3(up.x, up.y, up.z), CHASE_UP_KM),
-			),
-		);
+		// Behind and above in the ship's own frame, then swung round its up axis
+		// by the orbit. `cameraRotation` applies the same yaw, so the rig turns
+		// as one piece and the hull stays where it was in frame.
+		const offset = this.chaseOffset
+			.set(0, CHASE_UP_KM, CHASE_BACK_KM)
+			.applyAxisAngle(HEAD_AXIS, this.chaseYaw)
+			.applyQuaternion(this.orientation);
+		return add(this.world.ship.pos, v3(offset.x, offset.y, offset.z));
 	}
 
 	/**
@@ -2252,6 +2428,13 @@ class Game {
 		const shipRel = sub(this.world.ship.pos, camPos);
 		this.shipMesh.position.set(shipRel.x, shipRel.y, shipRel.z);
 		this.shipMesh.quaternion.copy(this.orientation);
+		this.anchorFleet();
+		for (const parked of this.fleet)
+			parked.mesh.position.set(
+				parked.pos.x - camPos.x,
+				parked.pos.y - camPos.y,
+				parked.pos.z - camPos.z,
+			);
 		// The hull is the camera in cockpit view, and drawing a cube around the
 		// near plane fills the screen with its inside faces.
 		this.shipMesh.visible = this.view === "chase";
@@ -2274,6 +2457,40 @@ class Game {
 		if (this.legacyHud) this.updateHud();
 	};
 
+	private readonly chaseOffset = new THREE.Vector3();
+
+	/**
+	 * Pin the review avenue in front of the ship, once.
+	 *
+	 * Laid out along the ship's own axes rather than the world's: the ship does
+	 * not boot facing -Z, it boots facing the station, and an avenue built on
+	 * the world axes put thirty-three hulls out of frame with nothing wrong in
+	 * any of the numbers. Deferred to the first frame because `buildShip` runs
+	 * before that boot facing is settled, so a basis read in the constructor is
+	 * the identity one and quietly wrong.
+	 */
+	private anchorFleet() {
+		if (this.fleetAnchored || !this.fleet.length) return;
+		this.fleetAnchored = true;
+		const anchor = this.world.ship.pos;
+		const facing = this.orientation;
+		// Nose back down the avenue, so the player meets bows rather than tails.
+		const about = new THREE.Quaternion().setFromAxisAngle(HEAD_AXIS, Math.PI);
+		for (const parked of this.fleet) {
+			const offset = new THREE.Vector3(
+				parked.slot.x,
+				parked.slot.y,
+				parked.slot.z,
+			).applyQuaternion(facing);
+			parked.pos = v3(
+				anchor.x + offset.x,
+				anchor.y + offset.y,
+				anchor.z + offset.z,
+			);
+			parked.mesh.quaternion.copy(facing).multiply(about);
+		}
+	}
+
 	private cameraRotation() {
 		const yaw =
 			this.view === "cockpit"
@@ -2282,7 +2499,7 @@ class Game {
 					: this.headLook === "right"
 						? -Math.PI / 2.7
 						: 0
-				: 0;
+				: this.chaseYaw;
 		this.headRotation.setFromAxisAngle(HEAD_AXIS, yaw);
 		return this.viewRotation.copy(this.orientation).multiply(this.headRotation);
 	}
@@ -2317,11 +2534,7 @@ class Game {
 				: null,
 			mode: this.regime === "cruise" ? "CRUISE" : "NORMAL FLIGHT",
 			throttle: `${(this.throttle * 100).toFixed(0)}%`,
-			assist: this.assist ? "ON" : "OFF",
-			charge: `${this.chargeAu.toFixed(1)}/${CHARGE_CAPACITY_AU} AU`,
 			speed: velocity.speed,
-			eta: this.etaCache === null ? "CALC" : duration(this.etaCache),
-			guidance: this.cruisePrompt(target ? targetKm : null),
 			tuning: this.tuningSummary(),
 		});
 	}
@@ -2491,7 +2704,10 @@ class Game {
 		// A focused console replaces the forward glass. Leaving target brackets
 		// here would make an HTML panel look like an accidental overlay rather
 		// than the deliberate head-turn view the cockpit contract calls for.
-		if (this.view === "cockpit" && this.headLook !== "forward") return;
+		if (this.view === "cockpit" && this.headLook !== "forward") {
+			this.cockpitPrompt.reset();
+			return;
+		}
 		const toPixels = (ndcX: number, ndcY: number) => ({
 			x: (ndcX * 0.5 + 0.5) * w,
 			y: (1 - (ndcY * 0.5 + 0.5)) * h,
@@ -2573,11 +2789,17 @@ class Game {
 			promptTarget ? length(sub(promptTarget.pos, camPos)) : null,
 		);
 		if (prompt) {
-			ctx.font = "13px ui-monospace, Menlo, monospace";
+			const x = w / 2;
+			const y = h * 0.62;
+			ctx.font = PROMPT_FONT;
 			ctx.textAlign = "center";
-			ctx.fillStyle = "rgba(255, 214, 120, 0.9)";
-			ctx.fillText(prompt, w / 2, h * 0.62);
+			ctx.fillStyle = PROMPT_FILL;
+			ctx.fillText(prompt, x, y);
+			const promptWidth = ctx.measureText(prompt).width;
+			this.cockpitPrompt.setCenteredPrompt(prompt, x, y, promptWidth);
 			ctx.textAlign = "left";
+		} else {
+			this.cockpitPrompt.reset();
 		}
 
 		// The selected target owns the amber sky marker. Green remains prograde,
@@ -2725,7 +2947,14 @@ function seedFromQuery(): number {
 	return (Math.random() * 0x1_0000_0000) >>> 0;
 }
 
-if (new URLSearchParams(window.location.search).has("hud-gallery")) {
+if (
+	new URLSearchParams(window.location.search).get("model-viewer") === "ship"
+) {
+	const { mountModelViewer } = await import("./model-viewer");
+	mountModelViewer();
+	// The workbench owns an isolated render loop, so no live simulation is built
+	// behind it. It is a visual asset tool rather than a second game mode.
+} else if (new URLSearchParams(window.location.search).has("hud-gallery")) {
 	const { mountStateGallery } = await import("./state-gallery");
 	mountStateGallery();
 	// The gallery owns its own Three.js scene. Do not build the live game behind
