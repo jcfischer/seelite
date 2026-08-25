@@ -442,7 +442,6 @@ class Game {
 	private shipMesh!: THREE.Group;
 	/** Chase-only visual traffic samples. They are child display meshes, not
 	 * simulation actors: #26 will replace them with an explicit roster source. */
-	private visualTraffic!: THREE.Group;
 	/** Cockpit structure follows the ship, while the camera pans within it. */
 	private cockpit!: CockpitHardware;
 	private tuningKey = "";
@@ -990,19 +989,18 @@ class Game {
 	}
 
 	private buildShip() {
+		// One hull, and it is the player's.
+		//
+		// Chase used to carry an interceptor and a freighter alongside, as a
+		// relative-scale check while the archetypes were being designed. They
+		// were children of this mesh, so they inherited the player's orientation
+		// and turned with it exactly — glued to the hull rather than flying
+		// beside it, which the chase orbit made impossible to miss. Their job
+		// belongs to `?model-viewer=ship`, which frames each hull against its own
+		// declared reach; real traffic needs simulation positions, and those are
+		// #26's to give.
 		this.shipMesh = buildShipMesh(...PLAYER_HULL).root;
 		this.shipMesh.name = "ship";
-		this.visualTraffic = new THREE.Group();
-		this.visualTraffic.name = "visual-traffic";
-		this.visualTraffic.userData.displayOnly = true;
-		const interceptor = buildShipMesh("interceptor", "a").root;
-		interceptor.name = "traffic-interceptor";
-		interceptor.position.set(-0.07, 0.018, -0.12);
-		const freighter = buildShipMesh("freighter", "a").root;
-		freighter.name = "traffic-freighter";
-		freighter.position.set(0.09, 0.004, -0.18);
-		this.visualTraffic.add(interceptor, freighter);
-		this.shipMesh.add(this.visualTraffic);
 		this.nearScene.add(this.shipMesh);
 	}
 
@@ -2348,13 +2346,6 @@ class Game {
 		const shipRel = sub(this.world.ship.pos, camPos);
 		this.shipMesh.position.set(shipRel.x, shipRel.y, shipRel.z);
 		this.shipMesh.quaternion.copy(this.orientation);
-		// These are flight-distance visual samples, not bodies. A small formation
-		// drift makes their exhaust-end cues readable in chase without inventing
-		// simulation positions, scanner contacts, AI, or a default #26 roster.
-		this.visualTraffic.children[0].position.y =
-			0.018 + Math.sin(this.world.gameTime * 0.7) * 0.004;
-		this.visualTraffic.children[1].position.y =
-			0.004 + Math.sin(this.world.gameTime * 0.45 + 1.1) * 0.003;
 		// The hull is the camera in cockpit view, and drawing a cube around the
 		// near plane fills the screen with its inside faces.
 		this.shipMesh.visible = this.view === "chase";

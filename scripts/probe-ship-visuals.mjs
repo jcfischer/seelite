@@ -34,10 +34,12 @@ function state() {
 		courierCore: Boolean(ship.getObjectByName("courier-dorsal-hull")),
 		exhausts: ship.children.filter((child) => child.name.includes("exhaust"))
 			.length,
-		trafficDisplayOnly:
-			ship.getObjectByName("visual-traffic")?.userData.displayOnly === true,
-		interceptor: Boolean(ship.getObjectByName("traffic-interceptor")),
-		freighter: Boolean(ship.getObjectByName("traffic-freighter")),
+		// Chase shows the player's hull and nothing else. The count is asserted
+		// rather than the absence of two old names, so a future extra hull
+		// parented here has to be a deliberate change to this line.
+		hulls: game.nearScene.children.filter(
+			(child) => child.userData.hullId !== undefined,
+		).length,
 		liveCockpit:
 			cockpit instanceof HTMLElement &&
 			getComputedStyle(cockpit).display !== "none",
@@ -77,9 +79,7 @@ for (const viewport of VIEWPORTS) {
 			chase.variant === "a" &&
 			chase.courierCore &&
 			chase.exhausts === 2 &&
-			chase.trafficDisplayOnly &&
-			chase.interceptor &&
-			chase.freighter &&
+			chase.hulls === 1 &&
 			!chase.liveCockpit,
 	);
 	// Orbit to port and hold until the camera has swung a good part of a

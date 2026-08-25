@@ -33,7 +33,7 @@ industrial construction. Primary mass must remain continuous; secondary panels
 may explain structure but must never return to an assembly of disconnected
 boxes.
 
-The query-gated `?model-viewer=ship` workbench exposes all nine candidates
+The query-gated `?model-viewer=ship` workbench exposes every candidate
 without constructing `Game`. A designer can orbit each candidate, apply
 temporary proportion controls, and rank A/B/C in preference order per role.
 The ranking summary is an iteration input, not persistent game state: it guides
@@ -179,16 +179,24 @@ to port and starboard while held, `2` returns it astern. The orbit turns the
 whole rig — position and look direction share one yaw about the ship's own up
 axis — so the range to the hull never changes, which is what a browser probe
 asserts rather than trusting the arithmetic. The angle survives a view toggle,
-because a look the player set up is a look they meant. Chase also includes one interceptor and freighter formation
-sample at flight distance, giving the archetypes an honest relative-scale check.
-Those samples are child display meshes, not simulation actors: they have no
-position in `sim.ts`, target identity, scanner contact, AI, collision, or roster
-meaning. Hulls do not participate in the body far/near handoff, so the existing
+because a look the player set up is a look they meant. Chase shows that hull and nothing else.
+
+An earlier pass put an interceptor and a freighter alongside it as a
+relative-scale check. They were children of the player mesh, so they inherited
+its orientation exactly and turned with it — glued to the hull rather than
+flying beside it. The chase orbit made that impossible to miss, and they are
+gone. The workbench does that job properly, framing each hull against its own
+declared reach, and traffic that reads as traffic needs simulation positions,
+which are #26's to give. A browser probe now asserts the count of hulls in the
+near scene rather than the absence of two particular names, so anything parented
+there in future has to be a deliberate change to that line.
+
+Hulls do not participate in the body far/near handoff, so the existing
 kilometre-scale body handoff stays untouched.
 
 ## 3. Verification contract
 
-Headless tests assert all nine candidates have stable hull and variant identity,
+Headless tests assert every candidate has stable hull and variant identity,
 deterministic bounds, declared reach, distinct design theses, compact exhausts,
 intersecting canopy fairings and structurally mounted nacelles. The mount
 assertion names no side: it was written as port and starboard, which outlawed
@@ -202,7 +210,7 @@ are deliberately open, and an axis-aligned box cannot see the hole in the middle
 of one. Every other check in this file measures a part against the hull; this is
 the only one that measures it against the view out of the canopy, which is why
 the dish defect survived until a designer looked at a render. A viewer probe
-verifies all nine candidates, per-role ranking, isolated draft controls, and the
+verifies every candidate, per-role ranking, isolated draft controls, and the
 absence of `Game`. A live browser probe verifies that the courier is present
 only in chase view and that returning to cockpit restores the live cockpit
 instruments and overlay.
