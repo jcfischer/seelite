@@ -22,9 +22,10 @@
  *    the stock deficit (§5) each reuse rather than inventing their own.
  *
  * **`marketRow` is keyed on station *type*, and must widen.** §5.1 derives the
- * fluctuation byte from `hash(stationSeed, epoch)` and §5.2 keys the deficit per
- * station, so both need station *identity*. Type is all this spec's arithmetic
- * needs and all the measurements exercise, so the narrower signature stands
+ * fluctuation byte from `hash(stationSeed, epoch)` and §5.5 keys the deficit
+ * by the station's composite carrier-slot identity, so both need identity beyond
+ * station type. Type is all this spec's arithmetic needs and all the measurements
+ * exercise, so the narrower signature stands
  * here; the implement node widens it to a `{ type, seed }` struct along with
  * every call site, and §11 records that as owed.
  */
