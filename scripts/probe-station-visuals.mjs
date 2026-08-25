@@ -97,9 +97,15 @@ const GRID = 24;
  * clock, so the only noise left is the resampling of two masks that differ by a
  * bloom halo. Measured on a passing build, the three types come out at 0.000,
  * 0.000 and 0.026 — the 0.026 being the trade station, whose hull *is* its
- * silhouette and whose beacons therefore bloom closest to the limb. 0.05 is
- * about twice that and an order below the 0.5 a genuinely different shape
- * scores, so it separates the two without being tuned to either.
+ * silhouette and whose beacons therefore bloom closest to the limb.
+ *
+ * Be plain about which side that derivation comes from: 0.05 is twice the worst
+ * value a **passing** build produces, and nothing here has measured a build
+ * where an accessory really does carry the outline. What sets the other end of
+ * the scale is `probe-station.mjs`, which measures this same `1 − IoU` between
+ * *different* station types on the same resampled grid and records 0.35, 0.61
+ * and 0.62. Two shapes that genuinely differ score an order of magnitude above
+ * this line; a build that keeps its outline sits at least an order below it.
  *
  * The exact form of this claim is headless — the mesh's vertex reach is
  * identical at all three levels — and this is the rendered half, which is the

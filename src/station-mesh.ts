@@ -112,6 +112,17 @@ export interface StationMesh {
 	 * station lit differently, and would then fail across the whole galaxy.
 	 */
 	fixtures: StationFixture[];
+	/**
+	 * The tagged accessories, collected once at build.
+	 *
+	 * `setStationDetail` walked the whole graph — struts, rings, panes, stacks —
+	 * to flip visibility on the handful of nodes that carry a tag. The set is
+	 * known at construction, so it is gathered there. The `userData` tag stays on
+	 * each object as well, because that is what `probe-station-visuals.mjs`
+	 * reads to hide exactly the set the bands hide; both come from `detail()`, so
+	 * they cannot disagree.
+	 */
+	accessories: THREE.Object3D[];
 }
 
 /** One clock-driven light. `base` is its lit intensity; the waveform scales it. */
@@ -176,6 +187,13 @@ const surfaceMaps = (type: StationType) => {
 		PLATE_TEXTURE_SIZE,
 		THREE.RGBAFormat,
 	);
+	// **sRGB on the albedo, linear on the wear map.** three.js reads a `map` as
+	// sRGB-encoded and a roughness/metalness map as linear data. Left at the
+	// default `NoColorSpace` the authored plate value of 196 is taken as linear
+	// 0.77 rather than sRGB 0.55, and every hull renders materially darker than
+	// the plating arithmetic says — a whole-pass brightness error with no symptom
+	// but "the stations look dark".
+	albedo.colorSpace = THREE.SRGBColorSpace;
 	for (const map of [albedo, wear]) {
 		map.wrapS = THREE.RepeatWrapping;
 		map.wrapT = THREE.RepeatWrapping;
@@ -190,10 +208,27 @@ const surfaceMaps = (type: StationType) => {
 	return { albedo, wear };
 };
 
-const SURFACE_MAPS: Record<StationType, ReturnType<typeof surfaceMaps>> = {
-	trade: surfaceMaps("trade"),
-	shipyard: surfaceMaps("shipyard"),
-	refinery: surfaceMaps("refinery"),
+/**
+ * The maps for one role, built on first use and kept.
+ *
+ * Built eagerly for all three at module load first, which was **declined once
+ * and then measured**: three plating passes and three wear passes over a 128²
+ * map cost 18–22 ms, paid by every importer — including `tests/headless.test.ts`
+ * and every other headless test that touches this file, none of which renders —
+ * and paid for roles a given system may not hold. The guess behind the decline
+ * was about a millisecond.
+ *
+ * A `Map` rather than a `Record`, and that does not lose the fourth-type
+ * guarantee: `surfaceMaps` reads `STATION_VISUALS[type]`, which is the `Record`
+ * that stops the build.
+ */
+const surfaceMapCache = new Map<StationType, ReturnType<typeof surfaceMaps>>();
+const mapsFor = (type: StationType) => {
+	const cached = surfaceMapCache.get(type);
+	if (cached) return cached;
+	const built = surfaceMaps(type);
+	surfaceMapCache.set(type, built);
+	return built;
 };
 
 /**
@@ -204,7 +239,7 @@ const SURFACE_MAPS: Record<StationType, ReturnType<typeof surfaceMaps>> = {
  * secondary cue, and a per-role *coloured* map would quietly become a third.
  */
 const hullMaterial = (color: number, type: StationType) => {
-	const { albedo, wear } = SURFACE_MAPS[type];
+	const { albedo, wear } = mapsFor(type);
 	return new THREE.MeshStandardMaterial({
 		color,
 		map: albedo,
@@ -692,7 +727,7 @@ function buildRefinery(color: number, fixtures: StationFixture[]): THREE.Group {
  */
 const BUILDERS: Record<
 	StationType,
-	(color: number) => Omit<StationMesh, "type" | "detail">
+	(color: number) => Omit<StationMesh, "type" | "detail" | "accessories">
 > = {
 	trade: (color) => {
 		const fixtures: StationFixture[] = [];
@@ -759,7 +794,11 @@ export function buildStationMesh(
 	// lights while it in fact produced most of them, so a fourth station type
 	// would have compiled with none and lit nothing.
 	const built = BUILDERS[type](color);
-	const mesh: StationMesh = { ...built, type, detail: "full" };
+	const accessories: THREE.Object3D[] = [];
+	built.root.traverse((object) => {
+		if (object.userData.minDetail) accessories.push(object);
+	});
+	const mesh: StationMesh = { ...built, type, detail: "full", accessories };
 	// Built at `full` and then set, so the tagged accessories are in a state that
 	// matches the field rather than merely defaulting to visible. The renderer
 	// corrects it on the first frame in any case; a station that disagreed with
@@ -781,11 +820,10 @@ export function setStationDetail(
 	level: StationDetailLevel,
 ): void {
 	mesh.detail = level;
-	mesh.root.traverse((object) => {
-		const min = object.userData.minDetail as StationDetailLevel | undefined;
-		if (!min) return;
+	for (const object of mesh.accessories) {
+		const min = object.userData.minDetail as StationDetailLevel;
 		object.visible = min === "full" ? level === "full" : level !== "outline";
-	});
+	}
 }
 
 /**

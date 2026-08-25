@@ -84,10 +84,16 @@ many of its own radii away the camera is.
 | `reduced` | ≤ 400 | hull, aperture, and the emissive lights only |
 | `outline` | > 400 | hull and aperture; every accessory off |
 
-The bands switch with the **same 5% hysteresis** the render layer uses
-(`HANDOFF_HYSTERESIS`, `src/units.ts`), imported rather than restated. A station
-held at a band edge otherwise flickers its whole detail set once a frame, which
-is more visible than any of the detail it is choosing between.
+**The table is the undirected reading.** The bands switch with the same 5%
+hysteresis the render layer uses (`HANDOFF_HYSTERESIS`, `src/units.ts`),
+imported rather than restated, and that band is *directional*: a station already
+at a level is held there until it is 5% past the threshold. So a station at 41
+radii is `full` if it is receding from close range and `reduced` if it is being
+approached from far, and both are correct. The figures above are where a station
+lands with no previous level — the case of one being placed rather than flown
+to. Without the directional band a station parked on an edge flickers its whole
+detail set once a frame, which is more visible than any of the detail it is
+choosing between.
 
 At `HANDOFF_KM` — where a body crosses into the far layer — a trade station is
 16,667 radii away and unambiguously `outline`. The two rules do not need to

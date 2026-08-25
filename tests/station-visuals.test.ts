@@ -37,7 +37,7 @@ import {
 	stationDetailLevel,
 	surfaceTexels,
 } from "../src/station-visuals";
-import { HANDOFF_HYSTERESIS } from "../src/units";
+import { HANDOFF_HYSTERESIS, HANDOFF_KM } from "../src/units";
 
 const TYPES: StationType[] = ["trade", "shipyard", "refinery"];
 const LEVELS: StationDetailLevel[] = ["full", "reduced", "outline"];
@@ -190,7 +190,10 @@ describe("detail is chosen by apparent size, with the render layer's hysteresis"
 		// decisions — but they must not fight. The smallest silhouette gives the
 		// largest apparent radii, so checking the largest one is the binding case.
 		const largest = Math.max(...Object.values(STATION_SILHOUETTE_KM));
-		expect(stationDetailLevel("full", 1e4 / largest)).toBe("outline");
+		// `HANDOFF_KM` imported, not restated: retuned downward, a literal 1e4
+		// here would keep asserting the old range and this invariant would stop
+		// being checked while staying green.
+		expect(stationDetailLevel("full", HANDOFF_KM / largest)).toBe("outline");
 	});
 });
 
@@ -285,11 +288,13 @@ describe("activity is a pure function of the game clock", () => {
 			if (beaconIntensity("trade", t, 0) > 0.5) lit++;
 			n++;
 		}
-		// Within a tenth of the declared figure: the ramp at each end of the
-		// flash costs a little, and asserting the exact fraction would be
-		// asserting the ramp's shape rather than the duty cycle.
+		// Within a tenth either way. The ramp at each end of the flash costs a
+		// little — measured, the lit fraction is about 0.92 of the duty — so the
+		// exact fraction would be asserting the ramp's shape. A looser upper
+		// bound would let the duty cycle grow by half before this noticed, which
+		// is the failure a duty-cycle test exists to catch.
 		expect(lit / n).toBeGreaterThan(beaconDuty * 0.9);
-		expect(lit / n).toBeLessThan(beaconDuty * 1.6);
+		expect(lit / n).toBeLessThan(beaconDuty * 1.1);
 	});
 
 	test("the port and starboard beacons are out of phase", () => {

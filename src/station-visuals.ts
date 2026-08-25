@@ -265,6 +265,14 @@ const clamp255 = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
 export function platingTexels(type: StationType, size = PLATE_TEXTURE_SIZE) {
 	const { pitchPx, seam, weathering } = STATION_VISUALS[type].plating;
 	const out = new Uint8Array(size * size * 4);
+	// **A whole number of panels across the map.** The pitch is an authored
+	// intent in texels, but the map wraps (`RepeatWrapping`), so a pitch that
+	// does not divide the size leaves a truncated panel at the seam and its
+	// boundary doubles when the texture repeats. Rounding to a panel count and
+	// deriving the boundaries from that keeps the authored figure meaningful and
+	// the wrap clean.
+	const panels = Math.max(1, Math.round(size / pitchPx));
+	const panelOf = (n: number) => Math.floor((n * panels) / size);
 	for (let y = 0; y < size; y++) {
 		for (let x = 0; x < size; x++) {
 			// Streaks run *down* the hull: the envelope varies with x and persists
@@ -272,19 +280,16 @@ export function platingTexels(type: StationType, size = PLATE_TEXTURE_SIZE) {
 			// first version did — it bands horizontally instead and chops the
 			// finer streak below into segments, which reads as dirt in rows.
 			const grime = streak(`${type}-grime`, x, 9) * weathering;
-			const plate = hash01(
-				`${type}-plate`,
-				Math.floor(x / pitchPx),
-				Math.floor(y / pitchPx),
-			);
+			const plate = hash01(`${type}-plate`, panelOf(x), panelOf(y));
 			// Panel-to-panel variation is small; the seam between them is what the
 			// eye reads as plating at all.
 			let v = 196 + (plate - 0.5) * 26;
+			// A texel is on a seam when the next texel — wrapping at the edge —
+			// belongs to a different panel. That gives exactly `panels` seams in
+			// each axis and one of them lands on the wrap, where it belongs.
 			const onSeam =
-				x % pitchPx === 0 ||
-				y % pitchPx === 0 ||
-				x % pitchPx === pitchPx - 1 ||
-				y % pitchPx === pitchPx - 1;
+				panelOf(x) !== panelOf((x + 1) % size) ||
+				panelOf(y) !== panelOf((y + 1) % size);
 			if (onSeam) v *= 1 - seam;
 			// Weathering darkens rather than tints: a soot streak is missing light,
 			// and tinting it would break the greyscale contract above.
