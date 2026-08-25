@@ -194,6 +194,24 @@ there in future has to be a deliberate change to that line.
 Hulls do not participate in the body far/near handoff, so the existing
 kilometre-scale body handoff stays untouched.
 
+`?fleet` parks every model in an avenue the player can fly down, ordered by
+declared reach so the walk runs smallest to largest. It is gated because
+thirty-three hulls is a showroom rather than a star system, and because a hull
+the player can fly past but never scan, target or collide with would be a lie in
+the shipped game. Behind the gate it is honest: a static arrangement anchored
+once to the ship's boot position and facing, with no entry in `sim.ts` and no
+roster meaning.
+
+Two figures in that layout are answers to measurements rather than taste. The
+gaps are far wider than clearance needs, because full throttle is 2 km/s and an
+avenue packed as tightly as the hulls allow is gone in under three seconds. And
+the middle variant of each row is lifted off the centre line, because three
+hulls spread evenly about the axis put one of them exactly where the player is
+flying — and with no collision in the scaffold, that means passing through a
+ship, which reads as a rendering fault rather than as a fleet. Headless tests
+own both: that no two hulls intersect, and that the lane down the middle stays
+open.
+
 ## 3. Verification contract
 
 Headless tests assert every candidate has stable hull and variant identity,

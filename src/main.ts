@@ -111,7 +111,13 @@ import {
 } from "./sim";
 import { SPIN_RPM_RANGE } from "./station";
 import { buildStationMesh } from "./station-mesh";
-import { type HullId, type HullVariantId, buildShipMesh } from "./ship-mesh";
+import {
+	type HullId,
+	type HullVariantId,
+	type FleetSlot,
+	buildShipMesh,
+	fleetLayout,
+} from "./ship-mesh";
 import { LiveCockpit, type RightTab } from "./live-cockpit";
 import { type WarpField, warpField } from "./warp";
 import { type Vec3, add, dot, length, scale, sub, v3 } from "./vec3";
@@ -512,6 +518,21 @@ class Game {
 	 *  which nothing does yet, and which is why this is a field rather than a
 	 *  `readonly` built in the constructor. */
 	private selectableCache: Body[] | null = null;
+	/**
+	 * The parked review fleet, gated on `?fleet`.
+	 *
+	 * Off by default because thirty-three hulls is a showroom, not a star
+	 * system: it is a lot of geometry, and a hull the player can fly past but
+	 * never scan, target or collide with would be a lie in the shipped game.
+	 * Behind the gate it is honest — a static display arrangement, anchored
+	 * once, with no entry in `sim.ts` and no roster meaning. #26 still owns
+	 * anything that is meant to be a ship rather than a picture of one.
+	 */
+	private readonly fleetReview = new URLSearchParams(
+		window.location.search,
+	).has("fleet");
+	private fleet: { mesh: THREE.Object3D; slot: FleetSlot; pos: Vec3 | null }[] =
+		[];
 	/** The speed law's masses, rebuilt once per clock value. See `masses()`. */
 	private massesCache: { id: string; pos: Vec3; radiusKm: number }[] | null =
 		null;
@@ -1002,6 +1023,21 @@ class Game {
 		this.shipMesh = buildShipMesh(...PLAYER_HULL).root;
 		this.shipMesh.name = "ship";
 		this.nearScene.add(this.shipMesh);
+		if (this.fleetReview) this.buildFleetReview();
+	}
+
+	/** Build the review hulls. Where they go is settled on the first frame. */
+	private buildFleetReview() {
+		const group = new THREE.Group();
+		group.name = "fleet-review";
+		group.userData.displayOnly = true;
+		for (const slot of fleetLayout()) {
+			const hull = buildShipMesh(slot.id, slot.variant).root;
+			hull.name = `fleet-${slot.id}-${slot.variant}`;
+			group.add(hull);
+			this.fleet.push({ mesh: hull, slot, pos: null });
+		}
+		this.nearScene.add(group);
 	}
 
 	/** The physical cockpit and its one, deck-mounted scanner. */
@@ -2346,6 +2382,14 @@ class Game {
 		const shipRel = sub(this.world.ship.pos, camPos);
 		this.shipMesh.position.set(shipRel.x, shipRel.y, shipRel.z);
 		this.shipMesh.quaternion.copy(this.orientation);
+		this.anchorFleet();
+		for (const parked of this.fleet)
+			if (parked.pos)
+				parked.mesh.position.set(
+					parked.pos.x - camPos.x,
+					parked.pos.y - camPos.y,
+					parked.pos.z - camPos.z,
+				);
 		// The hull is the camera in cockpit view, and drawing a cube around the
 		// near plane fills the screen with its inside faces.
 		this.shipMesh.visible = this.view === "chase";
@@ -2369,6 +2413,37 @@ class Game {
 	};
 
 	private readonly chaseOffset = new THREE.Vector3();
+
+	/**
+	 * Pin the review avenue in front of the ship, once.
+	 *
+	 * Laid out along the ship's own axes rather than the world's: the ship does
+	 * not boot facing -Z, it boots facing the station, and an avenue built on
+	 * the world axes put thirty-three hulls out of frame with nothing wrong in
+	 * any of the numbers. Deferred to the first frame because `buildShip` runs
+	 * before that boot facing is settled, so a basis read in the constructor is
+	 * the identity one and quietly wrong.
+	 */
+	private anchorFleet() {
+		if (!this.fleet.length || this.fleet[0].pos) return;
+		const anchor = this.world.ship.pos;
+		const facing = this.orientation;
+		// Nose back down the avenue, so the player meets bows rather than tails.
+		const about = new THREE.Quaternion().setFromAxisAngle(HEAD_AXIS, Math.PI);
+		for (const parked of this.fleet) {
+			const offset = new THREE.Vector3(
+				parked.slot.x,
+				parked.slot.y,
+				parked.slot.z,
+			).applyQuaternion(facing);
+			parked.pos = v3(
+				anchor.x + offset.x,
+				anchor.y + offset.y,
+				anchor.z + offset.z,
+			);
+			parked.mesh.quaternion.copy(facing).multiply(about);
+		}
+	}
 
 	private cameraRotation() {
 		const yaw =

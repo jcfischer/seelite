@@ -40,6 +40,7 @@ function state() {
 		hulls: game.nearScene.children.filter(
 			(child) => child.userData.hullId !== undefined,
 		).length,
+		fleet: game.nearScene.getObjectByName("fleet-review")?.children.length ?? 0,
 		liveCockpit:
 			cockpit instanceof HTMLElement &&
 			getComputedStyle(cockpit).display !== "none",
@@ -138,6 +139,66 @@ for (const viewport of VIEWPORTS) {
 			returned.liveCockpit &&
 			returned.physicalCockpit &&
 			!returned.duplicateDomFloor,
+	);
+	await page.close();
+}
+
+// The review avenue is gated, so the default game has to be proved clean of it
+// and the gate proved to actually place hulls in the world — not parented to
+// the player, which is the mistake the samples it replaces made.
+for (const viewport of VIEWPORTS.slice(0, 1)) {
+	const page = await browser.newPage({ viewport });
+	page.on("pageerror", (error) =>
+		check(
+			`${viewport.name}: fleet page has no error (${error.message})`,
+			false,
+		),
+	);
+	await page.goto(`${ORIGIN}/?seed=42`, { waitUntil: "load" });
+	await page.waitForFunction(() => window.__seelite?.frames > 1);
+	const ungated = await page.evaluate(state);
+	check(
+		`${viewport.name}: the default game carries no review fleet`,
+		ungated.fleet === 0 && ungated.hulls === 1,
+	);
+
+	await page.goto(`${ORIGIN}/?seed=42&fleet`, { waitUntil: "load" });
+	await page.waitForFunction(() => window.__seelite?.frames > 2);
+	const gated = await page.evaluate(() => {
+		const game = window.__seelite;
+		const fleet = game.nearScene.getObjectByName("fleet-review");
+		const ship = game.world.ship.pos;
+		// A hull's position here is its offset from the camera in *world* axes,
+		// and the ship does not boot facing world -Z. Rotate into the ship's own
+		// frame before asking whether something is in front of it.
+		const intoShipFrame = game.orientation.clone().invert();
+		const hulls = fleet.children.map((hull) => ({
+			name: hull.name,
+			ahead: hull.position.clone().applyQuaternion(intoShipFrame).z,
+			range: Math.hypot(...hull.position.toArray()),
+		}));
+		return {
+			count: fleet.children.length,
+			displayOnly: fleet.userData.displayOnly === true,
+			// Parked in the world, not on the player: nothing here appears in the
+			// sim's body list, and so nothing can be targeted or scanned.
+			simBodies: game.world.system.bodies.filter((body) =>
+				String(body.id).startsWith("fleet"),
+			).length,
+			nearest: Math.min(...hulls.map((hull) => hull.range)),
+			farthest: Math.max(...hulls.map((hull) => hull.range)),
+			allAhead: hulls.every((hull) => hull.ahead < 0),
+			shipMoved: ship,
+		};
+	});
+	check(
+		`${viewport.name}: the gate parks every hull ahead of the player`,
+		gated.count === 33 &&
+			gated.displayOnly &&
+			gated.simBodies === 0 &&
+			gated.allAhead &&
+			gated.nearest > 0.1 &&
+			gated.farthest > 20,
 	);
 	await page.close();
 }

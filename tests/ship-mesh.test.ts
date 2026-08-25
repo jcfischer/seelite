@@ -10,6 +10,7 @@ import {
 	SHIP_DESIGN_ROUND,
 	type HullVariantId,
 	buildShipMesh,
+	fleetLayout,
 } from "../src/ship-mesh";
 
 function bounds(id: (typeof HULL_IDS)[number], variant: HullVariantId = "a") {
@@ -311,6 +312,40 @@ describe("procedural ship visual language", () => {
 				}
 			}
 		}
+	});
+
+	test("the fleet review parks every model clear of its neighbours", () => {
+		const slots = fleetLayout();
+		expect(slots.length).toBe(HULL_IDS.length * HULL_VARIANT_IDS.length);
+		// Every hull exactly once, so a role added later cannot be silently left
+		// out of the avenue.
+		expect(
+			new Set(slots.map((slot) => `${slot.id}/${slot.variant}`)).size,
+		).toBe(slots.length);
+		for (const a of slots)
+			for (const b of slots) {
+				if (a === b) continue;
+				const gap = Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+				// Reach is a radius, so touching is the sum of the two. The margin
+				// on top is the room to fly between them, which is the whole point
+				// of parking them in a line rather than listing them in a viewer.
+				const clear = HULL_VISUALS[a.id].reachKm + HULL_VISUALS[b.id].reachKm;
+				expect(
+					`${a.id}/${a.variant} to ${b.id}/${b.variant}: ${gap > clear * 1.8}`,
+				).toBe(`${a.id}/${a.variant} to ${b.id}/${b.variant}: true`);
+			}
+		// The lane down the middle has to stay open. Nothing in the scaffold
+		// collides, so a hull parked on the flight line is one the player passes
+		// straight through, which reads as a rendering fault rather than a fleet.
+		for (const slot of slots) {
+			const offAxis = Math.hypot(slot.x, slot.y);
+			expect(
+				`${slot.id}/${slot.variant} clears the lane: ${offAxis > HULL_VISUALS[slot.id].reachKm * 1.8}`,
+			).toBe(`${slot.id}/${slot.variant} clears the lane: true`);
+		}
+		// Smallest first: the size range only reads as deliberate if it grows.
+		const rows = [...new Set(slots.map((slot) => slot.z))];
+		expect(rows).toEqual([...rows].sort((a, b) => b - a));
 	});
 
 	test("every nacelle intersects a named structural mount", () => {

@@ -5817,6 +5817,69 @@ function buildDreadnoughtC(root: THREE.Group, p: Palette) {
 	blister(root, "dreadnought-sensor", 0.0068, [0.02, deck + 0.022, -0.126], p);
 }
 
+export interface FleetSlot {
+	readonly id: HullId;
+	readonly variant: HullVariantId;
+	/** Offset from the review's anchor, in kilometres. */
+	readonly x: number;
+	readonly y: number;
+	readonly z: number;
+}
+
+/**
+ * Park every model in an avenue the player can fly down.
+ *
+ * Ordered by declared reach so the walk is smallest to largest, which is the
+ * one arrangement that makes the size range legible: a capital hull beside a
+ * courier reads as a mistake, but at the end of a line that grows towards it,
+ * it reads as the point. Spacing is derived from the two hulls involved rather
+ * than being one tuned number, because a gap that clears two couriers puts two
+ * dreadnoughts inside each other.
+ *
+ * The gaps are far wider than clearance needs. Full throttle is 2 km/s, and an
+ * avenue packed as tightly as the hulls allow is gone in under three seconds —
+ * a flypast rather than somewhere the player has flown. These figures put it at
+ * roughly twenty seconds wide open, and a couple of minutes at the throttle
+ * setting anyone actually looking at the ships will be using.
+ *
+ * The middle variant of each row is lifted rather than left on the centre
+ * line. Three hulls spread evenly about the axis puts one of them exactly
+ * where the player is flying, and with no collision in the scaffold that means
+ * passing straight through a ship — which reads as a rendering fault rather
+ * than as a fleet. Lifting it keeps the row symmetric and leaves the lane
+ * clear underneath.
+ *
+ * Pure arithmetic, exported so `tests/ship-mesh.test.ts` can prove the hulls do
+ * not intersect without a browser. It creates no meshes, no actors, and no
+ * simulation positions: `main.ts` anchors the result and #26 still owns any
+ * roster meaning a hull might one day carry.
+ */
+export function fleetLayout(): FleetSlot[] {
+	const byReach = [...HULL_IDS].sort(
+		(a, b) => HULL_VISUALS[a].reachKm - HULL_VISUALS[b].reachKm,
+	);
+	const slots: FleetSlot[] = [];
+	let z = 0;
+	let previousReach = 0;
+	for (const id of byReach) {
+		const reach = HULL_VISUALS[id].reachKm;
+		z -= (previousReach + reach) * 12 + 0.8;
+		previousReach = reach;
+		const lateral = reach * 9;
+		HULL_VARIANT_IDS.forEach((variant, column) => {
+			const centred = column === 1;
+			slots.push({
+				id,
+				variant,
+				x: (column - 1) * lateral,
+				y: centred ? lateral * 0.62 : 0,
+				z,
+			});
+		});
+	}
+	return slots;
+}
+
 type Builder = (root: THREE.Group, palette: Palette) => void;
 
 /**
