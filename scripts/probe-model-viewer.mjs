@@ -62,9 +62,9 @@ for (const viewport of VIEWPORTS) {
 	await page
 		.locator('[data-model-role="freighter"][data-model-variant="b"]')
 		.click();
-	for (const variant of ["b", "a", "c"]) {
+	for (const rankChoice of ["b", "a", "c"]) {
 		await page
-			.locator(`[data-model-role="freighter"][data-model-rank="${variant}"]`)
+			.locator(`[data-model-role="freighter"][data-model-rank="${rankChoice}"]`)
 			.click();
 	}
 	await page.locator('[data-model-control="beam"]').fill("130");

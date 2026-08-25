@@ -223,9 +223,14 @@ the layouts it forbade. It now says what it always meant — every nacelle
 intersects some named mount, so none of them float.
 
 A further test walks the pilot's forward sightline out to the hull's declared
-reach and asserts no solid module sits on it. Rings and hoops are exempt: they
-are deliberately open, and an axis-aligned box cannot see the hole in the middle
-of one. Every other check in this file measures a part against the hull; this is
+reach and asserts no solid module sits on it. It was first written as an
+allowlist of part names and review found four parts it silently passed; it is
+now the other way round, with two exemptions decided by construction rather than
+by name. A torus is open, and an axis-aligned box cannot see the hole in the
+middle of one. A strut is thin: `strut()` stamps `userData.thin`, so a pylon or
+a stay is something the pilot sees past rather than through. Widening it found
+eleven sensor blisters parked at eye height in front of the glass, which the
+allowlist had never looked at. Every other check in this file measures a part against the hull; this is
 the only one that measures it against the view out of the canopy, which is why
 the dish defect survived until a designer looked at a render. A viewer probe
 verifies every candidate, per-role ranking, isolated draft controls, and the
@@ -234,7 +239,14 @@ only in chase view and that returning to cockpit restores the live cockpit
 instruments and overlay.
 
 Lofted command bodies, nacelles, and fuselages must contain indexed front and
-rear caps, and every side and cap triangle must face outward. This winding is a
+rear caps, and every side and cap triangle of those parts must face outward.
+The scope is named because the test enforces exactly it: parts whose name
+carries `fuselage`, `cockpit`, `bridge` or `nacelle`. Chines, fins, blisters,
+struts and hoops are not inspected. That is a gap and is written down as one
+rather than described as a universal contract — the parts that are checked are
+the ones whose inward wall would show as a false transparent cone across a whole
+hull, and the ones that are not are small enough that the failure would read as
+a speck. This winding is a
 rendering contract: an inward near wall is culled and exposes the far wall as a
 false transparent cone. Outwardness is measured against each part's own recorded
 centreline rather than against -Z, because a blade is swept along +X and a strut

@@ -33,7 +33,7 @@ export const HULL_IDS = [
 export type HullId = (typeof HULL_IDS)[number];
 export const HULL_VARIANT_IDS = ["a", "b", "c"] as const;
 export type HullVariantId = (typeof HULL_VARIANT_IDS)[number];
-export const SHIP_DESIGN_ROUND = 7;
+export const SHIP_DESIGN_ROUND = 10;
 
 export interface HullVariant {
 	readonly id: HullVariantId;
@@ -371,11 +371,15 @@ const liveries: Record<
 	dreadnought: { hull: 0x7b8288, panel: 0x3c434b, accent: 0xd4553c },
 };
 
+const palettes = new Map<HullId, Palette>();
+
 function makePalette(id: HullId): Palette {
+	const cached = palettes.get(id);
+	if (cached) return cached;
 	const colors = liveries[id];
 	const painted = (color: number, roughness: number, metalness: number) =>
 		new THREE.MeshStandardMaterial({ color, roughness, metalness });
-	return {
+	const palette: Palette = {
 		hull: painted(colors.hull, 0.5, 0.3),
 		panel: painted(colors.panel, 0.58, 0.36),
 		trim: painted(0x33454d, 0.5, 0.55),
@@ -396,6 +400,8 @@ function makePalette(id: HullId): Palette {
 			metalness: 0.08,
 		}),
 	};
+	palettes.set(id, palette);
+	return palette;
 }
 
 function add(
@@ -747,10 +753,25 @@ function strut(
 		new THREE.Vector3(0, 0, 1),
 		end.clone().sub(start).normalize(),
 	);
+	// Marked rather than named. A strut is thin by construction — a pylon, a
+	// stay, a boom — and the forward-view test needs to know which parts are
+	// thin enough to see past without matching on a list of words that goes
+	// stale the moment someone names one something new.
+	geometry.userData.thin = true;
 	return transform(
 		geometry,
 		new THREE.Matrix4().compose(start, orientation, new THREE.Vector3(1, 1, 1)),
 	);
+}
+
+/** A blade for one side. The literal is written once, not once per arm. */
+function mirroredBlade(
+	stations: ReadonlyArray<Ring>,
+	sign: 1 | -1,
+	options: { segments?: number; subdivisions?: number } = {},
+) {
+	const geometry = blade(stations, options);
+	return sign > 0 ? geometry : mirrorX(geometry);
 }
 
 /**
@@ -1436,7 +1457,7 @@ function buildInterceptorA(root: THREE.Group, p: Palette) {
 		],
 		{ ...p, panel: p.accent },
 	);
-	blister(root, "interceptor-sensor", 0.0012, [0, 0.0042, -0.0245], p);
+	blister(root, "interceptor-sensor", 0.0012, [0.0032, 0.0042, -0.0155], p);
 }
 
 function buildInterceptorB(root: THREE.Group, p: Palette) {
@@ -1528,7 +1549,7 @@ function buildInterceptorB(root: THREE.Group, p: Palette) {
 		],
 		{ ...p, panel: p.accent },
 	);
-	blister(root, "interceptor-sensor", 0.0012, [0, 0.0044, -0.0225], p);
+	blister(root, "interceptor-sensor", 0.0012, [0.003, 0.0044, -0.0135], p);
 }
 
 function buildInterceptorC(root: THREE.Group, p: Palette) {
@@ -1631,7 +1652,7 @@ function buildInterceptorC(root: THREE.Group, p: Palette) {
 		],
 		{ ...p, panel: p.accent },
 	);
-	blister(root, "interceptor-sensor", 0.0012, [0, 0.0038, -0.0235], p);
+	blister(root, "interceptor-sensor", 0.0012, [0.003, 0.0038, -0.0145], p);
 }
 
 function buildFreighterA(root: THREE.Group, p: Palette) {
@@ -1752,17 +1773,13 @@ function buildFreighterA(root: THREE.Group, p: Palette) {
 		add(
 			root,
 			"freighter-nacelle-mount-" + side,
-			sign > 0
-				? blade([
-						{ z: 0.0045, w: 0.0026, h: 0.0064, b: 0.006, y: 0.0225, e: 3.2 },
-						{ z: 0.0132, w: 0.0022, h: 0.0056, b: 0.0052, y: 0.0262, e: 3 },
-					])
-				: mirrorX(
-						blade([
-							{ z: 0.0045, w: 0.0026, h: 0.0064, b: 0.006, y: 0.0225, e: 3.2 },
-							{ z: 0.0132, w: 0.0022, h: 0.0056, b: 0.0052, y: 0.0262, e: 3 },
-						]),
-					),
+			mirroredBlade(
+				[
+					{ z: 0.0045, w: 0.0026, h: 0.0064, b: 0.006, y: 0.0225, e: 3.2 },
+					{ z: 0.0132, w: 0.0022, h: 0.0056, b: 0.0052, y: 0.0262, e: 3 },
+				],
+				sign,
+			),
 			p.trim,
 			[0, deck, 0],
 		);
@@ -2299,17 +2316,13 @@ function buildMinerA(root: THREE.Group, p: Palette) {
 		add(
 			root,
 			"miner-nacelle-mount-" + side,
-			sign > 0
-				? blade([
-						{ z: 0.009, w: 0.0028, h: 0.0068, b: 0.0064, y: 0.0245, e: 3.2 },
-						{ z: 0.0162, w: 0.0024, h: 0.006, b: 0.0056, y: 0.0288, e: 3 },
-					])
-				: mirrorX(
-						blade([
-							{ z: 0.009, w: 0.0028, h: 0.0068, b: 0.0064, y: 0.0245, e: 3.2 },
-							{ z: 0.0162, w: 0.0024, h: 0.006, b: 0.0056, y: 0.0288, e: 3 },
-						]),
-					),
+			mirroredBlade(
+				[
+					{ z: 0.009, w: 0.0028, h: 0.0068, b: 0.0064, y: 0.0245, e: 3.2 },
+					{ z: 0.0162, w: 0.0024, h: 0.006, b: 0.0056, y: 0.0288, e: 3 },
+				],
+				sign,
+			),
 			p.trim,
 		);
 		add(
@@ -2418,17 +2431,13 @@ function buildMinerB(root: THREE.Group, p: Palette) {
 		add(
 			root,
 			"miner-nacelle-mount-" + side,
-			sign > 0
-				? blade([
-						{ z: 0.0068, w: 0.0028, h: 0.0068, b: 0.0064, y: 0.0265, e: 3.2 },
-						{ z: 0.0148, w: 0.0024, h: 0.006, b: 0.0056, y: 0.0305, e: 3 },
-					])
-				: mirrorX(
-						blade([
-							{ z: 0.0068, w: 0.0028, h: 0.0068, b: 0.0064, y: 0.0265, e: 3.2 },
-							{ z: 0.0148, w: 0.0024, h: 0.006, b: 0.0056, y: 0.0305, e: 3 },
-						]),
-					),
+			mirroredBlade(
+				[
+					{ z: 0.0068, w: 0.0028, h: 0.0068, b: 0.0064, y: 0.0265, e: 3.2 },
+					{ z: 0.0148, w: 0.0024, h: 0.006, b: 0.0056, y: 0.0305, e: 3 },
+				],
+				sign,
+			),
 			p.trim,
 		);
 		add(
@@ -2570,17 +2579,13 @@ function buildMinerC(root: THREE.Group, p: Palette) {
 		add(
 			root,
 			"miner-nacelle-mount-" + side,
-			sign > 0
-				? blade([
-						{ z: 0.0052, w: 0.0028, h: 0.007, b: 0.0066, y: 0.0255, e: 3.2 },
-						{ z: 0.0138, w: 0.0024, h: 0.0062, b: 0.0058, y: 0.0295, e: 3 },
-					])
-				: mirrorX(
-						blade([
-							{ z: 0.0052, w: 0.0028, h: 0.007, b: 0.0066, y: 0.0255, e: 3.2 },
-							{ z: 0.0138, w: 0.0024, h: 0.0062, b: 0.0058, y: 0.0295, e: 3 },
-						]),
-					),
+			mirroredBlade(
+				[
+					{ z: 0.0052, w: 0.0028, h: 0.007, b: 0.0066, y: 0.0255, e: 3.2 },
+					{ z: 0.0138, w: 0.0024, h: 0.0062, b: 0.0058, y: 0.0295, e: 3 },
+				],
+				sign,
+			),
 			p.trim,
 			[0, deck, 0],
 		);
@@ -2687,17 +2692,13 @@ function buildPatrolA(root: THREE.Group, p: Palette) {
 		add(
 			root,
 			"patrol-nacelle-mount-" + side,
-			sign > 0
-				? blade([
-						{ z: 0.005, w: 0.0026, h: 0.0062, b: 0.0058, y: 0.0125, e: 3.2 },
-						{ z: 0.0126, w: 0.0022, h: 0.0054, b: 0.005, y: 0.0165, e: 3 },
-					])
-				: mirrorX(
-						blade([
-							{ z: 0.005, w: 0.0026, h: 0.0062, b: 0.0058, y: 0.0125, e: 3.2 },
-							{ z: 0.0126, w: 0.0022, h: 0.0054, b: 0.005, y: 0.0165, e: 3 },
-						]),
-					),
+			mirroredBlade(
+				[
+					{ z: 0.005, w: 0.0026, h: 0.0062, b: 0.0058, y: 0.0125, e: 3.2 },
+					{ z: 0.0126, w: 0.0022, h: 0.0054, b: 0.005, y: 0.0165, e: 3 },
+				],
+				sign,
+			),
 			p.hull,
 		);
 		add(
@@ -2721,7 +2722,7 @@ function buildPatrolA(root: THREE.Group, p: Palette) {
 		);
 	}
 	engineBell(root, "patrol-core", [0, 0, 0.0285], 0.0042, 0.0044, p);
-	blister(root, "patrol-sensor", 0.0012, [0, 0.0042, -0.0195], p);
+	blister(root, "patrol-sensor", 0.0012, [0.0032, 0.0042, -0.0105], p);
 }
 
 function buildPatrolB(root: THREE.Group, p: Palette) {
@@ -2887,7 +2888,7 @@ function buildPatrolB(root: THREE.Group, p: Palette) {
 		],
 		{ ...p, panel: p.accent },
 	);
-	blister(root, "patrol-sensor", 0.0013, [keel, 0.0042, -0.0195], p);
+	blister(root, "patrol-sensor", 0.0013, [keel + 0.0032, 0.0042, -0.0105], p);
 }
 
 function buildPatrolC(root: THREE.Group, p: Palette) {
@@ -2983,17 +2984,13 @@ function buildPatrolC(root: THREE.Group, p: Palette) {
 		add(
 			root,
 			"patrol-nacelle-mount-" + side,
-			sign > 0
-				? blade([
-						{ z: 0.005, w: 0.0026, h: 0.0062, b: 0.0058, y: 0.0155, e: 3.2 },
-						{ z: 0.0122, w: 0.0022, h: 0.0054, b: 0.005, y: 0.0195, e: 3 },
-					])
-				: mirrorX(
-						blade([
-							{ z: 0.005, w: 0.0026, h: 0.0062, b: 0.0058, y: 0.0155, e: 3.2 },
-							{ z: 0.0122, w: 0.0022, h: 0.0054, b: 0.005, y: 0.0195, e: 3 },
-						]),
-					),
+			mirroredBlade(
+				[
+					{ z: 0.005, w: 0.0026, h: 0.0062, b: 0.0058, y: 0.0155, e: 3.2 },
+					{ z: 0.0122, w: 0.0022, h: 0.0054, b: 0.005, y: 0.0195, e: 3 },
+				],
+				sign,
+			),
 			p.hull,
 		);
 		add(
@@ -3017,7 +3014,7 @@ function buildPatrolC(root: THREE.Group, p: Palette) {
 		);
 	}
 	engineBell(root, "patrol-core", [0, 0, 0.0305], 0.0042, 0.0044, p);
-	blister(root, "patrol-sensor", 0.0013, [0, 0.0044, -0.0145], p);
+	blister(root, "patrol-sensor", 0.0013, [0.003, 0.0044, -0.0055], p);
 }
 
 function buildExplorerA(root: THREE.Group, p: Palette) {
@@ -3108,17 +3105,13 @@ function buildExplorerA(root: THREE.Group, p: Palette) {
 		add(
 			root,
 			"explorer-nacelle-mount-" + side,
-			sign > 0
-				? blade([
-						{ z: 0.0044, w: 0.0026, h: 0.0064, b: 0.006, y: 0.0255, e: 3.2 },
-						{ z: 0.0118, w: 0.0022, h: 0.0056, b: 0.0052, y: 0.0295, e: 3 },
-					])
-				: mirrorX(
-						blade([
-							{ z: 0.0044, w: 0.0026, h: 0.0064, b: 0.006, y: 0.0255, e: 3.2 },
-							{ z: 0.0118, w: 0.0022, h: 0.0056, b: 0.0052, y: 0.0295, e: 3 },
-						]),
-					),
+			mirroredBlade(
+				[
+					{ z: 0.0044, w: 0.0026, h: 0.0064, b: 0.006, y: 0.0255, e: 3.2 },
+					{ z: 0.0118, w: 0.0022, h: 0.0056, b: 0.0052, y: 0.0295, e: 3 },
+				],
+				sign,
+			),
 			p.trim,
 		);
 		add(
@@ -3288,7 +3281,7 @@ function buildExplorerB(root: THREE.Group, p: Palette) {
 		strut([0.0142, 0.0018, 0.0035], [0.0172, 0.0088, -0.0035], 0.0024, 0.0017),
 		p.trim,
 	);
-	dish(root, "explorer-dish", 0.0104, [0.0172, 0.0098, -0.0058], p, [
+	dish(root, "explorer-dish", 0.0104, [0.0208, 0.0098, -0.0058], p, [
 		-Math.PI / 3,
 		0.28,
 		0,
@@ -3431,17 +3424,13 @@ function buildExplorerC(root: THREE.Group, p: Palette) {
 		add(
 			root,
 			"explorer-nacelle-mount-" + side,
-			sign > 0
-				? blade([
-						{ z: 0.0042, w: 0.0026, h: 0.0064, b: 0.006, y: 0.0255, e: 3.2 },
-						{ z: 0.0118, w: 0.0022, h: 0.0056, b: 0.0052, y: 0.0295, e: 3 },
-					])
-				: mirrorX(
-						blade([
-							{ z: 0.0042, w: 0.0026, h: 0.0064, b: 0.006, y: 0.0255, e: 3.2 },
-							{ z: 0.0118, w: 0.0022, h: 0.0056, b: 0.0052, y: 0.0295, e: 3 },
-						]),
-					),
+			mirroredBlade(
+				[
+					{ z: 0.0042, w: 0.0026, h: 0.0064, b: 0.006, y: 0.0255, e: 3.2 },
+					{ z: 0.0118, w: 0.0022, h: 0.0056, b: 0.0052, y: 0.0295, e: 3 },
+				],
+				sign,
+			),
 			p.trim,
 		);
 		add(
@@ -3604,17 +3593,13 @@ function buildRaiderA(root: THREE.Group, p: Palette) {
 		add(
 			root,
 			"raider-nacelle-mount-" + side,
-			sign > 0
-				? blade([
-						{ z: 0.0042, w: 0.0028, h: 0.0064, b: 0.006, y: 0.0135, e: 3.2 },
-						{ z: 0.0106, w: 0.0024, h: 0.0056, b: 0.0052, y: 0.0175, e: 3 },
-					])
-				: mirrorX(
-						blade([
-							{ z: 0.0042, w: 0.0028, h: 0.0064, b: 0.006, y: 0.0135, e: 3.2 },
-							{ z: 0.0106, w: 0.0024, h: 0.0056, b: 0.0052, y: 0.0175, e: 3 },
-						]),
-					),
+			mirroredBlade(
+				[
+					{ z: 0.0042, w: 0.0028, h: 0.0064, b: 0.006, y: 0.0135, e: 3.2 },
+					{ z: 0.0106, w: 0.0024, h: 0.0056, b: 0.0052, y: 0.0175, e: 3 },
+				],
+				sign,
+			),
 			p.hull,
 		);
 		add(
@@ -3647,7 +3632,7 @@ function buildRaiderA(root: THREE.Group, p: Palette) {
 		],
 		{ ...p, panel: p.accent },
 	);
-	blister(root, "raider-sensor", 0.0012, [-0.0042, 0.0034, -0.0155], p);
+	blister(root, "raider-sensor", 0.0012, [-0.0042, 0.0034, -0.0095], p);
 }
 
 function buildRaiderB(root: THREE.Group, p: Palette) {
@@ -3819,7 +3804,7 @@ function buildRaiderB(root: THREE.Group, p: Palette) {
 		],
 		{ ...p, panel: p.accent },
 	);
-	blister(root, "raider-sensor", 0.0012, [keel + 0.0038, 0.0034, -0.0145], p);
+	blister(root, "raider-sensor", 0.0012, [keel + 0.0038, 0.0034, -0.0085], p);
 }
 
 function buildRaiderC(root: THREE.Group, p: Palette) {
@@ -3910,17 +3895,13 @@ function buildRaiderC(root: THREE.Group, p: Palette) {
 		add(
 			root,
 			"raider-nacelle-mount-" + side,
-			sign > 0
-				? blade([
-						{ z: 0.005, w: 0.0028, h: 0.0064, b: 0.006, y: 0.0145, e: 3.2 },
-						{ z: 0.0128, w: 0.0024, h: 0.0056, b: 0.0052, y: 0.0185, e: 3 },
-					])
-				: mirrorX(
-						blade([
-							{ z: 0.005, w: 0.0028, h: 0.0064, b: 0.006, y: 0.0145, e: 3.2 },
-							{ z: 0.0128, w: 0.0024, h: 0.0056, b: 0.0052, y: 0.0185, e: 3 },
-						]),
-					),
+			mirroredBlade(
+				[
+					{ z: 0.005, w: 0.0028, h: 0.0064, b: 0.006, y: 0.0145, e: 3.2 },
+					{ z: 0.0128, w: 0.0024, h: 0.0056, b: 0.0052, y: 0.0185, e: 3 },
+				],
+				sign,
+			),
 			p.hull,
 		);
 		add(
@@ -3947,7 +3928,7 @@ function buildRaiderC(root: THREE.Group, p: Palette) {
 		],
 		{ ...p, panel: p.accent },
 	);
-	blister(root, "raider-sensor", 0.0012, [0.005, 0.003, -0.0135], p);
+	blister(root, "raider-sensor", 0.0012, [0.005, 0.003, -0.0075], p);
 }
 
 /**
@@ -4064,17 +4045,13 @@ function buildCarrierA(root: THREE.Group, p: Palette) {
 		add(
 			root,
 			"carrier-nacelle-mount-" + side,
-			sign > 0
-				? blade([
-						{ z: 0.03, w: 0.014, h: 0.032, b: 0.03, y: 0.12, e: 3.4 },
-						{ z: 0.062, w: 0.012, h: 0.028, b: 0.026, y: 0.142, e: 3.2 },
-					])
-				: mirrorX(
-						blade([
-							{ z: 0.03, w: 0.014, h: 0.032, b: 0.03, y: 0.12, e: 3.4 },
-							{ z: 0.062, w: 0.012, h: 0.028, b: 0.026, y: 0.142, e: 3.2 },
-						]),
-					),
+			mirroredBlade(
+				[
+					{ z: 0.03, w: 0.014, h: 0.032, b: 0.03, y: 0.12, e: 3.4 },
+					{ z: 0.062, w: 0.012, h: 0.028, b: 0.026, y: 0.142, e: 3.2 },
+				],
+				sign,
+			),
 			p.hull,
 		);
 		for (const [tier, cy] of [
@@ -4417,17 +4394,13 @@ function buildCarrierC(root: THREE.Group, p: Palette) {
 		add(
 			root,
 			"carrier-nacelle-mount-" + side,
-			sign > 0
-				? blade([
-						{ z: 0.036, w: 0.014, h: 0.03, b: 0.028, y: 0.104, e: 3.4 },
-						{ z: 0.066, w: 0.012, h: 0.026, b: 0.024, y: 0.126, e: 3.2 },
-					])
-				: mirrorX(
-						blade([
-							{ z: 0.036, w: 0.014, h: 0.03, b: 0.028, y: 0.104, e: 3.4 },
-							{ z: 0.066, w: 0.012, h: 0.026, b: 0.024, y: 0.126, e: 3.2 },
-						]),
-					),
+			mirroredBlade(
+				[
+					{ z: 0.036, w: 0.014, h: 0.03, b: 0.028, y: 0.104, e: 3.4 },
+					{ z: 0.066, w: 0.012, h: 0.026, b: 0.024, y: 0.126, e: 3.2 },
+				],
+				sign,
+			),
 			p.trim,
 			[0, deck, 0],
 		);
@@ -4621,17 +4594,13 @@ function buildTugA(root: THREE.Group, p: Palette) {
 		add(
 			root,
 			"tug-nacelle-mount-" + side,
-			sign > 0
-				? blade([
-						{ z: 0.0064, w: 0.0038, h: 0.0086, b: 0.0082, y: 0.004, e: 3.6 },
-						{ z: 0.0112, w: 0.0034, h: 0.0078, b: 0.0074, y: 0.0062, e: 3.4 },
-					])
-				: mirrorX(
-						blade([
-							{ z: 0.0064, w: 0.0038, h: 0.0086, b: 0.0082, y: 0.004, e: 3.6 },
-							{ z: 0.0112, w: 0.0034, h: 0.0078, b: 0.0074, y: 0.0062, e: 3.4 },
-						]),
-					),
+			mirroredBlade(
+				[
+					{ z: 0.0064, w: 0.0038, h: 0.0086, b: 0.0082, y: 0.004, e: 3.6 },
+					{ z: 0.0112, w: 0.0034, h: 0.0078, b: 0.0074, y: 0.0062, e: 3.4 },
+				],
+				sign,
+			),
 			p.hull,
 		);
 		add(
@@ -4664,7 +4633,7 @@ function buildTugA(root: THREE.Group, p: Palette) {
 		],
 		{ ...p, panel: p.accent },
 	);
-	blister(root, "tug-sensor", 0.0016, [0.0044, 0.0068, -0.0155], p);
+	blister(root, "tug-sensor", 0.0016, [0.0044, 0.0068, -0.0055], p);
 }
 
 function buildTugB(root: THREE.Group, p: Palette) {
@@ -4833,7 +4802,7 @@ function buildTugB(root: THREE.Group, p: Palette) {
 		],
 		{ ...p, panel: p.accent },
 	);
-	blister(root, "tug-sensor", 0.0016, [keel + 0.004, 0.0064, -0.0145], p);
+	blister(root, "tug-sensor", 0.0016, [keel + 0.004, 0.0064, -0.0045], p);
 }
 
 function buildTugC(root: THREE.Group, p: Palette) {
@@ -4960,7 +4929,7 @@ function buildTugC(root: THREE.Group, p: Palette) {
 		],
 		{ ...p, panel: p.accent },
 	);
-	blister(root, "tug-sensor", 0.0016, [0.0042, deck + 0.0062, -0.0145], p);
+	blister(root, "tug-sensor", 0.0016, [0.0042, deck + 0.0062, -0.0045], p);
 }
 
 function buildProspectorA(root: THREE.Group, p: Palette) {
@@ -5042,17 +5011,13 @@ function buildProspectorA(root: THREE.Group, p: Palette) {
 		add(
 			root,
 			"prospector-nacelle-mount-" + side,
-			sign > 0
-				? blade([
-						{ z: 0.0034, w: 0.0022, h: 0.005, b: 0.0048, y: 0.0195, e: 3 },
-						{ z: 0.0082, w: 0.0019, h: 0.0044, b: 0.0042, y: 0.0225, e: 2.8 },
-					])
-				: mirrorX(
-						blade([
-							{ z: 0.0034, w: 0.0022, h: 0.005, b: 0.0048, y: 0.0195, e: 3 },
-							{ z: 0.0082, w: 0.0019, h: 0.0044, b: 0.0042, y: 0.0225, e: 2.8 },
-						]),
-					),
+			mirroredBlade(
+				[
+					{ z: 0.0034, w: 0.0022, h: 0.005, b: 0.0048, y: 0.0195, e: 3 },
+					{ z: 0.0082, w: 0.0019, h: 0.0044, b: 0.0042, y: 0.0225, e: 2.8 },
+				],
+				sign,
+			),
 			p.trim,
 		);
 		add(
@@ -5357,17 +5322,13 @@ function buildProspectorC(root: THREE.Group, p: Palette) {
 		add(
 			root,
 			"prospector-nacelle-mount-" + side,
-			sign > 0
-				? blade([
-						{ z: 0.0032, w: 0.0022, h: 0.005, b: 0.0048, y: 0.0198, e: 3 },
-						{ z: 0.008, w: 0.0019, h: 0.0044, b: 0.0042, y: 0.0228, e: 2.8 },
-					])
-				: mirrorX(
-						blade([
-							{ z: 0.0032, w: 0.0022, h: 0.005, b: 0.0048, y: 0.0198, e: 3 },
-							{ z: 0.008, w: 0.0019, h: 0.0044, b: 0.0042, y: 0.0228, e: 2.8 },
-						]),
-					),
+			mirroredBlade(
+				[
+					{ z: 0.0032, w: 0.0022, h: 0.005, b: 0.0048, y: 0.0198, e: 3 },
+					{ z: 0.008, w: 0.0019, h: 0.0044, b: 0.0042, y: 0.0228, e: 2.8 },
+				],
+				sign,
+			),
 			p.trim,
 		);
 		add(
@@ -5494,17 +5455,13 @@ function buildDreadnoughtA(root: THREE.Group, p: Palette) {
 		add(
 			root,
 			"dreadnought-nacelle-mount-" + side,
-			sign > 0
-				? blade([
-						{ z: 0.024, w: 0.013, h: 0.03, b: 0.028, y: 0.126, e: 3.4 },
-						{ z: 0.044, w: 0.011, h: 0.026, b: 0.024, y: 0.15, e: 3.2 },
-					])
-				: mirrorX(
-						blade([
-							{ z: 0.024, w: 0.013, h: 0.03, b: 0.028, y: 0.126, e: 3.4 },
-							{ z: 0.044, w: 0.011, h: 0.026, b: 0.024, y: 0.15, e: 3.2 },
-						]),
-					),
+			mirroredBlade(
+				[
+					{ z: 0.024, w: 0.013, h: 0.03, b: 0.028, y: 0.126, e: 3.4 },
+					{ z: 0.044, w: 0.011, h: 0.026, b: 0.024, y: 0.15, e: 3.2 },
+				],
+				sign,
+			),
 			p.hull,
 		);
 		add(
@@ -5779,17 +5736,13 @@ function buildDreadnoughtC(root: THREE.Group, p: Palette) {
 		add(
 			root,
 			"dreadnought-nacelle-mount-" + side,
-			sign > 0
-				? blade([
-						{ z: 0.032, w: 0.013, h: 0.028, b: 0.026, y: 0.106, e: 3.4 },
-						{ z: 0.058, w: 0.011, h: 0.024, b: 0.022, y: 0.128, e: 3.2 },
-					])
-				: mirrorX(
-						blade([
-							{ z: 0.032, w: 0.013, h: 0.028, b: 0.026, y: 0.106, e: 3.4 },
-							{ z: 0.058, w: 0.011, h: 0.024, b: 0.022, y: 0.128, e: 3.2 },
-						]),
-					),
+			mirroredBlade(
+				[
+					{ z: 0.032, w: 0.013, h: 0.028, b: 0.026, y: 0.106, e: 3.4 },
+					{ z: 0.058, w: 0.011, h: 0.024, b: 0.022, y: 0.128, e: 3.2 },
+				],
+				sign,
+			),
 			p.trim,
 			[0, deck, 0],
 		);

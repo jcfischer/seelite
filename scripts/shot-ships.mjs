@@ -4,19 +4,6 @@ import { chromium } from "playwright";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 const OUT = process.argv[2] ?? "/tmp/ships";
-const ROLES = [
-	"courier",
-	"interceptor",
-	"freighter",
-	"miner",
-	"patrol",
-	"explorer",
-	"raider",
-	"carrier",
-	"tug",
-	"prospector",
-	"dreadnought",
-];
 const VARIANTS = ["a", "b", "c"];
 const DISTANCE = {
 	courier: 0.125,
@@ -41,6 +28,14 @@ const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 900, height: 900 } });
 await page.goto(`${ORIGIN}/?model-viewer=ship`, { waitUntil: "load" });
 await page.waitForSelector("#model-viewer canvas");
+const ROLES = await page.evaluate(() =>
+	[...document.querySelectorAll("[data-model-asset]")].map(
+		(button) => button.dataset.modelAsset,
+	),
+);
+const missing = ROLES.filter((role) => DISTANCE[role] === undefined);
+if (missing.length)
+	throw new Error(`no framing distance for: ${missing.join(", ")}`);
 await page.evaluate(() => {
 	document.querySelector(".mv-panel")?.setAttribute("hidden", "");
 	const wrap = document.querySelector(".mv-wrap");
@@ -72,8 +67,10 @@ for (const role of ROLES) {
 				},
 				{
 					...view,
-					// One shared orbit radius across every role proves relative size;
-					// per-role framing hides it, because everything fills the frame.
+					// Per-role framing by default, so each hull fills the frame.
+					// `SHOT_DISTANCE` overrides it with one shared orbit radius,
+					// which is the only way the shots show relative size — the
+					// default deliberately hides it.
 					distance: process.env.SHOT_DISTANCE
 						? Number(process.env.SHOT_DISTANCE)
 						: DISTANCE[role],

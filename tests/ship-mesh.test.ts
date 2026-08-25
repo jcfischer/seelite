@@ -174,8 +174,10 @@ describe("procedural ship visual language", () => {
 					(child) =>
 						child.name.includes("cockpit") || child.name.includes("bridge"),
 				);
-				// A mount is named for the nacelle it carries, so match the drive
-				// itself rather than the first child whose name mentions one.
+				// Every drive, paired with its own exhaust by name. Taking the
+				// first of each happened to pair correctly, but nothing made it
+				// so — a reordering would have compared a trim drive against an
+				// oversized bell and passed or failed for an unrelated reason.
 				const nacelle = root.children.find((child) =>
 					child.name.endsWith("-nacelle"),
 				);
@@ -186,15 +188,27 @@ describe("procedural ship visual language", () => {
 				expect(bridge).toBeDefined();
 				expect(nacelle).toBeDefined();
 				expect(exhaust).toBeDefined();
-				const nacelleSize = new THREE.Box3()
-					.setFromObject(nacelle as THREE.Object3D)
-					.getSize(new THREE.Vector3());
-				const exhaustSize = new THREE.Box3()
-					.setFromObject(exhaust as THREE.Object3D)
-					.getSize(new THREE.Vector3());
-				expect(Math.max(...exhaustSize.toArray())).toBeLessThan(
-					Math.max(...nacelleSize.toArray()) * 0.5,
-				);
+				const span = (object: THREE.Object3D) =>
+					Math.max(
+						...new THREE.Box3()
+							.setFromObject(object)
+							.getSize(new THREE.Vector3())
+							.toArray(),
+					);
+				let pairs = 0;
+				for (const drive of root.children) {
+					if (!drive.name.endsWith("-nacelle")) continue;
+					const stem = drive.name.slice(0, -"-nacelle".length);
+					const bell = root.children.find(
+						(child) => child.name === `${stem}-exhaust`,
+					);
+					if (!bell) continue;
+					pairs += 1;
+					expect(`${drive.name}: ${span(bell) < span(drive) * 0.5}`).toBe(
+						`${drive.name}: true`,
+					);
+				}
+				expect(pairs).toBeGreaterThanOrEqual(2);
 			}
 		}
 	});
@@ -272,33 +286,59 @@ describe("procedural ship visual language", () => {
 		// the canopy, which nothing caught because every other check measures a
 		// part against the hull rather than against the view out of it.
 		//
-		// Rings and hoops are exempt: they are deliberately open, and an
-		// axis-aligned box cannot see the hole in the middle of one. The rule is
-		// about solid volumes — a dish, a drum, a tank, a cargo bank.
-		const SOLID = /dish|drum|skip|hold|bin|habitat|refinery|tank|pannier|bank/;
+		// This was first written as an allowlist of part names, which is the
+		// wrong shape: it passed anything nobody had thought to add, and review
+		// named four such parts that slipped through. Everything is checked now
+		// but two exemptions, both decided by construction rather than by
+		// matching words that go stale the moment a part is renamed.
+		//
+		// A torus is open, and an axis-aligned box cannot see the hole in the
+		// middle of one. A strut is thin — `strut()` stamps `userData.thin` —
+		// and a pylon or a stay is something the pilot sees past rather than
+		// through.
+		//
+		// The hull the glass is set into is named, because no property tells it
+		// apart: the pilot looks over their own nose.
+		const OWN_HULL = /fuselage|cockpit|bridge|dorsal-hull|promenade/;
 		for (const id of HULL_IDS) {
 			for (const variant of HULL_VARIANT_IDS) {
 				const root = buildShipMesh(id, variant).root;
 				root.updateMatrixWorld(true);
 				const canopy = root.getObjectByName(id + "-cockpit") as THREE.Mesh;
-				const eye = new THREE.Box3()
-					.setFromObject(canopy)
-					.getCenter(new THREE.Vector3());
+				const glass = new THREE.Box3().setFromObject(canopy);
+				const eye = glass.getCenter(new THREE.Vector3());
+				// The sightline is as wide as the glass, not an infinitely thin
+				// line — the pilot sees a cone, and a hull parked just beside the
+				// axis blocks as much of it as one parked on the axis. Spread
+				// sideways only: sampling below the eye finds the structure the
+				// canopy stands on, which is not a blocked view on any ship.
+				const halfWidth = (glass.max.x - glass.min.x) / 2;
 				const reach = HULL_VISUALS[id].reachKm;
+				let checked = 0;
 				for (const child of root.children) {
-					if (!(child instanceof THREE.Mesh) || !SOLID.test(child.name))
+					if (!(child instanceof THREE.Mesh)) continue;
+					if (
+						child.geometry.type === "TorusGeometry" ||
+						child.geometry.userData.thin === true ||
+						OWN_HULL.test(child.name)
+					)
 						continue;
+					checked += 1;
 					const box = new THREE.Box3().setFromObject(child);
 					let blocked = false;
 					for (let step = 0; step <= 60; step += 1) {
 						const ahead = eye.z - (step / 60) * (reach + Math.abs(eye.z));
-						if (box.containsPoint(new THREE.Vector3(eye.x, eye.y, ahead)))
-							blocked = true;
+						for (const dx of [0, halfWidth, -halfWidth])
+							if (
+								box.containsPoint(new THREE.Vector3(eye.x + dx, eye.y, ahead))
+							)
+								blocked = true;
 					}
 					expect(`${id}/${variant} ${child.name} blocks view: ${blocked}`).toBe(
 						`${id}/${variant} ${child.name} blocks view: false`,
 					);
 				}
+				expect(checked).toBeGreaterThan(0);
 				// A cutter head is exempt from the solid rule because it is a ring,
 				// but a ring the pilot has to look through is still the wrong place
 				// for it: its top arc must clear the eye line.

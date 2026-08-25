@@ -15,6 +15,16 @@ import {
 	buildShipMesh,
 } from "./ship-mesh";
 
+/**
+ * The workbench's only top-level numeric constant, and it exists for that.
+ *
+ * `probe-guard.mjs` proves a probe is talking to a dev server serving *this*
+ * checkout by comparing top-level numeric literals in the guarded module, and
+ * `probe-model-viewer.mjs` guards on this file. All of the workbench's tuning
+ * lives inside `mountModelViewer`, so without one constant out here the guard
+ * has nothing to compare and refuses to run. Review read this as an unused
+ * export; deleting it took the probe red on the next run.
+ */
 export const MODEL_VIEWER_VERSION = 1;
 
 type ViewerState = {
@@ -173,13 +183,11 @@ export function mountModelViewer(): void {
 	const rebuild = () => {
 		if (mesh) {
 			holder.remove(mesh);
+			// Geometry only. Palettes are shared per role now, so a hull that
+			// disposed its materials would take out every other hull of that role
+			// — including the next one this workbench builds.
 			mesh.traverse((object) => {
-				if (!(object instanceof THREE.Mesh)) return;
-				object.geometry.dispose();
-				const materials = Array.isArray(object.material)
-					? object.material
-					: [object.material];
-				for (const material of materials) material.dispose();
+				if (object instanceof THREE.Mesh) object.geometry.dispose();
 			});
 		}
 		mesh = buildShipMesh(state.asset, state.variant).root;
