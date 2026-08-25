@@ -1,0 +1,146 @@
+/**
+ * THROWAWAY #48 combat balance model.  It has no world, renderer, persistence,
+ * collision, or AI ownership: it only makes the combat numbers flyable and
+ * measurable before a production combat system chooses those seams.
+ */
+export const COMBAT_PROTOTYPE_DEFAULTS = {
+	hull: 100,
+	shield: 60,
+	energy: 100,
+	heatLock: 100,
+	pulseDamagePerSecond: 3.6,
+	pulseEnergyPerSecond: 3,
+	pulseHeatPerSecond: 2,
+	beamDamagePerSecond: 7.2,
+	beamEnergyPerSecond: 18,
+	beamHeatPerSecond: 30,
+	energyRegenPerSecond: 12,
+	heatCoolPerSecond: 16,
+	shieldRechargePerSecond: 6,
+	lockSeconds: 1.5,
+	interdictionSeconds: 2.5,
+} as const;
+
+export type WeaponMode = "pulse" | "beam" | null;
+export interface CombatPrototypeState {
+	elapsed: number;
+	energy: number;
+	heat: number;
+	heatLocked: boolean;
+	foreShield: number;
+	aftShield: number;
+	targetForeShield: number;
+	targetAftShield: number;
+	targetHull: number;
+	missileLock: boolean;
+	lockProgress: number;
+	incomingMissile: boolean;
+	interdiction: boolean;
+	interdictionProgress: number;
+}
+export interface CombatPrototypeInput {
+	dt: number;
+	firing?: WeaponMode;
+	targetInCone?: boolean;
+	hitAft?: boolean;
+	incomingMissile?: boolean;
+	ecm?: boolean;
+	interdicting?: boolean;
+	breakAngle?: boolean;
+}
+
+export function createCombatPrototype(
+	overrides: Partial<CombatPrototypeState> = {},
+): CombatPrototypeState {
+	return {
+		elapsed: 0,
+		energy: COMBAT_PROTOTYPE_DEFAULTS.energy,
+		heat: 0,
+		heatLocked: false,
+		foreShield: COMBAT_PROTOTYPE_DEFAULTS.shield,
+		aftShield: COMBAT_PROTOTYPE_DEFAULTS.shield,
+		targetForeShield: COMBAT_PROTOTYPE_DEFAULTS.shield,
+		targetAftShield: COMBAT_PROTOTYPE_DEFAULTS.shield,
+		targetHull: COMBAT_PROTOTYPE_DEFAULTS.hull,
+		missileLock: false,
+		lockProgress: 0,
+		incomingMissile: false,
+		interdiction: false,
+		interdictionProgress: 0,
+		...overrides,
+	};
+}
+
+const clamp = (value: number, max: number) => Math.max(0, Math.min(max, value));
+
+export function stepCombatPrototype(
+	state: CombatPrototypeState,
+	input: CombatPrototypeInput,
+): CombatPrototypeState {
+	const dt = Math.max(0, input.dt);
+	let next = { ...state, elapsed: state.elapsed + dt };
+	const coneHeld = input.targetInCone ?? true;
+	next.lockProgress = coneHeld
+		? Math.min(COMBAT_PROTOTYPE_DEFAULTS.lockSeconds, next.lockProgress + dt)
+		: 0;
+	next.missileLock = next.lockProgress >= COMBAT_PROTOTYPE_DEFAULTS.lockSeconds;
+	if (input.incomingMissile) next.incomingMissile = true;
+	if (input.ecm) next.incomingMissile = false;
+	next.interdictionProgress =
+		input.interdicting && !input.breakAngle
+			? Math.min(
+					COMBAT_PROTOTYPE_DEFAULTS.interdictionSeconds,
+					next.interdictionProgress + dt,
+				)
+			: 0;
+	next.interdiction =
+		next.interdictionProgress >= COMBAT_PROTOTYPE_DEFAULTS.interdictionSeconds;
+	const weapon = input.firing ?? null;
+	const canFire = weapon !== null && !next.heatLocked && next.energy > 0;
+	if (canFire) {
+		const beam = weapon === "beam";
+		const energyCost =
+			(beam
+				? COMBAT_PROTOTYPE_DEFAULTS.beamEnergyPerSecond
+				: COMBAT_PROTOTYPE_DEFAULTS.pulseEnergyPerSecond) * dt;
+		if (next.energy >= energyCost) {
+			next.energy -= energyCost;
+			next.heat +=
+				(beam
+					? COMBAT_PROTOTYPE_DEFAULTS.beamHeatPerSecond
+					: COMBAT_PROTOTYPE_DEFAULTS.pulseHeatPerSecond) * dt;
+			const damage =
+				(beam
+					? COMBAT_PROTOTYPE_DEFAULTS.beamDamagePerSecond
+					: COMBAT_PROTOTYPE_DEFAULTS.pulseDamagePerSecond) * dt;
+			const shieldKey = input.hitAft ? "targetAftShield" : "targetForeShield";
+			const shield = next[shieldKey];
+			next[shieldKey] = clamp(
+				shield - damage,
+				COMBAT_PROTOTYPE_DEFAULTS.shield,
+			);
+			next.targetHull = clamp(
+				next.targetHull - Math.max(0, damage - shield),
+				COMBAT_PROTOTYPE_DEFAULTS.hull,
+			);
+		}
+	} else {
+		next.energy = clamp(
+			next.energy + COMBAT_PROTOTYPE_DEFAULTS.energyRegenPerSecond * dt,
+			COMBAT_PROTOTYPE_DEFAULTS.energy,
+		);
+		next.heat = clamp(
+			next.heat - COMBAT_PROTOTYPE_DEFAULTS.heatCoolPerSecond * dt,
+			COMBAT_PROTOTYPE_DEFAULTS.heatLock,
+		);
+	}
+	next.heatLocked =
+		next.heat >= COMBAT_PROTOTYPE_DEFAULTS.heatLock ||
+		(next.heatLocked && next.heat > COMBAT_PROTOTYPE_DEFAULTS.heatLock * 0.5);
+	const lower = next.foreShield <= next.aftShield ? "foreShield" : "aftShield";
+	next[lower] = clamp(
+		next[lower] + COMBAT_PROTOTYPE_DEFAULTS.shieldRechargePerSecond * dt,
+		COMBAT_PROTOTYPE_DEFAULTS.shield,
+	);
+	return next;
+}
