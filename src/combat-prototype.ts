@@ -117,24 +117,33 @@ export function stepCombatPrototype(
 				: COMBAT_PROTOTYPE_DEFAULTS.pulseEnergyPerSecond) * dt;
 		if (next.energy >= energyCost) {
 			next.energy -= energyCost;
-			next.heat +=
-				(beam
-					? COMBAT_PROTOTYPE_DEFAULTS.beamHeatPerSecond
-					: COMBAT_PROTOTYPE_DEFAULTS.pulseHeatPerSecond) * dt;
-			const damage =
-				(beam
-					? COMBAT_PROTOTYPE_DEFAULTS.beamDamagePerSecond
-					: COMBAT_PROTOTYPE_DEFAULTS.pulseDamagePerSecond) * dt;
-			const shieldKey = input.hitAft ? "targetAftShield" : "targetForeShield";
-			const shield = next[shieldKey];
-			next[shieldKey] = clamp(
-				shield - damage,
-				COMBAT_PROTOTYPE_DEFAULTS.shield,
+			next.heat = clamp(
+				next.heat +
+					(beam
+						? COMBAT_PROTOTYPE_DEFAULTS.beamHeatPerSecond
+						: COMBAT_PROTOTYPE_DEFAULTS.pulseHeatPerSecond) *
+						dt,
+				COMBAT_PROTOTYPE_DEFAULTS.heatLock,
 			);
-			next.targetHull = clamp(
-				next.targetHull - Math.max(0, damage - shield),
-				COMBAT_PROTOTYPE_DEFAULTS.hull,
-			);
+			// A held trigger still costs energy and adds heat when the strafe leaves
+			// the sightline, but it cannot damage a target the fixed forward weapon
+			// does not point at.
+			if (coneHeld) {
+				const damage =
+					(beam
+						? COMBAT_PROTOTYPE_DEFAULTS.beamDamagePerSecond
+						: COMBAT_PROTOTYPE_DEFAULTS.pulseDamagePerSecond) * dt;
+				const shieldKey = input.hitAft ? "targetAftShield" : "targetForeShield";
+				const shield = next[shieldKey];
+				next[shieldKey] = clamp(
+					shield - damage,
+					COMBAT_PROTOTYPE_DEFAULTS.shield,
+				);
+				next.targetHull = clamp(
+					next.targetHull - Math.max(0, damage - shield),
+					COMBAT_PROTOTYPE_DEFAULTS.hull,
+				);
+			}
 		}
 	} else {
 		next.energy = clamp(
@@ -149,7 +158,6 @@ export function stepCombatPrototype(
 	next.heatLocked =
 		next.heat >= COMBAT_PROTOTYPE_DEFAULTS.heatLock ||
 		(next.heatLocked && next.heat > COMBAT_PROTOTYPE_DEFAULTS.heatLock * 0.5);
-	const lower = next.foreShield <= next.aftShield ? "foreShield" : "aftShield";
 	if (input.enemyFiring) {
 		const damage = COMBAT_PROTOTYPE_DEFAULTS.enemyDamagePerSecond * dt;
 		const shield = next.foreShield;

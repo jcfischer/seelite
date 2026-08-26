@@ -12,9 +12,8 @@ const VIEWPORTS = [
 	{ name: "narrow", width: 390, height: 844 },
 ];
 const PIXEL_CHANNEL_TOLERANCE = 3;
-const ETA_READOUT =
-	/^ETA (?:<1s|\d+(?:\.\d+)?(?:s|min|h|d))  CHARGE \d+\.\d AU$/;
-const ETA_READOUT_SOURCE = ETA_READOUT.source;
+const COMBAT_READOUT = /^LOCK (?:READY|\d+%) · (?:MISSILE WARNING|CLEAR)$/;
+const COMBAT_READOUT_SOURCE = COMBAT_READOUT.source;
 const PULSE_READOUT = /^F \d+ A \d+ · E \d+ · H \d+ PULSE$/;
 
 function textPixelsMatch(canvas, renderedText) {
@@ -73,7 +72,7 @@ function textPixelsMatch(canvas, renderedText) {
 	return glyphPixels > 0;
 }
 
-const PROBE_MATCHERS_SCRIPT = `const PIXEL_CHANNEL_TOLERANCE = ${PIXEL_CHANNEL_TOLERANCE}; globalThis.__seeliteTextPixelsMatch = ${textPixelsMatch}; globalThis.__seeliteEtaReadout = new RegExp(${JSON.stringify(ETA_READOUT_SOURCE)});`;
+const PROBE_MATCHERS_SCRIPT = `const PIXEL_CHANNEL_TOLERANCE = ${PIXEL_CHANNEL_TOLERANCE}; globalThis.__seeliteTextPixelsMatch = ${textPixelsMatch}; globalThis.__seeliteCombatReadout = new RegExp(${JSON.stringify(COMBAT_READOUT_SOURCE)});`;
 
 function measureLiveCockpit() {
 	const visible = (selector) => {
@@ -244,13 +243,16 @@ const { check, watch, exit } = tally();
 for (const viewport of VIEWPORTS) {
 	const page = await browser.newPage({ viewport });
 	watch(page, viewport.name);
+	page.on("pageerror", (error) =>
+		check(`${viewport.name}: no page error (${error.message})`, false),
+	);
 	await page.goto(`${ORIGIN}/?seed=42`, { waitUntil: "load" });
 	await page.addScriptTag({ content: PROBE_MATCHERS_SCRIPT });
 	await page.waitForFunction(
 		() =>
 			window.__seelite?.frames > 1 &&
 			document.querySelector("[data-live-cockpit]") &&
-			globalThis.__seeliteEtaReadout.test(
+			globalThis.__seeliteCombatReadout.test(
 				window.__seelite.cockpit.targetInstrument.secondaryText.text,
 			),
 	);
@@ -328,7 +330,7 @@ for (const viewport of VIEWPORTS) {
 			forward.physicalInstruments === 3 &&
 			!forward.forwardFloor &&
 			forward.targetInstrumentSecondaryText &&
-			ETA_READOUT.test(forward.targetInstrumentSecondaryReadout ?? "") &&
+			COMBAT_READOUT.test(forward.targetInstrumentSecondaryReadout ?? "") &&
 			forward.throttleFill > 0 &&
 			forward.hologramRings >= 7 &&
 			forward.hologramContacts === forward.contacts * 2 &&
@@ -398,7 +400,7 @@ for (const viewport of VIEWPORTS) {
 		const game = window.__seelite;
 		return (
 			game.targetRange() > 3600 * 2 &&
-			globalThis.__seeliteEtaReadout.test(
+			globalThis.__seeliteCombatReadout.test(
 				game.cockpit.targetInstrument.secondaryText.text,
 			) &&
 			game.cockpitPrompt.text.includes("press J to cruise")
@@ -406,11 +408,11 @@ for (const viewport of VIEWPORTS) {
 	});
 	const distant = await page.evaluate(measureLiveCockpit);
 	check(
-		`${viewport.name}: a distant target renders ETA on its physical panel and cruise guidance on the glass`,
+		`${viewport.name}: a distant target renders combat lock status and cruise guidance on the glass`,
 		distant.targetRangeKm > 3600 * 2 &&
 			distant.targetInstrumentSecondaryText &&
 			distant.cruisePromptText &&
-			ETA_READOUT.test(distant.targetInstrumentSecondaryReadout ?? "") &&
+			COMBAT_READOUT.test(distant.targetInstrumentSecondaryReadout ?? "") &&
 			distant.cruisePromptReadout.includes("press J to cruise"),
 		`range ${distant.targetRangeKm}; target-panel ${distant.targetInstrumentSecondaryReadout}; prompt ${distant.cruisePromptReadout}; text match ${distant.targetInstrumentSecondaryText}/${distant.cruisePromptText}`,
 	);

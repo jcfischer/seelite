@@ -11,10 +11,11 @@ test("starter pulse fire destroys an unshielded hull within the pacing target", 
 		targetForeShield: 0,
 		targetAftShield: 0,
 	});
-	for (let elapsed = 0; elapsed < 30; elapsed += 0.1)
+	for (let elapsed = 0; elapsed < 30 && state.targetHull > 0; elapsed += 0.1)
 		state = stepCombatPrototype(state, { dt: 0.1, firing: "pulse" });
 	expect(state.targetHull).toBe(0);
 	expect(state.elapsed).toBeGreaterThanOrEqual(20);
+	expect(state.elapsed).toBeLessThanOrEqual(30);
 });
 
 test("beam trades faster damage for a heat lockout", () => {
@@ -22,6 +23,27 @@ test("beam trades faster damage for a heat lockout", () => {
 	for (let elapsed = 0; elapsed < 4; elapsed += 0.1)
 		state = stepCombatPrototype(state, { dt: 0.1, firing: "beam" });
 	expect(state.heatLocked).toBe(true);
+});
+
+test("weapon heat never exceeds the instrument scale", () => {
+	const state = stepCombatPrototype(createCombatPrototype(), {
+		dt: 3.4,
+		firing: "beam",
+	});
+	expect(state.heat).toBeLessThanOrEqual(COMBAT_PROTOTYPE_DEFAULTS.heatLock);
+});
+
+test("an off-cone shot spends resources without damaging the target", () => {
+	const state = stepCombatPrototype(createCombatPrototype(), {
+		dt: 1,
+		firing: "pulse",
+		targetInCone: false,
+	});
+	expect(state.energy).toBeLessThan(COMBAT_PROTOTYPE_DEFAULTS.energy);
+	expect(state.heat).toBeGreaterThan(0);
+	expect(state.targetForeShield).toBe(COMBAT_PROTOTYPE_DEFAULTS.shield);
+	expect(state.targetAftShield).toBe(COMBAT_PROTOTYPE_DEFAULTS.shield);
+	expect(state.targetHull).toBe(COMBAT_PROTOTYPE_DEFAULTS.hull);
 });
 
 test("a broken acquisition cone clears missile lock and ECM clears a warning", () => {

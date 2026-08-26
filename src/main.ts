@@ -75,6 +75,7 @@ import { starField } from "./backdrop";
 import { SettingsStore } from "./settings";
 import { AudioFX } from "./audio";
 import {
+	COMBAT_PROTOTYPE_DEFAULTS,
 	createCombatPrototype,
 	duelTargetInCone,
 	stepCombatPrototype,
@@ -665,6 +666,10 @@ class Game {
 	private readonly keys = new Set<string>();
 	/** Throwaway #48 balance state: it is not world or persistent combat state. */
 	combat: CombatPrototypeState = createCombatPrototype();
+	/** Prototype chrome is opt-in, so the normal flight HUD stays production-only. */
+	private readonly combatPrototypeEnabled = new URLSearchParams(
+		window.location.search,
+	).has("combat");
 	private combatIncoming = false;
 	private combatEcm = false;
 	readonly audio = new AudioFX();
@@ -2081,7 +2086,7 @@ class Game {
 				? " PULSE"
 				: "";
 		const combatText = `F ${combat.foreShield.toFixed(0)} A ${combat.aftShield.toFixed(0)} · E ${combat.energy.toFixed(0)} · H ${combat.heat.toFixed(0)}${combat.heatLocked ? " LOCK" : ""}${firing}`;
-		const targetCombat = `ETA ${eta} · LOCK ${combat.missileLock ? "READY" : `${((combat.lockProgress * 100) / 1.5).toFixed(0)}%`} · ${combat.incomingMissile ? "MISSILE WARNING" : "CLEAR"}`;
+		const targetCombat = `LOCK ${combat.missileLock ? "READY" : `${((combat.lockProgress * 100) / COMBAT_PROTOTYPE_DEFAULTS.lockSeconds).toFixed(0)}%`} · ${combat.incomingMissile ? "MISSILE WARNING" : "CLEAR"}`;
 		const key = `${speed}|${velocity.context}|${targetText}|${eta}|${this.throttle}|${this.assist}|${this.chargeAu}|${combatText}|${targetCombat}`;
 		if (key === this.cockpit.instrumentKey) return;
 		this.cockpit.instrumentKey = key;
@@ -2133,7 +2138,7 @@ class Game {
 			this.cockpit.targetInstrument,
 			"TARGET",
 			targetText,
-			`ETA ${eta}  CHARGE ${this.chargeAu.toFixed(1)} AU`,
+			targetCombat,
 			"#ffd17a",
 		);
 		this.cockpit.flightInstrument.texture.needsUpdate = true;
@@ -3083,15 +3088,16 @@ class Game {
 		this.updateLocalFrameBody();
 		// #48 deliberately couples no combat entity to the world yet: this is a
 		// flyable balance rig over the shared flight loop, not production combat.
+		const targetInCone = duelTargetInCone(this.combat.elapsed);
 		this.combat = stepCombatPrototype(this.combat, {
 			dt,
 			firing: this.keys.has("b") ? "beam" : this.keys.has(" ") ? "pulse" : null,
-			targetInCone: duelTargetInCone(this.combat.elapsed),
+			targetInCone,
 			incomingMissile: this.combatIncoming,
 			ecm: this.combatEcm,
 			interdicting: this.regime === "cruise",
 			breakAngle: this.keys.has("q") || this.keys.has("e"),
-			enemyFiring: this.combat.targetHull > 0,
+			enemyFiring: this.combat.targetHull > 0 && targetInCone,
 		});
 		this.combatIncoming = false;
 		this.combatEcm = false;
@@ -3907,27 +3913,29 @@ class Game {
 		} else {
 			this.cockpitPrompt.reset();
 		}
-		ctx.font = "12px ui-monospace, monospace";
-		ctx.fillStyle = "rgba(255, 214, 120, 0.9)";
-		ctx.textAlign = "center";
-		ctx.fillText(
-			"COMBAT PROTOTYPE — hold SPACE pulse · B beam · Z warning · R ECM",
-			w / 2,
-			h * 0.72,
-		);
-		ctx.fillStyle = "rgba(255, 115, 130, 0.95)";
-		ctx.fillText(
-			`TARGET  SHIELDS F ${this.combat.targetForeShield.toFixed(0)}  A ${this.combat.targetAftShield.toFixed(0)}  HULL ${this.combat.targetHull.toFixed(0)}`,
-			w / 2,
-			h * 0.76,
-		);
-		ctx.fillStyle = "rgba(116, 234, 255, 0.95)";
-		ctx.fillText(
-			`PLAYER  SHIELDS F ${this.combat.foreShield.toFixed(0)}  A ${this.combat.aftShield.toFixed(0)}  HULL ${this.combat.playerHull.toFixed(0)}`,
-			w / 2,
-			h * 0.8,
-		);
-		ctx.textAlign = "left";
+		if (this.combatPrototypeEnabled) {
+			ctx.font = "12px ui-monospace, monospace";
+			ctx.fillStyle = "rgba(255, 214, 120, 0.9)";
+			ctx.textAlign = "center";
+			ctx.fillText(
+				"COMBAT PROTOTYPE — hold SPACE pulse · B beam · Z warning · R ECM",
+				w / 2,
+				h * 0.72,
+			);
+			ctx.fillStyle = "rgba(255, 115, 130, 0.95)";
+			ctx.fillText(
+				`TARGET  SHIELDS F ${this.combat.targetForeShield.toFixed(0)}  A ${this.combat.targetAftShield.toFixed(0)}  HULL ${this.combat.targetHull.toFixed(0)}`,
+				w / 2,
+				h * 0.76,
+			);
+			ctx.fillStyle = "rgba(116, 234, 255, 0.95)";
+			ctx.fillText(
+				`PLAYER  SHIELDS F ${this.combat.foreShield.toFixed(0)}  A ${this.combat.aftShield.toFixed(0)}  HULL ${this.combat.playerHull.toFixed(0)}`,
+				w / 2,
+				h * 0.8,
+			);
+			ctx.textAlign = "left";
+		}
 
 		// The selected target owns the amber sky marker. Green remains prograde,
 		// and the other bodies stay cool blue navigation context.
