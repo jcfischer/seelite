@@ -29,12 +29,13 @@
  *    hand-picked number left, how many multiples of that floor a gap must
  *    clear, is swept rather than declared.
  *
- *    And the claim is scoped to the classes **this system generates**, which is
- *    not all nine: `ice` is unreachable from the generator by construction
- *    (`tests/planet-appearance.test.ts` asserts it), and any class seed 1 does
- *    not produce cannot fail this check. The gallery — `probe-planets.mjs` —
- *    owns the all-nine comparison; what is asked here is whether the *live
- *    path* draws what it was given.
+ *    And the claim is scoped to the classes **this system generates**, which
+ *    the check names in its own output rather than leaving to this comment.
+ *    `ice` is unreachable from the generator by construction
+ *    (`tests/planet-appearance.test.ts` asserts it), and any class the seed does
+ *    not produce cannot fail here. The gallery — `probe-planets.mjs` — owns the
+ *    all-nine comparison; what is asked here is whether the *live path* draws
+ *    what it was given.
  *
  *    Two stronger checks were tried here and withdrawn, and the withdrawals are
  *    recorded beside the code because both look obvious to write again. A
@@ -108,22 +109,27 @@ import {
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
 /**
- * Seed 15, chosen for **class coverage** rather than for being the world other
+ * Seed 6, chosen for **class coverage** rather than for being the world other
  * probes reason about.
  *
  * The other probes use seed 1, and this one did too until its own class-scope
- * reporting made the cost visible: seed 1's start system generates three lit
- * classes. Seed 15's generates six — airless, desert, jovian, lava, terran,
- * venusian — which is every class reachable from the generator except
- * `iceGiant`, and it is the harder test besides: lava, venusian and desert are
- * three warm rocky worlds, so a colour-and-contrast descriptor has somewhere to
- * confuse itself.
+ * reporting made the cost visible: seed 1's start system draws three lit
+ * classes, so five of the reachable ones could never fail a check here.
  *
- * Scanned rather than picked: the first sixty seeds' start systems were counted
- * by class and this is the widest. That scan is not kept, because its answer is
- * this constant.
+ * Seed 6's start system draws six — airless, desert, iceGiant, jovian, terran
+ * and venusian — which is every class the generator can reach except `lava`
+ * and the unreachable `ice`. Scanned rather than picked: the first two hundred
+ * seeds were run through `makeWorld`, which is the path the game itself takes,
+ * and counted by class.
+ *
+ * That scan is not kept, because its answer is this constant — but the
+ * *shipped* run prints the classes it actually found, so a claim here that
+ * stops being true is contradicted by the probe's own output rather than
+ * standing. It already happened once: an earlier revision named six classes for
+ * a seed that drew four, because the scan behind it read `galaxy.systems[0]`
+ * rather than the start system `makeWorld` picks.
  */
-const URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=15`;
+const URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=6`;
 
 const VIEW = { width: 900, height: 900 };
 
@@ -151,6 +157,18 @@ const GRID = 5;
 
 const installHelpers = (page) =>
 	page.addInitScript(() => {
+		/** Unit vector, and the cross product. One spelling each: the same
+		 *  normalisation was written out three times in this file. */
+		const norm = (v) => {
+			const n = Math.hypot(v[0], v[1], v[2]) || 1;
+			return [v[0] / n, v[1] / n, v[2] / n];
+		};
+		const cross = (a, b) => [
+			a[1] * b[2] - a[2] * b[1],
+			a[2] * b[0] - a[0] * b[2],
+			a[0] * b[1] - a[1] * b[0],
+		];
+
 		/** The drawn object for a body, whichever layer it is currently in. */
 		window.__meshOf = (id) =>
 			window.__seelite.nearScene.getObjectByName(id) ??
@@ -168,8 +186,7 @@ const installHelpers = (page) =>
 		window.__lookAtFrom = (bodyId, dir, radii) => {
 			const g = window.__seelite;
 			const body = g.world.system.bodies.find((b) => b.id === bodyId);
-			const n = Math.hypot(dir[0], dir[1], dir[2]) || 1;
-			const u = [dir[0] / n, dir[1] / n, dir[2] / n];
+			const u = norm(dir);
 			const range = body.radiusKm * radii;
 			g.world.ship.pos = {
 				x: body.pos.x + u[0] * range,
@@ -181,6 +198,32 @@ const installHelpers = (page) =>
 			g.orientation.setFromUnitVectors(
 				new V(0, 0, -1),
 				new V(-u[0], -u[1], -u[2]),
+			);
+		};
+
+		/**
+		 * Stand `radii` body radii off `bodyId` on its **night** side, looking
+		 * back at it.
+		 *
+		 * The falsifying view for "each body is lit from its own star". A shader
+		 * that ignored `sunDir` — or one lit from the camera, which is what the
+		 * scene's own directional lights do — draws this disc as bright as the
+		 * day side. One lit from the star draws almost nothing.
+		 */
+		window.__viewNightSide = (bodyId, radii) => {
+			const g = window.__seelite;
+			const body = g.world.system.bodies.find((b) => b.id === bodyId);
+			const star = g.world.system.bodies.find((b) => b.kind === "star");
+			// Directly away from the star, so the whole visible hemisphere is the
+			// one the star cannot see.
+			window.__lookAtFrom(
+				bodyId,
+				[
+					body.pos.x - star.pos.x,
+					body.pos.y - star.pos.y,
+					body.pos.z - star.pos.z,
+				],
+				radii,
 			);
 		};
 
@@ -209,15 +252,6 @@ const installHelpers = (page) =>
 			// Any two axes perpendicular to it. Which two does not matter — the
 			// longitude sweeps the whole circle they span.
 			const up = Math.abs(sy) < 0.9 ? [0, 1, 0] : [1, 0, 0];
-			const cross = (a, b) => [
-				a[1] * b[2] - a[2] * b[1],
-				a[2] * b[0] - a[0] * b[2],
-				a[0] * b[1] - a[1] * b[0],
-			];
-			const norm = (v) => {
-				const n = Math.hypot(v[0], v[1], v[2]) || 1;
-				return [v[0] / n, v[1] / n, v[2] / n];
-			};
 			const e1 = norm(cross([sx, sy, sz], up));
 			const e2 = norm(cross([sx, sy, sz], e1));
 			// 55° off the body-star axis: enough of a terminator that relief and
@@ -472,33 +506,67 @@ console.log(
 	`\n  drawn: ${spheres.map((b) => `${b.id}=${b.visual?.surface}`).join(", ")}\n`,
 );
 
-/* 2. Each body is lit from its own star. */
-const lighting = await page.evaluate(() => {
-	const g = window.__seelite;
-	const star = g.world.system.bodies.find((b) => b.kind === "star");
-	return g.world.system.bodies
-		.filter((b) => b.kind === "planet" || b.kind === "moon")
-		.map((b) => {
-			const v = g.visualOfBody(b.id);
-			const dx = star.pos.x - b.pos.x;
-			const dy = star.pos.y - b.pos.y;
-			const dz = star.pos.z - b.pos.z;
-			const d = Math.hypot(dx, dy, dz) || 1;
-			// The cosine between the direction the shader was given and the
-			// direction to the star from *this body*. Anything but 1 is a body lit
-			// from somewhere it is not.
-			return {
-				id: b.id,
-				cos:
-					(v.sunDir.x * dx) / d + (v.sunDir.y * dy) / d + (v.sunDir.z * dz) / d,
-			};
-		});
-});
-const worstCos = Math.min(...lighting.map((l) => l.cos));
+/* 2. Each body is lit from its own star, measured on the pixels. */
+
+/*
+ * The renderer *writes* a per-body sun direction, and an earlier version of
+ * this check read that uniform back and compared it to the same body→star
+ * formula `main.ts` had just used. That confirmed an assignment, not a render:
+ * `worst cos = 1.000000` for every body was the circularity showing, and a
+ * shader that ignored `sunDir` entirely and drew every disc full would have
+ * passed it green.
+ *
+ * What falsifies the claim is the **night side**. A body lit from its own star
+ * is nearly black from directly anti-sunward; one lit from the camera, which is
+ * what the scene's own directional lights do, or one ignoring the direction
+ * altogether, is as bright from there as from anywhere.
+ */
+const lighting = [];
+for (const body of spheres) {
+	if (body.kind === "star") continue;
+	await page.evaluate(
+		([id, radii]) => window.__viewBody(id, radii, 0),
+		[body.id, READ_RADII],
+	);
+	const day = await page.evaluate(
+		([id, inset]) => window.__innerDiscStats(id, inset),
+		[body.id, 1 / 3],
+	);
+	await page.evaluate(
+		([id, radii]) => window.__viewNightSide(id, radii),
+		[body.id, READ_RADII],
+	);
+	const night = await page.evaluate(
+		([id, inset]) => window.__innerDiscStats(id, inset),
+		[body.id, 1 / 3],
+	);
+	lighting.push({
+		id: body.id,
+		surface: body.visual.surface,
+		day: day.mean,
+		night: night.mean,
+	});
+}
+
+console.log("\n  disc brightness, sunward face against night face");
+for (const row of lighting)
+	console.log(
+		`    ${row.id.padEnd(18)} ${row.surface.padEnd(9)} ` +
+			`day ${row.day.toFixed(0).padStart(4)}   night ${row.night.toFixed(0).padStart(4)}   ` +
+			`ratio ${(row.night / Math.max(1, row.day)).toFixed(3)}`,
+	);
+
+const worstRatio = Math.max(
+	...lighting.map((l) => l.night / Math.max(1, l.day)),
+);
 check(
-	"every body's shader is lit from its own star",
-	worstCos > 0.99999,
-	`worst cos = ${worstCos.toFixed(6)}`,
+	"every body's night side is dark, so it is lit from its star and not the camera",
+	// A quarter is generous against a shader that ignores the direction, which
+	// would land at 1.0, and slack enough for the classes that legitimately glow
+	// in the dark — lava's emission and a thick atmosphere's wrapped light both
+	// put real brightness past the terminator.
+	lighting.length > 0 && worstRatio < 0.25,
+	`worst night/day ratio ${worstRatio.toFixed(3)} over ${lighting.length} bodies`,
 );
 
 /* 3. The classes read as different worlds, in the game. */
@@ -642,15 +710,18 @@ for (const body of usable) {
  * How many multiples of the repeat noise a class gap has to clear.
  *
  * At 1× the check would ask only that two classes differ at all, which is a
- * weaker claim than "render alike" implies. 5 is a hand-picked number like any
- * other, so it is swept below rather than declared — the failure that got the
- * separation check withdrawn was an unswept constant, and repeating it one
- * check to the left would be learning nothing.
+ * weaker claim than "render alike" implies.
+ *
+ * 5 is a floor on a *measured ratio*, not a tuning dial, and the difference is
+ * what the sweep below prints: the gap sits at 6 to 11 times the noise across
+ * every weight, so where in that range the bar is put does not decide anything.
+ * An earlier revision swept this constant too, over [2, 5, 10, 20] — but those
+ * were four numbers nobody derived, and reporting ✓/✗ against them said less
+ * than printing the ratio does. What is worth sweeping is `SPREAD_WEIGHT`,
+ * which changes the descriptor; this only changes where the line is drawn under
+ * it.
  */
 const NOISE_MARGIN = 5;
-/** Margins the verdict is re-derived at, for the same reason as
- *  `WEIGHT_SWEEP`. */
-const MARGIN_SWEEP = [2, 5, 10, 20];
 
 const descriptorsAt = (weight) =>
 	new Map(usable.map((body) => [body.id, describe(body.views, weight)]));
@@ -674,11 +745,32 @@ const descriptorsAt = (weight) =>
 const repeatOf = (body) => sweepViews(body);
 
 const noiseBodies = usable.slice(0, 3);
-let repeatNoise = 0;
-for (const body of noiseBodies) {
-	const d = distance(describe(body.views), describe(await repeatOf(body)));
-	if (d > repeatNoise) repeatNoise = d;
-}
+// The second reading is taken once and kept, so the floor can be re-derived at
+// any weight from the same pixels. Re-measuring per weight would fold the
+// browser's own variation into the sweep and confound the two.
+for (const body of noiseBodies) body.repeat = await repeatOf(body);
+
+/**
+ * The floor, **at the weight being asked about**.
+ *
+ * The weight scales the descriptor's fourth component on *both* sides of the
+ * comparison, so a sweep that raised the weight for the gap and left the floor
+ * at `SPREAD_WEIGHT` would inflate the gap against a fixed bar — a sweep biased
+ * towards passing, which is the exact failure the sweep was added to catch, and
+ * which it shipped with for a round.
+ */
+const noiseAt = (weight) => {
+	let worst = 0;
+	for (const body of noiseBodies) {
+		const d = distance(
+			describe(body.views, weight),
+			describe(body.repeat, weight),
+		);
+		if (d > worst) worst = d;
+	}
+	return worst;
+};
+const repeatNoise = noiseAt(SPREAD_WEIGHT);
 
 const verdict = descriptorsAt(SPREAD_WEIGHT);
 for (const body of usable) body.all = verdict.get(body.id);
@@ -718,18 +810,21 @@ for (const body of usable)
  */
 console.log("\n  class gaps against the repeat-measurement noise floor");
 let robust = 0;
-let cells = 0;
 for (const weight of WEIGHT_SWEEP) {
 	const { best: closest } = closestAt(descriptorsAt(weight));
-	const verdicts = MARGIN_SWEEP.map((margin) => {
-		cells++;
-		const ok = Number.isFinite(closest) && closest > repeatNoise * margin;
-		if (ok) robust++;
-		return `${margin}×${ok ? "\u2713" : "\u2717"}`;
-	});
+	// The floor moves with the weight, because the weight scales the
+	// descriptor's fourth component on *both* sides of the comparison. A fixed
+	// floor inflated the gap against a fixed bar and reported a clean sweep that
+	// was biased towards passing — the exact failure the sweep exists to catch,
+	// shipped inside the sweep itself for one round.
+	const floor = noiseAt(weight);
+	const ratio = closest / Math.max(1e-9, floor);
+	const ok = Number.isFinite(ratio) && ratio >= NOISE_MARGIN;
+	if (ok) robust++;
 	console.log(
 		`    weight ${String(weight).padStart(2)}  closest pair ${closest.toFixed(1).padStart(5)}  ` +
-			`margins ${verdicts.join("  ")}`,
+			`floor ${floor.toFixed(2).padStart(5)}  ratio ${ratio.toFixed(1).padStart(5)}×  ` +
+			`${ok ? "clear" : "BELOW THE MARGIN"}`,
 	);
 }
 
@@ -745,10 +840,10 @@ check(
 		`noise floor of ${repeatNoise.toFixed(1)} × ${NOISE_MARGIN}`,
 );
 check(
-	"and that does not turn on either constant",
-	robust === cells,
-	`clear at ${robust}/${cells} of weight [${WEIGHT_SWEEP.join(", ")}] × ` +
-		`margin [${MARGIN_SWEEP.join(", ")}]`,
+	"and that does not turn on the spread weight",
+	robust === WEIGHT_SWEEP.length,
+	`gap stays at least ${NOISE_MARGIN}× the floor at ` +
+		`${robust}/${WEIGHT_SWEEP.length} weights in [${WEIGHT_SWEEP.join(", ")}]`,
 );
 
 /* 3b. The star survives the bloom. */
@@ -801,59 +896,38 @@ check(
 );
 
 /* 4. The budget, per layer, on the class that costs the most. */
-
-/**
- * The budget is taken on **seed 1**, in a second page, and the seed is the
- * point.
- *
- * `?seed=15` above is chosen for class coverage and its start system has no
- * moon in it — so measuring the budget there would measure whatever body
- * happened to be first in the list, and an earlier revision of this section
- * silently reported the *star* under a heading that said "the worst class".
- * The airless class is the expensive one (`planet-classes.glsl.ts`: 135 cell
- * tests per fragment per impact octave), so the budget is only worth taking
- * where one exists.
- */
-const BUDGET_URL = process.env.PROBE_BUDGET_URL ?? `${ORIGIN}/?seed=1`;
 const RANGES = [
 	["near (a body filling the screen)", 3],
 	["approach", 60],
 	["far", 4000],
 ];
 
-const budgetPage = await browser.newPage({ viewport: VIEW });
-watch(budgetPage);
-await installHelpers(budgetPage);
-await budgetPage.goto(BUDGET_URL, { waitUntil: "domcontentloaded" });
-await bootedGame(budgetPage);
-
-const budgetBodies = await budgetPage.evaluate(() => {
-	const g = window.__seelite;
-	return g.world.system.bodies
-		.filter((b) => b.kind !== "station")
-		.map((b) => ({ id: b.id, surface: g.visualOfBody(b.id)?.surface }));
-});
-const airless = budgetBodies.find((b) => b.surface === "airless");
+// The airless class is the expensive one (`planet-classes.glsl.ts`: 135 cell
+// tests per fragment per impact octave), so a budget taken anywhere else is a
+// budget about some other question. Checked rather than assumed: an earlier
+// revision fell back to whatever body came first and reported the *star* under
+// a heading that said "the worst class".
+const airless = spheres.find((b) => b.visual?.surface === "airless");
 check(
 	"the budget is taken on the class that costs the most",
 	Boolean(airless),
 	airless
 		? `${airless.id} is airless, the crater-bearing class`
-		: `${BUDGET_URL} has no airless body — the figures below would be about ` +
-				"some other class and are not worth reading",
+		: `${URL} draws no airless body — the figures below would be about some ` +
+				"other class and are not worth reading",
 );
 
 if (airless) {
 	console.log("\n  frame budget — software rasteriser, a floor not a forecast");
 	console.log(`  ${airless.id} (airless), alone in the frame and in company`);
 	for (const [label, radii] of RANGES) {
-		const row = await budgetPage.evaluate(
+		const row = await page.evaluate(
 			([id, r]) => {
 				window.__viewBody(id, r, 0);
 				const g = window.__seelite;
 				g.render(0);
 				// Alone, so the body's own cost has an honest denominator: a frame
-				// that also holds two gas giants and a bloomed star cannot say what
+				// that also holds gas giants and a bloomed star cannot say what
 				// fraction of it any one body is.
 				window.__soloBody(id);
 				const alone = [];

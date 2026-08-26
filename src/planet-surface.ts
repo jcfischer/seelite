@@ -53,7 +53,7 @@ const FAR_SPHERE_RINGS = 16;
  * The surface spheres, one per detail tier, built on first use and shared by
  * every body.
  *
- * Exported as *geometry* rather than as segment counts, and `setGeometry` takes
+ * Exported as *geometry* rather than as segment counts, and `setLayer` takes
  * a **layer** rather than a `BufferGeometry`, so the invariant above is the
  * module's shape instead of its prose: a caller selects near or far and cannot
  * hand a body a tessellation the shells were not built to match.
@@ -101,7 +101,12 @@ export const surfaceSphere = (layer: "near" | "approach" | "far") => {
  *   flat white. Measured on `?seed=15`, whose star is `0xf8f7ff`: a mean of 235
  *   with a granulation spread of 2.8, against 199 and 4.5 for a warm one — the
  *   difference between a lamp and a star, and a defect a screenshot shows
- *   instantly and a spread-only check does not.
+ *   instantly and a spread-only check does not. **Those two figures describe
+ *   the build before this constant existed and cannot be re-derived from the
+ *   tree**, because nothing ships a way to disable the normalisation — the same
+ *   caveat the crater-band figures carry. What is checked on every run is the
+ *   property they were evidence for: the disc has granulation, and the bloom
+ *   pass is not where it comes from.
  *
  * So the tint carries **hue, not exposure**. That is the honest division: a
  * star's apparent brightness on screen is already a rendering choice rather
@@ -246,6 +251,25 @@ const ringPlane = () => {
 	return ringGeometry;
 };
 
+/**
+ * `fragmentFor`, memoised by class.
+ *
+ * Three moons of one class assembled three identical shader sources and
+ * compiled three identical programs, and `buildBodies` runs over every body on
+ * the boot path — which is time the loading screen pays. Three keys its program
+ * cache on the source string, so handing it the same string twice is what makes
+ * two bodies share one compiled program; the materials stay per body, because
+ * the uniforms do.
+ */
+const fragmentCache = new Map<SurfaceClass, string>();
+const cachedFragment = (surface: SurfaceClass): string => {
+	const hit = fragmentCache.get(surface);
+	if (hit !== undefined) return hit;
+	const source = fragmentFor(surface);
+	fragmentCache.set(surface, source);
+	return source;
+};
+
 export function buildBodyVisual(
 	look: PlanetAppearance,
 	sphere: THREE.BufferGeometry,
@@ -283,7 +307,7 @@ export function buildBodyVisual(
 		new THREE.ShaderMaterial({
 			uniforms,
 			vertexShader: SURFACE_VERTEX,
-			fragmentShader: fragmentFor(look.surface),
+			fragmentShader: cachedFragment(look.surface),
 		}),
 	);
 	group.add(planet);
