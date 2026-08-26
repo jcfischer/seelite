@@ -24,7 +24,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { CRATER_CELL, CRATER_PROFILE } from "../src/planet-shaders";
+import { CRATER_CELL, CRATER_PROFILE, CRATER_RIM } from "../src/planet-shaders";
 import { repoPath } from "./lib/source-scan";
 
 const shared = readFileSync(repoPath("src/planet-shaders.ts"), "utf8");
@@ -44,7 +44,7 @@ describe("the crater field has one definition", () => {
 		// and must appear nowhere else. A second occurrence in either file means
 		// somebody has inlined the profile again, which is how the copy this
 		// replaced came about in the first place.
-		const rim = /exp\(-pow\(\(d - 0\.88\) \* 6\.5, 2\.0\)\)/g;
+		const rim = /exp\(-pow\(\(d - CRATER_RIM_AT\) \* CRATER_RIM_SHARPNESS/g;
 		expect(shared.match(rim)?.length ?? 0).toBe(1);
 		expect(station.match(rim)?.length ?? 0).toBe(0);
 	});
@@ -58,6 +58,28 @@ describe("the crater field has one definition", () => {
 			expect(CRATER_PROFILE).toContain(name);
 		for (const name of ["vec3 offset", "float dist", "float d ="])
 			expect(CRATER_CELL).toContain(name);
+	});
+
+	test("the derivative reads the profile's own constants", () => {
+		// This *is* guardable, and an earlier version of this file said it was
+		// not: "the derivative needs a GLSL interpreter". Only its *value* does.
+		// Its dependence on the profile is source text, and it was the one
+		// remaining path by which the two could diverge in silence — a wrong
+		// slope still shades plausibly, so nothing rendered would report it.
+		//
+		// The rim's position and sharpness are `#define`s now, used by the
+		// profile and by the chain rule alike. What is checked is that neither
+		// side has gone back to writing the number: `2 × 6.5² = 84.5` is what a
+		// hand-expanded derivative looks like, and it is exactly what would be
+		// left stale by a change to the sharpness.
+		expect(CRATER_RIM).toContain("#define CRATER_RIM_AT");
+		expect(CRATER_RIM).toContain("#define CRATER_RIM_SHARPNESS");
+		expect(CRATER_PROFILE).toContain("CRATER_RIM_AT");
+		expect(CRATER_PROFILE).toContain("CRATER_RIM_SHARPNESS");
+		expect(station).toContain("CRATER_RIM_SHARPNESS * CRATER_RIM_SHARPNESS");
+		expect(station).toContain("(d - CRATER_RIM_AT)");
+		expect(station).not.toContain("84.5");
+		expect(station).not.toContain("0.88");
 	});
 
 	test("both walk the same neighbourhood", () => {

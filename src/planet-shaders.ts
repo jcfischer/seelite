@@ -40,9 +40,21 @@ export const CRATER_CELL = /* glsl */ `    vec3 cell = base + vec3(x, y, z);
     float dist = length(offset);
     float d = dist / radius;`;
 
+/**
+ * Where the rim sits, and how sharp it is.
+ *
+ * Hoisted out of the profile because the *derivative* needs them too:
+ * `station-surface.ts` differentiates the rim analytically, and its chain rule
+ * carries `2 · CRATER_RIM_SHARPNESS²`. Written as literals in both places, a
+ * change to the sharpness here would leave the derivative describing a
+ * different crater — silently, because a wrong slope shades plausibly.
+ */
+export const CRATER_RIM = /* glsl */ `#define CRATER_RIM_AT 0.88
+#define CRATER_RIM_SHARPNESS 6.5`;
+
 export const CRATER_PROFILE = /* glsl */ `      float inside = step(d, 1.0);
       float bowl = -(1.0 - d * d) * inside;
-      float rim  = exp(-pow((d - 0.88) * 6.5, 2.0)) * 0.7;`;
+      float rim  = exp(-pow((d - CRATER_RIM_AT) * CRATER_RIM_SHARPNESS, 2.0)) * 0.7;`;
 
 /** Hashes, value noise, fBm, ridged fBm, domain warp. GLSL ES 1.00. */
 /**
@@ -73,6 +85,7 @@ float fbm${octaves}(vec3 p) {
 
 export const NOISE_GLSL = /* glsl */ `
 const float PI = 3.14159265;
+${CRATER_RIM}
 
 float hash31(vec3 p) {
   p = fract(p * 0.1031);

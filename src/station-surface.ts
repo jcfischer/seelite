@@ -129,8 +129,14 @@ ${CRATER_CELL}
 ${CRATER_PROFILE}
       acc += (bowl + rim) * depth;
       // d(bowl)/dd is 2d inside the bowl and zero beyond it; d(rim)/dd is the
-      // gaussian times its own exponent's derivative.
-      float dProfile = (2.0 * d * inside) + rim * (-84.5 * (d - 0.88));
+      // gaussian times its own exponent's derivative. Both read the profile's
+      // own defines rather than the numbers they evaluate to: hand-expanded,
+      // the sharpness would appear here as twice its square, and a change to it
+      // upstream would leave this describing a different crater — silently,
+      // because a wrong slope still shades plausibly.
+      float dProfile = (2.0 * d * inside)
+                     + rim * (-2.0 * CRATER_RIM_SHARPNESS * CRATER_RIM_SHARPNESS
+                              * (d - CRATER_RIM_AT));
       // Chain rule out to p: dd/d|offset| is 1/radius, d|offset|/dp is the unit
       // offset, and the outer p *= scale contributes another factor.
       grad += dProfile * depth * scale * offset / max(dist * radius, 1e-6);
@@ -219,10 +225,8 @@ const ROCK_SURFACE = /* glsl */ `{
  *
  * **What it costs.** `craters` walks a 3×3×3 neighbourhood, and `reliefNormal`
  * derives its normal from four more evaluations of the height field — so the
- * obvious construction pays five walks a fragment. It pays one. The two cuts
- * that got it there, and what each was measured to be worth, are recorded at
- * `cratersAndGradient` and at the fragment patch that uses it, beside the loops
- * they justify rather than three times over here.
+ * obvious construction pays five walks a fragment. It pays one. The figures
+ * that got it there are at `cratersAndGradient`, beside the loop they justify.
  *
  * #57's own note says an implementation should bake this into a normal map at
  * generation. That remains the cheaper answer and it is not taken here, because

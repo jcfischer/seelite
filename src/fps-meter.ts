@@ -13,14 +13,18 @@
  * frame, so the two agree, and the meter needs nothing from the page it is
  * measuring.
  *
- * **A stall is reported, not frozen through.** A meter driven only by
+ * **A stall is reported where it can be.** A meter driven only by
  * `requestAnimationFrame` stops updating exactly when the page stops painting,
  * so it holds the last healthy number on screen — failing open into something
- * reassuring, which is the opposite of what an instrument should do. A timer
- * runs alongside it and takes over when no frame has arrived for longer than a
- * stall threshold, showing how long the page has been stopped — and knows the
- * difference between a stall and a backgrounded tab, which also stops frames
- * and is not a fault.
+ * reassuring. A timer runs alongside and takes over when frames stop arriving.
+ *
+ * Its reach is worth stating, because it is smaller than "detects a frozen
+ * page": a **blocked main thread stops the timer too**, and no instrument
+ * written in the page's own JavaScript can report that from inside. What this
+ * does catch is a render loop that has stopped asking for frames — an
+ * exception that killed it, a `cancelAnimationFrame` that was not meant, a tab
+ * throttled to nothing — and it knows a backgrounded tab from a fault, which
+ * also stops frames and is not one.
  *
  * It shows the frame *time* beside the rate, because the two carry different
  * information at the low end: 60 fps and 55 fps are 16.7 ms and 18.2 ms, but
@@ -116,16 +120,12 @@ export function mountFpsMeter(): () => void {
 	 * which is the whole point: without it the readout holds its last healthy
 	 * figure for as long as the page is frozen.
 	 *
-	 * **A backgrounded tab is not a stall**, and reporting one as such would make
-	 * this the false-alarm counterpart of the failure it exists to prevent —
-	 * every return to the tab greeting you with `stalled · 12.4 s` for a page
-	 * that was working perfectly. `document.hidden` distinguishes them, and the
-	 * frame clock is reset on the way back so the first window after is measured
-	 * rather than inherited.
-	 *
-	 * It wakes at the threshold rather than at the sample window: a watch that
-	 * cannot fire until four windows have passed has no reason to look sooner,
-	 * and this runs for the lifetime of every workbench session.
+	 * `document.hidden` is read because a backgrounded tab stops frames and is
+	 * not a fault; the frame clock is reset on the way back so the first window
+	 * after is measured rather than inherited. It wakes at its own threshold
+	 * rather than at the sample window — a watch that cannot fire until four
+	 * windows have passed has no reason to look sooner, and this runs for the
+	 * lifetime of every workbench session.
 	 */
 	const watch = window.setInterval(() => {
 		if (document.hidden) {
