@@ -12,7 +12,11 @@ const VIEWPORTS = [
 	{ name: "narrow", width: 390, height: 844 },
 ];
 const PIXEL_CHANNEL_TOLERANCE = 3;
-const COMBAT_READOUT = /^LOCK (?:READY|\d+%) · (?:MISSILE WARNING|CLEAR)$/;
+const ETA_READOUT =
+	/^ETA (?:<1s|\d+(?:\.\d+)?(?:s|min|h|d))  CHARGE \d+\.\d AU$/;
+const ETA_READOUT_SOURCE = ETA_READOUT.source;
+const COMBAT_READOUT =
+	/^LOCK (?:READY|\d+%) · (?:MISSILE WARNING|CLEAR) · (?:INTERDICTED|CLEAR)$/;
 const COMBAT_READOUT_SOURCE = COMBAT_READOUT.source;
 const PULSE_READOUT = /^F \d+ A \d+ · E \d+ · H \d+ PULSE$/;
 
@@ -72,7 +76,7 @@ function textPixelsMatch(canvas, renderedText) {
 	return glyphPixels > 0;
 }
 
-const PROBE_MATCHERS_SCRIPT = `const PIXEL_CHANNEL_TOLERANCE = ${PIXEL_CHANNEL_TOLERANCE}; globalThis.__seeliteTextPixelsMatch = ${textPixelsMatch}; globalThis.__seeliteCombatReadout = new RegExp(${JSON.stringify(COMBAT_READOUT_SOURCE)});`;
+const PROBE_MATCHERS_SCRIPT = `const PIXEL_CHANNEL_TOLERANCE = ${PIXEL_CHANNEL_TOLERANCE}; globalThis.__seeliteTextPixelsMatch = ${textPixelsMatch}; globalThis.__seeliteEtaReadout = new RegExp(${JSON.stringify(ETA_READOUT_SOURCE)}); globalThis.__seeliteCombatReadout = new RegExp(${JSON.stringify(COMBAT_READOUT_SOURCE)});`;
 
 function measureLiveCockpit() {
 	const visible = (selector) => {
@@ -454,6 +458,29 @@ for (const viewport of VIEWPORTS) {
 	);
 	await page.close();
 }
+
+const productionPage = await browser.newPage({
+	viewport: { width: 1280, height: 760 },
+});
+await productionPage.goto(`${ORIGIN}/?seed=42`, { waitUntil: "load" });
+await productionPage.addScriptTag({ content: PROBE_MATCHERS_SCRIPT });
+await productionPage.waitForFunction(() =>
+	globalThis.__seeliteEtaReadout.test(
+		window.__seelite.cockpit.targetInstrument.secondaryText.text,
+	),
+);
+const productionEtaVisible = await productionPage.evaluate(() => {
+	const game = window.__seelite;
+	return globalThis.__seeliteTextPixelsMatch(
+		game.cockpit.targetInstrument.ctx.canvas,
+		game.cockpit.targetInstrument.secondaryText,
+	);
+});
+check(
+	"production: target instrument retains visible ETA and charge readout",
+	productionEtaVisible,
+);
+await productionPage.close();
 
 await browser.close();
 exit();

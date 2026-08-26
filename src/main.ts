@@ -2090,7 +2090,7 @@ class Game {
 			? `F ${combat.foreShield.toFixed(0)} A ${combat.aftShield.toFixed(0)} · E ${combat.energy.toFixed(0)} · H ${combat.heat.toFixed(0)}${combat.heatLocked ? " LOCK" : ""}${firing}`
 			: velocity.context;
 		const targetCombat = this.combatPrototypeEnabled
-			? `LOCK ${combat.missileLock ? "READY" : `${((combat.lockProgress * 100) / COMBAT_PROTOTYPE_DEFAULTS.lockSeconds).toFixed(0)}%`} · ${combat.incomingMissile ? "MISSILE WARNING" : "CLEAR"}`
+			? `LOCK ${combat.missileLock ? "READY" : `${((combat.lockProgress * 100) / COMBAT_PROTOTYPE_DEFAULTS.lockSeconds).toFixed(0)}%`} · ${combat.incomingMissile ? "MISSILE WARNING" : "CLEAR"} · ${combat.interdiction ? "INTERDICTED" : "CLEAR"}`
 			: `ETA ${eta}  CHARGE ${this.chargeAu.toFixed(1)} AU`;
 		const key = `${speed}|${velocity.context}|${targetText}|${eta}|${this.throttle}|${this.assist}|${this.chargeAu}|${combatText}|${targetCombat}`;
 		if (key === this.cockpit.instrumentKey) return;

@@ -46,6 +46,22 @@ test("an off-cone shot spends resources without damaging the target", () => {
 	expect(state.targetHull).toBe(COMBAT_PROTOTYPE_DEFAULTS.hull);
 });
 
+test("a roll break resets a charged interdiction", () => {
+	let state = createCombatPrototype();
+	state = stepCombatPrototype(state, {
+		dt: COMBAT_PROTOTYPE_DEFAULTS.interdictionSeconds,
+		interdicting: true,
+	});
+	expect(state.interdiction).toBe(true);
+	state = stepCombatPrototype(state, {
+		dt: 0.1,
+		interdicting: true,
+		breakAngle: true,
+	});
+	expect(state.interdiction).toBe(false);
+	expect(state.interdictionProgress).toBe(0);
+});
+
 test("a broken acquisition cone clears missile lock and ECM clears a warning", () => {
 	let state = createCombatPrototype();
 	for (
