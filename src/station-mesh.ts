@@ -1195,7 +1195,16 @@ function buildShipyardGantry(color: number): BuiltPart {
 		boom.position.y = y;
 		frame.add(boom);
 	}
-	group.add(buildBayLights(fixtures, reach, r));
+	// On the keel's own underside, inside its half-height and inside its length.
+	group.add(
+		buildBayLights(
+			fixtures,
+			r,
+			(i, position) =>
+				position.set(-reach * 0.34 + i * reach * 0.23, -r * 0.3, 0),
+			new THREE.Vector3(reach * 0.14, -r * 0.24, 0),
+		),
+	);
 	group.add(
 		portRun("shipyard", 16, (i, position, normal) => {
 			normal.set(0, 1, 0);
@@ -1315,7 +1324,16 @@ function buildShipyardHangar(color: number): BuiltPart {
 	spun.add(buildAperture("shipyard", r * 0.6));
 	group.add(spun);
 
-	group.add(buildBayLights(fixtures, reach, r));
+	// Inside the bay mouth, which is where a bay's floods are.
+	group.add(
+		buildBayLights(
+			fixtures,
+			r,
+			(i, position) =>
+				position.set(-reach * 0.2 + i * reach * 0.13, r * 0.2, r * 0.4),
+			new THREE.Vector3(reach * 0.1, -r * 0.18, r * 0.4),
+		),
+	);
 	group.add(
 		portRun("shipyard", 16, (i, position, normal) => {
 			normal.set(0, 0, -1);
@@ -1328,7 +1346,9 @@ function buildShipyardHangar(color: number): BuiltPart {
 	);
 	group.add(
 		strobePair("shipyard", fixtures, r * 0.07, (side, position) => {
-			position.set(side * reach * 0.55, 0, r * 0.2);
+			// Inside the slab's own half-length (`reach * 0.54`), not on it: at
+			// 0.55 one of the pair sat clear of the hull it is mounted on.
+			position.set(side * reach * 0.5, 0, r * 0.36);
 		}),
 	);
 	return { group, fixtures, spinner: spun };
@@ -1383,7 +1403,22 @@ function buildShipyardSlipway(color: number): BuiltPart {
 		strut.rotation.z = theta;
 		frame.add(strut);
 	}
-	group.add(buildBayLights(fixtures, reach, r));
+	// On the arc's inner face, looking into the slip.
+	group.add(
+		buildBayLights(
+			fixtures,
+			r,
+			(i, position) => {
+				const theta = Math.PI * 0.3 + (i / 3) * Math.PI * 1.35;
+				position.set(
+					Math.cos(theta) * major * 0.86,
+					Math.sin(theta) * major * 0.86,
+					0,
+				);
+			},
+			new THREE.Vector3(major * 0.86, 0, 0),
+		),
+	);
 	group.add(
 		portRun("shipyard", 12, (i, position, normal) => {
 			const theta = Math.PI * 0.28 + ((i + 1) / 13) * Math.PI * 1.4;
@@ -1405,13 +1440,21 @@ function buildShipyardSlipway(color: number): BuiltPart {
 	return { group, fixtures, spinner: spun };
 }
 
-/** The shipyard's work light: cold floods along the bay and one welding arc.
- *  Shared by all three forms, because the light is what says *shipyard* once
- *  the outline has told you it is not a trade station. */
+/**
+ * The shipyard's work light: cold floods along the bay and one welding arc.
+ *
+ * Shared by all three forms, because the light is what says *shipyard* once the
+ * outline has told you it is not a trade station — but **placed by the caller**,
+ * because the three have nothing in common to hang it on. A single hard-coded
+ * row put two of the Gantry's floods in empty space beside the keel and would
+ * have buried the Hangar's inside a slab. A fixture's position is a property of
+ * the structure it is mounted on, so the structure supplies it.
+ */
 function buildBayLights(
 	fixtures: StationFixture[],
-	reach: number,
 	r: number,
+	place: (i: number, position: THREE.Vector3) => void,
+	arcAt: THREE.Vector3,
 ): THREE.Group {
 	const group = new THREE.Group();
 	for (let i = 0; i < 4; i++) {
@@ -1419,7 +1462,7 @@ function buildBayLights(
 			new THREE.BoxGeometry(r * 0.26, r * 0.03, r * 0.06),
 			FLOOD_MATERIAL,
 		);
-		flood.position.set(-reach * 0.4 + i * reach * 0.27, -r * 0.5, 0);
+		place(i, flood.position);
 		flood.name = "bay-flood";
 		detail(flood, "reduced");
 		group.add(flood);
@@ -1429,7 +1472,7 @@ function buildBayLights(
 		new THREE.SphereGeometry(r * 0.05, 8, 6),
 		arcMaterial,
 	);
-	arc.position.set(reach * 0.14, -r * 0.34, 0);
+	arc.position.copy(arcAt);
 	arc.name = "weld-arc";
 	detail(arc, "reduced");
 	group.add(arc);
@@ -1821,8 +1864,11 @@ function buildOutpostDerrick(color: number): BuiltPart {
 		group.add(collar);
 	}
 	group.add(buildPadDeck(fixtures, r, r * 1.1));
+	// Rooted **on a tank**, not beside the cluster: the tanks sit on a 0.42·r
+	// circle and are 0.34·r across, so a boom starting at 0.6·r began in empty
+	// space and the whole flare was a detached island.
 	const flare = buildFlare(fixtures, r * 0.9, r * 0.08);
-	flare.position.set(r * 0.6, -r * 0.5, -r * 0.4);
+	flare.position.set(r * 0.42, -r * 0.42, -r * 1.3);
 	flare.rotation.x = -Math.PI / 2.4;
 	flare.rotation.y = 0.5;
 	group.add(flare);
@@ -1948,8 +1994,12 @@ function buildOutpostRig(color: number): BuiltPart {
 	group.add(flare);
 	group.add(
 		portRun("outpost", 6, (i, position, normal) => {
+			// The body is pitched 0.34 rad about X and is 0.62·r half-wide, so a
+			// run at 0.64·r cleared it entirely. Inside its own beam, and pitched
+			// with it.
 			normal.set(1, 0, 0);
-			position.set(r * 0.64, r * 0.2, -r * 0.8 + i * r * 0.22);
+			const z = -r * 0.7 + i * r * 0.2;
+			position.set(r * 0.5, r * 0.2 + z * 0.34, z);
 		}),
 	);
 	return { group, fixtures };

@@ -310,3 +310,62 @@ describe("§7's secondary cue, and the detail that is not the identity", () => {
 		}
 	});
 });
+
+describe("a station is one object, not a scatter of parts", () => {
+	/**
+	 * The parts of a built station, grouped into islands by bounding-box
+	 * contact.
+	 *
+	 * Boxes rather than geometry, and it is worth being plain that this is a
+	 * **proxy**: two boxes can overlap while the meshes inside them miss each
+	 * other, so a pass here is not proof that everything touches. What it does
+	 * catch is the failure that actually happens — a fixture placed at a radius
+	 * chosen by eye, hanging in space beside the hull it is meant to be mounted
+	 * on. Four of those were in the pool when this was first run: two of the
+	 * Gantry's floods, one of the Hangar's strobes, the Derrick's whole flare,
+	 * and the Rig's window run.
+	 */
+	function islands(root: THREE.Object3D): string[][] {
+		root.updateMatrixWorld(true);
+		const parts: { name: string; box: THREE.Box3 }[] = [];
+		root.traverse((object) => {
+			if (!(object as THREE.Mesh).geometry) return;
+			parts.push({
+				name: object.name || object.type,
+				box: new THREE.Box3().setFromObject(object),
+			});
+		});
+		const parent = parts.map((_, i) => i);
+		const find = (i: number): number =>
+			parent[i] === i ? i : (parent[i] = find(parent[i]));
+		for (let i = 0; i < parts.length; i++)
+			for (let j = i + 1; j < parts.length; j++)
+				if (parts[i].box.intersectsBox(parts[j].box)) parent[find(i)] = find(j);
+		const grouped = new Map<number, string[]>();
+		for (let i = 0; i < parts.length; i++) {
+			const root = find(i);
+			if (!grouped.has(root)) grouped.set(root, []);
+			(grouped.get(root) as string[]).push(parts[i].name);
+		}
+		return [...grouped.values()];
+	}
+
+	test("every form of every role is a single connected assembly", () => {
+		for (const type of TYPES) {
+			for (const form of STATION_FORMS[type]) {
+				const { root } = buildStationForm(type, form.id, GREY);
+				const found = islands(root);
+				// The message carries the names, because "2 islands" tells you
+				// nothing about which part came loose and the parts are named.
+				const detached = found
+					.slice(1)
+					.map((names) => names.join("+"))
+					.join(" | ");
+				expect([`${type} ${form.id}`, detached]).toEqual([
+					`${type} ${form.id}`,
+					"",
+				]);
+			}
+		}
+	});
+});
