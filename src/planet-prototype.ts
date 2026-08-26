@@ -211,6 +211,7 @@ const RING_FRAGMENT = /* glsl */ `
 precision highp float;
 varying vec2 vRing;
 varying vec3 vWorldP;
+varying vec3 vCentre;
 ${NOISE_GLSL}
 uniform vec3  sunDir;
 uniform float innerR;
@@ -227,9 +228,19 @@ void main() {
   float gap   = smoothstep(0.02, 0.0, abs(fbm3(vec3(t * 7.0 + seedOffset, 5.0, 1.0)) - 0.5));
   float density = grain * (1.0 - gap) * smoothstep(0.0, 0.10, t) * smoothstep(1.0, 0.86, t);
 
-  // The planet sits at the origin of the ring's own frame, so anything whose
-  // perpendicular distance from the sun line is under one radius is eclipsed.
-  vec3 toBody = -vWorldP;
+  // Eclipse: anything whose perpendicular distance from the planet-sun line is
+  // under one radius is in shadow.
+  //
+  // Measured from the planet's own world position, not from the scene origin.
+  // vWorldP is world space and includes the group's placement, so negating it
+  // pointed at the origin — which is the planet only in single-body mode, where
+  // the group happens to sit there. In the gallery the ringed body is at about
+  // (-2.7, -2.85), and the shadow band fell nowhere near it. Silent in exactly
+  // the view a reviewer opens to look at rings.
+  // The centre arrives as a varying because Three injects modelMatrix into the
+  // vertex prefix only — reading it here compiles to nothing, the material
+  // fails silently, and the rings simply do not draw.
+  vec3 toBody = vCentre - vWorldP;
   float along = dot(toBody, sunDir);
   float perp  = length(toBody - sunDir * along);
   float shadow = (along < 0.0) ? 1.0 : smoothstep(0.94, 1.10, perp);
@@ -242,10 +253,14 @@ void main() {
 const RING_VERTEX = /* glsl */ `
 varying vec2 vRing;
 varying vec3 vWorldP;
+varying vec3 vCentre;
 void main() {
   vRing = position.xy;
   vec4 world = modelMatrix * vec4(position, 1.0);
   vWorldP = world.xyz;
+  // The planet's world position: the ring mesh carries no local translation, so
+  // its own origin under modelMatrix *is* the body it orbits.
+  vCentre = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
   gl_Position = projectionMatrix * viewMatrix * world;
 }
 `;
@@ -288,6 +303,12 @@ const PROTOTYPE_CSS = `
  *  geometry rather than one per body. The atmosphere shell's radius varies with
  *  optical depth, so that one genuinely cannot be shared. */
 const CLOUD_GEOMETRY = new THREE.SphereGeometry(1.014, 128, 84);
+
+/** The atmosphere shell is a unit sphere scaled per body, rather than one
+ *  tessellation per distinct radius: the radius varies with optical depth, but
+ *  a scale on the mesh expresses that without building the same ~6k vertices
+ *  again for each of the ladder's five values. */
+const SHELL_GEOMETRY = new THREE.SphereGeometry(1, 96, 64);
 
 function buildBody(look: PlanetAppearance, sphere: THREE.SphereGeometry): Body {
 	const uniforms: Record<string, THREE.IUniform> = {
@@ -341,20 +362,22 @@ function buildBody(look: PlanetAppearance, sphere: THREE.SphereGeometry): Body {
 	if (look.atmosphere > 0) {
 		// Back faces only, additively: the shell is a volume seen from outside,
 		// and drawing its front faces would put a wash over the whole disc.
-		group.add(
-			new THREE.Mesh(
-				new THREE.SphereGeometry(1.03 + look.atmosphere * 0.025, 96, 64),
-				new THREE.ShaderMaterial({
-					uniforms,
-					transparent: true,
-					depthWrite: false,
-					side: THREE.BackSide,
-					blending: THREE.AdditiveBlending,
-					vertexShader: SURFACE_VERTEX,
-					fragmentShader: ATMOSPHERE_FRAGMENT,
-				}),
-			),
+		const shell = new THREE.Mesh(
+			SHELL_GEOMETRY,
+			new THREE.ShaderMaterial({
+				uniforms,
+				transparent: true,
+				depthWrite: false,
+				side: THREE.BackSide,
+				blending: THREE.AdditiveBlending,
+				vertexShader: SURFACE_VERTEX,
+				fragmentShader: ATMOSPHERE_FRAGMENT,
+			}),
 		);
+		// A thicker shell stands further off the surface. On the shared unit
+		// geometry that is a scale rather than its own tessellation.
+		shell.scale.setScalar(1.03 + look.atmosphere * 0.025);
+		group.add(shell);
 	}
 	if (look.hasRings) {
 		const ring = new THREE.Mesh(
@@ -700,9 +723,22 @@ function installProbeSurface(ctx: {
 				for (const child of body.group.children)
 					if (child.name === "decor") child.visible = visible;
 		},
+		/**
+		 * Point every body at a rotation, **immediately**.
+		 *
+		 * Writing `view` alone would leave the rotation to the next rAF, while
+		 * `samplePatches` renders directly — so a probe that sets a rotation and
+		 * samples in two back-to-back round trips could read the previous one, and
+		 * the distinctness signature's "three rotations" would silently collapse
+		 * to fewer without any check going red.
+		 */
 		setView: (spin: number, tilt: number) => {
 			view.spin = spin;
 			view.tilt = tilt;
+			for (const body of bodies) {
+				body.group.rotation.y = spin;
+				body.group.rotation.x = tilt;
+			}
 		},
 	};
 }

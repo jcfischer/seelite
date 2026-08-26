@@ -459,6 +459,13 @@ async function reportBudget(page, classes) {
 	console.log(
 		`    gallery (${classes.length} bodies)  ${gallery.renderMs.toFixed(1)} ms/render   (rAF cadence ${gallery.cadenceMs.toFixed(1)} ms)`,
 	);
+	// The two rows below are not comparable to the one above: the gallery is nine
+	// small discs and each class row is one disc filling the frame. Fragment
+	// shaders cost per covered pixel, so the per-class rows are the higher fill
+	// rate and the gallery total is not their sum.
+	console.log(
+		"    each class below is measured full-screen — a different fill rate to the gallery row:",
+	);
 
 	/**
 	 * Each class alone, full screen — where the per-class cost actually shows.
@@ -510,6 +517,16 @@ await checkTerminators(page, classes, depths);
 await checkDistinctness(page, classes);
 await checkOcean(page, classes);
 await reportBudget(page, classes);
+
+// Re-asserted: the listener above keeps collecting through distinctness, the
+// ocean sweep and the nine per-class navigations in reportBudget, where a shader
+// that failed to compile for one class would otherwise go unreported. The first
+// assertion only covered page load.
+check(
+	`no page error across the whole run (${failures.length})`,
+	failures.length === 0,
+);
+if (failures.length) console.error(failures.join("\n"));
 
 await browser.close();
 exit();

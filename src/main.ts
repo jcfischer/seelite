@@ -2725,14 +2725,19 @@ function seedFromQuery(): number {
 	return (Math.random() * 0x1_0000_0000) >>> 0;
 }
 
-if (new URLSearchParams(window.location.search).has("planet-prototype")) {
-	const { mountPlanetPrototype } = await import("./planet-prototype");
-	mountPlanetPrototype();
-} else if (new URLSearchParams(window.location.search).has("hud-gallery")) {
+if (new URLSearchParams(window.location.search).has("hud-gallery")) {
 	const { mountStateGallery } = await import("./state-gallery");
 	mountStateGallery();
 	// The gallery owns its own Three.js scene. Do not build the live game behind
 	// it: that would leave two hidden render loops spending CPU and GPU.
+} else if (
+	new URLSearchParams(window.location.search).has("planet-prototype")
+) {
+	// After `hud-gallery`, not before it: this branch is a disposable study, and
+	// a disposable route should not outrank a durable one when both flags are on
+	// the URL. Same reason it owns its own scene — no live game behind it.
+	const { mountPlanetPrototype } = await import("./planet-prototype");
+	mountPlanetPrototype();
 } else {
 	const game = new Game(seedFromQuery());
 	// The handle probes and the browser console reach the game through. Everything
