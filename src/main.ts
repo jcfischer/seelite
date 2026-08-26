@@ -2080,11 +2080,12 @@ class Game {
 			: "NO TARGET";
 		const eta = this.etaCache === null ? "CALC" : duration(this.etaCache);
 		const combat = this.combat;
-		const firing = this.keys.has("b")
-			? " BEAM"
-			: this.keys.has(" ")
-				? " PULSE"
-				: "";
+		const firing =
+			combat.firing === "beam"
+				? " BEAM"
+				: combat.firing === "pulse"
+					? " PULSE"
+					: "";
 		const combatText = this.combatPrototypeEnabled
 			? `F ${combat.foreShield.toFixed(0)} A ${combat.aftShield.toFixed(0)} · E ${combat.energy.toFixed(0)} · H ${combat.heat.toFixed(0)}${combat.heatLocked ? " LOCK" : ""}${firing}`
 			: velocity.context;
@@ -3409,7 +3410,7 @@ class Game {
 			this.combatPrototypeEnabled && this.view === "cockpit";
 		const targetMaterial = this.combatTargetMesh
 			.material as THREE.MeshStandardMaterial;
-		const firingWeapon = this.keys.has(" ") || this.keys.has("b");
+		const firingWeapon = this.combat.firing !== null;
 		targetMaterial.emissive.setHex(firingWeapon ? 0x9df6ff : 0x450308);
 		targetMaterial.emissiveIntensity = firingWeapon ? 4 : 1.2;
 		this.combatTargetMesh.scale.setScalar(firingWeapon ? 1.25 : 1);
@@ -3417,7 +3418,7 @@ class Game {
 		this.combatLaser.visible =
 			this.combatPrototypeEnabled &&
 			this.view === "cockpit" &&
-			(this.keys.has(" ") || this.keys.has("b"));
+			this.combat.firing !== null;
 
 		// The star, resolved once at build time rather than scanned for per frame:
 		// every body's sun direction is measured from it, and there is no path
@@ -3855,10 +3856,7 @@ class Game {
 
 		// The Three line is spatial reference; this glass tracer is the readable
 		// weapon feedback at every viewport and cannot disappear behind cockpit mesh.
-		if (
-			this.combatPrototypeEnabled &&
-			(this.keys.has(" ") || this.keys.has("b"))
-		) {
+		if (this.combatPrototypeEnabled && this.combat.firing !== null) {
 			ctx.save();
 			// The lower third is physical cockpit hardware. Clip the glass effect to
 			// the windscreen rather than drawing a laser over an instrument panel.

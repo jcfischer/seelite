@@ -28,6 +28,7 @@ export interface CombatPrototypeState {
 	energy: number;
 	heat: number;
 	heatLocked: boolean;
+	firing: WeaponMode;
 	foreShield: number;
 	aftShield: number;
 	playerHull: number;
@@ -60,6 +61,7 @@ export function createCombatPrototype(
 		energy: COMBAT_PROTOTYPE_DEFAULTS.energy,
 		heat: 0,
 		heatLocked: false,
+		firing: null,
 		foreShield: COMBAT_PROTOTYPE_DEFAULTS.shield,
 		aftShield: COMBAT_PROTOTYPE_DEFAULTS.shield,
 		playerHull: COMBAT_PROTOTYPE_DEFAULTS.hull,
@@ -115,6 +117,7 @@ export function stepCombatPrototype(
 			: COMBAT_PROTOTYPE_DEFAULTS.pulseEnergyPerSecond) * dt;
 	const canFire =
 		weapon !== null && !next.heatLocked && next.energy >= energyCost;
+	next.firing = canFire ? weapon : null;
 	if (canFire) {
 		if (next.energy >= energyCost) {
 			next.energy -= energyCost;
