@@ -15,6 +15,11 @@
  * clamp — would have left every asserted line intact and passed green while the
  * two fields quietly diverged. One definition cannot diverge at all.
  *
+ * That last sentence is true of the *definition* and not of the file. Nothing
+ * stops someone pasting the profile back in beside the interpolation, and no
+ * source scan can rule that out for certain — the detector below says what it
+ * catches and what it does not.
+ *
  * What is left to check is that the definition is still the *only* place the
  * field is written: that both functions interpolate the snippets rather than
  * having grown their own copy back, and that the shared strings still carry the
@@ -40,13 +45,32 @@ describe("the crater field has one definition", () => {
 	});
 
 	test("neither has grown its own copy of the profile back", () => {
-		// The rim gaussian is the field's signature: it appears in the snippet
-		// and must appear nowhere else. A second occurrence in either file means
-		// somebody has inlined the profile again, which is how the copy this
-		// replaced came about in the first place.
-		const rim = /exp\(-pow\(\(d - CRATER_RIM_AT\) \* CRATER_RIM_SHARPNESS/g;
-		expect(shared.match(rim)?.length ?? 0).toBe(1);
-		expect(station.match(rim)?.length ?? 0).toBe(0);
+		// **What this can and cannot see.** A detector that matches one exact
+		// string has the blind spot of the guard it replaced, one level up: a
+		// re-inline with different spacing, renamed locals, or the constants
+		// hand-expanded walks straight past it. So it does not look for one
+		// string.
+		//
+		// Whitespace is normalised first, which removes reformatting as a way
+		// through. Then three of the field's marks are checked rather than one,
+		// each of which a re-inlined profile has to reproduce *somehow* to
+		// work: the rim gaussian's shape, the profile's own local names — which
+		// the accumulation below reads by name, so a rename would have to reach
+		// it too — and the cell's centre jitter.
+		//
+		// It is still a source scan and it can still be defeated on purpose.
+		// What it catches is the accident: someone pasting the profile back in
+		// to add a term, which is exactly how the copy this replaced came about.
+		const flat = (t: string) => t.replace(/\s+/g, " ");
+		const gaussian = /exp\( *- *pow\(/g;
+		expect(flat(shared).match(gaussian)?.length ?? 0).toBe(1);
+		expect(flat(station).match(gaussian)?.length ?? 0).toBe(0);
+
+		// The profile's locals, and the cell's jitter. Declared in the snippets
+		// and interpolated at build time, so the *source* of either consumer
+		// naming them means a second copy.
+		for (const mark of ["float bowl", "float rim", "hash31(cell"])
+			expect(flat(station)).not.toContain(mark);
 	});
 
 	test("the snippets carry what each consumer reads out of them", () => {

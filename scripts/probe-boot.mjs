@@ -550,26 +550,17 @@ check(
 );
 
 /**
- * The other side, which is the one that could actually go wrong.
+ * The other side of the gate, which is the half that could actually go wrong.
+ * The workbench mounts a meter *unconditionally*, and the only reason one does
+ * not survive the return to flight is that `[data-model-close]` navigates.
+ * Rewrite it as an in-place teardown and the readout is on the flight floor
+ * with no `?fps` anywhere — so it is checked here rather than reasoned about.
  *
- * **Every wait below is generous, and no wait below decides anything.** Three
- * of them exist — for the workbench's meter, which arrives a tick after the
- * canvas because the import is dynamic; for the close, which may or may not
- * navigate, that being the question; and for the first real rate, two sample
- * windows away. Each is bounded well above what it needs and each swallows its
- * own expiry, so a loaded machine costs seconds instead of a verdict, and a
- * genuine failure arrives as the named check below going red rather than as an
- * uncaught timeout that stops the file before the check runs. That distinction
- * cost a suite run to a 6 s bound once, and cost this block a crash where a
- * red check belonged.
- *
- * The check above is the safe half: a page that never opened the workbench has
- * nothing that could have mounted a meter. The workbench mounts one
- * *unconditionally*, so the path worth measuring is the one that goes through
- * it and comes back — and it comes back by navigating, which is why the meter
- * does not survive. That is a property of `[data-model-close]`, not of this
- * gate, and nothing checked it: rewrite that handler as an in-place teardown
- * and the readout arrives on the flight floor with no `?fps` anywhere.
+ * Every wait below is bounded generously and swallows its own expiry: what is
+ * asserted is the end state, so a loaded machine costs seconds and a real
+ * failure arrives as a named check going red. Both halves of that were learned
+ * the hard way — a 6 s bound cost a suite run, and an uncaught wait crashed
+ * this block where a red check belonged.
  */
 // Not through `open`: the workbench builds no simulation behind itself, so
 // `bootedGame` has nothing to wait for and would time out.

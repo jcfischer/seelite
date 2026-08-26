@@ -13,18 +13,28 @@
  * frame, so the two agree, and the meter needs nothing from the page it is
  * measuring.
  *
- * **A stall is reported where it can be.** A meter driven only by
- * `requestAnimationFrame` stops updating exactly when the page stops painting,
- * so it holds the last healthy number on screen — failing open into something
- * reassuring. A timer runs alongside and takes over when frames stop arriving.
+ * **What it measures is the page's frame service, not the game's loop.** That
+ * distinction is the whole of what this instrument is and is not, and an
+ * earlier version of this comment got it wrong in the direction that flatters
+ * the tool.
  *
- * Its reach is worth stating, because it is smaller than "detects a frozen
- * page": a **blocked main thread stops the timer too**, and no instrument
- * written in the page's own JavaScript can report that from inside. What this
- * does catch is a render loop that has stopped asking for frames — an
- * exception that killed it, a `cancelAnimationFrame` that was not meant, a tab
- * throttled to nothing — and it knows a backgrounded tab from a fault, which
- * also stops frames and is not one.
+ * `requestAnimationFrame` fires once per composited frame whether or not
+ * anything drew into it. So the rate here tracks what a frame *costs* — which
+ * is what the meter was added for, and why a heavier shader moves it — and it
+ * is blind to whether the scene changed. Kill the game's render loop with an
+ * exception and this reads a healthy 60 over a frozen picture, because its own
+ * callback is still being served. Detecting that needs something the game
+ * hands it, and the meter deliberately takes nothing from the page it
+ * measures.
+ *
+ * The stall watch is narrower still. A meter driven only by rAF stops updating
+ * exactly when the page stops painting, holding its last healthy number on
+ * screen, so a timer runs alongside and takes over when frames stop arriving.
+ * What that covers is the page-wide cases: a tab throttled to nothing, and a
+ * backgrounded tab, which it tells apart from a fault because that also stops
+ * frames and is not one. What it does not cover is a **blocked main thread**,
+ * which stops the timer too — no instrument written in the page's own
+ * JavaScript reports that from inside.
  *
  * It reports three numbers rather than one; why each is there is at the line
  * that formats it.

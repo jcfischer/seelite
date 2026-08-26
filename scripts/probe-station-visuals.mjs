@@ -418,7 +418,7 @@ for (const viewport of VIEWPORTS) {
 		};
 	});
 	check(
-		`${viewport.name}: every shader program the frame used linked`,
+		`${viewport.name}: every shader program the renderer has built linked`,
 		programs.total > 0 && programs.unlinked === 0,
 		`${programs.total - programs.unlinked}/${programs.total} linked`,
 	);
