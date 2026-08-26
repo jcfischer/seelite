@@ -10,8 +10,15 @@
  *
  * **It counts its own animation frames rather than reading the renderer's
  * counter.** Every `requestAnimationFrame` callback fires once per composited
- * frame, so the two agree — and this way the meter works on any page, including
- * one whose render loop has stalled, which is the case it most needs to report.
+ * frame, so the two agree, and the meter needs nothing from the page it is
+ * measuring.
+ *
+ * **A stall is reported, not frozen through.** A meter driven only by
+ * `requestAnimationFrame` stops updating exactly when the page stops painting,
+ * so it holds the last healthy number on screen — failing open into something
+ * reassuring, which is the opposite of what an instrument should do. A timer
+ * runs alongside it and takes over when no frame has arrived for longer than a
+ * window, showing how long the page has been stopped.
  *
  * It shows the frame *time* beside the rate, because the two carry different
  * information at the low end: 60 fps and 55 fps are 16.7 ms and 18.2 ms, but
@@ -69,6 +76,13 @@ export function mountFpsMeter(): () => void {
 	let handle = 0;
 	let stopped = false;
 
+	const show = (html: string) => {
+		// Every part of this is a number this file formatted, so there is nothing
+		// to escape — and `innerHTML` lets the rate read apart from the figures
+		// that qualify it.
+		readout.innerHTML = html;
+	};
+
 	const tick = () => {
 		if (stopped) return;
 		const now = performance.now();
@@ -79,13 +93,10 @@ export function mountFpsMeter(): () => void {
 		if (now - windowStart >= WINDOW_MS) {
 			const seconds = (now - windowStart) / 1000;
 			const fps = frames / seconds;
-			const mean = 1000 / fps;
-			// `innerHTML` so the rate reads apart from the two figures that
-			// qualify it. Every part of this string is a number this function
-			// formatted, so there is nothing here to escape.
-			readout.innerHTML =
-				`<b>${fps.toFixed(1)}</b> fps · ${mean.toFixed(0)} ms` +
-				` · worst ${worst.toFixed(0)} ms`;
+			show(
+				`<b>${fps.toFixed(1)}</b> fps · ${(1000 / fps).toFixed(0)} ms` +
+					` · worst ${worst.toFixed(0)} ms`,
+			);
 			frames = 0;
 			worst = 0;
 			windowStart = now;
@@ -94,9 +105,19 @@ export function mountFpsMeter(): () => void {
 	};
 	handle = requestAnimationFrame(tick);
 
+	// The stall watch. `setInterval` keeps running when the compositor does not,
+	// which is the whole point: without it the readout would hold its last
+	// healthy figure for as long as the page was frozen.
+	const watch = window.setInterval(() => {
+		const since = performance.now() - last;
+		if (since > WINDOW_MS * 4)
+			show(`<b>stalled</b> · ${(since / 1000).toFixed(1)} s`);
+	}, WINDOW_MS);
+
 	return () => {
 		stopped = true;
 		cancelAnimationFrame(handle);
+		window.clearInterval(watch);
 		readout.remove();
 	};
 }

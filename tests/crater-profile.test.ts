@@ -35,33 +35,28 @@ const PROFILE = [
 	"hash31(cell + 13.3));",
 	"float radius = 0.16 + 0.34 * hash31(cell + 3.1);",
 	"float rim  = exp(-pow((d - 0.88) * 6.5, 2.0)) * 0.7;",
+	// The reach, which decides *which* craters a point can see. A change here in
+	// one function alone samples a different set of them.
+	"if (d < 1.2)",
+	// The neighbourhood, all three axes. Guarding only x — which the first
+	// version did, while the PR claimed the check covered the neighbourhood —
+	// leaves a y or z bound free to change on one side and pass green.
+	"for (int x = -1; x <= 1; ++x)",
+	"for (int y = -1; y <= 1; ++y)",
+	"for (int z = -1; z <= 1; ++z)",
+	// The cell the walk is anchored on, and the scaling that sizes it.
+	"p *= scale;",
+	"vec3 base = floor(p);",
+	"vec3 cell = base + vec3(x, y, z);",
 ];
 
 const squashed = (text: string) => text.replace(/[ \t]+/g, " ");
 
 describe("the station's crater field is #57's crater field", () => {
-	test("both carry the same profile, line for line", () => {
-		for (const line of PROFILE) {
-			const needle = squashed(line);
-			expect([needle, squashed(shared).includes(needle)]).toEqual([
-				needle,
-				true,
-			]);
-			expect([needle, squashed(station).includes(needle)]).toEqual([
-				needle,
-				true,
-			]);
-		}
-	});
-
-	test("both walk the same neighbourhood", () => {
-		// A crater's reach is at most 1.2 × its radius, and its radius is under
-		// one cell — so only the 27 cells around a point can affect it, and both
-		// functions have to agree about that or one of them samples craters the
-		// other cannot see.
-		const walk = /for \(int x = -1; x <= 1; \+\+x\)/;
-		expect(walk.test(shared)).toBe(true);
-		expect(walk.test(station)).toBe(true);
+	test.each(PROFILE)("both carry: %s", (line) => {
+		const needle = squashed(line);
+		expect(squashed(shared)).toContain(needle);
+		expect(squashed(station)).toContain(needle);
 	});
 
 	test("the bowl is the same expression, modulo the gradient's own factor", () => {
@@ -71,5 +66,14 @@ describe("the station's crater field is #57's crater field", () => {
 		expect(shared).toContain("-(1.0 - d * d) * step(d, 1.0)");
 		expect(station).toContain("float inside = step(d, 1.0);");
 		expect(station).toContain("-(1.0 - d * d) * inside");
+	});
+
+	test("the depth scaling is applied the same way on both sides", () => {
+		// `depth` multiplies the summed profile in #57's and each term in the
+		// station's, because the gradient needs it inside the loop. Both are
+		// asserted, so neither can quietly drop it.
+		expect(squashed(shared)).toContain("acc += (bowl + rim) * depth;");
+		expect(squashed(station)).toContain("acc += (bowl + rim) * depth;");
+		expect(squashed(station)).toContain("dProfile * depth * scale");
 	});
 });

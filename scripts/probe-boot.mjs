@@ -535,14 +535,12 @@ check(
 );
 
 /**
- * The frame-rate readout is a **developer instrument**, not a HUD element.
+ * Both sides of the `?fps` gate. `fps-meter.ts` carries why it is gated at all.
  *
- * `hud-and-scanner.md` §5 puts tuning readouts on a Tuning tab and says they
- * may never occupy the persistent player flight floor. A number in the corner
- * of a cockpit is exactly that, so it is gated on `?fps` — and a gate is only a
- * gate if something checks both sides of it. The default game above has already
- * been open for the whole of this file; if the meter were ungated it would be
- * on screen in every check that precedes this one.
+ * A gate is only a gate if something checks that the default game does not
+ * carry it — and the page below has been open for the whole of this file, so if
+ * the meter were ungated it would have been on screen in every check that
+ * precedes this one.
  */
 check(
 	"the default game carries no frame-rate readout",
