@@ -51,7 +51,7 @@
 import * as THREE from "three";
 import { type Ring, hullLoft } from "./loft";
 import {
-	applyTriplanar,
+	applyRockSurface,
 	boxProjectUVs,
 	buildAsteroid,
 	displayRand,
