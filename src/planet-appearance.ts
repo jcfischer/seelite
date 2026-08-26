@@ -37,10 +37,21 @@ export interface PlanetAppearance {
 	 *  a class with no shell leaves it at 0 rather than at a colour nothing
 	 *  draws. */
 	atmosphereColor: number;
-	/** Fraction of the surface below sea level. 0 means no *liquid* ocean — an
-	 *  ice world's is frozen solid and still sets it, because the fracture
-	 *  pattern is drawn across the shell that froze. */
-	oceanFraction: number;
+	/**
+	 * The elevation the shader floods to, on its stretched 0..1 terrain field.
+	 *
+	 * **Not the ocean fraction.** `stretch()` widens a bell-shaped fBm so a
+	 * threshold near the middle is a usable control, but it does not turn the
+	 * mapping into a CDF — measured on the terran world, sea level 0.65 floods
+	 * 47% of sampled patches and 0.80 floods 66%. The relationship is monotonic,
+	 * which is what the shader needs; it is not an identity, which is what an
+	 * `oceanFraction` name would have promised.
+	 *
+	 * 0 means the class has no *liquid* ocean. An ice world's is frozen solid and
+	 * still sets it, because the fracture pattern is drawn across the shell that
+	 * froze.
+	 */
+	seaLevel: number;
 	/** How much of the disc a separate weather shell covers. 0 draws no shell —
 	 *  a venusian world's deck *is* its surface, and a gas giant's bands are
 	 *  painted into it, so neither gets a second one. */
@@ -50,6 +61,8 @@ export interface PlanetAppearance {
 	seed: number;
 }
 
+import { GIANT_ORBIT_FACTOR } from "./system";
+
 /** FNV-1a. Appearance needs a stable number per id, not a good distribution. */
 const hash = (text: string) => {
 	let value = 2166136261;
@@ -57,16 +70,6 @@ const hash = (text: string) => {
 		value = Math.imul(value ^ text.charCodeAt(i), 16777619);
 	return value >>> 0;
 };
-
-/**
- * The giant boundary, as a multiple of the habitable distance.
- *
- * `system.ts` spells the same rule inline as `aAu > 2 * habitableAu`. The two
- * are checked against each other by a test that generates real systems and
- * compares every planet's `isGasGiant` against this number — a literal asserted
- * against itself would stay green while the parity it claims went false.
- */
-export const GIANT_ORBIT_FACTOR = 2;
 
 /**
  * Thresholds on `a/a_hab`, in the units the generator already thinks in.
@@ -86,7 +89,9 @@ export const WARMTH = {
 	TERRAN: 1.3,
 	/** Cold enough that the ocean is gone. The same line as `GIANT`. */
 	DESERT: GIANT_ORBIT_FACTOR,
-	/** Matches `system.ts`'s `isGasGiant`. */
+	/** `system.ts`'s own `isGasGiant` factor, imported rather than restated —
+	 *  the generator owns the rule and display reads it, so the parity is
+	 *  structural instead of asserted by a test. */
 	GIANT: GIANT_ORBIT_FACTOR,
 	/** Beyond this a giant is methane-blue rather than ammonia-brown. */
 	ICE_GIANT: 5.0,
@@ -121,7 +126,7 @@ export function classify(
 const NO_SHELL = {
 	atmosphere: 0,
 	atmosphereColor: 0,
-	oceanFraction: 0,
+	seaLevel: 0,
 	cloudCover: 0,
 	hasRings: false,
 } as const;
@@ -148,7 +153,7 @@ const CLASS_TRAITS: Record<
 		atmosphere: 0.2,
 		atmosphereColor: 0x9fd0e8,
 		// A frozen ocean is still an ocean: the fracture pattern needs one.
-		oceanFraction: 0.9,
+		seaLevel: 0.9,
 		cloudCover: 0.12,
 	},
 	jovian: { atmosphere: 1, atmosphereColor: 0xd8a05a },
@@ -193,16 +198,20 @@ export function appearanceFor(
 	};
 
 	if (surface === "terran") {
-		// 0.55–0.75, so terran worlds vary between continents and archipelagos
-		// without ever losing the ocean that makes them terran.
-		look.oceanFraction = 0.55 + ((seed >>> 8) & 0xff) / 255 / 5;
+		// 0.55–0.75. Flooding that band leaves every terran world with both
+		// continents and open water — measured at roughly 30% to 66% ocean —
+		// without any of them losing the sea that makes it terran.
+		look.seaLevel = 0.55 + ((seed >>> 8) & 0xff) / 255 / 5;
 		// Weather is the loudest thing about a terran world at a distance, and
 		// the cover varies enough between them to be an identity of its own.
 		look.cloudCover = 0.55 + ((seed >>> 16) & 0xff) / 255 / 2.2;
 	}
-	// Three giants in eight, so rings stay an event.
+	// Three giants in eight, so rings stay an event. Read off the *top* byte:
+	// the hash comment above disclaims its distribution, and leaning on the low
+	// bits of a value declared "not a good distribution" would be taking back
+	// the disclaimer one line later.
 	if (surface === "jovian" || surface === "iceGiant")
-		look.hasRings = (seed & 7) < 3;
+		look.hasRings = ((seed >>> 24) & 7) < 3;
 
 	return look;
 }

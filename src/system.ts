@@ -86,6 +86,15 @@ export const SHIPYARD_MIN_TL = 10;
  *  constant for both the count's upper bound and the size of the roll table, so
  *  the two cannot drift apart and leave a fallback guarding nothing. */
 export const MAX_MOONS = 3;
+
+/**
+ * A planet is a gas giant past this multiple of the habitable distance (§6.2).
+ *
+ * Exported because the renderer's surface classifier draws the same line, and a
+ * second copy of the number over there would be kept honest only by a test.
+ * The generator owns it; display reads it.
+ */
+export const GIANT_ORBIT_FACTOR = 2;
 const ROLLS_PER_MOON = 4;
 
 /**
@@ -402,7 +411,7 @@ export function generateContents(record: SystemRecord): SystemContents {
 			moonRolls.push(bodies());
 		if (aAu < MIN_ORBIT_AU || aAu > MAX_ORBIT_AU) continue;
 
-		const isGasGiant = aAu > 2 * habitableAu;
+		const isGasGiant = aAu > GIANT_ORBIT_FACTOR * habitableAu;
 		const size = isGasGiant ? GIANT_RADIUS_KM : ROCKY_RADIUS_KM;
 		const radiusKm = size.base + radiusRoll * size.span;
 		const id = `planet-${i}`;

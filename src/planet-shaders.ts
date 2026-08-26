@@ -12,6 +12,32 @@
  */
 
 /** Hashes, value noise, fBm, ridged fBm, domain warp. GLSL ES 1.00. */
+/**
+ * `fbmN` for each octave count the classes use.
+ *
+ * Emitted from one template rather than written three times: GLSL ES 1.00
+ * forbids a non-constant loop bound, so the functions genuinely cannot share a
+ * body — but the lacunarity and the offset can still have one home instead of
+ * three that must be edited together.
+ *
+ * Amplitude-normalised: the sum is divided by the total weight, so fbm3/4/5 all
+ * return the same range and a threshold tuned against one still means something
+ * against another. The prototype this replaced skipped that, which is why its
+ * sea level sat in the tail of the distribution and drowned every continent.
+ */
+const FBM_VARIANTS = [3, 4, 5]
+	.map(
+		(octaves) => /* glsl */ `
+float fbm${octaves}(vec3 p) {
+  float s = 0.0, a = 0.5, n = 0.0;
+  for (int i = 0; i < ${octaves}; ++i) {
+    s += a * vnoise(p); n += a; p = p * 2.03 + 17.1; a *= 0.5;
+  }
+  return s / n;
+}`,
+	)
+	.join("\n");
+
 export const NOISE_GLSL = /* glsl */ `
 const float PI = 3.14159265;
 
@@ -32,25 +58,7 @@ float vnoise(vec3 p) {
              mix(mix(e,g,f.x), mix(h,k,f.x), f.y), f.z);
 }
 
-// Amplitude-normalised: the sum is divided by the total weight, so fbm3/4/5 all
-// return the same range and a threshold tuned against one still means something
-// against another. The old prototype skipped this, which is why its sea level
-// sat in the tail of the distribution and drowned every continent.
-float fbm3(vec3 p) {
-  float s = 0.0, a = 0.5, n = 0.0;
-  for (int i = 0; i < 3; ++i) { s += a * vnoise(p); n += a; p = p * 2.03 + 17.1; a *= 0.5; }
-  return s / n;
-}
-float fbm4(vec3 p) {
-  float s = 0.0, a = 0.5, n = 0.0;
-  for (int i = 0; i < 4; ++i) { s += a * vnoise(p); n += a; p = p * 2.03 + 17.1; a *= 0.5; }
-  return s / n;
-}
-float fbm5(vec3 p) {
-  float s = 0.0, a = 0.5, n = 0.0;
-  for (int i = 0; i < 5; ++i) { s += a * vnoise(p); n += a; p = p * 2.03 + 17.1; a *= 0.5; }
-  return s / n;
-}
+${FBM_VARIANTS}
 
 // Ridged noise: the |2n-1| fold turns smooth hills into creases, which is what
 // mountain chains and ice fractures both are.

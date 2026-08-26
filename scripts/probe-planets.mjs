@@ -18,7 +18,9 @@ const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
 const PAGE_URL = process.env.PROBE_URL ?? ORIGIN + "/?planet-prototype";
 
-/** The ladder, in the order the gallery lays it out. */
+/** Every rung the ladder must reach. Order is the gallery's layout choice and
+ *  not part of the claim, so this is compared as a set — reordering the gallery
+ *  should not turn this probe red for a reason unrelated to what it tests. */
 const EXPECTED = [
 	"lava",
 	"venusian",
@@ -74,11 +76,17 @@ check("no page error while the gallery rendered", failures.length === 0);
 if (failures.length) console.error(failures.join("\n"));
 
 const classes = await page.evaluate(() => window.__seelitePlanets.classes);
+const wraps = await page.evaluate(() => window.__seelitePlanets.wrapAmount);
+const missing = EXPECTED.filter((name) => !classes.includes(name));
+const extra = classes.filter((name) => !EXPECTED.includes(name));
 check(
 	`every ladder rung reached the screen (${classes.join(", ")})`,
-	EXPECTED.length === classes.length &&
-		EXPECTED.every((name, i) => classes[i] === name),
+	missing.length === 0 &&
+		extra.length === 0 &&
+		classes.length === EXPECTED.length,
 );
+if (missing.length) console.error(`  missing: ${missing.join(", ")}`);
+if (extra.length) console.error(`  unexpected: ${extra.join(", ")}`);
 
 /**
  * Sample the lit and unlit sides of every disc, in one round trip.
@@ -90,8 +98,12 @@ check(
  * 0.62 of its radius, so a sample any nearer the centre lands *on* the
  * terminator and reads half-lit for every class — measured, and it is what an
  * earlier revision of this probe was doing when it reported gas giants as
- * marginal. Past 0.85 the atmosphere shell takes over and the measurement stops
- * being about the surface.
+ * marginal. Past ~0.85 the atmosphere shell takes over and the measurement stops
+ * being about the surface — and that bound has to hold for the patch's *corner*,
+ * not its centre. Centre 0.78 radii out, half-width 0.06 on each axis, so the
+ * far corner reaches 0.86. An earlier revision used a 0.10 half-width from 0.80
+ * and reached 0.93, which put shell pixels inside a measurement whose own
+ * comment excluded them.
  *
  * One `evaluate` for all of them: `samplePatch` re-renders the whole scene, and
  * a round trip per body meant nine full renders of nine fragment shaders on the
@@ -126,13 +138,27 @@ for (let i = 0; i < classes.length; i++) {
 			dark > passiveDark,
 		);
 	} else {
-		// 3x separates a lit sphere from a flat one. The bar matters: the
-		// prototype this replaced lit its rocky worlds as `0.62 + 0.72*ndl`,
-		// which tops out at 2.16x however hard the sun shines, and lit its gas
-		// giants not at all.
+		// How sharp a terminator *should* be is a property of the atmosphere, not
+		// a constant. The shader carries light past the geometric terminator by
+		// `(ndl + w)/(1 + w)`, so at the sampled bearing a body with w = 0.32 is
+		// still faintly lit where an airless one is black — that is the model
+		// working, not a defect, and a single bar either fails the giants or lets
+		// an unlit moon through.
+		//
+		// Each bar still discriminates against what this prototype replaced: the
+		// old renderer lit rocky worlds as `0.62 + 0.72*ndl`, which tops out at
+		// 2.16x however hard the sun shines, and lit its gas giants not at all
+		// (1.0x flat).
+		// `iceGiant` sits closest to its bar, and the reason is its rings: the ring
+		// plane crosses the disc through the unlit sample, and a ring is lit by
+		// the sun whatever the planet behind it is doing. The check still
+		// discriminates — an unlit ice giant reads flat — but the number is about
+		// planet-and-ring, and reading it as a surface figure would be wrong.
+		const wrap = wraps[i];
+		const bar = wrap > 0.25 ? 2.2 : wrap > 0.1 ? 4.0 : 6.0;
 		check(
-			`${name}: has a terminator (lit ${lit.toFixed(1)} vs dark ${dark.toFixed(1)}, x${(lit / Math.max(1, dark)).toFixed(1)})`,
-			lit > dark * 3.0,
+			`${name}: has a terminator (lit ${lit.toFixed(1)} vs dark ${dark.toFixed(1)}, x${(lit / Math.max(1, dark)).toFixed(1)} against a x${bar} bar at wrap ${wrap.toFixed(2)})`,
+			lit > dark * bar,
 		);
 	}
 }
@@ -140,12 +166,17 @@ for (let i = 0; i < classes.length; i++) {
 /**
  * Pairwise distinctness, on colour *and* structure.
  *
- * Mean patch colour alone is too weak a claim to carry "nine different
- * pictures": two classes with identical structure and one 1.8x brighter would
- * pass every pair. So each patch also reports the standard deviation of its
- * luminance, and a pair separates on hue, on brightness, **or** on texture — a
- * banded giant against a smooth haze differs in the third even when the first
- * two are close.
+ * A pair passes on hue, on brightness, **or** on texture, and the axis it used
+ * is printed — because all three are legitimate ways for two worlds to look
+ * different, and demanding two of them would fail real pairs (a star and a
+ * terran world separate on brightness and hue while sharing a deviation).
+ *
+ * Texture is the axis this probe was missing. On colour alone, two classes with
+ * identical structure and one 1.8x brighter passed, and the header's claim about
+ * "nine different pictures" rested on a measurement that could not see pattern
+ * at all. The standard deviation of luminance inside each patch is what sees it:
+ * `terran/jovian` separate at 8.5x on that axis while sitting 1.17x apart in
+ * brightness.
  */
 const MIN_CHROMA = 0.035;
 const MIN_LUMA_RATIO = 1.8;
@@ -219,6 +250,10 @@ for (let gx = -3; gx <= 3; gx++)
 
 const terran = classes.indexOf("terran");
 check("the gallery includes a terran world", terran >= 0);
+if (terran < 0)
+	console.error(
+		"  skipped: ocean coverage, sea-level monotonicity, sea-level range",
+	);
 
 /** Ocean fraction at a given sea level, in one round trip. */
 async function oceanFractionAt(seaLevel) {
@@ -236,7 +271,7 @@ async function oceanFractionAt(seaLevel) {
 
 if (terran >= 0) {
 	const authored = await page.evaluate(
-		(i) => window.__seelitePlanets.oceanFraction[i],
+		(i) => window.__seelitePlanets.seaLevel[i],
 		terran,
 	);
 	const fraction = await oceanFractionAt(null);
@@ -267,10 +302,15 @@ if (terran >= 0) {
 	console.log(
 		`  sea level -> ocean: ${ladder.map(([l, f]) => `${l}=${(f * 100).toFixed(0)}%`).join("  ")}`,
 	);
+	// One grid cell of slack. The classification is a hard threshold on ~37
+	// sampled patches, so a single boundary patch flipping between steps would
+	// fail a shader that is behaving correctly — a strict compare here tests the
+	// sampling noise, not the shader.
+	const SLACK = 1 / GRID.length;
 	for (let i = 1; i < ladder.length; i++) {
 		check(
 			`raising sea level ${ladder[i - 1][0]} -> ${ladder[i][0]} does not lower the ocean fraction`,
-			ladder[i][1] >= ladder[i - 1][1],
+			ladder[i][1] >= ladder[i - 1][1] - SLACK,
 		);
 	}
 	// A control that never moves is not a control. Across the full sweep the

@@ -1,12 +1,12 @@
 import { expect, test } from "bun:test";
 import { generateGalaxy } from "../src/galaxy";
+import { WARMTH, appearanceFor, classify } from "../src/planet-appearance";
 import {
 	GIANT_ORBIT_FACTOR,
-	WARMTH,
-	appearanceFor,
-	classify,
-} from "../src/planet-appearance";
-import { MAX_ORBIT_AU, MIN_ORBIT_AU, generateContents } from "../src/system";
+	MAX_ORBIT_AU,
+	MIN_ORBIT_AU,
+	generateContents,
+} from "../src/system";
 
 /** `a/a_hab` midway between two rungs, so a threshold nudge does not flip it. */
 const between = (low: number, high: number) => (low + high) / 2;
@@ -30,6 +30,9 @@ test("the desert rung and the giant rung are one boundary, not two", () => {
 	// Two names for one line. Split them and a band opens between the last
 	// rocky rung and the first giant one, which nothing would classify.
 	expect(WARMTH.DESERT).toBe(WARMTH.GIANT);
+	// And the line is the generator's own, imported rather than restated — so
+	// this is now a structural fact, not a number the test has to police. The
+	// sweep below still checks that the rule built on it agrees per planet.
 	expect(WARMTH.GIANT).toBe(GIANT_ORBIT_FACTOR);
 });
 
@@ -96,18 +99,20 @@ test("class comes from the orbit, decoration comes from the seed", () => {
 	expect(a.surface).toBe(b.surface);
 	// ...with different weather.
 	expect(a.seed).not.toBe(b.seed);
-	expect(a.oceanFraction).not.toBe(b.oceanFraction);
+	expect(a.seaLevel).not.toBe(b.seaLevel);
 
 	// And the same id twice is byte-identical, because nothing here is random.
 	expect(rocky(1.0, "planet-1")).toEqual(a);
 });
 
-test("terran worlds keep an ocean, and it is never the whole planet", () => {
+test("terran sea levels stay inside the band that leaves land and water", () => {
+	// A *threshold*, not a fraction: only the browser runs the noise it cuts, so
+	// what the band actually floods is measured in `probe-planets.mjs`.
 	for (let i = 0; i < 64; i++) {
 		const world = rocky(1.0, `planet-${i}`);
 		expect(world.surface).toBe("terran");
-		expect(world.oceanFraction).toBeGreaterThanOrEqual(0.55);
-		expect(world.oceanFraction).toBeLessThanOrEqual(0.75);
+		expect(world.seaLevel).toBeGreaterThanOrEqual(0.55);
+		expect(world.seaLevel).toBeLessThanOrEqual(0.75);
 		expect(world.cloudCover).toBeGreaterThan(0);
 	}
 });
@@ -121,6 +126,7 @@ test("a class with no shell leaves the shell fields alone", () => {
 	]) {
 		expect(look.atmosphere).toBe(0);
 		expect(look.atmosphereColor).toBe(0);
+		expect(look.seaLevel).toBe(0);
 		expect(look.cloudCover).toBe(0);
 		expect(look.hasRings).toBe(false);
 	}
