@@ -278,9 +278,30 @@ uniform float warmth;
  * detail is ridged noise in surface(), which is far cheaper than a third
  * neighbourhood walk and reads the same at that scale.
  *
- * The standing cost is a prototype figure. An implementation should bake this
- * into a normal map once at system generation, where 135 cell tests happen per
- * texel at load instead of per pixel per frame.
+ * The standing cost is a prototype figure, and #59 measured what could be done
+ * about it in the live renderer. Two answers were tried and both were withdrawn
+ * against the measurement, which is recorded here because the next reader will
+ * otherwise propose them again:
+ *
+ * A **bake** at system generation — the answer an earlier revision of this
+ * comment proposed. Baking to an equirectangular target gives back the UV seam
+ * and the pole pinch this whole module is object-space to avoid, and a cubemap
+ * bake that does not costs six faces to buy a saving nothing had yet measured.
+ *
+ * A **detail band** that dropped the fine octave once its craters were
+ * sub-pixel. Built, measured by scripts/probe-planet-surfaces.mjs on the moon
+ * alone in the frame, in five interleaved pairs at each render layer: +3.0 ms
+ * against 66.9 ms of run-to-run spread filling the screen, -3.7 against 4.2 at
+ * approach, +1.2 against 3.8 in the far layer. Inside the instrument's own
+ * noise at every layer, so the band was reporting a saving it could not
+ * demonstrate, and it went. The reason it cannot help is structural rather than
+ * a tuning failure: crater cost is a *coverage* cost, so it is only large when
+ * the body fills the screen, and that is exactly where the craters are the
+ * whole read and no band would drop them.
+ *
+ * Both octaves stay, unconditionally. If this ever needs to be cheaper, the
+ * measurement to beat is in the probe's budget section, and it must be taken on
+ * a GPU — the runner is a software rasteriser.
  */
 float height(vec3 p) {
   return craters(p + seedOffset, 3.2, 0.55)

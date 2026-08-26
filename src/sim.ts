@@ -64,6 +64,7 @@ import {
 	placeBodies,
 	velocityOnOrbit,
 } from "./system";
+import { type PlanetAppearance, appearanceOf } from "./planet-appearance";
 import { type Vec3, add, dot, length, scale, sub, v3 } from "./vec3";
 
 /**
@@ -85,6 +86,20 @@ export interface Body {
 	radiusKm: number;
 	/** Base colour. Emissive for a star, diffuse for everything else. */
 	color: number;
+	/**
+	 * How this body is drawn, classified from the generator's own numbers.
+	 *
+	 * `undefined` for a station, which is the one body that is not a sphere.
+	 *
+	 * **Held here rather than derived in the renderer**, for the reason
+	 * `color` is: the class is a function of `aAu`, `isGasGiant` and the star's
+	 * luminosity, all of which live in `contents`, and a renderer that looked
+	 * them up itself would be the second place that join is spelled. It stays
+	 * display-only and it stays pure — `planet-appearance.ts` imports nothing
+	 * but `system.ts`, so carrying it here does not put Three.js anywhere near
+	 * this module.
+	 */
+	appearance?: PlanetAppearance;
 }
 
 export interface Ship {
@@ -232,6 +247,7 @@ export function makeSystem(record: SystemRecord, gameTime: number): System {
 		pos: b.pos,
 		radiusKm: b.radiusKm,
 		color: colorFor(b, record, contents),
+		appearance: appearanceOf(b, contents),
 	}));
 	return {
 		record,
