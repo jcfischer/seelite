@@ -119,12 +119,22 @@ export interface StationGeometry {
  * and `tests/aperture-fit.test.ts` measures it, so the figures below are
  * derived rather than placeholders.
  *
- * The slot went from 200 × 70 m to **120 × 60 m**, ratified 2026-08-26. The
- * old width was 3.7× the widest ordinary hull's beam and read as a hangar door
- * on a 1.24 km station — 16% of its whole width, against about 10% for the
- * reference Coriolis. 120 m still admits every ordinary hull with 66 m to
- * spare, and the height keeps its own margin at 13 m, which is the skill tax
- * `docking.md` §3 wants it to be.
+ * The slot went from 200 × 70 m to **120 × 70 m**, ratified 2026-08-26. The old
+ * width was 3.7× the widest ordinary hull's beam and read as a hangar door on a
+ * 1.24 km station — 16% of its whole width, against about 10% for the reference
+ * Coriolis.
+ *
+ * **Only the width moved, and the first attempt moved the height too.** §10
+ * requires the slot to admit the largest hull *at check 4's 50° roll limit*,
+ * not axis-aligned, and a rolled rectangle needs `w·cos θ + h·sin θ` across and
+ * `w·sin θ + h·cos θ` up. Measured over the roster at 50°, the binding figures
+ * are 62.8 m and 63.4 m — so height is the dimension with almost no room in it,
+ * and 60 m was 3.4 m short of a slot the docking checks would have accepted a
+ * ship through. §10 is explicit about the remedy: the aperture moves, not the
+ * tolerance.
+ *
+ * At 120 × 70 the margins are 57.2 m across and 6.6 m up, which is the skill tax
+ * `docking.md` §3 wants and the reason the height is not a dial.
  *
  * They are read from here by the meshes, the docking checks and the probes
  * rather than restated, so a retune is one edit in one place — and every form's
@@ -133,7 +143,7 @@ export interface StationGeometry {
 export const STATION_GEOMETRY: Record<StationType, StationGeometry> = {
 	trade: {
 		coreRadiusKm: 0.6,
-		aperture: { kind: "slot", widthKm: 0.12, heightKm: 0.06 },
+		aperture: { kind: "slot", widthKm: 0.12, heightKm: 0.07 },
 		axis: "parent",
 		spins: true,
 	},
@@ -142,7 +152,7 @@ export const STATION_GEOMETRY: Record<StationType, StationGeometry> = {
 		// is silhouette, not dockable geometry, so it changes what you *see* and
 		// nothing about what you fly into.
 		coreRadiusKm: 0.6,
-		aperture: { kind: "slot", widthKm: 0.12, heightKm: 0.06 },
+		aperture: { kind: "slot", widthKm: 0.12, heightKm: 0.07 },
 		axis: "parent",
 		spins: true,
 	},

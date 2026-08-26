@@ -390,11 +390,26 @@ async function silhouette(id, repeat = false) {
 				};
 			};
 			const shape = shapeOf(withIt, without);
-			// The control's second capture, taken from the *same* pair of renders
-			// rather than from a second evaluate. See the header: real frames run
-			// between two evaluates and carry the station along its orbit, which
-			// is a genuine change of apparent size and not instability.
-			return twice ? { shape, again: shapeOf(withIt, without) } : shape;
+			if (!twice) return shape;
+			// **A second pair of renders, not a second call on the same buffers.**
+			//
+			// The control is supposed to measure what this metric does when
+			// nothing has changed — rasteriser, read-back, threshold and
+			// resampling, all of it. Differencing the *same two frames* twice
+			// measures a pure function against itself and is identically zero, so
+			// the gate could not fail. It was written that way while fixing the
+			// opposite problem — two evaluates let real frames run between the
+			// captures, which moved the station along its orbit — and the fix
+			// overshot into a check that asserts nothing.
+			//
+			// Rendering again inside one evaluate is the honest middle: the clock
+			// is still pinned and no frame lands between, so nothing about the
+			// scene changes, but every stage that could be unstable runs twice.
+			const withItAgain = luma();
+			mesh.visible = false;
+			const withoutAgain = luma();
+			mesh.visible = true;
+			return { shape, again: shapeOf(withItAgain, withoutAgain) };
 		},
 		[id, GRID, repeat],
 	);

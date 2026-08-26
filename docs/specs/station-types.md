@@ -567,15 +567,16 @@ variants, and for the same reason: the pool is what a later decision draws on.
 | Role | A | B | C |
 |---|---|---|---|
 | trade | **Coriolis** — a cuboctahedron; the slot is cut into a real flat square face | **Ring** — a spun torus on a fixed hub, the dock a tunnel on the axis | **Drum** — an O'Neill barrel end-on; length rather than width is the cue |
-| shipyard | **Gantry** — a command keel under open ribbed bays sized for a ship | **Hangar** — a closed slab with a floodlit bay mouth; ships inside, not clamped outside | **Slipway** — a broken ring with the gap as the slip |
+| shipyard | **Gantry** — a bridge keel under open ribbed bays sized for a ship | **Hangar** — a closed slab with a floodlit bay mouth; ships inside, not clamped outside | **Slipway** — a broken ring with the gap as the slip |
 | refinery | **Warren** — terraced plant cut into the rock; the pad is in the notch | **Collar** — a machined band gripping the rock at its waist | **Spar** — a processing spar run through the rock and out the far side |
 | outpost | **Derrick** — a lattice tower on a tank cluster, pad deck on top | **Buoy** — a stubby drum wearing radiator fins; nothing hangs off it | **Rig** — an angled truss holding a deck out over a drill head |
 
 `SELECTED_FORM` (`station-mesh.ts`) names the one the game builds for each role,
 and is one line per role so a later choice is one edit. Trade and shipyard are
-**A** by the round-one ranking; refinery and outpost are **A** as a placeholder
-and the constant says so, because those two roles were never ranked and a
-default that pretends otherwise is how a placeholder becomes the shipped answer.
+**A** by the round-one ranking; refinery and outpost are **A** as a placeholder,
+which the constant's own comment states, because those two roles were never
+ranked and a default that pretends otherwise is how a placeholder becomes the
+shipped answer.
 
 ### 7.2 What each form owes
 

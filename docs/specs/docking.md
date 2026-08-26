@@ -153,7 +153,7 @@ check 5 a ship flying squarely into the *hull face* satisfies every angle, every
 sign and the gate, and docks through solid structure.
 
 **Check 4 compares against the axis-*line*, not an oriented vector.** The slot is
-a 0.12 × 0.06 km rectangle, so a ship rolled 180° is a geometrically identical
+a 0.12 × 0.07 km rectangle, so a ship rolled 180° is a geometrically identical
 entry; an oriented-vector comparison would reject it for no physical reason. Two consequences of *that instant*
 being the evaluation point, both of which decide implementations:
 
@@ -289,7 +289,7 @@ answers for it.
 
 | Type | Dockable core radius | Aperture | Axis |
 |---|---|---|---|
-| trade station | 0.6 km | slot, 0.12 × 0.06 km, on the spin axis | toward the parent body (1984's "face nearest the planet") |
+| trade station | 0.6 km | slot, 0.12 × 0.07 km, on the spin axis | toward the parent body (1984's "face nearest the planet") |
 | shipyard | 0.6 km (Coriolis core) | identical slot | toward the parent body |
 | refinery | 0.4 km (drum) | pad, 0.15 × 0.15 km | radially outward from the star |
 
@@ -300,18 +300,30 @@ against every one of them, which is what §10 actually asked for.
 
 The slot was 0.20 × 0.07 km. That is 3.7× the widest ordinary hull's beam and
 16% of a 1.24 km station's whole width, against about 10% on the reference
-Coriolis: on screen it read as a hangar door rather than as a slot. At
-0.12 × 0.06 km every ordinary hull still passes with 66 m of width to spare and
-13 m of height, the height being the dimension that binds and the one §3 wants
-tight — the slot is the skill tax.
+Coriolis: on screen it read as a hangar door rather than as a slot.
+
+**Only the width moved.** §10 requires the slot to admit the largest hull at
+check 4's 50° roll limit rather than axis-aligned, and a rolled rectangle needs
+`w·cos θ + h·sin θ` across and `w·sin θ + h·cos θ` up. Measured over #35's
+roster at 50°, the binding figures are **62.8 m** across and **63.4 m** up —
+so the height has almost nothing in it, and a first attempt at 0.12 × 0.06
+was 3.4 m short of a slot the checks would have cleared a ship through. §10 is
+explicit about the remedy and it was followed: the aperture moves, not the
+tolerance.
+
+At 0.12 × 0.07 km the margins are 57.2 m across and 6.6 m up. The height is not
+a dial.
 
 **Neither capital class fits, and is not meant to** (see the map's
 Constraints): the carrier is 212 × 181 m and the dreadnought 186 × 165 m. #26
 owes them an outfitting route that is not a station.
 
 Probe fixtures and every form's drawn dock frame read the aperture from the
-geometry constant rather than restating it, so a retune moves one table and
-nothing else.
+geometry constant rather than restating it, so a retune moves one table and no
+*code*. It does not move one **prose** site: this retune also touched §4, §10,
+the table above, `station.test.ts`'s expectation and `aperture-fit.test.ts`'s
+header. Figures written into prose are the thing that goes stale, which is why
+the test prints its margins rather than asserting a remembered pair.
 
 The shipyard's drydock frame (#13 §7) extends to roughly 1.5 km and is **not
 dockable geometry** — it is silhouette. Docking geometry is a drawn object and
@@ -538,7 +550,7 @@ before merge.
   station hostility; and the NPC traffic that replaces §6.1's injected
   occupancy. It inherits §9.1.10 as a test it must satisfy, not author.
 - **The HUD node** — inherits §8's two cues.
-- **#26 (ship roster)** — the slot at 0.12 × 0.06 km must admit the largest hull
+- **#26 (ship roster)** — the slot at 0.12 × 0.07 km must admit the largest hull
   it introduces **at check 4's 50° roll limit**, not merely axis-aligned: a hull
   that fits the 70 m short dimension square does not fit it rolled 50°. If it
   does not, the aperture moves, not the tolerance.

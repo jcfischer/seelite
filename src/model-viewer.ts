@@ -276,6 +276,9 @@ export function mountModelViewer(): void {
 		elevation: 0.38,
 		distance: framing(family.assets[0], family.variantIds[0]),
 	};
+	/** The reach the stage is currently framed for, so a reframe that would
+	 *  change nothing can be skipped. */
+	let currentReach = family.reachKm(state.asset, state.variant);
 	let mesh: THREE.Group | undefined;
 	let dragging = false;
 	let previous = { x: 0, y: 0 };
@@ -385,6 +388,7 @@ export function mountModelViewer(): void {
 			state.variant = state.selectedVariants[asset];
 			// A capital hull and a courier cannot share an orbit radius, so the
 			// stage reframes rather than leaving the camera inside the new ship.
+			currentReach = family.reachKm(asset, state.variant);
 			state.distance = framing(asset, state.variant);
 			reframe(asset, state.variant);
 			root
@@ -406,10 +410,16 @@ export function mountModelViewer(): void {
 			state.selectedVariants[state.asset] = variant;
 			// A station form's reach is per *form*, not per role — a ring is half
 			// again a drum — so selecting one reframes the stage the way selecting
-			// a role does. On the ship family every variant of a role shares a
-			// reach and this is a no-op.
-			state.distance = framing(state.asset, variant);
-			reframe(state.asset, variant);
+			// a role does. Guarded on the reach actually changing: on the ship
+			// family every variant of a role shares one, and `reframe` disposes a
+			// `GridHelper` and builds another, which is a real allocation to spend
+			// on a no-op.
+			const reach = family.reachKm(state.asset, variant);
+			if (reach !== currentReach) {
+				currentReach = reach;
+				state.distance = framing(state.asset, variant);
+				reframe(state.asset, variant);
+			}
 			updateTournament();
 			rebuild();
 		}

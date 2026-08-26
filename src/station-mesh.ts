@@ -51,7 +51,7 @@
 import * as THREE from "three";
 import { type Ring, hullLoft } from "./loft";
 import { SimplexNoise } from "./noise";
-import { STATION_GEOMETRY, type StationType } from "./station";
+import { STATION_GEOMETRY, STATION_TYPES, type StationType } from "./station";
 import {
 	PLATE_TEXTURE_SIZE,
 	ROCK_TEXTURE_SIZE,
@@ -90,20 +90,19 @@ import {
  * nothing else. Reading it as a design constraint would be reading a
  * measurement as an intention.
  */
-export const STATION_SILHOUETTE_KM: Record<StationType, number> = {
-	get trade() {
-		return formOf("trade", SELECTED_FORM.trade).reachKm;
-	},
-	get shipyard() {
-		return formOf("shipyard", SELECTED_FORM.shipyard).reachKm;
-	},
-	get refinery() {
-		return formOf("refinery", SELECTED_FORM.refinery).reachKm;
-	},
-	get outpost() {
-		return formOf("outpost", SELECTED_FORM.outpost).reachKm;
-	},
-};
+export const STATION_SILHOUETTE_KM: Record<StationType, number> =
+	Object.defineProperties(
+		{} as Record<StationType, number>,
+		Object.fromEntries(
+			STATION_TYPES.map((type) => [
+				type,
+				{
+					enumerable: true,
+					get: () => formOf(type, SELECTED_FORM[type]).reachKm,
+				},
+			]),
+		),
+	);
 
 /** What the renderer gets back: a root oriented to the aperture axis, and the
  *  part of it that spins. */
@@ -874,6 +873,17 @@ export interface StationForm {
 export type StationFormId = "a" | "b" | "c";
 export const STATION_FORM_IDS: StationFormId[] = ["a", "b", "c"];
 
+/** One flat-shaded clone per base material, kept. */
+const flatClones = new WeakMap<THREE.Material, THREE.Material>();
+function flatCloneOf(material: THREE.Material) {
+	const cached = flatClones.get(material);
+	if (cached) return cached;
+	const clone = material.clone();
+	if (clone instanceof THREE.MeshStandardMaterial) clone.flatShading = true;
+	flatClones.set(material, clone);
+	return clone;
+}
+
 /**
  * One texture repeat per this many kilometres of hull.
  *
@@ -928,9 +938,10 @@ function shell(
 	for (let i = 0; i < uv.count; i++)
 		uv.setXY(i, uv.getX(i) / STATION_PANEL_KM, uv.getY(i) / STATION_PANEL_KM);
 	uv.needsUpdate = true;
-	const shaded = flat ? material.clone() : material;
-	if (flat && shaded instanceof THREE.MeshStandardMaterial)
-		shaded.flatShading = true;
+	// Cached per source material: the forms ask for flat shading dozens of times
+	// per station, and a clone each time gives one station dozens of distinct
+	// materials that can never batch. One clone per base material instead.
+	const shaded = flat ? flatCloneOf(material) : material;
 	const mesh = new THREE.Mesh(geometry, shaded);
 	mesh.name = name;
 	return mesh;
@@ -1379,7 +1390,7 @@ function buildTradeDrum(color: number): BuiltPart {
 	return { group, fixtures };
 }
 
-/** Shipyard A — Gantry. A command keel with two open bays of lofted ribs
+/** Shipyard A — Gantry. A bridge keel with two open bays of lofted ribs
  *  along it; the bays are the silhouette, and they are obviously *for* holding
  *  something the size of a ship. */
 function buildShipyardGantry(color: number): BuiltPart {
@@ -1687,10 +1698,6 @@ function buildShipyardSlipway(color: number): BuiltPart {
 	// angles on one object leaves the result to `Euler`'s order, and all four
 	// came out lying along one line, which is why the form read as unfinished.
 	for (let i = 0; i < 4; i++) {
-		const arm = new THREE.Group();
-		arm.rotation.z = Math.PI * 0.3 + (i / 3) * Math.PI * 1.35;
-		arm.name = `strut-${i}`;
-		frame.add(arm);
 		const strut = shell(
 			[
 				{ z: r * 0.32, w: r * 0.08, h: r * 0.06, e: 4 },
@@ -1701,17 +1708,17 @@ function buildShipyardSlipway(color: number): BuiltPart {
 			6,
 			true,
 		);
-		strut.rotation.y = Math.PI / 2;
-		arm.add(strut);
+		radialArm(
+			frame,
+			Math.PI * 0.3 + (i / 3) * Math.PI * 1.35,
+			`strut-${i}`,
+			strut,
+		);
 	}
 	// The two ends of the slip, capped and built up. An arc that simply stops is
 	// a tube with a hole in it: these are the working faces the slip opens
 	// between, so they carry the heaviest structure on the station.
 	for (const [index, end] of [Math.PI * 0.28, Math.PI * 1.73].entries()) {
-		const cap = new THREE.Group();
-		cap.rotation.z = end;
-		cap.name = `slip-head-${index}`;
-		frame.add(cap);
 		const head = shell(
 			[
 				{ z: major - r * 0.3, w: r * 0.26, h: r * 0.3, e: 6 },
@@ -1723,8 +1730,7 @@ function buildShipyardSlipway(color: number): BuiltPart {
 			6,
 			true,
 		);
-		head.rotation.y = Math.PI / 2;
-		cap.add(head);
+		radialArm(frame, end, `slip-head-${index}`, head);
 	}
 	// On the arc's inner face, looking into the slip.
 	group.add(
@@ -1885,6 +1891,32 @@ function buildVentBank(
 	// and it is now the only light it has.
 	fixtures.push({ material: glow, base: 3, kind: "flare" });
 	return stack;
+}
+
+/**
+ * Nest a part in its own frame at `theta` about Z, turned to run radially.
+ *
+ * The five places that need this — the Ring's spoke members, the Slipway's
+ * struts and slip heads, the Collar's clamps, the Derrick's legs — all want the
+ * same thing and all got it wrong the same way first: setting `rotation.y` and
+ * `rotation.z` on one object leaves the result to `Euler`'s order, and the
+ * members come out clustered along a line instead of spaced round the axis.
+ * Nested frames compose in the order they are nested and there is nothing to
+ * reason about, which is worth having in one place rather than five.
+ */
+function radialArm(
+	parent: THREE.Object3D,
+	theta: number,
+	name: string,
+	child: THREE.Object3D,
+) {
+	const arm = new THREE.Group();
+	arm.rotation.z = theta;
+	arm.name = name;
+	child.rotation.y = Math.PI / 2;
+	arm.add(child);
+	parent.add(arm);
+	return arm;
 }
 
 /**
@@ -2092,10 +2124,6 @@ function buildRefineryCollar(color: number): BuiltPart {
 	// the ring spokes' reason: two angles on one object leaves the result to
 	// `Euler`'s order, and the members come out clustered instead of spaced.
 	for (let i = 0; i < 5; i++) {
-		const arm = new THREE.Group();
-		arm.rotation.z = (i / 5) * Math.PI * 2;
-		arm.name = `clamp-${i}`;
-		group.add(arm);
 		const clamp = shell(
 			[
 				{ z: rockRadius * 0.8, w: r * 0.15, h: r * 0.13, e: 6 },
@@ -2106,8 +2134,7 @@ function buildRefineryCollar(color: number): BuiltPart {
 			6,
 			true,
 		);
-		clamp.rotation.y = Math.PI / 2;
-		arm.add(clamp);
+		radialArm(group, (i / 5) * Math.PI * 2, `clamp-${i}`, clamp);
 	}
 	// The pad is on a plated boss over the rock's +Z pole, fed from the band.
 	group.add(
@@ -2548,7 +2575,7 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 		{
 			id: "a",
 			name: "Gantry",
-			thesis: "command keel under open ribbed bays sized for a ship",
+			thesis: "bridge keel under open ribbed bays sized for a ship",
 			reachKm: 1.5,
 			build: buildShipyardGantry,
 		},
@@ -2566,29 +2593,6 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			thesis: "a broken ring with the gap as the slip",
 			reachKm: 1.5,
 			build: buildShipyardSlipway,
-		},
-	],
-	outpost: [
-		{
-			id: "a",
-			name: "Derrick",
-			thesis: "a lattice tower on a tank cluster, pad deck on top",
-			reachKm: 0.42,
-			build: buildOutpostDerrick,
-		},
-		{
-			id: "b",
-			name: "Buoy",
-			thesis: "a stubby drum wearing radiator fins; nothing hangs off it",
-			reachKm: 0.42,
-			build: buildOutpostBuoy,
-		},
-		{
-			id: "c",
-			name: "Rig",
-			thesis: "an angled truss holding a deck out over a drill head",
-			reachKm: 0.42,
-			build: buildOutpostRig,
 		},
 	],
 	refinery: [
@@ -2614,6 +2618,29 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			build: buildRefinerySpar,
 		},
 	],
+	outpost: [
+		{
+			id: "a",
+			name: "Derrick",
+			thesis: "a lattice tower on a tank cluster, pad deck on top",
+			reachKm: 0.42,
+			build: buildOutpostDerrick,
+		},
+		{
+			id: "b",
+			name: "Buoy",
+			thesis: "a stubby drum wearing radiator fins; nothing hangs off it",
+			reachKm: 0.42,
+			build: buildOutpostBuoy,
+		},
+		{
+			id: "c",
+			name: "Rig",
+			thesis: "an angled truss holding a deck out over a drill head",
+			reachKm: 0.42,
+			build: buildOutpostRig,
+		},
+	],
 };
 
 /**
@@ -2630,15 +2657,15 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 export const SELECTED_FORM: Record<StationType, StationFormId> = {
 	trade: "a",
 	shipyard: "a",
-	// **Warren, and chosen by a measurement rather than by order.** The pairing
-	// that matters is this form against the *trade* station, because those are
-	// the two the identity floor keeps failing on, and it moved when the trade
-	// station did. Against round two's swept drum the Warren measured 1 − IoU
-	// 0.224 on a 0.25 floor and the Collar was picked instead; against the
-	// cuboctahedron the Warren clears the floor and the Spar is the one that
-	// does not, at 0.244. A selection made once and left alone would have been
-	// wrong twice. Still a placeholder until the role is ranked — but a
-	// placeholder that passes the gate §7 rests identity on.
+	// **Placeholder, and it says so.** This role was never ranked — round one
+	// sent it back with an instruction rather than an order — so `a` is first in
+	// the list and nothing more.
+	//
+	// It used to carry a justification: the Warren was chosen because it cleared
+	// the outline floor `probe-station.mjs` gated on, where the other two did
+	// not. That gate was withdrawn later in the same node, so the reasoning
+	// outlived the thing it reasoned about. The figures are still measured and
+	// printed; they are no longer a reason to pick one form over another.
 	refinery: "a",
 	// Unranked, like the refinery's was: three new forms and nobody has looked
 	// at them. It changes nothing in a running game either way — `system.ts`
