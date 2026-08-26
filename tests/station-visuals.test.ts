@@ -385,10 +385,13 @@ describe("what the renderer drives, at every range", () => {
 		// The blocker sage's HonestOracle lens caught. The update skipped the
 		// waveforms once a station reached `outline`, on the reasoning that
 		// nothing clock-driven is drawn out there — but the flare is deliberately
-		// *untagged*, because its tip is the refinery's outermost vertex and
-		// hiding it would change the outline. So it stayed on screen with a frozen
-		// intensity: a distant refinery's flare depended on how close that client
-		// had been, which is precisely what §5.2 promises it does not.
+		// *untagged* — it was a flame then, and its tip was the refinery's
+		// outermost vertex, so hiding it would have changed the outline. It stayed
+		// on screen with a frozen intensity: a distant refinery's flare depended
+		// on how close that client had been, which is precisely what §5.2
+		// promises it does not. The flare is a lit throat now and is tagged like
+		// any other accessory, so this asserts the general rule — every fixture is
+		// driven at every level — rather than the one case that forced it.
 		const mesh = buildStationMesh("refinery", GREY);
 		const flare = () =>
 			mesh.fixtures.find((f) => f.kind === "flare")?.material

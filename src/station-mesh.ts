@@ -343,8 +343,9 @@ function buildWindowGrid(
  *
  * The rule it serves is §2's: **a detail level may not change the outline.**
  * Nothing tagged here may be the farthest vertex of its station — the flare
- * flame is the refinery's outermost point and is therefore silhouette rather
- * than detail, and is deliberately not tagged. `tests/station-visuals.test.ts`
+ * refinery's outermost point is a radiator wing, which is structure and is
+ * therefore not tagged — its flare, which used to hold that place, is a lit
+ * throat sunk into a nozzle now and carries no outline at all. `tests/station-visuals.test.ts`
  * asserts the reach is identical at all three levels, which is what stops that
  * from being a rule kept by hand.
  */
@@ -1593,31 +1594,32 @@ function buildBayLights(
 }
 
 /**
- * The refinery's heat: a **vent bank**, not a chimney.
+ * The refinery's heat: a **vent bank**, and no plume.
  *
- * The first version was a tapered tube with an orange cone on the end, which is
- * a chimney with a flame drawn on it — reviewed as exactly that. A chimney also
- * makes no sense in vacuum: nothing rises, so there is nothing for a stack to
- * be tall *for*.
+ * This shape has been wrong twice. It began as a tapered tube with an orange
+ * cone on the end — a chimney with a flame drawn on it, which is what the
+ * review called it, and which makes no sense in vacuum because nothing rises.
+ * The second version kept a cone as a "plume thrown clear", which is the same
+ * error wearing a different hat: **a steady flame needs an atmosphere to burn
+ * in and something to hold its shape**. A gas vent in vacuum throws an
+ * expanding cloud that thins to nothing in metres, and it is not a solid.
  *
- * What a plant in vacuum actually needs is somewhere to dump heat and somewhere
- * to vent gas sideways. So this is a low manifold lying along the hull with a
- * row of short nozzles down it, glowing at their throats, and one of them
- * carrying a visible plume — a jet, thrown clear, rather than a candle standing
- * up. It reads as machinery at any angle instead of only in profile, and it is
- * a third the height, which is what stops it dominating a rock.
+ * So there is no plume. What remains is what a plant in vacuum would actually
+ * show: a manifold lying along the hull, a row of nozzles down it, and the
+ * throats glowing from the heat of what passed through them. The glow breathes
+ * on the role's flicker, so the machine still reads as running.
  *
- * The plume is never tagged as detail: on more than one form it is the
- * outermost drawn point, and `station-visuals.md` §2 forbids an accessory
- * carrying the outline.
+ * If a plume is ever wanted, it is a **particle system** — an emitter on each
+ * nozzle, drawn as additive points that expand and fade — and it belongs with
+ * the exhaust work, not here: a cone pretending to be a gas is exactly the
+ * cheat this version removed.
  */
-function buildFlare(
+function buildVentBank(
 	fixtures: StationFixture[],
 	length: number,
 	radius: number,
 ): THREE.Group {
 	const stack = new THREE.Group();
-	// The manifold: a squat drum lying along the surface, not standing off it.
 	// Proportioned from its own length rather than from the old stack's tube
 	// radius: a manifold `radius * 1.5` across was a rail, not a plant, and
 	// disappeared into the rock it sits on.
@@ -1652,36 +1654,25 @@ function buildFlare(
 		nozzle.position.set(-length * 0.24 + i * length * 0.17, 0, across * 0.7);
 		nozzle.rotation.x = -0.35;
 		stack.add(nozzle);
+		// The lit throat, sunk into the nozzle's mouth rather than standing at
+		// the end of it: it is the inside of the pipe glowing, so it has to be
+		// inside the pipe.
 		const throat = new THREE.Mesh(
 			new THREE.BoxGeometry(across * 0.5, across * 0.5, across * 0.2),
 			glow,
 		);
 		throat.position.set(
 			-length * 0.24 + i * length * 0.17,
-			length * 0.34 * 0.34,
-			across * 0.7 + length * 0.31,
+			length * 0.3 * 0.34,
+			across * 0.7 + length * 0.27,
 		);
-		throat.name = "vent-throat";
+		throat.name = "flare";
 		detail(throat, "reduced");
 		stack.add(throat);
 	}
-	fixtures.push({ material: glow, base: 2.4, kind: "work" });
-
-	// One plume, thrown clear of the plant rather than standing over it.
-	const plumeMaterial = emissiveMaterial(STATION_VISUALS.refinery.heatColor, 3);
-	const plume = new THREE.Mesh(
-		new THREE.ConeGeometry(radius * 0.55, length * 0.62, 6),
-		plumeMaterial,
-	);
-	plume.position.set(
-		length * 0.29,
-		length * 0.34,
-		radius * 0.7 + length * 0.32,
-	);
-	plume.rotation.x = -0.35;
-	plume.name = "flare";
-	stack.add(plume);
-	fixtures.push({ material: plumeMaterial, base: 3, kind: "flare" });
+	// One fixture for the bank, kind `flare`: it is the flare system's light,
+	// and it is now the only light it has.
+	fixtures.push({ material: glow, base: 3, kind: "flare" });
 	return stack;
 }
 
@@ -1716,6 +1707,20 @@ function buildRadiator(spanKm: number, tilt: number): THREE.Group {
 	);
 	stalk.rotation.y = Math.PI / 2;
 	group.add(stalk);
+	// A spine down the panels' own axis, which is the thing that holds them.
+	//
+	// Without it the two outer panels touched nothing: they sit ±0.46 of a span
+	// off the stalk's axis while the stalk is a fifteenth of a span thick, so
+	// the wing was a stalk and three unattached plates. It passed the island
+	// check on two forms only because the rock's bounding box happened to cover
+	// them, which is the box proxy flattering a real defect.
+	const spine = new THREE.Mesh(
+		new THREE.BoxGeometry(spanKm * 0.1, spanKm * 0.06, spanKm * 1.06),
+		plainMaterial(0x6f7d88, 0.8, 0.4),
+	);
+	spine.position.set(spanKm * 0.46, 0, 0);
+	spine.name = "radiator-spine";
+	group.add(spine);
 	// Ribbed rather than one slab: the ribs are a fixed pitch, so the panel is
 	// also a ruler for how big the station is.
 	for (let i = 0; i < 3; i++) {
@@ -1781,15 +1786,21 @@ function buildRefineryWarren(color: number): BuiltPart {
 		[r * 0.86, r * 0.6, 0.55],
 		[-r * 0.72, r * 0.78, -0.7],
 	]) {
-		const flare = buildFlare(fixtures, r * 1.05, r * 0.07);
+		const flare = buildVentBank(fixtures, r * 1.05, r * 0.07);
 		flare.position.set(x, y, r * 0.36);
 		flare.rotation.x = -Math.PI / 2.6;
 		flare.rotation.y = lean;
 		group.add(flare);
 	}
+	// **Three wings, not two.** The plume used to lend the outline a spike; with
+	// it gone the Warren measured 1 − IoU 0.245 against the trade station on a
+	// 0.25 floor, and identity is what §7 rests on. A third panel is also the
+	// physically honest direction — radiator area is the thing a plant in vacuum
+	// never has enough of — rather than a spike put back for the metric.
 	for (const [tilt, at] of [
 		[0.5, new THREE.Vector3(0, 0, 0)],
 		[Math.PI - 0.45, new THREE.Vector3(0, 0, -r * 0.5)],
+		[Math.PI * 1.42, new THREE.Vector3(0, 0, -r * 0.15)],
 	] as [number, THREE.Vector3][]) {
 		const wing = buildRadiator(r * 1.45, tilt);
 		wing.position.copy(at);
@@ -1903,13 +1914,13 @@ function buildRefineryCollar(color: number): BuiltPart {
 	);
 	group.add(buildAperture("refinery", r * 1.0));
 	for (const side of [-1, 1]) {
-		const flare = buildFlare(fixtures, r * 0.9, r * 0.07);
+		const flare = buildVentBank(fixtures, r * 0.9, r * 0.07);
 		flare.position.set(side * major * 0.82, r * 0.42, 0);
 		flare.rotation.x = -Math.PI / 2.6;
 		flare.rotation.z = side * 0.35;
 		group.add(flare);
 	}
-	for (const tilt of [Math.PI * 0.5, Math.PI * 1.5]) {
+	for (const tilt of [Math.PI * 0.42, Math.PI * 1.1, Math.PI * 1.62]) {
 		const wing = buildRadiator(r * 1.4, tilt);
 		wing.position.z = -r * 0.3;
 		group.add(wing);
@@ -1987,13 +1998,13 @@ function buildRefinerySpar(color: number): BuiltPart {
 		group.add(tank);
 	}
 	for (const side of [-1, 1]) {
-		const flare = buildFlare(fixtures, r * 0.85, r * 0.07);
+		const flare = buildVentBank(fixtures, r * 0.85, r * 0.07);
 		flare.position.set(side * r * 0.34, r * 0.3, -r * 1.5);
 		flare.rotation.x = -Math.PI / 2.3;
 		flare.rotation.z = side * 0.3;
 		group.add(flare);
 	}
-	for (const tilt of [0.4, Math.PI - 0.4]) {
+	for (const tilt of [0.4, Math.PI - 0.4, Math.PI * 1.5]) {
 		const wing = buildRadiator(r * 1.4, tilt);
 		wing.position.z = -r * 0.75;
 		group.add(wing);
@@ -2141,7 +2152,7 @@ function buildOutpostDerrick(color: number): BuiltPart {
 	// Rooted **on a tank**, not beside the cluster: the tanks sit on a 0.42·r
 	// circle and are 0.34·r across, so a boom starting at 0.6·r began in empty
 	// space and the whole flare was a detached island.
-	const flare = buildFlare(fixtures, r * 0.9, r * 0.08);
+	const flare = buildVentBank(fixtures, r * 0.9, r * 0.08);
 	flare.position.set(r * 0.42, -r * 0.42, -r * 1.3);
 	flare.rotation.x = -Math.PI / 2.4;
 	flare.rotation.y = 0.5;
@@ -2273,7 +2284,7 @@ function buildOutpostRig(color: number): BuiltPart {
 		group.add(brace);
 	}
 	group.add(buildPadDeck(fixtures, r, r * 0.95));
-	const flare = buildFlare(fixtures, r * 1.0, r * 0.08);
+	const flare = buildVentBank(fixtures, r * 1.0, r * 0.08);
 	flare.position.set(-r * 0.55, r * 0.75, -r * 1.1);
 	flare.rotation.x = -Math.PI / 2.2;
 	flare.rotation.y = -0.5;
@@ -2562,11 +2573,13 @@ export function updateStationVisuals(
 	// **Every fixture, at every level.** An earlier version returned early at
 	// `outline` on the reasoning that nothing clock-driven is drawn there — which
 	// is false for the refinery's flare, the one fixture deliberately left
-	// untagged because its tip is the station's outermost point. Its intensity
-	// froze at whatever the last near-range frame wrote, so a distant refinery's
-	// flare depended on that client's approach history rather than on the clock,
-	// and §5.2's "two clients at one seed draw the same frame" was not true of
-	// it. Driving the hidden ones too costs a couple of float writes a frame.
+	// untagged, back when it was a flame whose tip was the station's outermost
+	// point. Its intensity froze at whatever the last near-range frame wrote, so
+	// a distant refinery's flare depended on that client's approach history
+	// rather than on the clock, and §5.2's "two clients at one seed draw the
+	// same frame" was not true of it. The flare is a tagged throat now and the
+	// hidden case is ordinary, but driving every fixture regardless costs a
+	// couple of float writes a frame and removes the whole class of bug.
 	// The kind → waveform mapping is `station-visuals.ts`'s, which owns the one
 	// signature and the one motion a role carries. This module only multiplies
 	// by the fixture's own lit intensity.

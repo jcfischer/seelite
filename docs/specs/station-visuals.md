@@ -160,7 +160,7 @@ Each role carries one emissive signature and one motion:
 |---|---|---|
 | trade | warm window grid, plus a pair of hull strobes on the beam | the strobes alternate on a 2 s period at a 12% duty cycle |
 | shipyard | cool window grid, cold blue-white floodlit bays, and the same strobe pair | one bay carries a welding arc — a fast, deep flicker; the strobes alternate as the trade station's do |
-| refinery | warm flare over the stacks, a heat ring and lit ports on the drum's face | the flare and the ring breathe on a slow shallow flicker |
+| refinery | glowing vent throats, a heat ring and lit ports on the dock face | the throats and the ring breathe on a slow shallow flicker |
 
 The colours are drawn from `hud-and-scanner.md` §4's grammar rather than a
 second palette: cool for structure and work light, warm for habitation and heat.
