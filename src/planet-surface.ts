@@ -32,14 +32,6 @@ import {
 } from "./planet-shaders";
 
 /**
- * Where the light comes from when the caller does not say.
- *
- * 51 degrees off the view axis: far enough that every body has a terminator,
- * near enough that a gallery is not half in shadow. The live renderer always
- * says, because its star has a real position; the prototype does not, because
- * it has no star.
- */
-/**
  * The tessellation a body and its shells share, and the reason it is exported.
  *
  * A surface drawn at fewer segments than the atmosphere around it is a polygon
@@ -52,10 +44,91 @@ import {
  * `FAR_SPHERE_SEGMENTS` on the same handoff that already re-parents it: 12× the
  * vertices buys nothing on a disc a few pixels across.
  */
-export const SPHERE_SEGMENTS = 96;
-export const SPHERE_RINGS = 64;
-export const FAR_SPHERE_SEGMENTS = 32;
-export const FAR_SPHERE_RINGS = 16;
+const SPHERE_SEGMENTS = 96;
+const SPHERE_RINGS = 64;
+const FAR_SPHERE_SEGMENTS = 32;
+const FAR_SPHERE_RINGS = 16;
+
+/**
+ * The surface spheres, one per detail tier, built on first use and shared by
+ * every body.
+ *
+ * Exported as *geometry* rather than as segment counts, and `setGeometry` takes
+ * a **layer** rather than a `BufferGeometry`, so the invariant above is the
+ * module's shape instead of its prose: a caller selects near or far and cannot
+ * hand a body a tessellation the shells were not built to match.
+ */
+let nearSphere: THREE.SphereGeometry | undefined;
+let farSphere: THREE.SphereGeometry | undefined;
+export const surfaceSphere = (layer: "near" | "approach" | "far") => {
+	if (layer === "far") {
+		farSphere ??= new THREE.SphereGeometry(
+			1,
+			FAR_SPHERE_SEGMENTS,
+			FAR_SPHERE_RINGS,
+		);
+		return farSphere;
+	}
+	// Approach takes the fine sphere with near. The budget measures the two
+	// separately, but a body in the approach layer is one being flown at — that
+	// is what the layer is for — so its limb is exactly as visible as a near
+	// body's, and a coarser sphere there would be a facet nobody asked to save.
+	nearSphere ??= new THREE.SphereGeometry(1, SPHERE_SEGMENTS, SPHERE_RINGS);
+	return nearSphere;
+};
+
+/**
+ * Where the light comes from when the caller does not say.
+ *
+ * 51 degrees off the view axis: far enough that every body has a terminator,
+ * near enough that a gallery is not half in shadow. The live renderer always
+ * says, because its star has a real position; the prototype does not, because
+ * it has no star.
+ */
+/**
+ * The luminance every photosphere is exposed at, whatever colour the star is.
+ *
+ * The star shader multiplies its tint by up to 1.52 — `0.55 + 0.62 · bright`,
+ * then `1.30` — which was tuned in the gallery against one warm tint. Read in
+ * **linear** space, which is where the shader works, `STAR_CLASSES`' colours
+ * run from 0.54 at `0xffb26b` to 0.94 at `0xf8f7ff`, so that gain lands very
+ * differently across the ladder:
+ *
+ * - A **saturated** tint clips one channel and not the others. The red pins,
+ *   green and blue do not, and the granulation survives in what is left. That
+ *   is the star the gallery was tuned on, and it reads.
+ * - A **neutral** tint clips all three together, at which point the disc is
+ *   flat white. Measured on `?seed=15`, whose star is `0xf8f7ff`: a mean of 235
+ *   with a granulation spread of 2.8, against 199 and 4.5 for a warm one — the
+ *   difference between a lamp and a star, and a defect a screenshot shows
+ *   instantly and a spread-only check does not.
+ *
+ * So the tint carries **hue, not exposure**. That is the honest division: a
+ * star's apparent brightness on screen is already a rendering choice rather
+ * than a measurement, the tone curve is not a photometer, and what reads as
+ * class is the colour. The light a star *casts* is untouched — `sunColor` is a
+ * different question, and a hot star lighting its worlds more brightly than a
+ * cool one is right.
+ *
+ * 0.55 puts the peak at 1.52 × 0.55 ≈ 0.84, under the knee for a neutral tint,
+ * and leaves the warm end almost where it already was — the fix pulls the
+ * bright classes down to a working exposure rather than pushing every class up
+ * to one.
+ */
+export const PHOTOSPHERE_LUMA = 0.55;
+
+/** Rec. 709, the coefficients `probe-planet-surfaces.mjs` measures with. */
+const lumaOf = (c: THREE.Color) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+
+/** A star's colour at the one exposure every photosphere is drawn at. */
+function photosphereTint(hex: number): THREE.Color {
+	const colour = new THREE.Color(hex);
+	const luma = lumaOf(colour);
+	// Black has no hue to preserve and no exposure to normalise to; no star class
+	// carries it, and dividing by its luma would be a division by zero rather
+	// than a dark star.
+	return luma > 0 ? colour.multiplyScalar(PHOTOSPHERE_LUMA / luma) : colour;
+}
 
 export const DEFAULT_SUN_DIRECTION = new THREE.Vector3(
 	0.62,
@@ -70,8 +143,9 @@ export interface BodyVisualOptions {
 	sunDir?: THREE.Vector3;
 	/** The star's own colour, for the light it casts on everything else. */
 	sunColor?: number;
-	/** The star's colour as its *own* photosphere, which is a different
-	 *  question from the light it casts and is read only by the star class. */
+	/** The star's colour as its *own* photosphere, which is a different question
+	 *  from the light it casts and is read only by the star class. Normalised to
+	 *  `PHOTOSPHERE_LUMA` before it reaches the shader — see there. */
 	starTint?: number;
 }
 
@@ -90,15 +164,17 @@ export interface BodyVisual {
 	 *  every other class ignores it. */
 	setTime(seconds: number): void;
 	/**
-	 * Swap the surface tessellation, for the layer the body is now in.
+	 * Swap the surface tessellation for the layer the body is now in.
 	 *
-	 * Through the handle rather than by reaching into `group.children[0]`: which
-	 * child the surface is is this module's business, and a caller that knew it
-	 * would break silently the first time a shell was added before the surface.
-	 * Only the surface — the shells are one geometry each, and a body in the far
-	 * layer draws them at a few pixels whichever it uses.
+	 * A **layer**, not a geometry: the surface and the shells around it are one
+	 * tessellation invariant, and a signature taking a `BufferGeometry` would
+	 * leave that as documentation. Through the handle rather than by reaching
+	 * into `group.children[0]`, because which child the surface is belongs here
+	 * and a caller that knew it would break silently the first time a shell was
+	 * added before the surface. Only the surface: the shells are one geometry
+	 * each, drawn at a few pixels in the far layer whichever they use.
 	 */
-	setGeometry(geometry: THREE.BufferGeometry): void;
+	setLayer(layer: "near" | "approach" | "far"): void;
 	/**
 	 * Free the per-body materials and the star's corona texture.
 	 *
@@ -188,7 +264,7 @@ export function buildBodyVisual(
 		seedOffset: { value: (look.seed % 997) / 97 },
 		warmth: { value: look.warmth },
 		seaLevel: { value: look.seaLevel },
-		starTint: { value: new THREE.Color(opts.starTint ?? 0xfff4ea) },
+		starTint: { value: photosphereTint(opts.starTint ?? 0xfff4ea) },
 		atmoColor: { value: new THREE.Color(look.atmosphereColor) },
 		atmoStrength: { value: look.atmosphere },
 		cloudCover: { value: look.cloudCover },
@@ -298,8 +374,8 @@ export function buildBodyVisual(
 		setTime(seconds) {
 			uniforms.time.value = seconds;
 		},
-		setGeometry(geometry) {
-			planet.geometry = geometry;
+		setLayer(layer) {
+			planet.geometry = surfaceSphere(layer);
 		},
 		dispose() {
 			// One pass over the children, which includes the surface mesh — an

@@ -25,7 +25,16 @@
  *    The pass condition is measured against the **instrument's own repeat
  *    noise** — two readings of one unchanged body — rather than against a
  *    number anyone picked. A floor someone chooses is a number the art then has
- *    to clear, which is how a measurement turns into a design driver.
+ *    to clear, which is how a measurement turns into a design driver. The one
+ *    hand-picked number left, how many multiples of that floor a gap must
+ *    clear, is swept rather than declared.
+ *
+ *    And the claim is scoped to the classes **this system generates**, which is
+ *    not all nine: `ice` is unreachable from the generator by construction
+ *    (`tests/planet-appearance.test.ts` asserts it), and any class seed 1 does
+ *    not produce cannot fail this check. The gallery — `probe-planets.mjs` —
+ *    owns the all-nine comparison; what is asked here is whether the *live
+ *    path* draws what it was given.
  *
  *    Two stronger checks were tried here and withdrawn, and the withdrawals are
  *    recorded beside the code because both look obvious to write again. A
@@ -58,15 +67,22 @@
  *    4.2 to 2.0.
  *
  *    The rebalance this check was written to guide turned out not to be needed,
- *    and the measurement is what says so: bloom disabled gives an inner-disc
- *    spread of 4.22 and as shipped 4.21. The photosphere never reaches the
- *    pass's threshold, so what haloes a star is its corona sprite. The check
- *    stays because a later change to either the threshold or the photosphere's
- *    brightness could put the two in contact.
+ *    and **both conditions are measured in the run** rather than one measured
+ *    and the other quoted: the pass is set to zero strength, the disc is read
+ *    again, and the two spreads are compared. They agree, because the
+ *    photosphere never reaches the pass's threshold — what haloes a star is its
+ *    corona sprite. The check stays because a later change to either the
+ *    threshold or the photosphere's brightness would separate them.
  *
- * 4. **A frame budget per render layer.** Taken with a `readPixels` fence and
- *    not a `requestAnimationFrame` mean, which cannot report below the display
- *    refresh — 16.7 ms on a 60 Hz panel whatever the shaders cost.
+ * 4. **A frame budget per render layer**, taken on the airless class, which is
+ *    the expensive one. In a second page on `?seed=1`, because the seed chosen
+ *    above for class coverage has no moon in its start system — an earlier
+ *    revision measured whatever body came first there and reported the *star*
+ *    under a heading that said "the worst class".
+ *
+ *    Taken with a `readPixels` fence and not a `requestAnimationFrame` mean,
+ *    which cannot report below the display refresh — 16.7 ms on a 60 Hz panel
+ *    whatever the shaders cost.
  *
  *    **These are software-rasteriser figures.** The runner has no GPU, so every
  *    number below is a floor of badness rather than a player's experience.
@@ -91,9 +107,23 @@ import {
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
-/** Seed 1, for `probe-station.mjs`'s reason: it is the start system every other
- *  probe reasons about, so a surface finding here is about the same world. */
-const URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=1`;
+/**
+ * Seed 15, chosen for **class coverage** rather than for being the world other
+ * probes reason about.
+ *
+ * The other probes use seed 1, and this one did too until its own class-scope
+ * reporting made the cost visible: seed 1's start system generates three lit
+ * classes. Seed 15's generates six — airless, desert, jovian, lava, terran,
+ * venusian — which is every class reachable from the generator except
+ * `iceGiant`, and it is the harder test besides: lava, venusian and desert are
+ * three warm rocky worlds, so a colour-and-contrast descriptor has somewhere to
+ * confuse itself.
+ *
+ * Scanned rather than picked: the first sixty seeds' start systems were counted
+ * by class and this is the widest. That scan is not kept, because its answer is
+ * this constant.
+ */
+const URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=15`;
 
 const VIEW = { width: 900, height: 900 };
 
@@ -121,16 +151,6 @@ const GRID = 5;
 
 const installHelpers = (page) =>
 	page.addInitScript(() => {
-		/**
-		 * Stand `radii` body radii off `bodyId`, on the sunward side at
-		 * `longitude`, looking at it.
-		 *
-		 * Sunward and not arbitrary: a body viewed from its night side is a
-		 * silhouette, and every class's silhouette is the same circle. The
-		 * longitude then rotates the viewpoint *around* the body-star axis, so
-		 * each view is lit the same and shows a different face — which is the
-		 * variable the signature wants, with lighting held still.
-		 */
 		/** The drawn object for a body, whichever layer it is currently in. */
 		window.__meshOf = (id) =>
 			window.__seelite.nearScene.getObjectByName(id) ??
@@ -164,6 +184,16 @@ const installHelpers = (page) =>
 			);
 		};
 
+		/**
+		 * Stand `radii` body radii off `bodyId`, on the sunward side at
+		 * `longitude`, looking at it.
+		 *
+		 * Sunward and not arbitrary: a body viewed from its night side is a
+		 * silhouette, and every class's silhouette is the same circle. The
+		 * longitude then rotates the viewpoint *around* the body-star axis, so
+		 * each view is lit the same and shows a different face — which is the
+		 * variable the signature wants, with lighting held still.
+		 */
 		window.__viewBody = (bodyId, radii, longitude) => {
 			const g = window.__seelite;
 			const body = g.world.system.bodies.find((b) => b.id === bodyId);
@@ -206,7 +236,6 @@ const installHelpers = (page) =>
 			window.__lookAtFrom(bodyId, dir, radii);
 		};
 
-		/**
 		/** How far a pixel has to move, summed over RGB, to count as the body's
 		 *  rather than as dither in whatever was behind it. */
 		const CHANGED = 8;
@@ -310,6 +339,24 @@ const installHelpers = (page) =>
 			return { pixels: box.changed, patches };
 		};
 
+		/**
+		 * Set the bloom pass's strength, returning what it was.
+		 *
+		 * So the star check *measures* the bloom's effect rather than quoting a
+		 * figure from a run nobody can repeat — the mistake this probe already
+		 * had to correct once, where the crater band's numbers outlived the lever
+		 * that produced them.
+		 */
+		window.__setBloomStrength = (strength) => {
+			const pass = window.__seelite.composer.passes.find((p) =>
+				p.constructor.name.includes("Bloom"),
+			);
+			if (!pass) return null;
+			const was = pass.strength;
+			pass.strength = strength;
+			return was;
+		};
+
 		/** Show or hide a body's decorations — the star's corona sprite, a giant's
 		 *  rings. Anything named `decor` reaches well outside the disc and is lit
 		 *  whatever the surface is doing, so a measurement *of the surface* has to
@@ -322,7 +369,6 @@ const installHelpers = (page) =>
 		};
 
 		/**
-		/**
 		 * Mean and spread of luma over the **pixels** of a body's inner disc.
 		 *
 		 * Per pixel and not per patch: granulation is fine, low-contrast
@@ -331,9 +377,17 @@ const installHelpers = (page) =>
 		 * the surface. The inner box is `inset` of the way in from the bounding
 		 * box on each side, so the limb — where the darkening law lives and
 		 * supplies a gradient no amount of washing removes — is outside it.
+		 *
+		 * `given` overrides the bounding box. A star is a light source with a
+		 * frame-wide bloom halo, so hiding it changes pixels everywhere and the
+		 * difference box becomes the whole capture — which made a bloom-on and a
+		 * bloom-off reading measure two different regions and compare them as if
+		 * they were the same one. The caller pins the box instead.
 		 */
-		window.__innerDiscStats = (bodyId, inset) => {
-			const box = window.__discBox(bodyId);
+		window.__innerDiscStats = (bodyId, inset, given) => {
+			const box = given
+				? { ...window.__discBox(bodyId), ...given }
+				: window.__discBox(bodyId);
 			if (box.changed === 0)
 				return { pixels: 0, mean: 0, spread: 0, clipped: 0 };
 			const dx = Math.floor((box.x1 - box.x0 + 1) * inset);
@@ -457,22 +511,29 @@ check(
  * every other body: it is drawn, and it is drawn by the `star` class.
  */
 const lit = spheres.filter((b) => b.kind !== "star");
-const signatures = [];
-for (const body of lit) {
+/** One body, measured once at each viewing longitude. The initial pass and the
+ *  repeat pass are the same sweep, so the floor is measured by the instrument
+ *  it is a floor for. */
+const sweepViews = async (body) => {
 	const views = [];
 	for (const longitude of LONGITUDES) {
 		await page.evaluate(
 			([id, radii, lon]) => window.__viewBody(id, radii, lon),
 			[body.id, READ_RADII, longitude],
 		);
-		const sig = await page.evaluate(
-			([id, grid]) => window.__bodySignature(id, grid),
-			[body.id, GRID],
+		views.push(
+			await page.evaluate(
+				([id, grid]) => window.__bodySignature(id, grid),
+				[body.id, GRID],
+			),
 		);
-		views.push(sig);
 	}
-	signatures.push({ ...body, views });
-}
+	return views;
+};
+
+const signatures = [];
+for (const body of lit)
+	signatures.push({ ...body, views: await sweepViews(body) });
 
 /**
  * A **rotation-invariant** descriptor for a set of views.
@@ -577,10 +638,19 @@ for (const body of usable) {
  * what "the same" looks like to this measurement.
  */
 
-/** How many multiples of the repeat noise a class gap has to clear. A margin
- *  rather than a threshold: at 1× the check would be asking only that the two
- *  measurements differ at all. */
+/**
+ * How many multiples of the repeat noise a class gap has to clear.
+ *
+ * At 1× the check would ask only that two classes differ at all, which is a
+ * weaker claim than "render alike" implies. 5 is a hand-picked number like any
+ * other, so it is swept below rather than declared — the failure that got the
+ * separation check withdrawn was an unswept constant, and repeating it one
+ * check to the left would be learning nothing.
+ */
 const NOISE_MARGIN = 5;
+/** Margins the verdict is re-derived at, for the same reason as
+ *  `WEIGHT_SWEEP`. */
+const MARGIN_SWEEP = [2, 5, 10, 20];
 
 const descriptorsAt = (weight) =>
 	new Map(usable.map((body) => [body.id, describe(body.views, weight)]));
@@ -588,27 +658,20 @@ const descriptorsAt = (weight) =>
 /**
  * The repeat noise: one body, measured twice over the same longitudes.
  *
- * Nothing about the body changes between the two passes except that the world
- * clock advanced and it moved along its orbit — which is exactly the
- * variability a real reading carries, so it belongs in the floor rather than
- * being controlled out of it.
+ * **This is render-repeat noise, not the spread of a real reading**, and the
+ * difference is worth naming rather than claiming the stronger thing. The body
+ * does move along its orbit between the passes, but `__viewBody` re-derives the
+ * camera from its current position and its current body-star axis, so the
+ * motion is largely normalised out and what is left is the rasteriser plus
+ * whatever the clock changed in a cloud deck.
+ *
+ * That makes it a *floor*, in the honest direction: it is the smallest
+ * difference this instrument can call a difference, so a gap that clears it by
+ * the margin below has cleared something real. It is not an estimate of how far
+ * two readings of the same class would sit apart across systems, and nothing
+ * here claims it is.
  */
-const repeatOf = async (body) => {
-	const second = [];
-	for (const longitude of LONGITUDES) {
-		await page.evaluate(
-			([id, radii, lon]) => window.__viewBody(id, radii, lon),
-			[body.id, READ_RADII, longitude],
-		);
-		second.push(
-			await page.evaluate(
-				([id, grid]) => window.__bodySignature(id, grid),
-				[body.id, GRID],
-			),
-		);
-	}
-	return second;
-};
+const repeatOf = (body) => sweepViews(body);
 
 const noiseBodies = usable.slice(0, 3);
 let repeatNoise = 0;
@@ -655,29 +718,37 @@ for (const body of usable)
  */
 console.log("\n  class gaps against the repeat-measurement noise floor");
 let robust = 0;
+let cells = 0;
 for (const weight of WEIGHT_SWEEP) {
 	const { best: closest } = closestAt(descriptorsAt(weight));
-	const ok = Number.isFinite(closest) && closest > repeatNoise * NOISE_MARGIN;
-	if (ok) robust++;
+	const verdicts = MARGIN_SWEEP.map((margin) => {
+		cells++;
+		const ok = Number.isFinite(closest) && closest > repeatNoise * margin;
+		if (ok) robust++;
+		return `${margin}×${ok ? "\u2713" : "\u2717"}`;
+	});
 	console.log(
-		`    weight ${String(weight).padStart(2)}  closest pair of classes ${closest.toFixed(1)}  ` +
-			`${ok ? "clear" : "INSIDE THE NOISE"}`,
+		`    weight ${String(weight).padStart(2)}  closest pair ${closest.toFixed(1).padStart(5)}  ` +
+			`margins ${verdicts.join("  ")}`,
 	);
 }
 
 check(
-	"no two classes render alike",
+	`no two of the ${new Set(usable.map((b) => b.visual.surface)).size} classes ` +
+		"this system generates render alike",
 	// Non-vacuous: `closestPair` starts at infinity and is only lowered by a
 	// cross-class pair, so without the finiteness guard a scene whose classes had
 	// all collapsed into one would report green.
 	Number.isFinite(closestPair) && closestPair > repeatNoise * NOISE_MARGIN,
-	`closest pair ${closestPair.toFixed(1)} (${closestLabel}) against a repeat ` +
-		`noise floor of ${repeatNoise.toFixed(1)} × ${NOISE_MARGIN} over ${noiseBodies.length} bodies`,
+	`${[...new Set(usable.map((b) => b.visual.surface))].sort().join(", ")}; ` +
+		`closest pair ${closestPair.toFixed(1)} (${closestLabel}) against a repeat ` +
+		`noise floor of ${repeatNoise.toFixed(1)} × ${NOISE_MARGIN}`,
 );
 check(
-	"and that does not turn on the spread weight",
-	robust === WEIGHT_SWEEP.length,
-	`clear at ${robust}/${WEIGHT_SWEEP.length} weights in [${WEIGHT_SWEEP.join(", ")}]`,
+	"and that does not turn on either constant",
+	robust === cells,
+	`clear at ${robust}/${cells} of weight [${WEIGHT_SWEEP.join(", ")}] × ` +
+		`margin [${MARGIN_SWEEP.join(", ")}]`,
 );
 
 /* 3b. The star survives the bloom. */
@@ -687,70 +758,126 @@ const starLook = await page.evaluate((id) => {
 	// terminator — every view of it is the same view.
 	//
 	// The corona is hidden first. It is a sprite reaching 5.2 radii, so with it
-	// in frame the bounding box is the glow rather than the photosphere, and the
-	// inner box taken from that would land on the disc's rim.
+	// in frame the bounding box is the glow rather than the photosphere.
 	window.__setDecorVisible(id, false);
 	window.__lookAtFrom(id, [0.4, 0.25, 0.88], 4);
-	const stats = window.__innerDiscStats(id, 1 / 3);
+
+	// The box is taken **once, with the bloom off**, and then both readings are
+	// taken inside it. A star's bloom halo reaches the whole frame, so a box
+	// derived by hiding the star is the whole capture when the pass is on and
+	// the disc when it is off — two regions, compared as though they were one.
+	const was = window.__setBloomStrength(0);
+	const box = window.__discBox(id);
+	const pinned = { x0: box.x0, y0: box.y0, x1: box.x1, y1: box.y1 };
+	const without = window.__innerDiscStats(id, 1 / 3, pinned);
+	if (was !== null) window.__setBloomStrength(was);
+	const shipped = window.__innerDiscStats(id, 1 / 3, pinned);
+
 	window.__setDecorVisible(id, true);
-	return stats;
+	return { shipped, without, hadPass: was !== null };
 }, starBody.id);
 check(
-	"the star's photosphere survives the bloom pass",
-	starLook.pixels > 1000 && starLook.spread > 2 && starLook.clipped < 0.01,
-	`inner disc luma ${starLook.mean.toFixed(0)} ± ${starLook.spread.toFixed(2)} ` +
-		`over ${starLook.pixels} px, ${(100 * starLook.clipped).toFixed(1)}% clipped`,
+	"the star's photosphere has structure and is not clipped to white",
+	starLook.without.pixels > 1000 &&
+		starLook.without.spread > 2 &&
+		starLook.without.clipped < 0.01,
+	`inner disc luma ${starLook.without.mean.toFixed(0)} ± ` +
+		`${starLook.without.spread.toFixed(2)} over ${starLook.without.pixels} px, ` +
+		`${(100 * starLook.without.clipped).toFixed(1)}% clipped — measured with the ` +
+		"bloom pass at zero strength, so this is the shader's own granulation",
 );
-console.log(
-	"    with the bloom pass disabled and as shipped, this spread measured 4.22\n" +
-		"    and 4.21 — the photosphere sits below the pass's threshold, so what\n" +
-		"    haloes a star on screen is its corona sprite, and the bloom needed no\n" +
-		"    rebalancing against the new photosphere\n",
+check(
+	"and the bloom pass does not cost it that structure",
+	// A **direction**, not a tuned distance: the pass may add contrast, it may
+	// not take contrast away. That is what caught the real defect here — a hot
+	// star whose photosphere clipped flat, where the pass then washed what was
+	// left from 2.77 down to 0.90 and the disc read as a lamp. The 10% is
+	// measurement tolerance, not a margin anyone is choosing; on the build this
+	// caught, the ratio was 0.33.
+	starLook.hadPass && starLook.shipped.spread >= starLook.without.spread * 0.9,
+	`spread ${starLook.without.spread.toFixed(2)} without the pass against ` +
+		`${starLook.shipped.spread.toFixed(2)} as shipped, in the same pinned box ` +
+		`— ratio ${(starLook.shipped.spread / starLook.without.spread).toFixed(2)}`,
 );
 
-/* 4. The budget, per layer, and what the detail band is worth. */
+/* 4. The budget, per layer, on the class that costs the most. */
+
+/**
+ * The budget is taken on **seed 1**, in a second page, and the seed is the
+ * point.
+ *
+ * `?seed=15` above is chosen for class coverage and its start system has no
+ * moon in it — so measuring the budget there would measure whatever body
+ * happened to be first in the list, and an earlier revision of this section
+ * silently reported the *star* under a heading that said "the worst class".
+ * The airless class is the expensive one (`planet-classes.glsl.ts`: 135 cell
+ * tests per fragment per impact octave), so the budget is only worth taking
+ * where one exists.
+ */
+const BUDGET_URL = process.env.PROBE_BUDGET_URL ?? `${ORIGIN}/?seed=1`;
 const RANGES = [
 	["near (a body filling the screen)", 3],
 	["approach", 60],
 	["far", 4000],
 ];
-const airless =
-	spheres.find((b) => b.visual?.surface === "airless") ?? spheres[0];
 
-console.log("\n  frame budget — software rasteriser, a floor not a forecast");
-console.log(
-	`  the worst class, ${airless.id}, alone in the frame and in company`,
+const budgetPage = await browser.newPage({ viewport: VIEW });
+watch(budgetPage);
+await installHelpers(budgetPage);
+await budgetPage.goto(BUDGET_URL, { waitUntil: "domcontentloaded" });
+await bootedGame(budgetPage);
+
+const budgetBodies = await budgetPage.evaluate(() => {
+	const g = window.__seelite;
+	return g.world.system.bodies
+		.filter((b) => b.kind !== "station")
+		.map((b) => ({ id: b.id, surface: g.visualOfBody(b.id)?.surface }));
+});
+const airless = budgetBodies.find((b) => b.surface === "airless");
+check(
+	"the budget is taken on the class that costs the most",
+	Boolean(airless),
+	airless
+		? `${airless.id} is airless, the crater-bearing class`
+		: `${BUDGET_URL} has no airless body — the figures below would be about ` +
+				"some other class and are not worth reading",
 );
-for (const [label, radii] of RANGES) {
-	const row = await page.evaluate(
-		([id, r]) => {
-			window.__viewBody(id, r, 0);
-			const g = window.__seelite;
-			g.render(0);
-			// Alone, so the body's own cost has an honest denominator: a frame that
-			// also holds two gas giants and a bloomed star cannot say what fraction
-			// of it any one body is.
-			window.__soloBody(id);
-			const alone = [];
-			for (let i = 0; i < 5; i++) alone.push(g.measureRenderMs(8));
-			window.__soloBody(null);
-			g.render(0);
-			const whole = [];
-			for (let i = 0; i < 5; i++) whole.push(g.measureRenderMs(8));
-			return { alone, whole };
-		},
-		[airless.id, radii],
-	);
-	// Median and span rather than a mean: five samples on a shared machine have
-	// outliers, and the span is what any later claim about a saving has to beat.
-	const median = (xs) =>
-		[...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
-	const span = (xs) => Math.max(...xs) - Math.min(...xs);
-	console.log(
-		`    ${label.padEnd(34)} body ${median(row.alone).toFixed(1)} ms ` +
-			`(±${span(row.alone).toFixed(1)}), whole system ${median(row.whole).toFixed(1)} ms ` +
-			`(±${span(row.whole).toFixed(1)})`,
-	);
+
+if (airless) {
+	console.log("\n  frame budget — software rasteriser, a floor not a forecast");
+	console.log(`  ${airless.id} (airless), alone in the frame and in company`);
+	for (const [label, radii] of RANGES) {
+		const row = await budgetPage.evaluate(
+			([id, r]) => {
+				window.__viewBody(id, r, 0);
+				const g = window.__seelite;
+				g.render(0);
+				// Alone, so the body's own cost has an honest denominator: a frame
+				// that also holds two gas giants and a bloomed star cannot say what
+				// fraction of it any one body is.
+				window.__soloBody(id);
+				const alone = [];
+				for (let i = 0; i < 5; i++) alone.push(g.measureRenderMs(8));
+				window.__soloBody(null);
+				g.render(0);
+				const whole = [];
+				for (let i = 0; i < 5; i++) whole.push(g.measureRenderMs(8));
+				return { alone, whole };
+			},
+			[airless.id, radii],
+		);
+		// Median and span rather than a mean: five samples on a shared machine
+		// have outliers, and the span is what any later claim about a saving has
+		// to beat.
+		const median = (xs) =>
+			[...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
+		const span = (xs) => Math.max(...xs) - Math.min(...xs);
+		console.log(
+			`    ${label.padEnd(34)} body ${median(row.alone).toFixed(1)} ms ` +
+				`(±${span(row.alone).toFixed(1)}), whole system ${median(row.whole).toFixed(1)} ms ` +
+				`(±${span(row.whole).toFixed(1)})`,
+		);
+	}
 }
 
 await browser.close();
