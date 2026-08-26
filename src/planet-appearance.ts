@@ -9,6 +9,11 @@
  * replaces a whole second generator, and it means a hot star's third rung and a
  * cold star's third rung look different for the reason they should.
  *
+ * Callers get that ratio from `orbitWarmth(aAu, luminosity)` in `system.ts`
+ * rather than spelling it themselves: `a_hab` is clamped into the orbit
+ * envelope, and an unclamped `√L` agrees with it everywhere except at the edges
+ * — which is precisely where it would misclassify with nothing to show for it.
+ *
  * The seed only decorates: it picks continent shapes, crater fields and storm
  * placement *within* a class. It never picks the class. Two worlds at the same
  * relative orbit are the same kind of world with different weather.
@@ -42,10 +47,11 @@ export interface PlanetAppearance {
 	 *
 	 * **Not the ocean fraction.** `stretch()` widens a bell-shaped fBm so a
 	 * threshold near the middle is a usable control, but it does not turn the
-	 * mapping into a CDF — measured on the terran world, sea level 0.65 floods
-	 * 47% of sampled patches and 0.80 floods 66%. The relationship is monotonic,
-	 * which is what the shader needs; it is not an identity, which is what an
-	 * `oceanFraction` name would have promised.
+	 * mapping into a CDF. `probe-planets.mjs` sweeps it and prints the pairing;
+	 * the relationship is monotonic, which is what the shader needs, and it is
+	 * not an identity, which is what an `oceanFraction` name would have promised.
+	 * Figures are not repeated here — a number copied out of a probe run is a
+	 * number nothing keeps current.
 	 *
 	 * 0 means the class has no *liquid* ocean. An ice world's is frozen solid and
 	 * still sets it, because the fracture pattern is drawn across the shell that
@@ -89,9 +95,11 @@ export const WARMTH = {
 	TERRAN: 1.3,
 	/** Cold enough that the ocean is gone. The same line as `GIANT`. */
 	DESERT: GIANT_ORBIT_FACTOR,
-	/** `system.ts`'s own `isGasGiant` factor, imported rather than restated —
-	 *  the generator owns the rule and display reads it, so the parity is
-	 *  structural instead of asserted by a test. */
+	/** `system.ts`'s own `isGasGiant` factor, imported rather than restated.
+	 *  Together with `orbitWarmth` — which owns the clamped denominator — both
+	 *  halves of the comparison now come from the generator, so the parity is
+	 *  structural. The generated-systems sweep in the tests still runs, because
+	 *  it checks the *rule built on them* agrees per planet. */
 	GIANT: GIANT_ORBIT_FACTOR,
 	/** Beyond this a giant is methane-blue rather than ammonia-brown. */
 	ICE_GIANT: 5.0,
@@ -198,13 +206,13 @@ export function appearanceFor(
 	};
 
 	if (surface === "terran") {
-		// 0.55–0.75. Flooding that band leaves every terran world with both
-		// continents and open water — measured at roughly 30% to 66% ocean —
-		// without any of them losing the sea that makes it terran.
+		// 0.55–0.75. `probe-planets.mjs` sweeps this band and asserts that both
+		// ends leave continents and open water, so no terran world loses the sea
+		// that makes it terran or drowns entirely.
 		look.seaLevel = 0.55 + ((seed >>> 8) & 0xff) / 255 / 5;
 		// Weather is the loudest thing about a terran world at a distance, and
 		// the cover varies enough between them to be an identity of its own.
-		look.cloudCover = 0.55 + ((seed >>> 16) & 0xff) / 255 / 2.2;
+		look.cloudCover = 0.55 + ((seed >>> 16) & 0xff) / 255 / 2.25;
 	}
 	// Three giants in eight, so rings stay an event. Read off the *top* byte:
 	// the hash comment above disclaims its distribution, and leaning on the low

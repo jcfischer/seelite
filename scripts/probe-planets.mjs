@@ -36,9 +36,16 @@ const EXPECTED = [
 /** Emissive classes are bright on their own night side, and should be. */
 const SELF_LIT = new Set(["star", "lava"]);
 
-/** Rec. 709 on the raw framebuffer bytes. Relative, so the gamma does not
- *  matter — every comparison here is a ratio between two patches. */
-const luma = ([r, g, b]) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+/**
+ * Rec. 709 on the raw framebuffer bytes, taken from the page rather than
+ * respelled here.
+ *
+ * The `sd` each patch reports is computed with the page's coefficients, so a
+ * second copy on this side would make the deviation and these luminances two
+ * different quantities as soon as either moved. Relative, so gamma does not
+ * matter — every comparison below is a ratio between two patches.
+ */
+let luma = null;
 
 /** Direction of a colour, independent of how brightly it is lit. Two classes
  *  may share a hue and differ in luminance, or the reverse, so distinctness is
@@ -49,12 +56,17 @@ const chroma = (rgb) => {
 };
 
 await guardedOrigin(ORIGIN);
-// SwiftShader by default here rasterises nine full-screen fragment shaders in
-// software, which is slow enough that the frame-count wait below times out on a
-// default launch. ANGLE gives it the same path the shot scripts use.
-const browser = await launchChromium({
-	args: ["--use-gl=angle", "--enable-unsafe-swiftshader"],
-});
+/**
+ * ANGLE, with SwiftShader allowed as its backend.
+ *
+ * A default headless launch is slow enough here that the frame-count wait below
+ * times out. Naming the args in one constant matters for the budget figures
+ * printed at the end: they are only meaningful next to the renderer that
+ * produced them, and "SwiftShader" alone would be a guess about which backend
+ * ANGLE actually chose on this machine.
+ */
+const LAUNCH_ARGS = ["--use-gl=angle", "--enable-unsafe-swiftshader"];
+const browser = await launchChromium({ args: LAUNCH_ARGS });
 const { check, exit } = tally();
 const page = await browser.newPage({ viewport: { width: 900, height: 900 } });
 const failures = [];
@@ -76,7 +88,14 @@ check("no page error while the gallery rendered", failures.length === 0);
 if (failures.length) console.error(failures.join("\n"));
 
 const classes = await page.evaluate(() => window.__seelitePlanets.classes);
-const wraps = await page.evaluate(() => window.__seelitePlanets.wrapAmount);
+// Coefficients fetched once, applied locally: every use below sits inside a
+// loop, and a round trip per luminance would cost more than the duplication it
+// removes.
+const LUMA = await page.evaluate(
+	() => window.__seelitePlanets.lumaCoefficients,
+);
+luma = ([r, g, b]) => LUMA[0] * r + LUMA[1] * g + LUMA[2] * b;
+const depths = await page.evaluate(() => window.__seelitePlanets.atmosphere);
 const missing = EXPECTED.filter((name) => !classes.includes(name));
 const extra = classes.filter((name) => !EXPECTED.includes(name));
 check(
@@ -105,15 +124,15 @@ if (extra.length) console.error(`  unexpected: ${extra.join(", ")}`);
  * and reached 0.93, which put shell pixels inside a measurement whose own
  * comment excluded them.
  *
- * One `evaluate` for all of them: `samplePatch` re-renders the whole scene, and
- * a round trip per body meant nine full renders of nine fragment shaders on the
- * software rasteriser this probe deliberately runs on.
+ * One `evaluate` for all of them: every `samplePatch` re-renders the whole
+ * scene, so a round trip per body meant nine full renders of nine fragment
+ * shaders on the software rasteriser this probe deliberately runs on.
  */
 const patches = await page.evaluate(
 	(count) =>
 		Array.from({ length: count }, (_, i) => ({
-			lit: window.__seelitePlanets.samplePatch(i, 0.72, 0.35, 0.1),
-			dark: window.__seelitePlanets.samplePatch(i, -0.74, -0.36, 0.1),
+			lit: window.__seelitePlanets.samplePatch(i, 0.7, 0.34, 0.06),
+			dark: window.__seelitePlanets.samplePatch(i, -0.72, -0.35, 0.06),
 		})),
 	classes.length,
 );
@@ -149,15 +168,33 @@ for (let i = 0; i < classes.length; i++) {
 		// old renderer lit rocky worlds as `0.62 + 0.72*ndl`, which tops out at
 		// 2.16x however hard the sun shines, and lit its gas giants not at all
 		// (1.0x flat).
-		// `iceGiant` sits closest to its bar, and the reason is its rings: the ring
-		// plane crosses the disc through the unlit sample, and a ring is lit by
-		// the sun whatever the planet behind it is doing. The check still
+		// How sharp a terminator *should* be is a property of the atmosphere, so
+		// the bar is keyed on optical depth rather than being one constant.
+		//
+		// It is keyed on `atmosphere` and not on `wrapAmount`, which was the first
+		// attempt: wrap only softens the *surface* term, while the additive shell
+		// is a separate contribution that brightens the unlit limb on its own. The
+		// two disagree exactly where it matters — desert and ice sit at almost the
+		// same wrap (0.096 vs 0.064) and measure 4.9x against 44.9x, because the
+		// desert's dust haze is half again as thick and its ground is darker.
+		//
+		// Measured, so the boundaries clear every real value rather than grazing
+		// one: airless 0.0, ice 0.2, desert 0.3, terran 0.8, giants 1.0. An
+		// earlier revision split at 0.1 and put desert 4% from the line.
+		//
+		// Each bar still discriminates against what this prototype replaced: the
+		// old renderer lit rocky worlds as `0.62 + 0.72*ndl`, which tops out at
+		// 2.16x however hard the sun shines, and lit its gas giants not at all.
+		//
+		// `iceGiant` sits closest to its bar, and the reason is its rings: the
+		// ring plane crosses the disc through the unlit sample, and a ring is lit
+		// by the sun whatever the planet behind it is doing. The check still
 		// discriminates — an unlit ice giant reads flat — but the number is about
 		// planet-and-ring, and reading it as a surface figure would be wrong.
-		const wrap = wraps[i];
-		const bar = wrap > 0.25 ? 2.2 : wrap > 0.1 ? 4.0 : 6.0;
+		const depth = depths[i];
+		const bar = depth === 0 ? 6.0 : depth <= 0.35 ? 3.5 : 2.2;
 		check(
-			`${name}: has a terminator (lit ${lit.toFixed(1)} vs dark ${dark.toFixed(1)}, x${(lit / Math.max(1, dark)).toFixed(1)} against a x${bar} bar at wrap ${wrap.toFixed(2)})`,
+			`${name}: has a terminator (lit ${lit.toFixed(1)} vs dark ${dark.toFixed(1)}, x${(dark > 0 ? lit / dark : Number.POSITIVE_INFINITY).toFixed(1)} against a x${bar} bar at optical depth ${depth.toFixed(2)})`,
 			lit > dark * bar,
 		);
 	}
@@ -260,9 +297,13 @@ async function oceanFractionAt(seaLevel) {
 	const grid = await page.evaluate(
 		([index, cells, level]) => {
 			if (level !== null) window.__seelitePlanets.setSeaLevel(index, level);
-			return cells.map(
-				([u, v]) => window.__seelitePlanets.samplePatch(index, u, v, 0.05).rgb,
-			);
+			// One render for the whole grid. `samplePatches` renders once and reads
+			// every cell out of that frame; mapping `samplePatch` over the cells
+			// instead meant ~37 full software-rasterised renders per sea level,
+			// five sea levels over.
+			return window.__seelitePlanets
+				.samplePatches(index, cells, 0.05)
+				.map((patch) => patch.rgb);
 		},
 		[terran, GRID, seaLevel],
 	);
@@ -297,10 +338,14 @@ if (terran >= 0) {
 	 * 60% ocean" would be false. Monotonic response is true, and testable.
 	 */
 	const ladder = [];
-	for (const level of [0.35, 0.5, 0.65, 0.8])
+	// The band `appearanceFor` actually issues (0.55–0.75) plus one step outside
+	// it each way. Sweeping 0.35–0.80 measured a range no terran world can have,
+	// and the figures then quoted in the docs described sea levels the classifier
+	// cannot produce.
+	for (const level of [0.45, 0.55, 0.65, 0.75, 0.85])
 		ladder.push([level, await oceanFractionAt(level)]);
 	console.log(
-		`  sea level -> ocean: ${ladder.map(([l, f]) => `${l}=${(f * 100).toFixed(0)}%`).join("  ")}`,
+		`  sea level -> ocean: ${ladder.map(([l, f]) => `${l}=${(f * 100).toFixed(0)}%`).join("  ")}  (issued band 0.55-0.75)`,
 	);
 	// One grid cell of slack. The classification is a hard threshold on ~37
 	// sampled patches, so a single boundary patch flipping between steps would
@@ -327,35 +372,73 @@ if (terran >= 0) {
 }
 
 /**
- * The budget.
+ * The budget, measured per class rather than quoted.
  *
- * Two numbers, because they measure different things and only one of them is
- * the shader cost. `meanFrameMs` is a mean of `requestAnimationFrame` deltas,
- * which cannot report faster than the display's refresh interval — at 60 Hz it
- * bottoms out near 16.7 ms however cheap the shaders are, so on its own it is a
- * measure of the cadence. `measureRenderMs` renders back to back outside that
- * cadence and blocks on `finish()`, so it is the work.
+ * Two kinds of number, and only one of them is the shader cost. `meanFrameMs`
+ * is a mean of `requestAnimationFrame` deltas, which cannot report faster than
+ * the display's refresh interval — at 60 Hz it bottoms out near 16.7 ms however
+ * cheap the shaders are, so on its own it measures the cadence.
+ * `measureRenderMs` renders back to back outside that cadence and fences on
+ * `readPixels`, so it is the work.
  *
- * Reported, not gated: this runs on whatever the developer has, and on a
- * headless runner it is a software rasteriser, so a threshold here would be a
- * threshold on the machine rather than on the shader.
+ * Every row is produced here, in the committed harness, because a table pasted
+ * into a PR from a throwaway script cannot be re-checked by the next reader.
+ * Reported, not gated: this runs on whatever the developer has, and a threshold
+ * would be a threshold on the machine rather than on the shader.
  */
-const budget = await page.evaluate(() => ({
+const gallery = await page.evaluate(() => ({
 	cadenceMs: window.__seelitePlanets.meanFrameMs(),
 	renderMs: window.__seelitePlanets.measureRenderMs(),
 	buffer: window.__seelitePlanets.bufferSize(),
 }));
+const [bw, bh] = gallery.buffer;
 console.log(
-	`  budget: ${budget.renderMs.toFixed(1)} ms/render for ${classes.length} bodies at ${budget.buffer[0]}x${budget.buffer[1]} (rAF cadence ${budget.cadenceMs.toFixed(1)} ms)`,
+	`  budget, ${bw}x${bh} — the renderer is whatever this browser gave us (see LAUNCH_ARGS):`,
 );
+console.log(
+	`    gallery (${classes.length} bodies)  ${gallery.renderMs.toFixed(1)} ms/render   (rAF cadence ${gallery.cadenceMs.toFixed(1)} ms)`,
+);
+
+/**
+ * Each class alone, full screen — where the per-class cost actually shows.
+ *
+ * Measured by navigating the **same** page rather than opening one per class.
+ * A second page does not sit idle: it keeps its own rAF loop running, and on a
+ * software rasteriser the two contend for the same cores. Measured that way the
+ * per-class figures came out 26–42 ms against 2.6–17.7 ms one at a time — a
+ * number about scheduling, not about shaders. This block runs last for the same
+ * reason: nothing above it needs the gallery page afterwards.
+ */
+const perClass = [];
+for (const name of classes) {
+	await page.goto(`${ORIGIN}/?planet-prototype=${name}`, { waitUntil: "load" });
+	await page.waitForFunction(
+		() => window.__seelitePlanets && window.__seelitePlanets.frameCount() > 20,
+		{ timeout: 30000 },
+	);
+	perClass.push([
+		name,
+		await page.evaluate(() => window.__seelitePlanets.measureRenderMs()),
+	]);
+}
+for (const [name, ms] of [...perClass].sort((a, b) => b[1] - a[1]))
+	console.log(`    ${name.padEnd(10)} ${ms.toFixed(1)} ms/render`);
+
+const worst = perClass.reduce((a, b) => (b[1] > a[1] ? b : a));
+console.log(`  worst class: ${worst[0]} at ${worst[1].toFixed(1)} ms/render`);
+
 // Not a budget threshold — a sanity floor on the *instrument*. Nine full-screen
 // fragment shaders cannot rasterise in under 50 microseconds on any hardware, so
 // a figure below that means the fence is not fencing and the number is fiction.
 // This is exactly how the first version of this measurement failed: `finish()`
 // returned immediately and it reported 0.0 ms.
 check(
-	`render cost is a real measurement, not an un-fenced enqueue (${budget.renderMs.toFixed(2)} ms)`,
-	budget.renderMs > 0.05 && budget.renderMs < 5000,
+	`render cost is a real measurement, not an un-fenced enqueue (${gallery.renderMs.toFixed(2)} ms)`,
+	gallery.renderMs > 0.05 && gallery.renderMs < 5000,
+);
+check(
+	`every class was measured (${perClass.length}/${classes.length})`,
+	perClass.length === classes.length && perClass.every(([, ms]) => ms > 0.05),
 );
 
 await browser.close();

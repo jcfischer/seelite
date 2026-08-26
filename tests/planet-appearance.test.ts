@@ -3,9 +3,8 @@ import { generateGalaxy } from "../src/galaxy";
 import { WARMTH, appearanceFor, classify } from "../src/planet-appearance";
 import {
 	GIANT_ORBIT_FACTOR,
-	MAX_ORBIT_AU,
-	MIN_ORBIT_AU,
 	generateContents,
+	orbitWarmth,
 } from "../src/system";
 
 /** `a/a_hab` midway between two rungs, so a threshold nudge does not flip it. */
@@ -68,15 +67,14 @@ test("the giant rung agrees with the generator on every planet it makes", () => 
 	let giants = 0;
 	for (const record of systems) {
 		const contents = generateContents(record);
-		// The generator's own habitable distance, spelled the same way (§6.1).
-		const habitableAu = Math.min(
-			MAX_ORBIT_AU,
-			Math.max(MIN_ORBIT_AU, Math.sqrt(contents.star.luminosity)),
-		);
 		for (const planet of contents.planets) {
 			planets++;
 			if (planet.isGasGiant) giants++;
-			const warmth = planet.aAu / habitableAu;
+			// The generator's own ratio, called rather than respelled. Round 3
+			// caught that sharing only GIANT_ORBIT_FACTOR left this denominator
+			// hand-copied — and the clamp inside it is exactly where an unclamped
+			// sqrt(L) would silently disagree.
+			const warmth = orbitWarmth(planet.aAu, contents.star.luminosity);
 			// The line itself: the ladder's threshold and the generator's rule
 			// classify every generated planet the same way.
 			expect(warmth > WARMTH.GIANT).toBe(planet.isGasGiant);

@@ -1,3 +1,5 @@
+import type { SurfaceClass } from "./planet-appearance";
+
 /**
  * One fragment body per surface class.
  *
@@ -44,9 +46,14 @@ uniform float seedOffset;
 float continent(vec3 p) {
   return stretch(fbm5(warp(p * 1.15 + seedOffset, 1.4, 0.85)));
 }
+// One coastline, used by both the relief and the albedo. Spelled twice, they
+// drift, and the shore stops being where the mountains stop.
+float landMask(float c) {
+  return smoothstep(seaLevel - 0.008, seaLevel + 0.028, c);
+}
 float height(vec3 p) {
   float c = continent(p);
-  float land = smoothstep(seaLevel - 0.008, seaLevel + 0.028, c);
+  float land = landMask(c);
   // Mountains only inland, and only on the taller half of the landmass, so the
   // ranges follow the continent instead of speckling it.
   float orogeny = smoothstep(seaLevel + 0.10, seaLevel + 0.34, c);
@@ -56,8 +63,7 @@ float height(vec3 p) {
 void surface(vec3 p, inout vec3 albedo, inout vec3 N,
              inout vec3 emissive, inout float specPower, inout float specMask) {
   float c    = continent(p);
-  // Tight: a wide band turns every coast into a beach the size of a continent.
-  float land = smoothstep(seaLevel - 0.008, seaLevel + 0.028, c);
+  float land = landMask(c);
   float h    = height(p);
   float lat  = abs(p.y);
 
@@ -468,7 +474,9 @@ void surface(vec3 p, inout vec3 albedo, inout vec3 N,
 }
 `;
 
-export const CLASS_GLSL: Record<string, string> = {
+/** Keyed by `SurfaceClass`, so adding a rung without a shader is a type error
+ *  rather than a shader that compiles with no `surface()` body. */
+export const CLASS_GLSL: Record<SurfaceClass, string> = {
 	terran: TERRAN,
 	desert: DESERT,
 	ice: ICE,

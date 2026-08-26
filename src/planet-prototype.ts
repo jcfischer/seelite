@@ -25,12 +25,6 @@ import {
 } from "./planet-appearance";
 
 /**
- * The gallery, in ladder order: hottest rocky world to coldest, then the giants,
- * then a moon and a star. `warmth` is `a/a_hab` — the same number the generator
- * already has — and every entry here is the class `appearanceFor` returns for
- * that number, so the gallery cannot drift from the classifier.
- */
-/**
  * `[id, warmth, giant, note]`, in ladder order: hottest rocky world to coldest,
  * then the giants, then a moon and a star. `warmth` is `a/a_hab` — the same
  * number the generator already has — and every row's class is whatever
@@ -44,7 +38,10 @@ const ROWS: [string, number, boolean, string][] = [
 	["planet-3", 1.6, false, "a ≈ 1.6 a_hab"],
 	["planet-4", 3.4, false, "cold, and still rocky"],
 	["planet-5", 3.0, true, "a > 2 a_hab"],
-	["planet-9", 7.5, true, "a > 5 a_hab"],
+	// planet-7 rather than any ice giant: rings fall to three giants in eight,
+	// and a gallery that exists to show what each class *can* look like should
+	// draw the ring shader rather than leave it to chance on whichever id.
+	["planet-7", 7.5, true, "a > 5 a_hab, ringed"],
 ];
 
 interface GalleryEntry {
@@ -287,6 +284,11 @@ const PROTOTYPE_CSS = `
  * atmosphere and the rings all see the same sun and the same clock without any
  * of them being told about it separately.
  */
+/** The cloud shell is the same radius on every body that has one, so it is one
+ *  geometry rather than one per body. The atmosphere shell's radius varies with
+ *  optical depth, so that one genuinely cannot be shared. */
+const CLOUD_GEOMETRY = new THREE.SphereGeometry(1.014, 128, 84);
+
 function buildBody(look: PlanetAppearance, sphere: THREE.SphereGeometry): Body {
 	const uniforms: Record<string, THREE.IUniform> = {
 		time: { value: 0 },
@@ -325,7 +327,7 @@ function buildBody(look: PlanetAppearance, sphere: THREE.SphereGeometry): Body {
 	if (look.cloudCover > 0) {
 		group.add(
 			new THREE.Mesh(
-				new THREE.SphereGeometry(1.014, 128, 84),
+				CLOUD_GEOMETRY,
 				new THREE.ShaderMaterial({
 					uniforms,
 					transparent: true,
@@ -425,6 +427,22 @@ function installDragControls(canvas: HTMLCanvasElement) {
 	});
 	return view;
 }
+
+/**
+ * Rec. 709 relative luminance, on raw framebuffer bytes.
+ *
+ * Published on the probe handle so the probe does not carry its own copy: the
+ * `sd` returned by `samplePatches` is computed with these coefficients, and a
+ * probe comparing that deviation against luminances of its own would be
+ * comparing two different quantities the moment either side changed.
+ */
+export const LUMA_COEFFICIENTS: [number, number, number] = [
+	0.2126, 0.7152, 0.0722,
+];
+const luma = (r: number, g: number, b: number) =>
+	LUMA_COEFFICIENTS[0] * r +
+	LUMA_COEFFICIENTS[1] * g +
+	LUMA_COEFFICIENTS[2] * b;
 
 /** Rolling mean, used for both the on-screen readout and the probe handle. */
 const mean = (values: number[]) =>
@@ -577,8 +595,7 @@ function installProbeSurface(ctx: {
 				r += pixels[i];
 				g += pixels[i + 1];
 				b += pixels[i + 2];
-				const y =
-					0.2126 * pixels[i] + 0.7152 * pixels[i + 1] + 0.0722 * pixels[i + 2];
+				const y = luma(pixels[i], pixels[i + 1], pixels[i + 2]);
 				lumaSum += y;
 				lumaSq += y * y;
 			}
@@ -629,10 +646,17 @@ function installProbeSurface(ctx: {
 
 	(window as unknown as Record<string, unknown>).__seelitePlanets = {
 		classes: bodies.map((b) => b.surface),
-		// How far light wraps past the geometric terminator on each body. The
-		// terminator check reads it, because how sharp a terminator *should* be is
-		// a property of the atmosphere, not a constant.
+		// The very coefficients `samplePatches` uses for `sd`. Handed over as
+		// numbers rather than as a function so the probe can apply them
+		// synchronously in its own loops, while this file stays the one place
+		// they are written down.
+		lumaCoefficients: LUMA_COEFFICIENTS,
+		// How far light wraps past the geometric terminator, and the optical depth
+		// of the shell around each body. The terminator check reads the second:
+		// how sharp a terminator *should* be is a property of the atmosphere, not
+		// a constant.
 		wrapAmount: bodies.map((b) => b.uniforms.wrapAmount.value as number),
+		atmosphere: looks.map((look) => look.atmosphere),
 		seaLevel: looks.map((look) => look.seaLevel),
 		cloudCover: looks.map((look) => look.cloudCover),
 		// The display cadence. Reported *next to* measureRenderMs, never instead
@@ -737,6 +761,9 @@ export function mountPlanetPrototype(): void {
 	// budget, and a budget needs a number measured on the worst case — which is
 	// the gallery, nine shaders on screen at once.
 	const frames: number[] = [];
+	// Seeded off-view so the first frame writes the rotations once.
+	let lastSpin = Number.NaN;
+	let lastTilt = Number.NaN;
 	let last = performance.now();
 	const clock = new THREE.Clock();
 	let frameCount = 0;
@@ -749,11 +776,19 @@ export function mountPlanetPrototype(): void {
 		frameCount++;
 
 		const elapsed = clock.getElapsedTime();
+		// Rotations only when the view actually moved: each write dirties a matrix
+		// on nine groups, and the view is static except while someone is dragging.
+		// `time` is the only uniform that genuinely varies every frame.
+		const moved = view.spin !== lastSpin || view.tilt !== lastTilt;
 		for (const body of bodies) {
 			body.uniforms.time.value = elapsed;
-			body.group.rotation.y = view.spin;
-			body.group.rotation.x = view.tilt;
+			if (moved) {
+				body.group.rotation.y = view.spin;
+				body.group.rotation.x = view.tilt;
+			}
 		}
+		lastSpin = view.spin;
+		lastTilt = view.tilt;
 		renderer.render(scene, camera);
 
 		if (frameCount % 15 === 0) {
