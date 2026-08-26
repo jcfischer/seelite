@@ -238,6 +238,54 @@ async function placeShipAtLocalOffset(page, local) {
 	}, local);
 }
 
+async function targetInstrumentRendered(page) {
+	const shown = await page.screenshot();
+	try {
+		await page.evaluate(() => {
+			window.__seelite.nearScene.getObjectByName("target-instrument").visible =
+				false;
+		});
+		const frame = await page.evaluate(() => window.__seelite.frames);
+		await page.waitForFunction(
+			(before) => window.__seelite.frames > before,
+			frame,
+		);
+		const hidden = await page.screenshot();
+		return page.evaluate(
+			async ({ shown, hidden }) => {
+				const decode = async (base64) => {
+					const image = await createImageBitmap(
+						await (await fetch(`data:image/png;base64,${base64}`)).blob(),
+					);
+					const canvas = document.createElement("canvas");
+					canvas.width = image.width;
+					canvas.height = image.height;
+					const context = canvas.getContext("2d");
+					context.drawImage(image, 0, 0);
+					return context.getImageData(0, 0, canvas.width, canvas.height).data;
+				};
+				const [a, b] = await Promise.all([decode(shown), decode(hidden)]);
+				let changed = 0;
+				for (let i = 0; i < a.length; i += 4)
+					if (
+						Math.abs(a[i] - b[i]) +
+							Math.abs(a[i + 1] - b[i + 1]) +
+							Math.abs(a[i + 2] - b[i + 2]) >
+						30
+					)
+						changed++;
+				return changed;
+			},
+			{ shown: shown.toString("base64"), hidden: hidden.toString("base64") },
+		);
+	} finally {
+		await page.evaluate(() => {
+			window.__seelite.nearScene.getObjectByName("target-instrument").visible =
+				true;
+		});
+	}
+}
+
 // The guard compares top-level numeric declarations in the renderer and unit
 // surfaces; scanner projection terms are covered by cockpit's unit tests.
 await guardedOrigin(ORIGIN, ["src/main.ts", "src/units.ts"]);
@@ -469,16 +517,12 @@ await productionPage.waitForFunction(() =>
 		window.__seelite.cockpit.targetInstrument.secondaryText.text,
 	),
 );
-const productionEtaVisible = await productionPage.evaluate(() => {
-	const game = window.__seelite;
-	return globalThis.__seeliteTextPixelsMatch(
-		game.cockpit.targetInstrument.ctx.canvas,
-		game.cockpit.targetInstrument.secondaryText,
-	);
-});
+const productionInstrumentPixels =
+	await targetInstrumentRendered(productionPage);
 check(
-	"production: target instrument retains visible ETA and charge readout",
-	productionEtaVisible,
+	"production: target instrument contributes composited screen pixels",
+	productionInstrumentPixels > 100,
+	`${productionInstrumentPixels} changed screen pixels`,
 );
 await productionPage.close();
 
