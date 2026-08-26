@@ -692,91 +692,165 @@ function strobePair(
 // for a shape. Each declares its own reach, and `STATION_SILHOUETTE_KM` is the
 // selected form's row rather than a number written twice.
 
-/** Trade A — Coriolis. A twelve-sided spun drum with chamfered ends and a
- *  **flat** docking face. #28's octahedron put the slot on a vertex, which is
- *  the review's first finding: you cannot fly into a point. */
+/**
+ * Trade A — Coriolis. A **cuboctahedron**: eight triangular faces and six
+ * square ones, with the slot cut into the square face that points at you.
+ *
+ * This is the third attempt and the first that is the reference shape rather
+ * than an approximation of it. Round one built a twelve-sided lofted drum,
+ * which projected as a circle down the aperture axis and could not be told from
+ * the refinery by outline. Round two squared its *section* — four segments at
+ * `e: 5` — which fixed the projection and was still a swept tube with a bulge
+ * in the middle, judged ugly on review, and had nothing flat to put a light on.
+ *
+ * A cuboctahedron solves all three at once and needs no swept loft: its six
+ * square faces are genuinely flat and axis-aligned, so the +Z one is a door and
+ * the four equatorial ones are walls that a window grid and a strobe can sit
+ * *on* rather than near. Every vertex is the same distance from the centre, so
+ * `PolyhedronGeometry` can build it directly from twelve points, and the
+ * silhouette is a twelve-sided outline that is nobody else's.
+ *
+ * `FACE_INSET` is where the square faces are: for a cuboctahedron of radius R
+ * the square face planes sit at `R / √2`. That figure is the whole reason
+ * nothing floats — the aperture, the collar, the panes and the strobes are all
+ * placed from it rather than from a radius chosen by eye.
+ */
+const CUBOCTAHEDRON_FACE = Math.SQRT1_2;
+
+function buildCuboctahedron(radiusKm: number, material: THREE.Material) {
+	// The twelve permutations of (±1, ±1, 0). `PolyhedronGeometry` normalises
+	// every vertex to the radius, which is exact here because a cuboctahedron's
+	// vertices are equidistant — that is what makes it buildable this way and a
+	// truncated cube, say, not.
+	// The twelve permutations of (±1, ±1, 0), grouped so the index list below can
+	// be read: 0–3 are the z = 0 ring, 4–7 the y = 0 ring, 8–11 the x = 0 ring.
+	// `PolyhedronGeometry` normalises every vertex to the radius, which is exact
+	// here because a cuboctahedron's vertices are equidistant — that is what
+	// makes it buildable this way and a truncated cube, say, not.
+	const vertices = [
+		1, 1, 0, -1, 1, 0, -1, -1, 0, 1, -1, 0, 1, 0, 1, -1, 0, 1, -1, 0, -1, 1, 0,
+		-1, 0, 1, 1, 0, -1, 1, 0, -1, -1, 0, 1, -1,
+	];
+	// Six squares as two triangles each, then eight triangles — one per octant.
+	// Every winding is outward; the first version's list was neither a
+	// cuboctahedron nor consistently wound, and rendered as two interpenetrating
+	// wedges with the window grid hanging in space beside them, because the
+	// faces the panes were placed against were not where the geometry put them.
+	const indices = [
+		// +Z, -Z
+		4, 8, 5, 4, 5, 9, 7, 10, 6, 7, 6, 11,
+		// +X, -X
+		0, 4, 3, 0, 3, 7, 1, 6, 2, 1, 2, 5,
+		// +Y, -Y
+		0, 11, 1, 0, 1, 8, 3, 9, 2, 3, 2, 10,
+		// the eight octant triangles
+		0, 8, 4, 1, 5, 8, 2, 9, 5, 3, 4, 9, 0, 7, 11, 1, 11, 6, 2, 6, 10, 3, 10, 7,
+	];
+	const geometry = new THREE.PolyhedronGeometry(vertices, indices, radiusKm, 0);
+	// **Box-projected UVs, per face.** `PolyhedronGeometry` writes an azimuthal
+	// unwrap — longitude and latitude — which is right for a sphere and wrong
+	// for a solid made of flat plates: the plating smears into streaks towards
+	// the poles and changes panel size from one triangle to the next. Each face
+	// is projected onto whichever axis plane it most faces instead, in
+	// kilometres, so a panel is the same size everywhere on this hull and the
+	// same size as on every other station.
+	const position = geometry.getAttribute("position") as THREE.BufferAttribute;
+	const uv = geometry.getAttribute("uv") as THREE.BufferAttribute;
+	const a = new THREE.Vector3();
+	const b = new THREE.Vector3();
+	const c = new THREE.Vector3();
+	const edge = new THREE.Vector3();
+	const normal = new THREE.Vector3();
+	// One texture repeat per 150 m. The map carries about eight panels across,
+	// so a plate is roughly 19 m — a size a pilot can judge a ship against,
+	// which is the whole job of plating at this scale. At 60 m per repeat the
+	// hull read as fine noise rather than as panels.
+	const PANEL_KM = 0.15;
+	// Non-indexed, so each run of three vertices is one face and can be given its
+	// own projection without splitting anything.
+	for (let i = 0; i < position.count; i += 3) {
+		a.fromBufferAttribute(position, i);
+		b.fromBufferAttribute(position, i + 1);
+		c.fromBufferAttribute(position, i + 2);
+		normal.copy(b).sub(a);
+		edge.copy(c).sub(a);
+		normal.cross(edge);
+		const ax = Math.abs(normal.x);
+		const ay = Math.abs(normal.y);
+		const az = Math.abs(normal.z);
+		const axis = ax > ay && ax > az ? 0 : ay > az ? 1 : 2;
+		for (let k = 0; k < 3; k++) {
+			const v = k === 0 ? a : k === 1 ? b : c;
+			uv.setXY(
+				i + k,
+				(axis === 0 ? v.y : v.x) / PANEL_KM,
+				(axis === 2 ? v.y : v.z) / PANEL_KM,
+			);
+		}
+	}
+	uv.needsUpdate = true;
+	const mesh = new THREE.Mesh(geometry, material);
+	(material as THREE.MeshStandardMaterial).flatShading = true;
+	return mesh;
+}
+
 function buildTradeCoriolis(color: number): BuiltPart {
 	const r = STATION_GEOMETRY.trade.coreRadiusKm;
 	const group = new THREE.Group();
 	const fixtures: StationFixture[] = [];
-	// **A squared hull with cut corners, which is what a Coriolis actually is.**
-	// Round one built this as a twelve-sided drum at `e: 2` — a true ellipse —
-	// and the result was a ball: down the aperture axis, the one view a docking
-	// approach has, it projected as a circle, and `probe-station.mjs` measured
-	// it against the refinery at 1 − IoU 0.215 on a 0.25 floor. Two round things
-	// cannot differ by outline however they are decorated, and §7 rests identity
-	// on outline.
-	//
-	// So the section is four segments at `e: 5`: a rounded square head-on. That
-	// is also the shape the reference has — Elite's Coriolis is a cube with its
-	// corners cut, and its slot is cut into one of the flat faces.
-	//
-	// `e` is not a corner radius: a superellipse's diagonal reaches
-	// `2^(1/e)` × its own half-extent, so an `e: 5` section's corners sit 15%
-	// outside `w`. The declared reach carries that; `w` alone does not.
-	const hull = shell(
-		[
-			{ z: -r * 0.94, w: r * 0.34, h: r * 0.34, e: 5 },
-			{ z: -r * 0.74, w: r * 0.62, h: r * 0.62, e: 5, hard: true },
-			{ z: -r * 0.3, w: r * 0.9, h: r * 0.9, e: 5 },
-			{ z: r * 0.3, w: r * 0.9, h: r * 0.9, e: 5 },
-			{ z: r * 0.74, w: r * 0.62, h: r * 0.62, e: 5, hard: true },
-			{ z: r * 0.92, w: r * 0.52, h: r * 0.52, e: 5 },
-		],
-		hullMaterial(color, "trade"),
-		"core",
-		4,
-		true,
-	);
+	const radius = r * 0.95;
+	/** Where a square face's plane sits, kilometres. Everything mounted on the
+	 *  hull is placed from this — which is what stops a light hanging in space
+	 *  beside the station, as the swept version's did. */
+	const face = radius * CUBOCTAHEDRON_FACE;
+
+	const hull = buildCuboctahedron(radius, hullMaterial(color, "trade"));
+	hull.name = "core";
 	group.add(hull);
-	// A raised collar round the slot, so the flat face reads as a *door* rather
-	// than as a panel that happens to be lit.
-	const collar = shell(
-		[
-			{ z: r * 0.9, w: r * 0.42, h: r * 0.42, e: 5 },
-			{ z: r * 0.98, w: r * 0.36, h: r * 0.36, e: 5, hard: true },
-		],
+
+	// A square coaming round the slot, standing proud of the +Z face by a tenth
+	// of its own width — a door frame, so the face reads as a way in rather than
+	// as a lit panel.
+	const coaming = new THREE.Mesh(
+		new THREE.BoxGeometry(face * 1.05, face * 1.05, face * 0.16),
 		plainMaterial(0x79838f, 0.7, 0.45),
-		"collar",
-		4,
-		true,
 	);
-	group.add(collar);
-	group.add(buildAperture("trade", r * 0.98));
-	// Ports in bands round the widest station, which is where decks would be.
+	coaming.position.z = face + face * 0.06;
+	coaming.name = "coaming";
+	group.add(coaming);
+	group.add(buildAperture("trade", face + face * 0.14));
+
+	// The window grid, on the four equatorial square faces. Each pane sits on
+	// its face's own plane, a hair proud, so none of them can float: the face is
+	// at `face` along its axis and spans ±`face` across it.
+	const PER_FACE = 7;
 	group.add(
-		portRun("trade", PANE_COUNT, (i, position, normal) => {
-			// **On the flats, never near a corner.** An `e: 5` section's corner
-			// sits 15% outside `w`, and a pane is 30 m across: placed there it
-			// becomes the station's outermost drawn point, which breaks §2's rule
-			// that a detail level may not change the outline — measured, the trade
-			// station reached 0.670 km with its window grid and 0.634 km without.
-			// Four faces, seven panes to each, spread across the middle of the
-			// face.
-			const face = (i % 4) * (Math.PI / 2);
-			const theta =
-				face +
-				(0.28 + (Math.floor(i / 4) / 7) * 0.44) * (Math.PI / 2) -
-				Math.PI / 4;
-			const band = (Math.floor(i / 4) % 2 === 0 ? -1 : 1) * r * 0.14;
-			normal.set(Math.cos(theta), Math.sin(theta), 0);
-			// On the squared section's own surface, not on a circle round it:
-			// |x/w|^e + |y/w|^e = 1 gives a radius of
-			// w / (|cos|^e + |sin|^e)^(1/e) at each angle. A pane placed on a
-			// circle would float off the flats and sink into the corners.
-			const e = 5;
-			const w = r * 0.9;
-			const radius =
-				w /
-				(Math.abs(Math.cos(theta)) ** e + Math.abs(Math.sin(theta)) ** e) **
-					(1 / e);
-			position.copy(normal).multiplyScalar(radius * 1.01);
-			position.z = band;
+		portRun("trade", PER_FACE * 4, (i, position, normal) => {
+			// Four faces, seven panes each: the face is the index modulo four and
+			// the position along it is the index divided by four.
+			const angle = ((i % 4) / 4) * Math.PI * 2;
+			const step = Math.floor(i / 4);
+			normal.set(Math.cos(angle), Math.sin(angle), 0);
+			// A staggered two-row run inside the face's square, kept clear of its
+			// edges so a pane cannot hang off a corner. The face plane is at
+			// `face` along its normal and spans ±`face` across it.
+			const across = (step / (PER_FACE - 1) - 0.5) * face * 1.1;
+			const up = (step % 2 === 0 ? -1 : 1) * face * 0.32;
+			position
+				.copy(normal)
+				.multiplyScalar(face * 1.004)
+				.addScaledVector(
+					new THREE.Vector3(-Math.sin(angle), Math.cos(angle), 0),
+					across,
+				);
+			position.z = up;
 		}),
 	);
+
+	// The strobes on two opposite equatorial faces, flat against them.
 	group.add(
 		strobePair("trade", fixtures, r * 0.07, (side, position) => {
-			position.set(side * r * 0.92, 0, r * 0.32);
+			position.set(side * face * 1.02, 0, face * 0.5);
 		}),
 	);
 	return { group, fixtures };
@@ -856,7 +930,11 @@ function buildTradeRing(color: number): BuiltPart {
 	// the eye a triangle to read. Two control stations per member, so there is
 	// no interior to overshoot, and they stop at the rim's **inner face** rather
 	// than at its centre.
-	const SPOKES = 6;
+	// **Four.** Six read as a bicycle wheel — the review's word for the first
+	// version was "comic", and more members did not fix that, they thickened it.
+	// Four A-frames is eight members, which is enough to look carried and few
+	// enough that the ring's own circle stays the shape you see.
+	const SPOKES = 4;
 	const foot = major - tube * 0.94;
 	for (let i = 0; i < SPOKES; i++) {
 		const theta = (i / SPOKES) * Math.PI * 2;
@@ -1175,6 +1253,15 @@ function buildShipyardHangar(color: number): BuiltPart {
 
 	// The bay mouth: a recess cut into the flank, floodlit from inside. Its own
 	// size is the ruler — it is obviously a hole a ship goes through.
+	//
+	// **It is a construction slip, not the dock**, and the shape must not be
+	// allowed to imply otherwise. Measured, the mouth is 1070 × 264 × 144 m
+	// against a pool whose largest ordinary hull is 74 × 54 × 47 m: fifteen of
+	// them nose to tail, three or four abreast. That is deliberate — a shipyard
+	// should visibly hold ships — but the *player* docks at the hub, through the
+	// 200 × 70 m slot on the spin axis, because `docking.md` §4 puts the slot on
+	// that axis and #28 keeps the outboard structure still. A pad in this bay
+	// would be a second docking geometry the checks do not read.
 	const mouth = new THREE.Mesh(
 		new THREE.BoxGeometry(reach * 0.5, r * 0.44, r * 0.24),
 		new THREE.MeshBasicMaterial({ color: 0x05070a }),
@@ -1880,8 +1967,8 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 		{
 			id: "a",
 			name: "Coriolis",
-			thesis: "squared hull with cut corners; the slot is on a flat face",
-			reachKm: 0.72,
+			thesis: "cuboctahedron — the slot is cut into a real flat square face",
+			reachKm: 0.62,
 			build: buildTradeCoriolis,
 		},
 		{
@@ -1985,15 +2072,16 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 export const SELECTED_FORM: Record<StationType, StationFormId> = {
 	trade: "a",
 	shipyard: "a",
-	// **Collar, and chosen by a measurement rather than by order.** The Warren
-	// was first, and `probe-station.mjs` measured it against the trade station's
-	// drum at 1 − IoU 0.224 on a 0.25 floor: down the aperture axis — the one
-	// view a docking approach has — a rock with an inlaid cut and a plated drum
-	// are both round. The Collar's band projects as a ring round the rock from
-	// that same view, which is a different outline rather than a differently
-	// decorated one. Still a placeholder until the role is ranked; it is simply
-	// a placeholder that passes the gate #7 rests identity on.
-	refinery: "b",
+	// **Warren, and chosen by a measurement rather than by order.** The pairing
+	// that matters is this form against the *trade* station, because those are
+	// the two the identity floor keeps failing on, and it moved when the trade
+	// station did. Against round two's swept drum the Warren measured 1 − IoU
+	// 0.224 on a 0.25 floor and the Collar was picked instead; against the
+	// cuboctahedron the Warren clears the floor and the Spar is the one that
+	// does not, at 0.244. A selection made once and left alone would have been
+	// wrong twice. Still a placeholder until the role is ranked — but a
+	// placeholder that passes the gate §7 rests identity on.
+	refinery: "a",
 	// Unranked, like the refinery's was: three new forms and nobody has looked
 	// at them. It changes nothing in a running game either way — `system.ts`
 	// places no outposts, because what one sells and how often one exists are
