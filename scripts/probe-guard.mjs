@@ -348,6 +348,20 @@ const FINGERPRINT = ["src/units.ts", "src/main.ts"];
 export function tally() {
 	let failures = 0;
 	let checks = 0;
+	/**
+	 * One definition, because both `watch` and `watchShaders` install it and a
+	 * retune that reached one and not the other would leave half the suite on
+	 * an older filter. The long note on `watch` documents this listener.
+	 */
+	const shaderListener = (page, tag) =>
+		page.on("console", (message) => {
+			if (message.type() !== "error") return;
+			const text = message.text();
+			if (!/shader|glsl|link status|validate_status/i.test(text)) return;
+			checks++;
+			failures++;
+			console.log(`SHADERERROR ${tag}${text.slice(0, 400)}`);
+		});
 	return {
 		check(label, ok, detail) {
 			checks++;
@@ -365,14 +379,7 @@ export function tally() {
 		 */
 		watchShaders(page, label) {
 			const tag = label ? `${label}: ` : "";
-			page.on("console", (message) => {
-				if (message.type() !== "error") return;
-				const text = message.text();
-				if (!/shader|glsl|link status|validate_status/i.test(text)) return;
-				checks++;
-				failures++;
-				console.log(`SHADERERROR ${tag}${text.slice(0, 400)}`);
-			});
+			shaderListener(page, tag);
 		},
 		watch(page, label) {
 			const tag = label ? `${label}: ` : "";
@@ -410,18 +417,13 @@ export function tally() {
 			 * was added, nine probes installed their own
 			 * `page.on("pageerror", ...)` and never called `watch`, so a guard
 			 * written up as covering the suite covered three files. Every probe
-			 * now installs one or the other on every page it opens.
-			 * `check-launcher-wiring.mjs` is the place to enforce that if it
-			 * drifts back.
+			 * now installs one or the other on every page it opens, and
+			 * `check-launcher-wiring.mjs` enforces it rather than this comment
+			 * asserting it — it counts pages against watches, and refuses a
+			 * hand-rolled `pageerror` handler that does not also take
+			 * `watchShaders`. `npm run probe` runs that check first.
 			 */
-			page.on("console", (message) => {
-				if (message.type() !== "error") return;
-				const text = message.text();
-				if (!/shader|glsl|link status|validate_status/i.test(text)) return;
-				checks++;
-				failures++;
-				console.log(`SHADERERROR ${tag}${text.slice(0, 400)}`);
-			});
+			shaderListener(page, tag);
 			page.on("pageerror", (e) => {
 				// Counted as a check too, not just a failure. Incrementing `failures`
 				// alone makes `${checks - failures}/${checks}` report a failing check

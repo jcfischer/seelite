@@ -114,7 +114,11 @@ describe("the crater field has one definition", () => {
 		// The snippets are text, so their contract is by name: `CRATER_CELL`
 		// reads `base`, `p` and the loop counters, and declares the rest. A
 		// consumer that fails to supply one gets a GLSL compile error in a
-		// browser — which the probes now catch, but late and far from here.
+		// browser. What would catch *that* is thinner than it sounds and is
+		// the reason this test exists: the probes' console listener matches the
+		// text of three.js's error, which fails open on a rewording, and the
+		// one check that asks the GL context directly names the rock's own
+		// program. A third consumer, in some other material, has neither.
 		//
 		// The names *declared* are guarded by the one-definition tests above.
 		// These are the ones each consumer has to bring itself, and they are

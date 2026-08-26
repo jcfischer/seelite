@@ -10,8 +10,9 @@
  *
  * **It counts its own animation frames rather than reading the renderer's
  * counter.** Every `requestAnimationFrame` callback fires once per composited
- * frame, so the two agree, and the meter needs nothing from the page it is
- * measuring.
+ * frame, so what this counts is the compositor's rate — and the meter needs
+ * nothing from the page it is measuring. It is not the renderer's draw count
+ * and does not track it; the paragraph below is about where the two part.
  *
  * **What it measures is the page's frame service, not the game's loop.** That
  * distinction is the whole of what this instrument is and is not, and an

@@ -393,8 +393,10 @@ for (const viewport of VIEWPORTS) {
 	 * spliced into three.js's chunks by `onBeforeCompile`. The tests that guard
 	 * it match *source text* — they can prove the crater field has one
 	 * definition and that a rename has not left an interpolation dangling, and
-	 * they cannot prove the result compiles, because nothing headless has a GL
-	 * context. A patch that stopped linking would leave three.js logging to the
+	 * they cannot prove the result compiles, because `bun test` has no GL
+	 * context. Not "nothing headless": `probe-planets` launches with
+	 * `--use-gl=angle --enable-unsafe-swiftshader` and gets one. A compile
+	 * check belongs where a context is, which is here. A patch that stopped linking would leave three.js logging to the
 	 * console and rendering something, and the checks above would go on passing:
 	 * they ask whether the refinery is on screen and lit, and it would be.
 	 *

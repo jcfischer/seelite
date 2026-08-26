@@ -116,6 +116,43 @@ for (const path of scripts(DIR).sort()) {
 		);
 	if (resolvesPlaywright.test(code))
 		problems.push(`${name}: still resolves Playwright itself`);
+
+	/**
+	 * Every page a probe opens is watched.
+	 *
+	 * The shader-error listener lives inside `tally()`'s `watch` and
+	 * `watchShaders`, and for a while nine probes rolled their own
+	 * `page.on("pageerror", ...)` and called neither — so a guard described as
+	 * covering the suite covered four files, and nothing said otherwise. The
+	 * comment in `probe-guard.mjs` named this file as the place to enforce it,
+	 * which is only worth writing if it is done.
+	 *
+	 * Counted rather than matched pairwise: a probe that opens three pages and
+	 * watches two is the failure, and page creation and watching are far
+	 * enough apart in these files that following one to the other statically
+	 * would be guesswork. A count is a blunt instrument that is right about
+	 * the case that matters — none, or fewer than there are pages.
+	 */
+	const reports = /\btally\s*\(\s*\)/.test(code);
+	const pages = (code.match(/\.newPage\s*\(/g) ?? []).length;
+	const watched = (code.match(/\bwatch(Shaders)?\s*\(/g) ?? []).length;
+	const ownPageError = /page\.on\(\s*["']pageerror["']/.test(code);
+	// Scoped to scripts that report: `shot-ships.mjs` opens a page to take a
+	// screenshot and has no checks to fail, so a watch there would have
+	// nothing to report into.
+	if (reports && pages > watched)
+		problems.push(
+			`${name}: opens ${pages} page(s) but installs ${watched} watch(es) — ` +
+				`an unwatched page reports neither page errors nor shader failures`,
+		);
+	// A probe may keep its own page-error reporting — `probe-planets` names
+	// them at two milestones rather than one per event — but then it owes the
+	// shader listener separately, which is what `watchShaders` is for.
+	if (reports && ownPageError && !/\bwatchShaders\s*\(/.test(code))
+		problems.push(
+			`${name}: installs its own pageerror handler without watchShaders() — ` +
+				`use watch(), or take the shader listener on its own`,
+		);
 }
 
 if (callers < EXPECTED_CALLERS)
