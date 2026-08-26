@@ -262,29 +262,45 @@ describe("§7's secondary cue, and the detail that is not the identity", () => {
 		expect(hex(b.root)).toBe(0x222222);
 	});
 
-	test("window panes lie on the hull, not buried inside it", () => {
-		// The failure this guards is invisible on screen: a pane inside an opaque
-		// hull renders as nothing, and reads only as "the windows do not show".
-		// #28 could test it exactly — an octahedron's surface is the plane
-		// |x| + |y| + |z| = r — and the forms have no single such expression
-		// between them, so what is asserted is the property that survives:
-		// a pane is out near the shell it belongs to, and not inside the middle
-		// of the station or outside its declared reach.
+	test("window panes sit out near the shell they belong to", () => {
+		// **Renamed, because the old name was a claim this cannot make.** It was
+		// "panes lie on the hull, not buried inside it", which #28 could assert
+		// exactly: its hull was an octahedron and "on the hull" was the equation
+		// |x| + |y| + |z| = r. Twelve forms share no such equation, and the
+		// generalisation that replaced it — a floor at a quarter of the core
+		// radius — passes the very defect the name promises to catch, a pane on a
+		// circle of 0.62·r sitting tens of metres inside an opaque face.
+		//
+		// What is left is a bound, honestly named: a pane is out near the shell
+		// and inside the declared reach. It catches a grid placed at the centre
+		// or outside the silhouette; it cannot see one buried by a few metres,
+		// and nothing headless can without a per-form surface equation. The
+		// island check and the browser's own "the windows do not show" are what
+		// cover the rest.
 		for (const type of TYPES) {
 			for (const form of STATION_FORMS[type]) {
 				const { root } = buildStationForm(type, form.id, GREY);
 				root.updateMatrixWorld(true);
 				const panes = root.getObjectByName("windows") as THREE.InstancedMesh;
 				expect(panes?.isInstancedMesh).toBe(true);
+				// Against the **core radius**, not the form's reach: a shipyard's
+				// ports are on its bridge, and its reach is a 1.4 km frame the
+				// crew does not live in. The dockable core is the inhabited part
+				// and the only per-form scale that means the same thing on all
+				// twelve.
 				const core = STATION_GEOMETRY[type].coreRadiusKm;
 				const m = new THREE.Matrix4();
 				const p = new THREE.Vector3();
 				for (let i = 0; i < panes.count; i++) {
 					panes.getMatrixAt(i, m);
 					p.setFromMatrixPosition(m);
-					// The group is authored in kilometres — the normalisation happens
-					// at the root, above this — so these are kilometres already.
-					expect(p.length()).toBeGreaterThan(core * 0.25);
+					// Authored in kilometres — the normalisation happens at the root,
+					// above this group — so these are kilometres already.
+					expect([type, form.id, p.length() > core * 0.4]).toEqual([
+						type,
+						form.id,
+						true,
+					]);
 					expect(p.length()).toBeLessThanOrEqual(form.reachKm);
 				}
 			}

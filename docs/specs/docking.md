@@ -315,8 +315,13 @@ At 0.12 × 0.07 km the margins are 57.2 m across and 6.6 m up. The height is not
 a dial.
 
 **Neither capital class fits, and is not meant to** (see the map's
-Constraints): the carrier is 212 × 181 m and the dreadnought 186 × 165 m. #26
-owes them an outfitting route that is not a station.
+Constraints). Stated in the same terms as the rest of this section, which is
+what the slot has to admit rather than what the hull measures square: **rolled
+to 50° the carrier needs 256 × 257 m and the dreadnought 229 × 228 m.** Their
+axis-aligned envelopes are 212 × 181 and 186 × 165, and quoting those here was
+the mistake this section is otherwise about — whoever retunes an aperture would
+read 212 as the bar to stay under when the admit threshold is 256. #26 owes them
+an outfitting route that is not a station.
 
 Probe fixtures and every form's drawn dock frame read the aperture from the
 geometry constant rather than restating it, so a retune moves one table and no

@@ -51,7 +51,11 @@ there was no slack at all to mount anything in. Every fixture had to be solved
 onto the face plane `|x| + |y| + |z| = r` and sit inside the convex outline.
 
 #56 replaced that hull with a cuboctahedron and the budget is a declared reach
-per *form* now, with a few per cent of headroom on each. The arithmetic changed;
+per *form* now. How much headroom each carries is **printed by
+`station-mesh.test.ts`, not asserted tightly**: the guard is that a form is
+inside its declaration and not below 60% of it, which catches an overrun and a
+declaration nothing approaches, and says nothing about a form sitting a third
+of the way in. Read the run's own figures rather than a number written here. The arithmetic changed;
 the rule did not, and it generalised:
 
 > A fixture's position is derived from the surface it is mounted on, never

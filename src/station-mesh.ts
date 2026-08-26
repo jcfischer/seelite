@@ -59,15 +59,12 @@ import {
 import { STATION_GEOMETRY, STATION_TYPES, type StationType } from "./station";
 import {
 	PLATE_TEXTURE_SIZE,
-	ROCK_TEXTURE_SIZE,
 	STATION_VISUALS,
 	type StationDetailLevel,
 	type StationFixtureKind,
 	fixtureIntensity,
 	flickerIntensity,
 	platingTexels,
-	rockAlbedoTexels,
-	rockNormalTexels,
 	stationDetailLevel,
 	surfaceTexels,
 } from "./station-visuals";
@@ -95,6 +92,8 @@ import {
  * nothing else. Reading it as a design constraint would be reading a
  * measurement as an intention.
  */
+const reachCache: Partial<Record<StationType, number>> = {};
+
 export const STATION_SILHOUETTE_KM: Record<StationType, number> =
 	Object.defineProperties(
 		{} as Record<StationType, number>,
@@ -103,7 +102,14 @@ export const STATION_SILHOUETTE_KM: Record<StationType, number> =
 				type,
 				{
 					enumerable: true,
-					get: () => formOf(type, SELECTED_FORM[type]).reachKm,
+					// A memoised getter, not a value: `SELECTED_FORM` is a module
+					// constant so the lookup resolves once, but `STATION_FORMS` and
+					// `formOf` are declared further down the file and evaluating
+					// eagerly here reads them before initialisation. Left as a bare
+					// `find` it ran on every read, and the renderer reads this per
+					// station per frame.
+					get: () =>
+						(reachCache[type] ??= formOf(type, SELECTED_FORM[type]).reachKm),
 				},
 			]),
 		),
@@ -240,9 +246,23 @@ const mapsFor = (type: StationType) => {
  * deliberately separate, because §7 rests identity on outline with colour as the
  * secondary cue, and a per-role *coloured* map would quietly become a third.
  */
+/**
+ * One painted hull material per (type, colour), kept.
+ *
+ * A station used to build its own, so three trade stations in a system carried
+ * three identical materials and the workbench accumulated one more on every
+ * rebuild. Sharing them is safe because nothing mutates a hull material after
+ * construction — the ones that *are* mutated are the fixtures, which stay per
+ * station for exactly that reason and carry no textures.
+ */
+const hullMaterials = new Map<string, THREE.MeshStandardMaterial>();
+
 const hullMaterial = (color: number, type: StationType) => {
+	const cacheKey = `${type}:${color}`;
+	const cached = hullMaterials.get(cacheKey);
+	if (cached) return cached;
 	const { albedo, wear } = mapsFor(type);
-	return new THREE.MeshStandardMaterial({
+	const material = new THREE.MeshStandardMaterial({
 		color,
 		map: albedo,
 		roughnessMap: wear,
@@ -253,6 +273,8 @@ const hullMaterial = (color: number, type: StationType) => {
 		roughness: 1,
 		metalness: 1,
 	});
+	hullMaterials.set(cacheKey, material);
+	return material;
 };
 
 /** An unplated structural part — a strut, a collar, a stack. Small, and lit
@@ -770,8 +792,10 @@ function buildTradeCoriolis(color: number): BuiltPart {
  * - **The rim was fat.** A tube a quarter of the ring's own radius has the
  *   proportions of a life-belt. It is 0.13·r now against 0.24·r, which is
  *   roughly the ratio a spun habitat actually has.
- * - **Two spokes read as a prop.** Six, and they are lofted trusses that taper
- *   into the rim rather than rods that meet it at a butt joint.
+ * - **Two spokes read as a prop.** They are lofted A-frame trusses now, and
+ *   there are four of them — the count went to six first and read as a bicycle
+ *   wheel, which is recorded at `SPOKES` below rather than here, because a
+ *   number written in two places is a number that disagrees with itself.
  * - **Nothing had a size.** A smooth torus gives the eye no unit to judge
  *   against, so it could be ten metres across. The rim now carries repeated
  *   modules at a fixed pitch — the same trick #35's carrier uses, and the only
@@ -1021,7 +1045,7 @@ function buildShipyardGantry(color: number): BuiltPart {
 	const group = new THREE.Group();
 	const fixtures: StationFixture[] = [];
 	const r = STATION_GEOMETRY.shipyard.coreRadiusKm;
-	const reach = 2.3;
+	const span = 2.3;
 	// **The spinning part is compact, and that is a rule rather than a taste.**
 	// The slot sits on the spin axis (`docking.md` §4.2), so whatever turns
 	// sweeps its own outline round that axis: a 1.4 km keel spun about Z changes
@@ -1061,10 +1085,10 @@ function buildShipyardGantry(color: number): BuiltPart {
 	group.add(frame);
 	const keel = shell(
 		[
-			{ z: -reach * 0.62, w: r * 0.26, h: r * 0.2, e: 3 },
-			{ z: -reach * 0.2, w: r * 0.42, h: r * 0.34, e: 3.4, hard: true },
-			{ z: reach * 0.34, w: r * 0.5, h: r * 0.42, e: 3.4 },
-			{ z: reach * 0.56, w: r * 0.38, h: r * 0.32, e: 3.4 },
+			{ z: -span * 0.62, w: r * 0.26, h: r * 0.2, e: 3 },
+			{ z: -span * 0.2, w: r * 0.42, h: r * 0.34, e: 3.4, hard: true },
+			{ z: span * 0.34, w: r * 0.5, h: r * 0.42, e: 3.4 },
+			{ z: span * 0.56, w: r * 0.38, h: r * 0.32, e: 3.4 },
 		],
 		plainMaterial(0x8b95a0, 0.7, 0.44),
 		"keel",
@@ -1074,7 +1098,7 @@ function buildShipyardGantry(color: number): BuiltPart {
 	keel.rotation.y = Math.PI / 2;
 	frame.add(keel);
 	for (let i = 0; i < 7; i++) {
-		const x = -reach * 0.52 + (i / 6) * reach * 1.04;
+		const x = -span * 0.52 + (i / 6) * span * 1.04;
 		const arch = new THREE.Mesh(
 			new THREE.TorusGeometry(r * 0.62, r * 0.05, 5, 12, Math.PI * 1.25),
 			rib,
@@ -1087,8 +1111,8 @@ function buildShipyardGantry(color: number): BuiltPart {
 	for (const y of [-r * 0.58, r * 0.58]) {
 		const rail = shell(
 			[
-				{ z: -reach * 0.56, w: r * 0.05, h: r * 0.05, e: 3 },
-				{ z: reach * 0.56, w: r * 0.05, h: r * 0.05, e: 3 },
+				{ z: -span * 0.56, w: r * 0.05, h: r * 0.05, e: 3 },
+				{ z: span * 0.56, w: r * 0.05, h: r * 0.05, e: 3 },
 			],
 			rib,
 			"rail",
@@ -1109,7 +1133,7 @@ function buildShipyardGantry(color: number): BuiltPart {
 	for (const y of [-r * 0.8, r * 0.8]) {
 		const boom = shell(
 			[
-				{ z: -reach * 0.1, w: r * 0.09, h: r * 0.09, e: 3 },
+				{ z: -span * 0.1, w: r * 0.09, h: r * 0.09, e: 3 },
 				{ z: r * 1.5, w: r * 0.07, h: r * 0.07, e: 3, hard: true },
 				{ z: r * 1.9, w: r * 0.16, h: r * 0.16, e: 3 },
 			],
@@ -1127,15 +1151,15 @@ function buildShipyardGantry(color: number): BuiltPart {
 			fixtures,
 			r,
 			(i, position) =>
-				position.set(-reach * 0.34 + i * reach * 0.23, -r * 0.3, 0),
-			new THREE.Vector3(reach * 0.14, -r * 0.24, 0),
+				position.set(-span * 0.34 + i * span * 0.23, -r * 0.3, 0),
+			new THREE.Vector3(span * 0.14, -r * 0.24, 0),
 		),
 	);
 	group.add(
 		portRun("shipyard", 16, (i, position, normal) => {
 			normal.set(0, 1, 0);
 			position.set(
-				reach * 0.18 + (i % 8) * r * 0.08,
+				span * 0.18 + (i % 8) * r * 0.08,
 				r * 0.44,
 				(i < 8 ? -1 : 1) * r * 0.16,
 			);
@@ -1143,7 +1167,7 @@ function buildShipyardGantry(color: number): BuiltPart {
 	);
 	group.add(
 		strobePair("shipyard", fixtures, r * 0.07, (side, position) => {
-			position.set(side * reach * 0.55, 0, 0);
+			position.set(side * span * 0.55, 0, 0);
 		}),
 	);
 	return { group, fixtures, spinner: spun };
@@ -1165,7 +1189,7 @@ function buildShipyardHangar(color: number): BuiltPart {
 	const group = new THREE.Group();
 	const fixtures: StationFixture[] = [];
 	const r = STATION_GEOMETRY.shipyard.coreRadiusKm;
-	const reach = 2.14;
+	const span = 2.14;
 	const frame = new THREE.Group();
 	frame.name = "frame";
 	group.add(frame);
@@ -1173,10 +1197,10 @@ function buildShipyardHangar(color: number): BuiltPart {
 	// The slab: long, rectangular in section, with a chamfer at each end.
 	const slab = shell(
 		[
-			{ z: -reach * 0.56, w: r * 0.34, h: r * 0.5, e: 5 },
-			{ z: -reach * 0.44, w: r * 0.5, h: r * 0.72, e: 7, hard: true },
-			{ z: reach * 0.4, w: r * 0.5, h: r * 0.72, e: 7, hard: true },
-			{ z: reach * 0.54, w: r * 0.32, h: r * 0.48, e: 5 },
+			{ z: -span * 0.56, w: r * 0.34, h: r * 0.5, e: 5 },
+			{ z: -span * 0.44, w: r * 0.5, h: r * 0.72, e: 7, hard: true },
+			{ z: span * 0.4, w: r * 0.5, h: r * 0.72, e: 7, hard: true },
+			{ z: span * 0.54, w: r * 0.32, h: r * 0.48, e: 5 },
 		],
 		hullMaterial(color, "shipyard"),
 		"slab",
@@ -1202,7 +1226,7 @@ function buildShipyardHangar(color: number): BuiltPart {
 	// they went stale the moment §5's provisional figure was resolved — which is
 	// the failure `docking.md` names in the same breath as fixing it.
 	const mouth = new THREE.Mesh(
-		new THREE.BoxGeometry(reach * 0.5, r * 0.44, r * 0.24),
+		new THREE.BoxGeometry(span * 0.5, r * 0.44, r * 0.24),
 		new THREE.MeshBasicMaterial({ color: 0x05070a }),
 	);
 	mouth.position.set(0, 0, r * 0.42);
@@ -1211,8 +1235,8 @@ function buildShipyardHangar(color: number): BuiltPart {
 	for (const side of [-1, 1]) {
 		const lip = shell(
 			[
-				{ z: -reach * 0.25, w: r * 0.06, h: r * 0.05, e: 5 },
-				{ z: reach * 0.25, w: r * 0.06, h: r * 0.05, e: 5 },
+				{ z: -span * 0.25, w: r * 0.06, h: r * 0.05, e: 5 },
+				{ z: span * 0.25, w: r * 0.06, h: r * 0.05, e: 5 },
 			],
 			plainMaterial(0x8b95a0, 0.66, 0.46),
 			"lip",
@@ -1230,7 +1254,7 @@ function buildShipyardHangar(color: number): BuiltPart {
 			new THREE.BoxGeometry(r * 0.03, r * 0.76, r * 0.54),
 			plainMaterial(0x6f7d88, 0.78, 0.42),
 		);
-		rib.position.set(-reach * 0.42 + (i / 8) * reach * 0.84, 0, 0);
+		rib.position.set(-span * 0.42 + (i / 8) * span * 0.84, 0, 0);
 		frame.add(rib);
 	}
 
@@ -1260,8 +1284,8 @@ function buildShipyardHangar(color: number): BuiltPart {
 			fixtures,
 			r,
 			(i, position) =>
-				position.set(-reach * 0.2 + i * reach * 0.13, r * 0.2, r * 0.4),
-			new THREE.Vector3(reach * 0.1, -r * 0.18, r * 0.4),
+				position.set(-span * 0.2 + i * span * 0.13, r * 0.2, r * 0.4),
+			new THREE.Vector3(span * 0.1, -r * 0.18, r * 0.4),
 		),
 	);
 	group.add(
@@ -1272,7 +1296,7 @@ function buildShipyardHangar(color: number): BuiltPart {
 			// grid came away as one loose island.
 			normal.set(0, 0, -1);
 			position.set(
-				-reach * 0.34 + (i % 8) * reach * 0.1,
+				-span * 0.34 + (i % 8) * span * 0.1,
 				(i < 8 ? -1 : 1) * r * 0.24,
 				-r * 0.46,
 			);
@@ -1280,9 +1304,9 @@ function buildShipyardHangar(color: number): BuiltPart {
 	);
 	group.add(
 		strobePair("shipyard", fixtures, r * 0.07, (side, position) => {
-			// Inside the slab's own half-length (`reach * 0.54`), not on it: at
+			// Inside the slab's own half-length (`span * 0.54`), not on it: at
 			// 0.55 one of the pair sat clear of the hull it is mounted on.
-			position.set(side * reach * 0.5, 0, r * 0.36);
+			position.set(side * span * 0.5, 0, r * 0.36);
 		}),
 	);
 	return { group, fixtures, spinner: spun };
@@ -1295,8 +1319,8 @@ function buildShipyardSlipway(color: number): BuiltPart {
 	const group = new THREE.Group();
 	const fixtures: StationFixture[] = [];
 	const r = STATION_GEOMETRY.shipyard.coreRadiusKm;
-	const reach = 2.07;
-	const major = reach * 0.62;
+	const span = 2.07;
+	const major = span * 0.62;
 	const arc = new THREE.Mesh(
 		new THREE.TorusGeometry(major, r * 0.2, 8, 22, Math.PI * 1.45),
 		hullMaterial(color, "shipyard"),
