@@ -1056,7 +1056,14 @@ class Game {
 		// a body crossing `HANDOFF_KM` has to be re-tessellated at the new scale
 		// mid-flight, which allocates on the frame the player is most likely to be
 		// looking at the thing.
-		const unitSphere = new THREE.SphereGeometry(1, 32, 16);
+		//
+		// 96×64 and not the 32×16 this was while every body was a flat-shaded
+		// `MeshStandardMaterial`. A body in the near layer fills the screen, and a
+		// 32-segment silhouette puts an 11° facet on its limb — inside an
+		// atmosphere shell that `planet-surface.ts` tessellates at 96×64, so the
+		// air was smooth and the ground it wrapped was a polygon. The gallery
+		// never showed it: it builds its own 144×96 sphere.
+		const unitSphere = new THREE.SphereGeometry(1, 96, 64);
 		for (const body of this.world.system.bodies) {
 			// A station is the one body that is not a sphere: #13 §7's three
 			// silhouettes, built in kilometres. Everything else — star, planet,
@@ -2518,11 +2525,6 @@ class Game {
 			const k = scaleFor(layer);
 			mesh.position.set(dx * k, dy * k, dz * k);
 
-			// Stations are aimed and spun; everything else is a sphere and has no
-			// orientation worth writing. Both numbers come from `stationPose` in
-			// sim — the renderer mirrors the slot's phase rather than owning it
-			// (`docking.md` §4.1), so a docking check never depends on frame
-			// timing.
 			// The surface shader's sun is a **per-body** direction, from this body
 			// to the star — not the camera-to-star direction the lights below use.
 			// At astronomical separations the two disagree by tens of degrees, and
@@ -2548,6 +2550,11 @@ class Game {
 				visual.setTime(this.world.gameTime);
 			}
 
+			// Stations are aimed and spun; everything else is a sphere and has no
+			// orientation worth writing. Both numbers come from `stationPose` in
+			// sim — the renderer mirrors the slot's phase rather than owning it
+			// (`docking.md` §4.1), so a docking check never depends on frame
+			// timing.
 			const station = this.stationVisuals.get(body.id);
 			if (station) {
 				const spinner = station.spinner;

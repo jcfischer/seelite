@@ -22,11 +22,19 @@
  *    number, and a single view collapses two worlds that differ only on the
  *    face that happened to be turned away.
  *
- *    The pass condition is a **nearest-neighbour** one and not a threshold:
- *    each body's signature must be closer to its own second view than to any
- *    other body's. A floor on a distinctness metric is a number the art then
- *    has to clear, which is how a measurement turns into a design driver; a
- *    nearest-neighbour test asks only the question the check is named after.
+ *    The pass condition is measured against the **instrument's own repeat
+ *    noise** — two readings of one unchanged body — rather than against a
+ *    number anyone picked. A floor someone chooses is a number the art then has
+ *    to clear, which is how a measurement turns into a design driver.
+ *
+ *    Two stronger checks were tried here and withdrawn, and the withdrawals are
+ *    recorded beside the code because both look obvious to write again. A
+ *    per-*body* nearest-neighbour test failed a correct build, because three
+ *    moons of the same class *should* look alike. A per-*class* separation test
+ *    — closest class pair wider than the widest within-class gap — passed, and
+ *    then its own weight sweep showed it passed at only two of five values of
+ *    `SPREAD_WEIGHT`: the constant had been tuned until the verdict came out.
+ *    The sweep survives as a check in its own right for that reason.
  *
  * 2. **Each body is lit from its own star, not from the camera.** The
  *    directional lights that light the ship and the stations are aimed from the
@@ -42,9 +50,19 @@
  *    bloom pass whose threshold was tuned when the star was a flat
  *    `MeshBasicMaterial`. The failure that combination produces is a disc
  *    clipped to featureless white, which is invisible in a thumbnail and
- *    obvious at approach. Measured as luma spread across the star's own pixels
- *    and the fraction of them that are clipped, so "the bloom is balanced" is a
- *    number rather than an opinion.
+ *    obvious at approach. Measured **per pixel** over the inner third of the
+ *    disc, corona hidden. Both halves of that are corrections: a spread taken
+ *    across the whole disc reports the limb-darkening gradient however flat the
+ *    granulation inside it has been washed, and a spread taken over patch
+ *    *means* averages away most of what is left — at a 13-cell grid it halved,
+ *    4.2 to 2.0.
+ *
+ *    The rebalance this check was written to guide turned out not to be needed,
+ *    and the measurement is what says so: bloom disabled gives an inner-disc
+ *    spread of 4.22 and as shipped 4.21. The photosphere never reaches the
+ *    pass's threshold, so what haloes a star is its corona sprite. The check
+ *    stays because a later change to either the threshold or the photosphere's
+ *    brightness could put the two in contact.
  *
  * 4. **A frame budget per render layer.** Taken with a `readPixels` fence and
  *    not a `requestAnimationFrame` mean, which cannot report below the display
@@ -113,6 +131,39 @@ const installHelpers = (page) =>
 		 * each view is lit the same and shows a different face — which is the
 		 * variable the signature wants, with lighting held still.
 		 */
+		/** The drawn object for a body, whichever layer it is currently in. */
+		window.__meshOf = (id) =>
+			window.__seelite.nearScene.getObjectByName(id) ??
+			window.__seelite.approachScene.getObjectByName(id) ??
+			window.__seelite.farScene.getObjectByName(id) ??
+			null;
+
+		/**
+		 * Stand `radii` body radii off `bodyId` along `dir` and look back down it.
+		 *
+		 * The half of `__viewBody` that is not about where the star is, so the
+		 * star's own check — which has no star direction to work from, being the
+		 * star — can place a camera without restating the placement.
+		 */
+		window.__lookAtFrom = (bodyId, dir, radii) => {
+			const g = window.__seelite;
+			const body = g.world.system.bodies.find((b) => b.id === bodyId);
+			const n = Math.hypot(dir[0], dir[1], dir[2]) || 1;
+			const u = [dir[0] / n, dir[1] / n, dir[2] / n];
+			const range = body.radiusKm * radii;
+			g.world.ship.pos = {
+				x: body.pos.x + u[0] * range,
+				y: body.pos.y + u[1] * range,
+				z: body.pos.z + u[2] * range,
+			};
+			g.world.ship.vel = { x: 0, y: 0, z: 0 };
+			const V = g.nearScene.position.constructor;
+			g.orientation.setFromUnitVectors(
+				new V(0, 0, -1),
+				new V(-u[0], -u[1], -u[2]),
+			);
+		};
+
 		window.__viewBody = (bodyId, radii, longitude) => {
 			const g = window.__seelite;
 			const body = g.world.system.bodies.find((b) => b.id === bodyId);
@@ -152,20 +203,7 @@ const installHelpers = (page) =>
 				sz * c +
 					(e1[2] * Math.cos(longitude) + e2[2] * Math.sin(longitude)) * s,
 			];
-			const range = body.radiusKm * radii;
-			g.world.ship.pos = {
-				x: body.pos.x + dir[0] * range,
-				y: body.pos.y + dir[1] * range,
-				z: body.pos.z + dir[2] * range,
-			};
-			g.world.ship.vel = { x: 0, y: 0, z: 0 };
-			const from = new g.nearScene.position.constructor(0, 0, -1);
-			const to = new g.nearScene.position.constructor(
-				-dir[0],
-				-dir[1],
-				-dir[2],
-			);
-			g.orientation.setFromUnitVectors(from.normalize(), to.normalize());
+			window.__lookAtFrom(bodyId, dir, radii);
 		};
 
 		/**
@@ -177,6 +215,9 @@ const installHelpers = (page) =>
 		 * frame, so any absolute threshold would be tuned to one moment of one
 		 * orbit.
 		 */
+		/** How far a pixel has to move, summed over RGB, to count as the body's
+		 *  rather than as dither in whatever was behind it. */
+		const CHANGED = 8;
 		window.__bodySignature = (bodyId, grid) => {
 			const g = window.__seelite;
 			const src = g.renderer.domElement;
@@ -193,10 +234,7 @@ const installHelpers = (page) =>
 				ctx.drawImage(src, 0, 0, W, H);
 				return ctx.getImageData(0, 0, W, H).data;
 			};
-			const mesh =
-				g.nearScene.getObjectByName(bodyId) ??
-				g.approachScene.getObjectByName(bodyId) ??
-				g.farScene.getObjectByName(bodyId);
+			const mesh = window.__meshOf(bodyId);
 			const shown = frame();
 			mesh.visible = false;
 			const hidden = frame();
@@ -209,12 +247,16 @@ const installHelpers = (page) =>
 			let x1 = -1;
 			let y1 = -1;
 			let changed = 0;
-			for (let i = 0; i < shown.length; i += 4) {
-				const d =
-					Math.abs(shown[i] - hidden[i]) +
+			// One spelling of "did this pixel change", used by the bounding-box
+			// scan and by the patch loop below. Two copies drift, and the second
+			// copy is the one that silently stops agreeing about what the body is.
+			const moved = (i) =>
+				Math.abs(shown[i] - hidden[i]) +
 					Math.abs(shown[i + 1] - hidden[i + 1]) +
-					Math.abs(shown[i + 2] - hidden[i + 2]);
-				if (d <= 8) continue;
+					Math.abs(shown[i + 2] - hidden[i + 2]) >
+				CHANGED;
+			for (let i = 0; i < shown.length; i += 4) {
+				if (!moved(i)) continue;
 				changed++;
 				const p = i / 4;
 				const x = p % W;
@@ -245,11 +287,7 @@ const installHelpers = (page) =>
 					for (let y = py0; y < py1; y++) {
 						for (let x = px0; x < px1; x++) {
 							const i = (y * W + x) * 4;
-							const d =
-								Math.abs(shown[i] - hidden[i]) +
-								Math.abs(shown[i + 1] - hidden[i + 1]) +
-								Math.abs(shown[i + 2] - hidden[i + 2]);
-							if (d <= 8) continue;
+							if (!moved(i)) continue;
 							r += shown[i];
 							gg += shown[i + 1];
 							b += shown[i + 2];
@@ -262,6 +300,94 @@ const installHelpers = (page) =>
 			return { pixels: changed, patches };
 		};
 
+		/** Show or hide a body's decorations — the star's corona sprite, a giant's
+		 *  rings. Anything named `decor` reaches well outside the disc and is lit
+		 *  whatever the surface is doing, so a measurement *of the surface* has to
+		 *  be able to take it out of the frame. */
+		window.__setDecorVisible = (bodyId, visible) => {
+			const mesh = window.__meshOf(bodyId);
+			if (mesh)
+				for (const child of mesh.children)
+					if (child.name === "decor") child.visible = visible;
+		};
+
+		/**
+		 * Mean and spread of luma over the **pixels** of a body's inner disc.
+		 *
+		 * Per pixel and not per patch: granulation is fine, low-contrast
+		 * structure, and a patch mean over even 1/169th of the disc averages half
+		 * of it away — which is a measurement reporting its own grid rather than
+		 * the surface. The inner box is `inset` of the way in from the bounding
+		 * box on each side, so the limb — where the darkening law lives and
+		 * supplies a gradient no amount of washing removes — is outside it.
+		 */
+		window.__innerDiscStats = (bodyId, inset) => {
+			const g = window.__seelite;
+			const src = g.renderer.domElement;
+			const W = 300;
+			const H = 300;
+			const cv = document.createElement("canvas");
+			cv.width = W;
+			cv.height = H;
+			const ctx = cv.getContext("2d", { willReadFrequently: true });
+			const frame = () => {
+				g.render(0);
+				ctx.drawImage(src, 0, 0, W, H);
+				return ctx.getImageData(0, 0, W, H).data;
+			};
+			const mesh = window.__meshOf(bodyId);
+			const shown = frame();
+			mesh.visible = false;
+			const hidden = frame();
+			mesh.visible = true;
+
+			let x0 = W;
+			let y0 = H;
+			let x1 = -1;
+			let y1 = -1;
+			for (let i = 0; i < shown.length; i += 4) {
+				if (
+					Math.abs(shown[i] - hidden[i]) +
+						Math.abs(shown[i + 1] - hidden[i + 1]) +
+						Math.abs(shown[i + 2] - hidden[i + 2]) <=
+					8
+				)
+					continue;
+				const p = i / 4;
+				const x = p % W;
+				const y = (p / W) | 0;
+				if (x < x0) x0 = x;
+				if (x > x1) x1 = x;
+				if (y < y0) y0 = y;
+				if (y > y1) y1 = y;
+			}
+			if (x1 < 0) return { pixels: 0, mean: 0, spread: 0, clipped: 0 };
+
+			const dx = Math.floor((x1 - x0 + 1) * inset);
+			const dy = Math.floor((y1 - y0 + 1) * inset);
+			let sum = 0;
+			let sumSq = 0;
+			let count = 0;
+			let clipped = 0;
+			for (let y = y0 + dy; y <= y1 - dy; y++)
+				for (let x = x0 + dx; x <= x1 - dx; x++) {
+					const i = (y * W + x) * 4;
+					const l =
+						0.2126 * shown[i] + 0.7152 * shown[i + 1] + 0.0722 * shown[i + 2];
+					sum += l;
+					sumSq += l * l;
+					count++;
+					if (Math.min(shown[i], shown[i + 1], shown[i + 2]) > 250) clipped++;
+				}
+			const mean = sum / count;
+			return {
+				pixels: count,
+				mean,
+				spread: Math.sqrt(Math.max(0, sumSq / count - mean * mean)),
+				clipped: clipped / count,
+			};
+		};
+
 		/**
 		 * Hide every drawn body but one.
 		 *
@@ -272,10 +398,7 @@ const installHelpers = (page) =>
 		window.__soloBody = (keepId) => {
 			const g = window.__seelite;
 			for (const body of g.world.system.bodies) {
-				const mesh =
-					g.nearScene.getObjectByName(body.id) ??
-					g.approachScene.getObjectByName(body.id) ??
-					g.farScene.getObjectByName(body.id);
+				const mesh = window.__meshOf(body.id);
 				if (mesh) mesh.visible = body.id === keepId || keepId === null;
 			}
 		};
@@ -289,7 +412,7 @@ const browser = await launchChromium();
 const { check, watch, exit } = tally();
 const page = await browser.newPage({ viewport: VIEW });
 watch(page);
-installHelpers(page);
+await installHelpers(page);
 await page.goto(URL, { waitUntil: "domcontentloaded" });
 await bootedGame(page);
 
@@ -313,7 +436,9 @@ check(
 );
 check(
 	"a station is not",
-	stations.every((b) => b.visual === null),
+	// The non-empty guard is the check: `every` over nothing is true, so without
+	// it this reported green on a scene with no stations in it at all.
+	stations.length > 0 && stations.every((b) => b.visual === null),
 	`${stations.length} stations`,
 );
 console.log(
@@ -392,7 +517,26 @@ for (const body of lit) {
  * here rather than hidden in the numbers.
  */
 const SPREAD_WEIGHT = 3;
-const describe = (views) => {
+/** Weights the verdict is re-derived at, so the pass is reported as robust or
+ *  not rather than asserted at one point. See the separation check below. */
+const WEIGHT_SWEEP = [1, 2, 3, 5, 8];
+
+/** Mean and spread of luma over a set of patches. One spelling, used by the
+ *  descriptor below and by the star's own check. */
+const lumaStats = (patches) => {
+	const luma = patches.map(
+		(p) => 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2],
+	);
+	const mean = luma.reduce((a, c) => a + c, 0) / luma.length;
+	return {
+		mean,
+		spread: Math.sqrt(
+			luma.reduce((a, c) => a + (c - mean) ** 2, 0) / luma.length,
+		),
+	};
+};
+
+const describe = (views, weight = SPREAD_WEIGHT) => {
 	let r = 0;
 	let g = 0;
 	let b = 0;
@@ -401,20 +545,14 @@ const describe = (views) => {
 	for (const view of views) {
 		const filled = view.patches.filter(Boolean);
 		if (filled.length === 0) continue;
-		const luma = filled.map(
-			(p) => 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2],
-		);
-		const mean = luma.reduce((a, c) => a + c, 0) / luma.length;
-		spread += Math.sqrt(
-			luma.reduce((a, c) => a + (c - mean) ** 2, 0) / luma.length,
-		);
+		spread += lumaStats(filled).spread;
 		r += filled.reduce((a, p) => a + p[0], 0) / filled.length;
 		g += filled.reduce((a, p) => a + p[1], 0) / filled.length;
 		b += filled.reduce((a, p) => a + p[2], 0) / filled.length;
 		n++;
 	}
 	if (n === 0) return null;
-	return [r / n, g / n, b / n, (SPREAD_WEIGHT * spread) / n];
+	return [r / n, g / n, b / n, (weight * spread) / n];
 };
 
 const distance = (a, b) =>
@@ -444,41 +582,80 @@ for (const body of usable) {
 }
 
 /*
- * The claim is about **classes**, not about bodies.
+ * What the live path can actually be asked, and what it cannot.
  *
- * Three moons of the same class should look alike — that is the classifier
- * working, not a failure. What must hold is that the gap between two classes is
- * wider than the gap within one, so a class is a thing you can see rather than
- * a label in a struct.
+ * The check written first here was a **separation** one: the closest pair of
+ * classes must be further apart than the widest gap within a class. It passed,
+ * and then the weight sweep below showed it passed only at two of five values
+ * of `SPREAD_WEIGHT` — so the constant had been tuned until the verdict came
+ * out, which is the failure mode the whole sweep exists to catch. It is
+ * withdrawn rather than re-tuned.
+ *
+ * It was also asking too much of this world. Two gas giants generated from
+ * different seeds sit 38.3 apart on this descriptor — the seed decorates
+ * *within* a class by design, and on a four-number summary that within-class
+ * spread is the same size as a between-class one. A descriptor that separated
+ * them would have to be one the surfaces were then shaped to satisfy.
+ *
+ * What is left is the claim the node actually needs and the live path can
+ * support: **no two classes render alike**, measured against the instrument's
+ * own repeat noise rather than against a number anyone picked. The floor is the
+ * distance between two independent measurements of one unchanged body, which is
+ * what "the same" looks like to this measurement.
  */
-let worstIntra = 0;
-let worstIntraLabel = "";
-for (const body of usable) {
-	const self = distance(body.halfA, body.halfB);
-	if (self > worstIntra) {
-		worstIntra = self;
-		worstIntraLabel = `${body.id} against itself`;
-	}
-}
-for (const a of usable)
-	for (const b of usable) {
-		if (a.id >= b.id || a.visual.surface !== b.visual.surface) continue;
-		const d = distance(a.all, b.all);
-		if (d > worstIntra) {
-			worstIntra = d;
-			worstIntraLabel = `${a.id} vs ${b.id} (both ${a.visual.surface})`;
-		}
-	}
 
-let bestInter = Number.POSITIVE_INFINITY;
-let bestInterLabel = "";
+/** How many multiples of the repeat noise a class gap has to clear. A margin
+ *  rather than a threshold: at 1× the check would be asking only that the two
+ *  measurements differ at all. */
+const NOISE_MARGIN = 5;
+
+const descriptorsAt = (weight) =>
+	new Map(usable.map((body) => [body.id, describe(body.views, weight)]));
+
+/**
+ * The repeat noise: one body, measured twice over the same longitudes.
+ *
+ * Nothing about the body changes between the two passes except that the world
+ * clock advanced and it moved along its orbit — which is exactly the
+ * variability a real reading carries, so it belongs in the floor rather than
+ * being controlled out of it.
+ */
+const repeatOf = async (body) => {
+	const second = [];
+	for (const longitude of LONGITUDES) {
+		await page.evaluate(
+			([id, radii, lon]) => window.__viewBody(id, radii, lon),
+			[body.id, READ_RADII, longitude],
+		);
+		second.push(
+			await page.evaluate(
+				([id, grid]) => window.__bodySignature(id, grid),
+				[body.id, GRID],
+			),
+		);
+	}
+	return second;
+};
+
+const noiseBodies = usable.slice(0, 3);
+let repeatNoise = 0;
+for (const body of noiseBodies) {
+	const d = distance(describe(body.views), describe(await repeatOf(body)));
+	if (d > repeatNoise) repeatNoise = d;
+}
+
+const verdict = descriptorsAt(SPREAD_WEIGHT);
+for (const body of usable) body.all = verdict.get(body.id);
+
+let closestPair = Number.POSITIVE_INFINITY;
+let closestLabel = "";
 for (const a of usable)
 	for (const b of usable) {
 		if (a.id >= b.id || a.visual.surface === b.visual.surface) continue;
-		const d = distance(a.all, b.all);
-		if (d < bestInter) {
-			bestInter = d;
-			bestInterLabel = `${a.visual.surface} vs ${b.visual.surface}`;
+		const d = distance(verdict.get(a.id), verdict.get(b.id));
+		if (d < closestPair) {
+			closestPair = d;
+			closestLabel = `${a.visual.surface} vs ${b.visual.surface}`;
 		}
 	}
 
@@ -489,54 +666,73 @@ for (const body of usable)
 			`${body.all.map((v) => v.toFixed(1).padStart(6)).join(" ")}`,
 	);
 
+/*
+ * The verdict, re-derived across a sweep of `SPREAD_WEIGHT`.
+ *
+ * Stating a free parameter is not the same as showing the answer does not turn
+ * on it — and here it demonstrably did once. The weight scales the fourth
+ * component of the descriptor, so the sweep is the difference between a
+ * measurement and a number that happened to land the right way.
+ */
+console.log("\n  class gaps against the repeat-measurement noise floor");
+let robust = 0;
+for (const weight of WEIGHT_SWEEP) {
+	const d = descriptorsAt(weight);
+	let closest = Number.POSITIVE_INFINITY;
+	for (const a of usable)
+		for (const b of usable) {
+			if (a.id >= b.id || a.visual.surface === b.visual.surface) continue;
+			closest = Math.min(closest, distance(d.get(a.id), d.get(b.id)));
+		}
+	const ok = Number.isFinite(closest) && closest > repeatNoise * NOISE_MARGIN;
+	if (ok) robust++;
+	console.log(
+		`    weight ${String(weight).padStart(2)}  closest pair of classes ${closest.toFixed(1)}  ` +
+			`${ok ? "clear" : "INSIDE THE NOISE"}`,
+	);
+}
+
 check(
-	"two classes are further apart than one class is from itself",
-	bestInter > worstIntra,
-	`closest pair of classes ${bestInter.toFixed(1)} (${bestInterLabel}) ` +
-		`vs widest within a class ${worstIntra.toFixed(1)} (${worstIntraLabel})`,
+	"no two classes render alike",
+	// Non-vacuous: `closestPair` starts at infinity and is only lowered by a
+	// cross-class pair, so without the finiteness guard a scene whose classes had
+	// all collapsed into one would report green.
+	Number.isFinite(closestPair) && closestPair > repeatNoise * NOISE_MARGIN,
+	`closest pair ${closestPair.toFixed(1)} (${closestLabel}) against a repeat ` +
+		`noise floor of ${repeatNoise.toFixed(1)} × ${NOISE_MARGIN} over ${noiseBodies.length} bodies`,
+);
+check(
+	"and that does not turn on the spread weight",
+	robust === WEIGHT_SWEEP.length,
+	`clear at ${robust}/${WEIGHT_SWEEP.length} weights in [${WEIGHT_SWEEP.join(", ")}]`,
 );
 
 /* 3b. The star survives the bloom. */
 const starBody = spheres.find((b) => b.kind === "star");
-const starLook = await page.evaluate(
-	([id, grid]) => {
-		// Any direction: the star is not lit, so there is no sunward side and no
-		// terminator — every view of it is the same view.
-		const g = window.__seelite;
-		const b = g.world.system.bodies.find((x) => x.id === id);
-		const d = [0.4, 0.25, 0.88];
-		const n = Math.hypot(d[0], d[1], d[2]);
-		const range = b.radiusKm * 4;
-		g.world.ship.pos = {
-			x: b.pos.x + (d[0] / n) * range,
-			y: b.pos.y + (d[1] / n) * range,
-			z: b.pos.z + (d[2] / n) * range,
-		};
-		g.world.ship.vel = { x: 0, y: 0, z: 0 };
-		const V = g.nearScene.position.constructor;
-		const to = new V(-d[0] / n, -d[1] / n, -d[2] / n);
-		g.orientation.setFromUnitVectors(new V(0, 0, -1), to);
-		const sig = window.__bodySignature(id, grid);
-		return sig;
-	},
-	[starBody.id, GRID],
-);
-const starPatches = starLook.patches.filter(Boolean);
-const starLuma = starPatches.map(
-	(p) => 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2],
-);
-const starMean = starLuma.reduce((a, c) => a + c, 0) / starLuma.length;
-const starSpread = Math.sqrt(
-	starLuma.reduce((a, c) => a + (c - starMean) ** 2, 0) / starLuma.length,
-);
-// Clipped, not merely bright: a photosphere is supposed to be the brightest
-// thing on screen. What it must not be is *flat*.
-const clipped = starPatches.filter((p) => Math.min(p[0], p[1], p[2]) > 250);
+const starLook = await page.evaluate((id) => {
+	// Any direction: the star is not lit, so there is no sunward side and no
+	// terminator — every view of it is the same view.
+	//
+	// The corona is hidden first. It is a sprite reaching 5.2 radii, so with it
+	// in frame the bounding box is the glow rather than the photosphere, and the
+	// inner box taken from that would land on the disc's rim.
+	window.__setDecorVisible(id, false);
+	window.__lookAtFrom(id, [0.4, 0.25, 0.88], 4);
+	const stats = window.__innerDiscStats(id, 1 / 3);
+	window.__setDecorVisible(id, true);
+	return stats;
+}, starBody.id);
 check(
 	"the star's photosphere survives the bloom pass",
-	starSpread > 2 && clipped.length < starPatches.length / 2,
-	`luma ${starMean.toFixed(0)} ± ${starSpread.toFixed(1)} across ${starPatches.length} patches, ` +
-		`${clipped.length} clipped to white`,
+	starLook.pixels > 1000 && starLook.spread > 2 && starLook.clipped < 0.01,
+	`inner disc luma ${starLook.mean.toFixed(0)} ± ${starLook.spread.toFixed(2)} ` +
+		`over ${starLook.pixels} px, ${(100 * starLook.clipped).toFixed(1)}% clipped`,
+);
+console.log(
+	"    with the bloom pass disabled and as shipped, this spread measured 4.22\n" +
+		"    and 4.21 — the photosphere sits below the pass's threshold, so what\n" +
+		"    haloes a star on screen is its corona sprite, and the bloom needed no\n" +
+		"    rebalancing against the new photosphere\n",
 );
 
 /* 4. The budget, per layer, and what the detail band is worth. */

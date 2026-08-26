@@ -278,30 +278,37 @@ uniform float warmth;
  * detail is ridged noise in surface(), which is far cheaper than a third
  * neighbourhood walk and reads the same at that scale.
  *
- * The standing cost is a prototype figure, and #59 measured what could be done
- * about it in the live renderer. Two answers were tried and both were withdrawn
- * against the measurement, which is recorded here because the next reader will
- * otherwise propose them again:
+ * The standing cost is a prototype figure, and #59 tried twice to lower it in
+ * the live renderer. Both attempts were withdrawn, which is recorded here
+ * because the next reader will otherwise propose them again.
  *
  * A **bake** at system generation — the answer an earlier revision of this
  * comment proposed. Baking to an equirectangular target gives back the UV seam
  * and the pole pinch this whole module is object-space to avoid, and a cubemap
- * bake that does not costs six faces to buy a saving nothing had yet measured.
+ * bake that does not costs six faces to buy a saving nothing had measured.
  *
  * A **detail band** that dropped the fine octave once its craters were
- * sub-pixel. Built, measured by scripts/probe-planet-surfaces.mjs on the moon
- * alone in the frame, in five interleaved pairs at each render layer: +3.0 ms
- * against 66.9 ms of run-to-run spread filling the screen, -3.7 against 4.2 at
- * approach, +1.2 against 3.8 in the far layer. Inside the instrument's own
- * noise at every layer, so the band was reporting a saving it could not
- * demonstrate, and it went. The reason it cannot help is structural rather than
- * a tuning failure: crater cost is a *coverage* cost, so it is only large when
- * the body fills the screen, and that is exactly where the craters are the
- * whole read and no band would drop them.
+ * sub-pixel. Built, measured on the moon alone in the frame in five
+ * interleaved band-on/band-off pairs at each render layer, and withdrawn: the
+ * lever moved the frame by +3.0 ms near, -3.7 approach and +1.2 far, against
+ * run-to-run spreads of 66.9, 4.2 and 3.8 ms on the unchanged condition. Below
+ * the instrument's own noise everywhere.
  *
- * Both octaves stay, unconditionally. If this ever needs to be cheaper, the
- * measurement to beat is in the probe's budget section, and it must be taken on
- * a GPU — the runner is a software rasteriser.
+ * **Those figures cannot be reproduced from the shipped tree**, and that is
+ * stated rather than glossed: the lever they measured was removed with the
+ * band, so scripts/probe-planet-surfaces.mjs no longer has a band-on/band-off
+ * column. What it keeps is the per-layer budget those differences were taken
+ * against, which is the number a later attempt has to beat.
+ *
+ * The measurement is also a **software-rasteriser** measurement — the runner
+ * has no GPU — so what it licenses is "no saving was demonstrated here", not
+ * "no saving exists". The reason to expect the second is an argument rather
+ * than a measurement, and it is worth having in view: crater cost is a
+ * coverage cost, so it is only large when the body fills the screen, and that
+ * is exactly where the craters are the whole read and no band would drop them.
+ * A GPU run could still overturn it.
+ *
+ * Both octaves stay, unconditionally.
  */
 float height(vec3 p) {
   return craters(p + seedOffset, 3.2, 0.55)

@@ -71,6 +71,15 @@ export interface BodyVisual {
 	/** The world clock, seconds. Drives cloud drift and stellar granulation;
 	 *  every other class ignores it. */
 	setTime(seconds: number): void;
+	/**
+	 * Free the per-body materials and the star's corona texture.
+	 *
+	 * **Nothing calls this yet, and that is a fact about the renderer rather
+	 * than an oversight**: `buildBodies` runs once, at construction, because
+	 * there is no path that changes the system a game is in — hyperspace is not
+	 * built. It exists correct rather than absent so that the node which adds
+	 * that path has something to call, instead of discovering the leak.
+	 */
 	dispose(): void;
 }
 
@@ -101,16 +110,28 @@ function coronaTexture(): THREE.Texture {
 	return texture;
 }
 
-/** The cloud shell is the same radius on every body that has one, so it is one
- *  geometry rather than one per body. The atmosphere shell's radius varies with
- *  optical depth, so that one genuinely cannot be shared. */
-const CLOUD_GEOMETRY = new THREE.SphereGeometry(1.014, 128, 84);
-
-/** The atmosphere shell is a unit sphere scaled per body, rather than one
- *  tessellation per distinct radius: the radius varies with optical depth, but
- *  a scale on the mesh expresses that without building the same ~6k vertices
- *  again for each of the ladder's five values. */
-const SHELL_GEOMETRY = new THREE.SphereGeometry(1, 96, 64);
+/**
+ * The cloud shell is the same radius on every body that has one, so it is one
+ * geometry rather than one per body. The atmosphere shell's radius varies with
+ * optical depth, so that one genuinely cannot be shared as a *radius* — but it
+ * can be shared as a unit sphere scaled per body, which is what it is, rather
+ * than one tessellation per distinct value of the ladder.
+ *
+ * Built on first use rather than at module evaluation. The prototype imported
+ * this module only under `?planet-prototype`; the game imports it on the boot
+ * path, and a system whose bodies have neither weather nor air would otherwise
+ * pay ~17k vertices of construction for two meshes nothing adds.
+ */
+let cloudGeometry: THREE.SphereGeometry | undefined;
+const cloudShell = () => {
+	cloudGeometry ??= new THREE.SphereGeometry(1.014, 128, 84);
+	return cloudGeometry;
+};
+let shellGeometry: THREE.SphereGeometry | undefined;
+const atmosphereShell = () => {
+	shellGeometry ??= new THREE.SphereGeometry(1, 96, 64);
+	return shellGeometry;
+};
 
 export function buildBodyVisual(
 	look: PlanetAppearance,
@@ -157,7 +178,7 @@ export function buildBodyVisual(
 	if (look.cloudCover > 0) {
 		group.add(
 			new THREE.Mesh(
-				CLOUD_GEOMETRY,
+				cloudShell(),
 				new THREE.ShaderMaterial({
 					uniforms,
 					transparent: true,
@@ -172,7 +193,7 @@ export function buildBodyVisual(
 		// Back faces only, additively: the shell is a volume seen from outside,
 		// and drawing its front faces would put a wash over the whole disc.
 		const shell = new THREE.Mesh(
-			SHELL_GEOMETRY,
+			atmosphereShell(),
 			new THREE.ShaderMaterial({
 				uniforms,
 				transparent: true,
@@ -230,7 +251,6 @@ export function buildBodyVisual(
 	// the axis decides seasons — and nothing in the sim has an axis yet.
 	group.rotation.z = 0.18;
 
-	const surfaceMaterial = planet.material as THREE.ShaderMaterial;
 	return {
 		group,
 		uniforms,
@@ -242,12 +262,22 @@ export function buildBodyVisual(
 			uniforms.time.value = seconds;
 		},
 		dispose() {
-			// The shared geometries are module constants and outlive any one body;
-			// the materials are per body and do not.
-			surfaceMaterial.dispose();
-			for (const child of group.children)
-				if (child instanceof THREE.Mesh || child instanceof THREE.Sprite)
-					(child.material as THREE.Material).dispose();
+			// One pass over the children, which includes the surface mesh — an
+			// explicit `surfaceMaterial.dispose()` beside this loop disposed it
+			// twice. The shared geometries are module constants and outlive any one
+			// body, so they are deliberately not touched.
+			for (const child of group.children) {
+				if (!(child instanceof THREE.Mesh || child instanceof THREE.Sprite))
+					continue;
+				const material = child.material as THREE.Material & {
+					map?: THREE.Texture | null;
+				};
+				// The corona's texture is drawn per star into a canvas, and
+				// `Material.dispose()` does not free a map — so a star disposed
+				// without this leaves a 128×128 texture on the GPU.
+				material.map?.dispose();
+				material.dispose();
+			}
 		},
 	};
 }
