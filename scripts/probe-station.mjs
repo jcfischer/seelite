@@ -27,9 +27,12 @@
  *
  *    So the figures are measured and printed at both ranges and asserted at
  *    neither. What is still gated is that each station **is drawn and has a
- *    silhouette at all**, and that re-measuring one reproduces it — the control,
- *    which is about whether the measurement works rather than about what it
- *    finds.
+ *    silhouette at all** — at both ranges — and, **at the near range only**,
+ *    that re-measuring one reproduces it. That control is about whether the
+ *    measurement works rather than about what it finds, and it is near-range
+ *    only because at 60 km the mask is a few dozen pixels and the control itself
+ *    reads about 0.17: a check whose noise is three times its own ceiling is not
+ *    a check.
  *
  * 2. **The slot tracks the spin.** Its screen-space orientation advances at the
  *    station's own `spinRpm`, and it is measured twice over:

@@ -43,7 +43,7 @@
 export type StationType = "trade" | "refinery" | "shipyard" | "outpost";
 
 /**
- * The same three, as a value.
+ * The four, as a value.
  *
  * Every table below is a `Record<StationType, …>`, so the *type* is already the
  * thing a fourth station type breaks the build against. This is for the callers

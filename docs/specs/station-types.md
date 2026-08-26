@@ -572,11 +572,20 @@ variants, and for the same reason: the pool is what a later decision draws on.
 | outpost | **Derrick** — a lattice tower on a tank cluster, pad deck on top | **Buoy** — a stubby drum wearing radiator fins; nothing hangs off it | **Rig** — an angled truss holding a deck out over a drill head |
 
 `SELECTED_FORM` (`station-mesh.ts`) names the one the game builds for each role,
-and is one line per role so a later choice is one edit. Trade and shipyard are
-**A** by the round-one ranking; refinery and outpost are **A** as a placeholder,
-which the constant's own comment states, because those two roles were never
-ranked and a default that pretends otherwise is how a placeholder becomes the
-shipped answer.
+and is one line per role so a later choice is one edit. Trade and shipyard are **A**
+because round one ranked their slot first; refinery and outpost are **A** as a
+placeholder, which the constant's own comment states, because those two roles
+were never ranked and a default that pretends otherwise is how a placeholder
+becomes the shipped answer.
+
+**The letter carried forward and the geometry did not, which is worth being
+plain about.** Round one's trade A was a twelve-sided lofted drum; it has been
+rebuilt twice since — squared in section, then as a cuboctahedron — because it
+projected as a circle and could not be told from the refinery by outline, and
+then because it was judged ugly. The shipyard's A has changed less but its
+spinning part is now a hub rather than the keel that was ranked. So the ranking
+chose a *concept* and the concepts survived; nobody has ranked the geometry that
+ships. A round three would be ranking different objects under the same letters.
 
 ### 7.2 What each form owes
 

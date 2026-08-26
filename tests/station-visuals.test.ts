@@ -174,25 +174,42 @@ describe("a detail level may not change the outline", () => {
 });
 
 describe("a fixture is on the station it is mounted on", () => {
-	test("both strobes sit out on the hull, in every form", () => {
-		// The failure: chasing a bloom overshoot on #28's octahedron, the pair was
-		// moved to a point whose coordinates summed to 0.9·r on a surface defined
-		// by |x| + |y| + |z| = r — **inside** the hull, invisible, and the
-		// overshoot it was moved for turned out to be the window grid. That test
-		// was exact because the surface had one equation; the forms do not share
-		// one, so what is asserted is the property that survives a redesign: a
-		// strobe is out near the shell and inside the declared reach. Both ends
-		// matter — the centre buries it and past the reach breaks §2.
+	test("both strobes sit out on the hull, on every form that has them", () => {
+		// #28 could assert this exactly — its hull was an octahedron, whose
+		// surface is the single plane |x| + |y| + |z| = r, so "on the hull" was an
+		// equation. Twelve forms share no such equation, and the first
+		// generalisation was too weak to be worth having: a floor at 0.3 of the
+		// core radius passes the very defect its own comment recounted, a lamp at
+		// (0.45, 0, 0.45)·r buried inside the hull at a length of 0.64·r.
+		//
+		// The floor is a fraction of the form's **own declared reach** now, which
+		// is the only per-form scale there is. Every strobe in the pool sits
+		// between 0.72 and 0.97 of it, and the buried case is 0.67 — so this
+		// catches a fixture placed well inside the hull and, honestly, cannot see
+		// one that is inside by a few metres. That class is caught by the island
+		// check instead, which is why both exist.
 		for (const type of TYPES) {
+			const hasStrobes = STATION_VISUALS[type].activity.strobePeriodS > 0;
 			for (const form of STATION_FORMS[type]) {
 				const { root } = buildStationForm(type, form.id, GREY);
 				root.updateMatrixWorld(true);
-				const core = STATION_GEOMETRY[type].coreRadiusKm;
 				for (const kind of ["strobe-a", "strobe-b"]) {
 					const lamp = root.getObjectByName(kind);
+					// Asserted either way, so a role that quietly lost its strobes
+					// reports it rather than skipping the loop and passing.
+					expect([type, form.id, kind, Boolean(lamp)]).toEqual([
+						type,
+						form.id,
+						kind,
+						hasStrobes,
+					]);
 					if (!lamp) continue;
 					const p = (lamp as THREE.Object3D).position;
-					expect(p.length()).toBeGreaterThan(core * 0.3);
+					expect([type, form.id, p.length() > form.reachKm * 0.68]).toEqual([
+						type,
+						form.id,
+						true,
+					]);
 					expect(p.length()).toBeLessThanOrEqual(form.reachKm);
 				}
 			}
