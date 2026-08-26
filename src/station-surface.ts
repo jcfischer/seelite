@@ -187,9 +187,8 @@ vec4 cratersAndGradient(vec3 p, float scale, float depth) {
   return vec4(grad, acc);
 }
 
-// The fine term, kept out of the crater walk because its gradient is not
-// analytic: it is still differenced, but differencing four fbm4 calls is a
-// fraction of differencing four neighbourhood walks.
+// The fine term. It shades nothing — the normal is the craters' alone — so it
+// is evaluated once, for the albedo, and its gradient is never wanted.
 float grain(vec3 p) { return fbm4(p * 11.0) * 0.16; }`,
 			)
 			.replace(
@@ -208,22 +207,21 @@ float grain(vec3 p) { return fbm4(p * 11.0) * 0.16; }`,
   vec4 pit = cratersAndGradient(p * 2.3, 7.0, 0.42);
   float h = pit.w + grain(p);
 
-  // The height gradient, tangential to the sphere. The grain is differenced in
-  // the same tangent frame RELIEF uses, so both halves are the same kind of
-  // quantity before they are added.
-  vec3 axis = abs(p.y) < 0.94 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
-  vec3 t = normalize(cross(axis, p));
-  vec3 b = cross(p, t);
-  float e = 0.0035;
+  // **The craters alone shape the normal.** The grain used to be differenced
+  // here too — four extra fbm4 calls, and fbm4 is four octaves of value noise,
+  // so roughly 160 hash lookups a fragment spent on the *normal* alone. It
+  // moved to the albedo below, where it is evaluated once, joining the ridged
+  // tier that was moved there for the same reason.
+  //
+  // What this gives up is shading relief between craters. On a body whose read
+  // is impact structure — AIRLESS says exactly that, "the relief is the whole
+  // read on an airless body" — the craters are the relief, and the grain was
+  // always the third tier.
   vec3 slope = pit.xyz - p * dot(pit.xyz, p);
-  slope += t * (grain(normalize(p + t * e)) - grain(normalize(p - t * e)))
-             / (2.0 * e);
-  slope += b * (grain(normalize(p + b * e)) - grain(normalize(p - b * e)))
-             / (2.0 * e);
 
   // The same shape as reliefNormal's last line — lean the normal away from
   // uphill. The coefficient differs because that one folds its own 2e into the
-  // differences and this one has already divided them out.
+  // differences and this gradient is analytic.
   vec3 objN = normalize(p - 0.010 * slope);
   normal = normalize(normalMatrix * objN);
 
