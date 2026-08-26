@@ -28,21 +28,47 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { CRATER_CELL, CRATER_PROFILE, CRATER_RIM } from "../src/planet-shaders";
 import { repoPath } from "./lib/source-scan";
 
 const shared = readFileSync(repoPath("src/planet-shaders.ts"), "utf8");
 const station = readFileSync(repoPath("src/station-surface.ts"), "utf8");
 
+/**
+ * Every file that interpolates the snippets, found rather than listed.
+ *
+ * Two hardcoded paths could only ever check the two consumers that exist, and
+ * this file's whole subject is what happens when a *third* appears. Named
+ * explicitly, a third would be invisible here and would learn the contract
+ * from a browser shader log — which is the outcome these tests are written to
+ * prevent, arrived at by the test not looking.
+ *
+ * `src` is small enough to read whole; the alternative is a list that has to
+ * be remembered at exactly the moment nobody is thinking about this file.
+ */
+const INTERPOLATORS = readdirSync(repoPath("src"))
+	.filter((f) => f.endsWith(".ts"))
+	.map((f) => [f, readFileSync(repoPath(`src/${f}`), "utf8")] as const)
+	.filter(([, src]) => src.includes("${CRATER_CELL}"));
+
 describe("the crater field has one definition", () => {
-	test.each([
-		["planet-shaders.ts", shared],
-		["station-surface.ts", station],
-	])("%s interpolates the shared snippets", (_name, source) => {
-		expect(source).toContain("${CRATER_CELL}");
-		expect(source).toContain("${CRATER_PROFILE}");
+	test("both known consumers are among the interpolators found", () => {
+		// The scan is the thing every case below rests on, so it is checked
+		// rather than trusted: a glob that silently matched nothing would make
+		// each of them vacuously green.
+		const found = INTERPOLATORS.map(([name]) => name);
+		expect(found).toContain("planet-shaders.ts");
+		expect(found).toContain("station-surface.ts");
 	});
+
+	test.each(INTERPOLATORS)(
+		"%s interpolates the shared snippets",
+		(_n, source) => {
+			expect(source).toContain("${CRATER_CELL}");
+			expect(source).toContain("${CRATER_PROFILE}");
+		},
+	);
 
 	test("neither has grown its own copy of the profile back", () => {
 		// **What this can and cannot see.** A detector that matches one exact
@@ -118,15 +144,19 @@ describe("the crater field has one definition", () => {
 		// the reason this test exists: the probes' console listener matches the
 		// text of three.js's error, which fails open on a rewording, and the
 		// one check that asks the GL context directly names the rock's own
-		// program. A third consumer, in some other material, has neither.
+		// program. A third consumer, in some other material, has neither — but
+		// it is inside `INTERPOLATORS` the moment it interpolates, so it is
+		// inside this test too, without anyone remembering to add it.
 		//
 		// The names *declared* are guarded by the one-definition tests above.
 		// These are the ones each consumer has to bring itself, and they are
 		// checked here so a third interpolator learns the contract from a
 		// failing unit test rather than from a shader log.
-		for (const source of [shared, station]) {
-			expect(source).toMatch(/vec3 base = floor\(p\)/);
-			expect(source).toMatch(/vec3 p[ ,)]/);
+		for (const [name, source] of INTERPOLATORS) {
+			expect(`${name}: ${/vec3 base = floor\(p\)/.test(source)}`).toBe(
+				`${name}: true`,
+			);
+			expect(`${name}: ${/vec3 p[ ,)]/.test(source)}`).toBe(`${name}: true`);
 		}
 	});
 
@@ -136,7 +166,7 @@ describe("the crater field has one definition", () => {
 		// in each function rather than in the snippets — it is part of the
 		// accumulation, not of the field — so it is the one thing here that still
 		// has to be checked twice.
-		for (const source of [shared, station]) {
+		for (const [, source] of INTERPOLATORS) {
 			for (const axis of ["x", "y", "z"])
 				expect(source).toContain(
 					`for (int ${axis} = -1; ${axis} <= 1; ++${axis})`,

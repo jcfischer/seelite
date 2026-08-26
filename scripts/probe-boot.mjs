@@ -567,7 +567,10 @@ check(
 const bench = await browser.newPage({ viewport: { width: 900, height: 620 } });
 watch(bench);
 await bench.goto(`${URL}&model-viewer=station`, { waitUntil: "load" });
-await bench.waitForSelector("#model-viewer canvas");
+const mounted = await bench
+	.waitForSelector("#model-viewer canvas", { timeout: 20000 })
+	.catch(() => null);
+check("the workbench opens", Boolean(mounted));
 const readout = await bench
 	.waitForSelector("[data-fps-meter]", { timeout: 20000 })
 	.catch(() => null);
@@ -580,7 +583,7 @@ await Promise.all([
 			{ timeout: 20000 },
 		)
 		.catch(() => {}),
-	bench.click("[data-model-close]"),
+	bench.click("[data-model-close]").catch(() => {}),
 ]);
 check(
 	"returning to flight from the workbench leaves no readout behind",

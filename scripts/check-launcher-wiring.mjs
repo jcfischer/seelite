@@ -102,6 +102,22 @@ for (const path of scripts(DIR).sort()) {
 		.replace(/\/\*[\s\S]*?\*\//g, "")
 		.replace(/^\s*\/\/.*$/gm, "");
 
+	/**
+	 * The same source with trailing comments and string bodies emptied.
+	 *
+	 * `code` above strips block comments and whole-line `//` comments, which is
+	 * enough for the import checks that read it. It is not enough for counting
+	 * calls: a trailing comment or a *string* mentioning `watch(` inflates the
+	 * count, and the count is what decides whether a page is guarded. This
+	 * file's own failure messages are the proof — they contain "use watch(),"
+	 * and would match their own regex.
+	 */
+	const bare = code
+		.replace(/([^:])\/\/.*$/gm, "$1")
+		.replace(/`(?:[^`\\]|\\.)*`/g, "``")
+		.replace(/"(?:[^"\\]|\\.)*"/g, '""')
+		.replace(/'(?:[^'\\]|\\.)*'/g, "''");
+
 	const calls = /\blaunchChromium\s*\(/.test(code);
 	const bound = importedFromGuard(code, path).has("launchChromium");
 
@@ -133,10 +149,10 @@ for (const path of scripts(DIR).sort()) {
 	 * would be guesswork. A count is a blunt instrument that is right about
 	 * the case that matters — none, or fewer than there are pages.
 	 */
-	const reports = /\btally\s*\(\s*\)/.test(code);
-	const pages = (code.match(/\.newPage\s*\(/g) ?? []).length;
-	const watched = (code.match(/\bwatch(Shaders)?\s*\(/g) ?? []).length;
-	const ownPageError = /page\.on\(\s*["']pageerror["']/.test(code);
+	const reports = /\btally\s*\(\s*\)/.test(bare);
+	const pages = (bare.match(/\.newPage\s*\(/g) ?? []).length;
+	const watched = (bare.match(/\bwatch(Shaders)?\s*\(/g) ?? []).length;
+	const ownPageError = /page\.on\(\s*\W*pageerror/.test(code);
 	// Scoped to scripts that report: `shot-ships.mjs` opens a page to take a
 	// screenshot and has no checks to fail, so a watch there would have
 	// nothing to report into.
@@ -148,7 +164,7 @@ for (const path of scripts(DIR).sort()) {
 	// A probe may keep its own page-error reporting — `probe-planets` names
 	// them at two milestones rather than one per event — but then it owes the
 	// shader listener separately, which is what `watchShaders` is for.
-	if (reports && ownPageError && !/\bwatchShaders\s*\(/.test(code))
+	if (reports && ownPageError && !/\bwatchShaders\s*\(/.test(bare))
 		problems.push(
 			`${name}: installs its own pageerror handler without watchShaders() — ` +
 				`use watch(), or take the shader listener on its own`,

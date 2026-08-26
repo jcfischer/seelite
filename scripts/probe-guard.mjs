@@ -397,31 +397,22 @@ export function tally() {
 			 * page red here. This matches the one class that is otherwise
 			 * silent and is always a defect.
 			 *
-			 * **Errors only, and `warning` was tried and taken back out.** It
-			 * looked free — one more way a rewording could not slip past — and
-			 * it is not: three.js warns `THREE.WebGLProgram: Program Info Log:`
-			 * on the branch where the link *succeeded* and the driver merely
-			 * returned a non-empty log, which `/program info/` matches. On
-			 * SwiftShader, which is what these probes rasterise with, a
-			 * non-empty log on a good link is ordinary. That is a green tree
-			 * reported red, which is worse than the hole it was closing.
+			 * **Errors only**, and narrowly matched. `warning` is deliberately
+			 * excluded: three.js warns `Program Info Log:` on the branch where
+			 * the link *succeeded* and the driver merely returned a non-empty
+			 * log, which is ordinary on SwiftShader — including it reports a
+			 * green tree red.
 			 *
-			 * **What is left matches text, so it fails open.** Three.js rewords
-			 * this message and the failure mode is silently back. The backstop
-			 * is one probe: `probe-station-visuals` asks the GL context for
-			 * `LINK_STATUS` and names the rock's own program, so that probe
-			 * holds without this listener. Every other probe has this and
-			 * nothing else, which is worth knowing before trusting it.
+			 * **It matches text, so it fails open**: three.js rewords this and
+			 * the hole is back. The backstop is one probe —
+			 * `probe-station-visuals` asks the GL context for `LINK_STATUS` and
+			 * names the rock's own program. Every other probe has this and
+			 * nothing else.
 			 *
-			 * **It reaches a probe only through `watch`.** When this listener
-			 * was added, nine probes installed their own
-			 * `page.on("pageerror", ...)` and never called `watch`, so a guard
-			 * written up as covering the suite covered three files. Every probe
-			 * now installs one or the other on every page it opens, and
-			 * `check-launcher-wiring.mjs` enforces it rather than this comment
-			 * asserting it — it counts pages against watches, and refuses a
-			 * hand-rolled `pageerror` handler that does not also take
-			 * `watchShaders`. `npm run probe` runs that check first.
+			 * A listener reaches a probe only through `watch` or
+			 * `watchShaders`, and `check-launcher-wiring.mjs` enforces that
+			 * every page gets one; `npm run probe` runs it first. PR #63 has
+			 * the history of what was tried here and reverted.
 			 */
 			shaderListener(page, tag);
 			page.on("pageerror", (e) => {
