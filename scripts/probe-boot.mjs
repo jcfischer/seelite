@@ -591,11 +591,14 @@ check(
 	),
 	await bench.evaluate(() => window.location.search || "(no query)"),
 );
-await bench.close();
-
-// From `URL`, so the meter is measured on the same page the rest of this file
-// boots rather than on a second one that might differ.
-const metered = await open(`${URL}&fps`);
+// Reused rather than closed and replaced. This block already costs the file
+// one extra page; a second would be another boot for a page identical to the
+// one in hand, and `probe-all` gives each probe 600 s on a machine that is not
+// always idle. `URL` again, so the meter is measured on the same page the rest
+// of this file boots rather than on one that might differ.
+const metered = bench;
+await metered.goto(`${URL}&fps`, { waitUntil: "load" });
+await bootedGame(metered);
 // Wait for a *rate*, not for the element. The meter mounts showing "- fps",
 // so waiting on text containing "fps" is satisfied the instant it appears and
 // gates on nothing: whether the read below saw a measured figure or the
@@ -618,6 +621,7 @@ check(
 	Number.isFinite(rate) && rate > 0 && reading.includes("worst"),
 	reading,
 );
+await metered.close();
 
 await browser.close();
 exit();

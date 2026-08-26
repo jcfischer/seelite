@@ -101,21 +101,37 @@ ${NOISE_GLSL}
  *   five walks, grain differenced   25 fps, 80-90 ms worst
  *   one walk, grain differenced     40 fps, 40-50 ms worst
  *
- * Those two are the comparison that decided it, and they are a pair: one
- * machine, one view, one term moved. The configuration that actually ships cut
- * the differenced grain as well, and it has **no row here on purpose**. What
- * came back for it was "fps in the 50s" and no worst frame — and a mean
- * without its worst frame is the one number this codebase says not to trust
- * (fps-meter.ts, at the line that formats it). Set beside two measurements it
- * would read as a third. It is an acceptance rather than a measurement, and a
- * sentence is the honest shape for it. Reproduce any of this by opening
- * ?seed=1&fps and flying to a refinery. The figures
+ * One machine, one view, one term moved. Reproduce with ?seed=1&fps at a
+ * refinery. The configuration that ships cut the differenced grain as well and
+ * has no row: what came back for it was a rate with no worst frame, which is
+ * the number fps-meter.ts says not to trust, so it is an acceptance rather
+ * than a third measurement. The review record on #63 carries the rest. The figures
  * are one machine's and are not portable; the *structure* is what carries — a
  * term inside the height field is paid five times, and a term in the albedo
  * once.
  *
- * A crater's profile is smooth in d, so its slope is available for free in
- * the loop that accumulates its depth. One walk, both answers.
+ * A crater's profile is *mostly* smooth in d, so its slope comes almost free
+ * in the loop that accumulates its depth. One walk, both answers.
+ *
+ * **Where "mostly" bites.** The profile has two breaks, and an analytic
+ * gradient reports them where a finite difference smoothed them over its
+ * epsilon. That difference is real and is worth writing down rather than
+ * discovering later on a screenshot:
+ *
+ *   - inside = step(d, 1.0) cuts the bowl at the rim, so d(bowl)/dd is 2d
+ *     below 1 and 0 above it: dProfile jumps by 2.0 across d = 1.
+ *   - the walk is culled at d < 1.2, where the rim gaussian still has a value
+ *     of about 0.009 and a slope of about -0.25. Both are dropped, not faded.
+ *
+ * The height itself is near-continuous at both — 0.009 x depth at the cull —
+ * so this shows in shading, not in shape: a harder edge at the crater lip than
+ * the differenced normal gave, and a faint step at the cull radius. The rock
+ * shipped with both present and was accepted on how it looks.
+ *
+ * The fix, if either ever reads badly, is a narrow smoothstep in place of the
+ * step and a fade on the rim approaching 1.2 — but that is an edit to the
+ * *shared* field, so it changes every planet #57 draws too, and it is that
+ * decision rather than this one.
  *
  * There is one definition of the field, and it is #57's: CRATER_CELL and
  * CRATER_PROFILE are interpolated here and into craters() alike, so the two

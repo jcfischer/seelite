@@ -371,22 +371,26 @@ export function tally() {
 			 * page red here. This matches the one class that is otherwise
 			 * silent and is always a defect.
 			 *
-			 * **It matches text, so it fails open.** Three.js reworded this
-			 * message, or routed it through `console.warn`, and the failure
-			 * mode above is silently back. That is why it is not the only
-			 * guard: `probe-station-visuals` asks the GL context itself for
-			 * `LINK_STATUS`, by name, which no rewording upstream can affect.
-			 * This one is the wide net — it covers every probe that renders,
-			 * including materials nothing thought to name — and the named check
-			 * is the one that holds when the net tears. `warn` is included for
-			 * that reason: it costs nothing and removes one of the two ways the
-			 * wording could slip past.
+			 * **Errors only, and `warning` was tried and taken back out.** It
+			 * looked free — one more way a rewording could not slip past — and
+			 * it is not: three.js warns `THREE.WebGLProgram: Program Info Log:`
+			 * on the branch where the link *succeeded* and the driver merely
+			 * returned a non-empty log, which `/program info/` matches. On
+			 * SwiftShader, which is what these probes rasterise with, a
+			 * non-empty log on a good link is ordinary. That is a green tree
+			 * reported red, which is worse than the hole it was closing.
+			 *
+			 * **What is left matches text, so it fails open.** Three.js rewords
+			 * this message and the failure mode is silently back. The backstop
+			 * is narrower than it sounds and worth stating exactly:
+			 * `probe-station-visuals` asks the GL context for `LINK_STATUS` and
+			 * names the rock's own program, so *that* probe holds without this
+			 * one. Every other probe that renders has this and nothing else.
 			 */
 			page.on("console", (message) => {
-				if (message.type() !== "error" && message.type() !== "warning") return;
+				if (message.type() !== "error") return;
 				const text = message.text();
-				if (!/shader|program info|glsl|link status|validate_status/i.test(text))
-					return;
+				if (!/shader|glsl|link status|validate_status/i.test(text)) return;
 				checks++;
 				failures++;
 				console.log(`SHADERERROR ${text.slice(0, 400)}`);

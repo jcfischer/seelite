@@ -217,21 +217,10 @@ export function mountModelViewer(): void {
 	// as well as how it looks. `mountFpsMeter` is idempotent, so opening the
 	// workbench with `?fps` as well gives one readout rather than two.
 	//
-	// The returned disposer is dropped on purpose, and the reason is a few lines
-	// down rather than here to be found: `[data-model-close]` *navigates* — it
-	// rewrites the URL without `model-viewer` and assigns it — so the document
-	// carrying this meter is torn down by the browser, along with its frame
-	// callback and its stall timer. Calling the disposer first would be tidying
-	// a page that is about to cease existing. If that handler ever becomes an
-	// in-place teardown, this becomes a leak *and* a way onto the flight floor
-	// without `?fps`, which is why `probe-boot` opens the workbench and closes
-	// it rather than only checking a page that never opened one.
-	// Dynamically, as `main.ts` does behind `?fps`: a statically imported meter
-	// would sit in the eagerly-loaded graph of a view module, which is the
-	// opposite of what gating it is for. Not awaited, because nothing here
-	// needs it to have arrived — the meter measures the frame loop the lines
-	// below start, and it can attach a frame or two late without measuring
-	// anything differently.
+	// Dynamic and unawaited, like `main.ts`'s `?fps` branch. The disposer is
+	// dropped because `[data-model-close]` navigates, so the browser takes the
+	// whole document; `probe-boot` asserts that rather than leaving it to be
+	// reasoned about.
 	void import("./fps-meter").then((m) => m.mountFpsMeter());
 
 	const stage = root.querySelector<HTMLElement>(
