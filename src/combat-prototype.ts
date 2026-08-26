@@ -5,12 +5,12 @@
  */
 export const COMBAT_PROTOTYPE_DEFAULTS = {
 	hull: 100,
-	shield: 60,
+	shield: 106,
 	energy: 100,
 	heatLock: 100,
-	pulseDamagePerSecond: 3.6,
-	pulseEnergyPerSecond: 3,
-	pulseHeatPerSecond: 2,
+	pulseDamagePerSecond: 5.5,
+	pulseEnergyPerSecond: 1,
+	pulseHeatPerSecond: 1.5,
 	beamDamagePerSecond: 7.2,
 	beamEnergyPerSecond: 18,
 	beamHeatPerSecond: 30,
@@ -83,8 +83,8 @@ const clamp = (value: number, max: number) => Math.max(0, Math.min(max, value));
 /** The prototype enemy's deterministic strafe crosses the sight line briefly. */
 export function duelTargetInCone(elapsed: number) {
 	return (
-		Math.abs(3 * Math.sin(elapsed * 0.7)) < 0.7 &&
-		Math.abs(1.2 * Math.cos(elapsed * 1.1)) < 0.7
+		Math.abs(3 * Math.sin(elapsed * 0.7)) < 2.9 &&
+		Math.abs(1.2 * Math.cos(elapsed * 1.1)) < 1.1
 	);
 }
 

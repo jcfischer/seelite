@@ -75,7 +75,6 @@ import { starField } from "./backdrop";
 import { SettingsStore } from "./settings";
 import { AudioFX } from "./audio";
 import {
-	COMBAT_PROTOTYPE_DEFAULTS,
 	createCombatPrototype,
 	duelTargetInCone,
 	stepCombatPrototype,
@@ -780,6 +779,8 @@ class Game {
 	/** Text geometry from the current glass pass, exposed so the visual probe can
 	 * compare the rendered glyphs with the renderer's own placement contract. */
 	readonly cockpitPrompt = new TextRaster();
+	/** Prototype-only glass status, exposed for the browser probe. */
+	readonly combatOverlayStatus = new TextRaster();
 	/** What the HUD last displayed, quantised to its own resolution — so a frame
 	 *  that would render the same text neither builds nor writes it. */
 	private hudKey = "";
@@ -2079,20 +2080,7 @@ class Game {
 			? `${target.id.toUpperCase()}  ${range(targetKm)}`
 			: "NO TARGET";
 		const eta = this.etaCache === null ? "CALC" : duration(this.etaCache);
-		const combat = this.combat;
-		const firing =
-			combat.firing === "beam"
-				? " BEAM"
-				: combat.firing === "pulse"
-					? " PULSE"
-					: "";
-		const combatText = this.combatPrototypeEnabled
-			? `F ${combat.foreShield.toFixed(0)} A ${combat.aftShield.toFixed(0)} · E ${combat.energy.toFixed(0)} · H ${combat.heat.toFixed(0)}${combat.heatLocked ? " LOCK" : ""}${firing}`
-			: velocity.context;
-		const targetCombat = this.combatPrototypeEnabled
-			? `LOCK ${combat.missileLock ? "READY" : `${((combat.lockProgress * 100) / COMBAT_PROTOTYPE_DEFAULTS.lockSeconds).toFixed(0)}%`} · ${combat.incomingMissile ? "MISSILE WARNING" : "CLEAR"} · ${combat.interdiction ? "INTERDICTED" : "CLEAR"}`
-			: `ETA ${eta}  CHARGE ${this.chargeAu.toFixed(1)} AU`;
-		const key = `${speed}|${velocity.context}|${targetText}|${eta}|${this.throttle}|${this.assist}|${this.chargeAu}|${combatText}|${targetCombat}`;
+		const key = `${speed}|${velocity.context}|${targetText}|${eta}|${this.throttle}|${this.assist}|${this.chargeAu}`;
 		if (key === this.cockpit.instrumentKey) return;
 		this.cockpit.instrumentKey = key;
 		const paint = (
@@ -2136,14 +2124,14 @@ class Game {
 			this.cockpit.flightInstrument,
 			velocity.title,
 			speed,
-			combatText,
+			velocity.context,
 			"#75d7ff",
 		);
 		paint(
 			this.cockpit.targetInstrument,
 			"TARGET",
 			targetText,
-			targetCombat,
+			`ETA ${eta}  CHARGE ${this.chargeAu.toFixed(1)} AU`,
 			"#ffd17a",
 		);
 		this.cockpit.flightInstrument.texture.needsUpdate = true;
@@ -3948,7 +3936,19 @@ class Game {
 				w / 2,
 				h * 0.8,
 			);
+			const combatStatus = `FIRE ${this.combat.firing?.toUpperCase() ?? "SAFE"} · LOCK ${this.combat.missileLock ? "READY" : "ACQUIRING"} · MISSILE ${this.combat.incomingMissile ? "WARNING" : "CLEAR"} · INTERDICTION ${this.combat.interdiction ? "ACTIVE" : "CLEAR"}`;
+			ctx.font = PROMPT_FONT;
+			ctx.fillStyle = PROMPT_FILL;
+			ctx.fillText(combatStatus, w / 2, h * 0.84);
+			this.combatOverlayStatus.setCenteredPrompt(
+				combatStatus,
+				w / 2,
+				h * 0.84,
+				ctx.measureText(combatStatus).width,
+			);
 			ctx.textAlign = "left";
+		} else {
+			this.combatOverlayStatus.reset();
 		}
 
 		// The selected target owns the amber sky marker. Green remains prograde,

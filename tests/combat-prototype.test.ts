@@ -6,13 +6,27 @@ import {
 	duelTargetInCone,
 } from "../src/combat-prototype";
 
-test("starter pulse fire destroys an unshielded hull within the pacing target", () => {
-	let state = createCombatPrototype({
-		targetForeShield: 0,
-		targetAftShield: 0,
-	});
-	for (let elapsed = 0; elapsed < 30 && state.targetHull > 0; elapsed += 0.1)
-		state = stepCombatPrototype(state, { dt: 0.1, firing: "pulse" });
+function fireFixedStepDuel(state = createCombatPrototype()) {
+	while (state.elapsed < 90 && state.targetHull > 0)
+		state = stepCombatPrototype(state, {
+			dt: 0.1,
+			firing: "pulse",
+			targetInCone: duelTargetInCone(state.elapsed),
+		});
+	return state;
+}
+
+test("starter pulse duel destroys the shielded target within the pacing target", () => {
+	const state = fireFixedStepDuel();
+	expect(state.targetHull).toBe(0);
+	expect(state.elapsed).toBeGreaterThanOrEqual(60);
+	expect(state.elapsed).toBeLessThanOrEqual(90);
+});
+
+test("starter pulse duel destroys an unshielded hull within the pacing target", () => {
+	const state = fireFixedStepDuel(
+		createCombatPrototype({ targetForeShield: 0, targetAftShield: 0 }),
+	);
 	expect(state.targetHull).toBe(0);
 	expect(state.elapsed).toBeGreaterThanOrEqual(20);
 	expect(state.elapsed).toBeLessThanOrEqual(30);

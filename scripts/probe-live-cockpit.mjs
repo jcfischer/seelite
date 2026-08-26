@@ -15,10 +15,12 @@ const PIXEL_CHANNEL_TOLERANCE = 3;
 const ETA_READOUT =
 	/^ETA (?:<1s|\d+(?:\.\d+)?(?:s|min|h|d))  CHARGE \d+\.\d AU$/;
 const ETA_READOUT_SOURCE = ETA_READOUT.source;
-const COMBAT_READOUT =
-	/^LOCK (?:READY|\d+%) · (?:MISSILE WARNING|CLEAR) · (?:INTERDICTED|CLEAR)$/;
-const COMBAT_READOUT_SOURCE = COMBAT_READOUT.source;
-const PULSE_READOUT = /^F \d+ A \d+ · E \d+ · H \d+ PULSE$/;
+const VELOCITY_READOUT =
+	/^(?:NOSE-LOCKED CRUISE|.+ FRAME · INERTIAL \d+ km\/s)$/;
+const VELOCITY_READOUT_SOURCE = VELOCITY_READOUT.source;
+const COMBAT_STATUS =
+	/^FIRE (?:SAFE|PULSE|BEAM) · LOCK (?:READY|ACQUIRING) · MISSILE (?:WARNING|CLEAR) · INTERDICTION (?:ACTIVE|CLEAR)$/;
+const COMBAT_STATUS_SOURCE = COMBAT_STATUS.source;
 
 function textPixelsMatch(canvas, renderedText) {
 	if (!canvas || !renderedText) return false;
@@ -76,7 +78,7 @@ function textPixelsMatch(canvas, renderedText) {
 	return glyphPixels > 0;
 }
 
-const PROBE_MATCHERS_SCRIPT = `const PIXEL_CHANNEL_TOLERANCE = ${PIXEL_CHANNEL_TOLERANCE}; globalThis.__seeliteTextPixelsMatch = ${textPixelsMatch}; globalThis.__seeliteEtaReadout = new RegExp(${JSON.stringify(ETA_READOUT_SOURCE)}); globalThis.__seeliteCombatReadout = new RegExp(${JSON.stringify(COMBAT_READOUT_SOURCE)});`;
+const PROBE_MATCHERS_SCRIPT = `const PIXEL_CHANNEL_TOLERANCE = ${PIXEL_CHANNEL_TOLERANCE}; globalThis.__seeliteTextPixelsMatch = ${textPixelsMatch}; globalThis.__seeliteEtaReadout = new RegExp(${JSON.stringify(ETA_READOUT_SOURCE)}); globalThis.__seeliteVelocityReadout = new RegExp(${JSON.stringify(VELOCITY_READOUT_SOURCE)}); globalThis.__seeliteCombatStatus = new RegExp(${JSON.stringify(COMBAT_STATUS_SOURCE)});`;
 
 function measureLiveCockpit() {
 	const visible = (selector) => {
@@ -105,6 +107,7 @@ function measureLiveCockpit() {
 		"scanner-reference-line",
 	);
 	const targetInstrumentCanvas = game.cockpit.targetInstrument?.ctx?.canvas;
+	const flightInstrumentCanvas = game.cockpit.flightInstrument?.ctx?.canvas;
 	const overlayCanvas = document.querySelector("#overlay");
 	const referenceLinePoints =
 		scannerReferenceLine?.geometry?.getAttribute("position");
@@ -154,6 +157,17 @@ function measureLiveCockpit() {
 		),
 		targetInstrumentSecondaryReadout:
 			game.cockpit.targetInstrument?.secondaryText.text,
+		flightInstrumentSecondaryText: globalThis.__seeliteTextPixelsMatch(
+			flightInstrumentCanvas,
+			game.cockpit.flightInstrument?.secondaryText,
+		),
+		flightInstrumentSecondaryReadout:
+			game.cockpit.flightInstrument?.secondaryText.text,
+		combatOverlayText: globalThis.__seeliteTextPixelsMatch(
+			overlayCanvas,
+			game.combatOverlayStatus,
+		),
+		combatOverlayReadout: game.combatOverlayStatus.text,
 		cruisePromptReadout: game.cockpitPrompt.text,
 		scannerMounted:
 			Boolean(scanner?.visible) &&
@@ -304,8 +318,11 @@ for (const viewport of VIEWPORTS) {
 		() =>
 			window.__seelite?.frames > 1 &&
 			document.querySelector("[data-live-cockpit]") &&
-			globalThis.__seeliteCombatReadout.test(
+			globalThis.__seeliteEtaReadout.test(
 				window.__seelite.cockpit.targetInstrument.secondaryText.text,
+			) &&
+			globalThis.__seeliteCombatStatus.test(
+				window.__seelite.combatOverlayStatus.text,
 			),
 	);
 	// Put the selected station at a known ship-local port-bow bearing. This is a
@@ -327,7 +344,7 @@ for (const viewport of VIEWPORTS) {
 		energyBeforePulse,
 	);
 	const combatReadout = await page.evaluate(
-		() => window.__seelite.cockpit.flightInstrument.secondaryText.text,
+		() => window.__seelite.combatOverlayStatus.text,
 	);
 	const laserVisible = await page.evaluate(
 		() =>
@@ -336,8 +353,10 @@ for (const viewport of VIEWPORTS) {
 	);
 	await page.keyboard.up("Space");
 	check(
-		`${viewport.name}: holding Space draws a prototype laser and exposes immediate PULSE feedback on the physical instrument`,
-		laserVisible && PULSE_READOUT.test(combatReadout),
+		`${viewport.name}: holding Space draws a prototype laser and exposes immediate PULSE feedback on the glass overlay`,
+		laserVisible &&
+			COMBAT_STATUS.test(combatReadout) &&
+			combatReadout.includes("FIRE PULSE"),
 		combatReadout,
 	);
 	await page.evaluate(() => window.__seelite.setThrottle(0));
@@ -382,7 +401,11 @@ for (const viewport of VIEWPORTS) {
 			forward.physicalInstruments === 3 &&
 			!forward.forwardFloor &&
 			forward.targetInstrumentSecondaryText &&
-			COMBAT_READOUT.test(forward.targetInstrumentSecondaryReadout ?? "") &&
+			ETA_READOUT.test(forward.targetInstrumentSecondaryReadout ?? "") &&
+			forward.flightInstrumentSecondaryText &&
+			VELOCITY_READOUT.test(forward.flightInstrumentSecondaryReadout ?? "") &&
+			forward.combatOverlayText &&
+			COMBAT_STATUS.test(forward.combatOverlayReadout ?? "") &&
 			forward.throttleFill > 0 &&
 			forward.hologramRings >= 7 &&
 			forward.hologramContacts === forward.contacts * 2 &&
@@ -452,7 +475,7 @@ for (const viewport of VIEWPORTS) {
 		const game = window.__seelite;
 		return (
 			game.targetRange() > 3600 * 2 &&
-			globalThis.__seeliteCombatReadout.test(
+			globalThis.__seeliteEtaReadout.test(
 				game.cockpit.targetInstrument.secondaryText.text,
 			) &&
 			game.cockpitPrompt.text.includes("press J to cruise")
@@ -464,7 +487,7 @@ for (const viewport of VIEWPORTS) {
 		distant.targetRangeKm > 3600 * 2 &&
 			distant.targetInstrumentSecondaryText &&
 			distant.cruisePromptText &&
-			COMBAT_READOUT.test(distant.targetInstrumentSecondaryReadout ?? "") &&
+			ETA_READOUT.test(distant.targetInstrumentSecondaryReadout ?? "") &&
 			distant.cruisePromptReadout.includes("press J to cruise"),
 		`range ${distant.targetRangeKm}; target-panel ${distant.targetInstrumentSecondaryReadout}; prompt ${distant.cruisePromptReadout}; text match ${distant.targetInstrumentSecondaryText}/${distant.cruisePromptText}`,
 	);
