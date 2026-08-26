@@ -56,7 +56,7 @@ const LIMIT_S = 300;
 
 await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
-const { check, exit } = tally();
+const { check, watch, exit } = tally();
 
 /** Every fixture in this probe is a named body in a named seed, so a missing
  *  one is a broken probe rather than a failing game — reported once, here. */
@@ -68,7 +68,7 @@ async function bailIfMissing(result, label) {
 }
 
 const page = await browser.newPage({ viewport: { width: 900, height: 620 } });
-page.on("pageerror", (e) => check(`no page error (${e.message})`, false));
+watch(page);
 await installCamSim(page);
 await page.goto(URL, { waitUntil: "load" });
 await bootedGame(page);

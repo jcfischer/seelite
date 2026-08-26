@@ -132,20 +132,26 @@ export function mountFpsMeter(): () => void {
 	 * figure for as long as the page is frozen.
 	 *
 	 * `document.hidden` is read because a backgrounded tab stops frames and is
-	 * not a fault; the frame clock is reset on the way back so the first window
-	 * after is measured rather than inherited. It wakes at its own threshold
-	 * rather than at the sample window — a watch that cannot fire until four
-	 * windows have passed has no reason to look sooner, and this runs for the
-	 * lifetime of every workbench session.
+	 * not a fault. It wakes at its own threshold rather than at the sample
+	 * window — a watch that cannot fire until four windows have passed has no
+	 * reason to look sooner, and this runs for the lifetime of every workbench
+	 * session.
 	 */
+	// The counters are reset on the way back from a hidden tab rather than
+	// every 2 s while it is hidden. Polling `document.hidden` had the timer
+	// zeroing counters no rAF was incrementing, for as long as the tab stayed
+	// in the background — an event says the same thing once.
+	const onVisibility = () => {
+		if (document.hidden) return;
+		last = performance.now();
+		windowStart = last;
+		frames = 0;
+		worst = 0;
+	};
+	document.addEventListener("visibilitychange", onVisibility);
+
 	const watch = window.setInterval(() => {
-		if (document.hidden) {
-			last = performance.now();
-			windowStart = last;
-			frames = 0;
-			worst = 0;
-			return;
-		}
+		if (document.hidden) return;
 		const since = performance.now() - last;
 		if (since > STALL_MS)
 			show(`<b>stalled</b> · ${(since / 1000).toFixed(1)} s`);
@@ -155,6 +161,7 @@ export function mountFpsMeter(): () => void {
 		stopped = true;
 		cancelAnimationFrame(handle);
 		window.clearInterval(watch);
+		document.removeEventListener("visibilitychange", onVisibility);
 		readout.remove();
 	};
 }

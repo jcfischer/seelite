@@ -150,13 +150,11 @@ function measureGalleryState() {
 
 await guardedOrigin(ORIGIN, ["src/units.ts", "src/state-gallery.ts"]);
 const browser = await launchChromium();
-const { check, exit } = tally();
+const { check, watch, exit } = tally();
 
 for (const viewport of VIEWPORTS) {
 	const page = await browser.newPage({ viewport });
-	page.on("pageerror", (error) =>
-		check(`${viewport.name}: no page error (${error.message})`, false),
-	);
+	watch(page, viewport.name);
 	await page.goto(`${ORIGIN}/?seed=42&hud-gallery=assist-on`, {
 		waitUntil: "load",
 	});

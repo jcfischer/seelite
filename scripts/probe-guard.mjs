@@ -356,7 +356,26 @@ export function tally() {
 				`${ok ? "  ok  " : " FAIL "} ${label}${detail ? ` — ${detail}` : ""}`,
 			);
 		},
-		watch(page) {
+		/**
+		 * The shader listener alone, for a probe that reports page errors its
+		 * own way. `probe-planets` collects them in an array and names them at
+		 * two milestones rather than one per event, which is a reporting choice
+		 * worth keeping; it should not have to give that up to be guarded
+		 * against a silent shader failure.
+		 */
+		watchShaders(page, label) {
+			const tag = label ? `${label}: ` : "";
+			page.on("console", (message) => {
+				if (message.type() !== "error") return;
+				const text = message.text();
+				if (!/shader|glsl|link status|validate_status/i.test(text)) return;
+				checks++;
+				failures++;
+				console.log(`SHADERERROR ${tag}${text.slice(0, 400)}`);
+			});
+		},
+		watch(page, label) {
+			const tag = label ? `${label}: ` : "";
 			/**
 			 * A shader that fails to compile is not a page error.
 			 *
@@ -382,10 +401,18 @@ export function tally() {
 			 *
 			 * **What is left matches text, so it fails open.** Three.js rewords
 			 * this message and the failure mode is silently back. The backstop
-			 * is narrower than it sounds and worth stating exactly:
-			 * `probe-station-visuals` asks the GL context for `LINK_STATUS` and
-			 * names the rock's own program, so *that* probe holds without this
-			 * one. Every other probe that renders has this and nothing else.
+			 * is one probe: `probe-station-visuals` asks the GL context for
+			 * `LINK_STATUS` and names the rock's own program, so that probe
+			 * holds without this listener. Every other probe has this and
+			 * nothing else, which is worth knowing before trusting it.
+			 *
+			 * **It reaches a probe only through `watch`.** When this listener
+			 * was added, nine probes installed their own
+			 * `page.on("pageerror", ...)` and never called `watch`, so a guard
+			 * written up as covering the suite covered three files. Every probe
+			 * now installs one or the other on every page it opens.
+			 * `check-launcher-wiring.mjs` is the place to enforce that if it
+			 * drifts back.
 			 */
 			page.on("console", (message) => {
 				if (message.type() !== "error") return;
@@ -393,7 +420,7 @@ export function tally() {
 				if (!/shader|glsl|link status|validate_status/i.test(text)) return;
 				checks++;
 				failures++;
-				console.log(`SHADERERROR ${text.slice(0, 400)}`);
+				console.log(`SHADERERROR ${tag}${text.slice(0, 400)}`);
 			});
 			page.on("pageerror", (e) => {
 				// Counted as a check too, not just a failure. Incrementing `failures`
@@ -403,7 +430,7 @@ export function tally() {
 				// page; it just did not have a label until now.
 				checks++;
 				failures++;
-				console.log(`PAGEERROR ${e.message}`);
+				console.log(`PAGEERROR ${tag}${e.message}`);
 			});
 		},
 		get failures() {

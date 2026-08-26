@@ -57,10 +57,10 @@ const VIEWPORT = { width: 900, height: 620 };
 
 await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
-const { check, exit } = tally();
+const { check, watch, exit } = tally();
 
 const page = await browser.newPage({ viewport: VIEWPORT });
-page.on("pageerror", (e) => check(`no page error (${e.message})`, false));
+watch(page);
 // The shared camera recovery, installed as an init script — `probe-boot.mjs`
 // uses the same one, and re-deriving `shipSim - shipMesh` in each probe is one
 // more place for the camera-relative contract to be restated slightly wrong.

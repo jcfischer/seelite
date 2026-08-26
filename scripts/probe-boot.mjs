@@ -596,15 +596,14 @@ check(
 // one in hand, and `probe-all` gives each probe 600 s on a machine that is not
 // always idle. `URL` again, so the meter is measured on the same page the rest
 // of this file boots rather than on one that might differ.
-const metered = bench;
-await metered.goto(`${URL}&fps`, { waitUntil: "load" });
-await bootedGame(metered);
+await bench.goto(`${URL}&fps`, { waitUntil: "load" });
+await bootedGame(bench);
 // Wait for a *rate*, not for the element. The meter mounts showing "- fps",
 // so waiting on text containing "fps" is satisfied the instant it appears and
 // gates on nothing: whether the read below saw a measured figure or the
 // placeholder would come down to boot latency, on a wait written to take
 // exactly that out. A digit is what the placeholder does not have.
-await metered
+await bench
 	.waitForFunction(
 		() =>
 			/\d/.test(document.querySelector("[data-fps-meter]")?.textContent ?? ""),
@@ -612,7 +611,7 @@ await metered
 		{ timeout: 20000 },
 	)
 	.catch(() => {});
-const reading = await metered.evaluate(
+const reading = await bench.evaluate(
 	() => document.querySelector("[data-fps-meter]")?.textContent ?? "(no meter)",
 );
 const rate = Number.parseFloat(reading);
@@ -621,7 +620,7 @@ check(
 	Number.isFinite(rate) && rate > 0 && reading.includes("worst"),
 	reading,
 );
-await metered.close();
+await bench.close();
 
 await browser.close();
 exit();

@@ -136,6 +136,10 @@ await guardedOrigin(ORIGIN, [
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 
+// The program scan below runs once, not once per viewport: a program is built
+// from a material, not from a window size.
+let scannedPrograms = false;
+
 /**
  * Everything this probe needs about one station, from **one** evaluate.
  *
@@ -379,7 +383,11 @@ for (const viewport of VIEWPORTS) {
 	}
 
 	/**
-	 * Every program that drew the frame above actually linked.
+	 * Every program the renderer built for the frames above actually linked.
+	 *
+	 * Asked once rather than per viewport: a program is built from a material,
+	 * not from a window size, so the second pass would re-ask a question whose
+	 * answer cannot have changed and print a second identical line.
 	 *
 	 * The rock's surface is a patched `MeshStandardMaterial`: four GLSL strings
 	 * spliced into three.js's chunks by `onBeforeCompile`. The tests that guard
@@ -401,32 +409,35 @@ for (const viewport of VIEWPORTS) {
 	 * makes the rock's program findable by name rather than assumed to be in
 	 * the pile.
 	 */
-	const programs = await page.evaluate(() => {
-		const renderer = window.__seelite.renderer;
-		const gl = renderer.getContext();
-		const built = Array.from(renderer.info.programs ?? []);
-		const linked = (p) =>
-			Boolean(p.program) && gl.getProgramParameter(p.program, gl.LINK_STATUS);
-		const rock = built.filter((p) =>
-			String(p.cacheKey ?? "").includes("station-rock"),
+	if (!scannedPrograms) {
+		scannedPrograms = true;
+		const programs = await page.evaluate(() => {
+			const renderer = window.__seelite.renderer;
+			const gl = renderer.getContext();
+			const built = Array.from(renderer.info.programs ?? []);
+			const linked = (p) =>
+				Boolean(p.program) && gl.getProgramParameter(p.program, gl.LINK_STATUS);
+			const rock = built.filter((p) =>
+				String(p.cacheKey ?? "").includes("station-rock"),
+			);
+			return {
+				total: built.length,
+				unlinked: built.filter((p) => !linked(p)).length,
+				rock: rock.length,
+				rockLinked: rock.filter(linked).length,
+			};
+		});
+		check(
+			"every shader program the renderer has built linked",
+			programs.total > 0 && programs.unlinked === 0,
+			`${programs.total - programs.unlinked}/${programs.total} linked`,
 		);
-		return {
-			total: built.length,
-			unlinked: built.filter((p) => !linked(p)).length,
-			rock: rock.length,
-			rockLinked: rock.filter(linked).length,
-		};
-	});
-	check(
-		`${viewport.name}: every shader program the renderer has built linked`,
-		programs.total > 0 && programs.unlinked === 0,
-		`${programs.total - programs.unlinked}/${programs.total} linked`,
-	);
-	check(
-		`${viewport.name}: the rock's own program is among them, and linked`,
-		programs.rock > 0 && programs.rockLinked === programs.rock,
-		`${programs.rockLinked}/${programs.rock} "station-rock" programs`,
-	);
+		check(
+			"the rock's own program is among them, and linked",
+			programs.rock > 0 && programs.rockLinked === programs.rock,
+			`${programs.rockLinked}/${programs.rock} "station-rock" programs`,
+		);
+	}
 
 	console.log(
 		`\n[${viewport.name}] warmth: ` +
