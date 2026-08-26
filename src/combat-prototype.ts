@@ -108,13 +108,14 @@ export function stepCombatPrototype(
 	next.interdiction =
 		next.interdictionProgress >= COMBAT_PROTOTYPE_DEFAULTS.interdictionSeconds;
 	const weapon = input.firing ?? null;
-	const canFire = weapon !== null && !next.heatLocked && next.energy > 0;
+	const beam = weapon === "beam";
+	const energyCost =
+		(beam
+			? COMBAT_PROTOTYPE_DEFAULTS.beamEnergyPerSecond
+			: COMBAT_PROTOTYPE_DEFAULTS.pulseEnergyPerSecond) * dt;
+	const canFire =
+		weapon !== null && !next.heatLocked && next.energy >= energyCost;
 	if (canFire) {
-		const beam = weapon === "beam";
-		const energyCost =
-			(beam
-				? COMBAT_PROTOTYPE_DEFAULTS.beamEnergyPerSecond
-				: COMBAT_PROTOTYPE_DEFAULTS.pulseEnergyPerSecond) * dt;
 		if (next.energy >= energyCost) {
 			next.energy -= energyCost;
 			next.heat = clamp(

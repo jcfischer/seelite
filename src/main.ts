@@ -2085,8 +2085,12 @@ class Game {
 			: this.keys.has(" ")
 				? " PULSE"
 				: "";
-		const combatText = `F ${combat.foreShield.toFixed(0)} A ${combat.aftShield.toFixed(0)} · E ${combat.energy.toFixed(0)} · H ${combat.heat.toFixed(0)}${combat.heatLocked ? " LOCK" : ""}${firing}`;
-		const targetCombat = `LOCK ${combat.missileLock ? "READY" : `${((combat.lockProgress * 100) / COMBAT_PROTOTYPE_DEFAULTS.lockSeconds).toFixed(0)}%`} · ${combat.incomingMissile ? "MISSILE WARNING" : "CLEAR"}`;
+		const combatText = this.combatPrototypeEnabled
+			? `F ${combat.foreShield.toFixed(0)} A ${combat.aftShield.toFixed(0)} · E ${combat.energy.toFixed(0)} · H ${combat.heat.toFixed(0)}${combat.heatLocked ? " LOCK" : ""}${firing}`
+			: velocity.context;
+		const targetCombat = this.combatPrototypeEnabled
+			? `LOCK ${combat.missileLock ? "READY" : `${((combat.lockProgress * 100) / COMBAT_PROTOTYPE_DEFAULTS.lockSeconds).toFixed(0)}%`} · ${combat.incomingMissile ? "MISSILE WARNING" : "CLEAR"}`
+			: `ETA ${eta}  CHARGE ${this.chargeAu.toFixed(1)} AU`;
 		const key = `${speed}|${velocity.context}|${targetText}|${eta}|${this.throttle}|${this.assist}|${this.chargeAu}|${combatText}|${targetCombat}`;
 		if (key === this.cockpit.instrumentKey) return;
 		this.cockpit.instrumentKey = key;
@@ -2201,10 +2205,10 @@ class Game {
 				if (this.view === "cockpit") this.setHeadLook("right");
 				return;
 			case "z":
-				this.combatIncoming = true;
+				if (this.combatPrototypeEnabled) this.combatIncoming = true;
 				return;
 			case "r":
-				this.combatEcm = true;
+				if (this.combatPrototypeEnabled) this.combatEcm = true;
 				return;
 			case "j":
 				if (this.regime === "cruise") this.dropOut("dropped by the player");
@@ -3089,16 +3093,21 @@ class Game {
 		// #48 deliberately couples no combat entity to the world yet: this is a
 		// flyable balance rig over the shared flight loop, not production combat.
 		const targetInCone = duelTargetInCone(this.combat.elapsed);
-		this.combat = stepCombatPrototype(this.combat, {
-			dt,
-			firing: this.keys.has("b") ? "beam" : this.keys.has(" ") ? "pulse" : null,
-			targetInCone,
-			incomingMissile: this.combatIncoming,
-			ecm: this.combatEcm,
-			interdicting: this.regime === "cruise",
-			breakAngle: this.keys.has("q") || this.keys.has("e"),
-			enemyFiring: this.combat.targetHull > 0 && targetInCone,
-		});
+		if (this.combatPrototypeEnabled)
+			this.combat = stepCombatPrototype(this.combat, {
+				dt,
+				firing: this.keys.has("b")
+					? "beam"
+					: this.keys.has(" ")
+						? "pulse"
+						: null,
+				targetInCone,
+				incomingMissile: this.combatIncoming,
+				ecm: this.combatEcm,
+				interdicting: this.regime === "cruise",
+				breakAngle: this.keys.has("q") || this.keys.has("e"),
+				enemyFiring: this.combat.targetHull > 0 && targetInCone,
+			});
 		this.combatIncoming = false;
 		this.combatEcm = false;
 		const yaw = this.axis(["arrowright", "d"], ["arrowleft", "a"]);
@@ -3396,7 +3405,8 @@ class Game {
 				-12,
 			)
 			.applyQuaternion(viewRotation);
-		this.combatTargetMesh.visible = this.view === "cockpit";
+		this.combatTargetMesh.visible =
+			this.combatPrototypeEnabled && this.view === "cockpit";
 		const targetMaterial = this.combatTargetMesh
 			.material as THREE.MeshStandardMaterial;
 		const firingWeapon = this.keys.has(" ") || this.keys.has("b");
@@ -3405,7 +3415,9 @@ class Game {
 		this.combatTargetMesh.scale.setScalar(firingWeapon ? 1.25 : 1);
 		this.combatLaser.quaternion.copy(viewRotation);
 		this.combatLaser.visible =
-			this.view === "cockpit" && (this.keys.has(" ") || this.keys.has("b"));
+			this.combatPrototypeEnabled &&
+			this.view === "cockpit" &&
+			(this.keys.has(" ") || this.keys.has("b"));
 
 		// The star, resolved once at build time rather than scanned for per frame:
 		// every body's sun direction is measured from it, and there is no path
@@ -3843,7 +3855,10 @@ class Game {
 
 		// The Three line is spatial reference; this glass tracer is the readable
 		// weapon feedback at every viewport and cannot disappear behind cockpit mesh.
-		if (this.keys.has(" ") || this.keys.has("b")) {
+		if (
+			this.combatPrototypeEnabled &&
+			(this.keys.has(" ") || this.keys.has("b"))
+		) {
 			ctx.save();
 			// The lower third is physical cockpit hardware. Clip the glass effect to
 			// the windscreen rather than drawing a laser over an instrument panel.
