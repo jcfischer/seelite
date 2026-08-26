@@ -66,10 +66,13 @@ const ORIGIN =
  * classes, so five of the reachable ones could never fail a check here.
  *
  * Seed 6's start system draws six — airless, desert, iceGiant, jovian, terran
- * and venusian — which is every class the generator can reach except `lava`
- * and the unreachable `ice`. Scanned rather than picked: the first two hundred
- * seeds were run through `makeWorld`, which is the path the game itself takes,
- * and counted by class.
+ * and venusian. Scanned rather than picked: the first two hundred seeds were
+ * run through `makeWorld`, which is the path the game itself takes, and counted
+ * by class; six was the most any start system drew, and no start system in that
+ * range drew seven. That is a statement about two hundred seeds, not about the
+ * seed space — the class *set* the shaders must cover is
+ * `tests/planet-appearance.test.ts`'s to assert, and check 3c below draws every
+ * one of them regardless of what any seed generates.
  *
  * That scan is not kept, because its answer is this constant — but the
  * *shipped* run prints the classes it actually found, so a claim here that
@@ -241,6 +244,13 @@ const installHelpers = (page) =>
 		 */
 		window.__discBox = (bodyId) => {
 			const g = window.__seelite;
+			// Decorations off for the capture, and this is the only place it is
+			// spelled — every measurement in this file goes through here, so
+			// hiding them in the callers instead left whichever caller was added
+			// last measuring a ring or a corona. Both mistakes happened: the class
+			// signatures were once taken with a ringed giant's 4.8-radius ring
+			// plane in the box, and the star's with its corona sprite in it.
+			window.__setDecorVisible(bodyId, false);
 			const src = g.renderer.domElement;
 			const cv = document.createElement("canvas");
 			cv.width = W;
@@ -281,6 +291,7 @@ const installHelpers = (page) =>
 				if (y < y0) y0 = y;
 				if (y > y1) y1 = y;
 			}
+			window.__setDecorVisible(bodyId, true);
 			return { shown, moved, x0, y0, x1, y1, changed, W, H };
 		};
 
@@ -396,6 +407,31 @@ const installHelpers = (page) =>
 				spread: Math.sqrt(Math.max(0, sumSq / count - mean * mean)),
 				clipped: clipped / count,
 			};
+		};
+
+		/**
+		 * A star's photosphere, read with and without the bloom pass.
+		 *
+		 * One spelling, called from both star pages. The sequence has four steps
+		 * that all have to agree — where the camera stands, how far in the inner
+		 * box is taken, that the box is **pinned with the pass off**, and that the
+		 * pass is restored — and a second copy is four chances for one of them to
+		 * drift.
+		 *
+		 * The pin is the part that is easy to get wrong: a star's bloom halo
+		 * reaches the whole frame, so a box derived by hiding the star is the disc
+		 * with the pass off and the entire capture with it on, and the two
+		 * readings would then be of different regions compared as one.
+		 */
+		window.__photosphereStats = (starId, radii, inset) => {
+			window.__lookAtFrom(starId, [0.4, 0.25, 0.88], radii);
+			const was = window.__setBloomStrength(0);
+			const box = window.__discBox(starId);
+			const pinned = { x0: box.x0, y0: box.y0, x1: box.x1, y1: box.y1 };
+			const without = window.__innerDiscStats(starId, inset, pinned);
+			if (was !== null) window.__setBloomStrength(was);
+			const shipped = window.__innerDiscStats(starId, inset, pinned);
+			return { without, shipped, hadPass: was !== null };
 		};
 
 		/**
@@ -731,20 +767,29 @@ for (const body of usable) body.all = verdict.get(body.id);
 
 /** The closest pair of *different* classes, over a set of descriptors. One
  *  spelling, used for the shipped verdict and for every weight in the sweep. */
-const closestAt = (descriptors) => {
+const closestPairIn = (entries) => {
 	let best = Number.POSITIVE_INFINITY;
 	let label = "";
-	for (const a of usable)
-		for (const b of usable) {
-			if (a.id >= b.id || a.visual.surface === b.visual.surface) continue;
-			const d = distance(descriptors.get(a.id), descriptors.get(b.id));
+	for (let i = 0; i < entries.length; i++)
+		for (let j = i + 1; j < entries.length; j++) {
+			if (entries[i].key === entries[j].key) continue;
+			const d = distance(entries[i].descriptor, entries[j].descriptor);
 			if (d < best) {
 				best = d;
-				label = `${a.visual.surface} vs ${b.visual.surface}`;
+				label = `${entries[i].key} vs ${entries[j].key}`;
 			}
 		}
 	return { best, label };
 };
+/** The cross-body form: one entry per body, keyed by its class, so two bodies
+ *  of one class are skipped as a same-key pair. */
+const closestAt = (descriptors) =>
+	closestPairIn(
+		usable.map((b) => ({
+			key: b.visual.surface,
+			descriptor: descriptors.get(b.id),
+		})),
+	);
 const { best: closestPair, label: closestLabel } = closestAt(verdict);
 
 console.log("\n  surface signatures (mean R,G,B and weighted luma spread)");
@@ -803,29 +848,12 @@ check(
 
 /* 3b. The star survives the bloom. */
 const starBody = spheres.find((b) => b.kind === "star");
-const starLook = await page.evaluate((id) => {
-	// Any direction: the star is not lit, so there is no sunward side and no
-	// terminator — every view of it is the same view.
-	//
-	// The corona is hidden first. It is a sprite reaching 5.2 radii, so with it
-	// in frame the bounding box is the glow rather than the photosphere.
-	window.__setDecorVisible(id, false);
-	window.__lookAtFrom(id, [0.4, 0.25, 0.88], 4);
-
-	// The box is taken **once, with the bloom off**, and then both readings are
-	// taken inside it. A star's bloom halo reaches the whole frame, so a box
-	// derived by hiding the star is the whole capture when the pass is on and
-	// the disc when it is off — two regions, compared as though they were one.
-	const was = window.__setBloomStrength(0);
-	const box = window.__discBox(id);
-	const pinned = { x0: box.x0, y0: box.y0, x1: box.x1, y1: box.y1 };
-	const without = window.__innerDiscStats(id, 1 / 3, pinned);
-	if (was !== null) window.__setBloomStrength(was);
-	const shipped = window.__innerDiscStats(id, 1 / 3, pinned);
-
-	window.__setDecorVisible(id, true);
-	return { shipped, without, hadPass: was !== null };
-}, starBody.id);
+// Any direction: the star is not lit, so there is no sunward side and no
+// terminator — every view of it is the same view.
+const starLook = await page.evaluate(
+	(id) => window.__photosphereStats(id, 4, 1 / 3),
+	starBody.id,
+);
 check(
 	"the star's photosphere has structure and is not clipped to white",
 	starLook.without.pixels > 1000 &&
@@ -879,13 +907,8 @@ await bootedGame(neutralPage);
 const neutral = await neutralPage.evaluate(() => {
 	const g = window.__seelite;
 	const star = g.world.system.bodies.find((b) => b.kind === "star");
-	window.__setDecorVisible(star.id, false);
-	window.__lookAtFrom(star.id, [0.4, 0.25, 0.88], 4);
-	const was = window.__setBloomStrength(0);
-	const stats = window.__innerDiscStats(star.id, 1 / 3);
-	if (was !== null) window.__setBloomStrength(was);
-	window.__setDecorVisible(star.id, true);
-	return { ...stats, colour: star.color.toString(16) };
+	const stats = window.__photosphereStats(star.id, 4, 1 / 3);
+	return { ...stats.without, colour: star.color.toString(16) };
 });
 check(
 	"a neutral-tinted star keeps its granulation too",
@@ -941,35 +964,36 @@ for (const surface of CLASSES) {
 	);
 	forced.push({ surface, descriptor: describe([sig]) });
 }
-// Twice under one class, at the same range and rotation, for this comparison's
-// own floor. The cross-body floor above is a different measurement over a
-// different sweep and would be the wrong bar here.
-await page.evaluate(
-	([id, klass]) => window.__seelite.redrawBodyAs(id, klass),
-	[subject.id, CLASSES[0]],
-);
-const forcedRepeat = describe([
+// A second reading of **every** class, for this comparison's own floor. Not of
+// one: `setTime` drives cloud drift, so terran, venusian and the giants move
+// between readings and lava does not — a floor taken from lava alone would be
+// the quietest class standing in for the noisiest, and this file already argues
+// that a floor short of the compared set can only understate itself and inflate
+// the ratio in the passing direction. The cross-body floor above is a different
+// measurement over a different sweep and would be the wrong bar here.
+let forcedFloor = 0;
+for (const row of forced) {
 	await page.evaluate(
-		([id, grid]) => window.__bodySignature(id, grid),
-		[subject.id, GRID],
-	),
-]);
+		([id, klass]) => window.__seelite.redrawBodyAs(id, klass),
+		[subject.id, row.surface],
+	);
+	const again = describe([
+		await page.evaluate(
+			([id, grid]) => window.__bodySignature(id, grid),
+			[subject.id, GRID],
+		),
+	]);
+	const d = distance(row.descriptor, again);
+	if (d > forcedFloor) forcedFloor = d;
+}
 await page.evaluate(
 	(id) => window.__seelite.redrawBodyAs(id, null),
 	subject.id,
 );
 
-const forcedFloor = distance(forced[0].descriptor, forcedRepeat);
-let forcedClosest = Number.POSITIVE_INFINITY;
-let forcedLabel = "";
-for (let i = 0; i < forced.length; i++)
-	for (let j = i + 1; j < forced.length; j++) {
-		const d = distance(forced[i].descriptor, forced[j].descriptor);
-		if (d < forcedClosest) {
-			forcedClosest = d;
-			forcedLabel = `${forced[i].surface} vs ${forced[j].surface}`;
-		}
-	}
+const { best: forcedClosest, label: forcedLabel } = closestPairIn(
+	forced.map((row) => ({ key: row.surface, descriptor: row.descriptor })),
+);
 
 console.log(
 	`\n  ${subject.id} drawn as each class in turn — seed, light and camera held still`,
@@ -985,7 +1009,8 @@ check(
 		Number.isFinite(forcedClosest) &&
 		forcedClosest > forcedFloor * NOISE_MARGIN,
 	`closest pair ${forcedClosest.toFixed(1)} (${forcedLabel}) against a same-class ` +
-		`repeat of ${forcedFloor.toFixed(1)} × ${NOISE_MARGIN}`,
+		`repeat of ${forcedFloor.toFixed(1)} × ${NOISE_MARGIN}, worst over all ` +
+		`${forced.length} classes`,
 );
 
 /* 4. The budget, per layer, on the class that costs the most. */

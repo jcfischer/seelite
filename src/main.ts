@@ -686,34 +686,20 @@ class Game {
 	}
 
 	/**
-	 * What #59's surface pass is currently drawing for one body.
-	 *
-	 * The same handle `visualOfStation` is, and for the same reason: a probe has
-	 * to know which class a body is being drawn as and which way its surface
-	 * shader is being lit, and a probe that recomputed either would be asserting
-	 * its own copy of the rule rather than what is on screen. `sunDir` in
-	 * particular is the whole of check 2: it is *not* the direction the scene
-	 * lights use, and the two are only distinguishable from inside.
-	 *
-	 * `undefined` for a station, which is drawn by `station-mesh.ts` and has no
-	 * surface class. Throwing would make a probe that walks every body have to
-	 * know the taxonomy.
-	 */
-	/**
 	 * Redraw one body as a class it is not, or restore it.
 	 *
-	 * **Display-only, and for one question a probe cannot otherwise ask**:
-	 * does the surface class decide the pixels? Comparing two *different*
-	 * bodies cannot answer it, because the seed decorates within a class and
-	 * two gas giants differ about as much as a giant and a moon — so a build
-	 * that drew every body with one seed-parameterised shader would look
-	 * exactly as varied. Drawing the **same** body under each class holds the
-	 * seed, the lighting, the camera and the geometry still, and leaves the
-	 * class as the only thing that changed.
+	 * **Display-only, and for one question a probe cannot otherwise ask**: does
+	 * the surface class decide the pixels? Comparing two *different* bodies
+	 * cannot answer it, because the seed decorates within a class and two gas
+	 * giants differ about as much as a giant and a moon — so a build that drew
+	 * every body with one seed-parameterised shader would look exactly as varied.
+	 * Drawing the **same** body under each class holds the seed, the lighting,
+	 * the camera and the geometry still, and leaves the class as the only thing
+	 * that changed.
 	 *
 	 * Nothing in the game calls this, and the appearance on the body is
-	 * untouched — `sim.ts` still owns what a body *is*, and this only swaps
-	 * what is drawn for it. Passing `null` puts the generated class back.
+	 * untouched — `sim.ts` still owns what a body *is*, and this only swaps what
+	 * is drawn for it. Passing `null` puts the generated class back.
 	 */
 	redrawBodyAs(id: string, surface: SurfaceClass | null) {
 		const body = this.world.system.byId.get(id);
@@ -741,6 +727,25 @@ class Game {
 		return true;
 	}
 
+	/**
+	 * What #59's surface pass is currently drawing for one body.
+	 *
+	 * The same handle `visualOfStation` is, and for the same reason: a probe has
+	 * to know which class a body is being drawn as, and a probe that recomputed
+	 * it would be asserting its own copy of the rule rather than what is on
+	 * screen.
+	 *
+	 * `sunDir` is reported too, but as **state and not as verification**. An
+	 * earlier probe read it back and compared it to the same body-to-star
+	 * formula the render loop had just used, which confirmed an assignment
+	 * rather than a render — a shader ignoring the uniform would have passed. The
+	 * claim is checked on pixels now, from the night side; this stays because it
+	 * is what a failure looks like when you go to explain one.
+	 *
+	 * `undefined` for a station, which is drawn by `station-mesh.ts` and has no
+	 * surface class. Throwing would make a probe that walks every body have to
+	 * know the taxonomy.
+	 */
 	visualOfBody(id: string) {
 		const visual = this.bodyVisuals.get(id);
 		if (!visual) return undefined;

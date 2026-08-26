@@ -183,11 +183,12 @@ export interface BodyVisual {
 	/**
 	 * Free the per-body materials and the star's corona texture.
 	 *
-	 * **Nothing calls this yet, and that is a fact about the renderer rather
-	 * than an oversight**: `buildBodies` runs once, at construction, because
-	 * there is no path that changes the system a game is in — hyperspace is not
-	 * built. It exists correct rather than absent so that the node which adds
-	 * that path has something to call, instead of discovering the leak.
+	 * `redrawBodyAs` calls it on every class swap, which is a probe path rather
+	 * than a gameplay one. **Nothing in the game does**, and that is a fact
+	 * about the renderer rather than an oversight: `buildBodies` runs once, at
+	 * construction, because there is no path that changes the system a game is
+	 * in — hyperspace is not built. It exists correct rather than absent so the
+	 * node that adds that path has something to call instead of a leak to find.
 	 */
 	dispose(): void;
 }
