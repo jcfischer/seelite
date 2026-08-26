@@ -16,7 +16,6 @@
 
 import * as THREE from "three";
 import { SimplexNoise } from "./noise";
-import { RELIEF } from "./planet-classes.glsl";
 import { NOISE_GLSL } from "./planet-shaders";
 
 /**
@@ -75,9 +74,9 @@ export function boxProjectUVs(geometry: THREE.BufferGeometry, panelKm: number) {
  * choose. Sampling a 3D field on the object's own position has none of those
  * problems, because there is nothing to unwrap.
  *
- * `NOISE_GLSL` and `RELIEF` are **imported, not pasted**. That was the whole
- * reason #56 deferred this: #57's shader library was still being written, and
- * two copies of a library in flight is worse than a workaround.
+ * `NOISE_GLSL` is **imported, not pasted**. That was the whole reason #56
+ * deferred this: #57's shader library was still being written, and two copies
+ * of a library in flight is worse than a workaround.
  *
  * **Three keeps doing the lighting.** This is a patch on `MeshStandardMaterial`
  * rather than a `ShaderMaterial`, and that is not a shortcut — the plating,
@@ -86,15 +85,27 @@ export function boxProjectUVs(geometry: THREE.BufferGeometry, panelKm: number) {
  * second sun. #57 can afford its own because it draws whole planets and nothing
  * else.
  *
- * **What it costs.** `craters` walks a 3×3×3 neighbourhood and `reliefNormal`
- * evaluates `height` four more times, so one crater octave is 5 × 27 = 135 cell
- * tests a fragment — #57's own figure, and its own note says an implementation
- * should bake it. This does not bake it, and the reason is measured rather than
- * argued: at docking range, where the rock fills the view, a headless
- * software-rasterised frame went from 15.5 fps to the figure in this node's
- * receipt. One octave, not #57's two, and the sub-crater tier is `ridged` noise
- * rather than a second neighbourhood walk — the same trade `AIRLESS` makes and
- * for the same reason.
+ * **What it costs, measured twice.** `craters` walks a 3×3×3 neighbourhood, and
+ * `reliefNormal` gets its normal from four more evaluations of the height
+ * field — so the obvious construction pays five walks a fragment. On a real GPU
+ * that was **25 fps with 80–90 ms hitches at docking range**, which is the
+ * moment `docking.md` §3 puts the whole skill tax on and so the worst possible
+ * one to drop frames in.
+ *
+ * The walk carries its own gradient now, so it happens once: a crater's profile
+ * is smooth in `d`, and its slope is free in the loop that accumulates its
+ * depth. Only the fine grain is still differenced, and four `fbm4` calls are a
+ * fraction of four neighbourhood walks.
+ *
+ * #57's own note says an implementation should bake this into a normal map at
+ * generation. That remains the cheaper answer and it is not taken here, because
+ * baking wants coordinates and an irregular body has none — which is the whole
+ * reason the maps this replaced were a workaround.
+ *
+ * `NOISE_GLSL` is imported rather than pasted; `RELIEF` is not used, because
+ * the normal is built from an analytic gradient instead of its finite
+ * differences — the tangent-frame construction below is deliberately the same
+ * shape so the two stay comparable.
  */
 export function applyRockSurface(material: THREE.MeshStandardMaterial) {
 	material.onBeforeCompile = (shader) => {
@@ -125,35 +136,95 @@ varying vec3 vRockP;
 ${NOISE_GLSL}
 #define PI 3.141592653589793
 
-// One crater octave for the relief, ridged noise for the grain beneath it.
-// A second octave is what AIRLESS pays for a moon that fills the screen; a
-// station is drawn in the live game beside a dozen other objects.
-float height(vec3 p) {
-  // Scaled for a body a kilometre across, not a moon: at #57's 3.4 the bowls
-  // came out seventy metres wide and the ground between them was glass.
-  //
-  // **Two terms, not three.** reliefNormal evaluates this five times, so
-  // anything in here is paid five times over — a third ridged octave here
-  // measured 4.5 fps against 15.5 before the shader existed. The sub-crater
-  // grain moved to the albedo below, which is where AIRLESS puts its own and
-  // why: at that scale the pits read as texture rather than as relief.
-  return craters(p * 2.3, 7.0, 0.42) + fbm4(p * 11.0) * 0.16;
+/*
+ * The crater field and its gradient, from **one** walk of the neighbourhood.
+ *
+ * This is #57's craters() with its derivative carried alongside, and it
+ * exists for one reason: reliefNormal gets its normal from four extra
+ * evaluations of the height field, so a 3x3x3 walk costs five walks a fragment.
+ * Measured on a real GPU that was 25 fps with 80-90 ms hitches at docking range
+ * — the moment a player is least able to afford them, since docking is where
+ * docking.md §3 puts the whole skill tax.
+ *
+ * A crater's profile is smooth in d, so its slope is available for free in
+ * the loop that accumulates its depth. One walk, both answers.
+ *
+ * **It must track #57's craters().** Two functions describing one field is
+ * the drift this project keeps paying for, and the mitigation here is that the
+ * profile is written once — bowl and rim below are the same two
+ * expressions — with the chain rule beside each. If planets change shape, this
+ * changes with them or the rock stops being made of the same rock.
+ */
+vec4 cratersAndGradient(vec3 p, float scale, float depth) {
+  p *= scale;
+  vec3 base = floor(p);
+  float acc = 0.0;
+  vec3 grad = vec3(0.0);
+  for (int x = -1; x <= 1; ++x)
+  for (int y = -1; y <= 1; ++y)
+  for (int z = -1; z <= 1; ++z) {
+    vec3 cell = base + vec3(x, y, z);
+    vec3 centre = cell + vec3(hash31(cell),
+                              hash31(cell + 61.7),
+                              hash31(cell + 13.3));
+    float radius = 0.16 + 0.34 * hash31(cell + 3.1);
+    vec3 offset = p - centre;
+    float dist = length(offset);
+    float d = dist / radius;
+    if (d < 1.2) {
+      float inside = step(d, 1.0);
+      float bowl = -(1.0 - d * d) * inside;
+      float rim  = exp(-pow((d - 0.88) * 6.5, 2.0)) * 0.7;
+      acc += (bowl + rim) * depth;
+      // d(bowl)/dd is 2d inside the bowl and zero beyond it; d(rim)/dd is the
+      // gaussian times its own exponent's derivative.
+      float dProfile = (2.0 * d * inside) + rim * (-84.5 * (d - 0.88));
+      // Chain rule out to p: dd/d|offset| is 1/radius, d|offset|/dp is the unit
+      // offset, and the outer p *= scale contributes another factor.
+      grad += dProfile * depth * scale * offset / max(dist * radius, 1e-6);
+    }
+  }
+  return vec4(grad, acc);
 }
-${RELIEF}`,
+
+// The fine term, kept out of the crater walk because its gradient is not
+// analytic: it is still differenced, but differencing four fbm4 calls is a
+// fraction of differencing four neighbourhood walks.
+float grain(vec3 p) { return fbm4(p * 11.0) * 0.16; }`,
 			)
 			.replace(
 				"#include <normal_fragment_maps>",
 				`{
   vec3 p = normalize(vRockP);
-  // **One height evaluation for both the normal and the albedo.**
+
+  // **One neighbourhood walk, not five.** The craters carry their own slope, so
+  // only the fine grain is differenced — and four fbm4 calls cost a fraction of
+  // four 3x3x3 walks. Measured on a real GPU, five walks was 25 fps with 80-90
+  // ms hitches at docking range, which is the moment a player can least afford
+  // them.
   //
-  // The tint used to live in <map_fragment>, which runs earlier and so had to
-  // call height() a second time — a second 27-cell crater walk per fragment for
-  // a colour. Doing both here costs one walk. diffuseColor is still in scope
-  // and the lighting chunks come after, so writing it from here is late but not
-  // too late.
-  float h = height(p);
-  vec3 objN = reliefNormal(p, p, 2.8);
+  // Scaled for a body a kilometre across rather than a moon: at #57's 3.4 the
+  // bowls came out seventy metres wide and the ground between them was glass.
+  vec4 pit = cratersAndGradient(p * 2.3, 7.0, 0.42);
+  float h = pit.w + grain(p);
+
+  // The height gradient, tangential to the sphere. The grain is differenced in
+  // the same tangent frame RELIEF uses, so both halves are the same kind of
+  // quantity before they are added.
+  vec3 axis = abs(p.y) < 0.94 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+  vec3 t = normalize(cross(axis, p));
+  vec3 b = cross(p, t);
+  float e = 0.0035;
+  vec3 slope = pit.xyz - p * dot(pit.xyz, p);
+  slope += t * (grain(normalize(p + t * e)) - grain(normalize(p - t * e)))
+             / (2.0 * e);
+  slope += b * (grain(normalize(p + b * e)) - grain(normalize(p - b * e)))
+             / (2.0 * e);
+
+  // The same shape as reliefNormal's last line — lean the normal away from
+  // uphill. The coefficient differs because that one folds its own 2e into the
+  // differences and this one has already divided them out.
+  vec3 objN = normalize(p - 0.010 * slope);
   normal = normalize(normalMatrix * objN);
 
   // Rock is not one colour and is not many: the range is narrow on purpose,
@@ -163,8 +234,8 @@ ${RELIEF}`,
   vec3 dust = vec3(0.44, 0.41, 0.36);
   vec3 face = vec3(0.60, 0.57, 0.51);
   vec3 tone = mix(dust, face, smoothstep(-0.15, 0.35, h));
-  // The sub-crater tier, evaluated once rather than five times — which is why
-  // it is here and not in height().
+  // The sub-crater tier, evaluated once — which is why it is here and not in
+  // anything the normal differentiates.
   tone *= 0.86 + 0.28 * fbm4(p * 19.0);
   tone *= 0.90 + 0.20 * ridged(p * 30.0);
   diffuseColor.rgb *= tone / 0.5;
