@@ -78,14 +78,6 @@ export const surfaceSphere = (layer: "near" | "approach" | "far") => {
 };
 
 /**
- * Where the light comes from when the caller does not say.
- *
- * 51 degrees off the view axis: far enough that every body has a terminator,
- * near enough that a gallery is not half in shadow. The live renderer always
- * says, because its star has a real position; the prototype does not, because
- * it has no star.
- */
-/**
  * The luminance every photosphere is exposed at, whatever colour the star is.
  *
  * The star shader multiplies its tint by up to 1.52 — `0.55 + 0.62 · bright`,
@@ -135,6 +127,14 @@ function photosphereTint(hex: number): THREE.Color {
 	return luma > 0 ? colour.multiplyScalar(PHOTOSPHERE_LUMA / luma) : colour;
 }
 
+/**
+ * Where the light comes from when the caller does not say.
+ *
+ * 51 degrees off the view axis: far enough that every body has a terminator,
+ * near enough that a gallery is not half in shadow. The live renderer always
+ * says, because its star has a real position; the prototype does not, because
+ * it has no star.
+ */
 export const DEFAULT_SUN_DIRECTION = new THREE.Vector3(
 	0.62,
 	0.3,

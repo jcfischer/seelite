@@ -118,6 +118,7 @@ import {
 	stepAngular,
 	stepWorld,
 } from "./sim";
+import type { SurfaceClass } from "./planet-appearance";
 import {
 	type BodyVisual,
 	buildBodyVisual,
@@ -483,6 +484,9 @@ class Game {
 	/** The shader surface for every body that is a sphere — star, planet, moon.
 	 *  A station is not in here; `stationVisuals` above is its equivalent. */
 	private readonly bodyVisuals = new Map<string, BodyVisual>();
+	/** The system's star, resolved once. Every body's sun direction is measured
+	 *  from it, and the system is fixed for a game's lifetime. */
+	private starBody?: Body;
 	/**
 	 * Which layer each body is currently drawn in.
 	 *
@@ -695,6 +699,48 @@ class Game {
 	 * surface class. Throwing would make a probe that walks every body have to
 	 * know the taxonomy.
 	 */
+	/**
+	 * Redraw one body as a class it is not, or restore it.
+	 *
+	 * **Display-only, and for one question a probe cannot otherwise ask**:
+	 * does the surface class decide the pixels? Comparing two *different*
+	 * bodies cannot answer it, because the seed decorates within a class and
+	 * two gas giants differ about as much as a giant and a moon — so a build
+	 * that drew every body with one seed-parameterised shader would look
+	 * exactly as varied. Drawing the **same** body under each class holds the
+	 * seed, the lighting, the camera and the geometry still, and leaves the
+	 * class as the only thing that changed.
+	 *
+	 * Nothing in the game calls this, and the appearance on the body is
+	 * untouched — `sim.ts` still owns what a body *is*, and this only swaps
+	 * what is drawn for it. Passing `null` puts the generated class back.
+	 */
+	redrawBodyAs(id: string, surface: SurfaceClass | null) {
+		const body = this.world.system.byId.get(id);
+		if (!body?.appearance) return false;
+		const old = this.bodyVisuals.get(id);
+		if (!old) return false;
+		const layer = this.layers.get(id) ?? "far";
+		old.group.removeFromParent();
+		old.dispose();
+		const visual = buildBodyVisual(
+			surface ? { ...body.appearance, surface } : body.appearance,
+			surfaceSphere(layer),
+			{
+				sunColor: this.world.system.contents.star.color,
+				starTint: this.world.system.contents.star.color,
+			},
+		);
+		visual.group.name = id;
+		this.bodyVisuals.set(id, visual);
+		this.meshes.set(id, visual.group);
+		// Through `setLayer`, so the new group is scaled and parented by the one
+		// rule that does it — a hand-placed group would be the second copy of the
+		// scale assignment `setLayer`'s own docstring warns about.
+		this.setLayer(body, layer);
+		return true;
+	}
+
 	visualOfBody(id: string) {
 		const visual = this.bodyVisuals.get(id);
 		if (!visual) return undefined;
@@ -1126,6 +1172,8 @@ class Game {
 			// in any case.
 			this.setLayer(body, "far");
 		}
+
+		this.starBody = this.world.system.bodies.find((b) => b.kind === "star");
 
 		// One light per layer, both standing in for the same star. A single light
 		// cannot serve two scenes at two scales — a `PointLight` at the far
@@ -2500,10 +2548,10 @@ class Game {
 		// being pinned there, its absence is a bug that takes an hour to see.
 		this.stars.position.copy(this.backdropCamera.position);
 
-		// The star, found once before the loop rather than per body: every body's
-		// sun direction is measured from it, and the search is over the same array
-		// the loop is walking.
-		const star = this.world.system.bodies.find((b) => b.kind === "star");
+		// The star, resolved once at build time rather than scanned for per frame:
+		// every body's sun direction is measured from it, and there is no path
+		// that changes the system a game is in.
+		const star = this.starBody;
 		const starPos = star ? star.pos : ORIGIN;
 
 		for (const body of this.world.system.bodies) {

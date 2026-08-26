@@ -6,98 +6,47 @@
  *
  * `tests/planet-surfaces.test.ts` owns the arithmetic: which class each
  * generated body is, that the classes come off the generator's own numbers
- * rather than a second derivation, and the detail band including its
- * hysteresis. What is left for a browser is what none of that can see.
+ * rather than a second derivation, and the shader assembly. What is left for a
+ * browser is what none of that can see.
  *
- * 1. **The live path draws the classes, and they read as different worlds.**
- *    `?planet-prototype` proved the shaders look distinct in a gallery under
- *    one lighting setup. That is not the same claim as "the game draws them",
- *    and until this node it was false — the only consumer of the shader set was
- *    the prototype route, and every body in the game was one shared
- *    `MeshStandardMaterial`.
+ * 1. **The live path draws the classes.** `?planet-prototype` proved the
+ *    shaders look distinct in a gallery. That is not the same claim as "the
+ *    game draws them", and until this node it was false — the only consumer of
+ *    the shader set was the prototype route.
  *
- *    Measured as a **signature**, `probe-planets.mjs`'s method: patches across
- *    the lit face, at several viewing longitudes, rather than one mean colour.
- *    A mean collapses a cratered grey moon and a smooth grey moon to the same
- *    number, and a single view collapses two worlds that differ only on the
- *    face that happened to be turned away.
+ * 2. **Each body is lit from its own star**, measured on its **night side**.
+ *    The scene's directional lights aim from the camera, which is right for the
+ *    ship and wrong for a planet: at astronomical separations the two
+ *    directions disagree by tens of degrees, and the disagreement is the
+ *    terminator. A body lit from its star is nearly black from anti-sunward;
+ *    one lit from the camera is not.
  *
- *    The pass condition is measured against the **instrument's own repeat
- *    noise** — two readings of one unchanged body — rather than against a
- *    number anyone picked. A floor someone chooses is a number the art then has
- *    to clear, which is how a measurement turns into a design driver. The one
- *    hand-picked number left, how many multiples of that floor a gap must
- *    clear, is swept rather than declared.
+ * 3. **The star's photosphere survives the bloom pass**, measured per pixel on
+ *    the inner third of the disc with the corona hidden, and with the pass
+ *    disabled and enabled in the same pinned box. A second page covers the
+ *    neutral-tinted star that `PHOTOSPHERE_LUMA` exists for.
  *
- *    And the claim is scoped to the classes **this system generates**, which
- *    the check names in its own output rather than leaving to this comment.
- *    `ice` is unreachable from the generator by construction
- *    (`tests/planet-appearance.test.ts` asserts it), and any class the seed does
- *    not produce cannot fail here. The gallery — `probe-planets.mjs` — owns the
- *    all-nine comparison; what is asked here is whether the *live path* draws
- *    what it was given.
+ * 4. **The class is what decides the pixels** — one body drawn as each class in
+ *    turn, seed and light and camera held still. The cross-body comparison in
+ *    check 1 cannot make this claim: the seed decorates *within* a class, and
+ *    two gas giants differ about as much as a giant and a moon.
  *
- *    Two stronger checks were tried here and withdrawn, and the withdrawals are
- *    recorded beside the code because both look obvious to write again. A
- *    per-*body* nearest-neighbour test failed a correct build, because three
- *    moons of the same class *should* look alike. A per-*class* separation test
- *    — closest class pair wider than the widest within-class gap — passed, and
- *    then its own weight sweep showed it passed at only two of five values of
- *    `SPREAD_WEIGHT`: the constant had been tuned until the verdict came out.
- *    The sweep survives as a check in its own right for that reason.
+ * 5. **A frame budget per render layer**, on the airless class, which is the
+ *    expensive one. Taken with a `readPixels` fence and not a
+ *    `requestAnimationFrame` mean, which cannot report below the display
+ *    refresh. **Software-rasteriser figures** — the runner has no GPU — so they
+ *    are printed rather than asserted against a threshold that would be a
+ *    threshold about SwiftShader.
  *
- * 2. **Each body is lit from its own star, not from the camera.** The
- *    directional lights that light the ship and the stations are aimed from the
- *    camera towards the star, which is right for them and wrong for a planet:
- *    at astronomical separations the camera-to-star and body-to-star directions
- *    disagree by tens of degrees, and the disagreement *is* the terminator.
- *    Read off `visualOfBody`, and checked against the sim positions rather than
- *    against a screenshot, because a wrong terminator on a body nobody is
- *    looking at is invisible and still wrong.
+ * Two habits run through the checks, both of them corrections. Every free
+ * constant is **swept or reported as a measured ratio**, never declared: a
+ * check whose verdict turns on a number nobody derived is a check about that
+ * number, and one here was withdrawn for exactly that. And every floor is the
+ * **instrument's own repeat noise** rather than a value someone picked, because
+ * a picked floor is a number the art then has to clear.
  *
- * 3. **The star survives the bloom pass.** #59 gave the star the prototype's
- *    photosphere — granulation, the real limb-darkening law, spots — over a
- *    bloom pass whose threshold was tuned when the star was a flat
- *    `MeshBasicMaterial`. The failure that combination produces is a disc
- *    clipped to featureless white, which is invisible in a thumbnail and
- *    obvious at approach. Measured **per pixel** over the inner third of the
- *    disc, corona hidden. Both halves of that are corrections: a spread taken
- *    across the whole disc reports the limb-darkening gradient however flat the
- *    granulation inside it has been washed, and a spread taken over patch
- *    *means* averages away most of what is left — at a 13-cell grid it halved,
- *    4.2 to 2.0.
- *
- *    The rebalance this check was written to guide turned out not to be needed,
- *    and **both conditions are measured in the run** rather than one measured
- *    and the other quoted: the pass is set to zero strength, the disc is read
- *    again, and the two spreads are compared. They agree, because the
- *    photosphere never reaches the pass's threshold — what haloes a star is its
- *    corona sprite. The check stays because a later change to either the
- *    threshold or the photosphere's brightness would separate them.
- *
- * 4. **A frame budget per render layer**, taken on the airless class, which is
- *    the expensive one. In a second page on `?seed=1`, because the seed chosen
- *    above for class coverage has no moon in its start system — an earlier
- *    revision measured whatever body came first there and reported the *star*
- *    under a heading that said "the worst class".
- *
- *    Taken with a `readPixels` fence and not a `requestAnimationFrame` mean,
- *    which cannot report below the display refresh — 16.7 ms on a 60 Hz panel
- *    whatever the shaders cost.
- *
- *    **These are software-rasteriser figures.** The runner has no GPU, so every
- *    number below is a floor of badness rather than a player's experience.
- *    Printed rather than asserted for exactly that reason: a budget threshold
- *    tuned on SwiftShader would be a threshold about SwiftShader.
- *
- *    This section is why there is no crater detail band. One was built: it
- *    dropped the airless class's fine octave once its craters were sub-pixel.
- *    Measured here on the moon alone in the frame, in five interleaved pairs
- *    per layer, the lever moved the frame by less than the instrument's own
- *    run-to-run spread at every layer — so it was withdrawn rather than shipped
- *    as a saving nothing could demonstrate. `planet-classes.glsl.ts` carries
- *    the figures next to the code they were about. What is left here is the
- *    budget itself, which is what the next attempt has to beat.
+ * `planet-classes.glsl.ts` records what was measured and withdrawn on the cost
+ * side, next to the code it concerns. It is not repeated here.
  */
 import {
 	bootedGame,
@@ -744,7 +693,12 @@ const descriptorsAt = (weight) =>
  */
 const repeatOf = (body) => sweepViews(body);
 
-const noiseBodies = usable.slice(0, 3);
+// Every measured body, not a sample of them. The floor is a *maximum* over the
+// bodies it is taken from, so leaving some out can only understate it — and an
+// understated floor inflates the ratio in the passing direction. A drifting
+// cloud deck outside a three-body sample was exactly the case that would have
+// been missed.
+const noiseBodies = usable;
 // The second reading is taken once and kept, so the floor can be re-derived at
 // any weight from the same pixels. Re-measuring per weight would fold the
 // browser's own variation into the sweep and confound the two.
@@ -837,7 +791,8 @@ check(
 	Number.isFinite(closestPair) && closestPair > repeatNoise * NOISE_MARGIN,
 	`${[...new Set(usable.map((b) => b.visual.surface))].sort().join(", ")}; ` +
 		`closest pair ${closestPair.toFixed(1)} (${closestLabel}) against a repeat ` +
-		`noise floor of ${repeatNoise.toFixed(1)} × ${NOISE_MARGIN}`,
+		`noise floor of ${repeatNoise.toFixed(1)} × ${NOISE_MARGIN}, ` +
+		`taken over all ${noiseBodies.length} of them`,
 );
 check(
 	"and that does not turn on the spread weight",
@@ -875,11 +830,16 @@ check(
 	"the star's photosphere has structure and is not clipped to white",
 	starLook.without.pixels > 1000 &&
 		starLook.without.spread > 2 &&
-		starLook.without.clipped < 0.01,
+		// Both captures. The spread is the shader's own and belongs to the
+		// bloom-off one; clipping is about what a player sees, so asserting it
+		// only on a capture nobody ships would be measuring the wrong frame.
+		starLook.without.clipped < 0.01 &&
+		starLook.shipped.clipped < 0.01,
 	`inner disc luma ${starLook.without.mean.toFixed(0)} ± ` +
-		`${starLook.without.spread.toFixed(2)} over ${starLook.without.pixels} px, ` +
-		`${(100 * starLook.without.clipped).toFixed(1)}% clipped — measured with the ` +
-		"bloom pass at zero strength, so this is the shader's own granulation",
+		`${starLook.without.spread.toFixed(2)} over ${starLook.without.pixels} px ` +
+		"with the bloom pass at zero strength, so the spread is the shader's own; " +
+		`clipped ${(100 * starLook.without.clipped).toFixed(1)}% there and ` +
+		`${(100 * starLook.shipped.clipped).toFixed(1)}% as shipped`,
 );
 check(
 	"and the bloom pass does not cost it that structure",
@@ -893,6 +853,139 @@ check(
 	`spread ${starLook.without.spread.toFixed(2)} without the pass against ` +
 		`${starLook.shipped.spread.toFixed(2)} as shipped, in the same pinned box ` +
 		`— ratio ${(starLook.shipped.spread / starLook.without.spread).toFixed(2)}`,
+);
+
+/* 3b-ii. The neutral-tinted star, which is the case the exposure exists for. */
+
+/*
+ * `?seed=6`'s star is not the star that motivated `PHOTOSPHERE_LUMA`.
+ *
+ * A **saturated** tint clips one channel and keeps the others, so its
+ * granulation survives whatever the exposure — which is why the gallery, and
+ * seed 1, never showed the problem. A **neutral** tint clips all three
+ * together, and that is the disc that read as a flat white lamp.
+ *
+ * `?seed=15`'s star is `0xf8f7ff`. Measured in its own page, because a check
+ * whose motivating case is never exercised is a constant nothing defends —
+ * the figures in `planet-surface.ts` describe a build this tree cannot
+ * reproduce, so this is what stands in for them.
+ */
+const NEUTRAL_URL = process.env.PROBE_NEUTRAL_URL ?? `${ORIGIN}/?seed=15`;
+const neutralPage = await browser.newPage({ viewport: VIEW });
+watch(neutralPage);
+await installHelpers(neutralPage);
+await neutralPage.goto(NEUTRAL_URL, { waitUntil: "domcontentloaded" });
+await bootedGame(neutralPage);
+const neutral = await neutralPage.evaluate(() => {
+	const g = window.__seelite;
+	const star = g.world.system.bodies.find((b) => b.kind === "star");
+	window.__setDecorVisible(star.id, false);
+	window.__lookAtFrom(star.id, [0.4, 0.25, 0.88], 4);
+	const was = window.__setBloomStrength(0);
+	const stats = window.__innerDiscStats(star.id, 1 / 3);
+	if (was !== null) window.__setBloomStrength(was);
+	window.__setDecorVisible(star.id, true);
+	return { ...stats, colour: star.color.toString(16) };
+});
+check(
+	"a neutral-tinted star keeps its granulation too",
+	neutral.pixels > 1000 && neutral.spread > 2 && neutral.clipped < 0.01,
+	`0x${neutral.colour}: inner disc luma ${neutral.mean.toFixed(0)} ± ` +
+		`${neutral.spread.toFixed(2)}, ${(100 * neutral.clipped).toFixed(1)}% clipped`,
+);
+
+/* 3c. The class is what decides the pixels. */
+
+/*
+ * The check the cross-body comparison above **cannot** make.
+ *
+ * Two different bodies differ for two reasons at once — their class and their
+ * seed — and on this descriptor the second is as large as the first: two gas
+ * giants from different seeds sit about as far apart as a giant and a moon. So
+ * a build that threw the nine class shaders away and drew every body with one
+ * seed-parameterised shader would produce a scene exactly as varied as this
+ * one, and pass everything above green. That is not a threshold that needs
+ * raising; it is the wrong comparison.
+ *
+ * Drawing **one body** under each class in turn holds the seed, the lighting,
+ * the camera, the geometry and the range still, and leaves the class as the
+ * only thing that changed. `redrawBodyAs` is display-only and puts the
+ * generated class back afterwards.
+ */
+const CLASSES = [
+	"lava",
+	"venusian",
+	"terran",
+	"desert",
+	"ice",
+	"airless",
+	"jovian",
+	"iceGiant",
+];
+const subject = spheres.find((b) => b.kind === "planet") ?? lit[0];
+await page.evaluate(
+	([id, radii]) => window.__viewBody(id, radii, 0),
+	[subject.id, READ_RADII],
+);
+
+const forced = [];
+for (const surface of CLASSES) {
+	const ok = await page.evaluate(
+		([id, klass]) => window.__seelite.redrawBodyAs(id, klass),
+		[subject.id, surface],
+	);
+	if (!ok) continue;
+	const sig = await page.evaluate(
+		([id, grid]) => window.__bodySignature(id, grid),
+		[subject.id, GRID],
+	);
+	forced.push({ surface, descriptor: describe([sig]) });
+}
+// Twice under one class, at the same range and rotation, for this comparison's
+// own floor. The cross-body floor above is a different measurement over a
+// different sweep and would be the wrong bar here.
+await page.evaluate(
+	([id, klass]) => window.__seelite.redrawBodyAs(id, klass),
+	[subject.id, CLASSES[0]],
+);
+const forcedRepeat = describe([
+	await page.evaluate(
+		([id, grid]) => window.__bodySignature(id, grid),
+		[subject.id, GRID],
+	),
+]);
+await page.evaluate(
+	(id) => window.__seelite.redrawBodyAs(id, null),
+	subject.id,
+);
+
+const forcedFloor = distance(forced[0].descriptor, forcedRepeat);
+let forcedClosest = Number.POSITIVE_INFINITY;
+let forcedLabel = "";
+for (let i = 0; i < forced.length; i++)
+	for (let j = i + 1; j < forced.length; j++) {
+		const d = distance(forced[i].descriptor, forced[j].descriptor);
+		if (d < forcedClosest) {
+			forcedClosest = d;
+			forcedLabel = `${forced[i].surface} vs ${forced[j].surface}`;
+		}
+	}
+
+console.log(
+	`\n  ${subject.id} drawn as each class in turn — seed, light and camera held still`,
+);
+for (const row of forced)
+	console.log(
+		`    ${row.surface.padEnd(9)} ${row.descriptor.map((v) => v.toFixed(1).padStart(6)).join(" ")}`,
+	);
+
+check(
+	`all ${forced.length} classes draw the same body differently`,
+	forced.length === CLASSES.length &&
+		Number.isFinite(forcedClosest) &&
+		forcedClosest > forcedFloor * NOISE_MARGIN,
+	`closest pair ${forcedClosest.toFixed(1)} (${forcedLabel}) against a same-class ` +
+		`repeat of ${forcedFloor.toFixed(1)} × ${NOISE_MARGIN}`,
 );
 
 /* 4. The budget, per layer, on the class that costs the most. */
