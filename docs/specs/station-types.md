@@ -110,7 +110,7 @@ Every other row names the section that owns it, for the same reason.
 | Exclusives → §4.1, §5.2 | — | fuel scoops, mining laser; contraband if `blackMarket` | hulls, military laser, energy unit |
 | Law → §5.1 | hostile odds ×1.0 | ×2.0 | ×0.5 + scan |
 | Docking → §6 | rotating slot | pad | rotating slot |
-| Silhouette → §7 | Coriolis octahedron | drum in an asteroid | Coriolis + drydock frame |
+| Silhouette → §7 | three forms, Coriolis selected | three forms on a rock, Warren selected | three forms, Gantry selected |
 
 ---
 
@@ -548,23 +548,71 @@ a shipyard an AU away is not close by.
 
 ## 7. Visual identity: silhouette first
 
-A player tells the three apart by **outline**, before colour and before any
+A player tells the four types apart by **outline**, before colour and before any
 detail resolves — and, deliberately, without any dependence on a HUD or scanner
 design, which remains unowned fog.
 
-| Type | Silhouette |
-|---|---|
-| trade station | Coriolis octahedron — the classic |
-| shipyard | the same rotating Coriolis core with a large **non-rotating drydock frame** clamped alongside; docks identically per §6, reads as a different object entirely |
-| refinery | a squat drum sunk into a captured asteroid, with flare stacks |
+### 7.1 A pool of forms, not one silhouette per role
+
+#28 gave each role exactly one outline. Reviewed in the live game after #36's
+visual pass, all three were rejected on form: the trade station's slot sat on a
+vertex, so there was nothing to fly into, and the other two read as neither
+machine nor rock. #56 rebuilt them in the **swept-loft language of #35's ship
+hulls**, and each role now carries **three forms** rather than one.
+
+They are all kept. A role names a size and a job; a form names a station model
+within it — the same relationship #35 settled between a hull archetype and its
+variants, and for the same reason: the pool is what a later decision draws on.
+
+| Role | A | B | C |
+|---|---|---|---|
+| trade | **Coriolis** — a cuboctahedron; the slot is cut into a real flat square face | **Ring** — a spun torus on a fixed hub, the dock a tunnel on the axis | **Drum** — an O'Neill barrel end-on; length rather than width is the cue |
+| shipyard | **Gantry** — a bridge keel under open ribbed bays sized for a ship | **Hangar** — a closed slab with a floodlit bay mouth; ships inside, not clamped outside | **Slipway** — a broken ring with the gap as the slip |
+| refinery | **Warren** — terraced plant cut into the rock; the pad is in the notch | **Collar** — a machined band gripping the rock at its waist | **Spar** — a processing spar run through the rock and out the far side |
+| outpost | **Derrick** — a lattice tower on a tank cluster, pad deck on top | **Buoy** — a stubby drum wearing radiator fins; nothing hangs off it | **Rig** — an angled truss holding a deck out over a drill head |
+
+`SELECTED_FORM` (`station-mesh.ts`) names the one the game builds for each role,
+and is one line per role so a later choice is one edit. Trade and shipyard are **A**
+because round one ranked their slot first; refinery and outpost are **A** as a
+placeholder, which the constant's own comment states, because those two roles
+were never ranked and a default that pretends otherwise is how a placeholder
+becomes the shipped answer.
+
+**The letter carried forward and the geometry did not, which is worth being
+plain about.** Round one's trade A was a twelve-sided lofted drum; it has been
+rebuilt twice since — squared in section, then as a cuboctahedron — because it
+projected as a circle and could not be told from the refinery by outline, and
+then because it was judged ugly. The shipyard's A has changed less but its
+spinning part is now a hub rather than the keel that was ranked. So the ranking
+chose a *concept* and the concepts survived; nobody has ranked the geometry that
+ships. A round three would be ranking different objects under the same letters.
+
+### 7.2 What each form owes
+
+- **A flat face for its aperture.** #28's octahedron put the slot on a vertex.
+  Every form now mounts the aperture on a surface that exists: a cuboctahedron's
+  square face, a hub's front cap, a pad deck.
+- **A compact spinning part.** The slot sits on the spin axis (`docking.md` §4),
+  so whatever turns sweeps its own outline round that axis. A 1.4 km keel spun
+  about it changes the station's projected width between phases, which is a
+  silhouette that depends on the clock. The shipyards turn a hub and leave the
+  structure still — #28's non-rotating drydock rule, generalised.
+- **A declared reach**, in `STATION_FORMS`, which `station-mesh.test.ts`
+  measures every form against — including the ones nobody has selected, because
+  a form the game never builds is exactly where an overrun hides.
+- **One connected assembly**, and **nothing in the docking corridor**: both are
+  headless assertions, and both caught real defects — four parts hanging in
+  space beside their stations, and an asteroid standing 131 m proud of its own
+  pad.
 
 `STATION_COLORS` (`src/sim.ts`) stays as the secondary cue and is unchanged.
-Emissive detail — window grids and navigation strobes on the trade station,
-cold floodlit bays on the shipyard, a warm flare on the refinery — is welcome
-and is not what the identity rests on, because it resolves at medium range and
-vanishes at scanner range.
+Emissive detail — window grids and hull strobes, cold floodlit bays, glowing
+vent throats — is welcome and is not what the identity rests on, because it
+resolves at medium range and vanishes at scanner range. #36's visual pass
+(`station-visuals.md`) owns all of it and is keyed on the *role*, so it survived
+this rebuild untouched.
 
-All procedural, per the map constraint: three parameterised meshes generated at
+All procedural, per the map constraint: twelve parameterised meshes generated at
 load, no downloaded assets.
 
 ---
@@ -692,10 +740,22 @@ Two tiers, per the repo's culture.
 
 ### 9.2 Browser probe
 
-- The three silhouettes are distinguishable: render one of each at a fixed
-  distance and assert their projected outlines differ by more than a
-  colour-only threshold. Running the same frames desaturated is the honest
-  version of "tell them apart", since §7 claims outline and not colour.
+- The three silhouettes are **measured** for distinguishability: render one of
+  each at a fixed distance and compare their projected outlines desaturated,
+  which is the honest version of "tell them apart" since §7 claims outline and
+  not colour.
+
+  It is reported and not asserted, by the principal's decision of 2026-08-26
+  while #56's forms were being ranked. §7's standard stands as design intent;
+  what was withdrawn is the *gate*. A floor on this metric turns out to be a
+  design driver — in one afternoon it produced a third radiator wing, a pair of
+  forward booms and a squared hull section, none of them chosen for the role and
+  all of them chosen to move a figure. Forms are ranked on how they look, and a
+  gate that quietly reshapes them competes with the person ranking.
+
+  What stays gated is that each station is drawn and has a silhouette at all,
+  and that re-measuring one reproduces it — the control, which is about whether
+  the measurement works rather than about what it finds.
 - Reading constants off `window.__seelite`, never restating them.
 
 ---

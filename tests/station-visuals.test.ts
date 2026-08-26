@@ -19,9 +19,15 @@
 
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
-import { STATION_GEOMETRY, type StationType } from "../src/station";
 import {
+	STATION_GEOMETRY,
+	STATION_TYPES,
+	type StationType,
+} from "../src/station";
+import {
+	STATION_FORMS,
 	STATION_SILHOUETTE_KM,
+	buildStationForm,
 	buildStationMesh,
 	setStationDetail,
 	updateStationVisuals,
@@ -29,17 +35,22 @@ import {
 import {
 	DETAIL_RADII,
 	PLATE_TEXTURE_SIZE,
+	ROCK_TEXTURE_SIZE,
 	STATION_VISUALS,
 	type StationDetailLevel,
 	strobeIntensity,
 	flickerIntensity,
 	platingTexels,
+	rockAlbedoTexels,
+	rockNormalTexels,
 	stationDetailLevel,
 	surfaceTexels,
 } from "../src/station-visuals";
 import { HANDOFF_HYSTERESIS, HANDOFF_KM } from "../src/units";
 
-const TYPES: StationType[] = ["trade", "shipyard", "refinery"];
+// From `station.ts`, not a literal: a fourth station type must reach every
+// loop in this file, and a hand-written list is exactly the place it would not.
+const TYPES: StationType[] = STATION_TYPES;
 const LEVELS: StationDetailLevel[] = ["full", "reduced", "outline"];
 const GREY = 0x9aa6b2;
 
@@ -98,8 +109,8 @@ describe("a detail level may not change the outline", () => {
 			// difference of any size means an accessory is carrying the outline —
 			// which is #28's silhouette probe measuring a different object at 60 km
 			// than at 5 km.
-			expect(measured[1]).toBe(measured[0]);
-			expect(measured[2]).toBe(measured[0]);
+			expect([type, measured[1]]).toEqual([type, measured[0]]);
+			expect([type, measured[2]]).toEqual([type, measured[0]]);
 		}
 	});
 
@@ -162,22 +173,45 @@ describe("a detail level may not change the outline", () => {
 	});
 });
 
-describe("a fixture on a Coriolis hull is on the hull", () => {
-	test("both strobes lie on the octahedron's face plane", () => {
-		// An octahedron's surface is |x| + |y| + |z| = r, so a lamp is on the hull
-		// only if its coordinates sum to r. Moved to (0.45, 0, 0.45)·r while
-		// chasing a bloom overshoot, this pair summed to 0.9·r and was **inside**
-		// the hull — invisible, and the overshoot it was moved for turned out to
-		// be the window grid all along. Nothing rendered says "this light is
-		// buried"; the arithmetic does.
-		for (const type of ["trade", "shipyard"] as StationType[]) {
-			const { root } = buildStationMesh(type, GREY);
-			const r = STATION_GEOMETRY[type].coreRadiusKm;
-			for (const kind of ["strobe-a", "strobe-b"]) {
-				const lamp = root.getObjectByName(kind);
-				expect(lamp).toBeDefined();
-				const p = (lamp as THREE.Object3D).position;
-				expect(Math.abs(p.x) + Math.abs(p.y) + Math.abs(p.z)).toBeCloseTo(r, 9);
+describe("a fixture is on the station it is mounted on", () => {
+	test("both strobes sit out on the hull, on every form that has them", () => {
+		// #28 could assert this exactly — its hull was an octahedron, whose
+		// surface is the single plane |x| + |y| + |z| = r, so "on the hull" was an
+		// equation. Twelve forms share no such equation, and the first
+		// generalisation was too weak to be worth having: a floor at 0.3 of the
+		// core radius passes the very defect its own comment recounted, a lamp at
+		// (0.45, 0, 0.45)·r buried inside the hull at a length of 0.64·r.
+		//
+		// The floor is a fraction of the form's **own declared reach** now, which
+		// is the only per-form scale there is. Every strobe in the pool sits
+		// between 0.72 and 0.97 of it, and the buried case is 0.67 — so this
+		// catches a fixture placed well inside the hull and, honestly, cannot see
+		// one that is inside by a few metres. That class is caught by the island
+		// check instead, which is why both exist.
+		for (const type of TYPES) {
+			const hasStrobes = STATION_VISUALS[type].activity.strobePeriodS > 0;
+			for (const form of STATION_FORMS[type]) {
+				const { root } = buildStationForm(type, form.id, GREY);
+				root.updateMatrixWorld(true);
+				for (const kind of ["strobe-a", "strobe-b"]) {
+					const lamp = root.getObjectByName(kind);
+					// Asserted either way, so a role that quietly lost its strobes
+					// reports it rather than skipping the loop and passing.
+					expect([type, form.id, kind, Boolean(lamp)]).toEqual([
+						type,
+						form.id,
+						kind,
+						hasStrobes,
+					]);
+					if (!lamp) continue;
+					const p = (lamp as THREE.Object3D).position;
+					expect([type, form.id, p.length() > form.reachKm * 0.68]).toEqual([
+						type,
+						form.id,
+						true,
+					]);
+					expect(p.length()).toBeLessThanOrEqual(form.reachKm);
+				}
 			}
 		}
 	});
@@ -252,12 +286,12 @@ describe("the plating is generated, not downloaded, and sized for RGBAFormat", (
 	});
 
 	test("the three roles do not share a surface", () => {
-		// §4's whole claim. Three identical maps would pass every other assertion
+		// §4's whole claim. Identical maps would pass every other assertion
 		// here and deliver no surface language at all.
 		const seen = new Set(
 			TYPES.map((t) => Buffer.from(platingTexels(t)).toString("base64")),
 		);
-		expect(seen.size).toBe(3);
+		expect(seen.size).toBe(TYPES.length);
 	});
 
 	test("the albedo is greyscale, so the type colour still multiplies through", () => {
@@ -371,10 +405,13 @@ describe("what the renderer drives, at every range", () => {
 		// The blocker sage's HonestOracle lens caught. The update skipped the
 		// waveforms once a station reached `outline`, on the reasoning that
 		// nothing clock-driven is drawn out there — but the flare is deliberately
-		// *untagged*, because its tip is the refinery's outermost vertex and
-		// hiding it would change the outline. So it stayed on screen with a frozen
-		// intensity: a distant refinery's flare depended on how close that client
-		// had been, which is precisely what §5.2 promises it does not.
+		// *untagged* — it was a flame then, and its tip was the refinery's
+		// outermost vertex, so hiding it would have changed the outline. It stayed
+		// on screen with a frozen intensity: a distant refinery's flare depended
+		// on how close that client had been, which is precisely what §5.2
+		// promises it does not. The flare is a lit throat now and is tagged like
+		// any other accessory, so this asserts the general rule — every fixture is
+		// driven at every level — rather than the one case that forced it.
 		const mesh = buildStationMesh("refinery", GREY);
 		const flare = () =>
 			mesh.fixtures.find((f) => f.kind === "flare")?.material
@@ -412,5 +449,71 @@ describe("what the renderer drives, at every range", () => {
 				9,
 			);
 		}
+	});
+});
+
+describe("the rock surface maps", () => {
+	const n = ROCK_TEXTURE_SIZE * ROCK_TEXTURE_SIZE * 4;
+
+	test("both buffers are exactly 4 x w x h", () => {
+		// A short `DataTexture` buffer does not throw: it samples past its end and
+		// renders as garbage. The same assertion the plating carries, for the same
+		// reason.
+		expect(rockAlbedoTexels("station").length).toBe(n);
+		expect(rockNormalTexels("station").length).toBe(n);
+	});
+
+	test("the same tag generates the same texels twice", () => {
+		const a = rockAlbedoTexels("station");
+		const b = rockAlbedoTexels("station");
+		expect(Buffer.from(a).equals(Buffer.from(b))).toBe(true);
+	});
+
+	test("the albedo is greyscale, so the rock's own colour still multiplies", () => {
+		const texels = rockAlbedoTexels("station");
+		for (let i = 0; i < texels.length; i += 4) {
+			expect(texels[i]).toBe(texels[i + 1]);
+			expect(texels[i]).toBe(texels[i + 2]);
+		}
+	});
+
+	test("the albedo sits near the middle, not near black", () => {
+		// It *multiplies* the material colour, so a dark map darkens the rock
+		// twice — once for the paint and once for the map. The first version
+		// centred at 150 and the rock read as coal.
+		const texels = rockAlbedoTexels("station");
+		let sum = 0;
+		for (let i = 0; i < texels.length; i += 4) sum += texels[i];
+		const mean = sum / (texels.length / 4);
+		expect(mean).toBeGreaterThan(170);
+		expect(mean).toBeLessThan(230);
+	});
+
+	test("the normal map is a unit field about +Z", () => {
+		// The one assertion that separates a normal map from a picture of one: a
+		// tangent-space map's blue channel is the component along the surface, so
+		// it is near 1 everywhere and never below the flat 0.5. A map generated
+		// with the axes confused fails this and looks merely odd on screen.
+		const texels = rockNormalTexels("station");
+		let minZ = 255;
+		let worstLength = 0;
+		for (let i = 0; i < texels.length; i += 4) {
+			const x = (texels[i] / 255) * 2 - 1;
+			const y = (texels[i + 1] / 255) * 2 - 1;
+			const z = (texels[i + 2] / 255) * 2 - 1;
+			minZ = Math.min(minZ, texels[i + 2]);
+			worstLength = Math.max(worstLength, Math.abs(Math.hypot(x, y, z) - 1));
+		}
+		expect(minZ).toBeGreaterThan(127);
+		// A byte's worth of quantisation, no more: this is a unit vector field.
+		expect(worstLength).toBeLessThan(0.02);
+	});
+
+	test("the normal map is not flat, or it is doing nothing", () => {
+		// A map of pure (0.5, 0.5, 1) is a valid normal map that perturbs nothing.
+		const texels = rockNormalTexels("station");
+		const seen = new Set<number>();
+		for (let i = 0; i < texels.length; i += 4) seen.add(texels[i]);
+		expect(seen.size).toBeGreaterThan(30);
 	});
 });

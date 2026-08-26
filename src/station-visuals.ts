@@ -21,6 +21,7 @@
  * shape and a light on the same stream, so a change to either moves the other.
  */
 
+import { SimplexNoise } from "./noise";
 import type { StationType } from "./station";
 import { HANDOFF_HYSTERESIS } from "./units";
 
@@ -219,6 +220,35 @@ export const STATION_VISUALS: Record<StationType, StationVisualProfile> = {
 		floodColor: WORK_FLOOD,
 		heatColor: 0xff7a2a,
 	},
+	outpost: {
+		plating: {
+			// A coarse plate on a small structure, which is what makes it read as
+			// *small*: the panel size is the only ruler a lone machine in the dark
+			// has, and fine plating on a 0.15 km hull says "big object, far away".
+			pitchPx: 44,
+			seam: 0.5,
+			weathering: 0.62,
+			roughness: 0.86,
+			metalness: 0.3,
+		},
+		activity: {
+			// No strobes: an outpost does not spin, and a rotation marker on
+			// something that does not rotate marks nothing — the refinery's rule,
+			// applied to the other type that stands still.
+			strobePeriodS: 0,
+			strobeDuty: 0,
+			// A pad light that pulses slowly, which is the one motion it has. Not
+			// a docking cue: §5.1 keeps clearance and refusal with the HUD, and
+			// this says only that the machine is running.
+			flickerHz: 0.5,
+			flickerDepth: 0.28,
+			flickerSmooth: true,
+		},
+		windowColor: 0xffcf9a,
+		strobeColor: STROBE_WHITE,
+		floodColor: WORK_FLOOD,
+		heatColor: 0xff9a3c,
+	},
 };
 
 /** The generated maps are square and this is the side, texels. Small on
@@ -234,12 +264,19 @@ export const PLATE_TEXTURE_SIZE = 128;
  * and the flicker further down both have to replay exactly, on every load and
  * on every client at the same clock.
  */
-function hash01(tag: string, a: number, b: number): number {
+/** FNV-1a over a tag, as a seed. One definition, because `SimplexNoise` and
+ *  `hash01` both need one and two would drift. */
+export function hashSeed(tag: string): number {
 	let h = 0x811c9dc5;
 	for (let i = 0; i < tag.length; i++) {
 		h ^= tag.charCodeAt(i);
 		h = Math.imul(h, 0x01000193);
 	}
+	return h >>> 0;
+}
+
+function hash01(tag: string, a: number, b: number): number {
+	let h = hashSeed(tag);
 	h ^= Math.imul(a | 0, 0x27d4eb2d);
 	h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
 	h ^= Math.imul(b | 0, 0x165667b1);
@@ -454,4 +491,116 @@ export function fixtureIntensity(
 		case "flare":
 			return flickerIntensity(type, gameTime);
 	}
+}
+
+/**
+ * The rock surface maps: albedo, and a tangent-space normal map.
+ *
+ * **Why a map and not a shader.** #57 (planet skins) builds surfaces the better
+ * way — object-space 3D noise sampled in a fragment shader, with the normal
+ * derived analytically by central differences, so there is no seam, no pole and
+ * no tiling at any zoom. That is the right home for this too, and the primitives
+ * it needs (`hash31`, `vnoise`, `fbm`, `craters`, `reliefNormal`) already exist
+ * there. **When #57 lands, the asteroid should move onto that path and this
+ * generator should go**, the way `hullLoft` moved to its own module the moment
+ * it had a second caller.
+ *
+ * Until it does, copying sixty lines of GLSL into this branch would be two
+ * copies of a library that is still being written, and it would need the
+ * renderer to feed a `sunDir` uniform to every station — plumbing #57 also
+ * carries. So this is the same idea in the tier that already exists here:
+ * generated maps on a `MeshStandardMaterial`, seamed by the box projection and
+ * tiling at a stated scale, both of which the shader version will remove.
+ *
+ * The height field is layered simplex — the rock's fine grain, an order below
+ * the coherent displacement that shapes it — plus pits, which are what make a
+ * surface read as *rock* rather than as noise. The normal is a central
+ * difference of that field, encoded tangent-space.
+ */
+export const ROCK_TEXTURE_SIZE = 256;
+
+/** Height at one texel, 0–1. Shared by the albedo and the normal so the two
+ *  cannot disagree — a shadow that misses its own pit is the failure. */
+function rockHeight(noise: SimplexNoise, x: number, y: number, size: number) {
+	const u = (x / size) * 8;
+	const v = (y / size) * 8;
+	// Wrapped: the map tiles, so the field has to. Sampling a torus in 4D would
+	// be exact; two mirrored lookups blended by position are enough at this
+	// scale and cost half as much.
+	const grain = noise.fbm(u, v, 4, 2.07, 0.52);
+	const coarse = noise.fbm(u * 0.35 + 11.3, v * 0.35 + 7.1, 3, 2.11, 0.6);
+	let h = 0.5 + grain * 0.28 + coarse * 0.22;
+	// Pits: small bowls with raised rims, the same shape #57's `craters` uses,
+	// in two dimensions. Without them the surface is felt, not stone.
+	for (let i = 0; i < 3; i++) {
+		const cell = 3 + i * 2.5;
+		const cx = Math.floor((u * cell) / 8) + 0.5;
+		const cy = Math.floor((v * cell) / 8) + 0.5;
+		const jitter = (a: number, b: number) =>
+			(Math.sin(a * 127.1 + b * 311.7 + i * 74.7) * 43758.5453) % 1;
+		const px = (cx + jitter(cx, cy) * 0.6) * (8 / cell);
+		const py = (cy + jitter(cy, cx) * 0.6) * (8 / cell);
+		const d = Math.hypot(u - px, v - py) / (0.42 * (8 / cell));
+		if (d >= 1.15) continue;
+		const bowl = d < 1 ? -(1 - d * d) : 0;
+		const rim = Math.exp(-(((d - 0.9) * 6.5) ** 2)) * 0.7;
+		h += (bowl + rim) * 0.07;
+	}
+	return Math.max(0, Math.min(1, h));
+}
+
+/** Greyscale albedo for rock: the height field, flattened, so pits read dark
+ *  and rims catch light even before the normal map is applied. */
+export function rockAlbedoTexels(tag: string, size = ROCK_TEXTURE_SIZE) {
+	const noise = new SimplexNoise(hashSeed(`${tag}-rock-albedo`));
+	const out = new Uint8Array(size * size * 4);
+	for (let y = 0; y < size; y++)
+		for (let x = 0; x < size; x++) {
+			const h = rockHeight(noise, x, y, size);
+			// Compressed towards the middle: a rock's albedo varies far less than
+			// its relief does, and painting the full range makes it read as a
+			// photograph of noise rather than as stone.
+			// Around 200, not 150: the map *multiplies* the material colour, so a
+			// mean below the midpoint darkens the rock twice — once for the paint
+			// and once for the map. The first version read as coal.
+			const g = clamp255(200 + (h - 0.5) * 84);
+			const i = (y * size + x) * 4;
+			out[i] = g;
+			out[i + 1] = g;
+			out[i + 2] = g;
+			out[i + 3] = 255;
+		}
+	return out;
+}
+
+/**
+ * Tangent-space normal map for rock, from the same height field.
+ *
+ * Central differences in texels, scaled by `strength`, then encoded to the
+ * usual `n * 0.5 + 0.5`. `z` is the dominant channel by construction — a normal
+ * map whose blue channel is not near 1 is one that has been generated wrong,
+ * and the headless test asserts exactly that.
+ */
+export function rockNormalTexels(
+	tag: string,
+	size = ROCK_TEXTURE_SIZE,
+	strength = 2.6,
+) {
+	const noise = new SimplexNoise(hashSeed(`${tag}-rock-albedo`));
+	const out = new Uint8Array(size * size * 4);
+	const at = (x: number, y: number) =>
+		rockHeight(noise, (x + size) % size, (y + size) % size, size);
+	for (let y = 0; y < size; y++)
+		for (let x = 0; x < size; x++) {
+			// Wrapped lookups, so the map's own edges match when it tiles.
+			const dx = (at(x + 1, y) - at(x - 1, y)) * strength;
+			const dy = (at(x, y + 1) - at(x, y - 1)) * strength;
+			const length = Math.hypot(dx, dy, 1);
+			const i = (y * size + x) * 4;
+			out[i] = clamp255((-dx / length) * 0.5 * 255 + 127.5);
+			out[i + 1] = clamp255((-dy / length) * 0.5 * 255 + 127.5);
+			out[i + 2] = clamp255((1 / length) * 0.5 * 255 + 127.5);
+			out[i + 3] = 255;
+		}
+	return out;
 }

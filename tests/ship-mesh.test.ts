@@ -147,8 +147,17 @@ describe("procedural ship visual language", () => {
 					inspected += 1;
 					const positions = object.geometry.getAttribute("position");
 					const indices = [...object.geometry.index.array];
-					const front = positions.count - 2;
-					const rear = positions.count - 1;
+					// From the geometry, not from the vertex layout: the cap centres
+					// were the last two vertices until the caps gained their own
+					// rings for planar UVs, and an assumption about layout goes
+					// quietly wrong rather than loudly.
+					const caps = object.geometry.userData.caps as {
+						front: number;
+						rear: number;
+					};
+					expect(caps).toBeDefined();
+					const front = caps.front;
+					const rear = caps.rear;
 					// A cap is a closed fan over the whole end ring, not a hole: one
 					// triangle per ring segment, no more and no fewer.
 					for (const capCenter of [front, rear])

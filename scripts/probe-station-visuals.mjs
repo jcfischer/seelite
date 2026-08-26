@@ -219,6 +219,7 @@ const measure = (page, bodyId) =>
 				"weld-arc",
 				"heat-glow",
 				"flare",
+				"vent-manifold",
 			];
 			const lights = hideWhere((c) => fixtureNames.includes(c.name));
 			const unlit = frame();

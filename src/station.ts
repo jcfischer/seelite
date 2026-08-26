@@ -28,8 +28,35 @@
  * to each other. `system.ts` re-exports it, so existing importers are unchanged.
  */
 
-/** The three types #6 named and #13 specified. */
-export type StationType = "trade" | "refinery" | "shipyard";
+/**
+ * The three types #6 named and #13 specified, plus #56's outpost.
+ *
+ * **The outpost is a form and a geometry, not yet an economy.** #13 fixed what
+ * a station type means for the market, for equipment and for law, and it did so
+ * for three types; nothing here decides what an outpost sells, whether it can
+ * be a fence, or how often the generator places one. Those are #13's and #6's
+ * questions and they need their own node. Until then `system.ts` places none,
+ * so no outpost exists in a running game and every table below answers for it
+ * conservatively — which is visible rather than assumed, because a
+ * `Record<StationType, …>` cannot compile without an answer.
+ */
+export type StationType = "trade" | "refinery" | "shipyard" | "outpost";
+
+/**
+ * The four, as a value.
+ *
+ * Every table below is a `Record<StationType, …>`, so the *type* is already the
+ * thing a fourth station type breaks the build against. This is for the callers
+ * that need to iterate — the model workbench's role tabs, the tests' loops —
+ * and it is here rather than written out at each of them so there is one list
+ * to extend rather than several to remember.
+ */
+export const STATION_TYPES: StationType[] = [
+	"trade",
+	"shipyard",
+	"refinery",
+	"outpost",
+];
 
 /** What you fly through, and how big it is (`docking.md` §5). */
 export interface StationAperture {
@@ -87,15 +114,36 @@ export interface StationGeometry {
  * until this table answers for it. A defaulted table would silently give it a
  * trade station's slot.
  *
- * **The aperture dimensions are provisional.** §5 fixes them pending #26's hull
- * roster, which owes the largest ship the slot has to admit. They are read from
- * here by the meshes and the probes rather than restated, so widening them is
- * one edit in one place.
+ * **The aperture dimensions were provisional and are now measured.** §5 fixed
+ * them pending #26's hull roster; the roster exists (#35 built eleven roles)
+ * and `tests/aperture-fit.test.ts` measures it, so the figures below are
+ * derived rather than placeholders.
+ *
+ * The slot went from 200 × 70 m to **120 × 70 m**, ratified 2026-08-26. The old
+ * width was 3.7× the widest ordinary hull's beam and read as a hangar door on a
+ * 1.24 km station — 16% of its whole width, against about 10% for the reference
+ * Coriolis.
+ *
+ * **Only the width moved, and the first attempt moved the height too.** §10
+ * requires the slot to admit the largest hull *at check 4's 50° roll limit*,
+ * not axis-aligned, and a rolled rectangle needs `w·cos θ + h·sin θ` across and
+ * `w·sin θ + h·cos θ` up. Measured over the roster at 50°, the binding figures
+ * are 62.8 m and 63.4 m — so height is the dimension with almost no room in it,
+ * and 60 m was 3.4 m short of a slot the docking checks would have accepted a
+ * ship through. §10 is explicit about the remedy: the aperture moves, not the
+ * tolerance.
+ *
+ * At 120 × 70 the margins are 57.2 m across and 6.6 m up, which is the skill tax
+ * `docking.md` §3 wants and the reason the height is not a dial.
+ *
+ * They are read from here by the meshes, the docking checks and the probes
+ * rather than restated, so a retune is one edit in one place — and every form's
+ * dock frame is sized *from* these numbers, so the drawn opening follows.
  */
 export const STATION_GEOMETRY: Record<StationType, StationGeometry> = {
 	trade: {
 		coreRadiusKm: 0.6,
-		aperture: { kind: "slot", widthKm: 0.2, heightKm: 0.07 },
+		aperture: { kind: "slot", widthKm: 0.12, heightKm: 0.07 },
 		axis: "parent",
 		spins: true,
 	},
@@ -104,13 +152,26 @@ export const STATION_GEOMETRY: Record<StationType, StationGeometry> = {
 		// is silhouette, not dockable geometry, so it changes what you *see* and
 		// nothing about what you fly into.
 		coreRadiusKm: 0.6,
-		aperture: { kind: "slot", widthKm: 0.2, heightKm: 0.07 },
+		aperture: { kind: "slot", widthKm: 0.12, heightKm: 0.07 },
 		axis: "parent",
 		spins: true,
 	},
 	refinery: {
 		coreRadiusKm: 0.4,
 		aperture: { kind: "pad", widthKm: 0.15, heightKm: 0.15 },
+		axis: "outward",
+		spins: false,
+	},
+	outpost: {
+		// A quarter of a trade station's core, which is the point of it: an
+		// industrial structure rather than a habitat, small enough that its whole
+		// silhouette is a machine.
+		coreRadiusKm: 0.15,
+		// A **pad**, and nothing else. It does not spin, so `docking.md` §4's roll
+		// match does not apply to it, exactly as it does not to the refinery — and
+		// the pad is what the whole category is built around rather than a
+		// consequence of the shape.
+		aperture: { kind: "pad", widthKm: 0.12, heightKm: 0.12 },
 		axis: "outward",
 		spins: false,
 	},
@@ -138,6 +199,11 @@ export const STATION_FENCE_ELIGIBLE: Record<StationType, boolean> = {
 	trade: false,
 	shipyard: false,
 	refinery: true,
+	// Conservative, and deliberately so: #13 made the refinery *the* seeded
+	// contraband market, and a second fence would change the geography that
+	// decision rests on. Whether a remote industrial outpost is the better fence
+	// is a real question and it belongs to #13, not to a visual round.
+	outpost: false,
 };
 
 /**

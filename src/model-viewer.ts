@@ -1,7 +1,15 @@
 /**
  * A query-gated procedural-model workbench. It deliberately does not construct
  * `Game`: this is a fast visual review surface for render assets, not a second
- * simulation route. New model families can register beside the ship chooser.
+ * simulation route.
+ *
+ * **Two families now, one workbench.** `?model-viewer=ship` reviews #35's hull
+ * roles and `?model-viewer=station` reviews #56's station forms. The second was
+ * nearly a copy of this file — the orbit, the ranking, the draft sliders and the
+ * stage are the same apparatus, and only what is being built differs — and two
+ * workbenches would have drifted the first time either was improved. So the
+ * ship-specific parts are gathered into a `ModelFamily` and everything else is
+ * written against that.
  */
 import * as THREE from "three";
 
@@ -11,9 +19,96 @@ import {
 	HULL_VISUALS,
 	SHIP_DESIGN_ROUND,
 	type HullId,
-	type HullVariantId,
 	buildShipMesh,
 } from "./ship-mesh";
+import {
+	STATION_DESIGN_ROUND,
+	STATION_FORMS,
+	STATION_FORM_IDS,
+	type StationFormId,
+	buildStationForm,
+} from "./station-mesh";
+import { STATION_TYPES, type StationType } from "./station";
+
+/** One concept a reviewer can select and rank. */
+interface FamilyVariant {
+	readonly id: string;
+	readonly name: string;
+	readonly thesis: string;
+}
+
+/**
+ * Everything the workbench needs that is specific to what it is reviewing.
+ *
+ * `reachKm` is what frames the stage: a capital hull is several times the
+ * largest courier and a shipyard is twice a trade station, so a fixed orbit
+ * radius puts the camera inside the subject. `emissive` names the parts the
+ * "engine cue" slider drives — exhausts on a ship, strobes and flares on a
+ * station.
+ */
+interface ModelFamily {
+	readonly id: string;
+	readonly title: string;
+	readonly copy: string;
+	readonly assets: readonly string[];
+	readonly variantIds: readonly string[];
+	readonly variants: (asset: string) => readonly FamilyVariant[];
+	readonly reachKm: (asset: string, variant: string) => number;
+	readonly build: (asset: string, variant: string) => THREE.Group;
+	readonly emissive: (name: string) => boolean;
+}
+
+const SHIP_FAMILY: ModelFamily = {
+	id: "ship",
+	title: `SHIP TOURNAMENT · ROUND ${SHIP_DESIGN_ROUND}`,
+	copy: "Ranking-guided descendants of round one. Use <b>rank</b> in preference order; click a numbered rank to remove it.",
+	assets: HULL_IDS,
+	variantIds: ["a", "b", "c"],
+	variants: (asset) => HULL_VARIANTS[asset as HullId],
+	reachKm: (asset) => HULL_VISUALS[asset as HullId].reachKm,
+	build: (asset, variant) =>
+		buildShipMesh(
+			asset as HullId,
+			variant as (typeof HULL_VARIANTS)[HullId][number]["id"],
+		).root,
+	emissive: (name) => name.includes("exhaust"),
+};
+
+const STATION_FAMILY: ModelFamily = {
+	id: "station",
+	title: `STATION FORMS · ROUND ${STATION_DESIGN_ROUND}`,
+	copy: "#28's three outlines rebuilt in the ship hulls' swept-loft language. Each role keeps its ranked top two and spends its last slot; the refinery spent all three. Use <b>rank</b> in preference order; click a numbered rank to remove it.",
+	assets: STATION_TYPES,
+	variantIds: STATION_FORM_IDS,
+	variants: (asset) => STATION_FORMS[asset as StationType],
+	reachKm: (asset, variant) =>
+		STATION_FORMS[asset as StationType].find((form) => form.id === variant)
+			?.reachKm ?? 1,
+	// A neutral grey, not `STATION_COLORS`: this round is about *form*, and a
+	// per-role paint would let colour carry a ranking that is supposed to be
+	// about shape (`station-types.md` §7's own standard, applied to the review).
+	// The **kilometre** group, not the root. `buildStationForm` normalises its
+	// root to one core radius across, which is what the renderer's single
+	// `mesh.scale = radiusKm × layerFactor` rule needs and is exactly wrong
+	// here: the stage frames the camera from a reach in kilometres, so handing
+	// it a root already divided by 0.6 puts the camera 1.9 radii out and inside
+	// the station. Reparenting the inner group is safe — the root is discarded.
+	build: (asset, variant) =>
+		buildStationForm(
+			asset as StationType,
+			variant as StationFormId,
+			0x9aa6b2,
+		).root.getObjectByName("km") as THREE.Group,
+	emissive: (name) =>
+		name.startsWith("strobe") ||
+		name === "flare" ||
+		name === "heat-glow" ||
+		name === "weld-arc" ||
+		name === "bay-flood" ||
+		name === "windows",
+};
+
+const FAMILIES: ModelFamily[] = [SHIP_FAMILY, STATION_FAMILY];
 
 /**
  * The workbench's only top-level numeric constant, and it exists for that.
@@ -29,10 +124,10 @@ import {
 export const MODEL_VIEWER_VERSION = 1;
 
 type ViewerState = {
-	asset: HullId;
-	variant: HullVariantId;
-	selectedVariants: Record<HullId, HullVariantId>;
-	rankings: Record<HullId, HullVariantId[]>;
+	asset: string;
+	variant: string;
+	selectedVariants: Record<string, string>;
+	rankings: Record<string, string[]>;
 	beam: number;
 	length: number;
 	engine: number;
@@ -91,27 +186,30 @@ function displayName(id: HullId) {
 	return `${id === "courier" ? "Courier Mk I" : id[0].toUpperCase() + id.slice(1)} · ${HULL_VISUALS[id].role}`;
 }
 
-function variantMarkup(role: HullId) {
-	return `<div class="mv-variants" data-model-variants="${role}"${role === "courier" ? "" : " hidden"}>${HULL_VARIANTS[
-		role
-	]
+function variantMarkup(family: ModelFamily, role: string) {
+	return `<div class="mv-variants" data-model-variants="${role}"${role === "courier" ? "" : " hidden"}>${family
+		.variants(role)
 		.map(
 			(variant) =>
-				`<div class="mv-variant"><button class="mv-button mv-concept" type="button" data-model-role="${role}" data-model-variant="${variant.id}" aria-pressed="${role === "courier" && variant.id === "a"}"><strong>${variant.id.toUpperCase()} · ${variant.name}</strong><small>${variant.thesis}</small></button><button class="mv-rank" type="button" data-model-role="${role}" data-model-rank="${variant.id}" aria-label="rank ${variant.name}">rank</button></div>`,
+				`<div class="mv-variant"><button class="mv-button mv-concept" type="button" data-model-role="${role}" data-model-variant="${variant.id}" aria-pressed="${role === family.assets[0] && variant.id === family.variantIds[0]}"><strong>${variant.id.toUpperCase()} · ${variant.name}</strong><small>${variant.thesis}</small></button><button class="mv-rank" type="button" data-model-role="${role}" data-model-rank="${variant.id}" aria-label="rank ${variant.name}">rank</button></div>`,
 		)
 		.join("")}</div>`;
 }
 
-/** Mount only when a designer explicitly requests `?model-viewer=ship`. */
+/** Mount only when a designer explicitly requests a family by name —
+ *  `?model-viewer=ship` or `?model-viewer=station`. An unknown name mounts
+ *  nothing rather than defaulting to one, because a typo silently reviewing the
+ *  wrong family is worse than a blank page. */
 export function mountModelViewer(): void {
-	if (
-		new URLSearchParams(window.location.search).get("model-viewer") !== "ship"
-	)
-		return;
+	const requested = new URLSearchParams(window.location.search).get(
+		"model-viewer",
+	);
+	const family = FAMILIES.find((candidate) => candidate.id === requested);
+	if (!family) return;
 	installStyle();
 	const root = document.createElement("section");
 	root.id = "model-viewer";
-	root.innerHTML = `<div class="mv-wrap"><main class="mv-stage" data-model-stage aria-label="procedural model preview"><span class="mv-axis">DRAG TO ORBIT · WHEEL TO ZOOM</span></main><aside class="mv-panel"><h1 class="mv-title">SHIP TOURNAMENT · ROUND ${SHIP_DESIGN_ROUND}</h1><p class="mv-copy">Ranking-guided descendants of round one. Use <b>rank</b> in preference order; click a numbered rank to remove it.</p><fieldset class="mv-set"><legend>Role</legend><div class="mv-role-tabs">${HULL_IDS.map((id) => `<button class="mv-button" type="button" data-model-asset="${id}" aria-pressed="${id === "courier"}">${id}</button>`).join("")}</div></fieldset><fieldset class="mv-set"><legend>Concepts</legend>${HULL_IDS.map(variantMarkup).join("")}</fieldset><fieldset class="mv-set"><legend>Your ranking</legend><pre class="mv-ranking" data-model-ranking></pre><button class="mv-reset" type="button" data-model-reset-ranking>clear current role</button></fieldset><fieldset class="mv-set"><legend>Draft controls</legend><label class="mv-control">Beam <output data-model-output="beam">100%</output><input data-model-control="beam" type="range" min="70" max="145" value="100" /></label><label class="mv-control">Length <output data-model-output="length">100%</output><input data-model-control="length" type="range" min="70" max="145" value="100" /></label><label class="mv-control">Engine cue <output data-model-output="engine">70%</output><input data-model-control="engine" type="range" min="0" max="140" value="70" /></label><label class="mv-check"><input data-model-control="wireframe" type="checkbox" /> wireframe</label></fieldset><button class="mv-close" type="button" data-model-close>return to flight</button></aside></div>`;
+	root.innerHTML = `<div class="mv-wrap"><main class="mv-stage" data-model-stage aria-label="procedural model preview"><span class="mv-axis">DRAG TO ORBIT · WHEEL TO ZOOM</span></main><aside class="mv-panel"><h1 class="mv-title">${family.title}</h1><p class="mv-copy">${family.copy}</p><fieldset class="mv-set"><legend>Role</legend><div class="mv-role-tabs">${family.assets.map((id, index) => `<button class="mv-button" type="button" data-model-asset="${id}" aria-pressed="${index === 0}">${id}</button>`).join("")}</div></fieldset><fieldset class="mv-set"><legend>Concepts</legend>${family.assets.map((id) => variantMarkup(family, id)).join("")}</fieldset><fieldset class="mv-set"><legend>Your ranking</legend><pre class="mv-ranking" data-model-ranking></pre><button class="mv-reset" type="button" data-model-reset-ranking>clear current role</button></fieldset><fieldset class="mv-set"><legend>Draft controls</legend><label class="mv-control">Beam <output data-model-output="beam">100%</output><input data-model-control="beam" type="range" min="70" max="145" value="100" /></label><label class="mv-control">Length <output data-model-output="length">100%</output><input data-model-control="length" type="range" min="70" max="145" value="100" /></label><label class="mv-control">Engine cue <output data-model-output="engine">70%</output><input data-model-control="engine" type="range" min="0" max="140" value="70" /></label><label class="mv-check"><input data-model-control="wireframe" type="checkbox" /> wireframe</label></fieldset><button class="mv-close" type="button" data-model-close>return to flight</button></aside></div>`;
 	document.body.append(root);
 	document.querySelector("#keys")?.remove();
 
@@ -142,11 +240,12 @@ export function mountModelViewer(): void {
 	// a fixed grid worked while every hull was within a factor of two of the
 	// next; a capital hull is several times the largest of them, and a constant
 	// 0.12 km orbit would put the camera inside it.
-	const framing = (id: HullId) => HULL_VISUALS[id].reachKm * 3.2;
+	const framing = (id: string, variant: string) =>
+		family.reachKm(id, variant) * 3.2;
 	let grid = new THREE.GridHelper(0.18, 12, 0x356274, 0x152d38);
 	scene.add(grid);
-	const reframe = (id: HullId) => {
-		const reach = HULL_VISUALS[id].reachKm;
+	const reframe = (id: string, variant: string) => {
+		const reach = family.reachKm(id, variant);
 		scene.remove(grid);
 		grid.dispose();
 		grid = new THREE.GridHelper(reach * 6, 12, 0x356274, 0x152d38);
@@ -159,24 +258,27 @@ export function mountModelViewer(): void {
 	const holder = new THREE.Group();
 	scene.add(holder);
 	const state: ViewerState = {
-		asset: "courier",
-		variant: "a",
+		asset: family.assets[0],
+		variant: family.variantIds[0],
 		// Derived from HULL_IDS so adding a role cannot leave a hole here that
 		// only shows up as an undefined ranking at click time.
 		selectedVariants: Object.fromEntries(
-			HULL_IDS.map((id) => [id, "a"]),
-		) as ViewerState["selectedVariants"],
+			family.assets.map((id) => [id, family.variantIds[0]]),
+		),
 		rankings: Object.fromEntries(
-			HULL_IDS.map((id) => [id, [] as HullVariantId[]]),
-		) as ViewerState["rankings"],
+			family.assets.map((id) => [id, [] as string[]]),
+		),
 		beam: 1,
 		length: 1,
 		engine: 0.7,
 		wireframe: false,
 		azimuth: 2.55,
 		elevation: 0.38,
-		distance: framing("courier"),
+		distance: framing(family.assets[0], family.variantIds[0]),
 	};
+	/** The reach the stage is currently framed for, so a reframe that would
+	 *  change nothing can be skipped. */
+	let currentReach = family.reachKm(state.asset, state.variant);
 	let mesh: THREE.Group | undefined;
 	let dragging = false;
 	let previous = { x: 0, y: 0 };
@@ -194,7 +296,7 @@ export function mountModelViewer(): void {
 			// held alive by this closure until the next rebuild replaces it.
 			mesh = undefined;
 		}
-		mesh = buildShipMesh(state.asset, state.variant).root;
+		mesh = family.build(state.asset, state.variant);
 		holder.add(mesh);
 		applyDraft();
 	};
@@ -218,8 +320,8 @@ export function mountModelViewer(): void {
 		root
 			.querySelectorAll<HTMLElement>("[data-model-rank]")
 			.forEach((button) => {
-				const role = button.dataset.modelRole as HullId;
-				const variant = button.dataset.modelRank as HullVariantId;
+				const role = button.dataset.modelRole as string;
+				const variant = button.dataset.modelRank as string;
 				const position = state.rankings[role].indexOf(variant);
 				button.textContent = position < 0 ? "rank" : `#${position + 1}`;
 				if (position < 0) button.removeAttribute("data-rank-position");
@@ -227,19 +329,21 @@ export function mountModelViewer(): void {
 			});
 		const summary = root.querySelector<HTMLElement>("[data-model-ranking]");
 		if (summary)
-			summary.textContent = HULL_IDS.map((role) => {
-				const order = state.rankings[role]
-					.map((variant) => variant.toUpperCase())
-					.join(" > ");
-				return `${role}: ${order || "—"}`;
-			}).join("\n");
+			summary.textContent = family.assets
+				.map((role) => {
+					const order = state.rankings[role]
+						.map((variant) => variant.toUpperCase())
+						.join(" > ");
+					return `${role}: ${order || "—"}`;
+				})
+				.join("\n");
 	};
 	const applyDraft = () => {
 		if (!mesh) return;
 		mesh.scale.set(state.beam, 1, state.length);
 		mesh.traverse((object) => {
 			if (!(object instanceof THREE.Mesh)) return;
-			const isEngine = object.name.includes("exhaust");
+			const isEngine = family.emissive(object.name);
 			const materials = Array.isArray(object.material)
 				? object.material
 				: [object.material];
@@ -277,15 +381,16 @@ export function mountModelViewer(): void {
 
 	root.addEventListener("click", (event) => {
 		const target = event.target as HTMLElement;
-		const asset = target.closest<HTMLElement>("[data-model-asset]")?.dataset
-			.modelAsset as HullId | undefined;
-		if (asset && HULL_IDS.includes(asset)) {
+		const asset =
+			target.closest<HTMLElement>("[data-model-asset]")?.dataset.modelAsset;
+		if (asset && family.assets.includes(asset)) {
 			state.asset = asset;
 			state.variant = state.selectedVariants[asset];
 			// A capital hull and a courier cannot share an orbit radius, so the
 			// stage reframes rather than leaving the camera inside the new ship.
-			state.distance = framing(asset);
-			reframe(asset);
+			currentReach = family.reachKm(asset, state.variant);
+			state.distance = framing(asset, state.variant);
+			reframe(asset, state.variant);
 			root
 				.querySelectorAll<HTMLElement>("[data-model-asset]")
 				.forEach((button) => {
@@ -298,21 +403,29 @@ export function mountModelViewer(): void {
 			rebuild();
 		}
 		const variantButton = target.closest<HTMLElement>("[data-model-variant]");
-		const variant = variantButton?.dataset.modelVariant as
-			| HullVariantId
-			| undefined;
-		const variantRole = variantButton?.dataset.modelRole as HullId | undefined;
+		const variant = variantButton?.dataset.modelVariant;
+		const variantRole = variantButton?.dataset.modelRole;
 		if (variant && variantRole === state.asset) {
 			state.variant = variant;
 			state.selectedVariants[state.asset] = variant;
+			// A station form's reach is per *form*, not per role — a ring is half
+			// again a drum — so selecting one reframes the stage the way selecting
+			// a role does. Guarded on the reach actually changing: on the ship
+			// family every variant of a role shares one, and `reframe` disposes a
+			// `GridHelper` and builds another, which is a real allocation to spend
+			// on a no-op.
+			const reach = family.reachKm(state.asset, variant);
+			if (reach !== currentReach) {
+				currentReach = reach;
+				state.distance = framing(state.asset, variant);
+				reframe(state.asset, variant);
+			}
 			updateTournament();
 			rebuild();
 		}
 		const rankButton = target.closest<HTMLElement>("[data-model-rank]");
-		const rankedVariant = rankButton?.dataset.modelRank as
-			| HullVariantId
-			| undefined;
-		const rankedRole = rankButton?.dataset.modelRole as HullId | undefined;
+		const rankedVariant = rankButton?.dataset.modelRank;
+		const rankedRole = rankButton?.dataset.modelRole;
 		if (rankedVariant && rankedRole === state.asset) {
 			const ranking = state.rankings[rankedRole];
 			const position = ranking.indexOf(rankedVariant);
@@ -360,7 +473,7 @@ export function mountModelViewer(): void {
 	renderer.domElement.addEventListener("pointerup", () => (dragging = false));
 	renderer.domElement.addEventListener("wheel", (event) => {
 		event.preventDefault();
-		const reach = HULL_VISUALS[state.asset].reachKm;
+		const reach = family.reachKm(state.asset, state.variant);
 		state.distance = THREE.MathUtils.clamp(
 			state.distance * (1 + event.deltaY * 0.0009),
 			reach * 1.5,
@@ -372,7 +485,7 @@ export function mountModelViewer(): void {
 		window as unknown as { __seeliteModelViewer: { state: ViewerState } }
 	).__seeliteModelViewer = { state };
 	updateTournament();
-	reframe(state.asset);
+	reframe(state.asset, state.variant);
 	rebuild();
 	resize();
 	frame();

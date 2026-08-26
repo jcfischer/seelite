@@ -5,15 +5,34 @@
  *   npm run dev                       # in one shell
  *   node scripts/probe-station.mjs    # in another
  *
- * Three claims, none of which a headless test can reach:
+ * Three things measured here, none of which a headless test can reach — and
+ * **the first of them is reported rather than gated.**
  *
- * 1. **The three silhouettes are distinguishable — by outline, not by colour.**
- *    §7 rests station identity on the shape a player sees before colour and
- *    before any detail resolves, so the measurement is a *desaturated* one:
- *    every frame is reduced to luminance before anything is compared, and the
- *    three `STATION_COLORS` cannot contribute to a pass. Colour differences are
- *    the easy way for this probe to go green while the outlines are identical,
- *    which is exactly the failure §7 is a decision about.
+ * 1. **How far apart the three silhouettes read, by outline alone.** §7 rests
+ *    station identity on the shape a player sees before colour and before any
+ *    detail resolves, so the measurement is a *desaturated* one: every frame is
+ *    reduced to luminance before anything is compared, and the three
+ *    `STATION_COLORS` cannot contribute. Colour differences are the easy way for
+ *    this to look healthy while the outlines are identical, which is exactly the
+ *    failure §7 is a decision about.
+ *
+ *    It stopped being an assertion on 2026-08-26, by the principal's decision
+ *    while #56's forms were being ranked. The reason is worth keeping, because
+ *    the number is still printed and someone will want to re-arm it: a floor on
+ *    this metric turns out to be a *design driver*. In one afternoon it produced
+ *    a third radiator wing, a pair of forward booms on a gantry and a squared
+ *    hull section — none of them chosen for the role, all of them chosen to move
+ *    a figure. Forms are ranked on how they look, and a gate that quietly
+ *    reshapes them competes with the person doing the ranking.
+ *
+ *    So the figures are measured and printed at both ranges and asserted at
+ *    neither. What is still gated is that each station **is drawn and has a
+ *    silhouette at all** — at both ranges — and, **at the near range only**,
+ *    that re-measuring one reproduces it. That control is about whether the
+ *    measurement works rather than about what it finds, and it is near-range
+ *    only because at 60 km the mask is a few dozen pixels and the control itself
+ *    reads about 0.17: a check whose noise is three times its own ceiling is not
+ *    a check.
  *
  * 2. **The slot tracks the spin.** Its screen-space orientation advances at the
  *    station's own `spinRpm`, and it is measured twice over:
@@ -91,15 +110,20 @@ const FAR_RANGE_KM = 60;
 const GRID = 24;
 
 /**
- * How much two silhouettes must differ, as `1 − IoU` on the resampled masks.
+ * The reference figure for how far two silhouettes read apart, as `1 − IoU` on
+ * the resampled masks.
  *
- * A floor, and it is only meaningful against the metric's own noise — so the
- * run measures that too, by capturing one station twice (the control below).
- * Measured: the three pairs come out at about 0.35 (trade/refinery), 0.61
- * (trade/shipyard) and 0.62 (refinery/shipyard), against a control of 0.02.
- * The closest pair is the two compact types, which is where the identity claim
- * is hardest, and 0.25 leaves that pair about 40% of headroom while sitting an
- * order of magnitude above the noise.
+ * **Not asserted any more** — see the header. It is kept because the printed
+ * comparison means nothing without a scale to read it against, and because this
+ * is the number to restore if the gate is ever re-armed.
+ *
+ * It is only meaningful against the metric's own noise, so the run measures that
+ * too, by capturing one station twice (the control below). Measured while it was
+ * still a gate: the three pairs came out at about 0.35 (trade/refinery), 0.61
+ * (trade/shipyard) and 0.62 (refinery/shipyard), against a control of 0.02. The
+ * closest pair was the two compact types, which is where the identity claim is
+ * hardest, and 0.25 left that pair about 40% of headroom while sitting an order
+ * of magnitude above the noise.
  */
 const MIN_DIFFERENCE = 0.25;
 
@@ -229,9 +253,21 @@ async function viewAlongAxis(id, rangeKm) {
  * see the header. Both happen inside one evaluate so no frame can land between
  * them and move the station.
  */
-async function silhouette(id) {
+/**
+ * Capture one station's silhouette — twice, from a single evaluate, when
+ * `repeat` is set.
+ *
+ * The control needs the *same* station measured twice with nothing at all
+ * changed between the two, and two separate evaluates cannot give that: real
+ * frames run in the gap, and the sim advances the station along its orbit. That
+ * is a genuine change of apparent size, which the crop-and-resample only mostly
+ * absorbs — and #56's squared Coriolis, whose mask has long straight edges,
+ * absorbs it least. The control read 0.062 against its own 0.05 ceiling with
+ * nothing unstable.
+ */
+async function silhouette(id, repeat = false) {
 	return page.evaluate(
-		([bodyId, grid]) => {
+		([bodyId, grid, twice]) => {
 			const g = window.__seelite;
 			const W = 600;
 			const H = 420;
@@ -258,10 +294,24 @@ async function silhouette(id) {
 
 			const mesh = window.__meshOfBody(bodyId);
 			if (!mesh) return { missing: true };
+			/**
+			 * **Pin the clock across this capture's renders.**
+			 *
+			 * A station's silhouette is a function of its spin phase whenever the
+			 * station is not round about its own axis, and #56's forms are not:
+			 * a squared Coriolis turning through 18° between two captures is a
+			 * genuinely different outline. The control — one station measured
+			 * twice — then read 0.051 against its own 0.05 ceiling while nothing
+			 * was unstable. Pinning makes every capture in this file comparable to
+			 * every other, which is what a shape comparison needs.
+			 */
+			const savedClock = g.world.gameTime;
+			g.world.gameTime = 0;
 			const withIt = luma();
 			mesh.visible = false;
 			const without = luma();
 			mesh.visible = true;
+			g.world.gameTime = savedClock;
 			g.render(0);
 
 			/**
@@ -332,21 +382,39 @@ async function silhouette(id) {
 				return cells;
 			};
 
-			const box = maskAndBox(withIt, without);
-			if (box.count === 0) return { empty: true, W, H };
-			const cells = resample(box, grid);
-			const count = box.count;
-			const bw = box.w;
-			const bh = box.h;
-
-			return {
-				cells,
-				pixels: count,
-				box: { w: bw, h: bh },
-				coverage: count / (bw * bh),
+			const shapeOf = (a, b) => {
+				const box = maskAndBox(a, b);
+				if (box.count === 0) return { empty: true, W, H };
+				return {
+					cells: resample(box, grid),
+					pixels: box.count,
+					box: { w: box.w, h: box.h },
+					coverage: box.count / (box.w * box.h),
+				};
 			};
+			const shape = shapeOf(withIt, without);
+			if (!twice) return shape;
+			// **A second pair of renders, not a second call on the same buffers.**
+			//
+			// The control is supposed to measure what this metric does when
+			// nothing has changed — rasteriser, read-back, threshold and
+			// resampling, all of it. Differencing the *same two frames* twice
+			// measures a pure function against itself and is identically zero, so
+			// the gate could not fail. It was written that way while fixing the
+			// opposite problem — two evaluates let real frames run between the
+			// captures, which moved the station along its orbit — and the fix
+			// overshot into a check that asserts nothing.
+			//
+			// Rendering again inside one evaluate is the honest middle: the clock
+			// is still pinned and no frame lands between, so nothing about the
+			// scene changes, but every stage that could be unstable runs twice.
+			const withItAgain = luma();
+			mesh.visible = false;
+			const withoutAgain = luma();
+			mesh.visible = true;
+			return { shape, again: shapeOf(withItAgain, withoutAgain) };
 		},
-		[id, GRID],
+		[id, GRID, repeat],
 	);
 }
 
@@ -369,6 +437,11 @@ const iou = (a, b) => {
  * A single close range answers the first and quietly assumes the second.
  */
 async function silhouettesAt(rangeKm, floor, gate) {
+	// `gate.pairs` asserts the pairwise outline comparison; `gate.control`
+	// asserts that re-measuring one station reproduces it. Two flags because
+	// they answer different questions and only one of them was relaxed: the
+	// control is about whether the *measurement* works at all, which is worth
+	// gating even where its subject is not.
 	const shapes = new Map();
 	/** The control capture, kept beside the map rather than inside it: a type-keyed
 	 *  map holding one entry that is not a type makes every consumer filter it
@@ -376,7 +449,15 @@ async function silhouettesAt(rangeKm, floor, gate) {
 	let control = null;
 	for (const station of setup.stations) {
 		await viewAlongAxis(station.id, rangeKm);
-		const shape = await silhouette(station.id);
+		// The trade station is captured *twice from one evaluate*, and the second
+		// copy is the control. Two evaluates cannot measure this metric's noise:
+		// real frames run in the gap and carry the station along its orbit, which
+		// is a genuine change of apparent size rather than instability — and a
+		// squared hull's mask, being mostly long straight edges, is where the
+		// crop-and-resample absorbs it least.
+		const captured = await silhouette(station.id, station.type === "trade");
+		const shape = captured.again ? captured.shape : captured;
+		if (captured.again) control = captured.again;
 		check(
 			`${rangeKm} km — ${station.type}: the station is drawn and has a silhouette`,
 			!shape.missing && !shape.empty && shape.pixels > 20,
@@ -388,13 +469,6 @@ async function silhouettesAt(rangeKm, floor, gate) {
 						`fill ${(100 * shape.coverage).toFixed(0)}%`,
 		);
 		if (shape.cells) shapes.set(station.type, shape);
-		// The control, captured back to back from the same viewpoint: it measures
-		// the metric's noise and nothing else. Re-aiming first would fold in a
-		// second of spin and orbit, which is a real change of shape rather than
-		// instability — the first version did that and read 0.05,
-		// indistinguishable from a flaky mask.
-		if (station.type === "trade" && shape.cells)
-			control = await silhouette(station.id);
 	}
 
 	const types = [...shapes.keys()];
@@ -408,7 +482,7 @@ async function silhouettesAt(rangeKm, floor, gate) {
 			console.log(
 				`  ${types[i]} vs ${types[j]}: 1 − IoU = ${difference.toFixed(3)}`,
 			);
-			if (gate)
+			if (gate.pairs)
 				check(
 					`${rangeKm} km — ${types[i]} and ${types[j]} differ by outline alone`,
 					difference > floor,
@@ -422,11 +496,12 @@ async function silhouettesAt(rangeKm, floor, gate) {
 		// Reported rather than thrown: an empty second capture would otherwise
 		// dereference `undefined` inside `iou` and kill the run before a single
 		// FAIL line was printed.
-		check(
-			`${rangeKm} km — re-measuring one station reproduces its silhouette`,
-			false,
-			"no second silhouette to compare",
-		);
+		if (gate.control)
+			check(
+				`${rangeKm} km — re-measuring one station reproduces its silhouette`,
+				false,
+				"no second silhouette to compare",
+			);
 	} else {
 		const drift = 1 - iou(first.cells, control.cells);
 		console.log(
@@ -437,7 +512,7 @@ async function silhouettesAt(rangeKm, floor, gate) {
 		// and the reason the far-range pairwise figures above are reported rather
 		// than asserted: a metric whose noise is half its signal is not evidence,
 		// and the honest far-range claim is the extent one below.
-		if (gate)
+		if (gate.control)
 			check(
 				`${rangeKm} km — re-measuring one station reproduces its silhouette`,
 				drift < MAX_CONTROL_DIFFERENCE,
@@ -447,8 +522,14 @@ async function silhouettesAt(rangeKm, floor, gate) {
 	return shapes;
 }
 
-const near = await silhouettesAt(RANGE_KM, MIN_DIFFERENCE, true);
-const far = await silhouettesAt(FAR_RANGE_KM, MIN_DIFFERENCE, false);
+const near = await silhouettesAt(RANGE_KM, MIN_DIFFERENCE, {
+	pairs: false,
+	control: true,
+});
+const far = await silhouettesAt(FAR_RANGE_KM, MIN_DIFFERENCE, {
+	pairs: false,
+	control: false,
+});
 
 /**
  * The half desaturation does not answer: **does it survive range?**
@@ -457,7 +538,7 @@ const far = await silhouettesAt(FAR_RANGE_KM, MIN_DIFFERENCE, false);
  * deliberately so — the mask is a couple of hundred pixels and the crop-and-
  * resample throws away the cue that actually survives out there, which is
  * **extent**. So the far-range claim is made on the thing a player has at that
- * distance: the shipyard's drydock frame makes it visibly wider than a Coriolis
+ * distance: the shipyard's outboard frame makes it visibly wider than a Coriolis
  * station that is otherwise its twin, and the refinery is squatter than either.
  */
 console.log(`\nextent at ${FAR_RANGE_KM} km (the cue that survives range):`);
@@ -722,7 +803,7 @@ if (shipyard) {
 				return {
 					layer: near ? "near" : far ? "far" : "none",
 					hasAperture: !!mesh?.getObjectByName("aperture"),
-					hasDrydock: !!mesh?.getObjectByName("drydock"),
+					hasFrame: !!mesh?.getObjectByName("frame"),
 				};
 			},
 			[shipyard.id, setup.handoffKm * multiple],
@@ -734,8 +815,8 @@ if (shipyard) {
 		);
 		check(
 			`at ${multiple}× handoff the assembly moved whole`,
-			state.hasAperture && state.hasDrydock,
-			`aperture ${state.hasAperture}, drydock ${state.hasDrydock}`,
+			state.hasAperture && state.hasFrame,
+			`aperture ${state.hasAperture}, frame ${state.hasFrame}`,
 		);
 	}
 }

@@ -2,11 +2,16 @@
  * The three silhouettes (`station-types.md` §7), built procedurally at load.
  *
  * §7's standard is the one this module is written against: **a player tells the
- * three apart by outline, before colour and before any detail resolves.** So the
- * shapes differ in gross form — an octahedron, an octahedron with a long frame
- * clamped alongside, and a squat drum in a lump of rock — rather than in
- * panelling or in emissive trim, which resolve at medium range and vanish at
- * scanner range. `STATION_COLORS` (`sim.ts`) stays the secondary cue.
+ * types apart by outline, before colour and before any detail resolves.** So
+ * the forms differ in gross form rather than in panelling or emissive trim,
+ * which resolve at medium range and vanish at scanner range. `STATION_COLORS`
+ * (`sim.ts`) stays the secondary cue.
+ *
+ * **Four roles, three forms each** (#56). #28 gave each role one silhouette;
+ * those were reviewed in the live game and rejected on form, and the pool that
+ * replaced them is built in the swept-loft language of #35's ship hulls.
+ * `SELECTED_FORM` names the one the game builds for each role — one line per
+ * role, so a later choice is one edit.
  *
  * **Everything is authored in kilometres**, read from `STATION_GEOMETRY` — a
  * slot drawn at a size the docking checks do not use is invisible to every
@@ -44,7 +49,14 @@
  */
 
 import * as THREE from "three";
-import { STATION_GEOMETRY, type StationType } from "./station";
+import { type Ring, hullLoft } from "./loft";
+import {
+	applyTriplanar,
+	boxProjectUVs,
+	buildAsteroid,
+	displayRand,
+} from "./station-surface";
+import { STATION_GEOMETRY, STATION_TYPES, type StationType } from "./station";
 import {
 	PLATE_TEXTURE_SIZE,
 	STATION_VISUALS,
@@ -58,8 +70,8 @@ import {
 } from "./station-visuals";
 
 /**
- * How far the *drawn* object reaches, kilometres — the drydock frame, the
- * captured asteroid, the flare stacks.
+ * How far the *drawn* object reaches, kilometres — the selected form's own
+ * declared reach: an outboard frame, a captured asteroid, a radiator wing.
  *
  * Here rather than in `STATION_GEOMETRY`, and that is the point: `docking.md`
  * §5 says the frame is silhouette and not dockable geometry, and #9's checks
@@ -71,20 +83,41 @@ import {
  * vertex of a built station lies outside it, so a frame or a flare stack cannot
  * quietly grow.
  *
- * The two rows are not the same kind of number, and it is worth being plain
- * about it. The shipyard's 1.5 km is `docking.md` §5's own figure, so its test
- * can fail against the spec and did — the frame reached 2.0 km and was resized.
- * The refinery's 0.9 is a **ratchet**: there is no spec figure for it, so it was
- * set from what the mesh measures (0.837 km) plus a little headroom, and on the
- * day it was written it could not have failed. It catches growth from here, and
- * nothing else. Reading it as a design constraint would be reading a
- * measurement as an intention.
+ * **It is now an intention, and it used to be a measurement.** #28 wrote four
+ * literals here and warned that reading them as design constraints would be
+ * reading a measurement as an intention: the shipyard's 1.5 km came from
+ * `docking.md` §5 and its test could fail against the spec, but the refinery's
+ * 0.9 was a ratchet set from what the mesh happened to measure. That warning
+ * does not survive #56 and has been removed rather than left to mislead.
+ *
+ * Every figure is now a **declared** `reachKm` on a form — a number an author
+ * chose before building the shape, which the form is then measured against.
+ * That is the direction a budget should run. What the test does *not* do is
+ * insist the shape fills its declaration: the floor is 60% of it, which catches
+ * a declaration nothing approaches without pretending the fit is tight.
  */
-export const STATION_SILHOUETTE_KM: Record<StationType, number> = {
-	trade: 0.6,
-	shipyard: 1.5,
-	refinery: 0.9,
-};
+const reachCache: Partial<Record<StationType, number>> = {};
+
+export const STATION_SILHOUETTE_KM: Record<StationType, number> =
+	Object.defineProperties(
+		{} as Record<StationType, number>,
+		Object.fromEntries(
+			STATION_TYPES.map((type) => [
+				type,
+				{
+					enumerable: true,
+					// A memoised getter, not a value: `SELECTED_FORM` is a module
+					// constant so the lookup resolves once, but `STATION_FORMS` and
+					// `formOf` are declared further down the file and evaluating
+					// eagerly here reads them before initialisation. Left as a bare
+					// `find` it ran on every read, and the renderer reads this per
+					// station per frame.
+					get: () =>
+						(reachCache[type] ??= formOf(type, SELECTED_FORM[type]).reachKm),
+				},
+			]),
+		),
+	);
 
 /** What the renderer gets back: a root oriented to the aperture axis, and the
  *  part of it that spins. */
@@ -131,28 +164,6 @@ export interface StationFixture {
 	material: THREE.MeshStandardMaterial;
 	base: number;
 	kind: StationFixtureKind;
-}
-
-/**
- * A small deterministic generator for the asteroid's vertices.
- *
- * Its own, rather than one of `rng.ts`'s domain streams, and the difference is
- * the point: this feeds a *shape on screen* and nothing in the simulation, so
- * drawing it from a world stream would couple a display detail to the
- * generator's draw counts. The key is a constant string per feature, so the
- * shape is the same on every load and in every system.
- */
-function displayRand(id: string): () => number {
-	let h = 0x811c9dc5;
-	for (let i = 0; i < id.length; i++) {
-		h ^= id.charCodeAt(i);
-		h = Math.imul(h, 0x01000193);
-	}
-	let state = h >>> 0;
-	return () => {
-		state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
-		return state / 4294967296;
-	};
 }
 
 /**
@@ -239,9 +250,23 @@ const mapsFor = (type: StationType) => {
  * deliberately separate, because §7 rests identity on outline with colour as the
  * secondary cue, and a per-role *coloured* map would quietly become a third.
  */
+/**
+ * One painted hull material per (type, colour), kept.
+ *
+ * A station used to build its own, so three trade stations in a system carried
+ * three identical materials and the workbench accumulated one more on every
+ * rebuild. Sharing them is safe because nothing mutates a hull material after
+ * construction — the ones that *are* mutated are the fixtures, which stay per
+ * station for exactly that reason and carry no textures.
+ */
+const hullMaterials = new Map<string, THREE.MeshStandardMaterial>();
+
 const hullMaterial = (color: number, type: StationType) => {
+	const cacheKey = `${type}:${color}`;
+	const cached = hullMaterials.get(cacheKey);
+	if (cached) return cached;
 	const { albedo, wear } = mapsFor(type);
-	return new THREE.MeshStandardMaterial({
+	const material = new THREE.MeshStandardMaterial({
 		color,
 		map: albedo,
 		roughnessMap: wear,
@@ -252,6 +277,8 @@ const hullMaterial = (color: number, type: StationType) => {
 		roughness: 1,
 		metalness: 1,
 	});
+	hullMaterials.set(cacheKey, material);
+	return material;
 };
 
 /** An unplated structural part — a strut, a collar, a stack. Small, and lit
@@ -274,6 +301,17 @@ const emissiveMaterial = (color: number, intensity: number) =>
 interface BuiltPart {
 	group: THREE.Group;
 	fixtures: StationFixture[];
+	/**
+	 * The part that turns, when that is not the whole body.
+	 *
+	 * §7's shipyard frame is explicitly non-rotating and a station that turned
+	 * whole would make it a fairground ride — and would also swing the outboard
+	 * structure through the view, which is measurable: `probe-station.mjs` reads
+	 * the shipyard's far-range width against the trade station's, and a spinning
+	 * frame makes that number a function of the clock. Omitted, the whole group
+	 * spins.
+	 */
+	spinner?: THREE.Object3D;
 }
 
 /**
@@ -321,8 +359,9 @@ function buildWindowGrid(
  *
  * The rule it serves is §2's: **a detail level may not change the outline.**
  * Nothing tagged here may be the farthest vertex of its station — the flare
- * flame is the refinery's outermost point and is therefore silhouette rather
- * than detail, and is deliberately not tagged. `tests/station-visuals.test.ts`
+ * refinery's outermost point is a radiator wing, which is structure and is
+ * therefore not tagged — its flare, which used to hold that place, is a lit
+ * throat sunk into a nozzle now and carries no outline at all. `tests/station-visuals.test.ts`
  * asserts the reach is identical at all three levels, which is what stops that
  * from being a rule kept by hand.
  */
@@ -364,6 +403,7 @@ const PANE_MATERIALS: Record<StationType, THREE.MeshStandardMaterial> = {
 	trade: emissiveMaterial(STATION_VISUALS.trade.windowColor, 1.4),
 	shipyard: emissiveMaterial(STATION_VISUALS.shipyard.windowColor, 1.4),
 	refinery: emissiveMaterial(STATION_VISUALS.refinery.windowColor, 1.2),
+	outpost: emissiveMaterial(STATION_VISUALS.outpost.windowColor, 1.2),
 };
 const APERTURE_LIGHT_MATERIAL = emissiveMaterial(0xffb347, 2.2);
 /** The shipyard's cold bay floods. Steady, so shared: what moves on that
@@ -390,7 +430,14 @@ function buildAperture(type: StationType, faceZ: number): THREE.Group {
 	const w = aperture.widthKm;
 	const h = aperture.heightKm;
 	const depth = Math.min(w, h) * 0.8;
-	const bar = 0.012;
+	// **Thick enough to straddle the surface it is cut into.** The frame used to
+	// sit *on* the face — bars centred half a bar proud of it — so it touched
+	// the hull at a plane and nowhere else. On screen that is a lit rectangle
+	// floating a few metres in front of the station, and the connectivity check
+	// reads it as exactly that: three forms reported all four bars adrift while
+	// nothing looked obviously wrong. Half in and half out, and thick enough
+	// that "half" is a real overlap rather than a rounding.
+	const bar = 0.024;
 
 	const mouth = new THREE.Mesh(
 		new THREE.BoxGeometry(w, h, depth),
@@ -416,7 +463,7 @@ function buildAperture(type: StationType, faceZ: number): THREE.Group {
 			new THREE.BoxGeometry(bw, bh, bar),
 			APERTURE_LIGHT_MATERIAL,
 		);
-		light.position.set(x, y, faceZ + bar / 2);
+		light.position.set(x, y, faceZ);
 		// Named so `probe-station-visuals.mjs` can hide the four bars and measure
 		// what they contribute, without also hiding the dark mouth they surround —
 		// which would change the station's brightness in the other direction and
@@ -428,349 +475,1870 @@ function buildAperture(type: StationType, faceZ: number): THREE.Group {
 	return group;
 }
 
-/** The Coriolis body: an octahedron whose ±Z vertices are the spin axis, so the
- *  slot sits on the axis and rotates in place (`docking.md` §4.2) rather than
- *  sweeping a circle the ship would have to intercept. */
-function buildCoriolisCore(type: StationType, color: number): BuiltPart {
-	const { coreRadiusKm } = STATION_GEOMETRY[type];
+/**
+ * Which ranking round the forms below belong to.
+ *
+ * Named for the same reason `SHIP_DESIGN_ROUND` is: the workbench labels the
+ * round it is showing, and a reviewer ranking round two against round one's
+ * labels is ranking the wrong pool.
+ *
+ * **Round one's ranking**, which produced this round: trade `A > C > B`,
+ * shipyard `A > C > B`, refinery — no order, and a instruction instead. Each
+ * role keeps its top two and spends its last slot, which is #35's convention;
+ * the refinery is the exception and spends all three, because the review of it
+ * was not a preference between the concepts offered but a rejection of two of
+ * them. "Keep the asteroid, but a better asteroid with structure built into it"
+ * makes rock the thesis of the whole role rather than of one concept in it.
+ *
+ * The other two notes were defects rather than preferences and are treated as
+ * such: the ring was ranked *last* and described as good — "looks like a comic,
+ * and maybe use more than one spoke" — so it is rebuilt in its slot rather than
+ * dropped, and the shipyard's last slot is spent on a different silhouette
+ * class rather than a fourth variation of an open frame.
+ */
+export const STATION_DESIGN_ROUND = 2;
+
+/**
+ * One candidate form for a role.
+ *
+ * The station counterpart of `ship-mesh.ts`'s hull variants, and deliberately
+ * the same shape of thing: an id, a name, a one-line thesis a reviewer can rank
+ * against, and a builder. #28 gave each role exactly one outline and the
+ * principal's review of #36's visuals rejected all three on form — the trade
+ * station's slot sat on a vertex, and the other two read as neither machine nor
+ * rock. So a role now carries several forms and the choice is a ranking rather
+ * than an assertion.
+ */
+export interface StationForm {
+	readonly id: StationFormId;
+	readonly name: string;
+	readonly thesis: string;
+	/** How far this form's drawn object reaches, kilometres. Per *form*, not per
+	 *  role: a ring station and a drum are not the same size, and
+	 *  `STATION_SILHOUETTE_KM` below is the selected form's row. */
+	readonly reachKm: number;
+	readonly build: (color: number) => BuiltPart;
+}
+
+export type StationFormId = "a" | "b" | "c";
+export const STATION_FORM_IDS: StationFormId[] = ["a", "b", "c"];
+
+/** One flat-shaded clone per base material, kept. */
+const flatClones = new WeakMap<THREE.Material, THREE.Material>();
+function flatCloneOf(material: THREE.Material) {
+	const cached = flatClones.get(material);
+	if (cached) return cached;
+	const clone = material.clone();
+	if (clone instanceof THREE.MeshStandardMaterial) clone.flatShading = true;
+	flatClones.set(material, clone);
+	return clone;
+}
+
+/**
+ * One texture repeat per this many kilometres of hull.
+ *
+ * The plating map carries about eight panels across, so a plate is roughly
+ * 19 m — a size a pilot can judge a ship against, which is the whole job of
+ * plating at this scale. One constant for every part of every station, because
+ * a plate that changes size from one part to the next stops being a ruler.
+ */
+const STATION_PANEL_KM = 0.15;
+
+/**
+ * The plated shell language every form shares.
+ *
+ * `hullLoft` is `ship-mesh.ts`'s primitive, moved to `loft.ts` when this node
+ * gave it a second caller. Using it is the whole point of the round: the ships
+ * stopped reading as an iron press when round four replaced the planform
+ * extrusion with a swept superellipse, and a station built from raw
+ * `BoxGeometry` and `CylinderGeometry` beside them is that same failure
+ * arriving a second time.
+ *
+ * `segments` is the one station-specific dial. A hull wants 16 and reads
+ * smooth; a station often wants 8 or 12, which reads as *plated panels of a
+ * size you can judge* — the thing that tells a pilot a station is enormous
+ * rather than a small object seen close.
+ */
+function shell(
+	controls: readonly Ring[],
+	material: THREE.Material,
+	name: string,
+	segments = 12,
+	/**
+	 * Shade each facet flat rather than smoothing across it.
+	 *
+	 * The one place a station parts company with a ship. A hull is a moulded
+	 * object and reads right smooth-shaded; a station is *plated*, and a
+	 * twelve-sided drum with smoothed normals reads as a sphere — measured on
+	 * the first Coriolis build, which came out an untextured blue blob. Flat
+	 * facets give the eye a panel whose size it can judge, which is the cue that
+	 * says "this thing is a kilometre across" rather than "this is a small
+	 * object seen close".
+	 */
+	flat = false,
+) {
+	const geometry = hullLoft(controls, { segments });
+	// **A panel size, not a panel count.** `hullLoft` writes its UVs in
+	// kilometres — chord distance round the section and distance along the
+	// sweep — so dividing by one constant gives every part of every station the
+	// same ~19 m plate. Multiplying a normalised 0–1 unwrap by a fixed count,
+	// which is what this did, gives a 1.5 km keel and a 0.12 km terrace six
+	// bands each: one coarse, the other a smear.
+	const uv = geometry.getAttribute("uv") as THREE.BufferAttribute;
+	for (let i = 0; i < uv.count; i++)
+		uv.setXY(i, uv.getX(i) / STATION_PANEL_KM, uv.getY(i) / STATION_PANEL_KM);
+	uv.needsUpdate = true;
+	// Cached per source material: the forms ask for flat shading dozens of times
+	// per station, and a clone each time gives one station dozens of distinct
+	// materials that can never batch. One clone per base material instead.
+	const shaded = flat ? flatCloneOf(material) : material;
+	const mesh = new THREE.Mesh(geometry, shaded);
+	mesh.name = name;
+	return mesh;
+}
+
+/** A run of lit ports along a lofted surface, placed by the caller's rule.
+ *  Sized from the station rather than from a constant, so the same call reads
+ *  right on a 0.4 km drum and a 1.5 km ring. */
+function portRun(
+	type: StationType,
+	count: number,
+	place: (i: number, position: THREE.Vector3, normal: THREE.Vector3) => void,
+) {
+	return buildWindowGrid(type, count, place);
+}
+
+/**
+ * A pair of hull strobes on a form's own beam.
+ *
+ * Extracted because every form wants them and each wants them somewhere
+ * different: a ring puts them on the rim, a drum on its widest station. The
+ * caller supplies the position; the alternation, the colour and the reason they
+ * are not a port/starboard pair are `station-visuals.md` §5's.
+ */
+function strobePair(
+	type: StationType,
+	fixtures: StationFixture[],
+	size: number,
+	place: (side: number, position: THREE.Vector3) => void,
+) {
 	const group = new THREE.Group();
-
-	// §7's secondary cue, applied: `color` is `STATION_COLORS[type]`, so the
-	// trade station and the shipyard — which share this outline at any range
-	// where the drydock frame has not resolved — still read apart.
-	const hull = new THREE.Mesh(
-		new THREE.OctahedronGeometry(coreRadiusKm, 0),
-		hullMaterial(color, type),
-	);
-	hull.name = "core";
-	group.add(hull);
-
-	// The slot face is the +Z vertex; flattening it gives the aperture somewhere
-	// to sit that is not a point. A short cylinder does that without touching the
-	// octahedron's outline, which is what the silhouette rests on.
-	const flat = coreRadiusKm * 0.34;
-	const collar = new THREE.Mesh(
-		new THREE.CylinderGeometry(flat, flat * 1.25, coreRadiusKm * 0.22, 4),
-		plainMaterial(0x79838f),
-	);
-	collar.rotation.x = Math.PI / 2;
-	collar.rotation.y = Math.PI / 4;
-	collar.position.z = coreRadiusKm * 0.72;
-	group.add(collar);
-
-	group.add(buildAperture(type, coreRadiusKm * 0.83));
-
-	// Window grids: detail, explicitly not identity. They resolve at medium range
-	// and are gone at scanner range, which is why §7 rests the identity on the
-	// outline instead.
-	//
-	// **On the hull, not inside it.** An octahedron's surface is the plane
-	// |x| + |y| + |z| = r, so a pane placed on a circle of radius 0.62r sits tens
-	// of metres *behind* an opaque face at every angle — invisible, which the
-	// first version was. The radius is solved from the face plane instead, and
-	// nudged a hair proud.
-	const rand = displayRand(`${type}-windows`);
-	group.add(
-		buildWindowGrid(type, PANE_COUNT, (i, position, normal) => {
-			// **Kept away from the vertices**, which a uniform angle does not do.
-			// `STATION_SILHOUETTE_KM.trade` is 0.6 km and the octahedron's own
-			// vertex is at 0.6 km, so the budget is exactly the hull and there is
-			// nothing spare (`station-visuals.md` §2.1): a pane drawn near θ = 0
-			// lands at 1.002·r and is outside it. Each pane takes a quadrant by
-			// index — seven panes to each of the four — and lands in the middle
-			// 70% of it, which bounds the worst case at 0.83·r and spreads the
-			// grid over the hull rather than clustering it wherever the stream
-			// happened to draw.
-			const quadrant = (i % 4) * (Math.PI / 2);
-			const theta = quadrant + (0.15 + rand() * 0.7) * (Math.PI / 2);
-			const band = (rand() - 0.5) * coreRadiusKm * 0.7;
-			const cos = Math.cos(theta);
-			const sin = Math.sin(theta);
-			// |x| + |y| = r − |z| on the face, so ρ(|cos| + |sin|) = r − |band|.
-			const rho =
-				((coreRadiusKm - Math.abs(band)) / (Math.abs(cos) + Math.abs(sin))) *
-				1.002;
-			position.set(rho * cos, rho * sin, band);
-			// The face normal of the octant the pane landed in — `lookAt(0, 0,
-			// band)` aimed it at the axis instead, which is not the surface it
-			// lies on.
-			normal
-				.set(Math.sign(position.x), Math.sign(position.y), Math.sign(band) || 1)
-				.normalize();
-		}),
-	);
-
-	// The two hull strobes, half a period apart on the beam. Deliberately *not*
-	// a port/starboard pair — this group is the spinner, so they exchange sides
-	// twice a revolution; the argument is `station-visuals.md` §5.
-	const fixtures: StationFixture[] = [];
-	const strobes: [StationFixture["kind"], number][] = [
+	const sides: [StationFixtureKind, number][] = [
 		["strobe-a", -1],
 		["strobe-b", 1],
 	];
-	for (const [kind, side] of strobes) {
+	for (const [kind, side] of sides) {
 		const material = emissiveMaterial(STATION_VISUALS[type].strobeColor, 0);
 		const lamp = new THREE.Mesh(
-			new THREE.BoxGeometry(
-				coreRadiusKm * 0.05,
-				coreRadiusKm * 0.05,
-				coreRadiusKm * 0.03,
-			),
+			new THREE.BoxGeometry(size, size, size * 0.6),
 			material,
 		);
-		// On the face plane — |x| + |y| + |z| = r — and inboard of the limb, so
-		// the bloom halo stays inside the silhouette (`station-visuals.md` §2.2).
-		// Both halves are asserted in `tests/station-visuals.test.ts`, which
-		// carries the story of how each was got wrong.
-		lamp.position.set(side * coreRadiusKm * 0.55, 0, coreRadiusKm * 0.45);
+		place(side, lamp.position);
 		lamp.name = kind;
 		detail(lamp, "reduced");
 		group.add(lamp);
 		fixtures.push({ material, base: 2.6, kind });
 	}
+	return group;
+}
+
+// ---------------------------------------------------------------------------
+// The forms
+// ---------------------------------------------------------------------------
+//
+// Three per role. Every one is built from `hullLoft` where it is a hull and
+// from a torus where it is a ring; nothing here is a `BoxGeometry` standing in
+// for a shape. Each declares its own reach, and `STATION_SILHOUETTE_KM` is the
+// selected form's row rather than a number written twice.
+
+/**
+ * Trade A — Coriolis. A **cuboctahedron**: eight triangular faces and six
+ * square ones, with the slot cut into the square face that points at you.
+ *
+ * This is the third attempt and the first that is the reference shape rather
+ * than an approximation of it. Round one built a twelve-sided lofted drum,
+ * which projected as a circle down the aperture axis and could not be told from
+ * the refinery by outline. Round two squared its *section* — four segments at
+ * `e: 5` — which fixed the projection and was still a swept tube with a bulge
+ * in the middle, judged ugly on review, and had nothing flat to put a light on.
+ *
+ * A cuboctahedron solves all three at once and needs no swept loft: its six
+ * square faces are genuinely flat and axis-aligned, so the +Z one is a door and
+ * the four equatorial ones are walls that a window grid and a strobe can sit
+ * *on* rather than near. Every vertex is the same distance from the centre, so
+ * `PolyhedronGeometry` can build it directly from twelve points, and the
+ * silhouette is a twelve-sided outline that is nobody else's.
+ *
+ * `FACE_INSET` is where the square faces are: for a cuboctahedron of radius R
+ * the square face planes sit at `R / √2`. That figure is the whole reason
+ * nothing floats — the aperture, the collar, the panes and the strobes are all
+ * placed from it rather than from a radius chosen by eye.
+ */
+const CUBOCTAHEDRON_FACE = Math.SQRT1_2;
+
+function buildCuboctahedron(radiusKm: number, material: THREE.Material) {
+	// The twelve permutations of (±1, ±1, 0). `PolyhedronGeometry` normalises
+	// every vertex to the radius, which is exact here because a cuboctahedron's
+	// vertices are equidistant — that is what makes it buildable this way and a
+	// truncated cube, say, not.
+	// The twelve permutations of (±1, ±1, 0), grouped so the index list below can
+	// be read: 0–3 are the z = 0 ring, 4–7 the y = 0 ring, 8–11 the x = 0 ring.
+	// `PolyhedronGeometry` normalises every vertex to the radius, which is exact
+	// here because a cuboctahedron's vertices are equidistant — that is what
+	// makes it buildable this way and a truncated cube, say, not.
+	const vertices = [
+		1, 1, 0, -1, 1, 0, -1, -1, 0, 1, -1, 0, 1, 0, 1, -1, 0, 1, -1, 0, -1, 1, 0,
+		-1, 0, 1, 1, 0, -1, 1, 0, -1, -1, 0, 1, -1,
+	];
+	// Six squares as two triangles each, then eight triangles — one per octant.
+	// Every winding is outward; the first version's list was neither a
+	// cuboctahedron nor consistently wound, and rendered as two interpenetrating
+	// wedges with the window grid hanging in space beside them, because the
+	// faces the panes were placed against were not where the geometry put them.
+	const indices = [
+		// +Z, -Z
+		4, 8, 5, 4, 5, 9, 7, 10, 6, 7, 6, 11,
+		// +X, -X
+		0, 4, 3, 0, 3, 7, 1, 6, 2, 1, 2, 5,
+		// +Y, -Y
+		0, 11, 1, 0, 1, 8, 3, 9, 2, 3, 2, 10,
+		// the eight octant triangles
+		0, 8, 4, 1, 5, 8, 2, 9, 5, 3, 4, 9, 0, 7, 11, 1, 11, 6, 2, 6, 10, 3, 10, 7,
+	];
+	const geometry = new THREE.PolyhedronGeometry(vertices, indices, radiusKm, 0);
+	// Box-projected UVs, per face — see `boxProjectUVs`.
+	boxProjectUVs(geometry, STATION_PANEL_KM);
+	// Through the clone cache, not by mutating the material it was handed: hull
+	// materials are shared per (type, colour) now, so setting `flatShading` on
+	// one sets it on every station of that type. It happens to be what both of
+	// this file's callers want, which is exactly why it would not have been
+	// noticed until a form wanted a smooth trade hull.
+	return new THREE.Mesh(geometry, flatCloneOf(material));
+}
+
+function buildTradeCoriolis(color: number): BuiltPart {
+	const r = STATION_GEOMETRY.trade.coreRadiusKm;
+	const group = new THREE.Group();
+	const fixtures: StationFixture[] = [];
+	const radius = r * 0.95;
+	/** Where a square face's plane sits, kilometres. Everything mounted on the
+	 *  hull is placed from this — which is what stops a light hanging in space
+	 *  beside the station, as the swept version's did. */
+	const face = radius * CUBOCTAHEDRON_FACE;
+
+	const hull = buildCuboctahedron(radius, hullMaterial(color, "trade"));
+	hull.name = "core";
+	group.add(hull);
+
+	// **A frame round the slot, not a wall over the face.**
+	//
+	// The first coaming was `face` square — 0.42 km on a 1.24 km station, a
+	// third of its whole width — and read as a plate bolted over the docking
+	// face rather than as a door in it. It is sized from the *aperture* now,
+	// which is the thing it frames: half again its width and three times its
+	// height, so the slot sits in a rim you can see the edges of.
+	//
+	// Thin in z as well, and the aperture's own bars overlap it: at the old
+	// depth the frame stood a hair clear of the coaming and the two were
+	// separate objects touching at a plane — which the connectivity check reads,
+	// correctly, as a light hanging in front of a station.
+	const slot = STATION_GEOMETRY.trade.aperture;
+	const coaming = new THREE.Mesh(
+		new THREE.BoxGeometry(slot.widthKm * 1.5, slot.heightKm * 3, face * 0.09),
+		plainMaterial(0x79838f, 0.7, 0.45),
+	);
+	coaming.position.z = face + face * 0.035;
+	coaming.name = "coaming";
+	group.add(coaming);
+	group.add(buildAperture("trade", face + face * 0.06));
+
+	// The window grid, on the four equatorial square faces. Each pane sits on
+	// its face's own plane, a hair proud, so none of them can float: the face is
+	// at `face` along its axis and spans ±`face` across it.
+	const PER_FACE = 7;
+	group.add(
+		portRun("trade", PER_FACE * 4, (i, position, normal) => {
+			// Four faces, seven panes each: the face is the index modulo four and
+			// the position along it is the index divided by four.
+			const angle = ((i % 4) / 4) * Math.PI * 2;
+			const step = Math.floor(i / 4);
+			normal.set(Math.cos(angle), Math.sin(angle), 0);
+			// A staggered two-row run inside the face's square, kept clear of its
+			// edges so a pane cannot hang off a corner. The face plane is at
+			// `face` along its normal and spans ±`face` across it.
+			const across = (step / (PER_FACE - 1) - 0.5) * face * 1.1;
+			const up = (step % 2 === 0 ? -1 : 1) * face * 0.32;
+			position
+				.copy(normal)
+				.multiplyScalar(face * 1.004)
+				.addScaledVector(
+					new THREE.Vector3(-Math.sin(angle), Math.cos(angle), 0),
+					across,
+				);
+			position.z = up;
+		}),
+	);
+
+	// The strobes on two opposite equatorial faces, flat against them.
+	group.add(
+		strobePair("trade", fixtures, r * 0.07, (side, position) => {
+			position.set(side * face * 1.02, 0, face * 0.5);
+		}),
+	);
 	return { group, fixtures };
 }
 
 /**
- * The shipyard's drydock frame: an open cage clamped alongside the core,
- * reaching `silhouetteRadiusKm` (`docking.md` §5 — silhouette, not dockable).
+ * Trade B — Ring. Rebuilt for round two.
  *
- * Long, open and off-centre, because those are the three things that survive
- * being reduced to an outline: the shipyard reads as a different *object* at the
- * range where the trade station is still a lit dot.
+ * Round one ranked this last and called it good: "the ring is good, but looks
+ * like a comic — and maybe use more than one spoke". That is a defect report
+ * rather than a preference, so the concept keeps its slot and the execution
+ * changes. Three things made it cartoonish and all three are structural:
+ *
+ * - **The rim was fat.** A tube a quarter of the ring's own radius has the
+ *   proportions of a life-belt. It is 0.13·r now against 0.24·r, which is
+ *   roughly the ratio a spun habitat actually has.
+ * - **Two spokes read as a prop.** They are lofted A-frame trusses now, and
+ *   there are four of them — the count went to six first and read as a bicycle
+ *   wheel, which is recorded at `SPOKES` below rather than here, because a
+ *   number written in two places is a number that disagrees with itself.
+ * - **Nothing had a size.** A smooth torus gives the eye no unit to judge
+ *   against, so it could be ten metres across. The rim now carries repeated
+ *   modules at a fixed pitch — the same trick #35's carrier uses, and the only
+ *   one that works against a starfield with no ruler in it.
  */
-function buildDrydock(): BuiltPart {
+function buildTradeRing(color: number): BuiltPart {
+	const r = STATION_GEOMETRY.trade.coreRadiusKm;
 	const group = new THREE.Group();
-	// Sized to fit inside the declared reach rather than by eye: the frame's far
-	// end sits at `offset + length/2`, and its rings stick out sideways, so the
-	// farthest vertex is the hypotenuse of the two. The first version put that at
-	// 2.0 km against a declared 1.5 — a silhouette budget nothing measured, which
-	// `tests/station-mesh.test.ts` now does.
-	const reach = STATION_SILHOUETTE_KM.shipyard;
-	const length = reach * 0.96;
-	const half = 0.28;
-	const strut = 0.035;
-	const material = plainMaterial(0x6f7d88, 0.78, 0.42);
+	const fixtures: StationFixture[] = [];
+	const major = r * 0.92;
+	const tube = r * 0.13;
+	const rim = new THREE.Mesh(
+		// 24 segments round the ring and 8 round the tube: flat-shaded, that is a
+		// rim visibly built of panels rather than a moulded doughnut.
+		new THREE.TorusGeometry(major, tube, 8, 24),
+		hullMaterial(color, "trade"),
+	);
+	rim.material = flatCloneOf(
+		rim.material as THREE.Material,
+	) as THREE.MeshStandardMaterial;
+	rim.name = "core";
+	group.add(rim);
 
-	for (const [x, y] of [
-		[half, half],
-		[half, -half],
-		[-half, half],
-		[-half, -half],
-	]) {
-		const beam = new THREE.Mesh(
-			new THREE.BoxGeometry(strut, strut, length),
-			material,
+	// **Recessed modules and slim fins, not lugs.**
+	//
+	// The first version alternated blocks *outward* and inward off the rim,
+	// which read as bolts stuck on the outside — reviewed as "weird
+	// protrusions". A spun habitat's outer face is its floor, so nothing should
+	// stick out of it that does not have to; what does stick out on a real one
+	// is thermal plant. So the repeated element is now a shallow panel set into
+	// the rim, and the only things standing off it are four radiator fins.
+	//
+	// The pitch is what matters and it survives the change: twelve of anything
+	// at a fixed spacing is the ruler that tells the eye how big the ring is.
+	const MODULES = 12;
+	for (let i = 0; i < MODULES; i++) {
+		const theta = (i / MODULES) * Math.PI * 2;
+		const bay = new THREE.Group();
+		bay.rotation.z = theta;
+		bay.name = `module-${i}`;
+		group.add(bay);
+		const panel = shell(
+			[
+				{ z: major - tube * 0.4, w: r * 0.075, h: r * 0.05, e: 6 },
+				{ z: major + tube * 0.55, w: r * 0.062, h: r * 0.042, e: 6 },
+			],
+			plainMaterial(i % 2 === 0 ? 0x8b95a0 : 0x6f7d88, 0.68, 0.46),
+			"module",
+			6,
+			true,
 		);
-		beam.position.set(x, y, 0);
-		group.add(beam);
+		panel.rotation.y = Math.PI / 2;
+		bay.add(panel);
 	}
-	for (const z of [-length / 2, -length / 6, length / 6, length / 2]) {
-		const ring = new THREE.Mesh(
-			new THREE.TorusGeometry(half * 1.35, strut * 0.8, 4, 4),
-			material,
+	// Four radiator fins, edge-on to the ring's plane so they read as sheets
+	// rather than as more blocks.
+	for (let i = 0; i < 4; i++) {
+		const theta = (i / 4) * Math.PI * 2 + Math.PI / 8;
+		const fin = new THREE.Group();
+		fin.rotation.z = theta;
+		group.add(fin);
+		const plate = new THREE.Mesh(
+			new THREE.BoxGeometry(r * 0.03, tube * 2.6, tube * 1.5),
+			plainMaterial(0x5f6d78, 0.84, 0.34),
 		);
-		ring.rotation.z = Math.PI / 4;
-		ring.position.z = z;
-		group.add(ring);
+		plate.position.set(major + tube * 0.5, 0, 0);
+		fin.add(plate);
 	}
-	// Cold floodlit bays (§7), on the frame rather than on the core so the two
-	// halves of the shipyard read differently lit as well as differently shaped.
-	for (const z of [-length / 3, 0, length / 3]) {
+
+	// **A-frame trusses, not radial bars.**
+	//
+	// Round two's first attempt ran six single square members from the hub to
+	// `major` — the rim's *centreline* — with a control station in the middle.
+	// Two things came out of that and both are visible from any angle: a
+	// Catmull-Rom run overshoots between control stations, so the members pushed
+	// through the rim and out the far side, and a lone bar between two round
+	// things reads as the spoke of a steering wheel rather than as structure.
+	//
+	// Each spoke is a pair now, splayed from a single root on the hub to two
+	// feet on the rim, which is what a real tension member looks like and gives
+	// the eye a triangle to read. Two control stations per member, so there is
+	// no interior to overshoot, and they stop at the rim's **inner face** rather
+	// than at its centre.
+	// **Four.** Six read as a bicycle wheel — the review's word for the first
+	// version was "comic", and more members did not fix that, they thickened it.
+	// Four A-frames is eight members, which is enough to look carried and few
+	// enough that the ring's own circle stays the shape you see.
+	const SPOKES = 4;
+	const foot = major - tube * 0.94;
+	for (let i = 0; i < SPOKES; i++) {
+		const theta = (i / SPOKES) * Math.PI * 2;
+		// A group per spoke, rotated about Z, with the member turned inside it.
+		// Setting both angles on one object leaves the result to `Euler`'s order
+		// — the members came out clustered on one side of the ring rather than
+		// spaced round it, which is what composing two axes on one Euler does
+		// when you are thinking of them as applied in sequence. Nested frames
+		// compose in the order they are nested and there is nothing to reason
+		// about.
+		const arm = new THREE.Group();
+		arm.rotation.z = theta;
+		arm.name = `spoke-${i}`;
+		group.add(arm);
+		for (const splay of [-1, 1]) {
+			const member = shell(
+				[
+					// Rooted on the hub's own surface at this spoke's angle, not at
+					// the axis: six pairs sharing one apex is a bundle of wires.
+					{
+						z: r * 0.14,
+						w: r * 0.026,
+						h: r * 0.019,
+						y: splay * r * 0.04,
+						e: 3,
+					},
+					{
+						z: foot,
+						w: r * 0.022,
+						h: r * 0.016,
+						// **`y`, not `x`.** The member is rotated `Ry(π/2)` so its own
+						// +Z runs radially; that same rotation sends its local +X to
+						// the station's *axis*, so an `x` offset splays the pair
+						// front-to-back rather than sideways and the six of them read
+						// as a cone of wires from one point. Local +Y survives the
+						// rotation as the tangential direction, which is the one a
+						// truss actually splays along.
+						y: splay * r * 0.16,
+						e: 3,
+					},
+				],
+				plainMaterial(0x6f7d88, 0.74, 0.44),
+				`member-${i}${splay < 0 ? "a" : "b"}`,
+				4,
+				true,
+			);
+			member.rotation.y = Math.PI / 2;
+			arm.add(member);
+		}
+	}
+	// A brace ring at mid-radius, tying the trusses together. It is what stops
+	// the web reading as twelve unrelated sticks, and it is the third repeated
+	// element at a fixed pitch — another ruler.
+	const brace = new THREE.Mesh(
+		new THREE.TorusGeometry(major * 0.56, r * 0.016, 4, 24),
+		plainMaterial(0x5f6d78, 0.8, 0.4),
+	);
+	brace.name = "brace";
+	group.add(brace);
+
+	// A hub with a real throat — and **wide enough for the slot it carries**.
+	//
+	// The previous hub was 0.17 km across against a 0.2 km slot: the opening was
+	// wider than the thing it was cut into, which is why the dock read as
+	// enormous. It is sized from the aperture now — the slot plus a frame either
+	// side — rather than from a fraction of the ring.
+	const slot = STATION_GEOMETRY.trade.aperture;
+	const throat = slot.widthKm * 0.5 + r * 0.11;
+	group.add(
+		shell(
+			[
+				{ z: -r * 0.42, w: throat * 0.72, h: throat * 0.72, e: 6 },
+				{ z: -r * 0.24, w: throat, h: throat, e: 6, hard: true },
+				{ z: r * 0.24, w: throat, h: throat, e: 6, hard: true },
+				{ z: r * 0.34, w: throat * 0.86, h: throat * 0.86, e: 6 },
+			],
+			plainMaterial(0x8b95a0, 0.6, 0.5),
+			"hub",
+			8,
+			true,
+		),
+	);
+	// **On the hub's own front cap**, at the same z its last ring sits at. Set
+	// short of it the hub stood 6 m past the mouth — a station poking into the
+	// corridor a ship flies down, which is the one place nothing may be.
+	group.add(buildAperture("trade", r * 0.34));
+	group.add(
+		portRun("trade", PANE_COUNT, (i, position, normal) => {
+			const theta = (i / PANE_COUNT) * Math.PI * 2;
+			// On the rim's inner face, which is where a spun habitat's windows
+			// look — inward, at the ring's own floor.
+			normal.set(-Math.cos(theta), -Math.sin(theta), 0);
+			position.set(
+				Math.cos(theta) * (major - tube * 0.98),
+				Math.sin(theta) * (major - tube * 0.98),
+				(i % 2 === 0 ? 1 : -1) * tube * 0.35,
+			);
+		}),
+	);
+	group.add(
+		strobePair("trade", fixtures, r * 0.06, (side, position) => {
+			position.set(0, side * (major + tube * 1.1), 0);
+		}),
+	);
+	return { group, fixtures };
+}
+
+/** Trade C — Drum. An O'Neill cylinder end-on: a long spun barrel whose
+ *  +Z cap is the dock. The one form whose length, not its width, is the cue. */
+function buildTradeDrum(color: number): BuiltPart {
+	const r = STATION_GEOMETRY.trade.coreRadiusKm;
+	const group = new THREE.Group();
+	const fixtures: StationFixture[] = [];
+	const body = r * 0.46;
+	group.add(
+		shell(
+			[
+				{ z: -r * 1.02, w: body * 0.5, h: body * 0.5, e: 2.6 },
+				{ z: -r * 0.86, w: body, h: body, e: 2.6, hard: true },
+				{ z: r * 0.72, w: body, h: body, e: 2.6, hard: true },
+				{ z: r * 0.88, w: body * 0.72, h: body * 0.72, e: 2.6 },
+			],
+			hullMaterial(color, "trade"),
+			"core",
+			12,
+			true,
+		),
+	);
+	// Two stiffening bands, which are what give the barrel a readable size.
+	for (const z of [-r * 0.45, r * 0.2]) {
+		const band = new THREE.Mesh(
+			new THREE.TorusGeometry(body * 1.06, body * 0.09, 6, 16),
+			plainMaterial(0x6f7d88, 0.75, 0.4),
+		);
+		band.position.z = z;
+		group.add(band);
+	}
+	// At the drum's own front cap (`r * 0.88`), not 20 m in front of it.
+	group.add(buildAperture("trade", r * 0.88));
+	group.add(
+		portRun("trade", PANE_COUNT, (i, position, normal) => {
+			const theta = (i / PANE_COUNT) * Math.PI * 2 * 3;
+			const z = -r * 0.8 + (i / PANE_COUNT) * r * 1.5;
+			normal.set(Math.cos(theta), Math.sin(theta), 0);
+			position.copy(normal).multiplyScalar(body * 1.01);
+			position.z = z;
+		}),
+	);
+	group.add(
+		strobePair("trade", fixtures, r * 0.07, (side, position) => {
+			position.set(side * body * 1.02, 0, r * 0.6);
+		}),
+	);
+	return { group, fixtures };
+}
+
+/** Shipyard A — Gantry. A bridge keel with two open bays of lofted ribs
+ *  along it; the bays are the silhouette, and they are obviously *for* holding
+ *  something the size of a ship. */
+function buildShipyardGantry(color: number): BuiltPart {
+	const group = new THREE.Group();
+	const fixtures: StationFixture[] = [];
+	const r = STATION_GEOMETRY.shipyard.coreRadiusKm;
+	const span = 2.3;
+	// **The spinning part is compact, and that is a rule rather than a taste.**
+	// The slot sits on the spin axis (`docking.md` §4.2), so whatever turns
+	// sweeps its own outline round that axis: a 1.4 km keel spun about Z changes
+	// the station's projected width completely between phases, which
+	// `probe-station.mjs` reads as a far-range width that depends on the clock.
+	// So the keel is structure and stays in the frame; what turns is a hub the
+	// size of a Coriolis core.
+	// Four segments and a high exponent: a **square** section, head-on. The
+	// first hub was a twelve-sided drum like the trade station's, and
+	// `probe-station.mjs` measured the two outlines at 1 − IoU 0.203 against its
+	// 0.25 floor — from the one viewpoint a docking approach has, a shipyard
+	// read as a trade station. §7 rests identity on outline, so the fix is the
+	// outline rather than the threshold.
+	const hub = shell(
+		[
+			{ z: -r * 0.5, w: r * 0.46, h: r * 0.46, e: 8 },
+			{ z: r * 0.2, w: r * 0.54, h: r * 0.54, e: 8, hard: true },
+			{ z: r * 0.62, w: r * 0.42, h: r * 0.42, e: 8 },
+		],
+		hullMaterial(color, "shipyard"),
+		"core",
+		4,
+		true,
+	);
+	const spun = new THREE.Group();
+	spun.name = "spun";
+	spun.add(hub);
+	spun.add(buildAperture("shipyard", r * 0.62));
+	group.add(spun);
+	const rib = plainMaterial(0x6f7d88, 0.78, 0.42);
+	// Named, because every shipyard form has one and `probe-station.mjs` reads
+	// it: the check is that the *whole assembly* reparents across the layer
+	// handoff, not just the painted core, and it needs one name that holds for
+	// every form rather than #28's `drydock`.
+	const frame = new THREE.Group();
+	frame.name = "frame";
+	group.add(frame);
+	const keel = shell(
+		[
+			{ z: -span * 0.62, w: r * 0.26, h: r * 0.2, e: 3 },
+			{ z: -span * 0.2, w: r * 0.42, h: r * 0.34, e: 3.4, hard: true },
+			{ z: span * 0.34, w: r * 0.5, h: r * 0.42, e: 3.4 },
+			{ z: span * 0.56, w: r * 0.38, h: r * 0.32, e: 3.4 },
+		],
+		plainMaterial(0x8b95a0, 0.7, 0.44),
+		"keel",
+		12,
+		true,
+	);
+	keel.rotation.y = Math.PI / 2;
+	frame.add(keel);
+	for (let i = 0; i < 7; i++) {
+		const x = -span * 0.52 + (i / 6) * span * 1.04;
+		const arch = new THREE.Mesh(
+			new THREE.TorusGeometry(r * 0.62, r * 0.05, 5, 12, Math.PI * 1.25),
+			rib,
+		);
+		arch.position.set(x, 0, 0);
+		arch.rotation.y = Math.PI / 2;
+		arch.rotation.z = -Math.PI * 0.62;
+		frame.add(arch);
+	}
+	for (const y of [-r * 0.58, r * 0.58]) {
+		const rail = shell(
+			[
+				{ z: -span * 0.56, w: r * 0.05, h: r * 0.05, e: 3 },
+				{ z: span * 0.56, w: r * 0.05, h: r * 0.05, e: 3 },
+			],
+			rib,
+			"rail",
+			6,
+		);
+		rail.rotation.y = Math.PI / 2;
+		rail.position.y = y;
+		frame.add(rail);
+	}
+	// Two booms carried forward past the hub, flanking the approach.
+	//
+	// Without them the gantry's frame lies entirely *across* the aperture axis,
+	// so from the one viewpoint a docking approach has — down that axis — the
+	// station is a hub with some thin structure behind it, and
+	// `probe-station.mjs` measured it against the trade station at 1 − IoU 0.238
+	// on a 0.25 floor. Identity is what §7 rests on and the approach view is
+	// where it matters most, so the frame now reaches into that view.
+	for (const y of [-r * 0.8, r * 0.8]) {
+		const boom = shell(
+			[
+				{ z: -span * 0.1, w: r * 0.09, h: r * 0.09, e: 3 },
+				{ z: r * 1.5, w: r * 0.07, h: r * 0.07, e: 3, hard: true },
+				{ z: r * 1.9, w: r * 0.16, h: r * 0.16, e: 3 },
+			],
+			plainMaterial(0x6f7d88, 0.78, 0.42),
+			"boom",
+			6,
+			true,
+		);
+		boom.position.y = y;
+		frame.add(boom);
+	}
+	// On the keel's own underside, inside its half-height and inside its length.
+	group.add(
+		buildBayLights(
+			fixtures,
+			r,
+			(i, position) =>
+				position.set(-span * 0.34 + i * span * 0.23, -r * 0.3, 0),
+			new THREE.Vector3(span * 0.14, -r * 0.24, 0),
+		),
+	);
+	group.add(
+		portRun("shipyard", 16, (i, position, normal) => {
+			normal.set(0, 1, 0);
+			position.set(
+				span * 0.18 + (i % 8) * r * 0.08,
+				r * 0.44,
+				(i < 8 ? -1 : 1) * r * 0.16,
+			);
+		}),
+	);
+	group.add(
+		strobePair("shipyard", fixtures, r * 0.07, (side, position) => {
+			position.set(side * span * 0.55, 0, 0);
+		}),
+	);
+	return { group, fixtures, spinner: spun };
+}
+
+/**
+ * Shipyard B — Hangar. Round two's replacement for the Cradle.
+ *
+ * Round one ranked the shipyard `A > C > B` and asked for "some other designs",
+ * so the last slot is not a fourth open frame. Every shipyard form so far is a
+ * *skeleton* — a cage, a broken ring — and reads as scaffolding round an empty
+ * volume. This one is the opposite silhouette class: a closed slab with a lit
+ * mouth cut into its flank, so the ships are inside rather than clamped
+ * outside. What it borrows is a carrier's bay, which is also the one shape in
+ * #35's pool that answers "how big is that" at range, because you can see a
+ * hole a ship fits through.
+ */
+function buildShipyardHangar(color: number): BuiltPart {
+	const group = new THREE.Group();
+	const fixtures: StationFixture[] = [];
+	const r = STATION_GEOMETRY.shipyard.coreRadiusKm;
+	const span = 2.14;
+	const frame = new THREE.Group();
+	frame.name = "frame";
+	group.add(frame);
+
+	// The slab: long, rectangular in section, with a chamfer at each end.
+	const slab = shell(
+		[
+			{ z: -span * 0.56, w: r * 0.34, h: r * 0.5, e: 5 },
+			{ z: -span * 0.44, w: r * 0.5, h: r * 0.72, e: 7, hard: true },
+			{ z: span * 0.4, w: r * 0.5, h: r * 0.72, e: 7, hard: true },
+			{ z: span * 0.54, w: r * 0.32, h: r * 0.48, e: 5 },
+		],
+		hullMaterial(color, "shipyard"),
+		"slab",
+		8,
+		true,
+	);
+	slab.rotation.y = Math.PI / 2;
+	frame.add(slab);
+
+	// The bay mouth: a recess cut into the flank, floodlit from inside. Its own
+	// size is the ruler — it is obviously a hole a ship goes through.
+	//
+	// **It is a construction slip, not the dock**, and the shape must not be
+	// allowed to imply otherwise. Measured, the mouth is 1070 × 264 × 144 m
+	// against a pool whose largest ordinary hull is 74 × 54 × 47 m: fifteen of
+	// them nose to tail, three or four abreast. That is deliberate — a shipyard
+	// should visibly hold ships — but the *player* docks at the hub, through the
+	// slot `STATION_GEOMETRY.shipyard` declares, because `docking.md` §4 puts it
+	// on the spin axis and #28 keeps the outboard structure still. A pad in this
+	// bay would be a second docking geometry the checks do not read.
+	//
+	// The slot's dimensions are deliberately not repeated here. They were, and
+	// they went stale the moment §5's provisional figure was resolved — which is
+	// the failure `docking.md` names in the same breath as fixing it.
+	const mouth = new THREE.Mesh(
+		new THREE.BoxGeometry(span * 0.5, r * 0.44, r * 0.24),
+		new THREE.MeshBasicMaterial({ color: 0x05070a }),
+	);
+	mouth.position.set(0, 0, r * 0.42);
+	mouth.name = "bay-mouth";
+	frame.add(mouth);
+	for (const side of [-1, 1]) {
+		const lip = shell(
+			[
+				{ z: -span * 0.25, w: r * 0.06, h: r * 0.05, e: 5 },
+				{ z: span * 0.25, w: r * 0.06, h: r * 0.05, e: 5 },
+			],
+			plainMaterial(0x8b95a0, 0.66, 0.46),
+			"lip",
+			6,
+			true,
+		);
+		lip.rotation.y = Math.PI / 2;
+		lip.position.set(0, side * r * 0.26, r * 0.5);
+		frame.add(lip);
+	}
+	// Rib frames at a fixed pitch down the flank — the second ruler, and what
+	// keeps a long smooth slab from reading as a small smooth box.
+	for (let i = 0; i < 9; i++) {
+		const rib = new THREE.Mesh(
+			new THREE.BoxGeometry(r * 0.03, r * 0.76, r * 0.54),
+			plainMaterial(0x6f7d88, 0.78, 0.42),
+		);
+		rib.position.set(-span * 0.42 + (i / 8) * span * 0.84, 0, 0);
+		frame.add(rib);
+	}
+
+	// The hub that turns, on the slab's spine. Compact, for the reason the
+	// Gantry's is: the slot sits on the spin axis, so whatever turns sweeps its
+	// own outline round it.
+	const hub = shell(
+		[
+			{ z: -r * 0.3, w: r * 0.34, h: r * 0.34, e: 8 },
+			{ z: r * 0.24, w: r * 0.42, h: r * 0.42, e: 8, hard: true },
+			{ z: r * 0.6, w: r * 0.32, h: r * 0.32, e: 8 },
+		],
+		hullMaterial(color, "shipyard"),
+		"core",
+		4,
+		true,
+	);
+	const spun = new THREE.Group();
+	spun.name = "spun";
+	spun.add(hub);
+	spun.add(buildAperture("shipyard", r * 0.6));
+	group.add(spun);
+
+	// Inside the bay mouth, which is where a bay's floods are.
+	group.add(
+		buildBayLights(
+			fixtures,
+			r,
+			(i, position) =>
+				position.set(-span * 0.2 + i * span * 0.13, r * 0.2, r * 0.4),
+			new THREE.Vector3(span * 0.1, -r * 0.18, r * 0.4),
+		),
+	);
+	group.add(
+		portRun("shipyard", 16, (i, position, normal) => {
+			// On the slab's own back face. The slab is `r * 0.72` half-high and
+			// `r * 0.5` half-wide in the rotated frame, so a run at `r * 0.5` in
+			// z sat clear of the surface it was meant to be set into — the whole
+			// grid came away as one loose island.
+			normal.set(0, 0, -1);
+			position.set(
+				-span * 0.34 + (i % 8) * span * 0.1,
+				(i < 8 ? -1 : 1) * r * 0.24,
+				-r * 0.46,
+			);
+		}),
+	);
+	group.add(
+		strobePair("shipyard", fixtures, r * 0.07, (side, position) => {
+			// Inside the slab's own half-length (`span * 0.54`), not on it: at
+			// 0.55 one of the pair sat clear of the hull it is mounted on.
+			position.set(side * span * 0.5, 0, r * 0.36);
+		}),
+	);
+	return { group, fixtures, spinner: spun };
+}
+
+/** Shipyard C — Slipway ring. A partial ring with the gap as the slip: the
+ *  one shipyard form whose outline is a broken circle, which nothing else in
+ *  the pool is. */
+function buildShipyardSlipway(color: number): BuiltPart {
+	const group = new THREE.Group();
+	const fixtures: StationFixture[] = [];
+	const r = STATION_GEOMETRY.shipyard.coreRadiusKm;
+	const span = 2.07;
+	const major = span * 0.62;
+	const arc = new THREE.Mesh(
+		new THREE.TorusGeometry(major, r * 0.2, 8, 22, Math.PI * 1.45),
+		hullMaterial(color, "shipyard"),
+	);
+	arc.name = "core";
+	arc.rotation.z = Math.PI * 0.28;
+	const frame = new THREE.Group();
+	frame.name = "frame";
+	frame.add(arc);
+	group.add(frame);
+	const spine = shell(
+		[
+			{ z: -r * 0.6, w: r * 0.3, h: r * 0.26, e: 3.4 },
+			{ z: r * 0.24, w: r * 0.4, h: r * 0.34, e: 3.4, hard: true },
+			{ z: r * 0.64, w: r * 0.3, h: r * 0.26, e: 3.4 },
+		],
+		plainMaterial(0x8b95a0, 0.62, 0.48),
+		"hub",
+		12,
+	);
+	const spun = new THREE.Group();
+	spun.name = "spun";
+	spun.add(spine);
+	spun.add(buildAperture("shipyard", r * 0.64));
+	group.add(spun);
+	// Struts from the hub to the arc, nested a group per angle — two Euler
+	// angles on one object leaves the result to `Euler`'s order, and all four
+	// came out lying along one line, which is why the form read as unfinished.
+	for (let i = 0; i < 4; i++) {
+		const strut = shell(
+			[
+				{ z: r * 0.32, w: r * 0.08, h: r * 0.06, e: 4 },
+				{ z: major, w: r * 0.06, h: r * 0.05, e: 4 },
+			],
+			plainMaterial(0x6f7d88, 0.78, 0.42),
+			"strut",
+			6,
+			true,
+		);
+		radialArm(
+			frame,
+			Math.PI * 0.3 + (i / 3) * Math.PI * 1.35,
+			`strut-${i}`,
+			strut,
+		);
+	}
+	// The two ends of the slip, capped and built up. An arc that simply stops is
+	// a tube with a hole in it: these are the working faces the slip opens
+	// between, so they carry the heaviest structure on the station.
+	for (const [index, end] of [Math.PI * 0.28, Math.PI * 1.73].entries()) {
+		const head = shell(
+			[
+				{ z: major - r * 0.3, w: r * 0.26, h: r * 0.3, e: 6 },
+				{ z: major + r * 0.05, w: r * 0.3, h: r * 0.34, e: 7, hard: true },
+				{ z: major + r * 0.26, w: r * 0.22, h: r * 0.26, e: 6 },
+			],
+			hullMaterial(color, "shipyard"),
+			"slip-head",
+			6,
+			true,
+		);
+		radialArm(frame, end, `slip-head-${index}`, head);
+	}
+	// On the arc's inner face, looking into the slip.
+	group.add(
+		buildBayLights(
+			fixtures,
+			r,
+			(i, position) => {
+				const theta = Math.PI * 0.3 + (i / 3) * Math.PI * 1.35;
+				// On the arc's inner *surface*, derived from its tube radius. At
+				// `major * 0.86` they hung 60 m inside the slip — invisible to the
+				// island check, whose boxes overlap because the arc's box spans the
+				// whole ring, and plainly floating on screen.
+				const inner = major - r * 0.18;
+				position.set(Math.cos(theta) * inner, Math.sin(theta) * inner, 0);
+			},
+			new THREE.Vector3(major - r * 0.18, 0, 0),
+		),
+	);
+	group.add(
+		portRun("shipyard", 12, (i, position, normal) => {
+			const theta = Math.PI * 0.28 + ((i + 1) / 13) * Math.PI * 1.4;
+			// On the ring's inner face, looking into the slip.
+			normal.set(-Math.cos(theta), -Math.sin(theta), 0);
+			position.set(
+				Math.cos(theta) * major * 0.82,
+				Math.sin(theta) * major * 0.82,
+				0,
+			);
+		}),
+	);
+	group.add(
+		strobePair("shipyard", fixtures, r * 0.07, (side, position) => {
+			const theta = Math.PI * 0.28 + (side > 0 ? 0 : Math.PI * 1.4);
+			position.set(Math.cos(theta) * major, Math.sin(theta) * major, 0);
+		}),
+	);
+	return { group, fixtures, spinner: spun };
+}
+
+/**
+ * The shipyard's work light: cold floods along the bay and one welding arc.
+ *
+ * Shared by all three forms, because the light is what says *shipyard* once the
+ * outline has told you it is not a trade station — but **placed by the caller**,
+ * because the three have nothing in common to hang it on. A single hard-coded
+ * row put two of the Gantry's floods in empty space beside the keel and would
+ * have buried the Hangar's inside a slab. A fixture's position is a property of
+ * the structure it is mounted on, so the structure supplies it.
+ */
+function buildBayLights(
+	fixtures: StationFixture[],
+	r: number,
+	place: (i: number, position: THREE.Vector3) => void,
+	arcAt: THREE.Vector3,
+): THREE.Group {
+	const group = new THREE.Group();
+	for (let i = 0; i < 4; i++) {
 		const flood = new THREE.Mesh(
-			new THREE.BoxGeometry(half * 1.6, 0.02, 0.05),
+			new THREE.BoxGeometry(r * 0.26, r * 0.03, r * 0.06),
 			FLOOD_MATERIAL,
 		);
-		flood.position.set(0, -half, z);
+		place(i, flood.position);
 		flood.name = "bay-flood";
 		detail(flood, "reduced");
 		group.add(flood);
 	}
-
-	// The welding arc (§5): one bay under work, struck and dying at 7 Hz. It is
-	// the only motion on the shipyard, which is what makes a *working* yard read
-	// differently from a lit one — and it is inside the frame, so switching it
-	// off at range cannot touch the 1.429 km reach the frame itself sets.
-	const fixtures: StationFixture[] = [];
 	const arcMaterial = emissiveMaterial(STATION_VISUALS.shipyard.floodColor, 0);
-	const arc = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), arcMaterial);
-	arc.position.set(0, -half * 0.45, length / 6);
+	const arc = new THREE.Mesh(
+		new THREE.SphereGeometry(r * 0.05, 8, 6),
+		arcMaterial,
+	);
+	arc.position.copy(arcAt);
 	arc.name = "weld-arc";
 	detail(arc, "reduced");
 	group.add(arc);
 	fixtures.push({ material: arcMaterial, base: 4.5, kind: "work" });
-
-	// Clamped alongside and offset, not concentric: a frame centred on the core
-	// would read as a bigger trade station rather than as a second object.
-	group.position.set(reach * 0.42, 0, 0);
-	group.rotation.y = Math.PI / 2;
-	group.name = "drydock";
-	return { group, fixtures };
+	return group;
 }
 
-/** The refinery: a squat drum sunk into a captured asteroid, with flare stacks
- *  (`station-types.md` §7). Nothing here rotates. */
-function buildRefinery(color: number): BuiltPart {
-	const geometry = STATION_GEOMETRY.refinery;
+/**
+ * The refinery's heat: a **vent bank**, and no plume.
+ *
+ * This shape has been wrong twice. It began as a tapered tube with an orange
+ * cone on the end — a chimney with a flame drawn on it, which is what the
+ * review called it, and which makes no sense in vacuum because nothing rises.
+ * The second version kept a cone as a "plume thrown clear", which is the same
+ * error wearing a different hat: **a steady flame needs an atmosphere to burn
+ * in and something to hold its shape**. A gas vent in vacuum throws an
+ * expanding cloud that thins to nothing in metres, and it is not a solid.
+ *
+ * So there is no plume. What remains is what a plant in vacuum would actually
+ * show: a manifold lying along the hull, a row of nozzles down it, and the
+ * throats glowing from the heat of what passed through them. The glow breathes
+ * on the role's flicker, so the machine still reads as running.
+ *
+ * If a plume is ever wanted, it is a **particle system** — an emitter on each
+ * nozzle, drawn as additive points that expand and fade — and it belongs with
+ * the exhaust work, not here: a cone pretending to be a gas is exactly the
+ * cheat this version removed.
+ */
+function buildVentBank(
+	fixtures: StationFixture[],
+	length: number,
+	radius: number,
+): THREE.Group {
+	const stack = new THREE.Group();
+	// Proportioned from its own length rather than from the old stack's tube
+	// radius: a manifold `radius * 1.5` across was a rail, not a plant, and
+	// disappeared into the rock it sits on.
+	const across = length * 0.17;
+	const manifold = shell(
+		[
+			{ z: -length * 0.34, w: across, h: across * 0.85, e: 5 },
+			{ z: length * 0.38, w: across * 1.12, h: across * 0.95, e: 5 },
+		],
+		plainMaterial(0x8a7a66, 0.88, 0.14),
+		"vent-manifold",
+		6,
+		true,
+	);
+	manifold.rotation.y = Math.PI / 2;
+	stack.add(manifold);
+
+	// Four nozzles down the manifold, angled outboard. Their number and spacing
+	// is the same ruler the ring's modules are: repeated parts at a fixed pitch.
+	const glow = emissiveMaterial(STATION_VISUALS.refinery.heatColor, 0);
+	for (let i = 0; i < 4; i++) {
+		const nozzle = shell(
+			[
+				{ z: 0, w: across * 0.42, h: across * 0.42, e: 4 },
+				{ z: length * 0.34, w: across * 0.3, h: across * 0.3, e: 4 },
+			],
+			plainMaterial(0x6f665c, 0.9, 0.12),
+			"vent",
+			6,
+			true,
+		);
+		nozzle.position.set(-length * 0.24 + i * length * 0.17, 0, across * 0.7);
+		nozzle.rotation.x = -0.35;
+		stack.add(nozzle);
+		// The lit throat, sunk into the nozzle's mouth rather than standing at
+		// the end of it: it is the inside of the pipe glowing, so it has to be
+		// inside the pipe.
+		const throat = new THREE.Mesh(
+			new THREE.BoxGeometry(across * 0.5, across * 0.5, across * 0.2),
+			glow,
+		);
+		throat.position.set(
+			-length * 0.24 + i * length * 0.17,
+			length * 0.3 * 0.34,
+			across * 0.7 + length * 0.27,
+		);
+		throat.name = "flare";
+		detail(throat, "reduced");
+		stack.add(throat);
+	}
+	// One fixture for the bank, kind `flare`: it is the flare system's light,
+	// and it is now the only light it has.
+	fixtures.push({ material: glow, base: 3, kind: "flare" });
+	return stack;
+}
+
+/**
+ * Nest a part in its own frame at `theta` about Z, turned to run radially.
+ *
+ * The five places that need this — the Ring's spoke members, the Slipway's
+ * struts and slip heads, the Collar's clamps, the Derrick's legs — all want the
+ * same thing and all got it wrong the same way first: setting `rotation.y` and
+ * `rotation.z` on one object leaves the result to `Euler`'s order, and the
+ * members come out clustered along a line instead of spaced round the axis.
+ * Nested frames compose in the order they are nested and there is nothing to
+ * reason about, which is worth having in one place rather than five.
+ */
+function radialArm(
+	parent: THREE.Object3D,
+	theta: number,
+	name: string,
+	child: THREE.Object3D,
+) {
+	const arm = new THREE.Group();
+	arm.rotation.z = theta;
+	arm.name = name;
+	child.rotation.y = Math.PI / 2;
+	arm.add(child);
+	parent.add(arm);
+	return arm;
+}
+
+/**
+ * A radiator wing: a flat panel on a short stalk, standing off the rock.
+ *
+ * The refinery's silhouette cue, and it exists because removing the old flare
+ * stacks removed one. §7 rests identity on outline and `probe-station.mjs`
+ * measures it: with the stacks gone every refinery form fell to `1 − IoU`
+ * 0.152, 0.174 and **0.025** against the trade station's cuboctahedron, on a
+ * 0.25 floor. Head-on, a rounded rock and a rounded polyhedron are the same
+ * shape however differently they are built — what separated them was always the
+ * spindly things sticking out.
+ *
+ * So the outboard feature comes back, but as the one a plant in vacuum actually
+ * needs. Nothing convects out here; heat leaves by radiating, and the area to do
+ * it with is the largest thing on any real spacecraft that processes anything.
+ * A flat panel is also the strongest silhouette shape available — a straight
+ * edge against a lumpy rock — which is what the metric is measuring.
+ */
+function buildRadiator(spanKm: number, tilt: number): THREE.Group {
+	const group = new THREE.Group();
+	const stalk = shell(
+		[
+			{ z: 0, w: spanKm * 0.07, h: spanKm * 0.07, e: 4 },
+			{ z: spanKm * 0.45, w: spanKm * 0.05, h: spanKm * 0.05, e: 4 },
+		],
+		plainMaterial(0x6f7d88, 0.8, 0.4),
+		"radiator-stalk",
+		4,
+		true,
+	);
+	stalk.rotation.y = Math.PI / 2;
+	group.add(stalk);
+	// A spine down the panels' own axis, which is the thing that holds them.
+	//
+	// Without it the two outer panels touched nothing: they sit ±0.46 of a span
+	// off the stalk's axis while the stalk is a fifteenth of a span thick, so
+	// the wing was a stalk and three unattached plates. It passed the island
+	// check on two forms only because the rock's bounding box happened to cover
+	// them, which is the box proxy flattering a real defect.
+	const spine = new THREE.Mesh(
+		new THREE.BoxGeometry(spanKm * 0.1, spanKm * 0.06, spanKm * 1.06),
+		plainMaterial(0x6f7d88, 0.8, 0.4),
+	);
+	spine.position.set(spanKm * 0.46, 0, 0);
+	spine.name = "radiator-spine";
+	group.add(spine);
+	// Ribbed rather than one slab: the ribs are a fixed pitch, so the panel is
+	// also a ruler for how big the station is.
+	for (let i = 0; i < 3; i++) {
+		const panel = new THREE.Mesh(
+			new THREE.BoxGeometry(spanKm * 0.9, spanKm * 0.03, spanKm * 0.42),
+			plainMaterial(0x5f6d78, 0.86, 0.3),
+		);
+		panel.position.set(spanKm * 0.82, 0, (i - 1) * spanKm * 0.46);
+		panel.name = "radiator";
+		group.add(panel);
+	}
+	group.rotation.z = tilt;
+	return group;
+}
+
+/**
+ * Refinery A — Warren. A cut face sliced into the rock, with terraced plant
+ * inside it and the pad at the bottom of the cut.
+ *
+ * The plant is *inside* the asteroid rather than bolted onto it, which is the
+ * round-one review's instruction: structure built into the rock. What the eye
+ * gets is a machined notch in something that is otherwise plainly a rock.
+ */
+function buildRefineryWarren(color: number): BuiltPart {
+	const r = STATION_GEOMETRY.refinery.coreRadiusKm;
 	const group = new THREE.Group();
 	const fixtures: StationFixture[] = [];
-	const r = geometry.coreRadiusKm;
-
-	// The asteroid: an icosahedron with its vertices pushed about, which is the
-	// cheapest shape that is unmistakably not a machined hull in outline.
-	const rock = new THREE.IcosahedronGeometry(r * 1.15, 1);
-	const rand = displayRand("station-refinery-rock");
-	const pos = rock.getAttribute("position");
-	for (let i = 0; i < pos.count; i++) {
-		const f = 0.7 + rand() * 0.55;
-		pos.setXYZ(i, pos.getX(i) * f, pos.getY(i) * f, pos.getZ(i) * f * 0.8);
-	}
-	rock.computeVertexNormals();
-	// Rougher and less metallic than a hull, and lighter than rock looks in a
-	// swatch: the near layer's only fill is a dim camera-side light, and a
-	// physically plausible dark asteroid renders as a hole in the starfield with
-	// two flares hanging over it. Read off a frame, not chosen from a palette.
-	const asteroid = new THREE.Mesh(
-		rock,
-		new THREE.MeshStandardMaterial({
-			color: 0x9a8a72,
-			roughness: 0.95,
-			metalness: 0.02,
+	// The cut the terraces sit in. Its ceiling is below where the machined half
+	// starts (`r * 0.5`), so the plant stands on the bench rather than in it.
+	group.add(
+		buildAsteroid(r * 1.24, "refinery-warren", {
+			radiusKm: r * 0.95,
+			ceilingKm: r * 0.42,
 		}),
 	);
-	asteroid.name = "asteroid";
-	group.add(asteroid);
 
-	// The drum, sunk in: only its lit face and the pad on it clear the rock.
-	const drum = new THREE.Mesh(
-		new THREE.CylinderGeometry(r * 0.62, r * 0.62, r * 0.9, 16),
-		hullMaterial(color, "refinery"),
-	);
-	drum.rotation.x = Math.PI / 2;
-	drum.position.z = r * 0.45;
-	// Named `core` like the Coriolis hull, so one probe check can read every
-	// type's painted surface rather than three names' worth of special case.
-	drum.name = "core";
-	group.add(drum);
-
-	group.add(buildAperture("refinery", r * 0.9));
-
-	// Flare stacks: thin, long, and off the drum's axis, so the outline has
-	// something spindly on it that neither Coriolis type has.
-	for (const [x, y, tilt] of [
-		[r * 0.75, r * 0.3, 0.35],
-		[-r * 0.6, r * 0.65, -0.5],
-	]) {
-		const stack = new THREE.Group();
-		const tube = new THREE.Mesh(
-			new THREE.CylinderGeometry(r * 0.07, r * 0.1, r * 1.3, 8),
-			plainMaterial(0x8a7a66, 0.9, 0.1),
+	// The cut: three terraces stepping down toward +Z, each a flat plated slab
+	// sunk into the rock face. Squared sections, so the machined half cannot be
+	// mistaken for more rock.
+	for (let i = 0; i < 3; i++) {
+		const w = r * (0.78 - i * 0.16);
+		const terrace = shell(
+			[
+				{ z: r * (0.5 + i * 0.16), w, h: w * 0.86, e: 8 },
+				{ z: r * (0.62 + i * 0.16), w: w * 0.95, h: w * 0.82, e: 8 },
+			],
+			hullMaterial(color, "refinery"),
+			i === 1 ? "core" : `terrace-${i}`,
+			8,
+			true,
 		);
-		tube.position.y = (r * 1.3) / 2;
-		stack.add(tube);
-		const flameMaterial = emissiveMaterial(
-			STATION_VISUALS.refinery.heatColor,
-			3.0,
-		);
-		const flame = new THREE.Mesh(
-			new THREE.ConeGeometry(r * 0.09, r * 0.35, 8),
-			flameMaterial,
-		);
-		flame.position.y = r * 1.3 + r * 0.15;
-		flame.name = "flare";
-		// **Not tagged as detail**, deliberately. The flame's tip is the
-		// refinery's farthest vertex — it is what sets the 0.837 km reach — so
-		// hiding it at range would change the outline, which is the one thing
-		// §2 forbids. §7 already calls the stacks silhouette; the flame on top of
-		// one is the same claim.
-		stack.add(flame);
-		fixtures.push({ material: flameMaterial, base: 3.0, kind: "flare" });
-		stack.position.set(x, y, r * 0.2);
-		stack.rotation.z = tilt;
-		group.add(stack);
+		group.add(terrace);
 	}
+	group.add(buildAperture("refinery", r * 0.99));
 
-	// A dull heat glow round the drum's base, breathing with the flare: the
-	// refinery is the one station whose light is a by-product of what it does.
-	const glowMaterial = emissiveMaterial(STATION_VISUALS.refinery.heatColor, 0);
-	const glow = new THREE.Mesh(
-		new THREE.TorusGeometry(r * 0.55, r * 0.035, 6, 20),
-		glowMaterial,
+	// **Stacks canted outward, not laid back.** Viewed down the aperture axis —
+	// the one view a docking approach has — a rock with an inlaid cut is still a
+	// rounded lump, and `probe-station.mjs` measured this against the trade
+	// station's drum at 1 − IoU 0.216 on a 0.25 floor. §7 rests identity on
+	// outline, so the machined half has to reach *into that view* rather than
+	// sit flush in it.
+	for (const [x, y, lean] of [
+		[r * 0.86, r * 0.6, 0.55],
+		[-r * 0.72, r * 0.78, -0.7],
+	]) {
+		const flare = buildVentBank(fixtures, r * 1.05, r * 0.07);
+		flare.position.set(x, y, r * 0.36);
+		flare.rotation.x = -Math.PI / 2.6;
+		flare.rotation.y = lean;
+		group.add(flare);
+	}
+	// **Three wings, not two.** The plume used to lend the outline a spike; with
+	// it gone the Warren measured 1 − IoU 0.245 against the trade station on a
+	// 0.25 floor, and identity is what §7 rests on. A third panel is also the
+	// physically honest direction — radiator area is the thing a plant in vacuum
+	// never has enough of — rather than a spike put back for the metric.
+	for (const [tilt, at] of [
+		[0.5, new THREE.Vector3(0, 0, 0)],
+		[Math.PI - 0.45, new THREE.Vector3(0, 0, -r * 0.5)],
+		[Math.PI * 1.42, new THREE.Vector3(0, 0, -r * 0.15)],
+	] as [number, THREE.Vector3][]) {
+		const wing = buildRadiator(r * 1.45, tilt);
+		wing.position.copy(at);
+		group.add(wing);
+	}
+	// A cantilevered loading arm off the cut, which is the other thing the
+	// silhouette gains: something obviously built sticking out of something
+	// obviously not.
+	const arm = shell(
+		[
+			{ z: 0, w: r * 0.12, h: r * 0.1, e: 6 },
+			{ z: r * 0.72, w: r * 0.08, h: r * 0.07, e: 6, hard: true },
+			{ z: r * 0.95, w: r * 0.2, h: r * 0.08, e: 6 },
+		],
+		plainMaterial(0x8b95a0, 0.68, 0.44),
+		"loading-arm",
+		6,
+		true,
 	);
-	// On the drum's lit face, round the pad, rather than at its base sunk in the
-	// asteroid. Viewed along the aperture axis — which is how a pilot arrives —
-	// a ring at the base is edge-on and contributes nothing.
-	glow.position.z = r * 0.905;
-	glow.name = "heat-glow";
-	detail(glow, "reduced");
-	group.add(glow);
-	fixtures.push({ material: glowMaterial, base: 1.1, kind: "work" });
-
-	// Lit ports round the drum. The refinery had no habitation light at all,
-	// which left a crewed station reading as an unmanned tank at close range —
-	// the range where §7's outline has stopped being the cue.
+	arm.rotation.y = Math.PI / 2.3;
+	arm.position.set(-r * 0.35, -r * 0.5, r * 0.5);
+	group.add(arm);
+	group.add(buildHeatRing(fixtures, r * 0.5, r * 0.98));
 	group.add(
-		buildWindowGrid("refinery", 8, (i, position, normal) => {
-			const theta = (i / 8) * Math.PI * 2;
-			// On the drum's **end face**, not round its side. Side ports are
-			// edge-on from the aperture axis and drew zero pixels there —
-			// measured — which left the refinery reading as an unlit tank from the
-			// one direction a pilot approaches it.
-			position.set(
-				Math.cos(theta) * r * 0.42,
-				Math.sin(theta) * r * 0.42,
-				r * 0.9,
-			);
+		portRun("refinery", 12, (i, position, normal) => {
+			// Down the terraced face, in two columns, so the cut reads as having
+			// levels rather than as one lit slab.
 			normal.set(0, 0, 1);
+			position.set(
+				(i % 2 === 0 ? -1 : 1) * r * 0.5,
+				r * 0.34 - Math.floor(i / 2) * r * 0.14,
+				r * (0.66 + Math.floor(i / 2) * 0.06),
+			);
 		}),
 	);
 	return { group, fixtures };
 }
 
 /**
- * Build one station's mesh, in kilometres, with +Z along its aperture axis.
+ * Refinery B — Collar. The rock gripped at its waist by a machined band that
+ * carries the whole plant, with the pad on the band's face.
  *
- * Keyed on a `Record<StationType, …>` for `station-types.md` §8.5's reason: a
- * fourth station type must stop the build until this file answers for it, and a
- * `switch` with a default would silently give it a trade station's outline —
- * which is precisely the identity §7 rests on.
+ * The band is the same swept language as a hull and wraps a body that is not
+ * one, which is the contrast the role is about. Unlike the Warren, the plant is
+ * visible from every angle rather than only from the cut.
  */
-const BUILDERS: Record<
-	StationType,
-	(color: number) => Omit<StationMesh, "type" | "detail" | "accessories">
-> = {
-	trade: (color) => {
-		const core = buildCoriolisCore("trade", color);
-		return {
-			root: normalise("trade", [core.group]),
-			spinner: core.group,
-			fixtures: core.fixtures,
-		};
-	},
-	shipyard: (color) => {
-		const core = buildCoriolisCore("shipyard", color);
-		// The frame is a sibling of the spinner, not a child: §7's drydock is
-		// explicitly non-rotating, and a station that turned whole would make it a
-		// fairground ride.
-		const drydock = buildDrydock();
-		return {
-			root: normalise("shipyard", [core.group, drydock.group]),
-			spinner: core.group,
-			fixtures: [...core.fixtures, ...drydock.fixtures],
-		};
-	},
-	refinery: (color) => {
-		// An empty spinner rather than `null`: the caller writes a phase of 0 into
-		// it every frame, and a null case in the render loop is a branch that
-		// exists only to be forgotten.
-		const spinner = new THREE.Group();
-		const body = buildRefinery(color);
-		return {
-			root: normalise("refinery", [body.group, spinner]),
-			spinner,
-			fixtures: body.fixtures,
-		};
-	},
+function buildRefineryCollar(color: number): BuiltPart {
+	const r = STATION_GEOMETRY.refinery.coreRadiusKm;
+	const group = new THREE.Group();
+	const fixtures: StationFixture[] = [];
+	group.add(
+		buildAsteroid(r * 1.16, "refinery-collar", {
+			radiusKm: r * 0.85,
+			ceilingKm: r * 0.42,
+		}),
+	);
+
+	// **Clear of the rock's own crests.** The displacement reaches about 1.15×
+	// its nominal radius, so a band at 1.1·r with a 0.16·r tube had its inner
+	// face at 0.94·r — buried for most of its circumference, with only the outer
+	// rim showing through. A collar has to *grip* the rock, which means sitting
+	// on the outside of it, so both radii are derived from the rock rather than
+	// chosen beside it.
+	const rockRadius = r * 1.16;
+	const crest = rockRadius * 1.15;
+	const tube = r * 0.15;
+	const major = crest + tube * 0.55;
+	const band = new THREE.Mesh(
+		new THREE.TorusGeometry(major, tube, 6, 20),
+		hullMaterial(color, "refinery"),
+	);
+	band.name = "core";
+	group.add(band);
+	// Clamps: short lofted blocks pinning the band to the rock, so the two read
+	// as *held together* rather than as one shape passing through the other.
+	//
+	// Nested in a group per angle rather than carrying two Euler rotations, for
+	// the ring spokes' reason: two angles on one object leaves the result to
+	// `Euler`'s order, and the members come out clustered instead of spaced.
+	for (let i = 0; i < 5; i++) {
+		const clamp = shell(
+			[
+				{ z: rockRadius * 0.8, w: r * 0.15, h: r * 0.13, e: 6 },
+				{ z: major + tube * 0.4, w: r * 0.11, h: r * 0.1, e: 6 },
+			],
+			plainMaterial(0x8b95a0, 0.66, 0.46),
+			"clamp",
+			6,
+			true,
+		);
+		radialArm(group, (i / 5) * Math.PI * 2, `clamp-${i}`, clamp);
+	}
+	// The pad is on a plated boss over the rock's +Z pole, fed from the band.
+	group.add(
+		shell(
+			[
+				{ z: r * 0.5, w: r * 0.5, h: r * 0.5, e: 6 },
+				{ z: r * 0.88, w: r * 0.42, h: r * 0.42, e: 6, hard: true },
+				{ z: r * 1.0, w: r * 0.34, h: r * 0.34, e: 6 },
+			],
+			hullMaterial(color, "refinery"),
+			"boss",
+			8,
+			true,
+		),
+	);
+	group.add(buildAperture("refinery", r * 1.0));
+	for (const side of [-1, 1]) {
+		const flare = buildVentBank(fixtures, r * 0.9, r * 0.07);
+		flare.position.set(side * major * 0.82, r * 0.42, 0);
+		flare.rotation.x = -Math.PI / 2.6;
+		flare.rotation.z = side * 0.35;
+		group.add(flare);
+	}
+	for (const tilt of [Math.PI * 0.42, Math.PI * 1.1, Math.PI * 1.62]) {
+		const wing = buildRadiator(r * 1.4, tilt);
+		wing.position.z = -r * 0.3;
+		group.add(wing);
+	}
+	group.add(buildHeatRing(fixtures, r * 0.44, r * 0.99));
+	group.add(
+		portRun("refinery", 12, (i, position, normal) => {
+			const theta = (i / 12) * Math.PI * 2;
+			normal.set(Math.cos(theta), Math.sin(theta), 0);
+			// On the band's own outer face, derived from it rather than guessed:
+			// a fixed 1.22·r sat inside the rock once the band moved out.
+			position.copy(normal).multiplyScalar(major + tube * 0.9);
+			position.z = 0;
+		}),
+	);
+	return { group, fixtures };
+}
+
+/**
+ * Refinery C — Spar. The rock run through by a processing spar that comes out
+ * the far side, tanks strung along it, the pad on the near end.
+ *
+ * The one form of the three whose axis is longer than the rock, and the only
+ * one where the machinery *pierces* rather than wraps or inlays. Its silhouette
+ * is a rock with a shaft through it, which nothing else in the pool is.
+ */
+function buildRefinerySpar(color: number): BuiltPart {
+	const r = STATION_GEOMETRY.refinery.coreRadiusKm;
+	const group = new THREE.Group();
+	const fixtures: StationFixture[] = [];
+	// Carved like the other two even though the spar already clears the rock:
+	// the invariant is the form's, not this build's, and a later tweak to the
+	// spar's length should not be able to reintroduce rock in the corridor.
+	group.add(
+		buildAsteroid(r * 1.05, "refinery-spar", {
+			radiusKm: r * 0.55,
+			ceilingKm: r * 0.6,
+		}),
+	);
+
+	group.add(
+		shell(
+			[
+				{ z: -r * 1.7, w: r * 0.2, h: r * 0.2, e: 6 },
+				{ z: -r * 1.3, w: r * 0.3, h: r * 0.3, e: 6, hard: true },
+				{ z: r * 0.9, w: r * 0.3, h: r * 0.3, e: 6, hard: true },
+				{ z: r * 1.22, w: r * 0.4, h: r * 0.4, e: 6 },
+			],
+			hullMaterial(color, "refinery"),
+			"core",
+			8,
+			true,
+		),
+	);
+	group.add(buildAperture("refinery", r * 1.22));
+	// Tanks strung along the exposed length, off-axis so the spar does not read
+	// as a smooth rod.
+	for (let i = 0; i < 3; i++) {
+		const tank = shell(
+			[
+				{ z: -r * 0.24, w: r * 0.19, h: r * 0.19, e: 2.4 },
+				{ z: r * 0.24, w: r * 0.19, h: r * 0.19, e: 2.4 },
+			],
+			plainMaterial(0xb2a894, 0.85, 0.16),
+			`tank-${i}`,
+			10,
+			true,
+		);
+		const theta = (i / 3) * Math.PI * 2;
+		tank.position.set(
+			Math.cos(theta) * r * 0.42,
+			Math.sin(theta) * r * 0.42,
+			-r * 1.42 + i * r * 0.06,
+		);
+		group.add(tank);
+	}
+	for (const side of [-1, 1]) {
+		const flare = buildVentBank(fixtures, r * 0.85, r * 0.07);
+		flare.position.set(side * r * 0.34, r * 0.3, -r * 1.5);
+		flare.rotation.x = -Math.PI / 2.3;
+		flare.rotation.z = side * 0.3;
+		group.add(flare);
+	}
+	for (const tilt of [0.4, Math.PI - 0.4, Math.PI * 1.5]) {
+		const wing = buildRadiator(r * 1.4, tilt);
+		wing.position.z = -r * 0.75;
+		group.add(wing);
+	}
+	group.add(buildHeatRing(fixtures, r * 0.42, r * 1.2));
+	group.add(
+		portRun("refinery", 10, (i, position, normal) => {
+			const theta = (i / 10) * Math.PI * 2;
+			normal.set(Math.cos(theta), Math.sin(theta), 0);
+			position.copy(normal).multiplyScalar(r * 0.32);
+			position.z = -r * 1.15;
+		}),
+	);
+	return { group, fixtures };
+}
+
+/** The heat ring round a refinery's docking face, breathing with the flare. */
+function buildHeatRing(
+	fixtures: StationFixture[],
+	radius: number,
+	z: number,
+): THREE.Mesh {
+	const material = emissiveMaterial(STATION_VISUALS.refinery.heatColor, 0);
+	const glow = new THREE.Mesh(
+		new THREE.TorusGeometry(radius, radius * 0.07, 6, 20),
+		material,
+	);
+	glow.position.z = z;
+	glow.name = "heat-glow";
+	detail(glow, "reduced");
+	fixtures.push({ material, base: 1.1, kind: "work" });
+	return glow;
+}
+
+// ---------------------------------------------------------------------------
+// The outposts (#56 round two)
+// ---------------------------------------------------------------------------
+//
+// A fourth category, asked for as "smaller structures, non-rotating, look like
+// industrial structures with just a landing pad". All three are a *machine with
+// a deck on it* rather than a place anyone lives: no spun habitat, no window
+// bands, and the pad is the largest flat thing on them.
+//
+// They carry no strobes, for the refinery's reason: nothing here turns.
+
+/** A small floodlit pad deck on the +Z face, with its own coaming. Shared by
+ *  every outpost form, because the pad is what the category *is* — the rest of
+ *  each form is the machine that justifies one. */
+function buildPadDeck(
+	fixtures: StationFixture[],
+	r: number,
+	z: number,
+): THREE.Group {
+	const group = new THREE.Group();
+	const deck = shell(
+		[
+			{ z: z - r * 0.16, w: r * 0.95, h: r * 0.95, e: 8 },
+			{ z, w: r * 0.9, h: r * 0.9, e: 8 },
+		],
+		plainMaterial(0x8b95a0, 0.7, 0.42),
+		"pad-deck",
+		4,
+		true,
+	);
+	group.add(deck);
+	group.add(buildAperture("outpost", z));
+	// Four floods on the coaming, and one warm heat lamp that breathes: the only
+	// motion an outpost has, and it says the machine is running rather than
+	// anything about clearance (§5.1).
+	for (let i = 0; i < 4; i++) {
+		const theta = (i / 4) * Math.PI * 2 + Math.PI / 4;
+		const flood = new THREE.Mesh(
+			new THREE.BoxGeometry(r * 0.16, r * 0.05, r * 0.05),
+			FLOOD_MATERIAL,
+		);
+		flood.position.set(
+			Math.cos(theta) * r * 0.82,
+			Math.sin(theta) * r * 0.82,
+			z + r * 0.02,
+		);
+		flood.rotation.z = theta;
+		flood.name = "bay-flood";
+		detail(flood, "reduced");
+		group.add(flood);
+	}
+	group.add(buildHeatRing(fixtures, r * 0.62, z + r * 0.03));
+	return group;
+}
+
+/** Outpost A — Derrick. A lattice tower standing on a tank cluster, with the
+ *  pad deck on top. The tallest thing in the category and the one whose
+ *  proportions are a *tower* rather than a box. */
+function buildOutpostDerrick(color: number): BuiltPart {
+	const r = STATION_GEOMETRY.outpost.coreRadiusKm;
+	const group = new THREE.Group();
+	const fixtures: StationFixture[] = [];
+	// The tank cluster at the foot.
+	for (let i = 0; i < 4; i++) {
+		const theta = (i / 4) * Math.PI * 2;
+		const tank = shell(
+			[
+				{ z: -r * 1.9, w: r * 0.34, h: r * 0.34, e: 2.4 },
+				{ z: -r * 1.1, w: r * 0.34, h: r * 0.34, e: 2.4 },
+			],
+			i === 0
+				? hullMaterial(color, "outpost")
+				: plainMaterial(0xb2a894, 0.88, 0.18),
+			i === 0 ? "core" : `tank-${i}`,
+			8,
+			true,
+		);
+		tank.position.set(
+			Math.cos(theta) * r * 0.42,
+			Math.sin(theta) * r * 0.42,
+			0,
+		);
+		group.add(tank);
+	}
+	// The tower: four legs and three collars, which is a lattice at this size —
+	// a truss of individual members would be pixels nobody resolves.
+	for (let i = 0; i < 4; i++) {
+		const theta = (i / 4) * Math.PI * 2 + Math.PI / 4;
+		const leg = shell(
+			[
+				{ z: -r * 1.2, w: r * 0.08, h: r * 0.08, x: r * 0.46, e: 4 },
+				{ z: r * 0.9, w: r * 0.06, h: r * 0.06, x: r * 0.28, e: 4 },
+			],
+			plainMaterial(0x6f7d88, 0.8, 0.4),
+			`leg-${i}`,
+			4,
+			true,
+		);
+		leg.rotation.z = theta;
+		group.add(leg);
+	}
+	for (const z of [-r * 0.8, -r * 0.1, r * 0.6]) {
+		const collar = new THREE.Mesh(
+			new THREE.TorusGeometry(r * (z < 0 ? 0.46 : 0.34), r * 0.035, 4, 8),
+			plainMaterial(0x6f7d88, 0.8, 0.4),
+		);
+		collar.position.z = z;
+		group.add(collar);
+	}
+	group.add(buildPadDeck(fixtures, r, r * 1.1));
+	// Rooted **on a tank**, not beside the cluster: the tanks sit on a 0.42·r
+	// circle and are 0.34·r across, so a boom starting at 0.6·r began in empty
+	// space and the whole flare was a detached island.
+	const flare = buildVentBank(fixtures, r * 0.9, r * 0.08);
+	flare.position.set(r * 0.42, -r * 0.42, -r * 1.3);
+	flare.rotation.x = -Math.PI / 2.4;
+	flare.rotation.y = 0.5;
+	group.add(flare);
+	group.add(
+		portRun("outpost", 6, (i, position, normal) => {
+			normal.set(0, 0, 1);
+			position.set(
+				(i % 3) * r * 0.3 - r * 0.3,
+				i < 3 ? r * 0.32 : -r * 0.32,
+				-r * 1.09,
+			);
+		}),
+	);
+	return { group, fixtures };
+}
+
+/** Outpost B — Buoy. A stubby drum wearing radiator fins, pad on the face.
+ *  The category's compact end: a single machine with nothing hanging off it,
+ *  which is what a relay or a survey station would actually be. */
+function buildOutpostBuoy(color: number): BuiltPart {
+	const r = STATION_GEOMETRY.outpost.coreRadiusKm;
+	const group = new THREE.Group();
+	const fixtures: StationFixture[] = [];
+	group.add(
+		shell(
+			[
+				{ z: -r * 1.5, w: r * 0.5, h: r * 0.5, e: 6 },
+				{ z: -r * 1.1, w: r * 0.86, h: r * 0.86, e: 6, hard: true },
+				{ z: r * 0.5, w: r * 0.86, h: r * 0.86, e: 6, hard: true },
+				{ z: r * 0.86, w: r * 0.66, h: r * 0.66, e: 6 },
+			],
+			hullMaterial(color, "outpost"),
+			"core",
+			6,
+			true,
+		),
+	);
+	// Radiator fins: flat plates, the one feature that reads as *thermal plant*
+	// and the reason this is not simply a barrel.
+	for (let i = 0; i < 3; i++) {
+		const theta = (i / 3) * Math.PI * 2;
+		const fin = new THREE.Mesh(
+			new THREE.BoxGeometry(r * 1.5, r * 0.05, r * 1.1),
+			plainMaterial(0x5f6d78, 0.84, 0.34),
+		);
+		fin.position.set(
+			Math.cos(theta) * r * 1.1,
+			Math.sin(theta) * r * 1.1,
+			-r * 0.4,
+		);
+		fin.rotation.z = theta;
+		fin.name = `fin-${i}`;
+		group.add(fin);
+	}
+	group.add(buildPadDeck(fixtures, r, r * 1.0));
+	group.add(
+		portRun("outpost", 6, (i, position, normal) => {
+			const theta = (i / 6) * Math.PI * 2;
+			normal.set(Math.cos(theta), Math.sin(theta), 0);
+			position.copy(normal).multiplyScalar(r * 0.88);
+			position.z = -r * 0.3;
+		}),
+	);
+	return { group, fixtures };
+}
+
+/** Outpost C — Rig. An angled truss carrying a deck out over a drill head, a
+ *  flare boom off the back. The one form of the three that is plainly working
+ *  *on* something rather than sitting in space. */
+function buildOutpostRig(color: number): BuiltPart {
+	const r = STATION_GEOMETRY.outpost.coreRadiusKm;
+	const group = new THREE.Group();
+	const fixtures: StationFixture[] = [];
+	const body = shell(
+		[
+			{ z: -r * 1.6, w: r * 0.3, h: r * 0.42, e: 6 },
+			{ z: -r * 1.0, w: r * 0.62, h: r * 0.8, e: 7, hard: true },
+			{ z: r * 0.4, w: r * 0.62, h: r * 0.8, e: 7, hard: true },
+			{ z: r * 0.75, w: r * 0.44, h: r * 0.58, e: 6 },
+		],
+		hullMaterial(color, "outpost"),
+		"core",
+		6,
+		true,
+	);
+	body.rotation.x = 0.34;
+	group.add(body);
+	// The drill head below, and the two braces that hold it out.
+	//
+	// **Both of these were adrift.** The head hung 90 m clear of the body with
+	// only a 1 m graze of bounding box between them, and the braces missed it
+	// entirely on x — they ran at ±0.06·r while the head is 0.24·r wide about
+	// the axis, so nothing in the assembly actually reached it. It looked
+	// exactly like what it was: a cone floating under two sticks.
+	//
+	// The head starts inside the body's envelope now and the braces converge
+	// onto it, so the three overlap rather than line up.
+	const head = shell(
+		[
+			{ z: -r * 0.75, w: r * 0.26, h: r * 0.26, e: 4 },
+			{ z: r * 0.1, w: r * 0.16, h: r * 0.16, e: 4, hard: true },
+			{ z: r * 0.5, w: r * 0.05, h: r * 0.05, e: 4 },
+		],
+		plainMaterial(0x8b95a0, 0.7, 0.42),
+		"drill",
+		6,
+		true,
+	);
+	head.rotation.x = Math.PI / 2;
+	head.position.set(0, -r * 1.05, -r * 0.35);
+	group.add(head);
+	for (const side of [-1, 1]) {
+		const brace = shell(
+			[
+				{ z: 0, w: r * 0.07, h: r * 0.06, e: 4 },
+				// Converging: the far station carries a lateral offset back
+				// towards the axis, so the brace ends *on* the head rather than
+				// beside it.
+				{ z: r * 0.95, w: r * 0.05, h: r * 0.04, x: side * -r * 0.28, e: 4 },
+			],
+			plainMaterial(0x6f7d88, 0.8, 0.4),
+			"brace",
+			4,
+			true,
+		);
+		brace.rotation.x = Math.PI / 2;
+		brace.position.set(side * r * 0.4, -r * 0.25, -r * 0.35);
+		group.add(brace);
+	}
+	group.add(buildPadDeck(fixtures, r, r * 0.95));
+	const flare = buildVentBank(fixtures, r * 1.0, r * 0.08);
+	flare.position.set(-r * 0.55, r * 0.75, -r * 1.1);
+	flare.rotation.x = -Math.PI / 2.2;
+	flare.rotation.y = -0.5;
+	group.add(flare);
+	group.add(
+		portRun("outpost", 6, (i, position, normal) => {
+			// The body is pitched 0.34 rad about X and is 0.62·r half-wide, so a
+			// run at 0.64·r cleared it entirely. Inside its own beam, and pitched
+			// with it.
+			normal.set(1, 0, 0);
+			const z = -r * 0.7 + i * r * 0.2;
+			position.set(r * 0.5, r * 0.2 + z * 0.34, z);
+		}),
+	);
+	return { group, fixtures };
+}
+
+/**
+ * Every form, by role.
+ *
+ * A `Record<StationType, …>` for `station-types.md` §8.5's reason, and each
+ * role's list is exactly `STATION_FORM_IDS` long so the previewer's three slots
+ * cannot silently hold two.
+ */
+export const STATION_FORMS: Record<StationType, StationForm[]> = {
+	trade: [
+		{
+			id: "a",
+			name: "Coriolis",
+			thesis: "cuboctahedron — the slot is cut into a real flat square face",
+			reachKm: 0.62,
+			build: buildTradeCoriolis,
+		},
+		{
+			id: "b",
+			name: "Ring",
+			thesis: "spun torus on a fixed hub; the dock is a tunnel on the axis",
+			reachKm: 0.73,
+			build: buildTradeRing,
+		},
+		{
+			id: "c",
+			name: "Drum",
+			thesis: "O'Neill barrel end-on; length rather than width is the cue",
+			reachKm: 0.66,
+			build: buildTradeDrum,
+		},
+	],
+	shipyard: [
+		{
+			id: "a",
+			name: "Gantry",
+			thesis: "bridge keel under open ribbed bays sized for a ship",
+			reachKm: 1.5,
+			build: buildShipyardGantry,
+		},
+		{
+			id: "b",
+			name: "Hangar",
+			thesis:
+				"a closed slab with a floodlit bay mouth; ships inside, not clamped outside",
+			reachKm: 1.5,
+			build: buildShipyardHangar,
+		},
+		{
+			id: "c",
+			name: "Slipway",
+			thesis: "a broken ring with the gap as the slip",
+			reachKm: 1.5,
+			build: buildShipyardSlipway,
+		},
+	],
+	refinery: [
+		{
+			id: "a",
+			name: "Warren",
+			thesis: "terraced plant cut into the rock; the pad is in the notch",
+			reachKm: 1.2,
+			build: buildRefineryWarren,
+		},
+		{
+			id: "b",
+			name: "Collar",
+			thesis: "a machined band gripping the rock at its waist",
+			reachKm: 1.15,
+			build: buildRefineryCollar,
+		},
+		{
+			id: "c",
+			name: "Spar",
+			thesis: "a processing spar run through the rock and out the far side",
+			reachKm: 1.15,
+			build: buildRefinerySpar,
+		},
+	],
+	outpost: [
+		{
+			id: "a",
+			name: "Derrick",
+			thesis: "a lattice tower on a tank cluster, pad deck on top",
+			reachKm: 0.42,
+			build: buildOutpostDerrick,
+		},
+		{
+			id: "b",
+			name: "Buoy",
+			thesis: "a stubby drum wearing radiator fins; nothing hangs off it",
+			reachKm: 0.42,
+			build: buildOutpostBuoy,
+		},
+		{
+			id: "c",
+			name: "Rig",
+			thesis: "an angled truss holding a deck out over a drill head",
+			reachKm: 0.42,
+			build: buildOutpostRig,
+		},
+	],
+};
+
+/**
+ * Which form each role is currently built with in the game.
+ *
+ * One line per role, so a ranking round changes three lines.
+ *
+ * Round one's ranking put `A` first for both trade and shipyard, so those two
+ * are choices rather than placeholders. The refinery's is a placeholder and
+ * says so: that role was not ranked — it was sent back with an instruction —
+ * so its three forms are all round two's and none of them has been looked at
+ * yet. Pretending otherwise is how a placeholder becomes the shipped answer.
+ */
+export const SELECTED_FORM: Record<StationType, StationFormId> = {
+	trade: "a",
+	shipyard: "a",
+	// **Placeholder, and it says so.** This role was never ranked — round one
+	// sent it back with an instruction rather than an order — so `a` is first in
+	// the list and nothing more.
+	//
+	// It used to carry a justification: the Warren was chosen because it cleared
+	// the outline floor `probe-station.mjs` gated on, where the other two did
+	// not. That gate was withdrawn later in the same node, so the reasoning
+	// outlived the thing it reasoned about. The figures are still measured and
+	// printed; they are no longer a reason to pick one form over another.
+	refinery: "a",
+	// Unranked, like the refinery's was: three new forms and nobody has looked
+	// at them. It changes nothing in a running game either way — `system.ts`
+	// places no outposts, because what one sells and how often one exists are
+	// #13's and #6's questions rather than this round's.
+	outpost: "a",
+};
+
+const formOf = (type: StationType, id: StationFormId) => {
+	const form = STATION_FORMS[type].find((candidate) => candidate.id === id);
+	if (!form) throw new Error(`no form ${id} for ${type}`);
+	return form;
 };
 
 /**
@@ -794,30 +2362,68 @@ function normalise(type: StationType, parts: THREE.Object3D[]): THREE.Group {
 }
 
 /**
- * Build one station's mesh. `color` is the type's colour from `STATION_COLORS`
- * (`sim.ts`), reached by the renderer as `body.color` — §7's secondary cue, and
- * the reason this takes an argument at all.
+ * Build one station in a named form.
+ *
+ * The form is a parameter because `?model-viewer=station` builds every
+ * candidate side by side, and because a ranking round has to change one line
+ * rather than nine builders. `buildStationMesh` below is this with the game's
+ * current choice supplied.
+ *
+ * `color` is the type's colour from `STATION_COLORS` (`sim.ts`), reached by the
+ * renderer as `body.color` — §7's secondary cue, and the reason this takes an
+ * argument at all.
  */
-export function buildStationMesh(
+export function buildStationForm(
 	type: StationType,
+	formId: StationFormId,
 	color: number,
 ): StationMesh {
+	const form = formOf(type, formId);
 	// The builder returns its own fixtures rather than filling an array handed
 	// to it: with an out-parameter the return type said a builder produced no
 	// lights while it in fact produced most of them, so a fourth station type
 	// would have compiled with none and lit nothing.
-	const built = BUILDERS[type](color);
+	const built = form.build(color);
+	// The spinner is the form's own declared part where it names one, the whole
+	// body where it does not, and an empty group for a role whose pad does not
+	// turn at all (`docking.md` §4). The empty one is a *sibling* added here;
+	// a declared one is already inside `built.group` and must not be re-added,
+	// which would lift it out of the body it belongs to.
+	const parts: THREE.Object3D[] = [built.group];
+	let spinner: THREE.Object3D;
+	if (STATION_GEOMETRY[type].spins) {
+		spinner = built.spinner ?? built.group;
+	} else {
+		spinner = new THREE.Group();
+		parts.push(spinner);
+	}
+	const root = normalise(type, parts);
 	const accessories: THREE.Object3D[] = [];
-	built.root.traverse((object) => {
+	root.traverse((object) => {
 		if (object.userData.minDetail) accessories.push(object);
 	});
-	const mesh: StationMesh = { ...built, type, detail: "full", accessories };
+	const mesh: StationMesh = {
+		root,
+		spinner,
+		type,
+		detail: "full",
+		fixtures: built.fixtures,
+		accessories,
+	};
 	// Built at `full` and then set, so the tagged accessories are in a state that
 	// matches the field rather than merely defaulting to visible. The renderer
 	// corrects it on the first frame in any case; a station that disagreed with
 	// its own handle for one frame is the sort of thing that shows up as a flash.
 	setStationDetail(mesh, "full");
 	return mesh;
+}
+
+/** Build one station in the form the game currently uses for its role. */
+export function buildStationMesh(
+	type: StationType,
+	color: number,
+): StationMesh {
+	return buildStationForm(type, SELECTED_FORM[type], color);
 }
 
 /**
@@ -866,11 +2472,13 @@ export function updateStationVisuals(
 	// **Every fixture, at every level.** An earlier version returned early at
 	// `outline` on the reasoning that nothing clock-driven is drawn there — which
 	// is false for the refinery's flare, the one fixture deliberately left
-	// untagged because its tip is the station's outermost point. Its intensity
-	// froze at whatever the last near-range frame wrote, so a distant refinery's
-	// flare depended on that client's approach history rather than on the clock,
-	// and §5.2's "two clients at one seed draw the same frame" was not true of
-	// it. Driving the hidden ones too costs a couple of float writes a frame.
+	// untagged, back when it was a flame whose tip was the station's outermost
+	// point. Its intensity froze at whatever the last near-range frame wrote, so
+	// a distant refinery's flare depended on that client's approach history
+	// rather than on the clock, and §5.2's "two clients at one seed draw the
+	// same frame" was not true of it. The flare is a tagged throat now and the
+	// hidden case is ordinary, but driving every fixture regardless costs a
+	// couple of float writes a frame and removes the whole class of bug.
 	// The kind → waveform mapping is `station-visuals.ts`'s, which owns the one
 	// signature and the one motion a role carries. This module only multiplies
 	// by the fixture's own lit intensity.
