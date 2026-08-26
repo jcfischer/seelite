@@ -2725,7 +2725,10 @@ function seedFromQuery(): number {
 	return (Math.random() * 0x1_0000_0000) >>> 0;
 }
 
-if (new URLSearchParams(window.location.search).has("hud-gallery")) {
+if (new URLSearchParams(window.location.search).has("planet-prototype")) {
+	const { mountPlanetPrototype } = await import("./planet-prototype");
+	mountPlanetPrototype();
+} else if (new URLSearchParams(window.location.search).has("hud-gallery")) {
 	const { mountStateGallery } = await import("./state-gallery");
 	mountStateGallery();
 	// The gallery owns its own Three.js scene. Do not build the live game behind
