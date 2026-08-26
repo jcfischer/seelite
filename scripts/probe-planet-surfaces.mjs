@@ -207,26 +207,33 @@ const installHelpers = (page) =>
 		};
 
 		/**
-		 * The body's own pixels, by difference.
-		 *
-		 * Rendered as drawn, then again with the body hidden; what changed is the
-		 * body. `probe-station.mjs`'s method, and it is here for the same reason:
-		 * a starfield puts lit pixels everywhere and the star itself is often in
-		 * frame, so any absolute threshold would be tuned to one moment of one
-		 * orbit.
-		 */
 		/** How far a pixel has to move, summed over RGB, to count as the body's
 		 *  rather than as dither in whatever was behind it. */
 		const CHANGED = 8;
-		window.__bodySignature = (bodyId, grid) => {
+		const W = 300;
+		const H = 300;
+
+		/**
+		 * The body's own pixels and the box that bounds them, by difference.
+		 *
+		 * Rendered as drawn, then again with the body hidden; what changed is the
+		 * body. `probe-station.mjs`'s method, and it is here for the same reason: a
+		 * starfield puts lit pixels everywhere and the star itself is often in
+		 * frame, so any absolute threshold would be tuned to one moment of one
+		 * orbit.
+		 *
+		 * **One copy, called by both measurements below.** The second spelling of a
+		 * difference test is the one that silently stops agreeing about what the
+		 * body is — this file carried that warning beside its own two copies and
+		 * then grew a third.
+		 */
+		window.__discBox = (bodyId) => {
 			const g = window.__seelite;
 			const src = g.renderer.domElement;
-			const W = 300;
-			const H = 300;
-			const scratch = document.createElement("canvas");
-			scratch.width = W;
-			scratch.height = H;
-			const ctx = scratch.getContext("2d", { willReadFrequently: true });
+			const cv = document.createElement("canvas");
+			cv.width = W;
+			cv.height = H;
+			const ctx = cv.getContext("2d", { willReadFrequently: true });
 			const frame = () => {
 				// Render and read in the same task: a WebGL canvas without
 				// `preserveDrawingBuffer` is cleared at the next composite.
@@ -240,21 +247,17 @@ const installHelpers = (page) =>
 			const hidden = frame();
 			mesh.visible = true;
 
-			// The changed pixels, and their bounding box — the disc, without
-			// projecting anything.
-			let x0 = W;
-			let y0 = H;
-			let x1 = -1;
-			let y1 = -1;
-			let changed = 0;
-			// One spelling of "did this pixel change", used by the bounding-box
-			// scan and by the patch loop below. Two copies drift, and the second
-			// copy is the one that silently stops agreeing about what the body is.
 			const moved = (i) =>
 				Math.abs(shown[i] - hidden[i]) +
 					Math.abs(shown[i + 1] - hidden[i + 1]) +
 					Math.abs(shown[i + 2] - hidden[i + 2]) >
 				CHANGED;
+
+			let x0 = W;
+			let y0 = H;
+			let x1 = -1;
+			let y1 = -1;
+			let changed = 0;
 			for (let i = 0; i < shown.length; i += 4) {
 				if (!moved(i)) continue;
 				changed++;
@@ -266,38 +269,45 @@ const installHelpers = (page) =>
 				if (y < y0) y0 = y;
 				if (y > y1) y1 = y;
 			}
-			if (changed === 0) return { pixels: 0, patches: [] };
+			return { shown, moved, x0, y0, x1, y1, changed, W, H };
+		};
 
-			// A patch mean per cell of the grid laid over that box. Cells with too
-			// few of the body's pixels report null rather than a number diluted by
-			// whatever was behind it.
+		/**
+		 * A patch mean per cell of a grid laid over the body's disc.
+		 *
+		 * Cells holding too few of the body's pixels report `null` rather than a
+		 * number diluted by whatever was behind them.
+		 */
+		window.__bodySignature = (bodyId, grid) => {
+			const box = window.__discBox(bodyId);
+			if (box.changed === 0) return { pixels: 0, patches: [] };
 			const patches = [];
-			const cw = (x1 - x0 + 1) / grid;
-			const ch = (y1 - y0 + 1) / grid;
+			const cw = (box.x1 - box.x0 + 1) / grid;
+			const ch = (box.y1 - box.y0 + 1) / grid;
 			for (let gy = 0; gy < grid; gy++) {
 				for (let gx = 0; gx < grid; gx++) {
 					let r = 0;
 					let gg = 0;
 					let b = 0;
 					let n = 0;
-					const px0 = Math.floor(x0 + gx * cw);
-					const px1 = Math.floor(x0 + (gx + 1) * cw);
-					const py0 = Math.floor(y0 + gy * ch);
-					const py1 = Math.floor(y0 + (gy + 1) * ch);
+					const px0 = Math.floor(box.x0 + gx * cw);
+					const px1 = Math.floor(box.x0 + (gx + 1) * cw);
+					const py0 = Math.floor(box.y0 + gy * ch);
+					const py1 = Math.floor(box.y0 + (gy + 1) * ch);
 					for (let y = py0; y < py1; y++) {
 						for (let x = px0; x < px1; x++) {
-							const i = (y * W + x) * 4;
-							if (!moved(i)) continue;
-							r += shown[i];
-							gg += shown[i + 1];
-							b += shown[i + 2];
+							const i = (y * box.W + x) * 4;
+							if (!box.moved(i)) continue;
+							r += box.shown[i];
+							gg += box.shown[i + 1];
+							b += box.shown[i + 2];
 							n++;
 						}
 					}
 					patches.push(n < 8 ? null : [r / n, gg / n, b / n]);
 				}
 			}
-			return { pixels: changed, patches };
+			return { pixels: box.changed, patches };
 		};
 
 		/** Show or hide a body's decorations — the star's corona sprite, a giant's
@@ -312,6 +322,7 @@ const installHelpers = (page) =>
 		};
 
 		/**
+		/**
 		 * Mean and spread of luma over the **pixels** of a body's inner disc.
 		 *
 		 * Per pixel and not per patch: granulation is fine, low-contrast
@@ -322,62 +333,24 @@ const installHelpers = (page) =>
 		 * supplies a gradient no amount of washing removes — is outside it.
 		 */
 		window.__innerDiscStats = (bodyId, inset) => {
-			const g = window.__seelite;
-			const src = g.renderer.domElement;
-			const W = 300;
-			const H = 300;
-			const cv = document.createElement("canvas");
-			cv.width = W;
-			cv.height = H;
-			const ctx = cv.getContext("2d", { willReadFrequently: true });
-			const frame = () => {
-				g.render(0);
-				ctx.drawImage(src, 0, 0, W, H);
-				return ctx.getImageData(0, 0, W, H).data;
-			};
-			const mesh = window.__meshOf(bodyId);
-			const shown = frame();
-			mesh.visible = false;
-			const hidden = frame();
-			mesh.visible = true;
-
-			let x0 = W;
-			let y0 = H;
-			let x1 = -1;
-			let y1 = -1;
-			for (let i = 0; i < shown.length; i += 4) {
-				if (
-					Math.abs(shown[i] - hidden[i]) +
-						Math.abs(shown[i + 1] - hidden[i + 1]) +
-						Math.abs(shown[i + 2] - hidden[i + 2]) <=
-					8
-				)
-					continue;
-				const p = i / 4;
-				const x = p % W;
-				const y = (p / W) | 0;
-				if (x < x0) x0 = x;
-				if (x > x1) x1 = x;
-				if (y < y0) y0 = y;
-				if (y > y1) y1 = y;
-			}
-			if (x1 < 0) return { pixels: 0, mean: 0, spread: 0, clipped: 0 };
-
-			const dx = Math.floor((x1 - x0 + 1) * inset);
-			const dy = Math.floor((y1 - y0 + 1) * inset);
+			const box = window.__discBox(bodyId);
+			if (box.changed === 0)
+				return { pixels: 0, mean: 0, spread: 0, clipped: 0 };
+			const dx = Math.floor((box.x1 - box.x0 + 1) * inset);
+			const dy = Math.floor((box.y1 - box.y0 + 1) * inset);
+			const px = box.shown;
 			let sum = 0;
 			let sumSq = 0;
 			let count = 0;
 			let clipped = 0;
-			for (let y = y0 + dy; y <= y1 - dy; y++)
-				for (let x = x0 + dx; x <= x1 - dx; x++) {
-					const i = (y * W + x) * 4;
-					const l =
-						0.2126 * shown[i] + 0.7152 * shown[i + 1] + 0.0722 * shown[i + 2];
+			for (let y = box.y0 + dy; y <= box.y1 - dy; y++)
+				for (let x = box.x0 + dx; x <= box.x1 - dx; x++) {
+					const i = (y * box.W + x) * 4;
+					const l = 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2];
 					sum += l;
 					sumSq += l * l;
 					count++;
-					if (Math.min(shown[i], shown[i + 1], shown[i + 2]) > 250) clipped++;
+					if (Math.min(px[i], px[i + 1], px[i + 2]) > 250) clipped++;
 				}
 			const mean = sum / count;
 			return {
@@ -647,17 +620,23 @@ for (const body of noiseBodies) {
 const verdict = descriptorsAt(SPREAD_WEIGHT);
 for (const body of usable) body.all = verdict.get(body.id);
 
-let closestPair = Number.POSITIVE_INFINITY;
-let closestLabel = "";
-for (const a of usable)
-	for (const b of usable) {
-		if (a.id >= b.id || a.visual.surface === b.visual.surface) continue;
-		const d = distance(verdict.get(a.id), verdict.get(b.id));
-		if (d < closestPair) {
-			closestPair = d;
-			closestLabel = `${a.visual.surface} vs ${b.visual.surface}`;
+/** The closest pair of *different* classes, over a set of descriptors. One
+ *  spelling, used for the shipped verdict and for every weight in the sweep. */
+const closestAt = (descriptors) => {
+	let best = Number.POSITIVE_INFINITY;
+	let label = "";
+	for (const a of usable)
+		for (const b of usable) {
+			if (a.id >= b.id || a.visual.surface === b.visual.surface) continue;
+			const d = distance(descriptors.get(a.id), descriptors.get(b.id));
+			if (d < best) {
+				best = d;
+				label = `${a.visual.surface} vs ${b.visual.surface}`;
+			}
 		}
-	}
+	return { best, label };
+};
+const { best: closestPair, label: closestLabel } = closestAt(verdict);
 
 console.log("\n  surface signatures (mean R,G,B and weighted luma spread)");
 for (const body of usable)
@@ -677,13 +656,7 @@ for (const body of usable)
 console.log("\n  class gaps against the repeat-measurement noise floor");
 let robust = 0;
 for (const weight of WEIGHT_SWEEP) {
-	const d = descriptorsAt(weight);
-	let closest = Number.POSITIVE_INFINITY;
-	for (const a of usable)
-		for (const b of usable) {
-			if (a.id >= b.id || a.visual.surface === b.visual.surface) continue;
-			closest = Math.min(closest, distance(d.get(a.id), d.get(b.id)));
-		}
+	const { best: closest } = closestAt(descriptorsAt(weight));
 	const ok = Number.isFinite(closest) && closest > repeatNoise * NOISE_MARGIN;
 	if (ok) robust++;
 	console.log(

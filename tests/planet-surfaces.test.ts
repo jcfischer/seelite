@@ -58,6 +58,11 @@ test("every generated body is classified from the generator's own numbers", () =
 
 test("a station has no surface class, because it is not a sphere", () => {
 	const contents = generateContents(SAMPLE[0]);
+	// `for` over an empty list asserts nothing. The same hole the browser probe
+	// guards against, and it is worth closing here too — a generator change that
+	// stopped emitting stations would otherwise leave this reporting green about
+	// a case it never saw.
+	expect(contents.stations.length).toBeGreaterThan(0);
 	for (const station of contents.stations)
 		expect(
 			appearanceOf({ id: station.id, kind: "station" }, contents),

@@ -118,7 +118,14 @@ import {
 	stepAngular,
 	stepWorld,
 } from "./sim";
-import { type BodyVisual, buildBodyVisual } from "./planet-surface";
+import {
+	type BodyVisual,
+	FAR_SPHERE_RINGS,
+	FAR_SPHERE_SEGMENTS,
+	SPHERE_RINGS,
+	SPHERE_SEGMENTS,
+	buildBodyVisual,
+} from "./planet-surface";
 import { SPIN_RPM_RANGE } from "./station";
 import {
 	type StationMesh,
@@ -479,6 +486,10 @@ class Game {
 	/** The shader surface for every body that is a sphere — star, planet, moon.
 	 *  A station is not in here; `stationVisuals` above is its equivalent. */
 	private readonly bodyVisuals = new Map<string, BodyVisual>();
+	/** The two body tessellations, swapped by `setLayer`. Shared across bodies,
+	 *  so the swap is an assignment and never a rebuild. */
+	private nearSphere!: THREE.SphereGeometry;
+	private farSphere!: THREE.SphereGeometry;
 	/**
 	 * Which layer each body is currently drawn in.
 	 *
@@ -1057,13 +1068,29 @@ class Game {
 		// mid-flight, which allocates on the frame the player is most likely to be
 		// looking at the thing.
 		//
-		// 96×64 and not the 32×16 this was while every body was a flat-shaded
-		// `MeshStandardMaterial`. A body in the near layer fills the screen, and a
-		// 32-segment silhouette puts an 11° facet on its limb — inside an
-		// atmosphere shell that `planet-surface.ts` tessellates at 96×64, so the
-		// air was smooth and the ground it wrapped was a polygon. The gallery
-		// never showed it: it builds its own 144×96 sphere.
-		const unitSphere = new THREE.SphereGeometry(1, 96, 64);
+		// Two of them, and the segment counts come from `planet-surface.ts` rather
+		// than being written here: a surface drawn at fewer segments than the
+		// atmosphere shell around it is a polygon inside a smooth shell, so the
+		// two are one invariant and the module that builds the shells owns it.
+		//
+		// The coarse one is what this was for every body in every layer while they
+		// were flat-shaded `MeshStandardMaterial`. A shader surface filling the
+		// near layer needs the fine one — a 32-segment silhouette puts an 11°
+		// facet on its limb, which the gallery never showed because it builds its
+		// own 144×96 sphere. But 12× the vertices buys nothing on a far-layer disc
+		// a few pixels across, so `setLayer` swaps between them on the handoff it
+		// already re-parents the body with.
+		this.nearSphere = new THREE.SphereGeometry(
+			1,
+			SPHERE_SEGMENTS,
+			SPHERE_RINGS,
+		);
+		this.farSphere = new THREE.SphereGeometry(
+			1,
+			FAR_SPHERE_SEGMENTS,
+			FAR_SPHERE_RINGS,
+		);
+		const unitSphere = this.nearSphere;
 		for (const body of this.world.system.bodies) {
 			// A station is the one body that is not a sphere: #13 §7's three
 			// silhouettes, built in kilometres. Everything else — star, planet,
@@ -1171,6 +1198,14 @@ class Game {
 		const mesh = this.meshes.get(body.id);
 		if (!mesh) return;
 		mesh.scale.setScalar(body.radiusKm * scaleFor(layer));
+		// Detail follows the layer, on the same rule and at the same moment as the
+		// scale — an assignment between two shared geometries, never a rebuild, so
+		// nothing allocates on the frame the player is most likely to be looking
+		// at the body. Only the surface mesh: the shells are one geometry each and
+		// a body in the far layer draws them at a few pixels either way.
+		this.bodyVisuals
+			.get(body.id)
+			?.setGeometry(layer === "far" ? this.farSphere : this.nearSphere);
 		const scene =
 			layer === "near"
 				? this.nearScene

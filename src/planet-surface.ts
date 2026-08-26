@@ -39,6 +39,24 @@ import {
  * says, because its star has a real position; the prototype does not, because
  * it has no star.
  */
+/**
+ * The tessellation a body and its shells share, and the reason it is exported.
+ *
+ * A surface drawn at fewer segments than the atmosphere around it is a polygon
+ * inside a smooth shell, which at the near layer is an 11° facet on the limb —
+ * so the two numbers are one invariant, not two settings. `main.ts` builds the
+ * surface sphere and this module builds the shells, so the constant lives here
+ * and is imported rather than restated with a comment tying them together.
+ *
+ * `SPHERE_SEGMENTS` is what a body drawn close needs. The far layer gets
+ * `FAR_SPHERE_SEGMENTS` on the same handoff that already re-parents it: 12× the
+ * vertices buys nothing on a disc a few pixels across.
+ */
+export const SPHERE_SEGMENTS = 96;
+export const SPHERE_RINGS = 64;
+export const FAR_SPHERE_SEGMENTS = 32;
+export const FAR_SPHERE_RINGS = 16;
+
 export const DEFAULT_SUN_DIRECTION = new THREE.Vector3(
 	0.62,
 	0.3,
@@ -71,6 +89,16 @@ export interface BodyVisual {
 	/** The world clock, seconds. Drives cloud drift and stellar granulation;
 	 *  every other class ignores it. */
 	setTime(seconds: number): void;
+	/**
+	 * Swap the surface tessellation, for the layer the body is now in.
+	 *
+	 * Through the handle rather than by reaching into `group.children[0]`: which
+	 * child the surface is is this module's business, and a caller that knew it
+	 * would break silently the first time a shell was added before the surface.
+	 * Only the surface — the shells are one geometry each, and a body in the far
+	 * layer draws them at a few pixels whichever it uses.
+	 */
+	setGeometry(geometry: THREE.BufferGeometry): void;
 	/**
 	 * Free the per-body materials and the star's corona texture.
 	 *
@@ -129,8 +157,17 @@ const cloudShell = () => {
 };
 let shellGeometry: THREE.SphereGeometry | undefined;
 const atmosphereShell = () => {
-	shellGeometry ??= new THREE.SphereGeometry(1, 96, 64);
+	shellGeometry ??= new THREE.SphereGeometry(1, SPHERE_SEGMENTS, SPHERE_RINGS);
 	return shellGeometry;
+};
+
+/** The ring plane is the same for every body that has one — the bands are
+ *  drawn by the shader from `innerR`/`outerR`, not by the geometry — so it is
+ *  shared like the shells rather than built per body and then leaked. */
+let ringGeometry: THREE.PlaneGeometry | undefined;
+const ringPlane = () => {
+	ringGeometry ??= new THREE.PlaneGeometry(4.8, 4.8, 1, 1);
+	return ringGeometry;
 };
 
 export function buildBodyVisual(
@@ -211,7 +248,7 @@ export function buildBodyVisual(
 	}
 	if (look.hasRings) {
 		const ring = new THREE.Mesh(
-			new THREE.PlaneGeometry(4.8, 4.8, 1, 1),
+			ringPlane(),
 			new THREE.ShaderMaterial({
 				uniforms,
 				transparent: true,
@@ -261,11 +298,19 @@ export function buildBodyVisual(
 		setTime(seconds) {
 			uniforms.time.value = seconds;
 		},
+		setGeometry(geometry) {
+			planet.geometry = geometry;
+		},
 		dispose() {
 			// One pass over the children, which includes the surface mesh — an
 			// explicit `surfaceMaterial.dispose()` beside this loop disposed it
-			// twice. The shared geometries are module constants and outlive any one
-			// body, so they are deliberately not touched.
+			// twice.
+			//
+			// Geometry is deliberately not touched: every one a body draws with —
+			// the surface sphere handed in, the two shells, the ring plane — is
+			// shared across bodies and outlives any of them. That was not true of
+			// the ring, which was built per body and would have leaked here; it is
+			// shared now, which is the fix rather than a special case in this loop.
 			for (const child of group.children) {
 				if (!(child instanceof THREE.Mesh || child instanceof THREE.Sprite))
 					continue;
