@@ -617,8 +617,8 @@ function installProbeSurface(ctx: {
 	 * renders back to back outside that cadence instead.
 	 *
 	 * **The fence is a readPixels, not finish().** gl.finish() is specified to
-	 * block until the queue drains, but through a headless browser's command
-	 * buffer it returns immediately, and the loop then measures the time to
+	 * block until the queue drains, but through a headless browser's GPU queue
+	 * it returns immediately, and the loop then measures the time to
 	 * *enqueue* nine shaders, which is approximately zero. readPixels has to hand
 	 * back real bytes, so it cannot return before the frame has been rasterised.
 	 * Measured: finish() reported 0.0 ms against an observed 76.9 ms rAF cadence
