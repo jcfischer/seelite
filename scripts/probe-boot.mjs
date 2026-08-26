@@ -552,6 +552,17 @@ check(
 /**
  * The other side, which is the one that could actually go wrong.
  *
+ * **Every wait below is generous, and no wait below decides anything.** Three
+ * of them exist — for the workbench's meter, which arrives a tick after the
+ * canvas because the import is dynamic; for the close, which may or may not
+ * navigate, that being the question; and for the first real rate, two sample
+ * windows away. Each is bounded well above what it needs and each swallows its
+ * own expiry, so a loaded machine costs seconds instead of a verdict, and a
+ * genuine failure arrives as the named check below going red rather than as an
+ * uncaught timeout that stops the file before the check runs. That distinction
+ * cost a suite run to a 6 s bound once, and cost this block a crash where a
+ * red check belonged.
+ *
  * The check above is the safe half: a page that never opened the workbench has
  * nothing that could have mounted a meter. The workbench mounts one
  * *unconditionally*, so the path worth measuring is the one that goes through
@@ -566,24 +577,10 @@ const bench = await browser.newPage({ viewport: { width: 900, height: 620 } });
 watch(bench);
 await bench.goto(`${URL}&model-viewer=station`, { waitUntil: "load" });
 await bench.waitForSelector("#model-viewer canvas");
-// Waited for rather than asserted outright: the workbench loads the meter
-// through a dynamic import, so it attaches a tick or two after the canvas
-// does. Asserting on the spot would be timing that import.
 const readout = await bench
 	.waitForSelector("[data-fps-meter]", { timeout: 20000 })
 	.catch(() => null);
 check("the workbench mounts a readout without `?fps`", Boolean(readout));
-/**
- * Whether the close navigates is the *question*, so the wait must not be the
- * thing that answers it — twice over.
- *
- * Left to throw, an in-place teardown would end this file as an uncaught
- * timeout rather than as the named check below going red: a worse report of
- * the same fact. And bounded tightly, a *correct* navigation that ran slow on
- * a loaded machine would report as a teardown that never happened. So the wait
- * is generous and its expiry is not a verdict: what is asserted is the end
- * state, and slowness costs seconds rather than a false red.
- */
 await Promise.all([
 	bench
 		.waitForFunction(
@@ -613,17 +610,16 @@ const metered = await open(`${URL}&fps`);
 // gates on nothing: whether the read below saw a measured figure or the
 // placeholder would come down to boot latency, on a wait written to take
 // exactly that out. A digit is what the placeholder does not have.
-await metered.waitForFunction(
-	() =>
-		/\d/.test(document.querySelector("[data-fps-meter]")?.textContent ?? ""),
-	null,
-	// Generous for the same reason as the close below: two sample windows sit
-	// well inside this, and the room is there so a loaded machine costs seconds
-	// rather than a red check.
-	{ timeout: 20000 },
-);
+await metered
+	.waitForFunction(
+		() =>
+			/\d/.test(document.querySelector("[data-fps-meter]")?.textContent ?? ""),
+		null,
+		{ timeout: 20000 },
+	)
+	.catch(() => {});
 const reading = await metered.evaluate(
-	() => document.querySelector("[data-fps-meter]").textContent,
+	() => document.querySelector("[data-fps-meter]")?.textContent ?? "(no meter)",
 );
 const rate = Number.parseFloat(reading);
 check(
