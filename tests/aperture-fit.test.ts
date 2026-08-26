@@ -11,14 +11,16 @@
  * slot nose-first, so its length is what it needs *clearance to stop in* — a
  * different question, and one `docking.md` §3's approach gate owns.
  *
- * Capitals are excluded and the exclusion is asserted, not assumed: the carrier
- * and the dreadnought are 176–212 m across against a 200 × 70 m slot, so they
- * cannot dock anywhere in the game and the roster has to say what happens to
- * them instead. That is #26's decision. Recording it as a failing expectation
- * here would be this file asserting a decision it does not own; recording it as
- * a *passing* one — capitals do not fit — is the honest form, and it goes red
- * the day someone shrinks a capital or widens a slot enough to change the
- * answer.
+ * **Capitals do not dock, and that is now a decision rather than a gap.** The
+ * carrier is 212 × 181 m and the dreadnought 186 × 165 m, against a 200 × 70 m
+ * slot and the refinery's 150 m pad: neither fits any aperture in the game, and
+ * neither is meant to. Ratified 2026-08-26 and recorded in the map's
+ * Constraints, so #26's roster owes them an outfitting route that is not a
+ * station.
+ *
+ * That makes the third test below a **contract, not a note**: it asserts that
+ * they still do not fit, and it goes red the day an aperture is widened far
+ * enough to admit one — which would be a decision reversed by accident.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -107,12 +109,13 @@ describe("the aperture admits the hulls that have to fly through it", () => {
 		expect(heightMargin).toBeGreaterThan(0);
 	});
 
-	test("neither capital fits any aperture, which is #26's problem to answer", () => {
-		// Not a defect of this node and not silently ignored either. Both capital
-		// classes are wider than every slot and pad in the game, so as things
-		// stand they can never dock — and the roster has to say what happens to
-		// them: an outfitting point that is not a station, a slot type that is
-		// not in `STATION_GEOMETRY`, or capitals that are NPC-only.
+	test("neither capital fits any aperture, and that is the intended answer", () => {
+		// The separate-class decision, held as an assertion. Both capital classes
+		// are wider than every slot and pad in the game and are supposed to be;
+		// what #26 owes them is an outfitting route that is not a station. This
+		// fails if an aperture is ever widened enough to admit one, which is the
+		// shape that reversal would take — nobody would write "capitals may dock
+		// now", they would widen a slot for some other reason.
 		for (const id of CAPITALS) {
 			const hull = envelope(id);
 			for (const type of STATION_TYPES) {
