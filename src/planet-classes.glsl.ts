@@ -154,11 +154,8 @@ export const ICE = /* glsl */ `
 uniform float seedOffset;
 
 // Lineae: the thin curved fractures of a shell floating on something liquid.
-// The trick is the *inverse* of a threshold — take a warped field and keep only
-// the pixels near one contour, which gives lines rather than regions.
 float fractures(vec3 p, float freq, float width) {
-  float f = fbm4(warp(p * freq + seedOffset, 0.9, 0.65));
-  return 1.0 - smoothstep(0.0, width, abs(f - 0.5));
+  return contour(p * freq + seedOffset, width, 0.9, 0.65);
 }
 float height(vec3 p) {
   return fbm4(p * 2.2 + seedOffset) * 0.35
@@ -192,11 +189,10 @@ uniform float seedOffset;
 uniform float time;
 
 // The crust is broken into plates and the light comes out between them, so the
-// glow lives on a contour of a warped field — the same primitive as ice
-// fractures, driving emission instead of albedo.
+// glow lives on a contour of a warped field — the shared contour() primitive,
+// wider and more strongly warped than ice uses, driving emission not albedo.
 float rift(vec3 p, float freq, float width) {
-  float f = fbm4(warp(p * freq + seedOffset, 1.2, 0.8));
-  return 1.0 - smoothstep(0.0, width, abs(f - 0.5));
+  return contour(p * freq + seedOffset, width, 1.2, 0.8);
 }
 float height(vec3 p) {
   return fbm4(p * 3.0 + seedOffset) * 0.5 - rift(p, 1.9, 0.06) * 0.4;

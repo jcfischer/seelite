@@ -18,7 +18,11 @@ import {
 	SURFACE_VERTEX,
 	VARYINGS_GLSL,
 } from "./planet-shaders";
-import { type SurfaceClass, appearanceFor } from "./planet-appearance";
+import {
+	type PlanetAppearance,
+	type SurfaceClass,
+	appearanceFor,
+} from "./planet-appearance";
 
 /**
  * The gallery, in ladder order: hottest rocky world to coldest, then the giants,
@@ -89,13 +93,15 @@ const GALLERY = [
 /**
  * A rocky body past the desert rung is an ice world; a gas giant is at the same
  * distance. `system.ts` separates them with `isGasGiant`, and so does the
- * gallery \u2014 stated per entry rather than guessed from the orbit, because the
+ * gallery — stated per entry rather than guessed from the orbit, because the
  * whole point is that one number does *not* decide it on its own.
  */
-const describe = (entry: (typeof GALLERY)[number]) =>
-	appearanceFor(entry.kind, entry.id, entry.warmth, {
-		isGasGiant: entry.giant,
-	});
+const describe = (entry: (typeof GALLERY)[number]) => {
+	if (entry.kind === "star") return appearanceFor("star", entry.id);
+	if (entry.kind === "moon")
+		return appearanceFor("moon", entry.id, entry.warmth);
+	return appearanceFor("planet", entry.id, entry.warmth, entry.giant);
+};
 
 const LABEL: Record<SurfaceClass, string> = {
 	lava: "Lava — molten crust",
@@ -276,15 +282,8 @@ interface Body {
 	surface: SurfaceClass;
 }
 
-export function mountPlanetPrototype(): void {
-	const query = new URLSearchParams(location.search).get("planet-prototype");
-	const single = GALLERY.find((entry) => describe(entry).surface === query);
-
-	const root = document.createElement("section");
-	root.id = "planet-prototype";
-	document.body.append(root);
-	const style = document.createElement("style");
-	style.textContent = `
+/** The page's own chrome. A module constant so the mount reads as scene setup. */
+const PROTOTYPE_CSS = `
 #planet-prototype{position:fixed;inset:0;background:#01030a;color:#dceeff;
   font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;z-index:20}
 #planet-prototype canvas{width:100%;height:100%;display:block}
@@ -297,6 +296,162 @@ export function mountPlanetPrototype(): void {
 .pp-caption span{color:#7f95ab;font-size:11px}
 .pp-stats{position:fixed;bottom:16px;right:20px;color:#7f95ab;text-align:right}
 .pp-stats b{color:#9fe8b0}`;
+
+/**
+ * Build one body: its surface, and whichever shells its class earns.
+ *
+ * Every shell shares the body's single uniform object, so the cloud deck, the
+ * atmosphere and the rings all see the same sun and the same clock without any
+ * of them being told about it separately.
+ */
+function buildBody(look: PlanetAppearance, sphere: THREE.SphereGeometry): Body {
+	const uniforms: Record<string, THREE.IUniform> = {
+		time: { value: 0 },
+		sunDir: { value: SUN_DIRECTION },
+		sunColor: { value: new THREE.Color(1.0, 0.97, 0.92) },
+		// A thick atmosphere carries light well past the geometric terminator;
+		// an airless body does not carry it at all.
+		wrapAmount: { value: look.atmosphere * 0.32 },
+		seedOffset: { value: (look.seed % 997) / 97 },
+		warmth: { value: look.warmth },
+		seaLevel: { value: look.oceanFraction },
+		starTint: { value: new THREE.Color(0xfff4ea) },
+		atmoColor: { value: new THREE.Color(look.atmosphereColor) },
+		atmoStrength: { value: look.atmosphere },
+		cloudCover: { value: look.cloudCover },
+		// Water cloud is neutral; a dust haze is the colour of the ground it
+		// was lifted from.
+		cloudTint: {
+			value: new THREE.Color(look.surface === "desert" ? 0xb08a62 : 0xdfe8f0),
+		},
+		innerR: { value: 1.35 },
+		outerR: { value: 2.3 },
+	};
+
+	const group = new THREE.Group();
+	const planet = new THREE.Mesh(
+		sphere,
+		new THREE.ShaderMaterial({
+			uniforms,
+			vertexShader: SURFACE_VERTEX,
+			fragmentShader: fragmentFor(look.surface),
+		}),
+	);
+	group.add(planet);
+
+	if (look.cloudCover > 0) {
+		group.add(
+			new THREE.Mesh(
+				new THREE.SphereGeometry(1.014, 128, 84),
+				new THREE.ShaderMaterial({
+					uniforms,
+					transparent: true,
+					depthWrite: false,
+					vertexShader: SURFACE_VERTEX,
+					fragmentShader: CLOUD_FRAGMENT,
+				}),
+			),
+		);
+	}
+	if (look.atmosphere > 0) {
+		// Back faces only, additively: the shell is a volume seen from outside,
+		// and drawing its front faces would put a wash over the whole disc.
+		group.add(
+			new THREE.Mesh(
+				new THREE.SphereGeometry(1.03 + look.atmosphere * 0.025, 96, 64),
+				new THREE.ShaderMaterial({
+					uniforms,
+					transparent: true,
+					depthWrite: false,
+					side: THREE.BackSide,
+					blending: THREE.AdditiveBlending,
+					vertexShader: SURFACE_VERTEX,
+					fragmentShader: ATMOSPHERE_FRAGMENT,
+				}),
+			),
+		);
+	}
+	if (look.hasRings) {
+		const ring = new THREE.Mesh(
+			new THREE.PlaneGeometry(4.8, 4.8, 1, 1),
+			new THREE.ShaderMaterial({
+				uniforms,
+				transparent: true,
+				depthWrite: false,
+				side: THREE.DoubleSide,
+				vertexShader: RING_VERTEX,
+				fragmentShader: RING_FRAGMENT,
+			}),
+		);
+		ring.rotation.x = Math.PI / 2 - 0.32;
+		group.add(ring);
+	}
+	if (look.surface === "star") {
+		// A corona sprite rather than a shader shell: the glow is unbounded and
+		// a sphere would cut it off at a radius the star does not have.
+		const corona = new THREE.Sprite(
+			new THREE.SpriteMaterial({
+				color: 0xffd9a8,
+				transparent: true,
+				blending: THREE.AdditiveBlending,
+				depthWrite: false,
+				opacity: 0.55,
+				map: coronaTexture(),
+			}),
+		);
+		corona.scale.setScalar(5.2);
+		group.add(corona);
+	}
+
+	group.rotation.z = 0.18;
+	return { group, uniforms, surface: look.surface };
+}
+
+/**
+ * Drag-to-rotate.
+ *
+ * Returns the live angles rather than taking a callback: the render loop reads
+ * them every frame anyway, and a probe needs to write them, so one mutable
+ * object is both the output and the handle.
+ */
+function installDragControls(canvas: HTMLCanvasElement) {
+	const view = { spin: 0, tilt: 0 };
+	let dragging = false;
+	let lastX = 0;
+	let lastY = 0;
+	canvas.style.cursor = "grab";
+	canvas.addEventListener("pointerdown", (event) => {
+		dragging = true;
+		lastX = event.clientX;
+		lastY = event.clientY;
+		canvas.setPointerCapture(event.pointerId);
+	});
+	canvas.addEventListener("pointermove", (event) => {
+		if (!dragging) return;
+		view.spin += (event.clientX - lastX) * 0.007;
+		view.tilt = THREE.MathUtils.clamp(
+			view.tilt + (event.clientY - lastY) * 0.007,
+			-1.2,
+			1.2,
+		);
+		lastX = event.clientX;
+		lastY = event.clientY;
+	});
+	canvas.addEventListener("pointerup", () => {
+		dragging = false;
+	});
+	return view;
+}
+
+export function mountPlanetPrototype(): void {
+	const query = new URLSearchParams(location.search).get("planet-prototype");
+	const single = GALLERY.find((entry) => describe(entry).surface === query);
+
+	const root = document.createElement("section");
+	root.id = "planet-prototype";
+	document.body.append(root);
+	const style = document.createElement("style");
+	style.textContent = PROTOTYPE_CSS;
 	document.head.append(style);
 
 	const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -311,143 +466,44 @@ export function mountPlanetPrototype(): void {
 	const scene = new THREE.Scene();
 	const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 400);
 	const shown = single ? [single] : GALLERY;
+	// Classified once. `describe` is pure, so five call sites were only waste —
+	// but five call sites are also five places to drift if its arguments change.
+	const looks = shown.map(describe);
 	const columns = single ? 1 : 3;
 	const rows = Math.ceil(shown.length / columns);
 	const SPACING = 2.7;
 
 	const sphere = new THREE.SphereGeometry(1, 144, 96);
-	const bodies: Body[] = [];
 
-	for (let i = 0; i < shown.length; i++) {
-		const entry = shown[i];
-		const look = describe(entry);
-		const uniforms: Record<string, THREE.IUniform> = {
-			time: { value: 0 },
-			sunDir: { value: SUN_DIRECTION },
-			sunColor: { value: new THREE.Color(1.0, 0.97, 0.92) },
-			// A thick atmosphere carries light well past the geometric terminator;
-			// an airless body does not carry it at all.
-			wrapAmount: { value: look.atmosphere * 0.32 },
-			seedOffset: { value: (look.seed % 997) / 97 },
-			warmth: { value: look.warmth },
-			seaLevel: { value: look.oceanFraction },
-			starTint: { value: new THREE.Color(0xfff4ea) },
-			atmoColor: { value: new THREE.Color(look.atmosphereColor) },
-			atmoStrength: { value: look.atmosphere },
-			cloudCover: { value: look.cloudCover },
-			// Water cloud is neutral; a dust haze is the colour of the ground it
-			// was lifted from.
-			cloudTint: {
-				value: new THREE.Color(look.surface === "desert" ? 0xb08a62 : 0xdfe8f0),
-			},
-			innerR: { value: 1.35 },
-			outerR: { value: 2.3 },
-		};
-
-		const group = new THREE.Group();
-		const planet = new THREE.Mesh(
-			sphere,
-			new THREE.ShaderMaterial({
-				uniforms,
-				vertexShader: SURFACE_VERTEX,
-				fragmentShader: fragmentFor(look.surface),
-			}),
-		);
-		group.add(planet);
-
-		if (look.cloudCover > 0) {
-			group.add(
-				new THREE.Mesh(
-					new THREE.SphereGeometry(1.014, 128, 84),
-					new THREE.ShaderMaterial({
-						uniforms,
-						transparent: true,
-						depthWrite: false,
-						vertexShader: SURFACE_VERTEX,
-						fragmentShader: CLOUD_FRAGMENT,
-					}),
-				),
-			);
-		}
-		if (look.atmosphere > 0) {
-			// Back faces only, additively: the shell is a volume seen from outside,
-			// and drawing its front faces would put a wash over the whole disc.
-			group.add(
-				new THREE.Mesh(
-					new THREE.SphereGeometry(1.03 + look.atmosphere * 0.025, 96, 64),
-					new THREE.ShaderMaterial({
-						uniforms,
-						transparent: true,
-						depthWrite: false,
-						side: THREE.BackSide,
-						blending: THREE.AdditiveBlending,
-						vertexShader: SURFACE_VERTEX,
-						fragmentShader: ATMOSPHERE_FRAGMENT,
-					}),
-				),
-			);
-		}
-		if (look.hasRings) {
-			const ring = new THREE.Mesh(
-				new THREE.PlaneGeometry(4.8, 4.8, 1, 1),
-				new THREE.ShaderMaterial({
-					uniforms,
-					transparent: true,
-					depthWrite: false,
-					side: THREE.DoubleSide,
-					vertexShader: RING_VERTEX,
-					fragmentShader: RING_FRAGMENT,
-				}),
-			);
-			ring.rotation.x = Math.PI / 2 - 0.32;
-			group.add(ring);
-		}
-		if (look.surface === "star") {
-			// A corona sprite rather than a shader shell: the glow is unbounded and
-			// a sphere would cut it off at a radius the star does not have.
-			const corona = new THREE.Sprite(
-				new THREE.SpriteMaterial({
-					color: 0xffd9a8,
-					transparent: true,
-					blending: THREE.AdditiveBlending,
-					depthWrite: false,
-					opacity: 0.55,
-					map: coronaTexture(),
-				}),
-			);
-			corona.scale.setScalar(5.2);
-			group.add(corona);
-		}
-
+	const bodies: Body[] = looks.map((look, i) => {
+		const body = buildBody(look, sphere);
 		if (!single) {
-			group.position.set(
+			body.group.position.set(
 				((i % columns) - (columns - 1) / 2) * SPACING,
 				((rows - 1) / 2 - Math.floor(i / columns)) * SPACING - 0.15,
 				0,
 			);
 		}
-		group.rotation.z = 0.18;
-		scene.add(group);
-		bodies.push({ group, uniforms, surface: look.surface });
-	}
+		scene.add(body.group);
+		return body;
+	});
 
 	camera.position.z = single ? 3.1 : 12.6;
 
 	const head = document.createElement("div");
 	head.className = "pp-head";
 	head.innerHTML = single
-		? `<b>${LABEL[describe(single).surface].toUpperCase()}</b><p>Drag to rotate. Sun is 51° off the view axis, so the terminator is real.</p>`
+		? `<b>${LABEL[looks[0].surface].toUpperCase()}</b><p>Drag to rotate. Sun is 51° off the view axis, so the terminator is real.</p>`
 		: "<b>PLANET CLASS GALLERY — NODE 54</b><p>Class is read off <code>a/a_hab</code>, the orbit ratio the generator already computes. The seed only picks continents, craters and storms <em>within</em> a class.</p>";
 	root.append(head);
 
 	// Captions are DOM, projected from each body's world position every frame:
 	// text in the scene would need a font atlas, and this prototype exists to
 	// judge surfaces, not typography.
-	const captions = shown.map((entry) => {
+	const captions = shown.map((entry, i) => {
 		const el = document.createElement("div");
 		el.className = "pp-caption";
-		const look = describe(entry);
-		el.innerHTML = `<b>${LABEL[look.surface]}</b><span>${entry.note}</span>`;
+		el.innerHTML = `<b>${LABEL[looks[i].surface]}</b><span>${entry.note}</span>`;
 		root.append(el);
 		return el;
 	});
@@ -456,32 +512,7 @@ export function mountPlanetPrototype(): void {
 	stats.className = "pp-stats";
 	root.append(stats);
 
-	let dragging = false;
-	let lastX = 0;
-	let lastY = 0;
-	let spinY = 0;
-	let tiltX = 0;
-	renderer.domElement.style.cursor = "grab";
-	renderer.domElement.addEventListener("pointerdown", (event) => {
-		dragging = true;
-		lastX = event.clientX;
-		lastY = event.clientY;
-		renderer.domElement.setPointerCapture(event.pointerId);
-	});
-	renderer.domElement.addEventListener("pointermove", (event) => {
-		if (!dragging) return;
-		spinY += (event.clientX - lastX) * 0.007;
-		tiltX = THREE.MathUtils.clamp(
-			tiltX + (event.clientY - lastY) * 0.007,
-			-1.2,
-			1.2,
-		);
-		lastX = event.clientX;
-		lastY = event.clientY;
-	});
-	renderer.domElement.addEventListener("pointerup", () => {
-		dragging = false;
-	});
+	const view = installDragControls(renderer.domElement);
 
 	const resize = () => {
 		renderer.setSize(innerWidth, innerHeight);
@@ -509,8 +540,8 @@ export function mountPlanetPrototype(): void {
 		const elapsed = clock.getElapsedTime();
 		for (const body of bodies) {
 			body.uniforms.time.value = elapsed;
-			body.group.rotation.y = spinY;
-			body.group.rotation.x = tiltX;
+			body.group.rotation.y = view.spin;
+			body.group.rotation.x = view.tilt;
 		}
 		renderer.render(scene, camera);
 
@@ -530,11 +561,48 @@ export function mountPlanetPrototype(): void {
 	loop();
 
 	/**
-	 * Read the mean colour of a patch on one body's disc.
+	 * Read one body's screen centre and radius, in drawing-buffer pixels.
+	 *
+	 * The radius is measured along **both** axes rather than measured on x and
+	 * reused: NDC is square while the buffer usually is not, so one radius in
+	 * pixels is a different NDC span horizontally and vertically. Getting this
+	 * wrong tilts every sampled bearing on a non-square viewport, which is
+	 * exactly the case a probe running at some other resolution would hit.
+	 */
+	const discOf = (index: number) => {
+		const buffer = renderer.getDrawingBufferSize(new THREE.Vector2());
+		const origin = bodies[index].group.position;
+		const centre = origin.clone().project(camera);
+		const right = new THREE.Vector3().setFromMatrixColumn(
+			camera.matrixWorld,
+			0,
+		);
+		const up = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
+		const edgeX = origin.clone().add(right).project(camera);
+		const edgeY = origin.clone().add(up).project(camera);
+		return {
+			buffer,
+			x: (centre.x * 0.5 + 0.5) * buffer.x,
+			y: (centre.y * 0.5 + 0.5) * buffer.y,
+			// Pixels per unit sphere radius, per axis.
+			radiusX: Math.abs(edgeX.x - centre.x) * 0.5 * buffer.x,
+			radiusY: Math.abs(edgeY.y - centre.y) * 0.5 * buffer.y,
+		};
+	};
+
+	/**
+	 * Read a patch on one body's disc: its mean colour, and how much it varies.
 	 *
 	 * `u` and `v` are offsets from the body's centre in units of its own screen
-	 * radius, so a probe can say "half a radius towards the sun" without knowing
-	 * the framing. Positive `u` is screen-right and positive `v` is screen-up.
+	 * radius, so a probe can say "three quarters of a radius towards the sun"
+	 * without knowing the framing. Positive `u` is screen-right, positive `v` is
+	 * screen-up.
+	 *
+	 * `sd` is the standard deviation of luminance inside the patch, and it is
+	 * here because mean colour alone does not answer "do these two worlds look
+	 * different". Two classes can share a mean and differ entirely in structure
+	 * — bands against smooth haze — and a distinctness check with no texture
+	 * term would call them identical.
 	 *
 	 * The render happens here, immediately before the read: the default
 	 * framebuffer is not preserved between frames, so a `readPixels` in any other
@@ -548,26 +616,16 @@ export function mountPlanetPrototype(): void {
 	) => {
 		renderer.render(scene, camera);
 		const gl = renderer.getContext();
-		const buffer = renderer.getDrawingBufferSize(new THREE.Vector2());
-		const centre = bodies[index].group.position.clone().project(camera);
-		const right = new THREE.Vector3()
-			.setFromMatrixColumn(camera.matrixWorld, 0)
-			.multiplyScalar(1);
-		const edge = bodies[index].group.position
-			.clone()
-			.add(right)
-			.project(camera);
-		const radiusNdc = Math.abs(edge.x - centre.x);
-		const px = ((centre.x + u * radiusNdc) * 0.5 + 0.5) * buffer.x;
-		// readPixels counts from the bottom, and NDC y already does too.
-		const aspect = buffer.x / buffer.y;
-		const py = ((centre.y + v * radiusNdc * aspect) * 0.5 + 0.5) * buffer.y;
-		const half = Math.max(2, Math.round(radiusNdc * halfFrac * 0.5 * buffer.x));
+		const disc = discOf(index);
+		const px = Math.round(disc.x + u * disc.radiusX);
+		// readPixels counts rows from the bottom, and so does NDC y.
+		const py = Math.round(disc.y + v * disc.radiusY);
+		const half = Math.max(2, Math.round(halfFrac * disc.radiusX));
 		const size = half * 2;
 		const pixels = new Uint8Array(size * size * 4);
 		gl.readPixels(
-			Math.round(px) - half,
-			Math.round(py) - half,
+			px - half,
+			py - half,
 			size,
 			size,
 			gl.RGBA,
@@ -577,29 +635,91 @@ export function mountPlanetPrototype(): void {
 		let r = 0;
 		let g = 0;
 		let b = 0;
+		let lumaSum = 0;
+		let lumaSq = 0;
+		const n = size * size;
 		for (let i = 0; i < pixels.length; i += 4) {
 			r += pixels[i];
 			g += pixels[i + 1];
 			b += pixels[i + 2];
+			const y =
+				0.2126 * pixels[i] + 0.7152 * pixels[i + 1] + 0.0722 * pixels[i + 2];
+			lumaSum += y;
+			lumaSq += y * y;
 		}
-		const n = size * size;
-		return [r / n, g / n, b / n];
+		const mean = lumaSum / n;
+		return {
+			rgb: [r / n, g / n, b / n] as [number, number, number],
+			sd: Math.sqrt(Math.max(0, lumaSq / n - mean * mean)),
+		};
 	};
 
-	// Probe surface. `meanFrameMs` is the measured budget; `classes` lets the
-	// probe assert that every ladder rung actually reached the screen; and
-	// `samplePatch` is how it checks that they look different from each other.
+	/**
+	 * The render cost of one frame, with the display's cadence taken out of it.
+	 *
+	 * A mean of `requestAnimationFrame` deltas cannot report anything faster than
+	 * the refresh interval, so on a 60 Hz display it bottoms out at 16.7 ms
+	 * whatever the shaders cost — which makes it a measure of the monitor, not of
+	 * the work. This renders back to back outside the rAF cadence instead.
+	 *
+	 * **The fence is a `readPixels`, not `finish()`.** `gl.finish()` is specified
+	 * to block until the queue drains, but through a headless browser's command
+	 * buffer it returns immediately and the loop below then measures the time to
+	 * *enqueue* nine shaders, which is approximately zero. `readPixels` has to
+	 * hand back real bytes, so it cannot return before the frame it is reading
+	 * has actually been rasterised. Measured: `finish()` reported 0.0 ms against
+	 * an observed 76.9 ms rAF cadence for the same scene.
+	 */
+	const measureRenderMs = (samples = 20) => {
+		const gl = renderer.getContext();
+		const fence = new Uint8Array(4);
+		const sync = () =>
+			gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, fence);
+		// One warm-up render, so shader compilation and buffer upload are not
+		// charged to the first sample.
+		renderer.render(scene, camera);
+		sync();
+		const started = performance.now();
+		for (let i = 0; i < samples; i++) {
+			renderer.render(scene, camera);
+			// Per iteration rather than once at the end: the driver is free to
+			// pipeline a batch of identical frames, and a single trailing fence
+			// would measure the last one plus whatever overlapped.
+			sync();
+		}
+		return (performance.now() - started) / samples;
+	};
+
+	// Probe surface. `measureRenderMs` is the budget — `meanFrameMs` is the
+	// display cadence and is reported next to it, not instead of it. `classes`
+	// lets the probe assert every ladder rung reached the screen, and
+	// `samplePatch` is how it checks they look different from each other.
 	(window as unknown as Record<string, unknown>).__seelitePlanets = {
 		classes: bodies.map((b) => b.surface),
-		cloudCover: shown.map((entry) => describe(entry).cloudCover),
-		oceanFraction: shown.map((entry) => describe(entry).oceanFraction),
+		cloudCover: looks.map((look) => look.cloudCover),
+		oceanFraction: looks.map((look) => look.oceanFraction),
 		meanFrameMs: () =>
 			frames.length ? frames.reduce((a, b) => a + b, 0) / frames.length : 0,
 		frameCount: () => frameCount,
 		samplePatch,
+		measureRenderMs,
+		bufferSize: () => {
+			const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+			return [size.x, size.y];
+		},
+		/**
+		 * Override one body's sea level.
+		 *
+		 * Here so a probe can show that sea level *controls* the ocean fraction
+		 * rather than asserting it does. Display-only, like everything else on
+		 * this handle — the classifier is untouched.
+		 */
+		setSeaLevel: (index: number, level: number) => {
+			bodies[index].uniforms.seaLevel.value = level;
+		},
 		setView: (spin: number, tilt: number) => {
-			spinY = spin;
-			tiltX = tilt;
+			view.spin = spin;
+			view.tilt = tilt;
 		},
 	};
 }

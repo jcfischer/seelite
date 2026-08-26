@@ -33,12 +33,17 @@ export interface PlanetAppearance {
 	/** Optical depth of the shell, 0 for an airless body. Drives limb glow and
 	 *  how far light wraps past the geometric terminator. */
 	atmosphere: number;
-	/** Linear-space RGB for that shell. Meaningless when `atmosphere` is 0. */
+	/** Linear-space RGB for that shell. Read only when `atmosphere` is above 0;
+	 *  a class with no shell leaves it at 0 rather than at a colour nothing
+	 *  draws. */
 	atmosphereColor: number;
-	/** Fraction of the surface below sea level. 0 when the class has no ocean. */
+	/** Fraction of the surface below sea level. 0 means no *liquid* ocean — an
+	 *  ice world's is frozen solid and still sets it, because the fracture
+	 *  pattern is drawn across the shell that froze. */
 	oceanFraction: number;
 	/** How much of the disc a separate weather shell covers. 0 draws no shell —
-	 *  a venusian world's deck *is* its surface, so it does not get one. */
+	 *  a venusian world's deck *is* its surface, and a gas giant's bands are
+	 *  painted into it, so neither gets a second one. */
 	cloudCover: number;
 	/** Only gas giants carry them, and only some of those. */
 	hasRings: boolean;
@@ -54,11 +59,22 @@ const hash = (text: string) => {
 };
 
 /**
+ * The giant boundary, as a multiple of the habitable distance.
+ *
+ * `system.ts` spells the same rule inline as `aAu > 2 * habitableAu`. The two
+ * are checked against each other by a test that generates real systems and
+ * compares every planet's `isGasGiant` against this number — a literal asserted
+ * against itself would stay green while the parity it claims went false.
+ */
+export const GIANT_ORBIT_FACTOR = 2;
+
+/**
  * Thresholds on `a/a_hab`, in the units the generator already thinks in.
  *
- * `GIANT` is not a new rule: `system.ts` sets `isGasGiant = aAu > 2 * habitableAu`,
- * so the giant boundary and this ladder's top rung are the same line. The rest
- * subdivide the space the generator left undifferentiated.
+ * `DESERT` and `GIANT` are deliberately one number, not two that happen to
+ * match: past the desert rung a body is either an ice world or a gas giant, and
+ * which one is not a question of distance. Deriving one from the other keeps an
+ * edit to the boundary from silently splitting the line in half.
  */
 export const WARMTH = {
 	/** Inside this, the crust does not stay solid. */
@@ -68,133 +84,125 @@ export const WARMTH = {
 	/** Liquid water. The band is narrow on purpose — terran worlds should feel
 	 *  found, not issued. */
 	TERRAN: 1.3,
-	/** Cold enough that the ocean is gone, warm enough that it is not ice. */
-	DESERT: 2.0,
-	/** Matches `isGasGiant`. */
-	GIANT: 2.0,
+	/** Cold enough that the ocean is gone. The same line as `GIANT`. */
+	DESERT: GIANT_ORBIT_FACTOR,
+	/** Matches `system.ts`'s `isGasGiant`. */
+	GIANT: GIANT_ORBIT_FACTOR,
 	/** Beyond this a giant is methane-blue rather than ammonia-brown. */
 	ICE_GIANT: 5.0,
 } as const;
 
 /**
- * Classify one body for display.
+ * Which rung a body sits on.
  *
- * `warmth` is `aAu / habitableAu`. Callers that have neither — a moon, whose
- * orbit is around a planet — pass the *parent's* warmth, which is the right
- * answer: a moon is at its planet's distance from the star.
+ * Split out from `appearanceFor` because it is the part the parity test wants:
+ * given a generated planet's orbit and the generator's own `isGasGiant`, does
+ * this ladder agree about which family it belongs to?
  */
-export function appearanceFor(
+export function classify(
 	kind: "star" | "planet" | "moon",
-	id: string,
 	warmth: number,
-	options: { isGasGiant?: boolean; radiusKm?: number } = {},
-): PlanetAppearance {
-	const seed = hash(id);
-	if (kind === "star")
-		return {
-			surface: "star",
-			warmth: 0,
-			atmosphere: 0,
-			atmosphereColor: 0,
-			oceanFraction: 0,
-			cloudCover: 0,
-			hasRings: false,
-			seed,
-		};
-
+	isGasGiant: boolean,
+): SurfaceClass {
+	if (kind === "star") return "star";
 	// A moon is airless whatever its orbit: nothing at moon mass holds a shell
 	// long enough to matter. It still reads cold or scorched through its albedo,
 	// which the shader takes from `warmth`.
-	if (kind === "moon")
-		return {
-			surface: "airless",
-			warmth,
-			atmosphere: 0,
-			atmosphereColor: 0,
-			oceanFraction: 0,
-			cloudCover: 0,
-			hasRings: false,
-			seed,
-		};
+	if (kind === "moon") return "airless";
+	if (isGasGiant) return warmth > WARMTH.ICE_GIANT ? "iceGiant" : "jovian";
+	if (warmth < WARMTH.LAVA) return "lava";
+	if (warmth < WARMTH.VENUS) return "venusian";
+	if (warmth < WARMTH.TERRAN) return "terran";
+	if (warmth < WARMTH.DESERT) return "desert";
+	return "ice";
+}
 
-	const giant = options.isGasGiant ?? warmth > WARMTH.GIANT;
-	if (giant) {
-		const cold = warmth > WARMTH.ICE_GIANT;
-		return {
-			surface: cold ? "iceGiant" : "jovian",
-			warmth,
-			// Thick, and the limb glow is the whole silhouette on a giant.
-			atmosphere: 1,
-			atmosphereColor: cold ? 0x4a86c8 : 0xd8a05a,
-			oceanFraction: 0,
-			// The band pattern is painted into the surface, so a second shell over
-			// it would only wash out the belts it exists to show.
-			cloudCover: 0,
-			// Three giants in eight, so rings stay an event.
-			hasRings: (seed & 7) < 3,
-			seed,
-		};
-	}
+/** Fields a class does not set. Spelled once rather than in every rung. */
+const NO_SHELL = {
+	atmosphere: 0,
+	atmosphereColor: 0,
+	oceanFraction: 0,
+	cloudCover: 0,
+	hasRings: false,
+} as const;
 
-	if (warmth < WARMTH.LAVA)
-		return {
-			surface: "lava",
-			warmth,
-			atmosphere: 0.35,
-			atmosphereColor: 0x8a3a1c,
-			oceanFraction: 0,
-			cloudCover: 0,
-			hasRings: false,
-			seed,
-		};
-	if (warmth < WARMTH.VENUS)
-		return {
-			surface: "venusian",
-			warmth,
-			atmosphere: 1,
-			atmosphereColor: 0xd6bd7a,
-			oceanFraction: 0,
-			cloudCover: 0,
-			hasRings: false,
-			seed,
-		};
-	if (warmth < WARMTH.TERRAN)
-		return {
-			surface: "terran",
-			warmth,
-			atmosphere: 0.8,
-			atmosphereColor: 0x3a86d8,
-			// 0.55–0.75, so terran worlds vary between continents and archipelagos
-			// without ever losing the ocean that makes them terran.
-			oceanFraction: 0.55 + ((seed >>> 8) & 0xff) / 255 / 5,
-			// Weather is the loudest thing about a terran world at a distance, and
-			// the cover varies enough between them to be an identity of its own.
-			cloudCover: 0.55 + ((seed >>> 16) & 0xff) / 255 / 2.2,
-			hasRings: false,
-			seed,
-		};
-	if (warmth < WARMTH.DESERT)
-		return {
-			surface: "desert",
-			warmth,
-			// Thin: enough for dust haze on the limb, not enough for a cloud deck.
-			atmosphere: 0.3,
-			atmosphereColor: 0xc98a5a,
-			oceanFraction: 0,
-			// Dust, not water: enough to streak, never enough to cover.
-			cloudCover: 0.22,
-			hasRings: false,
-			seed,
-		};
-	return {
-		surface: "ice",
-		warmth,
+/**
+ * What each class carries beyond the surface treatment itself.
+ *
+ * A table rather than nine object literals: `PlanetAppearance` is the part of
+ * this prototype meant to outlive it, and a field added to the interface should
+ * be one edit here, not nine.
+ */
+const CLASS_TRAITS: Record<
+	SurfaceClass,
+	Partial<Omit<PlanetAppearance, "surface" | "warmth" | "seed">>
+> = {
+	star: {},
+	airless: {},
+	lava: { atmosphere: 0.35, atmosphereColor: 0x8a3a1c },
+	venusian: { atmosphere: 1, atmosphereColor: 0xd6bd7a },
+	terran: { atmosphere: 0.8, atmosphereColor: 0x3a86d8 },
+	// Thin: enough for dust haze on the limb, never enough for a cloud deck.
+	desert: { atmosphere: 0.3, atmosphereColor: 0xc98a5a, cloudCover: 0.22 },
+	ice: {
 		atmosphere: 0.2,
 		atmosphereColor: 0x9fd0e8,
 		// A frozen ocean is still an ocean: the fracture pattern needs one.
 		oceanFraction: 0.9,
 		cloudCover: 0.12,
-		hasRings: false,
+	},
+	jovian: { atmosphere: 1, atmosphereColor: 0xd8a05a },
+	iceGiant: { atmosphere: 1, atmosphereColor: 0x4a86c8 },
+};
+
+/**
+ * Classify one body for display.
+ *
+ * `warmth` is `aAu / habitableAu`. A **planet must state its `isGasGiant`** —
+ * the generator always knows it, and defaulting the flag is how an earlier
+ * revision made every cold rocky world render as a gas giant with no error to
+ * show for it. A moon takes its *parent's* warmth, which is the right answer: a
+ * moon is at its planet's distance from the star.
+ */
+export function appearanceFor(kind: "star", id: string): PlanetAppearance;
+export function appearanceFor(
+	kind: "moon",
+	id: string,
+	warmth: number,
+): PlanetAppearance;
+export function appearanceFor(
+	kind: "planet",
+	id: string,
+	warmth: number,
+	isGasGiant: boolean,
+): PlanetAppearance;
+export function appearanceFor(
+	kind: "star" | "planet" | "moon",
+	id: string,
+	warmth = 0,
+	isGasGiant = false,
+): PlanetAppearance {
+	const seed = hash(id);
+	const surface = classify(kind, warmth, isGasGiant);
+	const look: PlanetAppearance = {
+		surface,
+		warmth: kind === "star" ? 0 : warmth,
 		seed,
+		...NO_SHELL,
+		...CLASS_TRAITS[surface],
 	};
+
+	if (surface === "terran") {
+		// 0.55–0.75, so terran worlds vary between continents and archipelagos
+		// without ever losing the ocean that makes them terran.
+		look.oceanFraction = 0.55 + ((seed >>> 8) & 0xff) / 255 / 5;
+		// Weather is the loudest thing about a terran world at a distance, and
+		// the cover varies enough between them to be an identity of its own.
+		look.cloudCover = 0.55 + ((seed >>> 16) & 0xff) / 255 / 2.2;
+	}
+	// Three giants in eight, so rings stay an event.
+	if (surface === "jovian" || surface === "iceGiant")
+		look.hasRings = (seed & 7) < 3;
+
+	return look;
 }

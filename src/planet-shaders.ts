@@ -73,10 +73,32 @@ vec3 warp(vec3 p, float freq, float amount) {
 }
 
 // fBm is bell-shaped, not uniform, so a raw threshold on it is a threshold on a
-// tail. Stretch the middle to fill 0..1 first, then a sea level of 0.6 really is
-// 60% ocean. FBM_SPREAD is the measured half-range of the normalised sum.
+// tail: the normalised octave sum sits near 0.5 with most of its mass inside a
+// narrow band, and a cutoff at 0.55 lands out where almost nothing is.
+//
+// This rescales that band to fill 0..1, which makes a sea level near 0.5 a
+// usable control instead of an off switch. It does **not** make the mapping a
+// CDF — a linear stretch of a bell curve is still a bell curve, so a sea level
+// of 0.6 is not 60% ocean. What is checked, in probe-planets.mjs, is the
+// weaker claim the shader actually needs: raising sea level raises the measured
+// ocean fraction, monotonically, across the usable range.
 const float FBM_SPREAD = 0.26;
 float stretch(float v) { return clamp(0.5 + (v - 0.5) / FBM_SPREAD, 0.0, 1.0); }
+
+// A thin line along one contour of a warped field.
+//
+// The trick is the *inverse* of a threshold: keep only the pixels near a single
+// value, and regions become curves. Ice lineae and lava rifts are the same
+// primitive with different constants and different destinations — one paints
+// albedo, the other paints emission — so it lives here rather than being
+// spelled twice under two names.
+// q arrives already scaled and offset, so a caller keeps control of how its
+// seed enters the field — pre- and post-multiply seeding give different
+// patterns, and that is the caller's decision to make, not this function's.
+float contour(vec3 q, float width, float warpFreq, float warpAmt) {
+  float f = fbm4(warp(q, warpFreq, warpAmt));
+  return 1.0 - smoothstep(0.0, width, abs(f - 0.5));
+}
 
 // One impact per cell across a 3x3x3 neighbourhood: a parabolic bowl with a
 // raised rim. No amount of fBm produces a crater, and craters are the entire
