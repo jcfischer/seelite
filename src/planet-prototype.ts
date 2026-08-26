@@ -369,6 +369,10 @@ function buildBody(look: PlanetAppearance, sphere: THREE.SphereGeometry): Body {
 			}),
 		);
 		ring.rotation.x = Math.PI / 2 - 0.32;
+		// Named so a probe can hide it: a ring crosses the disc and is lit by the
+		// sun whatever the planet behind it is doing, so any measurement *of the
+		// surface* has to be able to take it out of the frame.
+		ring.name = "decor";
 		group.add(ring);
 	}
 	if (look.surface === "star") {
@@ -385,6 +389,7 @@ function buildBody(look: PlanetAppearance, sphere: THREE.SphereGeometry): Body {
 			}),
 		);
 		corona.scale.setScalar(5.2);
+		corona.name = "decor";
 		group.add(corona);
 	}
 
@@ -682,6 +687,19 @@ function installProbeSurface(ctx: {
 		setSeaLevel: (index: number, level: number) => {
 			bodies[index].uniforms.seaLevel.value = level;
 		},
+		/**
+		 * Hide rings and coronae on every body.
+		 *
+		 * For measurements that are about the surface. The alternative — noting in
+		 * a comment that the ice giant's terminator reading includes its ring —
+		 * documents a contaminated number rather than taking the contamination
+		 * out, and a ringed ice giant with an unlit surface would still pass.
+		 */
+		setDecorVisible: (visible: boolean) => {
+			for (const body of bodies)
+				for (const child of body.group.children)
+					if (child.name === "decor") child.visible = visible;
+		},
 		setView: (spin: number, tilt: number) => {
 			view.spin = spin;
 			view.tilt = tilt;
@@ -689,6 +707,13 @@ function installProbeSurface(ctx: {
 	};
 }
 
+/**
+ * Mount the study. **One-shot**: this registers a `resize` listener and an
+ * unbounded `requestAnimationFrame` loop, and builds per-body geometry and
+ * materials it never disposes. Calling it twice leaks both. That is fine for a
+ * page whose whole job is to be looked at and closed, and it is stated so the
+ * next reader does not mistake it for a component.
+ */
 export function mountPlanetPrototype(): void {
 	const query = new URLSearchParams(location.search).get("planet-prototype");
 	const single = GALLERY.find((entry) => describe(entry).surface === query);

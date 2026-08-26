@@ -111,11 +111,22 @@ export const WARMTH = {
  * Split out from `appearanceFor` because it is the part the parity test wants:
  * given a generated planet's orbit and the generator's own `isGasGiant`, does
  * this ladder agree about which family it belongs to?
+ *
+ * Overloaded for the same reason `appearanceFor` is — a planet must say which
+ * family it is in, and a star or a moon must not be handed a flag that would be
+ * silently ignored.
  */
+export function classify(kind: "star", warmth: number): SurfaceClass;
+export function classify(kind: "moon", warmth: number): SurfaceClass;
+export function classify(
+	kind: "planet",
+	warmth: number,
+	isGasGiant: boolean,
+): SurfaceClass;
 export function classify(
 	kind: "star" | "planet" | "moon",
 	warmth: number,
-	isGasGiant: boolean,
+	isGasGiant = false,
 ): SurfaceClass {
 	if (kind === "star") return "star";
 	// A moon is airless whatever its orbit: nothing at moon mass holds a shell
@@ -196,7 +207,14 @@ export function appearanceFor(
 	isGasGiant = false,
 ): PlanetAppearance {
 	const seed = hash(id);
-	const surface = classify(kind, warmth, isGasGiant);
+	// The overloads exist for callers; inside the implementation signature `kind`
+	// is the union, so this is the one place the narrowing has to be spelled.
+	const surface =
+		kind === "star"
+			? classify("star", warmth)
+			: kind === "moon"
+				? classify("moon", warmth)
+				: classify("planet", warmth, isGasGiant);
 	const look: PlanetAppearance = {
 		surface,
 		warmth: kind === "star" ? 0 : warmth,
