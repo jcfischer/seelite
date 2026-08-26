@@ -566,12 +566,13 @@ const bench = await browser.newPage({ viewport: { width: 900, height: 620 } });
 watch(bench);
 await bench.goto(`${URL}&model-viewer=station`, { waitUntil: "load" });
 await bench.waitForSelector("#model-viewer canvas");
-check(
-	"the workbench mounts a readout without `?fps`",
-	await bench.evaluate(() =>
-		Boolean(document.querySelector("[data-fps-meter]")),
-	),
-);
+// Waited for rather than asserted outright: the workbench loads the meter
+// through a dynamic import, so it attaches a tick or two after the canvas
+// does. Asserting on the spot would be timing that import.
+const readout = await bench
+	.waitForSelector("[data-fps-meter]", { timeout: 20000 })
+	.catch(() => null);
+check("the workbench mounts a readout without `?fps`", Boolean(readout));
 /**
  * Whether the close navigates is the *question*, so the wait must not be the
  * thing that answers it — twice over.

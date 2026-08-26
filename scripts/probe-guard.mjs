@@ -367,14 +367,26 @@ export function tally() {
 			 * threw.
 			 *
 			 * Narrow on purpose: a probe is not a lint pass, and failing on any
-			 * console error would make an unrelated warning somewhere else in
-			 * the page red here. This matches the one class that is otherwise
+			 * console error would make an unrelated warning elsewhere in the
+			 * page red here. This matches the one class that is otherwise
 			 * silent and is always a defect.
+			 *
+			 * **It matches text, so it fails open.** Three.js reworded this
+			 * message, or routed it through `console.warn`, and the failure
+			 * mode above is silently back. That is why it is not the only
+			 * guard: `probe-station-visuals` asks the GL context itself for
+			 * `LINK_STATUS`, by name, which no rewording upstream can affect.
+			 * This one is the wide net — it covers every probe that renders,
+			 * including materials nothing thought to name — and the named check
+			 * is the one that holds when the net tears. `warn` is included for
+			 * that reason: it costs nothing and removes one of the two ways the
+			 * wording could slip past.
 			 */
 			page.on("console", (message) => {
-				if (message.type() !== "error") return;
+				if (message.type() !== "error" && message.type() !== "warning") return;
 				const text = message.text();
-				if (!/shader|program info|glsl|link status/i.test(text)) return;
+				if (!/shader|program info|glsl|link status|validate_status/i.test(text))
+					return;
 				checks++;
 				failures++;
 				console.log(`SHADERERROR ${text.slice(0, 400)}`);

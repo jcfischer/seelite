@@ -391,24 +391,41 @@ for (const viewport of VIEWPORTS) {
 	 * they ask whether the refinery is on screen and lit, and it would be.
 	 *
 	 * `LINK_STATUS` is the direct question, asked of the programs the renderer
-	 * actually built for this system — which includes the rock, because the
-	 * refinery has been framed at docking range in the loop above.
+	 * actually built for this system.
+	 *
+	 * **Named, not counted.** "None of them failed" is equally true of a build
+	 * where the rock compiled no program at all — a material that stopped being
+	 * applied, an early return, a refinery that stopped drawing an asteroid —
+	 * so a count alone can pass while the thing it exists to watch is absent.
+	 * `applyRockSurface` sets `customProgramCacheKey` to "station-rock", which
+	 * makes the rock's program findable by name rather than assumed to be in
+	 * the pile.
 	 */
 	const programs = await page.evaluate(() => {
 		const renderer = window.__seelite.renderer;
 		const gl = renderer.getContext();
 		const built = Array.from(renderer.info.programs ?? []);
+		const linked = (p) =>
+			Boolean(p.program) && gl.getProgramParameter(p.program, gl.LINK_STATUS);
+		const rock = built.filter((p) =>
+			String(p.cacheKey ?? "").includes("station-rock"),
+		);
 		return {
 			total: built.length,
-			unlinked: built.filter(
-				(p) => p.program && !gl.getProgramParameter(p.program, gl.LINK_STATUS),
-			).length,
+			unlinked: built.filter((p) => !linked(p)).length,
+			rock: rock.length,
+			rockLinked: rock.filter(linked).length,
 		};
 	});
 	check(
 		`${viewport.name}: every shader program the frame used linked`,
 		programs.total > 0 && programs.unlinked === 0,
 		`${programs.total - programs.unlinked}/${programs.total} linked`,
+	);
+	check(
+		`${viewport.name}: the rock's own program is among them, and linked`,
+		programs.rock > 0 && programs.rockLinked === programs.rock,
+		`${programs.rockLinked}/${programs.rock} "station-rock" programs`,
 	);
 
 	console.log(

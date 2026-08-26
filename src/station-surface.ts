@@ -100,13 +100,16 @@ ${NOISE_GLSL}
  *
  *   five walks, grain differenced   25 fps, 80-90 ms worst
  *   one walk, grain differenced     40 fps, 40-50 ms worst
- *   one walk, nothing else          "fps in the 50s", worst frame not reported
  *
- * The shipped row is the weakest of the three, and it is written that way
- * rather than tidied: this file argues a page below that a mean hides the
- * hitch a player feels, so the one configuration that ships having no worst
- * frame beside it is worth seeing. It was reported as a rate and accepted as
- * one. Reproduce it by opening ?seed=1&fps and flying to a refinery. The figures
+ * Those two are the comparison that decided it, and they are a pair: one
+ * machine, one view, one term moved. The configuration that actually ships cut
+ * the differenced grain as well, and it has **no row here on purpose**. What
+ * came back for it was "fps in the 50s" and no worst frame — and a mean
+ * without its worst frame is the one number this codebase says not to trust
+ * (fps-meter.ts, at the line that formats it). Set beside two measurements it
+ * would read as a third. It is an acceptance rather than a measurement, and a
+ * sentence is the honest shape for it. Reproduce any of this by opening
+ * ?seed=1&fps and flying to a refinery. The figures
  * are one machine's and are not portable; the *structure* is what carries — a
  * term inside the height field is paid five times, and a term in the albedo
  * once.
@@ -172,11 +175,19 @@ const ROCK_SURFACE = /* glsl */ `{
   // is evaluated once, joining the ridged tier that went there for the same
   // reason.
   //
-  // What that gives up is shading relief between craters, and side by side at
-  // 200 m the two renders were indistinguishable: the craters carry the read
-  // entirely, which is what AIRLESS says of an airless body in its own comment.
-  // The comparison was by eye on two screenshots, and it is worth saying so —
-  // nothing here measures it.
+  // What that gives up is shading relief between craters. What is known about
+  // the cost of giving it up is narrow, and is worth stating at its own size
+  // rather than as a conclusion: at 200 m, in two stills, on one machine, the
+  // two renders could not be told apart by eye. That is the whole of it. It
+  // says nothing about other ranges, nothing about the body in motion — where
+  // inter-crater relief is exactly the detail that reads as a surface turns —
+  // and it is a null result from one observer, which is the weakest thing a
+  // comparison can return.
+  //
+  // The cut rests on that plus the arithmetic above, which is the solid half:
+  // 160 hash lookups a fragment is a real number and the screenshots are not.
+  // If the rock ever looks flat in flight, this is the first comment to come
+  // back to, and the fix is four differenced samples rather than a mystery.
   vec3 slope = pit.xyz - p * dot(pit.xyz, p);
 
   // The same shape as planet-shaders.ts's reliefNormal ends on — lean the normal away from
@@ -210,8 +221,15 @@ const ROCK_SURFACE = /* glsl */ `{
  * was a workaround for the same thing: a texture needs coordinates, and an
  * irregular body has no good ones. Box projection seamed, an azimuthal unwrap
  * smeared at the poles, triplanar blending fixed both and left a tiling scale to
- * choose. Sampling a 3D field on the object's own position has none of those
- * problems, because there is nothing to unwrap.
+ * choose. Sampling a 3D field on the object's own *direction* has none of
+ * those problems, because there is nothing to unwrap.
+ *
+ * Direction, not position: `ROCK_SURFACE` opens on `normalize(vRockP)`, so the
+ * radius is discarded and one ray out of the centre carries a single value.
+ * That is a radial projection, and it is enough here only because the body is
+ * near-spherical — the deviation is the displacement itself. On a genuinely
+ * elongated rock the field would smear along the long axis, and the fix would
+ * be to sample the unnormalised position at a scale of its own.
  *
  * `NOISE_GLSL` is **imported, not pasted**. That was the whole reason #56
  * deferred this: #57's shader library was still being written, and two copies

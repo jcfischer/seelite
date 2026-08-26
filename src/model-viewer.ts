@@ -13,8 +13,6 @@
  */
 import * as THREE from "three";
 
-import { mountFpsMeter } from "./fps-meter";
-
 import {
 	HULL_IDS,
 	HULL_VARIANTS,
@@ -228,7 +226,13 @@ export function mountModelViewer(): void {
 	// in-place teardown, this becomes a leak *and* a way onto the flight floor
 	// without `?fps`, which is why `probe-boot` opens the workbench and closes
 	// it rather than only checking a page that never opened one.
-	mountFpsMeter();
+	// Dynamically, as `main.ts` does behind `?fps`: a statically imported meter
+	// would sit in the eagerly-loaded graph of a view module, which is the
+	// opposite of what gating it is for. Not awaited, because nothing here
+	// needs it to have arrived — the meter measures the frame loop the lines
+	// below start, and it can attach a frame or two late without measuring
+	// anything differently.
+	void import("./fps-meter").then((m) => m.mountFpsMeter());
 
 	const stage = root.querySelector<HTMLElement>(
 		"[data-model-stage]",
