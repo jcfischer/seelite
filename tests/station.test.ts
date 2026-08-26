@@ -45,11 +45,16 @@ describe("the geometry table (docking.md §5)", () => {
 	});
 
 	test("the two Coriolis types share one slot, the refinery has a pad", () => {
+		// 120 × 60 m, ratified 2026-08-26 against #35's roster and no longer the
+		// provisional 200 × 70 that `docking.md` §5 carried pending #26. The old
+		// width was 3.7× the widest ordinary hull's beam and read as a hangar
+		// door: 16% of a 1.24 km station, against about 10% on the reference
+		// Coriolis. `tests/aperture-fit.test.ts` holds the fit half of this.
 		for (const type of CORIOLIS) {
 			expect(STATION_GEOMETRY[type].aperture).toEqual({
 				kind: "slot",
-				widthKm: 0.2,
-				heightKm: 0.07,
+				widthKm: 0.12,
+				heightKm: 0.06,
 			});
 			expect(STATION_GEOMETRY[type].axis).toBe("parent");
 		}

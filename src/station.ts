@@ -114,15 +114,26 @@ export interface StationGeometry {
  * until this table answers for it. A defaulted table would silently give it a
  * trade station's slot.
  *
- * **The aperture dimensions are provisional.** §5 fixes them pending #26's hull
- * roster, which owes the largest ship the slot has to admit. They are read from
- * here by the meshes and the probes rather than restated, so widening them is
- * one edit in one place.
+ * **The aperture dimensions were provisional and are now measured.** §5 fixed
+ * them pending #26's hull roster; the roster exists (#35 built eleven roles)
+ * and `tests/aperture-fit.test.ts` measures it, so the figures below are
+ * derived rather than placeholders.
+ *
+ * The slot went from 200 × 70 m to **120 × 60 m**, ratified 2026-08-26. The
+ * old width was 3.7× the widest ordinary hull's beam and read as a hangar door
+ * on a 1.24 km station — 16% of its whole width, against about 10% for the
+ * reference Coriolis. 120 m still admits every ordinary hull with 66 m to
+ * spare, and the height keeps its own margin at 13 m, which is the skill tax
+ * `docking.md` §3 wants it to be.
+ *
+ * They are read from here by the meshes, the docking checks and the probes
+ * rather than restated, so a retune is one edit in one place — and every form's
+ * dock frame is sized *from* these numbers, so the drawn opening follows.
  */
 export const STATION_GEOMETRY: Record<StationType, StationGeometry> = {
 	trade: {
 		coreRadiusKm: 0.6,
-		aperture: { kind: "slot", widthKm: 0.2, heightKm: 0.07 },
+		aperture: { kind: "slot", widthKm: 0.12, heightKm: 0.06 },
 		axis: "parent",
 		spins: true,
 	},
@@ -131,7 +142,7 @@ export const STATION_GEOMETRY: Record<StationType, StationGeometry> = {
 		// is silhouette, not dockable geometry, so it changes what you *see* and
 		// nothing about what you fly into.
 		coreRadiusKm: 0.6,
-		aperture: { kind: "slot", widthKm: 0.2, heightKm: 0.07 },
+		aperture: { kind: "slot", widthKm: 0.12, heightKm: 0.06 },
 		axis: "parent",
 		spins: true,
 	},
