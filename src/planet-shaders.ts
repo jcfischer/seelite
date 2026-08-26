@@ -11,6 +11,39 @@
  * Values look darker than the equivalent sRGB swatch on purpose.
  */
 
+/**
+ * One cell of a crater field, and the profile of the crater in it.
+ *
+ * **Two consumers, one definition.** `craters()` below sums the profile;
+ * `station-surface.ts`'s `cratersAndGradient()` sums it *and* its slope, so a
+ * refinery's asteroid pays one walk of the 3×3×3 neighbourhood instead of the
+ * five that finite-differencing the height would cost. Those are different
+ * accumulations of the same field, and the field is written here so they cannot
+ * become two fields.
+ *
+ * The split is exactly at the accumulation: everything that decides *where a
+ * crater is and what shape it has* lives in these two strings, and everything
+ * that decides *what is done with it* lives in the function that interpolates
+ * them. A new term — a terrace, a second rim, a depth clamp — goes here and
+ * both consumers get it.
+ *
+ * They are strings rather than a shared GLSL function because the gradient
+ * needs `d`, `radius` and the offset from inside the loop, and GLSL ES 1.00
+ * has no way to hand those back without recomputing them.
+ */
+export const CRATER_CELL = /* glsl */ `    vec3 cell = base + vec3(x, y, z);
+    vec3 centre = cell + vec3(hash31(cell),
+                              hash31(cell + 61.7),
+                              hash31(cell + 13.3));
+    float radius = 0.16 + 0.34 * hash31(cell + 3.1);
+    vec3 offset = p - centre;
+    float dist = length(offset);
+    float d = dist / radius;`;
+
+export const CRATER_PROFILE = /* glsl */ `      float inside = step(d, 1.0);
+      float bowl = -(1.0 - d * d) * inside;
+      float rim  = exp(-pow((d - 0.88) * 6.5, 2.0)) * 0.7;`;
+
 /** Hashes, value noise, fBm, ridged fBm, domain warp. GLSL ES 1.00. */
 /**
  * `fbmN` for each octave count the classes use.
@@ -118,15 +151,9 @@ float craters(vec3 p, float scale, float depth) {
   for (int x = -1; x <= 1; ++x)
   for (int y = -1; y <= 1; ++y)
   for (int z = -1; z <= 1; ++z) {
-    vec3 cell = base + vec3(x, y, z);
-    vec3 centre = cell + vec3(hash31(cell),
-                              hash31(cell + 61.7),
-                              hash31(cell + 13.3));
-    float radius = 0.16 + 0.34 * hash31(cell + 3.1);
-    float d = length(p - centre) / radius;
+${CRATER_CELL}
     if (d < 1.2) {
-      float bowl = -(1.0 - d * d) * step(d, 1.0);
-      float rim  = exp(-pow((d - 0.88) * 6.5, 2.0)) * 0.7;
+${CRATER_PROFILE}
       acc += (bowl + rim) * depth;
     }
   }

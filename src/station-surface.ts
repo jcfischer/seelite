@@ -16,7 +16,7 @@
 
 import * as THREE from "three";
 import { SimplexNoise } from "./noise";
-import { NOISE_GLSL } from "./planet-shaders";
+import { CRATER_CELL, CRATER_PROFILE, NOISE_GLSL } from "./planet-shaders";
 
 /**
  * Give a geometry per-face box-projected UVs, in kilometres divided by `panel`.
@@ -63,62 +63,19 @@ export function boxProjectUVs(geometry: THREE.BufferGeometry, panelKm: number) {
 	uv.needsUpdate = true;
 }
 
-/**
- * Give a rock its surface from **#57's noise, evaluated per fragment**.
- *
- * The generated-map version this replaces baked a height field into an albedo
- * and a normal map and sampled them triplanar. That worked, and every part of it
- * was a workaround for the same thing: a texture needs coordinates, and an
- * irregular body has no good ones. Box projection seamed, an azimuthal unwrap
- * smeared at the poles, triplanar blending fixed both and left a tiling scale to
- * choose. Sampling a 3D field on the object's own position has none of those
- * problems, because there is nothing to unwrap.
- *
- * `NOISE_GLSL` is **imported, not pasted**. That was the whole reason #56
- * deferred this: #57's shader library was still being written, and two copies
- * of a library in flight is worse than a workaround. `RELIEF` is *not* used —
- * the normal comes from an analytic gradient rather than its finite
- * differences — though the tangent construction is deliberately the same shape,
- * so the two remain comparable.
- *
- * **Three keeps doing the lighting.** This is a patch on `MeshStandardMaterial`
- * rather than a `ShaderMaterial`, and that is not a shortcut — the plating,
- * vents and radiators bolted to the rock are lit by the scene's sun and fill,
- * and a rock with its own light model would read as a second object under a
- * second sun. #57 can afford its own because it draws whole planets and nothing
- * else.
- *
- * **What it costs.** `craters` walks a 3×3×3 neighbourhood, and `reliefNormal`
- * derives its normal from four more evaluations of the height field — so the
- * obvious construction pays five walks a fragment. It pays one. The two cuts
- * that got it there, and what each was measured to be worth, are recorded at
- * `cratersAndGradient` and at the fragment patch that uses it, beside the loops
- * they justify rather than three times over here.
- *
- * #57's own note says an implementation should bake this into a normal map at
- * generation. That remains the cheaper answer and it is not taken here, because
- * baking wants coordinates and an irregular body has none — which is the whole
- * reason the maps this replaced were a workaround.
- */
-export function applyRockSurface(material: THREE.MeshStandardMaterial) {
-	material.onBeforeCompile = (shader) => {
-		shader.vertexShader = shader.vertexShader
-			.replace(
-				"#include <common>",
-				`#include <common>
-varying vec3 vRockP;`,
-			)
-			.replace(
-				"#include <begin_vertex>",
-				`#include <begin_vertex>
-// Normalised in the fragment stage, not here: interpolating a unit vector
-// across a triangle does not give a unit vector.
-vRockP = position;`,
-			);
-		shader.fragmentShader = shader.fragmentShader
-			.replace(
-				"#include <common>",
-				`#include <common>
+/** The rock's vertex-stage additions: one varying, and the object-space
+ *  position everything else is a function of. Normalised in the fragment stage
+ *  rather than here — interpolating a unit vector across a triangle does not
+ *  give a unit vector. */
+const ROCK_VERTEX_COMMON = /* glsl */ `#include <common>
+varying vec3 vRockP;`;
+
+const ROCK_VERTEX_BODY = /* glsl */ `#include <begin_vertex>
+vRockP = position;`;
+
+/** The rock's fragment-stage prelude: #57's noise, the crater walk that carries
+ *  its own gradient, and the fine term. */
+const ROCK_FRAGMENT_COMMON = /* glsl */ `#include <common>
 uniform mat3 normalMatrix;
 varying vec3 vRockP;
 // NOISE_GLSL opens with its own "const float PI", and three.js has already
@@ -153,11 +110,11 @@ ${NOISE_GLSL}
  * A crater's profile is smooth in d, so its slope is available for free in
  * the loop that accumulates its depth. One walk, both answers.
  *
- * **It must track #57's craters().** Two functions describing one field is
- * the drift this project keeps paying for, and the mitigation here is that the
- * profile is written once — bowl and rim below are the same two
- * expressions — with the chain rule beside each. If planets change shape, this
- * changes with them or the rock stops being made of the same rock.
+ * There is one definition of the field, and it is #57's: CRATER_CELL and
+ * CRATER_PROFILE are interpolated here and into craters() alike, so the two
+ * differ only in what they accumulate. This was a copy held in step by a test
+ * that matched strings — which catches a changed line but not an added one, so
+ * a new term in one function would have passed green while the fields diverged.
  */
 vec4 cratersAndGradient(vec3 p, float scale, float depth) {
   p *= scale;
@@ -167,18 +124,9 @@ vec4 cratersAndGradient(vec3 p, float scale, float depth) {
   for (int x = -1; x <= 1; ++x)
   for (int y = -1; y <= 1; ++y)
   for (int z = -1; z <= 1; ++z) {
-    vec3 cell = base + vec3(x, y, z);
-    vec3 centre = cell + vec3(hash31(cell),
-                              hash31(cell + 61.7),
-                              hash31(cell + 13.3));
-    float radius = 0.16 + 0.34 * hash31(cell + 3.1);
-    vec3 offset = p - centre;
-    float dist = length(offset);
-    float d = dist / radius;
+${CRATER_CELL}
     if (d < 1.2) {
-      float inside = step(d, 1.0);
-      float bowl = -(1.0 - d * d) * inside;
-      float rim  = exp(-pow((d - 0.88) * 6.5, 2.0)) * 0.7;
+${CRATER_PROFILE}
       acc += (bowl + rim) * depth;
       // d(bowl)/dd is 2d inside the bowl and zero beyond it; d(rim)/dd is the
       // gaussian times its own exponent's derivative.
@@ -193,11 +141,12 @@ vec4 cratersAndGradient(vec3 p, float scale, float depth) {
 
 // The fine term. It shades nothing: the normal belongs to the craters, so this
 // is evaluated once for the albedo and its gradient is never wanted.
-float grain(vec3 p) { return fbm4(p * 11.0) * 0.16; }`,
-			)
-			.replace(
-				"#include <normal_fragment_maps>",
-				`{
+float grain(vec3 p) { return fbm4(p * 11.0) * 0.16; }`;
+
+/** The surface itself, patched over three's `<normal_fragment_maps>` — the one
+ *  chunk that runs after the geometric normal exists and before the lighting
+ *  reads it, which is why both the normal and the albedo are written here. */
+const ROCK_SURFACE = /* glsl */ `{
   vec3 p = normalize(vRockP);
 
   // Scaled for a body a kilometre across rather than a moon: at #57's 3.4 the
@@ -241,8 +190,53 @@ float grain(vec3 p) { return fbm4(p * 11.0) * 0.16; }`,
   tone *= 0.84 + 0.30 * fine;
   tone *= 0.92 + 0.16 * (1.0 - abs(2.0 * fine - 1.0));
   diffuseColor.rgb *= tone / 0.5;
-}`,
-			);
+}`;
+
+/**
+ * Give a rock its surface from **#57's noise, evaluated per fragment**.
+ *
+ * The generated-map version this replaces baked a height field into an albedo
+ * and a normal map and sampled them triplanar. That worked, and every part of it
+ * was a workaround for the same thing: a texture needs coordinates, and an
+ * irregular body has no good ones. Box projection seamed, an azimuthal unwrap
+ * smeared at the poles, triplanar blending fixed both and left a tiling scale to
+ * choose. Sampling a 3D field on the object's own position has none of those
+ * problems, because there is nothing to unwrap.
+ *
+ * `NOISE_GLSL` is **imported, not pasted**. That was the whole reason #56
+ * deferred this: #57's shader library was still being written, and two copies
+ * of a library in flight is worse than a workaround. `RELIEF` is *not* used —
+ * the normal comes from an analytic gradient rather than its finite
+ * differences — though the tangent construction is deliberately the same shape,
+ * so the two remain comparable.
+ *
+ * **Three keeps doing the lighting.** This is a patch on `MeshStandardMaterial`
+ * rather than a `ShaderMaterial`, and that is not a shortcut — the plating,
+ * vents and radiators bolted to the rock are lit by the scene's sun and fill,
+ * and a rock with its own light model would read as a second object under a
+ * second sun. #57 can afford its own because it draws whole planets and nothing
+ * else.
+ *
+ * **What it costs.** `craters` walks a 3×3×3 neighbourhood, and `reliefNormal`
+ * derives its normal from four more evaluations of the height field — so the
+ * obvious construction pays five walks a fragment. It pays one. The two cuts
+ * that got it there, and what each was measured to be worth, are recorded at
+ * `cratersAndGradient` and at the fragment patch that uses it, beside the loops
+ * they justify rather than three times over here.
+ *
+ * #57's own note says an implementation should bake this into a normal map at
+ * generation. That remains the cheaper answer and it is not taken here, because
+ * baking wants coordinates and an irregular body has none — which is the whole
+ * reason the maps this replaced were a workaround.
+ */
+export function applyRockSurface(material: THREE.MeshStandardMaterial) {
+	material.onBeforeCompile = (shader) => {
+		shader.vertexShader = shader.vertexShader
+			.replace("#include <common>", ROCK_VERTEX_COMMON)
+			.replace("#include <begin_vertex>", ROCK_VERTEX_BODY);
+		shader.fragmentShader = shader.fragmentShader
+			.replace("#include <common>", ROCK_FRAGMENT_COMMON)
+			.replace("#include <normal_fragment_maps>", ROCK_SURFACE);
 	};
 	// Two rocks with the same patch still compile twice unless they agree they
 	// are the same program.

@@ -18,7 +18,9 @@
  * so it holds the last healthy number on screen — failing open into something
  * reassuring, which is the opposite of what an instrument should do. A timer
  * runs alongside it and takes over when no frame has arrived for longer than a
- * window, showing how long the page has been stopped.
+ * stall threshold, showing how long the page has been stopped — and knows the
+ * difference between a stall and a backgrounded tab, which also stops frames
+ * and is not a fault.
  *
  * It shows the frame *time* beside the rate, because the two carry different
  * information at the low end: 60 fps and 55 fps are 16.7 ms and 18.2 ms, but
@@ -45,6 +47,10 @@ const STYLE = `
 /** How long a sample covers, milliseconds. Long enough that the number is not
  *  noise, short enough to follow the camera as it closes on something. */
 const WINDOW_MS = 500;
+
+/** How long without a frame counts as a stall rather than a slow frame. Four
+ *  windows: long enough that a 2 fps crawl still reports as a rate. */
+const STALL_MS = WINDOW_MS * 4;
 
 /**
  * Mount the readout, and return the function that removes it.
@@ -105,14 +111,34 @@ export function mountFpsMeter(): () => void {
 	};
 	handle = requestAnimationFrame(tick);
 
-	// The stall watch. `setInterval` keeps running when the compositor does not,
-	// which is the whole point: without it the readout would hold its last
-	// healthy figure for as long as the page was frozen.
+	/**
+	 * The stall watch. `setInterval` keeps running when the compositor does not,
+	 * which is the whole point: without it the readout holds its last healthy
+	 * figure for as long as the page is frozen.
+	 *
+	 * **A backgrounded tab is not a stall**, and reporting one as such would make
+	 * this the false-alarm counterpart of the failure it exists to prevent —
+	 * every return to the tab greeting you with `stalled · 12.4 s` for a page
+	 * that was working perfectly. `document.hidden` distinguishes them, and the
+	 * frame clock is reset on the way back so the first window after is measured
+	 * rather than inherited.
+	 *
+	 * It wakes at the threshold rather than at the sample window: a watch that
+	 * cannot fire until four windows have passed has no reason to look sooner,
+	 * and this runs for the lifetime of every workbench session.
+	 */
 	const watch = window.setInterval(() => {
+		if (document.hidden) {
+			last = performance.now();
+			windowStart = last;
+			frames = 0;
+			worst = 0;
+			return;
+		}
 		const since = performance.now() - last;
-		if (since > WINDOW_MS * 4)
+		if (since > STALL_MS)
 			show(`<b>stalled</b> · ${(since / 1000).toFixed(1)} s`);
-	}, WINDOW_MS);
+	}, STALL_MS);
 
 	return () => {
 		stopped = true;
