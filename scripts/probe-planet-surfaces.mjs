@@ -749,6 +749,25 @@ for (const body of noiseBodies) body.repeat = await repeatOf(body);
  * towards passing, which is the exact failure the sweep was added to catch, and
  * which it shipped with for a round.
  */
+/**
+ * The worst distance between a subject's descriptor and a second reading of it.
+ *
+ * Both floors in this file are this reduction, and both were got wrong once the
+ * same way — by taking it over too few subjects, which understates a maximum
+ * and so inflates a ratio towards passing. `noiseAt` below is the same
+ * reduction over readings already taken, because the cross-body floor has to be
+ * re-derived at each swept weight from the same pixels; this is the form for a
+ * floor measured once.
+ */
+const worstRepeatDistance = async (subjects, remeasure) => {
+	let worst = 0;
+	for (const subject of subjects) {
+		const d = distance(subject.descriptor, await remeasure(subject));
+		if (d > worst) worst = d;
+	}
+	return worst;
+};
+
 const noiseAt = (weight) => {
 	let worst = 0;
 	for (const body of noiseBodies) {
@@ -908,12 +927,40 @@ const neutral = await neutralPage.evaluate(() => {
 	const g = window.__seelite;
 	const star = g.world.system.bodies.find((b) => b.kind === "star");
 	const stats = window.__photosphereStats(star.id, 4, 1 / 3);
-	return { ...stats.without, colour: star.color.toString(16) };
+	return {
+		...stats.without,
+		colour: star.color.toString(16),
+		colourInt: star.color,
+	};
 });
+/**
+ * How far apart a tint's channels may be and still count as neutral.
+ *
+ * The check below is only *about* anything if this star is one: a saturated
+ * tint clips one channel and keeps the others whatever the exposure, so a
+ * generator change that made this seed's star orange would turn this into a
+ * second copy of the seed-6 check and still report green under a heading that
+ * says "neutral-tinted". Asserted rather than printed, so the day that happens
+ * it goes red and names the colour.
+ *
+ * `0xf8f7ff` spans 0.031 in sRGB; `0xffb26b`, the warm end of the ladder,
+ * spans 0.58.
+ */
+const NEUTRAL_SPAN = 0.1;
+const neutralChannels = [
+	((neutral.colourInt >> 16) & 0xff) / 255,
+	((neutral.colourInt >> 8) & 0xff) / 255,
+	(neutral.colourInt & 0xff) / 255,
+];
+const neutralSpan = Math.max(...neutralChannels) - Math.min(...neutralChannels);
 check(
 	"a neutral-tinted star keeps its granulation too",
-	neutral.pixels > 1000 && neutral.spread > 2 && neutral.clipped < 0.01,
-	`0x${neutral.colour}: inner disc luma ${neutral.mean.toFixed(0)} ± ` +
+	neutralSpan < NEUTRAL_SPAN &&
+		neutral.pixels > 1000 &&
+		neutral.spread > 2 &&
+		neutral.clipped < 0.01,
+	`0x${neutral.colour} spans ${neutralSpan.toFixed(3)} across its channels ` +
+		`(neutral under ${NEUTRAL_SPAN}): inner disc luma ${neutral.mean.toFixed(0)} ± ` +
 		`${neutral.spread.toFixed(2)}, ${(100 * neutral.clipped).toFixed(1)}% clipped`,
 );
 
@@ -971,21 +1018,18 @@ for (const surface of CLASSES) {
 // that a floor short of the compared set can only understate itself and inflate
 // the ratio in the passing direction. The cross-body floor above is a different
 // measurement over a different sweep and would be the wrong bar here.
-let forcedFloor = 0;
-for (const row of forced) {
+const forcedFloor = await worstRepeatDistance(forced, async (row) => {
 	await page.evaluate(
 		([id, klass]) => window.__seelite.redrawBodyAs(id, klass),
 		[subject.id, row.surface],
 	);
-	const again = describe([
+	return describe([
 		await page.evaluate(
 			([id, grid]) => window.__bodySignature(id, grid),
 			[subject.id, GRID],
 		),
 	]);
-	const d = distance(row.descriptor, again);
-	if (d > forcedFloor) forcedFloor = d;
-}
+});
 await page.evaluate(
 	(id) => window.__seelite.redrawBodyAs(id, null),
 	subject.id,

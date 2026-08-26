@@ -187,8 +187,12 @@ export interface BodyVisual {
 	 * than a gameplay one. **Nothing in the game does**, and that is a fact
 	 * about the renderer rather than an oversight: `buildBodies` runs once, at
 	 * construction, because there is no path that changes the system a game is
-	 * in — hyperspace is not built. It exists correct rather than absent so the
+	 * in — hyperspace is not built. It exists rather than being absent so the
 	 * node that adds that path has something to call instead of a leak to find.
+	 *
+	 * Whether it frees what it names is **not asserted anywhere** — nothing here
+	 * reads GPU allocations back — so read it as written with care, not as
+	 * verified.
 	 */
 	dispose(): void;
 }

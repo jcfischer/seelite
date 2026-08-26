@@ -712,10 +712,7 @@ class Game {
 		const visual = buildBodyVisual(
 			surface ? { ...body.appearance, surface } : body.appearance,
 			surfaceSphere(layer),
-			{
-				sunColor: this.world.system.contents.star.color,
-				starTint: this.world.system.contents.star.color,
-			},
+			this.bodyVisualOptions(),
 		);
 		visual.group.name = id;
 		this.bodyVisuals.set(id, visual);
@@ -1103,6 +1100,17 @@ class Game {
 		this.backdropScene.add(this.stars);
 	}
 
+	/** What every body's visual is built with. One spelling, because
+	 *  `redrawBodyAs` builds them too, and a third option added to one call site
+	 *  and not the other is a body drawn under a different star than its
+	 *  neighbours. */
+	private bodyVisualOptions() {
+		return {
+			sunColor: this.world.system.contents.star.color,
+			starTint: this.world.system.contents.star.color,
+		};
+	}
+
 	private buildBodies() {
 		// One unit sphere, shared by every body, sized per body with `mesh.scale`.
 		//
@@ -1148,10 +1156,11 @@ class Game {
 				// what a planet is painted with; it stays because the scanner and
 				// the target markers read it, and a symbol that changed colour with
 				// the terminator would be unreadable.
-				const visual = buildBodyVisual(body.appearance, unitSphere, {
-					sunColor: this.world.system.contents.star.color,
-					starTint: this.world.system.contents.star.color,
-				});
+				const visual = buildBodyVisual(
+					body.appearance,
+					unitSphere,
+					this.bodyVisualOptions(),
+				);
 				this.bodyVisuals.set(body.id, visual);
 				mesh = visual.group;
 			} else {

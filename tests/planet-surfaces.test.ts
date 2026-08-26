@@ -138,6 +138,22 @@ test("only the airless class pays for craters", () => {
 	expect(withCraters).toEqual(["airless"]);
 });
 
+test("the star class does not read the sun direction", () => {
+	// The renderer hands every body a unit vector towards its star, and for the
+	// star that vector is undefined — it is at zero distance from itself. The
+	// fallback there (`main.ts`: `SUN_DIR.set(0, 0, 1)`) is safe *because* the
+	// star class ignores `sunDir`, which until now only a comment said.
+	//
+	// Asked of the class body, not of the assembled shader: `sunDir` is declared
+	// in the shared lighting block and consumed by the shared `shade()`, which
+	// the star's `surface()` opts out of by writing `albedo = vec3(0.0)`. What
+	// must stay true is that the star's own code does not read it.
+	expect(CLASS_GLSL.star).not.toContain("sunDir");
+	// And that the classes which *are* lit still go through the shared path, so
+	// this is a fact about the star rather than about the whole set.
+	expect(fragmentFor("star")).toContain("sunDir");
+});
+
 test("appearanceOf is the same answer appearanceFor gives by hand", () => {
 	const contents = generateContents(SAMPLE[0]);
 	const planet = contents.planets[0];
