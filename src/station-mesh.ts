@@ -493,7 +493,24 @@ export const STATION_DESIGN_ROUND = 2;
  * no poles, which a spherical (θ, φ) parameterisation would not give — the
  * poles are exactly where a rock would then show a pinch.
  */
-function buildAsteroid(radiusKm: number, tag: string): THREE.Mesh {
+function buildAsteroid(
+	radiusKm: number,
+	tag: string,
+	/**
+	 * A keep-clear volume along +Z, carved out of the rock.
+	 *
+	 * Without it the displacement puts rock **in front of the pad**: measured,
+	 * the Warren's surface rose to z = 0.413 km against a pad mouth at 0.282 km
+	 * and the Collar's to 0.360 against 0.286, so on both a ship would have had
+	 * to fly through a hill to dock. Noise does not know where the dock is, and
+	 * a rock is the one body in the pool whose surface is not authored.
+	 *
+	 * The cut is a bench rather than a stamped hole — the ceiling eases upward
+	 * towards the rim — so it reads as ground that has been machined flat for
+	 * the pad, which is what it is.
+	 */
+	clear?: { radiusKm: number; ceilingKm: number },
+): THREE.Mesh {
 	const geometry = new THREE.IcosahedronGeometry(radiusKm, 3);
 	const noise = new SimplexNoise(
 		[...tag].reduce(
@@ -543,6 +560,16 @@ function buildAsteroid(radiusKm: number, tag: string): THREE.Mesh {
 		// it still reads as a sphere.
 		v.copy(unit).multiplyScalar(radiusKm * scale);
 		v.z *= 0.78;
+		if (clear) {
+			const rho = Math.hypot(v.x, v.y);
+			if (rho < clear.radiusKm) {
+				// Eased at the rim: a hard clamp leaves a stamped disc with a
+				// vertical wall, which reads as a hole punched in the rock rather
+				// than as a bench cut into it.
+				const t = rho / clear.radiusKm;
+				v.z = Math.min(v.z, clear.ceilingKm + clear.radiusKm * 0.55 * t * t);
+			}
+		}
 		position.setXYZ(i, v.x, v.y, v.z);
 	}
 	position.needsUpdate = true;
@@ -589,6 +616,16 @@ export type StationFormId = "a" | "b" | "c";
 export const STATION_FORM_IDS: StationFormId[] = ["a", "b", "c"];
 
 /**
+ * One texture repeat per this many kilometres of hull.
+ *
+ * The plating map carries about eight panels across, so a plate is roughly
+ * 19 m — a size a pilot can judge a ship against, which is the whole job of
+ * plating at this scale. One constant for every part of every station, because
+ * a plate that changes size from one part to the next stops being a ruler.
+ */
+const STATION_PANEL_KM = 0.15;
+
+/**
  * The plated shell language every form shares.
  *
  * `hullLoft` is `ship-mesh.ts`'s primitive, moved to `loft.ts` when this node
@@ -622,13 +659,15 @@ function shell(
 	flat = false,
 ) {
 	const geometry = hullLoft(controls, { segments });
-	// Repeat the plating over the part rather than stretching one copy across
-	// it: `hullLoft` writes `u` round the section and `v` along the sweep's arc
-	// length, so a scale here is a panel *count*, and a 1.5 km frame and a
-	// 0.4 km drum end up with panels of a comparable size.
+	// **A panel size, not a panel count.** `hullLoft` writes its UVs in
+	// kilometres — chord distance round the section and distance along the
+	// sweep — so dividing by one constant gives every part of every station the
+	// same ~19 m plate. Multiplying a normalised 0–1 unwrap by a fixed count,
+	// which is what this did, gives a 1.5 km keel and a 0.12 km terrace six
+	// bands each: one coarse, the other a smear.
 	const uv = geometry.getAttribute("uv") as THREE.BufferAttribute;
 	for (let i = 0; i < uv.count; i++)
-		uv.setXY(i, uv.getX(i) * segments * 0.5, uv.getY(i) * 6);
+		uv.setXY(i, uv.getX(i) / STATION_PANEL_KM, uv.getY(i) / STATION_PANEL_KM);
 	uv.needsUpdate = true;
 	const shaded = flat ? material.clone() : material;
 	if (flat && shaded instanceof THREE.MeshStandardMaterial)
@@ -765,7 +804,7 @@ function buildCuboctahedron(radiusKm: number, material: THREE.Material) {
 	// so a plate is roughly 19 m — a size a pilot can judge a ship against,
 	// which is the whole job of plating at this scale. At 60 m per repeat the
 	// hull read as fine noise rather than as panels.
-	const PANEL_KM = 0.15;
+	const PANEL_KM = STATION_PANEL_KM;
 	// Non-indexed, so each run of three vertices is one face and can be given its
 	// own projection without splitting anything.
 	for (let i = 0; i < position.count; i += 3) {
@@ -1525,7 +1564,14 @@ function buildRefineryWarren(color: number): BuiltPart {
 	const r = STATION_GEOMETRY.refinery.coreRadiusKm;
 	const group = new THREE.Group();
 	const fixtures: StationFixture[] = [];
-	group.add(buildAsteroid(r * 1.24, "refinery-warren"));
+	// The cut the terraces sit in. Its ceiling is below where the machined half
+	// starts (`r * 0.5`), so the plant stands on the bench rather than in it.
+	group.add(
+		buildAsteroid(r * 1.24, "refinery-warren", {
+			radiusKm: r * 0.95,
+			ceilingKm: r * 0.42,
+		}),
+	);
 
 	// The cut: three terraces stepping down toward +Z, each a flat plated slab
 	// sunk into the rock face. Squared sections, so the machined half cannot be
@@ -1607,7 +1653,12 @@ function buildRefineryCollar(color: number): BuiltPart {
 	const r = STATION_GEOMETRY.refinery.coreRadiusKm;
 	const group = new THREE.Group();
 	const fixtures: StationFixture[] = [];
-	group.add(buildAsteroid(r * 1.16, "refinery-collar"));
+	group.add(
+		buildAsteroid(r * 1.16, "refinery-collar", {
+			radiusKm: r * 0.85,
+			ceilingKm: r * 0.42,
+		}),
+	);
 
 	const band = new THREE.Mesh(
 		new THREE.TorusGeometry(r * 1.1, r * 0.16, 6, 20),
@@ -1679,7 +1730,15 @@ function buildRefinerySpar(color: number): BuiltPart {
 	const r = STATION_GEOMETRY.refinery.coreRadiusKm;
 	const group = new THREE.Group();
 	const fixtures: StationFixture[] = [];
-	group.add(buildAsteroid(r * 1.05, "refinery-spar"));
+	// Carved like the other two even though the spar already clears the rock:
+	// the invariant is the form's, not this build's, and a later tweak to the
+	// spar's length should not be able to reintroduce rock in the corridor.
+	group.add(
+		buildAsteroid(r * 1.05, "refinery-spar", {
+			radiusKm: r * 0.55,
+			ceilingKm: r * 0.6,
+		}),
+	);
 
 	group.add(
 		shell(

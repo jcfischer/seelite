@@ -369,3 +369,76 @@ describe("a station is one object, not a scatter of parts", () => {
 		}
 	});
 });
+
+describe("nothing stands in the way of the thing you fly through", () => {
+	/**
+	 * The docking corridor: the aperture's own footprint, extended outward along
+	 * +Z from the front of its mouth.
+	 *
+	 * A ship arrives down this axis — it is the one approach every type shares
+	 * (`docking.md` §4) — so anything of the station sitting in it is something
+	 * the pilot has to fly through. The failure that produced this check was the
+	 * refinery's asteroid: **noise does not know where the dock is**, and a rock
+	 * is the one body in the pool whose surface is not authored. Measured, the
+	 * Warren's rock rose 131 m past its own pad mouth and the Collar's 74 m.
+	 *
+	 * Written generally rather than against the rock, because the same failure
+	 * has other shapes — a flare boom swung across the approach, a gantry rib
+	 * carried too far forward — and none of them would be caught by a check that
+	 * only knew about asteroids.
+	 *
+	 * The radius is the aperture's half-*diagonal*, so the corridor contains the
+	 * whole opening rather than an inscribed circle of it.
+	 */
+	function intrusions(root: THREE.Object3D, type: StationType) {
+		root.updateMatrixWorld(true);
+		const core = STATION_GEOMETRY[type].coreRadiusKm;
+		const { widthKm, heightKm } = STATION_GEOMETRY[type].aperture;
+		const radius = Math.hypot(widthKm, heightKm) / 2;
+		const mouth = root.getObjectByName("aperture-mouth") as THREE.Mesh;
+		const front = new THREE.Box3().setFromObject(mouth).max.z * core;
+		const found = new Map<string, number>();
+		const v = new THREE.Vector3();
+		const instance = new THREE.Matrix4();
+		root.traverse((object) => {
+			const mesh = object as THREE.Mesh;
+			const position = mesh.geometry?.getAttribute?.("position");
+			if (!position) return;
+			// The aperture's own frame lives in the corridor by construction —
+			// it *is* the opening.
+			if (object.name.startsWith("aperture")) return;
+			const instanced = object as THREE.InstancedMesh;
+			const count = instanced.isInstancedMesh ? instanced.count : 1;
+			for (let n = 0; n < count; n++) {
+				if (instanced.isInstancedMesh) instanced.getMatrixAt(n, instance);
+				else instance.identity();
+				for (let i = 0; i < position.count; i++) {
+					v.fromBufferAttribute(position as THREE.BufferAttribute, i);
+					v.applyMatrix4(instance);
+					mesh.localToWorld(v);
+					v.multiplyScalar(core);
+					if (v.z <= front) continue;
+					if (Math.hypot(v.x, v.y) > radius) continue;
+					const name = object.name || object.type;
+					found.set(name, Math.max(found.get(name) ?? 0, v.z - front));
+				}
+			}
+		});
+		return found;
+	}
+
+	test("the approach corridor is clear on every form of every role", () => {
+		for (const type of TYPES) {
+			for (const form of STATION_FORMS[type]) {
+				const { root } = buildStationForm(type, form.id, GREY);
+				const blocked = [...intrusions(root, type)]
+					.map(([name, depth]) => `${name} +${(depth * 1000).toFixed(0)}m`)
+					.join(", ");
+				expect([`${type} ${form.id}`, blocked]).toEqual([
+					`${type} ${form.id}`,
+					"",
+				]);
+			}
+		}
+	});
+});

@@ -163,8 +163,8 @@ export function hullLoft(
 		);
 		arc.push(travelled);
 	}
-	const span = travelled || 1;
 	for (const [index, ring] of rings.entries()) {
+		const start = vertices.length / 3;
 		for (let point = 0; point < segments; point += 1) {
 			const angle = Math.PI / 2 - (point / segments) * Math.PI * 2;
 			const cos = Math.cos(angle);
@@ -178,11 +178,28 @@ export function hullLoft(
 						Math.abs(sin) ** power,
 				ring.z,
 			);
-			// `u` wraps the section and `v` runs the length. Both in the surface's
-			// own units rather than 0–1, so a `RepeatWrapping` map keeps a constant
-			// panel size whatever the part's size — which is the property a plating
-			// map needs and a 0–1 unwrap destroys.
-			uvs.push(point / segments, arc[index] / span);
+		}
+		// **UVs in kilometres, not normalised.** `u` is the chord distance round
+		// this ring's own section and `v` the distance travelled along the sweep,
+		// both in the same units the hull is authored in. A caller then picks a
+		// panel *size* by dividing, rather than a panel *count* by multiplying —
+		// and a count is what gives a 1.5 km keel and a 0.12 km terrace the same
+		// six bands, so one is coarse and the other is a smear.
+		//
+		// It also lets the end caps carry their own planar unwrap at the same
+		// scale, which a normalised parameterisation cannot: a cap has no
+		// circumference and no length to normalise against.
+		let round = 0;
+		for (let point = 0; point < segments; point += 1) {
+			if (point > 0) {
+				const a = (start + point) * 3;
+				const b = (start + point - 1) * 3;
+				round += Math.hypot(
+					vertices[a] - vertices[b],
+					vertices[a + 1] - vertices[b + 1],
+				);
+			}
+			uvs.push(round, arc[index]);
 		}
 	}
 	for (let ring = 0; ring < rings.length - 1; ring += 1) {
@@ -195,19 +212,44 @@ export function hullLoft(
 			indices.push(a, d, b, b, d, c);
 		}
 	}
+	/**
+	 * The two end caps, with **their own vertices and planar UVs**.
+	 *
+	 * The first version fanned the caps against the side ring's vertices, which
+	 * meant reusing the side's UVs: `u` sweeps 0–1 around the fan while `v`
+	 * stays put, so the texture is smeared radially across a flat face. On a
+	 * short, wide part — the refinery's terraces, a pad deck — that is most of
+	 * what you see of it, and it reads as streaked garbage rather than plating.
+	 *
+	 * Duplicating the ring costs `segments` vertices an end and buys a cap
+	 * unwrapped in its own plane, at the same scale as the sides.
+	 */
 	const first = rings[0];
 	const last = rings[rings.length - 1];
-	const front = vertices.length / 3;
-	vertices.push(first.x, first.y, first.z);
-	uvs.push(0.5, 0);
-	const rear = vertices.length / 3;
-	vertices.push(last.x, last.y, last.z);
-	uvs.push(0.5, 1);
-	const rearRing = (rings.length - 1) * segments;
+	const capRing = (ring: SolidRing, source: number, v: number) => {
+		const start = vertices.length / 3;
+		for (let point = 0; point < segments; point += 1) {
+			const at = (source + point) * 3;
+			vertices.push(vertices[at], vertices[at + 1], vertices[at + 2]);
+			// Planar in the cap's own axes, offset so the two caps do not sample
+			// the identical patch of a repeating map and look mirrored.
+			uvs.push(vertices[at] + v * 0.5, vertices[at + 1]);
+		}
+		const centre = vertices.length / 3;
+		vertices.push(ring.x, ring.y, ring.z);
+		uvs.push(ring.x + v * 0.5, ring.y);
+		return { start, centre };
+	};
+	const frontCap = capRing(first, 0, 0);
+	const rearCap = capRing(last, (rings.length - 1) * segments, 1);
 	for (let point = 0; point < segments; point += 1) {
 		const next = (point + 1) % segments;
-		indices.push(front, point, next);
-		indices.push(rear, rearRing + next, rearRing + point);
+		indices.push(
+			frontCap.centre,
+			frontCap.start + point,
+			frontCap.start + next,
+		);
+		indices.push(rearCap.centre, rearCap.start + next, rearCap.start + point);
 	}
 	const geometry = new THREE.BufferGeometry();
 	geometry.setAttribute(
@@ -218,6 +260,11 @@ export function hullLoft(
 	geometry.setIndex(indices);
 	geometry.computeVertexNormals();
 	geometry.userData.ringSize = segments;
+	// Where the two cap fans' centre vertices ended up. Recorded rather than
+	// left to be inferred: they were the last two vertices until the caps gained
+	// their own rings, and `tests/ship-mesh.test.ts` was reading them that way —
+	// a layout assumption that goes quietly wrong rather than loudly.
+	geometry.userData.caps = { front: frontCap.centre, rear: rearCap.centre };
 	geometry.userData.axis = rings.map((ring) => [ring.x, ring.y, ring.z]);
 	return geometry;
 }
