@@ -163,10 +163,26 @@ export function hullLoft(
 		);
 		arc.push(travelled);
 	}
+	/**
+	 * **`segments + 1` points a ring, not `segments`.**
+	 *
+	 * The last duplicates the first's position and carries `u` at the ring's
+	 * full circumference. Without it the closing quad wraps `u` from the whole
+	 * perimeter back to zero, so one facet of every lofted part — every ship
+	 * hull and every station shell — draws the whole texture compressed and
+	 * mirrored into a single quad. It is a seam rather than a smear, which is
+	 * why it survived the change that removed the smearing.
+	 *
+	 * The cap fans still index `segments` points of a ring, so
+	 * `userData.ringSize` keeps meaning "triangles in a cap fan" and the
+	 * winding test that reads it is unaffected.
+	 */
+	const stride = segments + 1;
 	for (const [index, ring] of rings.entries()) {
 		const start = vertices.length / 3;
-		for (let point = 0; point < segments; point += 1) {
-			const angle = Math.PI / 2 - (point / segments) * Math.PI * 2;
+		let round = 0;
+		for (let point = 0; point <= segments; point += 1) {
+			const angle = Math.PI / 2 - ((point % segments) / segments) * Math.PI * 2;
 			const cos = Math.cos(angle);
 			const sin = Math.sin(angle);
 			const power = 2 / ring.e;
@@ -178,19 +194,6 @@ export function hullLoft(
 						Math.abs(sin) ** power,
 				ring.z,
 			);
-		}
-		// **UVs in kilometres, not normalised.** `u` is the chord distance round
-		// this ring's own section and `v` the distance travelled along the sweep,
-		// both in the same units the hull is authored in. A caller then picks a
-		// panel *size* by dividing, rather than a panel *count* by multiplying —
-		// and a count is what gives a 1.5 km keel and a 0.12 km terrace the same
-		// six bands, so one is coarse and the other is a smear.
-		//
-		// It also lets the end caps carry their own planar unwrap at the same
-		// scale, which a normalised parameterisation cannot: a cap has no
-		// circumference and no length to normalise against.
-		let round = 0;
-		for (let point = 0; point < segments; point += 1) {
 			if (point > 0) {
 				const a = (start + point) * 3;
 				const b = (start + point - 1) * 3;
@@ -199,31 +202,28 @@ export function hullLoft(
 					vertices[a + 1] - vertices[b + 1],
 				);
 			}
+			// **UVs in kilometres, not normalised.** `u` is the chord distance
+			// round this ring's own section and `v` the distance travelled along
+			// the sweep, both in the units the hull is authored in. A caller then
+			// picks a panel *size* by dividing, rather than a panel *count* by
+			// multiplying — and a count is what gives a 1.5 km keel and a 0.12 km
+			// terrace the same six bands, so one is coarse and the other a smear.
+			//
+			// It also lets the end caps carry their own planar unwrap at the same
+			// scale, which a normalised parameterisation cannot: a cap has no
+			// circumference and no length to normalise against.
 			uvs.push(round, arc[index]);
 		}
 	}
 	for (let ring = 0; ring < rings.length - 1; ring += 1) {
 		for (let point = 0; point < segments; point += 1) {
-			const next = (point + 1) % segments;
-			const a = ring * segments + point;
-			const b = ring * segments + next;
-			const c = (ring + 1) * segments + next;
-			const d = (ring + 1) * segments + point;
+			const a = ring * stride + point;
+			const b = a + 1;
+			const c = (ring + 1) * stride + point + 1;
+			const d = (ring + 1) * stride + point;
 			indices.push(a, d, b, b, d, c);
 		}
 	}
-	/**
-	 * The two end caps, with **their own vertices and planar UVs**.
-	 *
-	 * The first version fanned the caps against the side ring's vertices, which
-	 * meant reusing the side's UVs: `u` sweeps 0–1 around the fan while `v`
-	 * stays put, so the texture is smeared radially across a flat face. On a
-	 * short, wide part — the refinery's terraces, a pad deck — that is most of
-	 * what you see of it, and it reads as streaked garbage rather than plating.
-	 *
-	 * Duplicating the ring costs `segments` vertices an end and buys a cap
-	 * unwrapped in its own plane, at the same scale as the sides.
-	 */
 	const first = rings[0];
 	const last = rings[rings.length - 1];
 	const capRing = (ring: SolidRing, source: number, v: number) => {
@@ -241,7 +241,7 @@ export function hullLoft(
 		return { start, centre };
 	};
 	const frontCap = capRing(first, 0, 0);
-	const rearCap = capRing(last, (rings.length - 1) * segments, 1);
+	const rearCap = capRing(last, (rings.length - 1) * stride, 1);
 	for (let point = 0; point < segments; point += 1) {
 		const next = (point + 1) % segments;
 		indices.push(

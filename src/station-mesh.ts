@@ -70,8 +70,8 @@ import {
 } from "./station-visuals";
 
 /**
- * How far the *drawn* object reaches, kilometres — the drydock frame, the
- * captured asteroid, the flare stacks.
+ * How far the *drawn* object reaches, kilometres — the selected form's own
+ * declared reach: an outboard frame, a captured asteroid, a radiator wing.
  *
  * Here rather than in `STATION_GEOMETRY`, and that is the point: `docking.md`
  * §5 says the frame is silhouette and not dockable geometry, and #9's checks
@@ -83,14 +83,18 @@ import {
  * vertex of a built station lies outside it, so a frame or a flare stack cannot
  * quietly grow.
  *
- * The two rows are not the same kind of number, and it is worth being plain
- * about it. The shipyard's 1.5 km is `docking.md` §5's own figure, so its test
- * can fail against the spec and did — the frame reached 2.0 km and was resized.
- * The refinery's 0.9 is a **ratchet**: there is no spec figure for it, so it was
- * set from what the mesh measures (0.837 km) plus a little headroom, and on the
- * day it was written it could not have failed. It catches growth from here, and
- * nothing else. Reading it as a design constraint would be reading a
- * measurement as an intention.
+ * **It is now an intention, and it used to be a measurement.** #28 wrote four
+ * literals here and warned that reading them as design constraints would be
+ * reading a measurement as an intention: the shipyard's 1.5 km came from
+ * `docking.md` §5 and its test could fail against the spec, but the refinery's
+ * 0.9 was a ratchet set from what the mesh happened to measure. That warning
+ * does not survive #56 and has been removed rather than left to mislead.
+ *
+ * Every figure is now a **declared** `reachKm` on a form — a number an author
+ * chose before building the shape, which the form is then measured against.
+ * That is the direction a budget should run. What the test does *not* do is
+ * insist the shape fills its declaration: the floor is 60% of it, which catches
+ * a declaration nothing approaches without pretending the fit is tight.
  */
 const reachCache: Partial<Record<StationType, number>> = {};
 
@@ -704,9 +708,12 @@ function buildCuboctahedron(radiusKm: number, material: THREE.Material) {
 	const geometry = new THREE.PolyhedronGeometry(vertices, indices, radiusKm, 0);
 	// Box-projected UVs, per face — see `boxProjectUVs`.
 	boxProjectUVs(geometry, STATION_PANEL_KM);
-	const mesh = new THREE.Mesh(geometry, material);
-	(material as THREE.MeshStandardMaterial).flatShading = true;
-	return mesh;
+	// Through the clone cache, not by mutating the material it was handed: hull
+	// materials are shared per (type, colour) now, so setting `flatShading` on
+	// one sets it on every station of that type. It happens to be what both of
+	// this file's callers want, which is exactly why it would not have been
+	// noticed until a form wanted a smooth trade hull.
+	return new THREE.Mesh(geometry, flatCloneOf(material));
 }
 
 function buildTradeCoriolis(color: number): BuiltPart {
@@ -813,7 +820,9 @@ function buildTradeRing(color: number): BuiltPart {
 		new THREE.TorusGeometry(major, tube, 8, 24),
 		hullMaterial(color, "trade"),
 	);
-	(rim.material as THREE.MeshStandardMaterial).flatShading = true;
+	rim.material = flatCloneOf(
+		rim.material as THREE.Material,
+	) as THREE.MeshStandardMaterial;
 	rim.name = "core";
 	group.add(rim);
 

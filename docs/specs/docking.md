@@ -293,10 +293,19 @@ answers for it.
 | shipyard | 0.6 km (Coriolis core) | identical slot | toward the parent body |
 | refinery | 0.4 km (drum) | pad, 0.15 × 0.15 km | radially outward from the star |
 
-**Aperture dimensions were provisional and are now measured** (ratified
-2026-08-26). #26 has still not fixed a *roster*, but #35 built one — eleven
-roles, thirty-three hulls — and `tests/aperture-fit.test.ts` measures the slot
-against every one of them, which is what §10 actually asked for.
+**Aperture dimensions are measured against the hulls that exist**, and are no
+longer a guess (ratified 2026-08-26). Read the two halves separately, because
+they are not the same claim:
+
+- What §10 gates on is the roster **#26** introduces, and #26 has not fixed one.
+  In that sense the figure stays provisional and this section stays open.
+- What #35 built is a *pool* — eleven roles, thirty-three hulls — and
+  `tests/aperture-fit.test.ts` measures the slot against every one of them at
+  check 4's roll limit. So the number is no longer unmeasured, which is what it
+  was.
+
+A roster drawn from that pool cannot invalidate the figure; a roster that
+introduces a hull outside it can, and the test is what will say so.
 
 The slot was 0.20 × 0.07 km. That is 3.7× the widest ordinary hull's beam and
 16% of a 1.24 km station's whole width, against about 10% on the reference
