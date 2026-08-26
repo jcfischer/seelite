@@ -2,11 +2,16 @@
  * The three silhouettes (`station-types.md` §7), built procedurally at load.
  *
  * §7's standard is the one this module is written against: **a player tells the
- * three apart by outline, before colour and before any detail resolves.** So the
- * shapes differ in gross form — an octahedron, an octahedron with a long frame
- * clamped alongside, and a squat drum in a lump of rock — rather than in
- * panelling or in emissive trim, which resolve at medium range and vanish at
- * scanner range. `STATION_COLORS` (`sim.ts`) stays the secondary cue.
+ * types apart by outline, before colour and before any detail resolves.** So
+ * the forms differ in gross form rather than in panelling or emissive trim,
+ * which resolve at medium range and vanish at scanner range. `STATION_COLORS`
+ * (`sim.ts`) stays the secondary cue.
+ *
+ * **Four roles, three forms each** (#56). #28 gave each role one silhouette;
+ * those were reviewed in the live game and rejected on form, and the pool that
+ * replaced them is built in the swept-loft language of #35's ship hulls.
+ * `SELECTED_FORM` names the one the game builds for each role — one line per
+ * role, so a later choice is one edit.
  *
  * **Everything is authored in kilometres**, read from `STATION_GEOMETRY` — a
  * slot drawn at a size the docking checks do not use is invisible to every

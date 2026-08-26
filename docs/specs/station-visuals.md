@@ -42,29 +42,42 @@ different object at 60 km than at 5 km and its finding decays into noise. The
 headless tier asserts the reach is *identical* at all three levels; that is the
 whole enforcement.
 
-### 2.1 The trade station has no headroom, and that is a design input
+### 2.1 A fixture is mounted on a surface, or it is floating
 
-`STATION_SILHOUETTE_KM.trade` is 0.6 km and the Coriolis octahedron's own vertex
-is at 0.6 km. The budget is not slack the pass may spend: it is exactly the
-hull. So every fixture added to a Coriolis core — strobe, housing, panel
-trim — is solved onto the face plane `|x| + |y| + |z| = r` and sits *inside* the
-convex outline, the way #28's window panes already do. A mast, a boom or an
-antenna on the trade station is not a tuning question; there is no room for one.
+**Superseded in its numbers by #56, kept for its rule.** When this was written
+the trade station was #28's octahedron and `STATION_SILHOUETTE_KM.trade` was
+0.6 km — exactly the octahedron's own vertex, so the budget was the hull and
+there was no slack at all to mount anything in. Every fixture had to be solved
+onto the face plane `|x| + |y| + |z| = r` and sit inside the convex outline.
 
-The shipyard (1.429 km of 1.5) and the refinery (0.837 km of 0.9) carry a few
-per cent, which is a ratchet against growth and not an allowance either.
+#56 replaced that hull with a cuboctahedron and the budget is a declared reach
+per *form* now, with a few per cent of headroom on each. The arithmetic changed;
+the rule did not, and it generalised:
+
+> A fixture's position is derived from the surface it is mounted on, never
+> chosen beside it.
+
+Every violation of that has looked different and cost the same. A lamp at
+`(0.45, 0, 0.45)·r` on a plane defined by `|x| + |y| + |z| = r` sums to 0.9·r
+and is **buried inside the hull**, invisible. A strobe at 0.55 of a reach whose
+slab ends at 0.54 hangs beside it. A window run at 0.64·r past a body 0.62·r
+half-wide clears it entirely. A radiator panel 0.46 of a span off a stalk a
+fifteenth of a span thick touches nothing. A band at 1.1·r round a rock whose
+crests reach 1.33·r is swallowed by it. All five shipped and all five were found
+by measurement rather than by looking, which is why the headless tier asserts
+that a station is **one connected assembly** — see §6.
 
 ### 2.2 An emissive fixture needs more clearance than a geometric one
 
 Inside the hull is not far enough for a light. The renderer runs a bloom pass,
 so an emissive surface spreads a halo past the geometry it is mounted on — and
-on the trade station, whose hull *is* the whole silhouette, a strobe sitting at
-0.8·r on the face plane pushed the rendered outline 7 px wider at docking range
-while the mesh's vertex reach was unchanged to the last bit.
+on #28's trade station, whose hull *was* the whole silhouette, a strobe sitting
+at 0.8·r on the face plane pushed the rendered outline 7 px wider at docking
+range while the mesh's vertex reach was unchanged to the last bit.
 
 The geometric budget cannot see this: it is a post-process on the frame, not a
 vertex. So the rule for an emissive accessory is **inboard of the limb**, not
-merely inside the vertex — the strobes sit at (0.55, 0, 0.45)·r.
+merely inside the surface.
 
 **This half is not gated, and it is worth being plain about why.** Three
 rendered forms of the check were tried and all three measure the bloom pass
@@ -77,13 +90,11 @@ exactly: the mesh's vertex reach, identical at all three levels, in the headless
 tier. What the bloom does on top of that is documented here and looked at, not
 asserted.
 
-**And it must still be on the plane.** An octahedron's surface is
-`|x| + |y| + |z| = r`, so a fixture is on the hull only if its coordinates sum to
-`r`. Chasing a residual one-pixel overshoot, the pair was moved to
-`(0.45, 0, 0.45)·r` — a sum of 0.9·r, which is *inside* the hull and invisible.
-The overshoot did not go away, because it was never the strobes: it is the window
-grid, whose panes sit on the same plane out to 0.83·r. Nothing rendered says "the
-lights are buried", so the headless tier asserts the sum.
+**The aperture frame is the case that hid three others.** It sat *on* the face
+it is cut into — bars centred half a bar proud — so it touched the hull at a
+plane and nowhere else, which is a lit rectangle floating in front of a station.
+It straddles the surface now, and is thick enough that "half in" is a real
+overlap rather than a rounding.
 
 ## 3. The three reading distances
 
@@ -174,8 +185,8 @@ from the only direction anyone approaches it. They are on the drum's face now,
 round the pad.
 
 The strobe pair belongs to the **Coriolis hull**, not to the trade station: the
-shipyard is the same spinning octahedron, so marking it is the same problem with
-the same answer. What separates the two roles is the work light — the shipyard's
+shipyard spins about the same axis for the same reason, so marking it is the
+same problem with the same answer. What separates the two roles is the work light — the shipyard's
 cold bays and its arc against the trade station's warm grid — and the drydock
 frame that is already carrying the outline.
 
