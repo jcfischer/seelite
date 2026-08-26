@@ -224,9 +224,10 @@ export function appearanceFor(
 	};
 
 	if (surface === "terran") {
-		// 0.55–0.75. `probe-planets.mjs` sweeps this band and asserts that both
-		// ends leave continents and open water, so no terran world loses the sea
-		// that makes it terran or drowns entirely.
+		// 0.55–0.75. `probe-planets.mjs` sweeps the band and checks both of its
+		// ends for land and water, so no terran world loses the sea that makes it
+		// terran or drowns entirely. Measured there: 29% ocean at 0.55, 58% at
+		// 0.75.
 		look.seaLevel = 0.55 + ((seed >>> 8) & 0xff) / 255 / 5;
 		// Weather is the loudest thing about a terran world at a distance, and
 		// the cover varies enough between them to be an identity of its own.

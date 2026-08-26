@@ -377,13 +377,17 @@ async function checkOcean(page, classes) {
 		console.log(
 			`  terran: sea level ${authored.toFixed(2)} -> ${(fraction * 100).toFixed(0)}% of sampled patches read as ocean`,
 		);
+		// The issued band (0.55-0.75) measures 29%-58% ocean, so these bars sit
+		// about 20 points outside that range rather than at the extremes. The old
+		// 15%/92% pair could not fail as labelled: a world at 91% ocean with one
+		// continent-sized patch passed a check that read "has continents".
 		check(
-			`terran has continents (ocean ${(fraction * 100).toFixed(0)}% < 92%)`,
-			fraction < 0.92,
+			`terran has continents (ocean ${(fraction * 100).toFixed(0)}% < 78%)`,
+			fraction < 0.78,
 		);
 		check(
-			`terran has an ocean (ocean ${(fraction * 100).toFixed(0)}% > 15%)`,
-			fraction > 0.15,
+			`terran has an ocean (ocean ${(fraction * 100).toFixed(0)}% > 12%)`,
+			fraction > 0.12,
 		);
 
 		/**
@@ -416,6 +420,18 @@ async function checkOcean(page, classes) {
 				ladder[i][1] >= ladder[i - 1][1] - SLACK,
 			);
 		}
+		// Both ends of the *issued* band leave land and water. Checked rather than
+		// implied: `planet-appearance.ts` tells a reader this band is what keeps
+		// every terran world from drowning or drying out, and until now the ladder
+		// steps were only checked for monotonicity.
+		for (const level of [0.55, 0.75]) {
+			const step = ladder.find(([l]) => l === level);
+			check(
+				`terran at issued sea level ${level} keeps land and water (${(step[1] * 100).toFixed(0)}% ocean)`,
+				step[1] > 0.12 && step[1] < 0.78,
+			);
+		}
+
 		// A control that never moves is not a control. Across the full sweep the
 		// fraction has to actually travel.
 		check(
