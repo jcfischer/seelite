@@ -100,9 +100,13 @@ ${NOISE_GLSL}
  *
  *   five walks, grain differenced   25 fps, 80-90 ms worst
  *   one walk, grain differenced     40 fps, 40-50 ms worst
- *   one walk, nothing else          50s fps
+ *   one walk, nothing else          "fps in the 50s", worst frame not reported
  *
- * Reproduce it by opening ?seed=1&fps and flying to a refinery. The figures
+ * The shipped row is the weakest of the three, and it is written that way
+ * rather than tidied: this file argues a page below that a mean hides the
+ * hitch a player feels, so the one configuration that ships having no worst
+ * frame beside it is worth seeing. It was reported as a rate and accepted as
+ * one. Reproduce it by opening ?seed=1&fps and flying to a refinery. The figures
  * are one machine's and are not portable; the *structure* is what carries — a
  * term inside the height field is paid five times, and a term in the albedo
  * once.
@@ -175,7 +179,7 @@ const ROCK_SURFACE = /* glsl */ `{
   // nothing here measures it.
   vec3 slope = pit.xyz - p * dot(pit.xyz, p);
 
-  // The same shape as reliefNormal's last line — lean the normal away from
+  // The same shape as planet-shaders.ts's reliefNormal ends on — lean the normal away from
   // uphill. The coefficient differs because that one folds its own 2e into the
   // differences and this gradient is analytic.
   vec3 objN = normalize(p - 0.010 * slope);

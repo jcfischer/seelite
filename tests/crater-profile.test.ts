@@ -78,8 +78,12 @@ describe("the crater field has one definition", () => {
 		expect(CRATER_PROFILE).toContain("CRATER_RIM_SHARPNESS");
 		expect(station).toContain("CRATER_RIM_SHARPNESS * CRATER_RIM_SHARPNESS");
 		expect(station).toContain("(d - CRATER_RIM_AT)");
-		expect(station).not.toContain("84.5");
-		expect(station).not.toContain("0.88");
+		// Anchored to the *shape* a hand-expanded derivative has, not to the
+		// bare numbers: `expect(station).not.toContain("0.88")` would also fail
+		// on an unrelated roughness or blend weight that happened to be 0.88,
+		// reporting it as a stale derivative.
+		expect(station).not.toMatch(/d - 0\.88/);
+		expect(station).not.toMatch(/-\s*84\.5/);
 	});
 
 	test("both walk the same neighbourhood", () => {

@@ -378,6 +378,39 @@ for (const viewport of VIEWPORTS) {
 		);
 	}
 
+	/**
+	 * Every program that drew the frame above actually linked.
+	 *
+	 * The rock's surface is a patched `MeshStandardMaterial`: four GLSL strings
+	 * spliced into three.js's chunks by `onBeforeCompile`. The tests that guard
+	 * it match *source text* — they can prove the crater field has one
+	 * definition and that a rename has not left an interpolation dangling, and
+	 * they cannot prove the result compiles, because nothing headless has a GL
+	 * context. A patch that stopped linking would leave three.js logging to the
+	 * console and rendering something, and the checks above would go on passing:
+	 * they ask whether the refinery is on screen and lit, and it would be.
+	 *
+	 * `LINK_STATUS` is the direct question, asked of the programs the renderer
+	 * actually built for this system — which includes the rock, because the
+	 * refinery has been framed at docking range in the loop above.
+	 */
+	const programs = await page.evaluate(() => {
+		const renderer = window.__seelite.renderer;
+		const gl = renderer.getContext();
+		const built = Array.from(renderer.info.programs ?? []);
+		return {
+			total: built.length,
+			unlinked: built.filter(
+				(p) => p.program && !gl.getProgramParameter(p.program, gl.LINK_STATUS),
+			).length,
+		};
+	});
+	check(
+		`${viewport.name}: every shader program the frame used linked`,
+		programs.total > 0 && programs.unlinked === 0,
+		`${programs.total - programs.unlinked}/${programs.total} linked`,
+	);
+
 	console.log(
 		`\n[${viewport.name}] warmth: ` +
 			Object.entries(lit)

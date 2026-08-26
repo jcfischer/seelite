@@ -549,16 +549,77 @@ check(
 	)),
 );
 
+/**
+ * The other side, which is the one that could actually go wrong.
+ *
+ * The check above is the safe half: a page that never opened the workbench has
+ * nothing that could have mounted a meter. The workbench mounts one
+ * *unconditionally*, so the path worth measuring is the one that goes through
+ * it and comes back — and it comes back by navigating, which is why the meter
+ * does not survive. That is a property of `[data-model-close]`, not of this
+ * gate, and nothing checked it: rewrite that handler as an in-place teardown
+ * and the readout arrives on the flight floor with no `?fps` anywhere.
+ */
+// Not through `open`: the workbench builds no simulation behind itself, so
+// `bootedGame` has nothing to wait for and would time out.
+const bench = await browser.newPage({ viewport: { width: 900, height: 620 } });
+watch(bench);
+await bench.goto(`${URL}&model-viewer=station`, { waitUntil: "load" });
+await bench.waitForSelector("#model-viewer canvas");
+check(
+	"the workbench mounts a readout without `?fps`",
+	await bench.evaluate(() =>
+		Boolean(document.querySelector("[data-fps-meter]")),
+	),
+);
+/**
+ * Whether the close navigates is the *question*, so the wait must not be the
+ * thing that answers it — twice over.
+ *
+ * Left to throw, an in-place teardown would end this file as an uncaught
+ * timeout rather than as the named check below going red: a worse report of
+ * the same fact. And bounded tightly, a *correct* navigation that ran slow on
+ * a loaded machine would report as a teardown that never happened. So the wait
+ * is generous and its expiry is not a verdict: what is asserted is the end
+ * state, and slowness costs seconds rather than a false red.
+ */
+await Promise.all([
+	bench
+		.waitForFunction(
+			() => !new URLSearchParams(window.location.search).has("model-viewer"),
+			null,
+			{ timeout: 20000 },
+		)
+		.catch(() => {}),
+	bench.click("[data-model-close]"),
+]);
+check(
+	"returning to flight from the workbench leaves no readout behind",
+	await bench.evaluate(
+		() =>
+			!new URLSearchParams(window.location.search).has("model-viewer") &&
+			!document.querySelector("[data-fps-meter]"),
+	),
+	await bench.evaluate(() => window.location.search || "(no query)"),
+);
+await bench.close();
+
 // From `URL`, so the meter is measured on the same page the rest of this file
 // boots rather than on a second one that might differ.
 const metered = await open(`${URL}&fps`);
-// Two windows, so the reading is a measurement rather than the first frame:
-// the meter reports nothing until its first window closes.
+// Wait for a *rate*, not for the element. The meter mounts showing "- fps",
+// so waiting on text containing "fps" is satisfied the instant it appears and
+// gates on nothing: whether the read below saw a measured figure or the
+// placeholder would come down to boot latency, on a wait written to take
+// exactly that out. A digit is what the placeholder does not have.
 await metered.waitForFunction(
 	() =>
-		document.querySelector("[data-fps-meter]")?.textContent?.includes("fps"),
+		/\d/.test(document.querySelector("[data-fps-meter]")?.textContent ?? ""),
 	null,
-	{ timeout: 8000 },
+	// Generous for the same reason as the close below: two sample windows sit
+	// well inside this, and the room is there so a loaded machine costs seconds
+	// rather than a red check.
+	{ timeout: 20000 },
 );
 const reading = await metered.evaluate(
 	() => document.querySelector("[data-fps-meter]").textContent,

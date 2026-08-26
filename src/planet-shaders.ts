@@ -30,6 +30,14 @@
  * They are strings rather than a shared GLSL function because the gradient
  * needs `d`, `radius` and the offset from inside the loop, and GLSL ES 1.00
  * has no way to hand those back without recomputing them.
+ *
+ * **What a consumer must provide, and must not shadow.** Being text rather
+ * than a signature, the contract is by name, so it is written down here
+ * instead of being learned from a collision. `CRATER_CELL` reads `base`, `p`
+ * and the loop counters `x`, `y`, `z`, and declares `cell`, `centre`,
+ * `radius`, `offset`, `dist` and `d`. `CRATER_PROFILE` reads `d` and declares
+ * `inside`, `bowl` and `rim`. A third interpolator supplies the first set and
+ * leaves the second alone.
  */
 export const CRATER_CELL = /* glsl */ `    vec3 cell = base + vec3(x, y, z);
     vec3 centre = cell + vec3(hash31(cell),

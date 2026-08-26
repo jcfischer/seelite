@@ -357,6 +357,28 @@ export function tally() {
 			);
 		},
 		watch(page) {
+			/**
+			 * A shader that fails to compile is not a page error.
+			 *
+			 * Three.js reports a bad program through `console.error` and carries
+			 * on, so a patched material that stopped linking would render — a
+			 * fallback, a flat body, nothing at all — while every check in every
+			 * probe stayed green. `pageerror` never sees it, because nothing
+			 * threw.
+			 *
+			 * Narrow on purpose: a probe is not a lint pass, and failing on any
+			 * console error would make an unrelated warning somewhere else in
+			 * the page red here. This matches the one class that is otherwise
+			 * silent and is always a defect.
+			 */
+			page.on("console", (message) => {
+				if (message.type() !== "error") return;
+				const text = message.text();
+				if (!/shader|program info|glsl|link status/i.test(text)) return;
+				checks++;
+				failures++;
+				console.log(`SHADERERROR ${text.slice(0, 400)}`);
+			});
 			page.on("pageerror", (e) => {
 				// Counted as a check too, not just a failure. Incrementing `failures`
 				// alone makes `${checks - failures}/${checks}` report a failing check

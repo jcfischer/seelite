@@ -218,6 +218,16 @@ export function mountModelViewer(): void {
 	// already, and the reason to open one is usually to judge what a form costs
 	// as well as how it looks. `mountFpsMeter` is idempotent, so opening the
 	// workbench with `?fps` as well gives one readout rather than two.
+	//
+	// The returned disposer is dropped on purpose, and the reason is a few lines
+	// down rather than here to be found: `[data-model-close]` *navigates* — it
+	// rewrites the URL without `model-viewer` and assigns it — so the document
+	// carrying this meter is torn down by the browser, along with its frame
+	// callback and its stall timer. Calling the disposer first would be tidying
+	// a page that is about to cease existing. If that handler ever becomes an
+	// in-place teardown, this becomes a leak *and* a way onto the flight floor
+	// without `?fps`, which is why `probe-boot` opens the workbench and closes
+	// it rather than only checking a page that never opened one.
 	mountFpsMeter();
 
 	const stage = root.querySelector<HTMLElement>(

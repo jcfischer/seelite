@@ -26,13 +26,8 @@
  * throttled to nothing — and it knows a backgrounded tab from a fault, which
  * also stops frames and is not one.
  *
- * It shows the frame *time* beside the rate, because the two carry different
- * information at the low end: 60 fps and 55 fps are 16.7 ms and 18.2 ms, but
- * 15 fps and 7 fps are 67 ms and 143 ms. Below about 20 fps the milliseconds
- * are what tell you how much has to come off.
- *
- * The worst frame in the window is shown too. A mean of 30 hides a 250 ms
- * hitch, and a hitch is what a player feels.
+ * It reports three numbers rather than one; why each is there is at the line
+ * that formats it.
  */
 
 const STYLE_ID = "seelite-fps-style";
@@ -103,6 +98,12 @@ export function mountFpsMeter(): () => void {
 		if (now - windowStart >= WINDOW_MS) {
 			const seconds = (now - windowStart) / 1000;
 			const fps = frames / seconds;
+			// The frame *time* rides beside the rate because the two carry
+			// different information at the low end: 60 and 55 fps are 16.7 and
+			// 18.2 ms, but 15 and 7 fps are 67 and 143 ms — below about 20 fps
+			// the milliseconds are what say how much has to come off. And the
+			// worst frame in the window rides beside both, because a mean of 30
+			// hides a 250 ms hitch, and the hitch is what a player feels.
 			show(
 				`<b>${fps.toFixed(1)}</b> fps · ${(1000 / fps).toFixed(0)} ms` +
 					` · worst ${worst.toFixed(0)} ms`,
