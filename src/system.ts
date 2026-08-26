@@ -86,6 +86,37 @@ export const SHIPYARD_MIN_TL = 10;
  *  constant for both the count's upper bound and the size of the roll table, so
  *  the two cannot drift apart and leave a fallback guarding nothing. */
 export const MAX_MOONS = 3;
+
+/**
+ * A planet is a gas giant past this multiple of the habitable distance (§6.2).
+ *
+ * Exported because the renderer's surface classifier draws the same line, and a
+ * second copy of the number over there would be kept honest only by a test.
+ * The generator owns it; display reads it.
+ */
+export const GIANT_ORBIT_FACTOR = 2;
+
+/**
+ * The habitable distance (§6.1): √(L/L☉) AU, clamped into the orbit envelope.
+ * An M dwarf's 0.2 AU is pulled out to 0.3; an A star's 4.5 sits inside 6.
+ *
+ * Exported because the renderer's surface classifier keys every class on
+ * `aAu / habitableDistanceAu(L)`, and **the clamp is the part that is easy to
+ * get wrong**: an unclamped `sqrt(L)` agrees with this everywhere except at the
+ * envelope edges, which is exactly where it would misclassify silently. Sharing
+ * the factor alone left that denominator hand-copied.
+ */
+export const habitableDistanceAu = (luminosity: number) =>
+	Math.min(MAX_ORBIT_AU, Math.max(MIN_ORBIT_AU, Math.sqrt(luminosity)));
+
+/**
+ * `a/a_hab` for one planet — the number the surface classifier switches on.
+ *
+ * One exported expression so display, tests and any future caller cannot each
+ * spell the ratio slightly differently.
+ */
+export const orbitWarmth = (aAu: number, luminosity: number) =>
+	aAu / habitableDistanceAu(luminosity);
 const ROLLS_PER_MOON = 4;
 
 /**
@@ -362,12 +393,7 @@ export function generateContents(record: SystemRecord): SystemContents {
 	const bodies = stream(record.seed, DOMAIN.BODIES);
 	const star = { id: "star", ...pickWeighted(bodies) };
 
-	// The habitable distance (§6.1): √(L/L☉) AU, clamped into the envelope. An M
-	// dwarf's 0.2 AU is pulled out to 0.3; an A star's 4.5 sits inside 6.
-	const habitableAu = Math.min(
-		MAX_ORBIT_AU,
-		Math.max(MIN_ORBIT_AU, Math.sqrt(star.luminosity)),
-	);
+	const habitableAu = habitableDistanceAu(star.luminosity);
 
 	// The ladder (§6.2): Titius-Bode-like ratios, then rescaled in log space so
 	// one rung lands exactly on `a_hab`. Rescaling rather than seeding a planet
@@ -402,7 +428,7 @@ export function generateContents(record: SystemRecord): SystemContents {
 			moonRolls.push(bodies());
 		if (aAu < MIN_ORBIT_AU || aAu > MAX_ORBIT_AU) continue;
 
-		const isGasGiant = aAu > 2 * habitableAu;
+		const isGasGiant = aAu > GIANT_ORBIT_FACTOR * habitableAu;
 		const size = isGasGiant ? GIANT_RADIUS_KM : ROCKY_RADIUS_KM;
 		const radiusKm = size.base + radiusRoll * size.span;
 		const id = `planet-${i}`;
