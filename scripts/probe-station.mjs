@@ -5,15 +5,31 @@
  *   npm run dev                       # in one shell
  *   node scripts/probe-station.mjs    # in another
  *
- * Three claims, none of which a headless test can reach:
+ * Three things measured here, none of which a headless test can reach — and
+ * **the first of them is reported rather than gated.**
  *
- * 1. **The three silhouettes are distinguishable — by outline, not by colour.**
- *    §7 rests station identity on the shape a player sees before colour and
- *    before any detail resolves, so the measurement is a *desaturated* one:
- *    every frame is reduced to luminance before anything is compared, and the
- *    three `STATION_COLORS` cannot contribute to a pass. Colour differences are
- *    the easy way for this probe to go green while the outlines are identical,
- *    which is exactly the failure §7 is a decision about.
+ * 1. **How far apart the three silhouettes read, by outline alone.** §7 rests
+ *    station identity on the shape a player sees before colour and before any
+ *    detail resolves, so the measurement is a *desaturated* one: every frame is
+ *    reduced to luminance before anything is compared, and the three
+ *    `STATION_COLORS` cannot contribute. Colour differences are the easy way for
+ *    this to look healthy while the outlines are identical, which is exactly the
+ *    failure §7 is a decision about.
+ *
+ *    It stopped being an assertion on 2026-08-26, by the principal's decision
+ *    while #56's forms were being ranked. The reason is worth keeping, because
+ *    the number is still printed and someone will want to re-arm it: a floor on
+ *    this metric turns out to be a *design driver*. In one afternoon it produced
+ *    a third radiator wing, a pair of forward booms on a gantry and a squared
+ *    hull section — none of them chosen for the role, all of them chosen to move
+ *    a figure. Forms are ranked on how they look, and a gate that quietly
+ *    reshapes them competes with the person doing the ranking.
+ *
+ *    So the figures are measured and printed at both ranges and asserted at
+ *    neither. What is still gated is that each station **is drawn and has a
+ *    silhouette at all**, and that re-measuring one reproduces it — the control,
+ *    which is about whether the measurement works rather than about what it
+ *    finds.
  *
  * 2. **The slot tracks the spin.** Its screen-space orientation advances at the
  *    station's own `spinRpm`, and it is measured twice over:
@@ -91,15 +107,20 @@ const FAR_RANGE_KM = 60;
 const GRID = 24;
 
 /**
- * How much two silhouettes must differ, as `1 − IoU` on the resampled masks.
+ * The reference figure for how far two silhouettes read apart, as `1 − IoU` on
+ * the resampled masks.
  *
- * A floor, and it is only meaningful against the metric's own noise — so the
- * run measures that too, by capturing one station twice (the control below).
- * Measured: the three pairs come out at about 0.35 (trade/refinery), 0.61
- * (trade/shipyard) and 0.62 (refinery/shipyard), against a control of 0.02.
- * The closest pair is the two compact types, which is where the identity claim
- * is hardest, and 0.25 leaves that pair about 40% of headroom while sitting an
- * order of magnitude above the noise.
+ * **Not asserted any more** — see the header. It is kept because the printed
+ * comparison means nothing without a scale to read it against, and because this
+ * is the number to restore if the gate is ever re-armed.
+ *
+ * It is only meaningful against the metric's own noise, so the run measures that
+ * too, by capturing one station twice (the control below). Measured while it was
+ * still a gate: the three pairs came out at about 0.35 (trade/refinery), 0.61
+ * (trade/shipyard) and 0.62 (refinery/shipyard), against a control of 0.02. The
+ * closest pair was the two compact types, which is where the identity claim is
+ * hardest, and 0.25 left that pair about 40% of headroom while sitting an order
+ * of magnitude above the noise.
  */
 const MIN_DIFFERENCE = 0.25;
 
@@ -398,6 +419,11 @@ const iou = (a, b) => {
  * A single close range answers the first and quietly assumes the second.
  */
 async function silhouettesAt(rangeKm, floor, gate) {
+	// `gate.pairs` asserts the pairwise outline comparison; `gate.control`
+	// asserts that re-measuring one station reproduces it. Two flags because
+	// they answer different questions and only one of them was relaxed: the
+	// control is about whether the *measurement* works at all, which is worth
+	// gating even where its subject is not.
 	const shapes = new Map();
 	/** The control capture, kept beside the map rather than inside it: a type-keyed
 	 *  map holding one entry that is not a type makes every consumer filter it
@@ -438,7 +464,7 @@ async function silhouettesAt(rangeKm, floor, gate) {
 			console.log(
 				`  ${types[i]} vs ${types[j]}: 1 − IoU = ${difference.toFixed(3)}`,
 			);
-			if (gate)
+			if (gate.pairs)
 				check(
 					`${rangeKm} km — ${types[i]} and ${types[j]} differ by outline alone`,
 					difference > floor,
@@ -452,11 +478,12 @@ async function silhouettesAt(rangeKm, floor, gate) {
 		// Reported rather than thrown: an empty second capture would otherwise
 		// dereference `undefined` inside `iou` and kill the run before a single
 		// FAIL line was printed.
-		check(
-			`${rangeKm} km — re-measuring one station reproduces its silhouette`,
-			false,
-			"no second silhouette to compare",
-		);
+		if (gate.control)
+			check(
+				`${rangeKm} km — re-measuring one station reproduces its silhouette`,
+				false,
+				"no second silhouette to compare",
+			);
 	} else {
 		const drift = 1 - iou(first.cells, control.cells);
 		console.log(
@@ -467,7 +494,7 @@ async function silhouettesAt(rangeKm, floor, gate) {
 		// and the reason the far-range pairwise figures above are reported rather
 		// than asserted: a metric whose noise is half its signal is not evidence,
 		// and the honest far-range claim is the extent one below.
-		if (gate)
+		if (gate.control)
 			check(
 				`${rangeKm} km — re-measuring one station reproduces its silhouette`,
 				drift < MAX_CONTROL_DIFFERENCE,
@@ -477,8 +504,14 @@ async function silhouettesAt(rangeKm, floor, gate) {
 	return shapes;
 }
 
-const near = await silhouettesAt(RANGE_KM, MIN_DIFFERENCE, true);
-const far = await silhouettesAt(FAR_RANGE_KM, MIN_DIFFERENCE, false);
+const near = await silhouettesAt(RANGE_KM, MIN_DIFFERENCE, {
+	pairs: false,
+	control: true,
+});
+const far = await silhouettesAt(FAR_RANGE_KM, MIN_DIFFERENCE, {
+	pairs: false,
+	control: false,
+});
 
 /**
  * The half desaturation does not answer: **does it survive range?**

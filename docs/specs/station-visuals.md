@@ -238,7 +238,11 @@ replays exactly.
 **Browser** (`scripts/probe-station-visuals.mjs`) — what no arithmetic reaches:
 
 - each role is distinguishable from the other two by its *lit* appearance at
-  close range, measured the same differenced-mask way #28 measures outline;
+  close range, measured the same differenced-mask way #28 measures outline, and
+  **still asserted** — #28's outline gate was withdrawn on 2026-08-26
+  (`station-types.md` §9.2) and this one was not, because they are different
+  claims: a floor on a *shape* metric reshapes geometry, while this one only
+  says each role's own fixtures put light of the right temperature on screen;
 - the aperture is the brightest feature on the station at docking range, at both
   a desktop and a narrow viewport;
 - the detail level actually falls with range (the silhouette half of §2's rule

@@ -692,10 +692,22 @@ Two tiers, per the repo's culture.
 
 ### 9.2 Browser probe
 
-- The three silhouettes are distinguishable: render one of each at a fixed
-  distance and assert their projected outlines differ by more than a
-  colour-only threshold. Running the same frames desaturated is the honest
-  version of "tell them apart", since §7 claims outline and not colour.
+- The three silhouettes are **measured** for distinguishability: render one of
+  each at a fixed distance and compare their projected outlines desaturated,
+  which is the honest version of "tell them apart" since §7 claims outline and
+  not colour.
+
+  It is reported and not asserted, by the principal's decision of 2026-08-26
+  while #56's forms were being ranked. §7's standard stands as design intent;
+  what was withdrawn is the *gate*. A floor on this metric turns out to be a
+  design driver — in one afternoon it produced a third radiator wing, a pair of
+  forward booms and a squared hull section, none of them chosen for the role and
+  all of them chosen to move a figure. Forms are ranked on how they look, and a
+  gate that quietly reshapes them competes with the person ranking.
+
+  What stays gated is that each station is drawn and has a silhouette at all,
+  and that re-measuring one reproduces it — the control, which is about whether
+  the measurement works rather than about what it finds.
 - Reading constants off `window.__seelite`, never restating them.
 
 ---
