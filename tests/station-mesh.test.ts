@@ -335,12 +335,33 @@ describe("a station is one object, not a scatter of parts", () => {
 				box: new THREE.Box3().setFromObject(object),
 			});
 		});
+		// **Shrunk before testing.** A bare `intersectsBox` counts a boundary
+		// graze as contact: the Rig's drill head overlapped its body by 1 m on a
+		// single axis and passed this check while hanging visibly detached on
+		// screen. Requiring a real overlap on every axis is what makes the proxy
+		// worth anything.
+		// Per axis, and never more than a quarter of the part's own extent on
+		// that axis: a flat 4 m would shrink a 12 m aperture bar into nothing and
+		// report the frame as detached from the hull it is bolted to.
+		const OVERLAP_KM = 0.004;
+		const shrunk = parts.map(({ box }) => {
+			const size = box.getSize(new THREE.Vector3());
+			return box
+				.clone()
+				.expandByVector(
+					new THREE.Vector3(
+						-Math.min(OVERLAP_KM, size.x * 0.25),
+						-Math.min(OVERLAP_KM, size.y * 0.25),
+						-Math.min(OVERLAP_KM, size.z * 0.25),
+					),
+				);
+		});
 		const parent = parts.map((_, i) => i);
 		const find = (i: number): number =>
 			parent[i] === i ? i : (parent[i] = find(parent[i]));
 		for (let i = 0; i < parts.length; i++)
 			for (let j = i + 1; j < parts.length; j++)
-				if (parts[i].box.intersectsBox(parts[j].box)) parent[find(i)] = find(j);
+				if (shrunk[i].intersectsBox(shrunk[j])) parent[find(i)] = find(j);
 		const grouped = new Map<number, string[]>();
 		for (let i = 0; i < parts.length; i++) {
 			const root = find(i);
