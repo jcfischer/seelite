@@ -35,11 +35,14 @@ import {
 import {
 	DETAIL_RADII,
 	PLATE_TEXTURE_SIZE,
+	ROCK_TEXTURE_SIZE,
 	STATION_VISUALS,
 	type StationDetailLevel,
 	strobeIntensity,
 	flickerIntensity,
 	platingTexels,
+	rockAlbedoTexels,
+	rockNormalTexels,
 	stationDetailLevel,
 	surfaceTexels,
 } from "../src/station-visuals";
@@ -429,5 +432,71 @@ describe("what the renderer drives, at every range", () => {
 				9,
 			);
 		}
+	});
+});
+
+describe("the rock surface maps", () => {
+	const n = ROCK_TEXTURE_SIZE * ROCK_TEXTURE_SIZE * 4;
+
+	test("both buffers are exactly 4 x w x h", () => {
+		// A short `DataTexture` buffer does not throw: it samples past its end and
+		// renders as garbage. The same assertion the plating carries, for the same
+		// reason.
+		expect(rockAlbedoTexels("station").length).toBe(n);
+		expect(rockNormalTexels("station").length).toBe(n);
+	});
+
+	test("the same tag generates the same texels twice", () => {
+		const a = rockAlbedoTexels("station");
+		const b = rockAlbedoTexels("station");
+		expect(Buffer.from(a).equals(Buffer.from(b))).toBe(true);
+	});
+
+	test("the albedo is greyscale, so the rock's own colour still multiplies", () => {
+		const texels = rockAlbedoTexels("station");
+		for (let i = 0; i < texels.length; i += 4) {
+			expect(texels[i]).toBe(texels[i + 1]);
+			expect(texels[i]).toBe(texels[i + 2]);
+		}
+	});
+
+	test("the albedo sits near the middle, not near black", () => {
+		// It *multiplies* the material colour, so a dark map darkens the rock
+		// twice — once for the paint and once for the map. The first version
+		// centred at 150 and the rock read as coal.
+		const texels = rockAlbedoTexels("station");
+		let sum = 0;
+		for (let i = 0; i < texels.length; i += 4) sum += texels[i];
+		const mean = sum / (texels.length / 4);
+		expect(mean).toBeGreaterThan(170);
+		expect(mean).toBeLessThan(230);
+	});
+
+	test("the normal map is a unit field about +Z", () => {
+		// The one assertion that separates a normal map from a picture of one: a
+		// tangent-space map's blue channel is the component along the surface, so
+		// it is near 1 everywhere and never below the flat 0.5. A map generated
+		// with the axes confused fails this and looks merely odd on screen.
+		const texels = rockNormalTexels("station");
+		let minZ = 255;
+		let worstLength = 0;
+		for (let i = 0; i < texels.length; i += 4) {
+			const x = (texels[i] / 255) * 2 - 1;
+			const y = (texels[i + 1] / 255) * 2 - 1;
+			const z = (texels[i + 2] / 255) * 2 - 1;
+			minZ = Math.min(minZ, texels[i + 2]);
+			worstLength = Math.max(worstLength, Math.abs(Math.hypot(x, y, z) - 1));
+		}
+		expect(minZ).toBeGreaterThan(127);
+		// A byte's worth of quantisation, no more: this is a unit vector field.
+		expect(worstLength).toBeLessThan(0.02);
+	});
+
+	test("the normal map is not flat, or it is doing nothing", () => {
+		// A map of pure (0.5, 0.5, 1) is a valid normal map that perturbs nothing.
+		const texels = rockNormalTexels("station");
+		const seen = new Set<number>();
+		for (let i = 0; i < texels.length; i += 4) seen.add(texels[i]);
+		expect(seen.size).toBeGreaterThan(30);
 	});
 });
