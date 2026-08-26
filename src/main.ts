@@ -3108,6 +3108,7 @@ class Game {
 				interdicting: this.regime === "cruise",
 				breakAngle: this.keys.has("q") || this.keys.has("e"),
 				enemyFiring: this.combat.targetHull > 0 && targetInCone,
+				enemyHitAft: Math.floor(this.combat.elapsed / 3) % 2 === 1,
 			});
 		this.combatIncoming = false;
 		this.combatEcm = false;

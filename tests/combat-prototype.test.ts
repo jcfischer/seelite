@@ -87,6 +87,16 @@ test("a strafing duel target can leave the line of fire", () => {
 	expect(duelTargetInCone(Math.PI / (2 * 0.7))).toBe(false);
 });
 
+test("enemy fire can deplete the player aft shield", () => {
+	const state = stepCombatPrototype(createCombatPrototype(), {
+		dt: 1,
+		enemyFiring: true,
+		enemyHitAft: true,
+	});
+	expect(state.aftShield).toBeLessThan(COMBAT_PROTOTYPE_DEFAULTS.shield);
+	expect(state.foreShield).toBe(COMBAT_PROTOTYPE_DEFAULTS.shield);
+});
+
 test("an enemy barrage depletes the player fore shield before damaging hull", () => {
 	let state = createCombatPrototype({ foreShield: 1 });
 	state = stepCombatPrototype(state, { dt: 1, enemyFiring: true });

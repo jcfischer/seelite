@@ -51,6 +51,7 @@ export interface CombatPrototypeInput {
 	interdicting?: boolean;
 	breakAngle?: boolean;
 	enemyFiring?: boolean;
+	enemyHitAft?: boolean;
 }
 
 export function createCombatPrototype(
@@ -164,8 +165,9 @@ export function stepCombatPrototype(
 		(next.heatLocked && next.heat > COMBAT_PROTOTYPE_DEFAULTS.heatLock * 0.5);
 	if (input.enemyFiring) {
 		const damage = COMBAT_PROTOTYPE_DEFAULTS.enemyDamagePerSecond * dt;
-		const shield = next.foreShield;
-		next.foreShield = clamp(shield - damage, COMBAT_PROTOTYPE_DEFAULTS.shield);
+		const shieldKey = input.enemyHitAft ? "aftShield" : "foreShield";
+		const shield = next[shieldKey];
+		next[shieldKey] = clamp(shield - damage, COMBAT_PROTOTYPE_DEFAULTS.shield);
 		next.playerHull = clamp(
 			next.playerHull - Math.max(0, damage - shield),
 			COMBAT_PROTOTYPE_DEFAULTS.hull,
