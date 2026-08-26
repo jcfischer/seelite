@@ -2989,6 +2989,16 @@ function seedFromQuery(): number {
 // is presence rather than a name comparison, so adding a third family is one
 // edit in `model-viewer.ts` rather than two files' worth; the workbench itself
 // mounts nothing for a name it does not recognise.
+// A frame-rate readout, on `?fps` and on nothing else. It mounts beside
+// whichever surface is about to be built — the game, the workbench or the
+// gallery — because what it measures is the page's frame loop rather than any
+// one of them, and the question it exists for ("what did that change cost?") is
+// asked of all three.
+if (new URLSearchParams(window.location.search).has("fps")) {
+	const { mountFpsMeter } = await import("./fps-meter");
+	mountFpsMeter();
+}
+
 if (new URLSearchParams(window.location.search).has("model-viewer")) {
 	const { mountModelViewer } = await import("./model-viewer");
 	mountModelViewer();

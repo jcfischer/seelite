@@ -1,0 +1,102 @@
+/**
+ * A frame-rate readout, for judging what a change costs.
+ *
+ * **Not part of the HUD**, and query-gated in the game for that reason:
+ * `hud-and-scanner.md` §5 puts developer tuning readouts on a Tuning tab and
+ * says they may "never occupy the persistent player flight floor". A number in
+ * the corner of a cockpit is exactly that. `?fps` mounts it; nothing else does.
+ * The model workbench shows it unconditionally, because a workbench is already
+ * an instrument rather than a view of the game.
+ *
+ * **It counts its own animation frames rather than reading the renderer's
+ * counter.** Every `requestAnimationFrame` callback fires once per composited
+ * frame, so the two agree — and this way the meter works on any page, including
+ * one whose render loop has stalled, which is the case it most needs to report.
+ *
+ * It shows the frame *time* beside the rate, because the two carry different
+ * information at the low end: 60 fps and 55 fps are 16.7 ms and 18.2 ms, but
+ * 15 fps and 7 fps are 67 ms and 143 ms. Below about 20 fps the milliseconds
+ * are what tell you how much has to come off.
+ *
+ * The worst frame in the window is shown too. A mean of 30 hides a 250 ms
+ * hitch, and a hitch is what a player feels.
+ */
+
+const STYLE_ID = "seelite-fps-style";
+const STYLE = `
+#seelite-fps {
+  position: fixed; top: 8px; right: 10px; z-index: 40;
+  padding: 4px 8px; pointer-events: none;
+  font: 11px/1.4 ui-monospace, "SF Mono", Menlo, monospace;
+  color: #cfe6f2; background: rgba(4, 11, 16, .66);
+  border: 1px solid rgba(124, 183, 211, .3);
+  letter-spacing: .06em; white-space: pre;
+}
+#seelite-fps b { color: #f0bc67; font-weight: normal; }
+`;
+
+/** How long a sample covers, milliseconds. Long enough that the number is not
+ *  noise, short enough to follow the camera as it closes on something. */
+const WINDOW_MS = 500;
+
+/**
+ * Mount the readout, and return the function that removes it.
+ *
+ * **Idempotent**: two call sites can reach this on one page — `?fps` in
+ * `main.ts` and the workbench, which shows it unconditionally — and two
+ * absolutely-positioned readouts at the same corner would sit on top of each
+ * other. The second call is a no-op that hands back a no-op, so neither caller
+ * has to know about the other.
+ */
+export function mountFpsMeter(): () => void {
+	if (document.querySelector("[data-fps-meter]")) return () => {};
+	if (!document.getElementById(STYLE_ID)) {
+		const style = document.createElement("style");
+		style.id = STYLE_ID;
+		style.textContent = STYLE;
+		document.head.append(style);
+	}
+	const readout = document.createElement("div");
+	readout.id = "seelite-fps";
+	readout.dataset.fpsMeter = "";
+	readout.textContent = "— fps";
+	document.body.append(readout);
+
+	let frames = 0;
+	let worst = 0;
+	let last = performance.now();
+	let windowStart = last;
+	let handle = 0;
+	let stopped = false;
+
+	const tick = () => {
+		if (stopped) return;
+		const now = performance.now();
+		const delta = now - last;
+		last = now;
+		frames += 1;
+		if (delta > worst) worst = delta;
+		if (now - windowStart >= WINDOW_MS) {
+			const seconds = (now - windowStart) / 1000;
+			const fps = frames / seconds;
+			const mean = 1000 / fps;
+			// `innerHTML` so the rate reads apart from the two figures that
+			// qualify it. Every part of this string is a number this function
+			// formatted, so there is nothing here to escape.
+			readout.innerHTML =
+				`<b>${fps.toFixed(1)}</b> fps · ${mean.toFixed(0)} ms` +
+				` · worst ${worst.toFixed(0)} ms`;
+			frames = 0;
+			worst = 0;
+			windowStart = now;
+		}
+		handle = requestAnimationFrame(tick);
+	};
+	handle = requestAnimationFrame(tick);
+
+	return () => {
+		stopped = true;
+		cancelAnimationFrame(handle);
+		readout.remove();
+	};
+}

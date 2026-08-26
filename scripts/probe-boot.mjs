@@ -534,5 +534,43 @@ check(
 	"the first 8 star positions are not all identical",
 );
 
+/**
+ * The frame-rate readout is a **developer instrument**, not a HUD element.
+ *
+ * `hud-and-scanner.md` §5 puts tuning readouts on a Tuning tab and says they
+ * may never occupy the persistent player flight floor. A number in the corner
+ * of a cockpit is exactly that, so it is gated on `?fps` — and a gate is only a
+ * gate if something checks both sides of it. The default game above has already
+ * been open for the whole of this file; if the meter were ungated it would be
+ * on screen in every check that precedes this one.
+ */
+check(
+	"the default game carries no frame-rate readout",
+	!(await page.evaluate(() =>
+		Boolean(document.querySelector("[data-fps-meter]")),
+	)),
+);
+
+// From `URL`, so the meter is measured on the same page the rest of this file
+// boots rather than on a second one that might differ.
+const metered = await open(`${URL}&fps`);
+// Two windows, so the reading is a measurement rather than the first frame:
+// the meter reports nothing until its first window closes.
+await metered.waitForFunction(
+	() =>
+		document.querySelector("[data-fps-meter]")?.textContent?.includes("fps"),
+	null,
+	{ timeout: 8000 },
+);
+const reading = await metered.evaluate(
+	() => document.querySelector("[data-fps-meter]").textContent,
+);
+const rate = Number.parseFloat(reading);
+check(
+	"`?fps` mounts a readout that reports a real rate",
+	Number.isFinite(rate) && rate > 0 && reading.includes("worst"),
+	reading,
+);
+
 await browser.close();
 exit();
