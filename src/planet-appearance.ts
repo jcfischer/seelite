@@ -67,7 +67,13 @@ export interface PlanetAppearance {
 	seed: number;
 }
 
-import { GIANT_ORBIT_FACTOR } from "./system";
+import {
+	GIANT_ORBIT_FACTOR,
+	type PlacedBody,
+	type Planet,
+	type SystemContents,
+	orbitWarmth,
+} from "./system";
 
 /** FNV-1a. Appearance needs a stable number per id, not a good distribution. */
 const hash = (text: string) => {
@@ -241,4 +247,56 @@ export function appearanceFor(
 		look.hasRings = ((seed >>> 24) & 7) < 3;
 
 	return look;
+}
+
+/**
+ * The appearance of one placed body, read off the contents it came from.
+ *
+ * The renderer's job is to draw what the generator made, and every number that
+ * decides how a body looks is already in `SystemContents`: the planet's `aAu`,
+ * its `isGasGiant`, and the star's luminosity. This is the one place that join
+ * is spelled, so no caller re-derives a warmth of its own — a second derivation
+ * agreeing today is a second derivation, and `orbitWarmth` owns the clamped
+ * denominator that makes the two disagree at the envelope's edges.
+ *
+ * The same stance as `colorFor` in `sim.ts` on a body that is not in the
+ * contents: it **throws**. A placed body the contents does not know about is
+ * the two halves of the generator disagreeing about what is in the system, not
+ * a display question with a sensible default.
+ *
+ * A station returns `undefined` rather than a class. It is the one body that is
+ * not a sphere — `station-mesh.ts` draws it — and handing it a surface class
+ * would be a value nothing reads.
+ */
+export function appearanceOf(
+	body: Pick<PlacedBody, "id" | "kind">,
+	contents: SystemContents,
+): PlanetAppearance | undefined {
+	if (body.kind === "station") return undefined;
+	if (body.kind === "star") return appearanceFor("star", body.id);
+
+	const warmthOf = (planet: Planet) =>
+		orbitWarmth(planet.aAu, contents.star.luminosity);
+
+	if (body.kind === "planet") {
+		const planet = contents.planets.find((p) => p.id === body.id);
+		if (!planet) throw new Error(`planet ${body.id} is not in the contents`);
+		return appearanceFor(
+			"planet",
+			planet.id,
+			warmthOf(planet),
+			planet.isGasGiant,
+		);
+	}
+
+	// A moon takes its *parent's* warmth: it is at the planet's distance from
+	// the star, and a moon warmth of its own would be a different number for no
+	// physical reason. Found by searching the moon lists rather than by parsing
+	// `${planetId}-moon-${n}` out of the id — the id format is the generator's
+	// business, and a reader that knows it is a second place to edit.
+	const host = contents.planets.find((p) =>
+		p.moons.some((m) => m.id === body.id),
+	);
+	if (!host) throw new Error(`moon ${body.id} is not in the contents`);
+	return appearanceFor("moon", body.id, warmthOf(host));
 }

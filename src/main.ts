@@ -118,6 +118,12 @@ import {
 	stepAngular,
 	stepWorld,
 } from "./sim";
+import type { SurfaceClass } from "./planet-appearance";
+import {
+	type BodyVisual,
+	buildBodyVisual,
+	surfaceSphere,
+} from "./planet-surface";
 import { SPIN_RPM_RANGE } from "./station";
 import {
 	type StationMesh,
@@ -145,6 +151,15 @@ import * as units from "./units";
  *  loop runs per body per frame, and a `Vector3` built there is garbage by the
  *  time it is read — the same trade `vec3.ts` names for `Vec3`. */
 const MESH_AXIS = new THREE.Vector3(0, 0, 1);
+/** Scratch for the per-body sun direction. One vector reused every frame for
+ *  every body: the uniform copies out of it immediately, and allocating one per
+ *  body per frame is garbage inside the hottest loop in the renderer. */
+const SUN_DIR = new THREE.Vector3();
+
+/** Where the star is when a system somehow has none. Only the sun direction
+ *  reads it, and only to avoid a NaN. */
+const ORIGIN = v3(0, 0, 0);
+
 const STATION_AXIS = new THREE.Vector3();
 const HEAD_AXIS = new THREE.Vector3(0, 1, 0);
 
@@ -466,6 +481,12 @@ class Game {
 	 * lights come from `station-mesh.ts`, driven by the same game clock.
 	 */
 	private readonly stationVisuals = new Map<string, StationMesh>();
+	/** The shader surface for every body that is a sphere — star, planet, moon.
+	 *  A station is not in here; `stationVisuals` above is its equivalent. */
+	private readonly bodyVisuals = new Map<string, BodyVisual>();
+	/** The system's star, resolved once. Every body's sun direction is measured
+	 *  from it, and the system is fixed for a game's lifetime. */
+	private starBody?: Body;
 	/**
 	 * Which layer each body is currently drawn in.
 	 *
@@ -662,6 +683,117 @@ class Game {
 	 */
 	poseOfStation(id: string) {
 		return stationPose(this.world.system, id, this.world.gameTime);
+	}
+
+	/**
+	 * Redraw one body as a class it is not, or restore it.
+	 *
+	 * **Display-only, and for one question a probe cannot otherwise ask**: does
+	 * the surface class decide the pixels? Comparing two *different* bodies
+	 * cannot answer it, because the seed decorates within a class and two gas
+	 * giants differ about as much as a giant and a moon — so a build that drew
+	 * every body with one seed-parameterised shader would look exactly as varied.
+	 * Drawing the **same** body under each class holds the seed, the lighting,
+	 * the camera and the geometry still, and leaves the class as the only thing
+	 * that changed.
+	 *
+	 * Nothing in the game calls this, and the appearance on the body is
+	 * untouched — `sim.ts` still owns what a body *is*, and this only swaps what
+	 * is drawn for it. Passing `null` puts the generated class back.
+	 */
+	redrawBodyAs(id: string, surface: SurfaceClass | null) {
+		const body = this.world.system.byId.get(id);
+		if (!body?.appearance) return false;
+		const old = this.bodyVisuals.get(id);
+		if (!old) return false;
+		const layer = this.layers.get(id) ?? "far";
+		old.group.removeFromParent();
+		old.dispose();
+		const visual = buildBodyVisual(
+			surface ? { ...body.appearance, surface } : body.appearance,
+			surfaceSphere(layer),
+			this.bodyVisualOptions(),
+		);
+		visual.group.name = id;
+		this.bodyVisuals.set(id, visual);
+		this.meshes.set(id, visual.group);
+		// Through `setLayer`, so the new group is scaled and parented by the one
+		// rule that does it — a hand-placed group would be the second copy of the
+		// scale assignment `setLayer`'s own docstring warns about.
+		this.setLayer(body, layer);
+		return true;
+	}
+
+	/**
+	 * What #59's surface pass is currently drawing for one body.
+	 *
+	 * The same handle `visualOfStation` is, and for the same reason: a probe has
+	 * to know which class a body is being drawn as, and a probe that recomputed
+	 * it would be asserting its own copy of the rule rather than what is on
+	 * screen.
+	 *
+	 * `sunDir` is reported too, but as **state and not as verification**. An
+	 * earlier probe read it back and compared it to the same body-to-star
+	 * formula the render loop had just used, which confirmed an assignment
+	 * rather than a render — a shader ignoring the uniform would have passed. The
+	 * claim is checked on pixels now, from the night side; this stays because it
+	 * is what a failure looks like when you go to explain one.
+	 *
+	 * `undefined` for a station, which is drawn by `station-mesh.ts` and has no
+	 * surface class. Throwing would make a probe that walks every body have to
+	 * know the taxonomy.
+	 */
+	visualOfBody(id: string) {
+		const visual = this.bodyVisuals.get(id);
+		if (!visual) return undefined;
+		const sun = visual.uniforms.sunDir.value as THREE.Vector3;
+		return {
+			surface: visual.surface,
+			// A copy: the renderer writes through this vector every frame, and a
+			// probe holding the live one would read whatever the next frame put
+			// there rather than what it measured.
+			sunDir: { x: sun.x, y: sun.y, z: sun.z },
+		};
+	}
+
+	/**
+	 * The cost of one rendered frame, with the display's cadence taken out.
+	 *
+	 * A mean of `requestAnimationFrame` deltas cannot report anything faster
+	 * than the refresh interval, so on a 60 Hz display it bottoms out at 16.7 ms
+	 * whatever the shaders cost — a measure of the monitor, not of the work.
+	 * This renders back to back outside that cadence instead.
+	 *
+	 * **The fence is a `readPixels`, not `finish()`.** `gl.finish()` is
+	 * specified to block until the queue drains, but through a headless
+	 * browser's GPU queue it returns immediately, and the loop then measures the
+	 * time to *enqueue* the frame, which is approximately zero. `readPixels` has
+	 * to hand back real bytes, so it cannot return before the frame has been
+	 * rasterised. The same finding `planet-prototype.ts` records: `finish()`
+	 * reported 0.0 ms against an observed 76.9 ms cadence for the same scene.
+	 *
+	 * `render(0)` and not `render(dt)`: a frame budget is about how long a frame
+	 * takes to draw, and advancing the world between samples would move the
+	 * bodies out from under the measurement.
+	 */
+	measureRenderMs(samples = 20): number {
+		const gl = this.renderer.getContext();
+		const fence = new Uint8Array(4);
+		const sync = () =>
+			gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, fence);
+		// One warm-up, so shader compilation and buffer upload are not charged to
+		// the first sample.
+		this.render(0);
+		sync();
+		const started = performance.now();
+		for (let i = 0; i < samples; i++) {
+			this.render(0);
+			// Per iteration rather than once at the end: the driver is free to
+			// pipeline a batch of identical frames, and a single trailing fence
+			// would measure the last one plus whatever overlapped.
+			sync();
+		}
+		return (performance.now() - started) / samples;
 	}
 
 	/**
@@ -968,6 +1100,17 @@ class Game {
 		this.backdropScene.add(this.stars);
 	}
 
+	/** What every body's visual is built with. One spelling, because
+	 *  `redrawBodyAs` builds them too, and a third option added to one call site
+	 *  and not the other is a body drawn under a different star than its
+	 *  neighbours. */
+	private bodyVisualOptions() {
+		return {
+			sunColor: this.world.system.contents.star.color,
+			starTint: this.world.system.contents.star.color,
+		};
+	}
+
 	private buildBodies() {
 		// One unit sphere, shared by every body, sized per body with `mesh.scale`.
 		//
@@ -976,7 +1119,13 @@ class Game {
 		// a body crossing `HANDOFF_KM` has to be re-tessellated at the new scale
 		// mid-flight, which allocates on the frame the player is most likely to be
 		// looking at the thing.
-		const unitSphere = new THREE.SphereGeometry(1, 32, 16);
+		//
+		// From `planet-surface.ts`, which owns both tiers, because a surface drawn
+		// at fewer segments than the atmosphere shell around it is a polygon
+		// inside a smooth shell — one invariant rather than two settings. Bodies
+		// start far and `setLayer` swaps the tier on the handoff it already
+		// re-parents them with.
+		const unitSphere = surfaceSphere("far");
 		for (const body of this.world.system.bodies) {
 			// A station is the one body that is not a sphere: #13 §7's three
 			// silhouettes, built in kilometres. Everything else — star, planet,
@@ -998,16 +1147,36 @@ class Game {
 				const built = buildStationMesh(station.type, body.color);
 				mesh = built.root;
 				this.stationVisuals.set(body.id, built);
+			} else if (body.appearance) {
+				// #54's classes, drawn by the game rather than by the gallery.
+				//
+				// The class arrives on the body (`sim.ts`), computed from the
+				// generator's own `aAu`, `isGasGiant` and star luminosity — so this
+				// is a lookup, not a second derivation. `body.color` is no longer
+				// what a planet is painted with; it stays because the scanner and
+				// the target markers read it, and a symbol that changed colour with
+				// the terminator would be unreadable.
+				const visual = buildBodyVisual(
+					body.appearance,
+					unitSphere,
+					this.bodyVisualOptions(),
+				);
+				this.bodyVisuals.set(body.id, visual);
+				mesh = visual.group;
 			} else {
-				const material =
-					body.kind === "star"
-						? new THREE.MeshBasicMaterial({ color: body.color })
-						: new THREE.MeshStandardMaterial({
-								color: body.color,
-								roughness: 0.9,
-								metalness: 0.0,
-							});
-				mesh = new THREE.Mesh(unitSphere, material);
+				// A body the contents does not classify. `appearanceOf` throws
+				// rather than returning `undefined` for anything but a station, and
+				// a station took the branch above — so this is unreachable today and
+				// is a visible grey rather than a crash if that ever stops being
+				// true.
+				mesh = new THREE.Mesh(
+					unitSphere,
+					new THREE.MeshStandardMaterial({
+						color: body.color,
+						roughness: 0.9,
+						metalness: 0.0,
+					}),
+				);
 			}
 			mesh.name = body.id;
 			this.meshes.set(body.id, mesh);
@@ -1017,6 +1186,8 @@ class Game {
 			// in any case.
 			this.setLayer(body, "far");
 		}
+
+		this.starBody = this.world.system.bodies.find((b) => b.kind === "star");
 
 		// One light per layer, both standing in for the same star. A single light
 		// cannot serve two scenes at two scales — a `PointLight` at the far
@@ -1065,6 +1236,12 @@ class Game {
 		const mesh = this.meshes.get(body.id);
 		if (!mesh) return;
 		mesh.scale.setScalar(body.radiusKm * scaleFor(layer));
+		// Detail follows the layer, on the same rule and at the same moment as the
+		// scale — an assignment between two shared geometries, never a rebuild, so
+		// nothing allocates on the frame the player is most likely to be looking
+		// at the body. Only the surface mesh: the shells are one geometry each and
+		// a body in the far layer draws them at a few pixels either way.
+		this.bodyVisuals.get(body.id)?.setLayer(layer);
 		const scene =
 			layer === "near"
 				? this.nearScene
@@ -2385,6 +2562,12 @@ class Game {
 		// being pinned there, its absence is a bug that takes an hour to see.
 		this.stars.position.copy(this.backdropCamera.position);
 
+		// The star, resolved once at build time rather than scanned for per frame:
+		// every body's sun direction is measured from it, and there is no path
+		// that changes the system a game is in.
+		const star = this.starBody;
+		const starPos = star ? star.pos : ORIGIN;
+
 		for (const body of this.world.system.bodies) {
 			const mesh = this.meshes.get(body.id);
 			if (!mesh) continue;
@@ -2412,6 +2595,31 @@ class Game {
 			if (layer !== was) this.setLayer(body, layer);
 			const k = scaleFor(layer);
 			mesh.position.set(dx * k, dy * k, dz * k);
+
+			// The surface shader's sun is a **per-body** direction, from this body
+			// to the star — not the camera-to-star direction the lights below use.
+			// At astronomical separations the two disagree by tens of degrees, and
+			// the disagreement is exactly the terminator: a planet on the far side
+			// of the star is a crescent, and a camera-derived direction would draw
+			// it full.
+			const visual = this.bodyVisuals.get(body.id);
+			if (visual) {
+				const sx = starPos.x - body.pos.x;
+				const sy = starPos.y - body.pos.y;
+				const sz = starPos.z - body.pos.z;
+				// The star itself is at zero distance from the star. Its class does
+				// not read `sunDir` — a star is not lit — so any unit vector will
+				// do, and this avoids a divide by zero producing NaNs that would
+				// propagate into the shared uniform.
+				const sd = Math.hypot(sx, sy, sz);
+				if (sd > 0) SUN_DIR.set(sx / sd, sy / sd, sz / sd);
+				else SUN_DIR.set(0, 0, 1);
+				visual.setSunDirection(SUN_DIR);
+				// The world clock, not a frame counter: cloud drift and stellar
+				// granulation are `f(gameTime)` like every other time-varying thing
+				// (#6), so they survive a pause and a save.
+				visual.setTime(this.world.gameTime);
+			}
 
 			// Stations are aimed and spun; everything else is a sphere and has no
 			// orientation worth writing. Both numbers come from `stationPose` in
@@ -2441,7 +2649,8 @@ class Game {
 
 		// The star also aims the light, in both scenes. Its direction is the same
 		// at either scale, which is the property that let one light stand for two.
-		const star = this.world.system.bodies.find((b) => b.kind === "star");
+		// This is the *camera's* direction to the star and it lights the ship and
+		// the stations; a planet's own surface shader uses its own, above.
 		if (star) {
 			const toStar = sub(star.pos, camPos);
 			const d = Math.max(1e-9, length(toStar));
