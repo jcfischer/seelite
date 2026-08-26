@@ -15,6 +15,7 @@ const PIXEL_CHANNEL_TOLERANCE = 3;
 const ETA_READOUT =
 	/^ETA (?:<1s|\d+(?:\.\d+)?(?:s|min|h|d))  CHARGE \d+\.\d AU$/;
 const ETA_READOUT_SOURCE = ETA_READOUT.source;
+const PULSE_READOUT = /^F \d+ A \d+ · E \d+ · H \d+ PULSE$/;
 
 function textPixelsMatch(canvas, renderedText) {
 	if (!canvas || !renderedText) return false;
@@ -282,9 +283,7 @@ for (const viewport of VIEWPORTS) {
 	await page.keyboard.up("Space");
 	check(
 		`${viewport.name}: holding Space draws a prototype laser and exposes immediate PULSE feedback on the physical instrument`,
-		laserVisible &&
-			combatReadout.includes("F 60 A 60") &&
-			combatReadout.endsWith(" PULSE"),
+		laserVisible && PULSE_READOUT.test(combatReadout),
 		combatReadout,
 	);
 	await page.evaluate(() => window.__seelite.setThrottle(0));
