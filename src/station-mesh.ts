@@ -1660,29 +1660,45 @@ function buildRefineryCollar(color: number): BuiltPart {
 		}),
 	);
 
+	// **Clear of the rock's own crests.** The displacement reaches about 1.15×
+	// its nominal radius, so a band at 1.1·r with a 0.16·r tube had its inner
+	// face at 0.94·r — buried for most of its circumference, with only the outer
+	// rim showing through. A collar has to *grip* the rock, which means sitting
+	// on the outside of it, so both radii are derived from the rock rather than
+	// chosen beside it.
+	const rockRadius = r * 1.16;
+	const crest = rockRadius * 1.15;
+	const tube = r * 0.15;
+	const major = crest + tube * 0.55;
 	const band = new THREE.Mesh(
-		new THREE.TorusGeometry(r * 1.1, r * 0.16, 6, 20),
+		new THREE.TorusGeometry(major, tube, 6, 20),
 		hullMaterial(color, "refinery"),
 	);
 	band.name = "core";
 	group.add(band);
 	// Clamps: short lofted blocks pinning the band to the rock, so the two read
 	// as *held together* rather than as one shape passing through the other.
+	//
+	// Nested in a group per angle rather than carrying two Euler rotations, for
+	// the ring spokes' reason: two angles on one object leaves the result to
+	// `Euler`'s order, and the members come out clustered instead of spaced.
 	for (let i = 0; i < 5; i++) {
-		const theta = (i / 5) * Math.PI * 2;
+		const arm = new THREE.Group();
+		arm.rotation.z = (i / 5) * Math.PI * 2;
+		arm.name = `clamp-${i}`;
+		group.add(arm);
 		const clamp = shell(
 			[
-				{ z: r * 0.72, w: r * 0.15, h: r * 0.13, e: 6 },
-				{ z: r * 1.18, w: r * 0.11, h: r * 0.1, e: 6 },
+				{ z: rockRadius * 0.8, w: r * 0.15, h: r * 0.13, e: 6 },
+				{ z: major + tube * 0.4, w: r * 0.11, h: r * 0.1, e: 6 },
 			],
 			plainMaterial(0x8b95a0, 0.66, 0.46),
-			`clamp-${i}`,
+			"clamp",
 			6,
 			true,
 		);
 		clamp.rotation.y = Math.PI / 2;
-		clamp.rotation.z = theta;
-		group.add(clamp);
+		arm.add(clamp);
 	}
 	// The pad is on a plated boss over the rock's +Z pole, fed from the band.
 	group.add(
@@ -1701,7 +1717,7 @@ function buildRefineryCollar(color: number): BuiltPart {
 	group.add(buildAperture("refinery", r * 1.0));
 	for (const side of [-1, 1]) {
 		const flare = buildFlare(fixtures, r * 0.9, r * 0.07);
-		flare.position.set(side * r * 1.05, r * 0.35, 0);
+		flare.position.set(side * major * 0.74, r * 0.35, 0);
 		flare.rotation.x = -Math.PI / 2.6;
 		flare.rotation.z = side * 0.35;
 		group.add(flare);
@@ -1711,7 +1727,9 @@ function buildRefineryCollar(color: number): BuiltPart {
 		portRun("refinery", 12, (i, position, normal) => {
 			const theta = (i / 12) * Math.PI * 2;
 			normal.set(Math.cos(theta), Math.sin(theta), 0);
-			position.copy(normal).multiplyScalar(r * 1.22);
+			// On the band's own outer face, derived from it rather than guessed:
+			// a fixed 1.22·r sat inside the rock once the band moved out.
+			position.copy(normal).multiplyScalar(major + tube * 0.9);
 			position.z = 0;
 		}),
 	);
