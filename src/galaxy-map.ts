@@ -33,6 +33,7 @@ import {
 } from "./galaxy";
 import {
 	type Course,
+	type CourseProgress,
 	type Route,
 	courseProgress,
 	planRoute,
@@ -56,6 +57,11 @@ const UP = new THREE.Vector3(0, 1, 0);
  *  camera's near/far plane arithmetic trivial and lets a probe read a radius
  *  off the scene and compare it to `GALAXY_RADIUS_LY` without a factor. */
 const CAMERA_START_LY = 62;
+/** The default framing. Named rather than inlined because `galaxy-map.md`
+ *  §5.1's crowding table is measured at exactly this view, and a figure quoted
+ *  from an unnamed orientation is not reproducible. */
+const DEFAULT_YAW = 0.6;
+const DEFAULT_PITCH = 0.35;
 const CAMERA_MIN_LY = 12;
 const CAMERA_MAX_LY = 140;
 
@@ -121,6 +127,10 @@ interface Handle {
 	jumpTo(index: number): void;
 	orbit(dxPx: number, dyPx: number): void;
 	zoom(deltaLy: number): void;
+	/** Back to the documented default framing — yaw, pitch and distance.
+	 *  Crowding depends on the orientation as well as the distance, so a
+	 *  figure quoted in the spec is only reproducible from a known view. */
+	resetView(): void;
 	/**
 	 * Every system's position in canvas pixels, under the current camera.
 	 *
@@ -132,6 +142,10 @@ interface Handle {
 	 * it from `pos` would be checking its own arithmetic.
 	 */
 	projected(): { index: number; x: number; y: number; behind: boolean }[];
+	/** The canvas's size in CSS pixels. A probe measuring crowding has to
+	 *  discard systems projected *outside* the viewport as well as behind the
+	 *  camera, and the drawn size is the module's fact, not the window's. */
+	viewport(): { width: number; height: number };
 	/** The pick radius the chart itself uses, so a probe measuring crowding
 	 *  compares against the module's number rather than a copy of it. */
 	pickRadiusPx: number;
@@ -308,8 +322,8 @@ export function mountGalaxyMap(): void {
 	const pivot = new THREE.Group();
 	scene.add(pivot);
 
-	let yaw = 0.6;
-	let pitch = 0.35;
+	let yaw = DEFAULT_YAW;
+	let pitch = DEFAULT_PITCH;
 	let distance = CAMERA_START_LY;
 
 	// Reference plane: a faint disc the drop-lines land on. Not a grid of
@@ -445,6 +459,7 @@ export function mountGalaxyMap(): void {
 	// ---- Derived state -----------------------------------------------------
 
 	let lit: SystemRecord[] = [];
+	let progress: CourseProgress | null = null;
 
 	const recompute = (): void => {
 		lit = reachable(galaxy.systems, current);
@@ -505,7 +520,11 @@ export function mountGalaxyMap(): void {
 			routeLine.visible = false;
 		}
 
-		const progress =
+		// Computed once here and held, not re-derived by the state getter.
+		// `courseProgress` runs `planRoute` — an O(n²) Dijkstra over 256
+		// systems — so a getter that looks free was one full search per read,
+		// and the probe reads `state` inside a 256-iteration loop.
+		progress =
 			course === null ? null : courseProgress(galaxy.systems, course, current);
 
 		legend.textContent = [
@@ -545,34 +564,66 @@ export function mountGalaxyMap(): void {
 
 	// ---- Interaction -------------------------------------------------------
 
-	const project = (s: SystemRecord): THREE.Vector3 => {
-		const v = new THREE.Vector3(s.pos.x, s.pos.y, s.pos.z);
-		pivot.localToWorld(v);
-		v.project(camera);
-		return v;
+	/**
+	 * A system's position in **client pixels**, and whether it is behind the
+	 * camera.
+	 *
+	 * The one conversion in this module. It was written out three times — in
+	 * `pick`, in the card placement and in `projected()` — and three near-copies
+	 * of one formula is how picking and drawing come to disagree: they must
+	 * produce the same pixel or the chart selects a system other than the one
+	 * under the cursor.
+	 *
+	 * `scratch` is reused rather than allocated. One click walks all 256
+	 * systems, and `projected()` does the same on every probe call.
+	 */
+	const scratch = new THREE.Vector3();
+	const toPixels = (
+		s: SystemRecord,
+		rect: DOMRect,
+	): { x: number; y: number; behind: boolean } => {
+		scratch.set(s.pos.x, s.pos.y, s.pos.z);
+		pivot.localToWorld(scratch);
+		scratch.project(camera);
+		return {
+			x: ((scratch.x + 1) / 2) * rect.width + rect.left,
+			y: ((-scratch.y + 1) / 2) * rect.height + rect.top,
+			behind: scratch.z > 1,
+		};
+	};
+
+	/**
+	 * The canvas rect, cached.
+	 *
+	 * `getBoundingClientRect` forces layout, and the frame loop reads it once a
+	 * frame while a selection exists. It changes only on a resize, which is the
+	 * one place that invalidates it.
+	 */
+	let cachedRect: DOMRect | null = null;
+	const canvasRect = (): DOMRect => {
+		if (cachedRect === null) cachedRect = canvas.getBoundingClientRect();
+		return cachedRect;
 	};
 
 	/**
 	 * Screen-space nearest point, not a raycast.
 	 *
-	 * A `Points` raycast tests a threshold in *world* units, so the same
-	 * threshold picks a fat target when zoomed in and misses entirely when
-	 * zoomed out — and the core, where systems are three per LY, is exactly
-	 * where that matters. Projecting and comparing pixels makes the pick
-	 * radius mean the thing the player experiences.
+	 * A `Points` raycast tests a threshold in *world* units, so one threshold
+	 * picks a fat target when zoomed in and a tiny one when zoomed out — and the
+	 * core, at three systems per LY, is exactly where that matters. Comparing
+	 * pixels makes the pick radius mean the thing the player experiences, which
+	 * is a **constant target size at every zoom**. That constancy is what
+	 * `probe-galaxy-map.mjs` measures, by finding the boundary at two camera
+	 * distances rather than by clicking dead centre.
 	 */
 	const pick = (clientX: number, clientY: number): SystemRecord | null => {
-		const rect = canvas.getBoundingClientRect();
-		const px = ((clientX - rect.left) / rect.width) * 2 - 1;
-		const py = -(((clientY - rect.top) / rect.height) * 2 - 1);
+		const rect = canvasRect();
 		let best: SystemRecord | null = null;
 		let bestD = Number.POSITIVE_INFINITY;
 		for (const s of galaxy.systems) {
-			const v = project(s);
-			if (v.z > 1) continue;
-			const dx = ((v.x - px) * rect.width) / 2;
-			const dy = ((v.y - py) * rect.height) / 2;
-			const d = Math.hypot(dx, dy);
+			const p = toPixels(s, rect);
+			if (p.behind) continue;
+			const d = Math.hypot(p.x - clientX, p.y - clientY);
 			if (d < PICK_RADIUS_PX && d < bestD) {
 				bestD = d;
 				best = s;
@@ -581,8 +632,18 @@ export function mountGalaxyMap(): void {
 		return best;
 	};
 
+	/**
+	 * How far a pointer may travel between press and release and still count as
+	 * a click.
+	 *
+	 * Not zero, which is what this was. A mouse drifting a single pixel — which
+	 * a hand on a trackpad does constantly — set `dragged` and made `pointerup`
+	 * return before selecting anything, so clicks failed silently and at random.
+	 */
+	const CLICK_SLOP_PX = 4;
+
 	let dragging = false;
-	let dragged = false;
+	let travelled = 0;
 	let lastX = 0;
 	let lastY = 0;
 
@@ -593,7 +654,7 @@ export function mountGalaxyMap(): void {
 
 	canvas.addEventListener("pointerdown", (e) => {
 		dragging = true;
-		dragged = false;
+		travelled = 0;
 		lastX = e.clientX;
 		lastY = e.clientY;
 		canvas.setPointerCapture(e.pointerId);
@@ -602,7 +663,9 @@ export function mountGalaxyMap(): void {
 		if (!dragging) return;
 		const dx = e.clientX - lastX;
 		const dy = e.clientY - lastY;
-		if (Math.hypot(dx, dy) > 0) dragged = true;
+		// Accumulated, not measured press-to-release: a circular drag that ends
+		// where it started has travelled far and is plainly not a click.
+		travelled += Math.hypot(dx, dy);
 		orbit(dx, dy);
 		lastX = e.clientX;
 		lastY = e.clientY;
@@ -610,7 +673,7 @@ export function mountGalaxyMap(): void {
 	canvas.addEventListener("pointerup", (e) => {
 		dragging = false;
 		// A drag that ends over a point is a camera move, not a selection.
-		if (dragged) return;
+		if (travelled > CLICK_SLOP_PX) return;
 		select(pick(e.clientX, e.clientY)?.index ?? null);
 	});
 	canvas.addEventListener(
@@ -667,15 +730,21 @@ export function mountGalaxyMap(): void {
 		renderer.setSize(w, h, false);
 		camera.aspect = w / Math.max(1, h);
 		camera.updateProjectionMatrix();
+		cachedRect = null;
 	};
 	window.addEventListener("resize", resize);
 	resize();
+
+	/** Hoisted out of the frame loop: the pitch axis is recomputed every frame
+	 *  and allocating a vector to hold it 60 times a second is churn for
+	 *  nothing. */
+	const pitchAxis = new THREE.Vector3();
 
 	const frame = (): void => {
 		pivot.rotation.set(0, 0, 0);
 		pivot.rotateOnWorldAxis(UP, yaw);
 		pivot.rotateOnWorldAxis(
-			new THREE.Vector3(1, 0, 0).applyAxisAngle(UP, yaw),
+			pitchAxis.set(1, 0, 0).applyAxisAngle(UP, yaw),
 			pitch,
 		);
 		camera.position.set(0, 0, distance);
@@ -685,10 +754,25 @@ export function mountGalaxyMap(): void {
 		renderer.render(scene, camera);
 
 		if (selected !== null && card.style.display !== "none") {
-			const v = project(selected);
-			const rect = canvas.getBoundingClientRect();
-			card.style.left = `${((v.x + 1) / 2) * rect.width + 18}px`;
-			card.style.top = `${((-v.y + 1) / 2) * rect.height - 12}px`;
+			const rect = canvasRect();
+			const p = toPixels(selected, rect);
+			// **Clamped, not merely offset.** The card is 260 px wide against a
+			// 390 px narrow viewport, so a selection right of centre pushed it
+			// off screen — and an off-screen record is the same as no record,
+			// which is what the probe's own check says. Anchoring right of the
+			// point stays the preference; the clamp is what makes it safe.
+			const w = card.offsetWidth;
+			const h = card.offsetHeight;
+			const left = Math.min(
+				Math.max(0, p.x - rect.left + 18),
+				Math.max(0, rect.width - w),
+			);
+			const top = Math.min(
+				Math.max(0, p.y - rect.top - 12),
+				Math.max(0, rect.height - h),
+			);
+			card.style.left = `${left}px`;
+			card.style.top = `${top}px`;
 		}
 		requestAnimationFrame(frame);
 	};
@@ -700,17 +784,18 @@ export function mountGalaxyMap(): void {
 
 	const handle: Handle = {
 		get state(): GalaxyMapState {
-			const progress =
-				course === null
-					? null
-					: courseProgress(galaxy.systems, course, current);
 			return {
 				galaxy: galaxyIndex,
 				systemCount: galaxy.systems.length,
 				currentIndex: current.index,
 				selectedIndex: selected?.index ?? null,
 				litIndices: lit.map((s) => s.index),
-				dropLineCount: selected === null ? 1 : 2,
+				// **Read off the geometry, not restated from `selected`.** As
+				// `selected === null ? 1 : 2` this reported the intent rather
+				// than the drawing, so the probe's "the unselected chart drops
+				// one line" could not fail on a build whose draw range was
+				// wrong — it was asserting the same field twice.
+				dropLineCount: dropGeometry.drawRange.count / 2,
 				haze: haze.visible,
 				jumpRangeLy: JUMP_RANGE_LY,
 				galaxyRadiusLy: GALAXY_RADIUS_LY,
@@ -758,17 +843,21 @@ export function mountGalaxyMap(): void {
 			orbit(dx, dy);
 		},
 		zoom,
+		resetView() {
+			yaw = DEFAULT_YAW;
+			pitch = DEFAULT_PITCH;
+			distance = CAMERA_START_LY;
+		},
 		projected() {
-			const rect = canvas.getBoundingClientRect();
-			return galaxy.systems.map((s) => {
-				const v = project(s);
-				return {
-					index: s.index,
-					x: ((v.x + 1) / 2) * rect.width + rect.left,
-					y: ((-v.y + 1) / 2) * rect.height + rect.top,
-					behind: v.z > 1,
-				};
-			});
+			const rect = canvasRect();
+			return galaxy.systems.map((s) => ({
+				index: s.index,
+				...toPixels(s, rect),
+			}));
+		},
+		viewport() {
+			const rect = canvasRect();
+			return { width: rect.width, height: rect.height };
 		},
 		pickRadiusPx: PICK_RADIUS_PX,
 	};

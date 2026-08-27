@@ -4,7 +4,7 @@
 **Date:** 2026-08-27
 **Context:** [#6](https://github.com/jcfischer/seelite/issues/6) settled a
 globular volume, [#70](https://github.com/jcfischer/seelite/issues/70) settled
-that every screen lives in the cockpit, and `hud-and-scanner.md` §1 gives the
+that every screen lives in the cockpit, and `hud-and-scanner.md` §2 gives the
 left Navigation console the system-scale discovery this is one scale above.
 
 ---
@@ -130,9 +130,19 @@ per-0.1-LY figure with the tenth dropped, the exact transcription error #7
 corrected in the specs. The correction's stated check was a repo-wide grep for
 `0.2 Cr`, which is a search for *prose* and cannot see a bare literal on a
 differently-named constant; `market.ts` had the right number under
-`FUEL_CR_PER_LY = 2` and the two disagreed by a factor of ten, unnoticed
-because nothing imported `jumpCost`. `tests/galaxy-route.test.ts` now asserts
-the two agree — a cross-module equality is the check a grep could not be.
+`FUEL_CR_PER_LY = 2` and the two disagreed by a factor of ten.
+
+Nothing was mispriced by it, and that claim is about the **constant**, not only
+about `jumpCost`: at the time of the change `FUEL_COST_PER_LY` had exactly two
+readers in the repo — `jumpCost` on the next line, and the new test — and
+`jumpCost` itself had none outside that test. The route panel is the first
+consumer either way, and it would have quoted a 22 LY crossing at 2.7 Cr. The
+check is `grep -rn FUEL_COST_PER_LY src/ tests/ scripts/`, and it is the check
+because a 10× change to an exported constant is only safe to the extent its
+importers are known.
+
+`tests/galaxy-route.test.ts` now asserts the two constants agree — a cross-module
+equality is the check a repo-wide grep for `0.2 Cr` could not be.
 
 ---
 
@@ -144,36 +154,51 @@ planned chain, and the generated description — the node's "without leaving the
 map" read literally.
 
 **Picking is screen-space, not a raycast.** A `Points` raycast tests a threshold
-in world units, so one threshold picks a fat target zoomed in and misses
-entirely zoomed out — and the core, at three systems per LY, is exactly where
-that matters. The pick radius is 14 px, and it means the thing the player
-experiences.
+in world units, so one threshold picks a fat target zoomed in and a tiny one
+zoomed out — and the core, at three systems per LY, is exactly where that
+matters. The pick radius is **14 px at every zoom**, and that constancy, not the
+number, is the property: it is what makes the target the size the player sees.
+§9.2 checks it at the boundary rather than at a point's centre, because a centre
+click cannot tell the two implementations apart.
 
-A drag that ends over a point is a camera move, not a selection.
+**A drag is a camera move, not a selection** — over a 4 px slop. Zero slop was
+the first implementation, and a mouse drifting a single pixel between press and
+release then cancelled the click silently.
 
 ### 5.1 The chart reads; the list finds
 
 **Measured, and it is the cost of choosing a free orbit.** The share of systems
-whose nearest on-screen neighbour falls inside the pick radius, against camera
-distance, at 1280 × 760:
+whose nearest on-screen neighbour falls inside the 14 px pick radius, against
+camera distance, at 1280 × 760 and the default framing (`DEFAULT_YAW`,
+`DEFAULT_PITCH`). Both filters matter: a system behind the camera *or* outside
+the viewport is not counted, because a pair the player cannot see is not
+crowding.
 
-| camera | crowded | systems on screen |
+| camera | crowded | on screen |
 |---|---|---|
 | 140 LY | 90.2% | 256 |
+| 120 LY | 84.0% | 256 |
 | 100 LY | 73.4% | 256 |
+| 86 LY | 63.7% | 256 |
 | 74 LY | 53.5% | 256 |
 | **62 LY** (the default; whole cluster) | **40.2%** | 256 |
-| 44 LY | 27.3% | 241 |
-| 32 LY | 16.8% | 208 |
-| 26 LY | 10.2% | 166 |
-| 18 LY | 6.7% | 128 |
-| 14 LY | 3.3% | 91 |
+| 52 LY | 33.6% | 253 |
+| 44 LY | 29.0% | 241 |
+| 38 LY | 25.1% | 231 |
+| 32 LY | 19.7% | 208 |
+| 26 LY | 14.5% | 166 |
+| 22 LY | 15.5% | 148 |
+| 18 LY | 13.3% | 128 |
+| 14 LY | 8.8% | 91 |
+| 12 LY | 10.7% | 75 |
 
 **There is no distance that both frames the whole cluster and lets you pick.**
-Crowding falls under 10% only at ≤ 26 LY, where a third of the galaxy is off the
-edges. Free orbit reads geography well and picks badly, and no amount of tuning
-the point size changes that: it is 256 points in a ball whose core is three
-times as dense as its rim.
+Crowding never falls below about 9%, and it only gets there at 14 LY, where 91
+of 256 systems are on screen — a third of the galaxy, and the rest off the
+edges. Below that it rises again as the framing tightens onto the dense core.
+No point-size tuning changes this: it is 256 points in a ball whose core is
+three times as dense as its rim, and the metric is a function of the projection
+and the pick radius alone.
 
 So the chart is the **reading** surface and Navigation's filterable list is the
 **finding** surface — which is what `hud-and-scanner.md` §2 already says
@@ -182,11 +207,20 @@ named system goes through the list; the chart answers *where is it, and what is
 between here and there*. **A galaxy map with no list is not a shippable map**,
 and #69 owes that list.
 
-The figures are the check on any later change to the projection, the point size,
-or the pick radius: a change that moves the 62 LY row upward is making the chart
-less usable, whatever it looks like.
+The 62 LY figure is **asserted**, not merely recorded: `probe-galaxy-map.mjs`
+resets to the default framing and requires it inside a 25–60% band, so a change
+to the projection or the pick radius that moves it has to answer for the move.
+The rest of the table is a recorded sweep. Two things the band deliberately does
+*not* cover, so the claim is not read wider than it is: the metric is blind to
+point size, and it is viewport-dependent — a 390 × 844 column frames 194 of the
+256 at 62 LY and measures 38.7%.
 
----
+**An earlier version of this table was wrong, and wrong in the flattering
+direction.** It counted every system in front of the camera rather than every
+system on screen, which credited the zoomed-in views with a crowding they had
+only because their crowded pairs had left the viewport: 10.2% at 26 LY against
+the true 14.5%, and 3.3% at 14 LY against 8.8%. The conclusion survived; the
+margin it rested on did not.
 
 ## 6. The density gradient
 
@@ -261,6 +295,13 @@ condition.
   §7 makes the match mandatory: it is a corrupted save, not a course in another
   galaxy.
 
+`serialiseCourse` and `parseCourse` live in `galaxy-route.ts` for now, and that
+is a temporary address rather than the right one: they implement §7's envelope
+rules, and §7 belongs to #46. **When #46 lands, the envelope-matching parse moves
+into the persistence module** and `galaxy-route.ts` keeps `Course` and
+`courseProgress`. Leaving it here after that would author one spec's rules in two
+files.
+
 Wiring it into an actual save file belongs to
 [#46](https://github.com/jcfischer/seelite/issues/46).
 
@@ -312,23 +353,38 @@ At desktop (1280 × 760) and narrow (390 × 844):
 
 1. The chart mounts with no `Game` behind it, 256 systems, and the constants
    read off the page rather than restated.
-2. **A click selects the system drawn under it** — the click position comes from
-   the page's own projection — **and still does after an orbit and a zoom.** A
-   build picking by world-space raycast threshold passes the first and fails the
-   second, which is why both are there.
-3. The drop-line count is 1 unselected and 2 selected (§2.1), and the record
-   card is visible, carries the selected system's name and economy, and lands
-   **on screen**.
-4. **Crowding is measured at two camera distances** and must fall as the camera
-   closes (§5.1). The check asserts the two samples were taken at *different*
-   distances, because the first version of this probe sampled before the frame
-   loop had moved the camera and reported one camera measured twice — it failed
-   only because the assertion demanded the figures differ.
-5. **The haze does not move a projected system** (§6).
-6. **A set course survives an off-plan jump**, keeping its destination and
-   re-deriving its remainder (§8.1).
-
----
+2. **The pick radius is 14 px at 62 LY and at 18 LY.** Four verdicts: a click
+   at 0.8 × the radius from an isolated system's centre selects it, and one at
+   1.6 × selects nothing, at both camera distances. **The boundary is the check
+   and the centre is not.** The first version clicked dead centre and asserted
+   the right system came back, which a world-space raycast passes trivially —
+   ray-to-point distance at the centre is ≈ 0 whatever the camera is doing — so
+   it verified nothing about the claim in its own comment. A world-unit
+   threshold cannot put the same pixel boundary at two zooms; one of the four
+   verdicts comes out wrong.
+3. The drop-line count is 1 unselected and 2 selected (§2.1), **read off the
+   geometry's draw range** rather than restated from the selection — as
+   `selected === null ? 1 : 2` the check was asserting the same field twice and
+   could only fail on itself.
+4. The record card is visible, carries the selected system's name and economy,
+   and lands **inside the viewport**. The 390 px column is the case that pushes
+   a 260 px card off the edge, and an off-screen record is the same as no
+   record.
+5. **Crowding at the default framing is inside a 25–60% band, and falls when the
+   camera closes** (§5.1). Three separate faults were caught here and each is
+   now a guard: the two samples must come from *different* camera distances,
+   because the first version sampled before the frame loop had moved the camera
+   and reported one camera measured twice; the sample must exclude systems
+   outside the viewport, not only those behind the camera; and the view is reset
+   to the named default framing, because crowding depends on the orientation as
+   well as the distance and a figure quoted from an unnamed view is not
+   reproducible.
+6. **The haze does not move a projected system** (§6).
+7. **A set course re-derives from where the ship actually is.** After an
+   off-plan jump the remainder must equal a route planned from the ship's real
+   position **and must differ from the plan-relative decrement a stored cursor
+   would give**. Without that second half — which is how it was first written —
+   a build that saved the chain and advanced an index passes.
 
 ## 10. Deferred
 

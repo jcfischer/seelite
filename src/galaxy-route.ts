@@ -13,7 +13,9 @@
  */
 
 import {
+	GALAXY_COUNT,
 	JUMP_RANGE_LY,
+	SYSTEMS_PER_GALAXY,
 	type SystemRecord,
 	distanceLy,
 	jumpCost,
@@ -307,17 +309,22 @@ export function parseCourse(
 			`course: unsupported schema version ${String(raw.version)}, expected ${COURSE_SCHEMA_VERSION}`,
 		);
 	}
-	if (!isIndex(raw.galaxy, 7)) {
-		throw new Error(`course: galaxy ${String(raw.galaxy)} is not 0..7`);
+	// Bounds derived, not restated. As literal `7` and `255` these went stale
+	// the moment `GALAXY_COUNT` or `SYSTEMS_PER_GALAXY` moved, and a validator
+	// that silently accepts an out-of-range save is worse than none.
+	if (!isIndex(raw.galaxy, GALAXY_COUNT - 1)) {
+		throw new Error(
+			`course: galaxy ${String(raw.galaxy)} is not 0..${GALAXY_COUNT - 1}`,
+		);
 	}
 	if (raw.galaxy !== envelopeGalaxy) {
 		throw new Error(
 			`course: galaxy ${raw.galaxy} does not match its envelope ${envelopeGalaxy}`,
 		);
 	}
-	if (!isIndex(raw.destinationIndex, 255)) {
+	if (!isIndex(raw.destinationIndex, SYSTEMS_PER_GALAXY - 1)) {
 		throw new Error(
-			`course: destinationIndex ${String(raw.destinationIndex)} is not 0..255`,
+			`course: destinationIndex ${String(raw.destinationIndex)} is not 0..${SYSTEMS_PER_GALAXY - 1}`,
 		);
 	}
 	return {
