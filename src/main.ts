@@ -3124,8 +3124,8 @@ class Game {
 						? "pulse"
 						: null,
 				targetInCone,
-				// The strafing target exposes its aft quarter on part of the cycle, so
-				// the player's fixed weapon alternates which shield bank it meets.
+				// Alternate which target shield bank the fixed weapon meets, so the
+				// fore/aft pools both participate in the duel pacing being measured.
 				hitAft: Math.floor(this.combat.elapsed / 2) % 2 === 1,
 				incomingMissile: this.combatIncoming,
 				ecm: this.combatEcm,
