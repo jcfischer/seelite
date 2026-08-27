@@ -591,6 +591,7 @@ const narrowOverlay = await narrowCombatPage.evaluate(() => {
 	const fits =
 		lines.length === 4 &&
 		lines.every((line) => line.width <= overlay.width - 16) &&
+		game.combatStatusWorstWidth > 0 &&
 		game.combatStatusWorstWidth <= overlay.width - 16;
 	const rendered = globalThis.__seeliteMeasureCockpit().combatOverlayText;
 	return {
@@ -598,6 +599,7 @@ const narrowOverlay = await narrowCombatPage.evaluate(() => {
 		fits,
 		canvas: overlay.width,
 		count: lines.length,
+		worst: game.combatStatusWorstWidth,
 	};
 });
 check(
