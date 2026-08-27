@@ -1127,7 +1127,15 @@ of check that stops being evidence, and §12.7 records that it fails open until
 6. **E4's flag is an unmet precondition on #46.** §12.1 says the skip gate is a
    typed domain that node "must approve and bound", and then this section is
    where a reader would look for the dependency and would not have found it. So:
-   **E4 and E5 cannot ship until `persistent-world-state.md` gains a bounded
-   per-galaxy arrival-flag domain**, which is #46's to amend and not this spec's
-   to assume. Disclosing a dependency once, in the section that creates it, is
-   how it gets lost.
+   **E4 cannot ship until `persistent-world-state.md` gains a bounded per-galaxy
+   arrival-flag domain**, which is #46's to amend and not this spec's to assume.
+   Disclosing a dependency once, in the section that creates it, is how it gets
+   lost.
+
+   **E4 and nothing else.** An earlier version of this joint said "E4 and E5",
+   and that was wrong: E5 is flight being suspended while docked, which stores
+   nothing and needs no domain. The rest of §12 — the arrival, the throat, the
+   docked state, the shield, launch — is buildable today, and only the *skip*
+   behaviour waits. Getting this wrong in the direction it was wrong in is the
+   expensive direction: it reads as a blanket block on the whole section, and
+   §12 exists to fix a bug a player is looking at now.
