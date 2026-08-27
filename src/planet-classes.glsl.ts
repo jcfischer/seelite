@@ -437,8 +437,8 @@ float height(vec3 p) {
  * which is the same difference the asteroid shipped with and nobody has looked
  * for on either.
  *
- * ?crater=differenced keeps the old path alongside, so that is a thing anyone
- * can look at rather than take on this comment's word.
+ * The perf panel's o key keeps the old path alongside, so that is a thing
+ * anyone can look at rather than take on this comment's word.
  */
 vec3 craterRelief(vec3 p, vec3 N, float strength) {
   if (perfAblate > 0.5) return N;
@@ -489,8 +489,8 @@ void surface(vec3 p, inout vec3 albedo, inout vec3 N,
 
   // The relief is the whole read on an airless body: no air, no cloud, no
   // ocean, nothing but the shape the impacts left.
-  // The perf panel s o key restores the five-walk path, so the two can be
-  // compared on one machine in one session by reloading. #59 could measure this
+  // The perf panel's o key restores the five-walk path, so the two can be
+  // compared in place, without reloading. #59 could measure this
   // class only on a software rasteriser and said so; what it licensed was "no
   // saving was demonstrated here", not "no saving exists". This is the switch
   // that lets a GPU answer it, and it costs a uniform branch that is uniform

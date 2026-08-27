@@ -547,9 +547,21 @@ class Game {
 	 * This game is fill-rate bound — a planet filling the view costs its surface
 	 * shader per pixel — so the buffer size is the largest single lever there
 	 * is, and a retina panel makes it four times what the same window costs at
-	 * ratio 1. Measured: the same view over a venusian, 17 fps on a laptop
-	 * display and 70 on an external one. That is the pixel count and nothing
-	 * else.
+	 * ratio 1.
+	 *
+	 * **What was observed, and what it does and does not license.** The same
+	 * view over a venusian gave 17 fps on a retina laptop panel and 70 on an
+	 * external display. The 4:1 ratio matches the pixel counts, and an earlier
+	 * version of this comment concluded "that is the pixel count and nothing
+	 * else". It is not entitled to: two physical displays differ in refresh
+	 * rate, compositor path, GPU power state and thermal headroom as well as in
+	 * pixels, and the comparison controlled for none of them.
+	 *
+	 * The controlled test is a keypress and has not been run: set this to 50%
+	 * on the *laptop*, where the buffer then matches the external display's, and
+	 * see whether the rate does. Until then the honest reading is that
+	 * resolution is a large lever — which the buffer sizes prove on their own —
+	 * and not that it is the whole of that particular gap.
 	 */
 	private renderScale = 1;
 	/** Player settings, read at boot and applied as they change. */
@@ -565,6 +577,11 @@ class Game {
 	 */
 	releaseHeldKeys() {
 		this.keys.clear();
+	}
+	/** How many keys the game currently believes are down — what `probe-boot`
+	 *  asserts on, since "the ship kept flying" is otherwise only a comment. */
+	get heldKeyCount() {
+		return this.keys.size;
 	}
 	get resolutionScale() {
 		return this.renderScale;

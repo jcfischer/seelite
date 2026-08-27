@@ -303,8 +303,16 @@ export function buildBodyVisual(
 	 *   ?perf=norelief  surface keeps its albedo, loses its normal perturbation
 	 *   ?perf=flat      surface is a plain lit sphere, no noise at all
 	 *
-	 * They are diagnostic and change what is drawn, so nothing reads them by
-	 * default and no probe asserts through them.
+	 * **These set the state a page opens in; the panel is what measures.** They
+	 * came first and the live switches replaced them for the actual work,
+	 * because a reload puts the ship somewhere else — `?perf` on its own mounts
+	 * the panel and every one of these is reachable there without one. They are
+	 * kept because a starting state is still useful when a page is opened by a
+	 * script rather than flown by a person, and because `?perf=noshells` has no
+	 * single key.
+	 *
+	 * Diagnostic, so nothing reads them by default and no probe asserts through
+	 * them.
 	 */
 	const perf = new URLSearchParams(window.location.search).get("perf") ?? "";
 	const noClouds = perf === "noclouds" || perf === "noshells";

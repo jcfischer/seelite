@@ -218,7 +218,8 @@ export type PerfTargets = {
 	 * by the player's own resolution setting as well, so a panel computing it
 	 * from the multiplier alone would print a figure the drawing buffer never
 	 * had, on any display above 2x or whenever the settings screen is not at
-	 * 100%. Every cost figure in this branch was read off this panel.
+	 * 100%. The per-term cost figures in this branch were read off this panel —
+	 * not the two-display comparison, which no single-machine panel can produce.
 	 */
 	resolution?: {
 		get: () => number;

@@ -24,10 +24,13 @@ const SCHEMA = {
 	 * A multiplier on the device pixel ratio.
 	 *
 	 * The renderer is fill-rate bound, so this is the largest single lever on
-	 * frame time: halving it in each axis quarters the work. Measured on the
-	 * principal's machine over a venusian planet filling the view — 17 fps on a
-	 * retina laptop panel against 70 on an external display, which is exactly
-	 * the ratio of their pixel counts.
+	 * frame time: halving it in each axis quarters the work, and that part is
+	 * arithmetic rather than measurement.
+	 *
+	 * The observation behind it — 17 fps on a retina laptop panel against 70 on
+	 * an external display, over a venusian filling the view — is consistent
+	 * with the 4:1 pixel ratio and is not a controlled test of it. `main.ts`
+	 * carries what that does and does not license.
 	 */
 	renderScale: {
 		fallback: 1,

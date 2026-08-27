@@ -701,5 +701,48 @@ async function fpsGate() {
 }
 await fpsGate();
 
+/**
+ * The settings screen takes the keyboard, and gives back the keys already
+ * held.
+ *
+ * Two claims that were comments until this check existed. The dialog swallows
+ * keys in the capture phase so the flight controls do not also act on them,
+ * and it clears the game's held-key set as it opens — `keydown` interception
+ * does nothing about a throttle key that went down before the dialog did, and
+ * a ship accelerating behind a screen the player is reading is the failure
+ * that motivates both.
+ */
+async function settingsGate() {
+	const page = await open(URL);
+	// Hold throttle, then open the screen while it is still down.
+	await page.keyboard.down("Shift");
+	await page.waitForFunction(() => window.__seelite.heldKeyCount > 0, null, {
+		timeout: 5000,
+	});
+	await page.keyboard.press("z");
+	const opened = await page.waitForSelector("[data-settings-panel]", {
+		timeout: 5000,
+	});
+	check("`z` opens the settings screen", Boolean(opened));
+	check(
+		"opening it releases the keys the player was holding",
+		(await page.evaluate(() => window.__seelite.heldKeyCount)) === 0,
+	);
+
+	// A flight key pressed while it is open must not reach the game.
+	await page.keyboard.press("v");
+	check(
+		"a flight key pressed over the screen does not reach the game",
+		(await page.evaluate(() => window.__seelite.heldKeyCount)) === 0 &&
+			Boolean(await page.$("[data-settings-panel]")),
+	);
+
+	await page.keyboard.up("Shift");
+	await page.keyboard.press("Escape");
+	check("`Escape` closes it", !(await page.$("[data-settings-panel]")));
+	await page.close();
+}
+await settingsGate();
+
 await browser.close();
 exit();
