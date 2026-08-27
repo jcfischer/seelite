@@ -328,7 +328,7 @@ function renderMarketRow(row: ConsoleMarketRow): string {
 		row.quantityDelta === undefined
 			? ""
 			: `<em class="sg-delta" data-gallery-shelf-delta>${signed(row.quantityDelta, 0)}</em>`;
-	return `<div class="sg-market-row" data-gallery-market-row="${esc(row.commodity.name)}" data-gallery-listed="true">${name}<span class="sg-cell"><span data-gallery-price>${CR(row.priceCr as number)}</span>${priceDelta}</span><span class="sg-cell"><span data-gallery-shelf>${row.quantity} ${row.commodity.unit}</span>${shelfDelta}</span></div>`;
+	return `<div class="sg-market-row" data-gallery-market-row="${esc(row.commodity.name)}" data-gallery-listed="true">${name}<span class="sg-cell"><span data-gallery-price>${CR(row.priceCr as number)}</span>${priceDelta}</span><span class="sg-cell"><span data-gallery-shelf>${row.quantity} ${esc(row.commodity.unit)}</span>${shelfDelta}</span></div>`;
 }
 
 function renderMarketTab(view: ConsoleView): string {
@@ -349,21 +349,45 @@ function renderMarketTab(view: ConsoleView): string {
 	return `<div class="sg-market" data-gallery-market><div class="sg-market-row sg-market-head"><span class="sg-good">GOOD</span><span class="sg-cell">PRICE</span><span class="sg-cell">SHELF</span></div>${traded.map(renderMarketRow).join("")}${absentBlock}</div>`;
 }
 
+/**
+ * One three-cell catalogue row. The equipment tab draws three kinds of them —
+ * available, unavailable, hulls — and had three inlined copies of the grid.
+ *
+ * `rightCell` is the middle cell's whole attribute list rather than just a
+ * class, because the unavailable row's reason carries a probe hook there.
+ */
+const catalogueRow = (
+	rowAttribute: string,
+	name: string,
+	right: string,
+	rightCell = 'class="sg-cell"',
+): string =>
+	`<div class="sg-market-row" ${rowAttribute}="${esc(name)}"><span class="sg-good">${esc(name)}</span><span ${rightCell}>${right}</span><span class="sg-cell"></span></div>`;
+
 function renderEquipmentTab(view: ConsoleView): string {
 	const screen = stationEquipmentScreen({
 		type: view.station.type,
 		displayTL: view.station.displayTL,
 	});
 	const available = screen.available
-		.map(
-			(item) =>
-				`<div class="sg-market-row" data-gallery-equipment-item="${esc(item.name)}"><span class="sg-good">${esc(item.name)}</span><span class="sg-cell">${item.per === "ly" ? `${item.priceCr.toFixed(1)} Cr / LY` : `${item.priceCr.toLocaleString("en-US")} Cr`}</span><span class="sg-cell"></span></div>`,
+		.map((item) =>
+			catalogueRow(
+				"data-gallery-equipment-item",
+				item.name,
+				item.per === "ly"
+					? `${item.priceCr.toFixed(1)} Cr / LY`
+					: `${item.priceCr.toLocaleString("en-US")} Cr`,
+			),
 		)
 		.join("");
 	const unavailable = screen.unavailable
-		.map(
-			(item) =>
-				`<div class="sg-market-row" data-gallery-unavailable-item="${esc(item.name)}"><span class="sg-good">${esc(item.name)}</span><span class="sg-cell sg-absent" data-gallery-unavailable-reason>${esc(item.reason)}</span><span class="sg-cell"></span></div>`,
+		.map((item) =>
+			catalogueRow(
+				"data-gallery-unavailable-item",
+				item.name,
+				esc(item.reason),
+				'class="sg-cell sg-absent" data-gallery-unavailable-reason',
+			),
 		)
 		.join("");
 	// §8.7's joint 4: a heading with nothing under it is a state a player sees,
@@ -377,9 +401,12 @@ function renderEquipmentTab(view: ConsoleView): string {
 				screen.hulls.length === 0
 					? `<p class="sg-absent" data-gallery-hulls-empty>Not priced yet — the ship roster owes them.</p>`
 					: screen.hulls
-							.map(
-								(hull) =>
-									`<div class="sg-market-row" data-gallery-hull-item="${esc(hull.name)}"><span class="sg-good">${esc(hull.name)}</span><span class="sg-cell">${hull.priceCr.toLocaleString("en-US")} Cr</span><span class="sg-cell"></span></div>`,
+							.map((hull) =>
+								catalogueRow(
+									"data-gallery-hull-item",
+									hull.name,
+									`${hull.priceCr.toLocaleString("en-US")} Cr`,
+								),
 							)
 							.join("")
 			}`
@@ -834,6 +861,10 @@ const STYLE = `
 }
 `;
 
+/** M9's one live control while docked. */
+const LAUNCH_CONTROL =
+	'<div class="sg-launch"><button class="sg-launch-button" type="button" data-gallery-launch>LAUNCH</button><small>The one live control on this console while docked.</small></div>';
+
 function renderConsolePanel({
 	side,
 	active,
@@ -845,8 +876,7 @@ function renderConsolePanel({
 	body,
 	list,
 	footer,
-	extra = "",
-	inert = false,
+	dockedFlight = false,
 }: {
 	side: "left" | "right";
 	active: boolean;
@@ -858,14 +888,18 @@ function renderConsolePanel({
 	body: string;
 	list: readonly [string, string][];
 	footer: string;
-	/** Appended after the layout — M9's launch control, and nothing else today. */
-	extra?: string;
-	/** M9: docked, the Flight console's readouts are shown and say they are
-	 *  inert. The attribute is what a probe reads; the value column reading
-	 *  INERT, dimmed against the live rows, is what a player reads. */
-	inert?: boolean;
+	/**
+	 * **M9**, both halves of it: docked, the Flight console carries the launch
+	 * control and its other readouts say they are inert. One flag rather than a
+	 * markup string and a boolean the caller had to keep in step, since the
+	 * caller derived both from the same condition.
+	 *
+	 * The attribute is what a probe reads; the value column reading INERT,
+	 * dimmed against the live rows, is what a player reads.
+	 */
+	dockedFlight?: boolean;
 }): string {
-	return `<aside class="sg-panel" data-gallery-panel="${side}" data-active="${active}"><header class="sg-console-top"><h2>${title}</h2><small>${subtitle}</small></header><nav class="sg-tabs" aria-label="${side} console tabs">${tabs}</nav><div class="sg-console-layout"><div class="sg-console-rail">${rail.map((item, index) => (index === 0 ? `<b>${item}</b>` : `<span>${item}</span>`)).join("")}</div><div class="sg-console-data"><h3>${heading}</h3><p ${title === "TUNING" ? "data-gallery-tuning" : ""}>${body}</p><div class="sg-console-list"${inert ? " data-gallery-inert" : ""}>${list.map(([label, value]) => `<span><b>${label}</b><em>${value}</em></span>`).join("")}</div></div></div>${extra}<small>${footer}</small></aside>`;
+	return `<aside class="sg-panel" data-gallery-panel="${side}" data-active="${active}"><header class="sg-console-top"><h2>${title}</h2><small>${subtitle}</small></header><nav class="sg-tabs" aria-label="${side} console tabs">${tabs}</nav><div class="sg-console-layout"><div class="sg-console-rail">${rail.map((item, index) => (index === 0 ? `<b>${item}</b>` : `<span>${item}</span>`)).join("")}</div><div class="sg-console-data"><h3>${heading}</h3><p ${title === "TUNING" ? "data-gallery-tuning" : ""}>${body}</p><div class="sg-console-list"${dockedFlight ? " data-gallery-inert" : ""}>${list.map(([label, value]) => `<span><b>${label}</b><em>${value}</em></span>`).join("")}</div></div></div>${dockedFlight ? LAUNCH_CONTROL : ""}<small>${footer}</small></aside>`;
 }
 
 /**
@@ -921,10 +955,7 @@ export function renderGalleryState(
 	const rightConsole = renderConsolePanel({
 		side: "right",
 		active: isRight,
-		extra: flightDocked
-			? '<div class="sg-launch"><button class="sg-launch-button" type="button" data-gallery-launch>LAUNCH</button><small>The one live control on this console while docked.</small></div>'
-			: "",
-		inert: flightDocked,
+		dockedFlight: flightDocked,
 		title: rightTab.toUpperCase(),
 		subtitle: "CMDR · SEELITE",
 		tabs: (["Flight", "Drive", "Tuning"] as RightTab[])

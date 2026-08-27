@@ -27,6 +27,7 @@ import {
 	COMMODITIES,
 	type Commodity,
 	EQUIPMENT,
+	type Equipment,
 	type MarketRow,
 	type MarketStation,
 	type StationTypeKey,
@@ -196,23 +197,37 @@ export interface ConsoleEquipmentScreen {
 }
 
 /**
+ * `station-types.md` §4.1's gate is `min(displayTL + 3, 10)`, and this is the
+ * `+ 3`.
+ *
+ * Named rather than written twice, because the gate and its inverse below both
+ * carry it and a change to one that missed the other would shift the whole
+ * catalogue by a tech level with no test naming the number. It is also the
+ * module's only top-level constant, which is what lets `probe-guard`
+ * fingerprint it — a probe measuring this module's output could not name it
+ * while every number in it was buried in an expression.
+ */
+export const UNIVERSAL_TL_BONUS = 3;
+
+/**
  * The lowest `displayTL` at which the item at `index` in `UNIVERSAL_ITEMS` is
- * on a shelf — the inverse of `min(displayTL + 3, 10)`.
+ * on a shelf — the inverse of `min(displayTL + UNIVERSAL_TL_BONUS, 10)`.
  *
  * Exported because M8's reason string is this number, and a reason the player
  * can act on is the whole of what makes a short list read as the exploration
  * incentive rather than as an error state.
  */
 export const requiredDisplayTL = (index: number): number =>
-	Math.max(0, index - 2);
+	Math.max(0, index - UNIVERSAL_TL_BONUS + 1);
 
 /** `station-types.md` §4.1's gate, over §7's order rather than over
  *  `EQUIPMENT`'s nine. */
 export const universalItemsAt = (displayTL: number): readonly UniversalItem[] =>
-	UNIVERSAL_ITEMS.slice(
-		0,
-		Math.min(Math.max(0, displayTL) + 3, UNIVERSAL_GATE_CAP),
-	);
+	UNIVERSAL_ITEMS.slice(0, universalReach(displayTL));
+
+/** How many of `UNIVERSAL_ITEMS` a station at this tech level shelves. */
+export const universalReach = (displayTL: number): number =>
+	Math.min(Math.max(0, displayTL) + UNIVERSAL_TL_BONUS, UNIVERSAL_GATE_CAP);
 
 /**
  * **M8:** the full catalogue, with every unavailable item shown and its reason
@@ -222,14 +237,36 @@ export const universalItemsAt = (displayTL: number): readonly UniversalItem[] =>
  * item is unavailable for exactly one of three reasons — the tech gate, or the
  * two type scopes — and each is named in the words §8.3 uses.
  */
+/**
+ * M8's reason for a type exclusive, in §8.3's words.
+ *
+ * Exhaustive rather than `refinery ? … : "shipyards"`: a third scope added to
+ * `EQUIPMENT` would have been labelled "shipyards only" and shipped, where this
+ * fails to compile.
+ */
+const scopeReason = (
+	scope: Exclude<Equipment["scope"], "universal">,
+): string => {
+	switch (scope) {
+		case "refinery":
+			return "refineries only";
+		case "shipyard":
+			return "shipyards only";
+		default: {
+			const unreachable: never = scope;
+			throw new Error(`no reason string for scope ${unreachable}`);
+		}
+	}
+};
+
 export function stationEquipmentScreen(input: {
 	type: StationTypeKey;
 	displayTL: number;
 }): ConsoleEquipmentScreen {
 	const { type, displayTL } = input;
 	// The gate itself, not `universalItemsAt(displayTL).length` — that built a
-	// throwaway array on every render to read a number this line computes.
-	const reach = Math.min(Math.max(0, displayTL) + 3, UNIVERSAL_GATE_CAP);
+	// throwaway array on every render to read a number this computes.
+	const reach = universalReach(displayTL);
 	const available: ConsoleEquipmentEntry[] = [];
 	const unavailable: ConsoleUnavailableEntry[] = [];
 
@@ -250,11 +287,7 @@ export function stationEquipmentScreen(input: {
 			per: "unit",
 		};
 		if (item.scope === type) available.push(entry);
-		else
-			unavailable.push({
-				name: item.name,
-				reason: `${item.scope === "refinery" ? "refineries" : "shipyards"} only`,
-			});
+		else unavailable.push({ name: item.name, reason: scopeReason(item.scope) });
 	}
 
 	return {

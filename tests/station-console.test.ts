@@ -188,21 +188,40 @@ test("obligation 4: the delta is measured against this epoch's base, not the las
 // Obligation 8 — the universal set, Fuel included, at every displayTL
 // ---------------------------------------------------------------------------
 
-/** `economy-trade.md` §7's table order, transcribed from the spec rather than
- *  derived from `EQUIPMENT` — a set derived from the array under test could not
- *  catch the array's missing first element. */
-const ECONOMY_TRADE_7 = [
-	"Fuel",
-	"Missile",
-	"Large Cargo Bay",
-	"Extra Pulse Laser",
-	"E.C.M. System",
-	"Extra Beam Laser",
-	"Escape Pod",
-	"Energy Bomb",
-	"Docking Computer",
-	"Galactic Hyperdrive",
-];
+/**
+ * `economy-trade.md` §7's table order — **read out of the spec**, not typed here
+ * and not derived from `EQUIPMENT`.
+ *
+ * Derived from the array under test it could not catch that array's missing
+ * first element, which is the whole of §8.5.3. Typed here it is a second copy
+ * of the spec's order with nothing tying it back, and the entire tech-gate
+ * mapping — `requiredDisplayTL(9) === 7` — rests on that order. Parsed, a retune
+ * of §7 that does not reach `UNIVERSAL_ITEMS` turns this file red.
+ */
+const ECONOMY_TRADE_7 = (() => {
+	const spec = readFileSync(
+		new URL("../docs/specs/economy-trade.md", import.meta.url),
+		"utf8",
+	);
+	const names: string[] = [];
+	for (const line of spec.split("\n")) {
+		const cells = line.split("|").map((cell) => cell.trim());
+		// `| Item | Price | Where |` — the universal rows of §7's table, in the
+		// order they appear. `Missile (max 4)` carries a parenthetical the item
+		// list does not.
+		if (cells.length !== 5 || cells[3] !== "universal") continue;
+		names.push(cells[1].replace(/\s*\(.*\)$/, ""));
+	}
+	return names;
+})();
+
+test("the §7 order this file checks against was read out of the spec", () => {
+	// The guard on the parser. A selector that matched nothing would leave every
+	// assertion below comparing two empty lists and agreeing.
+	expect(ECONOMY_TRADE_7.length).toBe(10);
+	expect(ECONOMY_TRADE_7[0]).toBe("Fuel");
+	expect(ECONOMY_TRADE_7.at(-1)).toBe("Galactic Hyperdrive");
+});
 
 test("obligation 8: Fuel is the first universal item and the one absent from EQUIPMENT", () => {
 	expect(UNIVERSAL_ITEMS.map((e) => e.name)).toEqual(ECONOMY_TRADE_7);
@@ -301,10 +320,17 @@ test("obligation 6: type exclusives are sold at their own type and named everywh
 	expect(shipyard.unavailable.map((e) => e.reason)).toContain(
 		"refineries only",
 	);
-	// Saturated: every universal item is on the shelf, so nothing is gated.
-	expect(shipyard.unavailable.map((e) => e.reason)).not.toContain(
-		"requires TL 10",
-	);
+	// Saturated: every universal item is on the shelf. Asserted as the positive,
+	// because the negative it replaced — no reason reads "requires TL 10" —
+	// names a string `requiredDisplayTL` maxes out below and so cannot fail.
+	expect(shipyard.available.map((e) => e.name)).toEqual([
+		...ECONOMY_TRADE_7,
+		"Extra Energy Unit",
+		"Military Laser",
+	]);
+	expect(
+		shipyard.unavailable.filter((e) => e.reason.startsWith("requires TL")),
+	).toEqual([]);
 });
 
 test("§8.3: the hull section exists at a shipyard and is empty until #26", () => {

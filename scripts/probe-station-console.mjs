@@ -154,10 +154,17 @@ function measureConsole() {
 	};
 }
 
-// `station-console.ts` declares no top-level numbers of its own — round 1 moved
-// its two constant blocks to the layers that own them — so the guard reads the
-// modules it draws from instead.
-await guardedOrigin(ORIGIN, ["src/state-gallery.ts", "src/market.ts"]);
+// All three modules whose output this probe asserts on. `station-console.ts`
+// was left out for a round on the premise that it declares no top-level
+// numbers — true at the time and beside the point: the guard is about tree
+// identity, and a stale bundle of the module that computes every row count,
+// gate and reason here would have passed. It now names `UNIVERSAL_TL_BONUS`,
+// which is §4.1's gate and the number this probe's equipment checks turn on.
+await guardedOrigin(ORIGIN, [
+	"src/state-gallery.ts",
+	"src/market.ts",
+	"src/station-console.ts",
+]);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 
@@ -391,8 +398,16 @@ check(
 );
 
 // --- §6's responsive rule, for the state §7's inventory never had ---------
+// Back to Market first: obligation 7 left the Equipment tab up, and the media
+// query this measures is `.sg-market-row`'s seventeen-row grid.
+await page.locator('[data-gallery-console-tab="Market"]').click();
 await page.setViewportSize({ width: 390, height: 844 });
 const narrow = await page.evaluate(measureConsole);
+check(
+	"narrow: the market grid is what is measured, not the equipment list",
+	narrow.activeTab === "Market" && narrow.rows.length === 17,
+	`${narrow.activeTab}, ${narrow.rows.length} rows`,
+);
 check(
 	"narrow: the console fits the cockpit shell and never scrolls the page sideways",
 	// Inside the cockpit rather than inside the viewport: the gallery page
