@@ -858,6 +858,12 @@ measure and said so in its own docstring — it exists because `dockedAt` was se
 and never cleared, not because leaving was designed.
 
 **What the player presses to launch is #70's, and the motion is this spec's.**
+*(#70 has since answered: `hud-and-scanner.md` §8's **M9** puts the launch
+control on the **Flight console**, reached by turning the head right, not on the
+station console. The sentence below was written expecting a single full-screen
+station mode; §8's **M1** kept the cockpit instead, so "that screen" is the
+cockpit and the command sits on the console that owns flight. The seam this
+paragraph exists to protect is unchanged.)*
 The seam has to be stated because E5 makes the stick and the throttle inert, so
 the one control the player would reach for is gone: a docked player is in a
 screen, and the launch command is a control *in* that screen. This spec owns what
