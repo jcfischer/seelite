@@ -23,13 +23,68 @@ import type { SurfaceClass } from "./planet-appearance";
 /** Height-field relief, shared by every class that has any. */
 const RELIEF = /* glsl */ `
 uniform float perfAblate;
+uniform float reliefMode;
 // Perturb the normal from a height function by central differences in the
 // sphere's own tangent frame. Cheaper than displacing geometry and it survives
 // at any tessellation, which matters because the game draws these bodies at
 // wildly different screen sizes.
+/*
+ * **The frame is mostly this function**, and it is worth writing down what that
+ * cost is before reading the code, because the shape of the fix follows from it.
+ *
+ * Measured on a GPU with the body filling the view, by switching one term at a
+ * time from the perf panel (?perf):
+ *
+ *              full    no relief   flat sphere
+ *   terran     60 ms     28 ms       14 ms
+ *   ice        86 ms     30 ms       16 ms
+ *   jovian     26 ms     24 ms       17 ms
+ *
+ * A gas giant has no height field, and barely moves — which is the control that
+ * makes the other two rows mean something. On the rocky classes relief is more
+ * than half the frame, and neither bloom, nor the atmosphere shell, nor the
+ * cloud shell moved terran at all.
+ *
+ * The reason is the four extra height() calls below. A height function here
+ * is several octaves of fBm plus a ridged or contoured term, so asking it five
+ * times a fragment to learn one slope is where the frame goes.
+ *
+ * reliefMode selects how the slope is obtained. Both paths shade from the
+ * same height field; they differ only in how its gradient is found, which is
+ * why they can be compared by eye on one body without anything else moving.
+ */
 vec3 reliefNormal(vec3 p, vec3 N, float strength) {
   // Diagnostic ablation, off by default. See planet-surface.ts.
   if (perfAblate > 0.5) return N;
+
+  if (reliefMode > 0.5) {
+    /*
+     * One height evaluation, and the screen its own difference operator.
+     *
+     * dFdx/dFdy hand back how a value changes across the 2x2 quad the GPU
+     * is already shading, so the gradient of the height field costs a
+     * subtraction rather than four more evaluations of it. The world-space
+     * surface gradient is then recovered from the screen-space one through the
+     * position's own derivatives — the standard construction, and exact for a
+     * linear patch.
+     *
+     * What it gives up is resolution: the perturbation is constant across each
+     * quad, so where the height field has detail finer than two pixels this
+     * quantises what the four-tap version resolved. That is a thing to look at
+     * rather than to argue about, which is why it is a switch.
+     */
+    vec3 dpx = dFdx(vWorldP), dpy = dFdy(vWorldP);
+    float h = height(p);
+    float hx = dFdx(h), hy = dFdy(h);
+    vec3 r1 = cross(dpy, N), r2 = cross(N, dpx);
+    float det = dot(dpx, r1);
+    if (abs(det) < 1e-12) return N;
+    vec3 grad = (r1 * hx + r2 * hy) / det;
+    // The four-tap path below perturbs by a *difference* over 2e rather than by
+    // a derivative, so the same visual strength is that factor applied here.
+    return normalize(N - strength * 0.007 * grad);
+  }
+
   vec3 axis = abs(p.y) < 0.94 ? vec3(0,1,0) : vec3(1,0,0);
   vec3 t = normalize(cross(axis, p)), b = cross(p, t);
   float e = 0.0035;

@@ -51,6 +51,30 @@ const STYLE = `
  * Every planet material carries `perfAblate`, so setting it is a walk rather
  * than a lookup. Returns the value it set, for the panel to read back.
  */
+function setUniform(scenes: THREE.Object3D[], name: string, value: number) {
+	for (const scene of scenes)
+		scene.traverse((object) => {
+			const material = (object as THREE.Mesh).material;
+			for (const m of [material].flat()) {
+				const u = (m as THREE.ShaderMaterial)?.uniforms;
+				if (u?.[name]) u[name].value = value;
+			}
+		});
+}
+
+function readUniform(scenes: THREE.Object3D[], name: string): number {
+	let found = 0;
+	for (const scene of scenes)
+		scene.traverse((object) => {
+			const material = (object as THREE.Mesh).material;
+			for (const m of [material].flat()) {
+				const u = (m as THREE.ShaderMaterial)?.uniforms;
+				if (u?.[name]) found = u[name].value as number;
+			}
+		});
+	return found;
+}
+
 function setAblate(scenes: THREE.Object3D[], value: number) {
 	for (const scene of scenes)
 		scene.traverse((object) => {
@@ -239,10 +263,40 @@ export function mountPerfPanel(targets: PerfTargets) {
 		},
 		{
 			key: "r",
-			// 0 = full, 1 = albedo without the normal perturbation, 2 = plain sphere.
-			label: "surface",
-			state: () => ["full", "no relief", "flat"][readAblate(scenes)] ?? "full",
-			toggle: () => setAblate(scenes, (readAblate(scenes) + 1) % 3),
+			// Four steps rather than three: the two ways of getting the slope, then
+			// the two ablations that price them. Cycling them on one key keeps
+			// them in one column, which is what makes a reading comparable.
+			label: "relief",
+			state: () =>
+				readAblate(scenes) === 2
+					? "flat"
+					: readAblate(scenes) === 1
+						? "none"
+						: readUniform(scenes, "reliefMode") > 0.5
+							? "screen-space"
+							: "four-tap",
+			toggle: () => {
+				const step =
+					readAblate(scenes) === 0 && readUniform(scenes, "reliefMode") < 0.5
+						? 0
+						: readAblate(scenes) === 0
+							? 1
+							: readAblate(scenes) === 1
+								? 2
+								: 3;
+				// four-tap -> screen-space -> none -> flat -> four-tap
+				if (step === 0) {
+					setUniform(scenes, "reliefMode", 1);
+				} else if (step === 1) {
+					setUniform(scenes, "reliefMode", 0);
+					setAblate(scenes, 1);
+				} else if (step === 2) {
+					setAblate(scenes, 2);
+				} else {
+					setAblate(scenes, 0);
+					setUniform(scenes, "reliefMode", 0);
+				}
+			},
 		},
 		{
 			key: "p",
@@ -284,6 +338,7 @@ export function mountPerfPanel(targets: PerfTargets) {
 			for (const kind of ["atmosphere", "cloud"])
 				for (const s of shells(scenes, kind)) s.visible = true;
 			setAblate(scenes, 0);
+			setUniform(scenes, "reliefMode", 0);
 			setCrater(scenes, false);
 			draw();
 			return;

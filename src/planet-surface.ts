@@ -319,6 +319,10 @@ export function buildBodyVisual(
 		// #59 could not take — its runner had no GPU, and it said so.
 		// 0 normally; 1 drops the normal perturbation, 2 drops the surface noise
 		// entirely. Read by every class through `RELIEF`.
+		// 0 = four-tap central differences, 1 = one tap plus screen-space
+		// derivatives. See `reliefNormal` in `planet-classes.glsl.ts` for what
+		// each costs and what the second gives up.
+		reliefMode: { value: 0 },
 		perfAblate: {
 			value: perf === "flat" ? 2 : perf === "norelief" ? 1 : 0,
 		},
@@ -351,6 +355,11 @@ export function buildBodyVisual(
 			uniforms,
 			vertexShader: SURFACE_VERTEX,
 			fragmentShader: cachedFragment(look.surface),
+			// `reliefNormal`'s screen-space path calls `dFdx`/`dFdy`. In GLSL ES
+			// 1.00 those are an extension, and three used to need
+			// `extensions.derivatives` — the flag is gone since r152 because a
+			// WebGL2 context has them as core, which is the context three asks
+			// for. Named here because the next reader will look for the flag.
 		}),
 	);
 	// Tagged with its class and a way to change it, for the perf panel's class
