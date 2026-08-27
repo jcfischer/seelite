@@ -100,10 +100,21 @@ ${NOISE_GLSL}
  *   five walks, grain differenced   25 fps, 80-90 ms worst
  *   one walk, grain differenced     40 fps, 40-50 ms worst
  *
- * One machine, one view, one term moved. Reproduce with ?seed=1&fps at a
- * refinery. The configuration that ships cut the differenced grain as well and
- * has no row here: what came back for it was a rate with no worst frame. #63
- * carries the rest. The figures
+ * One machine, one view, one term moved.
+ *
+ * **Neither row is what you get by running this tree.** The shipped
+ * configuration cut the differenced grain as well, so it is a third
+ * arrangement and has no row here — what came back for it was a rate with no
+ * worst frame. ?seed=1&fps at a refinery measures *that*, which is the useful
+ * number for anyone asking what the rock costs today, and is not either row
+ * above.
+ *
+ * To reproduce the comparison itself, put back what each row names: the
+ * top row is reliefNormal-style differencing of the height field, four extra
+ * evaluations around every fragment; the second is this function with the
+ * grain term differenced into the normal instead of folded into the albedo
+ * below. Both are removals of the change this file makes, which is why the
+ * figures live here rather than in a script. #63 carries the rest. The figures
  * are one machine's and are not portable; the *structure* is what carries — a
  * term inside the height field is paid five times, and a term in the albedo
  * once.

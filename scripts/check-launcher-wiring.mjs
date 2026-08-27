@@ -94,13 +94,34 @@ const EXPECTED_CALLERS = 1;
 const problems = [];
 let callers = 0;
 
+/**
+ * One sanitiser, two settings.
+ *
+ * The import checks need comments gone. The call *counts* need string bodies
+ * gone as well, because a count decides whether a page is guarded and a
+ * mention of `watch(` in a string satisfies it — this file's own failure
+ * messages contain one. Two nearly-identical strippers described one intent
+ * and would have to be fixed twice.
+ */
+function strip(source, { strings = false } = {}) {
+	let out = source
+		.replace(/\/\*[\s\S]*?\*\//g, "")
+		.replace(/^\s*\/\/.*$/gm, "");
+	if (!strings) return out;
+	// The `[^:]` guard keeps a `//` inside a URL from eating its line.
+	out = out
+		.replace(/([^:])\/\/.*$/gm, "$1")
+		.replace(/`(?:[^`\\]|\\.)*`/g, "``")
+		.replace(/"(?:[^"\\]|\\.)*"/g, '""')
+		.replace(/'(?:[^'\\]|\\.)*'/g, "''");
+	return out;
+}
+
 for (const path of scripts(DIR).sort()) {
 	if (path === SELF || path === GUARD) continue;
 	const name = relative(DIR, path);
 	const src = readFileSync(path, "utf8");
-	const code = src
-		.replace(/\/\*[\s\S]*?\*\//g, "")
-		.replace(/^\s*\/\/.*$/gm, "");
+	const code = strip(src);
 
 	/**
 	 * The same source with trailing comments and string bodies emptied.
@@ -112,11 +133,7 @@ for (const path of scripts(DIR).sort()) {
 	 * file's own failure messages are the proof — they contain "use watch(),"
 	 * and would match their own regex.
 	 */
-	const bare = code
-		.replace(/([^:])\/\/.*$/gm, "$1")
-		.replace(/`(?:[^`\\]|\\.)*`/g, "``")
-		.replace(/"(?:[^"\\]|\\.)*"/g, '""')
-		.replace(/'(?:[^'\\]|\\.)*'/g, "''");
+	const bare = strip(src, { strings: true });
 
 	const calls = /\blaunchChromium\s*\(/.test(code);
 	const bound = importedFromGuard(code, path).has("launchChromium");

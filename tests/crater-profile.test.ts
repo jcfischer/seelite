@@ -46,11 +46,31 @@ const station = readFileSync(repoPath("src/station-surface.ts"), "utf8");
  *
  * `src` is small enough to read whole; the alternative is a list that has to
  * be remembered at exactly the moment nobody is thinking about this file.
+ *
+ * **Either snippet counts, and the walk recurses.** Keying on the literal
+ * "${CRATER_CELL}" in a flat `readdir` was narrower than the sentence above
+ * it: a consumer that took only `${CRATER_PROFILE}`, or lived in a
+ * subdirectory `src` does not have today, would have been outside the scan
+ * while carrying its own copy of the field — and would have made every
+ * `test.each` below vacuous rather than red.
  */
-const INTERPOLATORS = readdirSync(repoPath("src"))
-	.filter((f) => f.endsWith(".ts"))
-	.map((f) => [f, readFileSync(repoPath(`src/${f}`), "utf8")] as const)
-	.filter(([, src]) => src.includes("${CRATER_CELL}"));
+const sources = (dir: string): (readonly [string, string])[] =>
+	readdirSync(repoPath(dir), { withFileTypes: true }).flatMap((entry) =>
+		entry.isDirectory()
+			? sources(`${dir}/${entry.name}`)
+			: entry.name.endsWith(".ts")
+				? [
+						[
+							`${dir}/${entry.name}`.replace(/^src\//, ""),
+							readFileSync(repoPath(`${dir}/${entry.name}`), "utf8"),
+						] as const,
+					]
+				: [],
+	);
+
+const INTERPOLATORS = sources("src").filter(([, src]) =>
+	/\$\{CRATER_(CELL|PROFILE)\}/.test(src),
+);
 
 describe("the crater field has one definition", () => {
 	test("both known consumers are among the interpolators found", () => {
