@@ -41,7 +41,9 @@
  *    scripts/measure-station-shells.ts [seeds]` re-derives, at the t0 placed
  *    positions, that across seeds 1..8000 no station sits inside its own
  *    host's or any foreign body's 1.05 shell (closest own-host approach
- *    1.500 R — the floor itself; closest foreign ~559 radii). The rules the
+ *    1.500 R — the floor itself; the closest pair of any kind is two
+ *    co-orbiting stations at 3.2 core radii, still outside every shell).
+ *    The rules the
  *    deleted block exercised are pinned headlessly instead:
  *    `tests/cruise.test.ts`, "being inside a shell does not pin the ship
  *    there", for the release rule, and `tests/station-orbits.test.ts` for

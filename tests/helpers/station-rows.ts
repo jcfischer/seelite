@@ -21,6 +21,7 @@ import {
 	generateGalaxy,
 	type SystemRecord,
 } from "../../src/galaxy";
+import { type Body, makeWorld } from "../../src/sim";
 import { type SystemContents, generateContents } from "../../src/system";
 
 /**
@@ -115,6 +116,51 @@ export function forEachHostedStation(
 		});
 	}
 }
+
+/**
+ * Every host-orbiting station **at its placed t0 position**, beside every
+ * other body the game moves.
+ *
+ * `makeWorld(seed).system`, not `generateContents`: the question is where the
+ * station *sits* at t0, which only the world build resolves — and the bodies
+ * come from `byId`, the complete set the game moves: star, planets, moons,
+ * stations. `contents.planets` is pre-placement (no `pos`) and silently omits
+ * the moons. Both this walk and the instrument `measure-station-shells.ts`
+ * go through it for the reason this module's header gives: a hand-copied
+ * sweep is a second definition of "every station", and the two drift.
+ *
+ * The bodies resolve once per world rather than once per station-body pair,
+ * and the orphan guard is the same throw the radius walk uses.
+ */
+export function forEachPlacedStation(
+	visit: (
+		station: Body,
+		host: Body,
+		others: readonly Body[],
+		seed: number,
+	) => void,
+	seeds: Iterable<number> = DEFAULT_SHELL_SEEDS,
+): void {
+	for (const seed of seeds) {
+		const S = makeWorld(seed).system;
+		const bodies = [...S.byId.values()];
+		for (const st of S.contents.stations) {
+			if (!st.parentId) continue; // star-centric refinery: no host
+			const station = S.byId.get(st.id);
+			const host = S.byId.get(st.parentId);
+			if (!station?.pos || !host?.pos)
+				throw new Error(`orphan station ${st.id}`);
+			visit(station, host, bodies, seed);
+		}
+	}
+}
+
+/** Seeds the placed-geometry walk covers by default — the headless tier's
+ *  budget (~5 s for the whole sweep). The instrument goes further on demand. */
+export const DEFAULT_SHELL_SEEDS: readonly number[] = Array.from(
+	{ length: 1500 },
+	(_, i) => i + 1,
+);
 
 /** Every galaxy of a world. The census and the clamp measurement sweep all of
  *  them; the placement fixture pins only the two its capture script names. */

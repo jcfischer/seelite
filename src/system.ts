@@ -102,31 +102,29 @@ export const GIANT_ORBIT_FACTOR = 2;
  * How high a station's orbit floor is, as a multiple of its host's radius
  * (node #32, against `in-system-travel.md` §12.2/§12.3).
  *
- * `1.5`, chosen over the measured alternatives as the knee of the curve.
- * The four figures that ranked the candidates are recorded in
- * `galaxy-generation.md` §7.3 (26.1% of legs occluded with no floor; 14.2%
- * at 1.5, 7.4% at 2.2, ~5% at 3) and `measure-cruise-arrival.ts` re-derives
- * the live ones on any run — the rejected floors stay in the spec, not in a
- * switch, the way `node-30-candidates` keeps #30's rule comparison
- * recoverable. What ranking on those figures costs: the floor's altitude
- * scales linearly with `R`, so a big-giant shipyard is already parked
- * 35,000 km up at 1.5 and 140,000 km up at 3, and the period band keeps the
- * orbital speed climbing with it.
+ * `1.5`, chosen as the knee of the measured curve. The ranking lives in
+ * `galaxy-generation.md` §7.3: 26.1% of cruise legs occluded with no floor
+ * (49 of 337 planet-orbiting stations inside their own host's 1.05 shell —
+ * the geometry behind §12.2's "second cruise covers 1 km" figure, which
+ * §12.2 itself walks back as an overclaim for the game), 14.2% at 1.5,
+ * 7.4% at 2.2, 4.2% at 3 — and `measure-cruise-arrival.ts` re-derives the
+ * set for whatever the constant is set to, which is how a rejected floor
+ * stays recoverable without a switch. What the rejected floors were rejected
+ * for is the same linear `R`: a big-giant shipyard is already ~35,000 km up
+ * at 1.5, ~84,000 at 2.2, ~140,000 at 3, and the period band keeps the
+ * orbital speed climbing with the altitude.
  *
  * It is a **floor**, not an orbit: the 400–2,000 km band still decides
  * whenever it lands above the floor, which it does for small hosts — a
  * 2,400 km rocky world's band tops out at 1.83 × radius, so its stations
- * keep the low band — and the floor takes over exactly where the band stops
- * clearing what it has to clear: the 1.05 × shell (§12.2 measured 49 of 337
- * stations inside their host's own shell — the geometry behind the sweep's
- * "second cruise covers 1 km" figure, which §12.2 itself walks back as an
- * overclaim for the game) and the occlusion geometry (§12.3, 26.1% of legs).
- * The floor takes over from 1.5/1.05 ≈ 1.43 × the rocky band's top radius
- * upward, i.e. every large planet and every giant.
- * `tests/station-orbits.test.ts` pins both outcomes, and
- * `measure-station-shells.ts` prints the placed-geometry population at t0
- * (zero inside any 1.05 shell across seeds 1..8000) that the floor is why
- * `probe-arrival.mjs` no longer flies.
+ * keep the low band — and above a 4,000 km host (`2,000 / (1.5 − 1)`, the
+ * point past which no band draw can reach the floor) the floor term is the
+ * max by arithmetic and every station rides at exactly 1.5 × the host's
+ * radius. The looser bound it clears by construction, the 1.05 × shell,
+ * crosses the band only at 40,000 km of host radius.
+ * `tests/station-orbits.test.ts` pins both regimes, and
+ * `measure-station-shells.ts` sweeps the placed-geometry population at t0
+ * that the floor is why `probe-arrival.mjs` no longer flies.
  */
 export const STATION_ORBIT_R_OVER_R = 1.5;
 

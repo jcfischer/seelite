@@ -20,20 +20,27 @@
  */
 
 import { describe, expect, test } from "bun:test";
-// Read off the page, not restated (CLAUDE.md): these are the two thresholds
-// the invariants below are stated against.
+// Read off the page, not restated (CLAUDE.md): these are the thresholds the
+// invariants below are stated against.
 import { SURFACE_MARGIN } from "../src/cruise";
-import { makeWorld } from "../src/sim";
 import { STATION_ORBIT_R_OVER_R } from "../src/system";
+import type { Vec3 } from "../src/vec3";
 import {
 	ALL_GALAXIES,
 	forEachHostedStation,
+	forEachPlacedStation,
 	forEachSystem,
 	stationRows,
 	worldSeeds,
 } from "./helpers/station-rows";
 import baseline from "./fixtures/station-orbits.json";
 import baselineBefore from "./fixtures/station-orbits-pre-floor.json";
+
+/** Flat distance between two placed positions (both resolved here; the type
+ *  keeps the helper's optional `pos` honest at the call sites). */
+function dist(a: Vec3, b: Vec3): number {
+	return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+}
 
 describe("station placement is stable against added draws", () => {
 	test("the fixture is a real corpus, not an empty pass", () => {
@@ -128,10 +135,12 @@ describe("unreachable systems (known defect, station-types.md §5.4)", () => {
  * §12.2 (`in-system-travel.md`) measured **49 of 337** planet-orbiting
  * stations sitting inside their own host's 1.05× cruise shell — a draw,
  * because a 400–2,000 km absolute altitude loses a race against a 5% shell
- * of a proportional radius. The corpus figure came from the `measure-cruise-
- * arrival` sweep; this sweep re-derives the population over `worldSeeds(8)`,
- * where the defect population was 2,381 station-placements, so the before
- * build fails by a mile rather than at the margin. §12.3 measured the
+ * of a proportional radius. Re-running that census by radius over the corpus
+ * this file walks — `worldSeeds(8)`, the before tag (`node-32-before-orbit-
+ * floor`), the same `forEachHostedStation` traversal — finds 1,059 of 19,202
+ * host-orbiting stations inside their own shell, so the before build fails
+ * by a mile rather than at the margin; over placed t0 positions the before
+ * build holds 382 inside-shell stations across seeds 1..1500. §12.3 measured the
  * occlusion side (26.1% of legs); the *rule* being ratified is the floor,
  * whose value is measured there and pinned here as a generator invariant:
  * every station orbits at or above `STATION_ORBIT_R_OVER_R` of its host.
@@ -149,69 +158,65 @@ describe("station orbits clear their host (node #32)", () => {
 		expect(hostOrbiting).toBeGreaterThan(1000);
 	});
 
-	test("no station sits inside its own host's cruise shell", () => {
-		// §12.2's defect, as an invariant: the guard now stops the ship at
-		// `radius + HOST_CLEARANCE_KM` for the host, but a station *inside the
-		// proportional shell* was still the geometry that made cruise
-		// unengageable from there, and cruise's release rule is not a reason to
-		// keep generating it. The generator's job is that it never happens.
+	test("the floor leaves no station inside its host's cruise shell", () => {
+		// The generator can violate §12.2's defect in one of two ways, and this
+		// pins both rather than re-walking the radius floor under a shell-shaped
+		// name: the constants may drift (a shell at 1.6 × R would swallow a 1.5
+		// floor), or the generator may stop applying the max.
+		expect(STATION_ORBIT_R_OVER_R).toBeGreaterThanOrEqual(SURFACE_MARGIN);
+		// The defect population directly: 1,059 of 19,202 host-orbiting stations
+		// inside their own shell on the before build over this corpus, zero now.
+		// (The t0 test
+		// below covers the same rule over the placed positions; this one needs
+		// no world build.)
+		let hostOrbiting = 0;
 		forEachHostedStation((s, host) => {
+			hostOrbiting++;
 			expect(s.orbit.radiusKm).toBeGreaterThanOrEqual(
 				host.radiusKm * SURFACE_MARGIN,
 			);
 		});
+		expect(hostOrbiting).toBeGreaterThan(1000);
 	});
 
 	test("no station sits inside *any* body's shell at t0, own or foreign", () => {
-		// The own-host bound above is about the orbit's radius; this one is about
-		// the orbit's *position at t0*, which the generator's phase draws also
-		// decide. It is what `probe-arrival.mjs`'s deleted seed-118 block used to
-		// measure in the browser — the floor took the geometry away from every
+		// Own and foreign share one walk here — the host's shell is part of "any
+		// body's", and dropping it would narrow the guarantee every time a loop
+		// got refactored. It is what `probe-arrival.mjs`'s deleted seed-118 block
+		// measured in the browser; the floor took the geometry away from every
 		// seeded world, so the pin moved here rather than dying with the block.
-		// Foreign bodies are the half the orbit invariant cannot see: a 33,000 km
-		// giant's shipyard clears its own shell by 16,500 km and can still be
-		// placed inside a neighbour's.
 		//
-		// `makeWorld`, not `generateContents`: the clearance is of the placed
-		// position, which only the world build resolves. 1,500 seeds is what fits
-		// the suite's second budget (measured: ~5 s); the committed instrument
-		// `scripts/measure-station-shells.ts` sweeps as far back as asked and
-		// reported zero own- and foreign-shell stations out to seeds 1..8000 when
-		// the floor landed.
+		// "Any body" means `byId`: the complete set the game moves. The first
+		// spelling looped `contents.planets` and was honest about less than its
+		// title claimed — the moons (every gas giant carries up to MAX_MOONS = 3,
+		// and the cruise guard applies its shell to every body it holds) were
+		// never measured. Measured now, 1,200 seeds: a station never hosts a
+		// moon, never touches the star's surface, and the foreign pair population
+		// — planets, moons, other stations — is empty inside every shell.
+		//
+		// The seeds and the world build come from `forEachPlacedStation`; the
+		// committed instrument `scripts/measure-station-shells.ts` walks the same
+		// helper as far back as asked (zero inside any shell at 1..8000 when the
+		// floor landed). Its closest foreign pair at that budget is 3.2 body
+		// radii — seed 3573, two co-orbiting stations 1.9 km apart across an
+		// 0.6 km core — the station-vs-station pair the planets-only loop never
+		// compared. Still outside every shell by a wide margin, and the pairs
+		// the floor is about (a station to any *body* it does not orbit) stay
+		// hundreds of radii clear.
 		let placed = 0;
-		for (let seed = 1; seed <= 1500; seed++) {
-			const w = makeWorld(seed);
-			const S = w.system;
-			for (const st of S.contents.stations) {
-				if (!st.parentId) continue;
-				const pos = S.byId.get(st.id)?.pos;
-				if (!pos) continue;
-				placed++;
-				// `byId`, not `contents.planets`: the contents are pre-placement and carry
-				// no `pos`; only the world build resolves one. The host first, then every
-				// foreign planet at t0.
-				const hostBody = S.byId.get(st.parentId);
-				if (hostBody?.pos) {
-					const d = Math.hypot(
-						pos.x - hostBody.pos.x,
-						pos.y - hostBody.pos.y,
-						pos.z - hostBody.pos.z,
-					);
-					expect(d).toBeGreaterThanOrEqual(hostBody.radiusKm * SURFACE_MARGIN);
-				}
-				for (const m of S.contents.planets) {
-					if (m.id === st.parentId) continue;
-					const mb = S.byId.get(m.id);
-					if (!mb?.pos) continue;
-					const d = Math.hypot(
-						pos.x - mb.pos.x,
-						pos.y - mb.pos.y,
-						pos.z - mb.pos.z,
-					);
-					expect(d).toBeGreaterThanOrEqual(mb.radiusKm * SURFACE_MARGIN);
-				}
+		forEachPlacedStation((station, host, others) => {
+			placed++;
+			const pos = station.pos!;
+			expect(dist(pos, host.pos!)).toBeGreaterThanOrEqual(
+				host.radiusKm * SURFACE_MARGIN,
+			);
+			for (const b of others) {
+				if (b.id === station.id || b.id === host.id || !b.pos) continue;
+				expect(dist(pos, b.pos)).toBeGreaterThanOrEqual(
+					b.radiusKm * SURFACE_MARGIN,
+				);
 			}
-		}
+		});
 		expect(placed).toBeGreaterThan(1000);
 	});
 
@@ -227,19 +232,22 @@ describe("station orbits clear their host (node #32)", () => {
 		//     below 2,000 / (STATION_ORBIT_R_OVER_R − 1) = 4,000 km of host
 		//     radius, which is the tighter bound and the one the census uses.
 		// Above the floor crossover the floor term is the max by arithmetic,
-		// so every row there sits exactly on 1.5 × R. Below it, the band must
-		// be seen winning, not merely present: the census counts rows whose
-		// drawn band is in [400, 2000] AND strictly above 1.5 × R. Measured on
-		// this corpus (worldSeeds(8), 19,202 host-orbiting stations): 1,337 —
-		// e.g. a 2,762 km host with a 1,794 km band. Zero rows sit strictly
-		// under the floor, so an assertion of `radiusKm < host × 1.5` would
-		// be asserting the empty set — the floor clips from below and nothing
-		// generated can sit under it.
+		// so every row there sits exactly on 1.5 × R (all 14,000 of them on this
+		// corpus). Below it the band must be seen winning, not merely present:
+		// the census counts rows whose orbit is *strictly* above the floor, so
+		// every counted row's radius came from the band draw. The band being
+		// drawable in [400, 2000] below the crossover is not the evidence — the
+		// floor wins most of those rows anyway (3,865 of 5,202 sit exactly on
+		// 1.5 × R), and a census that counted by band-window would still pass if
+		// the band had never won once. Measured here (worldSeeds(8), 19,202
+		// host-orbiting stations): 1,337 strictly above — e.g. a 2,762 km host
+		// with a 1,794 km band. Zero rows sit strictly under the floor, so an
+		// assertion of `radiusKm < host × 1.5` would be asserting the empty set —
+		// the floor clips from below and nothing generated can sit under it.
 		const floorCrossoverKm = 2000 / (STATION_ORBIT_R_OVER_R - 1);
 		let bandWon = 0;
 		let aboveCrossover = 0;
 		forEachHostedStation((s, host) => {
-			const bandKm = s.orbit.radiusKm - host.radiusKm;
 			if (host.radiusKm > floorCrossoverKm) {
 				// Above the crossover the floor must own the row exactly.
 				aboveCrossover++;
@@ -249,7 +257,8 @@ describe("station orbits clear their host (node #32)", () => {
 				);
 				return;
 			}
-			if (bandKm >= 400 - 1e-9 && bandKm <= 2000 + 1e-9) bandWon++;
+			if (s.orbit.radiusKm > host.radiusKm * STATION_ORBIT_R_OVER_R + 1e-9)
+				bandWon++;
 		});
 		// Non-vacuity on both sides of the crossover.
 		expect(bandWon).toBeGreaterThan(100);
