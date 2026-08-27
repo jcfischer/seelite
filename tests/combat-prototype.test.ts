@@ -51,11 +51,27 @@ test("starter pulse duel destroys an unshielded hull within the pacing target", 
 	expect(state.elapsed).toBeLessThanOrEqual(30);
 });
 
-test("beam trades faster damage for a heat lockout", () => {
-	let state = createCombatPrototype();
-	for (let elapsed = 0; elapsed < 4; elapsed += 0.1)
-		state = stepCombatPrototype(state, { dt: 0.1, firing: "beam" });
-	expect(state.heatLocked).toBe(true);
+test("beam out-damages pulse and still heat-locks", () => {
+	const beamDuel = (state = createCombatPrototype()) => {
+		while (state.elapsed < 60 && state.targetHull > 0)
+			state = stepCombatPrototype(state, {
+				dt: 0.1,
+				firing: "beam",
+				targetInCone: duelTargetInCone(state.elapsed),
+			});
+		return state;
+	};
+	const beamState = beamDuel();
+	// A fresh target proves the weapon still reaches heat lockout on its own.
+	const lockState = stepCombatPrototype(createCombatPrototype(), {
+		dt: 3.4,
+		firing: "beam",
+	});
+	expect(lockState.heatLocked).toBe(true);
+	// The beam kills the target in fewer seconds than the pulse duel, so it is
+	// the faster weapon despite the heat lock.
+	expect(beamState.targetHull).toBe(0);
+	expect(beamState.elapsed).toBeLessThan(fireFixedStepDuel().elapsed);
 });
 
 test("weapon heat never exceeds the instrument scale", () => {

@@ -11,7 +11,7 @@ export const COMBAT_PROTOTYPE_DEFAULTS = {
 	pulseDamagePerSecond: 6,
 	pulseEnergyPerSecond: 1,
 	pulseHeatPerSecond: 1.5,
-	beamDamagePerSecond: 7.2,
+	beamDamagePerSecond: 24,
 	beamEnergyPerSecond: 18,
 	beamHeatPerSecond: 30,
 	energyRegenPerSecond: 12,
