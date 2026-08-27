@@ -14,6 +14,7 @@
 import { describe, expect, test } from "bun:test";
 import { CLASS_GLSL } from "../src/planet-classes.glsl";
 import { PERF_CLASSES, PERF_KEYS, RESTORE_KEY } from "../src/perf-panel";
+import { SETTINGS_KEY } from "../src/settings-panel";
 import { codeOf } from "./lib/source-scan";
 
 const main = codeOf("src/main.ts");
@@ -53,8 +54,18 @@ describe("the perf panel stays out of the flight controls", () => {
 
 	test("no panel key is a flight binding", () => {
 		const bound = boundKeys(main);
-		for (const key of [...PERF_KEYS, RESTORE_KEY])
+		for (const key of [...PERF_KEYS, RESTORE_KEY, SETTINGS_KEY])
 			expect(`${key}: ${bound.has(key)}`).toBe(`${key}: false`);
+	});
+
+	test("the settings key is not a perf-panel key either", () => {
+		// The settings screen is player-facing and always on; the perf panel is
+		// query-gated. With `?perf` both are listening, so a shared key would
+		// open a dialog and toggle a diagnostic at once.
+		for (const key of [...PERF_KEYS, RESTORE_KEY])
+			expect(`${key} vs settings: ${key === SETTINGS_KEY}`).toBe(
+				`${key} vs settings: false`,
+			);
 	});
 
 	test("the panel's own keys are distinct", () => {

@@ -72,6 +72,7 @@ import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js"
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
 import { starField } from "./backdrop";
+import { SettingsStore } from "./settings";
 import { AudioFX } from "./audio";
 import {
 	SCANNER_RANGE_KM,
@@ -463,6 +464,8 @@ class Game {
 	 * else.
 	 */
 	private renderScale = 1;
+	/** Player settings, read at boot and applied as they change. */
+	readonly settings = new SettingsStore();
 	get resolutionScale() {
 		return this.renderScale;
 	}
@@ -957,6 +960,9 @@ class Game {
 			this.updateCockpit();
 		});
 		window.addEventListener("resize", () => this.onResize());
+		// A resolution setting is a change to the drawing buffer, so it lands the
+		// same way a window resize does.
+		this.settings.subscribe(() => this.onResize());
 		/**
 		 * A display change is not always a resize.
 		 *
@@ -3199,7 +3205,10 @@ class Game {
 		const w = window.innerWidth;
 		const h = window.innerHeight;
 		this.sizeOverlay();
-		const ratio = Math.min(window.devicePixelRatio, 2) * this.renderScale;
+		const ratio =
+			Math.min(window.devicePixelRatio, 2) *
+			this.renderScale *
+			this.settings.value.renderScale;
 		this.renderer.setPixelRatio(ratio);
 		this.composer.setPixelRatio(ratio);
 		for (const cam of [
@@ -3359,6 +3368,11 @@ if (query.has("model-viewer")) {
 	// tidiness: the panel walks the game's scenes, so it has to be mounted after
 	// the game exists. Gated first, so nothing is imported when it is not asked
 	// for.
+	// The settings screen is a player-facing feature, so it is not gated.
+	import("./settings-panel").then(({ mountSettingsPanel }) =>
+		mountSettingsPanel(game.settings),
+	);
+
 	if (query.has("perf"))
 		import("./perf-panel").then(({ mountPerfPanel }) =>
 			mountPerfPanel({
