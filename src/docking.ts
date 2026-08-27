@@ -800,6 +800,46 @@ export interface ComputerCommand {
  * straight at the slot from wherever the ship happens to be is the hull-face
  * approach §9.2.4 exists to catch.
  */
+/**
+ * Is the ship lined up enough to run in? §7's corridor, as its own predicate.
+ *
+ * A **cone**: `COMPUTER_CORRIDOR_KM` at the aperture plane, opening by
+ * `COMPUTER_CONE_TAN` per kilometre of standoff. Extracted from the step
+ * function because it is the piece of §7 most likely to be retuned and the one
+ * a test can pin without flying anything — the first version was a cylinder and
+ * the autopilot never met it.
+ */
+export function insideCorridor(frame: ApertureFrame, pose: EntryPose): boolean {
+	const axial = dot(pose.rel, frame.axis);
+	if (axial < frame.planeKm) return false;
+	const offAxisKm = length(sub(pose.rel, scale(frame.axis, axial)));
+	return (
+		offAxisKm <=
+		COMPUTER_CORRIDOR_KM + COMPUTER_CONE_TAN * (axial - frame.planeKm)
+	);
+}
+
+/**
+ * §7's speed law: #14's `distance / lead` on both legs, clamped differently.
+ *
+ * The line-up has **no floor**, so it converges on the corridor entry instead of
+ * orbiting it; the run-in has one, so the crossing happens in a frame rather
+ * than in the limit. Getting that pair the wrong way round is what produced the
+ * 600 s dither §7 records, so the two clamps are named here rather than inlined.
+ */
+export function approachSpeed(
+	distKm: number,
+	lined: boolean,
+	maxSpeedKms: number,
+): number {
+	return lined
+		? Math.min(
+				COMPUTER_RUN_IN_MAX_KMS,
+				Math.max(COMPUTER_RUN_IN_MIN_KMS, distKm / COMPUTER_LEAD_S),
+			)
+		: Math.min(maxSpeedKms, distKm / COMPUTER_LEAD_S);
+}
+
 export function dockingComputerStep(input: ComputerInput): ComputerCommand {
 	const { frame, pose, state, gameTime } = input;
 	const idle = (refused: ComputerCommand["refused"]): ComputerCommand => ({
@@ -817,8 +857,6 @@ export function dockingComputerStep(input: ComputerInput): ComputerCommand {
 	if (length(pose.rel) > VICINITY_KM) return idle("out-of-range");
 
 	const axial = dot(pose.rel, frame.axis);
-	const lateral = sub(pose.rel, scale(frame.axis, axial));
-	const offAxisKm = length(lateral);
 	const corridorAxial = frame.planeKm + COMPUTER_STANDOFF_KM;
 
 	// **The line-up target is a fixed point, not the axis abeam the ship.**
@@ -827,25 +865,14 @@ export function dockingComputerStep(input: ComputerInput): ComputerCommand {
 	// ship circles a few metres off the axis, closes nothing, and the grant
 	// expires under it. Measured at 2 rpm it held 17 m of offset for the whole
 	// 600 s window. The corridor entry is a place, so the leg to it terminates.
-	const lined =
-		axial >= frame.planeKm &&
-		offAxisKm <=
-			COMPUTER_CORRIDOR_KM + COMPUTER_CONE_TAN * (axial - frame.planeKm);
+	const lined = insideCorridor(frame, pose);
 	const target = lined
 		? scale(frame.axis, frame.planeKm)
 		: scale(frame.axis, corridorAxial);
 
 	const toTarget = sub(target, pose.rel);
 	const distKm = length(toTarget);
-	// #14's law on both legs, clamped differently. The line-up has no floor, so
-	// it converges on the corridor entry instead of orbiting it; the run-in has
-	// one, so the crossing happens in a frame rather than in the limit.
-	const speedKms = lined
-		? Math.min(
-				COMPUTER_RUN_IN_MAX_KMS,
-				Math.max(COMPUTER_RUN_IN_MIN_KMS, distKm / COMPUTER_LEAD_S),
-			)
-		: Math.min(input.maxSpeedKms, distKm / COMPUTER_LEAD_S);
+	const speedKms = approachSpeed(distKm, lined, input.maxSpeedKms);
 
 	return {
 		engaged: true,
@@ -900,7 +927,11 @@ export function slewToward(from: Vec3, to: Vec3, maxRad: number): Vec3 {
 	// The component of `b` perpendicular to `a`, normalised: the direction to
 	// turn in. Antiparallel is the one case with no such direction, and any
 	// perpendicular will do — the caller is turning through 180° either way.
+	// **A tolerance, not `=== 0`.** For a nearly-antiparallel pair the
+	// perpendicular component is tiny but non-zero, and normalising it amplifies
+	// float noise into an essentially random turn direction — the case the
+	// fallback exists for, taken by the branch that assumes a good one.
 	const perp = sub(b, scale(a, c));
-	const dir = length(perp) === 0 ? anyPerpendicular(a) : unit(perp);
+	const dir = length(perp) < 1e-9 ? anyPerpendicular(a) : unit(perp);
 	return add(scale(a, Math.cos(maxRad)), scale(dir, Math.sin(maxRad)));
 }

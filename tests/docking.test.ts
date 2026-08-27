@@ -17,6 +17,11 @@
 import { describe, expect, test } from "bun:test";
 import {
 	AXIS_TOLERANCE_DEG,
+	COMPUTER_CONE_TAN,
+	COMPUTER_CORRIDOR_KM,
+	COMPUTER_RUN_IN_MAX_KMS,
+	COMPUTER_RUN_IN_MIN_KMS,
+	COMPUTER_STANDOFF_KM,
 	DAMAGE_FLOOR,
 	GRANT_WINDOW_S,
 	HOSTILE_COOLDOWN_S,
@@ -30,10 +35,12 @@ import {
 	applyDamage,
 	attemptEntry,
 	dockingComputerStep,
+	approachSpeed,
 	entryDamage,
 	evaluateEntry,
 	fullCondition,
 	grantLive,
+	insideCorridor,
 	isAlive,
 	newDockingState,
 	orthonormalise,
@@ -744,6 +751,57 @@ function flyTheComputer(opts: {
 	}
 	return { docked, refused, violations, steps, gameTime };
 }
+
+describe("§7's two tuning surfaces, pinned without flying anything", () => {
+	const frame = frameFor();
+	const at = (axialKm: number, offKm: number): EntryPose =>
+		nominal(frame, {
+			rel: add(scale(frame.axis, axialKm), scale(slotBasis(frame).up, offKm)),
+		});
+
+	test("the corridor is a cone: loose at the standoff, tight at the plane", () => {
+		// The property, not the numbers: whatever the cone is retuned to, what
+		// it must not become is a cylinder — the shape that never got met.
+		const atPlane = COMPUTER_CORRIDOR_KM;
+		const atStandoff =
+			COMPUTER_CORRIDOR_KM + COMPUTER_CONE_TAN * COMPUTER_STANDOFF_KM;
+		expect(atStandoff).toBeGreaterThan(atPlane * 4);
+
+		expect(insideCorridor(frame, at(frame.planeKm, atPlane * 0.9))).toBe(true);
+		expect(insideCorridor(frame, at(frame.planeKm, atPlane * 1.1))).toBe(false);
+		const standoff = frame.planeKm + COMPUTER_STANDOFF_KM;
+		expect(insideCorridor(frame, at(standoff, atStandoff * 0.9))).toBe(true);
+		expect(insideCorridor(frame, at(standoff, atStandoff * 1.1))).toBe(false);
+		// The measured lag that killed the cylinder — 12 to 33 m — is inside the
+		// cone at the standoff and outside it at the plane. That pair is the
+		// whole reason the shape changed.
+		expect(insideCorridor(frame, at(standoff, 0.033))).toBe(true);
+		expect(insideCorridor(frame, at(frame.planeKm, 0.033))).toBe(false);
+	});
+
+	test("a ship already inside the plane is not lined up", () => {
+		expect(insideCorridor(frame, at(frame.planeKm - 0.01, 0))).toBe(false);
+	});
+
+	test("the run-in has a floor and the line-up does not", () => {
+		// Without the floor the run-in converges on the plane asymptotically and
+		// the approach completes in the limit rather than in a frame.
+		expect(approachSpeed(0, true, ASSIST_CAP_KMS)).toBe(
+			COMPUTER_RUN_IN_MIN_KMS,
+		);
+		expect(approachSpeed(1e6, true, ASSIST_CAP_KMS)).toBe(
+			COMPUTER_RUN_IN_MAX_KMS,
+		);
+		// And the run-in cap is under the gate, so a crossing this commands
+		// cannot fail check 6 on a rounding.
+		expect(COMPUTER_RUN_IN_MAX_KMS).toBeLessThan(V_GATE_KMS);
+
+		// With a floor the line-up orbits the point it is trying to reach, which
+		// is the 600 s dither §7 records.
+		expect(approachSpeed(0, false, ASSIST_CAP_KMS)).toBe(0);
+		expect(approachSpeed(1e6, false, ASSIST_CAP_KMS)).toBe(ASSIST_CAP_KMS);
+	});
+});
 
 describe("§9.1.11 the docking computer", () => {
 	test.each([0.6, 2.0, 3.0])(

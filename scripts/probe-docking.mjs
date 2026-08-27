@@ -183,7 +183,12 @@ async function fly(setup) {
 			);
 			D.place(id, start, { x: 0, y: 0, z: 0 });
 			g.targetId = id;
-			g.condition = { shield: setup.shield, hull: setup.hull };
+			// **`interimCondition`, not `condition`.** The field was renamed and
+			// this line was not: it silently created a stray property, no per-run
+			// health reset landed, and §9.2.5's "at most a quarter of the pool"
+			// quietly became a cumulative measurement across every run before it.
+			// A write to a page object cannot fail, which is what made it invisible.
+			g.interimCondition = { shield: setup.shield, hull: setup.hull };
 			g.lastEntry = null;
 			g.dockedAt = null;
 
@@ -208,7 +213,7 @@ async function fly(setup) {
 
 			let elapsed = 0;
 			const trace = [];
-			const before = { ...g.condition };
+			const before = { ...g.interimCondition };
 			for (let i = 0; i < limitS / dt; i++) {
 				if (g.lastEntry || g.dockedAt) break;
 				if (!setup.computer) D.reaim(id, setup);
@@ -232,6 +237,7 @@ async function fly(setup) {
 			}
 
 			const after = g.dockingSnapshot(id);
+			if (!after) return { noSnapshot: true, id };
 			return {
 				id,
 				spinRpm: station.spinRpm,
@@ -245,6 +251,7 @@ async function fly(setup) {
 				conditionAfter: after.condition,
 				entry: after.lastEntry,
 				trace,
+				poolMax: after.poolMax,
 				// The crossing's own measured speed, so §9.2's record is a
 				// measurement rather than the setpoint that was asked for.
 				entrySpeedKms: after.lastEntry?.evaluation?.speedKms ?? null,
@@ -258,6 +265,15 @@ async function fly(setup) {
 		[dt, LIMIT_S, setup],
 	);
 }
+
+/**
+ * What every run starts from: the standoff and the pools.
+ *
+ * Spread rather than repeated at three call sites — a retune of the standoff
+ * that reached two of them would silently change what the third measures rather
+ * than failing.
+ */
+const BASE = { standoffKm: 3.2, shield: 100, hull: 100 };
 
 const tolerances = await page.evaluate(() => {
 	const g = window.__seelite;
@@ -291,12 +307,7 @@ function failedEntryUnderGate(what, run) {
 // ---------------------------------------------------------------------------
 
 console.log("\n§9.2.3 a correct profile docks:");
-const good = await fly({
-	standoffKm: 3.2,
-	computer: true,
-	shield: 100,
-	hull: 100,
-});
+const good = await fly({ ...BASE, computer: true });
 console.log(
 	`  ${good.id} at ${good.spinRpm.toFixed(2)} rpm: docked=${good.docked} ` +
 		`after ${good.elapsed.toFixed(1)} s of sim time, ` +
@@ -332,66 +343,87 @@ check(
 // reachable only from a docked ship, which only the probe tier has, and the
 // first version of `resolveCrossing` set `dockedAt` and never cleared it.
 console.log("\ndocking has an exit:");
-const undock = await page.evaluate(
-	async ([dt]) => {
-		const g = window.__seelite;
-		const D = window.__dock;
-		const id = D.spinner().id;
-		const wasDocked = g.dockedAt === id;
-		const snap = g.dockingSnapshot(id);
-		// **Before anything below touches the ship.** `place` sets the throttle to
-		// zero itself, so reading it afterwards would assert that `place` works.
-		// What is under test is that the dock left no throttle running: the
-		// autopilot wrote one on the frame it crossed the plane, and clearing the
-		// engaged flag alone left the assist accelerating a docked ship.
-		const throttleAfterDock = snap.throttle;
-		// Pushed straight back out along the axis, which is the least a launch
-		// could possibly be — the sequence itself is not this node's.
-		D.place(id, D.scale(snap.axis, snap.planeKm + 0.5), {
-			x: 0,
-			y: 0,
-			z: 0,
-		});
-		for (let i = 0; i < 20; i++) {
-			g.step(dt);
-			g.render(dt);
-		}
-		const after = g.dockingSnapshot(id);
-		g.toggleDockingComputer();
-		return {
-			wasDocked,
-			stillDocked: g.dockedAt === id,
-			computerCanEngage: g.dockingComputerEngaged,
-			// Read **before** the toggle above re-engages anything: what is being
-			// asserted is that the dock left the ship at rest, not that the
-			// re-engagement did.
-			throttle: throttleAfterDock,
-			clearKm: g.dockingTolerances.UNDOCK_CLEAR_KM,
-			axialKm: after.axialKm,
-			planeKm: after.planeKm,
-		};
-	},
-	[dt],
-);
-check("the ship was docked to begin with", undock.wasDocked);
-check(
-	"leaving the plane clears the dock",
-	!undock.stillDocked,
-	`${undock.axialKm.toFixed(3)} km against a ${undock.planeKm.toFixed(3)} km plane ` +
-		`plus a ${undock.clearKm} km clearance`,
-);
-check(
-	"and the docking computer can be engaged again",
-	undock.computerCanEngage,
-);
-check(
-	"docking left no throttle running",
-	undock.throttle === 0,
-	`throttle ${undock.throttle}`,
-);
-await page.evaluate(() => {
-	window.__seelite.dockingComputerEngaged = false;
-});
+if (!good.docked)
+	console.log("  skipped: §9.2.3 did not dock, so there is nothing to leave");
+const undock = good.docked
+	? await page.evaluate(
+			async ([dt]) => {
+				const g = window.__seelite;
+				const D = window.__dock;
+				const id = D.spinner().id;
+				const wasDocked = g.dockedAt === id;
+				const snap = g.dockingSnapshot(id);
+				// **Before anything below touches the ship.** `place` sets the throttle to
+				// zero itself, so reading it afterwards would assert that `place` works.
+				// What is under test is that the dock left no throttle running: the
+				// autopilot wrote one on the frame it crossed the plane, and clearing the
+				// engaged flag alone left the assist accelerating a docked ship.
+				const throttleAfterDock = snap.throttle;
+				// Pushed straight back out along the axis, which is the least a launch
+				// could possibly be — the sequence itself is not this node's.
+				D.place(id, D.scale(snap.axis, snap.planeKm + 0.5), {
+					x: 0,
+					y: 0,
+					z: 0,
+				});
+				for (let i = 0; i < 20; i++) {
+					g.step(dt);
+					g.render(dt);
+				}
+				const after = g.dockingSnapshot(id);
+				g.toggleDockingComputer();
+				// One step, so what is measured is the autopilot actually flying rather
+				// than a flag having been flipped.
+				g.step(dt);
+				g.render(dt);
+				const flying = g.dockingSnapshot(id);
+				return {
+					engagedAfterStep: flying?.computerEngaged ?? false,
+					throttleAfterStep: flying?.throttle ?? 0,
+					wasDocked,
+					stillDocked: g.dockedAt === id,
+					computerCanEngage: g.dockingComputerEngaged,
+					// Read **before** the toggle above re-engages anything: what is being
+					// asserted is that the dock left the ship at rest, not that the
+					// re-engagement did.
+					throttle: throttleAfterDock,
+					clearKm: g.dockingTolerances.UNDOCK_CLEAR_KM,
+					axialKm: after.axialKm,
+					planeKm: after.planeKm,
+				};
+			},
+			[dt],
+		)
+	: null;
+if (undock) {
+	check("the ship was docked to begin with", undock.wasDocked);
+	check(
+		"leaving the plane clears the dock",
+		!undock.stillDocked,
+		`${undock.axialKm.toFixed(3)} km against a ${undock.planeKm.toFixed(3)} km plane ` +
+			`plus a ${undock.clearKm} km clearance`,
+	);
+	check(
+		// **After a step**, not straight after the toggle. `toggleDockingComputer`
+		// gates only on `hasDockingComputer`, which is a constant `true`, so
+		// asserting the flag alone cannot fail. What can fail is
+		// `stepDockingComputer`'s `if (… || this.dockedAt) return false` — which
+		// is the latch — so the assertion is that the autopilot is *still*
+		// engaged and commanding a throttle a step later.
+		"and the docking computer flies again after a step",
+		undock.engagedAfterStep && undock.throttleAfterStep > 0,
+		`engaged=${undock.engagedAfterStep} throttle=${undock.throttleAfterStep}`,
+	);
+	check(
+		"docking left no throttle running",
+		undock.throttle === 0,
+		`throttle ${undock.throttle}`,
+	);
+	await page.evaluate(() => {
+		window.__seelite.dockingComputerEngaged = false;
+		window.__seelite.setThrottle(0);
+	});
+}
 
 // ---------------------------------------------------------------------------
 // §9.2.4 — a hull-face approach is refused
@@ -417,12 +449,10 @@ const faceOffsetKm = await page.evaluate((deg) => {
 	return 0.75 * snap.planeKm * Math.tan((deg * Math.PI) / 180);
 }, tolerances.axisDeg);
 const face = await fly({
-	standoffKm: 3.2,
+	...BASE,
 	offsetKm: faceOffsetKm,
 	closingKms: tolerances.gateKms * 0.5,
 	rollDeg: 0,
-	shield: 100,
-	hull: 100,
 });
 if (!face.entry) for (const line of face.trace) console.log(`    ${line}`);
 console.log(
@@ -462,7 +492,7 @@ check(
 
 console.log("\n§9.2.5 a mis-rolled approach fails and survives:");
 const rolled = await fly({
-	standoffKm: 3.2,
+	...BASE,
 	// Just under the gate, so the roll is the **only** row that fails: an
 	// approach commanded at exactly `V_GATE` arrives at 1.005× it once the
 	// assist's lateral remainder is counted, and a run failing two rows cannot
@@ -470,8 +500,6 @@ const rolled = await fly({
 	// is §9.1.10's, and it is a unit test because it is arithmetic.
 	closingKms: tolerances.gateKms * 0.9,
 	rollDeg: 90,
-	shield: 100,
-	hull: 100,
 });
 if (!rolled.entry) for (const line of rolled.trace) console.log(`    ${line}`);
 const lost =
@@ -480,7 +508,7 @@ const lost =
 	(rolled.conditionAfter.shield + rolled.conditionAfter.hull);
 console.log(
 	`  90° out just under the gate: docked=${rolled.docked}, ` +
-		`pool ${lost.toFixed(1)} lost of 200, alive=${rolled.alive}`,
+		`pool ${lost.toFixed(1)} lost of ${rolled.poolMax}, alive=${rolled.alive}`,
 );
 failedEntryUnderGate("the mis-rolled approach", rolled);
 check(
@@ -492,8 +520,8 @@ check("it cost the ship something", lost > 0, `${lost.toFixed(2)} of the pool`);
 check("D1: the ship survived it", rolled.alive);
 check(
 	"D1: it cost at most a quarter of the pool",
-	lost <= 200 / 4 + 1e-9,
-	`${lost.toFixed(2)} of 200`,
+	lost <= rolled.poolMax / 4 + 1e-9,
+	`${lost.toFixed(2)} of ${rolled.poolMax}`,
 );
 check(
 	"the bounce left the ship outside the station, not in it",

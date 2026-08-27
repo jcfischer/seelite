@@ -146,6 +146,7 @@ import {
 	isAlive,
 	newDockingState,
 	orthonormalise,
+	poolOf,
 	planeCrossing,
 	requestClearance,
 	slewToward,
@@ -2542,6 +2543,10 @@ class Game {
 			dockedAt: this.dockedAt,
 			condition: this.interimCondition,
 			alive: isAlive(this.interimCondition),
+			// The full pool, so a probe asserting §2.1's quarter-pool bound reads
+			// it off the page instead of restating `INTERIM_SHIELD_POOL +
+			// INTERIM_HULL_POOL` — the two constants #8 is going to replace.
+			poolMax: poolOf(fullCondition()),
 			lastEntry: this.lastEntry,
 		};
 	}
@@ -2584,11 +2589,14 @@ class Game {
 		// is possible and observable.
 		if (this.dockedAt) {
 			const held = before.get(this.dockedAt);
-			// **Range, not the axial component.** Comparing the axial projection
-			// only clears on the outward side, so a ship carried through and out
-			// past the far side keeps a negative axial component forever — the
-			// one-way latch this block exists to prevent, reintroduced on the one
-			// path it was hardest to notice.
+			// **Range, not the axial component**, and `planeKm` is the dockable
+			// *core radius* (§5), so this asks whether the ship is outside the
+			// station's own hull sphere with fifty metres to spare. That is the
+			// question "has it left", and it has the two properties the axial
+			// test lacked: a ship carried out past the far side clears (its axial
+			// projection is negative and never recovers), and a ship sitting on
+			// the plane but a hull-radius off the axis is not in the slot either,
+			// so clearing there is right rather than a leak.
 			if (held && length(held.pose.rel) > held.frame.planeKm + UNDOCK_CLEAR_KM)
 				this.dockedAt = null;
 		}

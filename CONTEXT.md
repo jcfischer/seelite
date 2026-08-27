@@ -68,7 +68,7 @@ A station's time-boxed permission to enter, and a **precondition** rather than o
 _Avoid_: Docking permission flag, landing request
 
 **Failed entry**:
-A crossing of the aperture plane that does not satisfy every check. It repels the ship, damages it, and keeps its clearance grant; it does not destroy the ship and — unless it was a barge — does not turn the station hostile. `docs/specs/docking.md` §2 owns the model.
+A crossing of the aperture plane that does not satisfy every check. It repels the ship, damages it, and keeps its clearance grant; unless it was a barge it does not turn the station hostile. Damage is quadratic in the closing speed above a floor, so a failed entry at the gate speed is survivable by design while one flown at the assist cap is not — "it costs you something, not everything" is a claim about the gate, not a guarantee at any speed. `docs/specs/docking.md` §2 owns the model.
 _Avoid_: Crash, docking failure
 
 **Operational consequence**:
