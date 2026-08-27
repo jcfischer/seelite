@@ -835,6 +835,8 @@ class Game {
 		});
 		this.renderer.setSize(window.innerWidth, window.innerHeight);
 		this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+		// The composer is given the same ratio in `onResize`, which is called
+		// once during boot so the two can never be set in only one place.
 		this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
 		this.renderer.toneMappingExposure = 1.0;
 		// The passes below manage their own clearing — the composite depends on
@@ -920,12 +922,7 @@ class Game {
 		// multi-pass blur at up to 2x device pixel ratio is a fixed cost every
 		// frame whatever is on screen, so it is the first thing to price against
 		// a shader that is only expensive when a body fills the view.
-		this.bloomPass = new UnrealBloomPass(
-			new THREE.Vector2(window.innerWidth, window.innerHeight),
-			0.55,
-			0.6,
-			0.85,
-		);
+		this.bloomPass = new UnrealBloomPass(bloomResolution(), 0.55, 0.6, 0.85);
 		this.composer.addPass(this.bloomPass);
 		this.composer.addPass(new OutputPass());
 
@@ -941,6 +938,30 @@ class Game {
 			this.updateCockpit();
 		});
 		window.addEventListener("resize", () => this.onResize());
+		/**
+		 * A display change is not always a resize.
+		 *
+		 * Dragging the window from a retina panel to an external one can leave
+		 * the window the same CSS size while `devicePixelRatio` goes from 2 to
+		 * 1, and no `resize` fires. A resolution media query does fire, and
+		 * re-arms itself because the query it watches is the ratio it just
+		 * left.
+		 */
+		const watchRatio = () => {
+			const q = window.matchMedia(
+				`(resolution: ${window.devicePixelRatio}dppx)`,
+			);
+			const once = () => {
+				q.removeEventListener("change", once);
+				this.onResize();
+				watchRatio();
+			};
+			q.addEventListener("change", once);
+		};
+		watchRatio();
+		// Once at boot, so the renderer and the composer cannot be given a ratio
+		// in only one place.
+		this.onResize();
 		window.addEventListener("keydown", (e) => this.onKey(e, true));
 		window.addEventListener("keyup", (e) => this.onKey(e, false));
 		// Audio cannot open before a gesture, so it opens on the first one.
@@ -3134,10 +3155,34 @@ class Game {
 		this.overlay.height = window.innerHeight;
 	}
 
+	/**
+	 * **The pixel ratio is re-applied here, and that is the fix for a real
+	 * artefact rather than housekeeping.**
+	 *
+	 * `setPixelRatio` was called once, at construction, and the composer was
+	 * never told a ratio at all. `EffectComposer` sizes its own targets from
+	 * what it is given, so after any resize its render targets were CSS pixels
+	 * while the renderer's drawing buffer was CSS pixels times the ratio. The
+	 * two then disagree, and `UnrealBloomPass` — which samples a mip chain with
+	 * texel offsets computed from its own resolution — reads outside its
+	 * footprint.
+	 *
+	 * That is what the flickering black rectangles were: bloom blocks, roughly
+	 * one coarse texel across, centred on the brightest small thing in the
+	 * frame, which in chase view is the ship's own engine glow.
+	 *
+	 * Moving a window between displays is the case that bites hardest, because
+	 * `devicePixelRatio` itself changes — a retina laptop at 2, an external
+	 * panel at 1 — and the value captured at construction is then simply wrong.
+	 * It is read again here rather than remembered.
+	 */
 	private onResize() {
 		const w = window.innerWidth;
 		const h = window.innerHeight;
 		this.sizeOverlay();
+		const ratio = Math.min(window.devicePixelRatio, 2);
+		this.renderer.setPixelRatio(ratio);
+		this.composer.setPixelRatio(ratio);
 		for (const cam of [
 			this.backdropCamera,
 			this.farCamera,
@@ -3149,9 +3194,51 @@ class Game {
 		}
 		this.renderer.setSize(w, h);
 		this.composer.setSize(w, h);
+		// **After** the composer, not before. `EffectComposer.setSize` calls
+		// `setSize` on every pass it holds, so bloom's own resolution has to be
+		// re-applied afterwards or it is immediately overwritten with the full
+		// drawing buffer — which is what the first version of this did, and the
+		// mip chain went on being built at 451x321, 113x81, 57x41.
+		const bloom = bloomResolution();
+		this.bloomPass?.setSize(bloom.x, bloom.y);
 		this.starMaterial.uniforms.uPixelScale.value =
 			this.renderer.domElement.height * STAR_PIXEL_SCALE;
 	}
+}
+
+/**
+ * The size the bloom chain works at: half the window, rounded to even, and
+ * independent of the device pixel ratio.
+ *
+ * **Divisible by 32, because the chain halves five times.** `UnrealBloomPass`
+ * builds five mip levels by repeatedly halving its resolution. An odd width
+ * rounds, so the blur of a level samples a footprint its target does not cover,
+ * and
+ * the outermost row or column of a coarse mip can be left holding whatever was
+ * in that memory. On a coarse mip one texel is a large block of the screen —
+ * which is the size and shape of the artefact the principal reported, and it
+ * would depend on the window size, which is why it appeared on one display and
+ * not the other.
+ *
+ * **Independent of the ratio, because bloom is a blur.** Running it over four
+ * times as many pixels on a retina panel buys nothing visible: the result is
+ * a wide, soft glow either way. This is the one pass in the chain where
+ * resolution is close to free to give up.
+ *
+ * Both of those are claims about a machine I cannot see. What is certain is
+ * that the halving is a real saving on a pass that runs every frame regardless
+ * of what is on screen, and that the artefact is bloom's, because switching
+ * bloom off removes it.
+ */
+function bloomResolution() {
+	// A multiple of 32, not merely even: the chain halves five times, so only a
+	// starting size divisible by 2^5 keeps every level whole. Rounding to even
+	// was the first attempt and left 225, 113, 57, 29, 15 across the widths.
+	const quantised = (n: number) => Math.max(32, Math.round(n / 32) * 32);
+	return new THREE.Vector2(
+		quantised(window.innerWidth / 2),
+		quantised(window.innerHeight / 2),
+	);
 }
 
 /** Clamp a signed value to ±`limit` — the mouse's per-frame guard. */
