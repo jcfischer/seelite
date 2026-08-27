@@ -678,7 +678,7 @@ class Game {
 	private combatEcm = false;
 	/** Fitted status font cache: keyed on glass width; the fit is computed
 	 *  against the longest possible status text, so any live state fits. */
-	private combatStatusFit = new Map<number, { font: string; width: number }>();
+	private combatStatusFit = new Map<number, { font: string }>();
 	/** The overlay lines drawn last frame, at the font each was fitted to. */
 	combatOverlayLines: { text: string; font: string; width: number }[] = [];
 	/** Probe-only laser visibility override; the renderer honours it. */
@@ -3972,7 +3972,7 @@ class Game {
 		} else {
 			this.cockpitPrompt.reset();
 		}
-		if (this.combatPrototypeEnabled) {
+		if (this.combatPrototypeEnabled && this.view === "cockpit") {
 			ctx.save();
 			ctx.textAlign = "center";
 			const drawnLines: { text: string; font: string; width: number }[] = [];
@@ -4026,19 +4026,15 @@ class Game {
 					size -= 1;
 					ctx.font = `${size}px ui-monospace, Menlo, monospace`;
 				}
-				const font = ctx.font;
-				fittedEntry = {
-					font,
-					width: ctx.measureText(combatStatus).width,
-				};
+				fittedEntry = { font: ctx.font };
 				this.combatStatusFit.set(w, fittedEntry);
 			}
+			ctx.font = fittedEntry.font;
 			drawnLines.push({
 				text: combatStatus,
 				font: fittedEntry.font,
 				width: ctx.measureText(combatStatus).width,
 			});
-			ctx.font = fittedEntry.font;
 			ctx.fillStyle = PROMPT_FILL;
 			ctx.fillText(combatStatus, w / 2, h * 0.84);
 			this.combatOverlayStatus.setCenteredPrompt(
