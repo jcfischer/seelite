@@ -246,6 +246,33 @@ ${CRATER_PROFILE}
  *   were the same colour, which is the single largest reason its worlds looked
  *   flat.
  */
+/**
+ * A last guard on what a fragment hands to the post-processing chain.
+ *
+ * **One bad pixel becomes a block, and that is bloom's doing rather than the
+ * shader's.** `UnrealBloomPass` averages the frame down a mip chain, so a
+ * single NaN or Inf spreads across a whole texel of a coarse level — which is
+ * a large rectangle on screen, appearing and vanishing as the geometry that
+ * produced it moves. That is the artefact the principal has been chasing, and
+ * mip sizes were only half of it.
+ *
+ * The test is written inverted on purpose. NaN compares false against
+ * everything, so `!(c >= 0.0)` is true for NaN as well as for a negative,
+ * where `c < 0.0` would let NaN straight through. GLSL ES 1.00 has no `isnan`.
+ *
+ * The ceiling is far above anything meaningful — tone mapping has long since
+ * flattened this range — and far below half float's 65504, which is what the
+ * composer's targets store and what an unchecked product can reach.
+ */
+export const SANITISE_GLSL = /* glsl */ `
+vec3 sane(vec3 c) {
+  if (!(c.r >= 0.0)) c.r = 0.0;
+  if (!(c.g >= 0.0)) c.g = 0.0;
+  if (!(c.b >= 0.0)) c.b = 0.0;
+  return min(c, vec3(64.0));
+}
+`;
+
 export const LIGHT_GLSL = /* glsl */ `
 uniform vec3  sunDir;
 uniform vec3  sunColor;
@@ -330,6 +357,7 @@ export function fragmentFor(
 	return /* glsl */ `
 precision highp float;
 ${relief === "screen-space" ? "#define RELIEF_SCREEN_SPACE 1" : ""}
+${SANITISE_GLSL}
 ${VARYINGS_GLSL}
 ${NOISE_GLSL}
 ${LIGHT_GLSL}
@@ -351,7 +379,7 @@ void main() {
   vec3 col = shade(albedo, N, V);
   if (specPower > 0.0) col += sunColor * specular(N, V, specPower) * specMask;
   col += emissive;
-  gl_FragColor = vec4(col, 1.0);
+  gl_FragColor = vec4(sane(col), 1.0);
 }
 `;
 }
@@ -369,6 +397,7 @@ void main() {
 export const ATMOSPHERE_FRAGMENT = /* glsl */ `
 precision highp float;
 ${VARYINGS_GLSL}
+${SANITISE_GLSL}
 uniform vec3  sunDir;
 uniform vec3  atmoColor;
 uniform float atmoStrength;
@@ -440,7 +469,7 @@ void main() {
   // "a long way through the air", which is what it always meant.
   float grazing = pow(clamp(depth, 0.0, 1.0), 2.5);
   vec3 sunset = mix(atmoColor, atmoColor * vec3(1.5, 0.75, 0.42), grazing * 0.8);
-  gl_FragColor = vec4(sunset * (0.55 + 2.2 * forward) * day,
+  gl_FragColor = vec4(sane(sunset * (0.55 + 2.2 * forward) * day),
                       rim * day * atmoStrength);
 }
 `;
@@ -456,6 +485,7 @@ void main() {
 export const CLOUD_FRAGMENT = /* glsl */ `
 precision highp float;
 ${VARYINGS_GLSL}
+${SANITISE_GLSL}
 ${NOISE_GLSL}
 ${LIGHT_GLSL}
 uniform float time;
@@ -484,7 +514,7 @@ void main() {
   // Same lighting as the ground, so the cloud terminator lines up with it.
   float lit = wrappedDiffuse(N);
   float rim = pow(1.0 - max(dot(N, V), 0.0), 2.2);
-  gl_FragColor = vec4(cloudTint * (lit * 1.30 * sunColor + 0.025),
+  gl_FragColor = vec4(sane(cloudTint * (lit * 1.30 * sunColor + 0.025)),
                       clamp(mask, 0.0, 1.0) * (0.62 + 0.30 * rim));
 }
 `;
@@ -492,6 +522,7 @@ void main() {
 /** A ring plane: banded opacity, plus the planet's own shadow across it. */
 export const RING_FRAGMENT = /* glsl */ `
 precision highp float;
+${SANITISE_GLSL}
 varying vec2 vRing;
 varying vec3 vWorldP;
 varying vec3 vCentre;
@@ -529,7 +560,7 @@ void main() {
   float shadow = (along < 0.0) ? 1.0 : smoothstep(0.94, 1.10, perp);
 
   vec3 ice = mix(vec3(0.30, 0.27, 0.23), vec3(0.55, 0.52, 0.47), grain);
-  gl_FragColor = vec4(ice * (0.25 + 0.75 * shadow), density * 0.85);
+  gl_FragColor = vec4(sane(ice * (0.25 + 0.75 * shadow)), density * 0.85);
 }
 `;
 
