@@ -827,7 +827,7 @@ The boundary, stated so neither system has to guess:
 |---|---|
 | The aperture rectangle, at the plane | **§2 and §3 of this spec** — the six checks and the failed-entry model |
 | Hull, rim, drydock frame, and every other body | **The collision system** |
-| **The ship during §12.1's arrival, and while docked** | **Neither.** It is not a collidable body. |
+| **The ship during §12.1's arrival, while docked, and during the launch traversal** | **Neither.** It is not a collidable body. |
 
 **The ordering at the crossing instant, because the first two rows overlap
 there.** A ship on the plane is simultaneously in §2's row and entering the
@@ -835,6 +835,13 @@ exempt one, and an implementer cannot be left to pick. So: **§3's six checks
 evaluate at the crossing, and the exemption begins on the tick after a pass.** A
 failure is §2's in full — repel, damage, grant kept — because a failed entry
 never enters the exempt state at all.
+
+**The launch half of that row is not an afterthought.** E5 makes launch the
+mirror of the arrival, so a launching ship is neither arriving nor docked and an
+earlier draft of this table left it collidable — traversing the same throat, on
+the same rails, with the exemption switched off. A table introduced as "stated so
+neither system has to guess" that omits one of the three states §12 creates is
+worse than no table.
 
 **That third row is not a detail.** §12.1 invents a traversal — the ship flies
 down a throat it was placed in on rails — and E2 says nothing can fail during it.
@@ -959,8 +966,11 @@ Two tiers, as everywhere else in this spec.
    makes that a claim and #10 makes it binding, and without this row a docked
    state that froze the tick would satisfy every other obligation here.
 5. The **skip gate** is four booleans and gets a table: each type's first arrival
-   plays, each subsequent one is skippable, the four are independent, and a
-   launch is skippable whenever its type's flag is set.
+   plays, each subsequent one is skippable, and the four are independent.
+   **Every launch is skippable** — asserted unconditionally rather than as
+   "skippable whenever its type's flag is set", which §12.2 has already argued is
+   always true and which therefore has no reachable false branch. Stated
+   unconditionally, a regression that made a first launch play fails this row.
 6. **The duration falls inside E3's ratified bounds.** Without this the range is
    prose: "it terminates" is satisfied by an arrival of any length, so a retune
    to twelve seconds would pass every other row here. The bound is what §12.7
@@ -972,11 +982,22 @@ Two tiers, as everywhere else in this spec.
    the throat's cross-section at **every sub-step**, not merely at the ends — a
    law that is right at the endpoints and wrong between them is exactly what a
    translating-frame implementation looks like.
-8. **The arriving and parked ship are not collidable** (§12.3's third row).
-   Asserted here even though §0 disclaims collision, because the failure it
-   prevents is *this* section's invention: without it the arrival clips the
-   tunnel §12.1 just handed it. #75 inherits the other side.
-9. **Station names are unique within a system.** E9 argues uniqueness by
+8. **The arriving, parked and launching ship are in a state a collision system
+   can see.** The tempting form — "assert the ship is not collidable" — is
+   **vacuous**, because §12.3 records that nothing collides with anything today,
+   so it passes for the same reason everything else does. What is checkable now
+   is the thing #75 will actually read: that the three exempt states are
+   *distinguishable* from ordinary flight and are exposed as such. #75 inherits
+   the other half — that its system honours them — and until it lands, the
+   physical claim in §12.3's third row has no check. §12.7 records that.
+9. **A parked ship holds station over a long interval.** Obligation 4 has the
+   world running while docked, so the station translates at orbital speed and
+   spins the whole time — and §12.3 names being left where the law did not put
+   you as the way a scripted path fails. This is the *longest* such interval in
+   the section and it was the last one unchecked: park a ship, advance the clock
+   by minutes, and assert it is still at the docked position in the station's
+   own rotating frame, not merely somewhere near where it started.
+10. **Station names are unique within a system.** E9 argues uniqueness by
    construction — one station per type — and construction is exactly what a
    generator change can break without a compile error. Asserted over the same
    corpus `tests/station-orbits.test.ts` walks, so the silent case has a check.
@@ -1024,7 +1045,14 @@ of check that stops being evidence, and §12.7 records that it fails open until
 4. **A generated station name ripples further than this section** — #11's galaxy
    map, #69's target list and #70's screen all acquire something to display, and
    none of them has been told.
-5. **E4's flag is an unmet precondition on #46.** §12.1 says the skip gate is a
+5. **The fourth gate is unreachable, and the third row of §12.3 is unchecked.**
+   Two things §12.6 counts as coverage that currently prove nothing. `system.ts`
+   places **no outpost** — `station.ts` says so outright, because #56 shipped the
+   outpost as a form and a geometry and #13 has not decided what one *is* — so
+   the fourth skip flag is dead until something places one, and E4 is in practice
+   three first-times. And obligation 8's physical claim cannot fail while nothing
+   collides; only its state-visibility half is live until #75 lands.
+6. **E4's flag is an unmet precondition on #46.** §12.1 says the skip gate is a
    typed domain that node "must approve and bound", and then this section is
    where a reader would look for the dependency and would not have found it. So:
    **E4 and E5 cannot ship until `persistent-world-state.md` gains a bounded
