@@ -3845,7 +3845,7 @@ class Game {
 		ctx.stroke();
 
 		// The Three line is spatial reference; this glass tracer is the readable
-		// weapon feedback at every viewport and cannot disappear behind cockpit mesh.
+		// weapon feedback at every viewport.
 		if (this.combatPrototypeEnabled && this.combat.firing !== null) {
 			ctx.save();
 			// The lower third is physical cockpit hardware. Clip the glass effect to

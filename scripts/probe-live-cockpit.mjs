@@ -253,14 +253,44 @@ async function placeShipAtLocalOffset(page, local) {
 }
 
 async function targetInstrumentRendered(page) {
-	const shown = await page.screenshot();
+	const clip = await page.evaluate(() => {
+		const game = window.__seelite;
+		game.step(0);
+		const face = game.nearScene.getObjectByName("target-instrument");
+		if (!face?.geometry?.getAttribute("position")) return null;
+		face.updateWorldMatrix(true, false);
+		game.nearCamera.updateMatrixWorld();
+		const positions = face.geometry.getAttribute("position");
+		const projected = [];
+		for (let i = 0; i < positions.count; i++) {
+			projected.push(
+				face
+					.localToWorld(
+						face.position
+							.clone()
+							.set(positions.getX(i), positions.getY(i), positions.getZ(i)),
+					)
+					.project(game.nearCamera),
+			);
+		}
+		const xs = projected.map((p) => (p.x * 0.5 + 0.5) * innerWidth);
+		const ys = projected.map((p) => (-p.y * 0.5 + 0.5) * innerHeight);
+		const pad = 12;
+		const left = Math.max(0, Math.min(...xs) - pad);
+		const top = Math.max(0, Math.min(...ys) - pad);
+		const right = Math.min(innerWidth, Math.max(...xs) + pad);
+		const bottom = Math.min(innerHeight, Math.max(...ys) + pad);
+		return { x: left, y: top, width: right - left, height: bottom - top };
+	});
+	if (!clip || clip.width <= 1 || clip.height <= 1) return 0;
+	const shown = await page.screenshot({ clip });
 	try {
 		await page.evaluate(() => {
 			const game = window.__seelite;
 			game.nearScene.getObjectByName("target-instrument").visible = false;
 			game.render(0);
 		});
-		const hidden = await page.screenshot();
+		const hidden = await page.screenshot({ clip });
 		return page.evaluate(
 			async ({ shown, hidden }) => {
 				const decode = async (base64) => {
@@ -340,21 +370,47 @@ for (const viewport of VIEWPORTS) {
 		(before) => window.__seelite.combat.energy < before,
 		energyBeforePulse,
 	);
-	const combatReadout = await page.evaluate(
-		() => window.__seelite.combatOverlayStatus.text,
-	);
-	const laserVisible = await page.evaluate(
-		() =>
-			window.__seelite.nearScene.getObjectByName("combat-prototype-laser")
-				?.visible,
-	);
+	const [combatReadout, laserPixels] = await page.evaluate(async () => {
+		const game = window.__seelite;
+		const status = game.combatOverlayStatus.text;
+		const shown = await new Promise((resolve) => {
+			const canvas = document.createElement("canvas");
+			canvas.width = game.renderer.domElement.width;
+			canvas.height = game.renderer.domElement.height;
+			const ctx = canvas.getContext("2d");
+			ctx.drawImage(game.renderer.domElement, 0, 0);
+			resolve(ctx.getImageData(0, 0, canvas.width, canvas.height).data);
+		});
+		game.nearScene.getObjectByName("combat-prototype-laser").visible = false;
+		game.render(0);
+		const hidden = await new Promise((resolve) => {
+			const canvas = document.createElement("canvas");
+			canvas.width = game.renderer.domElement.width;
+			canvas.height = game.renderer.domElement.height;
+			const ctx = canvas.getContext("2d");
+			ctx.drawImage(game.renderer.domElement, 0, 0);
+			resolve(ctx.getImageData(0, 0, canvas.width, canvas.height).data);
+		});
+		game.nearScene.getObjectByName("combat-prototype-laser").visible = true;
+		game.render(0);
+		let changed = 0;
+		for (let i = 0; i < shown.length; i += 4)
+			if (
+				Math.abs(shown[i] - hidden[i]) +
+					Math.abs(shown[i + 1] - hidden[i + 1]) +
+					Math.abs(shown[i + 2] - hidden[i + 2]) >
+				30
+			)
+				changed++;
+		return [status, changed];
+	});
 	await page.keyboard.up("Space");
 	check(
 		`${viewport.name}: holding Space draws a prototype laser and exposes immediate PULSE feedback on the glass overlay`,
-		laserVisible &&
+		laserPixels > 50 &&
 			COMBAT_STATUS.test(combatReadout) &&
 			combatReadout.includes("FIRE PULSE"),
-		combatReadout,
+		`${laserPixels} changed pixels, status: ${combatReadout}`,
 	);
 	await page.evaluate(() => window.__seelite.setThrottle(0));
 	await page.waitForFunction(
