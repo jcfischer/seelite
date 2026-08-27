@@ -545,10 +545,13 @@ const resumedFrames = await combatPage.evaluate(async () => {
 	const game = window.__seelite;
 	const before = game.frames;
 	game.probeResumeLoop();
-	await new Promise((resolve) => setTimeout(resolve, 80));
-	return game.frames - before;
+	// Sample after the synchronous resume call so its own rendered frame does
+	// not count; then require several more to prove rAF is re-arming.
+	const afterResume = game.frames;
+	await new Promise((resolve) => setTimeout(resolve, 150));
+	return { delta: game.frames - afterResume, sync: afterResume - before };
 });
-check("prototype: frame loop resumes after freeze", resumedFrames > 0);
+check("prototype: frame loop keeps running after resume", resumedFrames.delta > 2);
 await combatPage.keyboard.up("Space");
 check(
 	"prototype: holding Space shows the weapon tracer, draws it on the glass and exposes immediate PULSE feedback",
