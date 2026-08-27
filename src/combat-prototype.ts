@@ -80,7 +80,9 @@ export function createCombatPrototype(
 
 const clamp = (value: number, max: number) => Math.max(0, Math.min(max, value));
 
-/** The strafe leaves the sight line briefly near each extreme of its sweep. */
+/** The strafe leaves the sight line for roughly 38% of the duel: the x term
+ *  fails ~16% of the time and the y term ~26%, which is the dominant driver
+ *  of the 60-90 s pacing window the tests assert. */
 export function duelTargetInCone(elapsed: number) {
 	return (
 		Math.abs(3 * Math.sin(elapsed * 0.7)) < 2.9 &&

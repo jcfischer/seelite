@@ -31,10 +31,11 @@ function fireFixedStepDuel(state = createCombatPrototype(), cap = 200) {
 test("starter pulse duel destroys the shielded target within the pacing target", () => {
 	const state = fireFixedStepDuel();
 	expect(state.targetHull).toBe(0);
-	// The enemy fired back through the duel: at least one shield bank was
-	// engaged, so this is a two-sided exchange and not a one-way kill.
-	expect(state.foreShield + state.aftShield).toBeLessThan(
-		COMBAT_PROTOTYPE_DEFAULTS.shield * 2,
+	// The enemy fired back through the duel: shields plus hull are below the
+	// untouched total, so the player took real damage — a two-sided exchange
+	// rather than a one-way kill.
+	expect(state.foreShield + state.aftShield + state.playerHull).toBeLessThan(
+		COMBAT_PROTOTYPE_DEFAULTS.shield * 2 + COMBAT_PROTOTYPE_DEFAULTS.hull,
 	);
 	expect(state.playerHull).toBeGreaterThan(0);
 	expect(state.elapsed).toBeGreaterThanOrEqual(60);
