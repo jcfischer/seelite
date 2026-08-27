@@ -449,6 +449,12 @@ class Game {
 	readonly farScene = new THREE.Scene();
 	/** Approach: close stars, planets, and moons at intermediate scale. */
 	readonly approachScene = new THREE.Scene();
+	/** Switchable from the perf panel; see `perf-panel.ts`. */
+	private bloomPass!: UnrealBloomPass;
+	/** The bloom pass, for the perf panel to switch. */
+	get bloom() {
+		return this.bloomPass ?? null;
+	}
 	/** Near: ships, stations, anything at 1:1 kilometres. */
 	readonly nearScene = new THREE.Scene();
 
@@ -910,14 +916,17 @@ class Game {
 		this.composer.addPass(farPass);
 		this.composer.addPass(approachPass);
 		this.composer.addPass(nearPass);
-		this.composer.addPass(
-			new UnrealBloomPass(
-				new THREE.Vector2(window.innerWidth, window.innerHeight),
-				0.55,
-				0.6,
-				0.85,
-			),
+		// Kept as a field so `perf-panel.ts` can switch it live. A full-screen
+		// multi-pass blur at up to 2x device pixel ratio is a fixed cost every
+		// frame whatever is on screen, so it is the first thing to price against
+		// a shader that is only expensive when a body fills the view.
+		this.bloomPass = new UnrealBloomPass(
+			new THREE.Vector2(window.innerWidth, window.innerHeight),
+			0.55,
+			0.6,
+			0.85,
 		);
+		this.composer.addPass(this.bloomPass);
 		this.composer.addPass(new OutputPass());
 
 		this.overlay = document.getElementById("overlay") as HTMLCanvasElement;
@@ -3234,6 +3243,23 @@ if (query.has("model-viewer")) {
 	// a probe needs to assert on has to be reachable from here, or the probe ends
 	// up asserting on pixels for want of a number.
 	(window as unknown as { __seelite: Game }).__seelite = game;
+
+	// `?perf` mounts the cost-attribution panel — live switches for bloom, the
+	// two shells, the surface shader and the crater path, so a body can be flown
+	// to once and the terms toggled in place rather than compared across two
+	// reloads from two positions.
+	//
+	// Here rather than beside the other query gates above, and that is not
+	// tidiness: the panel walks the game's scenes, so it has to be mounted after
+	// the game exists. Gated first, so nothing is imported when it is not asked
+	// for.
+	if (query.has("perf"))
+		import("./perf-panel").then(({ mountPerfPanel }) =>
+			mountPerfPanel({
+				scenes: [game.nearScene, game.approachScene, game.farScene],
+				bloom: game.bloom,
+			}),
+		);
 }
 
 export type { Game };

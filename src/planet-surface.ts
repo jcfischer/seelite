@@ -280,6 +280,29 @@ export function buildBodyVisual(
 	sphere: THREE.BufferGeometry,
 	opts: BodyVisualOptions = {},
 ): BodyVisual {
+	/**
+	 * Ablation switches, for attributing a frame cost rather than guessing at it.
+	 *
+	 * A planet filling the screen costs its surface shader, a cloud shell, an
+	 * atmosphere shell and a full-screen bloom pass, and the only honest way to
+	 * learn which dominates is to remove one at a time and read the meter.
+	 * #59 could not: its runner has no GPU, and it recorded that what its
+	 * figures licensed was "no saving was demonstrated here", not "no saving
+	 * exists". These are the levers that let a GPU answer it.
+	 *
+	 *   ?perf=noatmo    no atmosphere shell
+	 *   ?perf=noclouds  no cloud shell
+	 *   ?perf=noshells  neither
+	 *   ?perf=norelief  surface keeps its albedo, loses its normal perturbation
+	 *   ?perf=flat      surface is a plain lit sphere, no noise at all
+	 *
+	 * They are diagnostic and change what is drawn, so nothing reads them by
+	 * default and no probe asserts through them.
+	 */
+	const perf = new URLSearchParams(window.location.search).get("perf") ?? "";
+	const noClouds = perf === "noclouds" || perf === "noshells";
+	const noAtmo = perf === "noatmo" || perf === "noshells";
+
 	const uniforms: Record<string, THREE.IUniform> = {
 		time: { value: 0 },
 		// A direction, not a position, so it is the same vector at every render
@@ -294,6 +317,11 @@ export function buildBodyVisual(
 		// The A/B switch AIRLESS reads. Query-gated so the two crater paths can
 		// be compared on one machine by reloading, which is the measurement
 		// #59 could not take — its runner had no GPU, and it said so.
+		// 0 normally; 1 drops the normal perturbation, 2 drops the surface noise
+		// entirely. Read by every class through `RELIEF`.
+		perfAblate: {
+			value: perf === "flat" ? 2 : perf === "norelief" ? 1 : 0,
+		},
 		craterSlow: {
 			value:
 				new URLSearchParams(window.location.search).get("crater") ===
@@ -327,21 +355,24 @@ export function buildBodyVisual(
 	);
 	group.add(planet);
 
-	if (look.cloudCover > 0) {
-		group.add(
-			new THREE.Mesh(
-				cloudShell(),
-				new THREE.ShaderMaterial({
-					uniforms,
-					transparent: true,
-					depthWrite: false,
-					vertexShader: SURFACE_VERTEX,
-					fragmentShader: CLOUD_FRAGMENT,
-				}),
-			),
+	if (look.cloudCover > 0 && !noClouds) {
+		// Tagged so `perf-panel.ts` can find it by walking the scene. A tag on
+		// the object beats a registry of meshes, which would have to be kept in
+		// step with a world that regenerates on every jump.
+		const clouds = new THREE.Mesh(
+			cloudShell(),
+			new THREE.ShaderMaterial({
+				uniforms,
+				transparent: true,
+				depthWrite: false,
+				vertexShader: SURFACE_VERTEX,
+				fragmentShader: CLOUD_FRAGMENT,
+			}),
 		);
+		clouds.userData.shell = "cloud";
+		group.add(clouds);
 	}
-	if (look.atmosphere > 0) {
+	if (look.atmosphere > 0 && !noAtmo) {
 		// Back faces only, additively: the shell is a volume seen from outside,
 		// and drawing its front faces would put a wash over the whole disc.
 		const shell = new THREE.Mesh(
@@ -359,6 +390,7 @@ export function buildBodyVisual(
 		// A thicker shell stands further off the surface. On the shared unit
 		// geometry that is a scale rather than its own tessellation.
 		shell.scale.setScalar(1.03 + look.atmosphere * 0.025);
+		shell.userData.shell = "atmosphere";
 		group.add(shell);
 	}
 	if (look.hasRings) {

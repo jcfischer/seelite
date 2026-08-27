@@ -317,7 +317,9 @@ void main() {
   vec3  albedo = vec3(0.5);
   vec3  emissive = vec3(0.0);
   float specPower = 0.0, specMask = 0.0;
-  surface(p, albedo, N, emissive, specPower, specMask);
+  // ?perf=flat: a plain lit sphere, so the whole class shader can be priced
+  // against the rest of the frame. Diagnostic; see planet-surface.ts.
+  if (perfAblate < 1.5) surface(p, albedo, N, emissive, specPower, specMask);
 
   vec3 col = shade(albedo, N, V);
   if (specPower > 0.0) col += sunColor * specular(N, V, specPower) * specMask;

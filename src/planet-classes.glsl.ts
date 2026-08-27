@@ -22,11 +22,14 @@ import type { SurfaceClass } from "./planet-appearance";
 
 /** Height-field relief, shared by every class that has any. */
 const RELIEF = /* glsl */ `
+uniform float perfAblate;
 // Perturb the normal from a height function by central differences in the
 // sphere's own tangent frame. Cheaper than displacing geometry and it survives
 // at any tessellation, which matters because the game draws these bodies at
 // wildly different screen sizes.
 vec3 reliefNormal(vec3 p, vec3 N, float strength) {
+  // Diagnostic ablation, off by default. See planet-surface.ts.
+  if (perfAblate > 0.5) return N;
   vec3 axis = abs(p.y) < 0.94 ? vec3(0,1,0) : vec3(1,0,0);
   vec3 t = normalize(cross(axis, p)), b = cross(p, t);
   float e = 0.0035;
@@ -351,6 +354,7 @@ float height(vec3 p) {
  * can look at rather than take on this comment's word.
  */
 vec3 craterRelief(vec3 p, vec3 N, float strength) {
+  if (perfAblate > 0.5) return N;
   vec4 c1 = cratersAndGradient(p + seedOffset, 3.2, 0.55);
   vec4 c2 = cratersAndGradient(p + seedOffset * 1.7, 8.0, 0.20);
   vec3 grad = c1.xyz + c2.xyz;
