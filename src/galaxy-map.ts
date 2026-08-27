@@ -22,6 +22,7 @@ import {
 	GALAXY_COUNT,
 	GALAXY_RADIUS_LY,
 	JUMP_RANGE_LY,
+	SYSTEMS_PER_GALAXY,
 	type Galaxy,
 	type SystemRecord,
 	CORE_RADIUS_LY,
@@ -116,7 +117,7 @@ export interface GalaxyMapState {
 	} | null;
 }
 
-interface Handle {
+export interface Handle {
 	state: GalaxyMapState;
 	select(index: number | null): void;
 	commitCourse(): boolean;
@@ -132,7 +133,8 @@ interface Handle {
 	 *  figure quoted in the spec is only reproducible from a known view. */
 	resetView(): void;
 	/**
-	 * Every system's position in canvas pixels, under the current camera.
+	 * Every system's position in **canvas-relative** pixels, under the current
+	 * camera. Add `viewport().left`/`top` for client coordinates.
 	 *
 	 * Exposed because it is the one thing about this chart a headless test
 	 * cannot reach and a probe must not restate: whether the projection
@@ -142,10 +144,10 @@ interface Handle {
 	 * it from `pos` would be checking its own arithmetic.
 	 */
 	projected(): { index: number; x: number; y: number; behind: boolean }[];
-	/** The canvas's size in CSS pixels. A probe measuring crowding has to
-	 *  discard systems projected *outside* the viewport as well as behind the
-	 *  camera, and the drawn size is the module's fact, not the window's. */
-	viewport(): { width: number; height: number };
+	/** The canvas's box in CSS pixels. A probe measuring crowding has to discard
+	 *  systems projected *outside* the viewport as well as behind the camera,
+	 *  and the drawn box is the module's fact, not the window's. */
+	viewport(): { width: number; height: number; left: number; top: number };
 	/** The pick radius the chart itself uses, so a probe measuring crowding
 	 *  compares against the module's number rather than a copy of it. */
 	pickRadiusPx: number;
@@ -191,12 +193,7 @@ function hazeTexture(): THREE.Texture {
 
 const el = <K extends keyof HTMLElementTagNameMap>(
 	tag: K,
-	className?: string,
-): HTMLElementTagNameMap[K] => {
-	const node = document.createElement(tag);
-	if (className !== undefined) node.className = className;
-	return node;
-};
+): HTMLElementTagNameMap[K] => document.createElement(tag);
 
 export function mountGalaxyMap(): void {
 	const query = new URLSearchParams(window.location.search);
@@ -431,9 +428,14 @@ export function mountGalaxyMap(): void {
 
 	// D5: the route, drawn only once one is planned.
 	const routeGeometry = new THREE.BufferGeometry();
+	// Sized to the whole galaxy, not to a guess at how long a chain gets. A
+	// route cannot revisit a system, so `SYSTEMS_PER_GALAXY` points is the hard
+	// ceiling — and the previous 64 had no bound check behind it: a longer chain
+	// would have written past the end, which a typed array swallows silently,
+	// and then drawn the surplus vertices at the origin.
 	routeGeometry.setAttribute(
 		"position",
-		new THREE.BufferAttribute(new Float32Array(3 * 64), 3),
+		new THREE.BufferAttribute(new Float32Array(3 * SYSTEMS_PER_GALAXY), 3),
 	);
 	const routeLine = new THREE.Line(
 		routeGeometry,
@@ -508,13 +510,17 @@ export function mountGalaxyMap(): void {
 		if (route !== null && route.jumps > 0) {
 			const rp = routeGeometry.attributes.position.array as Float32Array;
 			const chain = [current, ...route.hops.map((h) => h.system)];
-			chain.forEach((s, i) => {
+			const capacity = routeGeometry.attributes.position.count;
+			chain.slice(0, capacity).forEach((s, i) => {
 				rp[i * 3] = s.pos.x;
 				rp[i * 3 + 1] = s.pos.y;
 				rp[i * 3 + 2] = s.pos.z;
 			});
 			routeGeometry.attributes.position.needsUpdate = true;
-			routeGeometry.setDrawRange(0, chain.length);
+			routeGeometry.setDrawRange(
+				0,
+				Math.min(chain.length, routeGeometry.attributes.position.count),
+			);
 			routeLine.visible = true;
 		} else {
 			routeLine.visible = false;
@@ -585,9 +591,15 @@ export function mountGalaxyMap(): void {
 		scratch.set(s.pos.x, s.pos.y, s.pos.z);
 		pivot.localToWorld(scratch);
 		scratch.project(camera);
+		// **Canvas-relative, not client.** These once carried `rect.left`/`top`,
+		// which made `projected()` client coordinates while `viewport()`
+		// reported canvas extents — a pair that only agrees while the chart is
+		// `position: fixed; inset: 0`, and §1 says that ends the moment it
+		// becomes a Navigation tab. The one conversion to client space is at
+		// the two call sites that need it.
 		return {
-			x: ((scratch.x + 1) / 2) * rect.width + rect.left,
-			y: ((-scratch.y + 1) / 2) * rect.height + rect.top,
+			x: ((scratch.x + 1) / 2) * rect.width,
+			y: ((-scratch.y + 1) / 2) * rect.height,
 			behind: scratch.z > 1,
 		};
 	};
@@ -618,12 +630,15 @@ export function mountGalaxyMap(): void {
 	 */
 	const pick = (clientX: number, clientY: number): SystemRecord | null => {
 		const rect = canvasRect();
+		// Client to canvas, once, rather than canvas to client 256 times.
+		const x = clientX - rect.left;
+		const y = clientY - rect.top;
 		let best: SystemRecord | null = null;
 		let bestD = Number.POSITIVE_INFINITY;
 		for (const s of galaxy.systems) {
 			const p = toPixels(s, rect);
 			if (p.behind) continue;
-			const d = Math.hypot(p.x - clientX, p.y - clientY);
+			const d = Math.hypot(p.x - x, p.y - y);
 			if (d < PICK_RADIUS_PX && d < bestD) {
 				bestD = d;
 				best = s;
@@ -670,6 +685,14 @@ export function mountGalaxyMap(): void {
 		lastX = e.clientX;
 		lastY = e.clientY;
 	});
+	// A capture the browser takes back — a gesture, a lost pointer — never
+	// reaches `pointerup`, so without these the flag stays set and every later
+	// hover spins the cluster with no button held.
+	for (const kind of ["pointercancel", "lostpointercapture"]) {
+		canvas.addEventListener(kind, () => {
+			dragging = false;
+		});
+	}
 	canvas.addEventListener("pointerup", (e) => {
 		dragging = false;
 		// A drag that ends over a point is a camera move, not a selection.
@@ -680,7 +703,19 @@ export function mountGalaxyMap(): void {
 		"wheel",
 		(e) => {
 			e.preventDefault();
-			zoom(e.deltaY * 0.05);
+			// `deltaY` is only in pixels when `deltaMode` says so. Firefox
+			// reports lines (≈3 per notch) and some setups report pages, so
+			// treating the raw number as pixels moves the camera 0.15 LY a notch
+			// across a 12–140 LY range — and §5.1's whole answer to crowding is
+			// that zooming resolves the cluster. The probe tier is Chromium, so
+			// nothing here would have caught it.
+			const px =
+				e.deltaMode === 1
+					? e.deltaY * 16
+					: e.deltaMode === 2
+						? e.deltaY * root.clientHeight
+						: e.deltaY;
+			zoom(px * 0.05);
 		},
 		{ passive: false },
 	);
@@ -763,14 +798,8 @@ export function mountGalaxyMap(): void {
 			// point stays the preference; the clamp is what makes it safe.
 			const w = card.offsetWidth;
 			const h = card.offsetHeight;
-			const left = Math.min(
-				Math.max(0, p.x - rect.left + 18),
-				Math.max(0, rect.width - w),
-			);
-			const top = Math.min(
-				Math.max(0, p.y - rect.top - 12),
-				Math.max(0, rect.height - h),
-			);
+			const left = Math.min(Math.max(0, p.x + 18), Math.max(0, rect.width - w));
+			const top = Math.min(Math.max(0, p.y - 12), Math.max(0, rect.height - h));
 			card.style.left = `${left}px`;
 			card.style.top = `${top}px`;
 		}
@@ -857,7 +886,15 @@ export function mountGalaxyMap(): void {
 		},
 		viewport() {
 			const rect = canvasRect();
-			return { width: rect.width, height: rect.height };
+			// `left`/`top` so a probe can turn a `projected()` point into the
+			// client coordinates `page.mouse.click` wants, rather than assuming
+			// the canvas fills the window.
+			return {
+				width: rect.width,
+				height: rect.height,
+				left: rect.left,
+				top: rect.top,
+			};
 		},
 		pickRadiusPx: PICK_RADIUS_PX,
 	};

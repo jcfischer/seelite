@@ -141,8 +141,14 @@ check is `grep -rn FUEL_COST_PER_LY src/ tests/ scripts/`, and it is the check
 because a 10× change to an exported constant is only safe to the extent its
 importers are known.
 
-`tests/galaxy-route.test.ts` now asserts the two constants agree — a cross-module
-equality is the check a repo-wide grep for `0.2 Cr` could not be.
+`tests/galaxy-route.test.ts` pins **each figure absolutely and then their
+agreement**: `FUEL_TANK_LY === 7`, both per-LY constants `=== 0.2 / 0.1`,
+`jumpCost(7) === 14`, and the two constants equal to each other. The equality
+alone would have been the weaker check it first looked like — it proves the two
+match, not that either is right, so an edit moving both in the same direction
+passes it, and `jumpCost(7) === 14` leans on a tank size nothing was asserting.
+Four assertions, because the failure being guarded against is a transcription,
+and a transcription can land in any one of them.
 
 ---
 
@@ -161,9 +167,16 @@ number, is the property: it is what makes the target the size the player sees.
 §9.2 checks it at the boundary rather than at a point's centre, because a centre
 click cannot tell the two implementations apart.
 
-**A drag is a camera move, not a selection** — over a 4 px slop. Zero slop was
-the first implementation, and a mouse drifting a single pixel between press and
-release then cancelled the click silently.
+**A drag is a camera move, not a selection** — over a 4 px slop, accumulated
+rather than measured press-to-release, so a circular drag ending where it
+started still counts as a drag. Zero slop was the first implementation, and a
+mouse drifting a single pixel then cancelled the click silently.
+
+**Wheel zoom reads `deltaMode`.** A browser reporting lines rather than pixels
+sends ≈3 per notch, which would move the camera 0.15 LY across a 12–140 LY
+range — and §5.1's whole answer to crowding is that zooming resolves the
+cluster. The probe tier is Chromium only, so nothing in the suite would catch
+it; the conversion is in the handler instead.
 
 ### 5.1 The chart reads; the list finds
 
@@ -211,9 +224,13 @@ The 62 LY figure is **asserted**, not merely recorded: `probe-galaxy-map.mjs`
 resets to the default framing and requires it inside a 25–60% band, so a change
 to the projection or the pick radius that moves it has to answer for the move.
 The rest of the table is a recorded sweep. Two things the band deliberately does
-*not* cover, so the claim is not read wider than it is: the metric is blind to
-point size, and it is viewport-dependent — a 390 × 844 column frames 194 of the
-256 at 62 LY and measures 38.7%.
+*not* cover, so the claim is not read wider than it is. The metric is blind to
+point size. And it is viewport-dependent: a 390 × 844 column frames 194 of the
+256 at 62 LY and measures **38.7%**. The probe applies the one band to both
+viewports, which is honest only because both measured values sit inside it —
+the band is calibrated on the desktop figure and merely *accommodates* the
+narrow one, so its discriminating power at 390 px is weaker than at 1280 px.
+Tightening it would need a per-viewport calibration nobody has asked for yet.
 
 **An earlier version of this table was wrong, and wrong in the flattering
 direction.** It counted every system in front of the camera rather than every
@@ -318,6 +335,11 @@ they will forget they set. #69 owns the placement.
 Split on the repo's usual line: arithmetic headless, anything spatial in the
 browser.
 
+`src/galaxy-route.ts` memoises one jump graph per `(systems array, galaxy,
+range)` — the neighbour lists and their distances — because a caller planning to
+each of 256 systems in turn otherwise rebuilds the same 65,536-pair scan 256
+times. It changes when the work happens, never what is returned.
+
 ### 9.1 Headless — `tests/galaxy-route.test.ts`
 
 1. **The fuel price agrees across modules** — `jumpCost(7) === 14`, and
@@ -326,12 +348,22 @@ browser.
    lit, one at `7 + 0.001` is not, and a point 5 LY out in two axes at once
    (7.07 LY) is not, which is the assertion a build that dropped an axis fails.
 3. **The objective is the one §4 names.** Two hand-built graphs where greedy and
-   optimal *disagree*: a 1 LY cul-de-sac that traps nearest-first into three
-   jumps where two exist, and two equal-length chains that must break on
-   distance. A route planner over the real generator passes on almost any
-   plausible implementation — with ~8 systems in range at every step a greedy
-   walk arrives too — so the synthetic graphs are the only shape in which this
-   suite could fail on a wrong objective.
+   optimal *disagree*. In the first, the origin's nearest neighbour (6.08 LY) is
+   a **dead end** — 8.41 LY on to anywhere — so a nearest-first walk strands
+   itself while the two-jump answer takes the longer 6.90 LY first step. In the
+   second, two chains of two jumps are **both legal** (13.90 LY and 12.00 LY)
+   and the tie-break decides. A route planner over the real generator passes on
+   almost any plausible implementation — with ~8 systems in range at every step
+   a greedy walk arrives too — so the synthetic graphs are the only shape in
+   which this suite could fail on a wrong objective.
+
+   Both fixtures were wrong when first written, and the tie-break one was wrong
+   in the way that matters: its "alternative" chain had a **10.82 LY** second
+   leg, past the jump range, so only one two-jump route existed and the test
+   passed on exactly the build it claimed to exclude. Measured after the fix, it
+   fails on a planner with no distance ordering at all and *passes* on one that
+   drops the tie-break from the relaxation but keeps it in the selection order —
+   item 4 is what catches that half-removed case.
 4. **Agreement with brute force.** 60 twelve-system clouds in a 14 LY cube,
    every simple path enumerated and ranked as §4 ranks them. The cloud was
    sized by measurement, not guess: 9 systems in a 26 LY cube connected 4 trials
@@ -385,6 +417,15 @@ At desktop (1280 × 760) and narrow (390 × 844):
    position **and must differ from the plan-relative decrement a stored cursor
    would give**. Without that second half — which is how it was first written —
    a build that saved the chain and advanced an index passes.
+
+   The off-plan system is **chosen to discriminate**, not taken as the first lit
+   neighbour off the chain: some of those lie on an equally optimal alternate
+   route, where a correct build's re-plan happens to equal the cursor's answer
+   and the check goes false-red. The probe asks each candidate what a re-plan
+   from it would cost and takes the first a cursor could not have produced; if
+   there is none, it **fails** rather than falling back to an arbitrary jump,
+   because a green that could not have gone red is the failure this whole probe
+   exists to avoid.
 
 ## 10. Deferred
 

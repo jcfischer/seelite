@@ -84,6 +84,75 @@ const LY_EPSILON = 1e-9;
  * scan rather than a heap: 256 systems makes the scan cheaper than maintaining
  * the structure, the same trade `isConnected` makes one module over.
  */
+/**
+ * One galaxy's jump graph, built once.
+ *
+ * Every call used to filter the pool, rebuild the index map and rescan all
+ * 65,536 pairs — and a caller asking for a route to each of 256 systems in turn
+ * (the map's own workbench does exactly that) paid for the same adjacency 256
+ * times. The neighbour list is a function of the positions and the range, and
+ * generated records do not move, so it is memoised on the identity of the array
+ * it was built from.
+ *
+ * **It changes when work happens, never what is returned.** A different array,
+ * galaxy or range is a different entry; nothing here is keyed on the search.
+ */
+interface JumpGraph {
+	pool: SystemRecord[];
+	slot: Map<number, number>;
+	/** `neighbours[i]` — pool positions within `maxJump` of `i`. */
+	neighbourOf: number[][];
+	/** Matching distances, so the relaxation never recomputes a square root. */
+	distanceOf: number[][];
+}
+
+const graphCache = new WeakMap<
+	readonly SystemRecord[],
+	Map<string, JumpGraph>
+>();
+
+function jumpGraph(
+	systems: readonly SystemRecord[],
+	galaxy: number,
+	maxJump: number,
+): JumpGraph {
+	let perArray = graphCache.get(systems);
+	if (perArray === undefined) {
+		perArray = new Map();
+		graphCache.set(systems, perArray);
+	}
+	const key = `${galaxy}:${maxJump}`;
+	const cached = perArray.get(key);
+	if (cached !== undefined) return cached;
+
+	const pool = systems.filter((s) => s.galaxy === galaxy);
+	const n = pool.length;
+	const slot = new Map<number, number>();
+	for (let i = 0; i < n; i++) slot.set(pool[i].index, i);
+
+	const neighbourOf: number[][] = Array.from({ length: n }, () => []);
+	const distanceOf: number[][] = Array.from({ length: n }, () => []);
+	const maxJumpSq = maxJump * maxJump;
+	for (let i = 0; i < n; i++) {
+		for (let j = i + 1; j < n; j++) {
+			const dx = pool[i].pos.x - pool[j].pos.x;
+			const dy = pool[i].pos.y - pool[j].pos.y;
+			const dz = pool[i].pos.z - pool[j].pos.z;
+			const dSq = dx * dx + dy * dy + dz * dz;
+			if (dSq > maxJumpSq) continue;
+			const d = Math.sqrt(dSq);
+			neighbourOf[i].push(j);
+			distanceOf[i].push(d);
+			neighbourOf[j].push(i);
+			distanceOf[j].push(d);
+		}
+	}
+
+	const graph = { pool, slot, neighbourOf, distanceOf };
+	perArray.set(key, graph);
+	return graph;
+}
+
 export function planRoute(
 	systems: readonly SystemRecord[],
 	from: SystemRecord,
@@ -92,10 +161,12 @@ export function planRoute(
 ): Route | null {
 	if (from.galaxy !== to.galaxy) return null;
 
-	const pool = systems.filter((s) => s.galaxy === from.galaxy);
+	const { pool, slot, neighbourOf, distanceOf } = jumpGraph(
+		systems,
+		from.galaxy,
+		maxJump,
+	);
 	const n = pool.length;
-	const slot = new Map<number, number>();
-	for (let i = 0; i < n; i++) slot.set(pool[i].index, i);
 
 	const start = slot.get(from.index);
 	const goal = slot.get(to.index);
@@ -117,8 +188,6 @@ export function planRoute(
 	jumps[start] = 0;
 	ly[start] = 0;
 
-	const maxJumpSq = maxJump * maxJump;
-
 	for (let step = 0; step < n; step++) {
 		let u = -1;
 		for (let i = 0; i < n; i++) {
@@ -138,15 +207,13 @@ export function planRoute(
 		if (u === goal) break;
 		settled[u] = 1;
 
-		for (let v = 0; v < n; v++) {
-			if (settled[v] || v === u) continue;
-			const dx = pool[u].pos.x - pool[v].pos.x;
-			const dy = pool[u].pos.y - pool[v].pos.y;
-			const dz = pool[u].pos.z - pool[v].pos.z;
-			const dSq = dx * dx + dy * dy + dz * dz;
-			if (dSq > maxJumpSq) continue;
+		const adjacent = neighbourOf[u];
+		const spans = distanceOf[u];
+		for (let k = 0; k < adjacent.length; k++) {
+			const v = adjacent[k];
+			if (settled[v]) continue;
 			const candJumps = jumps[u] + 1;
-			const candLy = ly[u] + Math.sqrt(dSq);
+			const candLy = ly[u] + spans[k];
 			if (
 				candJumps < jumps[v] ||
 				(candJumps === jumps[v] && candLy < ly[v] - LY_EPSILON)
@@ -301,6 +368,20 @@ export function parseCourse(
 	envelopeGalaxy: number,
 ): Course | null {
 	if (raw === null || raw === undefined) return null;
+	// **Accepts its own serialised form.** `serialiseCourse` returns a JSON
+	// string, and a pair whose output the input rejects is a foot-gun for #46 —
+	// the caller had to write `parseCourse(JSON.parse(serialiseCourse(c)), g)`.
+	// A malformed string throws here rather than falling through to the
+	// object check, so a truncated save still fails loudly.
+	if (typeof raw === "string") {
+		let decoded: unknown;
+		try {
+			decoded = JSON.parse(raw);
+		} catch (cause) {
+			throw new Error(`course: unreadable JSON`, { cause });
+		}
+		return parseCourse(decoded, envelopeGalaxy);
+	}
 	if (!isPlainObject(raw)) {
 		throw new Error(`course: expected an object, got ${typeof raw}`);
 	}

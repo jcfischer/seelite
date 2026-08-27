@@ -131,17 +131,25 @@ for (const viewport of VIEWPORTS) {
 						p.x < width - 80 &&
 						p.y < height - 80,
 				);
-			return (
-				visible.find((a) =>
-					visible.every(
-						(b) =>
-							b.index === a.index || Math.hypot(a.x - b.x, a.y - b.y) > clear,
-					),
-				) ?? null
+			const found = visible.find((a) =>
+				visible.every(
+					(b) =>
+						b.index === a.index || Math.hypot(a.x - b.x, a.y - b.y) > clear,
+				),
 			);
+			const box = map.viewport();
+			return found === undefined
+				? null
+				: { ...found, originLeft: box.left, originTop: box.top };
 		}, clearance);
 		if (target === null) return { target: null, selected: undefined };
-		await page.mouse.click(target.x + offsetPx, target.y);
+		// `projected()` is canvas-relative; `page.mouse` wants client
+		// coordinates. Converted through the canvas box rather than assumed
+		// equal, because they only are while the chart fills the window.
+		await page.mouse.click(
+			target.x + target.originLeft + offsetPx,
+			target.y + target.originTop,
+		);
 		const after = await page.evaluate(() => window.__seeliteGalaxyMap.state);
 		return { target, selected: after.selectedIndex, state: after };
 	};
@@ -380,10 +388,36 @@ for (const viewport of VIEWPORTS) {
 
 		map.jumpTo(plan[0]);
 		const afterHop = map.state;
+		const cursorWouldSay = afterHop.courseRemaining - 1;
 
-		// Somewhere reachable that the plan does not contain.
-		const offPlan = afterHop.litIndices.find((i) => !plan.includes(i));
-		map.jumpTo(offPlan ?? afterHop.litIndices[0]);
+		// **Choose the off-plan system that discriminates.** Taking the first
+		// lit neighbour not on the chain risks landing on one that happens to
+		// be exactly one hop closer — an equally optimal alternate route — where
+		// a correct build's re-plan equals the cursor's answer and the check
+		// goes false-red. So the probe asks each candidate what a re-plan from
+		// there would cost, and takes the first whose answer a cursor could not
+		// have produced. If none exists the check fails loudly rather than
+		// falling back to an arbitrary jump.
+		const here = afterHop.currentIndex;
+		let offPlan = null;
+		let offPlanFresh = null;
+		for (const candidate of afterHop.litIndices) {
+			if (plan.includes(candidate)) continue;
+			map.jumpTo(candidate);
+			map.select(target);
+			const fresh = map.state.route.jumps;
+			map.jumpTo(here);
+			if (fresh !== cursorWouldSay) {
+				offPlan = candidate;
+				offPlanFresh = fresh;
+				break;
+			}
+		}
+		if (offPlan === null) {
+			return { discriminatingOffPlanFound: false };
+		}
+
+		map.jumpTo(offPlan);
 		const afterOffPlan = map.state;
 
 		// What a re-plan from here costs, computed by the chart's own router
@@ -392,6 +426,7 @@ for (const viewport of VIEWPORTS) {
 		const freshFromHere = map.state.route.jumps;
 
 		return {
+			discriminatingOffPlanFound: true,
 			committed,
 			jumps: best,
 			destination: set.course?.destinationIndex,
@@ -400,17 +435,18 @@ for (const viewport of VIEWPORTS) {
 			destinationAfterOffPlan: afterOffPlan.course?.destinationIndex,
 			remainingAfterOffPlan: afterOffPlan.courseRemaining,
 			freshFromHere,
-			// What a stored cursor would have said: one fewer than the previous
-			// remainder, wherever the ship actually went.
-			cursorWouldSay: afterHop.courseRemaining - 1,
-			offPlanUsed: offPlan !== undefined,
+			offPlanFresh,
+			cursorWouldSay,
 		};
 	});
 	check(
 		`${viewport.name}: a set course re-derives from where the ship is (${courseWalk.remainingAfterOffPlan} jumps; a cursor would say ${courseWalk.cursorWouldSay})`,
-		courseWalk.committed &&
+		// No discriminating off-plan neighbour means the check could not have
+		// told the two implementations apart, and a green that proves nothing is
+		// the failure this whole probe exists to avoid.
+		courseWalk.discriminatingOffPlanFound &&
+			courseWalk.committed &&
 			courseWalk.jumps >= 2 &&
-			courseWalk.offPlanUsed &&
 			courseWalk.destination === courseWalk.destinationAfterOffPlan &&
 			courseWalk.remainingAfterHop === courseWalk.remainingAtStart - 1 &&
 			// The remainder is a route planned from the ship's real position …

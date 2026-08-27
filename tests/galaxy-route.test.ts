@@ -114,6 +114,15 @@ describe("§4 fuel price — one figure, two modules", () => {
 	 * it would have quoted a 22 LY crossing at 2.7 Cr.
 	 */
 	test("a full tank costs 14 Cr, in both modules that name a fuel price", () => {
+		// **The absolute figures first, then the agreement.** Equality alone
+		// proves only that the two constants match, so an edit moving both in
+		// the same direction passes it — and `jumpCost(FUEL_TANK_LY) === 14`
+		// leans on `FUEL_TANK_LY` being 7, which nothing here asserted. Elite's
+		// PRXS table is 0.2 Cr per 0.1 LY over a 7 LY tank, and each of those
+		// three numbers is now pinned on its own.
+		expect(FUEL_TANK_LY).toBe(7);
+		expect(FUEL_COST_PER_LY).toBe(0.2 / 0.1);
+		expect(FUEL_CR_PER_LY).toBe(0.2 / 0.1);
 		expect(jumpCost(FUEL_TANK_LY)).toBeCloseTo(14, 10);
 		expect(FUEL_COST_PER_LY).toBe(FUEL_CR_PER_LY);
 	});
@@ -128,7 +137,7 @@ describe("§4 fuel price — one figure, two modules", () => {
 	});
 });
 
-describe("§2 reachability — the 7 LY shell", () => {
+describe("§3 reachability — the 7 LY shell", () => {
 	test("`reachable` is `neighbours`, and both read the true 3D distance", () => {
 		const galaxy = generateGalaxy(0xa11ce, 0);
 		const from = startSystem(galaxy);
@@ -179,18 +188,22 @@ describe("§4 route planning — fewest jumps, then shortest", () => {
 	});
 
 	/**
-	 * The greedy trap. Nearest-first from 0 takes the 1 LY step to system 1,
-	 * which is a cul-de-sac 8 LY short of the destination and forces a
-	 * three-jump chain. The two-jump answer starts with the *longest* legal
-	 * step available. A planner that walks toward the nearest neighbour, or
-	 * toward the neighbour nearest the destination, gets three.
+	 * The greedy trap. System 1 is the origin's **nearest** neighbour at 6.08 LY
+	 * and it is a dead end — 8.41 LY on to system 2 and 13.87 to the
+	 * destination, both past the 7 LY range. So a nearest-first walk strands
+	 * itself, while the two-jump answer takes the *longer* first step to system
+	 * 2 at 6.90 LY and reaches the destination 6.60 LY on.
+	 *
+	 * (The distances are stated because they were once wrong here: the comment
+	 * called system 1 "a 1 LY-ish detour" that "forces a three-jump chain",
+	 * and it is neither.)
 	 */
 	test("fewest jumps beats nearest-first, which is the whole point", () => {
 		const systems = [
 			at(0, 0),
-			at(1, 1, 6), // a 1 LY-ish detour that leads nowhere useful
-			at(2, 6.9), // the long first step
-			at(3, 13.5), // reachable from 2 only
+			at(1, 1, 6), // 6.08 LY away — nearest, and a dead end
+			at(2, 6.9), // 6.90 LY — the longer first step, and the only way on
+			at(3, 13.5), // reachable from 2 only, 6.60 LY further
 		];
 		const route = planRoute(systems, systems[0], systems[3]);
 		expect(route).not.toBeNull();
@@ -200,15 +213,29 @@ describe("§4 route planning — fewest jumps, then shortest", () => {
 	});
 
 	/**
-	 * Two chains of equal length; §4 breaks the tie on distance, so the
-	 * planner must not settle for the first two-jump chain its search
-	 * happens to reach.
+	 * **Two legal two-jump chains**, so §4's tie-break decides which one comes
+	 * back. The planner must not settle for whichever its search reaches first.
+	 *
+	 * The first version of this fixture put system 1 at `(3, 6)`, whose second
+	 * leg to the destination is **10.82 LY** — past the jump range, so the
+	 * "alternative" was not a chain at all and `[2, 3]` was the only two-jump
+	 * route. It passed on exactly the build it claimed to exclude. Both legs of
+	 * both chains are now inside the range, and `totalLy` is asserted so
+	 * returning the longer one fails on the number as well as the path.
+	 *
+	 * **What it does and does not discriminate**, measured by breaking the
+	 * planner two ways. It fails on a build with no distance ordering at all.
+	 * It *passes* on one that drops the tie-break from the relaxation but keeps
+	 * it in the selection order, because settling the shorter arm first
+	 * repairs the answer by accident. The brute-force comparison below catches
+	 * that half-removed case; this fixture is the readable statement of the
+	 * rule, not the whole net.
 	 */
 	test("equal jump counts break on total distance", () => {
 		const systems = [
 			at(0, 0),
-			at(1, 3, 6), // via here: 6.71 + 6.71 = 13.4 LY
-			at(2, 6, 0), // via here: 6.00 + 6.00 = 12.0 LY
+			at(1, 6, 3.5), // via here: 6.95 + 6.95 = 13.90 LY — legal, and longer
+			at(2, 6, 0), // via here: 6.00 + 6.00 = 12.00 LY — legal, and shorter
 			at(3, 12, 0),
 		];
 		const route = planRoute(systems, systems[0], systems[3]);
@@ -327,7 +354,7 @@ describe("§4 route planning — fewest jumps, then shortest", () => {
 	});
 });
 
-describe("§6 course — a destination, not a stored chain", () => {
+describe("§8 course — a destination, not a stored chain", () => {
 	const galaxy = generateGalaxy(0xfeed, 0);
 	const from = startSystem(galaxy);
 	const far = [...galaxy.systems].sort(
@@ -400,14 +427,23 @@ describe("§6 course — a destination, not a stored chain", () => {
 	});
 });
 
-describe("§6.1 course persistence — a typed, validated envelope", () => {
+describe("§8.2 course persistence — a typed, validated envelope", () => {
 	test("a course round-trips through its serialised form", () => {
 		const course: Course = {
 			version: COURSE_SCHEMA_VERSION,
 			galaxy: 3,
 			destinationIndex: 178,
 		};
+		// Composed directly. The pair once did not round-trip — `parseCourse`
+		// rejected the string `serialiseCourse` produced — so the caller had to
+		// interpose a `JSON.parse` that nothing in the contract mentioned.
+		expect(parseCourse(serialiseCourse(course), 3)).toEqual(course);
 		expect(parseCourse(JSON.parse(serialiseCourse(course)), 3)).toEqual(course);
+	});
+
+	test("an unreadable JSON string throws rather than reading as absent", () => {
+		expect(() => parseCourse("{ not json", 0)).toThrow(/unreadable/i);
+		expect(() => parseCourse('"a string"', 0)).toThrow();
 	});
 
 	test("no course at all is a valid state, not a parse failure", () => {
