@@ -78,7 +78,7 @@ function textPixelsMatch(canvas, renderedText) {
 	return glyphPixels > 0;
 }
 
-const PROBE_MATCHERS_SCRIPT = `const PIXEL_CHANNEL_TOLERANCE = ${PIXEL_CHANNEL_TOLERANCE}; globalThis.__seeliteTextPixelsMatch = ${textPixelsMatch}; globalThis.__seeliteEtaReadout = new RegExp(${JSON.stringify(ETA_READOUT_SOURCE)}); globalThis.__seeliteVelocityReadout = new RegExp(${JSON.stringify(VELOCITY_READOUT_SOURCE)}); globalThis.__seeliteCombatStatus = new RegExp(${JSON.stringify(COMBAT_STATUS_SOURCE)});`;
+const PROBE_MATCHERS_SCRIPT = `const PIXEL_CHANNEL_TOLERANCE = ${PIXEL_CHANNEL_TOLERANCE}; globalThis.__seeliteTextPixelsMatch = ${textPixelsMatch}; globalThis.__seeliteMeasureCockpit = ${measureLiveCockpit}; globalThis.__seeliteEtaReadout = new RegExp(${JSON.stringify(ETA_READOUT_SOURCE)}); globalThis.__seeliteVelocityReadout = new RegExp(${JSON.stringify(VELOCITY_READOUT_SOURCE)}); globalThis.__seeliteCombatStatus = new RegExp(${JSON.stringify(COMBAT_STATUS_SOURCE)});`;
 
 function measureLiveCockpit() {
 	const visible = (selector) => {
@@ -460,6 +460,9 @@ for (const viewport of VIEWPORTS) {
 const combatPage = await browser.newPage({
 	viewport: { width: 1280, height: 760 },
 });
+combatPage.on("pageerror", (error) =>
+	check("prototype: no page error (" + error.message + ")", false),
+);
 await combatPage.goto(`${ORIGIN}/?seed=42&combat=1`, { waitUntil: "load" });
 await combatPage.addScriptTag({ content: PROBE_MATCHERS_SCRIPT });
 await combatPage.waitForFunction(
@@ -480,7 +483,11 @@ await combatPage.waitForFunction(
 const combatReadout = await combatPage.evaluate(
 	() => window.__seelite.combatOverlayStatus.text,
 );
-await combatPage.evaluate(() => window.__seelite.render(0));
+await combatPage.evaluate(() => {
+	const game = window.__seelite;
+	game.step(0);
+	game.render(0);
+});
 const laserShown = await combatPage.screenshot();
 await combatPage.evaluate(() => {
 	const game = window.__seelite;
@@ -493,6 +500,9 @@ await combatPage.evaluate(() => {
 	game.nearScene.getObjectByName("combat-prototype-laser").visible = true;
 	game.render(0);
 });
+const combatOverlayRendered = await combatPage.evaluate(
+	() => globalThis.__seeliteMeasureCockpit().combatOverlayText,
+);
 const laserPixels = await combatPage.evaluate(
 	async ({ shown, hidden }) => {
 		const decode = async (base64) => {
@@ -528,8 +538,9 @@ check(
 	"prototype: holding Space draws a laser and exposes immediate PULSE feedback on the glass overlay",
 	laserPixels > 50 &&
 		COMBAT_STATUS.test(combatReadout) &&
-		combatReadout.includes("FIRE PULSE"),
-	`${laserPixels} changed pixels, status: ${combatReadout}`,
+		combatReadout.includes("FIRE PULSE") &&
+		combatOverlayRendered,
+	`${laserPixels} changed pixels, status: ${combatReadout}, overlay glyphs: ${combatOverlayRendered}`,
 );
 await combatPage.close();
 

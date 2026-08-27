@@ -666,9 +666,8 @@ class Game {
 	/** Throwaway #48 balance state: it is not world or persistent combat state. */
 	combat: CombatPrototypeState = createCombatPrototype();
 	/** Prototype chrome is opt-in, so the normal flight HUD stays production-only. */
-	private readonly combatPrototypeEnabled = new URLSearchParams(
-		window.location.search,
-	).has("combat");
+	private readonly combatPrototypeEnabled =
+		new URLSearchParams(window.location.search).get("combat") === "1";
 	private combatIncoming = false;
 	private combatEcm = false;
 	readonly audio = new AudioFX();
