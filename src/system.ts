@@ -102,12 +102,16 @@ export const GIANT_ORBIT_FACTOR = 2;
  * How high a station's orbit floor is, as a multiple of its host's radius
  * (node #32, against `in-system-travel.md` §12.2/§12.3).
  *
- * `1.5`, chosen over the measured alternatives as the knee of the curve:
- * `measure-cruise-arrival.ts` over 200 seeds puts the occluded-leg rate at
- * 26.1% today, 14.2% at 1.5, 7.4% at 2.2, ~5% at 3 — while the altitude the
- * floor imposes scales linearly with `R`, so a big-giant shipyard is already
- * parked 35,000 km up at 1.5 and 140,000 km up at 3, and the period band
- * keeps the orbital speed climbing with it.
+ * `1.5`, chosen over the measured alternatives as the knee of the curve.
+ * The four figures that ranked the candidates are recorded in
+ * `galaxy-generation.md` §7.3 (26.1% of legs occluded with no floor; 14.2%
+ * at 1.5, 7.4% at 2.2, ~5% at 3) and `measure-cruise-arrival.ts` re-derives
+ * the live ones on any run — the rejected floors stay in the spec, not in a
+ * switch, the way `node-30-candidates` keeps #30's rule comparison
+ * recoverable. What ranking on those figures costs: the floor's altitude
+ * scales linearly with `R`, so a big-giant shipyard is already parked
+ * 35,000 km up at 1.5 and 140,000 km up at 3, and the period band keeps the
+ * orbital speed climbing with it.
  *
  * It is a **floor**, not an orbit: the 400–2,000 km band still decides
  * whenever it lands above the floor, which it does for small hosts — a
@@ -117,9 +121,12 @@ export const GIANT_ORBIT_FACTOR = 2;
  * stations inside their host's own shell — the geometry behind the sweep's
  * "second cruise covers 1 km" figure, which §12.2 itself walks back as an
  * overclaim for the game) and the occlusion geometry (§12.3, 26.1% of legs).
- * The floor takes over from 1.5/1.05 ≈ 1.43 × the rocky band's top radius upward, i.e. every
- * large planet and every giant. `tests/station-orbits.test.ts` pins both
- * outcomes.
+ * The floor takes over from 1.5/1.05 ≈ 1.43 × the rocky band's top radius
+ * upward, i.e. every large planet and every giant.
+ * `tests/station-orbits.test.ts` pins both outcomes, and
+ * `measure-station-shells.ts` prints the placed-geometry population at t0
+ * (zero inside any 1.05 shell across seeds 1..8000) that the floor is why
+ * `probe-arrival.mjs` no longer flies.
  */
 export const STATION_ORBIT_R_OVER_R = 1.5;
 
@@ -629,19 +636,10 @@ function generateStations(
 	});
 
 	/** Station orbits are low and fast (§7.3): a few hundred to a couple of
-	 *  thousand km up, 90–240 minutes round — with a floor under that band
-	 *  (node #32). The band is absolute while everything that has to clear the
-	 *  host scales with its radius: `in-system-travel.md` §12.3 measured 26.1%
-	 *  of legs to a planet-orbiting station occluded by the host, and §12.2 a
-	 *  station inside its own 1.05× shell. A floor at `STATION_ORBIT_R_OVER_R`
-	 *  of the host's radius fixes the second by construction — the band's
-	 *  minimum altitude already clears a rocky world's shell, so a host small
-	 *  enough to claim one is a host big enough that the floor applies — and
-	 *  cuts the first to about half (both figures re-measured per the
-	 *  instrument below). It does not fix occlusion outright; nothing
-	 *  short of a r/R in the tens does, and §12.3's own table says where that
-	 *  stops paying for what it costs in altitude. Spin, which docking has to
-	 *  match, belongs to #9. */
+	 *  thousand km up, 90–240 minutes round — floored at
+	 *  `STATION_ORBIT_R_OVER_R` of the host; its doc carries why the band
+	 *  alone could not stand, and the instrument named there re-measures the
+	 *  figures. Spin, which docking has to match, belongs to #9. */
 	const aroundBody = (body: Planet): Orbit => ({
 		radiusKm: Math.max(
 			body.radiusKm + uniform(rand, 400, 2000),
