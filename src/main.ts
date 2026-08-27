@@ -3123,6 +3123,9 @@ class Game {
 						? "pulse"
 						: null,
 				targetInCone,
+				// The strafing target exposes its aft quarter on part of the cycle, so
+				// the player's fixed weapon alternates which shield bank it meets.
+				hitAft: Math.floor(this.combat.elapsed / 2) % 2 === 1,
 				incomingMissile: this.combatIncoming,
 				ecm: this.combatEcm,
 				// Interdiction only charges in cruise (it is a cruise mechanic); the
@@ -3885,9 +3888,11 @@ class Game {
 		ctx.stroke();
 
 		// The Three line is spatial reference; this glass tracer is the readable
-		// weapon feedback at every viewport.
+		// weapon feedback at every viewport. It shares the cockpit-view gate of
+		// the 3D beam it represents.
 		if (
 			this.combatPrototypeEnabled &&
+			this.view === "cockpit" &&
 			this.combat.firing !== null &&
 			!this.probeForceLaserHidden
 		) {
