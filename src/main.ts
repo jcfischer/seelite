@@ -3143,8 +3143,12 @@ class Game {
 				breakAngle: this.keys.has("q") || this.keys.has("e"),
 				// The enemy fires on its own schedule, not on the player's aim cone:
 				// gating the enemy's damage on targetInCone would let the player
-				// only be damaged while happening to point at the enemy.
-				enemyFiring: this.combat.targetHull > 0 && this.combat.elapsed % 4 < 2,
+				// only be damaged while happening to point at the enemy. Both stop
+				// once either side's hull is gone, so the duel has a terminal state.
+				enemyFiring:
+					this.combat.targetHull > 0 &&
+					this.combat.playerHull > 0 &&
+					this.combat.elapsed % 4 < 2,
 				enemyHitAft: Math.floor(this.combat.elapsed / 3) % 2 === 1,
 			});
 		}
@@ -4042,7 +4046,12 @@ class Game {
 				"player",
 				"PLAYER  SHIELDS F 999  A 999  HULL 999",
 			);
-			const combatStatus = `FIRE ${this.combat.heatLocked ? "LOCKED" : (this.combat.firing?.toUpperCase() ?? "SAFE")} · H ${this.combat.heat.toFixed(0)} E ${this.combat.energy.toFixed(0)} · LOCK ${this.combat.missileLock ? "READY" : "ACQ"} · MISSILE ${this.combat.incomingMissile ? "WARNING" : "CLEAR"} · INTD ${this.combat.interdiction ? "ACTIVE" : "CLEAR"}`;
+			const combatStatus =
+				this.combat.playerHull <= 0
+					? "DUEL LOST"
+					: this.combat.targetHull <= 0
+						? "DUEL WON"
+						: `FIRE ${this.combat.heatLocked ? "LOCKED" : (this.combat.firing?.toUpperCase() ?? "SAFE")} · H ${this.combat.heat.toFixed(0)} E ${this.combat.energy.toFixed(0)} · LOCK ${this.combat.missileLock ? "READY" : "ACQ"} · MISSILE ${this.combat.incomingMissile ? "WARNING" : "CLEAR"} · INTD ${this.combat.interdiction ? "ACTIVE" : "CLEAR"}`;
 			// The status line goes through the same fitter, keyed on its widest
 			// text so any live state fits whatever the first frame displayed.
 			const longestStatus =
