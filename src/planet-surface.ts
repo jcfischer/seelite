@@ -294,10 +294,11 @@ export function buildBodyVisual(
 	 * `flat` — and they are gone. They came first, the live switches replaced
 	 * them for the actual measuring, and the justification left for keeping
 	 * them was "a starting state is useful when a page is opened by a script".
-	 * That caller cannot exist: `check-launcher-wiring.mjs` now refuses any
-	 * script whose source opens a page with `?perf`, and the only page-opening
-	 * scripts here are probes. A flag kept for a caller the repo forbids is
-	 * dead code with a story attached.
+	 * There is no such caller: the only page-opening scripts here are probes, and
+	 * a probe must not mount the panel — its key listener would see the probe's
+	 * own keystrokes. `check-launcher-wiring.mjs` refuses the literal flag in a
+	 * probe's source, which catches the way that would happen without making it
+	 * impossible. Either way the flags were kept for a use nobody has.
 	 *
 	 * `?perf` alone still mounts the panel, and every one of those states is a
 	 * keypress there — `noshells` being the two that have no single key.

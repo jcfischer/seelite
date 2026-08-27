@@ -18,11 +18,17 @@
  * The isolation is exactly that and no more: the key listener is a plain
  * `window` handler installed at mount, so a page that mounts the panel *and*
  * is driven by a probe would see both. What keeps that from happening is that
- * no probe URL carries `?perf`, and that is **enforced** rather than trusted:
- * `check-launcher-wiring.mjs` refuses a probe whose source opens a page with
- * it, and `npm run probe` runs that before any browser starts. So adding
- * `?perf` to a probe to see something fails the wiring check rather than
- * quietly putting a keystroke-driven diagnostic under a rendering assertion. `hud-and-scanner.md` §5 keeps
+ * no probe URL carries `?perf`. `check-launcher-wiring.mjs` refuses a probe
+ * whose source contains it, and `npm run probe` runs that before any browser
+ * starts — so adding `?perf` to a probe to see something fails the wiring
+ * check rather than quietly putting a keystroke-driven diagnostic under a
+ * rendering assertion.
+ *
+ * **It is a text match, and text is the limit of it.** A URL assembled from
+ * variables, or with the flag appended somewhere else, walks past it. That
+ * catches the way it would actually happen — someone adding the flag to a URL
+ * to look at something — and does not make the isolation a property of the
+ * program. Calling it "enforced" was too strong. `hud-and-scanner.md` §5 keeps
  * developer tuning readouts off the persistent player flight floor; this obeys
  * that the same way the frame meter does, by never being on unless asked for.
  *

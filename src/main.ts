@@ -3977,10 +3977,13 @@ class Game {
  * given still matters. `settings.ts` tells the player the second half, which is
  * the half they can see.
  *
- * Both of those are claims about a machine I cannot see. What is certain is
- * that the halving is a real saving on a pass that runs every frame regardless
- * of what is on screen, and that the artefact is bloom's, because switching
- * bloom off removes it.
+ * Both of those are claims about a machine I cannot see. And the saving is not
+ * certain either, which an earlier version of this said it was: switching bloom
+ * off entirely moved terran by nothing measurable, so quartering its pixel
+ * count cannot be relied on to move it more. The measurement that would settle
+ * that was never taken. What *is* established is that the artefact is bloom's,
+ * because switching bloom off removes it, and that a whole mip chain is the
+ * right shape whether or not it is faster.
  */
 function bloomResolution() {
 	// A multiple of 32, not merely even: the chain halves five times, so only a
