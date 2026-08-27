@@ -95,7 +95,28 @@ describe("§9.1 namespace and baseline stability", () => {
 		// **Pinned, not bounded** — the same rule `market-state.test.ts` states
 		// for its 117-station corpus. A `>` here leaves a generator change that
 		// halves the galaxy green.
+		//
+		// A pin is a regression check, not a proof the number is *right*, so it
+		// is bracketed by the structure `station-types.md` claims: 1-3 stations
+		// per system over 8 x 256 systems, which puts any correct total between
+		// 2,048 and 6,144. Measured at this seed, every system in all eight
+		// galaxies carries at least one — so the bracket's floor is tight rather
+		// than nominal, and a generator change that started dropping stations
+		// would break the floor before it reached the pin.
 		expect(carriers).toBe(3229);
+		let systemsWithStations = 0;
+		let widest = 0;
+		for (let galaxy = 0; galaxy < 8; galaxy++) {
+			const perSystem = new Map<number, number>();
+			for (const c of enumerateCarriers(WORLD, galaxy))
+				perSystem.set(c.systemIndex, (perSystem.get(c.systemIndex) ?? 0) + 1);
+			systemsWithStations += perSystem.size;
+			widest = Math.max(widest, ...perSystem.values());
+		}
+		expect(widest).toBe(3);
+		expect(systemsWithStations).toBe(8 * 256);
+		expect(carriers).toBeGreaterThanOrEqual(8 * 256);
+		expect(carriers).toBeLessThanOrEqual(8 * 256 * 3);
 	});
 
 	test("a local id repeats across systems and never inside one", () => {
@@ -313,6 +334,35 @@ describe("§9.3 the transition table", () => {
 		});
 		expect(at(w, 40).condition).toBe("operational");
 		expect(at(w, 40).instanceOrdinal).toBe(0);
+	});
+
+	test("a recovery that takes no time is refused", () => {
+		const w = applyTransition(newWorld(WORLD), 0, KEY, {
+			kind: "disable",
+			occurredAt: 10,
+			cause: PLAYER,
+		});
+		// `completesAt === occurredAt` returned a world whose clock already
+		// equalled the deadline with the row still `repairing` — the one state
+		// the writers' clock rule says no verb can produce, and `serializeWorld`
+		// would have written it down.
+		expect(() =>
+			applyTransition(w, 0, KEY, {
+				kind: "repair-start",
+				occurredAt: 10,
+				cause: PLAYER,
+				consequenceArea: "system:3",
+				completesAt: 10,
+			}),
+		).toThrow(/no later/);
+		expect(() =>
+			applyTransition(underRepair(), 0, KEY, {
+				kind: "recovery-change",
+				occurredAt: 20,
+				cause: PLAYER,
+				completesAt: 20,
+			}),
+		).toThrow(/no later/);
 	});
 
 	test("every invalid transition fails loudly", () => {
@@ -1192,6 +1242,35 @@ describe("§9.9 atomicity and integrity", () => {
 		// it back.
 		raw.galaxies[0].objective[KEY].condition = "operational";
 		expect(() => parseWorld(raw)).toThrow(/recovery descriptor/);
+	});
+
+	test("an ordinal that is not a count is rejected", () => {
+		const raw = serializeWorld(populated()) as {
+			galaxies: { objective: Record<string, { instanceOrdinal: number }> }[];
+		};
+		// `num` alone took `-2.5`, and `materialized` then handed back `-1.5` —
+		// an instance ordinal no writer can produce.
+		raw.galaxies[0].objective[OTHER].instanceOrdinal = -2.5;
+		expect(() => parseWorld(raw)).toThrow(/non-negative integer/);
+	});
+
+	test("a recovery that completes before it starts is rejected", () => {
+		const raw = serializeWorld(underRepair()) as {
+			galaxies: {
+				objective: Record<string, { recovery: { completesAt: number } }>;
+			}[];
+		};
+		raw.galaxies[0].objective[KEY].recovery.completesAt = 5;
+		expect(() => parseWorld(raw)).toThrow(/started at/);
+	});
+
+	test("a missing integrity field is named, not diagnosed as a mismatch", () => {
+		const raw = serializeWorld(populated()) as Record<string, unknown>;
+		// §7 asks truncation to be reported as truncation. Reporting it as
+		// "re-encoded, re-ordered, or assembled from more than one save" sends
+		// whoever debugs the save after the wrong fault.
+		delete raw.integrity;
+		expect(() => parseWorld(raw)).toThrow(/integrity field is missing/);
 	});
 
 	test("a malformed row fails loudly", () => {

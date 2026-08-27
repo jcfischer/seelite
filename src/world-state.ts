@@ -513,14 +513,6 @@ function fail(message: string): never {
 }
 
 /**
- * The one bounds check every writer shares.
- *
- * It was on `applyTransition` alone, and the other three writers spread
- * `galaxies[8]` — `undefined` — into a ninth envelope holding one domain. The
- * corruption then surfaced a long way from its cause, inside a canonicaliser
- * or as "expected eight galaxy envelopes" on the next load.
- */
-/**
  * The preamble every writer shares: the galaxy, the clock, the materialization,
  * and swapping one envelope back in.
  *
@@ -552,6 +544,19 @@ function withEnvelope(
 function assertCarrierKey(key: CarrierKey): void {
 	if (!isCarrierKey(key)) fail(`${key} is not a carrier key`);
 }
+
+/**
+ * The one bounds check every writer shares.
+ *
+ * It was on `applyTransition` alone, and the other three writers spread
+ * `galaxies[8]` — `undefined` — into a ninth envelope holding one domain. The
+ * corruption then surfaced a long way from its cause, inside a canonicaliser
+ * or as "expected eight galaxy envelopes" on the next load.
+ */
+/** §7's visited domain range, in one place: `visit` applies it at the write and
+ *  `parseVisited` at the load, and they are meant to stay identical. */
+const isSystemIndex = (v: unknown): boolean =>
+	typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 255;
 
 function assertGalaxy(galaxyIndex: number): void {
 	if (
@@ -634,11 +639,17 @@ function nextDelta(
 				fail(
 					`a replacement needs a destroyed or disabled carrier, not a ${current.condition} one`,
 				);
+			// **Strictly later.** `completesAt === occurredAt` returned a world
+			// whose clock already equalled the deadline with the row still
+			// `repairing` — the one state the suite says no verb can produce, and
+			// `serializeWorld` would have written it down. A recovery that takes
+			// no time is not a recovery; §4 wants a process something can be
+			// flown at.
 			if (
 				!Number.isFinite(event.completesAt) ||
-				event.completesAt < event.occurredAt
+				event.completesAt <= event.occurredAt
 			)
-				fail(`${event.kind} completes before it starts`);
+				fail(`${event.kind} completes no later than it starts`);
 			opensEpisode = !episodeOpen;
 			episodeOrdinal = nextOrdinal;
 			next = {
@@ -660,9 +671,9 @@ function nextDelta(
 				fail(`nothing to change: the carrier is ${current.condition}`);
 			if (
 				!Number.isFinite(event.completesAt) ||
-				event.completesAt < event.occurredAt
+				event.completesAt <= event.occurredAt
 			)
-				fail("recovery-change completes before now");
+				fail("recovery-change completes no later than now");
 			episodeOrdinal = open?.ordinal ?? 0;
 			next = {
 				instanceOrdinal: current.instanceOrdinal,
@@ -905,7 +916,7 @@ export const visit = (
 ): WorldState => {
 	// The parser's range, applied at the write. Accepting a value only the next
 	// load rejects is the distance-from-cause `assertGalaxy` exists to close.
-	if (!Number.isInteger(systemIndex) || systemIndex < 0 || systemIndex > 255)
+	if (!isSystemIndex(systemIndex))
 		fail(`visit: ${systemIndex} is not a system index`);
 	return withEnvelope(world, galaxyIndex, world.gameTime, (env) =>
 		env.visited.includes(systemIndex)
@@ -1066,9 +1077,11 @@ export const canonicalSnapshot = (
 /**
  * The model → save boundary (§7). Not a file format: no bytes, no slots, no
  * migration — §10 defers all three. What it does own is the **atomicity
- * guarantee**: `integrity` is a hash of the whole canonical body, so a snapshot
- * assembled from two different timelines is rejected instead of loading as a
- * plausible third one.
+ * check**: `integrity` is a 32-bit FNV-1a over the whole body, so a snapshot
+ * assembled from two different saves is rejected rather than loading as a
+ * plausible third one. A non-cryptographic hash catches an accidental splice
+ * with high probability, not by proof, and nothing here resists a deliberate
+ * forgery — a save file is the player's own.
  */
 export const serializeWorld = (world: WorldState): unknown => {
 	const body = canonicalBody(world);
@@ -1090,6 +1103,19 @@ const num = (
 	if (typeof value !== "number" || !Number.isFinite(value))
 		fail(`${what}: ${field} is not a finite number`);
 	return value as number;
+};
+
+/** An ordinal is a count. `num` alone accepted `-2.5`, which `materialized`
+ *  then handed back as `-1.5` — a value no writer can produce. */
+const ordinal = (
+	raw: Record<string, unknown>,
+	field: string,
+	what: string,
+): number => {
+	const value = num(raw, field, what);
+	if (!Number.isInteger(value) || value < 0)
+		fail(`${what}: ${field} is not a non-negative integer`);
+	return value;
 };
 
 const str = (
@@ -1149,12 +1175,18 @@ const parseObservedRecovery = (
 	const kind = str(o, "kind", what);
 	if (kind !== "repair" && kind !== "replacement")
 		fail(`${what}: recovery kind ${kind} is unknown`);
+	const startedAt = num(o, "startedAt", what);
+	const completesAt = num(o, "completesAt", what);
+	if (completesAt <= startedAt)
+		fail(
+			`${what}: a recovery completing at ${completesAt} started at ${startedAt}`,
+		);
 	return {
 		processId: str(o, "processId", what),
 		kind: kind as RecoveryKind,
 		consequenceArea: str(o, "consequenceArea", what),
-		startedAt: num(o, "startedAt", what),
-		completesAt: num(o, "completesAt", what),
+		startedAt,
+		completesAt,
 	};
 };
 
@@ -1172,8 +1204,8 @@ const parseFact = (raw: unknown, what: string): TransitionFact => {
 	if (!isCarrierKey(key)) fail(`${what}: ${key} is not a carrier key`);
 	return {
 		key: key as CarrierKey,
-		instanceOrdinal: num(o, "instanceOrdinal", what),
-		episodeOrdinal: num(o, "episodeOrdinal", what),
+		instanceOrdinal: ordinal(o, "instanceOrdinal", what),
+		episodeOrdinal: ordinal(o, "episodeOrdinal", what),
 		kind: kind as TransitionKind,
 		occurredAt: num(o, "occurredAt", what),
 		cause: parseProvenance(o.cause, what),
@@ -1209,7 +1241,7 @@ const parseObjectiveRow = (value: unknown, key: string): ObjectiveDelta => {
 	if (!CONDITIONS.has(condition))
 		fail(`objective ${key}: condition ${condition} is unknown`);
 	const delta: ObjectiveDelta = {
-		instanceOrdinal: num(row, "instanceOrdinal", `objective ${key}`),
+		instanceOrdinal: ordinal(row, "instanceOrdinal", `objective ${key}`),
 		condition: condition as OperationalCondition,
 		...(row.recovery === undefined
 			? {}
@@ -1230,7 +1262,7 @@ const parseEpisodeRow = (value: unknown, key: string): CausalEpisode => {
 	if (typeof row.closed !== "boolean")
 		fail(`episode ${key}: closed is not a boolean`);
 	return {
-		ordinal: num(row, "ordinal", `episode ${key}`),
+		ordinal: ordinal(row, "ordinal", `episode ${key}`),
 		initiating: parseFact(row.initiating, `episode ${key} initiating`),
 		...(row.intervention === undefined
 			? {}
@@ -1255,7 +1287,7 @@ const parseKnowledgeRow = (value: unknown, key: string): KnowledgeRow => {
 			? undefined
 			: parseObservedRecovery(row.observedRecovery, `knowledge ${key}`);
 	return {
-		observedInstanceOrdinal: num(
+		observedInstanceOrdinal: ordinal(
 			row,
 			"observedInstanceOrdinal",
 			`knowledge ${key}`,
@@ -1275,7 +1307,7 @@ const parseVisited = (raw: unknown, slot: number): number[] => {
 	const seen = new Set<number>();
 	let previous: number | undefined;
 	return (raw as unknown[]).map((v) => {
-		if (typeof v !== "number" || !Number.isInteger(v) || v < 0 || v > 255)
+		if (!isSystemIndex(v))
 			fail(`galaxy ${slot}: ${String(v)} is not a system index`);
 		if (seen.has(v as number))
 			fail(`galaxy ${slot}: visited system ${String(v)} is listed twice`);
@@ -1389,6 +1421,11 @@ export function parseWorld(raw: unknown): WorldState {
 	// keys in another order both land here, so the message names the class and
 	// not a diagnosis it cannot make.
 	const { integrity, ...received } = o;
+	// Named, not diagnosed as a mismatch: §7 asks truncation to be reported as
+	// truncation, and a save with the field cut off is the commonest way to
+	// arrive here.
+	if (typeof integrity !== "number")
+		fail("snapshot: the integrity field is missing");
 	if (integrity !== fnv1a(JSON.stringify(received)))
 		fail(
 			"snapshot: integrity check failed — the body does not match its hash (re-encoded, re-ordered, or assembled from more than one save)",
