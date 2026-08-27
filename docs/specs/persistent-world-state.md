@@ -144,6 +144,8 @@ The implementation node owes headless tests proving:
 
 All arithmetic and state-machine checks are headless. A later carrier's visible world evidence or map/HUD presentation also owes the repository's browser probe tier.
 
+**Implemented in `src/world-state.ts` and the leaf `src/carrier-key.ts`, checked by `tests/world-state.test.ts`.** That file has ten `describe` blocks: nine titled `§9.1` … `§9.9`, one for each obligation above and numbered as this section numbers it, plus `§7 the envelope's writers` — what §7 asks of the write path rather than of the model, titled so that counting blocks against this list does not read as a mismatch. The legal-status domain is present as the typed per-galaxy slot §7 requires and nothing more — thresholds, decay and the Clean/Wanted/Fugitive label belong to the combat node, and being derived, the label is a §8 projection that must not be saved.
+
 ## 10. Deferred decisions
 
 This model deliberately does not choose:

@@ -15,6 +15,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { type CarrierKey, carrierKey } from "../src/carrier-key";
 import { DOMAIN } from "../src/domains";
 import { generateGalaxy, systemSeedFor } from "../src/galaxy";
 import {
@@ -26,8 +27,6 @@ import {
 	type DeficitMap,
 	MARKET_PERIOD_MIN,
 	type MarketStation,
-	type CarrierKey,
-	carrierKey,
 	marketEpoch,
 	marketPhaseMin,
 	marketRow,
