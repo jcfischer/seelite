@@ -503,11 +503,16 @@ await combatPage.waitForFunction(
 const combatReadout = await combatPage.evaluate(
 	() => window.__seelite.combatOverlayStatus.text,
 );
-await combatPage.evaluate(() => {
+const freezeProof = await combatPage.evaluate(async () => {
 	const game = window.__seelite;
 	game.probeFreezeLoop();
+	const frozenAt = game.frames;
+	await new Promise((resolve) => setTimeout(resolve, 80));
+	const stayedFrozen = game.frames === frozenAt;
 	game.render(0);
+	return stayedFrozen;
 });
+check("prototype: frame loop halts while frozen", freezeProof);
 const laserTracerPixels = await combatPage.evaluate(() => {
 	const game = window.__seelite;
 	const overlay = document.querySelector("#overlay");

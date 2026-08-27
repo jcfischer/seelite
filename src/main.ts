@@ -676,6 +676,8 @@ class Game {
 		new URLSearchParams(window.location.search).get("combat") === "1";
 	private combatIncoming = false;
 	private combatEcm = false;
+	/** Fitted status font cache: keyed on text + glass width, recomputed on change. */
+	private combatStatusFit = new Map<string, string>();
 	/** Probe-only laser visibility override; the renderer honours it. */
 	probeForceLaserHidden = false;
 	/** rAF handle, so a probe can freeze the loop and render by hand. */
@@ -3128,8 +3130,8 @@ class Game {
 				interdicting: this.regime === "cruise",
 				breakAngle: this.keys.has("q") || this.keys.has("e"),
 				// The enemy fires on its own schedule, not on the player's aim cone:
-				// gating it on targetInCone would let the duel rig only be damaged
-				// while the player happens to be pointing at it.
+				// gating the enemy's damage on targetInCone would let the player
+				// only be damaged while happening to point at the enemy.
 				enemyFiring: this.combat.targetHull > 0 && this.combat.elapsed % 4 < 2,
 				enemyHitAft: Math.floor(this.combat.elapsed / 3) % 2 === 1,
 			});
@@ -3981,22 +3983,28 @@ class Game {
 				h * 0.8,
 			);
 			const combatStatus = `FIRE ${this.combat.firing?.toUpperCase() ?? "SAFE"} · LOCK ${this.combat.missileLock ? "READY" : "ACQUIRING"} · MISSILE ${this.combat.incomingMissile ? "WARNING" : "CLEAR"} · INTERDICTION ${this.combat.interdiction ? "ACTIVE" : "CLEAR"}`;
-			ctx.font = PROMPT_FONT;
-			// Fit the status line to the glass width so it stays on-screen (and
-			// legible) at every viewport, narrow included.
-			while (
-				ctx.measureText(combatStatus).width > w - 16 &&
-				parseFloat(ctx.font) > 9
-			)
-				ctx.font = `${parseFloat(ctx.font) - 1}px ui-monospace, Menlo, monospace`;
+			const fitKey = `${combatStatus}|${w}`;
+			let fitted = this.combatStatusFit.get(fitKey);
+			if (!fitted) {
+				ctx.font = PROMPT_FONT;
+				let size = 13;
+				while (size > 9 && ctx.measureText(combatStatus).width > w - 16) {
+					size -= 1;
+					ctx.font = `${size}px ui-monospace, Menlo, monospace`;
+				}
+				fitted = ctx.font;
+				this.combatStatusFit.set(fitKey, fitted);
+			}
+			ctx.font = fitted;
+			const fittedWidth = ctx.measureText(combatStatus).width;
 			ctx.fillStyle = PROMPT_FILL;
 			ctx.fillText(combatStatus, w / 2, h * 0.84);
 			this.combatOverlayStatus.setCenteredPrompt(
 				combatStatus,
 				w / 2,
 				h * 0.84,
-				ctx.measureText(combatStatus).width,
-				ctx.font,
+				fittedWidth,
+				fitted,
 			);
 			ctx.restore();
 		} else {
