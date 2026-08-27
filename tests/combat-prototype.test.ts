@@ -59,6 +59,9 @@ test("beam out-damages pulse and still heat-locks", () => {
 				dt: 0.1,
 				firing: "beam",
 				targetInCone: duelTargetInCone(state.elapsed),
+				// Same shield-bank alternation as the pulse arm, so the two
+				// duels differ only in the weapon.
+				hitAft: Math.floor(state.elapsed / 2) % 2 === 1,
 			});
 		return state;
 	};
@@ -69,8 +72,9 @@ test("beam out-damages pulse and still heat-locks", () => {
 		firing: "beam",
 	});
 	expect(lockState.heatLocked).toBe(true);
-	// The beam kills the target in fewer seconds than the pulse duel, so it is
-	// the faster weapon despite the heat lock.
+	// The beam kills the target in fewer seconds than the pulse duel (both
+	// alternate the target shield bank), so it is the faster weapon despite
+	// the heat lock.
 	expect(beamState.targetHull).toBe(0);
 	expect(beamState.elapsed).toBeLessThan(fireFixedStepDuel().elapsed);
 });
