@@ -8,13 +8,24 @@
  * would ask for a zero-sized buffer, and `"0.5"` as a string would multiply a
  * pixel ratio into a string.
  */
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
 	DEFAULT_SETTINGS,
 	loadSettings,
 	saveSettings,
 	SettingsStore,
 } from "../src/settings";
+
+/**
+ * The real global, so it can be put back.
+ *
+ * These tests install a fake `window`, and `bun test` shares one process
+ * across files — so without restoring it, a test elsewhere that asks whether a
+ * DOM exists gets this file's answer. That is exactly what happened: CI failed
+ * on "no DOM is present in this runtime" while the same suite passed locally,
+ * because the two ran the files in a different order.
+ */
+const realWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
 
 /** A minimal stand-in, so the tests describe the loader rather than a browser. */
 function installStorage(initial: Record<string, string> = {}) {
@@ -28,10 +39,16 @@ function installStorage(initial: Record<string, string> = {}) {
 	return map;
 }
 
+function restoreWindow() {
+	if (realWindow) Object.defineProperty(globalThis, "window", realWindow);
+	else delete (globalThis as { window?: unknown }).window;
+}
+
 const KEY = "seelite:settings:v1";
 
 describe("settings survive what a string store can hold", () => {
 	beforeEach(() => installStorage());
+	afterEach(restoreWindow);
 
 	test("nothing stored gives the defaults", () => {
 		expect(loadSettings()).toEqual(DEFAULT_SETTINGS);
@@ -79,6 +96,7 @@ describe("settings survive what a string store can hold", () => {
 
 describe("the store tells its listeners, once", () => {
 	beforeEach(() => installStorage());
+	afterEach(restoreWindow);
 
 	test("a change notifies", () => {
 		const store = new SettingsStore({ renderScale: 1 });

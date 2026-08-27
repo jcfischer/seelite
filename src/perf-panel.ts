@@ -214,7 +214,11 @@ function shells(scenes: THREE.Object3D[], kind: string) {
  * The keys this panel takes, and the one that restores everything.
  *
  * Exported because they have to stay out of the flight controls' way, and
- * "I checked once" is not a mechanism: `tests/perf-panel-keys.test.ts` reads
+ * "I checked once" is not a mechanism — which the docking model proved by
+ * landing on `main` and binding `c` and `u`, the two this panel had taken for
+ * clouds and restore. The test caught it; nobody had to remember. `y` and `i`
+ * are the free ones left, and they are worse mnemonics than the keys they
+ * replace, which is the price of the game owning the good letters: `tests/perf-panel-keys.test.ts` reads
  * the bindings out of `main.ts` and fails if any of these is claimed there.
  * An earlier revision used the digit row on the strength of a comment saying
  * the flight controls own the letters — 1, 2 and 3 swing the chase view and 0
@@ -228,8 +232,8 @@ function shells(scenes: THREE.Object3D[], kind: string) {
  * setting; resolution belongs to `settings.ts` and this panel prices the terms
  * that are not settings.
  */
-export const PERF_KEYS = ["b", "h", "c", "r", "o", "p"] as const;
-export const RESTORE_KEY = "u";
+export const PERF_KEYS = ["b", "h", "y", "r", "o", "p"] as const;
+export const RESTORE_KEY = "i";
 
 export type PerfTargets = {
 	scenes: THREE.Object3D[];
@@ -276,7 +280,7 @@ export function mountPerfPanel(targets: PerfTargets) {
 			},
 		},
 		{
-			key: "c",
+			key: "y",
 			label: "clouds",
 			state: () =>
 				shells(scenes, "cloud").some((s) => s.visible) ? "on" : "off",
