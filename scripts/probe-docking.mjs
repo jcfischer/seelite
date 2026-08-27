@@ -72,32 +72,7 @@ await page.evaluate(() => {
 		spinner: () =>
 			g.world.system.contents.stations.find((s) => s.spinRpm > 0) ??
 			g.world.system.contents.stations[0],
-		/**
-		 * A stable direction perpendicular to the docking axis.
-		 *
-		 * **Not** the slot's rolled basis, deliberately. The hull-face run needs a
-		 * lateral offset that stays put; the slot's `across` rotates with the
-		 * station, so aiming at `across · 315 m` is aiming at a point that orbits
-		 * the axis at 0.65 rpm, and the ship spends the approach chasing it round
-		 * rather than flying at the hull. The roll *error* is still stated against
-		 * the slot's own basis, because that is what check 4 measures.
-		 *
-		 * Seeded from whichever world axis is least parallel to the docking axis,
-		 * which is arbitrary and allowed to be: the claim under test is "inside
-		 * check 2's cone and outside the aperture", and the aperture is 120 × 70 m
-		 * against a 315 m offset in any direction.
-		 */
-		perp(axis) {
-			const D = window.__dock;
-			const seed =
-				Math.abs(axis.x) < 0.9 ? { x: 1, y: 0, z: 0 } : { x: 0, y: 1, z: 0 };
-			const c = {
-				x: axis.y * seed.z - axis.z * seed.y,
-				y: axis.z * seed.x - axis.x * seed.z,
-				z: axis.x * seed.y - axis.y * seed.x,
-			};
-			return D.scale(c, 1 / Math.hypot(c.x, c.y, c.z));
-		},
+
 		/** The unit vector from the ship to a station-relative point. */
 		toward(id, rel) {
 			const body = g.world.system.byId.get(id);
@@ -140,7 +115,12 @@ await page.evaluate(() => {
 			if (!snap) return;
 			const aim = D.add(
 				D.scale(snap.axis, snap.planeKm - 2),
-				D.scale(D.perp(snap.axis), setup.offsetKm ?? 0),
+				// The **unrolled** reference off the page, not a perpendicular this
+				// file seeds for itself. The lateral offset must not rotate with the
+				// slot — aiming at `basis.across · 315 m` is aiming at a point that
+				// orbits the axis at 0.65 rpm — and the convention for "not parallel
+				// to this axis" belongs to `docking.ts`, which now has exactly one.
+				D.scale(snap.reference, setup.offsetKm ?? 0),
 			);
 			const rad = ((setup.rollDeg ?? 0) * Math.PI) / 180;
 			// The roll error is stated against the **slot's** own basis, because
@@ -199,7 +179,7 @@ async function fly(setup) {
 
 			const start = D.add(
 				D.scale(axis, seen.planeKm + setup.standoffKm),
-				D.scale(D.perp(axis), setup.offsetKm ?? 0),
+				D.scale(seen.reference, setup.offsetKm ?? 0),
 			);
 			D.place(id, start, { x: 0, y: 0, z: 0 });
 			g.targetId = id;
@@ -306,8 +286,11 @@ console.log(
 if (!good.docked) for (const line of good.trace) console.log(`    ${line}`);
 check("the station answered the clearance request", good.cleared);
 check(
+	// Not `entry === null || ...`, which was the first spelling and is satisfied
+	// by the absence of the crossing it claims to measure.
 	"the docking computer crossed under the gate",
-	good.entry === null || good.entry?.evaluation?.checks?.closingSpeed === true,
+	good.entry?.evaluation?.checks?.closingSpeed === true,
+	`${good.entrySpeedKms?.toFixed(4) ?? "no crossing"} km/s against ${tolerances.gateKms}`,
 );
 check(
 	"a correct profile docks",
@@ -324,6 +307,57 @@ check(
 	good.conditionAfter.hull === good.conditionBefore.hull,
 );
 
+// Docking is not a one-way latch. Not one of §9.2's five rows — it is a
+// property of this node's *wiring* rather than of the model — but it is
+// reachable only from a docked ship, which only the probe tier has, and the
+// first version of `resolveCrossing` set `dockedAt` and never cleared it.
+console.log("\ndocking has an exit:");
+const undock = await page.evaluate(
+	async ([dt]) => {
+		const g = window.__seelite;
+		const D = window.__dock;
+		const id = D.spinner().id;
+		const wasDocked = g.dockedAt === id;
+		const snap = g.dockingSnapshot(id);
+		// Pushed straight back out along the axis, which is the least a launch
+		// could possibly be — the sequence itself is not this node's.
+		D.place(id, D.scale(snap.axis, snap.planeKm + 0.5), {
+			x: 0,
+			y: 0,
+			z: 0,
+		});
+		for (let i = 0; i < 20; i++) {
+			g.step(dt);
+			g.render(dt);
+		}
+		const after = g.dockingSnapshot(id);
+		g.toggleDockingComputer();
+		return {
+			wasDocked,
+			stillDocked: g.dockedAt === id,
+			computerCanEngage: g.dockingComputerEngaged,
+			clearKm: g.dockingTolerances.UNDOCK_CLEAR_KM,
+			axialKm: after.axialKm,
+			planeKm: after.planeKm,
+		};
+	},
+	[dt],
+);
+check("the ship was docked to begin with", undock.wasDocked);
+check(
+	"leaving the plane clears the dock",
+	!undock.stillDocked,
+	`${undock.axialKm.toFixed(3)} km against a ${undock.planeKm.toFixed(3)} km plane ` +
+		`plus a ${undock.clearKm} km clearance`,
+);
+check(
+	"and the docking computer can be engaged again",
+	undock.computerCanEngage,
+);
+await page.evaluate(() => {
+	window.__seelite.dockingComputerEngaged = false;
+});
+
 // ---------------------------------------------------------------------------
 // §9.2.4 — a hull-face approach is refused
 // ---------------------------------------------------------------------------
@@ -335,7 +369,11 @@ check(
 console.log("\n§9.2.4 a hull-face approach is refused:");
 const faceOffsetKm = await page.evaluate((deg) => {
 	const g = window.__seelite;
-	const snap = g.dockingSnapshot();
+	// The **spinner**, which is the station `fly` actually flies. Taking the
+	// nearest station's core radius instead would scale the offset off a body
+	// this run never approaches, and the two differing would make §9.2.4 fail on
+	// `axisAlignment` rather than on the containment claim it is making.
+	const snap = g.dockingSnapshot(window.__dock.spinner().id);
 	// Three quarters of the way to the cone's edge: comfortably inside check 2,
 	// six times outside check 5, and not sitting on either boundary — a probe
 	// that measured a boundary would be re-testing what the headless rows own.
@@ -357,16 +395,19 @@ console.log(
 		`${(face.apertureWidthKm * 500).toFixed(0)} × ${(face.apertureHeightKm * 500).toFixed(0)} m ` +
 		`half-aperture: docked=${face.docked}`,
 );
+const cornerKm = Math.hypot(
+	face.apertureWidthKm / 2,
+	face.apertureHeightKm / 2,
+);
 check(
-	// Against the **larger** half-extent, so the guard holds whichever way
-	// `D.perp` happened to point. Comparing against the width alone was the
-	// first version and it checked the 60 m half while containment may be
-	// judging the 35 m one — a guard that passes for a reason unrelated to what
-	// the check under test measured.
+	// Against the rectangle's **corner radius**, which is the only bound that
+	// holds whichever way the reference direction points. Two earlier versions
+	// were weaker: the width half alone (which may be the larger of the two
+	// while containment judges the smaller), then the larger half-extent (which
+	// still leaves the diagonal unproved).
 	"the offset really is outside the aperture, in any direction",
-	faceOffsetKm > Math.max(face.apertureWidthKm, face.apertureHeightKm) / 2,
-	`${(faceOffsetKm * 1000).toFixed(0)} m against a ` +
-		`${(Math.max(face.apertureWidthKm, face.apertureHeightKm) * 500).toFixed(0)} m half-extent`,
+	faceOffsetKm > cornerKm,
+	`${(faceOffsetKm * 1000).toFixed(0)} m against a ${(cornerKm * 1000).toFixed(0)} m corner radius`,
 );
 console.log(
 	`  at the plane: ${face.entry?.evaluation?.positionAngleDeg?.toFixed(1)}° off the axis by position, ` +

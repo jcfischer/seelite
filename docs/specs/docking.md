@@ -452,15 +452,23 @@ Any control input cancels it.
 
 **Two legs, and the corridor between them is a cone** (implementation finding,
 2026-08-27). The computer lines up on a fixed point out along the axis and then
-runs in at the slot; what is not obvious until it is flown is that the corridor
-deciding when to switch cannot be a cylinder. §5's axis points at the parent
-body, so it **swings as the station orbits**, the corridor entry swings with it,
-and a ship chasing that point lags it by tens of metres. Measured in the browser
-against a fixed 7 m tolerance the computer never lined up at all: it held 12–33 m
-off-axis and dithered at the standoff until the 600 s grant expired under it. A
-cone — wide at range, tightening to the aperture — is met at the standoff, and
-the run-in aims at the slot centre so the lateral error closes in proportion to
-the distance rather than having to be flown out first.
+runs in at the slot; what is not obvious until it is flown is what decides the
+switch between the two.
+
+§5's axis points at the parent body, so it **swings as the station orbits**, the
+corridor entry point swings with it, and a ship chasing that point lags it. A
+7 m cylinder was tried first and was never met: measured in the browser the
+autopilot held **12–33 m** off-axis and dithered at the standoff until the 600 s
+grant expired under it.
+
+A wider cylinder was **not** flown, so "a cylinder cannot work" is not what was
+shown — but the measurement bounds it from both sides. A cylinder has to be at
+least the lag at range (33 m measured) and at most something the aperture will
+accept at the plane (§5's half-height is 35 m), and those two nearly coincide:
+whatever a workable cylinder is, it has no margin in it. A cone is wide where
+the lag is and tight where the aperture is, and the run-in aims at the slot
+centre so the lateral error closes in proportion to the distance rather than
+having to be flown out first.
 
 **It never bypasses a check.** It satisfies §3's six conditions like anything
 else, so it cannot dock at a hostile station, cannot skip §6's clearance, and

@@ -145,11 +145,13 @@ import {
 	grantLive,
 	isAlive,
 	newDockingState,
+	orthonormalise,
 	planeCrossing,
 	requestClearance,
 	slewToward,
 	slotBasis,
 	tickDocking,
+	UNDOCK_CLEAR_KM,
 } from "./docking";
 import {
 	type StationMesh,
@@ -739,6 +741,7 @@ class Game {
 		V_GATE_KMS,
 		AXIS_TOLERANCE_DEG,
 		ROLL_TOLERANCE_DEG,
+		UNDOCK_CLEAR_KM,
 	});
 
 	/**
@@ -769,8 +772,13 @@ class Game {
 	 * #8 owns the real pools, the real scale, and — §11.6 — whatever undoes the
 	 * damage; until that lands D1's failure model is survivable but not yet
 	 * costly.
+	 *
+	 * **`interim` in the name, matching the `INTERIM_` constants it is built
+	 * from.** A field called `condition` on the game handle is the slot #8's real
+	 * pools would silently inherit, and inheriting a stand-in is how a temporary
+	 * answer stops being visible as one.
 	 */
-	condition: ShipCondition = fullCondition();
+	interimCondition: ShipCondition = fullCondition();
 
 	/** Which station the ship is docked at, or `null`. */
 	dockedAt: string | null = null;
@@ -2510,14 +2518,19 @@ class Game {
 			// rather than deriving its own — a probe with its own copy of a rule
 			// goes falsely red the day the rule changes.
 			basis: slotBasis(frame),
+			// The **unrolled** reference direction — `slotBasis` at phase zero.
+			// A probe needing a lateral offset that does not rotate with the slot
+			// was seeding its own perpendicular from a world axis, which is a
+			// third spelling of a convention `docking.ts` already owns.
+			reference: slotBasis({ ...frame, phaseRad: 0 }).across,
 			spinRpm: stationOf(this.world.system, target).spinRpm,
 			clearance: state.clearance,
 			grantLive: grantLive(state, this.world.gameTime),
 			hostile: state.hostile,
 			computerEngaged: this.dockingComputerEngaged,
 			dockedAt: this.dockedAt,
-			condition: this.condition,
-			alive: isAlive(this.condition),
+			condition: this.interimCondition,
+			alive: isAlive(this.interimCondition),
 			lastEntry: this.lastEntry,
 		};
 	}
@@ -2549,16 +2562,42 @@ class Game {
 				),
 			);
 
+		// **Docking is not a one-way latch.** `dockedAt` set and never cleared
+		// disables the computer for the rest of the session and leaves the
+		// station's aperture as a tripwire — the first version did exactly that,
+		// and only the probe cleared it, by hand. The full launch sequence is not
+		// this node's and not `docking.md`'s; what is this node's is that leaving
+		// is possible and observable.
+		if (this.dockedAt) {
+			const held = before.get(this.dockedAt);
+			if (
+				held &&
+				dot(held.pose.rel, held.frame.axis) >
+					held.frame.planeKm + UNDOCK_CLEAR_KM
+			)
+				this.dockedAt = null;
+		}
+
 		// **At most one crossing is resolved per step, and it is the nearest.**
 		// `dockingApproaches` walks in range order, so the first crossing found
 		// is the nearest station's. A ship cannot dock at two stations in one
 		// 0.1 s step, and resolving a farther one after a nearer one would apply
 		// a repel to a position the nearer outcome had already rewritten.
 		for (const [id, from] of before) {
-			const frame = this.apertureFrameOf(id);
-			const crossing = planeCrossing(frame, from.pose, this.entryPoseOf(id));
+			// Docked ships do not re-cross their own plane. Without this the
+			// station's aperture is a tripwire the moment anything nudges the ship.
+			if (this.dockedAt === id) continue;
+			// **The cached frame, not a fresh one.** `dockingApproaches` built it
+			// at the top of the step and `planeCrossing` already documents that it
+			// evaluates one frame for both endpoints; rebuilding it here was the
+			// dedup this pair exists for, not happening.
+			const crossing = planeCrossing(
+				from.frame,
+				from.pose,
+				this.entryPoseOf(id),
+			);
 			if (!crossing) continue;
-			this.resolveCrossing(id, frame, crossing);
+			this.resolveCrossing(id, from.frame, crossing);
 			return;
 		}
 	}
@@ -2591,7 +2630,7 @@ class Game {
 			return;
 		}
 		// §2.0: repelled, damaged, and left outside — never inside the station.
-		this.condition = applyDamage(this.condition, outcome.damage);
+		this.interimCondition = applyDamage(this.interimCondition, outcome.damage);
 		const body = this.world.system.byId.get(id);
 		if (body && outcome.repelled) {
 			this.world.ship.pos = add(body.pos, outcome.repelled.rel);
@@ -2599,15 +2638,20 @@ class Game {
 		}
 	}
 
-	private stepDockingComputer(dt: number): boolean {
+	private stepDockingComputer(
+		dt: number,
+		approaches: Map<string, DockingApproach>,
+	): boolean {
 		if (!this.dockingComputerEngaged || this.dockedAt) return false;
-		const nearest = this.stationsByRange()[0];
-		if (!nearest) return false;
-		const frame = this.apertureFrameOf(nearest.id);
+		// The first entry is the nearest station: `dockingApproaches` walks in
+		// range order.
+		const [nearestId, approach] = approaches.entries().next().value ?? [];
+		if (!nearestId || !approach) return false;
+		const { frame } = approach;
 		const command = dockingComputerStep({
 			frame,
-			pose: this.entryPoseOf(nearest.id),
-			state: this.dockingStateOf(nearest.id),
+			pose: approach.pose,
+			state: this.dockingStateOf(nearestId),
 			gameTime: this.world.gameTime,
 			maxSpeedKms: ASSIST_CAP_KMS,
 		});
@@ -2637,11 +2681,13 @@ class Game {
 	 * spelling of it — the same reason `step` and `render` are public.
 	 */
 	setAttitude(nose: Vec3, up: Vec3) {
-		const f = new THREE.Vector3(nose.x, nose.y, nose.z).normalize();
-		const u = new THREE.Vector3(up.x, up.y, up.z);
-		u.addScaledVector(f, -u.dot(f));
-		if (u.lengthSq() < 1e-12) return;
-		u.normalize();
+		// The orthonormalisation is `docking.ts`'s, not a second copy here: the
+		// headless harness that flies the autopilot needs the same law, and the
+		// tier that verifies a thing should not carry its own version of it.
+		const basis = orthonormalise(nose, up);
+		if (!basis) return;
+		const f = new THREE.Vector3(basis.nose.x, basis.nose.y, basis.nose.z);
+		const u = new THREE.Vector3(basis.up.x, basis.up.y, basis.up.z);
 		const right = new THREE.Vector3().crossVectors(f, u);
 		// Columns are (right, up, back): the mesh's nose is -Z, which is what
 		// `nose()` reads back out.
@@ -2796,21 +2842,34 @@ class Game {
 		// stepped, so the cancel and the input land on the same frame rather than
 		// the computer getting one more frame of authority over a player who has
 		// already taken the stick.
+		//
+		// **The throttle counts.** It was left out of the first version, and the
+		// result was worse than no cancel: `stepDockingComputer` overwrites
+		// `this.throttle` on the same frame, so a player pushing the throttle got
+		// neither a cancel nor an effect — an input that visibly does nothing.
+		const throttleInput = this.keys.has("shift") || this.keys.has("control");
 		if (
 			this.dockingComputerEngaged &&
 			(yaw !== 0 ||
 				pitch !== 0 ||
 				roll !== 0 ||
+				throttleInput ||
 				this.mouseDx !== 0 ||
 				this.mouseDy !== 0)
 		)
 			this.dockingComputerEngaged = false;
 
-		if (this.stepDockingComputer(dt)) {
+		// One range scan and one orbital evaluation per station for the whole
+		// step: the autopilot reads the same approach the crossing test then uses
+		// as its "before" half, and neither moves the ship, so a second
+		// evaluation would be the same answer at the same clock value.
+		const approaches = this.dockingApproaches();
+
+		if (this.stepDockingComputer(dt, approaches)) {
 			this.mouseDx = 0;
 			this.mouseDy = 0;
 			this.audio.ambient(this.throttle);
-			this.advanceNormalFlight(dt);
+			this.advanceNormalFlight(dt, approaches);
 			return;
 		}
 
@@ -2879,7 +2938,7 @@ class Game {
 			return;
 		}
 
-		this.advanceNormalFlight(dt);
+		this.advanceNormalFlight(dt, approaches);
 	}
 
 	/**
@@ -2889,11 +2948,14 @@ class Game {
 	 * the same way. Two copies is how a later post-step hook lands in one of
 	 * them and the computer silently stops obeying a rule hand flying does.
 	 */
-	private advanceNormalFlight(dt: number) {
-		// The approaches before the step, for every station close enough to be
-		// flown into: a plane crossing is a property of the pair of frames, and
-		// the "before" half stops existing the moment the ship moves.
-		const before = this.dockingApproaches();
+	private advanceNormalFlight(
+		dt: number,
+		before: Map<string, DockingApproach>,
+	) {
+		// `before` is the approaches from the top of the step, for every station
+		// close enough to be flown into: a plane crossing is a property of the
+		// pair of frames, and the "before" half stops existing the moment the
+		// ship moves.
 
 		// The whole world, not just the ship: `dt` is sim seconds and the bodies
 		// are on orbits driven by the same clock. Stepping the ship alone would

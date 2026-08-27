@@ -36,6 +36,7 @@ import {
 	grantLive,
 	isAlive,
 	newDockingState,
+	orthonormalise,
 	planeCrossing,
 	poolOf,
 	repel,
@@ -695,11 +696,15 @@ function flyTheComputer(opts: {
 		}
 		nose = slewToward(nose, cmd.nose, ANGULAR_MAX.yaw * dt);
 		up = slewToward(up, cmd.up, ANGULAR_MAX.roll * dt);
-		// `up` must stay perpendicular to the nose to be an attitude rather than
-		// two independent directions.
-		const along = dot(up, nose);
-		const fixed = sub(up, scale(nose, along));
-		if (length(fixed) > 1e-9) up = scale(fixed, 1 / length(fixed));
+		// Through the module's own law, not a copy of it: `main.ts`'s
+		// `setAttitude` calls the same function, so this harness flies the
+		// autopilot the way the renderer does rather than the way a test author
+		// remembered it.
+		const attitude = orthonormalise(nose, up);
+		if (attitude) {
+			nose = attitude.nose;
+			up = attitude.up;
+		}
 
 		const before: EntryPose = { rel: ship.pos, vRel: ship.vel, nose, up };
 		stepFlight(
@@ -789,6 +794,25 @@ describe("§9.1.11 the docking computer", () => {
 // ---------------------------------------------------------------------------
 // The plane crossing itself
 // ---------------------------------------------------------------------------
+
+describe("orthonormalise is the one attitude law", () => {
+	test("it corrects an up that has drifted off perpendicular", () => {
+		const nose = v3(0, 0, -1);
+		const drifted = add(v3(0, 1, 0), scale(nose, 0.4));
+		const a = orthonormalise(nose, drifted);
+		expect(a).not.toBeNull();
+		expect(dot(a!.nose, a!.up)).toBeCloseTo(0, 12);
+		expect(length(a!.up)).toBeCloseTo(1, 12);
+		// The nose is authoritative and the up is what moves: an autopilot that
+		// let the roll pull the nose round would be flying a different approach
+		// from the one it commanded.
+		expect(a!.nose).toEqual(nose);
+	});
+
+	test("parallel directions are not an attitude", () => {
+		expect(orthonormalise(v3(0, 0, -1), v3(0, 0, -2))).toBeNull();
+	});
+});
 
 describe("the plane crossing is interpolated, not sampled", () => {
 	test("it finds the crossing between two frames", () => {

@@ -99,6 +99,19 @@ export const HOSTILE_COOLDOWN_S = 600;
 export const REPEL_OFFSET_KM = 0.01;
 
 /**
+ * How far outside the aperture plane a docked ship must get before it counts as
+ * having left, km.
+ *
+ * **This is not a launch sequence, and this spec does not own one.** What it
+ * prevents is a one-way latch: `dockedAt` set and never cleared disables the
+ * docking computer for the rest of the session and turns the station's own
+ * aperture into a tripwire the moment anything nudges the ship. Fifty metres is
+ * clear of the repel offset and well inside the standoff, so leaving is
+ * unambiguous without being a mechanic.
+ */
+export const UNDOCK_CLEAR_KM = 0.05;
+
+/**
  * **#8's constant, standing in.** The absolute damage scale is
  * `docs/specs/docking.md` §10's hand-off to the combat node, because it is
  * denominated in #8's shield and energy pools — which do not exist yet.
@@ -129,6 +142,28 @@ const ROLL_COS = Math.cos(ROLL_TOLERANCE_DEG * DEG);
 // a leaf whose whole job is to import nothing and stay small; widening it for
 // one consumer trades that for convenience. If a second module wants them, that
 // is the moment to move them.
+
+/**
+ * Some direction perpendicular to `a`, chosen deterministically.
+ *
+ * One spelling of "a direction not parallel to this axis", because there were
+ * three: `slotBasis`, `slewToward`'s antiparallel case and the browser probe
+ * each carried the same `< 0.9` seed test, and a threshold is not a thing to
+ * keep in step across two languages and a page boundary.
+ *
+ * Which perpendicular is arbitrary and allowed to be — the only requirement is
+ * that everything reading it reads *this* one, which is why the probe takes the
+ * basis off the page rather than seeding its own.
+ */
+const anyPerpendicular = (a: Vec3): Vec3 => {
+	const seed =
+		Math.abs(a.x) < 0.9
+			? v3(1, 0, 0)
+			: Math.abs(a.y) < 0.9
+				? v3(0, 1, 0)
+				: v3(0, 0, 1);
+	return unit(cross(a, seed));
+};
 
 const cross = (a: Vec3, b: Vec3): Vec3 =>
 	v3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
@@ -216,13 +251,7 @@ export function apertureFrame(
  */
 export function slotBasis(frame: ApertureFrame): { across: Vec3; up: Vec3 } {
 	const a = frame.axis;
-	const seed =
-		Math.abs(a.x) < 0.9
-			? v3(1, 0, 0)
-			: Math.abs(a.y) < 0.9
-				? v3(0, 1, 0)
-				: v3(0, 0, 1);
-	const u = unit(cross(a, seed));
+	const u = anyPerpendicular(a);
 	const v = cross(a, u);
 	const c = Math.cos(frame.phaseRad);
 	const s = Math.sin(frame.phaseRad);
@@ -343,10 +372,11 @@ export function evaluateEntry(
 		const projected = sub(pose.up, scale(axis, dot(pose.up, axis)));
 		if (length(projected) === 0) {
 			// The up-vector lies along the docking axis, so it has no projection in
-			// the slot plane and no roll to compare. That is a ship pointing
-			// sideways down the slot; check 2 has already refused it, and reporting
-			// a match here rather than a `NaN` keeps the roll row from deciding a
-			// case it cannot see.
+			// the slot plane and there is no roll to compare. **The row reports a
+			// failure**, and the angle stays `NaN` because there is genuinely no
+			// angle to report — the two together say "this pose has no roll", which
+			// a `true` would not. The verdict is unchanged either way: the ship is
+			// pointing sideways down the slot, so check 2 has already refused it.
 			rollAngleDeg = Number.NaN;
 			rollMatch = false;
 		} else {
@@ -838,6 +868,29 @@ export function dockingComputerStep(input: ComputerInput): ComputerCommand {
  * renderer need the same law, and two spellings of a slerp step is how the
  * autopilot and the drawn ship come to disagree about where the nose is.
  */
+/**
+ * An attitude from two independently slewed directions.
+ *
+ * `up` is re-orthogonalised against `nose`, because two directions turned
+ * separately stop being perpendicular after the first step and are then not an
+ * attitude at all. Returns the nose unchanged and a corrected up; `null` when
+ * the two are parallel and there is no attitude to build.
+ *
+ * Here rather than in each caller because there were two partial copies — the
+ * renderer's `setAttitude` and `tests/docking.test.ts`'s flight harness — and
+ * the tier that verifies the autopilot should not carry its own version of the
+ * law the autopilot is flown by.
+ */
+export function orthonormalise(
+	nose: Vec3,
+	up: Vec3,
+): { nose: Vec3; up: Vec3 } | null {
+	const f = unit(nose);
+	const corrected = sub(up, scale(f, dot(up, f)));
+	if (length(corrected) < 1e-12) return null;
+	return { nose: f, up: unit(corrected) };
+}
+
 export function slewToward(from: Vec3, to: Vec3, maxRad: number): Vec3 {
 	const a = unit(from);
 	const b = unit(to);
@@ -847,11 +900,7 @@ export function slewToward(from: Vec3, to: Vec3, maxRad: number): Vec3 {
 	// The component of `b` perpendicular to `a`, normalised: the direction to
 	// turn in. Antiparallel is the one case with no such direction, and any
 	// perpendicular will do — the caller is turning through 180° either way.
-	let perp = sub(b, scale(a, c));
-	if (length(perp) === 0) {
-		const seed = Math.abs(a.x) < 0.9 ? v3(1, 0, 0) : v3(0, 1, 0);
-		perp = cross(a, seed);
-	}
-	const dir = unit(perp);
+	const perp = sub(b, scale(a, c));
+	const dir = length(perp) === 0 ? anyPerpendicular(a) : unit(perp);
 	return add(scale(a, Math.cos(maxRad)), scale(dir, Math.sin(maxRad)));
 }
