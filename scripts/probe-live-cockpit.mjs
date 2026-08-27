@@ -551,7 +551,7 @@ const resumedFrames = await combatPage.evaluate(async () => {
 check("prototype: frame loop resumes after freeze", resumedFrames > 0);
 await combatPage.keyboard.up("Space");
 check(
-	"prototype: holding Space shows the beam, draws the glass tracer and exposes immediate PULSE feedback",
+	"prototype: holding Space shows the weapon tracer, draws it on the glass and exposes immediate PULSE feedback",
 	beamVisible &&
 		laserPixels > 50 &&
 		COMBAT_STATUS.test(combatReadout) &&
@@ -578,26 +578,42 @@ await narrowCombatPage.waitForFunction(
 );
 const narrowOverlay = await narrowCombatPage.evaluate(() => {
 	const game = window.__seelite;
-	const status = game.combatOverlayStatus;
 	const overlay = document.querySelector("#overlay");
 	const context = overlay.getContext("2d");
-	context.font = status.font;
-	const width = context.measureText(status.text).width;
-	const fits = width <= overlay.width - 16;
-	const rendered = globalThis.__seeliteMeasureCockpit().combatOverlayText;
-	return {
-		rendered,
-		fits,
-		width,
-		canvas: overlay.width,
-		font: status.font,
-		text: status.text,
+	// The overlay draws four centred lines; every one must fit the glass width
+	// at the font the game renders it with (fixed 12px start, then fitted).
+	const status = game.combatOverlayStatus;
+	// Measure each line at the size the game's fitter would draw it at: the
+	// probe mirrors the fit loop instead of hardcoding a font, so a narrow
+	// viewport that forces a shrink is verified at the shrunk size.
+	const lines = [
+		"COMBAT PROTOTYPE — hold SPACE pulse · B beam · Z warning · R ECM",
+		`TARGET  SHIELDS F ${game.combat.targetForeShield.toFixed(0)}  A ${game.combat.targetAftShield.toFixed(0)}  HULL ${game.combat.targetHull.toFixed(0)}`,
+		`PLAYER  SHIELDS F ${game.combat.foreShield.toFixed(0)}  A ${game.combat.aftShield.toFixed(0)}  HULL ${game.combat.playerHull.toFixed(0)}`,
+		status.text,
+	];
+	const fit = (text) => {
+		let size = 12;
+		context.font = `${size}px ui-monospace, monospace`;
+		while (size > 8 && context.measureText(text).width > overlay.width - 16) {
+			size -= 1;
+			context.font = `${size}px ui-monospace, monospace`;
+		}
+		return {
+			text: text.slice(0, 24),
+			width: context.measureText(text).width,
+			font: context.font,
+		};
 	};
+	const measured = lines.map(fit);
+	const fits = measured.every((m) => m.width <= overlay.width - 16);
+	const rendered = globalThis.__seeliteMeasureCockpit().combatOverlayText;
+	return { rendered, fits, canvas: overlay.width, measured };
 });
 check(
-	"prototype: combat overlay renders legibly at the narrow viewport",
+	"prototype: all combat overlay lines fit the narrow viewport",
 	narrowOverlay.rendered && narrowOverlay.fits,
-	`${narrowOverlay.width}/${narrowOverlay.canvas} px, font ${narrowOverlay.font}, rendered ${narrowOverlay.rendered}`,
+	`canvas ${narrowOverlay.canvas}px, rendered ${narrowOverlay.rendered}`,
 );
 await narrowCombatPage.close();
 

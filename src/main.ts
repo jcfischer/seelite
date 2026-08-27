@@ -676,8 +676,9 @@ class Game {
 		new URLSearchParams(window.location.search).get("combat") === "1";
 	private combatIncoming = false;
 	private combatEcm = false;
-	/** Fitted status font cache: keyed on text + glass width, recomputed on change. */
-	private combatStatusFit = new Map<string, string>();
+	/** Fitted status font cache: keyed on glass width (the fit only depends on
+	 *  width and the longest status text), storing the font and measured width. */
+	private combatStatusFit = new Map<number, { font: string; width: number }>();
 	/** Probe-only laser visibility override; the renderer honours it. */
 	probeForceLaserHidden = false;
 	/** rAF handle, so a probe can freeze the loop and render by hand. */
@@ -3442,10 +3443,13 @@ class Game {
 			this.combatTargetMesh.visible = this.view === "cockpit";
 			const targetMaterial = this.combatTargetMesh
 				.material as THREE.MeshStandardMaterial;
-			const firingWeapon = this.combat.firing !== null;
-			targetMaterial.emissive.setHex(firingWeapon ? 0x9df6ff : 0x450308);
-			targetMaterial.emissiveIntensity = firingWeapon ? 4 : 1.2;
-			this.combatTargetMesh.scale.setScalar(firingWeapon ? 1.25 : 1);
+			// Flash only on a shot that can actually land: holding the trigger
+			// off-cone should not swell the target it cannot hit.
+			const hitting =
+				this.combat.firing !== null && duelTargetInCone(this.combat.elapsed);
+			targetMaterial.emissive.setHex(hitting ? 0x9df6ff : 0x450308);
+			targetMaterial.emissiveIntensity = hitting ? 4 : 1.2;
+			this.combatTargetMesh.scale.setScalar(hitting ? 1.25 : 1);
 			this.combatLaser.quaternion.copy(viewRotation);
 			this.combatLaser.visible =
 				this.view === "cockpit" &&
@@ -3968,30 +3972,45 @@ class Game {
 		}
 		if (this.combatPrototypeEnabled) {
 			ctx.save();
-			ctx.font = "12px ui-monospace, monospace";
-			ctx.fillStyle = "rgba(255, 214, 120, 0.9)";
 			ctx.textAlign = "center";
-			ctx.fillText(
+			const drawFitted = (
+				text: string,
+				y: number,
+				fill: string,
+				startSize: number,
+			) => {
+				ctx.font = `${startSize}px ui-monospace, monospace`;
+				let size = startSize;
+				while (size > 8 && ctx.measureText(text).width > w - 16) {
+					size -= 1;
+					ctx.font = `${size}px ui-monospace, monospace`;
+				}
+				ctx.fillStyle = fill;
+				ctx.fillText(text, w / 2, y);
+			};
+			drawFitted(
 				"COMBAT PROTOTYPE — hold SPACE pulse · B beam · Z warning · R ECM",
-				w / 2,
 				h * 0.72,
+				"rgba(255, 214, 120, 0.9)",
+				12,
 			);
-			ctx.fillStyle = "rgba(255, 115, 130, 0.95)";
-			ctx.fillText(
+			drawFitted(
 				`TARGET  SHIELDS F ${this.combat.targetForeShield.toFixed(0)}  A ${this.combat.targetAftShield.toFixed(0)}  HULL ${this.combat.targetHull.toFixed(0)}`,
-				w / 2,
 				h * 0.76,
+				"rgba(255, 115, 130, 0.95)",
+				12,
 			);
-			ctx.fillStyle = "rgba(116, 234, 255, 0.95)";
-			ctx.fillText(
+			drawFitted(
 				`PLAYER  SHIELDS F ${this.combat.foreShield.toFixed(0)}  A ${this.combat.aftShield.toFixed(0)}  HULL ${this.combat.playerHull.toFixed(0)}`,
-				w / 2,
 				h * 0.8,
+				"rgba(116, 234, 255, 0.95)",
+				12,
 			);
 			const combatStatus = `FIRE ${this.combat.firing?.toUpperCase() ?? "SAFE"} · LOCK ${this.combat.missileLock ? "READY" : "ACQUIRING"} · MISSILE ${this.combat.incomingMissile ? "WARNING" : "CLEAR"} · INTERDICTION ${this.combat.interdiction ? "ACTIVE" : "CLEAR"}`;
-			const fitKey = `${combatStatus}|${w}`;
-			let fitted = this.combatStatusFit.get(fitKey);
-			if (!fitted) {
+			// The fit depends on the glass width and the longest status text, not on
+			// which state is currently displayed, so the cache key is just the width.
+			let fittedEntry = this.combatStatusFit.get(w);
+			if (!fittedEntry) {
 				ctx.font = PROMPT_FONT;
 				const startSize = parseInt(PROMPT_FONT, 10);
 				let size = startSize;
@@ -3999,19 +4018,19 @@ class Game {
 					size -= 1;
 					ctx.font = `${size}px ui-monospace, Menlo, monospace`;
 				}
-				fitted = ctx.font;
-				this.combatStatusFit.set(fitKey, fitted);
+				const font = ctx.font;
+				fittedEntry = { font, width: ctx.measureText(combatStatus).width };
+				this.combatStatusFit.set(w, fittedEntry);
 			}
-			ctx.font = fitted;
-			const fittedWidth = ctx.measureText(combatStatus).width;
+			ctx.font = fittedEntry.font;
 			ctx.fillStyle = PROMPT_FILL;
 			ctx.fillText(combatStatus, w / 2, h * 0.84);
 			this.combatOverlayStatus.setCenteredPrompt(
 				combatStatus,
 				w / 2,
 				h * 0.84,
-				fittedWidth,
-				fitted,
+				fittedEntry.width,
+				fittedEntry.font,
 			);
 			ctx.restore();
 		} else {
