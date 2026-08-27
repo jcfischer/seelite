@@ -584,9 +584,15 @@ const narrowOverlay = await narrowCombatPage.evaluate(() => {
 	const lines = game.combatOverlayLines;
 	const fits =
 		lines.length === 4 &&
-		lines.every((line) => line.width <= overlay.width - 16);
+		lines.every((line) => line.width <= overlay.width - 16) &&
+		game.combatStatusWorstWidth <= overlay.width - 16;
 	const rendered = globalThis.__seeliteMeasureCockpit().combatOverlayText;
-	return { rendered, fits, canvas: overlay.width, count: lines.length };
+	return {
+		rendered,
+		fits,
+		canvas: overlay.width,
+		count: lines.length,
+	};
 });
 check(
 	"prototype: all combat overlay lines fit the narrow viewport",

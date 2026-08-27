@@ -678,7 +678,12 @@ class Game {
 	private combatEcm = false;
 	/** Fitted status font cache: keyed on glass width; the fit is computed
 	 *  against the longest possible status text, so any live state fits. */
-	private combatStatusFit = new Map<number, { font: string }>();
+	private combatStatusFit = new Map<
+		number,
+		{ font: string; worstWidth: number }
+	>();
+	/** The fitted width of the widest status text at the current glass width. */
+	combatStatusWorstWidth = 0;
 	/** The overlay lines drawn last frame, at the font each was fitted to. */
 	combatOverlayLines: { text: string; font: string; width: number }[] = [];
 	/** Probe-only laser visibility override; the renderer honours it. */
@@ -4031,11 +4036,15 @@ class Game {
 					size -= 1;
 					ctx.font = `${size}px ui-monospace, Menlo, monospace`;
 				}
-				fittedEntry = { font: ctx.font };
+				fittedEntry = {
+					font: ctx.font,
+					worstWidth: ctx.measureText(longestStatus).width,
+				};
 				this.combatStatusFit.set(w, fittedEntry);
 			}
 			ctx.font = fittedEntry.font;
 			const statusWidth = ctx.measureText(combatStatus).width;
+			this.combatStatusWorstWidth = fittedEntry.worstWidth;
 			drawnLines.push({
 				text: combatStatus,
 				font: fittedEntry.font,
