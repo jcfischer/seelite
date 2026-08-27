@@ -630,7 +630,26 @@ async function fpsGate() {
 	 * The saved boot was an argument; the flake is a number.
 	 */
 	await bench.close();
-	const metered = await open(`${URL}&fps`);
+	/**
+	 * The gate as an A/B on one page, which is the only form of it that means
+	 * anything.
+	 *
+	 * The absence check at the top of this file passes identically whether the
+	 * gate works or `mountFpsMeter` is never called at all — it asserts absence
+	 * where absence was never in question, and its justification ("the page has
+	 * been open for the whole of this file") argues for the wrong thing. Here
+	 * one page is loaded without the flag and then with it, so the only
+	 * difference between the two readings is the flag.
+	 */
+	const metered = await open(URL);
+	check(
+		"the same page carries no readout before the flag",
+		!(await metered.evaluate(() =>
+			Boolean(document.querySelector("[data-fps-meter]")),
+		)),
+	);
+	await metered.goto(`${URL}&fps`, { waitUntil: "load" });
+	await bootedGame(metered);
 	// Wait for a *rate*, not for the element. The meter mounts showing "- fps",
 	// so waiting on text containing "fps" is satisfied the instant it appears and
 	// gates on nothing: whether the read below saw a measured figure or the
