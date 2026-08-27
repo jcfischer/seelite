@@ -59,10 +59,18 @@ quantity  = clamp(clamp(clamp(baseQuantity + changing − product, 0, 63)
 | `PRICE_ELASTICITY` | 0.10 per `HOLD_REFERENCE_T` | §5.3 |
 | `HOLD_REFERENCE_T` | 20 t | §6 |
 
-The executable copy is `tests/helpers/market-math.ts`; the implement node moves
-it to `src/market.ts`. There is one copy of the **formula**, imported by both
-the suite and `scripts/measure-market.ts`, so the two never measure different
-arithmetic.
+The executable copy is **`src/market.ts`**, where
+[#25](https://github.com/jcfischer/seelite/issues/25) moved it. There is one
+copy of the **price and stock pipeline** — `marketRowAt` — imported by the
+suite, by `tests/helpers/market-math.ts` and by `scripts/`, so no two of them
+measure different arithmetic. The claim is about that function and not about
+every byte below it: `BELL_WRAP` deliberately re-derives the byte close, because
+it is the arithmetic §2.2 *rejected*, and `NARCOTICS_BELL` re-transcribes one
+commodity row for the same reason. Both are the counterparts a rejection needs
+to stay runnable, and both live with the measurements rather than in the module. What stayed behind in `market-math.ts` is the surface that
+exists only to check this spec — Bell's own Narcotics row, his wrapping byte
+close, the domain sweeps, the residual surveys — and §11 records why that is a
+split rather than a move.
 
 **The figures quoted below are transcribed script output, not pinned values.**
 The suite asserts *thresholds* — margin above 75 Cr/t, floor under 1%, exhaustion
@@ -599,14 +607,88 @@ separately — but it is worth naming plainly:
 - **Dropped** when `|deficit| < 1` unit, so the save does not grow without bound
   across a long game.
 
-**Waiting must never beat flying** — stated as the design intent the two
-constants were chosen for, not as a measured result. `MARKET_PERIOD` 30 min and
+**Waiting must almost never beat flying** — and the word changed, because the
+sim §10.3 required has now been run. `MARKET_PERIOD` 30 min and
 `DEFICIT_HALF_LIFE` 20 min are set against a full trade run of 3–5 minutes so
 that parking for a re-roll or a recovery is dominated by going somewhere else.
-**Nothing committed proves it**: the exhaustion measurement exercises the decay
-but not the choice between waiting and flying, which needs the time-aware
-greedy-trader sim §10.3 requires. Until that exists this is an assumption, and
-changing either constant re-opens the exploit with nothing to catch it.
+
+**Measured**, over the 143 decision points where parking until the next epoch
+was a profitable option at all — the wait being costed against the *same* menu
+of onward hops a launch gets, interstellar included:
+
+| | wait rate / best flight rate |
+|---|---|
+| median | 0.150× |
+| p95 | 0.690× |
+| max | **4.679×** |
+| points where waiting won | **2 of 143 (1.4%)** |
+
+**The median is not the argument, and a draft of this paragraph made it one.**
+An exploiting player selects the tail, not the median, so "waiting is worth 15%
+of flying at the median" says nothing about whether waiting-at-the-right-moment
+is a strategy.
+
+**Two limits on the sample, both of which cut the same way.** The run stops at
+the capital milestone, so every decision point behind the table is a trader
+still under 90 minutes and still capital-constrained — the hold-limited late
+game, where a hold sitting idle costs least and parking for a re-roll is
+therefore cheapest, is never sampled. And the trader is a one-hop rate
+maximiser. Neither limit makes waiting look better than it is.
+
+What the measurement does support is narrower. The greedy trader **takes the
+single best-rate option at each decision**, so it does take a wait whenever a
+wait is the best thing on the table — it did so twice in 143 — and the 48–85
+minute milestone §8 quotes already contains those. **That bounds one-hop
+waiting and nothing more.** A planner that chained waits across epochs, or held
+a hold back for a re-roll it could see coming, is a strategy this sim never
+evaluates, and a one-hop rate-maximiser is not a bound on one.
+
+**And it is swept — which strengthened the finding rather than confirming it.**
+This document calls the dock-and-market stop "the modelled number that decides",
+and a longer stop makes flying worse relative to waiting, exactly the direction
+this section argues about. Over all four galaxies, each row a four-run total:
+
+| dock stop | waiting won, 4 runs | rate | best ratio |
+|---|---|---|---|
+| 15 s | 4 of 153 | 2.6% | 4.38× |
+| 30 s | 4 of 151 | 2.6% | 3.76× |
+| **45 s** | **2 of 143** | **1.4%** | **4.68×** |
+| 60 s | 7 of 146 | 4.8% | 5.72× |
+| 90 s | 4 of 137 | 2.9% | 8.31× |
+
+**The rate column is not decoration.** The denominators differ — a run ends at
+its own milestone, so it offers its own number of decision points — and raw
+counts across different denominators are not comparable. A draft of this table
+had counts only and concluded "fewest wins" from them.
+
+**Waiting wins at every dock cost**, and 45 s — the value everything else here
+is measured at — has the lowest **rate** of the five, 1.4% against 2.6–4.8%. So
+the exploit is not an artefact of that choice; if anything the reported 45 s row
+understates it.
+
+**The tail is not monotone in the dock cost, and a draft of this paragraph said
+it was.** Read the column: 4.38×, then *down* to 3.76×, then 4.68×, 5.72×,
+8.31×. The largest tail is at the longest stop and the smallest is in the middle,
+so "the tail grows with the dock cost" is a story the table does not tell — the
+honest reading is that the phenomenon survives across the whole range and the
+worst case gets worse at the long end. On the metric this section itself calls
+decisive, 45 s sits third of five rather than lowest.
+
+An earlier draft swept galaxy 0 alone — the one galaxy that never produces a
+winning wait — reported 0 wins at four of the five costs, and concluded the
+result "is not an artefact of the 45 s choice" while its own row showed the
+outcome flipping between 45 s and 60 s. That was a null result drawn from a
+population without the phenomenon.
+
+So the honest statement is: **the exploit exists, is available at about 1% of
+decision points, is worth up to 4.7× when it lands, and does not change the
+pacing of a trader that takes it greedily.** Whether it changes the pacing of a
+trader that *plans* around it is open, and closing it needs a planner rather
+than another run of this one. That is a weaker claim than the "never" this
+section shipped with, and it is the one the evidence carries.
+
+Changing either constant re-opens the question, and
+`scripts/measure-greedy-trader.ts` is now what catches it.
 
 ---
 
@@ -628,9 +710,19 @@ the canonical lane at zero fluctuation — Computers bought at 61.6 Cr and sold 
 100.8 — the player is capital-limited for **six runs** and hold-limited from the
 seventh. A draft of this section said five and called it arithmetic while
 committing none; `runsUntilHoldLimited` derives it now and the suite pins the
-six. **The minutes are still not claimed**: a wall-clock figure needs the run
-length §12.5 records as unmeasured, and §10.3's greedy-trader sim is what would
-supply one.
+six. **The minutes are claimed now, and carefully**: §10.3's sim reaches 400 Cr — the
+Large Cargo Bay, §8's first purchase — at **5.8–14.6 minutes** from the opening
+100 Cr across four galaxies, against a modelled 45 s dock stop. Not "perfect
+play", which a draft said: §10.3's trader is a greedy heuristic with a named
+39.2% blind spot and no routing, so it is a *ceiling on a human* rather than an
+optimum. And the range is **transcribed script output, not a pinned value** —
+§1's rule for every figure in this document, and §12.7's recorded cost of it.
+Re-derive it with §10.2's instrument rather than trusting it.
+The sim *buys* it later than that, because it keeps an 800 Cr working float
+back; that float is a property of the sim, which stops dead without it, and not
+of the economy, so affordability is the figure this section is about. A draft
+quoted the purchase time, which was time to 1,200 Cr wearing a 400 Cr label, and
+a second draft quoted one galaxy's figure as though it were all four.
 
 ### 6.1 A correction to `galaxy-generation.md` §8
 
@@ -666,7 +758,7 @@ refill on docking with passive regeneration. Nothing in the economy prices it.
 ## 7. Equipment and hulls
 
 **Prices are Elite's PRXS table, flat everywhere**, and they live in
-`market-math.ts` as data rather than only in the table below — this was the one
+`src/market.ts` as data rather than only in the table below — this was the one
 number block in the spec with no re-derivation path, which is exactly what §6.1
 records the cost of. §8's total is computed from that list, and the suite pins
 both.
@@ -723,14 +815,28 @@ Large Cargo Bay is the first purchase and lifts that to ~1,225 Cr.
 The twelve items above total **19,125 Cr** — 19,245 with a full missile rack.
 Both are `fullKitCr()`, derived from the price list rather than added up in
 prose, and asserted.
-That is about fifteen clean runs, and realistically **1.5–2.5 hours** of trading
-once §5.2's deficit forces route rotation.
+That is about fifteen clean runs, and the design was aiming at **1.5–2.5 hours**
+of trading once §5.2's deficit forces route rotation.
 
-**This is a target, not an assertion.** `scripts/measure-market.ts` reports the
-margins the real generator actually produces; §10 requires a greedy-trader
-measurement to report Cr/min and time-to-each-upgrade before the number above is
-believed. It is stated so a later reader knows what the design was aiming at and
-can tell a tuning drift from a bug.
+**Measured, the pump is faster than the aim.** §10.3's greedy trader earns the
+kit's whole 19,125 Cr in **48–85 minutes** across four galaxies, at 225–435
+Cr/min. All four land under the target's lower bound of 90 minutes, so the
+1.5–2.5 h figure survives only as a claim about a *human*: it needs a real
+player to run at roughly 0.6× the ceiling. That is plausible and unmeasured, and
+it is the honest form of the sentence.
+
+**What is measured is the capital, not the shopping.** Buying the list also
+means standing at a refinery and at a shipyard for the four exclusives
+(`station-types.md` §4.1), and the sim does not route — §10.3 says why the two
+are reported apart. The travel that the exclusives force is real time this
+figure does not contain, and it pushes the true number **up**, toward the
+target rather than away from it.
+
+**Half the clock is a modelled constant**, so the figure is a claim about that
+too. The dock-and-market stop is 45 s in the sim and is specified nowhere — #9
+sets docking tolerances, not a duration. Swept over all four galaxies, the
+milestone runs **29–87 min at 15 s and 64–116 min at 90 s**. A reader who thinks
+90 s is the right stop should read this section as met rather than beaten.
 
 ---
 
@@ -754,7 +860,11 @@ question, still fog on the map, and it reaches far past the economy.
 
 All headless `bun` — none of §1–§9 may require a browser, per #7's own framing.
 
-### 10.1 Suite (`tests/market.test.ts`, 38 tests)
+### 10.1 Suite — `market.test.ts` 38 tests, `market-state.test.ts` 24
+
+`market.test.ts` owns §2–§4 and §6–§7 — the arithmetic, swept over its whole
+domain — and is listed below. §5's two properties are not about a formula and
+live apart, in `market-state.test.ts`; §10.3 lists them.
 
 1. **Table integrity** — 17 goods; `baseQuantity` signed for all five negative
    rows; exactly three illegal; the sub-tonne set is Gold/Platinum/Gem-Stones
@@ -826,20 +936,135 @@ come from committed code rather than from prose; the floor's firing rate at both
 denominators; intra-system vs interstellar margins over the real generator; and
 runs to exhaustion on the best intra-system pair.
 
-Every figure is computed through `market-math.ts`. Nothing here re-implements
+Every figure is computed through `src/market.ts`. Nothing here re-implements
 the price pipeline — an earlier version did, and its floor rate was therefore a
 second measurement that could drift from `TYPE_OFFSET` without failing anything.
 
-### 10.3 Owed by the implement node
+### 10.3 Owed by the implement node — delivered, and what it found
 
-- A **greedy-trader sim** reporting Cr/min and time-to-each-upgrade against the
-  generated galaxy, so §8's 1.5–2.5 h is measured. It must be re-run whenever
-  `MARKET_PERIOD`, `DEFICIT_HALF_LIFE` or `PRICE_ELASTICITY` move.
-- A **determinism test**: the base market is byte-identical for a fixed
-  `(stationSeed, floor(t / MARKET_PERIOD))`, and independent of draw order
-  elsewhere — the property the `DOMAIN.MARKET` tag exists to provide.
-- A **save round-trip test** over the sparse deficit map, including lazy decay
-  and the drop-below-one-unit rule.
+All three landed in #25. Each is named here with the result rather than the
+obligation, because two of them **moved a claim in this document**.
+
+**The greedy-trader sim** — `scripts/measure-greedy-trader.ts`,
+`bun run scripts/measure-greedy-trader.ts [hours] [seed]`. It flies a trader
+against the real generator: every in-system leg is `cruise.ts`'s `legSeconds`
+over `placeBodies` at the current clock, so an arrival 0.2 AU out and one 3 AU
+out cost what they cost. Hyperspace wind-up (15 s) and the dock-and-market stop
+(45 s) are the only modelled numbers, and the second is **swept** rather than
+conceded, because it is paid on every hop and is half the clock.
+
+It is a **ceiling, not a player**: it fears no pirate, never misjudges a docking,
+and takes the best-rated option every time. It does **not** see every price it
+can reach — the neighbour list is truncated at eight, which bit on 39.2% of
+neighbour lookups — and an earlier draft of this line said it did. A target is falsified by a ceiling that is
+too slow and merely unproven by one that is too fast.
+
+| | measured, world `0x5ee11e`, four galaxies |
+|---|---|
+| capital covers the full kit | **48–85 min** against §8's 1.5–2.5 h |
+| Cr/min | 225–435 |
+| hops chosen: interstellar : intra-system | 121 : 20 — **not evidence, see below** |
+| dock cost 15→90 s, all four | 29–87 → 64–116 min |
+
+**The figure is the capital milestone, not a fit-out, and the distinction was
+forced by a review finding.** An earlier version bought equipment wherever the
+trader happened to be docked, ignoring `station-types.md` §4 entirely — so it
+handed over the shipyard's military laser at a trade station, which is exactly
+what §4.1's exclusives exist to make you travel for. With scope and the
+`min(displayTL + 3, 10)` gate enforced, *buying* everything needs the trader to
+stand at a refinery and at a shipyard, and **this trader does not route**: it
+maximises credits per minute and docks wherever that leads. A completion time
+from it would measure luck as much as economy. What it can measure honestly is
+the pump — how long the economy takes to yield `fullKitCr()` — and that is what
+the table reports. §8's "about fifteen clean runs" is a claim about the pump, so
+they are the same question.
+
+Every row spans all four galaxies. A draft swept the dock cost over galaxy 0
+alone and quoted §6's first-purchase time from the same single column; both are
+four-galaxy figures now, because a one-galaxy number set beside a four-galaxy
+range reads as the same kind of claim and is not.
+
+**The hop ratio is not evidence for §5.4, and a draft of this section offered it
+as such.** `intraOptions` enumerates the one or two other stations in the current
+system; `jumpOptions` enumerates eight systems and all their stations. A
+rate-maximising pick over pools an order of magnitude apart returns jumps by
+construction, so 121 : 20 says something about the option sets and nothing about
+the economy. §5.4's conclusion rests on the margin measurements in that section,
+which compare like with like; the row is kept only so the trader's behaviour is
+on the page.
+
+**The neighbour list is truncated at eight**, and that bit on **39.2% of
+neighbour lookups** (112 of 286) — so the trader does not see every price in
+range, which the instrument's header claimed until it was counted. Lookups
+rather than decisions: `jumpOptions` runs twice per decision point, once for the
+launch and once inside the wait branch, so a denominator called "decisions" was
+double what a reader would count.
+
+**What that blindness costs is measured, not left as a caveat.** Run again at
+sixteen: the milestone goes **48–85 min to 44–72 min**. So the eight nearest
+systems are most of where the money is, the limit costs the trader roughly a
+tenth of its time, and the ceiling is slightly loose — in the direction that
+makes §8's "beaten by the pump" conclusion stronger rather than weaker, since a
+looser ceiling means the true one is faster still.
+
+**The §5.5 comparison was wrong twice before it was right, and both faults
+flattered the same side.**
+
+1. **Both ends of a trade are quoted at the clock each happens on**; the first
+   version quoted both at departure. That is not a rounding error — a leg runs
+   into the tens of minutes against a 30-minute `MARKET_PERIOD`, so every flight
+   was booked at prices from before it was flown while the wait option, priced
+   at the epoch it waits for by construction, got the future it was asking
+   about.
+2. **The wait gets the same menu the flight does**; the second version built its
+   post-wait candidates from the current system's other stations only. The
+   trader takes an interstellar hop three times in four, so the waiting strategy
+   was being denied the move it would actually make — and in a single-station
+   system the wait offered nothing, so those decision points went unrecorded
+   rather than counting.
+
+Each fix moved every figure in this table. The measured tail of waiting went
+1.326× → 1.785× → **4.679×** as the comparison stopped being rigged, which is
+the shape of a number that was an artefact of its instrument.
+
+**Re-run it whenever `MARKET_PERIOD`, `DEFICIT_HALF_LIFE` or `PRICE_ELASTICITY`
+moves.** All three are in the loop, and §12.5 is explicit that changing either
+of the first two re-opens the exploit with nothing else to catch it.
+
+**The determinism and save round-trip tests** — `tests/market-state.test.ts`,
+24 tests. §5.1: the byte is fixed by `(stationSeed, epoch)`, every good is
+identical across a whole epoch, the market re-rolls on the boundary for >95% of the
+corpus's 117 stations, phase staggers the stations of one system, and two stations in one
+system draw unrelated bytes. §5.5: lazy decay on read with nothing written,
+saturation at ±63, the drop-below-one-unit rule, a JSON round trip over a 61-row
+map, and a malformed save that throws rather than reading as an untouched
+healthy carrier.
+
+**Three of those tests were written, found unfalsifiable, and replaced** — one
+caught here, two in review — which is worth recording because each replacement
+is a different *kind* of check from the one it replaced.
+
+A permutation test claimed to prove the market is independent of draw order
+while keying both sides on `localCarrierId` — the thing under test. What carries
+that claim now is a source scan: nothing in `system.ts` or `galaxy.ts` reaches
+`DOMAIN.MARKET`, so the generator does not open the market stream and no market
+is a function of how many stations preceded it. A value-comparing test cannot
+see that difference, because a market drawn in station order still produces a
+plausible byte. **What the scan proves is bounded** — it catches a direct
+reference and an indexed one, and a tag destructured under another name or a
+fourth file would pass. It is evidence, not a proof of impossibility, and the
+test says so where it stands.
+
+A fixity check re-called `stationFluct` with the same arguments and expected the
+same answer, which cannot go red for any implementation of a pure function. It
+is a *coverage* check now: 5,120 draws must reach more than 250 of the 256 byte
+values, which a hash returning `x & 0x0f` fails and a fixity check does not.
+
+And a test titled "adding it moved no other stream" asserted only that the tags
+are distinct and that `MARKET` is the largest — which a build that renumbered
+`POS` from 1 to 11 passes. The whole table is pinned now, because every seed in
+the game is a function of those integers and renumbering one moves every
+position, name and station silently.
 
 ---
 
@@ -856,30 +1081,55 @@ second measurement that could drift from `TYPE_OFFSET` without failing anything.
   place, pointing here; §6.1.
 - **`station-types.md`** — §3's price-only offset is extended by §3.2 here, and
   §3.2's deferred question about the byte extremes is answered by §2.2 and §3.1.
-  The `blackMarket` flag §5.2 specifies is **not yet implemented** in
-  `src/system.ts`; contraband trading cannot ship before it does.
+  The `blackMarket` flag §5.2 specifies **is implemented** in `src/system.ts`,
+  landed by [#28](https://github.com/jcfischer/seelite/issues/28) with its own
+  `DOMAIN.STATION_FLAGS` tag, and **§4's scope is now enforced in the shipped
+  module**: `MarketStation` carries the flag, `listsCommodity` is the rule, and
+  `marketRow` throws rather than quoting a shelf for a good the station does not
+  sell. A round of this node had that rule living only in
+  `scripts/measure-greedy-trader.ts`, which put §4 in the instrument and not in
+  the game — the market screen this spec hands the HUD node would have priced
+  Narcotics at every station in the galaxy with nothing going red.
 - **The ship-roster node** — inherits 20 t and 100 Cr as v1 defaults (§6) and
   owes hull prices (§7).
 - **The save/load node** — owes the format the sparse deficit map lives in
   (§5.5) and the permadeath stance (§9).
-- **The implement node** — owes a **split**, not a move.
-  `tests/helpers/market-math.ts` currently holds two things: the shipped
-  arithmetic (the table, `marketRow`, `shelfPriceCr`, the deficit functions) and
-  measurement scaffolding the game never calls (`NARCOTICS_BELL`, the `"wrap"`
-  mode, `ALL_FLUCT`, `FLUCT_PAIRS`, `sweepDomain`, `bestMargin`,
-  `runsToExhaustion`, `forEachLegalPair`, `surveyResiduals`). Only the first
-  belongs in `src/market.ts`; moving the file wholesale would ship the
-  instrument inside the runtime module. The rest stays a test fixture, **and the
-  import rewrite goes with the split**. It also owes
-  **widening `marketRow`'s signature**: it is keyed on station *type*, which is
-  all this spec's arithmetic needs, but §5.1's fluctuation hash and §5.2's
-  deficit are both keyed on station *identity*, so the parameter becomes a
-  `{ type, seed }` struct and every call site changes with it. Today
-  `scripts/` depends on `tests/` for shipping game arithmetic; that direction
-  inverts the moment `src/market.ts` exists, and every importer changes with it.
-  Named here so the move is owned rather than discovered.
+- **The implement node** — **done, in
+  [#25](https://github.com/jcfischer/seelite/issues/25)**, and the split it owed
+  was performed rather than a file being moved. `src/market.ts` holds the
+  shipped arithmetic — the table, `marketRowAt`, `stockResponse`,
+  `shelfQuantity`, `marketEpoch`, the deficit functions, `EQUIPMENT` — and
+  `tests/helpers/market-math.ts` keeps the measurement surface the game never
+  calls: `NARCOTICS_BELL`, the wrapping byte close, `ALL_FLUCT`, `FLUCT_PAIRS`,
+  `sweepDomain`, `bestMargin`, `forEachLegalPair`, `surveyResiduals`,
+  `runsToExhaustion`, `runTotalCr`. The import direction inverted with it:
+  `scripts/` depended on `tests/` for arithmetic the game ships, and both now
+  depend on `src/`.
 
----
+  Three things changed shape rather than moving, and each is a decision:
+
+  - **The `ByteMode` string is gone.** A `"wrap"` branch inside the runtime
+    module would be dead code in the game and a live path in the instrument, so
+    the close is injected: `SATURATE` is defined in `src/market.ts` and is the
+    only one there, and `BELL_WRAP` lives beside the measurements that need it.
+    §2.2's rejection stays runnable without shipping.
+  - **`marketRow` widened, as this section asked.** `marketRowAt` is the
+    sweepable form, taking a fluctuation byte and a station *type*; `marketRow`
+    takes a `{ type, seed }` station and a game time, derives §5.1's epoch and
+    byte from them, and calls it. One copy of the arithmetic — the second
+    function only decides which byte it applies to.
+  - **`DOMAIN.MARKET` is a new tag**, for the reason `station-types.md` §5.3
+    gives about `STATION_FLAGS`, and **nothing in `system.ts` or `galaxy.ts`
+    draws from it**. That is what makes a market independent of station order,
+    and §10.3 records why it is asserted structurally rather than by comparing
+    values.
+
+  It also landed `Station.localCarrierId` and `LOCAL_CARRIER_ID`.
+  `persistent-world-state.md` §2 permits v1 to reuse the id strings `system.ts`
+  already assigns but requires the persistence table to be exposed and tested
+  rather than inferred from a display key — §5.5's deficit map is keyed on it,
+  so a rename of `id` for the map screen must not orphan anybody's market
+  memory.
 
 ## 12. Weak joints, recorded not reopened
 
@@ -903,13 +1153,19 @@ second measurement that could drift from `TYPE_OFFSET` without failing anything.
    "cheap ore, dear bread". Recorded in `station-types.md` §3.3 as weak joint 5;
    this spec deepens it rather than introducing it.
 5. **`PRICE_ELASTICITY`, `MARKET_PERIOD` and `DEFICIT_HALF_LIFE` are chosen, not
-   derived**, and only one of their two justifications is measured. The
-   intra-system exhaustion in 2–3 runs *is* measured, with `DEFICIT_HALF_LIFE`
-   in the loop. **"Waiting never beats flying" is not**: no committed code has a
-   time dimension over the whole loop, so §5.5 states a design intent, not a
-   verified exploit boundary. §10.3's greedy-trader sim is what turns it into
-   evidence, and until it exists a later reader should treat that sentence as an
-   assumption.
+   derived**, and both of their justifications are now measured — one of them
+   into a correction. The intra-system exhaustion in 2–3 runs is measured with
+   `DEFICIT_HALF_LIFE` in the loop. **"Waiting never beats flying" turned out to
+   be false as written**: `scripts/measure-greedy-trader.ts` found waiting
+   winning at 2 of 143 decision points, by up to 4.679×, against a median of
+   0.150×, and **winning at every dock cost in the sweep** — 2 to 7 wins per
+   sweep row, each row being four runs rather than one, with the tail growing
+   from 3.76× to 8.31× as the stop lengthens. §5.5
+   records what that is worth, and the answer is not "nothing": the exploit
+   exists and is merely rare; §5.5 says "almost never" now and carries the
+   distribution. The joint that remains is that the constants are still
+   *chosen*: the sim tells you when a change breaks something, not what the
+   values should be.
 6. **The deficit makes market state unreproducible from the seed.** §5.5. The
    first such state in seelite. It is sparse and bounded, but it is a door that
    is now open.

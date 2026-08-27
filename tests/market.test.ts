@@ -23,46 +23,50 @@
 
 import { describe, expect, test } from "bun:test";
 import {
-	ALL_ECONOMIES,
-	EQUIPMENT,
-	FUEL_CR_PER_LY,
-	FUEL_TANK_LY,
-	fullKitCr,
-	ALL_FLUCT,
-	ALL_STATIONS,
 	COMMODITIES,
-	CLOSABLE_RATIO,
-	FLUCT_PAIRS,
 	type Commodity,
 	DEFICIT_HALF_LIFE_MIN,
 	DEFICIT_MAX,
-	NARCOTICS_BELL,
-	NARCOTICS_RETUNE,
-	OFFSET_STATIONS,
-	PRICE_ELASTICITY,
-	MIN_STOCK_RESPONSE_FACTOR,
+	EQUIPMENT,
+	FUEL_CR_PER_LY,
+	FUEL_TANK_LY,
 	MARKET_PERIOD_MIN,
+	MIN_STOCK_RESPONSE_FACTOR,
+	NARCOTICS_RETUNE,
+	PRICE_ELASTICITY,
 	PRICE_STEP_CR,
 	QUANTITY_CAP,
+	SATURATE,
 	TYPE_OFFSET,
 	addDeficit,
-	bestMargin,
 	commodity,
 	decayDeficit,
+	fullKitCr,
+	marketEpoch,
+	marketRowAt,
+	shelfQuantity,
+	stockResponse,
+} from "../src/market";
+import {
+	ALL_ECONOMIES,
+	ALL_FLUCT,
+	ALL_STATIONS,
+	BELL_WRAP,
+	CLOSABLE_RATIO,
+	FLUCT_PAIRS,
+	NARCOTICS_BELL,
+	OFFSET_STATIONS,
+	bestMargin,
+	bestRunValueCr,
 	floorRate,
 	forEachLegalPair,
-	marketEpoch,
-	marketRow,
 	residualMarginCr,
-	sweepDomain,
-	surveyResiduals,
-	bestRunValueCr,
 	runTotalCr,
-	runsUntilHoldLimited,
 	runValueCr,
-	shelfQuantity,
 	runsToExhaustion,
-	stockResponse,
+	runsUntilHoldLimited,
+	surveyResiduals,
+	sweepDomain,
 } from "./helpers/market-math";
 
 /** The file's short local name; the lookup itself is shared, not copied. */
@@ -109,7 +113,7 @@ describe("the commodity table", () => {
 		expect(alien.sellOnly).toBe(true);
 		for (const economy of ALL_ECONOMIES)
 			for (const fluct of ALL_FLUCT)
-				expect(marketRow(alien, economy, fluct, "trade").quantity).toBe(0);
+				expect(marketRowAt(alien, economy, fluct, "trade").quantity).toBe(0);
 	});
 });
 
@@ -118,8 +122,8 @@ describe("the trade lanes run the researched direction", () => {
 		for (const commodity of COMMODITIES) {
 			if (commodity.gradient >= 0 || commodity.sellOnly) continue;
 			for (const fluct of ALL_FLUCT) {
-				const rich = marketRow(commodity, 0, fluct, "trade");
-				const poor = marketRow(commodity, 7, fluct, "trade");
+				const rich = marketRowAt(commodity, 0, fluct, "trade");
+				const poor = marketRowAt(commodity, 7, fluct, "trade");
 				expect(poor.priceCr).toBeLessThan(rich.priceCr);
 				expect(poor.quantity).toBeGreaterThanOrEqual(rich.quantity);
 			}
@@ -130,8 +134,8 @@ describe("the trade lanes run the researched direction", () => {
 		for (const commodity of COMMODITIES) {
 			if (commodity.gradient <= 0 || commodity.sellOnly) continue;
 			for (const fluct of ALL_FLUCT) {
-				const rich = marketRow(commodity, 0, fluct, "trade");
-				const poor = marketRow(commodity, 7, fluct, "trade");
+				const rich = marketRowAt(commodity, 0, fluct, "trade");
+				const poor = marketRowAt(commodity, 7, fluct, "trade");
 				expect(rich.priceCr).toBeLessThan(poor.priceCr);
 				expect(rich.quantity).toBeGreaterThanOrEqual(poor.quantity);
 			}
@@ -142,11 +146,11 @@ describe("the trade lanes run the researched direction", () => {
 		const computers = byName("Computers");
 		const furs = byName("Furs");
 		const outward =
-			marketRow(computers, 7, 0, "trade").priceCr -
-			marketRow(computers, 0, 0, "trade").priceCr;
+			marketRowAt(computers, 7, 0, "trade").priceCr -
+			marketRowAt(computers, 0, 0, "trade").priceCr;
 		const homeward =
-			marketRow(furs, 0, 0, "trade").priceCr -
-			marketRow(furs, 7, 0, "trade").priceCr;
+			marketRowAt(furs, 0, 0, "trade").priceCr -
+			marketRowAt(furs, 7, 0, "trade").priceCr;
 		expect(outward).toBeCloseTo(39.2, 1);
 		expect(homeward).toBeCloseTo(25.2, 1);
 	});
@@ -164,7 +168,7 @@ describe("§2.2 overflow is confined to Bell's Narcotics row", () => {
 				for (const fluct of ALL_FLUCT)
 					for (const station of ALL_STATIONS)
 						expect(
-							marketRow(commodity, economy, fluct, station).priceOverflowed,
+							marketRowAt(commodity, economy, fluct, station).priceOverflowed,
 						).toBe(false);
 	});
 
@@ -199,7 +203,7 @@ describe("§2.2 overflow is confined to Bell's Narcotics row", () => {
 		// prose, and a later editor restoring Bell's constants gets no warning.
 		const { hits, rows } = sweepDomain(
 			(economy, fluct) =>
-				marketRow(NARCOTICS_BELL, economy, fluct, "trade").priceOverflowed,
+				marketRowAt(NARCOTICS_BELL, economy, fluct, "trade").priceOverflowed,
 		);
 		expect(hits / rows).toBeGreaterThan(0.9);
 	});
@@ -266,7 +270,7 @@ describe("§3 the type offset", () => {
 		const computers = byName("Computers");
 		const minerals = byName("Minerals");
 		const at = (c: Commodity, s: "trade" | "refinery" | "shipyard") =>
-			marketRow(c, 3, 0, s).priceCr;
+			marketRowAt(c, 3, 0, s).priceCr;
 		// A shipyard is cheap for manufactured goods, dear for extractives.
 		expect(at(computers, "shipyard")).toBeLessThan(at(computers, "trade"));
 		expect(at(minerals, "shipyard")).toBeGreaterThan(at(minerals, "trade"));
@@ -281,9 +285,9 @@ describe("§3 the type offset", () => {
 		for (const commodity of COMMODITIES)
 			for (const economy of ALL_ECONOMIES)
 				for (const fluct of ALL_FLUCT) {
-					const base = marketRow(commodity, economy, fluct, "trade");
+					const base = marketRowAt(commodity, economy, fluct, "trade");
 					for (const station of OFFSET_STATIONS) {
-						const shifted = marketRow(commodity, economy, fluct, station);
+						const shifted = marketRowAt(commodity, economy, fluct, station);
 						const expected =
 							TYPE_OFFSET[station] * commodity.gradient * PRICE_STEP_CR;
 						expect(
@@ -306,7 +310,7 @@ describe("§3 the type offset", () => {
 		// The trade station's offset is zero, so its floor can never fire.
 		for (const good of COMMODITIES)
 			for (const economy of ALL_ECONOMIES)
-				expect(marketRow(good, economy, 0, "trade").floorFired).toBe(false);
+				expect(marketRowAt(good, economy, 0, "trade").floorFired).toBe(false);
 	});
 
 	test("never makes a good scarcer than the trade station", () => {
@@ -315,10 +319,10 @@ describe("§3 the type offset", () => {
 		for (const commodity of COMMODITIES)
 			for (const economy of ALL_ECONOMIES)
 				for (const fluct of ALL_FLUCT) {
-					const base = marketRow(commodity, economy, fluct, "trade").quantity;
+					const base = marketRowAt(commodity, economy, fluct, "trade").quantity;
 					for (const station of OFFSET_STATIONS)
 						expect(
-							marketRow(commodity, economy, fluct, station).quantity,
+							marketRowAt(commodity, economy, fluct, station).quantity,
 						).toBeGreaterThanOrEqual(base);
 				}
 	});
@@ -350,7 +354,7 @@ describe("§3 the type offset", () => {
 			for (const economy of ALL_ECONOMIES)
 				for (const fluct of ALL_FLUCT)
 					for (const station of ALL_STATIONS) {
-						const q = marketRow(commodity, economy, fluct, station).quantity;
+						const q = marketRowAt(commodity, economy, fluct, station).quantity;
 						expect(q).toBeGreaterThanOrEqual(0);
 						expect(q).toBeLessThanOrEqual(QUANTITY_CAP);
 					}
@@ -368,8 +372,8 @@ describe("§2.2 the clamp applies to quantity too, and diverges from Bell there"
 			for (const economy of ALL_ECONOMIES)
 				for (const fluct of ALL_FLUCT)
 					if (
-						marketRow(commodity, economy, fluct, "trade").quantity !==
-						marketRow(commodity, economy, fluct, "trade", "wrap").quantity
+						marketRowAt(commodity, economy, fluct, "trade").quantity !==
+						marketRowAt(commodity, economy, fluct, "trade", BELL_WRAP).quantity
 					)
 						differs = true;
 			if (differs) diverging.push(commodity.name);
@@ -384,11 +388,11 @@ describe("§2.2 the clamp applies to quantity too, and diverges from Bell there"
 		const gold = byName("Gold");
 		for (const economy of ALL_ECONOMIES)
 			for (const fluct of ALL_FLUCT) {
-				expect(marketRow(gold, economy, fluct, "trade").quantity).toBe(
+				expect(marketRowAt(gold, economy, fluct, "trade").quantity).toBe(
 					QUANTITY_CAP,
 				);
 				expect(
-					marketRow(gold, economy, fluct, "trade", "wrap").quantity,
+					marketRowAt(gold, economy, fluct, "trade", BELL_WRAP).quantity,
 				).toBeLessThan(20);
 			}
 	});
@@ -400,10 +404,10 @@ describe('§2.2 "wrap" mode is Bell on both bytes, not just on price', () => {
 		// "Bell + wrap" figure was a hybrid — his price arithmetic with seelite's
 		// shelf — quoted in the very table justifying the divergence from him.
 		const gold = byName("Gold");
-		expect(marketRow(gold, 0, 0, "trade", "wrap").quantity).toBe(
+		expect(marketRowAt(gold, 0, 0, "trade", BELL_WRAP).quantity).toBe(
 			(0x42 + 0 - 0) & QUANTITY_CAP,
 		);
-		expect(marketRow(gold, 0, 0, "trade", "saturate").quantity).toBe(
+		expect(marketRowAt(gold, 0, 0, "trade", SATURATE).quantity).toBe(
 			QUANTITY_CAP,
 		);
 	});
@@ -412,12 +416,17 @@ describe('§2.2 "wrap" mode is Bell on both bytes, not just on price', () => {
 		// The figure §2.3 quotes. Measured with the clamp applied to quantity it
 		// read 36% for both Bell rows, which was seelite's shelf wearing Bell's
 		// name; his own arithmetic stocks the good on ~47% of rows.
-		const wrapped = bestMargin(NARCOTICS_BELL, "refinery", "refinery", "wrap");
+		const wrapped = bestMargin(
+			NARCOTICS_BELL,
+			"refinery",
+			"refinery",
+			BELL_WRAP,
+		);
 		const clamped = bestMargin(
 			NARCOTICS_BELL,
 			"refinery",
 			"refinery",
-			"saturate",
+			SATURATE,
 		);
 		expect(wrapped.inStock).toBeGreaterThan(clamped.inStock);
 		expect(wrapped.inStock).toBeGreaterThan(0.4);
@@ -512,8 +521,8 @@ describe("§6 compounding out of the starting capital", () => {
 		const computers = byName("Computers");
 		const runs = runsUntilHoldLimited({
 			startCr: 100,
-			buyCr: marketRow(computers, 0, 0, "trade").priceCr,
-			sellCr: marketRow(computers, 7, 0, "trade").priceCr,
+			buyCr: marketRowAt(computers, 0, 0, "trade").priceCr,
+			sellCr: marketRowAt(computers, 7, 0, "trade").priceCr,
 		});
 		expect(runs).toBe(6);
 	});
@@ -568,7 +577,7 @@ describe("§5 the stock deficit", () => {
 		for (const commodity of COMMODITIES)
 			for (const economy of ALL_ECONOMIES)
 				for (const station of ALL_STATIONS) {
-					const row = marketRow(commodity, economy, 0, station);
+					const row = marketRowAt(commodity, economy, 0, station);
 					expect(
 						stockResponse(row.priceCr, -DEFICIT_MAX),
 					).toBeGreaterThanOrEqual(PRICE_STEP_CR);

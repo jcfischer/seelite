@@ -35,6 +35,7 @@
  * having to build 2048 solar systems.
  */
 
+import { DOMAIN } from "./domains";
 import { mix, seedFor, seededRand } from "./rng";
 import { planetDescription, systemName } from "./names";
 import { type Vec3, lengthSq } from "./vec3";
@@ -102,39 +103,6 @@ const CDF_BISECTION_STEPS = 40;
  * the density profile (§3) or the radius (§2.1) — not this number.
  */
 export const MAX_LAYOUT_ATTEMPTS = 512;
-
-/**
- * The second-level stream split, per spec §1.
- *
- * Safe to extend, unsafe to renumber. Every existing seed's output is a
- * function of these values.
- */
-export const DOMAIN = {
-	POS: 1,
-	NAME: 2,
-	POLITY: 3,
-	BODIES: 4,
-	STATIONS: 5,
-	DESC: 6,
-	/** The new-game arrival bearing (`system.ts`). Not in the spec's list of
-	 *  six: it was added because reusing `POS` for it silently correlated the
-	 *  bearing with the system's own position — the first draw of a replayed
-	 *  stream is the same number both times. Adding a tag is the safe operation
-	 *  this table was designed for; reusing one is the unsafe one. */
-	ARRIVAL: 7,
-	/** The per-station flags — today just `blackMarket` (`station-types.md`
-	 *  §5.3). Its own tag rather than a draw inside `STATIONS`, because that
-	 *  stream is consumed in station order and an inserted draw re-places every
-	 *  station after it. */
-	STATION_FLAGS: 8,
-	/** Station spin (`station-types.md` §8.2). Separate from `STATION_FLAGS`
-	 *  rather than sharing it: `spinRpm` is kept conditionally on type, so a
-	 *  third flag added later would shift it — reproducing inside one tag
-	 *  exactly the coupling the tags exist to escape. */
-	STATION_SPIN: 9,
-} as const;
-
-export type DomainName = keyof typeof DOMAIN;
 
 /** The root of all galaxy-level derivation. */
 export const galaxyRoot = (worldSeed: number): number =>
