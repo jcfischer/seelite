@@ -3892,17 +3892,29 @@ class Game {
 	 * footprint.
 	 *
 	 * **The flicker's account lives here**, because four places were each
-	 * claiming to be its cause. The artefact — black rectangles, roughly one
-	 * coarse bloom texel across, appearing and vanishing as the frame moves —
-	 * was present on `main` before any of this branch existed, and switching
-	 * bloom off removes it. That much is established.
+	 * claiming to be its cause.
 	 *
-	 * What is *not* established is which input to bloom produces it. Two
-	 * candidates were found and both fixed: mip levels built from an odd start
-	 * (`bloomResolution`), and non-finite fragment colours (`SANITISE_GLSL`).
-	 * The first demonstrably reduced it. Whether the second finishes it is
-	 * unknown at the time of writing, and the honest state is "guarded in two
-	 * places, diagnosed in neither".
+	 * **All of it is one person's eye, and that is worth saying before the rest
+	 * of it.** The artefact does not reproduce headlessly — 25 frames in chase
+	 * view on a software rasteriser show only the terminator moving — so there
+	 * is no recording, no before/after capture and no repeatable procedure
+	 * here. Everything below is the principal reporting what he saw on his own
+	 * machine, in a session on 2026-08-27, and none of it is stronger than
+	 * that.
+	 *
+	 * What he reported: black rectangles, roughly one coarse bloom texel
+	 * across, appearing and vanishing as the frame moves; the same on a build
+	 * of `main` served alongside this branch, which is what places the artefact
+	 * before this work rather than in it; gone when bloom is switched off,
+	 * which is what points at bloom; and smaller but still present after the
+	 * mip fix, which is the whole basis for saying that one helped.
+	 *
+	 * Two candidate inputs were found and both guarded — mip levels built from
+	 * an odd start (`bloomResolution`) and non-finite fragment colours
+	 * (`SANITISE_GLSL`). Neither is a diagnosis. Whether the second finishes it
+	 * is unknown at the time of writing. Anyone reopening this should start by
+	 * getting a capture, because the next person will otherwise inherit the
+	 * same four unfalsifiable stories this comment replaced.
 	 *
 	 * The pixel-ratio re-application below is *not* one of those candidates. It
 	 * was investigated as one and ruled out. The measurement: with a page opened
