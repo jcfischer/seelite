@@ -4042,11 +4042,11 @@ class Game {
 				"player",
 				"PLAYER  SHIELDS F 999  A 999  HULL 999",
 			);
-			const combatStatus = `FIRE ${this.combat.firing?.toUpperCase() ?? "SAFE"} · H ${this.combat.heat.toFixed(0)} E ${this.combat.energy.toFixed(0)} · LOCK ${this.combat.missileLock ? "READY" : "ACQ"} · MISSILE ${this.combat.incomingMissile ? "WARNING" : "CLEAR"} · INTD ${this.combat.interdiction ? "ACTIVE" : "CLEAR"}`;
+			const combatStatus = `FIRE ${this.combat.heatLocked ? "LOCKED" : (this.combat.firing?.toUpperCase() ?? "SAFE")} · H ${this.combat.heat.toFixed(0)} E ${this.combat.energy.toFixed(0)} · LOCK ${this.combat.missileLock ? "READY" : "ACQ"} · MISSILE ${this.combat.incomingMissile ? "WARNING" : "CLEAR"} · INTD ${this.combat.interdiction ? "ACTIVE" : "CLEAR"}`;
 			// The status line goes through the same fitter, keyed on its widest
 			// text so any live state fits whatever the first frame displayed.
 			const longestStatus =
-				"FIRE PULSE · H 100 E 100 · LOCK READY · MISSILE WARNING · INTD ACTIVE";
+				"FIRE LOCKED · H 100 E 100 · LOCK READY · MISSILE WARNING · INTD ACTIVE";
 			const statusFont = drawFitted(
 				combatStatus,
 				h * 0.84,
