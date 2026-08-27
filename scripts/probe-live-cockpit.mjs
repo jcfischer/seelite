@@ -256,14 +256,10 @@ async function targetInstrumentRendered(page) {
 	const shown = await page.screenshot();
 	try {
 		await page.evaluate(() => {
-			window.__seelite.nearScene.getObjectByName("target-instrument").visible =
-				false;
+			const game = window.__seelite;
+			game.nearScene.getObjectByName("target-instrument").visible = false;
+			game.render(0);
 		});
-		const frame = await page.evaluate(() => window.__seelite.frames);
-		await page.waitForFunction(
-			(before) => window.__seelite.frames > before,
-			frame,
-		);
 		const hidden = await page.screenshot();
 		return page.evaluate(
 			async ({ shown, hidden }) => {
@@ -294,8 +290,9 @@ async function targetInstrumentRendered(page) {
 		);
 	} finally {
 		await page.evaluate(() => {
-			window.__seelite.nearScene.getObjectByName("target-instrument").visible =
-				true;
+			const game = window.__seelite;
+			game.nearScene.getObjectByName("target-instrument").visible = true;
+			game.render(0);
 		});
 	}
 }

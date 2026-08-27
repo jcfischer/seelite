@@ -3800,6 +3800,7 @@ class Game {
 		// than the deliberate head-turn view the cockpit contract calls for.
 		if (this.view === "cockpit" && this.headLook !== "forward") {
 			this.cockpitPrompt.reset();
+			this.combatOverlayStatus.reset();
 			return;
 		}
 		const toPixels = (ndcX: number, ndcY: number) => ({
