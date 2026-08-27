@@ -147,6 +147,13 @@ function measureConsole() {
 				row.textContent?.trim(),
 			);
 		})(),
+		leftPanelVisible: (() => {
+			const panel = document.querySelector('[data-gallery-panel="left"]');
+			return (
+				panel instanceof HTMLElement &&
+				getComputedStyle(panel).display !== "none"
+			);
+		})(),
 		headLook: document
 			.querySelector("[data-gallery-cockpit]")
 			?.getAttribute("data-gallery-head-look"),
@@ -295,6 +302,19 @@ for (const [when, measured] of [
 	["before", beforeRoll],
 	["after", afterRoll],
 ]) {
+	// **The positive first.** Both assertions below read `consoleText`, which is
+	// `""` when no console renders, so on a console-less build they would hold
+	// for the same reason they hold on a correct one — the exact vacuity this
+	// file's header claims to have designed out for obligation 11 and had not
+	// for 12. The epoch guard above reads the wrap element, not the console, so
+	// it does not close this either.
+	check(
+		`12: ${when} the roll, there is a market tab to find nothing on`,
+		measured.consolePresent &&
+			measured.rows.length === 17 &&
+			measured.consoleText.includes("Food"),
+		`${measured.rows.length} rows, ${measured.consoleText.length} chars`,
+	);
 	const text = measured.consoleText.toLowerCase();
 	const hit = COUNTDOWN_WORDS.find((word) => text.includes(word));
 	check(
@@ -379,6 +399,18 @@ check(
 	!drive.launchVisible,
 );
 await page.locator('[data-gallery-right-tab="Flight"]').click();
+// The other side of E5's boundary. M2 keeps the left console's job unchanged,
+// and E5 suspends *flight* — which is what the right console carries and the
+// left one does not. Asserted so that "the left console stays live" is a
+// measured decision rather than the half of it nobody looked at.
+await page.locator('[data-gallery-look="left"]').click();
+const left = await page.evaluate(measureConsole);
+check(
+	"M2/E5: the left console is not marked inert — flight is not what it carries",
+	left.leftPanelVisible && left.inertReadouts === null,
+	JSON.stringify(left.inertReadouts),
+);
+await page.locator('[data-gallery-look="right"]').click();
 
 check(
 	"9: the launch control is live - pressing it returns the flying cockpit",

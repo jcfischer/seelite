@@ -17,6 +17,7 @@ import {
 	type DockPhase,
 	type StationConsoleTab,
 	flightFloorVisible,
+	signedDelta,
 	stationConsoleVisible,
 	stationEquipmentScreen,
 	stationMarketScreen,
@@ -298,21 +299,6 @@ const esc = (value: string): string =>
 
 const CR = (value: number): string => `${value.toFixed(1)} Cr`;
 
-/**
- * M6's arrow: the sign is the whole content, so it is drawn rather than
- * spelled — and never as a clock, which is what M7 keeps off this screen.
- *
- * **A delta that rounds to zero gets neither arrow.** §3's floor pins the
- * cheapest rows at `PRICE_STEP_CR`, and it applies to the responded price too,
- * so a moved row there reads `0.0` — an up arrow beside it would tell the
- * player a price rose when the floor is what they are looking at.
- */
-export const signed = (value: number, digits: number): string => {
-	const magnitude = Math.abs(value).toFixed(digits);
-	if (Number(magnitude) === 0) return `·${magnitude}`;
-	return `${value > 0 ? "↑" : "↓"}${magnitude}`;
-};
-
 function renderMarketRow(row: ConsoleMarketRow): string {
 	const marker = row.commodity.illegal
 		? '<b class="sg-illegal" data-gallery-illegal title="restricted">⚠</b>'
@@ -323,11 +309,11 @@ function renderMarketRow(row: ConsoleMarketRow): string {
 	const priceDelta =
 		row.priceDeltaCr === undefined
 			? ""
-			: `<em class="sg-delta" data-gallery-price-delta>${signed(row.priceDeltaCr, 1)}</em>`;
+			: `<em class="sg-delta" data-gallery-price-delta>${signedDelta(row.priceDeltaCr, 1)}</em>`;
 	const shelfDelta =
 		row.quantityDelta === undefined
 			? ""
-			: `<em class="sg-delta" data-gallery-shelf-delta>${signed(row.quantityDelta, 0)}</em>`;
+			: `<em class="sg-delta" data-gallery-shelf-delta>${signedDelta(row.quantityDelta, 0)}</em>`;
 	return `<div class="sg-market-row" data-gallery-market-row="${esc(row.commodity.name)}" data-gallery-listed="true">${name}<span class="sg-cell"><span data-gallery-price>${CR(row.priceCr as number)}</span>${priceDelta}</span><span class="sg-cell"><span data-gallery-shelf>${row.quantity} ${esc(row.commodity.unit)}</span>${shelfDelta}</span></div>`;
 }
 
@@ -938,10 +924,25 @@ function renderFlightGlass(state: GalleryState): string {
 	return `<main class="sg-glass" aria-live="polite"><div class="sg-stars"></div><div class="sg-dash-deck" aria-hidden="true"></div><div class="sg-director" data-gallery-director data-accent="${state.accent}">${state.targetBearingDeg === undefined ? "" : `<i class="sg-target-arrow" data-gallery-target-arrow data-gallery-target-bearing="${state.targetBearingDeg}" style="--target-bearing:${state.targetBearingDeg}deg" aria-label="turn toward target bearing">➤</i>`}${state.director}${state.id.startsWith("docking-") ? `<div class="sg-docking" data-gallery-docking>AXIS FUNNEL · ROLL RING · ${state.id === "docking-granted" ? "CLEAR TO APPROACH" : "DO NOT ENTER"}</div>` : ""}</div><div class="sg-scanner" data-gallery-scanner aria-label="Local radar, 10,000 kilometre vicinity"><i class="sg-contact one" data-gallery-contact-stem></i><i class="sg-contact-anchor one" data-gallery-contact-anchor></i><i class="sg-contact two" data-gallery-contact-stem></i><i class="sg-contact-anchor two" data-gallery-contact-anchor></i><i class="sg-contact three" data-gallery-contact-stem></i><i class="sg-contact-anchor three" data-gallery-contact-anchor></i></div><div class="sg-floor" data-gallery-floor><span>${state.mode}</span><strong>${state.target}</strong></div></main>`;
 }
 
+/**
+ * The docked gallery's own chrome: which station is quoted, and the two
+ * controls that exist for the probe rather than for a player.
+ *
+ * **Deliberately outside the console.** M7 keeps the epoch off the market tab,
+ * and a clock control on the tab would be the countdown that decision refuses.
+ */
+function renderConsoleRig(view: ConsoleView): string {
+	return `<nav class="sg-states" aria-label="Console rig">${CONSOLE_STATIONS.map((candidate) => `<button class="sg-state" type="button" data-gallery-station="${esc(candidate.id)}" aria-pressed="${candidate.id === view.station.id}">${esc(candidate.label)}</button>`).join("")}<button class="sg-state" type="button" data-gallery-advance-clock>advance the clock past a market roll</button><button class="sg-state" type="button" data-gallery-redock>re-dock (replay the arrival)</button></nav>`;
+}
+
 /** M2's canopy: the station console, and nothing else. During the arrival it
  *  is the throat's payoff still running — M4, so the console is not there. */
 function renderDockedGlass(view: ConsoleView): string {
-	return `<main class="sg-glass sg-glass-docked" aria-live="polite">${renderStationConsole(view)}${view.phase === "arriving" ? `<p class="sg-arriving" data-gallery-arriving>ARRIVING</p>` : ""}</main>`;
+	// No `aria-live` on the console. The flying glass has it because its live
+	// content is one director line; here it would re-announce all seventeen rows
+	// on every tab and station change. The arrival notice keeps it, being the
+	// one thing on this wall that appears without the player acting.
+	return `<main class="sg-glass sg-glass-docked">${renderStationConsole(view)}${view.phase === "arriving" ? `<p class="sg-arriving" data-gallery-arriving aria-live="polite">ARRIVING</p>` : ""}</main>`;
 }
 
 export function renderGalleryState(
@@ -1012,7 +1013,7 @@ export function renderGalleryState(
 	});
 	return `<div class="sg-wrap" data-gallery-version="${GALLERY_VERSION}" data-gallery-state-active="${state.id}" data-gallery-dock-phase="${phase}" data-gallery-clock-min="${view.gameTimeMin}" data-gallery-market-epoch="${marketEpoch(view.station.station.phaseMin, view.gameTimeMin)}">
 		<header class="sg-head"><div><h1>SEELITE · COCKPIT STATE GALLERY</h1><p>Issue #34 prototype — visual contract, not simulated docking.</p></div><div class="sg-head-actions"><nav class="sg-look" aria-label="Cockpit head direction">${(["left", "forward", "right"] as HeadLook[]).map((look) => `<button type="button" data-gallery-look="${look}" aria-pressed="${headLook === look}">look ${look}</button>`).join("")}</nav><button class="sg-close" type="button">return to flight</button></div></header>
-		${docked ? `<nav class="sg-states" aria-label="Console rig">${CONSOLE_STATIONS.map((candidate) => `<button class="sg-state" type="button" data-gallery-station="${esc(candidate.id)}" aria-pressed="${candidate.id === view.station.id}">${esc(candidate.label)}</button>`).join("")}<button class="sg-state" type="button" data-gallery-advance-clock>advance the clock past a market roll</button><button class="sg-state" type="button" data-gallery-redock>re-dock (replay the arrival)</button></nav>` : ""}
+		${docked ? renderConsoleRig(view) : ""}
 		<nav class="sg-states" aria-label="Cockpit states">${GALLERY_STATES.map((candidate) => `<button class="sg-state" type="button" data-gallery-state="${candidate.id}" aria-pressed="${candidate.id === state.id}">${candidate.label}</button>`).join("")}</nav>
 		<div class="sg-shell" data-gallery-3d-prototype>
 			<div class="sg-cockpit" data-gallery-cockpit data-gallery-head-look="${headLook}" data-gallery-physical-console="${headLook}"><div class="sg-canopy" aria-hidden="true"></div>

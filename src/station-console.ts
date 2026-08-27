@@ -178,13 +178,40 @@ export function stationMarketScreen(
 	});
 }
 
+/**
+ * **M6's arrow**, and the rule that a delta which rounds to zero gets none.
+ *
+ * Here rather than in whichever screen draws it, for the reason this module's
+ * header gives: the gallery and, later, the live cockpit draw the same rows
+ * without a second copy of the rules, and this *is* one of the rules — §3's
+ * floor pins the cheapest rows at `PRICE_STEP_CR` and applies to the responded
+ * price too, so a moved row there shows `0.0`, and an up arrow beside it would
+ * report a rise the player did not cause. `shelfQuantity`'s clamp does the same
+ * to an already-empty shelf.
+ */
+export const signedDelta = (value: number, digits: number): string => {
+	const magnitude = Math.abs(value).toFixed(digits);
+	if (Number(magnitude) !== 0) return `${value > 0 ? "↑" : "↓"}${magnitude}`;
+	return `·${magnitude}`;
+};
+
 // ---------------------------------------------------------------------------
 // §8.3 — the equipment tab
 // ---------------------------------------------------------------------------
 
-/** One catalogue line. `market.ts` owns the universal ten; a type exclusive is
- *  narrowed to the same shape here so both halves of the tab are one list. */
-export type ConsoleEquipmentEntry = UniversalItem;
+/**
+ * One catalogue line, universal or type-exclusive.
+ *
+ * Its own shape rather than `= UniversalItem`, which is what it was: the alias
+ * said *universal* about the refinery and shipyard rows that also flow through
+ * it. `UniversalItem` is assignable to this, which is the direction the two
+ * actually stand in.
+ */
+export interface ConsoleEquipmentEntry {
+	name: string;
+	priceCr: number;
+	per: UniversalItem["per"];
+}
 
 /** An item the station does not sell, with M8's stated reason. */
 export interface ConsoleUnavailableEntry {

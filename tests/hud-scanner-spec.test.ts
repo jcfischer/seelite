@@ -7,7 +7,6 @@ import {
 	GALLERY_STATES,
 	galleryState,
 	renderGalleryState,
-	signed,
 } from "../src/state-gallery";
 
 const read = (path: string) =>
@@ -134,21 +133,6 @@ test("§8.3: the gallery has a shipyard, so the empty hull heading is rendered s
 		{ ...DEFAULT_CONSOLE_VIEW, tab: "Equipment" },
 	);
 	expect(trade).not.toContain("data-gallery-hulls");
-});
-
-test("M6: a delta that rounds to zero gets no arrow", () => {
-	// **Measured on `signed` itself**, because the gallery's own moved row is
-	// well above §3's floor and therefore cannot produce the case. The first
-	// version of this test rendered the default view and asserted the absence of
-	// "↑0.0" — which held on a build that emitted it, since no row could.
-	expect(signed(0.04, 1)).toBe("·0.0");
-	expect(signed(-0.04, 1)).toBe("·0.0");
-	expect(signed(0, 1)).toBe("·0.0");
-	expect(signed(-0, 0)).toBe("·0");
-	// And the two live cases keep their arrows, or the rule above would be a
-	// screen with no deltas on it at all.
-	expect(signed(4.83, 1)).toBe("↑4.8");
-	expect(signed(-12, 0)).toBe("↓12");
 });
 
 test("M6: the rendered moved row carries the arrow the builder gave it", () => {

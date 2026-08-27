@@ -34,6 +34,7 @@ import { ARRIVAL_SECONDS_MAX, ARRIVAL_SECONDS_MIN } from "../src/docking";
 import {
 	flightFloorVisible,
 	requiredDisplayTL,
+	signedDelta,
 	stationConsoleVisible,
 	stationEquipmentScreen,
 	stationMarketScreen,
@@ -368,15 +369,32 @@ test("E3's bounds here are the ones docking.md ratified", () => {
 		new URL("../docs/specs/docking.md", import.meta.url),
 		"utf8",
 	).replace(/\s+/g, " ");
-	const e3 = prose.slice(
-		prose.indexOf("**Decision E3:"),
-		prose.indexOf("**Decision E4:"),
-	);
-	// The guard on the slice: two `-1`s would agree with each other and slice
-	// nothing, which is the vacuous pass this shape falls into.
-	expect(prose.indexOf("**Decision E3:")).toBeGreaterThan(0);
+	const start = prose.indexOf("**Decision E3:");
+	const end = prose.indexOf("**Decision E4:");
+	// **Both** indices guarded, not only the first. With E4 renamed, `indexOf`
+	// returns -1 and `slice(start, -1)` yields everything from E3 to the end of
+	// the file — restoring exactly the whole-file match this slice exists to
+	// close, on a green test. An earlier version guarded the start alone.
+	expect(start).toBeGreaterThan(0);
+	expect(end).toBeGreaterThan(start);
+	const e3 = prose.slice(start, end);
 	expect(e3.length).toBeGreaterThan(100);
 	expect(e3).toContain("four to six seconds");
 	expect(ARRIVAL_SECONDS_MIN).toBe(4);
 	expect(ARRIVAL_SECONDS_MAX).toBe(6);
+});
+
+test("M6: a delta that rounds to zero gets no arrow", () => {
+	// **Measured on `signed` itself**, because the gallery's own moved row is
+	// well above §3's floor and therefore cannot produce the case. The first
+	// version of this test rendered the default view and asserted the absence of
+	// "↑0.0" — which held on a build that emitted it, since no row could.
+	expect(signedDelta(0.04, 1)).toBe("·0.0");
+	expect(signedDelta(-0.04, 1)).toBe("·0.0");
+	expect(signedDelta(0, 1)).toBe("·0.0");
+	expect(signedDelta(-0, 0)).toBe("·0");
+	// And the two live cases keep their arrows, or the rule above would be a
+	// screen with no deltas on it at all.
+	expect(signedDelta(4.83, 1)).toBe("↑4.8");
+	expect(signedDelta(-12, 0)).toBe("↓12");
 });
