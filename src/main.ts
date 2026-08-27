@@ -451,6 +451,25 @@ class Game {
 	readonly approachScene = new THREE.Scene();
 	/** Switchable from the perf panel; see `perf-panel.ts`. */
 	private bloomPass!: UnrealBloomPass;
+	/**
+	 * A multiplier on the device pixel ratio, for trading resolution against
+	 * frame time.
+	 *
+	 * This game is fill-rate bound — a planet filling the view costs its surface
+	 * shader per pixel — so the buffer size is the largest single lever there
+	 * is, and a retina panel makes it four times what the same window costs at
+	 * ratio 1. Measured: the same view over a venusian, 17 fps on a laptop
+	 * display and 70 on an external one. That is the pixel count and nothing
+	 * else.
+	 */
+	private renderScale = 1;
+	get resolutionScale() {
+		return this.renderScale;
+	}
+	setResolutionScale(scale: number) {
+		this.renderScale = scale;
+		this.onResize();
+	}
 	/** The bloom pass, for the perf panel to switch. */
 	get bloom() {
 		return this.bloomPass ?? null;
@@ -3180,7 +3199,7 @@ class Game {
 		const w = window.innerWidth;
 		const h = window.innerHeight;
 		this.sizeOverlay();
-		const ratio = Math.min(window.devicePixelRatio, 2);
+		const ratio = Math.min(window.devicePixelRatio, 2) * this.renderScale;
 		this.renderer.setPixelRatio(ratio);
 		this.composer.setPixelRatio(ratio);
 		for (const cam of [
@@ -3345,6 +3364,10 @@ if (query.has("model-viewer")) {
 			mountPerfPanel({
 				scenes: [game.nearScene, game.approachScene, game.farScene],
 				bloom: game.bloom,
+				resolution: {
+					get: () => game.resolutionScale,
+					set: (scale) => game.setResolutionScale(scale),
+				},
 			}),
 		);
 }

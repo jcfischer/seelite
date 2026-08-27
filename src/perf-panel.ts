@@ -206,11 +206,13 @@ function shells(scenes: THREE.Object3D[], kind: string) {
  * the flight controls own the letters — 1, 2 and 3 swing the chase view and 0
  * resets the cruise dials, so the panel stole four working controls.
  */
-export const PERF_KEYS = ["b", "h", "c", "r", "o", "p"] as const;
+export const PERF_KEYS = ["b", "h", "c", "r", "o", "p", "y"] as const;
 export const RESTORE_KEY = "u";
 
 export type PerfTargets = {
 	scenes: THREE.Object3D[];
+	/** Reads and sets the render-scale multiplier; see `main.ts`. */
+	resolution?: { get: () => number; set: (scale: number) => void };
 	/** The bloom pass, so it can be switched without rebuilding the composer. */
 	bloom: { enabled: boolean } | null;
 };
@@ -236,6 +238,24 @@ export function mountPerfPanel(targets: PerfTargets) {
 
 	const { scenes } = targets;
 	const switches: Switch[] = [
+		{
+			key: "y",
+			// The biggest lever in the frame, and the only one that costs nothing
+			// but sharpness: this game is fill-rate bound, so halving the buffer
+			// in each axis quarters the work. A retina panel is already paying
+			// that four times over against the same window at ratio 1.
+			label: "resolution",
+			state: () => {
+				const s2 = targets.resolution?.get() ?? 1;
+				const px = Math.round(window.devicePixelRatio * s2 * 100) / 100;
+				return `${Math.round(s2 * 100)}% (${px}x)`;
+			},
+			toggle: () => {
+				const order = [1, 0.75, 0.5];
+				const at = order.indexOf(targets.resolution?.get() ?? 1);
+				targets.resolution?.set(order[(at + 1) % order.length]);
+			},
+		},
 		{
 			key: "b",
 			label: "bloom",
@@ -332,6 +352,7 @@ export function mountPerfPanel(targets: PerfTargets) {
 			setAblate(scenes, 0);
 			setRelief(scenes, "four-tap");
 			setCrater(scenes, false);
+			targets.resolution?.set(1);
 			draw();
 			return;
 		}
