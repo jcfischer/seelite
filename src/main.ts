@@ -75,6 +75,12 @@ import { starField } from "./backdrop";
 import { SettingsStore } from "./settings";
 import { AudioFX } from "./audio";
 import {
+	createCombatPrototype,
+	duelTargetInCone,
+	stepCombatPrototype,
+	type CombatPrototypeState,
+} from "./combat-prototype";
+import {
 	SCANNER_RANGE_KM,
 	type HeadLook,
 	type ScannerContact,
@@ -482,10 +488,16 @@ class TextRaster {
 		this.background = "rgba(1, 8, 11, .9)";
 	}
 
-	setCenteredPrompt(text: string, x: number, y: number, width: number) {
+	setCenteredPrompt(
+		text: string,
+		x: number,
+		y: number,
+		width: number,
+		font = PROMPT_FONT,
+	) {
 		this.reset();
 		this.text = text;
-		this.font = PROMPT_FONT;
+		this.font = font;
 		this.fillStyle = PROMPT_FILL;
 		this.textAlign = "center";
 		this.x = x;
@@ -640,6 +652,10 @@ class Game {
 	 */
 	private readonly layers = new Map<string, "near" | "approach" | "far">();
 	private shipMesh!: THREE.Group;
+	/** Throwaway #48 target: a renderer-only silhouette, never a #35 traffic actor. */
+	private combatTargetMesh!: THREE.Mesh;
+	/** Bright, camera-local tracer shown only while the throwaway weapon is held. */
+	private combatLaser!: THREE.Line;
 	/** Cockpit structure follows the ship, while the camera pans within it. */
 	private cockpit!: CockpitHardware;
 	private tuningKey = "";
@@ -653,6 +669,40 @@ class Game {
 	private starMaterial!: THREE.ShaderMaterial;
 
 	private readonly keys = new Set<string>();
+	/** Throwaway #48 balance state: it is not world or persistent combat state. */
+	combat: CombatPrototypeState = createCombatPrototype();
+	/** Prototype chrome is opt-in, so the normal flight HUD stays production-only. */
+	private readonly combatPrototypeEnabled =
+		new URLSearchParams(window.location.search).get("combat") === "1";
+	private combatIncoming = false;
+	private combatEcm = false;
+	/** Fitted overlay font cache: keyed by role + glass width; the fit is
+	 *  computed against a widest-case text so any live state fits. */
+	private combatStatusFit = new Map<
+		string | number,
+		{ font: string; worstWidth?: number }
+	>();
+	/** The fitted width of the widest status text at the current glass width. */
+	combatStatusWorstWidth = 0;
+	/** The overlay lines drawn last frame, at the font each was fitted to. */
+	combatOverlayLines: { text: string; font: string; width: number }[] = [];
+	/** Probe-only laser visibility override; the renderer honours it. */
+	probeForceLaserHidden = false;
+	/** rAF handle, so a probe can freeze the loop and render by hand. */
+	private animationFrame = 0;
+	/** Freeze the frame loop; the caller renders manually with a fixed sim state. */
+	probeFreezeLoop() {
+		if (!this.combatPrototypeEnabled) return;
+		if (this.animationFrame) {
+			cancelAnimationFrame(this.animationFrame);
+			this.animationFrame = 0;
+		}
+	}
+	/** Resume the frame loop. */
+	probeResumeLoop() {
+		if (!this.combatPrototypeEnabled) return;
+		if (!this.animationFrame) this.animate();
+	}
 	readonly audio = new AudioFX();
 	private throttle = 0;
 	private frameBody: Body | null = null;
@@ -761,6 +811,8 @@ class Game {
 	/** Text geometry from the current glass pass, exposed so the visual probe can
 	 * compare the rendered glyphs with the renderer's own placement contract. */
 	readonly cockpitPrompt = new TextRaster();
+	/** Prototype-only glass status, exposed for the browser probe. */
+	readonly combatOverlayStatus = new TextRaster();
 	/** What the HUD last displayed, quantised to its own resolution — so a frame
 	 *  that would render the same text neither builds nor writes it. */
 	private hudKey = "";
@@ -1140,6 +1192,32 @@ class Game {
 		this.buildBodies();
 		this.buildShip();
 		this.buildCockpit();
+		if (this.combatPrototypeEnabled) {
+			this.combatTargetMesh = new THREE.Mesh(
+				new THREE.ConeGeometry(0.45, 1.3, 4),
+				new THREE.MeshStandardMaterial({
+					color: 0x9d2f35,
+					emissive: 0x450308,
+					emissiveIntensity: 1.2,
+				}),
+			);
+			this.combatTargetMesh.name = "combat-prototype-target";
+			this.combatTargetMesh.rotation.x = Math.PI / 2;
+			this.nearScene.add(this.combatTargetMesh);
+			this.combatLaser = new THREE.Line(
+				new THREE.BufferGeometry().setFromPoints([
+					new THREE.Vector3(0, 0, -0.6),
+					new THREE.Vector3(0, 0, -12),
+				]),
+				new THREE.LineBasicMaterial({
+					color: 0x74eaff,
+					transparent: true,
+					opacity: 0.95,
+				}),
+			);
+			this.combatLaser.name = "combat-prototype-laser";
+			this.nearScene.add(this.combatLaser);
+		}
 		this.warp = warpField(this.world.seed);
 		this.nearScene.add(this.warp.object);
 		// Something is selected on frame one. §6 makes selection a convenience
@@ -1213,6 +1291,7 @@ class Game {
 			const once = () => {
 				q.removeEventListener("change", once);
 				this.onResize();
+				this.combatStatusFit.clear();
 				watchRatio();
 			};
 			q.addEventListener("change", once);
@@ -2149,6 +2228,18 @@ class Game {
 			case "3":
 				if (this.view === "cockpit") this.setHeadLook("right");
 				return;
+			case "/":
+				if (this.combatPrototypeEnabled) {
+					this.combatIncoming = true;
+					return;
+				}
+				break;
+			case "q":
+				if (this.combatPrototypeEnabled) {
+					this.combatEcm = true;
+					return;
+				}
+				break;
 			case "j":
 				if (this.regime === "cruise") this.dropOut("dropped by the player");
 				else if (this.spoolLeftS > 0) {
@@ -3029,6 +3120,41 @@ class Game {
 	 */
 	step(dt: number) {
 		this.updateLocalFrameBody();
+		// #48 deliberately couples no combat entity to the world yet: this is a
+		// flyable balance rig over the shared flight loop, not production combat.
+		if (this.combatPrototypeEnabled) {
+			const targetInCone = duelTargetInCone(this.combat.elapsed);
+			this.combat = stepCombatPrototype(this.combat, {
+				dt,
+				firing: this.keys.has("s")
+					? "beam"
+					: this.keys.has(" ")
+						? "pulse"
+						: null,
+				targetInCone,
+				// Alternate which target shield bank the fixed weapon meets, so the
+				// fore/aft pools both participate in the duel pacing being measured.
+				hitAft: Math.floor(this.combat.elapsed / 2) % 2 === 1,
+				incomingMissile: this.combatIncoming,
+				ecm: this.combatEcm,
+				// Interdiction only charges in cruise (it is a cruise mechanic); the
+				// probe therefore never observes ACTIVE in normal flight, only CLEAR.
+				interdicting: this.regime === "cruise",
+				breakAngle: this.keys.has("q") || this.keys.has("e"),
+				// The enemy fires on its own schedule, not on the player's aim cone:
+				// gating the enemy's damage on targetInCone would let the player
+				// only be damaged while happening to point at the enemy. The enemy
+				// stops once either side's hull is gone, so the duel has a terminal
+				// state; the player's held trigger is their own choice.
+				enemyFiring:
+					this.combat.targetHull > 0 &&
+					this.combat.playerHull > 0 &&
+					this.combat.elapsed % 4 < 2,
+				enemyHitAft: Math.floor(this.combat.elapsed / 3) % 2 === 1,
+			});
+		}
+		this.combatIncoming = false;
+		this.combatEcm = false;
 		const yaw = this.axis(["arrowright", "d"], ["arrowleft", "a"]);
 		const pitch = this.axis(["arrowdown", "s"], ["arrowup", "w"]);
 		const roll = this.axis(["e"], ["q"]);
@@ -3315,6 +3441,38 @@ class Game {
 		// no-op today; it is written out because the moment the camera stops
 		// being pinned there, its absence is a bug that takes an hour to see.
 		this.stars.position.copy(this.backdropCamera.position);
+		// A deliberate prototype target gives the balance controls a visible object
+		// without borrowing #35's display-only traffic as a combat entity. It is
+		// built only in prototype mode, so the whole update is gated too.
+		if (this.combatPrototypeEnabled) {
+			// The target holds a fixed bearing off the nose (ship frame, not the
+			// head-look camera rotation). The cone test is scripted by elapsed
+			// time, so this prototype measures pacing, not aiming skill — the
+			// flight-validation note below must not claim aim decides hits.
+			this.combatTargetMesh.position
+				.set(
+					3 * Math.sin(this.combat.elapsed * 0.7),
+					1.2 * Math.cos(this.combat.elapsed * 1.1),
+					-12,
+				)
+				.applyQuaternion(this.orientation);
+			this.combatTargetMesh.visible = this.view === "cockpit";
+			const targetMaterial = this.combatTargetMesh
+				.material as THREE.MeshStandardMaterial;
+			// Flash on the same scripted cone that scores damage, so the swell
+			// tracks hits. The cone is a coarse proxy (up to ~13 degrees off the
+			// nose), not a pixel-accurate aim test — this rig measures pacing.
+			const hitting =
+				this.combat.firing !== null && duelTargetInCone(this.combat.elapsed);
+			targetMaterial.emissive.setHex(hitting ? 0x9df6ff : 0x450308);
+			targetMaterial.emissiveIntensity = hitting ? 4 : 1.2;
+			this.combatTargetMesh.scale.setScalar(hitting ? 1.25 : 1);
+			this.combatLaser.quaternion.copy(viewRotation);
+			this.combatLaser.visible =
+				this.view === "cockpit" &&
+				this.combat.firing !== null &&
+				!this.probeForceLaserHidden;
+		}
 
 		// The star, resolved once at build time rather than scanned for per frame:
 		// every body's sun direction is measured from it, and there is no path
@@ -3446,7 +3604,7 @@ class Game {
 	}
 
 	private animate = () => {
-		requestAnimationFrame(this.animate);
+		this.animationFrame = requestAnimationFrame(this.animate);
 		const now = performance.now();
 		const dt = this.lastTime
 			? Math.min(MAX_DT, (now - this.lastTime) / 1000)
@@ -3707,6 +3865,8 @@ class Game {
 		// than the deliberate head-turn view the cockpit contract calls for.
 		if (this.view === "cockpit" && this.headLook !== "forward") {
 			this.cockpitPrompt.reset();
+			this.combatOverlayStatus.reset();
+			this.combatOverlayLines = [];
 			return;
 		}
 		const toPixels = (ndcX: number, ndcY: number) => ({
@@ -3749,6 +3909,32 @@ class Game {
 		ctx.moveTo(w / 2, h / 2 - 7);
 		ctx.lineTo(w / 2, h / 2 - 2);
 		ctx.stroke();
+
+		// The Three line is spatial reference; this glass tracer is the readable
+		// weapon feedback at every viewport. It shares the cockpit-view gate of
+		// the 3D beam it represents.
+		if (
+			this.combatPrototypeEnabled &&
+			this.view === "cockpit" &&
+			this.combat.firing !== null &&
+			!this.probeForceLaserHidden
+		) {
+			ctx.save();
+			// The lower third is physical cockpit hardware. Clip the glass effect to
+			// the windscreen rather than drawing a laser over an instrument panel.
+			ctx.beginPath();
+			ctx.rect(0, 0, w, h * 0.66);
+			ctx.clip();
+			ctx.strokeStyle = "rgba(116, 234, 255, 0.98)";
+			ctx.lineWidth = 3;
+			ctx.beginPath();
+			ctx.moveTo(w * 0.24, h * 0.64);
+			ctx.lineTo(w / 2, h * 0.46);
+			ctx.moveTo(w * 0.76, h * 0.64);
+			ctx.lineTo(w / 2, h * 0.46);
+			ctx.stroke();
+			ctx.restore();
+		}
 
 		// Prograde and retrograde — the map's HUD constraint, and the thing that
 		// makes assist-off flyable at all: with the assist off the nose and the
@@ -3801,6 +3987,100 @@ class Game {
 			ctx.textAlign = "left";
 		} else {
 			this.cockpitPrompt.reset();
+		}
+		if (this.combatPrototypeEnabled && this.view === "cockpit") {
+			ctx.save();
+			ctx.textAlign = "center";
+			const drawnLines: { text: string; font: string; width: number }[] = [];
+			const drawFitted = (
+				text: string,
+				y: number,
+				fill: string,
+				startSize: number,
+				key: string,
+				widest: string,
+			) => {
+				// The fit depends on the widest text for this line and the glass
+				// width, not on the live digits, so cache the fitted font by key.
+				const cacheKey = `${key}|${w}`;
+				let fittedFont = this.combatStatusFit.get(cacheKey)?.font;
+				if (!fittedFont) {
+					ctx.font = `${startSize}px ui-monospace, monospace`;
+					let size = startSize;
+					while (size > 8 && ctx.measureText(widest).width > w - 16) {
+						size -= 1;
+						ctx.font = `${size}px ui-monospace, monospace`;
+					}
+					fittedFont = ctx.font;
+					this.combatStatusFit.set(cacheKey, {
+						font: fittedFont,
+						worstWidth: ctx.measureText(widest).width,
+					});
+				}
+				ctx.font = fittedFont;
+				const width = ctx.measureText(text).width;
+				drawnLines.push({ text, font: fittedFont, width });
+				ctx.fillStyle = fill;
+				ctx.fillText(text, w / 2, y);
+				return fittedFont;
+			};
+			drawFitted(
+				"COMBAT PROTOTYPE — hold SPACE pulse · S beam · / warning · Q ECM",
+				h * 0.72,
+				"rgba(255, 214, 120, 0.9)",
+				12,
+				"legend",
+				"COMBAT PROTOTYPE — hold SPACE pulse · S beam · / warning · Q ECM",
+			);
+			drawFitted(
+				`TARGET  SHIELDS F ${this.combat.targetForeShield.toFixed(0)}  A ${this.combat.targetAftShield.toFixed(0)}  HULL ${this.combat.targetHull.toFixed(0)}`,
+				h * 0.76,
+				"rgba(255, 115, 130, 0.95)",
+				12,
+				"target",
+				"TARGET  SHIELDS F 999  A 999  HULL 999",
+			);
+			drawFitted(
+				`PLAYER  SHIELDS F ${this.combat.foreShield.toFixed(0)}  A ${this.combat.aftShield.toFixed(0)}  HULL ${this.combat.playerHull.toFixed(0)}`,
+				h * 0.8,
+				"rgba(116, 234, 255, 0.95)",
+				12,
+				"player",
+				"PLAYER  SHIELDS F 999  A 999  HULL 999",
+			);
+			const combatStatus =
+				this.combat.playerHull <= 0
+					? "DUEL LOST"
+					: this.combat.targetHull <= 0
+						? "DUEL WON"
+						: `FIRE ${this.combat.heatLocked ? "LOCKED" : (this.combat.firing?.toUpperCase() ?? "SAFE")} · H ${this.combat.heat.toFixed(0)} E ${this.combat.energy.toFixed(0)} · LOCK ${this.combat.missileLock ? "READY" : "ACQ"} · MISSILE ${this.combat.incomingMissile ? "WARNING" : "CLEAR"} · INTD ${this.combat.interdiction ? "ACTIVE" : "CLEAR"}`;
+			// The status line goes through the same fitter, keyed on its widest
+			// text so any live state fits whatever the first frame displayed.
+			const longestStatus =
+				"FIRE LOCKED · H 100 E 100 · LOCK READY · MISSILE WARNING · INTD ACTIVE";
+			const statusFont = drawFitted(
+				combatStatus,
+				h * 0.84,
+				PROMPT_FILL,
+				parseInt(PROMPT_FONT, 10),
+				"status",
+				longestStatus,
+			);
+			this.combatStatusWorstWidth =
+				this.combatStatusFit.get(`status|${w}`)?.worstWidth ?? 0;
+			const statusWidth = drawnLines.at(-1)!.width;
+			this.combatOverlayStatus.setCenteredPrompt(
+				combatStatus,
+				w / 2,
+				h * 0.84,
+				statusWidth,
+				statusFont,
+			);
+			this.combatOverlayLines = drawnLines;
+			ctx.restore();
+		} else {
+			this.combatOverlayStatus.reset();
+			this.combatOverlayLines = [];
 		}
 
 		// The selected target owns the amber sky marker. Green remains prograde,
@@ -4085,6 +4365,12 @@ if (query.has("model-viewer")) {
 	mountStateGallery();
 	// The gallery owns its own Three.js scene. Do not build the live game behind
 	// it: that would leave two hidden render loops spending CPU and GPU.
+} else if (query.has("galaxy-map")) {
+	// #11's chart workbench. Its own scene, like every other surface in this
+	// chain, and no live game behind it: the map draws a generated galaxy from
+	// `galaxy.ts` directly and needs no simulation at all.
+	const { mountGalaxyMap } = await import("./galaxy-map");
+	mountGalaxyMap();
 } else if (query.has("planet-prototype")) {
 	// After `hud-gallery`, not before it: this branch is a disposable study, and
 	// a disposable route should not outrank a durable one when both flags are on

@@ -2,6 +2,8 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import {
+	CONSOLE_STATIONS,
+	DEFAULT_CONSOLE_VIEW,
 	GALLERY_STATES,
 	galleryState,
 	renderGalleryState,
@@ -32,6 +34,7 @@ test("the gallery resolves every inspectable flight state and defaults safely", 
 		"target-acquisition",
 		"docking-granted",
 		"docking-denied",
+		"docked",
 	]);
 	expect(galleryState("missing-state").id).toBe("assist-on");
 	expect(galleryState("target-acquisition").targetBearingDeg).toBe(-112);
@@ -71,6 +74,76 @@ test("head-look activates exactly the readable console overlay for that side", (
 	expect(forward).toContain('data-gallery-panel="right" data-active="false"');
 	expect(left).toContain('data-gallery-panel="left" data-active="true"');
 	expect(right).toContain('data-gallery-panel="right" data-active="true"');
+});
+
+test("§8: docked takes the whole flight floor away and hangs the console forward", () => {
+	// M10 and M2, on the rendered markup rather than on the state record: the
+	// floor, the scanner and the director are the three things §5 calls
+	// persistent, and docked is the state that is not the same cockpit with dead
+	// instruments.
+	const docked = renderGalleryState(galleryState("docked"), "Flight");
+	expect(docked).toContain("data-gallery-station-console");
+	expect(docked).not.toContain("data-gallery-floor");
+	expect(docked).not.toContain("data-gallery-scanner");
+	expect(docked).not.toContain("data-gallery-director");
+	// M9: launch is on the Flight console, and the rest of it says it is inert.
+	expect(docked).toContain("data-gallery-launch");
+	expect(docked).toContain("data-gallery-inert");
+	// The flying states are untouched by all of it.
+	const flying = renderGalleryState(galleryState("assist-on"), "Flight");
+	expect(flying).toContain("data-gallery-floor");
+	expect(flying).not.toContain("data-gallery-station-console");
+	expect(flying).not.toContain("data-gallery-launch");
+});
+
+test("§8: the arrival renders neither the console nor the floor it replaced", () => {
+	// M4's negative on the markup. The render is driven by `flightFloorVisible`
+	// and `stationConsoleVisible` rather than by a second `state.id` test, so
+	// the two predicates the headless tier asserts are the ones the glass obeys.
+	const arriving = renderGalleryState(
+		galleryState("docked"),
+		"Flight",
+		"forward",
+		{ ...DEFAULT_CONSOLE_VIEW, phase: "arriving" },
+	);
+	expect(arriving).toContain('data-gallery-dock-phase="arriving"');
+	expect(arriving).toContain("data-gallery-arriving");
+	expect(arriving).not.toContain("data-gallery-station-console");
+	expect(arriving).not.toContain("data-gallery-floor");
+	expect(arriving).not.toContain("data-gallery-scanner");
+});
+
+test("§8.3: the gallery has a shipyard, so the empty hull heading is rendered somewhere", () => {
+	// The heading is drawn at a shipyard and nowhere else. Without a shipyard in
+	// the rig it would be markup no state reaches — shipped, and unprobed.
+	const yard = CONSOLE_STATIONS.find((station) => station.id === "yard");
+	if (!yard) throw new Error("the console rig has no shipyard");
+	const rendered = renderGalleryState(
+		galleryState("docked"),
+		"Flight",
+		"forward",
+		{ ...DEFAULT_CONSOLE_VIEW, station: yard, tab: "Equipment" },
+	);
+	expect(rendered).toContain("data-gallery-hulls");
+	expect(rendered).toContain("data-gallery-hulls-empty");
+	const trade = renderGalleryState(
+		galleryState("docked"),
+		"Flight",
+		"forward",
+		{ ...DEFAULT_CONSOLE_VIEW, tab: "Equipment" },
+	);
+	expect(trade).not.toContain("data-gallery-hulls");
+});
+
+test("M6: the rendered moved row carries the arrow the builder gave it", () => {
+	const rendered = renderGalleryState(
+		galleryState("docked"),
+		"Flight",
+		"forward",
+		DEFAULT_CONSOLE_VIEW,
+	);
+	expect(rendered).toMatch(/data-gallery-price-delta>[↑↓]\d/);
+	expect(rendered).toMatch(/data-gallery-shelf-delta>[↑↓]\d/);
 });
 
 test("the gallery keeps the scanner self-explanatory without a visible title", () => {

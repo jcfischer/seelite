@@ -61,72 +61,22 @@ describe("station placement is stable against added draws", () => {
 });
 
 /**
- * The dead-end defect, pinned rather than left silent (`station-types.md` §5.4).
+ * **The defect this file used to pin is gone, and the pin with it.**
  *
- * The trade station is guarded by `if (primary)` while §6.2's ladder can
- * discard every rung outside the orbit envelope, so a planetless system
- * generates with nothing to dock at. §5.4 owns the analysis; this pins the
- * extent.
+ * It asserted a *rate* — about one system in 700 generating with no planet and
+ * no station — and said in its own docstring that it was meant to break when
+ * the defect was fixed. #51 took §5.4's second answer, forcing the ladder to
+ * keep the primary rung, so the rate is zero.
  *
- * **It is measured as a rate over many worlds, not as two named systems.**
- * `main.ts` seeds the world from `Math.random()` unless `?seed=` pins it, so
- * there is no "shipped world" whose bad systems could be listed — every session
- * generates its own. Naming two would pin an artefact of this file's fixture
- * seed and say nothing about what a player meets. Measured at 0.143% over 40
- * worlds, roughly three per world.
- *
- * It asserts the defect's **current** extent rather than the invariant, because
- * asserting the invariant today would simply fail. It is meant to break when
- * the defect is fixed, and how it breaks depends on which of §5.4's three
- * answers the fixing node takes:
- *
- * - **star-orbiting trade station** — `stationless` goes to 0, `planetless`
- *   stays where it is, and the identity below is *dropped*, not repinned.
- * - **force the ladder to keep a planet** — both go to 0.
- * - **drop such systems from the galaxy** — both go to 0, and the system count
- *   changes, so `galaxy.test.ts`'s digest moves too.
+ * A rate test is the wrong shape once the answer is "never": a band around
+ * 0.143% passes a generator that has quietly regressed to 0.1%, and only a rule
+ * refuses every value but the right one. The invariant lives in
+ * `tests/system-reachability.test.ts`, which asserts what must always hold
+ * rather than how often it currently does not — and which also covers the
+ * second defect #51 measured and this rate test could not see: a system that
+ * keeps planets while the primary rung alone is filtered, which had a trade
+ * station only through `generateStations`' fallback to `planets[0]`.
  */
-/** `station-types.md` §5.4's measurement, over 40 worlds. Not re-derived here —
- *  eight worlds would measure eight worlds. */
-const MEASURED_RATE = 0.00143;
-
-describe("unreachable systems (known defect, station-types.md §5.4)", () => {
-	/** Eight arbitrary worlds. One world would measure one world, and
-	 *  `scripts/measure-clamp-bite.ts` sweeps the same series. */
-	const WORLDS = worldSeeds(8);
-
-	test("about 1 system in 700 generates with no planet and no station", () => {
-		let systems = 0;
-		const planetless: string[] = [];
-		const stationless: string[] = [];
-		for (const world of WORLDS) {
-			forEachSystem(world, ALL_GALAXIES, (record, contents, g) => {
-				systems++;
-				// Built inside the branches: ~0.14% of 16,384 systems keep it.
-				if (contents.planets.length === 0)
-					planetless.push(`${world}:g${g}#${record.index}`);
-				if (contents.stations.length === 0)
-					stationless.push(`${world}:g${g}#${record.index}`);
-			});
-		}
-		expect(systems).toBe(WORLDS.length * ALL_GALAXIES.length * 256);
-		// Measured at 0.143% over 40 worlds (81,920 systems) by
-		// `scripts/measure-clamp-bite.ts`, which reports the same figure. The band
-		// is ±50%
-		// around that: wide enough to absorb sampling over eight worlds, narrow
-		// enough that fixing the defect fails the lower bound and roughly
-		// doubling it fails the upper. It does not claim to catch a 10% drift.
-		const rate = stationless.length / systems;
-		expect(rate).toBeGreaterThan(0.0007);
-		expect(rate).toBeLessThan(0.0022);
-		// The *same* systems, not merely the same count — §5.4 claims the
-		// stationless ones are stationless *because* they are planetless, and
-		// comparing two counts would let a second cause appear on one side while
-		// a first-cause system dropped off the other, with both totals equal.
-		expect(stationless).toEqual(planetless);
-	});
-});
-
 /**
  * Node #32's invariants: no station inside its host's guard shell, and an
  * explicit floor under the orbit band.
@@ -218,7 +168,11 @@ describe("station orbits clear their host (node #32)", () => {
 			}
 		});
 		expect(placed).toBeGreaterThan(1000);
-	});
+		// A seed × body × station full walk over 1,200 worlds: measured 4.5–5.8 s
+		// under full-suite load against bun's 5 s default. The timeout is a
+		// floor with headroom, not a budget — it only refuses to fail a busy
+		// machine, and costs nothing when the walk is fast.
+	}, 30_000);
 
 	test("the floor takes over exactly where the band stops clearing the shell", () => {
 		// The floor is a floor, not an orbit: wherever the 400–2,000 km band
@@ -273,15 +227,29 @@ describe("station orbits clear their host (node #32)", () => {
  * The floor is not a new orbit rule — the 400–2,000 km band still decides
  * whenever it lands above `STATION_ORBIT_R_OVER_R` × the host's radius, and
  * that is most small hosts. The evidence is this file's baseline, compared
- * row by row against its shape before #32: 791 station rows, of which 546
- * moved **in their orbit-radius column only** — every other field
- * byte-identical, because the change adds no draws to the `DOMAIN.STATIONS`
- * stream — and the unchanged 245 are exactly the small-host rows the band
- * still owns. Both directions of drift fail this: re-applying the old band
- * moves the large hosts back down, and replacing the band with a
- * proportional rule moves the small ones up.
+ * against its shape before #32: of the 791 rows that exist on both sides,
+ * the moved count below moved **in their orbit-radius column only** —
+ * every other field byte-identical, because the change adds no draws to the
+ * `DOMAIN.STATIONS` stream — and the unchanged ones are exactly the
+ * small-host rows the band still owns. Both directions of drift fail this:
+ * re-applying the old band moves the large hosts back down, and replacing
+ * the band with a proportional rule moves the small ones up.
  *
- * The before shape is not regenerated here (a generator that could emit
+ * The comparison is keyed on station identity — galaxy, system, station id,
+ * kind — not position, because #51 landed between the two shapes and moved
+ * rows around and brought two of its own:
+ *
+ * - two trade stations appear at galaxy 110 and galaxy 114, which #51's
+ *   ladder fix newly reaches (the counts below refuse to let #32's split
+ *   drift, and these two are outside it), and
+ * - two rows at system g1#253 (trade, shipyard) re-parent planet-4 →
+ *   planet-3 with **all five of their orbital columns**, #51 having rebuilt
+ *   that system's ladder — a re-parenting is a re-placement, so these two
+ *   are accounted as #51's and exempt from the radius-only rule (the floor
+ *   still holds on them: the parent is a planet, and the invariants above
+ *   walk every hosted station on the live generator).
+ *
+ * The `before` shape is not regenerated here (a generator that could emit
  * both rules would put the second one's draws into the shared stream). It
  * is committed as `station-orbits-pre-floor.json`, captured from the
  * generator at the tag `node-32-before-orbit-floor` — the tag stays as
@@ -290,34 +258,93 @@ describe("station orbits clear their host (node #32)", () => {
  * clone, an npm pack, a release tarball).
  */
 
+/** The identity columns of `stationRows`: galaxy, system, station, kind. */
+const IDENTITY_COLS = 4;
+
 /** The orbit-radius column of `stationRows`, so the comparison below names
  *  which column a row moved in rather than just that one did. */
 const RADIUS_COL = 5;
 
-function beforeRows(): string[][] {
-	return (baselineBefore.rows as string[]).map((r) => r.split("\t"));
-}
+/** The parent column, whose two merged rows are #51's, not #32's. */
+const PARENT_COL = 4;
+
+/** Sentinel so a stray-column diff fails naming the row and column, not
+ *  with an API bun:test does not have. */
+const RADIUS_COL_ONLY = "radius-column-only";
+
+/**
+ * Measured by hand over the two committed fixtures at the merge with #51
+ * (see the block below): the exact split this guard refuses to let drift.
+ * 544 + 245 + 2 + 2 = 793 rows on the after side.
+ */
+const MOVED_ROWS = 544;
+const UNCHANGED_ROWS = 245;
+const PARENT_MOVED_ROWS = 2;
+const NEW_ROWS = 2;
 
 describe("the floor moved only what the shell race moved (node #32)", () => {
 	test("the repinned fixture differs from the pre-#32 baseline in the radius column alone", () => {
-		const before = beforeRows();
+		const before = (baselineBefore.rows as string[]).map((r) => r.split("\t"));
 		const after = stationRows(baseline.worldSeed, baseline.galaxies).map((r) =>
 			r.split("\t"),
 		);
-		expect(after.length).toBe(before.length);
+		const beforeById = new Map(
+			before.map((r) => [r.slice(0, IDENTITY_COLS).join("\t"), r]),
+		);
 		let moved = 0;
-		for (let i = 0; i < before.length; i++) {
-			for (let c = 0; c < before[i].length; c++) {
-				if (before[i][c] === after[i][c]) continue;
-				expect(c).toBe(RADIUS_COL);
-				// Strictly upward: a floor never lowers an orbit.
-				expect(+after[i][RADIUS_COL]).toBeGreaterThan(+before[i][RADIUS_COL]);
-				moved++;
+		let unchanged = 0;
+		let parentMoved = 0;
+		let added = 0;
+		for (const row of after) {
+			const key = row.slice(0, IDENTITY_COLS).join("\t");
+			const was = beforeById.get(key);
+			if (was === undefined) {
+				added++;
+				continue;
 			}
+			let radiusDiff = false;
+			let reparented = false;
+			for (let c = IDENTITY_COLS; c < row.length; c++) {
+				if (was[c] === row[c]) continue;
+				if (c === PARENT_COL) {
+					// A re-parent is a re-placement: every orbit column may
+					// follow it. #51's two rows are the only ones allowed.
+					reparented = true;
+					continue;
+				}
+				if (reparented) continue;
+				if (c === RADIUS_COL) {
+					radiusDiff = true;
+					// Strictly upward: a floor never lowers an orbit.
+					expect(+row[RADIUS_COL]).toBeGreaterThan(+was[RADIUS_COL]);
+				} else {
+					// Any other column differing is drift this guard exists to
+					// catch; naming it in the expected value keeps the message.
+					expect(`row ${key} drifted outside the radius column at ${c}`).toBe(
+						RADIUS_COL_ONLY,
+					);
+				}
+			}
+			if (reparented) {
+				parentMoved++;
+				continue;
+			}
+			if (radiusDiff) moved++;
+			else unchanged++;
 		}
-		// The measured split, not a vague "some moved": 546 rows up, 245 left
-		// alone. Both sides are deterministic over a fixed corpus.
-		expect(moved).toBe(546);
-		expect(before.length - moved).toBe(245);
+		// Every pre-#32 row still exists: #32 adds no draws and #51 dropped
+		// none, so nothing may vanish from the before side.
+		const afterIds = new Set(
+			after.map((r) => r.slice(0, IDENTITY_COLS).join("\t")),
+		);
+		expect(
+			before.filter((r) => !afterIds.has(r.slice(0, IDENTITY_COLS).join("\t"))),
+		).toEqual([]);
+		// The measured split, not a vague "some moved". All sides are
+		// deterministic over a fixed corpus.
+		expect(moved).toBe(MOVED_ROWS);
+		expect(unchanged).toBe(UNCHANGED_ROWS);
+		expect(parentMoved).toBe(PARENT_MOVED_ROWS);
+		expect(added).toBe(NEW_ROWS);
 	});
 });

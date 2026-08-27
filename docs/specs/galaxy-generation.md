@@ -364,10 +364,11 @@ The names above were changed by #13 to match `StationType` (see
 type was retired at the same time as a word carrying no distinction — §1 there
 names it and holds the audit.
 
-> **The trade station is not unconditional**, though this table once said
-> "always". A planetless system has nothing to dock at. The measurement, the
-> reasoning and the fix's ownership are in `station-types.md` §5.4; they are not
-> repeated here.
+> **The trade station is unconditional again, since #51.** This table once said
+> "always", which was false for about one system in 700: the orbit ladder could
+> filter every rung and leave nothing to dock at. The ladder now keeps its
+> primary rung, clamped to the envelope boundary. `station-types.md` §5.4 owns
+> the measurement and the reasoning; they are not repeated here.
 
 ---
 

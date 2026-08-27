@@ -468,9 +468,38 @@ export function generateContents(record: SystemRecord): SystemContents {
 		const moonRolls: number[] = [];
 		for (let r = 0; r < MAX_MOONS * ROLLS_PER_MOON; r++)
 			moonRolls.push(bodies());
-		if (aAu < MIN_ORBIT_AU || aAu > MAX_ORBIT_AU) continue;
+		/**
+		 * The primary rung is kept, and clamped rather than discarded (#23/#51).
+		 *
+		 * `scaleFactor` is `habitableAu / ladder[primaryRung]`, so this rung is
+		 * *meant* to land exactly on the habitable distance, which is itself
+		 * already clamped into the envelope. It does not: `ladder[i] *
+		 * scaleFactor` is not bit-for-bit `habitableAu`, and where the habitable
+		 * distance has been clamped onto a boundary the product can fall a hair
+		 * outside and be discarded by the test below.
+		 *
+		 * That produced both of the defects this fixes — a system with no planets
+		 * at all when every other rung also fell outside, and, three times as
+		 * often, a system that kept planets but had none flagged primary. The
+		 * second was invisible to #23's rate measurement because
+		 * `generateStations` falls back to `planets[0]`, so those systems had a
+		 * trade station and simply did not have it on a primary.
+		 *
+		 * Clamped to the boundary rather than merely exempted from the test: an
+		 * exemption would let the primary sit outside the envelope the spec says
+		 * nothing is generated outside, which is a different defect wearing the
+		 * fix's clothes. `tests/system-reachability.test.ts` asserts both halves.
+		 *
+		 * No draw is added or reordered — this reads values already drawn — so
+		 * every system that was valid before generates identically.
+		 */
+		const outside = aAu < MIN_ORBIT_AU || aAu > MAX_ORBIT_AU;
+		if (outside && !isPrimary) continue;
+		const orbitAu = outside
+			? Math.min(MAX_ORBIT_AU, Math.max(MIN_ORBIT_AU, aAu))
+			: aAu;
 
-		const isGasGiant = aAu > GIANT_ORBIT_FACTOR * habitableAu;
+		const isGasGiant = orbitAu > GIANT_ORBIT_FACTOR * habitableAu;
 		const size = isGasGiant ? GIANT_RADIUS_KM : ROCKY_RADIUS_KM;
 		const radiusKm = size.base + radiusRoll * size.span;
 		const id = `planet-${i}`;
@@ -479,13 +508,13 @@ export function generateContents(record: SystemRecord): SystemContents {
 			: [];
 		planets.push({
 			id,
-			aAu,
+			aAu: orbitAu,
 			radiusKm,
 			isGasGiant,
 			isPrimary,
 			orbit: {
-				radiusKm: aAu * AU_KM,
-				periodS: orbitalPeriodS(aAu, star.massSolar),
+				radiusKm: orbitAu * AU_KM,
+				periodS: orbitalPeriodS(orbitAu, star.massSolar),
 				theta0,
 				inclination,
 				node,
@@ -560,11 +589,27 @@ function buildMoons(
  * names is not. Written the way the code works, so that a later reader
  * comparing the two finds the difference here rather than in a debugger.
  *
- * **The trade station is meant to be unconditional and is not** — it is guarded
- * by `if (primary)`, so a planetless system generates unreachable — no station
- * to dock at, and no body for #10's arrival point either. The rate is measured
- * and owned by `docs/specs/station-types.md` §5.4; pinned by
- * `tests/station-orbits.test.ts`.
+ * **The trade station is unconditional again (#51).** It is guarded by
+ * `if (primary)`, and a system could generate with no planet at all — nothing
+ * to dock at, and no body for #10's arrival point either. The ladder now keeps
+ * its primary rung rather than letting the envelope test discard it, so a
+ * primary always exists. `docs/specs/station-types.md` §5.4 owns the
+ * measurement; `tests/system-reachability.test.ts` asserts the invariant.
+ *
+ * **What enforces it, in four facts a reader can check.** `rungCount` is
+ * `3 + floor(bodies() * 5)`, so it is 3..7. `primaryRung` is
+ * `floor(bodies() * rungCount)`, so it is 0..rungCount-1. The loop runs `i`
+ * over exactly that range. `isPrimary` is `i === primaryRung` — the step the
+ * whole derivation turns on, which an earlier version of this comment left
+ * off-page. So the envelope test, `if (outside && !isPrimary)`, cannot skip the
+ * primary rung, and a primary is pushed for every system.
+ *
+ * What is *not* enforced is a runtime guard: nothing throws. If one of those
+ * three facts were broken by a later edit, the trade station would be absent
+ * rather than silently re-parented — the `?? planets[0]` fallback that used to
+ * hide exactly that is gone. That is the trade this makes deliberately: a
+ * visible failure the corpus test names, over a hidden one that produced a
+ * dockable system on a planet the generator never flagged.
  */
 /**
  * Draw a station's spin, consuming exactly one number whatever its type.
@@ -612,7 +657,14 @@ function generateStations(
 	const flagRand = stream(record.seed, DOMAIN.STATION_FLAGS);
 	const spinRand = stream(record.seed, DOMAIN.STATION_SPIN);
 	const stations: Station[] = [];
-	const primary = planets.find((p) => p.isPrimary) ?? planets[0];
+	// **No `?? planets[0]` fallback.** It used to be there, and it is what made
+	// the second defect invisible: a system whose primary rung alone was
+	// filtered still got a trade station, on a planet not flagged primary, so no
+	// station count could see it. With the primary rung now kept unconditionally
+	// (see the ladder above) this can only be undefined if that guarantee has
+	// broken — and then the right behaviour is the visible one, no trade
+	// station, which `tests/system-reachability.test.ts` fails on by name.
+	const primary = planets.find((p) => p.isPrimary);
 
 	/**
 	 * The two seeded fields, in station order, one draw each from each stream.
