@@ -747,7 +747,15 @@ than a convention that could drift: `STATION_GEOMETRY` is a
 `Record<StationType, StationGeometry>`, `StationGeometry.aperture` is one
 `StationAperture`, and `StationAperture.kind` is one of `"slot" | "pad"`. A type
 therefore cannot span both — not "does not today", *cannot*. Trade and shipyard
-are slots, refinery and outpost are pads. Gating on type therefore **over**-counts — the player
+are slots, refinery and outpost are pads.
+
+**Three of the four gates fire today and the pad side rests on one type.** No
+outpost is generated (§12.7's joint 5), so in a running game the slot
+presentation is covered twice — trade and shipyard — and the pad presentation
+once, by the refinery. The over-count argument therefore holds on the slot side
+and is exactly break-even on the pad side; it never under-counts, which is the
+property that matters, but "four gates over two presentations" overstates the
+margin until an outpost exists. Gating on type therefore **over**-counts — the player
 watches the throat once at their first trade station and again at their first
 shipyard. It cannot under-count, so no first sight of a presentation is ever
 suppressed. The over-count is what E9's shield buys back: a second first-time at
@@ -793,9 +801,16 @@ rotating frame** (derived here). "Inside the throat" and "on the deck" are
 descriptions, not coordinates, and §12.6's obligation 9 cannot be written against
 a description. So it is fixed the way §4.1 fixes slot phase — a quantity computed
 in sim, in the station's own frame, that the renderer mirrors: **on the aperture
-axis, one throat-depth inside the plane for a slot; on the axis at the plane for
-a pad**, which is the deck surface. Both are therefore functions of
+axis, one throat-depth inside the plane for a slot; on the axis a hair inside the
+deck for a pad**, rather than exactly on it. Both are therefore functions of
 `STATION_GEOMETRY` and E7's throat depth, and neither is a new constant.
+
+**The pad's offset is not fussiness.** The plane is §3's evaluation surface, and
+a ship parked exactly on it rests on the boundary of the surface its own checks
+are evaluated at. It is harmless today — `planeCrossing` returns `null` for an
+outward crossing, so a parked ship cannot re-trigger the checks by drifting — but
+that is a property of one function rather than a stated rule, and a docked
+position defined *on* the check surface is an invitation to find out otherwise.
 
 **The world keeps running.** #10's constraint is binding and unchanged: sim time
 is never compressed, so the clock advances and the bodies stay on their orbits
@@ -828,12 +843,15 @@ not the departure's. So, explicitly and in the same terms §12.1 and §12.3 use:
 - Flight controls become live at that same instant, not before: a player steering
   inside the throat is the control problem E2 declined.
 
-**It shares E4's flag, which makes it always skippable in practice.** The flag is
-set by arriving, and a player cannot launch from a station they did not arrive
-at — so by the time any launch happens, that type's flag is already set. Stated
-rather than left implicit: the alternative reading, that launch has its own flag,
-would make the first launch from each type unskippable *immediately after* the
-player watched the identical motion inbound.
+**Launch is unconditionally skippable, and does not read E4's flag at all.** The
+tempting argument is that it need not: the flag is set by arriving, and a player
+cannot launch from a station they did not arrive at. That argument has a hole —
+E5 depends on a save that may restore a *docked* ship, and E4 resets the flags on
+entering a galaxy, so a restored session can reach a launch with the flag clear.
+Rather than patch the argument, the rule drops the dependency: **a launch is
+always skippable.** §12.6's obligation 5 can then be the unconditional assertion
+it is written as, instead of one with an unreachable false branch and one
+reachable-only-after-a-load true branch.
 
 **`UNDOCK_CLEAR_KM` retires the day that lands.** #68 shipped it as an anti-latch
 measure and said so in its own docstring — it exists because `dockedAt` was set
@@ -930,7 +948,7 @@ the ship to a scripted arrival, which flies *into* a slot and *down onto* a pad.
 **This does not reopen `station-types.md` §6.** That decision fixed the number of
 docking *interactions* at two, and an interaction there is an approach and its
 checks — which stay exactly as ratified, the pad being the slot minus check 4
-(`tests/docking.test.ts` §9.1.6 pins it). An arrival is downstream of the checks.
+(pinned by `tests/docking.test.ts`'s `describe("§9.1.6 the pad is the slot minus check 4")`, verified against the file rather than remembered). An arrival is downstream of the checks.
 
 ### 12.5 The name shield
 
@@ -957,9 +975,19 @@ the parent planet is at most a decoration on top of that. Type is already unique
 per station within a system (`system.ts` places at most one of each), so this is
 uniqueness by construction rather than by a check.
 
-**What breaks it is a second station of one type in one system — and nothing
-else.** A *new* station type does not: `station.ts` already declares four, and a
-fifth still leaves each system with at most one of each. (An earlier draft
+**Uniqueness here means *within a system*, and that is all this name needs.**
+Two systems can share a name — `galaxy-generation.md` §9's obligation 6 asks only
+to "record the duplicate rate" over the 2048 records, so duplicates are expected
+rather than prevented — and two identically-named systems therefore carry
+identically-named stations. That is not a defect: the name is displayed in the
+throat you are flying down and in a target list for the system you are in, always
+in a context that disambiguates it. **Nothing in §12 requires a globally unique
+station name, and a reader should not infer one** from obligation 10, which
+asserts within-system uniqueness because within-system is the scope that matters.
+
+**Within that scope, what breaks it is a second station of one type in one
+system — and nothing else.** A *new* station type does not: `station.ts` already
+declares four, and a fifth still leaves each system with at most one of each. (An earlier draft
 claimed a fourth type would break this and would be caught by a compile error.
 Both halves were wrong — the fourth type already exists, and the compile-time
 guarantee it invoked belongs to `Record<StationType, …>` tables, which a name
