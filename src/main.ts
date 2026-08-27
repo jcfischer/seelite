@@ -3435,13 +3435,16 @@ class Game {
 		// without borrowing #35's display-only traffic as a combat entity. It is
 		// built only in prototype mode, so the whole update is gated too.
 		if (this.combatPrototypeEnabled) {
+			// The target sits in the ship's frame (ship orientation, not the
+			// head-look camera rotation), so the player's aim decides whether
+			// the strafe sits in the firing cone rather than following the view.
 			this.combatTargetMesh.position
 				.set(
 					3 * Math.sin(this.combat.elapsed * 0.7),
 					1.2 * Math.cos(this.combat.elapsed * 1.1),
 					-12,
 				)
-				.applyQuaternion(viewRotation);
+				.applyQuaternion(this.orientation);
 			this.combatTargetMesh.visible = this.view === "cockpit";
 			const targetMaterial = this.combatTargetMesh
 				.material as THREE.MeshStandardMaterial;
@@ -4030,10 +4033,11 @@ class Game {
 				this.combatStatusFit.set(w, fittedEntry);
 			}
 			ctx.font = fittedEntry.font;
+			const statusWidth = ctx.measureText(combatStatus).width;
 			drawnLines.push({
 				text: combatStatus,
 				font: fittedEntry.font,
-				width: ctx.measureText(combatStatus).width,
+				width: statusWidth,
 			});
 			ctx.fillStyle = PROMPT_FILL;
 			ctx.fillText(combatStatus, w / 2, h * 0.84);
