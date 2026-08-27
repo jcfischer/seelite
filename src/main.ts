@@ -3992,6 +3992,7 @@ class Game {
 				fill: string,
 				startSize: number,
 				key: string,
+				widest: string,
 			) => {
 				// The fit depends on the widest text for this line and the glass
 				// width, not on the live digits, so cache the fitted font by key.
@@ -4000,7 +4001,7 @@ class Game {
 				if (!fittedFont) {
 					ctx.font = `${startSize}px ui-monospace, monospace`;
 					let size = startSize;
-					while (size > 8 && ctx.measureText(text).width > w - 16) {
+					while (size > 8 && ctx.measureText(widest).width > w - 16) {
 						size -= 1;
 						ctx.font = `${size}px ui-monospace, monospace`;
 					}
@@ -4019,6 +4020,7 @@ class Game {
 				"rgba(255, 214, 120, 0.9)",
 				12,
 				"legend",
+				"COMBAT PROTOTYPE — hold SPACE pulse · B beam · Z warning · R ECM",
 			);
 			drawFitted(
 				`TARGET  SHIELDS F ${this.combat.targetForeShield.toFixed(0)}  A ${this.combat.targetAftShield.toFixed(0)}  HULL ${this.combat.targetHull.toFixed(0)}`,
@@ -4026,6 +4028,7 @@ class Game {
 				"rgba(255, 115, 130, 0.95)",
 				12,
 				"target",
+				"TARGET  SHIELDS F 999  A 999  HULL 999",
 			);
 			drawFitted(
 				`PLAYER  SHIELDS F ${this.combat.foreShield.toFixed(0)}  A ${this.combat.aftShield.toFixed(0)}  HULL ${this.combat.playerHull.toFixed(0)}`,
@@ -4033,6 +4036,7 @@ class Game {
 				"rgba(116, 234, 255, 0.95)",
 				12,
 				"player",
+				"PLAYER  SHIELDS F 999  A 999  HULL 999",
 			);
 			const combatStatus = `FIRE ${this.combat.firing?.toUpperCase() ?? "SAFE"} · H ${this.combat.heat.toFixed(0)} E ${this.combat.energy.toFixed(0)} · LOCK ${this.combat.missileLock ? "READY" : "ACQ"} · MISSILE ${this.combat.incomingMissile ? "WARNING" : "CLEAR"} · INTD ${this.combat.interdiction ? "ACTIVE" : "CLEAR"}`;
 			// Fit against the widest status the block can emit, so any live state
