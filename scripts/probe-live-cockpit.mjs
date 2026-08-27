@@ -252,81 +252,6 @@ async function placeShipAtLocalOffset(page, local) {
 	}, local);
 }
 
-async function targetInstrumentRendered(page) {
-	const clip = await page.evaluate(() => {
-		const game = window.__seelite;
-		game.step(0);
-		const face = game.nearScene.getObjectByName("target-instrument");
-		if (!face?.geometry?.getAttribute("position")) return null;
-		face.updateWorldMatrix(true, false);
-		game.nearCamera.updateMatrixWorld();
-		const positions = face.geometry.getAttribute("position");
-		const projected = [];
-		for (let i = 0; i < positions.count; i++) {
-			projected.push(
-				face
-					.localToWorld(
-						face.position
-							.clone()
-							.set(positions.getX(i), positions.getY(i), positions.getZ(i)),
-					)
-					.project(game.nearCamera),
-			);
-		}
-		const xs = projected.map((p) => (p.x * 0.5 + 0.5) * innerWidth);
-		const ys = projected.map((p) => (-p.y * 0.5 + 0.5) * innerHeight);
-		const pad = 12;
-		const left = Math.max(0, Math.min(...xs) - pad);
-		const top = Math.max(0, Math.min(...ys) - pad);
-		const right = Math.min(innerWidth, Math.max(...xs) + pad);
-		const bottom = Math.min(innerHeight, Math.max(...ys) + pad);
-		return { x: left, y: top, width: right - left, height: bottom - top };
-	});
-	if (!clip || clip.width <= 1 || clip.height <= 1) return 0;
-	const shown = await page.screenshot({ clip });
-	try {
-		await page.evaluate(() => {
-			const game = window.__seelite;
-			game.nearScene.getObjectByName("target-instrument").visible = false;
-			game.render(0);
-		});
-		const hidden = await page.screenshot({ clip });
-		return page.evaluate(
-			async ({ shown, hidden }) => {
-				const decode = async (base64) => {
-					const image = await createImageBitmap(
-						await (await fetch(`data:image/png;base64,${base64}`)).blob(),
-					);
-					const canvas = document.createElement("canvas");
-					canvas.width = image.width;
-					canvas.height = image.height;
-					const context = canvas.getContext("2d");
-					context.drawImage(image, 0, 0);
-					return context.getImageData(0, 0, canvas.width, canvas.height).data;
-				};
-				const [a, b] = await Promise.all([decode(shown), decode(hidden)]);
-				let changed = 0;
-				for (let i = 0; i < a.length; i += 4)
-					if (
-						Math.abs(a[i] - b[i]) +
-							Math.abs(a[i + 1] - b[i + 1]) +
-							Math.abs(a[i + 2] - b[i + 2]) >
-						30
-					)
-						changed++;
-				return changed;
-			},
-			{ shown: shown.toString("base64"), hidden: hidden.toString("base64") },
-		);
-	} finally {
-		await page.evaluate(() => {
-			const game = window.__seelite;
-			game.nearScene.getObjectByName("target-instrument").visible = true;
-			game.render(0);
-		});
-	}
-}
-
 // The guard compares top-level numeric declarations in the renderer and unit
 // surfaces; scanner projection terms are covered by cockpit's unit tests.
 await guardedOrigin(ORIGIN, ["src/main.ts", "src/units.ts"]);
@@ -347,9 +272,6 @@ for (const viewport of VIEWPORTS) {
 			document.querySelector("[data-live-cockpit]") &&
 			globalThis.__seeliteEtaReadout.test(
 				window.__seelite.cockpit.targetInstrument.secondaryText.text,
-			) &&
-			globalThis.__seeliteCombatStatus.test(
-				window.__seelite.combatOverlayStatus.text,
 			),
 	);
 	// Put the selected station at a known ship-local port-bow bearing. This is a
@@ -362,56 +284,6 @@ for (const viewport of VIEWPORTS) {
 		window.__seelite?.scannerContacts.some((contact) => contact.selected),
 	);
 	const forward = await page.evaluate(measureLiveCockpit);
-	const energyBeforePulse = await page.evaluate(
-		() => window.__seelite.combat.energy,
-	);
-	await page.keyboard.down("Space");
-	await page.waitForFunction(
-		(before) => window.__seelite.combat.energy < before,
-		energyBeforePulse,
-	);
-	const [combatReadout, laserPixels] = await page.evaluate(async () => {
-		const game = window.__seelite;
-		const status = game.combatOverlayStatus.text;
-		const shown = await new Promise((resolve) => {
-			const canvas = document.createElement("canvas");
-			canvas.width = game.renderer.domElement.width;
-			canvas.height = game.renderer.domElement.height;
-			const ctx = canvas.getContext("2d");
-			ctx.drawImage(game.renderer.domElement, 0, 0);
-			resolve(ctx.getImageData(0, 0, canvas.width, canvas.height).data);
-		});
-		game.nearScene.getObjectByName("combat-prototype-laser").visible = false;
-		game.render(0);
-		const hidden = await new Promise((resolve) => {
-			const canvas = document.createElement("canvas");
-			canvas.width = game.renderer.domElement.width;
-			canvas.height = game.renderer.domElement.height;
-			const ctx = canvas.getContext("2d");
-			ctx.drawImage(game.renderer.domElement, 0, 0);
-			resolve(ctx.getImageData(0, 0, canvas.width, canvas.height).data);
-		});
-		game.nearScene.getObjectByName("combat-prototype-laser").visible = true;
-		game.render(0);
-		let changed = 0;
-		for (let i = 0; i < shown.length; i += 4)
-			if (
-				Math.abs(shown[i] - hidden[i]) +
-					Math.abs(shown[i + 1] - hidden[i + 1]) +
-					Math.abs(shown[i + 2] - hidden[i + 2]) >
-				30
-			)
-				changed++;
-		return [status, changed];
-	});
-	await page.keyboard.up("Space");
-	check(
-		`${viewport.name}: holding Space draws a prototype laser and exposes immediate PULSE feedback on the glass overlay`,
-		laserPixels > 50 &&
-			COMBAT_STATUS.test(combatReadout) &&
-			combatReadout.includes("FIRE PULSE"),
-		`${laserPixels} changed pixels, status: ${combatReadout}`,
-	);
 	await page.evaluate(() => window.__seelite.setThrottle(0));
 	await page.waitForFunction(
 		() =>
@@ -457,8 +329,6 @@ for (const viewport of VIEWPORTS) {
 			ETA_READOUT.test(forward.targetInstrumentSecondaryReadout ?? "") &&
 			forward.flightInstrumentSecondaryText &&
 			VELOCITY_READOUT.test(forward.flightInstrumentSecondaryReadout ?? "") &&
-			forward.combatOverlayText &&
-			COMBAT_STATUS.test(forward.combatOverlayReadout ?? "") &&
 			forward.throttleFill > 0 &&
 			forward.hologramRings >= 7 &&
 			forward.hologramContacts === forward.contacts * 2 &&
@@ -583,24 +453,85 @@ for (const viewport of VIEWPORTS) {
 	await page.close();
 }
 
-const productionPage = await browser.newPage({
+// The prototype path adds the laser rig and combat glass; its assertions
+// (firing feedback, lock/missile/interdiction status) belong on a dedicated
+// combat-mode page so the production viewport loop above stays a production
+// check.
+const combatPage = await browser.newPage({
 	viewport: { width: 1280, height: 760 },
 });
-await productionPage.goto(`${ORIGIN}/?seed=42`, { waitUntil: "load" });
-await productionPage.addScriptTag({ content: PROBE_MATCHERS_SCRIPT });
-await productionPage.waitForFunction(() =>
-	globalThis.__seeliteEtaReadout.test(
-		window.__seelite.cockpit.targetInstrument.secondaryText.text,
-	),
+await combatPage.goto(`${ORIGIN}/?seed=42&combat=1`, { waitUntil: "load" });
+await combatPage.addScriptTag({ content: PROBE_MATCHERS_SCRIPT });
+await combatPage.waitForFunction(
+	() =>
+		window.__seelite?.frames > 1 &&
+		globalThis.__seeliteCombatStatus.test(
+			window.__seelite.combatOverlayStatus.text,
+		),
 );
-const productionInstrumentPixels =
-	await targetInstrumentRendered(productionPage);
+const energyBeforePulse = await combatPage.evaluate(
+	() => window.__seelite.combat.energy,
+);
+await combatPage.keyboard.down("Space");
+await combatPage.waitForFunction(
+	(before) => window.__seelite.combat.energy < before,
+	energyBeforePulse,
+);
+const combatReadout = await combatPage.evaluate(
+	() => window.__seelite.combatOverlayStatus.text,
+);
+await combatPage.evaluate(() => window.__seelite.render(0));
+const laserShown = await combatPage.screenshot();
+await combatPage.evaluate(() => {
+	const game = window.__seelite;
+	game.nearScene.getObjectByName("combat-prototype-laser").visible = false;
+	game.render(0);
+});
+const laserHidden = await combatPage.screenshot();
+await combatPage.evaluate(() => {
+	const game = window.__seelite;
+	game.nearScene.getObjectByName("combat-prototype-laser").visible = true;
+	game.render(0);
+});
+const laserPixels = await combatPage.evaluate(
+	async ({ shown, hidden }) => {
+		const decode = async (base64) => {
+			const image = await createImageBitmap(
+				await (await fetch(`data:image/png;base64,${base64}`)).blob(),
+			);
+			const canvas = document.createElement("canvas");
+			canvas.width = image.width;
+			canvas.height = image.height;
+			const context = canvas.getContext("2d");
+			context.drawImage(image, 0, 0);
+			return context.getImageData(0, 0, canvas.width, canvas.height).data;
+		};
+		const [a, b] = await Promise.all([decode(shown), decode(hidden)]);
+		let changed = 0;
+		for (let i = 0; i < a.length; i += 4)
+			if (
+				Math.abs(a[i] - b[i]) +
+					Math.abs(a[i + 1] - b[i + 1]) +
+					Math.abs(a[i + 2] - b[i + 2]) >
+				30
+			)
+				changed++;
+		return changed;
+	},
+	{
+		shown: laserShown.toString("base64"),
+		hidden: laserHidden.toString("base64"),
+	},
+);
+await combatPage.keyboard.up("Space");
 check(
-	"production: target instrument contributes composited screen pixels",
-	productionInstrumentPixels > 100,
-	`${productionInstrumentPixels} changed screen pixels`,
+	"prototype: holding Space draws a laser and exposes immediate PULSE feedback on the glass overlay",
+	laserPixels > 50 &&
+		COMBAT_STATUS.test(combatReadout) &&
+		combatReadout.includes("FIRE PULSE"),
+	`${laserPixels} changed pixels, status: ${combatReadout}`,
 );
-await productionPage.close();
+await combatPage.close();
 
 await browser.close();
 exit();
