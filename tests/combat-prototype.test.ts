@@ -19,6 +19,7 @@ function fireFixedStepDuel(state = createCombatPrototype(), cap = 200) {
 			targetInCone: duelTargetInCone(state.elapsed),
 			hitAft: Math.floor(state.elapsed / 2) % 2 === 1,
 			enemyFiring: state.targetHull > 0 && state.elapsed % 4 < 2,
+			enemyHitAft: Math.floor(state.elapsed / 3) % 2 === 1,
 		});
 	return state;
 }
