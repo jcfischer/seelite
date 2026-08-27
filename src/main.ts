@@ -3143,8 +3143,9 @@ class Game {
 				breakAngle: this.keys.has("q") || this.keys.has("e"),
 				// The enemy fires on its own schedule, not on the player's aim cone:
 				// gating the enemy's damage on targetInCone would let the player
-				// only be damaged while happening to point at the enemy. Both stop
-				// once either side's hull is gone, so the duel has a terminal state.
+				// only be damaged while happening to point at the enemy. The enemy
+				// stops once either side's hull is gone, so the duel has a terminal
+				// state; the player's held trigger is their own choice.
 				enemyFiring:
 					this.combat.targetHull > 0 &&
 					this.combat.playerHull > 0 &&
