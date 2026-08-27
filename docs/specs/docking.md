@@ -197,6 +197,16 @@ The clamp itself is cruise-only, so this coherence is a mnemonic, not a
 mechanism. **Confirm by flying it** (§9.2) before treating 0.10 as settled;
 it is the number in this spec most likely to move.
 
+**Flown, by a script, on 2026-08-27** — and that is a weaker result than the
+paragraph above asks for, so it is recorded as what it is. `probe-docking.mjs`
+crosses the plane under §5's real geometry at 0.09 km/s with the roll 90° out
+and at 0.06 km/s under the docking computer, and check 6 passes in both. What
+that establishes is that the gate is *reachable* by an approach flown under #5's
+own assist rather than only on paper. What it does not establish is that 0.10 is
+the right number, because a scripted approach has no difficulty: the question
+§11.4 records is whether a **person** can hold it, and nothing here has asked
+one. The figure stays provisional.
+
 ### 3.2 Why 35° and 50° (chosen, not derived)
 
 Stated plainly because §2 claims the tolerances now carry the whole skill tax,
@@ -431,6 +441,18 @@ equipment table is unamended.**
 It engages inside `VICINITY_KM` with a grant in hand, flies the approach, and
 docks — roughly the profile a competent pilot flies, no ceremony and no penalty.
 Any control input cancels it.
+
+**Two legs, and the corridor between them is a cone** (implementation finding,
+2026-08-27). The computer lines up on a fixed point out along the axis and then
+runs in at the slot; what is not obvious until it is flown is that the corridor
+deciding when to switch cannot be a cylinder. §5's axis points at the parent
+body, so it **swings as the station orbits**, the corridor entry swings with it,
+and a ship chasing that point lags it by tens of metres. Measured in the browser
+against a fixed 7 m tolerance the computer never lined up at all: it held 12–33 m
+off-axis and dithered at the standoff until the 600 s grant expired under it. A
+cone — wide at range, tightening to the aperture — is met at the standoff, and
+the run-in aims at the slot centre so the lateral error closes in proportion to
+the distance rather than having to be flown out first.
 
 **It never bypasses a check.** It satisfies §3's six conditions like anything
 else, so it cannot dock at a hostile station, cannot skip §6's clearance, and

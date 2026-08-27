@@ -53,6 +53,22 @@ The stable sequence number distinguishing successive causal episodes at one carr
 The station, system, or named route affected by a carrier's capability.
 _Avoid_: Territory
 
+**Aperture frame**:
+The station-local frame the docking checks are stated in: the outward aperture axis, the slot's current roll, and the aperture rectangle. `docs/specs/docking.md` §3 and §5 own its content; `src/docking.ts` is the one place it is built. Every tolerance is measured in the station's *velocity* frame, never the star's.
+_Avoid_: Docking port, world-space approach vector
+
+**Closing-speed gate**:
+The bound on `|v_rel|` at the instant of crossing the aperture plane, measured in the station's frame. `docs/specs/docking.md` §3 owns the figure; §3.1 owns why it is that figure.
+_Avoid_: Approach speed limit, docking speed
+
+**Clearance grant**:
+A station's time-boxed permission to enter, and a **precondition** rather than one of the checks. Crossing without a live one is a failed entry *and* turns the station hostile. `docs/specs/docking.md` §6 owns the protocol and its queued and denied replies.
+_Avoid_: Docking permission flag, landing request
+
+**Failed entry**:
+A crossing of the aperture plane that does not satisfy every check. It repels the ship, damages it, and keeps its clearance grant; it does not destroy the ship and — unless it was a barge — does not turn the station hostile. `docs/specs/docking.md` §2 owns the model.
+_Avoid_: Crash, docking failure
+
 **Operational consequence**:
 A mechanically different later situation produced by an intervention and attributable through world evidence and a persistent record.
 _Avoid_: Flavour text, global influence

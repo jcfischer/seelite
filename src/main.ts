@@ -104,6 +104,7 @@ import {
 	projectDirection,
 } from "./hud";
 import {
+	ANGULAR_MAX,
 	ASSIST_CAP_KMS,
 	type Angular,
 	type Body,
@@ -126,6 +127,28 @@ import {
 } from "./planet-surface";
 import { SPIN_RPM_RANGE } from "./station";
 import {
+	type ApertureFrame,
+	type DockingState,
+	type EntryOutcome,
+	type EntryPose,
+	type ShipCondition,
+	DOCKING_COMPUTER,
+	VICINITY_KM,
+	apertureFrame,
+	applyDamage,
+	attemptEntry,
+	dockingComputerStep,
+	fullCondition,
+	grantLive,
+	isAlive,
+	newDockingState,
+	planeCrossing,
+	requestClearance,
+	slewToward,
+	slotBasis,
+	tickDocking,
+} from "./docking";
+import {
 	type StationMesh,
 	buildStationMesh,
 	stationVisualSnapshot,
@@ -146,6 +169,13 @@ import { type Vec3, add, dot, length, scale, sub, v3 } from "./vec3";
 // spellings of the same constant — the two-public-paths pattern this branch
 // removed from `sim.ts` and pinned with a source-scan test.
 import * as units from "./units";
+// The docking module as a namespace, for the same reason `units` is one: §9.2's
+// probes assert against the gate and the tolerances, and a probe holding its own
+// copy of 0.10 km/s or 35° goes falsely red the day §11.4's "most likely to move"
+// numbers move. The same trade applies — everything this module exports becomes
+// reachable from the page — and it is acceptable for the same reason: it is a
+// module of constants and pure functions with no state to reach past.
+import * as docking from "./docking";
 
 /** Scratch vectors for aiming a station's aperture, allocated once: the render
  *  loop runs per body per frame, and a `Vector3` built there is garbage by the
@@ -671,6 +701,84 @@ class Game {
 	 *  probe drives a station to both ends of it, and a probe that restated
 	 *  0.6 and 3.0 would assert against its own copy. */
 	readonly spinRange = SPIN_RPM_RANGE;
+
+	/**
+	 * §6's clearance range, on the handle for the same reason the spin range is.
+	 *
+	 * Note that this is **not** `cruiseParams.vicinityKm`, which the `m`/`n`
+	 * dials move: that one is #14's approach clamp, a tuning knob for how cruise
+	 * arrives. This one is the gameplay range at which a station will answer a
+	 * clearance request, and `docking.md` §6 keeps the two apart by name so that
+	 * retuning the arrival does not silently retune the protocol.
+	 */
+	readonly dockingVicinityKm = VICINITY_KM;
+
+	/** The docking model itself, reachable from the handle — the module, not a
+	 *  copy. See the import's note for what that costs and why it is paid. */
+	readonly docking = docking;
+
+	/**
+	 * §6's protocol state, one per station, created on first contact.
+	 *
+	 * Keyed by station id and held on the game rather than on the `Station`
+	 * record, because a station record is generated from the seed and a grant is
+	 * something the player did — the same split `station.ts` makes for the
+	 * market's stock deficit.
+	 */
+	private readonly dockingStates = new Map<string, DockingState>();
+
+	/**
+	 * §6.1's injected slot occupancy, per station.
+	 *
+	 * Empty in the live game, and that is the spec's own state of affairs: NPC
+	 * traffic is #8's and unbuilt, so every request is granted at once. It is a
+	 * writable map rather than a constant zero so the queued branch is reachable
+	 * from a probe as well as from the headless tests — an unexercised branch is
+	 * what §6.1 refuses.
+	 */
+	readonly slotOccupancy = new Map<string, number>();
+
+	/**
+	 * #8's shield and hull pools, standing in (`docking.md` §10).
+	 *
+	 * The whole of what the game does with them today is take docking damage.
+	 * #8 owns the real pools, the real scale, and — §11.6 — whatever undoes the
+	 * damage; until that lands D1's failure model is survivable but not yet
+	 * costly.
+	 */
+	condition: ShipCondition = fullCondition();
+
+	/** Which station the ship is docked at, or `null`. */
+	dockedAt: string | null = null;
+
+	/**
+	 * Whether the ship carries §7's 1,000 Cr computer.
+	 *
+	 * `true` because there is nowhere to buy one: the market module has the
+	 * price (`EQUIPMENT`, and this node consumes that rather than pricing it)
+	 * and no screen sells it (#70 owns that). Shipping it fitted rather than
+	 * absent is what makes §7's behaviour reachable at all, and §7.1's reading —
+	 * an early-game skill gate and a late-game option — is a claim about the
+	 * economy that cannot be made until the shop exists.
+	 */
+	hasDockingComputer = true;
+
+	/** Whether it is flying. Any control input cancels it (§7). */
+	dockingComputerEngaged = false;
+
+	/** The name it is filed under in the equipment table, on the handle so a
+	 *  probe naming it does not restate the string. */
+	readonly dockingComputerName = DOCKING_COMPUTER;
+
+	/**
+	 * The last crossing of an aperture plane, whatever it did.
+	 *
+	 * Held for the HUD node and read by the probes: §9.2's mis-rolled and
+	 * hull-face runs both assert on the *outcome* of a crossing, and a probe
+	 * that had to infer one from the ship's position afterwards would be
+	 * measuring the repel rather than the verdict.
+	 */
+	lastEntry: EntryOutcome | null = null;
 
 	/**
 	 * The pose the renderer is mirroring for one station, at the current clock.
@@ -1876,6 +1984,14 @@ class Game {
 			case "f":
 				this.faceTarget();
 				return;
+			case "c":
+				// §6's request. A no-op outside `VICINITY_KM`, which is a refusal
+				// to answer rather than a denial — see `requestClearance`.
+				this.requestDockingClearance();
+				return;
+			case "u":
+				this.toggleDockingComputer();
+				return;
 			case "x":
 				// #5's assist toggle. Not in force inside cruise (#10 §1), where the
 				// regime is nose-locked — the state is kept and applied on exit.
@@ -2211,6 +2327,296 @@ class Game {
 		return v3(f.x, f.y, f.z);
 	}
 
+	/** The ship's up-vector in sim space — what `docking.md` §3's roll match is
+	 *  measured against, and the second half of an attitude the flight model
+	 *  deliberately does not hold (`sim.ts` keeps positions, not orientation). */
+	private shipUp() {
+		const u = new THREE.Vector3(0, 1, 0).applyQuaternion(this.orientation);
+		return v3(u.x, u.y, u.z);
+	}
+
+	/**
+	 * One station's velocity, sim space — the frame §1 states every tolerance in.
+	 *
+	 * A one-line pass through to `bodyVelocity`, and it is public because a
+	 * probe placing a ship beside a station has to place it *co-moving*: at 1 AU
+	 * the station is carried at ~30 km/s, so a ship parked at zero sim velocity
+	 * is closing at three hundred times the gate before it has done anything.
+	 */
+	stationVelocity(id: string): Vec3 {
+		return bodyVelocity(this.world.system, id, this.world.gameTime);
+	}
+
+	/** §6's state for one station, created on first contact. */
+	dockingStateOf(id: string): DockingState {
+		const held = this.dockingStates.get(id);
+		if (held) return held;
+		const fresh = newDockingState();
+		this.dockingStates.set(id, fresh);
+		return fresh;
+	}
+
+	/**
+	 * The aperture frame for one station, at this frame's clock.
+	 *
+	 * Composed from `stationPose` in sim, which is where §4.1 puts the phase —
+	 * nothing here reads an `Object3D`, and the renderer mirrors the same call.
+	 */
+	apertureFrameOf(id: string): ApertureFrame {
+		const pose = stationPose(this.world.system, id, this.world.gameTime);
+		return apertureFrame(
+			stationOf(this.world.system, id).type,
+			pose.axis,
+			pose.phaseRad,
+		);
+	}
+
+	/**
+	 * The ship relative to one station, **in the station's frame** (§1).
+	 *
+	 * The single conversion every caller in this file makes. Sim space is
+	 * star-centred and a station on a 1 AU orbit is carried at ~30 km/s, so a
+	 * check evaluated on raw sim velocities describes a different game — which
+	 * is `probe-cruise.mjs`'s finding turned into one function.
+	 */
+	entryPoseOf(
+		id: string,
+		pos = this.world.ship.pos,
+		vel = this.world.ship.vel,
+	): EntryPose {
+		const body = this.world.system.byId.get(id);
+		if (!body) throw new Error(`station ${id} has no placed body`);
+		return {
+			rel: sub(pos, body.pos),
+			vRel: sub(vel, bodyVelocity(this.world.system, id, this.world.gameTime)),
+			nose: this.nose(),
+			up: this.shipUp(),
+		};
+	}
+
+	/** Every station in the system, nearest first — what a clearance request and
+	 *  the computer both need, and neither should scan for itself. */
+	private stationsByRange(): { id: string; km: number }[] {
+		return this.world.system.contents.stations
+			.map((s) => {
+				const body = this.world.system.byId.get(s.id);
+				return {
+					id: s.id,
+					km: body
+						? length(sub(body.pos, this.world.ship.pos))
+						: Number.POSITIVE_INFINITY,
+				};
+			})
+			.sort((a, b) => a.km - b.km);
+	}
+
+	/**
+	 * §6's request, against the selected station or the nearest one.
+	 *
+	 * Selection first, because §6 says "when a station is the selected target" —
+	 * falling back to the nearest is a convenience for a player who has not
+	 * selected anything, and it can only reach a station that is already inside
+	 * `VICINITY_KM`, so it grants nothing selection would not have.
+	 */
+	requestDockingClearance(): { id: string | null; state: DockingState | null } {
+		const stations = this.stationsByRange();
+		const selected = stations.find((s) => s.id === this.targetId);
+		const chosen = selected ?? stations[0];
+		if (!chosen || chosen.km > VICINITY_KM) return { id: null, state: null };
+		const next = requestClearance(this.dockingStateOf(chosen.id), {
+			gameTime: this.world.gameTime,
+			rangeKm: chosen.km,
+			// §6.1: zero in the live game. #8 replaces the map, not the branch.
+			occupancy: this.slotOccupancy.get(chosen.id) ?? 0,
+			// #13 §5.1.1's shipyard scan. The predicate behind it is #8's and
+			// unbuilt, so nothing fails one yet — the *moment* is what this node
+			// owes, and it is here.
+			scanFails: false,
+		});
+		this.dockingStates.set(chosen.id, next);
+		return { id: chosen.id, state: next };
+	}
+
+	/**
+	 * Everything a probe needs to judge a docking approach, in one read.
+	 *
+	 * One call rather than a handful of exposed fields, because §9.2's probes
+	 * assert on *relationships* — a bounce that damaged the ship and left it
+	 * alive, a crossing refused for containment rather than for an angle — and
+	 * sampling those across several page evaluations lets the world move between
+	 * them. The numbers are the renderer's own, not a probe's copy of the rules.
+	 */
+	dockingSnapshot(id?: string) {
+		const target = id ?? this.stationsByRange()[0]?.id;
+		if (!target) return null;
+		const state = this.dockingStateOf(target);
+		const frame = this.apertureFrameOf(target);
+		const pose = this.entryPoseOf(target);
+		return {
+			stationId: target,
+			rangeKm: length(pose.rel),
+			/** `|v_rel|` in the station's frame — the scalar check 6 reads. */
+			closingKms: length(pose.vRel),
+			/** Which body the assist is treating as at rest. A docking approach
+			 *  that is holding the wrong one is closing at that body's orbital
+			 *  speed while the throttle says zero, which is §1's whole warning. */
+			frameBodyId: this.frameBody?.id ?? null,
+			throttle: this.throttle,
+			offAxisKm: length(
+				sub(pose.rel, scale(frame.axis, dot(pose.rel, frame.axis))),
+			),
+			axialKm: dot(pose.rel, frame.axis),
+			planeKm: frame.planeKm,
+			apertureKind: frame.aperture.kind,
+			apertureWidthKm: frame.aperture.widthKm,
+			apertureHeightKm: frame.aperture.heightKm,
+			phaseRad: frame.phaseRad,
+			axis: frame.axis,
+			// The rolled aperture basis, so a probe building an off-centre or
+			// mis-rolled approach measures against the renderer's convention
+			// rather than deriving its own — a probe with its own copy of a rule
+			// goes falsely red the day the rule changes.
+			basis: slotBasis(frame),
+			spinRpm: stationOf(this.world.system, target).spinRpm,
+			clearance: state.clearance,
+			grantLive: grantLive(state, this.world.gameTime),
+			hostile: state.hostile,
+			computerEngaged: this.dockingComputerEngaged,
+			dockedAt: this.dockedAt,
+			condition: this.condition,
+			alive: isAlive(this.condition),
+			lastEntry: this.lastEntry,
+		};
+	}
+
+	/** §7's toggle. Refused without the equipment, and it never bypasses a
+	 *  check — `dockingComputerStep` refuses the same conditions a pilot fails. */
+	toggleDockingComputer() {
+		if (!this.hasDockingComputer) return;
+		this.dockingComputerEngaged = !this.dockingComputerEngaged;
+	}
+
+	/**
+	 * The docking half of one simulation step: the clock's effect on every
+	 * protocol state, then the crossing test against the nearest station.
+	 *
+	 * Called with the pose from *before* the flight step, because a crossing is
+	 * a property of the pair of frames rather than of either one. Sampling the
+	 * nearer frame instead makes every tolerance a function of the frame rate —
+	 * the class of error §4.1 already refuses for the slot phase.
+	 */
+	private stepDocking(before: Map<string, EntryPose>) {
+		for (const [id, state] of this.dockingStates)
+			this.dockingStates.set(
+				id,
+				tickDocking(
+					state,
+					this.world.gameTime,
+					this.slotOccupancy.get(id) ?? 0,
+				),
+			);
+
+		for (const [id, from] of before) {
+			const frame = this.apertureFrameOf(id);
+			const to = this.entryPoseOf(id);
+			const crossing = planeCrossing(frame, from, to);
+			if (!crossing) continue;
+			const outcome = attemptEntry({
+				frame,
+				pose: crossing,
+				state: this.dockingStateOf(id),
+				gameTime: this.world.gameTime,
+			});
+			this.dockingStates.set(id, outcome.state);
+			this.lastEntry = outcome;
+			if (outcome.docked) {
+				this.dockedAt = id;
+				this.world.ship.vel = bodyVelocity(
+					this.world.system,
+					id,
+					this.world.gameTime,
+				);
+				this.dockingComputerEngaged = false;
+				return;
+			}
+			// §2.0: repelled, damaged, and left outside — never inside the station.
+			this.condition = applyDamage(this.condition, outcome.damage);
+			const body = this.world.system.byId.get(id);
+			const stationVel = bodyVelocity(
+				this.world.system,
+				id,
+				this.world.gameTime,
+			);
+			if (body && outcome.repelled) {
+				this.world.ship.pos = add(body.pos, outcome.repelled.rel);
+				this.world.ship.vel = add(stationVel, outcome.repelled.vRel);
+			}
+			// A bounce is a piloting event, not a reason to keep flying the
+			// approach that produced it.
+			this.dockingComputerEngaged = false;
+			return;
+		}
+	}
+
+	/**
+	 * §7's autopilot, applied: it writes the attitude and the throttle, and the
+	 * ordinary flight step does the rest.
+	 *
+	 * Returning `false` rather than throwing when it refuses, so a player who
+	 * engages it out of range or without a grant gets their controls back rather
+	 * than a stuck ship.
+	 */
+	private stepDockingComputer(dt: number): boolean {
+		if (!this.dockingComputerEngaged || this.dockedAt) return false;
+		const nearest = this.stationsByRange()[0];
+		if (!nearest) return false;
+		const frame = this.apertureFrameOf(nearest.id);
+		const command = dockingComputerStep({
+			frame,
+			pose: this.entryPoseOf(nearest.id),
+			state: this.dockingStateOf(nearest.id),
+			gameTime: this.world.gameTime,
+			maxSpeedKms: ASSIST_CAP_KMS,
+		});
+		if (!command.engaged) {
+			this.dockingComputerEngaged = false;
+			return false;
+		}
+		const nose = slewToward(this.nose(), command.nose, ANGULAR_MAX.yaw * dt);
+		const up = slewToward(this.shipUp(), command.up, ANGULAR_MAX.roll * dt);
+		this.setAttitude(nose, up);
+		this.throttle = Math.min(1, command.speedKms / ASSIST_CAP_KMS);
+		// The rates are zeroed rather than left running: the computer is placing
+		// the attitude directly, and a momentum term still turning underneath it
+		// would fight the slew every frame.
+		this.rates = { pitch: 0, yaw: 0, roll: 0 };
+		return true;
+	}
+
+	/**
+	 * Point the ship, given a nose and an up.
+	 *
+	 * The up is re-orthogonalised against the nose, because two independently
+	 * slewed directions are not an attitude until they are perpendicular.
+	 *
+	 * Public because §9.2's probes script an approach with a deliberate roll
+	 * error and need the renderer's own attitude law rather than a second
+	 * spelling of it — the same reason `step` and `render` are public.
+	 */
+	setAttitude(nose: Vec3, up: Vec3) {
+		const f = new THREE.Vector3(nose.x, nose.y, nose.z).normalize();
+		const u = new THREE.Vector3(up.x, up.y, up.z);
+		u.addScaledVector(f, -u.dot(f));
+		if (u.lengthSq() < 1e-12) return;
+		u.normalize();
+		const right = new THREE.Vector3().crossVectors(f, u);
+		// Columns are (right, up, back): the mesh's nose is -Z, which is what
+		// `nose()` reads back out.
+		this.orientation.setFromRotationMatrix(
+			new THREE.Matrix4().makeBasis(right, u, f.clone().negate()),
+		);
+	}
+
 	/**
 	 * Ask for cruise. It arrives `SPOOL_S` later, or not at all.
 	 *
@@ -2353,6 +2759,31 @@ class Game {
 		const pitch = this.axis(["arrowdown", "s"], ["arrowup", "w"]);
 		const roll = this.axis(["e"], ["q"]);
 
+		// §7: any control input cancels the computer. Read before the rates are
+		// stepped, so the cancel and the input land on the same frame rather than
+		// the computer getting one more frame of authority over a player who has
+		// already taken the stick.
+		if (
+			this.dockingComputerEngaged &&
+			(yaw !== 0 ||
+				pitch !== 0 ||
+				roll !== 0 ||
+				this.mouseDx !== 0 ||
+				this.mouseDy !== 0)
+		)
+			this.dockingComputerEngaged = false;
+
+		if (this.stepDockingComputer(dt)) {
+			this.mouseDx = 0;
+			this.mouseDy = 0;
+			this.audio.ambient(this.throttle);
+			const before = this.dockingPoses();
+			stepWorld(this.world, this.control(), dt);
+			this.chargeAu = chargeAfterRegen(this.chargeAu, dt);
+			this.stepDocking(before);
+			return;
+		}
+
 		// The mouse, when it has been captured, and the keyboard always — the
 		// principal's choice of "both, mouse on by default". A pointer delta is a
 		// *nudge* rather than a stick position, so it enters as an impulse on the
@@ -2418,6 +2849,11 @@ class Game {
 			return;
 		}
 
+		// The pose before the step, for every station close enough to be flown
+		// into: a plane crossing is a property of the pair of frames, and the
+		// "before" half stops existing the moment the ship moves.
+		const before = this.dockingPoses();
+
 		// The whole world, not just the ship: `dt` is sim seconds and the bodies
 		// are on orbits driven by the same clock. Stepping the ship alone would
 		// freeze the system around it, which is the state the scaffold was in.
@@ -2425,6 +2861,24 @@ class Game {
 		// §7: the tank refills passively in normal flight, and that is the
 		// anti-stranding rule rather than a convenience.
 		this.chargeAu = chargeAfterRegen(this.chargeAu, dt);
+		this.stepDocking(before);
+	}
+
+	/**
+	 * Every station near enough to cross a plane this frame, posed in its own
+	 * frame.
+	 *
+	 * Bounded by `VICINITY_KM` rather than run over the whole system: the pose
+	 * costs a `bodyVelocity` per station per frame, and a station the ship is an
+	 * AU away from cannot be crossed by any step the clamp allows.
+	 */
+	private dockingPoses(): Map<string, EntryPose> {
+		const poses = new Map<string, EntryPose>();
+		for (const { id, km } of this.stationsByRange()) {
+			if (km > VICINITY_KM) break;
+			poses.set(id, this.entryPoseOf(id));
+		}
+		return poses;
 	}
 
 	/**
