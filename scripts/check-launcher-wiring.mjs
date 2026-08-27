@@ -134,7 +134,7 @@ for (const path of scripts(DIR).sort()) {
 		problems.push(`${name}: still resolves Playwright itself`);
 
 	/**
-	 * Every page a probe opens is watched.
+	 * Every page-opening *call site* has a watch call site beside it.
 	 *
 	 * The shader-error listener lives inside `tally()`'s `watch` and
 	 * `watchShaders`, and for a while nine probes rolled their own
@@ -143,11 +143,21 @@ for (const path of scripts(DIR).sort()) {
 	 * comment in `probe-guard.mjs` named this file as the place to enforce it,
 	 * which is only worth writing if it is done.
 	 *
-	 * Counted rather than matched pairwise: a probe that opens three pages and
-	 * watches two is the failure, and page creation and watching are far
-	 * enough apart in these files that following one to the other statically
-	 * would be guesswork. A count is a blunt instrument that is right about
-	 * the case that matters — none, or fewer than there are pages.
+	 * **Read the claim narrowly, because the mechanism is narrow.** This counts
+	 * occurrences in the source; it does not pair them, and it cannot see how
+	 * many pages actually get opened. `probe-live-cockpit` creates its page
+	 * inside a `for (const viewport of VIEWPORTS)` loop — one call site, N
+	 * pages — and two `watch()` calls covering the same page would satisfy a
+	 * file whose second page is unwatched. Neither is caught here.
+	 *
+	 * What it does catch is the case that actually happened: a probe that opens
+	 * pages and calls no watch at all, or fewer watches than page-opening
+	 * sites. Nine files were in that state and nothing said so.
+	 *
+	 * The exact version is structural rather than textual — a helper in
+	 * `probe-guard.mjs` that opens and watches in one call, leaving
+	 * `browser.newPage(` itself as the thing to refuse. That is a change across
+	 * thirteen probes and belongs in its own node, not in this one.
 	 */
 	const reports = /\btally\s*\(\s*\)/.test(bare);
 	const pages = (bare.match(/\.newPage\s*\(/g) ?? []).length;

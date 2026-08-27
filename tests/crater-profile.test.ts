@@ -89,14 +89,28 @@ describe("the crater field has one definition", () => {
 		// to add a term, which is exactly how the copy this replaced came about.
 		const flat = (t: string) => t.replace(/\s+/g, " ");
 		const gaussian = /exp\( *- *pow\(/g;
+		// Over every interpolator, not over two names. The scan exists because
+		// a third consumer is the case this file is about, and a detector that
+		// reads two hardcoded paths would let that third file interpolate the
+		// snippets *and* paste a profile beside them.
 		expect(flat(shared).match(gaussian)?.length ?? 0).toBe(1);
-		expect(flat(station).match(gaussian)?.length ?? 0).toBe(0);
+		for (const [name, source] of INTERPOLATORS) {
+			if (name === "planet-shaders.ts") continue;
+			expect(`${name}: ${flat(source).match(gaussian)?.length ?? 0}`).toBe(
+				`${name}: 0`,
+			);
+		}
 
 		// The profile's locals, and the cell's jitter. Declared in the snippets
 		// and interpolated at build time, so the *source* of either consumer
 		// naming them means a second copy.
-		for (const mark of ["float bowl", "float rim", "hash31(cell"])
-			expect(flat(station)).not.toContain(mark);
+		for (const [name, source] of INTERPOLATORS) {
+			if (name === "planet-shaders.ts") continue;
+			for (const mark of ["float bowl", "float rim", "hash31(cell"])
+				expect(`${name}: ${flat(source).includes(mark)}`).toBe(
+					`${name}: false`,
+				);
+		}
 	});
 
 	test("the snippets carry what each consumer reads out of them", () => {

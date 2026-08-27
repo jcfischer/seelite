@@ -410,9 +410,12 @@ export function tally() {
 			 * nothing else.
 			 *
 			 * A listener reaches a probe only through `watch` or
-			 * `watchShaders`, and `check-launcher-wiring.mjs` enforces that
-			 * every page gets one; `npm run probe` runs it first. PR #63 has
-			 * the history of what was tried here and reverted.
+			 * `watchShaders`. `check-launcher-wiring.mjs` refuses a probe that
+			 * opens pages and installs fewer watches than page-opening sites —
+			 * which is what had gone wrong, and is less than "every page": read
+			 * its own note for what a source count cannot see. `npm run probe`
+			 * runs it first. PR #63 has the history of what was tried here and
+			 * reverted.
 			 */
 			shaderListener(page, tag);
 			page.on("pageerror", (e) => {

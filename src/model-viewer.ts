@@ -217,7 +217,10 @@ export function mountModelViewer(): void {
 	// as well as how it looks. `mountFpsMeter` is idempotent, so opening the
 	// workbench with `?fps` as well gives one readout rather than two.
 	//
-	// Dynamic and unawaited, like `main.ts`'s `?fps` branch. The disposer is
+	// Dynamic like `main.ts`'s `?fps` branch, and unawaited unlike it — boot
+	// there is already inside an async entry and gains nothing by racing,
+	// whereas this sits in a synchronous mount and the meter can attach a frame
+	// late without measuring anything differently. The disposer is
 	// dropped because `[data-model-close]` navigates, so the browser takes the
 	// whole document; `probe-boot` asserts that rather than leaving it to be
 	// reasoned about.

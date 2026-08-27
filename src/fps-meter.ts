@@ -8,25 +8,16 @@
  * The model workbench shows it unconditionally, because a workbench is already
  * an instrument rather than a view of the game.
  *
- * **It counts its own animation frames rather than reading the renderer's
- * counter.** Every `requestAnimationFrame` callback fires once per composited
- * frame, so what this counts is the compositor's rate — and the meter needs
- * nothing from the page it is measuring. It is not the renderer's draw count
- * and does not track it; the paragraph below is about where the two part.
+ * **It measures the page's frame service, not the game's loop**, and that
+ * distinction is the whole of what this instrument is and is not.
  *
- * **What it measures is the page's frame service, not the game's loop.** That
- * distinction is the whole of what this instrument is and is not, and an
- * earlier version of this comment got it wrong in the direction that flatters
- * the tool.
- *
- * `requestAnimationFrame` fires once per composited frame whether or not
- * anything drew into it. So the rate here tracks what a frame *costs* — which
- * is what the meter was added for, and why a heavier shader moves it — and it
- * is blind to whether the scene changed. Kill the game's render loop with an
- * exception and this reads a healthy 60 over a frozen picture, because its own
- * callback is still being served. Detecting that needs something the game
- * hands it, and the meter deliberately takes nothing from the page it
- * measures.
+ * It counts its own `requestAnimationFrame` callbacks, which fire once per
+ * composited frame whether or not anything drew into that frame — so it needs
+ * nothing from the page it measures, it tracks what a frame *costs* (which is
+ * why a heavier shader moves it, and why it was added), and it is blind to
+ * whether the scene changed. Kill the game's render loop with an exception and
+ * this reads a healthy 60 over a frozen picture. Detecting that would need
+ * something the game hands it.
  *
  * The stall watch is narrower still. A meter driven only by rAF stops updating
  * exactly when the page stops painting, holding its last healthy number on

@@ -618,8 +618,14 @@ const reading = await bench.evaluate(
 	() => document.querySelector("[data-fps-meter]")?.textContent ?? "(no meter)",
 );
 const rate = Number.parseFloat(reading);
+// Named for what it asserts. It reads a finite positive rate and a worst
+// frame, which catches a meter that never started, reports the placeholder, or
+// lost half its format. It does *not* check the number is right: a meter
+// miscounting frames, or reporting a constant, is green here — and the cost
+// figures this branch quotes rest on that accuracy, measured by eye in a real
+// browser rather than by anything in this file.
 check(
-	"`?fps` mounts a readout that reports a real rate",
+	"`?fps` mounts a readout that reports a finite rate and a worst frame",
 	Number.isFinite(rate) && rate > 0 && reading.includes("worst"),
 	reading,
 );
