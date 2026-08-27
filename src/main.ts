@@ -807,6 +807,16 @@ class Game {
 	/** Whether it is flying. Any control input cancels it (§7). */
 	dockingComputerEngaged = false;
 
+	/**
+	 * Why the computer last stopped flying, or `null`.
+	 *
+	 * Held rather than dropped because a disengagement the player cannot see is
+	 * the same defect §8 records about invisible tolerances. The cue itself
+	 * belongs to the HUD node; this is the value it will read.
+	 */
+	lastComputerRefusal: "no-clearance" | "hostile" | "out-of-range" | null =
+		null;
+
 	/** The name it is filed under in the equipment table, on the handle so a
 	 *  probe naming it does not restate the string. */
 	readonly dockingComputerName = DOCKING_COMPUTER;
@@ -2528,6 +2538,7 @@ class Game {
 			grantLive: grantLive(state, this.world.gameTime),
 			hostile: state.hostile,
 			computerEngaged: this.dockingComputerEngaged,
+			computerRefusal: this.lastComputerRefusal,
 			dockedAt: this.dockedAt,
 			condition: this.interimCondition,
 			alive: isAlive(this.interimCondition),
@@ -2540,6 +2551,7 @@ class Game {
 	toggleDockingComputer() {
 		if (!this.hasDockingComputer) return;
 		this.dockingComputerEngaged = !this.dockingComputerEngaged;
+		if (this.dockingComputerEngaged) this.lastComputerRefusal = null;
 	}
 
 	/**
@@ -2552,15 +2564,17 @@ class Game {
 	 * the class of error §4.1 already refuses for the slot phase.
 	 */
 	private stepDocking(before: Map<string, DockingApproach>) {
-		for (const [id, state] of this.dockingStates)
-			this.dockingStates.set(
-				id,
-				tickDocking(
-					state,
-					this.world.gameTime,
-					this.slotOccupancy.get(id) ?? 0,
-				),
+		for (const [id, state] of this.dockingStates) {
+			const next = tickDocking(
+				state,
+				this.world.gameTime,
+				this.slotOccupancy.get(id) ?? 0,
 			);
+			// `tickDocking` returns the same reference when nothing fired, which is
+			// most frames of most stations. Writing it back anyway is a map write
+			// per station per frame for a value that did not change.
+			if (next !== state) this.dockingStates.set(id, next);
+		}
 
 		// **Docking is not a one-way latch.** `dockedAt` set and never cleared
 		// disables the computer for the rest of the session and leaves the
@@ -2570,11 +2584,12 @@ class Game {
 		// is possible and observable.
 		if (this.dockedAt) {
 			const held = before.get(this.dockedAt);
-			if (
-				held &&
-				dot(held.pose.rel, held.frame.axis) >
-					held.frame.planeKm + UNDOCK_CLEAR_KM
-			)
+			// **Range, not the axial component.** Comparing the axial projection
+			// only clears on the outward side, so a ship carried through and out
+			// past the far side keeps a negative axial component forever — the
+			// one-way latch this block exists to prevent, reintroduced on the one
+			// path it was hardest to notice.
+			if (held && length(held.pose.rel) > held.frame.planeKm + UNDOCK_CLEAR_KM)
 				this.dockedAt = null;
 		}
 
@@ -2621,8 +2636,14 @@ class Game {
 		// Whatever happens next, the ship ends up in the station's frame or
 		// bouncing out of it, so the velocity is wanted either way.
 		const stationVel = this.stationVelocity(id);
-		// A dock and a bounce are both reasons to stop flying the approach.
+		// A dock and a bounce are both reasons to stop flying the approach —
+		// **and the throttle is part of the approach.** Clearing the engaged flag
+		// alone was the first version: `stepDockingComputer` had written the
+		// throttle on the same frame, so the next step hand-flew with a throttle
+		// nobody set and the assist accelerated a docked ship along its nose,
+		// through the station it had just docked at.
 		this.dockingComputerEngaged = false;
+		this.throttle = 0;
 
 		if (outcome.docked) {
 			this.dockedAt = id;
@@ -2656,7 +2677,16 @@ class Game {
 			maxSpeedKms: ASSIST_CAP_KMS,
 		});
 		if (!command.engaged) {
+			// **Silent disengagement is the failure mode here.** §8's HUD cues are
+			// not this node's, so nothing tells the player the autopilot stopped —
+			// and a grant taken at the far edge of `VICINITY_KM` expires mid-approach
+			// (§11.7), which is precisely when this fires. Leaving the throttle
+			// where the computer put it would hand back a ship still closing at a
+			// speed nobody chose, so the throttle goes to zero and the reason is
+			// recorded for the HUD node to read.
 			this.dockingComputerEngaged = false;
+			this.lastComputerRefusal = command.refused;
+			this.throttle = 0;
 			return false;
 		}
 		const nose = slewToward(this.nose(), command.nose, ANGULAR_MAX.yaw * dt);

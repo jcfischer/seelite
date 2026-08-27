@@ -595,8 +595,12 @@ describe("§9.1.10 the damage predicate", () => {
 	test("at V_GATE a failed entry from full health leaves three quarters of the pool", () => {
 		const full = fullCondition();
 		const quarter = poolOf(full) / 4;
-		for (const scale of [1, 10, 25, 40, 50]) {
-			const after = applyDamage(full, entryDamage(V_GATE_KMS, scale));
+		// `damageScale`, not `scale`: `scale` is the vec3 helper every other
+		// fixture in this file uses, and a loop variable shadowing it inside a
+		// test that happens not to need vector arithmetic is a trap for the next
+		// row added here.
+		for (const damageScale of [1, 10, 25, 40, 50]) {
+			const after = applyDamage(full, entryDamage(V_GATE_KMS, damageScale));
 			expect(poolOf(full) - poolOf(after)).toBeLessThanOrEqual(quarter);
 			expect(isAlive(after)).toBe(true);
 		}

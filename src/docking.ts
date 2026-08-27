@@ -862,13 +862,6 @@ export function dockingComputerStep(input: ComputerInput): ComputerCommand {
 }
 
 /**
- * Rotate `from` toward `to` by at most `maxRad`, staying on the unit sphere.
- *
- * Here rather than in the caller because both the computer's harness and the
- * renderer need the same law, and two spellings of a slerp step is how the
- * autopilot and the drawn ship come to disagree about where the nose is.
- */
-/**
  * An attitude from two independently slewed directions.
  *
  * `up` is re-orthogonalised against `nose`, because two directions turned
@@ -891,6 +884,13 @@ export function orthonormalise(
 	return { nose: f, up: unit(corrected) };
 }
 
+/**
+ * Rotate `from` toward `to` by at most `maxRad`, staying on the unit sphere.
+ *
+ * Here rather than in the caller because both the computer's harness and the
+ * renderer need the same law, and two spellings of a slerp step is how the
+ * autopilot and the drawn ship come to disagree about where the nose is.
+ */
 export function slewToward(from: Vec3, to: Vec3, maxRad: number): Vec3 {
 	const a = unit(from);
 	const b = unit(to);

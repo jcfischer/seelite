@@ -30,7 +30,7 @@ _Avoid_: Bonus, percentage effect
 A player action that changes a carrier's operational condition or recovery process.
 _Avoid_: Command, influence spend
 
-> The `Command` alias is about the **consequence model** — a player act on a carrier — and not about the word wherever it appears. `Game.command(key)` dispatches a keypress and `ComputerCommand` is one frame of an autopilot's output; neither is an intervention on a carrier, and renaming them to `Intervention` would make the glossary's own term mean two things. A reviewer flagging those is reading the alias too widely.
+> **Scope of the `Command` alias** (added by [#71](https://github.com/jcfischer/seelite/pull/71), and it is that PR's reading rather than a ruling from [#41](https://github.com/jcfischer/seelite/issues/41), which introduced the term and did not address the question). Every term in this file is a term of the **consequence model**, so the alias bans "Command" as a name for *a player act on a carrier* — not as an English word. `Game.command(key)` dispatches a keypress and `ComputerCommand` is one frame of an autopilot's output; neither is an intervention on a carrier, and renaming them would make the canonical term mean two things. If the model's owner reads the alias more widely than this, this note is what should be corrected.
 
 **Operational condition**:
 A carrier instance's objective physical condition. `docs/specs/persistent-world-state.md` §3.2 owns the enumeration.

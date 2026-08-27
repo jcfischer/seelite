@@ -219,6 +219,7 @@ async function fly(setup) {
 				// single end-state sample is guesswork.
 				if (i % 50 === 0 && trace.length < 20) {
 					const s = g.dockingSnapshot(id);
+					if (!s) break;
 					trace.push(
 						`t=${elapsed.toFixed(1)} axial=${s.axialKm.toFixed(3)} ` +
 							`off=${(s.offAxisKm * 1000).toFixed(1)}m v=${s.closingKms.toFixed(4)} ` +
@@ -265,6 +266,25 @@ const tolerances = await page.evaluate(() => {
 		axisDeg: g.dockingTolerances.AXIS_TOLERANCE_DEG,
 	};
 });
+
+/**
+ * The three rows both failure runs share: a crossing happened, it did not dock,
+ * and speed is not what refused it.
+ *
+ * One helper because the two blocks had it spelled out twice and differing only
+ * by label — and because the third row is the one that makes the other two mean
+ * anything. A run that failed on the gate would refuse for a reason neither
+ * §9.2.4 nor §9.2.5 is about.
+ */
+function failedEntryUnderGate(what, run) {
+	check(`${what}: a crossing happened at all`, run.entry !== null);
+	check(`${what} did not dock`, !run.docked);
+	check(
+		`${what} arrived under the gate, so speed is not what refused it`,
+		run.entry?.evaluation?.checks?.closingSpeed === true,
+		`${run.entrySpeedKms?.toFixed(4) ?? "no crossing"} km/s against ${tolerances.gateKms}`,
+	);
+}
 
 // ---------------------------------------------------------------------------
 // §9.2.3 — a scripted approach docks
@@ -319,6 +339,12 @@ const undock = await page.evaluate(
 		const id = D.spinner().id;
 		const wasDocked = g.dockedAt === id;
 		const snap = g.dockingSnapshot(id);
+		// **Before anything below touches the ship.** `place` sets the throttle to
+		// zero itself, so reading it afterwards would assert that `place` works.
+		// What is under test is that the dock left no throttle running: the
+		// autopilot wrote one on the frame it crossed the plane, and clearing the
+		// engaged flag alone left the assist accelerating a docked ship.
+		const throttleAfterDock = snap.throttle;
 		// Pushed straight back out along the axis, which is the least a launch
 		// could possibly be — the sequence itself is not this node's.
 		D.place(id, D.scale(snap.axis, snap.planeKm + 0.5), {
@@ -336,6 +362,10 @@ const undock = await page.evaluate(
 			wasDocked,
 			stillDocked: g.dockedAt === id,
 			computerCanEngage: g.dockingComputerEngaged,
+			// Read **before** the toggle above re-engages anything: what is being
+			// asserted is that the dock left the ship at rest, not that the
+			// re-engagement did.
+			throttle: throttleAfterDock,
 			clearKm: g.dockingTolerances.UNDOCK_CLEAR_KM,
 			axialKm: after.axialKm,
 			planeKm: after.planeKm,
@@ -353,6 +383,11 @@ check(
 check(
 	"and the docking computer can be engaged again",
 	undock.computerCanEngage,
+);
+check(
+	"docking left no throttle running",
+	undock.throttle === 0,
+	`throttle ${undock.throttle}`,
 );
 await page.evaluate(() => {
 	window.__seelite.dockingComputerEngaged = false;
@@ -413,13 +448,7 @@ console.log(
 	`  at the plane: ${face.entry?.evaluation?.positionAngleDeg?.toFixed(1)}° off the axis by position, ` +
 		`${face.entry?.evaluation?.noseAngleDeg?.toFixed(1)}° by nose, against a ${tolerances.axisDeg}° tolerance`,
 );
-check("a crossing happened at all", face.entry !== null);
-check("the hull-face approach did not dock", !face.docked);
-check(
-	"and it arrived under the gate, so speed is not what refused it",
-	face.entry?.evaluation?.checks?.closingSpeed === true,
-	`${face.entry?.evaluation?.speedKms?.toFixed(4)} km/s against ${tolerances.gateKms}`,
-);
+failedEntryUnderGate("the hull-face approach", face);
 check(
 	"and it failed on containment, not on an angle",
 	face.entry?.evaluation?.checks?.containment === false &&
@@ -453,13 +482,7 @@ console.log(
 	`  90° out just under the gate: docked=${rolled.docked}, ` +
 		`pool ${lost.toFixed(1)} lost of 200, alive=${rolled.alive}`,
 );
-check("a crossing happened at all", rolled.entry !== null);
-check("the mis-rolled approach did not dock", !rolled.docked);
-check(
-	"it arrived under the gate — the roll is the only thing wrong with it",
-	rolled.entry?.evaluation?.checks?.closingSpeed === true,
-	`${rolled.entry?.evaluation?.speedKms?.toFixed(4)} km/s against ${tolerances.gateKms}`,
-);
+failedEntryUnderGate("the mis-rolled approach", rolled);
 check(
 	"and it failed on the roll row",
 	rolled.entry?.evaluation?.checks?.rollMatch === false,

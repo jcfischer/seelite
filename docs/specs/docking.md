@@ -462,13 +462,16 @@ autopilot held **12–33 m** off-axis and dithered at the standoff until the 600
 grant expired under it.
 
 A wider cylinder was **not** flown, so "a cylinder cannot work" is not what was
-shown — but the measurement bounds it from both sides. A cylinder has to be at
-least the lag at range (33 m measured) and at most something the aperture will
-accept at the plane (§5's half-height is 35 m), and those two nearly coincide:
-whatever a workable cylinder is, it has no margin in it. A cone is wide where
-the lag is and tight where the aperture is, and the run-in aims at the slot
-centre so the lateral error closes in proportion to the distance rather than
-having to be flown out first.
+shown, and an earlier draft of this paragraph argued it was — by bounding a
+cylinder above at §5's 35 m half-height, which does not follow: the corridor is
+a *phase gate at range*, not a containment test at the plane, and the cone that
+shipped admits about 164 m at the same switch point. What the measurement shows
+is narrower and it is all that is claimed here: at a 3 km standoff the lag is
+tens of metres, so a corridor met there is a loose one, while the thing the
+approach has to end inside is 35 m. A cone is loose where the lag is and tight
+where the aperture is, and the run-in aims at the slot centre so the lateral
+error closes in proportion to the distance rather than having to be flown out
+first. Whether some intermediate cylinder also works is untested.
 
 **It never bypasses a check.** It satisfies §3's six conditions like anything
 else, so it cannot dock at a hostile station, cannot skip §6's clearance, and
@@ -625,7 +628,21 @@ before merge.
    flip ships now and its real exit — legal-status decay — is #8's. A 600 s
    cooldown stands in, because without one a lapsed grant plus one barge would
    lock a player out of a system's only station permanently.
-6. **Nothing owns repairing the damage D1 inflicts.** Handed to #8 (§10) rather
+6. **A grant can be taken from further away than it can be flown from**
+   (implementation finding, 2026-08-27). §6 grants anywhere inside
+   `VICINITY_KM` = 10,000 km, and defends the 600 s window with an arrival
+   distance of ~600 km — but normal flight is capped at 2 km/s, so 600 s buys
+   1,200 km. A grant taken at the far edge expires mid-approach, and §7's "it
+   engages inside `VICINITY_KM` … and docks" is false above about 1,200 km: the
+   computer refuses on the expiry and stops flying. Neither number is changed
+   here, because both were decided and the interaction is what was missed. What
+   *is* fixed is the silent half — the computer now zeroes the throttle and
+   records why it stopped, so it does not hand back a ship still closing at a
+   speed nobody chose. The real remedy is one of three and none of them is this
+   node's: shorten the request range, lengthen the window, or let the approach
+   re-request. The HUD node inherits the cue either way.
+
+7. **Nothing owns repairing the damage D1 inflicts.** Handed to #8 (§10) rather
    than invented here, because it is denominated in #8's pools and #7's table is
    deliberately unamended. Until it lands, D1's failure model is *survivable*
    but not yet *costly* — the punishment is real and the bill is unwritten.
