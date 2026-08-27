@@ -31,17 +31,18 @@
  *   carrier key, whatever happens to it. There is no event log here.
  */
 
-import { generateGalaxy } from "./galaxy";
 import {
 	type CarrierKey,
-	type DeficitMap,
 	carrierKey,
-	parseDeficits,
-} from "./market";
+	compareCarrierKeys,
+	isCarrierKey,
+} from "./carrier-key";
+import { generateGalaxy } from "./galaxy";
+import { type DeficitMap, parseDeficits } from "./market";
 import { generateContents } from "./system";
 
 export type { CarrierKey };
-export { carrierKey };
+export { carrierKey, compareCarrierKeys, isCarrierKey };
 
 /**
  * The mutable-state schema version (§2). Bump when the shape of anything in a
@@ -186,9 +187,14 @@ export interface LegalStatus {
 	updatedAt: number;
 }
 
-/** §7's typed per-galaxy envelope. The galaxy index lives here once; every
- *  station-keyed domain stores the envelope-relative `(systemIndex,
- *  localCarrierId)` pair and gets its galaxy from the container. */
+/**
+ * §7's typed per-galaxy envelope: **six state domains** — objective deltas,
+ * causal episodes, knowledge, market deficits, visited flags and legal status.
+ *
+ * `galaxyIndex` is the container's identity rather than a seventh domain. It
+ * lives here once, and every station-keyed domain stores the envelope-relative
+ * `(systemIndex, localCarrierId)` pair and gets its galaxy from the container.
+ */
 export interface GalaxyEnvelope {
 	galaxyIndex: number;
 	objective: Record<CarrierKey, ObjectiveDelta>;
@@ -209,8 +215,11 @@ export interface WorldState {
 	galaxies: GalaxyEnvelope[];
 }
 
-/** The envelope's declared domains. Anything else in a serialized envelope is
- *  rejected (§9.2): a save is not an open bag. */
+/**
+ * The envelope's declared fields: **six state domains plus the container's own
+ * identity**, `galaxyIndex`, which is not one of them. Anything else in a
+ * serialized envelope is rejected (§9.2) — a save is not an open bag.
+ */
 const ENVELOPE_DOMAINS = [
 	"galaxyIndex",
 	"objective",
@@ -326,36 +335,6 @@ export const carrierBaselineFingerprint = (
 			`${c.systemIndex}|${c.localCarrierId}|${c.stationType}|${c.parentId ?? "-"}|${c.orbitRadiusKm.toFixed(6)}|${c.orbitTheta0.toFixed(6)}`,
 		);
 	return fnv1a(parts.join("\n"));
-};
-
-/**
- * §4/§5's canonical carrier order: system index **numerically**, then the local
- * id.
- *
- * A plain string sort is wrong here and quietly so — `"11:station-trade"` sorts
- * before `"2:station-trade"` — and the order is load-bearing, because
- * same-timestamp completions materialize in it.
- */
-export const compareCarrierKeys = (a: string, b: string): number => {
-	const [sa, ia] = splitKey(a);
-	const [sb, ib] = splitKey(b);
-	if (sa !== sb) return sa - sb;
-	return ia < ib ? -1 : ia > ib ? 1 : 0;
-};
-
-/**
- * The persisted key's shape, in one place.
- *
- * `parseDeficits` in `market.ts` holds a third copy, which stays until that
- * module's save-format block moves out to `src/deficits.ts` — the note at the
- * bottom of `market.ts` §5.5 owns that move, and duplicating the regex here to
- * avoid one import would be the wrong half of the fix.
- */
-export const isCarrierKey = (key: string): boolean => /^\d+:.+$/.test(key);
-
-const splitKey = (key: string): [number, string] => {
-	const at = key.indexOf(":");
-	return [Number(key.slice(0, at)), key.slice(at + 1)];
 };
 
 const sortedKeys = <T>(map: Record<string, T>): CarrierKey[] =>
@@ -541,6 +520,14 @@ function fail(message: string): never {
  * corruption then surfaced a long way from its cause, inside a canonicaliser
  * or as "expected eight galaxy envelopes" on the next load.
  */
+/** The parser's key shape, applied at the write. `carrierKey(3, "")` yields
+ *  `"3:"`, which the type accepts and every writer stored — `splitCarrierKey`
+ *  then feeds `NaN` into the canonical order, and the damage first shows up as
+ *  a save that will not load. */
+function assertCarrierKey(key: CarrierKey): void {
+	if (!isCarrierKey(key)) fail(`${key} is not a carrier key`);
+}
+
 function assertGalaxy(galaxyIndex: number): void {
 	if (
 		!Number.isInteger(galaxyIndex) ||
@@ -701,6 +688,25 @@ function nextDelta(
 }
 
 /**
+ * §5's "initiating intervention when one exists": the recovery start inside the
+ * episode, kept for as long as the episode is.
+ *
+ * A new episode has one only if it *is* a start; a joined episode keeps the one
+ * it already had, and adopts this transition only when it is the first start
+ * inside it.
+ */
+function pickIntervention(
+	opensEpisode: boolean,
+	isStart: boolean,
+	open: CausalEpisode | undefined,
+	fact: TransitionFact,
+): TransitionFact | undefined {
+	if (opensEpisode) return isStart ? fact : undefined;
+	if (open?.intervention) return open.intervention;
+	return isStart ? fact : undefined;
+}
+
+/**
  * Applies one transition, or throws.
  *
  * Two orderings matter and both are §4's:
@@ -720,6 +726,7 @@ export function applyTransition(
 	event: TransitionEvent,
 ): WorldState {
 	assertGalaxy(galaxyIndex);
+	assertCarrierKey(key);
 	if (!Number.isFinite(event.occurredAt))
 		fail(`${event.kind} has no finite occurredAt`);
 	if (event.occurredAt < world.gameTime)
@@ -763,11 +770,7 @@ export function applyTransition(
 	// The episode an opener starts keeps only this transition; one it joins
 	// keeps the initiating transition and the first intervention inside it.
 	const initiating = opensEpisode ? fact : (open?.initiating ?? fact);
-	const intervention = opensEpisode
-		? isStart
-			? fact
-			: undefined
-		: (open?.intervention ?? (isStart ? fact : undefined));
+	const intervention = pickIntervention(opensEpisode, isStart, open, fact);
 	const episode: CausalEpisode = {
 		ordinal: episodeOrdinal,
 		initiating,
@@ -857,6 +860,7 @@ export const observe = (
 	source: string,
 ): WorldState => {
 	assertGalaxy(galaxyIndex);
+	assertCarrierKey(key);
 	// The same clock rule `applyTransition` enforces. Without it `advanceTo`'s
 	// `Math.max` silently accepted an observation from the past and let it
 	// overwrite fresher intelligence with a stale `observedAt`.
@@ -912,12 +916,21 @@ export const setLegalHeat = (
 	assertGalaxy(galaxyIndex);
 	if (!Number.isFinite(heat) || !Number.isFinite(updatedAt))
 		fail(`setLegalHeat: ${heat}/${updatedAt} is not a finite pair`);
-	const galaxies = world.galaxies.slice();
+	// The clock rule `observe` enforces, for the same reason: a stamp from the
+	// past overwriting a newer one, silently.
+	if (updatedAt < world.gameTime)
+		fail(
+			`setLegalHeat at ${updatedAt} is before the clock (${world.gameTime})`,
+		);
+	// Through `advanceTo` like `observe`, so a writer cannot leave the clock
+	// behind an event it just recorded.
+	const advanced = advanceTo(world, updatedAt);
+	const galaxies = advanced.galaxies.slice();
 	galaxies[galaxyIndex] = {
 		...galaxies[galaxyIndex],
 		legalStatus: { heat, updatedAt },
 	};
-	return { ...world, galaxies };
+	return { ...advanced, galaxies };
 };
 
 // ---------------------------------------------------------------------------
@@ -1190,6 +1203,92 @@ const parseCarrierMap = <T>(
 	return out;
 };
 
+const parseObjectiveRow = (value: unknown, key: string): ObjectiveDelta => {
+	const row = asObject(value, `objective row ${key}`);
+	const condition = str(row, "condition", `objective ${key}`);
+	if (!CONDITIONS.has(condition))
+		fail(`objective ${key}: condition ${condition} is unknown`);
+	const delta: ObjectiveDelta = {
+		instanceOrdinal: num(row, "instanceOrdinal", `objective ${key}`),
+		condition: condition as OperationalCondition,
+		...(row.recovery === undefined
+			? {}
+			: { recovery: parseRecovery(row.recovery, `objective ${key}`) }),
+	};
+	// Both directions. The one-sided check let an `operational` row carry a
+	// live descriptor that `isDue` can never fire and `effectiveCarrier` hands
+	// straight back — an immortal recovery.
+	if (delta.condition === "repairing" && !delta.recovery)
+		fail(`objective ${key}: repairing with no recovery descriptor`);
+	if (delta.condition !== "repairing" && delta.recovery)
+		fail(`objective ${key}: ${delta.condition} with a recovery descriptor`);
+	return delta;
+};
+
+const parseEpisodeRow = (value: unknown, key: string): CausalEpisode => {
+	const row = asObject(value, `episode ${key}`);
+	if (typeof row.closed !== "boolean")
+		fail(`episode ${key}: closed is not a boolean`);
+	return {
+		ordinal: num(row, "ordinal", `episode ${key}`),
+		initiating: parseFact(row.initiating, `episode ${key} initiating`),
+		...(row.intervention === undefined
+			? {}
+			: {
+					intervention: parseFact(
+						row.intervention,
+						`episode ${key} intervention`,
+					),
+				}),
+		latest: parseFact(row.latest, `episode ${key} latest`),
+		closed: row.closed as boolean,
+	};
+};
+
+const parseKnowledgeRow = (value: unknown, key: string): KnowledgeRow => {
+	const row = asObject(value, `knowledge row ${key}`);
+	const condition = str(row, "observedCondition", `knowledge ${key}`);
+	if (!CONDITIONS.has(condition))
+		fail(`knowledge ${key}: observedCondition ${condition} is unknown`);
+	const observedRecovery =
+		row.observedRecovery === undefined
+			? undefined
+			: parseObservedRecovery(row.observedRecovery, `knowledge ${key}`);
+	return {
+		observedInstanceOrdinal: num(
+			row,
+			"observedInstanceOrdinal",
+			`knowledge ${key}`,
+		),
+		observedCondition: condition as OperationalCondition,
+		observedAt: num(row, "observedAt", `knowledge ${key}`),
+		source: str(row, "source", `knowledge ${key}`),
+		...(observedRecovery ? { observedRecovery } : {}),
+	};
+};
+
+/** §7's visited flags. **Checked, never normalised**: re-sorting on the way in
+ *  is exactly what would let a save differ from what the integrity hash was
+ *  computed over. */
+const parseVisited = (raw: unknown, slot: number): number[] => {
+	if (!Array.isArray(raw)) fail(`galaxy ${slot}: visited is not an array`);
+	const seen = new Set<number>();
+	let previous: number | undefined;
+	return (raw as unknown[]).map((v) => {
+		if (typeof v !== "number" || !Number.isInteger(v) || v < 0 || v > 255)
+			fail(`galaxy ${slot}: ${String(v)} is not a system index`);
+		if (seen.has(v as number))
+			fail(`galaxy ${slot}: visited system ${String(v)} is listed twice`);
+		if (previous !== undefined && (v as number) < previous)
+			fail(`galaxy ${slot}: visited is not in ascending order`);
+		previous = v as number;
+		seen.add(v as number);
+		return v as number;
+	});
+};
+
+/** One envelope: the declared-field check, then six named domain parsers, then
+ *  the one invariant that spans two of them. */
 const parseEnvelope = (raw: unknown, slot: number): GalaxyEnvelope => {
 	const o = asObject(raw, `galaxy ${slot}`);
 	for (const field of Object.keys(o))
@@ -1203,91 +1302,28 @@ const parseEnvelope = (raw: unknown, slot: number): GalaxyEnvelope => {
 	if (galaxyIndex !== slot)
 		fail(`galaxy ${slot}: galaxyIndex says ${galaxyIndex}`);
 
-	const objective = parseCarrierMap(o.objective, "objective", (value, key) => {
-		const row = asObject(value, `objective row ${key}`);
-		const condition = str(row, "condition", `objective ${key}`);
-		if (!CONDITIONS.has(condition))
-			fail(`objective ${key}: condition ${condition} is unknown`);
-		const delta: ObjectiveDelta = {
-			instanceOrdinal: num(row, "instanceOrdinal", `objective ${key}`),
-			condition: condition as OperationalCondition,
-			...(row.recovery === undefined
-				? {}
-				: { recovery: parseRecovery(row.recovery, `objective ${key}`) }),
-		};
-		// Both directions. The one-sided check let an `operational` row carry a
-		// live descriptor that `isDue` can never fire and `effectiveCarrier`
-		// hands straight back — an immortal recovery.
-		if (delta.condition === "repairing" && !delta.recovery)
-			fail(`objective ${key}: repairing with no recovery descriptor`);
-		if (delta.condition !== "repairing" && delta.recovery)
-			fail(`objective ${key}: ${delta.condition} with a recovery descriptor`);
-		return delta;
-	});
-
-	const episodes = parseCarrierMap(o.episodes, "episodes", (value, key) => {
-		const row = asObject(value, `episode ${key}`);
-		if (typeof row.closed !== "boolean")
-			fail(`episode ${key}: closed is not a boolean`);
-		return {
-			ordinal: num(row, "ordinal", `episode ${key}`),
-			initiating: parseFact(row.initiating, `episode ${key} initiating`),
-			...(row.intervention === undefined
-				? {}
-				: {
-						intervention: parseFact(
-							row.intervention,
-							`episode ${key} intervention`,
-						),
-					}),
-			latest: parseFact(row.latest, `episode ${key} latest`),
-			closed: row.closed as boolean,
-		} satisfies CausalEpisode;
-	});
-
-	const knowledge = parseCarrierMap(o.knowledge, "knowledge", (value, key) => {
-		const row = asObject(value, `knowledge row ${key}`);
-		const condition = str(row, "observedCondition", `knowledge ${key}`);
-		if (!CONDITIONS.has(condition))
-			fail(`knowledge ${key}: observedCondition ${condition} is unknown`);
-		const observedRecovery =
-			row.observedRecovery === undefined
-				? undefined
-				: parseObservedRecovery(row.observedRecovery, `knowledge ${key}`);
-		return {
-			observedInstanceOrdinal: num(
-				row,
-				"observedInstanceOrdinal",
-				`knowledge ${key}`,
-			),
-			observedCondition: condition as OperationalCondition,
-			observedAt: num(row, "observedAt", `knowledge ${key}`),
-			source: str(row, "source", `knowledge ${key}`),
-			...(observedRecovery ? { observedRecovery } : {}),
-		} satisfies KnowledgeRow;
-	});
-
-	if (!Array.isArray(o.visited))
-		fail(`galaxy ${slot}: visited is not an array`);
-	const seen = new Set<number>();
-	let previous: number | undefined;
-	const visited = (o.visited as unknown[]).map((v) => {
-		if (typeof v !== "number" || !Number.isInteger(v) || v < 0 || v > 255)
-			fail(`galaxy ${slot}: ${String(v)} is not a system index`);
-		// `visit` promises **strictly ascending**, so the canonical snapshot
-		// cannot carry insertion order. Checked here rather than normalised,
-		// because normalising is exactly what would let a save differ from what
-		// the integrity hash was computed over.
-		if (seen.has(v as number))
-			fail(`galaxy ${slot}: visited system ${String(v)} is listed twice`);
-		if (previous !== undefined && (v as number) < previous)
-			fail(`galaxy ${slot}: visited is not in ascending order`);
-		previous = v as number;
-		seen.add(v as number);
-		return v as number;
-	});
-
+	const objective = parseCarrierMap(
+		o.objective,
+		"objective",
+		parseObjectiveRow,
+	);
+	const episodes = parseCarrierMap(o.episodes, "episodes", parseEpisodeRow);
+	const knowledge = parseCarrierMap(
+		o.knowledge,
+		"knowledge",
+		parseKnowledgeRow,
+	);
 	const legal = asObject(o.legalStatus, `galaxy ${slot} legalStatus`);
+
+	// **A cross-domain invariant, because the maps are written together.** Every
+	// objective row is created alongside its episode, and compaction drops
+	// objective rows without touching episodes — so `objective` is a subset of
+	// `episodes` in anything this model produced. Without the check, a repairing
+	// row with no episode materialized to operational with no transition fact
+	// and no closure, losing the one causal summary §6 promises.
+	for (const key of Object.keys(objective) as CarrierKey[])
+		if (!episodes[key])
+			fail(`galaxy ${slot}: objective row ${key} has no causal episode`);
 
 	return {
 		galaxyIndex,
@@ -1295,7 +1331,7 @@ const parseEnvelope = (raw: unknown, slot: number): GalaxyEnvelope => {
 		episodes,
 		knowledge,
 		deficits: parseDeficits(o.deficits),
-		visited,
+		visited: parseVisited(o.visited, slot),
 		legalStatus: {
 			heat: num(legal, "heat", `galaxy ${slot}`),
 			updatedAt: num(legal, "updatedAt", `galaxy ${slot}`),
@@ -1318,12 +1354,25 @@ export function parseWorld(raw: unknown): WorldState {
 	for (const field of Object.keys(o))
 		if (!(WORLD_FIELDS as readonly string[]).includes(field))
 			fail(`snapshot: ${field} is not a declared field`);
+	// **Versions first.** They decide which shape is legal, so checking them
+	// after the domain loops made a v2 save die as "factionInfluence is not a
+	// declared state domain" instead of naming the migration it needs.
+	const worldSchemaVersion = num(o, "worldSchemaVersion", "snapshot");
+	if (worldSchemaVersion !== WORLD_SCHEMA_VERSION)
+		fail(
+			`snapshot: worldSchemaVersion ${worldSchemaVersion} needs a migration`,
+		);
+	const worldGeneratorVersion = num(o, "worldGeneratorVersion", "snapshot");
+	if (worldGeneratorVersion !== WORLD_GENERATOR_VERSION)
+		fail(
+			`snapshot: worldGeneratorVersion ${worldGeneratorVersion} needs a migration`,
+		);
 	if (!Array.isArray(o.galaxies) || o.galaxies.length !== GALAXY_COUNT)
 		fail(`snapshot: expected eight galaxy envelopes`);
 
 	const world: WorldState = {
-		worldSchemaVersion: num(o, "worldSchemaVersion", "snapshot"),
-		worldGeneratorVersion: num(o, "worldGeneratorVersion", "snapshot"),
+		worldSchemaVersion,
+		worldGeneratorVersion,
 		seed: num(o, "seed", "snapshot"),
 		gameTime: num(o, "gameTime", "snapshot"),
 		galaxies: (o.galaxies as unknown[]).map((g, i) => parseEnvelope(g, i)),
@@ -1338,13 +1387,5 @@ export function parseWorld(raw: unknown): WorldState {
 	if (integrity !== fnv1a(JSON.stringify(received)))
 		fail("snapshot: integrity check failed — the save is not one timeline");
 
-	if (world.worldSchemaVersion !== WORLD_SCHEMA_VERSION)
-		fail(
-			`snapshot: worldSchemaVersion ${world.worldSchemaVersion} needs a migration`,
-		);
-	if (world.worldGeneratorVersion !== WORLD_GENERATOR_VERSION)
-		fail(
-			`snapshot: worldGeneratorVersion ${world.worldGeneratorVersion} needs a migration`,
-		);
 	return world;
 }

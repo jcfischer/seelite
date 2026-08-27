@@ -811,7 +811,8 @@ describe("§9.5 order independence", () => {
 
 // ---------------------------------------------------------------------------
 
-/** A world exercising all seven typed domains at once. */
+/** A world exercising all six typed domains at once. `galaxyIndex` is the
+ *  envelope's own identity, not a seventh domain. */
 const populated = (): WorldState => {
 	let w = underRepair();
 	w = observe(w, 0, KEY, 12, "visit");
@@ -1075,6 +1076,27 @@ describe("§7 the envelope's writers", () => {
 		expect(readKnowledge(w.galaxies[0], KEY)?.observedAt).toBe(500);
 	});
 
+	test("every writer refuses a malformed carrier key", () => {
+		const w = newWorld(WORLD);
+		// `carrierKey(3, "")` is `"3:"` — the type accepts it, every writer stored
+		// it, and `splitCarrierKey` then fed `NaN` into the canonical order. The
+		// damage only showed up as a save that would not load.
+		const empty = carrierKey(3, "");
+		expect(() =>
+			applyTransition(w, 0, empty, {
+				kind: "disable",
+				occurredAt: 1,
+				cause: PLAYER,
+			}),
+		).toThrow(/carrier key/);
+		expect(() => observe(w, 0, empty, 1, "visit")).toThrow(/carrier key/);
+	});
+
+	test("setLegalHeat refuses a stamp from the past", () => {
+		const w = setLegalHeat(newWorld(WORLD), 0, 10, 500);
+		expect(() => setLegalHeat(w, 0, 3, 5)).toThrow(/before the clock/);
+	});
+
 	test("a save listing one system twice is rejected", () => {
 		const raw = serializeWorld(visit(visit(newWorld(WORLD), 0, 3), 0, 11)) as {
 			galaxies: Record<string, unknown>[];
@@ -1166,6 +1188,36 @@ describe("§9.9 atomicity and integrity", () => {
 		};
 		raw.galaxies[0].objective[KEY] = { condition: "melted" };
 		expect(() => parseWorld(raw)).toThrow(/condition/i);
+	});
+
+	test("an objective row with no causal episode is rejected", () => {
+		const raw = serializeWorld(underRepair()) as {
+			galaxies: { episodes: Record<string, unknown> }[];
+		};
+		// Materializing the completion would have produced no transition fact and
+		// no closure — the row would go operational and the causal summary §6
+		// promises would simply be absent.
+		raw.galaxies[0].episodes = {};
+		expect(() => parseWorld(raw)).toThrow(/no causal episode/);
+	});
+
+	test("a version mismatch names the migration, not the shape", () => {
+		const raw = serializeWorld(newWorld(WORLD)) as Record<string, unknown> & {
+			galaxies: Record<string, unknown>[];
+		};
+		// A v2 save adds a domain. Checking the shape first made it die as
+		// "factionInfluence is not a declared state domain", which tells the
+		// save/load node nothing about what to run.
+		raw.worldSchemaVersion = 2;
+		raw.galaxies[0].factionInfluence = { "3": 0.4 };
+		expect(() => parseWorld(raw)).toThrow(
+			/worldSchemaVersion 2 needs a migration/,
+		);
+		const older = serializeWorld(newWorld(WORLD)) as Record<string, unknown>;
+		older.worldGeneratorVersion = 0;
+		expect(() => parseWorld(older)).toThrow(
+			/worldGeneratorVersion 0 needs a migration/,
+		);
 	});
 
 	test("a truncated galaxy list fails", () => {

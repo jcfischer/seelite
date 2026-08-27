@@ -40,6 +40,7 @@
  * derivable from a type.
  */
 
+import { type CarrierKey, carrierKey, isCarrierKey } from "./carrier-key";
 import { DOMAIN } from "./domains";
 import { mix, seededRand } from "./rng";
 
@@ -557,21 +558,14 @@ export interface DeficitRow {
 export type DeficitMap = Record<CarrierKey, DeficitRow>;
 
 /**
- * `CONTEXT.md`'s **CarrierKey**, given a type rather than left as a string.
+ * Re-exported from `carrier-key.ts`, which owns the persisted identity.
  *
- * Branded because the whole hazard this key exists to prevent is a `Station.id`
- * being passed where a persisted identity belongs — and a bare `string` accepts
- * one silently. The brand is erased at runtime; what it buys is that
- * `carrierKey` is the only way to make one.
+ * It lived here because the deficit map was the first domain to need it, which
+ * made the canonical identity of a saved fact a detail of the pricing module.
+ * The type and its constructor moved out to a leaf; the deficit map itself is
+ * still here, and the note at the end of this section owns that move.
  */
-export type CarrierKey = string & { readonly __carrierKey: unique symbol };
-
-/** The envelope-relative carrier key. The containing galaxy index comes from
- *  the save envelope, not from here. */
-export const carrierKey = (
-	systemIndex: number,
-	localCarrierId: string,
-): CarrierKey => `${systemIndex}:${localCarrierId}` as CarrierKey;
+export { type CarrierKey, carrierKey };
 
 /** A row decayed to `gameTimeMin`, with anything under one unit dropped. */
 const decayRow = (row: DeficitRow, gameTimeMin: number): DeficitRow => {
@@ -670,7 +664,7 @@ export function parseDeficits(raw: unknown): DeficitMap {
 		// bare `Station.id` — `"station-trade"`, the exact hazard the key type
 		// was introduced for — load silently and file one system's market memory
 		// under every system's.
-		if (!/^\d+:.+$/.test(key))
+		if (!isCarrierKey(key))
 			throw new Error(
 				`deficit map: ${key} is not a carrier key (systemIndex:localCarrierId)`,
 			);
