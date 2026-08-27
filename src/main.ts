@@ -3080,8 +3080,8 @@ class Game {
 		this.updateLocalFrameBody();
 		// #48 deliberately couples no combat entity to the world yet: this is a
 		// flyable balance rig over the shared flight loop, not production combat.
-		const targetInCone = duelTargetInCone(this.combat.elapsed);
-		if (this.combatPrototypeEnabled)
+		if (this.combatPrototypeEnabled) {
+			const targetInCone = duelTargetInCone(this.combat.elapsed);
 			this.combat = stepCombatPrototype(this.combat, {
 				dt,
 				firing: this.keys.has("b")
@@ -3097,6 +3097,7 @@ class Game {
 				enemyFiring: this.combat.targetHull > 0 && targetInCone,
 				enemyHitAft: Math.floor(this.combat.elapsed / 3) % 2 === 1,
 			});
+		}
 		this.combatIncoming = false;
 		this.combatEcm = false;
 		const yaw = this.axis(["arrowright", "d"], ["arrowleft", "a"]);
