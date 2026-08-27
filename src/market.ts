@@ -500,14 +500,24 @@ export interface DeficitRow {
  * save key**: it is system-local, so `station-trade` names one station in every
  * system in the galaxy.
  */
-export type DeficitMap = Record<string, DeficitRow>;
+export type DeficitMap = Record<CarrierKey, DeficitRow>;
+
+/**
+ * `CONTEXT.md`'s **CarrierKey**, given a type rather than left as a string.
+ *
+ * Branded because the whole hazard this key exists to prevent is a `Station.id`
+ * being passed where a persisted identity belongs — and a bare `string` accepts
+ * one silently. The brand is erased at runtime; what it buys is that
+ * `carrierKey` is the only way to make one.
+ */
+export type CarrierKey = string & { readonly __carrierKey: unique symbol };
 
 /** The envelope-relative carrier key. The containing galaxy index comes from
  *  the save envelope, not from here. */
 export const carrierKey = (
 	systemIndex: number,
 	localCarrierId: string,
-): string => `${systemIndex}:${localCarrierId}`;
+): CarrierKey => `${systemIndex}:${localCarrierId}` as CarrierKey;
 
 /** A row decayed to `gameTimeMin`, with anything under one unit dropped. */
 const decayRow = (row: DeficitRow, gameTimeMin: number): DeficitRow => {
@@ -529,7 +539,7 @@ const decayRow = (row: DeficitRow, gameTimeMin: number): DeficitRow => {
  */
 export const readDeficit = (
 	map: DeficitMap,
-	key: string,
+	key: CarrierKey,
 	goodName: string,
 	gameTimeMin: number,
 ): number => {
@@ -551,7 +561,7 @@ export const readDeficit = (
  */
 export function recordTrade(
 	map: DeficitMap,
-	key: string,
+	key: CarrierKey,
 	goodName: string,
 	units: number,
 	gameTimeMin: number,
@@ -581,7 +591,7 @@ export function pruneDeficits(
 	gameTimeMin: number,
 ): DeficitMap {
 	const out: DeficitMap = {};
-	for (const [key, row] of Object.entries(map)) {
+	for (const [key, row] of Object.entries(map) as [CarrierKey, DeficitRow][]) {
 		const decayed = decayRow(row, gameTimeMin);
 		if (Object.keys(decayed.goods).length > 0) out[key] = decayed;
 	}
@@ -601,6 +611,10 @@ export function parseDeficits(raw: unknown): DeficitMap {
 		throw new Error("deficit map: not an object");
 	const out: DeficitMap = {};
 	for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+		// A parsed key is a `CarrierKey` by construction: the map is only ever
+		// written through `carrierKey`, and a save that says otherwise is a
+		// corrupt save rather than a differently-keyed one.
+		const carrier = key as CarrierKey;
 		if (value === null || typeof value !== "object" || Array.isArray(value))
 			throw new Error(`deficit map: row ${key} is not an object`);
 		const row = value as Record<string, unknown>;
@@ -620,7 +634,7 @@ export function parseDeficits(raw: unknown): DeficitMap {
 				throw new Error(`deficit map: ${key}/${name} is not a finite number`);
 			goods[name] = units;
 		}
-		out[key] = { goods, updatedAt: row.updatedAt };
+		out[carrier] = { goods, updatedAt: row.updatedAt };
 	}
 	return out;
 }
@@ -628,6 +642,14 @@ export function parseDeficits(raw: unknown): DeficitMap {
 // ---------------------------------------------------------------------------
 // §6–§7 — cargo, fuel, and what a station sells
 // ---------------------------------------------------------------------------
+//
+// **The deficit block above is save-format concern living in the pricing
+// module**, and that is a temporary answer rather than the right one. §5.5's
+// map is the first world state seelite cannot regenerate from a seed, and the
+// save/load node will want it independent of how a price is computed. When that
+// node lands, `DeficitMap`, `CarrierKey`, `carrierKey`, `parseDeficits` and
+// `pruneDeficits` belong in a `src/deficits.ts` this module imports. Splitting
+// it now would be a module with one consumer and no owner.
 
 /**
  * §7's equipment list.

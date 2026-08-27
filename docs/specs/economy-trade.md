@@ -608,30 +608,36 @@ sim §10.3 required has now been run. `MARKET_PERIOD` 30 min and
 `DEFICIT_HALF_LIFE` 20 min are set against a full trade run of 3–5 minutes so
 that parking for a re-roll or a recovery is dominated by going somewhere else.
 
-**Measured**, over the 150 decision points where parking until the next epoch
+**Measured**, over the 143 decision points where parking until the next epoch
 was a profitable option at all — the wait being costed against the *same* menu
 of onward hops a launch gets, interstellar included:
 
 | | wait rate / best flight rate |
 |---|---|
-| median | 0.127× |
-| p95 | 0.677× |
+| median | 0.150× |
+| p95 | 0.690× |
 | max | **4.679×** |
-| points where waiting won | **3 of 150 (2.0%)** |
+| points where waiting won | **2 of 143 (1.4%)** |
 
 **The median is not the argument, and a draft of this paragraph made it one.**
-An exploiting player selects the tail, not the median, so "waiting is worth 13%
+An exploiting player selects the tail, not the median, so "waiting is worth 15%
 of flying at the median" says nothing about whether waiting-at-the-right-moment
-is a strategy. What answers that is that **the greedy trader already is that
-player**: it maximises rate at every decision, so it takes the wait precisely
-when the wait is the tail. It did so 3 times in 150, and its fit-out is the
-51–88 minutes §8 quotes — a figure that already has every profitable wait in it.
+is a strategy.
 
-So the honest statement is not that the exploit is closed. It is that **the
-exploit exists, is available at 2% of decision points, is worth up to 4.7× when
-it lands, and does not change the game's pacing**, because the opportunities are
-too rare to build a route around. That is a weaker claim than the "never" this
-section shipped with and it is the one the measurement supports.
+What the measurement does support is narrower. The greedy trader **takes the
+single best-rate option at each decision**, so it does take a wait whenever a
+wait is the best thing on the table — it did so twice in 143 — and the 48–85
+minute milestone §8 quotes already contains those. **That bounds one-hop
+waiting and nothing more.** A planner that chained waits across epochs, or held
+a hold back for a re-roll it could see coming, is a strategy this sim never
+evaluates, and a one-hop rate-maximiser is not a bound on one.
+
+So the honest statement is: **the exploit exists, is available at about 1% of
+decision points, is worth up to 4.7× when it lands, and does not change the
+pacing of a trader that takes it greedily.** Whether it changes the pacing of a
+trader that *plans* around it is open, and closing it needs a planner rather
+than another run of this one. That is a weaker claim than the "never" this
+section shipped with, and it is the one the evidence carries.
 
 Changing either constant re-opens the question, and
 `scripts/measure-greedy-trader.ts` is now what catches it.
@@ -657,12 +663,13 @@ the canonical lane at zero fluctuation — Computers bought at 61.6 Cr and sold 
 seventh. A draft of this section said five and called it arithmetic while
 committing none; `runsUntilHoldLimited` derives it now and the suite pins the
 six. **The minutes are claimed now, and carefully**: §10.3's sim reaches 400 Cr — the
-Large Cargo Bay, §8's first purchase — at **7.3 minutes** of perfect play from
-the opening 100 Cr, against a modelled 45 s dock stop. The sim *buys* it at 13.9
-minutes, because it keeps an 800 Cr working float back; that float is a property
-of the sim, which stops dead without it, and not of the economy, so 7.3 is the
-figure this section is about. A draft quoted 13.9 as time-to-the-bay, which was
-time to 1,200 Cr wearing a 400 Cr label.
+Large Cargo Bay, §8's first purchase — at **5.8–14.6 minutes** of perfect play
+from the opening 100 Cr across four galaxies, against a modelled 45 s dock stop.
+The sim *buys* it later than that, because it keeps an 800 Cr working float
+back; that float is a property of the sim, which stops dead without it, and not
+of the economy, so affordability is the figure this section is about. A draft
+quoted the purchase time, which was time to 1,200 Cr wearing a 400 Cr label, and
+a second draft quoted one galaxy's figure as though it were all four.
 
 ### 6.1 A correction to `galaxy-generation.md` §8
 
@@ -758,18 +765,25 @@ prose, and asserted.
 That is about fifteen clean runs, and the design was aiming at **1.5–2.5 hours**
 of trading once §5.2's deficit forces route rotation.
 
-**Measured, the ceiling is faster than the aim.** §10.3's greedy trader fits out
-in **51–88 minutes** across four galaxies, at 227–419 Cr/min. All four land under
-the target's lower bound of 90 minutes, so the
+**Measured, the pump is faster than the aim.** §10.3's greedy trader earns the
+kit's whole 19,125 Cr in **48–85 minutes** across four galaxies, at 225–435
+Cr/min. All four land under the target's lower bound of 90 minutes, so the
 1.5–2.5 h figure survives only as a claim about a *human*: it needs a real
 player to run at roughly 0.6× the ceiling. That is plausible and unmeasured, and
 it is the honest form of the sentence.
 
+**What is measured is the capital, not the shopping.** Buying the list also
+means standing at a refinery and at a shipyard for the four exclusives
+(`station-types.md` §4.1), and the sim does not route — §10.3 says why the two
+are reported apart. The travel that the exclusives force is real time this
+figure does not contain, and it pushes the true number **up**, toward the
+target rather than away from it.
+
 **Half the clock is a modelled constant**, so the figure is a claim about that
 too. The dock-and-market stop is 45 s in the sim and is specified nowhere — #9
-sets docking tolerances, not a duration. Swept: fit-out runs **49 min at 15 s
-and 106 min at 90 s**. A reader who thinks 90 s is the right stop should read
-this section as met rather than beaten.
+sets docking tolerances, not a duration. Swept over **galaxy 0**: the milestone
+runs **51 min at 15 s and 94 min at 90 s**. A reader who thinks 90 s is the
+right stop should read this section as met rather than beaten.
 
 ---
 
@@ -892,10 +906,26 @@ too slow and merely unproven by one that is too fast.
 
 | | measured, world `0x5ee11e`, four galaxies |
 |---|---|
-| fit-out, full kit | **51–88 min** against §8's 1.5–2.5 h |
-| Cr/min | 227–419 |
-| hops chosen: interstellar : intra-system | **111 : 36** |
-| fit-out across dock cost 15→90 s | 49 → 106 min |
+| capital covers the full kit | **48–85 min** against §8's 1.5–2.5 h |
+| Cr/min | 225–435 |
+| hops chosen: interstellar : intra-system | **121 : 20** |
+| dock cost 15→90 s (galaxy 0) | 51 → 94 min |
+
+**The figure is the capital milestone, not a fit-out, and the distinction was
+forced by a review finding.** An earlier version bought equipment wherever the
+trader happened to be docked, ignoring `station-types.md` §4 entirely — so it
+handed over the shipyard's military laser at a trade station, which is exactly
+what §4.1's exclusives exist to make you travel for. With scope and the
+`min(displayTL + 3, 10)` gate enforced, *buying* everything needs the trader to
+stand at a refinery and at a shipyard, and **this trader does not route**: it
+maximises credits per minute and docks wherever that leads. A completion time
+from it would measure luck as much as economy. What it can measure honestly is
+the pump — how long the economy takes to yield `fullKitCr()` — and that is what
+the table reports. §8's "about fifteen clean runs" is a claim about the pump, so
+they are the same question.
+
+The last two rows are **galaxy 0 alone** where they say so; the first two span
+all four.
 
 **The §5.5 comparison was wrong twice before it was right, and both faults
 flattered the same side.**
@@ -930,8 +960,9 @@ saturation at ±63, the drop-below-one-unit rule, a JSON round trip over a 61-ro
 map, and a malformed save that throws rather than reading as an untouched
 healthy carrier.
 
-**Two of those tests were written, found unfalsifiable, and replaced**, which is
-worth recording because both replacements are a different *kind* of check.
+**Three of those tests were written, found unfalsifiable, and replaced** — one
+caught here, two in review — which is worth recording because each replacement
+is a different *kind* of check from the one it replaced.
 
 A permutation test claimed to prove the market is independent of draw order
 while keying both sides on `localCarrierId` — the thing under test. What carries
@@ -948,6 +979,12 @@ A fixity check re-called `stationFluct` with the same arguments and expected the
 same answer, which cannot go red for any implementation of a pure function. It
 is a *coverage* check now: 5,120 draws must reach more than 250 of the 256 byte
 values, which a hash returning `x & 0x0f` fails and a fixity check does not.
+
+And a test titled "adding it moved no other stream" asserted only that the tags
+are distinct and that `MARKET` is the largest — which a build that renumbered
+`POS` from 1 to 11 passes. The whole table is pinned now, because every seed in
+the game is a function of those integers and renumbering one moves every
+position, name and station silently.
 
 ---
 
@@ -1035,8 +1072,8 @@ values, which a hash returning `x & 0x0f` fails and a fixity check does not.
    into a correction. The intra-system exhaustion in 2–3 runs is measured with
    `DEFICIT_HALF_LIFE` in the loop. **"Waiting never beats flying" turned out to
    be false as written**: `scripts/measure-greedy-trader.ts` found waiting
-   winning at 3 of 150 decision points, by up to 4.679×, against a median of
-   0.127×. §5.5 records what that is worth, and the answer is not "nothing":
+   winning at 2 of 143 decision points, by up to 4.679×, against a median of
+   0.150×. §5.5 records what that is worth, and the answer is not "nothing":
    the exploit exists and is merely rare.
    §5.5 says "almost never" now and carries the distribution. The joint that
    remains is that the constants are still *chosen*: the sim tells you when a

@@ -25,10 +25,12 @@
  *
  * ## What the trader is
  *
- * A **greedy upper bound on a human**, not a model of one. It sees every price
- * at every station it can reach, has no fear of pirates, never misjudges a
- * docking, and picks the option with the best credits per minute every single
- * time. So the Cr/min below is a ceiling: a player earns less. That is the
+ * A **greedy upper bound on a human**, not a model of one. It has no fear of
+ * pirates, never misjudges a docking, and picks the option with the best
+ * credits per minute every single time. It sees the prices at the nearest
+ * `NEIGHBOUR_LIMIT` systems in range rather than at every system in range —
+ * how often that bites is counted and printed, because "sees every price it
+ * can reach" was written here first and was not true. So the Cr/min below is a ceiling: a player earns less. That is the
  * useful direction — a target of 1.5–2.5 h is falsified by a *ceiling* that
  * takes longer, and is merely unproven by one that is faster.
  *
@@ -58,12 +60,15 @@ import {
 	COMMODITIES,
 	type Commodity,
 	EQUIPMENT,
+	type Equipment,
 	FUEL_CR_PER_LY,
 	FUEL_TANK_LY,
 	HOLD_REFERENCE_T,
 	MARKET_PERIOD_MIN,
 	type MarketStation,
+	type CarrierKey,
 	carrierKey,
+	fullKitCr,
 	type DeficitMap,
 	marketPhaseMin,
 	marketRow,
@@ -121,9 +126,49 @@ const WORKING_FLOAT_CR = 800;
  *  their stacking: a run carries a full hold **and** all three. */
 const SUB_TONNE = new Set(["Gold", "Platinum", "Gem-Stones"]);
 
+/**
+ * `station-types.md` §4.1's ten universal items, **in the order the count
+ * gates them**. Fuel is slot 0 and is not in `EQUIPMENT` (§7 prices it per
+ * light year, not per unit), so these nine occupy slots 1–9.
+ *
+ * The gate is `min(displayTL + 3, 10)` items *shown*, not a per-item tech
+ * level — which is why it saturates at `displayTL = 7` and why §4.2 rejected
+ * a per-type shift on it.
+ */
+const UNIVERSAL_ORDER = [
+	"Missile",
+	"Large Cargo Bay",
+	"Extra Pulse Laser",
+	"E.C.M. System",
+	"Extra Beam Laser",
+	"Escape Pod",
+	"Energy Bomb",
+	"Docking Computer",
+	"Galactic Hyperdrive",
+];
+
+/**
+ * Whether this station sells this item at all (`station-types.md` §4).
+ *
+ * **An earlier version of this sim ignored the question entirely**, sorted the
+ * whole list by price and bought a Military Laser wherever the trader happened
+ * to be docked. The fit-out figure §8 rests on was therefore a trader buying
+ * shipyard-only kit at a trade station — the exclusives §4.1 exists to make you
+ * travel for, handed over for free.
+ */
+const sellsIt = (item: Equipment, port: Port): boolean => {
+	if (item.scope !== "universal") return port.station.type === item.scope;
+	const slot = 1 + UNIVERSAL_ORDER.indexOf(item.name);
+	if (slot === 0) throw new Error(`${item.name} is not in the universal order`);
+	return slot < Math.min(port.record.displayTL + 3, 10);
+};
+
 /** How far the trader looks for a jump target. The whole 256-system galaxy is
  *  in memory, so this bounds work rather than knowledge. */
 const NEIGHBOUR_LIMIT = 8;
+/** Counts how often that limit actually bit, so the header's claim about what
+ *  the trader sees is measured rather than asserted. */
+let neighbourTruncations = 0;
 
 // ---------------------------------------------------------------------------
 // The world, as the trader sees it
@@ -134,7 +179,7 @@ interface Port {
 	contents: SystemContents;
 	station: Station;
 	market: MarketStation;
-	key: string;
+	key: CarrierKey;
 	/** Position at the moment it is asked for — a station orbits, so this is a
 	 *  function of the clock, never a stored constant (#6). */
 	posAt(gameTimeS: number): Vec3;
@@ -330,6 +375,20 @@ interface Result {
 		atMinutes: number;
 		affordableAtMinutes: number;
 	}[];
+	/**
+	 * When the trader's **capital** first covered the whole kit —
+	 * `fullKitCr()`, spent or in hand.
+	 *
+	 * **This, and not the purchase list, is what §8 is about.** "About fifteen
+	 * clean runs" is a claim about the pump: how long the economy takes to yield
+	 * 19,125 Cr. *Buying* everything also needs the trader to stand at a
+	 * refinery for the mining laser and a shipyard for the military one
+	 * (`station-types.md` §4.1), and this trader does not route — it maximises
+	 * credits per minute and docks wherever that leads. So a fit-out time from
+	 * this sim would be a measurement of luck as much as of the economy, and the
+	 * two figures are reported apart rather than one standing for the other.
+	 */
+	kitAffordableAtMinutes: number | null;
 	/** Every decision point where a wait was on the table, as
 	 *  `bestWaitRate / bestFlyRate`. A maximum alone cannot tell one lucky
 	 *  moment from a strategy. */
@@ -388,10 +447,9 @@ function jumpOptions(
 ): Hop[] {
 	const min = st.t / 60;
 	const out: Hop[] = [];
-	for (const record of neighbours(systems, here.record).slice(
-		0,
-		NEIGHBOUR_LIMIT,
-	)) {
+	const inRange = neighbours(systems, here.record);
+	if (inRange.length > NEIGHBOUR_LIMIT) neighbourTruncations++;
+	for (const record of inRange.slice(0, NEIGHBOUR_LIMIT)) {
 		const ly = distanceLy(here.record.pos, record.pos);
 		// `neighbours` already bounds this at `JUMP_RANGE_LY`, which is
 		// `FUEL_TANK_LY` — so there is no separate range check to make, and this
@@ -530,10 +588,17 @@ function run(
 		atMinutes: number;
 		affordableAtMinutes: number;
 	}[] = [];
-	let bought = 0;
-	/** Filled the first time credits cover `shopping[bought].priceCr` on its
-	 *  own, whether or not the float lets the trader spend it. */
-	let affordableAt: number | null = null;
+	/** Still to buy, in §8's order. An item is skipped rather than blocking the
+	 *  list when the station it is standing at does not sell it — the shipyard
+	 *  exclusives wait for a shipyard. */
+	const remaining = [...shopping];
+	/** Per item, the first moment credits covered its price — wherever the
+	 *  trader was standing. That is §6's compounding curve; *buying* also needs
+	 *  a station that sells it and the working float on top. */
+	const affordableAt = new Map<string, number>();
+	const kitCr = fullKitCr();
+	let spentCr = 0;
+	let kitAffordableAt: number | null = null;
 
 	let hops = 0;
 	let waits = 0;
@@ -599,33 +664,45 @@ function run(
 		if (hop.kind === "jump") jumps++;
 		else intra++;
 
-		// Probed **before every purchase**, not once per hop. Sampling it once
-		// meant that after buying item N, item N+1's affordability was not
-		// checked until the next hop — a whole leg later — so every figure after
-		// the first was stretched by a leg it did not take.
-		if (
-			bought < shopping.length &&
-			affordableAt === null &&
-			credits >= shopping[bought].priceCr
-		)
-			affordableAt = t / 60;
-		while (
-			bought < shopping.length &&
-			credits >= shopping[bought].priceCr + WORKING_FLOAT_CR
-		) {
-			credits -= shopping[bought].priceCr;
-			if (shopping[bought].name === "Large Cargo Bay") holdT += LARGE_BAY_T;
+		// Stamped for **every** item the credits now cover, not just the next one
+		// on the list. Probing a single pointer meant that after buying item N,
+		// item N+1's affordability went unchecked until the following hop — a
+		// whole leg later — so every figure after the first was stretched by a
+		// leg it did not take.
+		const probeAffordable = () => {
+			for (const item of remaining)
+				if (credits >= item.priceCr && !affordableAt.has(item.name))
+					affordableAt.set(item.name, t / 60);
+		};
+
+		probeAffordable();
+		if (kitAffordableAt === null && credits + spentCr >= kitCr)
+			kitAffordableAt = t / 60;
+		// Buy whatever this station sells and the float allows, in §8's order.
+		// **The scope check is not decoration**: an earlier version sorted the
+		// whole list by price and bought a Military Laser at a trade station,
+		// which hands over the exclusives §4.1 exists to make you travel for.
+		for (;;) {
+			const i = remaining.findIndex(
+				(e) => sellsIt(e, here) && credits >= e.priceCr + WORKING_FLOAT_CR,
+			);
+			if (i === -1) break;
+			const item = remaining[i];
+			credits -= item.priceCr;
+			spentCr += item.priceCr;
+			if (item.name === "Large Cargo Bay") holdT += LARGE_BAY_T;
 			upgrades.push({
-				name: shopping[bought].name,
+				name: item.name,
 				atMinutes: t / 60,
-				affordableAtMinutes: affordableAt ?? t / 60,
+				affordableAtMinutes: affordableAt.get(item.name) ?? t / 60,
 			});
-			affordableAt = null;
-			bought++;
-			if (bought < shopping.length && credits >= shopping[bought].priceCr)
-				affordableAt = t / 60;
+			remaining.splice(i, 1);
+			probeAffordable();
 		}
-		if (bought === shopping.length) break;
+		if (remaining.length === 0) break;
+		// Once the capital milestone is passed there is nothing left for this
+		// sim to measure: what remains is a routing problem it does not model.
+		if (kitAffordableAt !== null) break;
 	}
 
 	return {
@@ -639,6 +716,7 @@ function run(
 		jumpMinutes,
 		dockMinutes,
 		upgrades,
+		kitAffordableAtMinutes: kitAffordableAt,
 		waitRatios,
 	};
 }
@@ -678,12 +756,17 @@ const results = GALAXIES.map((g) => ({ g, r: run(worldSeed, g, hours) }));
 
 /** One derivation, two tables. Written out twice they drift on the next edit,
  *  and the two copies already spelled the kit total differently. */
-const summarize = (r: Result): { rate: number; done: boolean } => ({
+const summarize = (
+	r: Result,
+): { rate: number; done: boolean; kit: number | null } => ({
+	kit: r.kitAffordableAtMinutes,
 	rate: finite(
 		"Cr/min",
 		// `START_CR` is capital the trader was handed, not money it made.
-		// Small against a 173–421 Cr/min rate, and a bias in exactly the
-		// direction §8 is arguing about.
+		// Small against the rates this prints, and a bias in exactly the
+		// direction §8 is arguing about — so it is subtracted rather than
+		// waved off. No figure is quoted here: a rate transcribed into a
+		// comment goes stale on the next constant that moves.
 		(r.creditsCr -
 			START_CR +
 			r.upgrades.reduce((sum, u) => sum + priceOf(u.name), 0)) /
@@ -693,15 +776,15 @@ const summarize = (r: Result): { rate: number; done: boolean } => ({
 });
 
 console.log(
-	"galaxy   minutes    Cr/min   hops   intra    jump   waits   fitted out",
+	"galaxy   minutes    Cr/min   hops   intra    jump   waits   kit affordable",
 );
 for (const { g, r } of results) {
-	const { rate, done } = summarize(r);
+	const { rate, kit } = summarize(r);
 	console.log(
 		`${String(g).padStart(6)}${finite("minutes", r.minutes).toFixed(1).padStart(10)}` +
 			`${rate.toFixed(1).padStart(10)}${String(r.hops).padStart(7)}` +
 			`${String(r.intra).padStart(8)}${String(r.jumps).padStart(8)}` +
-			`${String(r.waits).padStart(8)}   ${done ? `${r.minutes.toFixed(0)} min` : "not in cap"}`,
+			`${String(r.waits).padStart(8)}   ${kit === null ? "not in cap" : `${kit.toFixed(0)} min`}`,
 	);
 }
 
@@ -723,6 +806,19 @@ console.log(
 		"which is a property of this sim and not of the economy.)",
 );
 if (results[0].r.upgrades.length === 0) console.log("  none — nothing bought");
+{
+	// §6 quotes the first purchase's affordability, so it gets a range across
+	// the four galaxies rather than galaxy 0's figure standing for all of them.
+	const first = results
+		.map(({ r }) => r.upgrades.find((u) => u.name === "Large Cargo Bay"))
+		.filter((u): u is NonNullable<typeof u> => u !== undefined)
+		.map((u) => u.affordableAtMinutes);
+	if (first.length > 0)
+		console.log(
+			`  Large Cargo Bay affordable across ${first.length} galaxies: ` +
+				`${finite("first", Math.min(...first)).toFixed(1)}–${finite("first", Math.max(...first)).toFixed(1)} min`,
+		);
+}
 
 console.log("\n§5.5 — waiting against flying");
 const ratios = results.flatMap(({ r }) => r.waitRatios).sort((a, b) => a - b);
@@ -762,14 +858,14 @@ if (ratios.length === 0) {
 console.log(
 	"\ndock+market cost, swept (galaxy 0) — the modelled number that decides",
 );
-console.log("  dock s   minutes   Cr/min   fitted out");
+console.log("  dock s   minutes   Cr/min   kit affordable");
 for (const dock of [15, 30, 45, 60, 90]) {
 	const r = run(worldSeed, 0, hours, dock);
-	const { rate, done } = summarize(r);
+	const { rate, kit } = summarize(r);
 	console.log(
 		`${String(dock).padStart(8)}${finite("minutes", r.minutes).toFixed(1).padStart(10)}` +
 			`${rate.toFixed(1).padStart(9)}` +
-			`   ${done ? `${r.minutes.toFixed(0)} min` : "not in cap"}`,
+			`   ${kit === null ? "not in cap" : `${kit.toFixed(0)} min`}`,
 	);
 }
 
@@ -777,6 +873,10 @@ const totalMin = results.reduce((s, { r }) => s + r.minutes, 0);
 const modelled = results.reduce(
 	(s, { r }) => s + r.jumpMinutes + r.dockMinutes,
 	0,
+);
+console.log(
+	`\nneighbour list truncated at ${NEIGHBOUR_LIMIT} on ${neighbourTruncations} ` +
+		"decision points — where it bit, the trader did not see the whole jump range.",
 );
 console.log(
 	`\nmodelled time as a share of the total: ${((100 * modelled) / Math.max(totalMin, 1e-9)).toFixed(1)}% ` +

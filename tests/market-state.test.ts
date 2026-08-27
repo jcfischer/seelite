@@ -25,8 +25,8 @@ import {
 	type DeficitMap,
 	MARKET_PERIOD_MIN,
 	type MarketStation,
+	type CarrierKey,
 	carrierKey,
-	commodity,
 	marketEpoch,
 	marketPhaseMin,
 	marketRow,
@@ -395,7 +395,7 @@ describe("§5.5 the deficit map is sparse, lazy, and round-trips", () => {
 		const back = parseDeficits(JSON.parse(JSON.stringify(map)));
 		expect(back).toEqual(map);
 		const at = t + 5;
-		for (const key of Object.keys(map))
+		for (const key of Object.keys(map) as CarrierKey[])
 			for (const good of Object.keys(map[key].goods))
 				expect(readDeficit(back, key, good, at)).toBe(
 					readDeficit(map, key, good, at),
