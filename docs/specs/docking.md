@@ -716,15 +716,25 @@ Two consequences that decide implementations:
   same arrival, because this fires on the crossing and neither is flying by then.
 
 **Decision E3: the arrival is long enough to be the payoff — four to six
-seconds.** Chosen against a two-second handover. The approach is the game's
+seconds, a range to tune inside rather than a point value.** Chosen against a two-second handover. The approach is the game's
 central skill loop and what it ends in should be worth having flown. §7's
 amendment is what keeps this from reopening D4.
 
 **Decision E4: it is skippable once the player has arrived at that *type* of
 station before.** Not per station: E7's throat is shared, so a per-station gate
-would make the player re-watch an identical five seconds at each of hundreds of
-stations — novelty rewarded for something that is not novel. Four first-times —
-trade, shipyard, refinery, outpost — match the gate to what actually differs.
+would make the player re-watch the *same* arrival at each of hundreds of stations
+— novelty rewarded for something that is not novel. Four first-times — trade,
+shipyard, refinery, outpost.
+
+**Four gates cover two presentations, and that is deliberate.**
+`STATION_GEOMETRY` fixes the aperture kind per type and no type spans both, so
+type → presentation is a total function: trade and shipyard are slots, refinery
+and outpost are pads. Gating on type therefore **over**-counts — the player
+watches the throat once at their first trade station and again at their first
+shipyard. It cannot under-count, so no first sight of a presentation is ever
+suppressed. The over-count is what E9's shield buys back: a second first-time at
+a different *kind* of station, with its own name on the wall, is not the same
+arrival twice.
 
 The flag is **per-galaxy player state, not a per-carrier-slot row**:
 `persistent-world-state.md` §1 already names "visited flags" among the facts the
@@ -753,6 +763,14 @@ own decision: the ship leaves the way it came in, and flight resumes when it doe
 measure and said so in its own docstring — it exists because `dockedAt` was set
 and never cleared, not because leaving was designed.
 
+**What the player presses to launch is #70's, and the motion is this spec's.**
+The seam has to be stated because E5 makes the stick and the throttle inert, so
+the one control the player would reach for is gone: a docked player is in a
+screen, and the launch command is a control *in* that screen. This spec owns what
+happens after it is pressed. Without this sentence the launch trigger falls in
+the gap between two sections that each disclaim the other's half — which is
+exactly how the market screen ended up owned by nobody.
+
 ### 12.3 Collision: a second system, and the boundary between them
 
 **Decision E6: collision is real, it is a separate system, and it is not this
@@ -762,10 +780,22 @@ through every body in the game.
 
 The boundary, stated so neither system has to guess:
 
-| Surface | Owner |
+| Surface or state | Owner |
 |---|---|
 | The aperture rectangle, at the plane | **§2 and §3 of this spec** — the six checks and the failed-entry model |
 | Hull, rim, drydock frame, and every other body | **The collision system** |
+| **The ship during §12.1's arrival, and while docked** | **Neither.** It is not a collidable body. |
+
+**That third row is not a detail.** §12.1 invents a traversal — the ship flies
+down a throat it was placed in on rails — and E2 says nothing can fail during it.
+Without the row, a collision implementer reading the table as authoritative gives
+the throat walls to collision, the default is collision-on, and **the arrival
+clips the tunnel it was just handed**. The same holds for the parked ship: it sits
+inside a structure that is otherwise solid.
+
+The exemption is safe precisely because the arrival is scripted: it is a position
+law with a known start and end, so there is no state in which it can be somewhere
+the law did not put it.
 
 §2.0's semantics are why this is a boundary rather than a merge: a failed entry
 repels with `v_axial` reversed and halved, damages on §2.1's quadratic above a
@@ -803,12 +833,28 @@ checks — which stay exactly as ratified, the pad being the slot minus check 4
 key rather than a name; `localCarrierId` is the persistence key. The name is a
 third thing.
 
-**Derived from the system and parent-planet name, never drawn** (derived here, not
-decided in session). A new draw from any existing domain tag shifts every station
-generated after it and moves `tests/station-orbits.test.ts`'s committed fixture —
-the coupling `station.ts` documents at length, and the reason the refinery draws a
-spin it discards. A name that is a pure function of names that already exist costs
-no stream.
+**Derived, never drawn** (derived here, not decided in session). A new draw from
+any existing domain tag shifts every station generated after it and moves
+`tests/station-orbits.test.ts`'s committed fixture — the coupling `station.ts`
+documents at length, and the reason the refinery draws a spin it discards. A name
+that is a pure function of names that already exist costs no stream.
+
+**What it is a function of, stated because the obvious answer collides.** "System
+plus parent planet" is not enough: `system.ts` picks the shipyard's host from
+`[primary, ...gasGiants]` at random, so **a trade station and a shipyard can orbit
+the same planet** and would derive the same name. And the refinery is
+`parentId: null` — star-centric in the belt — so it has no parent to derive from
+at all.
+
+So the derivation is a function of the **system name and the station's type**, and
+the parent planet is at most a decoration on top of that. Type is already unique
+per station within a system (`system.ts` places at most one of each) and is
+already the key of every table in `station.ts`, so this is uniqueness by
+construction rather than by a check. A fourth station type, or a second station of
+one type in a system, breaks that — and the `Record<StationType, …>` discipline
+means the first is a compile error while the second is not, so **if a system ever
+gains two stations of one type, the derivation must fold in `localCarrierId`**,
+which is the identity that is unique by contract.
 
 **Decision E10: the shield is a quad built in `station-mesh.ts`, with its texture
 supplied by the renderer.** That module is headless-tested and contains no
@@ -834,18 +880,37 @@ orients, it does not measure. §8's two cues are still owed.
 
 Two tiers, as everywhere else in this spec.
 
-**Headless.** The arrival is a sim position law, so it is arithmetic: that it
-terminates; that it ends at the docked position for both a slot and a pad; that
-nothing re-evaluates §3's checks during it (it begins after them); that flight
-inputs do nothing while docked; and that launch returns the ship to a state from
-which §3's checks can be evaluated again. The skip gate is four booleans and gets
-a table.
+**Headless.** The arrival is a sim position law, so it is arithmetic:
 
-**Browser probe.** That the throat is drawn behind every slot-bearing form and the
-deck under every pad; that the shield is legible at the mouth on approach; and that
-a scripted approach ends *inside* the station rather than hanging at the plane —
-the regression this whole section exists for, and a spatial claim, so it gets the
-spatial tier.
+1. It **terminates**, and ends at the docked position for both a slot and a pad.
+2. Nothing **re-evaluates §3's checks** during it — it begins after them.
+3. **Flight inputs do nothing while docked**, and launch returns the ship to a
+   state from which §3's checks can be evaluated again.
+4. **The world keeps running while docked** — the clock advances and the bodies
+   move along their orbits across a docked interval, with no compression. E5
+   makes that a claim and #10 makes it binding, and without this row a docked
+   state that froze the tick would satisfy every other obligation here.
+5. The **skip gate** is four booleans and gets a table: each type's first arrival
+   plays, each subsequent one is skippable, and the four are independent.
+
+**Browser probe.**
+
+1. The **throat is drawn** behind every slot-bearing form and the deck under
+   every pad.
+2. The shield is legible **at the mouth on approach** — and **the interior shield
+   is drawn and visible during the arrival**. The inside one is the half only a
+   probe can catch: it exists for a few seconds, from one angle, and nothing
+   headless can see it at all.
+3. A scripted approach ends **inside** the station rather than hanging at the
+   plane — the regression this whole section exists for, and a spatial claim, so
+   it gets the spatial tier.
+
+**Inherited by the collision node, not by this one.** When collision lands,
+§9.2.4's hull-face probe is measuring a collision rather than a failed entry
+(§3), and the collision node owes a re-pointing of it. That obligation is written
+here rather than only in §3's prose because a probe that stays green for a reason
+its own spec has declared dead is the shape of check that stops being evidence —
+and §12.7 records that it fails open until then.
 
 ### 12.7 Weak joints in this section
 
@@ -858,7 +923,12 @@ spatial tier.
    shield is what carries per-station identity instead.
 3. **Collision is decided and unowned** (E6). This section states that it exists
    and where its boundary is, and nothing here builds it. Until it does, flying at
-   a station's hull still passes through it.
+   a station's hull still passes through it — **and §9.2.4 stays green for a
+   justification §3 has already declared dead.** That probe currently proves that
+   a hull-face approach is refused by check 5; once the hull is solid it will be
+   proving that collision works, under a name that says otherwise. The obligation
+   to re-point it is §12.6's and it is inherited by the collision node, but until
+   that node exists the obligation has no holder and the check fails open.
 4. **A generated station name ripples further than this section** — #11's galaxy
    map, #69's target list and #70's screen all acquire something to display, and
    none of them has been told.
