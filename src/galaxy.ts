@@ -132,6 +132,12 @@ export const DOMAIN = {
 	 *  third flag added later would shift it — reproducing inside one tag
 	 *  exactly the coupling the tags exist to escape. */
 	STATION_SPIN: 9,
+	/** The station market (`economy-trade.md` §5.1): the fluctuation byte and
+	 *  the phase that staggers one system's stations. Its own tag for the reason
+	 *  the two above have theirs — the market is drawn per station and per
+	 *  epoch, and folding it into `STATION_FLAGS` would make a market a function
+	 *  of how many flags a station happens to carry. */
+	MARKET: 10,
 } as const;
 
 export type DomainName = keyof typeof DOMAIN;
