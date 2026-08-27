@@ -59,10 +59,14 @@ quantity  = clamp(clamp(clamp(baseQuantity + changing − product, 0, 63)
 | `PRICE_ELASTICITY` | 0.10 per `HOLD_REFERENCE_T` | §5.3 |
 | `HOLD_REFERENCE_T` | 20 t | §6 |
 
-The executable copy is `tests/helpers/market-math.ts`; the implement node moves
-it to `src/market.ts`. There is one copy of the **formula**, imported by both
-the suite and `scripts/measure-market.ts`, so the two never measure different
-arithmetic.
+The executable copy is **`src/market.ts`**, where
+[#25](https://github.com/jcfischer/seelite/issues/25) moved it. There is one
+copy of the **formula**, imported by the suite, by
+`tests/helpers/market-math.ts` and by `scripts/`, so no two of them measure
+different arithmetic. What stayed behind in `market-math.ts` is the surface that
+exists only to check this spec — Bell's own Narcotics row, his wrapping byte
+close, the domain sweeps, the residual surveys — and §11 records why that is a
+split rather than a move.
 
 **The figures quoted below are transcribed script output, not pinned values.**
 The suite asserts *thresholds* — margin above 75 Cr/t, floor under 1%, exhaustion
@@ -599,14 +603,30 @@ separately — but it is worth naming plainly:
 - **Dropped** when `|deficit| < 1` unit, so the save does not grow without bound
   across a long game.
 
-**Waiting must never beat flying** — stated as the design intent the two
-constants were chosen for, not as a measured result. `MARKET_PERIOD` 30 min and
+**Waiting must almost never beat flying** — and the word changed, because the
+sim §10.3 required has now been run. `MARKET_PERIOD` 30 min and
 `DEFICIT_HALF_LIFE` 20 min are set against a full trade run of 3–5 minutes so
 that parking for a re-roll or a recovery is dominated by going somewhere else.
-**Nothing committed proves it**: the exhaustion measurement exercises the decay
-but not the choice between waiting and flying, which needs the time-aware
-greedy-trader sim §10.3 requires. Until that exists this is an assumption, and
-changing either constant re-opens the exploit with nothing to catch it.
+
+**Measured**, over 122 decision points where parking until the next epoch was a
+profitable option at all:
+
+| | wait rate / best flight rate |
+|---|---|
+| median | 0.039× |
+| p95 | 0.395× |
+| max | **1.326×** |
+| points where waiting won | **1 of 122 (0.8%)** |
+
+So the intent holds as a tendency and **not as an absolute**: at one moment in a
+hundred and twenty-two, the best thing on offer was to sit still, and it was
+worth a third again as much as flying. The earlier draft of this paragraph said
+"never" and had nothing behind it. What the constants buy is that waiting is
+worth 4% of flying at the median — the exploit the pair were chosen to close is
+closed, and the residual is a rounding error rather than a strategy.
+
+Changing either constant re-opens the question, and
+`scripts/measure-greedy-trader.ts` is now what catches it.
 
 ---
 
@@ -628,9 +648,9 @@ the canonical lane at zero fluctuation — Computers bought at 61.6 Cr and sold 
 100.8 — the player is capital-limited for **six runs** and hold-limited from the
 seventh. A draft of this section said five and called it arithmetic while
 committing none; `runsUntilHoldLimited` derives it now and the suite pins the
-six. **The minutes are still not claimed**: a wall-clock figure needs the run
-length §12.5 records as unmeasured, and §10.3's greedy-trader sim is what would
-supply one.
+six. **The minutes are claimed now**: §10.3's sim puts the Large Cargo Bay — the
+first purchase, at 400 Cr — at **14 minutes** of perfect play from the opening
+100 Cr, against a modelled 45 s dock stop.
 
 ### 6.1 A correction to `galaxy-generation.md` §8
 
@@ -666,7 +686,7 @@ refill on docking with passive regeneration. Nothing in the economy prices it.
 ## 7. Equipment and hulls
 
 **Prices are Elite's PRXS table, flat everywhere**, and they live in
-`market-math.ts` as data rather than only in the table below — this was the one
+`src/market.ts` as data rather than only in the table below — this was the one
 number block in the spec with no re-derivation path, which is exactly what §6.1
 records the cost of. §8's total is computed from that list, and the suite pins
 both.
@@ -723,14 +743,21 @@ Large Cargo Bay is the first purchase and lifts that to ~1,225 Cr.
 The twelve items above total **19,125 Cr** — 19,245 with a full missile rack.
 Both are `fullKitCr()`, derived from the price list rather than added up in
 prose, and asserted.
-That is about fifteen clean runs, and realistically **1.5–2.5 hours** of trading
-once §5.2's deficit forces route rotation.
+That is about fifteen clean runs, and the design was aiming at **1.5–2.5 hours**
+of trading once §5.2's deficit forces route rotation.
 
-**This is a target, not an assertion.** `scripts/measure-market.ts` reports the
-margins the real generator actually produces; §10 requires a greedy-trader
-measurement to report Cr/min and time-to-each-upgrade before the number above is
-believed. It is stated so a later reader knows what the design was aiming at and
-can tell a tuning drift from a bug.
+**Measured, the ceiling is faster than the aim.** §10.3's greedy trader fits out
+in **56–100 minutes** across four galaxies, at 205–366 Cr/min. Perfect play is
+therefore inside the target's lower bound in three galaxies of four, so the
+1.5–2.5 h figure survives only as a claim about a *human*: it needs a real
+player to run at roughly 0.6× the ceiling. That is plausible and unmeasured, and
+it is the honest form of the sentence.
+
+**Half the clock is a modelled constant**, so the figure is a claim about that
+too. The dock-and-market stop is 45 s in the sim and is specified nowhere — #9
+sets docking tolerances, not a duration. Swept: fit-out runs **43 min at 15 s
+and 104 min at 90 s**. A reader who thinks 90 s is the right stop should read
+this section as met rather than beaten.
 
 ---
 
@@ -754,7 +781,12 @@ question, still fog on the map, and it reaches far past the economy.
 
 All headless `bun` — none of §1–§9 may require a browser, per #7's own framing.
 
-### 10.1 Suite (`tests/market.test.ts`, 38 tests)
+### 10.1 Suite (`tests/market.test.ts`, 38 tests, plus
+`tests/market-state.test.ts`, 24)
+
+`market.test.ts` owns §2–§4 and §6–§7 — the arithmetic, swept over its whole
+domain — and is listed below. §5's two properties are not about a formula and
+live apart, in `market-state.test.ts`; §10.3 lists them.
 
 1. **Table integrity** — 17 goods; `baseQuantity` signed for all five negative
    rows; exactly three illegal; the sub-tonne set is Gold/Platinum/Gem-Stones
@@ -826,20 +858,55 @@ come from committed code rather than from prose; the floor's firing rate at both
 denominators; intra-system vs interstellar margins over the real generator; and
 runs to exhaustion on the best intra-system pair.
 
-Every figure is computed through `market-math.ts`. Nothing here re-implements
+Every figure is computed through `src/market.ts`. Nothing here re-implements
 the price pipeline — an earlier version did, and its floor rate was therefore a
 second measurement that could drift from `TYPE_OFFSET` without failing anything.
 
-### 10.3 Owed by the implement node
+### 10.3 Owed by the implement node — delivered, and what it found
 
-- A **greedy-trader sim** reporting Cr/min and time-to-each-upgrade against the
-  generated galaxy, so §8's 1.5–2.5 h is measured. It must be re-run whenever
-  `MARKET_PERIOD`, `DEFICIT_HALF_LIFE` or `PRICE_ELASTICITY` move.
-- A **determinism test**: the base market is byte-identical for a fixed
-  `(stationSeed, floor(t / MARKET_PERIOD))`, and independent of draw order
-  elsewhere — the property the `DOMAIN.MARKET` tag exists to provide.
-- A **save round-trip test** over the sparse deficit map, including lazy decay
-  and the drop-below-one-unit rule.
+All three landed in #25. Each is named here with the result rather than the
+obligation, because two of them **moved a claim in this document**.
+
+**The greedy-trader sim** — `scripts/measure-greedy-trader.ts`,
+`bun run scripts/measure-greedy-trader.ts [hours] [seed]`. It flies a trader
+against the real generator: every in-system leg is `cruise.ts`'s `legSeconds`
+over `placeBodies` at the current clock, so an arrival 0.2 AU out and one 3 AU
+out cost what they cost. Hyperspace wind-up (15 s) and the dock-and-market stop
+(45 s) are the only modelled numbers, and the second is **swept** rather than
+conceded, because it is paid on every hop and is half the clock.
+
+It is a **ceiling, not a player**: it sees every price it can reach, fears no
+pirate and never misjudges a docking. A target is falsified by a ceiling that is
+too slow and merely unproven by one that is too fast.
+
+| | measured, world `0x5ee11e`, four galaxies |
+|---|---|
+| fit-out, full kit | **56–100 min** against §8's 1.5–2.5 h |
+| Cr/min | 205–366 |
+| hops chosen: interstellar : intra-system | **26 : 5** |
+| fit-out across dock cost 15→90 s | 43 → 104 min |
+
+**Re-run it whenever `MARKET_PERIOD`, `DEFICIT_HALF_LIFE` or `PRICE_ELASTICITY`
+moves.** All three are in the loop, and §12.5 is explicit that changing either
+of the first two re-opens the exploit with nothing else to catch it.
+
+**The determinism and save round-trip tests** — `tests/market-state.test.ts`,
+24 tests. §5.1: the byte is fixed by `(stationSeed, epoch)`, every good is
+identical across a whole epoch, the market re-rolls on the boundary for >95% of the
+corpus's 117 stations, phase staggers the stations of one system, and two stations in one
+system draw unrelated bytes. §5.5: lazy decay on read with nothing written,
+saturation at ±63, the drop-below-one-unit rule, a JSON round trip over a 61-row
+map, and a malformed save that throws rather than reading as an untouched
+healthy carrier.
+
+**One of those tests was written, found unfalsifiable, and replaced**, which is
+worth recording because the replacement is a different *kind* of check. A
+permutation test claimed to prove the market is independent of draw order while
+keying both sides on `localCarrierId` — the thing under test. What carries that
+claim is structural: nothing in `system.ts` or `galaxy.ts` draws from
+`DOMAIN.MARKET`, so no market can be a function of how many stations preceded
+it. A value-comparing test cannot see that difference, because a market drawn in
+station order still produces a plausible byte.
 
 ---
 
@@ -856,30 +923,50 @@ second measurement that could drift from `TYPE_OFFSET` without failing anything.
   place, pointing here; §6.1.
 - **`station-types.md`** — §3's price-only offset is extended by §3.2 here, and
   §3.2's deferred question about the byte extremes is answered by §2.2 and §3.1.
-  The `blackMarket` flag §5.2 specifies is **not yet implemented** in
-  `src/system.ts`; contraband trading cannot ship before it does.
+  The `blackMarket` flag §5.2 specifies **is implemented** in `src/system.ts`,
+  landed by [#28](https://github.com/jcfischer/seelite/issues/28) with its own
+  `DOMAIN.STATION_FLAGS` tag; contraband trading was gated on it and no longer
+  is.
 - **The ship-roster node** — inherits 20 t and 100 Cr as v1 defaults (§6) and
   owes hull prices (§7).
 - **The save/load node** — owes the format the sparse deficit map lives in
   (§5.5) and the permadeath stance (§9).
-- **The implement node** — owes a **split**, not a move.
-  `tests/helpers/market-math.ts` currently holds two things: the shipped
-  arithmetic (the table, `marketRow`, `shelfPriceCr`, the deficit functions) and
-  measurement scaffolding the game never calls (`NARCOTICS_BELL`, the `"wrap"`
-  mode, `ALL_FLUCT`, `FLUCT_PAIRS`, `sweepDomain`, `bestMargin`,
-  `runsToExhaustion`, `forEachLegalPair`, `surveyResiduals`). Only the first
-  belongs in `src/market.ts`; moving the file wholesale would ship the
-  instrument inside the runtime module. The rest stays a test fixture, **and the
-  import rewrite goes with the split**. It also owes
-  **widening `marketRow`'s signature**: it is keyed on station *type*, which is
-  all this spec's arithmetic needs, but §5.1's fluctuation hash and §5.2's
-  deficit are both keyed on station *identity*, so the parameter becomes a
-  `{ type, seed }` struct and every call site changes with it. Today
-  `scripts/` depends on `tests/` for shipping game arithmetic; that direction
-  inverts the moment `src/market.ts` exists, and every importer changes with it.
-  Named here so the move is owned rather than discovered.
+- **The implement node** — **done, in
+  [#25](https://github.com/jcfischer/seelite/issues/25)**, and the split it owed
+  was performed rather than a file being moved. `src/market.ts` holds the
+  shipped arithmetic — the table, `marketRowAt`, `stockResponse`,
+  `shelfQuantity`, `marketEpoch`, the deficit functions, `EQUIPMENT` — and
+  `tests/helpers/market-math.ts` keeps the measurement surface the game never
+  calls: `NARCOTICS_BELL`, the wrapping byte close, `ALL_FLUCT`, `FLUCT_PAIRS`,
+  `sweepDomain`, `bestMargin`, `forEachLegalPair`, `surveyResiduals`,
+  `runsToExhaustion`, `runTotalCr`. The import direction inverted with it:
+  `scripts/` depended on `tests/` for arithmetic the game ships, and both now
+  depend on `src/`.
 
----
+  Three things changed shape rather than moving, and each is a decision:
+
+  - **The `ByteMode` string is gone.** A `"wrap"` branch inside the runtime
+    module would be dead code in the game and a live path in the instrument, so
+    the close is injected: `SATURATE` is defined in `src/market.ts` and is the
+    only one there, and `BELL_WRAP` lives beside the measurements that need it.
+    §2.2's rejection stays runnable without shipping.
+  - **`marketRow` widened, as this section asked.** `marketRowAt` is the
+    sweepable form, taking a fluctuation byte and a station *type*; `marketRow`
+    takes a `{ type, seed }` station and a game time, derives §5.1's epoch and
+    byte from them, and calls it. One copy of the arithmetic — the second
+    function only decides which byte it applies to.
+  - **`DOMAIN.MARKET` is a new tag**, for the reason `station-types.md` §5.3
+    gives about `STATION_FLAGS`, and **nothing in `system.ts` or `galaxy.ts`
+    draws from it**. That is what makes a market independent of station order,
+    and §10.3 records why it is asserted structurally rather than by comparing
+    values.
+
+  It also landed `Station.localCarrierId` and `LOCAL_CARRIER_ID`.
+  `persistent-world-state.md` §2 permits v1 to reuse the id strings `system.ts`
+  already assigns but requires the persistence table to be exposed and tested
+  rather than inferred from a display key — §5.5's deficit map is keyed on it,
+  so a rename of `id` for the map screen must not orphan anybody's market
+  memory.
 
 ## 12. Weak joints, recorded not reopened
 
@@ -903,13 +990,14 @@ second measurement that could drift from `TYPE_OFFSET` without failing anything.
    "cheap ore, dear bread". Recorded in `station-types.md` §3.3 as weak joint 5;
    this spec deepens it rather than introducing it.
 5. **`PRICE_ELASTICITY`, `MARKET_PERIOD` and `DEFICIT_HALF_LIFE` are chosen, not
-   derived**, and only one of their two justifications is measured. The
-   intra-system exhaustion in 2–3 runs *is* measured, with `DEFICIT_HALF_LIFE`
-   in the loop. **"Waiting never beats flying" is not**: no committed code has a
-   time dimension over the whole loop, so §5.5 states a design intent, not a
-   verified exploit boundary. §10.3's greedy-trader sim is what turns it into
-   evidence, and until it exists a later reader should treat that sentence as an
-   assumption.
+   derived**, and both of their justifications are now measured — one of them
+   into a correction. The intra-system exhaustion in 2–3 runs is measured with
+   `DEFICIT_HALF_LIFE` in the loop. **"Waiting never beats flying" turned out to
+   be false as written**: `scripts/measure-greedy-trader.ts` found waiting
+   winning at 1 of 122 decision points, by 1.326×, against a median of 0.039×.
+   §5.5 says "almost never" now and carries the distribution. The joint that
+   remains is that the constants are still *chosen*: the sim tells you when a
+   change breaks something, not what the values should be.
 6. **The deficit makes market state unreproducible from the seed.** §5.5. The
    first such state in seelite. It is sparse and bounded, but it is a door that
    is now open.

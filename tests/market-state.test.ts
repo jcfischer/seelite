@@ -47,7 +47,7 @@ const WORLD = 0x5ee11e;
  * The first eighty systems of galaxy 0, generated once for the whole file.
  *
  * Sized by the **stations** it yields, not by the system count: about three
- * systems in four hold two or three, so eighty systems is a ~120-station
+ * systems in four hold two or three, so eighty systems is a **117-station**
  * corpus. A forty-system slice gave 61, which is thin for a rate asserted at
  * 95%.
  */
