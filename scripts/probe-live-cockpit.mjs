@@ -467,7 +467,7 @@ await combatPage.waitForFunction(
 			window.__seelite.combatOverlayStatus.text,
 		),
 );
-await combatPage.keyboard.press("z");
+await combatPage.keyboard.press("/");
 const warningShown = await combatPage
 	.waitForFunction(
 		() => window.__seelite.combatOverlayStatus.text.includes("MISSILE WARNING"),
@@ -477,7 +477,7 @@ const warningShown = await combatPage
 		() => true,
 		() => false,
 	);
-await combatPage.keyboard.press("r");
+await combatPage.keyboard.press("q");
 const warningCleared = await combatPage
 	.waitForFunction(
 		() =>
@@ -493,7 +493,7 @@ check(
 	warningShown && warningCleared,
 );
 // The beam heats up and locks out; the overlay must show the lockout.
-await combatPage.keyboard.down("b");
+await combatPage.keyboard.down("s");
 const lockShown = await combatPage
 	.waitForFunction(
 		() =>
@@ -505,7 +505,7 @@ const lockShown = await combatPage
 		() => true,
 		() => false,
 	);
-await combatPage.keyboard.up("b");
+await combatPage.keyboard.up("s");
 check("prototype: beam heat lockout is visible on the overlay", lockShown);
 await combatPage.keyboard.down("Space");
 // The feedback is claimed immediate, so the wait is bounded and fails the

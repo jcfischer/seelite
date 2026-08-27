@@ -2228,13 +2228,13 @@ class Game {
 			case "3":
 				if (this.view === "cockpit") this.setHeadLook("right");
 				return;
-			case "z":
+			case "/":
 				if (this.combatPrototypeEnabled) {
 					this.combatIncoming = true;
 					return;
 				}
 				break;
-			case "r":
+			case "q":
 				if (this.combatPrototypeEnabled) {
 					this.combatEcm = true;
 					return;
@@ -3126,7 +3126,7 @@ class Game {
 			const targetInCone = duelTargetInCone(this.combat.elapsed);
 			this.combat = stepCombatPrototype(this.combat, {
 				dt,
-				firing: this.keys.has("b")
+				firing: this.keys.has("s")
 					? "beam"
 					: this.keys.has(" ")
 						? "pulse"
@@ -4025,12 +4025,12 @@ class Game {
 				return fittedFont;
 			};
 			drawFitted(
-				"COMBAT PROTOTYPE — hold SPACE pulse · B beam · Z warning · R ECM",
+				"COMBAT PROTOTYPE — hold SPACE pulse · S beam · / warning · Q ECM",
 				h * 0.72,
 				"rgba(255, 214, 120, 0.9)",
 				12,
 				"legend",
-				"COMBAT PROTOTYPE — hold SPACE pulse · B beam · Z warning · R ECM",
+				"COMBAT PROTOTYPE — hold SPACE pulse · S beam · / warning · Q ECM",
 			);
 			drawFitted(
 				`TARGET  SHIELDS F ${this.combat.targetForeShield.toFixed(0)}  A ${this.combat.targetAftShield.toFixed(0)}  HULL ${this.combat.targetHull.toFixed(0)}`,
