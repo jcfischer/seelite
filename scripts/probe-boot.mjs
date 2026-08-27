@@ -557,6 +557,12 @@ check(
 async function fpsGate() {
 	/**
 	 * The other side of the gate, which is the half that could actually go wrong.
+	 *
+	 * Which page carries which side, since "both sides" is loose: the default is
+	 * asserted on the boot page the rest of this file uses, and again on the page
+	 * that comes back from the workbench; the positive is asserted on that same
+	 * page after a `goto` to `&fps`. One page, three states, rather than one page
+	 * per claim.
 	 * The workbench mounts a meter *unconditionally*, and the only reason one does
 	 * not survive the return to flight is that `[data-model-close]` navigates.
 	 * Rewrite it as an in-place teardown and the readout is on the flight floor

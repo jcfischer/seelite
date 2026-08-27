@@ -141,6 +141,15 @@ export function mountFpsMeter(): () => void {
 	 * which is the whole point: without it the readout holds its last healthy
 	 * figure for as long as the page is frozen.
 	 *
+	 * **It reports between one and two periods late**, not at the threshold.
+	 * The timer wakes every `STALL_MS` and asks whether the gap since the last
+	 * frame is already past `STALL_MS`, so a stall beginning just after a tick
+	 * waits for the tick after next: 2 s to 4 s at the current window. Halving
+	 * the period would halve that and double the wakes, in a meter whose
+	 * purpose is to not disturb what it measures — so the latency is the
+	 * choice, and this is the honest statement of it rather than "takes over
+	 * when frames stop arriving".
+	 *
 	 * `document.hidden` is read because a backgrounded tab stops frames and is
 	 * not a fault. It wakes at its own threshold rather than at the sample
 	 * window — a watch that cannot fire until four windows have passed has no

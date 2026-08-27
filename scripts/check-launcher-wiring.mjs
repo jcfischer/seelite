@@ -95,6 +95,20 @@ const problems = [];
 let callers = 0;
 
 /**
+ * Scripts that open a page and are deliberately outside the watch rule.
+ *
+ * One entry, with its reason beside it. `if (reports)` did this job implicitly
+ * and covered every future file that forgets a tally along with the one that
+ * means it.
+ */
+const EXEMPT = new Map([
+	[
+		"shot-ships.mjs",
+		"takes screenshots; has no checks for a watch to report into",
+	],
+]);
+
+/**
  * One sanitiser, two settings.
  *
  * The import checks need comments gone. The call *counts* need string bodies
@@ -176,13 +190,27 @@ for (const path of scripts(DIR).sort()) {
 	 */
 	const reports = /\btally\s*\(\s*\)/.test(bare);
 	const pages = (bare.match(/\.newPage\s*\(/g) ?? []).length;
-	const watched = (bare.match(/\bwatch(Shaders)?\s*\(/g) ?? []).length;
 	const ownPageError = /page\.on\(\s*\W*pageerror/.test(code);
-	// Scoped to scripts that report: `shot-ships.mjs` opens a page to take a
-	// screenshot and has no checks to fail, so a watch there would have
-	// nothing to report into.
+
+	/**
+	 * A script that opens pages and does not report is **named**, not skipped.
+	 *
+	 * The rule below needs a `tally()` to report into, so it was written as
+	 * `if (reports)` — which makes the guard fail open for exactly the file it
+	 * cannot see: a new probe that opens pages without a tally is unwatched and
+	 * this says nothing about it. The exemption is a list with a reason
+	 * attached, so joining it is a decision somebody makes rather than a side
+	 * effect of how a file happens to be written.
+	 */
+	if (pages && !reports && !EXEMPT.has(name))
+		problems.push(
+			`${name}: opens ${pages} page(s) and calls no tally() — it can neither ` +
+				`watch them nor report what a watch would find; add it to EXEMPT ` +
+				`with a reason if that is deliberate`,
+		);
+
 	const WITHIN = 8;
-	if (reports)
+	if (reports && !EXEMPT.has(name))
 		for (const opened of bare.matchAll(/\.newPage\s*\(/g)) {
 			const after = bare
 				.slice(opened.index ?? 0)
