@@ -135,7 +135,10 @@ ${NOISE_GLSL}
  * The height itself is near-continuous at both — 0.009 x depth at the cull —
  * so this shows in shading, not in shape: a harder edge at the crater lip than
  * the differenced normal gave, and a faint step at the cull radius. The rock
- * shipped with both present and was accepted on how it looks.
+ * shipped with both present, and nobody has looked for either specifically —
+ * the one visual comparison on record is of the grain term at 200 m. So
+ * "accepted" would be the wrong word: what happened is that neither was
+ * noticed, which is weaker and is what this should say.
  *
  * The fix, if either ever reads badly, is a narrow smoothstep in place of the
  * step and a fade on the rim approaching 1.2 — but that is an edit to the

@@ -160,21 +160,19 @@ for (const path of scripts(DIR).sort()) {
 	 * comment in `probe-guard.mjs` named this file as the place to enforce it,
 	 * which is only worth writing if it is done.
 	 *
-	 * **Read the claim narrowly, because the mechanism is narrow.** This counts
-	 * occurrences in the source; it does not pair them, and it cannot see how
-	 * many pages actually get opened. `probe-live-cockpit` creates its page
-	 * inside a `for (const viewport of VIEWPORTS)` loop — one call site, N
-	 * pages — and two `watch()` calls covering the same page would satisfy a
-	 * file whose second page is unwatched. Neither is caught here.
+	 * **Proximity, not a count.** Counting `newPage` sites against watch calls
+	 * was the first version and enforced nothing where it was most needed: a
+	 * probe that opens its page inside a `for (const viewport of VIEWPORTS)`
+	 * loop has one call site, so one watch anywhere in the file — including
+	 * outside the loop, watching only the first page — scored 1 > 1 and passed.
+	 * The rule now asks that each `newPage` be followed by a watch within a few
+	 * lines, which is where one has to be to cover the page just opened.
 	 *
-	 * What it does catch is the case that actually happened: a probe that opens
-	 * pages and calls no watch at all, or fewer watches than page-opening
-	 * sites. Nine files were in that state and nothing said so.
-	 *
-	 * The exact version is structural rather than textual — a helper in
-	 * `probe-guard.mjs` that opens and watches in one call, leaving
-	 * `browser.newPage(` itself as the thing to refuse. That is a change across
-	 * thirteen probes and belongs in its own node, not in this one.
+	 * Still textual, and it says so: a watch that follows within the window but
+	 * refers to some other page satisfies it. The exact version is structural —
+	 * a helper in `probe-guard.mjs` that opens and watches in one call, leaving
+	 * `browser.newPage(` itself as the thing to refuse — which is a change
+	 * across thirteen probes and its own node.
 	 */
 	const reports = /\btally\s*\(\s*\)/.test(bare);
 	const pages = (bare.match(/\.newPage\s*\(/g) ?? []).length;
@@ -183,11 +181,20 @@ for (const path of scripts(DIR).sort()) {
 	// Scoped to scripts that report: `shot-ships.mjs` opens a page to take a
 	// screenshot and has no checks to fail, so a watch there would have
 	// nothing to report into.
-	if (reports && pages > watched)
-		problems.push(
-			`${name}: opens ${pages} page(s) but installs ${watched} watch(es) — ` +
-				`an unwatched page reports neither page errors nor shader failures`,
-		);
+	const WITHIN = 8;
+	if (reports)
+		for (const opened of bare.matchAll(/\.newPage\s*\(/g)) {
+			const after = bare
+				.slice(opened.index ?? 0)
+				.split("\n")
+				.slice(0, WITHIN)
+				.join("\n");
+			if (!/\bwatch(Shaders)?\s*\(/.test(after))
+				problems.push(
+					`${name}: a page is opened with no watch within ${WITHIN} lines — ` +
+						`an unwatched page reports neither page errors nor shader failures`,
+				);
+		}
 	// A probe may keep its own page-error reporting — `probe-planets` names
 	// them at two milestones rather than one per event — but then it owes the
 	// shader listener separately, which is what `watchShaders` is for.
