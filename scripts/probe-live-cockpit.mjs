@@ -261,9 +261,6 @@ const { check, watch, exit } = tally();
 for (const viewport of VIEWPORTS) {
 	const page = await browser.newPage({ viewport });
 	watch(page, viewport.name);
-	page.on("pageerror", (error) =>
-		check(`${viewport.name}: no page error (${error.message})`, false),
-	);
 	await page.goto(`${ORIGIN}/?seed=42`, { waitUntil: "load" });
 	await page.addScriptTag({ content: PROBE_MATCHERS_SCRIPT });
 	await page.waitForFunction(
@@ -460,9 +457,7 @@ for (const viewport of VIEWPORTS) {
 const combatPage = await browser.newPage({
 	viewport: { width: 1280, height: 760 },
 });
-combatPage.on("pageerror", (error) =>
-	check("prototype: no page error (" + error.message + ")", false),
-);
+watch(combatPage, "prototype combat");
 await combatPage.goto(`${ORIGIN}/?seed=42&combat=1`, { waitUntil: "load" });
 await combatPage.addScriptTag({ content: PROBE_MATCHERS_SCRIPT });
 await combatPage.waitForFunction(
@@ -533,9 +528,7 @@ await combatPage.close();
 const narrowCombatPage = await browser.newPage({
 	viewport: { width: 390, height: 844 },
 });
-narrowCombatPage.on("pageerror", (error) =>
-	check("prototype narrow: no page error (" + error.message + ")", false),
-);
+watch(narrowCombatPage, "prototype combat narrow");
 await narrowCombatPage.goto(`${ORIGIN}/?seed=42&combat=1`, {
 	waitUntil: "load",
 });
