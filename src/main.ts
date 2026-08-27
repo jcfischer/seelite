@@ -488,10 +488,16 @@ class TextRaster {
 		this.background = "rgba(1, 8, 11, .9)";
 	}
 
-	setCenteredPrompt(text: string, x: number, y: number, width: number) {
+	setCenteredPrompt(
+		text: string,
+		x: number,
+		y: number,
+		width: number,
+		font = PROMPT_FONT,
+	) {
 		this.reset();
 		this.text = text;
-		this.font = PROMPT_FONT;
+		this.font = font;
 		this.fillStyle = PROMPT_FILL;
 		this.textAlign = "center";
 		this.x = x;
@@ -672,6 +678,16 @@ class Game {
 	private combatEcm = false;
 	/** Probe-only laser visibility override; the renderer honours it. */
 	probeForceLaserHidden = false;
+	/** rAF handle, so a probe can freeze the loop and render by hand. */
+	private animationFrame = 0;
+	/** Freeze the frame loop; the caller renders manually with a fixed sim state. */
+	probeFreezeLoop() {
+		if (this.animationFrame) cancelAnimationFrame(this.animationFrame);
+	}
+	/** Resume the frame loop. */
+	probeResumeLoop() {
+		if (!this.animationFrame) this.animate();
+	}
 	readonly audio = new AudioFX();
 	private throttle = 0;
 	private frameBody: Body | null = null;
@@ -3550,7 +3566,7 @@ class Game {
 	}
 
 	private animate = () => {
-		requestAnimationFrame(this.animate);
+		this.animationFrame = requestAnimationFrame(this.animate);
 		const now = performance.now();
 		const dt = this.lastTime
 			? Math.min(MAX_DT, (now - this.lastTime) / 1000)
@@ -3857,7 +3873,11 @@ class Game {
 
 		// The Three line is spatial reference; this glass tracer is the readable
 		// weapon feedback at every viewport.
-		if (this.combatPrototypeEnabled && this.combat.firing !== null) {
+		if (
+			this.combatPrototypeEnabled &&
+			this.combat.firing !== null &&
+			!this.probeForceLaserHidden
+		) {
 			ctx.save();
 			// The lower third is physical cockpit hardware. Clip the glass effect to
 			// the windscreen rather than drawing a laser over an instrument panel.
@@ -3950,6 +3970,13 @@ class Game {
 			);
 			const combatStatus = `FIRE ${this.combat.firing?.toUpperCase() ?? "SAFE"} · LOCK ${this.combat.missileLock ? "READY" : "ACQUIRING"} · MISSILE ${this.combat.incomingMissile ? "WARNING" : "CLEAR"} · INTERDICTION ${this.combat.interdiction ? "ACTIVE" : "CLEAR"}`;
 			ctx.font = PROMPT_FONT;
+			// Fit the status line to the glass width so it stays on-screen (and
+			// legible) at every viewport, narrow included.
+			while (
+				ctx.measureText(combatStatus).width > w - 16 &&
+				parseFloat(ctx.font) > 9
+			)
+				ctx.font = `${parseFloat(ctx.font) - 1}px ui-monospace, Menlo, monospace`;
 			ctx.fillStyle = PROMPT_FILL;
 			ctx.fillText(combatStatus, w / 2, h * 0.84);
 			this.combatOverlayStatus.setCenteredPrompt(
@@ -3957,6 +3984,7 @@ class Game {
 				w / 2,
 				h * 0.84,
 				ctx.measureText(combatStatus).width,
+				ctx.font,
 			);
 			ctx.textAlign = "left";
 		} else {

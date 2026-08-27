@@ -485,54 +485,33 @@ const combatReadout = await combatPage.evaluate(
 );
 await combatPage.evaluate(() => {
 	const game = window.__seelite;
-	game.step(0);
+	game.probeFreezeLoop();
 	game.render(0);
 });
-const laserShown = await combatPage.screenshot();
-await combatPage.evaluate(() => {
+const laserTracerPixels = await combatPage.evaluate(() => {
 	const game = window.__seelite;
+	const overlay = document.querySelector("#overlay");
+	const context = overlay.getContext("2d");
+	const count = () => {
+		const data = context.getImageData(0, 0, overlay.width, overlay.height).data;
+		let bright = 0;
+		for (let i = 0; i < data.length; i += 4)
+			if (data[i] > 100 && data[i + 1] > 180 && data[i + 2] > 200) bright++;
+		return bright;
+	};
+	const shown = count();
 	game.probeForceLaserHidden = true;
 	game.render(0);
-});
-const laserHidden = await combatPage.screenshot();
-await combatPage.evaluate(() => {
-	const game = window.__seelite;
+	const hidden = count();
 	game.probeForceLaserHidden = false;
 	game.render(0);
+	return { shown, hidden };
 });
+const laserPixels = laserTracerPixels.shown - laserTracerPixels.hidden;
 const combatOverlayRendered = await combatPage.evaluate(
 	() => globalThis.__seeliteMeasureCockpit().combatOverlayText,
 );
-const laserPixels = await combatPage.evaluate(
-	async ({ shown, hidden }) => {
-		const decode = async (base64) => {
-			const image = await createImageBitmap(
-				await (await fetch(`data:image/png;base64,${base64}`)).blob(),
-			);
-			const canvas = document.createElement("canvas");
-			canvas.width = image.width;
-			canvas.height = image.height;
-			const context = canvas.getContext("2d");
-			context.drawImage(image, 0, 0);
-			return context.getImageData(0, 0, canvas.width, canvas.height).data;
-		};
-		const [a, b] = await Promise.all([decode(shown), decode(hidden)]);
-		let changed = 0;
-		for (let i = 0; i < a.length; i += 4)
-			if (
-				Math.abs(a[i] - b[i]) +
-					Math.abs(a[i + 1] - b[i + 1]) +
-					Math.abs(a[i + 2] - b[i + 2]) >
-				30
-			)
-				changed++;
-		return changed;
-	},
-	{
-		shown: laserShown.toString("base64"),
-		hidden: laserHidden.toString("base64"),
-	},
-);
+await combatPage.evaluate(() => window.__seelite.probeResumeLoop());
 await combatPage.keyboard.up("Space");
 check(
 	"prototype: holding Space draws a laser and exposes immediate PULSE feedback on the glass overlay",
@@ -561,12 +540,27 @@ await narrowCombatPage.waitForFunction(
 			window.__seelite.combatOverlayStatus.text,
 		),
 );
-const narrowOverlayRendered = await narrowCombatPage.evaluate(
-	() => globalThis.__seeliteMeasureCockpit().combatOverlayText,
-);
+const narrowOverlay = await narrowCombatPage.evaluate(() => {
+	const game = window.__seelite;
+	const status = game.combatOverlayStatus;
+	const overlay = document.querySelector("#overlay");
+	const context = overlay.getContext("2d");
+	context.font = status.font;
+	const width = context.measureText(status.text).width;
+	const fits = width <= overlay.width;
+	const rendered = globalThis.__seeliteMeasureCockpit().combatOverlayText;
+	return {
+		rendered,
+		fits,
+		width,
+		canvas: overlay.width,
+		font: status.font,
+		text: status.text,
+	};
+});
 check(
 	"prototype: combat overlay renders legibly at the narrow viewport",
-	narrowOverlayRendered,
+	narrowOverlay.rendered && narrowOverlay.fits,
 );
 await narrowCombatPage.close();
 
