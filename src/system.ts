@@ -566,12 +566,13 @@ function buildMoons(
  * primary always exists. `docs/specs/station-types.md` §5.4 owns the
  * measurement; `tests/system-reachability.test.ts` asserts the invariant.
  *
- * **What enforces it, in three facts a reader can check.** `rungCount` is
+ * **What enforces it, in four facts a reader can check.** `rungCount` is
  * `3 + floor(bodies() * 5)`, so it is 3..7. `primaryRung` is
  * `floor(bodies() * rungCount)`, so it is 0..rungCount-1. The loop runs `i`
- * over exactly that range, and the envelope test reads
- * `if (outside && !isPrimary)` — which cannot skip `i === primaryRung`.
- * Therefore a primary is pushed for every system.
+ * over exactly that range. `isPrimary` is `i === primaryRung` — the step the
+ * whole derivation turns on, which an earlier version of this comment left
+ * off-page. So the envelope test, `if (outside && !isPrimary)`, cannot skip the
+ * primary rung, and a primary is pushed for every system.
  *
  * What is *not* enforced is a runtime guard: nothing throws. If one of those
  * three facts were broken by a later edit, the trade station would be absent

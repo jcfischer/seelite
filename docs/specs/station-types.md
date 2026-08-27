@@ -490,9 +490,10 @@ asserted by `tests/system-reachability.test.ts`; the rate test that used to
 pin the defect is gone, because a band around a rate passes a generator that
 has half-regressed.
 
-Not introduced here, and not fixed here. Recorded because the fixture committed
-with this spec is what exposed it, and because §5's whole construction assumes
-every system can be docked at.
+Not introduced by the node that found it, and not fixed by it either — #51 did
+that, later. Recorded here because the fixture committed with this spec is what
+exposed it, and because §5's whole construction assumes every system can be
+docked at.
 
 `galaxy-generation.md` §6.4 lists the trade station as present **"always"**, and
 `src/system.ts` states it outright: *"The trade station is unconditional, so a
