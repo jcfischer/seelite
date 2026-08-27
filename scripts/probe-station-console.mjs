@@ -363,6 +363,22 @@ check(
 	"9: the station console is not on the right wall — it hangs forward",
 	!right.consoleVisible,
 );
+// E5 suspends flight, not one tab of it. An earlier round gated the INERT
+// attribute on Flight alone, which left Drive saying THROTTLE INERT with
+// nothing marking it.
+await page.locator('[data-gallery-right-tab="Drive"]').click();
+const drive = await page.evaluate(measureConsole);
+check(
+	"E5: the right console's readouts are marked inert on its other tabs too",
+	Array.isArray(drive.inertReadouts) &&
+		drive.inertReadouts.some((line) => /THROTTLE\s*INERT/i.test(line ?? "")),
+	JSON.stringify(drive.inertReadouts),
+);
+check(
+	"M9: the launch control is on Flight and on no other tab",
+	!drive.launchVisible,
+);
+await page.locator('[data-gallery-right-tab="Flight"]').click();
 
 check(
 	"9: the launch control is live - pressing it returns the flying cockpit",
@@ -403,6 +419,22 @@ check(
 await page.locator('[data-gallery-console-tab="Market"]').click();
 await page.setViewportSize({ width: 390, height: 844 });
 const narrow = await page.evaluate(measureConsole);
+await page.locator('[data-gallery-look="right"]').click();
+const narrowRight = await page.evaluate(measureConsole);
+check(
+	"narrow: M9's launch control and its INERT readouts both survive the layout",
+	// The narrow rule drops `.sg-console-list` to make room, which left LAUNCH
+	// on a console saying nothing about why it was the only live thing on it.
+	// Measured at 390 px because that is where the rule applies.
+	narrowRight.launchVisible &&
+		Array.isArray(narrowRight.inertReadouts) &&
+		narrowRight.inertReadouts.some((line) =>
+			/THROTTLE\s*INERT/i.test(line ?? ""),
+		),
+	JSON.stringify(narrowRight.inertReadouts),
+);
+await page.locator('[data-gallery-look="forward"]').click();
+
 check(
 	"narrow: the market grid is what is measured, not the equipment list",
 	narrow.activeTab === "Market" && narrow.rows.length === 17,

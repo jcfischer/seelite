@@ -100,9 +100,15 @@ export interface ConsoleMarketRow {
 	 * this epoch. Present iff the deficit is non-zero — an absent field is a row
 	 * the player has never moved, which is what makes the arrow mean something.
 	 *
-	 * It can be `0` on a row §3's floor pins at `PRICE_STEP_CR`, because the
-	 * floor applies to the responded price too. That is the floor showing, not a
-	 * missing effect: the shelf delta beside it is still non-zero.
+	 * **It can be `0`, and so can the shelf delta beside it.** §3's floor pins
+	 * the cheapest rows at `PRICE_STEP_CR` and applies to the responded price
+	 * too, so a moved row there shows no price movement; and `shelfQuantity`
+	 * clamps at zero, so a shelf the player has already emptied shows no further
+	 * movement either. Both are the mechanism showing rather than an effect
+	 * going missing — which is why the field's presence is keyed on the
+	 * *deficit* and not on the size of what it moved. An earlier version of this
+	 * paragraph said the shelf delta is "still non-zero", which the clamp makes
+	 * false.
 	 */
 	priceDeltaCr?: number;
 	/** The same, in units on the shelf. Present iff the deficit is non-zero. */

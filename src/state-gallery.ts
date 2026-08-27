@@ -850,6 +850,12 @@ const STYLE = `
 	.sg-console-data { padding-top: 7px; }
 	.sg-console-data p { font-size: 11px; line-height: 1.35; }
 	.sg-console-list { display: none; }
+	/* The docked exception. The narrow rule drops the side console's list to
+	   make room, which is right for the flying states — but docked, that list is
+	   the INERT readout M9 puts beside the launch control, and dropping it
+	   leaves LAUNCH on a console saying nothing about why it is the only live
+	   thing on it. */
+	.sg-console-list[data-gallery-inert] { display: grid; }
 	.sg-glass { inset: 18px 12px 0; min-height: 480px; clip-path: none; }
 	/* The docked glass is a table, not a window: it fits the cockpit shell and
 	   scrolls its own rows, rather than growing the page under it. */
@@ -860,6 +866,17 @@ const STYLE = `
 	.sg-floor { bottom: 12px; font-size: 10px; flex-direction: column; gap: 3px; }
 }
 `;
+
+/**
+ * Which flight state the gallery shows after a launch.
+ *
+ * **Arbitrary, and named so that it reads as arbitrary.** A real cockpit
+ * resumes the flight it suspended; the gallery has six unrelated states and no
+ * memory of which one preceded a dock, so it picks the quiet one. The live
+ * cockpit should not inherit this — `docking.md` §12.2 says flight resumes, not
+ * that it resets.
+ */
+const LAUNCH_RETURNS_TO = "assist-on";
 
 /** M9's one live control while docked. */
 const LAUNCH_CONTROL =
@@ -877,6 +894,7 @@ function renderConsolePanel({
 	list,
 	footer,
 	dockedFlight = false,
+	inertReadouts = false,
 }: {
 	side: "left" | "right";
 	active: boolean;
@@ -889,17 +907,24 @@ function renderConsolePanel({
 	list: readonly [string, string][];
 	footer: string;
 	/**
-	 * **M9**, both halves of it: docked, the Flight console carries the launch
-	 * control and its other readouts say they are inert. One flag rather than a
-	 * markup string and a boolean the caller had to keep in step, since the
-	 * caller derived both from the same condition.
+	 * **M9:** docked, the Flight console carries the launch control. Only that
+	 * console and only that control — launching is flight, and §1 gives Flight
+	 * to the right panel.
+	 */
+	dockedFlight?: boolean;
+	/**
+	 * **E5:** docked, this console's readouts are inert on every one of its
+	 * tabs, because flight is suspended and not merely unavailable from one of
+	 * them. Separate from `dockedFlight` because the two really are different
+	 * conditions — an earlier round collapsed them and left the Drive tab saying
+	 * THROTTLE INERT with no attribute on it.
 	 *
 	 * The attribute is what a probe reads; the value column reading INERT,
 	 * dimmed against the live rows, is what a player reads.
 	 */
-	dockedFlight?: boolean;
+	inertReadouts?: boolean;
 }): string {
-	return `<aside class="sg-panel" data-gallery-panel="${side}" data-active="${active}"><header class="sg-console-top"><h2>${title}</h2><small>${subtitle}</small></header><nav class="sg-tabs" aria-label="${side} console tabs">${tabs}</nav><div class="sg-console-layout"><div class="sg-console-rail">${rail.map((item, index) => (index === 0 ? `<b>${item}</b>` : `<span>${item}</span>`)).join("")}</div><div class="sg-console-data"><h3>${heading}</h3><p ${title === "TUNING" ? "data-gallery-tuning" : ""}>${body}</p><div class="sg-console-list"${dockedFlight ? " data-gallery-inert" : ""}>${list.map(([label, value]) => `<span><b>${label}</b><em>${value}</em></span>`).join("")}</div></div></div>${dockedFlight ? LAUNCH_CONTROL : ""}<small>${footer}</small></aside>`;
+	return `<aside class="sg-panel" data-gallery-panel="${side}" data-active="${active}"><header class="sg-console-top"><h2>${title}</h2><small>${subtitle}</small></header><nav class="sg-tabs" aria-label="${side} console tabs">${tabs}</nav><div class="sg-console-layout"><div class="sg-console-rail">${rail.map((item, index) => (index === 0 ? `<b>${item}</b>` : `<span>${item}</span>`)).join("")}</div><div class="sg-console-data"><h3>${heading}</h3><p ${title === "TUNING" ? "data-gallery-tuning" : ""}>${body}</p><div class="sg-console-list"${inertReadouts ? " data-gallery-inert" : ""}>${list.map(([label, value]) => `<span><b>${label}</b><em>${value}</em></span>`).join("")}</div></div></div>${dockedFlight ? LAUNCH_CONTROL : ""}<small>${footer}</small></aside>`;
 }
 
 /**
@@ -967,6 +992,10 @@ export function renderGalleryState(
 		rail: ["SHIP", "POWER", "MODULES", "INVENTORY", "STATUS"],
 		heading: `${rightTab.toUpperCase()} / CONTROL`,
 		body: rightPanelBody(state, rightTab),
+		// `docked`, not `flightDocked`: E5 suspends flight, so the right console's
+		// readouts are inert whichever of its three tabs is up. Only the *launch
+		// control* is Flight's, which is what M9 places.
+		inertReadouts: docked,
 		list: docked
 			? [
 					["THROTTLE", "INERT"],
@@ -1040,11 +1069,14 @@ export function mountStateGallery(): void {
 			const picked = CONSOLE_TABS.find(
 				(candidate) => candidate === tabButton.dataset.galleryConsoleTab,
 			);
+			// `Boolean`, not an unconditional `true`: the ids are authored by the
+			// same module that renders the buttons, so a miss is a bug, and
+			// swallowing the click hides it behind a button that does nothing.
 			if (picked) {
 				view = { ...view, tab: picked };
 				paint();
 			}
-			return true;
+			return Boolean(picked);
 		}
 		const stationButton = target.closest<HTMLElement>("[data-gallery-station]");
 		if (stationButton) {
@@ -1055,7 +1087,7 @@ export function mountStateGallery(): void {
 				view = { ...view, station: picked };
 				paint();
 			}
-			return true;
+			return Boolean(picked);
 		}
 		if (target.closest("[data-gallery-advance-clock]")) {
 			// M7: the clock moves, and the market tab never says so. The control is
@@ -1077,7 +1109,7 @@ export function mountStateGallery(): void {
 			// the flying cockpit comes back. The *motion* between the two is #77's
 			// and the gallery has none of it — this is the state change only.
 			headLook = "forward";
-			setState("assist-on");
+			setState(LAUNCH_RETURNS_TO);
 			return true;
 		}
 		return false;

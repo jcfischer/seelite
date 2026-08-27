@@ -361,14 +361,22 @@ test("M10: the persistent flight floor is hidden the moment flight is suspended"
 });
 
 test("E3's bounds here are the ones docking.md ratified", () => {
-	// Not a tautology: the constants are checked against the spec's own prose,
-	// so a later retune of E3 that does not reach this module goes red here
-	// rather than in #77's arrival law alone.
+	// Not a tautology, and **anchored to E3 rather than to the file**: a
+	// whole-file `toContain` would stay green on a retune that changed E3's
+	// bounds while any other sentence still carried the phrase.
 	const prose = readFileSync(
 		new URL("../docs/specs/docking.md", import.meta.url),
 		"utf8",
 	).replace(/\s+/g, " ");
-	expect(prose).toContain("four to six seconds");
+	const e3 = prose.slice(
+		prose.indexOf("**Decision E3:"),
+		prose.indexOf("**Decision E4:"),
+	);
+	// The guard on the slice: two `-1`s would agree with each other and slice
+	// nothing, which is the vacuous pass this shape falls into.
+	expect(prose.indexOf("**Decision E3:")).toBeGreaterThan(0);
+	expect(e3.length).toBeGreaterThan(100);
+	expect(e3).toContain("four to six seconds");
 	expect(ARRIVAL_SECONDS_MIN).toBe(4);
 	expect(ARRIVAL_SECONDS_MAX).toBe(6);
 });
