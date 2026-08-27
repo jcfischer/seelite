@@ -50,6 +50,7 @@ const HEADLESS = [
 	"system",
 	"units",
 	"vec3",
+	"world-state",
 ] as const;
 
 test("no DOM is present in this runtime", () => {
@@ -94,6 +95,7 @@ test("no module has been quietly dropped from the list", () => {
 		"system",
 		"units",
 		"vec3",
+		"world-state",
 	];
 	const listed = new Set<string>(HEADLESS);
 	for (const name of required) expect(listed.has(name), name).toBe(true);

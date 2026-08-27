@@ -343,6 +343,16 @@ export const compareCarrierKeys = (a: string, b: string): number => {
 	return ia < ib ? -1 : ia > ib ? 1 : 0;
 };
 
+/**
+ * The persisted key's shape, in one place.
+ *
+ * `parseDeficits` in `market.ts` holds a third copy, which stays until that
+ * module's save-format block moves out to `src/deficits.ts` — the note at the
+ * bottom of `market.ts` §5.5 owns that move, and duplicating the regex here to
+ * avoid one import would be the wrong half of the fix.
+ */
+export const isCarrierKey = (key: string): boolean => /^\d+:.+$/.test(key);
+
 const splitKey = (key: string): [number, string] => {
 	const at = key.indexOf(":");
 	return [Number(key.slice(0, at)), key.slice(at + 1)];
@@ -459,11 +469,18 @@ export function materializeDue(
 
 /** Every galaxy materialized up to `gameTime`, and the clock moved to it.
  *  Idempotent: running it twice, or late, gives the same snapshot. */
-export const advanceTo = (world: WorldState, gameTime: number): WorldState => ({
-	...world,
-	gameTime: Math.max(world.gameTime, gameTime),
-	galaxies: world.galaxies.map((g) => materializeDue(g, gameTime).envelope),
-});
+export const advanceTo = (world: WorldState, gameTime: number): WorldState => {
+	// **One clock, used twice.** Clamping the stored time while materializing
+	// against the raw argument let `advanceTo(w, 5)` on a world at t = 100
+	// record a clock of 100 and leave a completion due at t = 50 unmaterialized
+	// — two worlds on one timeline serializing to different bytes.
+	const t = Math.max(world.gameTime, gameTime);
+	return {
+		...world,
+		gameTime: t,
+		galaxies: world.galaxies.map((g) => materializeDue(g, t).envelope),
+	};
+};
 
 // ---------------------------------------------------------------------------
 // §4 — the transition table
@@ -517,6 +534,23 @@ function fail(message: string): never {
 }
 
 /**
+ * The one bounds check every writer shares.
+ *
+ * It was on `applyTransition` alone, and the other three writers spread
+ * `galaxies[8]` — `undefined` — into a ninth envelope holding one domain. The
+ * corruption then surfaced a long way from its cause, inside a canonicaliser
+ * or as "expected eight galaxy envelopes" on the next load.
+ */
+function assertGalaxy(galaxyIndex: number): void {
+	if (
+		!Number.isInteger(galaxyIndex) ||
+		galaxyIndex < 0 ||
+		galaxyIndex >= GALAXY_COUNT
+	)
+		fail(`galaxy ${galaxyIndex} is outside 0..${GALAXY_COUNT - 1}`);
+}
+
+/**
  * Applies one transition, or throws.
  *
  * Two orderings matter and both are §4's:
@@ -535,8 +569,7 @@ export function applyTransition(
 	key: CarrierKey,
 	event: TransitionEvent,
 ): WorldState {
-	if (galaxyIndex < 0 || galaxyIndex >= GALAXY_COUNT)
-		fail(`galaxy ${galaxyIndex} is outside 0..7`);
+	assertGalaxy(galaxyIndex);
 	if (!Number.isFinite(event.occurredAt))
 		fail(`${event.kind} has no finite occurredAt`);
 	if (event.occurredAt < world.gameTime)
@@ -552,6 +585,8 @@ export function applyTransition(
 	};
 	const open = env.episodes[key];
 	const episodeOpen = open !== undefined && !open.closed;
+	/** Join the open episode, or allocate the next one (§4). */
+	const nextOrdinal = episodeOpen ? open.ordinal : (open?.ordinal ?? 0) + 1;
 
 	let next: ObjectiveDelta;
 	let episodeOrdinal: number;
@@ -569,7 +604,7 @@ export function applyTransition(
 			)
 				fail(`cannot destroy a carrier that is ${current.condition}`);
 			opensEpisode = !episodeOpen;
-			episodeOrdinal = episodeOpen ? open.ordinal : (open?.ordinal ?? 0) + 1;
+			episodeOrdinal = nextOrdinal;
 			next = {
 				instanceOrdinal: current.instanceOrdinal,
 				condition: event.kind === "disable" ? "disabled" : "destroyed",
@@ -579,7 +614,13 @@ export function applyTransition(
 		case "restore": {
 			if (current.condition !== "disabled")
 				fail(`cannot restore a carrier that is ${current.condition}`);
-			episodeOrdinal = open?.ordinal ?? 0;
+			// An opener like the other two. A restore after an interruption acts
+			// on a *closed* episode, and folding into it overwrote the interrupt
+			// outcome and credited the restoration to the old initiating cause —
+			// while the same close followed by a `disable` correctly opened the
+			// next episode.
+			opensEpisode = !episodeOpen;
+			episodeOrdinal = nextOrdinal;
 			next = {
 				instanceOrdinal: current.instanceOrdinal,
 				condition: "operational",
@@ -608,7 +649,7 @@ export function applyTransition(
 			)
 				fail(`${event.kind} completes before it starts`);
 			opensEpisode = !episodeOpen;
-			episodeOrdinal = episodeOpen ? open.ordinal : (open?.ordinal ?? 0) + 1;
+			episodeOrdinal = nextOrdinal;
 			next = {
 				instanceOrdinal: current.instanceOrdinal,
 				condition: "repairing",
@@ -658,6 +699,11 @@ export function applyTransition(
 		}
 		case "repair-complete":
 		case "replacement-complete": {
+			// **Earlier than `completesAt` only.** A completion event landing
+			// exactly *at* it arrives after the lazy one has already run (§4's
+			// "before applying a new event at that same timestamp"), so there is
+			// nothing left to complete and this throws. Loud rather than silent,
+			// and `world-state.test.ts` §9.4 pins it.
 			if (current.condition !== "repairing" || !current.recovery)
 				fail(`nothing to complete: the carrier is ${current.condition}`);
 			const wanted: RecoveryKind =
@@ -684,25 +730,21 @@ export function applyTransition(
 
 	const isStart =
 		event.kind === "repair-start" || event.kind === "replacement-start";
-	const episode: CausalEpisode = opensEpisode
-		? {
-				ordinal: episodeOrdinal,
-				initiating: fact,
-				...(isStart ? { intervention: fact } : {}),
-				latest: fact,
-				closed: CLOSING.has(event.kind),
-			}
-		: {
-				ordinal: episodeOrdinal,
-				initiating: open?.initiating ?? fact,
-				...(open?.intervention
-					? { intervention: open.intervention }
-					: isStart
-						? { intervention: fact }
-						: {}),
-				latest: fact,
-				closed: CLOSING.has(event.kind),
-			};
+	// The episode an opener starts keeps only this transition; one it joins
+	// keeps the initiating transition and the first intervention inside it.
+	const initiating = opensEpisode ? fact : (open?.initiating ?? fact);
+	const intervention = opensEpisode
+		? isStart
+			? fact
+			: undefined
+		: (open?.intervention ?? (isStart ? fact : undefined));
+	const episode: CausalEpisode = {
+		ordinal: episodeOrdinal,
+		initiating,
+		...(intervention ? { intervention } : {}),
+		latest: fact,
+		closed: CLOSING.has(event.kind),
+	};
 
 	let envelope: GalaxyEnvelope = {
 		...env,
@@ -784,7 +826,13 @@ export const observe = (
 	gameTime: number,
 	source: string,
 ): WorldState => {
-	const galaxies = world.galaxies.slice();
+	assertGalaxy(galaxyIndex);
+	// **Through `advanceTo`, not past it.** Moving the clock while leaving a due
+	// completion unwritten put the world in a state no other verb can produce:
+	// clock ahead of a `completesAt` nothing had materialized. `advanceTo` is
+	// idempotent, so paying for it here costs a pass over eight envelopes.
+	const advanced = advanceTo(world, gameTime);
+	const galaxies = advanced.galaxies.slice();
 	const env = galaxies[galaxyIndex];
 	galaxies[galaxyIndex] = writeKnowledge(
 		env,
@@ -793,7 +841,7 @@ export const observe = (
 		gameTime,
 		source,
 	);
-	return { ...world, gameTime: Math.max(world.gameTime, gameTime), galaxies };
+	return { ...advanced, galaxies };
 };
 
 /** §7's visited-flag domain. Sorted and unique, so insertion order cannot
@@ -803,6 +851,7 @@ export const visit = (
 	galaxyIndex: number,
 	systemIndex: number,
 ): WorldState => {
+	assertGalaxy(galaxyIndex);
 	const galaxies = world.galaxies.slice();
 	const env = galaxies[galaxyIndex];
 	if (env.visited.includes(systemIndex)) return world;
@@ -821,6 +870,7 @@ export const setLegalHeat = (
 	heat: number,
 	updatedAt: number,
 ): WorldState => {
+	assertGalaxy(galaxyIndex);
 	const galaxies = world.galaxies.slice();
 	galaxies[galaxyIndex] = {
 		...galaxies[galaxyIndex],
@@ -1034,19 +1084,30 @@ const parseProvenance = (raw: unknown, what: string): Provenance => {
 	};
 };
 
-const parseRecovery = (raw: unknown, what: string): RecoveryDescriptor => {
+/** The five fields an objective recovery descriptor and §3.1's `observedRecovery`
+ *  share. The observed copy is exactly this and no more — it is intelligence,
+ *  and it does not carry the objective descriptor's initiating provenance. */
+const parseObservedRecovery = (
+	raw: unknown,
+	what: string,
+): ObservedRecovery => {
 	const o = asObject(raw, `${what} recovery`);
 	const kind = str(o, "kind", what);
 	if (kind !== "repair" && kind !== "replacement")
 		fail(`${what}: recovery kind ${kind} is unknown`);
 	return {
-		kind: kind as RecoveryKind,
 		processId: str(o, "processId", what),
+		kind: kind as RecoveryKind,
 		consequenceArea: str(o, "consequenceArea", what),
 		startedAt: num(o, "startedAt", what),
 		completesAt: num(o, "completesAt", what),
-		initiatedBy: parseProvenance(o.initiatedBy, what),
 	};
+};
+
+const parseRecovery = (raw: unknown, what: string): RecoveryDescriptor => {
+	const shared = parseObservedRecovery(raw, what);
+	const o = asObject(raw, `${what} recovery`);
+	return { ...shared, initiatedBy: parseProvenance(o.initiatedBy, what) };
 };
 
 const parseFact = (raw: unknown, what: string): TransitionFact => {
@@ -1054,7 +1115,7 @@ const parseFact = (raw: unknown, what: string): TransitionFact => {
 	const kind = str(o, "kind", what);
 	if (!KINDS.has(kind)) fail(`${what}: transition kind ${kind} is unknown`);
 	const key = str(o, "key", what);
-	if (!/^\d+:.+$/.test(key)) fail(`${what}: ${key} is not a carrier key`);
+	if (!isCarrierKey(key)) fail(`${what}: ${key} is not a carrier key`);
 	return {
 		key: key as CarrierKey,
 		instanceOrdinal: num(o, "instanceOrdinal", what),
@@ -1143,20 +1204,10 @@ const parseEnvelope = (raw: unknown, slot: number): GalaxyEnvelope => {
 		const condition = str(row, "observedCondition", `knowledge ${key}`);
 		if (!CONDITIONS.has(condition))
 			fail(`knowledge ${key}: observedCondition ${condition} is unknown`);
-		let observedRecovery: ObservedRecovery | undefined;
-		if (row.observedRecovery !== undefined) {
-			const r = asObject(row.observedRecovery, `knowledge ${key} recovery`);
-			const kind = str(r, "kind", `knowledge ${key}`);
-			if (kind !== "repair" && kind !== "replacement")
-				fail(`knowledge ${key}: observed recovery kind ${kind} is unknown`);
-			observedRecovery = {
-				processId: str(r, "processId", `knowledge ${key}`),
-				kind: kind as RecoveryKind,
-				consequenceArea: str(r, "consequenceArea", `knowledge ${key}`),
-				startedAt: num(r, "startedAt", `knowledge ${key}`),
-				completesAt: num(r, "completesAt", `knowledge ${key}`),
-			};
-		}
+		const observedRecovery =
+			row.observedRecovery === undefined
+				? undefined
+				: parseObservedRecovery(row.observedRecovery, `knowledge ${key}`);
 		return {
 			observedInstanceOrdinal: num(
 				row,
@@ -1172,9 +1223,16 @@ const parseEnvelope = (raw: unknown, slot: number): GalaxyEnvelope => {
 
 	if (!Array.isArray(o.visited))
 		fail(`galaxy ${slot}: visited is not an array`);
+	const seen = new Set<number>();
 	const visited = (o.visited as unknown[]).map((v) => {
 		if (typeof v !== "number" || !Number.isInteger(v) || v < 0 || v > 255)
 			fail(`galaxy ${slot}: ${String(v)} is not a system index`);
+		// `visit` promises sorted and unique, so the canonical snapshot cannot
+		// carry insertion order. A duplicate arriving from a save would break
+		// that promise on the way back in.
+		if (seen.has(v as number))
+			fail(`galaxy ${slot}: visited system ${String(v)} is listed twice`);
+		seen.add(v as number);
 		return v as number;
 	});
 

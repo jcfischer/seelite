@@ -359,20 +359,68 @@ describe("§9.3 the transition table", () => {
 		const known = readKnowledge(w.galaxies[0], KEY);
 		expect(known?.observedCondition).toBe("operational");
 		expect(known?.observedAt).toBe(0);
-		// Every pair is representable.
-		for (const condition of [
+	});
+
+	test("every objective/observed pair is reachable and independent", () => {
+		// **Built, not asserted into existence.** The first version of this was a
+		// 4x4 loop over `condition === observed || condition !== observed`, which
+		// is true for every input and would have passed on an implementation that
+		// overwrote knowledge on every transition — the exact defect the matrix
+		// was there to rule out. Each cell now drives the objective axis to one
+		// condition and the knowledge axis to another, through the shipped verbs.
+		const CONDITIONS = [
 			"operational",
 			"disabled",
 			"destroyed",
 			"repairing",
-		] as const)
-			for (const observed of [
-				"operational",
-				"disabled",
-				"destroyed",
-				"repairing",
-			] as const)
-				expect(condition === observed || condition !== observed).toBe(true);
+		] as const;
+		/** Drives one carrier to `want`, unwitnessed, from a fresh world. */
+		const driveTo = (
+			want: (typeof CONDITIONS)[number],
+			t: number,
+		): WorldState => {
+			let w = newWorld(WORLD);
+			if (want === "operational") return w;
+			w = applyTransition(w, 0, KEY, {
+				kind: want === "destroyed" ? "destroy" : "disable",
+				occurredAt: t,
+				cause: PIRATE,
+			});
+			if (want === "repairing")
+				w = applyTransition(w, 0, KEY, {
+					kind: "repair-start",
+					occurredAt: t,
+					cause: PIRATE,
+					consequenceArea: "system:3",
+					completesAt: 1_000_000,
+				});
+			return w;
+		};
+		for (const observed of CONDITIONS)
+			for (const condition of CONDITIONS) {
+				// Observe the carrier while it is in `observed`, then move it to
+				// `condition` out of sight — so the two axes hold different values
+				// at the same instant wherever they can.
+				let w = driveTo(observed, 1);
+				w = observe(w, 0, KEY, 2, "visit");
+				expect(readKnowledge(w.galaxies[0], KEY)?.observedCondition).toBe(
+					observed,
+				);
+				const target = driveTo(condition, 1);
+				w = {
+					...w,
+					galaxies: w.galaxies.map((g, i) =>
+						i === 0 ? { ...g, objective: target.galaxies[0].objective } : g,
+					),
+				};
+				expect(effectiveCarrier(w.galaxies[0], KEY, 3).condition).toBe(
+					condition,
+				);
+				expect(readKnowledge(w.galaxies[0], KEY)?.observedCondition).toBe(
+					observed,
+				);
+				expect(readKnowledge(w.galaxies[0], KEY)?.observedAt).toBe(2);
+			}
 	});
 
 	test("repeated destroy/replace cycles preserve instance ordinals", () => {
@@ -460,6 +508,40 @@ describe("§9.3 the transition table", () => {
 		expect(episode?.intervention?.kind).toBe("replacement-start");
 	});
 
+	test("a restore after an interruption opens the next episode", () => {
+		let w = newWorld(WORLD);
+		w = applyTransition(w, 0, KEY, {
+			kind: "disable",
+			occurredAt: 1,
+			cause: PLAYER,
+		});
+		w = applyTransition(w, 0, KEY, {
+			kind: "repair-start",
+			occurredAt: 2,
+			cause: PLAYER,
+			consequenceArea: "system:3",
+			completesAt: 900,
+		});
+		w = applyTransition(w, 0, KEY, {
+			kind: "interrupt",
+			occurredAt: 3,
+			cause: PIRATE,
+			resulting: "disabled",
+		});
+		const interrupted = w.galaxies[0].episodes[KEY];
+		expect(interrupted?.closed).toBe(true);
+		w = applyTransition(w, 0, KEY, {
+			kind: "restore",
+			occurredAt: 4,
+			cause: PLAYER,
+		});
+		const after = w.galaxies[0].episodes[KEY];
+		// Folding into the closed episode overwrote the interruption and credited
+		// the restoration to the disable that opened it.
+		expect(after?.ordinal).toBe((interrupted?.ordinal ?? 0) + 1);
+		expect(after?.initiating.kind).toBe("restore");
+	});
+
 	test("a later unrelated episode replaces the summary, role `none` included", () => {
 		let w = advanceTo(underRepair(), 70);
 		const first = w.galaxies[0].episodes[KEY]?.ordinal ?? 0;
@@ -526,6 +608,28 @@ describe("§9.4 lazy recovery boundaries", () => {
 		const c = canonicalSnapshot(base, 10_000);
 		expect(a).toBe(b);
 		expect(a).toBe(c);
+	});
+
+	test("an explicit completion at `completesAt` arrives after the lazy one", () => {
+		// §4 materializes the due completion *before* a new event at the same
+		// timestamp, so by the time this is validated there is nothing left to
+		// complete. The PR states the behaviour; this is what holds it.
+		expect(() =>
+			applyTransition(underRepair(), 0, KEY, {
+				kind: "repair-complete",
+				occurredAt: 70,
+				cause: PIRATE,
+			}),
+		).toThrow(/nothing to complete/);
+		// One instant earlier it is an ordinary early completion.
+		const early = applyTransition(underRepair(), 0, KEY, {
+			kind: "repair-complete",
+			occurredAt: 69.999,
+			cause: PIRATE,
+		});
+		expect(effectiveCarrier(early.galaxies[0], KEY, 70).condition).toBe(
+			"operational",
+		);
 	});
 
 	test("a lazy completion does not update knowledge", () => {
@@ -849,6 +953,52 @@ describe("§9.8 hard bounds", () => {
 });
 
 // ---------------------------------------------------------------------------
+
+describe("§7 the envelope's writers", () => {
+	test("every writer refuses a galaxy index outside 0..7", () => {
+		const w = newWorld(WORLD);
+		expect(() => setLegalHeat(w, 8, 1, 1)).toThrow(/galaxy/);
+		expect(() => setLegalHeat(w, -1, 1, 1)).toThrow(/galaxy/);
+		expect(() => visit(w, 8, 3)).toThrow(/galaxy/);
+		expect(() => observe(w, 8, KEY, 1, "visit")).toThrow(/galaxy/);
+		expect(() =>
+			applyTransition(w, 8, KEY, {
+				kind: "disable",
+				occurredAt: 1,
+				cause: PLAYER,
+			}),
+		).toThrow(/galaxy/);
+		// The failure the guard prevents: a ninth envelope holding one domain.
+		expect(w.galaxies.length).toBe(8);
+	});
+
+	test("no writer moves the clock past a completion without materializing it", () => {
+		// The state no verb may produce: clock ahead of a `completesAt` that
+		// nothing has written down. `observe` bumped the clock on its own and
+		// made exactly that reachable, and `advanceTo` then materialized against
+		// its raw argument rather than the clamped clock, so asking for an
+		// earlier time left the row behind for good.
+		const observed = observe(underRepair(), 0, KEY, 500, "visit");
+		expect(observed.gameTime).toBe(500);
+		expect(observed.galaxies[0].objective[KEY]?.condition).toBe("operational");
+		expect(advanceTo(observed, 5).galaxies[0].objective[KEY]?.condition).toBe(
+			"operational",
+		);
+		expect(advanceTo(observed, 5).gameTime).toBe(500);
+		// And an `advanceTo` short of the deadline still leaves it repairing.
+		expect(
+			advanceTo(underRepair(), 50).galaxies[0].objective[KEY]?.condition,
+		).toBe("repairing");
+	});
+
+	test("a save listing one system twice is rejected", () => {
+		const raw = serializeWorld(visit(visit(newWorld(WORLD), 0, 3), 0, 11)) as {
+			galaxies: Record<string, unknown>[];
+		};
+		raw.galaxies[0].visited = [3, 3, 11];
+		expect(() => parseWorld(raw)).toThrow(/twice/i);
+	});
+});
 
 describe("§9.9 atomicity and integrity", () => {
 	test("a snapshot whose clock came from elsewhere fails validation", () => {
