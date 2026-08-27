@@ -51,29 +51,6 @@ const STYLE = `
  * Every planet material carries `perfAblate`, so setting it is a walk rather
  * than a lookup. Returns the value it set, for the panel to read back.
  */
-function setUniform(scenes: THREE.Object3D[], name: string, value: number) {
-	for (const scene of scenes)
-		scene.traverse((object) => {
-			const material = (object as THREE.Mesh).material;
-			for (const m of [material].flat()) {
-				const u = (m as THREE.ShaderMaterial)?.uniforms;
-				if (u?.[name]) u[name].value = value;
-			}
-		});
-}
-
-function readUniform(scenes: THREE.Object3D[], name: string): number {
-	let found = 0;
-	for (const scene of scenes)
-		scene.traverse((object) => {
-			const material = (object as THREE.Mesh).material;
-			for (const m of [material].flat()) {
-				const u = (m as THREE.ShaderMaterial)?.uniforms;
-				if (u?.[name]) found = u[name].value as number;
-			}
-		});
-	return found;
-}
 
 function setAblate(scenes: THREE.Object3D[], value: number) {
 	for (const scene of scenes)
@@ -175,6 +152,30 @@ function cycleClass(scenes: THREE.Object3D[], step: number) {
  * stepped to the first entry instead of the next one. The cycle appeared to
  * stick on `terran`.
  */
+/**
+ * The relief path is a `#define`, so switching it recompiles — the same
+ * mechanism as the class cycle, and for a harder reason: `dFdx` inside a branch
+ * on a uniform is undefined on some drivers, so the derivative calls must not
+ * be in the program at all when the four-tap path is selected.
+ */
+function setRelief(scenes: THREE.Object3D[], path: string) {
+	for (const scene of scenes)
+		scene.traverse((object) => {
+			object.userData?.setReliefPath?.(path);
+		});
+}
+
+function readRelief(scenes: THREE.Object3D[]): string {
+	let found = "four-tap";
+	for (const scene of scenes)
+		scene.traverse((object) => {
+			const klass = object.userData?.surfaceClass;
+			if (klass && klass !== "star" && object.userData?.reliefPath)
+				found = object.userData.reliefPath;
+		});
+	return found;
+}
+
 function readClass(scenes: THREE.Object3D[]): string {
 	let found = "";
 	for (const scene of scenes)
@@ -272,29 +273,20 @@ export function mountPerfPanel(targets: PerfTargets) {
 					? "flat"
 					: readAblate(scenes) === 1
 						? "none"
-						: readUniform(scenes, "reliefMode") > 0.5
-							? "screen-space"
-							: "four-tap",
+						: readRelief(scenes),
+			// four-tap -> screen-space -> none -> flat -> four-tap
 			toggle: () => {
-				const step =
-					readAblate(scenes) === 0 && readUniform(scenes, "reliefMode") < 0.5
-						? 0
-						: readAblate(scenes) === 0
-							? 1
-							: readAblate(scenes) === 1
-								? 2
-								: 3;
-				// four-tap -> screen-space -> none -> flat -> four-tap
-				if (step === 0) {
-					setUniform(scenes, "reliefMode", 1);
-				} else if (step === 1) {
-					setUniform(scenes, "reliefMode", 0);
+				const screen = readRelief(scenes) === "screen-space";
+				if (readAblate(scenes) === 0 && !screen) {
+					setRelief(scenes, "screen-space");
+				} else if (readAblate(scenes) === 0) {
+					setRelief(scenes, "four-tap");
 					setAblate(scenes, 1);
-				} else if (step === 2) {
+				} else if (readAblate(scenes) === 1) {
 					setAblate(scenes, 2);
 				} else {
 					setAblate(scenes, 0);
-					setUniform(scenes, "reliefMode", 0);
+					setRelief(scenes, "four-tap");
 				}
 			},
 		},
@@ -338,7 +330,7 @@ export function mountPerfPanel(targets: PerfTargets) {
 			for (const kind of ["atmosphere", "cloud"])
 				for (const s of shells(scenes, kind)) s.visible = true;
 			setAblate(scenes, 0);
-			setUniform(scenes, "reliefMode", 0);
+			setRelief(scenes, "four-tap");
 			setCrater(scenes, false);
 			draw();
 			return;

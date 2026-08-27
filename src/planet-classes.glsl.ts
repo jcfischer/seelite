@@ -23,7 +23,6 @@ import type { SurfaceClass } from "./planet-appearance";
 /** Height-field relief, shared by every class that has any. */
 const RELIEF = /* glsl */ `
 uniform float perfAblate;
-uniform float reliefMode;
 // Perturb the normal from a height function by central differences in the
 // sphere's own tangent frame. Cheaper than displacing geometry and it survives
 // at any tessellation, which matters because the game draws these bodies at
@@ -57,7 +56,8 @@ vec3 reliefNormal(vec3 p, vec3 N, float strength) {
   // Diagnostic ablation, off by default. See planet-surface.ts.
   if (perfAblate > 0.5) return N;
 
-  if (reliefMode > 0.5) {
+#ifdef RELIEF_SCREEN_SPACE
+  {
     /*
      * One height evaluation, and the screen its own difference operator.
      *
@@ -112,12 +112,14 @@ vec3 reliefNormal(vec3 p, vec3 N, float strength) {
     return normalize(N - tilt);
   }
 
+#else
   vec3 axis = abs(p.y) < 0.94 ? vec3(0,1,0) : vec3(1,0,0);
   vec3 t = normalize(cross(axis, p)), b = cross(p, t);
   float e = 0.0035;
   float dt = height(normalize(p + t * e)) - height(normalize(p - t * e));
   float db = height(normalize(p + b * e)) - height(normalize(p - b * e));
   return normalize(N - strength * (dt * t + db * b));
+#endif
 }
 `;
 

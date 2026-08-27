@@ -300,9 +300,29 @@ void main() {
  * this and it is the only way to keep the relief code shared rather than pasted
  * into all six classes that use it.
  */
-export function fragmentFor(surface: SurfaceClass): string {
+/**
+ * How the relief normal gets its gradient. A **compile-time** choice, not a
+ * uniform, and that is a correctness requirement rather than a preference.
+ *
+ * `dFdx`/`dFdy` are undefined inside non-uniform control flow, and a branch on
+ * a uniform is not reliably treated as uniform control flow by every driver —
+ * some evaluate both sides. Selecting the path with a `#define` means the
+ * derivative calls are simply not in the program when they are not wanted, and
+ * the four-tap program is byte-identical to the one that existed before the
+ * screen-space path was added.
+ *
+ * It also removes a branch from every planet fragment, which the uniform
+ * version was paying for on every class including the ones with no relief.
+ */
+export type ReliefPath = "four-tap" | "screen-space";
+
+export function fragmentFor(
+	surface: SurfaceClass,
+	relief: ReliefPath = "four-tap",
+): string {
 	return /* glsl */ `
 precision highp float;
+${relief === "screen-space" ? "#define RELIEF_SCREEN_SPACE 1" : ""}
 ${VARYINGS_GLSL}
 ${NOISE_GLSL}
 ${LIGHT_GLSL}

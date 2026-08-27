@@ -30,6 +30,7 @@ import {
 	SURFACE_VERTEX,
 	fragmentFor,
 } from "./planet-shaders";
+import type { ReliefPath } from "./planet-shaders";
 
 /**
  * The tessellation a body and its shells share, and the reason it is exported.
@@ -266,12 +267,18 @@ const ringPlane = () => {
  * two bodies share one compiled program; the materials stay per body, because
  * the uniforms do.
  */
-const fragmentCache = new Map<SurfaceClass, string>();
-const cachedFragment = (surface: SurfaceClass): string => {
-	const hit = fragmentCache.get(surface);
+// Keyed by class *and* relief path: the path is a #define, so the two produce
+// different programs and one cache slot per class would hand back the wrong one.
+const fragmentCache = new Map<string, string>();
+const cachedFragment = (
+	surface: SurfaceClass,
+	relief: ReliefPath = "four-tap",
+): string => {
+	const key = `${surface}:${relief}`;
+	const hit = fragmentCache.get(key);
 	if (hit !== undefined) return hit;
-	const source = fragmentFor(surface);
-	fragmentCache.set(surface, source);
+	const source = fragmentFor(surface, relief);
+	fragmentCache.set(key, source);
 	return source;
 };
 
@@ -319,10 +326,6 @@ export function buildBodyVisual(
 		// #59 could not take — its runner had no GPU, and it said so.
 		// 0 normally; 1 drops the normal perturbation, 2 drops the surface noise
 		// entirely. Read by every class through `RELIEF`.
-		// 0 = four-tap central differences, 1 = one tap plus screen-space
-		// derivatives. See `reliefNormal` in `planet-classes.glsl.ts` for what
-		// each costs and what the second gives up.
-		reliefMode: { value: 0 },
 		perfAblate: {
 			value: perf === "flat" ? 2 : perf === "norelief" ? 1 : 0,
 		},
@@ -369,6 +372,19 @@ export function buildBodyVisual(
 	// on the material rather than a value the panel can set: the panel should
 	// not have to know that.
 	planet.userData.surfaceClass = look.surface;
+	// The relief path is compiled in, like the class, so switching it is a
+	// shader swap. Kept beside the class so one swap can carry both.
+	planet.userData.reliefPath = "four-tap" as ReliefPath;
+	planet.userData.setReliefPath = (next: ReliefPath) => {
+		if (look.surface === "star") return;
+		const material = planet.material as THREE.ShaderMaterial;
+		material.fragmentShader = cachedFragment(
+			planet.userData.surfaceClass,
+			next,
+		);
+		material.needsUpdate = true;
+		planet.userData.reliefPath = next;
+	};
 	planet.userData.setSurfaceClass = (next: SurfaceClass) => {
 		// A star keeps its own shader. It is not a planet surface, it is the
 		// brightest thing in the frame and therefore what the bloom pass is
@@ -376,7 +392,7 @@ export function buildBodyVisual(
 		// term the panel is trying to hold still while another is measured.
 		if (look.surface === "star") return;
 		const material = planet.material as THREE.ShaderMaterial;
-		material.fragmentShader = cachedFragment(next);
+		material.fragmentShader = cachedFragment(next, planet.userData.reliefPath);
 		material.needsUpdate = true;
 		planet.userData.surfaceClass = next;
 	};
