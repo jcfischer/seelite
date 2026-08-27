@@ -682,6 +682,7 @@ class Game {
 	private animationFrame = 0;
 	/** Freeze the frame loop; the caller renders manually with a fixed sim state. */
 	probeFreezeLoop() {
+		if (!this.combatPrototypeEnabled) return;
 		if (this.animationFrame) {
 			cancelAnimationFrame(this.animationFrame);
 			this.animationFrame = 0;
@@ -689,6 +690,7 @@ class Game {
 	}
 	/** Resume the frame loop. */
 	probeResumeLoop() {
+		if (!this.combatPrototypeEnabled) return;
 		if (!this.animationFrame) this.animate();
 	}
 	readonly audio = new AudioFX();
@@ -1180,30 +1182,32 @@ class Game {
 		this.buildBodies();
 		this.buildShip();
 		this.buildCockpit();
-		this.combatTargetMesh = new THREE.Mesh(
-			new THREE.ConeGeometry(0.45, 1.3, 4),
-			new THREE.MeshStandardMaterial({
-				color: 0x9d2f35,
-				emissive: 0x450308,
-				emissiveIntensity: 1.2,
-			}),
-		);
-		this.combatTargetMesh.name = "combat-prototype-target";
-		this.combatTargetMesh.rotation.x = Math.PI / 2;
-		this.nearScene.add(this.combatTargetMesh);
-		this.combatLaser = new THREE.Line(
-			new THREE.BufferGeometry().setFromPoints([
-				new THREE.Vector3(0, 0, -0.6),
-				new THREE.Vector3(0, 0, -12),
-			]),
-			new THREE.LineBasicMaterial({
-				color: 0x74eaff,
-				transparent: true,
-				opacity: 0.95,
-			}),
-		);
-		this.combatLaser.name = "combat-prototype-laser";
-		this.nearScene.add(this.combatLaser);
+		if (this.combatPrototypeEnabled) {
+			this.combatTargetMesh = new THREE.Mesh(
+				new THREE.ConeGeometry(0.45, 1.3, 4),
+				new THREE.MeshStandardMaterial({
+					color: 0x9d2f35,
+					emissive: 0x450308,
+					emissiveIntensity: 1.2,
+				}),
+			);
+			this.combatTargetMesh.name = "combat-prototype-target";
+			this.combatTargetMesh.rotation.x = Math.PI / 2;
+			this.nearScene.add(this.combatTargetMesh);
+			this.combatLaser = new THREE.Line(
+				new THREE.BufferGeometry().setFromPoints([
+					new THREE.Vector3(0, 0, -0.6),
+					new THREE.Vector3(0, 0, -12),
+				]),
+				new THREE.LineBasicMaterial({
+					color: 0x74eaff,
+					transparent: true,
+					opacity: 0.95,
+				}),
+			);
+			this.combatLaser.name = "combat-prototype-laser";
+			this.nearScene.add(this.combatLaser);
+		}
 		this.warp = warpField(this.world.seed);
 		this.nearScene.add(this.warp.object);
 		// Something is selected on frame one. §6 makes selection a convenience
@@ -3419,28 +3423,29 @@ class Game {
 		// being pinned there, its absence is a bug that takes an hour to see.
 		this.stars.position.copy(this.backdropCamera.position);
 		// A deliberate prototype target gives the balance controls a visible object
-		// without borrowing #35's display-only traffic as a combat entity.
-		this.combatTargetMesh.position
-			.set(
-				3 * Math.sin(this.combat.elapsed * 0.7),
-				1.2 * Math.cos(this.combat.elapsed * 1.1),
-				-12,
-			)
-			.applyQuaternion(viewRotation);
-		this.combatTargetMesh.visible =
-			this.combatPrototypeEnabled && this.view === "cockpit";
-		const targetMaterial = this.combatTargetMesh
-			.material as THREE.MeshStandardMaterial;
-		const firingWeapon = this.combat.firing !== null;
-		targetMaterial.emissive.setHex(firingWeapon ? 0x9df6ff : 0x450308);
-		targetMaterial.emissiveIntensity = firingWeapon ? 4 : 1.2;
-		this.combatTargetMesh.scale.setScalar(firingWeapon ? 1.25 : 1);
-		this.combatLaser.quaternion.copy(viewRotation);
-		this.combatLaser.visible =
-			this.combatPrototypeEnabled &&
-			this.view === "cockpit" &&
-			this.combat.firing !== null &&
-			!this.probeForceLaserHidden;
+		// without borrowing #35's display-only traffic as a combat entity. It is
+		// built only in prototype mode, so the whole update is gated too.
+		if (this.combatPrototypeEnabled) {
+			this.combatTargetMesh.position
+				.set(
+					3 * Math.sin(this.combat.elapsed * 0.7),
+					1.2 * Math.cos(this.combat.elapsed * 1.1),
+					-12,
+				)
+				.applyQuaternion(viewRotation);
+			this.combatTargetMesh.visible = this.view === "cockpit";
+			const targetMaterial = this.combatTargetMesh
+				.material as THREE.MeshStandardMaterial;
+			const firingWeapon = this.combat.firing !== null;
+			targetMaterial.emissive.setHex(firingWeapon ? 0x9df6ff : 0x450308);
+			targetMaterial.emissiveIntensity = firingWeapon ? 4 : 1.2;
+			this.combatTargetMesh.scale.setScalar(firingWeapon ? 1.25 : 1);
+			this.combatLaser.quaternion.copy(viewRotation);
+			this.combatLaser.visible =
+				this.view === "cockpit" &&
+				this.combat.firing !== null &&
+				!this.probeForceLaserHidden;
+		}
 
 		// The star, resolved once at build time rather than scanned for per frame:
 		// every body's sun direction is measured from it, and there is no path
@@ -3954,6 +3959,7 @@ class Game {
 			this.cockpitPrompt.reset();
 		}
 		if (this.combatPrototypeEnabled) {
+			ctx.save();
 			ctx.font = "12px ui-monospace, monospace";
 			ctx.fillStyle = "rgba(255, 214, 120, 0.9)";
 			ctx.textAlign = "center";
@@ -3992,7 +3998,7 @@ class Game {
 				ctx.measureText(combatStatus).width,
 				ctx.font,
 			);
-			ctx.textAlign = "left";
+			ctx.restore();
 		} else {
 			this.combatOverlayStatus.reset();
 		}
