@@ -43,7 +43,8 @@ import {
 } from "../src/market";
 import { LOCAL_CARRIER_ID } from "../src/station";
 import { type Station, generateContents } from "../src/system";
-import { codeOf } from "./lib/source-scan";
+import { readdirSync } from "node:fs";
+import { codeOf, repoPath } from "./lib/source-scan";
 
 const WORLD = 0x5ee11e;
 
@@ -216,11 +217,21 @@ describe("§5.1 the market is independent of draw order elsewhere", () => {
 		// nothing subtler — a tag destructured under another name, or a fourth
 		// file, would pass. It is evidence that the generator does not reach for
 		// the market stream, not a proof that it cannot.
-		// `station.ts` is scanned too: it is concretely part of station
-		// generation — `generateStations` consumes its geometry, spin range,
-		// fence eligibility and `LOCAL_CARRIER_ID` — so leaving it out was a
-		// named gap rather than the generic one the comment above admits.
-		for (const file of ["src/system.ts", "src/galaxy.ts", "src/station.ts"]) {
+		// **Globbed, not listed.** A hard-coded trio was the first version and
+		// then the second, each time missing a file that was concretely part of
+		// generation; a `src/system-bodies.ts` added tomorrow would inherit no
+		// guard at all. Every module except the market's own is scanned, so a
+		// new one is covered by default rather than by somebody remembering.
+		// Two files are excluded and both are the subject rather than a
+		// generator: `market.ts` is the one module that *should* draw from the
+		// tag, and `domains.ts` is where the tag is declared.
+		const scanned = readdirSync(repoPath("src"))
+			.filter(
+				(f) => f.endsWith(".ts") && f !== "market.ts" && f !== "domains.ts",
+			)
+			.map((f) => `src/${f}`);
+		expect(scanned.length).toBeGreaterThan(15);
+		for (const file of scanned) {
 			const code = codeOf(file);
 			expect(code).not.toContain("DOMAIN.MARKET");
 			expect(code).not.toContain('DOMAIN["MARKET"]');

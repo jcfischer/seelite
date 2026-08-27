@@ -624,6 +624,13 @@ An exploiting player selects the tail, not the median, so "waiting is worth 15%
 of flying at the median" says nothing about whether waiting-at-the-right-moment
 is a strategy.
 
+**Two limits on the sample, both of which cut the same way.** The run stops at
+the capital milestone, so every decision point behind the table is a trader
+still under 90 minutes and still capital-constrained — the hold-limited late
+game, where a hold sitting idle costs least and parking for a re-roll is
+therefore cheapest, is never sampled. And the trader is a one-hop rate
+maximiser. Neither limit makes waiting look better than it is.
+
 What the measurement does support is narrower. The greedy trader **takes the
 single best-rate option at each decision**, so it does take a wait whenever a
 wait is the best thing on the table — it did so twice in 143 — and the 48–85
@@ -909,8 +916,10 @@ out cost what they cost. Hyperspace wind-up (15 s) and the dock-and-market stop
 (45 s) are the only modelled numbers, and the second is **swept** rather than
 conceded, because it is paid on every hop and is half the clock.
 
-It is a **ceiling, not a player**: it sees every price it can reach, fears no
-pirate and never misjudges a docking. A target is falsified by a ceiling that is
+It is a **ceiling, not a player**: it fears no pirate, never misjudges a docking,
+and takes the best-rated option every time. It does **not** see every price it
+can reach — the neighbour list is truncated at eight, which bit on 39.2% of
+decisions — and an earlier draft of this line said it did. A target is falsified by a ceiling that is
 too slow and merely unproven by one that is too fast.
 
 | | measured, world `0x5ee11e`, four galaxies |
@@ -918,7 +927,7 @@ too slow and merely unproven by one that is too fast.
 | capital covers the full kit | **48–85 min** against §8's 1.5–2.5 h |
 | Cr/min | 225–435 |
 | hops chosen: interstellar : intra-system | 121 : 20 — **not evidence, see below** |
-| dock cost 15→90 s (galaxy 0) | 51 → 94 min |
+| dock cost 15→90 s, all four | 29–87 → 64–116 min |
 
 **The figure is the capital milestone, not a fit-out, and the distinction was
 forced by a review finding.** An earlier version bought equipment wherever the
@@ -933,8 +942,10 @@ the pump — how long the economy takes to yield `fullKitCr()` — and that is w
 the table reports. §8's "about fifteen clean runs" is a claim about the pump, so
 they are the same question.
 
-The last two rows are **galaxy 0 alone** where they say so; the first two span
-all four.
+Every row spans all four galaxies. A draft swept the dock cost over galaxy 0
+alone and quoted §6's first-purchase time from the same single column; both are
+four-galaxy figures now, because a one-galaxy number set beside a four-galaxy
+range reads as the same kind of claim and is not.
 
 **The hop ratio is not evidence for §5.4, and a draft of this section offered it
 as such.** `intraOptions` enumerates the one or two other stations in the current
@@ -1100,11 +1111,13 @@ position, name and station silently.
    `DEFICIT_HALF_LIFE` in the loop. **"Waiting never beats flying" turned out to
    be false as written**: `scripts/measure-greedy-trader.ts` found waiting
    winning at 2 of 143 decision points, by up to 4.679×, against a median of
-   0.150×. §5.5 records what that is worth, and the answer is not "nothing":
-   the exploit exists and is merely rare.
-   §5.5 says "almost never" now and carries the distribution. The joint that
-   remains is that the constants are still *chosen*: the sim tells you when a
-   change breaks something, not what the values should be.
+   0.150×, and **winning at every dock cost in the sweep** — 2 to 7 wins per
+   run, with the tail growing from 3.76× to 8.31× as the stop lengthens. §5.5
+   records what that is worth, and the answer is not "nothing": the exploit
+   exists and is merely rare; §5.5 says "almost never" now and carries the
+   distribution. The joint that remains is that the constants are still
+   *chosen*: the sim tells you when a change breaks something, not what the
+   values should be.
 6. **The deficit makes market state unreproducible from the seed.** §5.5. The
    first such state in seelite. It is sparse and bounded, but it is a door that
    is now open.

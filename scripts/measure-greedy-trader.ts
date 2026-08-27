@@ -142,7 +142,9 @@ const SUB_TONNE = new Set(["Gold", "Platinum", "Gem-Stones"]);
  * level — which is why it saturates at `displayTL = 7` and why §4.2 rejected
  * a per-type shift on it.
  */
-const UNIVERSAL_ORDER = [
+type EquipmentName = (typeof EQUIPMENT)[number]["name"];
+
+const UNIVERSAL_ORDER: EquipmentName[] = [
 	"Missile",
 	"Large Cargo Bay",
 	"Extra Pulse Laser",
@@ -166,6 +168,10 @@ const UNIVERSAL_ORDER = [
 const sellsIt = (item: Equipment, port: Port): boolean => {
 	if (item.scope !== "universal") return port.station.type === item.scope;
 	const slot = 1 + UNIVERSAL_ORDER.indexOf(item.name);
+	// Typed against `EQUIPMENT`'s own names, so a rename in `src/market.ts` is a
+	// compile error here rather than this throw at run time. The throw stays for
+	// the case the type cannot see: an item added to `EQUIPMENT` as universal
+	// and not to this order.
 	if (slot === 0) throw new Error(`${item.name} is not in the universal order`);
 	return slot < Math.min(port.record.displayTL + 3, 10);
 };
@@ -553,6 +559,9 @@ const flyingOptions = (
  *
  * The wait earns nothing while it lasts and the deficit fades while you sit;
  * both are in the rate below, because the wait minutes are in its denominator.
+ * The fading needs no code here — the deficit map is shared and `readDeficit`
+ * decays from `updatedAt` against whatever clock it is handed, which is the
+ * post-wait one.
  */
 function waitOption(
 	here: Port,
@@ -853,70 +862,84 @@ if (results[0].r.upgrades.length === 0) console.log("  none — nothing bought")
 		);
 }
 
+/** One derivation of the wait distribution, for the two places that report it.
+ *  Two copies of the "won" predicate would have to move together the day it
+ *  changes. */
+const waitStats = (input: readonly number[]) => {
+	const r = [...input].sort((a, b) => a - b);
+	const at = (q: number) =>
+		r.length === 0
+			? 0
+			: finite("ratio", r[Math.min(r.length - 1, Math.floor(q * r.length))]);
+	return {
+		n: r.length,
+		median: at(0.5),
+		p95: at(0.95),
+		max: at(1),
+		won: r.filter((x) => x > 1).length,
+	};
+};
+
 console.log("\n§5.5 — waiting against flying");
-const ratios = results.flatMap(({ r }) => r.waitRatios).sort((a, b) => a - b);
-const waited = results.reduce((s, { r }) => s + r.waits, 0);
-const flew = results.reduce((s, { r }) => s + r.hops, 0);
-if (ratios.length === 0) {
+const all = waitStats(results.flatMap(({ r }) => r.waitRatios));
+const waited = results.reduce((sum, { r }) => sum + r.waits, 0);
+const flew = results.reduce((sum, { r }) => sum + r.hops, 0);
+if (all.n === 0) {
 	console.log("  no decision point ever offered a profitable wait.");
 } else {
-	const at = (q: number) =>
-		finite(
-			"ratio",
-			ratios[Math.min(ratios.length - 1, Math.floor(q * ratios.length))],
-		);
-	const won = ratios.filter((r) => r > 1).length;
+	console.log(`  decision points where a wait was on the table: ${all.n}`);
 	console.log(
-		`  decision points where a wait was on the table: ${ratios.length}`,
+		`  wait rate / best flight rate — median ${all.median.toFixed(3)}×, ` +
+			`p95 ${all.p95.toFixed(3)}×, max ${all.max.toFixed(3)}×`,
 	);
 	console.log(
-		`  wait rate / best flight rate — median ${at(0.5).toFixed(3)}×, ` +
-			`p95 ${at(0.95).toFixed(3)}×, max ${at(1).toFixed(3)}×`,
-	);
-	console.log(
-		`  points where waiting won: ${won} (${((100 * won) / ratios.length).toFixed(1)}%)`,
+		`  points where waiting won: ${all.won} (${((100 * all.won) / all.n).toFixed(1)}%)`,
 	);
 	console.log(`  hops actually spent waiting: ${waited} of ${flew + waited}`);
 	console.log(
-		won === 0
+		all.won === 0
 			? "  waiting never beat flying — §5.5's intent holds at these constants."
 			: "  **waiting beat flying somewhere** — §5.5's intent is not unconditional " +
 					"at these constants. The share above is what it is worth.",
 	);
 }
 
-// The dock cost is paid on every hop and is half the clock, so the fit-out
-// figure above is a claim about it as much as about the economy. Swept rather
-// than conceded in prose: if 45 s is wrong by 2×, this is what moves.
+// The dock cost is paid on every hop and is half the clock, so the milestone
+// above is a claim about it as much as about the economy. Swept rather than
+// conceded in prose: if 45 s is wrong by 2×, this is what moves.
+//
+// **Across all four galaxies, not galaxy 0.** A one-galaxy sweep was the first
+// version, and galaxy 0 is the one that never produces a winning wait — so it
+// reported a null result drawn from a population without the phenomenon, and
+// then concluded the phenomenon was not an artefact of the constant. The wait
+// distribution is swept with the milestone because a longer dock stop makes
+// flying worse relative to waiting, which is exactly the direction §5.5 argues
+// about.
 console.log(
-	"\ndock+market cost, swept (galaxy 0) — the modelled number that decides",
+	`\ndock+market cost, swept over ${GALAXIES.length} galaxies — the modelled number that decides`,
 );
-console.log("  dock s   minutes   Cr/min   kit affordable   waits won  max×");
+console.log("  dock s   kit affordable      Cr/min   waits won    max×");
 for (const dock of [15, 30, 45, 60, 90]) {
-	const r = run(worldSeed, 0, hours, dock);
-	const { rate, kit } = summarize(r);
-	// **The wait distribution is swept too.** §5.5 quotes it to three decimals
-	// while this document calls the dock cost "the modelled number that
-	// decides" — and a longer dock stop makes flying worse relative to waiting,
-	// which is exactly the direction §5.5 argues about. Measuring the milestone
-	// against it and not the ratio would have been choosing where to look.
-	const ratios = [...r.waitRatios].sort((a, b) => a - b);
-	const won = ratios.filter((x) => x > 1).length;
-	const max = ratios.length > 0 ? ratios[ratios.length - 1] : 0;
+	const swept = GALAXIES.map((g) => run(worldSeed, g, hours, dock));
+	const kits = swept
+		.map((r) => summarize(r).kit)
+		.filter((k): k is number => k !== null);
+	const rates = swept.map((r) => summarize(r).rate);
+	const stats = waitStats(swept.flatMap((r) => r.waitRatios));
 	console.log(
-		`${String(dock).padStart(8)}${finite("minutes", r.minutes).toFixed(1).padStart(10)}` +
-			`${rate.toFixed(1).padStart(9)}` +
-			`   ${(kit === null ? "not in cap" : `${kit.toFixed(0)} min`).padEnd(15)}` +
-			`${won}/${ratios.length}`.padStart(9) +
-			`${finite("max", max).toFixed(2)}×`.padStart(9),
+		`${String(dock).padStart(8)}   ` +
+			(kits.length === GALAXIES.length
+				? `${finite("kit", Math.min(...kits)).toFixed(0)}–${finite("kit", Math.max(...kits)).toFixed(0)} min`
+				: `${kits.length}/${GALAXIES.length} in cap`
+			).padEnd(15) +
+			`${finite("rate", Math.min(...rates)).toFixed(0)}–${finite("rate", Math.max(...rates)).toFixed(0)}`.padStart(
+				10,
+			) +
+			`${stats.won}/${stats.n}`.padStart(12) +
+			`${stats.max.toFixed(2)}×`.padStart(9),
 	);
 }
 
-const totalMin = results.reduce((s, { r }) => s + r.minutes, 0);
-const modelled = results.reduce(
-	(s, { r }) => s + r.jumpMinutes + r.dockMinutes,
-	0,
-);
 {
 	// Over the four reported runs only — the dock sweep's five extra runs are
 	// not in this figure, which is what made the first version of it wrong.
@@ -928,6 +951,11 @@ const modelled = results.reduce(
 			"— where it bit, the trader did not see the whole jump range.",
 	);
 }
+const totalMin = results.reduce((sum, { r }) => sum + r.minutes, 0);
+const modelled = results.reduce(
+	(sum, { r }) => sum + r.jumpMinutes + r.dockMinutes,
+	0,
+);
 console.log(
 	`\nmodelled time as a share of the total: ${((100 * modelled) / Math.max(totalMin, 1e-9)).toFixed(1)}% ` +
 		"— the rest is the generator's own geometry, estimated by `legSeconds`.",
