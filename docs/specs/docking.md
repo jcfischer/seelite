@@ -19,14 +19,22 @@ here and marked as such, so a later reader can tell a choice from a consequence.
 ## 0. What this owns, and what it does not
 
 **Owns:** the docking checks and their tolerances; the closing-speed gate; the
-failure model; station spin range and dockable geometry; the clearance
-protocol; and the docking computer's behaviour.
+failure model; **what a successful entry does** (§12); station spin range and
+dockable geometry; the clearance protocol; and the docking computer's behaviour.
 
 **Does not own:** which interactions exist and which type gets which — #13 §6
 settled that at two, and this spec builds two. Nor the legal-status predicate
 behind the shipyard scan, the absolute damage scale, or NPC traffic (all #8);
 nor the equipment price table (#7 §equipment, unamended by this spec); nor the
-HUD (fog — §8 records what it owes docking without designing it).
+HUD (fog — §8 records what it owes docking without designing it); nor the
+**collision system** (§12.3 states the boundary and hands it on); nor what the
+player *sees* once docked, which is the market-screen question (#70).
+
+**§12 was added after this spec was built and flown** (#73, 2026-08-27). The
+first version owned the failure completely — §2.0 specifies a repel down to the
+sign of a velocity component — and gave the success case a boolean. Flying it
+found the ship stopping dead at the aperture plane and hanging there, which was
+not a defect against this spec but the shape of its silence.
 
 ---
 
@@ -56,6 +64,10 @@ and #10 recorded that as binding on this node before it was written.
 ---
 
 ## 2. The failure model
+
+**The success case is §12.** This section is the failure half and nothing else;
+the two were written eight days apart and the asymmetry misled a reader once
+already, so the pointer is here rather than only in §0.
 
 **Decision D1: a failed entry damages the ship. It does not destroy it.**
 
@@ -151,6 +163,16 @@ cone is not a containment test: at §5's 0.6 km core radius, check 2's 35° admi
 about 0.42 km of lateral offset — four times the slot's half-length — so without
 check 5 a ship flying squarely into the *hull face* satisfies every angle, every
 sign and the gate, and docks through solid structure.
+
+**That justification does not survive collision, and the check does** (#73,
+§12.3). Once the hull is solid, the ship in the paragraph above stops at the
+hull and never reaches the plane, so check 5 stops being the thing that prevents
+the failure and becomes defence in depth behind a system that prevents it
+earlier. Keep it: the plane is a mathematical construct and a collision mesh is
+an approximation of a drawn shape, and the two agreeing everywhere is an
+assumption rather than a guarantee. But when collision lands, the browser probe
+for this row (§9.2.4) is measuring a collision, not a failed entry, and it must
+be re-pointed rather than left to pass for a reason that has moved.
 
 **Check 4 compares against the axis-*line*, not an oriented vector.** The slot is
 a 0.12 × 0.07 km rectangle, so a ship rolled 180° is a geometrically identical
@@ -450,6 +472,14 @@ It engages inside `VICINITY_KM` with a grant in hand, flies the approach, and
 docks — roughly the profile a competent pilot flies, no ceremony and no penalty.
 Any control input cancels it.
 
+**"No ceremony" is a comparison, not an absolute** (#73). §12's arrival takes
+four to six seconds and it is the *same* arrival a hand-flown entry gets, because
+§12.1 hands the ship over at the plane whoever was flying. So the computer is
+exactly as fast as a pilot and exactly as slow, which is what this decision
+actually protects: §7.1 records that "a slow scripted arc that made the computer
+safer but never faster" was on the table and declined, and a shared arc is not
+that arc. What D4 forbids is ceremony the computer pays *and a pilot does not*.
+
 **Two legs, and the corridor between them is a cone** (implementation finding,
 2026-08-27). The computer lines up on a fixed point out along the axis and then
 runs in at the slot; what is not obvious until it is flown is what decides the
@@ -646,3 +676,189 @@ before merge.
    than invented here, because it is denominated in #8's pools and #7's table is
    deliberately unamended. Until it lands, D1's failure model is *survivable*
    but not yet *costly* — the punishment is real and the bill is unwritten.
+
+---
+
+## 12. The successful entry
+
+**Decided with the principal on 2026-08-27, on node
+[#73](https://github.com/jcfischer/seelite/issues/73), after flying #68.** Eleven
+decisions, one at a time. Anything below that was not decided in that session is
+derived here and marked as such.
+
+The trigger was a bug report that was not a bug: *"ship does not fly into
+Coriolis station but hovers just over rotating dock"*. That is exactly what this
+spec asked for, because it asked for nothing.
+
+### 12.1 The arrival: the game takes the ship at the plane
+
+**Decision E1: the player sees the inside of a station, and it is a *throat*,
+not a bay.** The ship visibly enters the slot and the handover to the docked
+state happens inside it. A rendered bay with a landing pad was on the table and
+declined: it needs interior geometry per form, a second control problem inside a
+rotating drum, and collision — and it puts a second skill test *after* the one
+the six checks exist to be.
+
+**Decision E2: crossing the plane hands the ship over.** The arrival is
+scripted and nothing can fail during it, for both halves of one reason: the
+skill test ended at the crossing, and a player who flew a clean entry and then
+clipped a wall would be failing a test added after they passed.
+
+Two consequences that decide implementations:
+
+- **The arrival moves the ship in *sim*, not in the renderer.** This is the
+  repo's standing rule rather than a choice made here: the authoritative world is
+  float64 kilometres outside the scene graph and nothing reads a position back
+  out of an `Object3D`. So it is a position law of the shape `cruise.ts` already
+  uses — pure, no memory, sub-stepped, session state on the game — and therefore
+  headless-testable rather than a thing only a probe can see.
+- **One path, not two.** The docking computer and a hand-flown entry produce the
+  same arrival, because this fires on the crossing and neither is flying by then.
+
+**Decision E3: the arrival is long enough to be the payoff — four to six
+seconds.** Chosen against a two-second handover. The approach is the game's
+central skill loop and what it ends in should be worth having flown. §7's
+amendment is what keeps this from reopening D4.
+
+**Decision E4: it is skippable once the player has arrived at that *type* of
+station before.** Not per station: E7's throat is shared, so a per-station gate
+would make the player re-watch an identical five seconds at each of hundreds of
+stations — novelty rewarded for something that is not novel. Four first-times —
+trade, shipyard, refinery, outpost — match the gate to what actually differs.
+
+The flag is **per-galaxy player state, not a per-carrier-slot row**:
+`persistent-world-state.md` §1 already names "visited flags" among the facts the
+overlay stores and §7 puts "player knowledge and visited state" in the envelope,
+so this is four bits in a domain that exists rather than a new one.
+
+### 12.2 The docked state, and leaving
+
+**Decision E5: docked means flight is suspended.** The arrival parks the ship at
+a defined docked position — inside the throat for a slot, on the deck for a pad —
+and the throttle, the stick and the docking computer all go inert.
+
+**The world keeps running.** #10's constraint is binding and unchanged: sim time
+is never compressed, so the clock advances and the bodies stay on their orbits
+while the player is docked. Pausing was on the table and declined for that reason.
+
+**What the player sees while docked is #70's**, not this spec's. This section owns
+the ship; the market screen and the panel hierarchy own the screen. Stated
+explicitly because the last time that boundary was left implicit —
+`economy-trade.md` §11 handing the market screen to the HUD node,
+`hud-and-scanner.md` §0 declining it — the screen ended up owned by nobody.
+
+**Launch is the mirror of the arrival** and is built with it rather than being its
+own decision: the ship leaves the way it came in, and flight resumes when it does.
+**`UNDOCK_CLEAR_KM` retires the day that lands.** #68 shipped it as an anti-latch
+measure and said so in its own docstring — it exists because `dockedAt` was set
+and never cleared, not because leaving was designed.
+
+### 12.3 Collision: a second system, and the boundary between them
+
+**Decision E6: collision is real, it is a separate system, and it is not this
+spec's.** Flying into a station is a collision. Today nothing collides with
+anything — `SURFACE_MARGIN` is cruise-only (#10's) and normal flight passes
+through every body in the game.
+
+The boundary, stated so neither system has to guess:
+
+| Surface | Owner |
+|---|---|
+| The aperture rectangle, at the plane | **§2 and §3 of this spec** — the six checks and the failed-entry model |
+| Hull, rim, drydock frame, and every other body | **The collision system** |
+
+§2.0's semantics are why this is a boundary rather than a merge: a failed entry
+repels with `v_axial` reversed and halved, damages on §2.1's quadratic above a
+floor, **keeps its clearance grant**, and is guaranteed never to leave the ship
+inside the station. A generic collision reproduces none of that, and all of it was
+decided in #9's grilling.
+
+§3 records what collision does to check 5's *justification*, and §9.2.4 is the
+probe that has to be re-pointed when it lands.
+
+### 12.4 What the arrival is made of
+
+**Decision E7: one shared throat**, built by extending the aperture recess.
+`station-mesh.ts`'s `buildAperture` is already one function called by all eleven
+slot-bearing forms at a per-form face depth, and it reads `STATION_GEOMETRY`, so
+the throat inherits the aperture's dimensions and a retune of the slot moves it.
+Eleven distinct interiors were declined: form-authoring effort spent on a surface
+seen for a few seconds down one axis, and #56 withdrew its outline-identity gate
+on the neighbouring principle that a metric should not drive a design.
+
+**Decision E8: pads get a touchdown, not a throat.** A pad is an exterior deck —
+the Warren's notch, the Derrick's top deck — with no inside. So the rule is one
+and the presentation is two: crossing the aperture with every check passed hands
+the ship to a scripted arrival, which flies *into* a slot and *down onto* a pad.
+
+**This does not reopen `station-types.md` §6.** That decision fixed the number of
+docking *interactions* at two, and an interaction there is an approach and its
+checks — which stay exactly as ratified, the pad being the slot minus check 4
+(`tests/docking.test.ts` §9.1.6 pins it). An arrival is downstream of the checks.
+
+### 12.5 The name shield
+
+**Decision E9: a station carries a generated name, and the arrival shows it.**
+`Station.id` is `"station-trade"` and `station.ts` is explicit that it is a lookup
+key rather than a name; `localCarrierId` is the persistence key. The name is a
+third thing.
+
+**Derived from the system and parent-planet name, never drawn** (derived here, not
+decided in session). A new draw from any existing domain tag shifts every station
+generated after it and moves `tests/station-orbits.test.ts`'s committed fixture —
+the coupling `station.ts` documents at length, and the reason the refinery draws a
+spin it discards. A name that is a pure function of names that already exist costs
+no stream.
+
+**Decision E10: the shield is a quad built in `station-mesh.ts`, with its texture
+supplied by the renderer.** That module is headless-tested and contains no
+`document` reference at all; a `CanvasTexture` in it would force the
+`typeof document !== "undefined"` branch `station-visuals.ts`'s docstring names as
+the failure mode — *"the branch that ships to players would be the one no test ever
+takes"*. So the geometry is arithmetic and stays in the tested module, and the
+pixels are display and are filled by `main.ts`, which already draws text to
+canvases for the cockpit. `buildStationMesh` already returns a handle the render
+loop writes into every frame; the nameplate's `map` joins it.
+
+**Decision E11: the shield appears at the mouth *and* inside the throat.** The one
+at the mouth does a second job: §3.2 records that the tolerances were set wide
+partly because the player has "no visual referent at all" for checks 2 and 4, and
+a lit rectangle on the docking face says which face docks and roughly how the slot
+is rolled.
+
+**It is not a HUD cue and #69 may not treat it as one.** A sign is legible at a few
+kilometres at best; check 2's cone opens 0.42 km of lateral offset at the plane. It
+orients, it does not measure. §8's two cues are still owed.
+
+### 12.6 Verification obligations
+
+Two tiers, as everywhere else in this spec.
+
+**Headless.** The arrival is a sim position law, so it is arithmetic: that it
+terminates; that it ends at the docked position for both a slot and a pad; that
+nothing re-evaluates §3's checks during it (it begins after them); that flight
+inputs do nothing while docked; and that launch returns the ship to a state from
+which §3's checks can be evaluated again. The skip gate is four booleans and gets
+a table.
+
+**Browser probe.** That the throat is drawn behind every slot-bearing form and the
+deck under every pad; that the shield is legible at the mouth on approach; and that
+a scripted approach ends *inside* the station rather than hanging at the plane —
+the regression this whole section exists for, and a spatial claim, so it gets the
+spatial tier.
+
+### 12.7 Weak joints in this section
+
+1. **The arrival's duration is chosen and unflown** (E3). Four to six seconds is a
+   judgement about a loop nobody has run forty times. §7's shared-arc argument is
+   what makes it safe to retune later without reopening D4.
+2. **The skip gate rewards a novelty the throat does not have** (E4, E7). Four
+   first-times against one shared interior is a compromise, not a resolution: the
+   honest alternatives were distinct interiors per form, or no gate at all. E9's
+   shield is what carries per-station identity instead.
+3. **Collision is decided and unowned** (E6). This section states that it exists
+   and where its boundary is, and nothing here builds it. Until it does, flying at
+   a station's hull still passes through it.
+4. **A generated station name ripples further than this section** — #11's galaxy
+   map, #69's target list and #70's screen all acquire something to display, and
+   none of them has been told.
