@@ -492,13 +492,24 @@ check(
 	"prototype: Z injects and R clears a missile warning",
 	warningShown && warningCleared,
 );
-const energyBeforePulse = await combatPage.evaluate(
-	() => window.__seelite.combat.energy,
-);
+// The beam heats up and locks out; the overlay must show the lockout.
+await combatPage.keyboard.down("b");
+const lockShown = await combatPage
+	.waitForFunction(
+		() =>
+			window.__seelite.combat.heatLocked &&
+			window.__seelite.combatOverlayStatus.text.includes("FIRE LOCKED"),
+		{ timeout: 15000 },
+	)
+	.then(
+		() => true,
+		() => false,
+	);
+await combatPage.keyboard.up("b");
+check("prototype: beam heat lockout is visible on the overlay", lockShown);
 await combatPage.keyboard.down("Space");
-await combatPage.waitForFunction(
-	(before) => window.__seelite.combat.energy < before,
-	energyBeforePulse,
+await combatPage.waitForFunction(() =>
+	window.__seelite.combatOverlayStatus.text.includes("FIRE PULSE"),
 );
 const combatReadout = await combatPage.evaluate(
 	() => window.__seelite.combatOverlayStatus.text,
