@@ -729,12 +729,22 @@ async function settingsGate() {
 		(await page.evaluate(() => window.__seelite.heldKeyCount)) === 0,
 	);
 
-	// A flight key pressed while it is open must not reach the game.
+	/*
+	 * A flight key pressed while it is open must not reach the game — and the
+	 * assertion has to be about *state the key changes*.
+	 *
+	 * The first version pressed `v` and asserted `heldKeyCount === 0`. `v` is a
+	 * one-shot in the key handler's switch, never held, so the count stays 0
+	 * whether the dialog intercepted it or not: green by construction, proving
+	 * nothing. What `v` does do is toggle the view, so that is what is watched.
+	 */
+	const viewBefore = await page.evaluate(() => window.__seelite.view);
 	await page.keyboard.press("v");
+	const viewAfter = await page.evaluate(() => window.__seelite.view);
 	check(
 		"a flight key pressed over the screen does not reach the game",
-		(await page.evaluate(() => window.__seelite.heldKeyCount)) === 0 &&
-			Boolean(await page.$("[data-settings-panel]")),
+		viewAfter === viewBefore && Boolean(await page.$("[data-settings-panel]")),
+		`view ${viewBefore} -> ${viewAfter}`,
 	);
 
 	await page.keyboard.up("Shift");

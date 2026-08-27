@@ -13,8 +13,14 @@
  * only thing that changes between two readings is the term.
  *
  * **It is diagnostic, not a feature.** Every switch changes what is drawn, so
- * it is query-gated behind `?perf` alongside `?fps`, nothing reads it by
- * default, and no probe asserts through it. `hud-and-scanner.md` §5 keeps
+ * it is query-gated behind `?perf`, and nothing reads it by default.
+ *
+ * The isolation is exactly that and no more: the key listener is a plain
+ * `window` handler installed at mount, so a page that mounts the panel *and*
+ * is driven by a probe would see both. What keeps that from happening is that
+ * no probe URL carries `?perf` — `probe-boot`'s settings checks press keys
+ * against a page opened without it — and nothing enforces that beyond the
+ * URLs. Worth knowing before adding `?perf` to a probe to see something. `hud-and-scanner.md` §5 keeps
  * developer tuning readouts off the persistent player flight floor; this obeys
  * that the same way the frame meter does, by never being on unless asked for.
  *

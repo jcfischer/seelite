@@ -211,22 +211,25 @@ describe("the crater field has one definition", () => {
 		expect(CRATER_RIM).toContain("#define CRATER_RIM_SHARPNESS");
 		expect(CRATER_PROFILE).toContain("CRATER_RIM_AT");
 		expect(CRATER_PROFILE).toContain("CRATER_RIM_SHARPNESS");
-		//
-		// The derivative lives in `planet-shaders.ts` now, beside the profile it
-		// differentiates — #65 moved it there when AIRLESS became its second
-		// consumer, which also removed the cross-file distance that made this
-		// test necessary in the first place. It is kept because the *shape* it
-		// refuses is still the one a future hand-expansion would take.
-		expect(CRATER_RIM).toContain("#define CRATER_RIM_AT");
-		expect(CRATER_RIM).toContain("#define CRATER_RIM_SHARPNESS");
-		expect(CRATER_PROFILE).toContain("CRATER_RIM_AT");
-		expect(CRATER_PROFILE).toContain("CRATER_RIM_SHARPNESS");
 		expect(shared).toContain("CRATER_RIM_SHARPNESS * CRATER_RIM_SHARPNESS");
 		expect(shared).toContain("(d - CRATER_RIM_AT)");
-		// Anchored to the *shape* a hand-expanded derivative has, not to the
-		// bare numbers: `not.toContain("0.88")` would also fail on an unrelated
-		// roughness or blend weight that happened to be 0.88, reporting it as a
-		// stale derivative.
+
+		// **Every source file, not the one that happens to hold it today.**
+		// The derivative moved from `station-surface.ts` into
+		// `planet-shaders.ts` when AIRLESS became its second consumer, and the
+		// assertions moved with it — which left the file it came from unguarded
+		// against growing a hand-expansion of its own. A rule about a shape
+		// should not be a rule about a filename, so it is checked across `src`
+		// with the definition's own home exempted for the constants it declares.
+		//
+		// Anchored to the shape a hand-expansion has, not to the bare numbers:
+		// `not.toContain("0.88")` would also fail on an unrelated roughness that
+		// happened to be 0.88, reporting it as a stale derivative.
+		for (const [name, source] of sources("src")) {
+			if (name === "planet-shaders.ts") continue;
+			expect(`${name}: ${/d - 0\.88/.test(source)}`).toBe(`${name}: false`);
+			expect(`${name}: ${/-\s*84\.5/.test(source)}`).toBe(`${name}: false`);
+		}
 		expect(shared).not.toMatch(/d - 0\.88/);
 		expect(shared).not.toMatch(/-\s*84\.5/);
 	});
