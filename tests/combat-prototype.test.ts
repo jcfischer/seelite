@@ -8,13 +8,17 @@ import {
 
 // The cap is far above either pacing window, so both the low and high bounds
 // are real assertions: a duel that kills too fast (under 60 s) fails the floor,
-// and one that cannot kill within the window fails the ceiling.
+// and one that cannot kill within the window fails the ceiling. The step
+// mirrors the flyable rig: it alternates the target shield bank and lets the
+// enemy fire back on the same schedule the game drives.
 function fireFixedStepDuel(state = createCombatPrototype(), cap = 200) {
 	while (state.elapsed < cap && state.targetHull > 0)
 		state = stepCombatPrototype(state, {
 			dt: 0.1,
 			firing: "pulse",
 			targetInCone: duelTargetInCone(state.elapsed),
+			hitAft: Math.floor(state.elapsed / 2) % 2 === 1,
+			enemyFiring: state.targetHull > 0 && state.elapsed % 4 < 2,
 		});
 	return state;
 }
@@ -73,7 +77,7 @@ test("a shield-breaking hit bleeds exactly the unabsorbed remainder to hull", ()
 		{ dt: 1, firing: "pulse", targetInCone: true },
 	);
 	expect(state.targetForeShield).toBe(0);
-	expect(state.targetHull).toBe(COMBAT_PROTOTYPE_DEFAULTS.hull - 5);
+	expect(state.targetHull).toBe(COMBAT_PROTOTYPE_DEFAULTS.hull - 5.5);
 });
 
 test("a roll break resets a charged interdiction", () => {

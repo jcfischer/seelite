@@ -8,7 +8,7 @@ export const COMBAT_PROTOTYPE_DEFAULTS = {
 	shield: 106,
 	energy: 100,
 	heatLock: 100,
-	pulseDamagePerSecond: 5.5,
+	pulseDamagePerSecond: 6,
 	pulseEnergyPerSecond: 1,
 	pulseHeatPerSecond: 1.5,
 	beamDamagePerSecond: 7.2,

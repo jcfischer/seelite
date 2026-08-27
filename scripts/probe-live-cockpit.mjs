@@ -582,9 +582,11 @@ const narrowOverlay = await narrowCombatPage.evaluate(() => {
 	// The game exposes the four overlay lines it actually drew, at the font
 	// each was fitted to; assert on those rather than reimplementing the fitter.
 	const lines = game.combatOverlayLines;
-	const fits = lines.every((line) => line.width <= overlay.width - 16);
+	const fits =
+		lines.length === 4 &&
+		lines.every((line) => line.width <= overlay.width - 16);
 	const rendered = globalThis.__seeliteMeasureCockpit().combatOverlayText;
-	return { rendered, fits, canvas: overlay.width };
+	return { rendered, fits, canvas: overlay.width, count: lines.length };
 });
 check(
 	"prototype: all combat overlay lines fit the narrow viewport",
