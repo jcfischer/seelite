@@ -10,8 +10,10 @@
  *
  * Two of the eight are negatives — M4's and M7's — and a decision whose whole
  * content is "this does not appear" regresses in silence. Obligation 11 is
- * therefore asserted **during** the arrival rather than after it, and the probe
- * refuses rather than passes if it arrives too late to see one.
+ * therefore asserted **during** the arrival, and the arrival it observes is one
+ * the probe *starts* — the re-dock control — rather than the one that happens
+ * to be running at page load. Reading the phase after a boot raced a five-second
+ * arrival against the load and reported a slow machine as a build defect.
  */
 import { guardedOrigin, launchChromium, tally } from "./probe-guard.mjs";
 
@@ -58,9 +60,10 @@ function measureConsole() {
 	};
 	const consoleEl = document.querySelector("[data-gallery-station-console]");
 	const wrap = document.querySelector("[data-gallery-dock-phase]");
-	const rows = [...document.querySelectorAll("[data-gallery-market-row]")]
-		.filter((row) => !row.classList.contains("sg-market-head"))
-		.map((row) => ({
+	// The header row carries no `data-gallery-market-row`, so the selector
+	// already excludes it — an earlier filter for it removed nothing.
+	const rows = [...document.querySelectorAll("[data-gallery-market-row]")].map(
+		(row) => ({
 			name: row.getAttribute("data-gallery-market-row"),
 			listed: row.getAttribute("data-gallery-listed") === "true",
 			illegal: Boolean(row.querySelector("[data-gallery-illegal]")),
@@ -72,8 +75,14 @@ function measureConsole() {
 			shelfDelta:
 				row.querySelector("[data-gallery-shelf-delta]")?.textContent?.trim() ??
 				null,
-			deltaVisible: isVisible(row.querySelector("[data-gallery-price-delta]")),
-		}));
+			priceDeltaVisible: isVisible(
+				row.querySelector("[data-gallery-price-delta]"),
+			),
+			shelfDeltaVisible: isVisible(
+				row.querySelector("[data-gallery-shelf-delta]"),
+			),
+		}),
+	);
 	const box = (element) => {
 		if (!(element instanceof HTMLElement)) return null;
 		const r = element.getBoundingClientRect();
@@ -157,12 +166,16 @@ watch(page, "docked");
 await page.goto(`${ORIGIN}/?seed=42&hud-gallery=docked`, { waitUntil: "load" });
 await page.waitForSelector("#state-gallery");
 
-// --- Obligation 11 — M4's negative, asserted inside the arrival ------------
+// --- Obligation 11 - M4's negative, asserted inside an arrival we start ----
+await page.waitForSelector("[data-gallery-station-console]", {
+	timeout: 20_000,
+});
+await page.locator("[data-gallery-redock]").click();
 const arriving = await page.evaluate(measureConsole);
 check(
-	"11: the probe caught the arrival while it was still running",
+	"11: re-docking puts the cockpit back into an arrival",
 	arriving.phase === "arriving",
-	`phase was ${arriving.phase} — too late to assert M4's negative`,
+	`phase was ${arriving.phase}`,
 );
 check(
 	"11: the station console is not up during the arrival",
@@ -171,7 +184,7 @@ check(
 // The other half: it is not simply never up. Without this the check above
 // passes on a build that renders no console at all.
 await page.waitForSelector("[data-gallery-station-console]", {
-	timeout: 15_000,
+	timeout: 20_000,
 });
 const docked = await page.evaluate(measureConsole);
 check(
@@ -244,7 +257,8 @@ const unmovedRows = withDelta.rows.filter(
 check(
 	"5: the moved row carries a visible signed price and shelf delta",
 	Boolean(movedRow) &&
-		movedRow.deltaVisible &&
+		movedRow.priceDeltaVisible &&
+		movedRow.shelfDeltaVisible &&
 		/^[↑↓]\d/.test(movedRow.priceDelta ?? "") &&
 		/^[↑↓]\d/.test(movedRow.shelfDelta ?? ""),
 	`${MOVED_GOOD}: price ${movedRow?.priceDelta}, shelf ${movedRow?.shelfDelta}`,
@@ -342,6 +356,27 @@ check(
 	"9: the station console is not on the right wall — it hangs forward",
 	!right.consoleVisible,
 );
+
+check(
+	"9: the launch control is live - pressing it returns the flying cockpit",
+	// Rendered-and-not-disabled is not "live". §12.2's motion is #77's; what
+	// this asserts is the state change M9's control is the trigger for.
+	await (async () => {
+		await page.locator("[data-gallery-launch]").click();
+		const flying = await page.evaluate(measureConsole);
+		return (
+			flying.phase === "flying" &&
+			!flying.consolePresent &&
+			flying.floor &&
+			flying.scanner
+		);
+	})(),
+);
+// Back to docked for the remaining checks, through the same door a player uses.
+await page.locator('[data-gallery-state="docked"]').click();
+await page.waitForSelector("[data-gallery-station-console]", {
+	timeout: 20_000,
+});
 
 // --- Obligation 10 — forward returns the console, not flying glass --------
 await page.locator('[data-gallery-look="forward"]').click();

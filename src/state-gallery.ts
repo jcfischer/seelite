@@ -4,6 +4,7 @@
  * contacts are still design consumers, not completed simulation systems.
  */
 import * as THREE from "three";
+import { ARRIVAL_SECONDS_MAX, ARRIVAL_SECONDS_MIN } from "./docking";
 import {
 	MARKET_PERIOD_MIN,
 	type MarketStation,
@@ -12,8 +13,6 @@ import {
 	marketStationOf,
 } from "./market";
 import {
-	ARRIVAL_SECONDS_MAX,
-	ARRIVAL_SECONDS_MIN,
 	type ConsoleMarketRow,
 	type DockPhase,
 	type StationConsoleTab,
@@ -174,10 +173,12 @@ export const GALLERY_STATES: readonly GalleryState[] = [
  * A station for the console to quote, chosen so the gallery can show both
  * halves of every rule §8 states as a biconditional.
  *
- * Two of them rather than one, because M5's "priced **iff** `listsCommodity`"
- * cannot be seen at a single station: away from a fence the three illegal rows
- * are unpriced, and at one they are priced like everything else. One station
- * shows one side of that and reads like a rule with no exception.
+ * Three of them rather than one. M5's "priced **iff** `listsCommodity`" cannot
+ * be seen at a single station — away from a fence the three illegal rows are
+ * unpriced, at one they are priced like everything else, and one station shows
+ * one side of that and reads like a rule with no exception. The shipyard is
+ * there for a different reason: §8.3's hull heading is drawn at one and nowhere
+ * else, so without it that state would be markup no gallery state reaches.
  */
 export interface ConsoleStation {
 	id: "trade" | "fence" | "yard";
@@ -263,6 +264,12 @@ export interface ConsoleView {
 	gameTimeMin: number;
 }
 
+/** The two tabs, as values a DOM-sourced string can be checked against. */
+export const CONSOLE_TABS: readonly StationConsoleTab[] = [
+	"Market",
+	"Equipment",
+];
+
 export const DEFAULT_CONSOLE_VIEW: ConsoleView = {
 	station: CONSOLE_STATIONS[0],
 	tab: "Market",
@@ -300,7 +307,7 @@ const CR = (value: number): string => `${value.toFixed(1)} Cr`;
  * so a moved row there reads `0.0` — an up arrow beside it would tell the
  * player a price rose when the floor is what they are looking at.
  */
-const signed = (value: number, digits: number): string => {
+export const signed = (value: number, digits: number): string => {
 	const magnitude = Math.abs(value).toFixed(digits);
 	if (Number(magnitude) === 0) return `·${magnitude}`;
 	return `${value > 0 ? "↑" : "↓"}${magnitude}`;
@@ -361,8 +368,21 @@ function renderEquipmentTab(view: ConsoleView): string {
 		.join("");
 	// §8.7's joint 4: a heading with nothing under it is a state a player sees,
 	// so the gallery renders it rather than hiding the gap until #26.
+	// The heading is a shipyard's; what is under it is #26's. Rendering
+	// `screen.hulls` rather than the placeholder unconditionally means the day
+	// that node prices them the tab shows them instead of still saying nobody
+	// has.
 	const hulls = screen.hullsSection
-		? `<h4 class="sg-block-head" data-gallery-hulls>HULLS</h4><p class="sg-absent" data-gallery-hulls-empty>Not priced yet — the ship roster owes them.</p>`
+		? `<h4 class="sg-block-head" data-gallery-hulls>HULLS</h4>${
+				screen.hulls.length === 0
+					? `<p class="sg-absent" data-gallery-hulls-empty>Not priced yet — the ship roster owes them.</p>`
+					: screen.hulls
+							.map(
+								(hull) =>
+									`<div class="sg-market-row" data-gallery-hull-item="${esc(hull.name)}"><span class="sg-good">${esc(hull.name)}</span><span class="sg-cell">${hull.priceCr.toLocaleString("en-US")} Cr</span><span class="sg-cell"></span></div>`,
+							)
+							.join("")
+			}`
 		: "";
 	return `<div class="sg-market" data-gallery-equipment>${available}<h4 class="sg-block-head" data-gallery-unavailable>UNAVAILABLE HERE</h4>${unavailable}${hulls}</div>`;
 }
@@ -376,13 +396,11 @@ function renderEquipmentTab(view: ConsoleView): string {
  */
 export function renderStationConsole(view: ConsoleView): string {
 	if (!stationConsoleVisible(view.phase)) return "";
-	const tabs = (["Market", "Equipment"] as StationConsoleTab[])
-		.map(
-			(tab) =>
-				`<button class="sg-tab" type="button" data-gallery-console-tab="${tab}" aria-selected="${view.tab === tab}">${tab}</button>`,
-		)
-		.join("");
-	return `<section class="sg-station-console" data-gallery-station-console data-gallery-console-station="${esc(view.station.id)}" data-gallery-console-active-tab="${view.tab}"><header class="sg-console-top"><h2>STATION</h2><small>${esc(view.station.label)}</small></header><nav class="sg-tabs" aria-label="Station console tabs">${tabs}</nav>${view.tab === "Market" ? renderMarketTab(view) : renderEquipmentTab(view)}</section>`;
+	const tabs = CONSOLE_TABS.map(
+		(tab) =>
+			`<button class="sg-tab" type="button" data-gallery-console-tab="${esc(tab)}" aria-selected="${view.tab === tab}">${tab}</button>`,
+	).join("");
+	return `<section class="sg-station-console" data-gallery-station-console data-gallery-console-station="${esc(view.station.id)}" data-gallery-console-active-tab="${esc(view.tab)}"><header class="sg-console-top"><h2>STATION</h2><small>${esc(view.station.label)}</small></header><nav class="sg-tabs" aria-label="Station console tabs">${tabs}</nav>${view.tab === "Market" ? renderMarketTab(view) : renderEquipmentTab(view)}</section>`;
 }
 
 export function galleryState(id: string | null): GalleryState {
@@ -897,16 +915,16 @@ export function renderGalleryState(
 		],
 		footer: "Simulation continues while this console is open.",
 	});
+	// M9: launching is flight, and §1 gives Flight to the right panel. The
+	// console is otherwise inert while docked and says so.
+	const flightDocked = docked && rightTab === "Flight";
 	const rightConsole = renderConsolePanel({
 		side: "right",
 		active: isRight,
-		// M9: launching is flight, and §1 gives Flight to the right panel. The
-		// console is otherwise inert while docked and says so.
-		extra:
-			docked && rightTab === "Flight"
-				? '<div class="sg-launch"><button class="sg-launch-button" type="button" data-gallery-launch>LAUNCH</button><small>The one live control on this console while docked.</small></div>'
-				: "",
-		inert: docked && rightTab === "Flight",
+		extra: flightDocked
+			? '<div class="sg-launch"><button class="sg-launch-button" type="button" data-gallery-launch>LAUNCH</button><small>The one live control on this console while docked.</small></div>'
+			: "",
+		inert: flightDocked,
 		title: rightTab.toUpperCase(),
 		subtitle: "CMDR · SEELITE",
 		tabs: (["Flight", "Drive", "Tuning"] as RightTab[])
@@ -934,7 +952,7 @@ export function renderGalleryState(
 	});
 	return `<div class="sg-wrap" data-gallery-version="${GALLERY_VERSION}" data-gallery-state-active="${state.id}" data-gallery-dock-phase="${phase}" data-gallery-clock-min="${view.gameTimeMin}" data-gallery-market-epoch="${marketEpoch(view.station.station.phaseMin, view.gameTimeMin)}">
 		<header class="sg-head"><div><h1>SEELITE · COCKPIT STATE GALLERY</h1><p>Issue #34 prototype — visual contract, not simulated docking.</p></div><div class="sg-head-actions"><nav class="sg-look" aria-label="Cockpit head direction">${(["left", "forward", "right"] as HeadLook[]).map((look) => `<button type="button" data-gallery-look="${look}" aria-pressed="${headLook === look}">look ${look}</button>`).join("")}</nav><button class="sg-close" type="button">return to flight</button></div></header>
-		${docked ? `<nav class="sg-states" aria-label="Console rig">${CONSOLE_STATIONS.map((candidate) => `<button class="sg-state" type="button" data-gallery-station="${esc(candidate.id)}" aria-pressed="${candidate.id === view.station.id}">${esc(candidate.label)}</button>`).join("")}<button class="sg-state" type="button" data-gallery-advance-clock>advance the clock past a market roll</button></nav>` : ""}
+		${docked ? `<nav class="sg-states" aria-label="Console rig">${CONSOLE_STATIONS.map((candidate) => `<button class="sg-state" type="button" data-gallery-station="${esc(candidate.id)}" aria-pressed="${candidate.id === view.station.id}">${esc(candidate.label)}</button>`).join("")}<button class="sg-state" type="button" data-gallery-advance-clock>advance the clock past a market roll</button><button class="sg-state" type="button" data-gallery-redock>re-dock (replay the arrival)</button></nav>` : ""}
 		<nav class="sg-states" aria-label="Cockpit states">${GALLERY_STATES.map((candidate) => `<button class="sg-state" type="button" data-gallery-state="${candidate.id}" aria-pressed="${candidate.id === state.id}">${candidate.label}</button>`).join("")}</nav>
 		<div class="sg-shell" data-gallery-3d-prototype>
 			<div class="sg-cockpit" data-gallery-cockpit data-gallery-head-look="${headLook}" data-gallery-physical-console="${headLook}"><div class="sg-canopy" aria-hidden="true"></div>
@@ -979,6 +997,60 @@ export function mountStateGallery(): void {
 			paint();
 		}, GALLERY_ARRIVAL_SECONDS * 1000);
 	};
+	/**
+	 * The docked console's controls. Returns whether it handled the click, so
+	 * the listener stays one dispatch rather than growing a block per control.
+	 */
+	const handleConsoleClick = (target: HTMLElement): boolean => {
+		const tabButton = target.closest<HTMLElement>("[data-gallery-console-tab]");
+		if (tabButton) {
+			// Validated, not cast. The value comes off the DOM and ends up back in
+			// `innerHTML`; `as StationConsoleTab` asserted a shape nothing checked.
+			const picked = CONSOLE_TABS.find(
+				(candidate) => candidate === tabButton.dataset.galleryConsoleTab,
+			);
+			if (picked) {
+				view = { ...view, tab: picked };
+				paint();
+			}
+			return true;
+		}
+		const stationButton = target.closest<HTMLElement>("[data-gallery-station]");
+		if (stationButton) {
+			const picked = CONSOLE_STATIONS.find(
+				(candidate) => candidate.id === stationButton.dataset.galleryStation,
+			);
+			if (picked) {
+				view = { ...view, station: picked };
+				paint();
+			}
+			return true;
+		}
+		if (target.closest("[data-gallery-advance-clock]")) {
+			// M7: the clock moves, and the market tab never says so. The control is
+			// gallery chrome, deliberately outside the console it advances.
+			view = { ...view, gameTimeMin: view.gameTimeMin + MARKET_PERIOD_MIN };
+			paint();
+			return true;
+		}
+		if (target.closest("[data-gallery-redock]")) {
+			// Replays M4's sequence on demand. Without it the only arrival in the
+			// gallery is the one that runs during page load, and a check written
+			// against it races the load rather than measuring the decision.
+			beginArrival();
+			paint();
+			return true;
+		}
+		if (target.closest("[data-gallery-launch]")) {
+			// M9's control, doing what §12.2 says it leads to: flight resumes and
+			// the flying cockpit comes back. The *motion* between the two is #77's
+			// and the gallery has none of it — this is the state change only.
+			headLook = "forward";
+			setState("assist-on");
+			return true;
+		}
+		return false;
+	};
 	const paint = () => {
 		cockpitScene?.detach();
 		root.innerHTML = renderGalleryState(current, rightTab, headLook, view);
@@ -1012,35 +1084,7 @@ export function mountStateGallery(): void {
 			setState(state.dataset.galleryState ?? "assist-on");
 			return;
 		}
-		const consoleTab = target.closest<HTMLElement>(
-			"[data-gallery-console-tab]",
-		);
-		if (consoleTab) {
-			view = {
-				...view,
-				tab: consoleTab.dataset.galleryConsoleTab as StationConsoleTab,
-			};
-			paint();
-			return;
-		}
-		const stationPick = target.closest<HTMLElement>("[data-gallery-station]");
-		if (stationPick) {
-			const picked = CONSOLE_STATIONS.find(
-				(candidate) => candidate.id === stationPick.dataset.galleryStation,
-			);
-			if (picked) {
-				view = { ...view, station: picked };
-				paint();
-			}
-			return;
-		}
-		if (target.closest("[data-gallery-advance-clock]")) {
-			// M7: the clock moves, and the market tab never says so. The control
-			// is gallery chrome, deliberately outside the console it advances.
-			view = { ...view, gameTimeMin: view.gameTimeMin + MARKET_PERIOD_MIN };
-			paint();
-			return;
-		}
+		if (handleConsoleClick(target)) return;
 		const tab = target.closest<HTMLElement>("[data-gallery-right-tab]");
 		if (
 			tab &&

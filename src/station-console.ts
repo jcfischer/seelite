@@ -23,7 +23,6 @@
  * No DOM and no Three.js: this is sim-side data for a screen.
  */
 
-import { ARRIVAL_SECONDS_MAX, ARRIVAL_SECONDS_MIN } from "./docking";
 import {
 	COMMODITIES,
 	type Commodity,
@@ -39,13 +38,6 @@ import {
 	shelfQuantity,
 	stockResponse,
 } from "./market";
-
-// The two are re-exported rather than re-declared: this module is where a
-// screen reaches for them, and `docking.ts` and `market.ts` are where they are
-// decided. Sage's round 1 found both sitting here, which put a docking constant
-// and the corrected §7 catalogue in a screen.
-export { ARRIVAL_SECONDS_MAX, ARRIVAL_SECONDS_MIN };
-export { UNIVERSAL_GATE_CAP, UNIVERSAL_ITEMS, type UniversalItem };
 
 // ---------------------------------------------------------------------------
 // §8.1 / §8.4 — what is on the glass, and when
@@ -235,7 +227,9 @@ export function stationEquipmentScreen(input: {
 	displayTL: number;
 }): ConsoleEquipmentScreen {
 	const { type, displayTL } = input;
-	const reach = universalItemsAt(displayTL).length;
+	// The gate itself, not `universalItemsAt(displayTL).length` — that built a
+	// throwaway array on every render to read a number this line computes.
+	const reach = Math.min(Math.max(0, displayTL) + 3, UNIVERSAL_GATE_CAP);
 	const available: ConsoleEquipmentEntry[] = [];
 	const unavailable: ConsoleUnavailableEntry[] = [];
 

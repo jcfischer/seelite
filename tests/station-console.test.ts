@@ -22,17 +22,16 @@ import {
 	FUEL_CR_PER_LY,
 	type MarketStation,
 	MARKET_PERIOD_MIN,
+	UNIVERSAL_GATE_CAP,
+	UNIVERSAL_ITEMS,
 	listsCommodity,
 	marketRow,
 	marketStationOf,
 	shelfQuantity,
 	stockResponse,
 } from "../src/market";
+import { ARRIVAL_SECONDS_MAX, ARRIVAL_SECONDS_MIN } from "../src/docking";
 import {
-	ARRIVAL_SECONDS_MAX,
-	ARRIVAL_SECONDS_MIN,
-	UNIVERSAL_GATE_CAP,
-	UNIVERSAL_ITEMS,
 	flightFloorVisible,
 	requiredDisplayTL,
 	stationConsoleVisible,
