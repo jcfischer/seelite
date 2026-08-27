@@ -341,6 +341,8 @@ export function buildBodyVisual(
 		starTint: { value: photosphereTint(opts.starTint ?? 0xfff4ea) },
 		atmoColor: { value: new THREE.Color(look.atmosphereColor) },
 		atmoStrength: { value: look.atmosphere },
+		// Set below, once the shell's scale is known.
+		atmoInnerRatio: { value: 1 },
 		cloudCover: { value: look.cloudCover },
 		// Water cloud is neutral; a dust haze is the colour of the ground it
 		// was lifted from.
@@ -432,7 +434,12 @@ export function buildBodyVisual(
 		);
 		// A thicker shell stands further off the surface. On the shared unit
 		// geometry that is a scale rather than its own tessellation.
-		shell.scale.setScalar(1.03 + look.atmosphere * 0.025);
+		const shellScale = 1.03 + look.atmosphere * 0.025;
+		shell.scale.setScalar(shellScale);
+		// The surface is the unit sphere and the shell is that scaled, so the
+		// fraction of the shell the solid body fills is one over the scale. The
+		// atmosphere shader needs it to know where its chord is cut off.
+		uniforms.atmoInnerRatio.value = 1 / shellScale;
 		shell.userData.shell = "atmosphere";
 		group.add(shell);
 	}

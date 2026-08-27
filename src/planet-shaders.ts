@@ -279,6 +279,11 @@ export const VARYINGS_GLSL = /* glsl */ `
 varying vec3 vObjP;
 varying vec3 vWorldP;
 varying vec3 vWorldN;
+// The body's centre and this shell's radius, both in world units. The
+// atmosphere needs them to work out how much air a view ray actually passes
+// through, which is a question about the sphere rather than about the fragment.
+varying vec3 vCenter;
+varying float vRadius;
 `;
 
 export const SURFACE_VERTEX = /* glsl */ `
@@ -288,6 +293,8 @@ void main() {
   vec4 world = modelMatrix * vec4(position, 1.0);
   vWorldP = world.xyz;
   vWorldN = normalize(mat3(modelMatrix) * normal);
+  vCenter = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+  vRadius = length(world.xyz - vCenter);
   gl_Position = projectionMatrix * viewMatrix * world;
 }
 `;
@@ -365,17 +372,61 @@ ${VARYINGS_GLSL}
 uniform vec3  sunDir;
 uniform vec3  atmoColor;
 uniform float atmoStrength;
+uniform float atmoInnerRatio;
+/*
+ * **How much air the ray goes through**, rather than how edge-on the shell is.
+ *
+ * The previous version used pow(1 - dot(N, V), 3.2), which is maximal exactly
+ * at the shell's outer silhouette — so the glow was brightest where the
+ * geometry ends and then stopped dead. That reads as a painted ring with two
+ * hard edges, which is what the principal saw once bloom stopped smearing it.
+ *
+ * A real atmosphere is the opposite: the path through it goes to *zero* at the
+ * outer edge, grows inward, and is cut short where the planet blocks it. That
+ * is a chord length, and for a sphere it is worth computing rather than
+ * imitating — the falloff it gives is the reason a limb looks like air.
+ *
+ * Both chords come from the same quadratic. b is how far along the ray the
+ * closest approach to the centre lies and d2 the square of that distance, so
+ * a sphere of radius r is crossed over 2 * sqrt(r^2 - d2) when it is crossed
+ * at all. The lit-limb and forward-scattering terms are unchanged.
+ */
+float chord(float r2, float d2) {
+  return 2.0 * sqrt(max(r2 - d2, 0.0));
+}
 void main() {
   vec3 N = normalize(vWorldN);
   vec3 V = normalize(cameraPosition - vWorldP);
-  float rim = pow(1.0 - max(dot(N, V), 0.0), 3.2);
+
+  // The view ray, and its closest approach to the body's centre.
+  vec3 toCentre = vCenter - cameraPosition;
+  vec3 dir = -V;
+  float b = dot(toCentre, dir);
+  float d2 = dot(toCentre, toCentre) - b * b;
+
+  // Air along the ray: the shell's chord, less the part of it the planet's own
+  // body occupies. innerRatio is the surface radius as a fraction of the
+  // shell's, which is how planet-surface.ts scales the two.
+  float outer2 = vRadius * vRadius;
+  float inner2 = outer2 * atmoInnerRatio * atmoInnerRatio;
+  float air = chord(outer2, d2) - chord(inner2, d2);
+  // Normalised by the deepest possible path, so atmoStrength keeps meaning
+  // the same thing it did.
+  float depth = air / max(chord(outer2, 0.0) - chord(inner2, 0.0), 1e-6);
+
+  // Still shaped, but now shaping something that already falls to zero at the
+  // outer edge rather than peaking there.
+  float rim = pow(clamp(depth, 0.0, 1.0), 0.65);
+
   // Only the lit limb glows, and it fades through the terminator rather than
   // stopping at it.
   float day = smoothstep(-0.45, 0.30, dot(N, sunDir));
   // Forward scattering: looking towards the star through the shell.
   float forward = pow(max(dot(V, -sunDir), 0.0), 5.0);
-  // Longer path at grazing angles scatters out the blue first.
-  vec3 sunset = mix(atmoColor, atmoColor * vec3(1.5, 0.75, 0.42), rim * 0.8);
+  // Longer path at grazing angles scatters out the blue first — grazing is now
+  // "a long way through the air", which is what it always meant.
+  float grazing = pow(clamp(depth, 0.0, 1.0), 2.5);
+  vec3 sunset = mix(atmoColor, atmoColor * vec3(1.5, 0.75, 0.42), grazing * 0.8);
   gl_FragColor = vec4(sunset * (0.55 + 2.2 * forward) * day,
                       rim * day * atmoStrength);
 }
