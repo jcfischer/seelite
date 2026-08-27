@@ -30,6 +30,7 @@ import {
 	SURFACE_VERTEX,
 	fragmentFor,
 } from "./planet-shaders";
+import type { ReliefPath } from "./planet-shaders";
 
 /**
  * The tessellation a body and its shells share, and the reason it is exported.
@@ -266,12 +267,18 @@ const ringPlane = () => {
  * two bodies share one compiled program; the materials stay per body, because
  * the uniforms do.
  */
-const fragmentCache = new Map<SurfaceClass, string>();
-const cachedFragment = (surface: SurfaceClass): string => {
-	const hit = fragmentCache.get(surface);
+// Keyed by class *and* relief path: the path is a #define, so the two produce
+// different programs and one cache slot per class would hand back the wrong one.
+const fragmentCache = new Map<string, string>();
+const cachedFragment = (
+	surface: SurfaceClass,
+	relief: ReliefPath = "four-tap",
+): string => {
+	const key = `${surface}:${relief}`;
+	const hit = fragmentCache.get(key);
 	if (hit !== undefined) return hit;
-	const source = fragmentFor(surface);
-	fragmentCache.set(surface, source);
+	const source = fragmentFor(surface, relief);
+	fragmentCache.set(key, source);
 	return source;
 };
 
@@ -280,6 +287,23 @@ export function buildBodyVisual(
 	sphere: THREE.BufferGeometry,
 	opts: BodyVisualOptions = {},
 ): BodyVisual {
+	/**
+	 * The ablation switches live on the perf panel, not on the query string.
+	 *
+	 * There were five — `?perf=noatmo`, `noclouds`, `noshells`, `norelief`,
+	 * `flat` — and they are gone. They came first, the live switches replaced
+	 * them for the actual measuring, and the justification left for keeping
+	 * them was "a starting state is useful when a page is opened by a script".
+	 * There is no such caller: the only page-opening scripts here are probes, and
+	 * a probe must not mount the panel — its key listener would see the probe's
+	 * own keystrokes. `check-launcher-wiring.mjs` refuses the literal flag in a
+	 * probe's source, which catches the way that would happen without making it
+	 * impossible. Either way the flags were kept for a use nobody has.
+	 *
+	 * `?perf` alone still mounts the panel, and every one of those states is a
+	 * keypress there — `noshells` being the two that have no single key.
+	 */
+
 	const uniforms: Record<string, THREE.IUniform> = {
 		time: { value: 0 },
 		// A direction, not a position, so it is the same vector at every render
@@ -291,11 +315,23 @@ export function buildBodyVisual(
 		// an airless body does not carry it at all.
 		wrapAmount: { value: look.atmosphere * 0.32 },
 		seedOffset: { value: (look.seed % 997) / 97 },
+		// 0 normally; 1 drops the normal perturbation, 2 drops the surface noise
+		// entirely. Read by every class through `RELIEF`.
+		perfAblate: { value: 0 },
+		// The A/B switch AIRLESS reads, set live from the perf panel's `o` key.
+		// An earlier version offered `?crater=differenced` and a reload instead,
+		// which `perf-panel.ts` argues against in its own rationale: a reload
+		// puts the ship somewhere else, so two readings taken from two positions
+		// measure the positions as much as the terms. Two comments in one branch
+		// cannot recommend opposite methods.
+		craterSlow: { value: 0 },
 		warmth: { value: look.warmth },
 		seaLevel: { value: look.seaLevel },
 		starTint: { value: photosphereTint(opts.starTint ?? 0xfff4ea) },
 		atmoColor: { value: new THREE.Color(look.atmosphereColor) },
 		atmoStrength: { value: look.atmosphere },
+		// Set below, once the shell's scale is known.
+		atmoInnerRatio: { value: 1 },
 		cloudCover: { value: look.cloudCover },
 		// Water cloud is neutral; a dust haze is the colour of the ground it
 		// was lifted from.
@@ -313,23 +349,62 @@ export function buildBodyVisual(
 			uniforms,
 			vertexShader: SURFACE_VERTEX,
 			fragmentShader: cachedFragment(look.surface),
+			// `reliefNormal`'s screen-space path calls `dFdx`/`dFdy`. In GLSL ES
+			// 1.00 those are an extension, and three used to need
+			// `extensions.derivatives` — the flag is gone since r152 because a
+			// WebGL2 context has them as core, which is the context three asks
+			// for. Named here because the next reader will look for the flag.
 		}),
 	);
+	// Tagged with its class and a way to change it, for the perf panel's class
+	// cycle. The class is *compiled in* — `cachedFragment` picks one branch of
+	// `CLASS_GLSL` and the rest never reaches the GPU — so switching it is a
+	// shader swap and a recompile, not a uniform. That is why this is a closure
+	// on the material rather than a value the panel can set: the panel should
+	// not have to know that.
+	planet.userData.surfaceClass = look.surface;
+	// The relief path is compiled in, like the class, so switching it is a
+	// shader swap. Kept beside the class so one swap can carry both.
+	planet.userData.reliefPath = "four-tap" as ReliefPath;
+	planet.userData.setReliefPath = (next: ReliefPath) => {
+		if (look.surface === "star") return;
+		const material = planet.material as THREE.ShaderMaterial;
+		material.fragmentShader = cachedFragment(
+			planet.userData.surfaceClass,
+			next,
+		);
+		material.needsUpdate = true;
+		planet.userData.reliefPath = next;
+	};
+	planet.userData.setSurfaceClass = (next: SurfaceClass) => {
+		// A star keeps its own shader. It is not a planet surface, it is the
+		// brightest thing in the frame and therefore what the bloom pass is
+		// mostly working on, and drawing it as a desert would change the one
+		// term the panel is trying to hold still while another is measured.
+		if (look.surface === "star") return;
+		const material = planet.material as THREE.ShaderMaterial;
+		material.fragmentShader = cachedFragment(next, planet.userData.reliefPath);
+		material.needsUpdate = true;
+		planet.userData.surfaceClass = next;
+	};
 	group.add(planet);
 
 	if (look.cloudCover > 0) {
-		group.add(
-			new THREE.Mesh(
-				cloudShell(),
-				new THREE.ShaderMaterial({
-					uniforms,
-					transparent: true,
-					depthWrite: false,
-					vertexShader: SURFACE_VERTEX,
-					fragmentShader: CLOUD_FRAGMENT,
-				}),
-			),
+		// Tagged so `perf-panel.ts` can find it by walking the scene. A tag on
+		// the object beats a registry of meshes, which would have to be kept in
+		// step with a world that regenerates on every jump.
+		const clouds = new THREE.Mesh(
+			cloudShell(),
+			new THREE.ShaderMaterial({
+				uniforms,
+				transparent: true,
+				depthWrite: false,
+				vertexShader: SURFACE_VERTEX,
+				fragmentShader: CLOUD_FRAGMENT,
+			}),
 		);
+		clouds.userData.shell = "cloud";
+		group.add(clouds);
 	}
 	if (look.atmosphere > 0) {
 		// Back faces only, additively: the shell is a volume seen from outside,
@@ -348,7 +423,18 @@ export function buildBodyVisual(
 		);
 		// A thicker shell stands further off the surface. On the shared unit
 		// geometry that is a scale rather than its own tessellation.
-		shell.scale.setScalar(1.03 + look.atmosphere * 0.025);
+		// Thicker than the 1.03 + 0.025a it was. A shell that hugs the surface
+		// leaves the exponential falloff no room to fall off in, so the haze had
+		// to be steep to fit — and steep is the thing being fixed. The glow
+		// fades well inside the new silhouette, so a thicker shell does not read
+		// as a bigger planet.
+		const shellScale = 1.06 + look.atmosphere * 0.05;
+		shell.scale.setScalar(shellScale);
+		// The surface is the unit sphere and the shell is that scaled, so the
+		// fraction of the shell the solid body fills is one over the scale. The
+		// atmosphere shader needs it to know where its chord is cut off.
+		uniforms.atmoInnerRatio.value = 1 / shellScale;
+		shell.userData.shell = "atmosphere";
 		group.add(shell);
 	}
 	if (look.hasRings) {

@@ -701,5 +701,67 @@ async function fpsGate() {
 }
 await fpsGate();
 
+/**
+ * The settings screen takes the keyboard, and gives back the keys already
+ * held.
+ *
+ * Two claims that were comments until this check existed. The dialog swallows
+ * keys in the capture phase so the flight controls do not also act on them,
+ * and it clears the game's held-key set as it opens — `keydown` interception
+ * does nothing about a throttle key that went down before the dialog did, and
+ * a ship accelerating behind a screen the player is reading is the failure
+ * that motivates both.
+ */
+async function settingsGate() {
+	const page = await open(URL);
+	// Hold throttle, then open the screen while it is still down.
+	await page.keyboard.down("Shift");
+	await page.waitForFunction(() => window.__seelite.heldKeyCount > 0, null, {
+		timeout: 5000,
+	});
+	await page.keyboard.press("z");
+	const opened = await page.waitForSelector("[data-settings-panel]", {
+		timeout: 5000,
+	});
+	check("`z` opens the settings screen", Boolean(opened));
+	check(
+		"opening it releases the keys the player was holding",
+		(await page.evaluate(() => window.__seelite.heldKeyCount)) === 0,
+	);
+
+	/*
+	 * A flight key pressed while it is open must not reach the game — and the
+	 * assertion has to be about *state the key changes*.
+	 *
+	 * The first version pressed `v` and asserted `heldKeyCount === 0`. `v` is a
+	 * one-shot in the key handler's switch, never held, so the count stays 0
+	 * whether the dialog intercepted it or not: green by construction, proving
+	 * nothing. What `v` does do is toggle the view, so that is what is watched.
+	 */
+	const viewBefore = await page.evaluate(() => window.__seelite.view);
+	await page.keyboard.press("v");
+	const viewAfter = await page.evaluate(() => window.__seelite.view);
+	check(
+		"a flight key pressed over the screen does not reach the game",
+		viewAfter === viewBefore && Boolean(await page.$("[data-settings-panel]")),
+		`view ${viewBefore} -> ${viewAfter}`,
+	);
+
+	await page.keyboard.up("Shift");
+	await page.keyboard.press("Escape");
+	check("`Escape` closes it", !(await page.$("[data-settings-panel]")));
+
+	// And the same key reaches the game once the screen is gone, which is what
+	// makes the check above a statement about the dialog rather than about `v`
+	// never working in the first place.
+	await page.keyboard.press("v");
+	check(
+		"the same key works again once the screen is closed",
+		(await page.evaluate(() => window.__seelite.view)) !== viewBefore,
+	);
+	await page.close();
+}
+await settingsGate();
+
 await browser.close();
 exit();

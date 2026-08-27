@@ -3,16 +3,16 @@ import type { SurfaceClass } from "./planet-appearance";
 /**
  * One fragment body per surface class.
  *
- * Each class fills in `surface()`:
+ * Each class fills in surface():
  *
- * ```glsl
+ * glsl
  * void surface(vec3 p, inout vec3 albedo, inout vec3 N,
  *              inout vec3 emissive, inout float specPower, inout float specMask)
- * ```
  *
- * `p` is the unit object-space direction, `N` arrives as the geometric world
- * normal and may be perturbed, and the shared `main()` does the lighting. A
- * class that wants relief writes `N`; a class that glows writes `emissive`,
+ *
+ * p is the unit object-space direction, N arrives as the geometric world
+ * normal and may be perturbed, and the shared main() does the lighting. A
+ * class that wants relief writes N; a class that glows writes emissive,
  * which is added *after* the diffuse term and therefore survives the night side.
  *
  * The split matters: the classes differ in what they paint, never in how they
@@ -22,17 +22,107 @@ import type { SurfaceClass } from "./planet-appearance";
 
 /** Height-field relief, shared by every class that has any. */
 const RELIEF = /* glsl */ `
+uniform float perfAblate;
 // Perturb the normal from a height function by central differences in the
 // sphere's own tangent frame. Cheaper than displacing geometry and it survives
 // at any tessellation, which matters because the game draws these bodies at
 // wildly different screen sizes.
+/*
+ * **The frame is mostly this function**, and it is worth writing down what that
+ * cost is before reading the code, because the shape of the fix follows from it.
+ *
+ * Measured on a GPU with the body filling the view, by switching one term at a
+ * time from the perf panel (?perf):
+ *
+ *              full    no relief   flat sphere
+ *   terran     60 ms     28 ms       14 ms
+ *   ice        86 ms     30 ms       16 ms
+ *   jovian     26 ms     24 ms       17 ms
+ *
+ * A gas giant has no height field, and barely moves — which is the control that
+ * makes the other two rows mean something. On the rocky classes relief is more
+ * than half the frame, and neither bloom, nor the atmosphere shell, nor the
+ * cloud shell moved terran at all.
+ *
+ * The reason is the four extra height() calls below. A height function here
+ * is several octaves of fBm plus a ridged or contoured term, so asking it five
+ * times a fragment to learn one slope is where the frame goes.
+ *
+ * reliefMode selects how the slope is obtained. Both paths shade from the
+ * same height field; they differ only in how its gradient is found, which is
+ * why they can be compared by eye on one body without anything else moving.
+ */
 vec3 reliefNormal(vec3 p, vec3 N, float strength) {
+  // Diagnostic ablation, off by default. See planet-surface.ts.
+  if (perfAblate > 0.5) return N;
+
+#ifdef RELIEF_SCREEN_SPACE
+  {
+    /*
+     * One height evaluation, and the screen its own difference operator.
+     *
+     * dFdx/dFdy hand back how a value changes across the 2x2 quad the GPU
+     * is already shading, so the gradient of the height field costs a
+     * subtraction rather than four more evaluations of it. The world-space
+     * surface gradient is then recovered from the screen-space one through the
+     * position's own derivatives — the standard construction, and exact for a
+     * linear patch.
+     *
+     * What it gives up is resolution: the perturbation is constant across each
+     * quad, so where the height field has detail finer than two pixels this
+     * quantises what the four-tap version resolved. That is a thing to look at
+     * rather than to argue about, which is why it is a switch.
+     */
+    vec3 dpx = dFdx(vWorldP), dpy = dFdy(vWorldP);
+    float h = height(p);
+    float hx = dFdx(h), hy = dFdy(h);
+    vec3 r1 = cross(dpy, N), r2 = cross(N, dpx);
+    float det = dot(dpx, r1);
+    vec3 grad = (r1 * hx + r2 * hy) / det;
+    // The four-tap path below perturbs by a *difference* over 2e rather than by
+    // a derivative, so the same visual strength is that factor applied here.
+    vec3 tilt = strength * 0.007 * grad;
+
+    /*
+     * **Where this goes wrong, and what black rectangles are.**
+     *
+     * A derivative is taken across a 2x2 quad, and a quad on the silhouette has
+     * lanes outside the sphere. Those lanes still run the shader — that is what
+     * makes the derivative available at all — and they evaluate the height
+     * field at a position that is nowhere near their neighbours. The difference
+     * is then enormous, det is near zero at a grazing angle, and the quotient
+     * is huge or not a number at all.
+     *
+     * One NaN fragment is invisible. The bloom pass is what makes it a
+     * rectangle: a downsample chain averages that pixel into a whole block of
+     * a lower mip, so a handful of bad lanes at the limb come back as blocks
+     * that appear and vanish as the body moves.
+     *
+     * This is a guard against a hazard this path introduces, and **not** the
+     * cause of the flicker reported against this branch: that artefact exists
+     * on main, where this path does not, and this path is off by default. The
+     * flicker's own account is at onResize in main.ts.
+     *
+     * The test is inverted on purpose: NaN compares false against everything,
+     * so !(m < LIMIT) catches NaN as well as Inf where m > LIMIT would let
+     * NaN straight through.
+     */
+    float m = dot(tilt, tilt);
+    if (!(m < 1.0e4)) return N;
+    // A perturbation longer than the normal itself has already stopped meaning
+    // "a slope" and is on its way to flipping the normal over.
+    if (m > 1.0) tilt *= inversesqrt(m);
+    return normalize(N - tilt);
+  }
+
+#else
   vec3 axis = abs(p.y) < 0.94 ? vec3(0,1,0) : vec3(1,0,0);
   vec3 t = normalize(cross(axis, p)), b = cross(p, t);
   float e = 0.0035;
   float dt = height(normalize(p + t * e)) - height(normalize(p - t * e));
   float db = height(normalize(p + b * e)) - height(normalize(p - b * e));
   return normalize(N - strength * (dt * t + db * b));
+#endif
 }
 `;
 
@@ -264,6 +354,7 @@ void surface(vec3 p, inout vec3 albedo, inout vec3 N,
 export const AIRLESS = /* glsl */ `
 uniform float seedOffset;
 uniform float warmth;
+uniform float craterSlow;
 
 /*
  * Relief comes from the large basins only.
@@ -316,6 +407,71 @@ float height(vec3 p) {
        + fbm4(p * 5.0 + seedOffset) * 0.08;
 }
 
+/*
+ * The same relief, from one walk of each octave instead of five.
+ *
+ * reliefNormal differences height four times, and height here is two
+ * 3x3x3 crater walks — so a normal that the walks already contain was costing
+ * ten of them. cratersAndGradient accumulates each crater's slope in the loop
+ * that accumulates its depth, which is exact rather than approximate: this is
+ * the analytic derivative of the same profile, not a cheaper lookalike, and it
+ * visits every cell the path it replaces visited. That is true of the *crater*
+ * term only: the fine fbm octave below keeps its central differences, so the
+ * composite normal is analytic in its dominant part and differenced in its
+ * small one — not analytic throughout, which an earlier reading of this
+ * paragraph would have suggested — the d < 1.2 cull below is
+ * craters()'s own cull, not a new one.
+ *
+ * The fine fbm term keeps its central differences. It is 0.08 of the amplitude
+ * and four fbm4 calls, against the four *pairs of crater walks* that differencing
+ * the whole height was paying for it — so it is not what made this class
+ * expensive, and leaving it exact costs nothing worth naming.
+ *
+ * This is #60's asteroid optimisation. The two attempts recorded above were an
+ * octave split and a detail band; both changed *what is drawn* — a dropped
+ * octave is a missing crater — and both were withdrawn for it. This one keeps
+ * every octave and every cell either walk would have visited: the d < 1.2 cull
+ * below is the same cull craters() applies, so nothing is dropped relative
+ * to the path this replaces. It is not the stronger nothing-is-ever-dropped,
+ * which an earlier version of this comment said two paragraphs above conceding
+ * that very cull.
+ *
+ * It is not pixel-identical, and that should not be claimed. A central
+ * difference over 2e smooths whatever it straddles; the analytic derivative
+ * does not. Where the profile is smooth the two agree to O(e^2) and the frame
+ * is the same frame. Where it breaks they differ, and it breaks in two known
+ * places: step(d, 1.0) cuts the bowl at the rim, and the walk is culled at
+ * d < 1.2 with the rim gaussian still worth about 0.009. Both are documented
+ * at cratersAndGradient. The expected read is a slightly harder crater lip,
+ * which is the same difference the asteroid shipped with and nobody has looked
+ * for on either.
+ *
+ * The perf panel's o key keeps the old path alongside, so that is a thing
+ * anyone can look at rather than take on this comment's word.
+ */
+vec3 craterRelief(vec3 p, vec3 N, float strength) {
+  if (perfAblate > 0.5) return N;
+  vec4 c1 = cratersAndGradient(p + seedOffset, 3.2, 0.55);
+  vec4 c2 = cratersAndGradient(p + seedOffset * 1.7, 8.0, 0.20);
+  vec3 grad = c1.xyz + c2.xyz;
+
+  // The fine octave, differenced in the tangent frame reliefNormal uses, so
+  // the two contributions are expressed the same way before they are summed.
+  vec3 axis = abs(p.y) < 0.94 ? vec3(0,1,0) : vec3(1,0,0);
+  vec3 t = normalize(cross(axis, p)), b = cross(p, t);
+  float e = 0.0035;
+  float dt = (fbm4(normalize(p + t * e) * 5.0 + seedOffset)
+            - fbm4(normalize(p - t * e) * 5.0 + seedOffset)) * 0.08;
+  float db = (fbm4(normalize(p + b * e) * 5.0 + seedOffset)
+            - fbm4(normalize(p - b * e) * 5.0 + seedOffset)) * 0.08;
+
+  // The craters' gradient is a full 3D gradient; only its tangential part can
+  // tilt a normal on a sphere, and the radial part is what the displacement
+  // itself already is.
+  vec3 slope = grad - p * dot(grad, p);
+  return normalize(N - strength * (slope * (2.0 * e) + dt * t + db * b));
+}
+
 void surface(vec3 p, inout vec3 albedo, inout vec3 N,
              inout vec3 emissive, inout float specPower, inout float specMask) {
   float h = height(p);
@@ -342,7 +498,15 @@ void surface(vec3 p, inout vec3 albedo, inout vec3 N,
 
   // The relief is the whole read on an airless body: no air, no cloud, no
   // ocean, nothing but the shape the impacts left.
-  N = reliefNormal(p, N, 2.6 * (1.0 - mare * 0.7));
+  // The perf panel's o key restores the five-walk path, so the two can be
+  // compared in place, without reloading. #59 could measure this
+  // class only on a software rasteriser and said so; what it licensed was "no
+  // saving was demonstrated here", not "no saving exists". This is the switch
+  // that lets a GPU answer it, and it costs a uniform branch that is uniform
+  // across the draw.
+  N = craterSlow > 0.5
+    ? reliefNormal(p, N, 2.6 * (1.0 - mare * 0.7))
+    : craterRelief(p, N, 2.6 * (1.0 - mare * 0.7));
   specPower = 0.0;
   specMask  = 0.0;
 }
@@ -503,7 +667,7 @@ void surface(vec3 p, inout vec3 albedo, inout vec3 N,
 `;
 
 /** Keyed by `SurfaceClass`, so adding a rung without a shader is a type error
- *  rather than a shader that compiles with no `surface()` body. */
+ *  rather than a shader that compiles with no surface() body. */
 export const CLASS_GLSL: Record<SurfaceClass, string> = {
 	terran: TERRAN,
 	desert: DESERT,

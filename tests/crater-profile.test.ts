@@ -109,13 +109,23 @@ const walks = (source: string) => {
 };
 
 describe("the crater field has one definition", () => {
-	test("both known consumers are among the interpolators found", () => {
-		// The scan is the thing every case below rests on, so it is checked
-		// rather than trusted: a glob that silently matched nothing would make
-		// each of them vacuously green.
+	test("the shared file is the only interpolator, and the rest are callers", () => {
+		// The scan is what every case below rests on, so it is checked rather
+		// than trusted: a glob that silently matched nothing would make each of
+		// them vacuously green.
+		//
+		// **This got narrower, and that is the improvement.** `station-surface.ts`
+		// used to interpolate the snippets itself to build its own gradient
+		// walk. #65 needed the same walk for AIRLESS, so it moved into
+		// `NOISE_GLSL` beside `craters()` — one definition of the accumulation
+		// as well as of the field, and two call sites that share it. A file that
+		// only *calls* is outside the whole class of divergence these tests
+		// exist for.
 		const found = INTERPOLATORS.map(([name]) => name);
 		expect(found).toContain("planet-shaders.ts");
-		expect(found).toContain("station-surface.ts");
+		expect(found).toEqual(["planet-shaders.ts"]);
+		// The rock still uses the field — as a caller, which is the point.
+		expect(station).toMatch(/cratersAndGradient\(/);
 	});
 
 	test.each(INTERPOLATORS)(
@@ -201,14 +211,33 @@ describe("the crater field has one definition", () => {
 		expect(CRATER_RIM).toContain("#define CRATER_RIM_SHARPNESS");
 		expect(CRATER_PROFILE).toContain("CRATER_RIM_AT");
 		expect(CRATER_PROFILE).toContain("CRATER_RIM_SHARPNESS");
-		expect(station).toContain("CRATER_RIM_SHARPNESS * CRATER_RIM_SHARPNESS");
-		expect(station).toContain("(d - CRATER_RIM_AT)");
-		// Anchored to the *shape* a hand-expanded derivative has, not to the
-		// bare numbers: `expect(station).not.toContain("0.88")` would also fail
-		// on an unrelated roughness or blend weight that happened to be 0.88,
-		// reporting it as a stale derivative.
-		expect(station).not.toMatch(/d - 0\.88/);
-		expect(station).not.toMatch(/-\s*84\.5/);
+		expect(shared).toContain("CRATER_RIM_SHARPNESS * CRATER_RIM_SHARPNESS");
+		expect(shared).toContain("(d - CRATER_RIM_AT)");
+
+		// **Every source file, not the one that happens to hold it today.**
+		// The derivative moved from `station-surface.ts` into
+		// `planet-shaders.ts` when AIRLESS became its second consumer, and the
+		// assertions moved with it — which left the file it came from unguarded
+		// against growing a hand-expansion of its own. A rule about a shape
+		// should not be a rule about a filename, so it is checked across `src`
+		// with the definition's own home exempted for the constants it declares.
+		//
+		// Anchored to the shape a hand-expansion has, not to the bare numbers:
+		// `not.toContain("0.88")` would also fail on an unrelated roughness that
+		// happened to be 0.88, reporting it as a stale derivative.
+		// Guarding the guard, as the scan test above does: a glob that matched
+		// nothing would make this loop vacuously green, which is the failure
+		// mode of every source scan and the reason that sibling test exists.
+		const scanned = sources("src");
+		expect(scanned.length).toBeGreaterThan(10);
+		expect(scanned.map(([n]) => n)).toContain("station-surface.ts");
+		for (const [name, source] of scanned) {
+			if (name === "planet-shaders.ts") continue;
+			expect(`${name}: ${/d - 0\.88/.test(source)}`).toBe(`${name}: false`);
+			expect(`${name}: ${/-\s*84\.5/.test(source)}`).toBe(`${name}: false`);
+		}
+		expect(shared).not.toMatch(/d - 0\.88/);
+		expect(shared).not.toMatch(/-\s*84\.5/);
 	});
 
 	test("both interpolators supply what the snippets read", () => {

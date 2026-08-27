@@ -6,7 +6,7 @@
  * of that choice is that every lookup is 3D, which is why the octave counts are
  * small and the expensive primitives (craters) are used by one class only.
  *
- * **Authored in linear space.** The renderer sets `SRGBColorSpace` on output, so
+ * **Authored in linear space.** The renderer sets SRGBColorSpace on output, so
  * a colour written here is a linear reflectance, not a hex a designer picked.
  * Values look darker than the equivalent sRGB swatch on purpose.
  */
@@ -17,10 +17,12 @@ import { CLASS_GLSL, RELIEF } from "./planet-classes.glsl";
 /**
  * One cell of a crater field, and the profile of the crater in it.
  *
- * **Two consumers, one definition.** `craters()` below sums the profile;
- * `station-surface.ts`'s `cratersAndGradient()` sums it *and* its slope, so a
- * refinery's asteroid pays one walk of the 3×3×3 neighbourhood instead of the
- * five that finite-differencing the height would cost. Those are different
+ * **Two consumers, one definition.** craters() below sums the profile;
+ * cratersAndGradient() beside it sums the profile *and* its slope, so a
+ * refinery's asteroid and an airless moon each pay one walk of the 3×3×3
+ * neighbourhood instead of the five that finite-differencing the height would
+ * cost. Both live in this file: the gradient walk moved here from
+ * station-surface.ts when the moon became its second caller. Those are different
  * accumulations of the same field, and the field is written here so they cannot
  * become two fields.
  *
@@ -31,15 +33,15 @@ import { CLASS_GLSL, RELIEF } from "./planet-classes.glsl";
  * both consumers get it.
  *
  * They are strings rather than a shared GLSL function because the gradient
- * needs `d`, `radius` and the offset from inside the loop, and GLSL ES 1.00
+ * needs d, radius and the offset from inside the loop, and GLSL ES 1.00
  * has no way to hand those back without recomputing them.
  *
  * **What a consumer must provide, and must not shadow.** Being text rather
  * than a signature, the contract is by name, so it is written down here
- * instead of being learned from a collision. `CRATER_CELL` reads `base`, `p`
- * and the loop counters `x`, `y`, `z`, and declares `cell`, `centre`,
- * `radius`, `offset`, `dist` and `d`. `CRATER_PROFILE` reads `d` and declares
- * `inside`, `bowl` and `rim`. A third interpolator supplies the first set and
+ * instead of being learned from a collision. CRATER_CELL reads base, p
+ * and the loop counters x, y, z, and declares cell, centre,
+ * radius, offset, dist and d. CRATER_PROFILE reads d and declares
+ * inside, bowl and rim. A third interpolator supplies the first set and
  * leaves the second alone.
  */
 export const CRATER_CELL = /* glsl */ `    vec3 cell = base + vec3(x, y, z);
@@ -55,8 +57,8 @@ export const CRATER_CELL = /* glsl */ `    vec3 cell = base + vec3(x, y, z);
  * Where the rim sits, and how sharp it is.
  *
  * Hoisted out of the profile because the *derivative* needs them too:
- * `station-surface.ts` differentiates the rim analytically, and its chain rule
- * carries `2 · CRATER_RIM_SHARPNESS²`. Written as literals in both places, a
+ * cratersAndGradient below differentiates the rim analytically, and its chain
+ * rule carries 2 · CRATER_RIM_SHARPNESS². Written as literals in both places, a
  * change to the sharpness here would leave the derivative describing a
  * different crater — silently, because a wrong slope shades plausibly.
  */
@@ -69,7 +71,7 @@ export const CRATER_PROFILE = /* glsl */ `      float inside = step(d, 1.0);
 
 /** Hashes, value noise, fBm, ridged fBm, domain warp. GLSL ES 1.00. */
 /**
- * `fbmN` for each octave count the classes use.
+ * fbmN for each octave count the classes use.
  *
  * Emitted from one template rather than written three times: GLSL ES 1.00
  * forbids a non-constant loop bound, so the functions genuinely cannot share a
@@ -168,6 +170,49 @@ float contour(vec3 q, float width, float warpFreq, float warpAmt) {
 // One impact per cell across a 3x3x3 neighbourhood: a parabolic bowl with a
 // raised rim. No amount of fBm produces a crater, and craters are the entire
 // reason an airless body reads as airless.
+/**
+ * The same field, accumulated with its slope.
+ *
+ * craters above answers "how deep here"; a normal also needs "which way is
+ * downhill", and the usual way to get it — reliefNormal's central
+ * differences — asks the height function four more times. On a body whose
+ * height *is* two crater walks that is ten walks a fragment for a normal that
+ * one walk already contains: a crater's profile is smooth in d, so its slope
+ * is available inside the loop that accumulates its depth.
+ *
+ * Two consumers now: the refinery's asteroid (#60), and AIRLESS (#65), which
+ * planet-classes.glsl.ts says is the most expensive class in the set for
+ * exactly this reason.
+ */
+vec4 cratersAndGradient(vec3 p, float scale, float depth) {
+  p *= scale;
+  vec3 base = floor(p);
+  float acc = 0.0;
+  vec3 grad = vec3(0.0);
+  for (int x = -1; x <= 1; ++x)
+  for (int y = -1; y <= 1; ++y)
+  for (int z = -1; z <= 1; ++z) {
+${CRATER_CELL}
+    if (d < 1.2) {
+${CRATER_PROFILE}
+      acc += (bowl + rim) * depth;
+      // d(bowl)/dd is 2d inside the bowl and zero beyond it; d(rim)/dd is the
+      // gaussian times its own exponent's derivative. Both read the profile's
+      // own defines rather than the numbers they evaluate to: hand-expanded,
+      // the sharpness would appear here as twice its square, and a change to it
+      // upstream would leave this describing a different crater — silently,
+      // because a wrong slope still shades plausibly.
+      float dProfile = (2.0 * d * inside)
+                     + rim * (-2.0 * CRATER_RIM_SHARPNESS * CRATER_RIM_SHARPNESS
+                              * (d - CRATER_RIM_AT));
+      // Chain rule out to p: dd/d|offset| is 1/radius, d|offset|/dp is the unit
+      // offset, and the outer p *= scale contributes another factor.
+      grad += dProfile * depth * scale * offset / max(dist * radius, 1e-6);
+    }
+  }
+  return vec4(grad, acc);
+}
+
 float craters(vec3 p, float scale, float depth) {
   p *= scale;
   vec3 base = floor(p);
@@ -191,9 +236,9 @@ ${CRATER_PROFILE}
  * Three terms the previous prototype was missing, and each fixes one way a
  * sphere stops reading as a sphere:
  *
- * - **Wrapped diffuse.** A hard `max(N·L, 0)` puts the terminator exactly on the
+ * - **Wrapped diffuse.** A hard max(N·L, 0) puts the terminator exactly on the
  *   geometric limb, which is right for an airless rock and wrong for anything
- *   with air — a thick atmosphere scatters light tens of degrees past it. `wrap`
+ *   with air — a thick atmosphere scatters light tens of degrees past it. wrap
  *   is the body's optical depth, so the same expression gives Luna a knife-edge
  *   terminator and Venus a soft one.
  * - **Limb darkening.** Grazing exit angles carry less light out. Without it the
@@ -203,6 +248,60 @@ ${CRATER_PROFILE}
  *   were the same colour, which is the single largest reason its worlds looked
  *   flat.
  */
+/**
+ * A last guard on what a fragment hands to the post-processing chain.
+ *
+ * **One bad pixel becomes a block, and that is bloom's doing rather than the
+ * shader's.** `UnrealBloomPass` averages the frame down a mip chain, so a
+ * single NaN or Inf spreads across a whole texel of a coarse level — which is
+ * a large rectangle on screen, appearing and vanishing as the geometry that
+ * produced it moves.
+ *
+ * Applied to the planet programs in this file — the surface classes, both
+ * shells and the ring. The star field in `backdrop.ts` and the patched rock
+ * material are custom fragments too and are *not* covered; they are the next
+ * place to look if the artefact survives this.
+ *
+ * This is the second of two guards against that artefact — the first is the
+ * mip geometry, at `bloomResolution` in main.ts, which demonstrably reduced it
+ * without ending it. Neither is a diagnosis: no shader here is known to emit a
+ * non-finite value, and the artefact does not reproduce headlessly, so it
+ * cannot be traced that way. `onResize` in main.ts carries what is actually
+ * established.
+ *
+ * The test is written inverted on purpose. NaN compares false against
+ * everything, so `!(c >= 0.0)` is true for NaN as well as for a negative,
+ * where `c < 0.0` would let NaN straight through. GLSL ES 1.00 has no `isnan`.
+ *
+ * The ceiling is far above anything meaningful — tone mapping has long since
+ * flattened this range — and far below half float's 65504, which is what the
+ * composer's targets store and what an unchecked product can reach.
+ */
+export const SANITISE_GLSL = /* glsl */ `
+float saneF(float v) {
+  // Inverted on purpose: NaN compares false against everything, so this is
+  // true for NaN as well as for a negative, where v < 0.0 would let NaN pass.
+  if (!(v >= 0.0)) return 0.0;
+  return min(v, 64.0);
+}
+vec3 sane(vec3 c) {
+  return vec3(saneF(c.r), saneF(c.g), saneF(c.b));
+}
+/*
+ * **Alpha too, and on these shaders alpha matters more than colour.**
+ *
+ * The first version wrapped only RGB. The shells are the transparent and
+ * additive passes, so their alpha is what scales their contribution into the
+ * buffer bloom then samples — a non-finite one carries straight through the
+ * exact path this guard exists to close, past a guarded colour. Guarding three
+ * channels out of four on the one program where the fourth does the blending
+ * was the wrong three.
+ */
+vec4 sane4(vec4 c) {
+  return vec4(sane(c.rgb), saneF(c.a));
+}
+`;
+
 export const LIGHT_GLSL = /* glsl */ `
 uniform vec3  sunDir;
 uniform vec3  sunColor;
@@ -236,6 +335,11 @@ export const VARYINGS_GLSL = /* glsl */ `
 varying vec3 vObjP;
 varying vec3 vWorldP;
 varying vec3 vWorldN;
+// The body's centre and this shell's radius, both in world units. The
+// atmosphere needs them to work out how much air a view ray actually passes
+// through, which is a question about the sphere rather than about the fragment.
+varying vec3 vCenter;
+varying float vRadius;
 `;
 
 export const SURFACE_VERTEX = /* glsl */ `
@@ -245,6 +349,8 @@ void main() {
   vec4 world = modelMatrix * vec4(position, 1.0);
   vWorldP = world.xyz;
   vWorldN = normalize(mat3(modelMatrix) * normal);
+  vCenter = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+  vRadius = length(world.xyz - vCenter);
   gl_Position = projectionMatrix * viewMatrix * world;
 }
 `;
@@ -252,14 +358,35 @@ void main() {
 /**
  * Assemble one class's fragment shader.
  *
- * The order is load-bearing: `reliefNormal` calls `height`, which the class body
+ * The order is load-bearing: reliefNormal calls height, which the class body
  * defines *after* it, so a prototype declaration goes in between. GLSL allows
  * this and it is the only way to keep the relief code shared rather than pasted
  * into all six classes that use it.
  */
-export function fragmentFor(surface: SurfaceClass): string {
+/**
+ * How the relief normal gets its gradient. A **compile-time** choice, not a
+ * uniform, and that is a correctness requirement rather than a preference.
+ *
+ * `dFdx`/`dFdy` are undefined inside non-uniform control flow, and a branch on
+ * a uniform is not reliably treated as uniform control flow by every driver —
+ * some evaluate both sides. Selecting the path with a `#define` means the
+ * derivative calls are simply not in the program when they are not wanted, and
+ * the four-tap program is byte-identical to the one that existed before the
+ * screen-space path was added.
+ *
+ * It also removes a branch from every planet fragment, which the uniform
+ * version was paying for on every class including the ones with no relief.
+ */
+export type ReliefPath = "four-tap" | "screen-space";
+
+export function fragmentFor(
+	surface: SurfaceClass,
+	relief: ReliefPath = "four-tap",
+): string {
 	return /* glsl */ `
 precision highp float;
+${relief === "screen-space" ? "#define RELIEF_SCREEN_SPACE 1" : ""}
+${SANITISE_GLSL}
 ${VARYINGS_GLSL}
 ${NOISE_GLSL}
 ${LIGHT_GLSL}
@@ -274,12 +401,16 @@ void main() {
   vec3  albedo = vec3(0.5);
   vec3  emissive = vec3(0.0);
   float specPower = 0.0, specMask = 0.0;
-  surface(p, albedo, N, emissive, specPower, specMask);
+  // ?perf=flat: a plain lit sphere, so the whole class shader can be priced
+  // against the rest of the frame. Diagnostic; see planet-surface.ts.
+  if (perfAblate < 1.5) surface(p, albedo, N, emissive, specPower, specMask);
 
   vec3 col = shade(albedo, N, V);
   if (specPower > 0.0) col += sunColor * specular(N, V, specPower) * specMask;
   col += emissive;
-  gl_FragColor = vec4(col, 1.0);
+  // Alpha is the literal 1.0 on the opaque surface, so only colour can go
+  // wrong here. The shells use sane4, where alpha does the blending.
+  gl_FragColor = vec4(sane(col), 1.0);
 }
 `;
 }
@@ -297,22 +428,81 @@ void main() {
 export const ATMOSPHERE_FRAGMENT = /* glsl */ `
 precision highp float;
 ${VARYINGS_GLSL}
+${SANITISE_GLSL}
 uniform vec3  sunDir;
 uniform vec3  atmoColor;
 uniform float atmoStrength;
+uniform float atmoInnerRatio;
+/*
+ * **How much air the ray goes through**, rather than how edge-on the shell is.
+ *
+ * The previous version used pow(1 - dot(N, V), 3.2), which is maximal exactly
+ * at the shell's outer silhouette — so the glow was brightest where the
+ * geometry ends and then stopped dead. That reads as a painted ring with two
+ * hard edges. That is the *sharp atmosphere*, a separate report from the
+ * flickering rectangles, and it became visible once bloom stopped smearing it.
+ *
+ * A real atmosphere is the opposite: the path through it goes to *zero* at the
+ * outer edge, grows inward, and is cut short where the planet blocks it. That
+ * is a chord length, and for a sphere it is worth computing rather than
+ * imitating — the falloff it gives is the reason a limb looks like air.
+ *
+ * b is how far along the ray the closest approach to the centre lies and d2 the
+ * square of that distance — the geometry the falloff below is built on. The
+ * lit-limb and forward-scattering terms are unchanged.
+ */
 void main() {
   vec3 N = normalize(vWorldN);
   vec3 V = normalize(cameraPosition - vWorldP);
-  float rim = pow(1.0 - max(dot(N, V), 0.0), 3.2);
+
+  // The view ray, and its closest approach to the body's centre.
+  vec3 toCentre = vCenter - cameraPosition;
+  vec3 dir = -V;
+  float b = dot(toCentre, dir);
+  float d2 = dot(toCentre, toCentre) - b * b;
+
+  // Air along the ray: the shell's chord, less the part of it the planet's own
+  // body occupies. innerRatio is the surface radius as a fraction of the
+  // shell's, which is how planet-surface.ts scales the two.
+  /*
+   * **Density falls off with altitude**, and that is what makes a limb soft.
+   *
+   * A chord through a shell of *uniform* density does reach zero at the outer
+   * edge — but as a square root, so its slope there is infinite and the edge is
+   * still a line. That was the first attempt, and shaped by pow(depth, 0.65) it
+   * saturated across the whole annulus: a flat band with a crisp rim, which is
+   * what it looked like. Both halves were wrong the same way — the profile had
+   * no tail, and the exponent boosted what little it had into saturation.
+   *
+   * Air thins exponentially with height, so what a ray gathers depends on where
+   * it passes, not only how far. Weighting by the altitude of the ray's closest
+   * approach gives that tail directly, for one exponential, and it has no edge
+   * to be sharp at: it is already near nothing before the geometry runs out.
+   */
+  float outer = vRadius;
+  float inner = outer * atmoInnerRatio;
+  float graze = sqrt(max(d2, 0.0));
+  // Zero at the ground, one at the top of the shell.
+  float altitude = clamp((graze - inner) / max(outer - inner, 1e-6), 0.0, 1.0);
+  // A scale height of 3.5 leaves about 3% of the ground value at the top,
+  // which reads as a tail rather than a border.
+  float density = exp(-altitude * 3.5);
+  // Multiplied out to exactly zero at the silhouette, so the small remainder
+  // the exponential still carries does not leave a step of its own.
+  float rim = density * (1.0 - altitude);
+  float depth = rim;
+
   // Only the lit limb glows, and it fades through the terminator rather than
   // stopping at it.
   float day = smoothstep(-0.45, 0.30, dot(N, sunDir));
   // Forward scattering: looking towards the star through the shell.
   float forward = pow(max(dot(V, -sunDir), 0.0), 5.0);
-  // Longer path at grazing angles scatters out the blue first.
-  vec3 sunset = mix(atmoColor, atmoColor * vec3(1.5, 0.75, 0.42), rim * 0.8);
-  gl_FragColor = vec4(sunset * (0.55 + 2.2 * forward) * day,
-                      rim * day * atmoStrength);
+  // Longer path at grazing angles scatters out the blue first — grazing is now
+  // "a long way through the air", which is what it always meant.
+  float grazing = pow(clamp(depth, 0.0, 1.0), 2.5);
+  vec3 sunset = mix(atmoColor, atmoColor * vec3(1.5, 0.75, 0.42), grazing * 0.8);
+  gl_FragColor = sane4(vec4(sunset * (0.55 + 2.2 * forward) * day,
+                            rim * day * atmoStrength));
 }
 `;
 
@@ -327,6 +517,7 @@ void main() {
 export const CLOUD_FRAGMENT = /* glsl */ `
 precision highp float;
 ${VARYINGS_GLSL}
+${SANITISE_GLSL}
 ${NOISE_GLSL}
 ${LIGHT_GLSL}
 uniform float time;
@@ -355,14 +546,15 @@ void main() {
   // Same lighting as the ground, so the cloud terminator lines up with it.
   float lit = wrappedDiffuse(N);
   float rim = pow(1.0 - max(dot(N, V), 0.0), 2.2);
-  gl_FragColor = vec4(cloudTint * (lit * 1.30 * sunColor + 0.025),
-                      clamp(mask, 0.0, 1.0) * (0.62 + 0.30 * rim));
+  gl_FragColor = sane4(vec4(cloudTint * (lit * 1.30 * sunColor + 0.025),
+                            clamp(mask, 0.0, 1.0) * (0.62 + 0.30 * rim)));
 }
 `;
 
 /** A ring plane: banded opacity, plus the planet's own shadow across it. */
 export const RING_FRAGMENT = /* glsl */ `
 precision highp float;
+${SANITISE_GLSL}
 varying vec2 vRing;
 varying vec3 vWorldP;
 varying vec3 vCentre;
@@ -400,7 +592,7 @@ void main() {
   float shadow = (along < 0.0) ? 1.0 : smoothstep(0.94, 1.10, perp);
 
   vec3 ice = mix(vec3(0.30, 0.27, 0.23), vec3(0.55, 0.52, 0.47), grain);
-  gl_FragColor = vec4(ice * (0.25 + 0.75 * shadow), density * 0.85);
+  gl_FragColor = sane4(vec4(ice * (0.25 + 0.75 * shadow), density * 0.85));
 }
 `;
 

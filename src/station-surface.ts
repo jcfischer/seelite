@@ -154,34 +154,6 @@ ${NOISE_GLSL}
  * that matched strings — which catches a changed line but not an added one, so
  * a new term in one function would have passed green while the fields diverged.
  */
-vec4 cratersAndGradient(vec3 p, float scale, float depth) {
-  p *= scale;
-  vec3 base = floor(p);
-  float acc = 0.0;
-  vec3 grad = vec3(0.0);
-  for (int x = -1; x <= 1; ++x)
-  for (int y = -1; y <= 1; ++y)
-  for (int z = -1; z <= 1; ++z) {
-${CRATER_CELL}
-    if (d < 1.2) {
-${CRATER_PROFILE}
-      acc += (bowl + rim) * depth;
-      // d(bowl)/dd is 2d inside the bowl and zero beyond it; d(rim)/dd is the
-      // gaussian times its own exponent's derivative. Both read the profile's
-      // own defines rather than the numbers they evaluate to: hand-expanded,
-      // the sharpness would appear here as twice its square, and a change to it
-      // upstream would leave this describing a different crater — silently,
-      // because a wrong slope still shades plausibly.
-      float dProfile = (2.0 * d * inside)
-                     + rim * (-2.0 * CRATER_RIM_SHARPNESS * CRATER_RIM_SHARPNESS
-                              * (d - CRATER_RIM_AT));
-      // Chain rule out to p: dd/d|offset| is 1/radius, d|offset|/dp is the unit
-      // offset, and the outer p *= scale contributes another factor.
-      grad += dProfile * depth * scale * offset / max(dist * radius, 1e-6);
-    }
-  }
-  return vec4(grad, acc);
-}
 
 // The fine term. It shades nothing: the normal belongs to the craters, so this
 // is evaluated once for the albedo and its gradient is never wanted.

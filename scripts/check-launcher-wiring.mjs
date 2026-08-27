@@ -169,6 +169,27 @@ for (const path of scripts(DIR).sort()) {
 		problems.push(`${name}: still resolves Playwright itself`);
 
 	/**
+	 * No probe opens a page with `?perf`.
+	 *
+	 * The perf panel binds a plain `window` keydown listener at mount, so a
+	 * probe that mounted it would have its own keystrokes toggling diagnostics —
+	 * bloom off, a shell hidden, the surface flattened — under checks that
+	 * measure what is drawn. `perf-panel.ts` said the isolation "rests entirely
+	 * on the probe URL omitting ?perf, which nothing enforces". This is the
+	 * branch's own answer to that sentence, which it already applied to key
+	 * collisions: a comment cannot hold it, a check can.
+	 */
+	// Against `code`, which keeps string bodies, and not `bare`, which empties
+	// them — a URL *is* a string, so the version of this that read `bare` was
+	// checking source with the thing it looks for already removed. It passed a
+	// probe with `?perf` in it, which is how that was found.
+	if (/[?&]perf\b/.test(code))
+		problems.push(
+			`${name}: opens a page with ?perf — that mounts the diagnostic panel, ` +
+				`whose key listener would then see this probe's keystrokes`,
+		);
+
+	/**
 	 * Every page-opening *call site* has a watch call site beside it.
 	 *
 	 * The shader-error listener lives inside `tally()`'s `watch` and

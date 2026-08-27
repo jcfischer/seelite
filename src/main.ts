@@ -72,6 +72,7 @@ import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js"
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
 import { starField } from "./backdrop";
+import { SettingsStore } from "./settings";
 import { AudioFX } from "./audio";
 import {
 	SCANNER_RANGE_KM,
@@ -537,6 +538,60 @@ class Game {
 	readonly farScene = new THREE.Scene();
 	/** Approach: close stars, planets, and moons at intermediate scale. */
 	readonly approachScene = new THREE.Scene();
+	/** Switchable from the perf panel; see `perf-panel.ts`. */
+	private bloomPass!: UnrealBloomPass;
+	/**
+	 * Resolution has exactly one owner, and it is the player's setting.
+	 *
+	 * This game is fill-rate bound — a planet filling the view costs its surface
+	 * shader per pixel — so the buffer size is the largest single lever there
+	 * is, and a retina panel makes it four times what the same window costs at
+	 * ratio 1.
+	 *
+	 * There was briefly a second multiplier here, driven by the perf panel, and
+	 * it multiplied with the setting rather than replacing it: panel at 50% and
+	 * setting at 50% gave 25%, while the panel's readout reported only its own
+	 * half. A diagnostic may not co-own player state. The panel prices the terms
+	 * that are not settings; this one is a setting.
+	 *
+	 * **What was observed, and what it does and does not license.** The same
+	 * view over a venusian gave 17 fps on a retina laptop panel and 70 on an
+	 * external display. The 4:1 ratio matches the pixel counts, and an earlier
+	 * version of this comment concluded "that is the pixel count and nothing
+	 * else". It is not entitled to: two physical displays differ in refresh
+	 * rate, compositor path, GPU power state and thermal headroom as well as in
+	 * pixels, and the comparison controlled for none of them.
+	 *
+	 * The controlled test is a keypress and has not been run: set the setting to
+	 * 50% on the *laptop*, where the buffer then matches the external display's,
+	 * and see whether the rate does. Until then the honest reading is that
+	 * resolution is a large lever — which the buffer sizes prove on their own —
+	 * and not that it is the whole of that particular gap.
+	 */
+	readonly settings = new SettingsStore();
+
+	/**
+	 * Drop every held key.
+	 *
+	 * A dialog that takes `keydown` does not take back the keys already down:
+	 * a throttle or pitch key held when the settings screen opens stays in this
+	 * set, and the ship goes on flying behind a screen the player is reading.
+	 * The settings screen calls this as it opens, and `probe-boot` fails if it
+	 * stops.
+	 */
+	releaseHeldKeys() {
+		this.keys.clear();
+	}
+	/** How many keys the game currently believes are down — what `probe-boot`
+	 *  asserts on, since "the ship kept flying" is otherwise only a comment. */
+	get heldKeyCount() {
+		return this.keys.size;
+	}
+
+	/** The bloom pass, for the perf panel to switch. */
+	get bloom() {
+		return this.bloomPass ?? null;
+	}
 	/** Near: ships, stations, anything at 1:1 kilometres. */
 	readonly nearScene = new THREE.Scene();
 
@@ -1036,6 +1091,8 @@ class Game {
 		});
 		this.renderer.setSize(window.innerWidth, window.innerHeight);
 		this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+		// The composer is given the same ratio in `onResize`, which is called
+		// once during boot so the two can never be set in only one place.
 		this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
 		this.renderer.toneMappingExposure = 1.0;
 		// The passes below manage their own clearing — the composite depends on
@@ -1117,14 +1174,12 @@ class Game {
 		this.composer.addPass(farPass);
 		this.composer.addPass(approachPass);
 		this.composer.addPass(nearPass);
-		this.composer.addPass(
-			new UnrealBloomPass(
-				new THREE.Vector2(window.innerWidth, window.innerHeight),
-				0.55,
-				0.6,
-				0.85,
-			),
-		);
+		// Kept as a field so `perf-panel.ts` can switch it live. A full-screen
+		// multi-pass blur at up to 2x device pixel ratio is a fixed cost every
+		// frame whatever is on screen, so it is the first thing to price against
+		// a shader that is only expensive when a body fills the view.
+		this.bloomPass = new UnrealBloomPass(bloomResolution(), 0.55, 0.6, 0.85);
+		this.composer.addPass(this.bloomPass);
 		this.composer.addPass(new OutputPass());
 
 		this.overlay = document.getElementById("overlay") as HTMLCanvasElement;
@@ -1139,6 +1194,33 @@ class Game {
 			this.updateCockpit();
 		});
 		window.addEventListener("resize", () => this.onResize());
+		// A resolution setting is a change to the drawing buffer, so it lands the
+		// same way a window resize does.
+		this.settings.subscribe(() => this.onResize());
+		/**
+		 * A display change is not always a resize.
+		 *
+		 * Dragging the window from a retina panel to an external one can leave
+		 * the window the same CSS size while `devicePixelRatio` goes from 2 to
+		 * 1, and no `resize` fires. A resolution media query does fire, and
+		 * re-arms itself because the query it watches is the ratio it just
+		 * left.
+		 */
+		const watchRatio = () => {
+			const q = window.matchMedia(
+				`(resolution: ${window.devicePixelRatio}dppx)`,
+			);
+			const once = () => {
+				q.removeEventListener("change", once);
+				this.onResize();
+				watchRatio();
+			};
+			q.addEventListener("change", once);
+		};
+		watchRatio();
+		// Once at boot, so the renderer and the composer cannot be given a ratio
+		// in only one place.
+		this.onResize();
 		window.addEventListener("keydown", (e) => this.onKey(e, true));
 		window.addEventListener("keyup", (e) => this.onKey(e, false));
 		// Audio cannot open before a gesture, so it opens on the first one.
@@ -3797,10 +3879,66 @@ class Game {
 		this.overlay.height = window.innerHeight;
 	}
 
+	/**
+	 * **The pixel ratio is re-applied here, and that is the fix for a real
+	 * artefact rather than housekeeping.**
+	 *
+	 * `setPixelRatio` was called once, at construction, and the composer was
+	 * never told a ratio at all. `EffectComposer` sizes its own targets from
+	 * what it is given, so after any resize its render targets were CSS pixels
+	 * while the renderer's drawing buffer was CSS pixels times the ratio. The
+	 * two then disagree, and `UnrealBloomPass` — which samples a mip chain with
+	 * texel offsets computed from its own resolution — reads outside its
+	 * footprint.
+	 *
+	 * **The flicker's account lives here**, because four places were each
+	 * claiming to be its cause.
+	 *
+	 * **All of it is one person's eye, and that is worth saying before the rest
+	 * of it.** The artefact does not reproduce headlessly — 25 frames in chase
+	 * view on a software rasteriser show only the terminator moving — so there
+	 * is no recording, no before/after capture and no repeatable procedure
+	 * here. Everything below is the principal reporting what he saw on his own
+	 * machine, in a session on 2026-08-27, and none of it is stronger than
+	 * that.
+	 *
+	 * What he reported: black rectangles, roughly one coarse bloom texel
+	 * across, appearing and vanishing as the frame moves; the same on a build
+	 * of `main` served alongside this branch, which is what places the artefact
+	 * before this work rather than in it; gone when bloom is switched off,
+	 * which is what points at bloom; and smaller but still present after the
+	 * mip fix, which is the whole basis for saying that one helped.
+	 *
+	 * Two candidate inputs were found and both guarded — mip levels built from
+	 * an odd start (`bloomResolution`) and non-finite fragment colours
+	 * (`SANITISE_GLSL`). Neither is a diagnosis. Whether the second finishes it
+	 * is unknown at the time of writing. Anyone reopening this should start by
+	 * getting a capture, because the next person will otherwise inherit the
+	 * same four unfalsifiable stories this comment replaced.
+	 *
+	 * The pixel-ratio re-application below is *not* one of those candidates. It
+	 * was investigated as one and ruled out. The measurement: with a page opened
+	 * at `deviceScaleFactor` 1 and again at 2, then resized,
+	 * `renderer.getDrawingBufferSize()` and the composer's `renderTarget1` were
+	 * read back and compared — 1000x640 against 1000x640, and 2000x1280 against
+	 * 2000x1280, on this branch *and* on main. `EffectComposer.setSize` applies
+	 * the ratio itself, so the mismatch this was going to fix does not exist.
+	 * It is kept for the display-move case only, where `devicePixelRatio`
+	 * changes and a value captured at construction is simply stale.
+	 *
+	 * Moving a window between displays is the case that bites hardest, because
+	 * `devicePixelRatio` itself changes — a retina laptop at 2, an external
+	 * panel at 1 — and the value captured at construction is then simply wrong.
+	 * It is read again here rather than remembered.
+	 */
 	private onResize() {
 		const w = window.innerWidth;
 		const h = window.innerHeight;
 		this.sizeOverlay();
+		const ratio =
+			Math.min(window.devicePixelRatio, 2) * this.settings.value.renderScale;
+		this.renderer.setPixelRatio(ratio);
+		this.composer.setPixelRatio(ratio);
 		for (const cam of [
 			this.backdropCamera,
 			this.farCamera,
@@ -3812,9 +3950,62 @@ class Game {
 		}
 		this.renderer.setSize(w, h);
 		this.composer.setSize(w, h);
+		// **After** the composer, not before. `EffectComposer.setSize` calls
+		// `setSize` on every pass it holds, so bloom's own resolution has to be
+		// re-applied afterwards or it is immediately overwritten with the full
+		// drawing buffer — which is what the first version of this did, and the
+		// mip chain went on being built at 451x321, 113x81, 57x41.
+		const bloom = bloomResolution();
+		this.bloomPass?.setSize(bloom.x, bloom.y);
 		this.starMaterial.uniforms.uPixelScale.value =
 			this.renderer.domElement.height * STAR_PIXEL_SCALE;
 	}
+}
+
+/**
+ * The size the bloom chain works at: half the window, quantised to a multiple
+ * of 32, and independent of the device pixel ratio.
+ *
+ * **Divisible by 32, because the chain halves five times.** `UnrealBloomPass`
+ * builds five mip levels by repeatedly halving its resolution. An odd width
+ * rounds, so the blur of a level samples a footprint its target does not cover,
+ * and
+ * the outermost row or column of a coarse mip can be left holding whatever was
+ * in that memory. On a coarse mip one texel is a large block of the screen —
+ * which is the size and shape of the artefact the principal reported, and it
+ * would depend on the window size, which is why it appeared on one display and
+ * not the other.
+ *
+ * **Independent of the ratio, because bloom is a blur.** Running the chain over
+ * four times as many pixels on a retina panel buys nothing visible: the result
+ * is a wide, soft glow either way. This is the one pass where resolution is
+ * close to free to give up.
+ *
+ * That is about the chain's *own* size and says nothing about its input. The
+ * resolution setting shrinks the frame bloom reads, and the principal observed
+ * the cockpit's glow thinning as it does — fine highlights are averaged away
+ * before they can pass the brightness threshold, so fewer of them bloom at all.
+ * The two are not in tension: this pass is cheap to shrink, and what it is
+ * given still matters. `settings.ts` tells the player the second half, which is
+ * the half they can see.
+ *
+ * Both of those are claims about a machine I cannot see. And the saving is not
+ * certain either, which an earlier version of this said it was: switching bloom
+ * off entirely moved terran by nothing measurable, so quartering its pixel
+ * count cannot be relied on to move it more. The measurement that would settle
+ * that was never taken. What *is* established is that the artefact is bloom's,
+ * because switching bloom off removes it, and that a whole mip chain is the
+ * right shape whether or not it is faster.
+ */
+function bloomResolution() {
+	// A multiple of 32, not merely even: the chain halves five times, so only a
+	// starting size divisible by 2^5 keeps every level whole. Rounding to even
+	// was the first attempt and left 225, 113, 57, 29, 15 across the widths.
+	const quantised = (n: number) => Math.max(32, Math.round(n / 32) * 32);
+	return new THREE.Vector2(
+		quantised(window.innerWidth / 2),
+		quantised(window.innerHeight / 2),
+	);
 }
 
 /** Clamp a signed value to ±`limit` — the mouse's per-frame guard. */
@@ -3906,6 +4097,28 @@ if (query.has("model-viewer")) {
 	// a probe needs to assert on has to be reachable from here, or the probe ends
 	// up asserting on pixels for want of a number.
 	(window as unknown as { __seelite: Game }).__seelite = game;
+
+	// `?perf` mounts the cost-attribution panel — live switches for bloom, the
+	// two shells, the surface shader and the crater path, so a body can be flown
+	// to once and the terms toggled in place rather than compared across two
+	// reloads from two positions.
+	//
+	// Here rather than beside the other query gates above, and that is not
+	// tidiness: the panel walks the game's scenes, so it has to be mounted after
+	// the game exists. Gated first, so nothing is imported when it is not asked
+	// for.
+	// The settings screen is a player-facing feature, so it is not gated.
+	import("./settings-panel").then(({ mountSettingsPanel }) =>
+		mountSettingsPanel(game.settings, () => game.releaseHeldKeys()),
+	);
+
+	if (query.has("perf"))
+		import("./perf-panel").then(({ mountPerfPanel }) =>
+			mountPerfPanel({
+				scenes: [game.nearScene, game.approachScene, game.farScene],
+				bloom: game.bloom,
+			}),
+		);
 }
 
 export type { Game };
