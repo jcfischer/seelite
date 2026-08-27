@@ -636,7 +636,7 @@ async function fpsGate() {
 	// gates on nothing: whether the read below saw a measured figure or the
 	// placeholder would come down to boot latency, on a wait written to take
 	// exactly that out. A digit is what the placeholder does not have.
-	await metered
+	const rated = await metered
 		.waitForFunction(
 			() =>
 				/\d/.test(
@@ -645,7 +645,8 @@ async function fpsGate() {
 			null,
 			{ timeout: 20000 },
 		)
-		.catch(() => {});
+		.then(() => true)
+		.catch(() => false);
 	// The page is asked what it is before it is asked what it reads. Every wait in
 	// this block swallows its expiry, which is what keeps a failure a named check
 	// rather than a crash — and it also means the read below runs whether or not
@@ -666,7 +667,12 @@ async function fpsGate() {
 	// browser rather than by anything in this file.
 	check(
 		"`?fps` mounts a readout that reports a finite rate and a worst frame",
-		reading.query.includes("fps") &&
+		// `rated` is the wait's own verdict, asserted rather than assumed.
+		// Swallowing an expiry is what keeps a failure a named check instead of
+		// a crash; it also means the read above runs either way, so without this
+		// the check could pass on whatever text happened to be on the page.
+		rated &&
+			reading.query.includes("fps") &&
 			Number.isFinite(rate) &&
 			rate > 0 &&
 			reading.text.includes("worst"),

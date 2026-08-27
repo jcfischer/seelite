@@ -95,7 +95,11 @@ const problems = [];
 let callers = 0;
 
 /**
- * Scripts that open a page and are deliberately outside the watch rule.
+ * Scripts allowed to open a page without a `tally()`.
+ *
+ * This is the *only* thing an entry buys. It does not switch off the watch
+ * rules — those are gated on having a tally, which an exempt file does not
+ * have, so they never fire there anyway.
  *
  * One entry, with its reason beside it. `if (reports)` did this job implicitly
  * and covered every future file that forgets a tally along with the one that
@@ -209,8 +213,13 @@ for (const path of scripts(DIR).sort()) {
 				`with a reason if that is deliberate`,
 		);
 
+	// Not gated on EXEMPT. That list buys one thing — permission to open pages
+	// without a tally — and an entry on it was silently switching off the
+	// proximity rule and the `watchShaders` rule as well, which are about
+	// something else. They are gated on `reports`, which an exempt file does not
+	// have, so they simply do not fire there; nothing needs to exempt them.
 	const WITHIN = 8;
-	if (reports && !EXEMPT.has(name))
+	if (reports)
 		for (const opened of bare.matchAll(/\.newPage\s*\(/g)) {
 			const after = bare
 				.slice(opened.index ?? 0)

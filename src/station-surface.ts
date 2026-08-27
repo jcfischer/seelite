@@ -133,8 +133,11 @@ ${NOISE_GLSL}
  *     of about 0.009 and a slope of about -0.25. Both are dropped, not faded.
  *
  * The height itself is near-continuous at both — 0.009 x depth at the cull —
- * so this shows in shading, not in shape: a harder edge at the crater lip than
- * the differenced normal gave, and a faint step at the cull radius. The rock
+ * so the *arithmetic* says a break in the normal without a matching break in
+ * the surface, which would read as a harder edge at the crater lip and a faint
+ * step at the cull radius. That last sentence is a prediction, not an
+ * observation: it says what a discontinuity in a normal usually looks like,
+ * and nothing here has rendered the two side by side to check. The rock
  * shipped with both present, and nobody has looked for either specifically —
  * the one visual comparison on record is of the grain term at 200 m. So
  * "accepted" would be the wrong word: what happened is that neither was

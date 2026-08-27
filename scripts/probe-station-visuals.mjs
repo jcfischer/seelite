@@ -454,7 +454,7 @@ for (const viewport of VIEWPORTS) {
 		 * `applyRockSurface` records whether each `replace` changed anything;
 		 * this is where that gets read.
 		 */
-		const splices = await page.evaluate(() => {
+		const splices = await page.evaluate((refineryId) => {
 			// Both layers: a body's layer is its distance, and the scan runs
 			// after the loop above has left the camera wherever the last type
 			// put it.
@@ -466,9 +466,25 @@ for (const viewport of VIEWPORTS) {
 						if (material?.userData?.rockSplices)
 							out.push(Object.entries(material.userData.rockSplices));
 				});
-			return out;
-		});
-		const landed = splices.flat();
+			// Whether the refinery — the one station that has an asteroid — is
+			// carrying a patched material at all. Counting splices alone cannot
+			// answer this: a refinery that stopped calling `applyRockSurface`
+			// contributes nothing to `out`, and a check over `out` then passes
+			// on somebody else's rock. That is the failure this check names.
+			let onRefinery = 0;
+			const refinery = window.__meshOfBody(refineryId);
+			refinery?.traverse((object) => {
+				for (const material of [object.material].flat())
+					if (material?.userData?.rockSplices) onRefinery++;
+			});
+			return { all: out, onRefinery };
+		}, byType.refinery);
+		const landed = splices.all.flat();
+		check(
+			"the refinery carries a patched rock material",
+			splices.onRefinery > 0,
+			`${splices.onRefinery} patched material(s) under the refinery`,
+		);
 		check(
 			"every rock-surface splice found its marker",
 			landed.length > 0 && landed.every(([, ok]) => ok),
