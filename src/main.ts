@@ -4006,13 +4006,17 @@ class Game {
 						ctx.font = `${size}px ui-monospace, monospace`;
 					}
 					fittedFont = ctx.font;
-					this.combatStatusFit.set(cacheKey, { font: fittedFont });
+					this.combatStatusFit.set(cacheKey, {
+						font: fittedFont,
+						worstWidth: ctx.measureText(widest).width,
+					});
 				}
 				ctx.font = fittedFont;
 				const width = ctx.measureText(text).width;
 				drawnLines.push({ text, font: fittedFont, width });
 				ctx.fillStyle = fill;
 				ctx.fillText(text, w / 2, y);
+				return fittedFont;
 			};
 			drawFitted(
 				"COMBAT PROTOTYPE — hold SPACE pulse · B beam · Z warning · R ECM",
@@ -4039,41 +4043,27 @@ class Game {
 				"PLAYER  SHIELDS F 999  A 999  HULL 999",
 			);
 			const combatStatus = `FIRE ${this.combat.firing?.toUpperCase() ?? "SAFE"} · H ${this.combat.heat.toFixed(0)} E ${this.combat.energy.toFixed(0)} · LOCK ${this.combat.missileLock ? "READY" : "ACQ"} · MISSILE ${this.combat.incomingMissile ? "WARNING" : "CLEAR"} · INTD ${this.combat.interdiction ? "ACTIVE" : "CLEAR"}`;
-			// Fit against the widest status the block can emit, so any live state
-			// fits whatever the first frame happened to display.
+			// The status line goes through the same fitter, keyed on its widest
+			// text so any live state fits whatever the first frame displayed.
 			const longestStatus =
 				"FIRE PULSE · H 100 E 100 · LOCK READY · MISSILE WARNING · INTD ACTIVE";
-			let fittedEntry = this.combatStatusFit.get(w);
-			if (!fittedEntry) {
-				ctx.font = PROMPT_FONT;
-				const startSize = parseInt(PROMPT_FONT, 10);
-				let size = startSize;
-				while (size > 9 && ctx.measureText(longestStatus).width > w - 16) {
-					size -= 1;
-					ctx.font = `${size}px ui-monospace, Menlo, monospace`;
-				}
-				fittedEntry = {
-					font: ctx.font,
-					worstWidth: ctx.measureText(longestStatus).width,
-				};
-				this.combatStatusFit.set(w, fittedEntry);
-			}
-			ctx.font = fittedEntry.font;
-			const statusWidth = ctx.measureText(combatStatus).width;
-			this.combatStatusWorstWidth = fittedEntry.worstWidth ?? 0;
-			drawnLines.push({
-				text: combatStatus,
-				font: fittedEntry.font,
-				width: statusWidth,
-			});
-			ctx.fillStyle = PROMPT_FILL;
-			ctx.fillText(combatStatus, w / 2, h * 0.84);
+			const statusFont = drawFitted(
+				combatStatus,
+				h * 0.84,
+				PROMPT_FILL,
+				parseInt(PROMPT_FONT, 10),
+				"status",
+				longestStatus,
+			);
+			this.combatStatusWorstWidth =
+				this.combatStatusFit.get(`status|${w}`)?.worstWidth ?? 0;
+			const statusWidth = drawnLines.at(-1)!.width;
 			this.combatOverlayStatus.setCenteredPrompt(
 				combatStatus,
 				w / 2,
 				h * 0.84,
-				drawnLines.at(-1)!.width,
-				drawnLines.at(-1)!.font,
+				statusWidth,
+				statusFont,
 			);
 			this.combatOverlayLines = drawnLines;
 			ctx.restore();
