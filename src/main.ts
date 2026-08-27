@@ -1283,6 +1283,7 @@ class Game {
 			const once = () => {
 				q.removeEventListener("change", once);
 				this.onResize();
+				this.combatStatusFit.clear();
 				watchRatio();
 			};
 			q.addEventListener("change", once);
@@ -3992,7 +3993,8 @@ class Game {
 			let fitted = this.combatStatusFit.get(fitKey);
 			if (!fitted) {
 				ctx.font = PROMPT_FONT;
-				let size = 13;
+				const startSize = parseInt(PROMPT_FONT, 10);
+				let size = startSize;
 				while (size > 9 && ctx.measureText(combatStatus).width > w - 16) {
 					size -= 1;
 					ctx.font = `${size}px ui-monospace, Menlo, monospace`;

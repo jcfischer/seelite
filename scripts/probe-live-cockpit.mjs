@@ -533,6 +533,11 @@ const laserTracerPixels = await combatPage.evaluate(() => {
 	return { shown, hidden };
 });
 const laserPixels = laserTracerPixels.shown - laserTracerPixels.hidden;
+const beamVisible = await combatPage.evaluate(() => {
+	const game = window.__seelite;
+	const laser = game.nearScene.getObjectByName("combat-prototype-laser");
+	return laser?.visible === true;
+});
 const combatOverlayRendered = await combatPage.evaluate(
 	() => globalThis.__seeliteMeasureCockpit().combatOverlayText,
 );
@@ -546,12 +551,13 @@ const resumedFrames = await combatPage.evaluate(async () => {
 check("prototype: frame loop resumes after freeze", resumedFrames > 0);
 await combatPage.keyboard.up("Space");
 check(
-	"prototype: holding Space draws a laser and exposes immediate PULSE feedback on the glass overlay",
-	laserPixels > 50 &&
+	"prototype: holding Space shows the beam, draws the glass tracer and exposes immediate PULSE feedback",
+	beamVisible &&
+		laserPixels > 50 &&
 		COMBAT_STATUS.test(combatReadout) &&
 		combatReadout.includes("FIRE PULSE") &&
 		combatOverlayRendered,
-	`${laserPixels} changed pixels, status: ${combatReadout}, overlay glyphs: ${combatOverlayRendered}`,
+	`beam: ${beamVisible}, ${laserPixels} tracer pixels, status: ${combatReadout}, overlay glyphs: ${combatOverlayRendered}`,
 );
 await combatPage.close();
 
