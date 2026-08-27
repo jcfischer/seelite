@@ -3123,7 +3123,10 @@ class Game {
 				// probe therefore never observes ACTIVE in normal flight, only CLEAR.
 				interdicting: this.regime === "cruise",
 				breakAngle: this.keys.has("q") || this.keys.has("e"),
-				enemyFiring: this.combat.targetHull > 0 && targetInCone,
+				// The enemy fires on its own schedule, not on the player's aim cone:
+				// gating it on targetInCone would let the duel rig only be damaged
+				// while the player happens to be pointing at it.
+				enemyFiring: this.combat.targetHull > 0 && this.combat.elapsed % 4 < 2,
 				enemyHitAft: Math.floor(this.combat.elapsed / 3) % 2 === 1,
 			});
 		}

@@ -403,7 +403,7 @@ for (const viewport of VIEWPORTS) {
 	});
 	const distant = await page.evaluate(measureLiveCockpit);
 	check(
-		`${viewport.name}: a distant target renders combat lock status and cruise guidance on the glass`,
+		`${viewport.name}: a distant target renders ETA on its physical panel and cruise guidance on the glass`,
 		distant.targetRangeKm > 3600 * 2 &&
 			distant.targetInstrumentSecondaryText &&
 			distant.cruisePromptText &&
@@ -466,6 +466,31 @@ await combatPage.waitForFunction(
 		globalThis.__seeliteCombatStatus.test(
 			window.__seelite.combatOverlayStatus.text,
 		),
+);
+await combatPage.keyboard.press("z");
+const warningShown = await combatPage
+	.waitForFunction(
+		() => window.__seelite.combatOverlayStatus.text.includes("MISSILE WARNING"),
+		{ timeout: 5000 },
+	)
+	.then(
+		() => true,
+		() => false,
+	);
+await combatPage.keyboard.press("r");
+const warningCleared = await combatPage
+	.waitForFunction(
+		() =>
+			!window.__seelite.combatOverlayStatus.text.includes("MISSILE WARNING"),
+		{ timeout: 5000 },
+	)
+	.then(
+		() => true,
+		() => false,
+	);
+check(
+	"prototype: Z injects and R clears a missile warning",
+	warningShown && warningCleared,
 );
 const energyBeforePulse = await combatPage.evaluate(
 	() => window.__seelite.combat.energy,
@@ -547,7 +572,7 @@ const narrowOverlay = await narrowCombatPage.evaluate(() => {
 	const context = overlay.getContext("2d");
 	context.font = status.font;
 	const width = context.measureText(status.text).width;
-	const fits = width <= overlay.width;
+	const fits = width <= overlay.width - 16;
 	const rendered = globalThis.__seeliteMeasureCockpit().combatOverlayText;
 	return {
 		rendered,
