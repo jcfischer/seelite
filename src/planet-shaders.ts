@@ -11,6 +11,9 @@
  * Values look darker than the equivalent sRGB swatch on purpose.
  */
 
+import type { SurfaceClass } from "./planet-appearance";
+import { CLASS_GLSL, RELIEF } from "./planet-classes.glsl";
+
 /**
  * One cell of a crater field, and the profile of the crater in it.
  *
@@ -242,6 +245,176 @@ void main() {
   vec4 world = modelMatrix * vec4(position, 1.0);
   vWorldP = world.xyz;
   vWorldN = normalize(mat3(modelMatrix) * normal);
+  gl_Position = projectionMatrix * viewMatrix * world;
+}
+`;
+
+/**
+ * Assemble one class's fragment shader.
+ *
+ * The order is load-bearing: `reliefNormal` calls `height`, which the class body
+ * defines *after* it, so a prototype declaration goes in between. GLSL allows
+ * this and it is the only way to keep the relief code shared rather than pasted
+ * into all six classes that use it.
+ */
+export function fragmentFor(surface: SurfaceClass): string {
+	return /* glsl */ `
+precision highp float;
+${VARYINGS_GLSL}
+${NOISE_GLSL}
+${LIGHT_GLSL}
+float height(vec3 p);
+${RELIEF}
+${CLASS_GLSL[surface]}
+void main() {
+  vec3 p = normalize(vObjP);
+  vec3 N = normalize(vWorldN);
+  vec3 V = normalize(cameraPosition - vWorldP);
+
+  vec3  albedo = vec3(0.5);
+  vec3  emissive = vec3(0.0);
+  float specPower = 0.0, specMask = 0.0;
+  surface(p, albedo, N, emissive, specPower, specMask);
+
+  vec3 col = shade(albedo, N, V);
+  if (specPower > 0.0) col += sunColor * specular(N, V, specPower) * specMask;
+  col += emissive;
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+}
+
+/**
+ * The shell around a body with air.
+ *
+ * Three things the old version got wrong. The rim was lit uniformly, so a
+ * crescent planet wore a full halo and the terminator vanished into it — here
+ * the glow is gated by the sun. There was no forward scattering, so the bright
+ * arc that appears when you look *past* a planet at its star was missing. And
+ * the colour was one uniform: a real limb reddens as the path length through it
+ * grows, which is why the sunset term is separate.
+ */
+export const ATMOSPHERE_FRAGMENT = /* glsl */ `
+precision highp float;
+${VARYINGS_GLSL}
+uniform vec3  sunDir;
+uniform vec3  atmoColor;
+uniform float atmoStrength;
+void main() {
+  vec3 N = normalize(vWorldN);
+  vec3 V = normalize(cameraPosition - vWorldP);
+  float rim = pow(1.0 - max(dot(N, V), 0.0), 3.2);
+  // Only the lit limb glows, and it fades through the terminator rather than
+  // stopping at it.
+  float day = smoothstep(-0.45, 0.30, dot(N, sunDir));
+  // Forward scattering: looking towards the star through the shell.
+  float forward = pow(max(dot(V, -sunDir), 0.0), 5.0);
+  // Longer path at grazing angles scatters out the blue first.
+  vec3 sunset = mix(atmoColor, atmoColor * vec3(1.5, 0.75, 0.42), rim * 0.8);
+  gl_FragColor = vec4(sunset * (0.55 + 2.2 * forward) * day,
+                      rim * day * atmoStrength);
+}
+`;
+
+/**
+ * The weather shell, for the classes that have weather separate from the ground.
+ *
+ * Kept as its own mesh rather than a term in the surface shader for one reason:
+ * clouds are at a different altitude, so they cast onto a different part of the
+ * disc and they cross the terminator before the ground does. Painting them into
+ * the surface loses both, and loses the parallax that sells the gap.
+ */
+export const CLOUD_FRAGMENT = /* glsl */ `
+precision highp float;
+${VARYINGS_GLSL}
+${NOISE_GLSL}
+${LIGHT_GLSL}
+uniform float time;
+uniform float cloudCover;
+uniform float seedOffset;
+uniform vec3  cloudTint;
+void main() {
+  vec3 p = normalize(vObjP);
+  // Two rates: the deck drifts and the detail shears across it, which reads as
+  // one system moving rather than a texture sliding.
+  vec3 slow = p + vec3(time * 0.0030, 0.0, 0.0) + seedOffset;
+  vec3 fast = p + vec3(time * 0.0068, 0.0, time * 0.0011) + seedOffset;
+  float broad = fbm4(warp(slow * 2.3, 1.1, 0.75));
+  float wisp  = fbm5(fast * 8.5);
+
+  // Weather is banded on a rotating world: wet at the equator, dry in the horse
+  // latitudes, wet again at the polar front. Uniform coverage looks like fog.
+  float lat = abs(p.y);
+  float zonal = 0.58 + 0.42 * cos(lat * 8.2 + 0.4);
+
+  float field = broad * 0.68 + wisp * 0.32;
+  float mask = smoothstep(0.54 - cloudCover * 0.16, 0.56 + 0.10, field) * zonal;
+
+  vec3 N = normalize(vWorldN);
+  vec3 V = normalize(cameraPosition - vWorldP);
+  // Same lighting as the ground, so the cloud terminator lines up with it.
+  float lit = wrappedDiffuse(N);
+  float rim = pow(1.0 - max(dot(N, V), 0.0), 2.2);
+  gl_FragColor = vec4(cloudTint * (lit * 1.30 * sunColor + 0.025),
+                      clamp(mask, 0.0, 1.0) * (0.62 + 0.30 * rim));
+}
+`;
+
+/** A ring plane: banded opacity, plus the planet's own shadow across it. */
+export const RING_FRAGMENT = /* glsl */ `
+precision highp float;
+varying vec2 vRing;
+varying vec3 vWorldP;
+varying vec3 vCentre;
+${NOISE_GLSL}
+uniform vec3  sunDir;
+uniform float innerR;
+uniform float outerR;
+uniform float seedOffset;
+void main() {
+  float r = length(vRing);
+  if (r < innerR || r > outerR) discard;
+  float t = (r - innerR) / (outerR - innerR);
+
+  // Gaps are resonances, so they are narrow and sharp; the material between
+  // them varies smoothly. One field for each.
+  float grain = fbm4(vec3(t * 34.0 + seedOffset, 2.3, 7.1));
+  float gap   = smoothstep(0.02, 0.0, abs(fbm3(vec3(t * 7.0 + seedOffset, 5.0, 1.0)) - 0.5));
+  float density = grain * (1.0 - gap) * smoothstep(0.0, 0.10, t) * smoothstep(1.0, 0.86, t);
+
+  // Eclipse: anything whose perpendicular distance from the planet-sun line is
+  // under one radius is in shadow.
+  //
+  // Measured from the planet's own world position, not from the scene origin.
+  // vWorldP is world space and includes the group's placement, so negating it
+  // pointed at the origin — which is the planet only in single-body mode, where
+  // the group happens to sit there. In the gallery the ringed body is at about
+  // (-2.7, -2.85), and the shadow band fell nowhere near it. Silent in exactly
+  // the view a reviewer opens to look at rings.
+  // The centre arrives as a varying because Three injects modelMatrix into the
+  // vertex prefix only — reading it here compiles to nothing, the material
+  // fails silently, and the rings simply do not draw.
+  vec3 toBody = vCentre - vWorldP;
+  float along = dot(toBody, sunDir);
+  float perp  = length(toBody - sunDir * along);
+  float shadow = (along < 0.0) ? 1.0 : smoothstep(0.94, 1.10, perp);
+
+  vec3 ice = mix(vec3(0.30, 0.27, 0.23), vec3(0.55, 0.52, 0.47), grain);
+  gl_FragColor = vec4(ice * (0.25 + 0.75 * shadow), density * 0.85);
+}
+`;
+
+export const RING_VERTEX = /* glsl */ `
+varying vec2 vRing;
+varying vec3 vWorldP;
+varying vec3 vCentre;
+void main() {
+  vRing = position.xy;
+  vec4 world = modelMatrix * vec4(position, 1.0);
+  vWorldP = world.xyz;
+  // The planet's world position: the ring mesh carries no local translation, so
+  // its own origin under modelMatrix *is* the body it orbits.
+  vCentre = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
   gl_Position = projectionMatrix * viewMatrix * world;
 }
 `;
