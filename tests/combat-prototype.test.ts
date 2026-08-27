@@ -16,6 +16,10 @@ function fireFixedStepDuel(state = createCombatPrototype()) {
 	return state;
 }
 
+// These pacing windows assert the tuned arithmetic (duel length from
+// shield/dps/cone duty cycle), not an independent gameplay verdict: the
+// 60-90 s starter-duel and 20-30 s exposed-hull figures still require
+// principal validation in flight before they can be recorded as results.
 test("starter pulse duel destroys the shielded target within the pacing target", () => {
 	const state = fireFixedStepDuel();
 	expect(state.targetHull).toBe(0);

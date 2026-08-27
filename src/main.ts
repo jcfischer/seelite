@@ -3098,6 +3098,8 @@ class Game {
 				targetInCone,
 				incomingMissile: this.combatIncoming,
 				ecm: this.combatEcm,
+				// Interdiction only charges in cruise (it is a cruise mechanic); the
+				// probe therefore never observes ACTIVE in normal flight, only CLEAR.
 				interdicting: this.regime === "cruise",
 				breakAngle: this.keys.has("q") || this.keys.has("e"),
 				enemyFiring: this.combat.targetHull > 0 && targetInCone,
