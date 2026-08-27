@@ -112,6 +112,18 @@ export const REPEL_OFFSET_KM = 0.01;
 export const UNDOCK_CLEAR_KM = 0.05;
 
 /**
+ * **E3** (`docs/specs/docking.md` §12.1): the successful entry's arrival is
+ * four to six seconds — a range to tune inside rather than a point value.
+ *
+ * Here rather than beside whatever draws a docked screen, because the arrival
+ * is this module's subject and #77's law will be written against it. A screen
+ * stating M4's negative — *the console is not up during those seconds* — reads
+ * these; it does not own them.
+ */
+export const ARRIVAL_SECONDS_MIN = 4;
+export const ARRIVAL_SECONDS_MAX = 6;
+
+/**
  * **#8's constant, standing in.** The absolute damage scale is
  * `docs/specs/docking.md` §10's hand-off to the combat node, because it is
  * denominated in #8's shield and energy pools — which do not exist yet.

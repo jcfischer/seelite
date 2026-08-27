@@ -756,6 +756,39 @@ export const EQUIPMENT: readonly Equipment[] = [
 
 /** §6.1: 0.2 Cr per 0.1 LY — 2 Cr/LY, 14 Cr for the 7 LY tank. */
 export const FUEL_CR_PER_LY = 2;
+
+/**
+ * `economy-trade.md` §7's **ten universal items, in its table order, Fuel
+ * first** — and the list `station-types.md` §4.1's `min(displayTL + 3, 10)`
+ * gate is taken over.
+ *
+ * **It lives beside `EQUIPMENT` rather than in the screen that first needed
+ * it.** `EQUIPMENT` holds nine of the ten because fuel is priced by the light
+ * year as `FUEL_CR_PER_LY` rather than as a unit item, and a gate applied to
+ * those nine is wrong in two directions at once: it hides Fuel at every tech
+ * level, *and* below saturation it sells one item a level early — a slice of
+ * items 1…n taken from a list missing its **first** member differs from the
+ * correct set only by which items it holds, never by length, so nothing
+ * counting catches it. `hud-and-scanner.md` §8.5.3 is that defect written out.
+ * Leaving the corrected catalogue in the console module would have left the
+ * next reader of `EQUIPMENT` to walk into it again.
+ */
+export interface UniversalItem {
+	name: string;
+	priceCr: number;
+	/** Fuel is the one item §7 prices by distance rather than by the unit. */
+	per: "unit" | "ly";
+}
+
+/** `station-types.md` §4.1's ceiling: ten universal items. */
+export const UNIVERSAL_GATE_CAP = 10;
+
+export const UNIVERSAL_ITEMS: readonly UniversalItem[] = [
+	{ name: "Fuel", priceCr: FUEL_CR_PER_LY, per: "ly" },
+	...EQUIPMENT.filter((e) => e.scope === "universal").map(
+		(e): UniversalItem => ({ name: e.name, priceCr: e.priceCr, per: "unit" }),
+	),
+];
 export const FUEL_TANK_LY = 7;
 export const MAX_MISSILES = 4;
 
