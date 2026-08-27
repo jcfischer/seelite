@@ -47,68 +47,19 @@ describe("station placement is stable against added draws", () => {
 });
 
 /**
- * The dead-end defect, pinned rather than left silent (`station-types.md` §5.4).
+ * **The defect this file used to pin is gone, and the pin with it.**
  *
- * The trade station is guarded by `if (primary)` while §6.2's ladder can
- * discard every rung outside the orbit envelope, so a planetless system
- * generates with nothing to dock at. §5.4 owns the analysis; this pins the
- * extent.
+ * It asserted a *rate* — about one system in 700 generating with no planet and
+ * no station — and said in its own docstring that it was meant to break when
+ * the defect was fixed. #51 took §5.4's second answer, forcing the ladder to
+ * keep the primary rung, so the rate is zero.
  *
- * **It is measured as a rate over many worlds, not as two named systems.**
- * `main.ts` seeds the world from `Math.random()` unless `?seed=` pins it, so
- * there is no "shipped world" whose bad systems could be listed — every session
- * generates its own. Naming two would pin an artefact of this file's fixture
- * seed and say nothing about what a player meets. Measured at 0.143% over 40
- * worlds, roughly three per world.
- *
- * It asserts the defect's **current** extent rather than the invariant, because
- * asserting the invariant today would simply fail. It is meant to break when
- * the defect is fixed, and how it breaks depends on which of §5.4's three
- * answers the fixing node takes:
- *
- * - **star-orbiting trade station** — `stationless` goes to 0, `planetless`
- *   stays where it is, and the identity below is *dropped*, not repinned.
- * - **force the ladder to keep a planet** — both go to 0.
- * - **drop such systems from the galaxy** — both go to 0, and the system count
- *   changes, so `galaxy.test.ts`'s digest moves too.
+ * A rate test is the wrong shape once the answer is "never": a band around
+ * 0.143% passes a generator that has quietly regressed to 0.1%, and only a rule
+ * refuses every value but the right one. The invariant lives in
+ * `tests/system-reachability.test.ts`, which asserts what must always hold
+ * rather than how often it currently does not — and which also covers the
+ * second defect #51 measured and this rate test could not see: a system that
+ * keeps planets while the primary rung alone is filtered, which had a trade
+ * station only through `generateStations`' fallback to `planets[0]`.
  */
-/** `station-types.md` §5.4's measurement, over 40 worlds. Not re-derived here —
- *  eight worlds would measure eight worlds. */
-const MEASURED_RATE = 0.00143;
-
-describe("unreachable systems (known defect, station-types.md §5.4)", () => {
-	/** Eight arbitrary worlds. One world would measure one world, and
-	 *  `scripts/measure-clamp-bite.ts` sweeps the same series. */
-	const WORLDS = worldSeeds(8);
-
-	test("about 1 system in 700 generates with no planet and no station", () => {
-		let systems = 0;
-		const planetless: string[] = [];
-		const stationless: string[] = [];
-		for (const world of WORLDS) {
-			forEachSystem(world, ALL_GALAXIES, (record, contents, g) => {
-				systems++;
-				// Built inside the branches: ~0.14% of 16,384 systems keep it.
-				if (contents.planets.length === 0)
-					planetless.push(`${world}:g${g}#${record.index}`);
-				if (contents.stations.length === 0)
-					stationless.push(`${world}:g${g}#${record.index}`);
-			});
-		}
-		expect(systems).toBe(WORLDS.length * ALL_GALAXIES.length * 256);
-		// Measured at 0.143% over 40 worlds (81,920 systems) by
-		// `scripts/measure-clamp-bite.ts`, which reports the same figure. The band
-		// is ±50%
-		// around that: wide enough to absorb sampling over eight worlds, narrow
-		// enough that fixing the defect fails the lower bound and roughly
-		// doubling it fails the upper. It does not claim to catch a 10% drift.
-		const rate = stationless.length / systems;
-		expect(rate).toBeGreaterThan(0.0007);
-		expect(rate).toBeLessThan(0.0022);
-		// The *same* systems, not merely the same count — §5.4 claims the
-		// stationless ones are stationless *because* they are planetless, and
-		// comparing two counts would let a second cause appear on one side while
-		// a first-cause system dropped off the other, with both totals equal.
-		expect(stationless).toEqual(planetless);
-	});
-});

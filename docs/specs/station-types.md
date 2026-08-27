@@ -57,7 +57,7 @@ Fixed here, and these words mean exactly one thing from now on across #6, #7,
 | **target** | any endpoint a cruise leg can be aimed at. `cruise.ts`'s speed law reads the nearest star or planet; the selected target may also be a station, moon or belt. |
 | **fence** | a refinery whose `blackMarket` flag is true (§5.2). Not a separate object — the word is shorter than "a refinery with a black market" and is used only in that sense. |
 | **the target's frame** | the selected target's *velocity* frame, in which cruise exit and docking are judged (§6, `cruise.ts`). Declared here rather than left inferred, since it is the one place "target" means a reference frame and not a place. |
-| **system** | 0–3 stations plus its bodies — 0 is §5.4's defect, not the intent. "**multi-station**", never "multi-destination". |
+| **system** | 1–3 stations plus its bodies — every system has a trade station on its primary planet since #51 (§5.4). "**multi-station**", never "multi-destination". |
 
 These words hold across the specs and the code. **They do not rewrite the
 tracker**: #6's node text says "multi-destination" and will keep saying it,
@@ -464,11 +464,24 @@ and reusing an existing tag is the unsafe move `CLAUDE.md` names explicitly.
 
 ---
 
-### 5.4 A defect this node found: about one system in 700 is unreachable
+### 5.4 A defect this node found, fixed by #51: unreachable systems
 
-**This section owns the figure.** Every other mention — §11.6,
-`src/system.ts`, `tests/station-orbits.test.ts` — points here rather than
-restating it, so fixing the defect moves one number.
+**Fixed.** The rate was about one system in 700 — 0.143% over 40 worlds — and
+is now zero. #51 took the second of the three answers below: the ladder keeps
+the primary rung, clamped to the envelope boundary rather than discarded.
+
+**A second defect went with it, three times as common.** The same floating-point
+edge could filter the primary rung while other rungs survived, leaving a system
+with planets but *none flagged primary*. Measured over the same 40 worlds:
+14 planetless against **42** with planets and no primary. It was invisible to
+the rate measurement because `generateStations` falls back to `planets[0]`, so
+those systems had a trade station and simply did not have it on a primary.
+
+**This section owns the figures.** Every other mention — §11.6,
+`src/system.ts` — points here rather than restating them. The invariant is
+asserted by `tests/system-reachability.test.ts`; the rate test that used to
+pin the defect is gone, because a band around a rate passes a generator that
+has half-regressed.
 
 Not introduced here, and not fixed here. Recorded because the fixture committed
 with this spec is what exposed it, and because §5's whole construction assumes
@@ -806,7 +819,6 @@ Two tiers, per the repo's culture.
 5. **A belt refinery sells cheap bread.** §3.3 — staples share the extractive
    gradient, so the +3 that cheapens ore cheapens Food, Furs and Liquor too.
    Flavour debt; the declined repair is named there.
-6. **A small fraction of systems generate unreachable** — no planet, so no
-   station and no arrival body. §5.4 owns the measurement; a pre-existing defect
-   this node found rather than introduced, with the fix left to its own node
-   because the three candidate answers are a real choice.
+6. **A small fraction of systems generated unreachable** — no planet, so no
+   station and no arrival body. Found by this node, fixed by #51. §5.4 owns the
+   measurement and records the second, more common defect the fix also closed.
