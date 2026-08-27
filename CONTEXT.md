@@ -30,6 +30,8 @@ _Avoid_: Bonus, percentage effect
 A player action that changes a carrier's operational condition or recovery process.
 _Avoid_: Command, influence spend
 
+> **Scope of the `Command` alias** (added by [#71](https://github.com/jcfischer/seelite/pull/71), and it is that PR's reading rather than a ruling from [#41](https://github.com/jcfischer/seelite/issues/41), which introduced the term and did not address the question). Every term in this file is a term of the **consequence model**, so the alias bans "Command" as a name for *a player act on a carrier* — not as an English word. `Game.command(key)` dispatches a keypress and `ComputerCommand` is one frame of an autopilot's output; neither is an intervention on a carrier, and renaming them would make the canonical term mean two things. If the model's owner reads the alias more widely than this, this note is what should be corrected.
+
 **Operational condition**:
 A carrier instance's objective physical condition. `docs/specs/persistent-world-state.md` §3.2 owns the enumeration.
 _Avoid_: Status flag, lifecycle
@@ -52,6 +54,22 @@ The stable sequence number distinguishing successive causal episodes at one carr
 **Consequence area**:
 The station, system, or named route affected by a carrier's capability.
 _Avoid_: Territory
+
+**Aperture frame**:
+The station-local frame the docking checks are stated in: the outward aperture axis, the slot's current roll, and the aperture rectangle. `docs/specs/docking.md` §3 and §5 own its content; `src/docking.ts` is the one place it is built. Every tolerance is measured in the station's *velocity* frame, never the star's.
+_Avoid_: Docking port, world-space approach vector
+
+**Closing-speed gate**:
+The bound on `|v_rel|` at the instant of crossing the aperture plane, measured in the station's frame. `docs/specs/docking.md` §3 owns the figure; §3.1 owns why it is that figure.
+_Avoid_: Approach speed limit, docking speed
+
+**Clearance grant**:
+A station's time-boxed permission to enter, and a **precondition** rather than one of the checks. Crossing without a live one is a failed entry *and* turns the station hostile. `docs/specs/docking.md` §6 owns the protocol and its queued and denied replies.
+_Avoid_: Docking permission flag, landing request
+
+**Failed entry**:
+A crossing of the aperture plane that does not satisfy every check. It repels the ship, damages it, and keeps its clearance grant; unless it was a barge it does not turn the station hostile. Damage is quadratic in the closing speed above a floor, so a failed entry at the gate speed is survivable by design while one flown at the assist cap is not — "it costs you something, not everything" is a claim about the gate, not a guarantee at any speed. `docs/specs/docking.md` §2 owns the model.
+_Avoid_: Crash, docking failure
 
 **Operational consequence**:
 A mechanically different later situation produced by an intervention and attributable through world evidence and a persistent record.

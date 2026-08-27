@@ -197,6 +197,24 @@ The clamp itself is cruise-only, so this coherence is a mnemonic, not a
 mechanism. **Confirm by flying it** (§9.2) before treating 0.10 as settled;
 it is the number in this spec most likely to move.
 
+**Flown, by a script, on 2026-08-27** — and that is a weaker result than the
+paragraph above asks for, so it is recorded as what it is. `probe-docking.mjs`
+crosses the plane under §5's real geometry three times and **asserts the
+measured `|v_rel|` at the crossing**, not the setpoint it asked for: 0.0905 km/s
+with the roll 90° out, 0.0505 km/s on the hull-face run, and under the gate on
+the docking computer's own dock. Check 6 passes in all three.
+
+What that establishes is that the gate is *reachable* by an approach flown under
+#5's assist rather than only on paper — and it took two attempts to establish
+even that, because the first version of the probe wrote `ship.vel` directly and
+the assist cancelled the whole commanded closing speed inside one step.
+
+What it does not establish is that 0.10 is the right number. A scripted approach
+has no difficulty, and the question §11.4 records is whether a **person** can
+hold it. Nothing here has asked one, and the game ships with the docking
+computer fitted, so the first approach anyone flies is not a person's either.
+The figure stays provisional.
+
 ### 3.2 Why 35° and 50° (chosen, not derived)
 
 Stated plainly because §2 claims the tolerances now carry the whole skill tax,
@@ -432,6 +450,29 @@ It engages inside `VICINITY_KM` with a grant in hand, flies the approach, and
 docks — roughly the profile a competent pilot flies, no ceremony and no penalty.
 Any control input cancels it.
 
+**Two legs, and the corridor between them is a cone** (implementation finding,
+2026-08-27). The computer lines up on a fixed point out along the axis and then
+runs in at the slot; what is not obvious until it is flown is what decides the
+switch between the two.
+
+§5's axis points at the parent body, so it **swings as the station orbits**, the
+corridor entry point swings with it, and a ship chasing that point lags it. A
+7 m cylinder was tried first and was never met: measured in the browser the
+autopilot held **12–33 m** off-axis and dithered at the standoff until the 600 s
+grant expired under it.
+
+A wider cylinder was **not** flown, so "a cylinder cannot work" is not what was
+shown, and an earlier draft of this paragraph argued it was — by bounding a
+cylinder above at §5's 35 m half-height, which does not follow: the corridor is
+a *phase gate at range*, not a containment test at the plane, and the cone that
+shipped admits about 164 m at the same switch point. What the measurement shows
+is narrower and it is all that is claimed here: at a 3 km standoff the lag is
+tens of metres, so a corridor met there is a loose one, while the thing the
+approach has to end inside is 35 m. A cone is loose where the lag is and tight
+where the aperture is, and the run-in aims at the slot centre so the lateral
+error closes in proportion to the distance rather than having to be flown out
+first. Whether some intermediate cylinder also works is untested.
+
 **It never bypasses a check.** It satisfies §3's six conditions like anything
 else, so it cannot dock at a hostile station, cannot skip §6's clearance, and
 cannot enter above the gate speed. A computer that could dock where a pilot
@@ -587,7 +628,21 @@ before merge.
    flip ships now and its real exit — legal-status decay — is #8's. A 600 s
    cooldown stands in, because without one a lapsed grant plus one barge would
    lock a player out of a system's only station permanently.
-6. **Nothing owns repairing the damage D1 inflicts.** Handed to #8 (§10) rather
+6. **A grant can be taken from further away than it can be flown from**
+   (implementation finding, 2026-08-27). §6 grants anywhere inside
+   `VICINITY_KM` = 10,000 km, and defends the 600 s window with an arrival
+   distance of ~600 km — but normal flight is capped at 2 km/s, so 600 s buys
+   1,200 km. A grant taken at the far edge expires mid-approach, and §7's "it
+   engages inside `VICINITY_KM` … and docks" is false above about 1,200 km: the
+   computer refuses on the expiry and stops flying. Neither number is changed
+   here, because both were decided and the interaction is what was missed. What
+   *is* fixed is the silent half — the computer now zeroes the throttle and
+   records why it stopped, so it does not hand back a ship still closing at a
+   speed nobody chose. The real remedy is one of three and none of them is this
+   node's: shorten the request range, lengthen the window, or let the approach
+   re-request. The HUD node inherits the cue either way.
+
+7. **Nothing owns repairing the damage D1 inflicts.** Handed to #8 (§10) rather
    than invented here, because it is denominated in #8's pools and #7's table is
    deliberately unamended. Until it lands, D1's failure model is *survivable*
    but not yet *costly* — the punishment is real and the bill is unwritten.
