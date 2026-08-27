@@ -566,14 +566,19 @@ function buildMoons(
  * primary always exists. `docs/specs/station-types.md` §5.4 owns the
  * measurement; `tests/system-reachability.test.ts` asserts the invariant.
  *
- * **What enforces it, and what does not.** The ladder cannot discard the
- * primary rung — the envelope test now reads `if (outside && !isPrimary)`, so
- * the push at `i === primaryRung` is unconditional, and a primary exists by
- * construction rather than by sampling. What is *not* enforced is a runtime
- * guard: nothing throws. If that construction were ever broken, the trade
- * station would simply be absent, which is the visible failure rather than the
- * silent one — the `?? planets[0]` fallback that used to hide exactly that has
- * been removed.
+ * **What enforces it, in three facts a reader can check.** `rungCount` is
+ * `3 + floor(bodies() * 5)`, so it is 3..7. `primaryRung` is
+ * `floor(bodies() * rungCount)`, so it is 0..rungCount-1. The loop runs `i`
+ * over exactly that range, and the envelope test reads
+ * `if (outside && !isPrimary)` — which cannot skip `i === primaryRung`.
+ * Therefore a primary is pushed for every system.
+ *
+ * What is *not* enforced is a runtime guard: nothing throws. If one of those
+ * three facts were broken by a later edit, the trade station would be absent
+ * rather than silently re-parented — the `?? planets[0]` fallback that used to
+ * hide exactly that is gone. That is the trade this makes deliberately: a
+ * visible failure the corpus test names, over a hidden one that produced a
+ * dockable system on a planet the generator never flagged.
  */
 /**
  * Draw a station's spin, consuming exactly one number whatever its type.

@@ -34,11 +34,31 @@ import {
 	forEachSystem,
 	worldSeeds,
 } from "./helpers/station-rows";
-import { MAX_ORBIT_AU, MIN_ORBIT_AU, arrivalPoint } from "../src/system";
+import { generateGalaxy } from "../src/galaxy";
+import {
+	MAX_ORBIT_AU,
+	MIN_ORBIT_AU,
+	generateContents,
+	arrivalPoint,
+} from "../src/system";
 
 /** Eight worlds. One world would measure one world, and the corpus helpers
  *  sweep the same series the measurement scripts do. */
-const WORLDS = worldSeeds(8);
+/**
+ * Forty worlds — 81,920 systems — not eight.
+ *
+ * Eight was the retired rate test's sample, and a rate only needed enough
+ * systems to estimate one. This asserts a rule that must hold for every seed a
+ * player can generate, and `main.ts` seeds from `Math.random()` unless `?seed=`
+ * pins it, so there is no shipped world whose systems could be enumerated
+ * instead. Forty is what `scripts/measure-clamp-bite.ts` sweeps and what §5.4's
+ * figures were measured over, so the corpus and the measurement agree.
+ *
+ * It is still a sample. The guarantee itself is by construction and the three
+ * facts behind it are in `generateContents`; this is what would catch those
+ * facts being broken.
+ */
+const WORLDS = worldSeeds(40);
 
 describe("every system is reachable", () => {
 	test("the corpus is a real one, not an empty pass", () => {
@@ -83,6 +103,29 @@ describe("every system is reachable", () => {
 		expect(notOnPrimary).toEqual([]);
 	});
 
+	test("arrival computes for a system with no bodies at all", () => {
+		/*
+		 * The artefact behind the correction to #23, so the claim does not rest
+		 * on an experiment that left nothing behind.
+		 *
+		 * #23 said a planetless system "has no body for #10's arrival point,
+		 * which assumes one". Handed contents with no planets, no stations and
+		 * no belt, `arrivalPoint` still returns a finite position — it places
+		 * along a seeded bearing from the system origin and pushes clear of
+		 * whatever bodies exist, of which there are none. So the unreachability
+		 * was never a failure to place the ship; it was having nowhere to go.
+		 */
+		const record = generateGalaxy(worldSeeds(1)[0], 0).systems[0];
+		const empty = { ...generateContents(record), planets: [], stations: [] };
+		const at = arrivalPoint(record, empty, null, 0);
+		expect(Number.isFinite(at.x)).toBe(true);
+		expect(Number.isFinite(at.y)).toBe(true);
+		expect(Number.isFinite(at.z)).toBe(true);
+		// And it is a real distance out, not the origin — the property that made
+		// it look like arrival "worked" on the broken generator.
+		expect(Math.hypot(at.x, at.y, at.z)).toBeGreaterThan(0);
+	});
+
 	test("the retained primary still sits inside the orbit envelope", () => {
 		// The boundary case the fix turns on: a primary that would have been
 		// filtered is kept and clamped, so it must land *on* the envelope rather
@@ -109,8 +152,9 @@ describe("every system is reachable", () => {
 		 * point, which assumes one". `arrivalPoint` assumes nothing: it places
 		 * the ship a fixed distance along a seeded bearing from the system
 		 * origin and pushes clear of whatever bodies exist, so it returns a
-		 * finite point for a system with no bodies at all. Reverting the fix and
-		 * re-running proves it — this assertion passed on the broken generator.
+		 * finite point for a system with no bodies at all — which the test below
+		 * demonstrates on a system with none, rather than leaving the claim to
+		 * an experiment nobody can repeat.
 		 *
 		 * What was actually broken is the other half: there was nothing to
 		 * travel *to*. So the property worth asserting pairs the two — arrival
