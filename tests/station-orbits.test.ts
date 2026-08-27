@@ -26,11 +26,13 @@ import { SURFACE_MARGIN } from "../src/cruise";
 import { STATION_ORBIT_R_OVER_R } from "../src/system";
 import {
 	ALL_GALAXIES,
+	forEachHostedStation,
 	forEachSystem,
 	stationRows,
 	worldSeeds,
 } from "./helpers/station-rows";
 import baseline from "./fixtures/station-orbits.json";
+import baselineBefore from "./fixtures/station-orbits-pre-floor.json";
 
 describe("station placement is stable against added draws", () => {
 	test("the fixture is a real corpus, not an empty pass", () => {
@@ -136,19 +138,12 @@ describe("unreachable systems (known defect, station-types.md §5.4)", () => {
 describe("station orbits clear their host (node #32)", () => {
 	test("every station orbits at or above the r/R floor of its host", () => {
 		let hostOrbiting = 0;
-		for (const world of worldSeeds(8)) {
-			forEachSystem(world, ALL_GALAXIES, (_record, contents) => {
-				for (const s of contents.stations) {
-					if (!s.parentId) continue; // star-centric refinery: no host
-					const host = contents.planets.find((p) => p.id === s.parentId);
-					if (!host) throw new Error(`orphan station ${s.id}`);
-					hostOrbiting++;
-					expect(s.orbit.radiusKm / host.radiusKm).toBeGreaterThanOrEqual(
-						STATION_ORBIT_R_OVER_R,
-					);
-				}
-			});
-		}
+		forEachHostedStation((s, host) => {
+			hostOrbiting++;
+			expect(s.orbit.radiusKm / host.radiusKm).toBeGreaterThanOrEqual(
+				STATION_ORBIT_R_OVER_R,
+			);
+		});
 		// Non-vacuity: the invariant above over an empty corpus passes any test.
 		expect(hostOrbiting).toBeGreaterThan(1000);
 	});
@@ -157,20 +152,13 @@ describe("station orbits clear their host (node #32)", () => {
 		// §12.2's defect, as an invariant: the guard now stops the ship at
 		// `radius + HOST_CLEARANCE_KM` for the host, but a station *inside the
 		// proportional shell* was still the geometry that made cruise
-		// unengaeable from there, and cruise's release rule is not a reason to
+		// unengageable from there, and cruise's release rule is not a reason to
 		// keep generating it. The generator's job is that it never happens.
-		for (const world of worldSeeds(8)) {
-			forEachSystem(world, ALL_GALAXIES, (_record, contents) => {
-				for (const s of contents.stations) {
-					if (!s.parentId) continue;
-					const host = contents.planets.find((p) => p.id === s.parentId);
-					if (!host) throw new Error(`orphan station ${s.id}`);
-					expect(s.orbit.radiusKm).toBeGreaterThanOrEqual(
-						host.radiusKm * SURFACE_MARGIN,
-					);
-				}
-			});
-		}
+		forEachHostedStation((s, host) => {
+			expect(s.orbit.radiusKm).toBeGreaterThanOrEqual(
+				host.radiusKm * SURFACE_MARGIN,
+			);
+		});
 	});
 
 	test("the floor takes over exactly where the band stops clearing the shell", () => {
@@ -178,25 +166,38 @@ describe("station orbits clear their host (node #32)", () => {
 		// 400–2,000 km band already beats 1.05 × R, the band must still decide
 		// — otherwise #32 would have silently replaced the band with a
 		// proportional rule and every rocky world's station would have moved.
+		// "Still decides" has to mean the band *won*, not merely that a
+		// small-host row exists: a strict max would show it. The census below
+		// (worldSeeds(8), 19,202 host-orbiting stations) measures 1,337 rows
+		// whose drawn band lands in [400, 2000] and strictly above the floor —
+		// e.g. host radius 2,762 km with a 1,794 km band — and zero rows
+		// strictly below the floor. Asserting merely `radiusKm < host × 1.5`
+		// would be asserting the empty set: the floor clips from below, so no
+		// generated row can sit under it.
 		// Crossover: band top 2,000 km clears R when R ≤ 2,000 / (SURFACE_MARGIN − 1).
 		const crossoverKm = 2000 / (SURFACE_MARGIN - 1);
-		let bandDecided = 0;
-		for (const world of worldSeeds(8)) {
-			forEachSystem(world, ALL_GALAXIES, (_record, contents) => {
-				for (const s of contents.stations) {
-					if (!s.parentId) continue;
-					const host = contents.planets.find((p) => p.id === s.parentId);
-					if (!host) throw new Error(`orphan station ${s.id}`);
-					if (host.radiusKm <= crossoverKm) bandDecided++;
-				}
-			});
-		}
+		let bandWon = 0;
+		forEachHostedStation((s, host) => {
+			const bandKm = s.orbit.radiusKm - host.radiusKm;
+			const strictlyAboveFloor =
+				s.orbit.radiusKm > host.radiusKm * STATION_ORBIT_R_OVER_R + 1e-9;
+			if (
+				host.radiusKm <= crossoverKm &&
+				bandKm >= 400 - 1e-9 &&
+				bandKm <= 2000 + 1e-9 &&
+				strictlyAboveFloor
+			)
+				bandWon++;
+		});
+		// Non-vacuity in the strong form: the band demonstrably decided these
+		// rows — 1,337 on the measured corpus, so the bar sits an order of
+		// magnitude under it without pinning the corpus shape twice.
+		expect(bandWon).toBeGreaterThan(100);
 		// The fixture corpus is the place this is actually visible: the row
 		// heights moved only where the floor bound (the capture script's own
 		// invariant, checked here against the file the guard compares).
 		const now = stationRows(baseline.worldSeed, baseline.galaxies);
 		expect(now.length).toBe(baseline.rows.length);
-		expect(bandDecided).toBeGreaterThan(0);
 	});
 });
 
@@ -217,32 +218,19 @@ describe("station orbits clear their host (node #32)", () => {
  *
  * The before shape is not regenerated here (a generator that could emit
  * both rules would put the second one's draws into the shared stream). It
- * is the file this branch's first commit repinned, at the tag
- * `node-32-before-orbit-floor`.
+ * is committed as `station-orbits-pre-floor.json`, captured from the
+ * generator at the tag `node-32-before-orbit-floor` — the tag stays as
+ * provenance for where that file came from, but reading a committed fixture
+ * keeps this guard working in checkouts that never saw the tag (a shallow
+ * clone, an npm pack, a release tarball).
  */
-const BASELINE_BEFORE = "node-32-before-orbit-floor";
 
 /** The orbit-radius column of `stationRows`, so the comparison below names
  *  which column a row moved in rather than just that one did. */
 const RADIUS_COL = 5;
 
 function beforeRows(): string[][] {
-	const shown = Bun.spawnSync({
-		cmd: [
-			"git",
-			"show",
-			BASELINE_BEFORE + ":tests/fixtures/station-orbits.json",
-		],
-		cwd: import.meta.dir + "/..",
-		stdout: "pipe",
-	});
-	if (shown.exitCode !== 0)
-		throw new Error(
-			"cannot read " + BASELINE_BEFORE + "'s fixture: the guard needs the tag",
-		);
-	return (JSON.parse(shown.stdout.toString()).rows as string[]).map((r) =>
-		r.split("\t"),
-	);
+	return (baselineBefore.rows as string[]).map((r) => r.split("\t"));
 }
 
 describe("the floor moved only what the shell race moved (node #32)", () => {

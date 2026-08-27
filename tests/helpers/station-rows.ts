@@ -87,6 +87,35 @@ export function stationRows(
 	return rows;
 }
 
+/**
+ * Every host-orbiting station, paired with the body it orbits.
+ *
+ * The three node-#32 invariants — at or above the r/R floor, never inside the
+ * host's cruise shell, and the band still winning below the crossover — walk
+ * the same tree over the same corpus, and a fourth is cheap to imagine. A
+ * hand-copied walk that forgets the star-centric refineries (`parentId: null`,
+ * no host to clear) or treats an orphan host as a skip instead of an error
+ * changes what "every station" means between two tests that both claim it.
+ */
+export function forEachHostedStation(
+	visit: (
+		station: SystemContents["stations"][number],
+		host: SystemContents["planets"][number],
+	) => void,
+	opts: { galaxies?: readonly number[]; worlds?: readonly number[] } = {},
+): void {
+	for (const world of opts.worlds ?? worldSeeds(8)) {
+		forEachSystem(world, opts.galaxies ?? ALL_GALAXIES, (_record, contents) => {
+			for (const s of contents.stations) {
+				if (!s.parentId) continue; // star-centric refinery: no host
+				const host = contents.planets.find((p) => p.id === s.parentId);
+				if (!host) throw new Error(`orphan station ${s.id}`);
+				visit(s, host);
+			}
+		});
+	}
+}
+
 /** Every galaxy of a world. The census and the clamp measurement sweep all of
  *  them; the placement fixture pins only the two its capture script names. */
 export const ALL_GALAXIES: readonly number[] = Array.from(

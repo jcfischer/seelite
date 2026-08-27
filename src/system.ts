@@ -114,9 +114,10 @@ export const GIANT_ORBIT_FACTOR = 2;
  * 2,400 km rocky world's band tops out at 1.83 × radius, so its stations
  * keep the low band — and the floor takes over exactly where the band stops
  * clearing what it has to clear: the 1.05 × shell (§12.2 measured 49 of 337
- * stations inside their host's own) and the occlusion geometry (§12.3, 26.1%
- * of legs, a quarter of them unable to be cruised at all). The floor takes
- * over from 1.5/1.05 ≈ 1.43 × the rocky band's top radius upward, i.e. every
+ * stations inside their host's own shell — the geometry behind the sweep's
+ * "second cruise covers 1 km" figure, which §12.2 itself walks back as an
+ * overclaim for the game) and the occlusion geometry (§12.3, 26.1% of legs).
+ * The floor takes over from 1.5/1.05 ≈ 1.43 × the rocky band's top radius upward, i.e. every
  * large planet and every giant. `tests/station-orbits.test.ts` pins both
  * outcomes.
  */
