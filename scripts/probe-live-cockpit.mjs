@@ -491,13 +491,13 @@ await combatPage.evaluate(() => {
 const laserShown = await combatPage.screenshot();
 await combatPage.evaluate(() => {
 	const game = window.__seelite;
-	game.nearScene.getObjectByName("combat-prototype-laser").visible = false;
+	game.probeForceLaserHidden = true;
 	game.render(0);
 });
 const laserHidden = await combatPage.screenshot();
 await combatPage.evaluate(() => {
 	const game = window.__seelite;
-	game.nearScene.getObjectByName("combat-prototype-laser").visible = true;
+	game.probeForceLaserHidden = false;
 	game.render(0);
 });
 const combatOverlayRendered = await combatPage.evaluate(
@@ -547,6 +547,9 @@ await combatPage.close();
 const narrowCombatPage = await browser.newPage({
 	viewport: { width: 390, height: 844 },
 });
+narrowCombatPage.on("pageerror", (error) =>
+	check("prototype narrow: no page error (" + error.message + ")", false),
+);
 await narrowCombatPage.goto(`${ORIGIN}/?seed=42&combat=1`, {
 	waitUntil: "load",
 });

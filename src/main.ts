@@ -670,6 +670,8 @@ class Game {
 		new URLSearchParams(window.location.search).get("combat") === "1";
 	private combatIncoming = false;
 	private combatEcm = false;
+	/** Probe-only laser visibility override; the renderer honours it. */
+	probeForceLaserHidden = false;
 	readonly audio = new AudioFX();
 	private throttle = 0;
 	private frameBody: Body | null = null;
@@ -3415,7 +3417,8 @@ class Game {
 		this.combatLaser.visible =
 			this.combatPrototypeEnabled &&
 			this.view === "cockpit" &&
-			this.combat.firing !== null;
+			this.combat.firing !== null &&
+			!this.probeForceLaserHidden;
 
 		// The star, resolved once at build time rather than scanned for per frame:
 		// every body's sun direction is measured from it, and there is no path
