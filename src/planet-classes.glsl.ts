@@ -78,11 +78,38 @@ vec3 reliefNormal(vec3 p, vec3 N, float strength) {
     float hx = dFdx(h), hy = dFdy(h);
     vec3 r1 = cross(dpy, N), r2 = cross(N, dpx);
     float det = dot(dpx, r1);
-    if (abs(det) < 1e-12) return N;
     vec3 grad = (r1 * hx + r2 * hy) / det;
     // The four-tap path below perturbs by a *difference* over 2e rather than by
     // a derivative, so the same visual strength is that factor applied here.
-    return normalize(N - strength * 0.007 * grad);
+    vec3 tilt = strength * 0.007 * grad;
+
+    /*
+     * **Where this goes wrong, and what black rectangles are.**
+     *
+     * A derivative is taken across a 2x2 quad, and a quad on the silhouette has
+     * lanes outside the sphere. Those lanes still run the shader — that is what
+     * makes the derivative available at all — and they evaluate the height
+     * field at a position that is nowhere near their neighbours. The difference
+     * is then enormous, det is near zero at a grazing angle, and the quotient
+     * is huge or not a number at all.
+     *
+     * One NaN fragment is invisible. The bloom pass is what makes it a
+     * rectangle: a downsample chain averages that pixel into a whole block of
+     * a lower mip, so a handful of bad lanes at the limb come back as blocks
+     * that appear and vanish as the body moves. That is the artefact the
+     * principal saw, and it is the reason this is written as a guard rather
+     * than left to a driver.
+     *
+     * The test is inverted on purpose: NaN compares false against everything,
+     * so !(m < LIMIT) catches NaN as well as Inf where m > LIMIT would let
+     * NaN straight through.
+     */
+    float m = dot(tilt, tilt);
+    if (!(m < 1.0e4)) return N;
+    // A perturbation longer than the normal itself has already stopped meaning
+    // "a slope" and is on its way to flipping the normal over.
+    if (m > 1.0) tilt *= inversesqrt(m);
+    return normalize(N - tilt);
   }
 
   vec3 axis = abs(p.y) < 0.94 ? vec3(0,1,0) : vec3(1,0,0);
