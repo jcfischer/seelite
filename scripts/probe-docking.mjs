@@ -519,6 +519,16 @@ check(
 check("it cost the ship something", lost > 0, `${lost.toFixed(2)} of the pool`);
 check("D1: the ship survived it", rolled.alive);
 check(
+	// The bound is against `poolMax`, so it is only a per-entry bound if the run
+	// started from a full pool. Asserted rather than assumed: the reset used to
+	// write a field that did not exist, the bound went on passing, and nothing
+	// said the pool it was measured against was the pool the run began with.
+	"the run started from a full pool, so the bound below is per-entry",
+	rolled.conditionBefore.shield + rolled.conditionBefore.hull ===
+		rolled.poolMax,
+	`${rolled.conditionBefore.shield + rolled.conditionBefore.hull} of ${rolled.poolMax}`,
+);
+check(
 	"D1: it cost at most a quarter of the pool",
 	lost <= rolled.poolMax / 4 + 1e-9,
 	`${lost.toFixed(2)} of ${rolled.poolMax}`,

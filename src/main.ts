@@ -128,6 +128,7 @@ import {
 import { SPIN_RPM_RANGE } from "./station";
 import {
 	type ApertureFrame,
+	type Clearance,
 	type DockingState,
 	type EntryOutcome,
 	type EntryPose,
@@ -272,6 +273,13 @@ function wrapAngle(radians: number) {
  * position to return to, so the ship holds an attitude when the hand stops
  * rather than springing back to centre.
  */
+/** The throttle bindings, named once. `step` moves the throttle on them and
+ *  §7's cancel test asks whether the player is holding one; a rebind that
+ *  reached only the first would move the throttle without cancelling the
+ *  autopilot that is overwriting it. */
+const THROTTLE_UP = "shift";
+const THROTTLE_DOWN = "control";
+
 const MOUSE_RAD_PER_PX = 0.0022;
 
 /** How far a single frame's mouse movement may turn the ship, radians. A
@@ -357,6 +365,45 @@ type Regime = "normal" | "cruise";
  * the same orbital evaluation to produce, and computing the frame twice per
  * station per frame was measurable work for no answer that changed.
  */
+/**
+ * What `dockingSnapshot` hands a probe — declared rather than inferred.
+ *
+ * Flat rather than grouped into geometry/protocol/ship, deliberately: §9.2's
+ * probes assert on *relationships across* those groups (a bounce that damaged
+ * the ship and left it alive, a crossing refused for containment rather than
+ * for an angle), and a grouped shape costs every read an extra hop for a
+ * tidiness the consumer does not want. What the grouping was really asking for
+ * is that the shape be *documented*, which a named interface does.
+ */
+interface DockingSnapshot {
+	stationId: string;
+	rangeKm: number;
+	closingKms: number;
+	frameBodyId: string | null;
+	throttle: number;
+	offAxisKm: number;
+	axialKm: number;
+	planeKm: number;
+	apertureKind: "slot" | "pad";
+	apertureWidthKm: number;
+	apertureHeightKm: number;
+	phaseRad: number;
+	axis: Vec3;
+	basis: { across: Vec3; up: Vec3 };
+	reference: Vec3;
+	spinRpm: number;
+	clearance: Clearance;
+	grantLive: boolean;
+	hostile: boolean;
+	computerEngaged: boolean;
+	computerRefusal: "no-clearance" | "hostile" | "out-of-range" | null;
+	dockedAt: string | null;
+	condition: ShipCondition;
+	alive: boolean;
+	poolMax: number;
+	lastEntry: EntryOutcome | null;
+}
+
 interface DockingApproach {
 	frame: ApertureFrame;
 	pose: EntryPose;
@@ -2098,6 +2145,31 @@ class Game {
 		}
 	}
 
+	/**
+	 * Has the player taken the stick this frame?
+	 *
+	 * A named predicate rather than a six-term disjunction inside `step`,
+	 * because the next input source added has to be threaded somewhere and an
+	 * unnamed boolean is the wrong somewhere. The mouse terms are read here and
+	 * consumed below in the same step on every path — the autopilot branch
+	 * zeroes them before returning, and the hand-flown path folds them into
+	 * `impulse` — so nothing carries a delta into a later frame.
+	 */
+	private hasControlInput(yaw: number, pitch: number, roll: number): boolean {
+		return (
+			yaw !== 0 ||
+			pitch !== 0 ||
+			roll !== 0 ||
+			// §7 counts the throttle. Leaving it out was worse than no cancel:
+			// `stepDockingComputer` overwrites `this.throttle` on the same frame,
+			// so a player pushing the throttle got neither a cancel nor an effect.
+			this.keys.has(THROTTLE_UP) ||
+			this.keys.has(THROTTLE_DOWN) ||
+			this.mouseDx !== 0 ||
+			this.mouseDy !== 0
+		);
+	}
+
 	/** A camera pan only: flight controls and the ship's nose stay live. */
 	setHeadLook(headLook: HeadLook) {
 		this.headLook = headLook;
@@ -2498,7 +2570,7 @@ class Game {
 	 * sampling those across several page evaluations lets the world move between
 	 * them. The numbers are the renderer's own, not a probe's copy of the rules.
 	 */
-	dockingSnapshot(id?: string) {
+	dockingSnapshot(id?: string): DockingSnapshot | null {
 		const target = id ?? this.stationsByRange()[0]?.id;
 		if (!target) return null;
 		const state = this.dockingStateOf(target);
@@ -2601,11 +2673,14 @@ class Game {
 				this.dockedAt = null;
 		}
 
-		// **At most one crossing is resolved per step, and it is the nearest.**
-		// `dockingApproaches` walks in range order, so the first crossing found
-		// is the nearest station's. A ship cannot dock at two stations in one
-		// 0.1 s step, and resolving a farther one after a nearer one would apply
-		// a repel to a position the nearer outcome had already rewritten.
+		// **At most one crossing is resolved per step: the first, in
+		// start-of-step range order.** `dockingApproaches` sorts by the range the
+		// ship had *before* it moved, so this is not strictly the nearest
+		// crossing — over one 0.1 s step it is the same station in every case
+		// that can arise, since two stations close enough for the order to flip
+		// mid-step would be inside each other. A ship cannot dock at two stations
+		// at once, and resolving a farther one after a nearer one would apply a
+		// repel to a position the nearer outcome had already rewritten.
 		for (const [id, from] of before) {
 			// Docked ships do not re-cross their own plane. Without this the
 			// station's aperture is a tripwire the moment anything nudges the ship.
@@ -2885,16 +2960,7 @@ class Game {
 		// result was worse than no cancel: `stepDockingComputer` overwrites
 		// `this.throttle` on the same frame, so a player pushing the throttle got
 		// neither a cancel nor an effect — an input that visibly does nothing.
-		const throttleInput = this.keys.has("shift") || this.keys.has("control");
-		if (
-			this.dockingComputerEngaged &&
-			(yaw !== 0 ||
-				pitch !== 0 ||
-				roll !== 0 ||
-				throttleInput ||
-				this.mouseDx !== 0 ||
-				this.mouseDy !== 0)
-		)
+		if (this.dockingComputerEngaged && this.hasControlInput(yaw, pitch, roll))
 			this.dockingComputerEngaged = false;
 
 		// One range scan and one orbital evaluation per station for the whole
@@ -2953,8 +3019,9 @@ class Game {
 		if (orbit !== 0)
 			this.chaseYaw = wrapAngle(this.chaseYaw + orbit * CHASE_ORBIT_RATE * dt);
 
-		if (this.keys.has("shift")) this.throttle = Math.min(1, this.throttle + dt);
-		if (this.keys.has("control"))
+		if (this.keys.has(THROTTLE_UP))
+			this.throttle = Math.min(1, this.throttle + dt);
+		if (this.keys.has(THROTTLE_DOWN))
 			this.throttle = Math.max(0, this.throttle - dt);
 		this.audio.ambient(this.throttle);
 

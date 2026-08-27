@@ -444,9 +444,14 @@ export function planeCrossing(
 	return {
 		rel: lerp(before.rel, after.rel),
 		vRel: lerp(before.vRel, after.vRel),
-		// Attitude is taken from the later frame rather than interpolated: a
-		// slerp between two unit vectors is not a lerp, and the step is a frame
-		// long. Taking the nearer end is the honest cheap answer.
+		// **Attitude is taken from the later frame rather than interpolated**, so
+		// the pose below mixes an interpolated position and velocity with an
+		// end-of-step attitude. A slerp between two unit vectors is not a lerp,
+		// and the step is a frame long; the error is bounded by how far the ship
+		// can turn in one — at `ANGULAR_MAX.roll` and `MAX_DT` that is 8°, and
+		// against check 2's 35° and check 4's 50° it moves a verdict only for a
+		// pose already within a frame's turn of the boundary. Slerping both by
+		// the same `t` is the exact answer if that ever matters.
 		nose: after.nose,
 		up: after.up,
 	};
