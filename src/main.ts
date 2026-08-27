@@ -3435,9 +3435,10 @@ class Game {
 		// without borrowing #35's display-only traffic as a combat entity. It is
 		// built only in prototype mode, so the whole update is gated too.
 		if (this.combatPrototypeEnabled) {
-			// The target sits in the ship's frame (ship orientation, not the
-			// head-look camera rotation), so the player's aim decides whether
-			// the strafe sits in the firing cone rather than following the view.
+			// The target holds a fixed bearing off the nose (ship frame, not the
+			// head-look camera rotation). The cone test is scripted by elapsed
+			// time, so this prototype measures pacing, not aiming skill — the
+			// flight-validation note below must not claim aim decides hits.
 			this.combatTargetMesh.position
 				.set(
 					3 * Math.sin(this.combat.elapsed * 0.7),
@@ -4016,11 +4017,11 @@ class Game {
 				"rgba(116, 234, 255, 0.95)",
 				12,
 			);
-			const combatStatus = `FIRE ${this.combat.firing?.toUpperCase() ?? "SAFE"} · LOCK ${this.combat.missileLock ? "READY" : "ACQ"} · MISSILE ${this.combat.incomingMissile ? "WARNING" : "CLEAR"} · INTD ${this.combat.interdiction ? "ACTIVE" : "CLEAR"}`;
+			const combatStatus = `FIRE ${this.combat.firing?.toUpperCase() ?? "SAFE"} · H ${this.combat.heat.toFixed(0)} E ${this.combat.energy.toFixed(0)} · LOCK ${this.combat.missileLock ? "READY" : "ACQ"} · MISSILE ${this.combat.incomingMissile ? "WARNING" : "CLEAR"} · INTD ${this.combat.interdiction ? "ACTIVE" : "CLEAR"}`;
 			// Fit against the widest status the block can emit, so any live state
 			// fits whatever the first frame happened to display.
 			const longestStatus =
-				"FIRE PULSE · LOCK READY · MISSILE WARNING · INTD ACTIVE";
+				"FIRE PULSE · H 100 E 100 · LOCK READY · MISSILE WARNING · INTD ACTIVE";
 			let fittedEntry = this.combatStatusFit.get(w);
 			if (!fittedEntry) {
 				ctx.font = PROMPT_FONT;
