@@ -42,9 +42,22 @@ export const carrierKey = (
  */
 export const isCarrierKey = (key: string): boolean => /^\d+:.+$/.test(key);
 
-/** System index and local id, split back out. */
-export const splitCarrierKey = (key: string): [number, string] => {
+/**
+ * System index and local id, split back out.
+ *
+ * **Loud on a key with no separator.** It used to return `Number("")` — `NaN` —
+ * and `compareCarrierKeys` then compared `NaN - NaN`, which is not less, not
+ * greater and not equal, so the sort silently fell back to arbitrary order:
+ * exactly the quietly-wrong ordering the comparator exists to prevent, and one
+ * §4 resolves same-timestamp completions in.
+ *
+ * Not exported: `compareCarrierKeys` is its only caller, and a second path to
+ * the split invites a caller that does not want the check.
+ */
+const splitCarrierKey = (key: string): [number, string] => {
 	const at = key.indexOf(":");
+	if (!isCarrierKey(key))
+		throw new Error(`carrier-key: ${key} is not a carrier key`);
 	return [Number(key.slice(0, at)), key.slice(at + 1)];
 };
 

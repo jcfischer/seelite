@@ -15,7 +15,8 @@
 
 import { describe, expect, test } from "bun:test";
 import { generateGalaxy } from "../src/galaxy";
-import { type DeficitMap, carrierKey, recordTrade } from "../src/market";
+import { carrierKey, compareCarrierKeys } from "../src/carrier-key";
+import { type DeficitMap, recordTrade } from "../src/market";
 import { LOCAL_CARRIER_ID } from "../src/station";
 import { generateContents } from "../src/system";
 import {
@@ -28,7 +29,6 @@ import {
 	canonicalSnapshot,
 	carrierBaselineFingerprint,
 	compactWorld,
-	compareCarrierKeys,
 	effectiveCarrier,
 	enumerateCarriers,
 	applyTransition,
@@ -759,6 +759,15 @@ describe("§9.5 order independence", () => {
 		);
 	});
 
+	test("a key with no separator is refused, not silently mis-sorted", () => {
+		// `NaN - NaN` is not less, not greater and not equal, so a comparator
+		// that let one through fell back to arbitrary order — the exact failure
+		// the numeric sort exists to prevent, and one §4 orders completions by.
+		expect(() =>
+			compareCarrierKeys("station-trade", "2:station-trade"),
+		).toThrow(/carrier key/);
+	});
+
 	test("carrier keys sort numerically by system, not lexically", () => {
 		const sorted = [
 			carrierKey(11, "station-trade"),
@@ -1033,8 +1042,11 @@ describe("§7 the envelope's writers", () => {
 				cause: PLAYER,
 			}),
 		).toThrow(/galaxy/);
-		// The failure the guard prevents: a ninth envelope holding one domain.
-		expect(w.galaxies.length).toBe(8);
+		// The failure the guard prevents, on a world a *permitted* writer touched:
+		// asserting on the untouched `w` could not have failed even with every
+		// guard removed, because every call above threw before returning.
+		expect(visit(w, 7, 3).galaxies.length).toBe(8);
+		expect(visit(w, 7, 3).galaxies[7].visited).toEqual([3]);
 	});
 
 	test("no writer moves the clock past a completion without materializing it", () => {
@@ -1211,6 +1223,16 @@ describe("§9.9 atomicity and integrity", () => {
 		raw.worldSchemaVersion = 2;
 		raw.galaxies[0].factionInfluence = { "3": 0.4 };
 		expect(() => parseWorld(raw)).toThrow(
+			/worldSchemaVersion 2 needs a migration/,
+		);
+		// **And at the top level.** The first fix moved the version read ahead of
+		// the *envelope* loops only, leaving the declared-field loop in front of
+		// it — so a v2 save adding a top-level field still died with exactly the
+		// error the move was meant to stop. This is the case that check missed.
+		const topLevel = serializeWorld(newWorld(WORLD)) as Record<string, unknown>;
+		topLevel.worldSchemaVersion = 2;
+		topLevel.shipLog = [];
+		expect(() => parseWorld(topLevel)).toThrow(
 			/worldSchemaVersion 2 needs a migration/,
 		);
 		const older = serializeWorld(newWorld(WORLD)) as Record<string, unknown>;

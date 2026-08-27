@@ -44,6 +44,8 @@ _Avoid_: Live map state, discovery status
 A named, visible, and interruptible in-world process that repairs a carrier instance or replaces it with a new one.
 _Avoid_: Respawn timer
 
+> **`repairing` is the persisted spelling of "a recovery process is live"** — both kinds, repair and replacement. A carrier awaiting a replacement is `repairing` in `docs/specs/persistent-world-state.md` §3.2's enumeration and in `src/world-state.ts`, which is narrower than this entry reads. The descriptor's own `kind` says which process it is, and §4 makes the kind decide the valid completion. Renaming the condition is a `worldSchemaVersion` bump, so it is a decision rather than a tidy-up.
+
 **Causal episode**:
 The bounded provenance unit for the latest related operational transitions at one carrier slot. `docs/specs/persistent-world-state.md` §5 owns its retained facts and compaction rule.
 _Avoid_: Full event log

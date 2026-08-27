@@ -48,6 +48,7 @@
  * measures, and `measure-cruise-pacing.ts` is where the flown comparison lives.
  */
 
+import { type CarrierKey, carrierKey } from "../src/carrier-key";
 import { DEFAULT_CRUISE, type Mass, legSeconds } from "../src/cruise";
 import {
 	GALAXY_COUNT,
@@ -66,8 +67,6 @@ import {
 	HOLD_REFERENCE_T,
 	MARKET_PERIOD_MIN,
 	type MarketStation,
-	type CarrierKey,
-	carrierKey,
 	fullKitCr,
 	type DeficitMap,
 	listsCommodity,

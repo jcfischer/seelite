@@ -41,8 +41,8 @@ import { generateGalaxy } from "./galaxy";
 import { type DeficitMap, parseDeficits } from "./market";
 import { generateContents } from "./system";
 
-export type { CarrierKey };
-export { carrierKey, compareCarrierKeys, isCarrierKey };
+// **Not re-exported.** `carrier-key.ts` is the one owner; a second path to the
+// same names is the coupling it was extracted to prevent. Import from there.
 
 /**
  * The mutable-state schema version (§2). Bump when the shape of anything in a
@@ -520,6 +520,31 @@ function fail(message: string): never {
  * corruption then surfaced a long way from its cause, inside a canonicaliser
  * or as "expected eight galaxy envelopes" on the next load.
  */
+/**
+ * The preamble every writer shares: the galaxy, the clock, the materialization,
+ * and swapping one envelope back in.
+ *
+ * It was copied into four entry points, and the diff that added the third one
+ * already records a bug from getting it wrong — a writer that moved the clock
+ * and materialized nothing. A fifth writer should not have to rediscover the
+ * sequence.
+ */
+function withEnvelope(
+	world: WorldState,
+	galaxyIndex: number,
+	at: number,
+	edit: (env: GalaxyEnvelope) => GalaxyEnvelope,
+): WorldState {
+	assertGalaxy(galaxyIndex);
+	if (!Number.isFinite(at)) fail(`a write at ${at} has no finite time`);
+	if (at < world.gameTime)
+		fail(`a write at ${at} is before the clock (${world.gameTime})`);
+	const advanced = advanceTo(world, at);
+	const galaxies = advanced.galaxies.slice();
+	galaxies[galaxyIndex] = edit(galaxies[galaxyIndex]);
+	return { ...advanced, galaxies };
+}
+
 /** The parser's key shape, applied at the write. `carrierKey(3, "")` yields
  *  `"3:"`, which the type accepts and every writer stored — `splitCarrierKey`
  *  then feeds `NaN` into the canonical order, and the damage first shows up as
@@ -859,28 +884,16 @@ export const observe = (
 	gameTime: number,
 	source: string,
 ): WorldState => {
-	assertGalaxy(galaxyIndex);
 	assertCarrierKey(key);
-	// The same clock rule `applyTransition` enforces. Without it `advanceTo`'s
-	// `Math.max` silently accepted an observation from the past and let it
-	// overwrite fresher intelligence with a stale `observedAt`.
-	if (!Number.isFinite(gameTime) || gameTime < world.gameTime)
-		fail(`observe at ${gameTime} is before the clock (${world.gameTime})`);
-	// **Through `advanceTo`, not past it.** Moving the clock while leaving a due
-	// completion unwritten put the world in a state no other verb can produce:
-	// clock ahead of a `completesAt` nothing had materialized. `advanceTo` is
-	// idempotent, so paying for it here costs a pass over eight envelopes.
-	const advanced = advanceTo(world, gameTime);
-	const galaxies = advanced.galaxies.slice();
-	const env = galaxies[galaxyIndex];
-	galaxies[galaxyIndex] = writeKnowledge(
-		env,
-		key,
-		effectiveCarrier(env, key, gameTime),
-		gameTime,
-		source,
+	return withEnvelope(world, galaxyIndex, gameTime, (env) =>
+		writeKnowledge(
+			env,
+			key,
+			effectiveCarrier(env, key, gameTime),
+			gameTime,
+			source,
+		),
 	);
-	return { ...advanced, galaxies };
 };
 
 /** §7's visited-flag domain. Sorted and unique, so insertion order cannot
@@ -890,19 +903,18 @@ export const visit = (
 	galaxyIndex: number,
 	systemIndex: number,
 ): WorldState => {
-	assertGalaxy(galaxyIndex);
 	// The parser's range, applied at the write. Accepting a value only the next
 	// load rejects is the distance-from-cause `assertGalaxy` exists to close.
 	if (!Number.isInteger(systemIndex) || systemIndex < 0 || systemIndex > 255)
 		fail(`visit: ${systemIndex} is not a system index`);
-	const galaxies = world.galaxies.slice();
-	const env = galaxies[galaxyIndex];
-	if (env.visited.includes(systemIndex)) return world;
-	galaxies[galaxyIndex] = {
-		...env,
-		visited: [...env.visited, systemIndex].sort((a, b) => a - b),
-	};
-	return { ...world, galaxies };
+	return withEnvelope(world, galaxyIndex, world.gameTime, (env) =>
+		env.visited.includes(systemIndex)
+			? env
+			: {
+					...env,
+					visited: [...env.visited, systemIndex].sort((a, b) => a - b),
+				},
+	);
 };
 
 /** §7's legal-status domain. The persisted pair only — the label and the
@@ -913,24 +925,12 @@ export const setLegalHeat = (
 	heat: number,
 	updatedAt: number,
 ): WorldState => {
-	assertGalaxy(galaxyIndex);
-	if (!Number.isFinite(heat) || !Number.isFinite(updatedAt))
-		fail(`setLegalHeat: ${heat}/${updatedAt} is not a finite pair`);
-	// The clock rule `observe` enforces, for the same reason: a stamp from the
-	// past overwriting a newer one, silently.
-	if (updatedAt < world.gameTime)
-		fail(
-			`setLegalHeat at ${updatedAt} is before the clock (${world.gameTime})`,
-		);
-	// Through `advanceTo` like `observe`, so a writer cannot leave the clock
-	// behind an event it just recorded.
-	const advanced = advanceTo(world, updatedAt);
-	const galaxies = advanced.galaxies.slice();
-	galaxies[galaxyIndex] = {
-		...galaxies[galaxyIndex],
+	if (!Number.isFinite(heat))
+		fail(`setLegalHeat: ${heat} is not a finite heat`);
+	return withEnvelope(world, galaxyIndex, updatedAt, (env) => ({
+		...env,
 		legalStatus: { heat, updatedAt },
-	};
-	return { ...advanced, galaxies };
+	}));
 };
 
 // ---------------------------------------------------------------------------
@@ -1191,10 +1191,10 @@ const parseCarrierMap = <T>(
 	const o = asObject(raw, `${domain} domain`);
 	const out: Record<CarrierKey, T> = {};
 	for (const [key, value] of Object.entries(o)) {
-		// The same check `parseDeficits` makes, for the same reason: a bare
+		// The same check every boundary makes, for the same reason: a bare
 		// `Station.id` as a save key files one system's state under every
 		// system's, and a cast would let it through silently.
-		if (!/^\d+:.+$/.test(key))
+		if (!isCarrierKey(key))
 			fail(
 				`${domain}: ${key} is not a carrier key (systemIndex:localCarrierId)`,
 			);
@@ -1351,12 +1351,11 @@ const parseEnvelope = (raw: unknown, slot: number): GalaxyEnvelope => {
  */
 export function parseWorld(raw: unknown): WorldState {
 	const o = asObject(raw, "snapshot");
-	for (const field of Object.keys(o))
-		if (!(WORLD_FIELDS as readonly string[]).includes(field))
-			fail(`snapshot: ${field} is not a declared field`);
-	// **Versions first.** They decide which shape is legal, so checking them
-	// after the domain loops made a v2 save die as "factionInfluence is not a
-	// declared state domain" instead of naming the migration it needs.
+	// **Versions before every shape check, top-level included.** They decide
+	// which shape is legal. Moving them ahead of the *envelope* loops was half
+	// the fix: the `WORLD_FIELDS` loop still ran first, so a v2 save adding a
+	// top-level field died as "is not a declared field" — exactly the useless
+	// error the move was meant to stop.
 	const worldSchemaVersion = num(o, "worldSchemaVersion", "snapshot");
 	if (worldSchemaVersion !== WORLD_SCHEMA_VERSION)
 		fail(
@@ -1367,6 +1366,9 @@ export function parseWorld(raw: unknown): WorldState {
 		fail(
 			`snapshot: worldGeneratorVersion ${worldGeneratorVersion} needs a migration`,
 		);
+	for (const field of Object.keys(o))
+		if (!(WORLD_FIELDS as readonly string[]).includes(field))
+			fail(`snapshot: ${field} is not a declared field`);
 	if (!Array.isArray(o.galaxies) || o.galaxies.length !== GALAXY_COUNT)
 		fail(`snapshot: expected eight galaxy envelopes`);
 
@@ -1380,12 +1382,17 @@ export function parseWorld(raw: unknown): WorldState {
 
 	// **Over what arrived, not over what parsing made of it.** Hashing the
 	// re-canonicalised model made every difference canonicalisation smooths away
-	// invisible to the check — the hash agreed with itself by construction. The
-	// received body is hashed instead, which is why the shape checks above
-	// refuse anything canonicalisation would have quietly reordered.
+	// invisible to the check — the hash agreed with itself by construction.
+	//
+	// The cost is that this hash cannot say *which* difference it found. A
+	// snapshot assembled from two timelines and one merely re-encoded with its
+	// keys in another order both land here, so the message names the class and
+	// not a diagnosis it cannot make.
 	const { integrity, ...received } = o;
 	if (integrity !== fnv1a(JSON.stringify(received)))
-		fail("snapshot: integrity check failed — the save is not one timeline");
+		fail(
+			"snapshot: integrity check failed — the body does not match its hash (re-encoded, re-ordered, or assembled from more than one save)",
+		);
 
 	return world;
 }

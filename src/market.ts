@@ -557,15 +557,11 @@ export interface DeficitRow {
  */
 export type DeficitMap = Record<CarrierKey, DeficitRow>;
 
-/**
- * Re-exported from `carrier-key.ts`, which owns the persisted identity.
- *
- * It lived here because the deficit map was the first domain to need it, which
- * made the canonical identity of a saved fact a detail of the pricing module.
- * The type and its constructor moved out to a leaf; the deficit map itself is
- * still here, and the note at the end of this section owns that move.
- */
-export { type CarrierKey, carrierKey };
+// **`CarrierKey` and `carrierKey` are not re-exported here.** They lived in
+// this module because the deficit map was the first domain to need them, which
+// made the canonical identity of a saved fact a detail of the pricing module.
+// They are `carrier-key.ts`'s, and a re-export would leave two import paths to
+// one identity — the coupling the leaf was extracted to end.
 
 /** A row decayed to `gameTimeMin`, with anything under one unit dropped. */
 const decayRow = (row: DeficitRow, gameTimeMin: number): DeficitRow => {
