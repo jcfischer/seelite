@@ -2,6 +2,8 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import {
+	CONSOLE_STATIONS,
+	DEFAULT_CONSOLE_VIEW,
 	GALLERY_STATES,
 	galleryState,
 	renderGalleryState,
@@ -92,6 +94,61 @@ test("§8: docked takes the whole flight floor away and hangs the console forwar
 	expect(flying).toContain("data-gallery-floor");
 	expect(flying).not.toContain("data-gallery-station-console");
 	expect(flying).not.toContain("data-gallery-launch");
+});
+
+test("§8: the arrival renders neither the console nor the floor it replaced", () => {
+	// M4's negative on the markup. The render is driven by `flightFloorVisible`
+	// and `stationConsoleVisible` rather than by a second `state.id` test, so
+	// the two predicates the headless tier asserts are the ones the glass obeys.
+	const arriving = renderGalleryState(
+		galleryState("docked"),
+		"Flight",
+		"forward",
+		{ ...DEFAULT_CONSOLE_VIEW, phase: "arriving" },
+	);
+	expect(arriving).toContain('data-gallery-dock-phase="arriving"');
+	expect(arriving).toContain("data-gallery-arriving");
+	expect(arriving).not.toContain("data-gallery-station-console");
+	expect(arriving).not.toContain("data-gallery-floor");
+	expect(arriving).not.toContain("data-gallery-scanner");
+});
+
+test("§8.3: the gallery has a shipyard, so the empty hull heading is rendered somewhere", () => {
+	// The heading is drawn at a shipyard and nowhere else. Without a shipyard in
+	// the rig it would be markup no state reaches — shipped, and unprobed.
+	const yard = CONSOLE_STATIONS.find((station) => station.id === "yard");
+	if (!yard) throw new Error("the console rig has no shipyard");
+	const rendered = renderGalleryState(
+		galleryState("docked"),
+		"Flight",
+		"forward",
+		{ ...DEFAULT_CONSOLE_VIEW, station: yard, tab: "Equipment" },
+	);
+	expect(rendered).toContain("data-gallery-hulls");
+	expect(rendered).toContain("data-gallery-hulls-empty");
+	const trade = renderGalleryState(
+		galleryState("docked"),
+		"Flight",
+		"forward",
+		{ ...DEFAULT_CONSOLE_VIEW, tab: "Equipment" },
+	);
+	expect(trade).not.toContain("data-gallery-hulls");
+});
+
+test("M6: a delta that rounds to zero gets no arrow", () => {
+	// §3's floor pins the cheapest rows at one price step and applies to the
+	// responded price too, so a moved row there really does read 0.0. An up
+	// arrow beside it would report a rise the player did not cause.
+	const rendered = renderGalleryState(
+		galleryState("docked"),
+		"Flight",
+		"forward",
+		DEFAULT_CONSOLE_VIEW,
+	);
+	// The gallery's own moved row is well above the floor, so it keeps its arrow.
+	expect(rendered).toMatch(/data-gallery-price-delta>[↑↓]\d/);
+	expect(rendered).not.toContain("↑0.0");
+	expect(rendered).not.toContain("↓0.0");
 });
 
 test("the gallery keeps the scanner self-explanatory without a visible title", () => {

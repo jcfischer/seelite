@@ -112,6 +112,10 @@ function measureConsole() {
 		unavailableHead: Boolean(
 			document.querySelector("[data-gallery-unavailable]"),
 		),
+		hullsHead: Boolean(document.querySelector("[data-gallery-hulls]")),
+		hullsEmptyVisible: isVisible(
+			document.querySelector("[data-gallery-hulls-empty]"),
+		),
 		unavailable: [
 			...document.querySelectorAll("[data-gallery-unavailable-item]"),
 		].map((el) => ({
@@ -141,7 +145,10 @@ function measureConsole() {
 	};
 }
 
-await guardedOrigin(ORIGIN, ["src/state-gallery.ts", "src/station-console.ts"]);
+// `station-console.ts` declares no top-level numbers of its own — round 1 moved
+// its two constant blocks to the layers that own them — so the guard reads the
+// modules it draws from instead.
+await guardedOrigin(ORIGIN, ["src/state-gallery.ts", "src/market.ts"]);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 
@@ -186,7 +193,7 @@ check(
 );
 
 // --- Obligation 2 — seventeen rows, priced iff the station lists the good ---
-for (const station of ["trade", "fence"]) {
+for (const station of ["trade", "fence", "yard"]) {
 	await page.locator(`[data-gallery-station="${station}"]`).click();
 	const measured = await page.evaluate(measureConsole);
 	check(
@@ -223,7 +230,7 @@ for (const station of ["trade", "fence"]) {
 	);
 	check(
 		`2: ${station} ${station === "fence" ? "needs no" : "names its"} not-traded block`,
-		measured.notTradedHead === (station === "trade"),
+		measured.notTradedHead === (station !== "fence"),
 	);
 }
 
@@ -303,6 +310,19 @@ check(
 	),
 	equipment.unavailable.map((entry) => entry.reason).join(" | "),
 );
+
+// --- §8.3 / §8.7's joint 4 — the empty hull heading a player will see ------
+await page.locator('[data-gallery-station="yard"]').click();
+const yard = await page.evaluate(measureConsole);
+check(
+	"§8.3: a shipyard draws the hull heading, empty until #26 prices hulls",
+	yard.activeTab === "Equipment" && yard.hullsHead && yard.hullsEmptyVisible,
+);
+check(
+	"§8.3: a trade station draws no hull heading at all",
+	!equipment.hullsHead,
+);
+await page.locator('[data-gallery-station="trade"]').click();
 
 // --- Obligation 9 — launch is on the Flight console, the rest is inert -----
 await page.locator('[data-gallery-look="right"]').click();
