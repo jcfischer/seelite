@@ -15,6 +15,12 @@ const PIXEL_CHANNEL_TOLERANCE = 3;
 const ETA_READOUT =
 	/^ETA (?:<1s|\d+(?:\.\d+)?(?:s|min|h|d))  CHARGE \d+\.\d AU$/;
 const ETA_READOUT_SOURCE = ETA_READOUT.source;
+const VELOCITY_READOUT =
+	/^(?:NOSE-LOCKED CRUISE|.+ FRAME · INERTIAL \d+ km\/s)$/;
+const VELOCITY_READOUT_SOURCE = VELOCITY_READOUT.source;
+const COMBAT_STATUS =
+	/^FIRE (?:SAFE|PULSE|BEAM|LOCKED) · H \d+ E \d+ · LOCK (?:READY|ACQ) · MISSILE (?:WARNING|CLEAR) · INTD (?:ACTIVE|CLEAR)$/;
+const COMBAT_STATUS_SOURCE = COMBAT_STATUS.source;
 
 function textPixelsMatch(canvas, renderedText) {
 	if (!canvas || !renderedText) return false;
@@ -72,7 +78,7 @@ function textPixelsMatch(canvas, renderedText) {
 	return glyphPixels > 0;
 }
 
-const PROBE_MATCHERS_SCRIPT = `const PIXEL_CHANNEL_TOLERANCE = ${PIXEL_CHANNEL_TOLERANCE}; globalThis.__seeliteTextPixelsMatch = ${textPixelsMatch}; globalThis.__seeliteEtaReadout = new RegExp(${JSON.stringify(ETA_READOUT_SOURCE)});`;
+const PROBE_MATCHERS_SCRIPT = `const PIXEL_CHANNEL_TOLERANCE = ${PIXEL_CHANNEL_TOLERANCE}; globalThis.__seeliteTextPixelsMatch = ${textPixelsMatch}; globalThis.__seeliteMeasureCockpit = ${measureLiveCockpit}; globalThis.__seeliteEtaReadout = new RegExp(${JSON.stringify(ETA_READOUT_SOURCE)}); globalThis.__seeliteVelocityReadout = new RegExp(${JSON.stringify(VELOCITY_READOUT_SOURCE)}); globalThis.__seeliteCombatStatus = new RegExp(${JSON.stringify(COMBAT_STATUS_SOURCE)});`;
 
 function measureLiveCockpit() {
 	const visible = (selector) => {
@@ -101,6 +107,7 @@ function measureLiveCockpit() {
 		"scanner-reference-line",
 	);
 	const targetInstrumentCanvas = game.cockpit.targetInstrument?.ctx?.canvas;
+	const flightInstrumentCanvas = game.cockpit.flightInstrument?.ctx?.canvas;
 	const overlayCanvas = document.querySelector("#overlay");
 	const referenceLinePoints =
 		scannerReferenceLine?.geometry?.getAttribute("position");
@@ -150,6 +157,17 @@ function measureLiveCockpit() {
 		),
 		targetInstrumentSecondaryReadout:
 			game.cockpit.targetInstrument?.secondaryText.text,
+		flightInstrumentSecondaryText: globalThis.__seeliteTextPixelsMatch(
+			flightInstrumentCanvas,
+			game.cockpit.flightInstrument?.secondaryText,
+		),
+		flightInstrumentSecondaryReadout:
+			game.cockpit.flightInstrument?.secondaryText.text,
+		combatOverlayText: globalThis.__seeliteTextPixelsMatch(
+			overlayCanvas,
+			game.combatOverlayStatus,
+		),
+		combatOverlayReadout: game.combatOverlayStatus.text,
 		cruisePromptReadout: game.cockpitPrompt.text,
 		scannerMounted:
 			Boolean(scanner?.visible) &&
@@ -306,6 +324,8 @@ for (const viewport of VIEWPORTS) {
 			!forward.forwardFloor &&
 			forward.targetInstrumentSecondaryText &&
 			ETA_READOUT.test(forward.targetInstrumentSecondaryReadout ?? "") &&
+			forward.flightInstrumentSecondaryText &&
+			VELOCITY_READOUT.test(forward.flightInstrumentSecondaryReadout ?? "") &&
 			forward.throttleFill > 0 &&
 			forward.hologramRings >= 7 &&
 			forward.hologramContacts === forward.contacts * 2 &&
@@ -429,6 +449,185 @@ for (const viewport of VIEWPORTS) {
 	);
 	await page.close();
 }
+
+// The prototype path adds the laser rig and combat glass; its assertions
+// (firing feedback, lock/missile/interdiction status) belong on a dedicated
+// combat-mode page so the production viewport loop above stays a production
+// check.
+const combatPage = await browser.newPage({
+	viewport: { width: 1280, height: 760 },
+});
+watch(combatPage, "prototype combat");
+await combatPage.goto(`${ORIGIN}/?seed=42&combat=1`, { waitUntil: "load" });
+await combatPage.addScriptTag({ content: PROBE_MATCHERS_SCRIPT });
+await combatPage.waitForFunction(
+	() =>
+		window.__seelite?.frames > 1 &&
+		globalThis.__seeliteCombatStatus.test(
+			window.__seelite.combatOverlayStatus.text,
+		),
+);
+await combatPage.keyboard.press("/");
+const warningShown = await combatPage
+	.waitForFunction(
+		() => window.__seelite.combatOverlayStatus.text.includes("MISSILE WARNING"),
+		{ timeout: 5000 },
+	)
+	.then(
+		() => true,
+		() => false,
+	);
+await combatPage.keyboard.press("q");
+const warningCleared = await combatPage
+	.waitForFunction(
+		() =>
+			!window.__seelite.combatOverlayStatus.text.includes("MISSILE WARNING"),
+		{ timeout: 5000 },
+	)
+	.then(
+		() => true,
+		() => false,
+	);
+check(
+	"prototype: Z injects and R clears a missile warning",
+	warningShown && warningCleared,
+);
+// The beam heats up and locks out; the overlay must show the lockout.
+await combatPage.keyboard.down("s");
+const lockShown = await combatPage
+	.waitForFunction(
+		() =>
+			window.__seelite.combat.heatLocked &&
+			window.__seelite.combatOverlayStatus.text.includes("FIRE LOCKED"),
+		{ timeout: 15000 },
+	)
+	.then(
+		() => true,
+		() => false,
+	);
+await combatPage.keyboard.up("s");
+check("prototype: beam heat lockout is visible on the overlay", lockShown);
+await combatPage.keyboard.down("Space");
+// The feedback is claimed immediate, so the wait is bounded and fails the
+// check if pulse feedback does not appear in time.
+const pulseFeedbackShown = await combatPage
+	.waitForFunction(
+		() => window.__seelite.combatOverlayStatus.text.includes("FIRE PULSE"),
+		{ timeout: 2000 },
+	)
+	.then(
+		() => true,
+		() => false,
+	);
+check("prototype: pulse feedback appears promptly", pulseFeedbackShown);
+const combatReadout = await combatPage.evaluate(
+	() => window.__seelite.combatOverlayStatus.text,
+);
+const freezeProof = await combatPage.evaluate(async () => {
+	const game = window.__seelite;
+	game.probeFreezeLoop();
+	const frozenAt = game.frames;
+	await new Promise((resolve) => setTimeout(resolve, 80));
+	const stayedFrozen = game.frames === frozenAt;
+	game.render(0);
+	return stayedFrozen;
+});
+check("prototype: frame loop halts while frozen", freezeProof);
+const laserTracerPixels = await combatPage.evaluate(() => {
+	const game = window.__seelite;
+	const overlay = document.querySelector("#overlay");
+	const context = overlay.getContext("2d");
+	const count = () => {
+		const data = context.getImageData(0, 0, overlay.width, overlay.height).data;
+		let bright = 0;
+		for (let i = 0; i < data.length; i += 4)
+			if (data[i] > 100 && data[i + 1] > 180 && data[i + 2] > 200) bright++;
+		return bright;
+	};
+	const shown = count();
+	game.probeForceLaserHidden = true;
+	game.render(0);
+	const hidden = count();
+	game.probeForceLaserHidden = false;
+	game.render(0);
+	return { shown, hidden };
+});
+const laserPixels = laserTracerPixels.shown - laserTracerPixels.hidden;
+const beamVisible = await combatPage.evaluate(() => {
+	const game = window.__seelite;
+	const laser = game.nearScene.getObjectByName("combat-prototype-laser");
+	return laser?.visible === true;
+});
+const combatOverlayRendered = await combatPage.evaluate(
+	() => globalThis.__seeliteMeasureCockpit().combatOverlayText,
+);
+const resumedFrames = await combatPage.evaluate(async () => {
+	const game = window.__seelite;
+	const before = game.frames;
+	game.probeResumeLoop();
+	// Sample after the synchronous resume call so its own rendered frame does
+	// not count; then require several more to prove rAF is re-arming.
+	const afterResume = game.frames;
+	await new Promise((resolve) => setTimeout(resolve, 150));
+	return { delta: game.frames - afterResume, sync: afterResume - before };
+});
+check(
+	"prototype: frame loop keeps running after resume",
+	resumedFrames.delta > 2,
+);
+await combatPage.keyboard.up("Space");
+check(
+	"prototype: holding Space shows the weapon tracer, draws it on the glass and exposes immediate PULSE feedback",
+	beamVisible &&
+		laserPixels > 50 &&
+		COMBAT_STATUS.test(combatReadout) &&
+		combatReadout.includes("FIRE PULSE") &&
+		combatOverlayRendered,
+	`beam: ${beamVisible}, ${laserPixels} tracer pixels, status: ${combatReadout}, overlay glyphs: ${combatOverlayRendered}`,
+);
+await combatPage.close();
+
+const narrowCombatPage = await browser.newPage({
+	viewport: { width: 390, height: 844 },
+});
+watch(narrowCombatPage, "prototype combat narrow");
+await narrowCombatPage.goto(`${ORIGIN}/?seed=42&combat=1`, {
+	waitUntil: "load",
+});
+await narrowCombatPage.addScriptTag({ content: PROBE_MATCHERS_SCRIPT });
+await narrowCombatPage.waitForFunction(
+	() =>
+		window.__seelite?.frames > 1 &&
+		globalThis.__seeliteCombatStatus.test(
+			window.__seelite.combatOverlayStatus.text,
+		),
+);
+const narrowOverlay = await narrowCombatPage.evaluate(() => {
+	const game = window.__seelite;
+	const overlay = document.querySelector("#overlay");
+	// The game exposes the four overlay lines it actually drew, at the font
+	// each was fitted to; assert on those rather than reimplementing the fitter.
+	const lines = game.combatOverlayLines;
+	const fits =
+		lines.length === 4 &&
+		lines.every((line) => line.width <= overlay.width - 16) &&
+		game.combatStatusWorstWidth > 0 &&
+		game.combatStatusWorstWidth <= overlay.width - 16;
+	const rendered = globalThis.__seeliteMeasureCockpit().combatOverlayText;
+	return {
+		rendered,
+		fits,
+		canvas: overlay.width,
+		count: lines.length,
+		worst: game.combatStatusWorstWidth,
+	};
+});
+check(
+	"prototype: all combat overlay lines fit the narrow viewport",
+	narrowOverlay.rendered && narrowOverlay.fits,
+	`canvas ${narrowOverlay.canvas}px, rendered ${narrowOverlay.rendered}`,
+);
+await narrowCombatPage.close();
 
 await browser.close();
 exit();
