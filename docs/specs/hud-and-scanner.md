@@ -42,7 +42,8 @@ appears.
 ## 2. Compact scanner
 
 The compact scanner is persistently visible at the **lower centre of the
-cockpit**. It is a **local radar**: a large, shallow concentric
+cockpit** — in the flying states. §8's **M10** removes it while docked; this
+section describes the state it serves. It is a **local radar**: a large, shallow concentric
 elliptical base. Each contact uses a **vertical mast** anchored to a small
 **anchor disc** on that plane, so the separation is read as height rather than a
 slanted vector. Bearing and range read from the base, not a detached top-down
@@ -233,10 +234,12 @@ carries that: an unexplained number reads as broken, a number with its own
 delta beside it reads as an effect.
 
 **Decision M7: only the deficit clock is visible.** The arrow decays toward zero
-across §5.2's 20-minute half-life and the player watches their own mark fade.
-§5.1's 30-minute epoch is **not** surfaced — no countdown, no announcement. The
-base is the world and the arrow is the market's memory of *you*, which is the
-distinction §5 draws and the one worth putting on glass.
+across `economy-trade.md` §5.2's 20-minute half-life and the player watches their
+own mark fade. **`economy-trade.md` §5.1's 30-minute epoch is not surfaced** — no
+countdown, no announcement. The base is the world and the arrow is the market's
+memory of *you*, which is the distinction that spec's §5 draws and the one worth
+putting on glass. (Every §5.x in this decision is `economy-trade.md`'s; **§5** of
+*this* document is the cockpit's physical consoles.)
 
 **The cost is named rather than discovered.** At an epoch roll every price in the
 table changes at once with nothing saying why, and a player returning to a
@@ -245,7 +248,7 @@ and declined for a reason that cuts the other way: `economy-trade.md` §5.5
 measured waiting-for-the-roll as an exploit available at ~1% of decision points
 and worth up to 4.7× when it lands, and a visible countdown is a countdown to
 park against. Surfacing the clock would make the screen more honest and the game
-more exploitable. Recorded as a weak joint (§8.5, joint 1) on the principal's
+more exploitable. Recorded as a weak joint (§8.7, joint 1) on the principal's
 call.
 
 ### 8.3 The equipment tab
@@ -300,22 +303,36 @@ Three traps, each one a fact about the shipped module rather than a style note.
    source for *what does the table show*.
 3. **The tech-level gate counts Fuel, which is not in `EQUIPMENT`.**
    `station-types.md` §4.1 gates "the ten universal items" at
-   `min(displayTL + 3, 10)`. **Fuel is the tenth the cap counts, and it is not in
-   the array**: `EQUIPMENT` holds nine universal rows, because fuel is priced by
-   the light year as `FUEL_CR_PER_LY` rather than as a unit item. A gate implemented by taking the first
+   `min(displayTL + 3, 10)`. **Fuel is the *first* of those ten and the one
+   absent from the array** — `economy-trade.md` §7's table opens with it, and
+   `EQUIPMENT` holds the other nine, because fuel is priced by the light year as
+   `FUEL_CR_PER_LY` rather than as a unit item. A draft of this paragraph called
+   Fuel "the tenth", which contradicted obligation 6 and, worse, would have made
+   the whole *sold too early* column below vanish: a slice of items 1…n taken
+   from a list missing its *last* member differs from the correct set only by
+   length. A gate implemented by taking the first
    `min(displayTL + 3, 10)` of `EQUIPMENT`'s universal rows is wrong in *two*
    directions at once, and a first draft of this paragraph named only the first:
    it hides Fuel at every tech level, and from `displayTL` 0 through 6 it also
    sells one item the station should not have. Measured against the shipped
    array:
 
-   | `displayTL` | hidden | sold too early |
-   |---|---|---|
-   | 0 | Fuel | Extra Pulse Laser |
-   | 1–4 | Fuel | one item, sliding up §7's order |
-   | 5 | Fuel | Docking Computer |
-   | 6 | Fuel | Galactic Hyperdrive |
-   | 7–12 | Fuel | — (the slice runs out of array) |
+   Every row read off the shipped array rather than reasoned about, because a
+   range row that names no item is the shape of a row nobody measured:
+
+   | `displayTL` | n | hidden | sold too early |
+   |---|---|---|---|
+   | 0 | 3 | Fuel | Extra Pulse Laser |
+   | 1 | 4 | Fuel | E.C.M. System |
+   | 2 | 5 | Fuel | Extra Beam Laser |
+   | 3 | 6 | Fuel | Escape Pod |
+   | 4 | 7 | Fuel | Energy Bomb |
+   | 5 | 8 | Fuel | Docking Computer |
+   | 6 | 9 | Fuel | Galactic Hyperdrive |
+   | 7–12 | 10 | Fuel | — (the slice runs out of array) |
+
+   The *sold too early* column is exactly `economy-trade.md` §7's order shifted
+   by one, which is the signature of the missing first element.
 
    The early sale is the half that matters: it puts a galactic hyperdrive on a
    `displayTL = 6` shelf, one tech level below where §4.1 puts it, and nothing
@@ -332,17 +349,26 @@ state the current probe cannot express, let alone assert.
 | # | Obligation | Tier |
 |---|---|---|
 | 1 | `?hud-gallery=docked` exists and renders the station console on the forward wall, with **no** flight floor and **no** compact scanner. | browser |
-| 2 | The market tab renders seventeen rows at a non-fence station: fourteen priced, three in the not-traded block. At a fence, seventeen priced. | browser |
+| 2 | The market tab renders **seventeen** rows at every station, and a row is priced **iff** `listsCommodity` is true for it. Asserted as that biconditional and not as the constant fourteen: a station type that later drops a legal good would fail a hard-coded count on a correct build, which is the brittleness §8.5.2 rejects `stationCommodities` for. | browser |
 | 3 | The screen's row builder never calls `marketRow` for a good failing `listsCommodity` — asserted by construction, not by absence of a throw. | headless |
-| 4 | A row with a non-zero deficit renders a signed delta against **this epoch's** base, and a row with zero deficit renders none. | headless |
-| 5 | The equipment tab at a low-TL trade station lists the available items **and** a non-empty unavailable block, each entry carrying a reason string. | headless |
+| 4 | The row builder returns a signed delta field for a non-zero deficit, against **this epoch's** base, and no delta field for a zero deficit. Asserted against the builder's return value rather than against pixels, which is what keeps it headless. | headless |
+| 4b | Those deltas reach the glass: the docked gallery renders a moved row with a visible signed delta and an unmoved row without one. | browser |
+| 5 | The equipment builder at a low-TL trade station returns a non-empty available list **and** a non-empty unavailable list, every unavailable entry carrying a reason string. Return value, not rendering. | headless |
+| 5b | The unavailable block and its reason strings are on the glass in the docked gallery. | browser |
 | 6 | The universal-item **set** at `displayTL` d matches `economy-trade.md` §7's table order truncated to `min(d + 3, 10)`, Fuel included — the trap in §8.5.3, checked at d = 0…12. (`station-types.md` §4.1 owns the *gate*; `economy-trade.md` §7 is where the ten items appear in order, Fuel first.) | headless |
 | 7 | Turning the head right while docked exposes the Flight console with a live launch control and inert throttle/assist readouts. | browser |
 | 8 | Looking forward while docked returns the station console, not flying glass — §5's rule as amended by M2. | browser |
+| 9 | **M4's negative:** during the arrival the station console is **not** up. Asserted mid-arrival, not only at its end, or the check passes on a build that never delays it. | browser |
+| 10 | **M7's negative:** no epoch countdown or refresh announcement appears anywhere on the market tab, including across a simulated epoch boundary while docked. | browser |
 
 Obligation 3 is written as a construction check rather than "no throw is
 observed", because the passing build and the broken one both throw nothing on a
 fence, where every good lists. A test that only visits a fence cannot fail.
+
+**Obligations 9 and 10 exist because M4 and M7 are negatives**, and a decision
+whose whole content is "this does not appear" regresses in silence. Obligation 9
+is asserted *during* the arrival rather than after it, because a build that
+skipped E3's four to six seconds entirely would satisfy an end-state check.
 
 **Obligation 6 asserts the set and not the count, and a first draft of this
 paragraph justified that with a claim it had not run.** It said a count check is
