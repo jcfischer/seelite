@@ -253,8 +253,14 @@ ${CRATER_PROFILE}
  * shader's.** `UnrealBloomPass` averages the frame down a mip chain, so a
  * single NaN or Inf spreads across a whole texel of a coarse level — which is
  * a large rectangle on screen, appearing and vanishing as the geometry that
- * produced it moves. That is the artefact the principal has been chasing, and
- * mip sizes were only half of it.
+ * produced it moves.
+ *
+ * This is the second of two guards against that artefact — the first is the
+ * mip geometry, at `bloomResolution` in main.ts, which demonstrably reduced it
+ * without ending it. Neither is a diagnosis: no shader here is known to emit a
+ * non-finite value, and the artefact does not reproduce headlessly, so it
+ * cannot be traced that way. `onResize` in main.ts carries what is actually
+ * established.
  *
  * The test is written inverted on purpose. NaN compares false against
  * everything, so `!(c >= 0.0)` is true for NaN as well as for a negative,
@@ -408,7 +414,8 @@ uniform float atmoInnerRatio;
  * The previous version used pow(1 - dot(N, V), 3.2), which is maximal exactly
  * at the shell's outer silhouette — so the glow was brightest where the
  * geometry ends and then stopped dead. That reads as a painted ring with two
- * hard edges, which is what the principal saw once bloom stopped smearing it.
+ * hard edges. That is the *sharp atmosphere*, a separate report from the
+ * flickering rectangles, and it became visible once bloom stopped smearing it.
  *
  * A real atmosphere is the opposite: the path through it goes to *zero* at the
  * outer edge, grows inward, and is cut short where the planet blocks it. That

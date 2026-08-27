@@ -211,8 +211,20 @@ export const RESTORE_KEY = "u";
 
 export type PerfTargets = {
 	scenes: THREE.Object3D[];
-	/** Reads and sets the render-scale multiplier; see `main.ts`. */
-	resolution?: { get: () => number; set: (scale: number) => void };
+	/**
+	 * Reads and sets the render-scale multiplier, and reports the ratio the
+	 * renderer *actually applied* — which is not the multiplier times
+	 * `devicePixelRatio`. The renderer caps the device ratio at 2 and multiplies
+	 * by the player's own resolution setting as well, so a panel computing it
+	 * from the multiplier alone would print a figure the drawing buffer never
+	 * had, on any display above 2x or whenever the settings screen is not at
+	 * 100%. Every cost figure in this branch was read off this panel.
+	 */
+	resolution?: {
+		get: () => number;
+		set: (scale: number) => void;
+		effectiveRatio: () => number;
+	};
 	/** The bloom pass, so it can be switched without rebuilding the composer. */
 	bloom: { enabled: boolean } | null;
 };
@@ -247,7 +259,8 @@ export function mountPerfPanel(targets: PerfTargets) {
 			label: "resolution",
 			state: () => {
 				const s2 = targets.resolution?.get() ?? 1;
-				const px = Math.round(window.devicePixelRatio * s2 * 100) / 100;
+				const px =
+					Math.round((targets.resolution?.effectiveRatio() ?? 1) * 100) / 100;
 				return `${Math.round(s2 * 100)}% (${px}x)`;
 			},
 			toggle: () => {

@@ -54,7 +54,11 @@ const STYLE = `
 #seelite-settings .hint { margin-top: 14px; color: #7f97b8; font-size: 11.5px; }
 `;
 
-export function mountSettingsPanel(store: SettingsStore) {
+export function mountSettingsPanel(
+	store: SettingsStore,
+	/** Called as the screen opens, to drop keys the player is still holding. */
+	releaseHeldKeys?: () => void,
+) {
 	if (!document.getElementById(STYLE_ID)) {
 		const style = document.createElement("style");
 		style.id = STYLE_ID;
@@ -104,6 +108,10 @@ export function mountSettingsPanel(store: SettingsStore) {
 
 	const open = () => {
 		if (root) return close();
+		// Taking `keydown` does not take back the keys already down. Without
+		// this, a held throttle or pitch key keeps flying the ship behind a
+		// screen the player is reading.
+		releaseHeldKeys?.();
 		root = document.createElement("section");
 		root.id = "seelite-settings";
 		root.dataset.settingsPanel = "";

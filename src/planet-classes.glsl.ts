@@ -96,9 +96,12 @@ vec3 reliefNormal(vec3 p, vec3 N, float strength) {
      * One NaN fragment is invisible. The bloom pass is what makes it a
      * rectangle: a downsample chain averages that pixel into a whole block of
      * a lower mip, so a handful of bad lanes at the limb come back as blocks
-     * that appear and vanish as the body moves. That is the artefact the
-     * principal saw, and it is the reason this is written as a guard rather
-     * than left to a driver.
+     * that appear and vanish as the body moves.
+     *
+     * This is a guard against a hazard this path introduces, and **not** the
+     * cause of the flicker reported against this branch: that artefact exists
+     * on main, where this path does not, and this path is off by default. The
+     * flicker's own account is at onResize in main.ts.
      *
      * The test is inverted on purpose: NaN compares false against everything,
      * so !(m < LIMIT) catches NaN as well as Inf where m > LIMIT would let

@@ -554,8 +554,25 @@ class Game {
 	private renderScale = 1;
 	/** Player settings, read at boot and applied as they change. */
 	readonly settings = new SettingsStore();
+
+	/**
+	 * Drop every held key.
+	 *
+	 * A dialog that takes `keydown` does not take back the keys already down:
+	 * a throttle or pitch key held when the settings screen opens stays in this
+	 * set, and the ship goes on flying behind a screen the player is reading.
+	 * The dialog calls this as it opens.
+	 */
+	releaseHeldKeys() {
+		this.keys.clear();
+	}
 	get resolutionScale() {
 		return this.renderScale;
+	}
+	/** What the renderer is actually drawing at, asked of the renderer rather
+	 *  than recomputed from the parts that went into it. */
+	get appliedPixelRatio() {
+		return this.renderer.getPixelRatio();
 	}
 	setResolutionScale(scale: number) {
 		this.renderScale = scale;
@@ -3864,9 +3881,23 @@ class Game {
 	 * texel offsets computed from its own resolution — reads outside its
 	 * footprint.
 	 *
-	 * That is what the flickering black rectangles were: bloom blocks, roughly
-	 * one coarse texel across, centred on the brightest small thing in the
-	 * frame, which in chase view is the ship's own engine glow.
+	 * **The flicker's account lives here**, because four places were each
+	 * claiming to be its cause. The artefact — black rectangles, roughly one
+	 * coarse bloom texel across, appearing and vanishing as the frame moves —
+	 * was present on `main` before any of this branch existed, and switching
+	 * bloom off removes it. That much is established.
+	 *
+	 * What is *not* established is which input to bloom produces it. Two
+	 * candidates were found and both fixed: mip levels built from an odd start
+	 * (`bloomResolution`), and non-finite fragment colours (`SANITISE_GLSL`).
+	 * The first demonstrably reduced it. Whether the second finishes it is
+	 * unknown at the time of writing, and the honest state is "guarded in two
+	 * places, diagnosed in neither".
+	 *
+	 * The pixel-ratio re-application below is *not* one of those candidates. It
+	 * was investigated as one and ruled out by measurement — the composer's
+	 * targets already match the drawing buffer, because `EffectComposer.setSize`
+	 * applies the ratio itself. It is kept for the display-move case only.
 	 *
 	 * Moving a window between displays is the case that bites hardest, because
 	 * `devicePixelRatio` itself changes — a retina laptop at 2, an external
@@ -3907,8 +3938,8 @@ class Game {
 }
 
 /**
- * The size the bloom chain works at: half the window, rounded to even, and
- * independent of the device pixel ratio.
+ * The size the bloom chain works at: half the window, quantised to a multiple
+ * of 32, and independent of the device pixel ratio.
  *
  * **Divisible by 32, because the chain halves five times.** `UnrealBloomPass`
  * builds five mip levels by repeatedly halving its resolution. An odd width
@@ -4042,7 +4073,7 @@ if (query.has("model-viewer")) {
 	// for.
 	// The settings screen is a player-facing feature, so it is not gated.
 	import("./settings-panel").then(({ mountSettingsPanel }) =>
-		mountSettingsPanel(game.settings),
+		mountSettingsPanel(game.settings, () => game.releaseHeldKeys()),
 	);
 
 	if (query.has("perf"))
@@ -4053,6 +4084,7 @@ if (query.has("model-viewer")) {
 				resolution: {
 					get: () => game.resolutionScale,
 					set: (scale) => game.setResolutionScale(scale),
+					effectiveRatio: () => game.appliedPixelRatio,
 				},
 			}),
 		);
