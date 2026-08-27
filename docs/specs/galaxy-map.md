@@ -132,14 +132,22 @@ corrected in the specs. The correction's stated check was a repo-wide grep for
 differently-named constant; `market.ts` had the right number under
 `FUEL_CR_PER_LY = 2` and the two disagreed by a factor of ten.
 
-Nothing was mispriced by it, and that claim is about the **constant**, not only
-about `jumpCost`: at the time of the change `FUEL_COST_PER_LY` had exactly two
-readers in the repo — `jumpCost` on the next line, and the new test — and
-`jumpCost` itself had none outside that test. The route panel is the first
-consumer either way, and it would have quoted a 22 LY crossing at 2.7 Cr. The
-check is `grep -rn FUEL_COST_PER_LY src/ tests/ scripts/`, and it is the check
-because a 10× change to an exported constant is only safe to the extent its
-importers are known.
+Nothing appears to have been mispriced by it, and the claim is about the
+**constant**, not only about `jumpCost`: at the time of the change
+`FUEL_COST_PER_LY` had exactly two readers — `jumpCost` on the next line, and
+the new test — and `jumpCost` itself had none outside that test. The route panel
+is the first consumer either way, and it would have quoted a 22 LY crossing at
+2.7 Cr.
+
+**Say how far that was checked, because the method has a known hole and this
+document is the reason it is known.** Three greps: `FUEL_COST_PER_LY` by name,
+`FUEL_CR_PER_LY` by name (both readers are accounted for; both constants are
+now 2), and a value grep for bare `0.2` across `src/`, whose every hit is
+geometry, audio or a material roughness. What none of them can see is a fuel
+price re-derived at runtime or carried under a third name — which is exactly
+how the original bug survived a grep for `0.2 Cr`. The honest form of the claim
+is *no third copy was found by three searches of two kinds*, not *no third copy
+exists.*
 
 `tests/galaxy-route.test.ts` pins **each figure absolutely and then their
 agreement**: `FUEL_TANK_LY === 7`, both per-LY constants `=== 0.2 / 0.1`,
@@ -158,6 +166,12 @@ Clicking a system selects it. An **inline card beside the selected point**
 carries name, economy, government, tech level, population, direct distance, the
 planned chain, and the generated description — the node's "without leaving the
 map" read literally.
+
+**The record does not depend on a route.** It is seed-derived and always
+knowable, so only the chain line is conditional: an unroutable selection reads
+"no route within range" and keeps the rest. Gating the whole card on a route was
+the first implementation, and it made such a click look dead — a colour change
+and nothing else.
 
 **Picking is screen-space, not a raycast.** A `Points` raycast tests a threshold
 in world units, so one threshold picks a fat target zoomed in and a tiny one
@@ -296,6 +310,13 @@ system and re-derives, rather than advancing a cursor into a stored list.
 
 ### 8.2 Persistence
 
+`destinationIndex` is a `SystemRecord.index`, **not an array position**.
+`generateGalaxy` returns systems in index order and
+`tests/galaxy-route.test.ts` pins that, but `parseCourse` validates a loaded
+index against the *range* rather than against a slot, so the map looks courses
+up by field. A positional read there is a `.name` of `undefined` waiting for a
+generator change.
+
 The course is per-galaxy typed state in `persistent-world-state.md` §7's
 envelope, under the player-knowledge axis: it is player intent, not world
 condition.
@@ -383,8 +404,12 @@ times. It changes when the work happens, never what is returned.
 
 At desktop (1280 × 760) and narrow (390 × 844):
 
-1. The chart mounts with no `Game` behind it, 256 systems, and the constants
-   read off the page rather than restated.
+1. The chart mounts with no `Game` behind it, draws 256 systems, and reports
+   `galaxyRadiusLy === 22` and `jumpRangeLy === 7`. Those two **are** restated
+   literals, deliberately and against the repo's usual rule: they are the spec's
+   own figures, so a build that changed them should fail this rather than have
+   the probe follow it. Everything else the probe compares — the pick radius,
+   the viewport box, the route — it reads off the page.
 2. **The pick radius is 14 px at 62 LY and at 18 LY.** Four verdicts: a click
    at 0.8 × the radius from an isolated system's centre selects it, and one at
    1.6 × selects nothing, at both camera distances. **The boundary is the check

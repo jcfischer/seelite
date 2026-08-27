@@ -373,44 +373,53 @@ export function parseCourse(
 	// the caller had to write `parseCourse(JSON.parse(serialiseCourse(c)), g)`.
 	// A malformed string throws here rather than falling through to the
 	// object check, so a truncated save still fails loudly.
-	if (typeof raw === "string") {
-		let decoded: unknown;
+	//
+	// **Decoded at most once, deliberately.** Recursing into `parseCourse` was
+	// the first shape of this and it accepted arbitrarily double-encoded JSON —
+	// `JSON.stringify(serialiseCourse(c))` came back a healthy course and
+	// `'"null"'` came back as absence, which is the precise reinterpretation the
+	// paragraph above forbids. The decoded value falls through to the object
+	// checks instead.
+	let value: unknown = raw;
+	if (typeof value === "string") {
 		try {
-			decoded = JSON.parse(raw);
+			value = JSON.parse(value);
 		} catch (cause) {
-			throw new Error(`course: unreadable JSON`, { cause });
+			throw new Error("course: unreadable JSON", { cause });
 		}
-		return parseCourse(decoded, envelopeGalaxy);
+		if (value === null) {
+			throw new Error("course: JSON null is not an absent course");
+		}
 	}
-	if (!isPlainObject(raw)) {
-		throw new Error(`course: expected an object, got ${typeof raw}`);
+	if (!isPlainObject(value)) {
+		throw new Error(`course: expected an object, got ${typeof value}`);
 	}
-	if (raw.version !== COURSE_SCHEMA_VERSION) {
+	if (value.version !== COURSE_SCHEMA_VERSION) {
 		throw new Error(
-			`course: unsupported schema version ${String(raw.version)}, expected ${COURSE_SCHEMA_VERSION}`,
+			`course: unsupported schema version ${String(value.version)}, expected ${COURSE_SCHEMA_VERSION}`,
 		);
 	}
 	// Bounds derived, not restated. As literal `7` and `255` these went stale
 	// the moment `GALAXY_COUNT` or `SYSTEMS_PER_GALAXY` moved, and a validator
 	// that silently accepts an out-of-range save is worse than none.
-	if (!isIndex(raw.galaxy, GALAXY_COUNT - 1)) {
+	if (!isIndex(value.galaxy, GALAXY_COUNT - 1)) {
 		throw new Error(
-			`course: galaxy ${String(raw.galaxy)} is not 0..${GALAXY_COUNT - 1}`,
+			`course: galaxy ${String(value.galaxy)} is not 0..${GALAXY_COUNT - 1}`,
 		);
 	}
-	if (raw.galaxy !== envelopeGalaxy) {
+	if (value.galaxy !== envelopeGalaxy) {
 		throw new Error(
-			`course: galaxy ${raw.galaxy} does not match its envelope ${envelopeGalaxy}`,
+			`course: galaxy ${value.galaxy} does not match its envelope ${envelopeGalaxy}`,
 		);
 	}
-	if (!isIndex(raw.destinationIndex, SYSTEMS_PER_GALAXY - 1)) {
+	if (!isIndex(value.destinationIndex, SYSTEMS_PER_GALAXY - 1)) {
 		throw new Error(
-			`course: destinationIndex ${String(raw.destinationIndex)} is not 0..${SYSTEMS_PER_GALAXY - 1}`,
+			`course: destinationIndex ${String(value.destinationIndex)} is not 0..${SYSTEMS_PER_GALAXY - 1}`,
 		);
 	}
 	return {
 		version: COURSE_SCHEMA_VERSION,
-		galaxy: raw.galaxy,
-		destinationIndex: raw.destinationIndex,
+		galaxy: value.galaxy,
+		destinationIndex: value.destinationIndex,
 	};
 }

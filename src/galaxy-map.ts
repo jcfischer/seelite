@@ -209,6 +209,21 @@ export function mountGalaxyMap(): void {
 			: 0x5ee11e;
 
 	const galaxy: Galaxy = generateGalaxy(worldSeed, galaxyIndex);
+
+	/**
+	 * A system by its `index`, not by its array position.
+	 *
+	 * `generateGalaxy` builds the array in index order, so the two agree today —
+	 * but `galaxy-route.ts` keeps them apart on purpose (`slot.set(pool[i].index,
+	 * i)`), and the one caller that is *not* under this module's control is a
+	 * `Course` loaded from a save under #46: `parseCourse` validates
+	 * `destinationIndex` against the range and not against a slot, so a
+	 * positional read there is a `.name` of `undefined` waiting for a generator
+	 * change. `tests/galaxy-route.test.ts` pins the invariant; this respects it
+	 * rather than assuming it.
+	 */
+	const systemByIndex = (index: number): SystemRecord | null =>
+		galaxy.systems.find((s) => s.index === index) ?? null;
 	let current = startSystem(galaxy);
 	let selected: SystemRecord | null = null;
 	let course: Course | null = null;
@@ -538,7 +553,7 @@ export function mountGalaxyMap(): void {
 			`at ${current.name}  ·  ${lit.length} within ${JUMP_RANGE_LY} LY`,
 			course === null
 				? "no course set"
-				: `course: ${galaxy.systems[course.destinationIndex].name}` +
+				: `course: ${systemByIndex(course.destinationIndex)?.name ?? "?"}` +
 					`  ·  ${progress?.remaining ?? "?"} jump(s) left` +
 					(progress?.nextHop
 						? `  ·  next ${progress.nextHop.system.name}`
@@ -550,18 +565,25 @@ export function mountGalaxyMap(): void {
 		hazeButton.textContent = `core haze: ${haze.visible ? "on" : "off"}`;
 		hazeButton.setAttribute("aria-pressed", String(haze.visible));
 
-		if (selected === null || route === null) {
+		if (selected === null) {
 			card.style.display = "none";
 		} else {
+			// **The record does not depend on a route.** It is seed-derived and
+			// always knowable, and §5 says clicking a system shows it. Gating
+			// the whole card on `route !== null` made an unroutable selection
+			// read as a dead click — a colour change and nothing else. Only the
+			// chain line is conditional.
 			card.style.display = "block";
 			card.textContent = [
 				selected.name,
 				`${ECONOMY_NAMES[selected.economy]} · ${GOVERNMENT_NAMES[selected.government]}`,
 				`TL ${selected.displayTL} · pop ${(selected.population / 10).toFixed(1)} bn`,
 				`${distanceLy(current.pos, selected.pos).toFixed(1)} LY direct`,
-				route.jumps === 0
-					? "you are here"
-					: `${route.jumps} jump(s) · ${route.totalLy.toFixed(1)} LY · ${route.totalCr.toFixed(0)} Cr`,
+				route === null
+					? "no route within range"
+					: route.jumps === 0
+						? "you are here"
+						: `${route.jumps} jump(s) · ${route.totalLy.toFixed(1)} LY · ${route.totalCr.toFixed(0)} Cr`,
 				"",
 				selected.description,
 			].join("\n");
@@ -721,7 +743,7 @@ export function mountGalaxyMap(): void {
 	);
 
 	function select(index: number | null): void {
-		selected = index === null ? null : (galaxy.systems[index] ?? null);
+		selected = index === null ? null : systemByIndex(index);
 		recompute();
 	}
 
@@ -862,8 +884,8 @@ export function mountGalaxyMap(): void {
 		},
 		setHaze,
 		jumpTo(index: number) {
-			const next = galaxy.systems[index];
-			if (next === undefined) return;
+			const next = systemByIndex(index);
+			if (next === null) return;
 			current = next;
 			selected = null;
 			recompute();

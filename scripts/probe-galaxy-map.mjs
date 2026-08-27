@@ -32,16 +32,31 @@ import { guardedOrigin, launchChromium, tally } from "./probe-guard.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
+/**
+ * `crowding` is §5.1's measured figure at the default framing, ± the band a
+ * change to the projection or the pick radius has to stay inside.
+ *
+ * **Per viewport, because the figure is.** One band across both was calibrated
+ * on the desktop 40.2% and merely accommodated the narrow 38.7%, so the narrow
+ * run reported a verdict against a threshold nobody had set for it. Each is now
+ * its own measurement with its own band — still wide, because this is a
+ * regression guard rather than a tuning target, but each end is a number
+ * somebody measured at that width.
+ */
 const VIEWPORTS = [
-	{ name: "desktop", width: 1280, height: 760 },
-	{ name: "narrow", width: 390, height: 844 },
+	{
+		name: "desktop",
+		width: 1280,
+		height: 760,
+		crowding: { measured: 0.402, min: 0.3, max: 0.5 },
+	},
+	{
+		name: "narrow",
+		width: 390,
+		height: 844,
+		crowding: { measured: 0.387, min: 0.29, max: 0.49 },
+	},
 ];
-
-/** §5.1's measured figure at the default framing, with the band a change to
- *  the projection or the pick radius has to stay inside. Wide, because it is a
- *  regression band and not a tuning target — but not so wide that halving the
- *  point separation would pass. */
-const CROWDING_AT_DEFAULT = { min: 0.25, max: 0.6 };
 
 const nextFrame = (page) =>
 	page.evaluate(
@@ -54,7 +69,9 @@ const browser = await launchChromium();
 const { check, watch, exit } = tally();
 
 for (const viewport of VIEWPORTS) {
-	const page = await browser.newPage({ viewport });
+	const page = await browser.newPage({
+		viewport: { width: viewport.width, height: viewport.height },
+	});
 	watch(page, viewport.name);
 	await page.goto(`${ORIGIN}/?galaxy-map=0`, { waitUntil: "load" });
 	await page.waitForSelector("#galaxy-map canvas");
@@ -298,7 +315,7 @@ for (const viewport of VIEWPORTS) {
 	await page.evaluate(() => window.__seeliteGalaxyMap.resetView());
 
 	check(
-		`${viewport.name}: crowding ${(wide.crowded * 100).toFixed(1)}% of ${wide.onScreen} at ${wide.distanceLy} LY, ${(close.crowded * 100).toFixed(1)}% of ${close.onScreen} at ${close.distanceLy} LY`,
+		`${viewport.name}: crowding ${(wide.crowded * 100).toFixed(1)}% of ${wide.onScreen} at ${wide.distanceLy} LY (spec: ${(viewport.crowding.measured * 100).toFixed(1)}%), ${(close.crowded * 100).toFixed(1)}% of ${close.onScreen} at ${close.distanceLy} LY`,
 		// The two samples must be of two different cameras, or the comparison
 		// below is between a figure and itself.
 		close.distanceLy < wide.distanceLy &&
@@ -311,8 +328,8 @@ for (const viewport of VIEWPORTS) {
 			close.onScreen >= 25 &&
 			// §5.1's figure, banded. This assertion is what makes the spec's
 			// table a check rather than a note.
-			wide.crowded >= CROWDING_AT_DEFAULT.min &&
-			wide.crowded <= CROWDING_AT_DEFAULT.max &&
+			wide.crowded >= viewport.crowding.min &&
+			wide.crowded <= viewport.crowding.max &&
 			// Zooming must resolve the cluster. If it did not, free orbit would
 			// have no answer to depth ambiguity at all.
 			close.crowded < wide.crowded,

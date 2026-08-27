@@ -354,6 +354,27 @@ describe("§4 route planning — fewest jumps, then shortest", () => {
 	});
 });
 
+describe("array position and `SystemRecord.index`", () => {
+	/**
+	 * They agree, and that is a fact worth pinning rather than assuming.
+	 *
+	 * `generateGalaxy` builds the array in index order, so `systems[i].index ===
+	 * i` — but `planRoute` deliberately keeps the two apart, and a `Course`
+	 * loaded from a save carries a `destinationIndex` validated against the
+	 * *range* and not against a slot. Anything that reads one as the other is
+	 * relying on this test, so the reliance should be visible here.
+	 */
+	test("`generateGalaxy` returns systems in index order", () => {
+		for (const g of [0, 3, 7]) {
+			const galaxy = generateGalaxy(0x9e1d, g);
+			galaxy.systems.forEach((s, position) => {
+				expect(s.index).toBe(position);
+				expect(s.galaxy).toBe(g);
+			});
+		}
+	});
+});
+
 describe("§8 course — a destination, not a stored chain", () => {
 	const galaxy = generateGalaxy(0xfeed, 0);
 	const from = startSystem(galaxy);
@@ -444,6 +465,23 @@ describe("§8.2 course persistence — a typed, validated envelope", () => {
 	test("an unreadable JSON string throws rather than reading as absent", () => {
 		expect(() => parseCourse("{ not json", 0)).toThrow(/unreadable/i);
 		expect(() => parseCourse('"a string"', 0)).toThrow();
+	});
+
+	/**
+	 * The string branch decodes **once**. Recursing was the first shape of it,
+	 * and it let a doubly-encoded save through as healthy — the exact
+	 * reinterpretation §7 forbids, introduced by the fix for the round-2
+	 * finding that the pair did not round-trip.
+	 */
+	test("a doubly-encoded course throws instead of decoding twice", () => {
+		const once = serialiseCourse({
+			version: COURSE_SCHEMA_VERSION,
+			galaxy: 0,
+			destinationIndex: 3,
+		});
+		expect(() => parseCourse(JSON.stringify(once), 0)).toThrow();
+		expect(() => parseCourse("null", 0)).toThrow(/absent/i);
+		expect(() => parseCourse('"null"', 0)).toThrow();
 	});
 
 	test("no course at all is a valid state, not a parse failure", () => {
