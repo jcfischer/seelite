@@ -1,12 +1,20 @@
 /**
  * A frame-rate readout, for judging what a change costs.
  *
- * **Not part of the HUD**, and query-gated in the game for that reason:
- * `hud-and-scanner.md` §5 puts developer tuning readouts on a Tuning tab and
- * says they may "never occupy the persistent player flight floor". A number in
- * the corner of a cockpit is exactly that. `?fps` mounts it; nothing else does.
- * The model workbench shows it unconditionally, because a workbench is already
- * an instrument rather than a view of the game.
+ * **Not part of the HUD**, and query-gated in the game for that reason.
+ * `hud-and-scanner.md` §5 says developer tuning parameters "move to a Tuning
+ * tab on the right panel: they are available while tuning the prototype, but
+ * never occupy the persistent player flight floor."
+ *
+ * What the gate satisfies is the second clause and not the first. This is a
+ * fixed overlay in the corner of the flight floor, on no Tuning tab — so it
+ * complies by never being *persistent* for a player, not by living where the
+ * rule says tuning readouts live. Worth saying rather than citing §5 as though
+ * it covered both: the Tuning tab does not exist yet, and when it does, this
+ * belongs on it and the query flag becomes the fallback rather than the
+ * answer. `?fps` mounts it in the game; nothing else does. The model workbench
+ * shows it unconditionally, because a workbench is already an instrument
+ * rather than a view of the game.
  *
  * **It measures the page's frame service, not the game's loop**, and that
  * distinction is the whole of what this instrument is and is not.

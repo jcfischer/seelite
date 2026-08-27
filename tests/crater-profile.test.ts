@@ -72,6 +72,42 @@ const INTERPOLATORS = sources("src").filter(([, src]) =>
 	/\$\{CRATER_(CELL|PROFILE)\}/.test(src),
 );
 
+/**
+ * The text around each interpolation, rather than the file holding it.
+ *
+ * File-scoped assertions were satisfied by coincidence. `vec3 p` appears three
+ * times in `station-surface.ts` — `float grain(vec3 p)`, `vec3 p =
+ * normalize(vRockP)` — none of them the loop variable the snippet reads, so a
+ * *second* interpolating function added to that file would have inherited a
+ * green pass without supplying anything. The same width made the copy detector
+ * count every `exp(-pow(` in `planet-shaders.ts`, where an unrelated gaussian
+ * in some other planet class would fail under the label "grown its own copy of
+ * the profile back" — the mislabelling this file rejects two tests later, for
+ * `0.88`, and had not applied to itself.
+ *
+ * The unit is the **enclosing GLSL function**, not a character window. A fixed
+ * window was tried first and is not good enough: 900 characters back from the
+ * interpolation in `station-surface.ts` reaches into the function above it, so
+ * a second walk that supplied nothing borrowed the neighbour's
+ * `vec3 base = floor(p)` and passed. A function is the scope the contract is
+ * actually about — whatever declares `base` and `p` has to be the same one
+ * that reads them.
+ */
+const FN_START = /\n([A-Za-z_][\w ]*\([^)]*\)\s*\{)/g;
+const walks = (source: string) => {
+	const starts = [...source.matchAll(FN_START)].map((m) => m.index ?? 0);
+	const out: string[] = [];
+	for (const hit of source.matchAll(/\$\{CRATER_(?:CELL|PROFILE)\}/g)) {
+		const at = hit.index ?? 0;
+		const open = starts.filter((i) => i < at).pop() ?? 0;
+		// To the first close brace at column zero after the interpolation,
+		// which is where a GLSL function in these template literals ends.
+		const close = source.indexOf("\n}", at);
+		out.push(source.slice(open, close === -1 ? source.length : close));
+	}
+	return out;
+};
+
 describe("the crater field has one definition", () => {
 	test("both known consumers are among the interpolators found", () => {
 		// The scan is the thing every case below rests on, so it is checked
@@ -113,24 +149,29 @@ describe("the crater field has one definition", () => {
 		// a third consumer is the case this file is about, and a detector that
 		// reads two hardcoded paths would let that third file interpolate the
 		// snippets *and* paste a profile beside them.
-		expect(flat(shared).match(gaussian)?.length ?? 0).toBe(1);
-		for (const [name, source] of INTERPOLATORS) {
-			if (name === "planet-shaders.ts") continue;
-			expect(`${name}: ${flat(source).match(gaussian)?.length ?? 0}`).toBe(
-				`${name}: 0`,
-			);
-		}
+		// Once in the snippet that defines it, and never in the code around an
+		// interpolation of that snippet. Counting the whole of
+		// `planet-shaders.ts` would have called an unrelated gaussian a copy.
+		expect(flat(CRATER_PROFILE).match(gaussian)?.length ?? 0).toBe(1);
+		for (const [name, source] of INTERPOLATORS)
+			for (const [n, walk] of walks(source).entries()) {
+				const at = `${name} walk ${n + 1}`;
+				expect(`${at}: ${flat(walk).match(gaussian)?.length ?? 0}`).toBe(
+					`${at}: 0`,
+				);
+			}
 
 		// The profile's locals, and the cell's jitter. Declared in the snippets
 		// and interpolated at build time, so the *source* of either consumer
 		// naming them means a second copy.
-		for (const [name, source] of INTERPOLATORS) {
-			if (name === "planet-shaders.ts") continue;
-			for (const mark of ["float bowl", "float rim", "hash31(cell"])
-				expect(`${name}: ${flat(source).includes(mark)}`).toBe(
-					`${name}: false`,
-				);
-		}
+		for (const [name, source] of INTERPOLATORS)
+			for (const [n, walk] of walks(source).entries()) {
+				const at = `${name} walk ${n + 1}`;
+				for (const mark of ["float bowl", "float rim", "hash31(cell"])
+					expect(`${at}: ${mark}: ${flat(walk).includes(mark)}`).toBe(
+						`${at}: ${mark}: false`,
+					);
+			}
 	});
 
 	test("the snippets carry what each consumer reads out of them", () => {
@@ -186,12 +227,14 @@ describe("the crater field has one definition", () => {
 		// These are the ones each consumer has to bring itself, and they are
 		// checked here so a third interpolator learns the contract from a
 		// failing unit test rather than from a shader log.
-		for (const [name, source] of INTERPOLATORS) {
-			expect(`${name}: ${/vec3 base = floor\(p\)/.test(source)}`).toBe(
-				`${name}: true`,
-			);
-			expect(`${name}: ${/vec3 p[ ,)]/.test(source)}`).toBe(`${name}: true`);
-		}
+		for (const [name, source] of INTERPOLATORS)
+			for (const [n, walk] of walks(source).entries()) {
+				const at = `${name} walk ${n + 1}`;
+				expect(`${at}: ${/vec3 base = floor\(p\)/.test(walk)}`).toBe(
+					`${at}: true`,
+				);
+				expect(`${at}: ${/\(vec3 p[ ,)]/.test(walk)}`).toBe(`${at}: true`);
+			}
 	});
 
 	test("both walk the same neighbourhood", () => {
