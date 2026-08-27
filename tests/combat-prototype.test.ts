@@ -60,6 +60,15 @@ test("an off-cone shot spends resources without damaging the target", () => {
 	expect(state.targetHull).toBe(COMBAT_PROTOTYPE_DEFAULTS.hull);
 });
 
+test("a shield-breaking hit bleeds exactly the unabsorbed remainder to hull", () => {
+	const state = stepCombatPrototype(
+		createCombatPrototype({ targetForeShield: 0.5 }),
+		{ dt: 1, firing: "pulse", targetInCone: true },
+	);
+	expect(state.targetForeShield).toBe(0);
+	expect(state.targetHull).toBe(COMBAT_PROTOTYPE_DEFAULTS.hull - 5);
+});
+
 test("a roll break resets a charged interdiction", () => {
 	let state = createCombatPrototype();
 	state = stepCombatPrototype(state, {

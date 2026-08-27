@@ -139,13 +139,10 @@ export function stepCombatPrototype(
 						? COMBAT_PROTOTYPE_DEFAULTS.beamDamagePerSecond
 						: COMBAT_PROTOTYPE_DEFAULTS.pulseDamagePerSecond) * dt;
 				const shieldKey = input.hitAft ? "targetAftShield" : "targetForeShield";
-				const shield = next[shieldKey];
-				next[shieldKey] = clamp(
-					shield - damage,
-					COMBAT_PROTOTYPE_DEFAULTS.shield,
-				);
+				const absorbed = Math.min(next[shieldKey], damage);
+				next[shieldKey] -= absorbed;
 				next.targetHull = clamp(
-					next.targetHull - Math.max(0, damage - shield),
+					next.targetHull - (damage - absorbed),
 					COMBAT_PROTOTYPE_DEFAULTS.hull,
 				);
 			}
@@ -166,10 +163,10 @@ export function stepCombatPrototype(
 	if (input.enemyFiring) {
 		const damage = COMBAT_PROTOTYPE_DEFAULTS.enemyDamagePerSecond * dt;
 		const shieldKey = input.enemyHitAft ? "aftShield" : "foreShield";
-		const shield = next[shieldKey];
-		next[shieldKey] = clamp(shield - damage, COMBAT_PROTOTYPE_DEFAULTS.shield);
+		const absorbed = Math.min(next[shieldKey], damage);
+		next[shieldKey] -= absorbed;
 		next.playerHull = clamp(
-			next.playerHull - Math.max(0, damage - shield),
+			next.playerHull - (damage - absorbed),
 			COMBAT_PROTOTYPE_DEFAULTS.hull,
 		);
 	} else {
