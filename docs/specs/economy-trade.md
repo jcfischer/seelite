@@ -613,16 +613,16 @@ profitable option at all:
 
 | | wait rate / best flight rate |
 |---|---|
-| median | 0.039× |
-| p95 | 0.395× |
-| max | **1.326×** |
-| points where waiting won | **1 of 122 (0.8%)** |
+| median | 0.031× |
+| p95 | 0.573× |
+| max | **1.785×** |
+| points where waiting won | **3 of 123 (2.4%)** |
 
-So the intent holds as a tendency and **not as an absolute**: at one moment in a
-hundred and twenty-two, the best thing on offer was to sit still, and it was
-worth a third again as much as flying. The earlier draft of this paragraph said
+So the intent holds as a tendency and **not as an absolute**: at three moments
+in a hundred and twenty-three, the best thing on offer was to sit still, and the
+best of those was worth 1.79× flying. The earlier draft of this paragraph said
 "never" and had nothing behind it. What the constants buy is that waiting is
-worth 4% of flying at the median — the exploit the pair were chosen to close is
+worth 3% of flying at the median — the exploit the pair were chosen to close is
 closed, and the residual is a rounding error rather than a strategy.
 
 Changing either constant re-opens the question, and
@@ -648,9 +648,13 @@ the canonical lane at zero fluctuation — Computers bought at 61.6 Cr and sold 
 100.8 — the player is capital-limited for **six runs** and hold-limited from the
 seventh. A draft of this section said five and called it arithmetic while
 committing none; `runsUntilHoldLimited` derives it now and the suite pins the
-six. **The minutes are claimed now**: §10.3's sim puts the Large Cargo Bay — the
-first purchase, at 400 Cr — at **14 minutes** of perfect play from the opening
-100 Cr, against a modelled 45 s dock stop.
+six. **The minutes are claimed now, and carefully**: §10.3's sim reaches 400 Cr — the
+Large Cargo Bay, §8's first purchase — at **7.3 minutes** of perfect play from
+the opening 100 Cr, against a modelled 45 s dock stop. The sim *buys* it at 13.9
+minutes, because it keeps an 800 Cr working float back; that float is a property
+of the sim, which stops dead without it, and not of the economy, so 7.3 is the
+figure this section is about. A draft quoted 13.9 as time-to-the-bay, which was
+time to 1,200 Cr wearing a 400 Cr label.
 
 ### 6.1 A correction to `galaxy-generation.md` §8
 
@@ -747,16 +751,16 @@ That is about fifteen clean runs, and the design was aiming at **1.5–2.5 hours
 of trading once §5.2's deficit forces route rotation.
 
 **Measured, the ceiling is faster than the aim.** §10.3's greedy trader fits out
-in **56–100 minutes** across four galaxies, at 205–366 Cr/min. Perfect play is
-therefore inside the target's lower bound in three galaxies of four, so the
+in **51–123 minutes** across four galaxies, at 173–421 Cr/min. Three of the four
+land under the target's lower bound and one lands inside the range, so the
 1.5–2.5 h figure survives only as a claim about a *human*: it needs a real
 player to run at roughly 0.6× the ceiling. That is plausible and unmeasured, and
 it is the honest form of the sentence.
 
 **Half the clock is a modelled constant**, so the figure is a claim about that
 too. The dock-and-market stop is 45 s in the sim and is specified nowhere — #9
-sets docking tolerances, not a duration. Swept: fit-out runs **43 min at 15 s
-and 104 min at 90 s**. A reader who thinks 90 s is the right stop should read
+sets docking tolerances, not a duration. Swept: fit-out runs **49 min at 15 s
+and 106 min at 90 s**. A reader who thinks 90 s is the right stop should read
 this section as met rather than beaten.
 
 ---
@@ -781,8 +785,7 @@ question, still fog on the map, and it reaches far past the economy.
 
 All headless `bun` — none of §1–§9 may require a browser, per #7's own framing.
 
-### 10.1 Suite (`tests/market.test.ts`, 38 tests, plus
-`tests/market-state.test.ts`, 24)
+### 10.1 Suite — `market.test.ts` 38 tests, `market-state.test.ts` 24
 
 `market.test.ts` owns §2–§4 and §6–§7 — the arithmetic, swept over its whole
 domain — and is listed below. §5's two properties are not about a formula and
@@ -881,10 +884,19 @@ too slow and merely unproven by one that is too fast.
 
 | | measured, world `0x5ee11e`, four galaxies |
 |---|---|
-| fit-out, full kit | **56–100 min** against §8's 1.5–2.5 h |
-| Cr/min | 205–366 |
-| hops chosen: interstellar : intra-system | **26 : 5** |
-| fit-out across dock cost 15→90 s | 43 → 104 min |
+| fit-out, full kit | **51–123 min** against §8's 1.5–2.5 h |
+| Cr/min | 173–421 |
+| hops chosen: interstellar : intra-system | **121 : 39** |
+| fit-out across dock cost 15→90 s | 49 → 106 min |
+
+**Both ends of a trade are quoted at the clock each happens on**, and the first
+version of this instrument quoted both at departure. That is not a rounding
+error: a leg runs into the tens of minutes against a 30-minute `MARKET_PERIOD`,
+so every flight was booked at prices from before it was flown while the wait
+option — priced at the epoch it waits for, by construction — got the future it
+was asking about. The comparison §5.5 turns on was stale flights against
+correctly-timed waits. Fixing it moved every figure in this table and doubled
+the rate at which waiting wins.
 
 **Re-run it whenever `MARKET_PERIOD`, `DEFICIT_HALF_LIFE` or `PRICE_ELASTICITY`
 moves.** All three are in the loop, and §12.5 is explicit that changing either
@@ -899,14 +911,24 @@ saturation at ±63, the drop-below-one-unit rule, a JSON round trip over a 61-ro
 map, and a malformed save that throws rather than reading as an untouched
 healthy carrier.
 
-**One of those tests was written, found unfalsifiable, and replaced**, which is
-worth recording because the replacement is a different *kind* of check. A
-permutation test claimed to prove the market is independent of draw order while
-keying both sides on `localCarrierId` — the thing under test. What carries that
-claim is structural: nothing in `system.ts` or `galaxy.ts` draws from
-`DOMAIN.MARKET`, so no market can be a function of how many stations preceded
-it. A value-comparing test cannot see that difference, because a market drawn in
-station order still produces a plausible byte.
+**Two of those tests were written, found unfalsifiable, and replaced**, which is
+worth recording because both replacements are a different *kind* of check.
+
+A permutation test claimed to prove the market is independent of draw order
+while keying both sides on `localCarrierId` — the thing under test. What carries
+that claim now is a source scan: nothing in `system.ts` or `galaxy.ts` reaches
+`DOMAIN.MARKET`, so the generator does not open the market stream and no market
+is a function of how many stations preceded it. A value-comparing test cannot
+see that difference, because a market drawn in station order still produces a
+plausible byte. **What the scan proves is bounded** — it catches a direct
+reference and an indexed one, and a tag destructured under another name or a
+fourth file would pass. It is evidence, not a proof of impossibility, and the
+test says so where it stands.
+
+A fixity check re-called `stationFluct` with the same arguments and expected the
+same answer, which cannot go red for any implementation of a pure function. It
+is a *coverage* check now: 5,120 draws must reach more than 250 of the 256 byte
+values, which a hash returning `x & 0x0f` fails and a fixity check does not.
 
 ---
 
@@ -994,7 +1016,8 @@ station order still produces a plausible byte.
    into a correction. The intra-system exhaustion in 2–3 runs is measured with
    `DEFICIT_HALF_LIFE` in the loop. **"Waiting never beats flying" turned out to
    be false as written**: `scripts/measure-greedy-trader.ts` found waiting
-   winning at 1 of 122 decision points, by 1.326×, against a median of 0.039×.
+   winning at 3 of 123 decision points, by up to 1.785×, against a median of
+   0.031×.
    §5.5 says "almost never" now and carries the distribution. The joint that
    remains is that the constants are still *chosen*: the sim tells you when a
    change breaks something, not what the values should be.

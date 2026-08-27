@@ -40,7 +40,7 @@
  * derivable from a type.
  */
 
-import { DOMAIN } from "./galaxy";
+import { DOMAIN } from "./domains";
 import { mix, seededRand } from "./rng";
 
 /** Elite's byte→credits step: a price byte is 0.4 Cr. */
@@ -224,6 +224,14 @@ export function marketRowAt(
 	const product = economy * commodity.gradient;
 	const changing = fluct & commodity.mask;
 	const offset = TYPE_OFFSET[station];
+	// `StationType` has four members and §3's offset table has three, so both
+	// call sites narrow a station's type to reach this function. An `outpost`
+	// would arrive here as an `undefined` offset and every price would come back
+	// `NaN` with nothing thrown — the silent-garbage failure the instrument's own
+	// `finite()` guard exists to prevent, one layer lower. `station-types.md`
+	// §3 owes the outpost an offset before one can be generated.
+	if (offset === undefined)
+		throw new Error(`no type offset for station type ${station}`);
 
 	const rawPrice = commodity.basePrice + changing + product;
 	const closedPrice = close.price(rawPrice);

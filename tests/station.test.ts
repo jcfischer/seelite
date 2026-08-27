@@ -13,7 +13,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { DOMAIN, generateGalaxy, stream } from "../src/galaxy";
+import { DOMAIN } from "../src/domains";
+import { generateGalaxy, stream } from "../src/galaxy";
 import { advanceSystem, makeSystem, stationPose } from "../src/sim";
 import {
 	SPIN_RPM_RANGE,

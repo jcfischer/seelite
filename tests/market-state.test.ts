@@ -15,7 +15,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { DOMAIN, generateGalaxy, systemSeedFor } from "../src/galaxy";
+import { DOMAIN } from "../src/domains";
+import { generateGalaxy, systemSeedFor } from "../src/galaxy";
 import {
 	COMMODITIES,
 	DEFICIT_DROP_UNITS,
@@ -92,16 +93,28 @@ describe("§2 the persistence identity is a table, not a display key", () => {
 });
 
 describe("§5.1 the base market is f(stationSeed, epoch)", () => {
-	test("the fluctuation byte is a byte, and fixed by (seed, epoch)", () => {
-		for (const record of SYSTEMS.slice(0, 8))
-			for (let epoch = 0; epoch < 8; epoch++) {
-				const seed = marketSeedFor(record.seed, LOCAL_CARRIER_ID.trade);
-				const byte = stationFluct(seed, epoch);
+	test("the fluctuation byte is a byte, and every value is reachable", () => {
+		// Re-calling `stationFluct` with the same arguments and expecting the same
+		// answer was the first version of this, and it cannot go red for any
+		// implementation of a pure function — the same unfalsifiability the
+		// permutation test below was thrown out for. What can fail is the *range*
+		// and its coverage: a hash that returned `x & 0x0f`, or one that skipped
+		// the top of the byte, passes a fixity check and fails this.
+		const seen = new Set<number>();
+		for (const record of SYSTEMS)
+			for (let epoch = 0; epoch < 64; epoch++) {
+				const byte = stationFluct(
+					marketSeedFor(record.seed, LOCAL_CARRIER_ID.trade),
+					epoch,
+				);
 				expect(Number.isInteger(byte)).toBe(true);
 				expect(byte).toBeGreaterThanOrEqual(0);
 				expect(byte).toBeLessThanOrEqual(255);
-				expect(stationFluct(seed, epoch)).toBe(byte);
+				seen.add(byte);
 			}
+		// 5,120 draws over 256 values: seeing under 250 of them is a hash that
+		// does not use the whole byte, which is what §2's fluctuation masks read.
+		expect(seen.size).toBeGreaterThan(250);
 	});
 
 	test("every good is byte-identical across one whole epoch", () => {
@@ -203,8 +216,18 @@ describe("§5.1 the market is independent of draw order elsewhere", () => {
 		//
 		// A permutation test was written here first and could not fail: it keyed
 		// both sides on `localCarrierId`, which is the very thing under test.
-		for (const file of ["src/system.ts", "src/galaxy.ts"])
-			expect(codeOf(file)).not.toContain("DOMAIN.MARKET");
+		//
+		// **What this proves is bounded, and the bound is worth stating.** It is
+		// a source scan, so it catches a direct reference and an indexed one and
+		// nothing subtler — a tag destructured under another name, or a fourth
+		// file, would pass. It is evidence that the generator does not reach for
+		// the market stream, not a proof that it cannot.
+		for (const file of ["src/system.ts", "src/galaxy.ts"]) {
+			const code = codeOf(file);
+			expect(code).not.toContain("DOMAIN.MARKET");
+			expect(code).not.toContain('DOMAIN["MARKET"]');
+			expect(code).not.toContain("MARKET:");
+		}
 		// And the module that does use it reaches it exactly once, to build the
 		// per-station stream root.
 		const market = codeOf("src/market.ts");

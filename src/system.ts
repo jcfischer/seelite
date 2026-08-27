@@ -52,7 +52,8 @@
  * *threshold* (`a > 2·a_hab`), which is spec'd (§6.2) and does decide moons.
  */
 
-import { DOMAIN, type SystemRecord, stream } from "./galaxy";
+import { DOMAIN } from "./domains";
+import { type SystemRecord, stream } from "./galaxy";
 import { type Vec3, dot, lengthSq } from "./vec3";
 import {
 	LOCAL_CARRIER_ID,

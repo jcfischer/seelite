@@ -59,6 +59,7 @@ import {
 	type Commodity,
 	EQUIPMENT,
 	FUEL_CR_PER_LY,
+	FUEL_TANK_LY,
 	HOLD_REFERENCE_T,
 	MARKET_PERIOD_MIN,
 	type MarketStation,
@@ -95,7 +96,7 @@ const JUMP_SECONDS = 15;
  *  #9 sets docking *tolerances*, not a duration. Also reported for sensitivity,
  *  because it is paid on every single hop and is therefore the modelled number
  *  that matters. */
-let DOCK_SECONDS = 45;
+const DOCK_SECONDS = 45;
 
 /** Starting credits and hold — §6, both v1 defaults the ship-roster node
  *  inherits. */
@@ -206,12 +207,24 @@ interface Hop {
 	cargo: { good: Commodity; units: number }[];
 }
 
-/** What a hold-and-stack basket earns on one leg, given capital. */
+/**
+ * What a hold-and-stack basket earns on one leg, given capital.
+ *
+ * **The two ends are quoted at two clocks**, and an earlier version quoted both
+ * at departure. That was not a rounding error: a leg runs into the tens of
+ * minutes against a 30-minute `MARKET_PERIOD`, so a flight was booked at prices
+ * from before it was flown while the wait option — which is priced at the epoch
+ * it waits for by construction — got the future it was asking about. The
+ * comparison the whole §5.5 question turns on was then stale flights against
+ * correctly-timed waits, and the "1 of 122" it produced was an artefact of that
+ * asymmetry.
+ */
 function basket(
 	from: Port,
 	to: Port,
 	deficits: DeficitMap,
-	gameTimeMin: number,
+	buyMin: number,
+	sellMin: number,
 	capitalCr: number,
 	holdT: number,
 ): { profitCr: number; cargo: { good: Commodity; units: number }[] } {
@@ -227,8 +240,8 @@ function basket(
 		(g) => !g.sellOnly && tradable(g, from) && tradable(g, to),
 	)
 		.map((g) => {
-			const here = quote(g, from, deficits, gameTimeMin);
-			const there = quote(g, to, deficits, gameTimeMin);
+			const here = quote(g, from, deficits, buyMin);
+			const there = quote(g, to, deficits, sellMin);
 			return { good: g, here, there, margin: there.sellCr - here.buyCr };
 		})
 		.filter((c) => c.margin > 0 && c.here.units > 0)
@@ -254,7 +267,12 @@ function basket(
 }
 
 /** Seconds from one port to another inside one system, at the current clock. */
-function intraSeconds(from: Port, to: Port, gameTimeS: number): number {
+function intraSeconds(
+	from: Port,
+	to: Port,
+	gameTimeS: number,
+	dockSeconds: number,
+): number {
 	const target = { pos: to.posAt(gameTimeS), radiusKm: 1 };
 	return (
 		legSeconds(
@@ -262,13 +280,18 @@ function intraSeconds(from: Port, to: Port, gameTimeS: number): number {
 			target,
 			massesOf(to.contents, gameTimeS),
 			DEFAULT_CRUISE,
-		) + DOCK_SECONDS
+		) + dockSeconds
 	);
 }
 
 /** Seconds for a jump: wind-up, then the arrival-point-to-station leg §7.4
  *  makes a function of the inbound bearing. */
-function jumpSeconds(from: Port, to: Port, gameTimeS: number): number {
+function jumpSeconds(
+	from: Port,
+	to: Port,
+	gameTimeS: number,
+	dockSeconds: number,
+): number {
 	const entry = arrivalPoint(
 		to.record,
 		to.contents,
@@ -284,7 +307,7 @@ function jumpSeconds(from: Port, to: Port, gameTimeS: number): number {
 			massesOf(to.contents, gameTimeS + JUMP_SECONDS),
 			DEFAULT_CRUISE,
 		) +
-		DOCK_SECONDS
+		dockSeconds
 	);
 }
 
@@ -302,14 +325,169 @@ interface Result {
 	waitMinutes: number;
 	jumpMinutes: number;
 	dockMinutes: number;
-	upgrades: { name: string; atMinutes: number }[];
+	/** `atMinutes` is when it was *bought* — behind `WORKING_FLOAT_CR`.
+	 *  `affordableAtMinutes` is when the credits first covered the price alone,
+	 *  which is the compounding curve §6 is about and is the only one of the two
+	 *  that means anything outside this sim. */
+	upgrades: {
+		name: string;
+		atMinutes: number;
+		affordableAtMinutes: number;
+	}[];
 	/** Every decision point where a wait was on the table, as
 	 *  `bestWaitRate / bestFlyRate`. A maximum alone cannot tell one lucky
 	 *  moment from a strategy. */
 	waitRatios: number[];
 }
 
-function run(worldSeed: number, galaxy: number, hours: number): Result {
+/**
+ * What the trader knows when it decides: the clock, the wallet, the hold, and
+ * the market's memory of it.
+ *
+ * The three option builders below take this rather than closing over `run`'s
+ * locals, so each is a function of its arguments and can be read on its own.
+ */
+interface Stance {
+	t: number;
+	credits: number;
+	holdT: number;
+	deficits: DeficitMap;
+	dockSeconds: number;
+}
+
+/** (a) Another station in this system — §5.4's intra-system pair. */
+function intraOptions(here: Port, st: Stance): Hop[] {
+	const min = st.t / 60;
+	const out: Hop[] = [];
+	for (const to of portsOf(here.record, here.contents)) {
+		if (to.station.id === here.station.id) continue;
+		const seconds = intraSeconds(here, to, st.t, st.dockSeconds);
+		const b = basket(
+			here,
+			to,
+			st.deficits,
+			min,
+			min + seconds / 60,
+			st.credits,
+			st.holdT,
+		);
+		out.push({
+			kind: "intra",
+			to,
+			seconds,
+			fuelCr: 0,
+			profitCr: b.profitCr,
+			cargo: b.cargo,
+		});
+	}
+	return out;
+}
+
+/** (b) A station in a system one jump away. */
+function jumpOptions(
+	here: Port,
+	systems: readonly SystemRecord[],
+	contentsFor: (r: SystemRecord) => SystemContents,
+	st: Stance,
+): Hop[] {
+	const min = st.t / 60;
+	const out: Hop[] = [];
+	for (const record of neighbours(systems, here.record).slice(
+		0,
+		NEIGHBOUR_LIMIT,
+	)) {
+		const ly = distanceLy(here.record.pos, record.pos);
+		// `neighbours` already bounds this at `JUMP_RANGE_LY`, which is
+		// `FUEL_TANK_LY` — so there is no separate range check to make, and this
+		// asserts the identity rather than assuming it. The tank is not *tracked*
+		// because fuel is sold at every station (§7) and the trader docks on every
+		// hop: a full refill is always one purchase away, so paying is refuelling.
+		if (ly > FUEL_TANK_LY)
+			throw new Error(
+				`neighbour at ${ly} LY is past the ${FUEL_TANK_LY} LY tank`,
+			);
+		const fuelCr = ly * FUEL_CR_PER_LY;
+		if (fuelCr > st.credits) continue;
+		for (const to of portsOf(record, contentsFor(record))) {
+			const seconds = jumpSeconds(here, to, st.t, st.dockSeconds);
+			const b = basket(
+				here,
+				to,
+				st.deficits,
+				min,
+				min + seconds / 60,
+				st.credits - fuelCr,
+				st.holdT,
+			);
+			out.push({
+				kind: "jump",
+				to,
+				seconds,
+				fuelCr,
+				profitCr: b.profitCr,
+				cargo: b.cargo,
+			});
+		}
+	}
+	return out;
+}
+
+/**
+ * (c) §5.5's rival strategy: park here until this market re-rolls, then take
+ * the best hop the new epoch offers.
+ *
+ * Costed honestly — the wait earns nothing while it lasts, the deficit fades
+ * while you sit, and **both ends of the trade are quoted at the clock they
+ * happen on**, which is the correction that changed this measurement.
+ */
+function waitOption(
+	here: Port,
+	st: Stance,
+): { hop: Hop; waitMin: number } | null {
+	const min = st.t / 60;
+	const phase = marketPhaseMin(here.market.seed);
+	const nextEpochMin =
+		(marketEpoch(phase, min) + 1) * MARKET_PERIOD_MIN - phase;
+	const waitMin = Math.max(0, nextEpochMin - min);
+	let bestAfter = 0;
+	let bestSeconds = 1;
+	for (const to of portsOf(here.record, here.contents)) {
+		if (to.station.id === here.station.id) continue;
+		const seconds = intraSeconds(here, to, st.t + waitMin * 60, st.dockSeconds);
+		const b = basket(
+			here,
+			to,
+			st.deficits,
+			nextEpochMin + 1e-6,
+			nextEpochMin + 1e-6 + seconds / 60,
+			st.credits,
+			st.holdT,
+		);
+		if (b.profitCr / (waitMin * 60 + seconds) > bestAfter / bestSeconds) {
+			bestAfter = b.profitCr;
+			bestSeconds = waitMin * 60 + seconds;
+		}
+	}
+	if (bestAfter <= 0) return null;
+	return {
+		hop: {
+			kind: "wait",
+			to: here,
+			seconds: bestSeconds,
+			fuelCr: 0,
+			profitCr: bestAfter,
+			cargo: [],
+		},
+		waitMin,
+	};
+}
+
+function run(
+	worldSeed: number,
+	galaxy: number,
+	hours: number,
+	dockSeconds: number = DOCK_SECONDS,
+): Result {
 	const systems = generateGalaxy(worldSeed, galaxy).systems;
 	const contentsOf = new Map<number, SystemContents>();
 	const contentsFor = (r: SystemRecord): SystemContents => {
@@ -341,8 +519,15 @@ function run(worldSeed: number, galaxy: number, hours: number): Result {
 					? 1
 					: a.priceCr - b.priceCr,
 		);
-	const upgrades: { name: string; atMinutes: number }[] = [];
+	const upgrades: {
+		name: string;
+		atMinutes: number;
+		affordableAtMinutes: number;
+	}[] = [];
 	let bought = 0;
+	/** Filled the first time credits cover `shopping[bought].priceCr` on its
+	 *  own, whether or not the float lets the trader spend it. */
+	let affordableAt: number | null = null;
 
 	let hops = 0;
 	let waits = 0;
@@ -357,79 +542,12 @@ function run(worldSeed: number, galaxy: number, hours: number): Result {
 		const min = t / 60;
 		const options: Hop[] = [];
 
-		// (a) another station in this system.
-		for (const to of portsOf(here.record, here.contents)) {
-			if (to.station.id === here.station.id) continue;
-			const seconds = intraSeconds(here, to, t);
-			const b = basket(here, to, deficits, min, credits, holdT);
-			options.push({
-				kind: "intra",
-				to,
-				seconds,
-				fuelCr: 0,
-				profitCr: b.profitCr,
-				cargo: b.cargo,
-			});
-		}
-
-		// (b) a station in a system one jump away.
-		for (const record of neighbours(systems, here.record).slice(
-			0,
-			NEIGHBOUR_LIMIT,
-		)) {
-			const ly = distanceLy(here.record.pos, record.pos);
-			const fuelCr = ly * FUEL_CR_PER_LY;
-			if (fuelCr > credits) continue;
-			for (const to of portsOf(record, contentsFor(record))) {
-				const seconds = jumpSeconds(here, to, t);
-				const b = basket(here, to, deficits, min, credits - fuelCr, holdT);
-				options.push({
-					kind: "jump",
-					to,
-					seconds,
-					fuelCr,
-					profitCr: b.profitCr,
-					cargo: b.cargo,
-				});
-			}
-		}
-
-		// (c) §5.5's rival strategy: park here until this market re-rolls, then
-		//     take the best hop the new epoch offers. Costed honestly — the wait
-		//     itself earns nothing, and the deficit fades while you sit.
-		const phase = marketPhaseMin(here.market.seed);
-		const nextEpochMin =
-			(marketEpoch(phase, min) + 1) * MARKET_PERIOD_MIN - phase;
-		const waitMin = Math.max(0, nextEpochMin - min);
-		{
-			let bestAfter = 0;
-			let bestSeconds = 1;
-			for (const to of portsOf(here.record, here.contents)) {
-				if (to.station.id === here.station.id) continue;
-				const b = basket(
-					here,
-					to,
-					deficits,
-					nextEpochMin + 1e-6,
-					credits,
-					holdT,
-				);
-				const seconds = intraSeconds(here, to, t + waitMin * 60);
-				if (b.profitCr / (waitMin * 60 + seconds) > bestAfter / bestSeconds) {
-					bestAfter = b.profitCr;
-					bestSeconds = waitMin * 60 + seconds;
-				}
-			}
-			if (bestAfter > 0)
-				options.push({
-					kind: "wait",
-					to: here,
-					seconds: bestSeconds,
-					fuelCr: 0,
-					profitCr: bestAfter,
-					cargo: [],
-				});
-		}
+		const stance = { t, credits, holdT, deficits, dockSeconds };
+		options.push(...intraOptions(here, stance));
+		options.push(...jumpOptions(here, systems, contentsFor, stance));
+		const wait = waitOption(here, stance);
+		if (wait) options.push(wait.hop);
+		const waitMin = wait?.waitMin ?? 0;
 
 		const rated = options
 			.filter((o) => o.seconds > 0)
@@ -459,7 +577,7 @@ function run(worldSeed: number, galaxy: number, hours: number): Result {
 			deficits = recordTrade(deficits, here.key, good.name, units, t / 60);
 		credits -= hop.fuelCr;
 		if (hop.kind === "jump") jumpMinutes += JUMP_SECONDS / 60;
-		dockMinutes += DOCK_SECONDS / 60;
+		dockMinutes += dockSeconds / 60;
 		t += hop.seconds;
 		const arriveMin = t / 60;
 		for (const { good, units } of hop.cargo)
@@ -476,13 +594,24 @@ function run(worldSeed: number, galaxy: number, hours: number): Result {
 		if (hop.kind === "jump") jumps++;
 		else intra++;
 
+		if (
+			bought < shopping.length &&
+			affordableAt === null &&
+			credits >= shopping[bought].priceCr
+		)
+			affordableAt = t / 60;
 		while (
 			bought < shopping.length &&
 			credits >= shopping[bought].priceCr + WORKING_FLOAT_CR
 		) {
 			credits -= shopping[bought].priceCr;
 			if (shopping[bought].name === "Large Cargo Bay") holdT += LARGE_BAY_T;
-			upgrades.push({ name: shopping[bought].name, atMinutes: t / 60 });
+			upgrades.push({
+				name: shopping[bought].name,
+				atMinutes: t / 60,
+				affordableAtMinutes: affordableAt ?? t / 60,
+			});
+			affordableAt = null;
 			bought++;
 		}
 		if (bought === shopping.length) break;
@@ -531,16 +660,22 @@ console.log(
 const GALAXIES = [0, 1, 2, 3].filter((g) => g < GALAXY_COUNT);
 const results = GALAXIES.map((g) => ({ g, r: run(worldSeed, g, hours) }));
 
+/** One derivation, two tables. Written out twice they drift on the next edit,
+ *  and the two copies already spelled the kit total differently. */
+const summarize = (r: Result): { rate: number; done: boolean } => ({
+	rate: finite(
+		"Cr/min",
+		(r.creditsCr + r.upgrades.reduce((sum, u) => sum + priceOf(u.name), 0)) /
+			Math.max(r.minutes, 1e-9),
+	),
+	done: r.upgrades.length === EQUIPMENT.length - 1,
+});
+
 console.log(
 	"galaxy   minutes    Cr/min   hops   intra    jump   waits   fitted out",
 );
 for (const { g, r } of results) {
-	const rate = finite(
-		"Cr/min",
-		(r.creditsCr + r.upgrades.reduce((s, u) => s + priceOf(u.name), 0)) /
-			Math.max(r.minutes, 1e-9),
-	);
-	const done = r.upgrades.length === EQUIPMENT.length - 1;
+	const { rate, done } = summarize(r);
 	console.log(
 		`${String(g).padStart(6)}${finite("minutes", r.minutes).toFixed(1).padStart(10)}` +
 			`${rate.toFixed(1).padStart(10)}${String(r.hops).padStart(7)}` +
@@ -556,10 +691,16 @@ function priceOf(name: string): number {
 }
 
 console.log("\ntime to each upgrade, minutes (galaxy 0)");
+console.log("  item                  affordable    bought");
 for (const u of results[0].r.upgrades)
 	console.log(
-		`  ${u.name.padEnd(22)}${finite(u.name, u.atMinutes).toFixed(1).padStart(8)}`,
+		`  ${u.name.padEnd(22)}${finite(u.name, u.affordableAtMinutes).toFixed(1).padStart(10)}` +
+			`${finite(u.name, u.atMinutes).toFixed(1).padStart(10)}`,
 	);
+console.log(
+	`  (\`bought\` trails \`affordable\` by the ${WORKING_FLOAT_CR} Cr working float, ` +
+		"which is a property of this sim and not of the economy.)",
+);
 if (results[0].r.upgrades.length === 0) console.log("  none — nothing bought");
 
 console.log("\n§5.5 — waiting against flying");
@@ -601,21 +742,15 @@ console.log(
 	"\ndock+market cost, swept (galaxy 0) — the modelled number that decides",
 );
 console.log("  dock s   minutes   Cr/min   fitted out");
-const dockDefault = DOCK_SECONDS;
 for (const dock of [15, 30, 45, 60, 90]) {
-	DOCK_SECONDS = dock;
-	const r = run(worldSeed, 0, hours);
-	const kit = r.upgrades.reduce((sum, u) => sum + priceOf(u.name), 0);
-	const done = r.upgrades.length === EQUIPMENT.length - 1;
+	const r = run(worldSeed, 0, hours, dock);
+	const { rate, done } = summarize(r);
 	console.log(
 		`${String(dock).padStart(8)}${finite("minutes", r.minutes).toFixed(1).padStart(10)}` +
-			`${finite("rate", (r.creditsCr + kit) / Math.max(r.minutes, 1e-9))
-				.toFixed(1)
-				.padStart(9)}` +
+			`${rate.toFixed(1).padStart(9)}` +
 			`   ${done ? `${r.minutes.toFixed(0)} min` : "not in cap"}`,
 	);
 }
-DOCK_SECONDS = dockDefault;
 
 const totalMin = results.reduce((s, { r }) => s + r.minutes, 0);
 const modelled = results.reduce(
@@ -624,5 +759,5 @@ const modelled = results.reduce(
 );
 console.log(
 	`\nmodelled time as a share of the total: ${((100 * modelled) / Math.max(totalMin, 1e-9)).toFixed(1)}% ` +
-		"— the rest is flown geometry.",
+		"— the rest is the generator's own geometry, estimated by `legSeconds`.",
 );
