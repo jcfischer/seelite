@@ -434,7 +434,12 @@ export function buildBodyVisual(
 		);
 		// A thicker shell stands further off the surface. On the shared unit
 		// geometry that is a scale rather than its own tessellation.
-		const shellScale = 1.03 + look.atmosphere * 0.025;
+		// Thicker than the 1.03 + 0.025a it was. A shell that hugs the surface
+		// leaves the exponential falloff no room to fall off in, so the haze had
+		// to be steep to fit — and steep is the thing being fixed. The glow
+		// fades well inside the new silhouette, so a thicker shell does not read
+		// as a bigger planet.
+		const shellScale = 1.06 + look.atmosphere * 0.05;
 		shell.scale.setScalar(shellScale);
 		// The surface is the unit sphere and the shell is that scaled, so the
 		// fraction of the shell the solid body fills is one over the scale. The

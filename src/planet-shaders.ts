@@ -386,14 +386,10 @@ uniform float atmoInnerRatio;
  * is a chord length, and for a sphere it is worth computing rather than
  * imitating — the falloff it gives is the reason a limb looks like air.
  *
- * Both chords come from the same quadratic. b is how far along the ray the
- * closest approach to the centre lies and d2 the square of that distance, so
- * a sphere of radius r is crossed over 2 * sqrt(r^2 - d2) when it is crossed
- * at all. The lit-limb and forward-scattering terms are unchanged.
+ * b is how far along the ray the closest approach to the centre lies and d2 the
+ * square of that distance — the geometry the falloff below is built on. The
+ * lit-limb and forward-scattering terms are unchanged.
  */
-float chord(float r2, float d2) {
-  return 2.0 * sqrt(max(r2 - d2, 0.0));
-}
 void main() {
   vec3 N = normalize(vWorldN);
   vec3 V = normalize(cameraPosition - vWorldP);
@@ -407,16 +403,33 @@ void main() {
   // Air along the ray: the shell's chord, less the part of it the planet's own
   // body occupies. innerRatio is the surface radius as a fraction of the
   // shell's, which is how planet-surface.ts scales the two.
-  float outer2 = vRadius * vRadius;
-  float inner2 = outer2 * atmoInnerRatio * atmoInnerRatio;
-  float air = chord(outer2, d2) - chord(inner2, d2);
-  // Normalised by the deepest possible path, so atmoStrength keeps meaning
-  // the same thing it did.
-  float depth = air / max(chord(outer2, 0.0) - chord(inner2, 0.0), 1e-6);
-
-  // Still shaped, but now shaping something that already falls to zero at the
-  // outer edge rather than peaking there.
-  float rim = pow(clamp(depth, 0.0, 1.0), 0.65);
+  /*
+   * **Density falls off with altitude**, and that is what makes a limb soft.
+   *
+   * A chord through a shell of *uniform* density does reach zero at the outer
+   * edge — but as a square root, so its slope there is infinite and the edge is
+   * still a line. That was the first attempt, and shaped by pow(depth, 0.65) it
+   * saturated across the whole annulus: a flat band with a crisp rim, which is
+   * what it looked like. Both halves were wrong the same way — the profile had
+   * no tail, and the exponent boosted what little it had into saturation.
+   *
+   * Air thins exponentially with height, so what a ray gathers depends on where
+   * it passes, not only how far. Weighting by the altitude of the ray's closest
+   * approach gives that tail directly, for one exponential, and it has no edge
+   * to be sharp at: it is already near nothing before the geometry runs out.
+   */
+  float outer = vRadius;
+  float inner = outer * atmoInnerRatio;
+  float graze = sqrt(max(d2, 0.0));
+  // Zero at the ground, one at the top of the shell.
+  float altitude = clamp((graze - inner) / max(outer - inner, 1e-6), 0.0, 1.0);
+  // A scale height of 3.5 leaves about 3% of the ground value at the top,
+  // which reads as a tail rather than a border.
+  float density = exp(-altitude * 3.5);
+  // Multiplied out to exactly zero at the silhouette, so the small remainder
+  // the exponential still carries does not leave a step of its own.
+  float rim = density * (1.0 - altitude);
+  float depth = rim;
 
   // Only the lit limb glows, and it fades through the terminator rather than
   // stopping at it.
