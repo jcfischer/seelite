@@ -67,10 +67,14 @@ await guardedOrigin(ORIGIN);
  */
 const LAUNCH_ARGS = ["--use-gl=angle", "--enable-unsafe-swiftshader"];
 const browser = await launchChromium({ args: LAUNCH_ARGS });
-const { check, exit } = tally();
+const { check, watchShaders, exit } = tally();
 const page = await browser.newPage({ viewport: { width: 900, height: 900 } });
 const failures = [];
 page.on("pageerror", (error) => failures.push(String(error)));
+// This probe names its page errors at two milestones rather than one per
+// event, so it takes the shader listener on its own; `probe-guard.mjs` carries
+// why that listener exists.
+watchShaders(page);
 await page.goto(PAGE_URL, { waitUntil: "load" });
 await page.waitForSelector("#planet-prototype canvas");
 await page.waitForFunction(() => window.__seelitePlanets !== undefined, {

@@ -37,13 +37,11 @@ function state() {
 
 await guardedOrigin(ORIGIN, ["src/model-viewer.ts"]);
 const browser = await launchChromium();
-const { check, exit } = tally();
+const { check, watch, exit } = tally();
 
 for (const viewport of VIEWPORTS) {
 	const page = await browser.newPage({ viewport });
-	page.on("pageerror", (error) =>
-		check(`${viewport.name}: no page error (${error.message})`, false),
-	);
+	watch(page, viewport.name);
 	await page.goto(`${ORIGIN}/?model-viewer=ship`, { waitUntil: "load" });
 	await page.waitForSelector("#model-viewer canvas");
 	const initial = await page.evaluate(state);

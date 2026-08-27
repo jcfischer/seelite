@@ -136,6 +136,10 @@ await guardedOrigin(ORIGIN, [
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 
+// The program scan below runs once, not once per viewport: a program is built
+// from a material, not from a window size.
+let scannedPrograms = false;
+
 /**
  * Everything this probe needs about one station, from **one** evaluate.
  *
@@ -375,6 +379,118 @@ for (const viewport of VIEWPORTS) {
 			`${viewport.name}: ${type} draws accessories at docking range`,
 			m.accessories.count > 0,
 			`${m.accessories.count}px of accessory`,
+		);
+	}
+
+	/**
+	 * Every program the renderer built for the frames above actually linked.
+	 *
+	 * Asked once rather than per viewport: a program is built from a material,
+	 * not from a window size, so the second pass would re-ask a question whose
+	 * answer cannot have changed and print a second identical line.
+	 *
+	 * The rock's surface is a patched `MeshStandardMaterial`: four GLSL strings
+	 * spliced into three.js's chunks by `onBeforeCompile`. The tests that guard
+	 * it match *source text* — they can prove the crater field has one
+	 * definition and that a rename has not left an interpolation dangling, and
+	 * they cannot prove the result compiles, because `bun test` has no GL
+	 * context. Not "nothing headless": `probe-planets` launches with
+	 * `--use-gl=angle --enable-unsafe-swiftshader` and gets one. A compile
+	 * check belongs where a context is, which is here. A patch that stopped linking would leave three.js logging to the
+	 * console and rendering something, and the checks above would go on passing:
+	 * they ask whether the refinery is on screen and lit, and it would be.
+	 *
+	 * `LINK_STATUS` is the direct question, asked of the programs the renderer
+	 * actually built for this system.
+	 *
+	 * **Named, not counted.** "None of them failed" is equally true of a build
+	 * where the rock compiled no program at all — a material that stopped being
+	 * applied, an early return, a refinery that stopped drawing an asteroid —
+	 * so a count alone can pass while the thing it exists to watch is absent.
+	 * `applyRockSurface` sets `customProgramCacheKey` to "station-rock", which
+	 * makes the rock's program findable by name rather than assumed to be in
+	 * the pile.
+	 */
+	if (!scannedPrograms) {
+		scannedPrograms = true;
+		const programs = await page.evaluate(() => {
+			const renderer = window.__seelite.renderer;
+			const gl = renderer.getContext();
+			const built = Array.from(renderer.info.programs ?? []);
+			const linked = (p) =>
+				Boolean(p.program) && gl.getProgramParameter(p.program, gl.LINK_STATUS);
+			const rock = built.filter((p) =>
+				String(p.cacheKey ?? "").includes("station-rock"),
+			);
+			return {
+				total: built.length,
+				unlinked: built.filter((p) => !linked(p)).length,
+				rock: rock.length,
+				rockLinked: rock.filter(linked).length,
+			};
+		});
+		check(
+			"every shader program the renderer has built linked",
+			programs.total > 0 && programs.unlinked === 0,
+			`${programs.total - programs.unlinked}/${programs.total} linked`,
+		);
+		check(
+			"the rock's own program is among them, and linked",
+			programs.rock > 0 && programs.rockLinked === programs.rock,
+			`${programs.rockLinked}/${programs.rock} "station-rock" programs`,
+		);
+
+		/**
+		 * And the patch is actually in that program.
+		 *
+		 * A linked program under the name `station-rock` proves the material
+		 * was applied, not that anything was spliced into it: the cache key is
+		 * set beside `onBeforeCompile`, not by it. Let one
+		 * `#include <normal_fragment_maps>` marker go stale against a three.js
+		 * chunk rename and the splice returns the string unchanged, a stock
+		 * `MeshStandardMaterial` links cleanly under the rock's own name, and
+		 * every check above stays green over a rock with no craters on it.
+		 *
+		 * `applyRockSurface` records whether each `replace` changed anything;
+		 * this is where that gets read.
+		 */
+		const splices = await page.evaluate((refineryId) => {
+			// Both layers: a body's layer is its distance, and the scan runs
+			// after the loop above has left the camera wherever the last type
+			// put it.
+			const g = window.__seelite;
+			const out = [];
+			for (const scene of [g.nearScene, g.farScene])
+				scene?.traverse((object) => {
+					for (const material of [object.material].flat())
+						if (material?.userData?.rockSplices)
+							out.push(Object.entries(material.userData.rockSplices));
+				});
+			// Whether the refinery — the one station that has an asteroid — is
+			// carrying a patched material at all. Counting splices alone cannot
+			// answer this: a refinery that stopped calling `applyRockSurface`
+			// contributes nothing to `out`, and a check over `out` then passes
+			// on somebody else's rock. That is the failure this check names.
+			let onRefinery = 0;
+			const refinery = window.__meshOfBody(refineryId);
+			refinery?.traverse((object) => {
+				for (const material of [object.material].flat())
+					if (material?.userData?.rockSplices) onRefinery++;
+			});
+			return { all: out, onRefinery };
+		}, byType.refinery);
+		const landed = splices.all.flat();
+		check(
+			"the refinery carries a patched rock material",
+			splices.onRefinery > 0,
+			`${splices.onRefinery} patched material(s) under the refinery`,
+		);
+		check(
+			"every rock-surface splice found its marker",
+			landed.length > 0 && landed.every(([, ok]) => ok),
+			landed.length
+				? `${landed.filter(([, ok]) => ok).length}/${landed.length} markers`
+				: "no patched rock material in the scene",
 		);
 	}
 

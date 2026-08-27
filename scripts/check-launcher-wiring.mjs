@@ -94,13 +94,64 @@ const EXPECTED_CALLERS = 1;
 const problems = [];
 let callers = 0;
 
+/**
+ * Scripts allowed to open a page without a `tally()`.
+ *
+ * This is the *only* thing an entry buys. It does not switch off the watch
+ * rules — those are gated on having a tally, which an exempt file does not
+ * have, so they never fire there anyway.
+ *
+ * One entry, with its reason beside it. `if (reports)` did this job implicitly
+ * and covered every future file that forgets a tally along with the one that
+ * means it.
+ */
+const EXEMPT = new Map([
+	[
+		"shot-ships.mjs",
+		"takes screenshots; has no checks for a watch to report into",
+	],
+]);
+
+/**
+ * One sanitiser, two settings.
+ *
+ * The import checks need comments gone. The call *counts* need string bodies
+ * gone as well, because a count decides whether a page is guarded and a
+ * mention of `watch(` in a string satisfies it — this file's own failure
+ * messages contain one. Two nearly-identical strippers described one intent
+ * and would have to be fixed twice.
+ */
+function strip(source, { strings = false } = {}) {
+	let out = source
+		.replace(/\/\*[\s\S]*?\*\//g, "")
+		.replace(/^\s*\/\/.*$/gm, "");
+	if (!strings) return out;
+	// The `[^:]` guard keeps a `//` inside a URL from eating its line.
+	out = out
+		.replace(/([^:])\/\/.*$/gm, "$1")
+		.replace(/`(?:[^`\\]|\\.)*`/g, "``")
+		.replace(/"(?:[^"\\]|\\.)*"/g, '""')
+		.replace(/'(?:[^'\\]|\\.)*'/g, "''");
+	return out;
+}
+
 for (const path of scripts(DIR).sort()) {
 	if (path === SELF || path === GUARD) continue;
 	const name = relative(DIR, path);
 	const src = readFileSync(path, "utf8");
-	const code = src
-		.replace(/\/\*[\s\S]*?\*\//g, "")
-		.replace(/^\s*\/\/.*$/gm, "");
+	const code = strip(src);
+
+	/**
+	 * The same source with trailing comments and string bodies emptied.
+	 *
+	 * `code` above strips block comments and whole-line `//` comments, which is
+	 * enough for the import checks that read it. It is not enough for counting
+	 * calls: a trailing comment or a *string* mentioning `watch(` inflates the
+	 * count, and the count is what decides whether a page is guarded. This
+	 * file's own failure messages are the proof — they contain "use watch(),"
+	 * and would match their own regex.
+	 */
+	const bare = strip(src, { strings: true });
 
 	const calls = /\blaunchChromium\s*\(/.test(code);
 	const bound = importedFromGuard(code, path).has("launchChromium");
@@ -116,6 +167,79 @@ for (const path of scripts(DIR).sort()) {
 		);
 	if (resolvesPlaywright.test(code))
 		problems.push(`${name}: still resolves Playwright itself`);
+
+	/**
+	 * Every page-opening *call site* has a watch call site beside it.
+	 *
+	 * The shader-error listener lives inside `tally()`'s `watch` and
+	 * `watchShaders`, and for a while nine probes rolled their own
+	 * `page.on("pageerror", ...)` and called neither — so a guard described as
+	 * covering the suite covered four files, and nothing said otherwise. The
+	 * comment in `probe-guard.mjs` named this file as the place to enforce it,
+	 * which is only worth writing if it is done.
+	 *
+	 * **Proximity, not a count.** Counting `newPage` sites against watch calls
+	 * was the first version and enforced nothing where it was most needed: a
+	 * probe that opens its page inside a `for (const viewport of VIEWPORTS)`
+	 * loop has one call site, so one watch anywhere in the file — including
+	 * outside the loop, watching only the first page — scored 1 > 1 and passed.
+	 * The rule now asks that each `newPage` be followed by a watch within a few
+	 * lines, which is where one has to be to cover the page just opened.
+	 *
+	 * Still textual, and it says so: a watch that follows within the window but
+	 * refers to some other page satisfies it. The exact version is structural —
+	 * a helper in `probe-guard.mjs` that opens and watches in one call, leaving
+	 * `browser.newPage(` itself as the thing to refuse — which is a change
+	 * across thirteen probes and its own node.
+	 */
+	const reports = /\btally\s*\(\s*\)/.test(bare);
+	const pages = (bare.match(/\.newPage\s*\(/g) ?? []).length;
+	const ownPageError = /page\.on\(\s*\W*pageerror/.test(code);
+
+	/**
+	 * A script that opens pages and does not report is **named**, not skipped.
+	 *
+	 * The rule below needs a `tally()` to report into, so it was written as
+	 * `if (reports)` — which makes the guard fail open for exactly the file it
+	 * cannot see: a new probe that opens pages without a tally is unwatched and
+	 * this says nothing about it. The exemption is a list with a reason
+	 * attached, so joining it is a decision somebody makes rather than a side
+	 * effect of how a file happens to be written.
+	 */
+	if (pages && !reports && !EXEMPT.has(name))
+		problems.push(
+			`${name}: opens ${pages} page(s) and calls no tally() — it can neither ` +
+				`watch them nor report what a watch would find; add it to EXEMPT ` +
+				`with a reason if that is deliberate`,
+		);
+
+	// Not gated on EXEMPT. That list buys one thing — permission to open pages
+	// without a tally — and an entry on it was silently switching off the
+	// proximity rule and the `watchShaders` rule as well, which are about
+	// something else. They are gated on `reports`, which an exempt file does not
+	// have, so they simply do not fire there; nothing needs to exempt them.
+	const WITHIN = 8;
+	if (reports)
+		for (const opened of bare.matchAll(/\.newPage\s*\(/g)) {
+			const after = bare
+				.slice(opened.index ?? 0)
+				.split("\n")
+				.slice(0, WITHIN)
+				.join("\n");
+			if (!/\bwatch(Shaders)?\s*\(/.test(after))
+				problems.push(
+					`${name}: a page is opened with no watch within ${WITHIN} lines — ` +
+						`an unwatched page reports neither page errors nor shader failures`,
+				);
+		}
+	// A probe may keep its own page-error reporting — `probe-planets` names
+	// them at two milestones rather than one per event — but then it owes the
+	// shader listener separately, which is what `watchShaders` is for.
+	if (reports && ownPageError && !/\bwatchShaders\s*\(/.test(bare))
+		problems.push(
+			`${name}: installs its own pageerror handler without watchShaders() — ` +
+				`use watch(), or take the shader listener on its own`,
+		);
 }
 
 if (callers < EXPECTED_CALLERS)

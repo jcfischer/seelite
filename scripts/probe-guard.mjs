@@ -348,6 +348,20 @@ const FINGERPRINT = ["src/units.ts", "src/main.ts"];
 export function tally() {
 	let failures = 0;
 	let checks = 0;
+	/**
+	 * One definition, because both `watch` and `watchShaders` install it and a
+	 * retune that reached one and not the other would leave half the suite on
+	 * an older filter. The long note on `watch` documents this listener.
+	 */
+	const shaderListener = (page, tag) =>
+		page.on("console", (message) => {
+			if (message.type() !== "error") return;
+			const text = message.text();
+			if (!/shader|glsl|link status|validate_status/i.test(text)) return;
+			checks++;
+			failures++;
+			console.log(`SHADERERROR ${tag}${text.slice(0, 400)}`);
+		});
 	return {
 		check(label, ok, detail) {
 			checks++;
@@ -356,7 +370,54 @@ export function tally() {
 				`${ok ? "  ok  " : " FAIL "} ${label}${detail ? ` — ${detail}` : ""}`,
 			);
 		},
-		watch(page) {
+		/**
+		 * The shader listener alone, for a probe that reports page errors its
+		 * own way. `probe-planets` collects them in an array and names them at
+		 * two milestones rather than one per event, which is a reporting choice
+		 * worth keeping; it should not have to give that up to be guarded
+		 * against a silent shader failure.
+		 */
+		watchShaders(page, label) {
+			const tag = label ? `${label}: ` : "";
+			shaderListener(page, tag);
+		},
+		watch(page, label) {
+			const tag = label ? `${label}: ` : "";
+			/**
+			 * A shader that fails to compile is not a page error.
+			 *
+			 * Three.js reports a bad program through `console.error` and carries
+			 * on, so a patched material that stopped linking would render — a
+			 * fallback, a flat body, nothing at all — while every check in every
+			 * probe stayed green. `pageerror` never sees it, because nothing
+			 * threw.
+			 *
+			 * Narrow on purpose: a probe is not a lint pass, and failing on any
+			 * console error would make an unrelated warning elsewhere in the
+			 * page red here. This matches the one class that is otherwise
+			 * silent and is always a defect.
+			 *
+			 * **Errors only**, and narrowly matched. `warning` is deliberately
+			 * excluded: three.js warns `Program Info Log:` on the branch where
+			 * the link *succeeded* and the driver merely returned a non-empty
+			 * log, which is ordinary on SwiftShader — including it reports a
+			 * green tree red.
+			 *
+			 * **It matches text, so it fails open**: three.js rewords this and
+			 * the hole is back. The backstop is one probe —
+			 * `probe-station-visuals` asks the GL context for `LINK_STATUS` and
+			 * names the rock's own program. Every other probe has this and
+			 * nothing else.
+			 *
+			 * A listener reaches a probe only through `watch` or
+			 * `watchShaders`. `check-launcher-wiring.mjs` refuses a probe that
+			 * opens pages and installs fewer watches than page-opening sites —
+			 * which is what had gone wrong, and is less than "every page": read
+			 * its own note for what a source count cannot see. `npm run probe`
+			 * runs it first. PR #63 has the history of what was tried here and
+			 * reverted.
+			 */
+			shaderListener(page, tag);
 			page.on("pageerror", (e) => {
 				// Counted as a check too, not just a failure. Incrementing `failures`
 				// alone makes `${checks - failures}/${checks}` report a failing check
@@ -365,7 +426,7 @@ export function tally() {
 				// page; it just did not have a label until now.
 				checks++;
 				failures++;
-				console.log(`PAGEERROR ${e.message}`);
+				console.log(`PAGEERROR ${tag}${e.message}`);
 			});
 		},
 		get failures() {

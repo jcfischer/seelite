@@ -16,11 +16,7 @@
 
 import * as THREE from "three";
 import { SimplexNoise } from "./noise";
-import {
-	ROCK_TEXTURE_SIZE,
-	rockAlbedoTexels,
-	rockNormalTexels,
-} from "./station-visuals";
+import { CRATER_CELL, CRATER_PROFILE, NOISE_GLSL } from "./planet-shaders";
 
 /**
  * Give a geometry per-face box-projected UVs, in kilometres divided by `panel`.
@@ -67,102 +63,292 @@ export function boxProjectUVs(geometry: THREE.BufferGeometry, panelKm: number) {
 	uv.needsUpdate = true;
 }
 
-/**
- * Patch a `MeshStandardMaterial` to sample its colour and normal maps
- * **triplanar**, in object space, with no UVs at all.
- *
- * Box projection got the rock most of the way there and left one artefact it
- * cannot avoid: the projection axis is chosen per face, so wherever the
- * dominant axis flips the UV jumps and the map discontinues. On a plated hull
- * that seam falls along a facet edge and is invisible; on a rock it reads as a
- * flat shelf cut across the relief, which is worse than the smearing it
- * replaced.
- *
- * Triplanar samples all three projections and blends them by the normal, so
- * there is no seam to fall on and no unwrap to smear. It is a *patch* rather
- * than a `ShaderMaterial` on purpose: everything about how the surface is lit —
- * the scene's sun, the fill, tone mapping — stays Three's, and this branch does
- * not acquire a second lighting model that #57's planet shaders would then have
- * to be reconciled with.
- *
- * The normal blend is the "whiteout" form: each planar sample is swizzled into
- * object space and added to the geometric normal before the blend, which keeps
- * relief on faces the projection is edge-on to instead of flattening them.
- */
-export function applyTriplanar(
-	material: THREE.MeshStandardMaterial,
-	scaleKm: number,
-) {
-	material.onBeforeCompile = (shader) => {
-		shader.uniforms.triScale = { value: 1 / scaleKm };
-		shader.vertexShader = shader.vertexShader
-			.replace(
-				"#include <common>",
-				`#include <common>
-varying vec3 vTriPos;
-varying vec3 vTriNormal;`,
-			)
-			.replace(
-				"#include <begin_vertex>",
-				`#include <begin_vertex>
-vTriPos = position;
-vTriNormal = normal;`,
-			);
-		shader.fragmentShader = shader.fragmentShader
-			.replace(
-				"#include <common>",
-				`#include <common>
-uniform float triScale;
-// Declared here on purpose: three.js puts normalMatrix in the vertex prefix
-// only, and the renderer sets it on whatever program declares it. The blend
-// below has to leave object space, and this is the transform it leaves by.
+/** The rock's vertex-stage additions: one varying, and the object-space
+ *  position everything else is a function of. Normalised in the fragment stage
+ *  rather than here — interpolating a unit vector across a triangle does not
+ *  give a unit vector. */
+const ROCK_VERTEX_COMMON = /* glsl */ `#include <common>
+varying vec3 vRockP;`;
+
+const ROCK_VERTEX_BODY = /* glsl */ `#include <begin_vertex>
+vRockP = position;`;
+
+/** The rock's fragment-stage prelude: #57's noise, the crater walk that carries
+ *  its own gradient, and the fine term. */
+const ROCK_FRAGMENT_COMMON = /* glsl */ `#include <common>
 uniform mat3 normalMatrix;
-varying vec3 vTriPos;
-varying vec3 vTriNormal;
-// Raised to a high power so the blend is narrow: a wide one averages three
-// samples over most of the surface and reads as a blur rather than as stone.
-vec3 triWeights() {
-  vec3 w = pow(abs(normalize(vTriNormal)), vec3(6.0));
-  return w / (w.x + w.y + w.z);
-}`,
-			)
-			.replace(
-				"#include <map_fragment>",
-				`{
-  vec3 w = triWeights();
-  vec2 uX = vTriPos.zy * triScale;
-  vec2 uY = vTriPos.xz * triScale;
-  vec2 uZ = vTriPos.xy * triScale;
-  vec4 tri = texture2D(map, uX) * w.x
-           + texture2D(map, uY) * w.y
-           + texture2D(map, uZ) * w.z;
-  diffuseColor *= tri;
-}`,
-			)
-			.replace(
-				"#include <normal_fragment_maps>",
-				`{
-  vec3 w = triWeights();
-  vec3 gn = normalize(vTriNormal);
-  vec3 nX = texture2D(normalMap, vTriPos.zy * triScale).xyz * 2.0 - 1.0;
-  vec3 nY = texture2D(normalMap, vTriPos.xz * triScale).xyz * 2.0 - 1.0;
-  vec3 nZ = texture2D(normalMap, vTriPos.xy * triScale).xyz * 2.0 - 1.0;
-  nX.xy *= normalScale;
-  nY.xy *= normalScale;
-  nZ.xy *= normalScale;
-  // Whiteout blend: fold the geometric normal in before swizzling, so a face
-  // the projection is edge-on to keeps its relief instead of going flat.
-  nX = vec3(nX.xy + gn.zy, abs(nX.z) * gn.x);
-  nY = vec3(nY.xy + gn.xz, abs(nY.z) * gn.y);
-  nZ = vec3(nZ.xy + gn.xy, abs(nZ.z) * gn.z);
-  vec3 objN = normalize(nX.zyx * w.x + nY.xzy * w.y + nZ.xyz * w.z);
+varying vec3 vRockP;
+// NOISE_GLSL opens with its own "const float PI", and three.js has already
+// #defined PI in <common> — so the declaration expands to
+// "const float 3.14159... =" and the shader will not compile. Undefined around
+// the include and restored after, because three's own chunks below use it.
+#undef PI
+${NOISE_GLSL}
+#define PI 3.141592653589793
+
+/*
+ * The crater field and its gradient, from **one** walk of the neighbourhood.
+ *
+ * This is #57's craters() with its derivative carried alongside, and it exists
+ * for one reason: reliefNormal gets its normal from four extra evaluations of
+ * the height field, so a 3x3x3 walk costs five walks a fragment.
+ *
+ * **What that was worth**, on a GPU at docking range with the refinery filling
+ * the view (the headless probe rasterises in software, so its numbers say
+ * nothing about this):
+ *
+ *   five walks, grain differenced   25 fps, 80-90 ms worst
+ *   one walk, grain differenced     40 fps, 40-50 ms worst
+ *
+ * One machine, one view, one term moved.
+ *
+ * **Neither row is what you get by running this tree.** The shipped
+ * configuration cut the differenced grain as well, so it is a third
+ * arrangement and has no row here — what came back for it was a rate with no
+ * worst frame. ?seed=1&fps at a refinery measures *that*, which is the useful
+ * number for anyone asking what the rock costs today, and is not either row
+ * above.
+ *
+ * To reproduce the comparison itself, put back what each row names: the
+ * top row is reliefNormal-style differencing of the height field, four extra
+ * evaluations around every fragment; the second is this function with the
+ * grain term differenced into the normal instead of folded into the albedo
+ * below. Both are removals of the change this file makes, which is why the
+ * figures live here rather than in a script. #63 carries the rest. The figures
+ * are one machine's and are not portable; the *structure* is what carries — a
+ * term inside the height field is paid five times, and a term in the albedo
+ * once.
+ *
+ * A crater's profile is *mostly* smooth in d, so its slope comes almost free
+ * in the loop that accumulates its depth. One walk, both answers.
+ *
+ * **Where "mostly" bites.** The profile has two breaks, and an analytic
+ * gradient reports them where a finite difference smoothed them over its
+ * epsilon. That difference is real and is worth writing down rather than
+ * discovering later on a screenshot:
+ *
+ *   - inside = step(d, 1.0) cuts the bowl at the rim, so d(bowl)/dd is 2d
+ *     below 1 and 0 above it: dProfile jumps by 2.0 across d = 1.
+ *   - the walk is culled at d < 1.2, where the rim gaussian still has a value
+ *     of about 0.009 and a slope of about -0.25. Both are dropped, not faded.
+ *
+ * The height itself is near-continuous at both — 0.009 x depth at the cull —
+ * so the *arithmetic* says a break in the normal without a matching break in
+ * the surface, which would read as a harder edge at the crater lip and a faint
+ * step at the cull radius. That last sentence is a prediction, not an
+ * observation: it says what a discontinuity in a normal usually looks like,
+ * and nothing here has rendered the two side by side to check. The rock
+ * shipped with both present, and nobody has looked for either specifically —
+ * the one visual comparison on record is of the grain term at 200 m. So
+ * "accepted" would be the wrong word: what happened is that neither was
+ * noticed, which is weaker and is what this should say.
+ *
+ * The fix, if either ever reads badly, is a narrow smoothstep in place of the
+ * step and a fade on the rim approaching 1.2 — but that is an edit to the
+ * *shared* field, so it changes every planet #57 draws too, and it is that
+ * decision rather than this one.
+ *
+ * There is one definition of the field, and it is #57's: CRATER_CELL and
+ * CRATER_PROFILE are interpolated here and into craters() alike, so the two
+ * differ only in what they accumulate. This was a copy held in step by a test
+ * that matched strings — which catches a changed line but not an added one, so
+ * a new term in one function would have passed green while the fields diverged.
+ */
+vec4 cratersAndGradient(vec3 p, float scale, float depth) {
+  p *= scale;
+  vec3 base = floor(p);
+  float acc = 0.0;
+  vec3 grad = vec3(0.0);
+  for (int x = -1; x <= 1; ++x)
+  for (int y = -1; y <= 1; ++y)
+  for (int z = -1; z <= 1; ++z) {
+${CRATER_CELL}
+    if (d < 1.2) {
+${CRATER_PROFILE}
+      acc += (bowl + rim) * depth;
+      // d(bowl)/dd is 2d inside the bowl and zero beyond it; d(rim)/dd is the
+      // gaussian times its own exponent's derivative. Both read the profile's
+      // own defines rather than the numbers they evaluate to: hand-expanded,
+      // the sharpness would appear here as twice its square, and a change to it
+      // upstream would leave this describing a different crater — silently,
+      // because a wrong slope still shades plausibly.
+      float dProfile = (2.0 * d * inside)
+                     + rim * (-2.0 * CRATER_RIM_SHARPNESS * CRATER_RIM_SHARPNESS
+                              * (d - CRATER_RIM_AT));
+      // Chain rule out to p: dd/d|offset| is 1/radius, d|offset|/dp is the unit
+      // offset, and the outer p *= scale contributes another factor.
+      grad += dProfile * depth * scale * offset / max(dist * radius, 1e-6);
+    }
+  }
+  return vec4(grad, acc);
+}
+
+// The fine term. It shades nothing: the normal belongs to the craters, so this
+// is evaluated once for the albedo and its gradient is never wanted.
+float grain(vec3 p) { return fbm4(p * 11.0) * 0.16; }`;
+
+/** The surface itself, patched over three's `<normal_fragment_maps>` — the one
+ *  chunk that runs after the geometric normal exists and before the lighting
+ *  reads it, which is why both the normal and the albedo are written here. */
+const ROCK_SURFACE = /* glsl */ `{
+  vec3 p = normalize(vRockP);
+
+  // Scaled for a body a kilometre across rather than a moon: at #57's 3.4 the
+  // bowls came out seventy metres wide and the ground between them was glass.
+  // The walk's cost, and why there is only one of it, is at
+  // cratersAndGradient.
+  vec4 pit = cratersAndGradient(p * 2.3, 7.0, 0.42);
+  float h = pit.w + grain(p);
+
+  // **The craters alone shape the normal.** The grain was differenced here too
+  // — four extra fbm4 calls, four octaves each, so roughly 160 hash lookups a
+  // fragment spent on the normal alone. It moved to the albedo below, where it
+  // is evaluated once, joining the ridged tier that went there for the same
+  // reason.
+  //
+  // What that gives up is shading relief between craters. What is known about
+  // the cost of giving it up is narrow, and is worth stating at its own size
+  // rather than as a conclusion: at 200 m, in two stills, on one machine, the
+  // two renders could not be told apart by eye. That is the whole of it. It
+  // says nothing about other ranges, nothing about the body in motion — where
+  // inter-crater relief is exactly the detail that reads as a surface turns —
+  // and it is a null result from one observer, which is the weakest thing a
+  // comparison can return.
+  //
+  // The cut rests on that plus the arithmetic above, which is the solid half:
+  // 160 hash lookups a fragment is a real number and the screenshots are not.
+  // If the rock ever looks flat in flight, this is the first comment to come
+  // back to, and the fix is four differenced samples rather than a mystery.
+  vec3 slope = pit.xyz - p * dot(pit.xyz, p);
+
+  // The same shape as planet-shaders.ts's reliefNormal ends on — lean the normal away from
+  // uphill. The coefficient differs because that one folds its own 2e into the
+  // differences and this gradient is analytic.
+  vec3 objN = normalize(p - 0.010 * slope);
   normal = normalize(normalMatrix * objN);
-}`,
+
+  // Rock is not one colour and is not many: the range is narrow on purpose,
+  // because a surface painted across its whole albedo range reads as a
+  // photograph of noise. What varies is which kind of rock — dust in the
+  // basins, exposed face on the rims.
+  vec3 dust = vec3(0.44, 0.41, 0.36);
+  vec3 face = vec3(0.60, 0.57, 0.51);
+  vec3 tone = mix(dust, face, smoothstep(-0.15, 0.35, h));
+  // **One noise call for the sub-crater tier, not two.** It was an fbm4 and a
+  // ridged pass — two four-octave walks a fragment for colour, on top of
+  // grain()'s own. ridged folds |2n-1| over the same field, so one fbm4 gives
+  // both: the value tints, and its distance from the midpoint creases.
+  float fine = fbm4(p * 19.0);
+  tone *= 0.84 + 0.30 * fine;
+  tone *= 0.92 + 0.16 * (1.0 - abs(2.0 * fine - 1.0));
+  diffuseColor.rgb *= tone / 0.5;
+}`;
+
+/**
+ * Give a rock its surface from **#57's noise, evaluated per fragment**.
+ *
+ * The generated-map version this replaces baked a height field into an albedo
+ * and a normal map and sampled them triplanar. That worked, and every part of it
+ * was a workaround for the same thing: a texture needs coordinates, and an
+ * irregular body has no good ones. Box projection seamed, an azimuthal unwrap
+ * smeared at the poles, triplanar blending fixed both and left a tiling scale to
+ * choose. Sampling a 3D field on the object's own *direction* has none of
+ * those problems, because there is nothing to unwrap.
+ *
+ * Direction, not position: `ROCK_SURFACE` opens on `normalize(vRockP)`, so the
+ * radius is discarded and one ray out of the centre carries a single value.
+ * That is a radial projection, and it is enough here only because the body is
+ * near-spherical — the deviation is the displacement itself. On a genuinely
+ * elongated rock the field would smear along the long axis, and the fix would
+ * be to sample the unnormalised position at a scale of its own.
+ *
+ * `NOISE_GLSL` is **imported, not pasted**. That was the whole reason #56
+ * deferred this: #57's shader library was still being written, and two copies
+ * of a library in flight is worse than a workaround. `RELIEF` is *not* used —
+ * the normal comes from an analytic gradient rather than its finite
+ * differences — though the tangent construction is deliberately the same shape,
+ * so the two remain comparable.
+ *
+ * **Three keeps doing the lighting.** This is a patch on `MeshStandardMaterial`
+ * rather than a `ShaderMaterial`, and that is not a shortcut — the plating,
+ * vents and radiators bolted to the rock are lit by the scene's sun and fill,
+ * and a rock with its own light model would read as a second object under a
+ * second sun. #57 can afford its own because it draws whole planets and nothing
+ * else.
+ *
+ * **What it costs.** `craters` walks a 3×3×3 neighbourhood, and `reliefNormal`
+ * derives its normal from four more evaluations of the height field — so the
+ * obvious construction pays five walks a fragment. It pays one. The figures
+ * that got it there are at `cratersAndGradient`, beside the loop they justify.
+ *
+ * #57's own note says an implementation should bake this into a normal map at
+ * generation. That remains the cheaper answer and it is not taken here, because
+ * baking wants coordinates and an irregular body has none — which is the whole
+ * reason the maps this replaced were a workaround.
+ */
+export function applyRockSurface(material: THREE.MeshStandardMaterial) {
+	/**
+	 * Each splice reports whether it landed.
+	 *
+	 * `String.replace` with a marker that is not there returns the string
+	 * unchanged and says nothing — and three.js renames its chunks between
+	 * versions. A no-op splice leaves a **stock** `MeshStandardMaterial` that
+	 * compiles and links perfectly, under this material's own cache key, with
+	 * no craters on it. Every check that exists would stay green: the refinery
+	 * is on screen, it is lit, its program linked, and its program is named
+	 * `station-rock` — because that name is set here rather than by the patch.
+	 *
+	 * So the outcome is recorded where a probe can read it. `userData` rather
+	 * than a throw: a broken splice should fail a check, not take the page down
+	 * in front of a player, and the console line is worded so the probes'
+	 * shader listener catches it too.
+	 */
+	const splices: Record<string, boolean> = {};
+	// Keyed by stage as well as marker: both stages patch
+	// `#include <common>`, and one key for the two would let a hit in the
+	// fragment stage stand in for a miss in the vertex stage.
+	const splice = (
+		stage: string,
+		source: string,
+		marker: string,
+		code: string,
+	) => {
+		const out = source.replace(marker, code);
+		splices[`${stage} ${marker}`] = out !== source;
+		if (out === source)
+			console.error(
+				`shader splice missed: ${marker} is not in three.js's ${stage} chunk any more`,
 			);
+		return out;
 	};
-	// Two materials with the same `onBeforeCompile` source still compile twice
-	// unless they agree they are the same program.
-	material.customProgramCacheKey = () => `station-triplanar-${scaleKm}`;
+	material.onBeforeCompile = (shader) => {
+		shader.vertexShader = splice(
+			"vertex",
+			splice(
+				"vertex",
+				shader.vertexShader,
+				"#include <common>",
+				ROCK_VERTEX_COMMON,
+			),
+			"#include <begin_vertex>",
+			ROCK_VERTEX_BODY,
+		);
+		shader.fragmentShader = splice(
+			"fragment",
+			splice(
+				"fragment",
+				shader.fragmentShader,
+				"#include <common>",
+				ROCK_FRAGMENT_COMMON,
+			),
+			"#include <normal_fragment_maps>",
+			ROCK_SURFACE,
+		);
+		material.userData.rockSplices = splices;
+	};
+	// Two rocks with the same patch still compile twice unless they agree they
+	// are the same program.
+	material.customProgramCacheKey = () => "station-rock";
 	return material;
 }
 
@@ -234,47 +420,6 @@ export function displayRand(id: string): () => number {
 		return state / 4294967296;
 	};
 }
-
-/**
- * The rock surface maps, built once and shared by every asteroid.
- *
- * One pair for all three refinery forms: they are the same rock at the same
- * scale, and a per-form map would be three uploads of nearly identical texels.
- * What differs between the forms is the *displacement*, which is per-form and
- * seeded by tag — that is what makes them different rocks.
- */
-const buildRockMaps = () => {
-	const albedo = new THREE.DataTexture(
-		rockAlbedoTexels("station"),
-		ROCK_TEXTURE_SIZE,
-		ROCK_TEXTURE_SIZE,
-		THREE.RGBAFormat,
-	);
-	albedo.colorSpace = THREE.SRGBColorSpace;
-	const normal = new THREE.DataTexture(
-		rockNormalTexels("station"),
-		ROCK_TEXTURE_SIZE,
-		ROCK_TEXTURE_SIZE,
-		THREE.RGBAFormat,
-	);
-	// **Linear, not sRGB.** A normal map is a vector field, not a colour: read
-	// as sRGB every component is bent by the transfer curve and the lighting
-	// leans in a direction nothing in the geometry points.
-	for (const map of [albedo, normal]) {
-		map.wrapS = THREE.RepeatWrapping;
-		map.wrapT = THREE.RepeatWrapping;
-		map.minFilter = THREE.LinearMipmapLinearFilter;
-		map.generateMipmaps = true;
-		map.needsUpdate = true;
-	}
-	return { albedo, normal };
-};
-
-/** Built on first use, not at import: `station-mesh.ts` is imported by the
- *  headless tier, and two 256² buffers plus their textures are a cost nothing
- *  there can use. */
-let rockMapsCache: ReturnType<typeof buildRockMaps> | undefined;
-const rockMaps = () => (rockMapsCache ??= buildRockMaps());
 
 /**
  * A captured asteroid, displaced and cratered.
@@ -381,37 +526,25 @@ export function buildAsteroid(
 	position.needsUpdate = true;
 	geometry.computeVertexNormals();
 	smoothVertexNormals(geometry);
-	// Box-projected, so the surface maps do not smear into the poles the way an
-	// azimuthal unwrap does on a body this irregular. One repeat per 90 m: the
-	// rock's own displacement carries everything larger, and this carries
-	// everything smaller.
-	const { albedo, normal } = rockMaps();
 	const mesh = new THREE.Mesh(
 		geometry,
 		new THREE.MeshStandardMaterial({
 			// Lighter than rock looks in a swatch, for #28's reason: the near
 			// layer's only fill is a dim camera-side light, and a physically
-			// plausible dark asteroid renders as a hole in the starfield.
+			// plausible dark asteroid renders as a hole in the starfield. The
+			// shader tints from here rather than replacing it, so this is still
+			// the one place the rock's overall value is set.
 			color: 0x9a8a72,
-			map: albedo,
-			normalMap: normal,
-			// Strong: the map is the only thing carrying surface at the scale a
-			// pilot is close enough to see, and a rock has no gloss to fight it.
-			normalScale: new THREE.Vector2(1.4, 1.4),
 			roughness: 0.95,
 			metalness: 0.02,
-			// **Smooth-shaded now.** Flat shading was doing the job the normal map
-			// does, and does worse: it quantises the surface to the tessellation,
-			// so a rock looked faceted at every range instead of grained close up
-			// and round far off. The two fight each other — a facet's constant
-			// normal flattens the map's relief across the whole triangle.
+			// **Smooth-shaded.** Flat shading quantises the surface to the
+			// tessellation, so a rock reads faceted at every range instead of
+			// grained close up and round far off — and it fights the relief, whose
+			// perturbation a facet's constant normal flattens across the triangle.
 			flatShading: false,
 		}),
 	);
-	// One repeat per 180 m. At 90 m the grain read as noise rather than as
-	// stone: the features a rock shows are metres to tens of metres, and the map
-	// has to be scaled so its own pits land in that range.
-	applyTriplanar(mesh.material as THREE.MeshStandardMaterial, 0.18);
+	applyRockSurface(mesh.material as THREE.MeshStandardMaterial);
 	mesh.name = "asteroid";
 	return mesh;
 }

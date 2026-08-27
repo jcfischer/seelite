@@ -238,13 +238,11 @@ async function placeShipAtLocalOffset(page, local) {
 // surfaces; scanner projection terms are covered by cockpit's unit tests.
 await guardedOrigin(ORIGIN, ["src/main.ts", "src/units.ts"]);
 const browser = await launchChromium();
-const { check, exit } = tally();
+const { check, watch, exit } = tally();
 
 for (const viewport of VIEWPORTS) {
 	const page = await browser.newPage({ viewport });
-	page.on("pageerror", (error) =>
-		check(`${viewport.name}: no page error (${error.message})`, false),
-	);
+	watch(page, viewport.name);
 	await page.goto(`${ORIGIN}/?seed=42`, { waitUntil: "load" });
 	await page.addScriptTag({ content: PROBE_MATCHERS_SCRIPT });
 	await page.waitForFunction(

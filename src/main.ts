@@ -3198,19 +3198,31 @@ function seedFromQuery(): number {
 // is presence rather than a name comparison, so adding a third family is one
 // edit in `model-viewer.ts` rather than two files' worth; the workbench itself
 // mounts nothing for a name it does not recognise.
-if (new URLSearchParams(window.location.search).has("model-viewer")) {
+// A frame-rate readout, on `?fps` and on nothing else — `fps-meter.ts` carries
+// the reason it is gated. It mounts before whichever surface is about to be
+// built, because what it measures is the page's frame loop rather than any one
+// of them.
+// One parse for every gate below, rather than one per instrument: the boot
+// surface was building a fresh `URLSearchParams` three times in as many
+// branches.
+const query = new URLSearchParams(window.location.search);
+
+if (query.has("fps")) {
+	const { mountFpsMeter } = await import("./fps-meter");
+	mountFpsMeter();
+}
+
+if (query.has("model-viewer")) {
 	const { mountModelViewer } = await import("./model-viewer");
 	mountModelViewer();
 	// The workbench owns an isolated render loop, so no live simulation is built
 	// behind it. It is a visual asset tool rather than a second game mode.
-} else if (new URLSearchParams(window.location.search).has("hud-gallery")) {
+} else if (query.has("hud-gallery")) {
 	const { mountStateGallery } = await import("./state-gallery");
 	mountStateGallery();
 	// The gallery owns its own Three.js scene. Do not build the live game behind
 	// it: that would leave two hidden render loops spending CPU and GPU.
-} else if (
-	new URLSearchParams(window.location.search).has("planet-prototype")
-) {
+} else if (query.has("planet-prototype")) {
 	// After `hud-gallery`, not before it: this branch is a disposable study, and
 	// a disposable route should not outrank a durable one when both flags are on
 	// the URL. Same reason it owns its own scene — no live game behind it.

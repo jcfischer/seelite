@@ -15,7 +15,7 @@ const VIEWPORTS = [
 // different checkout — the exact failure `probe-guard.mjs` exists to prevent.
 await guardedOrigin(ORIGIN, ["src/main.ts", "src/ship-mesh.ts"]);
 const browser = await launchChromium();
-const { check, exit } = tally();
+const { check, watch, exit } = tally();
 
 function state() {
 	const game = window.__seelite;
@@ -60,9 +60,7 @@ function state() {
 
 for (const viewport of VIEWPORTS) {
 	const page = await browser.newPage({ viewport });
-	page.on("pageerror", (error) =>
-		check(`${viewport.name}: no page error (${error.message})`, false),
-	);
+	watch(page, viewport.name);
 	await page.goto(`${ORIGIN}/?seed=42`, { waitUntil: "load" });
 	await page.waitForFunction(() => window.__seelite?.frames > 1);
 	const cockpit = await page.evaluate(state);
@@ -153,12 +151,7 @@ for (const viewport of VIEWPORTS) {
 // the player, which is the mistake the samples it replaces made.
 for (const viewport of VIEWPORTS.slice(0, 1)) {
 	const page = await browser.newPage({ viewport });
-	page.on("pageerror", (error) =>
-		check(
-			`${viewport.name}: fleet page has no error (${error.message})`,
-			false,
-		),
-	);
+	watch(page, `${viewport.name} fleet`);
 	await page.goto(`${ORIGIN}/?seed=42`, { waitUntil: "load" });
 	await page.waitForFunction(() => window.__seelite?.frames > 1);
 	const ungated = await page.evaluate(state);

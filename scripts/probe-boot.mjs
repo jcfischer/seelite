@@ -518,6 +518,12 @@ check(
 		again.every((v, i) => v === state.starPositions[i]),
 	`${again.length} values compared`,
 );
+// Closed as soon as its one reading is taken. Each of these is a *running
+// game*: a WebGL context, a render loop, a simulation. Left open they stack up
+// for the rest of the file, and the boot budget for the pages after them is
+// the fixed 20 s in `bootedGame`. This file opens four; leaving three live is
+// what made the last of them time out.
+await reload.close();
 
 const other = await open(`${ORIGIN}/?seed=${OTHER_SEED}`);
 const otherStars = await other.evaluate(() => {
@@ -533,6 +539,167 @@ check(
 	otherStars.some((v, i) => v !== state.starPositions[i]),
 	"the first 8 star positions are not all identical",
 );
+await other.close();
+
+/**
+ * Both sides of the `?fps` gate. `fps-meter.ts` carries why it is gated at all.
+ *
+ * A gate is only a gate if something checks that the default game does not
+ * carry it — and the page below has been open for the whole of this file, so if
+ * the meter were ungated it would have been on screen in every check that
+ * precedes this one.
+ */
+check(
+	"the default game carries no frame-rate readout",
+	!(await page.evaluate(() =>
+		Boolean(document.querySelector("[data-fps-meter]")),
+	)),
+);
+
+/**
+ * Both sides of the `?fps` gate, in one function because it is one subject and
+ * because everything below opens a page of its own — the boot page the rest of
+ * this file asserts on is not touched here.
+ */
+async function fpsGate() {
+	/**
+	 * The other side of the gate, which is the half that could actually go wrong.
+	 *
+	 * Which page carries which side, since "both sides" is loose: the default is
+	 * asserted on the boot page the rest of this file uses, and again on the page
+	 * that comes back from the workbench; the positive is asserted on that same
+	 * page after a `goto` to `&fps`. One page, three states, rather than one page
+	 * per claim.
+	 * The workbench mounts a meter *unconditionally*, and the only reason one does
+	 * not survive the return to flight is that `[data-model-close]` navigates.
+	 * Rewrite it as an in-place teardown and the readout is on the flight floor
+	 * with no `?fps` anywhere — so it is checked here rather than reasoned about.
+	 *
+	 * Every wait below is bounded generously and swallows its own expiry: what is
+	 * asserted is the end state, so a loaded machine costs seconds and a real
+	 * failure arrives as a named check going red. Both halves of that were learned
+	 * the hard way — a 6 s bound cost a suite run, and an uncaught wait crashed
+	 * this block where a red check belonged.
+	 */
+	// Not through `open`: the workbench builds no simulation behind itself, so
+	// `bootedGame` has nothing to wait for and would time out.
+	const bench = await browser.newPage({
+		viewport: { width: 900, height: 620 },
+	});
+	watch(bench);
+	await bench.goto(`${URL}&model-viewer=station`, { waitUntil: "load" });
+	const mounted = await bench
+		.waitForSelector("#model-viewer canvas", { timeout: 20000 })
+		.catch(() => null);
+	check("the workbench opens", Boolean(mounted));
+	const readout = await bench
+		.waitForSelector("[data-fps-meter]", { timeout: 20000 })
+		.catch(() => null);
+	check("the workbench mounts a readout without `?fps`", Boolean(readout));
+	await Promise.all([
+		bench
+			.waitForFunction(
+				() => !new URLSearchParams(window.location.search).has("model-viewer"),
+				null,
+				{ timeout: 20000 },
+			)
+			.catch(() => {}),
+		bench.click("[data-model-close]").catch(() => {}),
+	]);
+	check(
+		"returning to flight from the workbench leaves no readout behind",
+		await bench.evaluate(
+			() =>
+				!new URLSearchParams(window.location.search).has("model-viewer") &&
+				!document.querySelector("[data-fps-meter]"),
+		),
+		await bench.evaluate(() => window.location.search || "(no query)"),
+	);
+	/**
+	 * A fresh page, not the workbench one navigated a third time.
+	 *
+	 * Reusing it saved a boot, was taken as a suggestion in review, and has now
+	 * been measured costing more than it saved: with
+	 * `?model-viewer=station` -> flight -> `&fps` on one page, `bootedGame`
+	 * timed out at 20 s in two consecutive suite runs while eleven other probes
+	 * passed, and this file took 116 s. A workbench page holds its own
+	 * Three.js renderer and GL context, and a game booting behind that history
+	 * is not the measurement `?fps` is meant to give — the rest of this file
+	 * asserts on a game booted into a clean page, which is what this now is.
+	 *
+	 * The saved boot was an argument; the flake is a number.
+	 */
+	await bench.close();
+	/**
+	 * The gate as an A/B on one page, which is the only form of it that means
+	 * anything.
+	 *
+	 * The absence check at the top of this file passes identically whether the
+	 * gate works or `mountFpsMeter` is never called at all — it asserts absence
+	 * where absence was never in question, and its justification ("the page has
+	 * been open for the whole of this file") argues for the wrong thing. Here
+	 * one page is loaded without the flag and then with it, so the only
+	 * difference between the two readings is the flag.
+	 */
+	const metered = await open(URL);
+	check(
+		"the same page carries no readout before the flag",
+		!(await metered.evaluate(() =>
+			Boolean(document.querySelector("[data-fps-meter]")),
+		)),
+	);
+	await metered.goto(`${URL}&fps`, { waitUntil: "load" });
+	await bootedGame(metered);
+	// Wait for a *rate*, not for the element. The meter mounts showing "- fps",
+	// so waiting on text containing "fps" is satisfied the instant it appears and
+	// gates on nothing: whether the read below saw a measured figure or the
+	// placeholder would come down to boot latency, on a wait written to take
+	// exactly that out. A digit is what the placeholder does not have.
+	const rated = await metered
+		.waitForFunction(
+			() =>
+				/\d/.test(
+					document.querySelector("[data-fps-meter]")?.textContent ?? "",
+				),
+			null,
+			{ timeout: 20000 },
+		)
+		.then(() => true)
+		.catch(() => false);
+	// The page is asked what it is before it is asked what it reads. Every wait in
+	// this block swallows its expiry, which is what keeps a failure a named check
+	// rather than a crash — and it also means the read below runs whether or not
+	// the wait succeeded. Pairing the reading with the query it was taken on
+	// removes the one way that could mislead: a verdict formed on a page that is
+	// not the one under test.
+	const reading = await metered.evaluate(() => ({
+		query: window.location.search,
+		text:
+			document.querySelector("[data-fps-meter]")?.textContent ?? "(no meter)",
+	}));
+	const rate = Number.parseFloat(reading.text);
+	// Named for what it asserts. It reads a finite positive rate and a worst
+	// frame, which catches a meter that never started, reports the placeholder, or
+	// lost half its format. It does *not* check the number is right: a meter
+	// miscounting frames, or reporting a constant, is green here — and the cost
+	// figures this branch quotes rest on that accuracy, measured by eye in a real
+	// browser rather than by anything in this file.
+	check(
+		"`?fps` mounts a readout that reports a finite rate and a worst frame",
+		// `rated` is the wait's own verdict, asserted rather than assumed.
+		// Swallowing an expiry is what keeps a failure a named check instead of
+		// a crash; it also means the read above runs either way, so without this
+		// the check could pass on whatever text happened to be on the page.
+		rated &&
+			reading.query.includes("fps") &&
+			Number.isFinite(rate) &&
+			rate > 0 &&
+			reading.text.includes("worst"),
+		`${reading.query} → ${reading.text}`,
+	);
+	await metered.close();
+}
+await fpsGate();
 
 await browser.close();
 exit();

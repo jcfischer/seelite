@@ -212,6 +212,19 @@ export function mountModelViewer(): void {
 	root.innerHTML = `<div class="mv-wrap"><main class="mv-stage" data-model-stage aria-label="procedural model preview"><span class="mv-axis">DRAG TO ORBIT · WHEEL TO ZOOM</span></main><aside class="mv-panel"><h1 class="mv-title">${family.title}</h1><p class="mv-copy">${family.copy}</p><fieldset class="mv-set"><legend>Role</legend><div class="mv-role-tabs">${family.assets.map((id, index) => `<button class="mv-button" type="button" data-model-asset="${id}" aria-pressed="${index === 0}">${id}</button>`).join("")}</div></fieldset><fieldset class="mv-set"><legend>Concepts</legend>${family.assets.map((id) => variantMarkup(family, id)).join("")}</fieldset><fieldset class="mv-set"><legend>Your ranking</legend><pre class="mv-ranking" data-model-ranking></pre><button class="mv-reset" type="button" data-model-reset-ranking>clear current role</button></fieldset><fieldset class="mv-set"><legend>Draft controls</legend><label class="mv-control">Beam <output data-model-output="beam">100%</output><input data-model-control="beam" type="range" min="70" max="145" value="100" /></label><label class="mv-control">Length <output data-model-output="length">100%</output><input data-model-control="length" type="range" min="70" max="145" value="100" /></label><label class="mv-control">Engine cue <output data-model-output="engine">70%</output><input data-model-control="engine" type="range" min="0" max="140" value="70" /></label><label class="mv-check"><input data-model-control="wireframe" type="checkbox" /> wireframe</label></fieldset><button class="mv-close" type="button" data-model-close>return to flight</button></aside></div>`;
 	document.body.append(root);
 	document.querySelector("#keys")?.remove();
+	// Unconditionally here, unlike in the game: a workbench is an instrument
+	// already, and the reason to open one is usually to judge what a form costs
+	// as well as how it looks. `mountFpsMeter` is idempotent, so opening the
+	// workbench with `?fps` as well gives one readout rather than two.
+	//
+	// Dynamic like `main.ts`'s `?fps` branch, and unawaited unlike it — boot
+	// there is already inside an async entry and gains nothing by racing,
+	// whereas this sits in a synchronous mount and the meter can attach a frame
+	// late without measuring anything differently. The disposer is
+	// dropped because `[data-model-close]` navigates, so the browser takes the
+	// whole document; `probe-boot` asserts that rather than leaving it to be
+	// reasoned about.
+	void import("./fps-meter").then((m) => m.mountFpsMeter());
 
 	const stage = root.querySelector<HTMLElement>(
 		"[data-model-stage]",
