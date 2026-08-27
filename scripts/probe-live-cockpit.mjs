@@ -551,7 +551,10 @@ const resumedFrames = await combatPage.evaluate(async () => {
 	await new Promise((resolve) => setTimeout(resolve, 150));
 	return { delta: game.frames - afterResume, sync: afterResume - before };
 });
-check("prototype: frame loop keeps running after resume", resumedFrames.delta > 2);
+check(
+	"prototype: frame loop keeps running after resume",
+	resumedFrames.delta > 2,
+);
 await combatPage.keyboard.up("Space");
 check(
 	"prototype: holding Space shows the weapon tracer, draws it on the glass and exposes immediate PULSE feedback",

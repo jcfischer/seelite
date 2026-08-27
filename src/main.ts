@@ -676,11 +676,11 @@ class Game {
 		new URLSearchParams(window.location.search).get("combat") === "1";
 	private combatIncoming = false;
 	private combatEcm = false;
-	/** Fitted status font cache: keyed on glass width; the fit is computed
-	 *  against the longest possible status text, so any live state fits. */
+	/** Fitted overlay font cache: keyed by role + glass width; the fit is
+	 *  computed against a widest-case text so any live state fits. */
 	private combatStatusFit = new Map<
-		number,
-		{ font: string; worstWidth: number }
+		string | number,
+		{ font: string; worstWidth?: number }
 	>();
 	/** The fitted width of the widest status text at the current glass width. */
 	combatStatusWorstWidth = 0;
@@ -3991,16 +3991,25 @@ class Game {
 				y: number,
 				fill: string,
 				startSize: number,
+				key: string,
 			) => {
-				ctx.font = `${startSize}px ui-monospace, monospace`;
-				let size = startSize;
-				while (size > 8 && ctx.measureText(text).width > w - 16) {
-					size -= 1;
-					ctx.font = `${size}px ui-monospace, monospace`;
+				// The fit depends on the widest text for this line and the glass
+				// width, not on the live digits, so cache the fitted font by key.
+				const cacheKey = `${key}|${w}`;
+				let fittedFont = this.combatStatusFit.get(cacheKey)?.font;
+				if (!fittedFont) {
+					ctx.font = `${startSize}px ui-monospace, monospace`;
+					let size = startSize;
+					while (size > 8 && ctx.measureText(text).width > w - 16) {
+						size -= 1;
+						ctx.font = `${size}px ui-monospace, monospace`;
+					}
+					fittedFont = ctx.font;
+					this.combatStatusFit.set(cacheKey, { font: fittedFont });
 				}
-				const font = ctx.font;
+				ctx.font = fittedFont;
 				const width = ctx.measureText(text).width;
-				drawnLines.push({ text, font, width });
+				drawnLines.push({ text, font: fittedFont, width });
 				ctx.fillStyle = fill;
 				ctx.fillText(text, w / 2, y);
 			};
@@ -4009,18 +4018,21 @@ class Game {
 				h * 0.72,
 				"rgba(255, 214, 120, 0.9)",
 				12,
+				"legend",
 			);
 			drawFitted(
 				`TARGET  SHIELDS F ${this.combat.targetForeShield.toFixed(0)}  A ${this.combat.targetAftShield.toFixed(0)}  HULL ${this.combat.targetHull.toFixed(0)}`,
 				h * 0.76,
 				"rgba(255, 115, 130, 0.95)",
 				12,
+				"target",
 			);
 			drawFitted(
 				`PLAYER  SHIELDS F ${this.combat.foreShield.toFixed(0)}  A ${this.combat.aftShield.toFixed(0)}  HULL ${this.combat.playerHull.toFixed(0)}`,
 				h * 0.8,
 				"rgba(116, 234, 255, 0.95)",
 				12,
+				"player",
 			);
 			const combatStatus = `FIRE ${this.combat.firing?.toUpperCase() ?? "SAFE"} · H ${this.combat.heat.toFixed(0)} E ${this.combat.energy.toFixed(0)} · LOCK ${this.combat.missileLock ? "READY" : "ACQ"} · MISSILE ${this.combat.incomingMissile ? "WARNING" : "CLEAR"} · INTD ${this.combat.interdiction ? "ACTIVE" : "CLEAR"}`;
 			// Fit against the widest status the block can emit, so any live state
@@ -4044,7 +4056,7 @@ class Game {
 			}
 			ctx.font = fittedEntry.font;
 			const statusWidth = ctx.measureText(combatStatus).width;
-			this.combatStatusWorstWidth = fittedEntry.worstWidth;
+			this.combatStatusWorstWidth = fittedEntry.worstWidth ?? 0;
 			drawnLines.push({
 				text: combatStatus,
 				font: fittedEntry.font,

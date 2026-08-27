@@ -30,6 +30,7 @@ function fireFixedStepDuel(state = createCombatPrototype(), cap = 200) {
 test("starter pulse duel destroys the shielded target within the pacing target", () => {
 	const state = fireFixedStepDuel();
 	expect(state.targetHull).toBe(0);
+	expect(state.playerHull).toBeGreaterThan(0);
 	expect(state.elapsed).toBeGreaterThanOrEqual(60);
 	expect(state.elapsed).toBeLessThanOrEqual(90);
 });
