@@ -257,6 +257,11 @@ ${CRATER_PROFILE}
  * a large rectangle on screen, appearing and vanishing as the geometry that
  * produced it moves.
  *
+ * Applied to the planet programs in this file — the surface classes, both
+ * shells and the ring. The star field in `backdrop.ts` and the patched rock
+ * material are custom fragments too and are *not* covered; they are the next
+ * place to look if the artefact survives this.
+ *
  * This is the second of two guards against that artefact — the first is the
  * mip geometry, at `bloomResolution` in main.ts, which demonstrably reduced it
  * without ending it. Neither is a diagnosis: no shader here is known to emit a

@@ -415,7 +415,11 @@ float height(vec3 p) {
  * ten of them. cratersAndGradient accumulates each crater's slope in the loop
  * that accumulates its depth, which is exact rather than approximate: this is
  * the analytic derivative of the same profile, not a cheaper lookalike, and it
- * visits every cell the path it replaces visited — the d < 1.2 cull below is
+ * visits every cell the path it replaces visited. That is true of the *crater*
+ * term only: the fine fbm octave below keeps its central differences, so the
+ * composite normal is analytic in its dominant part and differenced in its
+ * small one — not analytic throughout, which an earlier reading of this
+ * paragraph would have suggested — the d < 1.2 cull below is
  * craters()'s own cull, not a new one.
  *
  * The fine fbm term keeps its central differences. It is 0.08 of the amplitude
