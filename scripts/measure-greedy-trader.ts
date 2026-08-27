@@ -81,6 +81,7 @@ import {
 } from "../src/market";
 import type { Station } from "../src/system";
 import {
+	type PlacedBody,
 	type SystemContents,
 	arrivalPoint,
 	generateContents,
@@ -110,6 +111,11 @@ const DOCK_SECONDS = 45;
  *  anyway, so this only has to be small against the leg — but it is a modelled
  *  number and every other one in this file is named. */
 const STATION_TARGET_RADIUS_KM = 1;
+
+/** How far past an epoch boundary a wait actually goes. `marketEpoch` floors,
+ *  so stopping exactly on the boundary can still read the old epoch — the wait
+ *  has to cross it, not touch it. A millisecond of game time. */
+const EPOCH_NUDGE_MIN = 1e-6;
 
 const START_CR = 100;
 const HOLD_T = HOLD_REFERENCE_T;
@@ -194,8 +200,48 @@ interface Port {
 	posAt(gameTimeS: number): Vec3;
 }
 
+/**
+ * `placeBodies` for one `(system, clock)`, memoised.
+ *
+ * Bodies move (#6), so a placement is only reusable at the same clock value —
+ * but within one enumeration it is asked for repeatedly: `posAt` places a whole
+ * system to find one station, `massesOf` places it again for the mass list, and
+ * `jumpSeconds` wants both at the arrival clock, for every station of every one
+ * of eight neighbour systems.
+ *
+ * Cleared between runs rather than growing for the life of the process, because
+ * every run replays the clock from zero.
+ */
+let placementCache = new WeakMap<SystemContents, Map<number, PlacedBody[]>>();
+const clearPlacements = () => {
+	placementCache = new WeakMap();
+};
+const placedAt = (
+	contents: SystemContents,
+	gameTimeS: number,
+): PlacedBody[] => {
+	// **Keyed on the contents object, not on an id.** The first version keyed on
+	// `contents.star.id`, which is not unique across systems — every system's
+	// star is `star` — so one system's placements were served for another's and
+	// the run died with "station station-refinery vanished". A `WeakMap` on the
+	// object is exact by construction and needs no id to be unique.
+	let perClock = placementCache.get(contents);
+	if (!perClock) {
+		perClock = new Map();
+		placementCache.set(contents, perClock);
+	}
+	// Bodies move (#6), so a placement is reusable only at the same clock.
+	// Rounded to the millisecond, far finer than any body moves in a step.
+	const key = Math.round(gameTimeS * 1000);
+	const hit = perClock.get(key);
+	if (hit) return hit;
+	const made = placeBodies(contents, gameTimeS);
+	perClock.set(key, made);
+	return made;
+};
+
 const massesOf = (contents: SystemContents, gameTimeS: number): Mass[] =>
-	placeBodies(contents, gameTimeS)
+	placedAt(contents, gameTimeS)
 		.filter((b) => b.kind !== "station")
 		.map((b) => ({ id: b.id, pos: b.pos, radiusKm: b.radiusKm }));
 
@@ -207,7 +253,7 @@ function portsOf(record: SystemRecord, contents: SystemContents): Port[] {
 		market: marketStationOf(station, record.seed),
 		key: carrierKey(record.index, station.localCarrierId),
 		posAt: (t: number) => {
-			const found = placeBodies(contents, t).find((b) => b.id === station.id);
+			const found = placedAt(contents, t).find((b) => b.id === station.id);
 			if (!found) throw new Error(`station ${station.id} vanished`);
 			return found.pos;
 		},
@@ -488,12 +534,8 @@ function intraOptions(here: Port, st: Stance): Hop[] {
 }
 
 /** (b) A station in a system one jump away. */
-function jumpOptions(
-	here: Port,
-	systems: readonly SystemRecord[],
-	contentsFor: (r: SystemRecord) => SystemContents,
-	st: Stance,
-): Hop[] {
+function jumpOptions(here: Port, world: World, st: Stance): Hop[] {
+	const { systems, contentsFor } = world;
 	const out: Hop[] = [];
 	const inRange = neighbours(systems, here.record);
 	// Counted per **enumeration**, not per decision: `jumpOptions` runs twice
@@ -532,14 +574,9 @@ function jumpOptions(
 
 /** Everything the trader could do *right now* if it launched: §5.4's
  *  intra-system pairs and its interstellar ones, at one stance. */
-const flyingOptions = (
-	here: Port,
-	systems: readonly SystemRecord[],
-	contentsFor: (r: SystemRecord) => SystemContents,
-	st: Stance,
-): Hop[] => [
+const flyingOptions = (here: Port, world: World, st: Stance): Hop[] => [
 	...intraOptions(here, st),
-	...jumpOptions(here, systems, contentsFor, st),
+	...jumpOptions(here, world, st),
 ];
 
 /**
@@ -569,21 +606,27 @@ const flyingOptions = (
  */
 function waitOption(
 	here: Port,
-	systems: readonly SystemRecord[],
-	contentsFor: (r: SystemRecord) => SystemContents,
+	world: World,
 	st: Stance,
 ): { hop: Hop; waitMin: number } | null {
 	const min = st.t / 60;
 	const phase = here.market.phaseMin;
 	const nextEpochMin =
 		(marketEpoch(phase, min) + 1) * MARKET_PERIOD_MIN - phase;
-	const waitMin = Math.max(0, nextEpochMin - min);
-	// The nudge lands inside the new epoch rather than exactly on its boundary,
-	// where `marketEpoch`'s floor could still return the old one.
-	const after = { ...st, t: (nextEpochMin + 1e-6) * 60 };
+	// **The nudge is part of the wait, not part of the pricing.** It lands
+	// inside the new epoch rather than exactly on its boundary, where
+	// `marketEpoch`'s floor can still return the old one — and an earlier
+	// version applied it when *quoting* the post-wait menu while advancing the
+	// clock only to the boundary when the wait was *taken*. Where the boundary
+	// rounds low, the trader then re-quoted at the old epoch: it was charged for
+	// a wait and handed back the market it had been sitting in. A fourth
+	// asymmetry of the species §10.3 lists three of, and the fix is that one
+	// number is used for both.
+	const waitMin = Math.max(0, nextEpochMin + EPOCH_NUDGE_MIN - min);
+	const after = { ...st, t: st.t + waitMin * 60 };
 
 	let best: { hop: Hop; rate: number } | null = null;
-	for (const hop of flyingOptions(here, systems, contentsFor, after)) {
+	for (const hop of flyingOptions(here, world, after)) {
 		if (hop.profitCr <= 0) continue;
 		const seconds = waitMin * 60 + hop.seconds;
 		const rate = (hop.profitCr - hop.fuelCr) / (seconds / 60);
@@ -697,12 +740,16 @@ function run(
 	hours: number,
 	dockSeconds: number = DOCK_SECONDS,
 ): Result {
-	const { systems, contentsFor } = world;
-
-	const start = systems.find((r) => contentsFor(r).stations.length >= 2);
+	// The cache is keyed on a clock value, and every run replays the clock from
+	// zero — so it is cleared per run rather than kept, or run N would read run
+	// N−1's placements at the same instant.
+	clearPlacements();
+	const start = world.systems.find(
+		(r) => world.contentsFor(r).stations.length >= 2,
+	);
 	if (!start) throw new Error("no multi-station system in this galaxy");
 
-	let here = portsOf(start, contentsFor(start))[0];
+	let here = portsOf(start, world.contentsFor(start))[0];
 	let credits = START_CR;
 	let holdT = HOLD_T;
 	let deficits: DeficitMap = {};
@@ -746,8 +793,8 @@ function run(
 		const options: Hop[] = [];
 
 		const stance = { t, credits, holdT, deficits, dockSeconds, tally };
-		options.push(...flyingOptions(here, systems, contentsFor, stance));
-		const wait = waitOption(here, systems, contentsFor, stance);
+		options.push(...flyingOptions(here, world, stance));
+		const wait = waitOption(here, world, stance);
 		if (wait) options.push(wait.hop);
 		const waitMin = wait?.waitMin ?? 0;
 

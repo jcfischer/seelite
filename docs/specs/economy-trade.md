@@ -652,14 +652,23 @@ this section argues about. Over all four galaxies, each row a four-run total:
 | 60 s | 7 of 146 | 5.72× |
 | 90 s | 4 of 137 | 8.31× |
 
-**Waiting wins at every dock cost, and 45 s is the row least favourable to it.**
-A draft of this paragraph swept galaxy 0 alone — the one galaxy that never
-produces a winning wait — reported 0 wins at four of the five costs, and
-concluded the result "is not an artefact of the 45 s choice", while its own row
-showed the outcome flipping between 45 s and 60 s. That was a null result drawn
-from a population without the phenomenon. The four-galaxy sweep says the
-opposite of what the draft was reaching for: the phenomenon is robust to the
-constant, and the tail grows with it, from 3.76× to 8.31×.
+**Waiting wins at every dock cost**, and 45 s — the value everything else here
+is measured at — has the **fewest** wins of the five. So the exploit is not an
+artefact of that choice; if anything the reported 45 s row understates it.
+
+**The tail is not monotone in the dock cost, and a draft of this paragraph said
+it was.** Read the column: 4.38×, then *down* to 3.76×, then 4.68×, 5.72×,
+8.31×. The largest tail is at the longest stop and the smallest is in the middle,
+so "the tail grows with the dock cost" is a story the table does not tell — the
+honest reading is that the phenomenon survives across the whole range and the
+worst case gets worse at the long end. On the metric this section itself calls
+decisive, 45 s sits third of five rather than lowest.
+
+An earlier draft swept galaxy 0 alone — the one galaxy that never produces a
+winning wait — reported 0 wins at four of the five costs, and concluded the
+result "is not an artefact of the 45 s choice" while its own row showed the
+outcome flipping between 45 s and 60 s. That was a null result drawn from a
+population without the phenomenon.
 
 So the honest statement is: **the exploit exists, is available at about 1% of
 decision points, is worth up to 4.7× when it lands, and does not change the
@@ -692,8 +701,11 @@ the canonical lane at zero fluctuation — Computers bought at 61.6 Cr and sold 
 seventh. A draft of this section said five and called it arithmetic while
 committing none; `runsUntilHoldLimited` derives it now and the suite pins the
 six. **The minutes are claimed now, and carefully**: §10.3's sim reaches 400 Cr — the
-Large Cargo Bay, §8's first purchase — at **5.8–14.6 minutes** of perfect play
-from the opening 100 Cr across four galaxies, against a modelled 45 s dock stop.
+Large Cargo Bay, §8's first purchase — at **5.8–14.6 minutes** from the opening
+100 Cr across four galaxies, against a modelled 45 s dock stop. Not "perfect
+play", which a draft said: §10.3's trader is a greedy heuristic with a named
+39.2% blind spot and no routing, so it is a *ceiling on a human* rather than an
+optimum.
 The sim *buys* it later than that, because it keeps an 800 Cr working float
 back; that float is a property of the sim, which stops dead without it, and not
 of the economy, so affordability is the figure this section is about. A draft
