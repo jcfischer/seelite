@@ -59,9 +59,12 @@ test("beam out-damages pulse and still heat-locks", () => {
 				dt: 0.1,
 				firing: "beam",
 				targetInCone: duelTargetInCone(state.elapsed),
-				// Same shield-bank alternation as the pulse arm, so the two
-				// duels differ only in the weapon.
+				// Same shield-bank alternation and enemy schedule as the pulse
+				// arm, so the two duels differ only in the weapon.
 				hitAft: Math.floor(state.elapsed / 2) % 2 === 1,
+				enemyFiring:
+					state.targetHull > 0 && state.playerHull > 0 && state.elapsed % 4 < 2,
+				enemyHitAft: Math.floor(state.elapsed / 3) % 2 === 1,
 			});
 		return state;
 	};

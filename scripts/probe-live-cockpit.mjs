@@ -508,9 +508,18 @@ const lockShown = await combatPage
 await combatPage.keyboard.up("b");
 check("prototype: beam heat lockout is visible on the overlay", lockShown);
 await combatPage.keyboard.down("Space");
-await combatPage.waitForFunction(() =>
-	window.__seelite.combatOverlayStatus.text.includes("FIRE PULSE"),
-);
+// The feedback is claimed immediate, so the wait is bounded and fails the
+// check if pulse feedback does not appear in time.
+const pulseFeedbackShown = await combatPage
+	.waitForFunction(
+		() => window.__seelite.combatOverlayStatus.text.includes("FIRE PULSE"),
+		{ timeout: 2000 },
+	)
+	.then(
+		() => true,
+		() => false,
+	);
+check("prototype: pulse feedback appears promptly", pulseFeedbackShown);
 const combatReadout = await combatPage.evaluate(
 	() => window.__seelite.combatOverlayStatus.text,
 );
