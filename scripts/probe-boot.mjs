@@ -518,6 +518,12 @@ check(
 		again.every((v, i) => v === state.starPositions[i]),
 	`${again.length} values compared`,
 );
+// Closed as soon as its one reading is taken. Each of these is a *running
+// game*: a WebGL context, a render loop, a simulation. Left open they stack up
+// for the rest of the file, and the boot budget for the pages after them is
+// the fixed 20 s in `bootedGame`. This file opens four; leaving three live is
+// what made the last of them time out.
+await reload.close();
 
 const other = await open(`${ORIGIN}/?seed=${OTHER_SEED}`);
 const otherStars = await other.evaluate(() => {
@@ -533,6 +539,7 @@ check(
 	otherStars.some((v, i) => v !== state.starPositions[i]),
 	"the first 8 star positions are not all identical",
 );
+await other.close();
 
 /**
  * Both sides of the `?fps` gate. `fps-meter.ts` carries why it is gated at all.
@@ -608,19 +615,28 @@ async function fpsGate() {
 		),
 		await bench.evaluate(() => window.location.search || "(no query)"),
 	);
-	// Reused rather than closed and replaced. This block already costs the file
-	// one extra page; a second would be another boot for a page identical to the
-	// one in hand, and `probe-all` gives each probe 600 s on a machine that is not
-	// always idle. `URL` again, so the meter is measured on the same page the rest
-	// of this file boots rather than on one that might differ.
-	await bench.goto(`${URL}&fps`, { waitUntil: "load" });
-	await bootedGame(bench);
+	/**
+	 * A fresh page, not the workbench one navigated a third time.
+	 *
+	 * Reusing it saved a boot, was taken as a suggestion in review, and has now
+	 * been measured costing more than it saved: with
+	 * `?model-viewer=station` -> flight -> `&fps` on one page, `bootedGame`
+	 * timed out at 20 s in two consecutive suite runs while eleven other probes
+	 * passed, and this file took 116 s. A workbench page holds its own
+	 * Three.js renderer and GL context, and a game booting behind that history
+	 * is not the measurement `?fps` is meant to give — the rest of this file
+	 * asserts on a game booted into a clean page, which is what this now is.
+	 *
+	 * The saved boot was an argument; the flake is a number.
+	 */
+	await bench.close();
+	const metered = await open(`${URL}&fps`);
 	// Wait for a *rate*, not for the element. The meter mounts showing "- fps",
 	// so waiting on text containing "fps" is satisfied the instant it appears and
 	// gates on nothing: whether the read below saw a measured figure or the
 	// placeholder would come down to boot latency, on a wait written to take
 	// exactly that out. A digit is what the placeholder does not have.
-	await bench
+	await metered
 		.waitForFunction(
 			() =>
 				/\d/.test(
@@ -636,7 +652,7 @@ async function fpsGate() {
 	// the wait succeeded. Pairing the reading with the query it was taken on
 	// removes the one way that could mislead: a verdict formed on a page that is
 	// not the one under test.
-	const reading = await bench.evaluate(() => ({
+	const reading = await metered.evaluate(() => ({
 		query: window.location.search,
 		text:
 			document.querySelector("[data-fps-meter]")?.textContent ?? "(no meter)",
@@ -656,7 +672,7 @@ async function fpsGate() {
 			reading.text.includes("worst"),
 		`${reading.query} → ${reading.text}`,
 	);
-	await bench.close();
+	await metered.close();
 }
 await fpsGate();
 
