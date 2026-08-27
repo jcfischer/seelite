@@ -639,14 +639,27 @@ waiting and nothing more.** A planner that chained waits across epochs, or held
 a hold back for a re-roll it could see coming, is a strategy this sim never
 evaluates, and a one-hop rate-maximiser is not a bound on one.
 
-**And it is swept, not measured at one dock cost.** This document calls the
-dock-and-market stop "the modelled number that decides", and a longer stop makes
-flying worse relative to waiting — exactly the direction this section argues
-about. Over galaxy 0 at 15, 30, 45, 60 and 90 s, waiting won **0, 0, 0, 1 and 0**
-times out of 40, 34, 42, 40 and 37, with a best ratio of 0.66×, 0.80×, 0.70×,
-1.02× and 0.81×. The conclusion is not an artefact of the 45 s choice, and the
-4.679× tail above comes from a different galaxy rather than from a different
-dock cost.
+**And it is swept — which strengthened the finding rather than confirming it.**
+This document calls the dock-and-market stop "the modelled number that decides",
+and a longer stop makes flying worse relative to waiting, exactly the direction
+this section argues about. Over all four galaxies, each row a four-run total:
+
+| dock stop | waiting won, 4 runs | best ratio |
+|---|---|---|
+| 15 s | 4 of 153 | 4.38× |
+| 30 s | 4 of 151 | 3.76× |
+| **45 s** | **2 of 143** | **4.68×** |
+| 60 s | 7 of 146 | 5.72× |
+| 90 s | 4 of 137 | 8.31× |
+
+**Waiting wins at every dock cost, and 45 s is the row least favourable to it.**
+A draft of this paragraph swept galaxy 0 alone — the one galaxy that never
+produces a winning wait — reported 0 wins at four of the five costs, and
+concluded the result "is not an artefact of the 45 s choice", while its own row
+showed the outcome flipping between 45 s and 60 s. That was a null result drawn
+from a population without the phenomenon. The four-galaxy sweep says the
+opposite of what the draft was reaching for: the phenomenon is robust to the
+constant, and the tail grows with it, from 3.76× to 8.31×.
 
 So the honest statement is: **the exploit exists, is available at about 1% of
 decision points, is worth up to 4.7× when it lands, and does not change the
@@ -797,9 +810,9 @@ target rather than away from it.
 
 **Half the clock is a modelled constant**, so the figure is a claim about that
 too. The dock-and-market stop is 45 s in the sim and is specified nowhere — #9
-sets docking tolerances, not a duration. Swept over **galaxy 0**: the milestone
-runs **51 min at 15 s and 94 min at 90 s**. A reader who thinks 90 s is the
-right stop should read this section as met rather than beaten.
+sets docking tolerances, not a duration. Swept over all four galaxies, the
+milestone runs **29–87 min at 15 s and 64–116 min at 90 s**. A reader who thinks
+90 s is the right stop should read this section as met rather than beaten.
 
 ---
 
@@ -919,7 +932,7 @@ conceded, because it is paid on every hop and is half the clock.
 It is a **ceiling, not a player**: it fears no pirate, never misjudges a docking,
 and takes the best-rated option every time. It does **not** see every price it
 can reach — the neighbour list is truncated at eight, which bit on 39.2% of
-decisions — and an earlier draft of this line said it did. A target is falsified by a ceiling that is
+neighbour lookups — and an earlier draft of this line said it did. A target is falsified by a ceiling that is
 too slow and merely unproven by one that is too fast.
 
 | | measured, world `0x5ee11e`, four galaxies |
@@ -957,8 +970,11 @@ which compare like with like; the row is kept only so the trader's behaviour is
 on the page.
 
 **The neighbour list is truncated at eight**, and that bit on **39.2% of
-decisions** — so the trader does not see every price in range, which the
-instrument's header claimed until it was counted.
+neighbour lookups** (112 of 286) — so the trader does not see every price in
+range, which the instrument's header claimed until it was counted. Lookups
+rather than decisions: `jumpOptions` runs twice per decision point, once for the
+launch and once inside the wait branch, so a denominator called "decisions"
+was double what a reader would count.
 
 **The §5.5 comparison was wrong twice before it was right, and both faults
 flattered the same side.**
@@ -1112,7 +1128,8 @@ position, name and station silently.
    be false as written**: `scripts/measure-greedy-trader.ts` found waiting
    winning at 2 of 143 decision points, by up to 4.679×, against a median of
    0.150×, and **winning at every dock cost in the sweep** — 2 to 7 wins per
-   run, with the tail growing from 3.76× to 8.31× as the stop lengthens. §5.5
+   sweep row, each row being four runs rather than one, with the tail growing
+   from 3.76× to 8.31× as the stop lengthens. §5.5
    records what that is worth, and the answer is not "nothing": the exploit
    exists and is merely rare; §5.5 says "almost never" now and carries the
    distribution. The joint that remains is that the constants are still

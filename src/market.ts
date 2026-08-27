@@ -360,6 +360,15 @@ export interface MarketStation {
 	/** From `marketSeedFor` — the station's own stream root, `DOMAIN.MARKET`. */
 	seed: number;
 	/**
+	 * `marketPhaseMin(seed)`, carried rather than recomputed.
+	 *
+	 * It is a pure function of the seed and never varies for the life of a
+	 * station, and `marketRow` is called once per good per quote — seventeen
+	 * times a port, thousands of times a run in the instrument — each of which
+	 * was allocating a generator to re-derive the same number.
+	 */
+	phaseMin: number;
+	/**
 	 * `station-types.md` §5.2's fence flag, carried here because §4's scope is
 	 * the market's rule and not the station record's.
 	 *
@@ -462,9 +471,11 @@ export function marketStationOf(
 		throw new Error(
 			`station type ${station.type} has no market offset (economy-trade.md §3)`,
 		);
+	const seed = marketSeedFor(systemSeed, station.localCarrierId);
 	return {
 		type: station.type as StationTypeKey,
-		seed: marketSeedFor(systemSeed, station.localCarrierId),
+		seed,
+		phaseMin: marketPhaseMin(seed),
 		blackMarket: station.blackMarket,
 	};
 }
@@ -496,7 +507,7 @@ export function marketRow(
 		throw new Error(
 			`${station.type} does not list ${commodity.name} (economy-trade.md §4)`,
 		);
-	const epoch = marketEpoch(marketPhaseMin(station.seed), gameTimeMin);
+	const epoch = marketEpoch(station.phaseMin, gameTimeMin);
 	return marketRowAt(
 		commodity,
 		economy,

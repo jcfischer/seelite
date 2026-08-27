@@ -71,7 +71,6 @@ import {
 	fullKitCr,
 	type DeficitMap,
 	listsCommodity,
-	marketPhaseMin,
 	marketRow,
 	marketStationOf,
 	marketEpoch,
@@ -408,8 +407,9 @@ interface Result {
 	 */
 	kitAffordableAtMinutes: number | null;
 	/** How often `NEIGHBOUR_LIMIT` hid part of the jump range, over how many
-	 *  decisions — the denominator the header's claim needs. */
-	tally: { truncated: number; decisions: number };
+	 *  neighbour lookups — the denominator the header's claim needs. Lookups
+	 *  rather than decisions: `jumpOptions` runs twice per decision point. */
+	tally: { truncated: number; enumerations: number };
 	/** Every decision point where a wait was on the table, as
 	 *  `bestWaitRate / bestFlyRate`. A maximum alone cannot tell one lucky
 	 *  moment from a strategy. */
@@ -437,7 +437,7 @@ interface Stance {
 	 * printed — so the figure that exists to keep "how often that bites is
 	 * counted" honest spanned nine runs and was reported beside four-run tables.
 	 */
-	tally: { truncated: number; decisions: number };
+	tally: { truncated: number; enumerations: number };
 }
 
 /**
@@ -496,8 +496,12 @@ function jumpOptions(
 ): Hop[] {
 	const out: Hop[] = [];
 	const inRange = neighbours(systems, here.record);
+	// Counted per **enumeration**, not per decision: `jumpOptions` runs twice
+	// for each decision point — once from `flyingOptions` and once inside
+	// `waitOption` — so a denominator called "decisions" was double what a
+	// reader would count. The rate is unaffected; the absolute figure was not.
 	if (inRange.length > NEIGHBOUR_LIMIT) st.tally.truncated++;
-	st.tally.decisions++;
+	st.tally.enumerations++;
 	for (const record of inRange.slice(0, NEIGHBOUR_LIMIT)) {
 		const ly = distanceLy(here.record.pos, record.pos);
 		// `neighbours` already bounds this at `JUMP_RANGE_LY`, which is
@@ -570,7 +574,7 @@ function waitOption(
 	st: Stance,
 ): { hop: Hop; waitMin: number } | null {
 	const min = st.t / 60;
-	const phase = marketPhaseMin(here.market.seed);
+	const phase = here.market.phaseMin;
 	const nextEpochMin =
 		(marketEpoch(phase, min) + 1) * MARKET_PERIOD_MIN - phase;
 	const waitMin = Math.max(0, nextEpochMin - min);
@@ -589,21 +593,111 @@ function waitOption(
 	return best ? { hop: best.hop, waitMin } : null;
 }
 
+/**
+ * One galaxy's systems and their contents, generated once.
+ *
+ * **Shared across the dock sweep**, which re-enters `run` five times per galaxy
+ * for data that does not depend on the dock cost — twenty galaxy generations,
+ * each up to `MAX_LAYOUT_ATTEMPTS` layout attempts, plus a cold contents cache
+ * every time.
+ */
+interface World {
+	systems: readonly SystemRecord[];
+	contentsFor: (r: SystemRecord) => SystemContents;
+}
+
+function worldFor(worldSeed: number, galaxy: number): World {
+	const systems = generateGalaxy(worldSeed, galaxy).systems;
+	const contentsOf = new Map<number, SystemContents>();
+	return {
+		systems,
+		contentsFor: (r: SystemRecord): SystemContents => {
+			const hit = contentsOf.get(r.index);
+			if (hit) return hit;
+			const made = generateContents(r);
+			contentsOf.set(r.index, made);
+			return made;
+		},
+	};
+}
+
+/**
+ * The trader's books: everything the shopping pass reads and writes.
+ *
+ * A struct rather than a fistful of `run` locals, because the purchase pass is
+ * a self-contained concern that a reader otherwise has to scroll back through
+ * the flying loop to follow.
+ */
+interface Ledger {
+	credits: number;
+	holdT: number;
+	spentCr: number;
+	kitAffordableAt: number | null;
+	readonly kitCr: number;
+	/** Still to buy, in §8's order. An item is skipped rather than blocking the
+	 *  list when this station does not sell it — the shipyard exclusives wait
+	 *  for a shipyard. */
+	readonly remaining: Equipment[];
+	/** Per item, the first moment credits covered its price — wherever the
+	 *  trader was standing. That is §6's compounding curve; *buying* also needs
+	 *  a station that sells it and the working float on top. */
+	readonly affordableAt: Map<string, number>;
+	readonly upgrades: {
+		name: string;
+		atMinutes: number;
+		affordableAtMinutes: number;
+	}[];
+}
+
+/**
+ * One dock's worth of shopping: stamp affordability, then buy what this station
+ * sells and the float allows, in §8's order.
+ *
+ * **The scope check is not decoration.** An earlier version sorted the whole
+ * list by price and bought a Military Laser at a trade station, handing over
+ * the exclusives `station-types.md` §4.1 exists to make you travel for.
+ *
+ * Affordability is stamped for **every** item the credits now cover, not just
+ * the next one on the list. Probing a single pointer meant that after buying
+ * item N, item N+1 went unchecked until the following hop — a whole leg later —
+ * so every figure after the first was stretched by a leg it did not take.
+ */
+function shop(port: Port, led: Ledger, tMin: number): void {
+	const probe = () => {
+		for (const item of led.remaining)
+			if (led.credits >= item.priceCr && !led.affordableAt.has(item.name))
+				led.affordableAt.set(item.name, tMin);
+	};
+
+	probe();
+	if (led.kitAffordableAt === null && led.credits + led.spentCr >= led.kitCr)
+		led.kitAffordableAt = tMin;
+
+	for (;;) {
+		const i = led.remaining.findIndex(
+			(e) => sellsIt(e, port) && led.credits >= e.priceCr + WORKING_FLOAT_CR,
+		);
+		if (i === -1) break;
+		const item = led.remaining[i];
+		led.credits -= item.priceCr;
+		led.spentCr += item.priceCr;
+		if (item.name === "Large Cargo Bay") led.holdT += LARGE_BAY_T;
+		led.upgrades.push({
+			name: item.name,
+			atMinutes: tMin,
+			affordableAtMinutes: led.affordableAt.get(item.name) ?? tMin,
+		});
+		led.remaining.splice(i, 1);
+		probe();
+	}
+}
+
 function run(
-	worldSeed: number,
-	galaxy: number,
+	world: World,
 	hours: number,
 	dockSeconds: number = DOCK_SECONDS,
 ): Result {
-	const systems = generateGalaxy(worldSeed, galaxy).systems;
-	const contentsOf = new Map<number, SystemContents>();
-	const contentsFor = (r: SystemRecord): SystemContents => {
-		const hit = contentsOf.get(r.index);
-		if (hit) return hit;
-		const made = generateContents(r);
-		contentsOf.set(r.index, made);
-		return made;
-	};
+	const { systems, contentsFor } = world;
 
 	const start = systems.find((r) => contentsFor(r).stations.length >= 2);
 	if (!start) throw new Error("no multi-station system in this galaxy");
@@ -626,22 +720,16 @@ function run(
 					? 1
 					: a.priceCr - b.priceCr,
 		);
-	const upgrades: {
-		name: string;
-		atMinutes: number;
-		affordableAtMinutes: number;
-	}[] = [];
-	/** Still to buy, in §8's order. An item is skipped rather than blocking the
-	 *  list when the station it is standing at does not sell it — the shipyard
-	 *  exclusives wait for a shipyard. */
-	const remaining = [...shopping];
-	/** Per item, the first moment credits covered its price — wherever the
-	 *  trader was standing. That is §6's compounding curve; *buying* also needs
-	 *  a station that sells it and the working float on top. */
-	const affordableAt = new Map<string, number>();
-	const kitCr = fullKitCr();
-	let spentCr = 0;
-	let kitAffordableAt: number | null = null;
+	const led: Ledger = {
+		credits,
+		holdT,
+		spentCr: 0,
+		kitAffordableAt: null,
+		kitCr: fullKitCr(),
+		remaining: [...shopping],
+		affordableAt: new Map<string, number>(),
+		upgrades: [],
+	};
 
 	let hops = 0;
 	let waits = 0;
@@ -651,7 +739,7 @@ function run(
 	let jumpMinutes = 0;
 	let dockMinutes = 0;
 	const waitRatios: number[] = [];
-	const tally = { truncated: 0, decisions: 0 };
+	const tally = { truncated: 0, enumerations: 0 };
 
 	while (t < limit) {
 		const min = t / 60;
@@ -708,45 +796,16 @@ function run(
 		if (hop.kind === "jump") jumps++;
 		else intra++;
 
-		// Stamped for **every** item the credits now cover, not just the next one
-		// on the list. Probing a single pointer meant that after buying item N,
-		// item N+1's affordability went unchecked until the following hop — a
-		// whole leg later — so every figure after the first was stretched by a
-		// leg it did not take.
-		const probeAffordable = () => {
-			for (const item of remaining)
-				if (credits >= item.priceCr && !affordableAt.has(item.name))
-					affordableAt.set(item.name, t / 60);
-		};
+		led.credits = credits;
+		led.holdT = holdT;
+		shop(here, led, t / 60);
+		credits = led.credits;
+		holdT = led.holdT;
 
-		probeAffordable();
-		if (kitAffordableAt === null && credits + spentCr >= kitCr)
-			kitAffordableAt = t / 60;
-		// Buy whatever this station sells and the float allows, in §8's order.
-		// **The scope check is not decoration**: an earlier version sorted the
-		// whole list by price and bought a Military Laser at a trade station,
-		// which hands over the exclusives §4.1 exists to make you travel for.
-		for (;;) {
-			const i = remaining.findIndex(
-				(e) => sellsIt(e, here) && credits >= e.priceCr + WORKING_FLOAT_CR,
-			);
-			if (i === -1) break;
-			const item = remaining[i];
-			credits -= item.priceCr;
-			spentCr += item.priceCr;
-			if (item.name === "Large Cargo Bay") holdT += LARGE_BAY_T;
-			upgrades.push({
-				name: item.name,
-				atMinutes: t / 60,
-				affordableAtMinutes: affordableAt.get(item.name) ?? t / 60,
-			});
-			remaining.splice(i, 1);
-			probeAffordable();
-		}
-		if (remaining.length === 0) break;
+		if (led.remaining.length === 0) break;
 		// Once the capital milestone is passed there is nothing left for this
 		// sim to measure: what remains is a routing problem it does not model.
-		if (kitAffordableAt !== null) break;
+		if (led.kitAffordableAt !== null) break;
 	}
 
 	return {
@@ -759,8 +818,8 @@ function run(
 		waitMinutes,
 		jumpMinutes,
 		dockMinutes,
-		upgrades,
-		kitAffordableAtMinutes: kitAffordableAt,
+		upgrades: led.upgrades,
+		kitAffordableAtMinutes: led.kitAffordableAt,
 		tally,
 		waitRatios,
 	};
@@ -797,7 +856,15 @@ console.log(
 );
 
 const GALAXIES = [0, 1, 2, 3].filter((g) => g < GALAXY_COUNT);
-const results = GALAXIES.map((g) => ({ g, r: run(worldSeed, g, hours) }));
+/** Each galaxy built once and reused by the sweep below. */
+const WORLDS = GALAXIES.map((g) => ({ g, world: worldFor(worldSeed, g) }));
+const results = WORLDS.map(({ g, world }) => ({ g, r: run(world, hours) }));
+
+function priceOf(name: string): number {
+	const found = EQUIPMENT.find((e) => e.name === name);
+	if (!found) throw new Error(`no equipment named ${name}`);
+	return found.priceCr;
+}
 
 /** One derivation, two tables. Written out twice they drift on the next edit,
  *  and the two copies already spelled the kit total differently. */
@@ -828,12 +895,6 @@ for (const { g, r } of results) {
 			`${String(r.intra).padStart(8)}${String(r.jumps).padStart(8)}` +
 			`${String(r.waits).padStart(8)}   ${kit === null ? "not in cap" : `${kit.toFixed(0)} min`}`,
 	);
-}
-
-function priceOf(name: string): number {
-	const found = EQUIPMENT.find((e) => e.name === name);
-	if (!found) throw new Error(`no equipment named ${name}`);
-	return found.priceCr;
 }
 
 console.log("\ntime to each upgrade, minutes (galaxy 0)");
@@ -920,7 +981,7 @@ console.log(
 );
 console.log("  dock s   kit affordable      Cr/min   waits won    max×");
 for (const dock of [15, 30, 45, 60, 90]) {
-	const swept = GALAXIES.map((g) => run(worldSeed, g, hours, dock));
+	const swept = WORLDS.map(({ world }) => run(world, hours, dock));
 	const kits = swept
 		.map((r) => summarize(r).kit)
 		.filter((k): k is number => k !== null);
@@ -944,10 +1005,13 @@ for (const dock of [15, 30, 45, 60, 90]) {
 	// Over the four reported runs only — the dock sweep's five extra runs are
 	// not in this figure, which is what made the first version of it wrong.
 	const truncated = results.reduce((sum, { r }) => sum + r.tally.truncated, 0);
-	const decisions = results.reduce((sum, { r }) => sum + r.tally.decisions, 0);
+	const enumerations = results.reduce(
+		(sum, { r }) => sum + r.tally.enumerations,
+		0,
+	);
 	console.log(
 		`\nneighbour list truncated at ${NEIGHBOUR_LIMIT} on ${truncated} of ` +
-			`${decisions} decisions (${((100 * truncated) / Math.max(decisions, 1)).toFixed(1)}%) ` +
+			`${enumerations} neighbour lookups (${((100 * truncated) / Math.max(enumerations, 1)).toFixed(1)}%) ` +
 			"— where it bit, the trader did not see the whole jump range.",
 	);
 }

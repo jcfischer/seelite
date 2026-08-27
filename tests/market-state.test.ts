@@ -87,7 +87,12 @@ describe("§2 the persistence identity is a table, not a display key", () => {
 				expect(station.type).not.toBe("outpost");
 				seen++;
 			}
-		expect(seen).toBeGreaterThan(100);
+		// **Pinned, not bounded.** `economy-trade.md` §10.3 quotes this corpus as
+		// 117 stations, and two figures were already invented in this node by
+		// reading a `>` threshold as though it were a measurement. A threshold
+		// leaves a generator change that drops the corpus to 105 green and the
+		// spec silently wrong; an equality is what makes the prose checkable.
+		expect(seen).toBe(117);
 	});
 });
 
@@ -119,7 +124,7 @@ describe("§5.1 the base market is f(stationSeed, epoch)", () => {
 	test("every good is byte-identical across one whole epoch", () => {
 		const { record, stations } = stationsOf(3);
 		const station = marketStation(record.seed, stations[0]);
-		const phase = marketPhaseMin(station.seed);
+		const phase = station.phaseMin;
 		// Two moments inside the same epoch, at its two ends.
 		const start = MARKET_PERIOD_MIN * 4 - phase;
 		const end = start + MARKET_PERIOD_MIN - 1e-6;
@@ -138,7 +143,7 @@ describe("§5.1 the base market is f(stationSeed, epoch)", () => {
 		for (const record of SYSTEMS)
 			for (const s of generateContents(record).stations) {
 				const station = marketStation(record.seed, s);
-				const phase = marketPhaseMin(station.seed);
+				const phase = station.phaseMin;
 				const boundary = MARKET_PERIOD_MIN * 3 - phase;
 				const before = stationFluct(
 					station.seed,
@@ -287,7 +292,7 @@ describe("§5.1 the market is independent of draw order elsewhere", () => {
 		const s = stations[0];
 		const station = marketStation(record.seed, s);
 		const t = 613.5;
-		const epoch = marketEpoch(marketPhaseMin(station.seed), t);
+		const epoch = marketEpoch(station.phaseMin, t);
 		for (const good of stationCommodities(station)) {
 			const played = marketRow(good, record.economy, station, t);
 			const swept = marketRowAt(
@@ -399,7 +404,8 @@ describe("§5.5 the deficit map is sparse, lazy, and round-trips", () => {
 					t,
 				);
 			}
-		expect(Object.keys(map).length).toBeGreaterThan(50);
+		// Pinned for the reason above: §10.3 quotes this as a 61-row map.
+		expect(Object.keys(map).length).toBe(61);
 
 		const back = parseDeficits(JSON.parse(JSON.stringify(map)));
 		expect(back).toEqual(map);
