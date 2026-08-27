@@ -755,7 +755,9 @@ a different *kind* of station, with its own name on the wall, is not the same
 arrival twice.
 
 The flag is **per-galaxy player state, not a per-carrier-slot row.** It is four
-booleans, not one row per station, which is the whole reason to gate on type.
+booleans, not one row per station, which is the whole reason to gate on type —
+**three of them reachable today**, because no outpost is generated (§12.7's
+joint 5).
 
 **Per galaxy means the four reset on entering a new one**, and that is a choice
 rather than a consequence of where the bits live. Eight galaxies is eight sets of
@@ -772,15 +774,28 @@ per-galaxy envelope — so the *category* exists and the *scope* is right. What
 neither fixes is the **shape**: nothing there contemplates a per-station-*type*
 arrival flag specifically. §1's own escape clause is the honest route — "and
 other typed domains approved later" — so this is a typed domain **#46 must
-approve and bound**, not one already sitting there waiting. §6 of that spec bounds
-every other domain and will have to bound this one; four booleans per galaxy is
-the bound being asked for.
+approve and bound**, not one already sitting there waiting. §6 of that spec bounds several
+domains and **explicitly does not bound this class** — it says "the save/load
+decision owes fixed bounds for the map's per-galaxy visited and legal-status
+state", which is a deferral rather than a bound. So the ask is smaller and more
+awkward than an earlier draft of this paragraph made it: these flags join a class
+already waiting on a decision nobody has taken, and four booleans per galaxy is a
+bound being *offered* rather than one being inherited.
 
 ### 12.2 The docked state, and leaving
 
 **Decision E5: docked means flight is suspended.** The arrival parks the ship at
-a defined docked position — inside the throat for a slot, on the deck for a pad —
-and the throttle, the stick and the docking computer all go inert.
+the docked position and the throttle, the stick and the docking computer all go
+inert.
+
+**The docked position is an offset from the aperture origin, in the station's
+rotating frame** (derived here). "Inside the throat" and "on the deck" are
+descriptions, not coordinates, and §12.6's obligation 9 cannot be written against
+a description. So it is fixed the way §4.1 fixes slot phase — a quantity computed
+in sim, in the station's own frame, that the renderer mirrors: **on the aperture
+axis, one throat-depth inside the plane for a slot; on the axis at the plane for
+a pad**, which is the deck surface. Both are therefore functions of
+`STATION_GEOMETRY` and E7's throat depth, and neither is a new constant.
 
 **The world keeps running.** #10's constraint is binding and unchanged: sim time
 is never compressed, so the clock advances and the bodies stay on their orbits
@@ -794,6 +809,24 @@ explicitly because the last time that boundary was left implicit —
 
 **Launch is the mirror of the arrival** and is built with it rather than being its
 own decision: the ship leaves the way it came in, and flight resumes when it does.
+
+**Launch gets the arrival's treatment, not a sentence saying it is like it.**
+"The mirror of the arrival" is how this paragraph read for four review rounds,
+and each round found another place where the mirror had not actually been
+applied — the collision exemption named the arriving and parked ship and not the
+launching one, and §12.6 checked the arrival's frame and the parked ship's and
+not the departure's. So, explicitly and in the same terms §12.1 and §12.3 use:
+
+- The launch traversal is a **scripted position law in the station's rotating
+  frame**, like the arrival and for the same reason: the throat turns, and a law
+  written in the translating frame alone walks the ship into a wall that moved.
+- The ship is **not collidable during it** (§12.3's third row).
+- **It stops being exempt when it clears the aperture plane outward** — the
+  mirror of "the exemption begins on the tick after a pass". From that instant it
+  is an ordinary flying ship and #75's system owns it. The plane is the boundary
+  in both directions, which is what makes it one rule rather than two.
+- Flight controls become live at that same instant, not before: a player steering
+  inside the throat is the control problem E2 declined.
 
 **It shares E4's flag, which makes it always skippable in practice.** The flag is
 set by arriving, and a player cannot launch from a station they did not arrive
@@ -878,13 +911,14 @@ probe that has to be re-pointed when it lands.
 
 **Decision E7: one shared throat**, built by extending the aperture recess.
 `station-mesh.ts`'s `buildAperture` is already one function, called by **every**
-form at a per-form face depth — six of those calls carry slots and the rest
-carry pads — and it reads `STATION_GEOMETRY`, so the throat inherits the
-aperture's dimensions and a retune of the slot moves it. (An earlier draft said
-"all eleven slot-bearing forms", which was wrong twice: the calls number ten, and
-four of them are pads. A count in prose is the thing that rots, which is why this
-sentence now says *every* and lets the code hold the number.) Distinct interiors
-per form were declined: form-authoring effort spent on a surface
+form at a per-form face depth, and it reads `STATION_GEOMETRY` — so the throat
+inherits the aperture's dimensions, a retune of the slot moves it, and **which
+forms get a throat is decided by `aperture.kind`, not by a list here.** (An
+earlier draft said "all eleven slot-bearing forms" and a later one replaced it
+with a different count. Both were wrong, and the second was wrong *inside a
+sentence correcting the first*. The rule this section is now following is the one
+it stated: prose does not hold counts.) Distinct interiors per form were
+declined: form-authoring effort spent on a surface
 seen for a few seconds down one axis, and #56 withdrew its outline-identity gate
 on the neighbouring principle that a metric should not drive a design.
 
@@ -920,16 +954,23 @@ at all.
 
 So the derivation is a function of the **system name and the station's type**, and
 the parent planet is at most a decoration on top of that. Type is already unique
-per station within a system (`system.ts` places at most one of each) and is
-already the key of every table in `station.ts`, so this is uniqueness by
-construction rather than by a check. A fourth station type, or a second station of
-one type in a system, breaks that — and the `Record<StationType, …>` discipline
-means the first is a compile error while the second is not, so **if a system ever
-gains two stations of one type, the derivation must fold in `localCarrierId`**,
-which is the identity that is unique by contract — appended as a discriminator,
-so an existing station's name never moves when a second one appears beside it.
-Because that break is silent, §12.6 asserts name uniqueness within a system
-rather than trusting the construction argument.
+per station within a system (`system.ts` places at most one of each), so this is
+uniqueness by construction rather than by a check.
+
+**What breaks it is a second station of one type in one system — and nothing
+else.** A *new* station type does not: `station.ts` already declares four, and a
+fifth still leaves each system with at most one of each. (An earlier draft
+claimed a fourth type would break this and would be caught by a compile error.
+Both halves were wrong — the fourth type already exists, and the compile-time
+guarantee it invoked belongs to `Record<StationType, …>` tables, which a name
+derivation need not be.)
+
+The remedy, and who applies it: **append `localCarrierId` as a discriminator** —
+appended, so an existing station's name never moves when a second one appears
+beside it. **§12.6's obligation 10 failing is the trigger**, and the fallback
+ships with the generator change that caused it rather than being deferred. A
+silent break with a detecting test and an unassigned remedy is a red test with no
+owner.
 
 **Decision E10: the shield is a quad built in `station-mesh.ts`, with its texture
 supplied by the renderer.** That module is headless-tested and contains no
@@ -975,13 +1016,16 @@ Two tiers, as everywhere else in this spec.
    prose: "it terminates" is satisfied by an arrival of any length, so a retune
    to twelve seconds would pass every other row here. The bound is what §12.7
    says is safe to move; a value outside it is not a tuning change.
-7. **The arrival is evaluated in the station's rotating frame.** §12.3 names
+7. **The arrival *and the launch traversal* are evaluated in the station's
+   rotating frame.** §12.3 names
    this as the one way a scripted path can still end somewhere it was not put,
    and a hazard a spec names and does not check is prose. Run the law against a
    spinning station at both ends of §4's range and assert the ship stays inside
    the throat's cross-section at **every sub-step**, not merely at the ends — a
    law that is right at the endpoints and wrong between them is exactly what a
-   translating-frame implementation looks like.
+   translating-frame implementation looks like. Both directions, because E5 makes
+   launch the mirror and a mirror asserted only on one side is the gap four
+   review rounds kept finding.
 8. **The arriving, parked and launching ship are in a state a collision system
    can see.** The tempting form — "assert the ship is not collidable" — is
    **vacuous**, because §12.3 records that nothing collides with anything today,
