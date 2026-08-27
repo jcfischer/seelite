@@ -19,7 +19,7 @@ const VELOCITY_READOUT =
 	/^(?:NOSE-LOCKED CRUISE|.+ FRAME · INERTIAL \d+ km\/s)$/;
 const VELOCITY_READOUT_SOURCE = VELOCITY_READOUT.source;
 const COMBAT_STATUS =
-	/^FIRE (?:SAFE|PULSE|BEAM) · LOCK (?:READY|ACQUIRING) · MISSILE (?:WARNING|CLEAR) · INTERDICTION (?:ACTIVE|CLEAR)$/;
+	/^FIRE (?:SAFE|PULSE|BEAM) · LOCK (?:READY|ACQ) · MISSILE (?:WARNING|CLEAR) · INTD (?:ACTIVE|CLEAR)$/;
 const COMBAT_STATUS_SOURCE = COMBAT_STATUS.source;
 
 function textPixelsMatch(canvas, renderedText) {
@@ -579,36 +579,12 @@ await narrowCombatPage.waitForFunction(
 const narrowOverlay = await narrowCombatPage.evaluate(() => {
 	const game = window.__seelite;
 	const overlay = document.querySelector("#overlay");
-	const context = overlay.getContext("2d");
-	// The overlay draws four centred lines; every one must fit the glass width
-	// at the font the game renders it with (fixed 12px start, then fitted).
-	const status = game.combatOverlayStatus;
-	// Measure each line at the size the game's fitter would draw it at: the
-	// probe mirrors the fit loop instead of hardcoding a font, so a narrow
-	// viewport that forces a shrink is verified at the shrunk size.
-	const lines = [
-		"COMBAT PROTOTYPE — hold SPACE pulse · B beam · Z warning · R ECM",
-		`TARGET  SHIELDS F ${game.combat.targetForeShield.toFixed(0)}  A ${game.combat.targetAftShield.toFixed(0)}  HULL ${game.combat.targetHull.toFixed(0)}`,
-		`PLAYER  SHIELDS F ${game.combat.foreShield.toFixed(0)}  A ${game.combat.aftShield.toFixed(0)}  HULL ${game.combat.playerHull.toFixed(0)}`,
-		status.text,
-	];
-	const fit = (text) => {
-		let size = 12;
-		context.font = `${size}px ui-monospace, monospace`;
-		while (size > 8 && context.measureText(text).width > overlay.width - 16) {
-			size -= 1;
-			context.font = `${size}px ui-monospace, monospace`;
-		}
-		return {
-			text: text.slice(0, 24),
-			width: context.measureText(text).width,
-			font: context.font,
-		};
-	};
-	const measured = lines.map(fit);
-	const fits = measured.every((m) => m.width <= overlay.width - 16);
+	// The game exposes the four overlay lines it actually drew, at the font
+	// each was fitted to; assert on those rather than reimplementing the fitter.
+	const lines = game.combatOverlayLines;
+	const fits = lines.every((line) => line.width <= overlay.width - 16);
 	const rendered = globalThis.__seeliteMeasureCockpit().combatOverlayText;
-	return { rendered, fits, canvas: overlay.width, measured };
+	return { rendered, fits, canvas: overlay.width };
 });
 check(
 	"prototype: all combat overlay lines fit the narrow viewport",

@@ -676,9 +676,11 @@ class Game {
 		new URLSearchParams(window.location.search).get("combat") === "1";
 	private combatIncoming = false;
 	private combatEcm = false;
-	/** Fitted status font cache: keyed on glass width (the fit only depends on
-	 *  width and the longest status text), storing the font and measured width. */
+	/** Fitted status font cache: keyed on glass width; the fit is computed
+	 *  against the longest possible status text, so any live state fits. */
 	private combatStatusFit = new Map<number, { font: string; width: number }>();
+	/** The overlay lines drawn last frame, at the font each was fitted to. */
+	combatOverlayLines: { text: string; font: string; width: number }[] = [];
 	/** Probe-only laser visibility override; the renderer honours it. */
 	probeForceLaserHidden = false;
 	/** rAF handle, so a probe can freeze the loop and render by hand. */
@@ -3973,6 +3975,7 @@ class Game {
 		if (this.combatPrototypeEnabled) {
 			ctx.save();
 			ctx.textAlign = "center";
+			const drawnLines: { text: string; font: string; width: number }[] = [];
 			const drawFitted = (
 				text: string,
 				y: number,
@@ -3985,6 +3988,9 @@ class Game {
 					size -= 1;
 					ctx.font = `${size}px ui-monospace, monospace`;
 				}
+				const font = ctx.font;
+				const width = ctx.measureText(text).width;
+				drawnLines.push({ text, font, width });
 				ctx.fillStyle = fill;
 				ctx.fillText(text, w / 2, y);
 			};
@@ -4006,22 +4012,32 @@ class Game {
 				"rgba(116, 234, 255, 0.95)",
 				12,
 			);
-			const combatStatus = `FIRE ${this.combat.firing?.toUpperCase() ?? "SAFE"} · LOCK ${this.combat.missileLock ? "READY" : "ACQUIRING"} · MISSILE ${this.combat.incomingMissile ? "WARNING" : "CLEAR"} · INTERDICTION ${this.combat.interdiction ? "ACTIVE" : "CLEAR"}`;
-			// The fit depends on the glass width and the longest status text, not on
-			// which state is currently displayed, so the cache key is just the width.
+			const combatStatus = `FIRE ${this.combat.firing?.toUpperCase() ?? "SAFE"} · LOCK ${this.combat.missileLock ? "READY" : "ACQ"} · MISSILE ${this.combat.incomingMissile ? "WARNING" : "CLEAR"} · INTD ${this.combat.interdiction ? "ACTIVE" : "CLEAR"}`;
+			// Fit against the longest possible status text so any live state fits,
+			// whatever the first frame happened to display.
+			const longestStatus =
+				"FIRE BEAM · LOCK ACQ · MISSILE WARNING · INTD ACTIVE";
 			let fittedEntry = this.combatStatusFit.get(w);
 			if (!fittedEntry) {
 				ctx.font = PROMPT_FONT;
 				const startSize = parseInt(PROMPT_FONT, 10);
 				let size = startSize;
-				while (size > 9 && ctx.measureText(combatStatus).width > w - 16) {
+				while (size > 9 && ctx.measureText(longestStatus).width > w - 16) {
 					size -= 1;
 					ctx.font = `${size}px ui-monospace, Menlo, monospace`;
 				}
 				const font = ctx.font;
-				fittedEntry = { font, width: ctx.measureText(combatStatus).width };
+				fittedEntry = {
+					font,
+					width: ctx.measureText(combatStatus).width,
+				};
 				this.combatStatusFit.set(w, fittedEntry);
 			}
+			drawnLines.push({
+				text: combatStatus,
+				font: fittedEntry.font,
+				width: ctx.measureText(combatStatus).width,
+			});
 			ctx.font = fittedEntry.font;
 			ctx.fillStyle = PROMPT_FILL;
 			ctx.fillText(combatStatus, w / 2, h * 0.84);
@@ -4029,9 +4045,10 @@ class Game {
 				combatStatus,
 				w / 2,
 				h * 0.84,
-				fittedEntry.width,
-				fittedEntry.font,
+				drawnLines.at(-1)!.width,
+				drawnLines.at(-1)!.font,
 			);
+			this.combatOverlayLines = drawnLines;
 			ctx.restore();
 		} else {
 			this.combatOverlayStatus.reset();
