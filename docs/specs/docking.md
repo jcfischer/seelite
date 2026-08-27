@@ -480,6 +480,21 @@ actually protects: §7.1 records that "a slow scripted arc that made the compute
 safer but never faster" was on the table and declined, and a shared arc is not
 that arc. What D4 forbids is ceremony the computer pays *and a pilot does not*.
 
+**The plain reading says otherwise and is not dismissed.** The ratified sentence
+carries no comparator — "no ceremony and no penalty" — and on its face a four-to-
+six-second arrival is ceremony the computer now pays. Two things weigh against
+reading it that way and neither is decisive on its own. §7.1 is the only place
+the phrase is explained, and it explains it comparatively. And a literal reading
+would forbid the arrival for a *pilot* too, since §12.1 gives them the same one —
+which makes D4, a decision about an item of equipment, the thing that governs
+what happens after a hand-flown entry. That is a wider claim than a section
+titled "The docking computer" should be making.
+
+So this is recorded as an **amendment on a contested reading**, not as a
+settled one. The author's own first judgement was that E3 reopened D4; #74's
+review is where that reversed. If the reading is wrong, the remedy is §7's
+price or E3's duration — not the tolerances, per §7.1.
+
 **Two legs, and the corridor between them is a cone** (implementation finding,
 2026-08-27). The computer lines up on a fixed point out along the axis and then
 runs in at the slot; what is not obvious until it is flown is what decides the
@@ -742,6 +757,14 @@ arrival twice.
 The flag is **per-galaxy player state, not a per-carrier-slot row.** It is four
 booleans, not one row per station, which is the whole reason to gate on type.
 
+**Per galaxy means the four reset on entering a new one**, and that is a choice
+rather than a consequence of where the bits live. Eight galaxies is eight sets of
+four first-times, which sounds like the tax E4 exists to avoid — but a galactic
+hyperdrive jump is the game's largest discontinuity, the stations on the far side
+are a different set, and `persistent-world-state.md` §7 makes the envelope
+per-galaxy anyway, so a global flag would be the special case needing an
+argument. A new game resets them with everything else.
+
 **What `persistent-world-state.md` licenses, stated precisely, because an earlier
 draft of this paragraph claimed more.** §1 names "visited flags" among the facts
 the overlay stores and §7 puts "player knowledge and visited state" in the
@@ -778,6 +801,7 @@ at — so by the time any launch happens, that type's flag is already set. State
 rather than left implicit: the alternative reading, that launch has its own flag,
 would make the first launch from each type unskippable *immediately after* the
 player watched the identical motion inbound.
+
 **`UNDOCK_CLEAR_KM` retires the day that lands.** #68 shipped it as an anti-latch
 measure and said so in its own docstring — it exists because `dockedAt` was set
 and never cleared, not because leaving was designed.
@@ -846,10 +870,14 @@ probe that has to be re-pointed when it lands.
 ### 12.4 What the arrival is made of
 
 **Decision E7: one shared throat**, built by extending the aperture recess.
-`station-mesh.ts`'s `buildAperture` is already one function called by all eleven
-slot-bearing forms at a per-form face depth, and it reads `STATION_GEOMETRY`, so
-the throat inherits the aperture's dimensions and a retune of the slot moves it.
-Eleven distinct interiors were declined: form-authoring effort spent on a surface
+`station-mesh.ts`'s `buildAperture` is already one function, called by **every**
+form at a per-form face depth — six of those calls carry slots and the rest
+carry pads — and it reads `STATION_GEOMETRY`, so the throat inherits the
+aperture's dimensions and a retune of the slot moves it. (An earlier draft said
+"all eleven slot-bearing forms", which was wrong twice: the calls number ten, and
+four of them are pads. A count in prose is the thing that rots, which is why this
+sentence now says *every* and lets the code hold the number.) Distinct interiors
+per form were declined: form-authoring effort spent on a surface
 seen for a few seconds down one axis, and #56 withdrew its outline-identity gate
 on the neighbouring principle that a metric should not drive a design.
 
@@ -937,7 +965,18 @@ Two tiers, as everywhere else in this spec.
    prose: "it terminates" is satisfied by an arrival of any length, so a retune
    to twelve seconds would pass every other row here. The bound is what §12.7
    says is safe to move; a value outside it is not a tuning change.
-7. **Station names are unique within a system.** E9 argues uniqueness by
+7. **The arrival is evaluated in the station's rotating frame.** §12.3 names
+   this as the one way a scripted path can still end somewhere it was not put,
+   and a hazard a spec names and does not check is prose. Run the law against a
+   spinning station at both ends of §4's range and assert the ship stays inside
+   the throat's cross-section at **every sub-step**, not merely at the ends — a
+   law that is right at the endpoints and wrong between them is exactly what a
+   translating-frame implementation looks like.
+8. **The arriving and parked ship are not collidable** (§12.3's third row).
+   Asserted here even though §0 disclaims collision, because the failure it
+   prevents is *this* section's invention: without it the arrival clips the
+   tunnel §12.1 just handed it. #75 inherits the other side.
+9. **Station names are unique within a system.** E9 argues uniqueness by
    construction — one station per type — and construction is exactly what a
    generator change can break without a compile error. Asserted over the same
    corpus `tests/station-orbits.test.ts` walks, so the silent case has a check.
@@ -976,11 +1015,19 @@ of check that stops being evidence, and §12.7 records that it fails open until
    and where its boundary is, and nothing here builds it;
    [#75](https://github.com/jcfischer/seelite/issues/75) owns it. Until that node
    lands, flying at a station's hull still passes through it — **and §9.2.4 stays
-   green for a justification §3 has already declared dead.** That probe currently proves that
-   a hull-face approach is refused by check 5; once the hull is solid it will be
-   proving that collision works, under a name that says otherwise. The obligation
-   to re-point it is §12.6's and it is inherited by the collision node, but until
-   that node exists the obligation has no holder and the check fails open.
+   green for a justification §3 has already declared dead.** That probe currently
+   proves a hull-face approach is refused by check 5; once the hull is solid it
+   will be proving that collision works, under a name that says otherwise. The
+   obligation to re-point it is #75's and is written into that node — so it has
+   an addressee — but **an obligation on an open node is not a check**, and this
+   one stays green until #75 is taken.
 4. **A generated station name ripples further than this section** — #11's galaxy
    map, #69's target list and #70's screen all acquire something to display, and
    none of them has been told.
+5. **E4's flag is an unmet precondition on #46.** §12.1 says the skip gate is a
+   typed domain that node "must approve and bound", and then this section is
+   where a reader would look for the dependency and would not have found it. So:
+   **E4 and E5 cannot ship until `persistent-world-state.md` gains a bounded
+   per-galaxy arrival-flag domain**, which is #46's to amend and not this spec's
+   to assume. Disclosing a dependency once, in the section that creates it, is
+   how it gets lost.
