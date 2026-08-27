@@ -418,6 +418,33 @@ export const stationFluct = (stationSeed: number, epoch: number): number =>
 	Math.floor(seededRand(mix(stationSeed, epoch))() * 256) & 0xff;
 
 /**
+ * A generated station, narrowed to what the market can price.
+ *
+ * **The narrowing happens once, here, rather than at every call site.**
+ * `StationType` has four members and §3's `TYPE_OFFSET` three, so a caller
+ * holding a `Station` has to bridge the gap somehow; two of them were doing it
+ * with a cast, which moves the obligation outward and puts a `NaN` price one
+ * typo away. This validates instead, and `marketRowAt` keeps its own throw as
+ * the backstop for anyone constructing a `MarketStation` by hand.
+ *
+ * `station-types.md` §3 owes the outpost an offset before one can be generated;
+ * until then this is where that gap is felt, loudly.
+ */
+export function marketStationOf(
+	station: { type: string; localCarrierId: string },
+	systemSeed: number,
+): MarketStation {
+	if (!(station.type in TYPE_OFFSET))
+		throw new Error(
+			`station type ${station.type} has no market offset (economy-trade.md §3)`,
+		);
+	return {
+		type: station.type as StationTypeKey,
+		seed: marketSeedFor(systemSeed, station.localCarrierId),
+	};
+}
+
+/**
  * The game's entry point: one good at one station at one moment.
  *
  * Derives the epoch and the fluctuation byte from the station's identity and

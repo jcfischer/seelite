@@ -235,8 +235,26 @@ describe("§5.1 the market is independent of draw order elsewhere", () => {
 	});
 
 	test("DOMAIN.MARKET is its own tag, and adding it moved no other stream", () => {
-		// A renumbered tag changes every seed in the game; a *new* tag must be
-		// larger than every existing one and equal to nothing else.
+		// **The tag values are pinned**, and the title is why. Distinctness plus
+		// "MARKET is the largest" was the first version of this, and renumbering
+		// `POS` from 1 to 11 alongside a larger `MARKET` passes both — so the
+		// test could not go red on the thing it is named for. Every existing
+		// seed's output is a function of these integers: renumbering one moves
+		// every position, name and station in the game, silently.
+		expect(DOMAIN).toEqual({
+			POS: 1,
+			NAME: 2,
+			POLITY: 3,
+			BODIES: 4,
+			STATIONS: 5,
+			DESC: 6,
+			ARRIVAL: 7,
+			STATION_FLAGS: 8,
+			STATION_SPIN: 9,
+			MARKET: 10,
+		});
+		// And a *new* tag is safe only when it is larger than every existing one,
+		// which is the operation this table was designed for.
 		const tags: number[] = Object.values(DOMAIN);
 		expect(tags.length).toBe(new Set(tags).size);
 		expect(DOMAIN.MARKET as number).toBe(Math.max(...tags));

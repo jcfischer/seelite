@@ -608,22 +608,30 @@ sim §10.3 required has now been run. `MARKET_PERIOD` 30 min and
 `DEFICIT_HALF_LIFE` 20 min are set against a full trade run of 3–5 minutes so
 that parking for a re-roll or a recovery is dominated by going somewhere else.
 
-**Measured**, over 122 decision points where parking until the next epoch was a
-profitable option at all:
+**Measured**, over the 150 decision points where parking until the next epoch
+was a profitable option at all — the wait being costed against the *same* menu
+of onward hops a launch gets, interstellar included:
 
 | | wait rate / best flight rate |
 |---|---|
-| median | 0.031× |
-| p95 | 0.573× |
-| max | **1.785×** |
-| points where waiting won | **3 of 123 (2.4%)** |
+| median | 0.127× |
+| p95 | 0.677× |
+| max | **4.679×** |
+| points where waiting won | **3 of 150 (2.0%)** |
 
-So the intent holds as a tendency and **not as an absolute**: at three moments
-in a hundred and twenty-three, the best thing on offer was to sit still, and the
-best of those was worth 1.79× flying. The earlier draft of this paragraph said
-"never" and had nothing behind it. What the constants buy is that waiting is
-worth 3% of flying at the median — the exploit the pair were chosen to close is
-closed, and the residual is a rounding error rather than a strategy.
+**The median is not the argument, and a draft of this paragraph made it one.**
+An exploiting player selects the tail, not the median, so "waiting is worth 13%
+of flying at the median" says nothing about whether waiting-at-the-right-moment
+is a strategy. What answers that is that **the greedy trader already is that
+player**: it maximises rate at every decision, so it takes the wait precisely
+when the wait is the tail. It did so 3 times in 150, and its fit-out is the
+51–88 minutes §8 quotes — a figure that already has every profitable wait in it.
+
+So the honest statement is not that the exploit is closed. It is that **the
+exploit exists, is available at 2% of decision points, is worth up to 4.7× when
+it lands, and does not change the game's pacing**, because the opportunities are
+too rare to build a route around. That is a weaker claim than the "never" this
+section shipped with and it is the one the measurement supports.
 
 Changing either constant re-opens the question, and
 `scripts/measure-greedy-trader.ts` is now what catches it.
@@ -751,8 +759,8 @@ That is about fifteen clean runs, and the design was aiming at **1.5–2.5 hours
 of trading once §5.2's deficit forces route rotation.
 
 **Measured, the ceiling is faster than the aim.** §10.3's greedy trader fits out
-in **51–123 minutes** across four galaxies, at 173–421 Cr/min. Three of the four
-land under the target's lower bound and one lands inside the range, so the
+in **51–88 minutes** across four galaxies, at 227–419 Cr/min. All four land under
+the target's lower bound of 90 minutes, so the
 1.5–2.5 h figure survives only as a claim about a *human*: it needs a real
 player to run at roughly 0.6× the ceiling. That is plausible and unmeasured, and
 it is the honest form of the sentence.
@@ -884,19 +892,30 @@ too slow and merely unproven by one that is too fast.
 
 | | measured, world `0x5ee11e`, four galaxies |
 |---|---|
-| fit-out, full kit | **51–123 min** against §8's 1.5–2.5 h |
-| Cr/min | 173–421 |
-| hops chosen: interstellar : intra-system | **121 : 39** |
+| fit-out, full kit | **51–88 min** against §8's 1.5–2.5 h |
+| Cr/min | 227–419 |
+| hops chosen: interstellar : intra-system | **111 : 36** |
 | fit-out across dock cost 15→90 s | 49 → 106 min |
 
-**Both ends of a trade are quoted at the clock each happens on**, and the first
-version of this instrument quoted both at departure. That is not a rounding
-error: a leg runs into the tens of minutes against a 30-minute `MARKET_PERIOD`,
-so every flight was booked at prices from before it was flown while the wait
-option — priced at the epoch it waits for, by construction — got the future it
-was asking about. The comparison §5.5 turns on was stale flights against
-correctly-timed waits. Fixing it moved every figure in this table and doubled
-the rate at which waiting wins.
+**The §5.5 comparison was wrong twice before it was right, and both faults
+flattered the same side.**
+
+1. **Both ends of a trade are quoted at the clock each happens on**; the first
+   version quoted both at departure. That is not a rounding error — a leg runs
+   into the tens of minutes against a 30-minute `MARKET_PERIOD`, so every flight
+   was booked at prices from before it was flown while the wait option, priced
+   at the epoch it waits for by construction, got the future it was asking
+   about.
+2. **The wait gets the same menu the flight does**; the second version built its
+   post-wait candidates from the current system's other stations only. The
+   trader takes an interstellar hop three times in four, so the waiting strategy
+   was being denied the move it would actually make — and in a single-station
+   system the wait offered nothing, so those decision points went unrecorded
+   rather than counting.
+
+Each fix moved every figure in this table. The measured tail of waiting went
+1.326× → 1.785× → **4.679×** as the comparison stopped being rigged, which is
+the shape of a number that was an artefact of its instrument.
 
 **Re-run it whenever `MARKET_PERIOD`, `DEFICIT_HALF_LIFE` or `PRICE_ELASTICITY`
 moves.** All three are in the loop, and §12.5 is explicit that changing either
@@ -1016,8 +1035,9 @@ values, which a hash returning `x & 0x0f` fails and a fixity check does not.
    into a correction. The intra-system exhaustion in 2–3 runs is measured with
    `DEFICIT_HALF_LIFE` in the loop. **"Waiting never beats flying" turned out to
    be false as written**: `scripts/measure-greedy-trader.ts` found waiting
-   winning at 3 of 123 decision points, by up to 1.785×, against a median of
-   0.031×.
+   winning at 3 of 150 decision points, by up to 4.679×, against a median of
+   0.127×. §5.5 records what that is worth, and the answer is not "nothing":
+   the exploit exists and is merely rare.
    §5.5 says "almost never" now and carries the distribution. The joint that
    remains is that the constants are still *chosen*: the sim tells you when a
    change breaks something, not what the values should be.

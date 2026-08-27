@@ -67,7 +67,7 @@ import {
 	type DeficitMap,
 	marketPhaseMin,
 	marketRow,
-	marketSeedFor,
+	marketStationOf,
 	marketEpoch,
 	readDeficit,
 	recordTrade,
@@ -150,10 +150,7 @@ function portsOf(record: SystemRecord, contents: SystemContents): Port[] {
 		record,
 		contents,
 		station,
-		market: {
-			type: station.type as MarketStation["type"],
-			seed: marketSeedOf(record, station),
-		},
+		market: marketStationOf(station, record.seed),
 		key: carrierKey(record.index, station.localCarrierId),
 		posAt: (t: number) => {
 			const found = placeBodies(contents, t).find((b) => b.id === station.id);
@@ -163,16 +160,19 @@ function portsOf(record: SystemRecord, contents: SystemContents): Port[] {
 	}));
 }
 
-const marketSeedOf = (record: SystemRecord, station: Station): number =>
-	marketSeedFor(record.seed, station.localCarrierId);
-
 /** §4: illegal goods trade only at a fence, and that is both directions. */
 const tradable = (good: Commodity, port: Port): boolean =>
 	!good.illegal || port.station.blackMarket;
 
+/**
+ * One good at one port.
+ *
+ * **One price, not a spread.** Elite quotes a single figure per good and you
+ * trade against it in both directions; nothing in §2–§5 introduces a bid/ask
+ * gap. Two identical fields would have read as a spread that does not exist.
+ */
 interface Quote {
-	buyCr: number;
-	sellCr: number;
+	priceCr: number;
 	units: number;
 }
 
@@ -187,11 +187,7 @@ function quote(
 	const row = marketRow(good, port.record.economy, port.market, gameTimeMin);
 	const deficit = readDeficit(deficits, port.key, good.name, gameTimeMin);
 	const priced = stockResponse(row.priceCr, deficit);
-	return {
-		buyCr: priced,
-		sellCr: priced,
-		units: shelfQuantity(row.quantity, deficit),
-	};
+	return { priceCr: priced, units: shelfQuantity(row.quantity, deficit) };
 }
 
 // ---------------------------------------------------------------------------
@@ -242,7 +238,7 @@ function basket(
 		.map((g) => {
 			const here = quote(g, from, deficits, buyMin);
 			const there = quote(g, to, deficits, sellMin);
-			return { good: g, here, there, margin: there.sellCr - here.buyCr };
+			return { good: g, here, there, margin: there.priceCr - here.priceCr };
 		})
 		.filter((c) => c.margin > 0 && c.here.units > 0)
 		.sort((a, b) => {
@@ -255,10 +251,10 @@ function basket(
 	for (const c of candidates) {
 		const sub = SUB_TONNE.has(c.good.name);
 		const byHold = sub ? c.here.units : Math.min(holdLeft, c.here.units);
-		const byCapital = Math.floor(spend / c.here.buyCr);
+		const byCapital = Math.floor(spend / c.here.priceCr);
 		const units = Math.min(byHold, byCapital);
 		if (units <= 0) continue;
-		spend -= units * c.here.buyCr;
+		spend -= units * c.here.priceCr;
 		profit += units * c.margin;
 		if (!sub) holdLeft -= units;
 		cargo.push({ good: c.good, units });
@@ -432,16 +428,44 @@ function jumpOptions(
 	return out;
 }
 
+/** Everything the trader could do *right now* if it launched: §5.4's
+ *  intra-system pairs and its interstellar ones, at one stance. */
+const flyingOptions = (
+	here: Port,
+	systems: readonly SystemRecord[],
+	contentsFor: (r: SystemRecord) => SystemContents,
+	st: Stance,
+): Hop[] => [
+	...intraOptions(here, st),
+	...jumpOptions(here, systems, contentsFor, st),
+];
+
 /**
  * (c) §5.5's rival strategy: park here until this market re-rolls, then take
  * the best hop the new epoch offers.
  *
- * Costed honestly — the wait earns nothing while it lasts, the deficit fades
- * while you sit, and **both ends of the trade are quoted at the clock they
- * happen on**, which is the correction that changed this measurement.
+ * Costed honestly, and that took two corrections.
+ *
+ * 1. **Both ends of the trade are quoted at the clock they happen on.** The
+ *    first version quoted every flight at departure while pricing the wait at
+ *    the epoch it waited for, so the comparison was stale flights against
+ *    correctly-timed waits.
+ * 2. **The wait gets the same menu the flight does.** The second version built
+ *    its post-wait candidates from this system's other stations only, so the
+ *    waiting strategy was denied the interstellar hop the trader takes three
+ *    times in four — and in a single-station system it offered nothing at all,
+ *    so those decision points went unrecorded rather than counting against
+ *    waiting. What this measures has to be the *best* thing waiting can buy, or
+ *    the number is a lower bound on waiting wearing the label of a measurement
+ *    of it.
+ *
+ * The wait earns nothing while it lasts and the deficit fades while you sit;
+ * both are in the rate below, because the wait minutes are in its denominator.
  */
 function waitOption(
 	here: Port,
+	systems: readonly SystemRecord[],
+	contentsFor: (r: SystemRecord) => SystemContents,
 	st: Stance,
 ): { hop: Hop; waitMin: number } | null {
 	const min = st.t / 60;
@@ -449,37 +473,19 @@ function waitOption(
 	const nextEpochMin =
 		(marketEpoch(phase, min) + 1) * MARKET_PERIOD_MIN - phase;
 	const waitMin = Math.max(0, nextEpochMin - min);
-	let bestAfter = 0;
-	let bestSeconds = 1;
-	for (const to of portsOf(here.record, here.contents)) {
-		if (to.station.id === here.station.id) continue;
-		const seconds = intraSeconds(here, to, st.t + waitMin * 60, st.dockSeconds);
-		const b = basket(
-			here,
-			to,
-			st.deficits,
-			nextEpochMin + 1e-6,
-			nextEpochMin + 1e-6 + seconds / 60,
-			st.credits,
-			st.holdT,
-		);
-		if (b.profitCr / (waitMin * 60 + seconds) > bestAfter / bestSeconds) {
-			bestAfter = b.profitCr;
-			bestSeconds = waitMin * 60 + seconds;
-		}
+	// The nudge lands inside the new epoch rather than exactly on its boundary,
+	// where `marketEpoch`'s floor could still return the old one.
+	const after = { ...st, t: (nextEpochMin + 1e-6) * 60 };
+
+	let best: { hop: Hop; rate: number } | null = null;
+	for (const hop of flyingOptions(here, systems, contentsFor, after)) {
+		if (hop.profitCr <= 0) continue;
+		const seconds = waitMin * 60 + hop.seconds;
+		const rate = (hop.profitCr - hop.fuelCr) / (seconds / 60);
+		if (!best || rate > best.rate)
+			best = { hop: { ...hop, kind: "wait", seconds }, rate };
 	}
-	if (bestAfter <= 0) return null;
-	return {
-		hop: {
-			kind: "wait",
-			to: here,
-			seconds: bestSeconds,
-			fuelCr: 0,
-			profitCr: bestAfter,
-			cargo: [],
-		},
-		waitMin,
-	};
+	return best ? { hop: best.hop, waitMin } : null;
 }
 
 function run(
@@ -543,9 +549,8 @@ function run(
 		const options: Hop[] = [];
 
 		const stance = { t, credits, holdT, deficits, dockSeconds };
-		options.push(...intraOptions(here, stance));
-		options.push(...jumpOptions(here, systems, contentsFor, stance));
-		const wait = waitOption(here, stance);
+		options.push(...flyingOptions(here, systems, contentsFor, stance));
+		const wait = waitOption(here, systems, contentsFor, stance);
 		if (wait) options.push(wait.hop);
 		const waitMin = wait?.waitMin ?? 0;
 
@@ -594,6 +599,10 @@ function run(
 		if (hop.kind === "jump") jumps++;
 		else intra++;
 
+		// Probed **before every purchase**, not once per hop. Sampling it once
+		// meant that after buying item N, item N+1's affordability was not
+		// checked until the next hop — a whole leg later — so every figure after
+		// the first was stretched by a leg it did not take.
 		if (
 			bought < shopping.length &&
 			affordableAt === null &&
@@ -613,6 +622,8 @@ function run(
 			});
 			affordableAt = null;
 			bought++;
+			if (bought < shopping.length && credits >= shopping[bought].priceCr)
+				affordableAt = t / 60;
 		}
 		if (bought === shopping.length) break;
 	}
@@ -647,6 +658,11 @@ const finite = (label: string, v: number): number => {
 const hours = Number(process.argv[2] ?? 4);
 const worldSeed = Number(process.argv[3] ?? 0x5ee11e);
 if (!Number.isFinite(hours) || hours <= 0) throw new Error("hours must be > 0");
+// The same guard, for the reason `finite()` exists: a mistyped seed otherwise
+// enters `generateGalaxy` as `NaN` and the run reports a galaxy nobody asked
+// for.
+if (!Number.isInteger(worldSeed))
+	throw new Error(`seed must be an integer, got ${process.argv[3]}`);
 
 console.log(
 	`greedy trader — world 0x${worldSeed.toString(16)}, ${hours} h cap, ` +
@@ -665,7 +681,12 @@ const results = GALAXIES.map((g) => ({ g, r: run(worldSeed, g, hours) }));
 const summarize = (r: Result): { rate: number; done: boolean } => ({
 	rate: finite(
 		"Cr/min",
-		(r.creditsCr + r.upgrades.reduce((sum, u) => sum + priceOf(u.name), 0)) /
+		// `START_CR` is capital the trader was handed, not money it made.
+		// Small against a 173–421 Cr/min rate, and a bias in exactly the
+		// direction §8 is arguing about.
+		(r.creditsCr -
+			START_CR +
+			r.upgrades.reduce((sum, u) => sum + priceOf(u.name), 0)) /
 			Math.max(r.minutes, 1e-9),
 	),
 	done: r.upgrades.length === EQUIPMENT.length - 1,
