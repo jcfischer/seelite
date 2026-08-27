@@ -35,15 +35,17 @@
  * 4. A station that sat *inside* its host's shell — 49 of 337 in the corpus
  *    before #32, every gas giant among them — could be cruised away from.
  *    Node #32's orbit floor (STATION_ORBIT_R_OVER_R, 1.5) removed that
- *    geometry from the generator: no seeded station sits inside its host's
- *    1.05 shell any more (swept across seeds 1..8000 — the closest own-host
- *    approach is 1.500 R, the floor itself), and none inside a foreign
- *    body's shell at t0 either (same sweep; the closest foreign approach is
- *    ~559 foreign radii). So this claim no longer has a browser fixture, and
- *    the probe no longer carries one. It is pinned
- *    headlessly instead — `tests/cruise.test.ts`, "being inside a shell does
- *    not pin the ship there" — and `tests/station-orbits.test.ts` pins that
- *    the generator keeps the geometry unfixable.
+ *    geometry from the generator, so this claim no longer has a browser
+ *    fixture and the probe no longer carries one. The population behind it
+ *    is a sweep claim, and the sweep ships: `bun run
+ *    scripts/measure-station-shells.ts [seeds]` re-derives, at the t0 placed
+ *    positions, that across seeds 1..8000 no station sits inside its own
+ *    host's or any foreign body's 1.05 shell (closest own-host approach
+ *    1.500 R — the floor itself; closest foreign ~559 radii). The rules the
+ *    deleted block exercised are pinned headlessly instead:
+ *    `tests/cruise.test.ts`, "being inside a shell does not pin the ship
+ *    there", for the release rule, and `tests/station-orbits.test.ts` for
+ *    the t0 clearance over seeds 1..1500 — so the deleted case fails closed.
  */
 import {
 	bootedGame,
