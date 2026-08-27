@@ -3459,8 +3459,9 @@ class Game {
 			this.combatTargetMesh.visible = this.view === "cockpit";
 			const targetMaterial = this.combatTargetMesh
 				.material as THREE.MeshStandardMaterial;
-			// Flash only on a shot that can actually land: holding the trigger
-			// off-cone should not swell the target it cannot hit.
+			// Flash on the same scripted cone that scores damage, so the swell
+			// tracks hits. The cone is a coarse proxy (up to ~13 degrees off the
+			// nose), not a pixel-accurate aim test — this rig measures pacing.
 			const hitting =
 				this.combat.firing !== null && duelTargetInCone(this.combat.elapsed);
 			targetMaterial.emissive.setHex(hitting ? 0x9df6ff : 0x450308);
