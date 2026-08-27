@@ -199,13 +199,21 @@ it is the number in this spec most likely to move.
 
 **Flown, by a script, on 2026-08-27** — and that is a weaker result than the
 paragraph above asks for, so it is recorded as what it is. `probe-docking.mjs`
-crosses the plane under §5's real geometry at 0.09 km/s with the roll 90° out
-and at 0.06 km/s under the docking computer, and check 6 passes in both. What
-that establishes is that the gate is *reachable* by an approach flown under #5's
-own assist rather than only on paper. What it does not establish is that 0.10 is
-the right number, because a scripted approach has no difficulty: the question
-§11.4 records is whether a **person** can hold it, and nothing here has asked
-one. The figure stays provisional.
+crosses the plane under §5's real geometry three times and **asserts the
+measured `|v_rel|` at the crossing**, not the setpoint it asked for: 0.0905 km/s
+with the roll 90° out, 0.0505 km/s on the hull-face run, and under the gate on
+the docking computer's own dock. Check 6 passes in all three.
+
+What that establishes is that the gate is *reachable* by an approach flown under
+#5's assist rather than only on paper — and it took two attempts to establish
+even that, because the first version of the probe wrote `ship.vel` directly and
+the assist cancelled the whole commanded closing speed inside one step.
+
+What it does not establish is that 0.10 is the right number. A scripted approach
+has no difficulty, and the question §11.4 records is whether a **person** can
+hold it. Nothing here has asked one, and the game ships with the docking
+computer fitted, so the first approach anyone flies is not a person's either.
+The figure stays provisional.
 
 ### 3.2 Why 35° and 50° (chosen, not derived)
 

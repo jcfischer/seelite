@@ -138,10 +138,16 @@ const unit = (a: Vec3): Vec3 => {
 	return len === 0 ? v3(1, 0, 0) : scale(a, 1 / len);
 };
 
-/** The acute angle between two directions, degrees. Clamped before `acos`
- *  because a dot product of two unit vectors reaches 1.0000000000000002. */
-const angleDeg = (a: Vec3, b: Vec3): number =>
-	Math.acos(Math.min(1, Math.max(-1, dot(unit(a), unit(b))))) / DEG;
+/**
+ * A cosine as an angle in degrees — a **diagnostic**, never a comparison.
+ *
+ * Clamped before `acos` because a dot product of two unit vectors reaches
+ * 1.0000000000000002. Every check below compares cosines directly and reports
+ * the degrees, rather than comparing the degrees: the round trip through
+ * `acos`/`cos` costs precision exactly where §9.1.1's boundary rows sit.
+ */
+const cosToDeg = (c: number): number =>
+	Math.acos(Math.min(1, Math.max(-1, c))) / DEG;
 
 // ---------------------------------------------------------------------------
 // The aperture frame
@@ -300,11 +306,17 @@ export function evaluateEntry(
 	// Check 2, both halves. The station→ship vector is compared against the
 	// outward axis; the nose against the *inward* one, because a docking ship
 	// points at the station rather than away from it.
-	const positionAngleDeg = angleDeg(pose.rel, axis);
-	const noseAngleDeg = angleDeg(pose.nose, scale(axis, -1));
+	//
+	// **The comparison is on the cosines, and the degrees are diagnostics.**
+	// Taking `acos` and then `cos` of the result round-trips through a
+	// transcendental pair for no gain, and near the tolerance it loses the last
+	// bits of the very quantity the boundary rows in §9.1.1 assert on.
+	const positionCos = dot(unit(pose.rel), axis);
+	const noseCos = -dot(unit(pose.nose), axis);
+	const positionAngleDeg = cosToDeg(positionCos);
+	const noseAngleDeg = cosToDeg(noseCos);
 	const axisAlignment =
-		Math.cos(positionAngleDeg * DEG) >= AXIS_COS - 1e-12 &&
-		Math.cos(noseAngleDeg * DEG) >= AXIS_COS - 1e-12;
+		positionCos >= AXIS_COS - 1e-12 && noseCos >= AXIS_COS - 1e-12;
 
 	// Check 3 reads a *velocity* sign, not a position sign: at the crossing
 	// instant the axial position is on the plane by construction, so a
@@ -338,9 +350,11 @@ export function evaluateEntry(
 			rollAngleDeg = Number.NaN;
 			rollMatch = false;
 		} else {
-			const raw = angleDeg(projected, basis.across);
-			rollAngleDeg = Math.min(raw, 180 - raw);
-			rollMatch = Math.cos(rollAngleDeg * DEG) >= ROLL_COS - 1e-12;
+			// The axis-*line*, so the acute angle mod 180°: the absolute cosine is
+			// that comparison without the round trip through degrees.
+			const rollCos = Math.abs(dot(unit(projected), basis.across));
+			rollAngleDeg = cosToDeg(rollCos);
+			rollMatch = rollCos >= ROLL_COS - 1e-12;
 		}
 	}
 
@@ -372,6 +386,17 @@ export function evaluateEntry(
  * on whichever frame happens to land nearest the plane — makes every tolerance
  * a function of the frame rate, which is the class of error §4.1 already
  * refuses for the slot phase.
+ *
+ * **One aperture frame is used for both endpoints, and that is an
+ * approximation.** The docking axis swings as the station orbits (§7's cone is
+ * the same fact), so strictly the plane at the earlier endpoint is not the plane
+ * at the later one. The error is bounded by how far the axis turns in one step:
+ * a station on a 400–2,000 km orbit turns it by microradians over the 0.1 s
+ * `MAX_DT` allows, against a slot 120 m across at a 600 m standoff. Interpolating
+ * the axis as well would be a slerp inside a root-find for a correction three
+ * orders of magnitude under the aperture. If the frame budget ever grows, this
+ * is the line to revisit; today it is a rounding term, stated rather than
+ * assumed.
  *
  * Only an inward crossing counts: a ship leaving through the plane has already
  * docked or been repelled.
@@ -722,10 +747,22 @@ export interface ComputerCommand {
 /**
  * One frame of §7's autopilot: roughly the profile a competent pilot flies.
  *
- * **It never bypasses a check.** It refuses at a hostile station, refuses
- * without clearance, and its speed law is capped below the gate on the run-in
- * so a crossing it commands cannot be above it. A computer that could dock
- * where a pilot could not would make §3 decoration.
+ * **It is not given any authority §3 does not give a pilot**, which is a weaker
+ * and truer statement than "it never bypasses a check". Two halves, and they
+ * are enforced in different places:
+ *
+ * - **Clearance and hostility it enforces itself**, here, by refusing to fly.
+ *   That half is a property of this function and nothing downstream can undo it.
+ * - **The gate it can only ever *ask* for.** This returns a commanded speed;
+ *   `main.ts` turns it into a throttle and #5's assist integrates it, so what
+ *   crosses the plane is the assist's tracking of the command, not the command.
+ *   A run commanded at exactly `V_GATE` arrives at about 1.005× it once the
+ *   lateral remainder is counted — which is why the run-in cap is well *under*
+ *   the gate rather than at it, and why the checks still run on the crossing
+ *   this produces like any other. The computer is not trusted; it is aimed.
+ *
+ * A computer that could dock where a pilot could not would make §3 decoration,
+ * and the reason it cannot is that it goes through the same `attemptEntry`.
  *
  * Two phases, and the split is what keeps check 5 satisfiable: lining up aims
  * at a point on the axis well outside the plane, so the turn happens in open

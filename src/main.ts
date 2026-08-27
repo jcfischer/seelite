@@ -132,8 +132,11 @@ import {
 	type EntryOutcome,
 	type EntryPose,
 	type ShipCondition,
+	AXIS_TOLERANCE_DEG,
 	DOCKING_COMPUTER,
+	ROLL_TOLERANCE_DEG,
 	VICINITY_KM,
+	V_GATE_KMS,
 	apertureFrame,
 	applyDamage,
 	attemptEntry,
@@ -169,13 +172,6 @@ import { type Vec3, add, dot, length, scale, sub, v3 } from "./vec3";
 // spellings of the same constant — the two-public-paths pattern this branch
 // removed from `sim.ts` and pinned with a source-scan test.
 import * as units from "./units";
-// The docking module as a namespace, for the same reason `units` is one: §9.2's
-// probes assert against the gate and the tolerances, and a probe holding its own
-// copy of 0.10 km/s or 35° goes falsely red the day §11.4's "most likely to move"
-// numbers move. The same trade applies — everything this module exports becomes
-// reachable from the page — and it is acceptable for the same reason: it is a
-// module of constants and pure functions with no state to reach past.
-import * as docking from "./docking";
 
 /** Scratch vectors for aiming a station's aperture, allocated once: the render
  *  loop runs per body per frame, and a `Vector3` built there is garbage by the
@@ -351,6 +347,18 @@ type Regime = "normal" | "cruise";
  * function already exported from `cruise.ts` whose rule a probe would otherwise
  * restate. Anything that reads or writes game state does not belong here.
  */
+/**
+ * One station's docking geometry and the ship's pose in it, for one step.
+ *
+ * The pair rather than the pose alone: a crossing test needs both, they cost
+ * the same orbital evaluation to produce, and computing the frame twice per
+ * station per frame was measurable work for no answer that changed.
+ */
+interface DockingApproach {
+	frame: ApertureFrame;
+	pose: EntryPose;
+}
+
 interface ProbeRayMath {
 	closestApproachKm: typeof closestApproachKm;
 }
@@ -713,9 +721,25 @@ class Game {
 	 */
 	readonly dockingVicinityKm = VICINITY_KM;
 
-	/** The docking model itself, reachable from the handle — the module, not a
-	 *  copy. See the import's note for what that costs and why it is paid. */
-	readonly docking = docking;
+	/**
+	 * §3's tolerances, reachable from the handle — and **only** the tolerances.
+	 *
+	 * §9.2's probes assert against the gate and the two angles, and a probe
+	 * holding its own copy of 0.10 km/s or 35° goes falsely red the day §11.4's
+	 * "most likely to move" numbers move. What they do *not* need is
+	 * `attemptEntry`, `repel` or `requestClearance`, and the first version of
+	 * this line published the whole module and put all three on the page. The
+	 * `units` namespace is exposed whole because it is a leaf of constants; this
+	 * module has state-mutating entry points, so it gets a named subset.
+	 *
+	 * Frozen, so a probe cannot write one and then measure against its own
+	 * value while reporting that it read the renderer's.
+	 */
+	readonly dockingTolerances = Object.freeze({
+		V_GATE_KMS,
+		AXIS_TOLERANCE_DEG,
+		ROLL_TOLERANCE_DEG,
+	});
 
 	/**
 	 * §6's protocol state, one per station, created on first contact.
@@ -760,6 +784,15 @@ class Game {
 	 * absent is what makes §7's behaviour reachable at all, and §7.1's reading —
 	 * an early-game skill gate and a late-game option — is a claim about the
 	 * economy that cannot be made until the shop exists.
+	 *
+	 * **The cost of that default is real and it is not the economy.** §3.1's
+	 * open question is whether a *person* can hold the 0.10 km/s gate, and a
+	 * game that boots with the autopilot fitted is a game where the first thing
+	 * anyone flies is the autopilot. The mitigation is that it is off until
+	 * asked for (`u`), and that §9.2's two failure runs disengage it explicitly
+	 * — but the honest reading is that this default makes the skill gate easy to
+	 * never meet, which is the opposite of what §7.1 assumes about the early
+	 * game. Once #70's screen exists this should ship `false`.
 	 */
 	hasDockingComputer = true;
 
@@ -2505,7 +2538,7 @@ class Game {
 	 * nearer frame instead makes every tolerance a function of the frame rate —
 	 * the class of error §4.1 already refuses for the slot phase.
 	 */
-	private stepDocking(before: Map<string, EntryPose>) {
+	private stepDocking(before: Map<string, DockingApproach>) {
 		for (const [id, state] of this.dockingStates)
 			this.dockingStates.set(
 				id,
@@ -2516,56 +2549,56 @@ class Game {
 				),
 			);
 
+		// **At most one crossing is resolved per step, and it is the nearest.**
+		// `dockingApproaches` walks in range order, so the first crossing found
+		// is the nearest station's. A ship cannot dock at two stations in one
+		// 0.1 s step, and resolving a farther one after a nearer one would apply
+		// a repel to a position the nearer outcome had already rewritten.
 		for (const [id, from] of before) {
 			const frame = this.apertureFrameOf(id);
-			const to = this.entryPoseOf(id);
-			const crossing = planeCrossing(frame, from, to);
+			const crossing = planeCrossing(frame, from.pose, this.entryPoseOf(id));
 			if (!crossing) continue;
-			const outcome = attemptEntry({
-				frame,
-				pose: crossing,
-				state: this.dockingStateOf(id),
-				gameTime: this.world.gameTime,
-			});
-			this.dockingStates.set(id, outcome.state);
-			this.lastEntry = outcome;
-			if (outcome.docked) {
-				this.dockedAt = id;
-				this.world.ship.vel = bodyVelocity(
-					this.world.system,
-					id,
-					this.world.gameTime,
-				);
-				this.dockingComputerEngaged = false;
-				return;
-			}
-			// §2.0: repelled, damaged, and left outside — never inside the station.
-			this.condition = applyDamage(this.condition, outcome.damage);
-			const body = this.world.system.byId.get(id);
-			const stationVel = bodyVelocity(
-				this.world.system,
-				id,
-				this.world.gameTime,
-			);
-			if (body && outcome.repelled) {
-				this.world.ship.pos = add(body.pos, outcome.repelled.rel);
-				this.world.ship.vel = add(stationVel, outcome.repelled.vRel);
-			}
-			// A bounce is a piloting event, not a reason to keep flying the
-			// approach that produced it.
-			this.dockingComputerEngaged = false;
+			this.resolveCrossing(id, frame, crossing);
 			return;
 		}
 	}
 
-	/**
-	 * §7's autopilot, applied: it writes the attitude and the throttle, and the
-	 * ordinary flight step does the rest.
-	 *
-	 * Returning `false` rather than throwing when it refuses, so a player who
-	 * engages it out of range or without a grant gets their controls back rather
-	 * than a stuck ship.
-	 */
+	/** One crossing, applied: the outcome, the ship, and the session state that
+	 *  follows from it. Split from the tick loop above because this is the half
+	 *  that grows — the HUD node's cues and #8's pools both land here. */
+	private resolveCrossing(
+		id: string,
+		frame: ApertureFrame,
+		crossing: EntryPose,
+	) {
+		const outcome = attemptEntry({
+			frame,
+			pose: crossing,
+			state: this.dockingStateOf(id),
+			gameTime: this.world.gameTime,
+		});
+		this.dockingStates.set(id, outcome.state);
+		this.lastEntry = outcome;
+		// Whatever happens next, the ship ends up in the station's frame or
+		// bouncing out of it, so the velocity is wanted either way.
+		const stationVel = this.stationVelocity(id);
+		// A dock and a bounce are both reasons to stop flying the approach.
+		this.dockingComputerEngaged = false;
+
+		if (outcome.docked) {
+			this.dockedAt = id;
+			this.world.ship.vel = stationVel;
+			return;
+		}
+		// §2.0: repelled, damaged, and left outside — never inside the station.
+		this.condition = applyDamage(this.condition, outcome.damage);
+		const body = this.world.system.byId.get(id);
+		if (body && outcome.repelled) {
+			this.world.ship.pos = add(body.pos, outcome.repelled.rel);
+			this.world.ship.vel = add(stationVel, outcome.repelled.vRel);
+		}
+	}
+
 	private stepDockingComputer(dt: number): boolean {
 		if (!this.dockingComputerEngaged || this.dockedAt) return false;
 		const nearest = this.stationsByRange()[0];
@@ -2777,10 +2810,7 @@ class Game {
 			this.mouseDx = 0;
 			this.mouseDy = 0;
 			this.audio.ambient(this.throttle);
-			const before = this.dockingPoses();
-			stepWorld(this.world, this.control(), dt);
-			this.chargeAu = chargeAfterRegen(this.chargeAu, dt);
-			this.stepDocking(before);
+			this.advanceNormalFlight(dt);
 			return;
 		}
 
@@ -2849,10 +2879,21 @@ class Game {
 			return;
 		}
 
-		// The pose before the step, for every station close enough to be flown
-		// into: a plane crossing is a property of the pair of frames, and the
-		// "before" half stops existing the moment the ship moves.
-		const before = this.dockingPoses();
+		this.advanceNormalFlight(dt);
+	}
+
+	/**
+	 * The normal-flight tail of a step: the world, the tank, the docking test.
+	 *
+	 * One method rather than two copies, because the autopilot branch above ends
+	 * the same way. Two copies is how a later post-step hook lands in one of
+	 * them and the computer silently stops obeying a rule hand flying does.
+	 */
+	private advanceNormalFlight(dt: number) {
+		// The approaches before the step, for every station close enough to be
+		// flown into: a plane crossing is a property of the pair of frames, and
+		// the "before" half stops existing the moment the ship moves.
+		const before = this.dockingApproaches();
 
 		// The whole world, not just the ship: `dt` is sim seconds and the bodies
 		// are on orbits driven by the same clock. Stepping the ship alone would
@@ -2865,20 +2906,30 @@ class Game {
 	}
 
 	/**
-	 * Every station near enough to cross a plane this frame, posed in its own
-	 * frame.
+	 * Every station near enough to cross a plane this frame: its aperture frame
+	 * and the ship's pose in it, computed **once**.
 	 *
-	 * Bounded by `VICINITY_KM` rather than run over the whole system: the pose
-	 * costs a `bodyVelocity` per station per frame, and a station the ship is an
-	 * AU away from cannot be crossed by any step the clamp allows.
+	 * The frame rides along with the pose because both halves cost the same
+	 * orbital evaluation — `stationPose` and `bodyVelocity` each walk the
+	 * contents to resolve a parent — and the crossing test needs both. An
+	 * earlier version returned poses alone and `stepDocking` then rebuilt the
+	 * frame per station, doubling that work every frame for nothing.
+	 *
+	 * Bounded by `VICINITY_KM` rather than run over the whole system: a station
+	 * an AU away cannot be crossed by any step the clamp allows. The walk is in
+	 * range order, which is what lets it stop at the first station out of range
+	 * — and what makes the nearest crossing the one resolved.
 	 */
-	private dockingPoses(): Map<string, EntryPose> {
-		const poses = new Map<string, EntryPose>();
+	private dockingApproaches(): Map<string, DockingApproach> {
+		const approaches = new Map<string, DockingApproach>();
 		for (const { id, km } of this.stationsByRange()) {
 			if (km > VICINITY_KM) break;
-			poses.set(id, this.entryPoseOf(id));
+			approaches.set(id, {
+				frame: this.apertureFrameOf(id),
+				pose: this.entryPoseOf(id),
+			});
 		}
-		return poses;
+		return approaches;
 	}
 
 	/**

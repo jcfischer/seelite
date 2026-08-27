@@ -30,6 +30,8 @@ _Avoid_: Bonus, percentage effect
 A player action that changes a carrier's operational condition or recovery process.
 _Avoid_: Command, influence spend
 
+> The `Command` alias is about the **consequence model** — a player act on a carrier — and not about the word wherever it appears. `Game.command(key)` dispatches a keypress and `ComputerCommand` is one frame of an autopilot's output; neither is an intervention on a carrier, and renaming them to `Intervention` would make the glossary's own term mean two things. A reviewer flagging those is reading the alias too widely.
+
 **Operational condition**:
 A carrier instance's objective physical condition. `docs/specs/persistent-world-state.md` §3.2 owns the enumeration.
 _Avoid_: Status flag, lifecycle

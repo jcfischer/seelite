@@ -109,6 +109,50 @@ await page.evaluate(() => {
 			const n = Math.hypot(d.x, d.y, d.z);
 			return n === 0 ? { x: 1, y: 0, z: 0 } : window.__dock.scale(d, 1 / n);
 		},
+		/**
+		 * One frame of a hand-flown profile: point at a fixed station-relative
+		 * point, hold the roll error this run was set up with, and command the
+		 * closing speed on the throttle.
+		 *
+		 * Re-aimed **every frame**, because the station is on an orbit and its
+		 * slot is turning; an attitude set once drifts off both the axis and the
+		 * roll over a 30 s approach. A player watching the HUD does the same
+		 * thing with the stick.
+		 *
+		 * The aim point sits **two kilometres past the plane**, not on it. Aiming
+		 * at the plane itself was the version before this one and the nose went
+		 * unstable at the end of the run: as the ship arrives, the vector to its
+		 * own aim point shrinks to nothing and its direction is decided by
+		 * whatever noise is left, so check 2 read 59.5° at the crossing and the
+		 * entry failed on the nose angle rather than on containment. A point
+		 * beyond the target is what a pilot flying *through* a face aims at, and
+		 * it keeps the nose well conditioned all the way in.
+		 *
+		 * Speed comes from the **throttle**, not from writing `ship.vel`. Writing
+		 * the velocity was the first version and it went nowhere: the assist
+		 * reads a throttle of zero as "hold station in the local frame" and has
+		 * 2 km/s² of authority, so it cancelled the whole commanded closing speed
+		 * inside a single step.
+		 */
+		reaim(id, setup) {
+			const D = window.__dock;
+			const snap = g.dockingSnapshot(id);
+			if (!snap) return;
+			const aim = D.add(
+				D.scale(snap.axis, snap.planeKm - 2),
+				D.scale(D.perp(snap.axis), setup.offsetKm ?? 0),
+			);
+			const rad = ((setup.rollDeg ?? 0) * Math.PI) / 180;
+			// The roll error is stated against the **slot's** own basis, because
+			// that is what check 4 measures — unlike the lateral offset above,
+			// which needs a direction that does not rotate.
+			const rolled = D.add(
+				D.scale(snap.basis.across, Math.cos(rad)),
+				D.scale(snap.basis.up, Math.sin(rad)),
+			);
+			g.setAttitude(D.toward(id, aim), rolled);
+			g.setThrottle(setup.closingKms / g.assistCapKms);
+		},
 		/** Park the ship at a station-relative offset with a station-relative
 		 *  velocity — the §1 conversion, done the way the game does it. */
 		place(id, rel, vRel) {
@@ -141,7 +185,14 @@ async function fly(setup) {
 			// A snapshot first, purely to read the frame: the axis, the plane and
 			// the rolled basis are the renderer's, and everything placed below is
 			// stated in them.
+			// `dockingSnapshot` returns null when there is no station to snapshot.
+			// With an explicit id that cannot happen for a station taken out of
+			// this system's own contents — but an unguarded dereference turns any
+			// future violation of that into a bare `TypeError` inside
+			// `page.evaluate`, which surfaces as an opaque probe crash instead of
+			// a named failure.
 			const seen = g.dockingSnapshot(id);
+			if (!seen) return { noSnapshot: true, id };
 			const axis = seen.axis;
 			const across = seen.basis.across;
 			const up = seen.basis.up;
@@ -180,43 +231,8 @@ async function fly(setup) {
 			const before = { ...g.condition };
 			for (let i = 0; i < limitS / dt; i++) {
 				if (g.lastEntry || g.dockedAt) break;
-				if (!setup.computer) {
-					// Re-aim every frame at a **point on the station** — the aperture
-					// centre, or for the hull-face run the point on the face this run
-					// is aimed squarely at. Holding the nose parallel to the axis
-					// instead was the first version and it drifted: the axis swings as
-					// the station orbits, so a 378 m offset chosen to sit inside
-					// check 2's cone had grown to 422 m by the plane and the entry
-					// failed on the angle instead of on containment — the run passed
-					// while measuring the wrong thing.
-					//
-					// Speed comes from the throttle, not from writing `ship.vel`. That
-					// was the other first version: the assist reads a throttle of zero
-					// as "hold station in the local frame" and has 2 km/s² of
-					// authority, so it cancelled the whole commanded closing speed
-					// inside a single step and nothing ever reached the plane.
-					const snap = g.dockingSnapshot(id);
-					// The aim point sits **two kilometres past the plane**, not on it.
-					// Aiming at the plane itself was the version before this one and
-					// the nose went unstable at the end of the run: as the ship
-					// arrives, the vector to its own aim point shrinks to nothing and
-					// its direction is decided by whatever noise is left, so check 2
-					// read 59.5° at the crossing and the entry failed on the nose
-					// angle rather than on containment. A point beyond the target is
-					// what a pilot flying *through* a face aims at, and it keeps the
-					// nose well conditioned all the way in.
-					const aim = D.add(
-						D.scale(snap.axis, snap.planeKm - 2),
-						D.scale(D.perp(snap.axis), setup.offsetKm ?? 0),
-					);
-					const rad = ((setup.rollDeg ?? 0) * Math.PI) / 180;
-					const rolled = D.add(
-						D.scale(snap.basis.across, Math.cos(rad)),
-						D.scale(snap.basis.up, Math.sin(rad)),
-					);
-					g.setAttitude(D.toward(id, aim), rolled);
-					g.setThrottle(setup.closingKms / g.assistCapKms);
-				}
+				if (!setup.computer) D.reaim(id, setup);
+
 				// A sparse trace, printed only when a run does not do what it was
 				// set up to do. A passing run prints its verdict and nothing else;
 				// a failing one needs the approach, and reconstructing it from a
@@ -248,8 +264,12 @@ async function fly(setup) {
 				conditionAfter: after.condition,
 				entry: after.lastEntry,
 				trace,
+				// The crossing's own measured speed, so §9.2's record is a
+				// measurement rather than the setpoint that was asked for.
+				entrySpeedKms: after.lastEntry?.evaluation?.speedKms ?? null,
 				computerEngaged: after.computerEngaged,
 				apertureWidthKm: after.apertureWidthKm,
+				apertureHeightKm: after.apertureHeightKm,
 				planeKm: after.planeKm,
 				axialKm: after.axialKm,
 			};
@@ -261,8 +281,8 @@ async function fly(setup) {
 const tolerances = await page.evaluate(() => {
 	const g = window.__seelite;
 	return {
-		gateKms: g.docking.V_GATE_KMS,
-		axisDeg: g.docking.AXIS_TOLERANCE_DEG,
+		gateKms: g.dockingTolerances.V_GATE_KMS,
+		axisDeg: g.dockingTolerances.AXIS_TOLERANCE_DEG,
 	};
 });
 
@@ -279,10 +299,16 @@ const good = await fly({
 });
 console.log(
 	`  ${good.id} at ${good.spinRpm.toFixed(2)} rpm: docked=${good.docked} ` +
-		`after ${good.elapsed.toFixed(1)} s of sim time`,
+		`after ${good.elapsed.toFixed(1)} s of sim time, ` +
+		`crossing at ${good.entrySpeedKms?.toFixed(4) ?? "?"} km/s ` +
+		`against a ${tolerances.gateKms} km/s gate`,
 );
 if (!good.docked) for (const line of good.trace) console.log(`    ${line}`);
 check("the station answered the clearance request", good.cleared);
+check(
+	"the docking computer crossed under the gate",
+	good.entry === null || good.entry?.evaluation?.checks?.closingSpeed === true,
+);
 check(
 	"a correct profile docks",
 	good.docked,
@@ -328,12 +354,19 @@ const face = await fly({
 if (!face.entry) for (const line of face.trace) console.log(`    ${line}`);
 console.log(
 	`  offset ${(faceOffsetKm * 1000).toFixed(0)} m against a ` +
-		`${(face.apertureWidthKm * 500).toFixed(0)} m half-width: docked=${face.docked}`,
+		`${(face.apertureWidthKm * 500).toFixed(0)} × ${(face.apertureHeightKm * 500).toFixed(0)} m ` +
+		`half-aperture: docked=${face.docked}`,
 );
 check(
-	"the offset really is outside the aperture",
-	faceOffsetKm > face.apertureWidthKm / 2,
-	`${(faceOffsetKm * 1000).toFixed(0)} m against ${(face.apertureWidthKm * 500).toFixed(0)} m`,
+	// Against the **larger** half-extent, so the guard holds whichever way
+	// `D.perp` happened to point. Comparing against the width alone was the
+	// first version and it checked the 60 m half while containment may be
+	// judging the 35 m one — a guard that passes for a reason unrelated to what
+	// the check under test measured.
+	"the offset really is outside the aperture, in any direction",
+	faceOffsetKm > Math.max(face.apertureWidthKm, face.apertureHeightKm) / 2,
+	`${(faceOffsetKm * 1000).toFixed(0)} m against a ` +
+		`${(Math.max(face.apertureWidthKm, face.apertureHeightKm) * 500).toFixed(0)} m half-extent`,
 );
 console.log(
 	`  at the plane: ${face.entry?.evaluation?.positionAngleDeg?.toFixed(1)}° off the axis by position, ` +
@@ -341,6 +374,11 @@ console.log(
 );
 check("a crossing happened at all", face.entry !== null);
 check("the hull-face approach did not dock", !face.docked);
+check(
+	"and it arrived under the gate, so speed is not what refused it",
+	face.entry?.evaluation?.checks?.closingSpeed === true,
+	`${face.entry?.evaluation?.speedKms?.toFixed(4)} km/s against ${tolerances.gateKms}`,
+);
 check(
 	"and it failed on containment, not on an angle",
 	face.entry?.evaluation?.checks?.containment === false &&
@@ -376,6 +414,11 @@ console.log(
 );
 check("a crossing happened at all", rolled.entry !== null);
 check("the mis-rolled approach did not dock", !rolled.docked);
+check(
+	"it arrived under the gate — the roll is the only thing wrong with it",
+	rolled.entry?.evaluation?.checks?.closingSpeed === true,
+	`${rolled.entry?.evaluation?.speedKms?.toFixed(4)} km/s against ${tolerances.gateKms}`,
+);
 check(
 	"and it failed on the roll row",
 	rolled.entry?.evaluation?.checks?.rollMatch === false,
