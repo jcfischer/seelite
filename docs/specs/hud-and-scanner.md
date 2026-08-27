@@ -172,10 +172,12 @@ Elite 1984 did — and was declined because it authors a second UI grammar and
 leaves #28/#56's forms and the 3D cockpit of §5 unused for the whole stop.
 
 **Decision M2: the console hangs on the forward wall.** While docked, the canopy
-opening carries it. §1 splits left (Navigation, Communications) and right
-(Flight, Drive, Tuning) and gives a fifth console no wall; forward is the one
-surface with no job, because [#73](https://github.com/jcfischer/seelite/issues/73)'s
-**E5** suspends flight and the canopy then looks at a throat wall. The left and
+opening carries it. §1 names two walls and four consoles — left owns Navigation
+and Communications, right owns Flight and Drive — and §5 adds Tuning to the
+right one. There is no third wall for a station console to hang on, and forward
+is the one surface with no job, because
+[#73](https://github.com/jcfischer/seelite/issues/73)'s **E5** suspends flight
+and the canopy then looks at a throat wall. The left and
 right consoles keep their jobs unchanged.
 
 **This amends §5.** "Looking forward returns to flying glass and the
@@ -298,8 +300,9 @@ Three traps, each one a fact about the shipped module rather than a style note.
    source for *what does the table show*.
 3. **The tech-level gate counts Fuel, which is not in `EQUIPMENT`.**
    `station-types.md` §4.1 gates "the ten universal items" at
-   `min(displayTL + 3, 10)`, and `EQUIPMENT` holds **nine** of them — Fuel is
-   priced separately as `FUEL_CR_PER_LY`. A gate implemented by taking the first
+   `min(displayTL + 3, 10)`. **Fuel is the tenth the cap counts, and it is not in
+   the array**: `EQUIPMENT` holds nine universal rows, because fuel is priced by
+   the light year as `FUEL_CR_PER_LY` rather than as a unit item. A gate implemented by taking the first
    `min(displayTL + 3, 10)` of `EQUIPMENT`'s universal rows is wrong in *two*
    directions at once, and a first draft of this paragraph named only the first:
    it hides Fuel at every tech level, and from `displayTL` 0 through 6 it also
@@ -309,9 +312,10 @@ Three traps, each one a fact about the shipped module rather than a style note.
    | `displayTL` | hidden | sold too early |
    |---|---|---|
    | 0 | Fuel | Extra Pulse Laser |
+   | 1–4 | Fuel | one item, sliding up §7's order |
    | 5 | Fuel | Docking Computer |
    | 6 | Fuel | Galactic Hyperdrive |
-   | 7–12 | Fuel | — |
+   | 7–12 | Fuel | — (the slice runs out of array) |
 
    The early sale is the half that matters: it puts a galactic hyperdrive on a
    `displayTL = 6` shelf, one tech level below where §4.1 puts it, and nothing
@@ -332,7 +336,7 @@ state the current probe cannot express, let alone assert.
 | 3 | The screen's row builder never calls `marketRow` for a good failing `listsCommodity` — asserted by construction, not by absence of a throw. | headless |
 | 4 | A row with a non-zero deficit renders a signed delta against **this epoch's** base, and a row with zero deficit renders none. | headless |
 | 5 | The equipment tab at a low-TL trade station lists the available items **and** a non-empty unavailable block, each entry carrying a reason string. | headless |
-| 6 | The universal-item **set** at `displayTL` d matches §7's order truncated to `min(d + 3, 10)`, Fuel included — the trap in §8.5.3, checked at d = 0…12. | headless |
+| 6 | The universal-item **set** at `displayTL` d matches `economy-trade.md` §7's table order truncated to `min(d + 3, 10)`, Fuel included — the trap in §8.5.3, checked at d = 0…12. (`station-types.md` §4.1 owns the *gate*; `economy-trade.md` §7 is where the ten items appear in order, Fuel first.) | headless |
 | 7 | Turning the head right while docked exposes the Flight console with a live launch control and inert throttle/assist readouts. | browser |
 | 8 | Looking forward while docked returns the station console, not flying glass — §5's rule as amended by M2. | browser |
 
@@ -340,11 +344,22 @@ Obligation 3 is written as a construction check rather than "no throw is
 observed", because the passing build and the broken one both throw nothing on a
 fence, where every good lists. A test that only visits a fence cannot fail.
 
-**Obligation 6 asserts the set and not the count, for the same reason.** The
-buggy gate of §8.5.3 returns exactly `min(d + 3, 10)` items at every tech level —
-it drops Fuel and takes one extra from the far end — so a count check is green on
-both builds at all thirteen values of d. The *membership* is what separates
-them.
+**Obligation 6 asserts the set and not the count, and a first draft of this
+paragraph justified that with a claim it had not run.** It said a count check is
+green on both builds at all thirteen values of d. It is not: `EQUIPMENT` holds
+nine universal rows, so from d = 7 the buggy slice runs out of array and returns
+9 against the correct 10, and a count check goes red. Measured across d = 0…12:
+
+| d | correct | buggy | count separates | set separates |
+|---|---|---|---|---|
+| 0–6 | 3…9 | 3…9 | **no** | yes |
+| 7–12 | 10 | 9 | yes | yes |
+
+So a count check does catch the bug — **but only above the saturation point**,
+and `station-types.md` §4.2 records that shipyards exist only at
+`displayTL ≥ 10`, so a check written against the station types a reader has in
+mind can sit entirely inside the half where counting is blind. Membership
+separates them at every d, which is why the obligation is written that way.
 
 ### 8.7 Weak joints, recorded not reopened
 

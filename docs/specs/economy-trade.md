@@ -1077,15 +1077,17 @@ position, name and station silently.
   the approach.
 - **The HUD node** — owes the illegal-goods marker (§4) and a stock/price
   display that can show a deficit-moved price without implying a bug.
-  **Discharged by [#70](https://github.com/jcfischer/seelite/issues/70)**, which
-  had to decide the owner first: `hud-and-scanner.md` §0 declined the market at
+  **Still open. [#70](https://github.com/jcfischer/seelite/issues/70) decided the
+  owner and the shape; the screen is not built.** That node had to settle
+  ownership first: `hud-and-scanner.md` §0 declined the market at
   the same time this line handed it there, so the screen was owned by nobody for
   as long as neither half was buildable. That spec's **§8** is the answer — the
   marker is M5 (all seventeen rows at every station, the untraded three in a
   named block), the deficit display is M6 (a signed delta against the current
   epoch's base), and M7 records that §5.1's epoch roll is deliberately *not*
   surfaced, because a countdown to it is a countdown to §5.5's measured wait
-  exploit.
+  exploit. What this line now waits on is `hud-and-scanner.md` §8.6's eight
+  verification obligations, owed by the node that implements the console.
 - **`galaxy-generation.md`** — §8's fuel Cost row was wrong and is corrected in
   place, pointing here; §6.1.
 - **`station-types.md`** — §3's price-only offset is extended by §3.2 here, and
