@@ -110,6 +110,19 @@ function shells(scenes: THREE.Object3D[], kind: string) {
 	return out;
 }
 
+/**
+ * The keys this panel takes, and the one that restores everything.
+ *
+ * Exported because they have to stay out of the flight controls' way, and
+ * "I checked once" is not a mechanism: `tests/perf-panel-keys.test.ts` reads
+ * the bindings out of `main.ts` and fails if any of these is claimed there.
+ * An earlier revision used the digit row on the strength of a comment saying
+ * the flight controls own the letters — 1, 2 and 3 swing the chase view and 0
+ * resets the cruise dials, so the panel stole four working controls.
+ */
+export const PERF_KEYS = ["b", "h", "c", "r", "o"] as const;
+export const RESTORE_KEY = "u";
+
 export type PerfTargets = {
 	scenes: THREE.Object3D[];
 	/** The bloom pass, so it can be switched without rebuilding the composer. */
@@ -138,7 +151,7 @@ export function mountPerfPanel(targets: PerfTargets) {
 	const { scenes } = targets;
 	const switches: Switch[] = [
 		{
-			key: "1",
+			key: "b",
 			label: "bloom",
 			state: () => (targets.bloom?.enabled === false ? "off" : "on"),
 			toggle: () => {
@@ -146,7 +159,7 @@ export function mountPerfPanel(targets: PerfTargets) {
 			},
 		},
 		{
-			key: "2",
+			key: "h",
 			label: "atmosphere",
 			state: () =>
 				shells(scenes, "atmosphere").some((s) => s.visible) ? "on" : "off",
@@ -155,7 +168,7 @@ export function mountPerfPanel(targets: PerfTargets) {
 			},
 		},
 		{
-			key: "3",
+			key: "c",
 			label: "clouds",
 			state: () =>
 				shells(scenes, "cloud").some((s) => s.visible) ? "on" : "off",
@@ -164,14 +177,14 @@ export function mountPerfPanel(targets: PerfTargets) {
 			},
 		},
 		{
-			key: "4",
+			key: "r",
 			// 0 = full, 1 = albedo without the normal perturbation, 2 = plain sphere.
 			label: "surface",
 			state: () => ["full", "no relief", "flat"][readAblate(scenes)] ?? "full",
 			toggle: () => setAblate(scenes, (readAblate(scenes) + 1) % 3),
 		},
 		{
-			key: "5",
+			key: "o",
 			label: "craters",
 			state: () => (readCrater(scenes) ? "differenced" : "one walk"),
 			toggle: () => setCrater(scenes, !readCrater(scenes)),
@@ -187,14 +200,14 @@ export function mountPerfPanel(targets: PerfTargets) {
 					off ? "off" : ""
 				}">${v}</span>`;
 			})
-			.join("\n")}\n<b>0</b> restore all`;
+			.join("\n")}\n<b>${RESTORE_KEY}</b> restore all`;
 	};
 
 	const onKey = (e: KeyboardEvent) => {
-		// No modifier, and not while typing: the flight controls own the letters,
-		// so this takes the digit row and leaves them alone.
+		// No modifier. The keys are checked against the flight bindings by
+		// `tests/perf-panel-keys.test.ts` rather than by assertion here.
 		if (e.metaKey || e.ctrlKey || e.altKey) return;
-		if (e.key === "0") {
+		if (e.key === RESTORE_KEY) {
 			if (targets.bloom) targets.bloom.enabled = true;
 			for (const kind of ["atmosphere", "cloud"])
 				for (const s of shells(scenes, kind)) s.visible = true;
