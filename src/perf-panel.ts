@@ -100,6 +100,67 @@ function readCrater(scenes: THREE.Object3D[]): boolean {
 	return slow;
 }
 
+/**
+ * Every class a planet can be drawn as, in the order the cycle steps through.
+ *
+ * Restated here rather than imported from `planet-appearance.ts`, and that is
+ * a deliberate exception to this repo's habit: importing `CLASS_GLSL`'s keys
+ * would pull the whole shader table into the eagerly-loaded graph for a
+ * diagnostic that is off by default. The cost of the copy is that a tenth
+ * class would not appear in the cycle, which is a missing entry in a debug
+ * panel rather than a divergence anything renders.
+ */
+export const PERF_CLASSES = [
+	"terran",
+	"desert",
+	"ice",
+	"lava",
+	"venusian",
+	"airless",
+	"jovian",
+	"iceGiant",
+] as const;
+
+/**
+ * Cycle every planet's class at once, not just the one in front of the camera.
+ *
+ * Picking "the nearest body" needs a camera, a body list and a distance rule,
+ * and gets them wrong at the layer handoff. Changing all of them means the one
+ * being looked at changes too, which is the whole requirement — and it makes
+ * the panel's reading unambiguous, since they are all the same class.
+ */
+function cycleClass(scenes: THREE.Object3D[], step: number) {
+	const at = PERF_CLASSES.indexOf(
+		readClass(scenes) as (typeof PERF_CLASSES)[number],
+	);
+	const next =
+		PERF_CLASSES[(at + step + PERF_CLASSES.length) % PERF_CLASSES.length];
+	for (const scene of scenes)
+		scene.traverse((object) => {
+			object.userData?.setSurfaceClass?.(next);
+		});
+	return next;
+}
+
+/**
+ * The class the *planets* are wearing.
+ *
+ * Skipping `star` is what makes the cycle work rather than a nicety: the star
+ * is tagged like any other body and refuses to change, so reading it back gave
+ * a name that is not in the cycle, `indexOf` returned -1, and every press
+ * stepped to the first entry instead of the next one. The cycle appeared to
+ * stick on `terran`.
+ */
+function readClass(scenes: THREE.Object3D[]): string {
+	let found = "";
+	for (const scene of scenes)
+		scene.traverse((object) => {
+			const klass = object.userData?.surfaceClass;
+			if (klass && klass !== "star") found = klass;
+		});
+	return found;
+}
+
 /** Shells are tagged in `planet-surface.ts`, so this needs no registry either. */
 function shells(scenes: THREE.Object3D[], kind: string) {
 	const out: THREE.Object3D[] = [];
@@ -120,7 +181,7 @@ function shells(scenes: THREE.Object3D[], kind: string) {
  * the flight controls own the letters — 1, 2 and 3 swing the chase view and 0
  * resets the cruise dials, so the panel stole four working controls.
  */
-export const PERF_KEYS = ["b", "h", "c", "r", "o"] as const;
+export const PERF_KEYS = ["b", "h", "c", "r", "o", "p"] as const;
 export const RESTORE_KEY = "u";
 
 export type PerfTargets = {
@@ -182,6 +243,17 @@ export function mountPerfPanel(targets: PerfTargets) {
 			label: "surface",
 			state: () => ["full", "no relief", "flat"][readAblate(scenes)] ?? "full",
 			toggle: () => setAblate(scenes, (readAblate(scenes) + 1) % 3),
+		},
+		{
+			key: "p",
+			label: "planet class",
+			state: () => readClass(scenes) || "—",
+			// A body's class is normally a function of its orbit, so the only way
+			// to see `airless` from the cockpit is to find a moon. This makes any
+			// body wear any class, which is what lets the crater path be measured
+			// at all: it is the most expensive class in the set and the hardest
+			// one to happen to be flying past.
+			toggle: () => cycleClass(scenes, 1),
 		},
 		{
 			key: "o",

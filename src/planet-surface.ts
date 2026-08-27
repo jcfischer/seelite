@@ -353,6 +353,24 @@ export function buildBodyVisual(
 			fragmentShader: cachedFragment(look.surface),
 		}),
 	);
+	// Tagged with its class and a way to change it, for the perf panel's class
+	// cycle. The class is *compiled in* — `cachedFragment` picks one branch of
+	// `CLASS_GLSL` and the rest never reaches the GPU — so switching it is a
+	// shader swap and a recompile, not a uniform. That is why this is a closure
+	// on the material rather than a value the panel can set: the panel should
+	// not have to know that.
+	planet.userData.surfaceClass = look.surface;
+	planet.userData.setSurfaceClass = (next: SurfaceClass) => {
+		// A star keeps its own shader. It is not a planet surface, it is the
+		// brightest thing in the frame and therefore what the bloom pass is
+		// mostly working on, and drawing it as a desert would change the one
+		// term the panel is trying to hold still while another is measured.
+		if (look.surface === "star") return;
+		const material = planet.material as THREE.ShaderMaterial;
+		material.fragmentShader = cachedFragment(next);
+		material.needsUpdate = true;
+		planet.userData.surfaceClass = next;
+	};
 	group.add(planet);
 
 	if (look.cloudCover > 0 && !noClouds) {

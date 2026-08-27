@@ -12,7 +12,8 @@
  * `bun test` instead of in flight.
  */
 import { describe, expect, test } from "bun:test";
-import { PERF_KEYS, RESTORE_KEY } from "../src/perf-panel";
+import { CLASS_GLSL } from "../src/planet-classes.glsl";
+import { PERF_CLASSES, PERF_KEYS, RESTORE_KEY } from "../src/perf-panel";
 import { codeOf } from "./lib/source-scan";
 
 const main = codeOf("src/main.ts");
@@ -59,5 +60,27 @@ describe("the perf panel stays out of the flight controls", () => {
 	test("the panel's own keys are distinct", () => {
 		const all = [...PERF_KEYS, RESTORE_KEY];
 		expect(new Set(all).size).toBe(all.length);
+	});
+});
+
+describe("the panel's class cycle matches the classes that exist", () => {
+	test("every name it cycles is a real surface class", () => {
+		// `perf-panel.ts` restates the class names rather than importing
+		// `CLASS_GLSL`, so a diagnostic that is off by default does not drag the
+		// shader table into the eagerly-loaded graph. The cost of a copy is that
+		// it can drift, and the failure would be silent: `setSurfaceClass("terrran")`
+		// picks no shader and the panel would report a class the GPU never got.
+		//
+		// A missing name is tolerable — one class absent from a debug cycle. A
+		// *wrong* name is not, so that is what this checks.
+		for (const name of PERF_CLASSES)
+			expect(`${name}: ${name in CLASS_GLSL}`).toBe(`${name}: true`);
+	});
+
+	test("the cycle covers every class a planet can be", () => {
+		// `star` is deliberately outside the cycle: it is not a planet surface,
+		// and drawing a world as a photosphere measures nothing about worlds.
+		const cyclable = Object.keys(CLASS_GLSL).filter((k) => k !== "star");
+		expect([...PERF_CLASSES].sort().join(",")).toBe(cyclable.sort().join(","));
 	});
 });
