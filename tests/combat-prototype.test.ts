@@ -32,13 +32,13 @@ function fireFixedStepDuel(state = createCombatPrototype(), cap = 200) {
 test("starter pulse duel destroys the shielded target within the pacing target", () => {
 	const state = fireFixedStepDuel();
 	expect(state.targetHull).toBe(0);
-	// The enemy fired back through the duel: the combined shield pools are
-	// below their untouched total, so the exchange engaged the player rather
-	// than being a one-way kill. (Hull itself is not threatened at these
-	// numbers: enemy net drain vs shield recharge never exhausts a bank.)
+	// The enemy fired back through the duel: shields were engaged (their sum
+	// is below the untouched total) while hull stayed untouched — so this is a
+	// two-sided exchange that does not threaten the player at these numbers.
 	expect(state.foreShield + state.aftShield).toBeLessThan(
 		COMBAT_PROTOTYPE_DEFAULTS.shield * 2,
 	);
+	expect(state.playerHull).toBe(COMBAT_PROTOTYPE_DEFAULTS.hull);
 	expect(state.elapsed).toBeGreaterThanOrEqual(60);
 	expect(state.elapsed).toBeLessThanOrEqual(90);
 });
