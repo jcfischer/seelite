@@ -61,9 +61,13 @@ quantity  = clamp(clamp(clamp(baseQuantity + changing − product, 0, 63)
 
 The executable copy is **`src/market.ts`**, where
 [#25](https://github.com/jcfischer/seelite/issues/25) moved it. There is one
-copy of the **formula**, imported by the suite, by
-`tests/helpers/market-math.ts` and by `scripts/`, so no two of them measure
-different arithmetic. What stayed behind in `market-math.ts` is the surface that
+copy of the **price and stock pipeline** — `marketRowAt` — imported by the
+suite, by `tests/helpers/market-math.ts` and by `scripts/`, so no two of them
+measure different arithmetic. The claim is about that function and not about
+every byte below it: `BELL_WRAP` deliberately re-derives the byte close, because
+it is the arithmetic §2.2 *rejected*, and `NARCOTICS_BELL` re-transcribes one
+commodity row for the same reason. Both are the counterparts a rejection needs
+to stay runnable, and both live with the measurements rather than in the module. What stayed behind in `market-math.ts` is the surface that
 exists only to check this spec — Bell's own Narcotics row, his wrapping byte
 close, the domain sweeps, the residual surveys — and §11 records why that is a
 split rather than a move.
@@ -644,17 +648,23 @@ This document calls the dock-and-market stop "the modelled number that decides",
 and a longer stop makes flying worse relative to waiting, exactly the direction
 this section argues about. Over all four galaxies, each row a four-run total:
 
-| dock stop | waiting won, 4 runs | best ratio |
-|---|---|---|
-| 15 s | 4 of 153 | 4.38× |
-| 30 s | 4 of 151 | 3.76× |
-| **45 s** | **2 of 143** | **4.68×** |
-| 60 s | 7 of 146 | 5.72× |
-| 90 s | 4 of 137 | 8.31× |
+| dock stop | waiting won, 4 runs | rate | best ratio |
+|---|---|---|---|
+| 15 s | 4 of 153 | 2.6% | 4.38× |
+| 30 s | 4 of 151 | 2.6% | 3.76× |
+| **45 s** | **2 of 143** | **1.4%** | **4.68×** |
+| 60 s | 7 of 146 | 4.8% | 5.72× |
+| 90 s | 4 of 137 | 2.9% | 8.31× |
+
+**The rate column is not decoration.** The denominators differ — a run ends at
+its own milestone, so it offers its own number of decision points — and raw
+counts across different denominators are not comparable. A draft of this table
+had counts only and concluded "fewest wins" from them.
 
 **Waiting wins at every dock cost**, and 45 s — the value everything else here
-is measured at — has the **fewest** wins of the five. So the exploit is not an
-artefact of that choice; if anything the reported 45 s row understates it.
+is measured at — has the lowest **rate** of the five, 1.4% against 2.6–4.8%. So
+the exploit is not an artefact of that choice; if anything the reported 45 s row
+understates it.
 
 **The tail is not monotone in the dock cost, and a draft of this paragraph said
 it was.** Read the column: 4.38×, then *down* to 3.76×, then 4.68×, 5.72×,
@@ -705,7 +715,9 @@ Large Cargo Bay, §8's first purchase — at **5.8–14.6 minutes** from the ope
 100 Cr across four galaxies, against a modelled 45 s dock stop. Not "perfect
 play", which a draft said: §10.3's trader is a greedy heuristic with a named
 39.2% blind spot and no routing, so it is a *ceiling on a human* rather than an
-optimum.
+optimum. And the range is **transcribed script output, not a pinned value** —
+§1's rule for every figure in this document, and §12.7's recorded cost of it.
+Re-derive it with §10.2's instrument rather than trusting it.
 The sim *buys* it later than that, because it keeps an 800 Cr working float
 back; that float is a property of the sim, which stops dead without it, and not
 of the economy, so affordability is the figure this section is about. A draft
@@ -985,8 +997,15 @@ on the page.
 neighbour lookups** (112 of 286) — so the trader does not see every price in
 range, which the instrument's header claimed until it was counted. Lookups
 rather than decisions: `jumpOptions` runs twice per decision point, once for the
-launch and once inside the wait branch, so a denominator called "decisions"
-was double what a reader would count.
+launch and once inside the wait branch, so a denominator called "decisions" was
+double what a reader would count.
+
+**What that blindness costs is measured, not left as a caveat.** Run again at
+sixteen: the milestone goes **48–85 min to 44–72 min**. So the eight nearest
+systems are most of where the money is, the limit costs the trader roughly a
+tenth of its time, and the ceiling is slightly loose — in the direction that
+makes §8's "beaten by the pump" conclusion stronger rather than weaker, since a
+looser ceiling means the true one is faster still.
 
 **The §5.5 comparison was wrong twice before it was right, and both faults
 flattered the same side.**

@@ -72,8 +72,10 @@ export interface Commodity {
 	sellOnly: boolean;
 }
 
-/** Two's-complement read of a byte literal, for the `baseQuantity` column. */
-const i8 = (byte: number): number => (byte << 24) >> 24;
+/** Two's-complement read of a byte literal, for the `baseQuantity` column.
+ *  Exported for `NARCOTICS_BELL`, which is the one row transcribed outside this
+ *  module and needs the same reading of it. */
+export const i8 = (byte: number): number => (byte << 24) >> 24;
 
 /**
  * Builds one row. The four numeric columns are what a reader checks against
@@ -146,7 +148,10 @@ export const NARCOTICS_RETUNE = {
 export const TYPE_OFFSET = { trade: 0, refinery: 3, shipyard: -2 } as const;
 export type StationTypeKey = keyof typeof TYPE_OFFSET;
 
-const clamp = (v: number, lo: number, hi: number): number =>
+/** Exported because `tests/helpers/market-math.ts` had a byte-identical copy —
+ *  two definitions of the same three-token function, in the two files the split
+ *  exists to keep from drifting. */
+export const clamp = (v: number, lo: number, hi: number): number =>
 	Math.min(Math.max(v, lo), hi);
 
 /** One good by name. Both consumers had their own copy of this lookup. */

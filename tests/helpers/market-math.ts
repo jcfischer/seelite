@@ -33,18 +33,13 @@ import {
 	type StationTypeKey,
 	TYPE_OFFSET,
 	addDeficit,
+	clamp,
 	commodity,
 	decayDeficit,
+	i8,
 	marketRowAt,
 	stockResponse,
 } from "../../src/market";
-
-const clamp = (v: number, lo: number, hi: number): number =>
-	Math.min(Math.max(v, lo), hi);
-
-/** Two's-complement read of a byte literal, for `NARCOTICS_BELL`'s
- *  `baseQuantity` column — the one row this file still transcribes. */
-const i8 = (byte: number): number => (byte << 24) >> 24;
 
 /**
  * Bell's own Narcotics row, kept so the divergence can be re-measured rather

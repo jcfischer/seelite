@@ -183,7 +183,10 @@ const sellsIt = (item: Equipment, port: Port): boolean => {
 
 /** How far the trader looks for a jump target. The whole 256-system galaxy is
  *  in memory, so this bounds work rather than knowledge. */
-const NEIGHBOUR_LIMIT = 8;
+let NEIGHBOUR_LIMIT = 8;
+const setNeighbourLimit = (n: number) => {
+	NEIGHBOUR_LIMIT = n;
+};
 
 // ---------------------------------------------------------------------------
 // The world, as the trader sees it
@@ -307,6 +310,21 @@ interface Hop {
 
 /**
  * What a hold-and-stack basket earns on one leg, given capital.
+ *
+ * **A run is priced at the shelf price, once**, and both of these are the
+ * spec's model rather than a simplification of it:
+ *
+ * - **The sale is not limited by the destination's shelf.** §10.1 states it
+ *   directly — `minBuy` is restricted to rows that carry stock, `maxSell` is
+ *   not, "because selling needs no shelf". A station's quantity is what it has
+ *   to sell you, not a bin with room in it.
+ * - **No slippage inside one transaction.** §5.2's deficit is what the market
+ *   remembers *between* visits: it is written after the trade and moves the
+ *   price you see next time. `runsToExhaustion` — the spec's own committed
+ *   measurement, pinned by the suite — does exactly this, taking
+ *   `profitCr += margin * holdT` at one price and applying the deficit only
+ *   between runs. Pricing the marginal unit here would make this instrument
+ *   measure a different economy from the one §5.4 was ratified on.
  *
  * **The two ends are quoted at two clocks**, and an earlier version quoted both
  * at departure. That was not a rounding error: a leg runs into the tens of
@@ -750,8 +768,7 @@ function run(
 	if (!start) throw new Error("no multi-station system in this galaxy");
 
 	let here = portsOf(start, world.contentsFor(start))[0];
-	let credits = START_CR;
-	let holdT = HOLD_T;
+
 	let deficits: DeficitMap = {};
 	let t = 0; // game seconds
 	const limit = hours * 3600;
@@ -768,8 +785,8 @@ function run(
 					: a.priceCr - b.priceCr,
 		);
 	const led: Ledger = {
-		credits,
-		holdT,
+		credits: START_CR,
+		holdT: HOLD_T,
 		spentCr: 0,
 		kitAffordableAt: null,
 		kitCr: fullKitCr(),
@@ -792,7 +809,14 @@ function run(
 		const min = t / 60;
 		const options: Hop[] = [];
 
-		const stance = { t, credits, holdT, deficits, dockSeconds, tally };
+		const stance = {
+			t,
+			credits: led.credits,
+			holdT: led.holdT,
+			deficits,
+			dockSeconds,
+			tally,
+		};
 		options.push(...flyingOptions(here, world, stance));
 		const wait = waitOption(here, world, stance);
 		if (wait) options.push(wait.hop);
@@ -824,7 +848,7 @@ function run(
 		// of §5.2 is that the market remembers which of them you did.
 		for (const { good, units } of hop.cargo)
 			deficits = recordTrade(deficits, here.key, good.name, units, t / 60);
-		credits -= hop.fuelCr;
+		led.credits -= hop.fuelCr;
 		if (hop.kind === "jump") jumpMinutes += JUMP_SECONDS / 60;
 		dockMinutes += dockSeconds / 60;
 		t += hop.seconds;
@@ -837,17 +861,13 @@ function run(
 				-units,
 				arriveMin,
 			);
-		credits += hop.profitCr;
+		led.credits += hop.profitCr;
 		here = hop.to;
 		hops++;
 		if (hop.kind === "jump") jumps++;
 		else intra++;
 
-		led.credits = credits;
-		led.holdT = holdT;
 		shop(here, led, t / 60);
-		credits = led.credits;
-		holdT = led.holdT;
 
 		if (led.remaining.length === 0) break;
 		// Once the capital milestone is passed there is nothing left for this
@@ -857,7 +877,7 @@ function run(
 
 	return {
 		minutes: t / 60,
-		creditsCr: credits,
+		creditsCr: led.credits,
 		hops,
 		waits,
 		intra,
@@ -1026,7 +1046,9 @@ if (all.n === 0) {
 console.log(
 	`\ndock+market cost, swept over ${GALAXIES.length} galaxies — the modelled number that decides`,
 );
-console.log("  dock s   kit affordable      Cr/min   waits won    max×");
+console.log(
+	"  dock s   kit affordable      Cr/min   waits won    rate    max×",
+);
 for (const dock of [15, 30, 45, 60, 90]) {
 	const swept = WORLDS.map(({ world }) => run(world, hours, dock));
 	const kits = swept
@@ -1044,6 +1066,7 @@ for (const dock of [15, 30, 45, 60, 90]) {
 				10,
 			) +
 			`${stats.won}/${stats.n}`.padStart(12) +
+			`${((100 * stats.won) / Math.max(stats.n, 1)).toFixed(1)}%`.padStart(8) +
 			`${stats.max.toFixed(2)}×`.padStart(9),
 	);
 }
@@ -1062,6 +1085,30 @@ for (const dock of [15, 30, 45, 60, 90]) {
 			"— where it bit, the trader did not see the whole jump range.",
 	);
 }
+{
+	// **What the truncation costs, not just how often it bites.** Reporting a
+	// 39.2% blind rate and calling the trader a ceiling is half an answer: the
+	// question is whether the eight nearest systems are where the money is. Run
+	// again at sixteen and compare — if the milestone barely moves, the limit is
+	// bounding work rather than knowledge after all.
+	setNeighbourLimit(16);
+	const wide = WORLDS.map(({ world }) => run(world, hours));
+	setNeighbourLimit(8);
+	const kitsOf = (rs: Result[]) =>
+		rs
+			.map((r) => r.kitAffordableAtMinutes)
+			.filter((k): k is number => k !== null);
+	const narrowKits = kitsOf(results.map(({ r }) => r));
+	const wideKits = kitsOf(wide);
+	const span = (k: number[]) =>
+		k.length === 0
+			? "none in cap"
+			: `${finite("kit", Math.min(...k)).toFixed(0)}–${finite("kit", Math.max(...k)).toFixed(0)} min`;
+	console.log(
+		`\nneighbour limit 8 vs 16 — kit affordable ${span(narrowKits)} vs ${span(wideKits)}`,
+	);
+}
+
 const totalMin = results.reduce((sum, { r }) => sum + r.minutes, 0);
 const modelled = results.reduce(
 	(sum, { r }) => sum + r.jumpMinutes + r.dockMinutes,
