@@ -35,9 +35,9 @@ compression**, flight controls remain active, and an explicit close action
 returns to an unobscured cockpit.
 
 **Docked, the split gains a third member: the forward wall carries the station
-console** (§8's M2). Left and right are unchanged. The forward wall is not a
-panel in the flying state and never becomes one — §8.1 is the whole of when it
-appears.
+console** (§8's M2). Left and right are unchanged. The forward wall is never a
+panel in the flying state: it carries the console only while docked, from the
+completion of #73's E3 arrival (§8's M4) to launch (M9).
 
 ## 2. Compact scanner
 
@@ -144,8 +144,8 @@ game instance, and returns to the live game route on exit.
 **This inventory is flying states only, and every one of them asserts a flight
 floor.** §8's M10 removes that floor while docked, so the `docked` state is one
 this plan cannot express rather than one it happens to omit. §8.6 carries its
-eight obligations, and obligations 1, 2, 7 and 8 extend this probe rather than
-starting a second one.
+twelve obligations — eight browser, four headless — and the browser eight extend this probe rather
+than starting a second one.
 
 `?hud-gallery=<state>` is the low-risk browser prototype for these checks. It is
 a design surface, not a claim that unbuilt docking, communications, or scanner
@@ -292,9 +292,11 @@ Three traps, each one a fact about the shipped module rather than a style note.
 
 1. **`marketRow` throws for a good the station does not sell.** It is deliberate
    — `src/market.ts` calls a silently empty shelf "how it would ship" — and M5
-   walks straight at it: the screen renders seventeen rows and only fourteen of
-   them have a price. The rule is to iterate `COMMODITIES`, test `listsCommodity`,
-   and call `marketRow` **only** where it returns true. A screen that asks for a
+   walks straight at it: the screen renders seventeen rows and, **away from a
+   fence**, only some of them have a price. (Not "fourteen" — obligation 2
+   refuses that constant for the reason it gives, and at a fence all seventeen
+   are priced.) The rule is to iterate `COMMODITIES`, test `listsCommodity`, and
+   call `marketRow` **only** where it returns true. A screen that asks for a
    price so it can grey the row out throws on every non-fence station in the
    galaxy.
 2. **`stationCommodities` is not the row list under M5.** It filters to what the
@@ -307,14 +309,13 @@ Three traps, each one a fact about the shipped module rather than a style note.
    absent from the array** — `economy-trade.md` §7's table opens with it, and
    `EQUIPMENT` holds the other nine, because fuel is priced by the light year as
    `FUEL_CR_PER_LY` rather than as a unit item. A draft of this paragraph called
-   Fuel "the tenth", which contradicted obligation 6 and, worse, would have made
+   Fuel "the tenth", which contradicted obligation 8 and, worse, would have made
    the whole *sold too early* column below vanish: a slice of items 1…n taken
    from a list missing its *last* member differs from the correct set only by
    length. A gate implemented by taking the first
    `min(displayTL + 3, 10)` of `EQUIPMENT`'s universal rows is wrong in *two*
-   directions at once, and a first draft of this paragraph named only the first:
-   it hides Fuel at every tech level, and from `displayTL` 0 through 6 it also
-   sells one item the station should not have. Measured against the shipped
+   directions at once: it hides Fuel at every tech level, and from `displayTL` 0
+   through 6 it also sells one item the station should not have. Measured against the shipped
    array:
 
    Every row read off the shipped array rather than reasoned about, because a
@@ -329,7 +330,7 @@ Three traps, each one a fact about the shipped module rather than a style note.
    | 4 | 7 | Fuel | Energy Bomb |
    | 5 | 8 | Fuel | Docking Computer |
    | 6 | 9 | Fuel | Galactic Hyperdrive |
-   | 7–12 | 10 | Fuel | — (the slice runs out of array) |
+   | 7–12 | 10 | Fuel | — (the slice exhausts the 9-row array and returns 9, not 10 — §8.6's count-separates case) |
 
    The *sold too early* column is exactly `economy-trade.md` §7's order shifted
    by one, which is the signature of the missing first element.
@@ -352,25 +353,30 @@ state the current probe cannot express, let alone assert.
 | 2 | The market tab renders **seventeen** rows at every station, and a row is priced **iff** `listsCommodity` is true for it. Asserted as that biconditional and not as the constant fourteen: a station type that later drops a legal good would fail a hard-coded count on a correct build, which is the brittleness §8.5.2 rejects `stationCommodities` for. | browser |
 | 3 | The screen's row builder never calls `marketRow` for a good failing `listsCommodity` — asserted by construction, not by absence of a throw. | headless |
 | 4 | The row builder returns a signed delta field for a non-zero deficit, against **this epoch's** base, and no delta field for a zero deficit. Asserted against the builder's return value rather than against pixels, which is what keeps it headless. | headless |
-| 4b | Those deltas reach the glass: the docked gallery renders a moved row with a visible signed delta and an unmoved row without one. | browser |
-| 5 | The equipment builder at a low-TL trade station returns a non-empty available list **and** a non-empty unavailable list, every unavailable entry carrying a reason string. Return value, not rendering. | headless |
-| 5b | The unavailable block and its reason strings are on the glass in the docked gallery. | browser |
-| 6 | The universal-item **set** at `displayTL` d matches `economy-trade.md` §7's table order truncated to `min(d + 3, 10)`, Fuel included — the trap in §8.5.3, checked at d = 0…12. (`station-types.md` §4.1 owns the *gate*; `economy-trade.md` §7 is where the ten items appear in order, Fuel first.) | headless |
-| 7 | Turning the head right while docked exposes the Flight console with a live launch control and inert throttle/assist readouts. | browser |
-| 8 | Looking forward while docked returns the station console, not flying glass — §5's rule as amended by M2. | browser |
-| 9 | **M4's negative:** during the arrival the station console is **not** up. Asserted mid-arrival, not only at its end, or the check passes on a build that never delays it. | browser |
-| 10 | **M7's negative:** no epoch countdown or refresh announcement appears anywhere on the market tab, including across a simulated epoch boundary while docked. | browser |
+| 5 | Those deltas reach the glass: the docked gallery renders a moved row with a visible signed delta and an unmoved row without one. | browser |
+| 6 | The equipment builder at a low-TL trade station returns a non-empty available list **and** a non-empty unavailable list, every unavailable entry carrying a reason string. Return value, not rendering. | headless |
+| 7 | The unavailable block and its reason strings are on the glass in the docked gallery. | browser |
+| 8 | The universal-item **set** at `displayTL` d matches `economy-trade.md` §7's table order truncated to `min(d + 3, 10)`, Fuel included — the trap in §8.5.3, checked at d = 0…12. (`station-types.md` §4.1 owns the *gate*; `economy-trade.md` §7 is where the ten items appear in order, Fuel first.) | headless |
+| 9 | Turning the head right while docked exposes the Flight console with a live launch control and inert throttle/assist readouts. | browser |
+| 10 | Looking forward while docked returns the station console, not flying glass — §5's rule as amended by M2. | browser |
+| 11 | **M4's negative:** during the arrival the station console is **not** up. Asserted mid-arrival, not only at its end, or the check passes on a build that never delays it. | browser |
+| 12 | **M7's negative:** no epoch countdown or refresh announcement appears anywhere on the market tab, including across a simulated epoch boundary while docked. | browser |
+
+**Twelve obligations, and the count is the handoff contract.** A draft of this
+section said eight and then grew two tiers and two negatives without updating it,
+which is the drift this document keeps finding in itself. The implementation node
+inherits twelve.
 
 Obligation 3 is written as a construction check rather than "no throw is
 observed", because the passing build and the broken one both throw nothing on a
 fence, where every good lists. A test that only visits a fence cannot fail.
 
-**Obligations 9 and 10 exist because M4 and M7 are negatives**, and a decision
-whose whole content is "this does not appear" regresses in silence. Obligation 9
+**Obligations 11 and 12 exist because M4 and M7 are negatives**, and a decision
+whose whole content is "this does not appear" regresses in silence. Obligation 11
 is asserted *during* the arrival rather than after it, because a build that
 skipped E3's four to six seconds entirely would satisfy an end-state check.
 
-**Obligation 6 asserts the set and not the count, and a first draft of this
+**Obligation 8 asserts the set and not the count, and a first draft of this
 paragraph justified that with a claim it had not run.** It said a count check is
 green on both builds at all thirteen values of d. It is not: `EQUIPMENT` holds
 nine universal rows, so from d = 7 the buggy slice runs out of array and returns

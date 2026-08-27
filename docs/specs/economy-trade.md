@@ -1086,7 +1086,7 @@ position, name and station silently.
   named block), the deficit display is M6 (a signed delta against the current
   epoch's base), and M7 records that §5.1's epoch roll is deliberately *not*
   surfaced, because a countdown to it is a countdown to §5.5's measured wait
-  exploit. What this line now waits on is `hud-and-scanner.md` §8.6's eight
+  exploit. What this line now waits on is `hud-and-scanner.md` §8.6's twelve
   verification obligations, owed by the node that implements the console.
 - **`galaxy-generation.md`** — §8's fuel Cost row was wrong and is corrected in
   place, pointing here; §6.1.
