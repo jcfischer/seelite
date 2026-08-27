@@ -55,6 +55,7 @@
 import { DOMAIN, type SystemRecord, stream } from "./galaxy";
 import { type Vec3, dot, lengthSq } from "./vec3";
 import {
+	LOCAL_CARRIER_ID,
 	SPIN_RPM_RANGE,
 	STATION_FENCE_ELIGIBLE,
 	STATION_GEOMETRY,
@@ -252,6 +253,16 @@ export type { StationType };
 export interface Station {
 	id: string;
 	type: StationType;
+	/**
+	 * The system-local carrier-slot persistence ID
+	 * (`persistent-world-state.md` §2), from `LOCAL_CARRIER_ID`.
+	 *
+	 * Equal to `id` in v1 and still not the same thing: `id` is a display and
+	 * lookup key, this is what a save row is filed under. `economy-trade.md`
+	 * §5.5 keys the stock deficit on `(systemIndex, localCarrierId)`, so a
+	 * rename of `id` for the map screen must not move anybody's market memory.
+	 */
+	localCarrierId: string;
 	/** The planet it orbits, or `null` for a star-centric orbit (the refinery,
 	 *  which sits in the belt). */
 	parentId: string | null;
@@ -583,9 +594,12 @@ function generateStations(
 	 */
 	const fields = (
 		type: StationType,
-	): Pick<Station, "blackMarket" | "spinRpm"> => ({
+	): Pick<Station, "blackMarket" | "spinRpm" | "localCarrierId"> => ({
 		blackMarket: drawBlackMarket(flagRand, type, record.government),
 		spinRpm: drawSpinRpm(spinRand, type),
+		// Not a draw: the persistence identity is a table lookup
+		// (`station.ts`), so it consumes nothing from either stream.
+		localCarrierId: LOCAL_CARRIER_ID[type],
 	});
 
 	/** Station orbits are low and fast (§7.3): a few hundred to a couple of

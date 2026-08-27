@@ -234,3 +234,27 @@ export function slotPhaseRad(spinRpm: number, gameTime: number): number {
 	const wrapped = phase % TAU;
 	return wrapped < 0 ? wrapped + TAU : wrapped;
 }
+
+/**
+ * The system-local carrier-slot persistence ID, per station type
+ * (`persistent-world-state.md` §2).
+ *
+ * **A table rather than a reuse of `Station.id`.** V1's strings are the same
+ * ones `system.ts` already assigns, and the spec explicitly permits that — but
+ * it requires the persistence identity to be *exposed and tested* rather than
+ * inferred from a display key, because the two have different contracts. A
+ * station's `id` may be renamed for the map screen; a carrier id may not,
+ * because a saved market deficit is keyed on it and a rename silently orphans
+ * every row.
+ *
+ * The full key is `(galaxyIndex, systemIndex, localCarrierId)`. This half is
+ * system-local: `station-trade` names one station in every system in the
+ * galaxy, which is why `economy-trade.md` §5.5 keys the deficit map on the
+ * envelope-relative pair and not on this string alone.
+ */
+export const LOCAL_CARRIER_ID: Record<StationType, string> = {
+	trade: "station-trade",
+	refinery: "station-refinery",
+	shipyard: "station-shipyard",
+	outpost: "station-outpost",
+};
