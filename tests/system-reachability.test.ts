@@ -42,8 +42,6 @@ import {
 	arrivalPoint,
 } from "../src/system";
 
-/** Eight worlds. One world would measure one world, and the corpus helpers
- *  sweep the same series the measurement scripts do. */
 /**
  * Forty worlds — 81,920 systems — not eight.
  *
