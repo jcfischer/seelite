@@ -6,7 +6,7 @@
  * of that choice is that every lookup is 3D, which is why the octave counts are
  * small and the expensive primitives (craters) are used by one class only.
  *
- * **Authored in linear space.** The renderer sets `SRGBColorSpace` on output, so
+ * **Authored in linear space.** The renderer sets SRGBColorSpace on output, so
  * a colour written here is a linear reflectance, not a hex a designer picked.
  * Values look darker than the equivalent sRGB swatch on purpose.
  */
@@ -17,8 +17,8 @@ import { CLASS_GLSL, RELIEF } from "./planet-classes.glsl";
 /**
  * One cell of a crater field, and the profile of the crater in it.
  *
- * **Two consumers, one definition.** `craters()` below sums the profile;
- * `station-surface.ts`'s `cratersAndGradient()` sums it *and* its slope, so a
+ * **Two consumers, one definition.** craters() below sums the profile;
+ * station-surface.ts's cratersAndGradient() sums it *and* its slope, so a
  * refinery's asteroid pays one walk of the 3×3×3 neighbourhood instead of the
  * five that finite-differencing the height would cost. Those are different
  * accumulations of the same field, and the field is written here so they cannot
@@ -31,15 +31,15 @@ import { CLASS_GLSL, RELIEF } from "./planet-classes.glsl";
  * both consumers get it.
  *
  * They are strings rather than a shared GLSL function because the gradient
- * needs `d`, `radius` and the offset from inside the loop, and GLSL ES 1.00
+ * needs d, radius and the offset from inside the loop, and GLSL ES 1.00
  * has no way to hand those back without recomputing them.
  *
  * **What a consumer must provide, and must not shadow.** Being text rather
  * than a signature, the contract is by name, so it is written down here
- * instead of being learned from a collision. `CRATER_CELL` reads `base`, `p`
- * and the loop counters `x`, `y`, `z`, and declares `cell`, `centre`,
- * `radius`, `offset`, `dist` and `d`. `CRATER_PROFILE` reads `d` and declares
- * `inside`, `bowl` and `rim`. A third interpolator supplies the first set and
+ * instead of being learned from a collision. CRATER_CELL reads base, p
+ * and the loop counters x, y, z, and declares cell, centre,
+ * radius, offset, dist and d. CRATER_PROFILE reads d and declares
+ * inside, bowl and rim. A third interpolator supplies the first set and
  * leaves the second alone.
  */
 export const CRATER_CELL = /* glsl */ `    vec3 cell = base + vec3(x, y, z);
@@ -55,8 +55,8 @@ export const CRATER_CELL = /* glsl */ `    vec3 cell = base + vec3(x, y, z);
  * Where the rim sits, and how sharp it is.
  *
  * Hoisted out of the profile because the *derivative* needs them too:
- * `station-surface.ts` differentiates the rim analytically, and its chain rule
- * carries `2 · CRATER_RIM_SHARPNESS²`. Written as literals in both places, a
+ * station-surface.ts differentiates the rim analytically, and its chain rule
+ * carries 2 · CRATER_RIM_SHARPNESS². Written as literals in both places, a
  * change to the sharpness here would leave the derivative describing a
  * different crater — silently, because a wrong slope shades plausibly.
  */
@@ -69,7 +69,7 @@ export const CRATER_PROFILE = /* glsl */ `      float inside = step(d, 1.0);
 
 /** Hashes, value noise, fBm, ridged fBm, domain warp. GLSL ES 1.00. */
 /**
- * `fbmN` for each octave count the classes use.
+ * fbmN for each octave count the classes use.
  *
  * Emitted from one template rather than written three times: GLSL ES 1.00
  * forbids a non-constant loop bound, so the functions genuinely cannot share a
@@ -168,6 +168,49 @@ float contour(vec3 q, float width, float warpFreq, float warpAmt) {
 // One impact per cell across a 3x3x3 neighbourhood: a parabolic bowl with a
 // raised rim. No amount of fBm produces a crater, and craters are the entire
 // reason an airless body reads as airless.
+/**
+ * The same field, accumulated with its slope.
+ *
+ * craters above answers "how deep here"; a normal also needs "which way is
+ * downhill", and the usual way to get it — reliefNormal's central
+ * differences — asks the height function four more times. On a body whose
+ * height *is* two crater walks that is ten walks a fragment for a normal that
+ * one walk already contains: a crater's profile is smooth in d, so its slope
+ * is available inside the loop that accumulates its depth.
+ *
+ * Two consumers now: the refinery's asteroid (#60), and AIRLESS (#65), which
+ * planet-classes.glsl.ts says is the most expensive class in the set for
+ * exactly this reason.
+ */
+vec4 cratersAndGradient(vec3 p, float scale, float depth) {
+  p *= scale;
+  vec3 base = floor(p);
+  float acc = 0.0;
+  vec3 grad = vec3(0.0);
+  for (int x = -1; x <= 1; ++x)
+  for (int y = -1; y <= 1; ++y)
+  for (int z = -1; z <= 1; ++z) {
+${CRATER_CELL}
+    if (d < 1.2) {
+${CRATER_PROFILE}
+      acc += (bowl + rim) * depth;
+      // d(bowl)/dd is 2d inside the bowl and zero beyond it; d(rim)/dd is the
+      // gaussian times its own exponent's derivative. Both read the profile's
+      // own defines rather than the numbers they evaluate to: hand-expanded,
+      // the sharpness would appear here as twice its square, and a change to it
+      // upstream would leave this describing a different crater — silently,
+      // because a wrong slope still shades plausibly.
+      float dProfile = (2.0 * d * inside)
+                     + rim * (-2.0 * CRATER_RIM_SHARPNESS * CRATER_RIM_SHARPNESS
+                              * (d - CRATER_RIM_AT));
+      // Chain rule out to p: dd/d|offset| is 1/radius, d|offset|/dp is the unit
+      // offset, and the outer p *= scale contributes another factor.
+      grad += dProfile * depth * scale * offset / max(dist * radius, 1e-6);
+    }
+  }
+  return vec4(grad, acc);
+}
+
 float craters(vec3 p, float scale, float depth) {
   p *= scale;
   vec3 base = floor(p);
@@ -191,9 +234,9 @@ ${CRATER_PROFILE}
  * Three terms the previous prototype was missing, and each fixes one way a
  * sphere stops reading as a sphere:
  *
- * - **Wrapped diffuse.** A hard `max(N·L, 0)` puts the terminator exactly on the
+ * - **Wrapped diffuse.** A hard max(N·L, 0) puts the terminator exactly on the
  *   geometric limb, which is right for an airless rock and wrong for anything
- *   with air — a thick atmosphere scatters light tens of degrees past it. `wrap`
+ *   with air — a thick atmosphere scatters light tens of degrees past it. wrap
  *   is the body's optical depth, so the same expression gives Luna a knife-edge
  *   terminator and Venus a soft one.
  * - **Limb darkening.** Grazing exit angles carry less light out. Without it the
@@ -252,7 +295,7 @@ void main() {
 /**
  * Assemble one class's fragment shader.
  *
- * The order is load-bearing: `reliefNormal` calls `height`, which the class body
+ * The order is load-bearing: reliefNormal calls height, which the class body
  * defines *after* it, so a prototype declaration goes in between. GLSL allows
  * this and it is the only way to keep the relief code shared rather than pasted
  * into all six classes that use it.

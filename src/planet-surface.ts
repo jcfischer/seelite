@@ -291,6 +291,16 @@ export function buildBodyVisual(
 		// an airless body does not carry it at all.
 		wrapAmount: { value: look.atmosphere * 0.32 },
 		seedOffset: { value: (look.seed % 997) / 97 },
+		// The A/B switch AIRLESS reads. Query-gated so the two crater paths can
+		// be compared on one machine by reloading, which is the measurement
+		// #59 could not take — its runner had no GPU, and it said so.
+		craterSlow: {
+			value:
+				new URLSearchParams(window.location.search).get("crater") ===
+				"differenced"
+					? 1
+					: 0,
+		},
 		warmth: { value: look.warmth },
 		seaLevel: { value: look.seaLevel },
 		starTint: { value: photosphereTint(opts.starTint ?? 0xfff4ea) },
