@@ -551,43 +551,22 @@ function assertGalaxy(galaxyIndex: number): void {
 }
 
 /**
- * Applies one transition, or throws.
+ * §4's table, and only §4's table.
  *
- * Two orderings matter and both are §4's:
- *
- * 1. **Due completions resolve first.** A disable arriving at the same instant
- *    a repair finishes acts on an *operational* carrier, not on a repairing
- *    one — otherwise a legal event would be rejected because nobody had looked
- *    at the clock yet.
- * 2. **Process kind fixes the completion.** A repair episode cannot close as a
- *    replacement, and a destroyed-origin replacement cannot close as a repair;
- *    the second is the one that would silently lose an instance ordinal.
+ * Split out of `applyTransition` so that adding a transition kind touches the
+ * validation and the resulting delta in one place, and the caller keeps the
+ * parts that are the same for every kind: the transition fact, the episode
+ * summary and the knowledge write.
  */
-export function applyTransition(
-	world: WorldState,
-	galaxyIndex: number,
+function nextDelta(
 	key: CarrierKey,
+	current: ObjectiveDelta,
 	event: TransitionEvent,
-): WorldState {
-	assertGalaxy(galaxyIndex);
-	if (!Number.isFinite(event.occurredAt))
-		fail(`${event.kind} has no finite occurredAt`);
-	if (event.occurredAt < world.gameTime)
-		fail(
-			`${event.kind} at ${event.occurredAt} is before the clock (${world.gameTime})`,
-		);
-
-	const advanced = advanceTo(world, event.occurredAt);
-	const env = advanced.galaxies[galaxyIndex];
-	const current = env.objective[key] ?? {
-		instanceOrdinal: 0,
-		condition: "operational" as OperationalCondition,
-	};
-	const open = env.episodes[key];
+	open: CausalEpisode | undefined,
+): { next: ObjectiveDelta; episodeOrdinal: number; opensEpisode: boolean } {
 	const episodeOpen = open !== undefined && !open.closed;
 	/** Join the open episode, or allocate the next one (§4). */
 	const nextOrdinal = episodeOpen ? open.ordinal : (open?.ordinal ?? 0) + 1;
-
 	let next: ObjectiveDelta;
 	let episodeOrdinal: number;
 	let opensEpisode = false;
@@ -718,6 +697,57 @@ export function applyTransition(
 		}
 	}
 
+	return { next, episodeOrdinal, opensEpisode };
+}
+
+/**
+ * Applies one transition, or throws.
+ *
+ * Two orderings matter and both are §4's:
+ *
+ * 1. **Due completions resolve first.** A disable arriving at the same instant
+ *    a repair finishes acts on an *operational* carrier, not on a repairing
+ *    one — otherwise a legal event would be rejected because nobody had looked
+ *    at the clock yet.
+ * 2. **Process kind fixes the completion.** A repair episode cannot close as a
+ *    replacement, and a destroyed-origin replacement cannot close as a repair;
+ *    the second is the one that would silently lose an instance ordinal.
+ */
+export function applyTransition(
+	world: WorldState,
+	galaxyIndex: number,
+	key: CarrierKey,
+	event: TransitionEvent,
+): WorldState {
+	assertGalaxy(galaxyIndex);
+	if (!Number.isFinite(event.occurredAt))
+		fail(`${event.kind} has no finite occurredAt`);
+	if (event.occurredAt < world.gameTime)
+		fail(
+			`${event.kind} at ${event.occurredAt} is before the clock (${world.gameTime})`,
+		);
+
+	const advanced = advanceTo(world, event.occurredAt);
+	const env = advanced.galaxies[galaxyIndex];
+	const current = env.objective[key] ?? {
+		instanceOrdinal: 0,
+		condition: "operational" as OperationalCondition,
+	};
+	const open = env.episodes[key];
+
+	const { next, episodeOrdinal, opensEpisode } = nextDelta(
+		key,
+		current,
+		event,
+		open,
+	);
+
+	// **The process the transition touched, not the one that survives it.**
+	// Reading it off `next` dropped it from every completion and every
+	// interrupt — `next` has no recovery — so one episode outcome serialized
+	// with the process identity when it materialized lazily and without it when
+	// it was explicit, and nothing recorded which process an interrupt stopped.
+	const processId = next.recovery?.processId ?? current.recovery?.processId;
 	const fact: TransitionFact = {
 		key,
 		instanceOrdinal: next.instanceOrdinal,
@@ -725,7 +755,7 @@ export function applyTransition(
 		kind: event.kind,
 		occurredAt: event.occurredAt,
 		cause: event.cause,
-		...(next.recovery ? { processId: next.recovery.processId } : {}),
+		...(processId === undefined ? {} : { processId }),
 	};
 
 	const isStart =
@@ -827,6 +857,11 @@ export const observe = (
 	source: string,
 ): WorldState => {
 	assertGalaxy(galaxyIndex);
+	// The same clock rule `applyTransition` enforces. Without it `advanceTo`'s
+	// `Math.max` silently accepted an observation from the past and let it
+	// overwrite fresher intelligence with a stale `observedAt`.
+	if (!Number.isFinite(gameTime) || gameTime < world.gameTime)
+		fail(`observe at ${gameTime} is before the clock (${world.gameTime})`);
 	// **Through `advanceTo`, not past it.** Moving the clock while leaving a due
 	// completion unwritten put the world in a state no other verb can produce:
 	// clock ahead of a `completesAt` nothing had materialized. `advanceTo` is
@@ -852,6 +887,10 @@ export const visit = (
 	systemIndex: number,
 ): WorldState => {
 	assertGalaxy(galaxyIndex);
+	// The parser's range, applied at the write. Accepting a value only the next
+	// load rejects is the distance-from-cause `assertGalaxy` exists to close.
+	if (!Number.isInteger(systemIndex) || systemIndex < 0 || systemIndex > 255)
+		fail(`visit: ${systemIndex} is not a system index`);
 	const galaxies = world.galaxies.slice();
 	const env = galaxies[galaxyIndex];
 	if (env.visited.includes(systemIndex)) return world;
@@ -871,6 +910,8 @@ export const setLegalHeat = (
 	updatedAt: number,
 ): WorldState => {
 	assertGalaxy(galaxyIndex);
+	if (!Number.isFinite(heat) || !Number.isFinite(updatedAt))
+		fail(`setLegalHeat: ${heat}/${updatedAt} is not a finite pair`);
 	const galaxies = world.galaxies.slice();
 	galaxies[galaxyIndex] = {
 		...galaxies[galaxyIndex],
@@ -1174,8 +1215,13 @@ const parseEnvelope = (raw: unknown, slot: number): GalaxyEnvelope => {
 				? {}
 				: { recovery: parseRecovery(row.recovery, `objective ${key}`) }),
 		};
+		// Both directions. The one-sided check let an `operational` row carry a
+		// live descriptor that `isDue` can never fire and `effectiveCarrier`
+		// hands straight back — an immortal recovery.
 		if (delta.condition === "repairing" && !delta.recovery)
 			fail(`objective ${key}: repairing with no recovery descriptor`);
+		if (delta.condition !== "repairing" && delta.recovery)
+			fail(`objective ${key}: ${delta.condition} with a recovery descriptor`);
 		return delta;
 	});
 
@@ -1224,14 +1270,19 @@ const parseEnvelope = (raw: unknown, slot: number): GalaxyEnvelope => {
 	if (!Array.isArray(o.visited))
 		fail(`galaxy ${slot}: visited is not an array`);
 	const seen = new Set<number>();
+	let previous: number | undefined;
 	const visited = (o.visited as unknown[]).map((v) => {
 		if (typeof v !== "number" || !Number.isInteger(v) || v < 0 || v > 255)
 			fail(`galaxy ${slot}: ${String(v)} is not a system index`);
-		// `visit` promises sorted and unique, so the canonical snapshot cannot
-		// carry insertion order. A duplicate arriving from a save would break
-		// that promise on the way back in.
+		// `visit` promises **strictly ascending**, so the canonical snapshot
+		// cannot carry insertion order. Checked here rather than normalised,
+		// because normalising is exactly what would let a save differ from what
+		// the integrity hash was computed over.
 		if (seen.has(v as number))
 			fail(`galaxy ${slot}: visited system ${String(v)} is listed twice`);
+		if (previous !== undefined && (v as number) < previous)
+			fail(`galaxy ${slot}: visited is not in ascending order`);
+		previous = v as number;
 		seen.add(v as number);
 		return v as number;
 	});
@@ -1278,8 +1329,13 @@ export function parseWorld(raw: unknown): WorldState {
 		galaxies: (o.galaxies as unknown[]).map((g, i) => parseEnvelope(g, i)),
 	};
 
-	const expected = fnv1a(JSON.stringify(canonicalBody(world)));
-	if (o.integrity !== expected)
+	// **Over what arrived, not over what parsing made of it.** Hashing the
+	// re-canonicalised model made every difference canonicalisation smooths away
+	// invisible to the check — the hash agreed with itself by construction. The
+	// received body is hashed instead, which is why the shape checks above
+	// refuse anything canonicalisation would have quietly reordered.
+	const { integrity, ...received } = o;
+	if (integrity !== fnv1a(JSON.stringify(received)))
 		fail("snapshot: integrity check failed — the save is not one timeline");
 
 	if (world.worldSchemaVersion !== WORLD_SCHEMA_VERSION)

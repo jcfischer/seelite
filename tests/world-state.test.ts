@@ -188,7 +188,39 @@ describe("§9.2 baseline purity and exclusion", () => {
 	});
 
 	test("the serialized model carries no generated geometry or projection", () => {
-		const serialized = JSON.stringify(serializeWorld(underRepair()));
+		// **Field names, not substrings.** The first version searched the JSON
+		// text for `"pos"`, which is inside `opposed` — a legal `PlayerRole` — so
+		// the first fixture to use that role would have turned a geometry check
+		// red with no geometry in sight. Every key in the tree is collected and
+		// compared exactly instead.
+		const keys = new Set<string>();
+		const walk = (value: unknown): void => {
+			if (Array.isArray(value)) return value.forEach(walk);
+			if (value === null || typeof value !== "object") return;
+			for (const [k, v] of Object.entries(value)) {
+				keys.add(k);
+				walk(v);
+			}
+		};
+		// A world using every `PlayerRole`, so the check is exercised against the
+		// vocabulary it has to coexist with.
+		let w = underRepair();
+		w = applyTransition(w, 0, KEY, {
+			kind: "recovery-change",
+			occurredAt: 20,
+			cause: {
+				causeKind: "blockade",
+				actorId: "pirate",
+				playerRole: "opposed",
+			},
+			completesAt: 400,
+		});
+		w = applyTransition(w, 0, OTHER, {
+			kind: "disable",
+			occurredAt: 21,
+			cause: { causeKind: "escort", actorId: "player", playerRole: "assisted" },
+		});
+		walk(serializeWorld(w));
 		for (const forbidden of [
 			"orbit",
 			"radiusKm",
@@ -200,10 +232,16 @@ describe("§9.2 baseline purity and exclusion", () => {
 			"periodS",
 			"inclination",
 			"pos",
-			"capability",
+			"radius",
+			"capabilities",
 			"stationType",
+			"type",
+			"id",
 		])
-			expect(serialized).not.toContain(forbidden);
+			expect(keys.has(forbidden), forbidden).toBe(false);
+		// The control: the walk found something, so an empty set cannot pass.
+		expect(keys.has("playerRole")).toBe(true);
+		expect(keys.size).toBeGreaterThan(15);
 	});
 
 	test("an undeclared state domain is rejected", () => {
@@ -540,6 +578,32 @@ describe("§9.3 the transition table", () => {
 		// the restoration to the disable that opened it.
 		expect(after?.ordinal).toBe((interrupted?.ordinal ?? 0) + 1);
 		expect(after?.initiating.kind).toBe("restore");
+	});
+
+	test("every recovery outcome records the process it touched", () => {
+		// Reading the identity off the *resulting* delta dropped it from every
+		// completion and interrupt, so one outcome serialized two ways depending
+		// on whether it materialized lazily or arrived as an event.
+		const lazy = advanceTo(underRepair(), 70);
+		const processId = recoveryProcessId(KEY, 1, "repair");
+		expect(lazy.galaxies[0].episodes[KEY]?.latest.processId).toBe(processId);
+
+		const explicit = applyTransition(underRepair(), 0, KEY, {
+			kind: "repair-complete",
+			occurredAt: 40,
+			cause: PIRATE,
+		});
+		expect(explicit.galaxies[0].episodes[KEY]?.latest.processId).toBe(
+			processId,
+		);
+
+		const stopped = applyTransition(underRepair(), 0, KEY, {
+			kind: "interrupt",
+			occurredAt: 40,
+			cause: PIRATE,
+			resulting: "disabled",
+		});
+		expect(stopped.galaxies[0].episodes[KEY]?.latest.processId).toBe(processId);
 	});
 
 	test("a later unrelated episode replaces the summary, role `none` included", () => {
@@ -991,6 +1055,26 @@ describe("§7 the envelope's writers", () => {
 		).toBe("repairing");
 	});
 
+	test("every writer refuses a value the parser would reject", () => {
+		const w = newWorld(WORLD);
+		expect(() => visit(w, 0, -1)).toThrow(/system index/);
+		expect(() => visit(w, 0, 256)).toThrow(/system index/);
+		expect(() => visit(w, 0, 3.5)).toThrow(/system index/);
+		expect(() => setLegalHeat(w, 0, Number.NaN, 1)).toThrow(/finite/);
+		expect(() => setLegalHeat(w, 0, 1, Number.POSITIVE_INFINITY)).toThrow(
+			/finite/,
+		);
+	});
+
+	test("observe refuses an observation from the past", () => {
+		const w = observe(newWorld(WORLD), 0, KEY, 500, "visit");
+		// `advanceTo`'s `Math.max` clamped the clock and let this through, so a
+		// stale reading overwrote fresher intelligence with an older
+		// `observedAt`.
+		expect(() => observe(w, 0, KEY, 5, "relay")).toThrow(/before the clock/);
+		expect(readKnowledge(w.galaxies[0], KEY)?.observedAt).toBe(500);
+	});
+
 	test("a save listing one system twice is rejected", () => {
 		const raw = serializeWorld(visit(visit(newWorld(WORLD), 0, 3), 0, 11)) as {
 			galaxies: Record<string, unknown>[];
@@ -1034,6 +1118,46 @@ describe("§9.9 atomicity and integrity", () => {
 		};
 		delete raw.galaxies[0].knowledge;
 		expect(() => parseWorld(raw)).toThrow(/knowledge/i);
+	});
+
+	test("visited out of ascending order is rejected, not normalised", () => {
+		const raw = serializeWorld(visit(visit(newWorld(WORLD), 0, 3), 0, 11)) as {
+			galaxies: Record<string, unknown>[];
+		};
+		raw.galaxies[0].visited = [11, 3];
+		// Silently re-sorting is what made the integrity hash agree with itself:
+		// the check ran over what parsing produced rather than what arrived.
+		expect(() => parseWorld(raw)).toThrow(/ascending/i);
+	});
+
+	test("a re-ordered carrier map fails the hash rather than being re-sorted", () => {
+		const raw = serializeWorld(populated()) as {
+			galaxies: { objective: Record<string, unknown> }[];
+		};
+		const objective = raw.galaxies[0].objective;
+		const keys = Object.keys(objective);
+		expect(keys).toEqual([KEY, OTHER]);
+		raw.galaxies[0].objective = {
+			[OTHER]: objective[OTHER],
+			[KEY]: objective[KEY],
+		};
+		// Nothing about this save is malformed — it is the same state written in
+		// a different order. Hashing the *re-canonicalised* model could not see
+		// it, because canonicalisation sorted it back before the hash ran: the
+		// check agreed with itself by construction. Hashing what arrived is what
+		// makes it visible.
+		expect(() => parseWorld(raw)).toThrow(/integrity/i);
+	});
+
+	test("an operational row carrying a live recovery is rejected", () => {
+		const raw = serializeWorld(underRepair()) as {
+			galaxies: { objective: Record<string, { condition: string }> }[];
+		};
+		// `isDue` can never fire a descriptor on an operational carrier, so the
+		// recovery would be immortal and `effectiveCarrier` would keep handing
+		// it back.
+		raw.galaxies[0].objective[KEY].condition = "operational";
+		expect(() => parseWorld(raw)).toThrow(/recovery descriptor/);
 	});
 
 	test("a malformed row fails loudly", () => {
