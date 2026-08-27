@@ -6,8 +6,11 @@ import {
 	duelTargetInCone,
 } from "../src/combat-prototype";
 
-function fireFixedStepDuel(state = createCombatPrototype()) {
-	while (state.elapsed < 90 && state.targetHull > 0)
+// The cap is far above either pacing window, so both the low and high bounds
+// are real assertions: a duel that kills too fast (under 60 s) fails the floor,
+// and one that cannot kill within the window fails the ceiling.
+function fireFixedStepDuel(state = createCombatPrototype(), cap = 200) {
+	while (state.elapsed < cap && state.targetHull > 0)
 		state = stepCombatPrototype(state, {
 			dt: 0.1,
 			firing: "pulse",
