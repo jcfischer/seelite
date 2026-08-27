@@ -67,7 +67,22 @@ export const CORE_RADIUS_LY = GALAXY_RADIUS_LY / Math.SQRT2;
 /** Jump range and fuel price (spec §2, §8). The range is also the edge
  *  predicate for the connectivity graph. */
 export const JUMP_RANGE_LY = 7.0;
-export const FUEL_COST_PER_LY = 0.2;
+
+/**
+ * **2 Cr per LY, not 0.2** — Elite's PRXS table charges 0.2 Cr per *0.1* LY, so
+ * a full 7 LY tank is 14 Cr (`economy-trade.md` §6.1, `galaxy-generation.md`
+ * §8).
+ *
+ * This read `0.2` until #11. The specs were corrected under #7 and the check
+ * that correction named was a repo-wide grep for `0.2 Cr` — which is a search
+ * for *prose*, and finds nothing in a module whose copy of the figure is a bare
+ * literal on a differently-named constant. `market.ts` declares the same price
+ * as `FUEL_CR_PER_LY = 2`; the two disagreed by a factor of ten for six weeks,
+ * unnoticed because nothing imported `jumpCost` until the route panel did.
+ * `tests/galaxy-route.test.ts` now asserts they agree, which is the check a
+ * grep could not be.
+ */
+export const FUEL_COST_PER_LY = 2;
 
 /** Bisection steps used to invert the radial CDF. **Fixed, not a tolerance** —
  *  a convergence-dependent count would make the layout a function of the

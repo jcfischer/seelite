@@ -1,0 +1,346 @@
+# Spec: the galaxy map
+
+**Status:** ratified design decision — [#11](https://github.com/jcfischer/seelite/issues/11)
+**Date:** 2026-08-27
+**Context:** [#6](https://github.com/jcfischer/seelite/issues/6) settled a
+globular volume, [#70](https://github.com/jcfischer/seelite/issues/70) settled
+that every screen lives in the cockpit, and `hud-and-scanner.md` §1 gives the
+left Navigation console the system-scale discovery this is one scale above.
+
+---
+
+## 0. Scope
+
+How the player reads and navigates a three-dimensional galaxy: the projection,
+the jump range, target selection and its record, multi-hop routing, the density
+gradient, and what happens to the other seven galaxies.
+
+It does **not** own the cockpit panel that carries the map — that is
+[#69](https://github.com/jcfischer/seelite/issues/69)'s panel hierarchy — nor
+the hyperspace jump itself, which is `galaxy-generation.md` §8, nor the market
+and equipment screens, which are #70's station console.
+
+`?galaxy-map` is the workbench this was decided on. It is a chart surface, not a
+second game mode: it builds no `Game`, and `src/main.ts` gates it alongside the
+other query-gated workbenches.
+
+---
+
+## 1. Where the map lives
+
+**A tab on the left Navigation console.** Not a full-screen mode, not a fifth
+panel, not an application.
+
+#70 ratified that there is no second UI grammar: the player is in the cockpit
+and a screen answers *which wall or which tab*, never *which application*.
+`hud-and-scanner.md` §1 gives the left panel Navigation and Communications, and
+§2 sends "system-scale discovery, filtering, and target records" there
+explicitly. A galaxy map is one scale up from that and belongs to the same
+console, reached by the same head turn.
+
+The consequences are §1's, inherited rather than restated: the game continues
+while the panel is open, there is no pause and no time compression, and an
+explicit close returns to an unobscured cockpit.
+
+---
+
+## 2. The projection: a freely orbited cluster
+
+The 256 systems are drawn as points in a freely orbitable 3D cluster. One light
+year is one world unit, so the cluster is 44 units across and a radius read off
+the scene is a radius in light years with no conversion.
+
+- **Drag orbits, wheel zooms.** The camera stays on one axis and the *cluster*
+  turns, so the projection is a pure function of two angles and a distance.
+- **The vertical axis is galaxy-space `y`, and the reference plane is `y = 0`.**
+  Arbitrary — `systemPosition` draws an isotropic direction, so the cluster has
+  no intrinsic equator — and stated because it is arbitrary. The plane, the
+  drop-lines and the anchor discs must all use the same axis or the depth cue
+  means nothing.
+- **A circular reference plane, not a square grid.** Three faint rings at
+  `R/3`, `2R/3` and `R`. A square grid would imply an extent the cluster does
+  not have.
+
+The alternatives are recorded because they were live: a fixed-tilt plan view
+with a mast per system (which reuses the compact scanner's depth language most
+directly, and thickets in the core), and a scrubbed depth slab (which removes
+ambiguity by removing the geography). Free orbit was chosen for being honest to
+the sphere §2 of `galaxy-generation.md` actually generates.
+
+### 2.1 Depth cues: drop-lines on the selection only
+
+Two systems 15 LY apart can touch on screen, and parallax needs motion the
+player does not always have to spare. So:
+
+- **The current system and the selected system each drop a line to the
+  reference plane**, ending in an anchor disc — the compact scanner's mast-and-
+  disc language (`hud-and-scanner.md` §2), applied to the one pair whose
+  separation the player is actually asking about.
+- **Nothing else drops a line.** A full mast field over 256 systems in a
+  3:1-concentrated ball is a thicket, and the two systems that matter are the
+  two the player has already named.
+- Everything else reads depth from size, brightness and the orbit itself.
+
+---
+
+## 3. Reachability: the 7 LY shell
+
+- A **wireframe sphere of radius `JUMP_RANGE_LY`** is drawn around the current
+  system. Wireframe rather than a translucent solid: a solid ball 7 LY across,
+  inside a 22 LY cluster, tints every system behind it — which is the one thing
+  a chart must not do to the points it is about.
+- Systems inside it are **lit** (cyan); everything else is **dim**. The
+  current system is green and the selection amber, per `hud-and-scanner.md`
+  §4's palette.
+- The shell gives the 7 LY figure a body the player can judge other distances
+  against; the lighting survives when the shell is edge-on.
+
+Expect **≈17 lit at the core, ≈8 at the mean radius, ≈3 at the rim** —
+`galaxy-generation.md` §4's table. That gradient is the map's geography, and §6
+is about whether anything else should carry it.
+
+---
+
+## 4. Routing: fewest jumps, then shortest
+
+The map plans. Selecting any system computes a chain and shows it; the range
+shading is always on, the route appears on selection.
+
+**The objective is fewest jumps, then shortest total distance.** Not shortest
+distance: a jump is a wind-up with a vulnerability window
+(`galaxy-generation.md` §8) and an arrival 1 AU out that has to be crossed
+(§7.4), so an extra hop costs the player far more than the ~2 Cr of fuel
+separating two equal-length chains. **Fuel is the tie-break, not the goal.**
+
+Implemented as lexicographic Dijkstra over `(jumps, ly)` in
+`src/galaxy-route.ts`, which imports no Three.js. The chart draws what it
+returns.
+
+A route is **null** when there is none, and never an empty chain. A
+§5-connected layout means this can only fire on a graph the generator did not
+produce — but if it ever does, the map must not display a course it cannot
+complete.
+
+### 4.1 Fuel is 2 Cr per LY
+
+`jumpCost(7) === 14 Cr`, per `economy-trade.md` §6.1 and Elite's PRXS table.
+
+`src/galaxy.ts` carried `FUEL_COST_PER_LY = 0.2` until this node — Elite's
+per-0.1-LY figure with the tenth dropped, the exact transcription error #7
+corrected in the specs. The correction's stated check was a repo-wide grep for
+`0.2 Cr`, which is a search for *prose* and cannot see a bare literal on a
+differently-named constant; `market.ts` had the right number under
+`FUEL_CR_PER_LY = 2` and the two disagreed by a factor of ten, unnoticed
+because nothing imported `jumpCost`. `tests/galaxy-route.test.ts` now asserts
+the two agree — a cross-module equality is the check a grep could not be.
+
+---
+
+## 5. Selection and the record
+
+Clicking a system selects it. An **inline card beside the selected point**
+carries name, economy, government, tech level, population, direct distance, the
+planned chain, and the generated description — the node's "without leaving the
+map" read literally.
+
+**Picking is screen-space, not a raycast.** A `Points` raycast tests a threshold
+in world units, so one threshold picks a fat target zoomed in and misses
+entirely zoomed out — and the core, at three systems per LY, is exactly where
+that matters. The pick radius is 14 px, and it means the thing the player
+experiences.
+
+A drag that ends over a point is a camera move, not a selection.
+
+### 5.1 The chart reads; the list finds
+
+**Measured, and it is the cost of choosing a free orbit.** The share of systems
+whose nearest on-screen neighbour falls inside the pick radius, against camera
+distance, at 1280 × 760:
+
+| camera | crowded | systems on screen |
+|---|---|---|
+| 140 LY | 90.2% | 256 |
+| 100 LY | 73.4% | 256 |
+| 74 LY | 53.5% | 256 |
+| **62 LY** (the default; whole cluster) | **40.2%** | 256 |
+| 44 LY | 27.3% | 241 |
+| 32 LY | 16.8% | 208 |
+| 26 LY | 10.2% | 166 |
+| 18 LY | 6.7% | 128 |
+| 14 LY | 3.3% | 91 |
+
+**There is no distance that both frames the whole cluster and lets you pick.**
+Crowding falls under 10% only at ≤ 26 LY, where a third of the galaxy is off the
+edges. Free orbit reads geography well and picks badly, and no amount of tuning
+the point size changes that: it is 256 points in a ball whose core is three
+times as dense as its rim.
+
+So the chart is the **reading** surface and Navigation's filterable list is the
+**finding** surface — which is what `hud-and-scanner.md` §2 already says
+("Navigation is authoritative for target selection and filters"). Selecting a
+named system goes through the list; the chart answers *where is it, and what is
+between here and there*. **A galaxy map with no list is not a shippable map**,
+and #69 owes that list.
+
+The figures are the check on any later change to the projection, the point size,
+or the pick radius: a change that moves the 62 LY row upward is making the chart
+less usable, whatever it looks like.
+
+---
+
+## 6. The density gradient
+
+The 3:1 core/rim ratio is carried by **point count alone** in the shipped map.
+
+A core haze — a generated radial sprite falling off on the density profile's own
+`1/(1 + (r/r_c)²)`, zeroed past the rim — is built and toggleable on the
+workbench (`H`, or the `core haze` button) so the comparison can be made by
+looking rather than argued. It is **off by default**, and the argument against
+shipping it on is §5.1's: the view is already 40% crowded at its default
+framing, and adding a luminous wash over the densest part of it is subtracting
+from the one thing the chart does well.
+
+Whatever a later pass decides, the haze must remain a **background channel**:
+turning it on may not move a single projected system. `probe-galaxy-map.mjs`
+asserts exactly that.
+
+---
+
+## 7. Galaxies: this one only
+
+The map draws the current galaxy. The other seven are not shown, not greyed, not
+indexed.
+
+#6 ratified that galaxies are a **namespace, not geography** — all 8 exist from
+the start and switching changes one index. Drawing them on a chart whose whole
+subject is 3D distance would imply a spatial relationship they do not have, and
+a reachability the 7 LY tank does not have either. The Galactic Hyperdrive is a
+Drive-console action (`hud-and-scanner.md` §1's right panel), not a map feature.
+
+---
+
+## 8. The course
+
+Committing to a destination sets a **course**, and a course **persists**.
+
+### 8.1 A destination, never a chain
+
+```ts
+interface Course { version: number; galaxy: number; destinationIndex: number }
+```
+
+Two reasons, and the second is the one that would have bitten:
+
+- `persistent-world-state.md` §8 says map presentation is a projection of
+  generated facts and is not persisted merely because it is derivable. A chain
+  is exactly that: `planRoute` recovers it from the world seed, the galaxy
+  index, and where the ship is.
+- **A saved chain goes wrong the first time the player jumps off it.** It
+  describes a position the ship has left. A saved *destination* is still true
+  from wherever the ship ends up, so an off-plan jump is a re-plan rather than
+  a desync.
+
+`courseProgress(systems, course, current)` therefore takes the ship's *current*
+system and re-derives, rather than advancing a cursor into a stored list.
+
+### 8.2 Persistence
+
+The course is per-galaxy typed state in `persistent-world-state.md` §7's
+envelope, under the player-knowledge axis: it is player intent, not world
+condition.
+
+- `COURSE_SCHEMA_VERSION` is bumped when the shape changes (§2's version
+  discipline).
+- **Absence is valid** — no course is not a corrupt course, and parses to
+  `null`.
+- **Anything else that fails to parse throws.** §7 requires a truncated or
+  partially written snapshot to fail loudly rather than be reinterpreted as an
+  untouched healthy value, and silently dropping an unreadable course is that
+  reinterpretation.
+- **An embedded `galaxy` that disagrees with its containing envelope throws.**
+  §7 makes the match mandatory: it is a corrupted save, not a course in another
+  galaxy.
+
+Wiring it into an actual save file belongs to
+[#46](https://github.com/jcfischer/seelite/issues/46).
+
+### 8.3 What the HUD owes it
+
+The next hop and the jumps remaining belong on the flight floor or the
+Navigation console — a course the player cannot see from the cockpit is a course
+they will forget they set. #69 owns the placement.
+
+---
+
+## 9. Verification
+
+Split on the repo's usual line: arithmetic headless, anything spatial in the
+browser.
+
+### 9.1 Headless — `tests/galaxy-route.test.ts`
+
+1. **The fuel price agrees across modules** — `jumpCost(7) === 14`, and
+   `FUEL_COST_PER_LY === FUEL_CR_PER_LY` (§4.1).
+2. **Reachability is the true 3D distance** — a system at `7 − 0.001` LY is
+   lit, one at `7 + 0.001` is not, and a point 5 LY out in two axes at once
+   (7.07 LY) is not, which is the assertion a build that dropped an axis fails.
+3. **The objective is the one §4 names.** Two hand-built graphs where greedy and
+   optimal *disagree*: a 1 LY cul-de-sac that traps nearest-first into three
+   jumps where two exist, and two equal-length chains that must break on
+   distance. A route planner over the real generator passes on almost any
+   plausible implementation — with ~8 systems in range at every step a greedy
+   walk arrives too — so the synthetic graphs are the only shape in which this
+   suite could fail on a wrong objective.
+4. **Agreement with brute force.** 60 twelve-system clouds in a 14 LY cube,
+   every simple path enumerated and ranked as §4 ranks them. The cloud was
+   sized by measurement, not guess: 9 systems in a 26 LY cube connected 4 trials
+   in 40, and the assertion floor on how many trials actually *compared*
+   anything is what caught it. At least 30 of the 60 must connect.
+5. **Every hop of every route from one origin to all 256 destinations is inside
+   the jump range**, and the chain ends where it was asked to.
+6. **A connected layout means no pair is unroutable** — §5 of
+   `galaxy-generation.md` guarantees it, and a map that reported otherwise
+   would be a worse failure than a suboptimal chain.
+7. **Cross-galaxy pairs do not route and do not light** (§7).
+8. **A course re-derives from an off-plan jump** and keeps its destination.
+9. **Course parsing** round-trips, accepts absence, and throws on a version
+   mismatch, a bad index, a non-object, and an envelope disagreement.
+
+### 9.2 Browser — `scripts/probe-galaxy-map.mjs`
+
+At desktop (1280 × 760) and narrow (390 × 844):
+
+1. The chart mounts with no `Game` behind it, 256 systems, and the constants
+   read off the page rather than restated.
+2. **A click selects the system drawn under it** — the click position comes from
+   the page's own projection — **and still does after an orbit and a zoom.** A
+   build picking by world-space raycast threshold passes the first and fails the
+   second, which is why both are there.
+3. The drop-line count is 1 unselected and 2 selected (§2.1), and the record
+   card is visible, carries the selected system's name and economy, and lands
+   **on screen**.
+4. **Crowding is measured at two camera distances** and must fall as the camera
+   closes (§5.1). The check asserts the two samples were taken at *different*
+   distances, because the first version of this probe sampled before the frame
+   loop had moved the camera and reported one camera measured twice — it failed
+   only because the assertion demanded the figures differ.
+5. **The haze does not move a projected system** (§6).
+6. **A set course survives an off-plan jump**, keeping its destination and
+   re-deriving its remainder (§8.1).
+
+---
+
+## 10. Deferred
+
+- **The Navigation list** — filterable, named, with type/range/ETA. §5.1 makes
+  it mandatory rather than optional; #69 owns it.
+- **Mounting the chart in the cockpit panel** — #69.
+- **Last-known station information on the map.**
+  `persistent-world-state.md` §3.1 requires the map to present carrier state as
+  timestamped "last known" rather than live omniscience. The system record in §5
+  is seed-derived and always knowable; the *stations inside* a system are
+  carriers and are not. Nothing in this spec displays them yet, and whatever
+  does inherits §3.1.
+- **Whether the core haze ships.** §6 leaves it off and built.
+- **Route safety, traffic, and legal status on the chart** — derived
+  projections (§8 of `persistent-world-state.md`), and none of them decided.

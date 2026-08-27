@@ -4085,6 +4085,12 @@ if (query.has("model-viewer")) {
 	mountStateGallery();
 	// The gallery owns its own Three.js scene. Do not build the live game behind
 	// it: that would leave two hidden render loops spending CPU and GPU.
+} else if (query.has("galaxy-map")) {
+	// #11's chart workbench. Its own scene, like every other surface in this
+	// chain, and no live game behind it: the map draws a generated galaxy from
+	// `galaxy.ts` directly and needs no simulation at all.
+	const { mountGalaxyMap } = await import("./galaxy-map");
+	mountGalaxyMap();
 } else if (query.has("planet-prototype")) {
 	// After `hud-gallery`, not before it: this branch is a disposable study, and
 	// a disposable route should not outrank a durable one when both flags are on
