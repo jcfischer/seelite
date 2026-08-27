@@ -38,7 +38,7 @@ const SCHEMA = {
 		label: "Resolution",
 		describe: (v: number) => `${Math.round(v * 100)}%`,
 		/** Why someone would move it, in the words of what they would see. */
-		note: "Lower is faster and softer. Below 100% the cockpit's glow thins, because bloom has fewer bright pixels to find.",
+		note: "Lower is faster and softer. Below 100% the cockpit's glow thins: bloom's own chain is a fixed size, but it reads a smaller frame, so fine highlights are averaged away before they can pass its brightness threshold.",
 	},
 } as const;
 

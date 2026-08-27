@@ -750,6 +750,15 @@ async function settingsGate() {
 	await page.keyboard.up("Shift");
 	await page.keyboard.press("Escape");
 	check("`Escape` closes it", !(await page.$("[data-settings-panel]")));
+
+	// And the same key reaches the game once the screen is gone, which is what
+	// makes the check above a statement about the dialog rather than about `v`
+	// never working in the first place.
+	await page.keyboard.press("v");
+	check(
+		"the same key works again once the screen is closed",
+		(await page.evaluate(() => window.__seelite.view)) !== viewBefore,
+	);
 	await page.close();
 }
 await settingsGate();

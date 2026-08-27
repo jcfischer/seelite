@@ -288,35 +288,20 @@ export function buildBodyVisual(
 	opts: BodyVisualOptions = {},
 ): BodyVisual {
 	/**
-	 * Ablation switches, for attributing a frame cost rather than guessing at it.
+	 * The ablation switches live on the perf panel, not on the query string.
 	 *
-	 * A planet filling the screen costs its surface shader, a cloud shell, an
-	 * atmosphere shell and a full-screen bloom pass, and the only honest way to
-	 * learn which dominates is to remove one at a time and read the meter.
-	 * #59 could not: its runner has no GPU, and it recorded that what its
-	 * figures licensed was "no saving was demonstrated here", not "no saving
-	 * exists". These are the levers that let a GPU answer it.
+	 * There were five — `?perf=noatmo`, `noclouds`, `noshells`, `norelief`,
+	 * `flat` — and they are gone. They came first, the live switches replaced
+	 * them for the actual measuring, and the justification left for keeping
+	 * them was "a starting state is useful when a page is opened by a script".
+	 * That caller cannot exist: `check-launcher-wiring.mjs` now refuses any
+	 * script whose source opens a page with `?perf`, and the only page-opening
+	 * scripts here are probes. A flag kept for a caller the repo forbids is
+	 * dead code with a story attached.
 	 *
-	 *   ?perf=noatmo    no atmosphere shell
-	 *   ?perf=noclouds  no cloud shell
-	 *   ?perf=noshells  neither
-	 *   ?perf=norelief  surface keeps its albedo, loses its normal perturbation
-	 *   ?perf=flat      surface is a plain lit sphere, no noise at all
-	 *
-	 * **These set the state a page opens in; the panel is what measures.** They
-	 * came first and the live switches replaced them for the actual work,
-	 * because a reload puts the ship somewhere else — `?perf` on its own mounts
-	 * the panel and every one of these is reachable there without one. They are
-	 * kept because a starting state is still useful when a page is opened by a
-	 * script rather than flown by a person, and because `?perf=noshells` has no
-	 * single key.
-	 *
-	 * Diagnostic, so nothing reads them by default and no probe asserts through
-	 * them.
+	 * `?perf` alone still mounts the panel, and every one of those states is a
+	 * keypress there — `noshells` being the two that have no single key.
 	 */
-	const perf = new URLSearchParams(window.location.search).get("perf") ?? "";
-	const noClouds = perf === "noclouds" || perf === "noshells";
-	const noAtmo = perf === "noatmo" || perf === "noshells";
 
 	const uniforms: Record<string, THREE.IUniform> = {
 		time: { value: 0 },
@@ -331,9 +316,7 @@ export function buildBodyVisual(
 		seedOffset: { value: (look.seed % 997) / 97 },
 		// 0 normally; 1 drops the normal perturbation, 2 drops the surface noise
 		// entirely. Read by every class through `RELIEF`.
-		perfAblate: {
-			value: perf === "flat" ? 2 : perf === "norelief" ? 1 : 0,
-		},
+		perfAblate: { value: 0 },
 		// The A/B switch AIRLESS reads, set live from the perf panel's `o` key.
 		// An earlier version offered `?crater=differenced` and a reload instead,
 		// which `perf-panel.ts` argues against in its own rationale: a reload
@@ -405,7 +388,7 @@ export function buildBodyVisual(
 	};
 	group.add(planet);
 
-	if (look.cloudCover > 0 && !noClouds) {
+	if (look.cloudCover > 0) {
 		// Tagged so `perf-panel.ts` can find it by walking the scene. A tag on
 		// the object beats a registry of meshes, which would have to be kept in
 		// step with a world that regenerates on every jump.
@@ -422,7 +405,7 @@ export function buildBodyVisual(
 		clouds.userData.shell = "cloud";
 		group.add(clouds);
 	}
-	if (look.atmosphere > 0 && !noAtmo) {
+	if (look.atmosphere > 0) {
 		// Back faces only, additively: the shell is a volume seen from outside,
 		// and drawing its front faces would put a wash over the whole disc.
 		const shell = new THREE.Mesh(

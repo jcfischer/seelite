@@ -3964,10 +3964,18 @@ class Game {
  * would depend on the window size, which is why it appeared on one display and
  * not the other.
  *
- * **Independent of the ratio, because bloom is a blur.** Running it over four
- * times as many pixels on a retina panel buys nothing visible: the result is
- * a wide, soft glow either way. This is the one pass in the chain where
- * resolution is close to free to give up.
+ * **Independent of the ratio, because bloom is a blur.** Running the chain over
+ * four times as many pixels on a retina panel buys nothing visible: the result
+ * is a wide, soft glow either way. This is the one pass where resolution is
+ * close to free to give up.
+ *
+ * That is about the chain's *own* size and says nothing about its input. The
+ * resolution setting shrinks the frame bloom reads, and the principal observed
+ * the cockpit's glow thinning as it does — fine highlights are averaged away
+ * before they can pass the brightness threshold, so fewer of them bloom at all.
+ * The two are not in tension: this pass is cheap to shrink, and what it is
+ * given still matters. `settings.ts` tells the player the second half, which is
+ * the half they can see.
  *
  * Both of those are claims about a machine I cannot see. What is certain is
  * that the halving is a real saving on a pass that runs every frame regardless
