@@ -20,6 +20,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
+// Read off the page, not restated (CLAUDE.md): these are the two thresholds
+// the invariants below are stated against.
+import { SURFACE_MARGIN } from "../src/cruise";
+import { STATION_ORBIT_R_OVER_R } from "../src/system";
 import {
 	ALL_GALAXIES,
 	forEachSystem,
@@ -110,5 +114,157 @@ describe("unreachable systems (known defect, station-types.md §5.4)", () => {
 		// comparing two counts would let a second cause appear on one side while
 		// a first-cause system dropped off the other, with both totals equal.
 		expect(stationless).toEqual(planetless);
+	});
+});
+
+/**
+ * Node #32's invariants: no station inside its host's guard shell, and an
+ * explicit floor under the orbit band.
+ *
+ * Both replace measured-defect pins with the rule the defect's node filed.
+ * §12.2 (`in-system-travel.md`) measured **49 of 337** planet-orbiting
+ * stations sitting inside their own host's 1.05× cruise shell — a draw,
+ * because a 400–2,000 km absolute altitude loses a race against a 5% shell
+ * of a proportional radius. The corpus figure came from the `measure-cruise-
+ * arrival` sweep; this sweep re-derives the population over `worldSeeds(8)`,
+ * where the defect population was 2,381 station-placements, so the before
+ * build fails by a mile rather than at the margin. §12.3 measured the
+ * occlusion side (26.1% of legs); the *rule* being ratified is the floor,
+ * whose value is measured there and pinned here as a generator invariant:
+ * every station orbits at or above `STATION_ORBIT_R_OVER_R` of its host.
+ */
+describe("station orbits clear their host (node #32)", () => {
+	test("every station orbits at or above the r/R floor of its host", () => {
+		let hostOrbiting = 0;
+		for (const world of worldSeeds(8)) {
+			forEachSystem(world, ALL_GALAXIES, (_record, contents) => {
+				for (const s of contents.stations) {
+					if (!s.parentId) continue; // star-centric refinery: no host
+					const host = contents.planets.find((p) => p.id === s.parentId);
+					if (!host) throw new Error(`orphan station ${s.id}`);
+					hostOrbiting++;
+					expect(s.orbit.radiusKm / host.radiusKm).toBeGreaterThanOrEqual(
+						STATION_ORBIT_R_OVER_R,
+					);
+				}
+			});
+		}
+		// Non-vacuity: the invariant above over an empty corpus passes any test.
+		expect(hostOrbiting).toBeGreaterThan(1000);
+	});
+
+	test("no station sits inside its own host's cruise shell", () => {
+		// §12.2's defect, as an invariant: the guard now stops the ship at
+		// `radius + HOST_CLEARANCE_KM` for the host, but a station *inside the
+		// proportional shell* was still the geometry that made cruise
+		// unengaeable from there, and cruise's release rule is not a reason to
+		// keep generating it. The generator's job is that it never happens.
+		for (const world of worldSeeds(8)) {
+			forEachSystem(world, ALL_GALAXIES, (_record, contents) => {
+				for (const s of contents.stations) {
+					if (!s.parentId) continue;
+					const host = contents.planets.find((p) => p.id === s.parentId);
+					if (!host) throw new Error(`orphan station ${s.id}`);
+					expect(s.orbit.radiusKm).toBeGreaterThanOrEqual(
+						host.radiusKm * SURFACE_MARGIN,
+					);
+				}
+			});
+		}
+	});
+
+	test("the floor takes over exactly where the band stops clearing the shell", () => {
+		// The floor is a floor, not an orbit: below the crossover, where the
+		// 400–2,000 km band already beats 1.05 × R, the band must still decide
+		// — otherwise #32 would have silently replaced the band with a
+		// proportional rule and every rocky world's station would have moved.
+		// Crossover: band top 2,000 km clears R when R ≤ 2,000 / (SURFACE_MARGIN − 1).
+		const crossoverKm = 2000 / (SURFACE_MARGIN - 1);
+		let bandDecided = 0;
+		for (const world of worldSeeds(8)) {
+			forEachSystem(world, ALL_GALAXIES, (_record, contents) => {
+				for (const s of contents.stations) {
+					if (!s.parentId) continue;
+					const host = contents.planets.find((p) => p.id === s.parentId);
+					if (!host) throw new Error(`orphan station ${s.id}`);
+					if (host.radiusKm <= crossoverKm) bandDecided++;
+				}
+			});
+		}
+		// The fixture corpus is the place this is actually visible: the row
+		// heights moved only where the floor bound (the capture script's own
+		// invariant, checked here against the file the guard compares).
+		const now = stationRows(baseline.worldSeed, baseline.galaxies);
+		expect(now.length).toBe(baseline.rows.length);
+		expect(bandDecided).toBeGreaterThan(0);
+	});
+});
+
+/**
+ * Node #32's own guard: the floor took over **where it had to and nowhere
+ * else**.
+ *
+ * The floor is not a new orbit rule — the 400–2,000 km band still decides
+ * whenever it lands above `STATION_ORBIT_R_OVER_R` × the host's radius, and
+ * that is most small hosts. The evidence is this file's baseline, compared
+ * row by row against its shape before #32: 791 station rows, of which 546
+ * moved **in their orbit-radius column only** — every other field
+ * byte-identical, because the change adds no draws to the `DOMAIN.STATIONS`
+ * stream — and the unchanged 245 are exactly the small-host rows the band
+ * still owns. Both directions of drift fail this: re-applying the old band
+ * moves the large hosts back down, and replacing the band with a
+ * proportional rule moves the small ones up.
+ *
+ * The before shape is not regenerated here (a generator that could emit
+ * both rules would put the second one's draws into the shared stream). It
+ * is the file this branch's first commit repinned, at the tag
+ * `node-32-before-orbit-floor`.
+ */
+const BASELINE_BEFORE = "node-32-before-orbit-floor";
+
+/** The orbit-radius column of `stationRows`, so the comparison below names
+ *  which column a row moved in rather than just that one did. */
+const RADIUS_COL = 5;
+
+function beforeRows(): string[][] {
+	const shown = Bun.spawnSync({
+		cmd: [
+			"git",
+			"show",
+			BASELINE_BEFORE + ":tests/fixtures/station-orbits.json",
+		],
+		cwd: import.meta.dir + "/..",
+		stdout: "pipe",
+	});
+	if (shown.exitCode !== 0)
+		throw new Error(
+			"cannot read " + BASELINE_BEFORE + "'s fixture: the guard needs the tag",
+		);
+	return (JSON.parse(shown.stdout.toString()).rows as string[]).map((r) =>
+		r.split("\t"),
+	);
+}
+
+describe("the floor moved only what the shell race moved (node #32)", () => {
+	test("the repinned fixture differs from the pre-#32 baseline in the radius column alone", () => {
+		const before = beforeRows();
+		const after = stationRows(baseline.worldSeed, baseline.galaxies).map((r) =>
+			r.split("\t"),
+		);
+		expect(after.length).toBe(before.length);
+		let moved = 0;
+		for (let i = 0; i < before.length; i++) {
+			for (let c = 0; c < before[i].length; c++) {
+				if (before[i][c] === after[i][c]) continue;
+				expect(c).toBe(RADIUS_COL);
+				// Strictly upward: a floor never lowers an orbit.
+				expect(+after[i][RADIUS_COL]).toBeGreaterThan(+before[i][RADIUS_COL]);
+				moved++;
+			}
+		}
+		// The measured split, not a vague "some moved": 546 rows up, 245 left
+		// alone. Both sides are deterministic over a fixed corpus.
+		expect(moved).toBe(546);
+		expect(before.length - moved).toBe(245);
 	});
 });

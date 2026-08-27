@@ -426,9 +426,24 @@ T_i    = 365.25 d · √(a_i³ / M★)          // Kepler III, M★ in solar mas
 ```
 
 with `θ_i0` seeded, inclination `U(0°, 3°)` and a seeded ascending node.
-Stations orbit their body circularly: radius = bodyRadius + `U(400, 2000)` km,
-period `U(90, 240)` min, in the body's equatorial plane. Station *spin* (for
-docking roll-match) belongs to #9.
+Stations orbit their body circularly: radius =
+max(`bodyRadius + U(400, 2000)` km, `1.5 × bodyRadius`), period `U(90, 240)`
+min, in the body's equatorial plane. Station *spin* (for docking roll-match)
+belongs to #9.
+
+The floor is node #32's decision (`STATION_ORBIT_R_OVER_R`, `src/system.ts`)
+and why the band alone could not stand: "low and fast" was absolute while
+everything that has to clear the host scales with its radius — the cruise
+shell (`1.05 ×` radius, `in-system-travel.md` §12.2) and the occlusion
+geometry (§12.3). Measured on the 200-seed corpus: the band alone left 49 of
+337 planet-orbiting stations inside their own host's shell and 26.1% of cruise
+legs occluded by the host; the floor clears the shell by construction, halves
+the occlusion to 14.2%, and hands the remainder to routing rather than
+altitude — 1.5 sits at the knee, since each further multiple buys less
+occlusion than the giant-shipyard altitude it costs. It engages exactly where
+the band stops clearing the shell (`1.5/1.05 ≈ 1.43` × the rocky band's top
+altitude), so small rocky hosts keep the band unchanged;
+`tests/station-orbits.test.ts` pins both halves.
 
 Kepler ellipses were rejected: eccentricity adds a solver for an effect nobody
 can perceive at these speeds.
