@@ -466,7 +466,14 @@ and reusing an existing tag is the unsafe move `CLAUDE.md` names explicitly.
 
 ### 5.4 A defect this node found, fixed by #51: unreachable systems
 
-**Fixed.** The rate was about one system in 700 — 0.143% over 40 worlds — and
+**Fixed.** One correction to the framing first, because it was carried from
+#23 and is wrong: a planetless system's arrival point *computes*. `arrivalPoint`
+places the ship along a seeded bearing from the system origin and pushes clear
+of whatever bodies exist, so it returns a finite point for a system with none.
+What was broken was that there was nothing to travel to — undockability, and
+uselessness, rather than a failure to place the ship.
+
+The rate was about one system in 700 — 0.143% over 40 worlds — and
 is now zero. #51 took the second of the three answers below: the ladder keeps
 the primary rung, clamped to the envelope boundary rather than discarded.
 

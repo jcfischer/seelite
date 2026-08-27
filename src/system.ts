@@ -566,10 +566,14 @@ function buildMoons(
  * primary always exists. `docs/specs/station-types.md` §5.4 owns the
  * measurement; `tests/system-reachability.test.ts` asserts the invariant.
  *
- * The `?? planets[0]` fallback below is now unreachable and is kept as the
- * thing that made the second defect invisible: a system whose primary rung
- * alone was filtered still got a trade station through it, on a planet not
- * flagged primary, which no station count could see.
+ * **What enforces it, and what does not.** The ladder cannot discard the
+ * primary rung — the envelope test now reads `if (outside && !isPrimary)`, so
+ * the push at `i === primaryRung` is unconditional, and a primary exists by
+ * construction rather than by sampling. What is *not* enforced is a runtime
+ * guard: nothing throws. If that construction were ever broken, the trade
+ * station would simply be absent, which is the visible failure rather than the
+ * silent one — the `?? planets[0]` fallback that used to hide exactly that has
+ * been removed.
  */
 /**
  * Draw a station's spin, consuming exactly one number whatever its type.
@@ -617,7 +621,14 @@ function generateStations(
 	const flagRand = stream(record.seed, DOMAIN.STATION_FLAGS);
 	const spinRand = stream(record.seed, DOMAIN.STATION_SPIN);
 	const stations: Station[] = [];
-	const primary = planets.find((p) => p.isPrimary) ?? planets[0];
+	// **No `?? planets[0]` fallback.** It used to be there, and it is what made
+	// the second defect invisible: a system whose primary rung alone was
+	// filtered still got a trade station, on a planet not flagged primary, so no
+	// station count could see it. With the primary rung now kept unconditionally
+	// (see the ladder above) this can only be undefined if that guarantee has
+	// broken — and then the right behaviour is the visible one, no trade
+	// station, which `tests/system-reachability.test.ts` fails on by name.
+	const primary = planets.find((p) => p.isPrimary);
 
 	/**
 	 * The two seeded fields, in station order, one draw each from each stream.

@@ -5,8 +5,9 @@
  * **This replaces an assertion of the defect with an assertion of the rule.**
  * `station-orbits.test.ts` used to pin the *rate* at which systems generated
  * unreachable — about one in 700 — because the invariant would simply have
- * failed. #23 chose to force the ladder to keep a planet, so the rate is now
- * zero and a rate is the wrong thing to measure: a band around 0.143% passes
+ * failed. #23 framed three answers and deliberately left the choice to a later
+ * node; #51 took the second of them, forcing the ladder to keep its primary
+ * rung. The rate is now zero, and a rate is the wrong thing to measure: a band around 0.143% passes
  * for a generator that has quietly regressed to 0.1%, and only a rule refuses
  * every value but the right one.
  *
@@ -33,7 +34,7 @@ import {
 	forEachSystem,
 	worldSeeds,
 } from "./helpers/station-rows";
-import { MAX_ORBIT_AU, MIN_ORBIT_AU } from "../src/system";
+import { MAX_ORBIT_AU, MIN_ORBIT_AU, arrivalPoint } from "../src/system";
 
 /** Eight worlds. One world would measure one world, and the corpus helpers
  *  sweep the same series the measurement scripts do. */
@@ -99,18 +100,35 @@ describe("every system is reachable", () => {
 		expect(outside).toEqual([]);
 	});
 
-	test("arrival can be computed for every system", () => {
-		// Reachability, not merely dockability: #10's arrival point is placed
-		// relative to a body, so a system with no body has nowhere to arrive even
-		// if something dockable existed. This is the half of #23 that a station
-		// count cannot see.
-		const noArrivalBody: string[] = [];
+	test("arrival lands somewhere there is something to arrive at", () => {
+		/*
+		 * **Computing arrival was never the broken half**, and saying so
+		 * corrects #23 as well as an earlier version of this test.
+		 *
+		 * #23 wrote that a planetless system "has no body for #10's arrival
+		 * point, which assumes one". `arrivalPoint` assumes nothing: it places
+		 * the ship a fixed distance along a seeded bearing from the system
+		 * origin and pushes clear of whatever bodies exist, so it returns a
+		 * finite point for a system with no bodies at all. Reverting the fix and
+		 * re-running proves it — this assertion passed on the broken generator.
+		 *
+		 * What was actually broken is the other half: there was nothing to
+		 * travel *to*. So the property worth asserting pairs the two — arrival
+		 * computes, and the system it computes into has a dockable body.
+		 */
+		const bad: string[] = [];
 		for (const world of WORLDS)
 			forEachSystem(world, ALL_GALAXIES, (record, contents, g) => {
-				const primary = contents.planets.find((p) => p.isPrimary);
-				if (!primary || !Number.isFinite(primary.orbit.radiusKm))
-					noArrivalBody.push(`${world}:g${g}#${record.index}`);
+				const at = arrivalPoint(record, contents, null, 0);
+				const finite =
+					Number.isFinite(at.x) &&
+					Number.isFinite(at.y) &&
+					Number.isFinite(at.z);
+				if (!finite || contents.stations.length === 0)
+					bad.push(
+						`${world}:g${g}#${record.index} finite=${finite} stations=${contents.stations.length}`,
+					);
 			});
-		expect(noArrivalBody).toEqual([]);
+		expect(bad).toEqual([]);
 	});
 });
