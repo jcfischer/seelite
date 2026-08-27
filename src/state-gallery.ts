@@ -4,6 +4,23 @@
  * contacts are still design consumers, not completed simulation systems.
  */
 import * as THREE from "three";
+import {
+	MARKET_PERIOD_MIN,
+	type MarketStation,
+	type StationTypeKey,
+	marketEpoch,
+	marketStationOf,
+} from "./market";
+import {
+	ARRIVAL_SECONDS_MAX,
+	ARRIVAL_SECONDS_MIN,
+	type ConsoleMarketRow,
+	type DockPhase,
+	type StationConsoleTab,
+	stationConsoleVisible,
+	stationEquipmentScreen,
+	stationMarketScreen,
+} from "./station-console";
 
 /** A probe-guard fingerprint for this browser-only prototype. */
 export const GALLERY_VERSION = 1;
@@ -14,7 +31,8 @@ export type GalleryStateId =
 	| "cruise"
 	| "target-acquisition"
 	| "docking-granted"
-	| "docking-denied";
+	| "docking-denied"
+	| "docked";
 
 export type GalleryState = {
 	id: GalleryStateId;
@@ -127,7 +145,185 @@ export const GALLERY_STATES: readonly GalleryState[] = [
 		panelDetail: "DOCKING DENIED · hostile status · leave the approach",
 		accent: "red",
 	},
+	{
+		// §8's docked state. The mode line and director never reach the glass —
+		// M10 takes the whole flight floor away — so these two fields describe
+		// what the *right* console says once the head turns to it.
+		id: "docked",
+		label: "Docked",
+		mode: "DOCKED · FLIGHT SUSPENDED · THROTTLE INERT",
+		target: "STATION CONSOLE",
+		director: "",
+		notice:
+			"Docked reuses the cockpit: the console hangs on the forward wall, and launch stays on the Flight console.",
+		panel: "Flight",
+		panelDetail:
+			"Flight is suspended while docked. Throttle and assist are shown inert; launch is the one live control.",
+		accent: "cyan",
+	},
 ];
+
+// ---------------------------------------------------------------------------
+// §8 — the station console the docked state hangs on the forward wall
+// ---------------------------------------------------------------------------
+
+/**
+ * A station for the console to quote, chosen so the gallery can show both
+ * halves of every rule §8 states as a biconditional.
+ *
+ * Two of them rather than one, because M5's "priced **iff** `listsCommodity`"
+ * cannot be seen at a single station: away from a fence the three illegal rows
+ * are unpriced, and at one they are priced like everything else. One station
+ * shows one side of that and reads like a rule with no exception.
+ */
+export interface ConsoleStation {
+	id: "trade" | "fence";
+	label: string;
+	economy: number;
+	displayTL: number;
+	type: StationTypeKey;
+	station: MarketStation;
+	/** §5.2 marks left here by the player, so M6's delta has something to show. */
+	moved: Record<string, number>;
+}
+
+const consoleStation = (
+	id: "trade" | "fence",
+	label: string,
+	type: StationTypeKey,
+	economy: number,
+	displayTL: number,
+	blackMarket: boolean,
+): ConsoleStation => ({
+	id,
+	label,
+	economy,
+	displayTL,
+	type,
+	station: marketStationOf(
+		{ type, localCarrierId: `gallery-${id}`, blackMarket },
+		0x5ee1_17e,
+	),
+	// Computers rather than an arbitrary row: it is expensive at every economy,
+	// so §5's proportional response moves it by credits a reader can see, and
+	// its shelf is deep enough that the deficit is not swallowed by the clamp.
+	moved: { Computers: 12 },
+});
+
+export const CONSOLE_STATIONS: readonly ConsoleStation[] = [
+	// TL 4 is the frontier case M8 is written for: seven of the ten universal
+	// items on the shelf, and three named with the tech level that would sell
+	// them.
+	consoleStation("trade", "TRADE STATION · TL 4", "trade", 3, 4, false),
+	consoleStation("fence", "REFINERY · FENCE · TL 9", "refinery", 5, 9, true),
+];
+
+/** What the forward wall is showing: which station, which tab, and how far
+ *  through the dock the player is. */
+export interface ConsoleView {
+	station: ConsoleStation;
+	tab: StationConsoleTab;
+	phase: DockPhase;
+	/** #6's clock in game minutes — the epoch the quote is taken in. */
+	gameTimeMin: number;
+}
+
+export const DEFAULT_CONSOLE_VIEW: ConsoleView = {
+	station: CONSOLE_STATIONS[0],
+	tab: "Market",
+	phase: "docked",
+	gameTimeMin: 0,
+};
+
+/** The gallery's arrival, inside E3's ratified range. #77 owns the real law. */
+export const GALLERY_ARRIVAL_SECONDS =
+	(ARRIVAL_SECONDS_MIN + ARRIVAL_SECONDS_MAX) / 2;
+
+const CR = (value: number): string => `${value.toFixed(1)} Cr`;
+
+/** M6's arrow: the sign is the whole content, so it is drawn rather than
+ *  spelled — and never as a clock, which is what M7 keeps off this screen. */
+const signed = (value: number, digits: number): string =>
+	`${value >= 0 ? "↑" : "↓"}${Math.abs(value).toFixed(digits)}`;
+
+function renderMarketRow(row: ConsoleMarketRow): string {
+	const marker = row.commodity.illegal
+		? '<b class="sg-illegal" data-gallery-illegal title="restricted">⚠</b>'
+		: "";
+	const name = `<span class="sg-good">${row.commodity.name}${marker}</span>`;
+	if (!row.listed)
+		return `<div class="sg-market-row" data-gallery-market-row="${row.commodity.name}" data-gallery-listed="false">${name}<span class="sg-cell sg-absent">—</span><span class="sg-cell sg-absent">—</span></div>`;
+	const priceDelta =
+		row.priceDeltaCr === undefined
+			? ""
+			: `<em class="sg-delta" data-gallery-price-delta>${signed(row.priceDeltaCr, 1)}</em>`;
+	const shelfDelta =
+		row.quantityDelta === undefined
+			? ""
+			: `<em class="sg-delta" data-gallery-shelf-delta>${signed(row.quantityDelta, 0)}</em>`;
+	return `<div class="sg-market-row" data-gallery-market-row="${row.commodity.name}" data-gallery-listed="true">${name}<span class="sg-cell"><span data-gallery-price>${CR(row.priceCr as number)}</span>${priceDelta}</span><span class="sg-cell"><span data-gallery-shelf>${row.quantity} ${row.commodity.unit}</span>${shelfDelta}</span></div>`;
+}
+
+function renderMarketTab(view: ConsoleView): string {
+	const rows = stationMarketScreen({
+		station: view.station.station,
+		economy: view.station.economy,
+		gameTimeMin: view.gameTimeMin,
+		deficitOf: (name) => view.station.moved[name] ?? 0,
+	});
+	const traded = rows.filter((row) => row.listed);
+	const absent = rows.filter((row) => !row.listed);
+	// M5's named block. It is a heading and not a greyed-out remainder, because
+	// station-types.md §3.4's failure mode is the exception being unread.
+	const absentBlock =
+		absent.length === 0
+			? ""
+			: `<h4 class="sg-block-head" data-gallery-not-traded>NOT TRADED HERE</h4>${absent.map(renderMarketRow).join("")}`;
+	return `<div class="sg-market" data-gallery-market><div class="sg-market-row sg-market-head"><span class="sg-good">GOOD</span><span class="sg-cell">PRICE</span><span class="sg-cell">SHELF</span></div>${traded.map(renderMarketRow).join("")}${absentBlock}</div>`;
+}
+
+function renderEquipmentTab(view: ConsoleView): string {
+	const screen = stationEquipmentScreen({
+		type: view.station.type,
+		displayTL: view.station.displayTL,
+	});
+	const available = screen.available
+		.map(
+			(item) =>
+				`<div class="sg-market-row" data-gallery-equipment-item="${item.name}"><span class="sg-good">${item.name}</span><span class="sg-cell">${item.per === "ly" ? `${item.priceCr.toFixed(1)} Cr / LY` : `${item.priceCr.toLocaleString("en-US")} Cr`}</span><span class="sg-cell"></span></div>`,
+		)
+		.join("");
+	const unavailable = screen.unavailable
+		.map(
+			(item) =>
+				`<div class="sg-market-row" data-gallery-unavailable-item="${item.name}"><span class="sg-good">${item.name}</span><span class="sg-cell sg-absent" data-gallery-unavailable-reason>${item.reason}</span><span class="sg-cell"></span></div>`,
+		)
+		.join("");
+	// §8.7's joint 4: a heading with nothing under it is a state a player sees,
+	// so the gallery renders it rather than hiding the gap until #26.
+	const hulls = screen.hullsSection
+		? `<h4 class="sg-block-head" data-gallery-hulls>HULLS</h4><p class="sg-absent" data-gallery-hulls-empty>Not priced yet — the ship roster owes them.</p>`
+		: "";
+	return `<div class="sg-market" data-gallery-equipment>${available}<h4 class="sg-block-head" data-gallery-unavailable>UNAVAILABLE HERE</h4>${unavailable}${hulls}</div>`;
+}
+
+/**
+ * **M2:** while docked, the canopy opening carries the console.
+ *
+ * Returns nothing at all during the arrival — M4, and §8.6's obligation 11 is
+ * asserted *during* those seconds rather than after them, because a build that
+ * never delayed would satisfy an end-state check.
+ */
+export function renderStationConsole(view: ConsoleView): string {
+	if (!stationConsoleVisible(view.phase)) return "";
+	const tabs = (["Market", "Equipment"] as StationConsoleTab[])
+		.map(
+			(tab) =>
+				`<button class="sg-tab" type="button" data-gallery-console-tab="${tab}" aria-selected="${view.tab === tab}">${tab}</button>`,
+		)
+		.join("");
+	return `<section class="sg-station-console" data-gallery-station-console data-gallery-console-station="${view.station.id}" data-gallery-console-active-tab="${view.tab}"><header class="sg-console-top"><h2>STATION</h2><small>${view.station.label}</small></header><nav class="sg-tabs" aria-label="Station console tabs">${tabs}</nav>${view.tab === "Market" ? renderMarketTab(view) : renderEquipmentTab(view)}</section>`;
+}
 
 export function galleryState(id: string | null): GalleryState {
 	return GALLERY_STATES.find((state) => state.id === id) ?? GALLERY_STATES[0];
@@ -514,6 +710,27 @@ const STYLE = `
 .sg-floor { position: absolute; z-index: 6; left: 14px; right: 14px; bottom: 14px; display: flex; justify-content: space-between; gap: 12px; padding: 9px; border: 1px solid #355369; background: rgba(3, 14, 23, .94); color: #9fd4ff; font-size: 11px; }
 .sg-floor strong { color: #ffe0a2; font-weight: 600; }
 .sg-note { margin: 0; color: #b4c8d4; }
+/* §8's station console. It fills the canopy opening rather than floating over
+   it: M4 declined a translucent console on contrast, and the arrival it waits
+   for is the last thing the forward wall showed. */
+.sg-glass-docked { z-index: 3; inset: 10px 40px 8px; display: flex; align-items: stretch; clip-path: none; }
+.sg-station-console { display: flex; flex-direction: column; width: 100%; overflow: hidden; padding: 14px 18px; border: 1px solid rgba(229, 170, 82, .88); background: linear-gradient(104deg, rgba(46, 18, 5, .96), rgba(12, 8, 5, .96) 62%, rgba(6, 9, 12, .95)); box-shadow: inset 0 0 68px rgba(231, 123, 31, .16); color: #ffd48c; }
+.sg-cockpit[data-gallery-head-look="left"] .sg-station-console,
+.sg-cockpit[data-gallery-head-look="right"] .sg-station-console { display: none; }
+.sg-market { flex: 1; overflow: auto; margin-top: 8px; padding-right: 6px; }
+.sg-market-row { display: grid; grid-template-columns: minmax(120px, 1.4fr) 1fr 1fr; gap: 10px; align-items: baseline; padding: 2px; border-bottom: 1px solid rgba(229, 170, 82, .22); font-size: 11px; }
+.sg-station-console h2 { margin: 0; color: #ffe1a9; font-size: 18px; letter-spacing: .1em; }
+.sg-market-head { color: #d8833b; border-bottom-width: 2px; letter-spacing: .08em; position: sticky; top: 0; background: #150a03; }
+.sg-good { color: #fff0c9; }
+.sg-cell { display: flex; justify-content: flex-start; gap: 8px; color: #f5bd78; }
+.sg-delta { color: #ffe0a2; font-style: normal; }
+.sg-absent { color: #a97a4a; }
+.sg-illegal { margin-left: 6px; color: #ff9c8e; }
+.sg-block-head { margin: 12px 0 4px; color: #ffb066; font-size: 11px; letter-spacing: .1em; }
+.sg-launch { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+.sg-launch-button { border: 1px solid #ffe0a2; background: rgba(223, 122, 20, .28); color: #fff0c9; cursor: pointer; font: inherit; font-size: 13px; letter-spacing: .12em; padding: 8px 18px; }
+.sg-console-list[data-gallery-inert] em { color: #a97a4a; }
+.sg-arriving { position: absolute; inset: auto 0 40% 0; margin: 0; color: #ffe0a2; font-size: 15px; letter-spacing: .3em; text-align: center; }
 @media (max-width: 600px) {
 	.sg-wrap { padding: 12px; }
 	.sg-head { align-items: flex-start; }
@@ -529,6 +746,11 @@ const STYLE = `
 	.sg-console-data p { font-size: 11px; line-height: 1.35; }
 	.sg-console-list { display: none; }
 	.sg-glass { inset: 18px 12px 0; min-height: 480px; clip-path: none; }
+	/* The docked glass is a table, not a window: it fits the cockpit shell and
+	   scrolls its own rows, rather than growing the page under it. */
+	.sg-glass-docked { inset: 12px 10px 12px; min-height: 0; }
+	.sg-station-console { padding: 10px 12px; }
+	.sg-market-row { grid-template-columns: minmax(90px, 1.3fr) 1fr .8fr; gap: 6px; font-size: 10px; }
 	.sg-scanner { width: min(330px, calc(100% - 24px)); bottom: 65px; }
 	.sg-floor { bottom: 12px; font-size: 10px; flex-direction: column; gap: 3px; }
 }
@@ -545,6 +767,8 @@ function renderConsolePanel({
 	body,
 	list,
 	footer,
+	extra = "",
+	inert = false,
 }: {
 	side: "left" | "right";
 	active: boolean;
@@ -556,17 +780,25 @@ function renderConsolePanel({
 	body: string;
 	list: readonly [string, string][];
 	footer: string;
+	/** Appended after the layout — M9's launch control, and nothing else today. */
+	extra?: string;
+	/** M9: docked, the Flight console's readouts are shown and say they are
+	 *  inert. The attribute is what a probe reads; the strike-through is what a
+	 *  player reads. */
+	inert?: boolean;
 }): string {
-	return `<aside class="sg-panel" data-gallery-panel="${side}" data-active="${active}"><header class="sg-console-top"><h2>${title}</h2><small>${subtitle}</small></header><nav class="sg-tabs" aria-label="${side} console tabs">${tabs}</nav><div class="sg-console-layout"><div class="sg-console-rail">${rail.map((item, index) => (index === 0 ? `<b>${item}</b>` : `<span>${item}</span>`)).join("")}</div><div class="sg-console-data"><h3>${heading}</h3><p ${title === "TUNING" ? "data-gallery-tuning" : ""}>${body}</p><div class="sg-console-list">${list.map(([label, value]) => `<span><b>${label}</b><em>${value}</em></span>`).join("")}</div></div></div><small>${footer}</small></aside>`;
+	return `<aside class="sg-panel" data-gallery-panel="${side}" data-active="${active}"><header class="sg-console-top"><h2>${title}</h2><small>${subtitle}</small></header><nav class="sg-tabs" aria-label="${side} console tabs">${tabs}</nav><div class="sg-console-layout"><div class="sg-console-rail">${rail.map((item, index) => (index === 0 ? `<b>${item}</b>` : `<span>${item}</span>`)).join("")}</div><div class="sg-console-data"><h3>${heading}</h3><p ${title === "TUNING" ? "data-gallery-tuning" : ""}>${body}</p><div class="sg-console-list"${inert ? " data-gallery-inert" : ""}>${list.map(([label, value]) => `<span><b>${label}</b><em>${value}</em></span>`).join("")}</div></div></div>${extra}<small>${footer}</small></aside>`;
 }
 
 export function renderGalleryState(
 	state: GalleryState,
 	rightTab: RightTab,
 	headLook: HeadLook = "forward",
+	view: ConsoleView = DEFAULT_CONSOLE_VIEW,
 ): string {
 	const isLeft = headLook === "left";
 	const isRight = headLook === "right";
+	const docked = state.id === "docked";
 	const leftTitle = leftPanelTitle(state);
 	const leftConsole = renderConsolePanel({
 		side: "left",
@@ -587,6 +819,13 @@ export function renderGalleryState(
 	const rightConsole = renderConsolePanel({
 		side: "right",
 		active: isRight,
+		// M9: launching is flight, and §1 gives Flight to the right panel. The
+		// console is otherwise inert while docked and says so.
+		extra:
+			docked && rightTab === "Flight"
+				? '<div class="sg-launch"><button class="sg-launch-button" type="button" data-gallery-launch>LAUNCH</button><small>The one live control on this console while docked.</small></div>'
+				: "",
+		inert: docked && rightTab === "Flight",
 		title: rightTab.toUpperCase(),
 		subtitle: "CMDR · SEELITE",
 		tabs: (["Flight", "Drive", "Tuning"] as RightTab[])
@@ -598,21 +837,28 @@ export function renderGalleryState(
 		rail: ["SHIP", "POWER", "MODULES", "INVENTORY", "STATUS"],
 		heading: `${rightTab.toUpperCase()} / CONTROL`,
 		body: rightPanelBody(state, rightTab),
-		list: [
-			["THROTTLE", "62%"],
-			["HEAT", "18%"],
-			["FUEL", "92%"],
-		],
+		list: docked
+			? [
+					["THROTTLE", "INERT"],
+					["ASSIST", "INERT"],
+					["FUEL", "92%"],
+				]
+			: [
+					["THROTTLE", "62%"],
+					["HEAT", "18%"],
+					["FUEL", "92%"],
+				],
 		footer:
 			"Tuning stays on this right-console tab, never on the flight floor.",
 	});
-	return `<div class="sg-wrap" data-gallery-version="${GALLERY_VERSION}" data-gallery-state-active="${state.id}">
+	return `<div class="sg-wrap" data-gallery-version="${GALLERY_VERSION}" data-gallery-state-active="${state.id}" data-gallery-dock-phase="${docked ? view.phase : "flying"}" data-gallery-clock-min="${view.gameTimeMin}" data-gallery-market-epoch="${marketEpoch(view.station.station.phaseMin, view.gameTimeMin)}">
 		<header class="sg-head"><div><h1>SEELITE · COCKPIT STATE GALLERY</h1><p>Issue #34 prototype — visual contract, not simulated docking.</p></div><div class="sg-head-actions"><nav class="sg-look" aria-label="Cockpit head direction">${(["left", "forward", "right"] as HeadLook[]).map((look) => `<button type="button" data-gallery-look="${look}" aria-pressed="${headLook === look}">look ${look}</button>`).join("")}</nav><button class="sg-close" type="button">return to flight</button></div></header>
+		${docked ? `<nav class="sg-states" aria-label="Console rig">${CONSOLE_STATIONS.map((candidate) => `<button class="sg-state" type="button" data-gallery-station="${candidate.id}" aria-pressed="${candidate.id === view.station.id}">${candidate.label}</button>`).join("")}<button class="sg-state" type="button" data-gallery-advance-clock>advance the clock past a market roll</button></nav>` : ""}
 		<nav class="sg-states" aria-label="Cockpit states">${GALLERY_STATES.map((candidate) => `<button class="sg-state" type="button" data-gallery-state="${candidate.id}" aria-pressed="${candidate.id === state.id}">${candidate.label}</button>`).join("")}</nav>
 		<div class="sg-shell" data-gallery-3d-prototype>
 			<div class="sg-cockpit" data-gallery-cockpit data-gallery-head-look="${headLook}" data-gallery-physical-console="${headLook}"><div class="sg-canopy" aria-hidden="true"></div>
 			${leftConsole}
-			<main class="sg-glass" aria-live="polite"><div class="sg-stars"></div><div class="sg-dash-deck" aria-hidden="true"></div><div class="sg-director" data-gallery-director data-accent="${state.accent}">${state.targetBearingDeg === undefined ? "" : `<i class="sg-target-arrow" data-gallery-target-arrow data-gallery-target-bearing="${state.targetBearingDeg}" style="--target-bearing:${state.targetBearingDeg}deg" aria-label="turn toward target bearing">➤</i>`}${state.director}${state.id.startsWith("docking-") ? `<div class="sg-docking" data-gallery-docking>AXIS FUNNEL · ROLL RING · ${state.id === "docking-granted" ? "CLEAR TO APPROACH" : "DO NOT ENTER"}</div>` : ""}</div><div class="sg-scanner" data-gallery-scanner aria-label="Local radar, 10,000 kilometre vicinity"><i class="sg-contact one" data-gallery-contact-stem></i><i class="sg-contact-anchor one" data-gallery-contact-anchor></i><i class="sg-contact two" data-gallery-contact-stem></i><i class="sg-contact-anchor two" data-gallery-contact-anchor></i><i class="sg-contact three" data-gallery-contact-stem></i><i class="sg-contact-anchor three" data-gallery-contact-anchor></i></div><div class="sg-floor" data-gallery-floor><span>${state.mode}</span><strong>${state.target}</strong></div></main>
+			${docked ? `<main class="sg-glass sg-glass-docked" aria-live="polite">${renderStationConsole(view)}${view.phase === "arriving" ? `<p class="sg-arriving" data-gallery-arriving>ARRIVING</p>` : ""}</main>` : `<main class="sg-glass" aria-live="polite"><div class="sg-stars"></div><div class="sg-dash-deck" aria-hidden="true"></div><div class="sg-director" data-gallery-director data-accent="${state.accent}">${state.targetBearingDeg === undefined ? "" : `<i class="sg-target-arrow" data-gallery-target-arrow data-gallery-target-bearing="${state.targetBearingDeg}" style="--target-bearing:${state.targetBearingDeg}deg" aria-label="turn toward target bearing">➤</i>`}${state.director}${state.id.startsWith("docking-") ? `<div class="sg-docking" data-gallery-docking>AXIS FUNNEL · ROLL RING · ${state.id === "docking-granted" ? "CLEAR TO APPROACH" : "DO NOT ENTER"}</div>` : ""}</div><div class="sg-scanner" data-gallery-scanner aria-label="Local radar, 10,000 kilometre vicinity"><i class="sg-contact one" data-gallery-contact-stem></i><i class="sg-contact-anchor one" data-gallery-contact-anchor></i><i class="sg-contact two" data-gallery-contact-stem></i><i class="sg-contact-anchor two" data-gallery-contact-anchor></i><i class="sg-contact three" data-gallery-contact-stem></i><i class="sg-contact-anchor three" data-gallery-contact-anchor></i></div><div class="sg-floor" data-gallery-floor><span>${state.mode}</span><strong>${state.target}</strong></div></main>`}
 			${rightConsole}
 			</div>
 		</div><p class="sg-note" data-gallery-notice>${state.notice}</p>
@@ -635,9 +881,26 @@ export function mountStateGallery(): void {
 	let rightTab: RightTab = current.panel === "Drive" ? "Drive" : "Flight";
 	let headLook: HeadLook = "forward";
 	let cockpitScene: CockpitScene | null = null;
+	let view: ConsoleView = { ...DEFAULT_CONSOLE_VIEW };
+	let arrivalTimer: ReturnType<typeof setTimeout> | null = null;
+	/**
+	 * M4's sequence, run rather than described: entering the docked state starts
+	 * an arrival, and the console appears only when it finishes. §8.6's
+	 * obligation 11 is asserted inside these seconds, so a build that skipped
+	 * them would pass an end-state check and fail this one.
+	 */
+	const beginArrival = () => {
+		if (arrivalTimer !== null) clearTimeout(arrivalTimer);
+		view = { ...view, phase: "arriving" };
+		arrivalTimer = setTimeout(() => {
+			arrivalTimer = null;
+			view = { ...view, phase: "docked" };
+			paint();
+		}, GALLERY_ARRIVAL_SECONDS * 1000);
+	};
 	const paint = () => {
 		cockpitScene?.detach();
-		root.innerHTML = renderGalleryState(current, rightTab, headLook);
+		root.innerHTML = renderGalleryState(current, rightTab, headLook, view);
 		const cockpit = root.querySelector<HTMLElement>("[data-gallery-cockpit]");
 		if (!cockpit) return;
 		if (cockpitScene) cockpitScene.attach(cockpit, headLook);
@@ -646,8 +909,14 @@ export function mountStateGallery(): void {
 	const setState = (id: string) => {
 		current = galleryState(id);
 		rightTab = current.panel === "Drive" ? "Drive" : "Flight";
+		if (current.id === "docked") beginArrival();
+		else if (arrivalTimer !== null) {
+			clearTimeout(arrivalTimer);
+			arrivalTimer = null;
+		}
 		paint();
 	};
+	if (current.id === "docked") beginArrival();
 	paint();
 	root.addEventListener("click", (event) => {
 		const target = event.target as HTMLElement;
@@ -662,6 +931,35 @@ export function mountStateGallery(): void {
 			setState(state.dataset.galleryState ?? "assist-on");
 			return;
 		}
+		const consoleTab = target.closest<HTMLElement>(
+			"[data-gallery-console-tab]",
+		);
+		if (consoleTab) {
+			view = {
+				...view,
+				tab: consoleTab.dataset.galleryConsoleTab as StationConsoleTab,
+			};
+			paint();
+			return;
+		}
+		const stationPick = target.closest<HTMLElement>("[data-gallery-station]");
+		if (stationPick) {
+			const picked = CONSOLE_STATIONS.find(
+				(candidate) => candidate.id === stationPick.dataset.galleryStation,
+			);
+			if (picked) {
+				view = { ...view, station: picked };
+				paint();
+			}
+			return;
+		}
+		if (target.closest("[data-gallery-advance-clock]")) {
+			// M7: the clock moves, and the market tab never says so. The control
+			// is gallery chrome, deliberately outside the console it advances.
+			view = { ...view, gameTimeMin: view.gameTimeMin + MARKET_PERIOD_MIN };
+			paint();
+			return;
+		}
 		const tab = target.closest<HTMLElement>("[data-gallery-right-tab]");
 		if (
 			tab &&
@@ -672,6 +970,7 @@ export function mountStateGallery(): void {
 			return;
 		}
 		if (target.closest(".sg-close")) {
+			if (arrivalTimer !== null) clearTimeout(arrivalTimer);
 			cockpitScene?.dispose();
 			const flightUrl = new URL(window.location.href);
 			flightUrl.searchParams.delete("hud-gallery");

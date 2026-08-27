@@ -32,6 +32,7 @@ test("the gallery resolves every inspectable flight state and defaults safely", 
 		"target-acquisition",
 		"docking-granted",
 		"docking-denied",
+		"docked",
 	]);
 	expect(galleryState("missing-state").id).toBe("assist-on");
 	expect(galleryState("target-acquisition").targetBearingDeg).toBe(-112);
@@ -71,6 +72,26 @@ test("head-look activates exactly the readable console overlay for that side", (
 	expect(forward).toContain('data-gallery-panel="right" data-active="false"');
 	expect(left).toContain('data-gallery-panel="left" data-active="true"');
 	expect(right).toContain('data-gallery-panel="right" data-active="true"');
+});
+
+test("§8: docked takes the whole flight floor away and hangs the console forward", () => {
+	// M10 and M2, on the rendered markup rather than on the state record: the
+	// floor, the scanner and the director are the three things §5 calls
+	// persistent, and docked is the state that is not the same cockpit with dead
+	// instruments.
+	const docked = renderGalleryState(galleryState("docked"), "Flight");
+	expect(docked).toContain("data-gallery-station-console");
+	expect(docked).not.toContain("data-gallery-floor");
+	expect(docked).not.toContain("data-gallery-scanner");
+	expect(docked).not.toContain("data-gallery-director");
+	// M9: launch is on the Flight console, and the rest of it says it is inert.
+	expect(docked).toContain("data-gallery-launch");
+	expect(docked).toContain("data-gallery-inert");
+	// The flying states are untouched by all of it.
+	const flying = renderGalleryState(galleryState("assist-on"), "Flight");
+	expect(flying).toContain("data-gallery-floor");
+	expect(flying).not.toContain("data-gallery-station-console");
+	expect(flying).not.toContain("data-gallery-launch");
 });
 
 test("the gallery keeps the scanner self-explanatory without a visible title", () => {
