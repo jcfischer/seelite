@@ -28,26 +28,30 @@
  */
 
 import {
-	ALL_STATIONS,
-	type ByteMode,
+	type ByteClose,
 	COMMODITIES,
 	type Commodity,
-	NARCOTICS_BELL,
-	OFFSET_STATIONS,
+	HOLD_REFERENCE_T,
+	SATURATE,
 	type StationTypeKey,
+	commodity,
+	marketRowAt,
+} from "../src/market";
+import {
+	ALL_STATIONS,
+	BELL_WRAP,
 	CLOSABLE_RATIO,
 	FLUCT_PAIRS,
-	HOLD_REFERENCE_T,
+	NARCOTICS_BELL,
+	OFFSET_STATIONS,
 	bestMargin,
 	bestResidualBetween,
 	bestRunValueCr,
 	floorRate,
-	commodity,
 	forEachLegalPair,
 	residualMarginCr,
-	marketRow,
-	surveyResiduals,
 	runsToExhaustion,
+	surveyResiduals,
 	sweepDomain,
 } from "../tests/helpers/market-math";
 import {
@@ -105,8 +109,11 @@ function measure(good: Commodity): {
 	const wrapSpan = span();
 	const clampSpan = span();
 	const { hits, rows } = sweepDomain((economy, fluct) => {
-		widen(wrapSpan, marketRow(good, economy, fluct, "trade", "wrap").priceCr);
-		const clamped = marketRow(good, economy, fluct, "trade", "saturate");
+		widen(
+			wrapSpan,
+			marketRowAt(good, economy, fluct, "trade", BELL_WRAP).priceCr,
+		);
+		const clamped = marketRowAt(good, economy, fluct, "trade", SATURATE);
 		widen(clampSpan, clamped.priceCr);
 		return clamped.priceOverflowed;
 	});
@@ -151,10 +158,10 @@ console.log(`Bell's row collapses under the clamp: ${bell.collapsed}`);
 console.log(
 	"\nbest margin, refinery → refinery (a fence is a refinery; blackMarket does not price)",
 );
-const NARCOTICS_ROWS: [string, Commodity, ByteMode][] = [
-	["Bell + wrap", NARCOTICS_BELL, "wrap"],
-	["Bell + clamp", NARCOTICS_BELL, "saturate"],
-	["seelite + clamp", commodity("Narcotics"), "saturate"],
+const NARCOTICS_ROWS: [string, Commodity, ByteClose][] = [
+	["Bell + wrap", NARCOTICS_BELL, BELL_WRAP],
+	["Bell + clamp", NARCOTICS_BELL, SATURATE],
+	["seelite + clamp", commodity("Narcotics"), SATURATE],
 ];
 for (const [label, good, mode] of NARCOTICS_ROWS) {
 	const { margin, inStock } = bestMargin(good, "refinery", "refinery", mode);
@@ -245,9 +252,9 @@ function pairMargin(
 		if (candidate.sellOnly) continue;
 		if (candidate.illegal) continue;
 		if (candidate.unit !== "t") continue; // §6: sub-tonne goods skip the hold
-		const b = marketRow(candidate, buy.economy, buy.fluct, buy.station);
+		const b = marketRowAt(candidate, buy.economy, buy.fluct, buy.station);
 		if (b.quantity === 0) continue;
-		const s = marketRow(candidate, sell.economy, sell.fluct, sell.station);
+		const s = marketRowAt(candidate, sell.economy, sell.fluct, sell.station);
 		if (s.priceCr - b.priceCr > best.margin)
 			best = { margin: s.priceCr - b.priceCr, good: candidate.name };
 	}
@@ -429,8 +436,14 @@ console.log("\n── §12: goods whose stock differs from Bell's `& 0x3F` wrap 
 for (const good of COMMODITIES) {
 	let worst = 0;
 	const { hits: differing, rows } = sweepDomain((economy, fluct) => {
-		const mine = marketRow(good, economy, fluct, "trade").quantity;
-		const theirs = marketRow(good, economy, fluct, "trade", "wrap").quantity;
+		const mine = marketRowAt(good, economy, fluct, "trade").quantity;
+		const theirs = marketRowAt(
+			good,
+			economy,
+			fluct,
+			"trade",
+			BELL_WRAP,
+		).quantity;
 		if (mine === theirs) return false;
 		worst = Math.max(worst, Math.abs(mine - theirs));
 		return true;
