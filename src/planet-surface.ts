@@ -321,21 +321,18 @@ export function buildBodyVisual(
 		// an airless body does not carry it at all.
 		wrapAmount: { value: look.atmosphere * 0.32 },
 		seedOffset: { value: (look.seed % 997) / 97 },
-		// The A/B switch AIRLESS reads. Query-gated so the two crater paths can
-		// be compared on one machine by reloading, which is the measurement
-		// #59 could not take — its runner had no GPU, and it said so.
 		// 0 normally; 1 drops the normal perturbation, 2 drops the surface noise
 		// entirely. Read by every class through `RELIEF`.
 		perfAblate: {
 			value: perf === "flat" ? 2 : perf === "norelief" ? 1 : 0,
 		},
-		craterSlow: {
-			value:
-				new URLSearchParams(window.location.search).get("crater") ===
-				"differenced"
-					? 1
-					: 0,
-		},
+		// The A/B switch AIRLESS reads, set live from the perf panel's `o` key.
+		// An earlier version offered `?crater=differenced` and a reload instead,
+		// which `perf-panel.ts` argues against in its own rationale: a reload
+		// puts the ship somewhere else, so two readings taken from two positions
+		// measure the positions as much as the terms. Two comments in one branch
+		// cannot recommend opposite methods.
+		craterSlow: { value: 0 },
 		warmth: { value: look.warmth },
 		seaLevel: { value: look.seaLevel },
 		starTint: { value: photosphereTint(opts.starTint ?? 0xfff4ea) },

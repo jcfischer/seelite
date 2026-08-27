@@ -355,7 +355,7 @@ export function mountPerfPanel(targets: PerfTargets) {
 	};
 
 	const onKey = (e: KeyboardEvent) => {
-		// No modifier. The keys are checked against the flight bindings by
+		// No Cmd, Ctrl or Alt. The keys are checked against the flight bindings by
 		// `tests/perf-panel-keys.test.ts` rather than by assertion here.
 		if (e.metaKey || e.ctrlKey || e.altKey) return;
 		if (e.key === RESTORE_KEY) {

@@ -489,7 +489,7 @@ void surface(vec3 p, inout vec3 albedo, inout vec3 N,
 
   // The relief is the whole read on an airless body: no air, no cloud, no
   // ocean, nothing but the shape the impacts left.
-  // ?crater=differenced restores the five-walk path, so the two can be
+  // The perf panel s o key restores the five-walk path, so the two can be
   // compared on one machine in one session by reloading. #59 could measure this
   // class only on a software rasteriser and said so; what it licensed was "no
   // saving was demonstrated here", not "no saving exists". This is the switch

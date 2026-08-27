@@ -18,9 +18,11 @@ import { CLASS_GLSL, RELIEF } from "./planet-classes.glsl";
  * One cell of a crater field, and the profile of the crater in it.
  *
  * **Two consumers, one definition.** craters() below sums the profile;
- * station-surface.ts's cratersAndGradient() sums it *and* its slope, so a
- * refinery's asteroid pays one walk of the 3×3×3 neighbourhood instead of the
- * five that finite-differencing the height would cost. Those are different
+ * cratersAndGradient() beside it sums the profile *and* its slope, so a
+ * refinery's asteroid and an airless moon each pay one walk of the 3×3×3
+ * neighbourhood instead of the five that finite-differencing the height would
+ * cost. Both live in this file: the gradient walk moved here from
+ * station-surface.ts when the moon became its second caller. Those are different
  * accumulations of the same field, and the field is written here so they cannot
  * become two fields.
  *
@@ -55,8 +57,8 @@ export const CRATER_CELL = /* glsl */ `    vec3 cell = base + vec3(x, y, z);
  * Where the rim sits, and how sharp it is.
  *
  * Hoisted out of the profile because the *derivative* needs them too:
- * station-surface.ts differentiates the rim analytically, and its chain rule
- * carries 2 · CRATER_RIM_SHARPNESS². Written as literals in both places, a
+ * cratersAndGradient below differentiates the rim analytically, and its chain
+ * rule carries 2 · CRATER_RIM_SHARPNESS². Written as literals in both places, a
  * change to the sharpness here would leave the derivative describing a
  * different crater — silently, because a wrong slope shades plausibly.
  */
@@ -271,11 +273,27 @@ ${CRATER_PROFILE}
  * composer's targets store and what an unchecked product can reach.
  */
 export const SANITISE_GLSL = /* glsl */ `
+float saneF(float v) {
+  // Inverted on purpose: NaN compares false against everything, so this is
+  // true for NaN as well as for a negative, where v < 0.0 would let NaN pass.
+  if (!(v >= 0.0)) return 0.0;
+  return min(v, 64.0);
+}
 vec3 sane(vec3 c) {
-  if (!(c.r >= 0.0)) c.r = 0.0;
-  if (!(c.g >= 0.0)) c.g = 0.0;
-  if (!(c.b >= 0.0)) c.b = 0.0;
-  return min(c, vec3(64.0));
+  return vec3(saneF(c.r), saneF(c.g), saneF(c.b));
+}
+/*
+ * **Alpha too, and on these shaders alpha matters more than colour.**
+ *
+ * The first version wrapped only RGB. The shells are the transparent and
+ * additive passes, so their alpha is what scales their contribution into the
+ * buffer bloom then samples — a non-finite one carries straight through the
+ * exact path this guard exists to close, past a guarded colour. Guarding three
+ * channels out of four on the one program where the fourth does the blending
+ * was the wrong three.
+ */
+vec4 sane4(vec4 c) {
+  return vec4(sane(c.rgb), saneF(c.a));
 }
 `;
 
@@ -385,6 +403,8 @@ void main() {
   vec3 col = shade(albedo, N, V);
   if (specPower > 0.0) col += sunColor * specular(N, V, specPower) * specMask;
   col += emissive;
+  // Alpha is the literal 1.0 on the opaque surface, so only colour can go
+  // wrong here. The shells use sane4, where alpha does the blending.
   gl_FragColor = vec4(sane(col), 1.0);
 }
 `;
@@ -476,8 +496,8 @@ void main() {
   // "a long way through the air", which is what it always meant.
   float grazing = pow(clamp(depth, 0.0, 1.0), 2.5);
   vec3 sunset = mix(atmoColor, atmoColor * vec3(1.5, 0.75, 0.42), grazing * 0.8);
-  gl_FragColor = vec4(sane(sunset * (0.55 + 2.2 * forward) * day),
-                      rim * day * atmoStrength);
+  gl_FragColor = sane4(vec4(sunset * (0.55 + 2.2 * forward) * day,
+                            rim * day * atmoStrength));
 }
 `;
 
@@ -521,8 +541,8 @@ void main() {
   // Same lighting as the ground, so the cloud terminator lines up with it.
   float lit = wrappedDiffuse(N);
   float rim = pow(1.0 - max(dot(N, V), 0.0), 2.2);
-  gl_FragColor = vec4(sane(cloudTint * (lit * 1.30 * sunColor + 0.025)),
-                      clamp(mask, 0.0, 1.0) * (0.62 + 0.30 * rim));
+  gl_FragColor = sane4(vec4(cloudTint * (lit * 1.30 * sunColor + 0.025),
+                            clamp(mask, 0.0, 1.0) * (0.62 + 0.30 * rim)));
 }
 `;
 
@@ -567,7 +587,7 @@ void main() {
   float shadow = (along < 0.0) ? 1.0 : smoothstep(0.94, 1.10, perp);
 
   vec3 ice = mix(vec3(0.30, 0.27, 0.23), vec3(0.55, 0.52, 0.47), grain);
-  gl_FragColor = vec4(sane(ice * (0.25 + 0.75 * shadow)), density * 0.85);
+  gl_FragColor = sane4(vec4(ice * (0.25 + 0.75 * shadow), density * 0.85));
 }
 `;
 
