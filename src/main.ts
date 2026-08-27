@@ -3854,6 +3854,7 @@ class Game {
 		if (this.view === "cockpit" && this.headLook !== "forward") {
 			this.cockpitPrompt.reset();
 			this.combatOverlayStatus.reset();
+			this.combatOverlayLines = [];
 			return;
 		}
 		const toPixels = (ndcX: number, ndcY: number) => ({
@@ -4016,10 +4017,10 @@ class Game {
 				12,
 			);
 			const combatStatus = `FIRE ${this.combat.firing?.toUpperCase() ?? "SAFE"} · LOCK ${this.combat.missileLock ? "READY" : "ACQ"} · MISSILE ${this.combat.incomingMissile ? "WARNING" : "CLEAR"} · INTD ${this.combat.interdiction ? "ACTIVE" : "CLEAR"}`;
-			// Fit against the longest possible status text so any live state fits,
-			// whatever the first frame happened to display.
+			// Fit against the widest status the block can emit, so any live state
+			// fits whatever the first frame happened to display.
 			const longestStatus =
-				"FIRE BEAM · LOCK ACQ · MISSILE WARNING · INTD ACTIVE";
+				"FIRE PULSE · LOCK READY · MISSILE WARNING · INTD ACTIVE";
 			let fittedEntry = this.combatStatusFit.get(w);
 			if (!fittedEntry) {
 				ctx.font = PROMPT_FONT;
@@ -4052,6 +4053,7 @@ class Game {
 			ctx.restore();
 		} else {
 			this.combatOverlayStatus.reset();
+			this.combatOverlayLines = [];
 		}
 
 		// The selected target owns the amber sky marker. Green remains prograde,
