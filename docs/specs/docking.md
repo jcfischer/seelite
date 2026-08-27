@@ -726,20 +726,32 @@ would make the player re-watch the *same* arrival at each of hundreds of station
 — novelty rewarded for something that is not novel. Four first-times — trade,
 shipyard, refinery, outpost.
 
-**Four gates cover two presentations, and that is deliberate.**
-`STATION_GEOMETRY` fixes the aperture kind per type and no type spans both, so
-type → presentation is a total function: trade and shipyard are slots, refinery
-and outpost are pads. Gating on type therefore **over**-counts — the player
+**Four gates cover two presentations, and that is deliberate.** Type →
+presentation is a total function, and it is a **type-level** guarantee rather
+than a convention that could drift: `STATION_GEOMETRY` is a
+`Record<StationType, StationGeometry>`, `StationGeometry.aperture` is one
+`StationAperture`, and `StationAperture.kind` is one of `"slot" | "pad"`. A type
+therefore cannot span both — not "does not today", *cannot*. Trade and shipyard
+are slots, refinery and outpost are pads. Gating on type therefore **over**-counts — the player
 watches the throat once at their first trade station and again at their first
 shipyard. It cannot under-count, so no first sight of a presentation is ever
 suppressed. The over-count is what E9's shield buys back: a second first-time at
 a different *kind* of station, with its own name on the wall, is not the same
 arrival twice.
 
-The flag is **per-galaxy player state, not a per-carrier-slot row**:
-`persistent-world-state.md` §1 already names "visited flags" among the facts the
-overlay stores and §7 puts "player knowledge and visited state" in the envelope,
-so this is four bits in a domain that exists rather than a new one.
+The flag is **per-galaxy player state, not a per-carrier-slot row.** It is four
+booleans, not one row per station, which is the whole reason to gate on type.
+
+**What `persistent-world-state.md` licenses, stated precisely, because an earlier
+draft of this paragraph claimed more.** §1 names "visited flags" among the facts
+the overlay stores and §7 puts "player knowledge and visited state" in the
+per-galaxy envelope — so the *category* exists and the *scope* is right. What
+neither fixes is the **shape**: nothing there contemplates a per-station-*type*
+arrival flag specifically. §1's own escape clause is the honest route — "and
+other typed domains approved later" — so this is a typed domain **#46 must
+approve and bound**, not one already sitting there waiting. §6 of that spec bounds
+every other domain and will have to bound this one; four booleans per galaxy is
+the bound being asked for.
 
 ### 12.2 The docked state, and leaving
 
@@ -759,6 +771,13 @@ explicitly because the last time that boundary was left implicit —
 
 **Launch is the mirror of the arrival** and is built with it rather than being its
 own decision: the ship leaves the way it came in, and flight resumes when it does.
+
+**It shares E4's flag, which makes it always skippable in practice.** The flag is
+set by arriving, and a player cannot launch from a station they did not arrive
+at — so by the time any launch happens, that type's flag is already set. Stated
+rather than left implicit: the alternative reading, that launch has its own flag,
+would make the first launch from each type unskippable *immediately after* the
+player watched the identical motion inbound.
 **`UNDOCK_CLEAR_KM` retires the day that lands.** #68 shipped it as an anti-latch
 measure and said so in its own docstring — it exists because `dockedAt` was set
 and never cleared, not because leaving was designed.
@@ -786,6 +805,13 @@ The boundary, stated so neither system has to guess:
 | Hull, rim, drydock frame, and every other body | **The collision system** |
 | **The ship during §12.1's arrival, and while docked** | **Neither.** It is not a collidable body. |
 
+**The ordering at the crossing instant, because the first two rows overlap
+there.** A ship on the plane is simultaneously in §2's row and entering the
+exempt one, and an implementer cannot be left to pick. So: **§3's six checks
+evaluate at the crossing, and the exemption begins on the tick after a pass.** A
+failure is §2's in full — repel, damage, grant kept — because a failed entry
+never enters the exempt state at all.
+
 **That third row is not a detail.** §12.1 invents a traversal — the ship flies
 down a throat it was placed in on rails — and E2 says nothing can fail during it.
 Without the row, a collision implementer reading the table as authoritative gives
@@ -793,9 +819,20 @@ the throat walls to collision, the default is collision-on, and **the arrival
 clips the tunnel it was just handed**. The same holds for the parked ship: it sits
 inside a structure that is otherwise solid.
 
-The exemption is safe precisely because the arrival is scripted: it is a position
-law with a known start and end, so there is no state in which it can be somewhere
-the law did not put it.
+The exemption is safe on the arrival's own side because it is scripted: a
+position law with a known start and end, so there is no state in which the ship
+is somewhere the law did not put it. That is only half an argument, and the other
+half is what keeps something *else* out of the throat:
+
+- **Another ship.** §6's clearance protocol is exactly that mechanism. A grant is
+  refused while the slot is occupied (§6.1's `queued`), so two ships are never
+  cleared into one throat. Occupancy is injected and always zero today; #8's
+  traffic replaces the injection and inherits the rule rather than reopening it.
+- **The station's own rotation.** The throat turns with the station, so the
+  arrival law carries the ship in the **rotating** frame — the same frame §4.1
+  computes the slot phase in. A law written in the station's translating frame
+  but not its rotating one would walk the ship into a wall that moved, which is
+  the one way a scripted path can still end somewhere it was not put.
 
 §2.0's semantics are why this is a boundary rather than a merge: a failed entry
 repels with `v_axial` reversed and halved, damages on §2.1's quadratic above a
@@ -854,7 +891,10 @@ construction rather than by a check. A fourth station type, or a second station 
 one type in a system, breaks that — and the `Record<StationType, …>` discipline
 means the first is a compile error while the second is not, so **if a system ever
 gains two stations of one type, the derivation must fold in `localCarrierId`**,
-which is the identity that is unique by contract.
+which is the identity that is unique by contract — appended as a discriminator,
+so an existing station's name never moves when a second one appears beside it.
+Because that break is silent, §12.6 asserts name uniqueness within a system
+rather than trusting the construction argument.
 
 **Decision E10: the shield is a quad built in `station-mesh.ts`, with its texture
 supplied by the renderer.** That module is headless-tested and contains no
@@ -891,7 +931,16 @@ Two tiers, as everywhere else in this spec.
    makes that a claim and #10 makes it binding, and without this row a docked
    state that froze the tick would satisfy every other obligation here.
 5. The **skip gate** is four booleans and gets a table: each type's first arrival
-   plays, each subsequent one is skippable, and the four are independent.
+   plays, each subsequent one is skippable, the four are independent, and a
+   launch is skippable whenever its type's flag is set.
+6. **The duration falls inside E3's ratified bounds.** Without this the range is
+   prose: "it terminates" is satisfied by an arrival of any length, so a retune
+   to twelve seconds would pass every other row here. The bound is what §12.7
+   says is safe to move; a value outside it is not a tuning change.
+7. **Station names are unique within a system.** E9 argues uniqueness by
+   construction — one station per type — and construction is exactly what a
+   generator change can break without a compile error. Asserted over the same
+   corpus `tests/station-orbits.test.ts` walks, so the silent case has a check.
 
 **Browser probe.**
 
@@ -905,12 +954,14 @@ Two tiers, as everywhere else in this spec.
    plane — the regression this whole section exists for, and a spatial claim, so
    it gets the spatial tier.
 
-**Inherited by the collision node, not by this one.** When collision lands,
-§9.2.4's hull-face probe is measuring a collision rather than a failed entry
-(§3), and the collision node owes a re-pointing of it. That obligation is written
-here rather than only in §3's prose because a probe that stays green for a reason
-its own spec has declared dead is the shape of check that stops being evidence —
-and §12.7 records that it fails open until then.
+**Inherited by [#75](https://github.com/jcfischer/seelite/issues/75), not by this
+node.** When collision lands, §9.2.4's hull-face probe is measuring a collision
+rather than a failed entry (§3), and #75 owes a re-pointing of it — it is written
+into that node's body as an inherited obligation, so it has a holder rather than
+being an obligation addressed to nobody. It is recorded here as well because a
+probe that stays green for a reason its own spec has declared dead is the shape
+of check that stops being evidence, and §12.7 records that it fails open until
+#75 is taken.
 
 ### 12.7 Weak joints in this section
 
@@ -921,10 +972,11 @@ and §12.7 records that it fails open until then.
    first-times against one shared interior is a compromise, not a resolution: the
    honest alternatives were distinct interiors per form, or no gate at all. E9's
    shield is what carries per-station identity instead.
-3. **Collision is decided and unowned** (E6). This section states that it exists
-   and where its boundary is, and nothing here builds it. Until it does, flying at
-   a station's hull still passes through it — **and §9.2.4 stays green for a
-   justification §3 has already declared dead.** That probe currently proves that
+3. **Collision is decided and unbuilt** (E6). This section states that it exists
+   and where its boundary is, and nothing here builds it;
+   [#75](https://github.com/jcfischer/seelite/issues/75) owns it. Until that node
+   lands, flying at a station's hull still passes through it — **and §9.2.4 stays
+   green for a justification §3 has already declared dead.** That probe currently proves that
    a hull-face approach is refused by check 5; once the hull is solid it will be
    proving that collision works, under a name that says otherwise. The obligation
    to re-point it is §12.6's and it is inherited by the collision node, but until
