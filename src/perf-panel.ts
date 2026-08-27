@@ -18,9 +18,11 @@
  * The isolation is exactly that and no more: the key listener is a plain
  * `window` handler installed at mount, so a page that mounts the panel *and*
  * is driven by a probe would see both. What keeps that from happening is that
- * no probe URL carries `?perf` — `probe-boot`'s settings checks press keys
- * against a page opened without it — and nothing enforces that beyond the
- * URLs. Worth knowing before adding `?perf` to a probe to see something. `hud-and-scanner.md` §5 keeps
+ * no probe URL carries `?perf`, and that is **enforced** rather than trusted:
+ * `check-launcher-wiring.mjs` refuses a probe whose source opens a page with
+ * it, and `npm run probe` runs that before any browser starts. So adding
+ * `?perf` to a probe to see something fails the wiring check rather than
+ * quietly putting a keystroke-driven diagnostic under a rendering assertion. `hud-and-scanner.md` §5 keeps
  * developer tuning readouts off the persistent player flight floor; this obeys
  * that the same way the frame meter does, by never being on unless asked for.
  *
@@ -212,26 +214,19 @@ function shells(scenes: THREE.Object3D[], kind: string) {
  * the flight controls own the letters — 1, 2 and 3 swing the chase view and 0
  * resets the cruise dials, so the panel stole four working controls.
  */
-export const PERF_KEYS = ["b", "h", "c", "r", "o", "p", "y"] as const;
+/**
+ * `y` is deliberately absent. It cycled resolution here while the settings
+ * screen owned the same renderer state, so two owners wrote it through
+ * different multipliers — panel 50% and settings 50% gave 25%, and the panel's
+ * own readout reported only its half. A diagnostic may not co-own a player
+ * setting; resolution belongs to `settings.ts` and this panel prices the terms
+ * that are not settings.
+ */
+export const PERF_KEYS = ["b", "h", "c", "r", "o", "p"] as const;
 export const RESTORE_KEY = "u";
 
 export type PerfTargets = {
 	scenes: THREE.Object3D[];
-	/**
-	 * Reads and sets the render-scale multiplier, and reports the ratio the
-	 * renderer *actually applied* — which is not the multiplier times
-	 * `devicePixelRatio`. The renderer caps the device ratio at 2 and multiplies
-	 * by the player's own resolution setting as well, so a panel computing it
-	 * from the multiplier alone would print a figure the drawing buffer never
-	 * had, on any display above 2x or whenever the settings screen is not at
-	 * 100%. The per-term cost figures in this branch were read off this panel —
-	 * not the two-display comparison, which no single-machine panel can produce.
-	 */
-	resolution?: {
-		get: () => number;
-		set: (scale: number) => void;
-		effectiveRatio: () => number;
-	};
 	/** The bloom pass, so it can be switched without rebuilding the composer. */
 	bloom: { enabled: boolean } | null;
 };
@@ -257,25 +252,6 @@ export function mountPerfPanel(targets: PerfTargets) {
 
 	const { scenes } = targets;
 	const switches: Switch[] = [
-		{
-			key: "y",
-			// The biggest lever in the frame, and the only one that costs nothing
-			// but sharpness: this game is fill-rate bound, so halving the buffer
-			// in each axis quarters the work. A retina panel is already paying
-			// that four times over against the same window at ratio 1.
-			label: "resolution",
-			state: () => {
-				const s2 = targets.resolution?.get() ?? 1;
-				const px =
-					Math.round((targets.resolution?.effectiveRatio() ?? 1) * 100) / 100;
-				return `${Math.round(s2 * 100)}% (${px}x)`;
-			},
-			toggle: () => {
-				const order = [1, 0.75, 0.5];
-				const at = order.indexOf(targets.resolution?.get() ?? 1);
-				targets.resolution?.set(order[(at + 1) % order.length]);
-			},
-		},
 		{
 			key: "b",
 			label: "bloom",
@@ -372,7 +348,6 @@ export function mountPerfPanel(targets: PerfTargets) {
 			setAblate(scenes, 0);
 			setRelief(scenes, "four-tap");
 			setCrater(scenes, false);
-			targets.resolution?.set(1);
 			draw();
 			return;
 		}

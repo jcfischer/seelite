@@ -541,13 +541,18 @@ class Game {
 	/** Switchable from the perf panel; see `perf-panel.ts`. */
 	private bloomPass!: UnrealBloomPass;
 	/**
-	 * A multiplier on the device pixel ratio, for trading resolution against
-	 * frame time.
+	 * Resolution has exactly one owner, and it is the player's setting.
 	 *
 	 * This game is fill-rate bound — a planet filling the view costs its surface
 	 * shader per pixel — so the buffer size is the largest single lever there
 	 * is, and a retina panel makes it four times what the same window costs at
 	 * ratio 1.
+	 *
+	 * There was briefly a second multiplier here, driven by the perf panel, and
+	 * it multiplied with the setting rather than replacing it: panel at 50% and
+	 * setting at 50% gave 25%, while the panel's readout reported only its own
+	 * half. A diagnostic may not co-own player state. The panel prices the terms
+	 * that are not settings; this one is a setting.
 	 *
 	 * **What was observed, and what it does and does not license.** The same
 	 * view over a venusian gave 17 fps on a retina laptop panel and 70 on an
@@ -557,14 +562,12 @@ class Game {
 	 * rate, compositor path, GPU power state and thermal headroom as well as in
 	 * pixels, and the comparison controlled for none of them.
 	 *
-	 * The controlled test is a keypress and has not been run: set this to 50%
-	 * on the *laptop*, where the buffer then matches the external display's, and
-	 * see whether the rate does. Until then the honest reading is that
+	 * The controlled test is a keypress and has not been run: set the setting to
+	 * 50% on the *laptop*, where the buffer then matches the external display's,
+	 * and see whether the rate does. Until then the honest reading is that
 	 * resolution is a large lever — which the buffer sizes prove on their own —
 	 * and not that it is the whole of that particular gap.
 	 */
-	private renderScale = 1;
-	/** Player settings, read at boot and applied as they change. */
 	readonly settings = new SettingsStore();
 
 	/**
@@ -573,7 +576,8 @@ class Game {
 	 * A dialog that takes `keydown` does not take back the keys already down:
 	 * a throttle or pitch key held when the settings screen opens stays in this
 	 * set, and the ship goes on flying behind a screen the player is reading.
-	 * The dialog calls this as it opens.
+	 * The settings screen calls this as it opens, and `probe-boot` fails if it
+	 * stops.
 	 */
 	releaseHeldKeys() {
 		this.keys.clear();
@@ -583,18 +587,7 @@ class Game {
 	get heldKeyCount() {
 		return this.keys.size;
 	}
-	get resolutionScale() {
-		return this.renderScale;
-	}
-	/** What the renderer is actually drawing at, asked of the renderer rather
-	 *  than recomputed from the parts that went into it. */
-	get appliedPixelRatio() {
-		return this.renderer.getPixelRatio();
-	}
-	setResolutionScale(scale: number) {
-		this.renderScale = scale;
-		this.onResize();
-	}
+
 	/** The bloom pass, for the perf panel to switch. */
 	get bloom() {
 		return this.bloomPass ?? null;
@@ -3912,9 +3905,14 @@ class Game {
 	 * places, diagnosed in neither".
 	 *
 	 * The pixel-ratio re-application below is *not* one of those candidates. It
-	 * was investigated as one and ruled out by measurement — the composer's
-	 * targets already match the drawing buffer, because `EffectComposer.setSize`
-	 * applies the ratio itself. It is kept for the display-move case only.
+	 * was investigated as one and ruled out. The measurement: with a page opened
+	 * at `deviceScaleFactor` 1 and again at 2, then resized,
+	 * `renderer.getDrawingBufferSize()` and the composer's `renderTarget1` were
+	 * read back and compared — 1000x640 against 1000x640, and 2000x1280 against
+	 * 2000x1280, on this branch *and* on main. `EffectComposer.setSize` applies
+	 * the ratio itself, so the mismatch this was going to fix does not exist.
+	 * It is kept for the display-move case only, where `devicePixelRatio`
+	 * changes and a value captured at construction is simply stale.
 	 *
 	 * Moving a window between displays is the case that bites hardest, because
 	 * `devicePixelRatio` itself changes — a retina laptop at 2, an external
@@ -3926,9 +3924,7 @@ class Game {
 		const h = window.innerHeight;
 		this.sizeOverlay();
 		const ratio =
-			Math.min(window.devicePixelRatio, 2) *
-			this.renderScale *
-			this.settings.value.renderScale;
+			Math.min(window.devicePixelRatio, 2) * this.settings.value.renderScale;
 		this.renderer.setPixelRatio(ratio);
 		this.composer.setPixelRatio(ratio);
 		for (const cam of [
@@ -4098,11 +4094,6 @@ if (query.has("model-viewer")) {
 			mountPerfPanel({
 				scenes: [game.nearScene, game.approachScene, game.farScene],
 				bloom: game.bloom,
-				resolution: {
-					get: () => game.resolutionScale,
-					set: (scale) => game.setResolutionScale(scale),
-					effectiveRatio: () => game.appliedPixelRatio,
-				},
 			}),
 		);
 }

@@ -414,8 +414,9 @@ float height(vec3 p) {
  * 3x3x3 crater walks — so a normal that the walks already contain was costing
  * ten of them. cratersAndGradient accumulates each crater's slope in the loop
  * that accumulates its depth, which is exact rather than approximate: this is
- * the analytic derivative of the same profile, not a cheaper lookalike, and no
- * crater is dropped at any scale.
+ * the analytic derivative of the same profile, not a cheaper lookalike, and it
+ * visits every cell the path it replaces visited — the d < 1.2 cull below is
+ * craters()'s own cull, not a new one.
  *
  * The fine fbm term keeps its central differences. It is 0.08 of the amplitude
  * and four fbm4 calls, against the four *pairs of crater walks* that differencing
@@ -424,8 +425,12 @@ float height(vec3 p) {
  *
  * This is #60's asteroid optimisation. The two attempts recorded above were an
  * octave split and a detail band; both changed *what is drawn* — a dropped
- * octave is a missing crater — and both were withdrawn for it. This one drops
- * nothing at any scale.
+ * octave is a missing crater — and both were withdrawn for it. This one keeps
+ * every octave and every cell either walk would have visited: the d < 1.2 cull
+ * below is the same cull craters() applies, so nothing is dropped relative
+ * to the path this replaces. It is not the stronger nothing-is-ever-dropped,
+ * which an earlier version of this comment said two paragraphs above conceding
+ * that very cull.
  *
  * It is not pixel-identical, and that should not be claimed. A central
  * difference over 2e smooths whatever it straddles; the analytic derivative
