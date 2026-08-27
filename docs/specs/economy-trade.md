@@ -632,6 +632,15 @@ waiting and nothing more.** A planner that chained waits across epochs, or held
 a hold back for a re-roll it could see coming, is a strategy this sim never
 evaluates, and a one-hop rate-maximiser is not a bound on one.
 
+**And it is swept, not measured at one dock cost.** This document calls the
+dock-and-market stop "the modelled number that decides", and a longer stop makes
+flying worse relative to waiting — exactly the direction this section argues
+about. Over galaxy 0 at 15, 30, 45, 60 and 90 s, waiting won **0, 0, 0, 1 and 0**
+times out of 40, 34, 42, 40 and 37, with a best ratio of 0.66×, 0.80×, 0.70×,
+1.02× and 0.81×. The conclusion is not an artefact of the 45 s choice, and the
+4.679× tail above comes from a different galaxy rather than from a different
+dock cost.
+
 So the honest statement is: **the exploit exists, is available at about 1% of
 decision points, is worth up to 4.7× when it lands, and does not change the
 pacing of a trader that takes it greedily.** Whether it changes the pacing of a
@@ -908,7 +917,7 @@ too slow and merely unproven by one that is too fast.
 |---|---|
 | capital covers the full kit | **48–85 min** against §8's 1.5–2.5 h |
 | Cr/min | 225–435 |
-| hops chosen: interstellar : intra-system | **121 : 20** |
+| hops chosen: interstellar : intra-system | 121 : 20 — **not evidence, see below** |
 | dock cost 15→90 s (galaxy 0) | 51 → 94 min |
 
 **The figure is the capital milestone, not a fit-out, and the distinction was
@@ -926,6 +935,19 @@ they are the same question.
 
 The last two rows are **galaxy 0 alone** where they say so; the first two span
 all four.
+
+**The hop ratio is not evidence for §5.4, and a draft of this section offered it
+as such.** `intraOptions` enumerates the one or two other stations in the current
+system; `jumpOptions` enumerates eight systems and all their stations. A
+rate-maximising pick over pools an order of magnitude apart returns jumps by
+construction, so 121 : 20 says something about the option sets and nothing about
+the economy. §5.4's conclusion rests on the margin measurements in that section,
+which compare like with like; the row is kept only so the trader's behaviour is
+on the page.
+
+**The neighbour list is truncated at eight**, and that bit on **39.2% of
+decisions** — so the trader does not see every price in range, which the
+instrument's header claimed until it was counted.
 
 **The §5.5 comparison was wrong twice before it was right, and both faults
 flattered the same side.**
@@ -1003,8 +1025,13 @@ position, name and station silently.
   §3.2's deferred question about the byte extremes is answered by §2.2 and §3.1.
   The `blackMarket` flag §5.2 specifies **is implemented** in `src/system.ts`,
   landed by [#28](https://github.com/jcfischer/seelite/issues/28) with its own
-  `DOMAIN.STATION_FLAGS` tag; contraband trading was gated on it and no longer
-  is.
+  `DOMAIN.STATION_FLAGS` tag, and **§4's scope is now enforced in the shipped
+  module**: `MarketStation` carries the flag, `listsCommodity` is the rule, and
+  `marketRow` throws rather than quoting a shelf for a good the station does not
+  sell. A round of this node had that rule living only in
+  `scripts/measure-greedy-trader.ts`, which put §4 in the instrument and not in
+  the game — the market screen this spec hands the HUD node would have priced
+  Narcotics at every station in the galaxy with nothing going red.
 - **The ship-roster node** — inherits 20 t and 100 Cr as v1 defaults (§6) and
   owes hull prices (§7).
 - **The save/load node** — owes the format the sparse deficit map lives in

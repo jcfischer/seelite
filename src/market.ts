@@ -359,7 +359,31 @@ export interface MarketStation {
 	type: StationTypeKey;
 	/** From `marketSeedFor` — the station's own stream root, `DOMAIN.MARKET`. */
 	seed: number;
+	/**
+	 * `station-types.md` §5.2's fence flag, carried here because §4's scope is
+	 * the market's rule and not the station record's.
+	 *
+	 * **This is the only commodity scoping in the game.** Everything else in the
+	 * table trades everywhere; Narcotics, Firearms and Slaves trade at a fence
+	 * and nowhere else.
+	 */
+	blackMarket: boolean;
 }
+
+/**
+ * Whether this station lists this good at all — §4's one scoped class.
+ *
+ * **It lives here rather than in a caller**, and an earlier round of this node
+ * had it only in `scripts/measure-greedy-trader.ts`. That put the rule in the
+ * instrument and not in the game: the market screen the HUD node is handed
+ * would have priced Narcotics at every station in the galaxy, and no test would
+ * have gone red. §4's exception is the whole of what makes a fence a place
+ * worth flying to.
+ */
+export const listsCommodity = (
+	commodity: Commodity,
+	station: MarketStation,
+): boolean => !commodity.illegal || station.blackMarket;
 
 /**
  * FNV-1a over the carrier id.
@@ -431,7 +455,7 @@ export const stationFluct = (stationSeed: number, epoch: number): number =>
  * until then this is where that gap is felt, loudly.
  */
 export function marketStationOf(
-	station: { type: string; localCarrierId: string },
+	station: { type: string; localCarrierId: string; blackMarket: boolean },
 	systemSeed: number,
 ): MarketStation {
 	if (!(station.type in TYPE_OFFSET))
@@ -441,8 +465,16 @@ export function marketStationOf(
 	return {
 		type: station.type as StationTypeKey,
 		seed: marketSeedFor(systemSeed, station.localCarrierId),
+		blackMarket: station.blackMarket,
 	};
 }
+
+/** Everything this station lists, in table order — what a market screen shows
+ *  and the one place §4's scope has to be applied. */
+export const stationCommodities = (
+	station: MarketStation,
+): readonly Commodity[] =>
+	COMMODITIES.filter((c) => listsCommodity(c, station));
 
 /**
  * The game's entry point: one good at one station at one moment.
@@ -458,6 +490,12 @@ export function marketRow(
 	gameTimeMin: number,
 	close: ByteClose = SATURATE,
 ): MarketRow {
+	// Loud rather than a zero row: a price for a good the station does not sell
+	// is a bug in the caller, and a silently empty shelf is how it would ship.
+	if (!listsCommodity(commodity, station))
+		throw new Error(
+			`${station.type} does not list ${commodity.name} (economy-trade.md §4)`,
+		);
 	const epoch = marketEpoch(marketPhaseMin(station.seed), gameTimeMin);
 	return marketRowAt(
 		commodity,
@@ -611,9 +649,15 @@ export function parseDeficits(raw: unknown): DeficitMap {
 		throw new Error("deficit map: not an object");
 	const out: DeficitMap = {};
 	for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
-		// A parsed key is a `CarrierKey` by construction: the map is only ever
-		// written through `carrierKey`, and a save that says otherwise is a
-		// corrupt save rather than a differently-keyed one.
+		// **Checked, not asserted.** The brand exists so that `carrierKey` is the
+		// only way to make one, and a cast here would have let a save keyed on a
+		// bare `Station.id` — `"station-trade"`, the exact hazard the key type
+		// was introduced for — load silently and file one system's market memory
+		// under every system's.
+		if (!/^\d+:.+$/.test(key))
+			throw new Error(
+				`deficit map: ${key} is not a carrier key (systemIndex:localCarrierId)`,
+			);
 		const carrier = key as CarrierKey;
 		if (value === null || typeof value !== "object" || Array.isArray(value))
 			throw new Error(`deficit map: row ${key} is not an object`);

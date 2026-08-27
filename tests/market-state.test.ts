@@ -19,6 +19,7 @@ import { DOMAIN } from "../src/domains";
 import { generateGalaxy, systemSeedFor } from "../src/galaxy";
 import {
 	COMMODITIES,
+	commodity,
 	DEFICIT_DROP_UNITS,
 	DEFICIT_HALF_LIFE_MIN,
 	DEFICIT_MAX,
@@ -32,14 +33,16 @@ import {
 	marketRow,
 	marketRowAt,
 	marketSeedFor,
+	marketStationOf,
 	parseDeficits,
 	pruneDeficits,
 	readDeficit,
 	recordTrade,
+	stationCommodities,
 	stationFluct,
 } from "../src/market";
-import { LOCAL_CARRIER_ID, type StationType } from "../src/station";
-import { generateContents } from "../src/system";
+import { LOCAL_CARRIER_ID } from "../src/station";
+import { type Station, generateContents } from "../src/system";
 import { codeOf } from "./lib/source-scan";
 
 const WORLD = 0x5ee11e;
@@ -59,16 +62,11 @@ const stationsOf = (index: number) => {
 	return { record, stations: generateContents(record).stations };
 };
 
-const marketStation = (
-	systemSeed: number,
-	type: StationType,
-	localCarrierId: string,
-): MarketStation => ({
-	// `outpost` has no type offset (`TYPE_OFFSET` is §3's three), and
-	// `system.ts` generates none — asserted below rather than assumed here.
-	type: type as MarketStation["type"],
-	seed: marketSeedFor(systemSeed, localCarrierId),
-});
+/** Through the shipped narrowing helper, not a hand-built struct: a test that
+ *  constructs its own `MarketStation` is testing a different object from the
+ *  one the game uses. */
+const marketStation = (systemSeed: number, station: Station): MarketStation =>
+	marketStationOf(station, systemSeed);
 
 describe("§2 the persistence identity is a table, not a display key", () => {
 	test("every station type has a carrier id, and they are distinct", () => {
@@ -119,17 +117,13 @@ describe("§5.1 the base market is f(stationSeed, epoch)", () => {
 
 	test("every good is byte-identical across one whole epoch", () => {
 		const { record, stations } = stationsOf(3);
-		const station = marketStation(
-			record.seed,
-			stations[0].type,
-			stations[0].localCarrierId,
-		);
+		const station = marketStation(record.seed, stations[0]);
 		const phase = marketPhaseMin(station.seed);
 		// Two moments inside the same epoch, at its two ends.
 		const start = MARKET_PERIOD_MIN * 4 - phase;
 		const end = start + MARKET_PERIOD_MIN - 1e-6;
 		expect(marketEpoch(phase, start)).toBe(marketEpoch(phase, end));
-		for (const good of COMMODITIES) {
+		for (const good of stationCommodities(station)) {
 			const a = marketRow(good, record.economy, station, start);
 			const b = marketRow(good, record.economy, station, end);
 			expect(b.priceCr).toBe(a.priceCr);
@@ -142,7 +136,7 @@ describe("§5.1 the base market is f(stationSeed, epoch)", () => {
 		let total = 0;
 		for (const record of SYSTEMS)
 			for (const s of generateContents(record).stations) {
-				const station = marketStation(record.seed, s.type, s.localCarrierId);
+				const station = marketStation(record.seed, s);
 				const phase = marketPhaseMin(station.seed);
 				const boundary = MARKET_PERIOD_MIN * 3 - phase;
 				const before = stationFluct(
@@ -222,7 +216,11 @@ describe("§5.1 the market is independent of draw order elsewhere", () => {
 		// nothing subtler — a tag destructured under another name, or a fourth
 		// file, would pass. It is evidence that the generator does not reach for
 		// the market stream, not a proof that it cannot.
-		for (const file of ["src/system.ts", "src/galaxy.ts"]) {
+		// `station.ts` is scanned too: it is concretely part of station
+		// generation — `generateStations` consumes its geometry, spin range,
+		// fence eligibility and `LOCAL_CARRIER_ID` — so leaving it out was a
+		// named gap rather than the generic one the comment above admits.
+		for (const file of ["src/system.ts", "src/galaxy.ts", "src/station.ts"]) {
 			const code = codeOf(file);
 			expect(code).not.toContain("DOMAIN.MARKET");
 			expect(code).not.toContain('DOMAIN["MARKET"]');
@@ -276,10 +274,10 @@ describe("§5.1 the market is independent of draw order elsewhere", () => {
 	test("the row a game shows equals the row a sweep computes", () => {
 		const { record, stations } = stationsOf(5);
 		const s = stations[0];
-		const station = marketStation(record.seed, s.type, s.localCarrierId);
+		const station = marketStation(record.seed, s);
 		const t = 613.5;
 		const epoch = marketEpoch(marketPhaseMin(station.seed), t);
-		for (const good of COMMODITIES) {
+		for (const good of stationCommodities(station)) {
 			const played = marketRow(good, record.economy, station, t);
 			const swept = marketRowAt(
 				good,
@@ -436,5 +434,71 @@ describe("§5.5 the deficit map is sparse, lazy, and round-trips", () => {
 		expect(DEFICIT_DROP_UNITS).toBe(1);
 		const map = recordTrade({}, KEY, FOOD, DEFICIT_DROP_UNITS / 2, 0);
 		expect(map[KEY]).toBeUndefined();
+	});
+});
+
+describe("§4 illegal goods are scoped to a fence, in the shipped module", () => {
+	const ILLEGAL = ["Slaves", "Narcotics", "Firearms"];
+
+	test("the scoped set is exactly three, and disjoint from the sub-tonne set", () => {
+		const illegal = COMMODITIES.filter((c) => c.illegal).map((c) => c.name);
+		expect(illegal.sort()).toEqual([...ILLEGAL].sort());
+	});
+
+	test("a fence lists the whole table; every other station lists 14 of 17", () => {
+		let fences = 0;
+		let plain = 0;
+		for (const record of SYSTEMS)
+			for (const s of generateContents(record).stations) {
+				const station = marketStation(record.seed, s);
+				const listed = stationCommodities(station).map((c) => c.name);
+				if (s.blackMarket) {
+					fences++;
+					expect(listed.length).toBe(COMMODITIES.length);
+				} else {
+					plain++;
+					expect(listed.length).toBe(COMMODITIES.length - 3);
+					for (const name of ILLEGAL) expect(listed).not.toContain(name);
+				}
+			}
+		// Both arms have to be exercised or half the rule is untested — fences
+		// are rare (`station-types.md` §5.2 keys them on government).
+		expect(fences).toBeGreaterThan(0);
+		expect(plain).toBeGreaterThan(0);
+	});
+
+	test("pricing contraband at a non-fence throws rather than quoting a shelf", () => {
+		const { record, stations } = stationsOf(3);
+		const plain = stations.find((s) => !s.blackMarket);
+		if (!plain) throw new Error("fixture has no non-fence station");
+		const station = marketStation(record.seed, plain);
+		for (const name of ILLEGAL)
+			expect(() =>
+				marketRow(commodity(name), record.economy, station, 100),
+			).toThrow(/does not list/);
+		// A legal good at the same station is unaffected — the guard is the
+		// scope, not a blanket refusal.
+		expect(() =>
+			marketRow(commodity("Food"), record.economy, station, 100),
+		).not.toThrow();
+	});
+
+	test("a fence prices all three", () => {
+		const fence = SYSTEMS.flatMap((record) =>
+			generateContents(record)
+				.stations.filter((s) => s.blackMarket)
+				.map((s) => ({ record, s })),
+		)[0];
+		if (!fence) throw new Error("corpus has no fence");
+		const station = marketStation(fence.record.seed, fence.s);
+		for (const name of ILLEGAL) {
+			const row = marketRow(
+				commodity(name),
+				fence.record.economy,
+				station,
+				100,
+			);
+			expect(row.priceCr).toBeGreaterThan(0);
+		}
 	});
 });

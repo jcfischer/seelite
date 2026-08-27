@@ -70,6 +70,7 @@ import {
 	carrierKey,
 	fullKitCr,
 	type DeficitMap,
+	listsCommodity,
 	marketPhaseMin,
 	marketRow,
 	marketStationOf,
@@ -105,6 +106,12 @@ const DOCK_SECONDS = 45;
 
 /** Starting credits and hold — §6, both v1 defaults the ship-roster node
  *  inherits. */
+/** The radius `legSeconds` treats a station as reached at. A station is a
+ *  kilometre across (`STATION_GEOMETRY`), and cruise drops at `dropRadiusKm`
+ *  anyway, so this only has to be small against the leg — but it is a modelled
+ *  number and every other one in this file is named. */
+const STATION_TARGET_RADIUS_KM = 1;
+
 const START_CR = 100;
 const HOLD_T = HOLD_REFERENCE_T;
 /** §6: the Large Cargo Bay is +15 t. It is §8's first purchase precisely
@@ -166,9 +173,6 @@ const sellsIt = (item: Equipment, port: Port): boolean => {
 /** How far the trader looks for a jump target. The whole 256-system galaxy is
  *  in memory, so this bounds work rather than knowledge. */
 const NEIGHBOUR_LIMIT = 8;
-/** Counts how often that limit actually bit, so the header's claim about what
- *  the trader sees is measured rather than asserted. */
-let neighbourTruncations = 0;
 
 // ---------------------------------------------------------------------------
 // The world, as the trader sees it
@@ -205,9 +209,11 @@ function portsOf(record: SystemRecord, contents: SystemContents): Port[] {
 	}));
 }
 
-/** §4: illegal goods trade only at a fence, and that is both directions. */
+/** §4's scope, from `src/market.ts` — the instrument does not carry its own
+ *  copy of a rule the game enforces. It used to, which is how the rule came to
+ *  exist only here. */
 const tradable = (good: Commodity, port: Port): boolean =>
-	!good.illegal || port.station.blackMarket;
+	listsCommodity(good, port.market);
 
 /**
  * One good at one port.
@@ -314,7 +320,10 @@ function intraSeconds(
 	gameTimeS: number,
 	dockSeconds: number,
 ): number {
-	const target = { pos: to.posAt(gameTimeS), radiusKm: 1 };
+	const target = {
+		pos: to.posAt(gameTimeS),
+		radiusKm: STATION_TARGET_RADIUS_KM,
+	};
 	return (
 		legSeconds(
 			from.posAt(gameTimeS),
@@ -339,7 +348,10 @@ function jumpSeconds(
 		from.record.pos,
 		gameTimeS + JUMP_SECONDS,
 	);
-	const target = { pos: to.posAt(gameTimeS + JUMP_SECONDS), radiusKm: 1 };
+	const target = {
+		pos: to.posAt(gameTimeS + JUMP_SECONDS),
+		radiusKm: STATION_TARGET_RADIUS_KM,
+	};
 	return (
 		JUMP_SECONDS +
 		legSeconds(
@@ -389,6 +401,9 @@ interface Result {
 	 * two figures are reported apart rather than one standing for the other.
 	 */
 	kitAffordableAtMinutes: number | null;
+	/** How often `NEIGHBOUR_LIMIT` hid part of the jump range, over how many
+	 *  decisions — the denominator the header's claim needs. */
+	tally: { truncated: number; decisions: number };
 	/** Every decision point where a wait was on the table, as
 	 *  `bestWaitRate / bestFlyRate`. A maximum alone cannot tell one lucky
 	 *  moment from a strategy. */
@@ -408,32 +423,60 @@ interface Stance {
 	holdT: number;
 	deficits: DeficitMap;
 	dockSeconds: number;
+	/**
+	 * Where the neighbour-limit disclosure accumulates.
+	 *
+	 * **Per run, with a denominator.** A module-level counter was the first
+	 * version, and the dock sweep called `run()` five more times before the line
+	 * printed — so the figure that exists to keep "how often that bites is
+	 * counted" honest spanned nine runs and was reported beside four-run tables.
+	 */
+	tally: { truncated: number; decisions: number };
+}
+
+/**
+ * One hop, priced.
+ *
+ * Both builders below ended in this same block — compute the basket, push an
+ * identically-keyed `Hop` — differing only in `kind`, `fuelCr` and which
+ * seconds function ran. A change to how an option is priced had to land twice.
+ */
+function hopTo(
+	here: Port,
+	to: Port,
+	st: Stance,
+	kind: Hop["kind"],
+	fuelCr: number,
+	seconds: number,
+): Hop {
+	const min = st.t / 60;
+	const b = basket(
+		here,
+		to,
+		st.deficits,
+		min,
+		min + seconds / 60,
+		st.credits - fuelCr,
+		st.holdT,
+	);
+	return { kind, to, seconds, fuelCr, profitCr: b.profitCr, cargo: b.cargo };
 }
 
 /** (a) Another station in this system — §5.4's intra-system pair. */
 function intraOptions(here: Port, st: Stance): Hop[] {
-	const min = st.t / 60;
 	const out: Hop[] = [];
 	for (const to of portsOf(here.record, here.contents)) {
 		if (to.station.id === here.station.id) continue;
-		const seconds = intraSeconds(here, to, st.t, st.dockSeconds);
-		const b = basket(
-			here,
-			to,
-			st.deficits,
-			min,
-			min + seconds / 60,
-			st.credits,
-			st.holdT,
+		out.push(
+			hopTo(
+				here,
+				to,
+				st,
+				"intra",
+				0,
+				intraSeconds(here, to, st.t, st.dockSeconds),
+			),
 		);
-		out.push({
-			kind: "intra",
-			to,
-			seconds,
-			fuelCr: 0,
-			profitCr: b.profitCr,
-			cargo: b.cargo,
-		});
 	}
 	return out;
 }
@@ -445,10 +488,10 @@ function jumpOptions(
 	contentsFor: (r: SystemRecord) => SystemContents,
 	st: Stance,
 ): Hop[] {
-	const min = st.t / 60;
 	const out: Hop[] = [];
 	const inRange = neighbours(systems, here.record);
-	if (inRange.length > NEIGHBOUR_LIMIT) neighbourTruncations++;
+	if (inRange.length > NEIGHBOUR_LIMIT) st.tally.truncated++;
+	st.tally.decisions++;
 	for (const record of inRange.slice(0, NEIGHBOUR_LIMIT)) {
 		const ly = distanceLy(here.record.pos, record.pos);
 		// `neighbours` already bounds this at `JUMP_RANGE_LY`, which is
@@ -462,26 +505,17 @@ function jumpOptions(
 			);
 		const fuelCr = ly * FUEL_CR_PER_LY;
 		if (fuelCr > st.credits) continue;
-		for (const to of portsOf(record, contentsFor(record))) {
-			const seconds = jumpSeconds(here, to, st.t, st.dockSeconds);
-			const b = basket(
-				here,
-				to,
-				st.deficits,
-				min,
-				min + seconds / 60,
-				st.credits - fuelCr,
-				st.holdT,
+		for (const to of portsOf(record, contentsFor(record)))
+			out.push(
+				hopTo(
+					here,
+					to,
+					st,
+					"jump",
+					fuelCr,
+					jumpSeconds(here, to, st.t, st.dockSeconds),
+				),
 			);
-			out.push({
-				kind: "jump",
-				to,
-				seconds,
-				fuelCr,
-				profitCr: b.profitCr,
-				cargo: b.cargo,
-			});
-		}
 	}
 	return out;
 }
@@ -608,12 +642,13 @@ function run(
 	let jumpMinutes = 0;
 	let dockMinutes = 0;
 	const waitRatios: number[] = [];
+	const tally = { truncated: 0, decisions: 0 };
 
 	while (t < limit) {
 		const min = t / 60;
 		const options: Hop[] = [];
 
-		const stance = { t, credits, holdT, deficits, dockSeconds };
+		const stance = { t, credits, holdT, deficits, dockSeconds, tally };
 		options.push(...flyingOptions(here, systems, contentsFor, stance));
 		const wait = waitOption(here, systems, contentsFor, stance);
 		if (wait) options.push(wait.hop);
@@ -717,6 +752,7 @@ function run(
 		dockMinutes,
 		upgrades,
 		kitAffordableAtMinutes: kitAffordableAt,
+		tally,
 		waitRatios,
 	};
 }
@@ -756,9 +792,7 @@ const results = GALAXIES.map((g) => ({ g, r: run(worldSeed, g, hours) }));
 
 /** One derivation, two tables. Written out twice they drift on the next edit,
  *  and the two copies already spelled the kit total differently. */
-const summarize = (
-	r: Result,
-): { rate: number; done: boolean; kit: number | null } => ({
+const summarize = (r: Result): { rate: number; kit: number | null } => ({
 	kit: r.kitAffordableAtMinutes,
 	rate: finite(
 		"Cr/min",
@@ -772,7 +806,6 @@ const summarize = (
 			r.upgrades.reduce((sum, u) => sum + priceOf(u.name), 0)) /
 			Math.max(r.minutes, 1e-9),
 	),
-	done: r.upgrades.length === EQUIPMENT.length - 1,
 });
 
 console.log(
@@ -858,14 +891,24 @@ if (ratios.length === 0) {
 console.log(
 	"\ndock+market cost, swept (galaxy 0) — the modelled number that decides",
 );
-console.log("  dock s   minutes   Cr/min   kit affordable");
+console.log("  dock s   minutes   Cr/min   kit affordable   waits won  max×");
 for (const dock of [15, 30, 45, 60, 90]) {
 	const r = run(worldSeed, 0, hours, dock);
 	const { rate, kit } = summarize(r);
+	// **The wait distribution is swept too.** §5.5 quotes it to three decimals
+	// while this document calls the dock cost "the modelled number that
+	// decides" — and a longer dock stop makes flying worse relative to waiting,
+	// which is exactly the direction §5.5 argues about. Measuring the milestone
+	// against it and not the ratio would have been choosing where to look.
+	const ratios = [...r.waitRatios].sort((a, b) => a - b);
+	const won = ratios.filter((x) => x > 1).length;
+	const max = ratios.length > 0 ? ratios[ratios.length - 1] : 0;
 	console.log(
 		`${String(dock).padStart(8)}${finite("minutes", r.minutes).toFixed(1).padStart(10)}` +
 			`${rate.toFixed(1).padStart(9)}` +
-			`   ${kit === null ? "not in cap" : `${kit.toFixed(0)} min`}`,
+			`   ${(kit === null ? "not in cap" : `${kit.toFixed(0)} min`).padEnd(15)}` +
+			`${won}/${ratios.length}`.padStart(9) +
+			`${finite("max", max).toFixed(2)}×`.padStart(9),
 	);
 }
 
@@ -874,10 +917,17 @@ const modelled = results.reduce(
 	(s, { r }) => s + r.jumpMinutes + r.dockMinutes,
 	0,
 );
-console.log(
-	`\nneighbour list truncated at ${NEIGHBOUR_LIMIT} on ${neighbourTruncations} ` +
-		"decision points — where it bit, the trader did not see the whole jump range.",
-);
+{
+	// Over the four reported runs only — the dock sweep's five extra runs are
+	// not in this figure, which is what made the first version of it wrong.
+	const truncated = results.reduce((sum, { r }) => sum + r.tally.truncated, 0);
+	const decisions = results.reduce((sum, { r }) => sum + r.tally.decisions, 0);
+	console.log(
+		`\nneighbour list truncated at ${NEIGHBOUR_LIMIT} on ${truncated} of ` +
+			`${decisions} decisions (${((100 * truncated) / Math.max(decisions, 1)).toFixed(1)}%) ` +
+			"— where it bit, the trader did not see the whole jump range.",
+	);
+}
 console.log(
 	`\nmodelled time as a share of the total: ${((100 * modelled) / Math.max(totalMin, 1e-9)).toFixed(1)}% ` +
 		"— the rest is the generator's own geometry, estimated by `legSeconds`.",
