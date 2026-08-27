@@ -93,19 +93,17 @@ ${NOISE_GLSL}
  * for one reason: reliefNormal gets its normal from four extra evaluations of
  * the height field, so a 3x3x3 walk costs five walks a fragment.
  *
- * **What that was worth**, read off the ?fps meter this branch adds, in the
- * principal's own browser at docking range with the refinery filling the view —
- * which is the only measurement that means anything, since the headless probe
- * rasterises in software:
+ * **What that was worth**, on a GPU at docking range with the refinery filling
+ * the view (the headless probe rasterises in software, so its numbers say
+ * nothing about this):
  *
  *   five walks, grain differenced   25 fps, 80-90 ms worst
  *   one walk, grain differenced     40 fps, 40-50 ms worst
  *
  * One machine, one view, one term moved. Reproduce with ?seed=1&fps at a
  * refinery. The configuration that ships cut the differenced grain as well and
- * has no row: what came back for it was a rate with no worst frame, which is
- * the number fps-meter.ts says not to trust, so it is an acceptance rather
- * than a third measurement. The review record on #63 carries the rest. The figures
+ * has no row here: what came back for it was a rate with no worst frame. #63
+ * carries the rest. The figures
  * are one machine's and are not portable; the *structure* is what carries — a
  * term inside the height field is paid five times, and a term in the albedo
  * once.
@@ -272,13 +270,64 @@ const ROCK_SURFACE = /* glsl */ `{
  * reason the maps this replaced were a workaround.
  */
 export function applyRockSurface(material: THREE.MeshStandardMaterial) {
+	/**
+	 * Each splice reports whether it landed.
+	 *
+	 * `String.replace` with a marker that is not there returns the string
+	 * unchanged and says nothing — and three.js renames its chunks between
+	 * versions. A no-op splice leaves a **stock** `MeshStandardMaterial` that
+	 * compiles and links perfectly, under this material's own cache key, with
+	 * no craters on it. Every check that exists would stay green: the refinery
+	 * is on screen, it is lit, its program linked, and its program is named
+	 * `station-rock` — because that name is set here rather than by the patch.
+	 *
+	 * So the outcome is recorded where a probe can read it. `userData` rather
+	 * than a throw: a broken splice should fail a check, not take the page down
+	 * in front of a player, and the console line is worded so the probes'
+	 * shader listener catches it too.
+	 */
+	const splices: Record<string, boolean> = {};
+	// Keyed by stage as well as marker: both stages patch
+	// `#include <common>`, and one key for the two would let a hit in the
+	// fragment stage stand in for a miss in the vertex stage.
+	const splice = (
+		stage: string,
+		source: string,
+		marker: string,
+		code: string,
+	) => {
+		const out = source.replace(marker, code);
+		splices[`${stage} ${marker}`] = out !== source;
+		if (out === source)
+			console.error(
+				`shader splice missed: ${marker} is not in three.js's ${stage} chunk any more`,
+			);
+		return out;
+	};
 	material.onBeforeCompile = (shader) => {
-		shader.vertexShader = shader.vertexShader
-			.replace("#include <common>", ROCK_VERTEX_COMMON)
-			.replace("#include <begin_vertex>", ROCK_VERTEX_BODY);
-		shader.fragmentShader = shader.fragmentShader
-			.replace("#include <common>", ROCK_FRAGMENT_COMMON)
-			.replace("#include <normal_fragment_maps>", ROCK_SURFACE);
+		shader.vertexShader = splice(
+			"vertex",
+			splice(
+				"vertex",
+				shader.vertexShader,
+				"#include <common>",
+				ROCK_VERTEX_COMMON,
+			),
+			"#include <begin_vertex>",
+			ROCK_VERTEX_BODY,
+		);
+		shader.fragmentShader = splice(
+			"fragment",
+			splice(
+				"fragment",
+				shader.fragmentShader,
+				"#include <common>",
+				ROCK_FRAGMENT_COMMON,
+			),
+			"#include <normal_fragment_maps>",
+			ROCK_SURFACE,
+		);
+		material.userData.rockSplices = splices;
 	};
 	// Two rocks with the same patch still compile twice unless they agree they
 	// are the same program.

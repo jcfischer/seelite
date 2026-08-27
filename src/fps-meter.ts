@@ -78,6 +78,8 @@ export function mountFpsMeter(): () => void {
 
 	let frames = 0;
 	let worst = 0;
+	/** The largest frame time seen since mount; never reset. */
+	let peak = 0;
 	let last = performance.now();
 	let windowStart = last;
 	let handle = 0;
@@ -103,12 +105,20 @@ export function mountFpsMeter(): () => void {
 			// The frame *time* rides beside the rate because the two carry
 			// different information at the low end: 60 and 55 fps are 16.7 and
 			// 18.2 ms, but 15 and 7 fps are 67 and 143 ms — below about 20 fps
-			// the milliseconds are what say how much has to come off. And the
-			// worst frame in the window rides beside both, because a mean of 30
-			// hides a 250 ms hitch, and the hitch is what a player feels.
+			// the milliseconds are what say how much has to come off.
+			//
+			// **Two worst frames, and the second is the honest one.** The
+			// window's worst answers "is it hitching now"; it is also thrown
+			// away every half second, so a 250 ms hitch shows once and is gone
+			// before anyone reading a number in the corner has noticed it. The
+			// peak is kept for the session, because the argument for showing a
+			// worst frame at all — that a mean of 30 hides a hitch, and the
+			// hitch is what a player feels — is an argument about something
+			// that happened, not about the last half second.
+			if (worst > peak) peak = worst;
 			show(
 				`<b>${fps.toFixed(1)}</b> fps · ${(1000 / fps).toFixed(0)} ms` +
-					` · worst ${worst.toFixed(0)} ms`,
+					` · worst ${worst.toFixed(0)} ms · peak ${peak.toFixed(0)} ms`,
 			);
 			frames = 0;
 			worst = 0;

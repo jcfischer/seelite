@@ -439,6 +439,43 @@ for (const viewport of VIEWPORTS) {
 			programs.rock > 0 && programs.rockLinked === programs.rock,
 			`${programs.rockLinked}/${programs.rock} "station-rock" programs`,
 		);
+
+		/**
+		 * And the patch is actually in that program.
+		 *
+		 * A linked program under the name `station-rock` proves the material
+		 * was applied, not that anything was spliced into it: the cache key is
+		 * set beside `onBeforeCompile`, not by it. Let one
+		 * `#include <normal_fragment_maps>` marker go stale against a three.js
+		 * chunk rename and the splice returns the string unchanged, a stock
+		 * `MeshStandardMaterial` links cleanly under the rock's own name, and
+		 * every check above stays green over a rock with no craters on it.
+		 *
+		 * `applyRockSurface` records whether each `replace` changed anything;
+		 * this is where that gets read.
+		 */
+		const splices = await page.evaluate(() => {
+			// Both layers: a body's layer is its distance, and the scan runs
+			// after the loop above has left the camera wherever the last type
+			// put it.
+			const g = window.__seelite;
+			const out = [];
+			for (const scene of [g.nearScene, g.farScene])
+				scene?.traverse((object) => {
+					for (const material of [object.material].flat())
+						if (material?.userData?.rockSplices)
+							out.push(Object.entries(material.userData.rockSplices));
+				});
+			return out;
+		});
+		const landed = splices.flat();
+		check(
+			"every rock-surface splice found its marker",
+			landed.length > 0 && landed.every(([, ok]) => ok),
+			landed.length
+				? `${landed.filter(([, ok]) => ok).length}/${landed.length} markers`
+				: "no patched rock material in the scene",
+		);
 	}
 
 	console.log(
