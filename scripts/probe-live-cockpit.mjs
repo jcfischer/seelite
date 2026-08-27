@@ -544,5 +544,28 @@ check(
 );
 await combatPage.close();
 
+const narrowCombatPage = await browser.newPage({
+	viewport: { width: 390, height: 844 },
+});
+await narrowCombatPage.goto(`${ORIGIN}/?seed=42&combat=1`, {
+	waitUntil: "load",
+});
+await narrowCombatPage.addScriptTag({ content: PROBE_MATCHERS_SCRIPT });
+await narrowCombatPage.waitForFunction(
+	() =>
+		window.__seelite?.frames > 1 &&
+		globalThis.__seeliteCombatStatus.test(
+			window.__seelite.combatOverlayStatus.text,
+		),
+);
+const narrowOverlayRendered = await narrowCombatPage.evaluate(
+	() => globalThis.__seeliteMeasureCockpit().combatOverlayText,
+);
+check(
+	"prototype: combat overlay renders legibly at the narrow viewport",
+	narrowOverlayRendered,
+);
+await narrowCombatPage.close();
+
 await browser.close();
 exit();

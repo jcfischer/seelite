@@ -2193,11 +2193,17 @@ class Game {
 				if (this.view === "cockpit") this.setHeadLook("right");
 				return;
 			case "z":
-				if (this.combatPrototypeEnabled) this.combatIncoming = true;
-				return;
+				if (this.combatPrototypeEnabled) {
+					this.combatIncoming = true;
+					return;
+				}
+				break;
 			case "r":
-				if (this.combatPrototypeEnabled) this.combatEcm = true;
-				return;
+				if (this.combatPrototypeEnabled) {
+					this.combatEcm = true;
+					return;
+				}
+				break;
 			case "j":
 				if (this.regime === "cruise") this.dropOut("dropped by the player");
 				else if (this.spoolLeftS > 0) {
