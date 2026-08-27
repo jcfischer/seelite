@@ -682,7 +682,10 @@ class Game {
 	private animationFrame = 0;
 	/** Freeze the frame loop; the caller renders manually with a fixed sim state. */
 	probeFreezeLoop() {
-		if (this.animationFrame) cancelAnimationFrame(this.animationFrame);
+		if (this.animationFrame) {
+			cancelAnimationFrame(this.animationFrame);
+			this.animationFrame = 0;
+		}
 	}
 	/** Resume the frame loop. */
 	probeResumeLoop() {
