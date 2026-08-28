@@ -63,14 +63,24 @@ export interface LiveCockpitCallbacks {
 	onChartHost: (host: HTMLElement | null) => void;
 }
 
+/**
+ * The handles `update` caches per structural render.
+ *
+ * **Every field is nullable, and that is the point.** Each left tab draws a
+ * different body, so several of these simply do not exist on a given render.
+ * The first version had every tab emit hidden placeholder elements to keep the
+ * lookups non-null, which shaped the panel's markup around this interface
+ * rather than around what each tab shows, and made a fourth entry here a
+ * required edit in three unrelated branches that had to agree by inspection.
+ */
 interface CockpitElements {
-	director: HTMLElement;
-	leftPanelCopy: HTMLElement;
-	rightPanelCopy: HTMLElement;
-	contactCount: HTMLElement;
-	navList: HTMLElement;
+	director: HTMLElement | null;
+	leftPanelCopy: HTMLElement | null;
+	rightPanelCopy: HTMLElement | null;
+	contactCount: HTMLElement | null;
+	navList: HTMLElement | null;
 	navQuery: HTMLInputElement | null;
-	arrow: HTMLElement;
+	arrow: HTMLElement | null;
 }
 
 const STYLE_ID = "seelite-live-cockpit-style";
@@ -142,24 +152,6 @@ const STYLE = `
 .lc-chart-host { position: relative; min-height: 300px; height: 100%; border: 1px solid rgba(229, 170, 82, .34); border-radius: 4px; overflow: hidden; background: #05080d; }
 @media (max-width: 600px) { .lc-panel { inset: 8px; padding: 13px; clip-path: none; } .lc-panel h2 { font-size: 14px; } .lc-panel-body { grid-template-columns: .45fr 1fr; gap: 8px; min-height: 0; } .lc-rail, .lc-panel-copy { padding-top: 7px; } .lc-panel-copy p { font-size: 11px; line-height: 1.4; } .lc-readout { display: none; } .lc-nav-list { max-height: 148px; } .lc-chart-host { min-height: 190px; } }
 `;
-
-/**
- * The elements `update` looks up, for the tabs that do not draw them.
- *
- * `update` caches one set of handles per structural render and every tab has to
- * satisfy it, so a tab that simply omitted these would leave `find()` returning
- * null and the next value write throwing. Emitted once beside `leftBody` rather
- * than hand-repeated in each of its branches: three copies of a list that has to
- * stay in step with `CockpitElements` is three places to forget.
- */
-function hiddenSlots(tab: LeftTab) {
-	const slots = [
-		tab === "Galaxy Map" ? "<p hidden data-live-left-copy></p>" : "",
-		tab === "Galaxy Map" ? "<span hidden data-live-contact-count></span>" : "",
-		tab === "Navigation" ? "" : "<ul hidden data-live-nav-list></ul>",
-	];
-	return slots.join("");
-}
 
 function installStyle() {
 	if (document.getElementById(STYLE_ID)) return;
@@ -273,7 +265,7 @@ export class LiveCockpit {
 			this.releaseChartHost();
 			this.root.innerHTML = this.markup(state);
 			const find = (selector: string) =>
-				this.root.querySelector<HTMLElement>(selector) as HTMLElement;
+				this.root.querySelector<HTMLElement>(selector);
 			this.elements = {
 				director: find("[data-live-director] > strong"),
 				leftPanelCopy: find("[data-live-left-copy]"),
@@ -295,25 +287,31 @@ export class LiveCockpit {
 		}
 		const elements = this.elements;
 		if (!elements) return;
-		elements.director.textContent = state.targetId ?? "NO TARGET SELECTED";
+		if (elements.director)
+			elements.director.textContent = state.targetId ?? "NO TARGET SELECTED";
 		if (elements.navQuery && elements.navQuery.value !== state.navFilter.query)
 			elements.navQuery.value = state.navFilter.query;
 		this.renderNav(state, elements);
 		const valueKey = `${state.speed}|${state.mode}|${state.throttle}|${state.target}|${state.rightTab}|${state.tuning}|${state.contacts.length}`;
 		if (valueKey === this.lastValueKey) return;
 		this.lastValueKey = valueKey;
-		elements.leftPanelCopy.textContent = state.target;
-		elements.rightPanelCopy.textContent =
-			state.rightTab === "Tuning"
-				? state.tuning
-				: `${state.mode} · ${state.speed} · throttle ${state.throttle}`;
-		elements.contactCount.textContent = String(state.contacts.length);
-		elements.arrow.hidden = state.targetBearingDeg === null;
-		if (state.targetBearingDeg !== null)
-			elements.arrow.style.setProperty(
-				"--target-bearing",
-				`${-state.targetBearingDeg}deg`,
-			);
+		if (elements.leftPanelCopy)
+			elements.leftPanelCopy.textContent = state.target;
+		if (elements.rightPanelCopy)
+			elements.rightPanelCopy.textContent =
+				state.rightTab === "Tuning"
+					? state.tuning
+					: `${state.mode} · ${state.speed} · throttle ${state.throttle}`;
+		if (elements.contactCount)
+			elements.contactCount.textContent = String(state.contacts.length);
+		if (elements.arrow) {
+			elements.arrow.hidden = state.targetBearingDeg === null;
+			if (state.targetBearingDeg !== null)
+				elements.arrow.style.setProperty(
+					"--target-bearing",
+					`${-state.targetBearingDeg}deg`,
+				);
+		}
 	}
 
 	/**
@@ -325,22 +323,30 @@ export class LiveCockpit {
 	 * characters, and every rebuild is a lost hover.
 	 */
 	private renderNav(state: LiveCockpitState, elements: CockpitElements) {
-		// The key is built directly from the rows rather than from a mapped
-		// array of cells, so an unchanged list costs one string instead of an
-		// array of objects **and** a string. The formatters are still called
-		// once per row — they are what decides whether anything changed — and
-		// the cells are only materialised on the frames that repaint.
-		let key = "";
-		for (const row of state.navRows)
-			key += `${row.id}:${row.selected}:${range(row.distanceKm)}:${navEta(row.etaSeconds)}|`;
-		if (key === this.lastNavKey) return;
+		// The tabs that draw no list have no element to draw into, and nothing
+		// below is worth computing for one.
+		const navList = elements.navList;
+		if (!navList) return;
+		// **The key is derived from the cells, not computed alongside them.**
+		// Formatting twice — once to build the key, once to draw — is two passes
+		// whose shapes have to stay identical, or the cache stops describing
+		// what is on screen. One pass, and the array is the cost of knowing.
+		//
+		// The formatters run every frame the tab is open because what they
+		// print is what decides: the range moves continuously and the panel
+		// prints it rounded, so there is no cheaper discriminator that is not
+		// just a guess about when the rounded value changed.
 		const cells = state.navRows.map((row) => ({
 			row,
 			range: range(row.distanceKm),
 			eta: navEta(row.etaSeconds),
 		}));
+		const key = cells
+			.map(({ row, range, eta }) => `${row.id}:${row.selected}:${range}:${eta}`)
+			.join("|");
+		if (key === this.lastNavKey) return;
 		this.lastNavKey = key;
-		elements.navList.innerHTML =
+		navList.innerHTML =
 			cells.length === 0
 				? '<li class="lc-nav-empty">NO TARGETS MATCH</li>'
 				: cells
@@ -369,7 +375,7 @@ export class LiveCockpit {
 			(tab) =>
 				`<button class="lc-tab" type="button" data-live-right-tab="${tab}" aria-selected="${state.rightTab === tab}">${tab}</button>`,
 		).join("");
-		return `<main class="lc-director" data-live-director><i class="lc-target-arrow" data-live-target-arrow aria-label="turn toward selected target">➤</i><strong>${targetId}</strong></main><aside class="lc-panel" data-live-panel="left" data-active="${view.activePanel === "left"}"><header><h2>${state.leftTab.toUpperCase()}</h2><small>LOCAL · 24</small></header><nav class="lc-tabs" aria-label="left console tabs">${leftTabs}</nav>${this.leftBody(state)}${hiddenSlots(state.leftTab)}<footer>Simulation continues while this console is open.</footer></aside><aside class="lc-panel" data-live-panel="right" data-active="${view.activePanel === "right"}"><header><h2>${state.rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="lc-tabs" aria-label="right console tabs">${rightTabs}</nav><div class="lc-panel-body"><div class="lc-rail"><b>SHIP</b><span>POWER</span><span>MODULES</span><span>INVENTORY</span><span>STATUS</span></div><div class="lc-panel-copy"><h3>${state.rightTab.toUpperCase()} / CONTROL</h3><p ${state.rightTab === "Tuning" ? "data-live-tuning" : ""}></p><div class="lc-readout"><span><b>ASSIST</b><em></em></span><span><b>CHARGE</b><em></em></span></div></div></div><footer>Tuning remains on this right-console tab, never on the flight floor.</footer></aside>`;
+		return `<main class="lc-director" data-live-director><i class="lc-target-arrow" data-live-target-arrow aria-label="turn toward selected target">➤</i><strong>${targetId}</strong></main><aside class="lc-panel" data-live-panel="left" data-active="${view.activePanel === "left"}"><header><h2>${state.leftTab.toUpperCase()}</h2><small>LOCAL · 24</small></header><nav class="lc-tabs" aria-label="left console tabs">${leftTabs}</nav>${this.leftBody(state)}<footer>Simulation continues while this console is open.</footer></aside><aside class="lc-panel" data-live-panel="right" data-active="${view.activePanel === "right"}"><header><h2>${state.rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="lc-tabs" aria-label="right console tabs">${rightTabs}</nav><div class="lc-panel-body"><div class="lc-rail"><b>SHIP</b><span>POWER</span><span>MODULES</span><span>INVENTORY</span><span>STATUS</span></div><div class="lc-panel-copy"><h3>${state.rightTab.toUpperCase()} / CONTROL</h3><p ${state.rightTab === "Tuning" ? "data-live-tuning" : ""}></p><div class="lc-readout"><span><b>ASSIST</b><em></em></span><span><b>CHARGE</b><em></em></span></div></div></div><footer>Tuning remains on this right-console tab, never on the flight floor.</footer></aside>`;
 	}
 
 	private leftBody(state: LiveCockpitState) {

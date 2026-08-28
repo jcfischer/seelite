@@ -351,6 +351,7 @@ const crowding = await page.evaluate(() => {
 	return {
 		fraction: visible.length === 0 ? 1 : crowded / visible.length,
 		onScreen: visible.length,
+		systemCount: map.state.systemCount,
 		width,
 		height,
 	};
@@ -360,12 +361,17 @@ const crowding = await page.evaluate(() => {
 // that halved crowding would be a change to the argument for the list.
 // Calibrated on 1280 x 760; the metric is viewport-dependent, so a narrow
 // viewport would need its own band rather than this one widened.
+// **The basis is asserted, not assumed.** `fraction` is
+// `crowded / visible.length`, so a build that framed only 101 systems would
+// still satisfy a `> 100` floor while the "of 256" the spec quotes had quietly
+// stopped holding — and a fraction over a smaller, sparser denominator is a
+// different measurement wearing the same name.
 check(
 	"the chart in the console is crowded enough that the list is mandatory",
-	crowding.onScreen > 100 &&
+	crowding.onScreen === crowding.systemCount &&
 		crowding.fraction >= 0.55 &&
 		crowding.fraction <= 0.8,
-	`${(crowding.fraction * 100).toFixed(1)}% of ${crowding.onScreen} on screen at ${Math.round(crowding.width)}x${Math.round(crowding.height)}`,
+	`${(crowding.fraction * 100).toFixed(1)}% of ${crowding.onScreen}/${crowding.systemCount} on screen at ${Math.round(crowding.width)}x${Math.round(crowding.height)}`,
 );
 
 // ---- Teardown -------------------------------------------------------------

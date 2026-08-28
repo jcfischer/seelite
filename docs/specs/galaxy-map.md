@@ -242,8 +242,10 @@ unchanged `PICK_RADIUS_PX`. Measured there at the default framing:
 **68.8% of 256**, against 40.2% full-page, with the whole cluster still on
 screen. Sharing `mountGalaxyChart` does not carry the figure across, so
 `probe-navigation-console.mjs` measures it at the shipped framing by the same
-method and bands it at 55-80%; the band is calibrated on 1280 x 760 and a narrow
-viewport would need its own.
+method and bands it at 55-80%. The band is calibrated on a 1280 x 760 window and
+a narrow viewport would need its own; the check also asserts that all 256 are on
+screen, because the fraction is taken over what is visible and a build framing
+fewer systems would be a different measurement wearing the same name.
 
 So the chart is the **reading** surface and Navigation's filterable list is the
 **finding** surface — which is what `hud-and-scanner.md` §2 already says

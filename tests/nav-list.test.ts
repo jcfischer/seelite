@@ -168,4 +168,10 @@ test("no module in src/ statically imports the galaxy chart", () => {
 	walk("src");
 	expect(offenders).toEqual([]);
 	expect(codeOf("src/main.ts")).toContain('import("./galaxy-map")');
+	// **What this does not prove.** It is a check on the import graph, not on
+	// the built output: a bundler configured to inline dynamic chunks would
+	// keep it green while the chart shipped in the entry anyway. The split was
+	// confirmed by hand against `npm run build`, which emits `galaxy-map` as its
+	// own 12.1K chunk. Asserting that here would mean running vite inside the
+	// headless tier, which is a different tier's job.
 });
