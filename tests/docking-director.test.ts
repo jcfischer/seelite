@@ -31,6 +31,25 @@ import { type Vec3, add, dot, length, scale, v3 } from "../src/vec3";
 
 const DEG = Math.PI / 180;
 
+/**
+ * The angles a cue sweep visits: a 0.25° pass over the whole range, and a
+ * 0.005° pass through the half-degree either side of the tolerance.
+ *
+ * The coarse grid alone was the first version, and it could not see the defect
+ * it was sold as catching: a director whose tolerance was 35.1° disagrees with
+ * the gate only on (35°, 35.1°], which a 0.25° grid steps straight over. The
+ * exact boundary is skipped in both passes — `evaluateEntry` compares cosines
+ * with a 1e-12 slack and the cue compares degrees, so the two may legitimately
+ * differ within about 1e-6° of it.
+ */
+function sweepAngles(toleranceDeg: number): number[] {
+	const angles: number[] = [];
+	for (let deg = 0; deg <= 90; deg += 0.25) angles.push(deg);
+	for (let deg = toleranceDeg - 0.5; deg <= toleranceDeg + 0.5; deg += 0.005)
+		angles.push(deg);
+	return angles.filter((deg) => Math.abs(deg - toleranceDeg) > 1e-6);
+}
+
 /** Awkward on purpose, for `docking.test.ts`'s reason: a world axis lets a sign
  *  error hide behind coordinates that happen to agree. */
 const AXIS = ((): Vec3 => {
@@ -137,8 +156,7 @@ describe("§3: the axis-alignment cue reads check 2's own angles", () => {
 	 */
 	test("the nose cue's verdict agrees with check 2 across the sweep", () => {
 		const frame = frameFor();
-		for (let deg = 0; deg <= 90; deg += 0.25) {
-			if (Math.abs(deg - AXIS_TOLERANCE_DEG) < 1e-6) continue;
+		for (const deg of sweepAngles(AXIS_TOLERANCE_DEG)) {
 			const nose = rotate(scale(frame.axis, -1), PERP, deg * DEG);
 			const pose = nominal(frame, { nose });
 			const e = evaluateEntry(frame, pose, { hostile: false });
@@ -159,8 +177,7 @@ describe("§3: the axis-alignment cue reads check 2's own angles", () => {
 	test("the position cue's verdict agrees with check 2 across its own sweep", () => {
 		const frame = frameFor();
 		const nominalRel = scale(frame.axis, frame.planeKm);
-		for (let deg = 0; deg <= 90; deg += 0.25) {
-			if (Math.abs(deg - AXIS_TOLERANCE_DEG) < 1e-6) continue;
+		for (const deg of sweepAngles(AXIS_TOLERANCE_DEG)) {
 			const rel = rotate(nominalRel, PERP, deg * DEG);
 			const pose = nominal(frame, { rel });
 			const e = evaluateEntry(frame, pose, { hostile: false });
@@ -241,8 +258,7 @@ describe("§3: the roll-match ring reads check 4's own angle", () => {
 
 	test("the ring's verdict agrees with check 4 across the sweep", () => {
 		const frame = frameFor("trade");
-		for (let deg = 0; deg <= 90; deg += 0.25) {
-			if (Math.abs(deg - ROLL_TOLERANCE_DEG) < 1e-6) continue;
+		for (const deg of sweepAngles(ROLL_TOLERANCE_DEG)) {
 			const up = rotate(slotBasis(frame).across, frame.axis, deg * DEG);
 			const pose = nominal(frame, { up });
 			const e = evaluateEntry(frame, pose, { hostile: false });

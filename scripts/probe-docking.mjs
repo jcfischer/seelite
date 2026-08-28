@@ -642,9 +642,44 @@ async function directorAt(setup) {
 			// goes red rather than silently reading a state nobody painted.
 			g.render(dt);
 			const drawn = g.directorRender;
+
+			// **The one thing the record cannot honestly self-report.**
+			// `directorRender` is assembled at the end of the draw whether or not
+			// the strokes landed, so deleting every `ctx.stroke()` would leave every
+			// field above unchanged. This reads the overlay's own pixels on the
+			// innermost funnel ring — the outer one runs off a 620 px canvas at a
+			// 35° cone — and counts how many sample points have anything painted at
+			// them. The 3×3 neighbourhood is because a 1.5 px stroke on a
+			// circle does not land on the exact sampled pixel.
+			let funnelPixelHits = 0;
+			const overlay = document.getElementById("overlay");
+			if (drawn && overlay) {
+				const octx = overlay.getContext("2d", { willReadFrequently: true });
+				const r = drawn.funnelRadiusPx * 0.28;
+				for (let i = 0; i < 24; i++) {
+					const a = (i / 24) * Math.PI * 2;
+					const px = Math.round(drawn.centre.x + Math.cos(a) * r);
+					const py = Math.round(drawn.centre.y + Math.sin(a) * r);
+					if (
+						px < 1 ||
+						py < 1 ||
+						px > overlay.width - 2 ||
+						py > overlay.height - 2
+					)
+						continue;
+					const patch = octx.getImageData(px - 1, py - 1, 3, 3).data;
+					for (let k = 3; k < patch.length; k += 4) {
+						if (patch[k] > 0) {
+							funnelPixelHits++;
+							break;
+						}
+					}
+				}
+			}
 			return {
 				id,
 				apertureKind: snap.apertureKind,
+				funnelPixelHits,
 				drawn: drawn
 					? {
 							funnelRadiusPx: drawn.funnelRadiusPx,
@@ -701,7 +736,7 @@ check(
 );
 check(
 	"the axis marker sits inside the funnel it is being flown into",
-	inside.drawn?.axisMarker !== null &&
+	Boolean(inside.drawn?.axisMarker) &&
 		Math.hypot(
 			inside.drawn.axisMarker.x - inside.drawn.centre.x,
 			inside.drawn.axisMarker.y - inside.drawn.centre.y,
@@ -728,6 +763,7 @@ check(
 	"five degrees past the tolerance flips the cue, and the marker leaves the funnel",
 	outside.drawn?.noseWithin === false &&
 		outside.drawn.aligned === false &&
+		Boolean(outside.drawn.axisMarker) &&
 		Math.hypot(
 			outside.drawn.axisMarker.x - outside.drawn.centre.x,
 			outside.drawn.axisMarker.y - outside.drawn.centre.y,
@@ -895,6 +931,18 @@ check(
 	"a head turn takes the director off the glass with everything else on it",
 	turned.drawn === null,
 	JSON.stringify(turned.drawn),
+);
+
+check(
+	// **The row the record cannot fake.** Every other browser row reads
+	// `directorRender`, which the draw assembles whether or not its strokes
+	// landed — delete the three `ctx.arc`/`ctx.stroke` calls and they all stay
+	// green while the pilot sees nothing. This reads the overlay canvas itself,
+	// and the control is the head-turned frame, where §5's grammar says the
+	// glass is replaced and the ring must genuinely not be there.
+	"the funnel ring is actually painted on the overlay, and a head turn wipes it",
+	inside.funnelPixelHits > 12 && turned.funnelPixelHits === 0,
+	`${inside.funnelPixelHits} of 24 sample points painted, ${turned.funnelPixelHits} after the head turn`,
 );
 await page.evaluate(() => window.__seelite.setHeadLook("forward"));
 

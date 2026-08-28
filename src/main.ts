@@ -464,8 +464,15 @@ const TEXT_RASTER_BOUNDS_DEFAULTS: Readonly<{
  *
  * Pixel geometry, not a second copy of the state: `state` below is the object
  * `docking-director.ts` returned, and everything beside it is where the draw
- * put it. A probe asserting the funnel is on screen is then asserting about
- * strokes that happened, which is the distinction `cockpitPrompt` exists for.
+ * put it and in what state it painted it — the distinction `cockpitPrompt`
+ * exists for.
+ *
+ * **It records what the draw decided, not that anything reached the canvas.**
+ * The record is assembled at the end of the method whether or not the strokes
+ * landed, so deleting every `ctx.stroke()` would leave it unchanged. That gap
+ * is closed in the probe rather than here: `probe-docking.mjs` reads the
+ * overlay's own pixels on the funnel ring, because a canvas is the one thing a
+ * renderer cannot honestly self-report.
  */
 interface DirectorRender {
 	state: DirectorState;
@@ -492,9 +499,10 @@ interface DirectorRender {
 	 * `null` for a pad, which has no long axis to match.
 	 */
 	rollTicksDeg: [number, number | null] | null;
-	/** The two ticks as drawn, in canvas pixels, so a check can pin which way
-	 *  the reference actually rotates on the pilot's screen. */
-	rollTickPointsPx: { x: number; y: number }[];
+	/** The two ticks as drawn, in canvas pixels, so a check can pin which way the
+	 *  reference actually rotates on the pilot's screen. Index-parallel with
+	 *  `rollTicksDeg`: an unreportable tick is `null` in both. */
+	rollTickPointsPx: ({ x: number; y: number } | null)[];
 	/** Which state the funnel was **painted** in. The record carries it because
 	 *  it is the one cue decision the draw makes rather than copies: without it
 	 *  a funnel that stayed green past the tolerance passes every browser row. */
@@ -2801,19 +2809,28 @@ class Game {
 	 * because a permanently-visible funnel is the wall of labels §1 refuses.
 	 */
 	directorState(): DirectorState | null {
-		const selected =
+		const of = (id: string) =>
+			dockingDirector({
+				stationId: id,
+				frame: this.apertureFrameOf(id),
+				pose: this.entryPoseOf(id),
+				state: this.dockingStateOf(id),
+				gameTime: this.world.gameTime,
+			});
+		// The selected station wins **only while it is local**. Selecting one
+		// across the system and flying to another is the ordinary case, and a
+		// selection-only rule left the pilot two kilometres off a slot with no
+		// director at all — the one place §3 says it becomes a docking director.
+		if (
 			this.targetId &&
 			this.world.system.contents.stations.some((s) => s.id === this.targetId)
-				? this.targetId
-				: this.stationsByRange()[0]?.id;
-		if (!selected) return null;
-		const director = dockingDirector({
-			stationId: selected,
-			frame: this.apertureFrameOf(selected),
-			pose: this.entryPoseOf(selected),
-			state: this.dockingStateOf(selected),
-			gameTime: this.world.gameTime,
-		});
+		) {
+			const selected = of(this.targetId);
+			if (selected.inVicinity) return selected;
+		}
+		const nearest = this.stationsByRange()[0]?.id;
+		if (!nearest) return null;
+		const director = of(nearest);
 		return director.inVicinity ? director : null;
 	}
 
@@ -4002,7 +4019,7 @@ class Game {
 		// Absent for a pad, because check 4 does not apply and an empty ring would
 		// read as one the pilot had failed.
 		let rollTicksDeg: [number, number | null] | null = null;
-		const rollTickPointsPx: { x: number; y: number }[] = [];
+		const rollTickPointsPx: ({ x: number; y: number } | null)[] = [];
 		if (state.roll) {
 			// The reference tick is the slot; the second is the ship. A symmetric
 			// pair about screen up was the first version and it was a tautology as
@@ -4025,7 +4042,14 @@ class Game {
 				: "rgba(255, 209, 122, 0.75)";
 			ctx.lineWidth = 2.5;
 			for (const tick of rollTicksDeg) {
-				if (tick === null) continue;
+				// **Index-parallel with `rollTicksDeg`, `null` included.** Skipping the
+				// push instead would leave a two-entry degree array beside a
+				// one-entry pixel array, and a consumer reading `[1]` as the
+				// reference tick would read `undefined` from a shorter list.
+				if (tick === null) {
+					rollTickPointsPx.push(null);
+					continue;
+				}
 				const rad = (tick * Math.PI) / 180 - Math.PI / 2;
 				const inner = funnelRadiusPx * 0.9;
 				const outer = funnelRadiusPx * 1.12;

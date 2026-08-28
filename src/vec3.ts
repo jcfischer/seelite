@@ -46,3 +46,14 @@ export const dot = (a: Vec3, b: Vec3): number =>
 	a.x * b.x + a.y * b.y + a.z * b.z;
 
 export const lengthSq = (a: Vec3): number => a.x * a.x + a.y * a.y + a.z * a.z;
+
+/**
+ * The right-handed cross product.
+ *
+ * Here rather than spelled out per consumer for the reason the leaf exists: a
+ * second spelling of a primitive is a second sign convention, and the one place
+ * it had been re-spelled was a HUD cue whose whole job is to tell a pilot which
+ * way to roll. Adds no imports — the leaf is still a leaf.
+ */
+export const cross = (a: Vec3, b: Vec3): Vec3 =>
+	v3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);

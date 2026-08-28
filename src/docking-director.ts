@@ -38,9 +38,9 @@ import {
 	type EntryPose,
 	evaluateEntry,
 	grantLive,
-	slotBasis,
+	signedRollDeg,
 } from "./docking";
-import { type Vec3, dot, length, scale, sub, v3 } from "./vec3";
+import { type Vec3, length, v3 } from "./vec3";
 
 /** One measured angle against the tolerance the pilot is flying to. */
 export interface DirectorCue {
@@ -147,45 +147,6 @@ export function dockingDirector(input: {
 		aligned: evaluation.checks.axisAlignment && evaluation.checks.rollMatch,
 	};
 }
-
-/**
- * The signed roll about the outward axis, folded to the same (−90, 90] the
- * unsigned check works in — so `Math.abs` of this is check 4's own angle.
- *
- * Folded rather than reported over the full turn, because a slot is
- * symmetric: a ship 170° out is 10° out the other way, and an instrument
- * telling it to roll 170° would be sending the pilot the long way round.
- */
-function signedRollDeg(frame: ApertureFrame, pose: EntryPose): number {
-	const axis = frame.axis;
-	const projected = sub(pose.up, scale(axis, dot(pose.up, axis)));
-	const norm = length(projected);
-	// **A relative guard, where `evaluateEntry`'s is an exact zero.** An
-	// up-vector *set* to the docking axis does not project to exactly nothing:
-	// `dot(up, axis)` is 1 to within a rounding error, so a residue of order
-	// 1e-17 survives and any angle taken from it is float noise. Measured on one
-	// such pose, the shipped check read 86.78° and this read 51.26° — both of
-	// them noise, and neither wrong on its own terms. The director declines to
-	// report an angle there rather than paint a tick nobody measured; the check
-	// keeps its own guard, because retuning a docking tolerance is not this
-	// node's, and it refuses the pose anyway.
-	if (norm <= ROLL_PROJECTION_FLOOR) return Number.NaN;
-	const u = scale(projected, 1 / norm);
-	const { across } = slotBasis(frame);
-	const perpendicular = cross(axis, across);
-	const deg =
-		(Math.atan2(dot(u, perpendicular), dot(u, across)) * 180) / Math.PI;
-	if (deg > 90) return deg - 180;
-	if (deg <= -90) return deg + 180;
-	return deg;
-}
-
-/** Below this, the up-vector's component in the slot plane is rounding error
- *  rather than a direction. Dimensionless: `pose.up` is a unit vector. */
-const ROLL_PROJECTION_FLOOR = 1e-9;
-
-const cross = (a: Vec3, b: Vec3): Vec3 =>
-	v3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
 
 /** `NaN` is outside every tolerance: a pose with no angle to report is not a
  *  pose that satisfies the check, and `NaN <= x` is already false. */

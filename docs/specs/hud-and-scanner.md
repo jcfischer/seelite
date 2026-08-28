@@ -165,7 +165,7 @@ So the director is verified against `docking.ts` itself, in both tiers:
 
 | Where | What it holds |
 |---|---|
-| `tests/docking-director.test.ts` | Every angle the director reports is `evaluateEntry`'s. Check 2's **two halves get two sweeps** — a sweep that rotates only the nose leaves the position cue constant, so it constrains the nose alone — and check 4 gets a third, each across 0–90° and each required to agree with the shipped check outside the 1e-6° band the cosine comparison's own slack projects to. A director looser than the gate by a degree fails them. |
+| `tests/docking-director.test.ts` | Every angle the cues are judged on is `evaluateEntry`'s. Check 2's **two halves get two sweeps** — a sweep that rotates only the nose leaves the position cue constant, so it constrains the nose alone — and check 4 gets a third. Each runs a 0.25° grid over 0–90° **and a 0.005° grid through the half-degree either side of the tolerance**, skipping only the exact boundary, where the check's cosine comparison and the cue's degree comparison may legitimately differ by about 1e-6°. The fine pass is what makes the claim mean anything: a director whose tolerance is 35.1° disagrees with the gate only on (35°, 35.1°], and the coarse grid steps straight over it. |
 | `scripts/probe-docking.mjs` | The funnel, the axis marker, the roll ring, the corridor bar and the clearance line reach the glass on a live approach; five degrees past the tolerance takes the marker out of the funnel **and repaints it**; the ring pins the ship at screen up and moves the slot's reference by the commanded roll, landing on opposite sides of the screen for opposite rolls; the corridor bar fills and fails as the ship leaves the axis; a pad draws no ring; hostility outranks a live grant; a head turn takes the director off the glass. |
 
 **The browser rows that matter are the ones the draw decides.** Most of what
@@ -173,8 +173,15 @@ So the director is verified against `docking.ts` itself, in both tiers:
 and the headless tier already covers that — a row asserting `noseWithin` proves
 nothing about pixels. What the draw decides for itself is the funnel's painted
 state, where the ticks land, and how far the corridor bar fills, so those are
-what the browser tier pins. Each was checked by injecting its defect and
-watching the row go red.
+what the browser tier pins.
+
+**And one row reads the canvas, because the record cannot report on itself.**
+`directorRender` is assembled at the end of the draw whether or not its strokes
+landed: delete every `ctx.stroke()` and every field-reading row stays green
+while the pilot sees nothing. So one row samples the overlay's own pixels around
+the innermost funnel ring and requires them painted, with the head-turned frame
+— where §5's grammar says the glass is replaced — as the control that they are
+genuinely absent.
 
 The browser rows read `directorRender`, which the **draw** writes rather than a
 computation beside it, so a build that produced a correct director and never
