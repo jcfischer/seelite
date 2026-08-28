@@ -242,7 +242,7 @@ const mean = (xs: number[]): number =>
 const crowdSpread = (
 	c: { positions: Vec3[] }[],
 	framing: { width: number; height: number },
-	distance: number,
+	radius: number,
 	pitch: number,
 ): number[] =>
 	c
@@ -250,7 +250,12 @@ const crowdSpread = (
 			(l) =>
 				crowdingAt(l.positions, {
 					...framing,
-					distance,
+					// **The framing convention lives here, with the yaw one.** Every
+					// caller used to compute `radius * CAMERA_PER_RADIUS` itself,
+					// restating "the framing scales with R" at five sites — which is
+					// the rule the whole sweep rests on for its rows to be about
+					// shape rather than about screen fill.
+					distance: radius * CAMERA_PER_RADIUS,
 					yaw: DEFAULT_YAW,
 					pitch,
 				}).fraction,
@@ -290,6 +295,20 @@ function corpus(q: number, radius: number) {
  * is a legitimate answer to the question being bisected, so it is caught at
  * exactly this one call and nowhere else.
  */
+const solvedRadii = new Map<string, number>();
+
+/** `solveRadius`, memoised on `(q, target)`. `sweep` and `grid` overlap on
+ *  q = 1.0, 0.7, 0.5 and 0.25, and each solve is 16 bisection steps over a
+ *  24-galaxy corpus — so re-solving them was most of a `grid` run. */
+function solvedRadius(q: number, target: number): number {
+	const key = `${q}:${target}`;
+	const hit = solvedRadii.get(key);
+	if (hit !== undefined) return hit;
+	const value = solveRadius(q, target);
+	solvedRadii.set(key, value);
+	return value;
+}
+
 function solveRadius(q: number, target: number): number {
 	let lo = 8;
 	let hi = 60;
@@ -328,7 +347,6 @@ function solveRadius(q: number, target: number): number {
 	return finite("solveRadius", (lo + hi) / 2);
 }
 
-const mode = process.argv[2] ?? "sweep";
 const pct = (xs: number[]) =>
 	`${(xs[0] * 100).toFixed(1)}%-${(xs[xs.length - 1] * 100).toFixed(1)}%`;
 
@@ -340,7 +358,7 @@ function assertThat(claim: string, held: boolean): void {
 	if (!held) process.exitCode = 1;
 }
 
-if (mode === "control") {
+function modeControl(): void {
 	// **Exactness is now structural, not measured.** `systemPosition` is a call
 	// to `positionForShape`, so the sweep runs the shipped draw by construction
 	// and `tests/galaxy.test.ts` gates it. This arm re-checks it anyway, because
@@ -391,7 +409,7 @@ if (mode === "control") {
 	// the probe's galaxy-0 figure are asserted within 2 points, which is the
 	// scale of disagreement the closed-form projection is expected to produce.
 	const ball = corpus(1, 22);
-	const crowd = crowdSpread(ball, DESKTOP, 22 * CAMERA_PER_RADIUS, 0.35);
+	const crowd = crowdSpread(ball, DESKTOP, 22, 0.35);
 	console.log(
 		`ball crowding     : ${pct(crowd)} over ${crowd.length} galaxies (probe measured 40.2%)`,
 	);
@@ -409,7 +427,9 @@ if (mode === "control") {
 		"every measured layout is one the game would ship",
 		isolatedTotal === 0,
 	);
-} else if (mode === "shipped") {
+}
+
+function modeShipped(): void {
 	// What the constants in `src/galaxy.ts` actually produce, and what the ball
 	// they replaced produced — the two rows `galaxy-generation.md` §2.1 quotes.
 	for (const [label, q, r] of [
@@ -420,10 +440,9 @@ if (mode === "control") {
 		const inRange = c
 			.map((l) => meanInRange(l.positions))
 			.sort((a, b) => a - b);
-		const distance = r * CAMERA_PER_RADIUS;
 		const pitch = q === 1 ? 0.35 : 0.7;
-		const d = crowdSpread(c, DESKTOP, distance, pitch);
-		const k = crowdSpread(c, CONSOLE, distance, pitch);
+		const d = crowdSpread(c, DESKTOP, r, pitch);
+		const k = crowdSpread(c, CONSOLE, r, pitch);
 		console.log(`${label} q=${q} R=${r}`);
 		console.log(
 			`  layouts        : ${c.length} connected, ${c.reduce((a, l) => a + isolated(l.positions), 0)} isolated systems`,
@@ -441,7 +460,9 @@ if (mode === "control") {
 			`  crowd console  : ${(mean(k) * 100).toFixed(1)}%  (spread ${pct(k)})`,
 		);
 	}
-} else if (mode === "solve") {
+}
+
+function modeSolve(): void {
 	const q = Number(process.argv[3] ?? GALAXY_FLATTENING_Q);
 	const target = Number(process.argv[4] ?? 8);
 	if (!Number.isFinite(q) || q <= 0 || q > 1) {
@@ -454,7 +475,7 @@ if (mode === "control") {
 			`measure-galaxy-shape: target must be positive, got "${process.argv[4]}"`,
 		);
 	}
-	const r = solveRadius(q, target);
+	const r = solvedRadius(q, target);
 	const c = corpus(q, r);
 	console.log(`q                : ${q}`);
 	console.log(`target in range  : ${target}`);
@@ -467,20 +488,23 @@ if (mode === "control") {
 	console.log(
 		`isolated systems : ${c.reduce((a, l) => a + isolated(l.positions), 0)}`,
 	);
-} else if (mode === "pitch") {
+}
+
+function modePitch(): void {
 	console.log(
 		`shipped shape: q = ${GALAXY_FLATTENING_Q}, R = ${GALAXY_RADIUS_LY}, yaw ${DEFAULT_YAW}`,
 	);
 	console.log("  pitch      desktop      console");
 	const c = corpus(GALAXY_FLATTENING_Q, GALAXY_RADIUS_LY);
-	const distance = GALAXY_RADIUS_LY * CAMERA_PER_RADIUS;
 	for (const deg of PITCH_DEGREES) {
 		const pitch = (deg * Math.PI) / 180;
 		console.log(
-			`  ${String(deg).padStart(3)}°    ${(mean(crowdSpread(c, DESKTOP, distance, pitch)) * 100).toFixed(1)}%        ${(mean(crowdSpread(c, CONSOLE, distance, pitch)) * 100).toFixed(1)}%`,
+			`  ${String(deg).padStart(3)}°    ${(mean(crowdSpread(c, DESKTOP, GALAXY_RADIUS_LY, pitch)) * 100).toFixed(1)}%        ${(mean(crowdSpread(c, CONSOLE, GALAXY_RADIUS_LY, pitch)) * 100).toFixed(1)}%`,
 		);
 	}
-} else if (mode === "grid") {
+}
+
+function modeGrid(): void {
 	/**
 	 * The q x pitch grid, which is the only thing that can carry
 	 * `galaxy-generation.md` §2's claim that **the ball is the least crowded
@@ -497,11 +521,10 @@ if (mode === "control") {
 	);
 	const rows: { q: number; cells: number[] }[] = [];
 	for (const q of GRID_Q) {
-		const r = q === 1 ? 22 : solveRadius(q, 8);
+		const r = q === 1 ? 22 : solvedRadius(q, 8);
 		const c = corpus(q, r);
-		const distance = r * CAMERA_PER_RADIUS;
 		const cells = PITCH_DEGREES.map((deg) =>
-			mean(crowdSpread(c, DESKTOP, distance, (deg * Math.PI) / 180)),
+			mean(crowdSpread(c, DESKTOP, r, (deg * Math.PI) / 180)),
 		);
 		rows.push({ q, cells });
 		console.log(
@@ -525,27 +548,49 @@ if (mode === "control") {
 			.filter((r) => r.q !== 1)
 			.every((r) => r.cells.every((x, i) => x > ballRow.cells[i])),
 	);
-} else if (mode === "sweep") {
+}
+
+function modeSweep(): void {
 	console.log(
 		"     q       R    core    mean  re-rolls   desktop   console   (pitch 40°, framing scales with R)",
 	);
 	for (const q of [1.0, 0.85, 0.7, 0.5, 0.35, 0.25, 0.15]) {
-		const r = solveRadius(q, 8);
+		const r = solvedRadius(q, 8);
 		const c = corpus(q, r);
-		const distance = r * CAMERA_PER_RADIUS;
 		const pitch = 0.7;
 		const m = mean(c.map((l) => meanInRange(l.positions)));
 		const a = mean(c.map((l) => l.attempt));
-		const d = mean(crowdSpread(c, DESKTOP, distance, pitch));
-		const k = mean(crowdSpread(c, CONSOLE, distance, pitch));
+		const d = mean(crowdSpread(c, DESKTOP, r, pitch));
+		const k = mean(crowdSpread(c, CONSOLE, r, pitch));
 		console.log(
 			`  ${q.toFixed(2)}   ${r.toFixed(1).padStart(5)}   ${(r / Math.SQRT2).toFixed(1).padStart(5)}   ${m.toFixed(2)}      ${a.toFixed(1).padStart(4)}     ${(d * 100).toFixed(1)}%     ${(k * 100).toFixed(1)}%`,
 		);
 	}
-} else {
-	// **Not a silent fall-through to the sweep.** A typo used to run a
-	// multi-minute q sweep and print a table for a question nobody asked.
+}
+
+/**
+ * The modes, as a table.
+ *
+ * A table rather than an `if`/`else if` chain over six ~30-line bodies: an
+ * unknown mode is a lookup miss instead of a branch somebody has to remember to
+ * add, and adding a mode is one entry rather than an edit to a chain. The chain
+ * had already silently lost its `solve` arm once during a refactor in this same
+ * PR, which is the argument.
+ */
+const MODES: Record<string, () => void> = {
+	control: modeControl,
+	shipped: modeShipped,
+	solve: modeSolve,
+	sweep: modeSweep,
+	pitch: modePitch,
+	grid: modeGrid,
+};
+
+const mode = process.argv[2] ?? "sweep";
+const run = MODES[mode];
+if (!run) {
 	throw new Error(
-		`measure-galaxy-shape: unknown mode "${mode}" — expected one of control, shipped, solve, sweep, pitch, grid`,
+		`measure-galaxy-shape: unknown mode "${mode}" — expected one of ${Object.keys(MODES).join(", ")}`,
 	);
 }
+run();

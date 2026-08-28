@@ -249,7 +249,7 @@ one. See the note under it before comparing a row against a remembered figure.
 
 **There is no distance that both frames the whole cluster and lets you pick.**
 That is the finding, and it survives the reshape: at 62 LY, where all 256 are on
-screen, 44.5% of them cannot be told apart, and crowding only reaches single
+screen, 44.5% of them cannot be told apart, and crowding first reaches single
 digits at 18 LY, where 118 of 256 are visible — under half the galaxy, and the
 rest off the edges. No point-size tuning changes it: it is 256 points in a disc
 whose core is three times as dense as its rim, and the metric is a function of

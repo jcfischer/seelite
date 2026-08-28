@@ -414,8 +414,16 @@ export function positionForShape(
  * Decided under #118; #107 ratified only that "the 3:1 ratio holds", which this
  * is what it takes to be true.
  */
-export const profileRadiusLy = (pos: Vec3, q = GALAXY_FLATTENING_Q): number =>
-	Math.sqrt(pos.x * pos.x + (pos.y / q) * (pos.y / q) + pos.z * pos.z);
+export const profileRadiusLy = (pos: Vec3, q = GALAXY_FLATTENING_Q): number => {
+	// A `q` of 0 is a flat sheet, and dividing by it yields Infinity or NaN
+	// rather than an error — which `systemFromPosition` would carry into `t` and
+	// then into a system with an undefined polity. Cheap to refuse, and the
+	// caller that would reach it is a sweep walking q toward zero.
+	if (!(q > 0)) {
+		throw new Error(`profileRadiusLy: q must be positive, got ${q}`);
+	}
+	return Math.sqrt(pos.x * pos.x + (pos.y / q) * (pos.y / q) + pos.z * pos.z);
+};
 
 /** Whether a jump graph at `maxJump` has exactly one component. Plain BFS from
  *  system 0; 256 nodes makes the O(n²) adjacency scan cheaper than building an

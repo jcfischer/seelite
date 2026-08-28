@@ -104,9 +104,18 @@ const { check, watch, exit } = tally();
  */
 const EXPECTED_Q = 0.7;
 
-/** How many viewports actually framed the cluster and so measured the disc.
- *  Asserted after the loop, so the skip above cannot become a silent retirement. */
-let discMeasured = 0;
+/**
+ * Which viewports actually framed the cluster and so measured the disc.
+ *
+ * Asserted after the loop, so a skip cannot become a silent retirement — and
+ * asserted **by name**, not as a count. `discMeasured >= 1` was satisfied by
+ * desktop alone while narrow is documented as always skipping, so the floor
+ * encoded nothing: a change that also cropped desktop would have to drop the
+ * count to zero to be caught, and by then the check is gone from both. Naming
+ * desktop is what makes "desktop must keep measuring this" a thing the suite
+ * knows rather than a thing this comment claims.
+ */
+const discMeasured = new Set();
 
 for (const viewport of VIEWPORTS) {
 	const page = await browser.newPage({
@@ -179,20 +188,37 @@ for (const viewport of VIEWPORTS) {
 			map.resetView();
 			// Orbit in small steps toward the target, reading the state each time —
 			// the drag-to-radians factor is the chart's business, not the probe's.
-			// Step toward the target and stop when it is reached *or* overshot.
-			// A fixed 4 px drag against a 0.005 rad tolerance can straddle the
-			// target and oscillate to the cap, which burns 400 synchronous orbit
-			// calls per framing and lands somewhere arbitrary anyway. Halving on
-			// an overshoot converges instead.
-			let step = 4;
-			let previous = Number.POSITIVE_INFINITY;
-			for (let i = 0; i < 400; i++) {
-				const delta = target - map.state.pitch;
+			// Step toward the target, halving on a genuine overshoot.
+			//
+			// A fixed drag against a 0.005 rad tolerance can straddle the target
+			// and oscillate to the cap, which burns synchronous orbit calls and
+			// lands somewhere arbitrary anyway. Two details matter and both were
+			// wrong in an earlier version: `previous` is seeded from the *first*
+			// delta rather than Infinity (whose sign is 1, so a negative opening
+			// delta read as an overshoot and halved the step before anything had
+			// been overshot), and the opening step is proportional to the distance
+			// rather than a fixed 4, so a far target converges in about log2 steps
+			// instead of walking there.
+			let delta = target - map.state.pitch;
+			let previous = delta;
+			let step = Math.max(4, Math.abs(delta) * 40);
+			let i = 0;
+			for (; i < 400; i++) {
+				delta = target - map.state.pitch;
 				if (Math.abs(delta) < 0.005) break;
-				if (Math.sign(delta) !== Math.sign(previous))
+				if (i > 0 && Math.sign(delta) !== Math.sign(previous))
 					step = Math.max(step / 2, 0.25);
 				previous = delta;
 				map.orbit(0, Math.sign(delta) * step);
+			}
+			if (Math.abs(target - map.state.pitch) > 0.02) {
+				// **Throw rather than return an unconverged framing.** Returning it
+				// let the aspect check run against a view nobody asked for and
+				// report "the cluster is a disc — FAIL", so a stalled orbit
+				// produced two failures naming two different defects.
+				throw new Error(
+					`aspectAtPitch: wanted ${target}, reached ${map.state.pitch} after ${i} steps`,
+				);
 			}
 			await new Promise((r) =>
 				requestAnimationFrame(() => requestAnimationFrame(r)),
@@ -261,7 +287,7 @@ for (const viewport of VIEWPORTS) {
 		Math.max(edgeOn.spanY, faceOn.spanY) < edgeOn.height - 2;
 	const edgeAspect = edgeOn.spanY / edgeOn.spanX;
 	const faceAspect = faceOn.spanY / faceOn.spanX;
-	if (framed) discMeasured++;
+	if (framed) discMeasured.add(viewport.name);
 	check(
 		framed
 			? `${viewport.name}: the cluster is a disc — edge-on aspect ${edgeAspect.toFixed(2)} (expected ~${EXPECTED_Q}), face-on ${faceAspect.toFixed(2)}`
@@ -668,8 +694,10 @@ for (const viewport of VIEWPORTS) {
 }
 
 check(
-	`the disc aspect was measured on ${discMeasured} of ${VIEWPORTS.length} viewports`,
-	discMeasured >= 1,
+	`the disc aspect was measured on [${[...discMeasured].join(", ")}] of ${VIEWPORTS.length} viewports`,
+	// Desktop is the arm that frames the whole cluster, so it is the arm this
+	// check lives or dies on. Narrow is expected to skip and is not required.
+	discMeasured.has("desktop"),
 );
 
 await browser.close();
