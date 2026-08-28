@@ -176,15 +176,23 @@ export interface FinderResults {
 	beyondRange: FinderRow[];
 }
 
-/** Does one system survive the name and economy narrowing? */
+/**
+ * Does one system survive the name and economy narrowing?
+ *
+ * `normalised` is the trimmed, lower-cased query. It is a parameter because
+ * `projectFinder` calls this 256 times per keystroke and normalising inside
+ * allocated two throwaway strings per system for a value that is the same on
+ * every one of them. Optional so the predicate can still be called on its own —
+ * which is what the tests do — and derived from the filter when it is absent.
+ */
 export function finderMatches(
 	system: Pick<SystemRecord, "name" | "economy">,
 	filter: FinderFilter,
+	normalised = filter.query.trim().toLowerCase(),
 ): boolean {
 	if (filter.economies.length > 0 && !filter.economies.includes(system.economy))
 		return false;
-	const query = filter.query.trim().toLowerCase();
-	return query === "" || system.name.toLowerCase().includes(query);
+	return normalised === "" || system.name.toLowerCase().includes(normalised);
 }
 
 /**
@@ -256,13 +264,14 @@ export function projectFinder(
 	maxJump = JUMP_RANGE_LY,
 ): FinderResults {
 	const projection = projectJumps(systems, from, maxJump);
-	const hasQuery = filter.query.trim() !== "";
+	const normalised = filter.query.trim().toLowerCase();
+	const hasQuery = normalised !== "";
 	const inBudget: FinderRow[] = [];
 	const beyondRange: FinderRow[] = [];
 
 	for (const system of systems) {
 		if (system.galaxy !== from.galaxy) continue;
-		if (!finderMatches(system, filter)) continue;
+		if (!finderMatches(system, filter, normalised)) continue;
 		const here = projection.reach(system);
 		// **Built inside the branch that keeps it.** Constructed before the
 		// test, a chip-only narrowing at the default budget allocated a row and

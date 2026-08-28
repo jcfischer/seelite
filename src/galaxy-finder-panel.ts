@@ -64,6 +64,71 @@ const FINDER_DRAWN_ROWS = 60;
  */
 const FINDER_MIN_CHART_PX = 360;
 
+/**
+ * The three layouts, as one table with one key set.
+ *
+ * Written as three `Object.assign` branches first, each restating the same
+ * eight properties with different values — which is how a key comes to be set
+ * in two of them and left stale in the third, and `position`/`bottom` are
+ * exactly the pair that would do it.
+ *
+ * - **closed**: floating in the top-right corner, never wider than the box it
+ *   floats over, so the chart keeps the cell #86's D3 preserved along with
+ *   §5.1's crowding band.
+ * - **column**: beside the chart, taking `FINDER_WIDTH_PX` off it.
+ * - **cover**: over the chart. The canvas box does not change, so §5.1's figure
+ *   is untouched — the trade is that the chart is not readable while the finder
+ *   is open, which below `FINDER_MIN_CHART_PX` it would not have been either
+ *   way.
+ */
+/** The panel over a chart it does not hide, and over one it does. */
+const PANEL_OVER_CHART = "rgba(6,12,20,0.88)";
+const PANEL_OPAQUE = "#060c14";
+
+const LAYOUT_STYLES: Record<
+	"closed" | "column" | "cover",
+	Partial<CSSStyleDeclaration>
+> = {
+	closed: {
+		background: PANEL_OVER_CHART,
+		position: "absolute",
+		right: "12px",
+		top: "12px",
+		bottom: "auto",
+		left: "auto",
+		flex: "0 0 auto",
+		width: `min(${FINDER_WIDTH_PX}px, calc(100% - 24px))`,
+		maxHeight: "none",
+	},
+	column: {
+		background: PANEL_OVER_CHART,
+		position: "relative",
+		right: "auto",
+		top: "auto",
+		bottom: "auto",
+		left: "auto",
+		flex: `0 1 ${FINDER_WIDTH_PX}px`,
+		width: "auto",
+		maxHeight: "100%",
+	},
+	cover: {
+		// **Opaque, unlike the other two.** At 0.88 the chart legend and the
+		// haze/course buttons read straight through the rows — seen by eye on a
+		// 390 px capture, which no check here could have failed on. Floating in
+		// a corner the translucency is worth having; over the whole chart it is
+		// two screens printed on top of each other.
+		background: PANEL_OPAQUE,
+		position: "absolute",
+		right: "12px",
+		top: "12px",
+		bottom: "12px",
+		left: "12px",
+		flex: "0 0 auto",
+		width: "auto",
+		maxHeight: "none",
+	},
+};
+
 export interface FinderPanelOptions {
 	/** The chart's root. The panel appends itself and is removed with it. */
 	root: HTMLElement;
@@ -145,7 +210,7 @@ export function mountFinderPanel({
 		flexDirection: "column",
 		gap: "8px",
 		padding: "10px",
-		background: "rgba(6,12,20,0.88)",
+		background: PANEL_OVER_CHART,
 		border: "1px solid #1d3247",
 		borderRadius: "3px",
 		fontSize: "11px",
@@ -264,7 +329,13 @@ export function mountFinderPanel({
 	// ---- Layout ------------------------------------------------------------
 
 	/**
-	 * Relayout when the chart's box crosses the column/cover threshold.
+	 * Relayout when the chart's **root** crosses the column/cover threshold.
+	 *
+	 * The root and not the stage: the stage is what the canvas draws into and
+	 * shrinks when this panel takes its column, so observing it would be
+	 * watching this panel's own output. `FINDER_MIN_CHART_PX` is compared
+	 * against `root.clientWidth`, which is the console cell and does not move
+	 * when the panel opens.
 	 *
 	 * **The comment below used to claim this and nothing did it.** `applyLayout`
 	 * runs only from `render`, and the chart's own `ResizeObserver` sets a
@@ -306,50 +377,7 @@ export function mountFinderPanel({
 		element.setAttribute("data-map-finder-expanded", String(expanded));
 		element.setAttribute("data-map-finder-layout", mode);
 		resultsEl.style.display = expanded ? "block" : "none";
-		if (mode === "cover") {
-			// Over the chart, not beside it. The canvas box does not change, so
-			// §5.1's crowding figure is untouched here — the trade is that the
-			// chart is not readable while the finder is open, which on a 390 px
-			// console it would not have been either way.
-			Object.assign(element.style, {
-				position: "absolute",
-				right: "12px",
-				top: "12px",
-				bottom: "12px",
-				left: "12px",
-				flex: "0 0 auto",
-				width: "auto",
-				maxHeight: "none",
-			});
-		} else if (mode === "column") {
-			Object.assign(element.style, {
-				position: "relative",
-				right: "auto",
-				top: "auto",
-				bottom: "auto",
-				left: "auto",
-				flex: `0 1 ${FINDER_WIDTH_PX}px`,
-				width: "auto",
-				maxHeight: "100%",
-			});
-		} else {
-			// Absolute, so a closed finder takes no column and the chart keeps
-			// the cell #86's D3 preserved along with its crowding band. The
-			// clamp is not a design choice about narrow viewports — at the
-			// console's 390 px media query the panel is still its full 268 px
-			// and covers most of that chart — it only guarantees the panel never
-			// overflows the box it floats over.
-			Object.assign(element.style, {
-				position: "absolute",
-				right: "12px",
-				top: "12px",
-				bottom: "auto",
-				left: "auto",
-				flex: "0 0 auto",
-				width: `min(${FINDER_WIDTH_PX}px, calc(100% - 24px))`,
-				maxHeight: "none",
-			});
-		}
+		Object.assign(element.style, LAYOUT_STYLES[mode]);
 		onLayoutChange();
 	};
 

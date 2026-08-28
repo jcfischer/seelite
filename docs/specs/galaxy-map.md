@@ -494,7 +494,11 @@ chart ruined and the finder cramped at once. Below `FINDER_MIN_CHART_PX` (360,
 set from the two cells that exist: it must admit 743 and refuse 76 — the *cell* at that viewport is 344, not
 390, so the strip is 76 and not the 122 an arithmetic on the page width gives)
 the expanded
-panel covers the stage instead. The canvas box is then unchanged, so §5.1's
+panel covers the stage instead — **opaque there, unlike the floating and column
+forms**, because at the translucency that reads well over a corner of the chart
+the legend and the haze and course buttons come straight through the rows. Seen
+by eye on a 390 px capture; no check in either tier could have failed on it,
+which is the third tier's whole point. The canvas box is unchanged, so §5.1's
 figure is untouched there, and the trade is that on a narrow console you read or
 you find, one at a time. §9.3 items 14 and 15 measure it at the viewport it is about, including the
 live resize across the threshold.

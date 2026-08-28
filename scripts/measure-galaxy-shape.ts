@@ -514,6 +514,22 @@ function modeShipped(): void {
 		console.log(
 			`  crowd cons-open: ${(mean(ko) * 100).toFixed(1)}%  (spread ${pct(ko)}) over ${seen(openRows)} on screen at ${CONSOLE_OPEN.width}x${CONSOLE_OPEN.height}`,
 		);
+		/**
+		 * **The equality of the two rows is entailed, so the precondition is what
+		 * is asserted.**
+		 *
+		 * While both cells frame the whole cluster the spacings are identical by
+		 * construction and the spreads cannot disagree — so printing them side by
+		 * side corroborates nothing on its own. What *can* fail is the fitting: a
+		 * narrower cell that stopped framing all 256 breaks the reasoning
+		 * `galaxy-map.md` §5.2 rests on, and then the two rows would be about
+		 * different populations while still reading alike.
+		 */
+		assertThat(
+			`the open cell still frames every system (${seen(openRows)} of ${SYSTEMS_PER_GALAXY})`,
+			openRows.every((x) => x.onScreen === SYSTEMS_PER_GALAXY) &&
+				consoleRows.every((x) => x.onScreen === SYSTEMS_PER_GALAXY),
+		);
 	}
 }
 
