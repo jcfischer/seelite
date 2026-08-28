@@ -261,9 +261,11 @@ is; a texture has never been told which plates meet. The geometry has been.
 vertex's shading normal and any face meeting there, which is exactly what
 `computeVertexNormals` has just averaged away at a `hard` station or a chine —
 and the hull material patches it into `roughnessFactor` and a small albedo lift.
-On the shipped courier the term is exactly zero on 77% of vertices and saturates
-on about one in a hundred, which is the shape it has to have: a wear term that
-reads high everywhere is a wash, not wear.
+The shape it has to have is that edges are a **minority**: a wear term reading
+high everywhere is a wash, not wear. Both ends are checked — over 70% of a
+courier's vertices exactly zero, and the saturating share inside 0.2%–5%.
+Measured today: 77% and 0.7%. A maximum alone would not do, because one
+saturating vertex satisfies it.
 
 #98 binds the whole of this: depth and light, forms stay clean. Hulls are crisp
 built objects, the wear is subtle, the panel lines geometric. The grime is
@@ -328,13 +330,27 @@ continuous ventral structure, and the inspection viewer supplies neutral
 underside fill so solid geometry does not read as a missing face.
 
 The surface has its own two tiers. Headless (`tests/surface.test.ts`): every
-station buffer is pinned to an **absolute checksum** taken from the commit
-before #101, so the shared generator is provably the old arithmetic rather than
-a retune that happened on the way past; the seam normal map is asserted in
-register with the painted seam and to decode to unit vectors; and the crease
-term is asserted in both directions — a constant-section tube reads under 0.2 on
+station buffer is pinned to an **absolute checksum** taken by running the
+shipped generators at `01427e4`. That guards against drift from the day the pins
+were taken and no further — it cannot prove its own provenance, because pins
+taken from the new code and labelled as old would satisfy every assertion
+identically, so the claim that they came from the parent commit lives in a
+commit message and not in anything a machine checks.
+
+The seam normal map is asserted **in register with the painted seam** by
+comparing the two maps on a row rather than by comparing their boundary lists,
+and `plateTexels` reads `seamOffsets` rather than recomputing the panel
+arithmetic — the first version did both wrong at once, computing an albedo it
+never read while the generator kept its own copy of the expression. The crease
+term is asserted in both directions: a constant-section tube reads under 0.2 on
 its swept surface while the same tube with a hard shoulder reads over 0.6, so
 neither a term wired to 0 nor one wired to 1 survives.
+
+One wear map serves four paints, and the test asserts the product the shader
+forms — `material.roughness × map.g` — for each of `hull`, `panel`, `trim` and
+`accent`, with a control on the count and a second test that the four differ
+from each other. Forcing the scalars to 1 is a repaint of three of them and it
+turns that test red.
 
 In the browser (`probe-ship-visuals.mjs`), the check that matters is that the
 seam map **reaches the frame**, and it took two wrong levers before it was one.

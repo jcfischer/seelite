@@ -252,24 +252,30 @@ for (const viewport of VIEWPORTS.slice(0, 1)) {
 			if (material?.userData?.hullSplices) materials.add(material);
 		});
 		const all = [...materials];
-		// Bail rather than throw on `all[0]` below: no patched material means the
-		// hull has not been built or drawn, which the checks should report as
-		// named failures rather than as a TypeError in the runner. **Every field
-		// the checks read**, not just `materials` — returning the count alone
-		// still crashed the third check on `undefined.length`, which is the same
-		// defect one line further down.
-		if (!all.length)
-			return {
-				materials: 0,
-				maps: [],
-				splices: 0,
-				splicesLanded: 0,
-				withSeams: [],
-				withoutSeams: [],
-				hullPixels: 0,
-				moved: 0,
-				stdev: 0,
-			};
+		/*
+		 * The shape every check reads, with nothing in it.
+		 *
+		 * One literal, spread into both returns, because the bail and the real
+		 * result have to carry the same fields and keeping two lists in step by
+		 * hand is how they diverge: the first bail returned `{ materials: 0 }`
+		 * alone and the third check still crashed on `undefined.length` — the
+		 * same defect one line further down from the one it fixed.
+		 */
+		const EMPTY = {
+			materials: 0,
+			maps: [],
+			splices: 0,
+			splicesLanded: 0,
+			withSeams: [],
+			withoutSeams: [],
+			hullPixels: 0,
+			moved: 0,
+			stdev: 0,
+		};
+		// No patched material means the hull has not been built or drawn, which
+		// the checks should report as named failures rather than as a TypeError
+		// in the runner.
+		if (!all.length) return EMPTY;
 		const splices = all.flatMap((m) => Object.values(m.userData.hullSplices));
 		const W = 480;
 		const H = 300;
@@ -366,6 +372,7 @@ for (const viewport of VIEWPORTS.slice(0, 1)) {
 		const mean = hullPixels ? sum / hullPixels : 0;
 		for (const v of values) spread += (v - mean) ** 2;
 		return {
+			...EMPTY,
 			materials: all.length,
 			maps: all.map((m) => ({
 				map: Boolean(m.map),

@@ -139,14 +139,41 @@ describe("the seam normal map is in register with the painted seam", () => {
 	const normals = seamNormalTexels(SHIP_PLATING);
 	const { x: seamX, y: seamY } = seamOffsets(SHIP_PLATING, size);
 
-	test("both channels derive their seams from one boundary set", () => {
-		// The albedo darkens a texel when the next one belongs to another panel;
-		// the normal map grooves the same boundaries. Asserted as set equality
-		// rather than as a count, because two sets of the same size in different
-		// places is exactly the defect.
-		expect(seamX.length).toBeGreaterThan(1);
-		expect(seamY.length).toBe(seamX.length);
-		for (const x of seamX) expect(x).toBeLessThan(size);
+	test("the albedo darkens exactly the columns the normal map grooves", () => {
+		/*
+		 * The assertion this `describe` was named for and did not make. It
+		 * computed the albedo and never read it: the only thing checked was that
+		 * the two boundary lists had the same length, which says nothing about
+		 * where either map put its seam.
+		 *
+		 * `plateTexels` recomputed `Math.floor((n * panels) / size)` inline
+		 * rather than reading `seamOffsets`, so "the emboss cannot land anywhere
+		 * but on a painted seam" was a claim about two copies of one expression
+		 * agreeing. Both halves are fixed: the generator reads the shared
+		 * definition, and this compares the two maps to each other on a row.
+		 */
+		const at = (buffer: Uint8Array, x: number, y: number, channel: number) =>
+			buffer[(y * size + x) * 4 + channel];
+		// A row through the middle of a panel, so the y boundaries do not darken
+		// it and every dark column on it is an x seam.
+		const row = Math.floor((seamY[0] + seamY[1]) / 2);
+		const dark: number[] = [];
+		const grooved: number[] = [];
+		for (let x = 0; x < size; x++) {
+			// The plate value varies by ±13 about 196; a seam multiplies it by
+			// `1 - 0.18`, which is 35 levels. The cut is between the two.
+			if (at(albedo, x, row, 0) < 196 - 20) dark.push(x);
+			// The centre of a groove is the one column pair where the encoded
+			// tilt flips sign, so a grooved column is any with a tilt at all.
+			if (Math.abs(at(normals, x, row, 0) - 128) > 4) grooved.push(x);
+		}
+		expect(dark.length).toBe(seamX.length);
+		expect(dark).toEqual(seamX);
+		// The groove is `SEAM_HALF_WIDTH_PX` wide either side, so it covers more
+		// columns than the one the albedo darkens — but every darkened column
+		// must be inside it, which is what "in register" means.
+		expect(grooved.length).toBeGreaterThan(dark.length);
+		for (const x of dark) expect(grooved).toContain(x);
 	});
 
 	test("a plate interior is flat and a seam is not", () => {
@@ -326,6 +353,10 @@ describe("the crease term reads a hull's own edges", () => {
 		const crease = geometry.getAttribute("crease");
 		const caps = geometry.userData.caps as { front: number; rear: number };
 		const end = Math.min(caps.front, caps.rear) - (RING_SEGMENTS + 1);
+		// Unguarded, an early cap gives `end <= 0`, an empty loop and a peak of
+		// 0 — which satisfies the "constant section does not crease" assertion
+		// without reading a single vertex.
+		expect(end).toBeGreaterThan(0);
 		let max = 0;
 		for (let i = 0; i < end; i++) max = Math.max(max, crease.getX(i));
 		return max;
@@ -361,8 +392,15 @@ describe("the crease term reads a hull's own edges", () => {
 		});
 		expect(values.length).toBeGreaterThan(1000);
 		const zero = values.filter((v) => v === 0).length / values.length;
+		const saturating = values.filter((v) => v === 1).length / values.length;
 		expect(zero).toBeGreaterThan(0.7);
-		expect(Math.max(...values)).toBe(1);
+		// **A band on the saturating share, not `max === 1`.** One saturating
+		// vertex satisfies a maximum, so the maximum could not tell "the hull has
+		// edges" from "the hull has an edge" — and the property being claimed is
+		// that edges are a *minority*, which needs both ends. Measured on the
+		// courier: 0.7% saturate and 77% read exactly zero.
+		expect(saturating).toBeGreaterThan(0.002);
+		expect(saturating).toBeLessThan(0.05);
 	});
 });
 
@@ -412,6 +450,14 @@ describe("one wear map, four paints", () => {
 		// The control: an empty traverse would satisfy every assertion above.
 		// Four paints — hull, panel, trim, accent — and no more.
 		expect(seen.length).toBe(4);
+		// **And the clamp must not be doing any work.** `plate` writes
+		// `Math.min(1, finish / clean)`, so a finish above the clean-plate
+		// reading — 0.70 for roughness today — would render below what was asked
+		// for with no signal, which is the same silent-repaint class as the
+		// round-two blocker. Asserted here so the clamp is a bound that never
+		// binds rather than a default nobody notices.
+		expect(cleanG).toBeGreaterThan(0.6);
+		expect(cleanB).toBeGreaterThan(0.6);
 	});
 
 	test("and the four finishes are actually different from each other", () => {

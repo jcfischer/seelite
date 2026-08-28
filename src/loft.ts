@@ -130,6 +130,59 @@ function sweep(controls: ReadonlyArray<Ring>, subdivisions = SUBDIVISIONS) {
 }
 
 /**
+ * What a geometry's `uv` attribute is measured in.
+ *
+ * `"km"` is what `hullLoft` writes — chord distance round the section and
+ * distance along the sweep — and `"plate"` is what it becomes once a consumer
+ * has divided by its own panel size. A three-module state machine in an untyped
+ * bag is how the *previous* marker went wrong: `plateUVs` gated on `ringSize`,
+ * a field recording where the cap fans are, and any producer that omitted it
+ * would silently have kept kilometre UVs. A typo in a string literal is the same
+ * failure with the same silence, so the two values and the two accessors are
+ * declared once, here, and every writer and reader goes through them.
+ */
+export type UvUnits = "km" | "plate";
+
+export const uvUnitsOf = (
+	geometry: THREE.BufferGeometry,
+): UvUnits | undefined => geometry.userData.uvUnits as UvUnits | undefined;
+
+/**
+ * Record a geometry's UV units **on a fresh `userData`**.
+ *
+ * `BufferGeometry.copy` assigns `userData` by reference, so a clone and its
+ * source share one object while owning separate UV buffers. Mutating the shared
+ * field would tell a clone taken before its source was divided that it had
+ * already been done, and it would keep kilometre UVs — plates 125 times too
+ * large on one side of a mirrored part. Replacing the object leaves the
+ * sibling's alone.
+ */
+export function setUvUnits(geometry: THREE.BufferGeometry, units: UvUnits) {
+	geometry.userData = { ...geometry.userData, uvUnits: units };
+}
+
+/**
+ * Multiply a geometry's UVs in place. Returns whether there were any.
+ *
+ * Pure UV arithmetic and no material knowledge, so it lives beside the module
+ * that writes the UVs rather than beside the one that consumes them: `hoop`
+ * scales three's normalised torus unwrap up into kilometres and `plateUVs`
+ * scales kilometres down into plates, which is one pass with two factors.
+ */
+export function scaleUVs(
+	geometry: THREE.BufferGeometry,
+	sx: number,
+	sy: number,
+) {
+	const uv = geometry.getAttribute("uv") as THREE.BufferAttribute | undefined;
+	if (!uv) return false;
+	for (let i = 0; i < uv.count; i++)
+		uv.setXY(i, uv.getX(i) * sx, uv.getY(i) * sy);
+	uv.needsUpdate = true;
+	return true;
+}
+
+/**
  * How far below a face's own normal the *shading* normal has been averaged —
  * per vertex, 0 on a smooth surface and 1 on a hard edge.
  *
@@ -162,11 +215,13 @@ const CREASE_FLOOR = 0.05;
 const CREASE_KNEE = 0.25;
 
 function computeCrease(geometry: THREE.BufferGeometry) {
+	const index = geometry.getIndex();
+	// Before the allocation, not after: a non-indexed geometry was buying a
+	// float per vertex and throwing it away on the next line.
+	if (!index) return;
 	const position = geometry.getAttribute("position") as THREE.BufferAttribute;
 	const normal = geometry.getAttribute("normal") as THREE.BufferAttribute;
-	const index = geometry.getIndex();
 	const out = new Float32Array(position.count);
-	if (!index) return;
 	const a = new THREE.Vector3();
 	const b = new THREE.Vector3();
 	const c = new THREE.Vector3();
@@ -347,7 +402,7 @@ export function hullLoft(
 	 * non-loft geometry adopting it, would have got the wrong plate size
 	 * silently. This says the thing the consumer actually needs to know.
 	 */
-	geometry.userData.uvUnits = "km";
+	setUvUnits(geometry, "km");
 	geometry.userData.ringSize = segments;
 	// Where the two cap fans' centre vertices ended up. Recorded rather than
 	// left to be inferred: they were the last two vertices until the caps gained

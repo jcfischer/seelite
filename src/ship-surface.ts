@@ -18,7 +18,8 @@
  */
 
 import * as THREE from "three";
-import { makeSplicer } from "./shader-splice";
+import { scaleUVs, setUvUnits, uvUnitsOf } from "./loft";
+import { type Splice, makeSplicer } from "./shader-splice";
 import {
 	PLATE_TEXTURE_SIZE,
 	type PlatingProfile,
@@ -420,24 +421,4 @@ export function plateUVs(geometry: THREE.BufferGeometry) {
 	// alone.
 	geometry.userData = { ...geometry.userData, uvUnits: "plate" };
 	return geometry;
-}
-
-/**
- * Multiply a geometry's UVs in place. Returns whether there were any.
- *
- * One loop rather than two: `hoop` scales three's normalised torus unwrap up
- * into kilometres and `plateUVs` scales kilometres down into plates, which is
- * the same pass with different factors written in two modules.
- */
-export function scaleUVs(
-	geometry: THREE.BufferGeometry,
-	sx: number,
-	sy: number,
-) {
-	const uv = geometry.getAttribute("uv") as THREE.BufferAttribute | undefined;
-	if (!uv) return false;
-	for (let i = 0; i < uv.count; i++)
-		uv.setXY(i, uv.getX(i) * sx, uv.getY(i) * sy);
-	uv.needsUpdate = true;
-	return true;
 }

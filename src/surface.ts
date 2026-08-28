@@ -130,7 +130,13 @@ export function seamOffsets(
 	const at: number[] = [];
 	for (let n = 0; n < size; n++)
 		if (panelOf(n) !== panelOf((n + 1) % size)) at.push(n);
-	return { x: at, y: [...at] };
+	// `panelOf` rides along because `plateTexels` needs the panel a texel is in,
+	// not only the boundaries. Handing it back is what makes this the single
+	// definition rather than the first of two: the albedo used to recompute
+	// `Math.floor((n * panels) / size)` inline, so "the emboss cannot land
+	// anywhere but on a painted seam" was a claim about two copies agreeing, and
+	// a change to either would have desynced them with every check still green.
+	return { x: at, y: [...at], panelOf, panels };
 }
 
 /**
@@ -152,8 +158,9 @@ export function plateTexels(
 ) {
 	const { seam, weathering } = profile;
 	const out = new Uint8Array(size * size * 4);
-	const panels = panelCount(profile, size);
-	const panelOf = (n: number) => Math.floor((n * panels) / size);
+	// **The one boundary definition**, shared with `seamNormalTexels` — see
+	// `seamOffsets`.
+	const { panelOf } = seamOffsets(profile, size);
 	for (let y = 0; y < size; y++) {
 		for (let x = 0; x < size; x++) {
 			// Streaks run *down* the hull: the envelope varies with x and persists

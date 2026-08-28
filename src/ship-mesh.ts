@@ -27,8 +27,16 @@ export {
 	RING_SEGMENTS,
 	SUBDIVISIONS,
 } from "./loft";
-import { type Ring, RING_SEGMENTS, hullLoft, revolve } from "./loft";
-import { plate, plateUVs, scaleUVs } from "./ship-surface";
+import {
+	RING_SEGMENTS,
+	type Ring,
+	hullLoft,
+	revolve,
+	scaleUVs,
+	setUvUnits,
+	uvUnitsOf,
+} from "./loft";
+import { plate, plateUVs } from "./ship-surface";
 
 export const HULL_IDS = [
 	"courier",
@@ -402,10 +410,15 @@ function makePalette(id: HullId): Palette {
 	 *
 	 * **The figures below are still the finish.** `plate` reads each material's
 	 * `roughness` and `metalness` and rescales them against what the shared wear
-	 * map reads on a clean plate, so a clean plate renders at exactly the values
-	 * written here and the map supplies the variation around them. All four
-	 * paints survive one map, which is the only reason one map is enough;
+	 * map reads on a clean plate, so a clean plate renders at the values written
+	 * here and the map supplies the variation around them. All four paints
+	 * survive one map, which is the only reason one map is enough;
 	 * `tests/surface.test.ts` asserts it for each of them.
+	 *
+	 * The rescale is clamped at 1, so a finish above the clean-plate reading —
+	 * roughness 0.70 today — would render below what is written. Nothing here is
+	 * near it, and the test asserts the headroom rather than the clamp, because
+	 * a clamp that starts binding is silent.
 	 */
 	const platedPaint = (color: number, roughness: number, metalness: number) =>
 		plate(painted(color, roughness, metalness));
@@ -449,7 +462,7 @@ function add(
 	// declared by `hullLoft` and by `hoop`, so the gate reads the fact it needs
 	// rather than a marker that happens to travel with it — the exhaust disc
 	// declares nothing and keeps its normalised unwrap.
-	if (geometry.userData.uvUnits === "km") plateUVs(geometry);
+	if (uvUnitsOf(geometry) === "km") plateUVs(geometry);
 	const mesh = new THREE.Mesh(geometry, material);
 	mesh.name = name;
 	mesh.position.set(...position);
@@ -670,7 +683,7 @@ function drumProfile(halfLength: number, radius: number) {
 function hoop(radius: number, tube: number) {
 	const geometry = new THREE.TorusGeometry(radius, tube, 8, 22);
 	scaleUVs(geometry, 2 * Math.PI * radius, 2 * Math.PI * tube);
-	geometry.userData.uvUnits = "km";
+	setUvUnits(geometry, "km");
 	return geometry;
 }
 

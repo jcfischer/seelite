@@ -21,6 +21,16 @@
 
 export type SpliceLog = Record<string, boolean>;
 
+/** One patch: hand it a stage, a source, a marker and the code, get the source
+ *  back with the code in place of the marker. Declared here rather than
+ *  re-stated by each caller — a change to the signature is then one edit. */
+export type Splice = (
+	stage: string,
+	source: string,
+	marker: string,
+	code: string,
+) => string;
+
 /**
  * A splicer whose results accumulate into one log.
  *
