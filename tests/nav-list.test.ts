@@ -15,7 +15,8 @@
  */
 import { expect, test } from "bun:test";
 import { navFilterMatches, projectNavTargets } from "../src/cockpit";
-import { codeOf } from "./lib/source-scan";
+import { readdirSync } from "node:fs";
+import { codeOf, repoPath } from "./lib/source-scan";
 import { v3 } from "../src/vec3";
 
 const BODIES = [
@@ -30,23 +31,31 @@ test("targets list nearest first, with the range the panel prints", () => {
 	const rows = projectNavTargets(v3(), BODIES, null);
 
 	expect(rows.map((row) => row.id)).toEqual([
+		"hesperia-i",
 		"near-station",
 		"hesperia",
 		"far-station",
 		"seelite",
 	]);
-	expect(rows[0].distanceKm).toBeCloseTo(300, 6);
-	expect(rows[2].distanceKm).toBeCloseTo(9_000, 6);
+	expect(rows[0].distanceKm).toBeCloseTo(100, 6);
+	expect(rows[1].distanceKm).toBeCloseTo(300, 6);
+	expect(rows[3].distanceKm).toBeCloseTo(9_000, 6);
 });
 
-test("a moon is not listed, because selection cannot reach one", () => {
-	// `Game.selectable()` filters moons out of the cycle order, and
-	// `onSelectTarget` goes through that same list rather than through `byId`.
-	// So a moon row would be a row that does nothing when clicked — a finding
-	// surface offering something the game cannot find.
-	expect(
-		projectNavTargets(v3(), BODIES, null).map((row) => row.id),
-	).not.toContain("hesperia-i");
+test("the projection holds no kind rule of its own", () => {
+	// **Deliberately lists the moon.** What can be targeted is `Game`'s rule —
+	// `selectable()`, which `cycleTarget` walks and `onSelectTarget` validates
+	// against — and `Game` passes that list in. A second listability set here
+	// would be a second owner: the day a body kind is added the two diverge, and
+	// the row either vanishes while `T` still cycles to it or appears and does
+	// nothing when clicked.
+	//
+	// The pairing is asserted in the browser, where both halves exist:
+	// `probe-navigation-console.mjs` compares the rows against the game's own
+	// `selectableIds()`.
+	expect(projectNavTargets(v3(), BODIES, null).map((row) => row.id)).toContain(
+		"hesperia-i",
+	);
 });
 
 test("the selected target is flagged, and nothing else is", () => {
@@ -68,7 +77,7 @@ test("the kind filter narrows to one class; an empty filter is every class", () 
 	const all = projectNavTargets(v3(), BODIES, null, {
 		filter: { kinds: [], query: "" },
 	});
-	expect(all).toHaveLength(4);
+	expect(all).toHaveLength(BODIES.length);
 });
 
 test("the query is a trimmed, case-insensitive substring of the id", () => {
@@ -110,22 +119,37 @@ test("without an ETA source every row reads unknown rather than zero", () => {
 	expect(rows.every((row) => row.etaSeconds === null)).toBe(true);
 });
 
-test("the chart chunk is reachable from the cockpit only by a dynamic import", () => {
+test("no module in src/ statically imports the galaxy chart", () => {
 	// The claim in `Game.setChartHost` is that a player who never opens the
 	// Galaxy Map tab does not pay for the chart in the initial bundle. That is a
-	// property of the *import graph*, not of the method: a stray value import
-	// anywhere in `main.ts` folds `galaxy-map.ts` and its scene back into the
-	// entry chunk without changing a line of the code that mounts it.
+	// property of the **import graph**, not of that method: a static
+	// `from "./galaxy-map"` anywhere reachable from the entry — `live-cockpit.ts`
+	// is the obvious candidate, since it is what asks for the host — folds the
+	// chunk back in without a line of `setChartHost` changing.
 	//
-	// `import type` is erased, so it is not the thing being banned.
-	const code = codeOf("src/main.ts");
-	const staticImports = code
-		.split("\n")
-		.filter(
-			(line) =>
-				/from "\.\/galaxy-map"/.test(line) &&
-				!/^import type /.test(line.trim()),
-		);
-	expect(staticImports).toEqual([]);
-	expect(code).toContain('import("./galaxy-map")');
+	// So the whole of `src/` is scanned rather than `main.ts` alone, which is
+	// what an earlier version of this test did and what made the claim wider
+	// than the check behind it. `import type` is erased before the bundler sees
+	// it, so it is not the thing being banned.
+	const offenders: string[] = [];
+	for (const file of readdirSync(repoPath("src"))) {
+		if (!file.endsWith(".ts") || file === "galaxy-map.ts") continue;
+		// Whole `import … from "./galaxy-map"` statements, single- or multi-line.
+		// Matched as statements rather than as lines, because a type-only import
+		// spread over several lines carries its `type` markers on the ones a
+		// line-at-a-time scan would judge on their own.
+		for (const [statement] of codeOf(`src/${file}`).matchAll(
+			// `[^;]*` cannot cross a statement terminator, so the match starts at
+			// this import's own `import` keyword rather than at the file's first
+			// one — which a lazy `[\s\S]*?` does, swallowing every import above it.
+			/^import\b[^;]*?from "\.\/galaxy-map";/gm,
+		)) {
+			// `import type { … }` is erased before the bundler sees it, so it is
+			// not what folds the chunk back in.
+			if (/^import\s+type\b/.test(statement)) continue;
+			offenders.push(`src/${file}: ${statement.replace(/\s+/g, " ")}`);
+		}
+	}
+	expect(offenders).toEqual([]);
+	expect(codeOf("src/main.ts")).toContain('import("./galaxy-map")');
 });

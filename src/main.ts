@@ -215,6 +215,7 @@ const {
 	APPROACH_NEAR_UNITS,
 	APPROACH_SCALE,
 	AU_KM,
+	range,
 	BACKDROP_RADIUS,
 	C_KMS,
 	MAX_DT,
@@ -2491,8 +2492,8 @@ class Game {
 	 *
 	 * The import is dynamic because `galaxy-map.ts` pulls in its own scene, and
 	 * a player who never opens the tab should not pay for it in the initial
-	 * bundle. `tests/source-scan.test.ts` pins that there is no static import of
-	 * it from here, because a stray value import would fold the chunk back in
+	 * bundle. `tests/nav-list.test.ts` pins that no module in `src/`
+	 * statically imports it, because a stray value import would fold the chunk back in
 	 * without changing a line of this method.
 	 *
 	 * The **generation counter** is what the await costs. Disposal is
@@ -2508,19 +2509,28 @@ class Game {
 		this.chart?.dispose();
 		this.chart = null;
 		if (!host) return;
-		import("./galaxy-map").then(({ mountGalaxyChart }) => {
-			if (!host.isConnected) return;
-			const chart = mountGalaxyChart({
-				host,
-				worldSeed: this.world.seed,
-				galaxyIndex: this.world.system.record.galaxy,
-				currentIndex: this.world.system.record.index,
+		import("./galaxy-map")
+			.then(({ mountGalaxyChart }) => {
+				if (!host.isConnected) return;
+				const chart = mountGalaxyChart({
+					host,
+					worldSeed: this.world.seed,
+					galaxyIndex: this.world.system.record.galaxy,
+					currentIndex: this.world.system.record.index,
+				});
+				// Superseded while the chunk was loading. Take it down rather than
+				// dropping the handle, which would leak the loop and the context.
+				if (generation !== this.chartGeneration) chart.dispose();
+				else this.chart = chart;
+			})
+			.catch((error) => {
+				// A stale deploy or an offline reload rejects here. Without this the
+				// promise rejects unhandled and the tab is an empty bordered box
+				// that looks exactly like a chart still loading.
+				console.error("[seelite] galaxy chart failed to load", error);
+				if (generation === this.chartGeneration && host.isConnected)
+					host.dataset.liveChartError = "true";
 			});
-			// Superseded while the chunk was loading. Take it down rather than
-			// dropping the handle, which would leak the loop and the context.
-			if (generation !== this.chartGeneration) chart.dispose();
-			else this.chart = chart;
-		});
 	}
 
 	/**
@@ -2717,6 +2727,19 @@ class Game {
 				);
 		}
 		return this.selectableCache;
+	}
+
+	/**
+	 * The ids `selectable()` holds — the one answer to "can this be targeted".
+	 *
+	 * Public because the Navigation list's central claim is that a row is a
+	 * thing the game can select, and both halves of that pairing only exist in
+	 * a browser. A probe that rebuilt the rule from `world.system.bodies` would
+	 * be comparing two copies of the projection's own filter and binding
+	 * neither to `cycleTarget` or `onSelectTarget`.
+	 */
+	selectableIds(): string[] {
+		return this.selectable().map((body) => body.id);
 	}
 
 	cycleTarget(step: number) {
@@ -3971,7 +3994,13 @@ class Game {
 		}
 		return projectNavTargets(
 			this.world.ship.pos,
-			this.world.system.bodies,
+			// **`selectable()`, not `system.bodies`.** It is the one list that
+			// decides what can be targeted at all — `cycleTarget` walks it and
+			// `onSelectTarget` validates against it — so the list shows exactly
+			// what a click on it can do. Handing the projection every body and
+			// letting it hold its own kind rule would be a second owner, and the
+			// day a body kind is added the two answers diverge silently.
+			this.selectable(),
 			this.targetId,
 			{
 				filter: this.navFilter,
@@ -4794,24 +4823,6 @@ function clock(seconds: number): string {
 	const s = Math.floor(seconds);
 	const pad = (n: number) => String(n).padStart(2, "0");
 	return `${Math.floor(s / 3600)}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}`;
-}
-
-/**
- * A distance in the unit that makes it readable: kilometres up close, AU once
- * the kilometre figure has stopped meaning anything to a human.
- *
- * The switch is at 0.01 AU with three decimals on each side, which is a
- * continuous readout: 1.5·10⁶ km reads as "0.010 AU", and one AU-step is
- * 1.5·10⁵ km against a last km-step of 0.1 km. An earlier version switched at
- * 1e5 km — 0.00067 AU — where three AU decimals cannot resolve anything: every
- * distance from 10⁵ to 2.2·10⁵ km displayed as the same "0.001 AU".
- */
-const RANGE_AU_SWITCH_KM = 0.01 * AU_KM;
-
-function range(km: number): string {
-	return km < RANGE_AU_SWITCH_KM
-		? `${km.toFixed(1)} km`
-		: `${(km / AU_KM).toFixed(3)} AU`;
 }
 
 /**

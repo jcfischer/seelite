@@ -168,18 +168,6 @@ export interface NavFilter {
 /** The classes the panel offers as filter chips, in the order it shows them. */
 export const NAV_FILTER_KINDS = ["station", "planet", "star"] as const;
 
-/**
- * Moons are absent on purpose.
- *
- * `Game.selectable()` filters them out of the cycle order, and the cockpit's
- * `onSelectTarget` goes through that same list rather than through
- * `world.system.byId` — which does hold moons. So a moon row would be a row
- * that does nothing when clicked: a finding surface offering something the game
- * cannot find. The claim is only true while selection keeps going through
- * `selectable()`, which is why that call site says so.
- */
-const LISTABLE = new Set<string>(NAV_FILTER_KINDS);
-
 export interface NavProjectionOptions {
 	filter?: NavFilter;
 	/**
@@ -201,7 +189,6 @@ export function navFilterMatches(
 	body: Pick<NavBody, "id" | "kind">,
 	filter: NavFilter,
 ): boolean {
-	if (!LISTABLE.has(body.kind)) return false;
 	if (filter.kinds.length > 0 && !filter.kinds.includes(body.kind))
 		return false;
 	const query = filter.query.trim().toLowerCase();
@@ -209,8 +196,15 @@ export function navFilterMatches(
 }
 
 /**
- * The Navigation list: every selectable body that survives the filter, nearest
+ * The Navigation list: the bodies it is given that survive the filter, nearest
  * first.
+ *
+ * **What is selectable is the caller's rule, not this one's.** A second
+ * kind-listability set here would be a second owner of it, and the two would
+ * diverge the day a body kind is added: the row would vanish from the list while
+ * `T` still cycled to it, or worse, appear and do nothing when clicked. `Game`
+ * passes `selectable()` — the same list `cycleTarget` walks and `onSelectTarget`
+ * validates against — so there is one answer to "can this be targeted".
  *
  * Nearest first rather than the cycle order `selectable()` uses. The two answer
  * different questions — cycling wants a stable walk that does not reshuffle as

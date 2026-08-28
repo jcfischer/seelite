@@ -201,7 +201,8 @@ const el = <K extends keyof HTMLElementTagNameMap>(
 ): HTMLElementTagNameMap[K] => document.createElement(tag);
 
 export interface GalaxyChartOptions {
-	/** The element the chart draws into. It is emptied on `dispose`. */
+	/** The element the chart draws into. Its own root is removed from that
+	 *  element on `dispose`; anything else the host holds is untouched. */
 	host: HTMLElement;
 	worldSeed: number;
 	galaxyIndex: number;

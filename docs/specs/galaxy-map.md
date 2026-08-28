@@ -462,11 +462,15 @@ At desktop (1280 × 760) and narrow (390 × 844):
 
 The chart's *mount* rather than its projection, and the list beside it.
 
-1. **The list is the finding surface.** Every listable body in the system is
-   shown — counted against the kinds the panel's own filter chips name, not
-   against a restated `kind !== "moon"` denylist, which is a second copy of the
-   rule that a fourth body kind would put out of step. Rows are ordered by the
-   ranges the simulation holds for those same ids —
+1. **Every row is a body the game will let you select, and every one is
+   listed.** Compared against `Game.selectableIds()` — the list `cycleTarget`
+   walks and `onSelectTarget` validates against — and not against a rule the
+   probe restates. Two earlier versions restated it, first as a
+   `kind !== "moon"` denylist and then as the kinds read off the panel's own
+   filter chips; the second is worse, because both sides of the comparison then
+   derive from the projection and nothing binds either to selection. If the two
+   diverge, a row click is a silent no-op and no check fires. Rows are ordered
+   by the ranges the simulation holds for those same ids —
    read from `world.system.byId`, not from the row text, because a list that
    sorted its own output and then reported that output as sorted passes on a
    build with no sort at all. Clicking a row the game is **not** already on
@@ -477,7 +481,9 @@ The chart's *mount* rather than its projection, and the list beside it.
    strictly shorter than the unfiltered one. A query matching nothing renders an
    empty-state rather than falling back to everything. The assertion uses
    `includes`, because `navFilterMatches` matches anywhere in the id and a probe
-   asserting a prefix would go red on a correctly-listed mid-string match.
+   asserting a prefix would go red on a correctly-listed mid-string match. That
+   a distinguishing fragment was found is itself a check, so a seed where none
+   exists reports a skip rather than exiting green having tested nothing.
 3. **The chart stays inside the panel.** Measured on the **canvas**, not on the
    host element: the host is a grid cell the console laid out, so its box is
    inside the panel by construction and asserting on it is asserting the
@@ -490,9 +496,12 @@ The chart's *mount* rather than its projection, and the list beside it.
    leaves a second WebGL context and a 60 Hz loop behind the flight view for
    every visit to the map.
 5. **The simulation keeps running while the chart is open** — §1's no-pause
-   rule, asserted as two samples of `frames` compared. Written first as a
-   `waitForFunction` followed by `check(..., true)`, which reports a pass the
-   tally never evaluated and throws rather than failing when the wait expires.
+   rule, asserted as two samples of `frames` compared, the first taken **after**
+   the chart is up. Wrong twice before that. As a `waitForFunction` followed by
+   `check(..., true)` it reported a pass the tally never evaluated and threw
+   rather than failing when the wait expired; baselined before the click it was
+   satisfied by the frames rendered while the chunk loaded, so a chart that
+   froze the loop on mount still passed.
 
 ## 10. Deferred
 

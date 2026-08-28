@@ -88,15 +88,13 @@ const readList = () =>
 		return {
 			rows,
 			empty: document.querySelectorAll(".lc-nav-empty").length,
-			// **The module's own allowlist, read off the chips it renders.** A
-			// denylist here (`kind !== "moon"`) would be a second copy of the
-			// rule, and a fourth body kind would make the two disagree and turn
-			// this red without the list being wrong.
-			listableCount: game.world.system.bodies.filter((b) =>
-				[...document.querySelectorAll("[data-live-nav-kind]")]
-					.map((chip) => chip.dataset.liveNavKind)
-					.includes(b.kind),
-			).length,
+			// **The game's own answer to "can this be targeted".** Reading the
+			// kinds off the panel's filter chips instead compares the projection
+			// against a second copy of the projection's own rule — both sides
+			// move together, and nothing binds either to the `selectable()` that
+			// `cycleTarget` walks and `onSelectTarget` validates against. If
+			// those two ever diverge, a row click becomes a silent no-op.
+			selectableIds: game.selectableIds(),
 		};
 	});
 
@@ -107,9 +105,11 @@ await page.waitForFunction(
 
 const listed = await readList();
 check(
-	"the Navigation tab lists every selectable body in the system",
-	listed.rows.length === listed.listableCount && listed.rows.length > 1,
-	`${listed.rows.length} rows against ${listed.listableCount} listable`,
+	"every row is a body the game will actually let you select, and every one is listed",
+	listed.rows.length > 1 &&
+		listed.rows.length === listed.selectableIds.length &&
+		listed.rows.every((row) => listed.selectableIds.includes(row.id)),
+	`rows ${listed.rows.map((r) => r.id).join(",")} against selectable ${listed.selectableIds.join(",")}`,
 );
 check(
 	"rows are ordered by the simulation's own ranges, nearest first",
@@ -176,6 +176,10 @@ const distinctive = listed.rows.find((row) =>
 			!other.id.toLowerCase().includes(row.id.slice(0, 4).toLowerCase()),
 	),
 );
+check(
+	"some id fragment distinguishes one row from another",
+	Boolean(distinctive),
+);
 if (distinctive) {
 	const prefix = distinctive.id.slice(0, 4);
 	await type(prefix);
@@ -216,9 +220,13 @@ await page.evaluate(() => {
 
 // ---- The chart tab --------------------------------------------------------
 
-const framesBefore = await page.evaluate(() => window.__seelite.frames);
 await clickTab("Galaxy Map");
 await page.waitForFunction(() => Boolean(window.__seeliteGalaxyMap));
+// **Baselined after the mount, not before it.** Sampled before the click, the
+// frames rendered while the chunk loaded and the chart built already satisfy
+// the comparison, so a chart that froze the loop the moment it came up would
+// pass. What is being asserted is that the loop runs *with the chart open*.
+const framesBefore = await page.evaluate(() => window.__seelite.frames);
 
 const chart = await page.evaluate(() => {
 	const host = document.querySelector("[data-live-chart-host]");
