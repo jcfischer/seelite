@@ -135,7 +135,7 @@ describe("§3: the axis-alignment cue reads check 2's own angles", () => {
 	 * requires agreement everywhere outside a 1e-6° band, which is the width the
 	 * cosine comparison's own 1e-12 slack projects to.
 	 */
-	test("the cue's verdict agrees with check 2 across the sweep", () => {
+	test("the nose cue's verdict agrees with check 2 across the sweep", () => {
 		const frame = frameFor();
 		for (let deg = 0; deg <= 90; deg += 0.25) {
 			if (Math.abs(deg - AXIS_TOLERANCE_DEG) < 1e-6) continue;
@@ -143,6 +143,29 @@ describe("§3: the axis-alignment cue reads check 2's own angles", () => {
 			const pose = nominal(frame, { nose });
 			const e = evaluateEntry(frame, pose, { hostile: false });
 			const d = director(frame, pose);
+			expect(d.axis.position.within && d.axis.nose.within).toBe(
+				e.checks.axisAlignment,
+			);
+		}
+	});
+
+	/**
+	 * The position half needs its **own** sweep, and the first version of this
+	 * file did not have one: the sweep above holds `rel` nominal, so
+	 * `axis.position.within` is `true` at every step and the conjunction is
+	 * driven by the nose alone. A position cue bound to the wrong tolerance
+	 * passed the whole file.
+	 */
+	test("the position cue's verdict agrees with check 2 across its own sweep", () => {
+		const frame = frameFor();
+		const nominalRel = scale(frame.axis, frame.planeKm);
+		for (let deg = 0; deg <= 90; deg += 0.25) {
+			if (Math.abs(deg - AXIS_TOLERANCE_DEG) < 1e-6) continue;
+			const rel = rotate(nominalRel, PERP, deg * DEG);
+			const pose = nominal(frame, { rel });
+			const e = evaluateEntry(frame, pose, { hostile: false });
+			const d = director(frame, pose);
+			expect(d.axis.position.deg).toBe(e.positionAngleDeg);
 			expect(d.axis.position.within && d.axis.nose.within).toBe(
 				e.checks.axisAlignment,
 			);
@@ -180,6 +203,40 @@ describe("§3: the roll-match ring reads check 4's own angle", () => {
 		expect(d.roll?.within).toBe(false);
 		expect(d.roll?.deg).toBe(e.rollAngleDeg);
 		expect(d.aligned).toBe(false);
+	});
+
+	/**
+	 * Check 4 is unsigned by design — it compares against the axis *line* — and
+	 * an unsigned cue is a guess-and-widen loop for the pilot. These two rows
+	 * are why the director carries a signed roll beside it, and the first
+	 * asserts the two agree rather than assuming it.
+	 */
+	test("the signed roll has check 4's magnitude and the pose's direction", () => {
+		const frame = frameFor("trade");
+		for (const deg of [-40, -12, 0, 12, 40]) {
+			const up = rotate(slotBasis(frame).across, frame.axis, deg * DEG);
+			const pose = nominal(frame, { up });
+			const d = director(frame, pose);
+			expect(d.rollSignedDeg).toBeCloseTo(deg, 6);
+			expect(Math.abs(d.rollSignedDeg as number)).toBeCloseTo(
+				d.roll?.deg as number,
+				6,
+			);
+		}
+	});
+
+	test("the signed roll folds the long way round to the short one", () => {
+		const frame = frameFor("trade");
+		// 170° out is 10° out the other way: a slot is symmetric, and an
+		// instrument saying "roll 170°" sends the pilot around the houses.
+		const up = rotate(slotBasis(frame).across, frame.axis, 170 * DEG);
+		const d = director(frame, nominal(frame, { up }));
+		expect(d.rollSignedDeg).toBeCloseTo(-10, 6);
+	});
+
+	test("a pad carries no signed roll either", () => {
+		const frame = frameFor("refinery");
+		expect(director(frame, nominal(frame)).rollSignedDeg).toBeNull();
 	});
 
 	test("the ring's verdict agrees with check 4 across the sweep", () => {

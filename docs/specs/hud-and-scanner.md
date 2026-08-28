@@ -165,8 +165,8 @@ So the director is verified against `docking.ts` itself, in both tiers:
 
 | Where | What it holds |
 |---|---|
-| `tests/docking-director.test.ts` | Every angle the director reports is `evaluateEntry`'s, and the cue's verdict is swept against checks 2 and 4 across 0–90° at both tolerances. A director one degree looser than the gate turns both sweeps red. |
-| `scripts/probe-docking.mjs` | The funnel, the roll ring, the corridor bar and the clearance line reach the glass on a live approach; five degrees past the tolerance flips the cue and takes the axis marker out of the funnel; a pad draws no ring; hostility outranks a live grant; a head turn takes the director off the glass. |
+| `tests/docking-director.test.ts` | Every angle the director reports is `evaluateEntry`'s. Check 2's **two halves get two sweeps** — a sweep that rotates only the nose leaves the position cue constant, so it constrains the nose alone — and check 4 gets a third, each across 0–90° and each required to agree with the shipped check outside the 1e-6° band the cosine comparison's own slack projects to. A director looser than the gate by a degree fails them. |
+| `scripts/probe-docking.mjs` | The funnel, the axis marker, the roll ring, the corridor bar and the clearance line reach the glass on a live approach; five degrees past the tolerance flips the cue and takes the marker out of the funnel; the ring's ticks put the slot at the reference and the ship at its **signed** error, so ±58° paint differently; the corridor bar fills and fails as the ship leaves the axis; a pad draws no ring; hostility outranks a live grant; a head turn takes the director off the glass. |
 
 The browser rows read `directorRender`, which the **draw** writes rather than a
 computation beside it, so a build that produced a correct director and never

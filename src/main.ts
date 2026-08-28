@@ -475,9 +475,16 @@ interface DirectorRender {
 	funnelRadiusPx: number;
 	/** Where the inward docking axis projects, or `null` when it is behind. */
 	axisMarker: { x: number; y: number; onScreen: boolean } | null;
-	/** The two roll ticks, degrees clockwise from screen up, or `null` for a
-	 *  pad — which has no long axis to match. */
+	/**
+	 * The two roll ticks, degrees clockwise from screen up: the first is the
+	 * slot's own reference and the second is where the ship's up actually sits,
+	 * so the gap is the signed error and the pilot reads *which way* to roll.
+	 * `null` for a pad, which has no long axis to match.
+	 */
 	rollTicksDeg: [number, number] | null;
+	/** The corridor bar — check 2's position half, which is a translation task
+	 *  rather than a turn. Fraction of the tolerance drawn, and its verdict. */
+	corridor: { fill: number; within: boolean };
 	/** The clearance line as drawn, and whether it was drawn as blocking. */
 	clearanceText: string;
 	blocking: boolean;
@@ -3987,8 +3994,16 @@ class Game {
 		// read as one the pilot had failed.
 		let rollTicksDeg: [number, number] | null = null;
 		if (state.roll) {
-			const half = Number.isFinite(state.roll.deg) ? state.roll.deg / 2 : 90;
-			rollTicksDeg = [-half, half];
+			// The reference tick is the slot; the second is the ship. A symmetric
+			// pair about screen up was the first version and it was a tautology as
+			// well as a bad instrument: its gap was the roll error by construction,
+			// so a probe measuring the gap measured the draw's own arithmetic, and
+			// a +40° and a −40° roll painted identically.
+			const signed = state.rollSignedDeg;
+			rollTicksDeg = [
+				0,
+				Number.isFinite(signed ?? Number.NaN) ? (signed as number) : 90,
+			];
 			ctx.strokeStyle = state.roll.within
 				? "rgba(150, 255, 190, 0.8)"
 				: "rgba(255, 209, 122, 0.75)";
@@ -4008,7 +4023,12 @@ class Game {
 		const corridorY = cy + funnelRadiusPx * 1.34;
 		const barHalf = funnelRadiusPx * 0.9;
 		const corridor = state.axis.position;
-		const fill = Math.min(1, corridor.deg / corridor.toleranceDeg);
+		// A pose with no position angle to report is a pose fully outside the
+		// corridor, not one with no corridor: `NaN` reaching `lineTo` draws
+		// nothing, and a missing bar reads as a missing instrument.
+		const fill = Number.isFinite(corridor.deg)
+			? Math.min(1, corridor.deg / corridor.toleranceDeg)
+			: 1;
 		ctx.lineWidth = 3;
 		ctx.strokeStyle = "rgba(120, 190, 235, 0.3)";
 		ctx.beginPath();
@@ -4045,6 +4065,7 @@ class Game {
 			funnelRadiusPx,
 			axisMarker,
 			rollTicksDeg,
+			corridor: { fill, within: corridor.within },
 			clearanceText,
 			blocking: state.blocking !== null,
 		};

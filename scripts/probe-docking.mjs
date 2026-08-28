@@ -589,11 +589,16 @@ async function directorAt(setup) {
 				);
 			};
 
-			D.place(id, D.scale(snap.axis, snap.planeKm + setup.standoffKm), {
-				x: 0,
-				y: 0,
-				z: 0,
-			});
+			D.place(
+				id,
+				D.add(
+					D.scale(snap.axis, snap.planeKm + setup.standoffKm),
+					// The **unrolled** reference, for this file's existing reason: a
+					// lateral offset stated in the slot's own basis orbits the axis.
+					D.scale(snap.reference, setup.lateralKm ?? 0),
+				),
+				{ x: 0, y: 0, z: 0 },
+			);
 			g.targetId = id;
 			g.dockingComputerEngaged = false;
 			g.setHeadLook(setup.headLook ?? "forward");
@@ -653,6 +658,8 @@ async function directorAt(setup) {
 							noseToleranceDeg: drawn.state.axis.nose.toleranceDeg,
 							positionDeg: drawn.state.axis.position.deg,
 							rollDeg: drawn.state.roll?.deg ?? null,
+							rollSignedDeg: drawn.state.rollSignedDeg,
+							corridor: drawn.corridor,
 							rollWithin: drawn.state.roll?.within ?? null,
 							rollToleranceDeg: drawn.state.roll?.toleranceDeg ?? null,
 							grantRemainingS: drawn.state.grantRemainingS,
@@ -740,15 +747,46 @@ check(
 		Math.abs(misrolled.drawn.rollDeg - (rollDegOf + 8)) < 0.5,
 	`${inside.drawn?.rollDeg?.toFixed(2)}° then ${misrolled.drawn?.rollDeg?.toFixed(2)}° against ${rollDegOf}°`,
 );
+const counterRolled = await directorAt({
+	standoffKm: 3.2,
+	noseDeg: 0,
+	rollDeg: -(rollDegOf + 8),
+	clear: true,
+});
 check(
-	"the ring's two ticks straddle the reference by the measured roll error",
-	Array.isArray(misrolled.drawn?.rollTicksDeg) &&
-		Math.abs(
-			misrolled.drawn.rollTicksDeg[1] -
-				misrolled.drawn.rollTicksDeg[0] -
-				misrolled.drawn.rollDeg,
-		) < 1e-6,
-	JSON.stringify(misrolled.drawn?.rollTicksDeg ?? null),
+	// **Not the gap between the ticks.** The first version asserted
+	// `ticks[1] - ticks[0] === rollDeg`, which the draw satisfied by
+	// construction — it built the pair *from* that number. This ties the drawn
+	// tick to the pose the probe commanded, and it separates the two directions:
+	// the symmetric pair it replaced painted +58° and −58° identically.
+	"the ring's ticks put the slot at the reference and the ship at its signed error",
+	misrolled.drawn?.rollTicksDeg?.[0] === 0 &&
+		Math.abs(misrolled.drawn.rollTicksDeg[1] - (rollDegOf + 8)) < 0.5 &&
+		counterRolled.drawn?.rollTicksDeg?.[0] === 0 &&
+		Math.abs(counterRolled.drawn.rollTicksDeg[1] + (rollDegOf + 8)) < 0.5,
+	`${JSON.stringify(misrolled.drawn?.rollTicksDeg)} then ${JSON.stringify(
+		counterRolled.drawn?.rollTicksDeg,
+	)} for ±${rollDegOf + 8}°`,
+);
+
+const offAxis = await directorAt({
+	standoffKm: 3.2,
+	noseDeg: 0,
+	rollDeg: 0,
+	lateralKm: 3.4,
+	clear: true,
+});
+check(
+	// Check 2's position half is a translation task, so it reads as a bar rather
+	// than a second ring — and the bar has to move. On the axis it is empty and
+	// green; far enough off it, it is full and amber.
+	"the corridor bar fills and fails as the ship leaves the approach axis",
+	inside.drawn?.corridor?.within === true &&
+		inside.drawn.corridor.fill < 0.05 &&
+		offAxis.drawn?.corridor?.within === false &&
+		offAxis.drawn.corridor.fill === 1 &&
+		offAxis.drawn.positionDeg > AXIS_DEG,
+	`${inside.drawn?.corridor?.fill?.toFixed(3)} on axis, ${offAxis.drawn?.corridor?.fill} at ${offAxis.drawn?.positionDeg?.toFixed(1)}°`,
 );
 
 const pad = await directorAt({

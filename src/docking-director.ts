@@ -30,8 +30,9 @@ import {
 	type EntryPose,
 	evaluateEntry,
 	grantLive,
+	slotBasis,
 } from "./docking";
-import { type Vec3, length } from "./vec3";
+import { type Vec3, dot, length, scale, sub, v3 } from "./vec3";
 
 /** One measured angle against the tolerance the pilot is flying to. */
 export interface DirectorCue {
@@ -76,6 +77,21 @@ export interface DirectorState {
 	/** Check 4, or `null` for a pad: a square aperture has no long axis to
 	 *  match, and an empty ring would read as a failed one. */
 	roll: DirectorCue | null;
+	/**
+	 * The **signed** roll error, degrees, folded to (−90, 90]: positive is a
+	 * right-handed rotation of the ship's up about the outward axis away from
+	 * the slot's `across`.
+	 *
+	 * Check 4 is unsigned — it compares against the axis *line*, so a ship
+	 * rolled 180° is the identical entry — and that is right for a gate and
+	 * useless for an instrument. A cue with a magnitude and no direction tells
+	 * the pilot how wrong they are and not which way to correct, which is a
+	 * guess-and-widen loop rather than a director. `|rollSignedDeg|` equals
+	 * `roll.deg`, and the test asserts that rather than assuming it.
+	 *
+	 * `null` for a pad, and `NaN` where there is no roll to report.
+	 */
+	rollSignedDeg: number | null;
 	closing: { kms: number; gateKms: number; within: boolean };
 	/** Checks 2 and 4 as the evaluation reports them — the verdict is
 	 *  `docking.ts`'s, and the per-half booleans above only say what to paint. */
@@ -106,11 +122,15 @@ export function dockingDirector(input: {
 			position: cue(evaluation.positionAngleDeg, AXIS_TOLERANCE_DEG),
 			nose: cue(evaluation.noseAngleDeg, AXIS_TOLERANCE_DEG),
 		},
-		axisOut: frame.axis,
+		// A copy, not the frame's own vector. A consumer that scaled this in place
+		// would be editing the aperture frame every docking check reads.
+		axisOut: v3(frame.axis.x, frame.axis.y, frame.axis.z),
 		roll:
 			frame.aperture.kind === "slot"
 				? cue(evaluation.rollAngleDeg, ROLL_TOLERANCE_DEG)
 				: null,
+		rollSignedDeg:
+			frame.aperture.kind === "slot" ? signedRollDeg(frame, pose) : null,
 		closing: {
 			kms: evaluation.speedKms,
 			gateKms: V_GATE_KMS,
@@ -119,6 +139,32 @@ export function dockingDirector(input: {
 		aligned: evaluation.checks.axisAlignment && evaluation.checks.rollMatch,
 	};
 }
+
+/**
+ * The signed roll about the outward axis, folded to the same (−90, 90] the
+ * unsigned check works in — so `Math.abs` of this is check 4's own angle.
+ *
+ * Folded rather than reported over the full turn, because a slot is
+ * symmetric: a ship 170° out is 10° out the other way, and an instrument
+ * telling it to roll 170° would be sending the pilot the long way round.
+ */
+function signedRollDeg(frame: ApertureFrame, pose: EntryPose): number {
+	const axis = frame.axis;
+	const projected = sub(pose.up, scale(axis, dot(pose.up, axis)));
+	const norm = length(projected);
+	if (norm === 0) return Number.NaN;
+	const u = scale(projected, 1 / norm);
+	const { across } = slotBasis(frame);
+	const perpendicular = cross(axis, across);
+	const deg =
+		(Math.atan2(dot(u, perpendicular), dot(u, across)) * 180) / Math.PI;
+	if (deg > 90) return deg - 180;
+	if (deg <= -90) return deg + 180;
+	return deg;
+}
+
+const cross = (a: Vec3, b: Vec3): Vec3 =>
+	v3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
 
 /** `NaN` is outside every tolerance: a pose with no angle to report is not a
  *  pose that satisfies the check, and `NaN <= x` is already false. */
