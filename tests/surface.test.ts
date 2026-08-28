@@ -262,3 +262,61 @@ describe("the crease term reads a hull's own edges", () => {
 		expect(Math.max(...values)).toBe(1);
 	});
 });
+
+describe("a profile figure is a ceiling, not a value", () => {
+	test("a clean ship plate lands on #35's painted finish", () => {
+		/*
+		 * The check the contact sheet had to stand in for.
+		 *
+		 * `wearTexels` writes `roughness × (0.55 + 0.45 × wear)`, so the profile
+		 * figure is what the *seams* reach and never what the plate reads. The
+		 * first `SHIP_PLATING` put `makePalette`'s 0.50 and 0.30 into those slots,
+		 * which put a clean plate at roughness 0.35 — 30% smoother than the hull
+		 * had ever been. A smoother metal mirrors the baked star into a tighter
+		 * lobe, and the star-facing nacelle in `hull-chase` clipped to white and
+		 * spilled bloom under the hull.
+		 *
+		 * Nothing could see it: both figures were exactly the numbers
+		 * `ship-visuals.md` said the livery used, every buffer was the right
+		 * length, and every probe was green. What separates the two builds is the
+		 * value a clean plate actually carries, so that is what is asserted —
+		 * against the livery finish it has to reproduce, not against itself.
+		 */
+		const albedo = plateTexels(SHIP_PLATING, "ship");
+		const wear = wearTexels(SHIP_PLATING, albedo);
+		// The modal plate texel: the map is mostly clean plate, so the median of
+		// the roughness channel is the plate's own value rather than a seam's.
+		const median = (channel: number) => {
+			const values: number[] = [];
+			for (let i = 0; i < PLATE_TEXTURE_SIZE ** 2; i++)
+				values.push(wear[i * 4 + channel]);
+			values.sort((a, b) => a - b);
+			return values[Math.floor(values.length / 2)] / 255;
+		};
+		/*
+		 * Banded at 0.02, and the basis matters more than the number. One 8-bit
+		 * step is 0.0039, and the plate's own panel-to-panel variation is ±13 of
+		 * 255 before the wear curve compresses it — so a tighter band would be
+		 * asserting the quantisation and the noise rather than the finish.
+		 * Measured: 0.510 and 0.294. The build this catches read 0.35 and 0.22,
+		 * which is seven and four bands away.
+		 */
+		expect(Math.abs(median(1) - 0.5)).toBeLessThan(0.02);
+		expect(Math.abs(median(2) - 0.3)).toBeLessThan(0.02);
+	});
+
+	test("and a seam is rougher and less metallic than the plate it sits on", () => {
+		// The other direction, so the assertion above cannot be satisfied by a
+		// map that is one flat value: the whole reason for a wear map is that the
+		// seams differ from the plate.
+		const albedo = plateTexels(SHIP_PLATING, "ship");
+		const wear = wearTexels(SHIP_PLATING, albedo);
+		const { x: seams } = seamOffsets(SHIP_PLATING, PLATE_TEXTURE_SIZE);
+		const at = (x: number, y: number, channel: number) =>
+			wear[(y * PLATE_TEXTURE_SIZE + x) * 4 + channel] / 255;
+		const y = Math.floor((seams[0] + seams[1]) / 2);
+		const plateX = Math.floor((seams[0] + seams[1]) / 2);
+		expect(at(seams[1], y, 1)).toBeGreaterThan(at(plateX, y, 1));
+		expect(at(seams[1], y, 2)).toBeLessThan(at(plateX, y, 2));
+	});
+});

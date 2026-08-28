@@ -68,9 +68,21 @@ export const SHIP_PANEL_KM = 0.008;
  * - `weathering` 0.10 against 0.12–0.78. #98 refused the grime: hulls stay
  *   crisp built objects. It is not zero because a plate-to-plate variation that
  *   is *only* seams reads as a decal sheet.
- * - `roughness` 0.50 and `metalness` 0.30 are `makePalette`'s existing painted
- *   hull values, unchanged. This node gave the hull a surface; the livery and
- *   its finish are #35's and stay put.
+ * - `roughness` 0.72 and `metalness` 0.41 are **ceilings**, and that is the
+ *   whole of why they are not #35's 0.50 and 0.30. `wearTexels` writes
+ *   `roughness × (0.55 + 0.45 × wear)`, so a clean plate — `wear` 0.33 at the
+ *   authored plate value of 196 — lands at `0.72 × 0.698 = 0.50` and
+ *   `0.41 × 0.736 = 0.30`: #35's finish, exactly, with seams and streaks free to
+ *   go rougher and less metallic from there.
+ *
+ *   Putting 0.50 and 0.30 in these slots was the first version, and it is the
+ *   defect the contact sheet caught. A clean plate then came out at roughness
+ *   0.35 — 30% smoother than the hull had ever been — and a smoother metal
+ *   mirrors the baked star into a tighter lobe: the star-facing nacelle in
+ *   `hull-chase` clipped to white and spilled bloom under the hull. Nothing in
+ *   either test tier could see it, because both figures were exactly the
+ *   numbers the spec said to use. The ceiling semantics are the thing to read
+ *   twice.
  * - `seamDepth` 0.55 is the term the station has none of. Enough that a moving
  *   sun breaks across a seam, low enough that the line does not read as a
  *   trench — and, like the panel size, a number set in front of a frame.
@@ -79,8 +91,8 @@ export const SHIP_PLATING: PlatingProfile = {
 	pitchPx: 16,
 	seam: 0.18,
 	weathering: 0.1,
-	roughness: 0.5,
-	metalness: 0.3,
+	roughness: 0.72,
+	metalness: 0.41,
 	seamDepth: 0.55,
 };
 
