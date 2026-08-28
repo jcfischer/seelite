@@ -116,9 +116,15 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   thing in the game — stations, ship hulls, and the cockpit when #105 lands —
   from a `PlatingProfile` and a tag. It takes a profile and never a type, which
   is what stopped it being a station's. `hullLoft` writes UVs in **kilometres**,
-  so a consumer divides by its own panel size: `SHIP_PANEL_KM` 0.008 gives a 1 m
-  plate, `STATION_PANEL_KM` 0.15 gives 19 m. Multiply a normalised unwrap by a
-  count instead and a dreadnought and a tug get the same number of bands.
+  so a consumer divides by its own panel size: `SHIP_PANEL_KM` 0.008 gives a
+  1 m x 4 m plate, `STATION_PANEL_KM` 0.15 gives 19 m square. Multiply a
+  normalised unwrap by a count instead and a dreadnought and a tug get the same
+  number of bands.
+- **A square grid of plates reads as scales, not as metal.** The profile carries
+  the layout — `aspect`, `stagger`, `seamHalfWidthPx` — because all three were
+  once hardcoded to the tiling case and the surface was flown and rejected for
+  it. Plates are strips in a brick bond, and the groove is a scribed line: at a
+  quarter of the plate it bevels every edge and each one domes into a pillow.
 - **A hull's edge wear comes from the geometry, not from the map.** No texture
   knows where two plates meet; `hullLoft` writes a per-vertex `crease` attribute
   and `ship-surface.ts` patches it into `roughnessFactor`. A map term and a

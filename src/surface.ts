@@ -25,8 +25,56 @@
 
 /** What a generated plating map looks like, for one consumer. */
 export interface PlatingProfile {
-	/** Panel pitch, texels. Small is a tight civil hull; large is structural. */
+	/** Panel pitch **across** the map, texels. Small is a tight civil hull;
+	 *  large is structural. With `aspect` this is the plate's short side. */
 	pitchPx: number;
+	/**
+	 * How many times longer a plate is than it is wide, along the second axis.
+	 *
+	 * **1 is a square, and a square grid is what makes a surface read as scales
+	 * rather than as plating.** Rolled steel comes off the mill in long strips
+	 * and a hull is planked with them lengthwise; a wall of identical squares is
+	 * tiling, and the eye names it as such immediately.
+	 *
+	 * Rounded to a whole number of rows, because the map wraps: a row count that
+	 * does not divide the map leaves a truncated row at the seam whose boundary
+	 * doubles on the repeat. So the achieved aspect is `cols / round(cols /
+	 * aspect)` and not exactly this — at 8 columns, an asked-for 4 is exactly 4
+	 * and an asked-for 3 is also 4.
+	 */
+	aspect: number;
+	/**
+	 * How far alternate rows are offset, as a fraction of a plate's width.
+	 *
+	 * **0 leaves a continuous seam running the whole length of the hull**, in
+	 * both axes, which is the other half of what reads as tiling. Half a plate
+	 * is a brick bond and is what plating actually is.
+	 *
+	 * Only even row counts wrap cleanly: with an odd count the last row and the
+	 * first are both unshifted and sit adjacent on the repeat. Nothing enforces
+	 * that, because the visible cost is one doubled row in a tile nobody is
+	 * looking at edge-on.
+	 */
+	stagger: number;
+	/**
+	 * Half the width of the groove cut into the normal map, texels.
+	 *
+	 * **The single largest driver of the scale-like read.** At 2 against a
+	 * 16-texel pitch the bevel is a quarter of every plate on all four sides, so
+	 * each one domes into a pillow — a 25 cm chamfer on a 1 m plate, where a
+	 * real seam is millimetres. What a plate wants is a flat face and a scribed
+	 * line, which means the smallest groove the map's resolution allows and a
+	 * pitch wide enough in texels that it stays small.
+	 */
+	seamHalfWidthPx: number;
+	/**
+	 * Panel-to-panel brightness spread, 8-bit levels either side of the base.
+	 *
+	 * Large enough and every plate is its own tone, which is a patchwork rather
+	 * than one skin with lines scribed into it. It is the seam that says
+	 * "plating"; this only says the plates were not cut from one sheet.
+	 */
+	variation: number;
 	/** How far a seam darkens the plate beneath it, 0–1. */
 	seam: number;
 	/** How much vertical streaking the surface carries, 0–1. */
@@ -95,48 +143,82 @@ function streak(tag: string, x: number, scale: number): number {
 const clamp255 = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
 
 /**
- * How many whole panels the map carries across one axis.
+ * Where the plates are: **one definition, read by both maps.**
  *
- * **A whole number of panels.** The pitch is an authored intent in texels, but
- * the map wraps (`RepeatWrapping`), so a pitch that does not divide the size
- * leaves a truncated panel at the seam and its boundary doubles when the
- * texture repeats. Rounding to a count and deriving the boundaries from that
- * keeps the authored figure meaningful and the wrap clean.
+ * `plateTexels` darkens the seams and `seamNormalTexels` grooves them, and #36
+ * recorded what happens when two maps that must agree derive their geometry
+ * independently — a shine that misses its own seam. An embossed seam that
+ * misses its own painted one is that defect one channel over. So the layout is
+ * built once and handed to both, and neither recomputes any part of it.
+ *
+ * **A whole number of plates in each axis**, because the map wraps
+ * (`RepeatWrapping`): a pitch that does not divide the size leaves a truncated
+ * plate at the edge whose boundary doubles on the repeat.
+ *
+ * The stagger is what makes this two-dimensional rather than two independent
+ * axes. A plate's column depends on its row, so there is no list of boundary
+ * columns that describes the map — which is why this returns predicates and not
+ * the offsets an earlier version handed out.
  */
-export const panelCount = (profile: PlatingProfile, size: number) =>
-	Math.max(1, Math.round(size / profile.pitchPx));
-
-/**
- * Which texel columns a panel boundary falls on.
- *
- * **One boundary set, two maps.** `plateTexels` darkens these columns and
- * `seamNormalTexels` grooves them, and #36 recorded what happens when two maps
- * that must agree are each derived independently: a shine that misses its own
- * seam. An embossed seam that misses its own painted one is that defect one
- * channel over, so both read this.
- *
- * A texel is on a seam when the next texel — wrapping at the edge — belongs to
- * a different panel. That gives exactly `panelCount` boundaries in each axis
- * and puts one of them on the wrap, where it belongs. The two axes share the
- * rule, so the returned lists are equal; both are returned anyway, because a
- * caller reading one and assuming the other is how the rule stops holding.
- */
-export function seamOffsets(
+export function plateLayout(
 	profile: PlatingProfile,
 	size = PLATE_TEXTURE_SIZE,
 ) {
-	const panels = panelCount(profile, size);
-	const panelOf = (n: number) => Math.floor((n * panels) / size);
-	const at: number[] = [];
-	for (let n = 0; n < size; n++)
-		if (panelOf(n) !== panelOf((n + 1) % size)) at.push(n);
-	// `panelOf` rides along because `plateTexels` needs the panel a texel is in,
-	// not only the boundaries. Handing it back is what makes this the single
-	// definition rather than the first of two: the albedo used to recompute
-	// `Math.floor((n * panels) / size)` inline, so "the emboss cannot land
-	// anywhere but on a painted seam" was a claim about two copies agreeing, and
-	// a change to either would have desynced them with every check still green.
-	return { x: at, y: [...at], panelOf, panels };
+	const cols = Math.max(1, Math.round(size / profile.pitchPx));
+	const rows = Math.max(1, Math.round(cols / profile.aspect));
+	const width = size / cols;
+	const rowOf = (y: number) => Math.floor((y * rows) / size);
+	/** How far this row is pushed along, texels. Alternate rows only, so the
+	 *  pattern is a brick bond rather than a shear. */
+	const shiftOf = (row: number) => (row % 2) * profile.stagger * width;
+	const colOf = (x: number, row: number) =>
+		Math.floor((((x - shiftOf(row) + size) % size) * cols) / size);
+	/**
+	 * Signed distance to the nearest seam **centre**, in each axis.
+	 *
+	 * The centre is a boundary plus a half texel: a boundary lies *between* two
+	 * texels, so measuring from the texel itself puts one exactly at the bottom
+	 * of the groove, where its slope is undefined and has to be encoded as flat.
+	 * A flat column down the middle of every seam is the same defect a smoothed
+	 * profile has, and at these widths it is a third of the groove.
+	 */
+	const toSeam = (n: number, boundary: (m: number) => boolean) => {
+		let best = size;
+		for (let m = 0; m < size; m++) {
+			if (!boundary(m)) continue;
+			const raw = n - (m + 0.5);
+			const wrapped =
+				raw > size / 2 ? raw - size : raw < -size / 2 ? raw + size : raw;
+			if (Math.abs(wrapped) < Math.abs(best)) best = wrapped;
+		}
+		return best;
+	};
+	const seamAcross = (x: number, row: number) =>
+		colOf(x, row) !== colOf((x + 1) % size, row);
+	const seamAlong = (y: number) => rowOf(y) !== rowOf((y + 1) % size);
+	return {
+		cols,
+		rows,
+		width,
+		rowOf,
+		colOf,
+		/** Whether a texel sits on a seam in either axis — what the albedo
+		 *  darkens. */
+		onSeam: (x: number, y: number) => {
+			const row = rowOf(y);
+			return seamAcross(x, row) || seamAlong(y);
+		},
+		/** Distance to the nearest groove centre in each axis, for the normal
+		 *  map. Across depends on the row, which is the whole point of the
+		 *  stagger. */
+		distanceTo: (x: number, y: number) => {
+			const row = rowOf(y);
+			return {
+				across: toSeam(x, (m) => seamAcross(m, row)),
+				along: toSeam(y, seamAlong),
+			};
+		},
+	};
 }
 
 /**
@@ -156,11 +238,10 @@ export function plateTexels(
 	tag: string,
 	size = PLATE_TEXTURE_SIZE,
 ) {
-	const { seam, weathering } = profile;
+	const { seam, weathering, variation } = profile;
 	const out = new Uint8Array(size * size * 4);
-	// **The one boundary definition**, shared with `seamNormalTexels` — see
-	// `seamOffsets`.
-	const { panelOf } = seamOffsets(profile, size);
+	// **The one layout**, shared with `seamNormalTexels` — see `plateLayout`.
+	const layout = plateLayout(profile, size);
 	for (let y = 0; y < size; y++) {
 		for (let x = 0; x < size; x++) {
 			// Streaks run *down* the hull: the envelope varies with x and persists
@@ -168,14 +249,12 @@ export function plateTexels(
 			// horizontally instead and chops the finer streak below into segments,
 			// which reads as dirt in rows.
 			const grime = streak(`${tag}-grime`, x, 9) * weathering;
-			const plate = hash01(`${tag}-plate`, panelOf(x), panelOf(y));
+			const row = layout.rowOf(y);
+			const plate = hash01(`${tag}-plate`, layout.colOf(x, row), row);
 			// Panel-to-panel variation is small; the seam between them is what the
 			// eye reads as plating at all.
-			let v = 196 + (plate - 0.5) * 26;
-			const onSeam =
-				panelOf(x) !== panelOf((x + 1) % size) ||
-				panelOf(y) !== panelOf((y + 1) % size);
-			if (onSeam) v *= 1 - seam;
+			let v = 196 + (plate - 0.5) * 2 * variation;
+			if (layout.onSeam(x, y)) v *= 1 - seam;
 			// Weathering darkens rather than tints: a soot streak is missing light,
 			// and tinting it would break the greyscale contract above.
 			v *= 1 - grime * 0.55 * streak(`${tag}-run`, x, 5);
@@ -237,16 +316,6 @@ export function wearTexels(
 }
 
 /**
- * How many texels wide the groove either side of a boundary is.
- *
- * Not one texel. A one-texel step has a gradient on one side only, so it
- * encodes a *ramp* rather than a groove and the hull reads as tilted plates
- * rather than plates with a line between them. Two texels is the narrowest that
- * gives the central difference below something symmetric to read.
- */
-const SEAM_HALF_WIDTH_PX = 2;
-
-/**
  * The profile's seam normal map, RGBA, tangent space.
  *
  * #101's answer to *where do panel lines live*: in the normal, so a seam is lit
@@ -267,27 +336,8 @@ export function seamNormalTexels(
 	size = PLATE_TEXTURE_SIZE,
 ) {
 	const out = new Uint8Array(size * size * 4);
-	const { x: boundaries } = seamOffsets(profile, size);
-	/**
-	 * Signed distance from texel `n` to the centre of the nearest groove.
-	 *
-	 * The centre is `b + 0.5`, not `b`. A boundary lies *between* texel `b` and
-	 * texel `b + 1` — that is what `seamOffsets` means by it — so measuring from
-	 * `b` puts one texel exactly at the bottom of the V, where the slope is
-	 * undefined and this function would have to encode it as flat. A flat texel
-	 * down the middle of every seam is the same defect a smoothstep profile has,
-	 * and it would have shipped unnoticed: it is one column in four.
-	 */
-	const toSeam = (n: number) => {
-		let best = size;
-		for (const b of boundaries) {
-			const raw = n - (b + 0.5);
-			const wrapped =
-				raw > size / 2 ? raw - size : raw < -size / 2 ? raw + size : raw;
-			if (Math.abs(wrapped) < Math.abs(best)) best = wrapped;
-		}
-		return best;
-	};
+	const layout = plateLayout(profile, size);
+	const half = profile.seamHalfWidthPx;
 	/**
 	 * The groove's slope at a signed distance from its centre.
 	 *
@@ -300,23 +350,16 @@ export function seamNormalTexels(
 	 * difference taken across the centre reads the two opposite slopes and
 	 * cancels them to flat.
 	 */
-	const slope = (d: number) =>
-		Math.abs(d) >= SEAM_HALF_WIDTH_PX ? 0 : Math.sign(d) / SEAM_HALF_WIDTH_PX;
-	// One scan per column, not per texel: `toSeam` walks every boundary, and the
-	// answer depends on one coordinate. Inside the inner loop it ran size² times
-	// for size distinct answers, and the waste grows with the square of
-	// `PLATE_TEXTURE_SIZE`.
-	const distance = Array.from({ length: size }, (_, n) => toSeam(n));
+	const slope = (d: number) => (Math.abs(d) >= half ? 0 : Math.sign(d) / half);
 	for (let y = 0; y < size; y++) {
-		const dy = distance[y];
 		for (let x = 0; x < size; x++) {
-			const dx = distance[x];
-			// Each axis contributes its own groove independently, so a panel
+			const { across, along } = layout.distanceTo(x, y);
+			// Each axis contributes its own groove independently, so a plate
 			// corner is a pit rather than a crossing of two lines that cancel.
 			// `+depth × slope` and not `−`, because the groove goes *down*: the
 			// surface tilts towards the cut on each side.
-			const nx = profile.seamDepth * slope(dx);
-			const ny = profile.seamDepth * slope(dy);
+			const nx = profile.seamDepth * slope(across);
+			const ny = profile.seamDepth * slope(along);
 			// GL convention: +Y is up in the tangent frame, and Z is out of the
 			// surface. Normalised so the decoded vector is unit length, which is
 			// what three.js's `normal_fragment_maps` assumes of a normal map.

@@ -32,14 +32,15 @@ import { STATION_PANEL_KM } from "../src/station-mesh";
 import {
 	SHIP_PANEL_KM,
 	SHIP_PLATING,
+	SHIP_MAP_SIZE,
 	cleanPlateFactors,
 	plateUVs,
 } from "../src/ship-surface";
 import {
 	PLATE_TEXTURE_SIZE,
 	plateTexels,
+	plateLayout,
 	seamNormalTexels,
-	seamOffsets,
 	wearTexels,
 } from "../src/surface";
 import {
@@ -134,10 +135,29 @@ describe("every generated buffer is the length a DataTexture needs", () => {
 });
 
 describe("the seam normal map is in register with the painted seam", () => {
-	const size = PLATE_TEXTURE_SIZE;
-	const albedo = plateTexels(SHIP_PLATING, "ship");
-	const normals = seamNormalTexels(SHIP_PLATING);
-	const { x: seamX, y: seamY } = seamOffsets(SHIP_PLATING, size);
+	const size = SHIP_MAP_SIZE;
+	const albedo = plateTexels(SHIP_PLATING, "ship", size);
+	const normals = seamNormalTexels(SHIP_PLATING, size);
+	const layout = plateLayout(SHIP_PLATING, size);
+	/** The seam columns on one row. Per row and not per map, because the
+	 *  stagger moves them: that is the whole point of the bond. */
+	const seamsOn = (row: number) => {
+		const at: number[] = [];
+		for (let x = 0; x < size; x++)
+			if (layout.colOf(x, row) !== layout.colOf((x + 1) % size, row))
+				at.push(x);
+		return at;
+	};
+	/**
+	 * A row through the **middle** of a strake, so every dark column on it is an
+	 * across-seam and no texel on it is inside the along-groove.
+	 *
+	 * The first version took the first row that was not itself a boundary, which
+	 * was y = 0 — half a texel past the boundary at 255.5, and therefore inside
+	 * a groove one texel wide. "Not on a seam" and "not in the groove either
+	 * side of one" are different questions once the groove has a width.
+	 */
+	const cleanRow = Math.floor(size / layout.rows / 2);
 
 	test("the albedo darkens exactly the columns the normal map grooves", () => {
 		/*
@@ -154,26 +174,51 @@ describe("the seam normal map is in register with the painted seam", () => {
 		 */
 		const at = (buffer: Uint8Array, x: number, y: number, channel: number) =>
 			buffer[(y * size + x) * 4 + channel];
-		// A row through the middle of a panel, so the y boundaries do not darken
-		// it and every dark column on it is an x seam.
-		const row = Math.floor((seamY[0] + seamY[1]) / 2);
+		const row = cleanRow;
+		const expected = seamsOn(layout.rowOf(row));
 		const dark: number[] = [];
 		const grooved: number[] = [];
+		/*
+		 * The cut between "plate" and "seam", derived rather than guessed.
+		 *
+		 * A plate's value is 196 ± `variation`, and the grime then multiplies it
+		 * by at worst `1 - weathering × 0.55`. A seam multiplies the *lightest*
+		 * plate by `1 - seam`. The two bands have to be disjoint for a threshold
+		 * to mean anything, so that is asserted before one is used: the first
+		 * version cut at a fixed offset from 196 and picked up four grime texels
+		 * as seams.
+		 */
+		const darkestPlate =
+			(196 - SHIP_PLATING.variation) * (1 - SHIP_PLATING.weathering * 0.55);
+		const lightestSeam =
+			(196 + SHIP_PLATING.variation) * (1 - SHIP_PLATING.seam);
+		expect(lightestSeam).toBeLessThan(darkestPlate);
+		const cut = (darkestPlate + lightestSeam) / 2;
 		for (let x = 0; x < size; x++) {
-			// The plate value varies by ±13 about 196; a seam multiplies it by
-			// `1 - 0.18`, which is 35 levels. The cut is between the two.
-			if (at(albedo, x, row, 0) < 196 - 20) dark.push(x);
+			if (at(albedo, x, row, 0) < cut) dark.push(x);
 			// The centre of a groove is the one column pair where the encoded
 			// tilt flips sign, so a grooved column is any with a tilt at all.
 			if (Math.abs(at(normals, x, row, 0) - 128) > 4) grooved.push(x);
 		}
-		expect(dark.length).toBe(seamX.length);
-		expect(dark).toEqual(seamX);
-		// The groove is `SEAM_HALF_WIDTH_PX` wide either side, so it covers more
+		expect(dark).toEqual(expected);
+		// The groove is `seamHalfWidthPx` wide either side, so it covers more
 		// columns than the one the albedo darkens — but every darkened column
 		// must be inside it, which is what "in register" means.
 		expect(grooved.length).toBeGreaterThan(dark.length);
 		for (const x of dark) expect(grooved).toContain(x);
+	});
+
+	test("the stagger actually moves the seams between rows", () => {
+		// Without this, `aspect` and `stagger` could both be ignored and every
+		// assertion above would still pass on the aligned grid they replaced —
+		// which is the layout the principal called scales.
+		const rows = new Set<string>();
+		for (let row = 0; row < layout.rows; row++)
+			rows.add(seamsOn(row).join(","));
+		expect(layout.rows).toBeGreaterThan(1);
+		expect(rows.size).toBe(2);
+		// And a plate is longer than it is wide, which is the other half.
+		expect(layout.cols / layout.rows).toBeGreaterThanOrEqual(2);
 	});
 
 	test("a plate interior is flat and a seam is not", () => {
@@ -186,18 +231,27 @@ describe("the seam normal map is in register with the painted seam", () => {
 			];
 		};
 		// The texel furthest from any boundary in both axes.
-		const mid = (a: number, b: number) => Math.floor((a + b) / 2);
-		const flatX = mid(seamX[0], seamX[1]);
-		const flatY = mid(seamY[0], seamY[1]);
+		const seamX = seamsOn(layout.rowOf(cleanRow));
+		const flatX = Math.floor((seamX[0] + seamX[1]) / 2);
+		const flatY = cleanRow;
 		const [fx, fy] = decode(flatX, flatY);
 		expect(Math.abs(fx)).toBeLessThan(0.01);
 		expect(Math.abs(fy)).toBeLessThan(0.01);
 
-		// One texel to either side of a boundary the surface tilts, and the two
-		// sides tilt *opposite ways* — a groove, not a step. A map that emitted
-		// the same tilt on both sides would read as a ramp across the whole
-		// hull, and it would pass a magnitude-only assertion.
-		const before = decode((seamX[1] - 1 + size) % size, flatY)[0];
+		/*
+		 * The two texels **straddling** a groove centre tilt opposite ways — a
+		 * groove, not a step. A map that emitted the same tilt on both sides
+		 * would read as a ramp across the whole hull and would pass a
+		 * magnitude-only assertion.
+		 *
+		 * The centre sits between `seamX[1]` and the texel after it, so those are
+		 * the two. An earlier version took one texel *outside* the boundary on
+		 * each side, which was inside a two-texel groove and is outside a
+		 * one-texel one — the assertion silently depended on the groove being
+		 * wide, and narrowing it to stop the surface reading as scales is exactly
+		 * what broke it.
+		 */
+		const before = decode(seamX[1], flatY)[0];
 		const after = decode((seamX[1] + 1) % size, flatY)[0];
 		expect(Math.abs(before)).toBeGreaterThan(0.02);
 		expect(Math.abs(after)).toBeGreaterThan(0.02);
@@ -227,7 +281,7 @@ describe("the seam normal map is in register with the painted seam", () => {
 		// The station case, and the control for the assertions above: the same
 		// generator over the same boundaries, with the one term that makes it a
 		// surface set to zero.
-		const flat = seamNormalTexels({ ...SHIP_PLATING, seamDepth: 0 });
+		const flat = seamNormalTexels({ ...SHIP_PLATING, seamDepth: 0 }, size);
 		// One assertion, and the *first* offending texel rather than a count, so
 		// a failure names where the map stopped being flat.
 		let offender = -1;
@@ -248,9 +302,15 @@ describe("a plate is the same ruler on a ship and on a station", () => {
 		// `panelKm / panels across the map` and the two consumers differ by one
 		// constant rather than by a system. Written as arithmetic on the shipped
 		// figures so a change to either profile moves this line.
-		const plateM = (panelKm: number, pitchPx: number) =>
-			(panelKm / Math.round(PLATE_TEXTURE_SIZE / pitchPx)) * 1000;
-		expect(plateM(SHIP_PANEL_KM, SHIP_PLATING.pitchPx)).toBeCloseTo(1, 1);
+		const plateM = (panelKm: number, mapPx: number, pitchPx: number) =>
+			(panelKm / Math.round(mapPx / pitchPx)) * 1000;
+		const ship = plateLayout(SHIP_PLATING, SHIP_MAP_SIZE);
+		// One metre across and four along: a hull is planked lengthwise, and a
+		// square plate is what read as scales.
+		expect(
+			plateM(SHIP_PANEL_KM, SHIP_MAP_SIZE, SHIP_PLATING.pitchPx),
+		).toBeCloseTo(1, 1);
+		expect((SHIP_PANEL_KM / ship.rows) * 1000).toBeCloseTo(4, 1);
 		// `STATION_PANEL_KM` is **imported**, not restated. It was written as the
 		// literal 0.15 under a comment claiming a change to either profile would
 		// move this line — which was false in exactly the direction that matters:
@@ -258,7 +318,11 @@ describe("a plate is the same ruler on a ship and on a station", () => {
 		// plate while this test, and the "~19 m" in `ship-visuals.md` and
 		// `CLAUDE.md`, stayed green.
 		expect(
-			plateM(STATION_PANEL_KM, STATION_VISUALS.trade.plating.pitchPx),
+			plateM(
+				STATION_PANEL_KM,
+				PLATE_TEXTURE_SIZE,
+				STATION_VISUALS.trade.plating.pitchPx,
+			),
 		).toBeCloseTo(18.75, 1);
 	});
 });
@@ -498,10 +562,18 @@ describe("one wear map, four paints", () => {
 		// seams differ from the plate.
 		const albedo = plateTexels(SHIP_PLATING, "ship");
 		const wear = wearTexels(SHIP_PLATING, albedo);
-		const { x: seams } = seamOffsets(SHIP_PLATING, PLATE_TEXTURE_SIZE);
+		const size = SHIP_MAP_SIZE;
+		const layout = plateLayout(SHIP_PLATING, size);
 		const at = (x: number, y: number, channel: number) =>
-			wear[(y * PLATE_TEXTURE_SIZE + x) * 4 + channel] / 255;
-		const y = Math.floor((seams[0] + seams[1]) / 2);
+			wear[(y * size + x) * 4 + channel] / 255;
+		// A row and a seam column on it, plus a column in the middle of the
+		// plate beside it.
+		const y = 1;
+		const row = layout.rowOf(y);
+		const seams: number[] = [];
+		for (let x = 0; x < size; x++)
+			if (layout.colOf(x, row) !== layout.colOf((x + 1) % size, row))
+				seams.push(x);
 		const plateX = Math.floor((seams[0] + seams[1]) / 2);
 		expect(at(seams[1], y, 1)).toBeGreaterThan(at(plateX, y, 1));
 		expect(at(seams[1], y, 2)).toBeLessThan(at(plateX, y, 2));

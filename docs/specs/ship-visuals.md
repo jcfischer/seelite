@@ -233,8 +233,11 @@ What differs between the two consumers is one constant and one profile:
 
 | | station | ship |
 | --- | --- | --- |
+| map | 128 texels | 256 texels |
 | tile size | `STATION_PANEL_KM` 0.15 km | `SHIP_PANEL_KM` 0.008 km |
-| plate | ~19 m | ~1 m |
+| plate | ~19 m square | 1 m x 4 m |
+| bond | aligned grid | staggered half a plate |
+| groove | none (painted) | 1 texel of 32, ~6% |
 | seam | painted, 0.30–0.50 | cut, 0.18 painted + 0.55 in the normal |
 | weathering | 0.12–0.78 | 0.10 |
 | filtering | nearest | linear |
@@ -244,6 +247,26 @@ Nineteen metres on a 54 m courier puts three plates on the whole ship. One metre
 is a figure set by looking at a frame and nothing in this repo can check it —
 #104's finding, which applies to a plate more than to most numbers, because a
 plate is the **ruler** a pilot judges a hull's size against.
+
+**The layout is the other half, and the first version got it wrong.** Square
+plates on an aligned grid, with a groove two texels either side of a 16-texel
+pitch, was flown and called *scales*. Every failure was in the same direction —
+a wall of identical squares is tiling, and a quarter of every plate bevelled on
+all four sides domes each one into a pillow. A 25 cm chamfer on a one-metre
+plate, where a real seam is millimetres.
+
+What replaced it is what plating is: rolled strips, four times longer than they
+are wide, laid in a **brick bond** so no seam runs the length of the hull, with
+the seam a scribed line rather than a bevel. The map went to 256 texels for the
+groove alone — a seam has to be one or two texels, and that is only small if a
+plate is thirty-odd texels across. The stations kept the square grid: their
+plate is nineteen metres, read from kilometres away, and their look is #36's to
+change.
+
+The layout lives in the profile — `aspect`, `stagger`, `seamHalfWidthPx`,
+`variation` — so the station roles declare the grid they already had rather than
+inheriting it by default, and the four checksum pins prove those figures
+reproduce #36's buffers byte for byte.
 
 **Panel lines are cut, not painted.** That is the half the station system did
 not have. A darkened texel is a decal: it reads the same from every angle and a

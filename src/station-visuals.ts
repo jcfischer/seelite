@@ -163,6 +163,20 @@ export const STATION_VISUALS: Record<StationType, StationVisualProfile> = {
 			/** Painted seams, not cut ones (#101), for every role — see
 			 *  `PlatingProfile.seamDepth`, which carries the reason. */
 			seamDepth: 0,
+			/**
+			 * **The layout #36 shipped, now stated rather than defaulted.**
+			 * Square plates on an aligned grid, and a groove width that reaches
+			 * nothing because `seamDepth` is 0. #101 gave ships a staggered
+			 * rectangular bond because a square grid reads as scales; the
+			 * stations kept theirs, because how a station looks is a judgement
+			 * somebody has to make in front of a frame and nobody made it in
+			 * that node. `tests/surface.test.ts` pins all four buffers to prove
+			 * these figures reproduce it byte for byte.
+			 */
+			aspect: 1,
+			stagger: 0,
+			seamHalfWidthPx: 2,
+			variation: 13,
 		},
 		activity: {
 			strobePeriodS: 2,
@@ -189,6 +203,11 @@ export const STATION_VISUALS: Record<StationType, StationVisualProfile> = {
 			roughness: 0.72,
 			metalness: 0.5,
 			seamDepth: 0,
+			/** #36's layout, stated rather than defaulted — see `trade`. */
+			aspect: 1,
+			stagger: 0,
+			seamHalfWidthPx: 2,
+			variation: 13,
 		},
 		activity: {
 			strobePeriodS: 2,
@@ -215,6 +234,11 @@ export const STATION_VISUALS: Record<StationType, StationVisualProfile> = {
 			roughness: 0.9,
 			metalness: 0.14,
 			seamDepth: 0,
+			/** #36's layout, stated rather than defaulted — see `trade`. */
+			aspect: 1,
+			stagger: 0,
+			seamHalfWidthPx: 2,
+			variation: 13,
 		},
 		activity: {
 			// No strobes: the refinery does not spin, and a rotation marker on a
@@ -241,6 +265,11 @@ export const STATION_VISUALS: Record<StationType, StationVisualProfile> = {
 			roughness: 0.86,
 			metalness: 0.3,
 			seamDepth: 0,
+			/** #36's layout, stated rather than defaulted — see `trade`. */
+			aspect: 1,
+			stagger: 0,
+			seamHalfWidthPx: 2,
+			variation: 13,
 		},
 		activity: {
 			// No strobes: an outpost does not spin, and a rotation marker on

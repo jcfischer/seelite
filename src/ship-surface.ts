@@ -21,7 +21,6 @@ import * as THREE from "three";
 import { scaleUVs, setUvUnits, uvUnitsOf } from "./loft";
 import { type Splice, makeSplicer } from "./shader-splice";
 import {
-	PLATE_TEXTURE_SIZE,
 	type PlatingProfile,
 	plateTexels,
 	seamNormalTexels,
@@ -35,9 +34,9 @@ import {
  * `hullLoft` writes its UVs in **kilometres** — chord round the section,
  * distance along the sweep — so a consumer picks a panel *size* by dividing
  * rather than a panel *count* by multiplying. The map carries
- * `PLATE_TEXTURE_SIZE / pitchPx` panels across, so a plate is
- * `SHIP_PANEL_KM / that`: eight panels over 8 m of tile is a **one-metre
- * plate**.
+ * `SHIP_MAP_SIZE / pitchPx` plates across and `aspect` times fewer along, so a
+ * plate is `SHIP_PANEL_KM / 8` wide and four times that long: **one metre by
+ * four** over an 8 m tile.
  *
  * A station's is `STATION_PANEL_KM = 0.15`, a 19 m plate. Nineteen metres on a
  * 54 m courier would put three plates on the entire ship.
@@ -58,6 +57,21 @@ import {
 export const SHIP_PANEL_KM = 0.008;
 
 /**
+ * How large the hull's generated maps are, texels a side.
+ *
+ * Larger than the stations' 128, and the reason is the **groove**, not detail
+ * in general. A seam has to be a scribed line rather than a bevel, so it wants
+ * to be one or two texels; that is only a small fraction of a plate if a plate
+ * is thirty-odd texels across. At 128 with eight plates across, a plate is 16
+ * texels and the narrowest possible groove is still an eighth of it.
+ *
+ * Three buffers at 256 are 768 kB, generated once and shared by every hull in
+ * the game. The stations stay at 128: their plate is nineteen metres and read
+ * from kilometres away, and nothing about their seam wants to be finer.
+ */
+export const SHIP_MAP_SIZE = 256;
+
+/**
  * The one plating profile every hull shares.
  *
  * One, not eleven. `ship-mesh.ts` caches a palette per hull id and shares it
@@ -69,6 +83,21 @@ export const SHIP_PANEL_KM = 0.008;
  *
  * The figures against a station's, and why they differ:
  *
+ * - `pitchPx` 32 against a 256-texel map: **eight plates across, two rows
+ *   down**, so a plate is four times longer than it is wide. The first version
+ *   was an 8x8 square grid on a 128 map, and a wall of identical squares reads
+ *   as *scales* — which is what it was called the first time somebody flew it.
+ *   Rolled steel comes off the mill in strips and a hull is planked lengthwise.
+ * - `stagger` 0.5 — a brick bond. At zero, a seam runs the entire length of the
+ *   hull in both axes, and the eye names a grid before it names plating.
+ * - `seamHalfWidthPx` 1 against a 32-texel plate: a **6% groove**. It was 2
+ *   against a 16-texel plate, a quarter of every plate bevelled on all four
+ *   sides — a 25 cm chamfer on a one-metre plate, where a real seam is
+ *   millimetres. That domed every plate into a pillow, and it was the single
+ *   largest reason the surface read as scales rather than as sheet.
+ * - `variation` 6 against the stations' 13. Half the spread, because a hull is
+ *   painted after it is planked: the plates should read as one skin with lines
+ *   scribed into it, not as a patchwork of tones.
  * - `seam` 0.18 against the trade station's 0.30. The station's seam is the
  *   whole of its panel line; a hull's line is mostly **cut** rather than
  *   painted, so the albedo carries the shadow in the groove and no more.
@@ -97,7 +126,11 @@ export const SHIP_PANEL_KM = 0.008;
  *   trench — and, like the panel size, a number set in front of a frame.
  */
 export const SHIP_PLATING: PlatingProfile = {
-	pitchPx: 16,
+	pitchPx: 32,
+	aspect: 4,
+	stagger: 0.5,
+	seamHalfWidthPx: 1,
+	variation: 6,
 	seam: 0.18,
 	weathering: 0.1,
 	roughness: 1,
@@ -141,12 +174,12 @@ function hullMaps() {
 	// Generated once and handed to both: `wearTexels` derives its wear from the
 	// albedo, so regenerating would run the plating loop twice and leave two
 	// buffers that only happen to agree.
-	const plate = plateTexels(SHIP_PLATING, "ship");
+	const plate = plateTexels(SHIP_PLATING, "ship", SHIP_MAP_SIZE);
 	const texture = (data: Uint8Array<ArrayBuffer>, srgb: boolean) => {
 		const map = new THREE.DataTexture(
 			data,
-			PLATE_TEXTURE_SIZE,
-			PLATE_TEXTURE_SIZE,
+			SHIP_MAP_SIZE,
+			SHIP_MAP_SIZE,
 			THREE.RGBAFormat,
 		);
 		// **sRGB on the albedo, linear on everything else.** three.js reads a
@@ -161,10 +194,10 @@ function hullMaps() {
 		map.needsUpdate = true;
 		return map;
 	};
-	const wearBytes = wearTexels(SHIP_PLATING, plate);
+	const wearBytes = wearTexels(SHIP_PLATING, plate, SHIP_MAP_SIZE);
 	const albedo = texture(plate, true);
 	const wear = texture(wearBytes, false);
-	const seams = texture(seamNormalTexels(SHIP_PLATING), false);
+	const seams = texture(seamNormalTexels(SHIP_PLATING, SHIP_MAP_SIZE), false);
 	// **Linear on the hull, nearest on the station.** A station's plating is
 	// read at a few hundred pixels and its seams are meant to stay seams; a
 	// hull's are a metre apart on an object the player parks next to, where
