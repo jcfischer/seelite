@@ -43,11 +43,12 @@
  * rule for the same reason it exempts `shot-ships.mjs`.
  */
 import { execFileSync } from "node:child_process";
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
 	GAME_TIME_S,
 	SEED,
+	SHOT_KINDS,
 	VIEWPORT,
 	VIEWS,
 	contactSheet,
@@ -118,21 +119,30 @@ await guardedOrigin(ORIGIN, [
 const browser = await launchChromium({ headless: false });
 const page = await browser.newPage({ viewport: VIEWPORT });
 
-// A shader that fails to link is reported through `console.error` and the scene
-// carries on drawing something. Here that would be a sheet of plausible frames
-// of the wrong build, so it is fatal rather than counted.
+/**
+ * A page fault seen at any point in the run, or null.
+ *
+ * A shader that fails to link is reported through `console.error` and the scene
+ * carries on drawing *something*, so a capture over a broken build produces
+ * seven plausible frames and a complete-looking sheet. The first version of this
+ * set `process.exitCode = 1` and kept going, which is the same failure the
+ * header refuses a software rasteriser over: an exit code above a folder of PNGs
+ * is a warning nobody reads once the images are open. So it is recorded here and
+ * the run is stopped before the manifest or the sheet is written.
+ */
+let fault = null;
+const faulted = (what) => {
+	if (!fault) fault = what;
+	console.error(`\n  ${what}`);
+};
 page.on("console", (m) => {
 	if (m.type() !== "error") return;
 	if (!/shader|glsl|link status|validate_status/i.test(m.text())) return;
-	console.error(
-		`\n  shader error — the sheet would be of a broken build:\n  ${m.text().slice(0, 400)}`,
+	faulted(
+		`shader error — the sheet would be of a broken build: ${m.text().slice(0, 400)}`,
 	);
-	process.exitCode = 1;
 });
-page.on("pageerror", (e) => {
-	console.error(`\n  page error: ${e.message}`);
-	process.exitCode = 1;
-});
+page.on("pageerror", (e) => faulted(`page error: ${e.message}`));
 
 await installViewPlacement(page);
 await page.goto(`${ORIGIN}/?seed=${SEED}`, { waitUntil: "load" });
@@ -141,34 +151,77 @@ await bootedGame(page);
 // is that the camera is placed co-moving with its subject, not that time stops.
 await page.evaluate((t) => window.__startClockAt(t), GAME_TIME_S);
 
-const renderer = await page.evaluate(() => {
+/**
+ * The renderer, and a refusal unless it can be *shown* to be the player's.
+ *
+ * Two ways to fail, and both are refusals rather than warnings. A name matching
+ * a known software rasteriser is the obvious one. The other is subtler and was
+ * a real hole: without `WEBGL_debug_renderer_info` the only readable name is the
+ * generic `gl.RENDERER`, which on a masked or unlisted software stack says
+ * nothing and passes a substring test. A name-match cannot prove hardware, so an
+ * unreadable name is treated as unproven and refused — the whole point of this
+ * script is that the principal is looking at the renderer they fly.
+ */
+const gpu = await page.evaluate(() => {
 	const gl = window.__seelite.renderer.getContext();
 	const ext = gl.getExtension("WEBGL_debug_renderer_info");
-	return ext
-		? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)
-		: gl.getParameter(gl.RENDERER);
+	return {
+		unmasked: ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : null,
+		generic: gl.getParameter(gl.RENDERER),
+	};
 });
-if (SOFTWARE.test(renderer)) {
+const renderer = gpu.unmasked ?? gpu.generic;
+const refusal = !gpu.unmasked
+	? `cannot read the real renderer — WEBGL_debug_renderer_info is unavailable, and "${gpu.generic}" does not say what is drawing`
+	: SOFTWARE.test(renderer)
+		? `this is a software rasteriser (${renderer})`
+		: null;
+if (refusal) {
 	await browser.close();
 	throw new Error(
-		`refusing to capture through a software rasteriser (${renderer}).\n` +
-			"The sheet is judged by eye, and this is not the renderer the player gets —\n" +
-			"bloom, tone mapping and mip-sampled surfaces all differ from ANGLE Metal.\n" +
-			"Run this on a machine with a display; there is deliberately no headless mode.",
+		`refusing to capture: ${refusal}.\n` +
+			"The sheet is judged by eye, and a frame from anything but the player's\n" +
+			"renderer is the wrong picture — bloom, tone mapping and mip-sampled\n" +
+			"surfaces all differ from ANGLE Metal. Run this on a machine with a\n" +
+			"display; there is deliberately no headless mode.",
 	);
 }
 
 /** Put the game in a view. Through the key, not the field, so the transition the
  *  game runs on a real toggle runs here too — `v` also resets head-look. */
+/**
+ * Put the game in a view, through the key rather than the field.
+ *
+ * `v` runs the transition the game runs on a real toggle — it also resets
+ * head-look — and assigning `game.view` would skip it. Bounded rather than a
+ * single press: `v` cycles, and a third view arriving later would turn a wrong
+ * frame into a `waitForFunction` timeout, which reads as a hung browser and not
+ * as the one-line cause it is.
+ */
+const VIEW_CYCLE_LIMIT = 8;
 async function setView(want) {
-	const now = await page.evaluate(() => window.__seelite.view);
-	if (now === want) return;
-	await page.keyboard.press("v");
-	await page.waitForFunction((w) => window.__seelite.view === w, want);
+	for (let i = 0; i <= VIEW_CYCLE_LIMIT; i++) {
+		if ((await page.evaluate(() => window.__seelite.view)) === want) return;
+		await page.keyboard.press("v");
+		await page.waitForTimeout(30);
+	}
+	throw new Error(
+		`the view cycle never reached "${want}" in ${VIEW_CYCLE_LIMIT} presses of v — ` +
+			"the view set names a view the game does not have",
+	);
 }
 
-async function place(shot) {
-	if (shot.kind === "station-axis") {
+/**
+ * One placer per shot kind, keyed by the kind.
+ *
+ * A table rather than an if-chain because `SHOT_KINDS` already enumerates the
+ * same three names one module away, and two hand-kept lists of the same thing
+ * drift. `tests/view-set.test.ts` cannot see this file, so `assertPlacersCover`
+ * below closes the loop at run time instead — the check is cheap and it fires
+ * before a single browser page is opened.
+ */
+const PLACERS = {
+	"station-axis": async (shot) => {
 		const id = `station-${shot.station}`;
 		await page.evaluate(
 			async ([bodyId, radii]) =>
@@ -178,8 +231,8 @@ async function place(shot) {
 			[id, shot.radii],
 		);
 		return id;
-	}
-	if (shot.kind === "body-offset") {
+	},
+	"body-offset": async (shot) => {
 		const id = await page.evaluate((name) => {
 			if (name !== "largest-planet") return name;
 			const planets = window.__seelite.world.system.bodies.filter(
@@ -196,8 +249,8 @@ async function place(shot) {
 			[id, shot.radii, shot.sunAngleDeg],
 		);
 		return id;
-	}
-	if (shot.kind === "deep-sky") {
+	},
+	"deep-sky": async () => {
 		await page.evaluate(async () => {
 			const g = window.__seelite;
 			const d = window.__emptiestDirection();
@@ -209,9 +262,25 @@ async function place(shot) {
 			});
 		});
 		return "empty sky";
-	}
-	throw new Error(`unknown shot kind: ${shot.kind}`);
+	},
+};
+
+/** Both directions: a declared kind with no placer, and a placer nothing declares. */
+function assertPlacersCover() {
+	const declared = new Set(SHOT_KINDS);
+	const built = new Set(Object.keys(PLACERS));
+	const missing = [...declared].filter((k) => !built.has(k));
+	const extra = [...built].filter((k) => !declared.has(k));
+	if (missing.length || extra.length)
+		throw new Error(
+			`shot kinds and placers disagree — ` +
+				`${missing.length ? `no placer for ${missing.join(", ")}; ` : ""}` +
+				`${extra.length ? `no SHOT_KINDS entry for ${extra.join(", ")}` : ""}`,
+		);
 }
+assertPlacersCover();
+
+const place = (shot) => PLACERS[shot.kind](shot);
 
 const dir = join(OUT, LABEL);
 await mkdir(dir, { recursive: true });
@@ -232,14 +301,27 @@ for (const view of VIEWS) {
 			}),
 	);
 	const file = `${LABEL}/${view.name}.png`;
+	// Read at the shutter, not at the top of the run: the clock is normalised and
+	// then left to run, so each frame has its own. The sheet prints the span,
+	// because a caption claiming a fixture property the frames do not have is
+	// the one lie the gate cannot survive.
+	const gameTime = await page.evaluate(() => window.__seelite.world.gameTime);
 	await page.screenshot({ path: join(OUT, file) });
-	captured.push({ name: view.name, file, subject });
+	captured.push({ name: view.name, file, subject, gameTime });
 	console.log(
 		`  ${view.name.padEnd(20)} ${view.shot.view.padEnd(8)} ${subject}`,
 	);
 }
 
 await browser.close();
+
+// Before anything is written. A page fault means every frame above is of a build
+// that did not link, and the whole point of this script is that what lands on
+// disk is what the principal is asked to say yes to.
+if (fault)
+	throw new Error(
+		`the page faulted during capture, so nothing was written: ${fault}`,
+	);
 
 const manifest = {
 	label: LABEL,
@@ -255,30 +337,43 @@ await writeFile(
 );
 
 /**
- * Every run present in the output directory, newest last.
+ * Rebuild the sheet from every run on disk, oldest first.
  *
- * The sheet is rebuilt from what is on disk rather than from this run alone, so
- * capturing an `after` beside an existing `before` produces the pair without
- * either capture knowing about the other.
+ * From disk rather than from this run alone, so capturing an `after` beside an
+ * existing `before` produces the pair without either capture knowing about the
+ * other. Ordered by `capturedAt` and not by directory name: the labels are
+ * git refs by default, whose alphabetical order is meaningless, and even the
+ * documented `before`/`after` pair sorts the wrong way round by name.
+ *
+ * **The stale sheet is removed before the new one is built.** `contactSheet`
+ * throws on a run missing a view, and a throw that leaves the previous complete
+ * `index.html` in place hands the reviewer a whole-looking sheet of an older
+ * capture — which is the exact failure the throw exists to prevent, one step
+ * further along.
  */
-const runs = [];
-for (const entry of (await readdir(OUT, { withFileTypes: true })).sort(
-	(a, b) => (a.name < b.name ? -1 : 1),
-)) {
-	if (!entry.isDirectory()) continue;
-	try {
-		runs.push(
-			JSON.parse(
-				await readFile(join(OUT, entry.name, "manifest.json"), "utf8"),
-			),
-		);
-	} catch {
-		// A directory with no manifest is not a run — someone's scratch folder, or
-		// a capture that died before it wrote one. Skipping it is right; failing
-		// on it would make an unrelated folder break the sheet.
+async function rebuildSheet(out) {
+	const runs = [];
+	for (const entry of await readdir(out, { withFileTypes: true })) {
+		if (!entry.isDirectory()) continue;
+		try {
+			runs.push(
+				JSON.parse(
+					await readFile(join(out, entry.name, "manifest.json"), "utf8"),
+				),
+			);
+		} catch {
+			// A directory with no manifest is not a run — someone's scratch folder,
+			// or a capture that died before it wrote one. Skipping it is right;
+			// failing on it would make an unrelated folder break the sheet.
+		}
 	}
+	runs.sort((a, b) => (a.capturedAt < b.capturedAt ? -1 : 1));
+	await rm(join(out, "index.html"), { force: true });
+	await writeFile(join(out, "index.html"), contactSheet(runs));
+	return runs;
 }
-await writeFile(join(OUT, "index.html"), contactSheet(runs));
+
+const runs = await rebuildSheet(OUT);
 
 console.log(
 	`\n  ${captured.length} views → ${dir}\n  renderer: ${renderer}\n  sheet: ${join(OUT, "index.html")} (${runs.length} run${runs.length === 1 ? "" : "s"})`,

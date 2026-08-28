@@ -587,10 +587,21 @@ export async function installViewPlacement(page) {
 		window.__bodyById = (id) =>
 			window.__seelite.world.system.bodies.find((b) => b.id === id) ?? null;
 
+		/**
+		 * The radius a subject's framing is measured in.
+		 *
+		 * Throws on an unknown id rather than returning null, because every caller
+		 * multiplies the result by a radii count: a null becomes NaN, the ship is
+		 * placed at NaN, and the shot is silently garbage instead of an error
+		 * naming the id that was mistyped.
+		 */
 		window.__radiusOf = (id) => {
 			const g = window.__seelite;
 			const body = window.__bodyById(id);
-			if (!body) return null;
+			if (!body)
+				throw new Error(
+					`__radiusOf: no body "${id}" in this system — the view set names a subject the seed does not have`,
+				);
 			return body.kind === "station"
 				? g.visualOfStation(id).silhouetteKm
 				: body.radiusKm;

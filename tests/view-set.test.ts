@@ -29,13 +29,27 @@ import {
 } from "../scripts/lib/view-set.mjs";
 
 /** A manifest as `capture-views.mjs` writes one, for a run that captured everything. */
-const fullRun = (label: string) => ({
+type ViewShot = { name: string; file: string; gameTime?: number };
+const fullRun = (
+	label: string,
+): {
+	label: string;
+	gitRef: string;
+	capturedAt: string;
+	renderer: string;
+	seed: number;
+	views: ViewShot[];
+} => ({
 	label,
 	gitRef: "abc1234",
 	capturedAt: "2026-08-28T12:00:00.000Z",
 	renderer: "ANGLE (Apple, Apple M1 Pro, OpenGL 4.1)",
 	seed: SEED,
-	views: VIEWS.map((v) => ({ name: v.name, file: `${label}/${v.name}.png` })),
+	views: VIEWS.map((v, i) => ({
+		name: v.name,
+		file: `${label}/${v.name}.png`,
+		gameTime: 0.6 + i * 0.4,
+	})),
 });
 
 describe("the view set itself", () => {
@@ -99,6 +113,27 @@ describe("the contact sheet", () => {
 		const html = contactSheet([fullRun("before")]);
 		expect(html).toContain("abc1234");
 		expect(html).toContain("Apple M1 Pro");
+	});
+
+	/**
+	 * The caption is the one place the sheet asserts a fixture property to the
+	 * person whose yes is the gate, so it has to be true of the frames above it.
+	 * It said "clock pinned at 0s" while `__startClockAt` normalises the start and
+	 * lets the clock run — seven frames at seven different times. It now prints
+	 * the span the frames were actually taken across.
+	 */
+	test("prints the clock span the frames were taken across, not a pinned time", () => {
+		const html = contactSheet([fullRun("before")]);
+		expect(html).toContain("· clock 0.6–3.0s");
+		expect(html).not.toContain("pinned");
+	});
+
+	test("omits the span for a run whose views carry no clock", () => {
+		const old = fullRun("before");
+		old.views = old.views.map(({ name, file }) => ({ name, file }));
+		const html = contactSheet([old]);
+		expect(html).toContain("abc1234");
+		expect(html).not.toContain("· clock ");
 	});
 
 	/**

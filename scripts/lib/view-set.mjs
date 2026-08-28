@@ -182,6 +182,13 @@ export const VIEWS = Object.freeze([
 /**
  * Levers no view claims, in map order.
  *
+ * **What this cannot check**, said here because the assertion reads stronger
+ * than it is: both sides are hand-kept in this file, so a seventh lever added to
+ * the map and never added to `LEVERS` passes green. And `covers` records an
+ * intention — that a number was typed — not that the view shows that surface.
+ * The second half is a person's job by construction: it is the same judgement
+ * #98 made the gate, and there is no check that stands in for it.
+ *
  * Returns ids rather than names so a caller can print either, and so the test
  * asserting the empty case can also assert the populated one exactly.
  *
@@ -241,10 +248,24 @@ export function contactSheet(runs) {
 	}
 
 	const fileIn = (run, name) => run.views.find((v) => v.name === name).file;
+	/**
+	 * The world clock the run's frames were actually taken at.
+	 *
+	 * Printed because the caption used to say "clock pinned at 0s" and that was
+	 * false: `__startClockAt` normalises the start and then lets the clock run, so
+	 * the seven frames are at seven different times. The sheet is what the
+	 * principal's yes is given against, and a fixture property asserted to them
+	 * has to be one the frames above it actually have.
+	 */
+	const clockSpan = (run) => {
+		const times = run.views.map((v) => v.gameTime).filter((t) => t != null);
+		if (!times.length) return "";
+		return ` · clock ${Math.min(...times).toFixed(1)}–${Math.max(...times).toFixed(1)}s`;
+	};
 	const head = runs
 		.map(
 			(r) =>
-				`<th><b>${esc(r.label)}</b><span>${esc(r.gitRef)} · ${esc(r.renderer)}</span></th>`,
+				`<th><b>${esc(r.label)}</b><span>${esc(r.gitRef)} · ${esc(r.renderer)}${esc(clockSpan(r))}</span></th>`,
 		)
 		.join("");
 	const rows = VIEWS.map(
@@ -282,7 +303,7 @@ ${runs
   img { display:block; width:100%; height:auto; background:#000; border:1px solid #1c2230; }
 </style>
 <h1>Canonical view set</h1>
-<p class="sub">Seed ${SEED}, clock pinned at ${GAME_TIME_S}s, ${VIEWPORT.width}×${VIEWPORT.height}. Captured headed — every frame here is the renderer the player gets.</p>
+<p class="sub">Seed ${SEED}, ${VIEWPORT.width}×${VIEWPORT.height}, clock started at ${GAME_TIME_S}s and left running. Captured headed — every frame here is the renderer the player gets. Each camera is placed co-moving with its subject, which is what holds a framing; the clock is not stopped.</p>
 <table>
 <thead><tr><th scope="row"></th>${head}</tr></thead>
 <tbody>

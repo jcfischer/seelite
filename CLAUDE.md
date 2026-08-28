@@ -59,11 +59,12 @@ npm run views -- --label after       # again, with the change
 open view-set/index.html             # the contact sheet, side by side
 ```
 
-Seven views on a fixed seed and a fixed camera, declared in
-`scripts/lib/view-set.mjs` — every lever charted under #98 has at least one view
-where its surface is the subject, and `tests/view-set.test.ts` fails if one does
-not. A run that drops a view refuses to build a sheet at all, because a sheet
-with a hole in it reads exactly like a whole one.
+Seven views on a fixed seed, declared in `scripts/lib/view-set.mjs` — each names
+the levers it is evidence for, and `tests/view-set.test.ts` goes red if a lever
+in that file has no view. It cannot check that the view *shows* the surface, nor
+that a lever added to the map reached the file; both are a person's job, which
+is the point. A run that drops a view refuses to build a sheet at all, because a
+sheet with a hole in it reads exactly like a whole one.
 
 **Capture is headed, and refuses to run otherwise.** Every other browser script
 here renders through SwiftShader; for an image judged by eye that is the wrong
