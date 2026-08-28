@@ -442,19 +442,21 @@ const shieldInk = (id, which) =>
 	page.evaluate(
 		([stationId, part]) => {
 			const g = window.__seelite;
-			// **One plate or both, because the two rows are different claims.** The
-			// approach row is about the shield at the mouth; the arrival row is about
-			// the one inside the throat, and hiding both would let the mouth plate's
-			// ink stand in for an interior plate that was never drawn. The plates
-			// come back from the mesh in build order — mouth first, interior second
-			// (`buildNameplates`) — so "interior" is the tail.
-			const mesh = window.__meshOfBody(stationId);
-			const plates = [];
-			mesh.traverse((o) => {
-				if (o.name === "station-nameplate") plates.push(o);
-			});
-			const chosen =
-				part === "interior" ? plates.slice(1) : part === "mouth" ? plates : [];
+			// **Through the game's own accessor**, not a traversal of this file's
+			// own. `nameplatesOfStation` returns the list `station-mesh.ts` collected
+			// at build; a `traverse` here would be a second spelling of "which
+			// objects are the shields", and the day the name changes one of them goes
+			// quietly green.
+			//
+			// They come back in build order — mouth first, interior second
+			// (`buildNameplates`) — which is what `part` indexes into.
+			const plates = g.nameplatesOfStation(stationId);
+			// **One plate each, never both.** The argument runs in both directions:
+			// hiding both for the interior row would let the mouth plate's ink stand
+			// in for an interior plate that was never drawn, and hiding both for the
+			// mouth row would let the interior plate — visible straight down the
+			// aperture — stand in for a mouth plate that was never textured.
+			const chosen = part === "interior" ? plates.slice(1) : plates.slice(0, 1);
 			const { changed } = window.__inkDelta(
 				() => {
 					for (const p of chosen) p.visible = false;

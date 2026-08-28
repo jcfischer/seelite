@@ -349,11 +349,18 @@ export function arrivalAttitude(
 	const slotUp = basis.across;
 	const aimed = scale(law.frame.axis, law.kind === "arrival" ? -1 : 1);
 	if (!law.fromNose || !law.fromUp) return { nose: aimed, up: slotUp };
-	// Turned through the slot's own `up` where the choice is free, so a launch
-	// pitches the ship over the lip it is leaving through rather than round an
-	// axis nothing chose.
+	// **Each turn through a plane perpendicular to what it is turning.** The
+	// nose sweeps through the slot's own `up`, so a launch pitches the ship over
+	// the lip it is leaving through rather than round an axis nothing chose.
+	//
+	// The roll sweeps through the slot's `up` as well, and **not** through the
+	// axis. Check 4 compares against the axis *line*, so a ship entering rolled
+	// 180° passes it — and its up-vector is then antipodal to the one the
+	// arrival is settling to. Turned through the axis, the half-way point puts
+	// the up-vector *on* the axis, collinear with the nose: the ship's basis
+	// collapses mid-arrival instead of rolling about its own nose.
 	return {
 		nose: slerp(law.fromNose, aimed, e, basis.up),
-		up: slerp(law.fromUp, slotUp, e, law.frame.axis),
+		up: slerp(law.fromUp, slotUp, e, basis.up),
 	};
 }

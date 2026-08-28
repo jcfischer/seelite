@@ -281,6 +281,33 @@ describe("§12.6 obligation 7 — both traversals are in the rotating frame", ()
 	});
 
 	/**
+	 * **An inverted entry must not collapse the ship's basis.**
+	 *
+	 * Check 4 compares against the axis *line*, so a ship crossing rolled 180°
+	 * passes it — and its up-vector is then antipodal to the one the arrival
+	 * settles to. A blend turned through the docking axis puts the up-vector
+	 * *on* that axis at the half-way point, collinear with the nose: the
+	 * orientation stops being a basis at all, mid-arrival, on a pose the checks
+	 * accepted.
+	 */
+	test("a ship entering rolled 180° keeps a basis all the way in", () => {
+		const phase = 0.7;
+		const frame = frameOf("trade", phase);
+		const slot = slotBasis(frame);
+		const law = beginArrival(frame, cornerEntry("trade", phase), 0, {
+			nose: scale(AXIS, -1),
+			// Rolled 180°: `|dot(up, across)|` is 1, so check 4 passes.
+			up: scale(slot.across, -1),
+		});
+		for (let i = 0; i <= 60; i++) {
+			const { nose, up } = arrivalAttitude(law, i / 60, phase);
+			// Perpendicular to within the rounding of two unit vectors, at every
+			// sub-step — not merely at the ends, which is where a collapse hides.
+			expect([i, Math.abs(dot(nose, up)) < 1e-9]).toEqual([i, true]);
+		}
+	});
+
+	/**
 	 * **The row that would have caught the 90°-out build**, and the reason it is
 	 * phrased through `evaluateEntry` rather than against a vector: the question
 	 * is not "does the attitude equal the one this module computed", which is a

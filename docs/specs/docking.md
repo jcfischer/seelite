@@ -1150,6 +1150,22 @@ of check that stops being evidence, and §12.7 records that it fails open until
    Disclosing a dependency once, in the section that creates it, is how it gets
    lost.
 
+   **As built (#77): the arrival ships unskippable.** That node checked
+   `persistent-world-state.md` after #46 closed and the domain is still not
+   there — the word "arrival" does not appear in that spec at all — so
+   `canSkipTraversal` refuses on an arrival and says why, and every *launch* is
+   skippable exactly as §12.6's obligation 5 asks. E4 is a follow-up node, and
+   the row that fails the day someone wires a skip without the store is in
+   `tests/dock-session.test.ts`.
+
+   **E4 and nothing else.** An earlier version of this joint said "E4 and E5",
+   and that was wrong: E5 is flight being suspended while docked, which stores
+   nothing and needs no domain. The rest of §12 — the arrival, the throat, the
+   docked state, the shield, launch — is buildable today, and only the *skip*
+   behaviour waits. Getting this wrong in the direction it was wrong in is the
+   expensive direction: it reads as a blanket block on the whole section, and
+   §12 exists to fix a bug a player is looking at now.
+
 7. **A form's aperture face and §3's plane are two different surfaces, and on
    some forms they are far apart** (#77). §12.2's docked position is a function
    of the **plane**, which is `coreRadiusKm`; a form cuts its aperture wherever
@@ -1178,19 +1194,3 @@ of check that stops being evidence, and §12.7 records that it fails open until
    went from 0.02 to between 0.05 and 0.21. The fix is a *continuous*
    phase-zero reference, decided where the convention is defined rather than at
    the line that reads it, and it is a node of its own.
-
-   **As built (#77): the arrival ships unskippable.** That node checked
-   `persistent-world-state.md` after #46 closed and the domain is still not
-   there — the word "arrival" does not appear in that spec at all — so
-   `canSkipTraversal` refuses on an arrival and says why, and every *launch* is
-   skippable exactly as §12.6's obligation 5 asks. E4 is a follow-up node, and
-   the row that fails the day someone wires a skip without the store is in
-   `tests/dock-session.test.ts`.
-
-   **E4 and nothing else.** An earlier version of this joint said "E4 and E5",
-   and that was wrong: E5 is flight being suspended while docked, which stores
-   nothing and needs no domain. The rest of §12 — the arrival, the throat, the
-   docked state, the shield, launch — is buildable today, and only the *skip*
-   behaviour waits. Getting this wrong in the direction it was wrong in is the
-   expensive direction: it reads as a blanket block on the whole section, and
-   §12 exists to fix a bug a player is looking at now.

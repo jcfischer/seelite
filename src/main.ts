@@ -178,7 +178,7 @@ import {
 	skipTraversal,
 	stepDockedWorld,
 } from "./dock-session";
-import { stationName } from "./station-name";
+import { stationNames } from "./station-name";
 import {
 	DIRECTOR_RANGE_KM,
 	type DirectorState,
@@ -1328,18 +1328,16 @@ class Game {
 	}
 
 	/**
-	 * Show or hide one station's name shields (§12.5's E11).
+	 * The shields themselves, in build order — mouth first, then the interior
+	 * one on a slot.
 	 *
-	 * **A control, not a feature.** §12.6's browser row 2 asks whether the
-	 * shield is *legible*, and the only way to measure ink a thing contributes
-	 * is to render the same frame without it — the shape `probe-docking.mjs`
-	 * already uses for the director. Nothing in the game calls this.
+	 * **The list `station-mesh.ts` collected**, not one a caller re-derives by
+	 * traversing for a name. A probe measuring one shield against the other
+	 * needs to say *which*, and two spellings of "which objects are the shields"
+	 * is one that goes quietly green the day the name moves.
 	 */
-	setNameplatesVisible(id: string, visible: boolean): number {
-		const station = this.stationVisuals.get(id);
-		if (!station) return 0;
-		for (const plate of station.nameplates) plate.visible = visible;
-		return station.nameplates.length;
+	nameplatesOfStation(id: string): THREE.Mesh[] {
+		return this.stationVisuals.get(id)?.nameplates ?? [];
 	}
 
 	constructor(seed: number) {
@@ -1743,6 +1741,9 @@ class Game {
 		// start far and `setLayer` swaps the tier on the handoff it already
 		// re-parents them with.
 		const unitSphere = surfaceSphere("far");
+		// One derivation for the whole system, so §12.5's discriminator sees the
+		// set it is a rule about.
+		const names = this.namesOfStations();
 		for (const body of this.world.system.bodies) {
 			// A station is the one body that is not a sphere: #13 §7's three
 			// silhouettes, built in kilometres. Everything else — star, planet,
@@ -1770,10 +1771,7 @@ class Game {
 				// — once per station at build, not per frame: the name never
 				// changes, and E9 makes it a pure function of facts that do not
 				// move.
-				paintNameplates(
-					built,
-					stationName(this.world.system.record.name, station.type),
-				);
+				paintNameplates(built, names.get(body.id) ?? body.id);
 				this.stationVisuals.set(body.id, built);
 			} else if (body.appearance) {
 				// #54's classes, drawn by the game rather than by the gallery.
@@ -3319,6 +3317,26 @@ class Game {
 	 * sampling those across several page evaluations lets the world move between
 	 * them. The numbers are the renderer's own, not a probe's copy of the rules.
 	 */
+	/**
+	 * Every station in this system, named — E9's derivation applied to the
+	 * **set** rather than one at a time.
+	 *
+	 * Through `stationNames`, which is what wires §12.5's discriminator remedy
+	 * into the game rather than leaving it as a function only a test calls: if
+	 * a generator change ever places two stations of one type, both get their
+	 * carrier slot appended and the display stops colliding. Calling
+	 * `stationName` per station would leave the remedy present and unreached.
+	 *
+	 * Rebuilt on demand rather than cached: it is a handful of string joins over
+	 * at most three stations, and a cache would be a second place the system's
+	 * identity lives.
+	 */
+	private namesOfStations(): Map<string, string> {
+		const stations = this.world.system.contents.stations;
+		const names = stationNames(this.world.system.record.name, stations);
+		return new Map(stations.map((s, i) => [s.id, names[i]]));
+	}
+
 	dockingSnapshot(id?: string): DockingSnapshot | null {
 		const target = id ?? this.stationsByRange()[0]?.id;
 		if (!target) return null;
@@ -3375,7 +3393,7 @@ class Game {
 			// E9's generated name, read off the page rather than re-derived by a
 			// probe: a probe with its own copy of a rule goes falsely red the day
 			// the rule changes.
-			stationName: stationName(this.world.system.record.name, station.type),
+			stationName: this.namesOfStations().get(target) ?? target,
 			condition: this.interimCondition,
 			alive: isAlive(this.interimCondition),
 			// The full pool, so a probe asserting §2.1's quarter-pool bound reads
