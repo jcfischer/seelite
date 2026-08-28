@@ -694,12 +694,23 @@ async function directorAt(setup) {
 				// `getImageData` is a synchronous read off an accelerated canvas, and
 				// the grid regions are hundreds of points — a per-point call was
 				// hundreds of stalls where one box read does.
-				const xs = points.map((point) => point.x);
-				const ys = points.map((point) => point.y);
-				const x0 = Math.max(0, Math.min(...xs) - 2);
-				const y0 = Math.max(0, Math.min(...ys) - 2);
-				const x1 = Math.min(overlay.width, Math.max(...xs) + 3);
-				const y1 = Math.min(overlay.height, Math.max(...ys) + 3);
+				// Reduced rather than spread: `Math.min(...xs)` passes one argument per
+				// point, which is fine at 22 x 22 and throws on the argument limit a
+				// couple of doublings later.
+				let minX = Number.POSITIVE_INFINITY;
+				let minY = Number.POSITIVE_INFINITY;
+				let maxX = Number.NEGATIVE_INFINITY;
+				let maxY = Number.NEGATIVE_INFINITY;
+				for (const point of points) {
+					if (point.x < minX) minX = point.x;
+					if (point.y < minY) minY = point.y;
+					if (point.x > maxX) maxX = point.x;
+					if (point.y > maxY) maxY = point.y;
+				}
+				const x0 = Math.max(0, minX - 2);
+				const y0 = Math.max(0, minY - 2);
+				const x1 = Math.min(overlay.width, maxX + 3);
+				const y1 = Math.min(overlay.height, maxY + 3);
 				if (x1 <= x0 || y1 <= y0)
 					return { where: [], hits: 0, colour: null, count: 0 };
 				const box = octx.getImageData(x0, y0, x1 - x0, y1 - y0);
@@ -743,6 +754,7 @@ async function directorAt(setup) {
 
 			const ringSample = sample(setup.sampleRing);
 			const belowSample = sample(setup.sampleBelow);
+			const aboveSample = sample(setup.sampleAbove);
 
 			return {
 				id,
@@ -750,6 +762,7 @@ async function directorAt(setup) {
 				overlayHeight: overlay ? overlay.height : 0,
 				ringSample,
 				belowSample,
+				aboveSample,
 				drawn: drawn
 					? {
 							funnelRadiusPx: drawn.funnelRadiusPx,
@@ -831,6 +844,13 @@ check(
  * *rolled pilot* can read a roll error off the drawn corridor is a fact about
  * the glass, and only a rendered frame answers it.
  */
+const fold = (deg) => {
+	let d = deg;
+	while (d > 90) d -= 180;
+	while (d <= -90) d += 180;
+	return d;
+};
+
 const throatTiltDeg = (measured) => {
 	const corners = measured.drawn?.throatCornersPx;
 	if (!corners || corners.length !== 4) return null;
@@ -838,10 +858,7 @@ const throatTiltDeg = (measured) => {
 	const dx = corners[1].x - corners[0].x;
 	// Canvas y grows downward, so negate to read as a normal angle.
 	const dy = -(corners[1].y - corners[0].y);
-	let deg = (Math.atan2(dy, dx) * 180) / Math.PI;
-	while (deg > 90) deg -= 180;
-	while (deg <= -90) deg += 180;
-	return deg;
+	return fold((Math.atan2(dy, dx) * 180) / Math.PI);
 };
 
 /**
@@ -853,13 +870,6 @@ const throatTiltDeg = (measured) => {
  * is exactly one degree of tilt per degree of roll, because the corridor is a
  * world object and the camera is what turns.
  */
-const fold = (deg) => {
-	let d = deg;
-	while (d > 90) d -= 180;
-	while (d <= -90) d += 180;
-	return d;
-};
-
 const rollSamples = [];
 for (const rollDeg of [-30, -12, 0, 12, 30]) {
 	const measured = await directorAt({ ...APPROACH, rollDeg });
@@ -931,8 +941,13 @@ check(
 	// facing away from the station.
 	"a nose pointing away is off-scale rather than pinned at the rim",
 	wayOff.drawn?.markerOffScale === true &&
-		markerFraction(wayOff) <= markerFraction(outside) * 3,
-	`${markerFraction(wayOff).toFixed(3)} of the ring for ${wayOff.drawn?.noseDeg?.toFixed(1)}°`,
+		// The clamp, against what an unclamped gauge would have drawn: 170° of a
+		// 35° tolerance is 4.86 rings out, so a marker that simply scaled would be
+		// far off the canvas. The first version compared the clamped value against
+		// three times another clamped value and held by construction.
+		markerFraction(wayOff) < (170 / AXIS_DEG) * 0.5 &&
+		markerFraction(wayOff) > 1,
+	`${markerFraction(wayOff).toFixed(3)} of the ring for ${wayOff.drawn?.noseDeg?.toFixed(1)}°, against ${(170 / AXIS_DEG).toFixed(2)} unclamped`,
 );
 
 // ---------------------------------------------------------------------------
@@ -1038,6 +1053,24 @@ const SAMPLE_BELOW = {
 	samples: 22,
 };
 
+/**
+ * The mirror band, immediately **above** the clip line.
+ *
+ * Without it the clip row is zero against zero and cannot fail: a pose whose
+ * corridor never reaches the clip line at all is indistinguishable from a
+ * working clip, and `sample()` returns zero for a region it cannot read. This
+ * band is the arm that must register hits, so the zero below it means the ink
+ * was stopped rather than never present.
+ */
+const SAMPLE_ABOVE = {
+	kind: "rect",
+	x0: inside.drawn.centre.x * 0.3,
+	x1: inside.drawn.centre.x * 1.7,
+	y0: inside.overlayHeight * GLASS_BOTTOM - 30,
+	y1: inside.overlayHeight * GLASS_BOTTOM - 3,
+	samples: 22,
+};
+
 const paintAligned = await directorAt({
 	...APPROACH,
 	noseDeg: AXIS_DEG - 5,
@@ -1049,12 +1082,14 @@ const pitched = await directorAt({
 	...APPROACH,
 	pitchDeg: 26,
 	sampleBelow: SAMPLE_BELOW,
+	sampleAbove: SAMPLE_ABOVE,
 });
 const pitchedAbsent = await directorAt({
 	...APPROACH,
 	pitchDeg: 26,
 	clear: false,
 	sampleBelow: SAMPLE_BELOW,
+	sampleAbove: SAMPLE_ABOVE,
 });
 const paintOffAxis = await directorAt({
 	...APPROACH,
@@ -1119,8 +1154,15 @@ check(
 	// changes with the clearance state; bounded above by the clip line and below
 	// by that text, the band is empty on both frames and an absolute zero is what
 	// the claim actually is. Removing the clip puts 21 points in it.
-	pitched.belowSample.hits === 0 && pitchedAbsent.belowSample.hits === 0,
-	`${pitched.belowSample.hits} painted below the glass with the director up, ${pitchedAbsent.belowSample.hits} without it — at ${JSON.stringify(pitched.belowSample.where)}`,
+	// **And the band above it must register hits**, from the same frame. Without
+	// that arm this row is zero against zero: a pose whose corridor never reaches
+	// the clip line passes it, and so does a region the sampler could not read.
+	pitched.belowSample.hits === 0 &&
+		pitchedAbsent.belowSample.hits === 0 &&
+		pitched.aboveSample.hits - pitchedAbsent.aboveSample.hits > 8,
+	`${pitched.aboveSample.hits} painted just above the clip line and ${pitched.belowSample.hits} below it, ` +
+		`against ${pitchedAbsent.aboveSample.hits} and ${pitchedAbsent.belowSample.hits} with no director` +
+		`${pitched.belowSample.hits ? ` — at ${JSON.stringify(pitched.belowSample.where)}` : ""}`,
 );
 
 await browser.close();

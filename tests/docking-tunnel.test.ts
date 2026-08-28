@@ -130,37 +130,58 @@ describe("the corridor is sufficient for the checks it guides", () => {
 		}
 	});
 
-	test("the headroom does not erode as the corridor lengthens", () => {
-		const frame = frameFor();
-		const worstAt = (mouthKm: number) =>
-			Math.max(
-				...dockingTunnel(frame, { mouthKm }).rings.flatMap((ring) =>
-					ring.corners.map(
-						(corner) =>
-							evaluateEntry(frame, poseAt(frame, corner), { hostile: false })
-								.positionAngleDeg,
+	/**
+	 * **Both aperture kinds, and the worst point is not the same one.**
+	 *
+	 * For a slot the corridor's widest angle is at its mouth, converging on
+	 * `atan(tan(flare)·√(1 + aspect²))` — 6.9°. For a pad it is at the
+	 * **throat**: a refinery's aperture is 0.15 km across a 0.4 km core, so its
+	 * corner already stands 14.9° off the axis before the flare adds anything,
+	 * and the corridor narrows in angle as it lengthens. A version of this row
+	 * built its fixture from the default station type, proved the slot's figure,
+	 * and left a comment asserting the pad's.
+	 *
+	 * Both stay inside half the tolerance, which is the claim — but the pad's
+	 * 14.9° against 17.5° is the tight one, and it is a fact about that station's
+	 * proportions rather than about the flare.
+	 */
+	test.each(["trade", "refinery"] as const)(
+		"the headroom holds at every length (%s)",
+		(type) => {
+			const frame = frameFor(type);
+			const worstAt = (mouthKm: number) =>
+				Math.max(
+					...dockingTunnel(frame, { mouthKm }).rings.flatMap((ring) =>
+						ring.corners.map(
+							(corner) =>
+								evaluateEntry(frame, poseAt(frame, corner), {
+									hostile: false,
+								}).positionAngleDeg,
+						),
 					),
-				),
-			);
-		// It approaches a limit rather than growing without bound: the corner's
-		// lateral offset and its axial distance both grow linearly, so the angle
-		// converges on `atan(tan(flare) · √(1 + aspect²))`.
-		const aspect = frame.aperture.heightKm / frame.aperture.widthKm;
-		const limit =
-			(Math.atan(
-				Math.tan((TUNNEL_FLARE_DEG * Math.PI) / 180) *
-					Math.sqrt(1 + aspect * aspect),
-			) *
-				180) /
-			Math.PI;
-		for (const mouthKm of [2, 8, 30, 200, 5_000]) {
-			expect(worstAt(mouthKm)).toBeLessThan(limit + 1e-6);
-			expect(worstAt(mouthKm)).toBeLessThan(AXIS_TOLERANCE_DEG / 2);
-		}
-		// And the limit is genuinely approached, so the bound above is not a
-		// vacuous one taken far from where the corridor actually operates.
-		expect(worstAt(5_000)).toBeGreaterThan(limit - 0.01);
-	});
+				);
+			const aspect = frame.aperture.heightKm / frame.aperture.widthKm;
+			const mouthLimit =
+				(Math.atan(
+					Math.tan((TUNNEL_FLARE_DEG * Math.PI) / 180) *
+						Math.sqrt(1 + aspect * aspect),
+				) *
+					180) /
+				Math.PI;
+			// The throat's own corner, which is the bound for a wide-apertured
+			// station and is fixed by its geometry rather than by the flare.
+			const throatAngle = worstAt(frame.planeKm);
+			const bound = Math.max(mouthLimit, throatAngle);
+
+			for (const mouthKm of [2, 8, 30, 200, 5_000]) {
+				expect(worstAt(mouthKm)).toBeLessThan(bound + 1e-6);
+				expect(worstAt(mouthKm)).toBeLessThan(AXIS_TOLERANCE_DEG / 2);
+			}
+			// The mouth limit is genuinely approached, so it is a bound taken where
+			// the corridor operates rather than one that happens to be far away.
+			expect(worstAt(5_000)).toBeGreaterThan(mouthLimit - 0.01);
+		},
+	);
 
 	test("a ship on the throat's corner is contained; a hair outside is not", () => {
 		const frame = frameFor();

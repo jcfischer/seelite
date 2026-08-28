@@ -30,12 +30,25 @@ import { type Vec3, add, scale } from "./vec3";
 /**
  * The corridor's flare, degrees of half-angle on its width.
  *
- * Small on purpose. At this angle the worst point on the corridor — a corner of
- * its mouth — sits under 8° off the docking axis at every distance, against
- * check 2's 35°, so a pilot who stays inside is not merely legal but has most
- * of the tolerance in hand. `docking.md` §3.2's complaint is that the gate is
- * wide *because* the instruments were missing; an instrument that only just fit
- * inside the gate would leave it exactly as wide.
+ * Small on purpose, so a pilot who stays inside the corridor is not merely
+ * legal but has most of check 2's 35° in hand. `docking.md` §3.2's complaint is
+ * that the gate is wide *because* the instruments were missing; one that only
+ * just fitted inside the gate would leave it exactly as wide.
+ *
+ * **Which point is worst depends on the station.** For a slot it is a corner of
+ * the mouth, whose angle converges on
+ * `atan(tan(TUNNEL_FLARE_DEG) · √(1 + aspect²))` — 6.9° for the 0.12 × 0.07
+ * slot — rather than growing with length. For a **pad** it is the *throat*: a
+ * refinery's 0.15 km aperture across a 0.4 km core already stands 14.9° off the
+ * axis before the flare adds anything, and the corridor narrows in angle as it
+ * lengthens. Both are inside half the tolerance, which is the claim, but 14.9°
+ * against 17.5° is the tight one — and it is a fact about that station's
+ * proportions, not about this constant. Retuning a station's aperture or core
+ * radius is what would break it.
+ *
+ * A draft of this comment said "the worst point is a corner of its mouth, under
+ * 8° at every distance". Both halves were false for the pad, and invisible to a
+ * test whose fixture defaulted to the slot.
  */
 export const TUNNEL_FLARE_DEG = 6;
 
