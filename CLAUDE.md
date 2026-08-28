@@ -43,6 +43,33 @@ npm run format:check       # biome, no fixes applied
 npm run build              # tsc + vite build
 ```
 
+### Visual work has a third tier, and it is a person
+
+A probe cannot fail on *this looks flat*. #35 and #36 both closed green and
+produced the look #98 then set out to change; #36's receipt records that every
+rendered form of its outline rule was measuring bloom. So a node that changes
+what the game **looks like** closes on two things and not one: the canonical
+view set, and the principal saying yes to it. The agent never stands in for
+that yes.
+
+```bash
+npm run dev                          # in one shell
+npm run views -- --label before      # in another, at the base commit
+npm run views -- --label after       # again, with the change
+open view-set/index.html             # the contact sheet, side by side
+```
+
+Seven views on a fixed seed and a fixed camera, declared in
+`scripts/lib/view-set.mjs` — every lever charted under #98 has at least one view
+where its surface is the subject, and `tests/view-set.test.ts` fails if one does
+not. A run that drops a view refuses to build a sheet at all, because a sheet
+with a hole in it reads exactly like a whole one.
+
+**Capture is headed, and refuses to run otherwise.** Every other browser script
+here renders through SwiftShader; for an image judged by eye that is the wrong
+picture, not merely a slow one. `view-set/` is gitignored — before/after is two
+runs at two refs, not a baseline in the repo.
+
 `scripts/probe-guard.mjs` refuses to measure a dev server that is not serving
 this working tree — the failure it prevents is a probe passing against someone
 else's checkout on the same port.

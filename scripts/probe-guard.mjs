@@ -472,3 +472,231 @@ export async function installCamSim(page) {
 		};
 	});
 }
+
+/**
+ * Install the page-side placement helpers a fixed-camera capture needs.
+ *
+ * `__placeShipAt` and `__viewAlongAxis` were written inside
+ * `probe-station-visuals.mjs` and lived there alone until #104 needed the same
+ * two. They are here rather than copied for the reason `installCamSim` is here:
+ * a second copy is a second thing to retune, and the copy that does not get
+ * retuned is the one that goes quietly wrong.
+ *
+ * The rest are #104's, and each closes a hole the station probe never had:
+ *
+ * - `__startClockAt` — body positions are `f(systemSeed, gameTime)`, so two
+ *   captures that boot to different clocks compare two different worlds. It
+ *   normalises the start and nothing more; the note on it has why holding the
+ *   clock down instead is actively harmful.
+ * - `__radiusOf` — the apparent size of a subject is what makes two shots
+ *   comparable, and a station's is its *silhouette*, not its core radius. The
+ *   two differ by a factor of three on a shipyard.
+ * - `__lookAt` — `__viewAlongAxis` can only point at a station's aperture. Half
+ *   the view set is pointed at something else.
+ * - `__sunOffset` — places the camera at a stated angle between the subject and
+ *   the star. That angle is the single largest thing deciding what a surface
+ *   looks like, and #99's fill exists because of what the frame looks like at
+ *   180 degrees of it.
+ * - `__emptiestDirection` — the backdrop is the only subject with no position to
+ *   aim at, so it is aimed at by *absence*: the heading furthest from the star
+ *   and every body.
+ *
+ * Call before `page.goto`; it re-runs on every navigation.
+ */
+export async function installViewPlacement(page) {
+	await page.addInitScript(() => {
+		const frame = () => new Promise((r) => requestAnimationFrame(() => r()));
+		const norm = (v) => {
+			const l = Math.hypot(v.x, v.y, v.z);
+			return { x: v.x / l, y: v.y / l, z: v.z / l };
+		};
+
+		window.__meshOfBody = (id) =>
+			window.__seelite.nearScene.getObjectByName(id) ??
+			window.__seelite.farScene.getObjectByName(id) ??
+			null;
+
+		/**
+		 * Put the ship at a sim point, optionally moving with something.
+		 *
+		 * `vel` defaults to zero, which is what every caller wanted before #104
+		 * and is still right for a subject the size of a planet. It is wrong for a
+		 * station: `Game.stationVelocity`'s own docstring says why — at 1 AU the
+		 * station is carried at ~30 km/s, so a ship parked at zero sim velocity is
+		 * closing on it at three hundred times the docking gate. Over the four
+		 * frames a shot takes that moved a camera placed 7.44 km out to 0.66 km,
+		 * measured while building the view set.
+		 */
+		window.__placeShipAt = async (pos, vel) => {
+			const g = window.__seelite;
+			g.world.ship.pos = pos;
+			g.world.ship.vel = vel ?? { x: 0, y: 0, z: 0 };
+			await frame();
+			await frame();
+		};
+
+		/** Put the camera on a station's aperture axis at `rangeKm` and look back
+		 *  down it — the view a docking approach has, and the one viewpoint
+		 *  defined for all three types. The axis comes from `poseOfStation`. */
+		window.__viewAlongAxis = async (bodyId, rangeKm, opts) => {
+			const g = window.__seelite;
+			const body = g.world.system.bodies.find((b) => b.id === bodyId);
+			const pose = g.poseOfStation(bodyId);
+			// Opt-in rather than the default, because the probes that had this
+			// helper first are measuring against the range they set and a silent
+			// change of what "parked" means would move their numbers.
+			const vel = opts?.comoving ? g.stationVelocity(bodyId) : undefined;
+			await window.__placeShipAt(
+				{
+					x: body.pos.x + pose.axis.x * rangeKm,
+					y: body.pos.y + pose.axis.y * rangeKm,
+					z: body.pos.z + pose.axis.z * rangeKm,
+				},
+				vel,
+			);
+			const from = g.nearScene.position.clone().set(0, 0, -1);
+			const to = g.nearScene.position
+				.clone()
+				.set(-pose.axis.x, -pose.axis.y, -pose.axis.z);
+			g.orientation.setFromUnitVectors(from, to);
+			await frame();
+		};
+
+		/**
+		 * Start both runs of a before/after pair from the same world clock.
+		 *
+		 * One assignment, not a standing hold. Holding it every frame was tried
+		 * first and is worse than not pinning at all: with the clock nailed down
+		 * the bodies are re-placed at the same `t` each frame while the ship keeps
+		 * its own state, and a camera placed 7.44 km off a station ended up 0.66 km
+		 * off it — on its hull — in four frames. What actually holds a framing is
+		 * placing the camera *co-moving* with its subject, which `__placeShipAt`
+		 * now does; the clock only has to start in the same place.
+		 *
+		 * So the clock runs during a capture. The cost is bounded and small: the
+		 * script paces itself the same way on both runs, and what moves in the
+		 * seconds it takes is orbital phase measured in tens of kilometres against
+		 * subjects framed from hundreds.
+		 */
+		window.__startClockAt = async (t) => {
+			window.__seelite.world.gameTime = t;
+			await frame();
+			await frame();
+		};
+
+		window.__bodyById = (id) =>
+			window.__seelite.world.system.bodies.find((b) => b.id === id) ?? null;
+
+		window.__radiusOf = (id) => {
+			const g = window.__seelite;
+			const body = window.__bodyById(id);
+			if (!body) return null;
+			return body.kind === "station"
+				? g.visualOfStation(id).silhouetteKm
+				: body.radiusKm;
+		};
+
+		/** Turn the camera from where the ship already is toward a sim point. */
+		window.__lookAt = async (target) => {
+			const g = window.__seelite;
+			const p = g.world.ship.pos;
+			const d = norm({
+				x: target.x - p.x,
+				y: target.y - p.y,
+				z: target.z - p.z,
+			});
+			const from = g.nearScene.position.clone().set(0, 0, -1);
+			const to = g.nearScene.position.clone().set(d.x, d.y, d.z);
+			g.orientation.setFromUnitVectors(from, to);
+			await frame();
+		};
+
+		/**
+		 * Stand `radii` subject-radii off `bodyId`, at `sunAngleDeg` between the
+		 * star and the camera as seen from the subject, and look at it.
+		 *
+		 * Sim space is star-centred (`sim.ts` §7.4), so the subject's direction to
+		 * the star is simply the reverse of its own position. Zero degrees puts
+		 * the camera on the star's side and the subject fully lit; 180 puts the
+		 * star beyond the subject and the subject a silhouette.
+		 *
+		 * The perpendicular is built from whichever world axis is least parallel
+		 * to the sun line, so the frame never degenerates — a fixed choice of
+		 * axis collapses for any subject that happens to lie along it, and which
+		 * subjects those are is a property of the seed.
+		 */
+		window.__sunOffset = async (bodyId, radii, sunAngleDeg) => {
+			const body = window.__bodyById(bodyId);
+			const sun = norm({ x: -body.pos.x, y: -body.pos.y, z: -body.pos.z });
+			const axes = [
+				{ x: 1, y: 0, z: 0 },
+				{ x: 0, y: 1, z: 0 },
+				{ x: 0, y: 0, z: 1 },
+			];
+			const up = axes.reduce((best, a) =>
+				Math.abs(a.x * sun.x + a.y * sun.y + a.z * sun.z) <
+				Math.abs(best.x * sun.x + best.y * sun.y + best.z * sun.z)
+					? a
+					: best,
+			);
+			const perp = norm({
+				x: sun.y * up.z - sun.z * up.y,
+				y: sun.z * up.x - sun.x * up.z,
+				z: sun.x * up.y - sun.y * up.x,
+			});
+			const a = (sunAngleDeg * Math.PI) / 180;
+			const dir = {
+				x: sun.x * Math.cos(a) + perp.x * Math.sin(a),
+				y: sun.y * Math.cos(a) + perp.y * Math.sin(a),
+				z: sun.z * Math.cos(a) + perp.z * Math.sin(a),
+			};
+			const range = window.__radiusOf(bodyId) * radii;
+			await window.__placeShipAt({
+				x: body.pos.x + dir.x * range,
+				y: body.pos.y + dir.y * range,
+				z: body.pos.z + dir.z * range,
+			});
+			await window.__lookAt(body.pos);
+		};
+
+		/**
+		 * The heading furthest from the star and every body, by search.
+		 *
+		 * Aiming at empty sky has no target to aim at, so it is found rather than
+		 * computed: a Fibonacci sphere of candidate headings, scored by the
+		 * closest thing in that direction, and the best kept. Cheap, and it does
+		 * not care how many bodies the seed produced or where they went.
+		 */
+		window.__emptiestDirection = () => {
+			const g = window.__seelite;
+			const p = g.world.ship.pos;
+			const subjects = [
+				{ x: 0, y: 0, z: 0 },
+				...g.world.system.bodies.map((b) => b.pos),
+			];
+			const dirs = subjects.map((s) =>
+				norm({ x: s.x - p.x, y: s.y - p.y, z: s.z - p.z }),
+			);
+			const N = 512;
+			const phi = Math.PI * (3 - Math.sqrt(5));
+			let best = null;
+			let bestScore = Number.POSITIVE_INFINITY;
+			for (let i = 0; i < N; i++) {
+				const y = 1 - (i / (N - 1)) * 2;
+				const r = Math.sqrt(Math.max(0, 1 - y * y));
+				const t = phi * i;
+				const c = { x: Math.cos(t) * r, y, z: Math.sin(t) * r };
+				let worst = -1;
+				for (const d of dirs) {
+					const dot = c.x * d.x + c.y * d.y + c.z * d.z;
+					if (dot > worst) worst = dot;
+				}
+				if (worst < bestScore) {
+					bestScore = worst;
+					best = c;
+				}
+			}
+			return best;
+		};
+	});
+}

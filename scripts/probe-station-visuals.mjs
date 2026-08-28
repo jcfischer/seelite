@@ -65,6 +65,7 @@
 import {
 	bootedGame,
 	guardedOrigin,
+	installViewPlacement,
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
@@ -94,39 +95,6 @@ const OUTLINE_RADII = 900;
  *  `probe-station.mjs`'s grid, for the same reason: the comparison must be of
  *  shape and not of apparent size. */
 const GRID = 24;
-const installHelpers = (page) =>
-	page.addInitScript(() => {
-		window.__meshOfBody = (id) =>
-			window.__seelite.nearScene.getObjectByName(id) ??
-			window.__seelite.farScene.getObjectByName(id) ??
-			null;
-		window.__placeShipAt = async (pos) => {
-			const g = window.__seelite;
-			g.world.ship.pos = pos;
-			g.world.ship.vel = { x: 0, y: 0, z: 0 };
-			await new Promise((r) => requestAnimationFrame(() => r()));
-			await new Promise((r) => requestAnimationFrame(() => r()));
-		};
-		/** Put the camera on a station's aperture axis at `rangeKm` and look back
-		 *  down it — the view a docking approach has, and the one viewpoint
-		 *  defined for all three types. The axis comes from `poseOfStation`. */
-		window.__viewAlongAxis = async (bodyId, rangeKm) => {
-			const g = window.__seelite;
-			const body = g.world.system.bodies.find((b) => b.id === bodyId);
-			const pose = g.poseOfStation(bodyId);
-			await window.__placeShipAt({
-				x: body.pos.x + pose.axis.x * rangeKm,
-				y: body.pos.y + pose.axis.y * rangeKm,
-				z: body.pos.z + pose.axis.z * rangeKm,
-			});
-			const from = g.nearScene.position.clone().set(0, 0, -1);
-			const to = g.nearScene.position
-				.clone()
-				.set(-pose.axis.x, -pose.axis.y, -pose.axis.z);
-			g.orientation.setFromUnitVectors(from, to);
-			await new Promise((r) => requestAnimationFrame(() => r()));
-		};
-	});
 
 await guardedOrigin(ORIGIN, [
 	"src/main.ts",
@@ -330,7 +298,7 @@ for (const viewport of VIEWPORTS) {
 		viewport: { width: viewport.width, height: viewport.height },
 	});
 	watch(page);
-	await installHelpers(page);
+	await installViewPlacement(page);
 	await page.goto(URL, { waitUntil: "load" });
 	await bootedGame(page);
 
@@ -548,7 +516,7 @@ for (const viewport of VIEWPORTS) {
 		viewport: { width: 1100, height: 720 },
 	});
 	watch(page);
-	await installHelpers(page);
+	await installViewPlacement(page);
 	await page.goto(URL, { waitUntil: "load" });
 	await bootedGame(page);
 
