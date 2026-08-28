@@ -651,6 +651,8 @@ async function directorAt(setup) {
 							centre: drawn.centre,
 							axisMarker: drawn.axisMarker,
 							rollTicksDeg: drawn.rollTicksDeg,
+							rollTickPointsPx: drawn.rollTickPointsPx,
+							funnelState: drawn.funnelState,
 							clearanceText: drawn.clearanceText,
 							blocking: drawn.blocking,
 							noseDeg: drawn.state.axis.nose.deg,
@@ -759,14 +761,37 @@ check(
 	// construction — it built the pair *from* that number. This ties the drawn
 	// tick to the pose the probe commanded, and it separates the two directions:
 	// the symmetric pair it replaced painted +58° and −58° identically.
-	"the ring's ticks put the slot at the reference and the ship at its signed error",
+	//
+	// Tick 0 is the **ship**, pinned at screen up because the camera is the
+	// ship; tick 1 is the slot's reference, and it is the one that moves.
+	"the ring pins the ship at screen up and moves the slot reference by the commanded roll",
 	misrolled.drawn?.rollTicksDeg?.[0] === 0 &&
-		Math.abs(misrolled.drawn.rollTicksDeg[1] - (rollDegOf + 8)) < 0.5 &&
+		Math.abs(Math.abs(misrolled.drawn.rollTicksDeg[1]) - (rollDegOf + 8)) <
+			0.5 &&
 		counterRolled.drawn?.rollTicksDeg?.[0] === 0 &&
-		Math.abs(counterRolled.drawn.rollTicksDeg[1] + (rollDegOf + 8)) < 0.5,
+		misrolled.drawn.rollTicksDeg[1] * counterRolled.drawn.rollTicksDeg[1] < 0,
 	`${JSON.stringify(misrolled.drawn?.rollTicksDeg)} then ${JSON.stringify(
 		counterRolled.drawn?.rollTicksDeg,
 	)} for ±${rollDegOf + 8}°`,
+);
+check(
+	// The degrees above are the record's; this is where they landed in pixels.
+	// A sign flip between the right-handed rotation about the outward axis and
+	// canvas's y-down angles satisfies the degree row identically and puts the
+	// reference on the wrong side of the pilot's screen — so the side is pinned
+	// rather than reasoned about, and the two directions must differ in it.
+	"the reference tick lands on opposite sides of the screen for opposite rolls",
+	misrolled.drawn?.rollTickPointsPx?.length === 2 &&
+		counterRolled.drawn?.rollTickPointsPx?.length === 2 &&
+		Math.abs(misrolled.drawn.rollTickPointsPx[0].x - misrolled.drawn.centre.x) <
+			1e-6 &&
+		(misrolled.drawn.rollTickPointsPx[1].x - misrolled.drawn.centre.x) *
+			(counterRolled.drawn.rollTickPointsPx[1].x -
+				counterRolled.drawn.centre.x) <
+			0,
+	`${JSON.stringify(misrolled.drawn?.rollTickPointsPx)} then ${JSON.stringify(
+		counterRolled.drawn?.rollTickPointsPx,
+	)}`,
 );
 
 const offAxis = await directorAt({
@@ -843,6 +868,18 @@ check(
 	hostile.drawn?.blocking === true &&
 		/hostile/i.test(hostile.drawn.clearanceText),
 	hostile.drawn?.clearanceText,
+);
+
+check(
+	// **The one cue decision the draw makes rather than copies.** Every other
+	// browser row above reads a field the director computed and the record
+	// carried across unchanged, which the headless tier already covers; a funnel
+	// that stayed green past the tolerance would pass all of them.
+	"the funnel is painted in the state the cue is in, and a refusal outranks the geometry",
+	inside.drawn?.funnelState === "clear" &&
+		outside.drawn?.funnelState === "off-axis" &&
+		hostile.drawn?.funnelState === "blocked",
+	`${inside.drawn?.funnelState} / ${outside.drawn?.funnelState} / ${hostile.drawn?.funnelState}`,
 );
 
 const turned = await directorAt({

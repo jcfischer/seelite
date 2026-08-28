@@ -7,11 +7,19 @@
  * partly because these did not exist; this module is the half that makes them
  * legible. §3: it "makes #9's checks legible; it does not automate them".
  *
- * **Every angle here is `evaluateEntry`'s, not a second computation.** A cue
- * measuring its own version of check 2 would leave the tolerance wide for a
- * second reason — the pilot would be flying an instrument that disagreed with
- * the gate. `tests/docking-director.test.ts` sweeps both cues against the
- * shipped checks and requires agreement.
+ * **Every angle the cues are judged on is `evaluateEntry`'s, not a second
+ * computation.** A cue measuring its own version of check 2 would leave the
+ * tolerance wide for a second reason — the pilot would be flying an instrument
+ * that disagreed with the gate. `tests/docking-director.test.ts` sweeps both
+ * halves of check 2 and check 4 against the shipped checks and requires
+ * agreement.
+ *
+ * **`rollSignedDeg` is the one exception, and it is deliberate.** Check 4 is
+ * unsigned by design — it compares against the axis *line* — and a cue with a
+ * magnitude and no direction is a guess-and-widen loop rather than a director,
+ * so the signed roll is computed here. It is display only: no verdict reads it,
+ * `roll.within` remains the check's, and the same sweep asserts
+ * `|rollSignedDeg|` equals `roll.deg` at every angle rather than at a handful.
  *
  * **What this is not:** a prediction that entry will pass. `evaluateEntry`'s
  * containment and inbound rows are facts about the *crossing instant*, and this
@@ -152,7 +160,16 @@ function signedRollDeg(frame: ApertureFrame, pose: EntryPose): number {
 	const axis = frame.axis;
 	const projected = sub(pose.up, scale(axis, dot(pose.up, axis)));
 	const norm = length(projected);
-	if (norm === 0) return Number.NaN;
+	// **A relative guard, where `evaluateEntry`'s is an exact zero.** An
+	// up-vector *set* to the docking axis does not project to exactly nothing:
+	// `dot(up, axis)` is 1 to within a rounding error, so a residue of order
+	// 1e-17 survives and any angle taken from it is float noise. Measured on one
+	// such pose, the shipped check read 86.78° and this read 51.26° — both of
+	// them noise, and neither wrong on its own terms. The director declines to
+	// report an angle there rather than paint a tick nobody measured; the check
+	// keeps its own guard, because retuning a docking tolerance is not this
+	// node's, and it refuses the pose anyway.
+	if (norm <= ROLL_PROJECTION_FLOOR) return Number.NaN;
 	const u = scale(projected, 1 / norm);
 	const { across } = slotBasis(frame);
 	const perpendicular = cross(axis, across);
@@ -162,6 +179,10 @@ function signedRollDeg(frame: ApertureFrame, pose: EntryPose): number {
 	if (deg <= -90) return deg + 180;
 	return deg;
 }
+
+/** Below this, the up-vector's component in the slot plane is rounding error
+ *  rather than a direction. Dimensionless: `pose.up` is a unit vector. */
+const ROLL_PROJECTION_FLOOR = 1e-9;
 
 const cross = (a: Vec3, b: Vec3): Vec3 =>
 	v3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);

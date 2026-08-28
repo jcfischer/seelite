@@ -166,7 +166,15 @@ So the director is verified against `docking.ts` itself, in both tiers:
 | Where | What it holds |
 |---|---|
 | `tests/docking-director.test.ts` | Every angle the director reports is `evaluateEntry`'s. Check 2's **two halves get two sweeps** — a sweep that rotates only the nose leaves the position cue constant, so it constrains the nose alone — and check 4 gets a third, each across 0–90° and each required to agree with the shipped check outside the 1e-6° band the cosine comparison's own slack projects to. A director looser than the gate by a degree fails them. |
-| `scripts/probe-docking.mjs` | The funnel, the axis marker, the roll ring, the corridor bar and the clearance line reach the glass on a live approach; five degrees past the tolerance flips the cue and takes the marker out of the funnel; the ring's ticks put the slot at the reference and the ship at its **signed** error, so ±58° paint differently; the corridor bar fills and fails as the ship leaves the axis; a pad draws no ring; hostility outranks a live grant; a head turn takes the director off the glass. |
+| `scripts/probe-docking.mjs` | The funnel, the axis marker, the roll ring, the corridor bar and the clearance line reach the glass on a live approach; five degrees past the tolerance takes the marker out of the funnel **and repaints it**; the ring pins the ship at screen up and moves the slot's reference by the commanded roll, landing on opposite sides of the screen for opposite rolls; the corridor bar fills and fails as the ship leaves the axis; a pad draws no ring; hostility outranks a live grant; a head turn takes the director off the glass. |
+
+**The browser rows that matter are the ones the draw decides.** Most of what
+`directorRender` carries is the director's own state copied across unchanged,
+and the headless tier already covers that — a row asserting `noseWithin` proves
+nothing about pixels. What the draw decides for itself is the funnel's painted
+state, where the ticks land, and how far the corridor bar fills, so those are
+what the browser tier pins. Each was checked by injecting its defect and
+watching the row go red.
 
 The browser rows read `directorRender`, which the **draw** writes rather than a
 computation beside it, so a build that produced a correct director and never

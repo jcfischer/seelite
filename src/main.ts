@@ -476,12 +476,29 @@ interface DirectorRender {
 	/** Where the inward docking axis projects, or `null` when it is behind. */
 	axisMarker: { x: number; y: number; onScreen: boolean } | null;
 	/**
-	 * The two roll ticks, degrees clockwise from screen up: the first is the
-	 * slot's own reference and the second is where the ship's up actually sits,
-	 * so the gap is the signed error and the pilot reads *which way* to roll.
+	 * The two roll ticks, degrees clockwise from screen up.
+	 *
+	 * **Tick 0 is the ship**, and it is at zero by construction: the camera is
+	 * the ship, so the ship's up *is* screen up and the tick can only ever sit
+	 * there. Tick 1 is the slot's own reference, at the signed error — so the
+	 * gap is which way to roll, and it is the tick that moves. A first version
+	 * had these labels the other way round, which described an instrument where
+	 * the fixed mark was the world and the moving one the pilot.
+	 *
+	 * Tick 1 is `null` where there is no roll to report — an up-vector lying
+	 * along the docking axis. Painting a definite 90° there would be a reading
+	 * the director never took.
+	 *
 	 * `null` for a pad, which has no long axis to match.
 	 */
-	rollTicksDeg: [number, number] | null;
+	rollTicksDeg: [number, number | null] | null;
+	/** The two ticks as drawn, in canvas pixels, so a check can pin which way
+	 *  the reference actually rotates on the pilot's screen. */
+	rollTickPointsPx: { x: number; y: number }[];
+	/** Which state the funnel was **painted** in. The record carries it because
+	 *  it is the one cue decision the draw makes rather than copies: without it
+	 *  a funnel that stayed green past the tolerance passes every browser row. */
+	funnelState: "clear" | "off-axis" | "blocked";
 	/** The corridor bar — check 2's position half, which is a translation task
 	 *  rather than a turn. Fraction of the tolerance drawn, and its verdict. */
 	corridor: { fill: number; within: boolean };
@@ -2774,15 +2791,6 @@ class Game {
 	}
 
 	/**
-	 * Everything a probe needs to judge a docking approach, in one read.
-	 *
-	 * One call rather than a handful of exposed fields, because §9.2's probes
-	 * assert on *relationships* — a bounce that damaged the ship and left it
-	 * alive, a crossing refused for containment rather than for an angle — and
-	 * sampling those across several page evaluations lets the world move between
-	 * them. The numbers are the renderer's own, not a probe's copy of the rules.
-	 */
-	/**
 	 * §3's director state for the station the pilot is working, or `null`.
 	 *
 	 * §3 says the on-glass director "retains the selected target after
@@ -2809,6 +2817,15 @@ class Game {
 		return director.inVicinity ? director : null;
 	}
 
+	/**
+	 * Everything a probe needs to judge a docking approach, in one read.
+	 *
+	 * One call rather than a handful of exposed fields, because §9.2's probes
+	 * assert on *relationships* — a bounce that damaged the ship and left it
+	 * alive, a crossing refused for containment rather than for an angle — and
+	 * sampling those across several page evaluations lets the world move between
+	 * them. The numbers are the renderer's own, not a probe's copy of the rules.
+	 */
 	dockingSnapshot(id?: string): DockingSnapshot | null {
 		const target = id ?? this.stationsByRange()[0]?.id;
 		if (!target) return null;
@@ -3909,18 +3926,6 @@ class Game {
 	}
 
 	/**
-	 * Draw the HUD markers over the rendered frame.
-	 *
-	 * The overlay is a 2D canvas rather than geometry in the near scene, and the
-	 * reason is the layering: a marker drawn as a world object would have to pick
-	 * a layer and a scale, and a reticle is neither near nor far — it is on the
-	 * glass. `hud.ts` does the projection, which is why it can be checked without
-	 * any of this.
-	 *
-	 * Everything is placed by **direction**, so a body draws its bracket in the
-	 * same place whichever layer rendered it — see that module's docstring.
-	 */
-	/**
 	 * §3's docking director, on the glass.
 	 *
 	 * **The funnel is centred on the optical axis, not on the station**, and that
@@ -3954,12 +3959,16 @@ class Game {
 			((h / 2) * Math.tan((state.axis.nose.toleranceDeg * Math.PI) / 180)) /
 			Math.tan(halfFov);
 
-		const axisOk = state.axis.nose.within;
-		const funnelColour = state.blocking
-			? "rgba(255, 110, 96, 0.85)"
-			: axisOk
-				? "rgba(150, 255, 190, 0.8)"
-				: "rgba(255, 209, 122, 0.75)";
+		const funnelState: DirectorRender["funnelState"] = state.blocking
+			? "blocked"
+			: state.axis.nose.within
+				? "clear"
+				: "off-axis";
+		const funnelColour = {
+			blocked: "rgba(255, 110, 96, 0.85)",
+			clear: "rgba(150, 255, 190, 0.8)",
+			"off-axis": "rgba(255, 209, 122, 0.75)",
+		}[funnelState];
 		ctx.save();
 		ctx.strokeStyle = funnelColour;
 		ctx.lineWidth = 1.5;
@@ -3992,30 +4001,43 @@ class Game {
 		// The roll ring: two ticks on the funnel, separated by the roll error.
 		// Absent for a pad, because check 4 does not apply and an empty ring would
 		// read as one the pilot had failed.
-		let rollTicksDeg: [number, number] | null = null;
+		let rollTicksDeg: [number, number | null] | null = null;
+		const rollTickPointsPx: { x: number; y: number }[] = [];
 		if (state.roll) {
 			// The reference tick is the slot; the second is the ship. A symmetric
 			// pair about screen up was the first version and it was a tautology as
 			// well as a bad instrument: its gap was the roll error by construction,
 			// so a probe measuring the gap measured the draw's own arithmetic, and
 			// a +40° and a −40° roll painted identically.
+			// The slot's reference is the ship's up rotated *back* by the signed
+			// error, which is why it carries the minus. Which way that lands on the
+			// canvas is not reasoned about here — a right-handed rotation about an
+			// axis pointing back through the ship, composed with canvas's y-down
+			// angles, is exactly the sort of double flip that reads correct and is
+			// not. `probe-docking.mjs` pins the drawn endpoint's side instead.
 			const signed = state.rollSignedDeg;
 			rollTicksDeg = [
 				0,
-				Number.isFinite(signed ?? Number.NaN) ? (signed as number) : 90,
+				Number.isFinite(signed ?? Number.NaN) ? -(signed as number) : null,
 			];
 			ctx.strokeStyle = state.roll.within
 				? "rgba(150, 255, 190, 0.8)"
 				: "rgba(255, 209, 122, 0.75)";
 			ctx.lineWidth = 2.5;
 			for (const tick of rollTicksDeg) {
+				if (tick === null) continue;
 				const rad = (tick * Math.PI) / 180 - Math.PI / 2;
 				const inner = funnelRadiusPx * 0.9;
 				const outer = funnelRadiusPx * 1.12;
+				const tip = {
+					x: cx + Math.cos(rad) * outer,
+					y: cy + Math.sin(rad) * outer,
+				};
 				ctx.beginPath();
 				ctx.moveTo(cx + Math.cos(rad) * inner, cy + Math.sin(rad) * inner);
-				ctx.lineTo(cx + Math.cos(rad) * outer, cy + Math.sin(rad) * outer);
+				ctx.lineTo(tip.x, tip.y);
 				ctx.stroke();
+				rollTickPointsPx.push(tip);
 			}
 		}
 
@@ -4065,12 +4087,26 @@ class Game {
 			funnelRadiusPx,
 			axisMarker,
 			rollTicksDeg,
+			rollTickPointsPx,
+			funnelState,
 			corridor: { fill, within: corridor.within },
 			clearanceText,
 			blocking: state.blocking !== null,
 		};
 	}
 
+	/**
+	 * Draw the HUD markers over the rendered frame.
+	 *
+	 * The overlay is a 2D canvas rather than geometry in the near scene, and the
+	 * reason is the layering: a marker drawn as a world object would have to pick
+	 * a layer and a scale, and a reticle is neither near nor far — it is on the
+	 * glass. `hud.ts` does the projection, which is why it can be checked without
+	 * any of this.
+	 *
+	 * Everything is placed by **direction**, so a body draws its bracket in the
+	 * same place whichever layer rendered it — see that module's docstring.
+	 */
 	private drawMarkers(camPos: Vec3) {
 		const ctx = this.overlayCtx;
 		if (!ctx) return;

@@ -248,7 +248,39 @@ describe("§3: the roll-match ring reads check 4's own angle", () => {
 			const e = evaluateEntry(frame, pose, { hostile: false });
 			const d = director(frame, pose);
 			expect(d.roll?.within).toBe(e.checks.rollMatch);
+			// The signed roll is the module's one independent computation, so the
+			// agreement is asserted **at every angle** rather than at a handful of
+			// samples inside the fold-free band, where a fold error cannot show.
+			expect(Math.abs(d.rollSignedDeg as number)).toBeCloseTo(
+				e.rollAngleDeg,
+				9,
+			);
 		}
+	});
+
+	/**
+	 * The degenerate pose, and the one place the signed cue deliberately
+	 * declines to agree.
+	 *
+	 * `evaluateEntry` guards on `length(projected) === 0` — an exact zero — and
+	 * an up-vector *set* to the docking axis does not produce one: `dot(up,
+	 * axis)` is 1 to within a rounding error, so a residue of order 1e-17
+	 * survives and an angle taken from it is float noise. Measured here the
+	 * shipped check reads 86.78° where the same arithmetic signed reads 51.26°.
+	 * Neither is wrong; both are noise. So the director reports no angle rather
+	 * than drawing a tick nobody measured, and this row pins that divergence
+	 * instead of hiding it behind a loose tolerance.
+	 */
+	test("an up-vector along the docking axis reports no signed roll", () => {
+		const frame = frameFor("trade");
+		const pose = nominal(frame, { up: frame.axis });
+		const e = evaluateEntry(frame, pose, { hostile: false });
+		const d = director(frame, pose);
+		// The check still answers, off a projection that is rounding error.
+		expect(d.roll?.deg).toBe(e.rollAngleDeg);
+		expect(d.roll?.within).toBe(e.checks.rollMatch);
+		// The cue does not.
+		expect(Number.isNaN(d.rollSignedDeg as number)).toBe(true);
 	});
 });
 
