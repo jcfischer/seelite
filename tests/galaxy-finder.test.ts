@@ -11,11 +11,15 @@
 import { describe, expect, test } from "bun:test";
 import {
 	FINDER_DEFAULT_BUDGET,
+	FINDER_MAX_BUDGET,
 	type FinderFilter,
 	finderDefaultFilter,
 	finderIsNarrowed,
 	finderMatches,
+	finderSessionFilter,
 	projectFinder,
+	rememberFinderBudget,
+	resetFinderSession,
 } from "../src/galaxy-finder";
 import {
 	ECONOMY_NAMES,
@@ -128,19 +132,55 @@ describe("the jump projection", () => {
 		expect(mixed.reach(here)?.jumps).toBe(0);
 	});
 
+	/**
+	 * **Both halves, because either alone is a loop that may never run.** The
+	 * first version asserted the galaxy of every returned row — and at this seed
+	 * the galaxy-1 name it queried matches nothing here, so the body never
+	 * executed and the test stated its claim by an empty iteration. So: a name
+	 * that exists *only* in the other galaxy returns nothing at all, and a name
+	 * that exists in **both** returns only this galaxy's.
+	 */
 	test("the finder drops rows from another galaxy", () => {
 		const other = generateGalaxy(WORLD_SEED, 1);
-		const target = other.systems[3];
-		const results = projectFinder(
-			[...galaxy.systems, ...other.systems],
+		const pool = [...galaxy.systems, ...other.systems];
+		const mine = new Set(galaxy.systems.map((s) => s.name));
+
+		const foreignOnly = other.systems.find(
+			(s) => !mine.has(s.name),
+		) as SystemRecord;
+		const absent = projectFinder(
+			pool,
 			here,
-			filter({ query: target.name, budgetJumps: 9 }),
+			filter({ query: foreignOnly.name, budgetJumps: 9 }),
 		);
-		const rows = [...results.inBudget, ...results.beyondRange];
+		expect(absent.inBudget).toEqual([]);
+		expect(absent.beyondRange).toEqual([]);
+
+		// The collision is built rather than found: no name is shared between
+		// galaxies 0 and 1 at this seed, so a search for one would be the empty
+		// loop again. A twin carrying a galaxy-0 name *and* its index is the
+		// hardest case the galaxy guard has to answer, and it is exactly what a
+		// map keyed on the bare index would return.
+		const mine0 = galaxy.systems[11];
+		const twin: SystemRecord = {
+			...other.systems[3],
+			index: mine0.index,
+			name: mine0.name,
+		};
+		expect(twin.galaxy).not.toBe(here.galaxy);
+		const found = projectFinder(
+			[...galaxy.systems, twin],
+			here,
+			filter({ query: mine0.name, budgetJumps: 9 }),
+		);
+		const rows = [...found.inBudget, ...found.beyondRange];
+		expect(rows.length).toBeGreaterThan(0);
+		expect(rows.filter((r) => r.index === mine0.index).length).toBe(1);
 		for (const r of rows) {
-			const record = [...galaxy.systems, ...other.systems].find(
-				(s) => s.index === r.index && s.name === r.name,
+			const record = galaxy.systems.find(
+				(s) => s.index === r.index,
 			) as SystemRecord;
+			expect(record).toBeDefined();
 			expect(record.galaxy).toBe(here.galaxy);
 		}
 	});
@@ -388,6 +428,47 @@ describe("D7 — a name lookup never returns a blank list", () => {
 		const found = results.beyondRange.find((r) => r.index === island.index);
 		expect(found?.jumps).toBeNull();
 		expect(found?.distanceLy).toBeGreaterThan(JUMP_RANGE_LY);
+	});
+});
+
+describe("D6 — the session budget", () => {
+	/**
+	 * The session value is module state, so a test that widened it would leak
+	 * into whatever ran next. Reset around, and asserted both ways: the budget
+	 * travels and the query does not.
+	 */
+	test("a remembered budget travels to a fresh filter; the query does not", () => {
+		resetFinderSession();
+		try {
+			expect(finderSessionFilter().budgetJumps).toBe(FINDER_DEFAULT_BUDGET);
+			rememberFinderBudget(filter({ query: "lave", budgetJumps: 4 }));
+			const fresh = finderSessionFilter();
+			expect(fresh.budgetJumps).toBe(4);
+			expect(fresh.query).toBe("");
+			expect(fresh.economies).toEqual([]);
+		} finally {
+			resetFinderSession();
+		}
+	});
+
+	test("a non-finite budget falls back to the default rather than passing through", () => {
+		resetFinderSession();
+		try {
+			expect(
+				rememberFinderBudget(filter({ budgetJumps: Number.NaN })).budgetJumps,
+			).toBe(FINDER_DEFAULT_BUDGET);
+			// And it does not leave the session holding one either, which is what
+			// would wedge the next panel open with no control that closes it.
+			expect(finderSessionFilter().budgetJumps).toBe(FINDER_DEFAULT_BUDGET);
+			expect(
+				rememberFinderBudget(filter({ budgetJumps: 99 })).budgetJumps,
+			).toBe(FINDER_MAX_BUDGET);
+			expect(rememberFinderBudget(filter({ budgetJumps: 0 })).budgetJumps).toBe(
+				1,
+			);
+		} finally {
+			resetFinderSession();
+		}
 	});
 });
 

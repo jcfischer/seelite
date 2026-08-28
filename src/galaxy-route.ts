@@ -269,11 +269,35 @@ export interface JumpProjection {
 	size: number;
 }
 
+/**
+ * One projection per (array, origin, range), for the same reason `jumpGraph` is
+ * memoised one level down: the finder rebuilds its rows on every keystroke,
+ * chip and budget step, and none of those move the ship. Without this each one
+ * paid a fresh whole-pool relaxation and a 256-entry map of new objects to read
+ * back numbers that had not changed.
+ *
+ * **It changes when work happens, never what is returned.** Generated records
+ * do not move, so the labels are a function of the key alone.
+ */
+const projectionCache = new WeakMap<
+	readonly SystemRecord[],
+	Map<string, JumpProjection>
+>();
+
 export function projectJumps(
 	systems: readonly SystemRecord[],
 	from: SystemRecord,
 	maxJump = JUMP_RANGE_LY,
 ): JumpProjection {
+	let perArray = projectionCache.get(systems);
+	if (perArray === undefined) {
+		perArray = new Map();
+		projectionCache.set(systems, perArray);
+	}
+	const cacheKey = `${from.galaxy}:${from.index}:${maxJump}`;
+	const cached = perArray.get(cacheKey);
+	if (cached !== undefined) return cached;
+
 	const graph = jumpGraph(systems, from.galaxy, maxJump);
 	const n = graph.pool.length;
 	const start = graph.slot.get(from.index);
@@ -285,12 +309,14 @@ export function projectJumps(
 			labels.set(graph.pool[i].index, { jumps: jumps[i], ly: ly[i] });
 		}
 	}
-	return {
+	const projection: JumpProjection = {
 		galaxy: from.galaxy,
 		reach: (system) =>
 			system.galaxy === from.galaxy ? labels.get(system.index) : undefined,
 		size: labels.size,
 	};
+	perArray.set(cacheKey, projection);
+	return projection;
 }
 
 export function planRoute(

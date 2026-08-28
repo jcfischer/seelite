@@ -396,7 +396,7 @@ and a filter setting is presentation.
 chart is disposed every time the player leaves the Galaxy Map tab
 (`Game.setChartHost`), so a budget held in `mountGalaxyChart`'s closure reads as
 persistent in every single-mount check and resets the moment anyone uses the
-map. It was built that way first. §9.3 item 11 leaves the tab and comes back,
+map. It was built that way first. §9.3 item 12 leaves the tab and comes back,
 and asserts the **query and the chips do not** survive with it — D6 widens the
 budget alone, and a check watching only the budget passes a build that persisted
 the whole filter.
@@ -421,7 +421,7 @@ course commit**: the chart's `set course` button stays the single owner (§8).
 (`galaxy-route.ts`) runs the same lexicographic Dijkstra `planRoute` runs, from
 the ship's system, with no early stop — one relaxation over the cached adjacency
 labels the whole pool. The two share `relaxFrom` rather than holding two copies
-of the objective; §9.1 asserts the labels equal `planRoute`'s counts anyway,
+of the objective; §9.1a asserts the labels equal `planRoute`'s counts anyway,
 because what the two still do differently is where they stop and how they derive
 the number.
 
@@ -438,6 +438,21 @@ with the box, so a system lands at `worldX · height / (2 · z · tan) + width /
 origin moves, by half the column the panel took. A narrower cell crops rather
 than compressing. This stops holding the moment the cluster no longer fits, so
 both checks assert all 256 are still on screen.
+
+**The drawn list is capped at 60 rows per group, and the cap says so.** A
+one-character query at a wide budget matches most of a 256-system galaxy, and
+every row is five elements, so an uncapped rebuild made a keystroke create about
+a thousand nodes for a scroll box that shows fifteen. The cap is on the
+**drawing** and never on the projection — the results carry every matching row —
+and the panel prints `+N MORE`, because a list that stopped at sixty in silence
+would read exactly like a galaxy with sixty matches in it.
+
+**Three modules, one per tier.** `galaxy-finder.ts` is the arithmetic and the
+session budget, with no DOM; `galaxy-finder-panel.ts` is the panel, with no
+Three.js and four callbacks to the chart; `galaxy-map.ts` mounts it and keeps
+the selection, which stays the chart's — a row click goes through the same
+`select` a click on the canvas does, so there is one selection rather than two
+that have to agree.
 
 **Stations are not a filter here.** They are carriers, and
 `persistent-world-state.md` §3.1 requires them to read as timestamped "last
@@ -758,12 +773,16 @@ The chart's *mount* rather than its projection, and the list beside it.
 10. **The finder commits no course** — it carries no per-row control and the
     chart still carries exactly one (D8). This item asserts an *absence*, so it
     has no red build: the build that fails it is a feature nobody wrote.
-11. **The widened budget survives a remount, and the query does not** (§5.2).
+11. **A wide budget draws a capped list and prints what it left out** (§5.2).
+    The rows in the DOM are fewer than the rows in `state.finder`, the printed
+    remainder is exactly the difference, and the text carries the number. Red
+    with the cap raised past the galaxy.
+12. **The widened budget survives a remount, and the query does not** (§5.2).
     The tab is left and re-entered, which disposes and rebuilds the chart — the
     only way the distinction is visible, since a mount-scoped budget reads as
     persistent in every single-mount check. Red twice: the budget put back in
     the closure, and the whole filter persisted rather than the budget alone.
-12. **Crowding in the open cell, measured rather than carried over.** The cell
+13. **Crowding in the open cell, measured rather than carried over.** The cell
     goes 1011 x 462 to 743 x 462 and the figure stays 73.0%, which §5.2 explains
     and this check makes falsifiable: every system's horizontal shift must be
     the *same* shift, equal to half the column the panel took, with the vertical
@@ -776,7 +795,8 @@ The chart's *mount* rather than its projection, and the list beside it.
     said so: aspect frozen, the check stayed green at 0.000 px, and the shipped
     build went red at 134 px, which is the translation a crop is supposed to
     produce. A second fault came out of the same run: the "closed" projection
-    was being captured while the finder was still open from item 8, so both
+    was being captured while the finder was still open from an earlier item,
+    so both
     reads were the same 743 px box and the comparison was 0.000 on every build.
 
 **Every check here was built a red build to run against**, one at a time:
@@ -788,7 +808,7 @@ to 2 and the default framing zoomed to 20 LY. Each turned the check named
 above it red — except the system half of item 3, which is recorded there as
 not yet discriminating rather than counted as covered.
 
-The finder checks were built red builds too — items 7 to 11, both halves where
+The finder checks were built red builds too — items 7 to 13, both halves where
 a check has two: `toggleFinderEconomy` made a no-op (item 7 red, and it is the
 exact dead-chip defect the ordering is there to catch); the beyond-range group
 suppressed, and then made a constant by dropping the budget test (item 8 red one
@@ -797,7 +817,8 @@ made a no-op, then the centre control made to zoom as well (item 9 red three
 ways, the third being what caught the check asserting "nothing else" while
 comparing only two of the pose's four components); the session budget put back
 inside the mount closure, and then the whole filter persisted rather than the
-budget alone (item 11 red one way each). Item 12 was the one that paid: its red
+budget alone (item 12 red one way each); and the cap raised past the galaxy so no row was
+omitted (item 11 red). Item 13 was the one that paid: its red
 build caught two faults in the check itself, both recorded where it is
 described.
 

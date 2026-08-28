@@ -74,6 +74,53 @@ export const finderDefaultFilter = (): FinderFilter => ({
 });
 
 /**
+ * D6's session-scoped budget, held with the filter it belongs to.
+ *
+ * **Module scope rather than mount scope, because the mount is the thing that
+ * does not survive.** `Game.setChartHost` disposes the chart every time the
+ * player leaves the Galaxy Map tab, so a budget held in the panel's closure
+ * would be back at 1 on the next look — which is not what "for the session"
+ * means. It was built that way first.
+ *
+ * It is deliberately **not saved**: `persistent-world-state.md` §8 forbids
+ * persisting a derivable projection, and a filter setting is presentation. A
+ * reload starts at the default.
+ */
+let sessionBudgetJumps: number = FINDER_DEFAULT_BUDGET;
+
+/** The filter a freshly mounted panel opens with: the default, carrying
+ *  whatever budget the session last settled on. The query and the chips do not
+ *  travel — D6 widens the budget alone. */
+export const finderSessionFilter = (): FinderFilter => ({
+	...finderDefaultFilter(),
+	budgetJumps: sessionBudgetJumps,
+});
+
+/**
+ * Clamp a filter's budget, remember it for the session, and hand it back.
+ *
+ * **The clamp refuses a non-finite value rather than passing it through.**
+ * `Math.max`/`Math.min` return `NaN` for a `NaN` input, and a `NaN` budget
+ * makes `finderIsNarrowed` permanently true, leaves both step buttons enabled
+ * and inert (`NaN ± 1`), and drops every row out of budget — a panel wedged
+ * open with nothing in it and no control that closes it.
+ */
+export function rememberFinderBudget(filter: FinderFilter): FinderFilter {
+	const asked = Math.round(filter.budgetJumps);
+	const budgetJumps = Number.isFinite(asked)
+		? Math.max(1, Math.min(FINDER_MAX_BUDGET, asked))
+		: FINDER_DEFAULT_BUDGET;
+	sessionBudgetJumps = budgetJumps;
+	return { ...filter, budgetJumps };
+}
+
+/** Put the session budget back to the default. For tests, which would
+ *  otherwise inherit whatever an earlier one settled. */
+export function resetFinderSession(): void {
+	sessionBudgetJumps = FINDER_DEFAULT_BUDGET;
+}
+
+/**
  * D4: is any narrowing active?
  *
  * **This is what expands the panel**, and it deliberately reads all three
@@ -156,9 +203,12 @@ const row = (
  * chain above one the planner itself calls cheaper.
  *
  * Unreachable rows sort last on their straight-line distance, which is the only
- * thing that is true about them. Ties break on the name so the order is total:
- * two systems at equal cost would otherwise swap rows on a re-sort and the list
- * would flicker under the cursor.
+ * thing that is true about them. The last tie breaks on the **index**, not the
+ * name: names repeat inside a galaxy — seed `0x5ee11e` galaxy 7 carries
+ * `ONTIAR` twice — so a name comparator returns 0 for a real pair and the
+ * order's totality would rest on two floats never being equal. The index is the
+ * one key that cannot tie, and a total order is what stops the list reshuffling
+ * under the cursor on a re-sort.
  */
 function byReach(a: FinderRow, b: FinderRow): number {
 	if (a.jumps !== b.jumps) {
@@ -170,7 +220,7 @@ function byReach(a: FinderRow, b: FinderRow): number {
 		return a.routeLy - b.routeLy;
 	if (a.jumps === null && a.distanceLy !== b.distanceLy)
 		return a.distanceLy - b.distanceLy;
-	return a.name.localeCompare(b.name);
+	return a.name.localeCompare(b.name) || a.index - b.index;
 }
 
 /**

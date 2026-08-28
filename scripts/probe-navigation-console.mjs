@@ -680,6 +680,38 @@ check(
 );
 
 /**
+ * **The drawn list is capped, and the cap says so.**
+ *
+ * A one-character query at a wide budget matches most of a 256-system galaxy,
+ * and every row is five elements — an uncapped rebuild made a keystroke create
+ * about a thousand nodes for a scroll box showing fifteen. The cap is on the
+ * drawing only: `state.finder` still carries every matching row, which is what
+ * the checks above read, and the panel prints what it left out. A list that
+ * stopped at sixty in silence would read exactly like a galaxy with sixty
+ * matches in it, which is the silent-truncation failure the map's constraints
+ * name.
+ */
+await clearFinder();
+await page.evaluate(() => window.__seeliteGalaxyMap.setFinderBudget(9));
+const wide = await finderState();
+const cap = await page.evaluate(() => {
+	const more = document.querySelector("[data-map-finder-more]");
+	return {
+		drawnRows: document.querySelectorAll("[data-map-finder-row]").length,
+		omitted: more === null ? 0 : Number(more.dataset.mapFinderMore),
+		says: more?.textContent ?? "",
+	};
+});
+check(
+	"a wide budget draws a capped list and prints what it left out",
+	wide.inBudget.length > cap.drawnRows &&
+		cap.omitted === wide.inBudget.length - cap.drawnRows &&
+		cap.says.includes(String(cap.omitted)),
+	`${wide.inBudget.length} matched, ${cap.drawnRows} drawn, "${cap.says}"`,
+);
+await clearFinder();
+
+/**
  * **D6's session persistence, which is only visible across a remount.**
  *
  * The chart is disposed every time the player leaves the tab, so a budget held
