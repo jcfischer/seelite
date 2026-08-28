@@ -42,16 +42,18 @@ describe("§12.5 E9 — the name is derived, not drawn", () => {
 		}
 	});
 
-	test("the separator cannot be forged from the inputs", () => {
-		// `hash(name + " " + type)` — a system called "AB" of type "trade" and one
-		// called "AB trade" of a type "" would collide under bare concatenation.
-		// There is no empty station type, so this asserts the property that makes
-		// that impossible rather than a case that can occur: two different input
-		// pairs whose concatenations differ.
-		expect(stationName("LAVE ", "trade")).not.toBe(
-			stationName("LAVE", "trade"),
-		);
-	});
+	// **There is no row for the separator, and that is the honest answer.** A
+	// test comparing two full names cannot fail on any implementation: the name
+	// carries the system name as a prefix, so two different systems differ there
+	// whatever the hash was keyed on — the row that used to be here passed
+	// identically on a bare-concatenation build, which is the tautology `#59`'s
+	// constraint asks about. And no forgeable pair exists to write a real row
+	// against: a collision under bare concatenation needs `nameA + typeA` to
+	// equal `nameB + typeB` with the types different, and none of the four
+	// `StationType` values is a suffix of another. The separator is insurance
+	// against a fifth that is, and insurance against a case that cannot arise
+	// yet is not a thing a test can exercise. `station-name.ts` carries the
+	// argument where a reader adding that fifth type will meet it.
 });
 
 describe("§12.5 E9 — the designators are actually used", () => {

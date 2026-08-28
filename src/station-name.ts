@@ -81,6 +81,14 @@ function fnv1a(text: string): number {
  * carry at all — and made git classify this file as **binary**, so the whole
  * module arrived in review as `Binary files differ` with nothing to read. A
  * separator has to be impossible in the inputs *and* printable in the source.
+ *
+ * **It is insurance, and today it insures nothing.** A collision under bare
+ * concatenation needs `nameA + typeA` to equal `nameB + typeB` with the types
+ * different, which needs one type to be a suffix of another — and none of the
+ * four is. So there is no forgeable pair to write a test against, and no test
+ * pretends otherwise. Add a fifth type that *is* a suffix of an existing one
+ * and this line is what stops two stations deriving the same designator; that
+ * is the reader this paragraph is for.
  */
 export function stationName(systemName: string, type: StationType): string {
 	const words = STATION_DESIGNATORS[type];

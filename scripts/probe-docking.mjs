@@ -251,11 +251,6 @@ async function fly(setup) {
 				elapsed,
 				cleared: cleared.id !== null,
 				grantLive: after.grantLive,
-				// **The crossing's verdict, not the parked state.** The loop above
-				// stops at the crossing — `lastEntry` is what it waits for — and
-				// since #77 a passed entry hands over to a five-second arrival
-				// before `dockedAt` is anything. §9.2's rows are about whether the
-				// entry was accepted, which is exactly this.
 				// **Both: the verdict *and* the state it hands over to.** The loop
 				// above stops at the crossing, and since #77 a passed entry hands over
 				// to a five-second arrival before `dockedAt` is anything — so the

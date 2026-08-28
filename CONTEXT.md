@@ -18,7 +18,7 @@ What a station is **called** — `ENBILATE Gateway`. A third thing beside its `i
 `docking.md` §12.5's decision E9 is where it was ratified as one: derived from
 the system name and the station type, never drawn from a stream, and unique
 within a system by construction. `src/station-name.ts` owns the derivation.
-_Avoid_: display name (says which of the three it is not, not which it is)
+_Avoid_: any wording that could be read as the persistence identity — that is the **Carrier slot**, and the two are deliberately different things.
 
 **CarrierKey**:
 The canonical persisted identity of a carrier slot; a galaxy envelope may store its system-local pair and supplies the galaxy component. `docs/specs/persistent-world-state.md` §2 and §7 own the structure.

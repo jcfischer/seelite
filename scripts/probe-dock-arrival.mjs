@@ -47,14 +47,22 @@ const PAGE_URL = process.env.PROBE_URL ?? ORIGIN + "/?seed=1";
  *
  * `PROBE_STANDOFF_KM` is where a run starts an approach from: outside §7's
  * three-kilometre computer standoff, so the whole approach is the autopilot's.
- * The two ink floors are what a drawn thing has to contribute for the frame to
- * say it is there; both are far under what a passing run measures — the
- * interior reads a few hundred pixels against a floor of 200, and each shield
- * a thousand or more against 40 — and far over the handful the anti-aliasing on
- * one edge moves.
+ *
+ * The ink floors are what a drawn thing has to contribute for the frame to say
+ * it is there. `SHIELD_INK_FLOOR` is 40 against a thousand or more measured —
+ * the shields are textured and emissive, so they read in any light.
+ * `APERTURE_BAR_INK_FLOOR` is a **control** rather than a subject: the bars are
+ * emissive too, and their ink is how a row says the camera is looking at the
+ * aperture at all.
+ *
+ * There is deliberately **no floor on the recess**. It is an unlit surface
+ * against a hull, so its pixel count is a fact about the light rig — #99's open
+ * node — and repeated runs measured it anywhere from 1 to 628 as the station's
+ * docking face went in and out of the sun. Any floor across that range would
+ * decide runs rather than builds, which is what a threshold must never do.
  */
 const PROBE_STANDOFF_KM = 4.5;
-const INTERIOR_INK_FLOOR = 200;
+const APERTURE_BAR_INK_FLOOR = 100;
 const SHIELD_INK_FLOOR = 40;
 
 await guardedOrigin(ORIGIN);
@@ -82,8 +90,19 @@ await page.addInitScript(() => {
 	 * station spins and its orbit carries it, so two captures taken across
 	 * separate calls differ by more than the effect being measured.
 	 */
-	window.__inkDelta = (hide, restore) => {
+	window.__inkDelta = (hide, restore, pinnedClock) => {
 		const g = window.__seelite;
+		// **Pin the clock across both renders where the caller asks.** A slot's
+		// phase decides how much of its recess faces the camera, and left free it
+		// is wherever the frame loop got to at boot: the same measurement read
+		// between 199 and 550 pixels across four runs, which is a threshold
+		// deciding runs rather than builds. `probe-station-visuals.mjs` pins for
+		// the same reason. Only the *drawn* phase moves — the bodies are not
+		// re-placed — so this is not available to a caller whose ship position
+		// was computed at the live clock, which is why it is an argument rather
+		// than the default.
+		const savedClock = g.world.gameTime;
+		if (pinnedClock !== undefined) g.world.gameTime = pinnedClock;
 		const W = 560;
 		const H = 400;
 		const scratch = document.createElement("canvas");
@@ -101,6 +120,7 @@ await page.addInitScript(() => {
 		const hidden = hide();
 		const without = frame();
 		restore();
+		g.world.gameTime = savedClock;
 		let changed = 0;
 		for (let i = 0; i < drawn.length; i += 4) {
 			// Summed across the channels, against a threshold that ignores the
@@ -238,34 +258,59 @@ for (const station of roster) {
 const interiorInk = await page.evaluate((id) => {
 	const g = window.__seelite;
 	const snap = g.dockingSnapshot(id);
-	// Close in: the slot is 120 m across, so from a couple of core radii out it
-	// subtends a handful of pixels and the difference this measures is smaller
-	// than the anti-aliasing on its own edge. One aperture-width off the face
-	// puts the mouth across a good part of the frame — on the axis, looking
-	// straight in, which is the arriving ship's own view.
-	const rangeKm = snap.planeKm + snap.apertureWidthKm;
-	window.__placeOnAxis(id, rangeKm, false);
+	// On the axis, looking straight in — the arriving ship's own view, at a
+	// range where the aperture is a good part of the frame.
+	window.__placeOnAxis(id, snap.planeKm * 1.5, false);
+
 	const mesh = window.__meshOfBody(id);
 	const interior = [];
+	const bars = [];
 	mesh.traverse((o) => {
 		if (o.name === "aperture-mouth" || o.name === "aperture-deck")
 			interior.push(o);
+		if (o.name === "aperture-light") bars.push(o);
 	});
-	const { changed } = window.__inkDelta(
-		() => {
-			for (const o of interior) o.visible = false;
-		},
-		() => {
-			for (const o of interior) o.visible = true;
-		},
-	);
-	return { changed, parts: interior.length, rangeKm };
+	const hideAll = (objects) => () => {
+		for (const o of objects) o.visible = false;
+	};
+	const showAll = (objects) => () => {
+		for (const o of objects) o.visible = true;
+	};
+	// Pinned phase for both, so neither is a function of which way the slot
+	// happened to be facing when the page booted.
+	const recess = window.__inkDelta(hideAll(interior), showAll(interior), 0);
+	const lit = window.__inkDelta(hideAll(bars), showAll(bars), 0);
+	return {
+		changed: recess.changed,
+		bars: lit.changed,
+		parts: interior.length,
+		rangeKm: snap.planeKm * 1.5,
+	};
 }, slotId);
 
 check(
-	"the interior contributes pixels on the axis view",
-	interiorInk.parts > 0 && interiorInk.changed > INTERIOR_INK_FLOOR,
-	`${interiorInk.changed} pixels change when ${interiorInk.parts} interior part(s) are hidden, ` +
+	// **"Reaches the screen", and the floor is zero on purpose.**
+	//
+	// Three things this row is not. It is not evidence of *depth*: E7 makes a
+	// slot's throat **be** the recess, so hiding it cannot separate a `BackSide`
+	// tunnel at `throatDepthKm` from the shallow lid it replaced — that is
+	// `tests/station-mesh.test.ts`'s depth row, which reads the drawn box
+	// against `arrival.ts`'s own number. It is not a *count* worth a threshold:
+	// the recess is an unlit surface against a hull, so how many pixels it moves
+	// is a fact about the **light rig** — #99's open node — and repeated runs
+	// measured anywhere from 1 to 628 as the station's face went in and out of
+	// the sun. A floor of 200 across that range decides runs rather than builds.
+	//
+	// So the claim is the one that is about this build: the recess reaches the
+	// screen at all. **The bars are the control that makes it worth anything** —
+	// they are emissive, so they read in any light, and their ink is what says
+	// the camera is looking at the aperture rather than at nothing.
+	"the recess reaches the screen on the axis view",
+	interiorInk.parts > 0 &&
+		interiorInk.changed > 0 &&
+		interiorInk.bars > APERTURE_BAR_INK_FLOOR,
+	`${interiorInk.changed} pixels from ${interiorInk.parts} interior part(s), ` +
+		`against ${interiorInk.bars} from the aperture bars in the same frame, ` +
 		`from ${interiorInk.rangeKm.toFixed(2)} km on the axis`,
 );
 
@@ -340,6 +385,17 @@ const dock = (id) =>
 const arrivalSeconds = await page.evaluate(
 	() => window.__seelite.dockingTolerances.ARRIVAL_SECONDS,
 );
+check(
+	// **Read bare, so checked bare.** The header refuses `??` fallbacks; a
+	// constant read without one still falls open if nothing looks at what came
+	// back. Renamed off `dockingTolerances`, this is `undefined`, the sample
+	// loop below runs `Math.floor(60 * NaN * 0.9)` iterations — zero — and the
+	// two rows that depend on it pass at the crossing point with the mouth plate
+	// in view.
+	"the page reports E3's arrival duration",
+	Number.isFinite(arrivalSeconds) && arrivalSeconds > 0,
+	`${arrivalSeconds}`,
+);
 const flown = await dock(slotId);
 
 check(
@@ -382,18 +438,35 @@ console.log("\n§12.6 browser row 2 — the name shield is drawn:");
  * The shield's ink at one viewpoint: the frame with the plates and the frame
  * without them, in one task for the reason row 1 gives.
  */
-const shieldInk = (id) =>
-	page.evaluate((stationId) => {
-		const g = window.__seelite;
-		let plates = 0;
-		const { changed } = window.__inkDelta(
-			() => {
-				plates = g.setNameplatesVisible(stationId, false);
-			},
-			() => g.setNameplatesVisible(stationId, true),
-		);
-		return { changed, plates };
-	}, id);
+const shieldInk = (id, which) =>
+	page.evaluate(
+		([stationId, part]) => {
+			const g = window.__seelite;
+			// **One plate or both, because the two rows are different claims.** The
+			// approach row is about the shield at the mouth; the arrival row is about
+			// the one inside the throat, and hiding both would let the mouth plate's
+			// ink stand in for an interior plate that was never drawn. The plates
+			// come back from the mesh in build order — mouth first, interior second
+			// (`buildNameplates`) — so "interior" is the tail.
+			const mesh = window.__meshOfBody(stationId);
+			const plates = [];
+			mesh.traverse((o) => {
+				if (o.name === "station-nameplate") plates.push(o);
+			});
+			const chosen =
+				part === "interior" ? plates.slice(1) : part === "mouth" ? plates : [];
+			const { changed } = window.__inkDelta(
+				() => {
+					for (const p of chosen) p.visible = false;
+				},
+				() => {
+					for (const p of chosen) p.visible = true;
+				},
+			);
+			return { changed, plates: chosen.length, total: plates.length };
+		},
+		[id, which],
+	);
 
 // The ship is parked in the throat from row 3, so the approach view has to be
 // set up again — deliberately, and after the dock rather than before: putting
@@ -416,7 +489,7 @@ check(
 	approach.phase,
 );
 
-const mouth = await shieldInk(slotId);
+const mouth = await shieldInk(slotId, "mouth");
 check(
 	"the shield at the mouth is drawn on approach",
 	mouth.plates > 0 && mouth.changed > SHIELD_INK_FLOOR,
@@ -455,7 +528,7 @@ check(
 	`${midArrival.phase} at ${midArrival.axialKm.toFixed(4)} km inside a ${midArrival.planeKm.toFixed(3)} km plane`,
 );
 
-const inside = await shieldInk(slotId);
+const inside = await shieldInk(slotId, "interior");
 check(
 	// The half only a probe can catch: it exists for a few seconds, from one
 	// angle, and nothing headless can see it at all.

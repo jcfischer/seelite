@@ -3532,9 +3532,10 @@ class Game {
 	private stepDockPhase(dt: number) {
 		const out = stepDockedWorld(this.world, this.dock, dt);
 		this.dock = out.session;
-		// The clock moved, so everything the clock drives moves with it. Anything
-		// per-frame added to `step`'s flight tail owes the same line here, and
-		// this one is the reason that is worth saying out loud: it was missing.
+		// The clock moved, so §6 moves with it: grants expire and hostility
+		// decays while the player sits docked. This line is the reason the
+		// caller's comment names what runs rather than implying the rest — it
+		// was missing, and nothing failed.
 		this.stepDockingProtocol();
 		if (!out.ship) return;
 		this.world.ship.pos = out.ship.pos;
@@ -3727,9 +3728,20 @@ class Game {
 		// flight: the throttle, the stick and the docking computer are all
 		// inert, so none of the input handling below runs — and neither does
 		// `stepDocking`, which is obligation 2's "nothing re-evaluates §3's
-		// checks during it". `stepDockedWorld` advances the clock and the bodies
-		// itself, so the world keeps running (obligation 4) exactly as it does
-		// on the flying path.
+		// checks during it".
+		//
+		// **What still runs is named, not implied.** `stepDockPhase` advances
+		// the clock, moves the bodies (`advanceWorldClock`) and ticks §6's
+		// protocol — three things, and the rest of `step`'s flight tail does
+		// not. That is enough for obligation 4 as §12.2 states it and enough for
+		// every subsystem this game currently has on that tail; it is **not** a
+		// standing equivalence, and an earlier version of this comment claimed
+		// one. The protocol tick is here because the first build left it out and
+		// a docked ship kept a grant that never expired. Anything per-frame
+		// added below owes the same question, and the answer has to be written
+		// rather than assumed — nothing checks it, because a test for "the
+		// world keeps running" cannot tell a running world from three running
+		// subsystems.
 		if (!flightLive(this.dock.phase)) {
 			this.stepDockPhase(dt);
 			return;
