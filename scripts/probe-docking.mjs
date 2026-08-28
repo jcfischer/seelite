@@ -543,5 +543,285 @@ check(
 	rolled.grantLive && !rolled.hostile,
 );
 
+// ---------------------------------------------------------------------------
+// §3's docking director — `hud-and-scanner.md`, the cues #9 left without a
+// visual referent.
+//
+// `docking.md` §3.2 records that check 2's cone and check 4's roll were set
+// wide **partly because the instruments did not exist**. The headless tier
+// (`tests/docking-director.test.ts`) proves the cue reads the same angle the
+// check does; this tier proves the cue reaches the glass, and that it moves
+// when the pose does. A cue that agreed with the check and was never painted
+// would pass the first tier alone.
+// ---------------------------------------------------------------------------
+
+/** Park the ship on the axis at a standoff, point the nose `noseDeg` off the
+ *  inward axis and roll it `rollDeg` off the slot, then render one frame and
+ *  read what the director actually drew. */
+async function directorAt(setup) {
+	return page.evaluate(
+		async ([dt, setup]) => {
+			const g = window.__seelite;
+			const D = window.__dock;
+			const station = setup.pad
+				? g.world.system.contents.stations.find((s) => s.spinRpm === 0)
+				: D.spinner();
+			if (!station) return { noStation: true };
+			const id = station.id;
+			const snap = g.dockingSnapshot(id);
+			if (!snap) return { noSnapshot: true, id };
+
+			// Rodrigues, page-side: the probe needs a pose *off* the tolerance and
+			// the game exposes no rotate. Only used to aim, never to measure — every
+			// number checked below is the renderer's own.
+			const rotate = (v, k, rad) => {
+				const c = Math.cos(rad);
+				const s = Math.sin(rad);
+				const kv = {
+					x: k.y * v.z - k.z * v.y,
+					y: k.z * v.x - k.x * v.z,
+					z: k.x * v.y - k.y * v.x,
+				};
+				const kd = k.x * v.x + k.y * v.y + k.z * v.z;
+				return D.add(
+					D.add(D.scale(v, c), D.scale(kv, s)),
+					D.scale(k, kd * (1 - c)),
+				);
+			};
+
+			D.place(id, D.scale(snap.axis, snap.planeKm + setup.standoffKm), {
+				x: 0,
+				y: 0,
+				z: 0,
+			});
+			g.targetId = id;
+			g.dockingComputerEngaged = false;
+			g.setHeadLook(setup.headLook ?? "forward");
+
+			const inward = D.scale(snap.axis, -1);
+			const nose = rotate(
+				inward,
+				snap.basis.up,
+				((setup.noseDeg ?? 0) * Math.PI) / 180,
+			);
+			const up = rotate(
+				snap.basis.across,
+				snap.axis,
+				((setup.rollDeg ?? 0) * Math.PI) / 180,
+			);
+			g.setAttitude(nose, up);
+
+			// **Reset the protocol every run**, for the reason this file already
+			// records about the docking computer: §6 state is session state and it
+			// survives the run that made it. Without this the uncleared row
+			// inherited the previous row's live grant and asserted "no clearance"
+			// against a station that had cleared the ship ten minutes ago.
+			const held = g.dockingStateOf(id);
+			held.clearance = { kind: "none" };
+			held.hostile = false;
+			held.hostileUntilS = null;
+
+			if (setup.clear) g.requestDockingClearance();
+			if (setup.hostile) {
+				// **Re-fetched, not `held`.** `requestClearance` is pure and the game
+				// stores the *new* state, so the object taken before the request is
+				// an orphan the moment a grant lands — mutating it set hostility on
+				// nothing and the row read "CLEARED" against a hostile station.
+				const current = g.dockingStateOf(id);
+				current.hostile = true;
+				current.hostileUntilS = g.world.gameTime + 600;
+			}
+
+			// A rendered frame, not a computed one: `directorRender` is written by
+			// the draw, so an unrendered frame leaves it null and every row below
+			// goes red rather than silently reading a state nobody painted.
+			g.render(dt);
+			const drawn = g.directorRender;
+			return {
+				id,
+				apertureKind: snap.apertureKind,
+				drawn: drawn
+					? {
+							funnelRadiusPx: drawn.funnelRadiusPx,
+							centre: drawn.centre,
+							axisMarker: drawn.axisMarker,
+							rollTicksDeg: drawn.rollTicksDeg,
+							clearanceText: drawn.clearanceText,
+							blocking: drawn.blocking,
+							noseDeg: drawn.state.axis.nose.deg,
+							noseWithin: drawn.state.axis.nose.within,
+							noseToleranceDeg: drawn.state.axis.nose.toleranceDeg,
+							positionDeg: drawn.state.axis.position.deg,
+							rollDeg: drawn.state.roll?.deg ?? null,
+							rollWithin: drawn.state.roll?.within ?? null,
+							rollToleranceDeg: drawn.state.roll?.toleranceDeg ?? null,
+							grantRemainingS: drawn.state.grantRemainingS,
+							aligned: drawn.state.aligned,
+						}
+					: null,
+			};
+		},
+		[dt, setup],
+	);
+}
+
+const AXIS_DEG = tolerances.axisDeg;
+const rollDegOf = await page.evaluate(
+	() => window.__seelite.dockingTolerances.ROLL_TOLERANCE_DEG,
+);
+
+const inside = await directorAt({
+	standoffKm: 3.2,
+	noseDeg: AXIS_DEG - 5,
+	rollDeg: 0,
+	clear: true,
+});
+check(
+	"the director is on the glass on a cleared approach",
+	Boolean(inside.drawn) &&
+		inside.drawn.funnelRadiusPx > 0 &&
+		inside.drawn.axisMarker !== null,
+	JSON.stringify(inside.drawn ?? inside),
+);
+check(
+	"the funnel is the axis tolerance, and the nose cue reads inside it",
+	inside.drawn?.noseToleranceDeg === AXIS_DEG &&
+		Math.abs(inside.drawn.noseDeg - (AXIS_DEG - 5)) < 0.5 &&
+		inside.drawn.noseWithin === true,
+	`${inside.drawn?.noseDeg?.toFixed(2)}° against ${AXIS_DEG}°`,
+);
+check(
+	"the axis marker sits inside the funnel it is being flown into",
+	inside.drawn?.axisMarker !== null &&
+		Math.hypot(
+			inside.drawn.axisMarker.x - inside.drawn.centre.x,
+			inside.drawn.axisMarker.y - inside.drawn.centre.y,
+		) < inside.drawn.funnelRadiusPx,
+	`${Math.hypot(
+		(inside.drawn?.axisMarker?.x ?? 0) - (inside.drawn?.centre?.x ?? 0),
+		(inside.drawn?.axisMarker?.y ?? 0) - (inside.drawn?.centre?.y ?? 0),
+	).toFixed(
+		1,
+	)} px against a ${inside.drawn?.funnelRadiusPx?.toFixed(1)} px funnel`,
+);
+
+const outside = await directorAt({
+	standoffKm: 3.2,
+	noseDeg: AXIS_DEG + 5,
+	rollDeg: 0,
+	clear: true,
+});
+check(
+	// The row that separates a drawn cue from a painted decoration: the same
+	// funnel, a pose five degrees the other side of the tolerance, and the
+	// verdict has to flip. A director that always read "aligned" passes every
+	// row above.
+	"five degrees past the tolerance flips the cue, and the marker leaves the funnel",
+	outside.drawn?.noseWithin === false &&
+		outside.drawn.aligned === false &&
+		Math.hypot(
+			outside.drawn.axisMarker.x - outside.drawn.centre.x,
+			outside.drawn.axisMarker.y - outside.drawn.centre.y,
+		) > outside.drawn.funnelRadiusPx,
+	`${outside.drawn?.noseDeg?.toFixed(2)}° against ${AXIS_DEG}°`,
+);
+
+const misrolled = await directorAt({
+	standoffKm: 3.2,
+	noseDeg: 0,
+	rollDeg: rollDegOf + 8,
+	clear: true,
+});
+check(
+	"the roll ring reads check 4's angle and fails past its tolerance",
+	inside.drawn?.rollWithin === true &&
+		inside.drawn.rollToleranceDeg === rollDegOf &&
+		misrolled.drawn?.rollWithin === false &&
+		Math.abs(misrolled.drawn.rollDeg - (rollDegOf + 8)) < 0.5,
+	`${inside.drawn?.rollDeg?.toFixed(2)}° then ${misrolled.drawn?.rollDeg?.toFixed(2)}° against ${rollDegOf}°`,
+);
+check(
+	"the ring's two ticks straddle the reference by the measured roll error",
+	Array.isArray(misrolled.drawn?.rollTicksDeg) &&
+		Math.abs(
+			misrolled.drawn.rollTicksDeg[1] -
+				misrolled.drawn.rollTicksDeg[0] -
+				misrolled.drawn.rollDeg,
+		) < 1e-6,
+	JSON.stringify(misrolled.drawn?.rollTicksDeg ?? null),
+);
+
+const pad = await directorAt({
+	standoffKm: 3.2,
+	noseDeg: 0,
+	rollDeg: 40,
+	clear: true,
+	pad: true,
+});
+check(
+	// A pad has no long axis to match, so an empty ring would read as a failed
+	// one. §4's whole point: the absence has to be an absence.
+	"a pad draws no roll ring, and a 40° roll is still aligned there",
+	pad.drawn !== null &&
+		pad.apertureKind === "pad" &&
+		pad.drawn.rollTicksDeg === null &&
+		pad.drawn.aligned === true,
+	`${pad.apertureKind}, ticks ${JSON.stringify(pad.drawn?.rollTicksDeg ?? null)}`,
+);
+
+check(
+	"a live grant reads as a positive state with its remaining window",
+	inside.drawn?.blocking === false &&
+		inside.drawn.grantRemainingS > 0 &&
+		/CLEARED/.test(inside.drawn.clearanceText),
+	inside.drawn?.clearanceText,
+);
+
+const uncleared = await directorAt({
+	standoffKm: 3.2,
+	noseDeg: 0,
+	rollDeg: 0,
+	clear: false,
+});
+check(
+	// §3: "a red mark alone never carries the consequence" — the refusal has to
+	// be written, and it has to say which refusal it is.
+	"an approach with no grant is blocking, and the glass writes the reason",
+	uncleared.drawn?.blocking === true &&
+		/DO NOT ENTER/.test(uncleared.drawn.clearanceText) &&
+		/clearance/i.test(uncleared.drawn.clearanceText),
+	uncleared.drawn?.clearanceText,
+);
+
+const hostile = await directorAt({
+	standoffKm: 3.2,
+	noseDeg: 0,
+	rollDeg: 0,
+	clear: true,
+	hostile: true,
+});
+check(
+	"hostility outranks the grant on the glass",
+	hostile.drawn?.blocking === true &&
+		/hostile/i.test(hostile.drawn.clearanceText),
+	hostile.drawn?.clearanceText,
+);
+
+const turned = await directorAt({
+	standoffKm: 3.2,
+	noseDeg: 0,
+	rollDeg: 0,
+	clear: true,
+	headLook: "left",
+});
+check(
+	// The director is glass, and a focused console has replaced the glass. §5's
+	// head-turn grammar, applied to the newest thing on it.
+	"a head turn takes the director off the glass with everything else on it",
+	turned.drawn === null,
+	JSON.stringify(turned.drawn),
+);
+await page.evaluate(() => window.__seelite.setHeadLook("forward"));
+
 await browser.close();
 exit();

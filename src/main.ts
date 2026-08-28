@@ -162,6 +162,7 @@ import {
 	tickDocking,
 	UNDOCK_CLEAR_KM,
 } from "./docking";
+import { type DirectorState, dockingDirector } from "./docking-director";
 import {
 	type StationMesh,
 	buildStationMesh,
@@ -457,6 +458,30 @@ const TEXT_RASTER_BOUNDS_DEFAULTS: Readonly<{
 	width: 0,
 	height: 0,
 });
+
+/**
+ * What the docking director actually painted on the glass this frame.
+ *
+ * Pixel geometry, not a second copy of the state: `state` below is the object
+ * `docking-director.ts` returned, and everything beside it is where the draw
+ * put it. A probe asserting the funnel is on screen is then asserting about
+ * strokes that happened, which is the distinction `cockpitPrompt` exists for.
+ */
+interface DirectorRender {
+	state: DirectorState;
+	/** Screen centre — the nose, and the thing the axis marker is flown into. */
+	centre: { x: number; y: number };
+	/** Pixel radius of the axis tolerance cone about the optical axis. */
+	funnelRadiusPx: number;
+	/** Where the inward docking axis projects, or `null` when it is behind. */
+	axisMarker: { x: number; y: number; onScreen: boolean } | null;
+	/** The two roll ticks, degrees clockwise from screen up, or `null` for a
+	 *  pad — which has no long axis to match. */
+	rollTicksDeg: [number, number] | null;
+	/** The clearance line as drawn, and whether it was drawn as blocking. */
+	clearanceText: string;
+	blocking: boolean;
+}
 
 class TextRaster {
 	text = TEXT_RASTER_DEFAULTS.text;
@@ -813,6 +838,13 @@ class Game {
 	readonly cockpitPrompt = new TextRaster();
 	/** Prototype-only glass status, exposed for the browser probe. */
 	readonly combatOverlayStatus = new TextRaster();
+	/**
+	 * What §3's docking director drew this frame, or `null` when it drew
+	 * nothing. The same pattern as `cockpitPrompt`: the record is written by the
+	 * draw itself rather than recomputed beside it, so a probe reading it cannot
+	 * pass against a director that was never painted.
+	 */
+	directorRender: DirectorRender | null = null;
 	/** What the HUD last displayed, quantised to its own resolution — so a frame
 	 *  that would render the same text neither builds nor writes it. */
 	private hudKey = "";
@@ -2743,6 +2775,33 @@ class Game {
 	 * sampling those across several page evaluations lets the world move between
 	 * them. The numbers are the renderer's own, not a probe's copy of the rules.
 	 */
+	/**
+	 * §3's director state for the station the pilot is working, or `null`.
+	 *
+	 * §3 says the on-glass director "retains the selected target after
+	 * Navigation chooses it", and becomes a docking director "for a local
+	 * station" — so the selected target wins when it is a station, and the
+	 * nearest station is the fallback. Outside §6's vicinity there is nothing to
+	 * direct: the return is `null` rather than a director with every cue grey,
+	 * because a permanently-visible funnel is the wall of labels §1 refuses.
+	 */
+	directorState(): DirectorState | null {
+		const selected =
+			this.targetId &&
+			this.world.system.contents.stations.some((s) => s.id === this.targetId)
+				? this.targetId
+				: this.stationsByRange()[0]?.id;
+		if (!selected) return null;
+		const director = dockingDirector({
+			stationId: selected,
+			frame: this.apertureFrameOf(selected),
+			pose: this.entryPoseOf(selected),
+			state: this.dockingStateOf(selected),
+			gameTime: this.world.gameTime,
+		});
+		return director.inVicinity ? director : null;
+	}
+
 	dockingSnapshot(id?: string): DockingSnapshot | null {
 		const target = id ?? this.stationsByRange()[0]?.id;
 		if (!target) return null;
@@ -3854,6 +3913,143 @@ class Game {
 	 * Everything is placed by **direction**, so a body draws its bracket in the
 	 * same place whichever layer rendered it — see that module's docstring.
 	 */
+	/**
+	 * §3's docking director, on the glass.
+	 *
+	 * **The funnel is centred on the optical axis, not on the station**, and that
+	 * is what makes it exact rather than approximate. Check 2's nose half is the
+	 * angle between the nose and the inward docking axis; the nose is the screen
+	 * centre by construction, so a ring of angular radius `AXIS_TOLERANCE_DEG`
+	 * about the centre maps to `tan(θ)/tan(fov/2)` in NDC with no small-angle
+	 * assumption, and "the axis marker is inside the ring" is check 2's nose half
+	 * and nothing else. A ring drawn *around the station* would have been a conic
+	 * section flattened into a circle, and would have read wrong exactly where
+	 * the pilot needs it — off to one side, early in the turn.
+	 *
+	 * The position half cannot be flown with the nose: it is where the ship *is*,
+	 * not where it points, so it reads as a corridor bar rather than a second
+	 * ring. Two rings would have said the pilot could fix both by turning.
+	 */
+	private drawDockingDirector(
+		ctx: CanvasRenderingContext2D,
+		w: number,
+		h: number,
+	) {
+		const state = this.directorState();
+		if (!state) {
+			this.directorRender = null;
+			return;
+		}
+		const cx = w / 2;
+		const cy = h / 2;
+		const halfFov = (this.nearCamera.fov * Math.PI) / 360;
+		const funnelRadiusPx =
+			((h / 2) * Math.tan((state.axis.nose.toleranceDeg * Math.PI) / 180)) /
+			Math.tan(halfFov);
+
+		const axisOk = state.axis.nose.within;
+		const funnelColour = state.blocking
+			? "rgba(255, 110, 96, 0.85)"
+			: axisOk
+				? "rgba(150, 255, 190, 0.8)"
+				: "rgba(255, 209, 122, 0.75)";
+		ctx.save();
+		ctx.strokeStyle = funnelColour;
+		ctx.lineWidth = 1.5;
+		// Three rings rather than one: a single circle reads as a reticle, and the
+		// nesting is what makes it a funnel the pilot is flying down.
+		for (const fraction of [1, 0.62, 0.28]) {
+			ctx.beginPath();
+			ctx.arc(cx, cy, funnelRadiusPx * fraction, 0, Math.PI * 2);
+			ctx.stroke();
+		}
+
+		// The inward axis: where the nose has to end up. `axis` points out of the
+		// station, so the direction to fly the nose to is its negation.
+		const inward = scale(state.axisOut, -1);
+		const projected = this.markerNdc(inward);
+		let axisMarker: DirectorRender["axisMarker"] = null;
+		if (!projected.behind) {
+			const x = (projected.ndcX * 0.5 + 0.5) * w;
+			const y = (1 - (projected.ndcY * 0.5 + 0.5)) * h;
+			axisMarker = { x, y, onScreen: projected.onScreen };
+			ctx.beginPath();
+			ctx.moveTo(x, y - 7);
+			ctx.lineTo(x + 7, y);
+			ctx.lineTo(x, y + 7);
+			ctx.lineTo(x - 7, y);
+			ctx.closePath();
+			ctx.stroke();
+		}
+
+		// The roll ring: two ticks on the funnel, separated by the roll error.
+		// Absent for a pad, because check 4 does not apply and an empty ring would
+		// read as one the pilot had failed.
+		let rollTicksDeg: [number, number] | null = null;
+		if (state.roll) {
+			const half = Number.isFinite(state.roll.deg) ? state.roll.deg / 2 : 90;
+			rollTicksDeg = [-half, half];
+			ctx.strokeStyle = state.roll.within
+				? "rgba(150, 255, 190, 0.8)"
+				: "rgba(255, 209, 122, 0.75)";
+			ctx.lineWidth = 2.5;
+			for (const tick of rollTicksDeg) {
+				const rad = (tick * Math.PI) / 180 - Math.PI / 2;
+				const inner = funnelRadiusPx * 0.9;
+				const outer = funnelRadiusPx * 1.12;
+				ctx.beginPath();
+				ctx.moveTo(cx + Math.cos(rad) * inner, cy + Math.sin(rad) * inner);
+				ctx.lineTo(cx + Math.cos(rad) * outer, cy + Math.sin(rad) * outer);
+				ctx.stroke();
+			}
+		}
+
+		// The corridor bar — check 2's position half, which is a translation task.
+		const corridorY = cy + funnelRadiusPx * 1.34;
+		const barHalf = funnelRadiusPx * 0.9;
+		const corridor = state.axis.position;
+		const fill = Math.min(1, corridor.deg / corridor.toleranceDeg);
+		ctx.lineWidth = 3;
+		ctx.strokeStyle = "rgba(120, 190, 235, 0.3)";
+		ctx.beginPath();
+		ctx.moveTo(cx - barHalf, corridorY);
+		ctx.lineTo(cx + barHalf, corridorY);
+		ctx.stroke();
+		ctx.strokeStyle = corridor.within
+			? "rgba(150, 255, 190, 0.85)"
+			: "rgba(255, 209, 122, 0.8)";
+		ctx.beginPath();
+		ctx.moveTo(cx - barHalf, corridorY);
+		ctx.lineTo(cx - barHalf + barHalf * 2 * fill, corridorY);
+		ctx.stroke();
+
+		// §3: a positive state and the remaining window, or the refusal *with its
+		// reason* — a red mark alone never carries the consequence.
+		const clearanceText = state.blocking
+			? state.blocking.text
+			: state.grantRemainingS === null
+				? "NO GRANT"
+				: `CLEARED · ${duration(state.grantRemainingS)} left`;
+		ctx.font = PROMPT_FONT;
+		ctx.textAlign = "center";
+		ctx.fillStyle = state.blocking
+			? "rgba(255, 110, 96, 0.95)"
+			: "rgba(150, 255, 190, 0.9)";
+		ctx.fillText(clearanceText, cx, corridorY + 26);
+		ctx.textAlign = "left";
+		ctx.restore();
+
+		this.directorRender = {
+			state,
+			centre: { x: cx, y: cy },
+			funnelRadiusPx,
+			axisMarker,
+			rollTicksDeg,
+			clearanceText,
+			blocking: state.blocking !== null,
+		};
+	}
+
 	private drawMarkers(camPos: Vec3) {
 		const ctx = this.overlayCtx;
 		if (!ctx) return;
@@ -3867,6 +4063,10 @@ class Game {
 			this.cockpitPrompt.reset();
 			this.combatOverlayStatus.reset();
 			this.combatOverlayLines = [];
+			// The director is glass, and a focused console has replaced the glass.
+			// Leaving the record standing would let a probe assert a funnel that
+			// this frame deliberately did not paint.
+			this.directorRender = null;
 			return;
 		}
 		const toPixels = (ndcX: number, ndcY: number) => ({
@@ -3967,6 +4167,8 @@ class Game {
 				ctx.stroke();
 			}
 		}
+
+		this.drawDockingDirector(ctx, w, h);
 
 		// The prompt, on the glass rather than only in the corner: the mechanic it
 		// names is the one the whole prototype is about, and the first flight of

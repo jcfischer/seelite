@@ -151,6 +151,27 @@ than starting a second one.
 a design surface, not a claim that unbuilt docking, communications, or scanner
 simulation has shipped.
 
+### 7.1 The docking director's own two tiers
+
+**The gallery cannot verify §3's two docking cues, and that is why they are
+checked elsewhere.** Its `docking-granted` and `docking-denied` states are fixed
+review fixtures, so a funnel drawn there is a picture of a cue rather than a
+reading of one. The cues are readouts of live docking state, and
+`docking.md` §3.2 records that check 2's cone and check 4's roll were set wide
+partly because these instruments did not exist — a cue that measured a slightly
+different angle from the check would leave them wide for a second reason.
+
+So the director is verified against `docking.ts` itself, in both tiers:
+
+| Where | What it holds |
+|---|---|
+| `tests/docking-director.test.ts` | Every angle the director reports is `evaluateEntry`'s, and the cue's verdict is swept against checks 2 and 4 across 0–90° at both tolerances. A director one degree looser than the gate turns both sweeps red. |
+| `scripts/probe-docking.mjs` | The funnel, the roll ring, the corridor bar and the clearance line reach the glass on a live approach; five degrees past the tolerance flips the cue and takes the axis marker out of the funnel; a pad draws no ring; hostility outranks a live grant; a head turn takes the director off the glass. |
+
+The browser rows read `directorRender`, which the **draw** writes rather than a
+computation beside it, so a build that produced a correct director and never
+painted it goes red rather than passing the tier that matters least.
+
 ## 8. The station console
 
 **Decided with the principal on 2026-08-27, on node
