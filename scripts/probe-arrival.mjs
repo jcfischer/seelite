@@ -12,16 +12,24 @@
  * velocity. It would pass unchanged with #30's defect still in place, and did.
  *
  * The defect is a **geometry** one, so the probe that catches it is chosen by
- * geometry: `?seed=47` has one station of each kind in a single system.
+ * geometry: `?seed=481` has both shapes in a single system.
  *
- * - `station-trade` orbits a 7,046 km planet whose centre sits 7,086 km across
+ * - `station-trade` orbits a 6,326 km planet whose centre sits 6,593 km across
  *   the line of sight — outside the planet and *inside* the 1.05 × radius shell
- *   it used to project. The station is in clear space and cruise ended against
- *   its host thousands of km short, at thousands of km/s.
- * - `station-shipyard` orbits a 33,002 km planet whose centre is 10,504 km
- *   across the line of sight, so the station is genuinely behind 33,000 km of
- *   world. That leg must still be stopped, and stopped *outside* the surface:
- *   a rule that reaches this one is one that flies through planets.
+ *   it used to project (1.042 ×). The station is in clear space and cruise
+ *   ended against its host thousands of km short, at thousands of km/s.
+ * - `station-shipyard` orbits a 35,192 km planet and is genuinely behind it.
+ *   That leg must still be stopped, and stopped *outside* the surface: a rule
+ *   that reaches this one is one that flies through planets.
+ *
+ * **It was `?seed=47` until #118.** The reshape moved every system, so that
+ * seed's system no longer has either shape and both checks went red for having
+ * lost their fixture. Seed 481 was found by re-running the same classification
+ * `scripts/measure-cruise-arrival.ts` uses — host between arrival point and
+ * station at leg start — over seeds 1..3000, and it is the one seed in that
+ * range that reproduces *both* geometries including the 1.0-1.05 shell band the
+ * first claim turns on. A probe whose subject is a generated fixture is
+ * invalidated by any regeneration; the re-pick is a scan, not a guess.
  *
  * Both legs are flown by `Game.step`, the same path the player takes.
  *
@@ -61,7 +69,7 @@ const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
 /** The seed is the fixture: see the header. A different one is a different
  *  claim, so it is not configurable. */
-const URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=47`;
+const URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=481`;
 /** Sim seconds a leg is given. Generous against the ~60 s legs both are. */
 const LIMIT_S = 300;
 

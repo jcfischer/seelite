@@ -83,12 +83,39 @@ import {
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
 /**
- * Seed 1, and not an arbitrary one: its start system holds all three station
- * types — the only way to compare three silhouettes under one lighting setup —
- * and its two Coriolis stations happen to sit at 0.91 and 2.95 rpm, which is
- * §4's range measured at both ends without the probe writing a spin itself.
+ * The fixture requirement is **one system holding all three station types**,
+ * each framable and fully lit at docking range — not this particular number.
+ *
+ * It was `?seed=1` until #118 reshaped the galaxy, after which that system holds
+ * only a trade post and a refinery. The re-pick is reproducible rather than a
+ * hunt, and the type scan alone is **not** the criterion: of the 40 seeds under
+ * 400 whose start system holds three types, most fail
+ * `probe-station-visuals.mjs` — the trade post frames small enough that its
+ * window grid contributes no measurable pixels. Scan
+ * `makeWorld(seed).system.contents.stations` for three distinct types, then run
+ * both station probes over the candidates. 54, 59, 96 and 115 pass the visuals
+ * probe; 54 is the most reliable across both.
+ *
+ * Seed 54's system, INEDTE, spins its Coriolis stations at 1.09 and 2.64 rpm —
+ * §4's range sampled near both ends without the probe writing a spin itself,
+ * which is the second thing this fixture is for. (Seed 1's were 0.91 and 2.95.)
+ *
+ * ## A known flake this seed does not cause and cannot fix
+ *
+ * The 5 km control below — trade measured twice — straddles its 0.05 ceiling.
+ * Measured over four runs each: `main` before #118 fails 1 in 4 (0.057, at the
+ * ceiling), this seed 2 in 4 (0.061-0.074), and seeds 59, 96 and 115 worse
+ * still. It is a **pre-existing** flake rather than one #118 introduced, and it
+ * is the subject of the open node #84 ("is probe-station's margin too tight?").
+ *
+ * The ceiling is deliberately **not** widened here. Loosening a margin so that
+ * an unrelated change goes green is how a check stops discriminating, and the
+ * data above suggests the margin is not even the real fault: the control
+ * re-measures a station that is *spinning*, so what it reports is rotation
+ * between the two captures rather than measurement noise. Deciding that belongs
+ * to #84, which already owns the question.
  */
-const URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=1`;
+const URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=54`;
 
 /** Where the camera stands, kilometres from the station centre. Far enough that
  *  the shipyard's 1.5 km frame is inside the frame, close enough that the

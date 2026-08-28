@@ -42,19 +42,43 @@ const ORIGIN =
  * its own measurement with its own band — still wide, because this is a
  * regression guard rather than a tuning target, but each end is a number
  * somebody measured at that width.
+ *
+ * ## Re-measured for the q = 0.7 disc (#118), and re-based on the spread
+ *
+ * The disc invalidated both bands, and #107's instruction was that they be
+ * **re-measured rather than widened**. They were: this probe was run over all
+ * eight galaxies at each viewport, and the band is that spread ± 4 points.
+ *
+ * ```
+ *              galaxy 0..7                                   spread     band
+ * desktop  44.5 41.0 40.2 40.6 48.0 47.3 39.8 41.0        39.8-48.0   36-52
+ * narrow   43.6 33.5 42.0 33.9 50.5 43.6 39.4 39.5        33.5-50.5   29-55
+ * ```
+ *
+ * **The desktop band tightened and the narrow one widened, and the widening is
+ * the fix rather than the evasion.** #107 found that §5.1 quoted 40.2% as
+ * though it were a constant when it is one galaxy of a 13-point spread. The old
+ * narrow band of 29-49 was set from galaxy 0 alone, and galaxy 4 measures 50.5
+ * — so that band was already outside its own subject and passed only because
+ * the probe mounts galaxy 0. A band set from one sample is not a tighter band,
+ * it is an untested one.
+ *
+ * **This band does not police the shape**, and is not asked to: it guards the
+ * projection and the pick radius. The disc is asserted directly by the
+ * edge-on/face-on aspect check below, which fails flat on a ball.
  */
 const VIEWPORTS = [
 	{
 		name: "desktop",
 		width: 1280,
 		height: 760,
-		crowding: { measured: 0.402, min: 0.3, max: 0.5 },
+		crowding: { measured: 0.445, min: 0.36, max: 0.52 },
 	},
 	{
 		name: "narrow",
 		width: 390,
 		height: 844,
-		crowding: { measured: 0.387, min: 0.29, max: 0.49 },
+		crowding: { measured: 0.436, min: 0.29, max: 0.55 },
 	},
 ];
 
@@ -67,6 +91,10 @@ const nextFrame = (page) =>
 await guardedOrigin(ORIGIN, ["src/galaxy-map.ts", "src/galaxy-route.ts"]);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
+
+/** How many viewports actually framed the cluster and so measured the disc.
+ *  Asserted after the loop, so the skip above cannot become a silent retirement. */
+let discMeasured = 0;
 
 for (const viewport of VIEWPORTS) {
 	const page = await browser.newPage({
@@ -94,8 +122,109 @@ for (const viewport of VIEWPORTS) {
 			!initial.gameConstructed &&
 			initial.state?.systemCount === 256 &&
 			initial.state?.galaxy === 0 &&
-			initial.state?.galaxyRadiusLy === 22 &&
+			// **A plausibility bracket, not a copy of the constant.** This read
+			// `=== 22` and went red on #118 for reshaping the galaxy, which is
+			// the failure mode `CLAUDE.md` names: a probe holding its own copy of
+			// a module's constant fails when the module changes it, and says
+			// nothing about the chart. What this check is for is that the chart
+			// mounted the real generator rather than a stub, so the bracket is
+			// wide and the disc itself is measured below.
+			initial.state?.galaxyRadiusLy > 15 &&
+			initial.state?.galaxyRadiusLy < 40 &&
 			initial.state?.jumpRangeLy === 7,
+	);
+
+	// ---- the cluster is a disc, measured rather than declared ---------------
+
+	/**
+	 * §2's oblate spheroid, as drawn.
+	 *
+	 * The chart reports `flatteningQ`, and a check comparing that field to a
+	 * literal would prove only that a number survived a getter. What is asserted
+	 * instead is the **projected aspect of the drawn points**: seen edge-on the
+	 * cluster must be about `q` as tall as it is wide, and seen face-on about
+	 * square. A ball fails both halves — it is square at every angle — and so
+	 * does a build that squashes the wrong axis, or squashes the geometry and not
+	 * the generator.
+	 *
+	 * Pitch is driven through `orbit` and read back off the state rather than
+	 * assumed from the drag: the pitch clamp is +/-1.45, so a probe that computed
+	 * the angle from its own pixel arithmetic would silently measure a different
+	 * view from the one it names.
+	 */
+	const aspectAtPitch = async (targetPitch) => {
+		const measured = await page.evaluate(async (target) => {
+			const map = window.__seeliteGalaxyMap;
+			map.select(null);
+			map.resetView();
+			// Orbit in small steps toward the target, reading the state each time —
+			// the drag-to-radians factor is the chart's business, not the probe's.
+			for (let i = 0; i < 400; i++) {
+				const delta = target - map.state.pitch;
+				if (Math.abs(delta) < 0.005) break;
+				map.orbit(0, Math.sign(delta) * 4);
+			}
+			await new Promise((r) =>
+				requestAnimationFrame(() => requestAnimationFrame(r)),
+			);
+			const { width, height } = map.viewport();
+			const pts = map
+				.projected()
+				.filter(
+					(p) =>
+						!p.behind && p.x >= 0 && p.y >= 0 && p.x <= width && p.y <= height,
+				);
+			const xs = pts.map((p) => p.x);
+			const ys = pts.map((p) => p.y);
+			return {
+				pitch: map.state.pitch,
+				q: map.state.flatteningQ,
+				onScreen: pts.length,
+				spanX: Math.max(...xs) - Math.min(...xs),
+				spanY: Math.max(...ys) - Math.min(...ys),
+			};
+		}, targetPitch);
+		return measured;
+	};
+
+	const edgeOn = await aspectAtPitch(0);
+	const faceOn = await aspectAtPitch(1.45);
+	await page.evaluate(() => window.__seeliteGalaxyMap.resetView());
+	/**
+	 * **Only where the cluster is fully framed.** A 390 px column crops the
+	 * galaxy horizontally at every distance the chart offers, so `spanX` there is
+	 * the viewport's width and the aspect it yields is a fact about the phone,
+	 * not about the disc. Measuring it anyway is how a check comes to assert
+	 * something nobody meant: the narrow run reported 1.52 against a q of 0.70.
+	 *
+	 * Skipping is only safe if a skip cannot be silent, so `discMeasured` is
+	 * asserted after the loop — a change that crops the desktop view too would
+	 * otherwise retire this check without anything going red.
+	 */
+	const framed =
+		Math.max(edgeOn.spanX, faceOn.spanX) < viewport.width - 2 &&
+		Math.max(edgeOn.spanY, faceOn.spanY) < viewport.height - 2;
+	const edgeAspect = edgeOn.spanY / edgeOn.spanX;
+	const faceAspect = faceOn.spanY / faceOn.spanX;
+	if (framed) discMeasured++;
+	check(
+		framed
+			? `${viewport.name}: the cluster is a disc — edge-on aspect ${edgeAspect.toFixed(2)} (q ${edgeOn.q}), face-on ${faceAspect.toFixed(2)}`
+			: `${viewport.name}: skipped the disc aspect — the cluster does not fit this viewport (${Math.round(edgeOn.spanX)} px of ${viewport.width})`,
+		!framed ||
+			(Math.abs(edgeOn.pitch) < 0.02 &&
+				faceOn.pitch > 1.4 &&
+				edgeOn.onScreen > 150 &&
+				// Edge-on the through-plane extent is the squashed one. Banded around
+				// q rather than pinned, because the extremes are 256 samples of a
+				// surface neither of which reaches it exactly.
+				edgeAspect > edgeOn.q - 0.12 &&
+				edgeAspect < edgeOn.q + 0.12 &&
+				// Face-on it is a circle. This is the half a wrong-axis squash fails.
+				faceAspect > 0.88 &&
+				faceAspect < 1.12 &&
+				// And the two views genuinely differ — the check a ball passes.
+				faceAspect - edgeAspect > 0.15),
 	);
 
 	// D6: nothing on this chart belongs to another galaxy — the lit set is the
@@ -474,6 +603,11 @@ for (const viewport of VIEWPORTS) {
 
 	await page.close();
 }
+
+check(
+	`the disc aspect was measured on ${discMeasured} of ${VIEWPORTS.length} viewports`,
+	discMeasured >= 1,
+);
 
 await browser.close();
 exit();

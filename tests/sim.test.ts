@@ -42,6 +42,12 @@ import { codeOf } from "./lib/source-scan";
 
 const SEED = 20260818;
 
+/** A world whose start system has several station types **and** a gas giant with
+ *  moons — the two branches `SEED`'s system does not reach. Named once, because
+ *  two tests below both need it and a galaxy reshape invalidates such a pick
+ *  silently: re-find it with a scan over `makeWorld`, not by guessing. */
+const MULTI_STATION_SEED = 2;
+
 /** Hands off the controls: no throttle, assist on. What `stepWorld`'s clock
  *  tests want, since none of them is about the ship. */
 const coasting = { nose: v3(0, 0, -1), throttle: 0, assist: true };
@@ -118,7 +124,11 @@ describe("makeWorld", () => {
 		// the only colour assertion there was (`Number.isInteger`). Keying on the
 		// type makes an unhandled type a compile error; this asserts the
 		// consequence that error exists to protect.
-		const world = makeWorld(SEED);
+		// A named seed, for the reason the moon test below carries: `SEED`'s start
+		// system has one station and so reduces the assertion to `1 === 1`. It had
+		// two until #118 reshaped the galaxy and every system moved — which is the
+		// hazard, since a coverage loss like that is silent by construction.
+		const world = makeWorld(MULTI_STATION_SEED);
 		const stations = world.system.bodies.filter((b) => b.kind === "station");
 		expect(stations.length).toBeGreaterThan(1);
 		const byType = new Map<string, number>();
@@ -131,7 +141,7 @@ describe("makeWorld", () => {
 		}
 		// Without this the assertion below reduces to `1 === 1` whenever the seed's
 		// stations happen to share a type, and a test named for distinguishing
-		// types would prove nothing. SEED's system has a trade post and a refinery.
+		// types would prove nothing.
 		expect(byType.size).toBeGreaterThan(1);
 		expect(new Set(byType.values()).size).toBe(byType.size);
 	});
@@ -141,8 +151,10 @@ describe("makeWorld", () => {
 		// with moons and so exercises none of this. Leaving the moon path to
 		// whichever system a default seed produced is how a branch goes untested
 		// while the suite reads as covering it — the placeholder had no moons at
-		// all, so nothing downstream had ever seen one.
-		const world = makeWorld(1);
+		// all, so nothing downstream had ever seen one. (It was seed 1 until #118;
+		// the reshape moved every system, and seed 1's no longer has a moon. The
+		// re-pick is the same act as the original one, for the same reason.)
+		const world = makeWorld(MULTI_STATION_SEED);
 		const moons = world.system.bodies.filter((b) => b.kind === "moon");
 		expect(moons.length).toBeGreaterThan(0);
 		for (const moon of moons) {

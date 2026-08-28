@@ -85,8 +85,8 @@ this spec and it was accepted deliberately.
 | Galaxies | 8, all present from the start |
 | Systems per galaxy | 256 |
 | Total | 2048 |
-| Shape | globular volume — a sphere, fully three-dimensional |
-| Radius `R` | 22 LY |
+| Shape | oblate spheroid — a disc, flattened on `y` by `q = 0.70` |
+| Radius `R` | 24.53 LY in plane, 17.17 LY through it |
 | Distance metric | true 3D Euclidean, isotropic |
 | Fuel tank | 7.0 LY |
 | Fuel cost | 0.2 Cr / 0.1 LY (14 Cr full tank) — §8 |
@@ -97,9 +97,52 @@ Galaxies are a **namespace, not a regeneration**: switching galaxy changes
 later bolt-on, and **the save must carry per-galaxy state** — visited flags,
 market fluctuation bytes, legal status — not one global set.
 
-Elite's 2:1 y-axis compression is **not** adopted. It existed because the BBC
-drew its chart wider than tall; importing a screen-aspect hack as a physical
-law would bias every route along one axis for no reason.
+### The disc, and why it is 0.70 and not Elite's 0.50
+
+This section ratified a **sphere** until #107 re-opened it on 2026-08-28. The
+cluster is now an oblate spheroid: `systemPosition` draws its radius and
+direction exactly as before and then scales the `y` term by `q`, so the cluster
+reaches `R` across and `q · R` through. The flattening is applied to `y`, which
+is `galaxy-map.md` §2's reference plane, so the disc's plane *is* the plane the
+chart's drop-lines already fall to.
+
+**Elite's 2:1 y-axis compression is still not adopted, and the distinction
+matters.** It existed because the BBC drew its chart wider than tall, and
+importing a screen-aspect hack as a physical law is what this spec declined.
+`q = 0.70` is not that number and is not adopted for that reason: it is taken
+because a galaxy is expected to look like one and because it makes the chart's
+reference plane real geography instead of an arbitrary convention. Adopting
+0.50 now, on looks, would invite the reading that the original argument was
+wrong.
+
+**It was taken against a measured cost, not for one.** #107's hypothesis was
+that a disc spreads the same 256 points over a larger projected area and so
+eases finding. Measured, it is refuted: holding ~8-in-range forces `R` upward as
+the volume flattens, the framing grows with `R`, and flattening then
+concentrates the points toward a plane, whose nearest-neighbour distances are
+shorter than a ball's at equal projected extent. The ball is the least crowded
+shape in the sweep at every viewing angle, face-on included.
+
+At the shipped 40° pitch, framing scaled with `R` so the comparison is of shapes
+and not of how much screen each fills:
+
+| `q` | `R` | mean in range | desktop crowding | console cell |
+|---|---|---|---|---|
+| 1.00 (ball) | 21.9 | 8.00 | 41.4% | 72.9% |
+| 0.85 | 23.1 | 8.00 | 45.1% | 76.5% |
+| **0.70 (shipped)** | **24.5** | **7.99** | **49.7%** | **80.1%** |
+| 0.50 (Elite's) | 27.4 | 8.00 | 54.8% | 84.5% |
+| 0.35 | 30.5 | 8.01 | 57.3% | 86.5% |
+| 0.25 | 33.4 | 8.00 | 60.3% | 87.5% |
+| 0.15 | 37.7 | 8.00 | 61.5% | 88.3% |
+
+So `q = 0.70` costs about **8 points** of desktop crowding against the ball,
+where `q = 0.50` costs 13. (#107 recorded those as 8 and 18, measured at the
+then-current 20° pitch; the gap narrows as the chart tilts toward face-on, and
+the shipped pitch is 40°. The ordering and the conclusion are unchanged.)
+
+Sweep it with `bun scripts/measure-galaxy-shape.ts sweep`. Changing `q` means
+re-solving `R` — see §2.1, they are one derivation.
 
 ### 2.1 Where the radius comes from
 
@@ -118,49 +161,121 @@ range needs 8 / 1436.8 = 0.00557 systems/LY³, so 256 systems want
 R = (46000 · 3 / 4π)^(1/3) ≈ 22 LY
 ```
 
-Check: 256 / ((4/3)π · 22³) = 256 / 44,602 = 0.00574 systems/LY³, giving a
-mean of **8.25 systems in range**. Which is, pleasingly, the size of a real
-globular cluster.
+That closed form is where 22 LY came from while the cluster was a ball, and it
+predicts a mean of 8.25 systems in range.
+
+#### The figure is solved, not computed, and 8.25 was never the measured one
+
+The closed form assumes a uniform ball. The generator draws a **3:1
+concentrated** profile (§3) and then **rejects any fragmented layout and
+re-rolls** (§5), and that filter is not neutral — it selects denser layouts. So
+the shipped radius is solved against the shipped generator rather than read off
+the integral:
+
+```
+bun scripts/measure-galaxy-shape.ts solve 0.70 8
+```
+
+Measured over 24 connected layouts (world seeds 1, 47, 12345 × 8 galaxies):
+
+| Shape | `R` | core `R/√2` | mean in range | mean re-rolls |
+|---|---|---|---|---|
+| ball, `q = 1` (pre-#118) | 22 LY | 15.56 LY | **7.88** | 5.6 |
+| disc, `q = 0.70` (shipped) | 24.53 LY | 17.35 LY | **7.97** | 5.3 |
+
+**§2.1 quoted 8.25 as a measured result and it never was one** — it is the
+uniform-ball prediction, and the ball the game actually shipped held 7.88. The
+disc at `R = 24.53` holds 7.97, so the reshape *preserved* the reach it was
+solved to hold, slightly improving it. `tests/galaxy.test.ts` pins the measured
+mean as a band around the shipped figure rather than as a `>` threshold: a
+threshold leaves a retune green and this spec silently wrong.
+
+`R` and the core radius are **outputs**. What is held fixed is ~8-in-range, and
+the core ratio stays `R/√2` so §3's 3:1 gradient survives the reshape unchanged.
 
 **Beware r³ when changing this.** Radius 35 LY feels like a modest increase
 and drops the same tank to ~2 systems in range, which near-certainly
-fragments the graph.
+fragments the graph. Past about 33 LY at `q = 0.70` there is no connected
+layout at all, and the solver above reports it.
+
+#### The radial gradient did not move, and that is a property rather than luck
+
+`t` — the 0-at-core, 1-at-rim input every radial bias in §4 reads — is taken on
+the **profile radius** `√(x² + (y/q)² + z²)`, the spheroidal coordinate §3's
+`ρ(r)` is written against, which is exactly the radius drawn before the squash.
+Because the profile's core radius is `R/√2`, `radialCdf` is a function of `x/R`
+alone, so `radiusForQuantile(u)/R` does not depend on `R` at all.
+
+The consequence: re-deriving the radius from 22 to 24.53 moved every system
+outward and changed **nothing** about what any system *is*. #107 argued the
+reshape "changes what each system is" from the radial gradient; it does, but
+only through the layout `attempt`, which is part of a system's seed and
+re-rolled in the galaxies whose connectivity flipped. The gradient itself held.
+`tests/galaxy.test.ts` asserts the scale-freeness, because the change that
+breaks it — reading `t` off the plain Euclidean distance — looks harmless and
+would both compress the gradient toward the core for polar systems and drop
+§3's core:rim ratio below the 3.0 it quotes.
 
 ---
 
 ## 3. Density profile
 
 Systems are **mildly centrally concentrated, 3:1 core to rim**. A uniform
-sphere would make every location statistically identical — position would
+cluster would make every location statistically identical — position would
 carry no meaning beyond distance travelled. Concentration buys an exploration
 gradient for free: a dense, well-connected core grading out to a sparse
 frontier where a jump is a commitment.
 
+**`r` here is the profile radius, not the Euclidean distance.** Since #118 the
+cluster is a `q = 0.70` spheroid (§2), and the profile is written on that
+shape's own coordinate `m = √(x² + (y/q)² + z²)` — which is exactly the radius
+drawn below, before the squash. `src/galaxy.ts` exports it as
+`profileRadiusLy`; the record's `radiusLy` is the plain Euclidean distance and
+is a different quantity, used where "most central" means nearest the centre
+(§5.1's start system). Everything radial in §4 reads the profile coordinate, and
+that is what keeps the ratio below exactly 3.0 on every axis.
+
 ```
-ρ(r) ∝ 1 / (1 + (r/r_c)²)          r_c = R/√2 = 15.556 LY
+ρ(m) ∝ 1 / (1 + (m/r_c)²)          r_c = R/√2 = 17.35 LY
 ρ(0)/ρ(R) = 1 + (R/r_c)² = 3.0     exactly, by construction
 ```
 
-Sample the radius by inverse transform on the volume-weighted PDF ∝ r²ρ(r):
+Sample the radius by inverse transform on the volume-weighted PDF ∝ m²ρ(m):
 
 ```
 F(x) = [x − r_c·atan(x/r_c)] / [R − r_c·atan(R/r_c)]
-     = [x − 15.556·atan(x/15.556)] / 7.1392
+     = [x − 17.345·atan(x/17.345)] / 7.9598
 ```
 
 `F` has no closed-form inverse; **invert by bisection to a fixed 40
 iterations** — deterministic, and a fixed count keeps it a pure function
 rather than a convergence-dependent one. Direction is uniform on the sphere:
-`cosθ = 2u₁ − 1`, `φ = 2πu₂`. Both draws come from the `POS` domain of the
-system's stream.
+`cosθ = 2u₁ − 1`, `φ = 2πu₂`; the `y` term is then scaled by `q`. Both draws
+come from the `POS` domain of the system's stream.
 
-Resulting neighbour counts (normalisation A = 256/21,708 = 0.01179/LY³):
+**`F` is scale-free in `x/R`**, since `r_c` is defined as `R/√2`. So
+`F⁻¹(u)/R` — the `t` every radial bias in §4 reads — does not depend on `R` at
+all, and re-deriving the radius in §2.1 moved no system's polity. See §2.1's
+last subsection.
 
-| Location | Local density | Systems within 7 LY |
-|---|---|---|
-| Centre | 0.01179 /LY³ | ≈ 17 |
-| Mean over cluster | 0.00574 /LY³ | ≈ 8.3 |
-| Rim (half the ball falls outside) | 0.00393 /LY³ | ≈ 3 |
+Resulting neighbour counts — **measured on the shipped generator**, over 8,192
+systems (4 world seeds × 8 galaxies), not read off the closed form:
+
+| Location | Local density | Systems within 7 LY | n |
+|---|---|---|---|
+| Centre (`t < 0.15`) | 0.01056 /LY³ | 15.2 | 51 |
+| Mean over cluster | 0.00557 /LY³ | 8.0 | 8,192 |
+| Rim (`t > 0.85`; half the neighbourhood falls outside) | 0.00311 /LY³ | 4.5 | 2,395 |
+
+The exploration gradient the concentration exists to buy is therefore about
+**3.4:1 in reachable neighbours**, core to rim — steeper than the 3.0 density
+ratio, because a rim neighbourhood also loses half its volume off the edge.
+
+The previous table quoted 17 / 8.3 / 3 from the analytic normalisation
+`A = 256/21,708` at `R = 22`. Those were predictions of a uniform-density
+integral over a ball, and this spec presented them as results; the centre bucket
+is small (`n = 51`), which is stated because a figure over 51 samples is a
+figure with a visible standard error and the row means it.
 
 ---
 
@@ -258,7 +373,7 @@ source file.
 
 ## 5. Connectivity
 
-A 3:1 concentrated sphere puts only ~3 systems in range at the rim, and 3D
+A 3:1 concentrated cluster puts only ~3 systems in range at the rim, and 3D
 neighbourhoods are lumpier than 2D ones. Across 8 galaxies some layouts will
 strand a system or isolate a pocket — and a start system in a two-system
 pocket is an unwinnable save. The 1984 research flagged reachability as

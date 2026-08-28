@@ -103,7 +103,11 @@ describe("§9.1 namespace and baseline stability", () => {
 		// galaxies carries at least one — so the bracket's floor is tight rather
 		// than nominal, and a generator change that started dropping stations
 		// would break the floor before it reached the pin.
-		expect(carriers).toBe(3229);
+		// 3,229 before #118 reshaped the galaxy; the three galaxies whose layout
+		// attempt re-rolled regenerated whole and carry 33 fewer stations between
+		// them. The floor below still holds: every system in all eight galaxies
+		// carries at least one.
+		expect(carriers).toBe(3196);
 		let systemsWithStations = 0;
 		let widest = 0;
 		for (let galaxy = 0; galaxy < 8; galaxy++) {
@@ -160,7 +164,7 @@ describe("§9.1 namespace and baseline stability", () => {
 		// Identity, type, parent and generated placement, hashed. It goes red on
 		// any generator change that moves a station — which is exactly when
 		// `WORLD_GENERATOR_VERSION` owes a bump and a migration.
-		expect(WORLD_GENERATOR_VERSION).toBe(2);
+		expect(WORLD_GENERATOR_VERSION).toBe(3);
 		const fingerprints = [0, 1, 2, 3, 4, 5, 6, 7].map((g) =>
 			carrierBaselineFingerprint(WORLD, g),
 		);
@@ -170,9 +174,21 @@ describe("§9.1 namespace and baseline stability", () => {
 });
 
 /**
- * Pinned at `WORLD_GENERATOR_VERSION` 2 against world seed `0x5ee11e`.
- * (1 → 2: node #32's orbit floor moved every floored station's generated
- * placement — the set this hashes — so the baseline moved with it.)
+ * Pinned at `WORLD_GENERATOR_VERSION` 3 against world seed `0x5ee11e`.
+ *
+ * - 1 → 2: node #32's orbit floor moved every floored station's generated
+ *   placement — the set this hashes — so the baseline moved with it.
+ * - 2 → 3: #118 reshaped the galaxy to a q = 0.7 disc and re-derived the
+ *   radius, which moved every position and so re-rolled the layout `attempt`
+ *   for three of these eight galaxies. An attempt is part of a system's seed,
+ *   so those galaxies re-generated whole.
+ *
+ * **Five of the eight are unchanged, and that is correct rather than a stale
+ * pin.** A system's polity is a function of `t`, and `t` is scale-free: the
+ * profile's core radius is `R/√2`, so `radiusForQuantile(u)/R` depends only on
+ * `u` and not on `R` (`tests/galaxy.test.ts` asserts it). `#118` therefore
+ * changed *positions*, not what a system *is* — except in the galaxies whose
+ * connectivity flipped and re-rolled the attempt. Those are galaxies 1, 2 and 6.
  *
  * These are not arbitrary numbers to re-bless when the suite goes red. Each one
  * is a hash of every carrier slot's identity, type, parent and generated
@@ -181,8 +197,8 @@ describe("§9.1 namespace and baseline stability", () => {
  * migration, and §2 says so.
  */
 const GOLDEN_FINGERPRINTS = [
-	4141145946, 2265591294, 2019697187, 510919445, 3914238703, 1874293826,
-	447413080, 1650131075,
+	4141145946, 2438204208, 3662742635, 510919445, 3914238703, 1874293826,
+	1655201375, 1650131075,
 ];
 
 // ---------------------------------------------------------------------------

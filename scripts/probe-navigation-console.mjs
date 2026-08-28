@@ -388,6 +388,15 @@ const crowding = await page.evaluate(() => {
 // that halved crowding would be a change to the argument for the list.
 // Calibrated on 1280 x 760; the metric is viewport-dependent, so a narrow
 // viewport would need its own band rather than this one widened.
+//
+// **Re-measured for the q = 0.7 disc (#118), from the spread and not from one
+// galaxy.** The 1011 x 462 cell was measured over all eight galaxies —
+// 76.6 75.4 74.2 76.2 76.2 77.7 68.4 75.8, a spread of 68.4-77.7 — and the band
+// is that ± 4 points. It replaces 55-80, which was set from a single ball
+// galaxy; the new band is *narrower* than the one it replaces, which is what
+// re-measuring rather than widening looks like when the measurement improves.
+// The live console here reads 73.0%, inside the workbench spread, which is what
+// makes measuring the cell size on the workbench a fair proxy for it.
 // **The basis is asserted, not assumed.** `fraction` is
 // `crowded / visible.length`, so a build that framed only 101 systems would
 // still satisfy a `> 100` floor while the "of 256" the spec quotes had quietly
@@ -396,8 +405,8 @@ const crowding = await page.evaluate(() => {
 check(
 	"the chart in the console is crowded enough that the list is mandatory",
 	crowding.onScreen === crowding.systemCount &&
-		crowding.fraction >= 0.55 &&
-		crowding.fraction <= 0.8,
+		crowding.fraction >= 0.64 &&
+		crowding.fraction <= 0.82,
 	`${(crowding.fraction * 100).toFixed(1)}% of ${crowding.onScreen}/${crowding.systemCount} on screen at ${Math.round(crowding.width)}x${Math.round(crowding.height)}`,
 );
 

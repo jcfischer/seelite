@@ -75,7 +75,10 @@ const ORIGIN =
 /** Seed 1, for `probe-station.mjs`'s reason: its start system holds all three
  *  station types, which is the only way to compare three lit signatures under
  *  one lighting setup. */
-const URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=1`;
+/** All three station types in one system, framable at docking range. See
+ *  `probe-station.mjs`'s note on this constant for the re-pick criterion — the
+ *  two probes share the fixture and must share the seed. */
+const URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=54`;
 
 const VIEWPORTS = [
 	{ name: "desktop", width: 1100, height: 720 },
