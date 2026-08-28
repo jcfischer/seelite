@@ -197,7 +197,7 @@ async function fly(setup) {
 			// that inherited a docked session from the one before it would fly
 			// nothing at all — which is exactly what the four §9.2.4 and §9.2.5
 			// rows reported when this line was still the old one.
-			g.dock = { phase: "flying", stationId: null, law: null };
+			g.resetDock();
 
 			const cleared = g.requestDockingClearance();
 
@@ -424,10 +424,18 @@ if (undock) {
 		undock.skipped,
 	);
 	check(
+		// **Both halves measured, not one asserted and the other printed.** The
+		// first version of this row named the position and tested only the phase,
+		// leaving `axialKm` and `planeKm` in the message string alone — a name that
+		// claims more than its predicate is the same defect as prose that claims
+		// more than its code.
 		"launching clears the dock and releases the ship outside the plane",
-		!undock.stillDocked && undock.phase === "flying",
+		!undock.stillDocked &&
+			undock.phase === "flying" &&
+			undock.axialKm > undock.planeKm,
 		`${undock.phase}, at ${undock.axialKm.toFixed(3)} km against a ${undock.planeKm.toFixed(3)} km plane`,
 	);
+
 	check(
 		// **After a step**, not straight after the toggle. `toggleDockingComputer`
 		// gates only on `hasDockingComputer`, which is a constant `true`, so

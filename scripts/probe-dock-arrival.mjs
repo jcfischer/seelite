@@ -13,10 +13,21 @@
  *
  * The arithmetic — where the law puts the ship, that it terminates, that it is
  * evaluated in the rotating frame — is `tests/arrival.test.ts` and
- * `tests/dock-session.test.ts`. Nothing is restated here: every threshold this
- * file compares against is read off the page (`dockingSnapshot`), which is the
- * repo's rule, because a probe carrying its own copy of a constant goes falsely
- * red the day the module changes it.
+ * `tests/dock-session.test.ts`.
+ *
+ * **Every quantity the game owns is read off the page** (`dockingSnapshot`,
+ * `dockingTolerances`), which is the repo's rule: a probe carrying its own copy
+ * of a constant goes falsely red the day the module changes it. The pixel
+ * counts and the standoffs below are **not** that — they are this file's own
+ * thresholds, measured against the frames it captures, and they are written out
+ * rather than derived because nothing in the game owns them. An earlier version
+ * of this paragraph claimed nothing was restated at all, which was false of its
+ * own next thirty lines.
+ *
+ * And nothing here falls open. A page constant is read without a fallback: `??`
+ * on a missing tolerance substitutes a plausible number and turns a rename into
+ * a green run, which is the exact failure the read-it-off-the-page rule exists
+ * to prevent.
  */
 
 import {
@@ -30,6 +41,22 @@ const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
 const PAGE_URL = process.env.PROBE_URL ?? ORIGIN + "/?seed=1";
 
+/**
+ * This file's own thresholds — **not** the game's, and named here so the three
+ * places that used to spell them inline cannot drift apart.
+ *
+ * `PROBE_STANDOFF_KM` is where a run starts an approach from: outside §7's
+ * three-kilometre computer standoff, so the whole approach is the autopilot's.
+ * The two ink floors are what a drawn thing has to contribute for the frame to
+ * say it is there; both are far under what a passing run measures — the
+ * interior reads a few hundred pixels against a floor of 200, and each shield
+ * a thousand or more against 40 — and far over the handful the anti-aliasing on
+ * one edge moves.
+ */
+const PROBE_STANDOFF_KM = 4.5;
+const INTERIOR_INK_FLOOR = 200;
+const SHIELD_INK_FLOOR = 40;
+
 await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
@@ -40,6 +67,87 @@ await page.addInitScript(() => {
 		window.__seelite.nearScene.getObjectByName(id) ??
 		window.__seelite.farScene.getObjectByName(id) ??
 		null;
+
+	/**
+	 * How many pixels a thing contributes: the frame with it, the frame without
+	 * it, and the count of what changed.
+	 *
+	 * One helper because both measurements in this file are the same twenty-five
+	 * lines, and a retune of the capture size or the per-pixel threshold has to
+	 * land on both or on neither. `hide` is called between the two captures and
+	 * `restore` after, so the caller says *what* is being measured and nothing
+	 * else.
+	 *
+	 * **Both frames in one task**, for `probe-station-visuals.mjs`'s reason: the
+	 * station spins and its orbit carries it, so two captures taken across
+	 * separate calls differ by more than the effect being measured.
+	 */
+	window.__inkDelta = (hide, restore) => {
+		const g = window.__seelite;
+		const W = 560;
+		const H = 400;
+		const scratch = document.createElement("canvas");
+		scratch.width = W;
+		scratch.height = H;
+		const ctx = scratch.getContext("2d", { willReadFrequently: true });
+		const frame = () => {
+			// Render and read in the same task: a WebGL canvas without
+			// `preserveDrawingBuffer` is cleared at the next composite.
+			g.render(0);
+			ctx.drawImage(g.renderer.domElement, 0, 0, W, H);
+			return ctx.getImageData(0, 0, W, H).data;
+		};
+		const drawn = frame();
+		const hidden = hide();
+		const without = frame();
+		restore();
+		let changed = 0;
+		for (let i = 0; i < drawn.length; i += 4) {
+			// Summed across the channels, against a threshold that ignores the
+			// last bit of tone mapping without ignoring a drawn edge.
+			if (
+				Math.abs(drawn[i] - without[i]) +
+					Math.abs(drawn[i + 1] - without[i + 1]) +
+					Math.abs(drawn[i + 2] - without[i + 2]) >
+				12
+			)
+				changed++;
+		}
+		return { changed, hidden };
+	};
+
+	/**
+	 * Place the ship on a station's aperture axis at `rangeKm`, at rest in the
+	 * station's frame, aimed down the axis — and, when asked, with clearance
+	 * granted and §7's computer flying.
+	 *
+	 * One helper because three runs in this file need exactly this, and three
+	 * copies drift the day the clearance protocol changes. **Selecting the
+	 * station is part of it**: `requestDockingClearance` answers for the
+	 * *selected* target when there is one, so without this the grant can land on
+	 * a different station and the computer refuses with `no-clearance`.
+	 */
+	window.__placeOnAxis = (id, rangeKm, engage) => {
+		const g = window.__seelite;
+		const snap = g.dockingSnapshot(id);
+		const body = g.world.system.byId.get(id);
+		const a = snap.axis;
+		g.world.ship.pos = {
+			x: body.pos.x + a.x * rangeKm,
+			y: body.pos.y + a.y * rangeKm,
+			z: body.pos.z + a.z * rangeKm,
+		};
+		g.world.ship.vel = { ...g.stationVelocity(id) };
+		g.regime = "normal";
+		g.rates = { pitch: 0, yaw: 0, roll: 0 };
+		g.setThrottle(0);
+		g.setAttitude({ x: -a.x, y: -a.y, z: -a.z }, snap.basis.up);
+		if (!engage) return snap;
+		g.targetId = id;
+		g.requestDockingClearance();
+		if (!g.dockingComputerEngaged) g.toggleDockingComputer();
+		return snap;
+	};
 });
 await page.goto(PAGE_URL, { waitUntil: "load" });
 await bootedGame(page);
@@ -110,61 +218,28 @@ for (const station of roster) {
 const interiorInk = await page.evaluate(
 	(id) => {
 		const g = window.__seelite;
-		const W = 560;
-		const H = 400;
-		const scratch = document.createElement("canvas");
-		scratch.width = W;
-		scratch.height = H;
-		const ctx = scratch.getContext("2d", { willReadFrequently: true });
-		const frame = () => {
-			// Render and read in the same task: a WebGL canvas without
-			// `preserveDrawingBuffer` is cleared at the next composite.
-			g.render(0);
-			ctx.drawImage(g.renderer.domElement, 0, 0, W, H);
-			return ctx.getImageData(0, 0, W, H).data;
-		};
 		const snap = g.dockingSnapshot(id);
-		const body = g.world.system.byId.get(id);
-		const axis = snap.axis;
-		// On the axis, a few slot-widths out, looking straight in — the arriving
-		// ship's own view.
 		// Close in: the slot is 120 m across, so from a couple of core radii out it
 		// subtends a handful of pixels and the difference this measures is smaller
 		// than the anti-aliasing on its own edge. One aperture-width off the face
-		// puts the mouth across a good part of the frame.
+		// puts the mouth across a good part of the frame — on the axis, looking
+		// straight in, which is the arriving ship's own view.
 		const rangeKm = snap.planeKm + snap.apertureWidthKm;
-		g.world.ship.pos = {
-			x: body.pos.x + axis.x * rangeKm,
-			y: body.pos.y + axis.y * rangeKm,
-			z: body.pos.z + axis.z * rangeKm,
-		};
-		g.world.ship.vel = { x: 0, y: 0, z: 0 };
-		g.setAttitude(
-			{ x: -axis.x, y: -axis.y, z: -axis.z },
-			{ x: snap.basis.up.x, y: snap.basis.up.y, z: snap.basis.up.z },
-		);
-
+		window.__placeOnAxis(id, rangeKm, false);
 		const mesh = window.__meshOfBody(id);
 		const interior = [];
 		mesh.traverse((o) => {
 			if (o.name === "aperture-mouth" || o.name === "aperture-deck")
 				interior.push(o);
 		});
-		const drawn = frame();
-		for (const o of interior) o.visible = false;
-		const without = frame();
-		for (const o of interior) o.visible = true;
-
-		let changed = 0;
-		for (let i = 0; i < drawn.length; i += 4) {
-			if (
-				Math.abs(drawn[i] - without[i]) +
-					Math.abs(drawn[i + 1] - without[i + 1]) +
-					Math.abs(drawn[i + 2] - without[i + 2]) >
-				12
-			)
-				changed++;
-		}
+		const { changed } = window.__inkDelta(
+			() => {
+				for (const o of interior) o.visible = false;
+			},
+			() => {
+				for (const o of interior) o.visible = true;
+			},
+		);
 		return { changed, parts: interior.length, rangeKm };
 	},
 	roster.find((s) => s.kind === "slot")?.id ?? roster[0].id,
@@ -172,7 +247,7 @@ const interiorInk = await page.evaluate(
 
 check(
 	"the interior contributes pixels on the axis view",
-	interiorInk.parts > 0 && interiorInk.changed > 200,
+	interiorInk.parts > 0 && interiorInk.changed > INTERIOR_INK_FLOOR,
 	`${interiorInk.changed} pixels change when ${interiorInk.parts} interior part(s) are hidden, ` +
 		`from ${interiorInk.rangeKm.toFixed(2)} km on the axis`,
 );
@@ -197,69 +272,52 @@ console.log("\n§12.6 browser row 3 — the approach ends inside:");
  * does and what `dockingComputerStep` exists for.
  */
 const dock = (id) =>
-	page.evaluate((stationId) => {
-		const g = window.__seelite;
-		const snap = g.dockingSnapshot(stationId);
-		const body = g.world.system.byId.get(stationId);
-		const axis = snap.axis;
-		// Outside the computer's own standoff, on the axis, at rest in the
-		// station's frame — from there the whole approach is the autopilot's.
-		const standoff = g.dockingTolerances.COMPUTER_STANDOFF_KM ?? 3;
-		g.world.ship.pos = {
-			x: body.pos.x + axis.x * (snap.planeKm + standoff * 1.5),
-			y: body.pos.y + axis.y * (snap.planeKm + standoff * 1.5),
-			z: body.pos.z + axis.z * (snap.planeKm + standoff * 1.5),
-		};
-		g.world.ship.vel = { ...g.stationVelocity(stationId) };
-		g.regime = "normal";
-		g.rates = { pitch: 0, yaw: 0, roll: 0 };
-		g.setThrottle(0);
-		g.setAttitude({ x: -axis.x, y: -axis.y, z: -axis.z }, snap.basis.up);
-		// §6: clearance is a precondition, not a check. Without a live grant this
-		// is a barge and the entry fails whatever the geometry says.
-		//
-		// **Select the station first.** `requestDockingClearance` answers for the
-		// *selected* target when there is one — §6's "when a station is the
-		// selected target" — and falls back to the nearest only when there is
-		// not. With another station selected the grant lands on that one and the
-		// computer refuses this approach with `no-clearance`, which is the
-		// protocol working rather than the probe's placement failing.
-		g.targetId = stationId;
-		g.requestDockingClearance();
-		if (!g.dockingComputerEngaged) g.toggleDockingComputer();
+	page.evaluate(
+		([stationId, standoffKm]) => {
+			const g = window.__seelite;
+			// Outside §7's computer standoff, on the axis, at rest in the station's
+			// frame, with clearance granted and the autopilot flying — all of which
+			// is `__placeOnAxis`, because three runs in this file need exactly it.
+			window.__placeOnAxis(
+				stationId,
+				g.dockingSnapshot(stationId).planeKm + standoffKm,
+				true,
+			);
 
-		const dt = 1 / 60;
-		const phases = [];
-		let arrivingAtS = null;
-		let elapsed = 0;
-		for (let i = 0; i < 60 * 120; i++) {
-			g.step(dt);
-			elapsed += dt;
-			const now = g.dockingSnapshot(stationId);
-			if (!phases.includes(now.dockPhase)) phases.push(now.dockPhase);
-			if (arrivingAtS === null && now.dockPhase === "arriving")
-				arrivingAtS = elapsed;
-			if (now.dockPhase === "docked") break;
-		}
-		const end = g.dockingSnapshot(stationId);
-		return {
-			phases,
-			arrivingAtS,
-			axialKm: end.axialKm,
-			planeKm: end.planeKm,
-			dockedAxialKm: end.dockedAxialKm,
-			phase: end.dockPhase,
-			lastEntryDocked: end.lastEntry?.docked ?? null,
-			// Named, so a failed entry says *which* check refused it rather than
-			// leaving the reader to guess.
-			failed: end.lastEntry?.evaluation
-				? Object.entries(end.lastEntry.evaluation.checks ?? {})
-						.filter(([, ok]) => ok === false)
-						.map(([name]) => name)
-				: [],
-			refusal: g.dockingSnapshot(stationId).computerRefusal ?? null,
-		};
-	}, id);
+			const dt = 1 / 60;
+			const phases = [];
+			let arrivingAtS = null;
+			let elapsed = 0;
+			for (let i = 0; i < 60 * 120; i++) {
+				g.step(dt);
+				elapsed += dt;
+				const now = g.dockingSnapshot(stationId);
+				if (!phases.includes(now.dockPhase)) phases.push(now.dockPhase);
+				if (arrivingAtS === null && now.dockPhase === "arriving")
+					arrivingAtS = elapsed;
+				if (now.dockPhase === "docked") break;
+			}
+			const end = g.dockingSnapshot(stationId);
+			return {
+				phases,
+				arrivingAtS,
+				axialKm: end.axialKm,
+				planeKm: end.planeKm,
+				dockedAxialKm: end.dockedAxialKm,
+				phase: end.dockPhase,
+				lastEntryDocked: end.lastEntry?.docked ?? null,
+				// Named, so a failed entry says *which* check refused it rather than
+				// leaving the reader to guess.
+				failed: end.lastEntry?.evaluation
+					? Object.entries(end.lastEntry.evaluation.checks ?? {})
+							.filter(([, ok]) => ok === false)
+							.map(([name]) => name)
+					: [],
+				refusal: end.computerRefusal ?? null,
+			};
+		},
+		[id, PROBE_STANDOFF_KM],
+	);
 
 const slotId = roster.find((s) => s.kind === "slot")?.id ?? roster[0].id;
 /** E3's duration, read off the page rather than restated. */
@@ -311,31 +369,13 @@ console.log("\n§12.6 browser row 2 — the name shield is drawn:");
 const shieldInk = (id) =>
 	page.evaluate((stationId) => {
 		const g = window.__seelite;
-		const W = 560;
-		const H = 400;
-		const scratch = document.createElement("canvas");
-		scratch.width = W;
-		scratch.height = H;
-		const ctx = scratch.getContext("2d", { willReadFrequently: true });
-		const frame = () => {
-			g.render(0);
-			ctx.drawImage(g.renderer.domElement, 0, 0, W, H);
-			return ctx.getImageData(0, 0, W, H).data;
-		};
-		const drawn = frame();
-		const plates = g.setNameplatesVisible(stationId, false);
-		const without = frame();
-		g.setNameplatesVisible(stationId, true);
-		let changed = 0;
-		for (let i = 0; i < drawn.length; i += 4) {
-			if (
-				Math.abs(drawn[i] - without[i]) +
-					Math.abs(drawn[i + 1] - without[i + 1]) +
-					Math.abs(drawn[i + 2] - without[i + 2]) >
-				12
-			)
-				changed++;
-		}
+		let plates = 0;
+		const { changed } = window.__inkDelta(
+			() => {
+				plates = g.setNameplatesVisible(stationId, false);
+			},
+			() => g.setNameplatesVisible(stationId, true),
+		);
 		return { changed, plates };
 	}, id);
 
@@ -349,17 +389,8 @@ const approach = await page.evaluate((stationId) => {
 	g.launch();
 	g.skipDockTraversal();
 	for (let i = 0; i < 30; i++) g.step(1 / 60);
-	const snap = g.dockingSnapshot(stationId);
-	const body = g.world.system.byId.get(stationId);
-	const axis = snap.axis;
-	const rangeKm = snap.planeKm * 3;
-	g.world.ship.pos = {
-		x: body.pos.x + axis.x * rangeKm,
-		y: body.pos.y + axis.y * rangeKm,
-		z: body.pos.z + axis.z * rangeKm,
-	};
-	g.world.ship.vel = { x: 0, y: 0, z: 0 };
-	g.setAttitude({ x: -axis.x, y: -axis.y, z: -axis.z }, snap.basis.up);
+	const rangeKm = g.dockingSnapshot(stationId).planeKm * 3;
+	window.__placeOnAxis(stationId, rangeKm, false);
 	return { phase: g.dockingSnapshot(stationId).dockPhase, rangeKm };
 }, slotId);
 
@@ -372,32 +403,20 @@ check(
 const mouth = await shieldInk(slotId);
 check(
 	"the shield at the mouth is drawn on approach",
-	mouth.plates > 0 && mouth.changed > 40,
+	mouth.plates > 0 && mouth.changed > SHIELD_INK_FLOOR,
 	`${mouth.changed} pixels from ${mouth.plates} plate(s) at ${approach.rangeKm.toFixed(2)} km`,
 );
 
 // The interior shield: measured **during** the arrival, which is the only time
 // it can be seen at all. A dock is flown again and stopped mid-traversal.
 const midArrival = await page.evaluate(
-	async ([stationId, arrivalSeconds]) => {
+	async ([stationId, arrivalSeconds, standoffKm]) => {
 		const g = window.__seelite;
-		const snap = g.dockingSnapshot(stationId);
-		const body = g.world.system.byId.get(stationId);
-		const axis = snap.axis;
-		const standoff = 4.5;
-		g.world.ship.pos = {
-			x: body.pos.x + axis.x * (snap.planeKm + standoff),
-			y: body.pos.y + axis.y * (snap.planeKm + standoff),
-			z: body.pos.z + axis.z * (snap.planeKm + standoff),
-		};
-		g.world.ship.vel = { ...g.stationVelocity(stationId) };
-		g.regime = "normal";
-		g.rates = { pitch: 0, yaw: 0, roll: 0 };
-		g.setThrottle(0);
-		g.setAttitude({ x: -axis.x, y: -axis.y, z: -axis.z }, snap.basis.up);
-		g.targetId = stationId;
-		g.requestDockingClearance();
-		if (!g.dockingComputerEngaged) g.toggleDockingComputer();
+		window.__placeOnAxis(
+			stationId,
+			g.dockingSnapshot(stationId).planeKm + standoffKm,
+			true,
+		);
 		for (let i = 0; i < 60 * 120; i++) {
 			g.step(1 / 60);
 			if (g.dockingSnapshot(stationId).dockPhase === "arriving") break;
@@ -411,7 +430,7 @@ const midArrival = await page.evaluate(
 		const now = g.dockingSnapshot(stationId);
 		return { phase: now.dockPhase, axialKm: now.axialKm, planeKm: now.planeKm };
 	},
-	[slotId, arrivalSeconds],
+	[slotId, arrivalSeconds, PROBE_STANDOFF_KM],
 );
 
 check(
@@ -425,8 +444,61 @@ check(
 	// The half only a probe can catch: it exists for a few seconds, from one
 	// angle, and nothing headless can see it at all.
 	"the interior shield is visible during the arrival",
-	inside.plates > 0 && inside.changed > 40,
+	inside.plates > 0 && inside.changed > SHIELD_INK_FLOOR,
 	`${inside.changed} pixels from ${inside.plates} plate(s)`,
+);
+
+// ---------------------------------------------------------------------------
+// The clock drives §6 while docked, too
+// ---------------------------------------------------------------------------
+//
+// Not one of §12.6's rows, and it is here because it is only reachable from a
+// docked ship. §12's three states return from `step` before the flight tail,
+// and the first build of that branch left the §6 protocol tick behind with it —
+// so a ship that sat docked kept a grant that never expired while #10's clock
+// ran the whole time. Obligation 4 says the world keeps running; this is what
+// that means for the one subsystem a docked ship still has.
+
+// **Last, and that ordering is a finding rather than housekeeping.** Run before
+// the shield rows, its ten minutes of game time moved the slot's phase and the
+// interior shield then measured **zero** from the same view at the same axial
+// distance. The plaque is mounted on the mesh's own axes and the ship's roll is
+// not tied to them — §12.7's joint 8 — so which part of the end wall is in
+// front of the pilot depends on the phase the station happens to be at. Until
+// that joint is closed, a view of the interior shield is only reproducible at a
+// clock this file has not advanced.
+
+console.log("\nthe clearance protocol runs while docked:");
+const grant = await page.evaluate((stationId) => {
+	const g = window.__seelite;
+	const before = g.dockingSnapshot(stationId);
+	// The expiry off the page, not a restated `GRANT_WINDOW_S`.
+	const expiresAtS =
+		before.clearance.kind === "granted" ? before.clearance.expiresAtS : null;
+	if (expiresAtS === null)
+		return { phase: before.dockPhase, expiresAtS, live: null, after: null };
+	// A tenth of a second a step, so a ten-minute window is six thousand of
+	// them rather than thirty-six thousand. Nothing here is measuring a frame.
+	const dt = 0.1;
+	while (g.world.gameTime <= expiresAtS + 1) g.step(dt);
+	const after = g.dockingSnapshot(stationId);
+	return {
+		phase: after.dockPhase,
+		expiresAtS,
+		live: after.grantLive,
+		after: g.world.gameTime,
+	};
+}, slotId);
+
+check(
+	"the ship is still docked across the whole interval",
+	grant.phase === "docked",
+	`${grant.phase} at t+${grant.after?.toFixed(0) ?? "?"}`,
+);
+check(
+	"and its grant expired on the clock rather than outliving the dock",
+	grant.expiresAtS !== null && grant.live === false,
+	`grant expired at ${grant.expiresAtS?.toFixed(0) ?? "none"}, live=${grant.live}`,
 );
 
 await browser.close();

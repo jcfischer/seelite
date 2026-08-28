@@ -10,9 +10,6 @@
 
 import { describe, expect, test } from "bun:test";
 import {
-	ARRIVAL_SECONDS,
-	ARRIVAL_SECONDS_MAX,
-	ARRIVAL_SECONDS_MIN,
 	LAUNCH_RELEASE_KM,
 	arrivalAttitude,
 	arrivalProgress,
@@ -23,7 +20,14 @@ import {
 	dockedAxialKm,
 	throatDepthKm,
 } from "../src/arrival";
-import { apertureFrame, evaluateEntry, slotBasis } from "../src/docking";
+import {
+	ARRIVAL_SECONDS,
+	ARRIVAL_SECONDS_MAX,
+	ARRIVAL_SECONDS_MIN,
+	apertureFrame,
+	evaluateEntry,
+	slotBasis,
+} from "../src/docking";
 import {
 	SPIN_RPM_RANGE,
 	STATION_GEOMETRY,

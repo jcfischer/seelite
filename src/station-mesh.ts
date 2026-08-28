@@ -665,12 +665,16 @@ function buildNameplates(
 	// would need a hull surface beside the mouth, and the trade station's
 	// second form does not have one there.
 	//
-	// **On local +X, turned a quarter turn.** Local X is the slot's `across`
-	// (`main.ts` aims the mesh on `slotBasis`), and `across` is what check 4
-	// accepts as the ship's *up* — so a correctly rolled pilot has `across`
-	// pointing up their canopy. Mounted on local Y instead, which was the first
-	// version, the sign hangs off the side of the frame and reads sideways: the
-	// captured frames showed the name running vertically up the canopy. The
+	// **On local +X, turned a quarter turn.** Local X is the *mesh's* own X, and
+	// the mesh's X is where `main.ts`'s `setFromUnitVectors` happens to leave it
+	// — the roll about the aperture axis is arbitrary today, which §12.7's
+	// joint 8 records and #77 deliberately did not fix. So this is not "the
+	// slot's `across`" and an earlier version of this comment said it was,
+	// asserting a rule the same change had just written down as false.
+	//
+	// What it *is*: the aperture rectangle's long axis, which is local X by
+	// construction — `BoxGeometry(w, h, …)` above puts `w` there. A sign along
+	// the short side would read as hanging off the frame at any roll. The
 	// texture's own up is local +Y, so the quarter turn is what moves it to X —
 	// **negative**, because the other sign turns the text through the mirror and
 	// the name reads backwards. Which way round it goes is not derivable from
@@ -698,7 +702,7 @@ function buildNameplates(
 		// the reason above.
 		// Off the axis rather than on it, so the ship flies *past* a plaque
 		// rather than into it — and off it along local X for the mouth plate's
-		// reason: that is the pilot's up.
+		// reason: that is the rectangle's long side.
 		inner.rotation.z = -Math.PI / 2;
 		inner.position.set(
 			w * NAMEPLATE_INNER_WIDTH_FACTOR,

@@ -10,8 +10,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { dockedAxialKm, ARRIVAL_SECONDS } from "../src/arrival";
-import { apertureFrame, slotBasis } from "../src/docking";
+import { dockedAxialKm } from "../src/arrival";
+import { ARRIVAL_SECONDS, apertureFrame, slotBasis } from "../src/docking";
 import {
 	type DockPhase,
 	canSkipTraversal,

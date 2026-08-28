@@ -26,26 +26,12 @@
 
 import {
 	type ApertureFrame,
-	ARRIVAL_SECONDS_MAX,
-	ARRIVAL_SECONDS_MIN,
+	ARRIVAL_SECONDS,
+	frameAtPhase,
 	slotBasis,
 } from "./docking";
 import type { StationAperture, StationGeometry } from "./station";
 import { type Vec3, add, dot, scale, v3 } from "./vec3";
-
-export { ARRIVAL_SECONDS_MAX, ARRIVAL_SECONDS_MIN };
-
-/**
- * The shipped duration, seconds — **E3**'s four-to-six range resolved to a
- * value.
- *
- * The middle of the band rather than either end: E3 chose a range explicitly so
- * that this is a tuning move and not a decision, and §12.7's joint 1 records
- * that the number is a judgement about a loop nobody has flown forty times.
- * `tests/arrival.test.ts` pins it inside the band, which is what makes a retune
- * to twelve seconds a failure rather than a preference.
- */
-export const ARRIVAL_SECONDS = 5;
 
 /**
  * How far outside the aperture plane the launch releases the ship, km.
@@ -151,7 +137,7 @@ function decompose(
 	phaseRad: number,
 	rel: Vec3,
 ): LocalOffset {
-	const { across, up } = slotBasis({ ...frame, phaseRad });
+	const { across, up } = slotBasis(frameAtPhase(frame, phaseRad));
 	return {
 		axial: dot(rel, frame.axis),
 		across: dot(rel, across),
@@ -218,7 +204,19 @@ export function beginLaunch(
  * `STATION_GEOMETRY` and cannot disagree with the frame the checks ran against.
  */
 function dockedAxialFor(frame: ApertureFrame): number {
-	return frame.planeKm - throatDepthKm(frame.aperture);
+	// Through `dockedAxialKm`, not a second spelling of the same subtraction:
+	// the frame's `planeKm` **is** the dockable core radius (`apertureFrame`
+	// sets it from `STATION_GEOMETRY`), so this is the same rule read off the
+	// frame the checks ran against rather than a parallel one that a retune
+	// could leave behind.
+	return dockedAxialKm({
+		coreRadiusKm: frame.planeKm,
+		aperture: frame.aperture,
+		// Neither field is read by `dockedAxialKm`; they are here because
+		// `StationGeometry` is a record of four and a partial would be a cast.
+		axis: "parent",
+		spins: frame.aperture.kind === "slot",
+	});
 }
 
 /** Where the traversal is, 0 at its start and 1 from its end onward. Clamped
@@ -232,7 +230,7 @@ export function arrivalProgress(law: ArrivalLaw, gameTime: number): number {
  *  `phaseRad`. */
 export function arrivalRel(law: ArrivalLaw, u: number, phaseRad: number): Vec3 {
 	const e = ease(clamp01(u));
-	const { across, up } = slotBasis({ ...law.frame, phaseRad });
+	const { across, up } = slotBasis(frameAtPhase(law.frame, phaseRad));
 	const lerp = (a: number, b: number) => a + (b - a) * e;
 	return add(
 		scale(law.frame.axis, lerp(law.from.axial, law.to.axial)),
@@ -263,7 +261,7 @@ export function arrivalRelVelocity(
 	const c = clamp01(u);
 	const e = ease(c);
 	const de = easeRate(c) / law.durationS;
-	const { across, up } = slotBasis({ ...law.frame, phaseRad });
+	const { across, up } = slotBasis(frameAtPhase(law.frame, phaseRad));
 	const at = (a: number, b: number) => a + (b - a) * e;
 	const rate = (a: number, b: number) => (b - a) * de;
 	const acrossNow = at(law.from.across, law.to.across);
@@ -311,7 +309,7 @@ export function arrivalAttitude(
 	phaseRad: number,
 ): { nose: Vec3; up: Vec3 } {
 	const e = ease(clamp01(u));
-	const { across } = slotBasis({ ...law.frame, phaseRad });
+	const { across } = slotBasis(frameAtPhase(law.frame, phaseRad));
 	const slotUp = across;
 	const aimed = scale(law.frame.axis, law.kind === "arrival" ? -1 : 1);
 	if (!law.fromNose || !law.fromUp) return { nose: aimed, up: slotUp };

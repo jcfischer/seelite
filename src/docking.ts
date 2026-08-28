@@ -124,6 +124,22 @@ export const ARRIVAL_SECONDS_MIN = 4;
 export const ARRIVAL_SECONDS_MAX = 6;
 
 /**
+ * The shipped duration, seconds — E3's range resolved to a value.
+ *
+ * **Here rather than in `arrival.ts`, beside the bounds it has to sit inside.**
+ * One tuning decision with two import paths is two places a retune can be made
+ * and one of them can be missed; `state-gallery.ts` already reads the bounds
+ * from this module, and the law reads all three.
+ *
+ * The middle of the band rather than either end: E3 chose a range explicitly so
+ * that moving inside it is a tuning change and not a decision, and §12.7's
+ * joint 1 records that the number is a judgement about a loop nobody has flown
+ * forty times. `tests/arrival.test.ts` pins it inside the band, which is what
+ * makes a retune to twelve seconds a failure rather than a preference.
+ */
+export const ARRIVAL_SECONDS = 5;
+
+/**
  * **#8's constant, standing in.** The absolute damage scale is
  * `docs/specs/docking.md` §10's hand-off to the combat node, because it is
  * denominated in #8's shield and energy pools — which do not exist yet.
@@ -245,6 +261,31 @@ export function apertureFrame(
 		phaseRad: geometry.spins ? phaseRad : 0,
 		aperture: geometry.aperture,
 		planeKm: geometry.coreRadiusKm,
+	};
+}
+
+/**
+ * The same frame at a different slot phase.
+ *
+ * `CONTEXT.md` §Language says of the aperture frame: *"`src/docking.ts` is the
+ * one place it is built."* A law that re-evaluates the basis every frame — the
+ * arrival, which must run in the station's *rotating* frame — needs the frame
+ * at the current phase on every call, and spelling that as `{ ...frame,
+ * phaseRad }` at each site makes a second module a builder of the frame the
+ * checks are stated in. One verb instead, so the rule stays a fact about
+ * imports.
+ *
+ * The phase is normalised the way `apertureFrame` normalises it: a pad does not
+ * rotate, so a caller passing a phase for one is describing something that
+ * cannot happen.
+ */
+export function frameAtPhase(
+	frame: ApertureFrame,
+	phaseRad: number,
+): ApertureFrame {
+	return {
+		...frame,
+		phaseRad: frame.aperture.kind === "slot" ? phaseRad : 0,
 	};
 }
 

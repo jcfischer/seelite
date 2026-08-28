@@ -144,6 +144,7 @@ import {
 	type EntryOutcome,
 	type EntryPose,
 	type ShipCondition,
+	ARRIVAL_SECONDS,
 	AXIS_TOLERANCE_DEG,
 	DOCKING_COMPUTER,
 	ROLL_TOLERANCE_DEG,
@@ -165,7 +166,7 @@ import {
 	slotBasis,
 	tickDocking,
 } from "./docking";
-import { ARRIVAL_SECONDS, dockedAxialKm } from "./arrival";
+import { dockedAxialKm } from "./arrival";
 import {
 	type DockPhase,
 	type DockSession,
@@ -1113,6 +1114,25 @@ class Game {
 	 *  rather than only whether it is parked. */
 	get dockPhase(): DockPhase {
 		return this.dock.phase;
+	}
+
+	/**
+	 * Put the ship back in flight without flying a launch.
+	 *
+	 * **For the probe tier, which teleports.** A run that places the ship
+	 * somewhere new has to end whatever session the run before it left, and
+	 * while the phase is not `flying` `step` runs the arrival and ignores every
+	 * input — so a probe that skipped this would fly nothing at all. It exists
+	 * as a method rather than as a `g.dock = { … }` literal in the probe because
+	 * that tier is not typechecked: a field added to `DockSession` would leave
+	 * the probe seeding a malformed session and its rows green against a state
+	 * the game never produces.
+	 *
+	 * Not a launch, and nothing in the game calls it: §12.2's launch is the only
+	 * way a *player* leaves.
+	 */
+	resetDock() {
+		this.dock = newDockSession();
 	}
 
 	/**
@@ -3305,6 +3325,10 @@ class Game {
 		const state = this.dockingStateOf(target);
 		const frame = this.apertureFrameOf(target);
 		const pose = this.entryPoseOf(target);
+		// One lookup for the three fields that need it. This runs per frame on
+		// the probe tier — `probe-dock-arrival.mjs` calls it inside a loop of
+		// several thousand simulated frames — and `stationOf` walks the contents.
+		const station = stationOf(this.world.system, target);
 		return {
 			stationId: target,
 			rangeKm: length(pose.rel),
@@ -3335,7 +3359,7 @@ class Game {
 			// was seeding its own perpendicular from a world axis, which is a
 			// third spelling of a convention `docking.ts` already owns.
 			reference: slotBasis({ ...frame, phaseRad: 0 }).across,
-			spinRpm: stationOf(this.world.system, target).spinRpm,
+			spinRpm: station.spinRpm,
 			clearance: state.clearance,
 			grantLive: grantLive(state, this.world.gameTime),
 			hostile: state.hostile,
@@ -3347,16 +3371,11 @@ class Game {
 			// flight and exposed as such — this is that exposure, and #75 is what
 			// reads it.
 			dockPhase: this.dock.phase,
-			dockedAxialKm: dockedAxialKm(
-				STATION_GEOMETRY[stationOf(this.world.system, target).type],
-			),
+			dockedAxialKm: dockedAxialKm(STATION_GEOMETRY[station.type]),
 			// E9's generated name, read off the page rather than re-derived by a
 			// probe: a probe with its own copy of a rule goes falsely red the day
 			// the rule changes.
-			stationName: stationName(
-				this.world.system.record.name,
-				stationOf(this.world.system, target).type,
-			),
+			stationName: stationName(this.world.system.record.name, station.type),
 			condition: this.interimCondition,
 			alive: isAlive(this.interimCondition),
 			// The full pool, so a probe asserting §2.1's quarter-pool bound reads
@@ -3384,7 +3403,19 @@ class Game {
 	 * nearer frame instead makes every tolerance a function of the frame rate —
 	 * the class of error §4.1 already refuses for the slot phase.
 	 */
-	private stepDocking(before: Map<string, DockingApproach>) {
+	/**
+	 * The clock's effect on every §6 protocol state: grants expire, hostility
+	 * decays, a queued ship is promoted.
+	 *
+	 * **Split out of `stepDocking` because it has to run on the docked path
+	 * too.** §12's three states return from `step` before the flight tail, and
+	 * the first build of that branch left this behind with it — so a ship that
+	 * sat docked for twenty minutes came out with a grant that had never
+	 * expired and a station whose hostility had never decayed, while #10's
+	 * clock ran the whole time. The rule is the one obligation 4 states for the
+	 * world: the clock advances, and everything driven by it advances with it.
+	 */
+	private stepDockingProtocol() {
 		for (const [id, state] of this.dockingStates) {
 			const next = tickDocking(
 				state,
@@ -3396,6 +3427,10 @@ class Game {
 			// per station per frame for a value that did not change.
 			if (next !== state) this.dockingStates.set(id, next);
 		}
+	}
+
+	private stepDocking(before: Map<string, DockingApproach>) {
+		this.stepDockingProtocol();
 
 		// **The one-way latch is gone, and so is the block that cleared it.**
 		// #68 shipped an anti-latch here — a range test that dropped `dockedAt`
@@ -3497,6 +3532,10 @@ class Game {
 	private stepDockPhase(dt: number) {
 		const out = stepDockedWorld(this.world, this.dock, dt);
 		this.dock = out.session;
+		// The clock moved, so everything the clock drives moves with it. Anything
+		// per-frame added to `step`'s flight tail owes the same line here, and
+		// this one is the reason that is worth saying out loud: it was missing.
+		this.stepDockingProtocol();
 		if (!out.ship) return;
 		this.world.ship.pos = out.ship.pos;
 		this.world.ship.vel = out.ship.vel;
@@ -3513,8 +3552,11 @@ class Game {
 	 * §12.2's launch, as the game's entry point for it.
 	 *
 	 * **The motion is this spec's and the control is #70's** — M9 puts the
-	 * command on the Flight console. This method is the seam: what happens
-	 * after it is pressed.
+	 * launch control on the Flight console. This method is the seam: what
+	 * happens after it is pressed. ("Control" rather than "command": `CONTEXT.md`
+	 * §Language reserves the latter as an avoid-alias for **Intervention**, a
+	 * different thing entirely, and a word that reads past a glossary is a word
+	 * that ends up meaning both.)
 	 */
 	launch(): boolean {
 		if (this.dock.phase !== "docked" || !this.dock.stationId) return false;
@@ -3533,16 +3575,6 @@ class Game {
 		if (!canSkipTraversal(this.dock)) return false;
 		this.dock = skipTraversal(this.dock, this.world.gameTime);
 		return true;
-	}
-
-	/** The docked station's generated name (E9), or `null` while flying. */
-	dockedStationName(): string | null {
-		const id = this.dock.stationId;
-		if (!id) return null;
-		return stationName(
-			this.world.system.record.name,
-			stationOf(this.world.system, id).type,
-		);
 	}
 
 	private stepDockingComputer(
