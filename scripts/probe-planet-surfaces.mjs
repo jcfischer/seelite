@@ -908,16 +908,22 @@ check(
  * `?seed=6`'s star is not the star that motivated `PHOTOSPHERE_LUMA`.
  *
  * A **saturated** tint clips one channel and keeps the others, so its
- * granulation survives whatever the exposure — which is why the gallery, and
- * seed 1, never showed the problem. A **neutral** tint clips all three
- * together, and that is the disc that read as a flat white lamp.
+ * granulation survives whatever the exposure. A **neutral** tint clips all
+ * three together, and that is the disc that read as a flat white lamp.
  *
- * `?seed=15`'s star is `0xf8f7ff`. Measured in its own page, because a check
- * whose motivating case is never exercised is a constant nothing defends —
- * the figures in `planet-surface.ts` describe a build this tree cannot
- * reproduce, so this is what stands in for them.
+ * `?seed=8`'s star is `0xf8f7ff`, the tint that motivated the constant.
+ * Measured in its own page, because a check whose motivating case is never
+ * exercised is a constant nothing defends — the figures in
+ * `planet-surface.ts` describe a build this tree cannot reproduce, so this is
+ * what stands in for them.
+ *
+ * **It was `?seed=15` until #118.** The reshape moved every system, and that
+ * seed's star is now `0xffb26b` — a span of 0.580, thoroughly saturated, so
+ * the check went red for having lost its subject rather than for a regression.
+ * A seed picked for a generated property is a fixture that a regeneration
+ * silently invalidates; re-find it by scanning `makeWorld`, never by guessing.
  */
-const NEUTRAL_URL = process.env.PROBE_NEUTRAL_URL ?? `${ORIGIN}/?seed=15`;
+const NEUTRAL_URL = process.env.PROBE_NEUTRAL_URL ?? `${ORIGIN}/?seed=8`;
 const neutralPage = await browser.newPage({ viewport: VIEW });
 watch(neutralPage);
 await installHelpers(neutralPage);

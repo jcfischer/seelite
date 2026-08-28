@@ -34,7 +34,6 @@ import {
 	worldSeeds,
 } from "./helpers/station-rows";
 import baseline from "./fixtures/station-orbits.json";
-import baselineBefore from "./fixtures/station-orbits-pre-floor.json";
 
 describe("station placement is stable against added draws", () => {
 	test("the fixture is a real corpus, not an empty pass", () => {
@@ -211,127 +210,30 @@ describe("station orbits clear their host (node #32)", () => {
 });
 
 /**
- * Node #32's own guard: the floor took over **where it had to and nowhere
- * else**.
+ * ## Retired under #118, and the fixture with it
  *
- * The floor is not a new orbit rule — the 400–2,000 km band still decides
- * whenever it lands above `STATION_ORBIT_R_OVER_R` × the host's radius, and
- * that is most small hosts. The evidence is this file's baseline, compared
- * against its shape before #32: of the 791 rows that exist on both sides,
- * the moved count below moved **in their orbit-radius column only** —
- * every other field byte-identical, because the change adds no draws to the
- * `DOMAIN.STATIONS` stream — and the unchanged ones are exactly the
- * small-host rows the band still owns. Both directions of drift fail this:
- * re-applying the old band moves the large hosts back down, and replacing
- * the band with a proportional rule moves the small ones up.
+ * This block held a row-by-row diff of the live generator against
+ * `station-orbits-pre-floor.json` — a world captured at the tag
+ * `node-32-before-orbit-floor` — and asserted that #32's orbit floor moved the
+ * radius column and nothing else, in an exact 544 / 245 / 2 / 2 split.
  *
- * The comparison is keyed on station identity — galaxy, system, station id,
- * kind — not position, because #51 landed between the two shapes and moved
- * rows around and brought two of its own:
+ * #118 reshaped the galaxy to a q = 0.7 disc, which moved every system and
+ * re-rolled the layout attempt for several galaxies. The diff's identity key is
+ * `(galaxy, system, station, kind)`, so after the reshape those keys name
+ * different places in a different world: the comparison does not merely go red,
+ * it stops meaning anything. There is no repin available either, because the
+ * *before* side is a world that no longer exists and cannot be regenerated —
+ * that was the point of committing it.
  *
- * - two trade stations appear at galaxy 110 and galaxy 114, which #51's
- *   ladder fix newly reaches (the counts below refuse to let #32's split
- *   drift, and these two are outside it), and
- * - two rows at system g1#253 (trade, shipyard) re-parent planet-4 →
- *   planet-3 with **all five of their orbital columns**, #51 having rebuilt
- *   that system's ladder — a re-parenting is a re-placement, so these two
- *   are accounted as #51's and exempt from the radius-only rule (the floor
- *   still holds on them: the parent is a planet, and the invariants above
- *   walk every hosted station on the live generator).
+ * **It is retired rather than widened.** A guard loosened until a reshape fits
+ * through it discriminates nothing, which is the failure #59 recorded. What
+ * #32's floor actually needs held is asserted on the live generator by the
+ * invariants above — every hosted station clears its host by the floor, and its
+ * parent is a planet — and those survive any regeneration because they are
+ * properties rather than a diff against a snapshot. What is genuinely lost is
+ * the *transitional* evidence that the floor moved only the radius column, and
+ * that evidence had already done its job: #32 is merged.
  *
- * The `before` shape is not regenerated here (a generator that could emit
- * both rules would put the second one's draws into the shared stream). It
- * is committed as `station-orbits-pre-floor.json`, captured from the
- * generator at the tag `node-32-before-orbit-floor` — the tag stays as
- * provenance for where that file came from, but reading a committed fixture
- * keeps this guard working in checkouts that never saw the tag (a shallow
- * clone, an npm pack, a release tarball).
+ * `tests/fixtures/station-orbits-pre-floor.json` is deleted with it. A fixture
+ * no test reads is a file that looks like coverage and is not.
  */
-
-/** The identity columns of `stationRows`: galaxy, system, station, kind. */
-const IDENTITY_COLS = 4;
-
-/** The orbit-radius column of `stationRows`, so the comparison below names
- *  which column a row moved in rather than just that one did. */
-const RADIUS_COL = 5;
-
-/** The parent column, whose two merged rows are #51's, not #32's. */
-const PARENT_COL = 4;
-
-/** Sentinel so a stray-column diff fails naming the row and column, not
- *  with an API bun:test does not have. */
-const RADIUS_COL_ONLY = "radius-column-only";
-
-/**
- * Measured by hand over the two committed fixtures at the merge with #51
- * (see the block below): the exact split this guard refuses to let drift.
- * 544 + 245 + 2 + 2 = 793 rows on the after side.
- */
-const MOVED_ROWS = 544;
-const UNCHANGED_ROWS = 245;
-const PARENT_MOVED_ROWS = 2;
-const NEW_ROWS = 2;
-
-describe("the floor moved only what the shell race moved (node #32)", () => {
-	test("the repinned fixture differs from the pre-#32 baseline in the radius column alone", () => {
-		const before = (baselineBefore.rows as string[]).map((r) => r.split("\t"));
-		const after = stationRows(baseline.worldSeed, baseline.galaxies).map((r) =>
-			r.split("\t"),
-		);
-		const beforeById = new Map(
-			before.map((r) => [r.slice(0, IDENTITY_COLS).join("\t"), r]),
-		);
-		let moved = 0;
-		let unchanged = 0;
-		let parentMoved = 0;
-		let added = 0;
-		for (const row of after) {
-			const key = row.slice(0, IDENTITY_COLS).join("\t");
-			const was = beforeById.get(key);
-			if (was === undefined) {
-				added++;
-				continue;
-			}
-			// A re-parent is a re-placement: every orbit column may follow it.
-			// #51's two rows are the only ones allowed. Decided before the column
-			// scan, so the exemption is the row as a whole and cannot depend on
-			// which columns happen to sit after the parent column — a column
-			// reordering in the row format stays safe, not just this order.
-			if (was[PARENT_COL] !== row[PARENT_COL]) {
-				parentMoved++;
-				continue;
-			}
-			let radiusDiff = false;
-			for (let c = IDENTITY_COLS; c < row.length; c++) {
-				if (was[c] === row[c]) continue;
-				if (c === RADIUS_COL) {
-					radiusDiff = true;
-					// Strictly upward: a floor never lowers an orbit.
-					expect(+row[RADIUS_COL]).toBeGreaterThan(+was[RADIUS_COL]);
-				} else {
-					// Any other column differing is drift this guard exists to
-					// catch; naming it in the expected value keeps the message.
-					expect(`row ${key} drifted outside the radius column at ${c}`).toBe(
-						RADIUS_COL_ONLY,
-					);
-				}
-			}
-			if (radiusDiff) moved++;
-			else unchanged++;
-		}
-		// Every pre-#32 row still exists: #32 adds no draws and #51 dropped
-		// none, so nothing may vanish from the before side.
-		const afterIds = new Set(
-			after.map((r) => r.slice(0, IDENTITY_COLS).join("\t")),
-		);
-		expect(
-			before.filter((r) => !afterIds.has(r.slice(0, IDENTITY_COLS).join("\t"))),
-		).toEqual([]);
-		// The measured split, not a vague "some moved". All sides are
-		// deterministic over a fixed corpus.
-		expect(moved).toBe(MOVED_ROWS);
-		expect(unchanged).toBe(UNCHANGED_ROWS);
-		expect(parentMoved).toBe(PARENT_MOVED_ROWS);
-		expect(added).toBe(NEW_ROWS);
-	});
-});

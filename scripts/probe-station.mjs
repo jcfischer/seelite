@@ -83,12 +83,37 @@ import {
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
 /**
- * Seed 1, and not an arbitrary one: its start system holds all three station
- * types — the only way to compare three silhouettes under one lighting setup —
- * and its two Coriolis stations happen to sit at 0.91 and 2.95 rpm, which is
- * §4's range measured at both ends without the probe writing a spin itself.
+ * The fixture requirement is **one system holding all three station types**,
+ * each framable and fully lit at docking range — not this particular number.
+ *
+ * It was `?seed=1` until #118 reshaped the galaxy, after which that system holds
+ * only a trade post and a refinery. The re-pick is reproducible rather than a
+ * hunt, and the type scan alone is **not** the criterion: of the 40 seeds under
+ * 400 whose start system holds three types, most fail
+ * `probe-station-visuals.mjs` — the trade post frames small enough that its
+ * window grid contributes no measurable pixels. Scan
+ * `makeWorld(seed).system.contents.stations` for three distinct types, then run
+ * both station probes over the candidates. 54, 59, 96 and 115 pass the visuals
+ * probe; 54 is the most reliable across both.
+ *
+ * Seed 54's system, INEDTE, spins its Coriolis stations at 1.09 and 2.64 rpm —
+ * §4's range sampled near both ends without the probe writing a spin itself,
+ * which is the second thing this fixture is for. (Seed 1's were 0.91 and 2.95.)
+ *
+ * ## The 5 km control flakes
+ *
+ * Trade measured twice, against a `1 − IoU ≤ 0.05` ceiling, lands red often — on
+ * `main` before #118 as well as here, and on every fixture tried. The ceiling is
+ * deliberately **not** widened to hide it: loosening a margin so an unrelated
+ * change goes green is how a check stops discriminating, and the readings point
+ * at the control re-measuring a *spinning* station rather than at the margin.
+ *
+ * The per-seed run table, and the fix, belong to node #84 ("is probe-station's
+ * margin too tight?"), where they are posted. Not repeated here, because a
+ * reader who wants the seed criterion above should not have to scroll past a
+ * statistical writeup that lives somewhere else.
  */
-const URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=1`;
+const URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=54`;
 
 /** Where the camera stands, kilometres from the station centre. Far enough that
  *  the shipyard's 1.5 km frame is inside the frame, close enough that the

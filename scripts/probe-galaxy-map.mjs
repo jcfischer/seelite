@@ -42,19 +42,47 @@ const ORIGIN =
  * its own measurement with its own band — still wide, because this is a
  * regression guard rather than a tuning target, but each end is a number
  * somebody measured at that width.
+ *
+ * ## Re-measured for the q = 0.7 disc (#118), and re-based on the spread
+ *
+ * The disc invalidated both bands, and #107's instruction was that they be
+ * **re-measured rather than widened**. They were: this probe was run over all
+ * eight galaxies at each viewport, and the band is that spread widened by about
+ * 4 points each way and **rounded outward to a whole percent** — so the printed
+ * ends are what to compare a re-measure against, not a formula to re-derive.
+ * (Stated because "spread ± 4" was written here and matches only one of the
+ * three bands: desktop is -3.8/+4.0 and narrow -4.5/+4.5 after rounding.)
+ *
+ * ```
+ *              galaxy 0..7                                   spread     band
+ * desktop  44.5 41.0 40.2 40.6 48.0 47.3 39.8 41.0        39.8-48.0   36-52
+ * narrow   43.6 33.5 42.0 33.9 50.5 43.6 39.4 39.5        33.5-50.5   29-55
+ * ```
+ *
+ * **The desktop band tightened and the narrow one widened, and the widening is
+ * the fix rather than the evasion.** #107 found that §5.1 quoted 40.2% as
+ * though it were a constant when it is one galaxy of a 13-point spread. The old
+ * narrow band of 29-49 was set from galaxy 0 alone, and galaxy 4 measures 50.5
+ * — so that band was already outside its own subject and passed only because
+ * the probe mounts galaxy 0. A band set from one sample is not a tighter band,
+ * it is an untested one.
+ *
+ * **This band does not police the shape**, and is not asked to: it guards the
+ * projection and the pick radius. The disc is asserted directly by the
+ * edge-on/face-on aspect check below, which fails flat on a ball.
  */
 const VIEWPORTS = [
 	{
 		name: "desktop",
 		width: 1280,
 		height: 760,
-		crowding: { measured: 0.402, min: 0.3, max: 0.5 },
+		crowding: { measured: 0.445, min: 0.36, max: 0.52 },
 	},
 	{
 		name: "narrow",
 		width: 390,
 		height: 844,
-		crowding: { measured: 0.387, min: 0.29, max: 0.49 },
+		crowding: { measured: 0.436, min: 0.29, max: 0.55 },
 	},
 ];
 
@@ -67,6 +95,31 @@ const nextFrame = (page) =>
 await guardedOrigin(ORIGIN, ["src/galaxy-map.ts", "src/galaxy-route.ts"]);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
+
+/**
+ * §2's flattening, as a literal.
+ *
+ * A probe that reads a constant off the page cannot check that constant, and
+ * this file's own rule is that a probe should not restate one. Both are true and
+ * they pull opposite ways, so the split is: the *band* uses this literal, and
+ * the page's reported `flatteningQ` is asserted equal to it in its own check.
+ * Changing §2's shape then fails here, by name, instead of quietly re-aiming the
+ * measurement at the new value.
+ */
+const EXPECTED_Q = 0.7;
+
+/**
+ * Which viewports actually framed the cluster and so measured the disc.
+ *
+ * Asserted after the loop, so a skip cannot become a silent retirement — and
+ * asserted **by name**, not as a count. `discMeasured >= 1` was satisfied by
+ * desktop alone while narrow is documented as always skipping, so the floor
+ * encoded nothing: a change that also cropped desktop would have to drop the
+ * count to zero to be caught, and by then the check is gone from both. Naming
+ * desktop is what makes "desktop must keep measuring this" a thing the suite
+ * knows rather than a thing this comment claims.
+ */
+const discMeasured = new Set();
 
 for (const viewport of VIEWPORTS) {
 	const page = await browser.newPage({
@@ -94,8 +147,183 @@ for (const viewport of VIEWPORTS) {
 			!initial.gameConstructed &&
 			initial.state?.systemCount === 256 &&
 			initial.state?.galaxy === 0 &&
-			initial.state?.galaxyRadiusLy === 22 &&
+			// **The radius is deliberately not asserted here.** It read `=== 22`
+			// and went red on #118 for reshaping the galaxy — the failure
+			// `CLAUDE.md` names, a probe holding its own copy of a module's
+			// constant. The replacement was a 15-40 bracket, which is worse than
+			// useless: §2.1's sweep spans R = 21.9 to R = 37.7, so every shape the
+			// project could ship passes it, including the ball the disc replaced.
+			// A check that cannot fail is not a weak check, it is a line that
+			// makes the suite look larger than it is.
+			//
+			// What distinguishes a mounted generator from a stub is the
+			// 256-system count above, the lit-neighbourhood check below, and the
+			// disc aspect — none of which a constant satisfies.
+			Number.isFinite(initial.state?.galaxyRadiusLy) &&
 			initial.state?.jumpRangeLy === 7,
+	);
+
+	// ---- the cluster is a disc, measured rather than declared ---------------
+
+	/**
+	 * §2's oblate spheroid, as drawn.
+	 *
+	 * The chart reports `flatteningQ`, and a check comparing that field to a
+	 * literal would prove only that a number survived a getter. What is asserted
+	 * instead is the **projected aspect of the drawn points**: seen edge-on the
+	 * cluster must be about `q` as tall as it is wide, and seen face-on about
+	 * square. A ball fails both halves — it is square at every angle — and so
+	 * does a build that squashes the wrong axis.
+	 *
+	 * **What it does not reach.** `projected()` maps each system's `pos` through
+	 * the pivot, so it sees the generator's squash and anything applied to the
+	 * pivot transform, but *not* a squash baked into the point cloud's own
+	 * geometry buffer — that would move the pixels without moving `pos`, and this
+	 * check would pass. Claiming otherwise was an overclaim in an earlier round of
+	 * this PR; the honest boundary is that this measures what the *projection* of
+	 * the authoritative positions looks like, which is the thing §2's reference
+	 * plane rests on.
+	 *
+	 * Pitch is driven through `orbit` and read back off the state rather than
+	 * assumed from the drag: the pitch clamp is +/-1.45, so a probe that computed
+	 * the angle from its own pixel arithmetic would silently measure a different
+	 * view from the one it names.
+	 */
+	const aspectAtPitch = (targetPitch) =>
+		page.evaluate(async (target) => {
+			const map = window.__seeliteGalaxyMap;
+			map.select(null);
+			map.resetView();
+			// Orbit in small steps toward the target, reading the state each time —
+			// the drag-to-radians factor is the chart's business, not the probe's.
+			// Step toward the target, halving on a genuine overshoot.
+			//
+			// A fixed drag against a 0.005 rad tolerance can straddle the target
+			// and oscillate to the cap, which burns synchronous orbit calls and
+			// lands somewhere arbitrary anyway. Two details matter and both were
+			// wrong in an earlier version: `previous` is seeded from the *first*
+			// delta rather than Infinity (whose sign is 1, so a negative opening
+			// delta read as an overshoot and halved the step before anything had
+			// been overshot), and the opening step is proportional to the distance
+			// rather than a fixed 4, so a far target converges in about log2 steps
+			// instead of walking there.
+			let delta = target - map.state.pitch;
+			let previous = delta;
+			let step = Math.max(4, Math.abs(delta) * 40);
+			let i = 0;
+			for (; i < 400; i++) {
+				delta = target - map.state.pitch;
+				if (Math.abs(delta) < 0.005) break;
+				if (i > 0 && Math.sign(delta) !== Math.sign(previous))
+					step = Math.max(step / 2, 0.25);
+				previous = delta;
+				map.orbit(0, Math.sign(delta) * step);
+			}
+			const stalled = Math.abs(target - map.state.pitch) > 0.02;
+			if (stalled) {
+				// **Throw rather than return an unconverged framing.** Returning it
+				// let the aspect check run against a view nobody asked for and
+				// report "the cluster is a disc — FAIL", so a stalled orbit
+				// produced two failures naming two different defects.
+				throw new Error(
+					`aspectAtPitch: wanted ${target}, reached ${map.state.pitch} after ${i} steps` +
+						(step <= 0.25 ? " (stalled at the step floor)" : ""),
+				);
+			}
+			await new Promise((r) =>
+				requestAnimationFrame(() => requestAnimationFrame(r)),
+			);
+			const { width, height } = map.viewport();
+			const pts = map
+				.projected()
+				.filter(
+					(p) =>
+						!p.behind && p.x >= 0 && p.y >= 0 && p.x <= width && p.y <= height,
+				);
+			if (pts.length === 0) {
+				// **Not a silent NaN.** `Math.max(...[])` is -Infinity, so the
+				// spans become NaN, every comparison below is false, and the run
+				// reports "skipped the disc aspect" — a broken measurement wearing
+				// the skip's name, which is the one thing `discMeasured` exists to
+				// stop.
+				throw new Error("aspectAtPitch: nothing on screen");
+			}
+			const xs = pts.map((p) => p.x);
+			const ys = pts.map((p) => p.y);
+			return {
+				pitch: map.state.pitch,
+				q: map.state.flatteningQ,
+				onScreen: pts.length,
+				spanX: Math.max(...xs) - Math.min(...xs),
+				spanY: Math.max(...ys) - Math.min(...ys),
+				// **The chart's own extents, not the page's.** `spanX` is measured
+				// against `map.viewport()`, so comparing it to the page viewport
+				// would call a cropped cluster framed on any layout where the
+				// canvas is smaller than the window — which §1 says is coming the
+				// moment this becomes a Navigation tab.
+				width,
+				height,
+			};
+		}, targetPitch);
+
+	const edgeOn = await aspectAtPitch(0);
+	const faceOn = await aspectAtPitch(1.45);
+	// **Convergence is its own verdict.** `aspectAtPitch` drives the pitch by
+	// orbiting and reading the state back, and that loop can run out of steps or
+	// step past its tolerance. Folded into the aspect check below, a failure to
+	// reach the framing would print "the cluster is a disc — FAIL", which names
+	// the wrong defect.
+	check(
+		`${viewport.name}: the chart reached both framings — pitch ${edgeOn.pitch.toFixed(3)} and ${faceOn.pitch.toFixed(3)} rad`,
+		Math.abs(edgeOn.pitch) < 0.02 &&
+			faceOn.pitch > 1.4 &&
+			edgeOn.onScreen > 150 &&
+			faceOn.onScreen > 150,
+	);
+	await page.evaluate(() => window.__seeliteGalaxyMap.resetView());
+	/**
+	 * **Only where the cluster is fully framed.** A 390 px column crops the
+	 * galaxy horizontally at every distance the chart offers, so `spanX` there is
+	 * the viewport's width and the aspect it yields is a fact about the phone,
+	 * not about the disc. Measuring it anyway is how a check comes to assert
+	 * something nobody meant: the narrow run reported 1.52 against a q of 0.70.
+	 *
+	 * Skipping is only safe if a skip cannot be silent, so `discMeasured` is
+	 * asserted after the loop — a change that crops the desktop view too would
+	 * otherwise retire this check without anything going red.
+	 */
+	const framed =
+		Math.max(edgeOn.spanX, faceOn.spanX) < edgeOn.width - 2 &&
+		Math.max(edgeOn.spanY, faceOn.spanY) < edgeOn.height - 2;
+	const edgeAspect = edgeOn.spanY / edgeOn.spanX;
+	const faceAspect = faceOn.spanY / faceOn.spanX;
+	if (framed) discMeasured.add(viewport.name);
+	check(
+		framed
+			? `${viewport.name}: the cluster is a disc — edge-on aspect ${edgeAspect.toFixed(2)} (expected ~${EXPECTED_Q}), face-on ${faceAspect.toFixed(2)}`
+			: `${viewport.name}: skipped the disc aspect — the cluster does not fit this chart (${Math.round(edgeOn.spanX)} px of ${Math.round(edgeOn.width)})`,
+		!framed ||
+			// Edge-on the through-plane extent is the squashed one. Banded around
+			// `EXPECTED_Q` rather than pinned, because the extremes are 256 samples
+			// of a surface neither of which reaches it exactly.
+			//
+			// **Against a literal, not against `map.state.flatteningQ`.** Sourcing
+			// the target from the page's own report of the constant makes the band
+			// follow the defect: a build that changed `GALAXY_FLATTENING_Q` moves
+			// the drawn extents and the reported `q` together and passes. The
+			// reported value is asserted separately below, so a deliberate change
+			// fails loudly in one named place rather than re-targeting this.
+			(edgeAspect > EXPECTED_Q - 0.12 &&
+				edgeAspect < EXPECTED_Q + 0.12 &&
+				// Face-on it is a circle. This is the half a wrong-axis squash fails.
+				faceAspect > 0.88 &&
+				faceAspect < 1.12 &&
+				// And the two views genuinely differ — the check a ball passes.
+				faceAspect - edgeAspect > 0.15),
+	);
+	check(
+		`${viewport.name}: the chart reports the shape it draws — q ${edgeOn.q}`,
+		edgeOn.q === EXPECTED_Q,
 	);
 
 	// D6: nothing on this chart belongs to another galaxy — the lit set is the
@@ -474,6 +702,13 @@ for (const viewport of VIEWPORTS) {
 
 	await page.close();
 }
+
+check(
+	`the disc aspect was measured on [${[...discMeasured].join(", ")}] of ${VIEWPORTS.length} viewports`,
+	// Desktop is the arm that frames the whole cluster, so it is the arm this
+	// check lives or dies on. Narrow is expected to skip and is not required.
+	discMeasured.has("desktop"),
+);
 
 await browser.close();
 exit();

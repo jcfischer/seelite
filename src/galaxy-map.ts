@@ -29,6 +29,7 @@
 import * as THREE from "three";
 import {
 	GALAXY_COUNT,
+	GALAXY_FLATTENING_Q,
 	GALAXY_RADIUS_LY,
 	JUMP_RANGE_LY,
 	SYSTEMS_PER_GALAXY,
@@ -71,7 +72,24 @@ const CAMERA_START_LY = 62;
  *  §5.1's crowding table is measured at exactly this view, and a figure quoted
  *  from an unnamed orientation is not reproducible. */
 const DEFAULT_YAW = 0.6;
-const DEFAULT_PITCH = 0.35;
+/**
+ * 40°, up from the ball's 20° (#118).
+ *
+ * **Chosen on legibility, not on the crowding it buys.** Measured across the
+ * whole clamp — 52.6% at 20° down to 46.3% at 83°, on the desktop framing — the
+ * entire range is worth **6 points**, trending toward face-on and never
+ * reaching the ball at *any* of its own angles (41.3-43.1% across the same
+ * clamp). So pitch is a trim, not a remedy, and no angle recovers what the disc
+ * cost — `bun scripts/measure-galaxy-shape.ts grid` is the q x pitch table
+ * behind that. What 40° buys is
+ * that the disc reads as one: face-on you see a circle and cannot tell it is
+ * flat, which spends the reason #107 took the disc at all, and edge-on you lose
+ * the cluster's extent. 40° shows the ellipse and the thickness together, and
+ * sits well inside the ±1.45 clamp.
+ *
+ * Re-measure with `bun scripts/measure-galaxy-shape.ts pitch`.
+ */
+const DEFAULT_PITCH = 0.7;
 const CAMERA_MIN_LY = 12;
 const CAMERA_MAX_LY = 140;
 
@@ -107,6 +125,14 @@ export interface GalaxyMapState {
 	jumpRangeLy: number;
 	galaxyRadiusLy: number;
 	coreRadiusLy: number;
+	/** The oblate-spheroid ratio of §2 — the cluster reaches `galaxyRadiusLy`
+	 *  across and `flatteningQ x galaxyRadiusLy` through the reference plane.
+	 *  Exposed so a probe can *measure* the disc rather than restate the
+	 *  constant it is checking. */
+	flatteningQ: number;
+	/** Radians. Exposed with `flatteningQ` because the disc's projected aspect
+	 *  is only interpretable against the angle it was seen from. */
+	pitch: number;
 	cameraDistanceLy: number;
 	route: {
 		jumps: number;
@@ -445,7 +471,7 @@ export function mountGalaxyChart({
 	pivot.add(cloud);
 
 	// D3: the reachability shell. Wireframe rather than a solid translucent
-	// ball — a solid one at 7 LY around a point deep inside a 22 LY cluster
+	// ball — a solid one at 7 LY around a point deep inside a 24.5 LY cluster
 	// tints every system behind it, which is the one thing the chart must not
 	// do to the points it is about.
 	const shell = new THREE.LineSegments(
@@ -924,6 +950,8 @@ export function mountGalaxyChart({
 				jumpRangeLy: JUMP_RANGE_LY,
 				galaxyRadiusLy: GALAXY_RADIUS_LY,
 				coreRadiusLy: CORE_RADIUS_LY,
+				flatteningQ: GALAXY_FLATTENING_Q,
+				pitch,
 				cameraDistanceLy: distance,
 				route:
 					route === null

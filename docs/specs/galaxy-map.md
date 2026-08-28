@@ -3,7 +3,10 @@
 **Status:** ratified design decision — [#11](https://github.com/jcfischer/seelite/issues/11)
 **Date:** 2026-08-27
 **Context:** [#6](https://github.com/jcfischer/seelite/issues/6) settled a
-globular volume, [#70](https://github.com/jcfischer/seelite/issues/70) settled
+globular volume — re-opened and reversed by
+[#107](https://github.com/jcfischer/seelite/issues/107) to a `q = 0.70` disc,
+built in [#118](https://github.com/jcfischer/seelite/issues/118) —
+[#70](https://github.com/jcfischer/seelite/issues/70) settled
 that every screen lives in the cockpit, and `hud-and-scanner.md` §2 gives the
 left Navigation console the system-scale discovery this is one scale above.
 
@@ -59,11 +62,19 @@ the scene is a radius in light years with no conversion.
 
 - **Drag orbits, wheel zooms.** The camera stays on one axis and the *cluster*
   turns, so the projection is a pure function of two angles and a distance.
-- **The vertical axis is galaxy-space `y`, and the reference plane is `y = 0`.**
-  Arbitrary — `systemPosition` draws an isotropic direction, so the cluster has
-  no intrinsic equator — and stated because it is arbitrary. The plane, the
-  drop-lines and the anchor discs must all use the same axis or the depth cue
-  means nothing.
+- **The vertical axis is galaxy-space `y`, and the reference plane is `y = 0`
+  — the disc's own plane.** `systemPosition` flattens the cluster on `y` by
+  `q = 0.70` (`galaxy-generation.md` §2), so the cluster has an intrinsic
+  equator and this plane is it. The plane, the drop-lines and the anchor discs
+  are therefore **geography**: a system above the plane is genuinely above the
+  galaxy, and a drop-line measures a real displacement rather than a distance
+  from a line somebody picked. The plane, the drop-lines and the anchor discs
+  must all use this same axis or the depth cue means nothing.
+
+  This is a reversal. The cluster was a sphere until #107, and this bullet said
+  the choice of `y = 0` was arbitrary *because* the direction draw is isotropic
+  and the cluster has no equator. That sentence is now false, and the fact that
+  it stopped being true is one of the two reasons the disc was taken at all.
 - **A circular reference plane, not a square grid.** Three faint rings at
   `R/3`, `2R/3` and `R`. A square grid would imply an extent the cluster does
   not have.
@@ -72,7 +83,10 @@ The alternatives are recorded because they were live: a fixed-tilt plan view
 with a mast per system (which reuses the compact scanner's depth language most
 directly, and thickets in the core), and a scrubbed depth slab (which removes
 ambiguity by removing the geography). Free orbit was chosen for being honest to
-the sphere §2 of `galaxy-generation.md` actually generates.
+the shape §2 of `galaxy-generation.md` actually generates — a sphere when that
+choice was made, a `q = 0.70` disc since #118. It survives the reshape: a disc
+has *less* depth ambiguity than a ball, not none, and the orbit is how the
+player resolves what remains.
 
 ### 2.1 Depth cues: drop-lines on the selection only
 
@@ -84,7 +98,7 @@ player does not always have to spare. So:
   disc language (`hud-and-scanner.md` §2), applied to the one pair whose
   separation the player is actually asking about.
 - **Nothing else drops a line.** A full mast field over 256 systems in a
-  3:1-concentrated ball is a thicket, and the two systems that matter are the
+  3:1-concentrated disc is a thicket, and the two systems that matter are the
   two the player has already named.
 - Everything else reads depth from size, brightness and the orbit itself.
 
@@ -94,7 +108,7 @@ player does not always have to spare. So:
 
 - A **wireframe sphere of radius `JUMP_RANGE_LY`** is drawn around the current
   system. Wireframe rather than a translucent solid: a solid ball 7 LY across,
-  inside a 22 LY cluster, tints every system behind it — which is the one thing
+  inside a 24.5 LY cluster, tints every system behind it — which is the one thing
   a chart must not do to the points it is about.
 - Systems inside it are **lit** (cyan); everything else is **dim**. The
   current system is green and the selection amber, per `hud-and-scanner.md`
@@ -208,44 +222,86 @@ camera distance, at 1280 × 760 and the default framing (`DEFAULT_YAW`,
 the viewport is not counted, because a pair the player cannot see is not
 crowding.
 
+**Re-measured for the `q = 0.70` disc under #118.** Every figure below described
+the ball and none of them survived the reshape; the table is the disc's, taken
+by the same method at the same camera distances and viewport. It is **not** at
+the ball table's pitch — `DEFAULT_PITCH` moved 0.35 → 0.70 rad in the same
+change, and this table is quoted at the default framing, which means the new
+one. See the note under it before comparing a row against a remembered figure.
+
 | camera | crowded | on screen |
 |---|---|---|
-| 140 LY | 90.2% | 256 |
-| 120 LY | 84.0% | 256 |
-| 100 LY | 73.4% | 256 |
-| 86 LY | 63.7% | 256 |
-| 74 LY | 53.5% | 256 |
-| **62 LY** (the default; whole cluster) | **40.2%** | 256 |
-| 52 LY | 33.6% | 253 |
-| 44 LY | 29.0% | 241 |
-| 38 LY | 25.1% | 231 |
-| 32 LY | 19.7% | 208 |
-| 26 LY | 14.5% | 166 |
-| 22 LY | 15.5% | 148 |
-| 18 LY | 13.3% | 128 |
-| 14 LY | 8.8% | 91 |
-| 12 LY | 10.7% | 75 |
+| 140 LY | 87.9% | 256 |
+| 120 LY | 83.2% | 256 |
+| 100 LY | 74.6% | 256 |
+| 86 LY | 66.4% | 256 |
+| 74 LY | 56.6% | 256 |
+| **62 LY** (the default; whole cluster) | **44.5%** | 256 |
+| 52 LY | 32.8% | 253 |
+| 44 LY | 23.9% | 247 |
+| 38 LY | 23.1% | 238 |
+| 32 LY | 16.3% | 209 |
+| 26 LY | 14.0% | 172 |
+| 22 LY | 15.8% | 152 |
+| 18 LY | 7.6% | 118 |
+| 14 LY | 2.2% | 89 |
+| 12 LY | 5.2% | 77 |
 
 **There is no distance that both frames the whole cluster and lets you pick.**
-Crowding never falls below about 9%, and it only gets there at 14 LY, where 91
-of 256 systems are on screen — a third of the galaxy, and the rest off the
-edges. Below that it rises again as the framing tightens onto the dense core.
-No point-size tuning changes this: it is 256 points in a ball whose core is
-three times as dense as its rim, and the metric is a function of the projection
-and the pick radius alone.
+That is the finding, and it survives the reshape: at 62 LY, where all 256 are on
+screen, 44.5% of them cannot be told apart, and crowding first reaches single
+digits at 18 LY, where 118 of 256 are visible — under half the galaxy, and the
+rest off the edges. No point-size tuning changes it: it is 256 points in a disc
+whose core is three times as dense as its rim, and the metric is a function of
+the projection and the pick radius alone.
+
+**One sub-claim did not survive, and is corrected rather than quietly dropped.**
+The ball's table supported "crowding never falls below about 9%". The disc's
+reaches **2.2% at 14 LY** — a zoomed-in disc genuinely does resolve, where a
+zoomed-in ball still had systems stacked along the view axis. The conclusion is
+unchanged because it never rested on that floor; it rests on there being no
+framing that does both jobs.
+
+**The default framing got worse, which is the cost #107 priced — and the two
+figures are not a matched comparison.** 40.2% on the ball against 44.5% on the
+disc, at the same camera and the same viewport but **not the same pitch**:
+`DEFAULT_PITCH` moved 0.35 → 0.70 rad in the same change, and tilting toward
+face-on is worth about 3 points to a disc (§2's grid). So 4.3 points is what a
+player actually experiences between the old default view and the new one, and it
+is the *net* of two effects pulling opposite ways.
+
+The shape's own cost, at matched framing, is larger: `galaxy-generation.md` §2's
+q × pitch grid puts the ball at 41.3% and the disc at 49.6% at 40°, and at 41.9%
+against 52.6% at 20° — about **8 points either way**, with the new default pitch
+handing roughly 3 of them back. Flattening concentrates the points toward a
+plane, and a plane's nearest-neighbour distances are shorter than a ball's at
+equal projected extent. The disc was taken knowing this.
+
+**40.2% and 44.5% are one galaxy, not the galaxy.** #107's finding, and this
+section used to read as though the figure were a constant. Measured over all
+eight galaxies at 1280 × 760 and the default framing, the disc spans
+**39.8%–48.0%** (galaxy 0 is the 44.5% above); the ball spanned 37.9%–50.8%.
+`probe-galaxy-map.mjs` therefore bands from the spread and not from the sample:
+36–52% at 1280 × 760, and 29–55% at 390 × 844, where the eight-galaxy spread is
+33.5%–50.5%. A band set from one galaxy is not a tighter band, it is an untested
+one — the narrow band of 29–49% that preceded this was already outside its own
+subject at galaxy 4.
 
 **And it is worse in the cockpit than on the workbench.** The table above was
 measured on `?galaxy-map`, a whole 1280 x 760 page. The shipped tab draws into a
 grid cell inside the console — 1011 x 462 at that same viewport — and crowding
 is a **pixel** property: the same 256 points packed into fewer pixels against an
-unchanged `PICK_RADIUS_PX`. Measured there at the default framing:
-**68.8% of 256**, against 40.2% full-page, with the whole cluster still on
-screen. Sharing `mountGalaxyChart` does not carry the figure across, so
+unchanged `PICK_RADIUS_PX`. Measured there over all eight galaxies at the
+default framing: **68.4%–77.7%**, against the full page's 39.8%–48.0%, with the
+whole cluster still on screen. (It was 68.8% on the ball.) Sharing
+`mountGalaxyChart` does not carry the figure across, so
 `probe-navigation-console.mjs` measures it at the shipped framing by the same
-method and bands it at 55-80%. The band is calibrated on a 1280 x 760 window and
-a narrow viewport would need its own; the check also asserts that all 256 are on
-screen, because the fraction is taken over what is visible and a build framing
-fewer systems would be a different measurement wearing the same name.
+method and bands it at **64–82%**, from that spread — narrower than the 55–80%
+it replaces, which is what re-measuring rather than widening looks like when the
+measurement improves. The band is calibrated on a 1280 x 760 window and a narrow
+viewport would need its own; the check also asserts that all 256 are on screen,
+because the fraction is taken over what is visible and a build framing fewer
+systems would be a different measurement wearing the same name.
 
 So the chart is the **reading** surface and Navigation's filterable list is the
 **finding** surface — which is what `hud-and-scanner.md` §2 already says
@@ -257,8 +313,25 @@ Navigation tab with type, range and ETA per row and narrowed by a kind chip and
 a name query.
 
 The 62 LY figure is **asserted**, not merely recorded: `probe-galaxy-map.mjs`
-resets to the default framing and requires it inside a 25–60% band, so a change
-to the projection or the pick radius that moves it has to answer for the move.
+resets to the default framing and requires it inside the per-viewport band
+above, so a change to the projection or the pick radius that moves it has to
+answer for the move.
+
+**That band does not police the shape**, and is not asked to — a ball and a disc
+both sit inside a 16-point window. The disc is asserted directly, by the same
+probe: it drives the chart to edge-on and to face-on and measures the projected
+bounding box, requiring an aspect near `q` edge-on and near 1 face-on. A ball is
+square at every angle and fails both halves, and so does a build that squashes
+the wrong axis. It reaches the generator's squash and the pivot transform, and
+**not** a squash baked into the point cloud's geometry buffer — that would move
+pixels without moving a `pos`. The band is taken against a literal rather than
+against the chart's reported `flatteningQ`, since a target read off the value
+under test follows a change instead of catching it; the reported value is
+asserted equal to the literal in its own check. Reaching each framing is also its
+own check, so failing to orbit to edge-on cannot print as a wrong shape. The
+aspect is skipped where the cluster does not fit the chart — a 390 px column
+crops it at every distance on offer, so the span there is the phone's and not the
+galaxy's — and a skipped-everywhere run fails on its own count.
 The rest of the table is a recorded sweep. Two things the band deliberately does
 *not* cover, so the claim is not read wider than it is. The metric is blind to
 point size. And it is viewport-dependent: a 390 × 844 column frames 194 of the

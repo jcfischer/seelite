@@ -47,18 +47,76 @@ export const GALAXY_COUNT = 8;
 export const SYSTEMS_PER_GALAXY = 256;
 
 /**
+ * How far the cluster is flattened on **y** — the oblate-spheroid ratio of its
+ * through-plane extent to its in-plane one (spec §2).
+ *
+ * Ratified in #107 on 2026-08-28, reversing §2's earlier "globular volume".
+ * `galaxy-map.md` §2's reference plane is `y = 0`, so the disc's plane *is* the
+ * plane the chart's drop-lines already fall to — which is the second reason the
+ * disc was taken, the first being that a galaxy is expected to look like one.
+ *
+ * **It was taken against a measured cost, not for one.** The node's own
+ * hypothesis was that a disc spreads the same 256 points over a larger projected
+ * area and so makes finding easier. It is refuted: holding ~8-in-range forces R
+ * upward as the volume flattens, the framing grows with R, and flattening then
+ * concentrates the points toward a plane — whose nearest-neighbour distances are
+ * shorter than a ball's at equal projected extent. Over the four shapes and
+ * seven pitches §2's grid samples, the ball is the least crowded in every cell,
+ * face-on included — `bun scripts/measure-galaxy-shape.ts grid` asserts that
+ * cell for cell rather than printing it, so a later retune cannot leave §2
+ * stating a refuted claim. (Scope matters and the spec carries it: four `q`
+ * values at one yaw, not every shape and not every angle.)
+ *
+ * **0.7 and not Elite's 0.5.** §2 declined Elite's 2:1 y-compression for a good
+ * reason — it was a screen-aspect hack imported as a physical law — and adopting
+ * that number now, on looks, would invite the reading that the argument was
+ * wrong. 0.7 flattens visibly and costs 8 points of desktop crowding against
+ * the ball, where 0.5 costs 13, both at the shipped 40° pitch.
+ *
+ * Sweep it with `bun scripts/measure-galaxy-shape.ts sweep`. Changing it means
+ * re-solving `GALAXY_RADIUS_LY` — the two are one derivation, and a q moved
+ * without it silently changes how many systems a tank reaches.
+ */
+export const GALAXY_FLATTENING_Q = 0.7;
+
+/**
  * The cluster radius in light years — **derived, not chosen** (spec §2.1).
  *
  * Elite's 7 LY tank put ≈8 systems in range of a typical world, and that number
  * is the actual design constant: enough choice to plan a route, few enough that
- * a distant system is a project. Holding it in three dimensions fixes the
- * density, and the density fixes the radius.
+ * a distant system is a project. Holding it fixes the density, and the density
+ * fixes the radius.
+ *
+ * This is the in-plane radius: the cluster reaches `R` across and
+ * `GALAXY_FLATTENING_Q · R` through. It was 22 while the cluster was a ball and
+ * is **solved at q = 0.7** here, over *connected* layouts, to hold a mean of
+ * ~8 systems inside the 7 LY tank. Measured at **7.97** over the instrument's 24
+ * connected layouts (seeds 1, 47, 12345) and **8.00** over the 32 the suite
+ * gates (those three plus the test file's own) — two seed sets, not two
+ * quantities, and the galaxy-to-galaxy spread is 7.04-9.02, so a mean quoted to
+ * three digits is a mean of a sample. Against the ball's 7.88 at 22 LY on the
+ * first of those sets: the reshape preserved the reach it was solved for.
+ * Re-solve with `bun scripts/measure-galaxy-shape.ts solve 0.7 8`, and read the
+ * shipped figures with `bun scripts/measure-galaxy-shape.ts shipped`.
+ *
+ * **8.25 is not that number and never was.** `galaxy-generation.md` §2.1 quoted
+ * it as the mean in range, but it is the prediction of a *uniform-ball* closed
+ * form; the generator is 3:1 concentrated and re-rolls fragmented layouts, and
+ * the ball it described actually held 7.88. #107 carried 8.25 forward as
+ * though it were measured. Corrected in the spec under #118.
+ *
+ * **Over connected layouts, because that filter is not neutral.** `layoutGalaxy`
+ * rejects a fragmented draw and re-rolls, which selects denser layouts. #107's
+ * first solve measured first-pass draws, landed at R = 23.9 with a mean of 8.76,
+ * and reported 1.13 isolated systems in the arm that reproduces the shipped
+ * ball — which has none. Both faults are one mistake: measuring galaxies the
+ * game would never ship.
  *
  * **Beware r³ when changing this.** 35 LY reads as a modest increase and drops
  * the same tank to ~2 systems in range, which near-certainly fragments the
  * graph.
  */
-export const GALAXY_RADIUS_LY = 22;
+export const GALAXY_RADIUS_LY = 24.53;
 
 /** The density profile's core radius, `R/√2`, which is what makes the core:rim
  *  ratio exactly 3 (spec §3). */
@@ -95,9 +153,17 @@ const CDF_BISECTION_STEPS = 40;
  * **Measured, and the spec's expectation was optimistic.** §5 says "a handful
  * of attempts is free", which reads as single digits and is right about the
  * cost but not about the count: over 1,600 galaxies (200 world seeds × 8) the
- * mean is 6.0, the 95th percentile is 19, and the worst seen is **52**. Roughly
- * five layouts in six strand at least one system, which is what a 3:1
- * concentrated 22 LY sphere against a 7 LY jump actually costs at the rim.
+ * mean is 4.63, the median 3, the 95th percentile 16 and the worst seen **52** —
+ * re-run under #118 with `bun scripts/measure-layout-attempts.ts` after the
+ * reshape, because every one of these numbers is a property of the shape.
+ * Roughly four layouts in five strand at least one system, which is what a 3:1
+ * concentrated 24.53 LY disc against a 7 LY jump actually costs at the rim.
+ *
+ * (The ball cost slightly more — mean 6.0, p95 19, same worst case of 52. The
+ * disc lays out marginally easier at the radius §2.1 solves for it, which was
+ * not a goal and is not a reason: #107 measured it at 7.3 re-rolls against 5.3
+ * over three seeds, the opposite ordering, so the two figures are inside each
+ * other's seed-to-seed noise and neither is a claim about the shape.)
  *
  * Re-run that measurement with `bun scripts/measure-layout-attempts.ts` (~5 s at
  * the default 200 seeds). It is a script rather than a test because it asserts
@@ -231,28 +297,56 @@ export const squaredDistanceLy = (a: Vec3, b: Vec3): number => {
  * ρ(r) ∝ 1/(1 + (r/r_c)²), so the mass inside radius *x* integrates to
  * `x − r_c·atan(x/r_c)`, normalised at `R`.
  */
-const CDF_NORM =
-	GALAXY_RADIUS_LY -
-	CORE_RADIUS_LY * Math.atan(GALAXY_RADIUS_LY / CORE_RADIUS_LY);
+/**
+ * `radius` defaults to the shipped `R`, and the profile's core radius is always
+ * `radius/√2` — which is what makes this scale-free in `x/radius` (§2.1).
+ *
+ * The parameter exists so `positionForShape` can draw galaxies at radii the game
+ * does not ship without a second copy of this arithmetic. A copy is what the
+ * sweep instrument used to hold, and two 40-step bisections that must stay in
+ * step is exactly the shape of drift this file keeps being bitten by.
+ */
+/**
+ * The profile's `(core, norm)` pair for a radius, memoised.
+ *
+ * `radiusForQuantile` calls `radialCdf` forty times per system, so computing the
+ * normaliser inside it put a second `atan` on every step of the hot path — about
+ * 82,000 extra per world, times the mean 4.97 layout attempts. One entry is
+ * enough in practice (the generator only ever asks for the shipped radius) and
+ * the map keeps the sweep's other radii cheap too.
+ */
+const cdfShape = new Map<number, { core: number; norm: number }>();
+const shapeFor = (radius: number): { core: number; norm: number } => {
+	const hit = cdfShape.get(radius);
+	if (hit) return hit;
+	const core = radius / Math.SQRT2;
+	const made = { core, norm: radius - core * Math.atan(radius / core) };
+	cdfShape.set(radius, made);
+	return made;
+};
 
-export function radialCdf(x: number): number {
-	return (x - CORE_RADIUS_LY * Math.atan(x / CORE_RADIUS_LY)) / CDF_NORM;
+export function radialCdf(x: number, radius = GALAXY_RADIUS_LY): number {
+	const { core, norm } = shapeFor(radius);
+	return (x - core * Math.atan(x / core)) / norm;
 }
 
 /**
  * Invert `radialCdf` by bisection, at a fixed step count.
  *
  * There is no closed form, and a `while (err > tol)` loop would make the galaxy
- * depend on the arithmetic rather than on the seed. Forty halvings of a 22 LY
+ * depend on the arithmetic rather than on the seed. Forty halvings of a 24.5 LY
  * interval leave ~2·10⁻¹¹ LY of uncertainty, which is far below anything the
  * simulation can see.
  */
-export function radiusForQuantile(u: number): number {
+export function radiusForQuantile(
+	u: number,
+	radius = GALAXY_RADIUS_LY,
+): number {
 	let lo = 0;
-	let hi = GALAXY_RADIUS_LY;
+	let hi = radius;
 	for (let i = 0; i < CDF_BISECTION_STEPS; i++) {
 		const mid = (lo + hi) / 2;
-		if (radialCdf(mid) < u) lo = mid;
+		if (radialCdf(mid, radius) < u) lo = mid;
 		else hi = mid;
 	}
 	return (lo + hi) / 2;
@@ -263,19 +357,116 @@ export function radiusForQuantile(u: number): number {
  *
  * Radius by inverse transform on the concentrated profile; direction uniform on
  * the sphere (`cosθ = 2u−1` rather than `θ = πu`, which would pile systems at
- * the poles).
+ * the poles); then **y scaled by `GALAXY_FLATTENING_Q`** to make the oblate
+ * spheroid of §2.
+ *
+ * **Three draws, in this order, and the squash is the last thing that happens.**
+ * A flattening that changed the *sampling* — drawing `cosθ` from a non-uniform
+ * distribution, say — would move every galaxy for a second reason on top of the
+ * shape, and no sweep comparing the two shapes would be comparing only the
+ * shape. `scripts/measure-galaxy-shape.ts control` asserts the parameterised
+ * replica reproduces this function exactly, which is what the whole instrument
+ * rests on.
  */
-export function systemPosition(systemSeed: number): Vec3 {
+export const systemPosition = (systemSeed: number): Vec3 =>
+	positionForShape(systemSeed, GALAXY_FLATTENING_Q, GALAXY_RADIUS_LY);
+
+/**
+ * `systemPosition` with the shape as parameters — the generator every sweep in
+ * `scripts/measure-galaxy-shape.ts` runs.
+ *
+ * **Exported rather than re-implemented there**, which is the point. The
+ * instrument needs to draw galaxies at shapes the game does not ship, and a
+ * private copy of this function is a copy that stops matching the day
+ * `radiusForQuantile` or the draw order changes — leaving a sweep that measures
+ * a generator nobody runs, with nothing going red. Here there is one body, so
+ * the sweep is the shipped draw by construction rather than by a control that
+ * has to be remembered.
+ *
+ * There is one bisection body: `radiusForQuantile` takes the radius as a
+ * parameter, so this is the shipped inverse rather than a copy of it that has to
+ * be kept in step.
+ */
+export function positionForShape(
+	systemSeed: number,
+	q: number,
+	radius: number,
+): Vec3 {
 	const rand = stream(systemSeed, DOMAIN.POS);
-	const r = radiusForQuantile(rand());
+	const r = radiusForQuantile(rand(), radius);
 	const cosTheta = 2 * rand() - 1;
 	const phi = 2 * Math.PI * rand();
 	const sinTheta = Math.sqrt(Math.max(0, 1 - cosTheta * cosTheta));
 	return {
 		x: r * sinTheta * Math.cos(phi),
-		y: r * sinTheta * Math.sin(phi),
+		y: q * r * sinTheta * Math.sin(phi),
 		z: r * cosTheta,
 	};
+}
+
+/**
+ * The **profile radius** — the spheroidal coordinate the density profile of §3
+ * is defined on, `√(x² + (y/q)² + z²)`, which is exactly the radius
+ * `systemPosition` drew before the squash.
+ *
+ * **This is not `radiusLy`, and the difference is load-bearing.** `radiusLy` is
+ * the plain Euclidean distance from the centre and is what `startSystem` means
+ * by "most central". The *profile* radius is what §3's `ρ(r)` and §4's radial
+ * gradients are written against, and it runs 0…`GALAXY_RADIUS_LY` by
+ * construction on any axis, where the Euclidean distance only reaches
+ * `q · GALAXY_RADIUS_LY` at the poles.
+ *
+ * Reading the gradients off the Euclidean distance instead was the alternative,
+ * and it is worse in both directions: a rim system above the plane would read as
+ * mid-disc, the core:rim ratio would stop being the 3.0 §3 quotes, and the whole
+ * polity distribution would shift toward the core for no reason anybody chose.
+ * A disc's outskirts include its halo — being far above the plane *is* being far
+ * out — so the ellipsoidal shell is also the truer reading of "how far out".
+ *
+ * `q` is a parameter for the same reason `positionForShape`'s is: an instrument
+ * sweeping shapes has to be able to ask a `q ≠ 0.7` corpus for its own profile
+ * radius, and a second body of this arithmetic is the drift those exports exist
+ * to prevent.
+ *
+ * Decided under #118; #107 ratified only that "the 3:1 ratio holds", which this
+ * is what it takes to be true.
+ */
+export const profileRadiusLy = (pos: Vec3, q = GALAXY_FLATTENING_Q): number => {
+	// A `q` of 0 is a flat sheet, and dividing by it yields Infinity or NaN
+	// rather than an error — which `systemFromPosition` would carry into `t` and
+	// then into a system with an undefined polity. Cheap to refuse, and the
+	// caller that would reach it is a sweep walking q toward zero.
+	if (!(q > 0)) {
+		throw new Error(`profileRadiusLy: q must be positive, got ${q}`);
+	}
+	return Math.sqrt(pos.x * pos.x + (pos.y / q) * (pos.y / q) + pos.z * pos.z);
+};
+
+/**
+ * Mean systems within one jump of a system, over a whole layout — the quantity
+ * `galaxy-generation.md` §2.1 holds fixed at ~8 and solves the radius against.
+ *
+ * Exported because the suite and `scripts/measure-galaxy-shape.ts` both need it
+ * and both had their own copy of the walk, kept in step by a comment. That is
+ * the drift `positionForShape` was exported to end, and this is the same shape
+ * of it.
+ *
+ * `j > i` walks each unordered pair once and doubles, rather than walking every
+ * ordered pair.
+ */
+export function meanNeighbours(
+	positions: readonly Vec3[],
+	maxJump = JUMP_RANGE_LY,
+): number {
+	if (positions.length === 0) return 0;
+	const maxJumpSq = maxJump * maxJump;
+	let pairs = 0;
+	for (let i = 0; i < positions.length; i++) {
+		for (let j = i + 1; j < positions.length; j++) {
+			if (squaredDistanceLy(positions[i], positions[j]) <= maxJumpSq) pairs++;
+		}
+	}
+	return (2 * pairs) / positions.length;
 }
 
 /** Whether a jump graph at `maxJump` has exactly one component. Plain BFS from
@@ -413,7 +604,18 @@ export function systemFromPosition(
 ): SystemRecord {
 	const seed = systemSeedFor(worldSeed, galaxy, attempt, index);
 	const radiusLy = Math.sqrt(lengthSq(pos));
-	const t = radiusLy / GALAXY_RADIUS_LY;
+	// **The profile coordinate, not the Euclidean distance.** See
+	// `profileRadiusLy`: §4's gradients are written against the shape's own
+	// shells, and only that coordinate spans 0…1 on every axis.
+	//
+	// Inlined rather than calling `profileRadiusLy`, which would put a second
+	// square root and a domain guard on every one of 2,048 records per world for
+	// a `q` that is a compile-time constant here. The exported function is for
+	// callers whose `q` varies; this is the shipped shape.
+	const flattenedY = pos.y / GALAXY_FLATTENING_Q;
+	const t =
+		Math.sqrt(pos.x * pos.x + flattenedY * flattenedY + pos.z * pos.z) /
+		GALAXY_RADIUS_LY;
 
 	const polity = stream(seed, DOMAIN.POLITY);
 

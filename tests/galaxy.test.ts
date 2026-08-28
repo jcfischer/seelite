@@ -16,6 +16,7 @@ import { describe, expect, test } from "bun:test";
 import {
 	CORE_RADIUS_LY,
 	GALAXY_COUNT,
+	GALAXY_FLATTENING_Q,
 	GALAXY_RADIUS_LY,
 	type Galaxy,
 	JUMP_RANGE_LY,
@@ -25,9 +26,13 @@ import {
 	generateGalaxy,
 	isConnected,
 	layoutGalaxy,
+	meanNeighbours,
+	positionForShape,
+	profileRadiusLy,
 	radialCdf,
 	radiusForQuantile,
 	startSystem,
+	stream,
 	systemAt,
 } from "../src/galaxy";
 import {
@@ -41,6 +46,7 @@ import {
 	placeBodies,
 	positionOnOrbit,
 } from "../src/system";
+import { DOMAIN } from "../src/domains";
 import { mix, seededRand } from "../src/rng";
 import { AU_KM } from "../src/units";
 
@@ -108,7 +114,7 @@ describe("determinism (§9.1)", () => {
 		expect(ALL.length).toBe(GALAXY_COUNT * SYSTEMS_PER_GALAXY);
 		// Regenerate this ONLY when a generator change was intended. It moving is
 		// the intended alarm: every seed's output changed.
-		expect(digest()).toBe("42012e8f");
+		expect(digest()).toBe("47f9eb28");
 	});
 
 	/**
@@ -125,18 +131,18 @@ describe("determinism (§9.1)", () => {
 	 * jitter it has to tolerate.
 	 */
 	const POSITION_FIXTURE: [number, number, [number, number, number]][] = [
-		[0, 0, [17.10849287840576, -5.666474372158571, 9.517887922255094]],
-		[0, 7, [17.28961579032331, 8.368830612005883, -0.584877307533546]],
-		[0, 255, [-0.8217812695608091, -2.136663942731725, -15.365833199837596]],
-		[1, 42, [12.896223202043647, -4.008713230503314, 4.015636648608916]],
-		[2, 100, [0.8102223646675069, 3.6901090139375645, -15.149815994121065]],
-		[2, 255, [0.6247203619016894, -0.9220166404734456, -4.27958636220147]],
-		[3, 3, [9.695589703089722, 7.21798217557434, 4.580782983008728]],
-		[4, 128, [-2.0458037004976357, -2.3347582160278066, 19.357383730729797]],
-		[5, 200, [10.093433779899545, -12.203130792801346, 8.188472073662716]],
-		[6, 17, [-5.190227898412195, 1.4869663512560247, 14.55661051494981]],
-		[7, 0, [3.542105952649244, -0.9403131560370799, -3.1462409122404567]],
-		[7, 254, [-8.45781701638163, 11.730339691656475, -12.75017496517518]],
+		[0, 0, [-1.8425327120351491, -13.461471207137816, -2.9063992119246476]],
+		[0, 7, [3.217795587888847, 15.25661322588951, 7.871320738599371]],
+		[0, 255, [-0.1458266752397721, -0.7234532208675706, -4.718494445220213]],
+		[1, 42, [12.899184604676078, 8.303622112444064, 15.585706965436465]],
+		[2, 100, [-10.634185181475557, 7.013801264099479, -10.58000584520634]],
+		[2, 255, [-16.692411386893507, -2.5246071290113345, -5.329411544514784]],
+		[3, 3, [10.810582518945042, 5.633635088035773, 5.107573026054733]],
+		[4, 128, [5.280759523904051, 6.570642366815511, -11.541876627268119]],
+		[5, 200, [11.254178664587997, -9.524543583781453, 9.130146362133932]],
+		[6, 17, [-12.050806009188495, -4.300619560371249, 12.762765535989875]],
+		[7, 0, [16.79842854038584, 1.400445614444768, 16.98095804675073]],
+		[7, 254, [2.6447048465711425, -5.042707992549704, -1.1346398217482452]],
 	];
 
 	test("sampled positions match a full-precision fixture", () => {
@@ -149,6 +155,14 @@ describe("determinism (§9.1)", () => {
 		// A fixture that emptied itself would pass vacuously, which is the one
 		// failure mode a table of literals actually has.
 		expect(POSITION_FIXTURE.length).toBeGreaterThanOrEqual(12);
+		// **This table was repinned wholesale under #118 and cannot police the
+		// shape.** Any twelve numbers agree with themselves, so a repin is exactly
+		// the move that carries a lost squash through green — and a bound on these
+		// twelve `y` values would not have caught it either: the *ball's* fixture
+		// had a largest |y| of 12.2, well inside the disc's 17.2 reach, so such a
+		// check passes on both shapes and discriminates nothing. What guards the
+		// shape is `describe("shape (§9.4a)")`, which asserts the squash as an
+		// exact identity over all 2048 systems rather than over a sample.
 	});
 
 	test("a second generation of the same seed agrees exactly", () => {
@@ -202,7 +216,7 @@ describe("connectivity (§9.3)", () => {
 		// guarantee, and a change that quietly pushes these up is the signal that
 		// the density profile or the radius needs revisiting — not that the retry
 		// budget does.
-		expect(GALAXIES.map((g) => g.attempt)).toEqual([4, 5, 5, 5, 19, 2, 3, 4]);
+		expect(GALAXIES.map((g) => g.attempt)).toEqual([1, 7, 1, 5, 11, 2, 4, 2]);
 	});
 
 	test("other world seeds also lay out well inside the ceiling", () => {
@@ -237,6 +251,159 @@ describe("connectivity (§9.3)", () => {
 	});
 });
 
+describe("shape (§9.4a)", () => {
+	// The galaxy is an oblate spheroid flattened on y by q, ratified in #107 and
+	// built in #118. These tests are what stops a later session reading the
+	// constants as tuning: q is *the shape*, and R is solved from it.
+
+	test("y is squashed by q against the raw draw, and x, z are not", () => {
+		// **Rebuilt from the stream, not from the position.** The obvious version
+		// of this test asserts `x² + z² + (y/q)² = profileRadiusLy²` — and that is
+		// a tautology: `profileRadiusLy` divides by the same `q`, so the identity
+		// holds for *any* q including 1, and a build that dropped the squash
+		// passes it. Confirmed by running the suite against the pre-#118 ball,
+		// where that form stayed green.
+		//
+		// So this re-draws the three numbers `systemPosition` draws — radius,
+		// `cosθ`, `φ`, in that order, off the same `POS` stream — and asserts the
+		// shipped position is that draw with `y` scaled and nothing else. A build
+		// that drops the squash, squashes the wrong axis, squashes twice, or
+		// reorders the draws all fail here, and none of them can fail by
+		// agreeing with themselves.
+		for (const s of ALL) {
+			const rand = stream(s.seed, DOMAIN.POS);
+			const r = radiusForQuantile(rand());
+			const cosTheta = 2 * rand() - 1;
+			const phi = 2 * Math.PI * rand();
+			const sinTheta = Math.sqrt(Math.max(0, 1 - cosTheta * cosTheta));
+			expect(s.pos.x).toBeCloseTo(r * sinTheta * Math.cos(phi), 12);
+			expect(s.pos.y).toBeCloseTo(
+				GALAXY_FLATTENING_Q * r * sinTheta * Math.sin(phi),
+				12,
+			);
+			expect(s.pos.z).toBeCloseTo(r * cosTheta, 12);
+			// And the profile coordinate recovers the drawn radius exactly, which
+			// is the property §3's density profile is written against.
+			expect(profileRadiusLy(s.pos)).toBeCloseTo(r, 12);
+		}
+	});
+
+	test("the cluster's extents are R across and qR through", () => {
+		// A band on each, because 2048 draws do not reach the surface exactly. The
+		// point of asserting both is that a q applied to the wrong axis, or applied
+		// twice, moves one of them and not the other.
+		const inPlane = Math.max(...ALL.map((s) => Math.hypot(s.pos.x, s.pos.z)));
+		const throughPlane = Math.max(...ALL.map((s) => Math.abs(s.pos.y)));
+		expect(inPlane).toBeGreaterThan(0.97 * GALAXY_RADIUS_LY);
+		expect(inPlane).toBeLessThanOrEqual(GALAXY_RADIUS_LY);
+		expect(throughPlane).toBeGreaterThan(
+			0.97 * GALAXY_FLATTENING_Q * GALAXY_RADIUS_LY,
+		);
+		expect(throughPlane).toBeLessThanOrEqual(
+			GALAXY_FLATTENING_Q * GALAXY_RADIUS_LY,
+		);
+		// And it is genuinely flattened rather than nominally so: the tell that q
+		// reached the generator at all.
+		expect(throughPlane).toBeLessThan(0.8 * inPlane);
+	});
+
+	test("t is scale-free, so the reshape moved positions and not polities", () => {
+		// **The property that makes `profileRadiusLy` safe**, and the one that
+		// explains why five of `world-state.test.ts`'s eight carrier fingerprints
+		// survived #118 unchanged.
+		//
+		// The profile's core radius is `R/√2`, so `radialCdf` is a function of
+		// `x/R` alone and `radiusForQuantile(u)/R` therefore does not depend on R.
+		// Re-deriving the radius from 22 to 24.53 moved every system outward and
+		// changed nothing about what any system *is*: government, economy and tech
+		// all read `t`, and `t` is the quantile.
+		//
+		// This corrects #107, which argued the reshape "changes what each system
+		// is" from the radial gradient. It does — but only through the layout
+		// `attempt`, which is part of a system's seed and re-rolled where
+		// connectivity flipped. The gradient itself did not move.
+		//
+		// The test is here rather than in a comment because the property is what a
+		// later session would break by switching `t` to the Euclidean distance,
+		// and that change looks harmless.
+		// **The shipped inverse at both radii**, not a local re-derivation of it.
+		// This test used to rebuild the CDF and the 40-step bisection inline,
+		// which made it a check on a replica; `radiusForQuantile` now takes the
+		// radius, so both arms are the function the generator runs.
+		const tAt = (u: number, radius: number): number =>
+			radiusForQuantile(u, radius) / radius;
+		for (const u of [0.001, 0.1, 0.25, 0.5, 0.75, 0.9, 0.999]) {
+			// The pre-#118 radius against the shipped one. **This is the
+			// assertion the test is named for**, and it went missing for one
+			// round while the loop was rewritten around it — leaving two range
+			// checks and a title that promised a comparison.
+			expect(tAt(u, 22)).toBeCloseTo(tAt(u, GALAXY_RADIUS_LY), 12);
+		}
+		// The defaulted call is the shipped-radius call, so a default that drifted
+		// from `GALAXY_RADIUS_LY` fails here rather than silently giving the
+		// generator a different profile from the sweep's.
+		expect(radiusForQuantile(0.5)).toBe(
+			radiusForQuantile(0.5, GALAXY_RADIUS_LY),
+		);
+		// And `t` genuinely spans the range — a constant `t` would satisfy every
+		// equality above.
+		expect(tAt(0.001, 22)).toBeLessThan(0.1);
+		expect(tAt(0.999, 22)).toBeGreaterThan(0.9);
+	});
+
+	test("the radius is the one solved for ~8 in range, not a round number", () => {
+		// R is an output of the derivation (`galaxy-generation.md` §2.1), and the
+		// figure is pinned here so that editing the constant without re-running
+		// `scripts/measure-galaxy-shape.ts solve` fails rather than drifts.
+		expect(GALAXY_FLATTENING_Q).toBe(0.7);
+		expect(GALAXY_RADIUS_LY).toBeCloseTo(24.53, 2);
+		// The core ratio is held at R/√2, which is what keeps the 3:1 gradient.
+		expect(CORE_RADIUS_LY).toBeCloseTo(GALAXY_RADIUS_LY / Math.SQRT2, 9);
+	});
+});
+
+/**
+ * The 32 connected layouts the two assertions below share — four world seeds,
+ * eight galaxies — walked **once**.
+ *
+ * Both tests need the same corpus, and computing it twice meant 32 extra
+ * `layoutGalaxy` calls (each re-rolling ~4.6 attempts × 256 bisections) on top
+ * of a second pass over 2.1M distance pairs. The pair loop is also halved:
+ * `j > i` counts each pair once and doubles, where the naive form walks every
+ * ordered pair.
+ */
+const discCorpus = (() => {
+	let cached: {
+		means: number[];
+		attempts: number[];
+		connected: number;
+	} | null = null;
+	return () => {
+		if (cached) return cached;
+		const means: number[] = [];
+		const attempts: number[] = [];
+		let connected = 0;
+		for (const world of [1, 47, 12345, WORLD]) {
+			for (let g = 0; g < GALAXY_COUNT; g++) {
+				const { positions, attempt } = layoutGalaxy(world, g);
+				if (isConnected(positions, JUMP_RANGE_LY)) connected++;
+				attempts.push(attempt);
+				// `meanNeighbours` is shipped rather than re-walked here: the sweep
+				// instrument needs the same quantity, and two copies of the walk
+				// kept in step by a comment is the drift the exported generator was
+				// extracted to end.
+				means.push(meanNeighbours(positions));
+			}
+		}
+		cached = { means, attempts, connected };
+		return cached;
+	};
+})();
+
+/** Every system's profile radius, computed once. Two tests below want it and
+ *  `shellDensity` wants it per shell, which was 2048 square roots each time. */
+const PROFILE_RADII = ALL.map((s) => profileRadiusLy(s.pos));
+
 describe("distribution (§9.4)", () => {
 	const neighbourCounts = (g: Galaxy): number[] =>
 		g.systems.map(
@@ -248,13 +415,91 @@ describe("distribution (§9.4)", () => {
 		);
 
 	test("a typical system has about 8 neighbours in range", () => {
-		// The design constant the 22 LY radius was derived from (§2.1): enough
-		// choice to plan a route, few enough that a distant system is a project.
-		// If this drifts, the radius is what moved.
+		// The design constant the radius was derived from (§2.1): enough choice to
+		// plan a route, few enough that a distant system is a project. If this
+		// drifts, the radius is what moved.
 		const counts = GALAXIES.flatMap(neighbourCounts);
 		const mean = counts.reduce((a, b) => a + b, 0) / counts.length;
 		expect(mean).toBeGreaterThan(7.3);
 		expect(mean).toBeLessThan(9.3);
+	});
+
+	test("the sweep instrument draws the shipped generator", () => {
+		// `scripts/measure-galaxy-shape.ts` sweeps shapes the game does not ship,
+		// and every figure in `galaxy-generation.md` §2.1 comes out of it. It used
+		// to hold a *copy* of `systemPosition` — same draws, same order, parameters
+		// instead of constants — bound to the real one only by a control mode that
+		// nothing ran. A copy like that stops matching the day `radiusForQuantile`
+		// or the draw order changes, and the sweep then measures a generator
+		// nobody runs with nothing going red.
+		//
+		// So `positionForShape` is the one body and `systemPosition` calls it.
+		// This is the gate on that: at the shipped parameters they are the same
+		// function, exactly — not close.
+		for (const s of ALL.filter((_, i) => i % 17 === 0)) {
+			const mine = positionForShape(
+				s.seed,
+				GALAXY_FLATTENING_Q,
+				GALAXY_RADIUS_LY,
+			);
+			expect(mine).toEqual(s.pos);
+		}
+		// And it genuinely varies with its parameters — otherwise the assertion
+		// above would hold on a stub that ignored them.
+		const ball = positionForShape(ALL[0].seed, 1, GALAXY_RADIUS_LY);
+		expect(ball.y).not.toBeCloseTo(ALL[0].pos.y, 6);
+		expect(ball.x).toBeCloseTo(ALL[0].pos.x, 12);
+	});
+
+	test("the mean in range is pinned at the measured 8.00, across seeds", () => {
+		// **A band around the measurement, not a `>` threshold** (#25): a
+		// threshold leaves a retune green and the spec silently wrong, and this
+		// figure is transcribed into `galaxy-generation.md` §2.1 as the thing R
+		// was solved for. It is the assertion that fails if somebody changes q
+		// without re-solving R.
+		//
+		// **8.00, not 8.25.** §2.1 quoted 8.25 for years and it is the prediction
+		// of a *uniform-ball* closed form, never a measurement — the generator is
+		// 3:1 concentrated and re-rolls fragmented layouts, and the ball it
+		// described held 7.88. Measured here over these 32 galaxies: 8.002, with a
+		// galaxy-to-galaxy spread of 7.04-9.02. The spread is why the band is on
+		// the *mean of means* rather than on any one galaxy.
+		//
+		// **Over connected layouts**, which is the only kind the game ships.
+		// #107's first solve measured first-pass draws and landed at 8.76 — the
+		// re-roll filter selects denser layouts, so a mean taken before it is a
+		// mean of galaxies nobody plays.
+		//
+		// Three world seeds beyond this file's, so the assertion is about the
+		// generator rather than about `WORLD`. The band is ±0.30, which the
+		// un-re-solved 8.76 fails and a q changed without re-solving R fails.
+		const { means } = discCorpus();
+		const mean = means.reduce((a, b) => a + b, 0) / means.length;
+		expect(means).toHaveLength(4 * GALAXY_COUNT);
+		expect(mean).toBeGreaterThan(8.0 - 0.3);
+		expect(mean).toBeLessThan(8.0 + 0.3);
+	});
+
+	test("the disc still lays out connected, with re-roll margin to spare", () => {
+		// #107 measured 24/24 connected at a mean 7.3 re-rolls against the ball's
+		// 5.3, and the margin narrows fast as q falls — 9.9 at q = 0.15, 22.4 at
+		// q = 0.08. So this is gated rather than left to a script: a later retune
+		// toward a thinner disc must see this go red rather than discover it in a
+		// throw on somebody's world seed.
+		const { attempts, connected } = discCorpus();
+		expect(connected).toBe(4 * GALAXY_COUNT);
+		const mean = attempts.reduce((a, b) => a + b, 0) / attempts.length;
+		// Absolute, not relative to the ceiling: an assertion written against
+		// `MAX_LAYOUT_ATTEMPTS` changes what it means when the ceiling moves.
+		//
+		// **8, not 15.** The comment above names q = 0.15's 9.9 re-rolls as the
+		// thing this must catch, and a bound of 15 passed it — so the check did
+		// not discriminate the range it claimed to. Measured here at 4.97 over
+		// these 32 galaxies, so 8 leaves 60% headroom against seed noise and
+		// still fails every thinner disc #107 swept.
+		expect(mean).toBeLessThan(8);
+		expect(Math.max(...attempts)).toBeLessThan(40);
+		expect(MAX_LAYOUT_ATTEMPTS).toBeGreaterThan(4 * Math.max(...attempts));
 	});
 
 	test("radii follow the specified profile (Kolmogorov-Smirnov)", () => {
@@ -262,7 +507,7 @@ describe("distribution (§9.4)", () => {
 		// this compares the whole empirical radial distribution against F(x), so a
 		// sampler that got the concentration right in aggregate but wrong in shape
 		// still fails.
-		const radii = ALL.map((s) => s.radiusLy).sort((a, b) => a - b);
+		const radii = [...PROFILE_RADII].sort((a, b) => a - b);
 		let d = 0;
 		for (let i = 0; i < radii.length; i++) {
 			const f = radialCdf(radii[i]);
@@ -285,9 +530,7 @@ describe("distribution (§9.4)", () => {
 		// value for *those* shells is computed here rather than quoted, so the
 		// assertion cannot drift away from the profile it is checking.
 		const shellDensity = (lo: number, hi: number): number => {
-			const count = ALL.filter(
-				(s) => s.radiusLy >= lo && s.radiusLy < hi,
-			).length;
+			const count = PROFILE_RADII.filter((m) => m >= lo && m < hi).length;
 			const volume = (4 / 3) * Math.PI * (hi ** 3 - lo ** 3);
 			return count / volume;
 		};
