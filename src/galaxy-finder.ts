@@ -59,13 +59,23 @@ export interface FinderFilter {
 export const FINDER_DEFAULT_BUDGET = 1;
 
 /**
- * The widest budget the control offers.
+ * The widest budget the control offers — and it has to clear the galaxy's own
+ * jump diameter, which was **measured** rather than assumed.
  *
- * Not a limit on the projection, which labels the whole pool: a budget past the
- * galaxy's diameter in jumps admits everything, so a larger number would be a
- * control position that cannot change what is on screen.
+ * It was 9, justified by the claim that a budget past the diameter admits
+ * everything. Nobody had measured the diameter. Over five world seeds, eight
+ * galaxies each, from **every** system as origin, the worst shortest-chain is
+ * **15 jumps** (14 at the shipped seed) — so at 9 a real pair sat permanently
+ * in the dimmed "beyond range" group with no control position that could
+ * promote it, which is *filtered-out reads as absent*, the failure D7 exists to
+ * prevent.
+ *
+ * 16 clears the measured worst by one. `galaxy-finder.test.ts` re-measures the
+ * shipped seed's eight galaxies from every origin and goes red if the ceiling
+ * stops covering it, because the diameter is a property of the generator and
+ * the generator changes.
  */
-export const FINDER_MAX_BUDGET = 9;
+export const FINDER_MAX_BUDGET = 16;
 
 export const finderDefaultFilter = (): FinderFilter => ({
 	query: "",

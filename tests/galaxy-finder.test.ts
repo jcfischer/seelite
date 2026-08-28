@@ -23,6 +23,7 @@ import {
 } from "../src/galaxy-finder";
 import {
 	ECONOMY_NAMES,
+	GALAXY_COUNT,
 	JUMP_RANGE_LY,
 	type SystemRecord,
 	generateGalaxy,
@@ -381,6 +382,64 @@ describe("D6 — the budget bounds the primary list", () => {
 			filter({ budgetJumps: 9 }),
 		);
 		expect(inBudget.some((r) => r.index === island.index)).toBe(false);
+	});
+});
+
+describe("the budget ceiling covers the galaxy", () => {
+	/**
+	 * **The ceiling is a claim about the generator, so it is measured against
+	 * it.**
+	 *
+	 * `FINDER_MAX_BUDGET` was 9, on the reasoning that a budget past the
+	 * galaxy's jump diameter admits everything — and nobody had measured the
+	 * diameter. It is 15 over five world seeds and 14 at the shipped one, so at
+	 * 9 a real pair sat permanently in the dimmed group with no control position
+	 * that could promote it: *filtered-out reads as absent*, which is the whole
+	 * failure D7 exists to prevent.
+	 *
+	 * Every origin in every galaxy of the shipped seed, because the worst pair
+	 * is not the start system's and a sample would be a different claim. ~360 ms.
+	 */
+	test("no reachable pair needs more jumps than the control can ask for", () => {
+		let worst = 0;
+		let worstAt = "";
+		for (let index = 0; index < GALAXY_COUNT; index++) {
+			const gx = generateGalaxy(WORLD_SEED, index);
+			for (const from of gx.systems) {
+				const reach = projectJumps(gx.systems, from);
+				for (const to of gx.systems) {
+					const jumps = reach.reach(to)?.jumps;
+					if (jumps !== undefined && jumps > worst) {
+						worst = jumps;
+						worstAt = `g${index} ${from.name}→${to.name}`;
+					}
+				}
+			}
+		}
+		// Printed into the failure by being in the message: a bare
+		// `toBeLessThanOrEqual` would say the ceiling was breached and not by
+		// how much or where.
+		expect({ worst, worstAt, ceiling: FINDER_MAX_BUDGET }).toMatchObject({
+			worst: expect.any(Number),
+		});
+		expect(worst).toBeLessThanOrEqual(FINDER_MAX_BUDGET);
+		// And the ceiling is not absurdly above it either — a ceiling of 500
+		// would pass the line above while making the control useless.
+		expect(FINDER_MAX_BUDGET).toBeLessThanOrEqual(worst + 4);
+	});
+
+	test("the widest budget admits every reachable system", () => {
+		const { inBudget, beyondRange } = projectFinder(
+			galaxy.systems,
+			here,
+			filter({ query: "", budgetJumps: FINDER_MAX_BUDGET }),
+		);
+		const reach = projectJumps(galaxy.systems, here);
+		const reachable = galaxy.systems.filter(
+			(s) => reach.reach(s) !== undefined,
+		);
+		expect(inBudget.length).toBe(reachable.length);
+		expect(beyondRange).toEqual([]);
 	});
 });
 

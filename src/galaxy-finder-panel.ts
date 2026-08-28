@@ -46,6 +46,21 @@ const FINDER_WIDTH_PX = 268;
  */
 const FINDER_DRAWN_ROWS = 60;
 
+/**
+ * The narrowest chart the panel will leave behind when it opens as a column.
+ *
+ * Below it the panel **covers** the chart instead. The column layout was
+ * written against the console's desktop cell, where 1011 px less the panel is
+ * 743 and still a chart; at the 390 px the console's media query drops to it
+ * would leave a 122 px strip, which is not a reading surface — it is the chart
+ * ruined and the finder cramped. §5.1's whole split is that the chart reads and
+ * the list finds, and on a narrow console you do one at a time.
+ *
+ * Set from the two cells that exist rather than from taste: it has to admit the
+ * desktop's 743 and refuse the narrow one's 122.
+ */
+const FINDER_MIN_CHART_PX = 360;
+
 export interface FinderPanelOptions {
 	/** The chart's root. The panel appends itself and is removed with it. */
 	root: HTMLElement;
@@ -98,9 +113,10 @@ export function mountFinderPanel({
 }: FinderPanelOptions): FinderPanel {
 	let filter: FinderFilter = finderSessionFilter();
 	let results: FinderResults = { inBudget: [], beyondRange: [] };
-	/** What the layout last applied — a cache, not a second answer to "is it
-	 *  open"; `finderIsNarrowed` remains the only one. */
-	let expandedApplied: boolean | null = null;
+	/** Which of the three layouts is on the element — a cache of what was
+	 *  applied, not a second answer to "is it open"; `finderIsNarrowed` remains
+	 *  the only one of those. */
+	let appliedMode: "closed" | "column" | "cover" | null = null;
 	/** The drawn row buttons by system index, so a selection restyles rather
 	 *  than rebuilds. Cleared whenever the list is rebuilt. */
 	const rowElements = new Map<number, HTMLElement>();
@@ -247,22 +263,48 @@ export function mountFinderPanel({
 	 * Derived from the filter rather than held as its own flag (D4): a second
 	 * owner of "is it open" is how a chip click comes to narrow the results
 	 * without showing them, which is the shape of the defect `live-cockpit.ts`
-	 * records having shipped once already. `expandedApplied` is a *cache of what
+	 * records having shipped once already. `appliedMode` is a *cache of what
 	 * was applied*, not a second answer — it exists so a keystroke does not
 	 * reallocate the chart's drawing buffer. Unconditional, every render made
 	 * the next frame read the stage's width and call `renderer.setSize` for a
 	 * box that had not moved.
 	 */
 	const applyLayout = (expanded: boolean): void => {
-		if (expanded === expandedApplied) return;
-		expandedApplied = expanded;
+		// **The mode is part of what was applied, not only the open/closed
+		// flag.** A console that resized across the threshold while the panel
+		// was open would otherwise keep whichever layout it opened with.
+		const mode = !expanded
+			? "closed"
+			: root.clientWidth - FINDER_WIDTH_PX >= FINDER_MIN_CHART_PX
+				? "column"
+				: "cover";
+		if (mode === appliedMode) return;
+		appliedMode = mode;
 		element.setAttribute("data-map-finder-expanded", String(expanded));
+		element.setAttribute("data-map-finder-layout", mode);
 		resultsEl.style.display = expanded ? "block" : "none";
-		if (expanded) {
+		if (mode === "cover") {
+			// Over the chart, not beside it. The canvas box does not change, so
+			// §5.1's crowding figure is untouched here — the trade is that the
+			// chart is not readable while the finder is open, which on a 390 px
+			// console it would not have been either way.
+			Object.assign(element.style, {
+				position: "absolute",
+				right: "12px",
+				top: "12px",
+				bottom: "12px",
+				left: "12px",
+				flex: "0 0 auto",
+				width: "auto",
+				maxHeight: "none",
+			});
+		} else if (mode === "column") {
 			Object.assign(element.style, {
 				position: "relative",
 				right: "auto",
 				top: "auto",
+				bottom: "auto",
+				left: "auto",
 				flex: `0 1 ${FINDER_WIDTH_PX}px`,
 				width: "auto",
 				maxHeight: "100%",
@@ -278,6 +320,8 @@ export function mountFinderPanel({
 				position: "absolute",
 				right: "12px",
 				top: "12px",
+				bottom: "auto",
+				left: "auto",
 				flex: "0 0 auto",
 				width: `min(${FINDER_WIDTH_PX}px, calc(100% - 24px))`,
 				maxHeight: "none",

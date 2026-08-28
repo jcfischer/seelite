@@ -386,6 +386,16 @@ substring query, as `navFilterMatches` implements it — because one set of
 controls across both lists is what stops two lists under one console reading as
 two applications.
 
+**The budget's ceiling is the galaxy's jump diameter, measured.** It was 9, on
+the reasoning that a budget past the diameter admits everything — and nobody had
+measured the diameter. Over five world seeds, eight galaxies each, from **every**
+system as origin, the worst shortest chain is **15 jumps** (14 at the shipped
+seed). At 9, real pairs sat permanently in the dimmed "beyond range" group with
+no control position that could promote them, which is *filtered-out reads as
+absent* — the failure the group exists to prevent. The ceiling is 16, and
+§9.1a re-measures the shipped seed's eight galaxies from every origin so a
+generator change that widens the galaxy goes red rather than stranding systems.
+
 **The budget defaults to 1 jump**, which is the shell the chart already lights
 (§3), so list and chart agree on first open and no unreachable system is ever in
 the primary list. The widened value persists for the **session** and is not
@@ -466,6 +476,16 @@ a thousand nodes for a scroll box that shows fifteen. The cap is on the
 **drawing** and never on the projection — the results carry every matching row —
 and the panel prints `+N MORE`, because a list that stopped at sixty in silence
 would read exactly like a galaxy with sixty matches in it.
+
+**Opened on a narrow console, the panel covers the chart rather than taking a
+column.** The column layout was written against the desktop cell, where 1011 px
+less the panel is 743 and still a chart. At the 390 px the console's media query
+drops to it leaves a **76 px strip** — measured, not estimated — which is the
+chart ruined and the finder cramped at once. Below `FINDER_MIN_CHART_PX` (360,
+set from the two cells that exist: it must admit 743 and refuse 76) the expanded
+panel covers the stage instead. The canvas box is then unchanged, so §5.1's
+figure is untouched there, and the trade is that on a narrow console you read or
+you find, one at a time. §9.3 item 14 measures both, at the viewport it is about.
 
 **Three modules, one per tier.** `galaxy-finder.ts` is the arithmetic and the
 session budget, with no DOM; `galaxy-finder-panel.ts` is the panel, with no
@@ -815,7 +835,18 @@ The chart's *mount* rather than its projection, and the list beside it.
     only way the distinction is visible, since a mount-scoped budget reads as
     persistent in every single-mount check. Red twice: the budget put back in
     the closure, and the whole filter persisted rather than the budget alone.
-13. **Crowding in the open cell, measured rather than carried over.** The cell
+13. **The desktop console opens the finder as a column**, checked *before* the
+    wait that depends on it — a build that covered at the desktop cell would
+    otherwise kill the probe on a 30 s `waitForFunction` timeout instead of
+    failing the check about it, which is the failure mode item 6 already
+    records. Found by red-building exactly that.
+14. **The narrow console covers instead** (§5.2), asserted at 390 x 844 rather
+    than from the constant: the layout reads `cover`, the canvas box is the same
+    open as closed, and the panel is most of the stage. The **return** to a
+    column when the console is wide again is its own half, because a build that
+    only ever covered would pass the first. Red both ways — the threshold at 0
+    and at 5000.
+15. **Crowding in the open cell, measured rather than carried over.** The cell
     goes 1011 x 462 to 743 x 462 and the figure stays 73.0%, which §5.2 explains
     and this check makes falsifiable: every system's horizontal shift must be
     the *same* shift, equal to half the column the panel took, with the vertical
@@ -841,7 +872,7 @@ to 2 and the default framing zoomed to 20 LY. Each turned the check named
 above it red — except the system half of item 3, which is recorded there as
 not yet discriminating rather than counted as covered.
 
-The finder checks were built red builds too — items 7 to 13, both halves where
+The finder checks were built red builds too — items 7 to 15, both halves where
 a check has two: `toggleFinderEconomy` made a no-op (item 7 red, and it is the
 exact dead-chip defect the ordering is there to catch); the beyond-range group
 suppressed, and then made a constant by dropping the budget test (item 8 red one
@@ -850,15 +881,17 @@ made a no-op, then the centre control made to zoom as well (item 9 red three
 ways, the third being what caught the check asserting "nothing else" while
 comparing only two of the pose's four components); the session budget put back
 inside the mount closure, and then the whole filter persisted rather than the
-budget alone (item 12 red one way each); and the cap raised past the galaxy so no row was
-omitted (item 11 red). Item 13 was the one that paid: its red
+budget alone (item 12 red one way each); the cap raised past the galaxy so no row was
+omitted (item 11 red); the panel forced to cover at the desktop cell (item 13
+red, and that build is what showed the check had to run before the wait); and
+the narrow threshold pinned at 0 and at 5000 (item 14 red each way). Item 15 was the one that paid: its red
 build caught two faults in the check itself, both recorded where it is
 described.
 
-**Item 10 has no red build and no item of its own**, because it asserts an
-absence — no per-row course control — and the build that fails it is a feature
-nobody wrote. It is listed rather than folded into another item so that the
-sentence above stays true of exactly the items it names.
+**Item 10 has no red build**, because it asserts an absence — no per-row
+course control — and the build that fails it is a feature nobody wrote. It is
+numbered rather than folded into another item so that the sentence above stays
+true of exactly the items it names.
 
 ## 10. Deferred
 

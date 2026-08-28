@@ -808,12 +808,19 @@ export function mountGalaxyChart({
 	 * systems, and `projected()` does the same on every probe call.
 	 */
 	const scratch = new THREE.Vector3();
+	/**
+	 * **The world matrix is refreshed by the caller, once.**
+	 *
+	 * `localToWorld` runs `updateWorldMatrix` up the whole parent chain on every
+	 * call, and `cluster` added an ancestor — so a `projected()` over 256
+	 * systems recomposed the same two matrices 256 times. The refresh is
+	 * `freshenCluster`, called once before each sweep.
+	 */
 	const toPixels = (
 		s: SystemRecord,
 		rect: DOMRect,
 	): { x: number; y: number; behind: boolean } => {
-		scratch.set(s.pos.x, s.pos.y, s.pos.z);
-		cluster.localToWorld(scratch);
+		scratch.set(s.pos.x, s.pos.y, s.pos.z).applyMatrix4(cluster.matrixWorld);
 		scratch.project(camera);
 		// **Canvas-relative, not client.** These once carried `rect.left`/`top`,
 		// which made `projected()` client coordinates while `viewport()`
@@ -835,6 +842,10 @@ export function mountGalaxyChart({
 	 * frame while a selection exists. It changes only on a resize, which is the
 	 * one place that invalidates it.
 	 */
+	/** Bring `cluster.matrixWorld` up to date — once per sweep, since every
+	 *  system in one sweep is read under the same transform. */
+	const freshenCluster = (): void => cluster.updateWorldMatrix(true, false);
+
 	let cachedRect: DOMRect | null = null;
 	const canvasRect = (): DOMRect => {
 		if (cachedRect === null) cachedRect = canvas.getBoundingClientRect();
@@ -854,6 +865,7 @@ export function mountGalaxyChart({
 	 */
 	const pick = (clientX: number, clientY: number): SystemRecord | null => {
 		const rect = canvasRect();
+		freshenCluster();
 		// Client to canvas, once, rather than canvas to client 256 times.
 		const x = clientX - rect.left;
 		const y = clientY - rect.top;
@@ -1039,6 +1051,7 @@ export function mountGalaxyChart({
 
 		if (selected !== null && card.style.display !== "none") {
 			const rect = canvasRect();
+			freshenCluster();
 			const p = toPixels(selected, rect);
 			// **Clamped, not merely offset.** The card is 260 px wide against a
 			// 390 px narrow viewport, so a selection right of centre pushed it
@@ -1142,6 +1155,7 @@ export function mountGalaxyChart({
 		},
 		projected() {
 			const rect = canvasRect();
+			freshenCluster();
 			return galaxy.systems.map((s) => ({
 				index: s.index,
 				...toPixels(s, rect),

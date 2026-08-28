@@ -258,6 +258,10 @@ export interface JumpReach {
  *
  * Unreachable systems are `undefined` too, rather than a sentinel, so a caller
  * that forgets either case gets nothing rather than a plausible number.
+ *
+ * **The records are assumed immutable.** The result is memoised on the array's
+ * identity and the origin, so a system mutated in place would be answered from
+ * a stale label — see the cache note above.
  */
 export interface JumpProjection {
 	/** The galaxy this was built for. Anything else is not on this chart. */
@@ -270,15 +274,27 @@ export interface JumpProjection {
 }
 
 /**
- * One projection per (array, origin, range), for the same reason `jumpGraph` is
- * memoised one level down: the finder rebuilds its rows on every keystroke,
- * chip and budget step, and none of those move the ship. Without this each one
- * paid a fresh whole-pool relaxation and a 256-entry map of new objects to read
- * back numbers that had not changed.
+ * The last few projections, for the same reason `jumpGraph` is memoised one
+ * level down: the finder rebuilds its rows on every keystroke, chip and budget
+ * step, and none of those move the ship. Without this each one paid a fresh
+ * whole-pool relaxation and a 256-entry map of new objects to read back numbers
+ * that had not changed.
  *
- * **It changes when work happens, never what is returned.** Generated records
- * do not move, so the labels are a function of the key alone.
+ * **Bounded, because the hit pattern is one origin repeated.** Keyed on the
+ * origin alone it would retain a 256-entry map per system the ship ever visited
+ * — about 65k live objects over a session that toured a galaxy, none of them
+ * ever read again. Two entries catch every hit an unbounded map would, and the
+ * one case they do not is a caller alternating between three origins, which is
+ * a workbench sweep rather than a player.
+ *
+ * **It changes when work happens, never what is returned — given immutable
+ * records.** That precondition is real: the labels are a function of the
+ * positions, and a system whose `pos` were mutated in place would keep its old
+ * chain here with nothing to notice. `generateGalaxy` returns fresh records and
+ * nothing in this repo writes to one; a future mutable record owes this cache a
+ * generation key.
  */
+const PROJECTION_CACHE_SIZE = 2;
 const projectionCache = new WeakMap<
 	readonly SystemRecord[],
 	Map<string, JumpProjection>
@@ -316,6 +332,13 @@ export function projectJumps(
 		size: labels.size,
 	};
 	perArray.set(cacheKey, projection);
+	// Insertion order is the eviction order, which for "one origin repeated" is
+	// the same as least-recently-used and is one line rather than a structure.
+	while (perArray.size > PROJECTION_CACHE_SIZE) {
+		const oldest = perArray.keys().next();
+		if (oldest.done) break;
+		perArray.delete(oldest.value);
+	}
 	return projection;
 }
 
