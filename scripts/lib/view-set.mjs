@@ -97,13 +97,20 @@ export const SHOT_KINDS = Object.freeze([
  * `uncoveredLevers` reads it, and the test drops a view to prove the reading can
  * fail.
  *
- * **`radii` is apparent size, and it was set by looking.** A subject fills about
- * a third of a 900 px frame at six to eight of its own radii, and the first
- * version of this set had three views at twelve, thirty and sixty — where the
- * station is a bloom dot with no surface to judge at all. That is the failure
- * this whole node exists to prevent, one level down: a sheet that is captured,
- * green, complete, and shows nothing. Anything retuning these numbers has to
- * open the PNGs.
+ * **`radii` is apparent size, and nothing here checks it.** Each number was set
+ * by opening the PNG at 1440x900 and looking; six to eight of a subject's own
+ * radii put it at roughly a third of the frame. The first version of this set
+ * had three views at twelve, thirty and sixty, where the station is a bloom dot
+ * with no surface to judge at all — a sheet that is captured, green, complete
+ * and shows nothing.
+ *
+ * That was caught by looking, and only by looking. **No check in this repo can
+ * catch it**, which is not an omission to be closed later: it is #98's finding
+ * restated one level down. A number that decides whether a frame is worth
+ * looking at cannot be verified by anything that is not looking. So anything
+ * retuning these has to reopen the PNGs, and a regression that shrinks a subject
+ * back to a dot will reach the sheet — where the person the sheet exists for is
+ * the one who notices.
  */
 export const VIEWS = Object.freeze([
 	{
@@ -200,6 +207,42 @@ export function uncoveredLevers(views) {
 	return Object.keys(LEVERS)
 		.map(Number)
 		.filter((id) => !covered.has(id));
+}
+
+/** What each shot kind needs beyond `kind` and `view`, and how to check it. */
+const finite = (n) => typeof n === "number" && Number.isFinite(n);
+const SHOT_REQUIREMENTS = {
+	"station-axis": (s) => typeof s.station === "string" && finite(s.radii),
+	"body-offset": (s) =>
+		typeof s.body === "string" && finite(s.radii) && finite(s.sunAngleDeg),
+	"deep-sky": () => true,
+};
+
+/**
+ * Views whose shot is missing what its kind needs, by name.
+ *
+ * The kind alone is not enough, and the gap had teeth: a `body-offset` view
+ * without `sunAngleDeg` reaches `__sunOffset`, multiplies `undefined` through
+ * the placement arithmetic and puts the ship at NaN — the exact failure
+ * `__radiusOf` throws to avoid one argument earlier. A NaN placement is not an
+ * error, it is a garbage frame, and a garbage frame in a contact sheet is
+ * something the reviewer squints at rather than something that names the field
+ * that is missing.
+ *
+ * Takes its subject as a parameter for the reason `uncoveredLevers` does: the
+ * test can then hand it a set that is actually broken, rather than asserting
+ * over the real one and proving only that today's literal is well formed.
+ *
+ * @param {ReadonlyArray<{name: string, shot: Record<string, unknown> & {kind: string}}>} views
+ * @returns {string[]}
+ */
+export function malformedShots(views) {
+	return views
+		.filter((v) => {
+			const needs = SHOT_REQUIREMENTS[v.shot.kind];
+			return !needs || !needs(v.shot);
+		})
+		.map((v) => v.name);
 }
 
 /** HTML-escape, for the captions and the ref strings the sheet interpolates. */

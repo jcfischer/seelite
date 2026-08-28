@@ -66,10 +66,15 @@ that a lever added to the map reached the file; both are a person's job, which
 is the point. A run that drops a view refuses to build a sheet at all, because a
 sheet with a hole in it reads exactly like a whole one.
 
-**Capture is headed, and refuses to run otherwise.** Every other browser script
-here renders through SwiftShader; for an image judged by eye that is the wrong
-picture, not merely a slow one. `view-set/` is gitignored — before/after is two
-runs at two refs, not a baseline in the repo.
+**Capture launches headed and then checks what it got.** It boots the page,
+reads the real renderer back, and refuses to write a single frame unless that
+renderer can be *shown* not to be a software rasteriser — an unreadable name
+counts as unproven. So it needs a display, but the guarantee is about the
+renderer rather than about headedness, and a displayless machine gets a full
+boot before the refusal. Every other browser script here renders through
+SwiftShader; for an image judged by eye that is the wrong picture, not merely a
+slow one. `view-set/` is gitignored — before/after is two runs at two refs, not
+a baseline in the repo.
 
 `scripts/probe-guard.mjs` refuses to measure a dev server that is not serving
 this working tree — the failure it prevents is a probe passing against someone

@@ -25,6 +25,7 @@ import {
 	VIEWPORT,
 	VIEWS,
 	contactSheet,
+	malformedShots,
 	uncoveredLevers,
 } from "../scripts/lib/view-set.mjs";
 
@@ -64,14 +65,33 @@ describe("the view set itself", () => {
 		for (const view of VIEWS) {
 			expect(view.what.length).toBeGreaterThan(0);
 			expect(SHOT_KINDS).toContain(view.shot.kind);
+			expect(["cockpit", "chase"]).toContain(view.shot.view);
 		}
 	});
 
 	/**
-	 * A view's `covers` is the only thing tying the set to the map. A typo makes
-	 * a lever silently uncovered while the array still looks populated, which is
-	 * the same failure as a missing view one level down.
+	 * The kind alone is not enough — see `malformedShots`. Asserted against the
+	 * real set *and* against a broken one, because a check run only over a frozen
+	 * literal proves the literal is well formed today and nothing about the rule.
 	 */
+	test("every shot carries the payload its kind needs", () => {
+		expect(malformedShots(VIEWS)).toEqual([]);
+	});
+
+	test("a shot missing its kind's payload is named", () => {
+		expect(
+			malformedShots([
+				{
+					name: "no-angle",
+					shot: { kind: "body-offset", body: "x", radii: 4 },
+				},
+				{ name: "no-radii", shot: { kind: "station-axis", station: "trade" } },
+				{ name: "bad-kind", shot: { kind: "improvised" } },
+				{ name: "fine", shot: { kind: "deep-sky" } },
+			]),
+		).toEqual(["no-angle", "no-radii", "bad-kind"]);
+	});
+
 	test("every covered id is a lever on the map", () => {
 		for (const view of VIEWS)
 			for (const id of view.covers) expect(LEVERS[id]).toBeDefined();

@@ -300,11 +300,19 @@ const page = await browser.newPage({ viewport: VIEWPORT });
  * A page fault seen at any point in the run, or null.
  *
  * A shader that fails to link is reported through `console.error` and the scene
- * carries on drawing *something*, so a capture over a broken build produces
- * seven plausible frames and a complete-looking sheet. The first version of this
- * set `process.exitCode = 1` and kept going, which is the same failure the
- * header refuses a software rasteriser over: an exit code above a folder of PNGs
- * is a warning nobody reads once the images are open.
+ * carries on drawing *something*, so a capture over that build produces seven
+ * plausible frames and a complete-looking sheet. The first version of this set
+ * `process.exitCode = 1` and kept going, which is the same failure the header
+ * refuses a software rasteriser over: an exit code above a folder of PNGs is a
+ * warning nobody reads once the images are open.
+ *
+ * **It catches one class, not "a broken build".** The filter is the same narrow
+ * one `tally()` uses, and narrow on purpose — a capture is not a lint pass, and
+ * failing on any console error would make an unrelated warning elsewhere in the
+ * page stop the run. A texture that fails to decode, a lost context, or a
+ * renderer error phrased differently all get through and reach the sheet. That
+ * is the same bargain every probe in this repo makes, and the reason the sheet's
+ * reader is a person.
  */
 let fault = null;
 const faulted = (what) => {
@@ -324,49 +332,53 @@ await installViewPlacement(page);
 await installViewFraming(page);
 await page.goto(`${ORIGIN}/?seed=${SEED}`, { waitUntil: "load" });
 await bootedGame(page);
-const renderer = await assertPlayersRenderer(page).catch(async (e) => {
-	await browser.close();
-	throw e;
-});
-// Before anything moves: `deep-sky` is specified as being at the arrival point,
-// and the ship starts on it.
-await page.evaluate(() => window.__rememberBootPosition());
-// Once, before anything is placed. The clock then runs; what holds each framing
-// is that the camera is placed co-moving with its subject, not that time stops.
-await page.evaluate((t) => window.__startClockAt(t), GAME_TIME_S);
-
-const dir = join(OUT, LABEL);
-await mkdir(dir, { recursive: true });
-
+let renderer;
 const captured = [];
-for (const view of VIEWS) {
-	await setView(page, view.shot.view);
-	const subject = await PLACERS[view.shot.kind](page, view.shot);
-	// Three settle frames. The near/far handoff has a hysteresis band and the
-	// station surface is built lazily, so the first frame after a jump can be
-	// drawn before either has caught up.
-	await page.evaluate(
-		() =>
-			new Promise((r) => {
-				let n = 3;
-				const tick = () => (n-- ? requestAnimationFrame(tick) : r());
-				requestAnimationFrame(tick);
-			}),
-	);
-	const file = `${LABEL}/${view.name}.png`;
-	// Read at the shutter, not at the top of the run: the clock is normalised and
-	// then left to run, so each frame has its own. The sheet prints the span,
-	// because a caption claiming a fixture property the frames do not have is
-	// the one lie the gate cannot survive.
-	const gameTime = await page.evaluate(() => window.__seelite.world.gameTime);
-	await page.screenshot({ path: join(OUT, file) });
-	captured.push({ name: view.name, file, subject, gameTime });
-	console.log(
-		`  ${view.name.padEnd(20)} ${view.shot.view.padEnd(8)} ${subject}`,
-	);
+try {
+	renderer = await assertPlayersRenderer(page);
+	// Before anything moves: `deep-sky` is specified as being at the arrival
+	// point, and the ship starts on it.
+	await page.evaluate(() => window.__rememberBootPosition());
+	// Once, before anything is placed. The clock then runs; what holds each
+	// framing is that the camera is placed co-moving with its subject, not that
+	// time stops.
+	await page.evaluate((t) => window.__startClockAt(t), GAME_TIME_S);
+
+	await mkdir(join(OUT, LABEL), { recursive: true });
+
+	for (const view of VIEWS) {
+		await setView(page, view.shot.view);
+		const subject = await PLACERS[view.shot.kind](page, view.shot);
+		// Three settle frames. The near/far handoff has a hysteresis band and the
+		// station surface is built lazily, so the first frame after a jump can be
+		// drawn before either has caught up.
+		await page.evaluate(
+			() =>
+				new Promise((r) => {
+					let n = 3;
+					const tick = () => (n-- ? requestAnimationFrame(tick) : r());
+					requestAnimationFrame(tick);
+				}),
+		);
+		const file = `${LABEL}/${view.name}.png`;
+		// Read at the shutter, not at the top of the run: the clock is normalised
+		// and then left to run, so each frame has its own. The sheet prints the
+		// span, because a caption claiming a fixture property the frames do not
+		// have is the one lie the gate cannot survive.
+		const gameTime = await page.evaluate(() => window.__seelite.world.gameTime);
+		await page.screenshot({ path: join(OUT, file) });
+		captured.push({ name: view.name, file, subject, gameTime });
+		console.log(
+			`  ${view.name.padEnd(20)} ${view.shot.view.padEnd(8)} ${subject}`,
+		);
+	}
+} finally {
+	// Every exit, not just the renderer refusal — a throw from a placer or a
+	// screenshot used to leave a headed Chromium window standing on the desktop.
+	await browser.close();
 }
 
-await browser.close();
+const dir = join(OUT, LABEL);
 
 // A fault means every frame above is of a build that did not link. The PNGs are
 // already on disk by now — they are written inside the loop — so the run
