@@ -297,9 +297,11 @@ export function signedRollDeg(frame: ApertureFrame, pose: EntryPose): number {
 	// **A relative guard, where `evaluateEntry`'s is an exact zero.** An
 	// up-vector *set* to the docking axis does not project to exactly nothing:
 	// `dot(up, axis)` is 1 to within a rounding error, so a residue of order
-	// 1e-17 survives and any angle taken from it is float noise. Measured on one
-	// such pose, the shipped check read 86.78° and this read 51.26° — both of
-	// them noise, and neither wrong on its own terms. This returns no angle
+	// 1e-17 survives and any angle taken from it is float noise — the check and
+	// this function each read a real angle off it, and they are tens of degrees
+	// apart, because they are reading different rounding errors rather than
+	// disagreeing. `tests/docking-director.test.ts` holds the pose. This returns
+	// no angle
 	// rather than one taken from rounding error, so the ring draws no tick;
 	// `evaluateEntry` keeps its own exact-zero guard, because retuning a docking
 	// check is #9's and it refuses the pose on check 2 anyway.

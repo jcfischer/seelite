@@ -4076,9 +4076,14 @@ class Game {
 		const corridorY = cy + funnelRadiusPx * 1.34;
 		const barHalf = funnelRadiusPx * 0.9;
 		const corridor = state.axis.position;
-		// A pose with no position angle to report is a pose fully outside the
-		// corridor, not one with no corridor: `NaN` reaching `lineTo` draws
-		// nothing, and a missing bar reads as a missing instrument.
+		// **A defensive clamp, not a described state.** `evaluateEntry` takes the
+		// position angle through `unit(pose.rel)`, which returns a real direction
+		// even for a zero vector, so `positionAngleDeg` has no reachable `NaN`
+		// today and nothing here paints the full-amber bar that would result. The
+		// clamp is here because the alternative failure is silent — `NaN` reaching
+		// `lineTo` draws nothing, and a bar that vanished would read as a missing
+		// instrument rather than a broken one. If a later pose does make the angle
+		// unmeasurable, this is the line that owes it an honest reading.
 		const fill = Number.isFinite(corridor.deg)
 			? Math.min(1, corridor.deg / corridor.toleranceDeg)
 			: 1;

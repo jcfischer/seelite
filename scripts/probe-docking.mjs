@@ -660,7 +660,7 @@ async function directorAt(setup) {
 			// `willReadFrequently` hint is ignored here because the game created
 			// this context first.
 			let funnelPixelHits = 0;
-			let funnelPixelColour = null;
+			const funnelColourCounts = {};
 			const ring = setup.sampleRing ?? null;
 			const overlay = document.getElementById("overlay");
 			if (ring && overlay) {
@@ -695,17 +695,35 @@ async function directorAt(setup) {
 							}
 						if (found) {
 							funnelPixelHits++;
-							funnelPixelColour = found;
+							// **Counted, not overwritten.** Keeping only the last hit made
+							// the colour comparison one arbitrary pixel of twenty-four, and
+							// the axis marker is stroked in the same colour and crosses this
+							// box — so the differing sample need not have been ring at all.
+							// **Quantised to 32-level channels before counting.** An
+							// anti-aliased stroke lands a dozen near-identical shades of one
+							// colour, which splits its own count and leaves no majority; the
+							// coarse bucket collapses those while keeping green and amber
+							// firmly apart. The probe never names a colour — the palette
+							// stays the renderer's.
+							const key = found.map((c) => c >> 5).join(",");
+							funnelColourCounts[key] = (funnelColourCounts[key] ?? 0) + 1;
 						}
 					}
 				}
 			}
 
+			// The colour the ring is actually stroked in: the one most of the
+			// circumference carries, with its count, so a row can require it to be
+			// a real majority rather than a lucky sample.
+			const dominant = Object.entries(funnelColourCounts).sort(
+				(a, b) => b[1] - a[1],
+			)[0];
 			return {
 				id,
 				apertureKind: snap.apertureKind,
 				funnelPixelHits,
-				funnelPixelColour,
+				funnelPixelColour: dominant ? dominant[0] : null,
+				funnelPixelColourCount: dominant ? dominant[1] : 0,
 				drawn: drawn
 					? {
 							funnelRadiusPx: drawn.funnelRadiusPx,
@@ -736,15 +754,23 @@ async function directorAt(setup) {
 }
 
 const AXIS_DEG = tolerances.axisDeg;
+
+/** What every director row starts from — spread rather than repeated, for the
+ *  reason `BASE` above exists: a retune of the standoff that reached six of the
+ *  seven rows would change what the seventh measures rather than failing. */
+const APPROACH = {
+	standoffKm: BASE.standoffKm,
+	noseDeg: 0,
+	rollDeg: 0,
+	clear: true,
+};
 const rollDegOf = await page.evaluate(
 	() => window.__seelite.dockingTolerances.ROLL_TOLERANCE_DEG,
 );
 
 const inside = await directorAt({
-	standoffKm: 3.2,
+	...APPROACH,
 	noseDeg: AXIS_DEG - 5,
-	rollDeg: 0,
-	clear: true,
 });
 check(
 	"the director is on the glass on a cleared approach",
@@ -776,10 +802,8 @@ check(
 );
 
 const outside = await directorAt({
-	standoffKm: 3.2,
+	...APPROACH,
 	noseDeg: AXIS_DEG + 5,
-	rollDeg: 0,
-	clear: true,
 });
 check(
 	// The row that separates a drawn cue from a painted decoration: the same
@@ -798,10 +822,8 @@ check(
 );
 
 const misrolled = await directorAt({
-	standoffKm: 3.2,
-	noseDeg: 0,
+	...APPROACH,
 	rollDeg: rollDegOf + 8,
-	clear: true,
 });
 check(
 	"the roll ring reads check 4's angle and fails past its tolerance",
@@ -812,10 +834,8 @@ check(
 	`${inside.drawn?.rollDeg?.toFixed(2)}° then ${misrolled.drawn?.rollDeg?.toFixed(2)}° against ${rollDegOf}°`,
 );
 const counterRolled = await directorAt({
-	standoffKm: 3.2,
-	noseDeg: 0,
+	...APPROACH,
 	rollDeg: -(rollDegOf + 8),
-	clear: true,
 });
 check(
 	// **Not the gap between the ticks.** The first version asserted
@@ -857,9 +877,7 @@ check(
 );
 
 const offAxis = await directorAt({
-	standoffKm: 3.2,
-	noseDeg: 0,
-	rollDeg: 0,
+	...APPROACH,
 	lateralKm: 3.4,
 	clear: true,
 });
@@ -877,7 +895,7 @@ check(
 );
 
 const pad = await directorAt({
-	standoffKm: 3.2,
+	...APPROACH,
 	noseDeg: 0,
 	rollDeg: 40,
 	clear: true,
@@ -903,9 +921,7 @@ check(
 );
 
 const uncleared = await directorAt({
-	standoffKm: 3.2,
-	noseDeg: 0,
-	rollDeg: 0,
+	...APPROACH,
 	clear: false,
 });
 check(
@@ -919,10 +935,7 @@ check(
 );
 
 const hostile = await directorAt({
-	standoffKm: 3.2,
-	noseDeg: 0,
-	rollDeg: 0,
-	clear: true,
+	...APPROACH,
 	hostile: true,
 });
 check(
@@ -945,10 +958,7 @@ check(
 );
 
 const turned = await directorAt({
-	standoffKm: 3.2,
-	noseDeg: 0,
-	rollDeg: 0,
-	clear: true,
+	...APPROACH,
 	headLook: "left",
 });
 check(
@@ -973,24 +983,18 @@ const SAMPLE_RING = {
 };
 
 const paintAligned = await directorAt({
-	standoffKm: 3.2,
+	...APPROACH,
 	noseDeg: AXIS_DEG - 5,
-	rollDeg: 0,
-	clear: true,
 	sampleRing: SAMPLE_RING,
 });
 const paintOffAxis = await directorAt({
-	standoffKm: 3.2,
+	...APPROACH,
 	noseDeg: AXIS_DEG + 5,
-	rollDeg: 0,
-	clear: true,
 	sampleRing: SAMPLE_RING,
 });
 const paintTurned = await directorAt({
-	standoffKm: 3.2,
+	...APPROACH,
 	noseDeg: AXIS_DEG - 5,
-	rollDeg: 0,
-	clear: true,
 	headLook: "left",
 	sampleRing: SAMPLE_RING,
 });
@@ -1015,17 +1019,19 @@ check(
 	// actually stroked, on the same pixels, five degrees either side of the
 	// tolerance — the difference between a cue that repaints and one that only
 	// says it did.
+	//
+	// **The dominant colour, over a majority of the circumference.** The first
+	// version kept the last of twenty-four samples, so it compared one arbitrary
+	// pixel — and the axis marker is stroked in the same colour and crosses the
+	// sampled box, so the pixel that differed need not have been ring.
 	"the painted ring changes colour when the cue leaves the tolerance",
-	Array.isArray(paintAligned.funnelPixelColour) &&
-		Array.isArray(paintOffAxis.funnelPixelColour) &&
-		paintOffAxis.funnelPixelHits > 12 &&
-		paintAligned.funnelPixelColour.join() !==
-			paintOffAxis.funnelPixelColour.join(),
-	`${JSON.stringify(paintAligned.funnelPixelColour)} then ${JSON.stringify(
-		paintOffAxis.funnelPixelColour,
-	)}`,
+	typeof paintAligned.funnelPixelColour === "string" &&
+		typeof paintOffAxis.funnelPixelColour === "string" &&
+		paintAligned.funnelPixelColourCount > 12 &&
+		paintOffAxis.funnelPixelColourCount > 12 &&
+		paintAligned.funnelPixelColour !== paintOffAxis.funnelPixelColour,
+	`${paintAligned.funnelPixelColour} x${paintAligned.funnelPixelColourCount} then ${paintOffAxis.funnelPixelColour} x${paintOffAxis.funnelPixelColourCount}`,
 );
-await page.evaluate(() => window.__seelite.setHeadLook("forward"));
 
 await browser.close();
 exit();

@@ -186,11 +186,13 @@ leaves the tolerance, which is the difference between a funnel that repaints and
 a record that says it did.
 
 **All three frames sample the same pixels, and that is the whole of the
-control.** Deriving the ring from each frame's own record was the first version:
-the record is `null` on a head turn, so the sampler never ran there and "zero
-pixels painted" was true without reading one. A build that nulled the record
-while leaving the funnel on the glass passed. The ring is now taken once and
-held fixed.
+control.** A ring derived from each frame's own record is no control at all: the
+record is `null` on a head turn, so the sampler would not run there and "zero
+pixels painted" would be true without reading one. The ring is taken once from
+the aligned frame and held fixed. The colour comparison takes the **dominant**
+bucket over the circumference for the same reason a single sample is not a
+reading: the axis marker carries the funnel's colour and crosses the sampled
+box.
 
 The browser rows read `directorRender`, which the **draw** writes rather than a
 computation beside it, so a build that produced a correct director and never
