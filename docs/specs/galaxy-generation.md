@@ -122,14 +122,15 @@ the volume flattens, the framing grows with `R`, and flattening then
 concentrates the points toward a plane, whose nearest-neighbour distances are
 shorter than a ball's at equal projected extent.
 
-**The ball is the least crowded shape at every pitch in the chart's clamp,
-face-on included** — a claim about a *grid*, so it is measured on one, by
-`bun scripts/measure-galaxy-shape.ts grid`, which asserts it rather than only
-printing it.
+**Over the four shapes and seven pitches the grid samples, the ball is the least
+crowded in every cell** — face-on included. That is the whole claim, scope first,
+because earlier drafts of this paragraph kept stating it and then qualifying it.
+It is measured rather than argued: `bun scripts/measure-galaxy-shape.ts grid`
+asserts it cell for cell instead of printing it.
 
-The grid samples **four shapes × seven pitches at one yaw** (`DEFAULT_YAW`), not
-every shape and not every angle, and the sentence above is scoped to what it
-covers. Desktop crowding, framing scaled with `R`:
+What the grid does not cover: three of the seven `q` values the sweep below
+measures, which are compared to the ball at 40° only; and **yaw**, held at
+`DEFAULT_YAW` throughout. Desktop crowding, framing scaled with `R`:
 
 | `q` | 12° | 20° | 30° | 40° | 55° | 70° | 83° |
 |---|---|---|---|---|---|---|---|
@@ -138,12 +139,11 @@ covers. Desktop crowding, framing scaled with `R`:
 | 0.50 | 63.1% | 61.9% | 58.1% | 54.7% | 50.7% | 49.1% | 46.8% |
 | 0.25 | 79.1% | 73.7% | 68.0% | 60.4% | 54.0% | 50.3% | 48.9% |
 
-The ball wins cell for cell across those 28 cells, and its best angle (41.3%)
-beats every flattened shape's best. Face-on recovers much of what flattening
-costs — the rows converge toward 83° — and never closes it. Yaw is held because
-the cluster is axisymmetric about `y` and yaw therefore turns a disc within its
-own plane; that is a reason to expect the row to be flat in yaw, not a
-measurement that it is.
+The ball wins in all 28 cells, and its best angle (41.3%) beats every flattened
+shape's best. Face-on recovers much of what flattening costs — the rows converge
+toward 83° — and never closes it. Yaw is held because the cluster is
+axisymmetric about `y`, so yaw turns a disc within its own plane; that is a
+reason to *expect* flatness in yaw, not a measurement of it.
 
 At the shipped 40° pitch, framing scaled with `R` so the comparison is of shapes
 and not of how much screen each fills:
@@ -281,7 +281,8 @@ all, and re-deriving the radius in §2.1 moved no system's polity. See §2.1's
 last subsection.
 
 Resulting neighbour counts — **measured on the shipped generator**, over 8,192
-systems (4 world seeds × 8 galaxies), not read off the closed form:
+systems (4 world seeds × 8 galaxies), not read off the closed form. Re-run it
+with `bun scripts/measure-galaxy-shape.ts density`, which prints this table:
 
 | Location | Systems within 7 LY | n |
 |---|---|---|
@@ -295,12 +296,13 @@ density" beside the count, and it was the same measurement divided by
 different units reads as two pieces of evidence agreeing, which is worth
 avoiding in a table headed "measured".
 
-So the exploration gradient the concentration buys is roughly **3.4:1 in
-reachable neighbours**, core to rim — quoted loosely on purpose, since the
-numerator is 51 systems and a bucket that small moves the ratio by a few tenths
-between seed sets. That is *not* independent of the ρ(0)/ρ(R) = 3.0 above — it is the same profile seen through a 7 LY window — and the gap between
-3.4 and 3.0 is the window's doing: a rim neighbourhood loses part of its volume
-off the edge of the cluster, which a point-density ratio does not see.
+The exploration gradient the concentration buys is therefore **steeper in
+reachable neighbours than the 3.0 density ratio**, because a rim neighbourhood
+loses part of its volume off the edge of the cluster — which a point-density
+ratio does not see. **No ratio is quoted as a figure here**: the core bucket is
+51 systems, nothing in the suite pins it, and a number whose error bar nobody has
+measured does not belong in a spec as a result. The direction is the finding; the
+rows above carry their own `n` for a reader who wants the arithmetic.
 
 The table before #118 quoted 17 / 8.3 / 3 from the analytic normalisation
 `A = 256/21,708` at `R = 22`. Those were predictions of a uniform-density

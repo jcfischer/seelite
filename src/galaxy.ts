@@ -425,6 +425,33 @@ export const profileRadiusLy = (pos: Vec3, q = GALAXY_FLATTENING_Q): number => {
 	return Math.sqrt(pos.x * pos.x + (pos.y / q) * (pos.y / q) + pos.z * pos.z);
 };
 
+/**
+ * Mean systems within one jump of a system, over a whole layout — the quantity
+ * `galaxy-generation.md` §2.1 holds fixed at ~8 and solves the radius against.
+ *
+ * Exported because the suite and `scripts/measure-galaxy-shape.ts` both need it
+ * and both had their own copy of the walk, kept in step by a comment. That is
+ * the drift `positionForShape` was exported to end, and this is the same shape
+ * of it.
+ *
+ * `j > i` walks each unordered pair once and doubles, rather than walking every
+ * ordered pair.
+ */
+export function meanNeighbours(
+	positions: readonly Vec3[],
+	maxJump = JUMP_RANGE_LY,
+): number {
+	if (positions.length === 0) return 0;
+	const maxJumpSq = maxJump * maxJump;
+	let pairs = 0;
+	for (let i = 0; i < positions.length; i++) {
+		for (let j = i + 1; j < positions.length; j++) {
+			if (squaredDistanceLy(positions[i], positions[j]) <= maxJumpSq) pairs++;
+		}
+	}
+	return (2 * pairs) / positions.length;
+}
+
 /** Whether a jump graph at `maxJump` has exactly one component. Plain BFS from
  *  system 0; 256 nodes makes the O(n²) adjacency scan cheaper than building an
  *  index for it. */

@@ -47,7 +47,11 @@ const ORIGIN =
  *
  * The disc invalidated both bands, and #107's instruction was that they be
  * **re-measured rather than widened**. They were: this probe was run over all
- * eight galaxies at each viewport, and the band is that spread ± 4 points.
+ * eight galaxies at each viewport, and the band is that spread widened by about
+ * 4 points each way and **rounded outward to a whole percent** — so the printed
+ * ends are what to compare a re-measure against, not a formula to re-derive.
+ * (Stated because "spread ± 4" was written here and matches only one of the
+ * three bands: desktop is -3.8/+4.0 and narrow -4.5/+4.5 after rounding.)
  *
  * ```
  *              galaxy 0..7                                   spread     band
@@ -143,13 +147,17 @@ for (const viewport of VIEWPORTS) {
 			!initial.gameConstructed &&
 			initial.state?.systemCount === 256 &&
 			initial.state?.galaxy === 0 &&
-			// **A plausibility bracket, not a copy of the constant.** This read
+			// **A plausibility bracket, and no more than that.** This read
 			// `=== 22` and went red on #118 for reshaping the galaxy, which is
 			// the failure mode `CLAUDE.md` names: a probe holding its own copy of
 			// a module's constant fails when the module changes it, and says
-			// nothing about the chart. What this check is for is that the chart
-			// mounted the real generator rather than a stub, so the bracket is
-			// wide and the disc itself is measured below.
+			// nothing about the chart.
+			//
+			// A hardcoded 20 would pass this, so it is *not* evidence that the
+			// real generator is mounted — an earlier version of this comment
+			// claimed it was. What actually distinguishes a stub is the 256-system
+			// count above, the lit-neighbourhood check below, and the disc aspect,
+			// none of which a constant satisfies.
 			initial.state?.galaxyRadiusLy > 15 &&
 			initial.state?.galaxyRadiusLy < 40 &&
 			initial.state?.jumpRangeLy === 7,

@@ -26,6 +26,7 @@ import {
 	generateGalaxy,
 	isConnected,
 	layoutGalaxy,
+	meanNeighbours,
 	positionForShape,
 	profileRadiusLy,
 	radialCdf,
@@ -379,7 +380,6 @@ const discCorpus = (() => {
 	} | null = null;
 	return () => {
 		if (cached) return cached;
-		const rangeSq = JUMP_RANGE_LY * JUMP_RANGE_LY;
 		const means: number[] = [];
 		const attempts: number[] = [];
 		let connected = 0;
@@ -388,17 +388,11 @@ const discCorpus = (() => {
 				const { positions, attempt } = layoutGalaxy(world, g);
 				if (isConnected(positions, JUMP_RANGE_LY)) connected++;
 				attempts.push(attempt);
-				let pairs = 0;
-				for (let i = 0; i < positions.length; i++) {
-					for (let j = i + 1; j < positions.length; j++) {
-						const dx = positions[i].x - positions[j].x;
-						const dy = positions[i].y - positions[j].y;
-						const dz = positions[i].z - positions[j].z;
-						if (dx * dx + dy * dy + dz * dz <= rangeSq) pairs++;
-					}
-				}
-				// Each unordered pair is two systems' neighbour, hence the 2.
-				means.push((2 * pairs) / positions.length);
+				// `meanNeighbours` is shipped rather than re-walked here: the sweep
+				// instrument needs the same quantity, and two copies of the walk
+				// kept in step by a comment is the drift the exported generator was
+				// extracted to end.
+				means.push(meanNeighbours(positions));
 			}
 		}
 		cached = { means, attempts, connected };
@@ -497,8 +491,14 @@ describe("distribution (§9.4)", () => {
 		const mean = attempts.reduce((a, b) => a + b, 0) / attempts.length;
 		// Absolute, not relative to the ceiling: an assertion written against
 		// `MAX_LAYOUT_ATTEMPTS` changes what it means when the ceiling moves.
-		expect(mean).toBeLessThan(15);
-		expect(Math.max(...attempts)).toBeLessThan(60);
+		//
+		// **8, not 15.** The comment above names q = 0.15's 9.9 re-rolls as the
+		// thing this must catch, and a bound of 15 passed it — so the check did
+		// not discriminate the range it claimed to. Measured here at 4.97 over
+		// these 32 galaxies, so 8 leaves 60% headroom against seed noise and
+		// still fails every thinner disc #107 swept.
+		expect(mean).toBeLessThan(8);
+		expect(Math.max(...attempts)).toBeLessThan(40);
 		expect(MAX_LAYOUT_ATTEMPTS).toBeGreaterThan(4 * Math.max(...attempts));
 	});
 

@@ -391,8 +391,8 @@ const crowding = await page.evaluate(() => {
 //
 // **Re-measured for the q = 0.7 disc (#118), from the spread and not from one
 // galaxy.** The 1011 x 462 cell was measured over all eight galaxies —
-// 76.6 75.4 74.2 76.2 76.2 77.7 68.4 75.8, a spread of 68.4-77.7 — and the band
-// is that ± 4 points. It replaces 55-80, which was set from a single ball
+// 76.6 75.4 74.2 76.2 76.2 77.7 68.4 75.8, a spread of 68.4-77.7 — widened about
+// 4 points each way and rounded outward to a whole percent (64-82). It replaces 55-80, which was set from a single ball
 // galaxy; the new band is *narrower* than the one it replaces, which is what
 // re-measuring rather than widening looks like when the measurement improves.
 // The live console here reads 73.0%, inside the workbench spread, which is what

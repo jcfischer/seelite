@@ -11,6 +11,7 @@
  *   sweep              the q table: R solved at each q, crowding at two framings
  *   pitch              crowding against the chart's pitch, at the shipped shape
  *   grid               q x pitch: the claim that the ball wins at every angle
+ *   density            §3's neighbour counts, bucketed by profile radius
  *
  * This is the instrument behind `galaxy-generation.md` §2.1's derivation and
  * `galaxy-map.md` §5.1's crowding spread. It ships because #107 chose q = 0.7
@@ -55,8 +56,11 @@ import {
 	SYSTEMS_PER_GALAXY,
 	clearLayoutCache,
 	isConnected,
+	generateGalaxy,
 	layoutGalaxy,
+	meanNeighbours,
 	positionForShape,
+	profileRadiusLy,
 	systemPosition,
 	systemSeedFor,
 } from "../src/galaxy";
@@ -107,22 +111,6 @@ const inRange = (a: Vec3, b: Vec3): boolean => {
 	const dz = a.z - b.z;
 	return dx * dx + dy * dy + dz * dz <= RANGE_SQ;
 };
-
-/** Mean systems within one 7 LY tank of a system, over every system. This is
- *  the quantity `galaxy-generation.md` §2.1 holds fixed at ~8.
- *
- *  `j > i` walks each unordered pair once and doubles, rather than walking every
- *  ordered pair — the same halving `tests/galaxy.test.ts` does, and it matters
- *  here because `solveRadius` calls this 16 times per q. */
-function meanInRange(positions: readonly Vec3[]): number {
-	let pairs = 0;
-	for (let i = 0; i < positions.length; i++) {
-		for (let j = i + 1; j < positions.length; j++) {
-			if (inRange(positions[i], positions[j])) pairs++;
-		}
-	}
-	return finite("meanInRange", (2 * pairs) / positions.length);
-}
 
 /** Systems reachable from nothing. Zero on any layout `layoutAt` returns —
  *  printed so that a regression to measuring first-pass draws shows up as a
@@ -187,14 +175,17 @@ function crowdingAt(
 		points.push({ x: px, y: py });
 	}
 
+	// Squared distance, not `Math.hypot`. This inner loop runs ~65k times per
+	// framing and `grid` reaches it about 670 times; the square root is pure cost
+	// against a fixed threshold.
+	const pickSq = PICK_RADIUS_PX * PICK_RADIUS_PX;
 	let crowded = 0;
 	for (let i = 0; i < points.length; i++) {
 		for (let j = 0; j < points.length; j++) {
 			if (i === j) continue;
-			if (
-				Math.hypot(points[i].x - points[j].x, points[i].y - points[j].y) <
-				PICK_RADIUS_PX
-			) {
+			const dx = points[i].x - points[j].x;
+			const dy = points[i].y - points[j].y;
+			if (dx * dx + dy * dy < pickSq) {
 				crowded++;
 				break;
 			}
@@ -233,6 +224,9 @@ const PITCH_DEGREES = [12, 20, 30, 40, 55, 70, 83] as const;
 /** The shapes the grid compares. The ball is pinned at its own solved radius of
  *  22 rather than re-solved, because that is the shape that actually shipped. */
 const GRID_Q = [1.0, 0.7, 0.5, 0.25] as const;
+/** §3's table quotes 8,192 systems, which is these four seeds x 8 galaxies x
+ *  256. One more than the sweep's, so the printed `n` matches the spec's. */
+const DENSITY_SEEDS = [1, 47, 12345, 20260818] as const;
 
 const mean = (xs: number[]): number =>
 	finite("mean", xs.reduce((a, b) => a + b, 0) / xs.length);
@@ -262,6 +256,22 @@ const crowdSpread = (
 		)
 		.sort((a, b) => a - b);
 
+/**
+ * Raised when a shape is too sparse to lay out at all — a legitimate answer to
+ * the question `solveRadius` bisects, and the *only* error it may swallow.
+ *
+ * A class rather than a message regex: matching on text meant a rename of the
+ * message silently turned a fatal `finite()` trip into "too sparse", which is
+ * the fail-loudly rule switched off exactly where a wrong number is hardest to
+ * see.
+ */
+class NoConnectedLayout extends Error {
+	constructor(q: number, radius: number) {
+		super(`measure-galaxy-shape: no connected layout at q=${q} R=${radius}`);
+		this.name = "NoConnectedLayout";
+	}
+}
+
 /** Every connected layout at `(q, R)` over the seed set, with its re-roll count. */
 function corpus(q: number, radius: number) {
 	const out: {
@@ -276,11 +286,7 @@ function corpus(q: number, radius: number) {
 			if (layout) out.push({ ...layout, seed, galaxy: g });
 		}
 	}
-	if (out.length === 0) {
-		throw new Error(
-			`measure-galaxy-shape: no connected layout at q=${q} R=${radius}`,
-		);
-	}
+	if (out.length === 0) throw new NoConnectedLayout(q, radius);
 	return out;
 }
 
@@ -325,17 +331,12 @@ function solveRadius(q: number, target: number): number {
 		let tooSparse = false;
 		let m = 0;
 		try {
-			m = mean(corpus(q, mid).map((l) => meanInRange(l.positions)));
+			m = mean(corpus(q, mid).map((l) => meanNeighbours(l.positions)));
 		} catch (error) {
-			// **Only the sparsity case.** A bare catch here would also swallow a
-			// tripped `finite` guard, which is the file's fail-loudly rule turned
-			// off exactly where a wrong number would be hardest to notice.
-			if (
-				!(error instanceof Error) ||
-				!/no connected layout/.test(error.message)
-			) {
-				throw error;
-			}
+			// **Only the sparsity case**, by type. A bare catch here would also
+			// swallow a tripped `finite` guard, which is the file's fail-loudly
+			// rule turned off exactly where a wrong number is hardest to notice.
+			if (!(error instanceof NoConnectedLayout)) throw error;
 			tooSparse = true;
 			console.log(
 				`  (q=${q}: no connected layout at R=${mid.toFixed(2)} — too sparse, bisecting down)`,
@@ -438,7 +439,7 @@ function modeShipped(): void {
 	] as const) {
 		const c = corpus(q, r);
 		const inRange = c
-			.map((l) => meanInRange(l.positions))
+			.map((l) => meanNeighbours(l.positions))
 			.sort((a, b) => a - b);
 		const pitch = q === 1 ? 0.35 : 0.7;
 		const d = crowdSpread(c, DESKTOP, r, pitch);
@@ -482,7 +483,7 @@ function modeSolve(): void {
 	console.log(`R                : ${r.toFixed(2)} LY`);
 	console.log(`core radius      : ${(r / Math.SQRT2).toFixed(2)} LY`);
 	console.log(
-		`mean in range    : ${mean(c.map((l) => meanInRange(l.positions))).toFixed(2)} over ${c.length} connected layouts`,
+		`mean in range    : ${mean(c.map((l) => meanNeighbours(l.positions))).toFixed(2)} over ${c.length} connected layouts`,
 	);
 	console.log(`mean re-rolls    : ${mean(c.map((l) => l.attempt)).toFixed(1)}`);
 	console.log(
@@ -502,6 +503,66 @@ function modePitch(): void {
 			`  ${String(deg).padStart(3)}°    ${(mean(crowdSpread(c, DESKTOP, GALAXY_RADIUS_LY, pitch)) * 100).toFixed(1)}%        ${(mean(crowdSpread(c, CONSOLE, GALAXY_RADIUS_LY, pitch)) * 100).toFixed(1)}%`,
 		);
 	}
+}
+
+/**
+ * §3's neighbour-count table: reachable systems within one 7 LY tank, bucketed
+ * by the profile radius `t`.
+ *
+ * It exists because that table is headed "measured on the shipped generator" and
+ * had **no instrument** — it was produced by a throwaway script during #118 and
+ * would have entered the spec unrepeatable, which is the exact failure §2.1's
+ * "a figure whose instrument is gone cannot be rechecked" warns about. Found in
+ * review, one round after the rule was written down.
+ *
+ * `DENSITY_SEEDS` is four world seeds rather than the sweep's three, because the
+ * table quotes 8,192 systems and the count should be reproducible from the mode
+ * that prints it.
+ */
+function modeDensity(): void {
+	const buckets = [
+		{ label: "Centre (t < 0.15)", lo: 0, hi: 0.15 },
+		{ label: "Mean over cluster", lo: 0, hi: Number.POSITIVE_INFINITY },
+		{ label: "Rim (t > 0.85)", lo: 0.85, hi: Number.POSITIVE_INFINITY },
+	];
+	const acc = buckets.map(() => ({ n: 0, sum: 0 }));
+	let systems = 0;
+	for (const world of DENSITY_SEEDS) {
+		for (let g = 0; g < GALAXY_COUNT; g++) {
+			const sys = generateGalaxy(world, g).systems;
+			for (const a of sys) {
+				let count = 0;
+				for (const b of sys)
+					if (a.index !== b.index && inRange(a.pos, b.pos)) count++;
+				const t = profileRadiusLy(a.pos) / GALAXY_RADIUS_LY;
+				buckets.forEach((bucket, i) => {
+					if (t >= bucket.lo && t < bucket.hi) {
+						acc[i].n++;
+						acc[i].sum += count;
+					}
+				});
+				systems++;
+			}
+		}
+	}
+	console.log(
+		`over ${systems} systems (${DENSITY_SEEDS.length} world seeds x ${GALAXY_COUNT} galaxies)\n`,
+	);
+	console.log("| Location | Systems within 7 LY | n |");
+	console.log("|---|---|---|");
+	buckets.forEach((bucket, i) => {
+		console.log(
+			`| ${bucket.label} | ${finite(bucket.label, acc[i].sum / acc[i].n).toFixed(1)} | ${acc[i].n} |`,
+		);
+	});
+	assertThat(
+		"every system fell in the cluster-wide bucket",
+		acc[1].n === systems,
+	);
+	assertThat(
+		"the core is denser in reachable neighbours than the rim",
+		acc[0].sum / acc[0].n > acc[2].sum / acc[2].n,
+	);
 }
 
 function modeGrid(): void {
@@ -558,7 +619,7 @@ function modeSweep(): void {
 		const r = solvedRadius(q, 8);
 		const c = corpus(q, r);
 		const pitch = 0.7;
-		const m = mean(c.map((l) => meanInRange(l.positions)));
+		const m = mean(c.map((l) => meanNeighbours(l.positions)));
 		const a = mean(c.map((l) => l.attempt));
 		const d = mean(crowdSpread(c, DESKTOP, r, pitch));
 		const k = mean(crowdSpread(c, CONSOLE, r, pitch));
@@ -584,6 +645,7 @@ const MODES: Record<string, () => void> = {
 	sweep: modeSweep,
 	pitch: modePitch,
 	grid: modeGrid,
+	density: modeDensity,
 };
 
 const mode = process.argv[2] ?? "sweep";
