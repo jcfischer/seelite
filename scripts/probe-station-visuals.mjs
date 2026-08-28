@@ -96,10 +96,27 @@ const OUTLINE_RADII = 900;
  *  shape and not of apparent size. */
 const GRID = 24;
 
+/*
+ * `src/surface.ts` in place of `src/station-visuals.ts`, and the swap loses
+ * nothing (#101).
+ *
+ * probe-guard fingerprints a module by its **top-level numeric constants**, and
+ * the only one station-visuals ever had was `PLATE_TEXTURE_SIZE` — the profile
+ * figures are nested inside `STATION_VISUALS` and the two light colours are hex,
+ * neither of which the guard's pattern reads. That constant moved to the shared
+ * generator when #101 split it out, so pointing the guard there follows the
+ * fingerprint rather than dropping it, and picks up `SEAM_HALF_WIDTH_PX` on the
+ * way.
+ *
+ * station-visuals therefore joins `cockpit.ts`, `live-cockpit.ts` and the two
+ * planet shader modules in the set probe-guard cannot fingerprint at all (#104).
+ * Written here rather than left to be rediscovered: leaving it in the list does
+ * not guard it, it makes every run of this probe throw before it starts.
+ */
 await guardedOrigin(ORIGIN, [
 	"src/main.ts",
 	"src/station-mesh.ts",
-	"src/station-visuals.ts",
+	"src/surface.ts",
 ]);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();

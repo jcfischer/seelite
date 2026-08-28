@@ -123,6 +123,12 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   knows where two plates meet; `hullLoft` writes a per-vertex `crease` attribute
   and `ship-surface.ts` patches it into `roughnessFactor`. A map term and a
   crease term answer different questions and neither substitutes.
+- **`src/station-visuals.ts` can no longer be fingerprinted by probe-guard.**
+  Its only top-level numeric constant moved to `src/surface.ts` in #101, and the
+  guard reads nothing else there — profile figures are nested and the light
+  colours are hex. It joins `cockpit.ts`, `live-cockpit.ts`, `planet-shaders.ts`
+  and `planet-classes.glsl.ts` in that set. Naming it in a guard list does not
+  guard it; it makes the probe throw before it starts.
 - **A shader splice that misses its marker is silent.** `String.replace` with a
   renamed chunk returns the string unchanged, leaving a stock material that
   compiles, links, renders and carries the patched program's own name. Every
