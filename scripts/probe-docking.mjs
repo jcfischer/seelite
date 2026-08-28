@@ -543,5 +543,495 @@ check(
 	rolled.grantLive && !rolled.hostile,
 );
 
+// ---------------------------------------------------------------------------
+// §3's docking director — `hud-and-scanner.md`, the cues #9 left without a
+// visual referent.
+//
+// `docking.md` §3.2 records that check 2's cone and check 4's roll were set
+// wide **partly because the instruments did not exist**. The headless tier
+// (`tests/docking-director.test.ts`) proves the cue reads the same angle the
+// check does; this tier proves the cue reaches the glass, and that it moves
+// when the pose does. A cue that agreed with the check and was never painted
+// would pass the first tier alone.
+// ---------------------------------------------------------------------------
+
+/** Park the ship on the axis at a standoff, point the nose `noseDeg` off the
+ *  inward axis and roll it `rollDeg` off the slot, then render one frame and
+ *  read what the director actually drew. */
+async function directorAt(setup) {
+	return page.evaluate(
+		async ([dt, setup]) => {
+			const g = window.__seelite;
+			const D = window.__dock;
+			const station = setup.pad
+				? g.world.system.contents.stations.find((s) => s.spinRpm === 0)
+				: D.spinner();
+			if (!station) return { noStation: true };
+			const id = station.id;
+			const snap = g.dockingSnapshot(id);
+			if (!snap) return { noSnapshot: true, id };
+
+			// Rodrigues, page-side: the probe needs a pose *off* the tolerance and
+			// the game exposes no rotate. Only used to aim, never to measure — every
+			// number checked below is the renderer's own.
+			const rotate = (v, k, rad) => {
+				const c = Math.cos(rad);
+				const s = Math.sin(rad);
+				const kv = {
+					x: k.y * v.z - k.z * v.y,
+					y: k.z * v.x - k.x * v.z,
+					z: k.x * v.y - k.y * v.x,
+				};
+				const kd = k.x * v.x + k.y * v.y + k.z * v.z;
+				return D.add(
+					D.add(D.scale(v, c), D.scale(kv, s)),
+					D.scale(k, kd * (1 - c)),
+				);
+			};
+
+			D.place(
+				id,
+				D.add(
+					D.scale(snap.axis, snap.planeKm + setup.standoffKm),
+					// The **unrolled** reference, for this file's existing reason: a
+					// lateral offset stated in the slot's own basis orbits the axis.
+					D.scale(snap.reference, setup.lateralKm ?? 0),
+				),
+				{ x: 0, y: 0, z: 0 },
+			);
+			g.targetId = id;
+			g.dockingComputerEngaged = false;
+			g.setHeadLook(setup.headLook ?? "forward");
+
+			const inward = D.scale(snap.axis, -1);
+			const nose = rotate(
+				inward,
+				snap.basis.up,
+				((setup.noseDeg ?? 0) * Math.PI) / 180,
+			);
+			const up = rotate(
+				snap.basis.across,
+				snap.axis,
+				((setup.rollDeg ?? 0) * Math.PI) / 180,
+			);
+			g.setAttitude(nose, up);
+
+			// **Reset the protocol every run**, for the reason this file already
+			// records about the docking computer: §6 state is session state and it
+			// survives the run that made it. Without this the uncleared row
+			// inherited the previous row's live grant and asserted "no clearance"
+			// against a station that had cleared the ship ten minutes ago.
+			const held = g.dockingStateOf(id);
+			held.clearance = { kind: "none" };
+			held.hostile = false;
+			held.hostileUntilS = null;
+
+			if (setup.clear) g.requestDockingClearance();
+			if (setup.hostile) {
+				// **Re-fetched, not `held`.** `requestClearance` is pure and the game
+				// stores the *new* state, so the object taken before the request is
+				// an orphan the moment a grant lands — mutating it set hostility on
+				// nothing and the row read "CLEARED" against a hostile station.
+				const current = g.dockingStateOf(id);
+				current.hostile = true;
+				current.hostileUntilS = g.world.gameTime + 600;
+			}
+
+			// A rendered frame, not a computed one: `directorRender` is written by
+			// the draw, so an unrendered frame leaves it null and every row below
+			// goes red rather than silently reading a state nobody painted.
+			g.render(dt);
+			const drawn = g.directorRender;
+
+			// **The one thing the record cannot honestly self-report.**
+			// `directorRender` is assembled at the end of the draw whether or not
+			// the strokes landed, so deleting every `ctx.stroke()` would leave every
+			// field above unchanged. This reads the overlay's own pixels.
+			//
+			// **The ring is passed in, not taken from the record.** Deriving it from
+			// `drawn` was the first version and it made the control vacuous: on a
+			// head-turned frame `drawn` is null, so the sampler never ran and
+			// "zero pixels painted" was true without reading one. Both frames now
+			// sample the *same* pixels, so a build that nulled the record while
+			// leaving the funnel on the glass goes red.
+			//
+			// One `getImageData` over the ring's bounding box rather than 24: each
+			// call is a synchronous readback off an accelerated canvas, and the
+			// `willReadFrequently` hint is ignored here because the game created
+			// this context first.
+			let funnelPixelHits = 0;
+			const funnelColourCounts = {};
+			const ring = setup.sampleRing ?? null;
+			const overlay = document.getElementById("overlay");
+			if (ring && overlay) {
+				const octx = overlay.getContext("2d");
+				const x0 = Math.max(0, Math.floor(ring.x - ring.r) - 2);
+				const y0 = Math.max(0, Math.floor(ring.y - ring.r) - 2);
+				const x1 = Math.min(overlay.width, Math.ceil(ring.x + ring.r) + 2);
+				const y1 = Math.min(overlay.height, Math.ceil(ring.y + ring.r) + 2);
+				if (x1 > x0 && y1 > y0) {
+					const box = octx.getImageData(x0, y0, x1 - x0, y1 - y0);
+					const at = (px, py) => {
+						const i = ((py - y0) * box.width + (px - x0)) * 4;
+						return box.data[i + 3] > 0
+							? [box.data[i], box.data[i + 1], box.data[i + 2]]
+							: null;
+					};
+					for (let i = 0; i < 24; i++) {
+						const a = (i / 24) * Math.PI * 2;
+						const px = Math.round(ring.x + Math.cos(a) * ring.r);
+						const py = Math.round(ring.y + Math.sin(a) * ring.r);
+						let found = null;
+						for (let dy = -1; dy <= 1 && !found; dy++)
+							for (let dx = -1; dx <= 1 && !found; dx++) {
+								if (
+									px + dx < x0 ||
+									py + dy < y0 ||
+									px + dx >= x1 ||
+									py + dy >= y1
+								)
+									continue;
+								found = at(px + dx, py + dy);
+							}
+						if (found) {
+							funnelPixelHits++;
+							// **Counted, not overwritten.** Keeping only the last hit made
+							// the colour comparison one arbitrary pixel of twenty-four, and
+							// the axis marker is stroked in the same colour and crosses this
+							// box — so the differing sample need not have been ring at all.
+							// **Quantised to 32-level channels before counting.** An
+							// anti-aliased stroke lands a dozen near-identical shades of one
+							// colour, which splits its own count and leaves no majority; the
+							// coarse bucket collapses those while keeping green and amber
+							// firmly apart. The probe never names a colour — the palette
+							// stays the renderer's.
+							const key = found.map((c) => c >> 5).join(",");
+							funnelColourCounts[key] = (funnelColourCounts[key] ?? 0) + 1;
+						}
+					}
+				}
+			}
+
+			// The colour the ring is actually stroked in: the one most of the
+			// circumference carries, with its count, so a row can require it to be
+			// a real majority rather than a lucky sample.
+			const dominant = Object.entries(funnelColourCounts).sort(
+				(a, b) => b[1] - a[1],
+			)[0];
+			return {
+				id,
+				apertureKind: snap.apertureKind,
+				funnelPixelHits,
+				funnelPixelColour: dominant ? dominant[0] : null,
+				funnelPixelColourCount: dominant ? dominant[1] : 0,
+				drawn: drawn
+					? {
+							funnelRadiusPx: drawn.funnelRadiusPx,
+							centre: drawn.centre,
+							axisMarker: drawn.axisMarker,
+							rollTicksDeg: drawn.rollTicksDeg,
+							rollTickPointsPx: drawn.rollTickPointsPx,
+							funnelState: drawn.funnelState,
+							clearanceText: drawn.clearanceText,
+							blocking: drawn.blocking,
+							noseDeg: drawn.state.axis.nose.deg,
+							noseWithin: drawn.state.axis.nose.within,
+							noseToleranceDeg: drawn.state.axis.nose.toleranceDeg,
+							positionDeg: drawn.state.axis.position.deg,
+							rollDeg: drawn.state.roll?.deg ?? null,
+							rollSignedDeg: drawn.state.rollSignedDeg,
+							corridor: drawn.corridor,
+							rollWithin: drawn.state.roll?.within ?? null,
+							rollToleranceDeg: drawn.state.roll?.toleranceDeg ?? null,
+							grantRemainingS: drawn.state.grantRemainingS,
+							aligned: drawn.state.aligned,
+						}
+					: null,
+			};
+		},
+		[dt, setup],
+	);
+}
+
+const AXIS_DEG = tolerances.axisDeg;
+
+/** What every director row starts from — spread rather than repeated, for the
+ *  reason `BASE` above exists: a retune of the standoff that reached six of the
+ *  seven rows would change what the seventh measures rather than failing. */
+const APPROACH = {
+	standoffKm: BASE.standoffKm,
+	noseDeg: 0,
+	rollDeg: 0,
+	clear: true,
+};
+const rollDegOf = await page.evaluate(
+	() => window.__seelite.dockingTolerances.ROLL_TOLERANCE_DEG,
+);
+
+const inside = await directorAt({
+	...APPROACH,
+	noseDeg: AXIS_DEG - 5,
+});
+check(
+	"the director is on the glass on a cleared approach",
+	Boolean(inside.drawn) &&
+		inside.drawn.funnelRadiusPx > 0 &&
+		inside.drawn.axisMarker !== null,
+	JSON.stringify(inside.drawn ?? inside),
+);
+check(
+	"the funnel is the axis tolerance, and the nose cue reads inside it",
+	inside.drawn?.noseToleranceDeg === AXIS_DEG &&
+		Math.abs(inside.drawn.noseDeg - (AXIS_DEG - 5)) < 0.5 &&
+		inside.drawn.noseWithin === true,
+	`${inside.drawn?.noseDeg?.toFixed(2)}° against ${AXIS_DEG}°`,
+);
+check(
+	"the axis marker sits inside the funnel it is being flown into",
+	Boolean(inside.drawn?.axisMarker) &&
+		Math.hypot(
+			inside.drawn.axisMarker.x - inside.drawn.centre.x,
+			inside.drawn.axisMarker.y - inside.drawn.centre.y,
+		) < inside.drawn.funnelRadiusPx,
+	`${Math.hypot(
+		(inside.drawn?.axisMarker?.x ?? 0) - (inside.drawn?.centre?.x ?? 0),
+		(inside.drawn?.axisMarker?.y ?? 0) - (inside.drawn?.centre?.y ?? 0),
+	).toFixed(
+		1,
+	)} px against a ${inside.drawn?.funnelRadiusPx?.toFixed(1)} px funnel`,
+);
+
+const outside = await directorAt({
+	...APPROACH,
+	noseDeg: AXIS_DEG + 5,
+});
+check(
+	// The row that separates a drawn cue from a painted decoration: the same
+	// funnel, a pose five degrees the other side of the tolerance, and the
+	// verdict has to flip. A director that always read "aligned" passes every
+	// row above.
+	"five degrees past the tolerance flips the cue, and the marker leaves the funnel",
+	outside.drawn?.noseWithin === false &&
+		outside.drawn.aligned === false &&
+		Boolean(outside.drawn.axisMarker) &&
+		Math.hypot(
+			outside.drawn.axisMarker.x - outside.drawn.centre.x,
+			outside.drawn.axisMarker.y - outside.drawn.centre.y,
+		) > outside.drawn.funnelRadiusPx,
+	`${outside.drawn?.noseDeg?.toFixed(2)}° against ${AXIS_DEG}°`,
+);
+
+const misrolled = await directorAt({
+	...APPROACH,
+	rollDeg: rollDegOf + 8,
+});
+check(
+	"the roll ring reads check 4's angle and fails past its tolerance",
+	inside.drawn?.rollWithin === true &&
+		inside.drawn.rollToleranceDeg === rollDegOf &&
+		misrolled.drawn?.rollWithin === false &&
+		Math.abs(misrolled.drawn.rollDeg - (rollDegOf + 8)) < 0.5,
+	`${inside.drawn?.rollDeg?.toFixed(2)}° then ${misrolled.drawn?.rollDeg?.toFixed(2)}° against ${rollDegOf}°`,
+);
+const counterRolled = await directorAt({
+	...APPROACH,
+	rollDeg: -(rollDegOf + 8),
+});
+check(
+	// **Not the gap between the ticks.** The first version asserted
+	// `ticks[1] - ticks[0] === rollDeg`, which the draw satisfied by
+	// construction — it built the pair *from* that number. This ties the drawn
+	// tick to the pose the probe commanded, and it separates the two directions:
+	// the symmetric pair it replaced painted +58° and −58° identically.
+	//
+	// Tick 0 is the **ship**, pinned at screen up because the camera is the
+	// ship; tick 1 is the slot's reference, and it is the one that moves.
+	"the ring pins the ship at screen up and moves the slot reference by the commanded roll",
+	misrolled.drawn?.rollTicksDeg?.[0] === 0 &&
+		Math.abs(Math.abs(misrolled.drawn.rollTicksDeg[1]) - (rollDegOf + 8)) <
+			0.5 &&
+		counterRolled.drawn?.rollTicksDeg?.[0] === 0 &&
+		misrolled.drawn.rollTicksDeg[1] * counterRolled.drawn.rollTicksDeg[1] < 0,
+	`${JSON.stringify(misrolled.drawn?.rollTicksDeg)} then ${JSON.stringify(
+		counterRolled.drawn?.rollTicksDeg,
+	)} for ±${rollDegOf + 8}°`,
+);
+check(
+	// The degrees above are the record's; this is where they landed in pixels.
+	// A sign flip between the right-handed rotation about the outward axis and
+	// canvas's y-down angles satisfies the degree row identically and puts the
+	// reference on the wrong side of the pilot's screen — so the side is pinned
+	// rather than reasoned about, and the two directions must differ in it.
+	"the reference tick lands on opposite sides of the screen for opposite rolls",
+	misrolled.drawn?.rollTickPointsPx?.length === 2 &&
+		counterRolled.drawn?.rollTickPointsPx?.length === 2 &&
+		Math.abs(misrolled.drawn.rollTickPointsPx[0].x - misrolled.drawn.centre.x) <
+			1e-6 &&
+		(misrolled.drawn.rollTickPointsPx[1].x - misrolled.drawn.centre.x) *
+			(counterRolled.drawn.rollTickPointsPx[1].x -
+				counterRolled.drawn.centre.x) <
+			0,
+	`${JSON.stringify(misrolled.drawn?.rollTickPointsPx)} then ${JSON.stringify(
+		counterRolled.drawn?.rollTickPointsPx,
+	)}`,
+);
+
+const offAxis = await directorAt({
+	...APPROACH,
+	lateralKm: 3.4,
+	clear: true,
+});
+check(
+	// Check 2's position half is a translation task, so it reads as a bar rather
+	// than a second ring — and the bar has to move. On the axis it is empty and
+	// green; far enough off it, it is full and amber.
+	"the corridor bar fills and fails as the ship leaves the approach axis",
+	inside.drawn?.corridor?.within === true &&
+		inside.drawn.corridor.fill < 0.05 &&
+		offAxis.drawn?.corridor?.within === false &&
+		offAxis.drawn.corridor.fill === 1 &&
+		offAxis.drawn.positionDeg > AXIS_DEG,
+	`${inside.drawn?.corridor?.fill?.toFixed(3)} on axis, ${offAxis.drawn?.corridor?.fill} at ${offAxis.drawn?.positionDeg?.toFixed(1)}°`,
+);
+
+const pad = await directorAt({
+	...APPROACH,
+	noseDeg: 0,
+	rollDeg: 40,
+	clear: true,
+	pad: true,
+});
+check(
+	// A pad has no long axis to match, so an empty ring would read as a failed
+	// one. §4's whole point: the absence has to be an absence.
+	"a pad draws no roll ring, and a 40° roll is still aligned there",
+	pad.drawn !== null &&
+		pad.apertureKind === "pad" &&
+		pad.drawn.rollTicksDeg === null &&
+		pad.drawn.aligned === true,
+	`${pad.apertureKind}, ticks ${JSON.stringify(pad.drawn?.rollTicksDeg ?? null)}`,
+);
+
+check(
+	"a live grant reads as a positive state with its remaining window",
+	inside.drawn?.blocking === false &&
+		inside.drawn.grantRemainingS > 0 &&
+		/CLEARED/.test(inside.drawn.clearanceText),
+	inside.drawn?.clearanceText,
+);
+
+const uncleared = await directorAt({
+	...APPROACH,
+	clear: false,
+});
+check(
+	// §3: "a red mark alone never carries the consequence" — the refusal has to
+	// be written, and it has to say which refusal it is.
+	"an approach with no grant is blocking, and the glass writes the reason",
+	uncleared.drawn?.blocking === true &&
+		/DO NOT ENTER/.test(uncleared.drawn.clearanceText) &&
+		/clearance/i.test(uncleared.drawn.clearanceText),
+	uncleared.drawn?.clearanceText,
+);
+
+const hostile = await directorAt({
+	...APPROACH,
+	hostile: true,
+});
+check(
+	"hostility outranks the grant on the glass",
+	hostile.drawn?.blocking === true &&
+		/hostile/i.test(hostile.drawn.clearanceText),
+	hostile.drawn?.clearanceText,
+);
+
+check(
+	// **The one cue decision the draw makes rather than copies.** Every other
+	// browser row above reads a field the director computed and the record
+	// carried across unchanged, which the headless tier already covers; a funnel
+	// that stayed green past the tolerance would pass all of them.
+	"the funnel is painted in the state the cue is in, and a refusal outranks the geometry",
+	inside.drawn?.funnelState === "clear" &&
+		outside.drawn?.funnelState === "off-axis" &&
+		hostile.drawn?.funnelState === "blocked",
+	`${inside.drawn?.funnelState} / ${outside.drawn?.funnelState} / ${hostile.drawn?.funnelState}`,
+);
+
+const turned = await directorAt({
+	...APPROACH,
+	headLook: "left",
+});
+check(
+	// The director is glass, and a focused console has replaced the glass. §5's
+	// head-turn grammar, applied to the newest thing on it.
+	"a head turn takes the director off the glass with everything else on it",
+	turned.drawn === null,
+	JSON.stringify(turned.drawn),
+);
+
+/**
+ * The ring the three paint rows below all sample — **one geometry, three
+ * frames**. Taken from the aligned run's record rather than recomputed, and
+ * then held fixed, because the point of the control frame is that the same
+ * pixels are read on it. The innermost of the three rings: the outer runs off a
+ * 620 px canvas at a 35° cone.
+ */
+const SAMPLE_RING = {
+	x: inside.drawn.centre.x,
+	y: inside.drawn.centre.y,
+	r: inside.drawn.funnelRadiusPx * 0.28,
+};
+
+const paintAligned = await directorAt({
+	...APPROACH,
+	noseDeg: AXIS_DEG - 5,
+	sampleRing: SAMPLE_RING,
+});
+const paintOffAxis = await directorAt({
+	...APPROACH,
+	noseDeg: AXIS_DEG + 5,
+	sampleRing: SAMPLE_RING,
+});
+const paintTurned = await directorAt({
+	...APPROACH,
+	noseDeg: AXIS_DEG - 5,
+	headLook: "left",
+	sampleRing: SAMPLE_RING,
+});
+await page.evaluate(() => window.__seelite.setHeadLook("forward"));
+
+check(
+	// **The row the record cannot fake.** Every other browser row reads
+	// `directorRender`, which the draw assembles whether or not its strokes
+	// landed — delete the three `ctx.arc`/`ctx.stroke` calls and they all stay
+	// green while the pilot sees nothing. This reads the overlay canvas itself.
+	//
+	// The control is the head-turned frame, where §5's grammar says the glass is
+	// replaced. It reads the **same pixels**: an earlier version derived the ring
+	// from the record, which is null there, so the sampler never ran and the zero
+	// was true without looking.
+	"the funnel ring is actually painted on the overlay, and a head turn wipes it",
+	paintAligned.funnelPixelHits > 12 && paintTurned.funnelPixelHits === 0,
+	`${paintAligned.funnelPixelHits} of 24 sample points painted, ${paintTurned.funnelPixelHits} after the head turn`,
+);
+check(
+	// `funnelState` above is a string the draw recorded. This is the colour it
+	// actually stroked, on the same pixels, five degrees either side of the
+	// tolerance — the difference between a cue that repaints and one that only
+	// says it did.
+	//
+	// **The dominant colour, over a majority of the circumference.** The first
+	// version kept the last of twenty-four samples, so it compared one arbitrary
+	// pixel — and the axis marker is stroked in the same colour and crosses the
+	// sampled box, so the pixel that differed need not have been ring.
+	"the painted ring changes colour when the cue leaves the tolerance",
+	typeof paintAligned.funnelPixelColour === "string" &&
+		typeof paintOffAxis.funnelPixelColour === "string" &&
+		paintAligned.funnelPixelColourCount > 12 &&
+		paintOffAxis.funnelPixelColourCount > 12 &&
+		paintAligned.funnelPixelColour !== paintOffAxis.funnelPixelColour,
+	`${paintAligned.funnelPixelColour} x${paintAligned.funnelPixelColourCount} then ${paintOffAxis.funnelPixelColour} x${paintOffAxis.funnelPixelColourCount}`,
+);
+
 await browser.close();
 exit();

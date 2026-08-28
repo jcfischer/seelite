@@ -21,7 +21,7 @@ import {
 	type StationAperture,
 	type StationType,
 } from "./station";
-import { type Vec3, add, dot, length, scale, sub, v3 } from "./vec3";
+import { type Vec3, add, cross, dot, length, scale, sub, v3 } from "./vec3";
 
 // ---------------------------------------------------------------------------
 // Tolerances (§3), all of them data rather than literals repeated per call site
@@ -177,9 +177,6 @@ const anyPerpendicular = (a: Vec3): Vec3 => {
 	return unit(cross(a, seed));
 };
 
-const cross = (a: Vec3, b: Vec3): Vec3 =>
-	v3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
-
 const unit = (a: Vec3): Vec3 => {
 	const len = length(a);
 	return len === 0 ? v3(1, 0, 0) : scale(a, 1 / len);
@@ -271,6 +268,52 @@ export function slotBasis(frame: ApertureFrame): { across: Vec3; up: Vec3 } {
 		across: add(scale(u, c), scale(v, s)),
 		up: add(scale(u, -s), scale(v, c)),
 	};
+}
+
+/** Below this, the up-vector's component in the slot plane is rounding error
+ *  rather than a direction. Dimensionless: `pose.up` is a unit vector. */
+export const ROLL_PROJECTION_FLOOR = 1e-9;
+
+/**
+ * The signed roll about the outward axis, folded to the same (−90, 90] the
+ * unsigned check works in — so `Math.abs` of this is `evaluateEntry`'s
+ * `rollAngleDeg` wherever the projection below is well conditioned, and `NaN`
+ * where it is not.
+ *
+ * **Display only.** No check reads it: `hud-and-scanner.md` §3's roll ring
+ * needs a direction to send the pilot in, and check 4 deliberately has none
+ * because it compares against the axis *line*. It lives here rather than in the
+ * HUD because aperture-frame trigonometry has one home (`CONTEXT.md`), and the
+ * one place it had been re-spelled was the cue whose job is which way to roll.
+ *
+ * Folded rather than reported over the full turn, because a slot is
+ * symmetric: a ship 170° out is 10° out the other way, and an instrument
+ * telling it to roll 170° would be sending the pilot the long way round.
+ */
+export function signedRollDeg(frame: ApertureFrame, pose: EntryPose): number {
+	const axis = frame.axis;
+	const projected = sub(pose.up, scale(axis, dot(pose.up, axis)));
+	const norm = length(projected);
+	// **A relative guard, where `evaluateEntry`'s is an exact zero.** An
+	// up-vector *set* to the docking axis does not project to exactly nothing:
+	// `dot(up, axis)` is 1 to within a rounding error, so a residue of order
+	// 1e-17 survives and any angle taken from it is float noise — the check and
+	// this function each read a real angle off it, and they are tens of degrees
+	// apart, because they are reading different rounding errors rather than
+	// disagreeing. `tests/docking-director.test.ts` holds the pose. This returns
+	// no angle
+	// rather than one taken from rounding error, so the ring draws no tick;
+	// `evaluateEntry` keeps its own exact-zero guard, because retuning a docking
+	// check is #9's and it refuses the pose on check 2 anyway.
+	if (norm <= ROLL_PROJECTION_FLOOR) return Number.NaN;
+	const u = scale(projected, 1 / norm);
+	const { across } = slotBasis(frame);
+	const perpendicular = cross(axis, across);
+	const deg =
+		(Math.atan2(dot(u, perpendicular), dot(u, across)) * 180) / Math.PI;
+	if (deg > 90) return deg - 180;
+	if (deg <= -90) return deg + 180;
+	return deg;
 }
 
 // ---------------------------------------------------------------------------

@@ -162,6 +162,7 @@ import {
 	tickDocking,
 	UNDOCK_CLEAR_KM,
 } from "./docking";
+import { type DirectorState, dockingDirector } from "./docking-director";
 import {
 	type StationMesh,
 	buildStationMesh,
@@ -457,6 +458,62 @@ const TEXT_RASTER_BOUNDS_DEFAULTS: Readonly<{
 	width: 0,
 	height: 0,
 });
+
+/**
+ * What the docking director actually painted on the glass this frame.
+ *
+ * Pixel geometry, not a second copy of the state: `state` below is the object
+ * `docking-director.ts` returned, and everything beside it is where the draw
+ * put it and in what state it painted it — the distinction `cockpitPrompt`
+ * exists for.
+ *
+ * **It records what the draw decided, not that anything reached the canvas.**
+ * The record is assembled at the end of the method whether or not the strokes
+ * landed, so deleting every `ctx.stroke()` would leave it unchanged. That gap
+ * is closed in the probe rather than here: `probe-docking.mjs` reads the
+ * overlay's own pixels on the funnel ring, because a canvas is the one thing a
+ * renderer cannot honestly self-report.
+ */
+interface DirectorRender {
+	state: DirectorState;
+	/** Screen centre — the nose, and the thing the axis marker is flown into. */
+	centre: { x: number; y: number };
+	/** Pixel radius of the axis tolerance cone about the optical axis. */
+	funnelRadiusPx: number;
+	/** Where the inward docking axis projects, or `null` when it is behind. */
+	axisMarker: { x: number; y: number; onScreen: boolean } | null;
+	/**
+	 * The two roll ticks, degrees clockwise from screen up.
+	 *
+	 * **Tick 0 is the ship**, and it is at zero by construction: the camera is
+	 * the ship, so the ship's up *is* screen up and the tick can only ever sit
+	 * there. Tick 1 is the slot's own reference, at the signed error — so the
+	 * gap is which way to roll, and it is the tick that moves. A first version
+	 * had these labels the other way round, which described an instrument where
+	 * the fixed mark was the world and the moving one the pilot.
+	 *
+	 * Tick 1 is `null` where there is no roll to report — an up-vector lying
+	 * along the docking axis. Painting a definite 90° there would be a reading
+	 * the director never took.
+	 *
+	 * `null` for a pad, which has no long axis to match.
+	 */
+	rollTicksDeg: [number, number | null] | null;
+	/** The two ticks as drawn, in canvas pixels, so a check can pin which way the
+	 *  reference actually rotates on the pilot's screen. Index-parallel with
+	 *  `rollTicksDeg`: an unreportable tick is `null` in both. */
+	rollTickPointsPx: ({ x: number; y: number } | null)[];
+	/** Which state the funnel was **painted** in. The record carries it because
+	 *  it is the one cue decision the draw makes rather than copies: without it
+	 *  a funnel that stayed green past the tolerance passes every browser row. */
+	funnelState: "clear" | "off-axis" | "blocked";
+	/** The corridor bar — check 2's position half, which is a translation task
+	 *  rather than a turn. Fraction of the tolerance drawn, and its verdict. */
+	corridor: { fill: number; within: boolean };
+	/** The clearance line as drawn, and whether it was drawn as blocking. */
+	clearanceText: string;
+	blocking: boolean;
+}
 
 class TextRaster {
 	text = TEXT_RASTER_DEFAULTS.text;
@@ -813,6 +870,13 @@ class Game {
 	readonly cockpitPrompt = new TextRaster();
 	/** Prototype-only glass status, exposed for the browser probe. */
 	readonly combatOverlayStatus = new TextRaster();
+	/**
+	 * What §3's docking director drew this frame, or `null` when it drew
+	 * nothing. The same pattern as `cockpitPrompt`: the record is written by the
+	 * draw itself rather than recomputed beside it, so a probe reading it cannot
+	 * pass against a director that was never painted.
+	 */
+	directorRender: DirectorRender | null = null;
 	/** What the HUD last displayed, quantised to its own resolution — so a frame
 	 *  that would render the same text neither builds nor writes it. */
 	private hudKey = "";
@@ -2735,6 +2799,49 @@ class Game {
 	}
 
 	/**
+	 * §3's director state for the station the pilot is working, or `null`.
+	 *
+	 * §3 says the on-glass director "retains the selected target after
+	 * Navigation chooses it", and becomes a docking director "for a local
+	 * station" — so the selected target wins when it is a station, and the
+	 * nearest station is the fallback. Outside §6's vicinity there is nothing to
+	 * direct: the return is `null` rather than a director with every cue grey,
+	 * because a permanently-visible funnel is the wall of labels §1 refuses.
+	 */
+	directorState(): DirectorState | null {
+		// **Range-gated before the director is built.** Normal flight is mostly
+		// out of §6's vicinity and this runs every frame for a HUD element that
+		// then paints nothing, so the cheap test comes first: `entryPoseOf` is one
+		// subtraction pair, where `dockingDirector` behind it is an aperture
+		// frame, a station pose and a full six-row entry evaluation. The
+		// selected-target branch below would otherwise pay all of it twice.
+		const of = (id: string) => {
+			const pose = this.entryPoseOf(id);
+			if (length(pose.rel) > VICINITY_KM) return null;
+			return dockingDirector({
+				stationId: id,
+				frame: this.apertureFrameOf(id),
+				pose,
+				state: this.dockingStateOf(id),
+				gameTime: this.world.gameTime,
+			});
+		};
+		// The selected station wins **only while it is local**. Selecting one
+		// across the system and flying to another is the ordinary case, and a
+		// selection-only rule left the pilot two kilometres off a slot with no
+		// director at all — the one place §3 says it becomes a docking director.
+		if (
+			this.targetId &&
+			this.world.system.contents.stations.some((s) => s.id === this.targetId)
+		) {
+			const selected = of(this.targetId);
+			if (selected) return selected;
+		}
+		const nearest = this.stationsByRange()[0]?.id;
+		return nearest ? of(nearest) : null;
+	}
+
+	/**
 	 * Everything a probe needs to judge a docking approach, in one read.
 	 *
 	 * One call rather than a handful of exposed fields, because §9.2's probes
@@ -3843,6 +3950,188 @@ class Game {
 	}
 
 	/**
+	 * §3's docking director, on the glass.
+	 *
+	 * **The funnel is centred on the optical axis, not on the station**, and that
+	 * is what makes it exact rather than approximate. Check 2's nose half is the
+	 * angle between the nose and the inward docking axis; the nose is the screen
+	 * centre by construction, so a ring of angular radius `AXIS_TOLERANCE_DEG`
+	 * about the centre maps to `tan(θ)/tan(fov/2)` in NDC with no small-angle
+	 * assumption, and "the axis marker is inside the ring" is check 2's nose half
+	 * and nothing else. A ring drawn *around the station* would have been a conic
+	 * section flattened into a circle, and would have read wrong exactly where
+	 * the pilot needs it — off to one side, early in the turn.
+	 *
+	 * The position half cannot be flown with the nose: it is where the ship *is*,
+	 * not where it points, so it reads as a corridor bar rather than a second
+	 * ring. Two rings would have said the pilot could fix both by turning.
+	 */
+	private drawDockingDirector(
+		ctx: CanvasRenderingContext2D,
+		w: number,
+		h: number,
+	) {
+		const state = this.directorState();
+		if (!state) {
+			this.directorRender = null;
+			return;
+		}
+		const cx = w / 2;
+		const cy = h / 2;
+		const halfFov = (this.nearCamera.fov * Math.PI) / 360;
+		const funnelRadiusPx =
+			((h / 2) * Math.tan((state.axis.nose.toleranceDeg * Math.PI) / 180)) /
+			Math.tan(halfFov);
+
+		const funnelState: DirectorRender["funnelState"] = state.blocking
+			? "blocked"
+			: state.axis.nose.within
+				? "clear"
+				: "off-axis";
+		const funnelColour = {
+			blocked: "rgba(255, 110, 96, 0.85)",
+			clear: "rgba(150, 255, 190, 0.8)",
+			"off-axis": "rgba(255, 209, 122, 0.75)",
+		}[funnelState];
+		ctx.save();
+		ctx.strokeStyle = funnelColour;
+		ctx.lineWidth = 1.5;
+		// Three rings rather than one: a single circle reads as a reticle, and the
+		// nesting is what makes it a funnel the pilot is flying down.
+		for (const fraction of [1, 0.62, 0.28]) {
+			ctx.beginPath();
+			ctx.arc(cx, cy, funnelRadiusPx * fraction, 0, Math.PI * 2);
+			ctx.stroke();
+		}
+
+		// The inward axis: where the nose has to end up. `axis` points out of the
+		// station, so the direction to fly the nose to is its negation.
+		const inward = scale(state.axisOut, -1);
+		const projected = this.markerNdc(inward);
+		let axisMarker: DirectorRender["axisMarker"] = null;
+		if (!projected.behind) {
+			const x = (projected.ndcX * 0.5 + 0.5) * w;
+			const y = (1 - (projected.ndcY * 0.5 + 0.5)) * h;
+			axisMarker = { x, y, onScreen: projected.onScreen };
+			ctx.beginPath();
+			ctx.moveTo(x, y - 7);
+			ctx.lineTo(x + 7, y);
+			ctx.lineTo(x, y + 7);
+			ctx.lineTo(x - 7, y);
+			ctx.closePath();
+			ctx.stroke();
+		}
+
+		// The roll ring: two ticks on the funnel, separated by the roll error.
+		// Absent for a pad, because check 4 does not apply and an empty ring would
+		// read as one the pilot had failed.
+		let rollTicksDeg: [number, number | null] | null = null;
+		const rollTickPointsPx: ({ x: number; y: number } | null)[] = [];
+		if (state.roll) {
+			// The reference tick is the slot; the second is the ship. A symmetric
+			// pair about screen up was the first version and it was a tautology as
+			// well as a bad instrument: its gap was the roll error by construction,
+			// so a probe measuring the gap measured the draw's own arithmetic, and
+			// a +40° and a −40° roll painted identically.
+			// The slot's reference is the ship's up rotated *back* by the signed
+			// error, which is why it carries the minus. Which way that lands on the
+			// canvas is not reasoned about here — a right-handed rotation about an
+			// axis pointing back through the ship, composed with canvas's y-down
+			// angles, is exactly the sort of double flip that reads correct and is
+			// not. `probe-docking.mjs` pins the drawn endpoint's side instead.
+			const signed = state.rollSignedDeg;
+			rollTicksDeg = [
+				0,
+				Number.isFinite(signed ?? Number.NaN) ? -(signed as number) : null,
+			];
+			ctx.strokeStyle = state.roll.within
+				? "rgba(150, 255, 190, 0.8)"
+				: "rgba(255, 209, 122, 0.75)";
+			ctx.lineWidth = 2.5;
+			for (const tick of rollTicksDeg) {
+				// **Index-parallel with `rollTicksDeg`, `null` included.** Skipping the
+				// push instead would leave a two-entry degree array beside a
+				// one-entry pixel array, and a consumer reading `[1]` as the
+				// reference tick would read `undefined` from a shorter list.
+				if (tick === null) {
+					rollTickPointsPx.push(null);
+					continue;
+				}
+				const rad = (tick * Math.PI) / 180 - Math.PI / 2;
+				const inner = funnelRadiusPx * 0.9;
+				const outer = funnelRadiusPx * 1.12;
+				const tip = {
+					x: cx + Math.cos(rad) * outer,
+					y: cy + Math.sin(rad) * outer,
+				};
+				ctx.beginPath();
+				ctx.moveTo(cx + Math.cos(rad) * inner, cy + Math.sin(rad) * inner);
+				ctx.lineTo(tip.x, tip.y);
+				ctx.stroke();
+				rollTickPointsPx.push(tip);
+			}
+		}
+
+		// The corridor bar — check 2's position half, which is a translation task.
+		const corridorY = cy + funnelRadiusPx * 1.34;
+		const barHalf = funnelRadiusPx * 0.9;
+		const corridor = state.axis.position;
+		// **A defensive clamp, not a described state.** `evaluateEntry` takes the
+		// position angle through `unit(pose.rel)`, which returns a real direction
+		// even for a zero vector, so `positionAngleDeg` has no reachable `NaN`
+		// today and nothing here paints the full-amber bar that would result. The
+		// clamp is here because the alternative failure is silent — `NaN` reaching
+		// `lineTo` draws nothing, and a bar that vanished would read as a missing
+		// instrument rather than a broken one. If a later pose does make the angle
+		// unmeasurable, this is the line that owes it an honest reading.
+		const fill = Number.isFinite(corridor.deg)
+			? Math.min(1, corridor.deg / corridor.toleranceDeg)
+			: 1;
+		ctx.lineWidth = 3;
+		ctx.strokeStyle = "rgba(120, 190, 235, 0.3)";
+		ctx.beginPath();
+		ctx.moveTo(cx - barHalf, corridorY);
+		ctx.lineTo(cx + barHalf, corridorY);
+		ctx.stroke();
+		ctx.strokeStyle = corridor.within
+			? "rgba(150, 255, 190, 0.85)"
+			: "rgba(255, 209, 122, 0.8)";
+		ctx.beginPath();
+		ctx.moveTo(cx - barHalf, corridorY);
+		ctx.lineTo(cx - barHalf + barHalf * 2 * fill, corridorY);
+		ctx.stroke();
+
+		// §3: a positive state and the remaining window, or the refusal *with its
+		// reason* — a red mark alone never carries the consequence.
+		const clearanceText = state.blocking
+			? state.blocking.text
+			: state.grantRemainingS === null
+				? "NO GRANT"
+				: `CLEARED · ${duration(state.grantRemainingS)} left`;
+		ctx.font = PROMPT_FONT;
+		ctx.textAlign = "center";
+		ctx.fillStyle = state.blocking
+			? "rgba(255, 110, 96, 0.95)"
+			: "rgba(150, 255, 190, 0.9)";
+		ctx.fillText(clearanceText, cx, corridorY + 26);
+		ctx.textAlign = "left";
+		ctx.restore();
+
+		this.directorRender = {
+			state,
+			centre: { x: cx, y: cy },
+			funnelRadiusPx,
+			axisMarker,
+			rollTicksDeg,
+			rollTickPointsPx,
+			funnelState,
+			corridor: { fill, within: corridor.within },
+			clearanceText,
+			blocking: state.blocking !== null,
+		};
+	}
+
+	/**
 	 * Draw the HUD markers over the rendered frame.
 	 *
 	 * The overlay is a 2D canvas rather than geometry in the near scene, and the
@@ -3867,6 +4156,10 @@ class Game {
 			this.cockpitPrompt.reset();
 			this.combatOverlayStatus.reset();
 			this.combatOverlayLines = [];
+			// The director is glass, and a focused console has replaced the glass.
+			// Leaving the record standing would let a probe assert a funnel that
+			// this frame deliberately did not paint.
+			this.directorRender = null;
 			return;
 		}
 		const toPixels = (ndcX: number, ndcY: number) => ({
@@ -3967,6 +4260,8 @@ class Game {
 				ctx.stroke();
 			}
 		}
+
+		this.drawDockingDirector(ctx, w, h);
 
 		// The prompt, on the glass rather than only in the corner: the mechanic it
 		// names is the one the whole prototype is about, and the first flight of
