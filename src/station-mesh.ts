@@ -56,7 +56,13 @@ import {
 	buildAsteroid,
 	displayRand,
 } from "./station-surface";
-import { STATION_GEOMETRY, STATION_TYPES, type StationType } from "./station";
+import {
+	STATION_GEOMETRY,
+	STATION_TYPES,
+	type StationAperture,
+	type StationType,
+} from "./station";
+import { throatDepthKm } from "./arrival";
 import {
 	PLATE_TEXTURE_SIZE,
 	STATION_VISUALS,
@@ -157,6 +163,17 @@ export interface StationMesh {
 	 * they cannot disagree.
 	 */
 	accessories: THREE.Object3D[];
+	/**
+	 * E9's name shields — the mouth plate and, on a slot, the one inside the
+	 * throat.
+	 *
+	 * Geometry only. **This module supplies no pixels** (E10): it is
+	 * headless-tested with no `document` reference at all, so the renderer
+	 * assigns each plate's `map` and turns its opacity up. The handle carries
+	 * them for the same reason it carries `fixtures` — they are the parts that
+	 * are written to after construction.
+	 */
+	nameplates: THREE.Mesh[];
 }
 
 /** One clock-driven light. `base` is its lit intensity; the waveform scales it. */
@@ -406,6 +423,96 @@ const PANE_MATERIALS: Record<StationType, THREE.MeshStandardMaterial> = {
 	outpost: emissiveMaterial(STATION_VISUALS.outpost.windowColor, 1.2),
 };
 const APERTURE_LIGHT_MATERIAL = emissiveMaterial(0xffb347, 2.2);
+
+/**
+ * The throat's walls: the **inside** of a box.
+ *
+ * `BackSide` is what makes one box a tunnel — the near faces are culled and the
+ * far ones are what the arriving ship sees. Not emissive: the throat is a lit
+ * structure seen against a dark interior, and the aperture bars around its
+ * mouth are the light source that says where it is.
+ *
+ * **Lambert rather than Standard, and the probe decided it.** The recess this
+ * replaces was an unlit `MeshBasicMaterial`; making it PBR costs enough of the
+ * frame under SwiftShader to turn `probe-navigation-console.mjs`'s *"the
+ * simulation keeps running while the chart is open"* row red — 28 → 32 frames
+ * in 500 ms against a `> +5` threshold, three runs out of three, where Lambert
+ * passes three out of three. A hand-rolled frame counter disagreed with itself
+ * on the same pair (31 against 42 in one three-second sample), which is what a
+ * measurement looks like when it cannot decide; the probe row is repeatable and
+ * it can.
+ *
+ * **What that costs, stated rather than discovered.** #99 made
+ * `scene.environment` a baked star, and `CLAUDE.md` records that it reaches
+ * `MeshStandardMaterial` and nothing else — so this surface is lit by the sun
+ * and the hemisphere but takes no environment, where the plating around its
+ * mouth does. On a rough dark interior seen for a few seconds that is a
+ * difference nobody can point at; on a brighter or shinier interior it would be
+ * the wrong trade, and #99's rig is where that argument belongs.
+ */
+const THROAT_MATERIAL = new THREE.MeshLambertMaterial({
+	color: 0x2a3038,
+	side: THREE.BackSide,
+});
+
+/** A pad's deck — the surface E8's touchdown lands on. */
+const DECK_MATERIAL = new THREE.MeshStandardMaterial({
+	color: 0x39414c,
+	roughness: 0.9,
+	metalness: 0.15,
+});
+
+/** How thick a pad's deck plate is, as a multiple of the aperture's smaller
+ *  dimension. Thin: it is a deck, not a block. */
+const DECK_THICKNESS_FACTOR = 0.08;
+
+/**
+ * The nameplate's height, as a multiple of the aperture's.
+ *
+ * **Two sizes, because the two plates are read from very different ranges.**
+ * The mouth plate's job is legibility on approach — §12.5 says it is legible at
+ * a few kilometres at best — so it is the full aperture wide. The interior one
+ * is read from inside a 280 m throat, tens of metres away: at the mouth plate's
+ * size it filled the canopy edge to edge and read as a billboard rather than a
+ * plaque. Measured by looking at the frame, which is the only instrument for
+ * this.
+ */
+const NAMEPLATE_HEIGHT_FACTOR = 0.4;
+const NAMEPLATE_INNER_WIDTH_FACTOR = 0.4;
+const NAMEPLATE_INNER_HEIGHT_FACTOR = 0.22;
+
+/** How thick a nameplate is, km — the aperture bars' own thickness, because it
+ *  is mounted the same way and for the same reason. */
+const NAMEPLATE_THICKNESS_KM = 0.024;
+
+/**
+ * What `main.ts` looks for when it fills the shields with pixels.
+ *
+ * A name rather than a returned array threaded back through eleven form
+ * builders: the plates are built inside `buildAperture`, which every form calls
+ * and none of them returns anything from, and `buildStationForm` already
+ * traverses the finished graph once to collect the tagged accessories.
+ */
+export const NAMEPLATE_NAME = "station-nameplate";
+
+/**
+ * One nameplate quad's material, **per plate rather than shared**.
+ *
+ * Every other shared material in this module is documented as never being
+ * mutated. This one is written to — the renderer assigns its `map` — and a
+ * shared one would give every station in the galaxy the name of whichever was
+ * textured last.
+ */
+function nameplateMaterial(): THREE.MeshBasicMaterial {
+	return new THREE.MeshBasicMaterial({
+		color: 0xffffff,
+		transparent: true,
+		// Nothing until the renderer supplies one (E10). An untextured plate is
+		// invisible rather than a white rectangle, so a station drawn before its
+		// texture arrives shows no shield instead of a blank one.
+		opacity: 0,
+	});
+}
 /** The shipyard's cold bay floods. Steady, so shared: what moves on that
  *  station is the welding arc, and it gets its own material per station. */
 const FLOOD_MATERIAL = emissiveMaterial(
@@ -429,7 +536,12 @@ function buildAperture(type: StationType, faceZ: number): THREE.Group {
 	const group = new THREE.Group();
 	const w = aperture.widthKm;
 	const h = aperture.heightKm;
-	const depth = Math.min(w, h) * 0.8;
+	// A slot's recess runs the throat's full depth — read from `arrival.ts`, so
+	// the drawn tunnel and the sim law that flies down it cannot disagree about
+	// how far in the ship parks. A pad has no inside, so its recess stays the
+	// shallow one it always was and E8's deck sits at its mouth.
+	const depth =
+		aperture.kind === "slot" ? throatDepthKm(aperture) : Math.min(w, h) * 0.8;
 	// **Thick enough to straddle the surface it is cut into.** The frame used to
 	// sit *on* the face — bars centred half a bar proud of it — so it touched
 	// the hull at a plane and nowhere else. On screen that is a lit rectangle
@@ -441,7 +553,16 @@ function buildAperture(type: StationType, faceZ: number): THREE.Group {
 
 	const mouth = new THREE.Mesh(
 		new THREE.BoxGeometry(w, h, depth),
-		new THREE.MeshBasicMaterial({ color: 0x05070a }),
+		// **E7's throat is this box, not a second one behind it.** §12.4 says the
+		// throat extends the aperture recess, and the first build read that as
+		// "add a deeper box behind the mouth" — which draws nothing, because the
+		// mouth is a solid dark rectangle standing in front of it. A slot's
+		// recess is therefore the throat: deep, and rendered `BackSide` so what
+		// the arriving ship sees is the inside of a tunnel rather than the
+		// outside of a lid.
+		aperture.kind === "slot"
+			? THROAT_MATERIAL
+			: new THREE.MeshBasicMaterial({ color: 0x05070a }),
 	);
 	// Sunk *and* clear of the face: at `faceZ - depth/2` the mouth's front face is
 	// exactly coplanar with the surface it is cut into, which z-fights — a slot
@@ -471,8 +592,143 @@ function buildAperture(type: StationType, faceZ: number): THREE.Group {
 		light.name = "aperture-light";
 		group.add(light);
 	}
+	// **E8's deck**, for a pad only. A pad is an exterior deck with no inside,
+	// so what the arrival needs under it is a surface to touch down on. E7's
+	// throat is not built here — it *is* the recess above, which every form
+	// already calls this one function for.
+	const interior = buildInterior(aperture, faceZ);
+	if (interior) group.add(interior);
+	// **E11: the shield appears at the mouth *and* inside the throat.** The one
+	// at the mouth does a second job — §3.2 records that the docking tolerances
+	// were set wide partly because the player has no visual referent at all for
+	// checks 2 and 4, and a lit rectangle on the docking face says which face
+	// docks and roughly how the slot is rolled. It orients; it does not measure,
+	// and #69 may not treat it as a cue (§12.5).
+	for (const plate of buildNameplates(aperture, faceZ)) group.add(plate);
 	group.name = "aperture";
 	return group;
+}
+
+/**
+ * What lies behind the aperture: a throat for a slot, a deck for a pad.
+ *
+ * **The throat is drawn as the inside of a box.** `THREE.BackSide` on a single
+ * `BoxGeometry` is the tunnel — four walls and an end, one draw call, and the
+ * cross-section is the aperture's own rectangle by construction rather than by
+ * four wall meshes whose positions could drift from it.
+ *
+ * **A pad gets a deck instead, and that is E8 rather than a shallow throat.** A
+ * pad is an exterior deck with no inside, so what the arrival needs under it is
+ * a surface to touch down on: a plate at the aperture, one aperture across.
+ */
+function buildInterior(
+	aperture: StationAperture,
+	faceZ: number,
+): THREE.Mesh | null {
+	// **A slot's interior is its recess** — see the mouth above. Only a pad
+	// needs a part of its own here.
+	if (aperture.kind !== "pad") return null;
+	const thickness =
+		DECK_THICKNESS_FACTOR * Math.min(aperture.widthKm, aperture.heightKm);
+	const deck = new THREE.Mesh(
+		new THREE.BoxGeometry(aperture.widthKm, aperture.heightKm, thickness),
+		DECK_MATERIAL,
+	);
+	deck.position.z = faceZ - thickness / 2;
+	deck.name = "aperture-deck";
+	return deck;
+}
+
+/**
+ * **E9/E10/E11: the name shield**, as geometry only.
+ *
+ * Two quads: one on the docking face above the mouth, one on the throat's end
+ * wall facing the incoming ship. The interior one is the half only a probe can
+ * catch — it exists for a few seconds, from one angle, and nothing headless can
+ * see it at all (§12.6's browser row 2).
+ *
+ * **The texture is the renderer's** (E10). This module is headless-tested and
+ * contains no `document` reference at all; a `CanvasTexture` here would force
+ * the `typeof document !== "undefined"` branch that `station-visuals.ts`'s
+ * docstring names as the failure mode — *the branch that ships to players would
+ * be the one no test ever takes*. So the geometry is arithmetic and stays here,
+ * and `main.ts` fills the `map`, which it already does for the cockpit's text.
+ */
+function buildNameplates(
+	aperture: StationAperture,
+	faceZ: number,
+): THREE.Mesh[] {
+	const w = aperture.widthKm;
+	const h = aperture.heightKm;
+	const plateH = h * NAMEPLATE_HEIGHT_FACTOR;
+	const plates: THREE.Mesh[] = [];
+
+	const mouth = new THREE.Mesh(
+		new THREE.BoxGeometry(w, plateH, NAMEPLATE_THICKNESS_KM),
+		nameplateMaterial(),
+	);
+	// **A box straddling the face, not a plane on it** — the same construction
+	// the four aperture bars use, and for the same reason their comment gives:
+	// a zero-thickness quad sitting *on* the surface touches it at a plane and
+	// nowhere else, which reads as a sign floating a few metres in front of the
+	// station. `tests/station-mesh.test.ts`'s connectivity check reports exactly
+	// that, and did, on the first version of this plate.
+	// **Butted onto an aperture bar, not floating beside it.** The bar spans
+	// `w/2` to `w/2 + bar` and is itself bolted to the hull, so seating the
+	// plate's inner edge half a bar into it gives a real overlap on all three
+	// axes — which is what the connectivity check measures, and what a sign
+	// mounted on a station actually looks like. Anchoring to the hull instead
+	// would need a hull surface beside the mouth, and the trade station's
+	// second form does not have one there.
+	//
+	// **On local +X, turned a quarter turn.** Local X is the *mesh's* own X, and
+	// the mesh's X is where `main.ts`'s `setFromUnitVectors` happens to leave it
+	// — the roll about the aperture axis is arbitrary today, which §12.7's
+	// joint 8 records and #77 deliberately did not fix. So this is not "the
+	// slot's `across`" and an earlier version of this comment said it was,
+	// asserting a rule the same change had just written down as false.
+	//
+	// What it *is*: the aperture rectangle's long axis, which is local X by
+	// construction — `BoxGeometry(w, h, …)` above puts `w` there. A sign along
+	// the short side would read as hanging off the frame at any roll. The
+	// texture's own up is local +Y, so the quarter turn is what moves it to X —
+	// **negative**, because the other sign turns the text through the mirror and
+	// the name reads backwards. Which way round it goes is not derivable from
+	// anything here; it was read off a captured frame.
+	mouth.rotation.z = -Math.PI / 2;
+	mouth.position.set(
+		w / 2 + NAMEPLATE_THICKNESS_KM / 2 + plateH / 2,
+		0,
+		faceZ + NAMEPLATE_THICKNESS_KM / 2,
+	);
+	mouth.name = NAMEPLATE_NAME;
+	plates.push(mouth);
+
+	if (aperture.kind === "slot") {
+		const inner = new THREE.Mesh(
+			new THREE.BoxGeometry(
+				w * NAMEPLATE_INNER_WIDTH_FACTOR,
+				h * NAMEPLATE_INNER_HEIGHT_FACTOR,
+				NAMEPLATE_THICKNESS_KM,
+			),
+			nameplateMaterial(),
+		);
+		// On the throat's end wall, facing back out at the arriving ship — which
+		// is the one angle it is ever seen from — and straddling that wall for
+		// the reason above.
+		// Off the axis rather than on it, so the ship flies *past* a plaque
+		// rather than into it — and off it along local X for the mouth plate's
+		// reason: that is the rectangle's long side.
+		inner.rotation.z = -Math.PI / 2;
+		inner.position.set(
+			w * NAMEPLATE_INNER_WIDTH_FACTOR,
+			0,
+			faceZ - throatDepthKm(aperture) + NAMEPLATE_THICKNESS_KM / 2,
+		);
+		inner.name = NAMEPLATE_NAME;
+		plates.push(inner);
+	}
+	return plates;
 }
 
 /**
@@ -2399,8 +2655,11 @@ export function buildStationForm(
 	}
 	const root = normalise(type, parts);
 	const accessories: THREE.Object3D[] = [];
+	const nameplates: THREE.Mesh[] = [];
 	root.traverse((object) => {
 		if (object.userData.minDetail) accessories.push(object);
+		if (object.name === NAMEPLATE_NAME && object instanceof THREE.Mesh)
+			nameplates.push(object);
 	});
 	const mesh: StationMesh = {
 		root,
@@ -2409,6 +2668,7 @@ export function buildStationForm(
 		detail: "full",
 		fixtures: built.fixtures,
 		accessories,
+		nameplates,
 	};
 	// Built at `full` and then set, so the tagged accessories are in a state that
 	// matches the field rather than merely defaulting to visible. The renderer

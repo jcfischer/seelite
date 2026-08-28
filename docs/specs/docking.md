@@ -1150,6 +1150,14 @@ of check that stops being evidence, and §12.7 records that it fails open until
    Disclosing a dependency once, in the section that creates it, is how it gets
    lost.
 
+   **As built (#77): the arrival ships unskippable.** That node checked
+   `persistent-world-state.md` after #46 closed and the domain is still not
+   there — the word "arrival" does not appear in that spec at all — so
+   `canSkipTraversal` refuses on an arrival and says why, and every *launch* is
+   skippable exactly as §12.6's obligation 5 asks. E4 is a follow-up node, and
+   the row that fails the day someone wires a skip without the store is in
+   `tests/dock-session.test.ts`.
+
    **E4 and nothing else.** An earlier version of this joint said "E4 and E5",
    and that was wrong: E5 is flight being suspended while docked, which stores
    nothing and needs no domain. The rest of §12 — the arrival, the throat, the
@@ -1157,3 +1165,32 @@ of check that stops being evidence, and §12.7 records that it fails open until
    behaviour waits. Getting this wrong in the direction it was wrong in is the
    expensive direction: it reads as a blanket block on the whole section, and
    §12 exists to fix a bug a player is looking at now.
+
+7. **A form's aperture face and §3's plane are two different surfaces, and on
+   some forms they are far apart** (#77). §12.2's docked position is a function
+   of the **plane**, which is `coreRadiusKm`; a form cuts its aperture wherever
+   its own geometry has a face. On the forms the game builds they agree closely
+   enough that the ship parks inside the drawn recess, and
+   `tests/station-mesh.test.ts` asserts exactly that. On three workbench
+   alternates they do not — the trade **Ring** cuts its slot on a hub at about a
+   third of the core radius, and two pads carry their deck at a face their
+   silhouette put elsewhere — so selecting one of those would park a ship in
+   solid hull. Pinned as an inventory rather than left as prose, so that
+   selecting one, adding a form like them, or fixing them all make the test
+   speak. `outpost a` is on that list *and* is its role's selected form, which
+   is only harmless because joint 5 above records that no outpost is generated.
+
+8. **The drawn slot's roll does not mirror `slotBasis`, and the obvious repair
+   makes things worse** (#77). `main.ts` aims a station with
+   `setFromUnitVectors`, the shortest turn taking local +Z onto the aperture
+   axis, which leaves the roll about that axis arbitrary — so the slot a player
+   *sees* is at an unknown angle to the frame check 4 is evaluated in. A ship
+   parked by §12.2 therefore sits visibly askew in its own slot, and a pilot
+   rolling by eye can miss check 4 by up to 90°, which is part of why §3.2 set
+   that tolerance wide. Aiming the mesh on `slotBasis` instead was built and
+   withdrawn inside #77: `anyPerpendicular` chooses its seed on a `< 0.9`
+   branch, so the reference **jumps** as a station's axis swings round its
+   orbit and the drawn hull snaps with it — `probe-station.mjs`'s repeat control
+   went from 0.02 to between 0.05 and 0.21. The fix is a *continuous*
+   phase-zero reference, decided where the convention is defined rather than at
+   the line that reads it, and it is a node of its own.

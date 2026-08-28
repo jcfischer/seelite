@@ -190,7 +190,14 @@ async function fly(setup) {
 			// A write to a page object cannot fail, which is what made it invisible.
 			g.interimCondition = { shield: setup.shield, hull: setup.hull };
 			g.lastEntry = null;
-			g.dockedAt = null;
+			// **The session, not a `dockedAt` flag.** #77 replaced the nullable id
+			// with §12's state machine, and `dockedAt` is a derived getter now.
+			// Resetting the session is also what a run *needs*: while it is not
+			// `flying`, `step` runs the arrival and ignores every input, so a run
+			// that inherited a docked session from the one before it would fly
+			// nothing at all — which is exactly what the four §9.2.4 and §9.2.5
+			// rows reported when this line was still the old one.
+			g.resetDock();
 
 			const cleared = g.requestDockingClearance();
 
@@ -244,7 +251,20 @@ async function fly(setup) {
 				elapsed,
 				cleared: cleared.id !== null,
 				grantLive: after.grantLive,
-				docked: after.dockedAt === id,
+				// **Both: the verdict *and* the state it hands over to.** The loop
+				// above stops at the crossing, and since #77 a passed entry hands over
+				// to a five-second arrival before `dockedAt` is anything — so the
+				// verdict alone is what §9.2 is about. But a build that evaluated
+				// `docked` and never entered the session would keep every row here
+				// green, which is the regression #77 exists to have fixed.
+				docked:
+					after.lastEntry?.docked === true &&
+					after.dockPhase !== "flying" &&
+					// **Scoped to this station**, which the old `after.dockedAt === id`
+					// carried and the first rewrite dropped: `dockPhase` is true of an
+					// arrival at *any* station, so without this a run that docked
+					// somewhere else would report the row green.
+					g.dock.stationId === id,
 				hostile: after.hostile,
 				alive: after.alive,
 				conditionBefore: before,
@@ -338,10 +358,18 @@ check(
 	good.conditionAfter.hull === good.conditionBefore.hull,
 );
 
-// Docking is not a one-way latch. Not one of §9.2's five rows — it is a
-// property of this node's *wiring* rather than of the model — but it is
-// reachable only from a docked ship, which only the probe tier has, and the
-// first version of `resolveCrossing` set `dockedAt` and never cleared it.
+// Docking has an exit, and since #77 the exit is §12.2's launch rather than a
+// range test. Not one of §9.2's five rows — it is a property of this node's
+// *wiring* rather than of the model — but it is reachable only from a docked
+// ship, which only the probe tier has, and the first version of
+// `resolveCrossing` set `dockedAt` and never cleared it.
+//
+// **`UNDOCK_CLEAR_KM` retired with #77** and this block changed with it. It
+// used to teleport the ship out past a clearance radius and assert the flag had
+// dropped; #68 shipped that radius as an anti-latch measure and said so in its
+// own docstring. §12.2 designed leaving, so the ship now *launches* — and what
+// this asserts is the same thing it always did: that the state ends, and the
+// autopilot flies again afterwards.
 console.log("\ndocking has an exit:");
 if (!good.docked)
 	console.log("  skipped: §9.2.3 did not dock, so there is nothing to leave");
@@ -351,22 +379,24 @@ const undock = good.docked
 				const g = window.__seelite;
 				const D = window.__dock;
 				const id = D.spinner().id;
-				const wasDocked = g.dockedAt === id;
 				const snap = g.dockingSnapshot(id);
-				// **Before anything below touches the ship.** `place` sets the throttle to
-				// zero itself, so reading it afterwards would assert that `place` works.
-				// What is under test is that the dock left no throttle running: the
-				// autopilot wrote one on the frame it crossed the plane, and clearing the
-				// engaged flag alone left the assist accelerating a docked ship.
+				// **Before anything below touches the ship.** What is under test is that
+				// the dock left no throttle running: the autopilot wrote one on the frame
+				// it crossed the plane, and clearing the engaged flag alone left the
+				// assist accelerating a docked ship.
 				const throttleAfterDock = snap.throttle;
-				// Pushed straight back out along the axis, which is the least a launch
-				// could possibly be — the sequence itself is not this node's.
-				D.place(id, D.scale(snap.axis, snap.planeKm + 0.5), {
-					x: 0,
-					y: 0,
-					z: 0,
-				});
-				for (let i = 0; i < 20; i++) {
+				// The arrival has to finish before a launch is possible — E5 parks the
+				// ship first, and `requestLaunch` refuses from any other state.
+				for (let i = 0; i < 60 * 20; i++) {
+					g.step(dt);
+					g.render(dt);
+					if (g.dockingSnapshot(id).dockPhase === "docked") break;
+				}
+				const wasDocked = g.dockedAt === id;
+				const launched = g.launch();
+				// Obligation 5: a launch is unconditionally skippable.
+				const skipped = g.skipDockTraversal();
+				for (let i = 0; i < 60; i++) {
 					g.step(dt);
 					g.render(dt);
 				}
@@ -381,13 +411,12 @@ const undock = good.docked
 					engagedAfterStep: flying?.computerEngaged ?? false,
 					throttleAfterStep: flying?.throttle ?? 0,
 					wasDocked,
+					launched,
+					skipped,
 					stillDocked: g.dockedAt === id,
+					phase: after.dockPhase,
 					computerCanEngage: g.dockingComputerEngaged,
-					// Read **before** the toggle above re-engages anything: what is being
-					// asserted is that the dock left the ship at rest, not that the
-					// re-engagement did.
 					throttle: throttleAfterDock,
-					clearKm: g.dockingTolerances.UNDOCK_CLEAR_KM,
 					axialKm: after.axialKm,
 					planeKm: after.planeKm,
 				};
@@ -397,12 +426,24 @@ const undock = good.docked
 	: null;
 if (undock) {
 	check("the ship was docked to begin with", undock.wasDocked);
+	check("§12.2's launch is accepted from a docked ship", undock.launched);
 	check(
-		"leaving the plane clears the dock",
-		!undock.stillDocked,
-		`${undock.axialKm.toFixed(3)} km against a ${undock.planeKm.toFixed(3)} km plane ` +
-			`plus a ${undock.clearKm} km clearance`,
+		"and it is unconditionally skippable (§12.6 obligation 5)",
+		undock.skipped,
 	);
+	check(
+		// **Both halves measured, not one asserted and the other printed.** The
+		// first version of this row named the position and tested only the phase,
+		// leaving `axialKm` and `planeKm` in the message string alone — a name that
+		// claims more than its predicate is the same defect as prose that claims
+		// more than its code.
+		"launching clears the dock and releases the ship outside the plane",
+		!undock.stillDocked &&
+			undock.phase === "flying" &&
+			undock.axialKm > undock.planeKm,
+		`${undock.phase}, at ${undock.axialKm.toFixed(3)} km against a ${undock.planeKm.toFixed(3)} km plane`,
+	);
+
 	check(
 		// **After a step**, not straight after the toggle. `toggleDockingComputer`
 		// gates only on `hasDockingComputer`, which is a constant `true`, so
