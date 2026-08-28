@@ -26,7 +26,12 @@ import {
 	newDockingState,
 	slotBasis,
 } from "../src/docking";
-import { dockingDirector } from "../src/docking-director";
+import {
+	DIRECTOR_RANGE_KM,
+	directorEngaged,
+	dockingDirector,
+} from "../src/docking-director";
+import { TUNNEL_MOUTH_FRACTION } from "../src/docking-tunnel";
 import { type Vec3, add, dot, length, scale, v3 } from "../src/vec3";
 
 const DEG = Math.PI / 180;
@@ -106,6 +111,9 @@ const director = (
 ) =>
 	dockingDirector({
 		stationId: over.stationId ?? "station-a",
+		// Not the origin: the tunnel is placed by adding this, so a zero would let
+		// a renderer that forgot to add it look correct.
+		stationPos: v3(1_400, -900, 320),
 		frame,
 		pose,
 		state: over.state ?? granted(GRANT_WINDOW_S),
@@ -419,6 +427,95 @@ describe("§3: clearance, grant window, and blocking states", () => {
 		});
 		expect(d.grantRemainingS).toBe(GRANT_WINDOW_S);
 		expect(d.blocking?.kind).toBe("hostile");
+	});
+});
+
+describe("§3: when the director is on the glass at all", () => {
+	/**
+	 * The rule the first build got wrong. It gated on `VICINITY_KM` — §6's
+	 * *clearance-request* range, ten thousand kilometres — so a funnel was on
+	 * glass through most of ordinary in-system flight. It is a director; there
+	 * is nothing to direct from a tenth of an AU out.
+	 */
+	test("beyond the approach range it is off, however good the clearance", () => {
+		const frame = frameFor();
+		const far = nominal(frame, {
+			rel: scale(frame.axis, DIRECTOR_RANGE_KM * 2),
+		});
+		const d = director(frame, far, { state: granted(GRANT_WINDOW_S) });
+		expect(d.inVicinity).toBe(true);
+		expect(directorEngaged(d)).toBe(false);
+	});
+
+	test("inside the range it needs the protocol engaged, not just proximity", () => {
+		const frame = frameFor();
+		const unasked = director(frame, nominal(frame), {
+			state: newDockingState(),
+		});
+		expect(unasked.rangeKm).toBeLessThan(DIRECTOR_RANGE_KM);
+		// Requesting clearance is what turns the instrument on.
+		expect(directorEngaged(unasked)).toBe(false);
+		expect(
+			directorEngaged(
+				director(frame, nominal(frame), { state: granted(GRANT_WINDOW_S) }),
+			),
+		).toBe(true);
+	});
+
+	test("a queued or denied station keeps it, because the refusal is the point", () => {
+		const frame = frameFor();
+		for (const clearance of [
+			{ kind: "queued", position: 2 } as const,
+			{ kind: "denied", reason: "contraband" } as const,
+		])
+			expect(
+				directorEngaged(
+					director(frame, nominal(frame), {
+						state: { ...newDockingState(), clearance },
+					}),
+				),
+			).toBe(true);
+	});
+
+	/**
+	 * §3's blocking state is the one thing a pilot must not lose by looking
+	 * away, and a station can turn hostile without ever having been asked.
+	 */
+	test("a hostile station keeps it even with no clearance ever requested", () => {
+		const frame = frameFor();
+		const d = director(frame, nominal(frame), {
+			state: { ...newDockingState(), hostile: true, hostileUntilS: 600 },
+		});
+		expect(d.clearanceKind).toBe("none");
+		expect(directorEngaged(d)).toBe(true);
+	});
+});
+
+describe("§3: the corridor the director carries", () => {
+	test("its mouth stops short of the ship rather than at it", () => {
+		const frame = frameFor();
+		const axialKm = 12;
+		const d = director(
+			frame,
+			nominal(frame, {
+				rel: scale(frame.axis, axialKm),
+			}),
+			{ state: granted(GRANT_WINDOW_S) },
+		);
+		const mouth = d.tunnel.rings.at(-1) as { axialKm: number };
+		expect(mouth.axialKm).toBeCloseTo(axialKm * TUNNEL_MOUTH_FRACTION, 9);
+		// Ahead of the pilot, which is the whole of why it is a tunnel to fly
+		// into: a mouth at the eye projects its corners to the frame edges.
+		expect(mouth.axialKm).toBeLessThan(axialKm);
+		expect(d.tunnel.throat.axialKm).toBeCloseTo(frame.planeKm, 9);
+	});
+
+	test("it is placed at the station, not at the origin", () => {
+		const frame = frameFor();
+		const d = director(frame, nominal(frame));
+		// The renderer adds `stationPos` to every corner. A director that left it
+		// at the origin would draw the corridor at the centre of the system.
+		expect(d.stationPos).not.toEqual(v3(0, 0, 0));
 	});
 });
 
