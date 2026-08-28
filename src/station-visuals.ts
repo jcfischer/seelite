@@ -39,11 +39,17 @@ import {
 } from "./surface";
 import { HANDOFF_HYSTERESIS } from "./units";
 
-// Re-exported, not merely imported. `PlatingProfile` described the station's
-// plating until #101 gave the generators a second and a third consumer, so the
-// shape moved to `surface.ts` and cannot be a station's any more — but every
-// existing importer reaches both through here, and `docs/specs/station-visuals.md`
-// §4 still calls this module the owner of the per-role figures, which it is.
+/**
+ * Re-exported for the importers that already reach them through here.
+ *
+ * **`src/surface.ts` is the canonical path** — it defines both, and neither is a
+ * station's any more. New code should import from there; this exists so #101 did
+ * not have to rewrite every existing import to say the same thing.
+ *
+ * What this module *does* own is unchanged: `STATION_VISUALS`, the per-role
+ * figures `docs/specs/station-visuals.md` §4 describes, the detail bands and the
+ * waveforms.
+ */
 export { PLATE_TEXTURE_SIZE, type PlatingProfile };
 
 /**

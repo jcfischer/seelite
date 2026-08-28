@@ -173,6 +173,13 @@ function computeCrease(geometry: THREE.BufferGeometry) {
 	const face = new THREE.Vector3();
 	const edge = new THREE.Vector3();
 	const vertex = new THREE.Vector3();
+	// Hoisted above the loop, not merely unrolled: a closure declared inside it
+	// is an allocation per triangle exactly as the array it replaced was. It
+	// reads `face` and `out` from here, both of which the loop rewrites.
+	const lean = (v: number) => {
+		vertex.fromBufferAttribute(normal, v);
+		out[v] = Math.max(out[v], 1 - vertex.dot(face));
+	};
 	for (let i = 0; i < index.count; i += 3) {
 		const ia = index.getX(i);
 		const ib = index.getX(i + 1);
@@ -188,13 +195,6 @@ function computeCrease(geometry: THREE.BufferGeometry) {
 		// NaN into the attribute and take every vertex of the fan with it.
 		if (face.lengthSq() === 0) continue;
 		face.normalize();
-		// Unrolled: a three-element array per triangle is a throwaway allocation
-		// on every triangle of every lofted geometry in the game, ships and
-		// stations alike, and all of it lands during load.
-		const lean = (v: number) => {
-			vertex.fromBufferAttribute(normal, v);
-			out[v] = Math.max(out[v], 1 - vertex.dot(face));
-		};
 		lean(ia);
 		lean(ib);
 		lean(ic);

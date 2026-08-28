@@ -68,21 +68,23 @@ export const SHIP_PANEL_KM = 0.008;
  * - `weathering` 0.10 against 0.12–0.78. #98 refused the grime: hulls stay
  *   crisp built objects. It is not zero because a plate-to-plate variation that
  *   is *only* seams reads as a decal sheet.
- * - `roughness` 0.72 and `metalness` 0.41 are **ceilings**, and that is the
- *   whole of why they are not #35's 0.50 and 0.30. `wearTexels` writes
- *   `roughness × (0.55 + 0.45 × wear)`, so a clean plate — `wear` 0.33 at the
- *   authored plate value of 196 — lands at `0.72 × 0.698 = 0.50` and
- *   `0.41 × 0.736 = 0.30`: #35's finish, exactly, with seams and streaks free to
- *   go rougher and less metallic from there.
+ * - `roughness` and `metalness` are **1**, and that is not a placeholder. A
+ *   station has one finish per role, so its profile can carry one; a hull has
+ *   four — `hull`, `panel`, `trim` and `accent` are different paints — and one
+ *   shared map cannot hold four. At 1 the map is the **wear curve alone**, and
+ *   `plate` scales each material by its own #35 finish so all four survive.
  *
- *   Putting 0.50 and 0.30 in these slots was the first version, and it is the
- *   defect the contact sheet caught. A clean plate then came out at roughness
- *   0.35 — 30% smoother than the hull had ever been — and a smoother metal
- *   mirrors the baked star into a tighter lobe: the star-facing nacelle in
- *   `hull-chase` clipped to white and spilled bloom under the hull. Nothing in
- *   either test tier could see it, because both figures were exactly the
- *   numbers the spec said to use. The ceiling semantics are the thing to read
- *   twice.
+ *   Two wrong answers came before that, and both are worth keeping written
+ *   down. Putting #35's 0.50 and 0.30 straight in these slots read a ceiling as
+ *   a value: a clean plate came out at roughness 0.35, 30% smoother than the
+ *   hull had ever been, and the star-facing nacelle in `hull-chase` clipped to
+ *   white and spilled bloom under the hull. Raising them to the ceilings that
+ *   put a clean plate back on 0.50/0.30 fixed the hull and silently repainted
+ *   the other three: with `material.roughness` forced to 1, `panel`
+ *   (0.58/0.36), `trim` (0.5/0.55) and `accent` (0.54/0.24) all rendered at the
+ *   hull's 0.50/0.30, halving `trim`'s metalness. Both builds were green in
+ *   both tiers, and the second one shipped a repaint under a docstring saying
+ *   the fleet was not repainted.
  * - `seamDepth` 0.55 is the term the station has none of. Enough that a moving
  *   sun breaks across a seam, low enough that the line does not read as a
  *   trench — and, like the panel size, a number set in front of a frame.
@@ -91,8 +93,8 @@ export const SHIP_PLATING: PlatingProfile = {
 	pitchPx: 16,
 	seam: 0.18,
 	weathering: 0.1,
-	roughness: 0.72,
-	metalness: 0.41,
+	roughness: 1,
+	metalness: 1,
 	seamDepth: 0.55,
 };
 
@@ -122,6 +124,9 @@ let maps: {
 	albedo: THREE.Texture;
 	wear: THREE.Texture;
 	seams: THREE.Texture;
+	/** What the wear map's two channels read on a clean plate — see
+	 *  `cleanPlate`. */
+	clean: { roughness: number; metalness: number };
 } | null = null;
 
 function hullMaps() {
@@ -149,8 +154,9 @@ function hullMaps() {
 		map.needsUpdate = true;
 		return map;
 	};
+	const wearBytes = wearTexels(SHIP_PLATING, plate);
 	const albedo = texture(plate, true);
-	const wear = texture(wearTexels(SHIP_PLATING, plate), false);
+	const wear = texture(wearBytes, false);
 	const seams = texture(seamNormalTexels(SHIP_PLATING), false);
 	// **Linear on the hull, nearest on the station.** A station's plating is
 	// read at a few hundred pixels and its seams are meant to stay seams; a
@@ -163,9 +169,36 @@ function hullMaps() {
 		map.minFilter = THREE.LinearMipmapLinearFilter;
 		map.generateMipmaps = true;
 	}
-	maps = { albedo, wear, seams };
+	maps = { albedo, wear, seams, clean: cleanPlate(wearBytes) };
 	return maps;
 }
+
+/**
+ * What the wear map's roughness and metalness channels read on a clean plate.
+ *
+ * **Measured off the shipped buffer, not restated from the curve.** The curve
+ * is `0.55 + 0.45 × wear` and `1 − 0.8 × wear`, and a clean plate's `wear`
+ * depends on the authored plate value, the panel-to-panel variation and the
+ * grime — so a constant here would be a transcription of arithmetic three
+ * profile fields can move, and `plate` would then scale every material by a
+ * number that no longer described the map it was scaling.
+ *
+ * The median rather than the mean: the map is mostly clean plate with seams and
+ * streaks below it, and a mean is pulled by exactly the texels this is meant to
+ * exclude.
+ */
+function cleanPlate(wear: Uint8Array) {
+	const median = (channel: number) => {
+		const values: number[] = [];
+		for (let i = 0; i < wear.length; i += 4) values.push(wear[i + channel]);
+		values.sort((a, b) => a - b);
+		return values[values.length >> 1] / 255;
+	};
+	return { roughness: median(1), metalness: median(2) };
+}
+
+/** The clean-plate factors, for a test that checks the finishes survive. */
+export const cleanPlateFactors = () => hullMaps().clean;
 
 /** Every hull material handed to `plate`, so the quality setting can reach them
  *  all. A `Set` and not a count: the gate has to put the map back, which means
@@ -235,6 +268,47 @@ roughnessFactor = mix(roughnessFactor, 1.0, vCrease * 0.45);
 diffuseColor.rgb *= 1.0 + vCrease * 0.14;`;
 
 /**
+ * The four splices that carry `loft.ts`'s crease into the lighting.
+ *
+ * Its own function so `plate` below reads as assign the maps, patch the shader,
+ * register the material — the nested `splice("vertex", splice("vertex", …))`
+ * pairs have to be read inside-out, and that is one thing to read rather than a
+ * third of a longer one.
+ */
+function patchCrease(
+	shader: { vertexShader: string; fragmentShader: string },
+	splice: (
+		stage: string,
+		source: string,
+		marker: string,
+		code: string,
+	) => string,
+) {
+	shader.vertexShader = splice(
+		"vertex",
+		splice(
+			"vertex",
+			shader.vertexShader,
+			"#include <common>",
+			CREASE_VERTEX_COMMON,
+		),
+		"#include <begin_vertex>",
+		CREASE_VERTEX_BODY,
+	);
+	shader.fragmentShader = splice(
+		"fragment",
+		splice(
+			"fragment",
+			shader.fragmentShader,
+			"#include <common>",
+			CREASE_FRAGMENT_COMMON,
+		),
+		"#include <roughnessmap_fragment>",
+		CREASE_SURFACE,
+	);
+}
+
+/**
  * Give a hull material the shared plating, its seams and its edge wear.
  *
  * Idempotent by the `plated` set: `ship-mesh.ts` caches a palette per hull id,
@@ -243,15 +317,35 @@ diffuseColor.rgb *= 1.0 + vCrease * 0.14;`;
  */
 export function plate(material: THREE.MeshStandardMaterial) {
 	if (plated.has(material)) return material;
-	const { albedo, wear, seams } = hullMaps();
+	const { albedo, wear, seams, clean } = hullMaps();
 	material.map = albedo;
 	material.roughnessMap = wear;
 	material.metalnessMap = wear;
-	// Multiplied by the map's green and blue channels, so these are the
-	// ceilings rather than the values. Left at 1 the map would be the whole
-	// answer and the profile's figures would be decoration.
-	material.roughness = 1;
-	material.metalness = 1;
+	/*
+	 * **Each material keeps its own finish.** `MeshStandardMaterial` multiplies
+	 * `roughness` by the map's green channel and `metalness` by its blue, so the
+	 * scalar is a per-material dial over one shared curve — which is the only
+	 * arrangement in which four paints survive one map.
+	 *
+	 * Forcing both to 1 was the round-two blocker: `panel` (0.58/0.36), `trim`
+	 * (0.5/0.55) and `accent` (0.54/0.24) all rendered at whatever the map's
+	 * clean plate happened to be, which halved `trim`'s metalness and made every
+	 * paint on the hull the same material. It was a repaint of #35's livery
+	 * shipped under a docstring saying the fleet was not repainted, and both
+	 * test tiers were green on it.
+	 *
+	 * Divided by the clean-plate reading rather than used raw, so the finish the
+	 * material arrives with is the finish a clean plate renders — the map is a
+	 * *wear* curve and must not be a brightness offset on top of the paint.
+	 * `userData.finish` records what was asked for, because after this the
+	 * material no longer says.
+	 */
+	material.userData.finish = {
+		roughness: material.roughness,
+		metalness: material.metalness,
+	};
+	material.roughness = Math.min(1, material.roughness / clean.roughness);
+	material.metalness = Math.min(1, material.metalness / clean.metalness);
 	material.normalMap = HULL_QUALITY[hullQuality].seamNormals ? seams : null;
 	material.normalScale = new THREE.Vector2(1, 1);
 	const { log, splice } = makeSplicer("hull surface");
@@ -261,30 +355,7 @@ export function plate(material: THREE.MeshStandardMaterial) {
 	// as "not compiled yet". Empty until the program links, which is the honest
 	// state and is what a probe should see.
 	material.userData.hullSplices = log;
-	material.onBeforeCompile = (shader) => {
-		shader.vertexShader = splice(
-			"vertex",
-			splice(
-				"vertex",
-				shader.vertexShader,
-				"#include <common>",
-				CREASE_VERTEX_COMMON,
-			),
-			"#include <begin_vertex>",
-			CREASE_VERTEX_BODY,
-		);
-		shader.fragmentShader = splice(
-			"fragment",
-			splice(
-				"fragment",
-				shader.fragmentShader,
-				"#include <common>",
-				CREASE_FRAGMENT_COMMON,
-			),
-			"#include <roughnessmap_fragment>",
-			CREASE_SURFACE,
-		);
-	};
+	material.onBeforeCompile = (shader) => patchCrease(shader, splice);
 	// Two hulls with the same patch still compile twice unless they agree they
 	// are the same program. Keyed by whether the normal map is on, because
 	// three.js's own defines differ between the two and a shared key would hand
@@ -338,12 +409,35 @@ export function plateUVs(geometry: THREE.BufferGeometry) {
 	// already have been through here, and a part added twice would otherwise be
 	// divided twice — plates 125 times too small on one side of the ship only,
 	// which reads as a rendering fault rather than as a scale error.
-	if (geometry.userData.platedUVs) return geometry;
-	const uv = geometry.getAttribute("uv") as THREE.BufferAttribute | undefined;
-	if (!uv) return geometry;
-	geometry.userData.platedUVs = true;
-	for (let i = 0; i < uv.count; i++)
-		uv.setXY(i, uv.getX(i) / SHIP_PANEL_KM, uv.getY(i) / SHIP_PANEL_KM);
-	uv.needsUpdate = true;
+	if (geometry.userData.uvUnits !== "km") return geometry;
+	if (!scaleUVs(geometry, 1 / SHIP_PANEL_KM, 1 / SHIP_PANEL_KM))
+		return geometry;
+	// **A fresh bag, not a mutation.** `BufferGeometry.copy` assigns
+	// `userData` by reference, so a clone and its source share one object while
+	// owning separate UV buffers — flipping the shared field would tell a clone
+	// taken before its source was plated that it had already been divided, and
+	// it would keep kilometre UVs. Replacing the object leaves the sibling's
+	// alone.
+	geometry.userData = { ...geometry.userData, uvUnits: "plate" };
 	return geometry;
+}
+
+/**
+ * Multiply a geometry's UVs in place. Returns whether there were any.
+ *
+ * One loop rather than two: `hoop` scales three's normalised torus unwrap up
+ * into kilometres and `plateUVs` scales kilometres down into plates, which is
+ * the same pass with different factors written in two modules.
+ */
+export function scaleUVs(
+	geometry: THREE.BufferGeometry,
+	sx: number,
+	sy: number,
+) {
+	const uv = geometry.getAttribute("uv") as THREE.BufferAttribute | undefined;
+	if (!uv) return false;
+	for (let i = 0; i < uv.count; i++)
+		uv.setXY(i, uv.getX(i) * sx, uv.getY(i) * sy);
+	uv.needsUpdate = true;
+	return true;
 }

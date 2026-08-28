@@ -209,7 +209,7 @@ export function wearTexels(
 	// mode as a short `DataTexture`, one step earlier.
 	if (albedo.length !== size * size * 4)
 		throw new Error(
-			`albedo is ${albedo.length} texels, expected ${size * size * 4}`,
+			`albedo is ${albedo.length} bytes, expected ${size * size * 4}`,
 		);
 	const out = new Uint8Array(size * size * 4);
 	for (let i = 0; i < size * size; i++) {

@@ -5,11 +5,14 @@
  * second and a third consumer. The tests here are in three groups, and the
  * grouping is the argument:
  *
- * 1. **The station's output did not move.** The refactor is only worth doing if
- *    it is provably behaviour-preserving, and "provably" here means an absolute
- *    checksum of every buffer, captured from the build before the change. A
- *    structural assertion that the wrapper calls the generator would pass on a
- *    generator that had been retuned.
+ * 1. **The station's output has not moved since the pins were taken.** An
+ *    absolute checksum of every buffer, captured by running the shipped
+ *    generators at `01427e4`. What it cannot do is prove its own provenance —
+ *    pins taken from the new code and labelled as old would satisfy every
+ *    assertion here identically — so this is a guard against later drift and a
+ *    claim in the commit message, not a proof of behaviour preservation. A
+ *    structural assertion that the wrapper calls the generator would be weaker
+ *    still: it passes on a generator that had been retuned.
  * 2. **The new normal map is in register with the albedo it is derived from.**
  *    #36 recorded the failure this prevents — a shine that misses its own seam —
  *    and an embossed seam that misses its own painted one is the same defect
@@ -26,7 +29,12 @@ import * as THREE from "three";
 import { RING_SEGMENTS, hullLoft } from "../src/loft";
 import { buildShipMesh } from "../src/ship-mesh";
 import { STATION_PANEL_KM } from "../src/station-mesh";
-import { SHIP_PANEL_KM, SHIP_PLATING } from "../src/ship-surface";
+import {
+	SHIP_PANEL_KM,
+	SHIP_PLATING,
+	cleanPlateFactors,
+	plateUVs,
+} from "../src/ship-surface";
 import {
 	PLATE_TEXTURE_SIZE,
 	plateTexels,
@@ -170,12 +178,22 @@ describe("the seam normal map is in register with the painted seam", () => {
 	});
 
 	test("every texel decodes to a unit vector", () => {
+		// Reduced to one assertion rather than 16,384: the fact is "the worst
+		// texel is still unit length", and asserting it per texel spends 16k
+		// expect() calls to say it while naming no offender when it fails.
+		let worst = 0;
+		let at = -1;
 		for (let i = 0; i < size * size; i++) {
 			const x = normals[i * 4] / 255 - 0.5;
 			const y = normals[i * 4 + 1] / 255 - 0.5;
 			const z = normals[i * 4 + 2] / 255 - 0.5;
-			expect(Math.hypot(x, y, z) * 2).toBeCloseTo(1, 1);
+			const off = Math.abs(Math.hypot(x, y, z) * 2 - 1);
+			if (off > worst) {
+				worst = off;
+				at = i;
+			}
 		}
+		expect({ worst: worst < 0.05, at }).toEqual({ worst: true, at });
 	});
 
 	test("a profile with no seam depth is flat everywhere", () => {
@@ -183,11 +201,17 @@ describe("the seam normal map is in register with the painted seam", () => {
 		// generator over the same boundaries, with the one term that makes it a
 		// surface set to zero.
 		const flat = seamNormalTexels({ ...SHIP_PLATING, seamDepth: 0 });
-		for (let i = 0; i < size * size; i++) {
-			expect(flat[i * 4]).toBe(128);
-			expect(flat[i * 4 + 1]).toBe(128);
-			expect(flat[i * 4 + 2]).toBe(255);
-		}
+		// One assertion, and the *first* offending texel rather than a count, so
+		// a failure names where the map stopped being flat.
+		let offender = -1;
+		for (let i = 0; i < size * size && offender < 0; i++)
+			if (
+				flat[i * 4] !== 128 ||
+				flat[i * 4 + 1] !== 128 ||
+				flat[i * 4 + 2] !== 255
+			)
+				offender = i;
+		expect(offender).toBe(-1);
 	});
 });
 
@@ -209,6 +233,65 @@ describe("a plate is the same ruler on a ship and on a station", () => {
 		expect(
 			plateM(STATION_PANEL_KM, STATION_VISUALS.trade.plating.pitchPx),
 		).toBeCloseTo(18.75, 1);
+	});
+});
+
+describe("plate UVs are divided exactly once", () => {
+	const ring = () => {
+		const g = hullLoft([
+			{ z: -0.01, w: 0.004, h: 0.003 },
+			{ z: 0.01, w: 0.004, h: 0.003 },
+		]);
+		return g;
+	};
+
+	test("a second call leaves the UVs where the first put them", () => {
+		const geometry = ring();
+		const before = (geometry.getAttribute("uv") as THREE.BufferAttribute).getX(
+			3,
+		);
+		plateUVs(geometry);
+		const once = (geometry.getAttribute("uv") as THREE.BufferAttribute).getX(3);
+		plateUVs(geometry);
+		const twice = (geometry.getAttribute("uv") as THREE.BufferAttribute).getX(
+			3,
+		);
+		expect(once).not.toBe(before);
+		expect(twice).toBe(once);
+	});
+
+	test("and a clone taken before its source was plated gets its own division", () => {
+		/*
+		 * The guard used to be a boolean in `userData`, and three's
+		 * `BufferGeometry.copy` assigns `userData` **by reference** — so a clone
+		 * and its source share one object while owning separate UV buffers.
+		 * Plating the source flipped the clone's flag too, and the clone kept
+		 * kilometre UVs: plates 125 times too large on one side of the ship only.
+		 * `mirrorX` is exactly that clone.
+		 *
+		 * The comment claimed the guard prevented this and nothing exercised it.
+		 */
+		const source = ring();
+		// A bare `clone()`, deliberately: `mirrorX` happens to spread `userData`
+		// into a fresh object, so testing through it would test that spread
+		// rather than this guard. The hazard is the raw copy, and the fix is
+		// that plating replaces the *source's* bag instead of mutating the one
+		// they share.
+		const clone = source.clone();
+		expect(clone.userData).toBe(source.userData);
+		plateUVs(source);
+		const beforeClone = (
+			clone.getAttribute("uv") as THREE.BufferAttribute
+		).getX(3);
+		plateUVs(clone);
+		const afterClone = (clone.getAttribute("uv") as THREE.BufferAttribute).getX(
+			3,
+		);
+		expect(afterClone).not.toBe(beforeClone);
+		expect(afterClone).toBeCloseTo(
+			(source.getAttribute("uv") as THREE.BufferAttribute).getX(3),
+			6,
+		);
 	});
 });
 
@@ -283,46 +366,67 @@ describe("the crease term reads a hull's own edges", () => {
 	});
 });
 
-describe("a profile figure is a ceiling, not a value", () => {
-	test("a clean ship plate lands on #35's painted finish", () => {
+describe("one wear map, four paints", () => {
+	test("every plated material renders a clean plate at its own #35 finish", () => {
 		/*
-		 * The check the contact sheet had to stand in for.
+		 * The check the contact sheet could not make, and the one round two
+		 * caught by reading the diff.
 		 *
-		 * `wearTexels` writes `roughness × (0.55 + 0.45 × wear)`, so the profile
-		 * figure is what the *seams* reach and never what the plate reads. The
-		 * first `SHIP_PLATING` put `makePalette`'s 0.50 and 0.30 into those slots,
-		 * which put a clean plate at roughness 0.35 — 30% smoother than the hull
-		 * had ever been. A smoother metal mirrors the baked star into a tighter
-		 * lobe, and the star-facing nacelle in `hull-chase` clipped to white and
-		 * spilled bloom under the hull.
+		 * `MeshStandardMaterial` multiplies `roughness` by the wear map's green
+		 * channel and `metalness` by its blue, so the scalar is a per-material
+		 * dial over one shared curve. Two builds got it wrong in opposite
+		 * directions and both were green everywhere:
 		 *
-		 * Nothing could see it: both figures were exactly the numbers
-		 * `ship-visuals.md` said the livery used, every buffer was the right
-		 * length, and every probe was green. What separates the two builds is the
-		 * value a clean plate actually carries, so that is what is asserted —
-		 * against the livery finish it has to reproduce, not against itself.
+		 *  - #35's 0.50/0.30 written into the *profile* read a ceiling as a
+		 *    value: a clean plate came out at 0.35, the hull was 30% smoother
+		 *    than it had ever been, and the star-facing nacelle clipped to white.
+		 *  - Ceilings that fixed the hull, with `material.roughness` forced to 1,
+		 *    silently repainted the other three — `panel`, `trim` and `accent`
+		 *    all rendered at the hull's finish, halving `trim`'s metalness.
+		 *
+		 * So the assertion is over **all four**, not the hull alone, and it is
+		 * the product the shader actually forms rather than either factor.
 		 */
-		const albedo = plateTexels(SHIP_PLATING, "ship");
-		const wear = wearTexels(SHIP_PLATING, albedo);
-		// The modal plate texel: the map is mostly clean plate, so the median of
-		// the roughness channel is the plate's own value rather than a seam's.
-		const median = (channel: number) => {
-			const values: number[] = [];
-			for (let i = 0; i < PLATE_TEXTURE_SIZE ** 2; i++)
-				values.push(wear[i * 4 + channel]);
-			values.sort((a, b) => a - b);
-			return values[Math.floor(values.length / 2)] / 255;
-		};
-		/*
-		 * Banded at 0.02, and the basis matters more than the number. One 8-bit
-		 * step is 0.0039, and the plate's own panel-to-panel variation is ±13 of
-		 * 255 before the wear curve compresses it — so a tighter band would be
-		 * asserting the quantisation and the noise rather than the finish.
-		 * Measured: 0.510 and 0.294. The build this catches read 0.35 and 0.22,
-		 * which is seven and four bands away.
-		 */
-		expect(Math.abs(median(1) - 0.5)).toBeLessThan(0.02);
-		expect(Math.abs(median(2) - 0.3)).toBeLessThan(0.02);
+		const { roughness: cleanG, metalness: cleanB } = cleanPlateFactors();
+		const seen: string[] = [];
+		buildShipMesh("courier").root.traverse((object) => {
+			const material = (object as THREE.Mesh)
+				.material as THREE.MeshStandardMaterial;
+			const finish = material?.userData?.finish as
+				| { roughness: number; metalness: number }
+				| undefined;
+			if (!finish || seen.includes(material.uuid)) return;
+			seen.push(material.uuid);
+			// Banded at 0.02, and the basis is the same as the ruler's: one
+			// 8-bit step is 0.0039 and the plate's own variation is ±13 of 255
+			// before the wear curve compresses it, so a tighter band asserts the
+			// quantisation. The repaint this catches moved `trim`'s metalness by
+			// 0.25 — twelve bands.
+			expect(
+				Math.abs(material.roughness * cleanG - finish.roughness),
+			).toBeLessThan(0.02);
+			expect(
+				Math.abs(material.metalness * cleanB - finish.metalness),
+			).toBeLessThan(0.02);
+		});
+		// The control: an empty traverse would satisfy every assertion above.
+		// Four paints — hull, panel, trim, accent — and no more.
+		expect(seen.length).toBe(4);
+	});
+
+	test("and the four finishes are actually different from each other", () => {
+		// Without this, a build that flattened all four to one value would pass
+		// the test above by also flattening what it compares against.
+		const finishes: string[] = [];
+		buildShipMesh("courier").root.traverse((object) => {
+			const material = (object as THREE.Mesh)
+				.material as THREE.MeshStandardMaterial;
+			const finish = material?.userData?.finish as
+				| { roughness: number; metalness: number }
+				| undefined;
+			if (finish) finishes.push(`${finish.roughness}/${finish.metalness}`);
+		});
+		expect(new Set(finishes).size).toBe(4);
 	});
 
 	test("and a seam is rougher and less metallic than the plate it sits on", () => {

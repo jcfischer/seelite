@@ -253,9 +253,23 @@ for (const viewport of VIEWPORTS.slice(0, 1)) {
 		});
 		const all = [...materials];
 		// Bail rather than throw on `all[0]` below: no patched material means the
-		// hull has not been built or drawn, which the checks should report as a
-		// failure with a reason rather than as a TypeError in the runner.
-		if (!all.length) return { materials: 0 };
+		// hull has not been built or drawn, which the checks should report as
+		// named failures rather than as a TypeError in the runner. **Every field
+		// the checks read**, not just `materials` — returning the count alone
+		// still crashed the third check on `undefined.length`, which is the same
+		// defect one line further down.
+		if (!all.length)
+			return {
+				materials: 0,
+				maps: [],
+				splices: 0,
+				splicesLanded: 0,
+				withSeams: [],
+				withoutSeams: [],
+				hullPixels: 0,
+				moved: 0,
+				stdev: 0,
+			};
 		const splices = all.flatMap((m) => Object.values(m.userData.hullSplices));
 		const W = 480;
 		const H = 300;
@@ -374,7 +388,7 @@ for (const viewport of VIEWPORTS.slice(0, 1)) {
 	check(
 		`hull surface: every plated material carries its three maps`,
 		surface.materials >= 3 &&
-			surface.maps?.every((m) => m.map && m.roughnessMap && m.metalnessMap),
+			surface.maps.every((m) => m.map && m.roughnessMap && m.metalnessMap),
 		`${surface.materials} material(s)`,
 	);
 	check(

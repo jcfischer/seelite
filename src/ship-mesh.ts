@@ -28,7 +28,7 @@ export {
 	SUBDIVISIONS,
 } from "./loft";
 import { type Ring, RING_SEGMENTS, hullLoft, revolve } from "./loft";
-import { plate, plateUVs } from "./ship-surface";
+import { plate, plateUVs, scaleUVs } from "./ship-surface";
 
 export const HULL_IDS = [
 	"courier",
@@ -400,12 +400,12 @@ function makePalette(id: HullId): Palette {
 	 * third emits rather than reflects. Plating them would be texels on a
 	 * surface that never reads as plate.
 	 *
-	 * `plate` sets `roughness` and `metalness` to **1**, so the wear map is the
-	 * whole answer and `SHIP_PLATING`'s ceilings decide the finish — a clean
-	 * plate lands back on the figures below, which is what
-	 * `tests/surface.test.ts` asserts. They are kept here rather than deleted
-	 * because they are #35's livery finish and this node did not repaint the
-	 * fleet, but they only reach a frame if `plate` is never called.
+	 * **The figures below are still the finish.** `plate` reads each material's
+	 * `roughness` and `metalness` and rescales them against what the shared wear
+	 * map reads on a clean plate, so a clean plate renders at exactly the values
+	 * written here and the map supplies the variation around them. All four
+	 * paints survive one map, which is the only reason one map is enough;
+	 * `tests/surface.test.ts` asserts it for each of them.
 	 */
 	const platedPaint = (color: number, roughness: number, metalness: number) =>
 		plate(painted(color, roughness, metalness));
@@ -669,12 +669,7 @@ function drumProfile(halfLength: number, radius: number) {
  */
 function hoop(radius: number, tube: number) {
 	const geometry = new THREE.TorusGeometry(radius, tube, 8, 22);
-	const uv = geometry.getAttribute("uv") as THREE.BufferAttribute;
-	const aroundKm = 2 * Math.PI * radius;
-	const acrossKm = 2 * Math.PI * tube;
-	for (let i = 0; i < uv.count; i++)
-		uv.setXY(i, uv.getX(i) * aroundKm, uv.getY(i) * acrossKm);
-	uv.needsUpdate = true;
+	scaleUVs(geometry, 2 * Math.PI * radius, 2 * Math.PI * tube);
 	geometry.userData.uvUnits = "km";
 	return geometry;
 }
