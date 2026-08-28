@@ -39,6 +39,11 @@ import {
 } from "./surface";
 import { HANDOFF_HYSTERESIS } from "./units";
 
+// Re-exported, not merely imported. `PlatingProfile` described the station's
+// plating until #101 gave the generators a second and a third consumer, so the
+// shape moved to `surface.ts` and cannot be a station's any more — but every
+// existing importer reaches both through here, and `docs/specs/station-visuals.md`
+// §4 still calls this module the owner of the per-role figures, which it is.
 export { PLATE_TEXTURE_SIZE, type PlatingProfile };
 
 /**
@@ -87,15 +92,6 @@ export function stationDetailLevel(
 	if (apparentRadii <= held(DETAIL_RADII.reduced, "reduced")) return "reduced";
 	return "outline";
 }
-
-/**
- * What the generated plating looks like for one role (§4).
- *
- * The shape lives in `surface.ts` now (#101): the generators became one system
- * serving stations, ship hulls and — when #105 lands — the cockpit, so the
- * profile they read cannot be a station's. Re-exported above so every existing
- * importer of this module is unchanged.
- */
 
 /** The one emissive signature and the one motion a role carries (§5). */
 export interface ActivityProfile {
@@ -167,7 +163,8 @@ export const STATION_VISUALS: Record<StationType, StationVisualProfile> = {
 			weathering: 0.12,
 			roughness: 0.55,
 			metalness: 0.42,
-			/** Painted seams, not cut ones — see `PlatingProfile.seamDepth`. */
+			/** Painted seams, not cut ones (#101), for every role — see
+			 *  `PlatingProfile.seamDepth`, which carries the reason. */
 			seamDepth: 0,
 		},
 		activity: {
@@ -194,7 +191,6 @@ export const STATION_VISUALS: Record<StationType, StationVisualProfile> = {
 			weathering: 0.3,
 			roughness: 0.72,
 			metalness: 0.5,
-			/** Painted seams, not cut ones — see `PlatingProfile.seamDepth`. */
 			seamDepth: 0,
 		},
 		activity: {
@@ -221,7 +217,6 @@ export const STATION_VISUALS: Record<StationType, StationVisualProfile> = {
 			weathering: 0.78,
 			roughness: 0.9,
 			metalness: 0.14,
-			/** Painted seams, not cut ones — see `PlatingProfile.seamDepth`. */
 			seamDepth: 0,
 		},
 		activity: {
@@ -248,7 +243,6 @@ export const STATION_VISUALS: Record<StationType, StationVisualProfile> = {
 			weathering: 0.62,
 			roughness: 0.86,
 			metalness: 0.3,
-			/** Painted seams, not cut ones — see `PlatingProfile.seamDepth`. */
 			seamDepth: 0,
 		},
 		activity: {

@@ -542,7 +542,7 @@ function flatCloneOf(material: THREE.Material) {
  * plating at this scale. One constant for every part of every station, because
  * a plate that changes size from one part to the next stops being a ruler.
  */
-const STATION_PANEL_KM = 0.15;
+export const STATION_PANEL_KM = 0.15;
 
 /**
  * The plated shell language every form shares.

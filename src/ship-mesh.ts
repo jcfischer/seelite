@@ -400,11 +400,12 @@ function makePalette(id: HullId): Palette {
 	 * third emits rather than reflects. Plating them would be texels on a
 	 * surface that never reads as plate.
 	 *
-	 * `plate` overwrites `roughness` and `metalness` with the map's ceilings, so
-	 * the per-material figures below are the profile's job now and the ones here
-	 * are what the material falls back to if it is ever unplated. Kept rather
-	 * than deleted, because they are #35's livery finish and this node did not
-	 * repaint the fleet.
+	 * `plate` sets `roughness` and `metalness` to **1**, so the wear map is the
+	 * whole answer and `SHIP_PLATING`'s ceilings decide the finish — a clean
+	 * plate lands back on the figures below, which is what
+	 * `tests/surface.test.ts` asserts. They are kept here rather than deleted
+	 * because they are #35's livery finish and this node did not repaint the
+	 * fleet, but they only reach a frame if `plate` is never called.
 	 */
 	const platedPaint = (color: number, roughness: number, metalness: number) =>
 		plate(painted(color, roughness, metalness));
@@ -441,14 +442,14 @@ function add(
 	position: [number, number, number] = [0, 0, 0],
 	rotation: [number, number, number] = [0, 0, 0],
 ) {
-	// **Every lofted part, not every plated one.** `hullLoft` writes its UVs in
-	// kilometres and they are unusable as they stand by any map; dividing here
-	// rather than at the four plated materials keeps one rule, and a geometry
-	// whose material has no map pays a loop over an attribute nobody samples.
-	// The `ringSize` marker is what says a geometry came from the loft — the
-	// exhaust disc and the docking ring do not, and their unwraps are already
-	// normalised.
-	if (geometry.userData.ringSize !== undefined) plateUVs(geometry);
+	// **Every part whose UVs are in kilometres, not every plated one.** Those
+	// UVs are unusable as they stand by any map; dividing here rather than at
+	// the four plated materials keeps one rule, and a geometry whose material
+	// has no map pays a loop over an attribute nobody samples. `uvUnits` is
+	// declared by `hullLoft` and by `hoop`, so the gate reads the fact it needs
+	// rather than a marker that happens to travel with it — the exhaust disc
+	// declares nothing and keeps its normalised unwrap.
+	if (geometry.userData.uvUnits === "km") plateUVs(geometry);
 	const mesh = new THREE.Mesh(geometry, material);
 	mesh.name = name;
 	mesh.position.set(...position);
@@ -651,9 +652,31 @@ function drumProfile(halfLength: number, radius: number) {
 	] as ReadonlyArray<readonly [number, number]>;
 }
 
-/** A structural hoop: the cheapest read for "machine" on an otherwise bare loft. */
+/**
+ * A structural hoop: the cheapest read for "machine" on an otherwise bare loft.
+ *
+ * **Its UVs are rewritten into kilometres**, because it is the one plated
+ * geometry in this file that `hullLoft` did not build. `TorusGeometry` unwraps
+ * 0–1 round the ring and 0–1 round the tube, so a hoop handed to `add()` as it
+ * comes wraps one whole 128-texel tile round itself whatever its size: 22 plates
+ * round a 27.6 m ring and the same 22 round a 3.1 m tube, against a plate that
+ * is 1 m everywhere else on the hull. A plate is the ruler a pilot judges a
+ * hull's size by, and a ruler that changes length per part is not one.
+ *
+ * Rewriting them here rather than exempting the hoop keeps `add()`'s rule
+ * single — every geometry it plates carries kilometre UVs — instead of adding a
+ * second scaling path for three's primitives.
+ */
 function hoop(radius: number, tube: number) {
-	return new THREE.TorusGeometry(radius, tube, 8, 22);
+	const geometry = new THREE.TorusGeometry(radius, tube, 8, 22);
+	const uv = geometry.getAttribute("uv") as THREE.BufferAttribute;
+	const aroundKm = 2 * Math.PI * radius;
+	const acrossKm = 2 * Math.PI * tube;
+	for (let i = 0; i < uv.count; i++)
+		uv.setXY(i, uv.getX(i) * aroundKm, uv.getY(i) * acrossKm);
+	uv.needsUpdate = true;
+	geometry.userData.uvUnits = "km";
+	return geometry;
 }
 
 function greebleStrip(

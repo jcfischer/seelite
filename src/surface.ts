@@ -295,10 +295,15 @@ export function seamNormalTexels(
 	 */
 	const slope = (d: number) =>
 		Math.abs(d) >= SEAM_HALF_WIDTH_PX ? 0 : Math.sign(d) / SEAM_HALF_WIDTH_PX;
+	// One scan per column, not per texel: `toSeam` walks every boundary, and the
+	// answer depends on one coordinate. Inside the inner loop it ran size² times
+	// for size distinct answers, and the waste grows with the square of
+	// `PLATE_TEXTURE_SIZE`.
+	const distance = Array.from({ length: size }, (_, n) => toSeam(n));
 	for (let y = 0; y < size; y++) {
-		const dy = toSeam(y);
+		const dy = distance[y];
 		for (let x = 0; x < size; x++) {
-			const dx = toSeam(x);
+			const dx = distance[x];
 			// Each axis contributes its own groove independently, so a panel
 			// corner is a pit rather than a crossing of two lines that cancel.
 			// `+depth × slope` and not `−`, because the groove goes *down*: the

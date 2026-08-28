@@ -13,12 +13,20 @@ const VIEWPORTS = [
 // renderer around it. Guarding on `main.ts` alone meant an edit to
 // `ship-mesh.ts` could be probed green against a stale dev server serving a
 // different checkout — the exact failure `probe-guard.mjs` exists to prevent.
+/*
+ * #101's surface, and **what the guard can and cannot see**.
+ *
+ * probe-guard fingerprints a module by its top-level numeric constants, so what
+ * these two add is `SHIP_PANEL_KM`, `PLATE_TEXTURE_SIZE` and
+ * `SEAM_HALF_WIDTH_PX` — the plate size on both sides of the divide, and the
+ * groove width. `SHIP_PLATING` and `HULL_QUALITY` are nested and the guard reads
+ * neither: a dev server serving another checkout whose profile figures differ
+ * would still pass. Written down rather than implied, because a guard list is
+ * exactly the kind of thing a reader takes as a coverage claim.
+ */
 await guardedOrigin(ORIGIN, [
 	"src/main.ts",
 	"src/ship-mesh.ts",
-	// #101's surface. Guarding on the mesh alone would let the plating, the
-	// seam map and the quality gate change under a dev server serving another
-	// checkout while this probe read them green.
 	"src/ship-surface.ts",
 	"src/surface.ts",
 ]);
@@ -244,6 +252,10 @@ for (const viewport of VIEWPORTS.slice(0, 1)) {
 			if (material?.userData?.hullSplices) materials.add(material);
 		});
 		const all = [...materials];
+		// Bail rather than throw on `all[0]` below: no patched material means the
+		// hull has not been built or drawn, which the checks should report as a
+		// failure with a reason rather than as a TypeError in the runner.
+		if (!all.length) return { materials: 0 };
 		const splices = all.flatMap((m) => Object.values(m.userData.hullSplices));
 		const W = 480;
 		const H = 300;
@@ -362,10 +374,13 @@ for (const viewport of VIEWPORTS.slice(0, 1)) {
 	check(
 		`hull surface: every plated material carries its three maps`,
 		surface.materials >= 3 &&
-			surface.maps.every((m) => m.map && m.roughnessMap && m.metalnessMap),
+			surface.maps?.every((m) => m.map && m.roughnessMap && m.metalnessMap),
 		`${surface.materials} material(s)`,
 	);
 	check(
+		// A count as well as an equality: the log is written when a material is
+		// plated and filled when its program links, so an empty log is "not
+		// compiled" rather than "nothing missed" — and `0 === 0` would pass it.
 		`hull surface: every shader splice found its marker`,
 		surface.splices > 0 && surface.splicesLanded === surface.splices,
 		`${surface.splicesLanded}/${surface.splices}`,

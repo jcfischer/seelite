@@ -188,10 +188,16 @@ function computeCrease(geometry: THREE.BufferGeometry) {
 		// NaN into the attribute and take every vertex of the fan with it.
 		if (face.lengthSq() === 0) continue;
 		face.normalize();
-		for (const v of [ia, ib, ic]) {
+		// Unrolled: a three-element array per triangle is a throwaway allocation
+		// on every triangle of every lofted geometry in the game, ships and
+		// stations alike, and all of it lands during load.
+		const lean = (v: number) => {
 			vertex.fromBufferAttribute(normal, v);
 			out[v] = Math.max(out[v], 1 - vertex.dot(face));
-		}
+		};
+		lean(ia);
+		lean(ib);
+		lean(ic);
 	}
 	for (let i = 0; i < out.length; i++)
 		out[i] = Math.max(
@@ -332,6 +338,16 @@ export function hullLoft(
 	geometry.setIndex(indices);
 	geometry.computeVertexNormals();
 	computeCrease(geometry);
+	/**
+	 * **What the `uv` attribute is measured in**, declared rather than inferred.
+	 *
+	 * `plateUVs` used to gate on `ringSize`, a marker this function sets to
+	 * record where the cap fans are — an unrelated fact that happened to be
+	 * present on every lofted geometry. A later producer omitting it, or a
+	 * non-loft geometry adopting it, would have got the wrong plate size
+	 * silently. This says the thing the consumer actually needs to know.
+	 */
+	geometry.userData.uvUnits = "km";
 	geometry.userData.ringSize = segments;
 	// Where the two cap fans' centre vertices ended up. Recorded rather than
 	// left to be inferred: they were the last two vertices until the caps gained

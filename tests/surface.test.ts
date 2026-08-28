@@ -21,9 +21,11 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { codeOf } from "./lib/source-scan";
 import * as THREE from "three";
 import { RING_SEGMENTS, hullLoft } from "../src/loft";
 import { buildShipMesh } from "../src/ship-mesh";
+import { STATION_PANEL_KM } from "../src/station-mesh";
 import { SHIP_PANEL_KM, SHIP_PLATING } from "../src/ship-surface";
 import {
 	PLATE_TEXTURE_SIZE,
@@ -78,14 +80,27 @@ describe("the station's surface did not move", () => {
 		});
 	}
 
-	test("the station wrapper is the shared generator, tagged by role", () => {
-		// The pins above would still hold if `station-visuals` kept a private
-		// copy of the old code, so this is the half that says the copy is gone.
+	test("the station wrapper agrees with the shared generator, tagged by role", () => {
+		// What this proves is that the wrapper passes the role's own profile and
+		// uses the role as the hash tag — get either wrong and the buffers
+		// diverge. What it does **not** prove is that the old copy is gone: a
+		// byte-identical private implementation satisfies both this and the pins
+		// above, because both compare outputs. The next test is the half that
+		// looks at the source.
 		for (const type of STATION_TYPES) {
 			expect(platingTexels(type)).toEqual(
 				plateTexels(STATION_VISUALS[type].plating, type),
 			);
 		}
+	});
+
+	test("and there is only one implementation of it", () => {
+		// The structural half, because no comparison of outputs can find a
+		// duplicate that agrees. A texel generator allocates its buffer; nothing
+		// left in `station-visuals.ts` should, now that both generators live in
+		// `surface.ts` and this module only wraps them.
+		expect(codeOf("src/station-visuals.ts")).not.toContain("new Uint8Array");
+		expect(codeOf("src/surface.ts")).toContain("new Uint8Array");
 	});
 
 	test("no station role embosses its seams", () => {
@@ -185,10 +200,15 @@ describe("a plate is the same ruler on a ship and on a station", () => {
 		const plateM = (panelKm: number, pitchPx: number) =>
 			(panelKm / Math.round(PLATE_TEXTURE_SIZE / pitchPx)) * 1000;
 		expect(plateM(SHIP_PANEL_KM, SHIP_PLATING.pitchPx)).toBeCloseTo(1, 1);
-		expect(plateM(0.15, STATION_VISUALS.trade.plating.pitchPx)).toBeCloseTo(
-			18.75,
-			1,
-		);
+		// `STATION_PANEL_KM` is **imported**, not restated. It was written as the
+		// literal 0.15 under a comment claiming a change to either profile would
+		// move this line — which was false in exactly the direction that matters:
+		// doubling the station's panel size would have doubled every station
+		// plate while this test, and the "~19 m" in `ship-visuals.md` and
+		// `CLAUDE.md`, stayed green.
+		expect(
+			plateM(STATION_PANEL_KM, STATION_VISUALS.trade.plating.pitchPx),
+		).toBeCloseTo(18.75, 1);
 	});
 });
 

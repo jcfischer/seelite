@@ -169,7 +169,14 @@ function hullMaps() {
 
 /** Every hull material handed to `plate`, so the quality setting can reach them
  *  all. A `Set` and not a count: the gate has to put the map back, which means
- *  holding the materials rather than knowing how many there were. */
+ *  holding the materials rather than knowing how many there were.
+ *
+ *  **Bounded, and not by eviction.** Nothing is ever removed, and nothing needs
+ *  to be: `ship-mesh.ts` caches one palette per hull id for the life of the
+ *  process, so this holds four materials per archetype and cannot exceed that —
+ *  44 at the eleven archetypes on the roster. A material reaches here only
+ *  through `makePalette`, which is the same cache, so a scene being discarded
+ *  frees no material this could drop. */
 const plated = new Set<THREE.MeshStandardMaterial>();
 
 /**
@@ -248,6 +255,12 @@ export function plate(material: THREE.MeshStandardMaterial) {
 	material.normalMap = HULL_QUALITY[hullQuality].seamNormals ? seams : null;
 	material.normalScale = new THREE.Vector2(1, 1);
 	const { log, splice } = makeSplicer("hull surface");
+	// **Recorded now, not in the compile callback.** A probe that traverses for
+	// this key before the first frame that draws a hull would otherwise find no
+	// patched materials at all and read that as "nothing to check" rather than
+	// as "not compiled yet". Empty until the program links, which is the honest
+	// state and is what a probe should see.
+	material.userData.hullSplices = log;
 	material.onBeforeCompile = (shader) => {
 		shader.vertexShader = splice(
 			"vertex",
@@ -271,7 +284,6 @@ export function plate(material: THREE.MeshStandardMaterial) {
 			"#include <roughnessmap_fragment>",
 			CREASE_SURFACE,
 		);
-		material.userData.hullSplices = log;
 	};
 	// Two hulls with the same patch still compile twice unless they agree they
 	// are the same program. Keyed by whether the normal map is on, because
@@ -293,6 +305,12 @@ export function plate(material: THREE.MeshStandardMaterial) {
  */
 export function applyHullQuality(quality: HullQuality) {
 	hullQuality = quality;
+	// **Before `hullMaps`.** This is called from `Game`'s boot-time quality pass,
+	// which runs before any hull material exists, and building the three buffers
+	// there would defeat the laziness the module is written for — the setting
+	// would pay for maps nothing is using yet. `plate` reads `hullQuality` when
+	// the first palette arrives.
+	if (plated.size === 0) return;
 	const { seams } = hullMaps();
 	const on = HULL_QUALITY[quality].seamNormals;
 	for (const material of plated) {
