@@ -431,11 +431,18 @@ const APERTURE_LIGHT_MATERIAL = emissiveMaterial(0xffb347, 2.2);
  * far ones are what the arriving ship sees. Not emissive: the throat is a lit
  * structure seen against a dark interior, and the aperture bars around its
  * mouth are the light source that says where it is.
+ *
+ * **Lambert, not Standard**, and that is measured rather than a preference: the
+ * recess this replaces was an unlit `MeshBasicMaterial`, and making it a PBR
+ * material cost about a fifth of the frame under SwiftShader — 45 frames in
+ * three seconds against 56 on `main` at 1280x760. Lambert shades the tunnel
+ * walls, which is the whole point of lighting them, at a fraction of the
+ * fragment cost. (A probe's frame cost is a relative signal and never the
+ * player's — #98 — but a fifth is worth not spending for a surface with no
+ * metalness in it.)
  */
-const THROAT_MATERIAL = new THREE.MeshStandardMaterial({
+const THROAT_MATERIAL = new THREE.MeshLambertMaterial({
 	color: 0x2a3038,
-	roughness: 0.85,
-	metalness: 0.2,
 	side: THREE.BackSide,
 });
 

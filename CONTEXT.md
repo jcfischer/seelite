@@ -12,6 +12,14 @@ _Avoid_: Modifier, influence point
 The persistent identity for a generated place that survives destruction and replacement of its occupying carrier instance. `docs/specs/persistent-world-state.md` §2 owns its key structure.
 _Avoid_: Bare global object ID, display name
 
+**Station name**:
+What a station is **called** — `ENBILATE Gateway`. A third thing beside its `id`
+(a lookup key) and its **Carrier slot** (what a save row is filed under), and
+`docking.md` §12.5's decision E9 is where it was ratified as one: derived from
+the system name and the station type, never drawn from a stream, and unique
+within a system by construction. `src/station-name.ts` owns the derivation.
+_Avoid_: display name (says which of the three it is not, not which it is)
+
 **CarrierKey**:
 The canonical persisted identity of a carrier slot; a galaxy envelope may store its system-local pair and supplies the galaxy component. `docs/specs/persistent-world-state.md` §2 and §7 own the structure.
 

@@ -3553,10 +3553,10 @@ class Game {
 	 *
 	 * **The motion is this spec's and the control is #70's** — M9 puts the
 	 * launch control on the Flight console. This method is the seam: what
-	 * happens after it is pressed. ("Control" rather than "command": `CONTEXT.md`
-	 * §Language reserves the latter as an avoid-alias for **Intervention**, a
-	 * different thing entirely, and a word that reads past a glossary is a word
-	 * that ends up meaning both.)
+	 * happens after it is pressed. **Control**, throughout — `CONTEXT.md`
+	 * §Language reserves the other word for **Intervention**, which is a player
+	 * action on a carrier's condition and not a thing on a console, and a word
+	 * that reads past a glossary is a word that ends up meaning both.
 	 */
 	launch(): boolean {
 		if (this.dock.phase !== "docked" || !this.dock.stationId) return false;

@@ -144,7 +144,20 @@ export function requestLaunch(
 	return {
 		phase: "launching",
 		stationId: session.stationId,
-		law: beginLaunch(frame, gameTime),
+		// The pose the docked ship is actually in — nose inward, rolled to the
+		// slot — so the launch turns it round over the traversal instead of
+		// reversing it on the first frame.
+		law: beginLaunch(frame, gameTime, dockedAttitude(frame)),
+	};
+}
+
+/** The attitude a parked ship holds: nose down the inward axis, up along the
+ *  slot's `across`, which is check 4's roll reference. One spelling, read by
+ *  both the docked tick and the launch that starts from it. */
+function dockedAttitude(frame: ApertureFrame): { nose: Vec3; up: Vec3 } {
+	return {
+		nose: scale(frame.axis, -1),
+		up: slotBasis(frame).across,
 	};
 }
 
@@ -225,7 +238,13 @@ export function stepDockedWorld(
 	const pose = stationPose(world.system, id, world.gameTime);
 	const frame = apertureFrame(station.type, pose.axis, pose.phaseRad);
 	const stationVel = bodyVelocity(world.system, id, world.gameTime);
-	const spinRadPerS = station.spinRpm
+	// **From the geometry, not from the drawn rpm.** `frameAtPhase` forces a
+	// pad's phase to zero because a pad does not rotate, so a pad carrying a
+	// non-zero `spinRpm` would get rotation terms in the velocity that its own
+	// position law does not have — and the velocity would stop being the
+	// derivative of the position mid-traversal. `apertureFrame` normalises the
+	// phase for the same reason; this is that rule applied to the rate.
+	const spinRadPerS = STATION_GEOMETRY[station.type].spins
 		? (2 * Math.PI * station.spinRpm) / 60
 		: 0;
 
@@ -246,12 +265,12 @@ export function stepDockedWorld(
 				// carries no velocity into it — the ship's velocity while docked is
 				// the station's, exactly.
 				vel: stationVel,
-				nose: scale(frame.axis, -1),
-				// The slot's **`across`** at this phase — check 4's convention, see
-				// `arrivalAttitude` — so a docked ship sits square in its slot and
-				// turns with the station rather than holding a world-space roll it
-				// has rotated away from.
-				up: slotBasis(frame).across,
+				// One spelling of the parked pose, which the launch also starts
+				// from: nose down the inward axis, up along the slot's `across` —
+				// check 4's convention, see `arrivalAttitude` — so a docked ship
+				// sits square in its slot and turns with the station rather than
+				// holding a world-space roll it has rotated away from.
+				...dockedAttitude(frame),
 			},
 		};
 	}

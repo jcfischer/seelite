@@ -184,6 +184,26 @@ check(
 	`${roster.length}`,
 );
 
+/**
+ * The station the throat rows are measured on.
+ *
+ * **No fallback to a pad.** `?? roster[0].id` was the first spelling and it is
+ * exactly the failure this file's header refuses: with no slot in the system
+ * the throat ink row, row 3 and the interior-shield row would every one of them
+ * measure a *pad* and still report green. A system with no slot station is a
+ * generator change, not a run to paper over.
+ */
+const slotId = roster.find((s) => s.kind === "slot")?.id;
+check(
+	"the system has a slot station to fly a throat at",
+	slotId !== undefined,
+	roster.map((s) => `${s.id}:${s.kind}`).join(", "),
+);
+if (slotId === undefined) {
+	await browser.close();
+	exit();
+}
+
 // ---------------------------------------------------------------------------
 // Row 1 — the throat is drawn behind every slot, the deck under every pad
 // ---------------------------------------------------------------------------
@@ -215,35 +235,32 @@ for (const station of roster) {
  * station spins and its orbit carries it, so two captures taken across separate
  * calls differ by more than the effect being measured.
  */
-const interiorInk = await page.evaluate(
-	(id) => {
-		const g = window.__seelite;
-		const snap = g.dockingSnapshot(id);
-		// Close in: the slot is 120 m across, so from a couple of core radii out it
-		// subtends a handful of pixels and the difference this measures is smaller
-		// than the anti-aliasing on its own edge. One aperture-width off the face
-		// puts the mouth across a good part of the frame — on the axis, looking
-		// straight in, which is the arriving ship's own view.
-		const rangeKm = snap.planeKm + snap.apertureWidthKm;
-		window.__placeOnAxis(id, rangeKm, false);
-		const mesh = window.__meshOfBody(id);
-		const interior = [];
-		mesh.traverse((o) => {
-			if (o.name === "aperture-mouth" || o.name === "aperture-deck")
-				interior.push(o);
-		});
-		const { changed } = window.__inkDelta(
-			() => {
-				for (const o of interior) o.visible = false;
-			},
-			() => {
-				for (const o of interior) o.visible = true;
-			},
-		);
-		return { changed, parts: interior.length, rangeKm };
-	},
-	roster.find((s) => s.kind === "slot")?.id ?? roster[0].id,
-);
+const interiorInk = await page.evaluate((id) => {
+	const g = window.__seelite;
+	const snap = g.dockingSnapshot(id);
+	// Close in: the slot is 120 m across, so from a couple of core radii out it
+	// subtends a handful of pixels and the difference this measures is smaller
+	// than the anti-aliasing on its own edge. One aperture-width off the face
+	// puts the mouth across a good part of the frame — on the axis, looking
+	// straight in, which is the arriving ship's own view.
+	const rangeKm = snap.planeKm + snap.apertureWidthKm;
+	window.__placeOnAxis(id, rangeKm, false);
+	const mesh = window.__meshOfBody(id);
+	const interior = [];
+	mesh.traverse((o) => {
+		if (o.name === "aperture-mouth" || o.name === "aperture-deck")
+			interior.push(o);
+	});
+	const { changed } = window.__inkDelta(
+		() => {
+			for (const o of interior) o.visible = false;
+		},
+		() => {
+			for (const o of interior) o.visible = true;
+		},
+	);
+	return { changed, parts: interior.length, rangeKm };
+}, slotId);
 
 check(
 	"the interior contributes pixels on the axis view",
@@ -319,7 +336,6 @@ const dock = (id) =>
 		[id, PROBE_STANDOFF_KM],
 	);
 
-const slotId = roster.find((s) => s.kind === "slot")?.id ?? roster[0].id;
 /** E3's duration, read off the page rather than restated. */
 const arrivalSeconds = await page.evaluate(
 	() => window.__seelite.dockingTolerances.ARRIVAL_SECONDS,
@@ -443,7 +459,14 @@ const inside = await shieldInk(slotId);
 check(
 	// The half only a probe can catch: it exists for a few seconds, from one
 	// angle, and nothing headless can see it at all.
-	"the interior shield is visible during the arrival",
+	// **At this clock, and the name says so.** The plaque sits on the mesh's own
+	// axes while the ship's roll is not tied to them (§12.7's joint 8), so which
+	// part of the end wall faces the pilot is a function of the slot's phase —
+	// the long-dock section below advances ten minutes and the same view then
+	// reads zero. This row is evidence that the interior shield is drawn and
+	// reachable; E11's claim that it is visible *throughout* an arrival is owed a
+	// check that joint 8 has to close first.
+	"the interior shield is visible during the arrival at this clock",
 	inside.plates > 0 && inside.changed > SHIELD_INK_FLOOR,
 	`${inside.changed} pixels from ${inside.plates} plate(s)`,
 );

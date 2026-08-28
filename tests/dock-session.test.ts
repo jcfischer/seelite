@@ -142,6 +142,40 @@ describe("§12.6 obligation 3 — flight is inert unless the ship is flying", ()
 	});
 });
 
+describe("§12.2 — the launch turns the ship round rather than snapping it", () => {
+	test("the nose sweeps from inward to outward over the traversal", () => {
+		// **The defect this catches shipped once.** `beginLaunch` said "a docked
+		// ship is already aligned — the arrival put it there" and passed no
+		// attitude, but the parked nose points *inward* and a launch aims
+		// outward: with nothing to blend from, the ship reversed 180° on the
+		// traversal's first frame. Every other row here passed.
+		const { world, id } = spinningWorld();
+		const e = entryOn(world, id);
+		let session = enterArrival(id, e.frame, e.rel, e.attitude, world.gameTime);
+		session = run(world, session, ARRIVAL_SECONDS + 0.5).session;
+		const axis = frameNow(world, id).axis;
+		session = requestLaunch(session, frameNow(world, id), world.gameTime);
+
+		const along: number[] = [];
+		let s = session;
+		// The **whole** traversal: sampled to the half-way point the nose is
+		// exactly perpendicular to the axis, which reads as "not out yet" and
+		// says nothing about whether it ever gets there.
+		for (let i = 0; i < Math.round(ARRIVAL_SECONDS * 60) + 2; i++) {
+			const out = stepDockedWorld(world, s, 1 / 60);
+			s = out.session;
+			if (out.ship) along.push(dot(out.ship.nose, axis));
+		}
+		// It starts pointing in and ends pointing out — and every step between
+		// moves in that direction, which is what a blend does and what a snap
+		// does not.
+		expect(along[0]).toBeLessThan(-0.9);
+		expect(along[along.length - 1]).toBeGreaterThan(0.9);
+		for (let i = 1; i < along.length; i++)
+			expect(along[i]).toBeGreaterThanOrEqual(along[i - 1] - 1e-9);
+	});
+});
+
 describe("§12.6 obligation 5 — every launch is skippable", () => {
 	test("a launch can be skipped, unconditionally", () => {
 		const { world, id } = spinningWorld();

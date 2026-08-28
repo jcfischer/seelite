@@ -4,8 +4,8 @@
  * The arrival is a **sim position law**, which is the repo's standing rule
  * rather than a choice §12 made: the authoritative world is float64 kilometres
  * outside the scene graph. So it is arithmetic, and these are the rows §12.6
- * asks of it — 1, 2, 6, 7 and 9. Rows 3, 4, 5 and 8 are about the game's state
- * machine rather than the law, and live in `tests/arrival-session.test.ts`.
+ * asks of it — 1, 2, 6 and 7. Rows 3, 4, 5, 8 and 9 are about the game's state
+ * machine rather than the law, and live in `tests/dock-session.test.ts`.
  */
 
 import { describe, expect, test } from "bun:test";

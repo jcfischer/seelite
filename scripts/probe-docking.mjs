@@ -256,7 +256,14 @@ async function fly(setup) {
 				// since #77 a passed entry hands over to a five-second arrival
 				// before `dockedAt` is anything. §9.2's rows are about whether the
 				// entry was accepted, which is exactly this.
-				docked: after.lastEntry?.docked === true,
+				// **Both: the verdict *and* the state it hands over to.** The loop
+				// above stops at the crossing, and since #77 a passed entry hands over
+				// to a five-second arrival before `dockedAt` is anything — so the
+				// verdict alone is what §9.2 is about. But a build that evaluated
+				// `docked` and never entered the session would keep every row here
+				// green, which is the regression #77 exists to have fixed.
+				docked:
+					after.lastEntry?.docked === true && after.dockPhase !== "flying",
 				hostile: after.hostile,
 				alive: after.alive,
 				conditionBefore: before,

@@ -1,9 +1,10 @@
 /**
- * A station's displayed name (`docs/specs/docking.md` §12.5, decision **E9**).
+ * A station's **name** (`docs/specs/docking.md` §12.5, decision **E9**).
  *
  * `Station.id` is `"station-trade"` and `station.ts` says outright that it is a
- * lookup key; `localCarrierId` is the persistence key. The name is a third
- * thing, and this module is where it is derived.
+ * lookup key; `localCarrierId` is the **carrier slot**, which is what a save row
+ * is filed under. The name is a third thing — `CONTEXT.md` §Language now carries
+ * it as its own term for that reason — and this module is where it is derived.
  *
  * **Derived, never drawn.** A new draw from any existing domain tag shifts
  * every station generated after it and moves `tests/station-orbits.test.ts`'s
@@ -108,7 +109,7 @@ export function stationName(systemName: string, type: StationType): string {
  * anything. Passing the id in makes the discriminator as unique as the
  * persistence key is, and moves the failure to where it belongs: if two
  * stations in one system share a carrier id, `economy-trade.md` §5.5's deficit
- * map has already merged their market memory, and a duplicated display name is
+ * map has already merged their market memory, and two stations sharing a name is
  * the smallest of that day's problems. This function does not paper over it —
  * duplicate ids come back as duplicate names, which is the honest report.
  */

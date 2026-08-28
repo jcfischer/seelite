@@ -31,7 +31,7 @@ import {
 	slotBasis,
 } from "./docking";
 import type { StationAperture, StationGeometry } from "./station";
-import { type Vec3, add, dot, scale, v3 } from "./vec3";
+import { type Vec3, add, dot, scale, sub, v3 } from "./vec3";
 
 /**
  * How far outside the aperture plane the launch releases the ship, km.
@@ -176,13 +176,20 @@ export function beginArrival(
 /**
  * Begin the launch: the same law, run the other way.
  *
- * It takes no attitude because a docked ship is already aligned — the arrival
- * put it there — and no flag, because **a launch is unconditionally skippable**
- * and reads none of E4's state (§12.2).
+ * **It takes the parked attitude, because "already aligned" was only half
+ * true.** The arrival does leave the ship rolled to the slot, but it leaves the
+ * nose pointing *inward* — and a launch aims outward, so with nothing to blend
+ * from the ship reversed 180° on the traversal's first frame. The same easing
+ * that settles the arrival now turns it round on the way out. Omit the argument
+ * and it snaps, which is why the caller passes it rather than the law assuming.
+ *
+ * No flag, though: **a launch is unconditionally skippable** and reads none of
+ * E4's state (§12.2).
  */
 export function beginLaunch(
 	frame: ApertureFrame,
 	startedAtS: number,
+	dockedAttitude?: { nose: Vec3; up: Vec3 },
 ): ArrivalLaw {
 	return {
 		kind: "launch",
@@ -191,8 +198,8 @@ export function beginLaunch(
 		durationS: ARRIVAL_SECONDS,
 		from: { axial: dockedAxialFor(frame), across: 0, up: 0 },
 		to: { axial: frame.planeKm + LAUNCH_RELEASE_KM, across: 0, up: 0 },
-		fromNose: null,
-		fromUp: null,
+		fromNose: dockedAttitude?.nose ?? null,
+		fromUp: dockedAttitude?.up ?? null,
 	};
 }
 
@@ -275,10 +282,39 @@ export function arrivalRelVelocity(
 	);
 }
 
-/** Normalise, returning the input's direction or `null` for a zero vector. */
+/** Normalise. A zero vector has no direction, so it gets an arbitrary one
+ *  rather than a `NaN`. */
 function unit(a: Vec3): Vec3 {
 	const n = Math.hypot(a.x, a.y, a.z);
 	return n === 0 ? v3(0, 0, 1) : scale(a, 1 / n);
+}
+
+/**
+ * Interpolate two directions along the great circle between them.
+ *
+ * **A real slerp, because the obvious `unit(lerp(a, b, t))` is degenerate
+ * exactly where this is used.** A launch turns the nose from inward to outward
+ * — two *antipodal* vectors — and their normalised lerp is the zero vector at
+ * the half-way point and flips sign either side of it: the ship holds its
+ * entry heading for half the traversal and then snaps. That shipped once, and
+ * `tests/dock-session.test.ts` holds the row that fails on it.
+ *
+ * `via` is the plane to turn through when the two are antipodal, where no
+ * great circle is preferred by the geometry and one has to be chosen. Callers
+ * pass the slot's own `up`, so the ship pitches over rather than rolling round
+ * some axis that depends on rounding.
+ */
+function slerp(a: Vec3, b: Vec3, t: number, via: Vec3): Vec3 {
+	const d = Math.min(1, Math.max(-1, dot(a, b)));
+	// Near-parallel: the great circle is shorter than float64 can resolve an
+	// axis for, and the lerp is the same answer to well inside a pixel.
+	if (d > 0.9995) return unit(add(scale(a, 1 - t), scale(b, t)));
+	const perpendicular =
+		d < -0.9995
+			? unit(sub(via, scale(a, dot(via, a))))
+			: unit(sub(b, scale(a, d)));
+	const theta = Math.acos(d) * t;
+	return add(scale(a, Math.cos(theta)), scale(perpendicular, Math.sin(theta)));
 }
 
 /**
@@ -309,10 +345,15 @@ export function arrivalAttitude(
 	phaseRad: number,
 ): { nose: Vec3; up: Vec3 } {
 	const e = ease(clamp01(u));
-	const { across } = slotBasis(frameAtPhase(law.frame, phaseRad));
-	const slotUp = across;
+	const basis = slotBasis(frameAtPhase(law.frame, phaseRad));
+	const slotUp = basis.across;
 	const aimed = scale(law.frame.axis, law.kind === "arrival" ? -1 : 1);
 	if (!law.fromNose || !law.fromUp) return { nose: aimed, up: slotUp };
-	const blend = (a: Vec3, b: Vec3) => unit(add(scale(a, 1 - e), scale(b, e)));
-	return { nose: blend(law.fromNose, aimed), up: blend(law.fromUp, slotUp) };
+	// Turned through the slot's own `up` where the choice is free, so a launch
+	// pitches the ship over the lip it is leaving through rather than round an
+	// axis nothing chose.
+	return {
+		nose: slerp(law.fromNose, aimed, e, basis.up),
+		up: slerp(law.fromUp, slotUp, e, law.frame.axis),
+	};
 }
