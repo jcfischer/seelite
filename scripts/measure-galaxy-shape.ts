@@ -211,6 +211,20 @@ const DEFAULT_YAW = 0.6;
 /** The shipped default framing, and the console cell the chart ships in. */
 const DESKTOP = { width: 1280, height: 760 };
 const CONSOLE = { width: 1011, height: 462 };
+/**
+ * The same cell with #115's finder open — the column the panel takes off the
+ * chart, measured on the shipped console at 1280 x 760.
+ *
+ * It is here because the closed band cannot be assumed to carry: crowding is a
+ * pixel property and #96 is the recorded case of the same figure changing under
+ * a different box. What this row shows is *why* it carries here — the chart
+ * holds its vertical field of view and widens `aspect` with the box, so a point's
+ * horizontal pixel position works out to `worldX · height / (2 · z · tan)` with
+ * the width cancelling. A narrower cell therefore crops rather than compresses,
+ * and while the whole cluster still fits, the two spreads are the same numbers.
+ * The moment the cluster stops fitting, `onScreen` falls and they part.
+ */
+const CONSOLE_OPEN = { width: 743, height: 462 };
 /** The shipped camera distance, expressed against the shipped radius, so a
  *  sweep over `R` frames every shape the same way and crowding is a property of
  *  the *shape* rather than of how much screen the cluster happens to fill. */
@@ -444,6 +458,7 @@ function modeShipped(): void {
 		const pitch = q === 1 ? 0.35 : 0.7;
 		const d = crowdSpread(c, DESKTOP, r, pitch);
 		const k = crowdSpread(c, CONSOLE, r, pitch);
+		const ko = crowdSpread(c, CONSOLE_OPEN, r, pitch);
 		console.log(`${label} q=${q} R=${r}`);
 		console.log(
 			`  layouts        : ${c.length} connected, ${c.reduce((a, l) => a + isolated(l.positions), 0)} isolated systems`,
@@ -459,6 +474,9 @@ function modeShipped(): void {
 		);
 		console.log(
 			`  crowd console  : ${(mean(k) * 100).toFixed(1)}%  (spread ${pct(k)})`,
+		);
+		console.log(
+			`  crowd cons-open: ${(mean(ko) * 100).toFixed(1)}%  (spread ${pct(ko)}) at ${CONSOLE_OPEN.width}x${CONSOLE_OPEN.height}`,
 		);
 	}
 }

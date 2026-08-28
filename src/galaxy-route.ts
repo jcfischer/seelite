@@ -153,29 +153,32 @@ function jumpGraph(
 	return graph;
 }
 
-export function planRoute(
-	systems: readonly SystemRecord[],
-	from: SystemRecord,
-	to: SystemRecord,
-	maxJump = JUMP_RANGE_LY,
-): Route | null {
-	if (from.galaxy !== to.galaxy) return null;
+/** What one relaxation settled: the labels, and the tree that produced them. */
+interface Relaxation {
+	jumps: Int32Array;
+	ly: Float64Array;
+	prev: Int32Array;
+}
 
-	const { pool, slot, neighbourOf, distanceOf } = jumpGraph(
-		systems,
-		from.galaxy,
-		maxJump,
-	);
-	const n = pool.length;
-
-	const start = slot.get(from.index);
-	const goal = slot.get(to.index);
-	if (start === undefined || goal === undefined) return null;
-
-	if (start === goal) {
-		return { from, to, hops: [], jumps: 0, totalLy: 0, totalCr: 0 };
-	}
-
+/**
+ * Lexicographic Dijkstra over `(jumps, ly)` from one pool slot.
+ *
+ * **The single owner of the relaxation.** `planRoute` wants the labels for one
+ * goal and `projectJumps` wants them for the whole pool, and the arithmetic is
+ * identical — the only difference is where it stops, which is what `goal` is
+ * for. Two copies of this loop would be the two-owners failure #46 and #69 both
+ * recorded, applied to the one quantity the finder and the route panel both
+ * print.
+ *
+ * `goal === null` settles everything reachable; a slot settles it early, which
+ * is the optimisation `planRoute` has always had and keeps.
+ */
+function relaxFrom(
+	{ neighbourOf, distanceOf }: JumpGraph,
+	n: number,
+	start: number,
+	goal: number | null,
+): Relaxation {
 	// `0x7fffffff` and not `Number.MAX_SAFE_INTEGER`: the latter does not fit an
 	// `Int32Array` and stores as −1, which makes every relaxation test read
 	// `1 < -1` and the planner return `null` for every reachable pair. It failed
@@ -224,6 +227,78 @@ export function planRoute(
 			}
 		}
 	}
+
+	return { jumps, ly, prev };
+}
+
+/** Where one system sits from the origin the projection was built for. */
+export interface JumpReach {
+	/** Fewest jumps, on the same objective `planRoute` optimises. */
+	jumps: number;
+	/** The total distance of that chain, light years. */
+	ly: number;
+}
+
+/**
+ * Every system in one galaxy, labelled with its jump count from `from`.
+ *
+ * The finder's jump budget is a bound on all 256 systems at once, and asking
+ * `planRoute` for each of them would run the same relaxation 256 times over the
+ * same graph to read one label out of each. This is that relaxation run once
+ * with no early stop — the same function, the same objective, the same cached
+ * adjacency.
+ *
+ * Keyed by `SystemRecord.index`, never by array position: `jumpGraph` keeps the
+ * two apart on purpose and a caller holding a saved index would read the wrong
+ * row the day the generator reorders. **That index is unique within a galaxy
+ * and not across them** — every galaxy numbers 0…255 — so a caller holding a
+ * multi-galaxy array must scope its own rows to `from.galaxy` rather than treat
+ * a hit here as proof a record is on this chart. The map holds `from.galaxy`'s
+ * pool and nothing else, which is what makes that scoping the caller's job.
+ *
+ * Unreachable systems are **absent** rather than present with a sentinel, so a
+ * caller that forgets the case gets `undefined` rather than a plausible number.
+ */
+export function projectJumps(
+	systems: readonly SystemRecord[],
+	from: SystemRecord,
+	maxJump = JUMP_RANGE_LY,
+): Map<number, JumpReach> {
+	const graph = jumpGraph(systems, from.galaxy, maxJump);
+	const n = graph.pool.length;
+	const start = graph.slot.get(from.index);
+	const reach = new Map<number, JumpReach>();
+	if (start === undefined) return reach;
+
+	const { jumps, ly } = relaxFrom(graph, n, start, null);
+	for (let i = 0; i < n; i++) {
+		if (!Number.isFinite(ly[i])) continue;
+		reach.set(graph.pool[i].index, { jumps: jumps[i], ly: ly[i] });
+	}
+	return reach;
+}
+
+export function planRoute(
+	systems: readonly SystemRecord[],
+	from: SystemRecord,
+	to: SystemRecord,
+	maxJump = JUMP_RANGE_LY,
+): Route | null {
+	if (from.galaxy !== to.galaxy) return null;
+
+	const graph = jumpGraph(systems, from.galaxy, maxJump);
+	const { pool, slot } = graph;
+	const n = pool.length;
+
+	const start = slot.get(from.index);
+	const goal = slot.get(to.index);
+	if (start === undefined || goal === undefined) return null;
+
+	if (start === goal) {
+		return { from, to, hops: [], jumps: 0, totalLy: 0, totalCr: 0 };
+	}
+
+	const { ly, prev } = relaxFrom(graph, n, start, goal);
 
 	if (!Number.isFinite(ly[goal])) return null;
 

@@ -360,33 +360,57 @@ for (const viewport of VIEWPORTS) {
 	 * +x and report what got selected.
 	 */
 	const clickAtOffset = async (offsetPx) => {
-		const target = await page.evaluate((clear) => {
-			const map = window.__seeliteGalaxyMap;
-			map.select(null);
-			const { width, height } = map.viewport();
-			const state = map.state;
-			const visible = map
-				.projected()
-				.filter(
-					(p) =>
-						!p.behind &&
-						p.index !== state.currentIndex &&
-						p.x > 80 &&
-						p.y > 80 &&
-						p.x < width - 80 &&
-						p.y < height - 80,
+		const target = await page.evaluate(
+			({ clear, offset }) => {
+				const map = window.__seeliteGalaxyMap;
+				map.select(null);
+				const { width, height } = map.viewport();
+				const state = map.state;
+				const box = map.viewport();
+				/**
+				 * **The canvas has to be the thing under the pixel.**
+				 *
+				 * The chart carries interactive furniture over its own canvas —
+				 * the finder's field and chips since #115, and whatever a later
+				 * node hangs there. A candidate underneath one of those is a
+				 * click the panel eats, and the verdict then reads as "the pick
+				 * radius is wrong" when the pointer never reached the chart at
+				 * all. Asked of the browser rather than computed from the boxes,
+				 * because what the probe needs to know is exactly what
+				 * `elementFromPoint` answers.
+				 *
+				 * This does not weaken the check. A build whose pick radius was a
+				 * world distance still fails on the four verdicts below; all this
+				 * removes is a candidate the mouse could never have tested.
+				 */
+				const canvas = document.querySelector("#galaxy-map canvas");
+				const onCanvas = (x, y) =>
+					document.elementFromPoint(x + box.left, y + box.top) === canvas;
+				const visible = map
+					.projected()
+					.filter(
+						(p) =>
+							!p.behind &&
+							p.index !== state.currentIndex &&
+							p.x > 80 &&
+							p.y > 80 &&
+							p.x < width - 80 &&
+							p.y < height - 80 &&
+							onCanvas(p.x, p.y) &&
+							onCanvas(p.x + offset, p.y),
+					);
+				const found = visible.find((a) =>
+					visible.every(
+						(b) =>
+							b.index === a.index || Math.hypot(a.x - b.x, a.y - b.y) > clear,
+					),
 				);
-			const found = visible.find((a) =>
-				visible.every(
-					(b) =>
-						b.index === a.index || Math.hypot(a.x - b.x, a.y - b.y) > clear,
-				),
-			);
-			const box = map.viewport();
-			return found === undefined
-				? null
-				: { ...found, originLeft: box.left, originTop: box.top };
-		}, clearance);
+				return found === undefined
+					? null
+					: { ...found, originLeft: box.left, originTop: box.top };
+			},
+			{ clear: clearance, offset: offsetPx },
+		);
 		if (target === null) return { target: null, selected: undefined };
 		// `projected()` is canvas-relative; `page.mouse` wants client
 		// coordinates. Converted through the canvas box rather than assumed

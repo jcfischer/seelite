@@ -43,6 +43,15 @@ import {
 	startSystem,
 } from "./galaxy";
 import {
+	FINDER_MAX_BUDGET,
+	type FinderFilter,
+	type FinderResults,
+	type FinderRow,
+	finderDefaultFilter,
+	finderIsNarrowed,
+	projectFinder,
+} from "./galaxy-finder";
+import {
 	type Course,
 	type CourseProgress,
 	type Route,
@@ -133,7 +142,15 @@ export interface GalaxyMapState {
 	/** Radians. Exposed with `flatteningQ` because the disc's projected aspect
 	 *  is only interpretable against the angle it was seen from. */
 	pitch: number;
+	/** Radians. With `pitch`, `cameraDistanceLy` and `focusIndex` this is the
+	 *  whole camera pose — which is what #115's D2 check compares across a row
+	 *  click. A pose missing a component is one a broken build can move without
+	 *  the check noticing. */
+	yaw: number;
 	cameraDistanceLy: number;
+	/** The system the cluster is centred on, or `null` for the galaxy centre.
+	 *  Only the per-row centre control changes it. */
+	focusIndex: number | null;
 	route: {
 		jumps: number;
 		totalLy: number;
@@ -150,6 +167,20 @@ export interface GalaxyMapState {
 		population: number;
 		distanceLy: number;
 	} | null;
+	/**
+	 * The finder, as the panel currently shows it.
+	 *
+	 * `expanded` is read off the same rule the layout is (`finderIsNarrowed`),
+	 * so a probe cannot be told the panel is open by a field the drawing does
+	 * not agree with. The two lists are the rows themselves rather than counts,
+	 * because D7's check is about *which* systems landed in which group.
+	 */
+	finder: {
+		expanded: boolean;
+		filter: FinderFilter;
+		inBudget: FinderRow[];
+		beyondRange: FinderRow[];
+	};
 }
 
 export interface Handle {
@@ -163,7 +194,16 @@ export interface Handle {
 	jumpTo(index: number): void;
 	orbit(dxPx: number, dyPx: number): void;
 	zoom(deltaLy: number): void;
-	/** Back to the documented default framing — yaw, pitch and distance.
+	/** Type a name into the finder's field, as the player would. */
+	setFinderQuery(query: string): void;
+	/** Click one economy chip. */
+	toggleFinderEconomy(economy: number): void;
+	/** Step the jump budget to a value. */
+	setFinderBudget(jumps: number): void;
+	/** D2's per-row centre control: move the camera and nothing else. `null`
+	 *  returns the centre of rotation to the galaxy's own. */
+	centreOn(index: number | null): void;
+	/** Back to the documented default framing — yaw, pitch, distance and focus.
 	 *  Crowding depends on the orientation as well as the distance, so a
 	 *  figure quoted in the spec is only reproducible from a known view. */
 	resetView(): void;
@@ -320,8 +360,32 @@ export function mountGalaxyChart({
 		color: "#cfe6f5",
 		font: "13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace",
 		overflow: "hidden",
+		display: "flex",
 	});
 	host.appendChild(root);
+
+	/**
+	 * The chart's own box — everything the canvas draws into, and nothing the
+	 * finder occupies.
+	 *
+	 * The finder is **beside** the chart when it is open, not over it, and that
+	 * is a measurement decision rather than a taste one. #86's D3 keeps the
+	 * default-closed cell so `probe-navigation-console.mjs`'s crowding band
+	 * still describes what is on screen; opening the panel narrows the cell,
+	 * which is a different figure and owes its own measurement (#115's first
+	 * obligation). An overlaid panel would have left the canvas box unchanged
+	 * and made that obligation unfalsifiable — the probe would re-measure the
+	 * number it already had.
+	 */
+	const stage = el("div");
+	stage.setAttribute("data-map-stage", "");
+	Object.assign(stage.style, {
+		position: "relative",
+		flex: "1 1 auto",
+		minWidth: "0",
+		height: "100%",
+	});
+	root.appendChild(stage);
 
 	const canvas = el("canvas");
 	Object.assign(canvas.style, {
@@ -332,7 +396,7 @@ export function mountGalaxyChart({
 		display: "block",
 		touchAction: "none",
 	});
-	root.appendChild(canvas);
+	stage.appendChild(canvas);
 
 	const legend = el("div");
 	legend.setAttribute("data-map-legend", "");
@@ -347,7 +411,7 @@ export function mountGalaxyChart({
 		pointerEvents: "none",
 		whiteSpace: "pre",
 	});
-	root.appendChild(legend);
+	stage.appendChild(legend);
 
 	const controls = el("div");
 	Object.assign(controls.style, {
@@ -357,7 +421,7 @@ export function mountGalaxyChart({
 		display: "flex",
 		gap: "8px",
 	});
-	root.appendChild(controls);
+	stage.appendChild(controls);
 
 	const button = (label: string, attr: string): HTMLButtonElement => {
 		const b = el("button");
@@ -397,7 +461,7 @@ export function mountGalaxyChart({
 		maxWidth: "260px",
 		whiteSpace: "pre-wrap",
 	});
-	root.appendChild(card);
+	stage.appendChild(card);
 
 	// ---- Scene -------------------------------------------------------------
 
@@ -412,6 +476,20 @@ export function mountGalaxyChart({
 	 *  able to assert where a point landed. */
 	const pivot = new THREE.Group();
 	scene.add(pivot);
+
+	/**
+	 * The cluster inside the pivot, so a *centre* is a translation and the
+	 * orbit stays a pure function of two angles.
+	 *
+	 * D2's per-row centre control has to move the camera, and this chart has no
+	 * camera to move: the camera sits on +z and the pivot spins under it, which
+	 * is exactly what lets a probe assert where a point landed. Offsetting the
+	 * cluster by −`focus` puts the chosen system at the centre of rotation, so
+	 * orbiting after a centre turns around the thing that was centred rather
+	 * than sliding it back off screen.
+	 */
+	const cluster = new THREE.Group();
+	pivot.add(cluster);
 
 	let yaw = DEFAULT_YAW;
 	let pitch = DEFAULT_PITCH;
@@ -439,7 +517,7 @@ export function mountGalaxyChart({
 			),
 		);
 	}
-	pivot.add(planeGroup);
+	cluster.add(planeGroup);
 
 	// The systems, as one Points cloud with per-vertex colour. 256 separate
 	// meshes would be 256 draw calls for a chart that is one object.
@@ -468,7 +546,7 @@ export function mountGalaxyChart({
 			transparent: true,
 		}),
 	);
-	pivot.add(cloud);
+	cluster.add(cloud);
 
 	// D3: the reachability shell. Wireframe rather than a solid translucent
 	// ball — a solid one at 7 LY around a point deep inside a 24.5 LY cluster
@@ -484,7 +562,7 @@ export function mountGalaxyChart({
 			opacity: 0.16,
 		}),
 	);
-	pivot.add(shell);
+	cluster.add(shell);
 
 	// D2: drop-lines, and their anchor discs. One buffer, rewritten each time
 	// the selection changes; the count is what the probe reads.
@@ -501,10 +579,10 @@ export function mountGalaxyChart({
 			opacity: 0.7,
 		}),
 	);
-	pivot.add(drops);
+	cluster.add(drops);
 
 	const anchors = new THREE.Group();
-	pivot.add(anchors);
+	cluster.add(anchors);
 	for (let i = 0; i < 2; i++) {
 		const disc = new THREE.Mesh(
 			new THREE.RingGeometry(0.35, 0.55, 24),
@@ -536,7 +614,7 @@ export function mountGalaxyChart({
 		new THREE.LineBasicMaterial({ color: COLOUR.route, transparent: true }),
 	);
 	routeLine.visible = false;
-	pivot.add(routeLine);
+	cluster.add(routeLine);
 
 	// D4: the haze, off by default so the two treatments start from the same
 	// place and the comparison is a keystroke rather than a rebuild.
@@ -550,7 +628,361 @@ export function mountGalaxyChart({
 	);
 	haze.scale.setScalar(2 * GALAXY_RADIUS_LY);
 	haze.visible = false;
-	pivot.add(haze);
+	cluster.add(haze);
+
+	// ---- Finder ------------------------------------------------------------
+
+	/**
+	 * The panel's width, and the whole of what opening it costs the chart.
+	 *
+	 * Wide enough for a name, an economy and a jump count on one line at the
+	 * console's 11 px monospace; narrow enough that the cell it leaves is still
+	 * a chart rather than a strip.
+	 */
+	const FINDER_WIDTH_PX = 268;
+
+	let finderFilter = finderDefaultFilter();
+	let finderResults: FinderResults = { inBudget: [], beyondRange: [] };
+	/**
+	 * The system the cluster is centred on, or null for the galaxy centre.
+	 *
+	 * Held as an index rather than as a vector so \`state\` can report *what* was
+	 * centred, which is what makes the D2 check readable: a probe asserts the
+	 * pose is unchanged across a row click and changed across a centre click,
+	 * and a raw offset would leave it comparing three floats to say so.
+	 */
+	let focusIndex: number | null = null;
+
+	/**
+	 * Set by anything that changes the canvas box, cleared by the frame loop.
+	 *
+	 * Declared here rather than beside \`resize\` because opening the finder is
+	 * now one of those things, and a layout change that did not reach the
+	 * renderer would leave the projection describing the box the canvas had
+	 * before the panel took its column.
+	 */
+	let resizePending = true;
+
+	const finder = el("aside");
+	finder.setAttribute("data-map-finder", "");
+	Object.assign(finder.style, {
+		display: "flex",
+		flexDirection: "column",
+		gap: "8px",
+		padding: "10px",
+		background: "rgba(6,12,20,0.88)",
+		border: "1px solid #1d3247",
+		borderRadius: "3px",
+		fontSize: "11px",
+		zIndex: "3",
+	});
+	root.appendChild(finder);
+
+	const finderControls = el("div");
+	Object.assign(finderControls.style, {
+		display: "flex",
+		flexDirection: "column",
+		gap: "7px",
+	});
+	finder.appendChild(finderControls);
+
+	/**
+	 * D4: the collapsed form is this field, on the tab, always.
+	 *
+	 * Not a chevron. #86 took default-closed against a recommendation of a fixed
+	 * panel, and the visible field is the half of that bargain that keeps a
+	 * load-bearing surface from being one the player never finds.
+	 */
+	const finderQuery = el("input");
+	finderQuery.type = "search";
+	finderQuery.placeholder = "FIND SYSTEM";
+	finderQuery.setAttribute("aria-label", "find a system by name");
+	finderQuery.setAttribute("data-map-finder-query", "");
+	Object.assign(finderQuery.style, {
+		font: "inherit",
+		color: "#cfe6f5",
+		background: "rgba(4,8,14,0.9)",
+		border: "1px solid #26506e",
+		borderRadius: "3px",
+		padding: "5px 7px",
+		width: "100%",
+	});
+	finderControls.appendChild(finderQuery);
+
+	const finderChips = el("div");
+	Object.assign(finderChips.style, {
+		display: "flex",
+		flexWrap: "wrap",
+		gap: "4px",
+	});
+	finderControls.appendChild(finderChips);
+
+	/** The economy chips — the console's own grammar (\`navFilterMatches\`), one
+	 *  chip set and one substring query across both of its lists. */
+	const chipButtons = ECONOMY_NAMES.map((label, economy) => {
+		const chip = el("button");
+		chip.type = "button";
+		chip.textContent = label.toUpperCase();
+		chip.setAttribute("data-map-finder-economy", String(economy));
+		Object.assign(chip.style, {
+			font: "inherit",
+			fontSize: "9px",
+			letterSpacing: "0.06em",
+			color: "#8fb2c9",
+			background: "transparent",
+			border: "1px solid #26506e",
+			borderRadius: "3px",
+			padding: "3px 6px",
+			cursor: "pointer",
+		});
+		finderChips.appendChild(chip);
+		return chip;
+	});
+
+	const budgetRow = el("div");
+	Object.assign(budgetRow.style, {
+		display: "flex",
+		alignItems: "center",
+		gap: "6px",
+		color: "#8fb2c9",
+	});
+	finderControls.appendChild(budgetRow);
+
+	const stepButton = (label: string, attr: string): HTMLButtonElement => {
+		const b = el("button");
+		b.type = "button";
+		b.textContent = label;
+		b.setAttribute(attr, "");
+		Object.assign(b.style, {
+			font: "inherit",
+			color: "#cfe6f5",
+			background: "rgba(10,20,32,0.9)",
+			border: "1px solid #26506e",
+			borderRadius: "3px",
+			padding: "2px 8px",
+			cursor: "pointer",
+		});
+		return b;
+	};
+	const budgetLabel = el("span");
+	budgetLabel.textContent = "JUMPS";
+	const budgetDown = stepButton("−", "data-map-finder-budget-down");
+	const budgetValue = el("b");
+	budgetValue.setAttribute("data-map-finder-budget", "");
+	Object.assign(budgetValue.style, { color: "#cfe6f5", minWidth: "12px" });
+	const budgetUp = stepButton("+", "data-map-finder-budget-up");
+	budgetRow.append(budgetLabel, budgetDown, budgetValue, budgetUp);
+
+	const finderResultsEl = el("div");
+	finderResultsEl.setAttribute("data-map-finder-results", "");
+	Object.assign(finderResultsEl.style, {
+		display: "none",
+		flex: "1 1 auto",
+		minHeight: "0",
+		overflow: "auto",
+	});
+	finder.appendChild(finderResultsEl);
+
+	/**
+	 * Open exactly when something is narrowing the list (D4).
+	 *
+	 * Derived from the filter rather than held as its own flag: a second owner
+	 * of "is it open" is how a chip click comes to narrow the results without
+	 * showing them, which is the shape of the defect \`live-cockpit.ts\` records
+	 * having shipped once already.
+	 */
+	const applyFinderLayout = (): void => {
+		const expanded = finderIsNarrowed(finderFilter);
+		finder.setAttribute("data-map-finder-expanded", String(expanded));
+		finderResultsEl.style.display = expanded ? "block" : "none";
+		if (expanded) {
+			Object.assign(finder.style, {
+				position: "relative",
+				right: "auto",
+				top: "auto",
+				flex: `0 1 ${FINDER_WIDTH_PX}px`,
+				width: "auto",
+				maxHeight: "100%",
+			});
+		} else {
+			// Absolute, so a closed finder takes no column and the chart keeps
+			// the cell #86's D3 preserved along with its crowding band.
+			Object.assign(finder.style, {
+				position: "absolute",
+				right: "12px",
+				top: "12px",
+				flex: "0 0 auto",
+				// Never wider than the box it floats over: at the 390 px viewport
+				// the console's media query drops to, a fixed 268 px panel is two
+				// thirds of the chart.
+				width: `min(${FINDER_WIDTH_PX}px, calc(100% - 24px))`,
+				maxHeight: "none",
+			});
+		}
+		// The observer on the stage catches this too; setting it here means the
+		// next frame is right even where `ResizeObserver` is missing.
+		resizePending = true;
+	};
+
+	const escape = (value: string): string =>
+		value.replace(
+			/[&<>"']/g,
+			(c) =>
+				({
+					"&": "&amp;",
+					"<": "&lt;",
+					">": "&gt;",
+					'"': "&quot;",
+					"'": "&#39;",
+				})[c] as string,
+		);
+
+	/** One row: the name, the economy, and the reach — plus a centre control
+	 *  that is a *separate* button, because D2 says the row already selected. */
+	const rowMarkup = (row: FinderRow, dim: boolean): string => {
+		const reach =
+			row.jumps === null
+				? "—"
+				: row.jumps === 0
+					? "here"
+					: `${row.jumps}j · ${row.routeLy?.toFixed(1)} LY`;
+		return (
+			`<li style="display:flex;gap:4px;align-items:stretch;opacity:${dim ? 0.55 : 1}">` +
+			`<button type="button" data-map-finder-row="${row.index}" aria-current="${row.selected}" ` +
+			`style="flex:1 1 auto;display:grid;grid-template-columns:1fr auto;gap:6px;text-align:left;font:inherit;font-size:11px;padding:4px 5px;cursor:pointer;border:0;border-bottom:1px solid rgba(38,80,110,.5);background:${row.selected ? "rgba(255,179,71,.22)" : "transparent"};color:${row.selected ? "#ffd9a2" : "#cfe6f5"}">` +
+			`<span>${escape(row.name)}</span><em style="font-style:normal;color:#8fb2c9">${reach}</em>` +
+			`<span style="grid-column:1/3;color:#7fa8c4;font-size:9px;letter-spacing:.05em">${escape(row.economy.toUpperCase())} · ${escape(row.government.toUpperCase())} · TL ${row.displayTL}</span>` +
+			`</button>` +
+			`<button type="button" data-map-finder-centre="${row.index}" aria-label="centre the chart on ${escape(row.name)}" title="centre" style="flex:0 0 auto;font:inherit;font-size:11px;color:#8fb2c9;background:transparent;border:0;border-bottom:1px solid rgba(38,80,110,.5);padding:0 6px;cursor:pointer">⊙</button>` +
+			`</li>`
+		);
+	};
+
+	const listMarkup = (rows: FinderRow[], dim: boolean): string =>
+		`<ul style="list-style:none;margin:0;padding:0">${rows.map((r) => rowMarkup(r, dim)).join("")}</ul>`;
+
+	/**
+	 * Redraw the two lists.
+	 *
+	 * The controls are built once and never re-rendered: rebuilding them would
+	 * blow away the query field's focus and caret on the keystroke that
+	 * produced the results, which is the failure `live-cockpit.ts` keeps
+	 * `targetId` out of its structural key to avoid.
+	 */
+	const renderFinder = (): void => {
+		finderResults = projectFinder(
+			galaxy.systems,
+			current,
+			finderFilter,
+			selected?.index ?? null,
+		);
+		budgetValue.textContent = String(finderFilter.budgetJumps);
+		budgetDown.disabled = finderFilter.budgetJumps <= 1;
+		budgetUp.disabled = finderFilter.budgetJumps >= FINDER_MAX_BUDGET;
+		chipButtons.forEach((chip, economy) => {
+			const on = finderFilter.economies.includes(economy);
+			chip.setAttribute("aria-pressed", String(on));
+			chip.style.color = on ? "#ffe1a9" : "#8fb2c9";
+			chip.style.borderColor = on ? "#ffb347" : "#26506e";
+			chip.style.background = on ? "rgba(255,179,71,.18)" : "transparent";
+		});
+		applyFinderLayout();
+		if (!finderIsNarrowed(finderFilter)) {
+			finderResultsEl.innerHTML = "";
+			return;
+		}
+		const { inBudget, beyondRange } = finderResults;
+		const primary =
+			inBudget.length === 0
+				? '<p style="margin:6px 2px;color:#7fa8c4">NOTHING WITHIN BUDGET</p>'
+				: listMarkup(inBudget, false);
+		// D7: the dimmed group is a *group*, headed, so a beyond-range row can
+		// never be mistaken for one the budget admitted.
+		const beyond =
+			beyondRange.length === 0
+				? ""
+				: '<h3 data-map-finder-beyond style="margin:9px 2px 3px;font-size:9px;letter-spacing:.12em;color:#7fa8c4">BEYOND RANGE</h3>' +
+					listMarkup(beyondRange, true);
+		finderResultsEl.innerHTML = primary + beyond;
+	};
+
+	const setFinderFilter = (next: FinderFilter): void => {
+		finderFilter = {
+			...next,
+			budgetJumps: Math.max(
+				1,
+				Math.min(FINDER_MAX_BUDGET, Math.round(next.budgetJumps)),
+			),
+		};
+		if (finderQuery.value !== finderFilter.query)
+			finderQuery.value = finderFilter.query;
+		renderFinder();
+	};
+
+	/**
+	 * Move the centre of rotation onto one system, or back to the galaxy's.
+	 *
+	 * The camera and nothing else (D2). Selection is untouched here on purpose:
+	 * the row click that preceded this one already made it, and a centre that
+	 * also selected would give one act two owners.
+	 */
+	const centreOn = (index: number | null): void => {
+		const system = index === null ? null : systemByIndex(index);
+		focusIndex = system?.index ?? null;
+		if (system === null) cluster.position.set(0, 0, 0);
+		else cluster.position.set(-system.pos.x, -system.pos.y, -system.pos.z);
+	};
+
+	finderQuery.addEventListener("input", () => {
+		setFinderFilter({ ...finderFilter, query: finderQuery.value });
+	});
+	// A search field's clear affordance fires `search`, not `input`, in Safari.
+	finderQuery.addEventListener("search", () => {
+		setFinderFilter({ ...finderFilter, query: finderQuery.value });
+	});
+	budgetDown.addEventListener("click", () =>
+		setFinderFilter({
+			...finderFilter,
+			budgetJumps: finderFilter.budgetJumps - 1,
+		}),
+	);
+	budgetUp.addEventListener("click", () =>
+		setFinderFilter({
+			...finderFilter,
+			budgetJumps: finderFilter.budgetJumps + 1,
+		}),
+	);
+	for (const [economy, chip] of chipButtons.entries())
+		chip.addEventListener("click", () => toggleFinderEconomy(economy));
+
+	function toggleFinderEconomy(economy: number): void {
+		const held = finderFilter.economies.includes(economy);
+		setFinderFilter({
+			...finderFilter,
+			economies: held
+				? finderFilter.economies.filter((e) => e !== economy)
+				: [...finderFilter.economies, economy],
+		});
+	}
+
+	/**
+	 * One click, dispatched centre-first.
+	 *
+	 * Order is load-bearing: the centre control sits *inside* the row's list
+	 * item, so a row-first branch would swallow it and the control would select
+	 * — the exact collapse of two acts into one that D2 and D8 both refuse.
+	 * Delegated because the list's markup is replaced on every keystroke.
+	 */
+	finderResultsEl.addEventListener("click", (event) => {
+		const element = event.target as HTMLElement;
+		const centre = element.closest<HTMLElement>("[data-map-finder-centre]");
+		if (centre) {
+			centreOn(Number(centre.dataset.mapFinderCentre));
+			return;
+		}
+		const row = element.closest<HTMLElement>("[data-map-finder-row]");
+		if (row) select(Number(row.dataset.mapFinderRow));
+	});
 
 	// ---- Derived state -----------------------------------------------------
 
@@ -640,6 +1072,8 @@ export function mountGalaxyChart({
 			"drag orbit · wheel zoom · click select · H haze",
 		].join("\n");
 
+		renderFinder();
+
 		courseButton.disabled = selected === null || route === null;
 		hazeButton.textContent = `core haze: ${haze.visible ? "on" : "off"}`;
 		hazeButton.setAttribute("aria-pressed", String(haze.visible));
@@ -690,7 +1124,7 @@ export function mountGalaxyChart({
 		rect: DOMRect,
 	): { x: number; y: number; behind: boolean } => {
 		scratch.set(s.pos.x, s.pos.y, s.pos.z);
-		pivot.localToWorld(scratch);
+		cluster.localToWorld(scratch);
 		scratch.project(camera);
 		// **Canvas-relative, not client.** These once carried `rect.left`/`top`,
 		// which made `projected()` client coordinates while `viewport()`
@@ -814,7 +1248,7 @@ export function mountGalaxyChart({
 				e.deltaMode === 1
 					? e.deltaY * 16
 					: e.deltaMode === 2
-						? e.deltaY * root.clientHeight
+						? e.deltaY * stage.clientHeight
 						: e.deltaY;
 			zoom(px * 0.05);
 		},
@@ -861,10 +1295,15 @@ export function mountGalaxyChart({
 
 	// ---- Frame -------------------------------------------------------------
 
-	let resizePending = true;
 	const resize = (): void => {
-		const w = root.clientWidth;
-		const h = root.clientHeight;
+		// **The stage, not the root.** They are the same box only while the
+		// finder is closed; open, the root still spans the host and the canvas
+		// has given up a column to the panel. Sizing the drawing buffer from the
+		// root would stretch the projection across a box the canvas does not
+		// occupy, and `viewport()` — which a probe measures crowding against —
+		// would report a width nothing is drawn at.
+		const w = stage.clientWidth;
+		const h = stage.clientHeight;
 		renderer.setSize(w, h, false);
 		camera.aspect = w / Math.max(1, h);
 		camera.updateProjectionMatrix();
@@ -883,7 +1322,7 @@ export function mountGalaxyChart({
 			: new ResizeObserver(() => {
 					resizePending = true;
 				});
-	observer?.observe(root);
+	observer?.observe(stage);
 	resize();
 
 	/** Hoisted out of the frame loop: the pitch axis is recomputed every frame
@@ -952,7 +1391,9 @@ export function mountGalaxyChart({
 				coreRadiusLy: CORE_RADIUS_LY,
 				flatteningQ: GALAXY_FLATTENING_Q,
 				pitch,
+				yaw,
 				cameraDistanceLy: distance,
+				focusIndex,
 				route:
 					route === null
 						? null
@@ -975,6 +1416,12 @@ export function mountGalaxyChart({
 								population: selected.population,
 								distanceLy: distanceLy(current.pos, selected.pos),
 							},
+				finder: {
+					expanded: finderIsNarrowed(finderFilter),
+					filter: finderFilter,
+					inBudget: finderResults.inBudget,
+					beyondRange: finderResults.beyondRange,
+				},
 			};
 		},
 		select,
@@ -995,10 +1442,23 @@ export function mountGalaxyChart({
 			orbit(dx, dy);
 		},
 		zoom,
+		setFinderQuery(query: string) {
+			setFinderFilter({ ...finderFilter, query });
+		},
+		toggleFinderEconomy,
+		setFinderBudget(jumps: number) {
+			setFinderFilter({ ...finderFilter, budgetJumps: jumps });
+		},
+		centreOn,
 		resetView() {
 			yaw = DEFAULT_YAW;
 			pitch = DEFAULT_PITCH;
 			distance = CAMERA_START_LY;
+			// **The focus too.** `resetView` is what a probe calls before quoting
+			// a crowding figure, and a centred cluster projects differently from
+			// one turning about its own middle — a figure measured after a centre
+			// would be a different measurement wearing the spec's name.
+			centreOn(null);
 		},
 		projected() {
 			const rect = canvasRect();
