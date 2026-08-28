@@ -28,6 +28,7 @@ export {
 	SUBDIVISIONS,
 } from "./loft";
 import { type Ring, RING_SEGMENTS, hullLoft, revolve } from "./loft";
+import { plate, plateUVs } from "./ship-surface";
 
 export const HULL_IDS = [
 	"courier",
@@ -391,11 +392,27 @@ function makePalette(id: HullId): Palette {
 	const colors = liveries[id];
 	const painted = (color: number, roughness: number, metalness: number) =>
 		new THREE.MeshStandardMaterial({ color, roughness, metalness });
+	/**
+	 * The four structural finishes, plated (#101).
+	 *
+	 * Not the canopy, the engine bell or the exhaust: the first is glass, the
+	 * second a nozzle whose whole surface is smaller than two plates, and the
+	 * third emits rather than reflects. Plating them would be texels on a
+	 * surface that never reads as plate.
+	 *
+	 * `plate` overwrites `roughness` and `metalness` with the map's ceilings, so
+	 * the per-material figures below are the profile's job now and the ones here
+	 * are what the material falls back to if it is ever unplated. Kept rather
+	 * than deleted, because they are #35's livery finish and this node did not
+	 * repaint the fleet.
+	 */
+	const platedPaint = (color: number, roughness: number, metalness: number) =>
+		plate(painted(color, roughness, metalness));
 	const palette: Palette = {
-		hull: painted(colors.hull, 0.5, 0.3),
-		panel: painted(colors.panel, 0.58, 0.36),
-		trim: painted(0x33454d, 0.5, 0.55),
-		accent: painted(colors.accent, 0.54, 0.24),
+		hull: platedPaint(colors.hull, 0.5, 0.3),
+		panel: platedPaint(colors.panel, 0.58, 0.36),
+		trim: platedPaint(0x33454d, 0.5, 0.55),
+		accent: platedPaint(colors.accent, 0.54, 0.24),
 		canopy: new THREE.MeshStandardMaterial({
 			color: 0x173743,
 			emissive: 0x061820,
@@ -424,6 +441,14 @@ function add(
 	position: [number, number, number] = [0, 0, 0],
 	rotation: [number, number, number] = [0, 0, 0],
 ) {
+	// **Every lofted part, not every plated one.** `hullLoft` writes its UVs in
+	// kilometres and they are unusable as they stand by any map; dividing here
+	// rather than at the four plated materials keeps one rule, and a geometry
+	// whose material has no map pays a loop over an attribute nobody samples.
+	// The `ringSize` marker is what says a geometry came from the loft — the
+	// exhaust disc and the docking ring do not, and their unwraps are already
+	// normalised.
+	if (geometry.userData.ringSize !== undefined) plateUVs(geometry);
 	const mesh = new THREE.Mesh(geometry, material);
 	mesh.name = name;
 	mesh.position.set(...position);

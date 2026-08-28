@@ -185,6 +185,7 @@ import {
 	buildShipMesh,
 	fleetLayout,
 } from "./ship-mesh";
+import { applyHullQuality } from "./ship-surface";
 import { LiveCockpit, type LeftTab, type RightTab } from "./live-cockpit";
 import type { GalaxyChart } from "./galaxy-map";
 import { type WarpField, warpField } from "./warp";
@@ -1866,6 +1867,11 @@ class Game {
 		for (const { scene } of this.layerLights)
 			scene.environment = mode.environment ? this.environmentMap : null;
 		this.renderer.toneMappingExposure = mode.exposure;
+		// The hull half of the same gate (#101): low drops the seam normal map.
+		// It is a separate call rather than a second field on `LIGHT_RIG`,
+		// because that record is the lighting model and a texture on a material
+		// is not part of it — `ship-surface.ts` owns what a hull surface costs.
+		applyHullQuality(this.settings.value.quality);
 	}
 
 	/**

@@ -16,6 +16,7 @@
 
 import * as THREE from "three";
 import { SimplexNoise } from "./noise";
+import { makeSplicer } from "./shader-splice";
 import { CRATER_CELL, CRATER_PROFILE, NOISE_GLSL } from "./planet-shaders";
 
 /**
@@ -260,39 +261,12 @@ const ROCK_SURFACE = /* glsl */ `{
  */
 export function applyRockSurface(material: THREE.MeshStandardMaterial) {
 	/**
-	 * Each splice reports whether it landed.
-	 *
-	 * `String.replace` with a marker that is not there returns the string
-	 * unchanged and says nothing — and three.js renames its chunks between
-	 * versions. A no-op splice leaves a **stock** `MeshStandardMaterial` that
-	 * compiles and links perfectly, under this material's own cache key, with
-	 * no craters on it. Every check that exists would stay green: the refinery
-	 * is on screen, it is lit, its program linked, and its program is named
-	 * `station-rock` — because that name is set here rather than by the patch.
-	 *
-	 * So the outcome is recorded where a probe can read it. `userData` rather
-	 * than a throw: a broken splice should fail a check, not take the page down
-	 * in front of a player, and the console line is worded so the probes'
-	 * shader listener catches it too.
+	 * Each splice reports whether it landed — see `shader-splice.ts`, which is
+	 * where this discipline lives since #101 gave it a second patched material.
+	 * The `userData` key stays `rockSplices`, because `probe-station-visuals.mjs`
+	 * reads it by name.
 	 */
-	const splices: Record<string, boolean> = {};
-	// Keyed by stage as well as marker: both stages patch
-	// `#include <common>`, and one key for the two would let a hit in the
-	// fragment stage stand in for a miss in the vertex stage.
-	const splice = (
-		stage: string,
-		source: string,
-		marker: string,
-		code: string,
-	) => {
-		const out = source.replace(marker, code);
-		splices[`${stage} ${marker}`] = out !== source;
-		if (out === source)
-			console.error(
-				`shader splice missed: ${marker} is not in three.js's ${stage} chunk any more`,
-			);
-		return out;
-	};
+	const { log: splices, splice } = makeSplicer("station rock");
 	material.onBeforeCompile = (shader) => {
 		shader.vertexShader = splice(
 			"vertex",

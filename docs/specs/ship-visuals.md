@@ -212,7 +212,79 @@ ship, which reads as a rendering fault rather than as a fleet. Headless tests
 own both: that no two hulls intersect, and that the lane down the middle stays
 open.
 
-## 3. Verification contract
+## 3. Surface: one generator, a plate, a cut seam and an edge
+
+Issue #101 gave the hulls a surface. Before it, `makePalette` built seven
+materials per archetype from a colour, a roughness and a metalness and nothing
+else: eleven archetypes across three concepts, and every large flat plate on
+every one of them was a single value.
+
+**The generator is shared, not copied.** `surface.ts` owns the arithmetic —
+plate, wear and seam-normal texels from a `PlatingProfile` and a tag — and
+`station-visuals.ts` (#36), `ship-surface.ts` and, when #105 lands, the cockpit
+each hand it a profile. The alternative on the table was a second, ship-only
+system. It was declined on a measurement rather than on taste: `hullLoft` writes
+its UVs in **kilometres**, and `hullLoft` is this module's own primitive that
+stations borrowed in #56. A station's plating was therefore three lines and a
+panel size away from being a hull's, and a second generator would have been the
+same arithmetic written twice, then three times.
+
+What differs between the two consumers is one constant and one profile:
+
+| | station | ship |
+| --- | --- | --- |
+| tile size | `STATION_PANEL_KM` 0.15 km | `SHIP_PANEL_KM` 0.008 km |
+| plate | ~19 m | ~1 m |
+| seam | painted, 0.30–0.50 | cut, 0.18 painted + 0.55 in the normal |
+| weathering | 0.12–0.78 | 0.10 |
+| filtering | nearest | linear |
+
+Nineteen metres on a 54 m courier puts three plates on the whole ship. One metre
+is a figure set by looking at a frame and nothing in this repo can check it —
+#104's finding, which applies to a plate more than to most numbers, because a
+plate is the **ruler** a pilot judges a hull's size against.
+
+**Panel lines are cut, not painted.** That is the half the station system did
+not have. A darkened texel is a decal: it reads the same from every angle and a
+moving sun sweeps over it. A seam in the normal map is lit, so the star breaks
+across it as the ship turns, which is what the reference frames do. The albedo
+still darkens the same texels — a groove in shadow *is* darker — and both maps
+read one boundary set (`seamOffsets`) so the emboss cannot land anywhere but on
+a painted seam. The stations were deliberately left painted: `seamDepth` is 0
+for all four roles, an answer rather than an omission, because changing how a
+station looks is a judgement somebody has to make in front of a frame.
+
+**Wear comes from two places, because they answer different questions.** The
+map's streaks give plate-to-plate variation and know nothing about where an edge
+is; a texture has never been told which plates meet. The geometry has been.
+`hullLoft` writes a per-vertex `crease` attribute — the largest angle between a
+vertex's shading normal and any face meeting there, which is exactly what
+`computeVertexNormals` has just averaged away at a `hard` station or a chine —
+and the hull material patches it into `roughnessFactor` and a small albedo lift.
+On the shipped courier the term is exactly zero on 77% of vertices and saturates
+on about one in a hundred, which is the shape it has to have: a wear term that
+reads high everywhere is a wash, not wear.
+
+#98 binds the whole of this: depth and light, forms stay clean. Hulls are crisp
+built objects, the wear is subtle, the panel lines geometric. The grime is
+refused, and `weathering` at 0.10 is not zero only because seams with no
+plate-to-plate variation at all read as a decal sheet.
+
+**Nothing here implements lighting.** The crease patch writes `roughnessFactor`
+and `diffuseColor` inside three.js's own chunk order and leaves the sun, the
+fill, the environment and the tone mapping where they are — `station-surface.ts`
+holds the same line, and for the same reason: a second lighting model would have
+to be reconciled with #57's planet shaders. Every splice records whether it
+found its marker (`shader-splice.ts`), because a missed splice leaves a stock
+material that compiles, links, renders and reports its own name.
+
+**The quality gate.** `low` drops the seam normal map and keeps the plate and
+wear maps; the seams do not disappear, they stop being lit. It is switched live
+on the material rather than at load, per #99: a reload puts the ship somewhere
+else, and two frames from two positions measure the positions as much as the
+term.
+
+## 4. Verification contract
 
 Headless tests assert every candidate has stable hull and variant identity,
 deterministic bounds, declared reach, distinct design theses, compact exhausts,
@@ -254,3 +326,30 @@ is oriented between two arbitrary points; a cap normal is compared with the
 direction from the part's middle towards that end. Concepts with visual negative space must still expose a
 continuous ventral structure, and the inspection viewer supplies neutral
 underside fill so solid geometry does not read as a missing face.
+
+The surface has its own two tiers. Headless (`tests/surface.test.ts`): every
+station buffer is pinned to an **absolute checksum** taken from the commit
+before #101, so the shared generator is provably the old arithmetic rather than
+a retune that happened on the way past; the seam normal map is asserted in
+register with the painted seam and to decode to unit vectors; and the crease
+term is asserted in both directions — a constant-section tube reads under 0.2 on
+its swept surface while the same tube with a hard shoulder reads over 0.6, so
+neither a term wired to 0 nor one wired to 1 survives.
+
+In the browser (`probe-ship-visuals.mjs`), the check that matters is that the
+seam map **reaches the frame**, and it took two wrong levers before it was one.
+Toggling the quality setting passed at 30.3% of hull pixels on a build whose
+seam map was generated flat, because `low` also drops the baked environment
+(#99). Nulling `material.normalMap` passed at 29.0% on that same flat build,
+because attaching any normal map changes three.js's defines and sends the
+fragment down a screen-space tangent frame — the map's *presence* moves pixels
+on its own. The lever is the map's **texels**, overwritten in place with the
+texture marked dirty and the material left alone: same program, same defines,
+same sampler. On the flat build that reads exactly 0.0% and fails; on the
+shipped one it reads 12.0%. The mask is the pixels that change when the hull is
+**removed from the scene** rather than hidden, because `render` reassigns
+`shipMesh.visible` every frame and the flag version returned an empty mask while
+every record-level check stayed green.
+
+Neither tier can say the hull looks right. #98 and #104 own that: this node
+closes on the canonical view set and the principal's yes, not on a green probe.

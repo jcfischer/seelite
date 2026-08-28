@@ -111,6 +111,23 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   is lit only by its own per-body star term from #59. A change that expects the
   environment to reach a planet is expecting it through a shader that never
   samples it.
+- **One surface generator, and a plate is a size rather than a count.**
+  `src/surface.ts` makes the plate, wear and seam-normal texels for every plated
+  thing in the game — stations, ship hulls, and the cockpit when #105 lands —
+  from a `PlatingProfile` and a tag. It takes a profile and never a type, which
+  is what stopped it being a station's. `hullLoft` writes UVs in **kilometres**,
+  so a consumer divides by its own panel size: `SHIP_PANEL_KM` 0.008 gives a 1 m
+  plate, `STATION_PANEL_KM` 0.15 gives 19 m. Multiply a normalised unwrap by a
+  count instead and a dreadnought and a tug get the same number of bands.
+- **A hull's edge wear comes from the geometry, not from the map.** No texture
+  knows where two plates meet; `hullLoft` writes a per-vertex `crease` attribute
+  and `ship-surface.ts` patches it into `roughnessFactor`. A map term and a
+  crease term answer different questions and neither substitutes.
+- **A shader splice that misses its marker is silent.** `String.replace` with a
+  renamed chunk returns the string unchanged, leaving a stock material that
+  compiles, links, renders and carries the patched program's own name. Every
+  patch here goes through `shader-splice.ts` and records what landed in
+  `userData`, and a probe reads it.
 - **Per-system RNG streams.** One shared generator couples every system to every
   other system's draw count. Add a domain tag rather than reusing one; reusing a
   tag silently correlates the two draws.

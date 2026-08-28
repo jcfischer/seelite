@@ -4,11 +4,18 @@
  *
  * **No Three.js here, deliberately**, and for a sharper reason than `station.ts`
  * has. Everything below is arithmetic: a band over a scalar, a waveform over the
- * game clock, and two buffers of texels. Kept as arithmetic it runs in the
- * headless tier, where a `DataTexture` whose buffer is the wrong length can be
- * caught by a length assertion instead of by someone noticing that a station
- * looks wrong. `station-mesh.ts` is the Three-side companion and imports this;
- * nothing here imports it back.
+ * game clock, and the per-role figures the texel generators read. Kept as
+ * arithmetic it runs in the headless tier, where a `DataTexture` whose buffer is
+ * the wrong length can be caught by a length assertion instead of by someone
+ * noticing that a station looks wrong. `station-mesh.ts` is the Three-side
+ * companion and imports this; nothing here imports it back.
+ *
+ * **The texels themselves moved to `surface.ts` in #101**, which gave the
+ * generators a second and a third consumer. What is left here is the station's
+ * half: `STATION_VISUALS`, the detail bands, the waveforms, and two thin
+ * wrappers that pass a role's profile to the shared generator with the role as
+ * its hash tag. `PLATE_TEXTURE_SIZE` and `PlatingProfile` are re-exported, so
+ * every existing importer of this module is unchanged.
  *
  * **The plating is a `DataTexture`, never a `CanvasTexture`** (§4). This module
  * is reached from `tests/`, which has no `document`. A canvas would force a
@@ -16,13 +23,23 @@
  * would be the one no test ever takes.
  *
  * `station-mesh.ts` keeps its own `displayRand` for the asteroid and the window
- * grid. That is not a duplicate of `hash01` below: those feed *geometry* built
- * once at load, and this feeds texels and waveforms. Merging them would put a
- * shape and a light on the same stream, so a change to either moves the other.
+ * grid. That is not a duplicate of `surface.ts`'s `hash01`: those feed
+ * *geometry* built once at load, and this feeds texels and waveforms. Merging
+ * them would put a shape and a light on the same stream, so a change to either
+ * moves the other.
  */
 
 import type { StationType } from "./station";
+import {
+	PLATE_TEXTURE_SIZE,
+	type PlatingProfile,
+	hash01,
+	plateTexels,
+	wearTexels,
+} from "./surface";
 import { HANDOFF_HYSTERESIS } from "./units";
+
+export { PLATE_TEXTURE_SIZE, type PlatingProfile };
 
 /**
  * How much of a station is drawn, given how large it appears.
@@ -71,18 +88,14 @@ export function stationDetailLevel(
 	return "outline";
 }
 
-/** What the generated plating looks like for one role (§4). */
-export interface PlatingProfile {
-	/** Panel pitch, texels. Small is a tight civil hull; large is structural. */
-	pitchPx: number;
-	/** How far a seam darkens the plate beneath it, 0–1. */
-	seam: number;
-	/** How much vertical streaking the role carries, 0–1. */
-	weathering: number;
-	/** The material's roughness and metalness where the map is neutral. */
-	roughness: number;
-	metalness: number;
-}
+/**
+ * What the generated plating looks like for one role (§4).
+ *
+ * The shape lives in `surface.ts` now (#101): the generators became one system
+ * serving stations, ship hulls and — when #105 lands — the cockpit, so the
+ * profile they read cannot be a station's. Re-exported above so every existing
+ * importer of this module is unchanged.
+ */
 
 /** The one emissive signature and the one motion a role carries (§5). */
 export interface ActivityProfile {
@@ -154,6 +167,8 @@ export const STATION_VISUALS: Record<StationType, StationVisualProfile> = {
 			weathering: 0.12,
 			roughness: 0.55,
 			metalness: 0.42,
+			/** Painted seams, not cut ones — see `PlatingProfile.seamDepth`. */
+			seamDepth: 0,
 		},
 		activity: {
 			strobePeriodS: 2,
@@ -179,6 +194,8 @@ export const STATION_VISUALS: Record<StationType, StationVisualProfile> = {
 			weathering: 0.3,
 			roughness: 0.72,
 			metalness: 0.5,
+			/** Painted seams, not cut ones — see `PlatingProfile.seamDepth`. */
+			seamDepth: 0,
 		},
 		activity: {
 			strobePeriodS: 2,
@@ -204,6 +221,8 @@ export const STATION_VISUALS: Record<StationType, StationVisualProfile> = {
 			weathering: 0.78,
 			roughness: 0.9,
 			metalness: 0.14,
+			/** Painted seams, not cut ones — see `PlatingProfile.seamDepth`. */
+			seamDepth: 0,
 		},
 		activity: {
 			// No strobes: the refinery does not spin, and a rotation marker on a
@@ -229,6 +248,8 @@ export const STATION_VISUALS: Record<StationType, StationVisualProfile> = {
 			weathering: 0.62,
 			roughness: 0.86,
 			metalness: 0.3,
+			/** Painted seams, not cut ones — see `PlatingProfile.seamDepth`. */
+			seamDepth: 0,
 		},
 		activity: {
 			// No strobes: an outpost does not spin, and a rotation marker on
@@ -250,156 +271,43 @@ export const STATION_VISUALS: Record<StationType, StationVisualProfile> = {
 	},
 };
 
-/** The generated maps are square and this is the side, texels. Small on
- *  purpose: the plating is a surface language read at a few hundred pixels, not
- *  a photograph, and every station in the galaxy shares these two buffers. */
-export const PLATE_TEXTURE_SIZE = 128;
-
-/**
- * A deterministic value in [0, 1) from a string tag and two integers.
- *
- * FNV-1a over the tag, then a mix of the two coordinates through the same
- * constants. Its whole contract is that it is a pure function: the texels below
- * and the flicker further down both have to replay exactly, on every load and
- * on every client at the same clock.
- */
-/** FNV-1a over a tag, as a seed. */
-function hashSeed(tag: string): number {
-	let h = 0x811c9dc5;
-	for (let i = 0; i < tag.length; i++) {
-		h ^= tag.charCodeAt(i);
-		h = Math.imul(h, 0x01000193);
-	}
-	return h >>> 0;
-}
-
-function hash01(tag: string, a: number, b: number): number {
-	let h = hashSeed(tag);
-	h ^= Math.imul(a | 0, 0x27d4eb2d);
-	h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
-	h ^= Math.imul(b | 0, 0x165667b1);
-	h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
-	return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
-}
-
-/** Smooth value noise over one axis, so a streak has a width rather than being
- *  one texel wide. One dimension is all §4's streaking needs: it runs down the
- *  hull, and the variation across it is what the seams already give. */
-function streak(tag: string, x: number, scale: number): number {
-	const p = x / scale;
-	const i = Math.floor(p);
-	const f = p - i;
-	const smooth = f * f * (3 - 2 * f);
-	return hash01(tag, i, 0) * (1 - smooth) + hash01(tag, i + 1, 0) * smooth;
-}
-
-const clamp255 = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
-
 /**
  * The role's albedo plating, RGBA, `PLATE_TEXTURE_SIZE` square.
  *
- * **Greyscale by construction** (§4): R, G and B are written from one value, so
- * `STATION_COLORS[type]` still multiplies through and §7's secondary colour cue
- * survives the pass. A coloured plate map would replace that cue with a painted
- * one and leave the docstrings that claim it still works saying something false.
+ * A wrapper over `surface.ts`'s generator since #101, and the role is the
+ * **tag**: the generator hashes it, so passing the type reproduces every buffer
+ * this module shipped before the split byte for byte. `tests/surface.test.ts`
+ * pins all four against checksums taken from the commit before the change,
+ * because a structural assertion that the wrapper delegates would still pass on
+ * a generator that had been retuned on the way past.
  *
- * The buffer is exactly `4 × w × h`, which `THREE.DataTexture` with
- * `RGBAFormat` requires and does not check: a short buffer samples past its end
- * and draws garbage rather than throwing.
+ * `size` is kept in the signature for `station-mesh.ts`, which passes it
+ * explicitly beside the two it hands `DataTexture`.
  */
 export function platingTexels(type: StationType, size = PLATE_TEXTURE_SIZE) {
-	const { pitchPx, seam, weathering } = STATION_VISUALS[type].plating;
-	const out = new Uint8Array(size * size * 4);
-	// **A whole number of panels across the map.** The pitch is an authored
-	// intent in texels, but the map wraps (`RepeatWrapping`), so a pitch that
-	// does not divide the size leaves a truncated panel at the seam and its
-	// boundary doubles when the texture repeats. Rounding to a panel count and
-	// deriving the boundaries from that keeps the authored figure meaningful and
-	// the wrap clean.
-	const panels = Math.max(1, Math.round(size / pitchPx));
-	const panelOf = (n: number) => Math.floor((n * panels) / size);
-	for (let y = 0; y < size; y++) {
-		for (let x = 0; x < size; x++) {
-			// Streaks run *down* the hull: the envelope varies with x and persists
-			// in y, so a run of soot is a vertical band. Sampled from y — as the
-			// first version did — it bands horizontally instead and chops the
-			// finer streak below into segments, which reads as dirt in rows.
-			const grime = streak(`${type}-grime`, x, 9) * weathering;
-			const plate = hash01(`${type}-plate`, panelOf(x), panelOf(y));
-			// Panel-to-panel variation is small; the seam between them is what the
-			// eye reads as plating at all.
-			let v = 196 + (plate - 0.5) * 26;
-			// A texel is on a seam when the next texel — wrapping at the edge —
-			// belongs to a different panel. That gives exactly `panels` seams in
-			// each axis and one of them lands on the wrap, where it belongs.
-			const onSeam =
-				panelOf(x) !== panelOf((x + 1) % size) ||
-				panelOf(y) !== panelOf((y + 1) % size);
-			if (onSeam) v *= 1 - seam;
-			// Weathering darkens rather than tints: a soot streak is missing light,
-			// and tinting it would break the greyscale contract above.
-			v *= 1 - grime * 0.55 * streak(`${type}-run`, x, 5);
-			const g = clamp255(v);
-			const i = (y * size + x) * 4;
-			out[i] = g;
-			out[i + 1] = g;
-			out[i + 2] = g;
-			out[i + 3] = 255;
-		}
-	}
-	return out;
+	return plateTexels(STATION_VISUALS[type].plating, type, size);
 }
 
 /**
  * The role's roughness and metalness map, RGBA.
  *
- * Green is roughness and blue is metalness, which is the channel layout
- * `MeshStandardMaterial` samples `roughnessMap` and `metalnessMap` from — so one
- * buffer serves as both and there is no second texture upload. Red is left at
- * full: an `aoMap` reads it, and a station has none.
- *
- * Seams and grime are rougher and less metallic than the plate they sit on,
- * which is what stops a station reading as one moulded object under a moving
- * sun.
+ * The albedo is optional *here* and required by the generator underneath, and
+ * the difference is deliberate: this module's callers have always been able to
+ * ask for the wear map alone, and the generator's contract is that the two maps
+ * come from one buffer. Defaulting it here is the one place that reconciles
+ * them, rather than every caller remembering to.
  */
 export function surfaceTexels(
 	type: StationType,
 	size = PLATE_TEXTURE_SIZE,
-	/** The role's albedo, if the caller already has it. Generating both maps
-	 *  for three roles otherwise runs the plating loop six times where three
-	 *  will do — and the two must be derived from the *same* buffer in any case,
-	 *  or a shine can miss its own seam. */
 	precomputed?: Uint8Array,
 ) {
-	const { roughness, metalness } = STATION_VISUALS[type].plating;
-	// A buffer of the wrong length would be read past its end by the loop below
-	// and produce a map that is garbage from some row down — the same failure
-	// mode as a short `DataTexture`, one step earlier.
-	if (precomputed && precomputed.length !== size * size * 4)
-		throw new Error(
-			`precomputed albedo is ${precomputed.length} texels, expected ${size * size * 4}`,
-		);
-	const albedo = precomputed ?? platingTexels(type, size);
-	const out = new Uint8Array(size * size * 4);
-	for (let i = 0; i < size * size; i++) {
-		// Darker plate means seam or grime, both of which are rougher. Derived
-		// from the albedo rather than regenerated so the two maps cannot fall out
-		// of register — which shows up as a shine that misses its own seam.
-		//
-		// **A factor, not an offset**, and the map's own clamp-bite constraint
-		// (#13) is why. Written as `roughness + wear × 0.5` the refinery's 0.9
-		// ceiling plus a wear of 0.6 saturates at 1.0 across almost the whole
-		// plate: the map collapsed to two distinct values and the role with the
-		// most weathering was the one whose weathering stopped showing. Expressed
-		// as a factor it cannot saturate, because the ceiling is the profile's own
-		// figure and the plate only ever sits below it.
-		const wear = Math.min(1, (1 - albedo[i * 4] / 255) / 0.7);
-		out[i * 4] = 255;
-		out[i * 4 + 1] = clamp255(roughness * (0.55 + 0.45 * wear) * 255);
-		out[i * 4 + 2] = clamp255(metalness * (1 - 0.8 * wear) * 255);
-		out[i * 4 + 3] = 255;
-	}
-	return out;
+	const profile = STATION_VISUALS[type].plating;
+	return wearTexels(
+		profile,
+		precomputed ?? plateTexels(profile, type, size),
+		size,
+	);
 }
 
 /**
