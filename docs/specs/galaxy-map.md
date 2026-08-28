@@ -402,6 +402,15 @@ the primary list. The widened value persists for the **session** and is not
 saved: `persistent-world-state.md` §8 forbids persisting a derivable projection,
 and a filter setting is presentation.
 
+**A remembered budget therefore opens the panel.** D4 expands on any active
+narrowing and D6 keeps the widened budget, so the first entry to the tab after a
+widening arrives expanded — "collapsed by default" is true of a session that has
+not touched the budget, and this is the case it does not cover. It follows from
+the two decisions rather than working around them, and it is what a trader who
+set the budget once would want. The sharp edge is the narrow console, where
+expanded means *covering*: the chart arrives hidden until the budget is stepped
+back. Named here rather than left for a player to discover.
+
 **It therefore lives outside the mount, and only a remount can show that.** The
 chart is disposed every time the player leaves the Galaxy Map tab
 (`Game.setChartHost`), so a budget held in `mountGalaxyChart`'s closure reads as
@@ -482,10 +491,13 @@ column.** The column layout was written against the desktop cell, where 1011 px
 less the panel is 743 and still a chart. At the 390 px the console's media query
 drops to it leaves a **76 px strip** — measured, not estimated — which is the
 chart ruined and the finder cramped at once. Below `FINDER_MIN_CHART_PX` (360,
-set from the two cells that exist: it must admit 743 and refuse 76) the expanded
+set from the two cells that exist: it must admit 743 and refuse 76 — the *cell* at that viewport is 344, not
+390, so the strip is 76 and not the 122 an arithmetic on the page width gives)
+the expanded
 panel covers the stage instead. The canvas box is then unchanged, so §5.1's
 figure is untouched there, and the trade is that on a narrow console you read or
-you find, one at a time. §9.3 item 14 measures both, at the viewport it is about.
+you find, one at a time. §9.3 items 14 and 15 measure it at the viewport it is about, including the
+live resize across the threshold.
 
 **Three modules, one per tier.** `galaxy-finder.ts` is the arithmetic and the
 session budget, with no DOM; `galaxy-finder-panel.ts` is the panel, with no
@@ -842,11 +854,18 @@ The chart's *mount* rather than its projection, and the list beside it.
     records. Found by red-building exactly that.
 14. **The narrow console covers instead** (§5.2), asserted at 390 x 844 rather
     than from the constant: the layout reads `cover`, the canvas box is the same
-    open as closed, and the panel is most of the stage. The **return** to a
-    column when the console is wide again is its own half, because a build that
-    only ever covered would pass the first. Red both ways — the threshold at 0
-    and at 5000.
-15. **Crowding in the open cell, measured rather than carried over.** The cell
+    open as closed, and the panel is most of the stage. Red with the threshold
+    at 0, which produces the 76 px strip the rule exists to prevent.
+15. **Resizing across the threshold relayouts a panel that is already open**,
+    both directions. The first version of this cleared the filter before
+    resizing and so measured a fresh open at the new width — a build whose
+    layout never responded to a resize passed it, which is exactly what the
+    build was: `applyLayout` runs from `render`, and the chart's own
+    `ResizeObserver` sets a redraw flag without calling back into the panel. The
+    panel watches the chart's box itself now. Red with that watch removed —
+    and note the *narrowing* half alone is not discriminating, since a build
+    stuck in cover satisfies it; the pair is the check.
+16. **Crowding in the open cell, measured rather than carried over.** The cell
     goes 1011 x 462 to 743 x 462 and the figure stays 73.0%, which §5.2 explains
     and this check makes falsifiable: every system's horizontal shift must be
     the *same* shift, equal to half the column the panel took, with the vertical
@@ -872,7 +891,7 @@ to 2 and the default framing zoomed to 20 LY. Each turned the check named
 above it red — except the system half of item 3, which is recorded there as
 not yet discriminating rather than counted as covered.
 
-The finder checks were built red builds too — items 7 to 15, both halves where
+The finder checks were built red builds too — items 7 to 16, both halves where
 a check has two: `toggleFinderEconomy` made a no-op (item 7 red, and it is the
 exact dead-chip defect the ordering is there to catch); the beyond-range group
 suppressed, and then made a constant by dropping the budget test (item 8 red one
@@ -884,7 +903,8 @@ inside the mount closure, and then the whole filter persisted rather than the
 budget alone (item 12 red one way each); the cap raised past the galaxy so no row was
 omitted (item 11 red); the panel forced to cover at the desktop cell (item 13
 red, and that build is what showed the check had to run before the wait); and
-the narrow threshold pinned at 0 and at 5000 (item 14 red each way). Item 15 was the one that paid: its red
+the narrow threshold pinned at 0 (item 14 red); and the panel's own resize
+watch removed (item 15 red). Item 16 was the one that paid: its red
 build caught two faults in the check itself, both recorded where it is
 described.
 

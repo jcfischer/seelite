@@ -51,13 +51,16 @@ const FINDER_DRAWN_ROWS = 60;
  *
  * Below it the panel **covers** the chart instead. The column layout was
  * written against the console's desktop cell, where 1011 px less the panel is
- * 743 and still a chart; at the 390 px the console's media query drops to it
- * would leave a 122 px strip, which is not a reading surface — it is the chart
- * ruined and the finder cramped. §5.1's whole split is that the chart reads and
- * the list finds, and on a narrow console you do one at a time.
+ * 743 and still a chart. At the 390 px viewport the console's media query drops
+ * to, **the cell is 344** — the panel is not the page — so the column would
+ * leave a **76 px strip**, which is not a reading surface: it is the chart
+ * ruined and the finder cramped at once. §5.1's whole split is that the chart
+ * reads and the list finds, and on a narrow console you do one at a time.
  *
  * Set from the two cells that exist rather than from taste: it has to admit the
- * desktop's 743 and refuse the narrow one's 122.
+ * desktop's 743 and refuse the narrow one's 76. (Written first as 122, which is
+ * 390 − 268 — the *page* less the panel, a cell that does not exist. The probe
+ * measures the real one.)
  */
 const FINDER_MIN_CHART_PX = 360;
 
@@ -90,6 +93,9 @@ export interface FinderPanelState {
 
 export interface FinderPanel {
 	element: HTMLElement;
+	/** Stop watching the chart's box. The chart's own `dispose` calls this;
+	 *  without it the observer keeps a removed root alive for the session. */
+	dispose(): void;
 	/** Redraw against the current selection and ship position. */
 	render(): void;
 	setQuery(query: string): void;
@@ -256,6 +262,23 @@ export function mountFinderPanel({
 	element.appendChild(resultsEl);
 
 	// ---- Layout ------------------------------------------------------------
+
+	/**
+	 * Relayout when the chart's box crosses the column/cover threshold.
+	 *
+	 * **The comment below used to claim this and nothing did it.** `applyLayout`
+	 * runs only from `render`, and the chart's own `ResizeObserver` sets a
+	 * redraw flag rather than calling back into the panel — so a console that
+	 * resized across the threshold while the panel was open kept whichever
+	 * layout it opened with, and the check that was supposed to cover it cleared
+	 * the filter before resizing and measured a fresh open instead of a
+	 * transition.
+	 */
+	const resizeWatch =
+		typeof ResizeObserver === "undefined"
+			? null
+			: new ResizeObserver(() => render());
+	resizeWatch?.observe(root);
 
 	/**
 	 * Apply the open/closed layout, and only when it changed.
@@ -611,6 +634,7 @@ export function mountFinderPanel({
 
 	return {
 		element,
+		dispose: () => resizeWatch?.disconnect(),
 		render,
 		setQuery: (value: string) => patch({ query: value }),
 		toggleEconomy,

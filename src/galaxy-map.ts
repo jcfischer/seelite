@@ -1190,6 +1190,7 @@ export function mountGalaxyChart({
 			window.removeEventListener("resize", resize);
 			if (globalKeys) window.removeEventListener("keydown", onKeyDown);
 			observer?.disconnect();
+			finder.dispose();
 			// `forceContextLoss` as well as `dispose`: a browser allows a small
 			// number of live WebGL contexts, and the flight view already holds
 			// one. Opening and closing the map tab a dozen times without giving

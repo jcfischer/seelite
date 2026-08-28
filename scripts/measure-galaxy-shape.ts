@@ -12,6 +12,8 @@
  *   pitch              crowding against the chart's pitch, at the shipped shape
  *   grid               q x pitch: the claim that the ball wins at every angle
  *   density            §3's neighbour counts, bucketed by profile radius
+ *   diameter [seeds…]  the worst shortest-chain over every ordered pair, which
+ *                      is what the finder's budget ceiling has to clear
  *
  * This is the instrument behind `galaxy-generation.md` §2.1's derivation and
  * `galaxy-map.md` §5.1's crowding spread. It ships because #107 chose q = 0.7
@@ -64,6 +66,8 @@ import {
 	systemPosition,
 	systemSeedFor,
 } from "../src/galaxy";
+import { FINDER_MAX_BUDGET } from "../src/galaxy-finder";
+import { projectJumps } from "../src/galaxy-route";
 import type { Vec3 } from "../src/vec3";
 
 /** Throw rather than print a non-finite figure. */
@@ -245,33 +249,50 @@ const GRID_Q = [1.0, 0.7, 0.5, 0.25] as const;
 /** §3's table quotes 8,192 systems, which is these four seeds x 8 galaxies x
  *  256. One more than the sweep's, so the printed `n` matches the spec's. */
 const DENSITY_SEEDS = [1, 47, 12345, 20260818] as const;
+/** The seeds `diameter` sweeps by default — the shipped one first, so its row
+ *  is the one `galaxy-finder.test.ts` also asserts. */
+const DIAMETER_SEEDS = [0x5ee11e, 42, 1, 47, 12345] as const;
 
 const mean = (xs: number[]): number =>
 	finite("mean", xs.reduce((a, b) => a + b, 0) / xs.length);
 
-/** Crowding over a corpus at one framing, ascending. One helper rather than the
- *  nine near-copies this had, so the framing convention lives in one place. */
+/**
+ * Crowding over a corpus at one framing — the whole record per layout.
+ *
+ * `crowdSpread` used to be the only helper and threw `onScreen` away, so
+ * anything wanting the count re-ran the O(points²) sweep over the same corpus
+ * at the same framing. `modeShipped` does want it: an equal spread across two
+ * cells is only meaningful while both still frame the whole cluster.
+ */
+const crowdRecords = (
+	c: { positions: Vec3[] }[],
+	framing: { width: number; height: number },
+	radius: number,
+	pitch: number,
+): { fraction: number; onScreen: number }[] =>
+	c.map((l) =>
+		crowdingAt(l.positions, {
+			...framing,
+			// **The framing convention lives here, with the yaw one.** Every
+			// caller used to compute `radius * CAMERA_PER_RADIUS` itself,
+			// restating "the framing scales with R" at five sites — which is
+			// the rule the whole sweep rests on for its rows to be about
+			// shape rather than about screen fill.
+			distance: radius * CAMERA_PER_RADIUS,
+			yaw: DEFAULT_YAW,
+			pitch,
+		}),
+	);
+
+/** Just the fractions, ascending — what every row but `shipped` wants. */
 const crowdSpread = (
 	c: { positions: Vec3[] }[],
 	framing: { width: number; height: number },
 	radius: number,
 	pitch: number,
 ): number[] =>
-	c
-		.map(
-			(l) =>
-				crowdingAt(l.positions, {
-					...framing,
-					// **The framing convention lives here, with the yaw one.** Every
-					// caller used to compute `radius * CAMERA_PER_RADIUS` itself,
-					// restating "the framing scales with R" at five sites — which is
-					// the rule the whole sweep rests on for its rows to be about
-					// shape rather than about screen fill.
-					distance: radius * CAMERA_PER_RADIUS,
-					yaw: DEFAULT_YAW,
-					pitch,
-				}).fraction,
-		)
+	crowdRecords(c, framing, radius, pitch)
+		.map((x) => x.fraction)
 		.sort((a, b) => a - b);
 
 /**
@@ -461,22 +482,17 @@ function modeShipped(): void {
 			.sort((a, b) => a - b);
 		const pitch = q === 1 ? 0.35 : 0.7;
 		const d = crowdSpread(c, DESKTOP, r, pitch);
-		const k = crowdSpread(c, CONSOLE, r, pitch);
-		const ko = crowdSpread(c, CONSOLE_OPEN, r, pitch);
+		// One pass per box, both numbers off it — the count used to be a second
+		// full sweep of the same corpus at the same framing.
+		const consoleRows = crowdRecords(c, CONSOLE, r, pitch);
+		const openRows = crowdRecords(c, CONSOLE_OPEN, r, pitch);
+		const k = consoleRows.map((x) => x.fraction).sort((a, b) => a - b);
+		const ko = openRows.map((x) => x.fraction).sort((a, b) => a - b);
 		/** How many systems the framing actually puts on screen, as a range over
-		 *  the corpus — the precondition the two cells’ equal spreads rest on. */
-		const seen = (box: { width: number; height: number }): string => {
-			const counts = c.map(
-				(l) =>
-					crowdingAt(l.positions, {
-						...box,
-						distance: r * CAMERA_PER_RADIUS,
-						yaw: DEFAULT_YAW,
-						pitch,
-					}).onScreen,
-			);
-			const low = Math.min(...counts);
-			const high = Math.max(...counts);
+		 *  the corpus — the precondition the two cells' equal spreads rest on. */
+		const seen = (rows: { onScreen: number }[]): string => {
+			const low = Math.min(...rows.map((x) => x.onScreen));
+			const high = Math.max(...rows.map((x) => x.onScreen));
 			return low === high ? String(low) : `${low}-${high}`;
 		};
 		console.log(`${label} q=${q} R=${r}`);
@@ -493,10 +509,10 @@ function modeShipped(): void {
 			`  crowd desktop  : ${(mean(d) * 100).toFixed(1)}%  (spread ${pct(d)}) at pitch ${pitch}`,
 		);
 		console.log(
-			`  crowd console  : ${(mean(k) * 100).toFixed(1)}%  (spread ${pct(k)}) over ${seen(CONSOLE)} on screen at ${CONSOLE.width}x${CONSOLE.height}`,
+			`  crowd console  : ${(mean(k) * 100).toFixed(1)}%  (spread ${pct(k)}) over ${seen(consoleRows)} on screen at ${CONSOLE.width}x${CONSOLE.height}`,
 		);
 		console.log(
-			`  crowd cons-open: ${(mean(ko) * 100).toFixed(1)}%  (spread ${pct(ko)}) over ${seen(CONSOLE_OPEN)} on screen at ${CONSOLE_OPEN.width}x${CONSOLE_OPEN.height}`,
+			`  crowd cons-open: ${(mean(ko) * 100).toFixed(1)}%  (spread ${pct(ko)}) over ${seen(openRows)} on screen at ${CONSOLE_OPEN.width}x${CONSOLE_OPEN.height}`,
 		);
 	}
 }
@@ -668,6 +684,61 @@ function modeSweep(): void {
 }
 
 /**
+ * The galaxy's **jump diameter**: the worst shortest-chain over every ordered
+ * pair, swept across world seeds.
+ *
+ * It exists because `galaxy-finder.ts`'s budget ceiling is a claim about this
+ * number and was set without it. At 9 — the first ceiling — real pairs sat
+ * permanently in the finder's dimmed "beyond range" group with no control
+ * position that could promote them, which is the *filtered-out reads as absent*
+ * failure the group exists to prevent. `galaxy-map.md` §5.2 quotes what this
+ * prints, so the figure has an instrument that reprints it (#118's rule: a spec
+ * figure stated as measured owes one).
+ *
+ * `galaxy-finder.test.ts` runs the shipped seed's arm of this in the suite; the
+ * multi-seed sweep lives here because it is a few seconds, not a few hundred
+ * milliseconds.
+ */
+function modeDiameter(): void {
+	const seeds = process.argv
+		.slice(3)
+		.map(Number)
+		.filter((n) => Number.isFinite(n));
+	const worldSeeds = seeds.length > 0 ? seeds : DIAMETER_SEEDS;
+	let overall = 0;
+	console.log(
+		`jump diameter over ${worldSeeds.length} world seeds x ${GALAXY_COUNT} galaxies, every system as origin`,
+	);
+	for (const seed of worldSeeds) {
+		let worstForSeed = 0;
+		let where = "";
+		for (let index = 0; index < GALAXY_COUNT; index++) {
+			const gx = generateGalaxy(seed, index);
+			for (const from of gx.systems) {
+				const reach = projectJumps(gx.systems, from);
+				for (const to of gx.systems) {
+					const jumps = reach.reach(to)?.jumps;
+					if (jumps !== undefined && jumps > worstForSeed) {
+						worstForSeed = jumps;
+						where = `g${index} ${from.name}→${to.name}`;
+					}
+				}
+			}
+		}
+		overall = Math.max(overall, worstForSeed);
+		console.log(
+			`  seed 0x${seed.toString(16)}: ${finite("diameter", worstForSeed)} jumps  (${where})`,
+		);
+	}
+	console.log(`worst over all seeds : ${overall} jumps`);
+	console.log(`finder ceiling       : ${FINDER_MAX_BUDGET}`);
+	assertThat(
+		"the finder's budget ceiling covers the worst chain in the sweep",
+		FINDER_MAX_BUDGET >= overall,
+	);
+}
+
+/**
  * The modes, as a table.
  *
  * A table rather than an `if`/`else if` chain over six ~30-line bodies: an
@@ -684,6 +755,7 @@ const MODES: Record<string, () => void> = {
 	pitch: modePitch,
 	grid: modeGrid,
 	density: modeDensity,
+	diameter: modeDiameter,
 };
 
 const mode = process.argv[2] ?? "sweep";

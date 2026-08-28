@@ -79,6 +79,38 @@ watch(page);
  * every evaluate below calls the same function rather than restating it.
  */
 await page.addInitScript(() => {
+	/**
+	 * §5.1's crowding metric, once.
+	 *
+	 * The closed cell and the open one are the same question asked of two
+	 * boxes, and the kernel was written out twice — which is how the two come
+	 * to measure subtly different things while both being called "crowding".
+	 * The same argument as `__seeliteOnScreen` below, one level up.
+	 */
+	window.__seeliteCrowding = () => {
+		const map = window.__seeliteGalaxyMap;
+		const radius = map.pickRadiusPx;
+		const { width, height } = map.viewport();
+		const visible = window.__seeliteOnScreen();
+		let crowded = 0;
+		for (const a of visible) {
+			for (const b of visible) {
+				if (a.index === b.index) continue;
+				if (Math.hypot(a.x - b.x, a.y - b.y) < radius) {
+					crowded++;
+					break;
+				}
+			}
+		}
+		return {
+			fraction: visible.length === 0 ? 1 : crowded / visible.length,
+			onScreen: visible.length,
+			systemCount: map.state.systemCount,
+			width,
+			height,
+		};
+	};
+
 	window.__seeliteOnScreen = () => {
 		const map = window.__seeliteGalaxyMap;
 		const { width, height } = map.viewport();
@@ -419,28 +451,7 @@ const crowding = await page.evaluate(() => {
 	const map = window.__seeliteGalaxyMap;
 	map.select(null);
 	map.resetView();
-	const radius = map.pickRadiusPx;
-	const { width, height } = map.viewport();
-	// On screen, not merely in front of the camera — counting points that have
-	// left the viewport inflates the figure with pairs nobody can see.
-	const visible = window.__seeliteOnScreen();
-	let crowded = 0;
-	for (const a of visible) {
-		for (const b of visible) {
-			if (a.index === b.index) continue;
-			if (Math.hypot(a.x - b.x, a.y - b.y) < radius) {
-				crowded++;
-				break;
-			}
-		}
-	}
-	return {
-		fraction: visible.length === 0 ? 1 : crowded / visible.length,
-		onScreen: visible.length,
-		systemCount: map.state.systemCount,
-		width,
-		height,
-	};
+	return window.__seeliteCrowding();
 });
 // Banded rather than floored, the way `probe-galaxy-map.mjs` bands §5.1's own
 // figure: a floor cannot notice the projection getting *better*, and a change
@@ -500,6 +511,14 @@ const nextFrames = (target) =>
 			new Promise((resolve) =>
 				requestAnimationFrame(() => requestAnimationFrame(resolve)),
 			),
+	);
+
+const finderLayout = () =>
+	page.evaluate(
+		() =>
+			document
+				.querySelector("[data-map-finder]")
+				?.getAttribute("data-map-finder-layout") ?? null,
 	);
 
 const finderState = () =>
@@ -884,12 +903,7 @@ await page.evaluate(() => {
 // the check that is actually about it, which is the failure mode this file
 // already records for a `waitForFunction` standing in for an assertion. Found
 // by red-building exactly that.
-const openMode = await page.evaluate(
-	() =>
-		document
-			.querySelector("[data-map-finder]")
-			?.getAttribute("data-map-finder-layout") ?? null,
-);
+const openMode = await finderLayout();
 check(
 	"the desktop console opens the finder as a column, so the cell narrows",
 	openMode === "column",
@@ -898,27 +912,7 @@ check(
 if (openMode === "column") await settled(0, closedCell.width - 100);
 const openCell = await canvasBox();
 const crowdingOpen = await page.evaluate(() => {
-	const map = window.__seeliteGalaxyMap;
-	const radius = map.pickRadiusPx;
-	const { width, height } = map.viewport();
-	const visible = window.__seeliteOnScreen();
-	let crowded = 0;
-	for (const a of visible) {
-		for (const b of visible) {
-			if (a.index === b.index) continue;
-			if (Math.hypot(a.x - b.x, a.y - b.y) < radius) {
-				crowded++;
-				break;
-			}
-		}
-	}
-	return {
-		fraction: visible.length === 0 ? 1 : crowded / visible.length,
-		onScreen: visible.length,
-		systemCount: map.state.systemCount,
-		width,
-		height,
-	};
+	return window.__seeliteCrowding();
 });
 const crop = await page.evaluate((before) => {
 	const map = window.__seeliteGalaxyMap;
@@ -993,9 +987,9 @@ await settled(closedCell.width - 1, closedCell.width + 1);
  *
  * Everything above runs at 1280 x 760, where the panel takes a 268 px column
  * off a 1011 px cell and leaves 743. At the 390 px viewport the console's media
- * query drops to, that same column would leave a **122 px strip** — not a
- * reading surface, and neither the crop mechanism nor the crowding band was
- * ever measured there. So below `FINDER_MIN_CHART_PX` the panel covers the
+ * query drops to, the cell is 344 px and that same column would leave a
+ * **76 px strip** — not a reading surface, and neither the crop mechanism nor
+ * the crowding band was ever measured there. So below `FINDER_MIN_CHART_PX` the panel covers the
  * chart instead, and this measures both halves of that rule at the viewport it
  * is about rather than asserting it from the constant.
  */
@@ -1005,18 +999,19 @@ const narrowClosed = await canvasBox();
 await page.evaluate(() => window.__seeliteGalaxyMap.setFinderQuery("a"));
 await nextFrames(page);
 const narrowOpen = await canvasBox();
-const narrowLayout = await page.evaluate(() => {
-	const panel = document.querySelector("[data-map-finder]");
-	const box = panel?.getBoundingClientRect();
+const narrowGeometry = await page.evaluate(() => {
+	const box = document
+		.querySelector("[data-map-finder]")
+		?.getBoundingClientRect();
 	const stage = document
 		.querySelector("[data-map-stage]")
 		?.getBoundingClientRect();
-	return {
-		mode: panel?.getAttribute("data-map-finder-layout") ?? null,
-		panelWidth: box?.width ?? 0,
-		stageWidth: stage?.width ?? 0,
-	};
+	return { panelWidth: box?.width ?? 0, stageWidth: stage?.width ?? 0 };
 });
+const narrowLayout = {
+	...narrowGeometry,
+	mode: await finderLayout(),
+};
 check(
 	"on a narrow console the open finder covers the chart rather than leaving a strip",
 	narrowLayout.mode === "cover" &&
@@ -1024,25 +1019,38 @@ check(
 		narrowLayout.panelWidth > 0.7 * narrowLayout.stageWidth,
 	`layout "${narrowLayout.mode}", cell ${Math.round(narrowClosed.width)} closed and ${Math.round(narrowOpen.width)} open, panel ${Math.round(narrowLayout.panelWidth)} of ${Math.round(narrowLayout.stageWidth)}`,
 );
-await clearFinder();
+/**
+ * **Widened while the panel is open, which is the path the code claims and no
+ * check exercised.**
+ *
+ * The first version cleared the filter before resizing, so it measured a fresh
+ * open at the new width — a build whose layout never responded to a resize
+ * would have passed it. The panel now watches the chart's box itself, because
+ * the chart's own `ResizeObserver` sets a redraw flag rather than calling back
+ * into the panel, and neither did anything about the layout.
+ */
 await page.setViewportSize({ width: 1280, height: 760 });
 await nextFrames(page);
-const backToDesktop = await page.evaluate(() => {
-	window.__seeliteGalaxyMap.setFinderQuery("a");
-	return null;
-});
-await nextFrames(page);
-const desktopMode = await page.evaluate(
-	() =>
-		document
-			.querySelector("[data-map-finder]")
-			?.getAttribute("data-map-finder-layout") ?? null,
-);
+const grownMode = await finderLayout();
+const grownState = await finderState();
 check(
-	"the same panel goes back to a column when the console is wide again",
-	desktopMode === "column" && backToDesktop === null,
-	`layout "${desktopMode}"`,
+	"widening the console while the finder is open turns the cover back into a column",
+	grownMode === "column" &&
+		grownState.expanded &&
+		grownState.filter.query === "a",
+	`layout "${grownMode}", still open ${grownState.expanded} on query "${grownState.filter.query}"`,
 );
+// And back the other way, still open, so the transition is not one-directional.
+await page.setViewportSize({ width: 390, height: 844 });
+await nextFrames(page);
+const shrunkMode = await finderLayout();
+check(
+	"narrowing it again while open turns the column back into a cover",
+	shrunkMode === "cover",
+	`layout "${shrunkMode}"`,
+);
+await page.setViewportSize({ width: 1280, height: 760 });
+await nextFrames(page);
 await clearFinder();
 
 // ---- Teardown -------------------------------------------------------------
