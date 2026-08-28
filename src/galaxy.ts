@@ -152,7 +152,9 @@ const CDF_BISECTION_STEPS = 40;
  * **Measured, and the spec's expectation was optimistic.** §5 says "a handful
  * of attempts is free", which reads as single digits and is right about the
  * cost but not about the count: over 1,600 galaxies (200 world seeds × 8) the
- * mean is 4.63, the median 3, the 95th percentile 16 and the worst seen **52**.
+ * mean is 4.63, the median 3, the 95th percentile 16 and the worst seen **52** —
+ * re-run under #118 with `bun scripts/measure-layout-attempts.ts` after the
+ * reshape, because every one of these numbers is a property of the shape.
  * Roughly four layouts in five strand at least one system, which is what a 3:1
  * concentrated 24.53 LY disc against a 7 LY jump actually costs at the rim.
  *
@@ -404,15 +406,16 @@ export function positionForShape(
  * A disc's outskirts include its halo — being far above the plane *is* being far
  * out — so the ellipsoidal shell is also the truer reading of "how far out".
  *
+ * `q` is a parameter for the same reason `positionForShape`'s is: an instrument
+ * sweeping shapes has to be able to ask a `q ≠ 0.7` corpus for its own profile
+ * radius, and a second body of this arithmetic is the drift those exports exist
+ * to prevent.
+ *
  * Decided under #118; #107 ratified only that "the 3:1 ratio holds", which this
  * is what it takes to be true.
  */
-export const profileRadiusLy = (pos: Vec3): number =>
-	Math.sqrt(
-		pos.x * pos.x +
-			(pos.y / GALAXY_FLATTENING_Q) * (pos.y / GALAXY_FLATTENING_Q) +
-			pos.z * pos.z,
-	);
+export const profileRadiusLy = (pos: Vec3, q = GALAXY_FLATTENING_Q): number =>
+	Math.sqrt(pos.x * pos.x + (pos.y / q) * (pos.y / q) + pos.z * pos.z);
 
 /** Whether a jump graph at `maxJump` has exactly one component. Plain BFS from
  *  system 0; 256 nodes makes the O(n²) adjacency scan cheaper than building an

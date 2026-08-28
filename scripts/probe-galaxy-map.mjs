@@ -172,17 +172,27 @@ for (const viewport of VIEWPORTS) {
 	 * the angle from its own pixel arithmetic would silently measure a different
 	 * view from the one it names.
 	 */
-	const aspectAtPitch = async (targetPitch) => {
-		const measured = await page.evaluate(async (target) => {
+	const aspectAtPitch = (targetPitch) =>
+		page.evaluate(async (target) => {
 			const map = window.__seeliteGalaxyMap;
 			map.select(null);
 			map.resetView();
 			// Orbit in small steps toward the target, reading the state each time —
 			// the drag-to-radians factor is the chart's business, not the probe's.
+			// Step toward the target and stop when it is reached *or* overshot.
+			// A fixed 4 px drag against a 0.005 rad tolerance can straddle the
+			// target and oscillate to the cap, which burns 400 synchronous orbit
+			// calls per framing and lands somewhere arbitrary anyway. Halving on
+			// an overshoot converges instead.
+			let step = 4;
+			let previous = Number.POSITIVE_INFINITY;
 			for (let i = 0; i < 400; i++) {
 				const delta = target - map.state.pitch;
 				if (Math.abs(delta) < 0.005) break;
-				map.orbit(0, Math.sign(delta) * 4);
+				if (Math.sign(delta) !== Math.sign(previous))
+					step = Math.max(step / 2, 0.25);
+				previous = delta;
+				map.orbit(0, Math.sign(delta) * step);
 			}
 			await new Promise((r) =>
 				requestAnimationFrame(() => requestAnimationFrame(r)),
@@ -194,6 +204,14 @@ for (const viewport of VIEWPORTS) {
 					(p) =>
 						!p.behind && p.x >= 0 && p.y >= 0 && p.x <= width && p.y <= height,
 				);
+			if (pts.length === 0) {
+				// **Not a silent NaN.** `Math.max(...[])` is -Infinity, so the
+				// spans become NaN, every comparison below is false, and the run
+				// reports "skipped the disc aspect" — a broken measurement wearing
+				// the skip's name, which is the one thing `discMeasured` exists to
+				// stop.
+				throw new Error("aspectAtPitch: nothing on screen");
+			}
 			const xs = pts.map((p) => p.x);
 			const ys = pts.map((p) => p.y);
 			return {
@@ -211,8 +229,6 @@ for (const viewport of VIEWPORTS) {
 				height,
 			};
 		}, targetPitch);
-		return measured;
-	};
 
 	const edgeOn = await aspectAtPitch(0);
 	const faceOn = await aspectAtPitch(1.45);

@@ -331,8 +331,21 @@ describe("shape (§9.4a)", () => {
 		// radius, so both arms are the function the generator runs.
 		const tAt = (u: number, radius: number): number =>
 			radiusForQuantile(u, radius) / radius;
-		// And `t` genuinely spans the range — a scale-free constant would pass the
-		// equalities above too.
+		for (const u of [0.001, 0.1, 0.25, 0.5, 0.75, 0.9, 0.999]) {
+			// The pre-#118 radius against the shipped one. **This is the
+			// assertion the test is named for**, and it went missing for one
+			// round while the loop was rewritten around it — leaving two range
+			// checks and a title that promised a comparison.
+			expect(tAt(u, 22)).toBeCloseTo(tAt(u, GALAXY_RADIUS_LY), 12);
+		}
+		// The defaulted call is the shipped-radius call, so a default that drifted
+		// from `GALAXY_RADIUS_LY` fails here rather than silently giving the
+		// generator a different profile from the sweep's.
+		expect(radiusForQuantile(0.5)).toBe(
+			radiusForQuantile(0.5, GALAXY_RADIUS_LY),
+		);
+		// And `t` genuinely spans the range — a constant `t` would satisfy every
+		// equality above.
 		expect(tAt(0.001, 22)).toBeLessThan(0.1);
 		expect(tAt(0.999, 22)).toBeGreaterThan(0.9);
 	});
@@ -392,6 +405,10 @@ const discCorpus = (() => {
 		return cached;
 	};
 })();
+
+/** Every system's profile radius, computed once. Two tests below want it and
+ *  `shellDensity` wants it per shell, which was 2048 square roots each time. */
+const PROFILE_RADII = ALL.map((s) => profileRadiusLy(s.pos));
 
 describe("distribution (§9.4)", () => {
 	const neighbourCounts = (g: Galaxy): number[] =>
@@ -490,7 +507,7 @@ describe("distribution (§9.4)", () => {
 		// this compares the whole empirical radial distribution against F(x), so a
 		// sampler that got the concentration right in aggregate but wrong in shape
 		// still fails.
-		const radii = ALL.map((s) => profileRadiusLy(s.pos)).sort((a, b) => a - b);
+		const radii = [...PROFILE_RADII].sort((a, b) => a - b);
 		let d = 0;
 		for (let i = 0; i < radii.length; i++) {
 			const f = radialCdf(radii[i]);
@@ -513,10 +530,7 @@ describe("distribution (§9.4)", () => {
 		// value for *those* shells is computed here rather than quoted, so the
 		// assertion cannot drift away from the profile it is checking.
 		const shellDensity = (lo: number, hi: number): number => {
-			const count = ALL.filter((s) => {
-				const m = profileRadiusLy(s.pos);
-				return m >= lo && m < hi;
-			}).length;
+			const count = PROFILE_RADII.filter((m) => m >= lo && m < hi).length;
 			const volume = (4 / 3) * Math.PI * (hi ** 3 - lo ** 3);
 			return count / volume;
 		};

@@ -114,11 +114,20 @@ const ORIGIN =
  *   seeds 96, 115             0/4 green
  * ```
  *
- * So the flake predates #118 — but this fixture roughly **doubles** its rate and
- * pushes the readings past anything `main` produced. That is a real cost of the
- * reshape, not somebody else's problem, and 54 is simply the best of the seeds
- * that satisfy the fixture requirement at all: seed 1 no longer holds three
- * station types, and every seed that does is worse than 54 on this control.
+ * **Read those counts for what four runs can carry, which is not much.** 3/4
+ * against 2/4 is one run, and nothing here distinguishes 25% from 50%; the
+ * defensible statements are that the flake predates #118, that it is common on
+ * every fixture tried, and that seed 54's *readings* (0.054-0.074) run above the
+ * single 0.057 seen on `main`. Whether the reshape made it more frequent is not
+ * something this sample can answer, and an earlier version of this comment said
+ * "roughly doubles" as though it could.
+ *
+ * It is still a cost this change carries rather than somebody else's problem.
+ * Seed 54 is the best of the seeds **tried**: seed 1 no longer holds three
+ * station types, and of the four candidates run against this control it is the
+ * only one green more often than not. Roughly 40 seeds under 400 hold three
+ * types and 36 of them were never run here, so "the best available" is a claim
+ * about the search, not about the seed space.
  *
  * The ceiling is deliberately **not** widened to hide it. Loosening a margin so
  * that an unrelated change goes green is how a check stops discriminating, and

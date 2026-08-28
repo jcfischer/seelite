@@ -122,10 +122,14 @@ the volume flattens, the framing grows with `R`, and flattening then
 concentrates the points toward a plane, whose nearest-neighbour distances are
 shorter than a ball's at equal projected extent.
 
-**The ball is the least crowded shape at every viewing angle, face-on
-included** — and that is a claim about a *grid*, so it is measured on one, by
+**The ball is the least crowded shape at every pitch in the chart's clamp,
+face-on included** — a claim about a *grid*, so it is measured on one, by
 `bun scripts/measure-galaxy-shape.ts grid`, which asserts it rather than only
-printing it. Desktop crowding, framing scaled with `R`:
+printing it.
+
+The grid samples **four shapes × seven pitches at one yaw** (`DEFAULT_YAW`), not
+every shape and not every angle, and the sentence above is scoped to what it
+covers. Desktop crowding, framing scaled with `R`:
 
 | `q` | 12° | 20° | 30° | 40° | 55° | 70° | 83° |
 |---|---|---|---|---|---|---|---|
@@ -134,9 +138,12 @@ printing it. Desktop crowding, framing scaled with `R`:
 | 0.50 | 63.1% | 61.9% | 58.1% | 54.7% | 50.7% | 49.1% | 46.8% |
 | 0.25 | 79.1% | 73.7% | 68.0% | 60.4% | 54.0% | 50.3% | 48.9% |
 
-The ball wins cell for cell, and its best angle (41.3%) beats every flattened
-shape's best. Face-on recovers much of what flattening costs — the rows converge
-toward 83° — and never closes it.
+The ball wins cell for cell across those 28 cells, and its best angle (41.3%)
+beats every flattened shape's best. Face-on recovers much of what flattening
+costs — the rows converge toward 83° — and never closes it. Yaw is held because
+the cluster is axisymmetric about `y` and yaw therefore turns a disc within its
+own plane; that is a reason to expect the row to be flat in yaw, not a
+measurement that it is.
 
 At the shipped 40° pitch, framing scaled with `R` so the comparison is of shapes
 and not of how much screen each fills:
@@ -288,9 +295,10 @@ density" beside the count, and it was the same measurement divided by
 different units reads as two pieces of evidence agreeing, which is worth
 avoiding in a table headed "measured".
 
-So the exploration gradient the concentration buys is **3.4:1 in reachable
-neighbours**, core to rim. That is *not* independent of the ρ(0)/ρ(R) = 3.0
-above — it is the same profile seen through a 7 LY window — and the gap between
+So the exploration gradient the concentration buys is roughly **3.4:1 in
+reachable neighbours**, core to rim — quoted loosely on purpose, since the
+numerator is 51 systems and a bucket that small moves the ratio by a few tenths
+between seed sets. That is *not* independent of the ρ(0)/ρ(R) = 3.0 above — it is the same profile seen through a 7 LY window — and the gap between
 3.4 and 3.0 is the window's doing: a rim neighbourhood loses part of its volume
 off the edge of the cluster, which a point-density ratio does not see.
 
