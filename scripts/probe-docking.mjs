@@ -258,7 +258,13 @@ async function fly(setup) {
 				// `docked` and never entered the session would keep every row here
 				// green, which is the regression #77 exists to have fixed.
 				docked:
-					after.lastEntry?.docked === true && after.dockPhase !== "flying",
+					after.lastEntry?.docked === true &&
+					after.dockPhase !== "flying" &&
+					// **Scoped to this station**, which the old `after.dockedAt === id`
+					// carried and the first rewrite dropped: `dockPhase` is true of an
+					// arrival at *any* station, so without this a run that docked
+					// somewhere else would report the row green.
+					g.dock.stationId === id,
 				hostile: after.hostile,
 				alive: after.alive,
 				conditionBefore: before,

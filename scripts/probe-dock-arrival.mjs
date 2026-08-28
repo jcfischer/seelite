@@ -612,7 +612,13 @@ const grant = await page.evaluate((stationId) => {
 	// A tenth of a second a step, so a ten-minute window is six thousand of
 	// them rather than thirty-six thousand. Nothing here is measuring a frame.
 	const dt = 0.1;
-	while (g.world.gameTime <= expiresAtS + 1) g.step(dt);
+	// **Bounded, like every other loop here.** A clock that stopped advancing
+	// would spin this forever and the run would die on a page timeout — which is
+	// the hardest failure in this tier to read, where the two rows below name
+	// exactly what went wrong.
+	const cap = Math.ceil((expiresAtS - g.world.gameTime + 2) / dt) + 60;
+	for (let i = 0; i < cap && g.world.gameTime <= expiresAtS + 1; i++)
+		g.step(dt);
 	const after = g.dockingSnapshot(stationId);
 	return {
 		phase: after.dockPhase,

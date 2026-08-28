@@ -208,7 +208,7 @@ import { type Vec3, add, dot, length, scale, sub, v3 } from "./vec3";
 // removed from `sim.ts` and pinned with a source-scan test.
 import * as units from "./units";
 
-/** Scratch vectors for aiming a station's aperture, allocated once: the render
+/** Scratch vector for aiming a station's aperture, allocated once: the render
  *  loop runs per body per frame, and a `Vector3` built there is garbage by the
  *  time it is read — the same trade `vec3.ts` names for `Vec3`. */
 /** Scratch for the per-body sun direction. One vector reused every frame for
@@ -228,6 +228,8 @@ const STATION_AXIS = new THREE.Vector3();
 const STAR_DIR = new THREE.Vector3();
 const ENV_QUAT = new THREE.Quaternion();
 const ENV_EULER = new THREE.Euler();
+/** Local +Z, which `station-mesh.ts` builds every station's aperture axis
+ *  along — the vector a station's mesh is rotated *from* when it is aimed. */
 const MESH_AXIS = new THREE.Vector3(0, 0, 1);
 const HEAD_AXIS = new THREE.Vector3(0, 1, 0);
 
@@ -1741,9 +1743,6 @@ class Game {
 		// start far and `setLayer` swaps the tier on the handoff it already
 		// re-parents them with.
 		const unitSphere = surfaceSphere("far");
-		// One derivation for the whole system, so §12.5's discriminator sees the
-		// set it is a rule about.
-		const names = this.namesOfStations();
 		for (const body of this.world.system.bodies) {
 			// A station is the one body that is not a sphere: #13 §7's three
 			// silhouettes, built in kilometres. Everything else — star, planet,
@@ -1771,7 +1770,7 @@ class Game {
 				// — once per station at build, not per frame: the name never
 				// changes, and E9 makes it a pure function of facts that do not
 				// move.
-				paintNameplates(built, names.get(body.id) ?? body.id);
+				paintNameplates(built, this.nameOfStation(body.id));
 				this.stationVisuals.set(body.id, built);
 			} else if (body.appearance) {
 				// #54's classes, drawn by the game rather than by the gallery.
@@ -3329,6 +3328,22 @@ class Game {
 	}
 
 	/**
+	 * One station's name, or a throw.
+	 *
+	 * **No `?? id` fallback**, which is what both call sites had: a lookup that
+	 * misses would then paint `station-trade` on a shield and report it through
+	 * the snapshot, and every ink row — which asks only whether a shield was
+	 * drawn — would stay green over a station wearing its lookup key. A station
+	 * absent from its own system's contents is the generator and the placement
+	 * having disagreed, which is what `stationOf` throws on.
+	 */
+	private nameOfStation(id: string): string {
+		const name = this.namesOfStations().get(id);
+		if (!name) throw new Error(`station ${id} is not in the contents`);
+		return name;
+	}
+
+	/**
 	 * Everything a probe needs to judge a docking approach, in one read.
 	 *
 	 * One call rather than a handful of exposed fields, because §9.2's probes
@@ -3393,7 +3408,7 @@ class Game {
 			// E9's generated name, read off the page rather than re-derived by a
 			// probe: a probe with its own copy of a rule goes falsely red the day
 			// the rule changes.
-			stationName: this.namesOfStations().get(target) ?? target,
+			stationName: this.nameOfStation(target),
 			condition: this.interimCondition,
 			alive: isAlive(this.interimCondition),
 			// The full pool, so a probe asserting §2.1's quarter-pool bound reads
