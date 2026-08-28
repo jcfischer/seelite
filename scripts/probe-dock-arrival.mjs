@@ -48,22 +48,22 @@ const PAGE_URL = process.env.PROBE_URL ?? ORIGIN + "/?seed=1";
  * `PROBE_STANDOFF_KM` is where a run starts an approach from: outside §7's
  * three-kilometre computer standoff, so the whole approach is the autopilot's.
  *
- * The ink floors are what a drawn thing has to contribute for the frame to say
- * it is there. `SHIELD_INK_FLOOR` is 40 against a thousand or more measured —
- * the shields are textured and emissive, so they read in any light.
- * `APERTURE_BAR_INK_FLOOR` is a **control** rather than a subject: the bars are
- * emissive too, and their ink is how a row says the camera is looking at the
- * aperture at all.
+ * **No row here carries a pixel *count* as its threshold.** Every ink figure in
+ * this file is a fact about the light rig as much as about the build — #99's
+ * open node — and one of them read anywhere from 1 to 628 across runs as the
+ * station's docking face went in and out of the sun. A floor across that range
+ * decides runs rather than builds, which is what a threshold must never do. So
+ * each row asks whether its subject contributes ink **at all**, against a
+ * **same-frame control** that says the camera is looking at the thing: the
+ * emissive aperture bars for the recess row, the recess itself for the two
+ * shield rows. The control is what makes a `> 0` worth anything.
  *
- * There is deliberately **no floor on the recess**. It is an unlit surface
- * against a hull, so its pixel count is a fact about the light rig — #99's open
- * node — and repeated runs measured it anywhere from 1 to 628 as the station's
- * docking face went in and out of the sun. Any floor across that range would
- * decide runs rather than builds, which is what a threshold must never do.
+ * `APERTURE_BAR_INK_FLOOR` is the one number left, and it is a control's floor
+ * rather than a subject's: the bars are emissive, so they read in any light, and
+ * a run measures them in the tens of thousands.
  */
 const PROBE_STANDOFF_KM = 4.5;
 const APERTURE_BAR_INK_FLOOR = 100;
-const SHIELD_INK_FLOOR = 40;
 
 await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
@@ -457,6 +457,11 @@ const shieldInk = (id, which) =>
 			// mouth row would let the interior plate — visible straight down the
 			// aperture — stand in for a mouth plate that was never textured.
 			const chosen = part === "interior" ? plates.slice(1) : plates.slice(0, 1);
+			// **Unpinned, deliberately, and that is why the predicate is not a
+			// count.** Both rows place the ship at the live clock — the interior one
+			// is measured mid-arrival, where the ship's position *is* a function of
+			// that clock — so pinning the render would turn the station under a
+			// camera placed for where it was.
 			const { changed } = window.__inkDelta(
 				() => {
 					for (const p of chosen) p.visible = false;
@@ -465,7 +470,34 @@ const shieldInk = (id, which) =>
 					for (const p of chosen) p.visible = true;
 				},
 			);
-			return { changed, plates: chosen.length, total: plates.length };
+			// **The same-frame control, and it differs by row because the two views
+			// do.** On approach the camera is kilometres out and the emissive bars
+			// are what says the aperture is on screen — the recess is a small dark
+			// hole at that range and reads a couple of pixels, which is no control at
+			// all. Mid-arrival the camera is *inside* the throat with the bars behind
+			// it, and the recess is the whole view. Either way, if the control
+			// contributes nothing the camera is not looking at the thing and neither
+			// figure means anything.
+			const controlName =
+				part === "interior" ? "aperture-mouth" : "aperture-light";
+			const recess = [];
+			window.__meshOfBody(stationId).traverse((o) => {
+				if (o.name === controlName) recess.push(o);
+			});
+			const control = window.__inkDelta(
+				() => {
+					for (const o of recess) o.visible = false;
+				},
+				() => {
+					for (const o of recess) o.visible = true;
+				},
+			);
+			return {
+				changed,
+				control: control.changed,
+				plates: chosen.length,
+				total: plates.length,
+			};
 		},
 		[id, which],
 	);
@@ -494,8 +526,9 @@ check(
 const mouth = await shieldInk(slotId, "mouth");
 check(
 	"the shield at the mouth is drawn on approach",
-	mouth.plates > 0 && mouth.changed > SHIELD_INK_FLOOR,
-	`${mouth.changed} pixels from ${mouth.plates} plate(s) at ${approach.rangeKm.toFixed(2)} km`,
+	mouth.plates > 0 && mouth.changed > 0 && mouth.control > 0,
+	`${mouth.changed} pixels from ${mouth.plates} plate(s) at ${approach.rangeKm.toFixed(2)} km, ` +
+		`against ${mouth.control} from the aperture bars in the same frame`,
 );
 
 // The interior shield: measured **during** the arrival, which is the only time
@@ -542,8 +575,9 @@ check(
 	// reachable; E11's claim that it is visible *throughout* an arrival is owed a
 	// check that joint 8 has to close first.
 	"the interior shield is visible during the arrival at this clock",
-	inside.plates > 0 && inside.changed > SHIELD_INK_FLOOR,
-	`${inside.changed} pixels from ${inside.plates} plate(s)`,
+	inside.plates > 0 && inside.changed > 0 && inside.control > 0,
+	`${inside.changed} pixels from ${inside.plates} plate(s), ` +
+		`against ${inside.control} from the recess in the same frame`,
 );
 
 // ---------------------------------------------------------------------------

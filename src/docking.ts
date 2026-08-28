@@ -99,19 +99,6 @@ export const HOSTILE_COOLDOWN_S = 600;
 export const REPEL_OFFSET_KM = 0.01;
 
 /**
- * How far outside the aperture plane a docked ship must get before it counts as
- * having left, km.
- *
- * **This is not a launch sequence, and this spec does not own one.** What it
- * prevents is a one-way latch: `dockedAt` set and never cleared disables the
- * docking computer for the rest of the session and turns the station's own
- * aperture into a tripwire the moment anything nudges the ship. Fifty metres is
- * clear of the repel offset and well inside the standoff, so leaving is
- * unambiguous without being a mechanic.
- */
-export const UNDOCK_CLEAR_KM = 0.05;
-
-/**
  * **E3** (`docs/specs/docking.md` §12.1): the successful entry's arrival is
  * four to six seconds — a range to tune inside rather than a point value.
  *

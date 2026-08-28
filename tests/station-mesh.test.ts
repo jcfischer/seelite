@@ -632,9 +632,18 @@ describe("§12.2 — the docked position is inside the drawn recess", () => {
 	/**
 	 * **Two rules, because E8 makes the presentation two.** A slot swallows the
 	 * ship, so the docked position must lie *within* the recess. A pad is an
-	 * exterior deck with no inside, so the ship rests **on** it: at or just
-	 * above the deck's top face, never below it — a metre of margin against the
-	 * hair §12.2 sinks it by, and never inside the plate.
+	 * exterior deck, so the ship sits **at** its face — within ten metres of it,
+	 * either side.
+	 *
+	 * **Either side, and that is not sloppiness.** §12.2 sinks a pad's docked
+	 * position "a hair inside the deck" deliberately, because the plane is §3's
+	 * evaluation surface and a ship parked exactly on it rests on the boundary
+	 * of the surface its own checks are read at. On the shipped refinery that
+	 * hair is 3 m, inside a 12 m plate — so the docked position is *below* the
+	 * deck's top face by construction, and a rule reading "never below it" would
+	 * be a rule this geometry breaks on purpose. The band is what the check can
+	 * honestly say: the ship is at the deck rather than somewhere else on the
+	 * station.
 	 */
 	const PAD_MARGIN_KM = 0.01;
 	const holdsTheShip = (type: StationType, formId: StationFormId) => {

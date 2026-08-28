@@ -3309,15 +3309,6 @@ class Game {
 	}
 
 	/**
-	 * Everything a probe needs to judge a docking approach, in one read.
-	 *
-	 * One call rather than a handful of exposed fields, because §9.2's probes
-	 * assert on *relationships* — a bounce that damaged the ship and left it
-	 * alive, a crossing refused for containment rather than for an angle — and
-	 * sampling those across several page evaluations lets the world move between
-	 * them. The numbers are the renderer's own, not a probe's copy of the rules.
-	 */
-	/**
 	 * Every station in this system, named — E9's derivation applied to the
 	 * **set** rather than one at a time.
 	 *
@@ -3337,6 +3328,15 @@ class Game {
 		return new Map(stations.map((s, i) => [s.id, names[i]]));
 	}
 
+	/**
+	 * Everything a probe needs to judge a docking approach, in one read.
+	 *
+	 * One call rather than a handful of exposed fields, because §9.2's probes
+	 * assert on *relationships* — a bounce that damaged the ship and left it
+	 * alive, a crossing refused for containment rather than for an angle — and
+	 * sampling those across several page evaluations lets the world move between
+	 * them. The numbers are the renderer's own, not a probe's copy of the rules.
+	 */
 	dockingSnapshot(id?: string): DockingSnapshot | null {
 		const target = id ?? this.stationsByRange()[0]?.id;
 		if (!target) return null;
@@ -3413,15 +3413,6 @@ class Game {
 	}
 
 	/**
-	 * The docking half of one simulation step: the clock's effect on every
-	 * protocol state, then the crossing test against the nearest station.
-	 *
-	 * Called with the pose from *before* the flight step, because a crossing is
-	 * a property of the pair of frames rather than of either one. Sampling the
-	 * nearer frame instead makes every tolerance a function of the frame rate —
-	 * the class of error §4.1 already refuses for the slot phase.
-	 */
-	/**
 	 * The clock's effect on every §6 protocol state: grants expire, hostility
 	 * decays, a queued ship is promoted.
 	 *
@@ -3447,6 +3438,15 @@ class Game {
 		}
 	}
 
+	/**
+	 * The docking half of one simulation step: the clock's effect on every
+	 * protocol state, then the crossing test against the nearest station.
+	 *
+	 * Called with the pose from *before* the flight step, because a crossing is
+	 * a property of the pair of frames rather than of either one. Sampling the
+	 * nearer frame instead makes every tolerance a function of the frame rate —
+	 * the class of error §4.1 already refuses for the slot phase.
+	 */
 	private stepDocking(before: Map<string, DockingApproach>) {
 		this.stepDockingProtocol();
 
@@ -5188,41 +5188,6 @@ class Game {
 }
 
 /**
- * The size the bloom chain works at: half the window, quantised to a multiple
- * of 32, and independent of the device pixel ratio.
- *
- * **Divisible by 32, because the chain halves five times.** `UnrealBloomPass`
- * builds five mip levels by repeatedly halving its resolution. An odd width
- * rounds, so the blur of a level samples a footprint its target does not cover,
- * and
- * the outermost row or column of a coarse mip can be left holding whatever was
- * in that memory. On a coarse mip one texel is a large block of the screen —
- * which is the size and shape of the artefact the principal reported, and it
- * would depend on the window size, which is why it appeared on one display and
- * not the other.
- *
- * **Independent of the ratio, because bloom is a blur.** Running the chain over
- * four times as many pixels on a retina panel buys nothing visible: the result
- * is a wide, soft glow either way. This is the one pass where resolution is
- * close to free to give up.
- *
- * That is about the chain's *own* size and says nothing about its input. The
- * resolution setting shrinks the frame bloom reads, and the principal observed
- * the cockpit's glow thinning as it does — fine highlights are averaged away
- * before they can pass the brightness threshold, so fewer of them bloom at all.
- * The two are not in tension: this pass is cheap to shrink, and what it is
- * given still matters. `settings.ts` tells the player the second half, which is
- * the half they can see.
- *
- * Both of those are claims about a machine I cannot see. And the saving is not
- * certain either, which an earlier version of this said it was: switching bloom
- * off entirely moved terran by nothing measurable, so quartering its pixel
- * count cannot be relied on to move it more. The measurement that would settle
- * that was never taken. What *is* established is that the artefact is bloom's,
- * because switching bloom off removes it, and that a whole mip chain is the
- * right shape whether or not it is faster.
- */
-/**
  * Draw E9's name onto a station's shields (**E10**).
  *
  * The pixels half of the split `station-mesh.ts` makes: that module is
@@ -5275,6 +5240,41 @@ function paintNameplates(mesh: StationMesh, name: string) {
 	}
 }
 
+/**
+ * The size the bloom chain works at: half the window, quantised to a multiple
+ * of 32, and independent of the device pixel ratio.
+ *
+ * **Divisible by 32, because the chain halves five times.** `UnrealBloomPass`
+ * builds five mip levels by repeatedly halving its resolution. An odd width
+ * rounds, so the blur of a level samples a footprint its target does not cover,
+ * and
+ * the outermost row or column of a coarse mip can be left holding whatever was
+ * in that memory. On a coarse mip one texel is a large block of the screen —
+ * which is the size and shape of the artefact the principal reported, and it
+ * would depend on the window size, which is why it appeared on one display and
+ * not the other.
+ *
+ * **Independent of the ratio, because bloom is a blur.** Running the chain over
+ * four times as many pixels on a retina panel buys nothing visible: the result
+ * is a wide, soft glow either way. This is the one pass where resolution is
+ * close to free to give up.
+ *
+ * That is about the chain's *own* size and says nothing about its input. The
+ * resolution setting shrinks the frame bloom reads, and the principal observed
+ * the cockpit's glow thinning as it does — fine highlights are averaged away
+ * before they can pass the brightness threshold, so fewer of them bloom at all.
+ * The two are not in tension: this pass is cheap to shrink, and what it is
+ * given still matters. `settings.ts` tells the player the second half, which is
+ * the half they can see.
+ *
+ * Both of those are claims about a machine I cannot see. And the saving is not
+ * certain either, which an earlier version of this said it was: switching bloom
+ * off entirely moved terran by nothing measurable, so quartering its pixel
+ * count cannot be relied on to move it more. The measurement that would settle
+ * that was never taken. What *is* established is that the artefact is bloom's,
+ * because switching bloom off removes it, and that a whole mip chain is the
+ * right shape whether or not it is faster.
+ */
 function bloomResolution() {
 	// A multiple of 32, not merely even: the chain halves five times, so only a
 	// starting size divisible by 2^5 keeps every level whole. Rounding to even
