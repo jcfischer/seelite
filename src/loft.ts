@@ -130,6 +130,139 @@ function sweep(controls: ReadonlyArray<Ring>, subdivisions = SUBDIVISIONS) {
 }
 
 /**
+ * What a geometry's `uv` attribute is measured in.
+ *
+ * `"km"` is what `hullLoft` writes — chord distance round the section and
+ * distance along the sweep — and `"plate"` is what it becomes once a consumer
+ * has divided by its own panel size. A three-module state machine in an untyped
+ * bag is how the *previous* marker went wrong: `plateUVs` gated on `ringSize`,
+ * a field recording where the cap fans are, and any producer that omitted it
+ * would silently have kept kilometre UVs. A typo in a string literal is the same
+ * failure with the same silence, so the two values and the two accessors are
+ * declared once, here, and every writer and reader goes through them.
+ */
+export type UvUnits = "km" | "plate";
+
+export const uvUnitsOf = (
+	geometry: THREE.BufferGeometry,
+): UvUnits | undefined => geometry.userData.uvUnits as UvUnits | undefined;
+
+/**
+ * Record a geometry's UV units **on a fresh `userData`**.
+ *
+ * `BufferGeometry.copy` assigns `userData` by reference, so a clone and its
+ * source share one object while owning separate UV buffers. Mutating the shared
+ * field would tell a clone taken before its source was divided that it had
+ * already been done, and it would keep kilometre UVs — plates 125 times too
+ * large on one side of a mirrored part. Replacing the object leaves the
+ * sibling's alone.
+ */
+export function setUvUnits(geometry: THREE.BufferGeometry, units: UvUnits) {
+	geometry.userData = { ...geometry.userData, uvUnits: units };
+}
+
+/**
+ * Multiply a geometry's UVs in place. Returns whether there were any.
+ *
+ * Pure UV arithmetic and no material knowledge, so it lives beside the module
+ * that writes the UVs rather than beside the one that consumes them: `hoop`
+ * scales three's normalised torus unwrap up into kilometres and `plateUVs`
+ * scales kilometres down into plates, which is one pass with two factors.
+ */
+export function scaleUVs(
+	geometry: THREE.BufferGeometry,
+	sx: number,
+	sy: number,
+) {
+	const uv = geometry.getAttribute("uv") as THREE.BufferAttribute | undefined;
+	if (!uv) return false;
+	for (let i = 0; i < uv.count; i++)
+		uv.setXY(i, uv.getX(i) * sx, uv.getY(i) * sy);
+	uv.needsUpdate = true;
+	return true;
+}
+
+/**
+ * How far below a face's own normal the *shading* normal has been averaged —
+ * per vertex, 0 on a smooth surface and 1 on a hard edge.
+ *
+ * #101 needed a wear term that lands on a hull's **edges**, and no map in UV
+ * space can know where those are: a texture is a picture of a plate and has
+ * never been told which plates meet. The geometry has been. A `hard` station
+ * ends one spline and starts the next, and a superellipse with a high exponent
+ * turns a chine round the section — both leave adjacent faces disagreeing about
+ * which way the surface points, and `computeVertexNormals` has just averaged
+ * that disagreement away into one vertex normal. The size of what it averaged
+ * away is the measurement.
+ *
+ * So this is one number per vertex: the largest angle between the vertex normal
+ * and any face meeting there, as `1 − cos`. It is read by `ship-surface.ts` to
+ * roughen and scuff an edge, and it is written **for every lofted geometry**
+ * including a station's — the cost is one pass over the index buffer at load,
+ * and an attribute no material reads costs a few kilobytes and nothing else.
+ * One rule beats a flag that has to be remembered.
+ *
+ * **The floor and the knee are set against the smooth case, not chosen.** At 16
+ * segments a tube's adjacent faces differ by 22.5°, so a vertex normal sits
+ * about 11.25° off each of them — `1 − cos` of 0.019. A right-angle crease is
+ * 45° off, which is 0.293. The floor is above the first and the knee below the
+ * second by enough margin that neither reading is near an edge of the band, and
+ * `tests/surface.test.ts` asserts both directions: a smooth taper's tube must
+ * read near zero while the same sweep with one shoulder marked hard must not.
+ * A constant fails one or the other.
+ */
+const CREASE_FLOOR = 0.05;
+const CREASE_KNEE = 0.25;
+
+function computeCrease(geometry: THREE.BufferGeometry) {
+	const index = geometry.getIndex();
+	// Before the allocation, not after: a non-indexed geometry was buying a
+	// float per vertex and throwing it away on the next line.
+	if (!index) return;
+	const position = geometry.getAttribute("position") as THREE.BufferAttribute;
+	const normal = geometry.getAttribute("normal") as THREE.BufferAttribute;
+	const out = new Float32Array(position.count);
+	const a = new THREE.Vector3();
+	const b = new THREE.Vector3();
+	const c = new THREE.Vector3();
+	const face = new THREE.Vector3();
+	const edge = new THREE.Vector3();
+	const vertex = new THREE.Vector3();
+	// Hoisted above the loop, not merely unrolled: a closure declared inside it
+	// is an allocation per triangle exactly as the array it replaced was. It
+	// reads `face` and `out` from here, both of which the loop rewrites.
+	const lean = (v: number) => {
+		vertex.fromBufferAttribute(normal, v);
+		out[v] = Math.max(out[v], 1 - vertex.dot(face));
+	};
+	for (let i = 0; i < index.count; i += 3) {
+		const ia = index.getX(i);
+		const ib = index.getX(i + 1);
+		const ic = index.getX(i + 2);
+		a.fromBufferAttribute(position, ia);
+		b.fromBufferAttribute(position, ib);
+		c.fromBufferAttribute(position, ic);
+		face.copy(b).sub(a);
+		edge.copy(c).sub(a);
+		face.cross(edge);
+		// A degenerate triangle — the ring point that closes a cap fan onto a
+		// zero-radius station — has no normal, and normalising it would put a
+		// NaN into the attribute and take every vertex of the fan with it.
+		if (face.lengthSq() === 0) continue;
+		face.normalize();
+		lean(ia);
+		lean(ib);
+		lean(ic);
+	}
+	for (let i = 0; i < out.length; i++)
+		out[i] = Math.max(
+			0,
+			Math.min(1, (out[i] - CREASE_FLOOR) / (CREASE_KNEE - CREASE_FLOOR)),
+		);
+	geometry.setAttribute("crease", new THREE.BufferAttribute(out, 1));
+}
+
+/**
  * Sweep a closed superellipse tube through the stations and cap both ends.
  *
  * Ring points run from +Y towards +X so the side quads wind outward; the caps
@@ -259,6 +392,17 @@ export function hullLoft(
 	geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
 	geometry.setIndex(indices);
 	geometry.computeVertexNormals();
+	computeCrease(geometry);
+	/**
+	 * **What the `uv` attribute is measured in**, declared rather than inferred.
+	 *
+	 * `plateUVs` used to gate on `ringSize`, a marker this function sets to
+	 * record where the cap fans are — an unrelated fact that happened to be
+	 * present on every lofted geometry. A later producer omitting it, or a
+	 * non-loft geometry adopting it, would have got the wrong plate size
+	 * silently. This says the thing the consumer actually needs to know.
+	 */
+	setUvUnits(geometry, "km");
 	geometry.userData.ringSize = segments;
 	// Where the two cap fans' centre vertices ended up. Recorded rather than
 	// left to be inferred: they were the last two vertices until the caps gained

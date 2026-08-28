@@ -27,7 +27,16 @@ export {
 	RING_SEGMENTS,
 	SUBDIVISIONS,
 } from "./loft";
-import { type Ring, RING_SEGMENTS, hullLoft, revolve } from "./loft";
+import {
+	RING_SEGMENTS,
+	type Ring,
+	hullLoft,
+	revolve,
+	scaleUVs,
+	setUvUnits,
+	uvUnitsOf,
+} from "./loft";
+import { plate, plateUVs } from "./ship-surface";
 
 export const HULL_IDS = [
 	"courier",
@@ -391,11 +400,33 @@ function makePalette(id: HullId): Palette {
 	const colors = liveries[id];
 	const painted = (color: number, roughness: number, metalness: number) =>
 		new THREE.MeshStandardMaterial({ color, roughness, metalness });
+	/**
+	 * The four structural finishes, plated (#101).
+	 *
+	 * Not the canopy, the engine bell or the exhaust: the first is glass, the
+	 * second a nozzle whose whole surface is smaller than two plates, and the
+	 * third emits rather than reflects. Plating them would be texels on a
+	 * surface that never reads as plate.
+	 *
+	 * **The figures below are still the finish.** `plate` reads each material's
+	 * `roughness` and `metalness` and rescales them against what the shared wear
+	 * map reads on a clean plate, so a clean plate renders at the values written
+	 * here and the map supplies the variation around them. All four paints
+	 * survive one map, which is the only reason one map is enough;
+	 * `tests/surface.test.ts` asserts it for each of them.
+	 *
+	 * The rescale is clamped at 1, so a finish above the clean-plate reading —
+	 * roughness 0.70 today — would render below what is written. Nothing here is
+	 * near it, and the test asserts the headroom rather than the clamp, because
+	 * a clamp that starts binding is silent.
+	 */
+	const platedPaint = (color: number, roughness: number, metalness: number) =>
+		plate(painted(color, roughness, metalness));
 	const palette: Palette = {
-		hull: painted(colors.hull, 0.5, 0.3),
-		panel: painted(colors.panel, 0.58, 0.36),
-		trim: painted(0x33454d, 0.5, 0.55),
-		accent: painted(colors.accent, 0.54, 0.24),
+		hull: platedPaint(colors.hull, 0.5, 0.3),
+		panel: platedPaint(colors.panel, 0.58, 0.36),
+		trim: platedPaint(0x33454d, 0.5, 0.55),
+		accent: platedPaint(colors.accent, 0.54, 0.24),
 		canopy: new THREE.MeshStandardMaterial({
 			color: 0x173743,
 			emissive: 0x061820,
@@ -424,6 +455,14 @@ function add(
 	position: [number, number, number] = [0, 0, 0],
 	rotation: [number, number, number] = [0, 0, 0],
 ) {
+	// **Every part whose UVs are in kilometres, not every plated one.** Those
+	// UVs are unusable as they stand by any map; dividing here rather than at
+	// the four plated materials keeps one rule, and a geometry whose material
+	// has no map pays a loop over an attribute nobody samples. `uvUnits` is
+	// declared by `hullLoft` and by `hoop`, so the gate reads the fact it needs
+	// rather than a marker that happens to travel with it — the exhaust disc
+	// declares nothing and keeps its normalised unwrap.
+	if (uvUnitsOf(geometry) === "km") plateUVs(geometry);
 	const mesh = new THREE.Mesh(geometry, material);
 	mesh.name = name;
 	mesh.position.set(...position);
@@ -626,9 +665,26 @@ function drumProfile(halfLength: number, radius: number) {
 	] as ReadonlyArray<readonly [number, number]>;
 }
 
-/** A structural hoop: the cheapest read for "machine" on an otherwise bare loft. */
+/**
+ * A structural hoop: the cheapest read for "machine" on an otherwise bare loft.
+ *
+ * **Its UVs are rewritten into kilometres**, because it is the one plated
+ * geometry in this file that `hullLoft` did not build. `TorusGeometry` unwraps
+ * 0–1 round the ring and 0–1 round the tube, so a hoop handed to `add()` as it
+ * comes wraps one whole 128-texel tile round itself whatever its size: 22 plates
+ * round a 27.6 m ring and the same 22 round a 3.1 m tube, against a plate that
+ * is 1 m everywhere else on the hull. A plate is the ruler a pilot judges a
+ * hull's size by, and a ruler that changes length per part is not one.
+ *
+ * Rewriting them here rather than exempting the hoop keeps `add()`'s rule
+ * single — every geometry it plates carries kilometre UVs — instead of adding a
+ * second scaling path for three's primitives.
+ */
 function hoop(radius: number, tube: number) {
-	return new THREE.TorusGeometry(radius, tube, 8, 22);
+	const geometry = new THREE.TorusGeometry(radius, tube, 8, 22);
+	scaleUVs(geometry, 2 * Math.PI * radius, 2 * Math.PI * tube);
+	setUvUnits(geometry, "km");
+	return geometry;
 }
 
 function greebleStrip(

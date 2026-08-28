@@ -64,7 +64,6 @@ import {
 } from "./station";
 import { throatDepthKm } from "./arrival";
 import {
-	PLATE_TEXTURE_SIZE,
 	STATION_VISUALS,
 	type StationDetailLevel,
 	type StationFixtureKind,
@@ -74,6 +73,7 @@ import {
 	stationDetailLevel,
 	surfaceTexels,
 } from "./station-visuals";
+import { PLATE_TEXTURE_SIZE } from "./surface";
 
 /**
  * How far the *drawn* object reaches, kilometres — the selected form's own
@@ -798,7 +798,7 @@ function flatCloneOf(material: THREE.Material) {
  * plating at this scale. One constant for every part of every station, because
  * a plate that changes size from one part to the next stops being a ruler.
  */
-const STATION_PANEL_KM = 0.15;
+export const STATION_PANEL_KM = 0.15;
 
 /**
  * The plated shell language every form shares.

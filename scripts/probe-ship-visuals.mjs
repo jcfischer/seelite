@@ -13,7 +13,23 @@ const VIEWPORTS = [
 // renderer around it. Guarding on `main.ts` alone meant an edit to
 // `ship-mesh.ts` could be probed green against a stale dev server serving a
 // different checkout — the exact failure `probe-guard.mjs` exists to prevent.
-await guardedOrigin(ORIGIN, ["src/main.ts", "src/ship-mesh.ts"]);
+/*
+ * #101's surface, and **what the guard can and cannot see**.
+ *
+ * probe-guard fingerprints a module by its top-level numeric constants, so what
+ * these two add is `SHIP_PANEL_KM`, `PLATE_TEXTURE_SIZE` and
+ * `SEAM_HALF_WIDTH_PX` — the plate size on both sides of the divide, and the
+ * groove width. `SHIP_PLATING` and `HULL_QUALITY` are nested and the guard reads
+ * neither: a dev server serving another checkout whose profile figures differ
+ * would still pass. Written down rather than implied, because a guard list is
+ * exactly the kind of thing a reader takes as a coverage claim.
+ */
+await guardedOrigin(ORIGIN, [
+	"src/main.ts",
+	"src/ship-mesh.ts",
+	"src/ship-surface.ts",
+	"src/surface.ts",
+]);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 
@@ -197,6 +213,222 @@ for (const viewport of VIEWPORTS.slice(0, 1)) {
 			gated.allAhead &&
 			gated.nearest > 0.1 &&
 			gated.farthest > 20,
+	);
+	await page.close();
+}
+
+/**
+ * #101's hull surface: the maps are on the materials, the patch landed, and the
+ * seam map is *reaching the frame*.
+ *
+ * The last one is the point. The map's own finding (#69) is that a renderer's
+ * record cannot prove anything was painted — a material carrying a `normalMap`
+ * property proves the assignment ran, not that a single fragment sampled it, and
+ * a splice that missed its marker leaves a stock material that links, renders and
+ * reports its own name. So the frame is measured twice, with the seam map on and
+ * off, over the pixels the hull actually occupies. If the map is not reaching the
+ * shader the two frames are identical, and this goes red.
+ *
+ * The quality setting is the switch because it is the one the game already has:
+ * `low` drops exactly this term (`settings.ts`), so the control costs nothing to
+ * build and the probe checks the shipped gate at the same time.
+ */
+{
+	const page = await browser.newPage({ viewport: VIEWPORTS[0] });
+	watch(page, "hull surface");
+	await page.goto(`${ORIGIN}/?seed=42`, { waitUntil: "load" });
+	await page.waitForFunction(() => window.__seelite?.frames > 1);
+	// Chase, so the hull is in front of the camera and fills enough of the frame
+	// for a plate to be more than one pixel across.
+	await page.keyboard.press("v");
+	await page.waitForFunction(() => window.__seelite?.view === "chase");
+
+	const surface = await page.evaluate(() => {
+		const g = window.__seelite;
+		const ship = g.shipMesh;
+		const materials = new Set();
+		ship.traverse((child) => {
+			const material = child.material;
+			if (material?.userData?.hullSplices) materials.add(material);
+		});
+		const all = [...materials];
+		/*
+		 * The shape every check reads, with nothing in it.
+		 *
+		 * One literal, spread into both returns, because the bail and the real
+		 * result have to carry the same fields and keeping two lists in step by
+		 * hand is how they diverge: the first bail returned `{ materials: 0 }`
+		 * alone and the third check still crashed on `undefined.length` — the
+		 * same defect one line further down from the one it fixed.
+		 */
+		const EMPTY = {
+			materials: 0,
+			maps: [],
+			splices: 0,
+			splicesLanded: 0,
+			withSeams: [],
+			withoutSeams: [],
+			hullPixels: 0,
+			moved: 0,
+			stdev: 0,
+		};
+		// No patched material means the hull has not been built or drawn, which
+		// the checks should report as named failures rather than as a TypeError
+		// in the runner.
+		if (!all.length) return EMPTY;
+		const splices = all.flatMap((m) => Object.values(m.userData.hullSplices));
+		const W = 480;
+		const H = 300;
+		const src = g.renderer.domElement;
+		const scratch = document.createElement("canvas");
+		scratch.width = W;
+		scratch.height = H;
+		const ctx = scratch.getContext("2d", { willReadFrequently: true });
+		const frame = () => {
+			// Render and read in the same task: a WebGL canvas without
+			// `preserveDrawingBuffer` is cleared at the next composite.
+			g.render(0);
+			ctx.drawImage(src, 0, 0, W, H);
+			return ctx.getImageData(0, 0, W, H).data;
+		};
+		const restore = g.settings.value.quality;
+		// **High before the bare frame**, for `probe-light-rig.mjs`'s reason: the
+		// mask and the frame it is differenced against must be one configuration,
+		// or on a page whose stored setting is `low` the mask stops being the
+		// hull.
+		g.settings.set("quality", "high");
+		// **Removed from the scene, not hidden.** `render` assigns
+		// `shipMesh.visible = view === "chase"` on every frame, so clearing the
+		// flag and re-rendering gives the hull straight back — the mask came out
+		// empty and both measurements below read zero while every record-level
+		// check stayed green. Re-parenting is the one lever the frame loop does
+		// not own.
+		const parent = ship.parent;
+		parent.remove(ship);
+		const bare = frame();
+		parent.add(ship);
+		const high = frame();
+		const withSeams = all.map((m) => Boolean(m.normalMap));
+
+		/*
+		 * **The lever is the seam map's texels, not whether it is attached** —
+		 * and this check took two wrong levers before this one.
+		 *
+		 * First it toggled the quality setting. That passed at 30.3% of hull
+		 * pixels on a build whose seam map was generated *flat*, because `low`
+		 * also drops the baked environment (#99): the check was reading someone
+		 * else's term and reporting it as this node's.
+		 *
+		 * Then it nulled `material.normalMap`. That passed at 29.0% on the same
+		 * flat build, because attaching *any* normal map changes three.js's own
+		 * defines and sends the fragment down `perturbNormal2Arb` with a
+		 * screen-space tangent frame. The presence of the map moves pixels on
+		 * its own; what this node added is the map's content.
+		 *
+		 * So the bytes are overwritten in place and the texture — not the
+		 * material — is marked dirty. Same program, same defines, same sampler:
+		 * the only thing that changes is what it reads. On a flat build this
+		 * writes flat over flat and the difference is exactly zero, which is
+		 * what makes it a check rather than a reading.
+		 */
+		const seamTexture = all[0].normalMap;
+		// The same defect the `EMPTY` literal above was added for, one lever
+		// further down: with no map attached this throws and the run reports a
+		// runner crash where `the quality gate adds and removes the seam map`
+		// should have failed by name.
+		if (!seamTexture) {
+			g.settings.set("quality", restore);
+			return { ...EMPTY, materials: all.length, withSeams };
+		}
+		const texels = seamTexture.image.data;
+		const original = texels.slice();
+		for (let i = 0; i < texels.length; i += 4) {
+			texels[i] = 128;
+			texels[i + 1] = 128;
+			texels[i + 2] = 255;
+		}
+		seamTexture.needsUpdate = true;
+		const flat = frame();
+		texels.set(original);
+		seamTexture.needsUpdate = true;
+		frame();
+
+		g.settings.set("quality", "low");
+		frame();
+		const withoutSeams = all.map((m) => Boolean(m.normalMap));
+		g.settings.set("quality", restore);
+		frame();
+
+		const luma = (d, i) =>
+			0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+		let hullPixels = 0;
+		let moved = 0;
+		let spread = 0;
+		let sum = 0;
+		const values = [];
+		for (let i = 0; i < high.length; i += 4) {
+			// A pixel is the hull's where hiding it changed the frame. Two levels
+			// rather than any, so the starfield the hull occludes does not join
+			// the mask.
+			if (Math.abs(luma(high, i) - luma(bare, i)) < 3) continue;
+			hullPixels++;
+			const here = luma(high, i);
+			values.push(here);
+			sum += here;
+			if (Math.abs(here - luma(flat, i)) >= 1) moved++;
+		}
+		const mean = hullPixels ? sum / hullPixels : 0;
+		for (const v of values) spread += (v - mean) ** 2;
+		return {
+			...EMPTY,
+			materials: all.length,
+			maps: all.map((m) => ({
+				map: Boolean(m.map),
+				roughnessMap: Boolean(m.roughnessMap),
+				metalnessMap: Boolean(m.metalnessMap),
+			})),
+			splices: splices.length,
+			splicesLanded: splices.filter(Boolean).length,
+			withSeams,
+			withoutSeams,
+			hullPixels,
+			moved,
+			// The control for the measurement below: a hull rendered as one flat
+			// value would report a large `hullPixels` and a spread near zero, and
+			// no difference between the two frames would then mean anything.
+			stdev: hullPixels ? Math.sqrt(spread / hullPixels) : 0,
+		};
+	});
+
+	check(
+		`hull surface: every plated material carries its three maps`,
+		surface.materials >= 3 &&
+			surface.maps.every((m) => m.map && m.roughnessMap && m.metalnessMap),
+		`${surface.materials} material(s)`,
+	);
+	check(
+		// A count as well as an equality: the log is written when a material is
+		// plated and filled when its program links, so an empty log is "not
+		// compiled" rather than "nothing missed" — and `0 === 0` would pass it.
+		`hull surface: every shader splice found its marker`,
+		surface.splices > 0 && surface.splicesLanded === surface.splices,
+		`${surface.splicesLanded}/${surface.splices}`,
+	);
+	check(
+		`hull surface: the quality gate adds and removes the seam map`,
+		surface.withSeams.length > 0 &&
+			surface.withSeams.every(Boolean) &&
+			surface.withoutSeams.every((on) => !on),
+	);
+	check(
+		`hull surface: the hull is drawn, and drawn with variation in it`,
+		surface.hullPixels > 500 && surface.stdev > 2,
+		`${surface.hullPixels} px, stdev ${surface.stdev.toFixed(1)}`,
+	);
+	check(
+		`hull surface: the seam map reaches the frame`,
+		surface.moved / Math.max(1, surface.hullPixels) > 0.05,
+		`${((surface.moved / Math.max(1, surface.hullPixels)) * 100).toFixed(1)}% of hull pixels moved`,
 	);
 	await page.close();
 }
