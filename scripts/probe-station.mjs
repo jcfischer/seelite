@@ -100,43 +100,18 @@ const ORIGIN =
  * §4's range sampled near both ends without the probe writing a spin itself,
  * which is the second thing this fixture is for. (Seed 1's were 0.91 and 2.95.)
  *
- * ## The 5 km control flakes, and #118 made it flake more often
+ * ## The 5 km control flakes
  *
- * Stated plainly because the comfortable version — "pre-existing, not ours" —
- * is only half true. The control below, trade measured twice against a
- * `1 − IoU ≤ 0.05` ceiling, straddles that ceiling. Four `probe:one station`
- * runs each:
+ * Trade measured twice, against a `1 − IoU ≤ 0.05` ceiling, lands red often — on
+ * `main` before #118 as well as here, and on every fixture tried. The ceiling is
+ * deliberately **not** widened to hide it: loosening a margin so an unrelated
+ * change goes green is how a check stops discriminating, and the readings point
+ * at the control re-measuring a *spinning* station rather than at the margin.
  *
- * ```
- *   main, seed 1 (pre-#118)   3/4 green   worst reading 0.057
- *   seed 54 (this fixture)    2/4 green   readings 0.061, 0.074
- *   seed 59                   1/4 green   readings 0.064, 0.069, 0.085
- *   seeds 96, 115             0/4 green
- * ```
- *
- * **Read those counts for what four runs can carry, which is not much.** 3/4
- * against 2/4 is one run, and nothing here distinguishes 25% from 50%; the
- * defensible statements are that the flake predates #118, that it is common on
- * every fixture tried, and that seed 54's *readings* (0.054-0.074) run above the
- * single 0.057 seen on `main`. Whether the reshape made it more frequent is not
- * something this sample can answer, and an earlier version of this comment said
- * "roughly doubles" as though it could.
- *
- * It is still a cost this change carries rather than somebody else's problem.
- * Seed 54 is the best of the seeds **tried**: seed 1 no longer holds three
- * station types, and of the four candidates run against this control it is the
- * only one green more often than not. Roughly 40 seeds under 400 hold three
- * types and 36 of them were never run here, so "the best available" is a claim
- * about the search, not about the seed space.
- *
- * The ceiling is deliberately **not** widened to hide it. Loosening a margin so
- * that an unrelated change goes green is how a check stops discriminating, and
- * the readings point away from the margin being the fault: the control
- * re-measures a station that is *spinning*, so what it reports is rotation
- * between the two captures rather than measurement noise, which is why it is
- * load-sensitive and why it straddles rather than sits. Fixing that — freezing
- * the game clock across the pair — is the open node #84's call, and the
- * measurements above are posted there.
+ * The per-seed run table, and the fix, belong to node #84 ("is probe-station's
+ * margin too tight?"), where they are posted. Not repeated here, because a
+ * reader who wants the seed criterion above should not have to scroll past a
+ * statistical writeup that lives somewhere else.
  */
 const URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=54`;
 

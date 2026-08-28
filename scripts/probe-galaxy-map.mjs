@@ -147,19 +147,19 @@ for (const viewport of VIEWPORTS) {
 			!initial.gameConstructed &&
 			initial.state?.systemCount === 256 &&
 			initial.state?.galaxy === 0 &&
-			// **A plausibility bracket, and no more than that.** This read
-			// `=== 22` and went red on #118 for reshaping the galaxy, which is
-			// the failure mode `CLAUDE.md` names: a probe holding its own copy of
-			// a module's constant fails when the module changes it, and says
-			// nothing about the chart.
+			// **The radius is deliberately not asserted here.** It read `=== 22`
+			// and went red on #118 for reshaping the galaxy — the failure
+			// `CLAUDE.md` names, a probe holding its own copy of a module's
+			// constant. The replacement was a 15-40 bracket, which is worse than
+			// useless: §2.1's sweep spans R = 21.9 to R = 37.7, so every shape the
+			// project could ship passes it, including the ball the disc replaced.
+			// A check that cannot fail is not a weak check, it is a line that
+			// makes the suite look larger than it is.
 			//
-			// A hardcoded 20 would pass this, so it is *not* evidence that the
-			// real generator is mounted — an earlier version of this comment
-			// claimed it was. What actually distinguishes a stub is the 256-system
-			// count above, the lit-neighbourhood check below, and the disc aspect,
-			// none of which a constant satisfies.
-			initial.state?.galaxyRadiusLy > 15 &&
-			initial.state?.galaxyRadiusLy < 40 &&
+			// What distinguishes a mounted generator from a stub is the
+			// 256-system count above, the lit-neighbourhood check below, and the
+			// disc aspect — none of which a constant satisfies.
+			Number.isFinite(initial.state?.galaxyRadiusLy) &&
 			initial.state?.jumpRangeLy === 7,
 	);
 
@@ -219,13 +219,15 @@ for (const viewport of VIEWPORTS) {
 				previous = delta;
 				map.orbit(0, Math.sign(delta) * step);
 			}
-			if (Math.abs(target - map.state.pitch) > 0.02) {
+			const stalled = Math.abs(target - map.state.pitch) > 0.02;
+			if (stalled) {
 				// **Throw rather than return an unconverged framing.** Returning it
 				// let the aspect check run against a view nobody asked for and
 				// report "the cluster is a disc — FAIL", so a stalled orbit
 				// produced two failures naming two different defects.
 				throw new Error(
-					`aspectAtPitch: wanted ${target}, reached ${map.state.pitch} after ${i} steps`,
+					`aspectAtPitch: wanted ${target}, reached ${map.state.pitch} after ${i} steps` +
+						(step <= 0.25 ? " (stalled at the step floor)" : ""),
 				);
 			}
 			await new Promise((r) =>

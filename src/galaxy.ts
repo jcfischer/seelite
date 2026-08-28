@@ -60,11 +60,12 @@ export const SYSTEMS_PER_GALAXY = 256;
  * area and so makes finding easier. It is refuted: holding ~8-in-range forces R
  * upward as the volume flattens, the framing grows with R, and flattening then
  * concentrates the points toward a plane — whose nearest-neighbour distances are
- * shorter than a ball's at equal projected extent. The ball is the least crowded
- * shape at every viewing angle including face-on — measured on a q x pitch grid
- * by `bun scripts/measure-galaxy-shape.ts grid`, which asserts it cell for cell
- * rather than only printing it, so a later retune cannot leave §2 stating a
- * refuted claim.
+ * shorter than a ball's at equal projected extent. Over the four shapes and
+ * seven pitches §2's grid samples, the ball is the least crowded in every cell,
+ * face-on included — `bun scripts/measure-galaxy-shape.ts grid` asserts that
+ * cell for cell rather than printing it, so a later retune cannot leave §2
+ * stating a refuted claim. (Scope matters and the spec carries it: four `q`
+ * values at one yaw, not every shape and not every angle.)
  *
  * **0.7 and not Elite's 0.5.** §2 declined Elite's 2:1 y-compression for a good
  * reason — it was a screen-aspect hack imported as a physical law — and adopting
@@ -305,12 +306,28 @@ export const squaredDistanceLy = (a: Vec3, b: Vec3): number => {
  * sweep instrument used to hold, and two 40-step bisections that must stay in
  * step is exactly the shape of drift this file keeps being bitten by.
  */
-export function radialCdf(x: number, radius = GALAXY_RADIUS_LY): number {
+/**
+ * The profile's `(core, norm)` pair for a radius, memoised.
+ *
+ * `radiusForQuantile` calls `radialCdf` forty times per system, so computing the
+ * normaliser inside it put a second `atan` on every step of the hot path — about
+ * 82,000 extra per world, times the mean 4.97 layout attempts. One entry is
+ * enough in practice (the generator only ever asks for the shipped radius) and
+ * the map keeps the sweep's other radii cheap too.
+ */
+const cdfShape = new Map<number, { core: number; norm: number }>();
+const shapeFor = (radius: number): { core: number; norm: number } => {
+	const hit = cdfShape.get(radius);
+	if (hit) return hit;
 	const core = radius / Math.SQRT2;
-	return (
-		(x - core * Math.atan(x / core)) /
-		(radius - core * Math.atan(radius / core))
-	);
+	const made = { core, norm: radius - core * Math.atan(radius / core) };
+	cdfShape.set(radius, made);
+	return made;
+};
+
+export function radialCdf(x: number, radius = GALAXY_RADIUS_LY): number {
+	const { core, norm } = shapeFor(radius);
+	return (x - core * Math.atan(x / core)) / norm;
 }
 
 /**
@@ -590,7 +607,15 @@ export function systemFromPosition(
 	// **The profile coordinate, not the Euclidean distance.** See
 	// `profileRadiusLy`: §4's gradients are written against the shape's own
 	// shells, and only that coordinate spans 0…1 on every axis.
-	const t = profileRadiusLy(pos) / GALAXY_RADIUS_LY;
+	//
+	// Inlined rather than calling `profileRadiusLy`, which would put a second
+	// square root and a domain guard on every one of 2,048 records per world for
+	// a `q` that is a compile-time constant here. The exported function is for
+	// callers whose `q` varies; this is the shipped shape.
+	const flattenedY = pos.y / GALAXY_FLATTENING_Q;
+	const t =
+		Math.sqrt(pos.x * pos.x + flattenedY * flattenedY + pos.z * pos.z) /
+		GALAXY_RADIUS_LY;
 
 	const polity = stream(seed, DOMAIN.POLITY);
 
