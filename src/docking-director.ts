@@ -72,7 +72,15 @@ export interface DirectorBlock {
 export interface DirectorState {
 	stationId: string;
 	rangeKm: number;
-	/** Inside §6's clearance range, where a request can be made at all. */
+	/**
+	 * Inside §6's clearance range, where a *request* can be made at all.
+	 *
+	 * **Not a director gate.** `directorEngaged` is, and it uses
+	 * `DIRECTOR_RANGE_KM` — two hundred times smaller. This field is kept because
+	 * the two ranges answer different questions and a reader needs to see both to
+	 * know which is which; gating the glass on this one is the defect #94 exists
+	 * to fix, and the name it had made that easy to do by accident.
+	 */
 	inVicinity: boolean;
 	/** §6's clearance state, so `directorEngaged` can read it without a second
 	 *  copy of the union reaching the renderer. */

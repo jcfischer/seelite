@@ -117,27 +117,49 @@ describe("the corridor is sufficient for the checks it guides", () => {
 						const e = evaluateEntry(frame, poseAt(frame, corner), {
 							hostile: false,
 						});
-						expect(e.positionAngleDeg).toBeLessThan(AXIS_TOLERANCE_DEG);
+						// **Half the tolerance, at every length.** Asserting only the
+						// tolerance here and the half only at one mouth length was the
+						// first version, and the headroom is the claim the spec makes:
+						// an instrument that only just fits inside a wide gate leaves
+						// the gate exactly as wide, which is `docking.md` §3.2's
+						// complaint. The bound tends to `atan(tan(flare)·√(1+aspect²))`
+						// as the mouth recedes, so it holds at every length or at none.
+						expect(e.positionAngleDeg).toBeLessThan(AXIS_TOLERANCE_DEG / 2);
 					}
 			}
 		}
 	});
 
-	test("the corridor is genuinely tighter than the gate, not merely inside it", () => {
+	test("the headroom does not erode as the corridor lengthens", () => {
 		const frame = frameFor();
-		const tunnel = dockingTunnel(frame, { mouthKm: 8 });
-		const worst = Math.max(
-			...tunnel.rings.flatMap((ring) =>
-				ring.corners.map(
-					(corner) =>
-						evaluateEntry(frame, poseAt(frame, corner), { hostile: false })
-							.positionAngleDeg,
+		const worstAt = (mouthKm: number) =>
+			Math.max(
+				...dockingTunnel(frame, { mouthKm }).rings.flatMap((ring) =>
+					ring.corners.map(
+						(corner) =>
+							evaluateEntry(frame, poseAt(frame, corner), { hostile: false })
+								.positionAngleDeg,
+					),
 				),
-			),
-		);
-		// Half the tolerance is the claim `docking.md` §3.2 wants: an instrument
-		// that only just fits inside a wide gate leaves the gate wide.
-		expect(worst).toBeLessThan(AXIS_TOLERANCE_DEG / 2);
+			);
+		// It approaches a limit rather than growing without bound: the corner's
+		// lateral offset and its axial distance both grow linearly, so the angle
+		// converges on `atan(tan(flare) · √(1 + aspect²))`.
+		const aspect = frame.aperture.heightKm / frame.aperture.widthKm;
+		const limit =
+			(Math.atan(
+				Math.tan((TUNNEL_FLARE_DEG * Math.PI) / 180) *
+					Math.sqrt(1 + aspect * aspect),
+			) *
+				180) /
+			Math.PI;
+		for (const mouthKm of [2, 8, 30, 200, 5_000]) {
+			expect(worstAt(mouthKm)).toBeLessThan(limit + 1e-6);
+			expect(worstAt(mouthKm)).toBeLessThan(AXIS_TOLERANCE_DEG / 2);
+		}
+		// And the limit is genuinely approached, so the bound above is not a
+		// vacuous one taken far from where the corridor actually operates.
+		expect(worstAt(5_000)).toBeGreaterThan(limit - 0.01);
 	});
 
 	test("a ship on the throat's corner is contained; a hair outside is not", () => {

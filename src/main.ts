@@ -465,21 +465,6 @@ const TEXT_RASTER_BOUNDS_DEFAULTS: Readonly<{
 });
 
 /**
- * What the docking director actually painted on the glass this frame.
- *
- * Pixel geometry, not a second copy of the state: `state` below is the object
- * `docking-director.ts` returned, and everything beside it is where the draw
- * put it and in what state it painted it — the distinction `cockpitPrompt`
- * exists for.
- *
- * **It records what the draw decided, not that anything reached the canvas.**
- * The record is assembled at the end of the method whether or not the strokes
- * landed, so deleting every `ctx.stroke()` would leave it unchanged. That gap
- * is closed in the probe rather than here: `probe-docking.mjs` reads the
- * overlay's own pixels on the funnel ring, because a canvas is the one thing a
- * renderer cannot honestly self-report.
- */
-/**
  * Where the flying glass ends and the physical cockpit begins, as a fraction of
  * the frame height.
  *
@@ -504,6 +489,21 @@ function throatColour(state: DirectorState): string {
 		: "rgba(255, 209, 122, 0.9)";
 }
 
+/**
+ * What the docking director actually painted on the glass this frame.
+ *
+ * Pixel geometry, not a second copy of the state: `state` below is the object
+ * `docking-director.ts` returned, and everything beside it is where the draw
+ * put it and in what state it painted it — the distinction `cockpitPrompt`
+ * exists for.
+ *
+ * **It records what the draw decided, not that anything reached the canvas.**
+ * The record is assembled at the end of the method whether or not the strokes
+ * landed, so deleting every `ctx.stroke()` would leave it unchanged. That gap
+ * is closed in the probe rather than here: `probe-docking.mjs` reads the
+ * overlay's own pixels on the funnel ring, because a canvas is the one thing a
+ * renderer cannot honestly self-report.
+ */
 interface DirectorRender {
 	state: DirectorState;
 	/** Screen centre — the nose, and the thing the axis marker is flown into. */
@@ -516,13 +516,25 @@ interface DirectorRender {
 	 */
 	funnelRadiusPx: number;
 	/** Where the nose marker was drawn: the true on-glass *direction* of the
-	 *  docking axis, at a radius that is the error as a fraction of tolerance. */
-	axisMarker: { x: number; y: number; onScreen: boolean } | null;
+	 *  docking axis, at a radius that is the error as a fraction of tolerance.
+	 *  Whether that radius still means anything is `markerOffScale`, not a
+	 *  property of the point — the coordinates are on canvas either way. */
+	axisMarker: { x: number; y: number } | null;
 	/** True when the nose error is past the gauge's range, so the marker has
 	 *  stopped moving and no longer reads as a distance. */
 	markerOffScale: boolean;
 	/** How many of the corridor's rectangles were fully on screen and stroked. */
 	tunnelRingsDrawn: number;
+	/**
+	 * The throat's four corners as drawn, in canvas pixels, or `null` when it did
+	 * not project.
+	 *
+	 * Here because the corridor is what carries check 4 now that the roll ticks
+	 * are gone, and "the rectangle turns with the slot" is a fact about the
+	 * *geometry* that says nothing about whether a rolled pilot can read a roll
+	 * error off the glass. The rectangle's screen-space tilt is that reading.
+	 */
+	throatCornersPx: { x: number; y: number }[] | null;
 	/** Which state the funnel was **painted** in. The record carries it because
 	 *  it is the one cue decision the draw makes rather than copies: without it
 	 *  a funnel that stayed green past the tolerance passes every browser row. */
@@ -4047,6 +4059,7 @@ class Game {
 			? "rgba(255, 110, 96, 0.5)"
 			: "rgba(120, 205, 245, 0.4)";
 		let tunnelRingsDrawn = 0;
+		let throatCornersPx: DirectorRender["throatCornersPx"] = null;
 		const projectedRings: ({ x: number; y: number } | null)[][] = [];
 		for (const ring of state.tunnel.rings) {
 			const corners = ring.corners.map((corner) =>
@@ -4055,6 +4068,7 @@ class Game {
 			projectedRings.push(corners);
 			if (corners.some((corner) => corner === null)) continue;
 			const points = corners as { x: number; y: number }[];
+			if (ring === state.tunnel.throat) throatCornersPx = points;
 			ctx.strokeStyle =
 				ring === state.tunnel.throat ? throatColour(state) : tunnelColour;
 			ctx.lineWidth = ring === state.tunnel.throat ? 2 : 1;
@@ -4133,7 +4147,7 @@ class Game {
 			const radius = Math.min(fraction, MARKER_MAX_FRACTION) * funnelRadiusPx;
 			const x = cx + ux * radius;
 			const y = cy + uy * radius;
-			axisMarker = { x, y, onScreen: !markerOffScale };
+			axisMarker = { x, y };
 			ctx.beginPath();
 			ctx.moveTo(x, y - 7);
 			ctx.lineTo(x + 7, y);
@@ -4178,6 +4192,7 @@ class Game {
 			axisMarker,
 			markerOffScale,
 			tunnelRingsDrawn,
+			throatCornersPx,
 			funnelState,
 			clearanceText,
 			blocking: state.blocking !== null,

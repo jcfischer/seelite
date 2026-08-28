@@ -655,50 +655,75 @@ async function directorAt(setup) {
 			// deriving it from `drawn` makes every control frame vacuous, because
 			// `drawn` is null on exactly the frames a control needs to read.
 			const overlay = document.getElementById("overlay");
-			const sample = (region) => {
-				if (!region || !overlay) return { hits: 0, colour: null, count: 0 };
-				const octx = overlay.getContext("2d");
+			const ringPoints = (region) => {
 				const points = [];
-				if (region.kind === "ring")
-					for (let i = 0; i < 24; i++) {
-						const a = (i / 24) * Math.PI * 2;
+				for (let i = 0; i < 24; i++) {
+					const a = (i / 24) * Math.PI * 2;
+					points.push({
+						x: Math.round(region.x + Math.cos(a) * region.r),
+						y: Math.round(region.y + Math.sin(a) * region.r),
+					});
+				}
+				return points;
+			};
+			const gridPoints = (region) => {
+				const points = [];
+				for (let i = 0; i < region.samples; i++)
+					for (let j = 0; j < region.samples; j++)
 						points.push({
-							x: Math.round(region.x + Math.cos(a) * region.r),
-							y: Math.round(region.y + Math.sin(a) * region.r),
+							x: Math.round(
+								region.x0 +
+									((region.x1 - region.x0) * i) / (region.samples - 1),
+							),
+							y: Math.round(
+								region.y0 +
+									((region.y1 - region.y0) * j) / (region.samples - 1),
+							),
 						});
-					}
-				else
-					for (let i = 0; i < region.samples; i++)
-						for (let j = 0; j < region.samples; j++)
-							points.push({
-								x: Math.round(
-									region.x0 +
-										((region.x1 - region.x0) * i) / (region.samples - 1),
-								),
-								y: Math.round(
-									region.y0 +
-										((region.y1 - region.y0) * j) / (region.samples - 1),
-								),
-							});
+				return points;
+			};
+
+			const sample = (region) => {
+				if (!region || !overlay)
+					return { where: [], hits: 0, colour: null, count: 0 };
+				const octx = overlay.getContext("2d");
+				const points =
+					region.kind === "ring" ? ringPoints(region) : gridPoints(region);
+
+				// **One readback over the whole region, then indexed.** Each
+				// `getImageData` is a synchronous read off an accelerated canvas, and
+				// the grid regions are hundreds of points — a per-point call was
+				// hundreds of stalls where one box read does.
+				const xs = points.map((point) => point.x);
+				const ys = points.map((point) => point.y);
+				const x0 = Math.max(0, Math.min(...xs) - 2);
+				const y0 = Math.max(0, Math.min(...ys) - 2);
+				const x1 = Math.min(overlay.width, Math.max(...xs) + 3);
+				const y1 = Math.min(overlay.height, Math.max(...ys) + 3);
+				if (x1 <= x0 || y1 <= y0)
+					return { where: [], hits: 0, colour: null, count: 0 };
+				const box = octx.getImageData(x0, y0, x1 - x0, y1 - y0);
+				const at = (px, py) => {
+					if (px < x0 || py < y0 || px >= x1 || py >= y1) return null;
+					const i = ((py - y0) * box.width + (px - x0)) * 4;
+					return box.data[i + 3] > 0
+						? [box.data[i], box.data[i + 1], box.data[i + 2]]
+						: null;
+				};
 
 				let hits = 0;
 				const hitPoints = [];
 				const counts = {};
 				for (const point of points) {
-					if (
-						point.x < 1 ||
-						point.y < 1 ||
-						point.x > overlay.width - 2 ||
-						point.y > overlay.height - 2
-					)
-						continue;
-					const patch = octx.getImageData(point.x - 1, point.y - 1, 3, 3).data;
 					let found = null;
-					for (let k = 0; k < patch.length && !found; k += 4)
-						if (patch[k + 3] > 0)
-							found = [patch[k], patch[k + 1], patch[k + 2]];
+					for (let dy = -1; dy <= 1 && !found; dy++)
+						for (let dx = -1; dx <= 1 && !found; dx++)
+							found = at(point.x + dx, point.y + dy);
 					if (found) {
 						hits++;
+						// Up to eight hit coordinates, carried purely so a failing row can
+						// say *where*. This is how the clip row's first version was caught
+						// reading the debug HUD's text instead of the director's ink.
 						if (hitPoints.length < 8) hitPoints.push([point.x, point.y]);
 						// Quantised to 32-level channels: an anti-aliased stroke lands a
 						// dozen near-identical shades, which splits its own count and
@@ -709,9 +734,6 @@ async function directorAt(setup) {
 				}
 				const dominant = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
 				return {
-					// Up to eight hit coordinates, carried purely so a failing row can
-					// say *where*. This is how the clip row's first version was caught
-					// reading the debug HUD's text instead of the director's ink.
 					where: hitPoints,
 					hits,
 					colour: dominant ? dominant[0] : null,
@@ -735,6 +757,7 @@ async function directorAt(setup) {
 							axisMarker: drawn.axisMarker,
 							markerOffScale: drawn.markerOffScale,
 							tunnelRingsDrawn: drawn.tunnelRingsDrawn,
+							throatCornersPx: drawn.throatCornersPx,
 							funnelState: drawn.funnelState,
 							clearanceText: drawn.clearanceText,
 							blocking: drawn.blocking,
@@ -798,6 +821,63 @@ check(
 		inside.drawn.mouthHalfWidthKm > inside.drawn.throatHalfWidthKm,
 	`${inside.drawn?.tunnelRingsDrawn}/${inside.drawn?.tunnelRings} rings drawn; ` +
 		`throat ${inside.drawn?.throatHalfWidthKm?.toFixed(4)} km, mouth ${inside.drawn?.mouthHalfWidthKm?.toFixed(4)} km`,
+);
+
+/**
+ * The screen-space tilt of the corridor's throat, degrees, folded to (−90, 90].
+ *
+ * This is the reading the roll ticks used to give. "The rectangle turns with
+ * the slot" is a fact about the geometry and is checked headless; whether a
+ * *rolled pilot* can read a roll error off the drawn corridor is a fact about
+ * the glass, and only a rendered frame answers it.
+ */
+const throatTiltDeg = (measured) => {
+	const corners = measured.drawn?.throatCornersPx;
+	if (!corners || corners.length !== 4) return null;
+	// The rectangle's width edge: corner 0 to corner 1 is `across` in the draw.
+	const dx = corners[1].x - corners[0].x;
+	// Canvas y grows downward, so negate to read as a normal angle.
+	const dy = -(corners[1].y - corners[0].y);
+	let deg = (Math.atan2(dy, dx) * 180) / Math.PI;
+	while (deg > 90) deg -= 180;
+	while (deg <= -90) deg += 180;
+	return deg;
+};
+
+/**
+ * The relation, measured and then pinned: the drawn throat's tilt is
+ * `90° − roll`, folded.
+ *
+ * Ninety because the fixtures set the ship's up along the slot's *width*, so at
+ * zero roll the rectangle's width edge stands vertical on the glass; the slope
+ * is exactly one degree of tilt per degree of roll, because the corridor is a
+ * world object and the camera is what turns.
+ */
+const fold = (deg) => {
+	let d = deg;
+	while (d > 90) d -= 180;
+	while (d <= -90) d += 180;
+	return d;
+};
+
+const rollSamples = [];
+for (const rollDeg of [-30, -12, 0, 12, 30]) {
+	const measured = await directorAt({ ...APPROACH, rollDeg });
+	rollSamples.push({ rollDeg, tiltDeg: throatTiltDeg(measured) });
+}
+check(
+	// **The row that says the corridor carries check 4.** The roll ticks are
+	// gone, and "the rectangle turns with the slot" — the headless row — is a
+	// fact about the geometry that says nothing about whether a rolled pilot can
+	// read a roll error off the glass. A corridor that ignored the slot's phase
+	// would sit at one tilt for every roll and fail this.
+	"the drawn throat's tilt tracks the ship's roll, one degree for one",
+	rollSamples.every(
+		(sample) =>
+			sample.tiltDeg !== null &&
+			Math.abs(fold(90 - sample.rollDeg - sample.tiltDeg)) < 1,
+	),
+	rollSamples.map((s) => `${s.rollDeg}°→${s.tiltDeg?.toFixed(1)}°`).join("  "),
 );
 
 const farther = await directorAt({ ...APPROACH, standoffKm: 20 });
@@ -1031,12 +1111,15 @@ check(
 	// with no director, so this measures the director's ink and not the
 	// cockpit's own.
 	"the director stays inside the canopy and paints nothing on the physical cockpit",
-	// **Adds nothing**, rather than "both read zero". The two frames are
-	// identical but for the clearance, and the cockpit's own ink below the glass
-	// is not perfectly stable between renders — an equality would be asserting
-	// that noise, where what is claimed is that the director contributes none of
-	// it. Removing the clip makes this go red.
-	pitched.belowSample.hits <= pitchedAbsent.belowSample.hits,
+	// **Zero, on both frames.** An earlier version asserted only
+	// `pitched <= pitchedAbsent`, which a build painting a few points below the
+	// glass could satisfy whenever the control happened to paint more — and the
+	// control's own instability was the stated reason for the inequality. That
+	// instability came from the band running down into the debug HUD, whose text
+	// changes with the clearance state; bounded above by the clip line and below
+	// by that text, the band is empty on both frames and an absolute zero is what
+	// the claim actually is. Removing the clip puts 21 points in it.
+	pitched.belowSample.hits === 0 && pitchedAbsent.belowSample.hits === 0,
 	`${pitched.belowSample.hits} painted below the glass with the director up, ${pitchedAbsent.belowSample.hits} without it — at ${JSON.stringify(pitched.belowSample.where)}`,
 );
 
