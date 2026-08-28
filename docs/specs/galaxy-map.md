@@ -478,15 +478,22 @@ At desktop (1280 × 760) and narrow (390 × 844):
 
 The chart's *mount* rather than its projection, and the list beside it.
 
-1. **Every row is a body the game will let you select, and every one is
-   listed.** Compared against `Game.selectableIds()` — the list `cycleTarget`
-   walks and `onSelectTarget` validates against — and not against a rule the
-   probe restates. Two earlier versions restated it, first as a
-   `kind !== "moon"` denylist and then as the kinds read off the panel's own
-   filter chips; the second is worse, because both sides of the comparison then
-   derive from the projection and nothing binds either to selection. If the two
-   diverge, a row click is a silent no-op and no check fires. Rows are ordered
-   by the ranges the simulation holds for those same ids —
+1. **The rendered list is exactly the set the game holds as selectable.**
+   Compared against `Game.selectableIds()` and not against a rule the probe
+   restates — two earlier versions restated it, first as a `kind !== "moon"`
+   denylist and then as the kinds read off the panel's own filter chips, the
+   second being worse because both sides of the comparison then derive from the
+   projection.
+
+   **What it does not check.** `navRows()` passes `selectable()` into the
+   projection, so the rows are a filtered image of that list by construction and
+   a divergence between the two cannot arise here. This catches the render and
+   filter path — a row dropped, duplicated, or drawn for a body the game does
+   not hold. What binds a row to *selection* is item 2's click, which moves
+   `targetBody()`. An earlier version of this paragraph sold the first check as
+   guarding the second's failure.
+
+   Rows are ordered by the ranges the simulation holds for those same ids —
    read from `world.system.byId`, not from the row text, because a list that
    sorted its own output and then reported that output as sorted passes on a
    build with no sort at all. Clicking a row the game is **not** already on
@@ -499,26 +506,43 @@ The chart's *mount* rather than its projection, and the list beside it.
    `includes`, because `navFilterMatches` matches anywhere in the id and a probe
    asserting a prefix would go red on a correctly-listed mid-string match. That
    a distinguishing fragment was found is itself a check, so a seed where none
-   exists goes **red** rather than exiting green having tested nothing — a
-   failure that names the seed rather than a silent skip.
-3. **The chart stays inside the panel.** Measured on the **canvas**, not on the
+   exists goes **red** rather than exiting green having tested nothing, and the
+   failure carries the page URL and the row ids so the seed is in the message.
+3. **The chart is built for the ship's galaxy and system.** The galaxy half
+   discriminates — a chart built for galaxy 3 while the ship flies in galaxy 0
+   fails. The system half does **not** yet: dropping `currentIndex` at the mount
+   site falls back to `startSystem(galaxy)`, which is where the game also
+   begins, so the defect and the fix agree and the probe stays green. Built and
+   run rather than assumed. It becomes discriminating when the ship can be
+   somewhere else, which is `galaxy-generation.md` §8's jump.
+
+4. **The chart stays inside the panel.** Measured on the **canvas**, not on the
    host element: the host is a grid cell the console laid out, so its box is
    inside the panel by construction and asserting on it is asserting the
    panel's own layout. Written that way first, and it passed against a chart
    restored to the workbench's `position: fixed` — which is #70's second UI
    grammar, the thing §1 rules out. On the canvas the same build reads
    `0,0,1280,760` against a panel of `102,53,1178,669`.
-4. **The tab takes the chart down.** After leaving, `__seeliteGalaxyMap` is
+5. **The tab takes the chart down.** After leaving, `__seeliteGalaxyMap` is
    null and no canvas remains in the panel — a mount without a matching dispose
    leaves a second WebGL context and a 60 Hz loop behind the flight view for
    every visit to the map.
-5. **The simulation keeps running while the chart is open** — §1's no-pause
+6. **The simulation keeps running while the chart is open** — §1's no-pause
    rule, asserted as two samples of `frames` compared, the first taken **after**
    the chart is up. Wrong twice before that. As a `waitForFunction` followed by
    `check(..., true)` it reported a pass the tally never evaluated and threw
    rather than failing when the wait expired; baselined before the click it was
    satisfied by the frames rendered while the chunk loaded, so a chart that
    froze the loop on mount still passed.
+
+**Every check here was built a red build to run against**, one at a time:
+the sort removed; the chart root back to `position: fixed`; a kind dropped
+from what `navRows` is handed; `onSelectTarget` made a no-op; the query and
+the kind chip each ignored; `currentIndex` dropped and the galaxy forced to
+3; `dispose` skipped; the frame loop cancelled on mount; `PICK_RADIUS_PX` cut
+to 2 and the default framing zoomed to 20 LY. Each turned the check named
+above it red — except the system half of item 3, which is recorded there as
+not yet discriminating rather than counted as covered.
 
 ## 10. Deferred
 

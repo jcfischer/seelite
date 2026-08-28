@@ -105,7 +105,7 @@ await page.waitForFunction(
 
 const listed = await readList();
 check(
-	"every row is a body the game will actually let you select, and every one is listed",
+	"the rendered list is exactly the set the game holds as selectable",
 	listed.rows.length > 1 &&
 		listed.rows.length === listed.selectableIds.length &&
 		listed.rows.every((row) => listed.selectableIds.includes(row.id)),
@@ -186,6 +186,7 @@ const distinctive = listed.rows.find((row) =>
 check(
 	"some id fragment distinguishes one row from another",
 	Boolean(distinctive),
+	`seed in ${PAGE_URL}; ids ${listed.rows.map((r) => r.id).join(",")}`,
 );
 if (distinctive) {
 	const prefix = distinctive.id.slice(0, 4);
@@ -249,7 +250,9 @@ const chart = await page.evaluate(() => {
 		canvases: host?.querySelectorAll("canvas").length ?? 0,
 		systemCount: window.__seeliteGalaxyMap?.state.systemCount ?? 0,
 		currentIndex: window.__seeliteGalaxyMap?.state.currentIndex ?? null,
+		galaxy: window.__seeliteGalaxyMap?.state.galaxy ?? null,
 		gameSystemIndex: window.__seelite.world.system.record.index,
+		gameGalaxy: window.__seelite.world.system.record.galaxy,
 		hostBox: hostBox && {
 			left: hostBox.left,
 			top: hostBox.top,
@@ -271,10 +274,22 @@ check(
 	chart.canvases === 1 && chart.systemCount === 256,
 	`${chart.canvases} canvas, ${chart.systemCount} systems`,
 );
+/**
+ * **This one cannot yet fail, and says so.** Dropping `currentIndex` at the
+ * mount site leaves `mountGalaxyChart` falling back to `startSystem(galaxy)` —
+ * which is where the game also begins, so the defect and the fix agree. Built
+ * and run: the probe stayed green.
+ *
+ * It is kept because it becomes discriminating the day the ship can be
+ * somewhere else, which is `galaxy-generation.md` §8's hyperspace jump, and
+ * because the galaxy half of the pair is not vacuous — a chart built for
+ * galaxy 3 while the ship flies in galaxy 0 fails here today.
+ */
 check(
-	"the chart is centred on the system the ship is actually in",
-	chart.currentIndex === chart.gameSystemIndex,
-	`chart ${chart.currentIndex} against game ${chart.gameSystemIndex}`,
+	"the chart is built for the galaxy and system the ship is in (system half not yet discriminating — see the note)",
+	chart.currentIndex === chart.gameSystemIndex &&
+		chart.galaxy === chart.gameGalaxy,
+	`chart ${chart.galaxy}/${chart.currentIndex} against game ${chart.gameGalaxy}/${chart.gameSystemIndex}`,
 );
 /**
  * **The containment check is the one that can go red on the obvious mistake.**
@@ -314,7 +329,7 @@ check(
 /**
  * §5.1's 40.2% is what makes the list mandatory rather than a convenience — and
  * it was measured on the workbench, which is a whole 1280 × 760 page. The tab
- * draws into a grid cell inside the console, roughly 1075 × 500 here, and
+ * draws into a grid cell inside the console — 1011 x 462 at this viewport — and
  * crowding is a **pixel** property: it is a function of the projection, the
  * viewport and `PICK_RADIUS_PX`, so a smaller box packs the same 256 points
  * into fewer pixels and can only make it worse.
