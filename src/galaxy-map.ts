@@ -818,6 +818,7 @@ export function mountGalaxyChart({
 
 	// ---- Frame -------------------------------------------------------------
 
+	let resizePending = true;
 	const resize = (): void => {
 		const w = root.clientWidth;
 		const h = root.clientHeight;
@@ -830,8 +831,15 @@ export function mountGalaxyChart({
 	// The window is not the only thing that can change this chart's box. Hosted
 	// in the Navigation tab it is a grid cell, and the panel resizes under the
 	// media query without the window doing anything the workbench would notice.
+	// Coalesced into the next frame rather than applied per notification: a
+	// panel under a CSS transition emits one box change per frame, and each
+	// would otherwise be a full `setSize` and projection rebuild.
 	const observer =
-		typeof ResizeObserver === "undefined" ? null : new ResizeObserver(resize);
+		typeof ResizeObserver === "undefined"
+			? null
+			: new ResizeObserver(() => {
+					resizePending = true;
+				});
 	observer?.observe(root);
 	resize();
 
@@ -842,6 +850,10 @@ export function mountGalaxyChart({
 
 	let animationFrame = 0;
 	const frame = (): void => {
+		if (resizePending) {
+			resizePending = false;
+			resize();
+		}
 		pivot.rotation.set(0, 0, 0);
 		pivot.rotateOnWorldAxis(UP, yaw);
 		pivot.rotateOnWorldAxis(

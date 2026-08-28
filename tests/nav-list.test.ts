@@ -15,6 +15,7 @@
  */
 import { expect, test } from "bun:test";
 import { navFilterMatches, projectNavTargets } from "../src/cockpit";
+import { codeOf } from "./lib/source-scan";
 import { v3 } from "../src/vec3";
 
 const BODIES = [
@@ -39,8 +40,9 @@ test("targets list nearest first, with the range the panel prints", () => {
 });
 
 test("a moon is not listed, because selection cannot reach one", () => {
-	// `Game.selectable()` filters moons out of the cycle order, so a moon on
-	// this list would be a row that does nothing when clicked — a finding
+	// `Game.selectable()` filters moons out of the cycle order, and
+	// `onSelectTarget` goes through that same list rather than through `byId`.
+	// So a moon row would be a row that does nothing when clicked — a finding
 	// surface offering something the game cannot find.
 	expect(
 		projectNavTargets(v3(), BODIES, null).map((row) => row.id),
@@ -106,4 +108,24 @@ test("without an ETA source every row reads unknown rather than zero", () => {
 	// a player killed on approach.
 	const rows = projectNavTargets(v3(), BODIES, null);
 	expect(rows.every((row) => row.etaSeconds === null)).toBe(true);
+});
+
+test("the chart chunk is reachable from the cockpit only by a dynamic import", () => {
+	// The claim in `Game.setChartHost` is that a player who never opens the
+	// Galaxy Map tab does not pay for the chart in the initial bundle. That is a
+	// property of the *import graph*, not of the method: a stray value import
+	// anywhere in `main.ts` folds `galaxy-map.ts` and its scene back into the
+	// entry chunk without changing a line of the code that mounts it.
+	//
+	// `import type` is erased, so it is not the thing being banned.
+	const code = codeOf("src/main.ts");
+	const staticImports = code
+		.split("\n")
+		.filter(
+			(line) =>
+				/from "\.\/galaxy-map"/.test(line) &&
+				!/^import type /.test(line.trim()),
+		);
+	expect(staticImports).toEqual([]);
+	expect(code).toContain('import("./galaxy-map")');
 });

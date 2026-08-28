@@ -171,9 +171,12 @@ export const NAV_FILTER_KINDS = ["station", "planet", "star"] as const;
 /**
  * Moons are absent on purpose.
  *
- * `Game.selectable()` filters them out of the cycle order, so a moon on this
- * list would be a row that does nothing when clicked — a finding surface
- * offering something the game cannot find.
+ * `Game.selectable()` filters them out of the cycle order, and the cockpit's
+ * `onSelectTarget` goes through that same list rather than through
+ * `world.system.byId` — which does hold moons. So a moon row would be a row
+ * that does nothing when clicked: a finding surface offering something the game
+ * cannot find. The claim is only true while selection keeps going through
+ * `selectable()`, which is why that call site says so.
  */
 const LISTABLE = new Set<string>(NAV_FILTER_KINDS);
 

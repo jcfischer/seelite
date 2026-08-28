@@ -123,7 +123,9 @@ list is the **finding** surface and the chart the **reading** one: §5.1 of that
 spec measured that no camera distance both frames the cluster and lets a system
 be picked, so the list is load-bearing rather than a convenience. Ranges refresh
 every frame and the estimates on `ETA_INTERVAL_S`, because a range is a
-subtraction and an estimate is an integration of the cruise law per row. Communications carries clearance requests and replies, hostile/legal
+subtraction and an estimate is an integration of the cruise law per row.
+
+Communications carries clearance requests and replies, hostile/legal
 status, and actionable messages. Flight presents speed, throttle, assist, current
 regime, and relative motion. Drive presents cruise charge, range, regeneration,
 and future equipment state. Developer tuning parameters move to a **Tuning tab**

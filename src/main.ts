@@ -814,6 +814,8 @@ class Game {
 	private navEtaAt = Number.NEGATIVE_INFINITY;
 	/** The Galaxy Map tab's chart, while that tab is open. */
 	private chart: GalaxyChart | null = null;
+	/** Which mount request is current; see `setChartHost`. */
+	private chartGeneration = 0;
 	private readonly headRotation = new THREE.Quaternion();
 	private readonly viewRotation = new THREE.Quaternion();
 	private readonly liveCockpit: LiveCockpit;
@@ -1401,7 +1403,12 @@ class Game {
 				this.updateCockpit();
 			},
 			onSelectTarget: (id) => {
-				if (!this.world.system.byId.has(id)) return;
+				// **Through `selectable()`, not through `byId`.** `byId` holds
+				// moons, which the list deliberately omits and `cycleTarget`
+				// cannot reach — accepting one here would make the list's stated
+				// reason for omitting them false, and give the player a target
+				// `T` could never return to.
+				if (!this.selectable().some((body) => body.id === id)) return;
 				this.targetId = id;
 				this.updateCockpit();
 			},
@@ -2484,23 +2491,35 @@ class Game {
 	 *
 	 * The import is dynamic because `galaxy-map.ts` pulls in its own scene, and
 	 * a player who never opens the tab should not pay for it in the initial
-	 * bundle. The `host.isConnected` re-check after the await is the race it
-	 * costs: a player can turn their head away, or switch tabs, inside the time
-	 * the chunk takes to arrive, and mounting into a detached element would
-	 * leave a render loop drawing into nothing with no handle left to stop it.
+	 * bundle. `tests/source-scan.test.ts` pins that there is no static import of
+	 * it from here, because a stray value import would fold the chunk back in
+	 * without changing a line of this method.
+	 *
+	 * The **generation counter** is what the await costs. Disposal is
+	 * synchronous and mounting is not, so a player toggling the tab twice
+	 * inside one chunk load has two mounts in flight against a `this.chart`
+	 * that is already `null`: the older one resolves last, overwrites the field,
+	 * and the newer chart is left running with nothing holding its `dispose`.
+	 * `host.isConnected` does not see this — the first host can still be
+	 * attached. Only "am I still the current request" does.
 	 */
 	private setChartHost(host: HTMLElement | null) {
+		const generation = ++this.chartGeneration;
 		this.chart?.dispose();
 		this.chart = null;
 		if (!host) return;
 		import("./galaxy-map").then(({ mountGalaxyChart }) => {
 			if (!host.isConnected) return;
-			this.chart = mountGalaxyChart({
+			const chart = mountGalaxyChart({
 				host,
 				worldSeed: this.world.seed,
 				galaxyIndex: this.world.system.record.galaxy,
 				currentIndex: this.world.system.record.index,
 			});
+			// Superseded while the chunk was loading. Take it down rather than
+			// dropping the handle, which would leak the loop and the context.
+			if (generation !== this.chartGeneration) chart.dispose();
+			else this.chart = chart;
 		});
 	}
 

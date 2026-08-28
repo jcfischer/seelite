@@ -148,6 +148,24 @@ const STYLE = `
 @media (max-width: 600px) { .lc-panel { inset: 8px; padding: 13px; clip-path: none; } .lc-panel h2 { font-size: 14px; } .lc-panel-body { grid-template-columns: .45fr 1fr; gap: 8px; min-height: 0; } .lc-rail, .lc-panel-copy { padding-top: 7px; } .lc-panel-copy p { font-size: 11px; line-height: 1.4; } .lc-readout { display: none; } .lc-nav-list { max-height: 148px; } .lc-chart-host { min-height: 190px; } }
 `;
 
+/**
+ * The elements `update` looks up, for the tabs that do not draw them.
+ *
+ * `update` caches one set of handles per structural render and every tab has to
+ * satisfy it, so a tab that simply omitted these would leave `find()` returning
+ * null and the next value write throwing. Emitted once beside `leftBody` rather
+ * than hand-repeated in each of its branches: three copies of a list that has to
+ * stay in step with `CockpitElements` is three places to forget.
+ */
+function hiddenSlots(tab: LeftTab) {
+	const slots = [
+		tab === "Galaxy Map" ? "<p hidden data-live-left-copy></p>" : "",
+		tab === "Galaxy Map" ? "<span hidden data-live-contact-count></span>" : "",
+		tab === "Navigation" ? "" : "<ul hidden data-live-nav-list></ul>",
+	];
+	return slots.join("");
+}
+
 function installStyle() {
 	if (document.getElementById(STYLE_ID)) return;
 	const style = document.createElement("style");
@@ -171,30 +189,9 @@ export class LiveCockpit {
 		this.root.id = "live-cockpit";
 		this.root.setAttribute("data-live-cockpit", "true");
 		// Delegation keeps clicks live after a structural render is replaced.
-		this.root.addEventListener("click", (event) => {
-			const element = event.target as HTMLElement;
-			const right = element.closest<HTMLElement>("[data-live-right-tab]");
-			if (right) {
-				const value = right.dataset.liveRightTab;
-				if (value === "Flight" || value === "Drive" || value === "Tuning")
-					this.callbacks.onRightTab(value);
-				return;
-			}
-			const left = element.closest<HTMLElement>("[data-live-left-tab]");
-			if (left) {
-				const value = left.dataset.liveLeftTab as LeftTab | undefined;
-				if (value && LEFT_TABS.includes(value)) this.callbacks.onLeftTab(value);
-				return;
-			}
-			const chip = element.closest<HTMLElement>("[data-live-nav-kind]");
-			if (chip) {
-				this.toggleKind(chip.dataset.liveNavKind as string);
-				return;
-			}
-			const row = element.closest<HTMLElement>("[data-live-nav-target]");
-			if (row)
-				this.callbacks.onSelectTarget(row.dataset.liveNavTarget as string);
-		});
+		this.root.addEventListener("click", (event) =>
+			this.handleClick(event.target as HTMLElement),
+		);
 		this.root.addEventListener("input", (event) => {
 			const field = event.target as HTMLElement;
 			if (field.matches("[data-live-nav-query]"))
@@ -204,6 +201,41 @@ export class LiveCockpit {
 				});
 		});
 		document.body.append(this.root);
+	}
+
+	/**
+	 * One click, dispatched to the first branch whose target it is inside.
+	 *
+	 * **Order is load-bearing and the branches return.** The rail's `GALAXY MAP`
+	 * carries `data-live-left-tab` and sits inside the Navigation body, so the
+	 * tab branch must be tried before the row branch. The failure mode this
+	 * shape has is silent: the root itself once carried `data-live-left-tab` as
+	 * a state attribute, which made `closest` match it for *every* click in the
+	 * cockpit and swallowed row selection and the filter chips without an error
+	 * anywhere. A method rather than a closure in the constructor, so the order
+	 * is one readable unit the next target has to be placed into deliberately.
+	 */
+	private handleClick(element: HTMLElement) {
+		const right = element.closest<HTMLElement>("[data-live-right-tab]");
+		if (right) {
+			const value = right.dataset.liveRightTab;
+			if (value === "Flight" || value === "Drive" || value === "Tuning")
+				this.callbacks.onRightTab(value);
+			return;
+		}
+		const left = element.closest<HTMLElement>("[data-live-left-tab]");
+		if (left) {
+			const value = left.dataset.liveLeftTab as LeftTab | undefined;
+			if (value && LEFT_TABS.includes(value)) this.callbacks.onLeftTab(value);
+			return;
+		}
+		const chip = element.closest<HTMLElement>("[data-live-nav-kind]");
+		if (chip) {
+			this.toggleKind(chip.dataset.liveNavKind as string);
+			return;
+		}
+		const row = element.closest<HTMLElement>("[data-live-nav-target]");
+		if (row) this.callbacks.onSelectTarget(row.dataset.liveNavTarget as string);
 	}
 
 	/** The filter last rendered — the base every chip toggle is applied to. */
@@ -337,7 +369,7 @@ export class LiveCockpit {
 			(tab) =>
 				`<button class="lc-tab" type="button" data-live-right-tab="${tab}" aria-selected="${state.rightTab === tab}">${tab}</button>`,
 		).join("");
-		return `<main class="lc-director" data-live-director><i class="lc-target-arrow" data-live-target-arrow aria-label="turn toward selected target">➤</i><strong>${targetId}</strong></main><aside class="lc-panel" data-live-panel="left" data-active="${view.activePanel === "left"}"><header><h2>${state.leftTab.toUpperCase()}</h2><small>LOCAL · 24</small></header><nav class="lc-tabs" aria-label="left console tabs">${leftTabs}</nav>${this.leftBody(state)}<footer>Simulation continues while this console is open.</footer></aside><aside class="lc-panel" data-live-panel="right" data-active="${view.activePanel === "right"}"><header><h2>${state.rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="lc-tabs" aria-label="right console tabs">${rightTabs}</nav><div class="lc-panel-body"><div class="lc-rail"><b>SHIP</b><span>POWER</span><span>MODULES</span><span>INVENTORY</span><span>STATUS</span></div><div class="lc-panel-copy"><h3>${state.rightTab.toUpperCase()} / CONTROL</h3><p ${state.rightTab === "Tuning" ? "data-live-tuning" : ""}></p><div class="lc-readout"><span><b>ASSIST</b><em></em></span><span><b>CHARGE</b><em></em></span></div></div></div><footer>Tuning remains on this right-console tab, never on the flight floor.</footer></aside>`;
+		return `<main class="lc-director" data-live-director><i class="lc-target-arrow" data-live-target-arrow aria-label="turn toward selected target">➤</i><strong>${targetId}</strong></main><aside class="lc-panel" data-live-panel="left" data-active="${view.activePanel === "left"}"><header><h2>${state.leftTab.toUpperCase()}</h2><small>LOCAL · 24</small></header><nav class="lc-tabs" aria-label="left console tabs">${leftTabs}</nav>${this.leftBody(state)}${hiddenSlots(state.leftTab)}<footer>Simulation continues while this console is open.</footer></aside><aside class="lc-panel" data-live-panel="right" data-active="${view.activePanel === "right"}"><header><h2>${state.rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="lc-tabs" aria-label="right console tabs">${rightTabs}</nav><div class="lc-panel-body"><div class="lc-rail"><b>SHIP</b><span>POWER</span><span>MODULES</span><span>INVENTORY</span><span>STATUS</span></div><div class="lc-panel-copy"><h3>${state.rightTab.toUpperCase()} / CONTROL</h3><p ${state.rightTab === "Tuning" ? "data-live-tuning" : ""}></p><div class="lc-readout"><span><b>ASSIST</b><em></em></span><span><b>CHARGE</b><em></em></span></div></div></div><footer>Tuning remains on this right-console tab, never on the flight floor.</footer></aside>`;
 	}
 
 	private leftBody(state: LiveCockpitState) {
@@ -345,9 +377,9 @@ export class LiveCockpit {
 		// (`galaxy-map.md` §5.1), so the map tab gives the chart the full body
 		// rather than squeezing it beside a rail it does not need.
 		if (state.leftTab === "Galaxy Map")
-			return `<div class="lc-panel-body" data-live-chart-body><div class="lc-chart-host" data-live-chart-host></div></div><p hidden data-live-left-copy></p><span hidden data-live-contact-count></span><ul hidden data-live-nav-list></ul>`;
+			return `<div class="lc-panel-body" data-live-chart-body><div class="lc-chart-host" data-live-chart-host></div></div>`;
 		if (state.leftTab === "Communications")
-			return `<div class="lc-panel-body"><div class="lc-rail"><b>SIGNALS</b><span>CLEARANCE</span><span>HAILS</span><span>LEGAL STATUS</span></div><div class="lc-panel-copy"><h3>SELECTED TARGET</h3><p data-live-left-copy></p><div class="lc-readout"><span><b>SCANNER RANGE</b><em>10,000 km</em></span><span><b>CONTACTS</b><em data-live-contact-count></em></span></div></div></div><ul hidden data-live-nav-list></ul>`;
+			return `<div class="lc-panel-body"><div class="lc-rail"><b>SIGNALS</b><span>CLEARANCE</span><span>HAILS</span><span>LEGAL STATUS</span></div><div class="lc-panel-copy"><h3>SELECTED TARGET</h3><p data-live-left-copy></p><div class="lc-readout"><span><b>SCANNER RANGE</b><em>10,000 km</em></span><span><b>CONTACTS</b><em data-live-contact-count></em></span></div></div></div>`;
 		const chips = NAV_FILTER_KINDS.map(
 			(kind) =>
 				`<button class="lc-chip" type="button" data-live-nav-kind="${kind}" aria-pressed="${state.navFilter.kinds.includes(kind)}">${kind.toUpperCase()}</button>`,

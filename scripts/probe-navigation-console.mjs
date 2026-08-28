@@ -88,10 +88,15 @@ const readList = () =>
 		return {
 			rows,
 			empty: document.querySelectorAll(".lc-nav-empty").length,
-			// Every id the game would let the player select, so a list that shows
-			// a strict subset by accident is visible as one.
-			selectableCount: game.world.system.bodies.filter((b) => b.kind !== "moon")
-				.length,
+			// **The module's own allowlist, read off the chips it renders.** A
+			// denylist here (`kind !== "moon"`) would be a second copy of the
+			// rule, and a fourth body kind would make the two disagree and turn
+			// this red without the list being wrong.
+			listableCount: game.world.system.bodies.filter((b) =>
+				[...document.querySelectorAll("[data-live-nav-kind]")]
+					.map((chip) => chip.dataset.liveNavKind)
+					.includes(b.kind),
+			).length,
 		};
 	});
 
@@ -103,8 +108,8 @@ await page.waitForFunction(
 const listed = await readList();
 check(
 	"the Navigation tab lists every selectable body in the system",
-	listed.rows.length === listed.selectableCount && listed.rows.length > 1,
-	`${listed.rows.length} rows against ${listed.selectableCount} selectable`,
+	listed.rows.length === listed.listableCount && listed.rows.length > 1,
+	`${listed.rows.length} rows against ${listed.listableCount} listable`,
 );
 check(
 	"rows are ordered by the simulation's own ranges, nearest first",
@@ -159,12 +164,16 @@ const type = async (value) => {
 	}, value);
 };
 
-// A prefix of one row's id, chosen so at least one other row does not match —
-// a query every row satisfies cannot tell a working filter from none.
+// A fragment of one row's id, chosen so at least one other row does not contain
+// it — a query every row satisfies cannot tell a working filter from none.
+//
+// `includes`, not `startsWith`: `navFilterMatches` matches anywhere in the id,
+// and a probe asserting a prefix would go red on a correctly-listed mid-string
+// match — a check failing on working code.
 const distinctive = listed.rows.find((row) =>
 	listed.rows.some(
 		(other) =>
-			!other.id.toLowerCase().startsWith(row.id.slice(0, 4).toLowerCase()),
+			!other.id.toLowerCase().includes(row.id.slice(0, 4).toLowerCase()),
 	),
 );
 if (distinctive) {
@@ -176,7 +185,7 @@ if (distinctive) {
 		filtered.rows.length > 0 &&
 			filtered.rows.length < listed.rows.length &&
 			filtered.rows.every((row) =>
-				row.id.toLowerCase().startsWith(prefix.toLowerCase()),
+				row.id.toLowerCase().includes(prefix.toLowerCase()),
 			),
 		`"${prefix}" → ${filtered.rows.map((r) => r.id).join(",")}`,
 	);
@@ -273,12 +282,17 @@ check(
 
 // `hud-and-scanner.md` §1: the game continues while a panel is open — no pause
 // and no time compression. A chart that stole the frame loop would show here.
-await page.waitForFunction(
-	(before) => window.__seelite.frames > before + 5,
-	framesBefore + 5,
-	{ timeout: 5_000 },
+//
+// Sampled and compared, not `waitForFunction` followed by `check(..., true)`:
+// that pair reports a pass the tally never evaluated, and a wait that times out
+// throws instead of failing the check it was standing in for.
+await new Promise((resolve) => setTimeout(resolve, 500));
+const framesAfter = await page.evaluate(() => window.__seelite.frames);
+check(
+	"the simulation keeps running while the chart is open",
+	framesAfter > framesBefore + 5,
+	`${framesBefore} → ${framesAfter}`,
 );
-check("the simulation keeps running while the chart is open", true);
 
 // ---- Teardown -------------------------------------------------------------
 
