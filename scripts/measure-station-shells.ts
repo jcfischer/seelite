@@ -6,9 +6,9 @@
  * headers are only honest while some script re-runs them (§12.2's own
  * argument; `galaxy-generation.md` §7.3 carries the figures this sweep
  * produced, so they are not restated here).
-
+ *
  *   bun run scripts/measure-station-shells.ts [seeds]   # default 8,000
-
+ *
  * Walks `forEachPlacedStation` — the same placed-geometry walk
  * `tests/station-orbits.test.ts` asserts over, at the suite's 500-seed
  * budget or any budget asked for here — over every body the game moves

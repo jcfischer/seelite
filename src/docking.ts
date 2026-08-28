@@ -739,7 +739,7 @@ export const COMPUTER_STANDOFF_KM = 3;
  * of being yanked off it. The ship never reaches the point — `resolveCrossing`
  * disengages the computer at the plane — so this is a direction reference, not a
  * course change. Small beside the 0.12 km slot, so it does not move the
- * approach; large beside the metres of lateral error the run-in actually
+ * approach; large compared with the ~2 m lateral error the run-in actually
  * carries, so the commanded direction stays stable in the gap between.
  */
 export const COMPUTER_AIM_INSIDE_KM = 0.05;
@@ -905,8 +905,14 @@ export function dockingComputerStep(input: ComputerInput): ComputerCommand {
 	// nose row of check 2 fails a clean position. The slot is a volume, so the
 	// aim is still "the slot", and the lateral error still closes in proportion
 	// to the distance.
+	// The aim never crosses to the far side of the plane, however thin the
+	// aperture is: clamped to stay inside (never below half the plane).
+	const aimKm = Math.max(
+		frame.planeKm - COMPUTER_AIM_INSIDE_KM,
+		frame.planeKm / 2,
+	);
 	const target = lined
-		? scale(frame.axis, frame.planeKm - COMPUTER_AIM_INSIDE_KM)
+		? scale(frame.axis, aimKm)
 		: scale(frame.axis, corridorAxial);
 
 	const toTarget = sub(target, pose.rel);

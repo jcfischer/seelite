@@ -437,8 +437,10 @@ and why the band alone could not stand: "low and fast" was absolute while
 everything that has to clear the host scales with its radius — the cruise
 shell (`1.05 ×` radius, `in-system-travel.md` §12.2) and the occlusion
 geometry (§12.3). Measured on the 200-seed corpus with
-`scripts/measure-cruise-arrival.ts` (re-runnable for any floor: edit the
-constant, sweep, restore — `1.5 → 2.2 → 3 → 1.5` is the whole comparison):
+`scripts/measure-cruise-arrival.ts` (re-runnable for any floor: edit
+`STATION_ORBIT_R_OVER_R`, sweep, restore — `1.5 → 2.2 → 3 → 1.5` is the
+whole comparison, and the committed value stays 1.5, so `git diff` shows
+exactly what a sweep changed):
 the band alone left 49 of 337 planet-orbiting stations inside their own
 host's shell and 26.1% of cruise legs occluded by the host; 1.5 halves the
 occlusion to 14.5% with the shell population at 0/337, 2.2 measures 7.4%,
