@@ -39,9 +39,15 @@ import {
  * `SHIP_PANEL_KM / that`: eight panels over 8 m of tile is a **one-metre
  * plate**.
  *
- * A station's is `STATION_PANEL_KM = 0.15`, a 19 m plate, and that is the whole
- * of the difference between the two surfaces — one constant, not one system.
- * Nineteen metres on a 54 m courier would put three plates on the entire ship.
+ * A station's is `STATION_PANEL_KM = 0.15`, a 19 m plate. Nineteen metres on a
+ * 54 m courier would put three plates on the entire ship.
+ *
+ * One constant is what separates the two **plate sizes**, and that is the whole
+ * of what made a shared generator possible — not the whole of what separates the
+ * two surfaces. A hull additionally cuts its seams into a normal map, filters
+ * linearly rather than nearest, carries a crease term stations have none of, and
+ * rescales four paints through one wear curve. The generator is shared; the
+ * surfaces are not interchangeable.
  *
  * **One metre is a number set by looking**, and nothing in this repo can check
  * it. #104 recorded the general form of that: a figure deciding whether a frame
@@ -278,12 +284,7 @@ diffuseColor.rgb *= 1.0 + vCrease * 0.14;`;
  */
 function patchCrease(
 	shader: { vertexShader: string; fragmentShader: string },
-	splice: (
-		stage: string,
-		source: string,
-		marker: string,
-		code: string,
-	) => string,
+	splice: Splice,
 ) {
 	shader.vertexShader = splice(
 		"vertex",
@@ -410,15 +411,11 @@ export function plateUVs(geometry: THREE.BufferGeometry) {
 	// already have been through here, and a part added twice would otherwise be
 	// divided twice — plates 125 times too small on one side of the ship only,
 	// which reads as a rendering fault rather than as a scale error.
-	if (geometry.userData.uvUnits !== "km") return geometry;
+	if (uvUnitsOf(geometry) !== "km") return geometry;
 	if (!scaleUVs(geometry, 1 / SHIP_PANEL_KM, 1 / SHIP_PANEL_KM))
 		return geometry;
-	// **A fresh bag, not a mutation.** `BufferGeometry.copy` assigns
-	// `userData` by reference, so a clone and its source share one object while
-	// owning separate UV buffers — flipping the shared field would tell a clone
-	// taken before its source was plated that it had already been divided, and
-	// it would keep kilometre UVs. Replacing the object leaves the sibling's
-	// alone.
-	geometry.userData = { ...geometry.userData, uvUnits: "plate" };
+	// `setUvUnits` and not an assignment: the fresh-`userData` rule that makes a
+	// bare clone safe lives there, in the one place both writers reach.
+	setUvUnits(geometry, "plate");
 	return geometry;
 }

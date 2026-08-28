@@ -14,8 +14,12 @@
  * generators a second and a third consumer. What is left here is the station's
  * half: `STATION_VISUALS`, the detail bands, the waveforms, and two thin
  * wrappers that pass a role's profile to the shared generator with the role as
- * its hash tag. `PLATE_TEXTURE_SIZE` and `PlatingProfile` are re-exported, so
- * every existing importer of this module is unchanged.
+ * its hash tag. `PLATE_TEXTURE_SIZE` and `PlatingProfile` are **not** re-exported
+ * from here: two importable paths for one canonical name is how new code picks
+ * the wrong one, and the handful of importers were repointed at `surface.ts`
+ * instead. What this module owns is `STATION_VISUALS`, the per-role figures
+ * `docs/specs/station-visuals.md` §4 describes, the detail bands and the
+ * waveforms.
  *
  * **The plating is a `DataTexture`, never a `CanvasTexture`** (§4). This module
  * is reached from `tests/`, which has no `document`. A canvas would force a
@@ -38,19 +42,6 @@ import {
 	wearTexels,
 } from "./surface";
 import { HANDOFF_HYSTERESIS } from "./units";
-
-/**
- * Re-exported for the importers that already reach them through here.
- *
- * **`src/surface.ts` is the canonical path** — it defines both, and neither is a
- * station's any more. New code should import from there; this exists so #101 did
- * not have to rewrite every existing import to say the same thing.
- *
- * What this module *does* own is unchanged: `STATION_VISUALS`, the per-role
- * figures `docs/specs/station-visuals.md` §4 describes, the detail bands and the
- * waveforms.
- */
-export { PLATE_TEXTURE_SIZE, type PlatingProfile };
 
 /**
  * How much of a station is drawn, given how large it appears.

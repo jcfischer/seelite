@@ -58,7 +58,6 @@ import {
 } from "./station-surface";
 import { STATION_GEOMETRY, STATION_TYPES, type StationType } from "./station";
 import {
-	PLATE_TEXTURE_SIZE,
 	STATION_VISUALS,
 	type StationDetailLevel,
 	type StationFixtureKind,
@@ -68,6 +67,7 @@ import {
 	stationDetailLevel,
 	surfaceTexels,
 } from "./station-visuals";
+import { PLATE_TEXTURE_SIZE } from "./surface";
 
 /**
  * How far the *drawn* object reaches, kilometres — the selected form's own

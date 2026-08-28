@@ -238,6 +238,7 @@ What differs between the two consumers is one constant and one profile:
 | seam | painted, 0.30–0.50 | cut, 0.18 painted + 0.55 in the normal |
 | weathering | 0.12–0.78 | 0.10 |
 | filtering | nearest | linear |
+| finish | one per role, in the profile | four per hull, rescaled per material |
 
 Nineteen metres on a 54 m courier puts three plates on the whole ship. One metre
 is a figure set by looking at a frame and nothing in this repo can check it —
@@ -262,10 +263,17 @@ vertex's shading normal and any face meeting there, which is exactly what
 `computeVertexNormals` has just averaged away at a `hard` station or a chine —
 and the hull material patches it into `roughnessFactor` and a small albedo lift.
 The shape it has to have is that edges are a **minority**: a wear term reading
-high everywhere is a wash, not wear. Both ends are checked — over 70% of a
-courier's vertices exactly zero, and the saturating share inside 0.2%–5%.
-Measured today: 77% and 0.7%. A maximum alone would not do, because one
-saturating vertex satisfies it.
+high everywhere is a wash, not wear. Both ends are checked, over all eleven
+archetypes rather than one — a share of exactly-zero vertices inside 60%–90%,
+and a share above 0.6 inside 0.5%–15%. Each bound alone passes on a constant: a
+term wired to 0 reads 100% zero, one wired to 1 reads none.
+
+Measured across the roster: zero 70.8%–81.4%, hard edges 1.58%–7.15%. The
+*saturating* share is deliberately not asserted, because it is not a property of
+the term — the courier saturates on 2.40% of its vertices and the dreadnought on
+none, which says how sharp each hull's creases are and nothing about whether the
+term works. An earlier version of this paragraph quoted one hull's reading as a
+contract, and quoted it wrong.
 
 #98 binds the whole of this: depth and light, forms stay clean. Hulls are crisp
 built objects, the wear is subtle, the panel lines geometric. The grime is

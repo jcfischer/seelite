@@ -332,6 +332,14 @@ for (const viewport of VIEWPORTS.slice(0, 1)) {
 		 * what makes it a check rather than a reading.
 		 */
 		const seamTexture = all[0].normalMap;
+		// The same defect the `EMPTY` literal above was added for, one lever
+		// further down: with no map attached this throws and the run reports a
+		// runner crash where `the quality gate adds and removes the seam map`
+		// should have failed by name.
+		if (!seamTexture) {
+			g.settings.set("quality", restore);
+			return { ...EMPTY, materials: all.length, withSeams };
+		}
 		const texels = seamTexture.image.data;
 		const original = texels.slice();
 		for (let i = 0; i < texels.length; i += 4) {

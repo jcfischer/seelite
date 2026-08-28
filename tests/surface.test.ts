@@ -27,7 +27,7 @@ import { describe, expect, test } from "bun:test";
 import { codeOf } from "./lib/source-scan";
 import * as THREE from "three";
 import { RING_SEGMENTS, hullLoft } from "../src/loft";
-import { buildShipMesh } from "../src/ship-mesh";
+import { HULL_IDS, buildShipMesh } from "../src/ship-mesh";
 import { STATION_PANEL_KM } from "../src/station-mesh";
 import {
 	SHIP_PANEL_KM,
@@ -376,31 +376,48 @@ describe("the crease term reads a hull's own edges", () => {
 		expect(tubePeak(cylinder)).toBeLessThan(0.2);
 	});
 
-	test("a shipped hull's edges are a minority of it, and they saturate", () => {
-		// The synthetic pair above says the term *can* discriminate. This says it
-		// discriminates on the geometry the game actually draws — where the
-		// failure that matters is not a wrong number but a term that reads high
-		// everywhere, which would roughen and lighten the whole hull and read as
-		// a flat wash rather than as wear.
-		const values: number[] = [];
-		buildShipMesh("courier").root.traverse((object) => {
-			const attribute = (object as THREE.Mesh).geometry?.getAttribute?.(
-				"crease",
-			);
-			if (!attribute) return;
-			for (let i = 0; i < attribute.count; i++) values.push(attribute.getX(i));
-		});
-		expect(values.length).toBeGreaterThan(1000);
-		const zero = values.filter((v) => v === 0).length / values.length;
-		const saturating = values.filter((v) => v === 1).length / values.length;
-		expect(zero).toBeGreaterThan(0.7);
-		// **A band on the saturating share, not `max === 1`.** One saturating
-		// vertex satisfies a maximum, so the maximum could not tell "the hull has
-		// edges" from "the hull has an edge" — and the property being claimed is
-		// that edges are a *minority*, which needs both ends. Measured on the
-		// courier: 0.7% saturate and 77% read exactly zero.
-		expect(saturating).toBeGreaterThan(0.002);
-		expect(saturating).toBeLessThan(0.05);
+	test("every shipped hull's edges are a minority of it", () => {
+		/*
+		 * The synthetic pair above says the term *can* discriminate. This says it
+		 * discriminates on the geometry the game draws — and it sweeps the whole
+		 * roster rather than one hull, because the first version of this test
+		 * measured the courier and the spec then quoted its reading as a property
+		 * of the term. It was not one: the courier saturates on 2.40% of its
+		 * vertices and the **dreadnought on none at all**, which is a fact about
+		 * how sharp a hull's creases are and not about whether the term works.
+		 *
+		 * Both ends are asserted, because each alone passes on a constant. A term
+		 * wired to 0 reads 100% zero and fails the upper bound; one wired to 1
+		 * reads 0% zero and fails the lower. The hard-edge share is the "there
+		 * are edges at all" half, and its floor is well under the quietest hull.
+		 *
+		 * Measured across the eleven archetypes: zero 70.8%-81.4%, hard edges
+		 * 1.58%-7.15%.
+		 */
+		for (const id of HULL_IDS) {
+			const values: number[] = [];
+			buildShipMesh(id).root.traverse((object) => {
+				const attribute = (object as THREE.Mesh).geometry?.getAttribute?.(
+					"crease",
+				);
+				if (!attribute) return;
+				for (let i = 0; i < attribute.count; i++)
+					values.push(attribute.getX(i));
+			});
+			expect(values.length).toBeGreaterThan(1000);
+			const share = (of: (v: number) => boolean) =>
+				values.filter(of).length / values.length;
+			const zero = share((v) => v === 0);
+			const hard = share((v) => v > 0.6);
+			expect({ id, zero: zero > 0.6 && zero < 0.9 }).toEqual({
+				id,
+				zero: true,
+			});
+			expect({ id, hard: hard > 0.005 && hard < 0.15 }).toEqual({
+				id,
+				hard: true,
+			});
+		}
 	});
 });
 

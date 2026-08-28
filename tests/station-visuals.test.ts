@@ -34,7 +34,6 @@ import {
 } from "../src/station-mesh";
 import {
 	DETAIL_RADII,
-	PLATE_TEXTURE_SIZE,
 	STATION_VISUALS,
 	type StationDetailLevel,
 	strobeIntensity,
@@ -43,6 +42,7 @@ import {
 	stationDetailLevel,
 	surfaceTexels,
 } from "../src/station-visuals";
+import { PLATE_TEXTURE_SIZE } from "../src/surface";
 import { HANDOFF_HYSTERESIS, HANDOFF_KM } from "../src/units";
 
 // From `station.ts`, not a literal: a fourth station type must reach every
