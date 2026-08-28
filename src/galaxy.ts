@@ -61,7 +61,10 @@ export const SYSTEMS_PER_GALAXY = 256;
  * upward as the volume flattens, the framing grows with R, and flattening then
  * concentrates the points toward a plane — whose nearest-neighbour distances are
  * shorter than a ball's at equal projected extent. The ball is the least crowded
- * shape in the sweep, at every viewing angle including face-on.
+ * shape at every viewing angle including face-on — measured on a q x pitch grid
+ * by `bun scripts/measure-galaxy-shape.ts grid`, which asserts it cell for cell
+ * rather than only printing it, so a later retune cannot leave §2 stating a
+ * refuted claim.
  *
  * **0.7 and not Elite's 0.5.** §2 declined Elite's 2:1 y-compression for a good
  * reason — it was a screen-aspect hack imported as a physical law — and adopting
@@ -334,15 +337,48 @@ export function radiusForQuantile(u: number): number {
  * replica reproduces this function exactly, which is what the whole instrument
  * rests on.
  */
-export function systemPosition(systemSeed: number): Vec3 {
+export const systemPosition = (systemSeed: number): Vec3 =>
+	positionForShape(systemSeed, GALAXY_FLATTENING_Q, GALAXY_RADIUS_LY);
+
+/**
+ * `systemPosition` with the shape as parameters — the generator every sweep in
+ * `scripts/measure-galaxy-shape.ts` runs.
+ *
+ * **Exported rather than re-implemented there**, which is the point. The
+ * instrument needs to draw galaxies at shapes the game does not ship, and a
+ * private copy of this function is a copy that stops matching the day
+ * `radiusForQuantile` or the draw order changes — leaving a sweep that measures
+ * a generator nobody runs, with nothing going red. Here there is one body, so
+ * the sweep is the shipped draw by construction rather than by a control that
+ * has to be remembered.
+ *
+ * The bisection is inlined rather than calling `radiusForQuantile` because that
+ * one closes over the shipped `R`; the arithmetic is otherwise identical, and
+ * `tests/galaxy.test.ts` asserts the two agree at the shipped parameters.
+ */
+export function positionForShape(
+	systemSeed: number,
+	q: number,
+	radius: number,
+): Vec3 {
+	const coreRadius = radius / Math.SQRT2;
+	const norm = radius - coreRadius * Math.atan(radius / coreRadius);
 	const rand = stream(systemSeed, DOMAIN.POS);
-	const r = radiusForQuantile(rand());
+	const u = rand();
+	let lo = 0;
+	let hi = radius;
+	for (let i = 0; i < CDF_BISECTION_STEPS; i++) {
+		const mid = (lo + hi) / 2;
+		if ((mid - coreRadius * Math.atan(mid / coreRadius)) / norm < u) lo = mid;
+		else hi = mid;
+	}
+	const r = (lo + hi) / 2;
 	const cosTheta = 2 * rand() - 1;
 	const phi = 2 * Math.PI * rand();
 	const sinTheta = Math.sqrt(Math.max(0, 1 - cosTheta * cosTheta));
 	return {
 		x: r * sinTheta * Math.cos(phi),
-		y: GALAXY_FLATTENING_Q * r * sinTheta * Math.sin(phi),
+		y: q * r * sinTheta * Math.sin(phi),
 		z: r * cosTheta,
 	};
 }

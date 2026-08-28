@@ -120,8 +120,23 @@ that a disc spreads the same 256 points over a larger projected area and so
 eases finding. Measured, it is refuted: holding ~8-in-range forces `R` upward as
 the volume flattens, the framing grows with `R`, and flattening then
 concentrates the points toward a plane, whose nearest-neighbour distances are
-shorter than a ball's at equal projected extent. The ball is the least crowded
-shape in the sweep at every viewing angle, face-on included.
+shorter than a ball's at equal projected extent.
+
+**The ball is the least crowded shape at every viewing angle, face-on
+included** — and that is a claim about a *grid*, so it is measured on one, by
+`bun scripts/measure-galaxy-shape.ts grid`, which asserts it rather than only
+printing it. Desktop crowding, framing scaled with `R`:
+
+| `q` | 12° | 20° | 30° | 40° | 55° | 70° | 83° |
+|---|---|---|---|---|---|---|---|
+| 1.00 (ball) | 41.3% | 41.9% | 42.6% | 41.3% | 41.6% | 42.5% | 43.1% |
+| 0.70 | 51.8% | 52.6% | 51.0% | 49.6% | 49.5% | 47.0% | 46.3% |
+| 0.50 | 63.1% | 61.9% | 58.1% | 54.7% | 50.7% | 49.1% | 46.8% |
+| 0.25 | 79.1% | 73.7% | 68.0% | 60.4% | 54.0% | 50.3% | 48.9% |
+
+The ball wins cell for cell, and its best angle (41.3%) beats every flattened
+shape's best. Face-on recovers much of what flattening costs — the rows converge
+toward 83° — and never closes it.
 
 At the shipped 40° pitch, framing scaled with `R` so the comparison is of shapes
 and not of how much screen each fills:

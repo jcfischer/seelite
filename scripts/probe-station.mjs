@@ -100,20 +100,34 @@ const ORIGIN =
  * §4's range sampled near both ends without the probe writing a spin itself,
  * which is the second thing this fixture is for. (Seed 1's were 0.91 and 2.95.)
  *
- * ## A known flake this seed does not cause and cannot fix
+ * ## The 5 km control flakes, and #118 made it flake more often
  *
- * The 5 km control below — trade measured twice — straddles its 0.05 ceiling.
- * Measured over four runs each: `main` before #118 fails 1 in 4 (0.057, at the
- * ceiling), this seed 2 in 4 (0.061-0.074), and seeds 59, 96 and 115 worse
- * still. It is a **pre-existing** flake rather than one #118 introduced, and it
- * is the subject of the open node #84 ("is probe-station's margin too tight?").
+ * Stated plainly because the comfortable version — "pre-existing, not ours" —
+ * is only half true. The control below, trade measured twice against a
+ * `1 − IoU ≤ 0.05` ceiling, straddles that ceiling. Four `probe:one station`
+ * runs each:
  *
- * The ceiling is deliberately **not** widened here. Loosening a margin so that
- * an unrelated change goes green is how a check stops discriminating, and the
- * data above suggests the margin is not even the real fault: the control
+ * ```
+ *   main, seed 1 (pre-#118)   3/4 green   worst reading 0.057
+ *   seed 54 (this fixture)    2/4 green   readings 0.061, 0.074
+ *   seed 59                   1/4 green   readings 0.064, 0.069, 0.085
+ *   seeds 96, 115             0/4 green
+ * ```
+ *
+ * So the flake predates #118 — but this fixture roughly **doubles** its rate and
+ * pushes the readings past anything `main` produced. That is a real cost of the
+ * reshape, not somebody else's problem, and 54 is simply the best of the seeds
+ * that satisfy the fixture requirement at all: seed 1 no longer holds three
+ * station types, and every seed that does is worse than 54 on this control.
+ *
+ * The ceiling is deliberately **not** widened to hide it. Loosening a margin so
+ * that an unrelated change goes green is how a check stops discriminating, and
+ * the readings point away from the margin being the fault: the control
  * re-measures a station that is *spinning*, so what it reports is rotation
- * between the two captures rather than measurement noise. Deciding that belongs
- * to #84, which already owns the question.
+ * between the two captures rather than measurement noise, which is why it is
+ * load-sensitive and why it straddles rather than sits. Fixing that — freezing
+ * the game clock across the pair — is the open node #84's call, and the
+ * measurements above are posted there.
  */
 const URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=54`;
 

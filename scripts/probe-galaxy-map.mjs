@@ -182,6 +182,13 @@ for (const viewport of VIEWPORTS) {
 				onScreen: pts.length,
 				spanX: Math.max(...xs) - Math.min(...xs),
 				spanY: Math.max(...ys) - Math.min(...ys),
+				// **The chart's own extents, not the page's.** `spanX` is measured
+				// against `map.viewport()`, so comparing it to the page viewport
+				// would call a cropped cluster framed on any layout where the
+				// canvas is smaller than the window — which §1 says is coming the
+				// moment this becomes a Navigation tab.
+				width,
+				height,
 			};
 		}, targetPitch);
 		return measured;
@@ -202,15 +209,15 @@ for (const viewport of VIEWPORTS) {
 	 * otherwise retire this check without anything going red.
 	 */
 	const framed =
-		Math.max(edgeOn.spanX, faceOn.spanX) < viewport.width - 2 &&
-		Math.max(edgeOn.spanY, faceOn.spanY) < viewport.height - 2;
+		Math.max(edgeOn.spanX, faceOn.spanX) < edgeOn.width - 2 &&
+		Math.max(edgeOn.spanY, faceOn.spanY) < edgeOn.height - 2;
 	const edgeAspect = edgeOn.spanY / edgeOn.spanX;
 	const faceAspect = faceOn.spanY / faceOn.spanX;
 	if (framed) discMeasured++;
 	check(
 		framed
 			? `${viewport.name}: the cluster is a disc — edge-on aspect ${edgeAspect.toFixed(2)} (q ${edgeOn.q}), face-on ${faceAspect.toFixed(2)}`
-			: `${viewport.name}: skipped the disc aspect — the cluster does not fit this viewport (${Math.round(edgeOn.spanX)} px of ${viewport.width})`,
+			: `${viewport.name}: skipped the disc aspect — the cluster does not fit this chart (${Math.round(edgeOn.spanX)} px of ${Math.round(edgeOn.width)})`,
 		!framed ||
 			(Math.abs(edgeOn.pitch) < 0.02 &&
 				faceOn.pitch > 1.4 &&

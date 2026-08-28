@@ -77,9 +77,11 @@ const DEFAULT_YAW = 0.6;
  *
  * **Chosen on legibility, not on the crowding it buys.** Measured across the
  * whole clamp — 52.6% at 20° down to 46.3% at 83°, on the desktop framing — the
- * entire range is worth **6 points**, trending monotonically toward face-on and
- * never reaching the ball's 41.4%. So pitch is a trim, not a remedy, and no
- * angle recovers what the disc cost. What 40° buys is
+ * entire range is worth **6 points**, trending toward face-on and never
+ * reaching the ball at *any* of its own angles (41.3-43.1% across the same
+ * clamp). So pitch is a trim, not a remedy, and no angle recovers what the disc
+ * cost — `bun scripts/measure-galaxy-shape.ts grid` is the q x pitch table
+ * behind that. What 40° buys is
  * that the disc reads as one: face-on you see a circle and cannot tell it is
  * flat, which spends the reason #107 took the disc at all, and edge-on you lose
  * the cluster's extent. 40° shows the ellipse and the thickness together, and

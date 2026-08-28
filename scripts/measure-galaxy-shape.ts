@@ -4,10 +4,13 @@
  *
  * `bun scripts/measure-galaxy-shape.ts [mode] [...]`
  *
- *   control            reproduce the shipped generator, position for position
+ *   control            the calibration arm: the ball's crowding, and the shape
+ *                      the shipped constants actually produce
+ *   shipped            what `src/galaxy.ts`'s constants produce, beside the ball
  *   solve <q> [target] the radius that holds `target` systems in jump range
  *   sweep              the q table: R solved at each q, crowding at two framings
  *   pitch              crowding against the chart's pitch, at the shipped shape
+ *   grid               q x pitch: the claim that the ball wins at every angle
  *
  * This is the instrument behind `galaxy-generation.md` §2.1's derivation and
  * `galaxy-map.md` §5.1's crowding spread. It ships because #107 chose q = 0.7
@@ -16,12 +19,16 @@
  *
  * ## It is comparative, and the probes are authoritative
  *
- * The crowding figures here run 2-5 points above `probe-galaxy-map.mjs`'s,
- * because this replicates the projection in closed form rather than reading it
- * off a rendered page. It is validated by its **control**: at `q = 1, R = 22` it
- * must reproduce the shipped ball position for position, and its crowding must
- * bracket the 40.2% the probe measured there. Never take a banded number from
- * this file — take it from a probe run. What this is for is the *comparison*
+ * The **positions** are the shipped generator's: `positionForShape` is exported
+ * from `src/galaxy.ts` and `systemPosition` is a call to it, so there is no
+ * replica here to drift. `tests/galaxy.test.ts` gates that they are one
+ * function.
+ *
+ * The **projection** is replicated in closed form rather than read off a
+ * rendered page, and that half is not exact: the crowding figures here run
+ * several points above `probe-galaxy-map.mjs`'s at the same framing — 41.4%
+ * against the probe's 40.2% on the ball. So never take a banded number from
+ * this file; take it from a probe run. What this is for is the *comparison*
  * between shapes, which no probe can make because only one shape is shipped.
  *
  * ## Connected layouts only
@@ -49,10 +56,10 @@ import {
 	clearLayoutCache,
 	isConnected,
 	layoutGalaxy,
-	stream,
+	positionForShape,
+	systemPosition,
 	systemSeedFor,
 } from "../src/galaxy";
-import { DOMAIN } from "../src/domains";
 import type { Vec3 } from "../src/vec3";
 
 /** Throw rather than print a non-finite figure. */
@@ -64,44 +71,6 @@ function finite(label: string, x: number): number {
 }
 
 // ---- the parameterised generator ------------------------------------------
-
-/**
- * `systemPosition` with `q` and `R` as parameters instead of constants.
- *
- * **The same three draws in the same order** — radius, `cosθ`, `φ` — off the
- * same `POS` stream. This is a squash of the shipped draw, not a different
- * distribution: at `q = 1, R = GALAXY_RADIUS_LY` it is the shipped function, and
- * `control` asserts exactly that. Anything that reorders the draws changes every
- * galaxy for a second reason and makes the sweep a comparison of two things.
- */
-function positionAt(systemSeed: number, q: number, radius: number): Vec3 {
-	const coreRadius = radius / Math.SQRT2;
-	const norm = radius - coreRadius * Math.atan(radius / coreRadius);
-	const cdf = (x: number): number =>
-		(x - coreRadius * Math.atan(x / coreRadius)) / norm;
-
-	const rand = stream(systemSeed, DOMAIN.POS);
-	// Bisection at a fixed step count, as `radiusForQuantile` does: a
-	// convergence-dependent count would make the layout a function of the
-	// floating-point path rather than of the seed.
-	const u = rand();
-	let lo = 0;
-	let hi = radius;
-	for (let i = 0; i < 40; i++) {
-		const mid = (lo + hi) / 2;
-		if (cdf(mid) < u) lo = mid;
-		else hi = mid;
-	}
-	const r = (lo + hi) / 2;
-	const cosTheta = 2 * rand() - 1;
-	const phi = 2 * Math.PI * rand();
-	const sinTheta = Math.sqrt(Math.max(0, 1 - cosTheta * cosTheta));
-	return {
-		x: r * sinTheta * Math.cos(phi),
-		y: q * r * sinTheta * Math.sin(phi),
-		z: r * cosTheta,
-	};
-}
 
 /** One connected layout at `(q, R)`, plus the re-roll count it took — the same
  *  reject-and-re-roll loop `layoutGalaxy` runs. `null` if none was found. */
@@ -115,7 +84,11 @@ function layoutAt(
 		const positions: Vec3[] = [];
 		for (let n = 0; n < SYSTEMS_PER_GALAXY; n++) {
 			positions.push(
-				positionAt(systemSeedFor(worldSeed, galaxy, attempt, n), q, radius),
+				positionForShape(
+					systemSeedFor(worldSeed, galaxy, attempt, n),
+					q,
+					radius,
+				),
 			);
 		}
 		if (isConnected(positions)) return { positions, attempt };
@@ -227,11 +200,16 @@ function crowdingAt(
 			}
 		}
 	}
+	if (points.length === 0) {
+		// Not "100% crowded". A framing that puts nothing on screen is a broken
+		// measurement, and substituting a plausible number for it is exactly the
+		// quiet garbage the finite guards exist to stop.
+		throw new Error(
+			`measure-galaxy-shape: nothing on screen at ${width}x${height}, distance ${distance}`,
+		);
+	}
 	return {
-		fraction: finite(
-			"crowding",
-			points.length === 0 ? 1 : crowded / points.length,
-		),
+		fraction: finite("crowding", crowded / points.length),
 		onScreen: points.length,
 	};
 }
@@ -250,9 +228,34 @@ const CAMERA_PER_RADIUS = 62 / 22;
 // ---- modes ------------------------------------------------------------------
 
 const WORLD_SEEDS = [1, 47, 12345];
+/** The pitches `galaxy-map.md` quotes, spanning the +/-1.45 clamp. */
+const PITCH_DEGREES = [12, 20, 30, 40, 55, 70, 83] as const;
+/** The shapes the grid compares. The ball is pinned at its own solved radius of
+ *  22 rather than re-solved, because that is the shape that actually shipped. */
+const GRID_Q = [1.0, 0.7, 0.5, 0.25] as const;
 
 const mean = (xs: number[]): number =>
 	finite("mean", xs.reduce((a, b) => a + b, 0) / xs.length);
+
+/** Crowding over a corpus at one framing, ascending. One helper rather than the
+ *  nine near-copies this had, so the framing convention lives in one place. */
+const crowdSpread = (
+	c: { positions: Vec3[] }[],
+	framing: { width: number; height: number },
+	distance: number,
+	pitch: number,
+): number[] =>
+	c
+		.map(
+			(l) =>
+				crowdingAt(l.positions, {
+					...framing,
+					distance,
+					yaw: DEFAULT_YAW,
+					pitch,
+				}).fraction,
+		)
+		.sort((a, b) => a - b);
 
 /** Every connected layout at `(q, R)` over the seed set, with its re-roll count. */
 function corpus(q: number, radius: number) {
@@ -295,7 +298,19 @@ function solveRadius(q: number, target: number): number {
 		let m: number;
 		try {
 			m = mean(corpus(q, mid).map((l) => meanInRange(l.positions)));
-		} catch {
+		} catch (error) {
+			// **Only the sparsity case.** A bare catch here would also swallow a
+			// tripped `finite` guard, which is the file's fail-loudly rule turned
+			// off exactly where a wrong number would be hardest to notice.
+			if (
+				!(error instanceof Error) ||
+				!/no connected layout/.test(error.message)
+			) {
+				throw error;
+			}
+			console.log(
+				`  (q=${q}: no connected layout at R=${mid.toFixed(2)} — too sparse, bisecting down)`,
+			);
 			m = 0;
 		}
 		if (m > target) lo = mid;
@@ -305,13 +320,22 @@ function solveRadius(q: number, target: number): number {
 }
 
 const mode = process.argv[2] ?? "sweep";
+const pct = (xs: number[]) =>
+	`${(xs[0] * 100).toFixed(1)}%-${(xs[xs.length - 1] * 100).toFixed(1)}%`;
+
+/** Fail the run, so a broken arm exits non-zero instead of printing a number
+ *  somebody transcribes. The header calls the control the thing the instrument
+ *  rests on; a control that only logs is not one. */
+function assertThat(claim: string, held: boolean): void {
+	console.log(`  ${held ? "ok  " : "FAIL"}  ${claim}`);
+	if (!held) process.exitCode = 1;
+}
 
 if (mode === "control") {
-	// The control the whole instrument rests on, in two halves.
-	//
-	// **Exactness.** At the shipped `(q, R)`, `positionAt` must be
-	// `systemPosition` — not close to it, the same number. If it is not, every
-	// figure below is about a generator the game does not run.
+	// **Exactness is now structural, not measured.** `systemPosition` is a call
+	// to `positionForShape`, so the sweep runs the shipped draw by construction
+	// and `tests/galaxy.test.ts` gates it. This arm re-checks it anyway, because
+	// it costs nothing and the alternative is trusting a comment.
 	let worst = 0;
 	let compared = 0;
 	for (const seed of WORLD_SEEDS) {
@@ -319,12 +343,13 @@ if (mode === "control") {
 		for (let g = 0; g < GALAXY_COUNT; g++) {
 			const shipped = layoutGalaxy(seed, g);
 			for (let n = 0; n < SYSTEMS_PER_GALAXY; n++) {
-				const mine = positionAt(
-					systemSeedFor(seed, g, shipped.attempt, n),
+				const id = systemSeedFor(seed, g, shipped.attempt, n);
+				const mine = positionForShape(
+					id,
 					GALAXY_FLATTENING_Q,
 					GALAXY_RADIUS_LY,
 				);
-				const p = shipped.positions[n];
+				const p = systemPosition(id);
 				worst = Math.max(
 					worst,
 					Math.abs(mine.x - p.x),
@@ -336,89 +361,49 @@ if (mode === "control") {
 		}
 	}
 	console.log(
-		`shipped shape    : q = ${GALAXY_FLATTENING_Q}, R = ${GALAXY_RADIUS_LY}`,
+		`shipped shape     : q = ${GALAXY_FLATTENING_Q}, R = ${GALAXY_RADIUS_LY}`,
 	);
-	console.log(`positions compared: ${compared}`);
 	console.log(
-		`worst |Δ|        : ${finite("control delta", worst).toExponential(2)}`,
+		`positions compared: ${compared}, worst |Δ| ${finite("control delta", worst).toExponential(2)}`,
 	);
+	assertThat("the sweep draws the shipped generator", worst === 0);
 
 	// **Calibration.** The ball arm — `q = 1, R = 22`, the shape that shipped
-	// before #118 — must bracket the 40.2% `probe-galaxy-map.mjs` measured on it.
-	// That is what makes the sweep's other rows believable, and it is also the
-	// reason nothing banded is taken from this file: these figures run above the
-	// probe's, so what is validated is the comparison, not the absolute.
+	// before #118 — is where this instrument's absolute figures can be compared
+	// against a probe's. They do not match and are not meant to: the projection
+	// here is closed-form, and it reads about a point high. What is asserted is
+	// that the probe's 40.2% falls inside this arm's galaxy-to-galaxy spread,
+	// which is what licenses reading the *differences* between shapes.
 	const ball = corpus(1, 22);
-	const crowd = ball
-		.map(
-			(l) =>
-				crowdingAt(l.positions, {
-					...DESKTOP,
-					distance: 22 * CAMERA_PER_RADIUS,
-					yaw: DEFAULT_YAW,
-					pitch: 0.35,
-				}).fraction,
-		)
-		.sort((a, b) => a - b);
+	const crowd = crowdSpread(ball, DESKTOP, 22 * CAMERA_PER_RADIUS, 0.35);
 	console.log(
-		`ball crowding    : ${(crowd[0] * 100).toFixed(1)}%-${(crowd[crowd.length - 1] * 100).toFixed(1)}% over ${crowd.length} galaxies (probe measured 40.2% at pitch 0.35)`,
+		`ball crowding     : ${pct(crowd)} over ${crowd.length} galaxies (probe measured 40.2%)`,
 	);
-	console.log(
-		`ball isolated    : ${ball.reduce((a, l) => a + isolated(l.positions), 0)} (must be 0 — a non-zero means first-pass draws leaked in)`,
+	assertThat(
+		"the probe's ball figure falls inside this arm's spread",
+		crowd[0] <= 0.402 && crowd[crowd.length - 1] >= 0.402,
 	);
-} else if (mode === "solve") {
-	const q = Number(process.argv[3] ?? GALAXY_FLATTENING_Q);
-	const target = Number(process.argv[4] ?? 8);
-	const r = solveRadius(q, target);
-	const c = corpus(q, r);
-	console.log(`q                : ${q}`);
-	console.log(`target in range  : ${target}`);
-	console.log(`R                : ${r.toFixed(2)} LY`);
-	console.log(`core radius      : ${(r / Math.SQRT2).toFixed(2)} LY`);
-	console.log(
-		`mean in range    : ${mean(c.map((l) => meanInRange(l.positions))).toFixed(2)} over ${c.length} connected layouts`,
-	);
-	console.log(`mean re-rolls    : ${mean(c.map((l) => l.attempt)).toFixed(1)}`);
-	console.log(
-		`isolated systems : ${c.reduce((a, l) => a + isolated(l.positions), 0)}`,
+	const isolatedTotal = ball.reduce((a, l) => a + isolated(l.positions), 0);
+	console.log(`ball isolated     : ${isolatedTotal}`);
+	assertThat(
+		"every measured layout is one the game would ship",
+		isolatedTotal === 0,
 	);
 } else if (mode === "shipped") {
 	// What the constants in `src/galaxy.ts` actually produce, and what the ball
 	// they replaced produced — the two rows `galaxy-generation.md` §2.1 quotes.
-	// Every figure the spec states about reach or connectivity comes from here.
 	for (const [label, q, r] of [
 		["ball (pre-#118)", 1, 22],
 		["disc (shipped) ", GALAXY_FLATTENING_Q, GALAXY_RADIUS_LY],
 	] as const) {
 		const c = corpus(q, r);
-		const inRange = c.map((l) => meanInRange(l.positions));
-		inRange.sort((a, b) => a - b);
+		const inRange = c
+			.map((l) => meanInRange(l.positions))
+			.sort((a, b) => a - b);
 		const distance = r * CAMERA_PER_RADIUS;
 		const pitch = q === 1 ? 0.35 : 0.7;
-		const d = c
-			.map(
-				(l) =>
-					crowdingAt(l.positions, {
-						...DESKTOP,
-						distance,
-						yaw: DEFAULT_YAW,
-						pitch,
-					}).fraction,
-			)
-			.sort((a, b) => a - b);
-		const k = c
-			.map(
-				(l) =>
-					crowdingAt(l.positions, {
-						...CONSOLE,
-						distance,
-						yaw: DEFAULT_YAW,
-						pitch,
-					}).fraction,
-			)
-			.sort((a, b) => a - b);
-		const pct = (xs: number[]) =>
-			`${(xs[0] * 100).toFixed(1)}%-${(xs[xs.length - 1] * 100).toFixed(1)}%`;
+		const d = crowdSpread(c, DESKTOP, distance, pitch);
+		const k = crowdSpread(c, CONSOLE, distance, pitch);
 		console.log(`${label} q=${q} R=${r}`);
 		console.log(
 			`  layouts        : ${c.length} connected, ${c.reduce((a, l) => a + isolated(l.positions), 0)} isolated systems`,
@@ -443,36 +428,58 @@ if (mode === "control") {
 	console.log("  pitch      desktop      console");
 	const c = corpus(GALAXY_FLATTENING_Q, GALAXY_RADIUS_LY);
 	const distance = GALAXY_RADIUS_LY * CAMERA_PER_RADIUS;
-	for (const deg of [12, 20, 30, 40, 55, 70, 83]) {
+	for (const deg of PITCH_DEGREES) {
 		const pitch = (deg * Math.PI) / 180;
-		const d = mean(
-			c.map(
-				(l) =>
-					crowdingAt(l.positions, {
-						...DESKTOP,
-						distance,
-						yaw: DEFAULT_YAW,
-						pitch,
-					}).fraction,
-			),
-		);
-		const k = mean(
-			c.map(
-				(l) =>
-					crowdingAt(l.positions, {
-						...CONSOLE,
-						distance,
-						yaw: DEFAULT_YAW,
-						pitch,
-					}).fraction,
-			),
-		);
 		console.log(
-			`  ${String(deg).padStart(3)}°    ${(d * 100).toFixed(1)}%        ${(k * 100).toFixed(1)}%`,
+			`  ${String(deg).padStart(3)}°    ${(mean(crowdSpread(c, DESKTOP, distance, pitch)) * 100).toFixed(1)}%        ${(mean(crowdSpread(c, CONSOLE, distance, pitch)) * 100).toFixed(1)}%`,
 		);
 	}
-} else {
-	// sweep
+} else if (mode === "grid") {
+	/**
+	 * The q x pitch grid, which is the only thing that can carry
+	 * `galaxy-generation.md` §2's claim that **the ball is the least crowded
+	 * shape at every viewing angle**. `sweep` varies q at one pitch and `pitch`
+	 * varies pitch at one q; neither alone says anything about every angle, and
+	 * the claim was written against a grid #107 measured and did not ship.
+	 *
+	 * Prints the desktop figure per cell, then asserts the claim so that a
+	 * future q or pitch change cannot leave the spec asserting a refuted one.
+	 */
+	console.log(`desktop crowding, framing scaled with R, yaw ${DEFAULT_YAW}\n`);
+	console.log(
+		`      q  ${PITCH_DEGREES.map((d) => `${d}°`.padStart(7)).join("")}`,
+	);
+	const rows: { q: number; cells: number[] }[] = [];
+	for (const q of GRID_Q) {
+		const r = q === 1 ? 22 : solveRadius(q, 8);
+		const c = corpus(q, r);
+		const distance = r * CAMERA_PER_RADIUS;
+		const cells = PITCH_DEGREES.map((deg) =>
+			mean(crowdSpread(c, DESKTOP, distance, (deg * Math.PI) / 180)),
+		);
+		rows.push({ q, cells });
+		console.log(
+			`  ${q.toFixed(2)}  ${cells.map((x) => `${(x * 100).toFixed(1)}%`.padStart(7)).join("")}`,
+		);
+	}
+	const ballRow = rows.find((r) => r.q === 1);
+	if (!ballRow) throw new Error("measure-galaxy-shape: grid has no ball row");
+	const ballBest = Math.min(...ballRow.cells);
+	const discWorstBest = rows
+		.filter((r) => r.q !== 1)
+		.map((r) => Math.min(...r.cells));
+	console.log("");
+	assertThat(
+		`the ball at its best angle (${(ballBest * 100).toFixed(1)}%) beats every flattened shape at its best`,
+		discWorstBest.every((x) => x > ballBest),
+	);
+	assertThat(
+		"the ball wins cell for cell, at every pitch",
+		rows
+			.filter((r) => r.q !== 1)
+			.every((r) => r.cells.every((x, i) => x > ballRow.cells[i])),
+	);
+} else if (mode === "sweep") {
 	console.log(
 		"     q       R    core    mean  re-rolls   desktop   console   (pitch 40°, framing scales with R)",
 	);
@@ -483,30 +490,16 @@ if (mode === "control") {
 		const pitch = 0.7;
 		const m = mean(c.map((l) => meanInRange(l.positions)));
 		const a = mean(c.map((l) => l.attempt));
-		const d = mean(
-			c.map(
-				(l) =>
-					crowdingAt(l.positions, {
-						...DESKTOP,
-						distance,
-						yaw: DEFAULT_YAW,
-						pitch,
-					}).fraction,
-			),
-		);
-		const k = mean(
-			c.map(
-				(l) =>
-					crowdingAt(l.positions, {
-						...CONSOLE,
-						distance,
-						yaw: DEFAULT_YAW,
-						pitch,
-					}).fraction,
-			),
-		);
+		const d = mean(crowdSpread(c, DESKTOP, distance, pitch));
+		const k = mean(crowdSpread(c, CONSOLE, distance, pitch));
 		console.log(
 			`  ${q.toFixed(2)}   ${r.toFixed(1).padStart(5)}   ${(r / Math.SQRT2).toFixed(1).padStart(5)}   ${m.toFixed(2)}      ${a.toFixed(1).padStart(4)}     ${(d * 100).toFixed(1)}%     ${(k * 100).toFixed(1)}%`,
 		);
 	}
+} else {
+	// **Not a silent fall-through to the sweep.** A typo used to run a
+	// multi-minute q sweep and print a table for a question nobody asked.
+	throw new Error(
+		`measure-galaxy-shape: unknown mode "${mode}" — expected one of control, shipped, solve, sweep, pitch, grid`,
+	);
 }

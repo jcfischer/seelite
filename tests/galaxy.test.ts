@@ -26,6 +26,7 @@ import {
 	generateGalaxy,
 	isConnected,
 	layoutGalaxy,
+	positionForShape,
 	profileRadiusLy,
 	radialCdf,
 	radiusForQuantile,
@@ -365,6 +366,51 @@ describe("shape (§9.4a)", () => {
 	});
 });
 
+/**
+ * The 32 connected layouts the two assertions below share — four world seeds,
+ * eight galaxies — walked **once**.
+ *
+ * Both tests need the same corpus, and computing it twice meant 32 extra
+ * `layoutGalaxy` calls (each re-rolling ~4.6 attempts × 256 bisections) on top
+ * of a second pass over 2.1M distance pairs. The pair loop is also halved:
+ * `j > i` counts each pair once and doubles, where the naive form walks every
+ * ordered pair.
+ */
+const discCorpus = (() => {
+	let cached: {
+		means: number[];
+		attempts: number[];
+		connected: number;
+	} | null = null;
+	return () => {
+		if (cached) return cached;
+		const rangeSq = JUMP_RANGE_LY * JUMP_RANGE_LY;
+		const means: number[] = [];
+		const attempts: number[] = [];
+		let connected = 0;
+		for (const world of [1, 47, 12345, WORLD]) {
+			for (let g = 0; g < GALAXY_COUNT; g++) {
+				const { positions, attempt } = layoutGalaxy(world, g);
+				if (isConnected(positions, JUMP_RANGE_LY)) connected++;
+				attempts.push(attempt);
+				let pairs = 0;
+				for (let i = 0; i < positions.length; i++) {
+					for (let j = i + 1; j < positions.length; j++) {
+						const dx = positions[i].x - positions[j].x;
+						const dy = positions[i].y - positions[j].y;
+						const dz = positions[i].z - positions[j].z;
+						if (dx * dx + dy * dy + dz * dz <= rangeSq) pairs++;
+					}
+				}
+				// Each unordered pair is two systems' neighbour, hence the 2.
+				means.push((2 * pairs) / positions.length);
+			}
+		}
+		cached = { means, attempts, connected };
+		return cached;
+	};
+})();
+
 describe("distribution (§9.4)", () => {
 	const neighbourCounts = (g: Galaxy): number[] =>
 		g.systems.map(
@@ -383,6 +429,33 @@ describe("distribution (§9.4)", () => {
 		const mean = counts.reduce((a, b) => a + b, 0) / counts.length;
 		expect(mean).toBeGreaterThan(7.3);
 		expect(mean).toBeLessThan(9.3);
+	});
+
+	test("the sweep instrument draws the shipped generator", () => {
+		// `scripts/measure-galaxy-shape.ts` sweeps shapes the game does not ship,
+		// and every figure in `galaxy-generation.md` §2.1 comes out of it. It used
+		// to hold a *copy* of `systemPosition` — same draws, same order, parameters
+		// instead of constants — bound to the real one only by a control mode that
+		// nothing ran. A copy like that stops matching the day `radiusForQuantile`
+		// or the draw order changes, and the sweep then measures a generator
+		// nobody runs with nothing going red.
+		//
+		// So `positionForShape` is the one body and `systemPosition` calls it.
+		// This is the gate on that: at the shipped parameters they are the same
+		// function, exactly — not close.
+		for (const s of ALL.filter((_, i) => i % 17 === 0)) {
+			const mine = positionForShape(
+				s.seed,
+				GALAXY_FLATTENING_Q,
+				GALAXY_RADIUS_LY,
+			);
+			expect(mine).toEqual(s.pos);
+		}
+		// And it genuinely varies with its parameters — otherwise the assertion
+		// above would hold on a stub that ignored them.
+		const ball = positionForShape(ALL[0].seed, 1, GALAXY_RADIUS_LY);
+		expect(ball.y).not.toBeCloseTo(ALL[0].pos.y, 6);
+		expect(ball.x).toBeCloseTo(ALL[0].pos.x, 12);
 	});
 
 	test("the mean in range is pinned at the measured 8.00, across seeds", () => {
@@ -407,24 +480,7 @@ describe("distribution (§9.4)", () => {
 		// Three world seeds beyond this file's, so the assertion is about the
 		// generator rather than about `WORLD`. The band is ±0.30, which the
 		// un-re-solved 8.76 fails and a q changed without re-solving R fails.
-		const rangeSq = JUMP_RANGE_LY * JUMP_RANGE_LY;
-		const means: number[] = [];
-		for (const world of [1, 47, 12345, WORLD]) {
-			for (let g = 0; g < GALAXY_COUNT; g++) {
-				const { positions } = layoutGalaxy(world, g);
-				let total = 0;
-				for (let i = 0; i < positions.length; i++) {
-					for (let j = 0; j < positions.length; j++) {
-						if (i === j) continue;
-						const dx = positions[i].x - positions[j].x;
-						const dy = positions[i].y - positions[j].y;
-						const dz = positions[i].z - positions[j].z;
-						if (dx * dx + dy * dy + dz * dz <= rangeSq) total++;
-					}
-				}
-				means.push(total / positions.length);
-			}
-		}
+		const { means } = discCorpus();
 		const mean = means.reduce((a, b) => a + b, 0) / means.length;
 		expect(means).toHaveLength(4 * GALAXY_COUNT);
 		expect(mean).toBeGreaterThan(8.0 - 0.3);
@@ -437,14 +493,8 @@ describe("distribution (§9.4)", () => {
 		// q = 0.08. So this is gated rather than left to a script: a later retune
 		// toward a thinner disc must see this go red rather than discover it in a
 		// throw on somebody's world seed.
-		const attempts: number[] = [];
-		for (const world of [1, 47, 12345, WORLD]) {
-			for (let g = 0; g < GALAXY_COUNT; g++) {
-				const { positions, attempt } = layoutGalaxy(world, g);
-				expect(isConnected(positions, JUMP_RANGE_LY)).toBe(true);
-				attempts.push(attempt);
-			}
-		}
+		const { attempts, connected } = discCorpus();
+		expect(connected).toBe(4 * GALAXY_COUNT);
 		const mean = attempts.reduce((a, b) => a + b, 0) / attempts.length;
 		// Absolute, not relative to the ceiling: an assertion written against
 		// `MAX_LAYOUT_ATTEMPTS` changes what it means when the ceiling moves.
