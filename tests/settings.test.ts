@@ -55,8 +55,16 @@ describe("settings survive what a string store can hold", () => {
 	});
 
 	test("a round trip keeps a legal value", () => {
-		saveSettings({ renderScale: 0.75 });
+		saveSettings({ ...DEFAULT_SETTINGS, renderScale: 0.75 });
 		expect(loadSettings().renderScale).toBe(0.75);
+	});
+
+	test("a round trip keeps a legal mode name", () => {
+		// The second setting is a string, and the loader validates by set
+		// membership rather than by `typeof` — so this is the case that would
+		// have been dropped silently by the number-only check it replaced.
+		saveSettings({ ...DEFAULT_SETTINGS, quality: "low" });
+		expect(loadSettings().quality).toBe("low");
 	});
 
 	test.each([
@@ -69,6 +77,26 @@ describe("settings survive what a string store can hold", () => {
 	])("%s falls back to the default", (_name, stored) => {
 		installStorage({ [KEY]: stored });
 		expect(loadSettings().renderScale).toBe(DEFAULT_SETTINGS.renderScale);
+	});
+
+	test.each([
+		["a mode name that does not exist", `{"quality":"ultra"}`],
+		["a number where a mode name goes", `{"quality":0}`],
+		["the right name in the wrong case", `{"quality":"HIGH"}`],
+		["an object", `{"quality":{}}`],
+	])("%s falls back to the default", (_name, stored) => {
+		installStorage({ [KEY]: stored });
+		expect(loadSettings().quality).toBe(DEFAULT_SETTINGS.quality);
+	});
+
+	test("one bad field does not take the good one with it", () => {
+		// They are validated independently, so a save written by an older build
+		// that never had `quality` keeps its resolution.
+		installStorage({ [KEY]: `{"renderScale":0.5,"quality":"ultra"}` });
+		expect(loadSettings()).toEqual({
+			renderScale: 0.5,
+			quality: DEFAULT_SETTINGS.quality,
+		});
 	});
 
 	test("a storage that refuses to be read does not stop the game", () => {
@@ -90,7 +118,9 @@ describe("settings survive what a string store can hold", () => {
 				},
 			},
 		};
-		expect(() => saveSettings({ renderScale: 0.5 })).not.toThrow();
+		expect(() =>
+			saveSettings({ ...DEFAULT_SETTINGS, renderScale: 0.5 }),
+		).not.toThrow();
 	});
 });
 
@@ -99,7 +129,7 @@ describe("the store tells its listeners, once", () => {
 	afterEach(restoreWindow);
 
 	test("a change notifies", () => {
-		const store = new SettingsStore({ renderScale: 1 });
+		const store = new SettingsStore({ ...DEFAULT_SETTINGS, renderScale: 1 });
 		const seen: number[] = [];
 		store.subscribe((s) => seen.push(s.renderScale));
 		store.set("renderScale", 0.5);
@@ -109,7 +139,7 @@ describe("the store tells its listeners, once", () => {
 	test("setting the value it already has notifies nobody", () => {
 		// The renderer rebuilds its drawing buffer on every notification, which
 		// is not a thing to do because a menu was redrawn.
-		const store = new SettingsStore({ renderScale: 1 });
+		const store = new SettingsStore({ ...DEFAULT_SETTINGS, renderScale: 1 });
 		let calls = 0;
 		store.subscribe(() => calls++);
 		store.set("renderScale", 1);
@@ -117,7 +147,7 @@ describe("the store tells its listeners, once", () => {
 	});
 
 	test("unsubscribing stops it", () => {
-		const store = new SettingsStore({ renderScale: 1 });
+		const store = new SettingsStore({ ...DEFAULT_SETTINGS, renderScale: 1 });
 		let calls = 0;
 		const off = store.subscribe(() => calls++);
 		off();

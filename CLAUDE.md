@@ -103,6 +103,14 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   an inner group. Hand back kilometres instead and the station is drawn
   `radiusKm` times too large — and `probe-handoff.mjs`, which measures the
   handoff as `drawnRadius / radiusKm`, reads it as a scale error.
+- **The lighting environment reaches `MeshStandardMaterial` and nothing else.**
+  `scene.environment` is a baked star (`light-rig.ts`), assigned to all three
+  layers and rotated onto the star each frame rather than rebaked. Hulls,
+  station plating and the cockpit are standard materials and take it; every
+  planet surface, shell and ring is a `ShaderMaterial` (`planet-surface.ts`) and
+  is lit only by its own per-body star term from #59. A change that expects the
+  environment to reach a planet is expecting it through a shader that never
+  samples it.
 - **Per-system RNG streams.** One shared generator couples every system to every
   other system's draw count. Add a domain tag rather than reusing one; reusing a
   tag silently correlates the two draws.
