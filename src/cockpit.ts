@@ -120,3 +120,119 @@ export function cockpitView(headLook: HeadLook): {
 		targetDirectorVisible: headLook !== "forward",
 	};
 }
+
+// ---------------------------------------------------------------------------
+// The left Navigation console's target list — node #91.
+// ---------------------------------------------------------------------------
+
+/**
+ * A body as the Navigation list needs it.
+ *
+ * Deliberately narrower than `sim.ts`'s `Body`: the list needs an identity, a
+ * class to filter on, and a position to range from. Taking the whole struct
+ * would let a renderer read `appearance` or `radiusKm` off a row and make this
+ * projection the second place those are joined.
+ */
+export interface NavBody {
+	id: string;
+	kind: string;
+	pos: Vec3;
+}
+
+/** One row of the list, as the panel prints it. */
+export interface NavRow {
+	id: string;
+	kind: string;
+	distanceKm: number;
+	/**
+	 * Seconds to arrival, or `null` when nothing supplied an estimate.
+	 *
+	 * `null` rather than `0`, because a missing estimate and an immediate
+	 * arrival are different facts and the panel must be able to say so.
+	 */
+	etaSeconds: number | null;
+	selected: boolean;
+}
+
+/**
+ * What the player has narrowed the list to.
+ *
+ * `kinds` empty means every class — an explicit "all" member would be a second
+ * way to say the same thing, and the two would drift.
+ */
+export interface NavFilter {
+	kinds: readonly string[];
+	query: string;
+}
+
+/** The classes the panel offers as filter chips, in the order it shows them. */
+export const NAV_FILTER_KINDS = ["station", "planet", "star"] as const;
+
+/**
+ * Moons are absent on purpose.
+ *
+ * `Game.selectable()` filters them out of the cycle order, so a moon on this
+ * list would be a row that does nothing when clicked — a finding surface
+ * offering something the game cannot find.
+ */
+const LISTABLE = new Set<string>(NAV_FILTER_KINDS);
+
+export interface NavProjectionOptions {
+	filter?: NavFilter;
+	/**
+	 * The arrival estimate for one body, if the caller has one.
+	 *
+	 * A callback rather than a field on `NavBody`, because the arithmetic is
+	 * `Game.timeToTarget`'s — it integrates the cruise law (`cruise.ts`'s
+	 * `legSeconds`) against the ship's regime and throttle, none of which
+	 * belongs in a presentation projection. It is called **only for the rows
+	 * that survive the filter**, which is the cost bound a filtered list buys.
+	 */
+	etaFor?: (body: NavBody) => number | null;
+}
+
+const EVERYTHING: NavFilter = { kinds: [], query: "" };
+
+/** Does one body survive the player's current narrowing? */
+export function navFilterMatches(
+	body: Pick<NavBody, "id" | "kind">,
+	filter: NavFilter,
+): boolean {
+	if (!LISTABLE.has(body.kind)) return false;
+	if (filter.kinds.length > 0 && !filter.kinds.includes(body.kind))
+		return false;
+	const query = filter.query.trim().toLowerCase();
+	return query === "" || body.id.toLowerCase().includes(query);
+}
+
+/**
+ * The Navigation list: every selectable body that survives the filter, nearest
+ * first.
+ *
+ * Nearest first rather than the cycle order `selectable()` uses. The two answer
+ * different questions — cycling wants a stable walk that does not reshuffle as
+ * the ship moves, and this wants "what is near me", which is the question a
+ * pilot opens the panel with.
+ */
+export function projectNavTargets(
+	shipPos: Vec3,
+	bodies: readonly NavBody[],
+	targetId: string | null,
+	{ filter = EVERYTHING, etaFor }: NavProjectionOptions = {},
+): NavRow[] {
+	const rows: NavRow[] = [];
+	for (const body of bodies) {
+		if (!navFilterMatches(body, filter)) continue;
+		rows.push({
+			id: body.id,
+			kind: body.kind,
+			distanceKm: length(sub(body.pos, shipPos)),
+			etaSeconds: etaFor ? etaFor(body) : null,
+			selected: body.id === targetId,
+		});
+	}
+	// Ties broken by id so the order is total: two stations at the same range
+	// would otherwise swap rows on a re-sort and the list would flicker.
+	rows.sort((a, b) => a.distanceKm - b.distanceKm || a.id.localeCompare(b.id));
+	return rows;
+}

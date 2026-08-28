@@ -20,16 +20,20 @@ It does **not** own the cockpit panel that carries the map — that is
 the hyperspace jump itself, which is `galaxy-generation.md` §8, nor the market
 and equipment screens, which are #70's station console.
 
-`?galaxy-map` is the workbench this was decided on. It is a chart surface, not a
-second game mode: it builds no `Game`, and `src/main.ts` gates it alongside the
-other query-gated workbenches.
+`?galaxy-map` is the workbench this was decided on, and it remains one. It is a
+chart surface, not a second game mode: it builds no `Game`, and `src/main.ts`
+gates it alongside the other query-gated workbenches.
 
 ---
 
 ## 1. Where the map lives
 
 **A tab on the left Navigation console.** Not a full-screen mode, not a fifth
-panel, not an application.
+panel, not an application. Built in
+[#96](https://github.com/jcfischer/seelite/issues/96): `mountGalaxyChart` takes
+a host element and returns a `dispose`, the tab mounts it on entry and disposes
+it on exit, and `?galaxy-map` is a second mount of the same function rather than
+a second implementation.
 
 #70 ratified that there is no second UI grammar: the player is in the cockpit
 and a screen answers *which wall or which tab*, never *which application*.
@@ -232,7 +236,9 @@ So the chart is the **reading** surface and Navigation's filterable list is the
 ("Navigation is authoritative for target selection and filters"). Selecting a
 named system goes through the list; the chart answers *where is it, and what is
 between here and there*. **A galaxy map with no list is not a shippable map**,
-and #69 owes that list.
+and #91 built it: `projectNavTargets` in `src/cockpit.ts`, rendered by the
+Navigation tab with type, range and ETA per row and narrowed by a kind chip and
+a name query.
 
 The 62 LY figure is **asserted**, not merely recorded: `probe-galaxy-map.mjs`
 resets to the default framing and requires it inside a 25–60% band, so a change
@@ -452,11 +458,37 @@ At desktop (1280 × 760) and narrow (390 × 844):
    because a green that could not have gone red is the failure this whole probe
    exists to avoid.
 
+### 9.3 Browser — `scripts/probe-navigation-console.mjs`
+
+The chart's *mount* rather than its projection, and the list beside it.
+
+1. **The list is the finding surface.** Every selectable body in the system is
+   listed, ordered by the ranges the simulation holds for those same ids —
+   read from `world.system.byId`, not from the row text, because a list that
+   sorted its own output and then reported that output as sorted passes on a
+   build with no sort at all. Clicking a row the game is **not** already on
+   moves `targetBody()`; the row that boot already selected would pass on a
+   build whose rows do nothing.
+2. **Both narrowings narrow.** The name query is checked against a prefix at
+   least one other row fails, and the kind chip against a list strictly shorter
+   than the unfiltered one. A query matching nothing renders an empty-state
+   rather than falling back to everything.
+3. **The chart stays inside the panel.** Measured on the **canvas**, not on the
+   host element: the host is a grid cell the console laid out, so its box is
+   inside the panel by construction and asserting on it is asserting the
+   panel's own layout. Written that way first, and it passed against a chart
+   restored to the workbench's `position: fixed` — which is #70's second UI
+   grammar, the thing §1 rules out. On the canvas the same build reads
+   `0,0,1280,760` against a panel of `102,53,1178,669`.
+4. **The tab takes the chart down.** After leaving, `__seeliteGalaxyMap` is
+   null and no canvas remains in the panel — a mount without a matching dispose
+   leaves a second WebGL context and a 60 Hz loop behind the flight view for
+   every visit to the map.
+5. **The simulation keeps running while the chart is open** — §1's no-pause
+   rule, asserted as `frames` advancing.
+
 ## 10. Deferred
 
-- **The Navigation list** — filterable, named, with type/range/ETA. §5.1 makes
-  it mandatory rather than optional; #69 owns it.
-- **Mounting the chart in the cockpit panel** — #69.
 - **Last-known station information on the map.**
   `persistent-world-state.md` §3.1 requires the map to present carrier state as
   timestamped "last known" rather than live omniscience. The system record in §5

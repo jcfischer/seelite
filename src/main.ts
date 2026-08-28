@@ -83,7 +83,10 @@ import {
 import {
 	SCANNER_RANGE_KM,
 	type HeadLook,
+	type NavFilter,
+	type NavRow,
 	type ScannerContact,
+	projectNavTargets,
 	projectScannerContacts,
 	targetArrowBearingDeg,
 } from "./cockpit";
@@ -181,7 +184,8 @@ import {
 	buildShipMesh,
 	fleetLayout,
 } from "./ship-mesh";
-import { LiveCockpit, type RightTab } from "./live-cockpit";
+import { LiveCockpit, type LeftTab, type RightTab } from "./live-cockpit";
+import type { GalaxyChart } from "./galaxy-map";
 import { type WarpField, warpField } from "./warp";
 import { type Vec3, add, dot, length, scale, sub, v3 } from "./vec3";
 // One path to `./units`, deliberately. Keeping a namespace import beside a named
@@ -795,6 +799,21 @@ class Game {
 	/** View-local head direction. It does not change the ship's orientation. */
 	headLook: HeadLook = "forward";
 	private rightTab: RightTab = "Flight";
+	private leftTab: LeftTab = "Navigation";
+	/**
+	 * What the Navigation list is narrowed to.
+	 *
+	 * Held here rather than inside `LiveCockpit` because the filter decides
+	 * which rows exist, and the rows decide which bodies get an ETA — which is
+	 * `timeToBody`'s integration. A panel that owned the filter privately would
+	 * make the cost of a frame a fact the game could not see.
+	 */
+	private navFilter: NavFilter = { kinds: [], query: "" };
+	/** Per-row arrival estimates, refreshed on `ETA_INTERVAL_S`. */
+	private readonly navEtaCache = new Map<string, number | null>();
+	private navEtaAt = Number.NEGATIVE_INFINITY;
+	/** The Galaxy Map tab's chart, while that tab is open. */
+	private chart: GalaxyChart | null = null;
 	private readonly headRotation = new THREE.Quaternion();
 	private readonly viewRotation = new THREE.Quaternion();
 	private readonly liveCockpit: LiveCockpit;
@@ -1368,9 +1387,25 @@ class Game {
 		// that box in the top-left corner while the CSS stretches nothing.
 		this.sizeOverlay();
 		this.hud = document.getElementById("hud") as HTMLElement;
-		this.liveCockpit = new LiveCockpit((tab) => {
-			this.rightTab = tab;
-			this.updateCockpit();
+		this.liveCockpit = new LiveCockpit({
+			onRightTab: (tab) => {
+				this.rightTab = tab;
+				this.updateCockpit();
+			},
+			onLeftTab: (tab) => {
+				this.leftTab = tab;
+				this.updateCockpit();
+			},
+			onNavFilter: (filter) => {
+				this.navFilter = filter;
+				this.updateCockpit();
+			},
+			onSelectTarget: (id) => {
+				if (!this.world.system.byId.has(id)) return;
+				this.targetId = id;
+				this.updateCockpit();
+			},
+			onChartHost: (host) => this.setChartHost(host),
 		});
 		window.addEventListener("resize", () => this.onResize());
 		// A resolution setting is a change to the drawing buffer, so it lands the
@@ -2444,6 +2479,101 @@ class Game {
 		);
 	}
 
+	/**
+	 * Mount or take down the Galaxy Map tab's chart.
+	 *
+	 * The import is dynamic because `galaxy-map.ts` pulls in its own scene, and
+	 * a player who never opens the tab should not pay for it in the initial
+	 * bundle. The `host.isConnected` re-check after the await is the race it
+	 * costs: a player can turn their head away, or switch tabs, inside the time
+	 * the chunk takes to arrive, and mounting into a detached element would
+	 * leave a render loop drawing into nothing with no handle left to stop it.
+	 */
+	private setChartHost(host: HTMLElement | null) {
+		this.chart?.dispose();
+		this.chart = null;
+		if (!host) return;
+		import("./galaxy-map").then(({ mountGalaxyChart }) => {
+			if (!host.isConnected) return;
+			this.chart = mountGalaxyChart({
+				host,
+				worldSeed: this.world.seed,
+				galaxyIndex: this.world.system.record.galaxy,
+				currentIndex: this.world.system.record.index,
+			});
+		});
+	}
+
+	/**
+	 * How long to reach one body, seconds — `timeToTarget` for an arbitrary
+	 * body rather than the selected one.
+	 *
+	 * Split out because the Navigation list needs the same figure per row, and
+	 * a second implementation of it is how the panel and the instrument beside
+	 * it come to disagree about the same trip.
+	 */
+	private timeToBody(target: Body): number | null {
+		const from = this.world.ship.pos;
+		const remaining = length(sub(target.pos, from));
+		if (remaining <= this.cruiseParams.dropRadiusKm) return 0;
+
+		// **In normal flight the answer is a division, not an integral.** The
+		// cruise law is a different regime's arithmetic and would report a minute
+		// for a crossing that takes two years at the assist cap — which is exactly
+		// the confusion that has to be designed out here rather than papered over:
+		// a whole session was spent at full throttle in normal flight watching
+		// 0.837 AU not change, because the panel said nothing.
+		//
+		// A blank was the previous answer and it is worse than a wrong number: it
+		// hides the one fact the player needs, which is that *this regime cannot
+		// get there*. At rest with the throttle shut the honest question is not
+		// "how long at zero" but "how long if I flew there", so the figure falls
+		// back to the regime's best speed.
+		if (this.regime !== "cruise" && this.spoolLeftS === 0) {
+			// **Progress along the line of sight, not absolute speed.** Flying
+			// across a target at 20 km/s with the assist off is not approaching it,
+			// and an absolute figure reported that leg ten times faster than the
+			// ship was actually closing — the same mistake the speed readout below
+			// argues against, made by the line beside it.
+			//
+			// The target's *own* motion is deliberately **not** subtracted here,
+			// which is the opposite of what the drop-out does, because the two
+			// answer different questions. The drop-out asks "am I arriving", and a
+			// station's 30 km/s is the frame that decides it. This asks "how long
+			// if I fly there", and a station's orbit is not progress the pilot can
+			// spend: subtracting it would swing the readout between 48 days and
+			// never as the station came round, while the ship sat still.
+			//
+			// The floor is the assist cap, because at rest with the throttle shut
+			// the honest answer is what the trip would cost, not infinity. A blank
+			// is what hid this regime's two-year crossings for a whole session.
+			const progress = dot(
+				this.world.ship.vel,
+				scale(sub(target.pos, from), 1 / remaining),
+			);
+			// The floor is the cap itself: `cap × throttle` can never exceed it, so a
+			// third term for the throttle was arithmetic that could not fire.
+			return remaining / Math.max(progress, ASSIST_CAP_KMS);
+		}
+
+		// In cruise, `cruise.ts` owns the arithmetic — `legSeconds` integrates the
+		// same `speedFor` the ship is flown by, clamp included. The renderer held
+		// its own copy of that integration for one round and it had already
+		// diverged: keyed to the nearest mass alone, it read ~30× too fast over a
+		// station's final approach and omitted the clamp's 16 s entirely.
+		return legSeconds(
+			from,
+			{
+				pos: target.pos,
+				radiusKm: target.radiusKm,
+				vel: bodyVelocity(this.world.system, target.id, this.world.gameTime),
+			},
+			this.masses(),
+			this.cruiseParams,
+			this.regime === "cruise" ? this.throttle : 1,
+		);
+	}
+
 	/** A camera pan only: flight controls and the ship's nose stay live. */
 	setHeadLook(headLook: HeadLook) {
 		this.headLook = headLook;
@@ -3204,66 +3334,7 @@ class Game {
 	 */
 	timeToTarget(): number | null {
 		const target = this.targetBody();
-		if (!target) return null;
-		const from = this.world.ship.pos;
-		const remaining = length(sub(target.pos, from));
-		if (remaining <= this.cruiseParams.dropRadiusKm) return 0;
-
-		// **In normal flight the answer is a division, not an integral.** The
-		// cruise law is a different regime's arithmetic and would report a minute
-		// for a crossing that takes two years at the assist cap — which is exactly
-		// the confusion that has to be designed out here rather than papered over:
-		// a whole session was spent at full throttle in normal flight watching
-		// 0.837 AU not change, because the panel said nothing.
-		//
-		// A blank was the previous answer and it is worse than a wrong number: it
-		// hides the one fact the player needs, which is that *this regime cannot
-		// get there*. At rest with the throttle shut the honest question is not
-		// "how long at zero" but "how long if I flew there", so the figure falls
-		// back to the regime's best speed.
-		if (this.regime !== "cruise" && this.spoolLeftS === 0) {
-			// **Progress along the line of sight, not absolute speed.** Flying
-			// across a target at 20 km/s with the assist off is not approaching it,
-			// and an absolute figure reported that leg ten times faster than the
-			// ship was actually closing — the same mistake the speed readout below
-			// argues against, made by the line beside it.
-			//
-			// The target's *own* motion is deliberately **not** subtracted here,
-			// which is the opposite of what the drop-out does, because the two
-			// answer different questions. The drop-out asks "am I arriving", and a
-			// station's 30 km/s is the frame that decides it. This asks "how long
-			// if I fly there", and a station's orbit is not progress the pilot can
-			// spend: subtracting it would swing the readout between 48 days and
-			// never as the station came round, while the ship sat still.
-			//
-			// The floor is the assist cap, because at rest with the throttle shut
-			// the honest answer is what the trip would cost, not infinity. A blank
-			// is what hid this regime's two-year crossings for a whole session.
-			const progress = dot(
-				this.world.ship.vel,
-				scale(sub(target.pos, from), 1 / remaining),
-			);
-			// The floor is the cap itself: `cap × throttle` can never exceed it, so a
-			// third term for the throttle was arithmetic that could not fire.
-			return remaining / Math.max(progress, ASSIST_CAP_KMS);
-		}
-
-		// In cruise, `cruise.ts` owns the arithmetic — `legSeconds` integrates the
-		// same `speedFor` the ship is flown by, clamp included. The renderer held
-		// its own copy of that integration for one round and it had already
-		// diverged: keyed to the nearest mass alone, it read ~30× too fast over a
-		// station's final approach and omitted the clamp's 16 s entirely.
-		return legSeconds(
-			from,
-			{
-				pos: target.pos,
-				radiusKm: target.radiusKm,
-				vel: this.targetVelocity(),
-			},
-			this.masses(),
-			this.cruiseParams,
-			this.regime === "cruise" ? this.throttle : 1,
-		);
+		return target === null ? null : this.timeToBody(target);
 	}
 
 	/**
@@ -3834,7 +3905,11 @@ class Game {
 		this.liveCockpit.update({
 			visible: true,
 			headLook: this.headLook,
+			leftTab: this.leftTab,
 			rightTab: this.rightTab,
+			navRows: this.navRows(),
+			navFilter: this.navFilter,
+			systemName: this.world.system.record.name,
 			contacts: this.scannerContacts,
 			targetId: target?.id ?? null,
 			target: target
@@ -3852,6 +3927,45 @@ class Game {
 			speed: velocity.speed,
 			tuning: this.tuningSummary(),
 		});
+	}
+
+	/**
+	 * The Navigation console's target list.
+	 *
+	 * Empty unless the panel is actually showing it. `timeToBody` integrates the
+	 * cruise law per row, and paying for a list nobody is looking at would put
+	 * that integration on every frame of normal flight — the panel is a view of
+	 * the world, not a reason to compute one.
+	 */
+	private navRows(): NavRow[] {
+		if (this.headLook !== "left" || this.leftTab !== "Navigation") return [];
+		// The estimates refresh on `ETA_INTERVAL_S`, the same cadence the HUD's
+		// single-target readout uses, and the ranges beside them refresh every
+		// frame. Two rates on one row is deliberate: the range is a subtraction
+		// and the estimate is an integration, and re-integrating a dozen legs
+		// sixty times a second to redraw the same rounded minutes is the cost
+		// this cache exists to refuse.
+		const stale = this.world.gameTime - this.navEtaAt >= ETA_INTERVAL_S;
+		if (stale) {
+			this.navEtaCache.clear();
+			this.navEtaAt = this.world.gameTime;
+		}
+		return projectNavTargets(
+			this.world.ship.pos,
+			this.world.system.bodies,
+			this.targetId,
+			{
+				filter: this.navFilter,
+				etaFor: ({ id }) => {
+					const cached = this.navEtaCache.get(id);
+					if (cached !== undefined) return cached;
+					const body = this.world.system.byId.get(id);
+					const eta = body ? this.timeToBody(body) : null;
+					this.navEtaCache.set(id, eta);
+					return eta;
+				},
+			},
+		);
 	}
 
 	private refreshScannerContacts() {

@@ -1,7 +1,7 @@
 /**
- * The galaxy map, as a workbench — node #11.
+ * The galaxy map — node #11's chart, node #96's mount.
  *
- * `?galaxy-map` draws one galaxy's 256 systems as a freely orbitable cluster,
+ * `mountGalaxyChart` draws one galaxy's 256 systems as a freely orbitable cluster,
  * with the 7 LY shell around the current system, a derived route to whatever is
  * selected, and the core haze on a toggle so the two treatments of the density
  * gradient can be compared side by side rather than argued about.
@@ -9,9 +9,14 @@
  * **This is a chart, not a console.** #70 ratified that every screen lives in
  * the cockpit and `hud-and-scanner.md` §2 gives system-scale discovery to the
  * left Navigation console, so the shipped map is a Navigation tab reached by a
- * head turn. What this route owns is the *chart surface* — the projection, the
- * shell, the drop-lines, the record card — which is the part the node had to
- * decide by looking at. Mounting it into the cockpit is #69's panel work.
+ * head turn — `live-cockpit.ts` hands up a host element and `main.ts` mounts
+ * this into it. What this module owns is the *chart surface* — the projection,
+ * the shell, the drop-lines, the record card.
+ *
+ * `?galaxy-map` mounts the same function full-page. Two mounts, one
+ * implementation: the crowding table in `galaxy-map.md` §5.1 was measured on
+ * the workbench and is quoted as a fact about the shipped map, which it is only
+ * while both are the same projection.
  *
  * Nothing here computes a route. `galaxy-route.ts` does, and it imports no
  * Three.js: the chart draws what the arithmetic returns, and a probe that wants
@@ -195,19 +200,44 @@ const el = <K extends keyof HTMLElementTagNameMap>(
 	tag: K,
 ): HTMLElementTagNameMap[K] => document.createElement(tag);
 
-export function mountGalaxyMap(): void {
-	const query = new URLSearchParams(window.location.search);
-	const rawGalaxy = Number(query.get("galaxy-map"));
-	const galaxyIndex =
-		Number.isInteger(rawGalaxy) && rawGalaxy >= 0 && rawGalaxy < GALAXY_COUNT
-			? rawGalaxy
-			: 0;
-	const rawSeed = Number(query.get("seed"));
-	const worldSeed =
-		Number.isFinite(rawSeed) && query.has("seed")
-			? Math.abs(Math.trunc(rawSeed)) >>> 0
-			: 0x5ee11e;
+export interface GalaxyChartOptions {
+	/** The element the chart draws into. It is emptied on `dispose`. */
+	host: HTMLElement;
+	worldSeed: number;
+	galaxyIndex: number;
+	/** Where the ship is. Defaults to the galaxy's own start system. */
+	currentIndex?: number;
+}
 
+/**
+ * A mounted chart, and the means to take it down again.
+ *
+ * `dispose` is the half that makes this hostable at all. As a workbench the
+ * chart never stopped — one page, one loop, one lifetime — and a Navigation tab
+ * that mounted it the same way would leave a WebGL context and a 60 Hz render
+ * loop running behind the flight view for the rest of the session, every time
+ * the player looked at the map.
+ */
+export interface GalaxyChart {
+	handle: Handle;
+	dispose(): void;
+}
+
+/**
+ * Mount the chart into a supplied element.
+ *
+ * The shipped surface is a tab on the left Navigation console
+ * (`galaxy-map.md` §1) and `?galaxy-map` is a workbench onto the same code.
+ * Two mounts of one implementation rather than two implementations: a
+ * projection that behaved differently in the cockpit from the surface its
+ * crowding table was measured on would make the table a claim about nothing.
+ */
+export function mountGalaxyChart({
+	host,
+	worldSeed,
+	galaxyIndex,
+	currentIndex,
+}: GalaxyChartOptions): GalaxyChart {
 	const galaxy: Galaxy = generateGalaxy(worldSeed, galaxyIndex);
 
 	/**
@@ -224,7 +254,9 @@ export function mountGalaxyMap(): void {
 	 */
 	const systemByIndex = (index: number): SystemRecord | null =>
 		galaxy.systems.find((s) => s.index === index) ?? null;
-	let current = startSystem(galaxy);
+	let current =
+		(currentIndex === undefined ? null : systemByIndex(currentIndex)) ??
+		startSystem(galaxy);
 	let selected: SystemRecord | null = null;
 	let course: Course | null = null;
 	let route: Route | null = null;
@@ -235,14 +267,18 @@ export function mountGalaxyMap(): void {
 	root.id = "galaxy-map";
 	root.setAttribute("data-galaxy-map", String(galaxyIndex));
 	Object.assign(root.style, {
-		position: "fixed",
+		// `absolute`, not `fixed`: in the Navigation tab the host is a grid cell
+		// inside the console, and a fixed root would break out of the panel and
+		// cover the flight view the panel is explicitly not allowed to replace
+		// (`hud-and-scanner.md` §1 — the game continues while the panel is open).
+		position: "absolute",
 		inset: "0",
 		background: "#05080d",
 		color: "#cfe6f5",
 		font: "13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace",
 		overflow: "hidden",
 	});
-	document.body.appendChild(root);
+	host.appendChild(root);
 
 	const canvas = el("canvas");
 	Object.assign(canvas.style, {
@@ -774,10 +810,11 @@ export function mountGalaxyMap(): void {
 		course = null;
 		select(null);
 	});
-	window.addEventListener("keydown", (e) => {
+	const onKeyDown = (e: KeyboardEvent): void => {
 		if (e.key === "h" || e.key === "H") setHaze(!haze.visible);
 		if (e.key === "Escape") select(null);
-	});
+	};
+	window.addEventListener("keydown", onKeyDown);
 
 	// ---- Frame -------------------------------------------------------------
 
@@ -790,6 +827,12 @@ export function mountGalaxyMap(): void {
 		cachedRect = null;
 	};
 	window.addEventListener("resize", resize);
+	// The window is not the only thing that can change this chart's box. Hosted
+	// in the Navigation tab it is a grid cell, and the panel resizes under the
+	// media query without the window doing anything the workbench would notice.
+	const observer =
+		typeof ResizeObserver === "undefined" ? null : new ResizeObserver(resize);
+	observer?.observe(root);
 	resize();
 
 	/** Hoisted out of the frame loop: the pitch axis is recomputed every frame
@@ -797,6 +840,7 @@ export function mountGalaxyMap(): void {
 	 *  nothing. */
 	const pitchAxis = new THREE.Vector3();
 
+	let animationFrame = 0;
 	const frame = (): void => {
 		pivot.rotation.set(0, 0, 0);
 		pivot.rotateOnWorldAxis(UP, yaw);
@@ -825,7 +869,7 @@ export function mountGalaxyMap(): void {
 			card.style.left = `${left}px`;
 			card.style.top = `${top}px`;
 		}
-		requestAnimationFrame(frame);
+		animationFrame = requestAnimationFrame(frame);
 	};
 
 	recompute();
@@ -921,6 +965,55 @@ export function mountGalaxyMap(): void {
 		pickRadiusPx: PICK_RADIUS_PX,
 	};
 
-	(window as unknown as { __seeliteGalaxyMap: Handle }).__seeliteGalaxyMap =
-		handle;
+	(
+		window as unknown as { __seeliteGalaxyMap: Handle | null }
+	).__seeliteGalaxyMap = handle;
+
+	return {
+		handle,
+		dispose() {
+			// Order matters: stop the loop before the renderer goes, or one more
+			// frame renders into a disposed context.
+			if (animationFrame) cancelAnimationFrame(animationFrame);
+			animationFrame = 0;
+			window.removeEventListener("resize", resize);
+			window.removeEventListener("keydown", onKeyDown);
+			observer?.disconnect();
+			// `forceContextLoss` as well as `dispose`: a browser allows a small
+			// number of live WebGL contexts, and the flight view already holds
+			// one. Opening and closing the map tab a dozen times without giving
+			// the context back is how the *game's* renderer gets evicted.
+			renderer.dispose();
+			renderer.forceContextLoss();
+			root.remove();
+			const owner = window as unknown as { __seeliteGalaxyMap: Handle | null };
+			if (owner.__seeliteGalaxyMap === handle) owner.__seeliteGalaxyMap = null;
+		},
+	};
+}
+
+/**
+ * `?galaxy-map` — the chart as a standalone workbench.
+ *
+ * A thin caller of `mountGalaxyChart`, reading the galaxy and seed off the
+ * query string and filling the page. It is a chart surface, not a second game
+ * mode: it builds no `Game`.
+ */
+export function mountGalaxyMap(): void {
+	const query = new URLSearchParams(window.location.search);
+	const rawGalaxy = Number(query.get("galaxy-map"));
+	const galaxyIndex =
+		Number.isInteger(rawGalaxy) && rawGalaxy >= 0 && rawGalaxy < GALAXY_COUNT
+			? rawGalaxy
+			: 0;
+	const rawSeed = Number(query.get("seed"));
+	const worldSeed =
+		Number.isFinite(rawSeed) && query.has("seed")
+			? Math.abs(Math.trunc(rawSeed)) >>> 0
+			: 0x5ee11e;
+
+	const host = el("div");
+	Object.assign(host.style, { position: "fixed", inset: "0" });
+	document.body.appendChild(host);
+	mountGalaxyChart({ host, worldSeed, galaxyIndex });
 }
