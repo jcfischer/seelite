@@ -208,6 +208,17 @@ export interface GalaxyChartOptions {
 	galaxyIndex: number;
 	/** Where the ship is. Defaults to the galaxy's own start system. */
 	currentIndex?: number;
+	/**
+	 * Bind `h` and `Escape` on `window`. Default off.
+	 *
+	 * The workbench owns its whole page, so a window-level shortcut there is
+	 * unambiguous. Inside the cockpit it is not: flight controls are live while
+	 * the panel is open (`hud-and-scanner.md` §1), so both handlers would see
+	 * the same key the day the game binds either — silently, since neither
+	 * would error. The tab therefore leaves them off; the haze and clear
+	 * controls are on-screen buttons, so nothing is unreachable without them.
+	 */
+	globalKeys?: boolean;
 }
 
 /**
@@ -238,6 +249,7 @@ export function mountGalaxyChart({
 	worldSeed,
 	galaxyIndex,
 	currentIndex,
+	globalKeys = false,
 }: GalaxyChartOptions): GalaxyChart {
 	const galaxy: Galaxy = generateGalaxy(worldSeed, galaxyIndex);
 
@@ -815,7 +827,7 @@ export function mountGalaxyChart({
 		if (e.key === "h" || e.key === "H") setHaze(!haze.visible);
 		if (e.key === "Escape") select(null);
 	};
-	window.addEventListener("keydown", onKeyDown);
+	if (globalKeys) window.addEventListener("keydown", onKeyDown);
 
 	// ---- Frame -------------------------------------------------------------
 
@@ -990,7 +1002,7 @@ export function mountGalaxyChart({
 			if (animationFrame) cancelAnimationFrame(animationFrame);
 			animationFrame = 0;
 			window.removeEventListener("resize", resize);
-			window.removeEventListener("keydown", onKeyDown);
+			if (globalKeys) window.removeEventListener("keydown", onKeyDown);
 			observer?.disconnect();
 			// `forceContextLoss` as well as `dispose`: a browser allows a small
 			// number of live WebGL contexts, and the flight view already holds
@@ -1028,5 +1040,5 @@ export function mountGalaxyMap(): void {
 	const host = el("div");
 	Object.assign(host.style, { position: "fixed", inset: "0" });
 	document.body.appendChild(host);
-	mountGalaxyChart({ host, worldSeed, galaxyIndex });
+	mountGalaxyChart({ host, worldSeed, galaxyIndex, globalKeys: true });
 }

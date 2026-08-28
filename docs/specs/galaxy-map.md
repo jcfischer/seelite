@@ -33,7 +33,10 @@ panel, not an application. Built in
 [#96](https://github.com/jcfischer/seelite/issues/96): `mountGalaxyChart` takes
 a host element and returns a `dispose`, the tab mounts it on entry and disposes
 it on exit, and `?galaxy-map` is a second mount of the same function rather than
-a second implementation.
+a second implementation. The workbench binds `h` and `Escape` on `window`; the
+tab does not, because flight controls are live while the panel is open and both
+handlers would see the same key the day the game binds either. The haze and
+clear controls are on-screen buttons, so the tab loses nothing.
 
 #70 ratified that there is no second UI grammar: the player is in the cockpit
 and a screen answers *which wall or which tab*, never *which application*.
