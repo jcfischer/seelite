@@ -472,3 +472,77 @@ export async function installCamSim(page) {
 		};
 	});
 }
+
+/**
+ * Install the two page-side placers that put the ship somewhere and look at it.
+ *
+ * `__placeShipAt` and `__viewAlongAxis` were written inside
+ * `probe-station-visuals.mjs` and lived there alone until #104 needed the same
+ * two. They are here rather than copied for the reason `installCamSim` is here:
+ * a second copy is a second thing to retune, and the copy that does not get
+ * retuned is the one that goes quietly wrong.
+ *
+ * The framing vocabulary #104 also needs — sun angles, subject radii, the search
+ * for empty sky — is **not** here. It has one consumer, and putting it here made
+ * the station probe inject a Fibonacci-sphere search it never calls into every
+ * page it opens. It lives in `scripts/lib/view-placement.mjs`, which builds on
+ * these.
+ *
+ * Call before `page.goto`; it re-runs on every navigation.
+ */
+export async function installViewPlacement(page) {
+	await page.addInitScript(() => {
+		const frame = () => new Promise((r) => requestAnimationFrame(() => r()));
+
+		window.__meshOfBody = (id) =>
+			window.__seelite.nearScene.getObjectByName(id) ??
+			window.__seelite.farScene.getObjectByName(id) ??
+			null;
+
+		/**
+		 * Put the ship at a sim point, optionally moving with something.
+		 *
+		 * `vel` defaults to zero, which is what every caller wanted before #104
+		 * and is still right for a subject the size of a planet. It is wrong for a
+		 * station: `Game.stationVelocity`'s own docstring says why — at 1 AU the
+		 * station is carried at ~30 km/s, so a ship parked at zero sim velocity is
+		 * closing on it at three hundred times the docking gate. Over the four
+		 * frames a shot takes that moved a camera placed 7.44 km out to 0.66 km,
+		 * measured while building the view set.
+		 */
+		window.__placeShipAt = async (pos, vel) => {
+			const g = window.__seelite;
+			g.world.ship.pos = pos;
+			g.world.ship.vel = vel ?? { x: 0, y: 0, z: 0 };
+			await frame();
+			await frame();
+		};
+
+		/** Put the camera on a station's aperture axis at `rangeKm` and look back
+		 *  down it — the view a docking approach has, and the one viewpoint
+		 *  defined for all three types. The axis comes from `poseOfStation`. */
+		window.__viewAlongAxis = async (bodyId, rangeKm, opts) => {
+			const g = window.__seelite;
+			const body = g.world.system.bodies.find((b) => b.id === bodyId);
+			const pose = g.poseOfStation(bodyId);
+			// Opt-in rather than the default, because the probes that had this
+			// helper first are measuring against the range they set and a silent
+			// change of what "parked" means would move their numbers.
+			const vel = opts?.comoving ? g.stationVelocity(bodyId) : undefined;
+			await window.__placeShipAt(
+				{
+					x: body.pos.x + pose.axis.x * rangeKm,
+					y: body.pos.y + pose.axis.y * rangeKm,
+					z: body.pos.z + pose.axis.z * rangeKm,
+				},
+				vel,
+			);
+			const from = g.nearScene.position.clone().set(0, 0, -1);
+			const to = g.nearScene.position
+				.clone()
+				.set(-pose.axis.x, -pose.axis.y, -pose.axis.z);
+			g.orientation.setFromUnitVectors(from, to);
+			await frame();
+		};
+	});
+}

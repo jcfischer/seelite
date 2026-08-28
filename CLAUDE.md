@@ -43,6 +43,39 @@ npm run format:check       # biome, no fixes applied
 npm run build              # tsc + vite build
 ```
 
+### Visual work has a third tier, and it is a person
+
+A probe cannot fail on *this looks flat*. #35 and #36 both closed green and
+produced the look #98 then set out to change; #36's receipt records that every
+rendered form of its outline rule was measuring bloom. So a node that changes
+what the game **looks like** closes on two things and not one: the canonical
+view set, and the principal saying yes to it. The agent never stands in for
+that yes.
+
+```bash
+npm run dev                          # in one shell
+npm run views -- --label before      # in another, at the base commit
+npm run views -- --label after       # again, with the change
+open view-set/index.html             # the contact sheet, side by side
+```
+
+Seven views on a fixed seed, declared in `scripts/lib/view-set.mjs` — each names
+the levers it is evidence for, and `tests/view-set.test.ts` goes red if a lever
+in that file has no view. It cannot check that the view *shows* the surface, nor
+that a lever added to the map reached the file; both are a person's job, which
+is the point. A run that drops a view refuses to build a sheet at all, because a
+sheet with a hole in it reads exactly like a whole one.
+
+**Capture launches headed and then checks what it got.** It boots the page,
+reads the real renderer back, and refuses to write a single frame unless that
+renderer can be *shown* not to be a software rasteriser — an unreadable name
+counts as unproven. So it needs a display, but the guarantee is about the
+renderer rather than about headedness, and a displayless machine gets a full
+boot before the refusal. Every other browser script here renders through
+SwiftShader; for an image judged by eye that is the wrong picture, not merely a
+slow one. `view-set/` is gitignored — before/after is two runs at two refs, not
+a baseline in the repo.
+
 `scripts/probe-guard.mjs` refuses to measure a dev server that is not serving
 this working tree — the failure it prevents is a probe passing against someone
 else's checkout on the same port.

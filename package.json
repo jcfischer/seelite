@@ -13,6 +13,7 @@
 		"check:wiring": "node scripts/check-launcher-wiring.mjs",
 		"probe": "npm run check:wiring && node scripts/probe-all.mjs",
 		"probe:one": "npm run check:wiring && node scripts/probe-all.mjs --only",
+		"views": "node scripts/capture-views.mjs",
 		"probe:browser": "playwright install chromium"
 	},
 	"dependencies": {
