@@ -34,13 +34,19 @@ import {
 	V_GATE_KMS,
 	VICINITY_KM,
 	type ApertureFrame,
+	type Clearance,
 	type DockingState,
 	type EntryPose,
 	evaluateEntry,
 	grantLive,
 	signedRollDeg,
 } from "./docking";
-import { type Vec3, length, v3 } from "./vec3";
+import {
+	TUNNEL_MOUTH_FRACTION,
+	type TunnelGeometry,
+	dockingTunnel,
+} from "./docking-tunnel";
+import { type Vec3, dot, length, v3 } from "./vec3";
 
 /** One measured angle against the tolerance the pilot is flying to. */
 export interface DirectorCue {
@@ -66,8 +72,19 @@ export interface DirectorBlock {
 export interface DirectorState {
 	stationId: string;
 	rangeKm: number;
-	/** Inside §6's clearance range, where a request can be made at all. */
+	/**
+	 * Inside §6's clearance range, where a *request* can be made at all.
+	 *
+	 * **Not a director gate.** `directorEngaged` is, and it uses
+	 * `DIRECTOR_RANGE_KM` — two hundred times smaller. This field is kept because
+	 * the two ranges answer different questions and a reader needs to see both to
+	 * know which is which; gating the glass on this one is the defect #94 exists
+	 * to fix, and the name it had made that easy to do by accident.
+	 */
 	inVicinity: boolean;
+	/** §6's clearance state, so `directorEngaged` can read it without a second
+	 *  copy of the union reaching the renderer. */
+	clearanceKind: Clearance["kind"];
 	/** Seconds left on a live grant, or `null` when there is none — §3's
 	 *  "positive state and the remaining window". */
 	grantRemainingS: number | null;
@@ -82,6 +99,19 @@ export interface DirectorState {
 	 * spelling of `docking.ts`'s convention.
 	 */
 	axisOut: Vec3;
+	/**
+	 * The station's own position, km — carried so the corridor below can be
+	 * placed in the world. The tunnel is anchored to the station rather than to
+	 * the glass, which is the whole of what lets it say *which side to approach
+	 * from*; a glass-only cue cannot, because turning the ship takes it with you.
+	 */
+	stationPos: Vec3;
+	/**
+	 * `docking-tunnel.ts`'s corridor, reaching from the aperture back to the
+	 * ship. Station-relative kilometres, so the renderer adds `stationPos` and
+	 * projects — nothing here is in scene-graph units.
+	 */
+	tunnel: TunnelGeometry;
 	/** Check 4, or `null` for a pad: a square aperture has no long axis to
 	 *  match, and an empty ring would read as a failed one. */
 	roll: DirectorCue | null;
@@ -106,14 +136,48 @@ export interface DirectorState {
 	aligned: boolean;
 }
 
+/**
+ * How close the ship must be for the director to be on the glass, km.
+ *
+ * **Not `VICINITY_KM`.** That is §6's *clearance-request* range — ten thousand
+ * kilometres — and gating the director on it put a funnel on screen through
+ * most of ordinary in-system flight, which is the wall of labels
+ * `hud-and-scanner.md` §1 refuses. This is an approach range: it is a director,
+ * and there is nothing to direct from a tenth of an AU out.
+ *
+ * Fifty kilometres is where the worst correction the corridor permits is cheap.
+ * A ship at that range sitting on check 2's 35° rim is 28.7 km off the axis,
+ * which is about fifteen seconds of lateral flight at #5's 2 km/s assist cap —
+ * so the cue appears with the error still trivially fixable, and about sixteen
+ * times further out than the docking computer's 3 km standoff, so a hand-flown
+ * approach sees it well before the autopilot would have taken over. It is a
+ * tuning value and the first flight is what confirms it.
+ */
+export const DIRECTOR_RANGE_KM = 50;
+
+/**
+ * Whether the director belongs on the glass at all.
+ *
+ * Range **and** the protocol, not either: the range makes it an approach
+ * instrument, and requiring the pilot to have engaged §6's protocol makes
+ * *requesting clearance* the act that turns it on. A station that has refused —
+ * or turned hostile without being asked — keeps the director, because §3's
+ * blocking state is the one thing a pilot must not lose by looking away.
+ */
+export function directorEngaged(state: DirectorState): boolean {
+	if (state.rangeKm > DIRECTOR_RANGE_KM) return false;
+	return state.clearanceKind !== "none" || state.blocking?.kind === "hostile";
+}
+
 export function dockingDirector(input: {
 	stationId: string;
+	stationPos: Vec3;
 	frame: ApertureFrame;
 	pose: EntryPose;
 	state: DockingState;
 	gameTime: number;
 }): DirectorState {
-	const { stationId, frame, pose, state, gameTime } = input;
+	const { stationId, stationPos, frame, pose, state, gameTime } = input;
 	const evaluation = evaluateEntry(frame, pose, { hostile: state.hostile });
 	const live = grantLive(state, gameTime);
 	const rangeKm = length(pose.rel);
@@ -122,6 +186,7 @@ export function dockingDirector(input: {
 		stationId,
 		rangeKm,
 		inVicinity: rangeKm <= VICINITY_KM,
+		clearanceKind: state.clearance.kind,
 		grantRemainingS:
 			live && state.clearance.kind === "granted"
 				? state.clearance.expiresAtS - gameTime
@@ -134,6 +199,16 @@ export function dockingDirector(input: {
 		// A copy, not the frame's own vector. A consumer that scaled this in place
 		// would be editing the aperture frame every docking check reads.
 		axisOut: v3(frame.axis.x, frame.axis.y, frame.axis.z),
+		stationPos,
+		// The mouth follows the ship's own axial distance, so the corridor reaches
+		// back toward the pilot and shortens as they fly it — but stops short of
+		// them, because a rectangle at the eye draws rails off the edges of the
+		// frame rather than a tunnel. Clamped inside `dockingTunnel`, which is
+		// where a mouth behind the throat has to be answered rather than assumed
+		// away.
+		tunnel: dockingTunnel(frame, {
+			mouthKm: dot(pose.rel, frame.axis) * TUNNEL_MOUTH_FRACTION,
+		}),
 		roll:
 			frame.aperture.kind === "slot"
 				? cue(evaluation.rollAngleDeg, ROLL_TOLERANCE_DEG)

@@ -151,52 +151,74 @@ than starting a second one.
 a design surface, not a claim that unbuilt docking, communications, or scanner
 simulation has shipped.
 
-### 7.1 The docking director's own two tiers
+### 7.1 The docking director
 
 **The gallery cannot verify §3's two docking cues, and that is why they are
 checked elsewhere.** Its `docking-granted` and `docking-denied` states are fixed
-review fixtures, so a funnel drawn there is a picture of a cue rather than a
-reading of one. The cues are readouts of live docking state, and
-`docking.md` §3.2 records that check 2's cone and check 4's roll were set wide
-partly because these instruments did not exist — a cue that measured a slightly
-different angle from the check would leave them wide for a second reason.
+review fixtures, so a cue drawn there is a picture of one rather than a reading.
+The cues are readouts of live docking state, and `docking.md` §3.2 records that
+check 2's cone and check 4's roll were set wide partly because these instruments
+did not exist.
 
-So the director is verified against `docking.ts` itself, in both tiers:
+**The director is a corridor in the world, plus one gauge on the glass.** That
+split follows from check 2 having two halves that are different pilot tasks: the
+**nose** half is fixed by turning and the **position** half only by translating.
+A first build drew both on glass and neither worked — the position half became a
+bar with a magnitude and no direction, and the nose half was drawn as a true
+projection of its own tolerance, which at a 60° field of view is
+`tan(35°)/tan(30°)` — 1.21 times half the canvas height, a ring larger than the
+screen. It read as arcs running off every edge.
+
+So:
+
+- **The corridor** (`src/docking-tunnel.ts`) is a rectangular tunnel projected
+  out of the station along its docking axis, its throat the aperture itself, its
+  mouth three quarters of the way back to the ship. Being anchored to the
+  station rather than the glass is what lets it answer **which side to approach
+  from**, which nothing in the cockpit answered before. Its rectangle carries
+  the slot's phase, so it is check 4's roll reference as well: the pilot lines
+  the cockpit up with it rather than reading ticks. A pad's corridor is square,
+  because check 4 does not apply there.
+- **The gauge** is a fixed ring on the glass with the docking axis marked on it
+  at the error *as a fraction of the tolerance*. The direction is true; the
+  radius is a gauge, and that has to be read rather than discovered.
+
+**The corridor is deliberately narrower than every tolerance it guides.** Check
+2's position half admits a 35° cone, and a cone drawn truthfully is always a
+70°-wide object — its rim is 35° from the station wherever the pilot stands. So
+this draws the corridor to *fly*, not the boundary not to leave: inside it is a
+**sufficient** condition, never the gate. `evaluateEntry` stays the gate.
+
+**It is on glass only on an approach, and only with the protocol engaged.** The
+first build gated on `VICINITY_KM` — §6's ten-thousand-kilometre *clearance
+request* range — and put a funnel on screen through most of ordinary in-system
+flight, which is §1's wall of labels. `DIRECTOR_RANGE_KM` is an approach range;
+requesting clearance is what turns the instrument on; and a refusal or a hostile
+station keeps it, because §3's blocking state is the one thing a pilot must not
+lose by looking away.
+
+**And it is clipped to the canopy**, sharing `GLASS_BOTTOM_FRACTION` with the
+laser tracer rather than restating it. The first build had no clip and drew over
+the dash deck, the scanner well and both console housings.
 
 | Where | What it holds |
 |---|---|
-| `tests/docking-director.test.ts` | Every angle the cues are judged on is `evaluateEntry`'s. Check 2's **two halves get two sweeps** — a sweep that rotates only the nose leaves the position cue constant, so it constrains the nose alone — and check 4 gets a third. Each runs a 0.25° grid over 0–90° **and a 0.005° grid through the half-degree either side of the tolerance**, skipping only the exact boundary, where the check's cosine comparison and the cue's degree comparison may legitimately differ by about 1e-6°. The fine pass is what makes the claim mean anything: a director whose tolerance is 35.1° disagrees with the gate only on (35°, 35.1°], and the coarse grid steps straight over it. |
-| `scripts/probe-docking.mjs` | The funnel, the axis marker, the roll ring, the corridor bar and the clearance line reach the glass on a live approach; five degrees past the tolerance takes the marker out of the funnel, and the ring's **stroked colour** changes on the same pixels; the ring pins the ship at screen up and moves the slot's reference by the commanded roll, landing on opposite sides of the screen for opposite rolls; the corridor bar fills and fails as the ship leaves the axis; a pad draws no ring; hostility outranks a live grant; a head turn takes the director off the glass. |
+| `tests/docking-director.test.ts` | Every angle the cues are judged on is `evaluateEntry`'s. Check 2's **two halves get two sweeps** — one that rotates only the nose leaves the position cue constant, so it constrains the nose alone — and check 4 gets a third. Each runs a 0.25° grid over 0–90° **and a 0.005° grid through the half-degree either side of the tolerance**: a cue whose tolerance is 35.1° disagrees with the gate only on (35°, 35.1°], which the coarse grid steps over. Plus the engagement rule, and the signed roll swept over four nose angles × four out-of-plane tilts × seven rolls. |
+| `tests/docking-tunnel.test.ts` | The corridor's sufficiency, against the shipped checks rather than a hand-typed angle: every corner of every ring passes check 2's position half **with half the tolerance still in hand**, at every length and at **both aperture kinds** — which matters because the worst point is not the same one: for a slot it is the mouth, converging on `atan(tan(flare)·√(1+aspect²))` at 6.9°, and for a pad it is the throat, at 14.9°, because a refinery's aperture is wide against a small core. The row asserts the limit, that it is genuinely approached, and the half-tolerance bound at both. Plus: the throat's corners are contained and a hair outside is not; the rectangle turns with the slot's phase; a pad's is square. |
+| `scripts/probe-docking.mjs` | What only a rendered frame answers. The corridor is drawn and shortens as the ship closes; the gauge's marker sits at the error as a fraction of the tolerance and goes off-scale rather than pinning at the rim; the director is absent without clearance and beyond the approach range, and present on a refusal; the **drawn throat's tilt tracks the ship's roll one degree for one**, which is the reading the roll ticks used to give and the headless phase row cannot make; and three rows read the **overlay's own pixels** — the ring is painted, its stroked colour changes across the tolerance, and the director paints across the band just above the clip line and nothing at all in the band just below it. |
 
-**The browser rows that matter are the ones the draw decides.** Most of what
-`directorRender` carries is the director's own state copied across unchanged,
-and the headless tier already covers that — a row asserting `noseWithin` proves
-nothing about pixels. What the draw decides for itself is the funnel's painted
-state, where the ticks land, and how far the corridor bar fills, so those are
-what the browser tier pins.
+**Every pixel row needs an arm that registers hits.** The clip row began as zero
+against zero, which a pose whose corridor never reached the clip line would have
+satisfied — and so would a region the sampler could not read. It samples two
+bands now, one either side of the line, and the one above must be painted.
 
-**And one row reads the canvas, because the record cannot report on itself.**
-`directorRender` is assembled at the end of the draw whether or not its strokes
-landed: delete every `ctx.stroke()` and every field-reading row stays green
-while the pilot sees nothing. So two rows sample the overlay's own pixels around
-the innermost funnel ring: one requires them painted, with the head-turned frame
-— where §5's grammar says the glass is replaced — as the control that they are
-genuinely absent, and one requires the stroked colour to change when the cue
-leaves the tolerance, which is the difference between a funnel that repaints and
-a record that says it did.
-
-**All three frames sample the same pixels, and that is the whole of the
-control.** A ring derived from each frame's own record is no control at all: the
-record is `null` on a head turn, so the sampler would not run there and "zero
-pixels painted" would be true without reading one. The ring is taken once from
-the aligned frame and held fixed. The colour comparison takes the **dominant**
-bucket over the circumference for the same reason a single sample is not a
-reading: the axis marker carries the funnel's colour and crosses the sampled
-box.
-
-The browser rows read `directorRender`, which the **draw** writes rather than a
-computation beside it, so a build that produced a correct director and never
-painted it goes red rather than passing the tier that matters least.
+**The pixel rows exist because `directorRender` cannot report on itself.** It is
+assembled at the end of the draw whether or not the strokes landed: delete every
+`ctx.stroke()` and every field-reading row stays green while the pilot sees
+nothing. Each pixel row's control frame reads the **same pixels** and differs
+only in the one thing under test — a sampler keyed off each frame's own record
+never runs on the frames a control needs, and a control that also changed the
+ship's attitude was measuring the attitude reference moving.
 
 ## 8. The station console
 
