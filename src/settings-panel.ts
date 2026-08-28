@@ -83,9 +83,11 @@ export function mountSettingsPanel(
 		if (!root) return;
 		const rows = SETTING_KEYS.map((key, i) => {
 			const spec = settingSpec(key);
-			const value = (spec.describe as (v: Settings[typeof key]) => string)(
-				store.value[key],
-			);
+			// The cast is hoisted rather than wrapped around the call: `describe`
+			// is a union of one-per-key signatures, and a reader should see the
+			// call, not unpick a parenthesised assertion to find it.
+			const describe = spec.describe as (v: Settings[typeof key]) => string;
+			const value = describe(store.value[key]);
 			return `<div class="row" role="option" aria-selected="${i === cursor}">
   <span class="name">${spec.label}</span>
   <span class="value">← ${value} →</span>

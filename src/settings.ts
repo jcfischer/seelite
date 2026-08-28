@@ -103,18 +103,60 @@ export function loadSettings(): Settings {
 		return out;
 	}
 	if (!parsed || typeof parsed !== "object") return out;
+	const stored = parsed as Record<string, unknown>;
 	for (const key of SETTING_KEYS) {
-		const value = (parsed as Record<string, unknown>)[key];
-		// Membership of the allowed set is the whole validation, and it carries
-		// the type check with it: `allowed` holds literals, so `"0.5"` is not in
-		// a set of numbers and `0` is not in a set of mode names. Testing the
-		// `typeof` first — as this did while every setting was a number — would
-		// have to be widened per key the moment a second kind arrived, which is
-		// a validator that grows a branch each time the schema does.
-		const allowed = SCHEMA[key].allowed as readonly unknown[];
-		if (allowed.includes(value)) out[key] = value as never;
+		// `key` here is the *union* of the setting keys, so `Settings[key]` is the
+		// intersection of their value types — `number & Quality`, which is `never`
+		// — and no assignment can satisfy it. That is a limitation of indexing by
+		// a union and not of this validation: `accept` below is generic and fully
+		// checked at any call site that names a key, and `assign` is the one place
+		// the union is widened, with nothing else in it to hide a mistake.
+		assign(out, key, accept(key, stored[key]));
 	}
 	return out;
+}
+
+/** Write one accepted value, or leave the default in place. Three lines with a
+ *  cast in them, kept apart from the loop so that the cast is the whole of what
+ *  is unchecked rather than one clause of a longer statement. */
+function assign<K extends keyof Settings>(
+	into: Settings,
+	key: K,
+	value: Settings[K] | undefined,
+) {
+	if (value !== undefined) (into as Record<K, Settings[K]>)[key] = value;
+}
+
+/**
+ * The stored value for one key, or `undefined` if it is not one this schema
+ * allows.
+ *
+ * Membership of the allowed set is the whole validation, and it carries the
+ * type check with it: `allowed` holds literals, so `"0.5"` is not in a set of
+ * numbers and `0` is not in a set of mode names. Testing `typeof` first — as
+ * this did while every setting was a number — would have to grow a branch per
+ * kind the moment a second one arrived.
+ *
+ * **Generic, and that is the point rather than decoration.** The form this
+ * replaces was one line in the loop ending `out[key] = value as never`, where
+ * the cast sat on the assignment and erased the link between what was validated
+ * and where it landed. Here the assertion is on the *return*, so every caller
+ * naming a key gets `Settings[K]` and the compiler checks the assignment for
+ * them.
+ *
+ * What it still does not check, stated rather than implied: that
+ * `SCHEMA[key].allowed` is a set of `Settings[K]` values. Indexing `Settings` by
+ * the union of its keys collapses to `never` (see `loadSettings`), so no
+ * signature written here recovers that, and a schema whose set stopped matching
+ * its field's type would compile. What catches that is `settings.test.ts`, which
+ * round-trips a legal value of each kind.
+ */
+function accept<K extends keyof Settings>(
+	key: K,
+	value: unknown,
+): Settings[K] | undefined {
+	const allowed = SCHEMA[key].allowed as readonly unknown[];
+	return allowed.includes(value) ? (value as Settings[K]) : undefined;
 }
 
 /** Write, and say nothing if the browser refuses. A rejected write is a lost

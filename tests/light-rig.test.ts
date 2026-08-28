@@ -16,6 +16,13 @@
  * buffer is *oriented* the way `three` samples it. The mapping from a pixel to
  * a direction is stated once, in `light-rig.ts`, and any test here that
  * restated it would agree with it by construction — including a flipped one.
+ * What it *can* check, since #99's first review round, is the **rotation**. It
+ * lived in `main.ts` as `setFromUnitVectors(BAKE_STAR_UNIT, STAR_DIR)`, where
+ * swapping the two arguments — the inverse rotation — left every check in the
+ * repo green: the inverse lands the lobe 2θ from the star, and θ was small for
+ * the seed the probe flies. Moved into `envRotation` it has a property that a
+ * swap breaks and this file sweeps, below.
+ *
  * A bake handed to the renderer back-to-front puts the reflection on the side
  * away from the star, which looks wrong and measures fine. That is
  * `probe-light-rig.mjs`'s job: it renders one station front-lit and once more
@@ -31,6 +38,7 @@ import {
 	ENV_WIDTH,
 	LIGHT_RIG,
 	envRadiance,
+	envRotation,
 	equirectEnvironment,
 } from "../src/light-rig";
 
@@ -215,5 +223,94 @@ describe("the rig's constants", () => {
 		expect(LIGHT_RIG.quality.low.exposure).toBe(
 			LIGHT_RIG.quality.high.exposure,
 		);
+	});
+});
+
+describe("the rotation onto the star", () => {
+	/** Apply a quaternion to a vector, the standard `v + 2q_v × (q_v × v + w v)`.
+	 *  Written here rather than imported because `light-rig.ts` returns a plain
+	 *  tuple on purpose — a `THREE.Quaternion` in the leaf would be the Three.js
+	 *  import the module exists without. */
+	const apply = (
+		[x, y, z, w]: [number, number, number, number],
+		v: readonly [number, number, number],
+	): [number, number, number] => {
+		const cx = y * v[2] - z * v[1] + w * v[0];
+		const cy = z * v[0] - x * v[2] + w * v[1];
+		const cz = x * v[1] - y * v[0] + w * v[2];
+		return [
+			v[0] + 2 * (y * cz - z * cy),
+			v[1] + 2 * (z * cx - x * cz),
+			v[2] + 2 * (x * cy - y * cx),
+		];
+	};
+
+	/** A spread of directions that does not favour any axis, plus the two
+	 *  degenerate ones by name. A grid over latitude and longitude would put
+	 *  most of its samples near the poles and test the easy cases hardest. */
+	function directions(count = 200): [number, number, number][] {
+		const out: [number, number, number][] = [
+			BAKE_STAR_DIR as [number, number, number],
+			[-1, 0, 0],
+		];
+		const golden = Math.PI * (3 - Math.sqrt(5));
+		for (let i = 0; i < count; i++) {
+			const y = 1 - (2 * (i + 0.5)) / count;
+			const ring = Math.sqrt(Math.max(0, 1 - y * y));
+			const theta = golden * i;
+			out.push([Math.cos(theta) * ring, y, Math.sin(theta) * ring]);
+		}
+		return out;
+	}
+
+	test("takes the bake's star direction onto the real one, everywhere", () => {
+		// The property the renderer's line asserted and nothing checked. It is
+		// false for the inverse rotation at every direction except the two poles,
+		// which is exactly the defect that shipped green.
+		for (const dir of directions()) {
+			const landed = apply(envRotation(dir), BAKE_STAR_DIR);
+			for (let i = 0; i < 3; i++) expect(landed[i]).toBeCloseTo(dir[i], 9);
+		}
+	});
+
+	test("the inverse rotation fails that, so the check is not free", () => {
+		// Building the defect rather than trusting the assertion above to be
+		// about something. `q⁻¹` is the conjugate.
+		// The whole vector, not one component. The inverse rotates by −θ about the
+		// same axis, which leaves the component *along* the bake's own star
+		// direction unchanged — so an assertion on `landed[0]` alone passes on the
+		// defect it was written to catch. Found by watching this test go green.
+		const dir: [number, number, number] = [
+			0.3,
+			0.5,
+			Math.sqrt(1 - 0.09 - 0.25),
+		];
+		const [x, y, z, w] = envRotation(dir);
+		const landed = apply([-x, -y, -z, w], BAKE_STAR_DIR);
+		const apart = Math.hypot(
+			landed[0] - dir[0],
+			landed[1] - dir[1],
+			landed[2] - dir[2],
+		);
+		expect(apart).toBeGreaterThan(0.5);
+	});
+
+	test("every rotation is a unit quaternion, including the antiparallel one", () => {
+		// A non-unit quaternion scales as well as rotates, so the environment
+		// would be sampled from a stretched direction — which shows up as a
+		// gradient that is subtly wrong rather than as an error.
+		for (const dir of directions())
+			expect(Math.hypot(...envRotation(dir))).toBeCloseTo(1, 12);
+	});
+
+	test("an unnormalised direction gives the same rotation as its unit", () => {
+		// The renderer already has a normalised vector, so this is about the
+		// function being safe to call from anywhere rather than about a caller
+		// that exists.
+		const dir: [number, number, number] = [0.6, -0.48, 0.64];
+		const big = dir.map((v) => v * 1e6) as [number, number, number];
+		const a = envRotation(dir);
+		const b = envRotation(big);
+		for (let i = 0; i < 4; i++) expect(b[i]).toBeCloseTo(a[i], 9);
 	});
 });

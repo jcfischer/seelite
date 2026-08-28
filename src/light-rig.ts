@@ -7,11 +7,15 @@
  * repo-wide. Station plating carries `metalness` per texel from
  * `station-visuals.ts`'s profiles (0.14–0.5 before the wear map cuts it) and a
  * hull sits at 0.08–0.1 (`ship-mesh.ts`), and metalness with no environment
- * *subtracts* diffuse and adds nothing back — so the more metal a surface
- * claimed to be, the deader it rendered. That is visible in the before sheet:
- * the trade station at three silhouette radii is a ring of flat grey facets
- * with no highlight anywhere on it, and its plating grid is not resolvable at
- * all.
+ * *subtracts* diffuse and gives back only what the two direct lights reflect —
+ * which on a rough plate at a grazing sun is very little, and nothing at all on
+ * the side facing away. So the more metal a surface claimed to be, the deader
+ * it rendered. (Not "nothing back", which is what this said first: a metal
+ * still takes a direct specular lobe from the sun and the fill through the
+ * BRDF. What it had no source for was the *indirect* term, which is the one
+ * that carries an unlit face.) That is visible in the before sheet: the trade
+ * station at three silhouette radii is a ring of flat grey facets with no
+ * highlight anywhere on it, and its plating grid is not resolvable at all.
  *
  * Two terms replace the flat ambient, and they are different kinds of thing:
  *
@@ -50,12 +54,22 @@
  * flying, for a direction that changes continuously; a rotation is a
  * quaternion.
  *
- * That rotation is also the one thing no test in this file can check — see the
- * header of `tests/light-rig.test.ts`. A bake sampled back-to-front puts the
- * reflection on the side *away* from the star, which looks wrong and measures
- * perfectly; `probe-light-rig.mjs` reads the pixels either side of a lit hull
- * and requires the star side to be brighter, which is false on a flipped bake
- * and equally false on no bake at all.
+ * **The rotation is derived here rather than in the renderer**, and that is the
+ * whole reason `envRotation` exists as a function instead of a line of
+ * `main.ts`. Written there it was `setFromUnitVectors(BAKE_STAR_UNIT, STAR_DIR)`
+ * — correct, and *indistinguishable from its own inverse* by anything this
+ * repo could run: swapping those two arguments left `probe-light-rig.mjs`
+ * green, because the inverse rotation lands the lobe 2θ from the star and θ was
+ * small for the seed the probe flies. The direction of the one transform the
+ * whole rig depends on then rested on argument order alone, restated as settled
+ * in three files.
+ *
+ * As a function it has a property a headless test can hold and a swap breaks:
+ * applying it to `BAKE_STAR_DIR` returns the direction it was given, for every
+ * direction including the antiparallel one. `tests/light-rig.test.ts` sweeps
+ * that; `probe-light-rig.mjs` still checks the end-to-end effect, because a
+ * correct rotation applied to a bake that never reached the scene is also
+ * green here.
  */
 
 /** The bake's own star direction: +X, so `atan2(z, x)` puts it at u = 0.5 and
@@ -245,4 +259,57 @@ export function equirectEnvironment(
 		}
 	}
 	return { data, width, height };
+}
+
+/**
+ * The quaternion that carries `BAKE_STAR_DIR` onto `starDir`, as `[x, y, z, w]`.
+ *
+ * The shortest arc, which is the same thing `THREE.Quaternion.setFromUnitVectors`
+ * builds — reimplemented here rather than called there because `light-rig.ts`
+ * imports no Three.js, and because a rotation that lives in the renderer is a
+ * rotation nothing headless can check. See this file's header for what that
+ * cost: the inverse rotation passed every check the repo had.
+ *
+ * `starDir` need not be normalised; it must not be zero.
+ *
+ * **The antiparallel case is the one worth reading.** When `starDir` is exactly
+ * opposite the bake's axis there is no shortest arc — every half-turn about
+ * every perpendicular axis is equally short — so an axis has to be *chosen*,
+ * and `cross` is zero and cannot choose it. Any perpendicular is correct, since
+ * the bake is rotationally symmetric about its own star axis and a half-turn
+ * about any of them lands the lobe in the same place. Picking one arbitrarily
+ * rather than leaving the branch out is the difference between a defined answer
+ * and a NaN quaternion, which renders as an unlit scene rather than as an error.
+ */
+export function envRotation(
+	starDir: readonly [number, number, number],
+): [number, number, number, number] {
+	const l = Math.hypot(starDir[0], starDir[1], starDir[2]);
+	const to: [number, number, number] = [
+		starDir[0] / l,
+		starDir[1] / l,
+		starDir[2] / l,
+	];
+	const from = BAKE_STAR_DIR;
+	const dot = from[0] * to[0] + from[1] * to[1] + from[2] * to[2];
+	// Half-turn: build a unit vector perpendicular to `from` and rotate 180°
+	// about it, which is the quaternion (axis, 0).
+	if (dot < -1 + 1e-9) {
+		// Cross with whichever world axis `from` is least parallel to, so the
+		// perpendicular never degenerates — `view-placement.mjs` picks its frame
+		// the same way and for the same reason.
+		const away: [number, number, number] =
+			Math.abs(from[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+		const ax = from[1] * away[2] - from[2] * away[1];
+		const ay = from[2] * away[0] - from[0] * away[2];
+		const az = from[0] * away[1] - from[1] * away[0];
+		const al = Math.hypot(ax, ay, az);
+		return [ax / al, ay / al, az / al, 0];
+	}
+	const x = from[1] * to[2] - from[2] * to[1];
+	const y = from[2] * to[0] - from[0] * to[2];
+	const z = from[0] * to[1] - from[1] * to[0];
+	const w = 1 + dot;
+	const n = Math.hypot(x, y, z, w);
+	return [x / n, y / n, z / n, w / n];
 }

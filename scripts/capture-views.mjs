@@ -53,6 +53,7 @@ import {
 	VIEWS,
 	contactSheet,
 } from "./lib/view-set.mjs";
+import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
 import {
 	bootedGame,
@@ -101,9 +102,6 @@ function gitRef() {
 const REF = gitRef();
 const LABEL = arg("label", REF);
 const OUT = arg("out", "view-set");
-
-/** Renderers that are not the player's. A refusal, per the header. */
-const SOFTWARE = /swiftshader|llvmpipe|software|mesa offscreen/i;
 
 /**
  * Both directions between the declared shot kinds and the placers built for
@@ -204,43 +202,6 @@ async function setView(page, want) {
 }
 
 /**
- * The renderer, and a refusal unless it can be *shown* to be the player's.
- *
- * Two ways to fail, and both are refusals rather than warnings. A name matching
- * a known software rasteriser is the obvious one. The other is subtler and was
- * a real hole: without `WEBGL_debug_renderer_info` the only readable name is the
- * generic `gl.RENDERER`, which on a masked or unlisted software stack says
- * nothing and passes a substring test. A name match cannot prove hardware, so an
- * unreadable name is treated as unproven and refused — the whole point of this
- * script is that the principal is looking at the renderer they fly.
- */
-async function assertPlayersRenderer(page) {
-	const gpu = await page.evaluate(() => {
-		const gl = window.__seelite.renderer.getContext();
-		const ext = gl.getExtension("WEBGL_debug_renderer_info");
-		return {
-			unmasked: ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : null,
-			generic: gl.getParameter(gl.RENDERER),
-		};
-	});
-	const renderer = gpu.unmasked ?? gpu.generic;
-	const refusal = !gpu.unmasked
-		? `cannot read the real renderer — WEBGL_debug_renderer_info is unavailable, and "${gpu.generic}" does not say what is drawing`
-		: SOFTWARE.test(renderer)
-			? `this is a software rasteriser (${renderer})`
-			: null;
-	if (refusal)
-		throw new Error(
-			`refusing to capture: ${refusal}.\n` +
-				"The sheet is judged by eye, and a frame from anything but the player's\n" +
-				"renderer is the wrong picture — bloom, tone mapping and mip-sampled\n" +
-				"surfaces all differ from ANGLE Metal. Run this on a machine with a\n" +
-				"display; there is deliberately no headless mode.",
-		);
-	return renderer;
-}
-
-/**
  * Rebuild the sheet from every run on disk, oldest first.
  *
  * From disk rather than from this run alone, so capturing an `after` beside an
@@ -335,7 +296,12 @@ await bootedGame(page);
 let renderer;
 const captured = [];
 try {
-	renderer = await assertPlayersRenderer(page);
+	// The refusal itself is `lib/players-renderer.mjs`, shared with
+	// `measure-light-cost.mjs`. What it protects here is that the sheet is judged
+	// by eye, and a frame from anything but the player's renderer is the wrong
+	// picture — bloom, tone mapping and mip-sampled surfaces all differ from
+	// ANGLE Metal.
+	renderer = await assertPlayersRenderer(page, "capture");
 	// Before anything moves: `deep-sky` is specified as being at the arrival
 	// point, and the ship starts on it.
 	await page.evaluate(() => window.__rememberBootPosition());

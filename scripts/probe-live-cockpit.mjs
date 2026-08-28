@@ -561,16 +561,35 @@ const beamVisible = await combatPage.evaluate(() => {
 const combatOverlayRendered = await combatPage.evaluate(
 	() => globalThis.__seeliteMeasureCockpit().combatOverlayText,
 );
-const resumedFrames = await combatPage.evaluate(async () => {
+/**
+ * How long to watch for frames after resuming.
+ *
+ * **800 ms, and it was 150.** This is a liveness check — does `rAF` re-arm —
+ * but at 150 ms its `delta > 2` was also a frame-rate assertion, and one this
+ * page cannot reliably meet: measured on the combat page under SwiftShader,
+ * `frames` advances 3 in 150 ms and 10–11 in a second, so the threshold needed
+ * the *median* exactly and flipped on jitter. #99's rig pushed the same page
+ * about 15% slower headless (probe wall time 27 s → 31 s) and the check began
+ * failing roughly one run in three, on a change whose measured cost on the
+ * player's renderer is a quarter of a millisecond a frame.
+ *
+ * Widening the window costs 650 ms and gives up nothing the check was for: a
+ * loop that did not re-arm produces **zero** frames over any window, so the
+ * defect it names still fails it — verified by returning early from
+ * `probeResumeLoop`. What it stops asserting is a frame rate on a software
+ * rasteriser, which is a number #98 already settled is nobody's.
+ */
+const RESUME_WATCH_MS = 800;
+const resumedFrames = await combatPage.evaluate(async (watchMs) => {
 	const game = window.__seelite;
 	const before = game.frames;
 	game.probeResumeLoop();
 	// Sample after the synchronous resume call so its own rendered frame does
 	// not count; then require several more to prove rAF is re-arming.
 	const afterResume = game.frames;
-	await new Promise((resolve) => setTimeout(resolve, 150));
+	await new Promise((resolve) => setTimeout(resolve, watchMs));
 	return { delta: game.frames - afterResume, sync: afterResume - before };
-});
+}, RESUME_WATCH_MS);
 check(
 	"prototype: frame loop keeps running after resume",
 	resumedFrames.delta > 2,

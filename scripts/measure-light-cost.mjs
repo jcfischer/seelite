@@ -10,7 +10,8 @@
  * Pro. A cost read off a probe is a relative signal and never the player's, so
  * a node pricing a renderer change either measures it headed or says plainly
  * that the number is software. This measures it headed, and refuses a software
- * rasteriser exactly as `capture-views.mjs` does and for the same reason.
+ * rasteriser through `lib/players-renderer.mjs`, which `capture-views.mjs` also
+ * uses — one home for the list of rasteriser names rather than two.
  *
  * ## Not a probe, and not a gate
  *
@@ -43,15 +44,22 @@
  * cannot answer the first question at all: it is capped at the display's
  * refresh, so both arms would read 60 and the term would price at zero.
  *
- * **Read the difference, and treat the rate as corroboration.** At the default
- * `deviceScaleFactor` of 1 this reported 1,290 fps, which is nothing's frame
- * rate — the buffer was a quarter of a retina one. At 2 it reports 385 against
- * #98's independently measured 371 for the same scene on the same machine,
- * which is close enough to say the two are measuring the same thing and far
- * from a claim that they agree to a percent. The number this script is *for* is
- * still the difference between its two arms.
+ * **Read the difference; the absolute rate is not evidence of anything here.**
+ * At the default `deviceScaleFactor` of 1 this reported 1,290 fps, which is
+ * nothing's frame rate — the buffer was a quarter of a retina one. At 2 it
+ * lands in the 330–390 fps band across runs, beside #98's 371 for the same
+ * scene on the same machine. That is a **coincidence of magnitude and not a
+ * corroboration**, which is worth saying because the first version of this
+ * header claimed the latter: #98's figure does not record the drawing-buffer
+ * size it was taken at, and this script's own scale-1 reading shows how much
+ * that one unknown is worth. Two numbers agreeing while one of the variables
+ * that produced them is unrecorded is not agreement.
+ *
+ * What is left, and what this script is for, is the difference between its two
+ * arms — measured on one buffer, one camera and one clock.
  */
 import { guardedOrigin, bootedGame, launchChromium } from "./probe-guard.mjs";
+import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
 import { installViewPlacement } from "./probe-guard.mjs";
 import { GAME_TIME_S, SEED, VIEWPORT } from "./lib/view-set.mjs";
@@ -67,37 +75,11 @@ const RADII = 3;
  *  end-of-block sync is under a percent of the block, and short enough that a
  *  block is a few hundred milliseconds rather than a hang. */
 const FRAMES = 120;
-const BLOCKS = 6;
-
-/** Renderers that are not the player's — `capture-views.mjs`'s list, restated
- *  rather than imported because that file is a script with no exports and
- *  giving it some to serve this one would widen its surface for a regex. */
-const SOFTWARE = /swiftshader|llvmpipe|software|mesa offscreen/i;
-
-async function assertPlayersRenderer(page) {
-	const gpu = await page.evaluate(() => {
-		const gl = window.__seelite.renderer.getContext();
-		const ext = gl.getExtension("WEBGL_debug_renderer_info");
-		return {
-			unmasked: ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : null,
-			generic: gl.getParameter(gl.RENDERER),
-		};
-	});
-	const renderer = gpu.unmasked ?? gpu.generic;
-	// An unreadable name is unproven, not assumed hardware — the hole
-	// `capture-views.mjs` records having had.
-	if (!gpu.unmasked || SOFTWARE.test(renderer))
-		throw new Error(
-			`refusing to measure: ${
-				gpu.unmasked
-					? `this is a software rasteriser (${renderer})`
-					: `cannot read the real renderer — "${gpu.generic}" does not say what is drawing`
-			}.\n` +
-				"A frame cost off SwiftShader is nobody's frame cost (#98). Run this on\n" +
-				"a machine with a display; there is deliberately no headless mode.",
-		);
-	return renderer;
-}
+/** Blocks per arm. Twelve rather than six because six put the arms' spreads on
+ *  top of each other: the low arm's worst block landed above the high arm's
+ *  median, so the difference of two medians was reported with no way to see
+ *  that. The dispersion is printed for the same reason. */
+const BLOCKS = 12;
 
 /** Milliseconds per frame for one block at one quality. */
 const block = (page, quality) =>
@@ -129,7 +111,10 @@ const median = (xs) => {
 	return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
 };
 
-await guardedOrigin(ORIGIN, ["src/main.ts", "src/light-rig.ts"]);
+// The guard's *return* is what gets navigated, not the raw `ORIGIN` — the
+// probes do it that way, and measuring a target the guard did not resolve is a
+// silent way to measure a different server.
+const origin = await guardedOrigin(ORIGIN, ["src/main.ts", "src/light-rig.ts"]);
 const browser = await launchChromium({ headless: false });
 // `deviceScaleFactor: 2` and not the default 1: the drawing buffer is what the
 // fill-rate-bound terms are paid over, and the machine this targets has a
@@ -143,9 +128,9 @@ const page = await browser.newPage({
 });
 await installViewPlacement(page);
 await installViewFraming(page);
-await page.goto(`${ORIGIN}/?seed=${SEED}`);
+await page.goto(`${origin}/?seed=${SEED}`);
 await bootedGame(page);
-const renderer = await assertPlayersRenderer(page);
+const renderer = await assertPlayersRenderer(page, "measure");
 await page.evaluate((t) => window.__startClockAt(t), GAME_TIME_S);
 await page.evaluate(
 	([id, radii]) =>
@@ -180,5 +165,22 @@ console.log(
 );
 console.log(`  spread — high ${high.map((x) => x.toFixed(2)).join(" ")}`);
 console.log(`  spread — low  ${low.map((x) => x.toFixed(2)).join(" ")}`);
+// A difference of two medians the size of the blocks' own spread says nothing
+// on its own, and the spreads here overlap. This is the statistic that does not
+// need the reader to eyeball two rows.
+//
+// **Pairwise, not "how many clear the worst".** That was written first and is
+// the mistake `#30` already recorded once: a statistic dominated by a single
+// block. One slow block in the low arm — the machine doing something else for
+// 300 ms — dropped it from 10/12 to 4/12 between two runs of the same build,
+// while the medians barely moved. Counting every (high, low) pairing instead
+// is the Mann-Whitney count: it assumes nothing about either distribution's
+// shape, and one outlier can move it by at most a twelfth.
+let slower = 0;
+for (const h of high) for (const l of low) if (h > l) slower++;
+const pairs = high.length * low.length;
+console.log(
+	`  separation              ${slower}/${pairs} pairings have the environment-on block slower (${((slower / pairs) * 100).toFixed(0)}%)`,
+);
 
 await browser.close();

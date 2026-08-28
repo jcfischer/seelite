@@ -40,13 +40,39 @@
  *
  * ## What it does not catch, measured rather than assumed
  *
- * **A small mis-rotation walks past it.** Inverting the arguments to
- * `setFromUnitVectors` — a plausible typo, and the third defect built for this
- * — moved the pair from 21.30/12.31 to 19.84/9.22 and stayed green. The
- * inequality is between a front-lit and a backlit hull, so it discriminates
- * *which hemisphere* the lobe is in and nothing finer. That is the failure the
- * bake's orientation actually has, and a check that claimed more would be
- * claiming it about a difference of two means over two thousand pixels.
+ * **The fill is not tested here, and cannot be at these framings.** A check
+ * that a backlit hull is still lit — the fix #99 inherited and must not undo —
+ * was written, and it could not fail: it asserted `back.low > 1` against a
+ * measured 38.28, on a mask that already admits only pixels three levels away
+ * from the background. Rebuilding it as a ratio did not rescue it either. With
+ * `fill.intensity` driven to 0, the backlit arm reads 28.16 against 38.28 and
+ * the ratio to the front-lit arm moves 48.9% → 39.6% — a real difference in the
+ * right direction, and far too shallow to put a threshold in the middle of
+ * without tuning the threshold until the verdict came out.
+ *
+ * The reason is the framing rather than the check. The fill's own case is a
+ * hull lit from *behind*, near 180°, and that is precisely the angle where the
+ * station eclipses the star and the mask stops being the station (below). So
+ * the two requirements are in direct conflict at this subject, and the fill
+ * keeps the coverage it had before #99 — which is none, beyond the frame a
+ * person looks at.
+ *
+ * **A small mis-rotation walks past it, and something else catches that now.**
+ * Inverting the rotation — a plausible typo, and the third defect built for
+ * this — moved the pair from 21.30/12.31 to 19.84/9.22 and stayed green,
+ * because the inverse lands the lobe 2θ from the star and θ is small for the
+ * direction seed 47 puts it in. The inequality here is between a front-lit and
+ * a backlit hull, so it discriminates *which hemisphere* the lobe is in and
+ * nothing finer; a check claiming more would be claiming it about a difference
+ * of two means over two thousand pixels.
+ *
+ * What closed that gap was moving the rotation out of `main.ts` and into
+ * `envRotation`, where `tests/light-rig.test.ts` sweeps its round trip over 200
+ * directions and the inverse fails at every one but the two poles. So the two
+ * tiers divide the question: the headless test says the rotation is the
+ * rotation it claims to be, and this says the bake reached the scene pointing
+ * the right way. Neither implies the other — a correct rotation applied to an
+ * environment that was never assigned is green upstairs.
  *
  * ## SwiftShader, said plainly
  *
@@ -133,11 +159,19 @@ const measure = (page, bodyId) =>
 		const wasVisible = mesh.visible;
 		const quality = g.settings.value.quality;
 
+		// High *before* the bare frame, not after. The mask is "pixels that moved
+		// when the station was hidden", so the bare frame and the frame it is
+		// differenced against have to be the same configuration — otherwise, on a
+		// page whose stored setting is `low`, the mask becomes "pixels the
+		// environment changed" and quietly stops being the station. The default
+		// is checked below, but a check that runs after the measurement does not
+		// protect it.
+		g.settings.set("quality", "high");
+
 		mesh.visible = false;
 		const withoutSubject = frame();
 		mesh.visible = wasVisible;
 
-		g.settings.set("quality", "high");
 		const high = frame();
 		g.settings.set("quality", "low");
 		const low = frame();
@@ -198,8 +232,17 @@ const back = await frameAndMeasure(page, BACK_DEG);
 t.check(
 	"the station is on screen in both framings",
 	!front.missing && !back.missing && front.pixels > 500 && back.pixels > 500,
-	`front ${front.pixels} px, back ${back.pixels} px`,
+	`front ${front.pixels ?? "no mesh"} px, back ${back.pixels ?? "no mesh"} px`,
 );
+
+// Everything below reads `front.high` and friends, and the summary lines at the
+// end format them unconditionally — so a missing mesh would throw a TypeError
+// over the tally's own report and take the `browser.close()` with it. Leaving
+// through the tally means the run says which check failed.
+if (front.missing || back.missing) {
+	await browser.close();
+	t.exit();
+}
 
 t.check(
 	"the game ships with the environment on",
@@ -231,12 +274,6 @@ t.check(
 	"and it adds more there than on a backlit one — the bake is not flipped",
 	frontDelta > backDelta,
 	`front Δ ${frontDelta.toFixed(2)} against back Δ ${backDelta.toFixed(2)}`,
-);
-
-t.check(
-	"a backlit hull is still lit with the environment off — the fill's job, unchanged",
-	back.low > 1,
-	`backlit at low quality reads ${back.low.toFixed(2)}`,
 );
 
 console.log(

@@ -72,7 +72,7 @@ import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js"
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
 import { starField } from "./backdrop";
-import { BAKE_STAR_DIR, LIGHT_RIG, equirectEnvironment } from "./light-rig";
+import { LIGHT_RIG, envRotation, equirectEnvironment } from "./light-rig";
 import { SettingsStore } from "./settings";
 import { AudioFX } from "./audio";
 import {
@@ -214,7 +214,6 @@ const STATION_AXIS = new THREE.Vector3();
  *  bake's own star direction onto it. Allocated once for the reason above: they
  *  are written every frame and read in the same statement. */
 const STAR_DIR = new THREE.Vector3();
-const BAKE_STAR_UNIT = new THREE.Vector3(...BAKE_STAR_DIR);
 const ENV_QUAT = new THREE.Quaternion();
 const ENV_EULER = new THREE.Euler();
 const HEAD_AXIS = new THREE.Vector3(0, 1, 0);
@@ -1755,6 +1754,11 @@ class Game {
 			);
 			hemi.name = "hemisphere";
 			scene.add(hemi);
+			// Held rather than found again each frame. The names stay for a probe
+			// to address them by, but the render loop indexes this instead: a
+			// `getObjectByName` walks every descendant, and the near scene holds
+			// every drawn body.
+			this.layerLights.push({ scene, sun, hemisphere: hemi });
 		}
 		// The image-based term, baked once from the star's own colour. This is the
 		// change that makes `metalness` mean anything: before it, every metal
@@ -1784,11 +1788,24 @@ class Game {
 		this.nearScene.add(fill);
 	}
 
+	/** The two star-aimed lights of each layer, with the scene they belong to.
+	 *  Built once by `buildLights` and read every frame; see the push site. */
+	private readonly layerLights: {
+		scene: THREE.Scene;
+		sun: THREE.DirectionalLight;
+		hemisphere: THREE.HemisphereLight;
+	}[] = [];
+
 	/** The baked lighting environment, kept so the quality setting can put it
 	 *  back after dropping it — `scene.environment = null` is how low drops it,
-	 *  and the texture has to survive that to be reassigned. Baked once per
-	 *  `Game`, because a `Game` is one system: nothing rebuilds the world in
-	 *  place today, and the day something does, this is what it rebakes. */
+	 *  and the texture has to survive that to be reassigned.
+	 *
+	 *  **Baked once per `Game`, and a `Game` is one system.** Nothing rebuilds the
+	 *  world in place — `makeWorld` is called exactly once, in the constructor —
+	 *  so the star's tint is fixed for this object's life and there is no jump
+	 *  path for it to go stale across. The day one exists it calls
+	 *  `buildEnvironment` again, which is why that method disposes what it is
+	 *  replacing rather than assuming it is the first call. */
 	private environmentMap: THREE.Texture | null = null;
 
 	/**
@@ -1804,6 +1821,10 @@ class Game {
 	 * model is testable and this is three lines and no decisions.
 	 */
 	private buildEnvironment() {
+		// Idempotent by disposal rather than by assuming a single call: a PMREM
+		// cube is a GPU texture, and a second bake that dropped the first would
+		// leak it silently.
+		this.environmentMap?.dispose();
 		const { data, width, height } = equirectEnvironment(
 			this.world.system.contents.star.color,
 		);
@@ -1824,6 +1845,11 @@ class Game {
 		// float texture per system jumped to alive for the session.
 		pmrem.dispose();
 		source.dispose();
+		// Once, here: it is a constant, and `applyQuality` runs on every quality
+		// change — writing it there dirtied every material's uniforms for a value
+		// that cannot have changed.
+		for (const { scene } of this.layerLights)
+			scene.environmentIntensity = LIGHT_RIG.environmentIntensity;
 		this.applyQuality();
 	}
 
@@ -1837,10 +1863,8 @@ class Game {
 	 */
 	private applyQuality() {
 		const mode = LIGHT_RIG.quality[this.settings.value.quality];
-		for (const scene of [this.farScene, this.approachScene, this.nearScene]) {
+		for (const { scene } of this.layerLights)
 			scene.environment = mode.environment ? this.environmentMap : null;
-			scene.environmentIntensity = LIGHT_RIG.environmentIntensity;
-		}
 		this.renderer.toneMappingExposure = mode.exposure;
 	}
 
@@ -3952,23 +3976,29 @@ class Game {
 			// the star direction changes continuously as the ship crosses the
 			// system, and a PMREM pass per frame is not a thing to spend a frame on.
 			//
-			// `setFromUnitVectors` picks the shortest arc, so the environment also
-			// rolls about the star axis as the ship moves. Nothing in the bake
-			// varies about that axis — the model is a lobe and a floor — so the
-			// roll is unobservable, and it stops being so the day #100's haze
-			// arrives. That is the seam, named where the rotation is set.
-			ENV_QUAT.setFromUnitVectors(BAKE_STAR_UNIT, STAR_DIR);
+			// `envRotation` picks the shortest arc, so the environment also rolls
+			// about the star axis as the ship moves. Nothing in the bake varies
+			// about that axis — the model is a lobe and a floor — so the roll is
+			// unobservable, and it stops being so the day #100's haze arrives.
+			// That is the seam, named where the rotation is applied.
+			//
+			// It is derived in `light-rig.ts` and not here, and that is the fix
+			// for #99's review blocker rather than a tidiness point: written here
+			// as `setFromUnitVectors(BAKE_STAR_UNIT, STAR_DIR)` it was
+			// indistinguishable from its own inverse by anything the repo could
+			// run. As a function it has a round trip a headless test sweeps.
+			ENV_QUAT.fromArray(envRotation([STAR_DIR.x, STAR_DIR.y, STAR_DIR.z]));
 			ENV_EULER.setFromQuaternion(ENV_QUAT);
-			for (const scene of [this.farScene, this.approachScene, this.nearScene]) {
-				const sun = scene.getObjectByName("sun") as THREE.DirectionalLight;
-				if (sun) sun.position.copy(STAR_DIR);
+			// Cached at build rather than looked up: `getObjectByName` walks every
+			// descendant, and the near scene holds every drawn body — so the two
+			// name lookups this replaced cost six recursive traversals a frame,
+			// scaling with the scene rather than with the two lights being found.
+			for (const rig of this.layerLights) {
+				rig.sun.position.copy(STAR_DIR);
 				// The hemisphere's axis is its position, so aiming it at the star is
 				// what turns a flat lift into a star-side gradient.
-				const hemi = scene.getObjectByName(
-					"hemisphere",
-				) as THREE.HemisphereLight;
-				if (hemi) hemi.position.copy(STAR_DIR);
-				scene.environmentRotation.copy(ENV_EULER);
+				rig.hemisphere.position.copy(STAR_DIR);
+				rig.scene.environmentRotation.copy(ENV_EULER);
 			}
 		}
 
