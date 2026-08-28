@@ -156,11 +156,16 @@ test("no module in src/ statically imports the galaxy chart", () => {
 				// writes `../galaxy-map` and folds the chunk in exactly the same
 				// way. The recursion was added without this and the subdirectory
 				// case stayed green.
-				/^(?:import|export)\b[^;]*?["'][^"']*\/galaxy-map["'];/gm,
+				// Anchored to a line *start plus any indentation* rather than to
+				// column zero: nothing in this repo indents a top-level import,
+				// but the test's claim is about the whole tree and a claim wider
+				// than its regex is how the last three holes in this check got
+				// through.
+				/(?:^|\n)[ \t]*(?:import|export)\b[^;]*?["'][^"']*\/galaxy-map["'];/g,
 			)) {
 				// `import type { … }` is erased before the bundler sees it, so it
 				// is not what costs anything.
-				if (/^import\s+type\b/.test(statement)) continue;
+				if (/^\s*import\s+type\b/.test(statement)) continue;
 				offenders.push(`${path}: ${statement.replace(/\s+/g, " ")}`);
 			}
 		}

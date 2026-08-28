@@ -192,14 +192,26 @@ if (distinctive) {
 	const prefix = distinctive.id.slice(0, 4);
 	await type(prefix);
 	const filtered = await readList();
+	// **Both directions, against a set computed here.** Asserting only that the
+	// survivors match the fragment, plus `length < listed.length`, degenerates
+	// on a seed where one row matches: a build that over-narrowed to a single
+	// arbitrary row would satisfy both halves and read as a working filter. The
+	// expected set is derived from the unfiltered list by the projection's own
+	// substring rule, so a row wrongly dropped fails as loudly as one wrongly
+	// kept.
+	const expected = listed.rows
+		.filter((row) => row.id.toLowerCase().includes(prefix.toLowerCase()))
+		.map((row) => row.id)
+		.sort();
 	check(
-		"the query narrows the list to the ids that match it",
-		filtered.rows.length > 0 &&
-			filtered.rows.length < listed.rows.length &&
-			filtered.rows.every((row) =>
-				row.id.toLowerCase().includes(prefix.toLowerCase()),
-			),
-		`"${prefix}" → ${filtered.rows.map((r) => r.id).join(",")}`,
+		"the query narrows to exactly the ids that match it — no more and no fewer",
+		expected.length > 0 &&
+			expected.length < listed.rows.length &&
+			filtered.rows
+				.map((row) => row.id)
+				.sort()
+				.join(",") === expected.join(","),
+		`"${prefix}" → ${filtered.rows.map((r) => r.id).join(",")}; expected ${expected.join(",")}`,
 	);
 }
 

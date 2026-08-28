@@ -499,15 +499,23 @@ The chart's *mount* rather than its projection, and the list beside it.
    build with no sort at all. Clicking a row the game is **not** already on
    moves `targetBody()`; the row that boot already selected would pass on a
    build whose rows do nothing.
-2. **Both narrowings narrow.** The name query is checked against a fragment at
-   least one other row does not contain, and the kind chip against a list
-   strictly shorter than the unfiltered one. A query matching nothing renders an
-   empty-state rather than falling back to everything. The assertion uses
-   `includes`, because `navFilterMatches` matches anywhere in the id and a probe
-   asserting a prefix would go red on a correctly-listed mid-string match. That
-   a distinguishing fragment was found is itself a check, so a seed where none
-   exists goes **red** rather than exiting green having tested nothing, and the
-   failure carries the page URL and the row ids so the seed is in the message.
+2. **Both narrowings narrow, in both directions.** The name query's survivors
+   are compared against the exact set the unfiltered list yields under the
+   projection's own substring rule — no more and no fewer. "Matches the
+   fragment, and the list got shorter" is not enough: on a seed where one row
+   matches, a build that over-narrowed to a single arbitrary row satisfies both
+   halves and reads as a working filter. Proved against a build that
+   over-narrowed and one that leaked an extra row.
+
+   The rule is `includes`, not `startsWith`, because `navFilterMatches` matches
+   anywhere in the id and a probe asserting a prefix goes red on a correctly
+   listed mid-string match. That a distinguishing fragment was found is itself a
+   check, so a seed where none exists goes **red** rather than exiting green
+   having tested nothing, and the failure carries the page URL and the row ids.
+
+   The kind chip is checked against a list strictly shorter than the unfiltered
+   one, and a query matching nothing renders an empty state rather than falling
+   back to everything.
 3. **The chart is built for the ship's galaxy and system.** The galaxy half
    discriminates — a chart built for galaxy 3 while the ship flies in galaxy 0
    fails. The system half does **not** yet: dropping `currentIndex` at the mount
@@ -537,8 +545,8 @@ The chart's *mount* rather than its projection, and the list beside it.
 
 **Every check here was built a red build to run against**, one at a time:
 the sort removed; the chart root back to `position: fixed`; a kind dropped
-from what `navRows` is handed; `onSelectTarget` made a no-op; the query and
-the kind chip each ignored; `currentIndex` dropped and the galaxy forced to
+from what `navRows` is handed; `onSelectTarget` made a no-op; the query ignored, over-narrowed, and
+leaked an extra row; the kind chip ignored; `currentIndex` dropped and the galaxy forced to
 3; `dispose` skipped; the frame loop cancelled on mount; `PICK_RADIUS_PX` cut
 to 2 and the default framing zoomed to 20 LY. Each turned the check named
 above it red — except the system half of item 3, which is recorded there as
