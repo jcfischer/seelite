@@ -432,14 +432,23 @@ const APERTURE_LIGHT_MATERIAL = emissiveMaterial(0xffb347, 2.2);
  * structure seen against a dark interior, and the aperture bars around its
  * mouth are the light source that says where it is.
  *
- * **Lambert, not Standard**, and that is measured rather than a preference: the
- * recess this replaces was an unlit `MeshBasicMaterial`, and making it a PBR
- * material cost about a fifth of the frame under SwiftShader — 45 frames in
- * three seconds against 56 on `main` at 1280x760. Lambert shades the tunnel
- * walls, which is the whole point of lighting them, at a fraction of the
- * fragment cost. (A probe's frame cost is a relative signal and never the
- * player's — #98 — but a fifth is worth not spending for a surface with no
- * metalness in it.)
+ * **Lambert rather than Standard, and the probe decided it.** The recess this
+ * replaces was an unlit `MeshBasicMaterial`; making it PBR costs enough of the
+ * frame under SwiftShader to turn `probe-navigation-console.mjs`'s *"the
+ * simulation keeps running while the chart is open"* row red — 28 → 32 frames
+ * in 500 ms against a `> +5` threshold, three runs out of three, where Lambert
+ * passes three out of three. A hand-rolled frame counter disagreed with itself
+ * on the same pair (31 against 42 in one three-second sample), which is what a
+ * measurement looks like when it cannot decide; the probe row is repeatable and
+ * it can.
+ *
+ * **What that costs, stated rather than discovered.** #99 made
+ * `scene.environment` a baked star, and `CLAUDE.md` records that it reaches
+ * `MeshStandardMaterial` and nothing else — so this surface is lit by the sun
+ * and the hemisphere but takes no environment, where the plating around its
+ * mouth does. On a rough dark interior seen for a few seconds that is a
+ * difference nobody can point at; on a brighter or shinier interior it would be
+ * the wrong trade, and #99's rig is where that argument belongs.
  */
 const THROAT_MATERIAL = new THREE.MeshLambertMaterial({
 	color: 0x2a3038,
