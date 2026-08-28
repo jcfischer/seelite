@@ -391,7 +391,7 @@ for (const viewport of VIEWPORTS) {
 				const canvas = document.querySelector("#galaxy-map canvas");
 				const onCanvas = (x, y) =>
 					document.elementFromPoint(x + box.left, y + box.top) === canvas;
-				const visible = map
+				const inFrame = map
 					.projected()
 					.filter(
 						(p) =>
@@ -400,12 +400,20 @@ for (const viewport of VIEWPORTS) {
 							p.x > 80 &&
 							p.y > 80 &&
 							p.x < width - 80 &&
-							p.y < height - 80 &&
-							onCanvas(p.x, p.y) &&
-							onCanvas(p.x + offset, p.y),
+							p.y < height - 80,
 					);
-				const found = visible.find((a) =>
-					visible.every(
+				// **Two pools, and mixing them was a real hole.** The candidate
+				// has to be under the canvas; its *neighbours* do not, because
+				// the chart picks in its own projection and does not care what
+				// the DOM draws on top. Filtering one array and using it for
+				// both accepted a candidate whose only near neighbour was hidden
+				// under the panel — and that neighbour is exactly what a
+				// mis-sized pick radius would return.
+				const candidates = inFrame.filter(
+					(p) => onCanvas(p.x, p.y) && onCanvas(p.x + offset, p.y),
+				);
+				const found = candidates.find((a) =>
+					inFrame.every(
 						(b) =>
 							b.index === a.index || Math.hypot(a.x - b.x, a.y - b.y) > clear,
 					),

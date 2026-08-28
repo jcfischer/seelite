@@ -472,6 +472,17 @@ const settled = async (widerThan, narrowerThan) => {
 	);
 };
 
+/** Two animation frames — `resetView` and `zoom` change fields the frame
+ *  loop applies, so a projection read in the same tick describes the view
+ *  before them. */
+const nextFrames = (target) =>
+	target.evaluate(
+		() =>
+			new Promise((resolve) =>
+				requestAnimationFrame(() => requestAnimationFrame(resolve)),
+			),
+	);
+
 const finderState = () =>
 	page.evaluate(() => {
 		const map = window.__seeliteGalaxyMap;
@@ -531,8 +542,78 @@ check(
 	"closed, the finder shows no results and leaves the chart its whole cell",
 	!closed.resultsShown &&
 		closed.drawnRows === 0 &&
-		Math.round(closedCell.width) === Math.round(crowding.width),
-	`results ${closed.resultsShown}, ${closed.drawnRows} rows, cell ${Math.round(closedCell.width)} against the measured ${Math.round(crowding.width)}`,
+		Math.round(closedCell.width) === Math.round(crowding.width) &&
+		Math.round(closedCell.height) === Math.round(crowding.height),
+	`results ${closed.resultsShown}, ${closed.drawnRows} rows, cell ${Math.round(closedCell.width)}x${Math.round(closedCell.height)} against the measured ${Math.round(crowding.width)}x${Math.round(crowding.height)}`,
+);
+
+/**
+ * **"Its whole cell" is about the canvas box, and the closed panel floats over
+ * a corner of it — so how many systems land under it is a question, not an
+ * assumption.**
+ *
+ * D3 preserved the *cell*, which is what §5.1's band is a figure about. But the
+ * collapsed finder is `position: absolute` over the stage, and a system drawn
+ * beneath it cannot be clicked — so if any were, the crowding figure would be
+ * counting unpickable points as pickable, which is the flattering direction.
+ * §5.1's own history has one of those in it already.
+ *
+ * **Measured: at the default framing, none are.** The cluster does not reach
+ * the top-right corner the panel sits in, so nothing §5.1 counts is hidden and
+ * the band means what it says. That is a fact about this framing rather than
+ * about the layout — orbit toward the panel and points do go under it, which
+ * the second half asserts so the first half is a measurement and not a check
+ * that cannot fail. A later panel that grew into the cluster at the default
+ * view would go red here rather than quietly changing what the figure means.
+ */
+const occlusionAt = () =>
+	page.evaluate(() => {
+		const map = window.__seeliteGalaxyMap;
+		const { width, height, left, top } = map.viewport();
+		const panel = document
+			.querySelector("[data-map-finder]")
+			?.getBoundingClientRect();
+		const onScreen = map
+			.projected()
+			.filter(
+				(p) =>
+					!p.behind && p.x >= 0 && p.y >= 0 && p.x <= width && p.y <= height,
+			);
+		const under = onScreen.filter((p) => {
+			const x = p.x + left;
+			const y = p.y + top;
+			return (
+				panel !== undefined &&
+				x >= panel.left &&
+				x <= panel.right &&
+				y >= panel.top &&
+				y <= panel.bottom
+			);
+		});
+		return { under: under.length, onScreen: onScreen.length };
+	});
+
+await page.evaluate(() => {
+	const map = window.__seeliteGalaxyMap;
+	map.select(null);
+	map.resetView();
+});
+await nextFrames(page);
+const occludedDefault = await occlusionAt();
+// Toward the panel: zooming *in* spreads the cluster across the canvas until
+// it reaches the corner the control sits in. Zooming out was tried first and
+// moves every point toward the centre, which is the wrong direction.
+await page.evaluate(() => window.__seeliteGalaxyMap.zoom(-40));
+await nextFrames(page);
+const occludedZoomed = await occlusionAt();
+await page.evaluate(() => window.__seeliteGalaxyMap.resetView());
+await nextFrames(page);
+check(
+	"nothing §5.1 counts is hidden under the closed panel at the default framing",
+	occludedDefault.onScreen === crowding.systemCount &&
+		occludedDefault.under === 0 &&
+		occludedZoomed.under > 0,
+	`${occludedDefault.under} of ${occludedDefault.onScreen} under the panel at the default framing, ${occludedZoomed.under} of ${occludedZoomed.onScreen} when the cluster is zoomed in under it`,
 );
 
 /**
@@ -655,7 +736,7 @@ await page.evaluate(() => {
 const afterCentre = await finderState();
 // **"Nothing else" has to be asserted, not just named.** Written first as focus
 // plus selection, it passed a build whose centre control also spun or zoomed the
-// camera — while the sentence above it, and Â§9.3, both said "the whole pose".
+// camera — while the sentence above it, and §9.3, both said "the whole pose".
 // The other three components are compared here for that reason.
 check(
 	"the per-row centre control moves the camera and changes nothing else",

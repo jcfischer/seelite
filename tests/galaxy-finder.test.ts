@@ -52,8 +52,12 @@ describe("the jump projection", () => {
 	 * settled a goal one relaxation too soon, or a chain reconstruction that
 	 * dropped a hop, shows up here and nowhere else.
 	 *
-	 * The sample spans 1 jump to unreachable, as the node asks: every system in
-	 * the galaxy, which is both.
+	 * The sample spans 1 jump to the far end of the galaxy. It does **not**
+	 * reach the unreachable case — §5 of `galaxy-generation.md` guarantees a
+	 * connected layout, so `unreachable` is pinned at 0 below and the
+	 * `route === null` branch here never runs. That half of the agreement is
+	 * the next test's, over a pool with hand-built islands in it, because a
+	 * branch no run enters is a branch nothing checks.
 	 */
 	test("every system's label equals planRoute's jump count", () => {
 		const reach = projectJumps(galaxy.systems, here);
@@ -91,6 +95,42 @@ describe("the jump projection", () => {
 		// rather than this one. Pinned so a generator that started producing
 		// isolated systems shows up here instead of quietly widening the sample.
 		expect(unreachable).toBe(0);
+	});
+
+	/**
+	 * **The unreachable half of the agreement, which the sweep above cannot
+	 * reach.**
+	 *
+	 * §5 of `galaxy-generation.md` guarantees a connected layout, so that sweep
+	 * asserts `unreachable === 0` — which means its `route === null` branch has
+	 * never executed and the claim "spans one jump to unreachable" was true of
+	 * the *intent* and not of the run. Here the pool is the real galaxy plus
+	 * three hand-built islands, so both sides are asked about a pair with no
+	 * chain and both are required to say so.
+	 */
+	test("planRoute and the projection agree on unreachable pairs too", () => {
+		const islands: SystemRecord[] = [910, 911, 912].map((index, i) => ({
+			...galaxy.systems[i],
+			index,
+			name: `Isle${index}`,
+			// Far enough apart that they are not even neighbours of each other:
+			// three islands in one component would test one unreachable pair
+			// three times rather than three of them.
+			pos: { x: 400 + i * 100, y: 0, z: 0 },
+		}));
+		const pool = [...galaxy.systems, ...islands];
+		const reach = projectJumps(pool, here);
+		let checked = 0;
+		for (const island of islands) {
+			expect(planRoute(pool, here, island)).toBeNull();
+			expect(reach.reach(island)).toBeUndefined();
+			checked++;
+		}
+		expect(checked).toBe(islands.length);
+		// And the reachable half is unchanged by their presence, so this is a
+		// test about the unreachable case rather than about a broken pool.
+		expect(reach.reach(here)?.jumps).toBe(0);
+		expect(reach.size).toBe(projectJumps(galaxy.systems, here).size);
 	});
 
 	/** A galaxy §5 guarantees connected has no unreachable system — so the
@@ -238,7 +278,10 @@ describe("D5 — what the filter admits and how it sorts", () => {
 		expect(
 			finderMatches(
 				target,
-				filter({ query: target.name, economies: [(target.economy + 1) % 8] }),
+				filter({
+					query: target.name,
+					economies: [(target.economy + 1) % ECONOMY_NAMES.length],
+				}),
 			),
 		).toBe(false);
 	});
@@ -473,15 +516,23 @@ describe("D6 — the session budget", () => {
 });
 
 describe("selection", () => {
-	test("exactly the selected index reads selected", () => {
+	/**
+	 * **A row carries no selected flag, and that is the assertion.**
+	 *
+	 * It carried one, and the panel rewrote it on every repaint — two owners of
+	 * one fact, where the projection's copy went stale the moment a render
+	 * skipped the projection, which is exactly what happens when only the
+	 * selection moved. Which row is selected is the chart's answer; the panel
+	 * paints from it. This pins the shape so the field cannot come back without
+	 * someone deciding to bring it back.
+	 */
+	test("a row carries no selection state", () => {
 		const { inBudget } = projectFinder(
 			galaxy.systems,
 			here,
 			filter({ budgetJumps: 2 }),
-			here.index,
 		);
-		expect(inBudget.filter((r) => r.selected).map((r) => r.index)).toEqual([
-			here.index,
-		]);
+		expect(inBudget.length).toBeGreaterThan(0);
+		expect(Object.keys(inBudget[0])).not.toContain("selected");
 	});
 });

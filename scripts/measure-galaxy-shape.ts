@@ -219,10 +219,14 @@ const CONSOLE = { width: 1011, height: 462 };
  * pixel property and #96 is the recorded case of the same figure changing under
  * a different box. What this row shows is *why* it carries here — the chart
  * holds its vertical field of view and widens `aspect` with the box, so a point's
- * horizontal pixel position works out to `worldX · height / (2 · z · tan)` with
- * the width cancelling. A narrower cell therefore crops rather than compresses,
- * and while the whole cluster still fits, the two spreads are the same numbers.
- * The moment the cluster stops fitting, `onScreen` falls and they part.
+ * horizontal pixel position works out to `worldX · height / (2 · z · tan)` plus
+ * half the width, so the *spacing* between two systems does not depend on the
+ * width at all. A narrower cell therefore crops rather than compresses, and
+ * while the whole cluster still fits, the two spreads are the same numbers. The
+ * moment the cluster stops fitting they part — so both rows print the on-screen
+ * count beside the spread, because that is the precondition the equality rests
+ * on and a reader comparing two identical spreads cannot otherwise see whether
+ * it still holds.
  */
 const CONSOLE_OPEN = { width: 743, height: 462 };
 /** The shipped camera distance, expressed against the shipped radius, so a
@@ -459,6 +463,22 @@ function modeShipped(): void {
 		const d = crowdSpread(c, DESKTOP, r, pitch);
 		const k = crowdSpread(c, CONSOLE, r, pitch);
 		const ko = crowdSpread(c, CONSOLE_OPEN, r, pitch);
+		/** How many systems the framing actually puts on screen, as a range over
+		 *  the corpus — the precondition the two cells’ equal spreads rest on. */
+		const seen = (box: { width: number; height: number }): string => {
+			const counts = c.map(
+				(l) =>
+					crowdingAt(l.positions, {
+						...box,
+						distance: r * CAMERA_PER_RADIUS,
+						yaw: DEFAULT_YAW,
+						pitch,
+					}).onScreen,
+			);
+			const low = Math.min(...counts);
+			const high = Math.max(...counts);
+			return low === high ? String(low) : `${low}-${high}`;
+		};
 		console.log(`${label} q=${q} R=${r}`);
 		console.log(
 			`  layouts        : ${c.length} connected, ${c.reduce((a, l) => a + isolated(l.positions), 0)} isolated systems`,
@@ -473,10 +493,10 @@ function modeShipped(): void {
 			`  crowd desktop  : ${(mean(d) * 100).toFixed(1)}%  (spread ${pct(d)}) at pitch ${pitch}`,
 		);
 		console.log(
-			`  crowd console  : ${(mean(k) * 100).toFixed(1)}%  (spread ${pct(k)})`,
+			`  crowd console  : ${(mean(k) * 100).toFixed(1)}%  (spread ${pct(k)}) over ${seen(CONSOLE)} on screen at ${CONSOLE.width}x${CONSOLE.height}`,
 		);
 		console.log(
-			`  crowd cons-open: ${(mean(ko) * 100).toFixed(1)}%  (spread ${pct(ko)}) at ${CONSOLE_OPEN.width}x${CONSOLE_OPEN.height}`,
+			`  crowd cons-open: ${(mean(ko) * 100).toFixed(1)}%  (spread ${pct(ko)}) over ${seen(CONSOLE_OPEN)} on screen at ${CONSOLE_OPEN.width}x${CONSOLE_OPEN.height}`,
 		);
 	}
 }

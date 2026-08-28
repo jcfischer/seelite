@@ -332,7 +332,7 @@ export function mountFinderPanel({
 			border: "0",
 			borderBottom: "1px solid rgba(38,80,110,.5)",
 		});
-		paintRow(pick, row.selected);
+		paintRow(pick, row.index === selectedIndex());
 
 		const name = el("span");
 		name.textContent = row.name;
@@ -438,20 +438,26 @@ export function mountFinderPanel({
 		const inputKey = `${here.index}|${filter.budgetJumps}|${filter.query.trim().toLowerCase()}|${[...filter.economies].sort((a, b) => a - b).join(",")}`;
 		if (inputKey !== projectionKey) {
 			projectionKey = inputKey;
-			results = projectFinder(systems, here, filter, selectedIndex());
+			results = projectFinder(systems, here, filter);
 		}
 		const { inBudget, beyondRange } = results;
-		// **Keyed on what would be drawn, not on the filter.** Two filters can
-		// yield the same rows, and the ship moving under a fixed filter yields
-		// different jump counts under the same indices — so the key carries the
-		// drawn rows' identity and reach, plus both group sizes so a change past
-		// the cap still forces the "+N more" line to be rewritten.
+		// **Keyed on what the rows actually print.** Two filters can yield the
+		// same rows, and the ship moving under a fixed filter yields different
+		// chains under the same indices — so the key carries the identity, the
+		// jump count *and the chain length*, plus both group sizes so a change
+		// past the cap still rewrites the "+N more" line. The length was missing
+		// at first, which would leave a row whose hop count survived a jump
+		// printing the chain length of the system the ship had left. **No red
+		// build for that one**: it needs a jump that preserves group membership
+		// and every jump count while changing a chain length, and none was found
+		// at this seed. The fix is by construction — the key carries what the
+		// row prints — and saying so is better than implying a run behind it.
 		const key = [inBudget, beyondRange]
 			.map(
 				(rows) =>
 					`${rows.length}#${rows
 						.slice(0, FINDER_DRAWN_ROWS)
-						.map((r) => `${r.index}:${r.jumps}`)
+						.map((r) => `${r.index}:${r.jumps}:${r.routeLy?.toFixed(1)}`)
 						.join(",")}`,
 			)
 			.join("|");
@@ -492,15 +498,12 @@ export function mountFinderPanel({
 		// Two rows, not all of them: `recompute` runs on every chart click, and
 		// repainting a wide list to move one highlight is hundreds of writes for
 		// a change to two of them.
+		// **The selection is the chart's, and it is read here rather than
+		// carried on the rows.** It used to be a `selected` field the projection
+		// filled in and this loop rewrote — two owners of one fact, and the
+		// projection's copy went stale the moment a render skipped it.
 		const next = selectedIndex();
 		if (next !== paintedIndex) {
-			// The held rows carry `selected`, and `state` reports them — so a
-			// repaint that touched only the DOM would leave the reported state
-			// describing the previous selection while the panel showed the new
-			// one. Two field writes per row, no allocation, and only on the
-			// renders where the selection actually moved.
-			for (const rows of [results.inBudget, results.beyondRange])
-				for (const row of rows) row.selected = row.index === next;
 			const before =
 				paintedIndex === null ? null : rowElements.get(paintedIndex);
 			if (before) paintRow(before, false);

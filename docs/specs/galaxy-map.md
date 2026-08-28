@@ -448,6 +448,17 @@ this node and is unchanged by it. What the instrument is used for here is the
 **equality of the two cells' spreads** — a comparison inside one population —
 which is what licenses reusing the closed cell's band for the open one.
 
+**Closed, the panel floats over the chart's top-right corner, and nothing
+§5.1 counts is under it.** D3 preserved the *cell*, which is what the crowding
+band is a figure about — but a system drawn beneath an interactive control
+cannot be clicked, so if any were, the band would be counting unpickable points
+as pickable. Measured at the default framing: **none are**, because the cluster
+does not reach that corner. That is a fact about the framing rather than about
+the layout — zoom in and the cluster spreads until seven of the 152 then on
+screen sit under the panel — so §9.3 item 7 asserts both, and a later control
+that grew into the cluster at the default view goes red there rather than
+quietly changing what §5.1's figure means.
+
 **The drawn list is capped at 60 rows per group, and the cap says so.** A
 one-character query at a wide budget matches most of a 256-system galaxy, and
 every row is five elements, so an uncapped rebuild made a keystroke create about
@@ -626,7 +637,11 @@ The finder's arithmetic (§5.2), all of it reachable without a DOM.
    reconstruction, which is everything the two do differently. An isolated
    system, built by hand because §5 of `galaxy-generation.md` guarantees the
    real generator has none, is **absent** from the map rather than carrying a
-   sentinel.
+   sentinel. The sweep itself does **not** reach the unreachable case — §5 of
+   `galaxy-generation.md` guarantees connectivity, so its `route === null`
+   branch never runs and `unreachable` is pinned at 0 to say so. A second test
+   asks both sides about a pool with hand-built islands in it, because a branch
+   no run enters is a branch nothing checks.
 2. **All three controls narrow**, so the expand rule cannot be keyed to the text
    field alone; whitespace is not a query.
 3. **The name match is a case-insensitive substring**, an empty chip set means
@@ -765,10 +780,19 @@ The chart's *mount* rather than its projection, and the list beside it.
 
 7. **The finder's collapsed form, and what expands it** (§5.2). Closed, it is a
    field and eight chips with the results hidden and the chart holding the cell
-   §5.1's band was measured on. **The chip case is checked before the typed
-   one**, and from a cleared filter: verifying only typing passes a build whose
-   chips are dead, which is a defect `live-cockpit.ts` records having shipped
-   once already. Clearing every narrowing collapses it again.
+   §5.1's band was measured on — **both dimensions**, since a check on the width
+   alone would not notice a control that took a strip off the top.
+
+   **Nothing §5.1 counts is hidden under it at the default framing**, asserted
+   with the case that shows the measurement is real: zoom in and seven of the
+   152 systems then on screen do go under the panel. The first half alone is a
+   check that cannot fail on a build whose panel is nowhere near the cluster,
+   which is every build until one is.
+
+   **The chip case is checked before the typed one**, and from a cleared filter:
+   verifying only typing passes a build whose chips are dead, which is a defect
+   `live-cockpit.ts` records having shipped once already. Clearing every
+   narrowing collapses it again.
 8. **Both directions of the beyond-range group, in the DOM.** The two query
    names are taken from the projection at run time rather than hard-coded, and
    are chosen to sit either side of the default budget. The heading is counted

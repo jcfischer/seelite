@@ -150,7 +150,6 @@ export interface FinderRow {
 	routeLy: number | null;
 	/** Straight-line distance, which exists even where a route does not. */
 	distanceLy: number;
-	selected: boolean;
 }
 
 /**
@@ -178,11 +177,16 @@ export function finderMatches(
 	return query === "" || system.name.toLowerCase().includes(query);
 }
 
+/**
+ * **No `selected` field.** Which row is selected is the chart's fact, not the
+ * projection's, and a copy here is one that goes stale the moment a render
+ * skips the projection — which is exactly what the panel does when only the
+ * selection moved. The panel paints from the chart's own answer.
+ */
 const row = (
 	system: SystemRecord,
 	from: SystemRecord,
 	reach: JumpReach | undefined,
-	selectedIndex: number | null,
 ): FinderRow => ({
 	index: system.index,
 	name: system.name,
@@ -192,7 +196,6 @@ const row = (
 	jumps: reach?.jumps ?? null,
 	routeLy: reach?.ly ?? null,
 	distanceLy: distanceLy(from.pos, system.pos),
-	selected: system.index === selectedIndex,
 });
 
 /**
@@ -240,7 +243,6 @@ export function projectFinder(
 	systems: readonly SystemRecord[],
 	from: SystemRecord,
 	filter: FinderFilter,
-	selectedIndex: number | null = null,
 	maxJump = JUMP_RANGE_LY,
 ): FinderResults {
 	const projection = projectJumps(systems, from, maxJump);
@@ -252,10 +254,13 @@ export function projectFinder(
 		if (system.galaxy !== from.galaxy) continue;
 		if (!finderMatches(system, filter)) continue;
 		const here = projection.reach(system);
-		const built = row(system, from, here, selectedIndex);
+		// **Built inside the branch that keeps it.** Constructed before the
+		// test, a chip-only narrowing at the default budget allocated a row and
+		// took a square root for every matching out-of-budget system and then
+		// dropped it — up to 250 of them on one chip click.
 		if (here !== undefined && here.jumps <= filter.budgetJumps)
-			inBudget.push(built);
-		else if (hasQuery) beyondRange.push(built);
+			inBudget.push(row(system, from, here));
+		else if (hasQuery) beyondRange.push(row(system, from, here));
 	}
 
 	inBudget.sort(byReach);
