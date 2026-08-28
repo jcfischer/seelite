@@ -112,7 +112,7 @@ const EXEMPT = new Map([
 	],
 	[
 		"capture-views.mjs",
-		"captures #104's view set; the gate is a human looking at the sheet, so it has no checks either — it does listen for shader and page errors, and makes both fatal",
+		"captures #104's view set; the gate is a human looking at the sheet, so it has no checks either — it does listen for shader and page errors, and a fault removes the run and the sheet rather than reporting one",
 	],
 ]);
 

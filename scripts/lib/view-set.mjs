@@ -223,14 +223,20 @@ const esc = (s) =>
  * declared has no lever behind it and no reason to be judged, and admitting one
  * quietly makes the set whatever the last capture happened to emit.
  *
- * @param {Array<{label: string, gitRef: string, capturedAt: string, renderer: string, seed: number, views: Array<{name: string, file: string}>}>} runs
+ * `views` is a parameter for the reason `uncoveredLevers` takes one: the
+ * completeness rule is the whole point of this function, and a rule that can
+ * only ever be exercised against the one real set is a rule nothing has watched
+ * fail. It defaults to `VIEWS`, so every caller but a test passes one argument.
+ *
+ * @param {Array<{label: string, gitRef: string, capturedAt: string, renderer: string, seed: number, views: Array<{name: string, file: string, gameTime?: number}>}>} runs
+ * @param {ReadonlyArray<{name: string, what: string, covers: number[]}>} [views]
  * @returns {string} a standalone HTML page
  */
-export function contactSheet(runs) {
+export function contactSheet(runs, views = VIEWS) {
 	if (!runs.length)
 		throw new Error("contactSheet: no runs — there is nothing to look at");
 
-	const declared = new Set(VIEWS.map((v) => v.name));
+	const declared = new Set(views.map((v) => v.name));
 	for (const run of runs) {
 		const present = new Set(run.views.map((v) => v.name));
 		const missing = [...declared].filter((n) => !present.has(n));
@@ -268,8 +274,9 @@ export function contactSheet(runs) {
 				`<th><b>${esc(r.label)}</b><span>${esc(r.gitRef)} · ${esc(r.renderer)}${esc(clockSpan(r))}</span></th>`,
 		)
 		.join("");
-	const rows = VIEWS.map(
-		(view) => `<tr>
+	const rows = views
+		.map(
+			(view) => `<tr>
   <th scope="row">
     <b>${esc(view.name)}</b>
     <span>${esc(view.what)}</span>
@@ -284,7 +291,8 @@ ${runs
 	)
 	.join("\n")}
 </tr>`,
-	).join("\n");
+		)
+		.join("\n");
 
 	return `<!doctype html>
 <meta charset="utf-8">

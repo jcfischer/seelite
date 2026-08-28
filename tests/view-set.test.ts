@@ -157,4 +157,27 @@ describe("the contact sheet", () => {
 	test("refuses no runs at all rather than emitting an empty sheet", () => {
 		expect(() => contactSheet([])).toThrow();
 	});
+
+	/**
+	 * The completeness rule against a set that is not the real one — the same
+	 * reason `uncoveredLevers` takes its subject as a parameter. A rule only ever
+	 * exercised against `VIEWS` is one nothing has watched decide.
+	 */
+	test("judges completeness against the set it is given, not the module's", () => {
+		const alt = [{ name: "only-view", what: "just the one", covers: [99] }];
+		const run = {
+			label: "alt",
+			gitRef: "abc1234",
+			capturedAt: "2026-08-28T12:00:00.000Z",
+			renderer: "ANGLE (Apple, Apple M1 Pro, OpenGL 4.1)",
+			seed: SEED,
+			views: [{ name: "only-view", file: "alt/only-view.png" }],
+		};
+		const html = contactSheet([run], alt);
+		expect(html).toContain("only-view");
+		expect(html).not.toContain("cockpit-arrival");
+		// And the same run is incomplete against the real set, which is the half
+		// that proves the parameter is doing the deciding.
+		expect(() => contactSheet([run])).toThrow("cockpit-arrival");
+	});
 });
