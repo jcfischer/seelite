@@ -116,11 +116,12 @@ export function dockingDirector(input: {
 	const { stationId, frame, pose, state, gameTime } = input;
 	const evaluation = evaluateEntry(frame, pose, { hostile: state.hostile });
 	const live = grantLive(state, gameTime);
+	const rangeKm = length(pose.rel);
 
 	return {
 		stationId,
-		rangeKm: length(pose.rel),
-		inVicinity: length(pose.rel) <= VICINITY_KM,
+		rangeKm,
+		inVicinity: rangeKm <= VICINITY_KM,
 		grantRemainingS:
 			live && state.clearance.kind === "granted"
 				? state.clearance.expiresAtS - gameTime

@@ -2809,14 +2809,23 @@ class Game {
 	 * because a permanently-visible funnel is the wall of labels §1 refuses.
 	 */
 	directorState(): DirectorState | null {
-		const of = (id: string) =>
-			dockingDirector({
+		// **Range-gated before the director is built.** Normal flight is mostly
+		// out of §6's vicinity and this runs every frame for a HUD element that
+		// then paints nothing, so the cheap test comes first: `entryPoseOf` is one
+		// subtraction pair, where `dockingDirector` behind it is an aperture
+		// frame, a station pose and a full six-row entry evaluation. The
+		// selected-target branch below would otherwise pay all of it twice.
+		const of = (id: string) => {
+			const pose = this.entryPoseOf(id);
+			if (length(pose.rel) > VICINITY_KM) return null;
+			return dockingDirector({
 				stationId: id,
 				frame: this.apertureFrameOf(id),
-				pose: this.entryPoseOf(id),
+				pose,
 				state: this.dockingStateOf(id),
 				gameTime: this.world.gameTime,
 			});
+		};
 		// The selected station wins **only while it is local**. Selecting one
 		// across the system and flying to another is the ordinary case, and a
 		// selection-only rule left the pilot two kilometres off a slot with no
@@ -2826,12 +2835,10 @@ class Game {
 			this.world.system.contents.stations.some((s) => s.id === this.targetId)
 		) {
 			const selected = of(this.targetId);
-			if (selected.inVicinity) return selected;
+			if (selected) return selected;
 		}
 		const nearest = this.stationsByRange()[0]?.id;
-		if (!nearest) return null;
-		const director = of(nearest);
-		return director.inVicinity ? director : null;
+		return nearest ? of(nearest) : null;
 	}
 
 	/**

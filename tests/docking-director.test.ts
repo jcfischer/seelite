@@ -287,6 +287,40 @@ describe("§3: the roll-match ring reads check 4's own angle", () => {
 	 * than drawing a tick nobody measured, and this row pins that divergence
 	 * instead of hiding it behind a loose tolerance.
 	 */
+	/**
+	 * The sweep above holds the up-vector exactly in the slot plane and the nose
+	 * on the axis — one degree of freedom, and not the one the projection guard
+	 * exists for. A real approach has neither: the nose is off-axis while it is
+	 * being corrected, and the up-vector has a component along the docking axis
+	 * for the whole of that. This sweeps both at once, because the claim being
+	 * made is about `signedRollDeg`'s *conditioning*, and a pose that is always
+	 * perfectly conditioned cannot test it.
+	 */
+	test("cue and check agree with the nose off-axis and the up-vector out of plane", () => {
+		const frame = frameFor("trade");
+		const basis = slotBasis(frame);
+		for (const noseDeg of [0, 20, 34, 48]) {
+			const nose = rotate(scale(frame.axis, -1), PERP, noseDeg * DEG);
+			for (const tiltDeg of [-70, -25, 25, 70]) {
+				for (const rollDeg of [-80, -47, -3, 0, 3, 47, 80]) {
+					const inPlane = rotate(basis.across, frame.axis, rollDeg * DEG);
+					// Tilted about the slot's own `across`, which takes the vector out
+					// of the plane and gives it the axial component the guard reads.
+					const up = rotate(inPlane, basis.across, tiltDeg * DEG);
+					const pose = nominal(frame, { nose, up });
+					const e = evaluateEntry(frame, pose, { hostile: false });
+					const d = director(frame, pose);
+					expect(d.roll?.deg).toBe(e.rollAngleDeg);
+					expect(d.roll?.within).toBe(e.checks.rollMatch);
+					expect(Math.abs(d.rollSignedDeg as number)).toBeCloseTo(
+						e.rollAngleDeg,
+						9,
+					);
+				}
+			}
+		}
+	});
+
 	test("an up-vector along the docking axis reports no signed roll", () => {
 		const frame = frameFor("trade");
 		const pose = nominal(frame, { up: frame.axis });

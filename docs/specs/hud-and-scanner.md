@@ -166,7 +166,7 @@ So the director is verified against `docking.ts` itself, in both tiers:
 | Where | What it holds |
 |---|---|
 | `tests/docking-director.test.ts` | Every angle the cues are judged on is `evaluateEntry`'s. Check 2's **two halves get two sweeps** — a sweep that rotates only the nose leaves the position cue constant, so it constrains the nose alone — and check 4 gets a third. Each runs a 0.25° grid over 0–90° **and a 0.005° grid through the half-degree either side of the tolerance**, skipping only the exact boundary, where the check's cosine comparison and the cue's degree comparison may legitimately differ by about 1e-6°. The fine pass is what makes the claim mean anything: a director whose tolerance is 35.1° disagrees with the gate only on (35°, 35.1°], and the coarse grid steps straight over it. |
-| `scripts/probe-docking.mjs` | The funnel, the axis marker, the roll ring, the corridor bar and the clearance line reach the glass on a live approach; five degrees past the tolerance takes the marker out of the funnel **and repaints it**; the ring pins the ship at screen up and moves the slot's reference by the commanded roll, landing on opposite sides of the screen for opposite rolls; the corridor bar fills and fails as the ship leaves the axis; a pad draws no ring; hostility outranks a live grant; a head turn takes the director off the glass. |
+| `scripts/probe-docking.mjs` | The funnel, the axis marker, the roll ring, the corridor bar and the clearance line reach the glass on a live approach; five degrees past the tolerance takes the marker out of the funnel, and the ring's **stroked colour** changes on the same pixels; the ring pins the ship at screen up and moves the slot's reference by the commanded roll, landing on opposite sides of the screen for opposite rolls; the corridor bar fills and fails as the ship leaves the axis; a pad draws no ring; hostility outranks a live grant; a head turn takes the director off the glass. |
 
 **The browser rows that matter are the ones the draw decides.** Most of what
 `directorRender` carries is the director's own state copied across unchanged,
@@ -178,10 +178,19 @@ what the browser tier pins.
 **And one row reads the canvas, because the record cannot report on itself.**
 `directorRender` is assembled at the end of the draw whether or not its strokes
 landed: delete every `ctx.stroke()` and every field-reading row stays green
-while the pilot sees nothing. So one row samples the overlay's own pixels around
-the innermost funnel ring and requires them painted, with the head-turned frame
+while the pilot sees nothing. So two rows sample the overlay's own pixels around
+the innermost funnel ring: one requires them painted, with the head-turned frame
 — where §5's grammar says the glass is replaced — as the control that they are
-genuinely absent.
+genuinely absent, and one requires the stroked colour to change when the cue
+leaves the tolerance, which is the difference between a funnel that repaints and
+a record that says it did.
+
+**All three frames sample the same pixels, and that is the whole of the
+control.** Deriving the ring from each frame's own record was the first version:
+the record is `null` on a head turn, so the sampler never ran there and "zero
+pixels painted" was true without reading one. A build that nulled the record
+while leaving the funnel on the glass passed. The ring is now taken once and
+held fixed.
 
 The browser rows read `directorRender`, which the **draw** writes rather than a
 computation beside it, so a build that produced a correct director and never

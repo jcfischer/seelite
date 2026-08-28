@@ -646,40 +646,66 @@ async function directorAt(setup) {
 			// **The one thing the record cannot honestly self-report.**
 			// `directorRender` is assembled at the end of the draw whether or not
 			// the strokes landed, so deleting every `ctx.stroke()` would leave every
-			// field above unchanged. This reads the overlay's own pixels on the
-			// innermost funnel ring — the outer one runs off a 620 px canvas at a
-			// 35° cone — and counts how many sample points have anything painted at
-			// them. The 3×3 neighbourhood is because a 1.5 px stroke on a
-			// circle does not land on the exact sampled pixel.
+			// field above unchanged. This reads the overlay's own pixels.
+			//
+			// **The ring is passed in, not taken from the record.** Deriving it from
+			// `drawn` was the first version and it made the control vacuous: on a
+			// head-turned frame `drawn` is null, so the sampler never ran and
+			// "zero pixels painted" was true without reading one. Both frames now
+			// sample the *same* pixels, so a build that nulled the record while
+			// leaving the funnel on the glass goes red.
+			//
+			// One `getImageData` over the ring's bounding box rather than 24: each
+			// call is a synchronous readback off an accelerated canvas, and the
+			// `willReadFrequently` hint is ignored here because the game created
+			// this context first.
 			let funnelPixelHits = 0;
+			let funnelPixelColour = null;
+			const ring = setup.sampleRing ?? null;
 			const overlay = document.getElementById("overlay");
-			if (drawn && overlay) {
-				const octx = overlay.getContext("2d", { willReadFrequently: true });
-				const r = drawn.funnelRadiusPx * 0.28;
-				for (let i = 0; i < 24; i++) {
-					const a = (i / 24) * Math.PI * 2;
-					const px = Math.round(drawn.centre.x + Math.cos(a) * r);
-					const py = Math.round(drawn.centre.y + Math.sin(a) * r);
-					if (
-						px < 1 ||
-						py < 1 ||
-						px > overlay.width - 2 ||
-						py > overlay.height - 2
-					)
-						continue;
-					const patch = octx.getImageData(px - 1, py - 1, 3, 3).data;
-					for (let k = 3; k < patch.length; k += 4) {
-						if (patch[k] > 0) {
+			if (ring && overlay) {
+				const octx = overlay.getContext("2d");
+				const x0 = Math.max(0, Math.floor(ring.x - ring.r) - 2);
+				const y0 = Math.max(0, Math.floor(ring.y - ring.r) - 2);
+				const x1 = Math.min(overlay.width, Math.ceil(ring.x + ring.r) + 2);
+				const y1 = Math.min(overlay.height, Math.ceil(ring.y + ring.r) + 2);
+				if (x1 > x0 && y1 > y0) {
+					const box = octx.getImageData(x0, y0, x1 - x0, y1 - y0);
+					const at = (px, py) => {
+						const i = ((py - y0) * box.width + (px - x0)) * 4;
+						return box.data[i + 3] > 0
+							? [box.data[i], box.data[i + 1], box.data[i + 2]]
+							: null;
+					};
+					for (let i = 0; i < 24; i++) {
+						const a = (i / 24) * Math.PI * 2;
+						const px = Math.round(ring.x + Math.cos(a) * ring.r);
+						const py = Math.round(ring.y + Math.sin(a) * ring.r);
+						let found = null;
+						for (let dy = -1; dy <= 1 && !found; dy++)
+							for (let dx = -1; dx <= 1 && !found; dx++) {
+								if (
+									px + dx < x0 ||
+									py + dy < y0 ||
+									px + dx >= x1 ||
+									py + dy >= y1
+								)
+									continue;
+								found = at(px + dx, py + dy);
+							}
+						if (found) {
 							funnelPixelHits++;
-							break;
+							funnelPixelColour = found;
 						}
 					}
 				}
 			}
+
 			return {
 				id,
 				apertureKind: snap.apertureKind,
 				funnelPixelHits,
+				funnelPixelColour,
 				drawn: drawn
 					? {
 							funnelRadiusPx: drawn.funnelRadiusPx,
@@ -933,16 +959,71 @@ check(
 	JSON.stringify(turned.drawn),
 );
 
+/**
+ * The ring the three paint rows below all sample — **one geometry, three
+ * frames**. Taken from the aligned run's record rather than recomputed, and
+ * then held fixed, because the point of the control frame is that the same
+ * pixels are read on it. The innermost of the three rings: the outer runs off a
+ * 620 px canvas at a 35° cone.
+ */
+const SAMPLE_RING = {
+	x: inside.drawn.centre.x,
+	y: inside.drawn.centre.y,
+	r: inside.drawn.funnelRadiusPx * 0.28,
+};
+
+const paintAligned = await directorAt({
+	standoffKm: 3.2,
+	noseDeg: AXIS_DEG - 5,
+	rollDeg: 0,
+	clear: true,
+	sampleRing: SAMPLE_RING,
+});
+const paintOffAxis = await directorAt({
+	standoffKm: 3.2,
+	noseDeg: AXIS_DEG + 5,
+	rollDeg: 0,
+	clear: true,
+	sampleRing: SAMPLE_RING,
+});
+const paintTurned = await directorAt({
+	standoffKm: 3.2,
+	noseDeg: AXIS_DEG - 5,
+	rollDeg: 0,
+	clear: true,
+	headLook: "left",
+	sampleRing: SAMPLE_RING,
+});
+await page.evaluate(() => window.__seelite.setHeadLook("forward"));
+
 check(
 	// **The row the record cannot fake.** Every other browser row reads
 	// `directorRender`, which the draw assembles whether or not its strokes
 	// landed — delete the three `ctx.arc`/`ctx.stroke` calls and they all stay
-	// green while the pilot sees nothing. This reads the overlay canvas itself,
-	// and the control is the head-turned frame, where §5's grammar says the
-	// glass is replaced and the ring must genuinely not be there.
+	// green while the pilot sees nothing. This reads the overlay canvas itself.
+	//
+	// The control is the head-turned frame, where §5's grammar says the glass is
+	// replaced. It reads the **same pixels**: an earlier version derived the ring
+	// from the record, which is null there, so the sampler never ran and the zero
+	// was true without looking.
 	"the funnel ring is actually painted on the overlay, and a head turn wipes it",
-	inside.funnelPixelHits > 12 && turned.funnelPixelHits === 0,
-	`${inside.funnelPixelHits} of 24 sample points painted, ${turned.funnelPixelHits} after the head turn`,
+	paintAligned.funnelPixelHits > 12 && paintTurned.funnelPixelHits === 0,
+	`${paintAligned.funnelPixelHits} of 24 sample points painted, ${paintTurned.funnelPixelHits} after the head turn`,
+);
+check(
+	// `funnelState` above is a string the draw recorded. This is the colour it
+	// actually stroked, on the same pixels, five degrees either side of the
+	// tolerance — the difference between a cue that repaints and one that only
+	// says it did.
+	"the painted ring changes colour when the cue leaves the tolerance",
+	Array.isArray(paintAligned.funnelPixelColour) &&
+		Array.isArray(paintOffAxis.funnelPixelColour) &&
+		paintOffAxis.funnelPixelHits > 12 &&
+		paintAligned.funnelPixelColour.join() !==
+			paintOffAxis.funnelPixelColour.join(),
+	`${JSON.stringify(paintAligned.funnelPixelColour)} then ${JSON.stringify(
+		paintOffAxis.funnelPixelColour,
+	)}`,
 );
 await page.evaluate(() => window.__seelite.setHeadLook("forward"));
 
