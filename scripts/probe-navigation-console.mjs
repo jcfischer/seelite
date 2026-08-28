@@ -113,10 +113,17 @@ check(
 );
 check(
 	"rows are ordered by the simulation's own ranges, nearest first",
+	// **Tolerance, because the world does not stop for the probe.** The rows
+	// were sorted at render time and these ranges are sampled after it, so two
+	// near-equidistant bodies that cross in between would fail a correct build.
+	// A part-per-thousand is far below any real ordering error — the probe's
+	// own seed puts its closest pair 0.17% apart — and far above one frame of
+	// orbital motion.
 	listed.rows.every(
 		(row, i) =>
 			row.trueRangeKm !== null &&
-			(i === 0 || row.trueRangeKm >= listed.rows[i - 1].trueRangeKm),
+			(i === 0 ||
+				row.trueRangeKm >= listed.rows[i - 1].trueRangeKm * (1 - 1e-3)),
 	),
 	listed.rows.map((r) => `${r.id}:${Math.round(r.trueRangeKm)}`).join(" "),
 );
@@ -300,6 +307,65 @@ check(
 	"the simulation keeps running while the chart is open",
 	framesAfter > framesBefore + 5,
 	`${framesBefore} → ${framesAfter}`,
+);
+
+// ---- Crowding at the framing the player actually gets ----------------------
+
+/**
+ * §5.1's 40.2% is what makes the list mandatory rather than a convenience — and
+ * it was measured on the workbench, which is a whole 1280 × 760 page. The tab
+ * draws into a grid cell inside the console, roughly 1075 × 500 here, and
+ * crowding is a **pixel** property: it is a function of the projection, the
+ * viewport and `PICK_RADIUS_PX`, so a smaller box packs the same 256 points
+ * into fewer pixels and can only make it worse.
+ *
+ * Sharing `mountGalaxyChart` therefore does not carry the figure across. The
+ * same method as `probe-galaxy-map.mjs` §9.2, run at the shipped framing, and
+ * the assertion is the one the decision actually rests on: at the view that
+ * frames the cluster, a large share of systems cannot be picked apart, so the
+ * chart cannot be its own finder.
+ */
+const crowding = await page.evaluate(() => {
+	const map = window.__seeliteGalaxyMap;
+	map.select(null);
+	map.resetView();
+	const radius = map.pickRadiusPx;
+	const { width, height } = map.viewport();
+	// On screen, not merely in front of the camera — counting points that have
+	// left the viewport inflates the figure with pairs nobody can see.
+	const visible = map
+		.projected()
+		.filter(
+			(p) => !p.behind && p.x >= 0 && p.y >= 0 && p.x <= width && p.y <= height,
+		);
+	let crowded = 0;
+	for (const a of visible) {
+		for (const b of visible) {
+			if (a.index === b.index) continue;
+			if (Math.hypot(a.x - b.x, a.y - b.y) < radius) {
+				crowded++;
+				break;
+			}
+		}
+	}
+	return {
+		fraction: visible.length === 0 ? 1 : crowded / visible.length,
+		onScreen: visible.length,
+		width,
+		height,
+	};
+});
+// Banded rather than floored, the way `probe-galaxy-map.mjs` bands §5.1's own
+// figure: a floor cannot notice the projection getting *better*, and a change
+// that halved crowding would be a change to the argument for the list.
+// Calibrated on 1280 x 760; the metric is viewport-dependent, so a narrow
+// viewport would need its own band rather than this one widened.
+check(
+	"the chart in the console is crowded enough that the list is mandatory",
+	crowding.onScreen > 100 &&
+		crowding.fraction >= 0.55 &&
+		crowding.fraction <= 0.8,
+	`${(crowding.fraction * 100).toFixed(1)}% of ${crowding.onScreen} on screen at ${Math.round(crowding.width)}x${Math.round(crowding.height)}`,
 );
 
 // ---- Teardown -------------------------------------------------------------

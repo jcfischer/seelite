@@ -118,7 +118,8 @@ large console display the primary view; looking forward returns to flying glass
 and the lower-centre radar.
 
 Navigation lists filterable targets with type, range, ETA, and the expanded
-scanner, and carries the galaxy chart on its own tab (`galaxy-map.md` §1). The
+scanner, and the left console carries the galaxy chart on a sibling tab
+(`galaxy-map.md` §1) that replaces the Navigation body and retitles the header. The
 list is the **finding** surface and the chart the **reading** one: §5.1 of that
 spec measured that no camera distance both frames the cluster and lets a system
 be picked, so the list is load-bearing rather than a convenience. Ranges refresh

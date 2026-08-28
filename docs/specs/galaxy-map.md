@@ -234,6 +234,17 @@ No point-size tuning changes this: it is 256 points in a ball whose core is
 three times as dense as its rim, and the metric is a function of the projection
 and the pick radius alone.
 
+**And it is worse in the cockpit than on the workbench.** The table above was
+measured on `?galaxy-map`, a whole 1280 x 760 page. The shipped tab draws into a
+grid cell inside the console — 1011 x 462 at that same viewport — and crowding
+is a **pixel** property: the same 256 points packed into fewer pixels against an
+unchanged `PICK_RADIUS_PX`. Measured there at the default framing:
+**68.8% of 256**, against 40.2% full-page, with the whole cluster still on
+screen. Sharing `mountGalaxyChart` does not carry the figure across, so
+`probe-navigation-console.mjs` measures it at the shipped framing by the same
+method and bands it at 55-80%; the band is calibrated on 1280 x 760 and a narrow
+viewport would need its own.
+
 So the chart is the **reading** surface and Navigation's filterable list is the
 **finding** surface — which is what `hud-and-scanner.md` §2 already says
 ("Navigation is authoritative for target selection and filters"). Selecting a
@@ -486,7 +497,8 @@ The chart's *mount* rather than its projection, and the list beside it.
    `includes`, because `navFilterMatches` matches anywhere in the id and a probe
    asserting a prefix would go red on a correctly-listed mid-string match. That
    a distinguishing fragment was found is itself a check, so a seed where none
-   exists reports a skip rather than exiting green having tested nothing.
+   exists goes **red** rather than exiting green having tested nothing — a
+   failure that names the seed rather than a silent skip.
 3. **The chart stays inside the panel.** Measured on the **canvas**, not on the
    host element: the host is a grid cell the console laid out, so its box is
    inside the panel by construction and asserting on it is asserting the

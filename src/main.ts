@@ -1401,6 +1401,11 @@ class Game {
 			},
 			onNavFilter: (filter) => {
 				this.navFilter = filter;
+				// Widening the filter re-admits rows whose estimate was computed
+				// earlier in this interval and then never touched again. Cheaper
+				// to drop the whole map on a filter change — which is a keystroke,
+				// not a frame — than to key every entry by its tick.
+				this.navEtaCache.clear();
 				this.updateCockpit();
 			},
 			onSelectTarget: (id) => {

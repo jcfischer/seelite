@@ -132,24 +132,40 @@ test("no module in src/ statically imports the galaxy chart", () => {
 	// than the check behind it. `import type` is erased before the bundler sees
 	// it, so it is not the thing being banned.
 	const offenders: string[] = [];
-	for (const file of readdirSync(repoPath("src"))) {
-		if (!file.endsWith(".ts") || file === "galaxy-map.ts") continue;
-		// Whole `import … from "./galaxy-map"` statements, single- or multi-line.
-		// Matched as statements rather than as lines, because a type-only import
-		// spread over several lines carries its `type` markers on the ones a
-		// line-at-a-time scan would judge on their own.
-		for (const [statement] of codeOf(`src/${file}`).matchAll(
-			// `[^;]*` cannot cross a statement terminator, so the match starts at
-			// this import's own `import` keyword rather than at the file's first
-			// one — which a lazy `[\s\S]*?` does, swallowing every import above it.
-			/^import\b[^;]*?from "\.\/galaxy-map";/gm,
-		)) {
-			// `import type { … }` is erased before the bundler sees it, so it is
-			// not what folds the chunk back in.
-			if (/^import\s+type\b/.test(statement)) continue;
-			offenders.push(`src/${file}: ${statement.replace(/\s+/g, " ")}`);
+	const walk = (dir: string) => {
+		for (const entry of readdirSync(repoPath(dir), { withFileTypes: true })) {
+			const path = `${dir}/${entry.name}`;
+			// Recursive, because `readdirSync` on `src` alone would let a module
+			// in a subdirectory carry the import the whole test exists to ban.
+			if (entry.isDirectory()) {
+				walk(path);
+				continue;
+			}
+			if (!entry.name.endsWith(".ts") || path === "src/galaxy-map.ts") continue;
+			for (const [statement] of codeOf(path).matchAll(
+				// Three forms fold the chunk back in, and an earlier version of
+				// this test caught only the first: a named `import … from`, a
+				// bare side-effect `import "./galaxy-map";`, and a re-export.
+				//
+				// `[^;]*` cannot cross a statement terminator, so each match
+				// starts at its own keyword rather than at the file's first
+				// import — which a lazy `[\s\S]*?` does, swallowing everything
+				// above it.
+				// The specifier is matched as *any* path ending in `/galaxy-map`,
+				// not as the literal `./galaxy-map`: a module one directory down
+				// writes `../galaxy-map` and folds the chunk in exactly the same
+				// way. The recursion was added without this and the subdirectory
+				// case stayed green.
+				/^(?:import|export)\b[^;]*?["'][^"']*\/galaxy-map["'];/gm,
+			)) {
+				// `import type { … }` is erased before the bundler sees it, so it
+				// is not what costs anything.
+				if (/^import\s+type\b/.test(statement)) continue;
+				offenders.push(`${path}: ${statement.replace(/\s+/g, " ")}`);
+			}
 		}
-	}
+	};
+	walk("src");
 	expect(offenders).toEqual([]);
 	expect(codeOf("src/main.ts")).toContain('import("./galaxy-map")');
 });

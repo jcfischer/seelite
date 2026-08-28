@@ -14,9 +14,13 @@
  * the shell, the drop-lines, the record card.
  *
  * `?galaxy-map` mounts the same function full-page. Two mounts, one
- * implementation: the crowding table in `galaxy-map.md` §5.1 was measured on
- * the workbench and is quoted as a fact about the shipped map, which it is only
- * while both are the same projection.
+ * implementation — but **not one measurement**. Crowding is a pixel property
+ * (the projection, the viewport and `PICK_RADIUS_PX`), so §5.1's 40.2% is a
+ * fact about the workbench's whole page and not about a chart in a console
+ * cell. The cell is smaller, which can only pack the points tighter: measured
+ * separately at the shipped framing it is 68.8%, and
+ * `probe-navigation-console.mjs` bands it there rather than inheriting the
+ * table.
  *
  * Nothing here computes a route. `galaxy-route.ts` does, and it imports no
  * Three.js: the chart draws what the arithmetic returns, and a probe that wants
