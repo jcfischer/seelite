@@ -441,8 +441,8 @@ geometry (§12.3). Measured on the 200-seed corpus with
 constant, sweep, restore — `1.5 → 2.2 → 3 → 1.5` is the whole comparison):
 the band alone left 49 of 337 planet-orbiting stations inside their own
 host's shell and 26.1% of cruise legs occluded by the host; 1.5 halves the
-occlusion to 14.2% with the shell population at 0/337, 2.2 measures 7.4%,
-and 3 measures 4.2% — 1.5 sits at the knee, since beyond it each multiple
+occlusion to 14.5% with the shell population at 0/337, 2.2 measures 7.4%,
+and 3 measures 4.1% — 1.5 sits at the knee, since beyond it each multiple
 buys less occlusion than the altitude it costs (a ~70,000 km giant's
 shipyard: ~35,000 km up at 1.5, ~84,000 at 2.2, ~140,000 at 3). The floor
 is a floor, not an orbit: a band row can only land above it while the band

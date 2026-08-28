@@ -106,8 +106,8 @@ export const GIANT_ORBIT_FACTOR = 2;
  * `galaxy-generation.md` §7.3: 26.1% of cruise legs occluded with no floor
  * (49 of 337 planet-orbiting stations inside their own host's 1.05 shell —
  * the geometry behind §12.2's "second cruise covers 1 km" figure, which
- * §12.2 itself walks back as an overclaim for the game), 14.2% at 1.5,
- * 7.4% at 2.2, 4.2% at 3 — and `measure-cruise-arrival.ts` re-derives the
+ * §12.2 itself walks back as an overclaim for the game), 14.5% at 1.5,
+ * 7.4% at 2.2, 4.1% at 3 — and `measure-cruise-arrival.ts` re-derives the
  * set for whatever the constant is set to, which is how a rejected floor
  * stays recoverable without a switch. What the rejected floors were rejected
  * for is the same linear `R`: a big-giant shipyard is already ~35,000 km up

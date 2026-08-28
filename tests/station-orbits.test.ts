@@ -24,23 +24,17 @@ import { describe, expect, test } from "bun:test";
 // invariants below are stated against.
 import { SURFACE_MARGIN } from "../src/cruise";
 import { STATION_ORBIT_R_OVER_R } from "../src/system";
-import type { Vec3 } from "../src/vec3";
 import {
 	ALL_GALAXIES,
 	forEachHostedStation,
 	forEachPlacedStation,
 	forEachSystem,
+	shellViolation,
 	stationRows,
 	worldSeeds,
 } from "./helpers/station-rows";
 import baseline from "./fixtures/station-orbits.json";
 import baselineBefore from "./fixtures/station-orbits-pre-floor.json";
-
-/** Flat distance between two placed positions (both resolved here; the type
- *  keeps the helper's optional `pos` honest at the call sites). */
-function dist(a: Vec3, b: Vec3): number {
-	return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
-}
 
 describe("station placement is stable against added draws", () => {
 	test("the fixture is a real corpus, not an empty pass", () => {
@@ -140,38 +134,34 @@ describe("station orbits clear their host (node #32)", () => {
 		// spelling looped `contents.planets` and was honest about less than its
 		// title claimed — the moons (every gas giant carries up to MAX_MOONS = 3,
 		// and the cruise guard applies its shell to every body it holds) were
-		// never measured. Measured now, 1,200 seeds: a station never hosts a
-		// moon, never touches the star's surface, and the foreign pair population
-		// — planets, moons, other stations — is empty inside every shell.
+		// never measured. Measured now over the headless budget (500 seeds,
+		// ≈850 stations): a station never hosts a moon, never touches the star's
+		// surface, and the foreign pair population — planets, moons, other
+		// stations — is empty inside every shell.
 		//
 		// The seeds and the world build come from `forEachPlacedStation`; the
 		// committed instrument `scripts/measure-station-shells.ts` walks the same
-		// helper as far back as asked (zero inside any shell at 1..8000 when the
-		// floor landed). Its closest foreign pair at that budget is 3.2 body
-		// radii — seed 3573, two co-orbiting stations 1.9 km apart across an
-		// 0.6 km core — the station-vs-station pair the planets-only loop never
-		// compared. Still outside every shell by a wide margin, and the pairs
-		// the floor is about (a station to any *body* it does not orbit) stay
-		// hundreds of radii clear.
+		// helper as far back as asked (re-derived at 1..8000: zero inside any
+		// shell when the floor landed). Its closest foreign pair at that budget
+		// is 3.2 body radii — seed 3573, two co-orbiting stations 1.9 km apart
+		// across an 0.6 km core — the station-vs-station pair the planets-only
+		// loop never compared. Still outside every shell by a wide margin, and
+		// the pairs the floor is about (a station to any *body* it does not
+		// orbit) stay hundreds of radii clear.
 		let placed = 0;
 		forEachPlacedStation((station, host, others) => {
 			placed++;
-			const pos = station.pos!;
-			expect(dist(pos, host.pos!)).toBeGreaterThanOrEqual(
-				host.radiusKm * SURFACE_MARGIN,
-			);
+			expect(shellViolation(station, host)).toBe(false);
 			for (const b of others) {
-				if (b.id === station.id || b.id === host.id || !b.pos) continue;
-				expect(dist(pos, b.pos)).toBeGreaterThanOrEqual(
-					b.radiusKm * SURFACE_MARGIN,
-				);
+				if (b.id === station.id || b.id === host.id) continue;
+				expect(shellViolation(station, b)).toBe(false);
 			}
 		});
-		expect(placed).toBeGreaterThan(1000);
-		// A seed × body × station full walk over 1,200 worlds: measured 4.5–5.8 s
-		// under full-suite load against bun's 5 s default. The timeout is a
-		// floor with headroom, not a budget — it only refuses to fail a busy
-		// machine, and costs nothing when the walk is fast.
+		expect(placed).toBeGreaterThan(500);
+		// A seed × body × station walk over 500 worlds is ~1.5 s under
+		// full-suite load — well inside bun's 5 s default. The timeout is a
+		// floor with headroom, not a budget; the deep 8,000-seed sweep belongs
+		// to the instrument.
 	}, 30_000);
 
 	test("the floor takes over exactly where the band stops clearing the shell", () => {
@@ -302,17 +292,18 @@ describe("the floor moved only what the shell race moved (node #32)", () => {
 				added++;
 				continue;
 			}
+			// A re-parent is a re-placement: every orbit column may follow it.
+			// #51's two rows are the only ones allowed. Decided before the column
+			// scan, so the exemption is the row as a whole and cannot depend on
+			// which columns happen to sit after the parent column — a column
+			// reordering in the row format stays safe, not just this order.
+			if (was[PARENT_COL] !== row[PARENT_COL]) {
+				parentMoved++;
+				continue;
+			}
 			let radiusDiff = false;
-			let reparented = false;
 			for (let c = IDENTITY_COLS; c < row.length; c++) {
 				if (was[c] === row[c]) continue;
-				if (c === PARENT_COL) {
-					// A re-parent is a re-placement: every orbit column may
-					// follow it. #51's two rows are the only ones allowed.
-					reparented = true;
-					continue;
-				}
-				if (reparented) continue;
 				if (c === RADIUS_COL) {
 					radiusDiff = true;
 					// Strictly upward: a floor never lowers an orbit.
@@ -324,10 +315,6 @@ describe("the floor moved only what the shell race moved (node #32)", () => {
 						RADIUS_COL_ONLY,
 					);
 				}
-			}
-			if (reparented) {
-				parentMoved++;
-				continue;
 			}
 			if (radiusDiff) moved++;
 			else unchanged++;

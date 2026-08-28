@@ -10,14 +10,21 @@
  *   bun run scripts/measure-station-shells.ts [seeds]   # default 8,000
 
  * Walks `forEachPlacedStation` — the same placed-geometry walk
- * `tests/station-orbits.test.ts` asserts over, at the suite's 1,500-seed
+ * `tests/station-orbits.test.ts` asserts over, at the suite's 500-seed
  * budget or any budget asked for here — over every body the game moves
  * (`byId`: star, planets, moons, stations), not just `contents.planets`.
  * Own-host and foreign counts print separately; nothing asserts. The asserts
  * live in the test.
+ *
+ * The foreign count counts **violating pairs, not stations**: a co-orbiting
+ * pair that entered a shell would be tallied from both ends. With a non-zero
+ * count that framing matters; here it is zero either way.
  */
-import { SURFACE_MARGIN } from "../src/cruise";
-import { forEachPlacedStation } from "../tests/helpers/station-rows";
+import {
+	forEachPlacedStation,
+	dist,
+	shellViolation,
+} from "../tests/helpers/station-rows";
 
 const SEEDS_N = Number(process.argv[2] ?? 8000);
 if (!Number.isInteger(SEEDS_N) || SEEDS_N < 1) {
@@ -37,26 +44,24 @@ forEachPlacedStation(
 	(station, host, others, seed) => {
 		stations++;
 		const p = station.pos;
-		const dOwn = Math.hypot(
-			p.x - host.pos.x,
-			p.y - host.pos.y,
-			p.z - host.pos.z,
-		);
+		const dOwn = dist(p, host.pos);
 		const rOwn = dOwn / host.radiusKm;
 		if (rOwn < minOwn) {
 			minOwn = rOwn;
 			minOwnSeed = seed;
 		}
-		if (dOwn < host.radiusKm * SURFACE_MARGIN) ownShell++;
+		if (shellViolation(station, host)) ownShell++;
 		for (const b of others) {
 			if (b.id === station.id || b.id === host.id || !b.pos) continue;
-			const d = Math.hypot(p.x - b.pos.x, p.y - b.pos.y, p.z - b.pos.z);
-			const f = d / b.radiusKm;
+			// A non-positive radius is no shell to be inside; guarding the ratio
+			// as well as the count keeps a degenerate body out of both.
+			if (!(b.radiusKm > 0)) continue;
+			const f = dist(p, b.pos) / b.radiusKm;
 			if (f < minForeign) {
 				minForeign = f;
 				minForeignSeed = seed;
 			}
-			if (d < b.radiusKm * SURFACE_MARGIN) foreignShell++;
+			if (shellViolation(station, b)) foreignShell++;
 		}
 	},
 	Array.from({ length: SEEDS_N }, (_, i) => i + 1),

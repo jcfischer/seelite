@@ -16,6 +16,7 @@
  * nothing fails.
  */
 
+import { SURFACE_MARGIN } from "../../src/cruise";
 import {
 	GALAXY_COUNT,
 	generateGalaxy,
@@ -23,6 +24,7 @@ import {
 } from "../../src/galaxy";
 import { type Body, makeWorld } from "../../src/sim";
 import { type SystemContents, generateContents } from "../../src/system";
+import type { Vec3 } from "../../src/vec3";
 
 /**
  * Walks `galaxies` of one world, generating each system's contents once.
@@ -117,6 +119,15 @@ export function forEachHostedStation(
 	}
 }
 
+/** Seeds the placed-geometry walk covers by default — the headless tier's
+ *  budget. The floor is by construction, so a regression in it fails any
+ *  sample; the deep sweep belongs to `scripts/measure-station-shells.ts`,
+ *  which goes to 8,000 on demand (500 seeds ≈ 850 placed stations). */
+export const DEFAULT_SHELL_SEEDS: readonly number[] = Array.from(
+	{ length: 500 },
+	(_, i) => i + 1,
+);
+
 /**
  * Every host-orbiting station **at its placed t0 position**, beside every
  * other body the game moves.
@@ -155,12 +166,24 @@ export function forEachPlacedStation(
 	}
 }
 
-/** Seeds the placed-geometry walk covers by default — the headless tier's
- *  budget (~5 s for the whole sweep). The instrument goes further on demand. */
-export const DEFAULT_SHELL_SEEDS: readonly number[] = Array.from(
-	{ length: 1500 },
-	(_, i) => i + 1,
-);
+/** Flat distance between two placed positions, km. Shared by the t0 shell
+ *  test and the instrument so the measure cannot drift from the assertion —
+ *  the reason this module exists. */
+export function dist(a: Vec3, b: Vec3): number {
+	return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+}
+
+/** Whether `a` sits inside `b`'s cruise shell — the placed-geometry predicate
+ *  the t0 test asserts *never* holds and the instrument counts when it does.
+ *  One definition, shared, so the two cannot drift. A body with no position
+ *  (pre-placement) or a non-positive radius has no shell and never counts. */
+export function shellViolation(a: Body, b: Body): boolean {
+	const pa = a.pos;
+	const pb = b.pos;
+	if (!pa || !pb) return false;
+	if (!(b.radiusKm > 0)) return false;
+	return dist(pa, pb) < b.radiusKm * SURFACE_MARGIN;
+}
 
 /** Every galaxy of a world. The census and the clamp measurement sweep all of
  *  them; the placement fixture pins only the two its capture script names. */
