@@ -136,7 +136,7 @@ import {
 	buildBodyVisual,
 	surfaceSphere,
 } from "./planet-surface";
-import { SPIN_RPM_RANGE } from "./station";
+import { SPIN_RPM_RANGE, STATION_GEOMETRY } from "./station";
 import {
 	type ApertureFrame,
 	type Clearance,
@@ -164,8 +164,20 @@ import {
 	slewToward,
 	slotBasis,
 	tickDocking,
-	UNDOCK_CLEAR_KM,
 } from "./docking";
+import { ARRIVAL_SECONDS, dockedAxialKm } from "./arrival";
+import {
+	type DockPhase,
+	type DockSession,
+	canSkipTraversal,
+	enterArrival,
+	flightLive,
+	newDockSession,
+	requestLaunch,
+	skipTraversal,
+	stepDockedWorld,
+} from "./dock-session";
+import { stationName } from "./station-name";
 import {
 	DIRECTOR_RANGE_KM,
 	type DirectorState,
@@ -198,7 +210,6 @@ import * as units from "./units";
 /** Scratch vectors for aiming a station's aperture, allocated once: the render
  *  loop runs per body per frame, and a `Vector3` built there is garbage by the
  *  time it is read — the same trade `vec3.ts` names for `Vec3`. */
-const MESH_AXIS = new THREE.Vector3(0, 0, 1);
 /** Scratch for the per-body sun direction. One vector reused every frame for
  *  every body: the uniform copies out of it immediately, and allocating one per
  *  body per frame is garbage inside the hottest loop in the renderer. */
@@ -216,6 +227,7 @@ const STATION_AXIS = new THREE.Vector3();
 const STAR_DIR = new THREE.Vector3();
 const ENV_QUAT = new THREE.Quaternion();
 const ENV_EULER = new THREE.Euler();
+const MESH_AXIS = new THREE.Vector3(0, 0, 1);
 const HEAD_AXIS = new THREE.Vector3(0, 1, 0);
 
 const {
@@ -424,6 +436,16 @@ interface DockingSnapshot {
 	computerEngaged: boolean;
 	computerRefusal: "no-clearance" | "hostile" | "out-of-range" | null;
 	dockedAt: string | null;
+	/** §12.3's three exempt states, distinguishable from ordinary flight —
+	 *  obligation 8's checkable half, and what #75 will read. */
+	dockPhase: DockPhase;
+	/** Where §12.2 parks the ship, as an axial distance from the station's
+	 *  centre — so a probe reads the throat's depth off the page instead of
+	 *  restating a constant that would go falsely red when the module retunes
+	 *  it. */
+	dockedAxialKm: number;
+	/** E9's generated name for this station. */
+	stationName: string;
 	condition: ShipCondition;
 	alive: boolean;
 	poolMax: number;
@@ -1027,7 +1049,11 @@ class Game {
 		V_GATE_KMS,
 		AXIS_TOLERANCE_DEG,
 		ROLL_TOLERANCE_DEG,
-		UNDOCK_CLEAR_KM,
+		// **`UNDOCK_CLEAR_KM` retired with #77.** It shipped in #68 as an
+		// anti-latch measure and said so in its own docstring — `dockedAt` was
+		// set and never cleared, and leaving was never designed. §12.2 designed
+		// it, so the tripwire is gone and `dockPhase` is what a probe reads.
+		ARRIVAL_SECONDS,
 	});
 
 	/**
@@ -1066,8 +1092,28 @@ class Game {
 	 */
 	interimCondition: ShipCondition = fullCondition();
 
-	/** Which station the ship is docked at, or `null`. */
-	dockedAt: string | null = null;
+	/**
+	 * §12's dock state machine — arriving, docked, launching, or flying.
+	 *
+	 * One session rather than a `dockedAt` string, because §12 creates three
+	 * states and a nullable id can only express one of them. The old field is
+	 * kept as a derived getter below: everything that asked "is the ship docked
+	 * at this station" still gets the same answer, and nothing has to learn the
+	 * new vocabulary to keep working.
+	 */
+	dock: DockSession = newDockSession();
+
+	/** Which station the ship is **docked** at, or `null` — the arrival and the
+	 *  launch are not it (§12.3's three states are distinct). */
+	get dockedAt(): string | null {
+		return this.dock.phase === "docked" ? this.dock.stationId : null;
+	}
+
+	/** §12.3's row, for anything that needs to know which state the ship is in
+	 *  rather than only whether it is parked. */
+	get dockPhase(): DockPhase {
+		return this.dock.phase;
+	}
 
 	/**
 	 * Whether the ship carries §7's 1,000 Cr computer.
@@ -1259,6 +1305,21 @@ class Game {
 	visualOfStation(id: string) {
 		const station = this.stationVisuals.get(id);
 		return station ? stationVisualSnapshot(station) : null;
+	}
+
+	/**
+	 * Show or hide one station's name shields (§12.5's E11).
+	 *
+	 * **A control, not a feature.** §12.6's browser row 2 asks whether the
+	 * shield is *legible*, and the only way to measure ink a thing contributes
+	 * is to render the same frame without it — the shape `probe-docking.mjs`
+	 * already uses for the director. Nothing in the game calls this.
+	 */
+	setNameplatesVisible(id: string, visible: boolean): number {
+		const station = this.stationVisuals.get(id);
+		if (!station) return 0;
+		for (const plate of station.nameplates) plate.visible = visible;
+		return station.nameplates.length;
 	}
 
 	constructor(seed: number) {
@@ -1682,6 +1743,17 @@ class Game {
 				// cue, which the mesh paints its hull with.
 				const built = buildStationMesh(station.type, body.color);
 				mesh = built.root;
+				// **E10's other half.** `station-mesh.ts` built the shields as
+				// geometry and supplied no pixels, because that module is
+				// headless-tested with no `document` reference in it. The renderer
+				// is where a canvas is allowed to exist, so the name is drawn here
+				// — once per station at build, not per frame: the name never
+				// changes, and E9 makes it a pure function of facts that do not
+				// move.
+				paintNameplates(
+					built,
+					stationName(this.world.system.record.name, station.type),
+				);
 				this.stationVisuals.set(body.id, built);
 			} else if (body.appearance) {
 				// #54's classes, drawn by the game rather than by the gallery.
@@ -2543,6 +2615,27 @@ class Game {
 			case "u":
 				this.toggleDockingComputer();
 				return;
+			case "enter":
+				// §12.2's launch, and obligation 5's skip, on one key.
+				//
+				// **A key, and deliberately not a screen.** M9 puts the launch
+				// control on the Flight console and #70 owns that surface; §12 owns
+				// what happens after it is pressed, and a binding is the smallest
+				// thing that makes the motion reachable without deciding #70's
+				// layout by implementation.
+				//
+				// **`Enter` rather than a letter, because every letter is taken** —
+				// twenty-six flight and dial bindings, plus `PERF_KEYS`,
+				// `RESTORE_KEY` and `SETTINGS_KEY`, which
+				// `tests/perf-panel-keys.test.ts` enforces are not flight bindings.
+				//
+				// Press to launch, press again to skip the traversal: one key, and
+				// the second press is the skip §12.2 makes unconditional. The skip
+				// refuses on an *arrival*, which is E4's unmet dependency rather
+				// than a policy — `canSkipTraversal` carries that argument.
+				if (this.dock.phase === "docked") this.launch();
+				else this.skipDockTraversal();
+				return;
 			case "x":
 				// #5's assist toggle. Not in force inside cruise (#10 §1), where the
 				// regime is nose-locked — the state is kept and applied on exit.
@@ -3249,6 +3342,21 @@ class Game {
 			computerEngaged: this.dockingComputerEngaged,
 			computerRefusal: this.lastComputerRefusal,
 			dockedAt: this.dockedAt,
+			// **§12.3's third row, on the page.** Obligation 8's checkable half
+			// is that the three exempt states are *distinguishable* from ordinary
+			// flight and exposed as such — this is that exposure, and #75 is what
+			// reads it.
+			dockPhase: this.dock.phase,
+			dockedAxialKm: dockedAxialKm(
+				STATION_GEOMETRY[stationOf(this.world.system, target).type],
+			),
+			// E9's generated name, read off the page rather than re-derived by a
+			// probe: a probe with its own copy of a rule goes falsely red the day
+			// the rule changes.
+			stationName: stationName(
+				this.world.system.record.name,
+				stationOf(this.world.system, target).type,
+			),
 			condition: this.interimCondition,
 			alive: isAlive(this.interimCondition),
 			// The full pool, so a probe asserting §2.1's quarter-pool bound reads
@@ -3289,25 +3397,13 @@ class Game {
 			if (next !== state) this.dockingStates.set(id, next);
 		}
 
-		// **Docking is not a one-way latch.** `dockedAt` set and never cleared
-		// disables the computer for the rest of the session and leaves the
-		// station's aperture as a tripwire — the first version did exactly that,
-		// and only the probe cleared it, by hand. The full launch sequence is not
-		// this node's and not `docking.md`'s; what is this node's is that leaving
-		// is possible and observable.
-		if (this.dockedAt) {
-			const held = before.get(this.dockedAt);
-			// **Range, not the axial component**, and `planeKm` is the dockable
-			// *core radius* (§5), so this asks whether the ship is outside the
-			// station's own hull sphere with fifty metres to spare. That is the
-			// question "has it left", and it has the two properties the axial
-			// test lacked: a ship carried out past the far side clears (its axial
-			// projection is negative and never recovers), and a ship sitting on
-			// the plane but a hull-radius off the axis is not in the slot either,
-			// so clearing there is right rather than a leak.
-			if (held && length(held.pose.rel) > held.frame.planeKm + UNDOCK_CLEAR_KM)
-				this.dockedAt = null;
-		}
+		// **The one-way latch is gone, and so is the block that cleared it.**
+		// #68 shipped an anti-latch here — a range test that dropped `dockedAt`
+		// once the ship drifted `UNDOCK_CLEAR_KM` clear — because docking set a
+		// flag nobody ever cleared and leaving was not designed. §12.2 designs
+		// it: a launch is a scripted traversal that ends by releasing the ship
+		// outside the plane, so the state ends deliberately rather than by the
+		// ship wandering out of a radius.
 
 		// **At most one crossing is resolved per step: the first, in
 		// start-of-step range order.** `dockingApproaches` sorts by the range the
@@ -3318,9 +3414,11 @@ class Game {
 		// at once, and resolving a farther one after a nearer one would apply a
 		// repel to a position the nearer outcome had already rewritten.
 		for (const [id, from] of before) {
-			// Docked ships do not re-cross their own plane. Without this the
-			// station's aperture is a tripwire the moment anything nudges the ship.
-			if (this.dockedAt === id) continue;
+			// A ship in any of §12.3's three exempt states does not re-cross its
+			// own plane — `step` does not reach this loop at all while it is in
+			// one, and the guard stays as the statement of the rule rather than
+			// as the thing enforcing it.
+			if (this.dock.stationId === id) continue;
 			// **The cached frame, not a fresh one.** `dockingApproaches` built it
 			// at the top of the step and `planeCrossing` already documents that it
 			// evaluates one frame for both endpoints; rebuilding it here was the
@@ -3365,7 +3463,17 @@ class Game {
 		this.throttle = 0;
 
 		if (outcome.docked) {
-			this.dockedAt = id;
+			// **E2: crossing the plane hands the ship over.** The skill test
+			// ended here, so from this instant the ship is on rails and nothing
+			// can fail — the arrival is a position law, and `stepDockedWorld`
+			// places the ship every frame until it parks.
+			this.dock = enterArrival(
+				id,
+				frame,
+				crossing.rel,
+				{ nose: crossing.nose, up: crossing.up },
+				this.world.gameTime,
+			);
 			this.world.ship.vel = stationVel;
 			return;
 		}
@@ -3376,6 +3484,65 @@ class Game {
 			this.world.ship.pos = add(body.pos, outcome.repelled.rel);
 			this.world.ship.vel = add(stationVel, outcome.repelled.vRel);
 		}
+	}
+
+	/**
+	 * One frame of an arrival, a parked ship or a launch.
+	 *
+	 * The placement is written into the ship — position, velocity **and
+	 * attitude** — because the traversal owns all three: E2's scripted path is
+	 * not a path the player is flying, and an orientation left where the
+	 * crossing put it would have the ship sliding down the throat sideways.
+	 */
+	private stepDockPhase(dt: number) {
+		const out = stepDockedWorld(this.world, this.dock, dt);
+		this.dock = out.session;
+		if (!out.ship) return;
+		this.world.ship.pos = out.ship.pos;
+		this.world.ship.vel = out.ship.vel;
+		this.setAttitude(out.ship.nose, out.ship.up);
+		// The rates are zeroed for the reason the docking computer zeroes them:
+		// the attitude is being placed directly, and a momentum term still
+		// turning underneath it would fight the placement every frame — and
+		// would still be turning on the frame a launch hands control back.
+		this.rates = { pitch: 0, yaw: 0, roll: 0 };
+		this.throttle = 0;
+	}
+
+	/**
+	 * §12.2's launch, as the game's entry point for it.
+	 *
+	 * **The motion is this spec's and the control is #70's** — M9 puts the
+	 * command on the Flight console. This method is the seam: what happens
+	 * after it is pressed.
+	 */
+	launch(): boolean {
+		if (this.dock.phase !== "docked" || !this.dock.stationId) return false;
+		this.dock = requestLaunch(
+			this.dock,
+			this.apertureFrameOf(this.dock.stationId),
+			this.world.gameTime,
+		);
+		return this.dock.phase === "launching";
+	}
+
+	/** Skip the traversal in progress, where §12.6's obligation 5 allows it —
+	 *  which today is a launch and never an arrival, because E4's flag has no
+	 *  bounded store yet (§12.7's joint 6). */
+	skipDockTraversal(): boolean {
+		if (!canSkipTraversal(this.dock)) return false;
+		this.dock = skipTraversal(this.dock, this.world.gameTime);
+		return true;
+	}
+
+	/** The docked station's generated name (E9), or `null` while flying. */
+	dockedStationName(): string | null {
+		const id = this.dock.stationId;
+		if (!id) return null;
+		return stationName(
+			this.world.system.record.name,
+			stationOf(this.world.system, id).type,
+		);
 	}
 
 	private stepDockingComputer(
@@ -3524,6 +3691,17 @@ class Game {
 	 */
 	step(dt: number) {
 		this.updateLocalFrameBody();
+		// **§12's three states come first, and they return.** E5 suspends
+		// flight: the throttle, the stick and the docking computer are all
+		// inert, so none of the input handling below runs — and neither does
+		// `stepDocking`, which is obligation 2's "nothing re-evaluates §3's
+		// checks during it". `stepDockedWorld` advances the clock and the bodies
+		// itself, so the world keeps running (obligation 4) exactly as it does
+		// on the flying path.
+		if (!flightLive(this.dock.phase)) {
+			this.stepDockPhase(dt);
+			return;
+		}
 		// #48 deliberately couples no combat entity to the world yet: this is a
 		// flyable balance rig over the shared flight loop, not production combat.
 		if (this.combatPrototypeEnabled) {
@@ -3958,6 +4136,25 @@ class Game {
 				// Local +Z is the aperture axis, which is the contract
 				// `station-mesh.ts` is built to.
 				STATION_AXIS.set(pose.axis.x, pose.axis.y, pose.axis.z);
+				// **The roll about this axis is *not* `slotBasis`'s, and that is a
+				// known defect rather than a convention** — recorded by #77 and
+				// left to a node of its own. `setFromUnitVectors` takes +Z to the
+				// axis by the shortest turn, so the drawn slot sits at an
+				// arbitrary angle to the frame every §3 check is evaluated in: a
+				// docked ship looks askew in its own slot, and a pilot who rolls
+				// to match the slot they can **see** can fail check 4 by up to
+				// 90°. `docking.ts` says of that reference *"the only requirement
+				// is that the renderer mirrors this one"*, and it does not.
+				//
+				// The obvious repair — aim the mesh on `slotBasis` itself —
+				// was built and withdrawn, because it exports a discontinuity into
+				// the visuals: `anyPerpendicular` picks its seed by a `< 0.9`
+				// branch, so the reference **jumps** as a station's axis swings
+				// round its orbit, and the drawn hull snaps with it.
+				// `probe-station.mjs`'s repeat control measured the cost — its
+				// drift went from 0.02 to between 0.05 and 0.21. Mirroring needs a
+				// *continuous* phase-zero reference, which is a change to the
+				// convention where it is defined, not to this line.
 				mesh.quaternion.setFromUnitVectors(MESH_AXIS, STATION_AXIS);
 				spinner.rotation.z = pose.phaseRad;
 			}
@@ -4963,6 +5160,59 @@ class Game {
  * because switching bloom off removes it, and that a whole mip chain is the
  * right shape whether or not it is faster.
  */
+/**
+ * Draw E9's name onto a station's shields (**E10**).
+ *
+ * The pixels half of the split `station-mesh.ts` makes: that module is
+ * headless-tested and contains no `document` reference, so it builds the quads
+ * and this fills them. A `CanvasTexture` there would force the
+ * `typeof document !== "undefined"` branch `station-visuals.ts` names as the
+ * failure mode — the branch that ships to players would be the one no test ever
+ * takes.
+ *
+ * One canvas shared by a station's two plates: they carry the same name, and
+ * the mouth plate and the interior one are never seen at once.
+ */
+function paintNameplates(mesh: StationMesh, name: string) {
+	const canvas = document.createElement("canvas");
+	canvas.width = 1024;
+	canvas.height = 256;
+	const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+	ctx.fillStyle = "#05070a";
+	ctx.fillRect(0, 0, canvas.width, canvas.height);
+	// A lit sign against a dark plate: the same warm amber the aperture bars
+	// around it use, so the shield reads as part of the docking face rather than
+	// as a label pasted onto it.
+	ctx.fillStyle = "#ffb347";
+	ctx.textAlign = "center";
+	ctx.textBaseline = "middle";
+	// **Fitted, not a fixed size.** E9's names run from two characters to a
+	// system name plus "Cracking Works", and a fixed 132 px cut the long ones
+	// off mid-word — which is what a look at the frame showed, and what no
+	// pixel-difference check would ever have reported: a clipped sign still
+	// contributes exactly as much ink as a whole one.
+	const text = name.toUpperCase();
+	const margin = canvas.width * 0.06;
+	let size = 132;
+	ctx.font = `bold ${size}px monospace`;
+	const width = ctx.measureText(text).width;
+	if (width > canvas.width - margin * 2) {
+		size = Math.floor((size * (canvas.width - margin * 2)) / width);
+		ctx.font = `bold ${size}px monospace`;
+	}
+	ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+	const texture = new THREE.CanvasTexture(canvas);
+	texture.colorSpace = THREE.SRGBColorSpace;
+	for (const plate of mesh.nameplates) {
+		const material = plate.material as THREE.MeshBasicMaterial;
+		material.map = texture;
+		// Built at zero so a station drawn before its texture arrives shows no
+		// shield rather than a blank white one; this is where it lights up.
+		material.opacity = 1;
+		material.needsUpdate = true;
+	}
+}
+
 function bloomResolution() {
 	// A multiple of 32, not merely even: the chain halves five times, so only a
 	// starting size divisible by 2^5 keeps every level whole. Rounding to even

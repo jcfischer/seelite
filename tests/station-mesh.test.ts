@@ -29,11 +29,15 @@ import {
 	type StationType,
 } from "../src/station";
 import {
+	NAMEPLATE_NAME,
+	SELECTED_FORM,
 	STATION_FORMS,
+	type StationFormId,
 	STATION_SILHOUETTE_KM,
 	buildStationForm,
 	buildStationMesh,
 } from "../src/station-mesh";
+import { dockedAxialKm, throatDepthKm } from "../src/arrival";
 
 // From `station.ts`, not a literal: a fourth station type must reach every
 // loop in this file, and a hand-written list is exactly the place it would not.
@@ -477,5 +481,213 @@ describe("nothing stands in the way of the thing you fly through", () => {
 				]);
 			}
 		}
+	});
+});
+
+/**
+ * `docs/specs/docking.md` §12.4's **E7/E8** and §12.5's **E10** — the parts of
+ * the arrival that are geometry.
+ *
+ * The *pixels* are §12.6's browser rows: whether the throat reads as depth and
+ * whether the shield is legible are things only a rendered frame answers. What
+ * is arithmetic, and therefore belongs here, is that every form has the parts
+ * at all and that they are sized from `STATION_GEOMETRY` rather than authored.
+ */
+describe("§12.4 E7/E8 — every form gets a throat or a deck", () => {
+	const interiorOf = (root: THREE.Object3D, name: string) => {
+		const found: THREE.Mesh[] = [];
+		root.traverse((o) => {
+			if (o.name === name && o instanceof THREE.Mesh) found.push(o);
+		});
+		return found;
+	};
+
+	test("a pad-bearing form has a deck and a slot-bearing one does not", () => {
+		for (const type of TYPES) {
+			const kind = STATION_GEOMETRY[type].aperture.kind;
+			for (const form of STATION_FORMS[type]) {
+				const { root } = buildStationForm(type, form.id, GREY);
+				const decks = interiorOf(root, "aperture-deck");
+				// E7/E8: **which forms get what is decided by `aperture.kind`**,
+				// not by a list — so this is asserted per type from the geometry
+				// table rather than against names written out here. A slot's
+				// throat is not a part of its own: it *is* the recess, which the
+				// row below measures.
+				expect([`${type} ${form.id}`, decks.length]).toEqual([
+					`${type} ${form.id}`,
+					kind === "pad" ? 1 : 0,
+				]);
+			}
+		}
+	});
+
+	test("a slot's recess is the throat, at the law's depth", () => {
+		for (const type of TYPES) {
+			const aperture = STATION_GEOMETRY[type].aperture;
+			if (aperture.kind !== "slot") continue;
+			for (const form of STATION_FORMS[type]) {
+				const { root } = buildStationForm(type, form.id, GREY);
+				root.updateMatrixWorld(true);
+				// **The recess itself**, because §12.4's throat extends it rather
+				// than standing behind it — a second box behind a solid mouth
+				// draws nothing at all, which is what the first build did and
+				// what `probe-dock-arrival.mjs`'s ink measurement caught.
+				const [throat] = interiorOf(root, "aperture-mouth");
+				const core = STATION_GEOMETRY[type].coreRadiusKm;
+				const size = new THREE.Box3()
+					.setFromObject(throat)
+					.getSize(new THREE.Vector3())
+					.multiplyScalar(core);
+				// **Read from `arrival.ts`, not restated.** The drawn throat and the
+				// sim law that flies down it must be the same depth, or the ship
+				// parks in a wall — and a test with its own copy of the number
+				// would not notice.
+				// **Close, not equal.** A geometry's positions are `Float32Array`,
+				// so a 0.28 km depth comes back as 0.2800000011920929 — the
+				// buffer's precision rather than a discrepancy. Six decimal places
+				// on a kilometre is a millimetre, which is four orders under
+				// anything §12 talks about.
+				const label = `${type} ${form.id}`;
+				expect([label, size.z.toFixed(6)]).toEqual([
+					label,
+					throatDepthKm(aperture).toFixed(6),
+				]);
+				expect(size.x).toBeCloseTo(aperture.widthKm, 6);
+				expect(size.y).toBeCloseTo(aperture.heightKm, 6);
+			}
+		}
+	});
+});
+
+describe("§12.5 E10/E11 — the shields are geometry here and pixels elsewhere", () => {
+	test("a slot carries two shields and a pad one", () => {
+		for (const type of TYPES) {
+			const kind = STATION_GEOMETRY[type].aperture.kind;
+			for (const form of STATION_FORMS[type]) {
+				const mesh = buildStationForm(type, form.id, GREY);
+				// **E11: at the mouth *and* inside the throat.** A pad has no
+				// inside, so it carries the mouth plate alone.
+				expect([`${type} ${form.id}`, mesh.nameplates.length]).toEqual([
+					`${type} ${form.id}`,
+					kind === "slot" ? 2 : 1,
+				]);
+				for (const plate of mesh.nameplates)
+					expect(plate.name).toBe(NAMEPLATE_NAME);
+			}
+		}
+	});
+
+	test("this module supplies no pixels", () => {
+		// E10's whole point: a `CanvasTexture` here would force the
+		// `typeof document !== "undefined"` branch that `station-visuals.ts`
+		// names as the failure mode — the branch that ships to players would be
+		// the one no test ever takes. The plate leaves this module untextured and
+		// invisible, and the renderer lights it.
+		const mesh = buildStationMesh("trade", GREY);
+		for (const plate of mesh.nameplates) {
+			const material = plate.material as THREE.MeshBasicMaterial;
+			expect(material.map).toBe(null);
+			expect(material.opacity).toBe(0);
+		}
+	});
+
+	test("each plate has its own material", () => {
+		// Every other shared material in the module is documented as never being
+		// mutated; this one is written to. A shared one would give every station
+		// in the galaxy the name of whichever was textured last.
+		const a = buildStationMesh("trade", GREY);
+		const b = buildStationMesh("trade", GREY);
+		expect(a.nameplates[0].material).not.toBe(b.nameplates[0].material);
+		expect(a.nameplates[0].material).not.toBe(a.nameplates[1].material);
+	});
+});
+
+/**
+ * The seam between the two tiers: the sim parks the ship at `dockedAxialKm`
+ * from the station's centre, and the mesh draws a recess somewhere. Nothing
+ * had ever asserted that the first is inside the second.
+ *
+ * It is not a restatement of either. `dockedAxialKm` is measured from the
+ * **docking plane**, which is `coreRadiusKm`; the recess is cut at the form's
+ * own aperture face, which each builder places where its geometry has a
+ * surface. The two are different quantities and a form is free to move one
+ * without the other — so a form whose face sits well inside the core can park
+ * the ship in solid hull, and no test in either tier would have said so.
+ */
+describe("§12.2 — the docked position is inside the drawn recess", () => {
+	/** Where the form cuts its aperture, and how far its recess reaches, in km
+	 *  from the station's centre. */
+	const recessKm = (type: StationType, formId: StationFormId) => {
+		const { root } = buildStationForm(type, formId, GREY);
+		root.updateMatrixWorld(true);
+		const core = STATION_GEOMETRY[type].coreRadiusKm;
+		const recess = root.getObjectByName(
+			STATION_GEOMETRY[type].aperture.kind === "slot"
+				? "aperture-mouth"
+				: "aperture-deck",
+		) as THREE.Mesh;
+		const box = new THREE.Box3().setFromObject(recess);
+		return { nearKm: box.max.z * core, farKm: box.min.z * core };
+	};
+	/**
+	 * **Two rules, because E8 makes the presentation two.** A slot swallows the
+	 * ship, so the docked position must lie *within* the recess. A pad is an
+	 * exterior deck with no inside, so the ship rests **on** it: at or just
+	 * above the deck's top face, never below it — a metre of margin against the
+	 * hair §12.2 sinks it by, and never inside the plate.
+	 */
+	const PAD_MARGIN_KM = 0.01;
+	const holdsTheShip = (type: StationType, formId: StationFormId) => {
+		const { nearKm, farKm } = recessKm(type, formId);
+		const parked = dockedAxialKm(STATION_GEOMETRY[type]);
+		return STATION_GEOMETRY[type].aperture.kind === "slot"
+			? parked <= nearKm && parked >= farKm
+			: parked <= nearKm + PAD_MARGIN_KM && parked >= nearKm - PAD_MARGIN_KM;
+	};
+
+	test("the form the game ships parks the ship inside its own recess", () => {
+		// **The seam between the two tiers, which nothing had asserted.**
+		// `dockedAxialKm` is measured from the **docking plane**, which is
+		// `coreRadiusKm`; the recess is cut at the form's own aperture face,
+		// wherever its geometry has a surface. They are different quantities and
+		// a form may move one without the other — so a form whose face sits well
+		// inside the core parks the ship in solid hull, and no test in either
+		// tier would have said so.
+		// **The outpost is excluded, and §12.7's joint 5 is why**: `system.ts`
+		// places none, so no outpost is drawn in any system at any seed and its
+		// deck cannot park anything. It is not silently skipped — the inventory
+		// below carries it, so whoever places the first outpost meets this.
+		for (const type of TYPES.filter((t) => t !== "outpost"))
+			expect([type, holdsTheShip(type, SELECTED_FORM[type])]).toEqual([
+				type,
+				true,
+			]);
+	});
+
+	test("and the alternates that cannot are exactly the known one", () => {
+		// **All of them are forms whose aperture face is not near the docking
+		// plane.** The Ring cuts its aperture on the hub at about a third of the
+		// core radius — its thesis is "spun torus on a fixed hub; the dock is a
+		// tunnel on the axis" — and the listed pads carry their deck at a face
+		// their own silhouette put somewhere other than `coreRadiusKm`. §12.2's
+		// docked position is a function of the **plane**, which is the core
+		// radius, so on those forms it lands away from the drawn surface.
+		//
+		// This is **not #77's to fix**: the drawn aperture and the checks'
+		// plane already disagreed on these forms, and none of them is a form the
+		// game builds. Pinned as an inventory rather than left as a comment, so
+		// that selecting one, adding a form like them, or fixing them all make
+		// this row speak.
+		//
+		// **`outpost a` is the one that is also the selected form**, and it is on
+		// this list rather than in the row above because §12.7's joint 5 records
+		// that `system.ts` places no outpost at all: the form is drawn nowhere,
+		// so this is an obligation on whoever places the first one and not a
+		// defect a player can reach.
+		const cannot: string[] = [];
+		for (const type of TYPES)
+			for (const form of STATION_FORMS[type])
+				if (!holdsTheShip(type, form.id)) cannot.push(`${type} ${form.id}`);
+		expect(cannot).toEqual(["trade b", "refinery c", "outpost a"]);
 	});
 });

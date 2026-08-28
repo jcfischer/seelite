@@ -39,6 +39,7 @@ import {
 	shelfQuantity,
 	stockResponse,
 } from "./market";
+import type { DockPhase } from "./dock-session";
 
 // ---------------------------------------------------------------------------
 // §8.1 / §8.4 — what is on the glass, and when
@@ -50,12 +51,16 @@ export type StationConsoleTab = "Market" | "Equipment";
 /**
  * Where a dock is, as far as the console is concerned.
  *
- * `docking.md` §12 owns the motion and #77 builds it; this type is only the
- * part M4 and M10 are decisions about, which is what the canopy shows. The two
- * predicates below are the whole of those decisions, so the negatives §8.6's
- * obligations 11 and 12 exist to protect are laws rather than layout.
+ * **Re-exported from `dock-session.ts` rather than declared here.** #70 wrote
+ * this type when §12 was unbuilt and the console was the only thing that had an
+ * opinion about a dock's phase; #77 built the state machine, which both runs the
+ * phases and adds `"launching"` — a state §12.3's table is a claim about and a
+ * canopy has no view on. Two spellings of one union is how the console and the
+ * sim come to disagree about what a dock is, so there is one, and it lives with
+ * the code that transitions it. The predicates below stay here: they are M4 and
+ * M10, and those are decisions about the glass.
  */
-export type DockPhase = "flying" | "arriving" | "docked";
+export type { DockPhase };
 
 /** **M4:** the console fills the canopy once #73's E3 arrival completes, and
  *  not during it. The throat is the arrival's payoff and the console is the
@@ -71,6 +76,11 @@ export const stationConsoleVisible = (phase: DockPhase): boolean =>
  * cockpit flyable, and `docking.md` §12.1's E2 makes the arrival scripted with
  * the controls not live. A floor over a ship nobody is flying is the dead
  * instrument M10 refuses.
+ *
+ * `launching` joins it on that side by the same derivation, and only that
+ * derivation: §12.2 makes the launch traversal scripted too, with the flight
+ * controls live "at that same instant, not before" — the instant the ship
+ * clears the plane and the phase is `flying` again.
  */
 export const flightFloorVisible = (phase: DockPhase): boolean =>
 	phase === "flying";
