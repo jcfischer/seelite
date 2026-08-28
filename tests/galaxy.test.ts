@@ -325,30 +325,12 @@ describe("shape (§9.4a)", () => {
 		// The test is here rather than in a comment because the property is what a
 		// later session would break by switching `t` to the Euclidean distance,
 		// and that change looks harmless.
-		const tAt = (u: number, radius: number): number => {
-			const core = radius / Math.SQRT2;
-			const norm = radius - core * Math.atan(radius / core);
-			const cdf = (x: number) => (x - core * Math.atan(x / core)) / norm;
-			let lo = 0;
-			let hi = radius;
-			for (let i = 0; i < 40; i++) {
-				const mid = (lo + hi) / 2;
-				if (cdf(mid) < u) lo = mid;
-				else hi = mid;
-			}
-			return (lo + hi) / 2 / radius;
-		};
-		for (const u of [0.001, 0.1, 0.25, 0.5, 0.75, 0.9, 0.999]) {
-			// The pre-#118 radius against the shipped one.
-			expect(tAt(u, 22)).toBeCloseTo(tAt(u, GALAXY_RADIUS_LY), 12);
-			// And it agrees with the shipped inverse, so this is the same function
-			// the generator runs rather than a re-derivation that happens to be
-			// scale-free on its own.
-			expect(radiusForQuantile(u) / GALAXY_RADIUS_LY).toBeCloseTo(
-				tAt(u, GALAXY_RADIUS_LY),
-				12,
-			);
-		}
+		// **The shipped inverse at both radii**, not a local re-derivation of it.
+		// This test used to rebuild the CDF and the 40-step bisection inline,
+		// which made it a check on a replica; `radiusForQuantile` now takes the
+		// radius, so both arms are the function the generator runs.
+		const tAt = (u: number, radius: number): number =>
+			radiusForQuantile(u, radius) / radius;
 		// And `t` genuinely spans the range — a scale-free constant would pass the
 		// equalities above too.
 		expect(tAt(0.001, 22)).toBeLessThan(0.1);

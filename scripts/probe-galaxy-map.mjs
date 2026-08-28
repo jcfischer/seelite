@@ -92,6 +92,18 @@ await guardedOrigin(ORIGIN, ["src/galaxy-map.ts", "src/galaxy-route.ts"]);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 
+/**
+ * §2's flattening, as a literal.
+ *
+ * A probe that reads a constant off the page cannot check that constant, and
+ * this file's own rule is that a probe should not restate one. Both are true and
+ * they pull opposite ways, so the split is: the *band* uses this literal, and
+ * the page's reported `flatteningQ` is asserted equal to it in its own check.
+ * Changing §2's shape then fails here, by name, instead of quietly re-aiming the
+ * measurement at the new value.
+ */
+const EXPECTED_Q = 0.7;
+
 /** How many viewports actually framed the cluster and so measured the disc.
  *  Asserted after the loop, so the skip above cannot become a silent retirement. */
 let discMeasured = 0;
@@ -144,8 +156,16 @@ for (const viewport of VIEWPORTS) {
 	 * instead is the **projected aspect of the drawn points**: seen edge-on the
 	 * cluster must be about `q` as tall as it is wide, and seen face-on about
 	 * square. A ball fails both halves — it is square at every angle — and so
-	 * does a build that squashes the wrong axis, or squashes the geometry and not
-	 * the generator.
+	 * does a build that squashes the wrong axis.
+	 *
+	 * **What it does not reach.** `projected()` maps each system's `pos` through
+	 * the pivot, so it sees the generator's squash and anything applied to the
+	 * pivot transform, but *not* a squash baked into the point cloud's own
+	 * geometry buffer — that would move the pixels without moving `pos`, and this
+	 * check would pass. Claiming otherwise was an overclaim in an earlier round of
+	 * this PR; the honest boundary is that this measures what the *projection* of
+	 * the authoritative positions looks like, which is the thing §2's reference
+	 * plane rests on.
 	 *
 	 * Pitch is driven through `orbit` and read back off the state rather than
 	 * assumed from the drag: the pitch clamp is +/-1.45, so a probe that computed
@@ -196,6 +216,18 @@ for (const viewport of VIEWPORTS) {
 
 	const edgeOn = await aspectAtPitch(0);
 	const faceOn = await aspectAtPitch(1.45);
+	// **Convergence is its own verdict.** `aspectAtPitch` drives the pitch by
+	// orbiting and reading the state back, and that loop can run out of steps or
+	// step past its tolerance. Folded into the aspect check below, a failure to
+	// reach the framing would print "the cluster is a disc — FAIL", which names
+	// the wrong defect.
+	check(
+		`${viewport.name}: the chart reached both framings — pitch ${edgeOn.pitch.toFixed(3)} and ${faceOn.pitch.toFixed(3)} rad`,
+		Math.abs(edgeOn.pitch) < 0.02 &&
+			faceOn.pitch > 1.4 &&
+			edgeOn.onScreen > 150 &&
+			faceOn.onScreen > 150,
+	);
 	await page.evaluate(() => window.__seeliteGalaxyMap.resetView());
 	/**
 	 * **Only where the cluster is fully framed.** A 390 px column crops the
@@ -216,22 +248,30 @@ for (const viewport of VIEWPORTS) {
 	if (framed) discMeasured++;
 	check(
 		framed
-			? `${viewport.name}: the cluster is a disc — edge-on aspect ${edgeAspect.toFixed(2)} (q ${edgeOn.q}), face-on ${faceAspect.toFixed(2)}`
+			? `${viewport.name}: the cluster is a disc — edge-on aspect ${edgeAspect.toFixed(2)} (expected ~${EXPECTED_Q}), face-on ${faceAspect.toFixed(2)}`
 			: `${viewport.name}: skipped the disc aspect — the cluster does not fit this chart (${Math.round(edgeOn.spanX)} px of ${Math.round(edgeOn.width)})`,
 		!framed ||
-			(Math.abs(edgeOn.pitch) < 0.02 &&
-				faceOn.pitch > 1.4 &&
-				edgeOn.onScreen > 150 &&
-				// Edge-on the through-plane extent is the squashed one. Banded around
-				// q rather than pinned, because the extremes are 256 samples of a
-				// surface neither of which reaches it exactly.
-				edgeAspect > edgeOn.q - 0.12 &&
-				edgeAspect < edgeOn.q + 0.12 &&
+			// Edge-on the through-plane extent is the squashed one. Banded around
+			// `EXPECTED_Q` rather than pinned, because the extremes are 256 samples
+			// of a surface neither of which reaches it exactly.
+			//
+			// **Against a literal, not against `map.state.flatteningQ`.** Sourcing
+			// the target from the page's own report of the constant makes the band
+			// follow the defect: a build that changed `GALAXY_FLATTENING_Q` moves
+			// the drawn extents and the reported `q` together and passes. The
+			// reported value is asserted separately below, so a deliberate change
+			// fails loudly in one named place rather than re-targeting this.
+			(edgeAspect > EXPECTED_Q - 0.12 &&
+				edgeAspect < EXPECTED_Q + 0.12 &&
 				// Face-on it is a circle. This is the half a wrong-axis squash fails.
 				faceAspect > 0.88 &&
 				faceAspect < 1.12 &&
 				// And the two views genuinely differ — the check a ball passes.
 				faceAspect - edgeAspect > 0.15),
+	);
+	check(
+		`${viewport.name}: the chart reports the shape it draws — q ${edgeOn.q}`,
+		edgeOn.q === EXPECTED_Q,
 	);
 
 	// D6: nothing on this chart belongs to another galaxy — the lit set is the

@@ -18,7 +18,9 @@
  *   the line of sight — outside the planet and *inside* the 1.05 × radius shell
  *   it used to project (1.042 ×). The station is in clear space and cruise
  *   ended against its host thousands of km short, at thousands of km/s.
- * - `station-shipyard` orbits a 35,192 km planet and is genuinely behind it.
+ * - `station-shipyard` orbits a 35,192 km planet whose centre sits 17,758 km
+ *   across the line of sight — 0.505 × the radius, so the sight line passes
+ *   half a planet deep and the station is genuinely behind 35,000 km of world.
  *   That leg must still be stopped, and stopped *outside* the surface: a rule
  *   that reaches this one is one that flies through planets.
  *

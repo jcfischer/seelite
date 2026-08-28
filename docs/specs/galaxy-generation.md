@@ -276,21 +276,29 @@ last subsection.
 Resulting neighbour counts — **measured on the shipped generator**, over 8,192
 systems (4 world seeds × 8 galaxies), not read off the closed form:
 
-| Location | Local density | Systems within 7 LY | n |
-|---|---|---|---|
-| Centre (`t < 0.15`) | 0.01056 /LY³ | 15.2 | 51 |
-| Mean over cluster | 0.00557 /LY³ | 8.0 | 8,192 |
-| Rim (`t > 0.85`; half the neighbourhood falls outside) | 0.00311 /LY³ | 4.5 | 2,395 |
+| Location | Systems within 7 LY | n |
+|---|---|---|
+| Centre (`t < 0.15`) | 15.2 | 51 |
+| Mean over cluster | 8.0 | 8,192 |
+| Rim (`t > 0.85`; half the neighbourhood falls outside) | 4.5 | 2,395 |
 
-The exploration gradient the concentration exists to buy is therefore about
-**3.4:1 in reachable neighbours**, core to rim — steeper than the 3.0 density
-ratio, because a rim neighbourhood also loses half its volume off the edge.
+**One column, not two.** The previous version of this table carried a "local
+density" beside the count, and it was the same measurement divided by
+(4/3)π·7³ — 0.01056 /LY³ *is* 15.2 within 7 LY. Presenting a quantity twice in
+different units reads as two pieces of evidence agreeing, which is worth
+avoiding in a table headed "measured".
 
-The previous table quoted 17 / 8.3 / 3 from the analytic normalisation
+So the exploration gradient the concentration buys is **3.4:1 in reachable
+neighbours**, core to rim. That is *not* independent of the ρ(0)/ρ(R) = 3.0
+above — it is the same profile seen through a 7 LY window — and the gap between
+3.4 and 3.0 is the window's doing: a rim neighbourhood loses part of its volume
+off the edge of the cluster, which a point-density ratio does not see.
+
+The table before #118 quoted 17 / 8.3 / 3 from the analytic normalisation
 `A = 256/21,708` at `R = 22`. Those were predictions of a uniform-density
-integral over a ball, and this spec presented them as results; the centre bucket
-is small (`n = 51`), which is stated because a figure over 51 samples is a
-figure with a visible standard error and the row means it.
+integral over a ball, and this spec presented them as results. The centre bucket
+is small (`n = 51`), stated because a figure over 51 samples carries a visible
+standard error and the row should say so.
 
 ---
 

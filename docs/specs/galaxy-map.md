@@ -224,7 +224,10 @@ crowding.
 
 **Re-measured for the `q = 0.70` disc under #118.** Every figure below described
 the ball and none of them survived the reshape; the table is the disc's, taken
-by the same method at the same framings.
+by the same method at the same camera distances and viewport. It is **not** at
+the ball table's pitch — `DEFAULT_PITCH` moved 0.35 → 0.70 rad in the same
+change, and this table is quoted at the default framing, which means the new
+one. See the note under it before comparing a row against a remembered figure.
 
 | camera | crowded | on screen |
 |---|---|---|
@@ -259,11 +262,20 @@ zoomed-in ball still had systems stacked along the view axis. The conclusion is
 unchanged because it never rested on that floor; it rests on there being no
 framing that does both jobs.
 
-**The default framing got worse, which is the cost #107 priced.** 40.2% on the
-ball against 44.5% on the disc, at the same camera and the same viewport.
-Flattening concentrates the points toward a plane, and a plane's
-nearest-neighbour distances are shorter than a ball's at equal projected extent.
-The disc was taken knowing this (`galaxy-generation.md` §2).
+**The default framing got worse, which is the cost #107 priced — and the two
+figures are not a matched comparison.** 40.2% on the ball against 44.5% on the
+disc, at the same camera and the same viewport but **not the same pitch**:
+`DEFAULT_PITCH` moved 0.35 → 0.70 rad in the same change, and tilting toward
+face-on is worth about 3 points to a disc (§2's grid). So 4.3 points is what a
+player actually experiences between the old default view and the new one, and it
+is the *net* of two effects pulling opposite ways.
+
+The shape's own cost, at matched framing, is larger: `galaxy-generation.md` §2's
+q × pitch grid puts the ball at 41.3% and the disc at 49.6% at 40°, and at 41.9%
+against 52.6% at 20° — about **8 points either way**, with the new default pitch
+handing roughly 3 of them back. Flattening concentrates the points toward a
+plane, and a plane's nearest-neighbour distances are shorter than a ball's at
+equal projected extent. The disc was taken knowing this.
 
 **40.2% and 44.5% are one galaxy, not the galaxy.** #107's finding, and this
 section used to read as though the figure were a constant. Measured over all
@@ -310,10 +322,16 @@ both sit inside a 16-point window. The disc is asserted directly, by the same
 probe: it drives the chart to edge-on and to face-on and measures the projected
 bounding box, requiring an aspect near `q` edge-on and near 1 face-on. A ball is
 square at every angle and fails both halves, and so does a build that squashes
-the mesh instead of the generator. The check is skipped where the cluster does
-not fit the viewport — a 390 px column crops it at every distance the chart
-offers, so the span there is the phone's and not the galaxy's — and a
-skipped-everywhere run fails on its own count.
+the wrong axis. It reaches the generator's squash and the pivot transform, and
+**not** a squash baked into the point cloud's geometry buffer — that would move
+pixels without moving a `pos`. The band is taken against a literal rather than
+against the chart's reported `flatteningQ`, since a target read off the value
+under test follows a change instead of catching it; the reported value is
+asserted equal to the literal in its own check. Reaching each framing is also its
+own check, so failing to orbit to edge-on cannot print as a wrong shape. The
+aspect is skipped where the cluster does not fit the chart — a 390 px column
+crops it at every distance on offer, so the span there is the phone's and not the
+galaxy's — and a skipped-everywhere run fails on its own count.
 The rest of the table is a recorded sweep. Two things the band deliberately does
 *not* cover, so the claim is not read wider than it is. The metric is blind to
 point size. And it is viewport-dependent: a 390 × 844 column frames 194 of the

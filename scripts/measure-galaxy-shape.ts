@@ -98,41 +98,41 @@ function layoutAt(
 
 // ---- what a layout is worth ------------------------------------------------
 
+/** The jump-range predicate both scans below need, in one place — the distance
+ *  metric was written out three times. */
+const RANGE_SQ = JUMP_RANGE_LY * JUMP_RANGE_LY;
+const inRange = (a: Vec3, b: Vec3): boolean => {
+	const dx = a.x - b.x;
+	const dy = a.y - b.y;
+	const dz = a.z - b.z;
+	return dx * dx + dy * dy + dz * dz <= RANGE_SQ;
+};
+
 /** Mean systems within one 7 LY tank of a system, over every system. This is
- *  the quantity `galaxy-generation.md` §2.1 holds fixed at ~8. */
+ *  the quantity `galaxy-generation.md` §2.1 holds fixed at ~8.
+ *
+ *  `j > i` walks each unordered pair once and doubles, rather than walking every
+ *  ordered pair — the same halving `tests/galaxy.test.ts` does, and it matters
+ *  here because `solveRadius` calls this 16 times per q. */
 function meanInRange(positions: readonly Vec3[]): number {
-	const rangeSq = JUMP_RANGE_LY * JUMP_RANGE_LY;
-	let total = 0;
+	let pairs = 0;
 	for (let i = 0; i < positions.length; i++) {
-		for (let j = 0; j < positions.length; j++) {
-			if (i === j) continue;
-			const a = positions[i];
-			const b = positions[j];
-			const dx = a.x - b.x;
-			const dy = a.y - b.y;
-			const dz = a.z - b.z;
-			if (dx * dx + dy * dy + dz * dz <= rangeSq) total++;
+		for (let j = i + 1; j < positions.length; j++) {
+			if (inRange(positions[i], positions[j])) pairs++;
 		}
 	}
-	return finite("meanInRange", total / positions.length);
+	return finite("meanInRange", (2 * pairs) / positions.length);
 }
 
 /** Systems reachable from nothing. Zero on any layout `layoutAt` returns —
  *  printed so that a regression to measuring first-pass draws shows up as a
  *  non-zero rather than as a slightly wrong mean. */
 function isolated(positions: readonly Vec3[]): number {
-	const rangeSq = JUMP_RANGE_LY * JUMP_RANGE_LY;
 	let count = 0;
 	for (let i = 0; i < positions.length; i++) {
 		let has = false;
 		for (let j = 0; j < positions.length && !has; j++) {
-			if (i === j) continue;
-			const a = positions[i];
-			const b = positions[j];
-			const dx = a.x - b.x;
-			const dy = a.y - b.y;
-			const dz = a.z - b.z;
-			has = dx * dx + dy * dy + dz * dz <= rangeSq;
+			if (i !== j) has = inRange(positions[i], positions[j]);
 		}
 		if (!has) count++;
 	}
@@ -293,9 +293,18 @@ function corpus(q: number, radius: number) {
 function solveRadius(q: number, target: number): number {
 	let lo = 8;
 	let hi = 60;
-	for (let i = 0; i < 26; i++) {
+	// 16 halvings of a 52 LY interval leave under 0.001 LY, which is four orders
+	// below anything §2.1 quotes. It was 26, and each step rebuilds the whole
+	// corpus — 24 galaxies, each re-rolling until connected — so the extra ten
+	// steps were roughly 40% of a `sweep` run bought for no digit.
+	for (let i = 0; i < 16; i++) {
 		const mid = (lo + hi) / 2;
-		let m: number;
+		// **A flag, not a sentinel.** Encoding "too sparse to lay out" as a
+		// measured mean of 0 works only until somebody adds a guard on the
+		// measurement, at which point the solver breaks in a way that looks like
+		// a data problem.
+		let tooSparse = false;
+		let m = 0;
 		try {
 			m = mean(corpus(q, mid).map((l) => meanInRange(l.positions)));
 		} catch (error) {
@@ -308,12 +317,12 @@ function solveRadius(q: number, target: number): number {
 			) {
 				throw error;
 			}
+			tooSparse = true;
 			console.log(
 				`  (q=${q}: no connected layout at R=${mid.toFixed(2)} — too sparse, bisecting down)`,
 			);
-			m = 0;
 		}
-		if (m > target) lo = mid;
+		if (!tooSparse && m > target) lo = mid;
 		else hi = mid;
 	}
 	return finite("solveRadius", (lo + hi) / 2);
@@ -368,12 +377,19 @@ if (mode === "control") {
 	);
 	assertThat("the sweep draws the shipped generator", worst === 0);
 
-	// **Calibration.** The ball arm — `q = 1, R = 22`, the shape that shipped
-	// before #118 — is where this instrument's absolute figures can be compared
-	// against a probe's. They do not match and are not meant to: the projection
-	// here is closed-form, and it reads about a point high. What is asserted is
-	// that the probe's 40.2% falls inside this arm's galaxy-to-galaxy spread,
-	// which is what licenses reading the *differences* between shapes.
+	// **Calibration, and a weak one — stated rather than oversold.** The ball arm
+	// (`q = 1, R = 22`, the shape that shipped before #118) is where this
+	// instrument's absolute figures can be held against a probe's. They do not
+	// match and are not meant to: the projection here is closed-form and reads
+	// about a point high.
+	//
+	// What is asserted is that the probe's 40.2% falls inside this arm's
+	// galaxy-to-galaxy spread. That spread is ~13 points wide while the shape
+	// differences read off the sweep are ~8, so this arm would **not** catch an
+	// instrument biased by several points — it rules out a gross error, not a
+	// small one. The narrower calibration is the mean: this arm's ball mean and
+	// the probe's galaxy-0 figure are asserted within 2 points, which is the
+	// scale of disagreement the closed-form projection is expected to produce.
 	const ball = corpus(1, 22);
 	const crowd = crowdSpread(ball, DESKTOP, 22 * CAMERA_PER_RADIUS, 0.35);
 	console.log(
@@ -382,6 +398,10 @@ if (mode === "control") {
 	assertThat(
 		"the probe's ball figure falls inside this arm's spread",
 		crowd[0] <= 0.402 && crowd[crowd.length - 1] >= 0.402,
+	);
+	assertThat(
+		`this arm's ball mean (${(mean(crowd) * 100).toFixed(1)}%) is within 2 points of the probe's 40.2%`,
+		Math.abs(mean(crowd) - 0.402) < 0.02,
 	);
 	const isolatedTotal = ball.reduce((a, l) => a + isolated(l.positions), 0);
 	console.log(`ball isolated     : ${isolatedTotal}`);
@@ -421,6 +441,32 @@ if (mode === "control") {
 			`  crowd console  : ${(mean(k) * 100).toFixed(1)}%  (spread ${pct(k)})`,
 		);
 	}
+} else if (mode === "solve") {
+	const q = Number(process.argv[3] ?? GALAXY_FLATTENING_Q);
+	const target = Number(process.argv[4] ?? 8);
+	if (!Number.isFinite(q) || q <= 0 || q > 1) {
+		throw new Error(
+			`measure-galaxy-shape: q must be in (0, 1], got "${process.argv[3]}"`,
+		);
+	}
+	if (!Number.isFinite(target) || target <= 0) {
+		throw new Error(
+			`measure-galaxy-shape: target must be positive, got "${process.argv[4]}"`,
+		);
+	}
+	const r = solveRadius(q, target);
+	const c = corpus(q, r);
+	console.log(`q                : ${q}`);
+	console.log(`target in range  : ${target}`);
+	console.log(`R                : ${r.toFixed(2)} LY`);
+	console.log(`core radius      : ${(r / Math.SQRT2).toFixed(2)} LY`);
+	console.log(
+		`mean in range    : ${mean(c.map((l) => meanInRange(l.positions))).toFixed(2)} over ${c.length} connected layouts`,
+	);
+	console.log(`mean re-rolls    : ${mean(c.map((l) => l.attempt)).toFixed(1)}`);
+	console.log(
+		`isolated systems : ${c.reduce((a, l) => a + isolated(l.positions), 0)}`,
+	);
 } else if (mode === "pitch") {
 	console.log(
 		`shipped shape: q = ${GALAXY_FLATTENING_Q}, R = ${GALAXY_RADIUS_LY}, yaw ${DEFAULT_YAW}`,

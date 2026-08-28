@@ -294,12 +294,21 @@ export const squaredDistanceLy = (a: Vec3, b: Vec3): number => {
  * ρ(r) ∝ 1/(1 + (r/r_c)²), so the mass inside radius *x* integrates to
  * `x − r_c·atan(x/r_c)`, normalised at `R`.
  */
-const CDF_NORM =
-	GALAXY_RADIUS_LY -
-	CORE_RADIUS_LY * Math.atan(GALAXY_RADIUS_LY / CORE_RADIUS_LY);
-
-export function radialCdf(x: number): number {
-	return (x - CORE_RADIUS_LY * Math.atan(x / CORE_RADIUS_LY)) / CDF_NORM;
+/**
+ * `radius` defaults to the shipped `R`, and the profile's core radius is always
+ * `radius/√2` — which is what makes this scale-free in `x/radius` (§2.1).
+ *
+ * The parameter exists so `positionForShape` can draw galaxies at radii the game
+ * does not ship without a second copy of this arithmetic. A copy is what the
+ * sweep instrument used to hold, and two 40-step bisections that must stay in
+ * step is exactly the shape of drift this file keeps being bitten by.
+ */
+export function radialCdf(x: number, radius = GALAXY_RADIUS_LY): number {
+	const core = radius / Math.SQRT2;
+	return (
+		(x - core * Math.atan(x / core)) /
+		(radius - core * Math.atan(radius / core))
+	);
 }
 
 /**
@@ -310,12 +319,15 @@ export function radialCdf(x: number): number {
  * interval leave ~2·10⁻¹¹ LY of uncertainty, which is far below anything the
  * simulation can see.
  */
-export function radiusForQuantile(u: number): number {
+export function radiusForQuantile(
+	u: number,
+	radius = GALAXY_RADIUS_LY,
+): number {
 	let lo = 0;
-	let hi = GALAXY_RADIUS_LY;
+	let hi = radius;
 	for (let i = 0; i < CDF_BISECTION_STEPS; i++) {
 		const mid = (lo + hi) / 2;
-		if (radialCdf(mid) < u) lo = mid;
+		if (radialCdf(mid, radius) < u) lo = mid;
 		else hi = mid;
 	}
 	return (lo + hi) / 2;
@@ -352,27 +364,17 @@ export const systemPosition = (systemSeed: number): Vec3 =>
  * the sweep is the shipped draw by construction rather than by a control that
  * has to be remembered.
  *
- * The bisection is inlined rather than calling `radiusForQuantile` because that
- * one closes over the shipped `R`; the arithmetic is otherwise identical, and
- * `tests/galaxy.test.ts` asserts the two agree at the shipped parameters.
+ * There is one bisection body: `radiusForQuantile` takes the radius as a
+ * parameter, so this is the shipped inverse rather than a copy of it that has to
+ * be kept in step.
  */
 export function positionForShape(
 	systemSeed: number,
 	q: number,
 	radius: number,
 ): Vec3 {
-	const coreRadius = radius / Math.SQRT2;
-	const norm = radius - coreRadius * Math.atan(radius / coreRadius);
 	const rand = stream(systemSeed, DOMAIN.POS);
-	const u = rand();
-	let lo = 0;
-	let hi = radius;
-	for (let i = 0; i < CDF_BISECTION_STEPS; i++) {
-		const mid = (lo + hi) / 2;
-		if ((mid - coreRadius * Math.atan(mid / coreRadius)) / norm < u) lo = mid;
-		else hi = mid;
-	}
-	const r = (lo + hi) / 2;
+	const r = radiusForQuantile(rand(), radius);
 	const cosTheta = 2 * rand() - 1;
 	const phi = 2 * Math.PI * rand();
 	const sinTheta = Math.sqrt(Math.max(0, 1 - cosTheta * cosTheta));
