@@ -56,28 +56,37 @@ describe("the jump projection", () => {
 		let oneJump = 0;
 		let unreachable = 0;
 		let far = 0;
+		let compared = 0;
 		for (const system of galaxy.systems) {
 			const route = planRoute(galaxy.systems, here, system);
-			const label = reach.get(system.index);
+			const label = reach.reach(system);
 			if (route === null) {
 				expect(label).toBeUndefined();
 				unreachable++;
+				compared++;
 				continue;
 			}
 			expect(label).toBeDefined();
 			expect(label?.jumps).toBe(route.jumps);
 			expect(label?.ly).toBeCloseTo(route.totalLy, 6);
+			compared++;
 			if (route.jumps === 1) oneJump++;
 			if (route.jumps >= 3) far++;
 		}
 		// The span the node asks for, asserted rather than assumed: a sample
 		// that happened to hold only one-jump systems would pass the loop above
-		// while checking a tenth of the claim.
-		expect(oneJump).toBeGreaterThan(0);
-		expect(far).toBeGreaterThan(0);
-		expect(oneJump + far + unreachable).toBeLessThanOrEqual(
-			galaxy.systems.length,
-		);
+		// while checking a tenth of the claim. Floors on the two ends and on the
+		// count that was actually compared — a third line summing the three
+		// buckets was here and could not fail, since three disjoint subsets of
+		// the loop's own input are always at most its length.
+		expect(oneJump).toBeGreaterThan(4);
+		expect(far).toBeGreaterThan(50);
+		expect(compared).toBe(galaxy.systems.length);
+		// §5 of `galaxy-generation.md` guarantees a connected layout, so the
+		// unreachable end of the span is the hand-built graph in the next test
+		// rather than this one. Pinned so a generator that started producing
+		// isolated systems shows up here instead of quietly widening the sample.
+		expect(unreachable).toBe(0);
 	});
 
 	/** A galaxy §5 guarantees connected has no unreachable system — so the
@@ -90,26 +99,33 @@ describe("the jump projection", () => {
 			pos: { x: 400, y: 0, z: 0 },
 		};
 		const reach = projectJumps([...galaxy.systems, island], here);
-		expect(reach.has(island.index)).toBe(false);
-		expect(reach.get(here.index)?.jumps).toBe(0);
+		expect(reach.reach(island)).toBeUndefined();
+		expect(reach.reach(here)?.jumps).toBe(0);
 	});
 
 	/**
-	 * **The key is a within-galaxy index, and two galaxies reuse the same
-	 * 0…255.** So this cannot be written as "no foreign system is in the map" —
-	 * a lookup by a foreign index answers about *this* galaxy's system of the
-	 * same number and reads as a hit. What is checkable is that adding a second
-	 * galaxy to the pool changes nothing at all: the projection is a function of
-	 * `from.galaxy` alone, which is what makes `projectFinder`'s own galaxy
-	 * guard the thing that scopes the rows.
+	 * **A within-galaxy index is not a key, which is why the lookup takes a
+	 * record.** Every galaxy numbers 0…255, so a bare index cannot say which
+	 * galaxy it means; `reach(system)` reads the record's own `galaxy` and
+	 * refuses a foreign one. Both halves are checked here — the foreign system
+	 * is refused, *and* its presence in the pool changes nothing about the rows
+	 * that are not foreign.
 	 */
-	test("a second galaxy in the pool changes nothing", () => {
+	test("a second galaxy in the pool is refused and changes nothing", () => {
 		const other = generateGalaxy(WORLD_SEED, 1);
 		const alone = projectJumps(galaxy.systems, here);
 		const mixed = projectJumps([...galaxy.systems, ...other.systems], here);
 		expect(mixed.size).toBe(alone.size);
-		for (const [index, reach] of alone)
-			expect(mixed.get(index)?.jumps).toBe(reach.jumps);
+		for (const system of galaxy.systems)
+			expect(mixed.reach(system)?.jumps).toBe(alone.reach(system)?.jumps);
+		// The collision the record-shaped lookup exists to refuse: galaxy 1's
+		// system 3 shares an index with a galaxy 0 system that *is* labelled.
+		const twin = other.systems.find((s) => s.index === here.index) as
+			| SystemRecord
+			| undefined;
+		expect(twin).toBeDefined();
+		expect(mixed.reach(twin as SystemRecord)).toBeUndefined();
+		expect(mixed.reach(here)?.jumps).toBe(0);
 	});
 
 	test("the finder drops rows from another galaxy", () => {
@@ -246,7 +262,7 @@ describe("D6 — the budget bounds the primary list", () => {
 		const { inBudget } = projectFinder(galaxy.systems, here, filter());
 		const reach = projectJumps(galaxy.systems, here);
 		const expected = galaxy.systems.filter(
-			(s) => (reach.get(s.index)?.jumps ?? 99) <= FINDER_DEFAULT_BUDGET,
+			(s) => (reach.reach(s)?.jumps ?? 99) <= FINDER_DEFAULT_BUDGET,
 		);
 		expect(inBudget.map((r) => r.index).sort((a, b) => a - b)).toEqual(
 			expected.map((s) => s.index).sort((a, b) => a - b),
@@ -308,7 +324,7 @@ describe("D7 — a name lookup never returns a blank list", () => {
 	test("a query whose matches are all out of budget shows the group and an empty primary list", () => {
 		const reach = projectJumps(galaxy.systems, here);
 		const far = galaxy.systems.find(
-			(s) => (reach.get(s.index)?.jumps ?? 0) >= 3,
+			(s) => (reach.reach(s)?.jumps ?? 0) >= 3,
 		) as SystemRecord;
 		const results = projectFinder(
 			galaxy.systems,
@@ -326,7 +342,7 @@ describe("D7 — a name lookup never returns a blank list", () => {
 	test("widening the budget moves a row from beyond-range into the list", () => {
 		const reach = projectJumps(galaxy.systems, here);
 		const far = galaxy.systems.find(
-			(s) => (reach.get(s.index)?.jumps ?? 0) === 3,
+			(s) => (reach.reach(s)?.jumps ?? 0) === 3,
 		) as SystemRecord;
 		const before = projectFinder(
 			galaxy.systems,

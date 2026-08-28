@@ -304,15 +304,18 @@ because the fraction is taken over what is visible and a build framing fewer
 systems would be a different measurement wearing the same name.
 
 So the chart is the **reading** surface and a filterable list is the
-**finding** surface. **Which list, was settled later and is not this one.** #86
-found that the Navigation tab's list is system-scale — a different corpus, different
-columns, a different sort — and put the galaxy-scale finder inside the Galaxy Map
-tab instead (§5.2). The sentence below describes what #91 built at system scale;
-read it as that, not as the galaxy finder — which is what `hud-and-scanner.md` §2 already says
+**finding** surface, which is what `hud-and-scanner.md` §2 already says
 ("Navigation is authoritative for target selection and filters"). Selecting a
-named system goes through the list; the chart answers *where is it, and what is
-between here and there*. **A galaxy map with no list is not a shippable map**,
-and #91 built it: `projectNavTargets` in `src/cockpit.ts`, rendered by the
+named system goes through a list; the chart answers *where is it, and what is
+between here and there*. **A galaxy map with no list is not a shippable map.**
+
+**Which list was settled later, and it is not the Navigation one.** #86 found
+that Navigation's list is system-scale — a different corpus, different columns,
+a different sort — and put the galaxy-scale finder inside the Galaxy Map tab
+instead. §5.2 is that surface; the paragraph below is #91's system-scale list,
+which is what §2's sentence was written about.
+
+#91 built that one: `projectNavTargets` in `src/cockpit.ts`, rendered by the
 Navigation tab with type, range and ETA per row and narrowed by a kind chip and
 a name query.
 
@@ -388,6 +391,15 @@ two applications.
 the primary list. The widened value persists for the **session** and is not
 saved: `persistent-world-state.md` §8 forbids persisting a derivable projection,
 and a filter setting is presentation.
+
+**It therefore lives outside the mount, and only a remount can show that.** The
+chart is disposed every time the player leaves the Galaxy Map tab
+(`Game.setChartHost`), so a budget held in `mountGalaxyChart`'s closure reads as
+persistent in every single-mount check and resets the moment anyone uses the
+map. It was built that way first. §9.3 item 11 leaves the tab and comes back,
+and asserts the **query and the chips do not** survive with it — D6 widens the
+budget alone, and a check watching only the budget passes a build that persisted
+the whole filter.
 
 **A name lookup never returns a blank list.** Most of 256 systems are more than
 one jump away, so a name query under the default budget would usually return
@@ -727,12 +739,12 @@ The chart's *mount* rather than its projection, and the list beside it.
    satisfied by the frames rendered while the chunk loaded, so a chart that
    froze the loop on mount still passed.
 
-7. **The finder, against §5.2.** The collapsed form is a field and eight chips
-   with the results hidden and the chart holding the cell §5.1's band was
-   measured on. **The chip case is checked before the typed one**, and from a
-   cleared filter: verifying only typing passes a build whose chips are dead,
-   which is a defect `live-cockpit.ts` records having shipped once already.
-   Clearing every narrowing collapses it again.
+7. **The finder's collapsed form, and what expands it** (§5.2). Closed, it is a
+   field and eight chips with the results hidden and the chart holding the cell
+   §5.1's band was measured on. **The chip case is checked before the typed
+   one**, and from a cleared filter: verifying only typing passes a build whose
+   chips are dead, which is a defect `live-cockpit.ts` records having shipped
+   once already. Clearing every narrowing collapses it again.
 8. **Both directions of the beyond-range group, in the DOM.** The two query
    names are taken from the projection at run time rather than hard-coded, and
    are chosen to sit either side of the default budget. The heading is counted
@@ -740,10 +752,18 @@ The chart's *mount* rather than its projection, and the list beside it.
    tell the grouping from a constant.
 9. **A row selects and does not move the camera; the centre control moves the
    camera and does not change the selection.** Both halves, comparing the whole
-   pose — yaw, pitch, distance and focus — because the first half alone passes
-   on a build whose camera can never move at all. The finder carries no course
-   control, and the chart still carries exactly one.
-10. **Crowding in the open cell, measured rather than carried over.** The cell
+   pose — yaw, pitch, distance and focus — on **both** of them. The centre half
+   was written comparing focus and selection alone, which passed a build whose
+   centre control also zoomed; the red build that zooms is what says so.
+10. **The finder commits no course** — it carries no per-row control and the
+    chart still carries exactly one (D8). This item asserts an *absence*, so it
+    has no red build: the build that fails it is a feature nobody wrote.
+11. **The widened budget survives a remount, and the query does not** (§5.2).
+    The tab is left and re-entered, which disposes and rebuilds the chart — the
+    only way the distinction is visible, since a mount-scoped budget reads as
+    persistent in every single-mount check. Red twice: the budget put back in
+    the closure, and the whole filter persisted rather than the budget alone.
+12. **Crowding in the open cell, measured rather than carried over.** The cell
     goes 1011 x 462 to 743 x 462 and the figure stays 73.0%, which §5.2 explains
     and this check makes falsifiable: every system's horizontal shift must be
     the *same* shift, equal to half the column the panel took, with the vertical
@@ -768,14 +788,23 @@ to 2 and the default framing zoomed to 20 LY. Each turned the check named
 above it red — except the system half of item 3, which is recorded there as
 not yet discriminating rather than counted as covered.
 
-The finder checks were built red builds too, one each and both halves where a
-check has two: `toggleFinderEconomy` made a no-op (item 7 red, and it is the
+The finder checks were built red builds too — items 7 to 11, both halves where
+a check has two: `toggleFinderEconomy` made a no-op (item 7 red, and it is the
 exact dead-chip defect the ordering is there to catch); the beyond-range group
-suppressed, and then made a constant by dropping the budget test (item 8 red on
-one branch each way); a row click made to centre as well, and then the centre
-control made a no-op (item 9 red on one half each). Item 10 was the one that
-paid: its red build caught two faults in the check itself, both recorded where
-it is described.
+suppressed, and then made a constant by dropping the budget test (item 8 red one
+branch each way); a row click made to centre as well, then the centre control
+made a no-op, then the centre control made to zoom as well (item 9 red three
+ways, the third being what caught the check asserting "nothing else" while
+comparing only two of the pose's four components); the session budget put back
+inside the mount closure, and then the whole filter persisted rather than the
+budget alone (item 11 red one way each). Item 12 was the one that paid: its red
+build caught two faults in the check itself, both recorded where it is
+described.
+
+**Item 10 has no red build and no item of its own**, because it asserts an
+absence — no per-row course control — and the build that fails it is a feature
+nobody wrote. It is listed rather than folded into another item so that the
+sentence above stays true of exactly the items it names.
 
 ## 10. Deferred
 

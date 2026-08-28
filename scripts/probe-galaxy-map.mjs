@@ -379,9 +379,14 @@ for (const viewport of VIEWPORTS) {
 				 * because what the probe needs to know is exactly what
 				 * `elementFromPoint` answers.
 				 *
-				 * This does not weaken the check. A build whose pick radius was a
-				 * world distance still fails on the four verdicts below; all this
-				 * removes is a candidate the mouse could never have tested.
+				 * **This does not weaken the check, and that was made red rather
+				 * than asserted.** With the pick threshold scaled by the camera
+				 * distance — the world-unit implementation the check exists to
+				 * exclude — the verdict goes red at both viewports with the filter
+				 * in place. And a filter that emptied the set fails closed: the
+				 * predicate below requires `target !== null` on all four clicks.
+				 * All this removes is a candidate the mouse could never have
+				 * tested.
 				 */
 				const canvas = document.querySelector("#galaxy-map canvas");
 				const onCanvas = (x, y) =>

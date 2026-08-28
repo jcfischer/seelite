@@ -43,6 +43,7 @@ import {
 	startSystem,
 } from "./galaxy";
 import {
+	FINDER_DEFAULT_BUDGET,
 	FINDER_MAX_BUDGET,
 	type FinderFilter,
 	type FinderResults,
@@ -119,6 +120,19 @@ const COLOUR = {
 /** Big enough to pick reliably under a mouse, small enough that the core is not
  *  a single blob. Screen-space picking uses this as its radius in pixels. */
 const PICK_RADIUS_PX = 14;
+
+/**
+ * #86's D6: the widened jump budget persists for the **session**.
+ *
+ * Module scope rather than mount scope, because the mount is the thing that
+ * does not survive: `Game.setChartHost` disposes the chart every time the
+ * player leaves the Galaxy Map tab, so a budget held in `mountGalaxyChart`'s
+ * closure would be back at 1 on the next look — which is not what D6 says. It
+ * is deliberately **not** saved (`persistent-world-state.md` §8 forbids
+ * persisting a derivable projection, and a filter setting is presentation), so
+ * a reload starts at the default.
+ */
+let sessionBudgetJumps: number = FINDER_DEFAULT_BUDGET;
 
 export interface GalaxyMapState {
 	galaxy: number;
@@ -423,20 +437,32 @@ export function mountGalaxyChart({
 	});
 	stage.appendChild(controls);
 
-	const button = (label: string, attr: string): HTMLButtonElement => {
+	/** The chart's button. `parent` and `style` exist because the finder's budget
+	 *  stepper is the same control in a tighter box, and a near-copy of this
+	 *  fifteen-line shape is how two buttons in one panel come to disagree. */
+	const button = (
+		label: string,
+		attr: string,
+		style: Partial<CSSStyleDeclaration> = {},
+		parent: HTMLElement = controls,
+	): HTMLButtonElement => {
 		const b = el("button");
 		b.textContent = label;
 		b.setAttribute(attr, "");
-		Object.assign(b.style, {
-			font: "inherit",
-			color: "#cfe6f5",
-			background: "rgba(10,20,32,0.9)",
-			border: "1px solid #26506e",
-			borderRadius: "3px",
-			padding: "6px 10px",
-			cursor: "pointer",
-		});
-		controls.appendChild(b);
+		Object.assign(
+			b.style,
+			{
+				font: "inherit",
+				color: "#cfe6f5",
+				background: "rgba(10,20,32,0.9)",
+				border: "1px solid #26506e",
+				borderRadius: "3px",
+				padding: "6px 10px",
+				cursor: "pointer",
+			},
+			style,
+		);
+		parent.appendChild(b);
 		return b;
 	};
 
@@ -641,8 +667,20 @@ export function mountGalaxyChart({
 	 */
 	const FINDER_WIDTH_PX = 268;
 
-	let finderFilter = finderDefaultFilter();
+	let finderFilter: FinderFilter = {
+		...finderDefaultFilter(),
+		budgetJumps: sessionBudgetJumps,
+	};
 	let finderResults: FinderResults = { inBudget: [], beyondRange: [] };
+	/** What `applyFinderLayout` last applied — a cache, not a second answer to
+	 *  "is it open"; `finderIsNarrowed` remains the only one. */
+	let finderExpanded: boolean | null = null;
+	/** The drawn row buttons by system index, so a selection restyles rather
+	 *  than rebuilds. Cleared whenever the list is rebuilt. */
+	const rowElements = new Map<number, HTMLElement>();
+	/** The rows the panel currently holds, as a string — the discriminator for
+	 *  whether a rebuild is owed. */
+	let listKey = "";
 	/**
 	 * The system the cluster is centred on, or null for the galaxy centre.
 	 *
@@ -749,19 +787,8 @@ export function mountGalaxyChart({
 	finderControls.appendChild(budgetRow);
 
 	const stepButton = (label: string, attr: string): HTMLButtonElement => {
-		const b = el("button");
+		const b = button(label, attr, { padding: "2px 8px" }, budgetRow);
 		b.type = "button";
-		b.textContent = label;
-		b.setAttribute(attr, "");
-		Object.assign(b.style, {
-			font: "inherit",
-			color: "#cfe6f5",
-			background: "rgba(10,20,32,0.9)",
-			border: "1px solid #26506e",
-			borderRadius: "3px",
-			padding: "2px 8px",
-			cursor: "pointer",
-		});
 		return b;
 	};
 	const budgetLabel = el("span");
@@ -784,15 +811,20 @@ export function mountGalaxyChart({
 	finder.appendChild(finderResultsEl);
 
 	/**
-	 * Open exactly when something is narrowing the list (D4).
+	 * Apply the open/closed layout, and only when it changed.
 	 *
-	 * Derived from the filter rather than held as its own flag: a second owner
-	 * of "is it open" is how a chip click comes to narrow the results without
-	 * showing them, which is the shape of the defect \`live-cockpit.ts\` records
-	 * having shipped once already.
+	 * Derived from the filter rather than held as its own flag (D4): a second
+	 * owner of "is it open" is how a chip click comes to narrow the results
+	 * without showing them, which is the shape of the defect `live-cockpit.ts`
+	 * records having shipped once already. `finderExpanded` is a *cache of what
+	 * was applied*, not a second answer — it exists so a keystroke does not
+	 * reallocate the drawing buffer. Unconditional, every render made the next
+	 * frame read `stage.clientWidth` and call `renderer.setSize` for a box that
+	 * had not moved.
 	 */
-	const applyFinderLayout = (): void => {
-		const expanded = finderIsNarrowed(finderFilter);
+	const applyFinderLayout = (expanded: boolean): void => {
+		if (expanded === finderExpanded) return;
+		finderExpanded = expanded;
 		finder.setAttribute("data-map-finder-expanded", String(expanded));
 		finderResultsEl.style.display = expanded ? "block" : "none";
 		if (expanded) {
@@ -824,58 +856,118 @@ export function mountGalaxyChart({
 		resizePending = true;
 	};
 
-	const escape = (value: string): string =>
-		value.replace(
-			/[&<>"']/g,
-			(c) =>
-				({
-					"&": "&amp;",
-					"<": "&lt;",
-					">": "&gt;",
-					'"': "&quot;",
-					"'": "&#39;",
-				})[c] as string,
-		);
+	/** Paint one row for its selected state — the whole of what a selection
+	 *  changes, so a row click does not have to rebuild the list. */
+	const paintRow = (button: HTMLElement, on: boolean): void => {
+		button.setAttribute("aria-current", String(on));
+		button.style.background = on ? "rgba(255,179,71,.22)" : "transparent";
+		button.style.color = on ? "#ffd9a2" : "#cfe6f5";
+	};
 
-	/** One row: the name, the economy, and the reach — plus a centre control
-	 *  that is a *separate* button, because D2 says the row already selected. */
-	const rowMarkup = (row: FinderRow, dim: boolean): string => {
-		const reach =
+	/**
+	 * One row, built as DOM.
+	 *
+	 * Not an HTML string. The first version concatenated one with a bespoke
+	 * `escape` applied per interpolation — three calls, one of them inside an
+	 * `aria-label` — and a missed call there is invisible in review and in every
+	 * green run. `textContent` cannot be missed, and it is how the rest of this
+	 * module builds its furniture.
+	 *
+	 * The centre control is a **separate button**, because D2 says the row click
+	 * already selected.
+	 */
+	const buildRow = (row: FinderRow, dim: boolean): HTMLLIElement => {
+		const item = el("li");
+		Object.assign(item.style, {
+			display: "flex",
+			gap: "4px",
+			alignItems: "stretch",
+			opacity: dim ? "0.55" : "1",
+		});
+
+		const pick = el("button");
+		pick.type = "button";
+		pick.setAttribute("data-map-finder-row", String(row.index));
+		Object.assign(pick.style, {
+			flex: "1 1 auto",
+			display: "grid",
+			gridTemplateColumns: "1fr auto",
+			gap: "6px",
+			textAlign: "left",
+			font: "inherit",
+			fontSize: "11px",
+			padding: "4px 5px",
+			cursor: "pointer",
+			border: "0",
+			borderBottom: "1px solid rgba(38,80,110,.5)",
+		});
+		paintRow(pick, row.selected);
+
+		const name = el("span");
+		name.textContent = row.name;
+		const reach = el("em");
+		Object.assign(reach.style, { fontStyle: "normal", color: "#8fb2c9" });
+		reach.textContent =
 			row.jumps === null
 				? "—"
 				: row.jumps === 0
 					? "here"
 					: `${row.jumps}j · ${row.routeLy?.toFixed(1)} LY`;
-		return (
-			`<li style="display:flex;gap:4px;align-items:stretch;opacity:${dim ? 0.55 : 1}">` +
-			`<button type="button" data-map-finder-row="${row.index}" aria-current="${row.selected}" ` +
-			`style="flex:1 1 auto;display:grid;grid-template-columns:1fr auto;gap:6px;text-align:left;font:inherit;font-size:11px;padding:4px 5px;cursor:pointer;border:0;border-bottom:1px solid rgba(38,80,110,.5);background:${row.selected ? "rgba(255,179,71,.22)" : "transparent"};color:${row.selected ? "#ffd9a2" : "#cfe6f5"}">` +
-			`<span>${escape(row.name)}</span><em style="font-style:normal;color:#8fb2c9">${reach}</em>` +
-			`<span style="grid-column:1/3;color:#7fa8c4;font-size:9px;letter-spacing:.05em">${escape(row.economy.toUpperCase())} · ${escape(row.government.toUpperCase())} · TL ${row.displayTL}</span>` +
-			`</button>` +
-			`<button type="button" data-map-finder-centre="${row.index}" aria-label="centre the chart on ${escape(row.name)}" title="centre" style="flex:0 0 auto;font:inherit;font-size:11px;color:#8fb2c9;background:transparent;border:0;border-bottom:1px solid rgba(38,80,110,.5);padding:0 6px;cursor:pointer">⊙</button>` +
-			`</li>`
-		);
+		const detail = el("span");
+		Object.assign(detail.style, {
+			gridColumn: "1/3",
+			color: "#7fa8c4",
+			fontSize: "9px",
+			letterSpacing: ".05em",
+		});
+		detail.textContent = `${row.economy.toUpperCase()} · ${row.government.toUpperCase()} · TL ${row.displayTL}`;
+		pick.append(name, reach, detail);
+
+		const centre = el("button");
+		centre.type = "button";
+		centre.setAttribute("data-map-finder-centre", String(row.index));
+		centre.setAttribute("aria-label", `centre the chart on ${row.name}`);
+		centre.title = "centre";
+		centre.textContent = "⊙";
+		Object.assign(centre.style, {
+			flex: "0 0 auto",
+			font: "inherit",
+			fontSize: "11px",
+			color: "#8fb2c9",
+			background: "transparent",
+			border: "0",
+			borderBottom: "1px solid rgba(38,80,110,.5)",
+			padding: "0 6px",
+			cursor: "pointer",
+		});
+
+		item.append(pick, centre);
+		rowElements.set(row.index, pick);
+		return item;
 	};
 
-	const listMarkup = (rows: FinderRow[], dim: boolean): string =>
-		`<ul style="list-style:none;margin:0;padding:0">${rows.map((r) => rowMarkup(r, dim)).join("")}</ul>`;
+	const buildList = (rows: FinderRow[], dim: boolean): HTMLUListElement => {
+		const list = el("ul");
+		Object.assign(list.style, { listStyle: "none", margin: "0", padding: "0" });
+		for (const row of rows) list.append(buildRow(row, dim));
+		return list;
+	};
 
 	/**
-	 * Redraw the two lists.
+	 * Redraw the panel.
 	 *
-	 * The controls are built once and never re-rendered: rebuilding them would
-	 * blow away the query field's focus and caret on the keystroke that
-	 * produced the results, which is the failure `live-cockpit.ts` keeps
-	 * `targetId` out of its structural key to avoid.
+	 * Three costs, each avoided where it is not owed. The controls are built
+	 * once and never re-rendered — rebuilding them would blow away the query
+	 * field's focus and caret on the keystroke that produced the results, the
+	 * failure `live-cockpit.ts` keeps `targetId` out of its structural key to
+	 * avoid. **The projection is skipped while the panel is closed**, so a chart
+	 * click does not pay a 256-node relaxation for a list showing nothing. And
+	 * **the list is rebuilt only when its rows changed**: a selection restyles
+	 * two nodes in place, because `recompute` runs on every click and a full
+	 * rebuild there threw away the list's scroll position on the click that
+	 * selected a row.
 	 */
 	const renderFinder = (): void => {
-		finderResults = projectFinder(
-			galaxy.systems,
-			current,
-			finderFilter,
-			selected?.index ?? null,
-		);
 		budgetValue.textContent = String(finderFilter.budgetJumps);
 		budgetDown.disabled = finderFilter.budgetJumps <= 1;
 		budgetUp.disabled = finderFilter.budgetJumps >= FINDER_MAX_BUDGET;
@@ -886,34 +978,83 @@ export function mountGalaxyChart({
 			chip.style.borderColor = on ? "#ffb347" : "#26506e";
 			chip.style.background = on ? "rgba(255,179,71,.18)" : "transparent";
 		});
-		applyFinderLayout();
-		if (!finderIsNarrowed(finderFilter)) {
-			finderResultsEl.innerHTML = "";
+
+		const expanded = finderIsNarrowed(finderFilter);
+		applyFinderLayout(expanded);
+		if (!expanded) {
+			finderResults = { inBudget: [], beyondRange: [] };
+			finderResultsEl.replaceChildren();
+			rowElements.clear();
+			listKey = "";
 			return;
 		}
+
+		finderResults = projectFinder(
+			galaxy.systems,
+			current,
+			finderFilter,
+			selected?.index ?? null,
+		);
 		const { inBudget, beyondRange } = finderResults;
-		const primary =
-			inBudget.length === 0
-				? '<p style="margin:6px 2px;color:#7fa8c4">NOTHING WITHIN BUDGET</p>'
-				: listMarkup(inBudget, false);
-		// D7: the dimmed group is a *group*, headed, so a beyond-range row can
-		// never be mistaken for one the budget admitted.
-		const beyond =
-			beyondRange.length === 0
-				? ""
-				: '<h3 data-map-finder-beyond style="margin:9px 2px 3px;font-size:9px;letter-spacing:.12em;color:#7fa8c4">BEYOND RANGE</h3>' +
-					listMarkup(beyondRange, true);
-		finderResultsEl.innerHTML = primary + beyond;
+		// **Keyed on what is drawn, not on the filter.** Two filters can yield
+		// the same rows, and the ship moving under a fixed filter yields
+		// different jump counts under the same indices — so the key carries both.
+		const key = [inBudget, beyondRange]
+			.map((rows) => rows.map((r) => `${r.index}:${r.jumps}`).join(","))
+			.join("|");
+		if (key !== listKey) {
+			listKey = key;
+			rowElements.clear();
+			const parts: (HTMLElement | Text)[] = [];
+			if (inBudget.length === 0) {
+				const empty = el("p");
+				Object.assign(empty.style, { margin: "6px 2px", color: "#7fa8c4" });
+				empty.textContent = "NOTHING WITHIN BUDGET";
+				parts.push(empty);
+			} else {
+				parts.push(buildList(inBudget, false));
+			}
+			// D7: the dimmed group is a *group*, headed, so a beyond-range row
+			// can never be mistaken for one the budget admitted.
+			if (beyondRange.length > 0) {
+				const heading = el("h3");
+				heading.setAttribute("data-map-finder-beyond", "");
+				Object.assign(heading.style, {
+					margin: "9px 2px 3px",
+					fontSize: "9px",
+					letterSpacing: ".12em",
+					color: "#7fa8c4",
+				});
+				heading.textContent = "BEYOND RANGE";
+				parts.push(heading, buildList(beyondRange, true));
+			}
+			finderResultsEl.replaceChildren(...parts);
+		}
+		for (const [index, button] of rowElements)
+			paintRow(button, index === selected?.index);
 	};
 
 	const setFinderFilter = (next: FinderFilter): void => {
-		finderFilter = {
-			...next,
-			budgetJumps: Math.max(
-				1,
-				Math.min(FINDER_MAX_BUDGET, Math.round(next.budgetJumps)),
-			),
-		};
+		// **A non-finite budget has to be refused here.** `Math.max`/`Math.min`
+		// pass `NaN` straight through, and a `NaN` budget makes
+		// `finderIsNarrowed` permanently true, disables neither step button while
+		// leaving both no-ops, and drops every row out of budget — a panel wedged
+		// open with nothing in it and no control that closes it.
+		const asked = Math.round(next.budgetJumps);
+		const budgetJumps = Number.isFinite(asked)
+			? Math.max(1, Math.min(FINDER_MAX_BUDGET, asked))
+			: FINDER_DEFAULT_BUDGET;
+		finderFilter = { ...next, budgetJumps };
+		// D6: the widened value persists for the **session**, so a trader
+		// planning multi-hop runs sets it once rather than on every visit to the
+		// tab. It lives outside the mount because the mount is *disposed* every
+		// time the player leaves the tab (`Game.setChartHost`), so a value held
+		// in this closure would reset on the next look at the map — which is not
+		// what "for the session" means. It is not saved: §8 of
+		// `persistent-world-state.md` forbids persisting a derivable projection,
+		// and a filter setting is presentation. The query and the chips do not
+		// persist; D6 widens the budget alone.
+		sessionBudgetJumps = budgetJumps;
 		if (finderQuery.value !== finderFilter.query)
 			finderQuery.value = finderFilter.query;
 		renderFinder();

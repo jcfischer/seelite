@@ -248,34 +248,49 @@ export interface JumpReach {
  * with no early stop — the same function, the same objective, the same cached
  * adjacency.
  *
- * Keyed by `SystemRecord.index`, never by array position: `jumpGraph` keeps the
- * two apart on purpose and a caller holding a saved index would read the wrong
- * row the day the generator reorders. **That index is unique within a galaxy
- * and not across them** — every galaxy numbers 0…255 — so a caller holding a
- * multi-galaxy array must scope its own rows to `from.galaxy` rather than treat
- * a hit here as proof a record is on this chart. The map holds `from.galaxy`'s
- * pool and nothing else, which is what makes that scoping the caller's job.
+ * **The lookup takes a record, not an index.** Indices are unique within a
+ * galaxy and not across them — every galaxy numbers 0…255 — so a bare
+ * `Map<number, …>` answers about *this* galaxy's system of that number whatever
+ * the caller meant, and a caller holding a multi-galaxy array would read a
+ * plausible wrong row with nothing to notice it. `reach(system)` checks the
+ * galaxy and returns `undefined` for a foreign one, which makes the scoping the
+ * projection's job rather than every future caller's.
  *
- * Unreachable systems are **absent** rather than present with a sentinel, so a
- * caller that forgets the case gets `undefined` rather than a plausible number.
+ * Unreachable systems are `undefined` too, rather than a sentinel, so a caller
+ * that forgets either case gets nothing rather than a plausible number.
  */
+export interface JumpProjection {
+	/** The galaxy this was built for. Anything else is not on this chart. */
+	galaxy: number;
+	/** How far one system is, or `undefined` if it is unreachable or foreign. */
+	reach(system: SystemRecord): JumpReach | undefined;
+	/** How many systems carry a label — the reachable pool, for a test that
+	 *  wants to compare two projections without walking a galaxy. */
+	size: number;
+}
+
 export function projectJumps(
 	systems: readonly SystemRecord[],
 	from: SystemRecord,
 	maxJump = JUMP_RANGE_LY,
-): Map<number, JumpReach> {
+): JumpProjection {
 	const graph = jumpGraph(systems, from.galaxy, maxJump);
 	const n = graph.pool.length;
 	const start = graph.slot.get(from.index);
-	const reach = new Map<number, JumpReach>();
-	if (start === undefined) return reach;
-
-	const { jumps, ly } = relaxFrom(graph, n, start, null);
-	for (let i = 0; i < n; i++) {
-		if (!Number.isFinite(ly[i])) continue;
-		reach.set(graph.pool[i].index, { jumps: jumps[i], ly: ly[i] });
+	const labels = new Map<number, JumpReach>();
+	if (start !== undefined) {
+		const { jumps, ly } = relaxFrom(graph, n, start, null);
+		for (let i = 0; i < n; i++) {
+			if (!Number.isFinite(ly[i])) continue;
+			labels.set(graph.pool[i].index, { jumps: jumps[i], ly: ly[i] });
+		}
 	}
-	return reach;
+	return {
+		galaxy: from.galaxy,
+		reach: (system) =>
+			system.galaxy === from.galaxy ? labels.get(system.index) : undefined,
+		size: labels.size,
+	};
 }
 
 export function planRoute(

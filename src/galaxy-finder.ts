@@ -23,11 +23,21 @@ import { type JumpReach, projectJumps } from "./galaxy-route";
 /**
  * What the player has narrowed the galaxy to.
  *
- * The same grammar the Navigation list uses (`navFilterMatches`,
+ * The same **grammar** the Navigation list uses (`navFilterMatches`,
  * `cockpit.ts`): a set of chips plus a substring query, with an empty chip set
  * meaning *every* economy rather than none. One console, one way to narrow a
  * list — which is what stops two lists under one console name reading as two
  * applications (#86 D5).
+ *
+ * **It is a second predicate, not a second grammar, and that is deliberate.**
+ * `navFilterMatches` chips on a `kind` string and queries a body's `id`; this
+ * chips on an economy *index* and queries a system's `name`. A shared helper
+ * over both would take the chip key and the queried field as parameters and
+ * would be four lines of indirection standing in for four lines of predicate —
+ * so what is shared is the rule as written down here and in
+ * `galaxy-map.md` §5.2, and the thing that would actually catch a drift is a
+ * test asserting the same three properties of each. `galaxy-finder.test.ts`
+ * has them for this one.
  *
  * `budgetJumps` is the third control and is this list's own: the local list has
  * no analogue because everything on it is in the system you are in.
@@ -183,7 +193,7 @@ export function projectFinder(
 	selectedIndex: number | null = null,
 	maxJump = JUMP_RANGE_LY,
 ): FinderResults {
-	const reach = projectJumps(systems, from, maxJump);
+	const projection = projectJumps(systems, from, maxJump);
 	const hasQuery = filter.query.trim() !== "";
 	const inBudget: FinderRow[] = [];
 	const beyondRange: FinderRow[] = [];
@@ -191,7 +201,7 @@ export function projectFinder(
 	for (const system of systems) {
 		if (system.galaxy !== from.galaxy) continue;
 		if (!finderMatches(system, filter)) continue;
-		const here = reach.get(system.index);
+		const here = projection.reach(system);
 		const built = row(system, from, here, selectedIndex);
 		if (here !== undefined && here.jumps <= filter.budgetJumps)
 			inBudget.push(built);

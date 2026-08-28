@@ -29,6 +29,15 @@ import {
  * prints the *same spread to the digit* for the two cells, 75.0%-86.7% over its
  * 24 layouts.
  *
+ * **The constant is the closed cell's band verbatim, reused because the two
+ * cells measure alike — it is not a fresh derivation from the open cell's own
+ * spread.** Said that way because those are different claims and only the first
+ * is true: the instrument's 75.0%-86.7% has a top the 82% ceiling excludes, so
+ * nothing here was "widened and rounded outward" from it. What the instrument
+ * establishes is the *equality of the two spreads*, which is what licenses the
+ * reuse; the ceiling's own provenance is §5.1's closed-cell derivation and is
+ * unchanged by this node.
+ *
  * That is a fact about the projection rather than a coincidence, and the check
  * below that compares the two sets of projected pixels is what makes it
  * falsifiable. The chart holds its vertical field of view and widens `aspect`
@@ -638,12 +647,19 @@ await page.evaluate(() => {
 	document.querySelector("[data-map-finder-centre]").click();
 });
 const afterCentre = await finderState();
+// **"Nothing else" has to be asserted, not just named.** Written first as focus
+// plus selection, it passed a build whose centre control also spun or zoomed the
+// camera — while the sentence above it, and Â§9.3, both said "the whole pose".
+// The other three components are compared here for that reason.
 check(
 	"the per-row centre control moves the camera and changes nothing else",
 	afterCentre.pose.focusIndex === afterRow.selectedIndex &&
 		afterCentre.pose.focusIndex !== poseBefore.focusIndex &&
-		afterCentre.selectedIndex === afterRow.selectedIndex,
-	`focus ${afterCentre.pose.focusIndex}, selection ${afterCentre.selectedIndex}`,
+		afterCentre.selectedIndex === afterRow.selectedIndex &&
+		afterCentre.pose.yaw === afterRow.pose.yaw &&
+		afterCentre.pose.pitch === afterRow.pose.pitch &&
+		afterCentre.pose.distance === afterRow.pose.distance,
+	`focus ${afterCentre.pose.focusIndex}, selection ${afterCentre.selectedIndex}, pose ${JSON.stringify(afterCentre.pose)} against ${JSON.stringify(afterRow.pose)}`,
 );
 
 // D8: the chart's `set course` button is the single owner of the commit. A
@@ -663,21 +679,53 @@ check(
 	`${commitControls.rows} rows, ${commitControls.perRowCourse} per-row course controls, ${commitControls.chartCourse} on the chart`,
 );
 
+/**
+ * **D6's session persistence, which is only visible across a remount.**
+ *
+ * The chart is disposed every time the player leaves the tab, so a budget held
+ * in `mountGalaxyChart`'s closure would read as "persists" in every
+ * single-mount check and reset the moment anyone actually used the map. That is
+ * how it was built first. The query and the chips are asserted *not* to
+ * survive, because D6 widens the budget alone and a check that only watched the
+ * budget would pass a build that persisted the whole filter.
+ */
+await clearFinder();
+await page.evaluate(() => {
+	window.__seeliteGalaxyMap.setFinderQuery("ra");
+	window.__seeliteGalaxyMap.setFinderBudget(4);
+});
+await clickTab("Navigation");
+await page.waitForFunction(() => window.__seeliteGalaxyMap == null);
+await clickTab("Galaxy Map");
+await page.waitForFunction(() => window.__seeliteGalaxyMap != null);
+const remounted = await finderState();
+check(
+	"a widened budget survives leaving and re-entering the tab; the query does not",
+	remounted.filter.budgetJumps === 4 &&
+		remounted.filter.query === "" &&
+		remounted.filter.economies.length === 0 &&
+		remounted.expanded,
+	`budget ${remounted.filter.budgetJumps}, query "${remounted.filter.query}", ${remounted.filter.economies.length} chips, expanded ${remounted.expanded}`,
+);
+await clearFinder();
+
 // ---- Crowding in the expanded cell (#115's first obligation) ---------------
 
 /**
  * **The 64-82% band above is the *closed* cell's, and it does not carry.**
  *
  * Opening the finder takes a column off the chart, and crowding is a pixel
- * property: the same 256 points in a narrower box are packed closer, so the
- * figure can only rise. #96 is the recorded case — the workbench's 40.2% became
- * the console's 68.8% for exactly this reason — and #118 is the recorded reason
- * to band from a spread rather than from one galaxy.
+ * property, so the figure had to be re-measured rather than carried across. #96
+ * is the recorded case of one changing under a different box — the workbench's
+ * 40.2% became the console's 68.8% — and #118 is the recorded reason to band
+ * from a spread rather than from one galaxy. **Here it did not move**, and the
+ * check below says why: this cell crops rather than compressing. An earlier
+ * draft of this paragraph said the figure "can only rise", which the check
+ * twelve lines down disproves.
  *
- * The band below is set from `measure-galaxy-shape.ts`'s console-open cell over
- * all eight galaxies, widened and rounded outward the way the closed band was.
- * The measured figure is printed either way, so a change that improved the
- * projection shows up as a value moving rather than as silence.
+ * `EXPANDED_CROWDING` at the top of this file carries the band and the whole of
+ * its provenance. The measured figure is printed either way, so a change that
+ * moved the projection shows up as a value moving rather than as silence.
  */
 // **The finder is open from the D7 checks above, so it is closed first.**
 // Capturing the "closed" projection while the panel still held its column read
