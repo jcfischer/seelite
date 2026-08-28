@@ -40,15 +40,42 @@ const SCHEMA = {
 		/** Why someone would move it, in the words of what they would see. */
 		note: "Lower is faster and softer. Below 100% the cockpit's glow thins: bloom's own chain is a fixed size, but it reads a smaller frame, so fine highlights are averaged away before they can pass its brightness threshold.",
 	},
+	/**
+	 * Which lighting terms the frame gets — #98's quality key, and #99's answer
+	 * to what "low" drops.
+	 *
+	 * There is no frame-time floor in this game and deliberately so (#98): the
+	 * target is Apple Silicon, the expensive part is gated, and a probe's frame
+	 * cost is a SwiftShader number that is nobody's. So this is the gate rather
+	 * than a budget.
+	 *
+	 * Low drops the baked lighting environment and keeps every other term. The
+	 * hemisphere costs what the flat ambient it replaced cost, so dropping it
+	 * would buy nothing and lose the gradient; the environment is the term with
+	 * a texture sample on every standard material in the frame.
+	 *
+	 * A string rather than a number, which is why the loader below reads
+	 * `allowed` as `unknown[]`: a lighting mode has no scale to be a point on,
+	 * and `0` and `1` in a save file would say nothing about which is which.
+	 */
+	quality: {
+		fallback: "high" as const,
+		allowed: ["high", "low"] as const,
+		label: "Lighting",
+		describe: (v: string) => (v === "high" ? "High" : "Low"),
+		note: "High reflects the star off every hull, plate and cockpit surface — the term that makes metal read as metal. Low drops it and keeps the sun, the star-side gradient and the cockpit fill; the picture stays lit and stops being reflective.",
+	},
 } as const;
 
-export type Settings = { renderScale: number };
+export type Quality = (typeof SCHEMA.quality.allowed)[number];
+export type Settings = { renderScale: number; quality: Quality };
 
 export const SETTING_KEYS = Object.keys(SCHEMA) as (keyof typeof SCHEMA)[];
 export const settingSpec = (key: keyof typeof SCHEMA) => SCHEMA[key];
 
 export const DEFAULT_SETTINGS: Settings = {
 	renderScale: SCHEMA.renderScale.fallback,
+	quality: SCHEMA.quality.fallback,
 };
 
 const STORAGE_KEY = "seelite:settings:v1";
@@ -78,8 +105,14 @@ export function loadSettings(): Settings {
 	if (!parsed || typeof parsed !== "object") return out;
 	for (const key of SETTING_KEYS) {
 		const value = (parsed as Record<string, unknown>)[key];
-		const allowed = SCHEMA[key].allowed as readonly number[];
-		if (typeof value === "number" && allowed.includes(value)) out[key] = value;
+		// Membership of the allowed set is the whole validation, and it carries
+		// the type check with it: `allowed` holds literals, so `"0.5"` is not in
+		// a set of numbers and `0` is not in a set of mode names. Testing the
+		// `typeof` first — as this did while every setting was a number — would
+		// have to be widened per key the moment a second kind arrived, which is
+		// a validator that grows a branch each time the schema does.
+		const allowed = SCHEMA[key].allowed as readonly unknown[];
+		if (allowed.includes(value)) out[key] = value as never;
 	}
 	return out;
 }

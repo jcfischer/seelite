@@ -72,6 +72,7 @@ import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js"
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
 import { starField } from "./backdrop";
+import { BAKE_STAR_DIR, LIGHT_RIG, equirectEnvironment } from "./light-rig";
 import { SettingsStore } from "./settings";
 import { AudioFX } from "./audio";
 import {
@@ -208,6 +209,14 @@ const SUN_DIR = new THREE.Vector3();
 const ORIGIN = v3(0, 0, 0);
 
 const STATION_AXIS = new THREE.Vector3();
+
+/** The camera's unit direction to the star, and the rotation carrying the
+ *  bake's own star direction onto it. Allocated once for the reason above: they
+ *  are written every frame and read in the same statement. */
+const STAR_DIR = new THREE.Vector3();
+const BAKE_STAR_UNIT = new THREE.Vector3(...BAKE_STAR_DIR);
+const ENV_QUAT = new THREE.Quaternion();
+const ENV_EULER = new THREE.Euler();
 const HEAD_AXIS = new THREE.Vector3(0, 1, 0);
 
 const {
@@ -1423,7 +1432,18 @@ class Game {
 		window.addEventListener("resize", () => this.onResize());
 		// A resolution setting is a change to the drawing buffer, so it lands the
 		// same way a window resize does.
-		this.settings.subscribe(() => this.onResize());
+		//
+		// Which key changed is tracked here rather than asked of the store,
+		// because the store deliberately publishes the whole settings object and
+		// refuses a no-op set. Without the comparison a lighting change would
+		// resize the drawing buffer to the size it already is — a reallocation on
+		// the frame the player flipped a switch to *look* at something.
+		let applied = this.settings.value;
+		this.settings.subscribe((next) => {
+			if (next.renderScale !== applied.renderScale) this.onResize();
+			if (next.quality !== applied.quality) this.applyQuality();
+			applied = next;
+		});
 		/**
 		 * A display change is not always a resize.
 		 *
@@ -1713,14 +1733,37 @@ class Game {
 		// authored for. Directional light sidesteps that: it has no position, only
 		// a direction, and the direction is the same in both.
 		for (const scene of [this.farScene, this.approachScene, this.nearScene]) {
-			const sun = new THREE.DirectionalLight(0xfff0d8, 3.0);
+			const sun = new THREE.DirectionalLight(
+				LIGHT_RIG.sun.color,
+				LIGHT_RIG.sun.intensity,
+			);
 			sun.name = "sun";
 			scene.add(sun);
 			// A little ambient, so an unlit hull is dark rather than black. Space has
 			// no ambient light; a screen with no detail in the shadows has no
 			// information in it either.
-			scene.add(new THREE.AmbientLight(0x223044, 0.6));
+			//
+			// A hemisphere rather than the flat `AmbientLight` this was (#99): a
+			// flat lift has no gradient, and a flat-lit object has no edges. Its
+			// axis is aimed at the star each frame rather than at world up, because
+			// "up" means nothing out here — what the eye reads is a star side that
+			// is lifted and a far side that is not.
+			const hemi = new THREE.HemisphereLight(
+				LIGHT_RIG.hemisphere.sky,
+				LIGHT_RIG.hemisphere.ground,
+				LIGHT_RIG.hemisphere.intensity,
+			);
+			hemi.name = "hemisphere";
+			scene.add(hemi);
 		}
+		// The image-based term, baked once from the star's own colour. This is the
+		// change that makes `metalness` mean anything: before it, every metal
+		// surface was subtracting diffuse and adding nothing back, and the trade
+		// station rendered as flat grey facets. `light-rig.ts` has the figures.
+		//
+		// One texture across all three layers, for the same reason one direction
+		// serves all three suns: an environment has no position, only directions.
+		this.buildEnvironment();
 
 		// A camera-side fill, near layer only — and it is a fix rather than a
 		// flourish. Measured on the first render: with the star behind the ship,
@@ -1733,9 +1776,72 @@ class Game {
 		// cube unreadable. Far-layer bodies deliberately do not get one — a planet
 		// lit from the viewer's shoulder would lose its terminator, and the
 		// crescent is the whole reason it reads as a sphere.
-		const fill = new THREE.DirectionalLight(0x9fb6d0, 0.9);
+		const fill = new THREE.DirectionalLight(
+			LIGHT_RIG.fill.color,
+			LIGHT_RIG.fill.intensity,
+		);
 		fill.name = "fill";
 		this.nearScene.add(fill);
+	}
+
+	/** The baked lighting environment, kept so the quality setting can put it
+	 *  back after dropping it — `scene.environment = null` is how low drops it,
+	 *  and the texture has to survive that to be reassigned. Baked once per
+	 *  `Game`, because a `Game` is one system: nothing rebuilds the world in
+	 *  place today, and the day something does, this is what it rebakes. */
+	private environmentMap: THREE.Texture | null = null;
+
+	/**
+	 * Bake the star's environment once and hand it to all three layers.
+	 *
+	 * `PMREMGenerator` convolves the equirectangular image into the roughness
+	 * chain every `MeshStandardMaterial` samples. It is a handful of small
+	 * render passes at load and nothing per frame — which is what makes this
+	 * affordable at all, and why the quality gate is about the per-fragment
+	 * sample rather than about this call.
+	 *
+	 * The source is `light-rig.ts`, which knows nothing about Three.js, so the
+	 * model is testable and this is three lines and no decisions.
+	 */
+	private buildEnvironment() {
+		const { data, width, height } = equirectEnvironment(
+			this.world.system.contents.star.color,
+		);
+		const source = new THREE.DataTexture(
+			data,
+			width,
+			height,
+			THREE.RGBAFormat,
+			THREE.FloatType,
+		);
+		source.mapping = THREE.EquirectangularReflectionMapping;
+		source.colorSpace = THREE.LinearSRGBColorSpace;
+		source.needsUpdate = true;
+		const pmrem = new THREE.PMREMGenerator(this.renderer);
+		this.environmentMap = pmrem.fromEquirectangular(source).texture;
+		// Both are done once the cube exists: the generator's own render targets
+		// and the source image are not read again, and holding them would keep a
+		// float texture per system jumped to alive for the session.
+		pmrem.dispose();
+		source.dispose();
+		this.applyQuality();
+	}
+
+	/**
+	 * Put the environment on the scenes, or take it off — #98's quality gate.
+	 *
+	 * Assignment rather than a rebuild, so the setting is live: the player sees
+	 * the same frame with and without the term, which is the only way to judge
+	 * what it is worth. Rebaking on every change would also make the setting
+	 * cost more than the thing it gates.
+	 */
+	private applyQuality() {
+		const mode = LIGHT_RIG.quality[this.settings.value.quality];
+		for (const scene of [this.farScene, this.approachScene, this.nearScene]) {
+			scene.environment = mode.environment ? this.environmentMap : null;
+			scene.environmentIntensity = LIGHT_RIG.environmentIntensity;
+		}
+		this.renderer.toneMappingExposure = mode.exposure;
 	}
 
 	/**
@@ -3840,9 +3946,29 @@ class Game {
 		if (star) {
 			const toStar = sub(star.pos, camPos);
 			const d = Math.max(1e-9, length(toStar));
+			STAR_DIR.set(toStar.x / d, toStar.y / d, toStar.z / d);
+			// The bake put its star at `BAKE_STAR_DIR`; this is the rotation that
+			// carries it onto the real one. A rotation rather than a rebake because
+			// the star direction changes continuously as the ship crosses the
+			// system, and a PMREM pass per frame is not a thing to spend a frame on.
+			//
+			// `setFromUnitVectors` picks the shortest arc, so the environment also
+			// rolls about the star axis as the ship moves. Nothing in the bake
+			// varies about that axis — the model is a lobe and a floor — so the
+			// roll is unobservable, and it stops being so the day #100's haze
+			// arrives. That is the seam, named where the rotation is set.
+			ENV_QUAT.setFromUnitVectors(BAKE_STAR_UNIT, STAR_DIR);
+			ENV_EULER.setFromQuaternion(ENV_QUAT);
 			for (const scene of [this.farScene, this.approachScene, this.nearScene]) {
 				const sun = scene.getObjectByName("sun") as THREE.DirectionalLight;
-				if (sun) sun.position.set(toStar.x / d, toStar.y / d, toStar.z / d);
+				if (sun) sun.position.copy(STAR_DIR);
+				// The hemisphere's axis is its position, so aiming it at the star is
+				// what turns a flat lift into a star-side gradient.
+				const hemi = scene.getObjectByName(
+					"hemisphere",
+				) as THREE.HemisphereLight;
+				if (hemi) hemi.position.copy(STAR_DIR);
+				scene.environmentRotation.copy(ENV_EULER);
 			}
 		}
 

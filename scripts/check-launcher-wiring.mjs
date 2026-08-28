@@ -111,6 +111,10 @@ const EXEMPT = new Map([
 		"takes screenshots; has no checks for a watch to report into",
 	],
 	[
+		"measure-light-cost.mjs",
+		"#99's headed frame-cost instrument; it asserts nothing by design — #98 settled that there is no frame-time floor to gate on — so there are no checks for a watch to report into",
+	],
+	[
 		"capture-views.mjs",
 		"captures #104's view set; the gate is a human looking at the sheet, so it has no checks either — it does listen for shader and page errors, and a fault removes the run and the sheet rather than reporting one",
 	],
