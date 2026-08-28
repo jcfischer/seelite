@@ -801,6 +801,43 @@ describe("§7's two tuning surfaces, pinned without flying anything", () => {
 		expect(approachSpeed(0, false, ASSIST_CAP_KMS)).toBe(0);
 		expect(approachSpeed(1e6, false, ASSIST_CAP_KMS)).toBe(ASSIST_CAP_KMS);
 	});
+
+	test("the run-in aims inside the plane, so the nose stays defined at the crossing", () => {
+		// What this pins is the *mechanism*, not the dynamics: at the crossing
+		// the ship sits at the plane with a small lateral error (the browser
+		// probe's measured crossing: ~2 m off-axis). An aim exactly *on* the
+		// plane makes the target and the position coincide, so the nose it
+		// orders reduces to the lateral error alone — sideways, ~90° off the
+		// axis — and check 2's 35° nose row fails a clean position. Node #32's
+		// orbit floor exposed that degeneracy in the browser (probe-docking
+		// §9.2.3, 37.4° nose at a 0.2° position); the browser probe carries the
+		// full approach dynamics end-to-end, and this static pose pins the
+		// arithmetic that makes the aim safe there: a hair inside
+		// (`COMPUTER_AIM_INSIDE_KM`) so the nose it orders stays "straight in"
+		// through the crossing.
+		const basis = slotBasis(frame);
+		const lateral = scale(basis.up, 0.002); // the probe's ~2 m crossing error
+		const cmd = dockingComputerStep({
+			frame,
+			pose: nominal(frame, {
+				rel: add(scale(frame.axis, frame.planeKm), lateral),
+			}),
+			state: requestClearance(newDockingState(), {
+				gameTime: 0,
+				rangeKm: 500,
+				occupancy: 0,
+			}),
+			gameTime: 0,
+			maxSpeedKms: ASSIST_CAP_KMS,
+		});
+		expect(cmd.engaged).toBe(true);
+		// The commanded nose points inward along the axis, not sideways at the
+		// lateral error — comfortably under the 35° tolerance.
+		const noseAngleDeg =
+			(Math.acos(Math.min(1, Math.max(-1, -dot(cmd.nose, frame.axis)))) * 180) /
+			Math.PI;
+		expect(noseAngleDeg).toBeLessThan(10);
+	});
 });
 
 describe("§9.1.11 the docking computer", () => {

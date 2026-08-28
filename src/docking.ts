@@ -729,6 +729,22 @@ export const DOCKING_COMPUTER = "Docking Computer";
 export const COMPUTER_STANDOFF_KM = 3;
 
 /**
+ * How far the run-in aim point sits *inside* the aperture plane, km (node #32's
+ * orbit floor exposed this: at the higher orbital speeds the approach converges
+ * a little tighter, and an aim point exactly on the plane degenerates exactly
+ * where the ship crosses it — the target and the position coincide, the
+ * commanded nose swings sideways in the last seconds, and check 2's 35° nose
+ * row fails a profile whose position is clean. Aiming a hair inside keeps
+ * `toTarget` non-zero through the crossing, so the nose holds the axis instead
+ * of being yanked off it. The ship never reaches the point — `resolveCrossing`
+ * disengages the computer at the plane — so this is a direction reference, not a
+ * course change. Small beside the 0.12 km slot, so it does not move the
+ * approach; large compared with the ~2 m lateral error the run-in actually
+ * carries, so the commanded direction stays stable in the gap between.
+ */
+export const COMPUTER_AIM_INSIDE_KM = 0.05;
+
+/**
  * The corridor the computer runs in through: a **cone**, not a cylinder.
  *
  * `COMPUTER_CORRIDOR_KM` is its half-width at the aperture plane — a fifth of
@@ -883,8 +899,20 @@ export function dockingComputerStep(input: ComputerInput): ComputerCommand {
 	// expires under it. Measured at 2 rpm it held 17 m of offset for the whole
 	// 600 s window. The corridor entry is a place, so the leg to it terminates.
 	const lined = insideCorridor(frame, pose);
+	// The run-in aim sits a hair *inside* the plane (COMPUTER_AIM_INSIDE_KM):
+	// an aim exactly on the plane degenerates as the ship closes — target and
+	// position coincide at the crossing, the commanded nose swings, and the
+	// nose row of check 2 fails a clean position. The slot is a volume, so the
+	// aim is still "the slot", and the lateral error still closes in proportion
+	// to the distance.
+	// The aim never crosses to the far side of the plane, however thin the
+	// aperture is: clamped to stay inside (never below half the plane).
+	const aimKm = Math.max(
+		frame.planeKm - COMPUTER_AIM_INSIDE_KM,
+		frame.planeKm / 2,
+	);
 	const target = lined
-		? scale(frame.axis, frame.planeKm)
+		? scale(frame.axis, aimKm)
 		: scale(frame.axis, corridorAxial);
 
 	const toTarget = sub(target, pose.rel);

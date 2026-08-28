@@ -160,7 +160,7 @@ describe("§9.1 namespace and baseline stability", () => {
 		// Identity, type, parent and generated placement, hashed. It goes red on
 		// any generator change that moves a station — which is exactly when
 		// `WORLD_GENERATOR_VERSION` owes a bump and a migration.
-		expect(WORLD_GENERATOR_VERSION).toBe(1);
+		expect(WORLD_GENERATOR_VERSION).toBe(2);
 		const fingerprints = [0, 1, 2, 3, 4, 5, 6, 7].map((g) =>
 			carrierBaselineFingerprint(WORLD, g),
 		);
@@ -170,7 +170,9 @@ describe("§9.1 namespace and baseline stability", () => {
 });
 
 /**
- * Pinned at `WORLD_GENERATOR_VERSION` 1 against world seed `0x5ee11e`.
+ * Pinned at `WORLD_GENERATOR_VERSION` 2 against world seed `0x5ee11e`.
+ * (1 → 2: node #32's orbit floor moved every floored station's generated
+ * placement — the set this hashes — so the baseline moved with it.)
  *
  * These are not arbitrary numbers to re-bless when the suite goes red. Each one
  * is a hash of every carrier slot's identity, type, parent and generated
@@ -179,8 +181,8 @@ describe("§9.1 namespace and baseline stability", () => {
  * migration, and §2 says so.
  */
 const GOLDEN_FINGERPRINTS = [
-	1658015500, 2309196245, 724003549, 939947066, 1093888180, 3774333343,
-	421215142, 2423621154,
+	4141145946, 2265591294, 2019697187, 510919445, 3914238703, 1874293826,
+	447413080, 1650131075,
 ];
 
 // ---------------------------------------------------------------------------

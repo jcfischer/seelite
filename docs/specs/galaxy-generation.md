@@ -427,9 +427,35 @@ T_i    = 365.25 d · √(a_i³ / M★)          // Kepler III, M★ in solar mas
 ```
 
 with `θ_i0` seeded, inclination `U(0°, 3°)` and a seeded ascending node.
-Stations orbit their body circularly: radius = bodyRadius + `U(400, 2000)` km,
-period `U(90, 240)` min, in the body's equatorial plane. Station *spin* (for
-docking roll-match) belongs to #9.
+Stations orbit their body circularly: radius =
+max(`bodyRadius + U(400, 2000)` km, `1.5 × bodyRadius`), period `U(90, 240)`
+min, in the body's equatorial plane. Station *spin* (for docking roll-match)
+belongs to #9.
+
+The floor is node #32's decision (`STATION_ORBIT_R_OVER_R`, `src/system.ts`)
+and why the band alone could not stand: "low and fast" was absolute while
+everything that has to clear the host scales with its radius — the cruise
+shell (`1.05 ×` radius, `in-system-travel.md` §12.2) and the occlusion
+geometry (§12.3). Measured on the 200-seed corpus with
+`scripts/measure-cruise-arrival.ts` (re-runnable for any floor: edit
+`STATION_ORBIT_R_OVER_R`, sweep, restore — `1.5 → 2.2 → 3 → 1.5` is the
+whole comparison, and the committed value stays 1.5, so `git diff` shows
+exactly what a sweep changed):
+the band alone left 49 of 337 planet-orbiting stations inside their own
+host's shell and 26.1% of cruise legs occluded by the host; 1.5 halves the
+occlusion to 14.5% with the shell population at 0/337, 2.2 measures 7.4%,
+and 3 measures 4.1% — 1.5 sits at the knee, since beyond it each multiple
+buys less occlusion than the altitude it costs (a ~70,000 km giant's
+shipyard: ~35,000 km up at 1.5, ~84,000 at 2.2, ~140,000 at 3). The floor
+is a floor, not an orbit: a band row can only land above it while the band
+still reaches past `0.5 × hostRadius`, i.e. below `2,000 / (1.5 − 1) =
+4,000 km` of host radius — so small rocky hosts keep the band unchanged and
+above 4,000 km every station rides at exactly 1.5 R. (The looser bound
+people reach for first, where the band's top altitude stops clearing the
+shell itself, is `2,000 / (1.05 − 1) = 40,000 km` — a band row there clears
+the shell and loses to the floor.) `tests/station-orbits.test.ts` pins both
+halves, and `scripts/measure-station-shells.ts` sweeps the placed t0
+population — zero stations inside any shell, own or foreign — on demand.
 
 Kepler ellipses were rejected: eccentricity adds a solver for an effect nobody
 can perceive at these speeds.

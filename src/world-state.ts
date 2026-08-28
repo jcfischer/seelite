@@ -56,7 +56,7 @@ export const WORLD_SCHEMA_VERSION = 1;
  * exactly the set `carrierBaselineFingerprint` hashes, so the pinned
  * fingerprints in `world-state.test.ts` go red at the same moment.
  */
-export const WORLD_GENERATOR_VERSION = 1;
+export const WORLD_GENERATOR_VERSION = 2;
 
 export const GALAXY_COUNT = 8;
 

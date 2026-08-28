@@ -32,11 +32,22 @@
  * 2. The occluded one is not: cruise ends against the host, with the ship
  *    outside its surface and inside the shell it no longer projects there.
  * 3. Neither path goes inside a planet, sampled every stepped frame.
- * 4. A station that sits *inside* its host's shell — 49 of 337 in the corpus,
- *    every gas giant among them — can be cruised away from. Before #30 the
- *    sweep fired on the first sub-step of every engagement there, whatever
- *    heading the ship took. That case needs its own seed, and its own page
- *    load, which is why this probe visits two.
+ * 4. A station that sat *inside* its host's shell — 49 of 337 in the corpus
+ *    before #32, every gas giant among them — could be cruised away from.
+ *    Node #32's orbit floor (STATION_ORBIT_R_OVER_R, 1.5) removed that
+ *    geometry from the generator, so this claim no longer has a browser
+ *    fixture and the probe no longer carries one. The population behind it
+ *    is a sweep claim, and the sweep ships: `bun run
+ *    scripts/measure-station-shells.ts [seeds]` re-derives, at the t0 placed
+ *    positions, that across seeds 1..8000 no station sits inside its own
+ *    host's or any foreign body's 1.05 shell (closest own-host approach
+ *    1.500 R — the floor itself; the closest pair of any kind is two
+ *    co-orbiting stations at 3.2 core radii, still outside every shell).
+ *    The rules the
+ *    deleted block exercised are pinned headlessly instead:
+ *    `tests/cruise.test.ts`, "being inside a shell does not pin the ship
+ *    there", for the release rule, and `tests/station-orbits.test.ts` for
+ *    the t0 clearance over seeds 1..1500 — so the deleted case fails closed.
  */
 import {
 	bootedGame,
@@ -236,79 +247,6 @@ check(
 	"and that path stayed outside every planet too",
 	behind.closestRatio >= 1 - 1e-6,
 	`closest was ${behind.closestId} at ${behind.closestRatio.toFixed(6)} × its radius`,
-);
-
-// ------------------------------- a station inside its host's shell can cruise out
-
-/**
- * A different seed, because the case is a different geometry.
- *
- * `?seed=118`'s shipyard is the deepest such station the sweep finds: it orbits
- * a gas giant well inside the 1.05 shell that giant projects. Before #30 the
- * sweep fired on the first sub-step of every engagement from there, whatever
- * heading the ship took, and the only way out was to crawl the gap at the
- * 2 km/s assist cap. The gap and the crawl are **measured on the page** below
- * rather than restated here, so this comment cannot drift from the fixture.
- *
- * Flown from the station rather than from a drop point, and that distinction is
- * the check: a ship dropped *at* a shell sits on its boundary and the spool-up
- * carries it clear, so a probe written there is green against the old rule too.
- * This one is not.
- */
-await page.goto(`${ORIGIN}/?seed=118`, { waitUntil: "load" });
-await bootedGame(page);
-
-const escape = await page.evaluate(
-	async ([dt]) => {
-		const g = window.__seelite;
-		g.targetId = "station-shipyard";
-		const hostId = g.targetParentId();
-		if (!hostId) return { missing: true };
-		const station = g.world.system.byId.get("station-shipyard");
-		const host = g.world.system.byId.get(hostId);
-		const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
-		const shellGapKm =
-			host.radiusKm * g.surfaceMargin - dist(station.pos, host.pos);
-
-		// Undocked, at the station. §6 allows free cruise with nothing selected,
-		// and what is measured is whether the guard releases the ship.
-		g.world.ship.pos = { ...station.pos };
-		g.targetId = null;
-		g.faceAway(hostId);
-		g.engageCruise();
-		const start = { ...g.world.ship.pos };
-		for (let i = 0; i < 10 / dt; i++) {
-			g.step(dt);
-			g.render(dt);
-		}
-		return {
-			shellGapKm,
-			assistCapKms: g.assistCapKms,
-			hostRadiusKm: host.radiusKm,
-			travelledKm: dist(start, g.world.ship.pos),
-			regime: g.regime,
-		};
-	},
-	[dt],
-);
-
-await bailIfMissing(
-	escape,
-	"seed 118 has the shipyard this probe is written against",
-);
-
-check(
-	"the fixture station really is inside its host's shell",
-	escape.shellGapKm > 1000,
-	`${escape.shellGapKm.toFixed(0)} km inside the shell of a ` +
-		`${(escape.hostRadiusKm / 1000).toFixed(0)}k km giant — ` +
-		`${(escape.shellGapKm / escape.assistCapKms / 60).toFixed(0)} minutes of crawling at the ` +
-		`${escape.assistCapKms} km/s assist cap`,
-);
-check(
-	"and cruise engages from it, aimed outward",
-	escape.travelledKm > 1e5,
-	`${(escape.travelledKm / 1e6).toFixed(2)}M km in ten seconds`,
 );
 
 await browser.close();

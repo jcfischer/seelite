@@ -16,12 +16,15 @@
  * nothing fails.
  */
 
+import { SURFACE_MARGIN } from "../../src/cruise";
 import {
 	GALAXY_COUNT,
 	generateGalaxy,
 	type SystemRecord,
 } from "../../src/galaxy";
+import { type Body, makeWorld } from "../../src/sim";
 import { type SystemContents, generateContents } from "../../src/system";
+import type { Vec3 } from "../../src/vec3";
 
 /**
  * Walks `galaxies` of one world, generating each system's contents once.
@@ -85,6 +88,101 @@ export function stationRows(
 		}
 	});
 	return rows;
+}
+
+/**
+ * Every host-orbiting station, paired with the body it orbits.
+ *
+ * The three node-#32 invariants — at or above the r/R floor, never inside the
+ * host's cruise shell, and the band still winning below the crossover — walk
+ * the same tree over the same corpus, and a fourth is cheap to imagine. A
+ * hand-copied walk that forgets the star-centric refineries (`parentId: null`,
+ * no host to clear) or treats an orphan host as a skip instead of an error
+ * changes what "every station" means between two tests that both claim it.
+ */
+export function forEachHostedStation(
+	visit: (
+		station: SystemContents["stations"][number],
+		host: SystemContents["planets"][number],
+	) => void,
+	opts: { galaxies?: readonly number[]; worlds?: readonly number[] } = {},
+): void {
+	for (const world of opts.worlds ?? worldSeeds(8)) {
+		forEachSystem(world, opts.galaxies ?? ALL_GALAXIES, (_record, contents) => {
+			for (const s of contents.stations) {
+				if (!s.parentId) continue; // star-centric refinery: no host
+				const host = contents.planets.find((p) => p.id === s.parentId);
+				if (!host) throw new Error(`orphan station ${s.id}`);
+				visit(s, host);
+			}
+		});
+	}
+}
+
+/** Seeds the placed-geometry walk covers by default — the headless tier's
+ *  budget. The floor is by construction, so a regression in it fails any
+ *  sample; the deep sweep belongs to `scripts/measure-station-shells.ts`,
+ *  which goes to 8,000 on demand (500 seeds ≈ 850 placed stations). */
+export const DEFAULT_SHELL_SEEDS: readonly number[] = Array.from(
+	{ length: 500 },
+	(_, i) => i + 1,
+);
+
+/**
+ * Every host-orbiting station **at its placed t0 position**, beside every
+ * other body the game moves.
+ *
+ * `makeWorld(seed).system`, not `generateContents`: the question is where the
+ * station *sits* at t0, which only the world build resolves — and the bodies
+ * come from `byId`, the complete set the game moves: star, planets, moons,
+ * stations. `contents.planets` is pre-placement (no `pos`) and silently omits
+ * the moons. Both this walk and the instrument `measure-station-shells.ts`
+ * go through it for the reason this module's header gives: a hand-copied
+ * sweep is a second definition of "every station", and the two drift.
+ *
+ * The bodies resolve once per world rather than once per station-body pair,
+ * and the orphan guard is the same throw the radius walk uses.
+ */
+export function forEachPlacedStation(
+	visit: (
+		station: Body,
+		host: Body,
+		others: readonly Body[],
+		seed: number,
+	) => void,
+	seeds: Iterable<number> = DEFAULT_SHELL_SEEDS,
+): void {
+	for (const seed of seeds) {
+		const S = makeWorld(seed).system;
+		const bodies = [...S.byId.values()];
+		for (const st of S.contents.stations) {
+			if (!st.parentId) continue; // star-centric refinery: no host
+			const station = S.byId.get(st.id);
+			const host = S.byId.get(st.parentId);
+			if (!station?.pos || !host?.pos)
+				throw new Error(`orphan station ${st.id}`);
+			visit(station, host, bodies, seed);
+		}
+	}
+}
+
+/** Flat distance between two placed positions, km. Shared by the t0 shell
+ *  test and the instrument so the measure cannot drift from the assertion —
+ *  the reason this module exists. */
+export function dist(a: Vec3, b: Vec3): number {
+	return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+}
+
+/** Whether `a` sits inside `b`'s cruise shell — the placed-geometry predicate
+ *  the t0 test asserts *never* holds and the instrument counts when it does.
+ *  One definition, shared, so the two cannot drift. A body with no position
+ *  (pre-placement) or a non-positive radius has no shell and never counts. */
+export function shellViolation(a: Body, b: Body): boolean {
+	const pa = a.pos;
+	const pb = b.pos;
+	if (!pa || !pb) return false;
+	if (!(b.radiusKm > 0)) return false;
+	return dist(pa, pb) < b.radiusKm * SURFACE_MARGIN;
 }
 
 /** Every galaxy of a world. The census and the clamp measurement sweep all of

@@ -99,6 +99,36 @@ export const MAX_MOONS = 3;
 export const GIANT_ORBIT_FACTOR = 2;
 
 /**
+ * How high a station's orbit floor is, as a multiple of its host's radius
+ * (node #32, against `in-system-travel.md` §12.2/§12.3).
+ *
+ * `1.5`, chosen as the knee of the measured curve. The ranking lives in
+ * `galaxy-generation.md` §7.3: 26.1% of cruise legs occluded with no floor
+ * (49 of 337 planet-orbiting stations inside their own host's 1.05 shell —
+ * the geometry behind §12.2's "second cruise covers 1 km" figure, which
+ * §12.2 itself walks back as an overclaim for the game), 14.5% at 1.5,
+ * 7.4% at 2.2, 4.1% at 3 — and `measure-cruise-arrival.ts` re-derives the
+ * set for whatever the constant is set to, which is how a rejected floor
+ * stays recoverable without a switch. What the rejected floors were rejected
+ * for is the same linear `R`: a big-giant shipyard is already ~35,000 km up
+ * at 1.5, ~84,000 at 2.2, ~140,000 at 3, and the period band keeps the
+ * orbital speed climbing with the altitude.
+ *
+ * It is a **floor**, not an orbit: the 400–2,000 km band still decides
+ * whenever it lands above the floor, which it does for small hosts — a
+ * 2,400 km rocky world's band tops out at 1.83 × radius, so its stations
+ * keep the low band — and above a 4,000 km host (`2,000 / (1.5 − 1)`, the
+ * point past which no band draw can reach the floor) the floor term is the
+ * max by arithmetic and every station rides at exactly 1.5 × the host's
+ * radius. The looser bound it clears by construction, the 1.05 × shell,
+ * crosses the band only at 40,000 km of host radius.
+ * `tests/station-orbits.test.ts` pins both regimes, and
+ * `measure-station-shells.ts` sweeps the placed-geometry population at t0
+ * that the floor is why `probe-arrival.mjs` no longer flies.
+ */
+export const STATION_ORBIT_R_OVER_R = 1.5;
+
+/**
  * The habitable distance (§6.1): √(L/L☉) AU, clamped into the orbit envelope.
  * An M dwarf's 0.2 AU is pulled out to 0.3; an A star's 4.5 sits inside 6.
  *
@@ -656,10 +686,15 @@ function generateStations(
 	});
 
 	/** Station orbits are low and fast (§7.3): a few hundred to a couple of
-	 *  thousand km up, 90–240 minutes round. Spin, which docking has to match,
-	 *  belongs to #9. */
+	 *  thousand km up, 90–240 minutes round — floored at
+	 *  `STATION_ORBIT_R_OVER_R` of the host; its doc carries why the band
+	 *  alone could not stand, and the instrument named there re-measures the
+	 *  figures. Spin, which docking has to match, belongs to #9. */
 	const aroundBody = (body: Planet): Orbit => ({
-		radiusKm: body.radiusKm + uniform(rand, 400, 2000),
+		radiusKm: Math.max(
+			body.radiusKm + uniform(rand, 400, 2000),
+			body.radiusKm * STATION_ORBIT_R_OVER_R,
+		),
 		periodS: uniform(rand, 90, 240) * 60,
 		theta0: rand() * TAU,
 		inclination: body.orbit.inclination,

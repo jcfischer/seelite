@@ -518,6 +518,18 @@ where the aperture is, and the run-in aims at the slot centre so the lateral
 error closes in proportion to the distance rather than having to be flown out
 first. Whether some intermediate cylinder also works is untested.
 
+**The run-in aim sits a hair inside the plane, not on it** (implementation
+finding, node #32). The slot centre is *at* the plane, so an aim exactly on it
+degenerates exactly where the ship crosses it: target and position coincide,
+the commanded nose reduces to the lateral error alone, and check 2's 35° nose
+row fails a profile whose position is clean. The orbit floor's higher orbital
+speeds made the approach converge a little more tightly, and the browser probe
+measured a **37.4° nose at a 0.2° position**. Aiming `COMPUTER_AIM_INSIDE_KM`
+(0.05 km) inside the plane keeps the commanded direction defined — "straight
+in" — through the crossing. It is still the slot (a 0.12 km aperture), so the
+lateral error still closes in proportion to the distance, and the ship never
+reaches the aim point: `resolveCrossing` disengages the computer at the plane.
+
 **It never bypasses a check.** It satisfies §3's six conditions like anything
 else, so it cannot dock at a hostile station, cannot skip §6's clearance, and
 cannot enter above the gate speed. A computer that could dock where a pilot
