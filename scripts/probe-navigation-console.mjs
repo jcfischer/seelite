@@ -30,13 +30,19 @@ import {
  * 24 layouts.
  *
  * **The constant is the closed cell's band verbatim, reused because the two
- * cells measure alike — it is not a fresh derivation from the open cell's own
- * spread.** Said that way because those are different claims and only the first
- * is true: the instrument's 75.0%-86.7% has a top the 82% ceiling excludes, so
- * nothing here was "widened and rounded outward" from it. What the instrument
- * establishes is the *equality of the two spreads*, which is what licenses the
- * reuse; the ceiling's own provenance is §5.1's closed-cell derivation and is
- * unchanged by this node.
+ * cells measure alike — it is not a derivation from the instrument's numbers.**
+ * Those are different claims and only the first is true. The two instruments
+ * measure different populations: §5.1's 64-82% comes from this probe's own
+ * eight-galaxy sweep of one world seed at this framing (68.4%-77.7%), while
+ * `measure-galaxy-shape.ts` sweeps **three** world seeds — 24 layouts — and
+ * reports 75.0%-86.7%, a top this ceiling excludes. That gap is not new and is
+ * not this node's: it is the same gap the closed-cell band has carried since
+ * #118, and the closed check lives inside 64-82% for the same reason this one
+ * does. What the instrument is used for here is the **equality of the two
+ * cells' spreads**, which is a comparison within one population and is what
+ * licenses reusing the band at all. Both checks are therefore scoped to the
+ * population the probe can reach — seed 42, galaxy 0 — and a band that covered
+ * the instrument's whole sweep would be a different, looser claim.
  *
  * That is a fact about the projection rather than a coincidence, and the check
  * below that compares the two sets of projected pixels is what makes it
@@ -864,7 +870,13 @@ check(
  */
 check(
 	"the narrower cell crops the chart rather than compressing it",
-	crop.compared > 200 &&
+	// **All 256, not a floor of 200.** The comment above and `galaxy-map.md`
+	// §5.2 both say this check requires the whole cluster on screen in both
+	// states — and it did not: a translation moves the survivors identically, so
+	// up to 55 systems could have left the box with the spread still under a
+	// pixel. The precondition was being borrowed from the crowding check next
+	// door rather than held here.
+	crop.compared === crowding.systemCount &&
 		crop.shiftSpreadPx < 1 &&
 		crop.worstDyPx < 1 &&
 		Math.abs(crop.meanShiftPx + (closedCell.width - openCell.width) / 2) < 1,

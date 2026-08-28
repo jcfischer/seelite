@@ -437,7 +437,16 @@ with the box, so a system lands at `worldX · height / (2 · z · tan) + width /
 — the **spacing** between two systems does not depend on the width, and only the
 origin moves, by half the column the panel took. A narrower cell crops rather
 than compressing. This stops holding the moment the cluster no longer fits, so
-both checks assert all 256 are still on screen.
+both checks assert all 256 are still on screen — the crop check asked only for
+200 when that sentence was first written, a precondition borrowed from its
+neighbour rather than held.
+
+**Both figures are scoped to the population the probe reaches**, seed 42 and
+galaxy 0. `measure-galaxy-shape.ts` sweeps three world seeds and reports a
+higher band (75.0%-86.7%) than §5.1's probe-derived 64-82%; that gap predates
+this node and is unchanged by it. What the instrument is used for here is the
+**equality of the two cells' spreads** — a comparison inside one population —
+which is what licenses reusing the closed cell's band for the open one.
 
 **The drawn list is capped at 60 rows per group, and the cap says so.** A
 one-character query at a wide budget matches most of a 256-system galaxy, and

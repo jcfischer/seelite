@@ -109,6 +109,9 @@ export function mountFinderPanel({
 	let paintedIndex: number | null = null;
 	/** What the DOM currently holds, as a short string. */
 	let listKey = "";
+	/** The filter and origin the held `results` were projected from. `selected`
+	 *  is deliberately absent: it changes the highlight, not the rows. */
+	let projectionKey = "";
 	let drawn = { inBudget: 0, beyondRange: 0 };
 
 	// ---- Furniture ---------------------------------------------------------
@@ -421,11 +424,22 @@ export function mountFinderPanel({
 			rowElements.clear();
 			paintedIndex = null;
 			listKey = "";
+			projectionKey = "";
 			drawn = { inBudget: 0, beyondRange: 0 };
 			return;
 		}
 
-		results = projectFinder(systems, currentSystem(), filter, selectedIndex());
+		// **The projection depends on the filter and the ship, not the
+		// selection** — and `recompute` runs on every canvas click, so a
+		// re-projection there allocates a row per match, takes a square root for
+		// each, sorts both groups, and is then thrown away by the key comparison
+		// below. Skipped unless one of its two inputs actually moved.
+		const here = currentSystem();
+		const inputKey = `${here.index}|${filter.budgetJumps}|${filter.query.trim().toLowerCase()}|${[...filter.economies].sort((a, b) => a - b).join(",")}`;
+		if (inputKey !== projectionKey) {
+			projectionKey = inputKey;
+			results = projectFinder(systems, here, filter, selectedIndex());
+		}
 		const { inBudget, beyondRange } = results;
 		// **Keyed on what would be drawn, not on the filter.** Two filters can
 		// yield the same rows, and the ship moving under a fixed filter yields
@@ -480,6 +494,13 @@ export function mountFinderPanel({
 		// a change to two of them.
 		const next = selectedIndex();
 		if (next !== paintedIndex) {
+			// The held rows carry `selected`, and `state` reports them — so a
+			// repaint that touched only the DOM would leave the reported state
+			// describing the previous selection while the panel showed the new
+			// one. Two field writes per row, no allocation, and only on the
+			// renders where the selection actually moved.
+			for (const rows of [results.inBudget, results.beyondRange])
+				for (const row of rows) row.selected = row.index === next;
 			const before =
 				paintedIndex === null ? null : rowElements.get(paintedIndex);
 			if (before) paintRow(before, false);

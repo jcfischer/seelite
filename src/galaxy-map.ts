@@ -410,32 +410,20 @@ export function mountGalaxyChart({
 	});
 	stage.appendChild(controls);
 
-	/** The chart's button. `parent` and `style` exist because the finder's budget
-	 *  stepper is the same control in a tighter box, and a near-copy of this
-	 *  fifteen-line shape is how two buttons in one panel come to disagree. */
-	const button = (
-		label: string,
-		attr: string,
-		style: Partial<CSSStyleDeclaration> = {},
-		parent: HTMLElement = controls,
-	): HTMLButtonElement => {
+	const button = (label: string, attr: string): HTMLButtonElement => {
 		const b = el("button");
 		b.textContent = label;
 		b.setAttribute(attr, "");
-		Object.assign(
-			b.style,
-			{
-				font: "inherit",
-				color: "#cfe6f5",
-				background: "rgba(10,20,32,0.9)",
-				border: "1px solid #26506e",
-				borderRadius: "3px",
-				padding: "6px 10px",
-				cursor: "pointer",
-			},
-			style,
-		);
-		parent.appendChild(b);
+		Object.assign(b.style, {
+			font: "inherit",
+			color: "#cfe6f5",
+			background: "rgba(10,20,32,0.9)",
+			border: "1px solid #26506e",
+			borderRadius: "3px",
+			padding: "6px 10px",
+			cursor: "pointer",
+		});
+		controls.appendChild(b);
 		return b;
 	};
 
