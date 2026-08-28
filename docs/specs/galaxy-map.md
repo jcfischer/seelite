@@ -20,16 +20,23 @@ It does **not** own the cockpit panel that carries the map — that is
 the hyperspace jump itself, which is `galaxy-generation.md` §8, nor the market
 and equipment screens, which are #70's station console.
 
-`?galaxy-map` is the workbench this was decided on. It is a chart surface, not a
-second game mode: it builds no `Game`, and `src/main.ts` gates it alongside the
-other query-gated workbenches.
+`?galaxy-map` is the workbench this was decided on, and it remains one. It is a
+chart surface, not a second game mode: it builds no `Game`, and `src/main.ts`
+gates it alongside the other query-gated workbenches.
 
 ---
 
 ## 1. Where the map lives
 
 **A tab on the left Navigation console.** Not a full-screen mode, not a fifth
-panel, not an application.
+panel, not an application. Built in
+[#96](https://github.com/jcfischer/seelite/issues/96): `mountGalaxyChart` takes
+a host element and returns a `dispose`, the tab mounts it on entry and disposes
+it on exit, and `?galaxy-map` is a second mount of the same function rather than
+a second implementation. The workbench binds `h` and `Escape` on `window`; the
+tab does not, because flight controls are live while the panel is open and both
+handlers would see the same key the day the game binds either. The haze and
+clear controls are on-screen buttons, so the tab loses nothing.
 
 #70 ratified that there is no second UI grammar: the player is in the cockpit
 and a screen answers *which wall or which tab*, never *which application*.
@@ -227,12 +234,27 @@ No point-size tuning changes this: it is 256 points in a ball whose core is
 three times as dense as its rim, and the metric is a function of the projection
 and the pick radius alone.
 
+**And it is worse in the cockpit than on the workbench.** The table above was
+measured on `?galaxy-map`, a whole 1280 x 760 page. The shipped tab draws into a
+grid cell inside the console — 1011 x 462 at that same viewport — and crowding
+is a **pixel** property: the same 256 points packed into fewer pixels against an
+unchanged `PICK_RADIUS_PX`. Measured there at the default framing:
+**68.8% of 256**, against 40.2% full-page, with the whole cluster still on
+screen. Sharing `mountGalaxyChart` does not carry the figure across, so
+`probe-navigation-console.mjs` measures it at the shipped framing by the same
+method and bands it at 55-80%. The band is calibrated on a 1280 x 760 window and
+a narrow viewport would need its own; the check also asserts that all 256 are on
+screen, because the fraction is taken over what is visible and a build framing
+fewer systems would be a different measurement wearing the same name.
+
 So the chart is the **reading** surface and Navigation's filterable list is the
 **finding** surface — which is what `hud-and-scanner.md` §2 already says
 ("Navigation is authoritative for target selection and filters"). Selecting a
 named system goes through the list; the chart answers *where is it, and what is
 between here and there*. **A galaxy map with no list is not a shippable map**,
-and #69 owes that list.
+and #91 built it: `projectNavTargets` in `src/cockpit.ts`, rendered by the
+Navigation tab with type, range and ETA per row and narrowed by a kind chip and
+a name query.
 
 The 62 LY figure is **asserted**, not merely recorded: `probe-galaxy-map.mjs`
 resets to the default framing and requires it inside a 25–60% band, so a change
@@ -452,11 +474,86 @@ At desktop (1280 × 760) and narrow (390 × 844):
    because a green that could not have gone red is the failure this whole probe
    exists to avoid.
 
+### 9.3 Browser — `scripts/probe-navigation-console.mjs`
+
+The chart's *mount* rather than its projection, and the list beside it.
+
+1. **The rendered list is exactly the set the game holds as selectable.**
+   Compared against `Game.selectableIds()` and not against a rule the probe
+   restates — two earlier versions restated it, first as a `kind !== "moon"`
+   denylist and then as the kinds read off the panel's own filter chips, the
+   second being worse because both sides of the comparison then derive from the
+   projection.
+
+   **What it does not check.** `navRows()` passes `selectable()` into the
+   projection, so the rows are a filtered image of that list by construction and
+   a divergence between the two cannot arise here. This catches the render and
+   filter path — a row dropped, duplicated, or drawn for a body the game does
+   not hold. What binds a row to *selection* is item 2's click, which moves
+   `targetBody()`. An earlier version of this paragraph sold the first check as
+   guarding the second's failure.
+
+   Rows are ordered by the ranges the simulation holds for those same ids —
+   read from `world.system.byId`, not from the row text, because a list that
+   sorted its own output and then reported that output as sorted passes on a
+   build with no sort at all. Clicking a row the game is **not** already on
+   moves `targetBody()`; the row that boot already selected would pass on a
+   build whose rows do nothing.
+2. **Both narrowings narrow, in both directions.** The name query's survivors
+   are compared against the exact set the unfiltered list yields under the
+   projection's own substring rule — no more and no fewer. "Matches the
+   fragment, and the list got shorter" is not enough: on a seed where one row
+   matches, a build that over-narrowed to a single arbitrary row satisfies both
+   halves and reads as a working filter. Proved against a build that
+   over-narrowed and one that leaked an extra row.
+
+   The rule is `includes`, not `startsWith`, because `navFilterMatches` matches
+   anywhere in the id and a probe asserting a prefix goes red on a correctly
+   listed mid-string match. That a distinguishing fragment was found is itself a
+   check, so a seed where none exists goes **red** rather than exiting green
+   having tested nothing, and the failure carries the page URL and the row ids.
+
+   The kind chip is checked against a list strictly shorter than the unfiltered
+   one, and a query matching nothing renders an empty state rather than falling
+   back to everything.
+3. **The chart is built for the ship's galaxy and system.** The galaxy half
+   discriminates — a chart built for galaxy 3 while the ship flies in galaxy 0
+   fails. The system half does **not** yet: dropping `currentIndex` at the mount
+   site falls back to `startSystem(galaxy)`, which is where the game also
+   begins, so the defect and the fix agree and the probe stays green. Built and
+   run rather than assumed. It becomes discriminating when the ship can be
+   somewhere else, which is `galaxy-generation.md` §8's jump.
+
+4. **The chart stays inside the panel.** Measured on the **canvas**, not on the
+   host element: the host is a grid cell the console laid out, so its box is
+   inside the panel by construction and asserting on it is asserting the
+   panel's own layout. Written that way first, and it passed against a chart
+   restored to the workbench's `position: fixed` — which is #70's second UI
+   grammar, the thing §1 rules out. On the canvas the same build reads
+   `0,0,1280,760` against a panel of `102,53,1178,669`.
+5. **The tab takes the chart down.** After leaving, `__seeliteGalaxyMap` is
+   null and no canvas remains in the panel — a mount without a matching dispose
+   leaves a second WebGL context and a 60 Hz loop behind the flight view for
+   every visit to the map.
+6. **The simulation keeps running while the chart is open** — §1's no-pause
+   rule, asserted as two samples of `frames` compared, the first taken **after**
+   the chart is up. Wrong twice before that. As a `waitForFunction` followed by
+   `check(..., true)` it reported a pass the tally never evaluated and threw
+   rather than failing when the wait expired; baselined before the click it was
+   satisfied by the frames rendered while the chunk loaded, so a chart that
+   froze the loop on mount still passed.
+
+**Every check here was built a red build to run against**, one at a time:
+the sort removed; the chart root back to `position: fixed`; a kind dropped
+from what `navRows` is handed; `onSelectTarget` made a no-op; the query ignored, over-narrowed, and
+leaked an extra row; the kind chip ignored; `currentIndex` dropped and the galaxy forced to
+3; `dispose` skipped; the frame loop cancelled on mount; `PICK_RADIUS_PX` cut
+to 2 and the default framing zoomed to 20 LY. Each turned the check named
+above it red — except the system half of item 3, which is recorded there as
+not yet discriminating rather than counted as covered.
+
 ## 10. Deferred
 
-- **The Navigation list** — filterable, named, with type/range/ETA. §5.1 makes
-  it mandatory rather than optional; #69 owns it.
-- **Mounting the chart in the cockpit panel** — #69.
 - **Last-known station information on the map.**
   `persistent-world-state.md` §3.1 requires the map to present carrier state as
   timestamped "last known" rather than live omniscience. The system record in §5

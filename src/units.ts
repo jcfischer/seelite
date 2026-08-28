@@ -252,3 +252,26 @@ export function scaleFor(layer: "near" | "approach" | "far"): number {
  * target; this is the actual ceiling.
  */
 export const F32_JITTER_UNITS = 1e5;
+
+/**
+ * A distance in the unit that makes it readable: kilometres up close, AU once
+ * the kilometre figure has stopped meaning anything to a human.
+ *
+ * The switch is at 0.01 AU with three decimals on each side, which is a
+ * continuous readout: 1.5·10⁶ km reads as "0.010 AU", and one AU-step is
+ * 1.5·10⁵ km against a last km-step of 0.1 km. An earlier version switched at
+ * 1e5 km — 0.00067 AU — where three AU decimals cannot resolve anything: every
+ * distance from 10⁵ to 2.2·10⁵ km displayed as the same "0.001 AU".
+ */
+const RANGE_AU_SWITCH_KM = 0.01 * AU_KM;
+
+/**
+ * Here rather than in `main.ts`, because the Navigation list prints the same
+ * quantity. Two ladders drift the moment one is tuned, and this file is the
+ * leaf both tiers can already import.
+ */
+export function range(km: number): string {
+	return km < RANGE_AU_SWITCH_KM
+		? `${km.toFixed(1)} km`
+		: `${(km / AU_KM).toFixed(3)} AU`;
+}
