@@ -12,7 +12,7 @@ describe("node #110 — derived body names", () => {
 		expect(moonName("SOORATLE II", 0)).toBe("SOORATLE II a");
 	});
 
-	test("every contents and placed-body record carries the same display name", () => {
+	test("every contents and placed-body record carries the same name", () => {
 		const record = generateGalaxy(42, 0).systems[0];
 		const contents = generateContents(record);
 		const placed = placeBodies(contents, 1234);

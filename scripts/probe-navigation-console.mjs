@@ -292,24 +292,32 @@ const type = async (value) => {
 	}, value);
 };
 
-// A fragment of one visible name, chosen so at least one other row does not
-// match either the name or the kind words the row prints.
-//
-const distinctive = listed.rows.find((row) =>
-	listed.rows.some(
-		(other) =>
-			!`${other.name} ${other.kind}`
-				.toLowerCase()
-				.includes(row.name.slice(0, 4).toLowerCase()),
-	),
-);
+const searchableText = (row) => `${row.name} ${row.kind}`.toLowerCase();
+
+// Choose the shortest visible-name prefix that narrows this particular list.
+// Four characters are not inherently distinctive in the finite digram
+// vocabulary, so a generated pair may need a longer prefix.
+const distinctive = listed.rows
+	.map((row) => {
+		const name = row.name.toLowerCase();
+		for (let length = 1; length <= name.length; length++) {
+			const prefix = name.slice(0, length);
+			const matching = listed.rows.filter((other) =>
+				searchableText(other).includes(prefix),
+			);
+			if (matching.length > 0 && matching.length < listed.rows.length)
+				return { row, prefix };
+		}
+		return null;
+	})
+	.find((candidate) => candidate !== null);
 check(
 	"some visible-name fragment distinguishes one row from another",
 	Boolean(distinctive),
 	`seed in ${PAGE_URL}; names ${listed.rows.map((r) => r.name).join(",")}`,
 );
 if (distinctive) {
-	const prefix = distinctive.name.slice(0, 4);
+	const prefix = distinctive.prefix;
 	await type(prefix);
 	const filtered = await readList();
 	// **Both directions, against a set computed here.** Asserting only that the
@@ -320,9 +328,7 @@ if (distinctive) {
 	// substring rule, so a row wrongly dropped fails as loudly as one wrongly
 	// kept.
 	const expected = listed.rows
-		.filter((row) =>
-			`${row.name} ${row.kind}`.toLowerCase().includes(prefix.toLowerCase()),
-		)
+		.filter((row) => searchableText(row).includes(prefix))
 		.map((row) => row.id)
 		.sort();
 	check(
