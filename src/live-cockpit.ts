@@ -15,6 +15,7 @@ import type {
 	ConsoleMarketRow,
 	StationConsoleTab,
 } from "./station-console";
+import { signedDelta } from "./station-console";
 
 export type RightTab = "Flight" | "Drive" | "Tuning";
 const RIGHT_TABS: readonly RightTab[] = ["Flight", "Drive", "Tuning"];
@@ -466,11 +467,11 @@ export class LiveCockpit {
 			const priceDelta =
 				entry.priceDeltaCr === undefined
 					? ""
-					: `<small class="lc-station-delta">${entry.priceDeltaCr > 0 ? "↑" : "↓"}${Math.abs(entry.priceDeltaCr).toFixed(1)}</small>`;
+					: `<small class="lc-station-delta">${signedDelta(entry.priceDeltaCr, 1)}</small>`;
 			const stockDelta =
 				entry.quantityDelta === undefined
 					? ""
-					: `<small class="lc-station-delta">${entry.quantityDelta > 0 ? "↑" : "↓"}${Math.abs(entry.quantityDelta)}</small>`;
+					: `<small class="lc-station-delta">${signedDelta(entry.quantityDelta, 0)}</small>`;
 			return `<div class="lc-station-row" data-live-market-row="${name}" data-live-listed="true"><span>${name}</span><span class="lc-station-cell">${price}${priceDelta}</span><span class="lc-station-cell">${stock}${stockDelta}</span></div>`;
 		};
 		return `<div class="lc-station-market" data-live-station-market><div class="lc-station-row lc-station-head"><span>GOOD</span><span class="lc-station-cell">PRICE</span><span class="lc-station-cell">SHELF</span></div>${rows.map(row).join("")}</div>`;

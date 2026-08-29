@@ -441,6 +441,7 @@ const dock = (id) =>
 			const dt = 1 / 60;
 			const phases = [];
 			let arrivingAtS = null;
+			let arrivalGlass = null;
 			let elapsed = 0;
 			for (let i = 0; i < 60 * 120; i++) {
 				g.step(dt);
@@ -449,12 +450,22 @@ const dock = (id) =>
 				if (!phases.includes(now.dockPhase)) phases.push(now.dockPhase);
 				if (arrivingAtS === null && now.dockPhase === "arriving")
 					arrivingAtS = elapsed;
+				if (arrivalGlass === null && now.dockPhase === "arriving") {
+					g.setHeadLook("forward");
+					g.render(0);
+					arrivalGlass = {
+						consolePresent:
+							document.querySelector("[data-live-station-console]") !== null,
+						floorHidden: g.floorRender === null,
+					};
+				}
 				if (now.dockPhase === "docked") break;
 			}
 			const end = g.dockingSnapshot(stationId);
 			return {
 				phases,
 				arrivingAtS,
+				arrivalGlass,
 				axialKm: end.axialKm,
 				planeKm: end.planeKm,
 				dockedAxialKm: end.dockedAxialKm,
@@ -504,6 +515,13 @@ check(
 	"the crossing hands over to an arrival before it parks",
 	flown.phases.join(",") === "flying,arriving,docked",
 	flown.phases.join(" → "),
+);
+check(
+	"the scripted arrival hides flight glass before the station console opens",
+	flown.arrivalGlass !== null &&
+		!flown.arrivalGlass.consolePresent &&
+		flown.arrivalGlass.floorHidden,
+	`console=${flown.arrivalGlass?.consolePresent}, floor hidden=${flown.arrivalGlass?.floorHidden}`,
 );
 check(
 	// The regression this section exists for: *"ship does not fly into Coriolis
@@ -697,6 +715,11 @@ const approach = await page.evaluate((stationId) => {
 	if (launch instanceof HTMLElement) launch.click();
 	const consoleGone =
 		document.querySelector("[data-live-station-console]") === null;
+	g.render(0);
+	const launchingGlass = {
+		phase: g.dockPhase,
+		floorHidden: g.floorRender === null,
+	};
 	g.skipDockTraversal();
 	for (let i = 0; i < 30; i++) g.step(1 / 60);
 	// The shield row is an approach view, so restore its forward gaze after
@@ -709,13 +732,18 @@ const approach = await page.evaluate((stationId) => {
 		rangeKm,
 		launchControl: launch instanceof HTMLElement,
 		consoleGone,
+		launchingGlass,
 	};
 }, slotId);
 
 check(
 	"the Flight console launch released the ship back into flight",
-	approach.launchControl && approach.consoleGone && approach.phase === "flying",
-	`control=${approach.launchControl}, console gone=${approach.consoleGone}, phase ${approach.phase}`,
+	approach.launchControl &&
+		approach.consoleGone &&
+		approach.launchingGlass.phase === "launching" &&
+		approach.launchingGlass.floorHidden &&
+		approach.phase === "flying",
+	`control=${approach.launchControl}, console gone=${approach.consoleGone}, launching=${approach.launchingGlass.phase}/${approach.launchingGlass.floorHidden}, phase ${approach.phase}`,
 );
 
 const mouth = await shieldInk(slotId, "mouth");
