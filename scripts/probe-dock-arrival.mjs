@@ -54,9 +54,10 @@ const PAGE_URL = process.env.PROBE_URL ?? ORIGIN + "/?seed=1";
  * station's docking face went in and out of the sun. A floor across that range
  * decides runs rather than builds, which is what a threshold must never do. So
  * each row asks whether its subject contributes ink **at all**, against a
- * **same-frame control** that says the camera is looking at the thing: the
- * emissive aperture bars for the recess row, the recess itself for the two
- * shield rows. The control is what makes a `> 0` worth anything.
+ * **same-frame control** that says the camera is looking at the thing — where
+ * one exists. On approach that is the emissive aperture bars. From inside the
+ * throat nothing independent is left, and the row there says so rather than
+ * borrowing a control that contains its own subject.
  *
  * `CONTROL_INK_FLOOR` is the one number left, and it is a **control's** floor
  * rather than a subject's: what it separates is a control that read something —
@@ -343,11 +344,9 @@ const interiorInk = await page.evaluate((id) => {
 	window.__placeOnAxis(id, snap.planeKm - snap.apertureHeightKm, false);
 	const mesh = window.__meshOfBody(id);
 	const interior = [];
-	const bars = [];
 	mesh.traverse((o) => {
 		if (o.name === "aperture-mouth" || o.name === "aperture-deck")
 			interior.push(o);
-		if (o.name === "aperture-light") bars.push(o);
 	});
 	const hideAll = (objects) => () => {
 		for (const o of objects) o.visible = false;
@@ -367,7 +366,6 @@ const interiorInk = await page.evaluate((id) => {
 	// What keeps this from being a bare number in the dark is the *approach* row
 	// in the same run: it proves this probe can see this station, with a control
 	// that genuinely is independent of its subject.
-	const lit = { changed: null };
 	return {
 		changed: recess.changed,
 		parts: interior.length,
@@ -376,22 +374,19 @@ const interiorInk = await page.evaluate((id) => {
 }, slotId);
 
 check(
-	// **"Reaches the screen", and the floor is zero on purpose.**
+	// **"Reaches the screen", with no floor and no control, both on purpose.**
 	//
-	// Three things this row is not. It is not evidence of *depth*: E7 makes a
-	// slot's throat **be** the recess, so hiding it cannot separate a `BackSide`
-	// tunnel at `throatDepthKm` from the shallow lid it replaced — that is
-	// `tests/station-mesh.test.ts`'s depth row, which reads the drawn box
-	// against `arrival.ts`'s own number. It is not a *count* worth a threshold:
-	// the recess is an unlit surface against a hull, so how many pixels it moves
-	// is a fact about the **light rig** — #99's open node — and repeated runs
-	// measured anywhere from 1 to 628 as the station's face went in and out of
-	// the sun. A floor of 200 across that range decides runs rather than builds.
+	// Not evidence of *depth*: E7 makes a slot's throat **be** the recess, so
+	// hiding it cannot separate a `BackSide` tunnel at `throatDepthKm` from the
+	// shallow lid it replaced — that is `tests/station-mesh.test.ts`'s depth row,
+	// which reads the drawn box against `arrival.ts`'s own number.
 	//
-	// So the claim is the one that is about this build: the recess reaches the
-	// screen at all. **The bars are the control that makes it worth anything** —
-	// they are emissive, so they read in any light, and their ink is what says
-	// the camera is looking at the aperture rather than at nothing.
+	// Not a *count* worth a threshold: an ink figure is a fact about the light
+	// rig as much as about the build, and one of them read from 1 to 628 across
+	// runs as a station's docking face went in and out of the sun.
+	//
+	// And not controlled, because from inside a tunnel the tunnel is the view.
+	// See the measurement above.
 	"the recess reaches the screen from inside the throat",
 	interiorInk.parts > 0 && interiorInk.changed > 0,
 	`${interiorInk.changed} pixels from ${interiorInk.parts} interior part(s), ` +

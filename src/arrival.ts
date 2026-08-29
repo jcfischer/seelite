@@ -66,7 +66,7 @@ export const LAUNCH_RELEASE_KM = 0.02;
  * square to the frame.
  *
  * The depth was carrying a second job it should never have had: the plane was
- * the core radius, 161 m outside the surface the slot is cut into, and only a
+ * the core radius, 173 m outside the surface the slot is cut into, and only a
  * throat deep enough to reach back past that offset kept the docked position
  * inside the drawn recess. #128 moved the plane to the face, so the two are
  * coupled by construction now — the recess spans `[plane − depth, plane]` and
@@ -133,7 +133,7 @@ export function throatDepthKm(aperture: StationAperture): number {
  * good enough: §12.6's obligation 1 cannot be written against a description.
  *
  * Measured from `aperturePlaneKm` — the surface the slot is cut into — and not
- * from the core radius, which on the trade station is 161 m outside it (#128).
+ * from the core radius, which on the trade station is 173 m outside it (#128).
  */
 export function dockedAxialKm(geometry: StationGeometry): number {
 	return geometry.aperturePlaneKm - throatDepthKm(geometry.aperture);

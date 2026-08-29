@@ -116,8 +116,8 @@ const ORIGIN =
  * one: it moved every station's drawn roll by tens of degrees, which is a
  * different picture of the same shape.
  *
- * So the ceiling is 0.15 (see `MAX_CONTROL_DIFFERENCE`), bracketed above the
- * noise and well below the signal, on the principal's call. The per-seed run
+ * So the ceiling is 0.12 (see `MAX_CONTROL_DIFFERENCE`), bracketed above the
+ * noise and below `MIN_DIFFERENCE`, on the principal's call. The per-seed run
  * table belongs to node #84 ("is probe-station's margin too tight?") and the
  * finer-grid alternative to #120, where they are posted.
  */
@@ -166,13 +166,21 @@ const MIN_DIFFERENCE = 0.25;
  * Not zero: the clock advances between the two captures, so a boundary cell or
  * two moves on the 24 × 24 grid.
  *
- * **Bracketed, not chosen.** Seven consecutive runs at 5 km measured the control
- * at 0.046, 0.047, 0.051, 0.053, 0.058, 0.060 and 0.064 — and in the same runs
- * the *closest* pair of different stations read 0.398. So anything between about
- * 0.07 and 0.35 separates "the same station twice" from "two different
- * stations", and 0.15 sits 2.3× above the worst noise and 2.6× below the
- * smallest real difference. A ceiling with headroom on both sides is a
- * threshold; one sitting on the noise, as 0.05 was, is a coin toss.
+ * **Bracketed, and the two sides are not equally well measured.** Seven
+ * consecutive runs at 5 km put the control at 0.046, 0.047, 0.051, 0.053,
+ * 0.058, 0.060 and 0.064 — seven samples, and 0.12 sits **1.9×** above the
+ * worst of them.
+ *
+ * The upper side is weaker and should be read as such. `MIN_DIFFERENCE` above
+ * is this file's own reference for how far two *different* stations must read
+ * apart — **0.25**, chosen when the comparison was still a gate — and 0.12 is
+ * 2.1× below it. Observed pairs read higher than that (0.398 for the closest
+ * pair in one run), but a single unreplicated reading is not the number to
+ * divide by, and quoting it would flatter the relaxation this branch wants.
+ * Against the declared floor the headroom is 2.1×, not 3.3×.
+ *
+ * A ceiling with headroom on both sides is a threshold; one sitting inside its
+ * own noise, as 0.05 was, is a coin toss.
  *
  * **Raised from 0.05 on the principal's call** (2026-08-29): *"You can relax
  * that requirement a lot. It doesn't matter for gameplay that much."* It is
@@ -189,7 +197,7 @@ const MIN_DIFFERENCE = 0.25;
  * `#120` is where the alternative lives — a finer grid, which would cut the
  * quantisation this is measuring rather than tolerate it.
  */
-const MAX_CONTROL_DIFFERENCE = 0.15;
+const MAX_CONTROL_DIFFERENCE = 0.12;
 
 /** Tolerance on the measured spin rate, relative. Loose because the station is
  *  also moving along its orbit between the two samples, and because the frame

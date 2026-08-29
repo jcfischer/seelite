@@ -79,7 +79,7 @@ export interface StationGeometry {
 	 * is a body's `radiusKm` — for the trade station a cuboctahedron's *vertex*
 	 * radius, where its square faces sit at `r/√2`. The slot is cut into one of
 	 * those faces (that is the form's whole thesis), so the plane and the slot
-	 * were 161 m apart on the trade station and 216 m on the shipyard: a ship
+	 * were 173 m apart on the trade station and 228 m on the shipyard: a ship
 	 * crossed §3's plane well before it reached the opening it could see, and
 	 * everything §12 measures from the plane — the throat, the docked position —
 	 * landed behind everything the player was looking at. Reported flying it as

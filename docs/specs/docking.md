@@ -340,7 +340,7 @@ answer different questions** (#128, 2026-08-29). The core radius is the body's
 read. The **aperture plane** is where §3's six checks are evaluated, and it has
 to be the surface the slot is actually cut into.
 
-They were the same number until a ship was watched crossing the plane **161 m
+They were the same number until a ship was watched crossing the plane **173 m
 before it reached the slot it could see**: a cuboctahedron's circumradius is its
 *vertex* radius and its square faces sit at `r/√2`, and cutting the slot into a
 real flat square face is the trade form's thesis. Everything §12 measures from
@@ -1193,7 +1193,7 @@ of check that stops being evidence, and §12.7 records that it fails open until
    This joint used to read: "On the forms the game builds they agree closely
    enough that the ship parks inside the drawn recess, and
    `tests/station-mesh.test.ts` asserts exactly that." Measured, they were
-   **161 m** apart on the trade station and **216 m** on the shipyard, and the
+   **173 m** apart on the trade station and **228 m** on the shipyard, and the
    containment test was green for the wrong reason — the throat was 280 m deep,
    which is far enough to reach back past the offset. Shorten the throat and the
    shipped trade station fails the same row.
@@ -1243,10 +1243,12 @@ of check that stops being evidence, and §12.7 records that it fails open until
    [#120](https://github.com/jcfischer/seelite/issues/120)'s subject for
    exceeding its ceiling half the time; this made it consistent.
 
-   The ceiling was **raised to 0.15, on the principal's call**, and measured
-   rather than picked: seven runs put the control at 0.046–0.064 while the
-   *closest* pair of different stations reads 0.398, so anything from about 0.07
-   to 0.35 separates a repeat from a different station. 0.05 was not a fine
+   The ceiling was **raised to 0.12, on the principal's call**, and measured
+   rather than picked — with the two sides honestly unequal. Seven runs put the
+   control at 0.046–0.064, so the lower bracket is 1.9× on seven samples. The
+   upper is 2.1× below `MIN_DIFFERENCE`, this file's own declared floor for how
+   far two *different* stations read apart; observed pairs read higher, but one
+   unreplicated reading is not a number to divide by. 0.05 was not a fine
    discrimination, it was a number inside the metric's own noise.
 
    Said plainly, because a spec that reads as principle while a branch does the

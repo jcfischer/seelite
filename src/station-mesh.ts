@@ -514,9 +514,12 @@ const NAMEPLATE_INNER_HEIGHT_FACTOR = 0.22;
  * into it, which was right when the throat was 280 m deep and the ship crossed
  * most of it. #128 cut the travel to 70 m and gave the recess 35 m of wall
  * beyond that, so the ship no longer passes the plaque at all — it stops short
- * of it and looks at it. Off-axis, that put the sign 54° off the view axis and
- * outside the frustum, which is how `probe-dock-arrival.mjs` found it: zero
- * pixels of shield against 186,647 of the tunnel it is mounted in.
+ * of it and looks at it, and straight ahead is where a sign should be.
+ *
+ * **This did not fix anything, and the change is not a diagnosis.** Off-axis,
+ * the plaque was 54° off the view axis, which is a reason it might not have
+ * drawn; on the axis it still draws **zero** pixels, and #131 owns the question
+ * of why. Moving it was right on its own terms and that is the whole claim.
  */
 const NAMEPLATE_INNER_OFFSET_FACTOR = 0;
 

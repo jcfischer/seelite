@@ -234,7 +234,7 @@ export interface ApertureFrame {
 	 * `dot(rel, axis)` passing down through this number, not through zero.
 	 *
 	 * **`STATION_GEOMETRY.aperturePlaneKm`, not `coreRadiusKm`** (#128). It was
-	 * the core radius until a ship was watched crossing the plane 161 m before
+	 * the core radius until a ship was watched crossing the plane 173 m before
 	 * it reached the slot it could see; the geometry table now declares where
 	 * the aperture is, and the form cuts it there.
 	 */
