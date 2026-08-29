@@ -131,8 +131,12 @@ export const VIEWS = Object.freeze([
 		// legible is that the flank emits. That is #102's whole thesis — raising
 		// the sun brightens the lit half and leaves the dark half exactly as
 		// dark — and this is the one view where nothing else can be doing the
-		// work. Measured across #129's before/after: 0.37% of pixels moved by
-		// more than 24/255, against 0.01% on `station-approach`.
+		// work. Measured across #129's before/after, against a same-build
+		// control: this frame moves 0.41% of its pixels by more than 24/255
+		// where two captures of one build move 0.14%. The table below the next
+		// view is the whole set; the figures live there rather than being
+		// restated here, which is how this comment came to carry a superseded
+		// pair through a round of review.
 		covers: [105, 103, 102, 99],
 		what: "The same interior with the star beyond the station: the case the camera-side fill was added for, and the dark side that only reads because it emits.",
 		shot: {
@@ -167,22 +171,29 @@ export const VIEWS = Object.freeze([
 		 * comment said "pixel-identical" on the strength of looking at two PNGs.
 		 * `npm run views:diff` (`scripts/diff-view-set.mjs`) is the instrument,
 		 * so these are re-runnable rather than quoted. The fraction of pixels
-		 * moving by more than 24/255, **against a third run of the same build**
-		 * — because the clock runs during capture and a spinning station is
-		 * framed at a different phase each time:
+		 * moving by more than 24/255 — **three captures of the branch against
+		 * one `before`, and the three same-build pairings among them**, because
+		 * the clock runs during capture and a spinning station is framed at a
+		 * different phase each time:
 		 *
-		 * | view | before → after | same build twice |
+		 * | view | before → after ×3 | same build, 3 pairings |
 		 * |---|---|---|
-		 * | `station-flank` | 2.09% | 1.05% |
-		 * | `cockpit-backlit` | 0.41% | 0.14% |
-		 * | `station-approach` | 0.55% | **0.55%** |
-		 * | `station-outline` | 0.05% | **0.05%** |
-		 * | `cockpit-arrival` | 0.02% | 0.02% |
-		 * | `hull-chase` | 0.01% | 0.01% |
-		 * | `sky-only` | 0.00% | 0.00% |
+		 * | `station-flank` | 1.27–1.52% | 0.00–0.09% |
+		 * | `cockpit-backlit` | 0.37% | 0.00% |
+		 * | `station-approach` | 0.03–0.10% | 0.00–0.06% |
+		 * | `station-outline` | 0.01% | 0.00% |
+		 * | `cockpit-arrival` | 0.00–0.01% | 0.00% |
+		 * | `hull-chase` | 0.00–0.03% | 0.00–0.03% |
+		 * | `planet-terminator`, `sky-only` | 0.00% | 0.00% |
 		 *
-		 * The two views that lost 102 move by **exactly** their own noise floor;
-		 * the two that keep it move by two to three times theirs.
+		 * The two views that keep 102 move by fifteen to twenty times their own
+		 * noise; the two that lost it move inside it.
+		 *
+		 * **Ranges and not single readings.** One pair is not a measurement
+		 * here: in an earlier, noisier session the same `before → after`
+		 * comparison read 0.55% on `station-approach` — with a same-build
+		 * control that also read 0.55%. The conclusion held, and it held for a
+		 * reason a single number could not have carried.
 		 *
 		 * The equatorial faces *are* on screen in the axis view — but at that
 		 * obliquity, tripling the ports and adding the plant moves the frame by

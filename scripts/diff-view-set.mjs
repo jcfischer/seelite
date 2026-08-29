@@ -26,21 +26,21 @@
  * capture, so two runs of the *same build* frame a spinning station at different
  * phases. Measured on #129 — before→after against after→after2 of one build:
  *
- * | view | before → after | same build twice |
+ * | view | before → after ×3 | same build, 3 pairings |
  * |---|---|---|
- * | `station-flank` | 2.09% | 1.05% |
- * | `cockpit-backlit` | 0.41% | 0.14% |
- * | `station-approach` | 0.55% | **0.55%** |
- * | `station-outline` | 0.05% | **0.05%** |
- * | `cockpit-arrival` | 0.02% | 0.02% |
- * | `hull-chase` | 0.01% | 0.01% |
+ * | `station-flank` | 1.27–1.52% | 0.00–0.09% |
+ * | `cockpit-backlit` | 0.37% | 0.00% |
+ * | `station-approach` | 0.03–0.10% | 0.00–0.06% |
+ * | `station-outline` | 0.01% | 0.00% |
  * | `sky-only` | 0.00% | 0.00% |
  *
- * A view whose before→after equals its same-build figure did not move. Reading
- * the first column alone would have called `station-approach`'s 0.55% a signal
- * a quarter the size of `station-flank`'s — and an earlier, quieter pair of
- * captures happened to read it as 0.01%, which would have been the right answer
- * for the wrong reason. **Always capture the third run.**
+ * A view whose before→after sits inside its same-build range did not move.
+ *
+ * **A single pair is not a measurement.** In a noisier session the same
+ * `before → after` read 0.55% on `station-approach` — with a same-build control
+ * that also read 0.55%. Three captures separate the two by an order of
+ * magnitude and one does not, which is why the ranges above are ranges. Capture
+ * the branch three times and diff every pairing.
  *
  * `sky-only` is the other control, from the other side: no station, no hull, and
  * it reads 0.00% in both columns, so a figure of zero is reachable and the

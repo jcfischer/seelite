@@ -257,13 +257,20 @@ describe("a greeble is mounted on the station, not floating beside it", () => {
 		// AABB and well past any radial floor: the box says *within the
 		// station*, and the question is *on a surface*.
 		//
-		// So it is a ray, cast from outside the piece back along its own normal,
-		// asked to find non-greeble geometry before it reaches the piece's own
-		// base. `SINK` puts the base a third of the height below the centre and
-		// the centre a sixth above the surface, so a mounted piece is hit well
-		// inside that budget and one standing clear of a surface is not hit at
-		// all. Instanced targets are excluded: window panes are not structure,
-		// and a greeble resting on a pane is the same defect.
+		// So it is a ray, cast from just above the piece's own top and reaching
+		// just past its own base, asked to find non-greeble geometry inside that
+		// window. `SINK` puts the base a third of the height below the centre
+		// and the centre a sixth above the surface, so a mounted piece is hit
+		// comfortably inside it and one standing clear of a surface is not hit
+		// at all. Instanced targets are excluded: window panes are not
+		// structure, and a greeble resting on a pane is the same defect.
+		//
+		// **It is not the generator's ray and must not be described as one.**
+		// The generator searches — tight outward, the station's diameter inward
+		// — because it is looking for a surface a zone only approximately aimed
+		// at. This verifies, so its window is the piece's own height. Two
+		// questions, and a shared implementation would make the check a
+		// restatement of the thing it checks.
 		//
 		// What it still cannot see is a piece buried inside a hollow — it finds
 		// the outer surface and is satisfied. That limit is the window panes'
@@ -301,19 +308,21 @@ describe("a greeble is mounted on the station, not floating beside it", () => {
 						matrix.premultiply(mesh.matrixWorld);
 						matrix.decompose(centre, rotation, scale);
 						normal.set(0, 0, 1).applyQuaternion(rotation).normalize();
-						// From `START` out, so the ray is never launched from
-						// inside the very surface it is looking for.
-						const START = 1;
+						// **From just above the piece's own top, reaching just
+						// past its own base.** An earlier version launched from
+						// one core radius out, which is hundreds of times the
+						// generator's own probe: anything the ray crossed on the
+						// way in satisfied it, so a piece floating clear of its
+						// surface passed as long as *something* stood further
+						// out along its normal. The window is the piece.
+						const height = scale.z;
 						ray.set(
-							centre.clone().addScaledVector(normal, START),
+							centre.clone().addScaledVector(normal, height * 0.6),
 							normal.clone().negate(),
 						);
-						ray.far = START + scale.z;
+						ray.far = height * 1.2;
 						const hit = ray.intersectObjects(structure, false);
-						// `scale.z` is the piece's height, so this asks: is there
-						// structure between the centre and the piece's own base?
-						if (!hit.length || hit[0].distance > START + scale.z * 0.5)
-							floating.push(`${mesh.name}#${i}`);
+						if (!hit.length) floating.push(`${mesh.name}#${i}`);
 					}
 				}
 				expect([type, form.id, floating.length]).toEqual([type, form.id, 0]);
