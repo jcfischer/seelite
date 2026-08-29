@@ -126,8 +126,15 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "cockpit-backlit",
-		covers: [105, 103, 99],
-		what: "The same interior with the star beyond the station: the case the camera-side fill was added for.",
+		// 102 added by #129, and it is the strongest frame in the set for it:
+		// the station is a **silhouette**, so the only thing making its flank
+		// legible is that the flank emits. That is #102's whole thesis — raising
+		// the sun brightens the lit half and leaves the dark half exactly as
+		// dark — and this is the one view where nothing else can be doing the
+		// work. Measured across #129's before/after: 0.37% of pixels moved by
+		// more than 24/255, against 0.01% on `station-approach`.
+		covers: [105, 103, 102, 99],
+		what: "The same interior with the star beyond the station: the case the camera-side fill was added for, and the dark side that only reads because it emits.",
 		shot: {
 			kind: "body-offset",
 			body: "station-trade",
@@ -151,17 +158,34 @@ export const VIEWS = Object.freeze([
 		 *
 		 * #102 §7 recorded that the two station views already claimed lever 102,
 		 * so the station child needed no view-set change and only the ship child
-		 * did. The before/after sheet falsified that: `station-approach` is on
+		 * did. The before/after sheet falsified that. `station-approach` is on
 		 * the *aperture axis*, and the aperture face is the one face a station's
 		 * clutter and ports are deliberately kept off — nothing may stand in the
-		 * corridor a ship flies down. The two runs were pixel-identical in the
-		 * frame that claimed to be evidence for the change.
+		 * corridor a ship flies down.
 		 *
-		 * So 102 moved off `station-approach`, which never showed it, onto this —
-		 * and off `station-outline` as well, for the reason recorded there: at
-		 * 140° that frame sees a shipyard from neither of the faces its ports are
-		 * on, and both runs showed the same unlit shape. This is the only view
-		 * that claims 102 for a station, and the residue is stated below it.
+		 * **Measured rather than eyeballed**, because the first version of this
+		 * comment said "pixel-identical" on the strength of looking at two PNGs.
+		 * Across #129's two runs, the fraction of pixels that moved by more than
+		 * 24/255:
+		 *
+		 * | view | moved > 24/255 |
+		 * |---|---|
+		 * | `station-flank` | 1.22% |
+		 * | `cockpit-backlit` | 0.37% |
+		 * | `station-approach` | 0.01% |
+		 * | `station-outline` | 0.00% |
+		 * | `hull-chase`, `planet-terminator`, `sky-only` | 0.00% |
+		 *
+		 * The equatorial faces *are* on screen in the axis view — but at that
+		 * obliquity, tripling the ports and adding the plant moves the frame by
+		 * as much as a view with no station surface in it at all. `covers`
+		 * records where a lever can be **judged**, not where its geometry is
+		 * technically within the frustum.
+		 *
+		 * So 102 moved off `station-approach` and off `station-outline`, onto
+		 * this and onto `cockpit-backlit`. The two that keep it are the lit case
+		 * and the dark one, which is the pair #102 is actually about; the two
+		 * that lost it are an axis view and a range view that show neither.
 		 *
 		 * A `body-offset` and not a `station-axis`, because the axis kind points
 		 * at exactly the face this has to avoid. 35° puts the star off the
@@ -185,14 +209,16 @@ export const VIEWS = Object.freeze([
 		 * **102 came off here too, and for the same reason it came off
 		 * `station-approach`** (#129). A shipyard's ports are on the keel's top
 		 * and the slab's back face; at 140° this frame sees the shipyard from
-		 * neither, and both runs of #129's before/after showed the same unlit
-		 * shape. What the frame does show is the backdrop behind a hard outline
-		 * and what bloom does to one, which is what it is kept for.
+		 * neither, and both runs of #129's before/after moved **0.00%** of this
+		 * frame's pixels by more than 24/255. What the frame does show is the
+		 * backdrop behind a hard outline and what bloom does to one, which is
+		 * what it is kept for.
 		 *
 		 * The residue is stated rather than papered over: **no view in this set
 		 * judges lit-window density at range.** `station-flank` judges it at
-		 * four radii. Whether the sheet needs a ninth view for the far case is a
-		 * decision, and #129 is not the node that takes it.
+		 * four radii and `cockpit-backlit` at eight, both on a trade station.
+		 * Whether the sheet needs a ninth view for a shipyard's own ports, or for
+		 * the far case, is a decision, and #129 is not the node that takes it.
 		 */
 		what: "The shipyard's whole frame against the sky: the backdrop behind a hard outline, and what bloom does to one.",
 		shot: {

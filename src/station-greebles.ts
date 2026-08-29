@@ -28,9 +28,16 @@
  *    already sweeps every vertex of every form, instanced copies included, so a
  *    zone placed across the approach is caught there rather than here.
  * 3. **A greeble is mounted, not floating.** It is sunk into the surface it sits
- *    on by a third of its own height, which is what makes the island check pass
- *    for the same reason a window pane does — and what stops a box reading as
- *    debris beside the hull.
+ *    on by a third of its own height, so a piece reads as bolted to the hull
+ *    rather than as debris beside it.
+ *
+ *    **`station-mesh.test.ts`'s island check does not see this, and an earlier
+ *    version of this comment claimed it did.** That check takes one `Box3` per
+ *    *object*, and `setFromObject` on an `InstancedMesh` unions every instance —
+ *    so one box already spans the hull and it would pass with every individual
+ *    piece floating free. The claim was worth exactly as much as the measurement
+ *    behind it, which was none. `tests/station-greebles.test.ts` asserts the
+ *    thing instead, per instance.
  *
  * **No glass, by construction.** #102 §1's exclusion: a station has no canopy,
  * and every zone here is declared on a plated shell by the builder that made it.

@@ -933,6 +933,42 @@ function rowsOf(i: number, count: number, rows: number) {
 }
 
 /**
+ * Spread the i-th piece evenly round a circle, with the side it alternates onto.
+ *
+ * The other layout every run in this file wants, written out five times before
+ * it was one function. `side` is the ±1 a zone uses when it puts alternate
+ * pieces on the two faces of a band; a zone on a single face ignores it.
+ *
+ * `(i + 0.5)` rather than `i`, so a run of any count is centred in its own
+ * sector rather than starting on the seam — which matters where a form's zone is
+ * an arc with an end, and costs nothing where it is a closed ring.
+ */
+function ringAt(i: number, count: number) {
+	return {
+		theta: ((i + 0.5) / count) * Math.PI * 2,
+		side: i % 2 === 0 ? 1 : -1,
+	};
+}
+
+/**
+ * The cuboctahedron's four equatorial faces: which face the i-th piece is on,
+ * that face's outward normal, and the tangent running across it.
+ *
+ * Both the Coriolis' port grid and its plant bands index faces this way, and two
+ * copies of it drift the moment one of them changes how many faces it uses.
+ * `step` is the index *within* the face, which is what a caller hands to
+ * `rowsOf`.
+ */
+function faceAt(i: number, faces = 4) {
+	const angle = ((i % faces) / faces) * Math.PI * 2;
+	return {
+		step: Math.floor(i / faces),
+		normal: new THREE.Vector3(Math.cos(angle), Math.sin(angle), 0),
+		tangent: new THREE.Vector3(-Math.sin(angle), Math.cos(angle), 0),
+	};
+}
+
+/**
  * The mechanical clutter on a form's own surfaces (#129).
  *
  * The zones are the form's, because #102 §2 settled that regions are authored
@@ -1110,29 +1146,24 @@ function buildTradeCoriolis(color: number): BuiltPart {
 	const PORT_ROWS = 3;
 	group.add(
 		portRun("trade", PER_FACE * 4, (i, count, position, normal) => {
-			// Four faces: the face is the index modulo four and the position
-			// along it is the index divided by four. The grid per face is derived
-			// from the count rather than from `PER_FACE`, so the role's scale
-			// spreads the extra panes over the face instead of doubling them up
-			// on the seven positions #36 had.
-			const perFace = Math.max(1, Math.round(count / 4));
-			const cols = Math.max(1, Math.ceil(perFace / PORT_ROWS));
-			const angle = ((i % 4) / 4) * Math.PI * 2;
-			const step = Math.floor(i / 4);
-			normal.set(Math.cos(angle), Math.sin(angle), 0);
+			// Four faces, and the grid per face derived from the count rather
+			// than from `PER_FACE`, so the role's scale spreads the extra panes
+			// over the face instead of doubling them up on the seven positions
+			// #36 had. `rowsOf` and not the same arithmetic written again: its
+			// `ceil` is what stops an index past the last slot landing on one
+			// another index already holds.
+			const { step, normal: outward, tangent } = faceAt(i, 4);
+			const perFace = Math.max(1, Math.ceil(count / 4));
+			const { row, along } = rowsOf(step, perFace, PORT_ROWS);
+			normal.copy(outward);
 			// Inside the face's square and kept clear of its edges, so a pane
 			// cannot hang off a corner. The face plane is at `face` along its
 			// normal and spans ±`face` across it; the grid uses the middle band
 			// and leaves the two outer ones to the plant below.
-			const across = ((step % cols) + 0.5) / cols - 0.5;
-			const row = Math.floor(step / cols) % PORT_ROWS;
 			position
 				.copy(normal)
 				.multiplyScalar(face * 1.004)
-				.addScaledVector(
-					new THREE.Vector3(-Math.sin(angle), Math.cos(angle), 0),
-					across * face * 1.04,
-				);
+				.addScaledVector(tangent, (along - 0.5) * face * 1.04);
 			position.z = ((row + 0.5) / PORT_ROWS - 0.5) * face * 0.62;
 		}),
 	);
@@ -1164,25 +1195,21 @@ function buildTradeCoriolis(color: number): BuiltPart {
 					// windows rather than among them: interleaved, the two read
 					// as one decorated stripe, which is what the first version
 					// flew as.
-					const perFace = Math.max(2, Math.round(count / 4));
-					const cols = Math.max(1, Math.round(perFace / 2));
-					const angle = ((i % 4) / 4) * Math.PI * 2;
-					const step = Math.floor(i / 4);
-					normal.set(Math.cos(angle), Math.sin(angle), 0);
+					const { step, normal: outward, tangent } = faceAt(i, 4);
+					const perFace = Math.max(2, Math.ceil(count / 4));
+					const { row, along } = rowsOf(step, perFace, 2);
+					normal.copy(outward);
 					position
 						.copy(normal)
 						.multiplyScalar(face)
-						.addScaledVector(
-							new THREE.Vector3(-Math.sin(angle), Math.cos(angle), 0),
-							(((step % cols) + 0.5) / cols - 0.5) * face * 1.06,
-						);
+						.addScaledVector(tangent, (along - 0.5) * face * 1.06);
 					// **The corners are the outline.** A cuboctahedron's square
 					// face sits at `r/√2` and its corners at `r`, so a piece at
 					// the face's own centre has √2 of headroom and one near a
 					// corner has none. Measured: an earlier run at ±0.72·face
 					// across ±0.6·face reached 0.577 km against the hull's 0.570
 					// and took the outline off the station.
-					position.z = (step < cols ? -1 : 1) * face * 0.52;
+					position.z = (row === 0 ? -1 : 1) * face * 0.52;
 				},
 			},
 		]),
@@ -1409,8 +1436,7 @@ function buildTradeRing(color: number): BuiltPart {
 				sizeKm: tube * 0.42,
 				reliefKm: tube * 0.34,
 				place: (i, count, position, normal) => {
-					const theta = ((i + 0.5) / count) * Math.PI * 2;
-					const side = i % 2 === 0 ? 1 : -1;
+					const { theta, side } = ringAt(i, count);
 					normal.set(0, 0, side);
 					position.set(
 						Math.cos(theta) * major,
@@ -1932,8 +1958,13 @@ function buildShipyardSlipway(color: number): BuiltPart {
 				sizeKm: r * 0.085,
 				reliefKm: r * 0.07,
 				place: (i, count, position, normal) => {
+					// **An arc, not a ring**, which is why the angle is written
+					// here rather than taken from `ringAt`: the gap in this form
+					// *is* the slip, and plant wrapped round it would sit across
+					// the one opening the concept is about. Only the side flip is
+					// shared.
+					const { side } = ringAt(i, count);
 					const theta = Math.PI * 0.28 + ((i + 0.5) / count) * Math.PI * 1.4;
-					const side = i % 2 === 0 ? 1 : -1;
 					normal.set(0, 0, side);
 					position.set(
 						Math.cos(theta) * major * 0.94,
@@ -2386,8 +2417,7 @@ function buildRefineryCollar(color: number): BuiltPart {
 				sizeKm: tube * 0.4,
 				reliefKm: tube * 0.36,
 				place: (i, count, position, normal) => {
-					const theta = ((i + 0.5) / count) * Math.PI * 2;
-					const side = i % 2 === 0 ? 1 : -1;
+					const { theta, side } = ringAt(i, count);
 					normal.set(Math.cos(theta), Math.sin(theta), 0);
 					position.copy(normal).multiplyScalar(major + tube * 0.55);
 					position.z = side * tube * 0.75;
@@ -2657,7 +2687,7 @@ function buildOutpostDerrick(color: number): BuiltPart {
 				sizeKm: r * 0.13,
 				reliefKm: r * 0.1,
 				place: (i, count, position, normal) => {
-					const theta = ((i + 0.5) / count) * Math.PI * 2;
+					const { theta } = ringAt(i, count);
 					normal.set(Math.cos(theta), Math.sin(theta), 0);
 					position.copy(normal).multiplyScalar(r * 0.42);
 					position.z = -r * 1.0;
@@ -2724,7 +2754,7 @@ function buildOutpostBuoy(color: number): BuiltPart {
 				sizeKm: r * 0.12,
 				reliefKm: r * 0.09,
 				place: (i, count, position, normal) => {
-					const theta = ((i + 0.5) / count) * Math.PI * 2;
+					const { theta } = ringAt(i, count);
 					normal.set(Math.cos(theta), Math.sin(theta), 0);
 					position.copy(normal).multiplyScalar(r * 0.84);
 					position.z = -r * 0.85 + (i % 3) * r * 0.3;

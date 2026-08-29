@@ -185,6 +185,75 @@ describe("every form carries clutter, and the density figure is what puts it the
 	});
 });
 
+describe("a greeble is mounted on the station, not floating beside it", () => {
+	test("every instance sits inside the station's own structure", () => {
+		// **The check `station-mesh.test.ts`'s island grouping cannot make.**
+		// That one takes one `Box3` per object, and `Box3.setFromObject` on an
+		// `InstancedMesh` unions every instance — so a single box already spans
+		// the hull, and the grouping would pass with every individual piece
+		// floating free. It catches a whole zone that is a detached island; it
+		// cannot see one piece of thirty.
+		//
+		// A proxy, named as one, in two halves: a piece's centre is inside the
+		// box of the *non-greeble* geometry, and it is out at the structure
+		// rather than at the middle of it.
+		//
+		// **The box is widened rather than shrunk, and two earlier versions of
+		// this got that backwards.** A face-mounted piece sits on the box's own
+		// surface by construction and then stands its own standoff proud of it:
+		// the Coriolis' square faces are at 0.672 against an AABB of 0.720 on x
+		// and 0.678 on y, so a 2% inset failed half the pieces and a bare
+		// `containsPoint` still failed the one sitting 0.0002 past the y face. A
+		// tolerance that fails correct work is worse than a loose one, because
+		// it is loosened by whoever meets it next rather than understood. 1% of
+		// the structure's own size is more than any greeble's standoff and two
+		// orders less than a zone placed off the hull, which is the distinction
+		// that has to hold.
+		//
+		// It cannot see a piece buried inside a hollow, and nothing headless can
+		// without a per-form surface equation — the same limit
+		// `station-mesh.test.ts` records for the window panes. What it catches is
+		// the failure that actually happens: a zone placed at a radius chosen by
+		// eye, off the surface it was meant to be set into. Four fixtures were in
+		// that state when the island check was first run.
+		for (const type of TYPES) {
+			for (const form of STATION_FORMS[type]) {
+				const { root } = buildStationForm(type, form.id, GREY);
+				root.updateMatrixWorld(true);
+				const structure = new THREE.Box3();
+				root.traverse((object) => {
+					if (isGreeble(object)) return;
+					if (!(object as THREE.Mesh).geometry) return;
+					structure.union(new THREE.Box3().setFromObject(object));
+				});
+				structure.expandByVector(
+					structure.getSize(new THREE.Vector3()).multiplyScalar(0.01),
+				);
+				// **A quarter of the core radius, not of the form's own box**, and
+				// that is the pane test's correction applied here: a shipyard's
+				// reach is a 1.4 km frame nothing is mounted on, so a floor
+				// derived from its bounding box rejected the keel clutter that is
+				// exactly where a yard's plant belongs. The mesh is normalised to
+				// one core radius, so the core radius is 1.
+				const FLOOR = 0.25;
+				const matrix = new THREE.Matrix4();
+				const centre = new THREE.Vector3();
+				const outside: string[] = [];
+				for (const mesh of greebleMeshes(root)) {
+					for (let i = 0; i < mesh.count; i++) {
+						mesh.getMatrixAt(i, matrix);
+						centre.setFromMatrixPosition(matrix);
+						mesh.localToWorld(centre);
+						if (!structure.containsPoint(centre) || centre.length() < FLOOR)
+							outside.push(`${mesh.name}#${i}`);
+					}
+				}
+				expect([type, form.id, outside.join(",")]).toEqual([type, form.id, ""]);
+			}
+		}
+	});
+});
+
 describe("#102 §2 — no greeble may be a station's farthest vertex", () => {
 	test("on every form, the structure reaches further than the clutter", () => {
 		// The rule stated where it is caused. `station-visuals.test.ts` asserts
@@ -264,7 +333,10 @@ describe("#129 — the windows are dense enough to read as inhabited", () => {
 	const paneCount = (root: THREE.Object3D) =>
 		(root.getObjectByName("windows") as THREE.InstancedMesh).count;
 
-	test("every role's window scale reaches its forms", () => {
+	test("no role's window scale is below 1", () => {
+		// Renamed: this asserts the figure, not that it reached anything. It
+		// builds no form, so it could never have failed for a scale that stopped
+		// reaching one — the test below is the one that can.
 		for (const type of TYPES) {
 			expect([type, STATION_VISUALS[type].windowScale >= 1]).toEqual([
 				type,
@@ -277,21 +349,33 @@ describe("#129 — the windows are dense enough to read as inhabited", () => {
 		// The counts #36 shipped, per form, so a scale silently reset to 1 is a
 		// red run rather than a station that merely looks the same. Not a
 		// tolerance: the figures are integers and this is the whole claim.
-		const before: Record<StationType, number[]> = {
-			trade: [28, 28, 28],
-			shipyard: [16, 16, 12],
-			refinery: [12, 12, 10],
-			outpost: [6, 6, 6],
+		//
+		// **Keyed by form id, not by position.** A positional list is
+		// re-baselined by reordering `STATION_FORMS` or inserting a form: each
+		// assertion silently starts comparing against another form's count, and
+		// nothing goes red.
+		const before: Record<StationType, Record<string, number>> = {
+			trade: { a: 28, b: 28, c: 28 },
+			shipyard: { a: 16, b: 16, c: 12 },
+			refinery: { a: 12, b: 12, c: 10 },
+			outpost: { a: 6, b: 6, c: 6 },
 		};
 		for (const type of TYPES) {
-			STATION_FORMS[type].forEach((form, i) => {
+			// Every form has a baseline, so a form added without one is a red run
+			// rather than a comparison against `undefined`, which is never true
+			// and would read as the new form having too few panes.
+			expect([type, Object.keys(before[type]).sort()]).toEqual([
+				type,
+				STATION_FORMS[type].map((form) => form.id).sort(),
+			]);
+			for (const form of STATION_FORMS[type]) {
 				const now = paneCount(buildStationForm(type, form.id, GREY).root);
-				expect([type, form.id, now > before[type][i]]).toEqual([
+				expect([type, form.id, now > before[type][form.id]]).toEqual([
 					type,
 					form.id,
 					true,
 				]);
-			});
+			}
 		}
 	});
 });
