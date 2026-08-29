@@ -20,11 +20,38 @@ import { codeOf, repoPath } from "./lib/source-scan";
 import { v3 } from "../src/vec3";
 
 const BODIES = [
-	{ id: "far-station", kind: "station" as const, pos: v3(9_000, 0, 0) },
-	{ id: "near-station", kind: "station" as const, pos: v3(0, 300, 0) },
-	{ id: "hesperia", kind: "planet" as const, pos: v3(0, 0, 4_000) },
-	{ id: "seelite", kind: "star" as const, pos: v3(0, 0, 120_000) },
-	{ id: "hesperia-i", kind: "moon" as const, pos: v3(100, 0, 0) },
+	{
+		id: "far-station",
+		name: "QUERIOR",
+		kind: "station" as const,
+		stationType: "trade",
+		pos: v3(9_000, 0, 0),
+	},
+	{
+		id: "near-station",
+		name: "ARLEDI",
+		kind: "station" as const,
+		stationType: "refinery",
+		pos: v3(0, 300, 0),
+	},
+	{
+		id: "hesperia",
+		name: "SOORATLE I",
+		kind: "planet" as const,
+		pos: v3(0, 0, 4_000),
+	},
+	{
+		id: "seelite",
+		name: "SOORATLE",
+		kind: "star" as const,
+		pos: v3(0, 0, 120_000),
+	},
+	{
+		id: "hesperia-i",
+		name: "SOORATLE I a",
+		kind: "moon" as const,
+		pos: v3(100, 0, 0),
+	},
 ];
 
 test("targets list nearest first, with the range the panel prints", () => {
@@ -80,17 +107,24 @@ test("the kind filter narrows to one class; an empty filter is every class", () 
 	expect(all).toHaveLength(BODIES.length);
 });
 
-test("the query is a trimmed, case-insensitive substring of the id", () => {
+test("the query matches the displayed name and kind words, never the id", () => {
 	const rows = projectNavTargets(v3(), BODIES, null, {
-		filter: { kinds: [], query: "  STAT " },
+		filter: { kinds: [], query: "  TRADE " },
 	});
-	expect(rows.map((row) => row.id)).toEqual(["near-station", "far-station"]);
+	expect(rows.map((row) => row.id)).toEqual(["far-station"]);
+	expect(rows[0].displayKind).toBe("trade station");
 	expect(
 		navFilterMatches(
-			{ id: "Hesperia", kind: "planet" },
+			{ name: "Hesperia", kind: "planet" },
 			{ kinds: [], query: "hesp" },
 		),
 	).toBe(true);
+	expect(
+		navFilterMatches(
+			{ name: "QUERIOR", kind: "station", stationType: "trade" },
+			{ kinds: [], query: "station-trade" },
+		),
+	).toBe(false);
 });
 
 test("ETA is asked for only the rows that survive the filter", () => {

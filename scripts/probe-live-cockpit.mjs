@@ -165,6 +165,13 @@ function measureLiveCockpit() {
 			game.renderer.domElement.parentElement === document.body &&
 			document.querySelectorAll("canvas:not(#overlay)").length === 1,
 		targetRangeKm: game.targetRange(),
+		targetId: game.targetBody()?.id ?? null,
+		targetName: game.targetBody()?.name ?? null,
+		directorName:
+			document.querySelector("[data-live-director] > strong")?.textContent ??
+			null,
+		targetInstrumentPrimaryReadout:
+			game.cockpit.targetInstrument?.primaryText ?? null,
 		targetInstrumentSecondaryText: globalThis.__seeliteTextPixelsMatch(
 			targetInstrumentCanvas,
 			game.cockpit.targetInstrument?.secondaryText,
@@ -383,6 +390,15 @@ for (const viewport of VIEWPORTS) {
 				?.baseYPercent > 50,
 	);
 	const astern = await page.evaluate(measureLiveCockpit);
+	check(
+		`${viewport.name}: the HUD target readout and director print the selected name, never its id`,
+		astern.targetName &&
+			astern.targetName !== astern.targetId &&
+			astern.targetInstrumentPrimaryReadout?.startsWith(astern.targetName) &&
+			!astern.targetInstrumentPrimaryReadout?.includes(astern.targetId) &&
+			astern.directorName === astern.targetName,
+		`id ${astern.targetId}; name ${astern.targetName}; instrument ${astern.targetInstrumentPrimaryReadout}; director ${astern.directorName}`,
+	);
 	check(
 		`${viewport.name}: a selected station astern remains visible in the scanner lower half`,
 		astern.selectedBaseX > 48 &&

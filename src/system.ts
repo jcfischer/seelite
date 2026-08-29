@@ -52,6 +52,7 @@
  * *threshold* (`a > 2·a_hab`), which is spec'd (§6.2) and does decide moons.
  */
 
+import { moonName, planetName, starName } from "./body-name";
 import { DOMAIN } from "./domains";
 import { type SystemRecord, stream } from "./galaxy";
 import { type Vec3, dot, lengthSq } from "./vec3";
@@ -63,6 +64,7 @@ import {
 	type StationType,
 	fenceProbability,
 } from "./station";
+import { stationNames } from "./station-name";
 import { AU_KM } from "./units";
 
 /** Seconds in a Julian year, the unit Kepler III is written in below. */
@@ -242,6 +244,7 @@ export interface Orbit {
 
 export interface Moon {
 	id: string;
+	name: string;
 	radiusKm: number;
 	/** Around its planet. */
 	orbit: Orbit;
@@ -249,6 +252,7 @@ export interface Moon {
 
 export interface Planet {
 	id: string;
+	name: string;
 	/** Orbit radius in AU — the figure the spec's envelope and ladder talk in. */
 	aAu: number;
 	radiusKm: number;
@@ -283,6 +287,9 @@ export type { StationType };
 
 export interface Station {
 	id: string;
+	/** Display-only proper name. Identity remains `id`; persistence remains
+	 *  `localCarrierId`. */
+	name: string;
 	type: StationType;
 	/**
 	 * The system-local carrier-slot persistence ID
@@ -319,7 +326,7 @@ export interface Station {
 }
 
 export interface SystemContents {
-	star: StarClassDef & { id: string };
+	star: StarClassDef & { id: string; name: string };
 	/** The habitable distance, AU, clamped into the orbit envelope. */
 	habitableAu: number;
 	planets: Planet[];
@@ -331,7 +338,11 @@ export interface SystemContents {
  *  the system. */
 export interface PlacedBody {
 	id: string;
+	name: string;
 	kind: "star" | "planet" | "moon" | "station";
+	/** Present only for stations, so presentation can print `TRADE STATION`
+	 *  without turning that label into identity. */
+	stationType?: StationType;
 	pos: Vec3;
 	radiusKm: number;
 }
@@ -433,7 +444,11 @@ const pickWeighted = (rand: () => number): StarClassDef => {
  */
 export function generateContents(record: SystemRecord): SystemContents {
 	const bodies = stream(record.seed, DOMAIN.BODIES);
-	const star = { id: "star", ...pickWeighted(bodies) };
+	const star = {
+		id: "star",
+		name: starName(record.name),
+		...pickWeighted(bodies),
+	};
 
 	const habitableAu = habitableDistanceAu(star.luminosity);
 
@@ -503,11 +518,13 @@ export function generateContents(record: SystemRecord): SystemContents {
 		const size = isGasGiant ? GIANT_RADIUS_KM : ROCKY_RADIUS_KM;
 		const radiusKm = size.base + radiusRoll * size.span;
 		const id = `planet-${i}`;
+		const name = planetName(record.name, planets.length);
 		const moons = isGasGiant
-			? buildMoons(id, radiusKm, moonCount, moonRolls, inclination, node)
+			? buildMoons(id, name, radiusKm, moonCount, moonRolls, inclination, node)
 			: [];
 		planets.push({
 			id,
+			name,
 			aAu: orbitAu,
 			radiusKm,
 			isGasGiant,
@@ -551,6 +568,7 @@ export function generateContents(record: SystemRecord): SystemContents {
  */
 function buildMoons(
 	planetId: string,
+	planetDisplayName: string,
 	planetRadiusKm: number,
 	count: number,
 	rolls: readonly number[],
@@ -562,6 +580,7 @@ function buildMoons(
 		const base = m * ROLLS_PER_MOON;
 		moons.push({
 			id: `${planetId}-moon-${m}`,
+			name: moonName(planetDisplayName, m),
 			radiusKm: MOON_RADIUS_KM.base + rolls[base] * MOON_RADIUS_KM.span,
 			orbit: {
 				radiusKm:
@@ -656,6 +675,7 @@ function generateStations(
 	// what `tests/station-orbits.test.ts` exists to catch (§5.3).
 	const flagRand = stream(record.seed, DOMAIN.STATION_FLAGS);
 	const spinRand = stream(record.seed, DOMAIN.STATION_SPIN);
+	const names = stationNames(record.seed, record.name);
 	const stations: Station[] = [];
 	// **No `?? planets[0]` fallback.** It used to be there, and it is what made
 	// the second defect invisible: a system whose primary rung alone was
@@ -677,7 +697,8 @@ function generateStations(
 	 */
 	const fields = (
 		type: StationType,
-	): Pick<Station, "blackMarket" | "spinRpm" | "localCarrierId"> => ({
+	): Pick<Station, "name" | "blackMarket" | "spinRpm" | "localCarrierId"> => ({
+		name: names[type],
 		blackMarket: drawBlackMarket(flagRand, type, record.government),
 		spinRpm: drawSpinRpm(spinRand, type),
 		// Not a draw: the persistence identity is a table lookup
@@ -759,6 +780,7 @@ export function placeBodies(
 	const placed: PlacedBody[] = [
 		{
 			id: contents.star.id,
+			name: contents.star.name,
 			kind: "star",
 			pos: { x: 0, y: 0, z: 0 },
 			radiusKm: contents.star.radiusKm,
@@ -770,6 +792,7 @@ export function placeBodies(
 		at.set(planet.id, pos);
 		placed.push({
 			id: planet.id,
+			name: planet.name,
 			kind: "planet",
 			pos,
 			radiusKm: planet.radiusKm,
@@ -778,6 +801,7 @@ export function placeBodies(
 			const rel = positionOnOrbit(moon.orbit, gameTime);
 			placed.push({
 				id: moon.id,
+				name: moon.name,
 				kind: "moon",
 				pos: { x: pos.x + rel.x, y: pos.y + rel.y, z: pos.z + rel.z },
 				radiusKm: moon.radiusKm,
@@ -789,7 +813,9 @@ export function placeBodies(
 		const base = station.parentId ? at.get(station.parentId) : undefined;
 		placed.push({
 			id: station.id,
+			name: station.name,
 			kind: "station",
+			stationType: station.type,
 			pos: base
 				? { x: base.x + rel.x, y: base.y + rel.y, z: base.z + rel.z }
 				: rel,

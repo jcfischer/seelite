@@ -44,6 +44,10 @@ export const DOMAIN = {
 	 *  epoch, and folding it into `STATION_FLAGS` would make a market a function
 	 *  of how many flags a station happens to carry. */
 	MARKET: 10,
+	/** Proper station names. One sub-stream per fixed station-type slot, so an
+	 *  absent refinery cannot hand its name to the shipyard and a collision
+	 *  redraw cannot advance a sibling's stream. */
+	STATION_NAME: 11,
 } as const;
 
 export type DomainName = keyof typeof DOMAIN;
