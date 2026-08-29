@@ -84,7 +84,7 @@ export const SHOT_KINDS = Object.freeze([
 ]);
 
 /**
- * Seven views, one seed, one clock.
+ * Eight views, one seed, one clock.
  *
  * #98 named four as a starting list and called it a proposal. Two things are
  * added here and both close a hole that list had. **`sky-only`**, because #100's
@@ -138,14 +138,61 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "station-approach",
-		covers: [101, 102, 103, 99],
-		what: "On the aperture axis at three silhouette radii — the surface, the panel lines, the greebles.",
+		covers: [101, 103, 99],
+		what: "On the aperture axis at three silhouette radii — the docking face, its plating and the lit aperture.",
 		shot: { kind: "station-axis", station: "trade", radii: 3, view: "chase" },
 	},
 	{
+		name: "station-flank",
+		covers: [102, 101, 99],
+		what: "A trade station's lit flank at four radii: the window grid and the plant beside it, which the axis view cannot show.",
+		/**
+		 * **Added by #129, and the reason is a frame rather than an argument.**
+		 *
+		 * #102 §7 recorded that the two station views already claimed lever 102,
+		 * so the station child needed no view-set change and only the ship child
+		 * did. The before/after sheet falsified that: `station-approach` is on
+		 * the *aperture axis*, and the aperture face is the one face a station's
+		 * clutter and ports are deliberately kept off — nothing may stand in the
+		 * corridor a ship flies down. The two runs were pixel-identical in the
+		 * frame that claimed to be evidence for the change.
+		 *
+		 * So 102 moved off `station-approach`, which never showed it, onto this.
+		 * `station-outline` keeps it: at eight radii the window *density* is what
+		 * reads, which is the half of #102 that survives range.
+		 *
+		 * A `body-offset` and not a `station-axis`, because the axis kind points
+		 * at exactly the face this has to avoid. 35° puts the star off the
+		 * camera's shoulder, so the flank is lit and still has a shaded side for
+		 * the plant to cast onto — a fully frontal light flattens a greeble into
+		 * its own footprint, which is the failure the first build was rejected
+		 * for.
+		 */
+		shot: {
+			kind: "body-offset",
+			body: "station-trade",
+			radii: 4,
+			sunAngleDeg: 35,
+			view: "chase",
+		},
+	},
+	{
 		name: "station-outline",
-		covers: [100, 102, 103],
-		what: "The shipyard's whole frame against the sky: lit-window density, and what bloom does to it.",
+		covers: [100, 103],
+		/**
+		 * **102 came off here too, and for the same reason it came off
+		 * `station-approach`** (#129). A shipyard's ports are on the keel's top
+		 * and the slab's back face; at 140° this frame sees the shipyard from
+		 * neither, and both runs of #129's before/after showed the same unlit
+		 * shape. What the frame does show is the backdrop behind a hard outline
+		 * and what bloom does to one, which is what it is kept for.
+		 *
+		 * The residue is stated rather than papered over: **no view in this set
+		 * judges lit-window density at range.** `station-flank` judges it at
+		 * four radii. Whether the sheet needs a ninth view for the far case is a
+		 * decision, and #129 is not the node that takes it.
+		 */
+		what: "The shipyard's whole frame against the sky: the backdrop behind a hard outline, and what bloom does to one.",
 		shot: {
 			kind: "body-offset",
 			body: "station-shipyard",

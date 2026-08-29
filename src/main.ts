@@ -4210,7 +4210,17 @@ class Game {
 				// chosen with and the same clock the pose is read at. A second
 				// distance computed here would be one more thing to keep in step
 				// with the layer rule.
-				updateStationVisuals(station, this.world.gameTime, distanceKm);
+				// The quality key rides along rather than being applied in
+				// `applyQuality`: a station built after the setting changed would
+				// otherwise draw its clutter for one frame at low, and the
+				// alternative — a live registry of every station's greeble meshes
+				// — is a set the renderer would have to remember to empty.
+				updateStationVisuals(
+					station,
+					this.world.gameTime,
+					distanceKm,
+					this.settings.value.quality,
+				);
 				// Through the handle's own accessor, not a second copy of the same
 				// argument triple: `poseOfStation` is documented as "the pose the
 				// renderer is mirroring", and a probe asserting through it has to be

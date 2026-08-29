@@ -63,8 +63,11 @@ import {
 	type StationType,
 } from "./station";
 import { throatDepthKm } from "./arrival";
+import { type GreebleZone, buildGreebles } from "./station-greebles";
 import {
+	STATION_QUALITY,
 	STATION_VISUALS,
+	type StationQuality,
 	type StationDetailLevel,
 	type StationFixtureKind,
 	fixtureIntensity,
@@ -174,6 +177,21 @@ export interface StationMesh {
 	 * are written to after construction.
 	 */
 	nameplates: THREE.Mesh[];
+	/**
+	 * The instanced greeble meshes, so #98's quality key can reach them (#102 §5).
+	 *
+	 * **A second owner of `visible`, deliberately, and on a different object.**
+	 * The detail band owns the greeble *group*; the quality key owns the
+	 * instanced meshes inside it. Sharing one object would make one of the two
+	 * settings a no-op depending on which ran last, and the symptom — clutter
+	 * that comes back when you fly closer with the setting on low — would read
+	 * as a band bug rather than as a gate that lost.
+	 *
+	 * Collected at build for `accessories`' reason: the set is known then, and
+	 * walking the graph every frame to find three meshes is a graph walk per
+	 * station per frame.
+	 */
+	greebles: THREE.InstancedMesh[];
 }
 
 /** One clock-driven light. `base` is its lit intensity; the waveform scales it. */
@@ -347,7 +365,12 @@ interface BuiltPart {
 function buildWindowGrid(
 	type: StationType,
 	count: number,
-	place: (i: number, position: THREE.Vector3, normal: THREE.Vector3) => void,
+	place: (
+		i: number,
+		count: number,
+		position: THREE.Vector3,
+		normal: THREE.Vector3,
+	) => void,
 ): THREE.InstancedMesh {
 	const panes = new THREE.InstancedMesh(
 		PANE_GEOMETRY,
@@ -363,7 +386,7 @@ function buildWindowGrid(
 	const unitZ = new THREE.Vector3(0, 0, 1);
 	const one = new THREE.Vector3(1, 1, 1);
 	for (let i = 0; i < count; i++) {
-		place(i, position, normal);
+		place(i, count, position, normal);
 		quaternion.setFromUnitVectors(unitZ, normal);
 		panes.setMatrixAt(i, matrix.compose(position, quaternion, one));
 	}
@@ -853,15 +876,56 @@ function shell(
 	return mesh;
 }
 
-/** A run of lit ports along a lofted surface, placed by the caller's rule.
- *  Sized from the station rather than from a constant, so the same call reads
- *  right on a 0.4 km drum and a 1.5 km ring. */
+/**
+ * A run of lit ports along a lofted surface, placed by the caller's rule.
+ *
+ * Sized from the station rather than from a constant, so the same call reads
+ * right on a 0.4 km drum and a 1.5 km ring.
+ *
+ * **`base` is the form's run, not the count built** (#129). The role's
+ * `windowScale` multiplies it, and the built count is handed to `place` — which
+ * is why every layout in this file is written against the `count` argument
+ * rather than against the literal beside it. A layout that closed over the
+ * literal would keep #36's spacing and stack the extra panes on top of the old
+ * ones, and the symptom would be a station that got brighter without getting
+ * more windows.
+ */
 function portRun(
 	type: StationType,
-	count: number,
-	place: (i: number, position: THREE.Vector3, normal: THREE.Vector3) => void,
+	base: number,
+	place: (
+		i: number,
+		count: number,
+		position: THREE.Vector3,
+		normal: THREE.Vector3,
+	) => void,
 ) {
+	const count = Math.max(
+		1,
+		Math.round(base * STATION_VISUALS[type].windowScale),
+	);
 	return buildWindowGrid(type, count, place);
+}
+
+/**
+ * The mechanical clutter on a form's own surfaces (#129).
+ *
+ * The zones are the form's, because #102 §2 settled that regions are authored
+ * and the fill is generated: a builder knows which of its faces is a flank and
+ * which is a docking face, and a scatter does not. `station-greebles.ts` owns
+ * everything after that.
+ *
+ * Tagged `full` here rather than inside the generator, for the same reason the
+ * window grid is: `detail` is this module's, and the band is this module's rule.
+ * `tag` keys the generator and must be unique per form — a shared one draws one
+ * form's clutter onto another.
+ */
+function greebleRun(
+	type: StationType,
+	tag: string,
+	zones: readonly GreebleZone[],
+) {
+	return detail(buildGreebles(type, tag, zones), "full");
 }
 
 /**
@@ -1012,26 +1076,39 @@ function buildTradeCoriolis(color: number): BuiltPart {
 	// its face's own plane, a hair proud, so none of them can float: the face is
 	// at `face` along its axis and spans ±`face` across it.
 	const PER_FACE = 7;
+	/** Rows of ports across a square face, so the run stays a **grid**.
+	 *
+	 *  #36's seven panes fitted one staggered row. Three times that on one row
+	 *  is a 30 m pane every 21 m, which is not a denser window grid — it is a
+	 *  continuous strip light, and it was flown as one. Rows are what makes the
+	 *  extra panes read as more windows rather than as a brighter line. */
+	const PORT_ROWS = 3;
 	group.add(
-		portRun("trade", PER_FACE * 4, (i, position, normal) => {
-			// Four faces, seven panes each: the face is the index modulo four and
-			// the position along it is the index divided by four.
+		portRun("trade", PER_FACE * 4, (i, count, position, normal) => {
+			// Four faces: the face is the index modulo four and the position
+			// along it is the index divided by four. The grid per face is derived
+			// from the count rather than from `PER_FACE`, so the role's scale
+			// spreads the extra panes over the face instead of doubling them up
+			// on the seven positions #36 had.
+			const perFace = Math.max(1, Math.round(count / 4));
+			const cols = Math.max(1, Math.ceil(perFace / PORT_ROWS));
 			const angle = ((i % 4) / 4) * Math.PI * 2;
 			const step = Math.floor(i / 4);
 			normal.set(Math.cos(angle), Math.sin(angle), 0);
-			// A staggered two-row run inside the face's square, kept clear of its
-			// edges so a pane cannot hang off a corner. The face plane is at
-			// `face` along its normal and spans ±`face` across it.
-			const across = (step / (PER_FACE - 1) - 0.5) * face * 1.1;
-			const up = (step % 2 === 0 ? -1 : 1) * face * 0.32;
+			// Inside the face's square and kept clear of its edges, so a pane
+			// cannot hang off a corner. The face plane is at `face` along its
+			// normal and spans ±`face` across it; the grid uses the middle band
+			// and leaves the two outer ones to the plant below.
+			const across = ((step % cols) + 0.5) / cols - 0.5;
+			const row = Math.floor(step / cols) % PORT_ROWS;
 			position
 				.copy(normal)
 				.multiplyScalar(face * 1.004)
 				.addScaledVector(
 					new THREE.Vector3(-Math.sin(angle), Math.cos(angle), 0),
-					across,
+					across * face * 1.04,
 				);
-			position.z = up;
+			position.z = ((row + 0.5) / PORT_ROWS - 0.5) * face * 0.62;
 		}),
 	);
 
@@ -1040,6 +1117,50 @@ function buildTradeCoriolis(color: number): BuiltPart {
 		strobePair("trade", fixtures, r * 0.07, (side, position) => {
 			position.set(side * face * 1.02, 0, face * 0.5);
 		}),
+	);
+	// Plant on the four equatorial faces, in the bands above and below the
+	// window run. Not on the docking face and not on the corners: a corner is
+	// where the silhouette lives, and a square face is where a habitat would
+	// actually bolt its machinery.
+	group.add(
+		greebleRun("trade", "trade-a", [
+			{
+				// Narrow and tall rather than wide and flat. At a 40 m footprint
+				// and 34 m of relief these were *tiles*: the eye reads a box on a
+				// hull by its shadowed side, and a piece wider than it is high
+				// has none worth seeing. Half the footprint and a third more
+				// relief is the same volume standing up.
+				count: 32,
+				sizeKm: face * 0.05,
+				reliefKm: face * 0.06,
+				place: (i, count, position, normal) => {
+					// Two rows per face, above and below the port grid — the band
+					// the grid deliberately leaves free. Machinery round the
+					// windows rather than among them: interleaved, the two read
+					// as one decorated stripe, which is what the first version
+					// flew as.
+					const perFace = Math.max(2, Math.round(count / 4));
+					const cols = Math.max(1, Math.round(perFace / 2));
+					const angle = ((i % 4) / 4) * Math.PI * 2;
+					const step = Math.floor(i / 4);
+					normal.set(Math.cos(angle), Math.sin(angle), 0);
+					position
+						.copy(normal)
+						.multiplyScalar(face)
+						.addScaledVector(
+							new THREE.Vector3(-Math.sin(angle), Math.cos(angle), 0),
+							(((step % cols) + 0.5) / cols - 0.5) * face * 1.06,
+						);
+					// **The corners are the outline.** A cuboctahedron's square
+					// face sits at `r/√2` and its corners at `r`, so a piece at
+					// the face's own centre has √2 of headroom and one near a
+					// corner has none. Measured: an earlier run at ±0.72·face
+					// across ±0.6·face reached 0.577 km against the hull's 0.570
+					// and took the outline off the station.
+					position.z = (step < cols ? -1 : 1) * face * 0.52;
+				},
+			},
+		]),
 	);
 	return { group, fixtures };
 }
@@ -1234,8 +1355,8 @@ function buildTradeRing(color: number): BuiltPart {
 	// corridor a ship flies down, which is the one place nothing may be.
 	group.add(buildAperture("trade", r * 0.34));
 	group.add(
-		portRun("trade", PANE_COUNT, (i, position, normal) => {
-			const theta = (i / PANE_COUNT) * Math.PI * 2;
+		portRun("trade", PANE_COUNT, (i, count, position, normal) => {
+			const theta = (i / count) * Math.PI * 2;
 			// On the rim's inner face, which is where a spun habitat's windows
 			// look — inward, at the ring's own floor.
 			normal.set(-Math.cos(theta), -Math.sin(theta), 0);
@@ -1250,6 +1371,30 @@ function buildTradeRing(color: number): BuiltPart {
 		strobePair("trade", fixtures, r * 0.06, (side, position) => {
 			position.set(0, side * (major + tube * 1.1), 0);
 		}),
+	);
+	// On the rim's two side faces, never on its outer one. #102's rule and this
+	// form's own review agree here: the outer face is a spun habitat's floor and
+	// the first version of the recessed modules was rejected for sticking out of
+	// it. The sides are also the one surface on this ring whose radius is
+	// `major`, so nothing here can approach the outline at `major + tube`.
+	group.add(
+		greebleRun("trade", "trade-b", [
+			{
+				count: 24,
+				sizeKm: tube * 0.42,
+				reliefKm: tube * 0.34,
+				place: (i, count, position, normal) => {
+					const theta = ((i + 0.5) / count) * Math.PI * 2;
+					const side = i % 2 === 0 ? 1 : -1;
+					normal.set(0, 0, side);
+					position.set(
+						Math.cos(theta) * major,
+						Math.sin(theta) * major,
+						side * tube * 0.92,
+					);
+				},
+			},
+		]),
 	);
 	return { group, fixtures };
 }
@@ -1287,9 +1432,9 @@ function buildTradeDrum(color: number): BuiltPart {
 	// At the drum's own front cap (`r * 0.88`), not 20 m in front of it.
 	group.add(buildAperture("trade", r * 0.88));
 	group.add(
-		portRun("trade", PANE_COUNT, (i, position, normal) => {
-			const theta = (i / PANE_COUNT) * Math.PI * 2 * 3;
-			const z = -r * 0.8 + (i / PANE_COUNT) * r * 1.5;
+		portRun("trade", PANE_COUNT, (i, count, position, normal) => {
+			const theta = (i / count) * Math.PI * 2 * 3;
+			const z = -r * 0.8 + (i / count) * r * 1.5;
 			normal.set(Math.cos(theta), Math.sin(theta), 0);
 			position.copy(normal).multiplyScalar(body * 1.01);
 			position.z = z;
@@ -1299,6 +1444,24 @@ function buildTradeDrum(color: number): BuiltPart {
 		strobePair("trade", fixtures, r * 0.07, (side, position) => {
 			position.set(side * body * 1.02, 0, r * 0.6);
 		}),
+	);
+	// Down the barrel, on the opposite helix to the window run so the two do not
+	// sit on each other. Short of the front cap at `r * 0.88`, which is where the
+	// aperture is and the one place nothing may be.
+	group.add(
+		greebleRun("trade", "trade-c", [
+			{
+				count: 26,
+				sizeKm: body * 0.17,
+				reliefKm: body * 0.13,
+				place: (i, count, position, normal) => {
+					const theta = -(i / count) * Math.PI * 2 * 2 + 0.7;
+					normal.set(Math.cos(theta), Math.sin(theta), 0);
+					position.copy(normal).multiplyScalar(body);
+					position.z = -r * 0.78 + (i / count) * r * 1.4;
+				},
+			},
+		]),
 	);
 	return { group, fixtures };
 }
@@ -1421,12 +1584,18 @@ function buildShipyardGantry(color: number): BuiltPart {
 		),
 	);
 	group.add(
-		portRun("shipyard", 16, (i, position, normal) => {
+		portRun("shipyard", 16, (i, count, position, normal) => {
+			// Two rows along the keel. The row length and the pitch both come
+			// from the count, so a denser run covers the same stretch of keel
+			// more finely rather than running off the end of it — which a fixed
+			// `r * 0.08` stride does the moment the count passes eight.
+			const perRow = Math.max(1, Math.round(count / 2));
+			const along = i % perRow;
 			normal.set(0, 1, 0);
 			position.set(
-				span * 0.18 + (i % 8) * r * 0.08,
+				span * 0.18 + (along / perRow) * r * 0.64,
 				r * 0.44,
-				(i < 8 ? -1 : 1) * r * 0.16,
+				(i < perRow ? -1 : 1) * r * 0.16,
 			);
 		}),
 	);
@@ -1434,6 +1603,27 @@ function buildShipyardGantry(color: number): BuiltPart {
 		strobePair("shipyard", fixtures, r * 0.07, (side, position) => {
 			position.set(side * span * 0.55, 0, 0);
 		}),
+	);
+	// Along the keel's underside, opposite the ports on its top. A yard's keel
+	// is where its plant would be run — and it is the one long surface on this
+	// form that is not a bay a ship has to fit into.
+	group.add(
+		greebleRun("shipyard", "shipyard-a", [
+			{
+				count: 30,
+				sizeKm: r * 0.075,
+				reliefKm: r * 0.06,
+				place: (i, count, position, normal) => {
+					const perRow = Math.max(1, Math.round(count / 2));
+					normal.set(0, -1, 0);
+					position.set(
+						-span * 0.42 + ((i % perRow) / perRow) * span * 0.84,
+						-r * 0.42,
+						(i < perRow ? -1 : 1) * r * 0.14,
+					);
+				},
+			},
+		]),
 	);
 	return { group, fixtures, spinner: spun };
 }
@@ -1554,15 +1744,19 @@ function buildShipyardHangar(color: number): BuiltPart {
 		),
 	);
 	group.add(
-		portRun("shipyard", 16, (i, position, normal) => {
+		portRun("shipyard", 16, (i, count, position, normal) => {
 			// On the slab's own back face. The slab is `r * 0.72` half-high and
 			// `r * 0.5` half-wide in the rotated frame, so a run at `r * 0.5` in
 			// z sat clear of the surface it was meant to be set into — the whole
 			// grid came away as one loose island.
+			//
+			// Two rows, spanning the same 0.8·span of back face at any count.
+			const perRow = Math.max(1, Math.round(count / 2));
+			const along = i % perRow;
 			normal.set(0, 0, -1);
 			position.set(
-				-span * 0.34 + (i % 8) * span * 0.1,
-				(i < 8 ? -1 : 1) * r * 0.24,
+				-span * 0.34 + (along / perRow) * span * 0.8,
+				(i < perRow ? -1 : 1) * r * 0.24,
 				-r * 0.46,
 			);
 		}),
@@ -1573,6 +1767,27 @@ function buildShipyardHangar(color: number): BuiltPart {
 			// 0.55 one of the pair sat clear of the hull it is mounted on.
 			position.set(side * span * 0.5, 0, r * 0.36);
 		}),
+	);
+	// On the slab's back face, beside the port run and set into the same
+	// surface — the face that is not the bay mouth, and the one place clutter
+	// cannot end up inside the volume a ship is meant to enter.
+	group.add(
+		greebleRun("shipyard", "shipyard-b", [
+			{
+				count: 26,
+				sizeKm: r * 0.09,
+				reliefKm: r * 0.07,
+				place: (i, count, position, normal) => {
+					const perRow = Math.max(1, Math.round(count / 2));
+					normal.set(0, 0, -1);
+					position.set(
+						-span * 0.36 + ((i % perRow) / perRow) * span * 0.84,
+						(i < perRow ? -1 : 1) * r * 0.46,
+						-r * 0.46,
+					);
+				},
+			},
+		]),
 	);
 	return { group, fixtures, spinner: spun };
 }
@@ -1667,8 +1882,8 @@ function buildShipyardSlipway(color: number): BuiltPart {
 		),
 	);
 	group.add(
-		portRun("shipyard", 12, (i, position, normal) => {
-			const theta = Math.PI * 0.28 + ((i + 1) / 13) * Math.PI * 1.4;
+		portRun("shipyard", 12, (i, count, position, normal) => {
+			const theta = Math.PI * 0.28 + ((i + 1) / (count + 1)) * Math.PI * 1.4;
 			// On the ring's inner face, looking into the slip.
 			normal.set(-Math.cos(theta), -Math.sin(theta), 0);
 			position.set(
@@ -1683,6 +1898,28 @@ function buildShipyardSlipway(color: number): BuiltPart {
 			const theta = Math.PI * 0.28 + (side > 0 ? 0 : Math.PI * 1.4);
 			position.set(Math.cos(theta) * major, Math.sin(theta) * major, 0);
 		}),
+	);
+	// On the broken ring's two flat sides, along the arc the ports look out of.
+	// Not on its outer face: that circle is the whole silhouette of the form,
+	// and the reach here is 1.450 km against a 1.5 km budget.
+	group.add(
+		greebleRun("shipyard", "shipyard-c", [
+			{
+				count: 26,
+				sizeKm: r * 0.085,
+				reliefKm: r * 0.07,
+				place: (i, count, position, normal) => {
+					const theta = Math.PI * 0.28 + ((i + 0.5) / count) * Math.PI * 1.4;
+					const side = i % 2 === 0 ? 1 : -1;
+					normal.set(0, 0, side);
+					position.set(
+						Math.cos(theta) * major * 0.94,
+						Math.sin(theta) * major * 0.94,
+						side * r * 0.12,
+					);
+				},
+			},
+		]),
 	);
 	return { group, fixtures, spinner: spun };
 }
@@ -1985,16 +2222,46 @@ function buildRefineryWarren(color: number): BuiltPart {
 	group.add(arm);
 	group.add(buildHeatRing(fixtures, r * 0.5, r * 0.98));
 	group.add(
-		portRun("refinery", 12, (i, position, normal) => {
+		portRun("refinery", 12, (i, count, position, normal) => {
 			// Down the terraced face, in two columns, so the cut reads as having
-			// levels rather than as one lit slab.
+			// levels rather than as one lit slab. The terrace is six levels deep
+			// whatever the count — the *steps* are the geometry — so a denser run
+			// puts more ports on each level rather than more levels on the face.
+			const LEVELS = 6;
+			const perLevel = Math.max(2, Math.round(count / LEVELS));
+			const level = Math.min(LEVELS - 1, Math.floor(i / perLevel));
+			const across = i % perLevel;
 			normal.set(0, 0, 1);
 			position.set(
-				(i % 2 === 0 ? -1 : 1) * r * 0.5,
-				r * 0.34 - Math.floor(i / 2) * r * 0.14,
-				r * (0.66 + Math.floor(i / 2) * 0.06),
+				((across + 0.5) / perLevel - 0.5) * r * 1.1,
+				r * 0.34 - level * r * 0.14,
+				r * (0.66 + level * 0.06),
 			);
 		}),
+	);
+	// A plant is mostly plant, which is why this role carries the densest
+	// figure. On the terraced face beside the ports, and on the arm — both
+	// authored surfaces, both well clear of the pad's own corridor along +Z.
+	group.add(
+		greebleRun("refinery", "refinery-a", [
+			{
+				count: 22,
+				sizeKm: r * 0.075,
+				reliefKm: r * 0.07,
+				place: (i, count, position, normal) => {
+					const LEVELS = 5;
+					const perLevel = Math.max(2, Math.round(count / LEVELS));
+					const level = Math.min(LEVELS - 1, Math.floor(i / perLevel));
+					const across = i % perLevel;
+					normal.set(0, 0, 1);
+					position.set(
+						((across + 0.5) / perLevel - 0.5) * r * 1.3,
+						r * 0.2 - level * r * 0.15,
+						r * (0.6 + level * 0.06),
+					);
+				},
+			},
+		]),
 	);
 	return { group, fixtures };
 }
@@ -2082,14 +2349,34 @@ function buildRefineryCollar(color: number): BuiltPart {
 	}
 	group.add(buildHeatRing(fixtures, r * 0.44, r * 0.99));
 	group.add(
-		portRun("refinery", 12, (i, position, normal) => {
-			const theta = (i / 12) * Math.PI * 2;
+		portRun("refinery", 12, (i, count, position, normal) => {
+			const theta = (i / count) * Math.PI * 2;
 			normal.set(Math.cos(theta), Math.sin(theta), 0);
 			// On the band's own outer face, derived from it rather than guessed:
 			// a fixed 1.22·r sat inside the rock once the band moved out.
 			position.copy(normal).multiplyScalar(major + tube * 0.9);
 			position.z = 0;
 		}),
+	);
+	// Two rings of plant on the band's own faces, fore and aft of the port run.
+	// The band is the machined part and the rock is not, so nothing here is
+	// placed on the asteroid — noise does not know where anything is, which is
+	// the same reason the pad had to be carved out of it.
+	group.add(
+		greebleRun("refinery", "refinery-b", [
+			{
+				count: 20,
+				sizeKm: tube * 0.4,
+				reliefKm: tube * 0.36,
+				place: (i, count, position, normal) => {
+					const theta = ((i + 0.5) / count) * Math.PI * 2;
+					const side = i % 2 === 0 ? 1 : -1;
+					normal.set(Math.cos(theta), Math.sin(theta), 0);
+					position.copy(normal).multiplyScalar(major + tube * 0.55);
+					position.z = side * tube * 0.75;
+				},
+			},
+		]),
 	);
 	return { group, fixtures };
 }
@@ -2166,12 +2453,30 @@ function buildRefinerySpar(color: number): BuiltPart {
 	}
 	group.add(buildHeatRing(fixtures, r * 0.42, r * 1.2));
 	group.add(
-		portRun("refinery", 10, (i, position, normal) => {
-			const theta = (i / 10) * Math.PI * 2;
+		portRun("refinery", 10, (i, count, position, normal) => {
+			const theta = (i / count) * Math.PI * 2;
 			normal.set(Math.cos(theta), Math.sin(theta), 0);
 			position.copy(normal).multiplyScalar(r * 0.32);
 			position.z = -r * 1.15;
 		}),
+	);
+	// Along the spar's shaft, on the far side of the rock from the pad. The one
+	// form whose machinery pierces rather than wraps, so its clutter runs with
+	// the shaft rather than round a band.
+	group.add(
+		greebleRun("refinery", "refinery-c", [
+			{
+				count: 20,
+				sizeKm: r * 0.09,
+				reliefKm: r * 0.08,
+				place: (i, count, position, normal) => {
+					const theta = (i / count) * Math.PI * 2 * 2.5;
+					normal.set(Math.cos(theta), Math.sin(theta), 0);
+					position.copy(normal).multiplyScalar(r * 0.3);
+					position.z = -r * 1.05 + (i / count) * r * 0.5;
+				},
+			},
+		]),
 	);
 	return { group, fixtures };
 }
@@ -2313,14 +2618,36 @@ function buildOutpostDerrick(color: number): BuiltPart {
 	flare.rotation.y = 0.5;
 	group.add(flare);
 	group.add(
-		portRun("outpost", 6, (i, position, normal) => {
+		portRun("outpost", 6, (i, count, position, normal) => {
+			// Two rows across the tank cluster's face, spanning the same 0.6·r
+			// whatever the count.
+			const perRow = Math.max(1, Math.round(count / 2));
+			const along = i % perRow;
 			normal.set(0, 0, 1);
 			position.set(
-				(i % 3) * r * 0.3 - r * 0.3,
-				i < 3 ? r * 0.32 : -r * 0.32,
+				(along / perRow) * r * 0.9 - r * 0.3,
+				i < perRow ? r * 0.32 : -r * 0.32,
 				-r * 1.09,
 			);
 		}),
+	);
+	// Sparse, and on the tank cluster rather than on the lattice: the coarse
+	// plating above is there to say *small*, and clutter strung through an open
+	// tower would blur the one silhouette this category has.
+	group.add(
+		greebleRun("outpost", "outpost-a", [
+			{
+				count: 12,
+				sizeKm: r * 0.13,
+				reliefKm: r * 0.1,
+				place: (i, count, position, normal) => {
+					const theta = ((i + 0.5) / count) * Math.PI * 2;
+					normal.set(Math.cos(theta), Math.sin(theta), 0);
+					position.copy(normal).multiplyScalar(r * 0.42);
+					position.z = -r * 1.0;
+				},
+			},
+		]),
 	);
 	return { group, fixtures };
 }
@@ -2365,12 +2692,29 @@ function buildOutpostBuoy(color: number): BuiltPart {
 	}
 	group.add(buildPadDeck(fixtures, r, r * 1.0));
 	group.add(
-		portRun("outpost", 6, (i, position, normal) => {
-			const theta = (i / 6) * Math.PI * 2;
+		portRun("outpost", 6, (i, count, position, normal) => {
+			const theta = (i / count) * Math.PI * 2;
 			normal.set(Math.cos(theta), Math.sin(theta), 0);
 			position.copy(normal).multiplyScalar(r * 0.88);
 			position.z = -r * 0.3;
 		}),
+	);
+	// On the drum's own waist, between the fins. Behind the pad, so nothing
+	// added here can reach the deck a ship touches down on.
+	group.add(
+		greebleRun("outpost", "outpost-b", [
+			{
+				count: 12,
+				sizeKm: r * 0.12,
+				reliefKm: r * 0.09,
+				place: (i, count, position, normal) => {
+					const theta = ((i + 0.5) / count) * Math.PI * 2;
+					normal.set(Math.cos(theta), Math.sin(theta), 0);
+					position.copy(normal).multiplyScalar(r * 0.84);
+					position.z = -r * 0.85 + (i % 3) * r * 0.3;
+				},
+			},
+		]),
 	);
 	return { group, fixtures };
 }
@@ -2445,14 +2789,32 @@ function buildOutpostRig(color: number): BuiltPart {
 	flare.rotation.y = -0.5;
 	group.add(flare);
 	group.add(
-		portRun("outpost", 6, (i, position, normal) => {
+		portRun("outpost", 6, (i, count, position, normal) => {
 			// The body is pitched 0.34 rad about X and is 0.62·r half-wide, so a
 			// run at 0.64·r cleared it entirely. Inside its own beam, and pitched
-			// with it.
+			// with it. The run covers the same 1.0·r of beam at any count; the
+			// old `i * r * 0.2` stride walked off the end of it.
 			normal.set(1, 0, 0);
-			const z = -r * 0.7 + i * r * 0.2;
+			const z = -r * 0.7 + (i / count) * r * 1.2;
 			position.set(r * 0.5, r * 0.2 + z * 0.34, z);
 		}),
+	);
+	// Down the beam's other flank, mirroring the port run and pitched with the
+	// body the same way — the fix that run records applies to anything else
+	// mounted on it.
+	group.add(
+		greebleRun("outpost", "outpost-c", [
+			{
+				count: 12,
+				sizeKm: r * 0.1,
+				reliefKm: r * 0.08,
+				place: (i, count, position, normal) => {
+					normal.set(-1, 0, 0);
+					const z = -r * 0.9 + (i / count) * r * 1.4;
+					position.set(-r * 0.5, r * 0.2 + z * 0.34, z);
+				},
+			},
+		]),
 	);
 	return { group, fixtures };
 }
@@ -2656,10 +3018,14 @@ export function buildStationForm(
 	const root = normalise(type, parts);
 	const accessories: THREE.Object3D[] = [];
 	const nameplates: THREE.Mesh[] = [];
+	const greebles: THREE.InstancedMesh[] = [];
 	root.traverse((object) => {
 		if (object.userData.minDetail) accessories.push(object);
 		if (object.name === NAMEPLATE_NAME && object instanceof THREE.Mesh)
 			nameplates.push(object);
+		const instanced = object as THREE.InstancedMesh;
+		if (instanced.isInstancedMesh && object.name.startsWith("greebles-"))
+			greebles.push(instanced);
 	});
 	const mesh: StationMesh = {
 		root,
@@ -2669,6 +3035,7 @@ export function buildStationForm(
 		fixtures: built.fixtures,
 		accessories,
 		nameplates,
+		greebles,
 	};
 	// Built at `full` and then set, so the tagged accessories are in a state that
 	// matches the field rather than merely defaulting to visible. The renderer
@@ -2722,12 +3089,29 @@ export function updateStationVisuals(
 	mesh: StationMesh,
 	gameTime: number,
 	distanceKm: number,
+	/**
+	 * #98's quality key (#102 §5) — low drops the greeble geometry and keeps
+	 * every emissive.
+	 *
+	 * Written every frame rather than on change, which is three boolean stores
+	 * per station and buys the thing a registry of live meshes would have cost a
+	 * leak for: the setting is live, and a station built while it was low comes
+	 * up correct on its first frame without a boot-time pass of its own.
+	 *
+	 * Defaulted, because every existing caller of this function is asking about
+	 * the clock and the range and has no opinion about quality — including the
+	 * tests that predate the key.
+	 */
+	quality: StationQuality = "high",
 ): void {
 	const level = stationDetailLevel(
 		mesh.detail,
 		distanceKm / STATION_SILHOUETTE_KM[mesh.type],
 	);
 	if (level !== mesh.detail) setStationDetail(mesh, level);
+
+	const drawGreebles = STATION_QUALITY[quality].greebles;
+	for (const instanced of mesh.greebles) instanced.visible = drawGreebles;
 
 	// **Every fixture, at every level.** An earlier version returned early at
 	// `outline` on the reasoning that nothing clock-driven is drawn there — which

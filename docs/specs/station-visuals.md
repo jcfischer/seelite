@@ -112,7 +112,7 @@ many of its own radii away the camera is.
 
 | Level | Apparent radii | What is drawn |
 |---|---|---|
-| `full` | ≤ 40 | plating, window grid, fixtures, strobes, flare, aperture recess |
+| `full` | ≤ 40 | plating, window grid, greebles, fixtures, strobes, flare, aperture recess |
 | `reduced` | ≤ 400 | hull, aperture, strobes, bay floods and heat glow — no window grid |
 | `outline` | > 400 | hull and aperture; every accessory off |
 
@@ -131,6 +131,28 @@ At `HANDOFF_KM` — where a body crosses into the far layer — a trade station 
 16,667 radii away and unambiguously `outline`. The two rules do not need to
 agree by construction, but they do not fight: a near-layer station is `full` or
 `reduced`, and a far-layer one is always `outline`.
+
+### 3.1 Greebles ride the `full` band, and `low` drops them (#129)
+
+The mechanical clutter added by [#129](https://github.com/jcfischer/seelite/issues/129)
+is tagged `full` for the reason everything else in that row is: it resolves away
+long before the outline does, and instances nobody has pixels for are state
+churn. §2's rule binds it exactly as written — **no greeble may be a station's
+farthest vertex** — and `tests/station-visuals.test.ts`'s equality is what holds
+it, with `tests/station-greebles.test.ts` stating it per form so a failure names
+one.
+
+The clutter is also the station's side of #98's quality key. **`low` drops the
+greeble instances and keeps every emissive**: the geometry is per-frame vertex
+and instance cost, an emissive is one property on a part drawn anyway, and
+dropping the lights would drop the reason
+[#102](https://github.com/jcfischer/seelite/issues/102) exists. `STATION_QUALITY`
+(`src/station-visuals.ts`) is the one place both sides read.
+
+Two owners write `visible` on the clutter and they write it on **different
+objects**: the band owns the greeble group, the quality key owns the instanced
+meshes inside it. On one object, whichever ran last would win and the other
+would be a silent no-op.
 
 ## 4. Surface: one greyscale plating map per role, multiplied by the type colour
 
@@ -166,6 +188,33 @@ may not hold.
 `RGBAFormat`.** A mismatch does not throw; it reads out of bounds and renders as
 garbage, and the headless test asserts the length for that reason rather than as
 a formality.
+
+### 4.1 Two density figures per role, and both are settled by looking (#129)
+
+`greebleDensity` and `windowScale` sit in each role's `STATION_VISUALS` profile.
+A form declares the *layout* — which of its faces is a flank, how a run wraps a
+band — and the profile declares **how much**, as a factor on what the form asked
+for. That split is what makes the density one number per role rather than twelve
+per form.
+
+| Role | `greebleDensity` | `windowScale` | Why |
+|---|---|---|---|
+| trade | 1.0 | 3.0 | A habitat: the least cluttered and the most lit, because its machinery is inside it |
+| shipyard | 1.4 | 2.5 | Scaffolding round a working volume — more plant, and most of its frame is not lived in |
+| refinery | 1.7 | 2.0 | A plant, which is almost entirely machinery; the clutter is the point rather than the trim |
+| outpost | 0.7 | 2.0 | Sparse on both, because the coarse plate above is what says *small* and clutter at the same pitch takes that ruler away |
+
+Neither figure is arrived at by arithmetic and neither can be. #102 settled that
+the density is decided in front of a frame, and #98 settled what frame: the
+canonical view set plus the principal's yes. What #129 shipped is these four
+rows and the sheet they were set on.
+
+**A denser run is not the same run repeated.** #129's first build multiplied the
+trade station's ports on one row and produced a 30 m pane every 21 m — a
+continuous strip light rather than a window grid, and it was flown as one. Every
+layout in `station-mesh.ts` is written against the count that was *built*, and
+the Coriolis lays its ports out in rows: extra panes have to spread over the
+face, not stack along a line.
 
 ## 5. Light and activity: identity, never state
 

@@ -54,8 +54,12 @@ const fullRun = (
 });
 
 describe("the view set itself", () => {
-	test("declares seven views with unique kebab-case names", () => {
-		expect(VIEWS.length).toBe(7);
+	test("declares eight views with unique kebab-case names", () => {
+		// Eight since #129 added `station-flank`. A literal and not
+		// `VIEWS.length`, which is the whole point: a view deleted by accident
+		// has to be a red run, and a check derived from its own subject cannot
+		// be one.
+		expect(VIEWS.length).toBe(8);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -144,7 +148,8 @@ describe("the contact sheet", () => {
 	 */
 	test("prints the clock span the frames were taken across, not a pinned time", () => {
 		const html = contactSheet([fullRun("before")]);
-		expect(html).toContain("· clock 0.6–3.0s");
+		// Eight frames at 0.4 s apart, so the span moved with the eighth view.
+		expect(html).toContain("· clock 0.6–3.4s");
 		expect(html).not.toContain("pinned");
 	});
 
