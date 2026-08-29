@@ -53,16 +53,15 @@ const PAGE_URL = process.env.PROBE_URL ?? ORIGIN + "/?seed=1";
  * open node — and one of them read anywhere from 1 to 628 across runs as the
  * station's docking face went in and out of the sun. A floor across that range
  * decides runs rather than builds, which is what a threshold must never do. So
- * **every ink row that asserts** asks whether its subject contributes ink *at
- * all*, against a **same-frame control** that says the camera is looking at the
- * thing. On approach that control is the emissive aperture bars.
+ * **every ink row** asks whether its subject contributes ink *at all*. Where a
+ * **same-frame control** exists that says the camera is looking at the thing,
+ * the row reads it too: on approach that is the emissive aperture bars.
  *
- * Two ink figures are **printed and not asserted**, both from inside the
- * throat, and for one reason: that frame contains an unexplained render fault —
- * the interior plaque draws nothing (#131) — and a frame with an unexplained
- * fault in it is not evidence that anything else in it rendered. Nor is a
- * control available there: the bars are behind the camera and hiding the
- * station hides the recess with it.
+ * From inside the throat there is none — the bars are behind the camera and
+ * hiding the station hides the recess with it — so the recess row asserts its
+ * subject alone and says so. One figure is **printed and not asserted**: the
+ * interior plaque draws nothing in that frame, which #131 records as
+ * undiagnosed, and a number nobody can explain is not a check.
  *
  * `CONTROL_INK_FLOOR` is the one number left, and it is a **control's** floor
  * rather than a subject's: what it separates is a control that read something —
@@ -378,23 +377,24 @@ const interiorInk = await page.evaluate((id) => {
 	};
 }, slotId);
 
-// **Printed, not asserted, and for the same reason as the row below it.**
-//
-// The subject is real: hiding the recess changes ~165,000 pixels from inside
-// the throat, where from outside it changed 0 — a recess and a hole through a
-// station are both dark. But there is no control available in that frame. The
-// emissive bars are behind the camera, hiding the whole station hides the
-// recess with it, and the interior plaque — 48 m wide and 23 m ahead — draws
-// **nothing**, which #131 records as undiagnosed.
-//
-// A frame with an unexplained render fault in it cannot be evidence that
-// anything else in it rendered. So the figure is printed and the claim waits on
-// #131, rather than borrowing the approach row's control from a different
-// camera position and calling it the same frame.
-console.log(
-	`  recess from inside the throat: ${interiorInk.changed} px from ` +
-		`${interiorInk.parts} interior part(s), at ` +
-		`${interiorInk.rangeKm.toFixed(3)} km on the axis`,
+check(
+	// **Asserted on its subject alone, with the control deferred to #131.**
+	//
+	// The subject is real and large: hiding the recess changes ~165,000 pixels
+	// from inside the throat, where from outside it changed **0** — a recess and
+	// a hole through a station are both dark, and that is why this row moved
+	// inside. It is the pixel evidence #128 exists to produce, so it is asserted
+	// rather than printed.
+	//
+	// What it does not have is a control. The emissive bars are behind the
+	// camera; hiding the whole station hides the recess with it; and the
+	// interior plaque draws nothing in this exact frame, which #131 records as
+	// undiagnosed. So the claim is narrow — the recess reaches the screen — and
+	// the frame it is read from is under a question of its own.
+	"the recess reaches the screen from inside the throat",
+	interiorInk.parts > 0 && interiorInk.changed > 0,
+	`${interiorInk.changed} pixels from ${interiorInk.parts} interior part(s), ` +
+		`from ${interiorInk.rangeKm.toFixed(3)} km on the axis, inside the throat`,
 );
 
 // ---------------------------------------------------------------------------

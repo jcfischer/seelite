@@ -329,7 +329,7 @@ answers for it.
 
 | Type | Dockable core radius | Aperture plane | Aperture | Axis |
 |---|---|---|---|---|
-| trade station | 0.6 km | 0.427 km | slot, 0.12 × 0.07 km, on the spin axis | toward the parent body (1984's "face nearest the planet") |
+| trade station | 0.6 km | 0.428 km | slot, 0.12 × 0.07 km, on the spin axis | toward the parent body (1984's "face nearest the planet") |
 | shipyard | 0.6 km (Coriolis core) | 0.372 km | identical slot | toward the parent body |
 | refinery | 0.4 km (drum) | 0.396 km | pad, 0.15 × 0.15 km | radially outward from the star |
 | outpost | 0.15 km | 0.165 km | pad, 0.12 × 0.12 km | radially outward from the star |
