@@ -91,11 +91,16 @@ export interface StationGeometry {
 	 * asserts the drawn hull comes up to it, which is the seam nothing checked.
 	 *
 	 * Every entry is a plain figure rather than a form's own arithmetic
-	 * re-derived. `0.6 × 0.95 × √½ × 1.06` sat here for one commit, and it was
-	 * this module owning a silhouette: a retune in `station-mesh.ts` would not
-	 * have reached it. The trade Coriolis takes the further step of sizing its
-	 * hull *from* this number, because that is the form whose face and plane were
-	 * 172 m apart.
+	 * re-derived. `0.6 × 0.95 × √½ × 1.06` sat here for one commit, and it was this
+	 * module owning a silhouette: a retune in `station-mesh.ts` would not have
+	 * reached it.
+	 *
+	 * **Each form still computes its own surface**, and that is deliberate.
+	 * Deriving a hull *from* this number was tried for the Coriolis and
+	 * withdrawn: it makes `tests/station-mesh.test.ts`'s hull-reaches-the-plane
+	 * row a restatement rather than an assertion, on the one form whose face and
+	 * plane were 172 m apart. Two paths to one number is the check; one path is
+	 * a tautology.
 	 *
 	 * A form is free to have no surface at this depth — the workbench alternates
 	 * do not — and the connectivity check is what says so.

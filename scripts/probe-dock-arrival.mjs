@@ -272,10 +272,10 @@ const rolls = await page.evaluate(() => {
 		mesh.traverse((o) => {
 			if (o.name === "aperture-mouth" || o.name === "aperture-deck") recess = o;
 		});
-		// A form with neither part is a failed row, not a crashed probe: an
-		// unguarded dereference here aborts the whole run with a `TypeError`
-		// inside `page.evaluate`, which surfaces as an opaque crash rather than
-		// as the named check that was supposed to fail.
+		// A form with neither part fails its row rather than taking the run down:
+		// an unguarded dereference here aborts the whole probe with a
+		// `TypeError` inside `page.evaluate`, which surfaces as an opaque stack
+		// trace rather than as the named check that was supposed to go red.
 		if (!recess) return { id: st.id, rollOffDeg: null, axisOffDeg: null };
 		recess.updateWorldMatrix(true, false);
 		const e = recess.matrixWorld.elements;
@@ -387,11 +387,13 @@ const interiorInk = await page.evaluate((id) => {
 check(
 	// **Asserted on its subject alone, with the control deferred to #131.**
 	//
-	// The subject is real and large: hiding the recess changes ~165,000 pixels
-	// from inside the throat, where from outside it changed **0** — a recess and
-	// a hole through a station are both dark, and that is why this row moved
-	// inside. It is the pixel evidence #128 exists to produce, so it is asserted
-	// rather than printed.
+	// The subject is real and large — this row measures ~165,000 pixels — and the
+	// assertion is the narrow one the figure supports: the recess contributes
+	// ink at all. It is **not** the 165,000-against-0 contrast that moved this
+	// row inside the throat; that comparison was made by hand while diagnosing
+	// (from outside, a recess and a hole through a station are both dark and
+	// hiding one changed nothing), and no row measures both viewpoints in one
+	// run.
 	//
 	// What it does not have is a control. The emissive bars are behind the
 	// camera; hiding the whole station hides the recess with it; and the
