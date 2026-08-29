@@ -119,7 +119,59 @@ export interface StationVisualProfile {
 	floodColor: number;
 	/** Heat: the refinery's flare and the dull glow at its drum. */
 	heatColor: number;
+	/**
+	 * How much mechanical clutter the role carries, as a factor on every zone a
+	 * form declares (#129, #102 §2).
+	 *
+	 * **One figure per role, and it is the dial a person turns.** #102 settled
+	 * that the density is decided by looking rather than chosen up front, so
+	 * what ships is a number per profile and a contact sheet it was set on — not
+	 * a constant buried in a builder, and not a per-form figure, which would
+	 * make "is this role busy enough?" twelve questions instead of four.
+	 *
+	 * The form still says which of *its* patches is busier than which; this says
+	 * how busy the role is. Multiplying rather than replacing is what keeps those
+	 * two separate.
+	 */
+	greebleDensity: number;
+	/**
+	 * How many lit ports the role carries, as a factor on each form's own run
+	 * (#129).
+	 *
+	 * The other half of "a station reads as inhabited at approach range". #36
+	 * shipped 28 panes on a 1.24 km trade station and 6 on an outpost; the counts
+	 * were each form's literal, so raising them meant twelve edits and a
+	 * judgement made twelve times. This is the same dial as `greebleDensity` for
+	 * the same reason — the layouts are per form, the density is per role.
+	 *
+	 * A factor and not a count, because a form's layout knows things the profile
+	 * does not: the Ring's ports go round its inner floor and the Warren's down
+	 * a terraced face, and a count handed down from here would have to be right
+	 * for both.
+	 */
+	windowScale: number;
 }
+
+/**
+ * What #98's quality key gives a station — #102 §5's answer.
+ *
+ * **Low drops the greeble geometry and keeps every emissive.** The clutter is
+ * per-frame vertex and instance cost; a lit window is one property on a part
+ * that is drawn anyway. And dropping the lights would drop the reason #102
+ * exists: what makes an unlit flank legible is that the flank emits, so a low
+ * setting that took the windows would be darker than the picture the node set
+ * out to change.
+ *
+ * Here rather than in `station-mesh.ts` for `LIGHT_RIG.quality`'s reason: this
+ * is arithmetic about what a setting selects, and it is read from both the
+ * renderer and the headless tier.
+ */
+export const STATION_QUALITY = {
+	high: { greebles: true },
+	low: { greebles: false },
+} as const;
+
+export type StationQuality = keyof typeof STATION_QUALITY;
 
 /**
  * Per-role surface and light.
@@ -194,6 +246,12 @@ export const STATION_VISUALS: Record<StationType, StationVisualProfile> = {
 		strobeColor: STROBE_WHITE,
 		floodColor: WORK_FLOOD,
 		heatColor: 0xffb347,
+		// A habitat, so it is the least cluttered of the four and the most lit:
+		// the machinery is inside it. Three times #36's ports on a 1.24 km hull
+		// is roughly one lit pane per 45 m of frontage, which is what makes the
+		// dark half read as a *place* at approach range rather than as a shape.
+		greebleDensity: 1,
+		windowScale: 3,
 	},
 	shipyard: {
 		plating: {
@@ -222,6 +280,11 @@ export const STATION_VISUALS: Record<StationType, StationVisualProfile> = {
 		strobeColor: STROBE_WHITE,
 		floodColor: WORK_FLOOD,
 		heatColor: 0xffb347,
+		// A yard is scaffolding round a working volume: more clutter than a
+		// habitat and fewer windows, because most of its 1.5 km of frame is not
+		// somewhere anyone lives.
+		greebleDensity: 1.4,
+		windowScale: 2.5,
 	},
 	refinery: {
 		plating: {
@@ -253,6 +316,11 @@ export const STATION_VISUALS: Record<StationType, StationVisualProfile> = {
 		strobeColor: STROBE_WHITE,
 		floodColor: WORK_FLOOD,
 		heatColor: 0xff7a2a,
+		// A plant, which is almost entirely machinery — the densest of the four,
+		// and the one whose clutter is the point rather than the trim. Its
+		// windows stay sparse for the same reason.
+		greebleDensity: 1.7,
+		windowScale: 2,
 	},
 	outpost: {
 		plating: {
@@ -288,6 +356,12 @@ export const STATION_VISUALS: Record<StationType, StationVisualProfile> = {
 		strobeColor: STROBE_WHITE,
 		floodColor: WORK_FLOOD,
 		heatColor: 0xff9a3c,
+		// Sparse on both counts, and deliberately: the coarse plate above is
+		// there to say *small*, and clutter at the same pitch as the plating
+		// would take that ruler away. A handful of lit ports says crewed; a grid
+		// of them would say habitat, which this is not.
+		greebleDensity: 0.7,
+		windowScale: 2,
 	},
 };
 

@@ -84,7 +84,7 @@ export const SHOT_KINDS = Object.freeze([
 ]);
 
 /**
- * Seven views, one seed, one clock.
+ * Eight views, one seed, one clock.
  *
  * #98 named four as a starting list and called it a proposal. Two things are
  * added here and both close a hole that list had. **`sky-only`**, because #100's
@@ -126,8 +126,19 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "cockpit-backlit",
-		covers: [105, 103, 99],
-		what: "The same interior with the star beyond the station: the case the camera-side fill was added for.",
+		// 102 added by #129, and it is the strongest frame in the set for it:
+		// the station is a **silhouette**, so the only thing making its flank
+		// legible is that the flank emits. That is #102's whole thesis — raising
+		// the sun brightens the lit half and leaves the dark half exactly as
+		// dark — and this is the one view where nothing else can be doing the
+		// work. Measured across #129's before/after, against a same-build
+		// control: this frame moves 0.41% of its pixels by more than 24/255
+		// where two captures of one build move 0.14%. The table below the next
+		// view is the whole set; the figures live there rather than being
+		// restated here, which is how this comment came to carry a superseded
+		// pair through a round of review.
+		covers: [105, 103, 102, 99],
+		what: "The same interior with the star beyond the station: the case the camera-side fill was added for, and the dark side that only reads because it emits.",
 		shot: {
 			kind: "body-offset",
 			body: "station-trade",
@@ -138,14 +149,98 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "station-approach",
-		covers: [101, 102, 103, 99],
-		what: "On the aperture axis at three silhouette radii — the surface, the panel lines, the greebles.",
+		covers: [101, 103, 99],
+		what: "On the aperture axis at three silhouette radii — the docking face, its plating and the lit aperture.",
 		shot: { kind: "station-axis", station: "trade", radii: 3, view: "chase" },
 	},
 	{
+		name: "station-flank",
+		covers: [102, 101, 99],
+		what: "A trade station's lit flank at four radii: the window grid and the plant beside it, which the axis view cannot show.",
+		/**
+		 * **Added by #129, and the reason is a frame rather than an argument.**
+		 *
+		 * #102 §7 recorded that the two station views already claimed lever 102,
+		 * so the station child needed no view-set change and only the ship child
+		 * did. The before/after sheet falsified that. `station-approach` is on
+		 * the *aperture axis*, and the aperture face is the one face a station's
+		 * clutter and ports are deliberately kept off — nothing may stand in the
+		 * corridor a ship flies down.
+		 *
+		 * **Measured rather than eyeballed**, because the first version of this
+		 * comment said "pixel-identical" on the strength of looking at two PNGs.
+		 * `npm run views:diff` (`scripts/diff-view-set.mjs`) is the instrument,
+		 * so these are re-runnable rather than quoted. The fraction of pixels
+		 * moving by more than 24/255 — **three captures of the branch against
+		 * one `before`, and the three same-build pairings among them**, because
+		 * the clock runs during capture and a spinning station is framed at a
+		 * different phase each time:
+		 *
+		 * | view | before → after ×3 | same build, 3 pairings |
+		 * |---|---|---|
+		 * | `station-flank` | 1.27–1.52% | 0.00–0.09% |
+		 * | `cockpit-backlit` | 0.37% | 0.00% |
+		 * | `station-approach` | 0.03–0.10% | 0.00–0.06% |
+		 * | `station-outline` | 0.01% | 0.00% |
+		 * | `cockpit-arrival` | 0.00–0.01% | 0.00% |
+		 * | `hull-chase` | 0.00–0.03% | 0.00–0.03% |
+		 * | `planet-terminator`, `sky-only` | 0.00% | 0.00% |
+		 *
+		 * The two views that keep 102 move by fifteen to twenty times their own
+		 * noise; the two that lost it move inside it.
+		 *
+		 * **Ranges and not single readings.** One pair is not a measurement
+		 * here: in an earlier, noisier session the same `before → after`
+		 * comparison read 0.55% on `station-approach` — with a same-build
+		 * control that also read 0.55%. The conclusion held, and it held for a
+		 * reason a single number could not have carried.
+		 *
+		 * The equatorial faces *are* on screen in the axis view — but at that
+		 * obliquity, tripling the ports and adding the plant moves the frame by
+		 * as much as a view with no station surface in it at all. `covers`
+		 * records where a lever can be **judged**, not where its geometry is
+		 * technically within the frustum.
+		 *
+		 * So 102 moved off `station-approach` and off `station-outline`, onto
+		 * this and onto `cockpit-backlit`. The two that keep it are the lit case
+		 * and the dark one, which is the pair #102 is actually about; the two
+		 * that lost it are an axis view and a range view that show neither.
+		 *
+		 * A `body-offset` and not a `station-axis`, because the axis kind points
+		 * at exactly the face this has to avoid. 35° puts the star off the
+		 * camera's shoulder, so the flank is lit and still has a shaded side for
+		 * the plant to cast onto — a fully frontal light flattens a greeble into
+		 * its own footprint, which is the failure the first build was rejected
+		 * for.
+		 */
+		shot: {
+			kind: "body-offset",
+			body: "station-trade",
+			radii: 4,
+			sunAngleDeg: 35,
+			view: "chase",
+		},
+	},
+	{
 		name: "station-outline",
-		covers: [100, 102, 103],
-		what: "The shipyard's whole frame against the sky: lit-window density, and what bloom does to it.",
+		covers: [100, 103],
+		/**
+		 * **102 came off here too, and for the same reason it came off
+		 * `station-approach`** (#129). A shipyard's ports are on the keel's top
+		 * and the slab's back face; at 140° this frame sees the shipyard from
+		 * neither: across #129's before/after this frame moved 0.05% of its
+		 * pixels by more than 24/255, which is **exactly** what a third run of
+		 * the same build moves. What the frame does show is the
+		 * backdrop behind a hard outline and what bloom does to one, which is
+		 * what it is kept for.
+		 *
+		 * The residue is stated rather than papered over: **no view in this set
+		 * judges lit-window density at range.** `station-flank` judges it at
+		 * four radii and `cockpit-backlit` at eight, both on a trade station.
+		 * Whether the sheet needs a ninth view for a shipyard's own ports, or for
+		 * the far case, is a decision, and #129 is not the node that takes it.
+		 */
+		what: "The shipyard's whole frame against the sky: the backdrop behind a hard outline, and what bloom does to one.",
 		shot: {
 			kind: "body-offset",
 			body: "station-shipyard",
