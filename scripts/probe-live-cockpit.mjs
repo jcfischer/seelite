@@ -447,6 +447,7 @@ for (const viewport of VIEWPORTS) {
 			return {
 				render,
 				widest: g.floorWidest,
+				spoolSeconds: g.spoolSeconds,
 				overlayHeight: overlay?.height ?? 0,
 				// The game's own state, so the check compares the instrument
 				// against the simulation rather than against a second copy of
@@ -508,25 +509,17 @@ for (const viewport of VIEWPORTS) {
 		`drawn from ${JSON.stringify(floor.render?.source)} against ${JSON.stringify(floor.sim)}`,
 	);
 	/**
-	 * It has to be **on the glass**, which is the half a headless test cannot
-	 * see: §5 puts the strip on the persistent floor, and the glass ends at
-	 * `GLASS_BOTTOM_FRACTION`. Below that is the deck, where it would be drawn
-	 * over the scanner; off the bottom is where a fixed pixel offset would put
-	 * it on the narrow viewport.
-	 */
-	/**
-	 * **Measured against the widest run the strip can draw, not this one.** The
-	 * fit is cached per viewport width and taken from `flightFloorWidest`, so
-	 * what this has to show is that the cached fit actually holds: the drawn run
-	 * is inside the margins *and* the widest one would be too.
-	 */
-	/**
-	 * **Every cell at its own widest, at once.** Setting only the charge left
-	 * MODE reading NORMAL against a `SPOOL 00.0s` bound and THR reading 62%
-	 * against `100%` — about five characters of the widest run never on the
-	 * glass when the assertion fired, which is the same surrogate this check
-	 * was rewritten to remove. The strip's own bound decides what to drive to,
-	 * so the two cannot drift apart.
+	 * Drive every cell to its own widest at once, for the three checks below.
+	 *
+	 * Where the strip lands is the half a headless test cannot see: §5 puts it
+	 * on the persistent floor, the glass ends at `GLASS_BOTTOM_FRACTION`, and
+	 * below that is the deck where it would be drawn over the scanner.
+	 *
+	 * **The fit is solved for the widest reading, so the widest reading is what
+	 * has to be on the glass when the assertion fires.** Setting only the charge
+	 * left MODE reading `NORMAL` against its bound and THR reading `62%` against
+	 * `100%` — five characters never drawn, which is the same surrogate these
+	 * checks were rewritten to remove, one layer in.
 	 */
 	const restore = await page.evaluate(() => {
 		const g = window.__seelite;
@@ -543,7 +536,12 @@ for (const viewport of VIEWPORTS) {
 		// the drive fills — so the check below asserts the *width* each cell was
 		// drawn at rather than an exact string it would lose a race with.
 		g.chargeAu = 11.9;
-		g.spoolLeftS = 10.5;
+		// The sim's own wind-up, not a number chosen here. At `SPOOL_S` every
+		// spool reading is one digit, so the countdown between this set and the
+		// draw cannot change the width — which is what the assertion below is
+		// about. Set to 10.5 it merely had half a second of margin before a
+		// character dropped, which widened the race rather than removing it.
+		g.spoolLeftS = g.spoolSeconds;
 		return before;
 	});
 	await nextFrames(page);
@@ -560,31 +558,49 @@ for (const viewport of VIEWPORTS) {
 	// The margin comes off the record rather than being restated here — a
 	// second copy of a constant is how a probe goes falsely red on a retune.
 	const margin = floor.render?.marginPx ?? 0;
+	/**
+	 * **Three named checks rather than one fifteen-clause boolean.** A red run
+	 * on the single check named the check and not which of its eight properties
+	 * broke; these fail one at a time and print only what they are about.
+	 */
 	check(
-		`${viewport.name}: the strip sits inside the glass and fits its widest reading`,
-		floor.render !== null &&
-			wide.render !== null &&
-			// Every cell at the bound the layout was solved for. Read off the
-			// page (`floorWidest`) rather than restated here, and compared by
-			// width because the font is monospace and the live values drift by a
-			// digit between the set and the draw.
+		`${viewport.name}: the strip is drawn at every cell's widest reading`,
+		wide.render !== null &&
+			// Read off the page (`floorWidest`) rather than restated here, and
+			// compared by width: the font is monospace, the drive refills
+			// between the set and the draw, and at the sim's own `SPOOL_S` every
+			// spool reading is the same width.
 			wide.render.cells.every(
 				(c) => c.value.length === wide.widest[c.label].length,
 			) &&
+			// The headless tier restates `SPOOL_S`, since it cannot import a
+			// module that pulls in Three.js. This is the seam that keeps the two
+			// honest.
+			wide.spoolSeconds === 3,
+		`"${wide.render?.cells.map((c) => c.value).join(" ")}" against bounds "${Object.values(wide.widest ?? {}).join(" ")}", spool ${wide.spoolSeconds}s`,
+	);
+	check(
+		`${viewport.name}: the strip sits inside the glass, above its lower edge`,
+		floor.render !== null &&
 			floor.render.baselineY < floor.render.glassBottomY &&
-			floor.render.baselineY > floor.render.glassBottomY - 26 &&
+			floor.render.baselineY > floor.render.glassBottomY - 26,
+		`baseline ${floor.render?.baselineY.toFixed(0)} of a glass bottom ${floor.render?.glassBottomY.toFixed(0)}`,
+	);
+	check(
+		`${viewport.name}: the widest run clears the margins, and the fit is the viewport's`,
+		floor.render !== null &&
+			wide.render !== null &&
 			floor.render.boxes.every((b) => b.x >= margin) &&
 			runEnd(floor.render) <= viewport.width - margin &&
 			wide.render.boxes.every((b) => b.x >= margin) &&
 			runEnd(wide.render) <= viewport.width - margin &&
-			// The legibility floor did not bind: the fit clamps rather than
-			// failing, and a viewport where it clamps draws a run past its
-			// margins.
+			// Zero whichever way it could have been non-zero — the legibility
+			// clamp binding, or the type size rounding above the linear solve.
 			wide.render.overflowPx === 0 &&
 			// The fit is a property of the viewport, so it must not have moved
 			// between two different readings.
 			wide.render.scale === floor.render.scale,
-		`baseline ${floor.render?.baselineY.toFixed(0)} of a glass bottom ${floor.render?.glassBottomY.toFixed(0)}; widest "${wide.render?.cells.map((c) => c.value).join(" ")}" against bounds "${Object.values(wide.widest ?? {}).join(" ")}" runs ${wide.render?.boxes[0].x.toFixed(0)}…${runEnd(wide.render).toFixed(0)} of ${viewport.width} at scale ${floor.render?.scale.toFixed(2)}, overflow ${wide.render?.overflowPx.toFixed(1)}px`,
+		`runs ${wide.render?.boxes[0].x.toFixed(0)}…${runEnd(wide.render).toFixed(0)} of ${viewport.width} with a ${margin}px margin, at scale ${floor.render?.scale.toFixed(2)}, overflow ${wide.render?.overflowPx.toFixed(1)}px`,
 	);
 
 	/**

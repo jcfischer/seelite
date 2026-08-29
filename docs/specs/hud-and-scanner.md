@@ -139,15 +139,20 @@ Built under #92. It draws along the **bottom of the glass**, above the deck and
 below the cruise prompt, and it is the last of §5's four floor instruments to
 ship.
 
-**Three of the four had no player-visible readout before it.** Mode, throttle
-and assist were written only to `#hud`, which `index.html` styles
-`clip: rect(0 0 0 0)` and which `main.ts` only writes under `?legacy-hud=1` — a
-probe surface, not a player one. So §5's rule that developer tuning must "never
-occupy the persistent player flight floor" was already satisfied, and the
-overlay drops nothing: it was never on the floor. Charge reached the glass once,
-as secondary text on the **target** instrument, and that is what moved: a second
-consumable with its own regeneration read as a property of the thing being flown
-to.
+**Mode and assist had no player-visible readout at all before it, and throttle
+had no figure.** All three were written only to `#hud`, which `index.html`
+styles `clip: rect(0 0 0 0)` and which `main.ts` only writes under
+`?legacy-hud=1` — a probe surface, not a player one. So §5's rule that developer
+tuning must "never occupy the persistent player flight floor" was already
+satisfied, and the overlay drops nothing: it was never on the floor.
+
+Throttle is the one with a surviving cue: `throttle-fill`, a lit wedge in a
+track at the deck's left edge, which still ships and still moves. It gives a
+proportion at a glance and no number, and it is unlabelled — so the strip's
+`THR` is the figure beside it rather than a replacement for it. Charge reached
+the glass once, as secondary text on the **target** instrument, and that is what
+moved: a second consumable with its own regeneration read as a property of the
+thing being flown to.
 
 **On the glass rather than on the deck.** The deck's only clear band is the
 2.3 mm lip outside the scanner bezel, which at the shipped dashboard pitch is a
@@ -259,7 +264,14 @@ Headless — `tests/flight-floor.test.ts`, over `flightFloorCells`:
    asserting that no reading prints `0.0` without the refusal tone. The tone and
    the text are one quantity computed by two expressions; a boundary is where
    that parts.
-4. **No reachable reading is wider than `flightFloorWidest`**, swept over every
+4. **The bound is the longest *reachable* reading**, and tightness is measured
+   against what the sim produces. MODE's bound was `SPOOL 10.0s` while the
+   wind-up is three seconds, and the test guarding against a loose bound
+   compared it to `"SPOOL 9.9s"` — another reading that cannot happen. The
+   maxima come from the sim's constants, and the spool duration is a parameter
+   for the same reason the charge capacity and rate are: one owner per constant
+   in the presentation tier.
+5. **No reachable reading is wider than `flightFloorWidest`**, swept over every
    combination of the four inputs, with the sweep's own size asserted — a loop
    that stopped iterating would satisfy every expectation inside it. And the
    bound is required to be *close*, since a bound of 200 characters would pass
@@ -269,19 +281,25 @@ Headless — `tests/flight-floor.test.ts`, over `flightFloorCells`:
 
 Browser — `scripts/probe-live-cockpit.mjs`, at both viewports:
 
-5. **The strip paints §5's four cells in order**, read from the record the draw
+6. **The strip paints §5's four cells in order**, read from the record the draw
    writes rather than from the state beside it.
-6. **The strip was drawn from the ship's own state** — the draw stamps the four
+7. **The strip was drawn from the ship's own state** — the draw stamps the four
    scalars it drew into the record, and they are compared against the game
    handle. The first version restated the projection here, rebuilding MODE from
    the regime and the spool in a nested ternary: the second copy its own comment
    said it was avoiding, and one that would drift the day the precedence
    changed. The mapping from those scalars to the strings is §7.0's item 2,
    where it is swept.
-7. **It sits inside the glass and fits its widest reading.** Both the drawn run
+8. **It sits inside the glass, fits its widest reading, and the fit is the
+   viewport's** — three named checks rather than one fifteen-clause boolean,
+   which named the check and not which of its eight properties broke. Both the
+   drawn run
    and the widest one must clear the margins — read off the record rather than
    restated — the fit must not have moved between them, and `overflowPx` must be
-   zero.
+   zero — whichever way it could have been non-zero, since the type size
+   rounds to a whole pixel and can land above what the linear solve predicted,
+   not only when the legibility clamp binds. "Every viewport" here is the two
+   `probe-live-cockpit.mjs` measures; the fit is solved per canvas width.
 
    **Every cell is driven to its own widest, not just one of them.** The first
    version measured whatever the strip happened to say and passed at 390 px on a
@@ -289,14 +307,21 @@ Browser — `scripts/probe-live-cockpit.mjs`, at both viewports:
    `NORMAL` against a `SPOOL 00.0s` bound and THR at `62%` against `100%` — five
    characters of the widest run never on the glass, which is the same surrogate
    one layer in. What is asserted is each drawn cell's **width against the
-   bound**, read off the page as `floorWidest`, because the spool counts down and
-   the drive refills between the set and the draw: an exact-string assertion
-   loses that race.
-8. **An empty drive paints the CHARGE cell red and a charged one does not** —
+   bound**, read off the page as `floorWidest`, because the drive refills between
+   the set and the draw and an exact-string assertion loses that race.
+
+   The spool used to lose it too: driven to 10.5 s against a bound of
+   `SPOOL 00.0s`, a character dropped the moment it crossed 10.0, so the width
+   assertion had half a second of margin rather than immunity. The bound is the
+   sim's `SPOOL_S` now — three seconds, one digit — so **every** reachable spool
+   reading is the same width and the countdown cannot change it. The probe drives
+   `g.spoolSeconds` and asserts the page agrees with the constant the headless
+   tier restates.
+9. **An empty drive paints the CHARGE cell red and a charged one does not** —
    sampled off the overlay's own pixels inside that cell's box, because a tone
    is a field on a record and a record can say anything.
-9. **The prompt and the cell agree** about an empty drive.
-10. **The target instrument no longer carries the charge.**
+10. **The prompt and the cell agree** about an empty drive.
+11. **The target instrument no longer carries the charge.**
 
 **Every one of these was built a red build** — including, after the first
 review round, the clamp failing open (`FLOOR_MIN_SCALE` raised to 0.95: 108.6 px

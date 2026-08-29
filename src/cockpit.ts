@@ -320,6 +320,7 @@ export const FLIGHT_FLOOR_LABELS = ["MODE", "THR", "ASSIST", "CHARGE"] as const;
 export function flightFloorWidest(
 	chargeCapacityAu: number,
 	chargeRegenAuPerS: number,
+	spoolSecondsMax: number,
 ): Record<(typeof FLIGHT_FLOOR_LABELS)[number], string> {
 	// **Derived by asking the formatter, not by restating its output.** These
 	// were four literals beside `flightFloorCells`, which is two spellings of
@@ -336,12 +337,19 @@ export function flightFloorWidest(
 		chargeRegenAuPerS,
 	};
 	/**
-	 * The worst case for each field, as *inputs*. A spool of 10 s is wider than
-	 * either regime word; a charge one step below capacity carries the
-	 * regeneration suffix the full tank omits.
+	 * The worst case for each field, as *inputs*.
+	 *
+	 * **`spoolSecondsMax` is a parameter for the same reason the capacity and
+	 * the rate are**: the presentation tier gets one owner per constant. It was
+	 * a literal 10 here, which is not a spool the sim can produce — the wind-up
+	 * is `SPOOL_S` seconds — so the bound reserved a character for a reading
+	 * that cannot happen, and the test guarding against a loose bound compared
+	 * it to another invented number. At the real maximum every spool reading is
+	 * the same width, which is what makes the browser check's width assertion
+	 * immune to the countdown rather than merely ahead of it.
 	 */
 	const candidates: FlightFloorState[] = [
-		{ ...base, spoolLeftS: 10 },
+		{ ...base, spoolLeftS: spoolSecondsMax },
 		{ ...base, regime: "cruise" },
 		{ ...base, throttle: 1 },
 		{ ...base, assist: false },
@@ -362,12 +370,14 @@ export function flightFloorWidest(
 /**
  * §5's compact mode/throttle/assist/charge strip.
  *
- * **Three of these four had no player-visible readout before this.** They were
- * written only to `#hud`, which is `clip: rect(0 0 0 0)` in `index.html` and is
- * only written at all under `?legacy-hud=1` — a probe surface, not a player
- * one. Charge reached the glass once, as secondary text on the *target*
- * instrument, which is the wrong instrument for a second consumable with its
- * own regeneration.
+ * **Mode and assist had no player-visible readout before this, and throttle had
+ * no figure.** All three were written only to `#hud`, which is
+ * `clip: rect(0 0 0 0)` in `index.html` and is only written at all under
+ * `?legacy-hud=1` — a probe surface, not a player one. Throttle keeps the lit
+ * wedge on the deck, which gives a proportion and no number; `THR` is the
+ * figure beside it. Charge reached the glass once, as secondary text on the
+ * *target* instrument, which is the wrong instrument for a second consumable
+ * with its own regeneration.
  */
 export function flightFloorCells(state: FlightFloorState): FloorCell[] {
 	const {

@@ -1066,9 +1066,17 @@ class Game {
 		 *  viewport — 1 where it did not have to shrink at all. */
 		scale: number;
 		marginPx: number;
-		/** How far the widest reading still overruns the margins at that scale.
-		 *  Zero at every shipped viewport; non-zero means the legibility floor
-		 *  bound first. */
+		/**
+		 * How far the widest reading still overruns the margins at the fitted
+		 * scale — zero at both viewports `probe-live-cockpit.mjs` measures.
+		 *
+		 * **Two things can put it above zero**, and the check does not care
+		 * which: the legibility clamp binding on a viewport too narrow for the
+		 * widest run, or the type size rounding to a whole pixel above what the
+		 * linear solve predicted. The solve assumes width is linear in size,
+		 * which is close but not exact, so the confirming measurement is what
+		 * decides — and the residue is what it decides *with*.
+		 */
 		overflowPx: number;
 		source: {
 			regime: string;
@@ -1172,7 +1180,11 @@ class Game {
 	readonly floorWidest = flightFloorWidest(
 		CHARGE_CAPACITY_AU,
 		CHARGE_REGEN_AU_PER_S,
+		SPOOL_S,
 	);
+	/** The wind-up, so a probe driving the strip to its widest reading asks the
+	 *  sim how long a spool is rather than assuming one. */
+	readonly spoolSeconds = SPOOL_S;
 
 	/** Where the flying glass ends, as a fraction of the frame — on the handle so
 	 *  a probe measuring the clip reads the renderer's line, not its own. */
@@ -4776,13 +4788,12 @@ class Game {
 			// evicted. Text width is very nearly linear in the type size, so one
 			// measurement gives the ratio; the second confirms it, and the
 			// residue is recorded rather than drawn over.
-			const widest = flightFloorWidest(
-				CHARGE_CAPACITY_AU,
-				CHARGE_REGEN_AU_PER_S,
-			);
+			// The handle's own copy, not a second derivation with the same
+			// arguments — a third parameter would otherwise have to be threaded
+			// to two call sites that must agree.
 			const widestCells = FLIGHT_FLOOR_LABELS.map((label) => ({
 				label,
-				value: widest[label],
+				value: this.floorWidest[label],
 			}));
 			const atOne = floorRunWidths(ctx, widestCells, 1).total;
 			const solved = Math.max(

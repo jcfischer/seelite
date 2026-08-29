@@ -14,6 +14,14 @@
 
 import { describe, expect, test } from "bun:test";
 import { CHARGE_CAPACITY_AU, CHARGE_REGEN_AU_PER_S } from "../src/cruise";
+/**
+ * The wind-up, from the module that owns it.
+ *
+ * `main.ts` pulls in Three.js, so the headless tier cannot import it — the
+ * value is restated here and the browser check asserts the page's own
+ * `spoolSeconds` against it, which is the seam that keeps the two honest.
+ */
+const SPOOL_SECONDS = 3;
 import {
 	FLIGHT_FLOOR_LABELS,
 	type FlightFloorState,
@@ -239,10 +247,14 @@ describe("the widest reading, which the strip is laid out against", () => {
 	 * second later. The font is monospace, so a character count is a width.
 	 */
 	test("no reachable reading is longer than its bound", () => {
-		const widest = flightFloorWidest(CHARGE_CAPACITY_AU, CHARGE_REGEN_AU_PER_S);
+		const widest = flightFloorWidest(
+			CHARGE_CAPACITY_AU,
+			CHARGE_REGEN_AU_PER_S,
+			SPOOL_SECONDS,
+		);
 		let checked = 0;
 		for (const regime of ["normal", "cruise"] as const)
-			for (const spoolLeftS of [0, 0.1, 3.5, 9.9])
+			for (const spoolLeftS of [0, 0.1, SPOOL_SECONDS / 2, SPOOL_SECONDS])
 				for (const throttle of [0, 0.005, 0.5, 1])
 					for (const assist of [true, false])
 						for (const chargeAu of [
@@ -274,10 +286,22 @@ describe("the widest reading, which the strip is laid out against", () => {
 		expect(checked).toBe(2 * 4 * 4 * 2 * 7 * 4);
 	});
 
-	/** And the bound is not absurdly loose — a bound of 200 characters would
-	 *  satisfy the sweep above while making the fit useless. */
+	/**
+	 * **The bound must be tight, and tightness is measured against what the sim
+	 * can produce.**
+	 *
+	 * This compared MODE's bound to the literal `"SPOOL 9.9s"` while the
+	 * wind-up is `SPOOL_S` = 3 seconds — so the guard against a loose bound was
+	 * itself checked against a reading that cannot happen, and the bound
+	 * reserved a character for it. The maxima come from the sim's own constants
+	 * now.
+	 */
 	test("the bound is close to the longest reachable reading", () => {
-		const widest = flightFloorWidest(CHARGE_CAPACITY_AU, CHARGE_REGEN_AU_PER_S);
+		const widest = flightFloorWidest(
+			CHARGE_CAPACITY_AU,
+			CHARGE_REGEN_AU_PER_S,
+			SPOOL_SECONDS,
+		);
 		const longestCharge = flightFloorCells({
 			regime: "normal",
 			spoolLeftS: 0,
@@ -290,6 +314,35 @@ describe("the widest reading, which the strip is laid out against", () => {
 		expect(
 			widest.CHARGE.length - longestCharge.value.length,
 		).toBeLessThanOrEqual(1);
-		expect(widest.MODE.length - "SPOOL 9.9s".length).toBeLessThanOrEqual(1);
+		const longestMode = flightFloorCells({
+			regime: "normal",
+			spoolLeftS: SPOOL_SECONDS,
+			throttle: 0,
+			assist: true,
+			chargeAu: CHARGE_CAPACITY_AU,
+			chargeCapacityAu: CHARGE_CAPACITY_AU,
+			chargeRegenAuPerS: CHARGE_REGEN_AU_PER_S,
+		}).find((c) => c.label === "MODE") as { value: string };
+		expect(widest.MODE).toBe(longestMode.value);
+		// And the consequence the browser check leans on: at the real maximum
+		// every spool reading is the same width, so a countdown between a
+		// probe's set and the draw cannot change it.
+		const spoolWidths = new Set(
+			[0.1, 1, 2.9, SPOOL_SECONDS].map(
+				(spoolLeftS) =>
+					(
+						flightFloorCells({
+							regime: "normal",
+							spoolLeftS,
+							throttle: 0,
+							assist: true,
+							chargeAu: CHARGE_CAPACITY_AU,
+							chargeCapacityAu: CHARGE_CAPACITY_AU,
+							chargeRegenAuPerS: CHARGE_REGEN_AU_PER_S,
+						}).find((c) => c.label === "MODE") as { value: string }
+					).value.length,
+			),
+		);
+		expect([...spoolWidths]).toEqual([widest.MODE.length]);
 	});
 });
