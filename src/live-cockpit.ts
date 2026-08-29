@@ -446,15 +446,15 @@ export class LiveCockpit {
 	}
 
 	private stationConsole(state: LiveCockpitState) {
-		const console = state.stationConsole;
-		if (!console || state.dockPhase !== "docked") return "";
+		const stationConsole = state.stationConsole;
+		if (!stationConsole || state.dockPhase !== "docked") return "";
 		const tabs = (["Market", "Equipment"] as const)
 			.map(
 				(tab) =>
-					`<button class="lc-tab" type="button" data-live-station-tab="${tab}" aria-selected="${console.tab === tab}">${tab}</button>`,
+					`<button class="lc-tab" type="button" data-live-station-tab="${tab}" aria-selected="${stationConsole.tab === tab}">${tab}</button>`,
 			)
 			.join("");
-		return `<section class="lc-station-console" data-live-station-console data-live-station-tab-active="${console.tab}"><header><h2>STATION</h2><small>${escapeHtml(console.label)}</small></header><nav class="lc-tabs" aria-label="station console tabs">${tabs}</nav>${console.tab === "Market" ? this.market(console.market) : this.equipment(console.equipment)}</section>`;
+		return `<section class="lc-station-console" data-live-station-console data-live-station-tab-active="${stationConsole.tab}"><header><h2>STATION</h2><small>${escapeHtml(stationConsole.label)}</small></header><nav class="lc-tabs" aria-label="station console tabs">${tabs}</nav>${stationConsole.tab === "Market" ? this.market(stationConsole.market) : this.equipment(stationConsole.equipment)}</section>`;
 	}
 
 	private market(rows: readonly ConsoleMarketRow[]) {

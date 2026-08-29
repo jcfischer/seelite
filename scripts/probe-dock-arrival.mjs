@@ -457,6 +457,7 @@ const dock = (id) =>
 						consolePresent:
 							document.querySelector("[data-live-station-console]") !== null,
 						floorHidden: g.floorRender === null,
+						gateOpen: g.hangarGateOfStation(stationId)?.visible === false,
 					};
 				}
 				if (now.dockPhase === "docked") break;
@@ -520,8 +521,9 @@ check(
 	"the scripted arrival hides flight glass before the station console opens",
 	flown.arrivalGlass !== null &&
 		!flown.arrivalGlass.consolePresent &&
-		flown.arrivalGlass.floorHidden,
-	`console=${flown.arrivalGlass?.consolePresent}, floor hidden=${flown.arrivalGlass?.floorHidden}`,
+		flown.arrivalGlass.floorHidden &&
+		flown.arrivalGlass.gateOpen,
+	`console=${flown.arrivalGlass?.consolePresent}, floor hidden=${flown.arrivalGlass?.floorHidden}, gate open=${flown.arrivalGlass?.gateOpen}`,
 );
 check(
 	// The regression this section exists for: *"ship does not fly into Coriolis

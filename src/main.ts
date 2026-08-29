@@ -207,7 +207,12 @@ import {
 	fleetLayout,
 } from "./ship-mesh";
 import { applyHullQuality } from "./ship-surface";
-import { LiveCockpit, type LeftTab, type RightTab } from "./live-cockpit";
+import {
+	LiveCockpit,
+	type LeftTab,
+	type LiveCockpitState,
+	type RightTab,
+} from "./live-cockpit";
 import { marketStationOf } from "./market";
 import {
 	type StationConsoleTab,
@@ -950,6 +955,9 @@ class Game {
 	private leftTab: LeftTab = "Navigation";
 	/** The forward station console keeps its tab across a head turn while docked. */
 	private stationConsoleTab: StationConsoleTab = "Market";
+	/** Docked console screens are stable until station or tab changes; do not rebuild them each frame. */
+	private stationConsoleCache: LiveCockpitState["stationConsole"] = null;
+	private stationConsoleCacheKey: string | null = null;
 	/**
 	 * What the Navigation list is narrowed to.
 	 *
@@ -4627,14 +4635,21 @@ class Game {
 	 *
 	 * `station-console.ts` owns every commodity/equipment rule; this method only
 	 * joins the live dock session to the station record and world clock. Market
-	 * deficits have no live owner until the market can trade, so their truthful
-	 * current value is zero rather than a parallel mutable store in the renderer.
+	 * deficits are not live yet, so the display stays neutral until trading owns
+	 * them rather than introducing a parallel mutable store in the renderer.
 	 */
 	private stationConsoleState() {
-		if (this.dock.phase !== "docked" || !this.dock.stationId) return null;
+		if (this.dock.phase !== "docked" || !this.dock.stationId) {
+			this.stationConsoleCache = null;
+			this.stationConsoleCacheKey = null;
+			return null;
+		}
+		const key = `${this.dock.stationId}|${this.stationConsoleTab}`;
+		if (this.stationConsoleCacheKey === key) return this.stationConsoleCache;
 		const station = stationOf(this.world.system, this.dock.stationId);
 		const market = marketStationOf(station, this.world.seed);
-		return {
+		this.stationConsoleCacheKey = key;
+		this.stationConsoleCache = {
 			label: this.nameOfStation(station.id),
 			tab: this.stationConsoleTab,
 			market: stationMarketScreen({
@@ -4648,6 +4663,7 @@ class Game {
 				displayTL: this.world.system.record.displayTL,
 			}),
 		};
+		return this.stationConsoleCache;
 	}
 
 	/**
