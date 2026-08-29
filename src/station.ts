@@ -83,7 +83,9 @@ export interface StationGeometry {
 	 * crossed §3's plane well before it reached the opening it could see, and
 	 * everything §12 measures from the plane — the throat, the docked position —
 	 * landed behind everything the player was looking at. Reported flying it as
-	 * *"the tunnel is skewed in relation to the docking port"*.
+	 * *"the tunnel is skewed in relation to the docking port"* — the principal's
+	 * words, quoted; `CONTEXT.md` §Language calls that surface the **aperture
+	 * frame**, and a bug report is not the place to insist on it.
 	 *
 	 * **One number, read by both tiers.** `apertureFrame` builds the checks'
 	 * plane from it and `station-mesh.ts`'s selected forms cut their aperture at

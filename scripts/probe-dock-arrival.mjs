@@ -58,12 +58,16 @@ const PAGE_URL = process.env.PROBE_URL ?? ORIGIN + "/?seed=1";
  * emissive aperture bars for the recess row, the recess itself for the two
  * shield rows. The control is what makes a `> 0` worth anything.
  *
- * `APERTURE_BAR_INK_FLOOR` is the one number left, and it is a control's floor
- * rather than a subject's: the bars are emissive, so they read in any light, and
- * a run measures them in the tens of thousands.
+ * `CONTROL_INK_FLOOR` is the one number left, and it is a **control's** floor
+ * rather than a subject's. It is the same number for both controls because it
+ * is not calibrated to either: a run measures the emissive bars at ~126,000 on
+ * approach and the whole station at ~185,000 from inside the throat, and what
+ * the floor separates is *those* from the case it exists for — a camera looking
+ * at nothing, which reads zero. Three orders of headroom is the point, not an
+ * oversight: a control that could plausibly fail is a second subject.
  */
 const PROBE_STANDOFF_KM = 4.5;
-const APERTURE_BAR_INK_FLOOR = 100;
+const CONTROL_INK_FLOOR = 100;
 
 await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
@@ -328,7 +332,7 @@ check(
 	"the recess reaches the screen from inside the throat",
 	interiorInk.parts > 0 &&
 		interiorInk.changed > 0 &&
-		interiorInk.bars > APERTURE_BAR_INK_FLOOR,
+		interiorInk.bars > CONTROL_INK_FLOOR,
 	`${interiorInk.changed} pixels from ${interiorInk.parts} interior part(s), ` +
 		`against ${interiorInk.bars} from the whole station in the same frame, ` +
 		`from ${interiorInk.rangeKm.toFixed(3)} km on the axis, inside the throat`,
@@ -546,7 +550,7 @@ check(
 const mouth = await shieldInk(slotId, "mouth");
 check(
 	"the shield at the mouth is drawn on approach",
-	mouth.plates > 0 && mouth.changed > 0 && mouth.control > 0,
+	mouth.plates > 0 && mouth.changed > 0 && mouth.control > CONTROL_INK_FLOOR,
 	`${mouth.changed} pixels from ${mouth.plates} plate(s) at ${approach.rangeKm.toFixed(2)} km, ` +
 		`against ${mouth.control} from the aperture bars in the same frame`,
 );

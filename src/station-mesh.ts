@@ -501,16 +501,9 @@ const DECK_THICKNESS_FACTOR = 0.08;
  * this.
  */
 const NAMEPLATE_HEIGHT_FACTOR = 0.4;
-/**
- * How far off the axis the interior plaque sits, as a multiple of the
- * aperture's width — and its size, as multiples of the aperture's.
- *
- * **Both were tuned against a 280 m throat and had to come in when #128 cut it
- * to 70.** A parked ship sits 35 m from the end wall now, and a plaque 48 m off
- * the axis is 54° off the view axis from there — outside the frustum, which is
- * how `probe-dock-arrival.mjs` found it: zero pixels of shield against 186,647
- * of the tunnel it is mounted in.
- */
+/** The interior plaque's size, as multiples of the aperture's. Unchanged by
+ *  #128 — what moved is where it sits, which is `NAMEPLATE_INNER_OFFSET_FACTOR`
+ *  below. */
 const NAMEPLATE_INNER_WIDTH_FACTOR = 0.4;
 const NAMEPLATE_INNER_HEIGHT_FACTOR = 0.22;
 /**

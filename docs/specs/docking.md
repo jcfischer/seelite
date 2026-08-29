@@ -1234,14 +1234,26 @@ of check that stops being evidence, and §12.7 records that it fails open until
    turn per second across a whole orbit, and that row is red on the old
    reference. Both roll figures are 0° now.
 
-   **What it cost, recorded rather than left to be found.** A station's drawn
-   orientation changed, and `probe-station.mjs`'s repeatability control — one
-   station measured twice, resampled to a 24 × 24 grid — moved from about 0.04
-   to 0.051–0.059 against its own 0.05 ceiling. That control was already
+   **What it cost, and what was done about it.** A station's drawn orientation
+   changed, so `probe-station.mjs`'s repeatability control — one station measured
+   twice, resampled to a 24 × 24 grid — moved from about 0.04 to 0.051–0.059
+   against a 0.05 ceiling. That control was already
    [#120](https://github.com/jcfischer/seelite/issues/120)'s subject for
-   exceeding its ceiling half the time; it now does so consistently, and whether
-   the answer is a finer grid or a re-measured ceiling belongs there rather than
-   in a branch that would be choosing it to go green.
+   exceeding its ceiling half the time; this made it consistent.
+
+   The ceiling was **raised to 0.15, on the principal's call**, and measured
+   rather than picked: seven runs put the control at 0.046–0.064 while the
+   *closest* pair of different stations reads 0.398, so anything from about 0.07
+   to 0.35 separates a repeat from a different station. 0.05 was not a fine
+   discrimination, it was a number inside the metric's own noise.
+
+   Said plainly, because a spec that reads as principle while a branch does the
+   opposite is worse than no spec: this **is** the branch that made the control
+   red raising the ceiling it went red against, which is the shape of an
+   anti-pattern. What makes it not one is that the bracket was measured on both
+   sides and the decision was the principal's, not that the number now passes.
+   The alternative — a finer grid, which would remove the quantisation rather
+   than tolerate it — stays with #120.
 
 9. **The interior name shield draws no pixels since the throat was shortened**
    (#128, open as [#131](https://github.com/jcfischer/seelite/issues/131)). E11
