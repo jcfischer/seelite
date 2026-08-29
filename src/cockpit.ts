@@ -321,15 +321,42 @@ export function flightFloorWidest(
 	chargeCapacityAu: number,
 	chargeRegenAuPerS: number,
 ): Record<(typeof FLIGHT_FLOOR_LABELS)[number], string> {
-	return {
-		// Two digits of spool, which is wider than NORMAL or CRUISE.
-		MODE: "SPOOL 00.0s",
-		THR: "100%",
-		ASSIST: "OFF",
-		// A full tank printed with the suffix it only carries below full: no
-		// reachable state is this wide, which is what a bound is for.
-		CHARGE: `${chargeCapacityAu.toFixed(1)}/${chargeCapacityAu} AU  +${(chargeRegenAuPerS * 60).toFixed(1)}/min`,
+	// **Derived by asking the formatter, not by restating its output.** These
+	// were four literals beside `flightFloorCells`, which is two spellings of
+	// every printed shape with nothing linking them: a format change in one had
+	// no compile-time tie to the other, and the sweep caught divergence only for
+	// the inputs it happened to enumerate.
+	const base: FlightFloorState = {
+		regime: "normal",
+		spoolLeftS: 0,
+		throttle: 0,
+		assist: true,
+		chargeAu: chargeCapacityAu,
+		chargeCapacityAu,
+		chargeRegenAuPerS,
 	};
+	/**
+	 * The worst case for each field, as *inputs*. A spool of 10 s is wider than
+	 * either regime word; a charge one step below capacity carries the
+	 * regeneration suffix the full tank omits.
+	 */
+	const candidates: FlightFloorState[] = [
+		{ ...base, spoolLeftS: 10 },
+		{ ...base, regime: "cruise" },
+		{ ...base, throttle: 1 },
+		{ ...base, assist: false },
+		{ ...base, chargeAu: chargeCapacityAu - 0.05 },
+		{ ...base, chargeAu: 0 },
+	];
+	const widest = Object.fromEntries(
+		FLIGHT_FLOOR_LABELS.map((label) => [label, ""]),
+	) as Record<(typeof FLIGHT_FLOOR_LABELS)[number], string>;
+	for (const candidate of candidates)
+		for (const cell of flightFloorCells(candidate)) {
+			const label = cell.label as (typeof FLIGHT_FLOOR_LABELS)[number];
+			if (cell.value.length > widest[label].length) widest[label] = cell.value;
+		}
+	return widest;
 }
 
 /**

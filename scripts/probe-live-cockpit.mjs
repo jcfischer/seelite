@@ -446,6 +446,7 @@ for (const viewport of VIEWPORTS) {
 			const overlay = document.getElementById("overlay");
 			return {
 				render,
+				widest: g.floorWidest,
 				overlayHeight: overlay?.height ?? 0,
 				// The game's own state, so the check compares the instrument
 				// against the simulation rather than against a second copy of
@@ -482,25 +483,29 @@ for (const viewport of VIEWPORTS) {
 		`${floor.render === null ? "nothing painted" : floor.render.cells.map((c) => `${c.label} ${c.value}`).join(" · ")}`,
 	);
 	/**
-	 * **Against the simulation, not against the projection.** The strip is a
-	 * pure function of these four scalars and `flight-floor.test.ts` pins what
-	 * it makes of them; what only the browser can say is that the values it was
-	 * handed are the ones the ship is actually flying with.
+	 * **The scalars the draw was handed are the ship's.**
+	 *
+	 * The first version restated the projection here — a nested ternary
+	 * rebuilding MODE from the regime and the spool — which is the second copy
+	 * its own comment said it was avoiding, and it would have drifted silently
+	 * the day `flightFloorCells` changed precedence. What the browser can say
+	 * that `flight-floor.test.ts` cannot is that the **inputs** were live: the
+	 * draw stamps them into the record, and they are compared against the game
+	 * handle. The mapping from those inputs to the strings is the headless
+	 * tier's, where it is swept.
 	 */
-	const cellValue = (label) =>
-		floor.render?.cells.find((c) => c.label === label)?.value ?? null;
 	check(
-		`${viewport.name}: every cell reads the ship's own state`,
-		cellValue("MODE") ===
-			(floor.sim.spoolLeftS > 0
-				? `SPOOL ${floor.sim.spoolLeftS.toFixed(1)}s`
-				: floor.sim.regime === "cruise"
-					? "CRUISE"
-					: "NORMAL") &&
-			cellValue("THR") === `${Math.round(floor.sim.throttle * 100)}%` &&
-			cellValue("ASSIST") === (floor.sim.assist ? "ON" : "OFF") &&
-			cellValue("CHARGE")?.startsWith(`${floor.sim.chargeAu.toFixed(1)}/`),
-		`sim throttle ${floor.sim.throttle.toFixed(2)}, assist ${floor.sim.assist}, charge ${floor.sim.chargeAu.toFixed(1)} against ${floor.render?.cells.map((c) => c.value).join(" · ")}`,
+		`${viewport.name}: the strip was drawn from the ship's own state`,
+		floor.render !== null &&
+			floor.render.source.regime === floor.sim.regime &&
+			floor.render.source.spoolLeftS === floor.sim.spoolLeftS &&
+			floor.render.source.throttle === floor.sim.throttle &&
+			floor.render.source.assist === floor.sim.assist &&
+			floor.render.source.chargeAu === floor.sim.chargeAu &&
+			// And not a frozen snapshot: the throttle was moved above, so a draw
+			// reading a boot-time copy would differ from the handle here.
+			floor.sim.throttle > 0.5,
+		`drawn from ${JSON.stringify(floor.render?.source)} against ${JSON.stringify(floor.sim)}`,
 	);
 	/**
 	 * It has to be **on the glass**, which is the half a headless test cannot
@@ -515,35 +520,71 @@ for (const viewport of VIEWPORTS) {
 	 * what this has to show is that the cached fit actually holds: the drawn run
 	 * is inside the margins *and* the widest one would be too.
 	 */
-	const widestRun = await page.evaluate(() => {
+	/**
+	 * **Every cell at its own widest, at once.** Setting only the charge left
+	 * MODE reading NORMAL against a `SPOOL 00.0s` bound and THR reading 62%
+	 * against `100%` — about five characters of the widest run never on the
+	 * glass when the assertion fired, which is the same surrogate this check
+	 * was rewritten to remove. The strip's own bound decides what to drive to,
+	 * so the two cannot drift apart.
+	 */
+	const restore = await page.evaluate(() => {
 		const g = window.__seelite;
-		const before = g.chargeAu;
-		// The longest CHARGE reading: below full, so the suffix is there, and
-		// with the widest numerator.
-		g.chargeAu = 11.95;
-		return { before };
+		const before = {
+			throttle: g.throttle,
+			assist: g.assist,
+			chargeAu: g.chargeAu,
+			spoolLeftS: g.spoolLeftS,
+		};
+		g.setThrottle(1);
+		g.assist = false;
+		// Below full so the regeneration suffix is there, and two digits of
+		// spool. Both drift while the frame renders — the spool counts down and
+		// the drive fills — so the check below asserts the *width* each cell was
+		// drawn at rather than an exact string it would lose a race with.
+		g.chargeAu = 11.9;
+		g.spoolLeftS = 10.5;
+		return before;
 	});
 	await nextFrames(page);
 	const wide = await readFloor();
-	await page.evaluate((au) => {
-		window.__seelite.chargeAu = au;
-	}, widestRun.before);
+	await page.evaluate((before) => {
+		const g = window.__seelite;
+		g.setThrottle(before.throttle);
+		g.assist = before.assist;
+		g.chargeAu = before.chargeAu;
+		g.spoolLeftS = before.spoolLeftS;
+	}, restore);
 	await nextFrames(page);
 	const runEnd = (r) => r.boxes.at(-1).x + r.boxes.at(-1).width;
+	// The margin comes off the record rather than being restated here — a
+	// second copy of a constant is how a probe goes falsely red on a retune.
+	const margin = floor.render?.marginPx ?? 0;
 	check(
 		`${viewport.name}: the strip sits inside the glass and fits its widest reading`,
 		floor.render !== null &&
 			wide.render !== null &&
+			// Every cell at the bound the layout was solved for. Read off the
+			// page (`floorWidest`) rather than restated here, and compared by
+			// width because the font is monospace and the live values drift by a
+			// digit between the set and the draw.
+			wide.render.cells.every(
+				(c) => c.value.length === wide.widest[c.label].length,
+			) &&
 			floor.render.baselineY < floor.render.glassBottomY &&
 			floor.render.baselineY > floor.render.glassBottomY - 26 &&
-			floor.render.boxes.every((b) => b.x >= 12) &&
-			runEnd(floor.render) <= viewport.width - 12 &&
-			wide.render.boxes.every((b) => b.x >= 12) &&
-			runEnd(wide.render) <= viewport.width - 12 &&
+			floor.render.boxes.every((b) => b.x >= margin) &&
+			runEnd(floor.render) <= viewport.width - margin &&
+			wide.render.boxes.every((b) => b.x >= margin) &&
+			runEnd(wide.render) <= viewport.width - margin &&
+			// The legibility floor did not bind: the fit clamps rather than
+			// failing, and a viewport where it clamps draws a run past its
+			// margins.
+			wide.render.overflowPx === 0 &&
 			// The fit is a property of the viewport, so it must not have moved
 			// between two different readings.
 			wide.render.scale === floor.render.scale,
-		`baseline ${floor.render?.baselineY.toFixed(0)} of a glass bottom ${floor.render?.glassBottomY.toFixed(0)}; run ${floor.render?.boxes[0].x.toFixed(0)}…${runEnd(floor.render).toFixed(0)} and widest ${wide.render?.boxes[0].x.toFixed(0)}…${runEnd(wide.render).toFixed(0)} of ${viewport.width} at scale ${floor.render?.scale.toFixed(2)}`,
+		`baseline ${floor.render?.baselineY.toFixed(0)} of a glass bottom ${floor.render?.glassBottomY.toFixed(0)}; widest "${wide.render?.cells.map((c) => c.value).join(" ")}" against bounds "${Object.values(wide.widest ?? {}).join(" ")}" runs ${wide.render?.boxes[0].x.toFixed(0)}…${runEnd(wide.render).toFixed(0)} of ${viewport.width} at scale ${floor.render?.scale.toFixed(2)}, overflow ${wide.render?.overflowPx.toFixed(1)}px`,
 	);
 
 	/**

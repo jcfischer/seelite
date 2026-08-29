@@ -525,12 +525,20 @@ const GLASS_BOTTOM_FRACTION = 0.66;
  * The band §5's mode/throttle/assist/charge strip occupies, measured up from
  * the bottom of the glass.
  *
- * **One owner, because two things are anchored to it.** The docking director's
- * clearance line is also placed off the glass bottom, and §3 says that line
- * must carry its reason — so it is offset by this rather than by a second
- * literal that a change to the strip's height would silently leave overlapping.
+ * **One owner, because three things are anchored to it**: the strip's own
+ * baseline, its type size, and the docking director's clearance line above it.
+ * §3 says that line carries its reason, and it used to be offset by a literal
+ * of its own while the strip placed itself at `glassBottomY - 9` with a fixed
+ * 13 px font — so the comment claimed an ownership the code did not have, and
+ * raising the type would have slid the strip under the line without touching
+ * this number.
  */
 const FLOOR_STRIP_HEIGHT_PX = 26;
+/** Where the baseline sits inside the band, and how big the value type is —
+ *  both fractions of it, so the band is the one thing to change. */
+const FLOOR_BASELINE_FRACTION = 0.35;
+const FLOOR_VALUE_FRACTION = 0.5;
+const FLOOR_LABEL_FRACTION = 0.385;
 
 /** §4's grammar, once. `cockpit.ts` decides which tone a reading earned; this
  *  is the only place a tone becomes a colour. */
@@ -541,8 +549,7 @@ const FLOOR_TONE_FILL: Record<FloorTone, string> = {
 	refused: "rgba(255, 110, 96, 0.97)",
 };
 const FLOOR_LABEL_FILL = "rgba(120, 165, 195, 0.75)";
-const FLOOR_VALUE_FONT = "13px ui-monospace, Menlo, monospace";
-const FLOOR_LABEL_FONT = "10px ui-monospace, Menlo, monospace";
+const FLOOR_FONT_FAMILY = "ui-monospace, Menlo, monospace";
 /** Between a label and its value, and between one cell and the next. */
 const FLOOR_LABEL_GAP_PX = 5;
 const FLOOR_CELL_GAP_PX = 22;
@@ -559,30 +566,43 @@ const MARKER_MAX_FRACTION = 1.3;
 /** The throat is the thing the ship goes through, so it is the brightest line
  *  in the corridor — and it carries the blocking state, because a refusal has
  *  to reach the part of the picture the pilot is aiming at. */
-/** One font declaration at a scale. The strip is the only thing that scales
- *  its whole run, so the parse stays here rather than becoming a helper the
- *  rest of the overlay would have to opt into. */
-const floorFont = (declaration: string, scale: number): string =>
-	declaration.replace(
-		/^(\d+)px/,
-		(_, px) => `${Math.max(7, Math.round(Number(px) * scale))}px`,
-	);
+/** A font at a scale, built rather than parsed back out of a declaration. */
+const floorFont = (fraction: number, scale: number): string =>
+	`${Math.max(7, Math.round(FLOOR_STRIP_HEIGHT_PX * fraction * scale))}px ${FLOOR_FONT_FAMILY}`;
 
-/** The width one run of values would take, labels and gaps included. */
-function floorRunWidth(
+/**
+ * One run's per-cell widths and their total.
+ *
+ * **The fit and the draw share this.** They each had their own copy of
+ * `label + gap + value`, which is two spellings of the metric the fit exists to
+ * guarantee — a change to the layout that landed in one would have made the fit
+ * describe a run the draw does not produce. The pairs carry their own labels
+ * rather than being indexed against `FLIGHT_FLOOR_LABELS`, so the two paths
+ * also agree on where a label comes from.
+ */
+function floorRunWidths(
 	ctx: CanvasRenderingContext2D,
-	values: readonly string[],
+	cells: readonly { label: string; value: string }[],
 	scale: number,
-): number {
-	let total = FLOOR_CELL_GAP_PX * scale * (values.length - 1);
-	for (const [i, value] of values.entries()) {
-		ctx.font = floorFont(FLOOR_LABEL_FONT, scale);
-		total += ctx.measureText(FLIGHT_FLOOR_LABELS[i]).width;
-		total += FLOOR_LABEL_GAP_PX * scale;
-		ctx.font = floorFont(FLOOR_VALUE_FONT, scale);
-		total += ctx.measureText(value).width;
-	}
-	return total;
+): { widths: number[]; total: number; labelWidths: number[] } {
+	const labelFont = floorFont(FLOOR_LABEL_FRACTION, scale);
+	const valueFont = floorFont(FLOOR_VALUE_FRACTION, scale);
+	const labelGap = FLOOR_LABEL_GAP_PX * scale;
+	const labelWidths: number[] = [];
+	const widths = cells.map((cell) => {
+		ctx.font = labelFont;
+		const label = ctx.measureText(cell.label).width;
+		labelWidths.push(label);
+		ctx.font = valueFont;
+		return label + labelGap + ctx.measureText(cell.value).width;
+	});
+	return {
+		widths,
+		labelWidths,
+		total:
+			widths.reduce((a, b) => a + b, 0) +
+			FLOOR_CELL_GAP_PX * scale * (cells.length - 1),
+	};
 }
 
 function throatColour(state: DirectorState): string {
@@ -865,10 +885,14 @@ class Game {
 		new URLSearchParams(window.location.search).get("combat") === "1";
 	private combatIncoming = false;
 	private combatEcm = false;
-	/** The floor strip's fitted scale, keyed by glass width. The fit is against
-	 *  the strip's widest possible reading, so it is a property of the viewport
-	 *  and never of the values on screen. */
-	private readonly floorFit = new Map<number, number>();
+	/** The floor strip's fitted scale for the width it was solved at. One memo
+	 *  and not a map: the fit is a property of the viewport, and a resize drag
+	 *  through a thousand widths should not leave a thousand entries behind. */
+	private floorFit: {
+		width: number;
+		scale: number;
+		overflowPx: number;
+	} | null = null;
 
 	/** Fitted overlay font cache: keyed by role + glass width; the fit is
 	 *  computed against a widest-case text so any live state fits. */
@@ -1041,6 +1065,18 @@ class Game {
 		/** What the strip was shrunk by to fit its widest reading in this
 		 *  viewport — 1 where it did not have to shrink at all. */
 		scale: number;
+		marginPx: number;
+		/** How far the widest reading still overruns the margins at that scale.
+		 *  Zero at every shipped viewport; non-zero means the legibility floor
+		 *  bound first. */
+		overflowPx: number;
+		source: {
+			regime: string;
+			spoolLeftS: number;
+			throttle: number;
+			assist: boolean;
+			chargeAu: number;
+		};
 	} | null = null;
 	/**
 	 * What §3's docking director drew this frame, or `null` when it drew
@@ -1131,6 +1167,12 @@ class Game {
 	/** §3's approach range, on the handle for the same reason the tolerances are:
 	 *  a probe that restated it would go falsely red the day it is retuned. */
 	readonly directorRangeKm = DIRECTOR_RANGE_KM;
+	/** The widest reading §5's floor strip can take, so a probe measuring the
+	 *  fit drives the run the layout was solved for rather than a copy of it. */
+	readonly floorWidest = flightFloorWidest(
+		CHARGE_CAPACITY_AU,
+		CHARGE_REGEN_AU_PER_S,
+	);
 
 	/** Where the flying glass ends, as a fraction of the frame — on the handle so
 	 *  a probe measuring the clip reads the renderer's line, not its own. */
@@ -4726,43 +4768,53 @@ class Game {
 		// absent — was a fifth too narrow for the run drawn a second later. At
 		// 390 px that clipped both ends, and the check measuring the incidental
 		// run passed.
-		let scale = this.floorFit.get(w);
-		if (scale === undefined) {
+		const available = w - 2 * FLOOR_MARGIN_PX;
+		if (this.floorFit?.width !== w) {
+			// **Solved rather than searched.** The step-down loop ran up to
+			// nineteen full measurements on every distinct canvas width, and a
+			// resize drag missed on every frame and appended to a map nothing
+			// evicted. Text width is very nearly linear in the type size, so one
+			// measurement gives the ratio; the second confirms it, and the
+			// residue is recorded rather than drawn over.
 			const widest = flightFloorWidest(
 				CHARGE_CAPACITY_AU,
 				CHARGE_REGEN_AU_PER_S,
 			);
-			const available = w - 2 * FLOOR_MARGIN_PX;
-			scale = 1;
-			while (scale > FLOOR_MIN_SCALE) {
-				if (
-					floorRunWidth(
-						ctx,
-						FLIGHT_FLOOR_LABELS.map((l) => widest[l]),
-						scale,
-					) <= available
-				)
-					break;
-				scale -= 0.02;
-			}
-			this.floorFit.set(w, scale);
+			const widestCells = FLIGHT_FLOOR_LABELS.map((label) => ({
+				label,
+				value: widest[label],
+			}));
+			const atOne = floorRunWidths(ctx, widestCells, 1).total;
+			const solved = Math.max(
+				FLOOR_MIN_SCALE,
+				Math.min(1, available / Math.max(1, atOne)),
+			);
+			// Rounded down to a step so a one-pixel viewport change does not
+			// re-lay the strip out at an imperceptibly different size.
+			const stepped = Math.max(FLOOR_MIN_SCALE, Math.floor(solved * 50) / 50);
+			const fitted = floorRunWidths(ctx, widestCells, stepped).total;
+			this.floorFit = {
+				width: w,
+				scale: stepped,
+				// **The clamp fails open, and says so.** `FLOOR_MIN_SCALE` is a
+				// floor on legibility, so a viewport too narrow for the widest
+				// run at that size draws anyway — the alternative is a floor
+				// instrument that vanishes. What it must not do is fail open
+				// *silently*: the overflow is recorded, and the browser check
+				// requires it to be zero at every shipped viewport.
+				overflowPx: Math.max(0, fitted - available),
+			};
 		}
-		const labelFont = floorFont(FLOOR_LABEL_FONT, scale);
-		const valueFont = floorFont(FLOOR_VALUE_FONT, scale);
+		const { scale } = this.floorFit;
+		const labelFont = floorFont(FLOOR_LABEL_FRACTION, scale);
+		const valueFont = floorFont(FLOOR_VALUE_FRACTION, scale);
 		const labelGap = FLOOR_LABEL_GAP_PX * scale;
 		const cellGap = FLOOR_CELL_GAP_PX * scale;
-
-		const widths = cells.map((cell) => {
-			ctx.font = labelFont;
-			const label = ctx.measureText(cell.label).width;
-			ctx.font = valueFont;
-			return label + labelGap + ctx.measureText(cell.value).width;
-		});
-		const total =
-			widths.reduce((a, b) => a + b, 0) + cellGap * (cells.length - 1);
+		const { widths, labelWidths, total } = floorRunWidths(ctx, cells, scale);
 
 		const glassBottomY = h * GLASS_BOTTOM_FRACTION;
-		const baselineY = glassBottomY - 9;
+		const baselineY =
+			glassBottomY - FLOOR_STRIP_HEIGHT_PX * FLOOR_BASELINE_FRACTION;
 		let x = (w - total) / 2;
 		const boxes: { label: string; x: number; y: number; width: number }[] = [];
 		ctx.save();
@@ -4772,15 +4824,35 @@ class Game {
 			ctx.font = labelFont;
 			ctx.fillStyle = FLOOR_LABEL_FILL;
 			ctx.fillText(cell.label, x, baselineY);
-			const labelWidth = ctx.measureText(cell.label).width;
 			ctx.font = valueFont;
 			ctx.fillStyle = FLOOR_TONE_FILL[cell.tone];
-			ctx.fillText(cell.value, x + labelWidth + labelGap, baselineY);
+			// The label width comes from the measuring pass rather than a second
+			// `measureText` here — four labels re-measured every frame for a
+			// value that changes only with the viewport.
+			ctx.fillText(cell.value, x + labelWidths[i] + labelGap, baselineY);
 			x += widths[i] + cellGap;
 		}
 		ctx.restore();
 
-		this.floorRender = { cells, boxes, baselineY, glassBottomY, scale };
+		this.floorRender = {
+			cells,
+			boxes,
+			baselineY,
+			glassBottomY,
+			scale,
+			marginPx: FLOOR_MARGIN_PX,
+			overflowPx: this.floorFit.overflowPx,
+			// The scalars the cells were built from, stamped by the draw — so a
+			// check can compare the instrument against the ship without
+			// restating the projection that maps one to the other.
+			source: {
+				regime: this.regime,
+				spoolLeftS: this.spoolLeftS,
+				throttle: this.throttle,
+				assist: this.assist,
+				chargeAu: this.chargeAu,
+			},
+		};
 	}
 
 	/**

@@ -185,18 +185,37 @@ its own is a design question this node did not take: it needs a threshold no
 spec states.
 
 **The strip is laid out against its widest possible reading**, not against what
-it currently says (`flightFloorWidest`), and the fit is cached per viewport
-width. Sized to the live values it re-centred whenever a digit changed — and the
-fit taken on a full tank, where the regeneration suffix is absent, was a fifth
-too narrow for the run drawn a second later: at 390 px both ends were clipped.
-The font is monospace, so a character count is a width, and the headless tier
-sweeps every reachable reading against the bound. Below `FLOOR_MIN_SCALE` the
-answer would have to be a different layout rather than smaller type.
+it currently says (`flightFloorWidest`), and the fit is memoised for the width
+it was solved at. Sized to the live values it re-centred whenever a digit
+changed — and the fit taken on a full tank, where the regeneration suffix is
+absent, was a fifth too narrow for the run drawn a second later: at 390 px both
+ends were clipped. The font is monospace, so a character count is a width, and
+the headless tier sweeps every reachable reading against the bound.
 
-Its band is owned by one constant, `FLOOR_STRIP_HEIGHT_PX`, because §3's
-clearance line is anchored to the same glass bottom and must clear it — §3 says
-that line carries its reason, and a second literal is how it comes to sit on top
-of the strip instead.
+**The bound is derived by asking the formatter**, not by restating its output.
+It was four literals beside `flightFloorCells` — two spellings of every printed
+shape with nothing linking them, so a format change in one had no tie to the
+other. It now runs the formatter over a worst-case input per field and keeps the
+longest, which is one owner of every string the strip can print.
+
+**The scale is solved, not searched.** One measurement of the widest run at full
+size gives the ratio, since text width is very nearly linear in type size; the
+second confirms it. The step-down loop it replaces ran up to nineteen full
+measurements on every distinct canvas width, and a resize drag missed on every
+frame and appended to a map nothing evicted.
+
+**`FLOOR_MIN_SCALE` fails open, and records that it did.** It is a floor on
+legibility, so a viewport too narrow for the widest run at that size draws
+anyway — a floor instrument that vanished would be worse. What it must not do is
+fail open silently: the residue is recorded as `overflowPx` and §7.0's fit check
+requires it to be zero at every shipped viewport.
+
+Its band is owned by one constant, `FLOOR_STRIP_HEIGHT_PX`: the baseline and
+both type sizes are fractions of it, and §3's clearance line is offset by it.
+The comment claimed that ownership before the code had it — the strip placed
+itself at `glassBottomY - 9` with a fixed 13 px font while only the clearance
+line read the constant, so raising the type would have slid the strip under the
+line without touching the number it was supposedly anchored to.
 
 ## 6. Responsive behaviour
 
@@ -244,26 +263,50 @@ Headless — `tests/flight-floor.test.ts`, over `flightFloorCells`:
    combination of the four inputs, with the sweep's own size asserted — a loop
    that stopped iterating would satisfy every expectation inside it. And the
    bound is required to be *close*, since a bound of 200 characters would pass
-   the sweep and make the fit useless.
+   the sweep and make the fit useless. The bound is now derived from the same
+   formatter, so what this sweep still catches is a worst-case *input* the
+   derivation does not enumerate.
 
 Browser — `scripts/probe-live-cockpit.mjs`, at both viewports:
 
 5. **The strip paints §5's four cells in order**, read from the record the draw
    writes rather than from the state beside it.
-6. **Every cell reads the ship's own state** — compared against `regime`,
-   `throttle`, `assist` and `chargeAu` on the game handle, not against a second
-   copy of the projection.
+6. **The strip was drawn from the ship's own state** — the draw stamps the four
+   scalars it drew into the record, and they are compared against the game
+   handle. The first version restated the projection here, rebuilding MODE from
+   the regime and the spool in a nested ternary: the second copy its own comment
+   said it was avoiding, and one that would drift the day the precedence
+   changed. The mapping from those scalars to the strings is §7.0's item 2,
+   where it is swept.
 7. **It sits inside the glass and fits its widest reading.** Both the drawn run
-   and the widest one must clear the margins, and the fit must not have moved
-   between them. The first version measured whatever the strip happened to say
-   and passed at 390 px on a run the frame showed clipped at both ends.
+   and the widest one must clear the margins — read off the record rather than
+   restated — the fit must not have moved between them, and `overflowPx` must be
+   zero.
+
+   **Every cell is driven to its own widest, not just one of them.** The first
+   version measured whatever the strip happened to say and passed at 390 px on a
+   run the frame showed clipped; the second set only the charge, leaving MODE at
+   `NORMAL` against a `SPOOL 00.0s` bound and THR at `62%` against `100%` — five
+   characters of the widest run never on the glass, which is the same surrogate
+   one layer in. What is asserted is each drawn cell's **width against the
+   bound**, read off the page as `floorWidest`, because the spool counts down and
+   the drive refills between the set and the draw: an exact-string assertion
+   loses that race.
 8. **An empty drive paints the CHARGE cell red and a charged one does not** —
    sampled off the overlay's own pixels inside that cell's box, because a tone
    is a field on a record and a record can say anything.
 9. **The prompt and the cell agree** about an empty drive.
 10. **The target instrument no longer carries the charge.**
 
-**Every one of these was built a red build**, save one caveat worth stating:
+**Every one of these was built a red build** — including, after the first
+review round, the clamp failing open (`FLOOR_MIN_SCALE` raised to 0.95: 108.6 px
+of overflow, and the check red), the draw stamping a stale scalar, and the
+baseline no longer derived from the band. Two of those three first read green
+because the edit that was supposed to break them silently did not match the
+formatted source — a no-op `replace` and a green run look exactly alike, which
+is the repo's own recorded lesson and cost two false clears here.
+
+One caveat worth stating:
 putting the charge back on the target instrument (check 10) makes the probe's
 own boot wait time out before any check runs, because that wait is keyed to the
 readout pattern. It fails loudly and cannot pass, but it fails as a timeout
