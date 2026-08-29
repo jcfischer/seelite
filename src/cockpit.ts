@@ -370,14 +370,17 @@ export function flightFloorWidest(
 /**
  * §5's compact mode/throttle/assist/charge strip.
  *
- * **Mode and assist had no player-visible readout before this, and throttle had
- * no figure.** All three were written only to `#hud`, which is
- * `clip: rect(0 0 0 0)` in `index.html` and is only written at all under
- * `?legacy-hud=1` — a probe surface, not a player one. Throttle keeps the lit
- * wedge on the deck, which gives a proportion and no number; `THR` is the
- * figure beside it. Charge reached the glass once, as secondary text on the
- * *target* instrument, which is the wrong instrument for a second consumable
- * with its own regeneration.
+ * **The gap was the floor, not visibility.** Mode and throttle already reached
+ * the player on the right console's Flight/Drive copy, and throttle also has an
+ * unlabelled wedge on the deck — §5 gives the Flight console those readings *as
+ * well*. What §5 also asks for, and what did not exist, is a compact strip on
+ * the **persistent floor**: a console is read by turning the head away from the
+ * glass. Assist reached nothing at all — the console renders its label with an
+ * empty value — and charge rode the *target* instrument, which is the wrong
+ * instrument for a second consumable with its own regeneration.
+ *
+ * `hud-and-scanner.md` §5.1 has the table and the reasoning; this is the one
+ * paragraph a reader of this function needs.
  */
 export function flightFloorCells(state: FlightFloorState): FloorCell[] {
 	const {

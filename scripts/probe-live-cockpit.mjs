@@ -673,6 +673,38 @@ for (const viewport of VIEWPORTS) {
 		`"${targetSecondary}"`,
 	);
 
+	/**
+	 * **The right console's ASSIST and CHARGE rows are no longer empty.**
+	 *
+	 * §5 gives the Flight console assist and the Drive console the cruise
+	 * charge, and the markup has carried both rows since the console was built
+	 * — with an empty `<em>`, which reads as a broken instrument rather than an
+	 * unbuilt one. They read the strip's own cells, so this is checking one
+	 * owner rather than two that happen to agree.
+	 */
+	await page.evaluate(() => window.__seelite.setHeadLook("right"));
+	await nextFrames(page);
+	const consoleRows = await page.evaluate(() => {
+		const g = window.__seelite;
+		const text = (selector) =>
+			document.querySelector(selector)?.textContent ?? null;
+		return {
+			assist: text("[data-live-assist]"),
+			charge: text("[data-live-charge]"),
+			cells: Object.fromEntries(g.floorCells().map((c) => [c.label, c.value])),
+		};
+	});
+	await page.evaluate(() => window.__seelite.setHeadLook("forward"));
+	await nextFrames(page);
+	check(
+		`${viewport.name}: the right console's assist and charge rows carry the strip's own readings`,
+		consoleRows.assist === consoleRows.cells.ASSIST &&
+			consoleRows.charge === consoleRows.cells.CHARGE &&
+			(consoleRows.assist?.length ?? 0) > 0 &&
+			(consoleRows.charge?.length ?? 0) > 0,
+		`console "${consoleRows.assist}" / "${consoleRows.charge}" against cells "${consoleRows.cells.ASSIST}" / "${consoleRows.cells.CHARGE}"`,
+	);
+
 	// Restore, so the head-look checks below see the state they expect.
 	await page.evaluate(() => {
 		const g = window.__seelite;

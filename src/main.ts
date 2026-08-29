@@ -605,6 +605,15 @@ function floorRunWidths(
 	};
 }
 
+/** One cell's value by label. Throws rather than printing `undefined` on a
+ *  label that does not exist — a blank readout is what this is fixing. */
+function floorCellValue(cells: readonly FloorCell[], label: string): string {
+	const cell = cells.find((c) => c.label === label);
+	if (cell === undefined)
+		throw new Error(`flight floor: no ${label} cell to read`);
+	return cell.value;
+}
+
 function throatColour(state: DirectorState): string {
 	if (state.blocking) return "rgba(255, 110, 96, 0.95)";
 	return state.aligned
@@ -4570,6 +4579,10 @@ class Game {
 			mode: this.regime === "cruise" ? "CRUISE" : "NORMAL FLIGHT",
 			throttle: `${(this.throttle * 100).toFixed(0)}%`,
 			speed: velocity.speed,
+			// The floor strip's own words, so the console and the floor cannot
+			// describe the same two facts differently.
+			assist: floorCellValue(this.floorCells(), "ASSIST"),
+			charge: floorCellValue(this.floorCells(), "CHARGE"),
 			tuning: this.tuningSummary(),
 		});
 	}
@@ -4763,8 +4776,17 @@ class Game {
 	 * width: four cells stretched over 1440 px is a row of unrelated numbers,
 	 * and the prompt and the clearance line it sits under are centred too.
 	 */
-	private drawFlightFloor(ctx: CanvasRenderingContext2D, w: number, h: number) {
-		const cells = flightFloorCells({
+	/**
+	 * §5's four readings, from the ship as it is now.
+	 *
+	 * **One builder, because two surfaces show these.** The floor strip draws
+	 * all four; the right console's Flight and Drive rows show assist and
+	 * charge, and those rows shipped as labels with an empty value beside them.
+	 * Wiring them from a second expression is how the console comes to say
+	 * "ON" while the floor says something else about the same toggle.
+	 */
+	floorCells(): FloorCell[] {
+		return flightFloorCells({
 			regime: this.regime,
 			spoolLeftS: this.spoolLeftS,
 			throttle: this.throttle,
@@ -4773,6 +4795,10 @@ class Game {
 			chargeCapacityAu: CHARGE_CAPACITY_AU,
 			chargeRegenAuPerS: CHARGE_REGEN_AU_PER_S,
 		});
+	}
+
+	private drawFlightFloor(ctx: CanvasRenderingContext2D, w: number, h: number) {
+		const cells = this.floorCells();
 
 		// **Fitted to the widest reading the strip can take, not to this one.**
 		// Sized to the live values it re-centred whenever a digit changed, and

@@ -139,20 +139,33 @@ Built under #92. It draws along the **bottom of the glass**, above the deck and
 below the cruise prompt, and it is the last of §5's four floor instruments to
 ship.
 
-**Mode and assist had no player-visible readout at all before it, and throttle
-had no figure.** All three were written only to `#hud`, which `index.html`
-styles `clip: rect(0 0 0 0)` and which `main.ts` only writes under
-`?legacy-hud=1` — a probe surface, not a player one. So §5's rule that developer
-tuning must "never occupy the persistent player flight floor" was already
-satisfied, and the overlay drops nothing: it was never on the floor.
+**What each of the four had before it, checked rather than assumed:**
 
-Throttle is the one with a surviving cue: `throttle-fill`, a lit wedge in a
-track at the deck's left edge, which still ships and still moves. It gives a
-proportion at a glance and no number, and it is unlabelled — so the strip's
-`THR` is the figure beside it rather than a replacement for it. Charge reached
-the glass once, as secondary text on the **target** instrument, and that is what
-moved: a second consumable with its own regeneration read as a property of the
-thing being flown to.
+| field | before | where |
+|---|---|---|
+| mode | `NORMAL FLIGHT` / `CRUISE` | the right console's Flight/Drive copy |
+| throttle | a percentage, and an unlabelled lit wedge | that copy, and the deck |
+| assist | **nothing** — a label with an empty value | the right console's readout row |
+| charge | `CHARGE 12.0 AU` | the **target** instrument's secondary line |
+
+So the gap is not that these were invisible. It is that §5 distinguishes the
+**persistent floor** from the **side consoles**, and puts a compact strip on the
+floor *as well as* giving the Flight console speed, throttle, assist and regime.
+A console is read by turning the head away from the glass; the floor is what
+keeps a hull-hidden cockpit flyable while looking forward, which is the sentence
+this strip exists to satisfy.
+
+Two consequences worth stating plainly. **The overlay drops nothing** — `#hud` is
+`clip: rect(0 0 0 0)` and is only written under `?legacy-hud=1`, so §5's rule
+that developer tuning must never occupy the floor was already satisfied; it was
+never on the floor. And **assist and charge were advertised on the console and
+never wired**: the markup has carried `<b>ASSIST</b><em></em>` and
+`<b>CHARGE</b><em></em>` since the console was built, which reads as a broken
+instrument rather than an unbuilt one. Both are filled now, from the strip's own
+cells, so the console and the floor cannot describe one fact two ways.
+
+Charge also **moves off the target instrument**: a second consumable with its
+own regeneration read as a property of the thing being flown to.
 
 **On the glass rather than on the deck.** The deck's only clear band is the
 2.3 mm lip outside the scanner bezel, which at the shipped dashboard pitch is a
@@ -213,7 +226,8 @@ frame and appended to a map nothing evicted.
 legibility, so a viewport too narrow for the widest run at that size draws
 anyway — a floor instrument that vanished would be worse. What it must not do is
 fail open silently: the residue is recorded as `overflowPx` and §7.0's fit check
-requires it to be zero at every shipped viewport.
+requires it to be zero at the two viewports that probe measures — which is not
+"every viewport", and §7.0 item 8 says what is left unmeasured.
 
 Its band is owned by one constant, `FLOOR_STRIP_HEIGHT_PX`: the baseline and
 both type sizes are fractions of it, and §3's clearance line is offset by it.
@@ -298,8 +312,13 @@ Browser — `scripts/probe-live-cockpit.mjs`, at both viewports:
    restated — the fit must not have moved between them, and `overflowPx` must be
    zero — whichever way it could have been non-zero, since the type size
    rounds to a whole pixel and can land above what the linear solve predicted,
-   not only when the legibility clamp binds. "Every viewport" here is the two
-   `probe-live-cockpit.mjs` measures; the fit is solved per canvas width.
+   not only when the legibility clamp binds. **"Every viewport" here is the two
+   `probe-live-cockpit.mjs` measures**, and the fit is solved per canvas width:
+   below 390 px the clamp can fail open with nothing measuring the residue. The
+   console's own media query bottoms out at 600 px and the narrow probe runs at
+   390, so what is unmeasured is narrower than anything the layout targets —
+   stated rather than implied by "every shipped viewport", which §5.1 said and
+   should not have.
 
    **Every cell is driven to its own widest, not just one of them.** The first
    version measured whatever the strip happened to say and passed at 390 px on a
@@ -321,7 +340,10 @@ Browser — `scripts/probe-live-cockpit.mjs`, at both viewports:
    sampled off the overlay's own pixels inside that cell's box, because a tone
    is a field on a record and a record can say anything.
 10. **The prompt and the cell agree** about an empty drive.
-11. **The target instrument no longer carries the charge.**
+11. **The target instrument no longer carries the charge**, and **the right
+    console's ASSIST and CHARGE rows are no longer empty** — both read the same
+    cells the strip draws, so a check that finds them agreeing is checking one
+    owner rather than two that happen to match.
 
 **Every one of these was built a red build** — including, after the first
 review round, the clamp failing open (`FLOOR_MIN_SCALE` raised to 0.95: 108.6 px

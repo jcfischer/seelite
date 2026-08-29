@@ -45,6 +45,11 @@ export interface LiveCockpitState {
 	mode: string;
 	throttle: string;
 	speed: string;
+	/** §5 gives the Flight console assist as well as speed, throttle and
+	 *  regime; it rendered the label with an empty value. */
+	assist: string;
+	/** §5 gives the Drive console the cruise charge. Same story. */
+	charge: string;
 	tuning: string;
 }
 
@@ -78,6 +83,8 @@ interface CockpitElements {
 	leftPanelCopy: HTMLElement | null;
 	rightPanelCopy: HTMLElement | null;
 	contactCount: HTMLElement | null;
+	assistReadout: HTMLElement | null;
+	chargeReadout: HTMLElement | null;
 	navList: HTMLElement | null;
 	navQuery: HTMLInputElement | null;
 	arrow: HTMLElement | null;
@@ -271,6 +278,8 @@ export class LiveCockpit {
 				leftPanelCopy: find("[data-live-left-copy]"),
 				rightPanelCopy: find('[data-live-panel="right"] .lc-panel-copy > p'),
 				contactCount: find("[data-live-contact-count]"),
+				assistReadout: find("[data-live-assist]"),
+				chargeReadout: find("[data-live-charge]"),
 				navList: find("[data-live-nav-list]"),
 				navQuery: this.root.querySelector<HTMLInputElement>(
 					"[data-live-nav-query]",
@@ -292,7 +301,7 @@ export class LiveCockpit {
 		if (elements.navQuery && elements.navQuery.value !== state.navFilter.query)
 			elements.navQuery.value = state.navFilter.query;
 		this.renderNav(state, elements);
-		const valueKey = `${state.speed}|${state.mode}|${state.throttle}|${state.target}|${state.rightTab}|${state.tuning}|${state.contacts.length}`;
+		const valueKey = `${state.speed}|${state.mode}|${state.throttle}|${state.assist}|${state.charge}|${state.target}|${state.rightTab}|${state.tuning}|${state.contacts.length}`;
 		if (valueKey === this.lastValueKey) return;
 		this.lastValueKey = valueKey;
 		if (elements.leftPanelCopy)
@@ -304,6 +313,15 @@ export class LiveCockpit {
 					: `${state.mode} · ${state.speed} · throttle ${state.throttle}`;
 		if (elements.contactCount)
 			elements.contactCount.textContent = String(state.contacts.length);
+		// **These two rendered as labels with nothing beside them.** §5 gives the
+		// Flight console assist and the Drive console the cruise charge, and the
+		// markup has carried both rows since the console was built — with an
+		// empty `<em>`, which reads as an instrument that is broken rather than
+		// one that was never wired.
+		if (elements.assistReadout)
+			elements.assistReadout.textContent = state.assist;
+		if (elements.chargeReadout)
+			elements.chargeReadout.textContent = state.charge;
 		if (elements.arrow) {
 			elements.arrow.hidden = state.targetBearingDeg === null;
 			if (state.targetBearingDeg !== null)
@@ -375,7 +393,7 @@ export class LiveCockpit {
 			(tab) =>
 				`<button class="lc-tab" type="button" data-live-right-tab="${tab}" aria-selected="${state.rightTab === tab}">${tab}</button>`,
 		).join("");
-		return `<main class="lc-director" data-live-director><i class="lc-target-arrow" data-live-target-arrow aria-label="turn toward selected target">➤</i><strong>${targetId}</strong></main><aside class="lc-panel" data-live-panel="left" data-active="${view.activePanel === "left"}"><header><h2>${state.leftTab.toUpperCase()}</h2><small>LOCAL · 24</small></header><nav class="lc-tabs" aria-label="left console tabs">${leftTabs}</nav>${this.leftBody(state)}<footer>Simulation continues while this console is open.</footer></aside><aside class="lc-panel" data-live-panel="right" data-active="${view.activePanel === "right"}"><header><h2>${state.rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="lc-tabs" aria-label="right console tabs">${rightTabs}</nav><div class="lc-panel-body"><div class="lc-rail"><b>SHIP</b><span>POWER</span><span>MODULES</span><span>INVENTORY</span><span>STATUS</span></div><div class="lc-panel-copy"><h3>${state.rightTab.toUpperCase()} / CONTROL</h3><p ${state.rightTab === "Tuning" ? "data-live-tuning" : ""}></p><div class="lc-readout"><span><b>ASSIST</b><em></em></span><span><b>CHARGE</b><em></em></span></div></div></div><footer>Tuning remains on this right-console tab, never on the flight floor.</footer></aside>`;
+		return `<main class="lc-director" data-live-director><i class="lc-target-arrow" data-live-target-arrow aria-label="turn toward selected target">➤</i><strong>${targetId}</strong></main><aside class="lc-panel" data-live-panel="left" data-active="${view.activePanel === "left"}"><header><h2>${state.leftTab.toUpperCase()}</h2><small>LOCAL · 24</small></header><nav class="lc-tabs" aria-label="left console tabs">${leftTabs}</nav>${this.leftBody(state)}<footer>Simulation continues while this console is open.</footer></aside><aside class="lc-panel" data-live-panel="right" data-active="${view.activePanel === "right"}"><header><h2>${state.rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="lc-tabs" aria-label="right console tabs">${rightTabs}</nav><div class="lc-panel-body"><div class="lc-rail"><b>SHIP</b><span>POWER</span><span>MODULES</span><span>INVENTORY</span><span>STATUS</span></div><div class="lc-panel-copy"><h3>${state.rightTab.toUpperCase()} / CONTROL</h3><p ${state.rightTab === "Tuning" ? "data-live-tuning" : ""}></p><div class="lc-readout"><span><b>ASSIST</b><em data-live-assist></em></span><span><b>CHARGE</b><em data-live-charge></em></span></div></div></div><footer>Tuning remains on this right-console tab, never on the flight floor.</footer></aside>`;
 	}
 
 	private leftBody(state: LiveCockpitState) {
