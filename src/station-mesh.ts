@@ -956,13 +956,16 @@ function ringAt(i: number, count: number) {
  *
  * Both the Coriolis' port grid and its plant bands index faces this way, and two
  * copies of it drift the moment one of them changes how many faces it uses.
- * `step` is the index *within* the face, which is what a caller hands to
- * `rowsOf`.
+ * `step` is the index *within* the face and `perFace` how many share it — the
+ * two a caller hands to `rowsOf`, returned from here because the face count is
+ * this function's, and dividing by it in the caller put the same constant in two
+ * places per call site.
  */
-function faceAt(i: number, faces = 4) {
+function faceAt(i: number, count: number, faces = 4) {
 	const angle = ((i % faces) / faces) * Math.PI * 2;
 	return {
 		step: Math.floor(i / faces),
+		perFace: Math.max(1, Math.ceil(count / faces)),
 		normal: new THREE.Vector3(Math.cos(angle), Math.sin(angle), 0),
 		tangent: new THREE.Vector3(-Math.sin(angle), Math.cos(angle), 0),
 	};
@@ -985,8 +988,13 @@ function greebleRun(
 	type: StationType,
 	tag: string,
 	zones: readonly GreebleZone[],
+	/** The form as built so far — what the generator snaps each piece onto.
+	 *  Every caller passes its own `group`, which is why this is called last in
+	 *  a builder: the structure has to exist before anything can be mounted on
+	 *  it. */
+	structure: THREE.Object3D,
 ) {
-	return detail(buildGreebles(type, tag, zones), "full");
+	return detail(buildGreebles(type, tag, zones, structure), "full");
 }
 
 /**
@@ -1152,8 +1160,7 @@ function buildTradeCoriolis(color: number): BuiltPart {
 			// #36 had. `rowsOf` and not the same arithmetic written again: its
 			// `ceil` is what stops an index past the last slot landing on one
 			// another index already holds.
-			const { step, normal: outward, tangent } = faceAt(i, 4);
-			const perFace = Math.max(1, Math.ceil(count / 4));
+			const { step, perFace, normal: outward, tangent } = faceAt(i, count, 4);
 			const { row, along } = rowsOf(step, perFace, PORT_ROWS);
 			normal.copy(outward);
 			// Inside the face's square and kept clear of its edges, so a pane
@@ -1179,40 +1186,49 @@ function buildTradeCoriolis(color: number): BuiltPart {
 	// where the silhouette lives, and a square face is where a habitat would
 	// actually bolt its machinery.
 	group.add(
-		greebleRun("trade", "trade-a", [
-			{
-				// Narrow and tall rather than wide and flat. At a 40 m footprint
-				// and 34 m of relief these were *tiles*: the eye reads a box on a
-				// hull by its shadowed side, and a piece wider than it is high
-				// has none worth seeing. Half the footprint and a third more
-				// relief is the same volume standing up.
-				count: 32,
-				sizeKm: face * 0.05,
-				reliefKm: face * 0.06,
-				place: (i, count, position, normal) => {
-					// Two rows per face, above and below the port grid — the band
-					// the grid deliberately leaves free. Machinery round the
-					// windows rather than among them: interleaved, the two read
-					// as one decorated stripe, which is what the first version
-					// flew as.
-					const { step, normal: outward, tangent } = faceAt(i, 4);
-					const perFace = Math.max(2, Math.ceil(count / 4));
-					const { row, along } = rowsOf(step, perFace, 2);
-					normal.copy(outward);
-					position
-						.copy(normal)
-						.multiplyScalar(face)
-						.addScaledVector(tangent, (along - 0.5) * face * 1.06);
-					// **The corners are the outline.** A cuboctahedron's square
-					// face sits at `r/√2` and its corners at `r`, so a piece at
-					// the face's own centre has √2 of headroom and one near a
-					// corner has none. Measured: an earlier run at ±0.72·face
-					// across ±0.6·face reached 0.577 km against the hull's 0.570
-					// and took the outline off the station.
-					position.z = (row === 0 ? -1 : 1) * face * 0.52;
+		greebleRun(
+			"trade",
+			"trade-a",
+			[
+				{
+					// Narrow and tall rather than wide and flat. At a 40 m footprint
+					// and 34 m of relief these were *tiles*: the eye reads a box on a
+					// hull by its shadowed side, and a piece wider than it is high
+					// has none worth seeing. Half the footprint and a third more
+					// relief is the same volume standing up.
+					count: 32,
+					sizeKm: face * 0.05,
+					reliefKm: face * 0.06,
+					place: (i, count, position, normal) => {
+						// Two rows per face, above and below the port grid — the band
+						// the grid deliberately leaves free. Machinery round the
+						// windows rather than among them: interleaved, the two read
+						// as one decorated stripe, which is what the first version
+						// flew as.
+						const {
+							step,
+							perFace,
+							normal: outward,
+							tangent,
+						} = faceAt(i, count, 4);
+						const { row, along } = rowsOf(step, perFace, 2);
+						normal.copy(outward);
+						position
+							.copy(normal)
+							.multiplyScalar(face)
+							.addScaledVector(tangent, (along - 0.5) * face * 1.06);
+						// **The corners are the outline.** A cuboctahedron's square
+						// face sits at `r/√2` and its corners at `r`, so a piece at
+						// the face's own centre has √2 of headroom and one near a
+						// corner has none. Measured: an earlier run at ±0.72·face
+						// across ±0.6·face reached 0.577 km against the hull's 0.570
+						// and took the outline off the station.
+						position.z = (row === 0 ? -1 : 1) * face * 0.52;
+					},
 				},
-			},
-		]),
+			],
+			group,
+		),
 	);
 	return { group, fixtures };
 }
@@ -1430,22 +1446,27 @@ function buildTradeRing(color: number): BuiltPart {
 	// it. The sides are also the one surface on this ring whose radius is
 	// `major`, so nothing here can approach the outline at `major + tube`.
 	group.add(
-		greebleRun("trade", "trade-b", [
-			{
-				count: 24,
-				sizeKm: tube * 0.42,
-				reliefKm: tube * 0.34,
-				place: (i, count, position, normal) => {
-					const { theta, side } = ringAt(i, count);
-					normal.set(0, 0, side);
-					position.set(
-						Math.cos(theta) * major,
-						Math.sin(theta) * major,
-						side * tube * 0.92,
-					);
+		greebleRun(
+			"trade",
+			"trade-b",
+			[
+				{
+					count: 24,
+					sizeKm: tube * 0.42,
+					reliefKm: tube * 0.34,
+					place: (i, count, position, normal) => {
+						const { theta, side } = ringAt(i, count);
+						normal.set(0, 0, side);
+						position.set(
+							Math.cos(theta) * major,
+							Math.sin(theta) * major,
+							side * tube * 0.92,
+						);
+					},
 				},
-			},
-		]),
+			],
+			group,
+		),
 	);
 	return { group, fixtures };
 }
@@ -1500,19 +1521,24 @@ function buildTradeDrum(color: number): BuiltPart {
 	// sit on each other. Short of the front cap at `r * 0.88`, which is where the
 	// aperture is and the one place nothing may be.
 	group.add(
-		greebleRun("trade", "trade-c", [
-			{
-				count: 26,
-				sizeKm: body * 0.17,
-				reliefKm: body * 0.13,
-				place: (i, count, position, normal) => {
-					const theta = -(i / count) * Math.PI * 2 * 2 + 0.7;
-					normal.set(Math.cos(theta), Math.sin(theta), 0);
-					position.copy(normal).multiplyScalar(body);
-					position.z = -r * 0.78 + (i / count) * r * 1.4;
+		greebleRun(
+			"trade",
+			"trade-c",
+			[
+				{
+					count: 26,
+					sizeKm: body * 0.17,
+					reliefKm: body * 0.13,
+					place: (i, count, position, normal) => {
+						const theta = -(i / count) * Math.PI * 2 * 2 + 0.7;
+						normal.set(Math.cos(theta), Math.sin(theta), 0);
+						position.copy(normal).multiplyScalar(body);
+						position.z = -r * 0.78 + (i / count) * r * 1.4;
+					},
 				},
-			},
-		]),
+			],
+			group,
+		),
 	);
 	return { group, fixtures };
 }
@@ -1658,22 +1684,27 @@ function buildShipyardGantry(color: number): BuiltPart {
 	// is where its plant would be run — and it is the one long surface on this
 	// form that is not a bay a ship has to fit into.
 	group.add(
-		greebleRun("shipyard", "shipyard-a", [
-			{
-				count: 30,
-				sizeKm: r * 0.075,
-				reliefKm: r * 0.06,
-				place: (i, count, position, normal) => {
-					const { row, along } = rowsOf(i, count, 2);
-					normal.set(0, -1, 0);
-					position.set(
-						-span * 0.42 + along * span * 0.84,
-						-r * 0.42,
-						(row === 0 ? -1 : 1) * r * 0.14,
-					);
+		greebleRun(
+			"shipyard",
+			"shipyard-a",
+			[
+				{
+					count: 30,
+					sizeKm: r * 0.075,
+					reliefKm: r * 0.06,
+					place: (i, count, position, normal) => {
+						const { row, along } = rowsOf(i, count, 2);
+						normal.set(0, -1, 0);
+						position.set(
+							-span * 0.42 + along * span * 0.84,
+							-r * 0.42,
+							(row === 0 ? -1 : 1) * r * 0.14,
+						);
+					},
 				},
-			},
-		]),
+			],
+			group,
+		),
 	);
 	return { group, fixtures, spinner: spun };
 }
@@ -1800,11 +1831,14 @@ function buildShipyardHangar(color: number): BuiltPart {
 			// z sat clear of the surface it was meant to be set into — the whole
 			// grid came away as one loose island.
 			//
-			// Two rows, spanning the same 0.8·span of back face at any count.
+			// Two rows across the **parallel** part of the back face. The slab's
+			// section is constant from −0.44·span to +0.4·span and chamfers
+			// outside that, so a run reaching 0.46·span put panes on the taper,
+			// where the surface has already fallen away from `r * 0.46`.
 			const { row, along } = rowsOf(i, count, 2);
 			normal.set(0, 0, -1);
 			position.set(
-				-span * 0.34 + along * span * 0.8,
+				-span * 0.34 + along * span * 0.68,
 				(row === 0 ? -1 : 1) * r * 0.24,
 				-r * 0.46,
 			);
@@ -1821,22 +1855,29 @@ function buildShipyardHangar(color: number): BuiltPart {
 	// surface — the face that is not the bay mouth, and the one place clutter
 	// cannot end up inside the volume a ship is meant to enter.
 	group.add(
-		greebleRun("shipyard", "shipyard-b", [
-			{
-				count: 26,
-				sizeKm: r * 0.09,
-				reliefKm: r * 0.07,
-				place: (i, count, position, normal) => {
-					const { row, along } = rowsOf(i, count, 2);
-					normal.set(0, 0, -1);
-					position.set(
-						-span * 0.36 + along * span * 0.84,
-						(row === 0 ? -1 : 1) * r * 0.46,
-						-r * 0.46,
-					);
+		greebleRun(
+			"shipyard",
+			"shipyard-b",
+			[
+				{
+					count: 26,
+					sizeKm: r * 0.09,
+					reliefKm: r * 0.07,
+					place: (i, count, position, normal) => {
+						const { row, along } = rowsOf(i, count, 2);
+						normal.set(0, 0, -1);
+						position.set(
+							// The slab's parallel section, for the port run's
+							// reason twenty lines up.
+							-span * 0.34 + along * span * 0.68,
+							(row === 0 ? -1 : 1) * r * 0.46,
+							-r * 0.46,
+						);
+					},
 				},
-			},
-		]),
+			],
+			group,
+		),
 	);
 	return { group, fixtures, spinner: spun };
 }
@@ -1952,28 +1993,33 @@ function buildShipyardSlipway(color: number): BuiltPart {
 	// Not on its outer face: that circle is the whole silhouette of the form,
 	// and the reach here is 1.450 km against a 1.5 km budget.
 	group.add(
-		greebleRun("shipyard", "shipyard-c", [
-			{
-				count: 26,
-				sizeKm: r * 0.085,
-				reliefKm: r * 0.07,
-				place: (i, count, position, normal) => {
-					// **An arc, not a ring**, which is why the angle is written
-					// here rather than taken from `ringAt`: the gap in this form
-					// *is* the slip, and plant wrapped round it would sit across
-					// the one opening the concept is about. Only the side flip is
-					// shared.
-					const { side } = ringAt(i, count);
-					const theta = Math.PI * 0.28 + ((i + 0.5) / count) * Math.PI * 1.4;
-					normal.set(0, 0, side);
-					position.set(
-						Math.cos(theta) * major * 0.94,
-						Math.sin(theta) * major * 0.94,
-						side * r * 0.12,
-					);
+		greebleRun(
+			"shipyard",
+			"shipyard-c",
+			[
+				{
+					count: 26,
+					sizeKm: r * 0.085,
+					reliefKm: r * 0.07,
+					place: (i, count, position, normal) => {
+						// **An arc, not a ring**, which is why the angle is written
+						// here rather than taken from `ringAt`: the gap in this form
+						// *is* the slip, and plant wrapped round it would sit across
+						// the one opening the concept is about. Only the side flip is
+						// shared.
+						const { side } = ringAt(i, count);
+						const theta = Math.PI * 0.28 + ((i + 0.5) / count) * Math.PI * 1.4;
+						normal.set(0, 0, side);
+						position.set(
+							Math.cos(theta) * major * 0.94,
+							Math.sin(theta) * major * 0.94,
+							side * r * 0.12,
+						);
+					},
 				},
-			},
-		]),
+			],
+			group,
+		),
 	);
 	return { group, fixtures, spinner: spun };
 }
@@ -2294,22 +2340,27 @@ function buildRefineryWarren(color: number): BuiltPart {
 	// figure. On the terraced face beside the ports, and on the arm — both
 	// authored surfaces, both well clear of the pad's own corridor along +Z.
 	group.add(
-		greebleRun("refinery", "refinery-a", [
-			{
-				count: 22,
-				sizeKm: r * 0.075,
-				reliefKm: r * 0.07,
-				place: (i, count, position, normal) => {
-					const { row, along } = rowsOf(i, count, 5);
-					normal.set(0, 0, 1);
-					position.set(
-						(along - 0.5) * r * 1.3,
-						r * 0.2 - row * r * 0.15,
-						r * (0.6 + row * 0.06),
-					);
+		greebleRun(
+			"refinery",
+			"refinery-a",
+			[
+				{
+					count: 22,
+					sizeKm: r * 0.075,
+					reliefKm: r * 0.07,
+					place: (i, count, position, normal) => {
+						const { row, along } = rowsOf(i, count, 5);
+						normal.set(0, 0, 1);
+						position.set(
+							(along - 0.5) * r * 1.3,
+							r * 0.2 - row * r * 0.15,
+							r * (0.6 + row * 0.06),
+						);
+					},
 				},
-			},
-		]),
+			],
+			group,
+		),
 	);
 	return { group, fixtures };
 }
@@ -2411,19 +2462,27 @@ function buildRefineryCollar(color: number): BuiltPart {
 	// placed on the asteroid — noise does not know where anything is, which is
 	// the same reason the pad had to be carved out of it.
 	group.add(
-		greebleRun("refinery", "refinery-b", [
-			{
-				count: 20,
-				sizeKm: tube * 0.4,
-				reliefKm: tube * 0.36,
-				place: (i, count, position, normal) => {
-					const { theta, side } = ringAt(i, count);
-					normal.set(Math.cos(theta), Math.sin(theta), 0);
-					position.copy(normal).multiplyScalar(major + tube * 0.55);
-					position.z = side * tube * 0.75;
+		greebleRun(
+			"refinery",
+			"refinery-b",
+			[
+				{
+					count: 20,
+					sizeKm: tube * 0.4,
+					reliefKm: tube * 0.36,
+					place: (i, count, position, normal) => {
+						const { theta, side } = ringAt(i, count);
+						normal.set(Math.cos(theta), Math.sin(theta), 0);
+						position.copy(normal).multiplyScalar(major + tube * 0.55);
+						// 0.6 and not 0.75 of the tube: at 0.75 one piece of
+						// twenty sat past the band's own cross-section and the
+						// snap ray found nothing to put it on.
+						position.z = side * tube * 0.6;
+					},
 				},
-			},
-		]),
+			],
+			group,
+		),
 	);
 	return { group, fixtures };
 }
@@ -2511,19 +2570,24 @@ function buildRefinerySpar(color: number): BuiltPart {
 	// form whose machinery pierces rather than wraps, so its clutter runs with
 	// the shaft rather than round a band.
 	group.add(
-		greebleRun("refinery", "refinery-c", [
-			{
-				count: 20,
-				sizeKm: r * 0.09,
-				reliefKm: r * 0.08,
-				place: (i, count, position, normal) => {
-					const theta = (i / count) * Math.PI * 2 * 2.5;
-					normal.set(Math.cos(theta), Math.sin(theta), 0);
-					position.copy(normal).multiplyScalar(r * 0.3);
-					position.z = -r * 1.05 + (i / count) * r * 0.5;
+		greebleRun(
+			"refinery",
+			"refinery-c",
+			[
+				{
+					count: 20,
+					sizeKm: r * 0.09,
+					reliefKm: r * 0.08,
+					place: (i, count, position, normal) => {
+						const theta = (i / count) * Math.PI * 2 * 2.5;
+						normal.set(Math.cos(theta), Math.sin(theta), 0);
+						position.copy(normal).multiplyScalar(r * 0.3);
+						position.z = -r * 1.05 + (i / count) * r * 0.5;
+					},
 				},
-			},
-		]),
+			],
+			group,
+		),
 	);
 	return { group, fixtures };
 }
@@ -2666,12 +2730,15 @@ function buildOutpostDerrick(color: number): BuiltPart {
 	group.add(flare);
 	group.add(
 		portRun("outpost", 6, (i, count, position, normal) => {
-			// Two rows across the tank cluster's face, spanning the same 0.9·r
-			// whatever the count.
+			// Two rows across the tank cluster's underside, centred on the axis
+			// and spanning 0.9·r·(perRow−1)/perRow — 0.75·r at the twelve that
+			// ship. Stated as it is rather than as "the same" span: the run this
+			// replaces covered 0.6·r, and a comment that rounds its own
+			// arithmetic is the kind that gets believed.
 			const { row, along } = rowsOf(i, count, 2);
 			normal.set(0, 0, 1);
 			position.set(
-				along * r * 0.9 - r * 0.3,
+				(along - 0.5) * r * 0.9,
 				row === 0 ? r * 0.32 : -r * 0.32,
 				-r * 1.09,
 			);
@@ -2681,19 +2748,33 @@ function buildOutpostDerrick(color: number): BuiltPart {
 	// plating above is there to say *small*, and clutter strung through an open
 	// tower would blur the one silhouette this category has.
 	group.add(
-		greebleRun("outpost", "outpost-a", [
-			{
-				count: 12,
-				sizeKm: r * 0.13,
-				reliefKm: r * 0.1,
-				place: (i, count, position, normal) => {
-					const { theta } = ringAt(i, count);
-					normal.set(Math.cos(theta), Math.sin(theta), 0);
-					position.copy(normal).multiplyScalar(r * 0.42);
-					position.z = -r * 1.0;
+		greebleRun(
+			"outpost",
+			"outpost-a",
+			[
+				{
+					count: 12,
+					sizeKm: r * 0.13,
+					reliefKm: r * 0.1,
+					place: (i, count, position, normal) => {
+						// **On a tank's own outward flank**, derived from where
+						// the cluster actually is. A run round the axis at
+						// 0.42·r — the tanks' *centre* circle — at z = −1.0·r
+						// sat in the gap above them, where the snap ray finds
+						// nothing and every piece stayed where it was written.
+						// The four tanks are at 0.42·r from the axis, 0.34·r
+						// half-wide, and span −1.9·r to −1.1·r.
+						const tank = (Math.floor(i / 3) % 4) * (Math.PI / 2);
+						normal.set(Math.cos(tank), Math.sin(tank), 0);
+						position
+							.copy(normal)
+							.multiplyScalar(r * (0.42 + 0.34))
+							.setZ(-r * 1.75 + ((i % 3) + 0.5) * r * 0.2);
+					},
 				},
-			},
-		]),
+			],
+			group,
+		),
 	);
 	return { group, fixtures };
 }
@@ -2748,19 +2829,24 @@ function buildOutpostBuoy(color: number): BuiltPart {
 	// On the drum's own waist, between the fins. Behind the pad, so nothing
 	// added here can reach the deck a ship touches down on.
 	group.add(
-		greebleRun("outpost", "outpost-b", [
-			{
-				count: 12,
-				sizeKm: r * 0.12,
-				reliefKm: r * 0.09,
-				place: (i, count, position, normal) => {
-					const { theta } = ringAt(i, count);
-					normal.set(Math.cos(theta), Math.sin(theta), 0);
-					position.copy(normal).multiplyScalar(r * 0.84);
-					position.z = -r * 0.85 + (i % 3) * r * 0.3;
+		greebleRun(
+			"outpost",
+			"outpost-b",
+			[
+				{
+					count: 12,
+					sizeKm: r * 0.12,
+					reliefKm: r * 0.09,
+					place: (i, count, position, normal) => {
+						const { theta } = ringAt(i, count);
+						normal.set(Math.cos(theta), Math.sin(theta), 0);
+						position.copy(normal).multiplyScalar(r * 0.84);
+						position.z = -r * 0.85 + (i % 3) * r * 0.3;
+					},
 				},
-			},
-		]),
+			],
+			group,
+		),
 	);
 	return { group, fixtures };
 }
@@ -2850,18 +2936,23 @@ function buildOutpostRig(color: number): BuiltPart {
 	// body the same way — the fix that run records applies to anything else
 	// mounted on it.
 	group.add(
-		greebleRun("outpost", "outpost-c", [
-			{
-				count: 12,
-				sizeKm: r * 0.1,
-				reliefKm: r * 0.08,
-				place: (i, count, position, normal) => {
-					normal.set(-1, 0, 0);
-					const z = -r * 0.9 + (i / count) * r * 1.4;
-					position.set(-r * 0.5, r * 0.2 + z * 0.34, z);
+		greebleRun(
+			"outpost",
+			"outpost-c",
+			[
+				{
+					count: 12,
+					sizeKm: r * 0.1,
+					reliefKm: r * 0.08,
+					place: (i, count, position, normal) => {
+						normal.set(-1, 0, 0);
+						const z = -r * 0.9 + (i / count) * r * 1.4;
+						position.set(-r * 0.5, r * 0.2 + z * 0.34, z);
+					},
 				},
-			},
-		]),
+			],
+			group,
+		),
 	);
 	return { group, fixtures };
 }

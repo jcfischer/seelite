@@ -14,6 +14,7 @@
 		"probe": "npm run check:wiring && node scripts/probe-all.mjs",
 		"probe:one": "npm run check:wiring && node scripts/probe-all.mjs --only",
 		"views": "node scripts/capture-views.mjs",
+		"views:diff": "node scripts/diff-view-set.mjs",
 		"probe:browser": "playwright install chromium"
 	},
 	"dependencies": {
@@ -24,6 +25,7 @@
 		"@types/bun": "^1.3.14",
 		"@types/three": "^0.170.0",
 		"playwright": "^1.62.1",
+		"pngjs": "^7.0.0",
 		"typescript": "^5.6.0",
 		"vite": "^6.0.0"
 	},

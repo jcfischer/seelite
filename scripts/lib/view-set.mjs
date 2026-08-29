@@ -165,16 +165,24 @@ export const VIEWS = Object.freeze([
 		 *
 		 * **Measured rather than eyeballed**, because the first version of this
 		 * comment said "pixel-identical" on the strength of looking at two PNGs.
-		 * Across #129's two runs, the fraction of pixels that moved by more than
-		 * 24/255:
+		 * `npm run views:diff` (`scripts/diff-view-set.mjs`) is the instrument,
+		 * so these are re-runnable rather than quoted. The fraction of pixels
+		 * moving by more than 24/255, **against a third run of the same build**
+		 * — because the clock runs during capture and a spinning station is
+		 * framed at a different phase each time:
 		 *
-		 * | view | moved > 24/255 |
-		 * |---|---|
-		 * | `station-flank` | 1.22% |
-		 * | `cockpit-backlit` | 0.37% |
-		 * | `station-approach` | 0.01% |
-		 * | `station-outline` | 0.00% |
-		 * | `hull-chase`, `planet-terminator`, `sky-only` | 0.00% |
+		 * | view | before → after | same build twice |
+		 * |---|---|---|
+		 * | `station-flank` | 2.09% | 1.05% |
+		 * | `cockpit-backlit` | 0.41% | 0.14% |
+		 * | `station-approach` | 0.55% | **0.55%** |
+		 * | `station-outline` | 0.05% | **0.05%** |
+		 * | `cockpit-arrival` | 0.02% | 0.02% |
+		 * | `hull-chase` | 0.01% | 0.01% |
+		 * | `sky-only` | 0.00% | 0.00% |
+		 *
+		 * The two views that lost 102 move by **exactly** their own noise floor;
+		 * the two that keep it move by two to three times theirs.
 		 *
 		 * The equatorial faces *are* on screen in the axis view — but at that
 		 * obliquity, tripling the ports and adding the plant moves the frame by
@@ -209,8 +217,9 @@ export const VIEWS = Object.freeze([
 		 * **102 came off here too, and for the same reason it came off
 		 * `station-approach`** (#129). A shipyard's ports are on the keel's top
 		 * and the slab's back face; at 140° this frame sees the shipyard from
-		 * neither, and both runs of #129's before/after moved **0.00%** of this
-		 * frame's pixels by more than 24/255. What the frame does show is the
+		 * neither: across #129's before/after this frame moved 0.05% of its
+		 * pixels by more than 24/255, which is **exactly** what a third run of
+		 * the same build moves. What the frame does show is the
 		 * backdrop behind a hard outline and what bloom does to one, which is
 		 * what it is kept for.
 		 *

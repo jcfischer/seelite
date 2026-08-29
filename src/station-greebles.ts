@@ -27,17 +27,28 @@
  * 2. **Nothing may stand in the docking corridor.** `station-mesh.test.ts`
  *    already sweeps every vertex of every form, instanced copies included, so a
  *    zone placed across the approach is caught there rather than here.
- * 3. **A greeble is mounted, not floating.** It is sunk into the surface it sits
- *    on by a third of its own height, so a piece reads as bolted to the hull
- *    rather than as debris beside it.
+ * 3. **A greeble is mounted, not floating** — and the generator makes that true
+ *    rather than trusting the zone. Each piece is cast back at the form's own
+ *    structure along its authored normal and moved onto the surface it hits,
+ *    then sunk a third of its height into it.
  *
- *    **`station-mesh.test.ts`'s island check does not see this, and an earlier
- *    version of this comment claimed it did.** That check takes one `Box3` per
+ *    **A zone cannot be authored accurately enough to skip this.** Seven of the
+ *    twelve forms floated pieces when the zones placed them at a radius written
+ *    by hand: the Gantry's keel tapers from 0.2·r to 0.42·r along its own
+ *    length, the Hangar's slab chamfers at both ends, and a twelve-sided
+ *    flat-shaded drum's surface is 3.4% inside the radius its control rings declare.
+ *    Every one of those is a number a person would have to keep in step with the
+ *    form. The ray reads the form instead, so a zone declares *where on the
+ *    station* and the surface decides *where exactly*.
+ *
+ *    **`station-mesh.test.ts`'s island check cannot see this, and an earlier
+ *    version of this comment claimed it could.** That check takes one `Box3` per
  *    *object*, and `setFromObject` on an `InstancedMesh` unions every instance —
  *    so one box already spans the hull and it would pass with every individual
- *    piece floating free. The claim was worth exactly as much as the measurement
- *    behind it, which was none. `tests/station-greebles.test.ts` asserts the
- *    thing instead, per instance.
+ *    piece floating free. Neither can a bounding box of any kind: a piece
+ *    hovering 100 m off a tapering keel is deep inside the station's box.
+ *    `tests/station-greebles.test.ts` casts the same ray the generator does and
+ *    asserts every piece found structure.
  *
  * **No glass, by construction.** #102 §1's exclusion: a station has no canopy,
  * and every zone here is declared on a plated shell by the builder that made it.
@@ -50,7 +61,7 @@
  */
 
 import * as THREE from "three";
-import { STATION_TYPES, type StationType } from "./station";
+import { STATION_GEOMETRY, STATION_TYPES, type StationType } from "./station";
 import { displayRand } from "./station-surface";
 import { STATION_VISUALS } from "./station-visuals";
 
@@ -135,11 +146,16 @@ export const GREEBLE_PRIMITIVES: readonly THREE.BufferGeometry[] = [
  * every other plated thing on the station. Shared per role and never mutated.
  */
 const MATERIALS: Record<StationType, THREE.MeshStandardMaterial> =
-	// From `STATION_TYPES` and not a list written out here, for the reason every
-	// other per-role table in this pass gives: a fifth station type must stop the
-	// build rather than reach an `undefined` material and draw nothing. A
-	// restated list behind a cast compiles clean and fails at the first station
-	// of the new role.
+	// From `STATION_TYPES` and not a list written out here: a list restated in
+	// this file goes stale silently when a fifth role is added, and this one
+	// cannot.
+	//
+	// **The cast is real and it is not a type guard.** `Object.fromEntries`
+	// returns an index signature, so the assertion below is what gives the table
+	// its type — a fifth role would reach an `undefined` material and draw
+	// nothing rather than stopping the build. Deriving the keys is what makes
+	// that unreachable in practice, and `tests/station-greebles.test.ts` asserts
+	// every role has a material, which is the check the cast cannot be.
 	Object.fromEntries(
 		STATION_TYPES.map((type) => [
 			type,
@@ -155,11 +171,16 @@ const MATERIALS: Record<StationType, THREE.MeshStandardMaterial> =
  * How deep a piece sits in the surface it is mounted on, as a fraction of its
  * own height.
  *
- * A third, which does two things at once: it puts the piece's bounding box
- * inside the hull's on every axis, so `station-mesh.test.ts`'s island check sees
- * it as attached rather than as a detached part; and it leaves two thirds
- * standing proud, so the relief a zone declares is the relief the eye reads
- * within a factor the zone can allow for.
+ * A third: enough that the piece has a base *inside* the surface rather than a
+ * face resting on it, which is what makes it read as bolted on rather than set
+ * down, and it leaves two thirds standing proud so the relief a zone declares is
+ * near the relief the eye reads.
+ *
+ * **It buys no check, and an earlier version of this comment said it bought the
+ * island check.** It does not: `station-mesh.test.ts` takes one `Box3` per
+ * object and `setFromObject` unions an `InstancedMesh`'s instances, so that box
+ * spans the hull however deep any individual piece sits. What proves a piece is
+ * mounted is the ray above and the test that casts the same one.
  */
 const SINK = 1 / 3;
 
@@ -182,8 +203,31 @@ export function buildGreebles(
 	type: StationType,
 	tag: string,
 	zones: readonly GreebleZone[],
+	/**
+	 * The form as built so far — what each piece is snapped onto.
+	 *
+	 * The parts, not the whole station: this is called from inside a builder,
+	 * before its group is normalised or given an aperture, and that is the right
+	 * moment. What it must contain is the **structure**, in the same kilometres
+	 * the zone authors in.
+	 */
+	structure: THREE.Object3D,
 ): THREE.Group {
 	const random = displayRand(`station-greebles-${tag}`);
+	// The targets a piece may land on: plain meshes only. A window grid is an
+	// `InstancedMesh` and is not structure — a greeble resting on a pane is the
+	// same defect as one resting on nothing, one step further along.
+	structure.updateMatrixWorld(true);
+	const targets: THREE.Mesh[] = [];
+	structure.traverse((object) => {
+		const mesh = object as THREE.Mesh;
+		if (!mesh.geometry) return;
+		if ((mesh as THREE.InstancedMesh).isInstancedMesh) return;
+		targets.push(mesh);
+	});
+	const ray = new THREE.Raycaster();
+	const from = new THREE.Vector3();
+	const back = new THREE.Vector3();
 	const density = STATION_VISUALS[type].greebleDensity;
 	const matrices: THREE.Matrix4[][] = GREEBLE_PRIMITIVES.map(() => []);
 	const position = new THREE.Vector3();
@@ -200,6 +244,45 @@ export function buildGreebles(
 		for (let i = 0; i < count; i++) {
 			zone.place(i, count, position, normal);
 			normal.normalize();
+			// **Snap onto the surface the zone was aiming at.**
+			//
+			// Cast from a probe height out, back along the authored normal, and
+			// take the first structure the ray meets — position *and* facing, so
+			// a piece on a flat-shaded facet lies flush with it rather than with
+			// the idealised curve the zone described.
+			//
+			// **Tight outward, generous inward**, and the asymmetry is the whole
+			// design. Outward the ray starts only twice the zone's own relief
+			// clear, so a piece cannot be pulled onto something standing in front
+			// of the surface it was authored on. Inward it may travel the
+			// station's own diameter, because the first thing it meets going that
+			// way *is* the nearest surface along the normal the zone declared —
+			// which is what the zone was pointing at.
+			//
+			// A short inward reach looks safer and is not: at twice the relief it
+			// missed every piece on the outpost forms, whose six-sided
+			// flat-shaded sections sit a long way inside the radius their control
+			// rings declare, and the pieces then stayed where they were authored.
+			// A miss leaves the authored position untouched rather than dropping
+			// the piece — a silently missing greeble is a zone nobody notices is
+			// broken — and `tests/station-greebles.test.ts` fails on exactly that.
+			const probe = zone.reliefKm * 2;
+			ray.set(
+				from.copy(position).addScaledVector(normal, probe),
+				back.copy(normal).negate(),
+			);
+			ray.far = probe + STATION_GEOMETRY[type].coreRadiusKm * 2;
+			const hit = ray.intersectObjects(targets, false)[0];
+			if (hit) {
+				position.copy(hit.point);
+				if (hit.normal) {
+					// The face normal is in the hit object's local space.
+					normal
+						.copy(hit.normal)
+						.transformDirection(hit.object.matrixWorld)
+						.normalize();
+				}
+			}
 			// The primitive is drawn from the stream rather than from `i` so a
 			// zone does not repeat crate-tank-fin in visible order; a run of ribs
 			// is something a zone asks for with a fin-shaped `sizeKm`, not

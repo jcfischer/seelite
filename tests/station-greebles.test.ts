@@ -38,12 +38,21 @@ import { STATION_QUALITY, STATION_VISUALS } from "../src/station-visuals";
 const TYPES: StationType[] = STATION_TYPES;
 const GREY = 0x9aa6b2;
 
-/** Every instanced greeble mesh on a built station. */
+/**
+ * Every instanced greeble mesh on a built station.
+ *
+ * **Asserts it agrees with `StationMesh.greebles`**, which is the set the
+ * *renderer* drives — the quality gate writes `visible` on exactly those. The
+ * two predicates differed by one character (`"greebles"` against
+ * `"greebles-"`), so a test walking its own traversal could pass while the gate
+ * reached a different set. Where a test only needs the renderer's set it takes
+ * `built.greebles` directly; this exists for the cases that start from a root.
+ */
 function greebleMeshes(root: THREE.Object3D): THREE.InstancedMesh[] {
 	const found: THREE.InstancedMesh[] = [];
 	root.traverse((object) => {
 		const mesh = object as THREE.InstancedMesh;
-		if (mesh.isInstancedMesh && object.name.startsWith("greebles")) {
+		if (mesh.isInstancedMesh && object.name.startsWith("greebles-")) {
 			found.push(mesh);
 		}
 	});
@@ -93,14 +102,21 @@ const isGreeble = (object: THREE.Object3D) => {
 };
 
 describe("every form carries clutter, and the density figure is what puts it there", () => {
-	test("every form of every role builds greebles", () => {
+	test("every form of every role builds greebles, and the handle holds them", () => {
 		for (const type of TYPES) {
 			for (const form of STATION_FORMS[type]) {
-				const { root } = buildStationForm(type, form.id, GREY);
-				expect([type, form.id, greebleCount(root) > 0]).toEqual([
+				const built = buildStationForm(type, form.id, GREY);
+				expect([type, form.id, greebleCount(built.root) > 0]).toEqual([
 					type,
 					form.id,
 					true,
+				]);
+				// The renderer drives `built.greebles`, not a traversal of its
+				// own, so the two sets have to be the same one.
+				expect([type, form.id, built.greebles.map((m) => m.name)]).toEqual([
+					type,
+					form.id,
+					greebleMeshes(built.root).map((m) => m.name),
 				]);
 			}
 		}
@@ -145,7 +161,15 @@ describe("every form carries clutter, and the density figure is what puts it the
 			},
 		};
 		for (const type of TYPES) {
-			const built = buildGreebles(type, `density-${type}`, [zone]).children;
+			// An empty structure: the snap finds nothing, every piece keeps the
+			// position the zone gave it, and the count is the only thing under
+			// test. A form would put its own geometry in the way of that.
+			const built = buildGreebles(
+				type,
+				`density-${type}`,
+				[zone],
+				new THREE.Group(),
+			).children;
 			const total = built.reduce(
 				(sum, mesh) => sum + (mesh as THREE.InstancedMesh).count,
 				0,
@@ -185,8 +209,41 @@ describe("every form carries clutter, and the density figure is what puts it the
 	});
 });
 
+describe("every role reaches the generator", () => {
+	test("each station type gets its own greeble material", () => {
+		// The check `MATERIALS`' `as Record<StationType, …>` cannot be: the cast
+		// types an index signature and would let a fifth role reach `undefined`
+		// and draw nothing. Building one piece per role is what proves the table
+		// is complete.
+		const zone = {
+			count: 1,
+			sizeKm: 0.01,
+			reliefKm: 0.01,
+			place: (_i: number, _n: number, p: THREE.Vector3, n: THREE.Vector3) => {
+				p.set(0, 0, 0);
+				n.set(0, 0, 1);
+			},
+		};
+		for (const type of TYPES) {
+			const group = buildGreebles(
+				type,
+				`material-${type}`,
+				[zone],
+				new THREE.Group(),
+			);
+			for (const child of group.children) {
+				const material = (child as THREE.InstancedMesh).material;
+				expect([type, material instanceof THREE.MeshStandardMaterial]).toEqual([
+					type,
+					true,
+				]);
+			}
+		}
+	});
+});
+
 describe("a greeble is mounted on the station, not floating beside it", () => {
-	test("every instance sits inside the station's own structure", () => {
+	test("every instance has structure under it, within its own height", () => {
 		// **The check `station-mesh.test.ts`'s island grouping cannot make.**
 		// That one takes one `Box3` per object, and `Box3.setFromObject` on an
 		// `InstancedMesh` unions every instance — so a single box already spans
@@ -194,61 +251,72 @@ describe("a greeble is mounted on the station, not floating beside it", () => {
 		// floating free. It catches a whole zone that is a detached island; it
 		// cannot see one piece of thirty.
 		//
-		// A proxy, named as one, in two halves: a piece's centre is inside the
-		// box of the *non-greeble* geometry, and it is out at the structure
-		// rather than at the middle of it.
+		// **A bounding box cannot see it either**, and the version of this test
+		// that used one is why the failure below reached a review. A piece
+		// hovering 102 m off a tapering keel is deep inside the station's union
+		// AABB and well past any radial floor: the box says *within the
+		// station*, and the question is *on a surface*.
 		//
-		// **The box is widened rather than shrunk, and two earlier versions of
-		// this got that backwards.** A face-mounted piece sits on the box's own
-		// surface by construction and then stands its own standoff proud of it:
-		// the Coriolis' square faces are at 0.672 against an AABB of 0.720 on x
-		// and 0.678 on y, so a 2% inset failed half the pieces and a bare
-		// `containsPoint` still failed the one sitting 0.0002 past the y face. A
-		// tolerance that fails correct work is worse than a loose one, because
-		// it is loosened by whoever meets it next rather than understood. 1% of
-		// the structure's own size is more than any greeble's standoff and two
-		// orders less than a zone placed off the hull, which is the distinction
-		// that has to hold.
+		// So it is a ray, cast from outside the piece back along its own normal,
+		// asked to find non-greeble geometry before it reaches the piece's own
+		// base. `SINK` puts the base a third of the height below the centre and
+		// the centre a sixth above the surface, so a mounted piece is hit well
+		// inside that budget and one standing clear of a surface is not hit at
+		// all. Instanced targets are excluded: window panes are not structure,
+		// and a greeble resting on a pane is the same defect.
 		//
-		// It cannot see a piece buried inside a hollow, and nothing headless can
-		// without a per-form surface equation — the same limit
-		// `station-mesh.test.ts` records for the window panes. What it catches is
-		// the failure that actually happens: a zone placed at a radius chosen by
-		// eye, off the surface it was meant to be set into. Four fixtures were in
-		// that state when the island check was first run.
+		// What it still cannot see is a piece buried inside a hollow — it finds
+		// the outer surface and is satisfied. That limit is the window panes'
+		// too, and it is a person's job for the same reason.
 		for (const type of TYPES) {
 			for (const form of STATION_FORMS[type]) {
-				const { root } = buildStationForm(type, form.id, GREY);
+				const { root, greebles } = buildStationForm(type, form.id, GREY);
 				root.updateMatrixWorld(true);
-				const structure = new THREE.Box3();
+				const structure: THREE.Mesh[] = [];
 				root.traverse((object) => {
+					const mesh = object as THREE.Mesh;
 					if (isGreeble(object)) return;
-					if (!(object as THREE.Mesh).geometry) return;
-					structure.union(new THREE.Box3().setFromObject(object));
+					if (!mesh.geometry) return;
+					if ((mesh as THREE.InstancedMesh).isInstancedMesh) return;
+					structure.push(mesh);
 				});
-				structure.expandByVector(
-					structure.getSize(new THREE.Vector3()).multiplyScalar(0.01),
-				);
-				// **A quarter of the core radius, not of the form's own box**, and
-				// that is the pane test's correction applied here: a shipyard's
-				// reach is a 1.4 km frame nothing is mounted on, so a floor
-				// derived from its bounding box rejected the keel clutter that is
-				// exactly where a yard's plant belongs. The mesh is normalised to
-				// one core radius, so the core radius is 1.
-				const FLOOR = 0.25;
+				const ray = new THREE.Raycaster();
 				const matrix = new THREE.Matrix4();
 				const centre = new THREE.Vector3();
-				const outside: string[] = [];
-				for (const mesh of greebleMeshes(root)) {
+				const rotation = new THREE.Quaternion();
+				const scale = new THREE.Vector3();
+				const normal = new THREE.Vector3();
+				const floating: string[] = [];
+				for (const mesh of greebles) {
 					for (let i = 0; i < mesh.count; i++) {
 						mesh.getMatrixAt(i, matrix);
-						centre.setFromMatrixPosition(matrix);
-						mesh.localToWorld(centre);
-						if (!structure.containsPoint(centre) || centre.length() < FLOOR)
-							outside.push(`${mesh.name}#${i}`);
+						// **Composed with the mesh's world matrix before
+						// decomposing**, so the scale comes back in the same
+						// units as the positions. Decomposing the instance
+						// matrix alone gives kilometres while `localToWorld`
+						// gives core radii, and the two differ by the core
+						// radius — a factor of 6.7 on an outpost, which is
+						// enough to fail every piece on all three of its forms
+						// while the geometry is correct.
+						matrix.premultiply(mesh.matrixWorld);
+						matrix.decompose(centre, rotation, scale);
+						normal.set(0, 0, 1).applyQuaternion(rotation).normalize();
+						// From `START` out, so the ray is never launched from
+						// inside the very surface it is looking for.
+						const START = 1;
+						ray.set(
+							centre.clone().addScaledVector(normal, START),
+							normal.clone().negate(),
+						);
+						ray.far = START + scale.z;
+						const hit = ray.intersectObjects(structure, false);
+						// `scale.z` is the piece's height, so this asks: is there
+						// structure between the centre and the piece's own base?
+						if (!hit.length || hit[0].distance > START + scale.z * 0.5)
+							floating.push(`${mesh.name}#${i}`);
 					}
 				}
-				expect([type, form.id, outside.join(",")]).toEqual([type, form.id, ""]);
+				expect([type, form.id, floating.length]).toEqual([type, form.id, 0]);
 			}
 		}
 	});
