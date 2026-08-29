@@ -233,3 +233,174 @@ export function projectNavTargets(
 	rows.sort((a, b) => a.distanceKm - b.distanceKm || a.id.localeCompare(b.id));
 	return rows;
 }
+
+// ---- The persistent flight floor's strip (§5, node #92) --------------------
+
+/**
+ * §4's grammar, as a name rather than a colour.
+ *
+ * The draw site turns a tone into pixels; this module decides which tone a
+ * reading has earned. Splitting it the other way — a formatter returning
+ * strings and a painter picking colours by re-reading the state — would put §4
+ * in two places, and the half that is not a pure function is the half nothing
+ * tests.
+ */
+export type FloorTone =
+	/** Cool cyan: passive instrumentation and stable reference. */
+	| "passive"
+	/** Amber: a state the pilot is expected to act on or account for. */
+	| "action"
+	/** Green: a confirmed, engaged state. */
+	| "confirmed"
+	/** Red: §4's "blocking danger or refusal". */
+	| "refused";
+
+export interface FloorCell {
+	label: string;
+	value: string;
+	tone: FloorTone;
+}
+
+/**
+ * What the strip reads, and nothing more.
+ *
+ * The charge capacity and regeneration rate are **passed in** rather than
+ * imported from `cruise.ts`. This module is the presentation tier and the two
+ * constants have one owner; a second import here would be a second place a
+ * retune has to reach, which is the failure `galaxy.ts` and `market.ts` shipped
+ * for six weeks with `FUEL_COST_PER_LY`.
+ */
+export interface FlightFloorState {
+	regime: "normal" | "cruise";
+	/** Seconds of hyperspace wind-up left, or 0. */
+	spoolLeftS: number;
+	/** 0…1. */
+	throttle: number;
+	assist: boolean;
+	chargeAu: number;
+	chargeCapacityAu: number;
+	chargeRegenAuPerS: number;
+}
+
+/**
+ * Is the drive empty *as the instruments print it*?
+ *
+ * **Rounded first, and that is the whole point.** The sim's own gate is
+ * `chargeAu <= 0`, and passive regeneration lifts the raw value off zero on the
+ * very next frame — so a tone keyed to the raw number turned calm-cyan while
+ * the same cell still printed "0.0/12 AU", and the cruise prompt went back to
+ * "press J to cruise" beside it. Two halves of one reading disagreeing, and
+ * caught by looking at the frame rather than by any check.
+ *
+ * One predicate, read by the strip's tone and by `cruisePrompt`, so the glass
+ * cannot say two things about one quantity. It follows that the refusal is
+ * **brief by construction** — about three seconds, until regeneration reaches
+ * 0.05 AU. Whether "practically stranded" deserves its own band is a design
+ * question this did not take: it would need a threshold no spec states.
+ */
+export const chargeReadsEmpty = (chargeAu: number): boolean =>
+	Number(chargeAu.toFixed(1)) <= 0;
+
+/** §5's own order, in §5's own sentence: "mode/throttle/assist/charge". */
+export const FLIGHT_FLOOR_LABELS = ["MODE", "THR", "ASSIST", "CHARGE"] as const;
+
+/**
+ * The widest reading each cell can ever take.
+ *
+ * **The strip is laid out against this, not against what it happens to say.**
+ * Sized to the live values it changed width every time the throttle passed a
+ * ten or the drive crossed an AU — and worse, it was measured on a full tank,
+ * where the regeneration suffix is absent, so the narrow viewport fitted a run
+ * a fifth shorter than the one it would draw a second later. The browser check
+ * passed on it and the frame showed both ends clipped.
+ *
+ * The font is monospace, so character count is width: `flight-floor.test.ts`
+ * can sweep the reachable values and require none longer than these.
+ */
+export function flightFloorWidest(
+	chargeCapacityAu: number,
+	chargeRegenAuPerS: number,
+): Record<(typeof FLIGHT_FLOOR_LABELS)[number], string> {
+	return {
+		// Two digits of spool, which is wider than NORMAL or CRUISE.
+		MODE: "SPOOL 00.0s",
+		THR: "100%",
+		ASSIST: "OFF",
+		// A full tank printed with the suffix it only carries below full: no
+		// reachable state is this wide, which is what a bound is for.
+		CHARGE: `${chargeCapacityAu.toFixed(1)}/${chargeCapacityAu} AU  +${(chargeRegenAuPerS * 60).toFixed(1)}/min`,
+	};
+}
+
+/**
+ * §5's compact mode/throttle/assist/charge strip.
+ *
+ * **Three of these four had no player-visible readout before this.** They were
+ * written only to `#hud`, which is `clip: rect(0 0 0 0)` in `index.html` and is
+ * only written at all under `?legacy-hud=1` — a probe surface, not a player
+ * one. Charge reached the glass once, as secondary text on the *target*
+ * instrument, which is the wrong instrument for a second consumable with its
+ * own regeneration.
+ */
+export function flightFloorCells(state: FlightFloorState): FloorCell[] {
+	const {
+		regime,
+		spoolLeftS,
+		throttle,
+		assist,
+		chargeAu,
+		chargeCapacityAu,
+		chargeRegenAuPerS,
+	} = state;
+
+	// **Spooling outranks the regime field.** The wind-up is a window the pilot
+	// is committed inside, and on the frame a drop-out fires `regime` still
+	// reads cruise — so a strip keyed on `regime` alone would name the regime
+	// the ship has left.
+	const mode: FloorCell =
+		spoolLeftS > 0
+			? {
+					label: "MODE",
+					value: `SPOOL ${spoolLeftS.toFixed(1)}s`,
+					tone: "action",
+				}
+			: regime === "cruise"
+				? { label: "MODE", value: "CRUISE", tone: "confirmed" }
+				: { label: "MODE", value: "NORMAL", tone: "passive" };
+
+	const thr: FloorCell = {
+		label: "THR",
+		value: `${Math.round(throttle * 100)}%`,
+		tone: "passive",
+	};
+
+	// **Amber when off.** Assist off is #5's Newtonian regime, where the nose
+	// and the velocity genuinely disagree — the single fact about the ship's
+	// handling that the hull-hidden cockpit cannot show any other way. It is a
+	// legitimate choice rather than a fault, so it is not red.
+	const assistCell: FloorCell = {
+		label: "ASSIST",
+		value: assist ? "ON" : "OFF",
+		tone: assist ? "passive" : "action",
+	};
+
+	// The regeneration is printed **only while it is running**. It is the
+	// anti-stranding rule and the map requires the HUD to show it, but a
+	// "+1.0/min" beside a full tank is a claim about a process that is not
+	// happening.
+	const regenPerMin = chargeRegenAuPerS * 60;
+	const filling = chargeAu < chargeCapacityAu;
+	const charge: FloorCell = {
+		label: "CHARGE",
+		value:
+			`${chargeAu.toFixed(1)}/${chargeCapacityAu} AU` +
+			(filling ? `  +${regenPerMin.toFixed(1)}/min` : ""),
+		// Empty is a **refusal**, not a low reading: the cruise engage is
+		// declined, which is §4's second red case. Anything above it is an
+		// ordinary spend. Read at the resolution the cell prints — see
+		// `chargeReadsEmpty`.
+		tone: chargeReadsEmpty(chargeAu) ? "refused" : "passive",
+	};
+
+	return [mode, thr, assistCell, charge];
+}

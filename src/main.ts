@@ -82,17 +82,24 @@ import {
 	type CombatPrototypeState,
 } from "./combat-prototype";
 import {
+	FLIGHT_FLOOR_LABELS,
 	SCANNER_RANGE_KM,
+	chargeReadsEmpty,
+	flightFloorWidest,
+	type FloorCell,
+	type FloorTone,
 	type HeadLook,
 	type NavFilter,
 	type NavRow,
 	type ScannerContact,
+	flightFloorCells,
 	projectNavTargets,
 	projectScannerContacts,
 	targetArrowBearingDeg,
 } from "./cockpit";
 import {
 	CHARGE_CAPACITY_AU,
+	CHARGE_REGEN_AU_PER_S,
 	type CruiseParams,
 	DEFAULT_CRUISE,
 	HOST_CLEARANCE_KM,
@@ -514,6 +521,37 @@ const TEXT_RASTER_BOUNDS_DEFAULTS: Readonly<{
  */
 const GLASS_BOTTOM_FRACTION = 0.66;
 
+/**
+ * The band §5's mode/throttle/assist/charge strip occupies, measured up from
+ * the bottom of the glass.
+ *
+ * **One owner, because two things are anchored to it.** The docking director's
+ * clearance line is also placed off the glass bottom, and §3 says that line
+ * must carry its reason — so it is offset by this rather than by a second
+ * literal that a change to the strip's height would silently leave overlapping.
+ */
+const FLOOR_STRIP_HEIGHT_PX = 26;
+
+/** §4's grammar, once. `cockpit.ts` decides which tone a reading earned; this
+ *  is the only place a tone becomes a colour. */
+const FLOOR_TONE_FILL: Record<FloorTone, string> = {
+	passive: "rgba(150, 205, 240, 0.92)",
+	action: "rgba(255, 196, 110, 0.95)",
+	confirmed: "rgba(150, 255, 190, 0.95)",
+	refused: "rgba(255, 110, 96, 0.97)",
+};
+const FLOOR_LABEL_FILL = "rgba(120, 165, 195, 0.75)";
+const FLOOR_VALUE_FONT = "13px ui-monospace, Menlo, monospace";
+const FLOOR_LABEL_FONT = "10px ui-monospace, Menlo, monospace";
+/** Between a label and its value, and between one cell and the next. */
+const FLOOR_LABEL_GAP_PX = 5;
+const FLOOR_CELL_GAP_PX = 22;
+/** Clear of the glass edges at every viewport. */
+const FLOOR_MARGIN_PX = 14;
+/** How far the strip may be shrunk to fit. Below this it is not an instrument
+ *  read at a glance, and the answer would have to be a different layout. */
+const FLOOR_MIN_SCALE = 0.62;
+
 /** How far past the tolerance ring the nose marker is allowed to sit before it
  *  stops moving. Beyond this the error is off-scale and the marker says so. */
 const MARKER_MAX_FRACTION = 1.3;
@@ -521,6 +559,32 @@ const MARKER_MAX_FRACTION = 1.3;
 /** The throat is the thing the ship goes through, so it is the brightest line
  *  in the corridor — and it carries the blocking state, because a refusal has
  *  to reach the part of the picture the pilot is aiming at. */
+/** One font declaration at a scale. The strip is the only thing that scales
+ *  its whole run, so the parse stays here rather than becoming a helper the
+ *  rest of the overlay would have to opt into. */
+const floorFont = (declaration: string, scale: number): string =>
+	declaration.replace(
+		/^(\d+)px/,
+		(_, px) => `${Math.max(7, Math.round(Number(px) * scale))}px`,
+	);
+
+/** The width one run of values would take, labels and gaps included. */
+function floorRunWidth(
+	ctx: CanvasRenderingContext2D,
+	values: readonly string[],
+	scale: number,
+): number {
+	let total = FLOOR_CELL_GAP_PX * scale * (values.length - 1);
+	for (const [i, value] of values.entries()) {
+		ctx.font = floorFont(FLOOR_LABEL_FONT, scale);
+		total += ctx.measureText(FLIGHT_FLOOR_LABELS[i]).width;
+		total += FLOOR_LABEL_GAP_PX * scale;
+		ctx.font = floorFont(FLOOR_VALUE_FONT, scale);
+		total += ctx.measureText(value).width;
+	}
+	return total;
+}
+
 function throatColour(state: DirectorState): string {
 	if (state.blocking) return "rgba(255, 110, 96, 0.95)";
 	return state.aligned
@@ -801,6 +865,11 @@ class Game {
 		new URLSearchParams(window.location.search).get("combat") === "1";
 	private combatIncoming = false;
 	private combatEcm = false;
+	/** The floor strip's fitted scale, keyed by glass width. The fit is against
+	 *  the strip's widest possible reading, so it is a property of the viewport
+	 *  and never of the values on screen. */
+	private readonly floorFit = new Map<number, number>();
+
 	/** Fitted overlay font cache: keyed by role + glass width; the fit is
 	 *  computed against a widest-case text so any live state fits. */
 	private combatStatusFit = new Map<
@@ -955,6 +1024,24 @@ class Game {
 	readonly cockpitPrompt = new TextRaster();
 	/** Prototype-only glass status, exposed for the browser probe. */
 	readonly combatOverlayStatus = new TextRaster();
+	/**
+	 * What §5's flight-floor strip painted this frame, or `null` when it painted
+	 * nothing — a focused console has replaced the glass.
+	 *
+	 * **Written by the draw, from the values it drew**, the same pattern as
+	 * `directorRender`. A record assembled beside the draw from the same state
+	 * would let a probe assert a strip that was never painted, which is the
+	 * check-that-cannot-fail this repo has shipped once already.
+	 */
+	floorRender: {
+		cells: FloorCell[];
+		boxes: { label: string; x: number; y: number; width: number }[];
+		baselineY: number;
+		glassBottomY: number;
+		/** What the strip was shrunk by to fit its widest reading in this
+		 *  viewport — 1 where it did not have to shrink at all. */
+		scale: number;
+	} | null = null;
 	/**
 	 * What §3's docking director drew this frame, or `null` when it drew
 	 * nothing. The same pattern as `cockpitPrompt`: the record is written by the
@@ -2489,7 +2576,11 @@ class Game {
 			? `${target.id.toUpperCase()}  ${range(targetKm)}`
 			: "NO TARGET";
 		const eta = this.etaCache === null ? "CALC" : duration(this.etaCache);
-		const key = `${speed}|${velocity.context}|${targetText}|${eta}|${this.throttle}|${this.assist}|${this.chargeAu}`;
+		// `chargeAu` is **not** in this key any more: the target instrument stopped
+		// printing it when §5's strip took it, and a key holding a value no
+		// painted pixel depends on repaints two canvas textures on the frame the
+		// drive regenerates a hundredth of an AU — about once a second, forever.
+		const key = `${speed}|${velocity.context}|${targetText}|${eta}|${this.throttle}|${this.assist}`;
 		if (key === this.cockpit.instrumentKey) return;
 		this.cockpit.instrumentKey = key;
 		const paint = (
@@ -2540,7 +2631,10 @@ class Game {
 			this.cockpit.targetInstrument,
 			"TARGET",
 			targetText,
-			`ETA ${eta}  CHARGE ${this.chargeAu.toFixed(1)} AU`,
+			// **Charge is gone from here.** It is a second consumable with its own
+			// regeneration (#10) and §5 puts it on the floor; riding the *target*
+			// instrument made it read as a property of the thing being flown to.
+			`ETA ${eta}`,
 			"#ffd17a",
 		);
 		this.cockpit.flightInstrument.texture.needsUpdate = true;
@@ -3037,7 +3131,11 @@ class Game {
 	private cruisePrompt(targetKm: number | null): string {
 		if (this.spoolLeftS > 0) return "";
 		if (this.regime === "cruise") return "";
-		if (this.chargeAu <= 0)
+		// **The same predicate the strip's tone reads.** As `chargeAu <= 0` this
+		// and the strip disagreed on the frame after a starve-out: regeneration
+		// lifts the raw value off zero immediately, so the prompt returned to
+		// "press J to cruise" beside a cell still printing "0.0/12 AU".
+		if (chargeReadsEmpty(this.chargeAu))
 			return "no drive charge — wait for it to regenerate";
 		if (targetKm === null) return "T selects a target";
 		// An hour at the cap, which is 7,200 km. Below that the crawl is the
@@ -4595,6 +4693,97 @@ class Game {
 	}
 
 	/**
+	 * §5's persistent mode/throttle/assist/charge strip, along the bottom of the
+	 * glass.
+	 *
+	 * **On the glass rather than on the deck, and that is the whole design
+	 * decision.** The deck's only clear band is the 2.3 mm lip outside the
+	 * scanner bezel, which at the shipped dashboard pitch is a foreshortened
+	 * sliver — and #94 is the recorded case of a geometrically-honest
+	 * cockpit instrument being unreadable and having to be rebuilt as a
+	 * compressed on-glass one. The floor is the persistent instrument *set*,
+	 * not a single surface: §5's attitude and prograde markers are already
+	 * here, and this joins them.
+	 *
+	 * Centred and sized to its content rather than spread across the full
+	 * width: four cells stretched over 1440 px is a row of unrelated numbers,
+	 * and the prompt and the clearance line it sits under are centred too.
+	 */
+	private drawFlightFloor(ctx: CanvasRenderingContext2D, w: number, h: number) {
+		const cells = flightFloorCells({
+			regime: this.regime,
+			spoolLeftS: this.spoolLeftS,
+			throttle: this.throttle,
+			assist: this.assist,
+			chargeAu: this.chargeAu,
+			chargeCapacityAu: CHARGE_CAPACITY_AU,
+			chargeRegenAuPerS: CHARGE_REGEN_AU_PER_S,
+		});
+
+		// **Fitted to the widest reading the strip can take, not to this one.**
+		// Sized to the live values it re-centred whenever a digit changed, and
+		// the fit taken on a full tank — where the regeneration suffix is
+		// absent — was a fifth too narrow for the run drawn a second later. At
+		// 390 px that clipped both ends, and the check measuring the incidental
+		// run passed.
+		let scale = this.floorFit.get(w);
+		if (scale === undefined) {
+			const widest = flightFloorWidest(
+				CHARGE_CAPACITY_AU,
+				CHARGE_REGEN_AU_PER_S,
+			);
+			const available = w - 2 * FLOOR_MARGIN_PX;
+			scale = 1;
+			while (scale > FLOOR_MIN_SCALE) {
+				if (
+					floorRunWidth(
+						ctx,
+						FLIGHT_FLOOR_LABELS.map((l) => widest[l]),
+						scale,
+					) <= available
+				)
+					break;
+				scale -= 0.02;
+			}
+			this.floorFit.set(w, scale);
+		}
+		const labelFont = floorFont(FLOOR_LABEL_FONT, scale);
+		const valueFont = floorFont(FLOOR_VALUE_FONT, scale);
+		const labelGap = FLOOR_LABEL_GAP_PX * scale;
+		const cellGap = FLOOR_CELL_GAP_PX * scale;
+
+		const widths = cells.map((cell) => {
+			ctx.font = labelFont;
+			const label = ctx.measureText(cell.label).width;
+			ctx.font = valueFont;
+			return label + labelGap + ctx.measureText(cell.value).width;
+		});
+		const total =
+			widths.reduce((a, b) => a + b, 0) + cellGap * (cells.length - 1);
+
+		const glassBottomY = h * GLASS_BOTTOM_FRACTION;
+		const baselineY = glassBottomY - 9;
+		let x = (w - total) / 2;
+		const boxes: { label: string; x: number; y: number; width: number }[] = [];
+		ctx.save();
+		ctx.textAlign = "left";
+		for (const [i, cell] of cells.entries()) {
+			boxes.push({ label: cell.label, x, y: baselineY, width: widths[i] });
+			ctx.font = labelFont;
+			ctx.fillStyle = FLOOR_LABEL_FILL;
+			ctx.fillText(cell.label, x, baselineY);
+			const labelWidth = ctx.measureText(cell.label).width;
+			ctx.font = valueFont;
+			ctx.fillStyle = FLOOR_TONE_FILL[cell.tone];
+			ctx.fillText(cell.value, x + labelWidth + labelGap, baselineY);
+			x += widths[i] + cellGap;
+		}
+		ctx.restore();
+
+		this.floorRender = { cells, boxes, baselineY, glassBottomY, scale };
+	}
+
+	/**
 	 * Where a sim-space direction lands, in normalised device coordinates.
 	 *
 	 * The renderer's one call into `hud.ts`, public so a probe can compare it
@@ -4794,7 +4983,14 @@ class Game {
 		// it landed below the clip and was sliced in half by it — a refusal the
 		// pilot could only half read, which is the one line §3 says must carry its
 		// reason.
-		ctx.fillText(clearanceText, cx, h * GLASS_BOTTOM_FRACTION - 16);
+		// Above the strip, not 16 px off the glass bottom, which is inside it.
+		// Derived from `FLOOR_STRIP_HEIGHT_PX` rather than restated, so raising
+		// the strip cannot leave this line sitting on top of it.
+		ctx.fillText(
+			clearanceText,
+			cx,
+			h * GLASS_BOTTOM_FRACTION - FLOOR_STRIP_HEIGHT_PX - 16,
+		);
 		ctx.textAlign = "left";
 		ctx.restore();
 
@@ -4838,9 +5034,10 @@ class Game {
 			this.combatOverlayStatus.reset();
 			this.combatOverlayLines = [];
 			// The director is glass, and a focused console has replaced the glass.
-			// Leaving the record standing would let a probe assert a funnel that
-			// this frame deliberately did not paint.
+			// Leaving either record standing would let a probe assert a funnel or
+			// a strip that this frame deliberately did not paint.
 			this.directorRender = null;
+			this.floorRender = null;
 			return;
 		}
 		const toPixels = (ndcX: number, ndcY: number) => ({
@@ -4943,6 +5140,7 @@ class Game {
 		}
 
 		this.drawDockingDirector(ctx, w, h, camPos);
+		this.drawFlightFloor(ctx, w, h);
 
 		// The prompt, on the glass rather than only in the corner: the mechanic it
 		// names is the one the whole prototype is about, and the first flight of

@@ -133,6 +133,71 @@ and future equipment state. Developer tuning parameters move to a **Tuning tab**
 on the right panel: they are available while tuning the prototype, but never
 occupy the persistent player flight floor.
 
+### 5.1 The mode/throttle/assist/charge strip
+
+Built under #92. It draws along the **bottom of the glass**, above the deck and
+below the cruise prompt, and it is the last of §5's four floor instruments to
+ship.
+
+**Three of the four had no player-visible readout before it.** Mode, throttle
+and assist were written only to `#hud`, which `index.html` styles
+`clip: rect(0 0 0 0)` and which `main.ts` only writes under `?legacy-hud=1` — a
+probe surface, not a player one. So §5's rule that developer tuning must "never
+occupy the persistent player flight floor" was already satisfied, and the
+overlay drops nothing: it was never on the floor. Charge reached the glass once,
+as secondary text on the **target** instrument, and that is what moved: a second
+consumable with its own regeneration read as a property of the thing being flown
+to.
+
+**On the glass rather than on the deck.** The deck's only clear band is the
+2.3 mm lip outside the scanner bezel, which at the shipped dashboard pitch is a
+foreshortened sliver — and #94 is the recorded case of a geometrically honest
+cockpit instrument being unreadable and having to be rebuilt as a compressed
+on-glass one. The floor is the persistent instrument *set* and not a single
+surface: §5's attitude and prograde markers are already on the glass, and this
+joins them. It is not a DOM card either, which is a distinction
+`probe-live-cockpit.mjs` already asserts (`[data-live-floor]` must be absent).
+
+| cell | reads | tone |
+|---|---|---|
+| MODE | `NORMAL`, `CRUISE`, or `SPOOL 1.4s` | passive / confirmed / action |
+| THR | the throttle, rounded to a percent | passive |
+| ASSIST | `ON` or `OFF` | passive / **action** when off |
+| CHARGE | `4.2/12 AU  +1.0/min` | passive, **refused** when empty |
+
+Spooling **outranks the regime**, because on the frame a drop-out fires the
+regime field still reads cruise. Assist off is amber rather than cyan: it is
+#5's Newtonian regime, where the nose and the velocity genuinely disagree, and
+it is the one fact about the ship's handling a hull-hidden cockpit cannot show
+any other way. The regeneration is printed **only while it is running** — the
+map makes it the anti-stranding rule and requires the HUD to show it, but a
+`+1.0/min` beside a full tank is a claim about a process that is not happening.
+
+**One predicate decides "empty", and it reads the printed value.** The sim's own
+gate is `chargeAu <= 0`, and passive regeneration lifts the raw value off zero on
+the very next frame — so a tone keyed to the raw number went calm cyan while the
+same cell still printed `0.0/12 AU`, and `cruisePrompt` offered "press J to
+cruise" beside it. `chargeReadsEmpty` rounds first, and both the tone and the
+prompt read it, so the glass cannot say two things about one quantity. It
+follows that the refusal is **brief by construction**, about three seconds until
+regeneration reaches 0.05 AU. Whether "practically stranded" deserves a band of
+its own is a design question this node did not take: it needs a threshold no
+spec states.
+
+**The strip is laid out against its widest possible reading**, not against what
+it currently says (`flightFloorWidest`), and the fit is cached per viewport
+width. Sized to the live values it re-centred whenever a digit changed — and the
+fit taken on a full tank, where the regeneration suffix is absent, was a fifth
+too narrow for the run drawn a second later: at 390 px both ends were clipped.
+The font is monospace, so a character count is a width, and the headless tier
+sweeps every reachable reading against the bound. Below `FLOOR_MIN_SCALE` the
+answer would have to be a different layout rather than smaller type.
+
+Its band is owned by one constant, `FLOOR_STRIP_HEIGHT_PX`, because §3's
+clearance line is anchored to the same glass bottom and must clear it — §3 says
+that line carries its reason, and a second literal is how it comes to sit on top
+of the strip instead.
+
 ## 6. Responsive behaviour
 
 On narrow viewports, one side panel at a time becomes a wide overlay. In either
@@ -158,6 +223,56 @@ than starting a second one.
 `?hud-gallery=<state>` is the low-risk browser prototype for these checks. It is
 a design surface, not a claim that unbuilt docking, communications, or scanner
 simulation has shipped.
+
+### 7.0 The flight-floor strip
+
+Headless — `tests/flight-floor.test.ts`, over `flightFloorCells`:
+
+1. **The four cells, in §5's order.** The order is pinned separately from the
+   contents, because a strip read at a glance makes a reordering a silent
+   relearning cost.
+2. **Each cell's text and tone against every branch** — spooling outranking the
+   regime, assist-off's amber, the regeneration suffix appearing only below
+   capacity, and the rounding, which was written expecting `4.25` to print
+   `4.2` and pinned at `4.3` once the formatter said otherwise.
+3. **The empty predicate at display resolution**, including the frame-after-a-
+   starve-out value that used to read passive, and a sweep over the whole range
+   asserting that no reading prints `0.0` without the refusal tone. The tone and
+   the text are one quantity computed by two expressions; a boundary is where
+   that parts.
+4. **No reachable reading is wider than `flightFloorWidest`**, swept over every
+   combination of the four inputs, with the sweep's own size asserted — a loop
+   that stopped iterating would satisfy every expectation inside it. And the
+   bound is required to be *close*, since a bound of 200 characters would pass
+   the sweep and make the fit useless.
+
+Browser — `scripts/probe-live-cockpit.mjs`, at both viewports:
+
+5. **The strip paints §5's four cells in order**, read from the record the draw
+   writes rather than from the state beside it.
+6. **Every cell reads the ship's own state** — compared against `regime`,
+   `throttle`, `assist` and `chargeAu` on the game handle, not against a second
+   copy of the projection.
+7. **It sits inside the glass and fits its widest reading.** Both the drawn run
+   and the widest one must clear the margins, and the fit must not have moved
+   between them. The first version measured whatever the strip happened to say
+   and passed at 390 px on a run the frame showed clipped at both ends.
+8. **An empty drive paints the CHARGE cell red and a charged one does not** —
+   sampled off the overlay's own pixels inside that cell's box, because a tone
+   is a field on a record and a record can say anything.
+9. **The prompt and the cell agree** about an empty drive.
+10. **The target instrument no longer carries the charge.**
+
+**Every one of these was built a red build**, save one caveat worth stating:
+putting the charge back on the target instrument (check 10) makes the probe's
+own boot wait time out before any check runs, because that wait is keyed to the
+readout pattern. It fails loudly and cannot pass, but it fails as a timeout
+rather than as the named check — the same wait-standing-for-an-assertion shape
+§9.3 of `galaxy-map.md` records, left here because the wait is a genuine settle.
+
+**And two defects came from looking at a frame rather than from any check**: the
+tone/prompt disagreement at zero charge, and the clipped run at 390 px. Both
+were green in both tiers at the moment they were photographed.
 
 ### 7.1 The docking director
 
