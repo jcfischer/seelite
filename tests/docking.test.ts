@@ -54,7 +54,16 @@ import {
 } from "../src/docking";
 import { ANGULAR_MAX, ASSIST_CAP_KMS, stepFlight } from "../src/sim";
 import { STATION_GEOMETRY, slotPhaseRad } from "../src/station";
-import { type Vec3, add, dot, length, scale, sub, v3 } from "../src/vec3";
+import {
+	type Vec3,
+	add,
+	cross,
+	dot,
+	length,
+	scale,
+	sub,
+	v3,
+} from "../src/vec3";
 
 const DEG = Math.PI / 180;
 
@@ -70,10 +79,22 @@ const AXIS = ((): Vec3 => {
 	return scale(a, 1 / length(a));
 })();
 
+/**
+ * The slot's phase-zero direction, which `apertureFrame` now takes rather than
+ * deriving (#126). A fixed perpendicular to `AXIS`: in the game it is the
+ * station's along-track direction, and what these rows test is the checks'
+ * arithmetic against *some* reference, which is what it always was.
+ */
+const REFERENCE = ((): Vec3 => {
+	const seed = v3(0, 0, 1);
+	const p = cross(AXIS, seed);
+	return scale(p, 1 / length(p));
+})();
+
 const frameFor = (
 	type: "trade" | "refinery" = "trade",
 	phaseRad = 0.7,
-): ApertureFrame => apertureFrame(type, AXIS, phaseRad);
+): ApertureFrame => apertureFrame(type, AXIS, phaseRad, REFERENCE);
 
 /**
  * A textbook entry: on the axis, nose down it, rolled to the slot, inbound at
@@ -112,7 +133,7 @@ function rotate(v: Vec3, axis: Vec3, rad: number): Vec3 {
 
 /** Some direction perpendicular to `AXIS`, for tilting things off it. */
 const PERP = ((): Vec3 => {
-	const b = slotBasis(apertureFrame("trade", AXIS, 0));
+	const b = slotBasis(apertureFrame("trade", AXIS, 0, REFERENCE));
 	return b.up;
 })();
 
@@ -462,7 +483,7 @@ describe("§9.1.6 the pad is the slot minus check 4", () => {
 	);
 
 	test("a real refinery pad does not spin, so it has no phase to match", () => {
-		const spun = apertureFrame("refinery", AXIS, 1.234);
+		const spun = apertureFrame("refinery", AXIS, 1.234, REFERENCE);
 		expect(STATION_GEOMETRY.refinery.spins).toBe(false);
 		expect(spun.phaseRad).toBe(0);
 		const e = evaluateEntry(spun, nominal(spun), { hostile: false });
@@ -692,6 +713,7 @@ function flyTheComputer(opts: {
 			type,
 			AXIS,
 			slotPhaseRad(opts.spinRpm, gameTime),
+			REFERENCE,
 		);
 		const pose: EntryPose = { rel: ship.pos, vRel: ship.vel, nose, up };
 		const cmd = dockingComputerStep({
@@ -735,6 +757,7 @@ function flyTheComputer(opts: {
 			type,
 			AXIS,
 			slotPhaseRad(opts.spinRpm, gameTime),
+			REFERENCE,
 		);
 		const crossing = planeCrossing(nextFrame, before, after);
 		if (crossing) {

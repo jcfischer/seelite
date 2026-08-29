@@ -30,7 +30,16 @@ import {
 	TUNNEL_RINGS,
 	dockingTunnel,
 } from "../src/docking-tunnel";
-import { type Vec3, add, dot, length, scale, sub, v3 } from "../src/vec3";
+import {
+	type Vec3,
+	add,
+	cross,
+	dot,
+	length,
+	scale,
+	sub,
+	v3,
+} from "../src/vec3";
 
 /** Awkward on purpose: a world axis lets a sign error hide behind coordinates
  *  that happen to agree (`docking.test.ts`'s rule). */
@@ -39,10 +48,22 @@ const AXIS = ((): Vec3 => {
 	return scale(a, 1 / length(a));
 })();
 
+/**
+ * The slot's phase-zero direction, which `apertureFrame` now takes rather than
+ * deriving (#126). A fixed perpendicular to `AXIS`: in the game it is the
+ * station's along-track direction, and what these rows test is the checks'
+ * arithmetic against *some* reference, which is what it always was.
+ */
+const REFERENCE = ((): Vec3 => {
+	const seed = v3(0, 0, 1);
+	const p = cross(AXIS, seed);
+	return scale(p, 1 / length(p));
+})();
+
 const frameFor = (
 	type: "trade" | "refinery" = "trade",
 	phaseRad = 0.7,
-): ApertureFrame => apertureFrame(type, AXIS, phaseRad);
+): ApertureFrame => apertureFrame(type, AXIS, phaseRad, REFERENCE);
 
 /** A pose that is *at* a station-relative point, nose and speed nominal, so the
  *  only thing under test is where the ship is. */

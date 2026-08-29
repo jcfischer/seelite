@@ -25,6 +25,7 @@ import {
 } from "../src/dock-session";
 import {
 	type World,
+	advanceSystem,
 	bodyVelocity,
 	makeWorld,
 	stationOf,
@@ -51,7 +52,7 @@ function spinningWorld(): { world: World; id: string } {
 function frameNow(world: World, id: string) {
 	const station = stationOf(world.system, id);
 	const pose = stationPose(world.system, id, world.gameTime);
-	return apertureFrame(station.type, pose.axis, pose.phaseRad);
+	return apertureFrame(station.type, pose.axis, pose.phaseRad, pose.reference);
 }
 
 /** A crossing pose on the plane, offset within the aperture as check 5 allows. */
@@ -91,6 +92,59 @@ function run(
 	}
 	return { session: s, ship };
 }
+
+describe("#126 — the slot's phase-zero reference is continuous", () => {
+	/**
+	 * **The property the withdrawn fix did not have.** Aiming the drawn station
+	 * on `slotBasis` is only safe if the reference that basis is built from
+	 * turns *smoothly* as the axis swings round the orbit. `anyPerpendicular`
+	 * does not: it picks its seed on a `< 0.9` branch and **jumps**, which made
+	 * the drawn hull snap and took `probe-station.mjs`'s repeat control from
+	 * 0.02 to 0.21.
+	 *
+	 * So this is not "the reference is perpendicular to the axis" — that was
+	 * true of the old one too. It is a bound on how far it can move between two
+	 * neighbouring clock values, over a whole orbit, which is the thing that was
+	 * false.
+	 */
+	test("it turns by less than a degree a second, all the way round an orbit", () => {
+		const { world, id } = spinningWorld();
+		const station = stationOf(world.system, id);
+		const periodS = station.orbit.periodS;
+		const step = periodS / 720;
+		let worst = 0;
+		let previous = stationPose(world.system, id, 0).reference;
+		for (let i = 1; i <= 720; i++) {
+			const t = i * step;
+			// The bodies have to be where the clock says before the pose is read:
+			// the axis is `parent.pos − body.pos`.
+			advanceSystem(world.system, t);
+			const now = stationPose(world.system, id, t).reference;
+			const turned =
+				(Math.acos(Math.min(1, Math.max(-1, dot(previous, now)))) * 180) /
+				Math.PI;
+			worst = Math.max(worst, turned / step);
+			previous = now;
+		}
+		// A station's own orbit is 90–240 minutes, so a reference that tracked it
+		// exactly turns at 0.025–0.067°/s. A jump shows up as orders of
+		// magnitude, not as a percentage.
+		expect([worst < 1, worst.toFixed(4)]).toEqual([true, worst.toFixed(4)]);
+	});
+
+	test("and it is perpendicular to the axis, which is what makes it a basis", () => {
+		const { world, id } = spinningWorld();
+		for (let i = 0; i <= 40; i++) {
+			const t = i * 37.5;
+			advanceSystem(world.system, t);
+			const pose = stationPose(world.system, id, t);
+			expect([i, Math.abs(dot(pose.reference, pose.axis)) < 1e-9]).toEqual([
+				i,
+				true,
+			]);
+		}
+	});
+});
 
 describe("§12.3 obligation 8 — the three exempt states are distinguishable", () => {
 	test("every state §12 creates is exempt, and flying is not", () => {

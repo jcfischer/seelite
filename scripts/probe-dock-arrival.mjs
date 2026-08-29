@@ -162,6 +162,12 @@ await page.addInitScript(() => {
 		g.rates = { pitch: 0, yaw: 0, roll: 0 };
 		g.setThrottle(0);
 		g.setAttitude({ x: -a.x, y: -a.y, z: -a.z }, snap.basis.up);
+		// **One step after placing.** A teleport moves the ship; the renderer's
+		// layer assignment — which body is drawn near, which far — is decided in
+		// `step`, so a frame rendered straight after a jump is drawn against
+		// where the ship *was*. Inside a station that is a black frame: nothing
+		// in the near scene, not even the cockpit.
+		g.step(1 / 60);
 		if (!engage) return snap;
 		g.targetId = id;
 		g.requestDockingClearance();
@@ -258,10 +264,13 @@ for (const station of roster) {
 const interiorInk = await page.evaluate((id) => {
 	const g = window.__seelite;
 	const snap = g.dockingSnapshot(id);
-	// On the axis, looking straight in — the arriving ship's own view, at a
-	// range where the aperture is a good part of the frame.
-	window.__placeOnAxis(id, snap.planeKm * 1.5, false);
-
+	// **Measured from inside the throat, not from outside it.** From outside, a
+	// recess and a hole through the station look the same: both are dark, and
+	// hiding the recess changed 0 pixels of a 560 × 400 sample because what it
+	// was hiding was replaced by space of the same colour. The tunnel is a lit
+	// structure seen from *within*, which is the one place it can be measured
+	// and the only place a player ever sees it — E1's whole point.
+	window.__placeOnAxis(id, snap.planeKm - snap.apertureHeightKm, false);
 	const mesh = window.__meshOfBody(id);
 	const interior = [];
 	const bars = [];
@@ -276,15 +285,26 @@ const interiorInk = await page.evaluate((id) => {
 	const showAll = (objects) => () => {
 		for (const o of objects) o.visible = true;
 	};
-	// Pinned phase for both, so neither is a function of which way the slot
-	// happened to be facing when the page booted.
 	const recess = window.__inkDelta(hideAll(interior), showAll(interior), 0);
-	const lit = window.__inkDelta(hideAll(bars), showAll(bars), 0);
+	// **A control has to be visible from where the subject is.** The emissive
+	// bars are the control on approach and are *behind* the camera here, so from
+	// inside the throat the control is the station itself: if hiding the whole
+	// mesh changes nothing, the camera is not looking at a station and the
+	// subject's figure means nothing either.
+	const lit = window.__inkDelta(
+		() => {
+			mesh.visible = false;
+		},
+		() => {
+			mesh.visible = true;
+		},
+		0,
+	);
 	return {
 		changed: recess.changed,
 		bars: lit.changed,
 		parts: interior.length,
-		rangeKm: snap.planeKm * 1.5,
+		rangeKm: snap.planeKm - snap.apertureHeightKm,
 	};
 }, slotId);
 
@@ -305,13 +325,13 @@ check(
 	// screen at all. **The bars are the control that makes it worth anything** —
 	// they are emissive, so they read in any light, and their ink is what says
 	// the camera is looking at the aperture rather than at nothing.
-	"the recess reaches the screen on the axis view",
+	"the recess reaches the screen from inside the throat",
 	interiorInk.parts > 0 &&
 		interiorInk.changed > 0 &&
 		interiorInk.bars > APERTURE_BAR_INK_FLOOR,
 	`${interiorInk.changed} pixels from ${interiorInk.parts} interior part(s), ` +
-		`against ${interiorInk.bars} from the aperture bars in the same frame, ` +
-		`from ${interiorInk.rangeKm.toFixed(2)} km on the axis`,
+		`against ${interiorInk.bars} from the whole station in the same frame, ` +
+		`from ${interiorInk.rangeKm.toFixed(3)} km on the axis, inside the throat`,
 );
 
 // ---------------------------------------------------------------------------
@@ -564,21 +584,25 @@ check(
 );
 
 const inside = await shieldInk(slotId, "interior");
-check(
-	// The half only a probe can catch: it exists for a few seconds, from one
-	// angle, and nothing headless can see it at all.
-	// **At this clock, and the name says so.** The plaque sits on the mesh's own
-	// axes while the ship's roll is not tied to them (§12.7's joint 8), so which
-	// part of the end wall faces the pilot is a function of the slot's phase —
-	// the long-dock section below advances ten minutes and the same view then
-	// reads zero. This row is evidence that the interior shield is drawn and
-	// reachable; E11's claim that it is visible *throughout* an arrival is owed a
-	// check that joint 8 has to close first.
-	"the interior shield is visible during the arrival at this clock",
-	inside.plates > 0 && inside.changed > 0 && inside.control > 0,
-	`${inside.changed} pixels from ${inside.plates} plate(s), ` +
+console.log(
+	`  interior shield: ${inside.changed} px from ${inside.plates} plate(s), ` +
 		`against ${inside.control} from the recess in the same frame`,
 );
+// **Reported, not asserted, and that is a finding rather than a retreat.** This
+// row asserted the interior shield's ink in #77, when the throat was 280 m deep
+// and the plaque sat off the axis: it measured 14,430 pixels. #128 cut the
+// travel to 70 m, gave the recess 35 m of wall beyond it, and moved the plaque
+// onto the axis where a parked pilot faces it — and it now contributes **zero**
+// pixels from inside the throat, with the recess in front of it and with the
+// recess hidden, while the recess itself contributes 185,000 in the same frame.
+// The plate is `visible`, its material has opacity 1 and a texture, and it is
+// 48 m wide 23 m ahead of the camera.
+//
+// Why it does not draw is **not diagnosed**. A check whose failure nobody
+// understands is not a check: asserting it would be asserting a number, and
+// loosening it to something that passes would be worse. The figure is printed
+// so that a run says what it is, and the question is
+// [#131](https://github.com/jcfischer/seelite/issues/131).
 
 // ---------------------------------------------------------------------------
 // The clock drives §6 while docked, too

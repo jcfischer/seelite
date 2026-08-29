@@ -70,6 +70,29 @@ export interface StationAperture {
 export interface StationGeometry {
 	/** The dockable core, kilometres. This is the body's `radiusKm`. */
 	coreRadiusKm: number;
+	/**
+	 * Where the aperture plane is, kilometres from the station's centre —
+	 * **the surface `docking.md` §3's six checks are evaluated at**, and the
+	 * surface the selected form cuts its aperture into.
+	 *
+	 * **Not `coreRadiusKm`, which is what it was until #128.** The core radius
+	 * is a body's `radiusKm` — for the trade station a cuboctahedron's *vertex*
+	 * radius, where its square faces sit at `r/√2`. The slot is cut into one of
+	 * those faces (that is the form's whole thesis), so the plane and the slot
+	 * were 161 m apart on the trade station and 216 m on the shipyard: a ship
+	 * crossed §3's plane well before it reached the opening it could see, and
+	 * everything §12 measures from the plane — the throat, the docked position —
+	 * landed behind everything the player was looking at. Reported flying it as
+	 * *"the tunnel is skewed in relation to the docking port"*.
+	 *
+	 * **One number, read by both tiers.** `apertureFrame` builds the checks'
+	 * plane from it and `station-mesh.ts`'s selected forms cut their aperture at
+	 * it, so the two cannot drift; `tests/station-mesh.test.ts` asserts the
+	 * drawn face is here, which is the seam nothing checked. A form is free to
+	 * have no surface at this depth — the workbench alternates do not — and the
+	 * connectivity check is what says so.
+	 */
+	aperturePlaneKm: number;
 	aperture: StationAperture;
 	/**
 	 * Where the aperture faces.
@@ -143,6 +166,10 @@ export interface StationGeometry {
 export const STATION_GEOMETRY: Record<StationType, StationGeometry> = {
 	trade: {
 		coreRadiusKm: 0.6,
+		// The Coriolis's square face, a hair proud of it: the hull is drawn at
+		// `0.95 × core` and a cuboctahedron's square faces sit at `1/√2` of its
+		// circumradius, with the frame standing 6% out from there.
+		aperturePlaneKm: 0.6 * 0.95 * Math.SQRT1_2 * 1.06,
 		aperture: { kind: "slot", widthKm: 0.12, heightKm: 0.07 },
 		axis: "parent",
 		spins: true,
@@ -152,12 +179,16 @@ export const STATION_GEOMETRY: Record<StationType, StationGeometry> = {
 		// is silhouette, not dockable geometry, so it changes what you *see* and
 		// nothing about what you fly into.
 		coreRadiusKm: 0.6,
+		// The Gantry's hub face.
+		aperturePlaneKm: 0.6 * 0.62,
 		aperture: { kind: "slot", widthKm: 0.12, heightKm: 0.07 },
 		axis: "parent",
 		spins: true,
 	},
 	refinery: {
 		coreRadiusKm: 0.4,
+		// The Warren's deck, which sits just inside its own rock.
+		aperturePlaneKm: 0.4 * 0.99,
 		aperture: { kind: "pad", widthKm: 0.15, heightKm: 0.15 },
 		axis: "outward",
 		spins: false,
@@ -167,6 +198,8 @@ export const STATION_GEOMETRY: Record<StationType, StationGeometry> = {
 		// industrial structure rather than a habitat, small enough that its whole
 		// silhouette is a machine.
 		coreRadiusKm: 0.15,
+		// The Derrick's top deck, which stands proud of its core.
+		aperturePlaneKm: 0.15 * 1.1,
 		// A **pad**, and nothing else. It does not spin, so `docking.md` §4's roll
 		// match does not apply to it, exactly as it does not to the refinery — and
 		// the pad is what the whole category is built around rather than a
