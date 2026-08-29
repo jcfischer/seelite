@@ -276,6 +276,7 @@ if (wanted) {
 		"clicking a row selects that body in the simulation, and only that row reads current",
 		selected.targetId === wanted.id &&
 			selected.director === wanted.name &&
+			selected.director !== "NO TARGET SELECTED" &&
 			selected.current.length === 1 &&
 			selected.current[0] === wanted.id,
 		`target ${selected.targetId}, director ${selected.director}, current ${selected.current.join(",")}`,
@@ -343,9 +344,13 @@ if (distinctive) {
 	);
 }
 
-const rawStationId = listed.rows.find((row) =>
-	row.id.startsWith("station-"),
-)?.id;
+await type("");
+const rawStationId = await page.evaluate(
+	() =>
+		document
+			.querySelector('[data-live-nav-target^="station-"]')
+			?.getAttribute("data-live-nav-target") ?? null,
+);
 check("the fixture exposes a raw station id", Boolean(rawStationId));
 if (rawStationId) {
 	await type(rawStationId);

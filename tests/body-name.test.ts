@@ -10,6 +10,8 @@ describe("node #110 — derived body names", () => {
 		expect(planetName("SOORATLE", 0)).toBe("SOORATLE I");
 		expect(planetName("SOORATLE", 1)).toBe("SOORATLE II");
 		expect(moonName("SOORATLE II", 0)).toBe("SOORATLE II a");
+		expect(() => planetName("SOORATLE", -1)).toThrow("outside the v1 ladder");
+		expect(() => planetName("SOORATLE", 8)).toThrow("outside the v1 ladder");
 	});
 
 	test("every contents and placed-body record carries the same name", () => {
@@ -30,7 +32,7 @@ describe("node #110 — derived body names", () => {
 		for (const body of placed) expect(expected.get(body.id)).toBe(body.name);
 	});
 
-	test("adding display names leaves the pre-name placement shape deterministic", () => {
+	test("adding names leaves the pre-name placement shape deterministic", () => {
 		const record = generateGalaxy(baseline.worldSeed, baseline.galaxy).systems[
 			baseline.system
 		];
