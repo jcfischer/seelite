@@ -37,7 +37,11 @@ import {
 	buildStationForm,
 	buildStationMesh,
 } from "../src/station-mesh";
-import { dockedAxialKm, throatDepthKm } from "../src/arrival";
+import {
+	dockedAxialKm,
+	drawnThroatDepthKm,
+	throatDepthKm,
+} from "../src/arrival";
 
 // From `station.ts`, not a literal: a fourth station type must reach every
 // loop in this file, and a hand-written list is exactly the place it would not.
@@ -431,6 +435,10 @@ describe("nothing stands in the way of the thing you fly through", () => {
 	 * The radius is the aperture's half-*diagonal*, so the corridor contains the
 	 * whole opening rather than an inscribed circle of it.
 	 */
+	/** See the vertex test below: the wall the aperture is cut into is not an
+	 *  intrusion into the corridor in front of it. */
+	const WALL_EPSILON_KM = 1e-4;
+
 	function intrusions(root: THREE.Object3D, type: StationType) {
 		root.updateMatrixWorld(true);
 		const core = STATION_GEOMETRY[type].coreRadiusKm;
@@ -458,7 +466,15 @@ describe("nothing stands in the way of the thing you fly through", () => {
 					v.applyMatrix4(instance);
 					mesh.localToWorld(v);
 					v.multiplyScalar(core);
-					if (v.z <= front) continue;
+					// **Strictly past the plane, by more than float32 can move a
+					// vertex.** Since #128 the aperture plane *is* the surface the
+					// slot is cut into, so the hull's own face and `front` are the
+					// same number reached by different paths — a float64 constant
+					// against a `Float32Array` position — and the wall the aperture
+					// is cut into lands a hair either side of it. A hundred
+					// millimetres is four orders under anything `docking.md` talks
+					// about and four orders over the noise (~3e-5 m at 0.4 km).
+					if (v.z <= front + WALL_EPSILON_KM) continue;
 					if (Math.hypot(v.x, v.y) > radius) continue;
 					const name = object.name || object.type;
 					found.set(name, Math.max(found.get(name) ?? 0, v.z - front));
@@ -548,9 +564,12 @@ describe("§12.4 E7/E8 — every form gets a throat or a deck", () => {
 				// on a kilometre is a millimetre, which is four orders under
 				// anything §12 talks about.
 				const label = `${type} ${form.id}`;
+				// **The drawn depth, which is the travelled depth plus the room a
+				// parked ship needs.** `dockedAxialKm` is where the ship's *origin*
+				// stops; a recess ending there puts its nose through the wall.
 				expect([label, size.z.toFixed(6)]).toEqual([
 					label,
-					throatDepthKm(aperture).toFixed(6),
+					drawnThroatDepthKm(aperture).toFixed(6),
 				]);
 				expect(size.x).toBeCloseTo(aperture.widthKm, 6);
 				expect(size.y).toBeCloseTo(aperture.heightKm, 6);
@@ -614,6 +633,57 @@ describe("§12.5 E10/E11 — the shields are geometry here and pixels elsewhere"
  * without the other — so a form whose face sits well inside the core can park
  * the ship in solid hull, and no test in either tier would have said so.
  */
+describe("§128 — the hull comes up to the plane the checks read", () => {
+	test("a slot form's hull reaches its declared aperture plane", () => {
+		// **The hull, not the aperture.** An earlier version of this row measured
+		// the *aperture* against `aperturePlaneKm` — and `buildAperture` places
+		// the aperture at that very number, so it only exercised the box's own
+		// offset. The drift it claims to catch is the surface moving out from
+		// under the slot, which that could not see.
+		//
+		// The `core` mesh is built through a different path — the form's own
+		// radius through `buildCuboctahedron` or a lathe — than the number it is
+		// compared against, and **that is the whole point**. Deriving the hull
+		// from `aperturePlaneKm` was tried and withdrawn: it makes the trade row
+		// a tautology (`reach === plane / 1.06` for any plane), on the one form
+		// the reported defect was found on. Two paths to one number is an
+		// assertion; one path is a restatement.
+		//
+		// **Slot forms only**, and the pads are excluded for a reason rather than
+		// for convenience: a pad's docking surface is its `aperture-deck`, a
+		// separate mesh, and its `core` is the rock or drum underneath — the
+		// refinery's reaches 0.312 km under a 0.396 km plane and the outpost's
+		// does not face that way at all. What holds a pad's deck to its station
+		// is the connectivity check above, and what keeps anything from standing
+		// in front of it is the approach-corridor check.
+		const rows: string[] = [];
+		for (const type of TYPES) {
+			if (STATION_GEOMETRY[type].aperture.kind !== "slot") continue;
+			const { root } = buildStationForm(type, SELECTED_FORM[type], GREY);
+			root.updateMatrixWorld(true);
+			const core = STATION_GEOMETRY[type].coreRadiusKm;
+			const hull = root.getObjectByName("core") as THREE.Object3D;
+			const reach = new THREE.Box3().setFromObject(hull).max.z * core;
+			const plane = STATION_GEOMETRY[type].aperturePlaneKm;
+			// Up to the plane and not past it: the aperture frame stands proud of
+			// the surface it is bolted to, so the surface may sit a frame's depth
+			// inside the plane and no further. That depth is 24 m on the trade
+			// station (`APERTURE_PROUD`), and the shipyard's hub is flush — which
+			// is a signed zero once it goes through a subtraction, hence the
+			// metre-scale slack on the near side rather than a `>= 0`.
+			const insideM = (plane - reach) * 1000;
+			rows.push(`${type}: hull ${insideM.toFixed(1)} m inside its plane`);
+			// Twenty-six metres of band: 24.9 m is where the trade Coriolis sits
+			// (its frame stands 6% proud of the face) and the shipyard's hub is
+			// flush. A form whose surface drifts a metre out from under its slot
+			// leaves it; the negative slack is a signed zero surviving a
+			// subtraction, not a tolerance.
+			expect([type, insideM > -0.1 && insideM < 26]).toEqual([type, true]);
+		}
+		console.log(rows.join("\n"));
+	});
+});
+
 describe("§12.2 — the docked position is inside the drawn recess", () => {
 	/** Where the form cuts its aperture, and how far its recess reaches, in km
 	 *  from the station's centre. */
@@ -662,11 +732,12 @@ describe("§12.2 — the docked position is inside the drawn recess", () => {
 		// a form may move one without the other — so a form whose face sits well
 		// inside the core parks the ship in solid hull, and no test in either
 		// tier would have said so.
-		// **The outpost is excluded, and §12.7's joint 5 is why**: `system.ts`
-		// places none, so no outpost is drawn in any system at any seed and its
-		// deck cannot park anything. It is not silently skipped — the inventory
-		// below carries it, so whoever places the first outpost meets this.
-		for (const type of TYPES.filter((t) => t !== "outpost"))
+		// **Every type, the outpost included.** It was excluded until #128,
+		// because its selected form cut its deck somewhere other than the plane
+		// and the row would have failed on a form no system places. Declaring
+		// the plane fixed that at the same time as everything else, so the
+		// exclusion is gone rather than carried.
+		for (const type of TYPES)
 			expect([type, holdsTheShip(type, SELECTED_FORM[type])]).toEqual([
 				type,
 				true,
@@ -674,29 +745,29 @@ describe("§12.2 — the docked position is inside the drawn recess", () => {
 	});
 
 	test("and the alternates that cannot are exactly the known one", () => {
-		// **All of them are forms whose aperture face is not near the docking
-		// plane.** The Ring cuts its aperture on the hub at about a third of the
-		// core radius — its thesis is "spun torus on a fixed hub; the dock is a
-		// tunnel on the axis" — and the listed pads carry their deck at a face
-		// their own silhouette put somewhere other than `coreRadiusKm`. §12.2's
-		// docked position is a function of the **plane**, which is the core
-		// radius, so on those forms it lands away from the drawn surface.
+		// **All of them are forms that cut their aperture somewhere other than
+		// `aperturePlaneKm`.** Since #128 that is exactly what this row means:
+		// the geometry table declares where the plane is, the *selected* form of
+		// each role cuts there, and an alternate is free to put its own aperture
+		// wherever its silhouette wants — the Ring on a hub at a third of the
+		// core radius, the outposts on decks of their own. Those forms cannot
+		// hold a ship the checks park by the plane, and selecting one is the
+		// change that has to answer for it.
 		//
-		// This is **not #77's to fix**: the drawn aperture and the checks'
-		// plane already disagreed on these forms, and none of them is a form the
-		// game builds. Pinned as an inventory rather than left as a comment, so
-		// that selecting one, adding a form like them, or fixing them all make
-		// this row speak.
-		//
-		// **`outpost a` is the one that is also the selected form**, and it is on
-		// this list rather than in the row above because §12.7's joint 5 records
-		// that `system.ts` places no outpost at all: the form is drawn nowhere,
-		// so this is an obligation on whoever places the first one and not a
-		// defect a player can reach.
+		// The list grew when the plane moved, and one name left it: `outpost a`
+		// was on it *and* was its role's selected form, which was only harmless
+		// because §12.7's joint 5 records that no outpost is generated. It holds
+		// the ship now.
 		const cannot: string[] = [];
 		for (const type of TYPES)
 			for (const form of STATION_FORMS[type])
 				if (!holdsTheShip(type, form.id)) cannot.push(`${type} ${form.id}`);
-		expect(cannot).toEqual(["trade b", "refinery c", "outpost a"]);
+		expect(cannot).toEqual([
+			"trade b",
+			"trade c",
+			"refinery c",
+			"outpost b",
+			"outpost c",
+		]);
 	});
 });

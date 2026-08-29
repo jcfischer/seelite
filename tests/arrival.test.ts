@@ -34,7 +34,7 @@ import {
 	STATION_TYPES,
 } from "../src/station";
 import { slotPhaseRad } from "../src/station";
-import { type Vec3, add, dot, scale, v3 } from "../src/vec3";
+import { type Vec3, add, cross, dot, length, scale, v3 } from "../src/vec3";
 
 /** An axis that is not a world axis, so nothing below can pass by accident on a
  *  basis that happens to line up with x, y or z. */
@@ -44,8 +44,20 @@ const AXIS = ((): Vec3 => {
 	return v3(a.x / n, a.y / n, a.z / n);
 })();
 
+/**
+ * The slot's phase-zero direction, which `apertureFrame` now takes rather than
+ * deriving (#126). A fixed perpendicular to `AXIS`: in the game it is the
+ * station's along-track direction, and what these rows test is the checks'
+ * arithmetic against *some* reference, which is what it always was.
+ */
+const REFERENCE = ((): Vec3 => {
+	const seed = v3(0, 0, 1);
+	const p = cross(AXIS, seed);
+	return scale(p, 1 / length(p));
+})();
+
 const frameOf = (type: "trade" | "refinery", phaseRad = 0) =>
-	apertureFrame(type, AXIS, phaseRad);
+	apertureFrame(type, AXIS, phaseRad, REFERENCE);
 
 /** The ship's offset decomposed back onto the station's aperture basis **at the
  *  phase it is being asked about** — which is the whole subject of obligation 7.
@@ -93,13 +105,18 @@ const CORNERS: [number, number][] = [
 ];
 
 describe("§12.4 E7/E8 — the throat is a function of the aperture", () => {
-	test("every type's throat fits inside its own core", () => {
+	test("every type's throat fits inside its own plane", () => {
 		for (const type of STATION_TYPES) {
 			const g = STATION_GEOMETRY[type];
-			// A throat deeper than the core radius would put the docked position
-			// on the far side of the station's centre — through the hull and out.
-			expect(dockedAxialKm(g)).toBeGreaterThan(0);
-			expect(dockedAxialKm(g)).toBeLessThan(g.coreRadiusKm);
+			// A throat deeper than the plane would put the docked position on the
+			// far side of the station's centre — through the hull and out. Against
+			// `aperturePlaneKm` and not the core radius, because since #128 that
+			// is the surface the throat is cut back from.
+			expect([type, dockedAxialKm(g) > 0]).toEqual([type, true]);
+			expect([type, dockedAxialKm(g) < g.aperturePlaneKm]).toEqual([
+				type,
+				true,
+			]);
 		}
 	});
 

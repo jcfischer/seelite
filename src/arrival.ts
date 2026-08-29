@@ -58,12 +58,50 @@ export const LAUNCH_RELEASE_KM = 0.02;
  * same quantity and not a length. A retune of the slot moves it, and *which*
  * forms get a throat is decided by `aperture.kind` below rather than by a list.
  *
- * Four: 280 m behind a 120 × 70 m slot on a 600 m core, so the ship is visibly
- * inside a tunnel and the docked position is still well clear of the station's
- * own centre — which `tests/arrival.test.ts` asserts for every type rather than
- * for the one this number was chosen against.
+ * **One, and it was four until #128.** Four put a 280 m shaft behind a
+ * 120 × 70 m opening, and at that aspect the far wall projects well off-centre
+ * from any view that is not exactly on the axis — the edges converge toward
+ * their own vanishing point, which reads as a tunnel skewed against its port.
+ * That is how it was reported, flying it. At one the hole is concentric and
+ * square to the frame.
+ *
+ * The depth was carrying a second job it should never have had: the plane was
+ * the core radius, 173 m outside the surface the slot is cut into, and only a
+ * throat deep enough to reach back past that offset kept the docked position
+ * inside the drawn recess. #128 moved the plane to the face, so the two are
+ * coupled by construction now — the recess spans `[plane − depth, plane]` and
+ * the ship parks at its far end — and the depth is free to be a length that
+ * looks right.
  */
-export const THROAT_DEPTH_FACTOR = 4;
+export const THROAT_DEPTH_FACTOR = 1;
+
+/**
+ * How much further the *drawn* recess runs than the ship parks, as a multiple
+ * of the same quantity.
+ *
+ * **Because a docked position is where the ship's origin stops, not where its
+ * nose does.** `dockedAxialKm` is one throat-depth inside the plane, so with the
+ * recess ending there the ship parks with its origin against the end wall and
+ * its nose through it — invisible while the throat was 280 m deep and the shield
+ * was off-axis, and immediate once #128 cut the throat to 70 m: the interior
+ * shield ended up level with the camera and `probe-dock-arrival.mjs` measured
+ * zero pixels of both it and the tunnel.
+ *
+ * Half again, so a parked ship has 35 m of tunnel and a wall to look at.
+ */
+export const THROAT_CLEARANCE_FACTOR = 0.5;
+
+/** How deep the recess is **drawn** — the depth the ship travels plus the room
+ *  it needs to sit in. `station-mesh.ts` reads this; the sim reads
+ *  `throatDepthKm`. */
+export function drawnThroatDepthKm(aperture: StationAperture): number {
+	return (
+		throatDepthKm(aperture) +
+		(aperture.kind === "slot"
+			? Math.min(aperture.widthKm, aperture.heightKm) * THROAT_CLEARANCE_FACTOR
+			: 0)
+	);
+}
 
 /**
  * How far a pad sinks the ship below its deck, as a multiple of the same
@@ -93,9 +131,12 @@ export function throatDepthKm(aperture: StationAperture): number {
  * A quantity computed in sim, in the station's own frame, that the renderer
  * mirrors — §12.2's requirement, and the reason "inside the throat" is not
  * good enough: §12.6's obligation 1 cannot be written against a description.
+ *
+ * Measured from `aperturePlaneKm` — the surface the slot is cut into — and not
+ * from the core radius, which on the trade station is 173 m outside it (#128).
  */
 export function dockedAxialKm(geometry: StationGeometry): number {
-	return geometry.coreRadiusKm - throatDepthKm(geometry.aperture);
+	return geometry.aperturePlaneKm - throatDepthKm(geometry.aperture);
 }
 
 /** The ship's offset from the station centre, in aperture-basis components.
@@ -217,10 +258,11 @@ function dockedAxialFor(frame: ApertureFrame): number {
 	// frame the checks ran against rather than a parallel one that a retune
 	// could leave behind.
 	return dockedAxialKm({
-		coreRadiusKm: frame.planeKm,
+		aperturePlaneKm: frame.planeKm,
 		aperture: frame.aperture,
-		// Neither field is read by `dockedAxialKm`; they are here because
-		// `StationGeometry` is a record of four and a partial would be a cast.
+		// None of these three is read by `dockedAxialKm`; they are here because
+		// `StationGeometry` is a record of five and a partial would be a cast.
+		coreRadiusKm: frame.planeKm,
 		axis: "parent",
 		spins: frame.aperture.kind === "slot",
 	});

@@ -25,12 +25,14 @@ import {
 } from "../src/dock-session";
 import {
 	type World,
+	advanceSystem,
 	bodyVelocity,
 	makeWorld,
 	stationOf,
 	stationPose,
 } from "../src/sim";
 import { STATION_GEOMETRY } from "../src/station";
+import { velocityOnOrbit } from "../src/system";
 import { add, dot, length, scale, sub } from "../src/vec3";
 
 /** A world whose start system has a spinning slot station — so the rotating
@@ -51,7 +53,7 @@ function spinningWorld(): { world: World; id: string } {
 function frameNow(world: World, id: string) {
 	const station = stationOf(world.system, id);
 	const pose = stationPose(world.system, id, world.gameTime);
-	return apertureFrame(station.type, pose.axis, pose.phaseRad);
+	return apertureFrame(station.type, pose.axis, pose.phaseRad, pose.reference);
 }
 
 /** A crossing pose on the plane, offset within the aperture as check 5 allows. */
@@ -91,6 +93,87 @@ function run(
 	}
 	return { session: s, ship };
 }
+
+describe("#126 — the slot's phase-zero reference is continuous", () => {
+	/**
+	 * **The property the withdrawn fix did not have.** Aiming the drawn station
+	 * on `slotBasis` is only safe if the reference that basis is built from
+	 * turns *smoothly* as the axis swings round the orbit. `anyPerpendicular`
+	 * does not: it picks its seed on a `< 0.9` branch and **jumps**, which made
+	 * the drawn hull snap and took `probe-station.mjs`'s repeat control from
+	 * 0.02 to 0.21.
+	 *
+	 * So this is not "the reference is perpendicular to the axis" — that was
+	 * true of the old one too, and `stationPose` orthogonalises unconditionally,
+	 * so asserting it would hold for any input whatever. It is a bound on how
+	 * far the reference can move between two neighbouring clock values, over a
+	 * whole orbit, which is the thing that was false.
+	 *
+	 * **Every station in the system, not one.** The two axis kinds are different
+	 * geometry: a `parent`-axis station's axis *is* its own orbital radius, so
+	 * its velocity is perpendicular to it exactly, while an `outward`-axis
+	 * station's axis points away from the star. Running this on a slot station
+	 * alone would leave the refinery's case unproven, which is where the
+	 * fallback guard would fire if it ever fired.
+	 */
+	test("it turns by less than a degree a second, all the way round an orbit", () => {
+		const { world } = spinningWorld();
+		const worstByStation: string[] = [];
+		for (const station of world.system.contents.stations) {
+			const periodS = station.orbit.periodS;
+			const step = periodS / 720;
+			let worst = 0;
+			let previous = stationPose(world.system, station.id, 0).reference;
+			for (let i = 1; i <= 720; i++) {
+				const t = i * step;
+				// The bodies have to be where the clock says before the pose is
+				// read: the axis is `parent.pos − body.pos`.
+				advanceSystem(world.system, t);
+				const now = stationPose(world.system, station.id, t).reference;
+				const turned =
+					(Math.acos(Math.min(1, Math.max(-1, dot(previous, now)))) * 180) /
+					Math.PI;
+				worst = Math.max(worst, turned / step);
+				previous = now;
+			}
+			worstByStation.push(`${station.id} ${worst.toFixed(4)}°/s`);
+			// A station's own orbit is 90–240 minutes, so a reference that tracked
+			// it exactly turns at 0.025–0.067°/s — this one measures 0.066 on the
+			// trade station. The withdrawn `anyPerpendicular` reference measures
+			// **23.68** on the same row: a jump shows up as orders of magnitude,
+			// not as a percentage, which is why the bound is a whole degree.
+			expect([station.id, worst < 1]).toEqual([station.id, true]);
+		}
+		console.log(worstByStation.join("\n"));
+	});
+
+	test("it is the along-track direction, not merely something perpendicular", () => {
+		// **`stationPose` orthogonalises unconditionally**, so a row asserting
+		// perpendicularity passes for any input direction and says nothing about
+		// the geometry the docs lean on. What distinguishes the along-track
+		// reference is that it lies in the plane of the orbit — so it is
+		// perpendicular to the orbit's *normal*, which the velocity and the
+		// radius together define.
+		const { world } = spinningWorld();
+		for (const station of world.system.contents.stations) {
+			advanceSystem(world.system, 137.5);
+			const pose = stationPose(world.system, station.id, 137.5);
+			const v = velocityOnOrbit(station.orbit, 137.5);
+			const speed = Math.hypot(v.x, v.y, v.z);
+			// Unit velocity, and the reference along it: for a circular orbit the
+			// axis is the radius and the velocity is already perpendicular to it,
+			// so the projection is a no-op and the two coincide.
+			const along = scale(v, 1 / speed);
+			expect([station.id, Math.abs(dot(pose.reference, along)) > 0.99]).toEqual(
+				[station.id, true],
+			);
+			expect([
+				station.id,
+				Math.abs(dot(pose.reference, pose.axis)) < 1e-9,
+			]).toEqual([station.id, true]);
+		}
+	});
+});
 
 describe("§12.3 obligation 8 — the three exempt states are distinguishable", () => {
 	test("every state §12 creates is exempt, and flying is not", () => {

@@ -217,12 +217,26 @@ export interface ApertureFrame {
 	phaseRad: number;
 	aperture: StationAperture;
 	/**
-	 * Axial distance from the station's centre to the aperture plane, km — the
-	 * dockable core radius (§5).
+	 * The slot's phase-zero direction: where `across` points when `phaseRad` is
+	 * zero, and the reference the renderer aims the drawn station with.
 	 *
-	 * Named for what it is here rather than reused as `coreRadiusKm`, because
-	 * what the checks do with it is decide where the plane is: a crossing is
+	 * **Supplied, not derived** (#126). Perpendicular to `axis` by construction
+	 * and re-orthogonalised in `slotBasis` anyway; `sim.ts`'s `stationPose`
+	 * builds it from the station's own orbital velocity, which is the one
+	 * direction available here that turns smoothly as the axis swings.
+	 */
+	reference: Vec3;
+	/**
+	 * Axial distance from the station's centre to the aperture plane, km.
+	 *
+	 * Named for what it is here rather than reused as a radius, because what the
+	 * checks do with it is decide where the plane is: a crossing is
 	 * `dot(rel, axis)` passing down through this number, not through zero.
+	 *
+	 * **`STATION_GEOMETRY.aperturePlaneKm`, not `coreRadiusKm`** (#128). It was
+	 * the core radius until a ship was watched crossing the plane 173 m before
+	 * it reached the slot it could see; the geometry table now declares where
+	 * the aperture is, and the form cuts it there.
 	 */
 	planeKm: number;
 }
@@ -238,16 +252,18 @@ export function apertureFrame(
 	type: StationType,
 	axis: Vec3,
 	phaseRad: number,
+	reference: Vec3,
 ): ApertureFrame {
 	const geometry = STATION_GEOMETRY[type];
 	return {
 		axis: unit(axis),
+		reference,
 		// A pad does not rotate, so a caller that passed a phase for one is
 		// describing something that cannot happen. Normalised here rather than
 		// trusted, so check 4's "does not apply" is a property of the frame.
 		phaseRad: geometry.spins ? phaseRad : 0,
 		aperture: geometry.aperture,
-		planeKm: geometry.coreRadiusKm,
+		planeKm: geometry.aperturePlaneKm,
 	};
 }
 
@@ -280,15 +296,29 @@ export function frameAtPhase(
  * An orthonormal pair spanning the aperture plane: `across` along the
  * rectangle's width at the current phase, `up` along its height.
  *
- * The phase-zero reference is derived from the axis by picking the world axis
- * least parallel to it. That is arbitrary and it has to be — a slot's phase is
- * only meaningful against *some* reference, and the only requirement is that
- * the renderer mirrors this one. The alternative, storing a reference vector on
- * the station, is a second place the convention would live.
+ * **The phase-zero reference comes in on the frame** (`reference`), and that is
+ * the whole of #126. It used to be `anyPerpendicular(axis)` — "arbitrary, and it
+ * has to be", with the only requirement that the renderer mirror it. The
+ * renderer did not: it aimed a station by the shortest turn onto its axis, which
+ * fixes the axis and leaves the roll wherever the arithmetic lands, and the
+ * drawn slot sat **64.6° from this basis on the trade station and 78.2° on the
+ * refinery**. A ship parked the way check 4 accepts was two thirds of a right
+ * angle out of the slot it was in.
+ *
+ * Making the renderer read this one was built and withdrawn first, because
+ * `anyPerpendicular` picks its seed on a `< 0.9` branch: the reference **jumps**
+ * as a station's axis swings round its orbit, and the drawn hull snapped with
+ * it. A reference the renderer can share has to be continuous, so it is no
+ * longer derived from the axis at all — `sim.ts` supplies the station's own
+ * along-track direction, which turns smoothly and is perpendicular to the axis
+ * by construction on a circular orbit.
  */
 export function slotBasis(frame: ApertureFrame): { across: Vec3; up: Vec3 } {
 	const a = frame.axis;
-	const u = anyPerpendicular(a);
+	// Re-orthogonalised rather than trusted: the caller's reference is
+	// perpendicular to the axis by construction, and "by construction" is a
+	// claim about a circular orbit rather than about float64.
+	const u = unit(sub(frame.reference, scale(a, dot(frame.reference, a))));
 	const v = cross(a, u);
 	const c = Math.cos(frame.phaseRad);
 	const s = Math.sin(frame.phaseRad);

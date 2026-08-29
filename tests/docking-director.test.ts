@@ -32,7 +32,7 @@ import {
 	dockingDirector,
 } from "../src/docking-director";
 import { TUNNEL_MOUTH_FRACTION } from "../src/docking-tunnel";
-import { type Vec3, add, dot, length, scale, v3 } from "../src/vec3";
+import { type Vec3, add, cross, dot, length, scale, v3 } from "../src/vec3";
 
 const DEG = Math.PI / 180;
 
@@ -62,10 +62,22 @@ const AXIS = ((): Vec3 => {
 	return scale(a, 1 / length(a));
 })();
 
+/**
+ * The slot's phase-zero direction, which `apertureFrame` now takes rather than
+ * deriving (#126). A fixed perpendicular to `AXIS`: in the game it is the
+ * station's along-track direction, and what these rows test is the checks'
+ * arithmetic against *some* reference, which is what it always was.
+ */
+const REFERENCE = ((): Vec3 => {
+	const seed = v3(0, 0, 1);
+	const p = cross(AXIS, seed);
+	return scale(p, 1 / length(p));
+})();
+
 const frameFor = (
 	type: "trade" | "refinery" = "trade",
 	phaseRad = 0.7,
-): ApertureFrame => apertureFrame(type, AXIS, phaseRad);
+): ApertureFrame => apertureFrame(type, AXIS, phaseRad, REFERENCE);
 
 function nominal(
 	frame: ApertureFrame,
@@ -93,7 +105,7 @@ function rotate(v: Vec3, axis: Vec3, rad: number): Vec3 {
 	return add(add(scale(v, c), scale(kv, s)), scale(k, dot(k, v) * (1 - c)));
 }
 
-const PERP = slotBasis(apertureFrame("trade", AXIS, 0)).up;
+const PERP = slotBasis(apertureFrame("trade", AXIS, 0, REFERENCE)).up;
 
 const granted = (expiresAtS: number): DockingState => ({
 	...newDockingState(),

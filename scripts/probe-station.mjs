@@ -100,18 +100,26 @@ const ORIGIN =
  * §4's range sampled near both ends without the probe writing a spin itself,
  * which is the second thing this fixture is for. (Seed 1's were 0.91 and 2.95.)
  *
- * ## The 5 km control flakes
+ * ## The 5 km control flaked, and the ceiling was the wrong number
  *
- * Trade measured twice, against a `1 − IoU ≤ 0.05` ceiling, lands red often — on
- * `main` before #118 as well as here, and on every fixture tried. The ceiling is
- * deliberately **not** widened to hide it: loosening a margin so an unrelated
- * change goes green is how a check stops discriminating, and the readings point
- * at the control re-measuring a *spinning* station rather than at the margin.
+ * Trade measured twice against a `1 − IoU ≤ 0.05` ceiling landed red often — on
+ * `main` before #118 as well as here, and on every fixture tried. This section
+ * used to say the ceiling was deliberately not widened, on the ground that
+ * loosening a margin so an unrelated change goes green is how a check stops
+ * discriminating. That reasoning is sound and it was being applied to the wrong
+ * quantity: the readings were never near what the control exists to separate.
  *
- * The per-seed run table, and the fix, belong to node #84 ("is probe-station's
- * margin too tight?"), where they are posted. Not repeated here, because a
- * reader who wants the seed criterion above should not have to scroll past a
- * statistical writeup that lives somewhere else.
+ * Measured over seven runs, the control sits at 0.046–0.064 while the *closest*
+ * pair of different stations reads 0.398 — a factor of six. A ceiling at 0.05
+ * was not discriminating finely, it was sitting inside its own noise, and it
+ * fired on any change that resampled a hull's outline differently. #128 was
+ * one: it moved every station's drawn roll by tens of degrees, which is a
+ * different picture of the same shape.
+ *
+ * So the ceiling is 0.12 (see `MAX_CONTROL_DIFFERENCE`), bracketed above the
+ * noise and below `MIN_DIFFERENCE`, on the principal's call. The per-seed run
+ * table belongs to node #84 ("is probe-station's margin too tight?") and the
+ * finer-grid alternative to #120, where they are posted.
  */
 const URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=54`;
 
@@ -152,9 +160,44 @@ const GRID = 24;
  */
 const MIN_DIFFERENCE = 0.25;
 
-/** What re-measuring one station back to back may differ by. Not zero: the
- *  clock advances between the two captures, so a boundary cell or two moves. */
-const MAX_CONTROL_DIFFERENCE = 0.05;
+/**
+ * What re-measuring one station back to back may differ by.
+ *
+ * Not zero: the clock advances between the two captures, so a boundary cell or
+ * two moves on the 24 × 24 grid.
+ *
+ * **Bracketed, and the two sides are not equally well measured.** Seven
+ * consecutive runs at 5 km put the control at 0.046, 0.047, 0.051, 0.053,
+ * 0.058, 0.060 and 0.064 — seven samples, and 0.12 sits **1.9×** above the
+ * worst of them.
+ *
+ * The upper side is weaker and should be read as such. `MIN_DIFFERENCE` above
+ * is this file's own reference for how far two *different* stations must read
+ * apart — **0.25**, chosen when the comparison was still a gate — and 0.12 is
+ * 2.1× below it. Observed pairs read higher than that (0.398 for the closest
+ * pair in one run), but a single unreplicated reading is not the number to
+ * divide by, and quoting it would flatter the relaxation this branch wants.
+ * Against the declared floor the headroom is 2.1×, not 3.3×.
+ *
+ * A ceiling with headroom on both sides is a threshold; one sitting inside its
+ * own noise, as 0.05 was, is a coin toss.
+ *
+ * **Raised from 0.05 on the principal's call** (2026-08-29): *"You can relax
+ * that requirement a lot. It doesn't matter for gameplay that much."* It is
+ * worth being plain about what that trades away, because the file's own header
+ * used to argue the other way. This control asks whether the **measurement**
+ * works — whether a mask is reproducible at all — and not what it finds; the
+ * shape comparison it protects has not been asserted since #56 withdrew it.
+ * What a tighter ceiling would buy is early warning of the metric drifting, and
+ * what it cost was a red run on changes that had nothing to do with it: #128
+ * moved every station's drawn roll by tens of degrees, which resamples a hull's
+ * outline differently and moved this figure from about 0.04 to about 0.055
+ * without anything becoming less repeatable.
+ *
+ * `#120` is where the alternative lives — a finer grid, which would cut the
+ * quantisation this is measuring rather than tolerate it.
+ */
+const MAX_CONTROL_DIFFERENCE = 0.12;
 
 /** Tolerance on the measured spin rate, relative. Loose because the station is
  *  also moving along its orbit between the two samples, and because the frame
@@ -287,8 +330,9 @@ async function viewAlongAxis(id, rangeKm) {
  * frames run in the gap, and the sim advances the station along its orbit. That
  * is a genuine change of apparent size, which the crop-and-resample only mostly
  * absorbs — and #56's squared Coriolis, whose mask has long straight edges,
- * absorbs it least. The control read 0.062 against its own 0.05 ceiling with
- * nothing unstable.
+ * absorbs it least. The control read 0.062 against the 0.05 ceiling of the day
+ * with nothing unstable — the reading that eventually moved the ceiling rather
+ * than the code.
  */
 async function silhouette(id, repeat = false) {
 	return page.evaluate(
@@ -326,8 +370,8 @@ async function silhouette(id, repeat = false) {
 			 * station is not round about its own axis, and #56's forms are not:
 			 * a squared Coriolis turning through 18° between two captures is a
 			 * genuinely different outline. The control — one station measured
-			 * twice — then read 0.051 against its own 0.05 ceiling while nothing
-			 * was unstable. Pinning makes every capture in this file comparable to
+			 * twice — then read 0.051 against the 0.05 ceiling of the day while
+			 * nothing was unstable. Pinning makes every capture in this file comparable to
 			 * every other, which is what a shape comparison needs.
 			 */
 			const savedClock = g.world.gameTime;

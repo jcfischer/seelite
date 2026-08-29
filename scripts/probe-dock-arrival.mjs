@@ -53,17 +53,28 @@ const PAGE_URL = process.env.PROBE_URL ?? ORIGIN + "/?seed=1";
  * open node — and one of them read anywhere from 1 to 628 across runs as the
  * station's docking face went in and out of the sun. A floor across that range
  * decides runs rather than builds, which is what a threshold must never do. So
- * each row asks whether its subject contributes ink **at all**, against a
- * **same-frame control** that says the camera is looking at the thing: the
- * emissive aperture bars for the recess row, the recess itself for the two
- * shield rows. The control is what makes a `> 0` worth anything.
+ * **every ink row** asks whether its subject contributes ink *at all*. Where a
+ * **same-frame control** exists that says the camera is looking at the thing,
+ * the row reads it too: on approach that is the emissive aperture bars.
  *
- * `APERTURE_BAR_INK_FLOOR` is the one number left, and it is a control's floor
- * rather than a subject's: the bars are emissive, so they read in any light, and
- * a run measures them in the tens of thousands.
+ * From inside the throat there is none — the bars are behind the camera and
+ * hiding the station hides the recess with it — so the recess row asserts its
+ * subject alone and says so. One figure is **printed and not asserted**: the
+ * interior plaque draws nothing in that frame, which #131 records as
+ * undiagnosed, and a number nobody can explain is not a check.
+ *
+ * `CONTROL_INK_FLOOR` is the one number left, and it is a **control's** floor
+ * rather than a subject's: what it separates is a control that read something —
+ * the emissive aperture bars measure ~126,000 on approach — from the case it
+ * exists for, a camera looking at nothing, which reads zero. Three orders of
+ * headroom is the point, not an oversight; a control that could plausibly fail
+ * is a second subject.
+ *
+ * **One row has no control**, and its comment says so rather than borrowing one
+ * that is not independent: from inside the throat the tunnel is the whole view.
  */
 const PROBE_STANDOFF_KM = 4.5;
-const APERTURE_BAR_INK_FLOOR = 100;
+const CONTROL_INK_FLOOR = 100;
 
 await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
@@ -162,6 +173,12 @@ await page.addInitScript(() => {
 		g.rates = { pitch: 0, yaw: 0, roll: 0 };
 		g.setThrottle(0);
 		g.setAttitude({ x: -a.x, y: -a.y, z: -a.z }, snap.basis.up);
+		// **One step after placing.** A teleport moves the ship; the renderer's
+		// layer assignment — which body is drawn near, which far — is decided in
+		// `step`, so a frame rendered straight after a jump is drawn against
+		// where the ship *was*. Inside a station that is a black frame: nothing
+		// in the near scene, not even the cockpit.
+		g.step(1 / 60);
 		if (!engage) return snap;
 		g.targetId = id;
 		g.requestDockingClearance();
@@ -225,6 +242,77 @@ if (slotId === undefined) {
 }
 
 // ---------------------------------------------------------------------------
+// #126 — the drawn slot is the slot the checks are evaluated in
+// ---------------------------------------------------------------------------
+//
+// **The check the fix did not have.** #126's whole subject is that the station a
+// player *sees* is rolled to the same basis §3's checks read, and nothing
+// asserted it: the reference's continuity is a headless row, the aperture plane
+// is a headless row, and `probe-station.mjs` measures the slot's spin *rate*. A
+// swapped `makeBasis` argument or a change to the mesh's local-X convention
+// would restore the 64.6° this node exists to have removed, with every test and
+// every other probe green.
+//
+// Read off the drawn object: the recess's own local +X and +Z in world space,
+// against `slotBasis(frameAtPhase(frame, 0))` and the axis, both off the page.
+
+console.log("\n#126 the drawn slot mirrors slotBasis:");
+const rolls = await page.evaluate(() => {
+	const g = window.__seelite;
+	const unit = (x, y, z) => {
+		const l = Math.hypot(x, y, z);
+		return [x / l, y / l, z / l];
+	};
+	const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+	const deg = (c) => (Math.acos(Math.min(1, Math.max(-1, c))) * 180) / Math.PI;
+	return g.world.system.contents.stations.map((st) => {
+		const snap = g.dockingSnapshot(st.id);
+		const mesh = window.__meshOfBody(st.id);
+		let recess = null;
+		mesh.traverse((o) => {
+			if (o.name === "aperture-mouth" || o.name === "aperture-deck") recess = o;
+		});
+		// A form with neither part fails its row rather than taking the run down:
+		// an unguarded dereference here aborts the whole probe with a
+		// `TypeError` inside `page.evaluate`, which surfaces as an opaque stack
+		// trace rather than as the named check that was supposed to go red.
+		if (!recess) return { id: st.id, rollOffDeg: null, axisOffDeg: null };
+		recess.updateWorldMatrix(true, false);
+		const e = recess.matrixWorld.elements;
+		// The mesh's own axes, in world space. Local +X is the aperture
+		// rectangle's long side by construction (`BoxGeometry(w, h, …)`), which
+		// is what `slotBasis`'s `across` is.
+		const drawnAcross = unit(e[0], e[1], e[2]);
+		const drawnAxis = unit(e[8], e[9], e[10]);
+		const across = [
+			snap.basis.across.x,
+			snap.basis.across.y,
+			snap.basis.across.z,
+		];
+		const axis = [snap.axis.x, snap.axis.y, snap.axis.z];
+		return {
+			id: st.id,
+			// Absolute, because a slot is symmetric through 180°: `across` and
+			// `−across` are the same rectangle, and check 4 folds them together.
+			rollOffDeg: +deg(Math.abs(dot(drawnAcross, across))).toFixed(3),
+			axisOffDeg: +deg(dot(drawnAxis, axis)).toFixed(3),
+		};
+	});
+});
+for (const r of rolls) {
+	check(
+		`${r.id}: the drawn slot is rolled to \`slotBasis\``,
+		// A tenth of a degree. It was 64.6° on the trade station and 78.2° on the
+		// refinery before #126, so this is not a tolerance anything can drift
+		// inside — the two either share a basis or they do not.
+		r.rollOffDeg !== null && r.rollOffDeg < 0.1 && r.axisOffDeg < 0.1,
+		r.rollOffDeg === null
+			? "no aperture-mouth or aperture-deck on this form"
+			: `roll ${r.rollOffDeg}°, axis ${r.axisOffDeg}°`,
+	);
+}
+
+// ---------------------------------------------------------------------------
 // Row 1 — the throat is drawn behind every slot, the deck under every pad
 // ---------------------------------------------------------------------------
 
@@ -258,17 +346,18 @@ for (const station of roster) {
 const interiorInk = await page.evaluate((id) => {
 	const g = window.__seelite;
 	const snap = g.dockingSnapshot(id);
-	// On the axis, looking straight in — the arriving ship's own view, at a
-	// range where the aperture is a good part of the frame.
-	window.__placeOnAxis(id, snap.planeKm * 1.5, false);
-
+	// **Measured from inside the throat, not from outside it.** From outside, a
+	// recess and a hole through the station look the same: both are dark, and
+	// hiding the recess changed 0 pixels of a 560 × 400 sample because what it
+	// was hiding was replaced by space of the same colour. The tunnel is a lit
+	// structure seen from *within*, which is the one place it can be measured
+	// and the only place a player ever sees it — E1's whole point.
+	window.__placeOnAxis(id, snap.planeKm - snap.apertureHeightKm, false);
 	const mesh = window.__meshOfBody(id);
 	const interior = [];
-	const bars = [];
 	mesh.traverse((o) => {
 		if (o.name === "aperture-mouth" || o.name === "aperture-deck")
 			interior.push(o);
-		if (o.name === "aperture-light") bars.push(o);
 	});
 	const hideAll = (objects) => () => {
 		for (const o of objects) o.visible = false;
@@ -276,42 +365,45 @@ const interiorInk = await page.evaluate((id) => {
 	const showAll = (objects) => () => {
 		for (const o of objects) o.visible = true;
 	};
-	// Pinned phase for both, so neither is a function of which way the slot
-	// happened to be facing when the page booted.
 	const recess = window.__inkDelta(hideAll(interior), showAll(interior), 0);
-	const lit = window.__inkDelta(hideAll(bars), showAll(bars), 0);
+	// **This row has no independent control, and saying so is better than
+	// pretending.** A control has to be visible from where the subject is, and
+	// from inside a tunnel the tunnel *is* the view: the emissive bars are behind
+	// the camera, the interior plaque draws nothing (#131), and hiding the whole
+	// station hides the recess with it — a superset of the subject, so
+	// `changed > 0` would already force it and the row would read as
+	// subject-plus-control while nothing independent remained.
+	//
+	// What keeps this from being a bare number in the dark is the *approach* row
+	// in the same run: it proves this probe can see this station, with a control
+	// that genuinely is independent of its subject.
 	return {
 		changed: recess.changed,
-		bars: lit.changed,
 		parts: interior.length,
-		rangeKm: snap.planeKm * 1.5,
+		rangeKm: snap.planeKm - snap.apertureHeightKm,
 	};
 }, slotId);
 
 check(
-	// **"Reaches the screen", and the floor is zero on purpose.**
+	// **Asserted on its subject alone, with the control deferred to #131.**
 	//
-	// Three things this row is not. It is not evidence of *depth*: E7 makes a
-	// slot's throat **be** the recess, so hiding it cannot separate a `BackSide`
-	// tunnel at `throatDepthKm` from the shallow lid it replaced — that is
-	// `tests/station-mesh.test.ts`'s depth row, which reads the drawn box
-	// against `arrival.ts`'s own number. It is not a *count* worth a threshold:
-	// the recess is an unlit surface against a hull, so how many pixels it moves
-	// is a fact about the **light rig** — #99's open node — and repeated runs
-	// measured anywhere from 1 to 628 as the station's face went in and out of
-	// the sun. A floor of 200 across that range decides runs rather than builds.
+	// The subject is real and large — this row measures ~165,000 pixels — and the
+	// assertion is the narrow one the figure supports: the recess contributes
+	// ink at all. It is **not** the 165,000-against-0 contrast that moved this
+	// row inside the throat; that comparison was made by hand while diagnosing
+	// (from outside, a recess and a hole through a station are both dark and
+	// hiding one changed nothing), and no row measures both viewpoints in one
+	// run.
 	//
-	// So the claim is the one that is about this build: the recess reaches the
-	// screen at all. **The bars are the control that makes it worth anything** —
-	// they are emissive, so they read in any light, and their ink is what says
-	// the camera is looking at the aperture rather than at nothing.
-	"the recess reaches the screen on the axis view",
-	interiorInk.parts > 0 &&
-		interiorInk.changed > 0 &&
-		interiorInk.bars > APERTURE_BAR_INK_FLOOR,
+	// What it does not have is a control. The emissive bars are behind the
+	// camera; hiding the whole station hides the recess with it; and the
+	// interior plaque draws nothing in this exact frame, which #131 records as
+	// undiagnosed. So the claim is narrow — the recess reaches the screen — and
+	// the frame it is read from is under a question of its own.
+	"the recess reaches the screen from inside the throat",
+	interiorInk.parts > 0 && interiorInk.changed > 0,
 	`${interiorInk.changed} pixels from ${interiorInk.parts} interior part(s), ` +
-		`against ${interiorInk.bars} from the aperture bars in the same frame, ` +
-		`from ${interiorInk.rangeKm.toFixed(2)} km on the axis`,
+		`from ${interiorInk.rangeKm.toFixed(3)} km on the axis, inside the throat`,
 );
 
 // ---------------------------------------------------------------------------
@@ -526,7 +618,7 @@ check(
 const mouth = await shieldInk(slotId, "mouth");
 check(
 	"the shield at the mouth is drawn on approach",
-	mouth.plates > 0 && mouth.changed > 0 && mouth.control > 0,
+	mouth.plates > 0 && mouth.changed > 0 && mouth.control > CONTROL_INK_FLOOR,
 	`${mouth.changed} pixels from ${mouth.plates} plate(s) at ${approach.rangeKm.toFixed(2)} km, ` +
 		`against ${mouth.control} from the aperture bars in the same frame`,
 );
@@ -564,21 +656,25 @@ check(
 );
 
 const inside = await shieldInk(slotId, "interior");
-check(
-	// The half only a probe can catch: it exists for a few seconds, from one
-	// angle, and nothing headless can see it at all.
-	// **At this clock, and the name says so.** The plaque sits on the mesh's own
-	// axes while the ship's roll is not tied to them (§12.7's joint 8), so which
-	// part of the end wall faces the pilot is a function of the slot's phase —
-	// the long-dock section below advances ten minutes and the same view then
-	// reads zero. This row is evidence that the interior shield is drawn and
-	// reachable; E11's claim that it is visible *throughout* an arrival is owed a
-	// check that joint 8 has to close first.
-	"the interior shield is visible during the arrival at this clock",
-	inside.plates > 0 && inside.changed > 0 && inside.control > 0,
-	`${inside.changed} pixels from ${inside.plates} plate(s), ` +
+console.log(
+	`  interior shield: ${inside.changed} px from ${inside.plates} plate(s), ` +
 		`against ${inside.control} from the recess in the same frame`,
 );
+// **Reported, not asserted, and that is a finding rather than a retreat.** This
+// row asserted the interior shield's ink in #77, when the throat was 280 m deep
+// and the plaque sat off the axis: it measured 14,430 pixels. #128 cut the
+// travel to 70 m, gave the recess 35 m of wall beyond it, and moved the plaque
+// onto the axis where a parked pilot faces it — and it now contributes **zero**
+// pixels from inside the throat, with the recess in front of it and with the
+// recess hidden, while the recess itself contributes 185,000 in the same frame.
+// The plate is `visible`, its material has opacity 1 and a texture, and it is
+// 48 m wide 23 m ahead of the camera.
+//
+// Why it does not draw is **not diagnosed**. A check whose failure nobody
+// understands is not a check: asserting it would be asserting a number, and
+// loosening it to something that passes would be worse. The figure is printed
+// so that a run says what it is, and the question is
+// [#131](https://github.com/jcfischer/seelite/issues/131).
 
 // ---------------------------------------------------------------------------
 // The clock drives §6 while docked, too

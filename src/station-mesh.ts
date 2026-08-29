@@ -62,7 +62,7 @@ import {
 	type StationAperture,
 	type StationType,
 } from "./station";
-import { throatDepthKm } from "./arrival";
+import { drawnThroatDepthKm, throatDepthKm } from "./arrival";
 import { type GreebleZone, buildGreebles } from "./station-greebles";
 import {
 	STATION_QUALITY,
@@ -501,8 +501,27 @@ const DECK_THICKNESS_FACTOR = 0.08;
  * this.
  */
 const NAMEPLATE_HEIGHT_FACTOR = 0.4;
+/** The interior plaque's size, as multiples of the aperture's. Unchanged by
+ *  #128 — what moved is where it sits, which is `NAMEPLATE_INNER_OFFSET_FACTOR`
+ *  below. */
 const NAMEPLATE_INNER_WIDTH_FACTOR = 0.4;
 const NAMEPLATE_INNER_HEIGHT_FACTOR = 0.22;
+/**
+ * How far off the axis the interior plaque sits, as a multiple of the
+ * aperture's width — **zero: it is straight ahead of a parked ship.**
+ *
+ * It was off-axis so the arriving ship would fly *past* a plaque rather than
+ * into it, which was right when the throat was 280 m deep and the ship crossed
+ * most of it. #128 cut the travel to 70 m and gave the recess 35 m of wall
+ * beyond that, so the ship no longer passes the plaque at all — it stops short
+ * of it and looks at it, and straight ahead is where a sign should be.
+ *
+ * **This did not fix anything, and the change is not a diagnosis.** Off-axis,
+ * the plaque was 54° off the view axis, which is a reason it might not have
+ * drawn; on the axis it still draws **zero** pixels, and #131 owns the question
+ * of why. Moving it was right on its own terms and that is the whole claim.
+ */
+const NAMEPLATE_INNER_OFFSET_FACTOR = 0;
 
 /** How thick a nameplate is, km — the aperture bars' own thickness, because it
  *  is mounted the same way and for the same reason. */
@@ -564,7 +583,9 @@ function buildAperture(type: StationType, faceZ: number): THREE.Group {
 	// how far in the ship parks. A pad has no inside, so its recess stays the
 	// shallow one it always was and E8's deck sits at its mouth.
 	const depth =
-		aperture.kind === "slot" ? throatDepthKm(aperture) : Math.min(w, h) * 0.8;
+		aperture.kind === "slot"
+			? drawnThroatDepthKm(aperture)
+			: Math.min(w, h) * 0.8;
 	// **Thick enough to straddle the surface it is cut into.** The frame used to
 	// sit *on* the face — bars centred half a bar proud of it — so it touched
 	// the hull at a plane and nowhere else. On screen that is a lit rectangle
@@ -587,10 +608,16 @@ function buildAperture(type: StationType, faceZ: number): THREE.Group {
 			? THROAT_MATERIAL
 			: new THREE.MeshBasicMaterial({ color: 0x05070a }),
 	);
-	// Sunk *and* clear of the face: at `faceZ - depth/2` the mouth's front face is
-	// exactly coplanar with the surface it is cut into, which z-fights — a slot
-	// that flickers as the station turns, which reads as no slot at all.
-	mouth.position.z = faceZ + bar / 2 - depth / 2;
+	// **A slot's recess spans exactly `[plane − depth, plane]`.** The sim parks
+	// the ship at the far end of that span (`dockedAxialKm`), so an offset here
+	// is an offset between where the ship stops and where the wall is — the
+	// version this replaces sank the box half a bar to stop its front face
+	// z-fighting with the surface it is cut into, and left the ship 12 m short
+	// of the end wall. A slot's recess is rendered `BackSide`, so its near cap
+	// is culled and there is no coplanar face left to fight. A pad's is not, and
+	// keeps the sinking.
+	mouth.position.z =
+		aperture.kind === "slot" ? faceZ - depth / 2 : faceZ + bar / 2 - depth / 2;
 	mouth.name = "aperture-mouth";
 	group.add(mouth);
 
@@ -744,9 +771,9 @@ function buildNameplates(
 		// reason: that is the rectangle's long side.
 		inner.rotation.z = -Math.PI / 2;
 		inner.position.set(
-			w * NAMEPLATE_INNER_WIDTH_FACTOR,
+			w * NAMEPLATE_INNER_OFFSET_FACTOR,
 			0,
-			faceZ - throatDepthKm(aperture) + NAMEPLATE_THICKNESS_KM / 2,
+			faceZ - drawnThroatDepthKm(aperture) + NAMEPLATE_THICKNESS_KM / 2,
 		);
 		inner.name = NAMEPLATE_NAME;
 		plates.push(inner);
@@ -1110,9 +1137,22 @@ function buildTradeCoriolis(color: number): BuiltPart {
 	const group = new THREE.Group();
 	const fixtures: StationFixture[] = [];
 	const radius = r * 0.95;
-	/** Where a square face's plane sits, kilometres. Everything mounted on the
-	 *  hull is placed from this — which is what stops a light hanging in space
-	 *  beside the station, as the swept version's did. */
+	/**
+	 * Where a square face's plane sits, kilometres. Everything mounted on the
+	 * hull is placed from this — which is what stops a light hanging in space
+	 * beside the station, as the swept version's did.
+	 *
+	 * **The form computes this and the table declares the plane, and the two are
+	 * checked against each other rather than one deriving the other** (#128).
+	 * Deriving the hull from `aperturePlaneKm` was tried and withdrawn: it makes
+	 * `tests/station-mesh.test.ts`'s hull-reaches-the-plane row a tautology on
+	 * the one form the defect was found on — the reach becomes `plane / 1.06`
+	 * for any plane, so the row cannot go red. Two paths to one number is what
+	 * makes the assertion worth making; a single path is a restatement.
+	 *
+	 * They agree to 0.8 m today, and the frame stands 6% proud of the face,
+	 * which is where the declared plane sits.
+	 */
 	const face = radius * CUBOCTAHEDRON_FACE;
 
 	const hull = buildCuboctahedron(radius, hullMaterial(color, "trade"));
@@ -1139,7 +1179,11 @@ function buildTradeCoriolis(color: number): BuiltPart {
 	coaming.position.z = face + face * 0.035;
 	coaming.name = "coaming";
 	group.add(coaming);
-	group.add(buildAperture("trade", face + face * 0.06));
+	// **The declared plane, not a depth this form picks.** `station.ts` owns
+	// where the aperture is, because §3's checks are evaluated there; the number
+	// happens to be this face 6% proud, and `tests/station-mesh.test.ts` asserts
+	// the two agree rather than trusting the comment.
+	group.add(buildAperture("trade", STATION_GEOMETRY.trade.aperturePlaneKm));
 
 	// The window grid, on the four equatorial square faces. Each pane sits on
 	// its face's own plane, a hair proud, so none of them can float: the face is
@@ -1578,7 +1622,9 @@ function buildShipyardGantry(color: number): BuiltPart {
 	const spun = new THREE.Group();
 	spun.name = "spun";
 	spun.add(hub);
-	spun.add(buildAperture("shipyard", r * 0.62));
+	spun.add(
+		buildAperture("shipyard", STATION_GEOMETRY.shipyard.aperturePlaneKm),
+	);
 	group.add(spun);
 	const rib = plainMaterial(0x6f7d88, 0.78, 0.42);
 	// Named, because every shipyard form has one and `probe-station.mjs` reads
@@ -2271,7 +2317,9 @@ function buildRefineryWarren(color: number): BuiltPart {
 		);
 		group.add(terrace);
 	}
-	group.add(buildAperture("refinery", r * 0.99));
+	group.add(
+		buildAperture("refinery", STATION_GEOMETRY.refinery.aperturePlaneKm),
+	);
 
 	// **Stacks canted outward, not laid back.** Viewed down the aperture axis —
 	// the one view a docking approach has — a rock with an inlaid cut is still a
@@ -2719,7 +2767,9 @@ function buildOutpostDerrick(color: number): BuiltPart {
 		collar.position.z = z;
 		group.add(collar);
 	}
-	group.add(buildPadDeck(fixtures, r, r * 1.1));
+	group.add(
+		buildPadDeck(fixtures, r, STATION_GEOMETRY.outpost.aperturePlaneKm),
+	);
 	// Rooted **on a tank**, not beside the cluster: the tanks sit on a 0.42·r
 	// circle and are 0.34·r across, so a boom starting at 0.6·r began in empty
 	// space and the whole flare was a detached island.

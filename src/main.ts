@@ -147,6 +147,7 @@ import {
 	ARRIVAL_SECONDS,
 	AXIS_TOLERANCE_DEG,
 	DOCKING_COMPUTER,
+	frameAtPhase,
 	ROLL_TOLERANCE_DEG,
 	VICINITY_KM,
 	V_GATE_KMS,
@@ -231,7 +232,11 @@ const ENV_QUAT = new THREE.Quaternion();
 const ENV_EULER = new THREE.Euler();
 /** Local +Z, which `station-mesh.ts` builds every station's aperture axis
  *  along — the vector a station's mesh is rotated *from* when it is aimed. */
-const MESH_AXIS = new THREE.Vector3(0, 0, 1);
+/** Scratch for the aperture basis a station is aimed with — allocated once,
+ *  like `STATION_AXIS`, because this runs per station per frame. */
+const STATION_ACROSS = new THREE.Vector3();
+const STATION_UP = new THREE.Vector3();
+const STATION_BASIS = new THREE.Matrix4();
 const HEAD_AXIS = new THREE.Vector3(0, 1, 0);
 
 const {
@@ -3189,6 +3194,7 @@ class Game {
 			stationOf(this.world.system, id).type,
 			pose.axis,
 			pose.phaseRad,
+			pose.reference,
 		);
 	}
 
@@ -4229,26 +4235,27 @@ class Game {
 				// Local +Z is the aperture axis, which is the contract
 				// `station-mesh.ts` is built to.
 				STATION_AXIS.set(pose.axis.x, pose.axis.y, pose.axis.z);
-				// **The roll about this axis is *not* `slotBasis`'s, and that is a
-				// known defect rather than a convention** — recorded by #77 and
-				// left to a node of its own. `setFromUnitVectors` takes +Z to the
-				// axis by the shortest turn, so the drawn slot sits at an
-				// arbitrary angle to the frame every §3 check is evaluated in: a
-				// docked ship looks askew in its own slot, and a pilot who rolls
-				// to match the slot they can **see** can fail check 4 by up to
-				// 90°. `docking.ts` says of that reference *"the only requirement
-				// is that the renderer mirrors this one"*, and it does not.
+				// **Aimed on the sim's own basis, which is what §4.1 always said
+				// and what was not true until #126.** `setFromUnitVectors` took
+				// local +Z onto the axis by the shortest turn — exact in the axis
+				// and arbitrary in the roll about it — so the slot a player could
+				// see sat 64.6° from the slot check 4 measures, on the trade
+				// station, and 78.2° on the refinery. A ship parked by §12.2 was
+				// two thirds of a right angle out of the slot it was in, which is
+				// how it was reported: *"leaves the ship in a felt skewed
+				// position"*.
 				//
-				// The obvious repair — aim the mesh on `slotBasis` itself —
-				// was built and withdrawn, because it exports a discontinuity into
-				// the visuals: `anyPerpendicular` picks its seed by a `< 0.9`
-				// branch, so the reference **jumps** as a station's axis swings
-				// round its orbit, and the drawn hull snaps with it.
-				// `probe-station.mjs`'s repeat control measured the cost — its
-				// drift went from 0.02 to between 0.05 and 0.21. Mirroring needs a
-				// *continuous* phase-zero reference, which is a change to the
-				// convention where it is defined, not to this line.
-				mesh.quaternion.setFromUnitVectors(MESH_AXIS, STATION_AXIS);
+				// Local X goes on the phase-zero `across` and local Y on the `up`
+				// that goes with it, so `spinner.rotation.z = phaseRad` reproduces
+				// `slotBasis` exactly. This was built and withdrawn once, when the
+				// reference was `anyPerpendicular` and jumped on its own `< 0.9`
+				// branch as the axis swung; the reference is the station's
+				// along-track direction now, and turns smoothly.
+				const zero = slotBasis(frameAtPhase(this.apertureFrameOf(body.id), 0));
+				STATION_ACROSS.set(zero.across.x, zero.across.y, zero.across.z);
+				STATION_UP.set(zero.up.x, zero.up.y, zero.up.z);
+				STATION_BASIS.makeBasis(STATION_ACROSS, STATION_UP, STATION_AXIS);
+				mesh.quaternion.setFromRotationMatrix(STATION_BASIS);
 				spinner.rotation.z = pose.phaseRad;
 			}
 		}

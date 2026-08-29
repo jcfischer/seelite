@@ -65,7 +65,7 @@ import {
 	velocityOnOrbit,
 } from "./system";
 import { type PlanetAppearance, appearanceOf } from "./planet-appearance";
-import { type Vec3, add, dot, length, scale, sub, v3 } from "./vec3";
+import { type Vec3, add, cross, dot, length, scale, sub, v3 } from "./vec3";
 
 /**
  * What a body is for rendering purposes.
@@ -390,6 +390,23 @@ export interface StationPose {
 	axis: Vec3;
 	/** Slot rotation about that axis, radians in [0, 2π). Always 0 for a pad. */
 	phaseRad: number;
+	/**
+	 * The slot's phase-zero direction — where `across` points at phase zero
+	 * (#126).
+	 *
+	 * **The station's own along-track direction**, which is its velocity about
+	 * whatever it orbits, with the parent's motion removed. Two properties make
+	 * it the right reference and nothing else here has both: it is perpendicular
+	 * to the axis by construction on a circular orbit, and it turns *smoothly*
+	 * as the axis swings. `docking.ts`'s old `anyPerpendicular` had the first
+	 * and not the second — it picks its seed on a `< 0.9` branch, so the
+	 * reference jumps, and a renderer sharing it snapped the drawn hull round.
+	 *
+	 * It lives here rather than in `docking.ts` because this is where the orbit
+	 * is. The arrow still points one way: `docking.ts` imports neither this
+	 * module nor anything that would need it.
+	 */
+	reference: Vec3;
 }
 
 /**
@@ -432,10 +449,50 @@ export function stationPose(
 	}
 
 	const len = length(toward);
+	const axis = len === 0 ? v3(1, 0, 0) : scale(toward, 1 / len);
+	// **The station's own orbital velocity**, not `bodyVelocity`'s. The parent's
+	// motion is thirty kilometres a second against the station's few, and it is
+	// not perpendicular to this axis — a reference built from the sum would pass
+	// through zero twice an orbit, which is the discontinuity #126 exists to be
+	// rid of. Its own velocity about whatever it orbits is perpendicular to the
+	// radius by construction, and the radius is this axis.
+	const along = velocityOnOrbit(station.orbit, gameTime);
+	const perpendicular = sub(along, scale(axis, dot(along, axis)));
+	const perpendicularLen = length(perpendicular);
+	// **A fraction of the velocity, not an exact zero.** The perpendicular
+	// component is the whole velocity for a `parent`-axis station, whose axis is
+	// its own orbital radius — but an `outward`-axis station's axis points away
+	// from the *star*, and a shrinking-but-nonzero component would be normalised
+	// back to unit length, amplifying whatever noise was left. That is a
+	// discontinuous reference wearing a continuous one's clothes, which is the
+	// failure #126 exists to remove. A thousandth of the speed is far below
+	// anything a circular orbit produces and far above the rounding.
+	const usable = perpendicularLen > length(along) * 1e-3;
 	return {
-		axis: len === 0 ? v3(1, 0, 0) : scale(toward, 1 / len),
+		axis,
 		phaseRad: slotPhaseRad(station.spinRpm, gameTime),
+		// A station at rest in its own frame has no along-track direction. It
+		// cannot happen — every orbit here has a period — and the fallback is
+		// the old arbitrary perpendicular rather than a `NaN` basis.
+		reference: usable
+			? scale(perpendicular, 1 / perpendicularLen)
+			: anyPerpendicularTo(axis),
 	};
+}
+
+/** A direction not parallel to `a`, for the cases the along-track reference
+ *  cannot serve: a station with no orbital motion, or one whose motion is along
+ *  its own aperture axis. Discontinuous by construction — which is exactly why
+ *  it is a fallback and not the rule (#126). */
+function anyPerpendicularTo(a: Vec3): Vec3 {
+	const seed =
+		Math.abs(a.x) < 0.9
+			? v3(1, 0, 0)
+			: Math.abs(a.y) < 0.9
+				? v3(0, 1, 0)
+				: v3(0, 0, 1);
+	const c = cross(a, seed);
+	return scale(c, 1 / length(c));
 }
 
 export function makeWorld(seed: number): World {

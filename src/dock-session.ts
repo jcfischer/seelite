@@ -236,7 +236,12 @@ export function stepDockedWorld(
 
 	const station = stationOf(world.system, id);
 	const pose = stationPose(world.system, id, world.gameTime);
-	const frame = apertureFrame(station.type, pose.axis, pose.phaseRad);
+	const frame = apertureFrame(
+		station.type,
+		pose.axis,
+		pose.phaseRad,
+		pose.reference,
+	);
 	const stationVel = bodyVelocity(world.system, id, world.gameTime);
 	// **From the geometry, not from the drawn rpm.** `frameAtPhase` forces a
 	// pad's phase to zero because a pad does not rotate, so a pad carrying a
