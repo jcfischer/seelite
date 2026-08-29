@@ -1233,8 +1233,10 @@ of check that stops being evidence, and §12.7 records that it fails open until
    direction** — its velocity about whatever it orbits, with the parent's motion
    removed — which is perpendicular to the axis by construction on a circular
    orbit and turns smoothly. `tests/dock-session.test.ts` bounds how far it may
-   turn per second across a whole orbit, and that row is red on the old
-   reference. Both roll figures are 0° now.
+   turn per second across a whole orbit, for every station in the system: the
+   along-track reference turns at **0.066°/s** worst on the trade station,
+   against the withdrawn one's **23.68°/s** — 360× worse, and 24× over the row's
+   own 1°/s bound. Both roll figures are 0° now.
 
    **What it cost, and what was done about it.** A station's drawn orientation
    changed, so `probe-station.mjs`'s repeatability control — one station measured

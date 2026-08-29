@@ -459,22 +459,31 @@ export function stationPose(
 	const along = velocityOnOrbit(station.orbit, gameTime);
 	const perpendicular = sub(along, scale(axis, dot(along, axis)));
 	const perpendicularLen = length(perpendicular);
+	// **A fraction of the velocity, not an exact zero.** The perpendicular
+	// component is the whole velocity for a `parent`-axis station, whose axis is
+	// its own orbital radius — but an `outward`-axis station's axis points away
+	// from the *star*, and a shrinking-but-nonzero component would be normalised
+	// back to unit length, amplifying whatever noise was left. That is a
+	// discontinuous reference wearing a continuous one's clothes, which is the
+	// failure #126 exists to remove. A thousandth of the speed is far below
+	// anything a circular orbit produces and far above the rounding.
+	const usable = perpendicularLen > length(along) * 1e-3;
 	return {
 		axis,
 		phaseRad: slotPhaseRad(station.spinRpm, gameTime),
 		// A station at rest in its own frame has no along-track direction. It
 		// cannot happen — every orbit here has a period — and the fallback is
 		// the old arbitrary perpendicular rather than a `NaN` basis.
-		reference:
-			perpendicularLen === 0
-				? anyPerpendicularTo(axis)
-				: scale(perpendicular, 1 / perpendicularLen),
+		reference: usable
+			? scale(perpendicular, 1 / perpendicularLen)
+			: anyPerpendicularTo(axis),
 	};
 }
 
-/** A direction not parallel to `a`, for the one case that cannot arise: a
- *  station with no orbital motion. Discontinuous by construction — which is
- *  exactly why it is a fallback and not the rule (#126). */
+/** A direction not parallel to `a`, for the cases the along-track reference
+ *  cannot serve: a station with no orbital motion, or one whose motion is along
+ *  its own aperture axis. Discontinuous by construction — which is exactly why
+ *  it is a fallback and not the rule (#126). */
 function anyPerpendicularTo(a: Vec3): Vec3 {
 	const seed =
 		Math.abs(a.x) < 0.9

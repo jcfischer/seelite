@@ -641,9 +641,13 @@ describe("§128 — the hull comes up to the plane the checks read", () => {
 		// offset. The drift it claims to catch is the surface moving out from
 		// under the slot, which that could not see.
 		//
-		// The `core` mesh is built through a different path — a radius through
-		// `buildCuboctahedron` or a lathe — than the number it is compared
-		// against, which is what makes the comparison worth making.
+		// The `core` mesh is built through a different path — the form's own
+		// radius through `buildCuboctahedron` or a lathe — than the number it is
+		// compared against, and **that is the whole point**. Deriving the hull
+		// from `aperturePlaneKm` was tried and withdrawn: it makes the trade row
+		// a tautology (`reach === plane / 1.06` for any plane), on the one form
+		// the reported defect was found on. Two paths to one number is an
+		// assertion; one path is a restatement.
 		//
 		// **Slot forms only**, and the pads are excluded for a reason rather than
 		// for convenience: a pad's docking surface is its `aperture-deck`, a
@@ -669,6 +673,11 @@ describe("§128 — the hull comes up to the plane the checks read", () => {
 			// metre-scale slack on the near side rather than a `>= 0`.
 			const insideM = (plane - reach) * 1000;
 			rows.push(`${type}: hull ${insideM.toFixed(1)} m inside its plane`);
+			// Twenty-six metres of band: 24.9 m is where the trade Coriolis sits
+			// (its frame stands 6% proud of the face) and the shipyard's hub is
+			// flush. A form whose surface drifts a metre out from under its slot
+			// leaves it; the negative slack is a signed zero surviving a
+			// subtraction, not a tolerance.
 			expect([type, insideM > -0.1 && insideM < 26]).toEqual([type, true]);
 		}
 		console.log(rows.join("\n"));

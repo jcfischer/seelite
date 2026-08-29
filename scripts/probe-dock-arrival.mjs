@@ -272,6 +272,11 @@ const rolls = await page.evaluate(() => {
 		mesh.traverse((o) => {
 			if (o.name === "aperture-mouth" || o.name === "aperture-deck") recess = o;
 		});
+		// A form with neither part is a failed row, not a crashed probe: an
+		// unguarded dereference here aborts the whole run with a `TypeError`
+		// inside `page.evaluate`, which surfaces as an opaque crash rather than
+		// as the named check that was supposed to fail.
+		if (!recess) return { id: st.id, rollOffDeg: null, axisOffDeg: null };
 		recess.updateWorldMatrix(true, false);
 		const e = recess.matrixWorld.elements;
 		// The mesh's own axes, in world space. Local +X is the aperture
@@ -300,8 +305,10 @@ for (const r of rolls) {
 		// A tenth of a degree. It was 64.6° on the trade station and 78.2° on the
 		// refinery before #126, so this is not a tolerance anything can drift
 		// inside — the two either share a basis or they do not.
-		r.rollOffDeg < 0.1 && r.axisOffDeg < 0.1,
-		`roll ${r.rollOffDeg}°, axis ${r.axisOffDeg}°`,
+		r.rollOffDeg !== null && r.rollOffDeg < 0.1 && r.axisOffDeg < 0.1,
+		r.rollOffDeg === null
+			? "no aperture-mouth or aperture-deck on this form"
+			: `roll ${r.rollOffDeg}°, axis ${r.axisOffDeg}°`,
 	);
 }
 

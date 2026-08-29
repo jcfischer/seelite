@@ -32,6 +32,7 @@ import {
 	stationPose,
 } from "../src/sim";
 import { STATION_GEOMETRY } from "../src/station";
+import { velocityOnOrbit } from "../src/system";
 import { add, dot, length, scale, sub } from "../src/vec3";
 
 /** A world whose start system has a spinning slot station — so the rotating
@@ -103,45 +104,73 @@ describe("#126 — the slot's phase-zero reference is continuous", () => {
 	 * 0.02 to 0.21.
 	 *
 	 * So this is not "the reference is perpendicular to the axis" — that was
-	 * true of the old one too. It is a bound on how far it can move between two
-	 * neighbouring clock values, over a whole orbit, which is the thing that was
-	 * false.
+	 * true of the old one too, and `stationPose` orthogonalises unconditionally,
+	 * so asserting it would hold for any input whatever. It is a bound on how
+	 * far the reference can move between two neighbouring clock values, over a
+	 * whole orbit, which is the thing that was false.
+	 *
+	 * **Every station in the system, not one.** The two axis kinds are different
+	 * geometry: a `parent`-axis station's axis *is* its own orbital radius, so
+	 * its velocity is perpendicular to it exactly, while an `outward`-axis
+	 * station's axis points away from the star. Running this on a slot station
+	 * alone would leave the refinery's case unproven, which is where the
+	 * fallback guard would fire if it ever fired.
 	 */
 	test("it turns by less than a degree a second, all the way round an orbit", () => {
-		const { world, id } = spinningWorld();
-		const station = stationOf(world.system, id);
-		const periodS = station.orbit.periodS;
-		const step = periodS / 720;
-		let worst = 0;
-		let previous = stationPose(world.system, id, 0).reference;
-		for (let i = 1; i <= 720; i++) {
-			const t = i * step;
-			// The bodies have to be where the clock says before the pose is read:
-			// the axis is `parent.pos − body.pos`.
-			advanceSystem(world.system, t);
-			const now = stationPose(world.system, id, t).reference;
-			const turned =
-				(Math.acos(Math.min(1, Math.max(-1, dot(previous, now)))) * 180) /
-				Math.PI;
-			worst = Math.max(worst, turned / step);
-			previous = now;
+		const { world } = spinningWorld();
+		const worstByStation: string[] = [];
+		for (const station of world.system.contents.stations) {
+			const periodS = station.orbit.periodS;
+			const step = periodS / 720;
+			let worst = 0;
+			let previous = stationPose(world.system, station.id, 0).reference;
+			for (let i = 1; i <= 720; i++) {
+				const t = i * step;
+				// The bodies have to be where the clock says before the pose is
+				// read: the axis is `parent.pos − body.pos`.
+				advanceSystem(world.system, t);
+				const now = stationPose(world.system, station.id, t).reference;
+				const turned =
+					(Math.acos(Math.min(1, Math.max(-1, dot(previous, now)))) * 180) /
+					Math.PI;
+				worst = Math.max(worst, turned / step);
+				previous = now;
+			}
+			worstByStation.push(`${station.id} ${worst.toFixed(4)}°/s`);
+			// A station's own orbit is 90–240 minutes, so a reference that tracked
+			// it exactly turns at 0.025–0.067°/s — this one measures 0.066 on the
+			// trade station. The withdrawn `anyPerpendicular` reference measures
+			// **23.68** on the same row: a jump shows up as orders of magnitude,
+			// not as a percentage, which is why the bound is a whole degree.
+			expect([station.id, worst < 1]).toEqual([station.id, true]);
 		}
-		// A station's own orbit is 90–240 minutes, so a reference that tracked it
-		// exactly turns at 0.025–0.067°/s. A jump shows up as orders of
-		// magnitude, not as a percentage.
-		expect([worst < 1, worst.toFixed(4)]).toEqual([true, worst.toFixed(4)]);
+		console.log(worstByStation.join("\n"));
 	});
 
-	test("and it is perpendicular to the axis, which is what makes it a basis", () => {
-		const { world, id } = spinningWorld();
-		for (let i = 0; i <= 40; i++) {
-			const t = i * 37.5;
-			advanceSystem(world.system, t);
-			const pose = stationPose(world.system, id, t);
-			expect([i, Math.abs(dot(pose.reference, pose.axis)) < 1e-9]).toEqual([
-				i,
-				true,
-			]);
+	test("it is the along-track direction, not merely something perpendicular", () => {
+		// **`stationPose` orthogonalises unconditionally**, so a row asserting
+		// perpendicularity passes for any input direction and says nothing about
+		// the geometry the docs lean on. What distinguishes the along-track
+		// reference is that it lies in the plane of the orbit — so it is
+		// perpendicular to the orbit's *normal*, which the velocity and the
+		// radius together define.
+		const { world } = spinningWorld();
+		for (const station of world.system.contents.stations) {
+			advanceSystem(world.system, 137.5);
+			const pose = stationPose(world.system, station.id, 137.5);
+			const v = velocityOnOrbit(station.orbit, 137.5);
+			const speed = Math.hypot(v.x, v.y, v.z);
+			// Unit velocity, and the reference along it: for a circular orbit the
+			// axis is the radius and the velocity is already perpendicular to it,
+			// so the projection is a no-op and the two coincide.
+			const along = scale(v, 1 / speed);
+			expect([station.id, Math.abs(dot(pose.reference, along)) > 0.99]).toEqual(
+				[station.id, true],
+			);
+			expect([
+				station.id,
+				Math.abs(dot(pose.reference, pose.axis)) < 1e-9,
+			]).toEqual([station.id, true]);
 		}
 	});
 });
