@@ -741,12 +741,13 @@ spec asked for, because it asked for nothing.
 
 ### 12.1 The arrival: the game takes the ship at the plane
 
-**Decision E1: the player sees the inside of a station, and it is a *throat*,
-not a bay.** The ship visibly enters the slot and the handover to the docked
-state happens inside it. A rendered bay with a landing pad was on the table and
-declined: it needs interior geometry per form, a second control problem inside a
-rotating drum, and collision — and it puts a second skill test *after* the one
-the six checks exist to be.
+**Decision E1, revised with the principal on 2026-08-29: the player sees a
+compact enclosed hangar, not an open throat.** The ship visibly enters the slot
+and the handover still happens inside it, but a parked free-look must read as a
+destination rather than exterior space glimpsed through a recess. The bay is
+shared by aperture kind, has no landing control or collision, and closes an
+inner gate only after the scripted arrival parks. That keeps the six checks as
+the only skill test while making the docked payoff legible.
 
 **Decision E2: crossing the plane hands the ship over.** The arrival is
 scripted and nothing can fail during it, for both halves of one reason: the
@@ -967,18 +968,15 @@ probe that has to be re-pointed when it lands.
 
 ### 12.4 What the arrival is made of
 
-**Decision E7: one shared throat**, built by extending the aperture recess.
+**Decision E7: one shared slot hangar**, built by extending the aperture recess.
 `station-mesh.ts`'s `buildAperture` is already one function, called by **every**
-form at a per-form face depth, and it reads `STATION_GEOMETRY` — so the throat
+form at a per-form face depth, and it reads `STATION_GEOMETRY` — so the bay
 inherits the aperture's dimensions, a retune of the slot moves it, and **which
-forms get a throat is decided by `aperture.kind`, not by a list here.** (An
-earlier draft said "all eleven slot-bearing forms" and a later one replaced it
-with a different count. Both were wrong, and the second was wrong *inside a
-sentence correcting the first*. The rule this section is now following is the one
-it stated: prose does not hold counts.) Distinct interiors per form were
-declined: form-authoring effort spent on a surface
-seen for a few seconds down one axis, and #56 withdrew its outline-identity gate
-on the neighbouring principle that a metric should not drive a design.
+forms get a hangar is decided by `aperture.kind`, not by a list here.** It adds
+an inset deck, ribs, guide strips and end bulkhead inside the existing volume;
+the docked-only inner gate seals the mouth after parking. Distinct interiors per
+form remain declined: the shared bay gives the arrival a clear payoff without
+turning silhouette identity into an interior-authoring burden.
 
 **Decision E8: pads get a touchdown, not a throat.** A pad is an exterior deck —
 the Warren's notch, the Derrick's top deck — with no inside. So the rule is one
@@ -1125,6 +1123,9 @@ Two tiers, as everywhere else in this spec.
 3. A scripted approach ends **inside** the station rather than hanging at the
    plane — the regression this whole section exists for, and a spatial claim, so
    it gets the spatial tier.
+4. A docked free-look back toward a slot mouth sees the closed hangar gate and
+   **no starfield pixels**. The approach and traversal remain open; the seal is
+   a docked-state payoff, not a second entry gate.
 
 **Inherited by [#75](https://github.com/jcfischer/seelite/issues/75), not by this
 node.** When collision lands, §9.2.4's hull-face probe is measuring a collision

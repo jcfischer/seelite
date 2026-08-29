@@ -29,6 +29,7 @@ import {
 	type StationType,
 } from "../src/station";
 import {
+	HANGAR_GATE_NAME,
 	NAMEPLATE_NAME,
 	SELECTED_FORM,
 	STATION_FORMS,
@@ -573,6 +574,20 @@ describe("§12.4 E7/E8 — every form gets a throat or a deck", () => {
 				]);
 				expect(size.x).toBeCloseTo(aperture.widthKm, 6);
 				expect(size.y).toBeCloseTo(aperture.heightKm, 6);
+			}
+		}
+	});
+
+	test("only a slot has a closed-dock hangar gate", () => {
+		for (const type of TYPES) {
+			const kind = STATION_GEOMETRY[type].aperture.kind;
+			for (const form of STATION_FORMS[type]) {
+				const mesh = buildStationForm(type, form.id, GREY);
+				expect([`${type} ${form.id}`, mesh.hangarGate?.name ?? null]).toEqual([
+					`${type} ${form.id}`,
+					kind === "slot" ? HANGAR_GATE_NAME : null,
+				]);
+				if (mesh.hangarGate) expect(mesh.hangarGate.visible).toBe(false);
 			}
 		}
 	});
