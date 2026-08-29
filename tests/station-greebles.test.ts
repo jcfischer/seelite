@@ -26,7 +26,7 @@ import {
 	STATION_TYPES,
 	type StationType,
 } from "../src/station";
-import { GREEBLE_PRIMITIVES } from "../src/station-greebles";
+import { GREEBLE_PRIMITIVES, buildGreebles } from "../src/station-greebles";
 import {
 	STATION_FORMS,
 	buildStationForm,
@@ -123,29 +123,52 @@ describe("every form carries clutter, and the density figure is what puts it the
 		}
 	});
 
-	test("every role's density figure is the one thing that moves its count", () => {
+	test("every role's density figure is the factor on a zone's own count", () => {
 		// The figure #129 asks to be settled by looking rather than chosen up
 		// front. This does not judge it — it proves the dial is wired, so what a
 		// person sees on the contact sheet is what the profile says.
+		//
+		// **Through `buildGreebles` with one fixed zone**, and that is the whole
+		// point of the test. The first version compared the totals of four
+		// *different forms*, whose zones already declare 32, 30, 22 and 12
+		// pieces: the four counts differ with `greebleDensity` deleted from the
+		// generator entirely, so the check could not fail for the thing it
+		// claims. One declaration through every role is the only way the density
+		// is the only variable.
+		const zone = {
+			count: 100,
+			sizeKm: 0.01,
+			reliefKm: 0.01,
+			place: (_i: number, _n: number, p: THREE.Vector3, n: THREE.Vector3) => {
+				p.set(0, 0, 0);
+				n.set(0, 0, 1);
+			},
+		};
 		for (const type of TYPES) {
-			expect([type, STATION_VISUALS[type].greebleDensity > 0]).toEqual([
+			const built = buildGreebles(type, `density-${type}`, [zone]).children;
+			const total = built.reduce(
+				(sum, mesh) => sum + (mesh as THREE.InstancedMesh).count,
+				0,
+			);
+			expect([type, total]).toEqual([
 				type,
-				true,
+				Math.round(100 * STATION_VISUALS[type].greebleDensity),
 			]);
 		}
-		// Two roles with different figures must not land on the same count for
-		// the same zone declaration; that would mean the figure is being
-		// rounded away rather than read.
-		const counts = TYPES.map((type) =>
-			greebleCount(buildStationForm(type, "a", GREY).root),
-		);
-		expect(new Set(counts).size).toBeGreaterThan(1);
+		// And the four figures are not all the same, so the equality above is
+		// four different numbers rather than one written twice.
+		expect(
+			new Set(TYPES.map((t) => STATION_VISUALS[t].greebleDensity)).size,
+		).toBe(TYPES.length);
 	});
 
 	test("the fill is deterministic — the same station twice is the same clutter", () => {
-		// `displayRand` is keyed by a constant string, so this holds across loads
-		// and across systems. A generator seeded from anything else — a counter,
-		// `Math.random` — passes every other test in this file and fails here.
+		// **What this proves and what it does not.** Two builds in one process,
+		// so it catches a generator that advances across calls — a module-level
+		// counter, a shared stream, `Math.random`. It says nothing about a
+		// second load or a second machine; the argument for those is that
+		// `displayRand` is keyed by a constant string and does integer
+		// arithmetic, and an argument is not a check.
 		for (const type of TYPES) {
 			for (const form of STATION_FORMS[type]) {
 				const a = greebleMeshes(buildStationForm(type, form.id, GREY).root);

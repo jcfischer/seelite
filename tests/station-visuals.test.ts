@@ -414,12 +414,12 @@ describe("what the renderer drives, at every range", () => {
 			mesh.fixtures.find((f) => f.kind === "flare")?.material
 				.emissiveIntensity ?? Number.NaN;
 		const farKm = STATION_SILHOUETTE_KM.refinery * DETAIL_RADII.reduced * 4;
-		updateStationVisuals(mesh, 11.3, farKm);
+		updateStationVisuals(mesh, 11.3, farKm, "high");
 		expect(mesh.detail).toBe("outline");
 		const a = flare();
-		updateStationVisuals(mesh, 11.9, farKm);
+		updateStationVisuals(mesh, 11.9, farKm, "high");
 		const b = flare();
-		updateStationVisuals(mesh, 11.3, farKm);
+		updateStationVisuals(mesh, 11.3, farKm, "high");
 		// Moving, and a pure function of the clock rather than of the approach —
 		// the same clock value gives the same light however it was reached.
 		expect(a).not.toBe(b);
@@ -433,7 +433,7 @@ describe("what the renderer drives, at every range", () => {
 		const mesh = buildStationMesh("trade", GREY);
 		const closeKm = STATION_SILHOUETTE_KM.trade;
 		for (const t of [0.03, 1.1, 7.42]) {
-			updateStationVisuals(mesh, t, closeKm);
+			updateStationVisuals(mesh, t, closeKm, "high");
 			const first = mesh.fixtures.find((f) => f.kind === "strobe-a");
 			const second = mesh.fixtures.find((f) => f.kind === "strobe-b");
 			const { strobePeriodS } = STATION_VISUALS.trade.activity;

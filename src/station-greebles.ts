@@ -43,7 +43,7 @@
  */
 
 import * as THREE from "three";
-import type { StationType } from "./station";
+import { STATION_TYPES, type StationType } from "./station";
 import { displayRand } from "./station-surface";
 import { STATION_VISUALS } from "./station-visuals";
 
@@ -128,22 +128,20 @@ export const GREEBLE_PRIMITIVES: readonly THREE.BufferGeometry[] = [
  * every other plated thing on the station. Shared per role and never mutated.
  */
 const MATERIALS: Record<StationType, THREE.MeshStandardMaterial> =
-	Object.freeze(
-		Object.fromEntries(
-			(["trade", "shipyard", "refinery", "outpost"] as StationType[]).map(
-				(type) => [
-					type,
-					new THREE.MeshStandardMaterial({
-						color: 0x6d7681,
-						roughness: Math.min(
-							1,
-							STATION_VISUALS[type].plating.roughness + 0.1,
-						),
-						metalness: STATION_VISUALS[type].plating.metalness,
-					}),
-				],
-			),
-		),
+	// From `STATION_TYPES` and not a list written out here, for the reason every
+	// other per-role table in this pass gives: a fifth station type must stop the
+	// build rather than reach an `undefined` material and draw nothing. A
+	// restated list behind a cast compiles clean and fails at the first station
+	// of the new role.
+	Object.fromEntries(
+		STATION_TYPES.map((type) => [
+			type,
+			new THREE.MeshStandardMaterial({
+				color: 0x6d7681,
+				roughness: Math.min(1, STATION_VISUALS[type].plating.roughness + 0.1),
+				metalness: STATION_VISUALS[type].plating.metalness,
+			}),
+		]),
 	) as Record<StationType, THREE.MeshStandardMaterial>;
 
 /**

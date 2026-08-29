@@ -908,6 +908,31 @@ function portRun(
 }
 
 /**
+ * Split an index into a **row** and a position **along** it, for a run laid out
+ * on a rectangular patch.
+ *
+ * Extracted because five callbacks in this file had `Math.round(count / 2)` and
+ * `(i % perRow) / perRow` written out, and the rule they share — how a role's
+ * density scale spreads extra pieces over a face rather than off the end of it
+ * — is one rule. `along` is in `[0, 1)`, so a caller multiplies by its own span
+ * and never has to know how many there are.
+ *
+ * `Math.ceil`, not `Math.round`: with `round`, an index past `rows * perRow`
+ * clamps onto a slot another index already holds, and the two pieces are drawn
+ * inside each other. That is not hypothetical — it was the refinery's terrace at
+ * the shipped density, where 37 pieces over 5 levels put i=35 and i=36 exactly
+ * on top of i=28 and i=29.
+ */
+function rowsOf(i: number, count: number, rows: number) {
+	const perRow = Math.max(1, Math.ceil(count / rows));
+	return {
+		perRow,
+		row: Math.min(rows - 1, Math.floor(i / perRow)),
+		along: ((i % perRow) + 0.5) / perRow,
+	};
+}
+
+/**
  * The mechanical clutter on a form's own surfaces (#129).
  *
  * The zones are the form's, because #102 §2 settled that regions are authored
@@ -1589,13 +1614,12 @@ function buildShipyardGantry(color: number): BuiltPart {
 			// from the count, so a denser run covers the same stretch of keel
 			// more finely rather than running off the end of it — which a fixed
 			// `r * 0.08` stride does the moment the count passes eight.
-			const perRow = Math.max(1, Math.round(count / 2));
-			const along = i % perRow;
+			const { row, along } = rowsOf(i, count, 2);
 			normal.set(0, 1, 0);
 			position.set(
-				span * 0.18 + (along / perRow) * r * 0.64,
+				span * 0.18 + along * r * 0.64,
 				r * 0.44,
-				(i < perRow ? -1 : 1) * r * 0.16,
+				(row === 0 ? -1 : 1) * r * 0.16,
 			);
 		}),
 	);
@@ -1614,12 +1638,12 @@ function buildShipyardGantry(color: number): BuiltPart {
 				sizeKm: r * 0.075,
 				reliefKm: r * 0.06,
 				place: (i, count, position, normal) => {
-					const perRow = Math.max(1, Math.round(count / 2));
+					const { row, along } = rowsOf(i, count, 2);
 					normal.set(0, -1, 0);
 					position.set(
-						-span * 0.42 + ((i % perRow) / perRow) * span * 0.84,
+						-span * 0.42 + along * span * 0.84,
 						-r * 0.42,
-						(i < perRow ? -1 : 1) * r * 0.14,
+						(row === 0 ? -1 : 1) * r * 0.14,
 					);
 				},
 			},
@@ -1751,12 +1775,11 @@ function buildShipyardHangar(color: number): BuiltPart {
 			// grid came away as one loose island.
 			//
 			// Two rows, spanning the same 0.8·span of back face at any count.
-			const perRow = Math.max(1, Math.round(count / 2));
-			const along = i % perRow;
+			const { row, along } = rowsOf(i, count, 2);
 			normal.set(0, 0, -1);
 			position.set(
-				-span * 0.34 + (along / perRow) * span * 0.8,
-				(i < perRow ? -1 : 1) * r * 0.24,
+				-span * 0.34 + along * span * 0.8,
+				(row === 0 ? -1 : 1) * r * 0.24,
 				-r * 0.46,
 			);
 		}),
@@ -1778,11 +1801,11 @@ function buildShipyardHangar(color: number): BuiltPart {
 				sizeKm: r * 0.09,
 				reliefKm: r * 0.07,
 				place: (i, count, position, normal) => {
-					const perRow = Math.max(1, Math.round(count / 2));
+					const { row, along } = rowsOf(i, count, 2);
 					normal.set(0, 0, -1);
 					position.set(
-						-span * 0.36 + ((i % perRow) / perRow) * span * 0.84,
-						(i < perRow ? -1 : 1) * r * 0.46,
+						-span * 0.36 + along * span * 0.84,
+						(row === 0 ? -1 : 1) * r * 0.46,
 						-r * 0.46,
 					);
 				},
@@ -2223,19 +2246,16 @@ function buildRefineryWarren(color: number): BuiltPart {
 	group.add(buildHeatRing(fixtures, r * 0.5, r * 0.98));
 	group.add(
 		portRun("refinery", 12, (i, count, position, normal) => {
-			// Down the terraced face, in two columns, so the cut reads as having
-			// levels rather than as one lit slab. The terrace is six levels deep
-			// whatever the count — the *steps* are the geometry — so a denser run
-			// puts more ports on each level rather than more levels on the face.
-			const LEVELS = 6;
-			const perLevel = Math.max(2, Math.round(count / LEVELS));
-			const level = Math.min(LEVELS - 1, Math.floor(i / perLevel));
-			const across = i % perLevel;
+			// Down the terraced face, so the cut reads as having levels rather
+			// than as one lit slab. The terrace is six levels deep whatever the
+			// count — the *steps* are the geometry — so a denser run puts more
+			// ports on each level rather than more levels on the face.
+			const { row, along } = rowsOf(i, count, 6);
 			normal.set(0, 0, 1);
 			position.set(
-				((across + 0.5) / perLevel - 0.5) * r * 1.1,
-				r * 0.34 - level * r * 0.14,
-				r * (0.66 + level * 0.06),
+				(along - 0.5) * r * 1.1,
+				r * 0.34 - row * r * 0.14,
+				r * (0.66 + row * 0.06),
 			);
 		}),
 	);
@@ -2249,15 +2269,12 @@ function buildRefineryWarren(color: number): BuiltPart {
 				sizeKm: r * 0.075,
 				reliefKm: r * 0.07,
 				place: (i, count, position, normal) => {
-					const LEVELS = 5;
-					const perLevel = Math.max(2, Math.round(count / LEVELS));
-					const level = Math.min(LEVELS - 1, Math.floor(i / perLevel));
-					const across = i % perLevel;
+					const { row, along } = rowsOf(i, count, 5);
 					normal.set(0, 0, 1);
 					position.set(
-						((across + 0.5) / perLevel - 0.5) * r * 1.3,
-						r * 0.2 - level * r * 0.15,
-						r * (0.6 + level * 0.06),
+						(along - 0.5) * r * 1.3,
+						r * 0.2 - row * r * 0.15,
+						r * (0.6 + row * 0.06),
 					);
 				},
 			},
@@ -2619,14 +2636,13 @@ function buildOutpostDerrick(color: number): BuiltPart {
 	group.add(flare);
 	group.add(
 		portRun("outpost", 6, (i, count, position, normal) => {
-			// Two rows across the tank cluster's face, spanning the same 0.6·r
+			// Two rows across the tank cluster's face, spanning the same 0.9·r
 			// whatever the count.
-			const perRow = Math.max(1, Math.round(count / 2));
-			const along = i % perRow;
+			const { row, along } = rowsOf(i, count, 2);
 			normal.set(0, 0, 1);
 			position.set(
-				(along / perRow) * r * 0.9 - r * 0.3,
-				i < perRow ? r * 0.32 : -r * 0.32,
+				along * r * 0.9 - r * 0.3,
+				row === 0 ? r * 0.32 : -r * 0.32,
 				-r * 1.09,
 			);
 		}),
@@ -2792,8 +2808,9 @@ function buildOutpostRig(color: number): BuiltPart {
 		portRun("outpost", 6, (i, count, position, normal) => {
 			// The body is pitched 0.34 rad about X and is 0.62·r half-wide, so a
 			// run at 0.64·r cleared it entirely. Inside its own beam, and pitched
-			// with it. The run covers the same 1.0·r of beam at any count; the
-			// old `i * r * 0.2` stride walked off the end of it.
+			// with it. The run covers 1.2·r of beam scaled by `(count − 1)/count`
+			// at any count — 1.1·r at the twelve this ships; the old
+			// `i * r * 0.2` stride walked off the end of it instead.
 			normal.set(1, 0, 0);
 			const z = -r * 0.7 + (i / count) * r * 1.2;
 			position.set(r * 0.5, r * 0.2 + z * 0.34, z);
@@ -3098,11 +3115,12 @@ export function updateStationVisuals(
 	 * leak for: the setting is live, and a station built while it was low comes
 	 * up correct on its first frame without a boot-time pass of its own.
 	 *
-	 * Defaulted, because every existing caller of this function is asking about
-	 * the clock and the range and has no opinion about quality — including the
-	 * tests that predate the key.
+	 * **Required, not defaulted.** A default is convenient for the callers that
+	 * predate the key and it is exactly what would let a second render path be
+	 * added later that draws the clutter at low with nothing to say so. The
+	 * pre-existing test call sites pass `"high"` explicitly instead.
 	 */
-	quality: StationQuality = "high",
+	quality: StationQuality,
 ): void {
 	const level = stationDetailLevel(
 		mesh.detail,

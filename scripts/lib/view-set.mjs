@@ -157,9 +157,11 @@ export const VIEWS = Object.freeze([
 		 * corridor a ship flies down. The two runs were pixel-identical in the
 		 * frame that claimed to be evidence for the change.
 		 *
-		 * So 102 moved off `station-approach`, which never showed it, onto this.
-		 * `station-outline` keeps it: at eight radii the window *density* is what
-		 * reads, which is the half of #102 that survives range.
+		 * So 102 moved off `station-approach`, which never showed it, onto this —
+		 * and off `station-outline` as well, for the reason recorded there: at
+		 * 140° that frame sees a shipyard from neither of the faces its ports are
+		 * on, and both runs showed the same unlit shape. This is the only view
+		 * that claims 102 for a station, and the residue is stated below it.
 		 *
 		 * A `body-offset` and not a `station-axis`, because the axis kind points
 		 * at exactly the face this has to avoid. 35° puts the star off the
