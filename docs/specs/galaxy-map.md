@@ -303,12 +303,19 @@ viewport would need its own; the check also asserts that all 256 are on screen,
 because the fraction is taken over what is visible and a build framing fewer
 systems would be a different measurement wearing the same name.
 
-So the chart is the **reading** surface and Navigation's filterable list is the
-**finding** surface — which is what `hud-and-scanner.md` §2 already says
+So the chart is the **reading** surface and a filterable list is the
+**finding** surface, which is what `hud-and-scanner.md` §2 already says
 ("Navigation is authoritative for target selection and filters"). Selecting a
-named system goes through the list; the chart answers *where is it, and what is
-between here and there*. **A galaxy map with no list is not a shippable map**,
-and #91 built it: `projectNavTargets` in `src/cockpit.ts`, rendered by the
+named system goes through a list; the chart answers *where is it, and what is
+between here and there*. **A galaxy map with no list is not a shippable map.**
+
+**Which list was settled later, and it is not the Navigation one.** #86 found
+that Navigation's list is system-scale — a different corpus, different columns,
+a different sort — and put the galaxy-scale finder inside the Galaxy Map tab
+instead. §5.2 is that surface; the paragraph below is #91's system-scale list,
+which is what §2's sentence was written about.
+
+#91 built that one: `projectNavTargets` in `src/cockpit.ts`, rendered by the
 Navigation tab with type, range and ETA per row and narrowed by a kind chip and
 a name query.
 
@@ -347,6 +354,166 @@ system on screen, which credited the zoomed-in views with a crowding they had
 only because their crowded pairs had left the viewport: 10.2% at 26 LY against
 the true 14.5%, and 3.3% at 14 LY against 8.8%. The conclusion survived; the
 margin it rested on did not.
+
+### 5.2 The finder: a search-and-list panel in the same tab
+
+Ratified in #86 and built in #115. §5.1 says the chart reads and something else
+finds; this is that something, and it lives **inside the Galaxy Map tab** rather
+than on a tab of its own.
+
+**Not a fourth tab, and not a scale switch on Navigation.** The finder's corpus
+*is* the chart's corpus, so putting both in one tab makes them one instrument
+and answers "does a row move the chart" by construction. Navigation's list is
+system-scale — bodies in the current system, ranges in kilometres, ETAs in
+seconds — and one tab holding two corpora and two column sets is the shape #86
+was raised to refuse.
+
+**Collapsed by default; the collapsed form is a visible search field.** Not a
+drawer behind a chevron: a load-bearing surface behind a control is one a player
+may never find, and default-closed is only defensible with the field on the tab.
+**Any active narrowing expands the results** — a typed query, an economy chip,
+or a changed jump budget — and clearing every narrowing collapses it again. The
+rule reads all three controls and not the query alone, because an expand keyed
+to the text field leaves the chips dead until something is typed.
+
+**Filters: substring on name, economy chips, a jump budget. Sort: fewest jumps,
+then shortest** — `planRoute`'s own objective rather than a second one invented
+for the list. Government and tech level are in the row and are not filterable;
+population and description stay on the record card. The split is *finding*
+versus *reading*: economy is the trader's axis and jumps are the tank's
+constraint. The controls are the grammar the console already has — chips plus a
+substring query, as `navFilterMatches` implements it — because one set of
+controls across both lists is what stops two lists under one console reading as
+two applications.
+
+**The budget's ceiling is the galaxy's jump diameter, measured.** It was 9, on
+the reasoning that a budget past the diameter admits everything — and nobody had
+measured the diameter. Over five world seeds, eight galaxies each, from **every**
+system as origin, the worst shortest chain is **15 jumps** (14 at the shipped
+seed). At 9, real pairs sat permanently in the dimmed "beyond range" group with
+no control position that could promote them, which is *filtered-out reads as
+absent* — the failure the group exists to prevent. The ceiling is 16, and
+§9.1a re-measures the shipped seed's eight galaxies from every origin so a
+generator change that widens the galaxy goes red rather than stranding systems.
+
+**The budget defaults to 1 jump**, which is the shell the chart already lights
+(§3), so list and chart agree on first open and no unreachable system is ever in
+the primary list. The widened value persists for the **session** and is not
+saved: `persistent-world-state.md` §8 forbids persisting a derivable projection,
+and a filter setting is presentation.
+
+**A remembered budget therefore opens the panel.** D4 expands on any active
+narrowing and D6 keeps the widened budget, so the first entry to the tab after a
+widening arrives expanded — "collapsed by default" is true of a session that has
+not touched the budget, and this is the case it does not cover. It follows from
+the two decisions rather than working around them, and it is what a trader who
+set the budget once would want. The sharp edge is the narrow console, where
+expanded means *covering*: the chart arrives hidden until the budget is stepped
+back. Named here rather than left for a player to discover.
+
+**It therefore lives outside the mount, and only a remount can show that.** The
+chart is disposed every time the player leaves the Galaxy Map tab
+(`Game.setChartHost`), so a budget held in `mountGalaxyChart`'s closure reads as
+persistent in every single-mount check and resets the moment anyone uses the
+map. It was built that way first. §9.3 item 12 leaves the tab and comes back,
+and asserts the **query and the chips do not** survive with it — D6 widens the
+budget alone, and a check watching only the budget passes a build that persisted
+the whole filter.
+
+**A name lookup never returns a blank list.** Most of 256 systems are more than
+one jump away, so a name query under the default budget would usually return
+nothing — and an empty list reads as *no such system*, not as *filtered out*.
+Out-of-budget **name matches** therefore show dimmed, in a "beyond range" group
+below the in-budget results, each with its jump count. A chip-only narrowing
+populates no such group: that is a browse rather than a lookup, and the whole
+galaxy printed twice under one chip click is the failure this rule exists to
+avoid wearing the costume of the fix for it.
+
+**A row selects and nothing else.** No camera move — the drop-line and the
+record card of §4 and §5 are already the "where is it" answer, and a row that
+flew the camera would destroy what the player was looking at on every row they
+tried. A **per-row centre control** moves the centre of rotation onto a system
+and changes nothing else, because the row click already selected. **No per-row
+course commit**: the chart's `set course` button stays the single owner (§8).
+
+**The jump projection is one traversal, not 256 routes.** `projectJumps`
+(`galaxy-route.ts`) runs the same lexicographic Dijkstra `planRoute` runs, from
+the ship's system, with no early stop — one relaxation over the cached adjacency
+labels the whole pool. The two share `relaxFrom` rather than holding two copies
+of the objective; §9.1a asserts the labels equal `planRoute`'s counts anyway,
+because what the two still do differently is where they stop and how they derive
+the number.
+
+**Opening it narrows the chart's cell, and that does not move the crowding
+figure.** The panel takes a 268 px column, so the shipped 1011 x 462 cell
+becomes 743 x 462. §5.1's 64–82% band was measured on the closed cell and could
+not be assumed to carry — crowding is a pixel property, and #96 is the recorded
+case of the same figure changing under a different box. Measured instead: the
+live console reads **73.0% at both cells**, and `measure-galaxy-shape.ts
+shipped` prints the same eight-galaxy spread to the digit for the two. The
+reason is that the chart holds its vertical field of view and widens `aspect`
+with the box, so a system lands at `worldX · height / (2 · z · tan) + width / 2`
+— the **spacing** between two systems does not depend on the width, and only the
+origin moves, by half the column the panel took. A narrower cell crops rather
+than compressing. This stops holding the moment the cluster no longer fits, so
+both checks assert all 256 are still on screen — the crop check asked only for
+200 when that sentence was first written, a precondition borrowed from its
+neighbour rather than held.
+
+**Both figures are scoped to the population the probe reaches**, seed 42 and
+galaxy 0. `measure-galaxy-shape.ts` sweeps three world seeds and reports a
+higher band (75.0%-86.7%) than §5.1's probe-derived 64-82%; that gap predates
+this node and is unchanged by it. What the instrument is used for here is the
+**equality of the two cells' spreads** — a comparison inside one population —
+which is what licenses reusing the closed cell's band for the open one.
+
+**Closed, the panel floats over the chart's top-right corner, and nothing
+§5.1 counts is under it.** D3 preserved the *cell*, which is what the crowding
+band is a figure about — but a system drawn beneath an interactive control
+cannot be clicked, so if any were, the band would be counting unpickable points
+as pickable. Measured at the default framing: **none are**, because the cluster
+does not reach that corner. That is a fact about the framing rather than about
+the layout — zoom in and the cluster spreads until seven of the 152 then on
+screen sit under the panel — so §9.3 item 7 asserts both, and a later control
+that grew into the cluster at the default view goes red there rather than
+quietly changing what §5.1's figure means.
+
+**The drawn list is capped at 60 rows per group, and the cap says so.** A
+one-character query at a wide budget matches most of a 256-system galaxy, and
+every row is five elements, so an uncapped rebuild made a keystroke create about
+a thousand nodes for a scroll box that shows fifteen. The cap is on the
+**drawing** and never on the projection — the results carry every matching row —
+and the panel prints `+N MORE`, because a list that stopped at sixty in silence
+would read exactly like a galaxy with sixty matches in it.
+
+**Opened on a narrow console, the panel covers the chart rather than taking a
+column.** The column layout was written against the desktop cell, where 1011 px
+less the panel is 743 and still a chart. At the 390 px the console's media query
+drops to it leaves a **76 px strip** — measured, not estimated — which is the
+chart ruined and the finder cramped at once. Below `FINDER_MIN_CHART_PX` (360,
+set from the two cells that exist: it must admit 743 and refuse 76 — the *cell* at that viewport is 344, not
+390, so the strip is 76 and not the 122 an arithmetic on the page width gives)
+the expanded
+panel covers the stage instead — **opaque there, unlike the floating and column
+forms**, because at the translucency that reads well over a corner of the chart
+the legend and the haze and course buttons come straight through the rows. Seen
+by eye on a 390 px capture; no check in either tier could have failed on it,
+which is the third tier's whole point. The canvas box is unchanged, so §5.1's
+figure is untouched there, and the trade is that on a narrow console you read or
+you find, one at a time. §9.3 items 14 and 15 measure it at the viewport it is about, including the
+live resize across the threshold.
+
+**Three modules, one per tier.** `galaxy-finder.ts` is the arithmetic and the
+session budget, with no DOM; `galaxy-finder-panel.ts` is the panel, with no
+Three.js and four callbacks to the chart; `galaxy-map.ts` mounts it and keeps
+the selection, which stays the chart's — a row click goes through the same
+`select` a click on the canvas does, so there is one selection rather than two
+that have to agree.
+
+**Stations are not a filter here.** They are carriers, and
+`persistent-world-state.md` §3.1 requires them to read as timestamped "last
+known" rather than live omniscience; §10 defers them from the map entirely. A
+facility filter is its own node.
 
 ## 6. The density gradient
 
@@ -495,6 +662,37 @@ times. It changes when the work happens, never what is returned.
 9. **Course parsing** round-trips, accepts absence, and throws on a version
    mismatch, a bad index, a non-object, and an envelope disagreement.
 
+### 9.1a Headless — `tests/galaxy-finder.test.ts`
+
+The finder's arithmetic (§5.2), all of it reachable without a DOM.
+
+1. **The whole-pool projection agrees with `planRoute`** over every system in
+   the galaxy — a sample that spans one jump to unreachable by construction, and
+   the span is asserted rather than assumed. The two share `relaxFrom`, and the
+   check says so: what it still discriminates is the early stop and the chain
+   reconstruction, which is everything the two do differently. An isolated
+   system, built by hand because §5 of `galaxy-generation.md` guarantees the
+   real generator has none, is **absent** from the map rather than carrying a
+   sentinel. The sweep itself does **not** reach the unreachable case — §5 of
+   `galaxy-generation.md` guarantees connectivity, so its `route === null`
+   branch never runs and `unreachable` is pinned at 0 to say so. A second test
+   asks both sides about a pool with hand-built islands in it, because a branch
+   no run enters is a branch nothing checks.
+2. **All three controls narrow**, so the expand rule cannot be keyed to the text
+   field alone; whitespace is not a query.
+3. **The name match is a case-insensitive substring**, an empty chip set means
+   every economy rather than none, and chips and query are conjunctive.
+4. **The order is fewest jumps then shortest, and total** — the same rows come
+   back in the same order from a reversed input array, so a re-sort cannot
+   reshuffle equals and make the list flicker.
+5. **The default budget admits exactly the one-jump shell**, widening only ever
+   adds rows, and no unreachable system reaches the primary list.
+6. **Both directions of the beyond-range split.** A query whose matches are all
+   in budget yields an empty group; one whose matches are all out of budget
+   yields a populated group *and* an empty primary list; widening the budget
+   moves a row from one to the other. A chip-only narrowing yields no group at
+   all.
+
 ### 9.2 Browser — `scripts/probe-galaxy-map.mjs`
 
 At desktop (1280 × 760) and narrow (390 × 844):
@@ -616,6 +814,78 @@ The chart's *mount* rather than its projection, and the list beside it.
    satisfied by the frames rendered while the chunk loaded, so a chart that
    froze the loop on mount still passed.
 
+7. **The finder's collapsed form, and what expands it** (§5.2). Closed, it is a
+   field and eight chips with the results hidden and the chart holding the cell
+   §5.1's band was measured on — **both dimensions**, since a check on the width
+   alone would not notice a control that took a strip off the top.
+
+   **Nothing §5.1 counts is hidden under it at the default framing**, asserted
+   with the case that shows the measurement is real: zoom in and seven of the
+   152 systems then on screen do go under the panel. The first half alone is a
+   check that cannot fail on a build whose panel is nowhere near the cluster,
+   which is every build until one is.
+
+   **The chip case is checked before the typed one**, and from a cleared filter:
+   verifying only typing passes a build whose chips are dead, which is a defect
+   `live-cockpit.ts` records having shipped once already. Clearing every
+   narrowing collapses it again.
+8. **Both directions of the beyond-range group, in the DOM.** The two query
+   names are taken from the projection at run time rather than hard-coded, and
+   are chosen to sit either side of the default budget. The heading is counted
+   as well as the rows, because a check that only ever saw one branch could not
+   tell the grouping from a constant.
+9. **A row selects and does not move the camera; the centre control moves the
+   camera and does not change the selection.** Both halves, comparing the whole
+   pose — yaw, pitch, distance and focus — on **both** of them. The centre half
+   was written comparing focus and selection alone, which passed a build whose
+   centre control also zoomed; the red build that zooms is what says so.
+10. **The finder commits no course** — it carries no per-row control and the
+    chart still carries exactly one (D8). This item asserts an *absence*, so it
+    has no red build: the build that fails it is a feature nobody wrote.
+11. **A wide budget draws a capped list and prints what it left out** (§5.2).
+    The rows in the DOM are fewer than the rows in `state.finder`, the printed
+    remainder is exactly the difference, and the text carries the number. Red
+    with the cap raised past the galaxy.
+12. **The widened budget survives a remount, and the query does not** (§5.2).
+    The tab is left and re-entered, which disposes and rebuilds the chart — the
+    only way the distinction is visible, since a mount-scoped budget reads as
+    persistent in every single-mount check. Red twice: the budget put back in
+    the closure, and the whole filter persisted rather than the budget alone.
+13. **The desktop console opens the finder as a column**, checked *before* the
+    wait that depends on it — a build that covered at the desktop cell would
+    otherwise kill the probe on a 30 s `waitForFunction` timeout instead of
+    failing the check about it, which is the failure mode item 6 already
+    records. Found by red-building exactly that.
+14. **The narrow console covers instead** (§5.2), asserted at 390 x 844 rather
+    than from the constant: the layout reads `cover`, the canvas box is the same
+    open as closed, and the panel is most of the stage. Red with the threshold
+    at 0, which produces the 76 px strip the rule exists to prevent.
+15. **Resizing across the threshold relayouts a panel that is already open**,
+    both directions. The first version of this cleared the filter before
+    resizing and so measured a fresh open at the new width — a build whose
+    layout never responded to a resize passed it, which is exactly what the
+    build was: `applyLayout` runs from `render`, and the chart's own
+    `ResizeObserver` sets a redraw flag without calling back into the panel. The
+    panel watches the chart's box itself now. Red with that watch removed —
+    and note the *narrowing* half alone is not discriminating, since a build
+    stuck in cover satisfies it; the pair is the check.
+16. **Crowding in the open cell, measured rather than carried over.** The cell
+    goes 1011 x 462 to 743 x 462 and the figure stays 73.0%, which §5.2 explains
+    and this check makes falsifiable: every system's horizontal shift must be
+    the *same* shift, equal to half the column the panel took, with the vertical
+    positions unmoved. A build that never updated the camera's aspect produces
+    the same two percentages and a shift that varies with the offset from the
+    centre.
+
+    Written the wrong way first — "every system lands on the same pixel" — which
+    is false for a crop too, since the origin moves with the box. The red build
+    said so: aspect frozen, the check stayed green at 0.000 px, and the shipped
+    build went red at 134 px, which is the translation a crop is supposed to
+    produce. A second fault came out of the same run: the "closed" projection
+    was being captured while the finder was still open from an earlier item,
+    so both
+    reads were the same 743 px box and the comparison was 0.000 on every build.
+
 **Every check here was built a red build to run against**, one at a time:
 the sort removed; the chart root back to `position: fixed`; a kind dropped
 from what `navRows` is handed; `onSelectTarget` made a no-op; the query ignored, over-narrowed, and
@@ -624,6 +894,28 @@ leaked an extra row; the kind chip ignored; `currentIndex` dropped and the galax
 to 2 and the default framing zoomed to 20 LY. Each turned the check named
 above it red — except the system half of item 3, which is recorded there as
 not yet discriminating rather than counted as covered.
+
+The finder checks were built red builds too — items 7 to 16, both halves where
+a check has two: `toggleFinderEconomy` made a no-op (item 7 red, and it is the
+exact dead-chip defect the ordering is there to catch); the beyond-range group
+suppressed, and then made a constant by dropping the budget test (item 8 red one
+branch each way); a row click made to centre as well, then the centre control
+made a no-op, then the centre control made to zoom as well (item 9 red three
+ways, the third being what caught the check asserting "nothing else" while
+comparing only two of the pose's four components); the session budget put back
+inside the mount closure, and then the whole filter persisted rather than the
+budget alone (item 12 red one way each); the cap raised past the galaxy so no row was
+omitted (item 11 red); the panel forced to cover at the desktop cell (item 13
+red, and that build is what showed the check had to run before the wait); and
+the narrow threshold pinned at 0 (item 14 red); and the panel's own resize
+watch removed (item 15 red). Item 16 was the one that paid: its red
+build caught two faults in the check itself, both recorded where it is
+described.
+
+**Item 10 has no red build**, because it asserts an absence — no per-row
+course control — and the build that fails it is a feature nobody wrote. It is
+numbered rather than folded into another item so that the sentence above stays
+true of exactly the items it names.
 
 ## 10. Deferred
 

@@ -153,29 +153,32 @@ function jumpGraph(
 	return graph;
 }
 
-export function planRoute(
-	systems: readonly SystemRecord[],
-	from: SystemRecord,
-	to: SystemRecord,
-	maxJump = JUMP_RANGE_LY,
-): Route | null {
-	if (from.galaxy !== to.galaxy) return null;
+/** What one relaxation settled: the labels, and the tree that produced them. */
+interface Relaxation {
+	jumps: Int32Array;
+	ly: Float64Array;
+	prev: Int32Array;
+}
 
-	const { pool, slot, neighbourOf, distanceOf } = jumpGraph(
-		systems,
-		from.galaxy,
-		maxJump,
-	);
-	const n = pool.length;
-
-	const start = slot.get(from.index);
-	const goal = slot.get(to.index);
-	if (start === undefined || goal === undefined) return null;
-
-	if (start === goal) {
-		return { from, to, hops: [], jumps: 0, totalLy: 0, totalCr: 0 };
-	}
-
+/**
+ * Lexicographic Dijkstra over `(jumps, ly)` from one pool slot.
+ *
+ * **The single owner of the relaxation.** `planRoute` wants the labels for one
+ * goal and `projectJumps` wants them for the whole pool, and the arithmetic is
+ * identical — the only difference is where it stops, which is what `goal` is
+ * for. Two copies of this loop would be the two-owners failure #46 and #69 both
+ * recorded, applied to the one quantity the finder and the route panel both
+ * print.
+ *
+ * `goal === null` settles everything reachable; a slot settles it early, which
+ * is the optimisation `planRoute` has always had and keeps.
+ */
+function relaxFrom(
+	{ neighbourOf, distanceOf }: JumpGraph,
+	n: number,
+	start: number,
+	goal: number | null,
+): Relaxation {
 	// `0x7fffffff` and not `Number.MAX_SAFE_INTEGER`: the latter does not fit an
 	// `Int32Array` and stores as −1, which makes every relaxation test read
 	// `1 < -1` and the planner return `null` for every reachable pair. It failed
@@ -224,6 +227,142 @@ export function planRoute(
 			}
 		}
 	}
+
+	return { jumps, ly, prev };
+}
+
+/** Where one system sits from the origin the projection was built for. */
+export interface JumpReach {
+	/** Fewest jumps, on the same objective `planRoute` optimises. */
+	jumps: number;
+	/** The total distance of that chain, light years. */
+	ly: number;
+}
+
+/**
+ * Every system in one galaxy, labelled with its jump count from `from`.
+ *
+ * The finder's jump budget is a bound on all 256 systems at once, and asking
+ * `planRoute` for each of them would run the same relaxation 256 times over the
+ * same graph to read one label out of each. This is that relaxation run once
+ * with no early stop — the same function, the same objective, the same cached
+ * adjacency.
+ *
+ * **The lookup takes a record, not an index.** Indices are unique within a
+ * galaxy and not across them — every galaxy numbers 0…255 — so a bare
+ * `Map<number, …>` answers about *this* galaxy's system of that number whatever
+ * the caller meant, and a caller holding a multi-galaxy array would read a
+ * plausible wrong row with nothing to notice it. `reach(system)` checks the
+ * galaxy and returns `undefined` for a foreign one, which makes the scoping the
+ * projection's job rather than every future caller's.
+ *
+ * Unreachable systems are `undefined` too, rather than a sentinel, so a caller
+ * that forgets either case gets nothing rather than a plausible number.
+ *
+ * **The records are assumed immutable.** The result is memoised on the array's
+ * identity and the origin, so a system mutated in place would be answered from
+ * a stale label — see the cache note above.
+ */
+export interface JumpProjection {
+	/** The galaxy this was built for. Anything else is not on this chart. */
+	galaxy: number;
+	/** How far one system is, or `undefined` if it is unreachable or foreign. */
+	reach(system: SystemRecord): JumpReach | undefined;
+	/** How many systems carry a label — the reachable pool, for a test that
+	 *  wants to compare two projections without walking a galaxy. */
+	size: number;
+}
+
+/**
+ * The last few projections, for the same reason `jumpGraph` is memoised one
+ * level down: the finder rebuilds its rows on every keystroke, chip and budget
+ * step, and none of those move the ship. Without this each one paid a fresh
+ * whole-pool relaxation and a 256-entry map of new objects to read back numbers
+ * that had not changed.
+ *
+ * **Bounded, because the hit pattern is one origin repeated.** Keyed on the
+ * origin alone it would retain a 256-entry map per system the ship ever visited
+ * — about 65k live objects over a session that toured a galaxy, none of them
+ * ever read again. Two entries catch every hit an unbounded map would, and the
+ * one case they do not is a caller alternating between three origins, which is
+ * a workbench sweep rather than a player.
+ *
+ * **It changes when work happens, never what is returned — given immutable
+ * records.** That precondition is real: the labels are a function of the
+ * positions, and a system whose `pos` were mutated in place would keep its old
+ * chain here with nothing to notice. `generateGalaxy` returns fresh records and
+ * nothing in this repo writes to one; a future mutable record owes this cache a
+ * generation key.
+ */
+const PROJECTION_CACHE_SIZE = 2;
+const projectionCache = new WeakMap<
+	readonly SystemRecord[],
+	Map<string, JumpProjection>
+>();
+
+export function projectJumps(
+	systems: readonly SystemRecord[],
+	from: SystemRecord,
+	maxJump = JUMP_RANGE_LY,
+): JumpProjection {
+	let perArray = projectionCache.get(systems);
+	if (perArray === undefined) {
+		perArray = new Map();
+		projectionCache.set(systems, perArray);
+	}
+	const cacheKey = `${from.galaxy}:${from.index}:${maxJump}`;
+	const cached = perArray.get(cacheKey);
+	if (cached !== undefined) return cached;
+
+	const graph = jumpGraph(systems, from.galaxy, maxJump);
+	const n = graph.pool.length;
+	const start = graph.slot.get(from.index);
+	const labels = new Map<number, JumpReach>();
+	if (start !== undefined) {
+		const { jumps, ly } = relaxFrom(graph, n, start, null);
+		for (let i = 0; i < n; i++) {
+			if (!Number.isFinite(ly[i])) continue;
+			labels.set(graph.pool[i].index, { jumps: jumps[i], ly: ly[i] });
+		}
+	}
+	const projection: JumpProjection = {
+		galaxy: from.galaxy,
+		reach: (system) =>
+			system.galaxy === from.galaxy ? labels.get(system.index) : undefined,
+		size: labels.size,
+	};
+	perArray.set(cacheKey, projection);
+	// Insertion order is the eviction order, which for "one origin repeated" is
+	// the same as least-recently-used and is one line rather than a structure.
+	while (perArray.size > PROJECTION_CACHE_SIZE) {
+		const oldest = perArray.keys().next();
+		if (oldest.done) break;
+		perArray.delete(oldest.value);
+	}
+	return projection;
+}
+
+export function planRoute(
+	systems: readonly SystemRecord[],
+	from: SystemRecord,
+	to: SystemRecord,
+	maxJump = JUMP_RANGE_LY,
+): Route | null {
+	if (from.galaxy !== to.galaxy) return null;
+
+	const graph = jumpGraph(systems, from.galaxy, maxJump);
+	const { pool, slot } = graph;
+	const n = pool.length;
+
+	const start = slot.get(from.index);
+	const goal = slot.get(to.index);
+	if (start === undefined || goal === undefined) return null;
+
+	if (start === goal) {
+		return { from, to, hops: [], jumps: 0, totalLy: 0, totalCr: 0 };
+	}
+
+	const { ly, prev } = relaxFrom(graph, n, start, goal);
 
 	if (!Number.isFinite(ly[goal])) return null;
 

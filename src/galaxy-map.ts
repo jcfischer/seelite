@@ -42,6 +42,7 @@ import {
 	generateGalaxy,
 	startSystem,
 } from "./galaxy";
+import { type FinderPanelState, mountFinderPanel } from "./galaxy-finder-panel";
 import {
 	type Course,
 	type CourseProgress,
@@ -133,7 +134,15 @@ export interface GalaxyMapState {
 	/** Radians. Exposed with `flatteningQ` because the disc's projected aspect
 	 *  is only interpretable against the angle it was seen from. */
 	pitch: number;
+	/** Radians. With `pitch`, `cameraDistanceLy` and `focusIndex` this is the
+	 *  whole camera pose — which is what #115's D2 check compares across a row
+	 *  click. A pose missing a component is one a broken build can move without
+	 *  the check noticing. */
+	yaw: number;
 	cameraDistanceLy: number;
+	/** The system the cluster is centred on, or `null` for the galaxy centre.
+	 *  Only the per-row centre control changes it. */
+	focusIndex: number | null;
 	route: {
 		jumps: number;
 		totalLy: number;
@@ -150,6 +159,15 @@ export interface GalaxyMapState {
 		population: number;
 		distanceLy: number;
 	} | null;
+	/**
+	 * The finder, as the panel currently shows it.
+	 *
+	 * `expanded` is read off the same rule the layout is (`finderIsNarrowed`),
+	 * so a probe cannot be told the panel is open by a field the drawing does
+	 * not agree with. The two lists are the rows themselves rather than counts,
+	 * because D7's check is about *which* systems landed in which group.
+	 */
+	finder: FinderPanelState;
 }
 
 export interface Handle {
@@ -163,7 +181,16 @@ export interface Handle {
 	jumpTo(index: number): void;
 	orbit(dxPx: number, dyPx: number): void;
 	zoom(deltaLy: number): void;
-	/** Back to the documented default framing — yaw, pitch and distance.
+	/** Type a name into the finder's field, as the player would. */
+	setFinderQuery(query: string): void;
+	/** Click one economy chip. */
+	toggleFinderEconomy(economy: number): void;
+	/** Step the jump budget to a value. */
+	setFinderBudget(jumps: number): void;
+	/** D2's per-row centre control: move the camera and nothing else. `null`
+	 *  returns the centre of rotation to the galaxy's own. */
+	centreOn(index: number | null): void;
+	/** Back to the documented default framing — yaw, pitch, distance and focus.
 	 *  Crowding depends on the orientation as well as the distance, so a
 	 *  figure quoted in the spec is only reproducible from a known view. */
 	resetView(): void;
@@ -320,8 +347,32 @@ export function mountGalaxyChart({
 		color: "#cfe6f5",
 		font: "13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace",
 		overflow: "hidden",
+		display: "flex",
 	});
 	host.appendChild(root);
+
+	/**
+	 * The chart's own box — everything the canvas draws into, and nothing the
+	 * finder occupies.
+	 *
+	 * The finder is **beside** the chart when it is open, not over it, and that
+	 * is a measurement decision rather than a taste one. #86's D3 keeps the
+	 * default-closed cell so `probe-navigation-console.mjs`'s crowding band
+	 * still describes what is on screen; opening the panel narrows the cell,
+	 * which is a different figure and owes its own measurement (#115's first
+	 * obligation). An overlaid panel would have left the canvas box unchanged
+	 * and made that obligation unfalsifiable — the probe would re-measure the
+	 * number it already had.
+	 */
+	const stage = el("div");
+	stage.setAttribute("data-map-stage", "");
+	Object.assign(stage.style, {
+		position: "relative",
+		flex: "1 1 auto",
+		minWidth: "0",
+		height: "100%",
+	});
+	root.appendChild(stage);
 
 	const canvas = el("canvas");
 	Object.assign(canvas.style, {
@@ -332,7 +383,7 @@ export function mountGalaxyChart({
 		display: "block",
 		touchAction: "none",
 	});
-	root.appendChild(canvas);
+	stage.appendChild(canvas);
 
 	const legend = el("div");
 	legend.setAttribute("data-map-legend", "");
@@ -347,7 +398,7 @@ export function mountGalaxyChart({
 		pointerEvents: "none",
 		whiteSpace: "pre",
 	});
-	root.appendChild(legend);
+	stage.appendChild(legend);
 
 	const controls = el("div");
 	Object.assign(controls.style, {
@@ -357,7 +408,7 @@ export function mountGalaxyChart({
 		display: "flex",
 		gap: "8px",
 	});
-	root.appendChild(controls);
+	stage.appendChild(controls);
 
 	const button = (label: string, attr: string): HTMLButtonElement => {
 		const b = el("button");
@@ -397,7 +448,7 @@ export function mountGalaxyChart({
 		maxWidth: "260px",
 		whiteSpace: "pre-wrap",
 	});
-	root.appendChild(card);
+	stage.appendChild(card);
 
 	// ---- Scene -------------------------------------------------------------
 
@@ -412,6 +463,20 @@ export function mountGalaxyChart({
 	 *  able to assert where a point landed. */
 	const pivot = new THREE.Group();
 	scene.add(pivot);
+
+	/**
+	 * The cluster inside the pivot, so a *centre* is a translation and the
+	 * orbit stays a pure function of two angles.
+	 *
+	 * D2's per-row centre control has to move the camera, and this chart has no
+	 * camera to move: the camera sits on +z and the pivot spins under it, which
+	 * is exactly what lets a probe assert where a point landed. Offsetting the
+	 * cluster by −`focus` puts the chosen system at the centre of rotation, so
+	 * orbiting after a centre turns around the thing that was centred rather
+	 * than sliding it back off screen.
+	 */
+	const cluster = new THREE.Group();
+	pivot.add(cluster);
 
 	let yaw = DEFAULT_YAW;
 	let pitch = DEFAULT_PITCH;
@@ -439,7 +504,7 @@ export function mountGalaxyChart({
 			),
 		);
 	}
-	pivot.add(planeGroup);
+	cluster.add(planeGroup);
 
 	// The systems, as one Points cloud with per-vertex colour. 256 separate
 	// meshes would be 256 draw calls for a chart that is one object.
@@ -468,7 +533,7 @@ export function mountGalaxyChart({
 			transparent: true,
 		}),
 	);
-	pivot.add(cloud);
+	cluster.add(cloud);
 
 	// D3: the reachability shell. Wireframe rather than a solid translucent
 	// ball — a solid one at 7 LY around a point deep inside a 24.5 LY cluster
@@ -484,7 +549,7 @@ export function mountGalaxyChart({
 			opacity: 0.16,
 		}),
 	);
-	pivot.add(shell);
+	cluster.add(shell);
 
 	// D2: drop-lines, and their anchor discs. One buffer, rewritten each time
 	// the selection changes; the count is what the probe reads.
@@ -501,10 +566,10 @@ export function mountGalaxyChart({
 			opacity: 0.7,
 		}),
 	);
-	pivot.add(drops);
+	cluster.add(drops);
 
 	const anchors = new THREE.Group();
-	pivot.add(anchors);
+	cluster.add(anchors);
 	for (let i = 0; i < 2; i++) {
 		const disc = new THREE.Mesh(
 			new THREE.RingGeometry(0.35, 0.55, 24),
@@ -536,7 +601,7 @@ export function mountGalaxyChart({
 		new THREE.LineBasicMaterial({ color: COLOUR.route, transparent: true }),
 	);
 	routeLine.visible = false;
-	pivot.add(routeLine);
+	cluster.add(routeLine);
 
 	// D4: the haze, off by default so the two treatments start from the same
 	// place and the comparison is a keystroke rather than a rebuild.
@@ -550,7 +615,63 @@ export function mountGalaxyChart({
 	);
 	haze.scale.setScalar(2 * GALAXY_RADIUS_LY);
 	haze.visible = false;
-	pivot.add(haze);
+	cluster.add(haze);
+
+	// ---- Finder ------------------------------------------------------------
+
+	/**
+	 * The system the cluster is centred on, or null for the galaxy centre.
+	 *
+	 * Held as an index rather than as a vector so `state` can report *what* was
+	 * centred, which is what makes the D2 check readable: a probe asserts the
+	 * pose is unchanged across a row click and changed across a centre click,
+	 * and a raw offset would leave it comparing three floats to say so.
+	 */
+	let focusIndex: number | null = null;
+
+	/**
+	 * Set by anything that changes the canvas box, cleared by the frame loop.
+	 *
+	 * Declared here rather than beside `resize` because opening the finder is
+	 * one of those things, and a layout change that did not reach the renderer
+	 * would leave the projection describing the box the canvas had before the
+	 * panel took its column.
+	 */
+	let resizePending = true;
+
+	/**
+	 * Move the centre of rotation onto one system, or back to the galaxy's.
+	 *
+	 * The camera and nothing else (D2). Selection is untouched here on purpose:
+	 * the row click that preceded this one already made it, and a centre that
+	 * also selected would give one act two owners.
+	 */
+	const centreOn = (index: number | null): void => {
+		const system = index === null ? null : systemByIndex(index);
+		focusIndex = system?.index ?? null;
+		if (system === null) cluster.position.set(0, 0, 0);
+		else cluster.position.set(-system.pos.x, -system.pos.y, -system.pos.z);
+	};
+
+	/**
+	 * The finder panel (#86, §5.2), mounted rather than built here.
+	 *
+	 * What the chart hands it is four callbacks and two readers, and what it
+	 * hands back is a `render` and its state. The selection stays the chart's —
+	 * `onSelect` goes through the same `select` a click on the canvas does, so
+	 * there is one selection and not two that have to agree.
+	 */
+	const finder = mountFinderPanel({
+		root,
+		systems: galaxy.systems,
+		currentSystem: () => current,
+		selectedIndex: () => selected?.index ?? null,
+		onSelect: (index) => select(index),
+		onCentre: (index) => centreOn(index),
+		onLayoutChange: () => {
+			resizePending = true;
+		},
+	});
 
 	// ---- Derived state -----------------------------------------------------
 
@@ -640,6 +761,8 @@ export function mountGalaxyChart({
 			"drag orbit · wheel zoom · click select · H haze",
 		].join("\n");
 
+		finder.render();
+
 		courseButton.disabled = selected === null || route === null;
 		hazeButton.textContent = `core haze: ${haze.visible ? "on" : "off"}`;
 		hazeButton.setAttribute("aria-pressed", String(haze.visible));
@@ -685,12 +808,19 @@ export function mountGalaxyChart({
 	 * systems, and `projected()` does the same on every probe call.
 	 */
 	const scratch = new THREE.Vector3();
+	/**
+	 * **The world matrix is refreshed by the caller, once.**
+	 *
+	 * `localToWorld` runs `updateWorldMatrix` up the whole parent chain on every
+	 * call, and `cluster` added an ancestor — so a `projected()` over 256
+	 * systems recomposed the same two matrices 256 times. The refresh is
+	 * `freshenCluster`, called once before each sweep.
+	 */
 	const toPixels = (
 		s: SystemRecord,
 		rect: DOMRect,
 	): { x: number; y: number; behind: boolean } => {
-		scratch.set(s.pos.x, s.pos.y, s.pos.z);
-		pivot.localToWorld(scratch);
+		scratch.set(s.pos.x, s.pos.y, s.pos.z).applyMatrix4(cluster.matrixWorld);
 		scratch.project(camera);
 		// **Canvas-relative, not client.** These once carried `rect.left`/`top`,
 		// which made `projected()` client coordinates while `viewport()`
@@ -712,6 +842,10 @@ export function mountGalaxyChart({
 	 * frame while a selection exists. It changes only on a resize, which is the
 	 * one place that invalidates it.
 	 */
+	/** Bring `cluster.matrixWorld` up to date — once per sweep, since every
+	 *  system in one sweep is read under the same transform. */
+	const freshenCluster = (): void => cluster.updateWorldMatrix(true, false);
+
 	let cachedRect: DOMRect | null = null;
 	const canvasRect = (): DOMRect => {
 		if (cachedRect === null) cachedRect = canvas.getBoundingClientRect();
@@ -731,6 +865,7 @@ export function mountGalaxyChart({
 	 */
 	const pick = (clientX: number, clientY: number): SystemRecord | null => {
 		const rect = canvasRect();
+		freshenCluster();
 		// Client to canvas, once, rather than canvas to client 256 times.
 		const x = clientX - rect.left;
 		const y = clientY - rect.top;
@@ -814,7 +949,7 @@ export function mountGalaxyChart({
 				e.deltaMode === 1
 					? e.deltaY * 16
 					: e.deltaMode === 2
-						? e.deltaY * root.clientHeight
+						? e.deltaY * stage.clientHeight
 						: e.deltaY;
 			zoom(px * 0.05);
 		},
@@ -861,10 +996,15 @@ export function mountGalaxyChart({
 
 	// ---- Frame -------------------------------------------------------------
 
-	let resizePending = true;
 	const resize = (): void => {
-		const w = root.clientWidth;
-		const h = root.clientHeight;
+		// **The stage, not the root.** They are the same box only while the
+		// finder is closed; open, the root still spans the host and the canvas
+		// has given up a column to the panel. Sizing the drawing buffer from the
+		// root would stretch the projection across a box the canvas does not
+		// occupy, and `viewport()` — which a probe measures crowding against —
+		// would report a width nothing is drawn at.
+		const w = stage.clientWidth;
+		const h = stage.clientHeight;
 		renderer.setSize(w, h, false);
 		camera.aspect = w / Math.max(1, h);
 		camera.updateProjectionMatrix();
@@ -883,7 +1023,7 @@ export function mountGalaxyChart({
 			: new ResizeObserver(() => {
 					resizePending = true;
 				});
-	observer?.observe(root);
+	observer?.observe(stage);
 	resize();
 
 	/** Hoisted out of the frame loop: the pitch axis is recomputed every frame
@@ -911,6 +1051,7 @@ export function mountGalaxyChart({
 
 		if (selected !== null && card.style.display !== "none") {
 			const rect = canvasRect();
+			freshenCluster();
 			const p = toPixels(selected, rect);
 			// **Clamped, not merely offset.** The card is 260 px wide against a
 			// 390 px narrow viewport, so a selection right of centre pushed it
@@ -952,7 +1093,9 @@ export function mountGalaxyChart({
 				coreRadiusLy: CORE_RADIUS_LY,
 				flatteningQ: GALAXY_FLATTENING_Q,
 				pitch,
+				yaw,
 				cameraDistanceLy: distance,
+				focusIndex,
 				route:
 					route === null
 						? null
@@ -975,6 +1118,7 @@ export function mountGalaxyChart({
 								population: selected.population,
 								distanceLy: distanceLy(current.pos, selected.pos),
 							},
+				finder: finder.state,
 			};
 		},
 		select,
@@ -995,13 +1139,23 @@ export function mountGalaxyChart({
 			orbit(dx, dy);
 		},
 		zoom,
+		setFinderQuery: finder.setQuery,
+		toggleFinderEconomy: finder.toggleEconomy,
+		setFinderBudget: finder.setBudget,
+		centreOn,
 		resetView() {
 			yaw = DEFAULT_YAW;
 			pitch = DEFAULT_PITCH;
 			distance = CAMERA_START_LY;
+			// **The focus too.** `resetView` is what a probe calls before quoting
+			// a crowding figure, and a centred cluster projects differently from
+			// one turning about its own middle — a figure measured after a centre
+			// would be a different measurement wearing the spec's name.
+			centreOn(null);
 		},
 		projected() {
 			const rect = canvasRect();
+			freshenCluster();
 			return galaxy.systems.map((s) => ({
 				index: s.index,
 				...toPixels(s, rect),
@@ -1036,6 +1190,7 @@ export function mountGalaxyChart({
 			window.removeEventListener("resize", resize);
 			if (globalKeys) window.removeEventListener("keydown", onKeyDown);
 			observer?.disconnect();
+			finder.dispose();
 			// `forceContextLoss` as well as `dispose`: a browser allows a small
 			// number of live WebGL contexts, and the flight view already holds
 			// one. Opening and closing the map tab a dozen times without giving
