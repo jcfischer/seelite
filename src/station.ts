@@ -168,10 +168,14 @@ export interface StationGeometry {
 export const STATION_GEOMETRY: Record<StationType, StationGeometry> = {
 	trade: {
 		coreRadiusKm: 0.6,
-		// The Coriolis's square face, a hair proud of it: the hull is drawn at
-		// `0.95 × core` and a cuboctahedron's square faces sit at `1/√2` of its
-		// circumradius, with the frame standing 6% out from there.
-		aperturePlaneKm: 0.6 * 0.95 * Math.SQRT1_2 * 1.06,
+		// **Authored here, and the Coriolis's hull is derived from it** — the
+		// form sizes its circumradius so that a square face lands under this
+		// plane, rather than this number re-deriving the form's drawing
+		// constants. §3's checks are evaluated here, so this is the contract and
+		// the silhouette follows.
+		// 428 m: the smallest round figure that keeps the derived hull at or above
+		// the `0.95 × core` reach `tests/station-mesh.test.ts` budgets for.
+		aperturePlaneKm: 0.428,
 		aperture: { kind: "slot", widthKm: 0.12, heightKm: 0.07 },
 		axis: "parent",
 		spins: true,

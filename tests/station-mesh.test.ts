@@ -633,31 +633,45 @@ describe("§12.5 E10/E11 — the shields are geometry here and pixels elsewhere"
  * without the other — so a form whose face sits well inside the core can park
  * the ship in solid hull, and no test in either tier would have said so.
  */
-describe("§128 — the drawn aperture is at the plane the checks read", () => {
-	test("every shipped form cuts its aperture at `aperturePlaneKm`", () => {
-		// **The seam nothing checked.** `apertureFrame` builds §3's plane from
-		// this number and `station-mesh.ts` cuts the aperture at it, so the two
-		// cannot drift — but only while both actually read it. Until #128 they
-		// did not: the plane was `coreRadiusKm` and each form chose its own
-		// depth, and on the trade station those were 161 m apart.
+describe("§128 — the hull comes up to the plane the checks read", () => {
+	test("a slot form's hull reaches its declared aperture plane", () => {
+		// **The hull, not the aperture.** An earlier version of this row measured
+		// the *aperture* against `aperturePlaneKm` — and `buildAperture` places
+		// the aperture at that very number, so it only exercised the box's own
+		// offset. The drift it claims to catch is the surface moving out from
+		// under the slot, which that could not see.
+		//
+		// The `core` mesh is built through a different path — a radius through
+		// `buildCuboctahedron` or a lathe — than the number it is compared
+		// against, which is what makes the comparison worth making.
+		//
+		// **Slot forms only**, and the pads are excluded for a reason rather than
+		// for convenience: a pad's docking surface is its `aperture-deck`, a
+		// separate mesh, and its `core` is the rock or drum underneath — the
+		// refinery's reaches 0.312 km under a 0.396 km plane and the outpost's
+		// does not face that way at all. What holds a pad's deck to its station
+		// is the connectivity check above, and what keeps anything from standing
+		// in front of it is the approach-corridor check.
+		const rows: string[] = [];
 		for (const type of TYPES) {
+			if (STATION_GEOMETRY[type].aperture.kind !== "slot") continue;
 			const { root } = buildStationForm(type, SELECTED_FORM[type], GREY);
 			root.updateMatrixWorld(true);
 			const core = STATION_GEOMETRY[type].coreRadiusKm;
-			const name =
-				STATION_GEOMETRY[type].aperture.kind === "slot"
-					? "aperture-mouth"
-					: "aperture-deck";
-			const drawn =
-				new THREE.Box3().setFromObject(root.getObjectByName(name) as THREE.Mesh)
-					.max.z * core;
-			// A millimetre, against a `Float32Array` position read back from a
-			// geometry — four orders under anything §12 talks about.
-			expect([
-				type,
-				Math.abs(drawn - STATION_GEOMETRY[type].aperturePlaneKm) < 1e-6,
-			]).toEqual([type, true]);
+			const hull = root.getObjectByName("core") as THREE.Object3D;
+			const reach = new THREE.Box3().setFromObject(hull).max.z * core;
+			const plane = STATION_GEOMETRY[type].aperturePlaneKm;
+			// Up to the plane and not past it: the aperture frame stands proud of
+			// the surface it is bolted to, so the surface may sit a frame's depth
+			// inside the plane and no further. That depth is 24 m on the trade
+			// station (`APERTURE_PROUD`), and the shipyard's hub is flush — which
+			// is a signed zero once it goes through a subtraction, hence the
+			// metre-scale slack on the near side rather than a `>= 0`.
+			const insideM = (plane - reach) * 1000;
+			rows.push(`${type}: hull ${insideM.toFixed(1)} m inside its plane`);
+			expect([type, insideM > -0.1 && insideM < 26]).toEqual([type, true]);
 		}
+		console.log(rows.join("\n"));
 	});
 });
 

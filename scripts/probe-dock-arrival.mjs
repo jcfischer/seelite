@@ -53,11 +53,16 @@ const PAGE_URL = process.env.PROBE_URL ?? ORIGIN + "/?seed=1";
  * open node — and one of them read anywhere from 1 to 628 across runs as the
  * station's docking face went in and out of the sun. A floor across that range
  * decides runs rather than builds, which is what a threshold must never do. So
- * each row asks whether its subject contributes ink **at all**, against a
- * **same-frame control** that says the camera is looking at the thing — where
- * one exists. On approach that is the emissive aperture bars. From inside the
- * throat nothing independent is left, and the row there says so rather than
- * borrowing a control that contains its own subject.
+ * **every ink row that asserts** asks whether its subject contributes ink *at
+ * all*, against a **same-frame control** that says the camera is looking at the
+ * thing. On approach that control is the emissive aperture bars.
+ *
+ * Two ink figures are **printed and not asserted**, both from inside the
+ * throat, and for one reason: that frame contains an unexplained render fault —
+ * the interior plaque draws nothing (#131) — and a frame with an unexplained
+ * fault in it is not evidence that anything else in it rendered. Nor is a
+ * control available there: the bars are behind the camera and hiding the
+ * station hides the recess with it.
  *
  * `CONTROL_INK_FLOOR` is the one number left, and it is a **control's** floor
  * rather than a subject's: what it separates is a control that read something —
@@ -373,24 +378,23 @@ const interiorInk = await page.evaluate((id) => {
 	};
 }, slotId);
 
-check(
-	// **"Reaches the screen", with no floor and no control, both on purpose.**
-	//
-	// Not evidence of *depth*: E7 makes a slot's throat **be** the recess, so
-	// hiding it cannot separate a `BackSide` tunnel at `throatDepthKm` from the
-	// shallow lid it replaced — that is `tests/station-mesh.test.ts`'s depth row,
-	// which reads the drawn box against `arrival.ts`'s own number.
-	//
-	// Not a *count* worth a threshold: an ink figure is a fact about the light
-	// rig as much as about the build, and one of them read from 1 to 628 across
-	// runs as a station's docking face went in and out of the sun.
-	//
-	// And not controlled, because from inside a tunnel the tunnel is the view.
-	// See the measurement above.
-	"the recess reaches the screen from inside the throat",
-	interiorInk.parts > 0 && interiorInk.changed > 0,
-	`${interiorInk.changed} pixels from ${interiorInk.parts} interior part(s), ` +
-		`from ${interiorInk.rangeKm.toFixed(3)} km on the axis, inside the throat`,
+// **Printed, not asserted, and for the same reason as the row below it.**
+//
+// The subject is real: hiding the recess changes ~165,000 pixels from inside
+// the throat, where from outside it changed 0 — a recess and a hole through a
+// station are both dark. But there is no control available in that frame. The
+// emissive bars are behind the camera, hiding the whole station hides the
+// recess with it, and the interior plaque — 48 m wide and 23 m ahead — draws
+// **nothing**, which #131 records as undiagnosed.
+//
+// A frame with an unexplained render fault in it cannot be evidence that
+// anything else in it rendered. So the figure is printed and the claim waits on
+// #131, rather than borrowing the approach row's control from a different
+// camera position and calling it the same frame.
+console.log(
+	`  recess from inside the throat: ${interiorInk.changed} px from ` +
+		`${interiorInk.parts} interior part(s), at ` +
+		`${interiorInk.rangeKm.toFixed(3)} km on the axis`,
 );
 
 // ---------------------------------------------------------------------------

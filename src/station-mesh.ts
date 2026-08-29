@@ -1092,6 +1092,11 @@ function strobePair(
  */
 const CUBOCTAHEDRON_FACE = Math.SQRT1_2;
 
+/** How far the aperture frame stands proud of the face it is mounted on, as a
+ *  multiple of the face's own distance. Shared with `station.ts`, which declares
+ *  the plane this puts the frame at. */
+export const APERTURE_PROUD = 1.06;
+
 function buildCuboctahedron(radiusKm: number, material: THREE.Material) {
 	// The twelve permutations of (±1, ±1, 0). `PolyhedronGeometry` normalises
 	// every vertex to the radius, which is exact here because a cuboctahedron's
@@ -1136,11 +1141,23 @@ function buildTradeCoriolis(color: number): BuiltPart {
 	const r = STATION_GEOMETRY.trade.coreRadiusKm;
 	const group = new THREE.Group();
 	const fixtures: StationFixture[] = [];
-	const radius = r * 0.95;
-	/** Where a square face's plane sits, kilometres. Everything mounted on the
-	 *  hull is placed from this — which is what stops a light hanging in space
-	 *  beside the station, as the swept version's did. */
-	const face = radius * CUBOCTAHEDRON_FACE;
+	/**
+	 * Where a square face's plane sits, kilometres. Everything mounted on the
+	 * hull is placed from this — which is what stops a light hanging in space
+	 * beside the station, as the swept version's did.
+	 *
+	 * **Derived from the declared aperture plane, not the other way round**
+	 * (#128). The slot is cut into this face and §3's checks are evaluated at
+	 * it, so `STATION_GEOMETRY.trade.aperturePlaneKm` is the contract and the
+	 * hull follows it: the frame stands 6% proud of the face, so the face is the
+	 * plane divided by 1.06, and the circumradius is that over `1/√2`.
+	 *
+	 * The other direction — the table re-deriving `0.6 × 0.95 × √½ × 1.06` — put
+	 * this form's drawing constants inside the module that owns the checks'
+	 * contract, where a retune here would not reach them.
+	 */
+	const face = STATION_GEOMETRY.trade.aperturePlaneKm / APERTURE_PROUD;
+	const radius = face / CUBOCTAHEDRON_FACE;
 
 	const hull = buildCuboctahedron(radius, hullMaterial(color, "trade"));
 	hull.name = "core";
