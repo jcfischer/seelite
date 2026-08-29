@@ -12,8 +12,16 @@ const VIEWPORTS = [
 	{ name: "narrow", width: 390, height: 844 },
 ];
 const PIXEL_CHANNEL_TOLERANCE = 3;
-const ETA_READOUT =
-	/^ETA (?:<1s|\d+(?:\.\d+)?(?:s|min|h|d))  CHARGE \d+\.\d AU$/;
+/**
+ * **CHARGE left this line when #92 built Â§5's floor strip.**
+ *
+ * It read `ETA 795d  CHARGE 12.0 AU` — the drive charge riding the *target*
+ * instrument, which made a second consumable with its own regeneration read as
+ * a property of the thing being flown to. The strip owns it now. This pattern
+ * is what caught the removal: the boot wait below blocks on it, so a build that
+ * dropped the text without updating the contract hangs rather than passing.
+ */
+const ETA_READOUT = /^ETA (?:<1s|\d+(?:\.\d+)?(?:s|min|h|d))$/;
 const ETA_READOUT_SOURCE = ETA_READOUT.source;
 const VELOCITY_READOUT =
 	/^(?:NOSE-LOCKED CRUISE|.+ FRAME · INERTIAL \d+ km\/s)$/;
@@ -21,6 +29,16 @@ const VELOCITY_READOUT_SOURCE = VELOCITY_READOUT.source;
 const COMBAT_STATUS =
 	/^FIRE (?:SAFE|PULSE|BEAM|LOCKED) · H \d+ E \d+ · LOCK (?:READY|ACQ) · MISSILE (?:WARNING|CLEAR) · INTD (?:ACTIVE|CLEAR)$/;
 const COMBAT_STATUS_SOURCE = COMBAT_STATUS.source;
+
+/** Two animation frames — a state set from the page runs before the next
+ *  draw, so a record read in the same tick describes the frame before it. */
+const nextFrames = (target) =>
+	target.evaluate(
+		() =>
+			new Promise((resolve) =>
+				requestAnimationFrame(() => requestAnimationFrame(resolve)),
+			),
+	);
 
 function textPixelsMatch(canvas, renderedText) {
 	if (!canvas || !renderedText) return false;
@@ -411,6 +429,290 @@ for (const viewport of VIEWPORTS) {
 			distant.cruisePromptReadout.includes("press J to cruise"),
 		`range ${distant.targetRangeKm}; target-panel ${distant.targetInstrumentSecondaryReadout}; prompt ${distant.cruisePromptReadout}; text match ${distant.targetInstrumentSecondaryText}/${distant.cruisePromptText}`,
 	);
+
+	// ---- §5's flight-floor strip (#92) ------------------------------------
+
+	/**
+	 * Read the strip as painted, plus the sim state each cell is *about*.
+	 *
+	 * Both halves in one evaluate, on one frame: comparing a record taken now
+	 * against a game state read a frame later would be comparing two moments,
+	 * and the throttle and charge both move continuously.
+	 */
+	const readFloor = () =>
+		page.evaluate(() => {
+			const g = window.__seelite;
+			const render = g.floorRender;
+			const overlay = document.getElementById("overlay");
+			return {
+				render,
+				widest: g.floorWidest,
+				spoolSeconds: g.spoolSeconds,
+				overlayHeight: overlay?.height ?? 0,
+				// The game's own state, so the check compares the instrument
+				// against the simulation rather than against a second copy of
+				// the projection that fills it.
+				sim: {
+					regime: g.regime,
+					spoolLeftS: g.spoolLeftS,
+					throttle: g.throttle,
+					assist: g.assist,
+					chargeAu: g.chargeAu,
+				},
+				prompt: g.cockpitPrompt.text,
+			};
+		});
+
+	// **Driven to a wide reading, not left at boot.** A full tank prints no
+	// regeneration suffix, so a strip measured there is a fifth narrower than
+	// the one the pilot sees a second after their first cruise — and the fit
+	// check below passed on exactly that while the frame showed both ends
+	// clipped at 390 px.
+	await page.evaluate(() => {
+		const g = window.__seelite;
+		g.setThrottle(0.62);
+		g.assist = false;
+		g.chargeAu = 4.2;
+	});
+	await nextFrames(page);
+	const floor = await readFloor();
+	check(
+		`${viewport.name}: the floor strip paints §5's four cells, in §5's order`,
+		floor.render !== null &&
+			floor.render.cells.map((c) => c.label).join(",") ===
+				"MODE,THR,ASSIST,CHARGE",
+		`${floor.render === null ? "nothing painted" : floor.render.cells.map((c) => `${c.label} ${c.value}`).join(" · ")}`,
+	);
+	/**
+	 * **The scalars the draw was handed are the ship's.**
+	 *
+	 * The first version restated the projection here — a nested ternary
+	 * rebuilding MODE from the regime and the spool — which is the second copy
+	 * its own comment said it was avoiding, and it would have drifted silently
+	 * the day `flightFloorCells` changed precedence. What the browser can say
+	 * that `flight-floor.test.ts` cannot is that the **inputs** were live: the
+	 * draw stamps them into the record, and they are compared against the game
+	 * handle. The mapping from those inputs to the strings is the headless
+	 * tier's, where it is swept.
+	 */
+	check(
+		`${viewport.name}: the strip was drawn from the ship's own state`,
+		floor.render !== null &&
+			floor.render.source.regime === floor.sim.regime &&
+			floor.render.source.spoolLeftS === floor.sim.spoolLeftS &&
+			floor.render.source.throttle === floor.sim.throttle &&
+			floor.render.source.assist === floor.sim.assist &&
+			floor.render.source.chargeAu === floor.sim.chargeAu &&
+			// And not a frozen snapshot: the throttle was moved above, so a draw
+			// reading a boot-time copy would differ from the handle here.
+			floor.sim.throttle > 0.5,
+		`drawn from ${JSON.stringify(floor.render?.source)} against ${JSON.stringify(floor.sim)}`,
+	);
+	/**
+	 * Drive every cell to its own widest at once, for the three checks below.
+	 *
+	 * Where the strip lands is the half a headless test cannot see: §5 puts it
+	 * on the persistent floor, the glass ends at `GLASS_BOTTOM_FRACTION`, and
+	 * below that is the deck where it would be drawn over the scanner.
+	 *
+	 * **The fit is solved for the widest reading, so the widest reading is what
+	 * has to be on the glass when the assertion fires.** Setting only the charge
+	 * left MODE reading `NORMAL` against its bound and THR reading `62%` against
+	 * `100%` — five characters never drawn, which is the same surrogate these
+	 * checks were rewritten to remove, one layer in.
+	 */
+	const restore = await page.evaluate(() => {
+		const g = window.__seelite;
+		const before = {
+			throttle: g.throttle,
+			assist: g.assist,
+			chargeAu: g.chargeAu,
+			spoolLeftS: g.spoolLeftS,
+		};
+		g.setThrottle(1);
+		g.assist = false;
+		// Below full so the regeneration suffix is there, and two digits of
+		// spool. Both drift while the frame renders — the spool counts down and
+		// the drive fills — so the check below asserts the *width* each cell was
+		// drawn at rather than an exact string it would lose a race with.
+		g.chargeAu = 11.9;
+		// The sim's own wind-up, not a number chosen here. At `SPOOL_S` every
+		// spool reading is one digit, so the countdown between this set and the
+		// draw cannot change the width — which is what the assertion below is
+		// about. Set to 10.5 it merely had half a second of margin before a
+		// character dropped, which widened the race rather than removing it.
+		g.spoolLeftS = g.spoolSeconds;
+		return before;
+	});
+	await nextFrames(page);
+	const wide = await readFloor();
+	await page.evaluate((before) => {
+		const g = window.__seelite;
+		g.setThrottle(before.throttle);
+		g.assist = before.assist;
+		g.chargeAu = before.chargeAu;
+		g.spoolLeftS = before.spoolLeftS;
+	}, restore);
+	await nextFrames(page);
+	const runEnd = (r) => r.boxes.at(-1).x + r.boxes.at(-1).width;
+	// The margin comes off the record rather than being restated here — a
+	// second copy of a constant is how a probe goes falsely red on a retune.
+	const margin = floor.render?.marginPx ?? 0;
+	/**
+	 * **Three named checks rather than one fifteen-clause boolean.** A red run
+	 * on the single check named the check and not which of its eight properties
+	 * broke; these fail one at a time and print only what they are about.
+	 */
+	check(
+		`${viewport.name}: the strip is drawn at every cell's widest reading`,
+		wide.render !== null &&
+			// Read off the page (`floorWidest`) rather than restated here, and
+			// compared by width: the font is monospace, the drive refills
+			// between the set and the draw, and at the sim's own `SPOOL_S` every
+			// spool reading is the same width.
+			wide.render.cells.every(
+				(c) => c.value.length === wide.widest[c.label].length,
+			) &&
+			// The headless tier restates `SPOOL_S`, since it cannot import a
+			// module that pulls in Three.js. This is the seam that keeps the two
+			// honest.
+			wide.spoolSeconds === 3,
+		`"${wide.render?.cells.map((c) => c.value).join(" ")}" against bounds "${Object.values(wide.widest ?? {}).join(" ")}", spool ${wide.spoolSeconds}s`,
+	);
+	check(
+		`${viewport.name}: the strip sits inside the glass, above its lower edge`,
+		floor.render !== null &&
+			floor.render.baselineY < floor.render.glassBottomY &&
+			floor.render.baselineY > floor.render.glassBottomY - 26,
+		`baseline ${floor.render?.baselineY.toFixed(0)} of a glass bottom ${floor.render?.glassBottomY.toFixed(0)}`,
+	);
+	check(
+		`${viewport.name}: the widest run clears the margins, and the fit is the viewport's`,
+		floor.render !== null &&
+			wide.render !== null &&
+			floor.render.boxes.every((b) => b.x >= margin) &&
+			runEnd(floor.render) <= viewport.width - margin &&
+			wide.render.boxes.every((b) => b.x >= margin) &&
+			runEnd(wide.render) <= viewport.width - margin &&
+			// Zero whichever way it could have been non-zero — the legibility
+			// clamp binding, or the type size rounding above the linear solve.
+			wide.render.overflowPx === 0 &&
+			// The fit is a property of the viewport, so it must not have moved
+			// between two different readings.
+			wide.render.scale === floor.render.scale,
+		`runs ${wide.render?.boxes[0].x.toFixed(0)}…${runEnd(wide.render).toFixed(0)} of ${viewport.width} with a ${margin}px margin, at scale ${floor.render?.scale.toFixed(2)}, overflow ${wide.render?.overflowPx.toFixed(1)}px`,
+	);
+
+	/**
+	 * **The refusal paints, and the passive reading does not.**
+	 *
+	 * The tone is a field on a record, and a record can say anything — so this
+	 * samples the overlay's own pixels inside the CHARGE cell's box and
+	 * requires red ones there when the drive is empty and none when it is not.
+	 * That is what makes the tone a claim about the glass rather than about a
+	 * string.
+	 */
+	const redInChargeCell = () =>
+		page.evaluate(() => {
+			const g = window.__seelite;
+			const box = g.floorRender?.boxes.find((b) => b.label === "CHARGE");
+			if (!box) return null;
+			const overlay = document.getElementById("overlay");
+			const ctx = overlay.getContext("2d", { willReadFrequently: true });
+			const data = ctx.getImageData(
+				Math.floor(box.x),
+				Math.floor(box.y) - 12,
+				Math.ceil(box.width),
+				16,
+			).data;
+			let red = 0;
+			for (let i = 0; i < data.length; i += 4) {
+				// §4's refusal fill is rgba(255,110,96,…): strongly red-dominant.
+				// The passive fill is rgba(150,205,240,…), which is the opposite.
+				if (data[i + 3] > 40 && data[i] > 170 && data[i] > data[i + 2] + 60)
+					red++;
+			}
+			return red;
+		});
+	const redWhenCharged = await redInChargeCell();
+	await page.evaluate(() => {
+		window.__seelite.chargeAu = 0;
+	});
+	await nextFrames(page);
+	const emptyFloor = await readFloor();
+	const redWhenEmpty = await redInChargeCell();
+	check(
+		`${viewport.name}: an empty drive paints the CHARGE cell as a refusal, and a charged one does not`,
+		redWhenCharged === 0 && redWhenEmpty > 20,
+		`${redWhenCharged} red pixels charged, ${redWhenEmpty} empty`,
+	);
+	/**
+	 * **And the prompt agrees with it.** Both read `chargeReadsEmpty`; as
+	 * `chargeAu <= 0` they disagreed on every frame after a starve-out, because
+	 * regeneration lifts the raw value off zero immediately — the strip printed
+	 * "0.0/12 AU" in calm cyan while the prompt offered "press J to cruise".
+	 * Caught by looking at a captured frame, so it is checked here.
+	 */
+	check(
+		`${viewport.name}: the empty-drive prompt and the CHARGE cell say the same thing`,
+		emptyFloor.render?.cells.find((c) => c.label === "CHARGE")?.tone ===
+			"refused" &&
+			emptyFloor.prompt === "no drive charge — wait for it to regenerate",
+		`tone ${emptyFloor.render?.cells.find((c) => c.label === "CHARGE")?.tone}, prompt "${emptyFloor.prompt}"`,
+	);
+
+	// The charge the target instrument used to carry is gone from it — asserted
+	// on the text rather than only through the boot pattern, so the removal has
+	// a check of its own.
+	const targetSecondary = await page.evaluate(
+		() => window.__seelite.cockpit.targetInstrument.secondaryText.text,
+	);
+	check(
+		`${viewport.name}: the target instrument no longer carries the drive charge`,
+		!targetSecondary.includes("CHARGE") && ETA_READOUT.test(targetSecondary),
+		`"${targetSecondary}"`,
+	);
+
+	/**
+	 * **The right console's ASSIST and CHARGE rows are no longer empty.**
+	 *
+	 * §5 gives the Flight console assist and the Drive console the cruise
+	 * charge, and the markup has carried both rows since the console was built
+	 * — with an empty `<em>`, which reads as a broken instrument rather than an
+	 * unbuilt one. They read the strip's own cells, so this is checking one
+	 * owner rather than two that happen to agree.
+	 */
+	await page.evaluate(() => window.__seelite.setHeadLook("right"));
+	await nextFrames(page);
+	const consoleRows = await page.evaluate(() => {
+		const g = window.__seelite;
+		const text = (selector) =>
+			document.querySelector(selector)?.textContent ?? null;
+		return {
+			assist: text("[data-live-assist]"),
+			charge: text("[data-live-charge]"),
+			cells: Object.fromEntries(g.floorCells().map((c) => [c.label, c.value])),
+		};
+	});
+	await page.evaluate(() => window.__seelite.setHeadLook("forward"));
+	await nextFrames(page);
+	check(
+		`${viewport.name}: the right console's assist and charge rows carry the strip's own readings`,
+		consoleRows.assist === consoleRows.cells.ASSIST &&
+			consoleRows.charge === consoleRows.cells.CHARGE &&
+			(consoleRows.assist?.length ?? 0) > 0 &&
+			(consoleRows.charge?.length ?? 0) > 0,
+		`console "${consoleRows.assist}" / "${consoleRows.charge}" against cells "${consoleRows.cells.ASSIST}" / "${consoleRows.cells.CHARGE}"`,
+	);
+
+	// Restore, so the head-look checks below see the state they expect.
+	await page.evaluate(() => {
+		const g = window.__seelite;
+		g.chargeAu = 12;
+		g.assist = true;
+		g.setThrottle(0);
+	});
+	await nextFrames(page);
 
 	await page.evaluate(() => window.__seelite.setHeadLook("left"));
 	await page.waitForFunction(

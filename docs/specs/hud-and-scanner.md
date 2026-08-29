@@ -133,6 +133,109 @@ and future equipment state. Developer tuning parameters move to a **Tuning tab**
 on the right panel: they are available while tuning the prototype, but never
 occupy the persistent player flight floor.
 
+### 5.1 The mode/throttle/assist/charge strip
+
+Built under #92. It draws along the **bottom of the glass**, above the deck and
+below the cruise prompt, and it is the last of §5's four floor instruments to
+ship.
+
+**What each of the four had before it, checked rather than assumed:**
+
+| field | before | where |
+|---|---|---|
+| mode | `NORMAL FLIGHT` / `CRUISE` | the right console's Flight/Drive copy |
+| throttle | a percentage, and an unlabelled lit wedge | that copy, and the deck |
+| assist | **nothing** — a label with an empty value | the right console's readout row |
+| charge | `CHARGE 12.0 AU` | the **target** instrument's secondary line |
+
+So the gap is not that these were invisible. It is that §5 distinguishes the
+**persistent floor** from the **side consoles**, and puts a compact strip on the
+floor *as well as* giving the Flight console speed, throttle, assist and regime.
+A console is read by turning the head away from the glass; the floor is what
+keeps a hull-hidden cockpit flyable while looking forward, which is the sentence
+this strip exists to satisfy.
+
+Two consequences worth stating plainly. **The overlay drops nothing** — `#hud` is
+`clip: rect(0 0 0 0)` and is only written under `?legacy-hud=1`, so §5's rule
+that developer tuning must never occupy the floor was already satisfied; it was
+never on the floor. And **assist and charge were advertised on the console and
+never wired**: the markup has carried `<b>ASSIST</b><em></em>` and
+`<b>CHARGE</b><em></em>` since the console was built, which reads as a broken
+instrument rather than an unbuilt one. Both are filled now, from the strip's own
+cells, so the console and the floor cannot describe one fact two ways.
+
+Charge also **moves off the target instrument**: a second consumable with its
+own regeneration read as a property of the thing being flown to.
+
+**On the glass rather than on the deck.** The deck's only clear band is the
+2.3 mm lip outside the scanner bezel, which at the shipped dashboard pitch is a
+foreshortened sliver — and #94 is the recorded case of a geometrically honest
+cockpit instrument being unreadable and having to be rebuilt as a compressed
+on-glass one. The floor is the persistent instrument *set* and not a single
+surface: §5's attitude and prograde markers are already on the glass, and this
+joins them. It is not a DOM card either, which is a distinction
+`probe-live-cockpit.mjs` already asserts (`[data-live-floor]` must be absent).
+
+| cell | reads | tone |
+|---|---|---|
+| MODE | `NORMAL`, `CRUISE`, or `SPOOL 1.4s` | passive / confirmed / action |
+| THR | the throttle, rounded to a percent | passive |
+| ASSIST | `ON` or `OFF` | passive / **action** when off |
+| CHARGE | `4.2/12 AU  +1.0/min` | passive, **refused** when empty |
+
+Spooling **outranks the regime**, because on the frame a drop-out fires the
+regime field still reads cruise. Assist off is amber rather than cyan: it is
+#5's Newtonian regime, where the nose and the velocity genuinely disagree, and
+it is the one fact about the ship's handling a hull-hidden cockpit cannot show
+any other way. The regeneration is printed **only while it is running** — the
+map makes it the anti-stranding rule and requires the HUD to show it, but a
+`+1.0/min` beside a full tank is a claim about a process that is not happening.
+
+**One predicate decides "empty", and it reads the printed value.** The sim's own
+gate is `chargeAu <= 0`, and passive regeneration lifts the raw value off zero on
+the very next frame — so a tone keyed to the raw number went calm cyan while the
+same cell still printed `0.0/12 AU`, and `cruisePrompt` offered "press J to
+cruise" beside it. `chargeReadsEmpty` rounds first, and both the tone and the
+prompt read it, so the glass cannot say two things about one quantity. It
+follows that the refusal is **brief by construction**, about three seconds until
+regeneration reaches 0.05 AU. Whether "practically stranded" deserves a band of
+its own is a design question this node did not take: it needs a threshold no
+spec states.
+
+**The strip is laid out against its widest possible reading**, not against what
+it currently says (`flightFloorWidest`), and the fit is memoised for the width
+it was solved at. Sized to the live values it re-centred whenever a digit
+changed — and the fit taken on a full tank, where the regeneration suffix is
+absent, was a fifth too narrow for the run drawn a second later: at 390 px both
+ends were clipped. The font is monospace, so a character count is a width, and
+the headless tier sweeps every reachable reading against the bound.
+
+**The bound is derived by asking the formatter**, not by restating its output.
+It was four literals beside `flightFloorCells` — two spellings of every printed
+shape with nothing linking them, so a format change in one had no tie to the
+other. It now runs the formatter over a worst-case input per field and keeps the
+longest, which is one owner of every string the strip can print.
+
+**The scale is solved, not searched.** One measurement of the widest run at full
+size gives the ratio, since text width is very nearly linear in type size; the
+second confirms it. The step-down loop it replaces ran up to nineteen full
+measurements on every distinct canvas width, and a resize drag missed on every
+frame and appended to a map nothing evicted.
+
+**`FLOOR_MIN_SCALE` fails open, and records that it did.** It is a floor on
+legibility, so a viewport too narrow for the widest run at that size draws
+anyway — a floor instrument that vanished would be worse. What it must not do is
+fail open silently: the residue is recorded as `overflowPx` and §7.0's fit check
+requires it to be zero at the two viewports that probe measures — which is not
+"every viewport", and §7.0 item 8 says what is left unmeasured.
+
+Its band is owned by one constant, `FLOOR_STRIP_HEIGHT_PX`: the baseline and
+both type sizes are fractions of it, and §3's clearance line is offset by it.
+The comment claimed that ownership before the code had it — the strip placed
+itself at `glassBottomY - 9` with a fixed 13 px font while only the clearance
+line read the constant, so raising the type would have slid the strip under the
+line without touching the number it was supposedly anchored to.
+
 ## 6. Responsive behaviour
 
 On narrow viewports, one side panel at a time becomes a wide overlay. In either
@@ -158,6 +261,108 @@ than starting a second one.
 `?hud-gallery=<state>` is the low-risk browser prototype for these checks. It is
 a design surface, not a claim that unbuilt docking, communications, or scanner
 simulation has shipped.
+
+### 7.0 The flight-floor strip
+
+Headless — `tests/flight-floor.test.ts`, over `flightFloorCells`:
+
+1. **The four cells, in §5's order.** The order is pinned separately from the
+   contents, because a strip read at a glance makes a reordering a silent
+   relearning cost.
+2. **Each cell's text and tone against every branch** — spooling outranking the
+   regime, assist-off's amber, the regeneration suffix appearing only below
+   capacity, and the rounding, which was written expecting `4.25` to print
+   `4.2` and pinned at `4.3` once the formatter said otherwise.
+3. **The empty predicate at display resolution**, including the frame-after-a-
+   starve-out value that used to read passive, and a sweep over the whole range
+   asserting that no reading prints `0.0` without the refusal tone. The tone and
+   the text are one quantity computed by two expressions; a boundary is where
+   that parts.
+4. **The bound is the longest *reachable* reading**, and tightness is measured
+   against what the sim produces. MODE's bound was `SPOOL 10.0s` while the
+   wind-up is three seconds, and the test guarding against a loose bound
+   compared it to `"SPOOL 9.9s"` — another reading that cannot happen. The
+   maxima come from the sim's constants, and the spool duration is a parameter
+   for the same reason the charge capacity and rate are: one owner per constant
+   in the presentation tier.
+5. **No reachable reading is wider than `flightFloorWidest`**, swept over every
+   combination of the four inputs, with the sweep's own size asserted — a loop
+   that stopped iterating would satisfy every expectation inside it. And the
+   bound is required to be *close*, since a bound of 200 characters would pass
+   the sweep and make the fit useless. The bound is now derived from the same
+   formatter, so what this sweep still catches is a worst-case *input* the
+   derivation does not enumerate.
+
+Browser — `scripts/probe-live-cockpit.mjs`, at both viewports:
+
+6. **The strip paints §5's four cells in order**, read from the record the draw
+   writes rather than from the state beside it.
+7. **The strip was drawn from the ship's own state** — the draw stamps the four
+   scalars it drew into the record, and they are compared against the game
+   handle. The first version restated the projection here, rebuilding MODE from
+   the regime and the spool in a nested ternary: the second copy its own comment
+   said it was avoiding, and one that would drift the day the precedence
+   changed. The mapping from those scalars to the strings is §7.0's item 2,
+   where it is swept.
+8. **It sits inside the glass, fits its widest reading, and the fit is the
+   viewport's** — three named checks rather than one fifteen-clause boolean,
+   which named the check and not which of its eight properties broke. Both the
+   drawn run
+   and the widest one must clear the margins — read off the record rather than
+   restated — the fit must not have moved between them, and `overflowPx` must be
+   zero — whichever way it could have been non-zero, since the type size
+   rounds to a whole pixel and can land above what the linear solve predicted,
+   not only when the legibility clamp binds. **"Every viewport" here is the two
+   `probe-live-cockpit.mjs` measures**, and the fit is solved per canvas width:
+   below 390 px the clamp can fail open with nothing measuring the residue. The
+   console's own media query bottoms out at 600 px and the narrow probe runs at
+   390, so what is unmeasured is narrower than anything the layout targets —
+   stated rather than implied by "every shipped viewport", which §5.1 said and
+   should not have.
+
+   **Every cell is driven to its own widest, not just one of them.** The first
+   version measured whatever the strip happened to say and passed at 390 px on a
+   run the frame showed clipped; the second set only the charge, leaving MODE at
+   `NORMAL` against a `SPOOL 00.0s` bound and THR at `62%` against `100%` — five
+   characters of the widest run never on the glass, which is the same surrogate
+   one layer in. What is asserted is each drawn cell's **width against the
+   bound**, read off the page as `floorWidest`, because the drive refills between
+   the set and the draw and an exact-string assertion loses that race.
+
+   The spool used to lose it too: driven to 10.5 s against a bound of
+   `SPOOL 00.0s`, a character dropped the moment it crossed 10.0, so the width
+   assertion had half a second of margin rather than immunity. The bound is the
+   sim's `SPOOL_S` now — three seconds, one digit — so **every** reachable spool
+   reading is the same width and the countdown cannot change it. The probe drives
+   `g.spoolSeconds` and asserts the page agrees with the constant the headless
+   tier restates.
+9. **An empty drive paints the CHARGE cell red and a charged one does not** —
+   sampled off the overlay's own pixels inside that cell's box, because a tone
+   is a field on a record and a record can say anything.
+10. **The prompt and the cell agree** about an empty drive.
+11. **The target instrument no longer carries the charge**, and **the right
+    console's ASSIST and CHARGE rows are no longer empty** — both read the same
+    cells the strip draws, so a check that finds them agreeing is checking one
+    owner rather than two that happen to match.
+
+**Every one of these was built a red build** — including, after the first
+review round, the clamp failing open (`FLOOR_MIN_SCALE` raised to 0.95: 108.6 px
+of overflow, and the check red), the draw stamping a stale scalar, and the
+baseline no longer derived from the band. Two of those three first read green
+because the edit that was supposed to break them silently did not match the
+formatted source — a no-op `replace` and a green run look exactly alike, which
+is the repo's own recorded lesson and cost two false clears here.
+
+One caveat worth stating:
+putting the charge back on the target instrument (check 10) makes the probe's
+own boot wait time out before any check runs, because that wait is keyed to the
+readout pattern. It fails loudly and cannot pass, but it fails as a timeout
+rather than as the named check — the same wait-standing-for-an-assertion shape
+§9.3 of `galaxy-map.md` records, left here because the wait is a genuine settle.
+
+**And two defects came from looking at a frame rather than from any check**: the
+tone/prompt disagreement at zero charge, and the clipped run at 390 px. Both
+were green in both tiers at the moment they were photographed.
 
 ### 7.1 The docking director
 

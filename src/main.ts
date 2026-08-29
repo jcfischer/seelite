@@ -82,17 +82,24 @@ import {
 	type CombatPrototypeState,
 } from "./combat-prototype";
 import {
+	FLIGHT_FLOOR_LABELS,
 	SCANNER_RANGE_KM,
+	chargeReadsEmpty,
+	flightFloorWidest,
+	type FloorCell,
+	type FloorTone,
 	type HeadLook,
 	type NavFilter,
 	type NavRow,
 	type ScannerContact,
+	flightFloorCells,
 	projectNavTargets,
 	projectScannerContacts,
 	targetArrowBearingDeg,
 } from "./cockpit";
 import {
 	CHARGE_CAPACITY_AU,
+	CHARGE_REGEN_AU_PER_S,
 	type CruiseParams,
 	DEFAULT_CRUISE,
 	HOST_CLEARANCE_KM,
@@ -519,6 +526,44 @@ const TEXT_RASTER_BOUNDS_DEFAULTS: Readonly<{
  */
 const GLASS_BOTTOM_FRACTION = 0.66;
 
+/**
+ * The band §5's mode/throttle/assist/charge strip occupies, measured up from
+ * the bottom of the glass.
+ *
+ * **One owner, because three things are anchored to it**: the strip's own
+ * baseline, its type size, and the docking director's clearance line above it.
+ * §3 says that line carries its reason, and it used to be offset by a literal
+ * of its own while the strip placed itself at `glassBottomY - 9` with a fixed
+ * 13 px font — so the comment claimed an ownership the code did not have, and
+ * raising the type would have slid the strip under the line without touching
+ * this number.
+ */
+const FLOOR_STRIP_HEIGHT_PX = 26;
+/** Where the baseline sits inside the band, and how big the value type is —
+ *  both fractions of it, so the band is the one thing to change. */
+const FLOOR_BASELINE_FRACTION = 0.35;
+const FLOOR_VALUE_FRACTION = 0.5;
+const FLOOR_LABEL_FRACTION = 0.385;
+
+/** §4's grammar, once. `cockpit.ts` decides which tone a reading earned; this
+ *  is the only place a tone becomes a colour. */
+const FLOOR_TONE_FILL: Record<FloorTone, string> = {
+	passive: "rgba(150, 205, 240, 0.92)",
+	action: "rgba(255, 196, 110, 0.95)",
+	confirmed: "rgba(150, 255, 190, 0.95)",
+	refused: "rgba(255, 110, 96, 0.97)",
+};
+const FLOOR_LABEL_FILL = "rgba(120, 165, 195, 0.75)";
+const FLOOR_FONT_FAMILY = "ui-monospace, Menlo, monospace";
+/** Between a label and its value, and between one cell and the next. */
+const FLOOR_LABEL_GAP_PX = 5;
+const FLOOR_CELL_GAP_PX = 22;
+/** Clear of the glass edges at every viewport. */
+const FLOOR_MARGIN_PX = 14;
+/** How far the strip may be shrunk to fit. Below this it is not an instrument
+ *  read at a glance, and the answer would have to be a different layout. */
+const FLOOR_MIN_SCALE = 0.62;
+
 /** How far past the tolerance ring the nose marker is allowed to sit before it
  *  stops moving. Beyond this the error is off-scale and the marker says so. */
 const MARKER_MAX_FRACTION = 1.3;
@@ -526,6 +571,54 @@ const MARKER_MAX_FRACTION = 1.3;
 /** The throat is the thing the ship goes through, so it is the brightest line
  *  in the corridor — and it carries the blocking state, because a refusal has
  *  to reach the part of the picture the pilot is aiming at. */
+/** A font at a scale, built rather than parsed back out of a declaration. */
+const floorFont = (fraction: number, scale: number): string =>
+	`${Math.max(7, Math.round(FLOOR_STRIP_HEIGHT_PX * fraction * scale))}px ${FLOOR_FONT_FAMILY}`;
+
+/**
+ * One run's per-cell widths and their total.
+ *
+ * **The fit and the draw share this.** They each had their own copy of
+ * `label + gap + value`, which is two spellings of the metric the fit exists to
+ * guarantee — a change to the layout that landed in one would have made the fit
+ * describe a run the draw does not produce. The pairs carry their own labels
+ * rather than being indexed against `FLIGHT_FLOOR_LABELS`, so the two paths
+ * also agree on where a label comes from.
+ */
+function floorRunWidths(
+	ctx: CanvasRenderingContext2D,
+	cells: readonly { label: string; value: string }[],
+	scale: number,
+): { widths: number[]; total: number; labelWidths: number[] } {
+	const labelFont = floorFont(FLOOR_LABEL_FRACTION, scale);
+	const valueFont = floorFont(FLOOR_VALUE_FRACTION, scale);
+	const labelGap = FLOOR_LABEL_GAP_PX * scale;
+	const labelWidths: number[] = [];
+	const widths = cells.map((cell) => {
+		ctx.font = labelFont;
+		const label = ctx.measureText(cell.label).width;
+		labelWidths.push(label);
+		ctx.font = valueFont;
+		return label + labelGap + ctx.measureText(cell.value).width;
+	});
+	return {
+		widths,
+		labelWidths,
+		total:
+			widths.reduce((a, b) => a + b, 0) +
+			FLOOR_CELL_GAP_PX * scale * (cells.length - 1),
+	};
+}
+
+/** One cell's value by label. Throws rather than printing `undefined` on a
+ *  label that does not exist — a blank readout is what this is fixing. */
+function floorCellValue(cells: readonly FloorCell[], label: string): string {
+	const cell = cells.find((c) => c.label === label);
+	if (cell === undefined)
+		throw new Error(`flight floor: no ${label} cell to read`);
+	return cell.value;
+}
+
 function throatColour(state: DirectorState): string {
 	if (state.blocking) return "rgba(255, 110, 96, 0.95)";
 	return state.aligned
@@ -806,6 +899,15 @@ class Game {
 		new URLSearchParams(window.location.search).get("combat") === "1";
 	private combatIncoming = false;
 	private combatEcm = false;
+	/** The floor strip's fitted scale for the width it was solved at. One memo
+	 *  and not a map: the fit is a property of the viewport, and a resize drag
+	 *  through a thousand widths should not leave a thousand entries behind. */
+	private floorFit: {
+		width: number;
+		scale: number;
+		overflowPx: number;
+	} | null = null;
+
 	/** Fitted overlay font cache: keyed by role + glass width; the fit is
 	 *  computed against a widest-case text so any live state fits. */
 	private combatStatusFit = new Map<
@@ -961,6 +1063,44 @@ class Game {
 	/** Prototype-only glass status, exposed for the browser probe. */
 	readonly combatOverlayStatus = new TextRaster();
 	/**
+	 * What §5's flight-floor strip painted this frame, or `null` when it painted
+	 * nothing — a focused console has replaced the glass.
+	 *
+	 * **Written by the draw, from the values it drew**, the same pattern as
+	 * `directorRender`. A record assembled beside the draw from the same state
+	 * would let a probe assert a strip that was never painted, which is the
+	 * check-that-cannot-fail this repo has shipped once already.
+	 */
+	floorRender: {
+		cells: FloorCell[];
+		boxes: { label: string; x: number; y: number; width: number }[];
+		baselineY: number;
+		glassBottomY: number;
+		/** What the strip was shrunk by to fit its widest reading in this
+		 *  viewport — 1 where it did not have to shrink at all. */
+		scale: number;
+		marginPx: number;
+		/**
+		 * How far the widest reading still overruns the margins at the fitted
+		 * scale — zero at both viewports `probe-live-cockpit.mjs` measures.
+		 *
+		 * **Two things can put it above zero**, and the check does not care
+		 * which: the legibility clamp binding on a viewport too narrow for the
+		 * widest run, or the type size rounding to a whole pixel above what the
+		 * linear solve predicted. The solve assumes width is linear in size,
+		 * which is close but not exact, so the confirming measurement is what
+		 * decides — and the residue is what it decides *with*.
+		 */
+		overflowPx: number;
+		source: {
+			regime: string;
+			spoolLeftS: number;
+			throttle: number;
+			assist: boolean;
+			chargeAu: number;
+		};
+	} | null = null;
+	/**
 	 * What §3's docking director drew this frame, or `null` when it drew
 	 * nothing. The same pattern as `cockpitPrompt`: the record is written by the
 	 * draw itself rather than recomputed beside it, so a probe reading it cannot
@@ -1049,6 +1189,16 @@ class Game {
 	/** §3's approach range, on the handle for the same reason the tolerances are:
 	 *  a probe that restated it would go falsely red the day it is retuned. */
 	readonly directorRangeKm = DIRECTOR_RANGE_KM;
+	/** The widest reading §5's floor strip can take, so a probe measuring the
+	 *  fit drives the run the layout was solved for rather than a copy of it. */
+	readonly floorWidest = flightFloorWidest(
+		CHARGE_CAPACITY_AU,
+		CHARGE_REGEN_AU_PER_S,
+		SPOOL_S,
+	);
+	/** The wind-up, so a probe driving the strip to its widest reading asks the
+	 *  sim how long a spool is rather than assuming one. */
+	readonly spoolSeconds = SPOOL_S;
 
 	/** Where the flying glass ends, as a fraction of the frame — on the handle so
 	 *  a probe measuring the clip reads the renderer's line, not its own. */
@@ -2494,7 +2644,11 @@ class Game {
 			? `${target.id.toUpperCase()}  ${range(targetKm)}`
 			: "NO TARGET";
 		const eta = this.etaCache === null ? "CALC" : duration(this.etaCache);
-		const key = `${speed}|${velocity.context}|${targetText}|${eta}|${this.throttle}|${this.assist}|${this.chargeAu}`;
+		// `chargeAu` is **not** in this key any more: the target instrument stopped
+		// printing it when §5's strip took it, and a key holding a value no
+		// painted pixel depends on repaints two canvas textures on the frame the
+		// drive regenerates a hundredth of an AU — about once a second, forever.
+		const key = `${speed}|${velocity.context}|${targetText}|${eta}|${this.throttle}|${this.assist}`;
 		if (key === this.cockpit.instrumentKey) return;
 		this.cockpit.instrumentKey = key;
 		const paint = (
@@ -2545,7 +2699,10 @@ class Game {
 			this.cockpit.targetInstrument,
 			"TARGET",
 			targetText,
-			`ETA ${eta}  CHARGE ${this.chargeAu.toFixed(1)} AU`,
+			// **Charge is gone from here.** It is a second consumable with its own
+			// regeneration (#10) and §5 puts it on the floor; riding the *target*
+			// instrument made it read as a property of the thing being flown to.
+			`ETA ${eta}`,
 			"#ffd17a",
 		);
 		this.cockpit.flightInstrument.texture.needsUpdate = true;
@@ -3042,7 +3199,11 @@ class Game {
 	private cruisePrompt(targetKm: number | null): string {
 		if (this.spoolLeftS > 0) return "";
 		if (this.regime === "cruise") return "";
-		if (this.chargeAu <= 0)
+		// **The same predicate the strip's tone reads.** As `chargeAu <= 0` this
+		// and the strip disagreed on the frame after a starve-out: regeneration
+		// lifts the raw value off zero immediately, so the prompt returned to
+		// "press J to cruise" beside a cell still printing "0.0/12 AU".
+		if (chargeReadsEmpty(this.chargeAu))
 			return "no drive charge — wait for it to regenerate";
 		if (targetKm === null) return "T selects a target";
 		// An hour at the cap, which is 7,200 km. Below that the crawl is the
@@ -4425,6 +4586,10 @@ class Game {
 			mode: this.regime === "cruise" ? "CRUISE" : "NORMAL FLIGHT",
 			throttle: `${(this.throttle * 100).toFixed(0)}%`,
 			speed: velocity.speed,
+			// The floor strip's own words, so the console and the floor cannot
+			// describe the same two facts differently.
+			assist: floorCellValue(this.floorCells(), "ASSIST"),
+			charge: floorCellValue(this.floorCells(), "CHARGE"),
 			tuning: this.tuningSummary(),
 		});
 	}
@@ -4599,6 +4764,139 @@ class Game {
 		if (key === this.hudKey) return;
 		this.hudKey = key;
 		this.hud.textContent = lines.join("\n");
+	}
+
+	/**
+	 * §5's persistent mode/throttle/assist/charge strip, along the bottom of the
+	 * glass.
+	 *
+	 * **On the glass rather than on the deck, and that is the whole design
+	 * decision.** The deck's only clear band is the 2.3 mm lip outside the
+	 * scanner bezel, which at the shipped dashboard pitch is a foreshortened
+	 * sliver — and #94 is the recorded case of a geometrically-honest
+	 * cockpit instrument being unreadable and having to be rebuilt as a
+	 * compressed on-glass one. The floor is the persistent instrument *set*,
+	 * not a single surface: §5's attitude and prograde markers are already
+	 * here, and this joins them.
+	 *
+	 * Centred and sized to its content rather than spread across the full
+	 * width: four cells stretched over 1440 px is a row of unrelated numbers,
+	 * and the prompt and the clearance line it sits under are centred too.
+	 */
+	/**
+	 * §5's four readings, from the ship as it is now.
+	 *
+	 * **One builder, because two surfaces show these.** The floor strip draws
+	 * all four; the right console's Flight and Drive rows show assist and
+	 * charge, and those rows shipped as labels with an empty value beside them.
+	 * Wiring them from a second expression is how the console comes to say
+	 * "ON" while the floor says something else about the same toggle.
+	 */
+	floorCells(): FloorCell[] {
+		return flightFloorCells({
+			regime: this.regime,
+			spoolLeftS: this.spoolLeftS,
+			throttle: this.throttle,
+			assist: this.assist,
+			chargeAu: this.chargeAu,
+			chargeCapacityAu: CHARGE_CAPACITY_AU,
+			chargeRegenAuPerS: CHARGE_REGEN_AU_PER_S,
+		});
+	}
+
+	private drawFlightFloor(ctx: CanvasRenderingContext2D, w: number, h: number) {
+		const cells = this.floorCells();
+
+		// **Fitted to the widest reading the strip can take, not to this one.**
+		// Sized to the live values it re-centred whenever a digit changed, and
+		// the fit taken on a full tank — where the regeneration suffix is
+		// absent — was a fifth too narrow for the run drawn a second later. At
+		// 390 px that clipped both ends, and the check measuring the incidental
+		// run passed.
+		const available = w - 2 * FLOOR_MARGIN_PX;
+		if (this.floorFit?.width !== w) {
+			// **Solved rather than searched.** The step-down loop ran up to
+			// nineteen full measurements on every distinct canvas width, and a
+			// resize drag missed on every frame and appended to a map nothing
+			// evicted. Text width is very nearly linear in the type size, so one
+			// measurement gives the ratio; the second confirms it, and the
+			// residue is recorded rather than drawn over.
+			// The handle's own copy, not a second derivation with the same
+			// arguments — a third parameter would otherwise have to be threaded
+			// to two call sites that must agree.
+			const widestCells = FLIGHT_FLOOR_LABELS.map((label) => ({
+				label,
+				value: this.floorWidest[label],
+			}));
+			const atOne = floorRunWidths(ctx, widestCells, 1).total;
+			const solved = Math.max(
+				FLOOR_MIN_SCALE,
+				Math.min(1, available / Math.max(1, atOne)),
+			);
+			// Rounded down to a step so a one-pixel viewport change does not
+			// re-lay the strip out at an imperceptibly different size.
+			const stepped = Math.max(FLOOR_MIN_SCALE, Math.floor(solved * 50) / 50);
+			const fitted = floorRunWidths(ctx, widestCells, stepped).total;
+			this.floorFit = {
+				width: w,
+				scale: stepped,
+				// **The clamp fails open, and says so.** `FLOOR_MIN_SCALE` is a
+				// floor on legibility, so a viewport too narrow for the widest
+				// run at that size draws anyway — the alternative is a floor
+				// instrument that vanishes. What it must not do is fail open
+				// *silently*: the overflow is recorded, and the browser check
+				// requires it to be zero at every shipped viewport.
+				overflowPx: Math.max(0, fitted - available),
+			};
+		}
+		const { scale } = this.floorFit;
+		const labelFont = floorFont(FLOOR_LABEL_FRACTION, scale);
+		const valueFont = floorFont(FLOOR_VALUE_FRACTION, scale);
+		const labelGap = FLOOR_LABEL_GAP_PX * scale;
+		const cellGap = FLOOR_CELL_GAP_PX * scale;
+		const { widths, labelWidths, total } = floorRunWidths(ctx, cells, scale);
+
+		const glassBottomY = h * GLASS_BOTTOM_FRACTION;
+		const baselineY =
+			glassBottomY - FLOOR_STRIP_HEIGHT_PX * FLOOR_BASELINE_FRACTION;
+		let x = (w - total) / 2;
+		const boxes: { label: string; x: number; y: number; width: number }[] = [];
+		ctx.save();
+		ctx.textAlign = "left";
+		for (const [i, cell] of cells.entries()) {
+			boxes.push({ label: cell.label, x, y: baselineY, width: widths[i] });
+			ctx.font = labelFont;
+			ctx.fillStyle = FLOOR_LABEL_FILL;
+			ctx.fillText(cell.label, x, baselineY);
+			ctx.font = valueFont;
+			ctx.fillStyle = FLOOR_TONE_FILL[cell.tone];
+			// The label width comes from the measuring pass rather than a second
+			// `measureText` here — four labels re-measured every frame for a
+			// value that changes only with the viewport.
+			ctx.fillText(cell.value, x + labelWidths[i] + labelGap, baselineY);
+			x += widths[i] + cellGap;
+		}
+		ctx.restore();
+
+		this.floorRender = {
+			cells,
+			boxes,
+			baselineY,
+			glassBottomY,
+			scale,
+			marginPx: FLOOR_MARGIN_PX,
+			overflowPx: this.floorFit.overflowPx,
+			// The scalars the cells were built from, stamped by the draw — so a
+			// check can compare the instrument against the ship without
+			// restating the projection that maps one to the other.
+			source: {
+				regime: this.regime,
+				spoolLeftS: this.spoolLeftS,
+				throttle: this.throttle,
+				assist: this.assist,
+				chargeAu: this.chargeAu,
+			},
+		};
 	}
 
 	/**
@@ -4801,7 +5099,14 @@ class Game {
 		// it landed below the clip and was sliced in half by it — a refusal the
 		// pilot could only half read, which is the one line §3 says must carry its
 		// reason.
-		ctx.fillText(clearanceText, cx, h * GLASS_BOTTOM_FRACTION - 16);
+		// Above the strip, not 16 px off the glass bottom, which is inside it.
+		// Derived from `FLOOR_STRIP_HEIGHT_PX` rather than restated, so raising
+		// the strip cannot leave this line sitting on top of it.
+		ctx.fillText(
+			clearanceText,
+			cx,
+			h * GLASS_BOTTOM_FRACTION - FLOOR_STRIP_HEIGHT_PX - 16,
+		);
 		ctx.textAlign = "left";
 		ctx.restore();
 
@@ -4845,9 +5150,10 @@ class Game {
 			this.combatOverlayStatus.reset();
 			this.combatOverlayLines = [];
 			// The director is glass, and a focused console has replaced the glass.
-			// Leaving the record standing would let a probe assert a funnel that
-			// this frame deliberately did not paint.
+			// Leaving either record standing would let a probe assert a funnel or
+			// a strip that this frame deliberately did not paint.
 			this.directorRender = null;
+			this.floorRender = null;
 			return;
 		}
 		const toPixels = (ndcX: number, ndcY: number) => ({
@@ -4950,6 +5256,7 @@ class Game {
 		}
 
 		this.drawDockingDirector(ctx, w, h, camPos);
+		this.drawFlightFloor(ctx, w, h);
 
 		// The prompt, on the glass rather than only in the corner: the mechanic it
 		// names is the one the whole prototype is about, and the first flight of
