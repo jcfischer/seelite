@@ -327,11 +327,33 @@ actual geometry"*. Fixed here, per type, as a `Record<StationType, …>` table
 for #13 §8.5's reason — a fourth station type stops the build until the table
 answers for it.
 
-| Type | Dockable core radius | Aperture | Axis |
-|---|---|---|---|
-| trade station | 0.6 km | slot, 0.12 × 0.07 km, on the spin axis | toward the parent body (1984's "face nearest the planet") |
-| shipyard | 0.6 km (Coriolis core) | identical slot | toward the parent body |
-| refinery | 0.4 km (drum) | pad, 0.15 × 0.15 km | radially outward from the star |
+| Type | Dockable core radius | Aperture plane | Aperture | Axis |
+|---|---|---|---|---|
+| trade station | 0.6 km | 0.427 km | slot, 0.12 × 0.07 km, on the spin axis | toward the parent body (1984's "face nearest the planet") |
+| shipyard | 0.6 km (Coriolis core) | 0.372 km | identical slot | toward the parent body |
+| refinery | 0.4 km (drum) | 0.396 km | pad, 0.15 × 0.15 km | radially outward from the star |
+| outpost | 0.15 km | 0.165 km | pad, 0.12 × 0.12 km | radially outward from the star |
+
+**The plane is not the core radius, and the two are a column apart because they
+answer different questions** (#128, 2026-08-29). The core radius is the body's
+`radiusKm` — what it is drawn one of across, what the scanner and the layer rule
+read. The **aperture plane** is where §3's six checks are evaluated, and it has
+to be the surface the slot is actually cut into.
+
+They were the same number until a ship was watched crossing the plane **161 m
+before it reached the slot it could see**: a cuboctahedron's circumradius is its
+*vertex* radius and its square faces sit at `r/√2`, and cutting the slot into a
+real flat square face is the trade form's thesis. Everything §12 measures from
+the plane — the throat, the docked position — therefore landed behind everything
+the player was looking at, and the throat had to be 280 m deep to reach back past
+it. Reported flying it as *"the tunnel is skewed in relation to the docking
+port"*.
+
+`STATION_GEOMETRY.aperturePlaneKm` is one number that both tiers read: the frame
+the checks run in is built from it, and the selected form of each role cuts its
+aperture at it. A form is free to have no surface there — the workbench
+alternates do not — and `tests/station-mesh.test.ts` holds both the agreement
+and the inventory of forms that break it.
 
 **Aperture dimensions are measured against the hulls that exist**, and are no
 longer a guess (ratified 2026-08-26). Read the two halves separately, because
@@ -1166,31 +1188,66 @@ of check that stops being evidence, and §12.7 records that it fails open until
    expensive direction: it reads as a blanket block on the whole section, and
    §12 exists to fix a bug a player is looking at now.
 
-7. **A form's aperture face and §3's plane are two different surfaces, and on
-   some forms they are far apart** (#77). §12.2's docked position is a function
-   of the **plane**, which is `coreRadiusKm`; a form cuts its aperture wherever
-   its own geometry has a face. On the forms the game builds they agree closely
+7. **A form's aperture face and §3's plane were two different surfaces, and the
+   claim that the shipped forms agreed was false** (#77, corrected by #128).
+   This joint used to read: "On the forms the game builds they agree closely
    enough that the ship parks inside the drawn recess, and
-   `tests/station-mesh.test.ts` asserts exactly that. On three workbench
-   alternates they do not — the trade **Ring** cuts its slot on a hub at about a
-   third of the core radius, and two pads carry their deck at a face their
-   silhouette put elsewhere — so selecting one of those would park a ship in
-   solid hull. Pinned as an inventory rather than left as prose, so that
-   selecting one, adding a form like them, or fixing them all make the test
-   speak. `outpost a` is on that list *and* is its role's selected form, which
-   is only harmless because joint 5 above records that no outpost is generated.
+   `tests/station-mesh.test.ts` asserts exactly that." Measured, they were
+   **161 m** apart on the trade station and **216 m** on the shipyard, and the
+   containment test was green for the wrong reason — the throat was 280 m deep,
+   which is far enough to reach back past the offset. Shorten the throat and the
+   shipped trade station fails the same row.
 
-8. **The drawn slot's roll does not mirror `slotBasis`, and the obvious repair
-   makes things worse** (#77). `main.ts` aims a station with
-   `setFromUnitVectors`, the shortest turn taking local +Z onto the aperture
-   axis, which leaves the roll about that axis arbitrary — so the slot a player
-   *sees* is at an unknown angle to the frame check 4 is evaluated in. A ship
-   parked by §12.2 therefore sits visibly askew in its own slot, and a pilot
-   rolling by eye can miss check 4 by up to 90°, which is part of why §3.2 set
-   that tolerance wide. Aiming the mesh on `slotBasis` instead was built and
-   withdrawn inside #77: `anyPerpendicular` chooses its seed on a `< 0.9`
-   branch, so the reference **jumps** as a station's axis swings round its
-   orbit and the drawn hull snaps with it — `probe-station.mjs`'s repeat control
-   went from 0.02 to between 0.05 and 0.21. The fix is a *continuous*
-   phase-zero reference, decided where the convention is defined rather than at
-   the line that reads it, and it is a node of its own.
+   §5's table now carries an **aperture plane** column and `apertureFrame` reads
+   it, so the surface the checks are evaluated at is the surface the slot is cut
+   into. What survives of the joint is the part that was always true: a form is
+   free to cut its aperture somewhere else, and four workbench alternates do —
+   the trade **Ring** on a hub at about a third of the core radius, and three
+   pads on decks of their own. Selecting one of those parks a ship in solid hull.
+   The inventory in `tests/station-mesh.test.ts` names them, and `outpost a` —
+   which was on that list *and* was its role's selected form — is no longer on
+   it.
+
+8. **The drawn slot's roll did not mirror `slotBasis`, and the fix needed a
+   continuous reference** (#77, closed by #126). `main.ts` aimed a station with
+   `setFromUnitVectors` — the shortest turn taking local +Z onto the aperture
+   axis, which fixes the axis and leaves the roll about it wherever the
+   arithmetic lands. Measured on the start system: the axis was exact to 0° and
+   the roll was **64.6°** out on the trade station and **78.2°** on the refinery.
+   A ship parked by §12.2 therefore sat two thirds of a right angle out of the
+   slot it was in, and a pilot rolling to the slot they could *see* could miss
+   check 4 by up to 90° — part of why §3.2 set that tolerance wide. Reported
+   flying it as *"leaves the ship in a felt skewed position"*.
+
+   **Aiming the mesh on `slotBasis` was built and withdrawn once before it
+   worked**, and the reason is the interesting half. `anyPerpendicular` chooses
+   its seed on a `< 0.9` branch, so the reference it derives **jumps** as a
+   station's axis swings round its orbit; a renderer sharing it snapped the
+   drawn hull round, and `probe-station.mjs`'s repeat control went from 0.02 to
+   between 0.05 and 0.21. A reference two tiers share has to be *continuous*.
+
+   So the phase-zero reference is no longer derived from the axis at all.
+   `sim.ts`'s `stationPose` supplies the station's **own along-track
+   direction** — its velocity about whatever it orbits, with the parent's motion
+   removed — which is perpendicular to the axis by construction on a circular
+   orbit and turns smoothly. `tests/dock-session.test.ts` bounds how far it may
+   turn per second across a whole orbit, and that row is red on the old
+   reference. Both roll figures are 0° now.
+
+   **What it cost, recorded rather than left to be found.** A station's drawn
+   orientation changed, and `probe-station.mjs`'s repeatability control — one
+   station measured twice, resampled to a 24 × 24 grid — moved from about 0.04
+   to 0.051–0.059 against its own 0.05 ceiling. That control was already
+   [#120](https://github.com/jcfischer/seelite/issues/120)'s subject for
+   exceeding its ceiling half the time; it now does so consistently, and whether
+   the answer is a finer grid or a re-measured ceiling belongs there rather than
+   in a branch that would be choosing it to go green.
+
+9. **The interior name shield draws no pixels since the throat was shortened**
+   (#128, open as [#131](https://github.com/jcfischer/seelite/issues/131)). E11
+   puts a shield inside the throat and #77 measured it at 14,430 pixels with a
+   280 m one. At 105 m it measures **zero**, with the recess in front of it and
+   with the recess hidden, while the recess itself measures 185,000 in the same
+   frame — and the plate is visible, textured, 48 m wide and 23 m ahead of the
+   camera. `probe-dock-arrival.mjs` prints the figure and asserts nothing about
+   it, because a check whose failure nobody understands is not a check.
