@@ -1201,9 +1201,11 @@ of check that stops being evidence, and §12.7 records that it fails open until
    §5's table now carries an **aperture plane** column and `apertureFrame` reads
    it, so the surface the checks are evaluated at is the surface the slot is cut
    into. What survives of the joint is the part that was always true: a form is
-   free to cut its aperture somewhere else, and four workbench alternates do —
-   the trade **Ring** on a hub at about a third of the core radius, and three
-   pads on decks of their own. Selecting one of those parks a ship in solid hull.
+   free to cut its aperture somewhere else, and **five** workbench alternates do:
+   the trade **Ring** on a hub at about a third of the core radius, the trade
+   **Drum** — a slot form, not a pad, which is the one a reader skimming for
+   "pads" would miss — the refinery **Spar**, and both alternate outposts.
+   Selecting any of them parks a ship in solid hull.
    The inventory in `tests/station-mesh.test.ts` names them, and `outpost a` —
    which was on that list *and* was its role's selected form — is no longer on
    it.

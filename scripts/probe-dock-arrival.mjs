@@ -59,12 +59,14 @@ const PAGE_URL = process.env.PROBE_URL ?? ORIGIN + "/?seed=1";
  * shield rows. The control is what makes a `> 0` worth anything.
  *
  * `CONTROL_INK_FLOOR` is the one number left, and it is a **control's** floor
- * rather than a subject's. It is the same number for both controls because it
- * is not calibrated to either: a run measures the emissive bars at ~126,000 on
- * approach and the whole station at ~185,000 from inside the throat, and what
- * the floor separates is *those* from the case it exists for — a camera looking
- * at nothing, which reads zero. Three orders of headroom is the point, not an
- * oversight: a control that could plausibly fail is a second subject.
+ * rather than a subject's: what it separates is a control that read something —
+ * the emissive aperture bars measure ~126,000 on approach — from the case it
+ * exists for, a camera looking at nothing, which reads zero. Three orders of
+ * headroom is the point, not an oversight; a control that could plausibly fail
+ * is a second subject.
+ *
+ * **One row has no control**, and its comment says so rather than borrowing one
+ * that is not independent: from inside the throat the tunnel is the whole view.
  */
 const PROBE_STANDOFF_KM = 4.5;
 const CONTROL_INK_FLOOR = 100;
@@ -235,6 +237,70 @@ if (slotId === undefined) {
 }
 
 // ---------------------------------------------------------------------------
+// #126 — the drawn slot is the slot the checks are evaluated in
+// ---------------------------------------------------------------------------
+//
+// **The check the fix did not have.** #126's whole subject is that the station a
+// player *sees* is rolled to the same basis §3's checks read, and nothing
+// asserted it: the reference's continuity is a headless row, the aperture plane
+// is a headless row, and `probe-station.mjs` measures the slot's spin *rate*. A
+// swapped `makeBasis` argument or a change to the mesh's local-X convention
+// would restore the 64.6° this node exists to have removed, with every test and
+// every other probe green.
+//
+// Read off the drawn object: the recess's own local +X and +Z in world space,
+// against `slotBasis(frameAtPhase(frame, 0))` and the axis, both off the page.
+
+console.log("\n#126 the drawn slot mirrors slotBasis:");
+const rolls = await page.evaluate(() => {
+	const g = window.__seelite;
+	const unit = (x, y, z) => {
+		const l = Math.hypot(x, y, z);
+		return [x / l, y / l, z / l];
+	};
+	const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+	const deg = (c) => (Math.acos(Math.min(1, Math.max(-1, c))) * 180) / Math.PI;
+	return g.world.system.contents.stations.map((st) => {
+		const snap = g.dockingSnapshot(st.id);
+		const mesh = window.__meshOfBody(st.id);
+		let recess = null;
+		mesh.traverse((o) => {
+			if (o.name === "aperture-mouth" || o.name === "aperture-deck") recess = o;
+		});
+		recess.updateWorldMatrix(true, false);
+		const e = recess.matrixWorld.elements;
+		// The mesh's own axes, in world space. Local +X is the aperture
+		// rectangle's long side by construction (`BoxGeometry(w, h, …)`), which
+		// is what `slotBasis`'s `across` is.
+		const drawnAcross = unit(e[0], e[1], e[2]);
+		const drawnAxis = unit(e[8], e[9], e[10]);
+		const across = [
+			snap.basis.across.x,
+			snap.basis.across.y,
+			snap.basis.across.z,
+		];
+		const axis = [snap.axis.x, snap.axis.y, snap.axis.z];
+		return {
+			id: st.id,
+			// Absolute, because a slot is symmetric through 180°: `across` and
+			// `−across` are the same rectangle, and check 4 folds them together.
+			rollOffDeg: +deg(Math.abs(dot(drawnAcross, across))).toFixed(3),
+			axisOffDeg: +deg(dot(drawnAxis, axis)).toFixed(3),
+		};
+	});
+});
+for (const r of rolls) {
+	check(
+		`${r.id}: the drawn slot is rolled to \`slotBasis\``,
+		// A tenth of a degree. It was 64.6° on the trade station and 78.2° on the
+		// refinery before #126, so this is not a tolerance anything can drift
+		// inside — the two either share a basis or they do not.
+		r.rollOffDeg < 0.1 && r.axisOffDeg < 0.1,
+		`roll ${r.rollOffDeg}°, axis ${r.axisOffDeg}°`,
+	);
+}
+
+// ---------------------------------------------------------------------------
 // Row 1 — the throat is drawn behind every slot, the deck under every pad
 // ---------------------------------------------------------------------------
 
@@ -290,23 +356,20 @@ const interiorInk = await page.evaluate((id) => {
 		for (const o of objects) o.visible = true;
 	};
 	const recess = window.__inkDelta(hideAll(interior), showAll(interior), 0);
-	// **A control has to be visible from where the subject is.** The emissive
-	// bars are the control on approach and are *behind* the camera here, so from
-	// inside the throat the control is the station itself: if hiding the whole
-	// mesh changes nothing, the camera is not looking at a station and the
-	// subject's figure means nothing either.
-	const lit = window.__inkDelta(
-		() => {
-			mesh.visible = false;
-		},
-		() => {
-			mesh.visible = true;
-		},
-		0,
-	);
+	// **This row has no independent control, and saying so is better than
+	// pretending.** A control has to be visible from where the subject is, and
+	// from inside a tunnel the tunnel *is* the view: the emissive bars are behind
+	// the camera, the interior plaque draws nothing (#131), and hiding the whole
+	// station hides the recess with it — a superset of the subject, so
+	// `changed > 0` would already force it and the row would read as
+	// subject-plus-control while nothing independent remained.
+	//
+	// What keeps this from being a bare number in the dark is the *approach* row
+	// in the same run: it proves this probe can see this station, with a control
+	// that genuinely is independent of its subject.
+	const lit = { changed: null };
 	return {
 		changed: recess.changed,
-		bars: lit.changed,
 		parts: interior.length,
 		rangeKm: snap.planeKm - snap.apertureHeightKm,
 	};
@@ -330,11 +393,8 @@ check(
 	// they are emissive, so they read in any light, and their ink is what says
 	// the camera is looking at the aperture rather than at nothing.
 	"the recess reaches the screen from inside the throat",
-	interiorInk.parts > 0 &&
-		interiorInk.changed > 0 &&
-		interiorInk.bars > CONTROL_INK_FLOOR,
+	interiorInk.parts > 0 && interiorInk.changed > 0,
 	`${interiorInk.changed} pixels from ${interiorInk.parts} interior part(s), ` +
-		`against ${interiorInk.bars} from the whole station in the same frame, ` +
 		`from ${interiorInk.rangeKm.toFixed(3)} km on the axis, inside the throat`,
 );
 

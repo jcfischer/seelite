@@ -67,7 +67,7 @@ The station, system, or named route affected by a carrier's capability.
 _Avoid_: Territory
 
 **Aperture frame**:
-The station-local frame the docking checks are stated in: the outward aperture axis, the slot's current roll, and the aperture rectangle. `docs/specs/docking.md` §3 and §5 own its content; `src/docking.ts` is the one place it is built. Every tolerance is measured in the station's *velocity* frame, never the star's.
+The station-local frame the docking checks are stated in: the outward aperture axis, the slot's current roll, the aperture rectangle, and the **phase-zero reference** the roll is measured from. `docs/specs/docking.md` §3 and §5 own its content; `src/docking.ts` is the one place it is *assembled*, and `src/sim.ts` is the one place the reference comes from — the station's own along-track direction, because that is where the orbit is and because a reference derived from the axis alone jumps as the axis swings (#126). Every tolerance is measured in the station's *velocity* frame, never the star's.
 _Avoid_: Docking port, world-space approach vector
 
 **Closing-speed gate**:
