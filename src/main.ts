@@ -212,7 +212,14 @@ import {
 	type LiveCockpitState,
 	type RightTab,
 } from "./live-cockpit";
-import { marketStationOf } from "./market";
+import { marketStationOf, readDeficit } from "./market";
+import { carrierKey } from "./carrier-key";
+import {
+	newCommander,
+	transactAtStation,
+	type StationAction,
+} from "./station-commerce";
+import { newWorld as newPersistentWorld, type WorldState } from "./world-state";
 import {
 	type StationConsoleTab,
 	stationEquipmentScreen,
@@ -957,9 +964,14 @@ class Game {
 	private leftTab: LeftTab = "Navigation";
 	/** The forward station console keeps its tab across a head turn while docked. */
 	private stationConsoleTab: StationConsoleTab = "Market";
+	/** Commander-owned mutable commerce state; no renderer may write it. */
+	private commander = newCommander();
+	/** The game-owned per-galaxy state holds the station deficit map. */
+	private commerceWorld!: WorldState;
 	/** Docked console screens are stable until station or tab changes; do not rebuild them each frame. */
 	private stationConsoleCache: LiveCockpitState["stationConsole"] = null;
 	private stationConsoleCacheKey: string | null = null;
+	private stationConsoleRevision = 0;
 	/**
 	 * What the Navigation list is narrowed to.
 	 *
@@ -1523,6 +1535,7 @@ class Game {
 
 	constructor(seed: number) {
 		this.world = makeWorld(seed);
+		this.commerceWorld = newPersistentWorld(seed);
 		for (const _body of this.world.system.bodies)
 			this.scannerContactBuffer.push({} as ScannerContact);
 		this.updateLocalFrameBody();
@@ -1689,6 +1702,13 @@ class Game {
 			onStationTab: (tab) => {
 				this.stationConsoleTab = tab;
 				this.updateCockpit();
+			},
+			onStationAction: (type, name) => {
+				const action: StationAction =
+					type === "buy-equipment"
+						? { type, equipment: name }
+						: { type, commodity: name };
+				this.transactStation(action);
 			},
 			onLaunch: () => {
 				if (this.launch()) this.updateCockpit();
@@ -4621,35 +4641,93 @@ class Game {
 	 *
 	 * `station-console.ts` owns every commodity/equipment rule; this method only
 	 * joins the live dock session to the station record and world clock. Market
-	 * deficits are not live yet, so the display stays neutral until trading owns
-	 * them rather than introducing a parallel mutable store in the renderer.
+	 * Deficits come from the current galaxy's persistent envelope, and commander
+	 * state comes from the one Game instance that can apply an accepted action.
 	 */
 	private stationConsoleState() {
-		if (this.dock.phase !== "docked" || !this.dock.stationId) {
+		const context = this.dockedStationContext();
+		if (!context) {
 			this.stationConsoleCache = null;
 			this.stationConsoleCacheKey = null;
 			return null;
 		}
-		const key = `${this.dock.stationId}|${this.stationConsoleTab}`;
+		const { station, market, envelope, stationKey, economy, gameTimeMin } =
+			context;
+		const key = `${this.dock.stationId}|${this.stationConsoleTab}|${this.stationConsoleRevision}`;
 		if (this.stationConsoleCacheKey === key) return this.stationConsoleCache;
-		const station = stationOf(this.world.system, this.dock.stationId);
-		const market = marketStationOf(station, this.world.seed);
 		this.stationConsoleCacheKey = key;
 		this.stationConsoleCache = {
 			label: this.nameOfStation(station.id),
 			tab: this.stationConsoleTab,
 			market: stationMarketScreen({
 				station: market,
-				economy: this.world.system.record.economy,
-				gameTimeMin: this.world.gameTime / 60,
-				deficitOf: () => 0,
+				economy,
+				gameTimeMin,
+				deficitOf: (goodName) =>
+					readDeficit(envelope.deficits, stationKey, goodName, gameTimeMin),
 			}),
 			equipment: stationEquipmentScreen({
 				type: market.type,
 				displayTL: this.world.system.record.displayTL,
 			}),
+			credits: this.commander.credits,
+			cargo: Object.entries(this.commander.cargo)
+				.filter(([, amount]) => amount > 0)
+				.map(([name, amount]) => `${name} ${amount}`),
+			ownedEquipment: this.commander.ownedEquipment,
+			revision: this.stationConsoleRevision,
 		};
 		return this.stationConsoleCache;
+	}
+
+	/** Applies a complete commerce result or leaves both owner states untouched. */
+	private transactStation(action: StationAction) {
+		const context = this.dockedStationContext();
+		if (!context) return;
+		const { market, envelope, stationKey, galaxyIndex, economy, gameTimeMin } =
+			context;
+		const result = transactAtStation({
+			commander: this.commander,
+			deficits: envelope.deficits,
+			station: market,
+			stationKey,
+			economy,
+			gameTimeMin,
+			displayTL: this.world.system.record.displayTL,
+			action,
+		});
+		if (!result.accepted) return;
+		this.commander = result.commander;
+		this.commerceWorld = {
+			...this.commerceWorld,
+			gameTime: this.world.gameTime / 60,
+			galaxies: this.commerceWorld.galaxies.map((current, index) =>
+				index === galaxyIndex
+					? { ...current, deficits: result.deficits }
+					: current,
+			),
+		};
+		this.stationConsoleRevision += 1;
+		this.updateCockpit();
+	}
+
+	/** Resolves the live dock session once for rendering and commerce actions. */
+	private dockedStationContext() {
+		if (this.dock.phase !== "docked" || !this.dock.stationId) return null;
+		const station = stationOf(this.world.system, this.dock.stationId);
+		const galaxyIndex = this.world.system.record.galaxy;
+		return {
+			station,
+			market: marketStationOf(station, this.world.seed),
+			envelope: this.commerceWorld.galaxies[galaxyIndex],
+			stationKey: carrierKey(
+				this.world.system.record.index,
+				station.localCarrierId,
+			),
+			galaxyIndex,
+			economy: this.world.system.record.economy,
+			gameTimeMin: this.world.gameTime / 60,
+		};
 	}
 
 	/**

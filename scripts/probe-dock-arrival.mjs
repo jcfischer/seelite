@@ -608,6 +608,44 @@ check(
 	`phase ${liveConsole.phase}, console=${liveConsole.present}/${liveConsole.visible}, rows=${liveConsole.marketRows}, floor hidden=${liveConsole.floorHidden}`,
 );
 
+// Commerce uses the live console, not the gallery fixture. A completed round
+// trip must change the rendered commander and shelf state, then return cargo
+// to zero through the same DOM action boundary.
+const liveTrade = await page.evaluate(() => {
+	const read = () => ({
+		commander:
+			document.querySelector("[data-live-commander]")?.textContent ?? "",
+		food:
+			document.querySelector('[data-live-market-row="Food"]')?.textContent ??
+			"",
+	});
+	const before = read();
+	const buy = document.querySelector(
+		'[data-live-station-action="buy-commodity"][data-live-station-name="Food"]',
+	);
+	if (!(buy instanceof HTMLElement))
+		return { before, afterBuy: before, afterSell: before, controls: false };
+	buy.click();
+	const afterBuy = read();
+	const sell = document.querySelector(
+		'[data-live-station-action="sell-commodity"][data-live-station-name="Food"]',
+	);
+	if (!(sell instanceof HTMLElement))
+		return { before, afterBuy, afterSell: afterBuy, controls: false };
+	sell.click();
+	return { before, afterBuy, afterSell: read(), controls: true };
+});
+
+check(
+	"the live station console completes a buy and sell across commander and shelf state",
+	liveTrade.controls &&
+		liveTrade.afterBuy.commander !== liveTrade.before.commander &&
+		liveTrade.afterBuy.food !== liveTrade.before.food &&
+		liveTrade.afterSell.commander.includes("HOLD EMPTY") &&
+		liveTrade.afterSell.food === liveTrade.before.food,
+	JSON.stringify(liveTrade),
+);
+
 const liveEquipment = await page.evaluate(() => {
 	const tab = document.querySelector('[data-live-station-tab="Equipment"]');
 	if (!(tab instanceof HTMLElement)) return { switched: false, rows: 0 };

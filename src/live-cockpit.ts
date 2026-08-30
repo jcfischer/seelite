@@ -10,6 +10,7 @@ import {
 	cockpitView,
 } from "./cockpit";
 import type { DockPhase } from "./dock-session";
+import type { StationAction } from "./station-commerce";
 import type {
 	ConsoleEquipmentScreen,
 	ConsoleMarketRow,
@@ -66,6 +67,11 @@ export interface LiveCockpitState {
 		tab: StationConsoleTab;
 		market: readonly ConsoleMarketRow[];
 		equipment: ConsoleEquipmentScreen;
+		credits: number;
+		cargo: readonly string[];
+		ownedEquipment: readonly string[];
+		/** Changes only when an accepted action replaces the displayed state. */
+		revision: number;
 	} | null;
 }
 
@@ -75,6 +81,7 @@ export interface LiveCockpitCallbacks {
 	onNavFilter: (filter: NavFilter) => void;
 	onSelectTarget: (id: string) => void;
 	onStationTab: (tab: StationConsoleTab) => void;
+	onStationAction: (action: StationAction["type"], name: string) => void;
 	onLaunch: () => void;
 	/**
 	 * The Galaxy Map tab's chart host has appeared or gone away.
@@ -182,15 +189,19 @@ const STYLE = `
 .lc-station-console h2 { margin: 0; color: #ffe1a9; font-size: 18px; letter-spacing: .1em; }
 .lc-station-console header small { color: #cb8c51; }
 .lc-station-market { flex: 1; overflow: auto; margin-top: 8px; padding-right: 6px; }
-.lc-station-row { display: grid; grid-template-columns: minmax(120px, 1.4fr) 1fr 1fr; gap: 10px; align-items: baseline; padding: 3px 2px; border-bottom: 1px solid rgba(229, 170, 82, .22); font-size: 11px; }
+.lc-station-row { display: grid; grid-template-columns: minmax(120px, 1.4fr) 1fr 1fr auto; gap: 10px; align-items: baseline; padding: 3px 2px; border-bottom: 1px solid rgba(229, 170, 82, .22); font-size: 11px; }
 .lc-station-row[data-live-listed="false"] { color: #8d7057; }
 .lc-station-head { position: sticky; top: 0; color: #d8833b; border-bottom-width: 2px; letter-spacing: .08em; background: #150a03; }
 .lc-station-cell { text-align: right; }
 .lc-station-delta { margin-left: 5px; color: #f0b05e; }
 .lc-station-section { margin: 14px 0 6px; color: #cb8c51; font-size: 11px; letter-spacing: .08em; }
 .lc-station-equipment { flex: 1; overflow: auto; margin-top: 8px; }
+.lc-station-action { border: 1px solid rgba(229, 170, 82, .52); border-radius: 3px; padding: 2px 6px; background: rgba(223, 122, 20, .16); color: #ffe1a9; cursor: pointer; font: inherit; font-size: 10px; }
+.lc-station-action:hover { background: rgba(223, 122, 20, .32); }
+.lc-station-owned { color: #9ed89b; font-size: 10px; letter-spacing: .06em; }
+.lc-station-commander { margin: 9px 0 0; color: #f5bd78; font-size: 11px; }
 .lc-launch { margin-top: 12px; border: 1px solid #ffe0a2; background: rgba(223, 122, 20, .28); color: #fff0c9; cursor: pointer; font: inherit; font-size: 13px; letter-spacing: .12em; padding: 8px 18px; }
-@media (max-width: 600px) { .lc-station-console { inset: 8px; padding: 13px; } .lc-station-row { grid-template-columns: minmax(90px, 1.3fr) 1fr .8fr; gap: 6px; font-size: 10px; } }
+@media (max-width: 600px) { .lc-station-console { inset: 8px; padding: 13px; } .lc-station-row { grid-template-columns: minmax(90px, 1.3fr) 1fr .8fr auto; gap: 6px; font-size: 10px; } }
 @media (max-width: 600px) { .lc-panel { inset: 8px; padding: 13px; clip-path: none; } .lc-panel h2 { font-size: 14px; } .lc-panel-body { grid-template-columns: .45fr 1fr; gap: 8px; min-height: 0; } .lc-rail, .lc-panel-copy { padding-top: 7px; } .lc-panel-copy p { font-size: 11px; line-height: 1.4; } .lc-readout { display: none; } .lc-nav-list { max-height: 148px; } .lc-chart-host { min-height: 190px; } }
 `;
 
@@ -245,6 +256,21 @@ export class LiveCockpit {
 	 */
 	private handleClick(element: HTMLElement) {
 		const stationTab = element.closest<HTMLElement>("[data-live-station-tab]");
+		const stationAction = element.closest<HTMLElement>(
+			"[data-live-station-action]",
+		);
+		if (stationAction) {
+			const action = stationAction.dataset.liveStationAction;
+			const name = stationAction.dataset.liveStationName;
+			if (
+				name &&
+				(action === "buy-commodity" ||
+					action === "sell-commodity" ||
+					action === "buy-equipment")
+			)
+				this.callbacks.onStationAction(action, name);
+			return;
+		}
 		if (stationTab) {
 			const value = stationTab.dataset.liveStationTab;
 			if (value === "Market" || value === "Equipment")
@@ -300,7 +326,7 @@ export class LiveCockpit {
 		// system from the Navigation list changes it, and a rebuild on that
 		// keystroke would blow away the filter field's focus and caret — the
 		// list would become unusable exactly while it was being used.
-		const key = `${state.visible}|${state.dockPhase}|${state.headLook}|${state.leftTab}|${state.rightTab}|${state.stationConsole?.label ?? ""}|${state.stationConsole?.tab ?? ""}`;
+		const key = `${state.visible}|${state.dockPhase}|${state.headLook}|${state.leftTab}|${state.rightTab}|${state.stationConsole?.label ?? ""}|${state.stationConsole?.tab ?? ""}|${state.stationConsole?.revision ?? 0}`;
 		this.setVisible(state.visible);
 		this.root.dataset.liveHeadLook = state.headLook;
 		this.root.dataset.liveDocked = String(state.dockPhase === "docked");
@@ -455,7 +481,7 @@ export class LiveCockpit {
 					`<button class="lc-tab" type="button" data-live-station-tab="${tab}" aria-selected="${stationConsole.tab === tab}">${tab}</button>`,
 			)
 			.join("");
-		return `<section class="lc-station-console" data-live-station-console data-live-station-tab-active="${stationConsole.tab}"><header><h2>STATION</h2><small>${escapeHtml(stationConsole.label)}</small></header><nav class="lc-tabs" aria-label="station console tabs">${tabs}</nav>${stationConsole.tab === "Market" ? this.market(stationConsole.market) : this.equipment(stationConsole.equipment)}</section>`;
+		return `<section class="lc-station-console" data-live-station-console data-live-station-tab-active="${stationConsole.tab}"><header><h2>STATION</h2><small>${escapeHtml(stationConsole.label)}</small></header><nav class="lc-tabs" aria-label="station console tabs">${tabs}</nav>${stationConsole.tab === "Market" ? this.market(stationConsole.market) : this.equipment(stationConsole.equipment, stationConsole.ownedEquipment)}<p class="lc-station-commander" data-live-commander>${stationConsole.credits.toFixed(1)} Cr · HOLD ${escapeHtml(stationConsole.cargo.join(", ") || "EMPTY")}</p></section>`;
 	}
 
 	private market(rows: readonly ConsoleMarketRow[]) {
@@ -473,17 +499,26 @@ export class LiveCockpit {
 				entry.quantityDelta === undefined
 					? ""
 					: `<small class="lc-station-delta">${signedDelta(entry.quantityDelta, 0)}</small>`;
-			return `<div class="lc-station-row" data-live-market-row="${name}" data-live-listed="true"><span>${name}</span><span class="lc-station-cell">${price}${priceDelta}</span><span class="lc-station-cell">${stock}${stockDelta}</span></div>`;
+			const actions = entry.commodity.sellOnly
+				? `<button class="lc-station-action" type="button" data-live-station-action="sell-commodity" data-live-station-name="${name}">SELL</button>`
+				: `<button class="lc-station-action" type="button" data-live-station-action="buy-commodity" data-live-station-name="${name}">BUY</button><button class="lc-station-action" type="button" data-live-station-action="sell-commodity" data-live-station-name="${name}">SELL</button>`;
+			return `<div class="lc-station-row" data-live-market-row="${name}" data-live-listed="true"><span>${name}</span><span class="lc-station-cell">${price}${priceDelta}</span><span class="lc-station-cell">${stock}${stockDelta}</span><span>${actions}</span></div>`;
 		};
-		return `<div class="lc-station-market" data-live-station-market><div class="lc-station-row lc-station-head"><span>GOOD</span><span class="lc-station-cell">PRICE</span><span class="lc-station-cell">SHELF</span></div>${rows.map(row).join("")}</div>`;
+		return `<div class="lc-station-market" data-live-station-market><div class="lc-station-row lc-station-head"><span>GOOD</span><span class="lc-station-cell">PRICE</span><span class="lc-station-cell">SHELF</span><span>ACTION</span></div>${rows.map(row).join("")}</div>`;
 	}
 
-	private equipment(screen: ConsoleEquipmentScreen) {
+	private equipment(screen: ConsoleEquipmentScreen, owned: readonly string[]) {
 		const available = screen.available
-			.map(
-				(entry) =>
-					`<div class="lc-station-row" data-live-equipment="available"><span>${escapeHtml(entry.name)}</span><span class="lc-station-cell">${entry.priceCr} Cr</span><span></span></div>`,
-			)
+			.map((entry) => {
+				const name = escapeHtml(entry.name);
+				const action =
+					entry.per === "ly"
+						? '<span class="lc-station-owned">FUEL SYSTEM PENDING</span>'
+						: owned.includes(entry.name)
+							? '<span class="lc-station-owned">OWNED</span>'
+							: `<button class="lc-station-action" type="button" data-live-station-action="buy-equipment" data-live-station-name="${name}">BUY</button>`;
+				return `<div class="lc-station-row" data-live-equipment="available"><span>${name}</span><span class="lc-station-cell">${entry.priceCr} Cr</span><span></span>${action}</div>`;
+			})
 			.join("");
 		const unavailable = screen.unavailable
 			.map(
