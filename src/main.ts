@@ -4651,7 +4651,8 @@ class Game {
 			this.stationConsoleCacheKey = null;
 			return null;
 		}
-		const { station, market, envelope, stationKey, economy, gameTimeMin } = context;
+		const { station, market, envelope, stationKey, economy, gameTimeMin } =
+			context;
 		const key = `${this.dock.stationId}|${this.stationConsoleTab}|${this.stationConsoleRevision}`;
 		if (this.stationConsoleCacheKey === key) return this.stationConsoleCache;
 		this.stationConsoleCacheKey = key;
@@ -4663,12 +4664,7 @@ class Game {
 				economy,
 				gameTimeMin,
 				deficitOf: (goodName) =>
-					readDeficit(
-						envelope.deficits,
-						stationKey,
-						goodName,
-						gameTimeMin,
-					),
+					readDeficit(envelope.deficits, stationKey, goodName, gameTimeMin),
 			}),
 			equipment: stationEquipmentScreen({
 				type: market.type,
@@ -4688,7 +4684,8 @@ class Game {
 	private transactStation(action: StationAction) {
 		const context = this.dockedStationContext();
 		if (!context) return;
-		const { market, envelope, stationKey, galaxyIndex, economy, gameTimeMin } = context;
+		const { market, envelope, stationKey, galaxyIndex, economy, gameTimeMin } =
+			context;
 		const result = transactAtStation({
 			commander: this.commander,
 			deficits: envelope.deficits,

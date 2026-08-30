@@ -81,10 +81,7 @@ export interface LiveCockpitCallbacks {
 	onNavFilter: (filter: NavFilter) => void;
 	onSelectTarget: (id: string) => void;
 	onStationTab: (tab: StationConsoleTab) => void;
-	onStationAction: (
-		action: StationAction["type"],
-		name: string,
-	) => void;
+	onStationAction: (action: StationAction["type"], name: string) => void;
 	onLaunch: () => void;
 	/**
 	 * The Galaxy Map tab's chart host has appeared or gone away.
