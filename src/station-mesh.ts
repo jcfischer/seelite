@@ -178,6 +178,12 @@ export interface StationMesh {
 	 */
 	nameplates: THREE.Mesh[];
 	/**
+	 * The docked-only inner gate for a slot bay. It stays open for the approach
+	 * and traversal, then closes once the ship has parked so a free look reads
+	 * as a contained hangar rather than open space behind the aperture.
+	 */
+	hangarGate: THREE.Object3D | null;
+	/**
 	 * The instanced greeble meshes, so #98's quality key can reach them (#102 §5).
 	 *
 	 * **A second owner of `visible`, deliberately, and on a different object.**
@@ -478,6 +484,22 @@ const THROAT_MATERIAL = new THREE.MeshLambertMaterial({
 	side: THREE.BackSide,
 });
 
+/** The low, warm structure that turns a slot throat into a recognisable bay. */
+const HANGAR_STRUCTURE_MATERIAL = new THREE.MeshStandardMaterial({
+	color: 0x151d27,
+	roughness: 0.8,
+	metalness: 0.3,
+});
+const HANGAR_GUIDE_MATERIAL = emissiveMaterial(0x6fc9dd, 1.2);
+const HANGAR_GATE_MATERIAL = new THREE.MeshStandardMaterial({
+	color: 0x111923,
+	roughness: 0.72,
+	metalness: 0.45,
+});
+
+/** The renderer toggles this group only for the station the player is docked at. */
+export const HANGAR_GATE_NAME = "hangar-gate";
+
 /** A pad's deck — the surface E8's touchdown lands on. */
 const DECK_MATERIAL = new THREE.MeshStandardMaterial({
 	color: 0x39414c,
@@ -648,6 +670,8 @@ function buildAperture(type: StationType, faceZ: number): THREE.Group {
 	// already calls this one function for.
 	const interior = buildInterior(aperture, faceZ);
 	if (interior) group.add(interior);
+	const hangar = buildSlotHangar(aperture, faceZ, depth);
+	if (hangar) group.add(hangar);
 	// **E11: the shield appears at the mouth *and* inside the throat.** The one
 	// at the mouth does a second job — §3.2 records that the docking tolerances
 	// were set wide partly because the player has no visual referent at all for
@@ -687,6 +711,110 @@ function buildInterior(
 	deck.position.z = faceZ - thickness / 2;
 	deck.name = "aperture-deck";
 	return deck;
+}
+
+/**
+ * The shared docked bay for every slot station.
+ *
+ * The approach remains an open throat: it is the visible path a pilot just
+ * flew. Once parked, `main.ts` closes the tagged gate at the mouth. The ribs,
+ * deck, guide strips and end bulkhead make the same compact volume read as a
+ * working hangar from a free look instead of an unlit rectangular recess.
+ */
+function buildSlotHangar(
+	aperture: StationAperture,
+	faceZ: number,
+	depth: number,
+): THREE.Group | null {
+	if (aperture.kind !== "slot") return null;
+	const { widthKm: w, heightKm: h } = aperture;
+	const group = new THREE.Group();
+	group.name = "hangar-interior";
+	const wall = Math.min(w, h) * 0.035;
+	const floorY = -h * 0.5 + wall * 0.5;
+	const ceilingY = h * 0.5 - wall * 0.5;
+	const centreZ = faceZ - depth * 0.5;
+
+	for (const y of [floorY, ceilingY]) {
+		const deck = new THREE.Mesh(
+			new THREE.BoxGeometry(w * 0.94, wall, depth * 0.96),
+			HANGAR_STRUCTURE_MATERIAL,
+		);
+		deck.position.set(0, y, centreZ);
+		deck.name = "hangar-deck";
+		group.add(deck);
+	}
+
+	// Three ribs establish scale down the bay without changing its aperture or
+	// silhouette. They are deliberately inset so they never become a second
+	// containment rule for the scripted path.
+	for (const fraction of [0.24, 0.54, 0.82]) {
+		const z = faceZ - depth * fraction;
+		const top = new THREE.Mesh(
+			new THREE.BoxGeometry(w * 0.9, wall, wall),
+			HANGAR_STRUCTURE_MATERIAL,
+		);
+		top.position.set(0, ceilingY, z);
+		top.name = "hangar-rib";
+		group.add(top);
+		for (const x of [-w * 0.45, w * 0.45]) {
+			const upright = new THREE.Mesh(
+				new THREE.BoxGeometry(wall, h * 0.82, wall),
+				HANGAR_STRUCTURE_MATERIAL,
+			);
+			upright.position.set(x, 0, z);
+			upright.name = "hangar-rib";
+			group.add(upright);
+		}
+	}
+
+	// Landing-guide strips make the floor read as a destination rather than a
+	// tunnel wall, even under a station's changing exterior light.
+	for (const x of [-w * 0.2, w * 0.2]) {
+		const guide = new THREE.Mesh(
+			new THREE.BoxGeometry(wall * 0.55, wall * 0.3, depth * 0.7),
+			HANGAR_GUIDE_MATERIAL,
+		);
+		guide.position.set(x, floorY + wall * 0.48, faceZ - depth * 0.58);
+		guide.name = "hangar-guide";
+		group.add(guide);
+	}
+	const endLight = new THREE.Mesh(
+		new THREE.BoxGeometry(w * 0.42, h * 0.12, wall * 0.4),
+		HANGAR_GUIDE_MATERIAL,
+	);
+	endLight.position.set(0, 0, faceZ - depth + wall * 0.3);
+	endLight.name = "hangar-end-light";
+	group.add(endLight);
+
+	// Closed only after docking: leaving it open through the traversal preserves
+	// the arrival's view of the aperture, while the settled view cannot leak the
+	// exterior starfield when the pilot turns around.
+	const gate = new THREE.Group();
+	gate.name = HANGAR_GATE_NAME;
+	gate.visible = false;
+	const door = new THREE.Mesh(
+		// It overlaps the recess by a real span rather than merely kissing its
+		// lip. The station connectivity contract deliberately rejects grazes.
+		new THREE.BoxGeometry(w, h, wall * 6),
+		HANGAR_GATE_MATERIAL,
+	);
+	// Its outward face is flush with the aperture plane: the bay may close after
+	// docking, but it must never protrude into the approach corridor.
+	door.position.z = faceZ - wall * 3;
+	door.name = "hangar-door";
+	gate.add(door);
+	for (const y of [-h * 0.22, 0, h * 0.22]) {
+		const strip = new THREE.Mesh(
+			new THREE.BoxGeometry(w * 0.72, wall * 0.28, wall),
+			HANGAR_GUIDE_MATERIAL,
+		);
+		strip.position.set(0, y, faceZ - wall);
+		strip.name = "hangar-gate-strip";
+		gate.add(strip);
+	}
+	group.add(gate);
+	return group;
 }
 
 /**
@@ -3207,6 +3335,7 @@ export function buildStationForm(
 	const accessories: THREE.Object3D[] = [];
 	const nameplates: THREE.Mesh[] = [];
 	const greebles: THREE.InstancedMesh[] = [];
+	let hangarGate: THREE.Object3D | null = null;
 	root.traverse((object) => {
 		if (object.userData.minDetail) accessories.push(object);
 		if (object.name === NAMEPLATE_NAME && object instanceof THREE.Mesh)
@@ -3214,6 +3343,7 @@ export function buildStationForm(
 		const instanced = object as THREE.InstancedMesh;
 		if (instanced.isInstancedMesh && object.name.startsWith("greebles-"))
 			greebles.push(instanced);
+		if (object.name === HANGAR_GATE_NAME) hangarGate = object;
 	});
 	const mesh: StationMesh = {
 		root,
@@ -3223,6 +3353,7 @@ export function buildStationForm(
 		fixtures: built.fixtures,
 		accessories,
 		nameplates,
+		hangarGate,
 		greebles,
 	};
 	// Built at `full` and then set, so the tagged accessories are in a state that

@@ -9,6 +9,13 @@ import {
 	type ScannerContact,
 	cockpitView,
 } from "./cockpit";
+import type { DockPhase } from "./dock-session";
+import type {
+	ConsoleEquipmentScreen,
+	ConsoleMarketRow,
+	StationConsoleTab,
+} from "./station-console";
+import { signedDelta } from "./station-console";
 
 export type RightTab = "Flight" | "Drive" | "Tuning";
 const RIGHT_TABS: readonly RightTab[] = ["Flight", "Drive", "Tuning"];
@@ -30,6 +37,7 @@ const LEFT_TABS: readonly LeftTab[] = [
 
 export interface LiveCockpitState {
 	visible: boolean;
+	dockPhase: DockPhase;
 	headLook: HeadLook;
 	leftTab: LeftTab;
 	rightTab: RightTab;
@@ -52,6 +60,13 @@ export interface LiveCockpitState {
 	/** §5 gives the Drive console the cruise charge. Same story. */
 	charge: string;
 	tuning: string;
+	/** §8's one forward-wall screen, supplied only for the docked station. */
+	stationConsole: {
+		label: string;
+		tab: StationConsoleTab;
+		market: readonly ConsoleMarketRow[];
+		equipment: ConsoleEquipmentScreen;
+	} | null;
 }
 
 export interface LiveCockpitCallbacks {
@@ -59,6 +74,8 @@ export interface LiveCockpitCallbacks {
 	onLeftTab: (tab: LeftTab) => void;
 	onNavFilter: (filter: NavFilter) => void;
 	onSelectTarget: (id: string) => void;
+	onStationTab: (tab: StationConsoleTab) => void;
+	onLaunch: () => void;
 	/**
 	 * The Galaxy Map tab's chart host has appeared or gone away.
 	 *
@@ -158,6 +175,22 @@ const STYLE = `
 .lc-nav-empty { padding: 10px 6px; color: #cb8c51; font-size: 11px; }
 .lc-chart-host[data-live-chart-error]::after { content: "CHART UNAVAILABLE — reload"; position: absolute; inset: 0; display: grid; place-content: center; color: #ffb0a2; letter-spacing: .08em; }
 .lc-chart-host { position: relative; min-height: 300px; height: 100%; border: 1px solid rgba(229, 170, 82, .34); border-radius: 4px; overflow: hidden; background: #05080d; }
+.lc-station-console { display: none; position: absolute; inset: 7% 8% 12%; overflow: auto; padding: 20px 30px; border: 1px solid rgba(229, 170, 82, .9); border-radius: 8px; background: linear-gradient(104deg, rgba(46, 18, 5, .98), rgba(12, 8, 6, .96)); box-shadow: inset 0 0 68px rgba(231, 123, 31, .17), 0 0 28px rgba(227, 133, 39, .15); color: #ffd48c; pointer-events: auto; }
+#live-cockpit[data-live-docked="true"][data-live-head-look="forward"] .lc-station-console { display: flex; flex-direction: column; }
+#live-cockpit[data-live-docked="true"] .lc-director { display: none; }
+.lc-station-console header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding-bottom: 11px; border-bottom: 2px solid #e5aa52; }
+.lc-station-console h2 { margin: 0; color: #ffe1a9; font-size: 18px; letter-spacing: .1em; }
+.lc-station-console header small { color: #cb8c51; }
+.lc-station-market { flex: 1; overflow: auto; margin-top: 8px; padding-right: 6px; }
+.lc-station-row { display: grid; grid-template-columns: minmax(120px, 1.4fr) 1fr 1fr; gap: 10px; align-items: baseline; padding: 3px 2px; border-bottom: 1px solid rgba(229, 170, 82, .22); font-size: 11px; }
+.lc-station-row[data-live-listed="false"] { color: #8d7057; }
+.lc-station-head { position: sticky; top: 0; color: #d8833b; border-bottom-width: 2px; letter-spacing: .08em; background: #150a03; }
+.lc-station-cell { text-align: right; }
+.lc-station-delta { margin-left: 5px; color: #f0b05e; }
+.lc-station-section { margin: 14px 0 6px; color: #cb8c51; font-size: 11px; letter-spacing: .08em; }
+.lc-station-equipment { flex: 1; overflow: auto; margin-top: 8px; }
+.lc-launch { margin-top: 12px; border: 1px solid #ffe0a2; background: rgba(223, 122, 20, .28); color: #fff0c9; cursor: pointer; font: inherit; font-size: 13px; letter-spacing: .12em; padding: 8px 18px; }
+@media (max-width: 600px) { .lc-station-console { inset: 8px; padding: 13px; } .lc-station-row { grid-template-columns: minmax(90px, 1.3fr) 1fr .8fr; gap: 6px; font-size: 10px; } }
 @media (max-width: 600px) { .lc-panel { inset: 8px; padding: 13px; clip-path: none; } .lc-panel h2 { font-size: 14px; } .lc-panel-body { grid-template-columns: .45fr 1fr; gap: 8px; min-height: 0; } .lc-rail, .lc-panel-copy { padding-top: 7px; } .lc-panel-copy p { font-size: 11px; line-height: 1.4; } .lc-readout { display: none; } .lc-nav-list { max-height: 148px; } .lc-chart-host { min-height: 190px; } }
 `;
 
@@ -211,6 +244,17 @@ export class LiveCockpit {
 	 * is one readable unit the next target has to be placed into deliberately.
 	 */
 	private handleClick(element: HTMLElement) {
+		const stationTab = element.closest<HTMLElement>("[data-live-station-tab]");
+		if (stationTab) {
+			const value = stationTab.dataset.liveStationTab;
+			if (value === "Market" || value === "Equipment")
+				this.callbacks.onStationTab(value);
+			return;
+		}
+		if (element.closest("[data-live-launch]")) {
+			this.callbacks.onLaunch();
+			return;
+		}
 		const right = element.closest<HTMLElement>("[data-live-right-tab]");
 		if (right) {
 			const value = right.dataset.liveRightTab;
@@ -256,9 +300,10 @@ export class LiveCockpit {
 		// system from the Navigation list changes it, and a rebuild on that
 		// keystroke would blow away the filter field's focus and caret — the
 		// list would become unusable exactly while it was being used.
-		const key = `${state.visible}|${state.headLook}|${state.leftTab}|${state.rightTab}`;
+		const key = `${state.visible}|${state.dockPhase}|${state.headLook}|${state.leftTab}|${state.rightTab}|${state.stationConsole?.label ?? ""}|${state.stationConsole?.tab ?? ""}`;
 		this.setVisible(state.visible);
 		this.root.dataset.liveHeadLook = state.headLook;
+		this.root.dataset.liveDocked = String(state.dockPhase === "docked");
 		// `liveLeftView`, **not** `liveLeftTab`. The root is an ancestor of every
 		// tab button, so a state attribute sharing the buttons' name makes
 		// `closest("[data-live-left-tab]")` match the root for *every* click in
@@ -394,7 +439,59 @@ export class LiveCockpit {
 			(tab) =>
 				`<button class="lc-tab" type="button" data-live-right-tab="${tab}" aria-selected="${state.rightTab === tab}">${tab}</button>`,
 		).join("");
-		return `<main class="lc-director" data-live-director><i class="lc-target-arrow" data-live-target-arrow aria-label="turn toward selected target">➤</i><strong>${targetName}</strong></main><aside class="lc-panel" data-live-panel="left" data-active="${view.activePanel === "left"}"><header><h2>${state.leftTab.toUpperCase()}</h2><small>LOCAL · 24</small></header><nav class="lc-tabs" aria-label="left console tabs">${leftTabs}</nav>${this.leftBody(state)}<footer>Simulation continues while this console is open.</footer></aside><aside class="lc-panel" data-live-panel="right" data-active="${view.activePanel === "right"}"><header><h2>${state.rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="lc-tabs" aria-label="right console tabs">${rightTabs}</nav><div class="lc-panel-body"><div class="lc-rail"><b>SHIP</b><span>POWER</span><span>MODULES</span><span>INVENTORY</span><span>STATUS</span></div><div class="lc-panel-copy"><h3>${state.rightTab.toUpperCase()} / CONTROL</h3><p ${state.rightTab === "Tuning" ? "data-live-tuning" : ""}></p><div class="lc-readout"><span><b>ASSIST</b><em data-live-assist></em></span><span><b>CHARGE</b><em data-live-charge></em></span></div></div></div><footer>Tuning remains on this right-console tab, never on the flight floor.</footer></aside>`;
+		const launch =
+			state.dockPhase === "docked" && state.rightTab === "Flight"
+				? '<button class="lc-launch" type="button" data-live-launch>LAUNCH</button>'
+				: "";
+		return `<main class="lc-director" data-live-director><i class="lc-target-arrow" data-live-target-arrow aria-label="turn toward selected target">➤</i><strong>${targetName}</strong></main>${this.stationConsole(state)}<aside class="lc-panel" data-live-panel="left" data-active="${view.activePanel === "left"}"><header><h2>${state.leftTab.toUpperCase()}</h2><small>LOCAL · 24</small></header><nav class="lc-tabs" aria-label="left console tabs">${leftTabs}</nav>${this.leftBody(state)}<footer>Simulation continues while this console is open.</footer></aside><aside class="lc-panel" data-live-panel="right" data-active="${view.activePanel === "right"}"><header><h2>${state.rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="lc-tabs" aria-label="right console tabs">${rightTabs}</nav><div class="lc-panel-body"><div class="lc-rail"><b>SHIP</b><span>POWER</span><span>MODULES</span><span>INVENTORY</span><span>STATUS</span></div><div class="lc-panel-copy"><h3>${state.rightTab.toUpperCase()} / CONTROL</h3><p ${state.rightTab === "Tuning" ? "data-live-tuning" : ""}></p><div class="lc-readout"><span><b>ASSIST</b><em data-live-assist></em></span><span><b>CHARGE</b><em data-live-charge></em></span></div></div></div>${launch}<footer>Tuning remains on this right-console tab, never on the flight floor.</footer></aside>`;
+	}
+
+	private stationConsole(state: LiveCockpitState) {
+		const stationConsole = state.stationConsole;
+		if (!stationConsole || state.dockPhase !== "docked") return "";
+		const tabs = (["Market", "Equipment"] as const)
+			.map(
+				(tab) =>
+					`<button class="lc-tab" type="button" data-live-station-tab="${tab}" aria-selected="${stationConsole.tab === tab}">${tab}</button>`,
+			)
+			.join("");
+		return `<section class="lc-station-console" data-live-station-console data-live-station-tab-active="${stationConsole.tab}"><header><h2>STATION</h2><small>${escapeHtml(stationConsole.label)}</small></header><nav class="lc-tabs" aria-label="station console tabs">${tabs}</nav>${stationConsole.tab === "Market" ? this.market(stationConsole.market) : this.equipment(stationConsole.equipment)}</section>`;
+	}
+
+	private market(rows: readonly ConsoleMarketRow[]) {
+		const row = (entry: ConsoleMarketRow) => {
+			const name = escapeHtml(entry.commodity.name);
+			if (!entry.listed)
+				return `<div class="lc-station-row" data-live-market-row="${name}" data-live-listed="false"><span>${name}</span><span class="lc-station-cell">—</span><span class="lc-station-cell">—</span></div>`;
+			const price = `${Math.round(entry.priceCr ?? 0)} Cr`;
+			const stock = `${entry.quantity ?? 0} ${escapeHtml(entry.commodity.unit)}`;
+			const priceDelta =
+				entry.priceDeltaCr === undefined
+					? ""
+					: `<small class="lc-station-delta">${signedDelta(entry.priceDeltaCr, 1)}</small>`;
+			const stockDelta =
+				entry.quantityDelta === undefined
+					? ""
+					: `<small class="lc-station-delta">${signedDelta(entry.quantityDelta, 0)}</small>`;
+			return `<div class="lc-station-row" data-live-market-row="${name}" data-live-listed="true"><span>${name}</span><span class="lc-station-cell">${price}${priceDelta}</span><span class="lc-station-cell">${stock}${stockDelta}</span></div>`;
+		};
+		return `<div class="lc-station-market" data-live-station-market><div class="lc-station-row lc-station-head"><span>GOOD</span><span class="lc-station-cell">PRICE</span><span class="lc-station-cell">SHELF</span></div>${rows.map(row).join("")}</div>`;
+	}
+
+	private equipment(screen: ConsoleEquipmentScreen) {
+		const available = screen.available
+			.map(
+				(entry) =>
+					`<div class="lc-station-row" data-live-equipment="available"><span>${escapeHtml(entry.name)}</span><span class="lc-station-cell">${entry.priceCr} Cr</span><span></span></div>`,
+			)
+			.join("");
+		const unavailable = screen.unavailable
+			.map(
+				(entry) =>
+					`<div class="lc-station-row" data-live-equipment="unavailable"><span>${escapeHtml(entry.name)}</span><span class="lc-station-cell">—</span><span class="lc-station-cell">${escapeHtml(entry.reason)}</span></div>`,
+			)
+			.join("");
+		return `<div class="lc-station-equipment" data-live-station-equipment><h3 class="lc-station-section">AVAILABLE</h3>${available}<h3 class="lc-station-section">UNAVAILABLE HERE</h3>${unavailable}</div>`;
 	}
 
 	private leftBody(state: LiveCockpitState) {

@@ -206,7 +206,18 @@ import {
 	fleetLayout,
 } from "./ship-mesh";
 import { applyHullQuality } from "./ship-surface";
-import { LiveCockpit, type LeftTab, type RightTab } from "./live-cockpit";
+import {
+	LiveCockpit,
+	type LeftTab,
+	type LiveCockpitState,
+	type RightTab,
+} from "./live-cockpit";
+import { marketStationOf } from "./market";
+import {
+	type StationConsoleTab,
+	stationEquipmentScreen,
+	stationMarketScreen,
+} from "./station-console";
 import type { GalaxyChart } from "./galaxy-map";
 import { type WarpField, warpField } from "./warp";
 import { type Vec3, add, dot, length, scale, sub, v3 } from "./vec3";
@@ -944,6 +955,11 @@ class Game {
 	headLook: HeadLook = "forward";
 	private rightTab: RightTab = "Flight";
 	private leftTab: LeftTab = "Navigation";
+	/** The forward station console keeps its tab across a head turn while docked. */
+	private stationConsoleTab: StationConsoleTab = "Market";
+	/** Docked console screens are stable until station or tab changes; do not rebuild them each frame. */
+	private stationConsoleCache: LiveCockpitState["stationConsole"] = null;
+	private stationConsoleCacheKey: string | null = null;
 	/**
 	 * What the Navigation list is narrowed to.
 	 *
@@ -1500,6 +1516,11 @@ class Game {
 		return this.stationVisuals.get(id)?.nameplates ?? [];
 	}
 
+	/** The docked-only inner gate, exposed so the browser probe reads the live mesh. */
+	hangarGateOfStation(id: string): THREE.Object3D | null {
+		return this.stationVisuals.get(id)?.hangarGate ?? null;
+	}
+
 	constructor(seed: number) {
 		this.world = makeWorld(seed);
 		for (const _body of this.world.system.bodies)
@@ -1664,6 +1685,13 @@ class Game {
 				if (!this.selectable().some((body) => body.id === id)) return;
 				this.targetId = id;
 				this.updateCockpit();
+			},
+			onStationTab: (tab) => {
+				this.stationConsoleTab = tab;
+				this.updateCockpit();
+			},
+			onLaunch: () => {
+				if (this.launch()) this.updateCockpit();
 			},
 			onChartHost: (host) => this.setChartHost(host),
 		});
@@ -4373,6 +4401,12 @@ class Game {
 					distanceKm,
 					this.settings.value.quality,
 				);
+				// The bay is open while approaching and traversing; it seals only once
+				// parked, so a docked free-look remains inside the station rather than
+				// looking back out through the aperture into space.
+				if (station.hangarGate)
+					station.hangarGate.visible =
+						this.dock.phase === "docked" && this.dock.stationId === body.id;
 				// Through the handle's own accessor, not a second copy of the same
 				// argument triple: `poseOfStation` is documented as "the pose the
 				// renderer is mirroring", and a probe asserting through it has to be
@@ -4550,6 +4584,7 @@ class Game {
 		this.updateInstruments(target, targetKm, velocity);
 		this.liveCockpit.update({
 			visible: true,
+			dockPhase: this.dock.phase,
 			headLook: this.headLook,
 			leftTab: this.leftTab,
 			rightTab: this.rightTab,
@@ -4577,7 +4612,44 @@ class Game {
 			assist: floorCellValue(this.floorCells(), "ASSIST"),
 			charge: floorCellValue(this.floorCells(), "CHARGE"),
 			tuning: this.tuningSummary(),
+			stationConsole: this.stationConsoleState(),
 		});
+	}
+
+	/**
+	 * The forward console is a view of the docked station, not a second market.
+	 *
+	 * `station-console.ts` owns every commodity/equipment rule; this method only
+	 * joins the live dock session to the station record and world clock. Market
+	 * deficits are not live yet, so the display stays neutral until trading owns
+	 * them rather than introducing a parallel mutable store in the renderer.
+	 */
+	private stationConsoleState() {
+		if (this.dock.phase !== "docked" || !this.dock.stationId) {
+			this.stationConsoleCache = null;
+			this.stationConsoleCacheKey = null;
+			return null;
+		}
+		const key = `${this.dock.stationId}|${this.stationConsoleTab}`;
+		if (this.stationConsoleCacheKey === key) return this.stationConsoleCache;
+		const station = stationOf(this.world.system, this.dock.stationId);
+		const market = marketStationOf(station, this.world.seed);
+		this.stationConsoleCacheKey = key;
+		this.stationConsoleCache = {
+			label: this.nameOfStation(station.id),
+			tab: this.stationConsoleTab,
+			market: stationMarketScreen({
+				station: market,
+				economy: this.world.system.record.economy,
+				gameTimeMin: this.world.gameTime / 60,
+				deficitOf: () => 0,
+			}),
+			equipment: stationEquipmentScreen({
+				type: market.type,
+				displayTL: this.world.system.record.displayTL,
+			}),
+		};
+		return this.stationConsoleCache;
 	}
 
 	/**
@@ -5128,6 +5200,17 @@ class Game {
 		const w = this.overlay.width;
 		const h = this.overlay.height;
 		ctx.clearRect(0, 0, w, h);
+		// §8 M4/M10: arrival and launch are scripted, and a docked ship is not
+		// flyable. The forward station console owns the docked glass; no stale
+		// flight-floor, scanner, director, or attitude marks may leak through it.
+		if (this.view === "cockpit" && this.dock.phase !== "flying") {
+			this.cockpitPrompt.reset();
+			this.combatOverlayStatus.reset();
+			this.combatOverlayLines = [];
+			this.directorRender = null;
+			this.floorRender = null;
+			return;
+		}
 		// A focused console replaces the forward glass. Leaving target brackets
 		// here would make an HTML panel look like an accidental overlay rather
 		// than the deliberate head-turn view the cockpit contract calls for.

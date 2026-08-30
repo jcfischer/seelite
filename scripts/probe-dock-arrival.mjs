@@ -441,6 +441,7 @@ const dock = (id) =>
 			const dt = 1 / 60;
 			const phases = [];
 			let arrivingAtS = null;
+			let arrivalGlass = null;
 			let elapsed = 0;
 			for (let i = 0; i < 60 * 120; i++) {
 				g.step(dt);
@@ -449,12 +450,23 @@ const dock = (id) =>
 				if (!phases.includes(now.dockPhase)) phases.push(now.dockPhase);
 				if (arrivingAtS === null && now.dockPhase === "arriving")
 					arrivingAtS = elapsed;
+				if (arrivalGlass === null && now.dockPhase === "arriving") {
+					g.setHeadLook("forward");
+					g.render(0);
+					arrivalGlass = {
+						consolePresent:
+							document.querySelector("[data-live-station-console]") !== null,
+						floorHidden: g.floorRender === null,
+						gateOpen: g.hangarGateOfStation(stationId)?.visible === false,
+					};
+				}
 				if (now.dockPhase === "docked") break;
 			}
 			const end = g.dockingSnapshot(stationId);
 			return {
 				phases,
 				arrivingAtS,
+				arrivalGlass,
 				axialKm: end.axialKm,
 				planeKm: end.planeKm,
 				dockedAxialKm: end.dockedAxialKm,
@@ -506,6 +518,14 @@ check(
 	flown.phases.join(" → "),
 );
 check(
+	"the scripted arrival hides flight glass before the station console opens",
+	flown.arrivalGlass !== null &&
+		!flown.arrivalGlass.consolePresent &&
+		flown.arrivalGlass.floorHidden &&
+		flown.arrivalGlass.gateOpen,
+	`console=${flown.arrivalGlass?.consolePresent}, floor hidden=${flown.arrivalGlass?.floorHidden}, gate open=${flown.arrivalGlass?.gateOpen}`,
+);
+check(
 	// The regression this section exists for: *"ship does not fly into Coriolis
 	// station but hovers just over rotating dock"*. The old behaviour left the
 	// ship at the crossing point, which is the plane itself.
@@ -518,6 +538,93 @@ check(
 	"and it ends where §12.2 puts it, to within a metre",
 	Math.abs(flown.axialKm - flown.dockedAxialKm) < 0.001,
 	`${(Math.abs(flown.axialKm - flown.dockedAxialKm) * 1000).toFixed(2)} m off`,
+);
+
+// A dock is not still an approach. Looking back through the mouth used to show
+// open space, so the pilot could turn inside the nominal throat and appear to
+// be suspended beside the station. The live docked gate is the boundary between
+// an arrival corridor and a recognisable enclosed hangar.
+const hangar = await page.evaluate((stationId) => {
+	const g = window.__seelite;
+	const snap = g.dockingSnapshot(stationId);
+	const gate = g.hangarGateOfStation(stationId);
+	// Turn toward the aperture after the state has settled. This is a view-only
+	// probe — a docked tick would correctly restore the parked attitude — and it
+	// checks the direction that previously exposed the starfield.
+	g.setAttitude(snap.axis, snap.basis.across);
+	g.render(0);
+	const stars = window.__inkDelta(
+		() => {
+			g.stars.visible = false;
+		},
+		() => {
+			g.stars.visible = true;
+		},
+	);
+	return {
+		phase: snap.dockPhase,
+		gate: gate !== null,
+		gateVisible: gate?.visible ?? false,
+		starPixels: stars.changed,
+	};
+}, slotId);
+
+check(
+	"the docked slot seals into a hangar when viewed back toward its mouth",
+	hangar.phase === "docked" &&
+		hangar.gate &&
+		hangar.gateVisible &&
+		hangar.starPixels === 0,
+	`${hangar.phase}, gate=${hangar.gate}/${hangar.gateVisible}, starfield ${hangar.starPixels} px`,
+);
+
+// The end of E3 is a docked cockpit, not merely a parked ship. The live
+// station console must replace the forward flight glass after the scripted
+// arrival has completed; the gallery is a fixture and cannot prove this join.
+const liveConsole = await page.evaluate(() => {
+	const g = window.__seelite;
+	g.setHeadLook("forward");
+	g.render(0);
+	const consoleEl = document.querySelector("[data-live-station-console]");
+	const style = consoleEl ? getComputedStyle(consoleEl) : null;
+	return {
+		phase: g.dockPhase,
+		present: consoleEl !== null,
+		visible:
+			style?.display !== "none" &&
+			(consoleEl?.getBoundingClientRect().width ?? 0) > innerWidth * 0.5,
+		marketRows: document.querySelectorAll("[data-live-market-row]").length,
+		floorHidden: g.floorRender === null,
+	};
+});
+
+check(
+	"the live docked cockpit replaces forward flight glass with the station market",
+	liveConsole.phase === "docked" &&
+		liveConsole.present &&
+		liveConsole.visible &&
+		liveConsole.marketRows === 17 &&
+		liveConsole.floorHidden,
+	`phase ${liveConsole.phase}, console=${liveConsole.present}/${liveConsole.visible}, rows=${liveConsole.marketRows}, floor hidden=${liveConsole.floorHidden}`,
+);
+
+const liveEquipment = await page.evaluate(() => {
+	const tab = document.querySelector('[data-live-station-tab="Equipment"]');
+	if (!(tab instanceof HTMLElement)) return { switched: false, rows: 0 };
+	tab.click();
+	return {
+		switched:
+			document
+				.querySelector("[data-live-station-console]")
+				?.getAttribute("data-live-station-tab-active") === "Equipment",
+		rows: document.querySelectorAll("[data-live-equipment]").length,
+	};
+});
+
+check(
+	"the live station console switches to the shared equipment projection",
+	liveEquipment.switched && liveEquipment.rows > 0,
+	`switched=${liveEquipment.switched}, equipment rows=${liveEquipment.rows}`,
 );
 
 // ---------------------------------------------------------------------------
@@ -600,19 +707,45 @@ const shieldInk = (id, which) =>
 // kilometres away, which is not a state §12 creates.
 const approach = await page.evaluate((stationId) => {
 	const g = window.__seelite;
-	// Out of the dock first, the way the game leaves one.
-	g.launch();
+	// Out of the dock through the real Flight-console control, not a direct
+	// `g.launch()` call. The DOM event must reach the same requestLaunch seam a
+	// player uses, and launch should remove the forward station console at once.
+	g.setHeadLook("right");
+	const flight = document.querySelector('[data-live-right-tab="Flight"]');
+	if (flight instanceof HTMLElement) flight.click();
+	const launch = document.querySelector("[data-live-launch]");
+	if (launch instanceof HTMLElement) launch.click();
+	const consoleGone =
+		document.querySelector("[data-live-station-console]") === null;
+	g.render(0);
+	const launchingGlass = {
+		phase: g.dockPhase,
+		floorHidden: g.floorRender === null,
+	};
 	g.skipDockTraversal();
 	for (let i = 0; i < 30; i++) g.step(1 / 60);
+	// The shield row is an approach view, so restore its forward gaze after
+	// exercising the right-wall Flight control above.
+	g.setHeadLook("forward");
 	const rangeKm = g.dockingSnapshot(stationId).planeKm * 3;
 	window.__placeOnAxis(stationId, rangeKm, false);
-	return { phase: g.dockingSnapshot(stationId).dockPhase, rangeKm };
+	return {
+		phase: g.dockingSnapshot(stationId).dockPhase,
+		rangeKm,
+		launchControl: launch instanceof HTMLElement,
+		consoleGone,
+		launchingGlass,
+	};
 }, slotId);
 
 check(
-	"the launch released the ship back into flight",
-	approach.phase === "flying",
-	approach.phase,
+	"the Flight console launch released the ship back into flight",
+	approach.launchControl &&
+		approach.consoleGone &&
+		approach.launchingGlass.phase === "launching" &&
+		approach.launchingGlass.floorHidden &&
+		approach.phase === "flying",
+	`control=${approach.launchControl}, console gone=${approach.consoleGone}, launching=${approach.launchingGlass.phase}/${approach.launchingGlass.floorHidden}, phase ${approach.phase}`,
 );
 
 const mouth = await shieldInk(slotId, "mouth");
