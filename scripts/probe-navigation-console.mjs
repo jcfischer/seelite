@@ -172,13 +172,23 @@ const readList = () =>
 			);
 		};
 		const rows = [...document.querySelectorAll("[data-live-nav-target]")].map(
-			(row) => ({
-				id: row.dataset.liveNavTarget,
-				kind: row.querySelector("i")?.textContent ?? "",
-				text: row.textContent ?? "",
-				current: row.getAttribute("aria-current") === "true",
-				trueRangeKm: rangeOf(row.dataset.liveNavTarget),
-			}),
+			(row) => {
+				const id = row.dataset.liveNavTarget;
+				const body = game.world.system.byId.get(id);
+				return {
+					id,
+					name: row.querySelector("span")?.textContent ?? "",
+					kind: row.querySelector("i")?.textContent ?? "",
+					text: row.textContent ?? "",
+					current: row.getAttribute("aria-current") === "true",
+					trueRangeKm: rangeOf(id),
+					expectedName: body?.name ?? null,
+					expectedKind:
+						body?.kind === "station" && body.stationType
+							? `${body.stationType} station`.toUpperCase()
+							: (body?.kind.toUpperCase() ?? null),
+				};
+			},
 		);
 		return {
 			rows,
@@ -205,6 +215,22 @@ check(
 		listed.rows.length === listed.selectableIds.length &&
 		listed.rows.every((row) => listed.selectableIds.includes(row.id)),
 	`rows ${listed.rows.map((r) => r.id).join(",")} against selectable ${listed.selectableIds.join(",")}`,
+);
+check(
+	"every primary row label is the body's name, never its id",
+	listed.rows.every(
+		(row) =>
+			row.name === row.expectedName &&
+			row.name.toLowerCase() !== row.id.toLowerCase(),
+	),
+	listed.rows
+		.map((row) => `${row.id} -> ${row.name} (expected ${row.expectedName})`)
+		.join(", "),
+);
+check(
+	"station kind cells carry the station type, and every other kind is exact",
+	listed.rows.every((row) => row.kind === row.expectedKind),
+	listed.rows.map((row) => `${row.id}: ${row.kind}`).join(", "),
 );
 check(
 	"rows are ordered by the simulation's own ranges, nearest first",
@@ -249,7 +275,8 @@ if (wanted) {
 	check(
 		"clicking a row selects that body in the simulation, and only that row reads current",
 		selected.targetId === wanted.id &&
-			selected.director === wanted.id &&
+			selected.director === wanted.name &&
+			selected.director !== "NO TARGET SELECTED" &&
 			selected.current.length === 1 &&
 			selected.current[0] === wanted.id,
 		`target ${selected.targetId}, director ${selected.director}, current ${selected.current.join(",")}`,
@@ -266,25 +293,32 @@ const type = async (value) => {
 	}, value);
 };
 
-// A fragment of one row's id, chosen so at least one other row does not contain
-// it — a query every row satisfies cannot tell a working filter from none.
-//
-// `includes`, not `startsWith`: `navFilterMatches` matches anywhere in the id,
-// and a probe asserting a prefix would go red on a correctly-listed mid-string
-// match — a check failing on working code.
-const distinctive = listed.rows.find((row) =>
-	listed.rows.some(
-		(other) =>
-			!other.id.toLowerCase().includes(row.id.slice(0, 4).toLowerCase()),
-	),
-);
+const searchableText = (row) => `${row.name} ${row.kind}`.toLowerCase();
+
+// Choose the shortest visible-name prefix that narrows this particular list.
+// Four characters are not inherently distinctive in the finite digram
+// vocabulary, so a generated pair may need a longer prefix.
+const distinctive = listed.rows
+	.map((row) => {
+		const name = row.name.toLowerCase();
+		for (let length = 1; length <= name.length; length++) {
+			const prefix = name.slice(0, length);
+			const matching = listed.rows.filter((other) =>
+				searchableText(other).includes(prefix),
+			);
+			if (matching.length > 0 && matching.length < listed.rows.length)
+				return { row, prefix };
+		}
+		return null;
+	})
+	.find((candidate) => candidate !== null);
 check(
-	"some id fragment distinguishes one row from another",
+	"some visible-name fragment distinguishes one row from another",
 	Boolean(distinctive),
-	`seed in ${PAGE_URL}; ids ${listed.rows.map((r) => r.id).join(",")}`,
+	`seed in ${PAGE_URL}; names ${listed.rows.map((r) => r.name).join(",")}`,
 );
 if (distinctive) {
-	const prefix = distinctive.id.slice(0, 4);
+	const prefix = distinctive.prefix;
 	await type(prefix);
 	const filtered = await readList();
 	// **Both directions, against a set computed here.** Asserting only that the
@@ -295,7 +329,7 @@ if (distinctive) {
 	// substring rule, so a row wrongly dropped fails as loudly as one wrongly
 	// kept.
 	const expected = listed.rows
-		.filter((row) => row.id.toLowerCase().includes(prefix.toLowerCase()))
+		.filter((row) => searchableText(row).includes(prefix))
 		.map((row) => row.id)
 		.sort();
 	check(
@@ -307,6 +341,24 @@ if (distinctive) {
 				.sort()
 				.join(",") === expected.join(","),
 		`"${prefix}" → ${filtered.rows.map((r) => r.id).join(",")}; expected ${expected.join(",")}`,
+	);
+}
+
+await type("");
+const rawStationId = await page.evaluate(
+	() =>
+		document
+			.querySelector('[data-live-nav-target^="station-"]')
+			?.getAttribute("data-live-nav-target") ?? null,
+);
+check("the fixture exposes a raw station id", Boolean(rawStationId));
+if (rawStationId) {
+	await type(rawStationId);
+	const rawIdMatch = await readList();
+	check(
+		"a raw station id is not a player-visible search term",
+		rawIdMatch.rows.length === 0 && rawIdMatch.empty === 1,
+		`${rawStationId} -> ${rawIdMatch.rows.map((row) => row.id).join(",")}`,
 	);
 }
 
@@ -326,7 +378,7 @@ check(
 	"the STATION chip narrows to stations, and it is a narrowing",
 	stations.rows.length > 0 &&
 		stations.rows.length < listed.rows.length &&
-		stations.rows.every((row) => row.kind === "STATION"),
+		stations.rows.every((row) => row.kind.endsWith(" STATION")),
 	stations.rows.map((r) => `${r.id}/${r.kind}`).join(" "),
 );
 await page.evaluate(() => {

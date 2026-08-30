@@ -78,7 +78,10 @@ export type BodyKind = PlacedBody["kind"];
 
 export interface Body {
 	id: string;
+	/** Display-only label; every lookup continues to use `id`. */
+	name: string;
 	kind: BodyKind;
+	stationType?: StationType;
 	/** Sim-space position, kilometres, float64, star-centred (spec §7.4). */
 	pos: Vec3;
 	/** Physical radius in kilometres — scaled with the position in the far
@@ -243,7 +246,9 @@ export function makeSystem(record: SystemRecord, gameTime: number): System {
 	const contents = generateContents(record);
 	const bodies = placeBodies(contents, gameTime).map((b) => ({
 		id: b.id,
+		name: b.name,
 		kind: b.kind,
+		stationType: b.stationType,
 		pos: b.pos,
 		radiusKm: b.radiusKm,
 		color: colorFor(b, record, contents),

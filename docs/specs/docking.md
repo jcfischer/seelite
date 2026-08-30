@@ -990,53 +990,32 @@ checks — which stay exactly as ratified, the pad being the slot minus check 4
 
 ### 12.5 The name shield
 
-**Decision E9: a station carries a generated name, and the arrival shows it.**
+**Decision E9, amended by work-graph #109: a station carries a generated name,
+and the arrival shows it.**
 `Station.id` is `"station-trade"` and `station.ts` is explicit that it is a lookup
 key rather than a name; `localCarrierId` is the persistence key. The name is a
 third thing.
 
-**Derived, never drawn** (derived here, not decided in session). A new draw from
-any existing domain tag shifts every station generated after it and moves
-`tests/station-orbits.test.ts`'s committed fixture — the coupling `station.ts`
-documents at length, and the reason the refinery draws a spin it discards. A name
-that is a pure function of names that already exist costs no stream.
+**Drawn, but never from an existing stream.** `DOMAIN.STATION_NAME = 11` is
+append-only. Each fixed station-type slot derives its own sub-stream, rather
+than consuming one shared stream in push order. A beltless system therefore
+does not give its shipyard the refinery slot's name, and a collision redraw in
+one slot cannot advance a sibling. All fixed slots are reserved whether or not
+that station exists in this system, so presence is not part of a name's seed.
 
-**What it is a function of, stated because the obvious answer collides.** "System
-plus parent planet" is not enough: `system.ts` picks the shipyard's host from
-`[primary, ...gasGiants]` at random, so **a trade station and a shipyard can orbit
-the same planet** and would derive the same name. And the refinery is
-`parentId: null` — star-centric in the belt — so it has no parent to derive from
-at all.
-
-So the derivation is a function of the **system name and the station's type**, and
-the parent planet is at most a decoration on top of that. Type is already unique
-per station within a system (`system.ts` places at most one of each), so this is
-uniqueness by construction rather than by a check.
+The local collision guard redraws when a name equals the system name or another
+fixed station slot. It is local by design: a galaxy-wide guard would have to
+generate all 256 systems before placing one station. The body and station
+placement streams remain untouched, which `tests/station-orbits.test.ts` pins.
 
 **Uniqueness here means *within a system*, and that is all this name needs.**
-Two systems can share a name — `galaxy-generation.md` §9's obligation 6 asks only
+Two systems can share names — `galaxy-generation.md` §9's obligation 6 asks only
 to "record the duplicate rate" over the 2048 records, so duplicates are expected
-rather than prevented — and two identically-named systems therefore carry
-identically-named stations. That is not a defect: the name is displayed in the
+rather than prevented. That is not a defect: the name is displayed in the
 throat you are flying down and in a target list for the system you are in, always
 in a context that disambiguates it. **Nothing in §12 requires a globally unique
 station name, and a reader should not infer one** from obligation 10, which
 asserts within-system uniqueness because within-system is the scope that matters.
-
-**Within that scope, what breaks it is a second station of one type in one
-system — and nothing else.** A *new* station type does not: `station.ts` already
-declares four, and a fifth still leaves each system with at most one of each. (An earlier draft
-claimed a fourth type would break this and would be caught by a compile error.
-Both halves were wrong — the fourth type already exists, and the compile-time
-guarantee it invoked belongs to `Record<StationType, …>` tables, which a name
-derivation need not be.)
-
-The remedy, and who applies it: **append `localCarrierId` as a discriminator** —
-appended, so an existing station's name never moves when a second one appears
-beside it. **§12.6's obligation 10 failing is the trigger**, and the fallback
-ships with the generator change that caused it rather than being deferred. A
-silent break with a detecting test and an unassigned remedy is a red test with no
-owner.
 
 **Decision E10: the shield is a quad built in `station-mesh.ts`, with its texture
 supplied by the renderer.** That module is headless-tested and contains no
@@ -1107,10 +1086,9 @@ Two tiers, as everywhere else in this spec.
    the section and it was the last one unchecked: park a ship, advance the clock
    by minutes, and assert it is still at the docked position in the station's
    own rotating frame, not merely somewhere near where it started.
-10. **Station names are unique within a system.** E9 argues uniqueness by
-   construction — one station per type — and construction is exactly what a
-   generator change can break without a compile error. Asserted over the same
-   corpus `tests/station-orbits.test.ts` walks, so the silent case has a check.
+10. **Station names are unique within a system.** E9's local redraw guard is
+    exercised directly against forced system-name and sibling collisions, then
+    asserted over the same corpus `tests/station-orbits.test.ts` walks.
 
 **Browser probe.**
 
@@ -1155,9 +1133,9 @@ of check that stops being evidence, and §12.7 records that it fails open until
    obligation to re-point it is #75's and is written into that node — so it has
    an addressee — but **an obligation on an open node is not a check**, and this
    one stays green until #75 is taken.
-4. **A generated station name ripples further than this section** — #11's galaxy
-   map, #69's target list and #70's screen all acquire something to display, and
-   none of them has been told.
+4. **Resolved by work-graph #109/#110:** generated names now ride every body
+   record, Navigation, target HUD, docking director, and station shield; ids
+   remain selection and persistence handles and are display-invisible.
 5. **The fourth gate is unreachable, and the third row of §12.3 is unchecked.**
    Two things §12.6 counts as coverage that currently prove nothing. `system.ts`
    places **no outpost** — `station.ts` says so outright, because #56 shipped the

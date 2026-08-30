@@ -186,7 +186,6 @@ import {
 	skipTraversal,
 	stepDockedWorld,
 } from "./dock-session";
-import { stationNames } from "./station-name";
 import {
 	DIRECTOR_RANGE_KM,
 	type DirectorState,
@@ -491,6 +490,9 @@ interface ProbeRayMath {
 interface Instrument {
 	ctx: CanvasRenderingContext2D;
 	texture: THREE.CanvasTexture;
+	/** The last primary string painted, for browser verification against the
+	 *  simulation record rather than OCR of a rescaled canvas. */
+	primaryText: string;
 	secondaryText: TextRaster;
 }
 
@@ -1952,8 +1954,8 @@ class Game {
 				// headless-tested with no `document` reference in it. The renderer
 				// is where a canvas is allowed to exist, so the name is drawn here
 				// — once per station at build, not per frame: the name never
-				// changes, and E9 makes it a pure function of facts that do not
-				// move.
+				// changes, and #109 makes it a fixed-slot seeded value that does
+				// not move.
 				paintNameplates(built, this.nameOfStation(body.id));
 				this.stationVisuals.set(body.id, built);
 			} else if (body.appearance) {
@@ -2478,7 +2480,7 @@ class Game {
 			face.position.set(x, 0.001, 0);
 			face.rotation.x = -Math.PI / 2;
 			scannerMount.add(face);
-			return { ctx, texture, secondaryText: new TextRaster() };
+			return { ctx, texture, primaryText: "", secondaryText: new TextRaster() };
 		};
 		this.cockpit.flightInstrument = makeInstrument("flight-instrument", -0.025);
 		this.cockpit.targetInstrument = makeInstrument("target-instrument", 0.025);
@@ -2669,7 +2671,7 @@ class Game {
 	) {
 		const speed = velocity.speed;
 		const targetText = target
-			? `${target.id.toUpperCase()}  ${range(targetKm)}`
+			? `${target.name}  ${range(targetKm)}`
 			: "NO TARGET";
 		const eta = this.etaCache === null ? "CALC" : duration(this.etaCache);
 		// `chargeAu` is **not** in this key any more: the target instrument stopped
@@ -2711,6 +2713,7 @@ class Game {
 			}
 			ctx.fillStyle = "#e7f6ff";
 			ctx.fillText(primary, 28, 128);
+			instrument.primaryText = primary;
 			raster.setInstrumentSecondary(secondary, accent, width);
 			ctx.font = raster.font;
 			ctx.fillStyle = accent;
@@ -3509,26 +3512,6 @@ class Game {
 	}
 
 	/**
-	 * Every station in this system, named — E9's derivation applied to the
-	 * **set** rather than one at a time.
-	 *
-	 * Through `stationNames`, which is what wires §12.5's discriminator remedy
-	 * into the game rather than leaving it as a function only a test calls: if
-	 * a generator change ever places two stations of one type, both get their
-	 * carrier slot appended and the display stops colliding. Calling
-	 * `stationName` per station would leave the remedy present and unreached.
-	 *
-	 * Rebuilt on demand rather than cached: it is a handful of string joins over
-	 * at most three stations, and a cache would be a second place the system's
-	 * identity lives.
-	 */
-	private namesOfStations(): Map<string, string> {
-		const stations = this.world.system.contents.stations;
-		const names = stationNames(this.world.system.record.name, stations);
-		return new Map(stations.map((s, i) => [s.id, names[i]]));
-	}
-
-	/**
 	 * One station's name, or a throw.
 	 *
 	 * **No `?? id` fallback**, which is what both call sites had: a lookup that
@@ -3539,9 +3522,11 @@ class Game {
 	 * having disagreed, which is what `stationOf` throws on.
 	 */
 	private nameOfStation(id: string): string {
-		const name = this.namesOfStations().get(id);
-		if (!name) throw new Error(`station ${id} is not in the contents`);
-		return name;
+		const station = this.world.system.contents.stations.find(
+			(s) => s.id === id,
+		);
+		if (!station) throw new Error(`station ${id} is not in the contents`);
+		return station.name;
 	}
 
 	/**
@@ -4608,8 +4593,9 @@ class Game {
 			systemName: this.world.system.record.name,
 			contacts: this.scannerContacts,
 			targetId: target?.id ?? null,
+			targetName: target?.name ?? null,
 			target: target
-				? `${target.id} · ${range(targetKm)}`
+				? `${target.name} · ${range(targetKm)}`
 				: "NO TARGET SELECTED",
 			targetBearingDeg: target
 				? targetArrowBearingDeg(
@@ -5476,7 +5462,7 @@ class Game {
 					ctx.stroke();
 					const km = length(sub(body.pos, camPos));
 					ctx.fillStyle = "rgba(255, 214, 120, 0.95)";
-					ctx.fillText(`${body.id}  ${range(km)}`, at.x + r + 6, at.y + 4);
+					ctx.fillText(`${body.name}  ${range(km)}`, at.x + r + 6, at.y + 4);
 					continue;
 				}
 				// Corner brackets rather than a box: a closed square over a distant
@@ -5496,7 +5482,7 @@ class Game {
 				if (body.kind === "station") {
 					const km = length(sub(body.pos, camPos));
 					ctx.fillStyle = "rgba(140, 190, 220, 0.55)";
-					ctx.fillText(`${body.id}  ${range(km)}`, at.x + r + 6, at.y + 4);
+					ctx.fillText(`${body.name}  ${range(km)}`, at.x + r + 6, at.y + 4);
 				}
 				continue;
 			}
@@ -5516,7 +5502,7 @@ class Game {
 			ctx.restore();
 			ctx.fillStyle = "rgba(255, 214, 120, 0.8)";
 			ctx.fillText(
-				`${body.id}  ${((angleOffNose(dir, this.nose()) * 180) / Math.PI).toFixed(0)}° off`,
+				`${body.name}  ${((angleOffNose(dir, this.nose()) * 180) / Math.PI).toFixed(0)}° off`,
 				Math.min(w - 120, Math.max(10, p.x - 48)),
 				Math.min(h - 10, Math.max(20, p.y + 22)),
 			);
@@ -5641,8 +5627,8 @@ function paintNameplates(mesh: StationMesh, name: string) {
 	ctx.fillStyle = "#ffb347";
 	ctx.textAlign = "center";
 	ctx.textBaseline = "middle";
-	// **Fitted, not a fixed size.** E9's names run from two characters to a
-	// system name plus "Cracking Works", and a fixed 132 px cut the long ones
+	// **Fitted, not a fixed size.** Digram names run from two to eight characters;
+	// fitting still makes this safe if the vocabulary is widened later, and a fixed size cut long names
 	// off mid-word — which is what a look at the frame showed, and what no
 	// pixel-difference check would ever have reported: a clipped sign still
 	// contributes exactly as much ink as a whole one.

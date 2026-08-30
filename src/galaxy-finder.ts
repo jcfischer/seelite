@@ -30,8 +30,9 @@ import { type JumpReach, projectJumps } from "./galaxy-route";
  * applications (#86 D5).
  *
  * **It is a second predicate, not a second grammar, and that is deliberate.**
- * `navFilterMatches` chips on a `kind` string and queries a body's `id`; this
- * chips on an economy *index* and queries a system's `name`. A shared helper
+ * `navFilterMatches` chips on a `kind` string and queries a body's visible
+ * name and kind words; this chips on an economy *index* and queries a system's
+ * `name`. A shared helper
  * over both would take the chip key and the queried field as parameters and
  * would be four lines of indirection standing in for four lines of predicate —
  * so what is shared is the rule as written down here and in
