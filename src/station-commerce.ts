@@ -3,7 +3,7 @@
  *
  * Rendering supplies actions; `Game` owns applying an accepted result.  This
  * module only calculates a complete next state, so a refusal cannot leave
- * credits, cargo, or the station's persistent deficit half-updated.
+ * credits, cargo, or the station's deficit half-updated.
  */
 import type { CarrierKey } from "./carrier-key";
 import {
@@ -19,7 +19,7 @@ import {
 	shelfQuantity,
 	stockResponse,
 } from "./market";
-import { stationEquipmentScreen, UNIVERSAL_TL_BONUS } from "./station-console";
+import { stationEquipmentScreen } from "./station-console";
 
 export interface CommanderState {
 	credits: number;
@@ -203,5 +203,3 @@ export const commanderHold = (commander: CommanderState) => ({
 	usedT: heldTonnes(commander.cargo),
 	capacityT: holdCapacityT(commander),
 });
-
-export { UNIVERSAL_TL_BONUS };

@@ -966,7 +966,7 @@ class Game {
 	private stationConsoleTab: StationConsoleTab = "Market";
 	/** Commander-owned mutable commerce state; no renderer may write it. */
 	private commander = newCommander();
-	/** Existing per-galaxy persistence owns the station deficit map. */
+	/** The game-owned per-galaxy state holds the station deficit map. */
 	private commerceWorld!: WorldState;
 	/** Docked console screens are stable until station or tab changes; do not rebuild them each frame. */
 	private stationConsoleCache: LiveCockpitState["stationConsole"] = null;
@@ -4645,35 +4645,29 @@ class Game {
 	 * state comes from the one Game instance that can apply an accepted action.
 	 */
 	private stationConsoleState() {
-		if (this.dock.phase !== "docked" || !this.dock.stationId) {
+		const context = this.dockedStationContext();
+		if (!context) {
 			this.stationConsoleCache = null;
 			this.stationConsoleCacheKey = null;
 			return null;
 		}
-		const station = stationOf(this.world.system, this.dock.stationId);
-		const envelope =
-			this.commerceWorld.galaxies[this.world.system.record.galaxy];
-		const stationKey = carrierKey(
-			this.world.system.record.index,
-			station.localCarrierId,
-		);
-		const key = `${this.dock.stationId}|${this.stationConsoleTab}|${this.commander.credits}|${JSON.stringify(this.commander.cargo)}|${this.commander.ownedEquipment.join("|")}|${JSON.stringify(envelope.deficits[stationKey] ?? null)}`;
+		const { station, market, envelope, stationKey, economy, gameTimeMin } = context;
+		const key = `${this.dock.stationId}|${this.stationConsoleTab}|${this.stationConsoleRevision}`;
 		if (this.stationConsoleCacheKey === key) return this.stationConsoleCache;
-		const market = marketStationOf(station, this.world.seed);
 		this.stationConsoleCacheKey = key;
 		this.stationConsoleCache = {
 			label: this.nameOfStation(station.id),
 			tab: this.stationConsoleTab,
 			market: stationMarketScreen({
 				station: market,
-				economy: this.world.system.record.economy,
-				gameTimeMin: this.world.gameTime / 60,
+				economy,
+				gameTimeMin,
 				deficitOf: (goodName) =>
 					readDeficit(
 						envelope.deficits,
 						stationKey,
 						goodName,
-						this.world.gameTime / 60,
+						gameTimeMin,
 					),
 			}),
 			equipment: stationEquipmentScreen({
@@ -4692,21 +4686,16 @@ class Game {
 
 	/** Applies a complete commerce result or leaves both owner states untouched. */
 	private transactStation(action: StationAction) {
-		if (this.dock.phase !== "docked" || !this.dock.stationId) return;
-		const station = stationOf(this.world.system, this.dock.stationId);
-		const market = marketStationOf(station, this.world.seed);
-		const galaxyIndex = this.world.system.record.galaxy;
-		const envelope = this.commerceWorld.galaxies[galaxyIndex];
+		const context = this.dockedStationContext();
+		if (!context) return;
+		const { market, envelope, stationKey, galaxyIndex, economy, gameTimeMin } = context;
 		const result = transactAtStation({
 			commander: this.commander,
 			deficits: envelope.deficits,
 			station: market,
-			stationKey: carrierKey(
-				this.world.system.record.index,
-				station.localCarrierId,
-			),
-			economy: this.world.system.record.economy,
-			gameTimeMin: this.world.gameTime / 60,
+			stationKey,
+			economy,
+			gameTimeMin,
 			displayTL: this.world.system.record.displayTL,
 			action,
 		});
@@ -4721,9 +4710,27 @@ class Game {
 					: current,
 			),
 		};
-		this.stationConsoleCacheKey = null;
 		this.stationConsoleRevision += 1;
 		this.updateCockpit();
+	}
+
+	/** Resolves the live dock session once for rendering and commerce actions. */
+	private dockedStationContext() {
+		if (this.dock.phase !== "docked" || !this.dock.stationId) return null;
+		const station = stationOf(this.world.system, this.dock.stationId);
+		const galaxyIndex = this.world.system.record.galaxy;
+		return {
+			station,
+			market: marketStationOf(station, this.world.seed),
+			envelope: this.commerceWorld.galaxies[galaxyIndex],
+			stationKey: carrierKey(
+				this.world.system.record.index,
+				station.localCarrierId,
+			),
+			galaxyIndex,
+			economy: this.world.system.record.economy,
+			gameTimeMin: this.world.gameTime / 60,
+		};
 	}
 
 	/**

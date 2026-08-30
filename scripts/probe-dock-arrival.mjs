@@ -641,7 +641,8 @@ check(
 	liveTrade.controls &&
 		liveTrade.afterBuy.commander !== liveTrade.before.commander &&
 		liveTrade.afterBuy.food !== liveTrade.before.food &&
-		liveTrade.afterSell.commander.includes("HOLD EMPTY"),
+		liveTrade.afterSell.commander.includes("HOLD EMPTY") &&
+		liveTrade.afterSell.food === liveTrade.before.food,
 	JSON.stringify(liveTrade),
 );
 

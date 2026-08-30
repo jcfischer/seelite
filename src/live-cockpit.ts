@@ -10,6 +10,7 @@ import {
 	cockpitView,
 } from "./cockpit";
 import type { DockPhase } from "./dock-session";
+import type { StationAction } from "./station-commerce";
 import type {
 	ConsoleEquipmentScreen,
 	ConsoleMarketRow,
@@ -81,7 +82,7 @@ export interface LiveCockpitCallbacks {
 	onSelectTarget: (id: string) => void;
 	onStationTab: (tab: StationConsoleTab) => void;
 	onStationAction: (
-		action: "buy-commodity" | "sell-commodity" | "buy-equipment",
+		action: StationAction["type"],
 		name: string,
 	) => void;
 	onLaunch: () => void;
@@ -203,7 +204,7 @@ const STYLE = `
 .lc-station-owned { color: #9ed89b; font-size: 10px; letter-spacing: .06em; }
 .lc-station-commander { margin: 9px 0 0; color: #f5bd78; font-size: 11px; }
 .lc-launch { margin-top: 12px; border: 1px solid #ffe0a2; background: rgba(223, 122, 20, .28); color: #fff0c9; cursor: pointer; font: inherit; font-size: 13px; letter-spacing: .12em; padding: 8px 18px; }
-@media (max-width: 600px) { .lc-station-console { inset: 8px; padding: 13px; } .lc-station-row { grid-template-columns: minmax(90px, 1.3fr) 1fr .8fr; gap: 6px; font-size: 10px; } }
+@media (max-width: 600px) { .lc-station-console { inset: 8px; padding: 13px; } .lc-station-row { grid-template-columns: minmax(90px, 1.3fr) 1fr .8fr auto; gap: 6px; font-size: 10px; } }
 @media (max-width: 600px) { .lc-panel { inset: 8px; padding: 13px; clip-path: none; } .lc-panel h2 { font-size: 14px; } .lc-panel-body { grid-template-columns: .45fr 1fr; gap: 8px; min-height: 0; } .lc-rail, .lc-panel-copy { padding-top: 7px; } .lc-panel-copy p { font-size: 11px; line-height: 1.4; } .lc-readout { display: none; } .lc-nav-list { max-height: 148px; } .lc-chart-host { min-height: 190px; } }
 `;
 
