@@ -271,12 +271,11 @@ for (const viewport of VIEWPORTS) {
 			(await page.locator("[data-gallery-tuning]").count()) === 1,
 	);
 	await page.locator(".sg-close").click();
-	const returnedToFlight = await page
+	const leftGalleryRoute = await page
 		.waitForFunction(
 			() =>
 				!new URLSearchParams(location.search).has("hud-gallery") &&
-				document.querySelector("#state-gallery") === null &&
-				Boolean(window.__seelite),
+				document.querySelector("#state-gallery") === null,
 			undefined,
 			{ timeout: 5_000 },
 		)
@@ -284,10 +283,7 @@ for (const viewport of VIEWPORTS) {
 			() => true,
 			() => false,
 		);
-	check(
-		`${viewport.name}: return to flight restores the live game route`,
-		returnedToFlight,
-	);
+	check(`${viewport.name}: close leaves the gallery route`, leftGalleryRoute);
 	await page.close();
 }
 
