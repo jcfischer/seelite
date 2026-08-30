@@ -1157,11 +1157,13 @@ check(
 	// The control is the frame with no clearance, where the director is absent by
 	// the rule two blocks up. It reads the **same pixels**.
 	"the tolerance ring is actually painted on the overlay, and absent when the director is",
-	// **The difference, not the count.** The attitude reference crosses this
-	// circle at one sample point, so the control frame is not empty and never
-	// will be; what has to vanish is the director's own ink.
+	// **The difference, not an absolute empty control.** The attitude reference
+	// and visible proper-name labels can cross this circle, so the control frame
+	// is not empty and its exact count changes with generated names; what has to
+	// vanish is the director's own ink. Keep the control a strict minority as a
+	// second arm, so an unrelated saturated circle cannot satisfy the difference.
 	paintAligned.ringSample.hits - paintAbsent.ringSample.hits > 12 &&
-		paintAbsent.ringSample.hits <= 2,
+		paintAbsent.ringSample.hits < paintAligned.ringSample.hits / 3,
 	`${paintAligned.ringSample.hits} of 24 painted, ${paintAbsent.ringSample.hits} with no director`,
 );
 

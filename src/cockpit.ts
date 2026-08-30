@@ -135,14 +135,18 @@ export function cockpitView(headLook: HeadLook): {
  */
 export interface NavBody {
 	id: string;
+	name: string;
 	kind: string;
+	stationType?: string;
 	pos: Vec3;
 }
 
 /** One row of the list, as the panel prints it. */
 export interface NavRow {
 	id: string;
+	name: string;
 	kind: string;
+	displayKind: string;
 	distanceKm: number;
 	/**
 	 * Seconds to arrival, or `null` when nothing supplied an estimate.
@@ -186,13 +190,27 @@ const EVERYTHING: NavFilter = { kinds: [], query: "" };
 
 /** Does one body survive the player's current narrowing? */
 export function navFilterMatches(
-	body: Pick<NavBody, "id" | "kind">,
+	body: Pick<NavBody, "name" | "kind" | "stationType">,
 	filter: NavFilter,
 ): boolean {
 	if (filter.kinds.length > 0 && !filter.kinds.includes(body.kind))
 		return false;
 	const query = filter.query.trim().toLowerCase();
-	return query === "" || body.id.toLowerCase().includes(query);
+	const displayKind = navDisplayKind(body);
+	return (
+		query === "" ||
+		body.name.toLowerCase().includes(query) ||
+		displayKind.toLowerCase().includes(query)
+	);
+}
+
+/** The exact words the Navigation kind cell prints. */
+export function navDisplayKind(
+	body: Pick<NavBody, "kind" | "stationType">,
+): string {
+	return body.kind === "station" && body.stationType
+		? `${body.stationType} station`
+		: body.kind;
 }
 
 /**
@@ -222,7 +240,9 @@ export function projectNavTargets(
 		if (!navFilterMatches(body, filter)) continue;
 		rows.push({
 			id: body.id,
+			name: body.name,
 			kind: body.kind,
+			displayKind: navDisplayKind(body),
 			distanceKm: length(sub(body.pos, shipPos)),
 			etaSeconds: etaFor ? etaFor(body) : null,
 			selected: body.id === targetId,

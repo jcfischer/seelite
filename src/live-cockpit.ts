@@ -40,6 +40,7 @@ export interface LiveCockpitState {
 	/** The system the ship is in, for the Navigation rail. */
 	systemName: string;
 	targetId: string | null;
+	targetName: string | null;
 	target: string;
 	targetBearingDeg: number | null;
 	mode: string;
@@ -297,7 +298,7 @@ export class LiveCockpit {
 		const elements = this.elements;
 		if (!elements) return;
 		if (elements.director)
-			elements.director.textContent = state.targetId ?? "NO TARGET SELECTED";
+			elements.director.textContent = state.targetName ?? "NO TARGET SELECTED";
 		if (elements.navQuery && elements.navQuery.value !== state.navFilter.query)
 			elements.navQuery.value = state.navFilter.query;
 		this.renderNav(state, elements);
@@ -370,7 +371,7 @@ export class LiveCockpit {
 				: cells
 						.map(
 							({ row, range, eta }) =>
-								`<li><button class="lc-nav-row" type="button" data-live-nav-target="${escapeHtml(row.id)}" aria-current="${row.selected}"><span>${escapeHtml(row.id.toUpperCase())}</span><i>${escapeHtml(row.kind.toUpperCase())}</i><em>${range} · ${eta}</em></button></li>`,
+								`<li><button class="lc-nav-row" type="button" data-live-nav-target="${escapeHtml(row.id)}" aria-current="${row.selected}"><span>${escapeHtml(row.name)}</span><i>${escapeHtml(row.displayKind.toUpperCase())}</i><em>${range} · ${eta}</em></button></li>`,
 						)
 						.join("");
 	}
@@ -384,7 +385,7 @@ export class LiveCockpit {
 
 	private markup(state: LiveCockpitState) {
 		const view = cockpitView(state.headLook);
-		const targetId = escapeHtml(state.targetId ?? "NO TARGET SELECTED");
+		const targetName = escapeHtml(state.targetName ?? "NO TARGET SELECTED");
 		const leftTabs = LEFT_TABS.map(
 			(tab) =>
 				`<button class="lc-tab" type="button" data-live-left-tab="${tab}" aria-selected="${state.leftTab === tab}">${tab}</button>`,
@@ -393,7 +394,7 @@ export class LiveCockpit {
 			(tab) =>
 				`<button class="lc-tab" type="button" data-live-right-tab="${tab}" aria-selected="${state.rightTab === tab}">${tab}</button>`,
 		).join("");
-		return `<main class="lc-director" data-live-director><i class="lc-target-arrow" data-live-target-arrow aria-label="turn toward selected target">➤</i><strong>${targetId}</strong></main><aside class="lc-panel" data-live-panel="left" data-active="${view.activePanel === "left"}"><header><h2>${state.leftTab.toUpperCase()}</h2><small>LOCAL · 24</small></header><nav class="lc-tabs" aria-label="left console tabs">${leftTabs}</nav>${this.leftBody(state)}<footer>Simulation continues while this console is open.</footer></aside><aside class="lc-panel" data-live-panel="right" data-active="${view.activePanel === "right"}"><header><h2>${state.rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="lc-tabs" aria-label="right console tabs">${rightTabs}</nav><div class="lc-panel-body"><div class="lc-rail"><b>SHIP</b><span>POWER</span><span>MODULES</span><span>INVENTORY</span><span>STATUS</span></div><div class="lc-panel-copy"><h3>${state.rightTab.toUpperCase()} / CONTROL</h3><p ${state.rightTab === "Tuning" ? "data-live-tuning" : ""}></p><div class="lc-readout"><span><b>ASSIST</b><em data-live-assist></em></span><span><b>CHARGE</b><em data-live-charge></em></span></div></div></div><footer>Tuning remains on this right-console tab, never on the flight floor.</footer></aside>`;
+		return `<main class="lc-director" data-live-director><i class="lc-target-arrow" data-live-target-arrow aria-label="turn toward selected target">➤</i><strong>${targetName}</strong></main><aside class="lc-panel" data-live-panel="left" data-active="${view.activePanel === "left"}"><header><h2>${state.leftTab.toUpperCase()}</h2><small>LOCAL · 24</small></header><nav class="lc-tabs" aria-label="left console tabs">${leftTabs}</nav>${this.leftBody(state)}<footer>Simulation continues while this console is open.</footer></aside><aside class="lc-panel" data-live-panel="right" data-active="${view.activePanel === "right"}"><header><h2>${state.rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="lc-tabs" aria-label="right console tabs">${rightTabs}</nav><div class="lc-panel-body"><div class="lc-rail"><b>SHIP</b><span>POWER</span><span>MODULES</span><span>INVENTORY</span><span>STATUS</span></div><div class="lc-panel-copy"><h3>${state.rightTab.toUpperCase()} / CONTROL</h3><p ${state.rightTab === "Tuning" ? "data-live-tuning" : ""}></p><div class="lc-readout"><span><b>ASSIST</b><em data-live-assist></em></span><span><b>CHARGE</b><em data-live-charge></em></span></div></div></div><footer>Tuning remains on this right-console tab, never on the flight floor.</footer></aside>`;
 	}
 
 	private leftBody(state: LiveCockpitState) {

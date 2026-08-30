@@ -247,7 +247,7 @@ describe("§5.1 the market is independent of draw order elsewhere", () => {
 		expect(market.split("DOMAIN.MARKET").length - 1).toBe(1);
 	});
 
-	test("DOMAIN.MARKET is its own tag, and adding it moved no other stream", () => {
+	test("domain tags are pinned, and appended tags move no existing stream", () => {
 		// **The tag values are pinned**, and the title is why. Distinctness plus
 		// "MARKET is the largest" was the first version of this, and renumbering
 		// `POS` from 1 to 11 alongside a larger `MARKET` passes both — so the
@@ -265,12 +265,13 @@ describe("§5.1 the market is independent of draw order elsewhere", () => {
 			STATION_FLAGS: 8,
 			STATION_SPIN: 9,
 			MARKET: 10,
+			STATION_NAME: 11,
 		});
 		// And a *new* tag is safe only when it is larger than every existing one,
 		// which is the operation this table was designed for.
 		const tags: number[] = Object.values(DOMAIN);
 		expect(tags.length).toBe(new Set(tags).size);
-		expect(DOMAIN.MARKET as number).toBe(Math.max(...tags));
+		expect(DOMAIN.STATION_NAME as number).toBe(Math.max(...tags));
 	});
 
 	test("the market seed is a function of the system seed alone", () => {

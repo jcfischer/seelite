@@ -13,12 +13,13 @@ The persistent identity for a generated place that survives destruction and repl
 _Avoid_: Bare global object ID, display name
 
 **Station name**:
-What a station is **called** — `ENBILATE Gateway`. A third thing beside its `id`
-(a lookup key) and its **Carrier slot** (what a save row is filed under), and
-`docking.md` §12.5's decision E9 is where it was ratified as one: derived from
-the system name and the station type, never drawn from a stream, and unique
-within a system by construction. `src/station-name.ts` owns the derivation.
-The **Carrier slot** may appear *inside* a name as a disambiguating suffix — §12.5's remedy appends it when two stations of one type share a system — without the name becoming the identity. The two stay different things: one is what a save row is filed under, the other is what is written on the wall.
+What a station is **called** — `QUERIOR`. A third thing beside its `id` (a
+lookup key) and its **Carrier slot** (what a save row is filed under). Work-graph
+decision “What is a planet called?” amended `docking.md` §12.5's E9: names are
+drawn from a dedicated `DOMAIN.STATION_NAME` stream, one fixed sub-stream per
+station-type slot, and locally redrawn on a collision. `src/station-name.ts`
+owns that policy. The name remains display-only; neither lookup nor persistence
+may switch to it.
 _Avoid_: using this term for the persistence identity.
 
 **CarrierKey**:
