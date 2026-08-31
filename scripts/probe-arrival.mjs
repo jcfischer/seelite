@@ -71,7 +71,21 @@ const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
 /** The seed is the fixture: see the header. A different one is a different
  *  claim, so it is not configurable. */
-const URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=481`;
+const SEED = 481;
+const URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=${SEED}`;
+/** How the bail messages below name the fixture — read back off the URL that is
+ *  actually flown, rather than restated. A restatement is what #118's re-pick
+ *  left behind: both messages went on naming the seed the header records as
+ *  retired, long after the probe stopped flying it, and a bail message is the
+ *  one line a reader trusts to say where to go and look (#169).
+ *
+ *  `globalThis.` because the const above shadows the global constructor. A
+ *  `PROBE_URL` carrying no seed gets a phrase rather than a number, since the
+ *  page then picks its own and this script never learns which. */
+const FIXTURE = (() => {
+	const flown = new globalThis.URL(URL).searchParams.get("seed");
+	return flown ? `seed ${flown}` : "the seed this probe flew";
+})();
 /** Sim seconds a leg is given. Generous against the ~60 s legs both are. */
 const LIMIT_S = 300;
 
@@ -85,10 +99,14 @@ const { check, watch, exit } = tally();
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 
 /** Every fixture in this probe is a named body in a named seed, so a missing
- *  one is a broken probe rather than a failing game — reported once, here. */
-async function bailIfMissing(result, label) {
+ *  one is a broken probe rather than a failing game — reported once, here.
+ *
+ *  The caller passes the *subject* and not the sentence: the seed comes from
+ *  {@link FIXTURE}, so the one line a reader sees when the fixture is gone
+ *  cannot name a seed the probe does not fly. */
+async function bailIfMissing(result, subject) {
 	if (!result.missing) return;
-	check(label, false);
+	check(`${FIXTURE} has ${subject} this probe is written against`, false);
 	await browser.close();
 	exit();
 }
@@ -248,10 +266,7 @@ async function startState() {
 
 const booted = await startState();
 const clear = await flyTo("station-trade");
-await bailIfMissing(
-	clear,
-	"seed 47 has the trade station this probe is written against",
-);
+await bailIfMissing(clear, "the trade station");
 console.log(
 	`\nstation-trade: host ${clear.hostId}, ${(clear.startKm / 1e6).toFixed(2)}M km leg, ` +
 		`${clear.elapsed.toFixed(1)} s, exit ${clear.exit}\n`,
@@ -365,10 +380,7 @@ check(
 // ------------------------------------------------------------------ occluded
 
 const behind = await flyTo("station-shipyard");
-await bailIfMissing(
-	behind,
-	"seed 47 has the shipyard this probe is written against",
-);
+await bailIfMissing(behind, "the shipyard");
 console.log(
 	`\nstation-shipyard: host ${behind.hostId}, ${(behind.startKm / 1e6).toFixed(2)}M km leg, ` +
 		`${behind.elapsed.toFixed(1)} s, exit ${behind.exit}\n`,
