@@ -71,7 +71,8 @@ const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
 /** The seed is the fixture: see the header. A different one is a different
  *  claim, so it is not configurable. */
-const URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=481`;
+const SEED = 481;
+const URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=${SEED}`;
 /** Sim seconds a leg is given. Generous against the ~60 s legs both are. */
 const LIMIT_S = 300;
 
@@ -85,10 +86,14 @@ const { check, watch, exit } = tally();
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 
 /** Every fixture in this probe is a named body in a named seed, so a missing
- *  one is a broken probe rather than a failing game — reported once, here. */
-async function bailIfMissing(result, label) {
+ *  one is a broken probe rather than a failing game — reported once, here.
+ *
+ *  The caller passes the *subject* and not the sentence: the seed comes from
+ *  {@link FIXTURE}, which the page reports, so the one line a reader sees when
+ *  the fixture is gone cannot name a seed the probe did not fly. */
+async function bailIfMissing(result, subject) {
 	if (!result.missing) return;
-	check(label, false);
+	check(`${FIXTURE} has ${subject} this probe is written against`, false);
 	await browser.close();
 	exit();
 }
@@ -100,6 +105,20 @@ await page.goto(URL, { waitUntil: "load" });
 await bootedGame(page);
 
 const dt = await page.evaluate(() => window.__seelite.units.MAX_DT);
+
+/** How the bail messages below name the fixture — **the seed the page reports
+ *  building its world from**, not the one this script asked for. Read rather
+ *  than restated, because a restatement is what #118's re-pick left behind:
+ *  both messages went on naming the seed the header records as retired, long
+ *  after the probe stopped flying it, and a bail message is the one line a
+ *  reader trusts to say where to go and look (#169).
+ *
+ *  Reading it off the page rather than off {@link URL} is the same rule the
+ *  `dt` above follows, and here it is also the only correct source: `?seed=`
+ *  is normalised (`Math.abs(Math.trunc())`) and an unusable one is *ignored*
+ *  for a random world (`seedFromQuery`, `src/main.ts`), so a `PROBE_URL`
+ *  carrying `-481.9` or `abc` flies a world the query string does not name. */
+const FIXTURE = `seed ${await page.evaluate(() => window.__seelite.world.seed)}`;
 
 /** Fly one leg to a named station, sampling how close the path came to every
  *  planet, and report the state it ended in. */
@@ -248,10 +267,7 @@ async function startState() {
 
 const booted = await startState();
 const clear = await flyTo("station-trade");
-await bailIfMissing(
-	clear,
-	"seed 47 has the trade station this probe is written against",
-);
+await bailIfMissing(clear, "the trade station");
 console.log(
 	`\nstation-trade: host ${clear.hostId}, ${(clear.startKm / 1e6).toFixed(2)}M km leg, ` +
 		`${clear.elapsed.toFixed(1)} s, exit ${clear.exit}\n`,
@@ -365,10 +381,7 @@ check(
 // ------------------------------------------------------------------ occluded
 
 const behind = await flyTo("station-shipyard");
-await bailIfMissing(
-	behind,
-	"seed 47 has the shipyard this probe is written against",
-);
+await bailIfMissing(behind, "the shipyard");
 console.log(
 	`\nstation-shipyard: host ${behind.hostId}, ${(behind.startKm / 1e6).toFixed(2)}M km leg, ` +
 		`${behind.elapsed.toFixed(1)} s, exit ${behind.exit}\n`,
