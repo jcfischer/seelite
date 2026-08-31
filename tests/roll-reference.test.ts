@@ -33,6 +33,7 @@ import * as THREE from "three";
 import {
 	type ApertureFrame,
 	type EntryPose,
+	ROLL_TOLERANCE_DEG,
 	V_GATE_KMS,
 	apertureFrame,
 	dockingComputerStep,
@@ -123,8 +124,16 @@ const poseAt = (
 function checkFourZero(frame: ApertureFrame): { nose: Vec3; up: Vec3 } {
 	const basis = slotBasis(frame);
 	const nose = scale(frame.axis, -1);
+	// **The sweep's origin is deliberately off the basis by 0.37°**, so the
+	// answer does not sit on an integer degree. Parameterised from `across`
+	// exactly, check 4's zero lands at 90.000°, and a search that only ever
+	// evaluates integer degrees would return it correct with a residual of
+	// zero — indistinguishable from a search that works. Both earlier versions
+	// of the loop below passed on exactly that coincidence. Offset, the zero is
+	// at 89.63° and only a search that actually refines can reach it.
+	const ORIGIN_OFFSET_DEG = 0.37;
 	const atDeg = (deg: number): Vec3 => {
-		const rad = (deg * Math.PI) / 180;
+		const rad = ((deg + ORIGIN_OFFSET_DEG) * Math.PI) / 180;
 		return add(
 			scale(basis.across, Math.cos(rad)),
 			scale(basis.up, Math.sin(rad)),
@@ -136,31 +145,65 @@ function checkFourZero(frame: ApertureFrame): { nose: Vec3; up: Vec3 } {
 				.rollAngleDeg,
 		);
 
-	// **Coarse, then refined, and refined until the residual is below what the
-	// rows assert.** A single 0.01° sweep was the first version, and it found
-	// the zero to 0.005° at best — while the rows below compare metres to six
-	// decimals. It passed only because the true zero fell on 90.00°, an exact
-	// multiple of the step: the grid handed back the right answer for a reason
-	// that has nothing to do with the check, which is the constructed pose this
-	// helper exists to avoid.
-	let centre = 0;
-	let step = 1;
-	let best = Number.POSITIVE_INFINITY;
-	for (let span = 0; span < 12; span++) {
-		for (let i = -180; i <= 180; i++) {
-			const deg = centre + i * step;
-			if (span > 0 && Math.abs(i) > 2) continue;
-			const score = scoreAt(deg);
-			if (score < best) {
-				best = score;
-				centre = deg;
-			}
+	// **Coarse sweep to the zero plateau, then bisect to its two edges and take
+	// the midpoint.** Three earlier versions searched for a minimum, and all
+	// three were wrong in the same way, which is what the plateau explains:
+	//
+	// `rollAngleDeg` reaches the caller through `cosToDeg`, an `acos` of a
+	// clamped cosine — and `acos` near 1 is the worst-conditioned place in the
+	// function. `evaluateEntry` reports **exactly 0.0** across a band about
+	// 1e-3° wide, so "minimise the reported angle" stops improving the instant
+	// the search enters that band and hands back whichever edge it reached
+	// first. No refinement fixes it: measured, the residual is 0.000e+0 at
+	// twelve passes and at sixteen alike, and the pose is still up to 1e-3°
+	// out — enough to move a hull extent by 1e-6 m, which is what the rows
+	// below were failing on once the origin came off the integer grid.
+	//
+	// The band's *edges* are sharp, so bisecting to each and taking the middle
+	// locates the zero to float precision — and it does it by reading the
+	// shipped check, which is the property that matters here. `docking.ts` says
+	// the degrees are "a **diagnostic**, never a comparison"; this is what that
+	// costs a consumer that has to invert it.
+	const isZero = (deg: number): boolean => scoreAt(deg) === 0;
+	// Coarse pass on the reported angle, which is well conditioned everywhere
+	// except the band itself — one degree is plenty to bracket a zero the check
+	// reports as tens of degrees away on either side.
+	let coarse = -180;
+	let bestDeg = Number.POSITIVE_INFINITY;
+	for (let deg = -180; deg <= 180; deg += 1) {
+		const score = scoreAt(deg);
+		if (score < bestDeg) {
+			bestDeg = score;
+			coarse = deg;
 		}
-		step /= 4;
 	}
-	// Tighter than any row below reads, so a row's own tolerance is what it
-	// tests rather than this search's residual.
-	expect(best).toBeLessThan(1e-9);
+	// Then a fine scan for a point actually inside the band. The band is about
+	// 1e-3° wide and the coarse pass lands within half a degree of it, so the
+	// step has to be finer than the band by enough to be sure of hitting it.
+	let inside = Number.NaN;
+	for (let deg = coarse - 0.5; deg <= coarse + 0.5; deg += 1e-4)
+		if (isZero(deg)) {
+			inside = deg;
+			break;
+		}
+	expect(Number.isNaN(inside)).toBe(false);
+	/** The edge of the zero band, bisected between a point inside and one out. */
+	const edge = (out: number): number => {
+		let lo = inside;
+		let hi = out;
+		for (let i = 0; i < 60; i++) {
+			const mid = (lo + hi) / 2;
+			if (isZero(mid)) lo = mid;
+			else hi = mid;
+		}
+		return lo;
+	};
+	const centre = (edge(inside - 1) + edge(inside + 1)) / 2;
+	// The band is real and narrow: wide enough that a minimum-search lands
+	// anywhere in it, far too narrow to be a second zero.
+	const width = edge(inside + 1) - edge(inside - 1);
+	expect(width).toBeGreaterThan(0);
+	expect(width).toBeLessThan(0.01);
 	return { nose, up: atDeg(centre) };
 }
 
@@ -202,13 +245,14 @@ describe("check 4's zero and the aperture-fit measurement agree (#157)", () => {
 		// At zero roll the envelope collapses to the hull's own two dimensions:
 		// `across` is the beam and `up` is the height, which is the convention
 		// under test stated in the fit test's own units.
-		const flat = rolledEnvelope("courier", 0);
-		// The two terms differ by 2.18x over the courier's variants — the max
-		// beam and the max height need not come from the same one, so this is
-		// wider apart than any single hull but narrower than that hull's own
-		// 4.4x. Floored rather than pinned: what the row needs is that no
-		// tolerance can straddle them, and a hull edit may move the figure.
-		expect(flat.across / flat.up).toBeGreaterThan(2);
+		// One named variant, so the arithmetic below is exact: the helper maxes
+		// each term over variants independently, and the widest hull need not be
+		// the tallest.
+		const flat = rolledEnvelope("courier", 0, "a");
+		// The Kestrel is 4.4x wider than it is tall, so the two readings are far
+		// apart and no tolerance can straddle them. Floored rather than pinned:
+		// what the row needs is the separation, and a hull edit may move it.
+		expect(flat.across / flat.up).toBeGreaterThan(3);
 
 		const needAcrossM =
 			alignment(beam, basis.across) * flat.across +
@@ -218,6 +262,41 @@ describe("check 4's zero and the aperture-fit measurement agree (#157)", () => {
 			alignment(orth.up, basis.up) * flat.up;
 		expect(needAcrossM).toBeCloseTo(flat.across, 6);
 		expect(needUpM).toBeCloseTo(flat.up, 6);
+
+		// **And at the roll limit, where the fit test actually reads it.** At
+		// zero roll the envelope hands back `(w, h)` unchanged, so the two
+		// assertions above reduce to the previous row plus the ratio floor —
+		// the `w·cos θ + h·sin θ` arithmetic that sizes the aperture never
+		// enters. Rolling the pose to check 4's tolerance and measuring the
+		// same extents is where the fit test's formula and the check's zero
+		// meet, and it is the comparison `docking.md` §3 names.
+		const atLimit = orthonormalise(
+			nose,
+			rotateAbout(up, frame.axis, ROLL_TOLERANCE_DEG),
+		);
+		if (!atLimit) throw new Error("degenerate attitude at the roll limit");
+		const limitBeam = cross(atLimit.nose, atLimit.up);
+		const rolled = rolledEnvelope(
+			"courier",
+			(ROLL_TOLERANCE_DEG * Math.PI) / 180,
+			"a",
+		);
+		expect(
+			alignment(limitBeam, basis.across) * flat.across +
+				alignment(atLimit.up, basis.across) * flat.up,
+		).toBeCloseTo(rolled.across, 6);
+		expect(
+			alignment(limitBeam, basis.up) * flat.across +
+				alignment(atLimit.up, basis.up) * flat.up,
+		).toBeCloseTo(rolled.up, 6);
+		expect(rolled.up / flat.up).toBeGreaterThan(3);
+		expect(rolled.across).toBeLessThan(flat.across);
+		// The whole point of measuring at the limit rather than at zero: the `up`
+		// term takes a share of the beam and grows by 3.5x on this hull, while
+		// the `across` term *shrinks* — a flat hull rolled presents less width
+		// and much more height. `aperture-fit.test.ts`'s "both are larger than
+		// either" holds for a near-square hull and not for this one, which is
+		// why the roster's tightest margin lands on the slot's height.
 	});
 
 	test("the docking computer flies at the pose the check accepts", () => {

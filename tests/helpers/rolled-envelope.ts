@@ -20,10 +20,19 @@ import { HULL_VARIANTS, type HullId, buildShipMesh } from "../../src/ship-mesh";
 export function rolledEnvelope(
 	id: HullId,
 	rollRad: number,
+	/** One variant, or every variant of the hull. **The max is taken per term**,
+	 *  so the widest and the tallest variant need not be the same one and
+	 *  `max(w·cos + h·sin)` is not `max(w)·cos + max(h)·sin` — a caller doing
+	 *  that arithmetic itself has to name a variant. */
+	variantId?: string,
 ): { across: number; up: number } {
 	let across = 0;
 	let up = 0;
-	for (const variant of HULL_VARIANTS[id]) {
+	const variants = variantId
+		? HULL_VARIANTS[id].filter((v) => v.id === variantId)
+		: HULL_VARIANTS[id];
+	if (variants.length === 0) throw new Error(`no variant ${id}/${variantId}`);
+	for (const variant of variants) {
 		const root = buildShipMesh(id, variant.id).root;
 		root.updateMatrixWorld(true);
 		const size = new THREE.Box3()

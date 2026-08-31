@@ -211,8 +211,10 @@ came from.
 **Neither the 50° of §3.2 nor §5's 0.12 × 0.07 km moves with the correction.**
 The tolerance is an angle magnitude against an axis-line and only the line it is
 measured from changed; the dimensions were ratified from the surviving
-convention. `tests/roll-reference.test.ts` is the row that compares check 4's
-zero with the fit measurement's, which is the check that did not exist:
+convention. `tests/roll-reference.test.ts` holds the pose check 4 scores as a
+perfect roll against the extents `tests/aperture-fit.test.ts` sizes this opening
+from — at zero roll and again at the 50° limit, where the `w·cos θ + h·sin θ`
+arithmetic is what the fit test actually reads. That comparison did not exist:
 `probe-dock-arrival.mjs` compares the drawn slot with `slotBasis`, which is the
 axis question, and nothing compared a ship pose with a slot at all. Both files
 read the beam off `tests/helpers/rolled-envelope.ts`, so the two halves cannot

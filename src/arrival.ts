@@ -608,10 +608,19 @@ export function recomposeDirection(
  *
  * It was `across` until #158, and one frame was read as evidence for that: a
  * docked ship looked to be "lying crossways in its own slot with the name
- * shield running vertically up the canopy". The shield sits on the station
- * mesh's own local X (`station-mesh.ts`) and carries nothing about the ship's
- * roll, so what that frame showed was the mouth plate. `tests/roll-reference.
- * test.ts` is the row that compares the two zeros, which is what was missing.
+ * shield running vertically up the canopy".
+ *
+ * **A shield's orientation is not evidence about a ship's roll, whichever
+ * shield it was.** Both are mounted on station geometry and neither turns with
+ * the ship: the mouth plate rides the station mesh's own local X
+ * (`station-mesh.ts`), and the bulkhead plaque a parked ship reads sits square
+ * to the bay's end wall (`station-interior-mesh.ts`). Which one the frame
+ * showed is not recoverable and does not need to be — an observation of a
+ * station fitting was read as an observation of an attitude.
+ *
+ * The row that could have settled it did not exist. It does now:
+ * `tests/roll-reference.test.ts` compares check 4's zero against the
+ * measurement `tests/aperture-fit.test.ts` sizes the aperture from.
  */
 export function arrivalAttitude(
 	law: ArrivalLaw,
