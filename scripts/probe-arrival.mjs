@@ -79,6 +79,11 @@ await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 
+/** Straight-line distance between two sim positions, driver-side. `flyTo` has
+ *  its own copy inside the `evaluate` callback because that runs in the page's
+ *  scope, not this one. */
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+
 /** Every fixture in this probe is a named body in a named seed, so a missing
  *  one is a broken probe rather than a failing game — reported once, here. */
 async function bailIfMissing(result, label) {
@@ -187,6 +192,9 @@ async function flyTo(stationId) {
 				exit: g.lastExit,
 				regime: g.regime,
 				missKm: dist(end.pos, g.world.ship.pos),
+				endPos: { ...g.world.ship.pos },
+				endNose: { ...g.nose() },
+				gameTimeAtEnd: g.world.gameTime,
 				hostRadiusKm: host ? host.radiusKm : null,
 				hostRangeRatio: hostNow
 					? dist(hostNow.pos, g.world.ship.pos) / hostNow.radiusKm
@@ -202,8 +210,43 @@ async function flyTo(stationId) {
 	);
 }
 
+/**
+ * The state a leg starts from — what the reset has to put back.
+ *
+ * Read through the handle rather than recomputed here: a probe with its own
+ * copy of what boot state is can agree with itself while disagreeing with the
+ * game.
+ */
+/** The session fields the reset is checked on, named once. Two lists is how a
+ *  sixth field gets read and never compared. */
+const SESSION_FIELDS = [
+	"regime",
+	"chargeAu",
+	"spoolLeftS",
+	"lastExit",
+	"targetId",
+];
+
+async function startState() {
+	return page.evaluate((fields) => {
+		const g = window.__seelite;
+		const session = Object.fromEntries(fields.map((f) => [f, g[f]]));
+		return {
+			...session,
+			pos: { ...g.world.ship.pos },
+			vel: { ...g.world.ship.vel },
+			// The nose. `step` turns the ship by mutating `orientation` in place,
+			// which is how the first version of the reset came to restore position
+			// and velocity and leave the attitude from the previous leg.
+			nose: { ...g.nose() },
+			gameTime: g.world.gameTime,
+		};
+	}, SESSION_FIELDS);
+}
+
 // ---------------------------------------------------------------- clear space
 
+const booted = await startState();
 const clear = await flyTo("station-trade");
 await bailIfMissing(
 	clear,
@@ -225,10 +268,102 @@ check(
 	`closest was ${clear.closestId} at ${clear.closestRatio.toFixed(6)} × its radius`,
 );
 
+// --------------------------------------------------------------- the reset
+
+/**
+ * **No navigation between the legs**, which is the map constraint #121 added:
+ * a page under measurement is never navigated. This used to be a `page.reload`
+ * and it timed out at 30 s — six times a slow cold boot — because the leg above
+ * runs its whole step-and-render loop inside one `page.evaluate` with no
+ * `await`, so a navigation is the first call that has to interrupt whatever
+ * that left running and the timeout lands there rather than on the cause.
+ *
+ * The reset is the game's own `resetFlightToStart`, guarded on the headless tier by
+ * `tests/world-reset.test.ts` (the world half, against a real `makeWorld`) and
+ * `tests/leg-reset-coverage.test.ts` (the renderer's own session fields). What
+ * *this* file adds is the one thing neither of those can see: that the reset
+ * ran in this browser, on this page, after a leg that actually moved the ship.
+ */
+await page.evaluate(() => window.__seelite.resetFlightToStart());
+const back = await startState();
+
+const drift = dist(back.pos, booted.pos);
+const flown = dist(clear.endPos, booted.pos);
+
+check(
+	"the reset puts the ship back at the arrival point the fixture was chosen against",
+	// A tolerance rather than `=== 0`, to match the nose check beside it. The
+	// exact form held only because this fixture's arrival point has no body
+	// inside `NEAR_FAR_KM`, so the assist's local frame is zero and a ship at
+	// rest truly does not move between boot and the snapshot. On a fixture where
+	// it is non-zero that check reddens for a reason that is not the reset.
+	drift < 1e-6,
+	`${drift.toExponential(2)} km from where the first leg started`,
+);
+check(
+	"and the leg above had moved it, so that is not a comparison of nothing",
+	flown > 1e6,
+	`the first leg ended ${(flown / 1e6).toFixed(1)}M km away`,
+);
+check(
+	"and the nose is a fresh boot's, not the heading the last leg finished on",
+	dist(back.nose, booted.nose) < 1e-9 &&
+		dist(clear.endNose, booted.nose) > 1e-3,
+	`${dist(back.nose, booted.nose).toExponential(1)} from boot, against ` +
+		`${dist(clear.endNose, booted.nose).toFixed(3)} at the end of the leg`,
+);
+/**
+ * The discrete session fields, one by one, so a failure names the field.
+ *
+ * The clock is **not** among them and that is not an oversight. This page is a
+ * running game: `requestAnimationFrame` keeps stepping between the reset and
+ * the read, so `gameTime` is already off zero by the time anything can look at
+ * it — the snapshot above was taken at 0.1 s for the same reason. An exact
+ * equality there would be asserting that two reads of a moving number agree,
+ * which is a flake dressed as a check. What the clock owes is below.
+ */
+const session = SESSION_FIELDS.map((field) => [
+	field,
+	back[field],
+	booted[field],
+]);
+// `undefined !== undefined` is false, so a field renamed on `Game` would make
+// both sides `undefined` and the check would go green having compared nothing —
+// on the one field the headless tier does not cover. A missing read is a
+// failure, not a match.
+const wrong = session.filter(
+	([, got, want]) => got === undefined || got !== want,
+);
+check(
+	"and the session state is a fresh boot's",
+	wrong.length === 0,
+	wrong.length
+		? wrong
+				.map(
+					([f, got, want]) =>
+						`${f} is ${JSON.stringify(got)}, want ${JSON.stringify(want)}`,
+				)
+				.join("; ")
+		: session.map(([f, got]) => `${f} ${JSON.stringify(got)}`).join(", "),
+);
+check(
+	"and the clock went back to the t0 the fixture was classified at",
+	// Against the clock *before* the reset, and against zero — not against a
+	// fraction of the leg. A reset that left the bodies at 40% of the leg would
+	// have satisfied the first version of this check, and 40% of a leg is a `t`
+	// the seed-481 classification was never run at.
+	//
+	// The margin is **ten** max-length frames, not one: `dt` is `MAX_DT`, which
+	// is also `animate`'s per-frame clamp, so this admits 1.0 s of rAF slack
+	// across the CDP round trip between the reset and this read. Wide, and
+	// deliberately so — the leg it is separating from is 66 s. An earlier
+	// version of this comment said one frame while the code said ten.
+	back.gameTime < clear.gameTimeAtEnd && back.gameTime <= dt * 10,
+	`${back.gameTime.toFixed(2)} s, down from ${clear.gameTimeAtEnd.toFixed(1)} s at the end of the leg`,
+);
+
 // ------------------------------------------------------------------ occluded
 
-await page.reload({ waitUntil: "load" });
-await bootedGame(page);
 const behind = await flyTo("station-shipyard");
 await bailIfMissing(
 	behind,

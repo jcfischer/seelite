@@ -749,3 +749,60 @@ export function advanceWorldClock(world: World, dt: number): void {
 	world.gameTime += dt;
 	advanceSystem(world.system, world.gameTime);
 }
+
+/**
+ * Put a world back where `makeWorld` left it, **without regenerating it**.
+ *
+ * The clock to zero, the bodies to where that clock puts them, the ship back at
+ * the arrival point at rest. The same `System` object throughout: same
+ * `contents`, same `byId`, same `Body` instances moved in place.
+ *
+ * ## Why in place, and why here
+ *
+ * #121 ratified a **ship-state reset within one system** for
+ * `probe-arrival.mjs`, which flies two legs on one page and needs the second to
+ * start where the first did. A world *rebuild* was ruled out rather than merely
+ * not chosen: `Game` calls `makeWorld` exactly once and holds per-system caches
+ * that are deliberately never invalidated on that basis — the baked
+ * `environmentMap`, and the `interiors` berth catalogue whose own comment says a
+ * build that adds a jump owes it a clear. Swapping the system out is that build.
+ *
+ * It lives in `sim.ts` rather than on the renderer because that is what makes it
+ * checkable: `tests/world-reset.test.ts` compares the result against a fresh
+ * `makeWorld(seed)`, on the tier that runs on every push. The renderer's own
+ * session state — regime, charge, spool, the last exit — is not a world concern
+ * and is reset beside this call, guarded separately.
+ *
+ * **The values are restated rather than copied off a fresh `makeWorld`**, so
+ * `tests/world-reset.test.ts` has something to catch. Precisely what it can
+ * catch is worth being exact about, because two earlier versions of this
+ * comment were not. Both this function and `makeWorld` call the same
+ * `arrivalPoint`, so the test cannot disagree about that function's *output*;
+ * what it checks is the four arguments, the clock value, whether each field is
+ * written at all, and — now that the clock is read back rather than restated —
+ * the order of the first two lines. Each of those was confirmed by breaking it
+ * and watching the file go red. A reset that built a whole world from
+ * `makeWorld` and copied its fields across could fail none of them.
+ *
+ * `originPos` is `null` and the clock is `0` because that is what a new game is
+ * (`makeWorld`); a reset is a return to the new game, not to some later arrival.
+ */
+export function resetWorldToStart(world: World): void {
+	world.gameTime = 0;
+	// `world.gameTime`, not a second literal `0`. With the literal the two lines
+	// were independent, so their order was not load-bearing and no swap could go
+	// red — while a comment above claimed the ordering had been red-built.
+	// Reading the clock back is also `advanceWorldClock`'s own shape, and it
+	// leaves one line owning what the time is.
+	advanceSystem(world.system, world.gameTime);
+	// `world.gameTime` here too, for the reason four lines up: a second literal
+	// would be a second statement of what the time is, and the one place that
+	// says it should be the line that sets it.
+	world.ship.pos = arrivalPoint(
+		world.system.record,
+		world.system.contents,
+		null,
+		world.gameTime,
+	);
+	world.ship.vel = v3();
+}

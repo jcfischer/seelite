@@ -127,6 +127,7 @@ import {
 	bodyVelocity,
 	stationHostIdOf,
 	makeWorld,
+	resetWorldToStart,
 	stationOf,
 	stationPose,
 	stepAngular,
@@ -1541,7 +1542,7 @@ class Game {
 		// rather than a rail, but a cruise panel with an empty target field on
 		// boot reads as broken, and the nearest station is what a ship at the
 		// arrival point is there to reach.
-		this.targetId = this.nearestOfKind("station")?.id ?? null;
+		this.selectBootTarget();
 		this.refreshScannerContacts();
 
 		this.composer = new EffectComposer(this.renderer);
@@ -3912,6 +3913,135 @@ class Game {
 		this.orientation.setFromRotationMatrix(
 			new THREE.Matrix4().makeBasis(right, u, f.clone().negate()),
 		);
+	}
+
+	/**
+	 * What is selected on frame one.
+	 *
+	 * One method with two callers — the constructor and `resetFlightToStart` — because
+	 * it was briefly two copies and they diverged immediately: the reset set
+	 * `null` while a boot selects the nearest station, and a browser check with
+	 * its own hardcoded `null` reported that as boot state for five runs. The
+	 * name scan in `tests/leg-reset-coverage.test.ts` compares names, not
+	 * values, and would never have caught it. One expression cannot disagree
+	 * with itself.
+	 */
+	private selectBootTarget() {
+		// Something is selected on frame one: a cruise panel with an empty target
+		// field on boot reads as broken.
+		this.targetId = this.nearestOfKind("station")?.id ?? null;
+	}
+
+	/**
+	 * Put the **flight session** back where a fresh boot leaves it, without
+	 * rebuilding the world.
+	 *
+	 * ## Who this is for
+	 *
+	 * `probe-arrival.mjs` flies two cruise legs and needs the second to start
+	 * where the first did. It used to get that by reloading the page between
+	 * them, which timed out at 30 s against a 4.2-7.4 s cold boot — the leg
+	 * before it runs a full step-and-render loop inside one `page.evaluate`, so
+	 * the navigation is the first call that has to interrupt whatever that left
+	 * running, and the timeout landed there rather than on the cause. #121
+	 * ratified removing the navigation instead of raising the number.
+	 *
+	 * ## What it is, and what it deliberately is not
+	 *
+	 * A **ship-state reset within one system**, never a rebuild.
+	 * `resetWorldToStart` in `sim.ts` carries the argument for why, and owns the
+	 * clock, the bodies and the arrival point. Neither the reasoning nor the
+	 * values are restated here; what is left is this class's own session state.
+	 *
+	 * ## On being reachable from a production console
+	 *
+	 * `private` is erased at runtime and this instance is published whole as
+	 * `window.__seelite`, which is why the combat rig's loop control took three
+	 * attempts to place and why `probe-boot.mjs` walks the prototype chain to
+	 * keep it off. This method is deliberately *not* held to that, and the
+	 * difference is the state each one leaves behind. Stopping the frame loop
+	 * puts the page somewhere the game never goes and cannot leave, and there is
+	 * no way back. This lands somewhere the game does go, with the loop running —
+	 * but only for what its name covers. **Called mid-dock it leaves the docking
+	 * session part-way through**, which is a state no boot produces; that is why
+	 * the method is `resetFlightToStart` and not `resetToStart`, and it is the
+	 * limit below rather than a footnote to a safety claim.
+	 *
+	 * It adds no *reach*: the ship, the clock and the whole session are already
+	 * writable fields on the published object, so anything this can do was a few
+	 * assignments away. What it adds is a **name** on the shipped console
+	 * surface, which #89's save/load will be expected to keep working rather
+	 * than to replace.
+	 *
+	 *
+	 * ## What it does not reset, and why the name says so
+	 *
+	 * The **docking session**. `dock`, `interimCondition` and the commerce clock
+	 * stamp are written by `stepDockPhase`, `enterArrival` and `applyDamage`,
+	 * none of which is on the coverage scan's declared list — so the guard cannot
+	 * see this gap either, which is why it is written here and why the method is
+	 * named for the half it does deliver. Called after a leg that entered an
+	 * aperture it would put the ship at the arrival point with a docking phase
+	 * part-way through. `probe-arrival` never docks. Anything that does needs the
+	 * docking path added to this method **and** to `LEG_PATH`, and then the name
+	 * can lose its qualifier.
+	 *
+	 * ## Why the list is long
+	 *
+	 * Because a short one would be wrong. `tests/leg-reset-coverage.test.ts`
+	 * reads this method and every method a leg runs through, and goes red if the
+	 * flight path assigns a field this does not. The failure it exists to
+	 * prevent is silent: a forgotten field starts the next leg in a state no
+	 * player ever has, and the probe flying that leg reports a well-formed
+	 * number about the wrong start.
+	 *
+	 * The caches are in the list for a sharper reason than tidiness. They are
+	 * stamped with the clock, and this is the only operation in the game that
+	 * moves the clock backwards — a value stamped at t=900 and read at t=0 is
+	 * being asked something a forward-only game never asks it.
+	 */
+	resetFlightToStart() {
+		resetWorldToStart(this.world);
+
+		this.regime = "normal";
+		this.spoolLeftS = 0;
+		this.throttle = 0;
+		this.chargeAu = CHARGE_CAPACITY_AU;
+		this.cruiseSpeedKms = 0;
+		this.closingKms = 0;
+		this.legStartedAtS = null;
+		this.lastLegS = null;
+		this.lastExit = "";
+		// Selection is not written by the flight path, so the coverage scan does
+		// not ask for it, and it is not spelled here either — the constructor and
+		// this method call the same `selectBootTarget`. Two copies is how the
+		// first version came to set `null`, a state no boot produces, and stay
+		// green for five runs.
+		this.selectBootTarget();
+
+		this.rates = { pitch: 0, yaw: 0, roll: 0 };
+		this.mouseDx = 0;
+		this.mouseDy = 0;
+		this.chaseYaw = 0;
+		this.dockingComputerEngaged = false;
+
+		// **Attitude, and it is not one of the assignments above.** `step` turns the
+		// ship with `this.orientation.multiply(turn)` — an in-place mutation of a
+		// `readonly` field, so a scan looking for `this.x =` cannot see it, and
+		// the first version of this method restored position and velocity while
+		// leaving the nose pointing wherever the last leg finished. A boot calls
+		// `faceTheStar`, so this does. The coverage test now reads in-place
+		// mutation as its own class for exactly this reason.
+		this.faceTheStar();
+		this.keys.clear();
+		this.navEtaCache.clear();
+
+		this.massesCache = null;
+		this.massesAt = Number.NaN;
+		this.etaCache = null;
+		this.etaAt = Number.NEGATIVE_INFINITY;
+		this.navEtaAt = Number.NEGATIVE_INFINITY;
+		this.selectableCache = null;
 	}
 
 	/**
