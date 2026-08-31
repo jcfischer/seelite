@@ -886,6 +886,8 @@ class Game {
 	private starMaterial!: THREE.ShaderMaterial;
 
 	private readonly keys = new Set<string>();
+	/** Primary mouse fire is held state, matching the keyboard laser control. */
+	private mouseFiring = false;
 	/**
 	 * THROWAWAY #48's prototype, or `null` in normal flight.
 	 *
@@ -1584,17 +1586,25 @@ class Game {
 		// the prototype chain to assert exactly that.
 		this.combatRig =
 			new URLSearchParams(window.location.search).get("combat") === "1"
-				? new CombatPrototypeRig(this.nearScene, {
-						freeze: () => {
-							if (this.animationFrame) {
-								cancelAnimationFrame(this.animationFrame);
-								this.animationFrame = 0;
-							}
+				? new CombatPrototypeRig(
+						this.nearScene,
+						{
+							freeze: () => {
+								if (this.animationFrame) {
+									cancelAnimationFrame(this.animationFrame);
+									this.animationFrame = 0;
+								}
+							},
+							resume: () => {
+								if (!this.animationFrame) this.animate();
+							},
 						},
-						resume: () => {
-							if (!this.animationFrame) this.animate();
-						},
-					})
+						this.world.ship,
+						// After `faceTheStar` above, and the rig's constructor says why:
+						// read before the boot facing this is the identity nose.
+						this.nose(),
+						this.world.seed,
+					)
 				: null;
 		this.warp = warpField(this.world.seed);
 		this.nearScene.add(this.warp.object);
@@ -1732,6 +1742,17 @@ class Game {
 		window.addEventListener("keydown", (e) => this.onKey(e, true));
 		window.addEventListener("keyup", (e) => this.onKey(e, false));
 		// Audio cannot open before a gesture, so it opens on the first one.
+		this.renderer.domElement.addEventListener("pointerdown", (e) => {
+			if (e.button === 0) this.mouseFiring = true;
+		});
+		window.addEventListener("pointerup", (e) => {
+			if (e.button === 0) this.mouseFiring = false;
+		});
+		// A window that loses focus never sees the release, and a trigger stuck
+		// down survives the tab switch.
+		window.addEventListener("blur", () => {
+			this.mouseFiring = false;
+		});
 		window.addEventListener("pointerdown", () => this.audio.ensure(), {
 			once: true,
 		});
@@ -3201,6 +3222,8 @@ class Game {
 				.sort(
 					(a, b) => order[a.kind] - order[b.kind] || a.id.localeCompare(b.id),
 				);
+			const striker = this.combatRig?.targetBody;
+			if (striker) this.selectableCache.push(striker);
 		}
 		return this.selectableCache;
 	}
@@ -3241,9 +3264,15 @@ class Game {
 	}
 
 	targetBody(): Body | null {
-		return this.targetId
-			? (this.world.system.byId.get(this.targetId) ?? null)
-			: null;
+		if (!this.targetId) return null;
+		// The striker is a live projection, never a world body, so `byId` cannot
+		// hold it and a lookup that only asked `byId` would return null for a
+		// target the player can select.
+		const striker = this.combatRig?.targetBody;
+		return (
+			this.world.system.byId.get(this.targetId) ??
+			(striker && this.targetId === striker.id ? striker : null)
+		);
 	}
 
 	/** The selected target's current range in simulation kilometres, if any. */
@@ -3374,6 +3403,14 @@ class Game {
 	 *  travel (§1). */
 	private nose() {
 		const f = new THREE.Vector3(0, 0, -1).applyQuaternion(this.orientation);
+		return v3(f.x, f.y, f.z);
+	}
+
+	/** The weapon ray is the sightline through the cockpit's central reticle. */
+	private weaponAim() {
+		const f = new THREE.Vector3(0, 0, -1).applyQuaternion(
+			this.cameraRotation(),
+		);
 		return v3(f.x, f.y, f.z);
 	}
 
@@ -4243,7 +4280,15 @@ class Game {
 		}
 		// #48 deliberately couples no combat entity to the world yet: this is a
 		// flyable balance rig over the shared flight loop, not production combat.
-		this.combatRig?.step(dt, this.keys, this.regime === "cruise");
+		this.combatRig?.step(dt, this.keys, this.regime === "cruise", {
+			ship: this.world.ship,
+			nose: this.nose(),
+			mouseFiring: this.mouseFiring,
+			// The sightline through the reticle, not the ship's attitude: a player
+			// looking off the nose aims where they are looking.
+			aimOrigin: this.cameraPos(),
+			aimNose: this.weaponAim(),
+		});
 		const yaw = this.axis(["arrowright", "d"], ["arrowleft", "a"]);
 		const pitch = this.axis(["arrowdown", "s"], ["arrowup", "w"]);
 		const roll = this.axis(["e"], ["q"]);
@@ -4531,7 +4576,7 @@ class Game {
 		// no-op today; it is written out because the moment the camera stops
 		// being pinned there, its absence is a bug that takes an hour to see.
 		this.stars.position.copy(this.backdropCamera.position);
-		this.combatRig?.render(this.view, this.orientation, viewRotation);
+		this.combatRig?.render(this.view, this.orientation, viewRotation, camPos);
 
 		// The star, resolved once at build time rather than scanned for per frame:
 		// every body's sun direction is measured from it, and there is no path
@@ -4964,11 +5009,16 @@ class Game {
 	}
 
 	private refreshScannerContacts() {
+		const striker = this.combatRig?.contact;
 		projectScannerContacts(
 			this.world.ship.pos,
 			this.world.system.bodies,
 			this.targetId,
-			{ orientation: this.orientation, output: this.scannerContactBuffer },
+			{
+				orientation: this.orientation,
+				output: this.scannerContactBuffer,
+				extraContacts: striker ? [striker] : [],
+			},
 		);
 	}
 

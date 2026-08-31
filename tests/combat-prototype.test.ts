@@ -6,6 +6,18 @@ import {
 	stepCombatPrototype,
 	duelTargetInCone,
 } from "../src/combat-prototype";
+import {
+	ENEMY_COLLISION_RADIUS_KM,
+	FIRE_COS,
+	GUN_RANGE_KM,
+	MAX_TURN_RATE_RAD_S,
+	MERGE_BREAK_KM,
+	PLAYER_LASER_RANGE_KM,
+	createCombatEnemy,
+	playerLaserHit,
+	stepCombatEnemy,
+} from "../src/combat-enemy";
+import { dot, length, scale, sub, v3 } from "../src/vec3";
 
 // The cap is far above either pacing window, so both the low and high bounds
 // are real assertions: a duel that kills too fast (under 60 s) fails the floor,
@@ -258,4 +270,396 @@ test("live inputs pass through, and are absent when the rig supplies none", () =
 	expect(flown.ecm).toBe(true);
 	expect(flown.interdicting).toBe(true);
 	expect(flown.breakAngle).toBe(true);
+});
+
+/**
+ * One duel, traced.
+ *
+ * The player is a fixed point unless a test says otherwise, which is the
+ * *hardest* case for the controller rather than the easiest: a target that
+ * never manoeuvres gives a canned path nothing to hide behind.
+ */
+function flyDuel({
+	seed = 12345,
+	seconds = 40,
+	dt = 0.05,
+	playerNose = v3(0, 0, -1),
+	playerFiring = false,
+	player = { pos: v3(), vel: v3() },
+	tracking = false,
+}: {
+	seed?: number;
+	seconds?: number;
+	dt?: number;
+	playerNose?: ReturnType<typeof v3>;
+	playerFiring?: boolean;
+	player?: { pos: ReturnType<typeof v3>; vel: ReturnType<typeof v3> };
+	/** Keep the player's nose on the enemy every frame, which is what a pilot
+	 *  in a dogfight does and the hardest case for a controller that reacts to
+	 *  being tracked. */
+	tracking?: boolean;
+} = {}) {
+	let enemy = createCombatEnemy(player, playerNose, seed);
+	let combat = createCombatPrototype();
+	let lowestTargetEnergy = combat.targetEnergy;
+	let lowestPlayerShield = combat.foreShield + combat.aftShield;
+	const trace: {
+		range: number;
+		phase: string;
+		pos: ReturnType<typeof v3>;
+		nose: ReturnType<typeof v3>;
+		up: ReturnType<typeof v3>;
+		aspect: number;
+		turnRate: number;
+		firing: boolean;
+	}[] = [];
+	for (let elapsed = 0; elapsed < seconds; elapsed += dt) {
+		const beforeNose = enemy.nose;
+		// The geometry the controller itself decided on: range and bearing are
+		// read *before* the step and the nose is the one it commanded. A trace
+		// that measured range from the post-step position would disagree with
+		// the firing gate by one frame's travel and go red on the boundary.
+		const toPlayer = sub(player.pos, enemy.ship.pos);
+		const range = length(toPlayer);
+		const bearing = scale(toPlayer, 1 / range);
+		if (tracking) playerNose = scale(bearing, -1);
+		const step = stepCombatEnemy(
+			enemy,
+			player,
+			playerNose,
+			combat,
+			playerFiring,
+			dt,
+		);
+		enemy = step.state;
+		combat = stepCombatPrototype(combat, {
+			dt,
+			targetInCone: step.targetInCone,
+			enemyFiring: step.enemyFiring,
+			enemyHitAft: step.enemyHitAft,
+		});
+		lowestTargetEnergy = Math.min(lowestTargetEnergy, combat.targetEnergy);
+		lowestPlayerShield = Math.min(
+			lowestPlayerShield,
+			combat.foreShield + combat.aftShield,
+		);
+		trace.push({
+			range,
+			phase: enemy.phase,
+			pos: enemy.ship.pos,
+			nose: enemy.nose,
+			up: enemy.up,
+			aspect: dot(enemy.nose, bearing),
+			turnRate:
+				Math.acos(Math.min(1, Math.max(-1, dot(beforeNose, enemy.nose)))) / dt,
+			firing: step.enemyFiring,
+		});
+	}
+	return { trace, combat, enemy, lowestTargetEnergy, lowestPlayerShield };
+}
+
+const spread = (values: number[]) => Math.max(...values) - Math.min(...values);
+const DUEL_SEEDS = [1, 99, 777, 12345];
+
+test("the enemy closes, attacks and trades through shared pulse arithmetic", () => {
+	const { trace, lowestTargetEnergy, lowestPlayerShield } = flyDuel({
+		seconds: 25,
+	});
+	expect(trace.some((row) => row.phase === "attack")).toBe(true);
+	expect(trace.some((row) => row.firing)).toBe(true);
+	// Minima, not end state: both pools regenerate, so a final reading proves
+	// only that the fight stopped.
+	expect(lowestTargetEnergy).toBeLessThan(COMBAT_PROTOTYPE_DEFAULTS.energy);
+	expect(lowestPlayerShield).toBeLessThan(COMBAT_PROTOTYPE_DEFAULTS.shield * 2);
+});
+
+/**
+ * The complaint this controller was rewritten for. The first build held a nine
+ * kilometre orbit behind a five kilometre floor, so the target was never in a
+ * range band where a fixed forward gun is a weapon and never large enough on
+ * the glass to read as a ship. A duel has to be *pressed*.
+ */
+test("the enemy presses the attack instead of holding a standoff orbit", () => {
+	for (const seed of DUEL_SEEDS) {
+		const { trace } = flyDuel({ seed });
+		const closest = Math.min(...trace.map((row) => row.range));
+		const inGunRange = trace.filter((row) => row.range <= GUN_RANGE_KM).length;
+		// It comes inside the merge distance…
+		expect(closest).toBeLessThan(MERGE_BREAK_KM);
+		// …but breaks rather than flying through the hull it is shooting at.
+		expect(closest).toBeGreaterThan(ENEMY_COLLISION_RADIUS_KM);
+		// …and most of the fight happens in its own weapon envelope.
+		expect(inGunRange / trace.length).toBeGreaterThan(0.4);
+	}
+});
+
+/**
+ * The rejected build's complaint, in the form it can come back in.
+ *
+ * A pilot holds the sight on the target, so the tail rule is live for most of
+ * the fight; without `evadeCooldown` bounding it the striker breaks far more
+ * than it shoots. The discriminating number is the share of frames it is
+ * firing, measured over eight seeds at 45 s: 0.294–0.307 with the lockout and
+ * 0.148–0.226 without, so 0.26 separates them with margin on both sides.
+ */
+test("a player who keeps their nose on it cannot suppress its guns", () => {
+	for (const seed of DUEL_SEEDS) {
+		const { trace } = flyDuel({ seed, seconds: 45, tracking: true });
+		const firing = trace.filter((row) => row.firing).length;
+		expect(firing / trace.length).toBeGreaterThan(0.26);
+		expect(Math.min(...trace.map((row) => row.range))).toBeLessThan(2);
+		// And it does still break off — a ship that ignored the tail entirely
+		// would pass both checks above and fail the point of the rule.
+		expect(trace.some((row) => row.phase === "evade")).toBe(true);
+	}
+});
+
+test("an attack run puts the ship's nose on the player", () => {
+	for (const seed of DUEL_SEEDS) {
+		const { trace } = flyDuel({ seed });
+		const bestAspect = Math.max(...trace.map((row) => row.aspect));
+		// Within five degrees of the boresight at the top of a run. The rejected
+		// build commanded the orbit tangent and never got near this.
+		expect(bestAspect).toBeGreaterThan(Math.cos((5 * Math.PI) / 180));
+	}
+});
+
+/**
+ * The rejected build took every lateral term from `cross(towardPlayer, up)`,
+ * which is perpendicular to the world's y axis by construction: the target
+ * could only crab around the horizontal. This is the check that the manoeuvre
+ * direction is drawn over the whole circle instead.
+ */
+test("the fight is not confined to a plane", () => {
+	for (const seed of DUEL_SEEDS) {
+		const { trace } = flyDuel({ seed, seconds: 40 });
+		const vertical = spread(trace.map((row) => row.pos.y));
+		expect(vertical).toBeGreaterThan(3);
+	}
+});
+
+/**
+ * A gate that cannot bite is not a gate. This asserts both halves: the ship
+ * does spend time inside gun range with the nose off the target, and it is
+ * cold on every one of those frames.
+ */
+test("fire is gated on the boresight, not on being nearby", () => {
+	const { trace } = flyDuel({ seconds: 40 });
+	const nearButOffAim = trace.filter(
+		(row) => row.range <= GUN_RANGE_KM && row.aspect < FIRE_COS,
+	);
+	expect(nearButOffAim.length).toBeGreaterThan(20);
+	expect(nearButOffAim.every((row) => !row.firing)).toBe(true);
+	expect(trace.some((row) => row.firing)).toBe(true);
+});
+
+test("the nose slews at a bounded rate and the ceiling actually binds", () => {
+	const { trace } = flyDuel({ seconds: 40 });
+	const fastest = Math.max(...trace.map((row) => row.turnRate));
+	expect(fastest).toBeLessThanOrEqual(MAX_TURN_RATE_RAD_S + 1e-6);
+	// Without this the test would pass on a ship that never turns hard, which
+	// is the failure mode a rate limit is supposed to make impossible to hide.
+	expect(fastest).toBeGreaterThan(MAX_TURN_RATE_RAD_S * 0.95);
+});
+
+test("two seeds fly two different fights", () => {
+	const a = flyDuel({ seed: 1, seconds: 30 }).trace;
+	const b = flyDuel({ seed: 99, seconds: 30 }).trace;
+	const apart = a.map((row, index) => length(sub(row.pos, b[index].pos)));
+	expect(Math.max(...apart)).toBeGreaterThan(3);
+});
+
+test("the ship banks into its turns and its roll reference stays a frame", () => {
+	const { trace } = flyDuel({ seconds: 40 });
+	for (const row of trace) {
+		expect(Math.abs(length(row.up) - 1)).toBeLessThan(1e-6);
+		expect(Math.abs(dot(row.up, row.nose))).toBeLessThan(1e-6);
+	}
+	// A ship that yawed flat would keep its roll reference near world up for the
+	// whole fight; a banking one lays it over.
+	expect(Math.min(...trace.map((row) => row.up.y))).toBeLessThan(0.2);
+});
+
+test("the player on the enemy's six forces a defensive spiral", () => {
+	const player = { pos: v3(), vel: v3() };
+	const playerNose = v3(0, 0, -1);
+	let enemy = createCombatEnemy(player, playerNose);
+	// Directly ahead of the player and running away from them: tracked, and not
+	// looking back.
+	enemy = { ...enemy, phase: "attack", phaseSeconds: 0 };
+	enemy.ship.pos = v3(0, 0, -4);
+	enemy.nose = v3(0, 0, -1);
+	let phase = enemy.phase;
+	for (let elapsed = 0; elapsed < 1; elapsed += 0.1) {
+		const step = stepCombatEnemy(
+			enemy,
+			player,
+			playerNose,
+			createCombatPrototype(),
+			false,
+			0.1,
+		);
+		enemy = step.state;
+		phase = enemy.phase;
+	}
+	expect(phase).toBe("evade");
+});
+
+test("a head-on merge is jousted rather than evaded", () => {
+	const player = { pos: v3(), vel: v3() };
+	const playerNose = v3(0, 0, -1);
+	let enemy = createCombatEnemy(player, playerNose);
+	// The same sight line as the test above — the player is pointed straight at
+	// it — but nosed back at the player. That is a merge, and calling it off is
+	// exactly how the rejected build stopped attacking.
+	enemy = { ...enemy, phase: "attack", phaseSeconds: 0 };
+	enemy.ship.pos = v3(0, 0, -4);
+	enemy.nose = v3(0, 0, 1);
+	for (let elapsed = 0; elapsed < 1; elapsed += 0.1)
+		enemy = stepCombatEnemy(
+			enemy,
+			player,
+			playerNose,
+			createCombatPrototype(),
+			false,
+			0.1,
+		).state;
+	expect(enemy.phase).toBe("attack");
+});
+
+test("enemy flight does not inherit a change in player velocity", () => {
+	const player = { pos: v3(), vel: v3(0, 0, -1) };
+	const enemy = createCombatEnemy(player, v3(0, 0, -1));
+	const step = stepCombatEnemy(
+		enemy,
+		player,
+		v3(0, 0, -1),
+		createCombatPrototype(),
+		false,
+		0.1,
+	);
+	// A player-relative frame would have driven this positive immediately.
+	expect(step.state.ship.vel.z).toBeLessThan(0);
+});
+
+test("a critically damaged enemy flees rather than receiving a scripted final hit", () => {
+	const player = { pos: v3(), vel: v3() };
+	const enemy = createCombatEnemy(player, v3(0, 0, -1));
+	const step = stepCombatEnemy(
+		enemy,
+		player,
+		v3(0, 0, -1),
+		createCombatPrototype({ targetHull: 20 }),
+		false,
+		0.1,
+	);
+	expect(step.state.phase).toBe("flee");
+	expect(step.enemyFiring).toBe(false);
+});
+
+test("the enemy spawns beyond the player beam, nosed at them", () => {
+	for (const seed of DUEL_SEEDS) {
+		const player = { pos: v3(), vel: v3() };
+		const enemy = createCombatEnemy(player, v3(0, 0, -1), seed);
+		const range = length(sub(enemy.ship.pos, player.pos));
+		expect(range).toBeGreaterThan(PLAYER_LASER_RANGE_KM);
+		const toPlayer = scale(sub(player.pos, enemy.ship.pos), 1 / range);
+		expect(dot(enemy.nose, toPlayer)).toBeGreaterThan(0.99);
+	}
+});
+
+/**
+ * The rejected build gated acquisition on the player's own forward cone, so a
+ * pirate politely waited to be looked at. It does not any more — but the
+ * *beam* still depends on where the player is pointed, and that half is real.
+ */
+test("the enemy closes even while the player looks away", () => {
+	const player = { pos: v3(), vel: v3() };
+	const away = v3(0, 0, 1);
+	let enemy = createCombatEnemy(player, v3(0, 0, -1));
+	const opening = length(sub(enemy.ship.pos, player.pos));
+	let step = stepCombatEnemy(
+		enemy,
+		player,
+		away,
+		createCombatPrototype(),
+		false,
+		0.1,
+	);
+	expect(step.targetInCone).toBe(false);
+	for (let elapsed = 0; elapsed < 8; elapsed += 0.1) {
+		step = stepCombatEnemy(
+			enemy,
+			player,
+			away,
+			createCombatPrototype(),
+			false,
+			0.1,
+		);
+		enemy = step.state;
+	}
+	expect(length(sub(enemy.ship.pos, player.pos))).toBeLessThan(opening - 5);
+});
+
+test("incoming fire that connects forces an immediate evade", () => {
+	const player = { pos: v3(), vel: v3() };
+	const enemy = createCombatEnemy(player, v3(0, 0, -1));
+	enemy.phase = "attack";
+	enemy.ship.pos = v3(0, 0, -8);
+	const step = stepCombatEnemy(
+		enemy,
+		player,
+		v3(0, 0, -1),
+		createCombatPrototype(),
+		true,
+		0.1,
+	);
+	expect(step.state.phase).toBe("evade");
+});
+
+test("a near miss leaves a short targeting window before a hit forces a break", () => {
+	const player = { pos: v3(), vel: v3() };
+	const enemy = createCombatEnemy(player, v3(0, 0, -1));
+	enemy.phase = "attack";
+	enemy.ship.pos = v3(0.75, 0, -8);
+	expect(playerLaserHit(player.pos, v3(0, 0, -1), enemy.ship.pos).hit).toBe(
+		false,
+	);
+	const step = stepCombatEnemy(
+		enemy,
+		player,
+		v3(0, 0, -1),
+		createCombatPrototype(),
+		true,
+		0.1,
+	);
+	expect(step.state.phase).toBe("attack");
+});
+
+test("the player beam uses a finite sim-space ray and its first sphere contact", () => {
+	const direct = playerLaserHit(v3(), v3(0, 0, -1), v3(0, 0, -8));
+	expect(direct.hit).toBe(true);
+	expect(direct.distanceKm).toBeLessThan(8);
+	expect(playerLaserHit(v3(), v3(0, 0, -1), v3(1, 0, -8)).hit).toBe(false);
+	expect(
+		playerLaserHit(v3(), v3(0, 0, -1), v3(0, 0, -PLAYER_LASER_RANGE_KM - 1))
+			.hit,
+	).toBe(false);
+});
+
+test("enemy hit-testing can use the cockpit sightline rather than ship attitude", () => {
+	const player = { pos: v3(), vel: v3() };
+	const enemy = createCombatEnemy(player, v3(0, 0, -1));
+	enemy.ship.pos = v3(0, 0, -8);
+	const step = stepCombatEnemy(
+		enemy,
+		player,
+		v3(0, 0, 1),
+		createCombatPrototype(),
+		false,
+		0.1,
+		v3(),
+		v3(0, 0, -1),
+	);
+	expect(step.targetInCone).toBe(true);
 });

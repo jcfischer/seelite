@@ -819,7 +819,10 @@ check(
 	warningShown && warningCleared,
 );
 // The beam heats up and locks out; the overlay must show the lockout.
-await combatPage.keyboard.down("s");
+// `x`, not `s`: the beam moved off the pitch key when the prototype gained a
+// flying enemy, and a probe holding the old key silently tested nothing but
+// pitch-down for fifteen seconds before timing out.
+await combatPage.keyboard.down("x");
 const lockShown = await combatPage
 	.waitForFunction(
 		() =>
@@ -831,7 +834,7 @@ const lockShown = await combatPage
 		() => true,
 		() => false,
 	);
-await combatPage.keyboard.up("s");
+await combatPage.keyboard.up("x");
 check("prototype: beam heat lockout is visible on the overlay", lockShown);
 await combatPage.keyboard.down("Space");
 // The feedback is claimed immediate, so the wait is bounded and fails the

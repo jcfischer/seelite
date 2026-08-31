@@ -17,7 +17,6 @@ export const COMBAT_PROTOTYPE_DEFAULTS = {
 	energyRegenPerSecond: 12,
 	heatCoolPerSecond: 16,
 	shieldRechargePerSecond: 6,
-	enemyDamagePerSecond: 8,
 	lockSeconds: 1.5,
 	interdictionSeconds: 2.5,
 } as const;
@@ -29,6 +28,10 @@ export interface CombatPrototypeState {
 	heat: number;
 	heatLocked: boolean;
 	firing: WeaponMode;
+	targetEnergy: number;
+	targetHeat: number;
+	targetHeatLocked: boolean;
+	enemyFiring: WeaponMode;
 	foreShield: number;
 	aftShield: number;
 	playerHull: number;
@@ -63,6 +66,10 @@ export function createCombatPrototype(
 		heat: 0,
 		heatLocked: false,
 		firing: null,
+		targetEnergy: COMBAT_PROTOTYPE_DEFAULTS.energy,
+		targetHeat: 0,
+		targetHeatLocked: false,
+		enemyFiring: null,
 		foreShield: COMBAT_PROTOTYPE_DEFAULTS.shield,
 		aftShield: COMBAT_PROTOTYPE_DEFAULTS.shield,
 		playerHull: COMBAT_PROTOTYPE_DEFAULTS.hull,
@@ -162,8 +169,19 @@ export function stepCombatPrototype(
 	next.heatLocked =
 		next.heat >= COMBAT_PROTOTYPE_DEFAULTS.heatLock ||
 		(next.heatLocked && next.heat > COMBAT_PROTOTYPE_DEFAULTS.heatLock * 0.5);
-	if (input.enemyFiring) {
-		const damage = COMBAT_PROTOTYPE_DEFAULTS.enemyDamagePerSecond * dt;
+	const enemyEnergyCost = COMBAT_PROTOTYPE_DEFAULTS.pulseEnergyPerSecond * dt;
+	const enemyCanFire =
+		input.enemyFiring &&
+		!next.targetHeatLocked &&
+		next.targetEnergy >= enemyEnergyCost;
+	next.enemyFiring = enemyCanFire ? "pulse" : null;
+	if (enemyCanFire) {
+		next.targetEnergy -= enemyEnergyCost;
+		next.targetHeat = clamp(
+			next.targetHeat + COMBAT_PROTOTYPE_DEFAULTS.pulseHeatPerSecond * dt,
+			COMBAT_PROTOTYPE_DEFAULTS.heatLock,
+		);
+		const damage = COMBAT_PROTOTYPE_DEFAULTS.pulseDamagePerSecond * dt;
 		const shieldKey = input.enemyHitAft ? "aftShield" : "foreShield";
 		const absorbed = Math.min(next[shieldKey], damage);
 		next[shieldKey] -= absorbed;
@@ -172,6 +190,14 @@ export function stepCombatPrototype(
 			COMBAT_PROTOTYPE_DEFAULTS.hull,
 		);
 	} else {
+		next.targetEnergy = clamp(
+			next.targetEnergy + COMBAT_PROTOTYPE_DEFAULTS.energyRegenPerSecond * dt,
+			COMBAT_PROTOTYPE_DEFAULTS.energy,
+		);
+		next.targetHeat = clamp(
+			next.targetHeat - COMBAT_PROTOTYPE_DEFAULTS.heatCoolPerSecond * dt,
+			COMBAT_PROTOTYPE_DEFAULTS.heatLock,
+		);
 		const lower =
 			next.foreShield <= next.aftShield ? "foreShield" : "aftShield";
 		next[lower] = clamp(
@@ -179,6 +205,10 @@ export function stepCombatPrototype(
 			COMBAT_PROTOTYPE_DEFAULTS.shield,
 		);
 	}
+	next.targetHeatLocked =
+		next.targetHeat >= COMBAT_PROTOTYPE_DEFAULTS.heatLock ||
+		(next.targetHeatLocked &&
+			next.targetHeat > COMBAT_PROTOTYPE_DEFAULTS.heatLock * 0.5);
 	return next;
 }
 

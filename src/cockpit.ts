@@ -30,6 +30,7 @@ export interface ScannerProjectionOptions {
 	orientation?: Quat;
 	rangeKm?: number;
 	output?: ScannerContact[];
+	extraContacts?: readonly ScannerBody[];
 }
 
 export const SCANNER_RANGE_KM = 10_000;
@@ -50,11 +51,12 @@ export function projectScannerContacts(
 		orientation,
 		rangeKm = SCANNER_RANGE_KM,
 		output,
+		extraContacts = [],
 	}: ScannerProjectionOptions = {},
 ): ScannerContact[] {
 	const contacts = output ?? [];
 	let count = 0;
-	for (const body of bodies) {
+	for (const body of [...bodies, ...extraContacts]) {
 		const worldRelative = sub(body.pos, shipPos);
 		// The scope is ship-local, not a tiny top-down map of the solar system.
 		// A contact must walk around the plate when the pilot turns, otherwise the
@@ -69,7 +71,10 @@ export function projectScannerContacts(
 		// scale makes a nearby contact at a pronounced bearing look centred. The
 		// square-root curve spends more of the plate on the immediate vicinity;
 		// direction remains exact and the edge still means scanner range.
-		const radius = Math.sqrt(clamp(planarDistanceKm / rangeKm, 0, 1));
+		const radius =
+			planarDistanceKm === 0
+				? 0
+				: Math.max(0.14, Math.sqrt(clamp(planarDistanceKm / rangeKm, 0, 1)));
 		const planarX =
 			planarDistanceKm === 0 ? 0 : (relative.x / planarDistanceKm) * radius;
 		const planarZ =

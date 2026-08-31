@@ -56,18 +56,40 @@
  */
 import * as THREE from "three";
 import {
+	type CombatEnemyState,
+	ENEMY_VISUAL_SCALE,
+	PLAYER_LASER_RANGE_KM,
+	createCombatEnemy,
+	stepCombatEnemy,
+} from "./combat-enemy";
+import {
 	type CombatPrototypeState,
 	createCombatPrototype,
-	duelInputs,
-	duelTargetInCone,
 	stepCombatPrototype,
 } from "./combat-prototype";
+import { mix, seedFor } from "./rng";
+import { buildShipMesh } from "./ship-mesh";
+import type { Body, Ship } from "./sim";
 import { PROMPT_FILL, PROMPT_FONT, TextRaster } from "./text-raster";
+import { type Vec3, add, scale, v3 } from "./vec3";
 
 /** The legend, and the widest text each status line is fitted against. */
 const LEGEND =
-	"COMBAT PROTOTYPE — hold SPACE pulse · S beam · / warning · Q ECM";
-const WIDEST_TARGET = "TARGET  SHIELDS F 999  A 999  HULL 999";
+	"COMBAT PROTOTYPE — hold SPACE pulse · LMB / X beam · / warning · Q ECM";
+/**
+ * `X`, not `S`.
+ *
+ * `S` is pitch-down. A beam bound to it meant every held shot also pushed the
+ * nose off the thing being shot at, which on a *scripted* target was invisible
+ * and on a flown one is the whole difficulty. `probe-live-cockpit.mjs` held the
+ * old key for fifteen seconds and timed out rather than saying so.
+ */
+const BEAM_KEY = "x";
+/** The striker's intent rides on the target line: the status line has no room
+ *  for it at the narrow viewport's fitter floor, and putting it there once
+ *  displaced the MISSILE and INTD fields two probe assertions wait on. */
+const WIDEST_TARGET =
+	"TARGET  SHIELDS F 999  A 999  HULL 999 · AI ACQUIRE · HOSTILE PULSE";
 const WIDEST_PLAYER = "PLAYER  SHIELDS F 999  A 999  HULL 999";
 const WIDEST_STATUS =
 	"FIRE LOCKED · H 100 E 100 · LOCK READY · MISSILE WARNING · INTD ACTIVE";
@@ -110,6 +132,14 @@ function statusText(s: CombatPrototypeState): string {
 	return `FIRE ${fire} · H ${s.heat.toFixed(0)} E ${s.energy.toFixed(0)} · LOCK ${s.missileLock ? "READY" : "ACQ"} · MISSILE ${s.incomingMissile ? "WARNING" : "CLEAR"} · INTD ${s.interdiction ? "ACTIVE" : "CLEAR"}`;
 }
 
+/** Scratch for the striker's attitude and impact point; reused every frame. */
+const RIG_NOSE = new THREE.Vector3();
+const RIG_UP = new THREE.Vector3();
+const RIG_ORIGIN = new THREE.Vector3();
+const RIG_ATTITUDE = new THREE.Matrix4();
+const RIG_INVERSE = new THREE.Quaternion();
+const RIG_IMPACT = new THREE.Vector3();
+
 export class CombatPrototypeRig {
 	/** Throwaway #48 balance state: it is not world or persistent combat state. */
 	state: CombatPrototypeState = createCombatPrototype();
@@ -122,10 +152,43 @@ export class CombatPrototypeRig {
 	/** Probe-only laser visibility override; the renderer honours it. */
 	forceLaserHidden = false;
 
-	/** Throwaway #48 target: a renderer-only silhouette, never a #35 traffic actor. */
-	private readonly targetMesh: THREE.Mesh;
+	/**
+	 * #53's flown striker.
+	 *
+	 * It replaces the scripted bearing this rig used to place the target on.
+	 * That bearing was two sines and a fixed -12 km, and `duelTargetInCone` was
+	 * a third sine standing in for aim — which made the rig a *pacing* rig and
+	 * nothing else. The striker flies through `stepFlight`, the player's own
+	 * integrator, and the cone is now a real ray against its hull, so what the
+	 * duel measures is aim as well as pacing.
+	 */
+	enemy: CombatEnemyState;
+	/** Whether the player's beam is on the striker this frame. */
+	targetInCone = false;
+	/** Where that beam ends — the hull if it connects, its reach if it does not. */
+	laserLengthKm = PLAYER_LASER_RANGE_KM;
+	/**
+	 * The striker as the scanner and the target list want it.
+	 *
+	 * Exposed rather than reached for: `main.ts` may not name the prototype
+	 * (`tests/combat-rig-boundary.test.ts`), so the two production surfaces the
+	 * striker has to appear on read one field each off the nullable rig.
+	 */
+	readonly contact = { id: "combat-prototype-enemy", pos: v3() };
+	readonly targetBody: Body;
+
+	/** #53's striker, drawn: the raider hull from the roster, not a cone. */
+	private readonly targetMesh: THREE.Group;
 	/** Bright, camera-local tracer shown only while the throwaway weapon is held. */
 	private readonly laser: THREE.Line;
+	/** The striker's own pulse, drawn from its hull to the cockpit. */
+	private readonly enemyLaser: THREE.Line;
+	/** Local sparks at the point the player's beam met the hull. */
+	private readonly impactSparks: THREE.Mesh;
+	private readonly impactMaterial: THREE.MeshBasicMaterial;
+	private impactPoint?: Vec3;
+	private hitFlash = 0;
+	private wasHit = false;
 	private incoming = false;
 	private ecm = false;
 	/** Fitted overlay font cache: keyed by role + glass width; the fit is
@@ -138,18 +201,67 @@ export class CombatPrototypeRig {
 	constructor(
 		scene: THREE.Scene,
 		private readonly loop: LoopControl,
+		player: Ship,
+		playerNose: Vec3,
+		worldSeed: number,
 	) {
-		this.targetMesh = new THREE.Mesh(
-			new THREE.ConeGeometry(0.45, 1.3, 4),
-			new THREE.MeshStandardMaterial({
-				color: 0x9d2f35,
-				emissive: 0x450308,
-				emissiveIntensity: 1.2,
+		// **The nose matters, and it has to be the settled one.** `createCombatEnemy`
+		// places the striker on the player's forward axis; built before the boot
+		// facing, `nose()` reads the identity orientation and the striker spawns
+		// tens of degrees off the boresight, closes down a line nobody is looking
+		// along, and is off the top of the frame for the whole approach. `Game`
+		// builds this rig after `faceTheStar`.
+		// The duel draws from the world's *combat* stream, so `?seed=` picks the
+		// opponent as well as the galaxy and a probe can replay one. Derived here
+		// rather than by the caller: `main.ts` is held to two mentions of the
+		// word combat (`tests/combat-rig-boundary.test.ts`), and a stream name
+		// passed in from there would be a third — and a place `Game` had learned
+		// something about the prototype.
+		this.enemy = createCombatEnemy(
+			player,
+			playerNose,
+			mix(seedFor(worldSeed, "combat"), 53),
+		);
+		this.contact.pos = this.enemy.ship.pos;
+		this.targetBody = {
+			id: this.contact.id,
+			name: "ENEMY STRIKER",
+			kind: "moon",
+			pos: this.enemy.ship.pos,
+			radiusKm: 0.75,
+			color: 0x9d2f35,
+		};
+		this.targetMesh = buildShipMesh("raider", "a").root;
+		this.targetMesh.name = "combat-prototype-target";
+		this.targetMesh.scale.setScalar(ENEMY_VISUAL_SCALE);
+		scene.add(this.targetMesh);
+		this.impactMaterial = new THREE.MeshBasicMaterial({
+			color: 0xbfeaff,
+			transparent: true,
+			opacity: 0,
+			depthWrite: false,
+		});
+		this.impactSparks = new THREE.Mesh(
+			new THREE.SphereGeometry(0.06, 8, 6),
+			this.impactMaterial,
+		);
+		this.impactSparks.name = "combat-prototype-impact";
+		this.impactSparks.visible = false;
+		this.targetMesh.add(this.impactSparks);
+		this.enemyLaser = new THREE.Line(
+			new THREE.BufferGeometry().setFromPoints([
+				new THREE.Vector3(),
+				new THREE.Vector3(),
+			]),
+			new THREE.LineBasicMaterial({
+				color: 0xff8a6a,
+				transparent: true,
+				opacity: 0.9,
 			}),
 		);
-		this.targetMesh.name = "combat-prototype-target";
-		this.targetMesh.rotation.x = Math.PI / 2;
-		scene.add(this.targetMesh);
+		this.enemyLaser.name = "combat-prototype-enemy-laser";
+		this.enemyLaser.frustumCulled = false;
+		scene.add(this.enemyLaser);
 		this.laser = new THREE.Line(
 			new THREE.BufferGeometry().setFromPoints([
 				new THREE.Vector3(0, 0, -0.6),
@@ -194,29 +306,75 @@ export class CombatPrototypeRig {
 	}
 
 	/**
-	 * One simulation frame of the duel.
+	 * One simulation frame: fly the striker, then settle the numbers.
 	 *
-	 * The held keys and the regime are the pilot's half; everything else the
-	 * schedule decides, and `duelInputs` is the one place it does — the same
-	 * function `tests/combat-prototype.test.ts` paces both weapon arms with.
+	 * **The schedule is gone.** `duelInputs` decided the cone, the shield bank
+	 * and the enemy's firing window from `elapsed`, which made every reading a
+	 * function of the clock rather than of the fight — and pacing was all a
+	 * scripted target could ever measure. It survives for
+	 * `tests/combat-prototype.test.ts`, which still paces the two weapon arms
+	 * against each other and needs a schedule that is identical between them.
+	 * What reaches the balance model here is the flown geometry.
 	 */
-	step(dt: number, keys: Set<string>, inCruise: boolean): void {
-		this.state = stepCombatPrototype(
+	step(
+		dt: number,
+		keys: Set<string>,
+		inCruise: boolean,
+		pilot: {
+			ship: Ship;
+			nose: Vec3;
+			/** The trigger, however it is held — the mouse is not a key. */
+			mouseFiring: boolean;
+			/** The cockpit sightline, which is not the ship's attitude: the
+			 *  player can look off the nose, and the beam follows the reticle. */
+			aimOrigin: Vec3;
+			aimNose: Vec3;
+		},
+	): void {
+		this.hitFlash = Math.max(0, this.hitFlash - dt);
+		const beam = pilot.mouseFiring || keys.has(BEAM_KEY);
+		const held = beam || keys.has(" ");
+		const flown = stepCombatEnemy(
+			this.enemy,
+			pilot.ship,
+			pilot.nose,
 			this.state,
-			duelInputs(
-				this.state,
-				dt,
-				keys.has("s") ? "beam" : keys.has(" ") ? "pulse" : null,
-				{
-					incomingMissile: this.incoming,
-					ecm: this.ecm,
-					// Interdiction only charges in cruise (it is a cruise mechanic);
-					// the probe therefore never observes ACTIVE in normal flight.
-					interdicting: inCruise,
-					breakAngle: keys.has("q") || keys.has("e"),
-				},
-			),
+			held,
+			dt,
+			pilot.aimOrigin,
+			pilot.aimNose,
 		);
+		this.enemy = flown.state;
+		this.contact.pos = flown.state.ship.pos;
+		this.targetBody.pos = flown.state.ship.pos;
+		this.targetInCone = flown.targetInCone;
+		this.laserLengthKm = flown.laserEndpointKm;
+
+		// The spark is placed on the frame the beam first connects, so it does not
+		// walk along the hull while a held trigger keeps scoring.
+		const connecting = held && flown.targetInCone;
+		if (connecting && !this.wasHit) {
+			this.hitFlash = 0.16;
+			this.impactPoint = add(
+				pilot.aimOrigin,
+				scale(pilot.aimNose, flown.laserEndpointKm),
+			);
+		}
+		this.wasHit = connecting;
+
+		this.state = stepCombatPrototype(this.state, {
+			dt,
+			firing: beam ? "beam" : keys.has(" ") ? "pulse" : null,
+			targetInCone: flown.targetInCone,
+			incomingMissile: this.incoming,
+			ecm: this.ecm,
+			// Interdiction only charges in cruise (it is a cruise mechanic);
+			// the probe therefore never observes ACTIVE in normal flight.
+			interdicting: inCruise,
+			breakAngle: keys.has("q") || keys.has("e"),
+			enemyFiring: flown.enemyFiring,
+			enemyHitAft: flown.enemyHitAft,
+		});
 		// One-shot inputs, cleared after the step that read them.
 		this.incoming = false;
 		this.ecm = false;
@@ -225,30 +383,62 @@ export class CombatPrototypeRig {
 	/**
 	 * The scene objects, placed for this frame.
 	 *
-	 * The target holds a fixed bearing off the nose (ship frame, not the
-	 * head-look camera rotation). The cone test is scripted by elapsed time, so
-	 * this prototype measures pacing, not aiming skill.
+	 * The striker is mirrored here from its sim-space ship; the renderer takes
+	 * no part in its path, its acquisition or its damage. Attitude comes from
+	 * the controller's own nose *and roll reference*: a fixed world up would fly
+	 * it flat through every turn and go degenerate the moment the nose reached
+	 * vertical, which this controller does routinely.
 	 */
 	render(
 		view: CombatView,
-		orientation: THREE.Quaternion,
+		_orientation: THREE.Quaternion,
 		viewRotation: THREE.Quaternion,
+		camPos: Vec3,
 	): void {
-		const { elapsed } = this.state;
-		this.targetMesh.position
-			.set(3 * Math.sin(elapsed * 0.7), 1.2 * Math.cos(elapsed * 1.1), -12)
-			.applyQuaternion(orientation);
+		const ship = this.enemy.ship.pos;
+		this.targetMesh.position.set(
+			ship.x - camPos.x,
+			ship.y - camPos.y,
+			ship.z - camPos.z,
+		);
+		RIG_NOSE.set(this.enemy.nose.x, this.enemy.nose.y, this.enemy.nose.z);
+		RIG_UP.set(this.enemy.up.x, this.enemy.up.y, this.enemy.up.z);
+		RIG_ATTITUDE.lookAt(RIG_ORIGIN, RIG_NOSE, RIG_UP);
+		this.targetMesh.quaternion.setFromRotationMatrix(RIG_ATTITUDE);
 		this.targetMesh.visible = view === "cockpit";
-		const material = this.targetMesh.material as THREE.MeshStandardMaterial;
-		// Flash on the same scripted cone that scores damage, so the swell tracks
-		// hits. The cone is a coarse proxy (up to ~13 degrees off the nose), not a
-		// pixel-accurate aim test.
-		const hitting = this.state.firing !== null && duelTargetInCone(elapsed);
-		material.emissive.setHex(hitting ? 0x9df6ff : 0x450308);
-		material.emissiveIntensity = hitting ? 4 : 1.2;
-		this.targetMesh.scale.setScalar(hitting ? 1.25 : 1);
+
+		const flash = this.hitFlash / 0.16;
+		if (this.impactPoint) {
+			RIG_IMPACT.set(
+				this.impactPoint.x - ship.x,
+				this.impactPoint.y - ship.y,
+				this.impactPoint.z - ship.z,
+			)
+				.applyQuaternion(RIG_INVERSE.copy(this.targetMesh.quaternion).invert())
+				.multiplyScalar(1 / ENEMY_VISUAL_SCALE);
+			this.impactSparks.position.copy(RIG_IMPACT);
+		}
+		this.impactSparks.scale.setScalar(1 + (1 - flash) * 0.35);
+		this.impactMaterial.opacity = flash * 0.95;
+		this.impactSparks.visible =
+			view === "cockpit" && flash > 0 && this.impactPoint !== undefined;
+
 		this.laser.quaternion.copy(viewRotation);
 		this.laser.visible = this.beamShown(view);
+
+		const enemyLine = this.enemyLaser.geometry.getAttribute(
+			"position",
+		) as THREE.BufferAttribute;
+		enemyLine.setXYZ(
+			0,
+			this.targetMesh.position.x,
+			this.targetMesh.position.y,
+			this.targetMesh.position.z,
+		);
+		enemyLine.setXYZ(1, 0, 0, 0);
+		enemyLine.needsUpdate = true;
+		this.enemyLaser.visible =
+			view === "cockpit" && this.state.enemyFiring !== null;
 	}
 
 	/**
@@ -380,7 +570,7 @@ export class CombatPrototypeRig {
 			LEGEND,
 		);
 		drawFitted(
-			`TARGET  SHIELDS F ${s.targetForeShield.toFixed(0)}  A ${s.targetAftShield.toFixed(0)}  HULL ${s.targetHull.toFixed(0)}`,
+			`TARGET  SHIELDS F ${s.targetForeShield.toFixed(0)}  A ${s.targetAftShield.toFixed(0)}  HULL ${s.targetHull.toFixed(0)} · AI ${this.enemy.phase.toUpperCase()} · HOSTILE ${s.enemyFiring?.toUpperCase() ?? "SAFE"}`,
 			h * 0.76,
 			"rgba(255, 115, 130, 0.95)",
 			12,

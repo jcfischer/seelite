@@ -81,7 +81,13 @@ test("the scanner reads the rig, and the rig is where the prototype went", () =>
 	expect(rig).toContain('"combat-prototype-target"');
 	expect(rig).toContain('"combat-prototype-laser"');
 	expect(rig).toContain("stepCombatPrototype");
-	expect(rig).toContain("duelInputs");
+	// `duelInputs` until #53: the rig drove a *scripted* duel, and the schedule
+	// was the thing it could not be caught without. It now flies a real striker
+	// and hands the balance model that fight's own geometry, so the entry point
+	// that must be here is the controller's. `duelInputs` survives for
+	// `tests/combat-prototype.test.ts`, which paces the two weapon arms against
+	// each other and needs a schedule identical between them.
+	expect(rig).toContain("stepCombatEnemy");
 });
 
 test("main.ts does not thread the combat prototype", () => {
