@@ -790,8 +790,12 @@ export function tickDocking(
 		 * a grant is only 600 s: a player who sat docked for eleven minutes lost
 		 * the berth they were standing in. `tickDocking` has no view of the dock
 		 * session, so the caller supplies the one bit it needs.
+		 *
+		 * **Required, not optional.** The default was `false`, which is the
+		 * eviction path — so a caller that forgot it got the bug rather than a
+		 * compile error.
 		 */
-		sessionHere?: boolean;
+		sessionHere: boolean;
 	},
 ): DockingState {
 	let next = state;

@@ -65,7 +65,7 @@ const REFERENCE = ((): Vec3 => {
 const frameOf = (type: StationType, phaseRad = 0) =>
 	apertureFrame(type, AXIS, phaseRad, REFERENCE);
 const interiorOf = (type: StationType) =>
-	stationInterior(type, STATION_GEOMETRY[type]);
+	stationInterior(type, STATION_GEOMETRY[type].aperturePlaneKm);
 const berthNamed = (type: StationType, id: string): Berth => {
 	const berth = interiorOf(type).berths.find(
 		(candidate) => candidate.id === id,

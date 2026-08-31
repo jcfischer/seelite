@@ -520,9 +520,9 @@ console.log("\n§13.5 browser row 3 — the approach ends inside:");
  * fails check 4 by a mile. The computer tracks the roll, which is what a pilot
  * does and what `dockingComputerStep` exists for.
  */
-const dock = (id) =>
+const dock = (id, opts = {}) =>
 	page.evaluate(
-		([stationId, standoffKm]) => {
+		([stationId, standoffKm, skip]) => {
 			const g = window.__seelite;
 			// Outside §7's computer standoff, on the axis, at rest in the station's
 			// frame, with clearance granted and the autopilot flying — all of which
@@ -554,6 +554,10 @@ const dock = (id) =>
 						floorHidden: g.floorRender === null,
 					};
 				}
+				// Obligation 5 both ways since §13.3: an arrival's skip completes at
+				// the reserved berth, so a caller that only needs a docked session
+				// can pay for the entry and skip the seconds after it.
+				if (skip && now.dockPhase === "arriving") g.skipDockTraversal();
 				if (now.dockPhase === "docked") break;
 			}
 			const end = g.dockingSnapshot(stationId);
@@ -578,22 +582,9 @@ const dock = (id) =>
 				refusal: end.computerRefusal ?? null,
 			};
 		},
-		[id, PROBE_STANDOFF_KM],
+		[id, PROBE_STANDOFF_KM, opts.skipTraversal === true],
 	);
 
-/** §13.3's traversal band, read off the page rather than restated. */
-const arrivalSeconds = await page.evaluate(
-	() => window.__seelite.dockingTolerances.TRAVERSAL_SECONDS_NEAR,
-);
-check(
-	// **Read bare, so checked bare.** The header refuses `??` fallbacks; a
-	// constant read without one still falls open if nothing looks at what came
-	// back. Renamed off `dockingTolerances`, this is `undefined` and every loop
-	// scaled by it runs zero iterations.
-	"the page reports §13.3's traversal duration",
-	Number.isFinite(arrivalSeconds) && arrivalSeconds > 0,
-	`${arrivalSeconds}`,
-);
 const flown = await dock(slotId);
 
 check(
@@ -894,9 +885,13 @@ check(
 		`against ${mouth.control} from the aperture bars in the same frame`,
 );
 
-// **Docked again.** The launch above put the ship back into flight, and the
-// rows below are only reachable from a dock.
-const redocked = await dock(slotId);
+// **Docked again, and by skipping rather than by flying.** The launch above put
+// the ship back into flight and the rows below are only reachable from a dock,
+// but the rows below do not care *how* it got there — and §13.3 raised a
+// traversal from five seconds to six or nine, on a suite that already reports a
+// timeout under load (#121). `dock` flies the whole approach; this pays for the
+// entry and skips the traversal.
+const redocked = await dock(slotId, { skipTraversal: true });
 check(
 	"the ship docks a second time, for the rows only a dock can reach",
 	redocked.phase === "docked",

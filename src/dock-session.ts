@@ -28,6 +28,7 @@ import {
 	beginLaunch,
 	berthCentre,
 	parkedAttitude,
+	recomposeOffset,
 } from "./arrival";
 import {
 	type ApertureFrame,
@@ -119,12 +120,28 @@ export const newDockSession = (): DockSession => ({
 export const interiorOfStation = (station: {
 	type: keyof typeof STATION_GEOMETRY;
 	berthSeed: number;
-}): StationInterior =>
-	stationInterior(
+}): StationInterior => {
+	// **Memoised, because the docked tick reads it every frame.** A parked ship
+	// sits for as long as the player likes (§12.6's obligation 4 says ten
+	// minutes is a case), and rebuilding the catalogue at 60 Hz is ~27
+	// allocations a frame for a value that cannot change: it is a pure function
+	// of the type, the table and the seed, all three fixed for a session.
+	const key = `${station.type}:${station.berthSeed}`;
+	const cached = interiorCache.get(key);
+	if (cached) return cached;
+	const built = stationInterior(
 		station.type,
-		STATION_GEOMETRY[station.type],
+		STATION_GEOMETRY[station.type].aperturePlaneKm,
 		station.berthSeed,
 	);
+	interiorCache.set(key, built);
+	return built;
+};
+
+/** Keyed on everything the catalogue is a function of, so it needs no
+ *  invalidation — a new galaxy's stations produce new keys rather than stale
+ *  answers. */
+const interiorCache = new Map<string, StationInterior>();
 
 /** The berth an id names, or a throw: a session holding an id no catalogue
  *  answers for is the reservation and the generator having diverged, not a case
@@ -307,11 +324,8 @@ export function stepDockedWorld(
 		// and a docked position integrated from where the ship was would drift
 		// away from it. Recomputed from the berth every frame, it cannot.
 		const local = berthCentre(berth);
+		const rel = recomposeOffset(frame, local, pose.phaseRad);
 		const { across, up } = slotBasis(frameAtPhase(frame, pose.phaseRad));
-		const rel = add(
-			scale(frame.axis, local.axial),
-			add(scale(across, local.across), scale(up, local.up)),
-		);
 		// **A berth is off the axis, so a docked ship is carried by the spin.**
 		// The old docked position sat on the axis and took no rotation term at
 		// all; a wall berth on a 3 rpm Coriolis is 105 m out, which is 33 m/s of

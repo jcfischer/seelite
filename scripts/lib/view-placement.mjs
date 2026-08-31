@@ -85,14 +85,30 @@ export async function installViewFraming(page) {
 				comoving: true,
 			});
 			g.targetId = stationId;
-			g.requestDockingClearance();
+			const requested = g.requestDockingClearance();
+			if (requested.state?.clearance?.kind !== "granted")
+				throw new Error(
+					`__parkInBerth: clearance at ${stationId} came back ` +
+						`${JSON.stringify(requested.state?.clearance)} for ${berthId}, ` +
+						`occupied ${[...others].join(",")}, ` +
+						`held ${requested.state?.berthId}`,
+				);
 			if (!g.dockingComputerEngaged) g.toggleDockingComputer();
 			// Sub-stepped in sim rather than by animation frames: a capture must
 			// not depend on how fast the machine renders.
 			let arrivingFor = 0;
-			for (let i = 0; i < 60 * 180; i++) {
+			for (let i = 0; i < 60 * 240; i++) {
 				g.step(dt);
 				const now = g.dockingSnapshot(stationId);
+				// **Re-engage if the autopilot drops out**, which is what a player
+				// would do and what §7 leaves them to do: the computer disengages
+				// silently — §8's cue belongs to the HUD node — and a capture that
+				// froze on the first drop-out would produce a frame of a ship
+				// hanging a kilometre short of a station it was cleared for.
+				if (now.dockPhase === "flying" && !now.computerEngaged) {
+					if (!now.grantLive) g.requestDockingClearance();
+					g.toggleDockingComputer();
+				}
 				if (now.dockPhase === "arriving") {
 					arrivingFor += dt;
 					// **The law's own duration, not the near figure.** §13.3 prices
@@ -118,10 +134,6 @@ export async function installViewFraming(page) {
 				);
 			// **The phase too, not the berth alone.** The berth is set at
 			// clearance and says only that the reservation landed; a run that
-			// never reached the station keeps it. That is exactly how the frame
-			// above went unnoticed — the assertion passed 115 km away.
-			// **The phase too, not the berth alone.** The berth is set at
-			// clearance and says only that the reservation landed; a run that
 			// never reached the station keeps it. That is exactly how a frame
 			// went unnoticed — the assertion passed 115 km away.
 			const reached =
@@ -129,7 +141,9 @@ export async function installViewFraming(page) {
 			if (settled.dockPhase !== reached)
 				throw new Error(
 					`__parkInBerth: wanted ${reached} at ${stationId} and the session ` +
-						`is ${settled.dockPhase}, ${settled.rangeKm.toFixed(1)} km out`,
+						`is ${settled.dockPhase}, ${settled.rangeKm.toFixed(1)} km out; ` +
+						`clearance ${settled.clearance.kind}, ` +
+						`computer refused ${settled.computerRefusal ?? "-"}`,
 				);
 			if (opts.launch) {
 				// A launch frame is of a ship that docked first: `g.launch()` is a

@@ -13,10 +13,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import * as THREE from "three";
 import { HULL_IDS, HULL_VISUALS, type HullId } from "../src/ship-mesh";
-import { STATION_SILHOUETTE_KM } from "../src/station-mesh";
+import { SELECTED_FORM, buildStationForm } from "../src/station-mesh";
 import {
-	BAY_HALF_LIMIT_KM,
 	BERTH_CELL,
 	type Berth,
 	ROLE_BERTHS,
@@ -31,7 +31,7 @@ import { STATION_GEOMETRY, STATION_TYPES } from "../src/station";
 
 const CAPITALS: HullId[] = ["carrier", "dreadnought"];
 const interiorOf = (type: (typeof STATION_TYPES)[number], seed = 0) =>
-	stationInterior(type, STATION_GEOMETRY[type], seed);
+	stationInterior(type, STATION_GEOMETRY[type].aperturePlaneKm, seed);
 
 /** A berth's occupied box in the aperture frame, as three intervals. The berth
  *  axes are not the frame's: a wall berth's *height* runs across the bay and
@@ -162,42 +162,60 @@ describe("the volume holds what it says it holds", () => {
 		}
 	});
 
-	test("no bay is capped so tight that a berth reaches the lane", () => {
-		// `BAY_HALF_LIMIT_KM` is a cap on the bay's width, authored per form —
-		// and a cap set below `lane + cell height` would put a wall berth in the
-		// transit lane. The lane-clearance row above would catch it, but it would
-		// read as a layout bug rather than as a table entry that is too small.
+	test("the bay fits inside the hull of the form that holds it", () => {
+		// **The boundary §13.7 states**: the interior may not change the exterior
+		// silhouette, and a bay wider than the hull it is cut into pokes through
+		// it. The shipyard's Gantry carries its slot on a hub about 250 m across
+		// and a bay sized from the berth cell alone came out 280 m wide — flown,
+		// the chase camera from a wall berth was outside the station altogether.
+		//
+		// **Measured against the hull's own bounding box, and the box is why
+		// this is a floor rather than a proof.** A hull mesh is `FrontSide`, so a
+		// ray cast from inside passes straight through and reports nothing; and a
+		// box is larger than the shape inside it, so a bay that fails this is
+		// certainly through the hull, while a bay that passes may still meet a
+		// sloped face. The rest is the canonical view set's, which is #98's
+		// finding one level down rather than a gap to close later.
+		//
+		// The interior is excluded from the measurement for the obvious reason:
+		// it is the subject.
+		// **Slot forms only, and the pads are excluded for a reason rather than
+		// for convenience** — the same restriction #128's hull-reaches-the-plane
+		// row makes and for the same reason. A Coriolis's `core` *is* the body its
+		// slot is cut into; a refinery's is a 48 m slab of deck sitting in the
+		// notch of a rock that is a separate mesh, and an outpost's is the tank
+		// cluster *below* its pad, at negative z. Measured against those, the row
+		// would be comparing the bay with the wrong object.
+		//
+		// So the two pad roles' bays are held by the canonical view set alone.
+		// That is the residue, stated rather than papered over.
 		for (const type of STATION_TYPES) {
-			const cell = BERTH_CELL[type];
-			const aperture = STATION_GEOMETRY[type].aperture;
-			expect([
-				type,
-				BAY_HALF_LIMIT_KM[type] >= aperture.widthKm / 2 + cell.heightKm,
-			]).toEqual([type, true]);
-			expect([
-				type,
-				BAY_HALF_LIMIT_KM[type] >= aperture.heightKm / 2 + cell.heightKm,
-			]).toEqual([type, true]);
-		}
-	});
-
-	test("the interior stays inside the drawn station", () => {
-		// The receipt's boundary: the interior may not change the exterior
-		// silhouette, and a volume reaching past the form's own reach would show
-		// through it. Measured against `STATION_SILHOUETTE_KM`, the selected
-		// form's reach, rather than against a figure typed in here.
-		for (const type of STATION_TYPES) {
+			if (STATION_GEOMETRY[type].aperture.kind !== "slot") continue;
 			const interior = interiorOf(type);
-			const corner = Math.hypot(
-				interior.halfAcrossKm,
-				interior.halfUpKm,
-				Math.max(
-					Math.abs(interior.mouthAxialKm),
-					Math.abs(interior.endAxialKm),
-				),
-			);
-			expect([type, corner <= STATION_SILHOUETTE_KM[type]]).toEqual([
-				type,
+			const { root } = buildStationForm(type, SELECTED_FORM[type], 0x888888, 0);
+			root.updateMatrixWorld(true);
+			const core = STATION_GEOMETRY[type].coreRadiusKm;
+			// **The `core`, not the whole assembly.** A shipyard's drydock frame
+			// reaches 1.5 km and a box over everything drawn is satisfied by any
+			// bay at all — measured that way, a cap of 400 m passed. `core` is the
+			// body the aperture is cut into, which is the thing the bay has to fit
+			// inside, and it is the same object `#128`'s hull-reaches-the-plane row
+			// measures.
+			const body = root.getObjectByName("core");
+			const hull = new THREE.Box3();
+			if (body) hull.setFromObject(body);
+			const label = `${type} ${SELECTED_FORM[type]}`;
+			expect([label, hull.isEmpty()]).toEqual([label, false]);
+			expect([label, interior.halfAcrossKm <= hull.max.x * core]).toEqual([
+				label,
+				true,
+			]);
+			expect([label, interior.halfUpKm <= hull.max.y * core]).toEqual([
+				label,
+				true,
+			]);
+			expect([label, interior.endAxialKm >= hull.min.z * core]).toEqual([
+				label,
 				true,
 			]);
 		}

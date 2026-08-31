@@ -22,11 +22,12 @@ import { stationInterior } from "../src/station-interior";
 import {
 	INTERIOR_GROUP_NAME,
 	NAMEPLATE_NAME,
+	PLATE_FACTOR,
 	buildStationInterior,
 } from "../src/station-interior-mesh";
 
 const interiorOf = (type: (typeof STATION_TYPES)[number]) =>
-	stationInterior(type, STATION_GEOMETRY[type]);
+	stationInterior(type, STATION_GEOMETRY[type].aperturePlaneKm);
 
 const built = (type: (typeof STATION_TYPES)[number]) => {
 	const group = buildStationInterior(type, interiorOf(type));
@@ -237,5 +238,42 @@ describe("§13.1 — what the bay must and must not carry", () => {
 	test("the group is the one the renderer and the probes look up", () => {
 		for (const type of STATION_TYPES)
 			expect([type, built(type).name]).toEqual([type, INTERIOR_GROUP_NAME]);
+	});
+
+	test("the furniture is tagged for the detail switch and the room is not", () => {
+		// **Fifty-odd meshes, and none of them was tagged.** `setStationDetail`
+		// culls on `userData.minDetail` alone, so an untagged bay is submitted in
+		// full at every range behind a hull nothing can see it through. The shell,
+		// the bulkhead, the lit rim and the shield stay unconditional: they are the
+		// room rather than what is in it, and the mouth reads as an opening at
+		// range only if what is behind it is drawn.
+		for (const type of STATION_TYPES) {
+			const group = built(type);
+			for (const berth of interiorOf(type).berths) {
+				const holder = group.getObjectByName(`berth-${berth.id}`);
+				expect([type, berth.id, holder?.userData.minDetail]).toEqual([
+					type,
+					berth.id,
+					"full",
+				]);
+			}
+			expect([
+				type,
+				group.getObjectByName("interior-fittings")?.userData.minDetail,
+			]).toEqual([type, "full"]);
+			for (const name of [
+				"interior-shell",
+				"interior-bulkhead",
+				"interior-lane-edge",
+				NAMEPLATE_NAME,
+			]) {
+				const part = group.getObjectByName(name);
+				expect([type, name, part?.userData.minDetail]).toEqual([
+					type,
+					name,
+					undefined,
+				]);
+			}
+		}
 	});
 });

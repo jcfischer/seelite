@@ -1347,8 +1347,14 @@ rotated by clearance-request time. If no fitting berth is free, clearance
 
 The reservation survives a failed entry while its grant remains live, is held
 through arrival, docking and launch, and releases when the ship crosses the
-aperture outward. An unused reservation releases when its grant expires or is
-cancelled. Berth reservation is separate from approach-corridor occupancy;
+aperture outward — **and the grant is spent with it**. That last clause is
+derived rather than ratified: the grant *is* the reservation, so a grant that
+outlived its berth would be a clearance no berth answers for, and `attemptEntry`
+would dock on it and hand the arrival nothing to park in. Re-requesting is free
+(§6), so what the player loses is a keystroke. An unused reservation releases
+when its grant expires or is cancelled — **unless the ship is in it**: a lapsed
+grant does not evict a ship that arrived on it, which is what "held through
+docking" means when a dock outlasts the 600 s window. Berth reservation is separate from approach-corridor occupancy;
 future traffic consumes both contracts.
 
 ### 13.3 Arrival, parked state, and launch

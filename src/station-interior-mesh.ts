@@ -23,7 +23,7 @@
 import * as THREE from "three";
 import type { StationType } from "./station";
 import type { Berth, StationInterior } from "./station-interior";
-import { STATION_VISUALS } from "./station-visuals";
+import { STATION_VISUALS, type StationDetailLevel } from "./station-visuals";
 
 /**
  * What `main.ts` looks for when it fills a name shield with pixels.
@@ -44,8 +44,12 @@ export const INTERIOR_GROUP_NAME = "station-interior";
  * How thick the interior's plates are, as a multiple of the shell's smaller
  * half-extent. Thin: these are decks and bulkheads, not blocks, and every one
  * of them is seen edge-on from somewhere in the bay.
+ *
+ * Exported so `tests/station-interior-mesh.test.ts` reads it rather than
+ * carrying a hand-copy — a tolerance typed into a test is one that stays green
+ * against a figure the module no longer uses.
  */
-const PLATE_FACTOR = 0.06;
+export const PLATE_FACTOR = 0.06;
 
 /**
  * The shell.
@@ -156,6 +160,25 @@ const box = (
 };
 
 /**
+ * Tag a part so `setStationDetail` drops it below the near band.
+ *
+ * **The bay is fifty-odd meshes and none of them was tagged**, so a station on
+ * the far side of a system submitted its berth brackets and its window panes at
+ * full count behind a hull nothing can see them through. The furniture and the
+ * fittings go; the shell, the bulkhead, the lit rim and the shield stay, because
+ * they are the room rather than what is in it, and because the mouth reads as an
+ * opening at range only if what is behind it is drawn.
+ *
+ * `station-mesh.ts`'s own `detail()` is private to that module and this one may
+ * not import it — it would be a cycle. The key is the contract, which
+ * `tests/station-interior-mesh.test.ts` pins.
+ */
+const atFullDetail = <T extends THREE.Object3D>(object: T): T => {
+	object.userData.minDetail = "full" satisfies StationDetailLevel;
+	return object;
+};
+
+/**
  * One station's interior.
  *
  * `interior` is the sim's catalogue and `nameTexture` is the renderer's job
@@ -191,7 +214,6 @@ export function buildStationInterior(
 	// is wider than the aperture, so what an arriving ship flies through is a
 	// rectangle cut in the near wall — and it is that wall the interior name
 	// shield is mounted on, facing every berth.
-	const lipUp = interior.halfUpKm - interior.laneHalfUpKm;
 	for (const [w, h, x, y] of ringAround(
 		{ across: interior.halfAcrossKm, up: interior.halfUpKm },
 		{ across: interior.laneHalfAcrossKm, up: interior.laneHalfUpKm },
@@ -233,7 +255,8 @@ export function buildStationInterior(
 	//
 	// It sat on the throat's end wall before #128 shortened the throat, and #131
 	// records that it then drew zero pixels from inside. This is the same wall,
-	// forty times further back and square to the lane: an arriving ship flies
+	// four times further back and square to the lane — 405 m of bay against a
+	// 105 m throat on the trade station: an arriving ship flies
 	// straight at it down the transit lane, which is the one view in the game
 	// where a station's name is read from inside it.
 	//
@@ -261,10 +284,16 @@ export function buildStationInterior(
 	shield.position.set(0, 0, interior.endAxialKm + plate);
 	group.add(shield);
 
+	// One flood-colour glow for every berth in the bay, hoisted for the reason
+	// `laneGlow` is: eight identical materials are eight draw batches where one
+	// would do.
+	const guide = glowMaterial(visuals.floodColor);
 	for (const berth of interior.berths)
-		group.add(buildBerth(type, interior, berth, plate, structure));
+		group.add(
+			atFullDetail(buildBerth(interior, berth, plate, structure, guide)),
+		);
 
-	group.add(buildRoleFittings(type, interior, plate, structure));
+	group.add(atFullDetail(buildRoleFittings(type, interior, plate, structure)));
 	return group;
 }
 
@@ -321,15 +350,14 @@ function berthBasis(berth: Berth) {
  * ways of holding the same ship in the same place.
  */
 function buildBerth(
-	type: StationType,
 	interior: StationInterior,
 	berth: Berth,
 	plate: number,
 	structure: THREE.Material,
+	guide: THREE.Material,
 ): THREE.Group {
 	const group = new THREE.Group();
 	group.name = `berth-${berth.id}`;
-	const visuals = STATION_VISUALS[type];
 	const { outward, beam } = berthBasis(berth);
 	// The surface itself: the berth's centre pushed back down its own normal by
 	// half the clear height, which is where the sim says the wall is.
@@ -350,7 +378,6 @@ function buildBerth(
 	// Two guide strips flanking the pad, in the role's own work-light colour —
 	// §13.4's rule that light identifies role and nothing else. Square in
 	// section, so they need no axis test at all.
-	const guide = glowMaterial(visuals.floodColor);
 	for (const side of [-1, 1]) {
 		const strip = box(
 			plate * 0.4,

@@ -23,7 +23,11 @@
  * hull was retuned.
  */
 
-import type { StationAperture, StationGeometry, StationType } from "./station";
+import {
+	STATION_GEOMETRY,
+	type StationAperture,
+	type StationType,
+} from "./station";
 
 /**
  * The three berth families (§13.2).
@@ -220,47 +224,13 @@ export const BAND_GAP_FACTOR = 0.5;
  * outpost keeps the tighter figure — its core is 150 m and a two-berth standoff
  * on every face would want more room behind its aperture than the station has
  * hull to hold it in — and a `type === "outpost"` test inside the generic sizer
- * put a second mechanism beside `BAY_HALF_LIMIT_KM` for the same question.
+ * was a second per-role mechanism hidden in a function.
  */
 export const BERTH_DEPTH_FACTOR: Record<StationType, number> = {
 	trade: 2,
 	shipyard: 2,
 	refinery: 2,
 	outpost: 1.5,
-};
-
-/**
- * How wide a bay a form can hold, kilometres of half-extent — **the form's own
- * internal clearance, and a second table for the reason `STATION_GEOMETRY`'s
- * `aperturePlaneKm` is one.**
- *
- * The bay is drawn inside the hull the form builds, and a bay wider than that
- * hull pokes through it: the shipyard's Gantry carries its slot on a hub about
- * 250 m across, and a bay sized from the berth cell alone came out 280 m wide.
- * The frame showed it — a chase view from a wall berth was outside the bay
- * altogether, among the drydock frame — and no headless check in this repo can
- * see it, because a hull mesh is `FrontSide` and a ray cast from inside passes
- * straight through.
- *
- * So the figure is authored here beside the catalogue that reads it, and it is
- * a **cap** rather than the size: a bay is the lane plus a berth's standoff,
- * clamped to what the form can hold. A form retuned narrower moves this number,
- * and the evidence for it is the canonical view set rather than an assertion.
- *
- * Every entry is at least `lane + cell height`, or a berth would overlap the
- * transit lane — which `tests/station-interior.test.ts` does check.
- */
-export const BAY_HALF_LIMIT_KM: Record<StationType, number> = {
-	// The Coriolis's square face is 428 m out and its girth is wider still.
-	trade: 0.14,
-	// The Gantry's hub: `slot.width/2 + r·0.11` is 126 m of half-width, and the
-	// plating around it takes the usable clearance to about 100 m.
-	shipyard: 0.1,
-	// The Warren is a rock, and the bay is cut into it.
-	refinery: 0.155,
-	// A 150 m core with a 120 m pad on top of it: the bay is most of the
-	// station, which is what an outpost is.
-	outpost: 0.105,
 };
 
 /** Where the two bands' centres sit, axial kilometres. */
@@ -279,6 +249,16 @@ function bandAxial(
 /**
  * The interior of one station, berths and all.
  *
+ * **`aperturePlaneKm` is a parameter, not a lookup**, and that is the one thing
+ * a caller may vary: the renderer's workbench builds each role's alternate
+ * forms, which cut their aperture wherever their own silhouette wants, and a
+ * bay built against the table would hang in space in front of them. For a
+ * *selected* form the two are the same number by construction —
+ * `STATION_GEOMETRY[type].aperturePlaneKm` is what the form cuts at — which is
+ * what keeps the sim's catalogue and the drawn bay in step. Everything else the
+ * geometry decides is read from the table here, so there is one aperture
+ * rectangle rather than a caller's copy of one.
+ *
  * `seed` decides only the addresses marked `seeded` — today the outpost's one
  * side berth. Passed in rather than drawn here: `system.ts` owns the per-system
  * streams and the domain-tag discipline, and a generator hidden in a geometry
@@ -286,18 +266,17 @@ function bandAxial(
  */
 export function stationInterior(
 	type: StationType,
-	geometry: StationGeometry,
+	aperturePlaneKm: number,
 	seed = 0,
 ): StationInterior {
 	const cell = BERTH_CELL[type];
-	const aperture: StationAperture = geometry.aperture;
+	const aperture: StationAperture = STATION_GEOMETRY[type].aperture;
 	const laneHalfAcrossKm = aperture.widthKm / 2;
 	const laneHalfUpKm = aperture.heightKm / 2;
 	const reach = cell.heightKm * BERTH_DEPTH_FACTOR[type];
-	const limit = BAY_HALF_LIMIT_KM[type];
-	const halfAcrossKm = Math.min(laneHalfAcrossKm + reach, limit);
-	const halfUpKm = Math.min(laneHalfUpKm + reach, limit);
-	const mouthAxialKm = geometry.aperturePlaneKm;
+	const halfAcrossKm = laneHalfAcrossKm + reach;
+	const halfUpKm = laneHalfUpKm + reach;
+	const mouthAxialKm = aperturePlaneKm;
 	const axialOf = bandAxial(mouthAxialKm, cell.lengthKm);
 	const bands = ROLE_BERTHS[type].map((entry) => entry.band);
 	const deepest = bands.includes("deep") ? axialOf.deep : axialOf.near;

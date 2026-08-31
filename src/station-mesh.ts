@@ -513,7 +513,7 @@ const FLOOD_MATERIAL = emissiveMaterial(
 function buildAperture(
 	type: StationType,
 	faceZ: number,
-	berthSeed = 0,
+	berthSeed: number,
 ): THREE.Group {
 	const { aperture } = STATION_GEOMETRY[type];
 	const group = new THREE.Group();
@@ -555,10 +555,10 @@ function buildAperture(
 		light.name = "aperture-light";
 		group.add(light);
 	}
-	// **E11's mouth shield, added before the bay** so that
-	// `buildStationForm`'s traversal collects the two plates mouth-first —
-	// which is the order `probe-dock-arrival.mjs` indexes into.
-	// **E11's mouth shield.** §3.2 records that the docking tolerances were set
+	// **E11's mouth shield, and it is added before the bay** so that
+	// `buildStationForm`'s traversal collects the two plates mouth-first, which
+	// is the order `probe-dock-arrival.mjs` indexes into. §3.2 records that the
+	// docking tolerances were set
 	// wide partly because the player has no visual referent at all for checks 2
 	// and 4, and a lit rectangle on the docking face says which face docks and
 	// roughly how the slot is rolled. It orients; it does not measure, and #69
@@ -566,21 +566,15 @@ function buildAperture(
 	// plaque `station-interior-mesh.ts` mounts, which is where a ship parked
 	// nose-outward can read it.
 	group.add(buildMouthNameplate(aperture, faceZ));
-	// **The bay (§13).** Built against the face this form actually cuts its
-	// aperture into rather than against the table, so the workbench's alternate
-	// forms — which pass their own `faceZ` — get an interior that meets their
-	// own opening. For a selected form the two are the same number by
-	// construction, which is what keeps the drawn bay and the sim's berths in
-	// step.
+	// **The bay (§13), against the face this form actually cuts.** `faceZ` is
+	// the only thing the renderer varies — everything else in the catalogue is
+	// the sim's table — because the workbench's alternate forms cut their
+	// aperture wherever their own silhouette wants, and a bay built against
+	// `aperturePlaneKm` would hang in space in front of them. For a selected
+	// form the two are the same number by construction, which is what keeps the
+	// drawn bay and the sim's berths in step.
 	group.add(
-		buildStationInterior(
-			type,
-			stationInterior(
-				type,
-				{ ...STATION_GEOMETRY[type], aperturePlaneKm: faceZ },
-				berthSeed,
-			),
-		),
+		buildStationInterior(type, stationInterior(type, faceZ, berthSeed)),
 	);
 	group.name = "aperture";
 	return group;
@@ -3065,7 +3059,11 @@ export function buildStationForm(
 	type: StationType,
 	formId: StationFormId,
 	color: number,
-	berthSeed = 0,
+	// **Required, not defaulted.** A default of 0 is the mismatch this parameter
+	// exists to prevent — a bay drawn at seed 0 while `interiorOfStation` reads
+	// the station's own draw puts a ship on a berth with no pad — and a default
+	// turns that into a silent wrong answer rather than a compile error.
+	berthSeed: number,
 ): StationMesh {
 	const form = formOf(type, formId);
 	// The builder returns its own fixtures rather than filling an array handed
@@ -3120,7 +3118,7 @@ export function buildStationForm(
 export function buildStationMesh(
 	type: StationType,
 	color: number,
-	berthSeed = 0,
+	berthSeed: number,
 ): StationMesh {
 	return buildStationForm(type, SELECTED_FORM[type], color, berthSeed);
 }

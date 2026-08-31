@@ -157,8 +157,13 @@ export const berthStandoff = (berth: Berth): LocalOffset =>
  *
  * Interpolated on the route's own length between the shortest and longest the
  * station's catalogue can produce, so the two figures are endpoints of a real
- * measurement rather than a lookup keyed on the band. A station with one band
- * has no spread and every route takes the near figure.
+ * measurement rather than a lookup keyed on the band.
+ *
+ * **The zero-spread case is "every route is the same length", not "one depth
+ * band".** They coincide today — the outpost has one band *and* a square bay,
+ * so its two berths are equidistant — but a non-square aperture would separate
+ * a deck berth from a wall berth on the same band, and the sentence would then
+ * name a condition the guard does not test.
  */
 export function traversalSeconds(
 	interior: StationInterior,
@@ -272,13 +277,11 @@ export function beginLaunch(
 	berth: Berth,
 	startedAtS: number,
 ): ArrivalLaw {
+	// **The arrival's own route, reversed.** Written out again inline, a fourth
+	// leg or a moved staging point had to land in two places or the two
+	// traversals stopped being the mirror §12.2 calls them.
 	const release = offset(frame.planeKm + LAUNCH_RELEASE_KM, 0, 0);
-	const path = [
-		berthCentre(berth),
-		berthStandoff(berth),
-		offset(interior.stagingAxialKm, 0, 0),
-		release,
-	];
+	const path = [...arrivalPath(interior, berth, release)].reverse();
 	const arc = arcOf(path);
 	return {
 		kind: "launch",
@@ -318,15 +321,23 @@ function locate(law: ArrivalLaw, e: number): { leg: number; t: number } {
 	return { leg: law.arc.length - 1, t: 1 };
 }
 
-/** Rebuild a local offset as a station-relative vector at one phase. */
-function recompose(
-	law: ArrivalLaw,
+/**
+ * Rebuild an offset held in aperture-basis components as a station-relative
+ * vector, at one phase.
+ *
+ * **Exported, because `dock-session.ts` places the parked ship with it.** It
+ * was a private helper and the docked tick wrote the same three lines out
+ * inline — two spellings of the rule this module exists to own, in two files
+ * that both insist elsewhere on one.
+ */
+export function recomposeOffset(
+	frame: ApertureFrame,
 	local: LocalOffset,
 	phaseRad: number,
 ): Vec3 {
-	const { across, up } = slotBasis(frameAtPhase(law.frame, phaseRad));
+	const { across, up } = slotBasis(frameAtPhase(frame, phaseRad));
 	return add(
-		scale(law.frame.axis, local.axial),
+		scale(frame.axis, local.axial),
 		add(scale(across, local.across), scale(up, local.up)),
 	);
 }
@@ -337,8 +348,8 @@ export function arrivalRel(law: ArrivalLaw, u: number, phaseRad: number): Vec3 {
 	const { leg, t } = locate(law, ease(clamp01(u)));
 	const a = law.path[leg - 1];
 	const b = law.path[leg];
-	return recompose(
-		law,
+	return recomposeOffset(
+		law.frame,
 		offsetAdd(a, offsetScale(offsetSub(b, a), t)),
 		phaseRad,
 	);

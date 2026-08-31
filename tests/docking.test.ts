@@ -76,11 +76,16 @@ import {
  * traffic is #8's — and the rows that need a full station build their own set
  * rather than moving this one.
  */
-const INTERIOR = stationInterior("trade", STATION_GEOMETRY.trade);
+const INTERIOR = stationInterior(
+	"trade",
+	STATION_GEOMETRY.trade.aperturePlaneKm,
+);
 const TRAFFIC = {
 	interior: INTERIOR,
 	hull: HULL_VISUALS.courier,
 	occupied: new Set<string>(),
+	// No ship of ours is at this station in most rows; the one that is says so.
+	sessionHere: false,
 };
 
 const DEG = Math.PI / 180;
