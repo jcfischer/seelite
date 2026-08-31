@@ -73,19 +73,6 @@ const ORIGIN =
  *  claim, so it is not configurable. */
 const SEED = 481;
 const URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=${SEED}`;
-/** How the bail messages below name the fixture — read back off the URL that is
- *  actually flown, rather than restated. A restatement is what #118's re-pick
- *  left behind: both messages went on naming the seed the header records as
- *  retired, long after the probe stopped flying it, and a bail message is the
- *  one line a reader trusts to say where to go and look (#169).
- *
- *  `globalThis.` because the const above shadows the global constructor. A
- *  `PROBE_URL` carrying no seed gets a phrase rather than a number, since the
- *  page then picks its own and this script never learns which. */
-const FIXTURE = (() => {
-	const flown = new globalThis.URL(URL).searchParams.get("seed");
-	return flown ? `seed ${flown}` : "the seed this probe flew";
-})();
 /** Sim seconds a leg is given. Generous against the ~60 s legs both are. */
 const LIMIT_S = 300;
 
@@ -102,8 +89,8 @@ const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
  *  one is a broken probe rather than a failing game — reported once, here.
  *
  *  The caller passes the *subject* and not the sentence: the seed comes from
- *  {@link FIXTURE}, so the one line a reader sees when the fixture is gone
- *  cannot name a seed the probe does not fly. */
+ *  {@link FIXTURE}, which the page reports, so the one line a reader sees when
+ *  the fixture is gone cannot name a seed the probe did not fly. */
 async function bailIfMissing(result, subject) {
 	if (!result.missing) return;
 	check(`${FIXTURE} has ${subject} this probe is written against`, false);
@@ -118,6 +105,20 @@ await page.goto(URL, { waitUntil: "load" });
 await bootedGame(page);
 
 const dt = await page.evaluate(() => window.__seelite.units.MAX_DT);
+
+/** How the bail messages below name the fixture — **the seed the page reports
+ *  building its world from**, not the one this script asked for. Read rather
+ *  than restated, because a restatement is what #118's re-pick left behind:
+ *  both messages went on naming the seed the header records as retired, long
+ *  after the probe stopped flying it, and a bail message is the one line a
+ *  reader trusts to say where to go and look (#169).
+ *
+ *  Reading it off the page rather than off {@link URL} is the same rule the
+ *  `dt` above follows, and here it is also the only correct source: `?seed=`
+ *  is normalised (`Math.abs(Math.trunc())`) and an unusable one is *ignored*
+ *  for a random world (`seedFromQuery`, `src/main.ts`), so a `PROBE_URL`
+ *  carrying `-481.9` or `abc` flies a world the query string does not name. */
+const FIXTURE = `seed ${await page.evaluate(() => window.__seelite.world.seed)}`;
 
 /** Fly one leg to a named station, sampling how close the path came to every
  *  planet, and report the state it ended in. */

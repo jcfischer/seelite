@@ -8,12 +8,14 @@
  * station. Nothing could go red for it — a bail message only prints when the
  * probe is already broken, and the browser tier does not run in CI at all.
  *
- * So the fix was structural rather than a corrected literal: the seed is read
- * back off the URL the probe actually flies, and the message is composed from
- * it. What is checkable about that is the shape, and only the shape — this test
- * cannot say the message is *true*, only that no copy of the seed exists to
- * drift away from the one that is flown. Truth follows from there being one
- * value, which is the whole of the claim.
+ * So the fix was structural rather than a corrected literal: the message is
+ * composed from the seed **the page reports building its world from**, the same
+ * way the probe already reads `MAX_DT` rather than restating it. What is
+ * checkable about that here is the shape, and only the shape — this headless
+ * test cannot reach the page, so it cannot say the message is *true*, only that
+ * no copy of the seed is left in the file to drift away from the one flown.
+ * Truth follows from the page being asked, which is the other half and is not
+ * checkable on this tier.
  *
  * Scoped to this one file on purpose. `scripts/lib/view-set.mjs` names seeds in
  * runtime strings legitimately — its §13.6.6 row declares a seed of its own and
