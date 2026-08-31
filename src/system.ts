@@ -323,6 +323,15 @@ export interface Station {
 	 *  refinery's fixed pad; [0.6, 3.0] for the two Coriolis types, where it is
 	 *  the difficulty dial rather than decoration. */
 	spinRpm: number;
+	/**
+	 * The station's own berth draw (`docking.md` §13.2).
+	 *
+	 * Today it decides only which side an outpost's second berth is on, which is
+	 * why it is an integer rather than a berth id: the catalogue is the
+	 * geometry's to build, and a generated *layout* would put a silhouette
+	 * decision in the generator.
+	 */
+	berthSeed: number;
 }
 
 export interface SystemContents {
@@ -675,6 +684,7 @@ function generateStations(
 	// what `tests/station-orbits.test.ts` exists to catch (§5.3).
 	const flagRand = stream(record.seed, DOMAIN.STATION_FLAGS);
 	const spinRand = stream(record.seed, DOMAIN.STATION_SPIN);
+	const berthRand = stream(record.seed, DOMAIN.STATION_BERTHS);
 	const names = stationNames(record.seed, record.name);
 	const stations: Station[] = [];
 	// **No `?? planets[0]` fallback.** It used to be there, and it is what made
@@ -697,10 +707,17 @@ function generateStations(
 	 */
 	const fields = (
 		type: StationType,
-	): Pick<Station, "name" | "blackMarket" | "spinRpm" | "localCarrierId"> => ({
+	): Pick<
+		Station,
+		"name" | "blackMarket" | "spinRpm" | "localCarrierId" | "berthSeed"
+	> => ({
 		name: names[type],
 		blackMarket: drawBlackMarket(flagRand, type, record.government),
 		spinRpm: drawSpinRpm(spinRand, type),
+		// Unconditional, like the two above and for the same reason: a draw kept
+		// only for the types that read it makes the draw count depend on which
+		// stations a system happens to have.
+		berthSeed: Math.floor(berthRand() * 0x100000000),
 		// Not a draw: the persistence identity is a table lookup
 		// (`station.ts`), so it consumes nothing from either stream.
 		localCarrierId: LOCAL_CARRIER_ID[type],

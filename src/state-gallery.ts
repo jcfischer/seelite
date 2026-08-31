@@ -4,7 +4,7 @@
  * contacts are still design consumers, not completed simulation systems.
  */
 import * as THREE from "three";
-import { ARRIVAL_SECONDS_MAX, ARRIVAL_SECONDS_MIN } from "./docking";
+import { TRAVERSAL_SECONDS_DEEP, TRAVERSAL_SECONDS_NEAR } from "./docking";
 import {
 	MARKET_PERIOD_MIN,
 	type MarketStation,
@@ -278,9 +278,10 @@ export const DEFAULT_CONSOLE_VIEW: ConsoleView = {
 	gameTimeMin: 0,
 };
 
-/** The gallery's arrival, inside E3's ratified range. #77 owns the real law. */
+/** The gallery's arrival, inside §13.3's ratified range. `arrival.ts` owns the
+ *  real law, which prices the route rather than assuming a berth. */
 export const GALLERY_ARRIVAL_SECONDS =
-	(ARRIVAL_SECONDS_MIN + ARRIVAL_SECONDS_MAX) / 2;
+	(TRAVERSAL_SECONDS_NEAR + TRAVERSAL_SECONDS_DEEP) / 2;
 
 /**
  * Everything the console interpolates goes through here.

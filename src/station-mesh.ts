@@ -62,7 +62,6 @@ import {
 	type StationAperture,
 	type StationType,
 } from "./station";
-import { drawnThroatDepthKm, throatDepthKm } from "./arrival";
 import { type GreebleZone, buildGreebles } from "./station-greebles";
 import {
 	STATION_QUALITY,
@@ -76,6 +75,12 @@ import {
 	stationDetailLevel,
 	surfaceTexels,
 } from "./station-visuals";
+import {
+	NAMEPLATE_NAME,
+	buildStationInterior,
+	ringAround,
+} from "./station-interior-mesh";
+import { stationInterior } from "./station-interior";
 import { PLATE_TEXTURE_SIZE } from "./surface";
 
 /**
@@ -177,12 +182,6 @@ export interface StationMesh {
 	 * are written to after construction.
 	 */
 	nameplates: THREE.Mesh[];
-	/**
-	 * The docked-only inner gate for a slot bay. It stays open for the approach
-	 * and traversal, then closes once the ship has parked so a free look reads
-	 * as a contained hangar rather than open space behind the aperture.
-	 */
-	hangarGate: THREE.Object3D | null;
 	/**
 	 * The instanced greeble meshes, so #98's quality key can reach them (#102 §5).
 	 *
@@ -454,64 +453,6 @@ const PANE_MATERIALS: Record<StationType, THREE.MeshStandardMaterial> = {
 const APERTURE_LIGHT_MATERIAL = emissiveMaterial(0xffb347, 2.2);
 
 /**
- * The throat's walls: the **inside** of a box.
- *
- * `BackSide` is what makes one box a tunnel — the near faces are culled and the
- * far ones are what the arriving ship sees. Not emissive: the throat is a lit
- * structure seen against a dark interior, and the aperture bars around its
- * mouth are the light source that says where it is.
- *
- * **Lambert rather than Standard, and the probe decided it.** The recess this
- * replaces was an unlit `MeshBasicMaterial`; making it PBR costs enough of the
- * frame under SwiftShader to turn `probe-navigation-console.mjs`'s *"the
- * simulation keeps running while the chart is open"* row red — 28 → 32 frames
- * in 500 ms against a `> +5` threshold, three runs out of three, where Lambert
- * passes three out of three. A hand-rolled frame counter disagreed with itself
- * on the same pair (31 against 42 in one three-second sample), which is what a
- * measurement looks like when it cannot decide; the probe row is repeatable and
- * it can.
- *
- * **What that costs, stated rather than discovered.** #99 made
- * `scene.environment` a baked star, and `CLAUDE.md` records that it reaches
- * `MeshStandardMaterial` and nothing else — so this surface is lit by the sun
- * and the hemisphere but takes no environment, where the plating around its
- * mouth does. On a rough dark interior seen for a few seconds that is a
- * difference nobody can point at; on a brighter or shinier interior it would be
- * the wrong trade, and #99's rig is where that argument belongs.
- */
-const THROAT_MATERIAL = new THREE.MeshLambertMaterial({
-	color: 0x2a3038,
-	side: THREE.BackSide,
-});
-
-/** The low, warm structure that turns a slot throat into a recognisable bay. */
-const HANGAR_STRUCTURE_MATERIAL = new THREE.MeshStandardMaterial({
-	color: 0x151d27,
-	roughness: 0.8,
-	metalness: 0.3,
-});
-const HANGAR_GUIDE_MATERIAL = emissiveMaterial(0x6fc9dd, 1.2);
-const HANGAR_GATE_MATERIAL = new THREE.MeshStandardMaterial({
-	color: 0x111923,
-	roughness: 0.72,
-	metalness: 0.45,
-});
-
-/** The renderer toggles this group only for the station the player is docked at. */
-export const HANGAR_GATE_NAME = "hangar-gate";
-
-/** A pad's deck — the surface E8's touchdown lands on. */
-const DECK_MATERIAL = new THREE.MeshStandardMaterial({
-	color: 0x39414c,
-	roughness: 0.9,
-	metalness: 0.15,
-});
-
-/** How thick a pad's deck plate is, as a multiple of the aperture's smaller
- *  dimension. Thin: it is a deck, not a block. */
-const DECK_THICKNESS_FACTOR = 0.08;
-
-/**
  * The nameplate's height, as a multiple of the aperture's.
  *
  * **Two sizes, because the two plates are read from very different ranges.**
@@ -523,28 +464,6 @@ const DECK_THICKNESS_FACTOR = 0.08;
  * this.
  */
 const NAMEPLATE_HEIGHT_FACTOR = 0.4;
-/** The interior plaque's size, as multiples of the aperture's. Unchanged by
- *  #128 — what moved is where it sits, which is `NAMEPLATE_INNER_OFFSET_FACTOR`
- *  below. */
-const NAMEPLATE_INNER_WIDTH_FACTOR = 0.4;
-const NAMEPLATE_INNER_HEIGHT_FACTOR = 0.22;
-/**
- * How far off the axis the interior plaque sits, as a multiple of the
- * aperture's width — **zero: it is straight ahead of a parked ship.**
- *
- * It was off-axis so the arriving ship would fly *past* a plaque rather than
- * into it, which was right when the throat was 280 m deep and the ship crossed
- * most of it. #128 cut the travel to 70 m and gave the recess 35 m of wall
- * beyond that, so the ship no longer passes the plaque at all — it stops short
- * of it and looks at it, and straight ahead is where a sign should be.
- *
- * **This did not fix anything, and the change is not a diagnosis.** Off-axis,
- * the plaque was 54° off the view axis, which is a reason it might not have
- * drawn; on the axis it still draws **zero** pixels, and #131 owns the question
- * of why. Moving it was right on its own terms and that is the whole claim.
- */
-const NAMEPLATE_INNER_OFFSET_FACTOR = 0;
-
 /** How thick a nameplate is, km — the aperture bars' own thickness, because it
  *  is mounted the same way and for the same reason. */
 const NAMEPLATE_THICKNESS_KM = 0.024;
@@ -552,12 +471,12 @@ const NAMEPLATE_THICKNESS_KM = 0.024;
 /**
  * What `main.ts` looks for when it fills the shields with pixels.
  *
- * A name rather than a returned array threaded back through eleven form
- * builders: the plates are built inside `buildAperture`, which every form calls
- * and none of them returns anything from, and `buildStationForm` already
- * traverses the finished graph once to collect the tagged accessories.
+ * **Re-exported from `station-interior-mesh.ts`, which owns it now**: the
+ * interior plaque is built over there, on the bulkhead the mouth is cut in, and
+ * the tag belongs with the module that puts it on an object. Re-exported rather
+ * than moved at every call site so importers are unchanged.
  */
-export const NAMEPLATE_NAME = "station-nameplate";
+export { NAMEPLATE_NAME } from "./station-interior-mesh";
 
 /**
  * One nameplate quad's material, **per plate rather than shared**.
@@ -585,6 +504,41 @@ const FLOOD_MATERIAL = emissiveMaterial(
 );
 
 /**
+ * The frame around an aperture, as four bars rather than one slab.
+ *
+ * **The hole has to be a hole.** Every form that framed its opening did it with
+ * a box spanning the aperture, which read correctly only because a dark recess
+ * was drawn in front of it — §13.1 replaced that recess with a bay, and a slab
+ * across the mouth is then a lit plate where the way out should be.
+ *
+ * `outerScale` keeps each form's own proportions: the trade Coriolis framed its
+ * slot half again its width and three times its height, and that is what the
+ * silhouette was ranked with.
+ */
+function coamingRing(
+	aperture: StationAperture,
+	z: number,
+	depth: number,
+	outerScale = { across: 1.5, up: 3 },
+): THREE.Mesh[] {
+	const material = plainMaterial(0x79838f, 0.7, 0.45);
+	const outer = {
+		across: (aperture.widthKm * outerScale.across) / 2,
+		up: (aperture.heightKm * outerScale.up) / 2,
+	};
+	const inner = { across: aperture.widthKm / 2, up: aperture.heightKm / 2 };
+	const bars: THREE.Mesh[] = [];
+	for (const [w, h, x, y] of ringAround(outer, inner)) {
+		if (w <= 0 || h <= 0) continue;
+		const bar = new THREE.Mesh(new THREE.BoxGeometry(w, h, depth), material);
+		bar.position.set(x, y, z);
+		bar.name = "coaming";
+		bars.push(bar);
+	}
+	return bars;
+}
+
+/**
  * The aperture, drawn as a lit recess on the +Z face.
  *
  * A dark box sunk into the hull with an emissive frame around its mouth, so the
@@ -595,19 +549,15 @@ const FLOOD_MATERIAL = emissiveMaterial(
  * z-fight, and the symptom is a slot that flickers in and out of existence as
  * the station rotates, which reads as the aperture not being there at all.
  */
-function buildAperture(type: StationType, faceZ: number): THREE.Group {
+function buildAperture(
+	type: StationType,
+	faceZ: number,
+	berthSeed: number,
+): THREE.Group {
 	const { aperture } = STATION_GEOMETRY[type];
 	const group = new THREE.Group();
 	const w = aperture.widthKm;
 	const h = aperture.heightKm;
-	// A slot's recess runs the throat's full depth — read from `arrival.ts`, so
-	// the drawn tunnel and the sim law that flies down it cannot disagree about
-	// how far in the ship parks. A pad has no inside, so its recess stays the
-	// shallow one it always was and E8's deck sits at its mouth.
-	const depth =
-		aperture.kind === "slot"
-			? drawnThroatDepthKm(aperture)
-			: Math.min(w, h) * 0.8;
 	// **Thick enough to straddle the surface it is cut into.** The frame used to
 	// sit *on* the face — bars centred half a bar proud of it — so it touched
 	// the hull at a plane and nowhere else. On screen that is a lit rectangle
@@ -617,31 +567,11 @@ function buildAperture(type: StationType, faceZ: number): THREE.Group {
 	// that "half" is a real overlap rather than a rounding.
 	const bar = 0.024;
 
-	const mouth = new THREE.Mesh(
-		new THREE.BoxGeometry(w, h, depth),
-		// **E7's throat is this box, not a second one behind it.** §12.4 says the
-		// throat extends the aperture recess, and the first build read that as
-		// "add a deeper box behind the mouth" — which draws nothing, because the
-		// mouth is a solid dark rectangle standing in front of it. A slot's
-		// recess is therefore the throat: deep, and rendered `BackSide` so what
-		// the arriving ship sees is the inside of a tunnel rather than the
-		// outside of a lid.
-		aperture.kind === "slot"
-			? THROAT_MATERIAL
-			: new THREE.MeshBasicMaterial({ color: 0x05070a }),
-	);
-	// **A slot's recess spans exactly `[plane − depth, plane]`.** The sim parks
-	// the ship at the far end of that span (`dockedAxialKm`), so an offset here
-	// is an offset between where the ship stops and where the wall is — the
-	// version this replaces sank the box half a bar to stop its front face
-	// z-fighting with the surface it is cut into, and left the ship 12 m short
-	// of the end wall. A slot's recess is rendered `BackSide`, so its near cap
-	// is culled and there is no coplanar face left to fight. A pad's is not, and
-	// keeps the sinking.
-	mouth.position.z =
-		aperture.kind === "slot" ? faceZ - depth / 2 : faceZ + bar / 2 - depth / 2;
-	mouth.name = "aperture-mouth";
-	group.add(mouth);
+	// **There is no recess any more, and no dark mouth plate.** §13.1 replaced
+	// E1/E7/E8's throat-and-deck presentation with one enclosed bay for every
+	// role, so what lies behind the opening is the interior below — and a solid
+	// rectangle at the aperture would stand in front of it, which is exactly the
+	// failure E7's own comment records.
 
 	// Four bars around the mouth rather than a ring: the slot is a rectangle, and
 	// its long axis is what the roll match is matched *to*.
@@ -664,166 +594,38 @@ function buildAperture(type: StationType, faceZ: number): THREE.Group {
 		light.name = "aperture-light";
 		group.add(light);
 	}
-	// **E8's deck**, for a pad only. A pad is an exterior deck with no inside,
-	// so what the arrival needs under it is a surface to touch down on. E7's
-	// throat is not built here — it *is* the recess above, which every form
-	// already calls this one function for.
-	const interior = buildInterior(aperture, faceZ);
-	if (interior) group.add(interior);
-	const hangar = buildSlotHangar(aperture, faceZ, depth);
-	if (hangar) group.add(hangar);
-	// **E11: the shield appears at the mouth *and* inside the throat.** The one
-	// at the mouth does a second job — §3.2 records that the docking tolerances
-	// were set wide partly because the player has no visual referent at all for
-	// checks 2 and 4, and a lit rectangle on the docking face says which face
-	// docks and roughly how the slot is rolled. It orients; it does not measure,
-	// and #69 may not treat it as a cue (§12.5).
-	for (const plate of buildNameplates(aperture, faceZ)) group.add(plate);
+	// **E11's mouth shield, and it is added before the bay** so that
+	// `buildStationForm`'s traversal collects the two plates mouth-first, which
+	// is the order `probe-dock-arrival.mjs` indexes into. §3.2 records that the
+	// docking tolerances were set
+	// wide partly because the player has no visual referent at all for checks 2
+	// and 4, and a lit rectangle on the docking face says which face docks and
+	// roughly how the slot is rolled. It orients; it does not measure, and #69
+	// may not treat it as a cue (§12.5). The *interior* shield is the bulkhead
+	// plaque `station-interior-mesh.ts` mounts, which is where a ship parked
+	// nose-outward can read it.
+	group.add(buildMouthNameplate(aperture, faceZ));
+	// **The bay (§13), against the face this form actually cuts.** `faceZ` is
+	// the only thing the renderer varies — everything else in the catalogue is
+	// the sim's table — because the workbench's alternate forms cut their
+	// aperture wherever their own silhouette wants, and a bay built against
+	// `aperturePlaneKm` would hang in space in front of them. For a selected
+	// form the two are the same number by construction, which is what keeps the
+	// drawn bay and the sim's berths in step.
+	group.add(
+		buildStationInterior(type, stationInterior(type, faceZ, berthSeed)),
+	);
 	group.name = "aperture";
 	return group;
 }
 
 /**
- * What lies behind the aperture: a throat for a slot, a deck for a pad.
+ * **E9/E10/E11: the mouth name shield**, as geometry only.
  *
- * **The throat is drawn as the inside of a box.** `THREE.BackSide` on a single
- * `BoxGeometry` is the tunnel — four walls and an end, one draw call, and the
- * cross-section is the aperture's own rectangle by construction rather than by
- * four wall meshes whose positions could drift from it.
- *
- * **A pad gets a deck instead, and that is E8 rather than a shallow throat.** A
- * pad is an exterior deck with no inside, so what the arrival needs under it is
- * a surface to touch down on: a plate at the aperture, one aperture across.
- */
-function buildInterior(
-	aperture: StationAperture,
-	faceZ: number,
-): THREE.Mesh | null {
-	// **A slot's interior is its recess** — see the mouth above. Only a pad
-	// needs a part of its own here.
-	if (aperture.kind !== "pad") return null;
-	const thickness =
-		DECK_THICKNESS_FACTOR * Math.min(aperture.widthKm, aperture.heightKm);
-	const deck = new THREE.Mesh(
-		new THREE.BoxGeometry(aperture.widthKm, aperture.heightKm, thickness),
-		DECK_MATERIAL,
-	);
-	deck.position.z = faceZ - thickness / 2;
-	deck.name = "aperture-deck";
-	return deck;
-}
-
-/**
- * The shared docked bay for every slot station.
- *
- * The approach remains an open throat: it is the visible path a pilot just
- * flew. Once parked, `main.ts` closes the tagged gate at the mouth. The ribs,
- * deck, guide strips and end bulkhead make the same compact volume read as a
- * working hangar from a free look instead of an unlit rectangular recess.
- */
-function buildSlotHangar(
-	aperture: StationAperture,
-	faceZ: number,
-	depth: number,
-): THREE.Group | null {
-	if (aperture.kind !== "slot") return null;
-	const { widthKm: w, heightKm: h } = aperture;
-	const group = new THREE.Group();
-	group.name = "hangar-interior";
-	const wall = Math.min(w, h) * 0.035;
-	const floorY = -h * 0.5 + wall * 0.5;
-	const ceilingY = h * 0.5 - wall * 0.5;
-	const centreZ = faceZ - depth * 0.5;
-
-	for (const y of [floorY, ceilingY]) {
-		const deck = new THREE.Mesh(
-			new THREE.BoxGeometry(w * 0.94, wall, depth * 0.96),
-			HANGAR_STRUCTURE_MATERIAL,
-		);
-		deck.position.set(0, y, centreZ);
-		deck.name = "hangar-deck";
-		group.add(deck);
-	}
-
-	// Three ribs establish scale down the bay without changing its aperture or
-	// silhouette. They are deliberately inset so they never become a second
-	// containment rule for the scripted path.
-	for (const fraction of [0.24, 0.54, 0.82]) {
-		const z = faceZ - depth * fraction;
-		const top = new THREE.Mesh(
-			new THREE.BoxGeometry(w * 0.9, wall, wall),
-			HANGAR_STRUCTURE_MATERIAL,
-		);
-		top.position.set(0, ceilingY, z);
-		top.name = "hangar-rib";
-		group.add(top);
-		for (const x of [-w * 0.45, w * 0.45]) {
-			const upright = new THREE.Mesh(
-				new THREE.BoxGeometry(wall, h * 0.82, wall),
-				HANGAR_STRUCTURE_MATERIAL,
-			);
-			upright.position.set(x, 0, z);
-			upright.name = "hangar-rib";
-			group.add(upright);
-		}
-	}
-
-	// Landing-guide strips make the floor read as a destination rather than a
-	// tunnel wall, even under a station's changing exterior light.
-	for (const x of [-w * 0.2, w * 0.2]) {
-		const guide = new THREE.Mesh(
-			new THREE.BoxGeometry(wall * 0.55, wall * 0.3, depth * 0.7),
-			HANGAR_GUIDE_MATERIAL,
-		);
-		guide.position.set(x, floorY + wall * 0.48, faceZ - depth * 0.58);
-		guide.name = "hangar-guide";
-		group.add(guide);
-	}
-	const endLight = new THREE.Mesh(
-		new THREE.BoxGeometry(w * 0.42, h * 0.12, wall * 0.4),
-		HANGAR_GUIDE_MATERIAL,
-	);
-	endLight.position.set(0, 0, faceZ - depth + wall * 0.3);
-	endLight.name = "hangar-end-light";
-	group.add(endLight);
-
-	// Closed only after docking: leaving it open through the traversal preserves
-	// the arrival's view of the aperture, while the settled view cannot leak the
-	// exterior starfield when the pilot turns around.
-	const gate = new THREE.Group();
-	gate.name = HANGAR_GATE_NAME;
-	gate.visible = false;
-	const door = new THREE.Mesh(
-		// It overlaps the recess by a real span rather than merely kissing its
-		// lip. The station connectivity contract deliberately rejects grazes.
-		new THREE.BoxGeometry(w, h, wall * 6),
-		HANGAR_GATE_MATERIAL,
-	);
-	// Its outward face is flush with the aperture plane: the bay may close after
-	// docking, but it must never protrude into the approach corridor.
-	door.position.z = faceZ - wall * 3;
-	door.name = "hangar-door";
-	gate.add(door);
-	for (const y of [-h * 0.22, 0, h * 0.22]) {
-		const strip = new THREE.Mesh(
-			new THREE.BoxGeometry(w * 0.72, wall * 0.28, wall),
-			HANGAR_GUIDE_MATERIAL,
-		);
-		strip.position.set(0, y, faceZ - wall);
-		strip.name = "hangar-gate-strip";
-		gate.add(strip);
-	}
-	group.add(gate);
-	return group;
-}
-
-/**
- * **E9/E10/E11: the name shield**, as geometry only.
- *
- * Two quads: one on the docking face above the mouth, one on the throat's end
- * wall facing the incoming ship. The interior one is the half only a probe can
- * catch — it exists for a few seconds, from one angle, and nothing headless can
- * see it at all (§12.6's browser row 2).
+ * One quad, on the docking face beside the opening. Its partner — the plaque a
+ * parked ship reads — is the bulkhead shield `station-interior-mesh.ts` mounts
+ * inside the bay, which is where §13.1 puts it: visible from every berth,
+ * because a parked ship faces out.
  *
  * **The texture is the renderer's** (E10). This module is headless-tested and
  * contains no `document` reference at all; a `CanvasTexture` here would force
@@ -832,14 +634,13 @@ function buildSlotHangar(
  * be the one no test ever takes*. So the geometry is arithmetic and stays here,
  * and `main.ts` fills the `map`, which it already does for the cockpit's text.
  */
-function buildNameplates(
+function buildMouthNameplate(
 	aperture: StationAperture,
 	faceZ: number,
-): THREE.Mesh[] {
+): THREE.Mesh {
 	const w = aperture.widthKm;
 	const h = aperture.heightKm;
 	const plateH = h * NAMEPLATE_HEIGHT_FACTOR;
-	const plates: THREE.Mesh[] = [];
 
 	const mouth = new THREE.Mesh(
 		new THREE.BoxGeometry(w, plateH, NAMEPLATE_THICKNESS_KM),
@@ -851,28 +652,20 @@ function buildNameplates(
 	// nowhere else, which reads as a sign floating a few metres in front of the
 	// station. `tests/station-mesh.test.ts`'s connectivity check reports exactly
 	// that, and did, on the first version of this plate.
+	//
 	// **Butted onto an aperture bar, not floating beside it.** The bar spans
 	// `w/2` to `w/2 + bar` and is itself bolted to the hull, so seating the
 	// plate's inner edge half a bar into it gives a real overlap on all three
-	// axes — which is what the connectivity check measures, and what a sign
-	// mounted on a station actually looks like. Anchoring to the hull instead
-	// would need a hull surface beside the mouth, and the trade station's
-	// second form does not have one there.
+	// axes.
 	//
-	// **On local +X, turned a quarter turn.** Local X is the *mesh's* own X, and
-	// the mesh's X is where `main.ts`'s `setFromUnitVectors` happens to leave it
-	// — the roll about the aperture axis is arbitrary today, which §12.7's
-	// joint 8 records and #77 deliberately did not fix. So this is not "the
-	// slot's `across`" and an earlier version of this comment said it was,
-	// asserting a rule the same change had just written down as false.
-	//
-	// What it *is*: the aperture rectangle's long axis, which is local X by
-	// construction — `BoxGeometry(w, h, …)` above puts `w` there. A sign along
-	// the short side would read as hanging off the frame at any roll. The
+	// **On local +X, turned a quarter turn.** Local X is the aperture
+	// rectangle's long axis by construction — `BoxGeometry(w, h, …)` above puts
+	// `w` there — and since #126 it is also the slot's phase-zero `across`. A
+	// sign along the short side would read as hanging off the frame. The
 	// texture's own up is local +Y, so the quarter turn is what moves it to X —
 	// **negative**, because the other sign turns the text through the mirror and
-	// the name reads backwards. Which way round it goes is not derivable from
-	// anything here; it was read off a captured frame.
+	// the name reads backwards. Which way round it goes was read off a captured
+	// frame.
 	mouth.rotation.z = -Math.PI / 2;
 	mouth.position.set(
 		w / 2 + NAMEPLATE_THICKNESS_KM / 2 + plateH / 2,
@@ -880,33 +673,7 @@ function buildNameplates(
 		faceZ + NAMEPLATE_THICKNESS_KM / 2,
 	);
 	mouth.name = NAMEPLATE_NAME;
-	plates.push(mouth);
-
-	if (aperture.kind === "slot") {
-		const inner = new THREE.Mesh(
-			new THREE.BoxGeometry(
-				w * NAMEPLATE_INNER_WIDTH_FACTOR,
-				h * NAMEPLATE_INNER_HEIGHT_FACTOR,
-				NAMEPLATE_THICKNESS_KM,
-			),
-			nameplateMaterial(),
-		);
-		// On the throat's end wall, facing back out at the arriving ship — which
-		// is the one angle it is ever seen from — and straddling that wall for
-		// the reason above.
-		// Off the axis rather than on it, so the ship flies *past* a plaque
-		// rather than into it — and off it along local X for the mouth plate's
-		// reason: that is the rectangle's long side.
-		inner.rotation.z = -Math.PI / 2;
-		inner.position.set(
-			w * NAMEPLATE_INNER_OFFSET_FACTOR,
-			0,
-			faceZ - drawnThroatDepthKm(aperture) + NAMEPLATE_THICKNESS_KM / 2,
-		);
-		inner.name = NAMEPLATE_NAME;
-		plates.push(inner);
-	}
-	return plates;
+	return mouth;
 }
 
 /**
@@ -951,7 +718,11 @@ export interface StationForm {
 	 *  role: a ring station and a drum are not the same size, and
 	 *  `STATION_SILHOUETTE_KM` below is the selected form's row. */
 	readonly reachKm: number;
-	readonly build: (color: number) => BuiltPart;
+	/** `berthSeed` is the station's own berth draw (`docking.md` §13.2), which
+	 *  reaches the interior and nothing else. Every builder takes it and most
+	 *  only forward it, which is the price of the alternative being a module
+	 *  global that a second station would overwrite. */
+	readonly build: (color: number, berthSeed: number) => BuiltPart;
 }
 
 export type StationFormId = "a" | "b" | "c";
@@ -1260,7 +1031,7 @@ function buildCuboctahedron(radiusKm: number, material: THREE.Material) {
 	return new THREE.Mesh(geometry, flatCloneOf(material));
 }
 
-function buildTradeCoriolis(color: number): BuiltPart {
+function buildTradeCoriolis(color: number, berthSeed: number): BuiltPart {
 	const r = STATION_GEOMETRY.trade.coreRadiusKm;
 	const group = new THREE.Group();
 	const fixtures: StationFixture[] = [];
@@ -1299,19 +1070,24 @@ function buildTradeCoriolis(color: number): BuiltPart {
 	// depth the frame stood a hair clear of the coaming and the two were
 	// separate objects touching at a plane — which the connectivity check reads,
 	// correctly, as a light hanging in front of a station.
+	// **A ring, and it always claimed to be one.** It was a single box spanning
+	// the aperture, which worked while the slot in front of it was a dark recess
+	// drawn `BackSide`: from outside, the recess read as the hole. §13.1 replaced
+	// that recess with a bay, and the slab was left standing across the mouth —
+	// from inside, the way out was a lit grey plate, and no rim on the bay's own
+	// bulkhead could help, because the slab was in front of it. Four bars around
+	// the opening instead, which changes nothing about the silhouette and makes
+	// the hole a hole.
 	const slot = STATION_GEOMETRY.trade.aperture;
-	const coaming = new THREE.Mesh(
-		new THREE.BoxGeometry(slot.widthKm * 1.5, slot.heightKm * 3, face * 0.09),
-		plainMaterial(0x79838f, 0.7, 0.45),
-	);
-	coaming.position.z = face + face * 0.035;
-	coaming.name = "coaming";
-	group.add(coaming);
+	for (const bar of coamingRing(slot, face + face * 0.035, face * 0.09))
+		group.add(bar);
 	// **The declared plane, not a depth this form picks.** `station.ts` owns
 	// where the aperture is, because §3's checks are evaluated there; the number
 	// happens to be this face 6% proud, and `tests/station-mesh.test.ts` asserts
 	// the two agree rather than trusting the comment.
-	group.add(buildAperture("trade", STATION_GEOMETRY.trade.aperturePlaneKm));
+	group.add(
+		buildAperture("trade", STATION_GEOMETRY.trade.aperturePlaneKm, berthSeed),
+	);
 
 	// The window grid, on the four equatorial square faces. Each pane sits on
 	// its face's own plane, a hair proud, so none of them can float: the face is
@@ -1425,7 +1201,7 @@ function buildTradeCoriolis(color: number): BuiltPart {
  *   modules at a fixed pitch — the same trick #35's carrier uses, and the only
  *   one that works against a starfield with no ruler in it.
  */
-function buildTradeRing(color: number): BuiltPart {
+function buildTradeRing(color: number, berthSeed: number): BuiltPart {
 	const r = STATION_GEOMETRY.trade.coreRadiusKm;
 	const group = new THREE.Group();
 	const fixtures: StationFixture[] = [];
@@ -1593,7 +1369,7 @@ function buildTradeRing(color: number): BuiltPart {
 	// **On the hub's own front cap**, at the same z its last ring sits at. Set
 	// short of it the hub stood 6 m past the mouth — a station poking into the
 	// corridor a ship flies down, which is the one place nothing may be.
-	group.add(buildAperture("trade", r * 0.34));
+	group.add(buildAperture("trade", r * 0.34, berthSeed));
 	group.add(
 		portRun("trade", PANE_COUNT, (i, count, position, normal) => {
 			const theta = (i / count) * Math.PI * 2;
@@ -1645,7 +1421,7 @@ function buildTradeRing(color: number): BuiltPart {
 
 /** Trade C — Drum. An O'Neill cylinder end-on: a long spun barrel whose
  *  +Z cap is the dock. The one form whose length, not its width, is the cue. */
-function buildTradeDrum(color: number): BuiltPart {
+function buildTradeDrum(color: number, berthSeed: number): BuiltPart {
 	const r = STATION_GEOMETRY.trade.coreRadiusKm;
 	const group = new THREE.Group();
 	const fixtures: StationFixture[] = [];
@@ -1674,7 +1450,7 @@ function buildTradeDrum(color: number): BuiltPart {
 		group.add(band);
 	}
 	// At the drum's own front cap (`r * 0.88`), not 20 m in front of it.
-	group.add(buildAperture("trade", r * 0.88));
+	group.add(buildAperture("trade", r * 0.88, berthSeed));
 	group.add(
 		portRun("trade", PANE_COUNT, (i, count, position, normal) => {
 			const theta = (i / count) * Math.PI * 2 * 3;
@@ -1718,7 +1494,7 @@ function buildTradeDrum(color: number): BuiltPart {
 /** Shipyard A — Gantry. A bridge keel with two open bays of lofted ribs
  *  along it; the bays are the silhouette, and they are obviously *for* holding
  *  something the size of a ship. */
-function buildShipyardGantry(color: number): BuiltPart {
+function buildShipyardGantry(color: number, berthSeed: number): BuiltPart {
 	const group = new THREE.Group();
 	const fixtures: StationFixture[] = [];
 	const r = STATION_GEOMETRY.shipyard.coreRadiusKm;
@@ -1751,7 +1527,11 @@ function buildShipyardGantry(color: number): BuiltPart {
 	spun.name = "spun";
 	spun.add(hub);
 	spun.add(
-		buildAperture("shipyard", STATION_GEOMETRY.shipyard.aperturePlaneKm),
+		buildAperture(
+			"shipyard",
+			STATION_GEOMETRY.shipyard.aperturePlaneKm,
+			berthSeed,
+		),
 	);
 	group.add(spun);
 	const rib = plainMaterial(0x6f7d88, 0.78, 0.42);
@@ -1895,7 +1675,7 @@ function buildShipyardGantry(color: number): BuiltPart {
  * #35's pool that answers "how big is that" at range, because you can see a
  * hole a ship fits through.
  */
-function buildShipyardHangar(color: number): BuiltPart {
+function buildShipyardHangar(color: number, berthSeed: number): BuiltPart {
 	const group = new THREE.Group();
 	const fixtures: StationFixture[] = [];
 	const r = STATION_GEOMETRY.shipyard.coreRadiusKm;
@@ -1985,7 +1765,7 @@ function buildShipyardHangar(color: number): BuiltPart {
 	const spun = new THREE.Group();
 	spun.name = "spun";
 	spun.add(hub);
-	spun.add(buildAperture("shipyard", r * 0.6));
+	spun.add(buildAperture("shipyard", r * 0.6, berthSeed));
 	group.add(spun);
 
 	// Inside the bay mouth, which is where a bay's floods are.
@@ -2059,7 +1839,7 @@ function buildShipyardHangar(color: number): BuiltPart {
 /** Shipyard C — Slipway ring. A partial ring with the gap as the slip: the
  *  one shipyard form whose outline is a broken circle, which nothing else in
  *  the pool is. */
-function buildShipyardSlipway(color: number): BuiltPart {
+function buildShipyardSlipway(color: number, berthSeed: number): BuiltPart {
 	const group = new THREE.Group();
 	const fixtures: StationFixture[] = [];
 	const r = STATION_GEOMETRY.shipyard.coreRadiusKm;
@@ -2088,7 +1868,7 @@ function buildShipyardSlipway(color: number): BuiltPart {
 	const spun = new THREE.Group();
 	spun.name = "spun";
 	spun.add(spine);
-	spun.add(buildAperture("shipyard", r * 0.64));
+	spun.add(buildAperture("shipyard", r * 0.64, berthSeed));
 	group.add(spun);
 	// Struts from the hub to the arc, nested a group per angle — two Euler
 	// angles on one object leaves the result to `Euler`'s order, and all four
@@ -2415,7 +2195,7 @@ function buildRadiator(spanKm: number, tilt: number): THREE.Group {
  * round-one review's instruction: structure built into the rock. What the eye
  * gets is a machined notch in something that is otherwise plainly a rock.
  */
-function buildRefineryWarren(color: number): BuiltPart {
+function buildRefineryWarren(color: number, berthSeed: number): BuiltPart {
 	const r = STATION_GEOMETRY.refinery.coreRadiusKm;
 	const group = new THREE.Group();
 	const fixtures: StationFixture[] = [];
@@ -2446,7 +2226,11 @@ function buildRefineryWarren(color: number): BuiltPart {
 		group.add(terrace);
 	}
 	group.add(
-		buildAperture("refinery", STATION_GEOMETRY.refinery.aperturePlaneKm),
+		buildAperture(
+			"refinery",
+			STATION_GEOMETRY.refinery.aperturePlaneKm,
+			berthSeed,
+		),
 	);
 
 	// **Stacks canted outward, not laid back.** Viewed down the aperture axis —
@@ -2549,7 +2333,7 @@ function buildRefineryWarren(color: number): BuiltPart {
  * one, which is the contrast the role is about. Unlike the Warren, the plant is
  * visible from every angle rather than only from the cut.
  */
-function buildRefineryCollar(color: number): BuiltPart {
+function buildRefineryCollar(color: number, berthSeed: number): BuiltPart {
 	const r = STATION_GEOMETRY.refinery.coreRadiusKm;
 	const group = new THREE.Group();
 	const fixtures: StationFixture[] = [];
@@ -2609,7 +2393,7 @@ function buildRefineryCollar(color: number): BuiltPart {
 			true,
 		),
 	);
-	group.add(buildAperture("refinery", r * 1.0));
+	group.add(buildAperture("refinery", r * 1.0, berthSeed));
 	for (const side of [-1, 1]) {
 		const flare = buildVentBank(fixtures, r * 0.9, r * 0.07);
 		flare.position.set(side * major * 0.82, r * 0.42, 0);
@@ -2671,7 +2455,7 @@ function buildRefineryCollar(color: number): BuiltPart {
  * one where the machinery *pierces* rather than wraps or inlays. Its silhouette
  * is a rock with a shaft through it, which nothing else in the pool is.
  */
-function buildRefinerySpar(color: number): BuiltPart {
+function buildRefinerySpar(color: number, berthSeed: number): BuiltPart {
 	const r = STATION_GEOMETRY.refinery.coreRadiusKm;
 	const group = new THREE.Group();
 	const fixtures: StationFixture[] = [];
@@ -2699,7 +2483,7 @@ function buildRefinerySpar(color: number): BuiltPart {
 			true,
 		),
 	);
-	group.add(buildAperture("refinery", r * 1.22));
+	group.add(buildAperture("refinery", r * 1.22, berthSeed));
 	// Tanks strung along the exposed length, off-axis so the spar does not read
 	// as a smooth rod.
 	for (let i = 0; i < 3; i++) {
@@ -2804,6 +2588,7 @@ function buildPadDeck(
 	fixtures: StationFixture[],
 	r: number,
 	z: number,
+	berthSeed: number,
 ): THREE.Group {
 	const group = new THREE.Group();
 	const deck = shell(
@@ -2817,7 +2602,7 @@ function buildPadDeck(
 		true,
 	);
 	group.add(deck);
-	group.add(buildAperture("outpost", z));
+	group.add(buildAperture("outpost", z, berthSeed));
 	// Four floods on the coaming, and one warm heat lamp that breathes: the only
 	// motion an outpost has, and it says the machine is running rather than
 	// anything about clearance (§5.1).
@@ -2844,7 +2629,7 @@ function buildPadDeck(
 /** Outpost A — Derrick. A lattice tower standing on a tank cluster, with the
  *  pad deck on top. The tallest thing in the category and the one whose
  *  proportions are a *tower* rather than a box. */
-function buildOutpostDerrick(color: number): BuiltPart {
+function buildOutpostDerrick(color: number, berthSeed: number): BuiltPart {
 	const r = STATION_GEOMETRY.outpost.coreRadiusKm;
 	const group = new THREE.Group();
 	const fixtures: StationFixture[] = [];
@@ -2896,7 +2681,12 @@ function buildOutpostDerrick(color: number): BuiltPart {
 		group.add(collar);
 	}
 	group.add(
-		buildPadDeck(fixtures, r, STATION_GEOMETRY.outpost.aperturePlaneKm),
+		buildPadDeck(
+			fixtures,
+			r,
+			STATION_GEOMETRY.outpost.aperturePlaneKm,
+			berthSeed,
+		),
 	);
 	// Rooted **on a tank**, not beside the cluster: the tanks sit on a 0.42·r
 	// circle and are 0.34·r across, so a boom starting at 0.6·r began in empty
@@ -2960,7 +2750,7 @@ function buildOutpostDerrick(color: number): BuiltPart {
 /** Outpost B — Buoy. A stubby drum wearing radiator fins, pad on the face.
  *  The category's compact end: a single machine with nothing hanging off it,
  *  which is what a relay or a survey station would actually be. */
-function buildOutpostBuoy(color: number): BuiltPart {
+function buildOutpostBuoy(color: number, berthSeed: number): BuiltPart {
 	const r = STATION_GEOMETRY.outpost.coreRadiusKm;
 	const group = new THREE.Group();
 	const fixtures: StationFixture[] = [];
@@ -2995,7 +2785,7 @@ function buildOutpostBuoy(color: number): BuiltPart {
 		fin.name = `fin-${i}`;
 		group.add(fin);
 	}
-	group.add(buildPadDeck(fixtures, r, r * 1.0));
+	group.add(buildPadDeck(fixtures, r, r * 1.0, berthSeed));
 	group.add(
 		portRun("outpost", 6, (i, count, position, normal) => {
 			const theta = (i / count) * Math.PI * 2;
@@ -3032,7 +2822,7 @@ function buildOutpostBuoy(color: number): BuiltPart {
 /** Outpost C — Rig. An angled truss carrying a deck out over a drill head, a
  *  flare boom off the back. The one form of the three that is plainly working
  *  *on* something rather than sitting in space. */
-function buildOutpostRig(color: number): BuiltPart {
+function buildOutpostRig(color: number, berthSeed: number): BuiltPart {
 	const r = STATION_GEOMETRY.outpost.coreRadiusKm;
 	const group = new THREE.Group();
 	const fixtures: StationFixture[] = [];
@@ -3092,7 +2882,7 @@ function buildOutpostRig(color: number): BuiltPart {
 		brace.position.set(side * r * 0.4, -r * 0.25, -r * 0.35);
 		group.add(brace);
 	}
-	group.add(buildPadDeck(fixtures, r, r * 0.95));
+	group.add(buildPadDeck(fixtures, r, r * 0.95, berthSeed));
 	const flare = buildVentBank(fixtures, r * 1.0, r * 0.08);
 	flare.position.set(-r * 0.55, r * 0.75, -r * 1.1);
 	flare.rotation.x = -Math.PI / 2.2;
@@ -3311,13 +3101,18 @@ export function buildStationForm(
 	type: StationType,
 	formId: StationFormId,
 	color: number,
+	// **Required, not defaulted.** A default of 0 is the mismatch this parameter
+	// exists to prevent — a bay drawn at seed 0 while `interiorOfStation` reads
+	// the station's own draw puts a ship on a berth with no pad — and a default
+	// turns that into a silent wrong answer rather than a compile error.
+	berthSeed: number,
 ): StationMesh {
 	const form = formOf(type, formId);
 	// The builder returns its own fixtures rather than filling an array handed
 	// to it: with an out-parameter the return type said a builder produced no
 	// lights while it in fact produced most of them, so a fourth station type
 	// would have compiled with none and lit nothing.
-	const built = form.build(color);
+	const built = form.build(color, berthSeed);
 	// The spinner is the form's own declared part where it names one, the whole
 	// body where it does not, and an empty group for a role whose pad does not
 	// turn at all (`docking.md` §4). The empty one is a *sibling* added here;
@@ -3335,7 +3130,6 @@ export function buildStationForm(
 	const accessories: THREE.Object3D[] = [];
 	const nameplates: THREE.Mesh[] = [];
 	const greebles: THREE.InstancedMesh[] = [];
-	let hangarGate: THREE.Object3D | null = null;
 	root.traverse((object) => {
 		if (object.userData.minDetail) accessories.push(object);
 		if (object.name === NAMEPLATE_NAME && object instanceof THREE.Mesh)
@@ -3343,7 +3137,6 @@ export function buildStationForm(
 		const instanced = object as THREE.InstancedMesh;
 		if (instanced.isInstancedMesh && object.name.startsWith("greebles-"))
 			greebles.push(instanced);
-		if (object.name === HANGAR_GATE_NAME) hangarGate = object;
 	});
 	const mesh: StationMesh = {
 		root,
@@ -3353,7 +3146,6 @@ export function buildStationForm(
 		fixtures: built.fixtures,
 		accessories,
 		nameplates,
-		hangarGate,
 		greebles,
 	};
 	// Built at `full` and then set, so the tagged accessories are in a state that
@@ -3368,8 +3160,9 @@ export function buildStationForm(
 export function buildStationMesh(
 	type: StationType,
 	color: number,
+	berthSeed: number,
 ): StationMesh {
-	return buildStationForm(type, SELECTED_FORM[type], color);
+	return buildStationForm(type, SELECTED_FORM[type], color, berthSeed);
 }
 
 /**

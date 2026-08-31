@@ -98,6 +98,11 @@ const STATION_FAMILY: ModelFamily = {
 			asset as StationType,
 			variant as StationFormId,
 			0x9aa6b2,
+			// **Seed zero, deliberately.** The workbench ranks *forms*, and the
+			// berth draw decides only which wall an outpost's second berth is on
+			// (`docking.md` §13.2). A varying seed would make two captures of one
+			// form differ for a reason that has nothing to do with the form.
+			0,
 		).root.getObjectByName("km") as THREE.Group,
 	emissive: (name) =>
 		name.startsWith("strobe") ||

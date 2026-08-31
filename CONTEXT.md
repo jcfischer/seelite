@@ -76,8 +76,17 @@ The bound on `|v_rel|` at the instant of crossing the aperture plane, measured i
 _Avoid_: Approach speed limit, docking speed
 
 **Clearance grant**:
-A station's time-boxed permission to enter, and a **precondition** rather than one of the checks. Crossing without a live one is a failed entry *and* turns the station hostile. `docs/specs/docking.md` §6 owns the protocol and its queued and denied replies.
+A station's time-boxed permission to enter, and a **precondition** rather than one of the checks. Crossing without a live one is a failed entry *and* turns the station hostile. Since §13.2 the grant **is** a berth reservation — it names the berth the ship will park in, it queues when no free berth fits, and it is spent when the ship crosses the aperture outward. `docs/specs/docking.md` §6 owns the protocol and its queued and denied replies; §13.2 owns the reservation.
 _Avoid_: Docking permission flag, landing request
+
+**Station interior (the bay)**:
+The enclosed, unpressurized volume beyond a station's aperture: a role-scaled room with a permanently clear central **transit lane** running from the open mouth to a **staging point**, and berths around it. It has no door — the aperture frame and the name shield stay visible from every berth. `docs/specs/docking.md` §13.1 owns the topology; `src/station-interior.ts` is the one place it is computed and `src/station-interior-mesh.ts` the one place it is drawn.
+_Avoid_: Hangar, throat, docking bay corridor
+
+**Berth**:
+Where one ship parks inside a bay, addressed as **interior face × depth band** — deck, port wall, starboard wall or overhead; near or deep. Its **family** (open deck pad, wall-side berth, recessed service cradle) changes presentation and parked pose and never the docking interaction. It accepts a hull when its declared clear length, beam and height contain that hull's envelope; there is no S/M/L class. `docs/specs/docking.md` §13.2 owns the catalogue, the fit predicate and the allocation.
+_Avoid_: Docking bay, slot, pad, landing pad
+These are aliases for **a berth** and nothing else. "Slot" is an aperture kind — `aperture.kind === "slot"` is code — and "pad" names both a berth *family* (open deck pad) and the surface a ship settles onto (`berth-pad`). The scope note is here because the repo has already had to correct one alias that read as banning an English word.
 
 **Failed entry**:
 A crossing of the aperture plane that does not satisfy every check. It repels the ship, damages it, and keeps its clearance grant; unless it was a barge it does not turn the station hostile. Damage is quadratic in the closing speed above a floor, so a failed entry at the gate speed is survivable by design while one flown at the assist cap is not — "it costs you something, not everything" is a claim about the gate, not a guarantee at any speed. `docs/specs/docking.md` §2 owns the model.

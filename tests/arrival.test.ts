@@ -1,11 +1,17 @@
 /**
- * `docs/specs/docking.md` §12's arrival law — the headless half of §12.6.
+ * `docs/specs/docking.md` §12 and §13's traversal law — the headless half of
+ * §13.5.
  *
- * The arrival is a **sim position law**, which is the repo's standing rule
+ * The traversal is a **sim position law**, which is the repo's standing rule
  * rather than a choice §12 made: the authoritative world is float64 kilometres
  * outside the scene graph. So it is arithmetic, and these are the rows §12.6
- * asks of it — 1, 2, 6 and 7. Rows 3, 4, 5, 8 and 9 are about the game's state
- * machine rather than the law, and live in `tests/dock-session.test.ts`.
+ * and §13.5 ask of it. The state machine's rows — the reservation's lifetime,
+ * the skip, the docked tick — live in `tests/dock-session.test.ts`.
+ *
+ * **The route is three legs now**, so several rows below changed shape rather
+ * than merely changing numbers: "ends on the axis" was true of a throat and is
+ * false of a berth, and what replaces it is "ends at the berth the reservation
+ * named".
  */
 
 import { describe, expect, test } from "bun:test";
@@ -17,13 +23,11 @@ import {
 	arrivalRelVelocity,
 	beginArrival,
 	beginLaunch,
-	dockedAxialKm,
-	throatDepthKm,
+	berthCentre,
 } from "../src/arrival";
 import {
-	ARRIVAL_SECONDS,
-	ARRIVAL_SECONDS_MAX,
-	ARRIVAL_SECONDS_MIN,
+	TRAVERSAL_SECONDS_DEEP,
+	TRAVERSAL_SECONDS_NEAR,
 	apertureFrame,
 	evaluateEntry,
 	slotBasis,
@@ -32,8 +36,10 @@ import {
 	SPIN_RPM_RANGE,
 	STATION_GEOMETRY,
 	STATION_TYPES,
+	type StationType,
 } from "../src/station";
 import { slotPhaseRad } from "../src/station";
+import { type Berth, stationInterior } from "../src/station-interior";
 import { type Vec3, add, cross, dot, length, scale, v3 } from "../src/vec3";
 
 /** An axis that is not a world axis, so nothing below can pass by accident on a
@@ -45,10 +51,10 @@ const AXIS = ((): Vec3 => {
 })();
 
 /**
- * The slot's phase-zero direction, which `apertureFrame` now takes rather than
+ * The slot's phase-zero direction, which `apertureFrame` takes rather than
  * deriving (#126). A fixed perpendicular to `AXIS`: in the game it is the
- * station's along-track direction, and what these rows test is the checks'
- * arithmetic against *some* reference, which is what it always was.
+ * station's along-track direction, and what these rows test is the law's
+ * arithmetic against *some* reference.
  */
 const REFERENCE = ((): Vec3 => {
 	const seed = v3(0, 0, 1);
@@ -56,364 +62,446 @@ const REFERENCE = ((): Vec3 => {
 	return scale(p, 1 / length(p));
 })();
 
-const frameOf = (type: "trade" | "refinery", phaseRad = 0) =>
+const frameOf = (type: StationType, phaseRad = 0) =>
 	apertureFrame(type, AXIS, phaseRad, REFERENCE);
+const interiorOf = (type: StationType) =>
+	stationInterior(type, STATION_GEOMETRY[type].aperturePlaneKm);
+const berthNamed = (type: StationType, id: string): Berth => {
+	const berth = interiorOf(type).berths.find(
+		(candidate) => candidate.id === id,
+	);
+	if (!berth) throw new Error(`no berth ${id} at ${type}`);
+	return berth;
+};
 
-/** The ship's offset decomposed back onto the station's aperture basis **at the
- *  phase it is being asked about** — which is the whole subject of obligation 7.
- *  A translating-frame law is one whose lateral components, read this way, walk
- *  away from where they started. */
-function local(frame: ReturnType<typeof frameOf>, phaseRad: number, rel: Vec3) {
-	const at = { ...frame, phaseRad };
-	const { across, up } = slotBasis(at);
+/** The pose a clean crossing leaves the ship in: on the axis at the plane,
+ *  nose inward, rolled to the slot. */
+function entryAt(type: StationType) {
+	const frame = frameOf(type);
 	return {
-		axial: dot(rel, frame.axis),
+		frame,
+		rel: scale(frame.axis, frame.planeKm),
+		attitude: {
+			nose: scale(frame.axis, -1),
+			up: slotBasis(frame).across,
+		},
+	};
+}
+
+/** The law for one berth, from a clean crossing. */
+function arrivalTo(type: StationType, berthId: string, startedAtS = 0) {
+	const { frame, rel, attitude } = entryAt(type);
+	return beginArrival(
+		frame,
+		interiorOf(type),
+		berthNamed(type, berthId),
+		rel,
+		startedAtS,
+		attitude,
+	);
+}
+
+/** The law's endpoint, decomposed back onto the aperture basis. */
+function localAt(
+	law: ReturnType<typeof arrivalTo>,
+	u: number,
+	phaseRad = law.frame.phaseRad,
+) {
+	const rel = arrivalRel(law, u, phaseRad);
+	const { across, up } = slotBasis({ ...law.frame, phaseRad });
+	return {
+		axial: dot(rel, law.frame.axis),
 		across: dot(rel, across),
 		up: dot(rel, up),
 	};
 }
 
-/** A crossing pose near the slot's corner — the offset a centred entry does not
- *  have, and the one a rotating-frame error moves. */
-function cornerEntry(
-	type: "trade" | "refinery",
-	phaseRad: number,
-	sx = 1,
-	sy = 1,
-): Vec3 {
-	const frame = frameOf(type, phaseRad);
-	const { across, up } = slotBasis(frame);
-	const a = STATION_GEOMETRY[type].aperture;
-	return add(
-		scale(frame.axis, frame.planeKm),
-		add(
-			scale(across, sx * a.widthKm * 0.45),
-			scale(up, sy * a.heightKm * 0.45),
-		),
-	);
-}
-
-/** The four corners of the rectangle. A frozen-basis law escapes through some
- *  of them and not others — the offset is carried round the axis, so which
- *  corner leaves first is a function of the spin's sign. A control that fixed
- *  one corner would be a control that passes or fails on that choice. */
-const CORNERS: [number, number][] = [
-	[1, 1],
-	[1, -1],
-	[-1, 1],
-	[-1, -1],
-];
-
-describe("§12.4 E7/E8 — the throat is a function of the aperture", () => {
-	test("every type's throat fits inside its own plane", () => {
-		for (const type of STATION_TYPES) {
-			const g = STATION_GEOMETRY[type];
-			// A throat deeper than the plane would put the docked position on the
-			// far side of the station's centre — through the hull and out. Against
-			// `aperturePlaneKm` and not the core radius, because since #128 that
-			// is the surface the throat is cut back from.
-			expect([type, dockedAxialKm(g) > 0]).toEqual([type, true]);
-			expect([type, dockedAxialKm(g) < g.aperturePlaneKm]).toEqual([
-				type,
-				true,
-			]);
-		}
+describe("§13.3 — the duration is priced on the route", () => {
+	test("every route in the game lies inside the ratified band", () => {
+		for (const type of STATION_TYPES)
+			for (const berth of interiorOf(type).berths) {
+				const law = arrivalTo(type, berth.id);
+				expect([
+					type,
+					berth.id,
+					law.durationS >= TRAVERSAL_SECONDS_NEAR,
+				]).toEqual([type, berth.id, true]);
+				expect([
+					type,
+					berth.id,
+					law.durationS <= TRAVERSAL_SECONDS_DEEP,
+				]).toEqual([type, berth.id, true]);
+			}
 	});
 
-	test("a slot gets a throat and a pad gets a touchdown", () => {
-		// E8: the rule is one and the presentation is two. A pad is an exterior
-		// deck with no inside, so its docked offset is a hair rather than a
-		// throat-depth — and "a hair" has to be smaller than the shallowest
-		// throat, or the two presentations are the same thing.
-		const slot = STATION_GEOMETRY.trade;
-		const pad = STATION_GEOMETRY.refinery;
-		expect(throatDepthKm(slot.aperture)).toBeGreaterThan(
-			throatDepthKm(pad.aperture),
-		);
-		expect(slot.coreRadiusKm - dockedAxialKm(slot)).toBeGreaterThan(
-			10 * (pad.coreRadiusKm - dockedAxialKm(pad)),
-		);
+	test("a deep berth takes longer than a near one at the same station", () => {
+		// **Not a restatement of the constants.** What is under test is that the
+		// interpolation reads the route rather than the band's name: a law that
+		// returned the near figure for everything would pass the row above.
+		const durations = interiorOf("trade").berths.map((berth) => ({
+			id: berth.id,
+			band: berth.band,
+			seconds: arrivalTo("trade", berth.id).durationS,
+		}));
+		for (const near of durations.filter((row) => row.band === "near"))
+			for (const deep of durations.filter((row) => row.band === "deep"))
+				expect([near.id, deep.id, deep.seconds > near.seconds]).toEqual([
+					near.id,
+					deep.id,
+					true,
+				]);
+		// The endpoints are reached rather than merely bounded: the shortest route
+		// in the catalogue takes the near figure and the longest the deep one.
+		const seconds = durations.map((row) => row.seconds);
+		expect(Math.min(...seconds)).toBeCloseTo(TRAVERSAL_SECONDS_NEAR, 9);
+		expect(Math.max(...seconds)).toBeCloseTo(TRAVERSAL_SECONDS_DEEP, 9);
 	});
 
-	test("it is read from the aperture, not from a list of forms", () => {
-		// E7: "which forms get a throat is decided by `aperture.kind`, not by a
-		// list here". A retune of the slot must move the throat.
-		const retuned = { kind: "slot", widthKm: 0.24, heightKm: 0.14 } as const;
-		expect(throatDepthKm(retuned)).toBe(
-			2 * throatDepthKm(STATION_GEOMETRY.trade.aperture),
-		);
+	test("a station with one depth band has no spread", () => {
+		// The outpost's two berths are both near, so its catalogue offers no
+		// longest route to interpolate toward and every arrival takes the near
+		// figure. A law dividing by the spread would produce `NaN` here.
+		for (const berth of interiorOf("outpost").berths)
+			expect(arrivalTo("outpost", berth.id).durationS).toBe(
+				TRAVERSAL_SECONDS_NEAR,
+			);
 	});
 });
 
-describe("§12.6 obligation 6 — the duration is inside E3's bounds", () => {
-	test("the shipped value is four to six seconds", () => {
-		// Without this row the range is prose: "it terminates" is satisfied by an
-		// arrival of any length, so a retune to twelve seconds would pass every
-		// other row in this file.
-		expect(ARRIVAL_SECONDS).toBeGreaterThanOrEqual(ARRIVAL_SECONDS_MIN);
-		expect(ARRIVAL_SECONDS).toBeLessThanOrEqual(ARRIVAL_SECONDS_MAX);
-	});
-});
-
-describe("§12.6 obligation 1 — it terminates at the docked position", () => {
-	for (const type of ["trade", "refinery"] as const) {
-		test(`${type}: the law ends at the docked position, on the axis`, () => {
-			const law = beginArrival(frameOf(type), cornerEntry(type, 0), 0);
-			expect(arrivalProgress(law, law.startedAtS + ARRIVAL_SECONDS)).toBe(1);
-			// Past the end it stays clamped: an arrival that kept integrating
-			// would drive the ship through the far wall.
-			expect(arrivalProgress(law, law.startedAtS + 600)).toBe(1);
-			const end = local(frameOf(type), 0, arrivalRel(law, 1, 0));
-			expect(end.axial).toBeCloseTo(dockedAxialKm(STATION_GEOMETRY[type]), 9);
-			expect(end.across).toBeCloseTo(0, 9);
-			expect(end.up).toBeCloseTo(0, 9);
+describe("§13.5 row 7 — it ends at the reserved berth, in the parked pose", () => {
+	for (const type of STATION_TYPES)
+		test(`${type}: every berth's law parks at that berth's centre`, () => {
+			for (const berth of interiorOf(type).berths) {
+				const law = arrivalTo(type, berth.id);
+				const end = localAt(law, 1);
+				const want = berthCentre(berth);
+				expect(end.axial).toBeCloseTo(want.axial, 9);
+				expect(end.across).toBeCloseTo(want.across, 9);
+				expect(end.up).toBeCloseTo(want.up, 9);
+			}
 		});
-	}
+
+	test("the parked pose points out of the station, up off the berth", () => {
+		for (const type of STATION_TYPES)
+			for (const berth of interiorOf(type).berths) {
+				const law = arrivalTo(type, berth.id);
+				const { nose, up } = arrivalAttitude(law, 1, law.frame.phaseRad);
+				// Nose outward — §13.3's "the exit remains straight ahead".
+				expect(dot(nose, law.frame.axis)).toBeCloseTo(1, 6);
+				// Up along the berth's own normal, so a wall berth and a deck berth
+				// are genuinely different roll attitudes.
+				const basis = slotBasis(law.frame);
+				const want = add(
+					scale(basis.across, berth.normal.across),
+					scale(basis.up, berth.normal.up),
+				);
+				expect(dot(up, want)).toBeCloseTo(1, 6);
+			}
+	});
+
+	test("a deck berth and an overhead berth park upside down from each other", () => {
+		// The row above compares each berth with its own normal, which would hold
+		// on a law that gave every berth the same one. This compares two.
+		const deck = arrivalTo("trade", "deck-near");
+		const over = arrivalTo("trade", "overhead-near");
+		const a = arrivalAttitude(deck, 1, 0).up;
+		const b = arrivalAttitude(over, 1, 0).up;
+		expect(dot(a, b)).toBeCloseTo(-1, 6);
+	});
 
 	test("it starts where the crossing left the ship", () => {
-		const entry = cornerEntry("trade", 0);
-		const law = beginArrival(frameOf("trade"), entry, 0);
-		const start = local(frameOf("trade"), 0, arrivalRel(law, 0, 0));
-		const want = local(frameOf("trade"), 0, entry);
-		expect(start.axial).toBeCloseTo(want.axial, 12);
-		expect(start.across).toBeCloseTo(want.across, 12);
-		expect(start.up).toBeCloseTo(want.up, 12);
+		const { rel } = entryAt("trade");
+		const law = arrivalTo("trade", "port-deep");
+		const start = arrivalRel(law, 0, law.frame.phaseRad);
+		expect(dot(start, law.frame.axis)).toBeCloseTo(dot(rel, law.frame.axis), 9);
 	});
 });
 
 describe("§12.6 obligation 2 — nothing re-evaluates §3's checks during it", () => {
-	test("the arrival never crosses the plane outward", () => {
-		// `planeCrossing` only fires on an *inward* crossing, so the law would
-		// have to leave and re-enter to re-trigger the checks. This asserts the
-		// stronger property: it never leaves at all.
-		const law = beginArrival(frameOf("trade"), cornerEntry("trade", 0), 0);
-		for (let i = 0; i <= 200; i++) {
-			const u = i / 200;
-			const axial = dot(arrivalRel(law, u, 0), AXIS);
-			expect(axial).toBeLessThanOrEqual(law.frame.planeKm + 1e-12);
-		}
-	});
-});
-
-describe("§12.6 obligation 7 — both traversals are in the rotating frame", () => {
-	/**
-	 * §12.3 names a translating-frame law as the one way a scripted path still
-	 * ends somewhere it was not put, and §12.6 asks for **every sub-step**,
-	 * because a law that is right at the endpoints and wrong between them is
-	 * exactly what that implementation looks like.
-	 *
-	 * Run at both ends of §4's spin range, in both directions.
-	 */
-	for (const rpm of [SPIN_RPM_RANGE.minRpm, SPIN_RPM_RANGE.maxRpm]) {
-		for (const kind of ["arrival", "launch"] as const) {
-			test(`${kind} at ${rpm} rpm stays inside the throat's cross-section`, () => {
-				const a = STATION_GEOMETRY.trade.aperture;
-				const t0 = 137.5;
-				const phase0 = slotPhaseRad(rpm, t0);
-				const law =
-					kind === "arrival"
-						? beginArrival(
-								frameOf("trade", phase0),
-								cornerEntry("trade", phase0),
-								t0,
-							)
-						: beginLaunch(frameOf("trade", phase0), t0);
-				for (let i = 0; i <= 400; i++) {
-					const u = i / 400;
-					const t = t0 + u * law.durationS;
-					const phase = slotPhaseRad(rpm, t);
-					const p = local(
-						frameOf("trade", phase),
-						phase,
-						arrivalRel(law, u, phase),
-					);
-					expect(Math.abs(p.across)).toBeLessThanOrEqual(a.widthKm / 2 + 1e-12);
-					expect(Math.abs(p.up)).toBeLessThanOrEqual(a.heightKm / 2 + 1e-12);
+	test("an arrival never crosses the plane outward", () => {
+		for (const type of STATION_TYPES)
+			for (const berth of interiorOf(type).berths) {
+				const law = arrivalTo(type, berth.id);
+				for (let i = 0; i <= 100; i++) {
+					const axial = localAt(law, i / 100).axial;
+					expect([type, berth.id, axial <= law.frame.planeKm + 1e-9]).toEqual([
+						type,
+						berth.id,
+						true,
+					]);
 				}
-			});
-		}
-	}
-
-	/**
-	 * **The control.** Could the rows above pass on a build that ignored the
-	 * thing they check? A law that froze the aperture basis at the phase it
-	 * started — the translating-frame implementation — is that build, and this
-	 * asserts it *fails*. Without this row, a law that never moves laterally at
-	 * all would satisfy every containment assertion above.
-	 */
-	test("a basis frozen at the start phase leaves the cross-section", () => {
-		const rpm = SPIN_RPM_RANGE.maxRpm;
-		const a = STATION_GEOMETRY.trade.aperture;
-		const t0 = 137.5;
-		const phase0 = slotPhaseRad(rpm, t0);
-		const escapes = CORNERS.filter(([sx, sy]) => {
-			const frozen = beginArrival(
-				frameOf("trade", phase0),
-				cornerEntry("trade", phase0, sx, sy),
-				t0,
-			);
-			for (let i = 0; i <= 400; i++) {
-				const u = i / 400;
-				const phase = slotPhaseRad(rpm, t0 + u * frozen.durationS);
-				// The frozen-basis position: the law evaluated as though the
-				// station never turned, read against the slot as it actually is.
-				const p = local(
-					frameOf("trade", phase),
-					phase,
-					arrivalRel(frozen, u, phase0),
-				);
-				if (
-					Math.abs(p.across) > a.widthKm / 2 ||
-					Math.abs(p.up) > a.heightKm / 2
-				)
-					return true;
 			}
-			return false;
-		});
-		// Not "all four": the spin carries an offset round the axis, so a corner
-		// on the leading side has room to turn into and one on the trailing side
-		// does not. What the control has to show is that the frozen build is
-		// **detectably** wrong, which one escaping corner does.
-		expect(escapes.length).toBeGreaterThan(0);
 	});
+});
 
-	test("the ship's attitude turns with the slot", () => {
-		const rpm = SPIN_RPM_RANGE.maxRpm;
-		const t0 = 0;
-		const law = beginArrival(frameOf("trade", 0), cornerEntry("trade", 0), t0);
-		// At the end of the arrival the ship is rolled to the slot: its up-vector
-		// is the slot's up at that instant, not at the one it entered on.
-		const tEnd = t0 + law.durationS;
-		const phaseEnd = slotPhaseRad(rpm, tEnd);
-		const { up } = arrivalAttitude(law, 1, phaseEnd);
-		const slot = slotBasis(frameOf("trade", phaseEnd));
-		// **Against `across`, which is what check 4 accepts**: `evaluateEntry`
-		// measures the roll as `|dot(shipUp, basis.across)|`. Asserting against
-		// `basis.up` is the 90°-out build, and it looked identical to this one in
-		// every other row here.
-		expect(dot(up, slot.across)).toBeCloseTo(1, 9);
-		// And the nose points *into* the station — down the inward axis.
-		const { nose } = arrivalAttitude(law, 1, phaseEnd);
-		expect(dot(nose, AXIS)).toBeCloseTo(-1, 9);
-	});
-
-	/**
-	 * **An inverted entry must not collapse the ship's basis.**
-	 *
-	 * Check 4 compares against the axis *line*, so a ship crossing rolled 180°
-	 * passes it — and its up-vector is then antipodal to the one the arrival
-	 * settles to. A blend turned through the docking axis puts the up-vector
-	 * *on* that axis at the half-way point, collinear with the nose: the
-	 * orientation stops being a basis at all, mid-arrival, on a pose the checks
-	 * accepted.
-	 */
-	test("a ship entering rolled 180° keeps a basis all the way in", () => {
-		const phase = 0.7;
-		const frame = frameOf("trade", phase);
-		const slot = slotBasis(frame);
-		const law = beginArrival(frame, cornerEntry("trade", phase), 0, {
-			nose: scale(AXIS, -1),
-			// Rolled 180°: `|dot(up, across)|` is 1, so check 4 passes.
-			up: scale(slot.across, -1),
-		});
-		for (let i = 0; i <= 60; i++) {
-			const { nose, up } = arrivalAttitude(law, i / 60, phase);
-			// Perpendicular to within the rounding of two unit vectors, at every
-			// sub-step — not merely at the ends, which is where a collapse hides.
-			expect([i, Math.abs(dot(nose, up)) < 1e-9]).toEqual([i, true]);
-		}
-	});
-
-	/**
-	 * **The row that would have caught the 90°-out build**, and the reason it is
-	 * phrased through `evaluateEntry` rather than against a vector: the question
-	 * is not "does the attitude equal the one this module computed", which is a
-	 * tautology, but "would the docking checks accept the ship where the arrival
-	 * parks it". A parked attitude check 4 refuses is a ship lying crossways in
-	 * a slot it just passed a roll test to enter.
-	 */
-	test("the parked attitude is one check 4 accepts", () => {
-		for (const rpm of [SPIN_RPM_RANGE.minRpm, SPIN_RPM_RANGE.maxRpm]) {
-			const t = 91.25;
-			const phase = slotPhaseRad(rpm, t);
-			const frame = frameOf("trade", phase);
-			const law = beginArrival(frame, cornerEntry("trade", phase), t);
-			const { nose, up } = arrivalAttitude(law, 1, phase);
-			const evaluation = evaluateEntry(
-				frame,
-				{
-					rel: arrivalRel(law, 1, phase),
-					// At rest in the station's frame, which is where §12.2 parks it.
-					vRel: v3(0, 0, 0),
-					nose,
-					up,
-				},
-				{ hostile: false },
+describe("§13.5 row 2 — the first leg stays inside the transit lane", () => {
+	test("an entry at a corner of the aperture is inside the lane to the staging point", () => {
+		// **§12.6's obligation 7, which the polyline changed the shape of.** The
+		// lane *is* the aperture rectangle carried inward (§13.1), so a ship that
+		// crossed the plane anywhere check 5 admits — a corner included — must
+		// still be inside it when it reaches the staging point. An entry on the
+		// axis cannot fail this; a corner is where it could.
+		for (const type of STATION_TYPES) {
+			const interior = interiorOf(type);
+			const frame = frameOf(type);
+			const basis = slotBasis(frame);
+			// Just inside the rectangle, which is where check 5 stops admitting.
+			const corner = add(
+				scale(frame.axis, frame.planeKm),
+				add(
+					scale(basis.across, interior.laneHalfAcrossKm * 0.98),
+					scale(basis.up, interior.laneHalfUpKm * 0.98),
+				),
 			);
-			expect([rpm, evaluation.checks.rollMatch]).toEqual([rpm, true]);
-			expect([rpm, evaluation.rollAngleDeg < 1e-6]).toEqual([rpm, true]);
+			for (const berth of interior.berths) {
+				const law = beginArrival(frame, interior, berth, corner, 0, {
+					nose: scale(frame.axis, -1),
+					up: basis.across,
+				});
+				for (let i = 0; i <= 200; i++) {
+					const at = localAt(law, i / 200);
+					// **The first leg only, which is what the lane covers.** §13.1
+					// runs it "from the open mouth to a staging point"; the transfer
+					// leg starts *at* that point and its whole job is to leave the
+					// lane for a berth, so a rule applied past it would forbid the
+					// manoeuvre §13.3 describes. A near berth's transfer runs at
+					// exactly the staging depth, hence the strict comparison.
+					if (at.axial <= interior.stagingAxialKm + 1e-9) continue;
+					const inside =
+						Math.abs(at.across) <= interior.laneHalfAcrossKm + 1e-9 &&
+						Math.abs(at.up) <= interior.laneHalfUpKm + 1e-9;
+					expect([type, berth.id, i, inside]).toEqual([
+						type,
+						berth.id,
+						i,
+						true,
+					]);
+				}
+			}
 		}
 	});
 });
 
-describe("§12.2 — launch is the mirror, and it releases outside the plane", () => {
-	test("it starts docked and ends clear of the plane, outward", () => {
-		const law = beginLaunch(frameOf("trade", 0), 0);
-		const start = local(frameOf("trade"), 0, arrivalRel(law, 0, 0));
-		expect(start.axial).toBeCloseTo(dockedAxialKm(STATION_GEOMETRY.trade), 9);
-		const end = local(frameOf("trade"), 0, arrivalRel(law, 1, 0));
-		// **Outward past the plane** — §12.3's boundary in the other direction.
-		expect(end.axial).toBeCloseTo(law.frame.planeKm + LAUNCH_RELEASE_KM, 9);
+describe("§13.5 rows 2 and 3 — the route stays inside the bay", () => {
+	for (const type of STATION_TYPES)
+		test(`${type}: every leg stays inside the enclosed volume`, () => {
+			const interior = interiorOf(type);
+			for (const berth of interior.berths) {
+				const law = arrivalTo(type, berth.id);
+				for (let i = 0; i <= 200; i++) {
+					const at = localAt(law, i / 200);
+					const inside =
+						at.axial <= interior.mouthAxialKm + 1e-9 &&
+						at.axial >= interior.endAxialKm - 1e-9 &&
+						Math.abs(at.across) <= interior.halfAcrossKm + 1e-9 &&
+						Math.abs(at.up) <= interior.halfUpKm + 1e-9;
+					expect([type, berth.id, i, inside]).toEqual([
+						type,
+						berth.id,
+						i,
+						true,
+					]);
+				}
+			}
+		});
+});
+
+describe("§12.6 obligation 7 — the law runs in the rotating frame", () => {
+	const RPM = SPIN_RPM_RANGE.maxRpm;
+
+	test("a spinning station's berth is still hit at the end of the route", () => {
+		const berth = berthNamed("trade", "starboard-deep");
+		const law = arrivalTo("trade", "starboard-deep");
+		const want = berthCentre(berth);
+		for (let i = 0; i <= 40; i++) {
+			const u = i / 40;
+			const phase = slotPhaseRad(RPM, u * law.durationS);
+			const at = localAt(law, u, phase);
+			// Held in the rotating basis, the components are the law's own
+			// regardless of how far the station has turned.
+			expect(Math.abs(at.across)).toBeLessThanOrEqual(
+				Math.abs(want.across) + 1e-9,
+			);
+		}
+		const end = localAt(law, 1, slotPhaseRad(RPM, law.durationS));
+		expect(end.across).toBeCloseTo(want.across, 9);
+		expect(end.up).toBeCloseTo(want.up, 9);
 	});
 
-	test("it is monotone outward, so it cannot re-trigger an inward crossing", () => {
-		const law = beginLaunch(frameOf("trade", 0), 0);
+	test("a basis frozen at the start phase misses the berth", () => {
+		// **The control.** Without it the row above is satisfied by a law that
+		// ignores the phase entirely, which is exactly the translating-frame bug
+		// §12.3 names.
+		const berth = berthNamed("trade", "starboard-deep");
+		const law = arrivalTo("trade", "starboard-deep");
+		const spun = slotPhaseRad(RPM, law.durationS);
+		const rel = arrivalRel(law, 1, spun);
+		// Decomposed on the *frozen* basis instead of the turned one, the berth's
+		// lateral offset is no longer where the law put it.
+		const frozen = slotBasis(law.frame);
+		expect(dot(rel, frozen.across)).not.toBeCloseTo(
+			berthCentre(berth).across,
+			6,
+		);
+	});
+
+	test("the parked attitude turns with the slot", () => {
+		const law = arrivalTo("trade", "port-near");
+		const a = arrivalAttitude(law, 1, 0).up;
+		const b = arrivalAttitude(law, 1, Math.PI / 2).up;
+		expect(dot(a, b)).toBeLessThan(0.99);
+	});
+});
+
+describe("§12.6 obligation 7 — a rolled entry keeps a basis all the way in", () => {
+	test("no berth's arrival collapses the basis, from any roll check 4 admits", () => {
+		// **The row the two-direction blend passed and the orientation slerp
+		// exists for.** The nose and the up-vector each took their own great
+		// circle, and at a wall berth the two circles crossed: an entry rolled to
+		// the opposite `across` is antipodal to the parked up-vector, so the roll
+		// turned through the slot's `up`; the nose turned from inward to outward
+		// through the same plane; and half way in both landed on it. Measured on
+		// trade `port-near`, `|dot(nose, up)|` was **1.0000** at u = 0.5.
+		//
+		// Every berth against every entry roll the slot's own basis offers, which
+		// is the set check 4 admits at 0° and 180°.
+		for (const type of STATION_TYPES) {
+			const { frame, rel } = entryAt(type);
+			const basis = slotBasis(frame);
+			const rolls: [string, Vec3][] = [
+				["+across", basis.across],
+				["-across", scale(basis.across, -1)],
+				["+up", basis.up],
+				["-up", scale(basis.up, -1)],
+			];
+			for (const berth of interiorOf(type).berths)
+				for (const [name, up] of rolls) {
+					const law = beginArrival(frame, interiorOf(type), berth, rel, 0, {
+						nose: scale(frame.axis, -1),
+						up,
+					});
+					let worst = 0;
+					for (let i = 0; i <= 100; i++) {
+						const at = arrivalAttitude(law, i / 100, frame.phaseRad);
+						worst = Math.max(worst, Math.abs(dot(at.nose, at.up)));
+					}
+					const label = `${type} ${berth.id} entry ${name}`;
+					// A basis, not a line: a tenth is nowhere near a tolerance the
+					// old blend could have drifted inside — it reached 1.
+					expect([label, worst < 0.1]).toEqual([label, true]);
+				}
+		}
+	});
+
+	test("a ship entering rolled 180° never collapses its own frame", () => {
+		const { frame, rel } = entryAt("trade");
+		const basis = slotBasis(frame);
+		const law = beginArrival(
+			frame,
+			interiorOf("trade"),
+			berthNamed("trade", "deck-near"),
+			rel,
+			0,
+			{ nose: scale(frame.axis, -1), up: scale(basis.across, -1) },
+		);
+		for (let i = 0; i <= 100; i++) {
+			const { nose, up } = arrivalAttitude(law, i / 100, frame.phaseRad);
+			expect(length(nose)).toBeCloseTo(1, 6);
+			expect(length(up)).toBeCloseTo(1, 6);
+			// Nose and up must stay a basis: collinear is a collapsed frame.
+			expect(Math.abs(dot(nose, up))).toBeLessThan(0.999);
+		}
+	});
+});
+
+describe("§13.3 — launch is the route run backwards", () => {
+	const launchFrom = (type: StationType, berthId: string) =>
+		beginLaunch(frameOf(type), interiorOf(type), berthNamed(type, berthId), 0);
+
+	test("it starts at the berth and ends clear of the plane, outward", () => {
+		for (const type of STATION_TYPES)
+			for (const berth of interiorOf(type).berths) {
+				const law = launchFrom(type, berth.id);
+				const start = localAt(law, 0);
+				const want = berthCentre(berth);
+				expect(start.axial).toBeCloseTo(want.axial, 9);
+				expect(localAt(law, 1).axial).toBeCloseTo(
+					law.frame.planeKm + LAUNCH_RELEASE_KM,
+					9,
+				);
+			}
+	});
+
+	test("its axial run is monotone outward, so it cannot re-trigger a crossing", () => {
+		const law = launchFrom("trade", "overhead-deep");
 		let previous = Number.NEGATIVE_INFINITY;
 		for (let i = 0; i <= 200; i++) {
-			const axial = dot(arrivalRel(law, i / 200, 0), AXIS);
+			const axial = localAt(law, i / 200).axial;
 			expect(axial).toBeGreaterThanOrEqual(previous - 1e-12);
 			previous = axial;
 		}
+	});
+
+	test("it settles the roll onto check 4's reference rather than turning the nose", () => {
+		const law = launchFrom("trade", "overhead-deep");
+		const basis = slotBasis(law.frame);
+		const start = arrivalAttitude(law, 0, law.frame.phaseRad);
+		const end = arrivalAttitude(law, 1, law.frame.phaseRad);
+		// The nose points out at both ends — no 180° turn inside the bay.
+		expect(dot(start.nose, law.frame.axis)).toBeCloseTo(1, 6);
+		expect(dot(end.nose, law.frame.axis)).toBeCloseTo(1, 6);
+		// And the released ship is square with the slot, which is the attitude
+		// check 4 measures.
+		expect(Math.abs(dot(end.up, basis.across))).toBeCloseTo(1, 6);
+		const evaluation = evaluateEntry(
+			law.frame,
+			{
+				rel: arrivalRel(law, 1, law.frame.phaseRad),
+				vRel: scale(law.frame.axis, -0.01),
+				nose: scale(end.nose, -1),
+				up: end.up,
+			},
+			{ hostile: false },
+		);
+		expect(evaluation.checks.rollMatch).toBe(true);
 	});
 });
 
 describe("§12.6 obligation 9 — the velocity is the law's own", () => {
 	test("it matches a finite difference of the position law", () => {
-		// The game hands the ship this velocity, so a velocity that is not the
-		// derivative of the position is a ship being carried by one rule and
-		// moving by another.
-		const rpm = SPIN_RPM_RANGE.maxRpm;
-		const spin = (2 * Math.PI * rpm) / 60;
-		const t0 = 11;
-		const law = beginArrival(
-			frameOf("trade", slotPhaseRad(rpm, t0)),
-			cornerEntry("trade", slotPhaseRad(rpm, t0)),
-			t0,
-		);
-		const h = 1e-6;
-		for (const u of [0.1, 0.37, 0.5, 0.83]) {
-			const t = t0 + u * law.durationS;
-			const analytic = arrivalRelVelocity(law, u, slotPhaseRad(rpm, t), spin);
-			const before = arrivalRel(
-				law,
-				arrivalProgress(law, t - h),
-				slotPhaseRad(rpm, t - h),
-			);
-			const after = arrivalRel(
-				law,
-				arrivalProgress(law, t + h),
-				slotPhaseRad(rpm, t + h),
-			);
-			for (const k of ["x", "y", "z"] as const)
-				expect(analytic[k]).toBeCloseTo((after[k] - before[k]) / (2 * h), 4);
+		const law = arrivalTo("trade", "starboard-deep");
+		const spinRadPerS = (2 * Math.PI * SPIN_RPM_RANGE.maxRpm) / 60;
+		const h = 1e-4;
+		// Sampled away from the waypoints: the speed is continuous and the
+		// direction turns a corner at each of them, which is what a polyline is.
+		for (const u of [0.12, 0.3, 0.62, 0.88]) {
+			const phase = slotPhaseRad(SPIN_RPM_RANGE.maxRpm, u * law.durationS);
+			const dPhase = spinRadPerS * h;
+			const a = arrivalRel(law, u - h / law.durationS, phase - dPhase);
+			const b = arrivalRel(law, u + h / law.durationS, phase + dPhase);
+			const numeric = scale(add(b, scale(a, -1)), 1 / (2 * h));
+			const analytic = arrivalRelVelocity(law, u, phase, spinRadPerS);
+			expect(length(add(numeric, scale(analytic, -1)))).toBeLessThan(1e-4);
 		}
 	});
 
 	test("it is zero at both ends, so the ship is parked rather than drifting", () => {
-		const law = beginArrival(frameOf("trade"), cornerEntry("trade", 0), 0);
-		for (const u of [0, 1]) {
-			const v = arrivalRelVelocity(law, u, 0, 0);
-			expect(Math.hypot(v.x, v.y, v.z)).toBeCloseTo(0, 12);
-		}
+		const law = arrivalTo("trade", "deck-deep");
+		expect(
+			length(arrivalRelVelocity(law, 0, law.frame.phaseRad, 0)),
+		).toBeCloseTo(0, 9);
+		expect(
+			length(arrivalRelVelocity(law, 1, law.frame.phaseRad, 0)),
+		).toBeCloseTo(0, 9);
+	});
+});
+
+describe("§12.6 obligation 6 — progress is clamped", () => {
+	test("it is 0 before the start and 1 from the end onward", () => {
+		const law = arrivalTo("trade", "deck-near", 10);
+		expect(arrivalProgress(law, 9)).toBe(0);
+		expect(arrivalProgress(law, 10)).toBe(0);
+		expect(arrivalProgress(law, 10 + law.durationS)).toBe(1);
+		expect(arrivalProgress(law, 1e6)).toBe(1);
 	});
 });

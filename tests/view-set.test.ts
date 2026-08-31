@@ -54,12 +54,32 @@ const fullRun = (
 });
 
 describe("the view set itself", () => {
-	test("declares eight views with unique kebab-case names", () => {
-		// Eight since #129 added `station-flank`. A literal and not
-		// `VIEWS.length`, which is the whole point: a view deleted by accident
-		// has to be a red run, and a check derived from its own subject cannot
-		// be one.
-		expect(VIEWS.length).toBe(8);
+	test("a view that declares its own seed is followed only by navigators", () => {
+		// **Ordering the set depends on and nothing else pinned.**
+		// `refinery-cradle-berth` carries `seed: 2` and its placer navigates; the
+		// page is left on that seed, so any view after it that expects `SEED` 47
+		// would be framed in the wrong system. It happens to be followed only by
+		// the workbench frame, which navigates away again — a fact this row makes
+		// a rule.
+		const navigates = (view: (typeof VIEWS)[number]) =>
+			view.shot.kind === "workbench-interior" ||
+			(view.shot as { seed?: number }).seed !== undefined;
+		let sawSeed = false;
+		for (const view of VIEWS) {
+			if (sawSeed)
+				expect([view.name, navigates(view)]).toEqual([view.name, true]);
+			if ((view.shot as { seed?: number }).seed !== undefined) sawSeed = true;
+		}
+		// And the rule is about a real case rather than a hypothetical one.
+		expect(sawSeed).toBe(true);
+	});
+
+	test("declares fifteen views with unique kebab-case names", () => {
+		// Eight after #129 added `station-flank`, fifteen since #147 added
+		// §13.6's seven-frame acceptance set. A literal and not `VIEWS.length`,
+		// which is the whole point: a view deleted by accident has to be a red
+		// run, and a check derived from its own subject cannot be one.
+		expect(VIEWS.length).toBe(15);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -148,8 +168,9 @@ describe("the contact sheet", () => {
 	 */
 	test("prints the clock span the frames were taken across, not a pinned time", () => {
 		const html = contactSheet([fullRun("before")]);
-		// Eight frames at 0.4 s apart, so the span moved with the eighth view.
-		expect(html).toContain("· clock 0.6–3.4s");
+		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
+		// many views the set declares — fifteen since #147's acceptance frames.
+		expect(html).toContain("· clock 0.6–6.2s");
 		expect(html).not.toContain("pinned");
 	});
 

@@ -421,6 +421,7 @@ describe("§3: clearance, grant window, and blocking states", () => {
 				hostile: true,
 				hostileUntilS: 600,
 				clearance: { kind: "denied", reason: "hostile" },
+				berthId: null,
 			},
 		});
 		expect(d.blocking?.kind).toBe("hostile");

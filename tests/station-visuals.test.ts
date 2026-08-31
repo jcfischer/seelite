@@ -97,7 +97,7 @@ function reachKm(root: THREE.Object3D, type: StationType): number {
 describe("a detail level may not change the outline", () => {
 	test("reach is identical at every level", () => {
 		for (const type of TYPES) {
-			const built = buildStationMesh(type, GREY);
+			const built = buildStationMesh(type, GREY, 0);
 			const measured = LEVELS.map((level) => {
 				setStationDetail(built, level);
 				return reachKm(built.root, type);
@@ -115,7 +115,7 @@ describe("a detail level may not change the outline", () => {
 		// #28's ceiling, re-asserted from this side. `station-mesh.test.ts` proves
 		// it for the mesh as built; this proves the visual pass did not spend it.
 		for (const type of TYPES) {
-			const built = buildStationMesh(type, GREY);
+			const built = buildStationMesh(type, GREY, 0);
 			for (const level of LEVELS) {
 				setStationDetail(built, level);
 				expect(reachKm(built.root, type)).toBeLessThanOrEqual(
@@ -129,7 +129,7 @@ describe("a detail level may not change the outline", () => {
 		// The equality above passes trivially if `setStationDetail` does nothing.
 		// This is what stops that reading as a green run.
 		for (const type of TYPES) {
-			const built = buildStationMesh(type, GREY);
+			const built = buildStationMesh(type, GREY, 0);
 			const drawn = (level: StationDetailLevel) => {
 				setStationDetail(built, level);
 				let n = 0;
@@ -151,10 +151,10 @@ describe("a detail level may not change the outline", () => {
 		// on. A level that stripped the aperture would leave a station with
 		// nothing to aim at, at exactly the range you start aiming.
 		for (const type of TYPES) {
-			const built = buildStationMesh(type, GREY);
+			const built = buildStationMesh(type, GREY, 0);
 			for (const level of LEVELS) {
 				setStationDetail(built, level);
-				for (const name of ["core", "aperture", "aperture-mouth"]) {
+				for (const name of ["core", "aperture", "station-interior"]) {
 					const part = built.root.getObjectByName(name);
 					expect(part).toBeDefined();
 					// `visible` is per-object, so an ancestor switched off would leave
@@ -188,7 +188,7 @@ describe("a fixture is on the station it is mounted on", () => {
 		for (const type of TYPES) {
 			const hasStrobes = STATION_VISUALS[type].activity.strobePeriodS > 0;
 			for (const form of STATION_FORMS[type]) {
-				const { root } = buildStationForm(type, form.id, GREY);
+				const { root } = buildStationForm(type, form.id, GREY, 0);
 				root.updateMatrixWorld(true);
 				for (const kind of ["strobe-a", "strobe-b"]) {
 					const lamp = root.getObjectByName(kind);
@@ -409,7 +409,7 @@ describe("what the renderer drives, at every range", () => {
 		// promises it does not. The flare is a lit throat now and is tagged like
 		// any other accessory, so this asserts the general rule — every fixture is
 		// driven at every level — rather than the one case that forced it.
-		const mesh = buildStationMesh("refinery", GREY);
+		const mesh = buildStationMesh("refinery", GREY, 0);
 		const flare = () =>
 			mesh.fixtures.find((f) => f.kind === "flare")?.material
 				.emissiveIntensity ?? Number.NaN;
@@ -430,7 +430,7 @@ describe("what the renderer drives, at every range", () => {
 		// The wiring between the two modules, which neither one can assert alone:
 		// a fixture driven by the wrong waveform is a light that animates and is
 		// still wrong, and nothing about the shape of the frame says so.
-		const mesh = buildStationMesh("trade", GREY);
+		const mesh = buildStationMesh("trade", GREY, 0);
 		const closeKm = STATION_SILHOUETTE_KM.trade;
 		for (const t of [0.03, 1.1, 7.42]) {
 			updateStationVisuals(mesh, t, closeKm, "high");

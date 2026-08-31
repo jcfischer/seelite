@@ -30,7 +30,7 @@ import {
 	shelfQuantity,
 	stockResponse,
 } from "../src/market";
-import { ARRIVAL_SECONDS_MAX, ARRIVAL_SECONDS_MIN } from "../src/docking";
+import { TRAVERSAL_SECONDS_DEEP, TRAVERSAL_SECONDS_NEAR } from "../src/docking";
 import {
 	flightFloorVisible,
 	requiredDisplayTL,
@@ -361,27 +361,33 @@ test("M10: the persistent flight floor is hidden the moment flight is suspended"
 	expect(flightFloorVisible("docked")).toBe(false);
 });
 
-test("E3's bounds here are the ones docking.md ratified", () => {
-	// Not a tautology, and **anchored to E3 rather than to the file**: a
-	// whole-file `toContain` would stay green on a retune that changed E3's
+test("the traversal bounds here are the ones docking.md ratified", () => {
+	// Not a tautology, and **anchored to the section rather than to the file**:
+	// a whole-file `toContain` would stay green on a retune that changed the
 	// bounds while any other sentence still carried the phrase.
 	const prose = readFileSync(
 		new URL("../docs/specs/docking.md", import.meta.url),
 		"utf8",
 	).replace(/\s+/g, " ");
-	const start = prose.indexOf("**Decision E3:");
-	const end = prose.indexOf("**Decision E4:");
-	// **Both** indices guarded, not only the first. With E4 renamed, `indexOf`
-	// returns -1 and `slice(start, -1)` yields everything from E3 to the end of
-	// the file — restoring exactly the whole-file match this slice exists to
-	// close, on a green test. An earlier version guarded the start alone.
+	// §13.3 re-fixed E3's band, so the ratified figures are read from there.
+	const start = prose.indexOf(
+		"**Traversal duration scales with route length**",
+	);
+	const end = prose.indexOf(
+		"**Both traversals are unconditionally skippable.**",
+	);
+	// **Both** indices guarded, not only the first. With the closing sentence
+	// renamed, `indexOf` returns -1 and `slice(start, -1)` yields everything to
+	// the end of the file — restoring exactly the whole-file match this slice
+	// exists to close, on a green test.
 	expect(start).toBeGreaterThan(0);
 	expect(end).toBeGreaterThan(start);
 	const e3 = prose.slice(start, end);
 	expect(e3.length).toBeGreaterThan(100);
-	expect(e3).toContain("four to six seconds");
-	expect(ARRIVAL_SECONDS_MIN).toBe(4);
-	expect(ARRIVAL_SECONDS_MAX).toBe(6);
+	expect(e3).toContain("about six seconds for a near");
+	expect(e3).toContain("nine seconds for a deep");
+	expect(TRAVERSAL_SECONDS_NEAR).toBe(6);
+	expect(TRAVERSAL_SECONDS_DEEP).toBe(9);
 });
 
 test("M6: a delta that rounds to zero gets no arrow", () => {

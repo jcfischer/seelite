@@ -247,7 +247,14 @@ function blockingOf(state: DockingState, live: boolean): DirectorBlock | null {
 	if (state.clearance.kind === "denied")
 		return {
 			kind: "denied",
-			text: `DO NOT ENTER · clearance denied · ${state.clearance.reason} scan`,
+			// **"scan" only where a scan is what refused.** #13 §5.1.1's contraband
+			// scan and §6's hostility both read as one; a hull too big for every
+			// berth in the catalogue (§13.2) is not a scan result, and calling it
+			// one would tell the pilot to dump cargo they are not carrying.
+			text:
+				state.clearance.reason === "no berth that fits"
+					? "DO NOT ENTER · clearance denied · no berth that fits this hull"
+					: `DO NOT ENTER · clearance denied · ${state.clearance.reason} scan`,
 		};
 	if (live) return null;
 	if (state.clearance.kind === "queued")

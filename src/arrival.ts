@@ -1,6 +1,6 @@
 /**
  * The successful entry's arrival, and its mirror the launch
- * (`docs/specs/docking.md` §12).
+ * (`docs/specs/docking.md` §12 and §13).
  *
  * **A sim position law, not an animation.** §12.1's decision E2 makes the
  * arrival scripted and unfailable, and the repo's standing rule decides where it
@@ -10,9 +10,18 @@
  * caller holds the clock for — and therefore headless-testable rather than a
  * thing only a probe can see.
  *
+ * **The route is a polyline now, and that is §13.3.** The old law ran one
+ * straight line from the crossing to a point on the axis, which is the whole of
+ * what a throat could offer. A berth is off the axis, so the traversal is three
+ * legs — axial run to the staging point, transfer toward the reserved face and
+ * band, settle along the berth's normal — and the ship is placed by arc length
+ * along that polyline. One global easing over the whole route rather than one
+ * per leg: three eased legs stop dead twice on the way in, which reads as a
+ * stutter rather than as a manoeuvre.
+ *
  * **Everything here is in the station's *rotating* frame.** §12.3 names a
  * translating-frame law as the one way a scripted path can still end somewhere
- * it was not put: the throat turns with the station, so a law that fixes the
+ * it was not put: the bay turns with the station, so a law that fixes the
  * ship's lateral offset in world space walks it into a wall that moved. The
  * mechanism is that the lateral components are held in the aperture basis and
  * the **basis is re-evaluated at the phase passed in on every call** — so a
@@ -26,12 +35,17 @@
 
 import {
 	type ApertureFrame,
-	ARRIVAL_SECONDS,
+	TRAVERSAL_SECONDS_DEEP,
+	TRAVERSAL_SECONDS_NEAR,
 	frameAtPhase,
 	slotBasis,
 } from "./docking";
-import type { StationAperture, StationGeometry } from "./station";
-import { type Vec3, add, dot, scale, sub, v3 } from "./vec3";
+import type {
+	Berth,
+	InteriorOffset,
+	StationInterior,
+} from "./station-interior";
+import { type Vec3, add, cross, dot, scale, sub, v3 } from "./vec3";
 
 /**
  * How far outside the aperture plane the launch releases the ship, km.
@@ -48,118 +62,44 @@ import { type Vec3, add, dot, scale, sub, v3 } from "./vec3";
 export const LAUNCH_RELEASE_KM = 0.02;
 
 /**
- * How deep a slot's throat runs, as a multiple of the aperture's smaller
- * dimension.
+ * How far off its berth surface the transfer leg leaves the ship, as a multiple
+ * of the berth's clear height.
  *
- * **E7: the throat extends the aperture recess rather than being authored per
- * form.** `station-mesh.ts`'s `buildAperture` already sinks a mouth of
- * `min(w, h) × 0.8` behind every aperture and is called by every form, so the
- * throat is the same recess taken deeper — which is why this is a factor on the
- * same quantity and not a length. A retune of the slot moves it, and *which*
- * forms get a throat is decided by `aperture.kind` below rather than by a list.
- *
- * **One, and it was four until #128.** Four put a 280 m shaft behind a
- * 120 × 70 m opening, and at that aspect the far wall projects well off-centre
- * from any view that is not exactly on the axis — the edges converge toward
- * their own vanishing point, which reads as a tunnel skewed against its port.
- * That is how it was reported, flying it. At one the hole is concentric and
- * square to the frame.
- *
- * The depth was carrying a second job it should never have had: the plane was
- * the core radius, 173 m outside the surface the slot is cut into, and only a
- * throat deep enough to reach back past that offset kept the docked position
- * inside the drawn recess. #128 moved the plane to the face, so the two are
- * coupled by construction now — the recess spans `[plane − depth, plane]` and
- * the ship parks at its far end — and the depth is free to be a length that
- * looks right.
+ * The settle is a real leg rather than a rounding — §13.3's third step is *"a
+ * normal settle onto the assigned berth"*, and a transfer that ended on the
+ * surface would make it one. Half a clear height: the ship arrives over its
+ * berth and comes down onto it.
  */
-export const THROAT_DEPTH_FACTOR = 1;
-
-/**
- * How much further the *drawn* recess runs than the ship parks, as a multiple
- * of the same quantity.
- *
- * **Because a docked position is where the ship's origin stops, not where its
- * nose does.** `dockedAxialKm` is one throat-depth inside the plane, so with the
- * recess ending there the ship parks with its origin against the end wall and
- * its nose through it — invisible while the throat was 280 m deep and the shield
- * was off-axis, and immediate once #128 cut the throat to 70 m: the interior
- * shield ended up level with the camera and `probe-dock-arrival.mjs` measured
- * zero pixels of both it and the tunnel.
- *
- * Half again, so a parked ship has 35 m of tunnel and a wall to look at.
- */
-export const THROAT_CLEARANCE_FACTOR = 0.5;
-
-/** How deep the recess is **drawn** — the depth the ship travels plus the room
- *  it needs to sit in. `station-mesh.ts` reads this; the sim reads
- *  `throatDepthKm`. */
-export function drawnThroatDepthKm(aperture: StationAperture): number {
-	return (
-		throatDepthKm(aperture) +
-		(aperture.kind === "slot"
-			? Math.min(aperture.widthKm, aperture.heightKm) * THROAT_CLEARANCE_FACTOR
-			: 0)
-	);
-}
-
-/**
- * How far a pad sinks the ship below its deck, as a multiple of the same
- * quantity.
- *
- * **E8: a pad is an exterior deck with no inside**, so this is not a shallow
- * throat — it is §12.2's "a hair inside the deck", and it exists for the reason
- * that section gives: the plane is §3's evaluation surface, and a ship parked
- * exactly on it rests on the boundary of the surface its own checks are
- * evaluated at. Three metres on a 150 m pad.
- */
-export const PAD_SINK_FACTOR = 0.02;
-
-/** How far behind the aperture plane the ship ends up, km — a throat for a
- *  slot, a hair for a pad, and in both cases a function of `STATION_GEOMETRY`
- *  rather than a new constant (§12.2). */
-export function throatDepthKm(aperture: StationAperture): number {
-	const smaller = Math.min(aperture.widthKm, aperture.heightKm);
-	return (
-		smaller * (aperture.kind === "slot" ? THROAT_DEPTH_FACTOR : PAD_SINK_FACTOR)
-	);
-}
-
-/**
- * The docked position's axial distance from the station's centre, km.
- *
- * A quantity computed in sim, in the station's own frame, that the renderer
- * mirrors — §12.2's requirement, and the reason "inside the throat" is not
- * good enough: §12.6's obligation 1 cannot be written against a description.
- *
- * Measured from `aperturePlaneKm` — the surface the slot is cut into — and not
- * from the core radius, which on the trade station is 173 m outside it (#128).
- */
-export function dockedAxialKm(geometry: StationGeometry): number {
-	return geometry.aperturePlaneKm - throatDepthKm(geometry.aperture);
-}
+export const SETTLE_STANDOFF_FACTOR = 0.5;
 
 /** The ship's offset from the station centre, in aperture-basis components.
  *  Lateral components are held here and the basis is rebuilt per call, which is
  *  what makes the law a rotating-frame one. */
-interface LocalOffset {
-	axial: number;
-	across: number;
-	up: number;
-}
+type LocalOffset = InteriorOffset;
 
 export interface ArrivalLaw {
 	/** Which traversal. The two share every line of arithmetic below and differ
-	 *  only in their endpoints and which way the nose points — which is what
-	 *  §12.2 means by "the mirror", spelled as one law rather than as two. */
+	 *  only in the order of the waypoints and which way the up-vector settles —
+	 *  which is what §12.2 means by "the mirror", spelled as one law rather than
+	 *  as two. */
 	kind: "arrival" | "launch";
 	frame: ApertureFrame;
 	startedAtS: number;
 	durationS: number;
-	from: LocalOffset;
-	to: LocalOffset;
+	/** The route, first waypoint to last, in aperture-basis components. Three
+	 *  legs in, three out. */
+	path: LocalOffset[];
+	/** Cumulative arc length at each waypoint, km. Precomputed because the
+	 *  position, the velocity and the duration all read it. */
+	arc: number[];
+	/** The berth this traversal serves. Held on the law so the parked pose and
+	 *  the launch that starts from it read one reservation. */
+	berthId: string;
+	/** The parked up-vector, in aperture-basis components: the berth's own
+	 *  normal (§13.3). */
+	berthNormal: LocalOffset;
 	/** The attitude the ship held at the crossing, blended out over the
-	 *  traversal. Absent for a launch, which starts already aligned. */
+	 *  traversal. Absent for a launch, which starts parked. */
 	fromNose: Vec3 | null;
 	fromUp: Vec3 | null;
 }
@@ -172,7 +112,105 @@ const ease = (u: number): number => u * u * (3 - 2 * u);
 const easeRate = (u: number): number => 6 * u * (1 - u);
 const clamp01 = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
 
-/** Decompose a station-relative offset onto the aperture basis at one phase. */
+const offset = (axial: number, across: number, up: number): LocalOffset => ({
+	axial,
+	across,
+	up,
+});
+const offsetSub = (a: LocalOffset, b: LocalOffset): LocalOffset =>
+	offset(a.axial - b.axial, a.across - b.across, a.up - b.up);
+const offsetAdd = (a: LocalOffset, b: LocalOffset): LocalOffset =>
+	offset(a.axial + b.axial, a.across + b.across, a.up + b.up);
+const offsetScale = (a: LocalOffset, k: number): LocalOffset =>
+	offset(a.axial * k, a.across * k, a.up * k);
+const offsetLength = (a: LocalOffset): number =>
+	Math.hypot(a.axial, a.across, a.up);
+
+/** Cumulative arc length along a polyline. */
+function arcOf(path: LocalOffset[]): number[] {
+	const arc = [0];
+	for (let i = 1; i < path.length; i++)
+		arc.push(arc[i - 1] + offsetLength(offsetSub(path[i], path[i - 1])));
+	return arc;
+}
+
+/**
+ * Where a parked ship's origin sits, and where the settle leg starts from.
+ *
+ * Exported because `dock-session.ts` places the docked ship from the berth
+ * rather than from a law — a docked ship is *placed*, not interpolated, which
+ * is what makes §12.6's obligation 9 hold over an arbitrarily long interval.
+ */
+export const berthCentre = (berth: Berth): LocalOffset =>
+	offset(berth.centre.axial, berth.centre.across, berth.centre.up);
+
+/** The hover point over a berth: one standoff out along its normal. */
+export const berthStandoff = (berth: Berth): LocalOffset =>
+	offsetAdd(
+		berthCentre(berth),
+		offsetScale(berth.normal, berth.clearHeightKm * SETTLE_STANDOFF_FACTOR),
+	);
+
+/**
+ * How long a route takes, seconds — §13.3's *"about six seconds for a near
+ * berth to nine seconds for a deep berth"*.
+ *
+ * Interpolated on the route's own length between the shortest and longest the
+ * station's catalogue can produce, so the two figures are endpoints of a real
+ * measurement rather than a lookup keyed on the band.
+ *
+ * **The zero-spread case is "every route is the same length", not "one depth
+ * band".** They coincide today — the outpost has one band *and* a square bay,
+ * so its two berths are equidistant — but a non-square aperture would separate
+ * a deck berth from a wall berth on the same band, and the sentence would then
+ * name a condition the guard does not test.
+ */
+export function traversalSeconds(
+	interior: StationInterior,
+	routeKm: number,
+	entry: LocalOffset,
+): number {
+	let shortest = Number.POSITIVE_INFINITY;
+	let longest = 0;
+	for (const berth of interior.berths) {
+		const length = routeLengthOf(interior, berth, entry);
+		if (length < shortest) shortest = length;
+		if (length > longest) longest = length;
+	}
+	if (!(longest > shortest)) return TRAVERSAL_SECONDS_NEAR;
+	const t = clamp01((routeKm - shortest) / (longest - shortest));
+	return (
+		TRAVERSAL_SECONDS_NEAR +
+		(TRAVERSAL_SECONDS_DEEP - TRAVERSAL_SECONDS_NEAR) * t
+	);
+}
+
+/** The three legs, entry first. */
+function arrivalPath(
+	interior: StationInterior,
+	berth: Berth,
+	entry: LocalOffset,
+): LocalOffset[] {
+	return [
+		entry,
+		offset(interior.stagingAxialKm, 0, 0),
+		berthStandoff(berth),
+		berthCentre(berth),
+	];
+}
+
+const routeLengthOf = (
+	interior: StationInterior,
+	berth: Berth,
+	entry: LocalOffset,
+): number => {
+	const arc = arcOf(arrivalPath(interior, berth, entry));
+	return arc[arc.length - 1];
+};
+
+/**
+ * Decompose a station-relative offset onto the aperture basis at one phase.
+ */
 function decompose(
 	frame: ApertureFrame,
 	phaseRad: number,
@@ -187,106 +225,134 @@ function decompose(
 }
 
 /**
- * Begin the arrival, from the pose the crossing left the ship in.
+ * Begin the arrival, from the pose the crossing left the ship in, to the berth
+ * clearance reserved for it.
  *
  * `entryRel` is the ship's position in the station's frame at the crossing —
  * `planeCrossing`'s interpolated `rel`, which check 5 has already placed inside
  * the aperture rectangle. That containment is what makes §12.6's obligation 7
- * assertable: the lateral components only ever shrink from here, so a law that
- * starts inside the section stays inside it.
+ * assertable: the first leg runs down the lane, and the lane *is* the aperture
+ * rectangle carried inward (§13.1), so a law that starts inside the section
+ * stays inside it until it reaches the staging point.
  */
 export function beginArrival(
 	frame: ApertureFrame,
+	interior: StationInterior,
+	berth: Berth,
 	entryRel: Vec3,
 	startedAtS: number,
 	entryAttitude?: { nose: Vec3; up: Vec3 },
 ): ArrivalLaw {
-	const from = decompose(frame, frame.phaseRad, entryRel);
+	const entry = decompose(frame, frame.phaseRad, entryRel);
+	const path = arrivalPath(interior, berth, entry);
+	const arc = arcOf(path);
 	return {
 		kind: "arrival",
 		frame,
 		startedAtS,
-		durationS: ARRIVAL_SECONDS,
-		from,
-		to: { axial: dockedAxialFor(frame), across: 0, up: 0 },
+		durationS: traversalSeconds(interior, arc[arc.length - 1], entry),
+		path,
+		arc,
+		berthId: berth.id,
+		berthNormal: berth.normal,
 		fromNose: entryAttitude?.nose ?? null,
 		fromUp: entryAttitude?.up ?? null,
 	};
 }
 
 /**
- * Begin the launch: the same law, run the other way.
+ * Begin the launch: the same route, run the other way (§13.3).
  *
- * **It takes the parked attitude, because "already aligned" was only half
- * true.** The arrival does leave the ship rolled to the slot, but it leaves the
- * nose pointing *inward* — and a launch aims outward, so with nothing to blend
- * from the ship reversed 180° on the traversal's first frame. The same easing
- * that settles the arrival now turns it round on the way out. Omit the argument
- * and it snaps, which is why the caller passes it rather than the law assuming.
+ * The parked ship already points outward, so unlike the old law this one does
+ * not turn the nose round — what it settles is the **roll**, from the berth's
+ * own normal back onto the slot's `across`, which is check 4's reference and
+ * the attitude a ship outside the plane is measured in.
  *
- * No flag, though: **a launch is unconditionally skippable** and reads none of
- * E4's state (§12.2).
+ * It reads no flag: **a launch is unconditionally skippable** and so, since
+ * #147, is an arrival (§13.3).
  */
 export function beginLaunch(
 	frame: ApertureFrame,
+	interior: StationInterior,
+	berth: Berth,
 	startedAtS: number,
-	dockedAttitude?: { nose: Vec3; up: Vec3 },
 ): ArrivalLaw {
+	// **The arrival's own route, reversed.** Written out again inline, a fourth
+	// leg or a moved staging point had to land in two places or the two
+	// traversals stopped being the mirror §12.2 calls them.
+	const release = offset(frame.planeKm + LAUNCH_RELEASE_KM, 0, 0);
+	const path = [...arrivalPath(interior, berth, release)].reverse();
+	const arc = arcOf(path);
 	return {
 		kind: "launch",
 		frame,
 		startedAtS,
-		durationS: ARRIVAL_SECONDS,
-		from: { axial: dockedAxialFor(frame), across: 0, up: 0 },
-		to: { axial: frame.planeKm + LAUNCH_RELEASE_KM, across: 0, up: 0 },
-		fromNose: dockedAttitude?.nose ?? null,
-		fromUp: dockedAttitude?.up ?? null,
+		// **Priced against the same entry the spread is computed from.** The
+		// route is measured from `release`, twenty metres outside the plane, and
+		// the spread from `planeKm` — so every deep berth's launch came out past
+		// `longest`, `t` clamped to 1, and two routes that arrive 0.44 s apart
+		// left in the same nine seconds.
+		durationS: traversalSeconds(interior, arc[arc.length - 1], release),
+		path,
+		arc,
+		berthId: berth.id,
+		berthNormal: berth.normal,
+		fromNose: null,
+		fromUp: null,
 	};
-}
-
-/**
- * The docked axial distance for a frame.
- *
- * The frame carries the aperture and `planeKm` — which `apertureFrame` sets to
- * the dockable core radius — so the law needs no second lookup into
- * `STATION_GEOMETRY` and cannot disagree with the frame the checks ran against.
- */
-function dockedAxialFor(frame: ApertureFrame): number {
-	// Through `dockedAxialKm`, not a second spelling of the same subtraction:
-	// the frame's `planeKm` **is** the dockable core radius (`apertureFrame`
-	// sets it from `STATION_GEOMETRY`), so this is the same rule read off the
-	// frame the checks ran against rather than a parallel one that a retune
-	// could leave behind.
-	return dockedAxialKm({
-		aperturePlaneKm: frame.planeKm,
-		aperture: frame.aperture,
-		// None of these three is read by `dockedAxialKm`; they are here because
-		// `StationGeometry` is a record of five and a partial would be a cast.
-		coreRadiusKm: frame.planeKm,
-		axis: "parent",
-		spins: frame.aperture.kind === "slot",
-	});
 }
 
 /** Where the traversal is, 0 at its start and 1 from its end onward. Clamped
  *  rather than left to run: an arrival that kept integrating past 1 would drive
- *  the ship through the far wall of the throat it was placed in. */
+ *  the ship through the back of the berth it was placed in. */
 export function arrivalProgress(law: ArrivalLaw, gameTime: number): number {
 	return clamp01((gameTime - law.startedAtS) / law.durationS);
+}
+
+/** Which leg an eased progress lands on, and how far along it. */
+function locate(law: ArrivalLaw, e: number): { leg: number; t: number } {
+	const total = law.arc[law.arc.length - 1];
+	const s = e * total;
+	for (let i = 1; i < law.arc.length; i++) {
+		if (s <= law.arc[i] || i === law.arc.length - 1) {
+			const span = law.arc[i] - law.arc[i - 1];
+			return { leg: i, t: span > 0 ? (s - law.arc[i - 1]) / span : 1 };
+		}
+	}
+	return { leg: law.arc.length - 1, t: 1 };
+}
+
+/**
+ * Rebuild an offset held in aperture-basis components as a station-relative
+ * vector, at one phase.
+ *
+ * **Exported, because `dock-session.ts` places the parked ship with it.** It
+ * was a private helper and the docked tick wrote the same three lines out
+ * inline — two spellings of the rule this module exists to own, in two files
+ * that both insist elsewhere on one.
+ */
+export function recomposeOffset(
+	frame: ApertureFrame,
+	local: LocalOffset,
+	phaseRad: number,
+): Vec3 {
+	const { across, up } = slotBasis(frameAtPhase(frame, phaseRad));
+	return add(
+		scale(frame.axis, local.axial),
+		add(scale(across, local.across), scale(up, local.up)),
+	);
 }
 
 /** The ship's position in the station's frame at progress `u` and slot phase
  *  `phaseRad`. */
 export function arrivalRel(law: ArrivalLaw, u: number, phaseRad: number): Vec3 {
-	const e = ease(clamp01(u));
-	const { across, up } = slotBasis(frameAtPhase(law.frame, phaseRad));
-	const lerp = (a: number, b: number) => a + (b - a) * e;
-	return add(
-		scale(law.frame.axis, lerp(law.from.axial, law.to.axial)),
-		add(
-			scale(across, lerp(law.from.across, law.to.across)),
-			scale(up, lerp(law.from.up, law.to.up)),
-		),
+	const { leg, t } = locate(law, ease(clamp01(u)));
+	const a = law.path[leg - 1];
+	const b = law.path[leg];
+	return recomposeOffset(
+		law.frame,
+		offsetAdd(a, offsetScale(offsetSub(b, a), t)),
+		phaseRad,
 	);
 }
 
@@ -300,6 +366,10 @@ export function arrivalRel(law: ArrivalLaw, u: number, phaseRad: number): Vec3 {
  * interpolation: `d(across)/dφ` is `up` and `d(up)/dφ` is `−across`, so a
  * station turning at `spinRadPerS` contributes a velocity to any ship holding a
  * lateral offset — which is precisely the motion a translating-frame law omits.
+ *
+ * **It is discontinuous at a waypoint, and that is the polyline rather than a
+ * defect.** The speed is continuous — one easing over the whole arc — and the
+ * direction turns a corner, which is what a three-leg route is.
  */
 export function arrivalRelVelocity(
 	law: ArrivalLaw,
@@ -309,17 +379,21 @@ export function arrivalRelVelocity(
 ): Vec3 {
 	const c = clamp01(u);
 	const e = ease(c);
-	const de = easeRate(c) / law.durationS;
+	const total = law.arc[law.arc.length - 1];
+	const dsdt = (easeRate(c) / law.durationS) * total;
+	const { leg, t } = locate(law, e);
+	const a = law.path[leg - 1];
+	const b = law.path[leg];
+	const span = offsetLength(offsetSub(b, a));
+	const dir =
+		span > 0 ? offsetScale(offsetSub(b, a), 1 / span) : offset(0, 0, 0);
+	const here = offsetAdd(a, offsetScale(offsetSub(b, a), t));
 	const { across, up } = slotBasis(frameAtPhase(law.frame, phaseRad));
-	const at = (a: number, b: number) => a + (b - a) * e;
-	const rate = (a: number, b: number) => (b - a) * de;
-	const acrossNow = at(law.from.across, law.to.across);
-	const upNow = at(law.from.up, law.to.up);
 	return add(
-		scale(law.frame.axis, rate(law.from.axial, law.to.axial)),
+		scale(law.frame.axis, dir.axial * dsdt),
 		add(
-			scale(across, rate(law.from.across, law.to.across) - upNow * spinRadPerS),
-			scale(up, rate(law.from.up, law.to.up) + acrossNow * spinRadPerS),
+			scale(across, dir.across * dsdt - here.up * spinRadPerS),
+			scale(up, dir.up * dsdt + here.across * spinRadPerS),
 		),
 	);
 }
@@ -332,54 +406,202 @@ function unit(a: Vec3): Vec3 {
 }
 
 /**
- * Interpolate two directions along the great circle between them.
+ * A ship's attitude as a unit quaternion, `[x, y, z, w]`.
  *
- * **A real slerp, because the obvious `unit(lerp(a, b, t))` is degenerate
- * exactly where this is used.** A launch turns the nose from inward to outward
- * — two *antipodal* vectors — and their normalised lerp is the zero vector at
- * the half-way point and flips sign either side of it: the ship holds its
- * entry heading for half the traversal and then snaps. That shipped once, and
- * `tests/dock-session.test.ts` holds the row that fails on it.
+ * **Two directions are not an orientation, and interpolating them separately is
+ * what went wrong.** The nose and the up-vector each took their own great
+ * circle, and at a wall berth the two circles crossed: an entry rolled to the
+ * opposite `across` — which check 4 accepts — is antipodal to the parked
+ * up-vector, so the roll turned through the slot's `up`; the nose turned from
+ * inward to outward through the same plane; and at the half-way point both
+ * landed on it. `|dot(nose, up)| = 1` — the ship's basis collapsed, mid-arrival,
+ * on four of a trade station's eight berths.
  *
- * `via` is the plane to turn through when the two are antipodal, where no
- * great circle is preferred by the geometry and one has to be chosen. Callers
- * pass the slot's own `up`, so the ship pitches over rather than rolling round
- * some axis that depends on rounding.
+ * Slerping the *orientation* cannot do that: a unit quaternion is a rotation,
+ * every point on the great circle between two of them is a rotation, and a
+ * rotation has an orthonormal basis by construction. There is no plane to
+ * choose and no degenerate pair to special-case.
+ *
+ * Hand-rolled rather than borrowed from Three.js, for this module's own reason:
+ * the authoritative world is float64 kilometres outside the scene graph and
+ * `arrival.ts` imports no renderer.
  */
-function slerp(a: Vec3, b: Vec3, t: number, via: Vec3): Vec3 {
-	const d = Math.min(1, Math.max(-1, dot(a, b)));
-	// Near-parallel: the great circle is shorter than float64 can resolve an
-	// axis for, and the lerp is the same answer to well inside a pixel.
-	if (d > 0.9995) return unit(add(scale(a, 1 - t), scale(b, t)));
-	const perpendicular =
-		d < -0.9995
-			? unit(sub(via, scale(a, dot(via, a))))
-			: unit(sub(b, scale(a, d)));
-	const theta = Math.acos(d) * t;
-	return add(scale(a, Math.cos(theta)), scale(perpendicular, Math.sin(theta)));
+type Quat = [number, number, number, number];
+
+/**
+ * The rotation that takes the ship's reference basis onto `(nose, up)`.
+ *
+ * The convention is `main.ts`'s `setAttitude`: columns are `(right, up, back)`
+ * with `back = −nose`, so the mesh's nose is local `−Z`. Shepperd's method
+ * picks the largest diagonal term, which is what keeps it conditioned when the
+ * trace is near `−1`.
+ */
+function quatFromAttitude(nose: Vec3, up: Vec3): Quat {
+	const f = unit(nose);
+	// Re-orthogonalised rather than trusted: the two come from a crossing pose
+	// and from a berth normal, and "perpendicular" is a claim about the
+	// geometry rather than about float64.
+	const u = unit(sub(up, scale(f, dot(up, f))));
+	const r = cross(f, u);
+	const b = scale(f, -1);
+	// Columns (r, u, b), read as m[row][col].
+	const m = [
+		[r.x, u.x, b.x],
+		[r.y, u.y, b.y],
+		[r.z, u.z, b.z],
+	];
+	const trace = m[0][0] + m[1][1] + m[2][2];
+	if (trace > 0) {
+		const w = Math.sqrt(1 + trace) / 2;
+		const k = 1 / (4 * w);
+		return [
+			(m[2][1] - m[1][2]) * k,
+			(m[0][2] - m[2][0]) * k,
+			(m[1][0] - m[0][1]) * k,
+			w,
+		];
+	}
+	if (m[0][0] > m[1][1] && m[0][0] > m[2][2]) {
+		const x = Math.sqrt(1 + m[0][0] - m[1][1] - m[2][2]) / 2;
+		const k = 1 / (4 * x);
+		return [
+			x,
+			(m[0][1] + m[1][0]) * k,
+			(m[0][2] + m[2][0]) * k,
+			(m[2][1] - m[1][2]) * k,
+		];
+	}
+	if (m[1][1] > m[2][2]) {
+		const y = Math.sqrt(1 + m[1][1] - m[0][0] - m[2][2]) / 2;
+		const k = 1 / (4 * y);
+		return [
+			(m[0][1] + m[1][0]) * k,
+			y,
+			(m[1][2] + m[2][1]) * k,
+			(m[0][2] - m[2][0]) * k,
+		];
+	}
+	const z = Math.sqrt(1 + m[2][2] - m[0][0] - m[1][1]) / 2;
+	const k = 1 / (4 * z);
+	return [
+		(m[0][2] + m[2][0]) * k,
+		(m[1][2] + m[2][1]) * k,
+		z,
+		(m[1][0] - m[0][1]) * k,
+	];
+}
+
+/** The `(nose, up)` pair a rotation produces — the inverse of the above, by
+ *  rotating the two reference directions it was built from. */
+function attitudeFromQuat(q: Quat): { nose: Vec3; up: Vec3 } {
+	const [x, y, z, w] = q;
+	const rotate = (v: Vec3): Vec3 => {
+		// v + 2·q_vec × (q_vec × v + w·v), the standard expansion.
+		const t = v3(
+			2 * (y * v.z - z * v.y),
+			2 * (z * v.x - x * v.z),
+			2 * (x * v.y - y * v.x),
+		);
+		return v3(
+			v.x + w * t.x + (y * t.z - z * t.y),
+			v.y + w * t.y + (z * t.x - x * t.z),
+			v.z + w * t.z + (x * t.y - y * t.x),
+		);
+	};
+	// The mesh's nose is local −Z and its up is local +Y (`setAttitude`).
+	return { nose: rotate(v3(0, 0, -1)), up: rotate(v3(0, 1, 0)) };
+}
+
+/**
+ * The shorter great-circle arc between two rotations.
+ *
+ * `q` and `−q` are the same rotation, so the sign is flipped when the dot is
+ * negative — otherwise the ship takes the long way round, which for a 180°
+ * nose turn is the difference between pitching over the lip and rolling
+ * backwards through the bay.
+ */
+function quatSlerp(a: Quat, b: Quat, t: number): Quat {
+	let [bx, by, bz, bw] = b;
+	let d = a[0] * bx + a[1] * by + a[2] * bz + a[3] * bw;
+	if (d < 0) {
+		bx = -bx;
+		by = -by;
+		bz = -bz;
+		bw = -bw;
+		d = -d;
+	}
+	// Near-parallel: the arc is shorter than float64 can resolve an axis for,
+	// and the normalised lerp is the same answer to well inside a pixel.
+	if (d > 0.9995) {
+		const q: Quat = [
+			a[0] + (bx - a[0]) * t,
+			a[1] + (by - a[1]) * t,
+			a[2] + (bz - a[2]) * t,
+			a[3] + (bw - a[3]) * t,
+		];
+		const n = Math.hypot(q[0], q[1], q[2], q[3]);
+		return [q[0] / n, q[1] / n, q[2] / n, q[3] / n];
+	}
+	const theta = Math.acos(d);
+	const s = Math.sin(theta);
+	const ka = Math.sin((1 - t) * theta) / s;
+	const kb = Math.sin(t * theta) / s;
+	return [
+		a[0] * ka + bx * kb,
+		a[1] * ka + by * kb,
+		a[2] * ka + bz * kb,
+		a[3] * ka + bw * kb,
+	];
+}
+
+/**
+ * The pose a parked ship holds (§13.3): **nose outward** along the aperture
+ * axis, up-vector away from the berth surface.
+ *
+ * One spelling, read by the docked tick, by the end of the arrival and by the
+ * launch that starts from it. The outward nose is the receipt's own wording —
+ * *"the exit remains straight ahead"* — and it is why a launch no longer has to
+ * turn the ship round inside the bay.
+ */
+export function parkedAttitude(
+	law: Pick<ArrivalLaw, "frame" | "berthNormal">,
+	phaseRad: number,
+): { nose: Vec3; up: Vec3 } {
+	return {
+		nose: law.frame.axis,
+		up: recomposeDirection(law.frame, law.berthNormal, phaseRad),
+	};
+}
+
+/** A direction held in aperture-basis components, at one phase. Separate from
+ *  `recompose` because a direction has no axial *position* to add. */
+export function recomposeDirection(
+	frame: ApertureFrame,
+	local: LocalOffset,
+	phaseRad: number,
+): Vec3 {
+	const { across, up } = slotBasis(frameAtPhase(frame, phaseRad));
+	return unit(
+		add(
+			scale(frame.axis, local.axial),
+			add(scale(across, local.across), scale(up, local.up)),
+		),
+	);
 }
 
 /**
  * The ship's attitude during the traversal.
  *
- * Aligned to the slot at the end — nose down the inward axis for an arrival and
- * out along it for a launch, up-vector along the slot's **`across`** at the
- * phase passed in, so the parked ship turns with the station rather than
- * holding a world-space roll the station has rotated away from.
+ * An arrival settles onto the parked pose — nose outward, up along the berth's
+ * normal — from whatever the crossing left it in. A launch runs the other way:
+ * it starts parked and settles onto the slot's own `across`, which is check 4's
+ * roll reference and the attitude a ship outside the plane is measured in.
  *
  * **`across`, not `up`, and that is check 4's convention rather than a
  * choice.** `evaluateEntry` measures the roll as `|dot(shipUp, basis.across)|`
  * and `signedRollDeg` reports zero when the two are parallel — so a ship rolled
- * "correctly" for this slot has its up-vector along the slot's long axis. The
- * first build aligned to `basis.up` instead, which is exactly 90° out: the
- * frames showed the docked ship lying crossways in its own slot with the name
- * shield running vertically up the canopy, and every headless row still passed,
- * because none of them compared the parked attitude with the one check 4
- * accepts.
- *
- * Blended from the entry attitude by the same easing the position uses, when
- * one was supplied. The ship crossed the plane within check 2's 35° and check
- * 4's 50°, so this is a few tens of degrees of settling and not a snap.
+ * "correctly" for a slot has its up-vector along the slot's long axis. The
+ * first build aligned to `basis.up` instead, which is exactly 90° out.
  */
 export function arrivalAttitude(
 	law: ArrivalLaw,
@@ -388,21 +610,23 @@ export function arrivalAttitude(
 ): { nose: Vec3; up: Vec3 } {
 	const e = ease(clamp01(u));
 	const basis = slotBasis(frameAtPhase(law.frame, phaseRad));
-	const slotUp = basis.across;
-	const aimed = scale(law.frame.axis, law.kind === "arrival" ? -1 : 1);
-	if (!law.fromNose || !law.fromUp) return { nose: aimed, up: slotUp };
-	// **Each turn through a plane perpendicular to what it is turning.** The
-	// nose sweeps through the slot's own `up`, so a launch pitches the ship over
-	// the lip it is leaving through rather than round an axis nothing chose.
-	//
-	// The roll sweeps through the slot's `up` as well, and **not** through the
-	// axis. Check 4 compares against the axis *line*, so a ship entering rolled
-	// 180° passes it — and its up-vector is then antipodal to the one the
-	// arrival is settling to. Turned through the axis, the half-way point puts
-	// the up-vector *on* the axis, collinear with the nose: the ship's basis
-	// collapses mid-arrival instead of rolling about its own nose.
-	return {
-		nose: slerp(law.fromNose, aimed, e, basis.up),
-		up: slerp(law.fromUp, slotUp, e, basis.up),
-	};
+	const parked = parkedAttitude(law, phaseRad);
+	if (law.kind === "launch")
+		// A launch starts parked and ends square with the slot: the nose is
+		// already outward at both ends, so what this settles is the roll.
+		return attitudeFromQuat(
+			quatSlerp(
+				quatFromAttitude(parked.nose, parked.up),
+				quatFromAttitude(law.frame.axis, basis.across),
+				e,
+			),
+		);
+	if (!law.fromNose || !law.fromUp) return parked;
+	return attitudeFromQuat(
+		quatSlerp(
+			quatFromAttitude(law.fromNose, law.fromUp),
+			quatFromAttitude(parked.nose, parked.up),
+			e,
+		),
+	);
 }

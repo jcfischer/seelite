@@ -59,7 +59,8 @@ npm run views -- --label after       # again, with the change
 open view-set/index.html             # the contact sheet, side by side
 ```
 
-Seven views on a fixed seed, declared in `scripts/lib/view-set.mjs` — each names
+Fifteen views on a fixed seed — bar one that declares its own — in
+`scripts/lib/view-set.mjs`, each naming
 the levers it is evidence for, and `tests/view-set.test.ts` goes red if a lever
 in that file has no view. It cannot check that the view *shows* the surface, nor
 that a lever added to the map reached the file; both are a person's job, which
@@ -94,6 +95,21 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
 - **`src/sim.ts` must not import Three.js.** The authoritative world is float64
   kilometres outside the scene graph; the scene graph is display only, and
   nothing reads a position back out of an `Object3D`.
+- **A station's bay is drawn inside the spinner, and the sim owns its shape.**
+  `src/station-interior.ts` computes the volume and the berth catalogue with no
+  Three.js; `src/station-interior-mesh.ts` draws that catalogue and authors no
+  dimension of its own. A berth is off the transit axis, so the bay has to turn
+  with the station or a parked ship is left behind — which is why the group goes
+  inside `spinner` rather than beside it.
+- **A bay wider than the form that holds it pokes through the hull, and only
+  half of that is checkable.** `tests/station-interior.test.ts` measures the bay
+  against the **slot** forms' `core` box, which is the body their slot is cut
+  into. The two pad roles are excluded for the reason #128's row excludes them:
+  a refinery's `core` is a 48 m slab of deck sitting in the notch of a rock that
+  is a separate mesh, and an outpost's is the tank cluster *below* its pad. A
+  ray cast from inside cannot stand in — a hull mesh is `FrontSide` and the ray
+  passes straight through. Those two roles' bays are held by the canonical view
+  set alone.
 - **A body's render layer is its distance, not its kind** — near within
   `HANDOFF_KM` of the camera, far beyond it, with a hysteresis band. Anything
   that adds a drawn object inherits this rather than picking a layer.

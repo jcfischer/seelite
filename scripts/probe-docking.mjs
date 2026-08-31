@@ -401,6 +401,15 @@ const undock = good.docked
 					g.render(dt);
 				}
 				const after = g.dockingSnapshot(id);
+				// **A fresh grant first, since §13.2.** The outward crossing spends
+				// the clearance along with the berth it reserved — a grant that
+				// outlived its berth is one no berth answers for — so the autopilot
+				// refuses with `no-clearance` rather than flying, and this row would
+				// go red for a reason it is not about. Re-requesting is free (§6).
+				// What is under test is the *latch*: that leaving the dock lets the
+				// computer fly again.
+				g.targetId = id;
+				g.requestDockingClearance();
 				g.toggleDockingComputer();
 				// One step, so what is measured is the autopilot actually flying rather
 				// than a flag having been flipped.
