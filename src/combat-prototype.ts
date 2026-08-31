@@ -181,3 +181,52 @@ export function stepCombatPrototype(
 	}
 	return next;
 }
+
+/**
+ * What the rig hands `stepCombatPrototype` for one frame of the scripted duel.
+ *
+ * **One function, because it was three.** The live rig built this object inline
+ * in `Game.step`, and `tests/combat-prototype.test.ts` wrote the same
+ * arithmetic out once per weapon arm — three spellings of one schedule, kept in
+ * step by hand. Every retune then needed the other two mirrored onto it, which
+ * is what the "match beam and pulse duel arms" and "mirror enemy aft
+ * alternation in duel" commits were doing. A test that builds its own inputs is
+ * pacing a different duel from the one being flown.
+ *
+ * The split is between what the *script* decides — the strafe, the shield-bank
+ * alternation, the enemy's firing window, all functions of `elapsed` and the
+ * two hulls — and what the *pilot* does, which the rig passes in as `live`.
+ * The weapon is the caller's because it is the one thing the two arms differ
+ * in, and `#48`'s pacing claim is exactly that they differ in nothing else.
+ */
+export interface DuelLiveInput {
+	incomingMissile?: boolean;
+	ecm?: boolean;
+	interdicting?: boolean;
+	breakAngle?: boolean;
+}
+
+export function duelInputs(
+	state: CombatPrototypeState,
+	dt: number,
+	firing: WeaponMode,
+	live: DuelLiveInput = {},
+): CombatPrototypeInput {
+	const { elapsed } = state;
+	return {
+		dt,
+		firing,
+		targetInCone: duelTargetInCone(elapsed),
+		// Alternate which target shield bank the fixed weapon meets, so the
+		// fore/aft pools both participate in the duel pacing being measured.
+		hitAft: Math.floor(elapsed / 2) % 2 === 1,
+		// The enemy fires on its own schedule, not on the player's aim cone:
+		// gating the enemy's damage on `targetInCone` would let the player only be
+		// damaged while happening to point at the enemy. It stops once either side
+		// is gone, so the duel has a terminal state.
+		enemyFiring:
+			state.targetHull > 0 && state.playerHull > 0 && elapsed % 4 < 2,
+		enemyHitAft: Math.floor(elapsed / 3) % 2 === 1,
+		...live,
+	};
+}
