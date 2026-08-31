@@ -6,9 +6,14 @@
  * aperture from `w·cos θ + h·sin θ` against the opening's *width* with `w` the
  * beam, and `tests/roll-reference.test.ts` checks that the pose check 4 calls a
  * perfect roll puts that same beam along the same axis — two halves of one
- * claim, re-derived separately, which is the shape of the defect #157 found.
- * With both reading this, swapping `size.x` for `size.y` here fails both rather
- * than quietly re-transposing the pair.
+ * claim, and re-deriving them separately is the shape of the defect #157 found.
+ *
+ * **Swapping `size.x` for `size.y` here fails `roll-reference` and not
+ * `aperture-fit`.** Measured, not assumed: the fit test only needs every hull to
+ * clear the opening, and a transposed courier clears 120 x 70 as readily as the
+ * right way round — which is #157's finding exactly. The pose row is the only
+ * side of this seam that can hold it, and this file is what makes the two one
+ * seam rather than two derivations.
  *
  * The worst case is *at* the roll rather than somewhere inside it: both
  * expressions grow monotonically in θ over 0–90° for any positive `w` and `h`.

@@ -216,7 +216,11 @@ async function fly(setup) {
 				// re-aimed every frame below. The loop owns the aiming; this only sets
 				// the first attitude so the ship does not spend its first frames
 				// turning out of whatever the previous run left it in.
-				g.setAttitude(D.scale(axis, -1), across);
+				// **`up`, check 4's zero since #158.** The seed was `across`, which
+				// under the corrected check is a 90° mis-roll — the opposite of what
+				// the line is for. Harmless, because `reaim` overwrites the attitude
+				// every frame, and wrong for exactly as long as nobody read it.
+				g.setAttitude(D.scale(axis, -1), up);
 				g.setThrottle(setup.closingKms / g.assistCapKms);
 			}
 

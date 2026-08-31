@@ -29,7 +29,6 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import * as THREE from "three";
 import {
 	type ApertureFrame,
 	type EntryPose,
@@ -99,6 +98,18 @@ function rotateAbout(v: Vec3, axis: Vec3, deg: number): Vec3 {
 	);
 }
 
+/** The extent a hull needs along one slot axis, metres — the beam and the
+ *  height each projected onto it. The four calls below differ only in which
+ *  axis and which envelope, which is what made the inline form hard to compare
+ *  against its siblings. */
+const extentAlong = (
+	beam: Vec3,
+	shipUp: Vec3,
+	axis: Vec3,
+	env: { across: number; up: number },
+): number =>
+	alignment(beam, axis) * env.across + alignment(shipUp, axis) * env.up;
+
 /** An entry pose at the plane, nominal but for its attitude — the sibling
  *  files' `nominal(frame, over)`, narrowed to the one thing these rows vary. */
 const poseAt = (
@@ -114,6 +125,84 @@ const poseAt = (
 });
 
 /**
+ * The centre of the band where a score reads exactly zero.
+ *
+ * **The score is `evaluateEntry`'s `rollAngleDeg`, and it has a plateau.** That
+ * angle reaches a caller through `cosToDeg` — an `acos` of a clamped cosine,
+ * worst-conditioned exactly at 1 — so the check reports **0.0** across a band
+ * measured at 2.94e-6° wide — about one ulp of the cosine near 1. Four earlier
+ * versions of this search
+ * were written before that was understood and every one of them was wrong in
+ * the same direction:
+ *
+ * - a 0.01° sweep for the minimum found the zero to 0.005° at best, and passed
+ *   only because the true zero sat on 90.00°;
+ * - its replacement read a centre it reassigned inside the same loop, drifted to
+ *   −2430°, and landed on an integer degree;
+ * - refining that further changed nothing — the residual is 0.000e+0 at twelve
+ *   passes and at sixteen alike, because a minimum search cannot see inside a
+ *   plateau;
+ * - and a fixed 1e-4° scan for a point inside the band hit it only because the
+ *   sweep's origin happened to be a multiple of the step. Move the origin to
+ *   0.37005° and nothing lands inside at all.
+ *
+ * So: **ternary search**, which narrows on a unimodal score without needing to
+ * sample the plateau on a grid — when both probes read zero the plateau is
+ * between them and the interval keeps both. Then bisect out to each sharp edge
+ * and take the middle, which locates the zero to float precision while reading
+ * nothing but the shipped check.
+ */
+function zeroBandCentre(scoreAt: (deg: number) => number): number {
+	let coarse = -180;
+	let best = Number.POSITIVE_INFINITY;
+	// Well conditioned everywhere but the band, so one degree brackets it.
+	for (let deg = -180; deg <= 180; deg += 1) {
+		const score = scoreAt(deg);
+		if (score < best) {
+			best = score;
+			coarse = deg;
+		}
+	}
+
+	let lo = coarse - 1;
+	let hi = coarse + 1;
+	// Each pass keeps two thirds, so the interval falls below 1e-9° in about
+	// fifty — three orders inside the band, and stopped there deliberately.
+	// Run to float collapse instead and `a` and `b` meet: the comparison then
+	// reads `false` forever and the interval walks off to one side, which is
+	// how this first came back with a score of 1.2e-6 instead of zero.
+	for (let i = 0; i < 200 && hi - lo > 1e-9; i++) {
+		const a = lo + (hi - lo) / 3;
+		const b = hi - (hi - lo) / 3;
+		if (scoreAt(a) < scoreAt(b)) hi = b;
+		else lo = a;
+	}
+	const inside = (lo + hi) / 2;
+	expect(scoreAt(inside)).toBe(0);
+
+	/** One sharp edge of the band, bisected between a point in and one out. */
+	const edge = (out: number): number => {
+		let within = inside;
+		let beyond = out;
+		for (let i = 0; i < 80; i++) {
+			const mid = (within + beyond) / 2;
+			if (scoreAt(mid) === 0) within = mid;
+			else beyond = mid;
+		}
+		return within;
+	};
+	const low = edge(inside - 1);
+	const high = edge(inside + 1);
+	// Real and narrow: wide enough that a minimum search lands anywhere in it,
+	// far too narrow to be a second zero. **Measured at 2.94e-6°**, which is a
+	// property of float64 and `acos` rather than a number this repo chose — so
+	// the check is a band and not a pinned figure.
+	expect(high - low).toBeGreaterThan(0);
+	expect(high - low).toBeLessThan(1e-4);
+	return (low + high) / 2;
+}
+
+/**
  * The roll that check 4 scores as perfect, found by **searching the shipped
  * check** rather than by constructing it from the convention.
  *
@@ -124,13 +213,15 @@ const poseAt = (
 function checkFourZero(frame: ApertureFrame): { nose: Vec3; up: Vec3 } {
 	const basis = slotBasis(frame);
 	const nose = scale(frame.axis, -1);
-	// **The sweep's origin is deliberately off the basis by 0.37°**, so the
-	// answer does not sit on an integer degree. Parameterised from `across`
-	// exactly, check 4's zero lands at 90.000°, and a search that only ever
-	// evaluates integer degrees would return it correct with a residual of
-	// zero — indistinguishable from a search that works. Both earlier versions
-	// of the loop below passed on exactly that coincidence. Offset, the zero is
-	// at 89.63° and only a search that actually refines can reach it.
+	// **The sweep's origin is off the basis by 0.37°**, so the answer does not
+	// sit on an integer degree. Parameterised from `across` exactly, check 4's
+	// zero lands on 90.000°, and a grid search returns it correct with a
+	// residual of zero — indistinguishable from a search that works, which is
+	// how three earlier versions of `zeroBandCentre` looked right.
+	//
+	// It is a tripwire and not a load-bearing constant: the search reaches the
+	// zero by narrowing rather than by sampling, and passes at offsets of 0,
+	// 0.123456, 0.37005 and 7.919 alike. Any other non-integer would do.
 	const ORIGIN_OFFSET_DEG = 0.37;
 	const atDeg = (deg: number): Vec3 => {
 		const rad = ((deg + ORIGIN_OFFSET_DEG) * Math.PI) / 180;
@@ -145,65 +236,7 @@ function checkFourZero(frame: ApertureFrame): { nose: Vec3; up: Vec3 } {
 				.rollAngleDeg,
 		);
 
-	// **Coarse sweep to the zero plateau, then bisect to its two edges and take
-	// the midpoint.** Three earlier versions searched for a minimum, and all
-	// three were wrong in the same way, which is what the plateau explains:
-	//
-	// `rollAngleDeg` reaches the caller through `cosToDeg`, an `acos` of a
-	// clamped cosine — and `acos` near 1 is the worst-conditioned place in the
-	// function. `evaluateEntry` reports **exactly 0.0** across a band about
-	// 1e-3° wide, so "minimise the reported angle" stops improving the instant
-	// the search enters that band and hands back whichever edge it reached
-	// first. No refinement fixes it: measured, the residual is 0.000e+0 at
-	// twelve passes and at sixteen alike, and the pose is still up to 1e-3°
-	// out — enough to move a hull extent by 1e-6 m, which is what the rows
-	// below were failing on once the origin came off the integer grid.
-	//
-	// The band's *edges* are sharp, so bisecting to each and taking the middle
-	// locates the zero to float precision — and it does it by reading the
-	// shipped check, which is the property that matters here. `docking.ts` says
-	// the degrees are "a **diagnostic**, never a comparison"; this is what that
-	// costs a consumer that has to invert it.
-	const isZero = (deg: number): boolean => scoreAt(deg) === 0;
-	// Coarse pass on the reported angle, which is well conditioned everywhere
-	// except the band itself — one degree is plenty to bracket a zero the check
-	// reports as tens of degrees away on either side.
-	let coarse = -180;
-	let bestDeg = Number.POSITIVE_INFINITY;
-	for (let deg = -180; deg <= 180; deg += 1) {
-		const score = scoreAt(deg);
-		if (score < bestDeg) {
-			bestDeg = score;
-			coarse = deg;
-		}
-	}
-	// Then a fine scan for a point actually inside the band. The band is about
-	// 1e-3° wide and the coarse pass lands within half a degree of it, so the
-	// step has to be finer than the band by enough to be sure of hitting it.
-	let inside = Number.NaN;
-	for (let deg = coarse - 0.5; deg <= coarse + 0.5; deg += 1e-4)
-		if (isZero(deg)) {
-			inside = deg;
-			break;
-		}
-	expect(Number.isNaN(inside)).toBe(false);
-	/** The edge of the zero band, bisected between a point inside and one out. */
-	const edge = (out: number): number => {
-		let lo = inside;
-		let hi = out;
-		for (let i = 0; i < 60; i++) {
-			const mid = (lo + hi) / 2;
-			if (isZero(mid)) lo = mid;
-			else hi = mid;
-		}
-		return lo;
-	};
-	const centre = (edge(inside - 1) + edge(inside + 1)) / 2;
-	// The band is real and narrow: wide enough that a minimum-search lands
-	// anywhere in it, far too narrow to be a second zero.
-	const width = edge(inside + 1) - edge(inside - 1);
-	expect(width).toBeGreaterThan(0);
-	expect(width).toBeLessThan(0.01);
+	const centre = zeroBandCentre(scoreAt);
 	return { nose, up: atDeg(centre) };
 }
 
@@ -254,14 +287,11 @@ describe("check 4's zero and the aperture-fit measurement agree (#157)", () => {
 		// what the row needs is the separation, and a hull edit may move it.
 		expect(flat.across / flat.up).toBeGreaterThan(3);
 
-		const needAcrossM =
-			alignment(beam, basis.across) * flat.across +
-			alignment(orth.up, basis.across) * flat.up;
-		const needUpM =
-			alignment(beam, basis.up) * flat.across +
-			alignment(orth.up, basis.up) * flat.up;
-		expect(needAcrossM).toBeCloseTo(flat.across, 6);
-		expect(needUpM).toBeCloseTo(flat.up, 6);
+		expect(extentAlong(beam, orth.up, basis.across, flat)).toBeCloseTo(
+			flat.across,
+			6,
+		);
+		expect(extentAlong(beam, orth.up, basis.up, flat)).toBeCloseTo(flat.up, 6);
 
 		// **And at the roll limit, where the fit test actually reads it.** At
 		// zero roll the envelope hands back `(w, h)` unchanged, so the two
@@ -281,14 +311,14 @@ describe("check 4's zero and the aperture-fit measurement agree (#157)", () => {
 			(ROLL_TOLERANCE_DEG * Math.PI) / 180,
 			"a",
 		);
-		expect(
-			alignment(limitBeam, basis.across) * flat.across +
-				alignment(atLimit.up, basis.across) * flat.up,
-		).toBeCloseTo(rolled.across, 6);
-		expect(
-			alignment(limitBeam, basis.up) * flat.across +
-				alignment(atLimit.up, basis.up) * flat.up,
-		).toBeCloseTo(rolled.up, 6);
+		expect(extentAlong(limitBeam, atLimit.up, basis.across, flat)).toBeCloseTo(
+			rolled.across,
+			6,
+		);
+		expect(extentAlong(limitBeam, atLimit.up, basis.up, flat)).toBeCloseTo(
+			rolled.up,
+			6,
+		);
 		expect(rolled.up / flat.up).toBeGreaterThan(3);
 		expect(rolled.across).toBeLessThan(flat.across);
 		// The whole point of measuring at the limit rather than at zero: the `up`

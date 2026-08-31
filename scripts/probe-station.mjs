@@ -675,8 +675,8 @@ for (const station of setup.stations) {
  *
  * The aperture group's local +X is the slot's long axis — the side a ship's
  * beam lies along at check 4's zero (#157) — so this projects that axis through
- * the near camera and reports its angle on screen. Pixels rather than NDC, so the viewport's aspect
- * ratio does not shear the angle.
+ * the near camera and reports its angle on screen. Pixels rather than NDC, so
+ * the viewport's aspect ratio does not shear the angle.
  */
 async function slotAngle(id) {
 	return page.evaluate(
