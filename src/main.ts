@@ -3916,6 +3916,23 @@ class Game {
 	}
 
 	/**
+	 * What is selected on frame one.
+	 *
+	 * One method with two callers — the constructor and `resetToStart` — because
+	 * it was briefly two copies and they diverged immediately: the reset set
+	 * `null` while a boot selects the nearest station, and a browser check with
+	 * its own hardcoded `null` reported that as boot state for five runs. The
+	 * name scan in `tests/leg-reset-coverage.test.ts` compares names, not
+	 * values, and would never have caught it. One expression cannot disagree
+	 * with itself.
+	 */
+	private selectBootTarget() {
+		// Something is selected on frame one: a cruise panel with an empty target
+		// field on boot reads as broken.
+		this.targetId = this.nearestOfKind("station")?.id ?? null;
+	}
+
+	/**
 	 * Put the game back where a fresh boot leaves it, without rebuilding it.
 	 *
 	 * ## Who this is for
@@ -3943,12 +3960,28 @@ class Game {
 	 * keep it off. This method is deliberately *not* held to that, and the
 	 * difference is the state each one leaves behind. Stopping the frame loop
 	 * puts the page somewhere the game never goes and cannot leave. A rewind
-	 * lands in exactly the state boot produces — the same expressions, the same
-	 * `selectBootTarget` — and the loop keeps running. It also adds no reach: the
-	 * ship, the clock and the whole session are already writable fields on the
-	 * published object, so anything this method can do was already a few
-	 * assignments away. #89's save/load will want this shape rather than a
-	 * probe-only one.
+	 * lands in a *legal* state — the flight session as boot produces it, by the
+	 * same expressions, with the loop still running. Not an identical one:
+	 * `frames` and the audio device are deliberately untouched, and the docking
+	 * session is out of scope below. And it adds no reach — the ship, the clock
+	 * and the whole session are already writable fields on the published object,
+	 * so anything this can do was a few assignments away already.
+	 *
+	 * What it does add is a **name**: `resetToStart` is now a discoverable member
+	 * of the shipped console surface, and #89's save/load will be expected to
+	 * keep it working rather than to invent its own. That is intended, and it is
+	 * the reason this is worth stating rather than gating.
+	 *
+	 * ## What it does not reset
+	 *
+	 * The **docking session**. `dock`, `interimCondition` and the commerce
+	 * clock stamp are written by `stepDockPhase`, `enterArrival` and
+	 * `applyDamage`, none of which is on the coverage scan's declared list — so
+	 * the guard cannot see this gap either, which is why it is written here. A
+	 * reset after a leg that entered an aperture would put the ship at the
+	 * arrival point with a docking phase still part-way through. `probe-arrival`
+	 * never docks, so it does not meet this; anything that does needs the
+	 * docking path added to both the reset and `LEG_PATH`.
 	 *
 	 * ## Why the list is long
 	 *
@@ -3964,23 +3997,6 @@ class Game {
 	 * moves the clock backwards — a value stamped at t=900 and read at t=0 is
 	 * being asked something a forward-only game never asks it.
 	 */
-	/**
-	 * What is selected on frame one.
-	 *
-	 * One method with two callers — the constructor and `resetToStart` — because
-	 * it was briefly two copies and they diverged immediately: the reset set
-	 * `null` while a boot selects the nearest station, and a browser check with
-	 * its own hardcoded `null` reported that as boot state for five runs. The
-	 * name scan in `tests/leg-reset-coverage.test.ts` compares names, not
-	 * values, and would never have caught it. One expression cannot disagree
-	 * with itself.
-	 */
-	private selectBootTarget() {
-		// Something is selected on frame one: a cruise panel with an empty target
-		// field on boot reads as broken.
-		this.targetId = this.nearestOfKind("station")?.id ?? null;
-	}
-
 	resetToStart() {
 		resetWorldToStart(this.world);
 

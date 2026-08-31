@@ -775,19 +775,26 @@ export function advanceWorldClock(world: World, dt: number): void {
  *
  * **The values are restated rather than copied off a fresh `makeWorld`**, so
  * `tests/world-reset.test.ts` has something to catch. Precisely what it can
- * catch is worth being exact about, because an earlier version of this comment
- * was not: both this function and `makeWorld` call the same `arrivalPoint`, so
- * the test cannot disagree about that function's *output* — what it checks is
- * the four arguments, the clock, the ordering, and that every field is written
- * at all. A reset that built a whole world from `makeWorld` and copied its
- * fields across could not fail any of those.
+ * catch is worth being exact about, because two earlier versions of this
+ * comment were not. Both this function and `makeWorld` call the same
+ * `arrivalPoint`, so the test cannot disagree about that function's *output*;
+ * what it checks is the four arguments, the clock value, whether each field is
+ * written at all, and — now that the clock is read back rather than restated —
+ * the order of the first two lines. Each of those was confirmed by breaking it
+ * and watching the file go red. A reset that built a whole world from
+ * `makeWorld` and copied its fields across could fail none of them.
  *
  * `originPos` is `null` and the clock is `0` because that is what a new game is
  * (`makeWorld`); a reset is a return to the new game, not to some later arrival.
  */
 export function resetWorldToStart(world: World): void {
 	world.gameTime = 0;
-	advanceSystem(world.system, 0);
+	// `world.gameTime`, not a second literal `0`. With the literal the two lines
+	// were independent, so their order was not load-bearing and no swap could go
+	// red — while a comment above claimed the ordering had been red-built.
+	// Reading the clock back is also `advanceWorldClock`'s own shape, and it
+	// leaves one line owning what the time is.
+	advanceSystem(world.system, world.gameTime);
 	world.ship.pos = arrivalPoint(
 		world.system.record,
 		world.system.contents,

@@ -14,20 +14,22 @@
  * here, on the tier that runs on every push, and it compares against a fresh
  * `makeWorld(seed)` rather than against the reset's own arithmetic.
  *
- * **How independent that comparison is, exactly.** Not fully, and the earlier
+ * **How independent that comparison is, exactly.** Not fully, and an earlier
  * wording here said "a genuinely independent construction", which was too
  * strong: both sides call the same `arrivalPoint`, so this cannot catch a bug
  * *inside* that function. What it catches is everything around it — the four
- * arguments, the clock value, the ordering of the two, and any field the reset
- * does not write at all. Every one of those was confirmed by deleting the line
- * and watching this file go red.
+ * arguments, the clock value, the order of the reset's first two lines, and any
+ * field the reset does not write at all.
  *
- * **The reset restates its values; this test proves they are the right ones.**
- * Building the reset *from* `makeWorld` would make the comparison a tautology:
- * it could not fail, so it would prove nothing about whether boot state and
- * reset state agree.
+ * The ordering half needed the code to change before the claim was true.
+ * `sim.ts` passed `advanceSystem` a literal `0` rather than `world.gameTime`,
+ * which made those two lines commute — so no swap could go red, and a receipt
+ * here nonetheless said one had. The clock is read back now, and the ordering
+ * test below is what would have caught the claim.
  */
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { repoPath } from "./lib/source-scan";
 import {
 	advanceWorldClock,
 	makeWorld,
@@ -84,6 +86,29 @@ describe("resetWorldToStart", () => {
 
 		resetWorldToStart(world);
 		expect(world.system.bodies.length).toBe(fresh.system.bodies.length);
+		for (const body of world.system.bodies) {
+			const at0 = fresh.system.byId.get(body.id);
+			if (!at0) throw new Error(`body ${body.id} is not in a fresh world`);
+			expect(body.pos).toEqual(at0.pos);
+		}
+	});
+
+	test("the clock is set before the bodies are placed against it", () => {
+		// Two halves, because neither alone is the claim. The source check pins the
+		// order; the behavioural half proves the order matters — swap the lines and
+		// `advanceSystem` runs on the pre-reset clock, leaving every body at t=900.
+		const source = readFileSync(repoPath("src/sim.ts"), "utf8");
+		const fn = source.slice(
+			source.indexOf("export function resetWorldToStart"),
+		);
+		expect(fn.indexOf("world.gameTime = 0")).toBeLessThan(
+			fn.indexOf("advanceSystem(world.system, world.gameTime)"),
+		);
+		expect(fn).not.toContain("advanceSystem(world.system, 0)");
+
+		const world = flyForward(SEED, 900);
+		resetWorldToStart(world);
+		const fresh = makeWorld(SEED);
 		for (const body of world.system.bodies) {
 			const at0 = fresh.system.byId.get(body.id);
 			if (!at0) throw new Error(`body ${body.id} is not in a fresh world`);

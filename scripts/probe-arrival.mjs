@@ -79,6 +79,11 @@ await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 
+/** Straight-line distance between two sim positions, driver-side. `flyTo` has
+ *  its own copy inside the `evaluate` callback because that runs in the page's
+ *  scope, not this one. */
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+
 /** Every fixture in this probe is a named body in a named seed, so a missing
  *  one is a broken probe rather than a failing game — reported once, here. */
 async function bailIfMissing(result, label) {
@@ -205,11 +210,6 @@ async function flyTo(stationId) {
 	);
 }
 
-/** Straight-line distance between two sim positions, driver-side. `flyTo` has
- *  its own copy inside the `evaluate` callback because that runs in the page's
- *  scope, not this one. */
-const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
-
 /**
  * The state a leg starts from — what the reset has to put back.
  *
@@ -285,7 +285,12 @@ const flown = dist(clear.endPos, booted.pos);
 
 check(
 	"the reset puts the ship back at the arrival point the fixture was chosen against",
-	drift === 0,
+	// A tolerance rather than `=== 0`, to match the nose check beside it. The
+	// exact form held only because this fixture's arrival point has no body
+	// inside `NEAR_FAR_KM`, so the assist's local frame is zero and a ship at
+	// rest truly does not move between boot and the snapshot. On a fixture where
+	// it is non-zero that check reddens for a reason that is not the reset.
+	drift < 1e-6,
 	`${drift.toExponential(2)} km from where the first leg started`,
 );
 check(

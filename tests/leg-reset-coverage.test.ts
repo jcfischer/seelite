@@ -20,10 +20,11 @@
  * ## What it cannot see, said plainly
  *
  * It compares names, not values. A reset that assigns `chargeAu = 0` satisfies
- * it. It reads a declared list of methods, so a flight-path field written in
- * some method not on that list is invisible — the list is the claim, and
- * widening it is a person's judgement. And it cannot know that a boot value is
- * the *right* value to restore.
+ * it. It reads a declared **hand-maintained** list of methods, so a flight-path
+ * field written in some method not on that list is invisible — a rename fails
+ * loudly, an addition does not, and the docking path is a gap this reset names
+ * in its own docblock rather than one this file can see. And it cannot know
+ * that a boot value is the *right* value to restore.
  *
  * **It reads two kinds of write, and the second is here because the first
  * missed one.** Assignment was the whole scan to begin with, and `step` turns
@@ -163,14 +164,33 @@ const across = (names: string[], extract: (body: string) => Set<string>) => {
 
 /** Computed once: each call re-reads ten method bodies out of the largest file
  *  in the project. */
-const MUTATED = across(LEG_PATH, mutatedFields);
-const ASSIGNED = new Set([
-	...across(LEG_PATH, assignedFields),
-	...across(DISPLAY_PATH, assignedFields),
-]);
+/**
+ * Memoised rather than computed at module scope, and that is the difference
+ * between one useful failure and six useless ones.
+ *
+ * `methodBody` throws when a declared method is gone — which is the case
+ * "every method the reset is declared against exists" was written for. At
+ * module scope that throw happens during import, so the file never loads, every
+ * test in it reports as a load error, and the one test that would have named
+ * `LEG_PATH` never runs.
+ */
+const memo = <T>(build: () => T) => {
+	let value: T | undefined;
+	return () => {
+		if (value === undefined) value = build();
+		return value;
+	};
+};
 
-/** Likewise: four tests read this same body. */
-const RESET_BODY = methodBody(main, "resetToStart");
+const mutated = memo(() => across(LEG_PATH, mutatedFields));
+const assigned = memo(
+	() =>
+		new Set([
+			...across(LEG_PATH, assignedFields),
+			...across(DISPLAY_PATH, assignedFields),
+		]),
+);
+const resetBody = memo(() => methodBody(main, "resetToStart"));
 
 test("every method the reset is declared against exists", () => {
 	// Its own test because the failure is different in kind: a renamed method
@@ -182,14 +202,14 @@ test("every method the reset is declared against exists", () => {
 });
 
 test("resetToStart assigns every field the flight path assigns", () => {
-	const written = ASSIGNED;
+	const written = assigned();
 
 	// The premise. Without it a scan that found no methods, or a regex that
 	// stopped matching, would pass by finding nothing to check — the failure mode
 	// where a green run means the check has stopped running.
 	expect(written.size).toBeGreaterThan(10);
 
-	const restored = assignedFields(RESET_BODY);
+	const restored = assignedFields(resetBody());
 	expect(
 		[...written].filter((f) => !NOT_RESET[f] && !restored.has(f)).sort(),
 	).toEqual([]);
@@ -202,26 +222,26 @@ test("resetToStart deals with every field the flight path mutates in place", () 
 	// pointing wherever the previous leg finished, under a docblock claiming boot
 	// state. A named field either appears in the reset or is exempt with a
 	// reason; there is no third option.
-	const mutated = MUTATED;
-	expect(mutated.size).toBeGreaterThan(0);
+	const fields = mutated();
+	expect(fields.size).toBeGreaterThan(0);
 
-	const body = RESET_BODY;
+	const body = resetBody();
 	const handled = (f: string) =>
 		NOT_RESET[f] ||
 		body.includes(`this.${f}`) ||
 		(RESTORED_BY[f] && body.includes(`this.${RESTORED_BY[f]}()`));
-	expect([...mutated].filter((f) => !handled(f)).sort()).toEqual([]);
+	expect([...fields].filter((f) => !handled(f)).sort()).toEqual([]);
 });
 
 test("every declared restorer is a real method the reset calls", () => {
 	// Without this, `RESTORED_BY` is a way to silence the scan by naming a method
 	// that does not exist or is never called — an exemption wearing a fix's
 	// clothes.
-	const body = RESET_BODY;
+	const body = resetBody();
 	for (const [field, method] of Object.entries(RESTORED_BY)) {
 		expect(() => methodBody(main, method)).not.toThrow();
 		expect(body).toContain(`this.${method}()`);
-		expect(MUTATED.has(field)).toBe(true);
+		expect(mutated().has(field)).toBe(true);
 	}
 });
 
@@ -230,7 +250,7 @@ test("every exemption names a field the leg path actually writes", () => {
 	// coverage: it makes the list look considered while guarding nothing. Either
 	// mechanism counts — `audio` is mutated in place, `frames` is incremented.
 	for (const field of Object.keys(NOT_RESET))
-		expect(MUTATED.has(field) || ASSIGNED.has(field)).toBe(true);
+		expect(mutated().has(field) || assigned().has(field)).toBe(true);
 });
 
 test("resetToStart hands the world half to sim.ts", () => {
@@ -238,8 +258,22 @@ test("resetToStart hands the world half to sim.ts", () => {
 	// `resetWorldToStart` owns those and `tests/world-reset.test.ts` is what
 	// proves them right. A second spelling here is a second answer to where boot
 	// state is.
-	const body = RESET_BODY;
+	const body = resetBody();
 	expect(body).toContain("resetWorldToStart(this.world)");
 	expect(body).not.toContain("arrivalPoint");
 	expect(body).not.toContain("gameTime =");
+});
+
+test("the scan reads code, and comments are not code", () => {
+	// Twice reported as a hole — that `body.includes(\`this.${f}\`)` would be
+	// satisfied by the reset's own comment quoting `this.orientation.multiply
+	// (turn)`, and that the phrase "a scan looking for `this.x =`" would register
+	// a phantom field. Neither happens: `main` is `codeOf(SUBJECT)`, which blanks
+	// every comment before any scan runs. Pinned here so it stops being an open
+	// question, and so a future scanner built on the raw file rather than on
+	// `codeOf` goes red instead of quietly reading prose as code.
+	const body = resetBody();
+	expect(body).not.toContain("this.orientation");
+	expect(body).not.toContain("multiply");
+	expect(body).toContain("this.faceTheStar()");
 });
