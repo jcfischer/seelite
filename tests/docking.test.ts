@@ -43,6 +43,7 @@ import {
 	insideCorridor,
 	isAlive,
 	newDockingState,
+	releaseBerth,
 	orthonormalise,
 	planeCrossing,
 	poolOf,
@@ -568,6 +569,27 @@ describe("§9.1.9 the clearance state machine", () => {
 			expiresAtS: 60 + GRANT_WINDOW_S,
 		});
 		expect(promoted.berthId).not.toBeNull();
+	});
+
+	test("releasing the berth spends the grant with it", () => {
+		// §13.2: the grant *is* the reservation, so a grant that outlived its
+		// berth is a clearance no berth answers for — and `attemptEntry` would
+		// dock on it and hand the arrival a null berth. Caught exactly that way,
+		// by a capture that launched and flew a second entry inside the same
+		// 600 s window.
+		const granted = requestClearance(newDockingState(), REQ);
+		expect(grantLive(granted, 0)).toBe(true);
+		const spent = releaseBerth(granted);
+		expect(spent.berthId).toBeNull();
+		expect(spent.clearance).toEqual({ kind: "none" });
+		expect(grantLive(spent, 0)).toBe(false);
+		// A denial is not a grant and is left alone: releasing a berth must not
+		// quietly forgive a station that refused you.
+		const denied = requestClearance(newDockingState(), {
+			...REQ,
+			scanFails: true,
+		});
+		expect(releaseBerth(denied).clearance).toEqual(denied.clearance);
 	});
 
 	test("a grant reserves one berth, and a bounce does not give it back", () => {

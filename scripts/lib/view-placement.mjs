@@ -33,6 +33,147 @@ export async function installViewFraming(page) {
 		 * So the clock runs during a capture, and each shot records the time it was
 		 * taken at rather than the sheet claiming a time none of them has.
 		 */
+		/**
+		 * Dock at one station, in one **named** berth, and stop at a named point
+		 * of the traversal (`docking.md` §13).
+		 *
+		 * **The berth is forced through the traffic seam, not through a back
+		 * door.** §13.2 allocates the least spare free berth and rotates equal
+		 * fits by request time, so a capture that merely asked for clearance
+		 * would get a different berth every run and a before/after pair would
+		 * compare two rooms. `berthOccupancy` is the injected map §6.1 left for
+		 * exactly this — filling it with every *other* berth leaves the wanted
+		 * one as the only thing that fits, and the grant comes out of the same
+		 * allocation a player's does.
+		 *
+		 * **Flown by the docking computer**, not teleported into the berth: the
+		 * frames are of the arrival the game runs. `stop` is `"docked"`, or a
+		 * fraction of the traversal to freeze mid-transfer at.
+		 */
+		window.__parkInBerth = async (stationId, berthId, opts = {}) => {
+			const g = window.__seelite;
+			// **Leave any dock first, and this is not housekeeping.** A docked or
+			// traversing session *places* the ship every frame (§12.6's
+			// obligation 9), so a teleport onto another station's axis is undone
+			// on the next tick — the shipyard frame came back 115 km from the
+			// shipyard, with the ship still flying the trade station's launch.
+			// Skipping is unconditional on both traversals since §13.3, so this
+			// needs no flag.
+			const dt = 1 / 60;
+			for (let i = 0; i < 60 * 60 && g.dockPhase !== "flying"; i++) {
+				if (g.dockPhase === "docked") g.launch();
+				g.skipDockTraversal();
+				g.step(dt);
+			}
+			if (g.dockPhase !== "flying")
+				throw new Error(
+					`__parkInBerth: could not leave the previous dock (${g.dockPhase})`,
+				);
+			const others = g
+				.berthIdsOfStation(stationId)
+				.filter((id) => id !== berthId);
+			if (others.length + 1 !== g.berthIdsOfStation(stationId).length)
+				throw new Error(
+					`__parkInBerth: no berth "${berthId}" at ${stationId} — ` +
+						"the view set names a berth this station does not have",
+				);
+			g.berthOccupancy.set(stationId, new Set(others));
+			const snap = g.dockingSnapshot(stationId);
+			// Outside §7's computer standoff, on the axis, co-moving.
+			await window.__viewAlongAxis(stationId, snap.planeKm + 4.5, {
+				comoving: true,
+			});
+			g.targetId = stationId;
+			g.requestDockingClearance();
+			if (!g.dockingComputerEngaged) g.toggleDockingComputer();
+			// Sub-stepped in sim rather than by animation frames: a capture must
+			// not depend on how fast the machine renders.
+			let arrivingFor = 0;
+			for (let i = 0; i < 60 * 180; i++) {
+				g.step(dt);
+				const now = g.dockingSnapshot(stationId);
+				if (now.dockPhase === "arriving") {
+					arrivingFor += dt;
+					if (
+						typeof opts.stopAtArrivalFraction === "number" &&
+						arrivingFor >=
+							g.dockingTolerances.TRAVERSAL_SECONDS_NEAR *
+								opts.stopAtArrivalFraction
+					)
+						break;
+				}
+				if (now.dockPhase === "docked") break;
+			}
+			const settled = g.dockingSnapshot(stationId);
+			if (settled.berthId !== berthId)
+				throw new Error(
+					`__parkInBerth: asked for ${berthId} and got ${settled.berthId} — ` +
+						"the forced occupancy did not reach the allocator",
+				);
+			// **The phase too, not the berth alone.** The berth is set at
+			// clearance and says only that the reservation landed; a run that
+			// never reached the station keeps it. That is exactly how the frame
+			// above went unnoticed — the assertion passed 115 km away.
+			const want = opts.launch
+				? "launching"
+				: opts.stopAtArrivalFraction !== undefined
+					? "arriving"
+					: "docked";
+			if (!opts.launch && settled.dockPhase !== want)
+				throw new Error(
+					`__parkInBerth: wanted ${want} at ${stationId} and the session is ` +
+						`${settled.dockPhase}, ${settled.rangeKm.toFixed(1)} km out`,
+				);
+			if (opts.launch) {
+				g.launch();
+				for (let i = 0; i < Math.round(60 * (opts.launchSeconds ?? 2)); i++)
+					g.step(dt);
+			}
+			g.setHeadLook(opts.headLook ?? "forward");
+			await frame();
+			await frame();
+			return settled.dockPhase;
+		};
+
+		/**
+		 * The station workbench, framed from **inside** one role's bay.
+		 *
+		 * §13.6's seventh frame is an outpost interior, and no system generates
+		 * an outpost (§12.7's joint 5) — so the only place one exists is
+		 * `?model-viewer=station`. The stage is an orbit camera looking at the
+		 * origin, and the bay spans the origin, so a small enough orbit radius
+		 * puts the camera inside it looking down the lane at the end bulkhead.
+		 *
+		 * **Oblique, not down the axis.** The stage always looks at the origin, so
+		 * a camera on the axis sees the end bulkhead square on and the bulkhead
+		 * fills the frame flat — the bay is wider than it is deep. An azimuth and
+		 * an elevation put the camera near a wall looking across the bay, which
+		 * is the berth's own viewpoint and shows the far corner, the pads and the
+		 * mouth at the edge.
+		 */
+		window.__frameWorkbenchInterior = async (
+			asset,
+			distanceRadii,
+			azimuth = 0,
+			elevation = 0,
+		) => {
+			const button = document.querySelector(`[data-model-asset="${asset}"]`);
+			if (!button)
+				throw new Error(
+					`__frameWorkbenchInterior: no "${asset}" on the station workbench`,
+				);
+			button.click();
+			const viewer = window.__seeliteModelViewer;
+			if (!viewer)
+				throw new Error("__frameWorkbenchInterior: the workbench is not up");
+			viewer.state.distance = distanceRadii;
+			viewer.state.azimuth = azimuth;
+			viewer.state.elevation = elevation;
+			await frame();
+			await frame();
+			return asset;
+		};
+
 		window.__startClockAt = async (t) => {
 			window.__seelite.world.gameTime = t;
 			await frame();

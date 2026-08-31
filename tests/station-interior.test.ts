@@ -16,6 +16,7 @@ import { describe, expect, test } from "bun:test";
 import { HULL_IDS, HULL_VISUALS, type HullId } from "../src/ship-mesh";
 import { STATION_SILHOUETTE_KM } from "../src/station-mesh";
 import {
+	BAY_HALF_LIMIT_KM,
 	BERTH_CELL,
 	type Berth,
 	ROLE_BERTHS,
@@ -158,6 +159,25 @@ describe("the volume holds what it says it holds", () => {
 						Math.abs(b.up[1]) <= interior.halfUpKm + 1e-9,
 				]).toEqual([type, berth.id, true]);
 			}
+		}
+	});
+
+	test("no bay is capped so tight that a berth reaches the lane", () => {
+		// `BAY_HALF_LIMIT_KM` is a cap on the bay's width, authored per form —
+		// and a cap set below `lane + cell height` would put a wall berth in the
+		// transit lane. The lane-clearance row above would catch it, but it would
+		// read as a layout bug rather than as a table entry that is too small.
+		for (const type of STATION_TYPES) {
+			const cell = BERTH_CELL[type];
+			const aperture = STATION_GEOMETRY[type].aperture;
+			expect([
+				type,
+				BAY_HALF_LIMIT_KM[type] >= aperture.widthKm / 2 + cell.heightKm,
+			]).toEqual([type, true]);
+			expect([
+				type,
+				BAY_HALF_LIMIT_KM[type] >= aperture.heightKm / 2 + cell.heightKm,
+			]).toEqual([type, true]);
 		}
 	});
 

@@ -66,8 +66,25 @@ function shellMaterial(type: StationType): THREE.Material {
 	return new THREE.MeshLambertMaterial({
 		color: SHELL_COLOR[type],
 		side: THREE.BackSide,
+		// **A dim self-glow, because nothing else lights the inside.** The star is
+		// outside the hull and `scene.environment` reaches standard materials
+		// only, so a purely reflective bay is whatever the hemisphere gives it —
+		// a flat grey that reads, through the opening from outside, as a panel
+		// rather than a hole. A working bay is lit; this is that light without a
+		// second `PointLight` per station, which is the frame cost #99 owns.
+		emissive: SHELL_COLOR[type],
+		emissiveIntensity: AMBIENT_GLOW,
 	});
 }
+
+/**
+ * How much of its own colour an interior surface emits.
+ *
+ * Low: enough that the bay reads as a lit room from inside and as an opening
+ * from outside, and not so much that it reads as a light box. Judged on the
+ * canonical frames, which is the only instrument for it.
+ */
+const AMBIENT_GLOW = 0.45;
 
 /** §13.4's interior treatments, as the one thing a colour can carry: how dirty
  *  and how cold the plating reads. Warm and clean for the habitat, cold and
@@ -82,7 +99,11 @@ const SHELL_COLOR: Record<StationType, number> = {
 /** The structure inside the bay — ribs, brackets, cradle arms. One material per
  *  role, shared: none of them is ever mutated. */
 const structureMaterial = (type: StationType) =>
-	new THREE.MeshLambertMaterial({ color: STRUCTURE_COLOR[type] });
+	new THREE.MeshLambertMaterial({
+		color: STRUCTURE_COLOR[type],
+		emissive: STRUCTURE_COLOR[type],
+		emissiveIntensity: AMBIENT_GLOW,
+	});
 
 const STRUCTURE_COLOR: Record<StationType, number> = {
 	trade: 0x424c59,

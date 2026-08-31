@@ -665,12 +665,29 @@ export const newDockingState = (): DockingState => ({
  * Give the berth back (§13.2): on the outward crossing that ends a launch, and
  * on a grant that expired or was cancelled without being used.
  *
- * A verb rather than a field write at each site, because the three sites are in
- * three modules and a reservation released in two of them is a station that
+ * A verb rather than a field write at each site, because the two sites are in
+ * two modules and a reservation released in one of them is a station that
  * slowly fills up with ships that left.
+ *
+ * **It spends a live grant along with the berth, and that is a correctness
+ * rule rather than a courtesy.** §13.2 makes the grant *be* the reservation, so
+ * a grant that outlived its berth is a clearance no berth answers for — and
+ * `attemptEntry` would dock on it and hand `enterArrival` a null berth. It was
+ * caught exactly that way: a capture launched and then flew a second entry
+ * inside the same 600 s window, and the crossing threw. Re-requesting is free
+ * (§6), so what the player loses is a keystroke.
  */
 export const releaseBerth = (state: DockingState): DockingState =>
-	state.berthId === null ? state : { ...state, berthId: null };
+	state.berthId === null && state.clearance.kind !== "granted"
+		? state
+		: {
+				...state,
+				berthId: null,
+				clearance:
+					state.clearance.kind === "granted"
+						? { kind: "none" }
+						: state.clearance,
+			};
 
 export interface ClearanceRequest {
 	gameTime: number;

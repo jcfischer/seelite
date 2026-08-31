@@ -155,6 +155,45 @@ const PLACERS = {
 		);
 		return id;
 	},
+	berth: async (page, shot) => {
+		const id = `station-${shot.station}`;
+		// **A view may name its own seed**, and exactly one does: `SEED` 47
+		// generates no refinery. Navigating re-runs the init scripts and re-boots
+		// the game, so the clock is re-pinned after the jump rather than carried
+		// across it.
+		if (shot.seed !== undefined) {
+			await page.goto(`${ORIGIN}/?seed=${shot.seed}`, { waitUntil: "load" });
+			await bootedGame(page);
+			await page.evaluate((t) => window.__startClockAt(t), GAME_TIME_S);
+		}
+		await page.evaluate(
+			async ([stationId, berthId, opts]) =>
+				window.__parkInBerth(stationId, berthId, opts),
+			[
+				id,
+				shot.berth,
+				{
+					stopAtArrivalFraction: shot.at,
+					headLook: shot.headLook,
+					launch: shot.launch,
+				},
+			],
+		);
+		return `${id} · ${shot.berth}`;
+	},
+	"workbench-interior": async (page, shot) => {
+		// **It navigates**, which is why the set puts it last: every view above
+		// needs the game and this one needs the game not to be there. The
+		// workbench is query-gated and constructs no `Game` at all.
+		await page.goto(`${ORIGIN}/?model-viewer=station`, { waitUntil: "load" });
+		await page.waitForSelector("#model-viewer canvas");
+		await page.evaluate(
+			async ([asset, radii, azimuth, elevation]) =>
+				window.__frameWorkbenchInterior(asset, radii, azimuth, elevation),
+			[shot.asset, shot.radii, shot.azimuth ?? 0, shot.elevation ?? 0],
+		);
+		return `workbench · ${shot.asset} interior`;
+	},
 	"deep-sky": async (page) => {
 		// Back to the arrival point first. Turning the camera alone left the ship
 		// wherever the previous view had put it, which made one view of a
@@ -313,8 +352,19 @@ try {
 	await mkdir(join(OUT, LABEL), { recursive: true });
 
 	for (const view of VIEWS) {
-		await setView(page, view.shot.view);
+		// **Not on the workbench**, which has no view cycle: `v` there is an
+		// unbound key, so `setView` would press it eight times and then throw
+		// about a view the game does not have — on a page that is not the game.
+		if (view.shot.kind !== "workbench-interior")
+			await setView(page, view.shot.view);
 		const subject = await PLACERS[view.shot.kind](page, view.shot);
+		// **Again, after placing.** A placer may navigate — `berth` does, for the
+		// one view that names its own seed — and a reload resets the game to the
+		// cockpit. The refinery frame came back as the docked station console
+		// filling a frame declared `chase`. Idempotent, so every other view pays
+		// one property read for it.
+		if (view.shot.kind !== "workbench-interior")
+			await setView(page, view.shot.view);
 		// Three settle frames. The near/far handoff has a hysteresis band and the
 		// station surface is built lazily, so the first frame after a jump can be
 		// drawn before either has caught up.
@@ -331,7 +381,14 @@ try {
 		// and then left to run, so each frame has its own. The sheet prints the
 		// span, because a caption claiming a fixture property the frames do not
 		// have is the one lie the gate cannot survive.
-		const gameTime = await page.evaluate(() => window.__seelite.world.gameTime);
+		// **Optional, because a workbench frame has no world.** `?model-viewer=`
+		// constructs no `Game` at all — that is the whole point of the gate — so
+		// there is no clock to read and `null` is the honest answer. The sheet's
+		// span filters them, which is the same path a run captured before the
+		// clock was recorded takes.
+		const gameTime = await page.evaluate(
+			() => window.__seelite?.world.gameTime ?? null,
+		);
 		await page.screenshot({ path: join(OUT, file) });
 		captured.push({ name: view.name, file, subject, gameTime });
 		console.log(

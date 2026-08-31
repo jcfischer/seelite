@@ -44,7 +44,8 @@ export const GAME_TIME_S = 0;
 export const VIEWPORT = { width: 1440, height: 900 };
 
 /**
- * The six levers charted under #98, by node id.
+ * The levers charted under #98, by node id — six then, seven since #147 put a
+ * room behind every aperture.
  *
  * The set's job is to cover every surface these touch — that is what makes it
  * canonical rather than a convenient handful of screenshots. Adding a seventh
@@ -59,6 +60,7 @@ export const LEVERS = Object.freeze({
 	102: "greebles and lit windows",
 	103: "selective bloom",
 	105: "the cockpit interior",
+	147: "the station interior",
 });
 
 /**
@@ -76,15 +78,27 @@ export const LEVERS = Object.freeze({
  * - `deep-sky` — at the arrival point, looking away from the star and every
  *   body. The only view where the backdrop is the subject rather than the
  *   thing behind one.
+ * - `berth` — docked at a **named berth** of a named station, flown there by
+ *   §7's docking computer, stopped at a named point of the traversal. #147's
+ *   interior is only ever seen from inside, and the berth is named rather than
+ *   allocated because §13.2 rotates equal fits by request time: an unnamed
+ *   berth is a different room each run, and a before/after pair of two rooms
+ *   compares nothing.
+ * - `workbench-interior` — `?model-viewer=station`, framed from inside one
+ *   role's bay. It exists for exactly one subject: no system generates an
+ *   outpost (§12.7's joint 5), so the workbench is the only place its interior
+ *   exists. It **navigates the page**, so it is last in the set.
  */
 export const SHOT_KINDS = Object.freeze([
 	"station-axis",
 	"body-offset",
 	"deep-sky",
+	"berth",
+	"workbench-interior",
 ]);
 
 /**
- * Eight views, one seed, one clock.
+ * Fifteen views, one seed, one clock.
  *
  * #98 named four as a starting list and called it a proposal. Two things are
  * added here and both close a hole that list had. **`sky-only`**, because #100's
@@ -279,6 +293,142 @@ export const VIEWS = Object.freeze([
 		what: "Away from the star and every body. The backdrop with nothing in front of it.",
 		shot: { kind: "deep-sky", view: "cockpit" },
 	},
+	/**
+	 * §13.6's seven-frame acceptance set, as declared views.
+	 *
+	 * The receipt fixes them and they are transcribed rather than reinterpreted:
+	 * the first four prove the whole transition at one station, and the last
+	 * three prove that role, family and location produce distinct interiors.
+	 * They are here rather than in a script of their own because #98's gate is
+	 * *one* sheet — a second contact sheet is a second thing to remember to
+	 * look at.
+	 *
+	 * **They come after the eight above and before nothing.** Each docks the
+	 * ship, which leaves the session somewhere the earlier views do not expect;
+	 * and the last one navigates the page away from the game entirely.
+	 */
+	{
+		name: "berth-arrival",
+		covers: [147, 105, 99],
+		what: "§13.6.1 — a trade station's bay mid-transfer to a deep overhead berth, in the cockpit. The scripted traversal, at the leg that leaves the lane.",
+		shot: {
+			kind: "berth",
+			station: "trade",
+			berth: "overhead-deep",
+			at: 0.75,
+			view: "cockpit",
+		},
+	},
+	{
+		name: "berth-docked-forward",
+		covers: [147, 105],
+		what: "§13.6.2 — the same station docked, looking forward: the station console over the bay, which is what a parked pilot actually sees.",
+		shot: {
+			kind: "berth",
+			station: "trade",
+			berth: "overhead-deep",
+			view: "cockpit",
+		},
+	},
+	{
+		name: "berth-free-look",
+		covers: [147, 102, 99],
+		/**
+		 * **Chase, not a cockpit head-turn, and the frame decided it.** §13.6.3
+		 * asks for a free look showing bay depth and the other berths; a docked
+		 * cockpit has a console on every wall (#143), so `Alt+→` shows the Flight
+		 * console filling the canopy and no bay at all. The chase camera is the
+		 * only view in the game from which a parked ship's surroundings are
+		 * visible.
+		 */
+		what: "§13.6.3 — the same berth from the chase camera: bay depth, the other berths, and the ship in its own berth.",
+		shot: {
+			kind: "berth",
+			station: "trade",
+			berth: "overhead-deep",
+			view: "chase",
+		},
+	},
+	{
+		name: "berth-launch-chase",
+		covers: [147, 101, 103],
+		what: "§13.6.4 — the same station launching, in chase view: the hull leaving its berth down the lane it arrived by.",
+		shot: {
+			kind: "berth",
+			station: "trade",
+			berth: "overhead-deep",
+			launch: true,
+			view: "chase",
+		},
+	},
+	{
+		name: "shipyard-wall-berth",
+		covers: [147, 99],
+		what: "§13.6.5 — a shipyard's bay from a wall berth, chase: coarse structure, cold work light, gantries.",
+		shot: {
+			kind: "berth",
+			station: "shipyard",
+			berth: "starboard-near",
+			view: "chase",
+		},
+	},
+	{
+		name: "refinery-cradle-berth",
+		covers: [147, 99],
+		/**
+		 * **The one view that names its own seed, and the fixture is why.**
+		 * **Seed 47 has no refinery** — it generates a trade station and a
+		 * shipyard and nothing else. The docstring on `SEED` above said the
+		 * fixture had "one station of each kind"; that was written for
+		 * `probe-arrival.mjs`'s purposes and is false of the station roster,
+		 * which is a finding this node ran into rather than a choice it made.
+		 *
+		 * Re-pinning `SEED` was the alternative and was declined: the eight views
+		 * above are framed against it and #129's before/after figures were
+		 * measured on it, so moving it would reframe every one of them to fix
+		 * one. Seed 2 is the lowest seed whose start system carries all three
+		 * generated types.
+		 */
+		what: "§13.6.6 — a refinery's bay from a service cradle, chase. Seed 2, because seed 47 generates no refinery.",
+		shot: {
+			kind: "berth",
+			station: "refinery",
+			berth: "port-deep",
+			seed: 2,
+			view: "chase",
+		},
+	},
+	{
+		name: "outpost-interior-workbench",
+		covers: [147],
+		/**
+		 * **A workbench frame, and the receipt says why**: no system generates an
+		 * outpost, so this is the only place its interior exists at all. It is
+		 * last because it navigates the page — every view above it needs the
+		 * game, and this one needs the game not to be there.
+		 *
+		 * **Through the aperture, not from a berth, and the stage is why.** The
+		 * workbench's camera always looks at the origin: on the axis and inside
+		 * the bay it sees the end bulkhead square on and flat, because the bay is
+		 * wider than it is deep, and off-axis at the same radius it is outside
+		 * the bay among the Derrick's own structure. Both were captured and
+		 * rejected. What the stage can do is stand off and look *in* — the view
+		 * axis passes through the opening — which is the outpost's bay as the
+		 * only place one exists.
+		 *
+		 * `radii` is the orbit radius the stage frames from the form's **reach**,
+		 * so it is a fraction of the whole silhouette rather than of the core.
+		 */
+		what: "§13.6.7 — an outpost's bay from inside, on the station workbench. Sparse panels, exposed utilities, one neutral lamp.",
+		shot: {
+			kind: "workbench-interior",
+			asset: "outpost",
+			radii: 0.75,
+			azimuth: 0.28,
+			elevation: 0.18,
+			view: "cockpit",
+		},
+	},
 ]);
 
 /**
@@ -311,6 +461,11 @@ const SHOT_REQUIREMENTS = {
 	"body-offset": (s) =>
 		typeof s.body === "string" && finite(s.radii) && finite(s.sunAngleDeg),
 	"deep-sky": () => true,
+	// The berth is named for the reason `SHOT_KINDS` gives: an unnamed one is a
+	// different room each run. `at`, `headLook` and `launch` are optional and a
+	// missing one is a docked, forward, cockpit frame.
+	berth: (s) => typeof s.station === "string" && typeof s.berth === "string",
+	"workbench-interior": (s) => typeof s.asset === "string" && finite(s.radii),
 };
 
 /**

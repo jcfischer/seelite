@@ -1442,6 +1442,15 @@ Seven frames:
 The first four prove the full transition. The final three prove that role,
 family and location produce distinct interiors.
 
+**Two of the seven are workbench frames, and the fixture is why.** `SEED` 47 —
+the canonical view set's pinned seed — generates a trade station and a shipyard
+and nothing else, so frames 6 and 7 are both captured from
+`?model-viewer=station`, framed from inside the role's own bay. Re-pinning the
+seed was the alternative and was declined: the eight views that predate this
+node are framed against it and #129's before/after figures were measured on it.
+The `SEED` docstring's claim of "one station of each kind" was written for
+`probe-arrival.mjs`'s purposes and is false of the station roster.
+
 ### 13.7 Boundaries
 
 No on-foot mode, manual interior flight, second docking test, downloaded asset,
