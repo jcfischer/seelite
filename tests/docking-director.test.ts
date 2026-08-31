@@ -88,7 +88,9 @@ function nominal(
 		rel: scale(frame.axis, frame.planeKm),
 		vRel: scale(frame.axis, -V_GATE_KMS / 2),
 		nose: scale(frame.axis, -1),
-		up: basis.across,
+		// Check 4's zero: the ship's up along the slot's **short** axis, so its
+		// beam lies along the long one (#158).
+		up: basis.up,
 		...over,
 	};
 }
@@ -230,7 +232,7 @@ describe("§3: the roll-match ring reads check 4's own angle", () => {
 	test("a mis-rolled slot fails the ring and the alignment", () => {
 		const frame = frameFor("trade");
 		const up = rotate(
-			slotBasis(frame).across,
+			slotBasis(frame).up,
 			frame.axis,
 			(ROLL_TOLERANCE_DEG + 5) * DEG,
 		);
@@ -251,7 +253,7 @@ describe("§3: the roll-match ring reads check 4's own angle", () => {
 	test("the signed roll has check 4's magnitude and the pose's direction", () => {
 		const frame = frameFor("trade");
 		for (const deg of [-40, -12, 0, 12, 40]) {
-			const up = rotate(slotBasis(frame).across, frame.axis, deg * DEG);
+			const up = rotate(slotBasis(frame).up, frame.axis, deg * DEG);
 			const pose = nominal(frame, { up });
 			const d = director(frame, pose);
 			expect(d.rollSignedDeg).toBeCloseTo(deg, 6);
@@ -266,7 +268,7 @@ describe("§3: the roll-match ring reads check 4's own angle", () => {
 		const frame = frameFor("trade");
 		// 170° out is 10° out the other way: a slot is symmetric, and an
 		// instrument saying "roll 170°" sends the pilot around the houses.
-		const up = rotate(slotBasis(frame).across, frame.axis, 170 * DEG);
+		const up = rotate(slotBasis(frame).up, frame.axis, 170 * DEG);
 		const d = director(frame, nominal(frame, { up }));
 		expect(d.rollSignedDeg).toBeCloseTo(-10, 6);
 	});
@@ -279,7 +281,7 @@ describe("§3: the roll-match ring reads check 4's own angle", () => {
 	test("the ring's verdict agrees with check 4 across the sweep", () => {
 		const frame = frameFor("trade");
 		for (const deg of sweepAngles(ROLL_TOLERANCE_DEG)) {
-			const up = rotate(slotBasis(frame).across, frame.axis, deg * DEG);
+			const up = rotate(slotBasis(frame).up, frame.axis, deg * DEG);
 			const pose = nominal(frame, { up });
 			const e = evaluateEntry(frame, pose, { hostile: false });
 			const d = director(frame, pose);
@@ -323,7 +325,7 @@ describe("§3: the roll-match ring reads check 4's own angle", () => {
 			const nose = rotate(scale(frame.axis, -1), PERP, noseDeg * DEG);
 			for (const tiltDeg of [-70, -25, 25, 70]) {
 				for (const rollDeg of [-80, -47, -3, 0, 3, 47, 80]) {
-					const inPlane = rotate(basis.across, frame.axis, rollDeg * DEG);
+					const inPlane = rotate(basis.up, frame.axis, rollDeg * DEG);
 					// Tilted about the slot's own `across`, which takes the vector out
 					// of the plane and gives it the axial component the guard reads.
 					const up = rotate(inPlane, basis.across, tiltDeg * DEG);

@@ -151,7 +151,7 @@ damage depending on which an implementer picks.
 | 1 | **Not hostile** | `station.hostile === false` | bit 7 of byte 32 |
 | 2 | **Axis alignment** — **both** the station→ship vector **and** the ship's nose, each against the docking axis | ≤ **35°** each | 26° nose + 22° cone, merged |
 | 3 | **Inbound** — the axial component of `v_rel` points into the slot | sign test | sign of z |
-| 4 | **Roll match** — ship's up-vector against the slot's long **axis-line**, in the slot plane, acute angle mod 180° | ≤ **50°** | 33.6° |
+| 4 | **Roll match** — ship's up-vector against the slot's short **axis-line**, in the slot plane, acute angle mod 180°, so the ship's *beam* lies along the long one | ≤ **50°** | 33.6° |
 | 5 | **Containment** — the crossing point lies inside the aperture rectangle, in the slot's rolled frame | inside | implicit in the hull |
 | 6 | **Closing speed** `|v_rel|`, in the station's frame, at the moment of slot-plane crossing | ≤ **0.10 km/s** | *had no such check* |
 
@@ -176,8 +176,10 @@ be re-pointed rather than left to pass for a reason that has moved.
 
 **Check 4 compares against the axis-*line*, not an oriented vector.** The slot is
 a 0.12 × 0.07 km rectangle, so a ship rolled 180° is a geometrically identical
-entry; an oriented-vector comparison would reject it for no physical reason. Two consequences of *that instant*
-being the evaluation point, both of which decide implementations:
+entry; an oriented-vector comparison would reject it for no physical reason.
+
+Two consequences of *that instant* being the evaluation point, both of which
+decide implementations:
 
 - **Check 2 is two angles, not one.** A purely positional cone constrains where
   the ship *is* and says nothing about where it points, so a ship translating up
@@ -188,6 +190,46 @@ being the evaluation point, both of which decide implementations:
 - **Check 3 is a velocity sign, not a position sign.** At the crossing instant
   the axial *position* is zero by construction, so a side-of-plane test has no
   defined answer there — and §9.1.1 requires boundary rows.
+
+**And it is the *short* axis-line, corrected in #157.** This row said "long"
+from #9 until #158, and the implementation matched it — so a ship at a perfect
+roll put its 11.7 m height across the 120 m side and its 51.2 m beam across the
+70 m one, and flew the slot on its side.
+
+It survived because the aperture's *size* cannot discriminate. At the 50° limit,
+over #35's roster, both readings admit every non-capital hull: beam along the
+long side needs 62.8 m across and 63.4 m up, for margins of 57.2 and 6.6 m
+against a 120 × 70 m slot; transposed it needs 63.4 and 62.8, for margins of
+56.6 and 7.2. The tightest margin moves by 0.6 m on a 70 m dimension, and no
+check in the repo reads it.
+
+**One frame appeared to argue the other way, and did not.** `arrival.ts` recorded
+a docked ship "lying crossways in its own slot with the name shield running
+vertically up the canopy", and took it as evidence for `across`. A shield's
+orientation is not evidence about a ship's roll, whichever shield it was: both
+are mounted on station geometry and neither turns with the ship — the mouth
+plate rides the station mesh's own local X (`station-mesh.ts`), and the bulkhead
+plaque a parked ship reads sits square to the bay's end wall
+(`station-interior-mesh.ts`). Which one that frame showed is not recoverable and
+does not need to be. An observation of a station fitting was read as an
+observation of an attitude.
+
+What settled it is that `tests/aperture-fit.test.ts` sizes this opening with the
+hull's beam along the long side, and §5's 0.12 × 0.07 km was ratified from that
+measurement — so the row was disagreeing with the reading its own dimensions
+came from.
+
+**Neither the 50° of §3.2 nor §5's 0.12 × 0.07 km moves with the correction.**
+The tolerance is an angle magnitude against an axis-line and only the line it is
+measured from changed; the dimensions were ratified from the surviving
+convention. `tests/roll-reference.test.ts` holds the pose check 4 scores as a
+perfect roll against the extents `tests/aperture-fit.test.ts` sizes this opening
+from — at zero roll and again at the 50° limit, where the `w·cos θ + h·sin θ`
+arithmetic is what the fit test actually reads. That comparison did not exist:
+`probe-dock-arrival.mjs` compares the drawn slot with `slotBasis`, which is the
+axis question, and nothing compared a ship pose with a slot at all. Both files
+read the beam off `tests/helpers/rolled-envelope.ts`, so the two halves cannot
+be re-transposed one at a time.
 
 **Check 4 does not apply to the refinery pad** — that is the whole of #13 §6's
 "the second is *genuinely easier* rather than merely different". Dropping the

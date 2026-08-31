@@ -7,8 +7,10 @@
  *
  * **At check 4's roll limit, not axis-aligned**, which is §10's actual wording
  * and which the first version of this file ignored. A ship may arrive up to
- * `ROLL_LIMIT` off the slot's long axis and still be admitted by the docking
- * checks, so the opening has to pass its hull at that angle. A rolled rectangle
+ * `ROLL_LIMIT` off the slot's long axis — its beam along that axis is check 4's
+ * own zero, ratified in #157 against this file's measurement — and still be
+ * admitted by the docking checks, so the opening has to pass its hull at that
+ * angle. A rolled rectangle
  * needs `w·cos θ + h·sin θ` across and `w·sin θ + h·cos θ` up, and for a hull
  * that is nearly as tall as it is wide those are both larger than either.
  *
@@ -36,13 +38,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import * as THREE from "three";
-import {
-	HULL_IDS,
-	HULL_VARIANTS,
-	type HullId,
-	buildShipMesh,
-} from "../src/ship-mesh";
+import { ROLL_TOLERANCE_DEG } from "../src/docking";
+import { HULL_IDS, type HullId } from "../src/ship-mesh";
+import { rolledEnvelope } from "./helpers/rolled-envelope";
 import {
 	STATION_GEOMETRY,
 	STATION_TYPES,
@@ -59,33 +57,21 @@ const CAPITALS: HullId[] = ["carrier", "dreadnought"];
  *  second copy of it here would be this file asserting against itself. */
 const ROLL_LIMIT = (50 * Math.PI) / 180;
 
-/**
- * The opening one hull needs, metres, at the roll limit — across all of its
- * variants.
- *
- * The worst case is *at* the limit rather than somewhere inside it: both
- * expressions grow monotonically in θ over 0–90° for any positive `w` and `h`,
- * so nothing between 0 and 50° binds harder than 50° does.
- */
-function rolledEnvelope(id: HullId) {
-	let across = 0;
-	let up = 0;
-	for (const variant of HULL_VARIANTS[id]) {
-		const root = buildShipMesh(id, variant.id).root;
-		root.updateMatrixWorld(true);
-		const size = new THREE.Box3()
-			.setFromObject(root)
-			.getSize(new THREE.Vector3());
-		const w = size.x * 1000;
-		const h = size.y * 1000;
-		across = Math.max(
-			across,
-			w * Math.cos(ROLL_LIMIT) + h * Math.sin(ROLL_LIMIT),
-		);
-		up = Math.max(up, w * Math.sin(ROLL_LIMIT) + h * Math.cos(ROLL_LIMIT));
-	}
-	return { across, up };
-}
+/** **And it must stay the shipped one.** `tests/roll-reference.test.ts` rolls to
+ *  `ROLL_TOLERANCE_DEG` while this file rolls to the spec's figure, and the two
+ *  are named as one angle by `docking.md` §3 — so if the tolerance ever moved,
+ *  both files would stay green and the tie between them would quietly stop
+ *  holding. Asserted at load rather than inside a row, because every row here
+ *  depends on it. */
+if (Math.abs(ROLL_LIMIT - (ROLL_TOLERANCE_DEG * Math.PI) / 180) > 1e-12)
+	throw new Error(
+		`the spec's roll limit and ROLL_TOLERANCE_DEG have diverged: ` +
+			`${(ROLL_LIMIT * 180) / Math.PI}° against ${ROLL_TOLERANCE_DEG}°`,
+	);
+
+/** The opening one hull needs at check 4's limit, metres — the shared helper,
+ *  so the `across` term's `w` is the beam in exactly one place (#158). */
+const rolled = (id: HullId) => rolledEnvelope(id, ROLL_LIMIT);
 
 /** The opening one type offers, metres. Read from the table, never restated. */
 const APERTURE = (type: StationType) => ({
@@ -101,7 +87,7 @@ describe("the aperture admits the hulls that have to fly through it", () => {
 			let tightest = Number.POSITIVE_INFINITY;
 			let tightestBy = "";
 			for (const id of ordinary) {
-				const hull = rolledEnvelope(id);
+				const hull = rolled(id);
 				const clearance = Math.min(
 					gap.width - hull.across,
 					gap.height - hull.up,
@@ -128,10 +114,8 @@ describe("the aperture admits the hulls that have to fly through it", () => {
 		// narrowing must not touch.
 		const gap = APERTURE("trade");
 		const ordinary = HULL_IDS.filter((id) => !CAPITALS.includes(id));
-		const needAcross = Math.max(
-			...ordinary.map((id) => rolledEnvelope(id).across),
-		);
-		const needUp = Math.max(...ordinary.map((id) => rolledEnvelope(id).up));
+		const needAcross = Math.max(...ordinary.map((id) => rolled(id).across));
+		const needUp = Math.max(...ordinary.map((id) => rolled(id).up));
 		const widthMargin = gap.width - needAcross;
 		const heightMargin = gap.height - needUp;
 		console.log(
@@ -150,7 +134,7 @@ describe("the aperture admits the hulls that have to fly through it", () => {
 		// shape that reversal would take — nobody would write "capitals may dock
 		// now", they would widen a slot for some other reason.
 		for (const id of CAPITALS) {
-			const hull = rolledEnvelope(id);
+			const hull = rolled(id);
 			for (const type of STATION_TYPES) {
 				const gap = APERTURE(type);
 				expect([

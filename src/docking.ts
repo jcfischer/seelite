@@ -49,8 +49,13 @@ export const V_GATE_KMS = 0.1;
  *  cone that constrains only position says nothing about where the ship points. */
 export const AXIS_TOLERANCE_DEG = 35;
 
-/** §3's check 4, degrees, against the slot's long **axis-line** and not an
- *  oriented vector: a ship rolled 180° is a geometrically identical entry. */
+/** §3's check 4, degrees, against the slot's **short** axis-line and not an
+ *  oriented vector: a ship rolled 180° is a geometrically identical entry.
+ *
+ *  Short, so the ship's *beam* lies along the long side — it read "long" from
+ *  #9 until #158, and the number itself did not move with the correction,
+ *  because a tolerance is an angle magnitude and only the line it is measured
+ *  from changed. */
 export const ROLL_TOLERANCE_DEG = 50;
 
 /**
@@ -360,10 +365,21 @@ export function signedRollDeg(frame: ApertureFrame, pose: EntryPose): number {
 	// check is #9's and it refuses the pose on check 2 anyway.
 	if (norm <= ROLL_PROJECTION_FLOOR) return Number.NaN;
 	const u = scale(projected, 1 / norm);
-	const { across } = slotBasis(frame);
-	const perpendicular = cross(axis, across);
+	// **The same reference check 4 compares against** (#158) — `basis.up`, the
+	// slot's short axis.
+	//
+	// **This has no reader.** The roll ticks went with #94's corridor
+	// (`hud-and-scanner.md` §3: "the pilot lines the cockpit up with it rather
+	// than reading ticks"), and nothing outside this module and
+	// `docking-director.ts` calls it. Moved with the check anyway, because left
+	// on `across` it would report 90° for the pose the check calls perfect — a
+	// number correct under a convention the repo no longer holds, waiting for
+	// the next instrument to trust it. Same formula shape as before, so the
+	// handedness is unchanged.
+	const rollZero = slotBasis(frame).up;
+	const perpendicular = cross(axis, rollZero);
 	const deg =
-		(Math.atan2(dot(u, perpendicular), dot(u, across)) * 180) / Math.PI;
+		(Math.atan2(dot(u, perpendicular), dot(u, rollZero)) * 180) / Math.PI;
 	if (deg > 90) return deg - 180;
 	if (deg <= -90) return deg + 180;
 	return deg;
@@ -418,7 +434,8 @@ export interface EntryEvaluation {
 	 *  rather than reporting a boolean. */
 	positionAngleDeg: number;
 	noseAngleDeg: number;
-	/** `Number.NaN` for a pad: a square aperture has no long axis to match. */
+	/** `Number.NaN` for a pad: a square aperture has no distinguished axis, so
+	 *  there is no roll to match. */
 	rollAngleDeg: number;
 	/** Where the crossing point sits in the rolled aperture frame, km. */
 	offsetAcrossKm: number;
@@ -472,8 +489,16 @@ export function evaluateEntry(
 		Math.abs(offsetAcrossKm) <= aperture.widthKm / 2 + 1e-12 &&
 		Math.abs(offsetUpKm) <= aperture.heightKm / 2 + 1e-12;
 
-	// Check 4. Against the axis-*line*: the acute angle mod 180°, so a ship
-	// rolled exactly 180° is the identical entry it geometrically is.
+	// Check 4. Against the slot's **short** axis-line — the ship's up-vector
+	// lies along it when the ship's *beam* lies along the long one, which is
+	// the pose `tests/aperture-fit.test.ts` sizes the opening from (#157). It
+	// read `basis.across` until #158, so a ship at a perfect roll flew the slot
+	// on its side. The aperture's size cannot tell the two apart, which is why
+	// nothing went red; `docking.md` §3 carries the measured margins, and this
+	// comment deliberately does not repeat them.
+	//
+	// Against the axis-*line*, so the acute angle mod 180°: a ship rolled
+	// exactly 180° is the identical entry it geometrically is.
 	let rollAngleDeg = Number.NaN;
 	let rollMatch = true;
 	if (aperture.kind === "slot") {
@@ -490,7 +515,7 @@ export function evaluateEntry(
 		} else {
 			// The axis-*line*, so the acute angle mod 180°: the absolute cosine is
 			// that comparison without the round trip through degrees.
-			const rollCos = Math.abs(dot(unit(projected), basis.across));
+			const rollCos = Math.abs(dot(unit(projected), basis.up));
 			rollAngleDeg = cosToDeg(rollCos);
 			rollMatch = rollCos >= ROLL_COS - 1e-12;
 		}
@@ -1137,7 +1162,10 @@ export function dockingComputerStep(input: ComputerInput): ComputerCommand {
 		// makes the roll match a tracking problem, and starting to track only at
 		// the corridor leaves the fastest spinner a turn to make in the last
 		// three kilometres.
-		up: frame.aperture.kind === "slot" ? slotBasis(frame).across : pose.up,
+		// `up`, not `across`: check 4's reference (#158), and the computer has to
+		// fly at the pose the check accepts or the autopilot is the defect —
+		// #157 was reported as a ship entering the slot at 90°.
+		up: frame.aperture.kind === "slot" ? slotBasis(frame).up : pose.up,
 		speedKms,
 		phase: lined ? "run-in" : "line-up",
 	};

@@ -112,13 +112,14 @@ export interface DirectorState {
 	 * projects — nothing here is in scene-graph units.
 	 */
 	tunnel: TunnelGeometry;
-	/** Check 4, or `null` for a pad: a square aperture has no long axis to
+	/** Check 4, or `null` for a pad: a square aperture has no distinguished axis to
 	 *  match, and an empty ring would read as a failed one. */
 	roll: DirectorCue | null;
 	/**
 	 * The **signed** roll error, degrees, folded to (−90, 90]: positive is a
 	 * right-handed rotation of the ship's up about the outward axis away from
-	 * the slot's `across`.
+	 * the slot's `up` — check 4's own reference since #158, so the zero this
+	 * reports and the zero the gate accepts are one direction.
 	 *
 	 * Check 4 is unsigned — it compares against the axis *line*, so a ship
 	 * rolled 180° is the identical entry — and that is right for a gate and

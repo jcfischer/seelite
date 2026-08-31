@@ -265,8 +265,10 @@ export function beginArrival(
  *
  * The parked ship already points outward, so unlike the old law this one does
  * not turn the nose round — what it settles is the **roll**, from the berth's
- * own normal back onto the slot's `across`, which is check 4's reference and
- * the attitude a ship outside the plane is measured in.
+ * own normal back onto the slot's `up`, which is check 4's reference since #158
+ * and the attitude a ship outside the plane is measured in. It settled onto
+ * `across` before that, which is the same right angle the check itself was
+ * out by.
  *
  * It reads no flag: **a launch is unconditionally skippable** and so, since
  * #147, is an arrival (§13.3).
@@ -411,7 +413,8 @@ function unit(a: Vec3): Vec3 {
  * **Two directions are not an orientation, and interpolating them separately is
  * what went wrong.** The nose and the up-vector each took their own great
  * circle, and at a wall berth the two circles crossed: an entry rolled to the
- * opposite `across` — which check 4 accepts — is antipodal to the parked
+ * opposite `across` — accepted by check 4 before #158, refused now — is
+ * antipodal to the parked
  * up-vector, so the roll turned through the slot's `up`; the nose turned from
  * inward to outward through the same plane; and at the half-way point both
  * landed on it. `|dot(nose, up)| = 1` — the ship's basis collapsed, mid-arrival,
@@ -594,14 +597,17 @@ export function recomposeDirection(
  *
  * An arrival settles onto the parked pose — nose outward, up along the berth's
  * normal — from whatever the crossing left it in. A launch runs the other way:
- * it starts parked and settles onto the slot's own `across`, which is check 4's
+ * it starts parked and settles onto the slot's own `up`, which is check 4's
  * roll reference and the attitude a ship outside the plane is measured in.
  *
- * **`across`, not `up`, and that is check 4's convention rather than a
- * choice.** `evaluateEntry` measures the roll as `|dot(shipUp, basis.across)|`
- * and `signedRollDeg` reports zero when the two are parallel — so a ship rolled
- * "correctly" for a slot has its up-vector along the slot's long axis. The
- * first build aligned to `basis.up` instead, which is exactly 90° out.
+ * **`up`, not `across`, and that is check 4's convention rather than a
+ * choice** (#158). `evaluateEntry` measures the roll as `|dot(shipUp,
+ * basis.up)|`, so a ship rolled "correctly" for a slot has its *beam* along
+ * the slot's long axis — which is the pose `tests/aperture-fit.test.ts` sizes
+ * the opening from.
+ *
+ * It was `across` until #158. Why it was, and why one frame appeared to support
+ * it, is recorded once in `docking.md` §3 rather than restated here.
  */
 export function arrivalAttitude(
 	law: ArrivalLaw,
@@ -617,7 +623,7 @@ export function arrivalAttitude(
 		return attitudeFromQuat(
 			quatSlerp(
 				quatFromAttitude(parked.nose, parked.up),
-				quatFromAttitude(law.frame.axis, basis.across),
+				quatFromAttitude(law.frame.axis, basis.up),
 				e,
 			),
 		);

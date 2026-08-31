@@ -574,7 +574,8 @@ function buildAperture(
 	// failure E7's own comment records.
 
 	// Four bars around the mouth rather than a ring: the slot is a rectangle, and
-	// its long axis is what the roll match is matched *to*.
+	// which side is the long one is what a ship rolls to line its beam up with
+	// (#157 — check 4 measures the up-vector against the *short* axis).
 	const lights: [number, number, number, number][] = [
 		[w + bar * 2, bar, 0, (h + bar) / 2],
 		[w + bar * 2, bar, 0, -(h + bar) / 2],

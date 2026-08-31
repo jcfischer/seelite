@@ -83,7 +83,8 @@ function entryAt(type: StationType) {
 		rel: scale(frame.axis, frame.planeKm),
 		attitude: {
 			nose: scale(frame.axis, -1),
-			up: slotBasis(frame).across,
+			// Check 4's zero (#158): up along the slot's short axis.
+			up: slotBasis(frame).up,
 		},
 	};
 }
@@ -363,8 +364,10 @@ describe("§12.6 obligation 7 — a rolled entry keeps a basis all the way in", 
 		// through the same plane; and half way in both landed on it. Measured on
 		// trade `port-near`, `|dot(nose, up)|` was **1.0000** at u = 0.5.
 		//
-		// Every berth against every entry roll the slot's own basis offers, which
-		// is the set check 4 admits at 0° and 180°.
+		// Every berth against every entry roll the slot's own basis offers. Check
+		// 4 admits the two `up` rolls (0° and 180°, its own zero since #158) and
+		// refuses the two `across` ones; a settle has to be well conditioned from
+		// all four, because a ship that fails the check still has to be somewhere.
 		for (const type of STATION_TYPES) {
 			const { frame, rel } = entryAt(type);
 			const basis = slotBasis(frame);
@@ -452,7 +455,7 @@ describe("§13.3 — launch is the route run backwards", () => {
 		expect(dot(end.nose, law.frame.axis)).toBeCloseTo(1, 6);
 		// And the released ship is square with the slot, which is the attitude
 		// check 4 measures.
-		expect(Math.abs(dot(end.up, basis.across))).toBeCloseTo(1, 6);
+		expect(Math.abs(dot(end.up, basis.up))).toBeCloseTo(1, 6);
 		const evaluation = evaluateEntry(
 			law.frame,
 			{

@@ -125,10 +125,12 @@ await page.evaluate(() => {
 			const rad = ((setup.rollDeg ?? 0) * Math.PI) / 180;
 			// The roll error is stated against the **slot's** own basis, because
 			// that is what check 4 measures — unlike the lateral offset above,
-			// which needs a direction that does not rotate.
+			// which needs a direction that does not rotate. Zero is `basis.up`
+			// since #158: the ship's up on the slot's short axis, so its beam
+			// lies along the long one.
 			const rolled = D.add(
-				D.scale(snap.basis.across, Math.cos(rad)),
-				D.scale(snap.basis.up, Math.sin(rad)),
+				D.scale(snap.basis.up, Math.cos(rad)),
+				D.scale(snap.basis.across, -Math.sin(rad)),
 			);
 			g.setAttitude(D.toward(id, aim), rolled);
 			g.setThrottle(setup.closingKms / g.assistCapKms);
@@ -174,7 +176,6 @@ async function fly(setup) {
 			const seen = g.dockingSnapshot(id);
 			if (!seen) return { noSnapshot: true, id };
 			const axis = seen.axis;
-			const across = seen.basis.across;
 			const up = seen.basis.up;
 
 			const start = D.add(
@@ -214,7 +215,11 @@ async function fly(setup) {
 				// re-aimed every frame below. The loop owns the aiming; this only sets
 				// the first attitude so the ship does not spend its first frames
 				// turning out of whatever the previous run left it in.
-				g.setAttitude(D.scale(axis, -1), across);
+				// **`up`, check 4's zero since #158.** The seed was `across`, which
+				// under the corrected check is a 90° mis-roll — the opposite of what
+				// the line is for. Harmless, because `reaim` overwrites the attitude
+				// every frame, and wrong for exactly as long as nobody read it.
+				g.setAttitude(D.scale(axis, -1), up);
 				g.setThrottle(setup.closingKms / g.assistCapKms);
 			}
 
@@ -664,7 +669,8 @@ async function directorAt(setup) {
 				((setup.pitchDeg ?? 0) * Math.PI) / 180,
 			);
 			const up = rotate(
-				snap.basis.across,
+				// Check 4's zero (#158) — the short axis, not the long one.
+				snap.basis.up,
 				snap.axis,
 				((setup.rollDeg ?? 0) * Math.PI) / 180,
 			);
@@ -912,13 +918,18 @@ const throatTiltDeg = (measured) => {
 };
 
 /**
- * The relation, measured and then pinned: the drawn throat's tilt is
- * `90° − roll`, folded.
+ * The relation, measured and then pinned: the drawn corridor's width edge sits
+ * at `−roll`, folded.
  *
- * Ninety because the fixtures set the ship's up along the slot's *width*, so at
- * zero roll the rectangle's width edge stands vertical on the glass; the slope
- * is exactly one degree of tilt per degree of roll, because the corridor is a
- * world object and the camera is what turns.
+ * **The offset was 90° until #158**, when the fixtures put the ship's up along
+ * the slot's *width* and the rectangle's width edge therefore stood vertical on
+ * the glass at zero roll. Check 4's zero is the slot's short axis now, so at
+ * zero roll the ship's beam and the throat's width edge are the same direction
+ * and the edge lies flat — the intercept moved, and only the intercept.
+ *
+ * The slope is unchanged and is the thing the row is for: exactly one degree of
+ * tilt per degree of roll, because the corridor is a world object and the
+ * camera is what turns.
  */
 const rollSamples = [];
 for (const rollDeg of [-30, -12, 0, 12, 30]) {
@@ -935,7 +946,7 @@ check(
 	rollSamples.every(
 		(sample) =>
 			sample.tiltDeg !== null &&
-			Math.abs(fold(90 - sample.rollDeg - sample.tiltDeg)) < 1,
+			Math.abs(fold(-sample.rollDeg - sample.tiltDeg)) < 1,
 	),
 	rollSamples.map((s) => `${s.rollDeg}°→${s.tiltDeg?.toFixed(1)}°`).join("  "),
 );
