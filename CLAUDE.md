@@ -35,13 +35,27 @@ Anything arithmetic gets a headless test; anything rendered or spatial gets a
 browser probe. A change is not done until both are green.
 
 ```bash
-npm test                   # bun, headless — sim logic, generators, unit scheme
-npm run probe              # starts a dev server, runs every browser probe
-npm run probe:one <name>   # one probe
-npx tsc --noEmit           # no errors
-npm run format:check       # biome, no fixes applied
-npm run build              # tsc + vite build
+rtk test npm test               # bun, headless — sim logic, generators, unit scheme
+npm run probe                   # starts a dev server, runs every browser probe
+npm run probe:one <name>        # one probe
+npx tsc --noEmit                # no errors
+rtk lint npm run format:check   # biome, no fixes applied
+rtk err npm run build           # tsc + vite build
 ```
+
+The `rtk` prefixes exist because a green run's output is re-read on every later
+turn of the session. Measured on a passing tree: `npm test` 702 bytes raw and
+112 through `rtk test`, `npm run build` 627 and 76, `format:check` 88 and 22 —
+a full green pass drops from 1,988 bytes to 781. Exit codes survive the filter
+in both directions.
+
+**On a red run `rtk test` prints `N fail` without naming the test.** It tees the
+full output and prints the log path — read that file. Re-running the command raw
+puts the unfiltered output into context, which is the thing the prefix avoids.
+
+Two stay unprefixed on purpose. `rtk tsc` returns exit 2 on a clean typecheck,
+so anything reading that exit code would treat a passing repo as broken. And
+`npm run probe` has no rtk filter; a green run is already 19 lines.
 
 ### Visual work has a third tier, and it is a person
 
