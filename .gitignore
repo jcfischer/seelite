@@ -25,3 +25,4 @@ view-set/
 
 # Claude Code scratch: agent worktrees are checkouts, not content.
 .claude/worktrees/
+.worktrees/
