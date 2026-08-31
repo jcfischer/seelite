@@ -53,7 +53,9 @@ import {
 	tickDocking,
 } from "../src/docking";
 import { ANGULAR_MAX, ASSIST_CAP_KMS, stepFlight } from "../src/sim";
+import { HULL_VISUALS } from "../src/ship-mesh";
 import { STATION_GEOMETRY, slotPhaseRad } from "../src/station";
+import { stationInterior } from "../src/station-interior";
 import {
 	type Vec3,
 	add,
@@ -64,6 +66,21 @@ import {
 	sub,
 	v3,
 } from "../src/vec3";
+
+/**
+ * The traffic a clearance request is answered against (§13.2).
+ *
+ * A grant reserves a berth now, so the protocol needs the catalogue and the
+ * envelope it has to fit. Empty occupancy is the live game's state — NPC
+ * traffic is #8's — and the rows that need a full station build their own set
+ * rather than moving this one.
+ */
+const INTERIOR = stationInterior("trade", STATION_GEOMETRY.trade);
+const TRAFFIC = {
+	interior: INTERIOR,
+	hull: HULL_VISUALS.courier,
+	occupied: new Set<string>(),
+};
 
 const DEG = Math.PI / 180;
 
@@ -396,7 +413,7 @@ describe("§9.1.4 a failed entry repels and keeps its grant", () => {
 		const granted = requestClearance(newDockingState(), {
 			gameTime: 0,
 			rangeKm: 500,
-			occupancy: 0,
+			...TRAFFIC,
 		});
 		const outcome = attemptEntry({
 			frame,
@@ -433,7 +450,7 @@ test("§9.1.5 a 90°-mis-rolled entry at 0.01 km/s still costs the floor", () =>
 		state: requestClearance(newDockingState(), {
 			gameTime: 0,
 			rangeKm: 500,
-			occupancy: 0,
+			...TRAFFIC,
 		}),
 		gameTime: 0,
 	});
@@ -497,7 +514,7 @@ describe("§9.1.6 the pad is the slot minus check 4", () => {
 // ---------------------------------------------------------------------------
 
 describe("§9.1.9 the clearance state machine", () => {
-	const REQ = { gameTime: 0, rangeKm: 500, occupancy: 0 };
+	const REQ = { gameTime: 0, rangeKm: 500, ...TRAFFIC };
 
 	test("granted opens a 600 s window that expires back to none", () => {
 		const s = requestClearance(newDockingState(), REQ);
@@ -507,9 +524,11 @@ describe("§9.1.9 the clearance state machine", () => {
 		});
 		expect(grantLive(s, GRANT_WINDOW_S - 1)).toBe(true);
 		expect(grantLive(s, GRANT_WINDOW_S)).toBe(false);
-		expect(tickDocking(s, GRANT_WINDOW_S, 0).clearance).toEqual({
+		expect(tickDocking(s, GRANT_WINDOW_S, TRAFFIC).clearance).toEqual({
 			kind: "none",
 		});
+		// §13.2: the reservation goes with the lapsed grant.
+		expect(tickDocking(s, GRANT_WINDOW_S, TRAFFIC).berthId).toBeNull();
 	});
 
 	test("out of range is not a reply at all", () => {
@@ -525,22 +544,43 @@ describe("§9.1.9 the clearance state machine", () => {
 		).toBe("granted");
 	});
 
-	test("an occupied slot queues, and frees into a grant", () => {
-		// §6.1: driven by an injected occupancy, so the branch is exercised code
-		// from the day it is written rather than waiting on #8's traffic.
+	test("a station with no free berth queues, and frees into a grant", () => {
+		// §6.1 and §13.2: driven by an injected occupancy, so the branch is
+		// exercised code from the day it is written rather than waiting on #8's
+		// traffic. Every berth held is the only state that queues now — a grant
+		// *is* a reservation, so there is nothing to grant.
+		const full = new Set(INTERIOR.berths.map((berth) => berth.id));
 		const queued = requestClearance(newDockingState(), {
 			...REQ,
-			occupancy: 2,
+			occupied: full,
 		});
-		expect(queued.clearance).toEqual({ kind: "queued", position: 2 });
+		expect(queued.clearance).toEqual({
+			kind: "queued",
+			position: full.size,
+		});
+		expect(queued.berthId).toBeNull();
 		expect(grantLive(queued, 0)).toBe(false);
-		const still = tickDocking(queued, 30, 1);
+		const still = tickDocking(queued, 30, { ...TRAFFIC, occupied: full });
 		expect(still.clearance.kind).toBe("queued");
-		const promoted = tickDocking(still, 60, 0);
+		const promoted = tickDocking(still, 60, TRAFFIC);
 		expect(promoted.clearance).toEqual({
 			kind: "granted",
 			expiresAtS: 60 + GRANT_WINDOW_S,
 		});
+		expect(promoted.berthId).not.toBeNull();
+	});
+
+	test("a grant reserves one berth, and a bounce does not give it back", () => {
+		const granted = requestClearance(newDockingState(), REQ);
+		expect(granted.berthId).not.toBeNull();
+		// §13.2: the reservation survives a failed entry while the grant is live.
+		const bounced = attemptEntry({
+			frame: frameFor(),
+			pose: nominal(frameFor()),
+			state: granted,
+			gameTime: 1,
+		});
+		expect(bounced.state.berthId).toBe(granted.berthId);
 	});
 
 	test("a failed shipyard scan denies, and the denial is hostile with an exit", () => {
@@ -584,10 +624,10 @@ describe("§9.1.9 the clearance state machine", () => {
 			state: newDockingState(),
 			gameTime: 100,
 		}).state;
-		expect(tickDocking(barged, 100 + HOSTILE_COOLDOWN_S - 1, 0).hostile).toBe(
-			true,
-		);
-		const cleared = tickDocking(barged, 100 + HOSTILE_COOLDOWN_S, 0);
+		expect(
+			tickDocking(barged, 100 + HOSTILE_COOLDOWN_S - 1, TRAFFIC).hostile,
+		).toBe(true);
+		const cleared = tickDocking(barged, 100 + HOSTILE_COOLDOWN_S, TRAFFIC);
 		expect(cleared.hostile).toBe(false);
 		expect(cleared.hostileUntilS).toBeNull();
 		expect(
@@ -685,7 +725,7 @@ function flyTheComputer(opts: {
 					...requestClearance(newDockingState(), {
 						gameTime: 0,
 						rangeKm: 500,
-						occupancy: 0,
+						...TRAFFIC,
 					}),
 					hostile: opts.hostile ?? false,
 				};
@@ -848,7 +888,7 @@ describe("§7's two tuning surfaces, pinned without flying anything", () => {
 			state: requestClearance(newDockingState(), {
 				gameTime: 0,
 				rangeKm: 500,
-				occupancy: 0,
+				...TRAFFIC,
 			}),
 			gameTime: 0,
 			maxSpeedKms: ASSIST_CAP_KMS,
@@ -903,7 +943,7 @@ describe("§9.1.11 the docking computer", () => {
 			state: requestClearance(newDockingState(), {
 				gameTime: 0,
 				rangeKm: 500,
-				occupancy: 0,
+				...TRAFFIC,
 			}),
 			gameTime: 0,
 			maxSpeedKms: ASSIST_CAP_KMS,

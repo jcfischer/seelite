@@ -26,9 +26,15 @@ import {
 	arrivalRelVelocity,
 	beginArrival,
 	beginLaunch,
-	dockedAxialKm,
+	berthCentre,
+	parkedAttitude,
 } from "./arrival";
-import { type ApertureFrame, apertureFrame, slotBasis } from "./docking";
+import {
+	type ApertureFrame,
+	apertureFrame,
+	frameAtPhase,
+	slotBasis,
+} from "./docking";
 import {
 	type World,
 	advanceWorldClock,
@@ -37,6 +43,11 @@ import {
 	stationPose,
 } from "./sim";
 import { STATION_GEOMETRY } from "./station";
+import {
+	type Berth,
+	type StationInterior,
+	stationInterior,
+} from "./station-interior";
 import { type Vec3, add, scale } from "./vec3";
 
 /**
@@ -81,6 +92,10 @@ export interface DockSession {
 	phase: DockPhase;
 	/** The station this session is at. `null` exactly when flying. */
 	stationId: string | null;
+	/** The berth reserved for this session (§13.2). `null` exactly when flying.
+	 *  Held from the grant through arrival, docking and launch, and released by
+	 *  the outward aperture crossing. */
+	berthId: string | null;
 	/** The traversal in progress. `null` while flying and while docked — a
 	 *  docked ship is *placed*, not interpolated, which is what makes
 	 *  obligation 9 hold over an arbitrarily long interval. */
@@ -90,8 +105,35 @@ export interface DockSession {
 export const newDockSession = (): DockSession => ({
 	phase: "flying",
 	stationId: null,
+	berthId: null,
 	law: null,
 });
+
+/**
+ * The interior one station presents (§13).
+ *
+ * Here rather than at each call site: the placement, the traversal and the
+ * renderer all need the same catalogue, and three lookups is three chances to
+ * pass a different seed and get a different outpost.
+ */
+export const interiorOfStation = (station: {
+	type: keyof typeof STATION_GEOMETRY;
+	berthSeed: number;
+}): StationInterior =>
+	stationInterior(
+		station.type,
+		STATION_GEOMETRY[station.type],
+		station.berthSeed,
+	);
+
+/** The berth an id names, or a throw: a session holding an id no catalogue
+ *  answers for is the reservation and the generator having diverged, not a case
+ *  to paper over with a default berth. */
+export function berthOf(interior: StationInterior, id: string): Berth {
+	const berth = interior.berths.find((candidate) => candidate.id === id);
+	if (!berth) throw new Error(`no berth ${id} at a ${interior.type} station`);
+	return berth;
+}
 
 /** Where the tick says the ship must be this frame. `null` while flying, when
  *  the ship owns its own position. */
@@ -111,6 +153,8 @@ export interface DockedShip {
 export function enterArrival(
 	stationId: string,
 	frame: ApertureFrame,
+	interior: StationInterior,
+	berth: Berth,
 	entryRel: Vec3,
 	attitude: { nose: Vec3; up: Vec3 },
 	gameTime: number,
@@ -118,7 +162,8 @@ export function enterArrival(
 	return {
 		phase: "arriving",
 		stationId,
-		law: beginArrival(frame, entryRel, gameTime, attitude),
+		berthId: berth.id,
+		law: beginArrival(frame, interior, berth, entryRel, gameTime, attitude),
 	};
 }
 
@@ -138,26 +183,24 @@ export function enterArrival(
 export function requestLaunch(
 	session: DockSession,
 	frame: ApertureFrame,
+	interior: StationInterior,
 	gameTime: number,
 ): DockSession {
-	if (session.phase !== "docked" || !session.stationId) return session;
+	if (session.phase !== "docked" || !session.stationId || !session.berthId)
+		return session;
 	return {
 		phase: "launching",
 		stationId: session.stationId,
-		// The pose the docked ship is actually in — nose inward, rolled to the
-		// slot — so the launch turns it round over the traversal instead of
-		// reversing it on the first frame.
-		law: beginLaunch(frame, gameTime, dockedAttitude(frame)),
-	};
-}
-
-/** The attitude a parked ship holds: nose down the inward axis, up along the
- *  slot's `across`, which is check 4's roll reference. One spelling, read by
- *  both the docked tick and the launch that starts from it. */
-function dockedAttitude(frame: ApertureFrame): { nose: Vec3; up: Vec3 } {
-	return {
-		nose: scale(frame.axis, -1),
-		up: slotBasis(frame).across,
+		berthId: session.berthId,
+		// The route back out, from the berth the ship is parked in. The parked
+		// nose already points outward (§13.3), so the launch settles the roll
+		// rather than turning the ship round.
+		law: beginLaunch(
+			frame,
+			interior,
+			berthOf(interior, session.berthId),
+			gameTime,
+		),
 	};
 }
 
@@ -169,17 +212,16 @@ function dockedAttitude(frame: ApertureFrame): { nose: Vec3; up: Vec3 } {
  * conditional form has an unreachable false branch, and stated unconditionally
  * a regression that made a first launch play fails the row.
  *
- * **An arrival currently cannot, and that is a dependency rather than a
- * decision.** E4 makes the arrival skippable once the player has arrived at
- * that *type* of station before — four booleans of per-galaxy player state. But
- * §12.7's joint 6 records that those flags are a typed domain
- * `persistent-world-state.md` "must approve and bound", and §6 of that spec
- * explicitly defers this class rather than bounding it. So the arrival ships
- * unskippable, exactly as #77 instructs, and E4 is a follow-up node — inventing
- * the storage here is the one thing that section forbids.
+ * **An arrival can too, since §13.3, and that retires E4 rather than
+ * implementing it.** E4 made an arrival skippable only once the player had
+ * arrived at that *type* of station before — four booleans of per-galaxy player
+ * state that `persistent-world-state.md` §6 declined to bound. §13.3 makes both
+ * traversals unconditionally skippable, so the flags have nothing left to gate
+ * and the storage question does not arise. An arrival's skip completes **at the
+ * reserved berth**; a launch's completes outside the aperture.
  */
 export function canSkipTraversal(session: DockSession): boolean {
-	return session.phase === "launching";
+	return session.phase === "arriving" || session.phase === "launching";
 }
 
 /**
@@ -253,35 +295,48 @@ export function stepDockedWorld(
 		? (2 * Math.PI * station.spinRpm) / 60
 		: 0;
 
+	const interior = interiorOfStation(station);
+
 	if (session.phase === "docked") {
+		if (!session.berthId)
+			throw new Error(`docked at ${id} with no berth reserved`);
+		const berth = berthOf(interior, session.berthId);
 		// **Placed, not interpolated.** Obligation 9's long interval is exactly
 		// this: the station translates at orbital speed and spins the whole time,
 		// and a docked position integrated from where the ship was would drift
-		// away from it. Recomputed from the station every frame, it cannot.
-		const rel = scale(
-			frame.axis,
-			dockedAxialKm(STATION_GEOMETRY[station.type]),
+		// away from it. Recomputed from the berth every frame, it cannot.
+		const local = berthCentre(berth);
+		const { across, up } = slotBasis(frameAtPhase(frame, pose.phaseRad));
+		const rel = add(
+			scale(frame.axis, local.axial),
+			add(scale(across, local.across), scale(up, local.up)),
+		);
+		// **A berth is off the axis, so a docked ship is carried by the spin.**
+		// The old docked position sat on the axis and took no rotation term at
+		// all; a wall berth on a 3 rpm Coriolis is 105 m out, which is 33 m/s of
+		// station-frame velocity the ship genuinely has.
+		const lateral = add(
+			scale(across, -local.up * spinRadPerS),
+			scale(up, local.across * spinRadPerS),
 		);
 		return {
 			session,
 			ship: {
 				pos: add(body.pos, rel),
-				// The docked offset is **on the axis**, so the station's rotation
-				// carries no velocity into it — the ship's velocity while docked is
-				// the station's, exactly.
-				vel: stationVel,
+				vel: add(stationVel, lateral),
 				// One spelling of the parked pose, which the launch also starts
-				// from: nose down the inward axis, up along the slot's `across` —
-				// check 4's convention, see `arrivalAttitude` — so a docked ship
-				// sits square in its slot and turns with the station rather than
-				// holding a world-space roll it has rotated away from.
-				...dockedAttitude(frame),
+				// from: nose outward along the aperture axis, up away from the
+				// berth surface (§13.3) — so a docked ship sits square in its
+				// berth and turns with the station rather than holding a
+				// world-space roll it has rotated away from.
+				...parkedAttitude({ frame, berthNormal: berth.normal }, pose.phaseRad),
 			},
 		};
 	}
 
 	const law = session.law;
 	if (!law) return { session: newDockSession(), ship: null };
+	void interior;
 	const u = arrivalProgress(law, world.gameTime);
 	const rel = arrivalRel(law, u, pose.phaseRad);
 	const vel = arrivalRelVelocity(law, u, pose.phaseRad, spinRadPerS);
@@ -299,6 +354,14 @@ export function stepDockedWorld(
 	// (§12.2), which is what makes the very next frame one in which §3's checks
 	// can be evaluated again.
 	return law.kind === "arrival"
-		? { session: { phase: "docked", stationId: id, law: null }, ship }
+		? {
+				session: {
+					phase: "docked",
+					stationId: id,
+					berthId: session.berthId,
+					law: null,
+				},
+				ship,
+			}
 		: { session: newDockSession(), ship };
 }

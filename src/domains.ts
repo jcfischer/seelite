@@ -48,6 +48,12 @@ export const DOMAIN = {
 	 *  absent refinery cannot hand its name to the shipyard and a collision
 	 *  redraw cannot advance a sibling's stream. */
 	STATION_NAME: 11,
+	/** The per-station berth draw (`docking.md` §13.2): today only which side an
+	 *  outpost's second berth is on. Its own tag rather than a draw inside
+	 *  `STATION_FLAGS` for that table's own reason — a flag added later would
+	 *  shift it, reproducing inside one tag exactly the coupling the tags exist
+	 *  to escape. */
+	STATION_BERTHS: 12,
 } as const;
 
 export type DomainName = keyof typeof DOMAIN;

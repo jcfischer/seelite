@@ -151,7 +151,8 @@ import {
 	type EntryOutcome,
 	type EntryPose,
 	type ShipCondition,
-	ARRIVAL_SECONDS,
+	TRAVERSAL_SECONDS_DEEP,
+	TRAVERSAL_SECONDS_NEAR,
 	AXIS_TOLERANCE_DEG,
 	DOCKING_COMPUTER,
 	frameAtPhase,
@@ -169,17 +170,20 @@ import {
 	orthonormalise,
 	poolOf,
 	planeCrossing,
+	releaseBerth,
 	requestClearance,
 	slewToward,
 	slotBasis,
 	tickDocking,
 } from "./docking";
-import { dockedAxialKm } from "./arrival";
+import { berthCentre } from "./arrival";
 import {
 	type DockPhase,
 	type DockSession,
+	berthOf,
 	canSkipTraversal,
 	enterArrival,
+	interiorOfStation,
 	flightLive,
 	newDockSession,
 	requestLaunch,
@@ -202,10 +206,12 @@ import {
 	type HullId,
 	type HullVariantId,
 	type FleetSlot,
+	HULL_VISUALS,
 	buildShipMesh,
 	fleetLayout,
 } from "./ship-mesh";
 import { applyHullQuality } from "./ship-surface";
+import type { StationInterior } from "./station-interior";
 import {
 	LiveCockpit,
 	type LeftTab,
@@ -314,6 +320,25 @@ const CHASE_UP_KM = 0.04;
  * constant, and it will be able to see what it is replacing.
  */
 const PLAYER_HULL: readonly [HullId, HullVariantId] = ["courier", "a"];
+
+/** The player hull's envelope, which is what a berth's fit predicate compares
+ *  against (§13.2). Read off the roster rather than restated. */
+const PLAYER_ENVELOPE = HULL_VISUALS[PLAYER_HULL[0]];
+
+/** No other ship holds a berth in the live game — NPC traffic is #8's. Shared
+ *  rather than allocated per station per frame. */
+const EMPTY_BERTHS: ReadonlySet<string> = new Set<string>();
+
+/** Where a session's berth parks a ship, axial km, or `null` when it holds
+ *  none. On the page for the probe tier, so nothing there rebuilds a
+ *  catalogue. */
+function berthAxialOf(
+	interior: StationInterior,
+	berthId: string | null,
+): number | null {
+	if (!berthId) return null;
+	return berthCentre(berthOf(interior, berthId)).axial;
+}
 
 /**
  * How fast the chase camera swings round the hull while a key is held.
@@ -472,11 +497,13 @@ interface DockingSnapshot {
 	/** §12.3's three exempt states, distinguishable from ordinary flight —
 	 *  obligation 8's checkable half, and what #75 will read. */
 	dockPhase: DockPhase;
-	/** Where §12.2 parks the ship, as an axial distance from the station's
-	 *  centre — so a probe reads the throat's depth off the page instead of
+	/** The berth this ship holds (§13.2), or `null` when it holds none. */
+	berthId: string | null;
+	/** Where that berth parks the ship, as an axial distance from the station's
+	 *  centre — so a probe reads the bay's depth off the page instead of
 	 *  restating a constant that would go falsely red when the module retunes
-	 *  it. */
-	dockedAxialKm: number;
+	 *  it. `null` when no berth is held. */
+	berthAxialKm: number | null;
 	/** E9's generated name for this station. */
 	stationName: string;
 	condition: ShipCondition;
@@ -1242,7 +1269,8 @@ class Game {
 		// anti-latch measure and said so in its own docstring — `dockedAt` was
 		// set and never cleared, and leaving was never designed. §12.2 designed
 		// it, so the tripwire is gone and `dockPhase` is what a probe reads.
-		ARRIVAL_SECONDS,
+		TRAVERSAL_SECONDS_NEAR,
+		TRAVERSAL_SECONDS_DEEP,
 	});
 
 	/**
@@ -1264,7 +1292,13 @@ class Game {
 	 * from a probe as well as from the headless tests — an unexercised branch is
 	 * what §6.1 refuses.
 	 */
-	readonly slotOccupancy = new Map<string, number>();
+	readonly berthOccupancy = new Map<string, ReadonlySet<string>>();
+
+	/** The berths other ships hold at one station (§13.2). Empty in the live
+	 *  game for `slotOccupancy`'s reason, and writable for the same one. */
+	private occupiedAt(id: string): ReadonlySet<string> {
+		return this.berthOccupancy.get(id) ?? EMPTY_BERTHS;
+	}
 
 	/**
 	 * #8's shield and hull pools, standing in (`docking.md` §10).
@@ -1526,11 +1560,6 @@ class Game {
 	 */
 	nameplatesOfStation(id: string): THREE.Mesh[] {
 		return this.stationVisuals.get(id)?.nameplates ?? [];
-	}
-
-	/** The docked-only inner gate, exposed so the browser probe reads the live mesh. */
-	hangarGateOfStation(id: string): THREE.Object3D | null {
-		return this.stationVisuals.get(id)?.hangarGate ?? null;
 	}
 
 	constructor(seed: number) {
@@ -3411,6 +3440,18 @@ class Game {
 	}
 
 	/**
+	 * The berth catalogue for one station (§13).
+	 *
+	 * Through `interiorOfStation` rather than a second `stationInterior` call,
+	 * so the renderer, the protocol and the traversal read one catalogue at one
+	 * seed — a second lookup with a different seed is an outpost whose drawn
+	 * berth is on the other wall from the one the ship parks in.
+	 */
+	interiorOf(id: string): StationInterior {
+		return interiorOfStation(stationOf(this.world.system, id));
+	}
+
+	/**
 	 * The ship relative to one station, **in the station's frame** (§1).
 	 *
 	 * The single conversion every caller in this file makes. Sim space is
@@ -3465,8 +3506,12 @@ class Game {
 		const next = requestClearance(this.dockingStateOf(chosen.id), {
 			gameTime: this.world.gameTime,
 			rangeKm: chosen.km,
-			// §6.1: zero in the live game. #8 replaces the map, not the branch.
-			occupancy: this.slotOccupancy.get(chosen.id) ?? 0,
+			// §13.2: a grant reserves a berth, so the protocol needs the catalogue
+			// and the envelope it has to fit.
+			interior: this.interiorOf(chosen.id),
+			hull: PLAYER_ENVELOPE,
+			// §6.1: empty in the live game. #8 replaces the map, not the branch.
+			occupied: this.occupiedAt(chosen.id),
 			// #13 §5.1.1's shipyard scan. The predicate behind it is #8's and
 			// unbuilt, so nothing fails one yet — the *moment* is what this node
 			// owes, and it is here.
@@ -3610,7 +3655,12 @@ class Game {
 			// flight and exposed as such — this is that exposure, and #75 is what
 			// reads it.
 			dockPhase: this.dock.phase,
-			dockedAxialKm: dockedAxialKm(STATION_GEOMETRY[station.type]),
+			// §13's reservation, on the page: which berth the grant holds and
+			// where the ship parks in it. A probe reading `berthId` against
+			// `berthAxialKm` is reading the reservation the sim placed the ship
+			// by rather than re-deriving a catalogue of its own.
+			berthId: this.dock.berthId ?? state.berthId,
+			berthAxialKm: berthAxialOf(this.interiorOf(target), this.dock.berthId),
 			// E9's generated name, read off the page rather than re-derived by a
 			// probe: a probe with its own copy of a rule goes falsely red the day
 			// the rule changes.
@@ -3647,11 +3697,11 @@ class Game {
 	 */
 	private stepDockingProtocol() {
 		for (const [id, state] of this.dockingStates) {
-			const next = tickDocking(
-				state,
-				this.world.gameTime,
-				this.slotOccupancy.get(id) ?? 0,
-			);
+			const next = tickDocking(state, this.world.gameTime, {
+				interior: this.interiorOf(id),
+				hull: PLAYER_ENVELOPE,
+				occupied: this.occupiedAt(id),
+			});
 			// `tickDocking` returns the same reference when nothing fired, which is
 			// most frames of most stations. Writing it back anyway is a map write
 			// per station per frame for a value that did not change.
@@ -3741,9 +3791,18 @@ class Game {
 			// ended here, so from this instant the ship is on rails and nothing
 			// can fail — the arrival is a position law, and `stepDockedWorld`
 			// places the ship every frame until it parks.
+			const interior = this.interiorOf(id);
+			// The berth the grant reserved (§13.2). A dock with no reservation is
+			// the protocol and the crossing having disagreed, not a case to paper
+			// over with a default berth — `attemptEntry` cannot return `docked`
+			// without a live grant, and a live grant carries a berth.
+			const reserved = outcome.state.berthId;
+			if (!reserved) throw new Error(`docked at ${id} with no berth reserved`);
 			this.dock = enterArrival(
 				id,
 				frame,
+				interior,
+				berthOf(interior, reserved),
 				crossing.rel,
 				{ nose: crossing.nose, up: crossing.up },
 				this.world.gameTime,
@@ -3769,8 +3828,18 @@ class Game {
 	 * crossing put it would have the ship sliding down the throat sideways.
 	 */
 	private stepDockPhase(dt: number) {
+		const wasAt = this.dock.stationId;
+		const wasLaunching = this.dock.phase === "launching";
 		const out = stepDockedWorld(this.world, this.dock, dt);
 		this.dock = out.session;
+		// **§13.2's release, at the one moment the receipt names**: the outward
+		// aperture crossing, which is where the launch law ends. Held through
+		// arrival, docking and the launch itself, so a ship that sat docked for
+		// twenty minutes never lost its berth to a lapsed grant.
+		if (wasLaunching && this.dock.phase === "flying" && wasAt) {
+			const state = this.dockingStates.get(wasAt);
+			if (state) this.dockingStates.set(wasAt, releaseBerth(state));
+		}
 		// The clock moved, so §6 moves with it: grants expire and hostility
 		// decays while the player sits docked. This line is the reason the
 		// caller's comment names what runs rather than implying the rest — it
@@ -3803,14 +3872,15 @@ class Game {
 		this.dock = requestLaunch(
 			this.dock,
 			this.apertureFrameOf(this.dock.stationId),
+			this.interiorOf(this.dock.stationId),
 			this.world.gameTime,
 		);
 		return this.dock.phase === "launching";
 	}
 
-	/** Skip the traversal in progress, where §12.6's obligation 5 allows it —
-	 *  which today is a launch and never an arrival, because E4's flag has no
-	 *  bounded store yet (§12.7's joint 6). */
+	/** Skip the traversal in progress. Unconditional on both sides since §13.3:
+	 *  an arrival's skip completes at the reserved berth, a launch's outside the
+	 *  aperture. E4's per-type novelty flags are retired, not stored. */
 	skipDockTraversal(): boolean {
 		if (!canSkipTraversal(this.dock)) return false;
 		this.dock = skipTraversal(this.dock, this.world.gameTime);
@@ -4421,12 +4491,6 @@ class Game {
 					distanceKm,
 					this.settings.value.quality,
 				);
-				// The bay is open while approaching and traversing; it seals only once
-				// parked, so a docked free-look remains inside the station rather than
-				// looking back out through the aperture into space.
-				if (station.hangarGate)
-					station.hangarGate.visible =
-						this.dock.phase === "docked" && this.dock.stationId === body.id;
 				// Through the handle's own accessor, not a second copy of the same
 				// argument triple: `poseOfStation` is documented as "the pose the
 				// renderer is mirroring", and a probe asserting through it has to be

@@ -10,11 +10,17 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { dockedAxialKm } from "../src/arrival";
-import { ARRIVAL_SECONDS, apertureFrame, slotBasis } from "../src/docking";
+import { berthCentre } from "../src/arrival";
+import {
+	TRAVERSAL_SECONDS_DEEP,
+	apertureFrame,
+	slotBasis,
+} from "../src/docking";
 import {
 	type DockPhase,
+	berthOf,
 	canSkipTraversal,
+	interiorOfStation,
 	collisionExempt,
 	enterArrival,
 	flightLive,
@@ -32,6 +38,7 @@ import {
 	stationPose,
 } from "../src/sim";
 import { STATION_GEOMETRY } from "../src/station";
+import type { Berth } from "../src/station-interior";
 import { velocityOnOrbit } from "../src/system";
 import { add, dot, length, scale, sub } from "../src/vec3";
 
@@ -48,6 +55,32 @@ function spinningWorld(): { world: World; id: string } {
 	}
 	throw new Error("no start system with a spinning slot station in 400 seeds");
 }
+
+/**
+ * The berth this session is driven into, and the catalogue it came from.
+ *
+ * **Through the game's own `interiorOfStation`**, not a second
+ * `stationInterior` call: the seed is the station's, and a test that built its
+ * own catalogue would be asserting against a different outpost from the one the
+ * game parks in.
+ */
+function berthFor(world: World, id: string, berthId: string) {
+	const interior = interiorOfStation(stationOf(world.system, id));
+	return { interior, berth: berthOf(interior, berthId) };
+}
+
+/**
+ * The berth every row below drives into.
+ *
+ * **A deep wall berth, not a near deck one**: it is the address with lateral
+ * offset in both components and the longest route, so a law that ignored a leg
+ * or froze the rotating basis fails here rather than passing on a berth that
+ * happens to sit on the axis.
+ */
+const BERTH_ID = "starboard-deep";
+
+/** Long enough for any traversal in the game to have finished. */
+const TRAVERSAL_MAX = TRAVERSAL_SECONDS_DEEP + 0.5;
 
 /** The aperture frame as the game builds it, at the world's current clock. */
 function frameNow(world: World, id: string) {
@@ -206,12 +239,26 @@ describe("§12.6 obligation 3 — flight is inert unless the ship is flying", ()
 	test("a launch ends outside the plane, where §3's checks can run again", () => {
 		const { world, id } = spinningWorld();
 		const e = entryOn(world, id);
-		let session = enterArrival(id, e.frame, e.rel, e.attitude, world.gameTime);
-		session = run(world, session, ARRIVAL_SECONDS + 0.5).session;
+		const { interior, berth } = berthFor(world, id, BERTH_ID);
+		let session = enterArrival(
+			id,
+			e.frame,
+			interior,
+			berth,
+			e.rel,
+			e.attitude,
+			world.gameTime,
+		);
+		session = run(world, session, TRAVERSAL_MAX).session;
 		expect(session.phase).toBe("docked");
 
-		session = requestLaunch(session, frameNow(world, id), world.gameTime);
-		const out = run(world, session, ARRIVAL_SECONDS + 0.5);
+		session = requestLaunch(
+			session,
+			frameNow(world, id),
+			interior,
+			world.gameTime,
+		);
+		const out = run(world, session, TRAVERSAL_MAX);
 		expect(out.session.phase).toBe("flying");
 		// The ship is where §3 can see it: outside the plane, on the outward
 		// side, so the very next inward crossing is a fresh entry.
@@ -225,37 +272,84 @@ describe("§12.6 obligation 3 — flight is inert unless the ship is flying", ()
 	});
 });
 
-describe("§12.2 — the launch turns the ship round rather than snapping it", () => {
-	test("the nose sweeps from inward to outward over the traversal", () => {
-		// **The defect this catches shipped once.** `beginLaunch` said "a docked
-		// ship is already aligned — the arrival put it there" and passed no
-		// attitude, but the parked nose points *inward* and a launch aims
-		// outward: with nothing to blend from, the ship reversed 180° on the
-		// traversal's first frame. Every other row here passed.
+describe("§13.3 — the arrival turns the ship round, and the launch does not", () => {
+	test("the nose sweeps from inward to outward over the arrival", () => {
+		// **The 180° turn moved.** It used to be the launch's, because a parked
+		// ship faced the back wall; §13.3 parks it facing out, so the arrival is
+		// what turns it and the launch is what no longer has to. The defect this
+		// guards is the same one either way: with nothing to blend from, an
+		// antipodal pair snaps on the first frame, and every other row passed
+		// when it did.
 		const { world, id } = spinningWorld();
 		const e = entryOn(world, id);
-		let session = enterArrival(id, e.frame, e.rel, e.attitude, world.gameTime);
-		session = run(world, session, ARRIVAL_SECONDS + 0.5).session;
-		const axis = frameNow(world, id).axis;
-		session = requestLaunch(session, frameNow(world, id), world.gameTime);
+		const { interior, berth } = berthFor(world, id, BERTH_ID);
+		let s = enterArrival(
+			id,
+			e.frame,
+			interior,
+			berth,
+			e.rel,
+			e.attitude,
+			world.gameTime,
+		);
 
 		const along: number[] = [];
-		let s = session;
-		// The **whole** traversal: sampled to the half-way point the nose is
-		// exactly perpendicular to the axis, which reads as "not out yet" and
-		// says nothing about whether it ever gets there.
-		for (let i = 0; i < Math.round(ARRIVAL_SECONDS * 60) + 2; i++) {
+		// **Against the law's own frame**, which is the one it settles onto: the
+		// station's aperture axis swings with its orbit, so the frame this frame
+		// and the frame the law was built in differ by more than the
+		// monotonicity tolerance below over a nine-second traversal.
+		const axis = e.frame.axis;
+		// The **whole** traversal, and only the traversal: sampled to the
+		// half-way point the nose is exactly perpendicular to the axis, which
+		// reads as "not out yet" and says nothing about whether it ever gets
+		// there. The docked frames that follow are placed against the *current*
+		// frame and belong to obligation 9's row, not this one.
+		for (let i = 0; i < Math.round(TRAVERSAL_MAX * 60) + 2; i++) {
+			if (s.phase !== "arriving") break;
 			const out = stepDockedWorld(world, s, 1 / 60);
 			s = out.session;
 			if (out.ship) along.push(dot(out.ship.nose, axis));
 		}
-		// It starts pointing in and ends pointing out — and every step between
-		// moves in that direction, which is what a blend does and what a snap
-		// does not.
+		expect(s.phase).toBe("docked");
 		expect(along[0]).toBeLessThan(-0.9);
 		expect(along[along.length - 1]).toBeGreaterThan(0.9);
+		// Every step moves in that direction, which is what a blend does and
+		// what a snap does not.
 		for (let i = 1; i < along.length; i++)
 			expect(along[i]).toBeGreaterThanOrEqual(along[i - 1] - 1e-9);
+	});
+
+	test("the launch keeps the nose out and settles the roll instead", () => {
+		const { world, id } = spinningWorld();
+		const e = entryOn(world, id);
+		const { interior, berth } = berthFor(world, id, BERTH_ID);
+		let session = enterArrival(
+			id,
+			e.frame,
+			interior,
+			berth,
+			e.rel,
+			e.attitude,
+			world.gameTime,
+		);
+		session = run(world, session, TRAVERSAL_MAX).session;
+		session = requestLaunch(
+			session,
+			frameNow(world, id),
+			interior,
+			world.gameTime,
+		);
+
+		let s = session;
+		let worst = 1;
+		for (let i = 0; i < Math.round(TRAVERSAL_MAX * 60) + 2; i++) {
+			const out = stepDockedWorld(world, s, 1 / 60);
+			s = out.session;
+			if (out.ship)
+				worst = Math.min(worst, dot(out.ship.nose, frameNow(world, id).axis));
+		}
+		// It never turns away from the exit at any point of the route.
+		expect(worst).toBeGreaterThan(0.9);
 	});
 });
 
@@ -263,9 +357,23 @@ describe("§12.6 obligation 5 — every launch is skippable", () => {
 	test("a launch can be skipped, unconditionally", () => {
 		const { world, id } = spinningWorld();
 		const e = entryOn(world, id);
-		let session = enterArrival(id, e.frame, e.rel, e.attitude, world.gameTime);
-		session = run(world, session, ARRIVAL_SECONDS + 0.5).session;
-		session = requestLaunch(session, frameNow(world, id), world.gameTime);
+		const { interior, berth } = berthFor(world, id, BERTH_ID);
+		let session = enterArrival(
+			id,
+			e.frame,
+			interior,
+			berth,
+			e.rel,
+			e.attitude,
+			world.gameTime,
+		);
+		session = run(world, session, TRAVERSAL_MAX).session;
+		session = requestLaunch(
+			session,
+			frameNow(world, id),
+			interior,
+			world.gameTime,
+		);
 		// Asserted unconditionally rather than as "skippable whenever its type's
 		// flag is set" — §12.2 argues that is always true, so the conditional
 		// form has no reachable false branch and a regression that made a first
@@ -276,23 +384,48 @@ describe("§12.6 obligation 5 — every launch is skippable", () => {
 		expect(out.session.phase).toBe("flying");
 	});
 
-	test("the arrival is not skippable, because E4 has no store yet", () => {
-		// **Not a decision reversed — a dependency unmet.** §12.7's joint 6:
-		// E4's four booleans are a typed domain `persistent-world-state.md` must
-		// approve and bound, and §6 of that spec explicitly does not bound this
-		// class. So the arrival ships unskippable and E4 is a follow-up; this row
-		// fails the day someone wires a skip without the store.
+	test("an arrival can be skipped too, and it lands at the reserved berth", () => {
+		// **§13.3 retired E4 rather than implementing it.** The old row here
+		// asserted the arrival was *not* skippable, because the per-type novelty
+		// flags had no bounded store; the gate is gone, so there is nothing left
+		// to store and the skip is unconditional on both sides.
 		const { world, id } = spinningWorld();
 		const e = entryOn(world, id);
+		const { interior, berth } = berthFor(world, id, BERTH_ID);
 		const session = enterArrival(
 			id,
 			e.frame,
+			interior,
+			berth,
 			e.rel,
 			e.attitude,
 			world.gameTime,
 		);
-		expect(canSkipTraversal(session)).toBe(false);
-		expect(skipTraversal(session, world.gameTime)).toBe(session);
+		expect(canSkipTraversal(session)).toBe(true);
+		const skipped = skipTraversal(session, world.gameTime);
+		const out = stepDockedWorld(world, skipped, 1 / 60);
+		expect(out.session.phase).toBe("docked");
+		expect(out.session.berthId).toBe(berth.id);
+		// **At the berth**, not merely in the docked state: a skip that flipped
+		// the phase without re-basing the law would place the ship from nowhere.
+		const body = world.system.byId.get(id);
+		if (!body || !out.ship) throw new Error("station or ship missing");
+		const frame = frameNow(world, id);
+		const rel = sub(out.ship.pos, body.pos);
+		const basis = slotBasis(frame);
+		const want = berthCentre(berth);
+		// A centimetre. The ship's position is a difference of two AU-scale
+		// vectors, so float64's own spacing there is tens of micrometres and the
+		// figure below is the arithmetic's floor rather than the law's error —
+		// four orders under the smallest thing §13 talks about either way.
+		const TOLERANCE_KM = 1e-5;
+		expect(Math.abs(dot(rel, frame.axis) - want.axial)).toBeLessThan(
+			TOLERANCE_KM,
+		);
+		expect(Math.abs(dot(rel, basis.across) - want.across)).toBeLessThan(
+			TOLERANCE_KM,
+		);
+		expect(Math.abs(dot(rel, basis.up) - want.up)).toBeLessThan(TOLERANCE_KM);
 	});
 });
 
@@ -301,18 +434,24 @@ describe("§12.6 obligation 4 — the world keeps running while docked", () => {
 		const { world, id } = spinningWorld();
 		const e = entryOn(world, id);
 		const t0 = world.gameTime;
-		let session = enterArrival(id, e.frame, e.rel, e.attitude, world.gameTime);
-		session = run(world, session, ARRIVAL_SECONDS + 0.5).session;
+		const { interior, berth } = berthFor(world, id, BERTH_ID);
+		let session = enterArrival(
+			id,
+			e.frame,
+			interior,
+			berth,
+			e.rel,
+			e.attitude,
+			world.gameTime,
+		);
+		session = run(world, session, TRAVERSAL_MAX).session;
 		const tDocked = world.gameTime;
 		const dockedFor = 600;
 		run(world, session, dockedFor);
 		// **No compression** (#10): sim seconds pass one for one, through the
 		// arrival and through ten minutes of sitting still.
 		expect(world.gameTime - tDocked).toBeCloseTo(dockedFor, 6);
-		expect(world.gameTime - t0).toBeCloseTo(
-			dockedFor + ARRIVAL_SECONDS + 0.5,
-			6,
-		);
+		expect(world.gameTime - t0).toBeCloseTo(dockedFor + TRAVERSAL_MAX, 6);
 	});
 
 	test("the bodies move along their orbits across a docked interval", () => {
@@ -321,8 +460,17 @@ describe("§12.6 obligation 4 — the world keeps running while docked", () => {
 		// never ran, and the system would stand still around the player.
 		const { world, id } = spinningWorld();
 		const e = entryOn(world, id);
-		let session = enterArrival(id, e.frame, e.rel, e.attitude, world.gameTime);
-		session = run(world, session, ARRIVAL_SECONDS + 0.5).session;
+		const { interior, berth } = berthFor(world, id, BERTH_ID);
+		let session = enterArrival(
+			id,
+			e.frame,
+			interior,
+			berth,
+			e.rel,
+			e.attitude,
+			world.gameTime,
+		);
+		session = run(world, session, TRAVERSAL_MAX).session;
 		const before = new Map(
 			[...world.system.byId].map(([k, b]) => [k, { ...b.pos }]),
 		);
@@ -341,11 +489,19 @@ describe("§12.6 obligation 9 — a parked ship holds station", () => {
 	test("after ten minutes it is still at the docked position, in the station's frame", () => {
 		const { world, id } = spinningWorld();
 		const e = entryOn(world, id);
-		let session = enterArrival(id, e.frame, e.rel, e.attitude, world.gameTime);
-		const arrived = run(world, session, ARRIVAL_SECONDS + 0.5);
+		const { interior, berth } = berthFor(world, id, BERTH_ID);
+		let session = enterArrival(
+			id,
+			e.frame,
+			interior,
+			berth,
+			e.rel,
+			e.attitude,
+			world.gameTime,
+		);
+		const arrived = run(world, session, TRAVERSAL_MAX);
 		session = arrived.session;
-		const station = stationOf(world.system, id);
-		const want = dockedAxialKm(STATION_GEOMETRY[station.type]);
+		const want = berthCentre(berth);
 
 		const out = run(world, session, 600);
 		const body = world.system.byId.get(id);
@@ -363,17 +519,29 @@ describe("§12.6 obligation 9 — a parked ship holds station", () => {
 		// distance from the star, not the ship's from the docked position. One
 		// millimetre is four orders under the smallest thing §12 talks about.
 		const TOLERANCE_KM = 1e-6;
-		expect(Math.abs(dot(rel, frame.axis) - want)).toBeLessThan(TOLERANCE_KM);
-		expect(Math.abs(dot(rel, across))).toBeLessThan(TOLERANCE_KM);
-		expect(Math.abs(dot(rel, up))).toBeLessThan(TOLERANCE_KM);
+		expect(Math.abs(dot(rel, frame.axis) - want.axial)).toBeLessThan(
+			TOLERANCE_KM,
+		);
+		expect(Math.abs(dot(rel, across) - want.across)).toBeLessThan(TOLERANCE_KM);
+		expect(Math.abs(dot(rel, up) - want.up)).toBeLessThan(TOLERANCE_KM);
+		// The berth this station handed out is genuinely off the axis, so the row
+		// above is not passing on a law that parks everything on the centreline.
+		expect(Math.hypot(want.across, want.up)).toBeGreaterThan(0);
 		// And the station really did move, so the row above is not passing on a
 		// stationary world.
 		expect(
 			length(sub(out.ship.pos, arrived.ship?.pos ?? body.pos)),
 		).toBeGreaterThan(100);
-		// Its velocity is the station's, exactly — a docked ship is carried.
+		// **Carried, and spun.** A berth is off the axis, so a parked ship's
+		// station-frame velocity is the station's plus the rotation term — the
+		// old docked position sat on the axis and had none.
 		const stationVel = bodyVelocity(world.system, id, world.gameTime);
-		for (const k of ["x", "y", "z"] as const)
-			expect(out.ship.vel[k]).toBe(stationVel[k]);
+		const spinRadPerS =
+			(2 * Math.PI * stationOf(world.system, id).spinRpm) / 60;
+		const lateral = length(sub(out.ship.vel, stationVel));
+		expect(lateral).toBeCloseTo(
+			Math.hypot(want.across, want.up) * spinRadPerS,
+			9,
+		);
 	});
 });

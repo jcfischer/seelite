@@ -21,6 +21,12 @@ import {
 	type StationAperture,
 	type StationType,
 } from "./station";
+import {
+	type Berth,
+	type HullEnvelope,
+	type StationInterior,
+	chooseBerth,
+} from "./station-interior";
 import { type Vec3, add, cross, dot, length, scale, sub, v3 } from "./vec3";
 
 // ---------------------------------------------------------------------------
@@ -99,32 +105,20 @@ export const HOSTILE_COOLDOWN_S = 600;
 export const REPEL_OFFSET_KM = 0.01;
 
 /**
- * **E3** (`docs/specs/docking.md` §12.1): the successful entry's arrival is
- * four to six seconds — a range to tune inside rather than a point value.
+ * **E3, as §13.3 re-fixed it**: a traversal is about six seconds to a near
+ * berth and about nine to a deep one.
  *
- * Here rather than beside whatever draws a docked screen, because the arrival
- * is this module's subject and #77's law will be written against it. A screen
- * stating M4's negative — *the console is not up during those seconds* — reads
- * these; it does not own them.
+ * The old figures — a 4–6 s band resolved to 5 — priced one straight run down a
+ * throat. §13.3's route is three legs to a berth that is off the axis, and its
+ * length is what the duration is interpolated on (`traversalSeconds`), so these
+ * are the endpoints of a measurement rather than a lookup keyed on the band.
+ *
+ * Here rather than in `arrival.ts`, beside the tolerances the rest of the
+ * docking interaction is stated in: `state-gallery.ts` reads them too, and one
+ * tuning decision with two import paths is one a retune can miss.
  */
-export const ARRIVAL_SECONDS_MIN = 4;
-export const ARRIVAL_SECONDS_MAX = 6;
-
-/**
- * The shipped duration, seconds — E3's range resolved to a value.
- *
- * **Here rather than in `arrival.ts`, beside the bounds it has to sit inside.**
- * One tuning decision with two import paths is two places a retune can be made
- * and one of them can be missed; `state-gallery.ts` already reads the bounds
- * from this module, and the law reads all three.
- *
- * The middle of the band rather than either end: E3 chose a range explicitly so
- * that moving inside it is a tuning change and not a decision, and §12.7's
- * joint 1 records that the number is a judgement about a loop nobody has flown
- * forty times. `tests/arrival.test.ts` pins it inside the band, which is what
- * makes a retune to twelve seconds a failure rather than a preference.
- */
-export const ARRIVAL_SECONDS = 5;
+export const TRAVERSAL_SECONDS_NEAR = 6;
+export const TRAVERSAL_SECONDS_DEEP = 9;
 
 /**
  * **#8's constant, standing in.** The absolute damage scale is
@@ -648,24 +642,51 @@ export interface DockingState {
 	/** `gameTime` at which §6's interim cooldown clears the flip. `null` when
 	 *  the station is not hostile. #8 replaces the timer, not the field. */
 	hostileUntilS: number | null;
+	/**
+	 * The berth this ship holds (§13.2), or `null` when it holds none.
+	 *
+	 * **Separate from the grant rather than carried on it.** §13.2 makes the
+	 * reservation survive a failed entry *while the grant remains live*, and
+	 * makes it outlive the grant through arrival, docking and launch — so it is
+	 * neither a field of `granted` nor a field of the dock session. It is
+	 * released by `releaseBerth`, which the outward aperture crossing calls.
+	 */
+	berthId: string | null;
 }
 
 export const newDockingState = (): DockingState => ({
 	clearance: { kind: "none" },
 	hostile: false,
 	hostileUntilS: null,
+	berthId: null,
 });
+
+/**
+ * Give the berth back (§13.2): on the outward crossing that ends a launch, and
+ * on a grant that expired or was cancelled without being used.
+ *
+ * A verb rather than a field write at each site, because the three sites are in
+ * three modules and a reservation released in two of them is a station that
+ * slowly fills up with ships that left.
+ */
+export const releaseBerth = (state: DockingState): DockingState =>
+	state.berthId === null ? state : { ...state, berthId: null };
 
 export interface ClearanceRequest {
 	gameTime: number;
 	rangeKm: number;
+	/** The station's berth catalogue (§13.2) — what a grant reserves out of. */
+	interior: StationInterior;
+	/** The requesting ship's envelope. Fit is geometric, so the protocol needs
+	 *  the box rather than a size class. */
+	hull: HullEnvelope;
 	/**
-	 * How many ships hold the slot (§6.1). Injected, and that is a build
+	 * Which berths other ships hold (§6.1, §13.2). Injected, and that is a build
 	 * obligation rather than a placeholder: NPC traffic is #8's and unbuilt, so
 	 * without an injected input the queued branch would be unexercised code from
 	 * the day it was written.
 	 */
-	occupancy: number;
+	occupied: ReadonlySet<string>;
 	/** #13 §5.1.1's shipyard contraband scan. The predicate behind it is #8's;
 	 *  requesting clearance is the moment it lands (§6). */
 	scanFails?: boolean;
@@ -695,12 +716,31 @@ export function requestClearance(
 			hostile: true,
 			hostileUntilS: req.gameTime + HOSTILE_COOLDOWN_S,
 		};
-	if (req.occupancy > 0)
-		return { ...state, clearance: { kind: "queued", position: req.occupancy } };
+	// **The grant *is* the reservation** (§13.2). A protocol that granted first
+	// and assigned a berth on arrival could grant to a ship nothing fits, which
+	// is the one case §13.2 answers with a queue rather than a denial.
+	const berth = berthFor(req);
+	if (!berth)
+		return {
+			...state,
+			clearance: { kind: "queued", position: req.occupied.size },
+		};
 	return {
 		...state,
 		clearance: { kind: "granted", expiresAtS: req.gameTime + GRANT_WINDOW_S },
+		berthId: berth.id,
 	};
+}
+
+/** The berth a request would be given, or `null` when none is free that fits.
+ *  One spelling, read by the request and by the promotion in `tickDocking`. */
+function berthFor(req: {
+	interior: StationInterior;
+	hull: HullEnvelope;
+	occupied: ReadonlySet<string>;
+	gameTime: number;
+}): Berth | null {
+	return chooseBerth(req.interior, req.hull, req.occupied, req.gameTime);
 }
 
 /** Whether a grant is live at `gameTime` — the first half of §6's entry
@@ -720,7 +760,11 @@ export function grantLive(state: DockingState, gameTime: number): boolean {
 export function tickDocking(
 	state: DockingState,
 	gameTime: number,
-	occupancy: number,
+	traffic: {
+		interior: StationInterior;
+		hull: HullEnvelope;
+		occupied: ReadonlySet<string>;
+	},
 ): DockingState {
 	let next = state;
 	if (
@@ -735,12 +779,18 @@ export function tickDocking(
 	)
 		// Expiry returns to `none` rather than to `denied`: re-request is free
 		// (§6), and a denial the player did not earn would read as one they did.
-		next = { ...next, clearance: { kind: "none" } };
-	if (next.clearance.kind === "queued" && occupancy === 0)
-		next = {
-			...next,
-			clearance: { kind: "granted", expiresAtS: gameTime + GRANT_WINDOW_S },
-		};
+		// **The reservation goes with it** (§13.2): an unused grant that lapses
+		// must not leave a berth held by a ship that never arrived.
+		next = releaseBerth({ ...next, clearance: { kind: "none" } });
+	if (next.clearance.kind === "queued") {
+		const berth = berthFor({ ...traffic, gameTime });
+		if (berth)
+			next = {
+				...next,
+				clearance: { kind: "granted", expiresAtS: gameTime + GRANT_WINDOW_S },
+				berthId: berth.id,
+			};
+	}
 	return next;
 }
 

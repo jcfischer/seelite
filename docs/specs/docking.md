@@ -749,6 +749,13 @@ shared by aperture kind, has no landing control or collision, and closes an
 inner gate only after the scripted arrival parks. That keeps the six checks as
 the only skill test while making the docked payoff legible.
 
+> **Superseded by §13.1 (node #136, ratified 2026-08-30).** Every station now
+> has a role-scaled enclosed interior with several berths, shared by *role*
+> rather than by aperture kind, and the inner gate is gone: the interior is
+> unpressurized, with no opaque door, and the aperture frame stays visible from
+> every berth. What survives is E1's reason — a parked free-look must read as a
+> destination — and the boundaries it kept.
+
 **Decision E2: crossing the plane hands the ship over.** The arrival is
 scripted and nothing can fail during it, for both halves of one reason: the
 skill test ended at the crossing, and a player who flew a clean entry and then
@@ -769,6 +776,19 @@ Two consequences that decide implementations:
 seconds, a range to tune inside rather than a point value.** Chosen against a two-second handover. The approach is the game's
 central skill loop and what it ends in should be worth having flown. §7's
 amendment is what keeps this from reopening D4.
+
+> **Re-fixed by §13.3 (node #136): about six seconds to a near berth and about
+> nine to a deep one.** The old band priced one straight run down a throat; the
+> route is three legs to a berth off the axis now, and the duration is
+> interpolated on the route's own length rather than looked up by band. E3's
+> reason is unchanged and is what fixed the *lower* end at six.
+
+> **Retired by §13.3 (node #136): both traversals are unconditionally
+> skippable.** The per-type novelty gate below has nothing left to gate — an
+> arrival's skip completes at the reserved berth, a launch's outside the
+> aperture — so the four per-galaxy booleans are not stored, and the typed
+> domain this section asked `persistent-world-state.md` to bound does not need
+> bounding. The reasoning is kept because it is what the retirement answers.
 
 **Decision E4: it is skippable once the player has arrived at that *type* of
 station before.** Not per station: E7's throat is shared, so a per-station gate
@@ -1248,3 +1268,184 @@ of check that stops being evidence, and §12.7 records that it fails open until
    frame — and the plate is visible, textured, 48 m wide and 23 m ahead of the
    camera. `probe-dock-arrival.mjs` prints the figure and asserts nothing about
    it, because a check whose failure nobody understands is not a check.
+
+
+## 13. The station interior
+
+**Ratified with the principal on 2026-08-30, on node
+[#136](https://github.com/jcfischer/seelite/issues/136)**, and built by
+[#147](https://github.com/jcfischer/seelite/issues/147). It supersedes §12's
+E1/E7/E8 presentation of a shared throat and an exterior touchdown deck, and
+re-fixes E3 and E4. Everything else §12 decided stands: the post-check handover,
+suspended flight while docked, station-local motion, the collision exemption,
+the running world clock, and the station console's ownership.
+
+The trigger was playtest feedback against the docked view #138 shipped: a flat
+closure at the end of the aperture does not read as a hangar.
+
+### 13.1 Shared topology
+
+Every station has a procedural **station interior** beyond its exterior
+aperture: a role-scaled enclosed volume expressed in the aperture frame, with a
+permanently clear central transit lane running from the open mouth to a staging
+point and berths arranged around it. The exterior form continues to own
+silhouette, aperture transform and physical scale; the interior alters neither
+the exterior geometry nor the docking-entry checks.
+
+**The lane is the aperture carried inward.** Its cross-section is the aperture's
+own rectangle, which is what makes §12.6's obligation 7 hold through the first
+leg: a ship that crossed the plane is inside the lane and cannot leave it before
+the staging point.
+
+**The interior is unpressurized. There is no opaque door and no energy
+curtain.** The aperture frame and the station-name shield are visible from every
+berth, so the route back to space is always recognisable. #138's docked gate is
+removed by this, and E11's interior shield moves from the throat's end wall — a
+surface that no longer exists — to the **mouth bulkhead**, facing the berths,
+which is where a ship parked nose-outward can read it. That also retires the
+symptom §12.7's joint 9 records as #131.
+
+### 13.2 Berths, fit, and allocation
+
+Three berth families: **open deck pad**, **wall-side berth**, and **recessed
+service cradle**. They change presentation and parked pose, never the docking
+interaction.
+
+| Role | Allowed families | V1 capacity |
+| --- | --- | ---: |
+| trade | deck or wall | 8 |
+| shipyard | wall or cradle | 6 |
+| refinery | deck or cradle | 4 |
+| outpost | deck or wall | 2 |
+
+A berth address is **interior face × depth band**: deck, port wall, starboard
+wall or overhead; near or deep. Trade fills all eight addresses. Shipyards use
+four side berths and two deep cradles. Refineries use two deck pads and two deep
+cradles. Outposts use one deck pad and one station-seeded side berth. The
+central transit axis is never a berth.
+
+**Fit is geometric, not a parallel S/M/L taxonomy.** Each berth declares a clear
+length, beam and height after safety margin, and accepts a ship exactly when
+that envelope contains the hull's geometric envelope. Capital hulls retain their
+established non-docking rule, and they are refused by this predicate rather than
+by a rule about capitals.
+
+**The cell is role-scaled, and the outpost is why.** The receipt scales the
+volume by role and fixes the capacities; it fixes no cell size, and one cell for
+every role does not survive the outpost, whose core is 150 m and whose aperture
+is 120 m across — a bay sized for a miner would be larger than the station it is
+cut into. So an outpost's berths are smaller, and the two largest ordinary hulls
+are turned away by the ordinary fit predicate. `src/station-interior.ts`'s
+`BERTH_CELL` is the table; `tests/station-interior.test.ts` measures it against
+the hull roster rather than against a typed list of names.
+
+**Clearance atomically reserves a currently free, fitting berth** — the grant
+*is* the reservation. Among candidates it chooses the least spare envelope,
+preserving larger capacity; equal fits use a deterministic station-local order
+rotated by clearance-request time. If no fitting berth is free, clearance
+**queues** rather than grants, which is the only state that queues now.
+
+The reservation survives a failed entry while its grant remains live, is held
+through arrival, docking and launch, and releases when the ship crosses the
+aperture outward. An unused reservation releases when its grant expires or is
+cancelled. Berth reservation is separate from approach-corridor occupancy;
+future traffic consumes both contracts.
+
+### 13.3 Arrival, parked state, and launch
+
+The successful crossing begins one scripted traversal of three legs:
+
+1. axial travel through the mouth to the central staging point;
+2. translation and roll toward the reserved face and depth band;
+3. a normal settle onto the assigned deck, wall, overhead berth or cradle.
+
+Parked, the ship **points outward** along the aperture axis and its local up
+points away from the berth surface. Wall and overhead addresses therefore create
+distinct roll attitudes while the exit remains straight ahead — which is why a
+launch no longer turns the ship round inside the bay, and settles the roll
+instead. Launch reverses the same route, keeps the reservation until the outward
+aperture crossing, and restores flight controls only after that crossing.
+
+**Traversal duration scales with route length**: about six seconds for a near
+berth to nine seconds for a deep one, interpolated on the route's own length
+between the shortest and longest the station's catalogue can produce. A station
+with one depth band has no spread and every route takes the near figure.
+
+**Both traversals are unconditionally skippable.** An arrival's skip completes
+at the reserved berth; a launch's completes outside the aperture and releases
+the reservation. This retires E4's per-type novelty gate and its persisted seen
+flags, and supersedes the open follow-up that was to bound their storage
+([#125](https://github.com/jcfischer/seelite/issues/125)).
+
+Cockpit remains the default traversal camera, with head-look available and
+flight controls inert. The ordinary player-controlled `V` toggle may switch to
+the chase camera, whose existing orbit controls remain available. No cinematic
+camera is forced. The station console appears only after the ship settles, and
+launch remains owned by the right Flight console.
+
+### 13.4 Interior identity
+
+Interiors extend the exterior role grammar rather than introducing a second
+palette:
+
+| Role | Interior treatment |
+| --- | --- |
+| trade | clean tight plating, warm windows, cargo markings |
+| shipyard | coarse structure, cold work lights, gantries |
+| refinery | sooted plating, pipes, vent machinery, heat glow |
+| outpost | sparse coarse panels, exposed utilities, minimal neutral lighting |
+
+**Light identifies role only.** It never encodes clearance, occupancy,
+hostility, or danger state — the same rule §5 states for the exterior.
+
+### 13.5 Verification obligations
+
+**Headless** (`tests/station-interior.test.ts`, `tests/arrival.test.ts`,
+`tests/dock-session.test.ts`, `tests/docking.test.ts`):
+
+1. Each role's catalogue has exactly its ratified capacity, distinct addresses,
+   and only families its palette allows.
+2. The central transit lane is clear of every berth, and no two berths overlap.
+3. Every berth lies inside the enclosed volume, and the volume lies inside the
+   drawn station.
+4. The fit predicate admits every ordinary hull at a full-size berth and neither
+   capital, measured against the hull roster.
+5. Allocation picks the least spare envelope, never an occupied berth, rotates
+   equal fits with the request time, and returns nothing at a full station.
+6. The reservation survives a failed entry under a live grant, is released by a
+   lapsed grant, and is released by the outward crossing.
+7. The traversal ends at the reserved berth's centre with the parked pose, and
+   its duration lies in the ratified band.
+8. A skip lands an arrival at the berth and a launch outside the plane.
+
+**Browser** (`scripts/probe-dock-arrival.mjs`): the bay is enclosed from a
+parked free-look, the mouth is open from inside, and the interior name shield
+draws pixels.
+
+**Human** (§13.6): the seven canonical frames. Automated checks may prove
+geometry, fit, deterministic assignment, reservation lifetime, traversal
+endpoints and the clear lane; whether the result *reads* as a hollow station is
+a judgement the principal makes in front of a frame.
+
+### 13.6 The human acceptance set
+
+Seven frames:
+
+1. trade arrival in cockpit, mid-transfer to a deep overhead berth;
+2. the same station docked forward, with console and open mouth legible;
+3. the same berth under free-look, showing bay depth and other berths;
+4. the same station launching in chase view;
+5. shipyard free-look from a wall berth;
+6. refinery free-look from a service cradle;
+7. an outpost interior workbench view, because outposts are not generated live.
+
+The first four prove the full transition. The final three prove that role,
+family and location produce distinct interiors.
+
+### 13.7 Boundaries
+
+No on-foot mode, manual interior flight, second docking test, downloaded asset,
+general interior collision system, exterior silhouette change, or market and
+equipment ownership change. NPC traffic is deliberately a later decision, and
+when it lands it must reuse berth fit, reservation and corridor occupancy rather
+than inventing a parallel docking model.

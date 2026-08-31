@@ -28,8 +28,8 @@ import {
 	STATION_TYPES,
 	type StationType,
 } from "../src/station";
+import { stationInterior } from "../src/station-interior";
 import {
-	HANGAR_GATE_NAME,
 	NAMEPLATE_NAME,
 	SELECTED_FORM,
 	STATION_FORMS,
@@ -38,11 +38,7 @@ import {
 	buildStationForm,
 	buildStationMesh,
 } from "../src/station-mesh";
-import {
-	dockedAxialKm,
-	drawnThroatDepthKm,
-	throatDepthKm,
-} from "../src/arrival";
+import { berthCentre } from "../src/arrival";
 
 // From `station.ts`, not a literal: a fourth station type must reach every
 // loop in this file, and a hand-written list is exactly the place it would not.
@@ -171,7 +167,7 @@ describe("the parts the probe and the renderer look up by name", () => {
 				const { root } = buildStationForm(type, form.id, GREY);
 				expect(root.getObjectByName("core")).toBeDefined();
 				expect(root.getObjectByName("aperture")).toBeDefined();
-				expect(root.getObjectByName("aperture-mouth")).toBeDefined();
+				expect(root.getObjectByName("station-interior")).toBeDefined();
 			}
 		}
 	});
@@ -185,8 +181,10 @@ describe("the parts the probe and the renderer look up by name", () => {
 			const { root, spinner } = buildStationForm("shipyard", form.id, GREY);
 			expect(root.getObjectByName("frame")).toBeDefined();
 			expect(spinner.getObjectByName("frame")).toBeUndefined();
-			// And the slot *is* inside it, or the phase drives nothing.
-			expect(spinner.getObjectByName("aperture-mouth")).toBeDefined();
+			// And the bay *is* inside it, or the phase drives nothing — a berth is
+			// off the axis, so a bay outside the spinner would leave a parked ship
+			// behind as the station turned.
+			expect(spinner.getObjectByName("station-interior")).toBeDefined();
 		}
 	});
 
@@ -207,20 +205,16 @@ describe("the meshes are built in the table's units", () => {
 		// at and what #9's checks measure, and it is invisible on screen.
 		for (const type of TYPES) {
 			const { root } = buildStationMesh(type, GREY);
-			root.updateMatrixWorld(true);
-			const mouth = root.getObjectByName("aperture-mouth") as THREE.Mesh;
-			expect(mouth).toBeDefined();
-			const box = new THREE.Box3().setFromObject(mouth);
-			const size = box.getSize(new THREE.Vector3());
+			const opening = apertureOpening(root);
 			const core = STATION_GEOMETRY[type].coreRadiusKm;
 			// Six digits, not nine: the vertices are float32 by the time they are
 			// read back, so nine would be asserting the storage format rather than
 			// the dimension. A slot 1% wrong fails this by four orders of magnitude.
-			expect(size.x * core).toBeCloseTo(
+			expect(opening.widthKm * core).toBeCloseTo(
 				STATION_GEOMETRY[type].aperture.widthKm,
 				6,
 			);
-			expect(size.y * core).toBeCloseTo(
+			expect(opening.heightKm * core).toBeCloseTo(
 				STATION_GEOMETRY[type].aperture.heightKm,
 				6,
 			);
@@ -230,13 +224,11 @@ describe("the meshes are built in the table's units", () => {
 	test("the aperture sits on the +Z face, which is the axis the caller aims", () => {
 		for (const type of TYPES) {
 			const { root } = buildStationMesh(type, GREY);
-			root.updateMatrixWorld(true);
-			const mouth = root.getObjectByName("aperture-mouth") as THREE.Mesh;
-			const centre = mouth.getWorldPosition(new THREE.Vector3());
-			expect(centre.z).toBeGreaterThan(0);
+			const opening = apertureOpening(root);
+			expect(opening.planeZ).toBeGreaterThan(0);
 			// On the axis, not off it: an off-axis slot turns the roll match into a
 			// lateral intercept at above-gate speed (`docking.md` §4.2).
-			expect(Math.hypot(centre.x, centre.y)).toBeLessThan(1e-6);
+			expect(Math.hypot(opening.centreX, opening.centreY)).toBeLessThan(1e-6);
 		}
 	});
 });
@@ -316,22 +308,17 @@ describe("§7's secondary cue, and the detail that is not the identity", () => {
 		}
 	});
 
-	test("the aperture mouth is not coplanar with the face it is cut into", () => {
+	test("the bay's mouth bulkhead is not coplanar with the bars in front of it", () => {
 		// Coplanar faces z-fight, and the symptom is a slot that flickers as the
 		// station turns — which reads as the aperture not being there.
 		for (const type of TYPES) {
 			const { root } = buildStationMesh(type, GREY);
-			root.updateMatrixWorld(true);
-			const mouth = root.getObjectByName("aperture-mouth") as THREE.Mesh;
-			const box = new THREE.Box3().setFromObject(mouth);
-			const bars = root.getObjectByName("aperture") as THREE.Object3D;
-			const barZ = Math.max(
-				...bars.children
-					.filter((c) => c.name !== "aperture-mouth")
-					.map((c) => c.position.z),
-			);
-			expect(box.max.z).toBeGreaterThan(barZ - 0.5);
-			expect(box.max.z).not.toBeCloseTo(barZ, 9);
+			const opening = apertureOpening(root);
+			const [panel] = interiorOf(root, "interior-bulkhead");
+			const box = new THREE.Box3().setFromObject(panel);
+			// Behind the bars, and by a real span rather than a rounding.
+			expect(box.max.z).toBeLessThan(opening.planeZ);
+			expect(box.max.z).not.toBeCloseTo(opening.planeZ, 9);
 		}
 	});
 });
@@ -445,8 +432,8 @@ describe("nothing stands in the way of the thing you fly through", () => {
 		const core = STATION_GEOMETRY[type].coreRadiusKm;
 		const { widthKm, heightKm } = STATION_GEOMETRY[type].aperture;
 		const radius = Math.hypot(widthKm, heightKm) / 2;
-		const mouth = root.getObjectByName("aperture-mouth") as THREE.Mesh;
-		const front = new THREE.Box3().setFromObject(mouth).max.z * core;
+		// The aperture plane, read off the bars' own centre — they straddle it.
+		const front = apertureOpening(root).planeZ * core;
 		const found = new Map<string, number>();
 		const v = new THREE.Vector3();
 		const instance = new THREE.Matrix4();
@@ -502,108 +489,149 @@ describe("nothing stands in the way of the thing you fly through", () => {
 });
 
 /**
- * `docs/specs/docking.md` §12.4's **E7/E8** and §12.5's **E10** — the parts of
- * the arrival that are geometry.
+ * `docs/specs/docking.md` §13's interior and §12.5's **E10** — the parts of the
+ * arrival that are geometry.
  *
- * The *pixels* are §12.6's browser rows: whether the throat reads as depth and
+ * The *pixels* are §13.5's browser rows: whether the bay reads as enclosed and
  * whether the shield is legible are things only a rendered frame answers. What
- * is arithmetic, and therefore belongs here, is that every form has the parts
- * at all and that they are sized from `STATION_GEOMETRY` rather than authored.
+ * is arithmetic, and therefore belongs here, is that every form has the parts at
+ * all and that they are sized from the sim's own catalogue rather than authored.
  */
-describe("§12.4 E7/E8 — every form gets a throat or a deck", () => {
-	const interiorOf = (root: THREE.Object3D, name: string) => {
-		const found: THREE.Mesh[] = [];
-		root.traverse((o) => {
-			if (o.name === name && o instanceof THREE.Mesh) found.push(o);
-		});
-		return found;
+/**
+ * The opening the four aperture bars frame, in mesh units.
+ *
+ * **Measured off the drawn bars rather than off a marker.** The dark mouth box
+ * this replaces was a solid rectangle sized from the table, so every row that
+ * looked it up was reading the table back; §13.1 removed it, because a solid
+ * rectangle at the aperture stands in front of the bay behind it. The bars are
+ * what is actually drawn around the hole, and their *inner* edges are the hole.
+ *
+ * The two uprights are taller than they are wide and the two rails the reverse,
+ * which is how they are told apart without a fifth name.
+ */
+function apertureOpening(root: THREE.Object3D) {
+	root.updateMatrixWorld(true);
+	const boxes = interiorOf(root, "aperture-light").map((bar) =>
+		new THREE.Box3().setFromObject(bar),
+	);
+	if (boxes.length !== 4) throw new Error(`${boxes.length} aperture bars`);
+	const size = (b: THREE.Box3) => b.getSize(new THREE.Vector3());
+	const uprights = boxes.filter((b) => size(b).y > size(b).x);
+	const rails = boxes.filter((b) => size(b).y <= size(b).x);
+	const right = Math.min(...uprights.map((b) => b.min.x).filter((x) => x > 0));
+	const left = Math.max(...uprights.map((b) => b.max.x).filter((x) => x < 0));
+	const top = Math.min(...rails.map((b) => b.min.y).filter((y) => y > 0));
+	const bottom = Math.max(...rails.map((b) => b.max.y).filter((y) => y < 0));
+	const z =
+		boxes.reduce((a, b) => a + b.getCenter(new THREE.Vector3()).z, 0) / 4;
+	return {
+		widthKm: right - left,
+		heightKm: top - bottom,
+		centreX: (right + left) / 2,
+		centreY: (top + bottom) / 2,
+		planeZ: z,
 	};
+}
 
-	test("a pad-bearing form has a deck and a slot-bearing one does not", () => {
-		for (const type of TYPES) {
-			const kind = STATION_GEOMETRY[type].aperture.kind;
+/** Every mesh in a form carrying one name. */
+const interiorOf = (root: THREE.Object3D, name: string) => {
+	const found: THREE.Mesh[] = [];
+	root.traverse((o) => {
+		if (o.name === name && o instanceof THREE.Mesh) found.push(o);
+	});
+	return found;
+};
+
+describe("§13.1 — every form gets a bay", () => {
+	test("every form gets one bay, whatever its aperture kind", () => {
+		// **§13.1 replaced E7/E8's split.** A slot used to get a throat and a pad
+		// a touchdown deck, decided by `aperture.kind`; the interior is shared by
+		// *role* now, so the shell is unconditional and the row that asserted the
+		// split would go red on the thing it was written to protect.
+		for (const type of TYPES)
 			for (const form of STATION_FORMS[type]) {
 				const { root } = buildStationForm(type, form.id, GREY);
-				const decks = interiorOf(root, "aperture-deck");
-				// E7/E8: **which forms get what is decided by `aperture.kind`**,
-				// not by a list — so this is asserted per type from the geometry
-				// table rather than against names written out here. A slot's
-				// throat is not a part of its own: it *is* the recess, which the
-				// row below measures.
-				expect([`${type} ${form.id}`, decks.length]).toEqual([
+				expect([
 					`${type} ${form.id}`,
-					kind === "pad" ? 1 : 0,
-				]);
+					interiorOf(root, "interior-shell").length,
+				]).toEqual([`${type} ${form.id}`, 1]);
 			}
+	});
+
+	test("the drawn bay spans exactly the volume the sim declares", () => {
+		// **Read from `station-interior.ts`, not restated.** The drawn shell and
+		// the law that flies down it must be the same box, or the ship parks in a
+		// wall — and a test with its own copy of the numbers would not notice.
+		//
+		// **Close, not equal.** A geometry's positions are `Float32Array`, so a
+		// 0.256 km depth comes back a few ULPs off — the buffer's precision
+		// rather than a discrepancy. Six decimal places on a kilometre is a
+		// millimetre, four orders under anything §13 talks about.
+		for (const type of TYPES) {
+			const interior = stationInterior(type, STATION_GEOMETRY[type]);
+			const { root } = buildStationForm(type, SELECTED_FORM[type], GREY);
+			root.updateMatrixWorld(true);
+			const [shell] = interiorOf(root, "interior-shell");
+			const core = STATION_GEOMETRY[type].coreRadiusKm;
+			const box = new THREE.Box3().setFromObject(shell);
+			expect([type, (box.max.z * core).toFixed(6)]).toEqual([
+				type,
+				interior.mouthAxialKm.toFixed(6),
+			]);
+			expect([type, (box.min.z * core).toFixed(6)]).toEqual([
+				type,
+				interior.endAxialKm.toFixed(6),
+			]);
+			expect(box.max.x * core).toBeCloseTo(interior.halfAcrossKm, 6);
+			expect(box.max.y * core).toBeCloseTo(interior.halfUpKm, 6);
 		}
 	});
 
-	test("a slot's recess is the throat, at the law's depth", () => {
+	test("every berth the sim hands out has a drawn pad under it", () => {
+		// The seam nothing else can see: the catalogue is arithmetic and the bay
+		// is geometry, and a berth with no pad is a ship settling onto nothing.
 		for (const type of TYPES) {
-			const aperture = STATION_GEOMETRY[type].aperture;
-			if (aperture.kind !== "slot") continue;
-			for (const form of STATION_FORMS[type]) {
-				const { root } = buildStationForm(type, form.id, GREY);
-				root.updateMatrixWorld(true);
-				// **The recess itself**, because §12.4's throat extends it rather
-				// than standing behind it — a second box behind a solid mouth
-				// draws nothing at all, which is what the first build did and
-				// what `probe-dock-arrival.mjs`'s ink measurement caught.
-				const [throat] = interiorOf(root, "aperture-mouth");
-				const core = STATION_GEOMETRY[type].coreRadiusKm;
-				const size = new THREE.Box3()
-					.setFromObject(throat)
-					.getSize(new THREE.Vector3())
-					.multiplyScalar(core);
-				// **Read from `arrival.ts`, not restated.** The drawn throat and the
-				// sim law that flies down it must be the same depth, or the ship
-				// parks in a wall — and a test with its own copy of the number
-				// would not notice.
-				// **Close, not equal.** A geometry's positions are `Float32Array`,
-				// so a 0.28 km depth comes back as 0.2800000011920929 — the
-				// buffer's precision rather than a discrepancy. Six decimal places
-				// on a kilometre is a millimetre, which is four orders under
-				// anything §12 talks about.
-				const label = `${type} ${form.id}`;
-				// **The drawn depth, which is the travelled depth plus the room a
-				// parked ship needs.** `dockedAxialKm` is where the ship's *origin*
-				// stops; a recess ending there puts its nose through the wall.
-				expect([label, size.z.toFixed(6)]).toEqual([
-					label,
-					drawnThroatDepthKm(aperture).toFixed(6),
-				]);
-				expect(size.x).toBeCloseTo(aperture.widthKm, 6);
-				expect(size.y).toBeCloseTo(aperture.heightKm, 6);
-			}
+			const interior = stationInterior(type, STATION_GEOMETRY[type]);
+			const { root } = buildStationForm(type, SELECTED_FORM[type], GREY);
+			for (const berth of interior.berths)
+				expect([
+					type,
+					berth.id,
+					!!root.getObjectByName(`berth-${berth.id}`),
+				]).toEqual([type, berth.id, true]);
 		}
 	});
 
-	test("only a slot has a closed-dock hangar gate", () => {
-		for (const type of TYPES) {
-			const kind = STATION_GEOMETRY[type].aperture.kind;
+	test("no station has an inner gate, at any detail level", () => {
+		// **§13.1's negative, as a row.** #138 closed a door behind a docked ship
+		// and the ratified interior is unpressurized: the aperture frame and the
+		// name shield stay visible from every berth, which a door makes false.
+		for (const type of TYPES)
 			for (const form of STATION_FORMS[type]) {
-				const mesh = buildStationForm(type, form.id, GREY);
-				expect([`${type} ${form.id}`, mesh.hangarGate?.name ?? null]).toEqual([
+				const { root } = buildStationForm(type, form.id, GREY);
+				const gates: string[] = [];
+				root.traverse((object) => {
+					if (/gate|door/i.test(object.name)) gates.push(object.name);
+				});
+				expect([`${type} ${form.id}`, gates]).toEqual([
 					`${type} ${form.id}`,
-					kind === "slot" ? HANGAR_GATE_NAME : null,
+					[],
 				]);
-				if (mesh.hangarGate) expect(mesh.hangarGate.visible).toBe(false);
 			}
-		}
 	});
 });
 
 describe("§12.5 E10/E11 — the shields are geometry here and pixels elsewhere", () => {
-	test("a slot carries two shields and a pad one", () => {
+	test("every station carries two shields, mouth and bulkhead", () => {
 		for (const type of TYPES) {
-			const kind = STATION_GEOMETRY[type].aperture.kind;
 			for (const form of STATION_FORMS[type]) {
 				const mesh = buildStationForm(type, form.id, GREY);
-				// **E11: at the mouth *and* inside the throat.** A pad has no
-				// inside, so it carries the mouth plate alone.
+				// **E11 as §13.1 re-sited it: at the mouth *and* on the bulkhead
+				// inside.** A pad used to carry the mouth plate alone, because it
+				// had no inside; every role has one now.
 				expect([`${type} ${form.id}`, mesh.nameplates.length]).toEqual([
 					`${type} ${form.id}`,
-					kind === "slot" ? 2 : 1,
+					2,
 				]);
 				for (const plate of mesh.nameplates)
 					expect(plate.name).toBe(NAMEPLATE_NAME);
@@ -699,90 +727,66 @@ describe("§128 — the hull comes up to the plane the checks read", () => {
 	});
 });
 
-describe("§12.2 — the docked position is inside the drawn recess", () => {
-	/** Where the form cuts its aperture, and how far its recess reaches, in km
-	 *  from the station's centre. */
-	const recessKm = (type: StationType, formId: StationFormId) => {
+describe("§13.5 row 3 — every berth is inside the drawn bay", () => {
+	/** The drawn shell's span, in km from the station's centre. */
+	const shellKm = (type: StationType, formId: StationFormId) => {
 		const { root } = buildStationForm(type, formId, GREY);
 		root.updateMatrixWorld(true);
 		const core = STATION_GEOMETRY[type].coreRadiusKm;
-		const recess = root.getObjectByName(
-			STATION_GEOMETRY[type].aperture.kind === "slot"
-				? "aperture-mouth"
-				: "aperture-deck",
-		) as THREE.Mesh;
-		const box = new THREE.Box3().setFromObject(recess);
-		return { nearKm: box.max.z * core, farKm: box.min.z * core };
-	};
-	/**
-	 * **Two rules, because E8 makes the presentation two.** A slot swallows the
-	 * ship, so the docked position must lie *within* the recess. A pad is an
-	 * exterior deck, so the ship sits **at** its face — within ten metres of it,
-	 * either side.
-	 *
-	 * **Either side, and that is not sloppiness.** §12.2 sinks a pad's docked
-	 * position "a hair inside the deck" deliberately, because the plane is §3's
-	 * evaluation surface and a ship parked exactly on it rests on the boundary
-	 * of the surface its own checks are read at. On the shipped refinery that
-	 * hair is 3 m, inside a 12 m plate — so the docked position is *below* the
-	 * deck's top face by construction, and a rule reading "never below it" would
-	 * be a rule this geometry breaks on purpose. The band is what the check can
-	 * honestly say: the ship is at the deck rather than somewhere else on the
-	 * station.
-	 */
-	const PAD_MARGIN_KM = 0.01;
-	const holdsTheShip = (type: StationType, formId: StationFormId) => {
-		const { nearKm, farKm } = recessKm(type, formId);
-		const parked = dockedAxialKm(STATION_GEOMETRY[type]);
-		return STATION_GEOMETRY[type].aperture.kind === "slot"
-			? parked <= nearKm && parked >= farKm
-			: parked <= nearKm + PAD_MARGIN_KM && parked >= nearKm - PAD_MARGIN_KM;
+		const shell = root.getObjectByName("interior-shell") as THREE.Object3D;
+		const box = new THREE.Box3().setFromObject(shell);
+		return {
+			nearKm: box.max.z * core,
+			farKm: box.min.z * core,
+			halfAcrossKm: box.max.x * core,
+			halfUpKm: box.max.y * core,
+		};
 	};
 
-	test("the form the game ships parks the ship inside its own recess", () => {
-		// **The seam between the two tiers, which nothing had asserted.**
-		// `dockedAxialKm` is measured from the **docking plane**, which is
-		// `coreRadiusKm`; the recess is cut at the form's own aperture face,
-		// wherever its geometry has a surface. They are different quantities and
-		// a form may move one without the other — so a form whose face sits well
-		// inside the core parks the ship in solid hull, and no test in either
-		// tier would have said so.
-		// **Every type, the outpost included.** It was excluded until #128,
-		// because its selected form cut its deck somewhere other than the plane
-		// and the row would have failed on a form no system places. Declaring
-		// the plane fixed that at the same time as everything else, so the
-		// exclusion is gone rather than carried.
-		for (const type of TYPES)
-			expect([type, holdsTheShip(type, SELECTED_FORM[type])]).toEqual([
-				type,
-				true,
-			]);
+	test("the form the game ships parks every ship inside its own bay", () => {
+		// **The seam between the two tiers, which nothing had asserted before
+		// #128 and which a berth makes three-dimensional.** The catalogue is
+		// measured from the declared plane; the bay is drawn at the form's own
+		// aperture face, wherever its geometry has a surface. They are different
+		// quantities and a form may move one without the other.
+		for (const type of TYPES) {
+			const interior = stationInterior(type, STATION_GEOMETRY[type]);
+			const shell = shellKm(type, SELECTED_FORM[type]);
+			for (const berth of interior.berths) {
+				const parked = berthCentre(berth);
+				const inside =
+					parked.axial <= shell.nearKm + 1e-6 &&
+					parked.axial >= shell.farKm - 1e-6 &&
+					Math.abs(parked.across) <= shell.halfAcrossKm + 1e-6 &&
+					Math.abs(parked.up) <= shell.halfUpKm + 1e-6;
+				expect([type, berth.id, inside]).toEqual([type, berth.id, true]);
+			}
+		}
 	});
 
-	test("and the alternates that cannot are exactly the known one", () => {
-		// **All of them are forms that cut their aperture somewhere other than
-		// `aperturePlaneKm`.** Since #128 that is exactly what this row means:
-		// the geometry table declares where the plane is, the *selected* form of
-		// each role cuts there, and an alternate is free to put its own aperture
-		// wherever its silhouette wants — the Ring on a hub at a third of the
-		// core radius, the outposts on decks of their own. Those forms cannot
-		// hold a ship the checks park by the plane, and selecting one is the
-		// change that has to answer for it.
-		//
-		// The list grew when the plane moved, and one name left it: `outpost a`
-		// was on it *and* was its role's selected form, which was only harmless
-		// because §12.7's joint 5 records that no outpost is generated. It holds
-		// the ship now.
-		const cannot: string[] = [];
+	test("an alternate form's bay meets its own aperture, not the table's", () => {
+		// **Why the builder takes a face rather than reading the table.** The
+		// workbench's alternates cut their aperture wherever their silhouette
+		// wants — the Ring on a hub at a third of the core radius — and a bay
+		// built against `aperturePlaneKm` would hang in space in front of them.
+		// Selecting one of these forms is still a change that has to answer for
+		// the sim's own catalogue; what this row asserts is that the *drawn* bay
+		// is never detached from the *drawn* opening.
 		for (const type of TYPES)
-			for (const form of STATION_FORMS[type])
-				if (!holdsTheShip(type, form.id)) cannot.push(`${type} ${form.id}`);
-		expect(cannot).toEqual([
-			"trade b",
-			"trade c",
-			"refinery c",
-			"outpost b",
-			"outpost c",
-		]);
+			for (const form of STATION_FORMS[type]) {
+				const { root } = buildStationForm(type, form.id, GREY);
+				root.updateMatrixWorld(true);
+				const core = STATION_GEOMETRY[type].coreRadiusKm;
+				const [aperture] = interiorOf(root, "aperture-light");
+				const mouth = new THREE.Box3().setFromObject(aperture).max.z * core;
+				const shell = shellKm(type, form.id);
+				const label = `${type} ${form.id}`;
+				// The bay's mouth is the aperture's own plane, to within the bar's
+				// half-thickness — they are built from one number.
+				expect([label, Math.abs(shell.nearKm - mouth) < 0.02]).toEqual([
+					label,
+					true,
+				]);
+			}
 	});
 });

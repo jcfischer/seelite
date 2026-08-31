@@ -154,7 +154,7 @@ describe("a detail level may not change the outline", () => {
 			const built = buildStationMesh(type, GREY);
 			for (const level of LEVELS) {
 				setStationDetail(built, level);
-				for (const name of ["core", "aperture", "aperture-mouth"]) {
+				for (const name of ["core", "aperture", "station-interior"]) {
 					const part = built.root.getObjectByName(name);
 					expect(part).toBeDefined();
 					// `visible` is per-object, so an ancestor switched off would leave
