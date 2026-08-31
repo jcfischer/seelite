@@ -317,7 +317,13 @@ const session = [
 	"lastExit",
 	"targetId",
 ].map((field) => [field, back[field], booted[field]]);
-const wrong = session.filter(([, got, want]) => got !== want);
+// `undefined !== undefined` is false, so a field renamed on `Game` would make
+// both sides `undefined` and the check would go green having compared nothing —
+// on the one field the headless tier does not cover. A missing read is a
+// failure, not a match.
+const wrong = session.filter(
+	([, got, want]) => got === undefined || got !== want,
+);
 check(
 	"and the session state is a fresh boot's",
 	wrong.length === 0,
@@ -335,9 +341,13 @@ check(
 	// Against the clock *before* the reset, and against zero — not against a
 	// fraction of the leg. A reset that left the bodies at 40% of the leg would
 	// have satisfied the first version of this check, and 40% of a leg is a `t`
-	// the seed-481 classification was never run at. The tolerance is one frame
-	// because this page keeps stepping between the reset and this read: the
-	// snapshot above was taken at 0.1 s for the same reason.
+	// the seed-481 classification was never run at.
+	//
+	// The margin is **ten** max-length frames, not one: `dt` is `MAX_DT`, which
+	// is also `animate`'s per-frame clamp, so this admits 1.0 s of rAF slack
+	// across the CDP round trip between the reset and this read. Wide, and
+	// deliberately so — the leg it is separating from is 66 s. An earlier
+	// version of this comment said one frame while the code said ten.
 	back.gameTime < clear.gameTimeAtEnd && back.gameTime <= dt * 10,
 	`${back.gameTime.toFixed(2)} s, down from ${clear.gameTimeAtEnd.toFixed(1)} s at the end of the leg`,
 );

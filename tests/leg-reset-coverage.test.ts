@@ -64,6 +64,20 @@ const LEG_PATH = [
 	"selectable",
 ];
 
+/**
+ * Methods a leg runs through whose **assignments** are session state but whose
+ * in-place mutations are not.
+ *
+ * `render` is the case, and the split is the map's constraint rather than a
+ * convenience: the scene graph is display only, and nothing reads a position
+ * back out of an `Object3D`. So `this.nearScene.add(...)` is not state a second
+ * leg could inherit, while `this.frames++` — which is what put `render` on this
+ * list — plainly is. Scanning it for both would demand an exemption line for
+ * every scene object the frame touches, and a list of seven exemptions reads as
+ * coverage while guarding nothing.
+ */
+const DISPLAY_PATH = ["render"];
+
 /** The body of a one-tab-indented method, by brace matching. */
 function methodBody(source: string, name: string): string {
 	const head = new RegExp(
@@ -96,6 +110,10 @@ const NOT_RESET: Record<string, string> = {
 	audio:
 		"the WebAudio engine is a device, not world state — a leg asks it to make " +
 		"noises and leaves nothing on it a second leg could read",
+	frames:
+		"a monotonic count of frames drawn since boot, read by the probes' own " +
+		"boot wait — rewinding it would make `bootedGame` wait again for a page " +
+		"that never left, and nothing in the sim reads it",
 };
 
 /**
@@ -108,12 +126,18 @@ const NOT_RESET: Record<string, string> = {
  */
 const RESTORED_BY: Record<string, string> = { orientation: "faceTheStar" };
 
-/** `this.foo =`, `this.foo +=`, `this.foo -=` — assignments, not reads, and not
- *  `===`. */
+/**
+ * `this.foo =`, and every compound form: `+= -= *= /= ??= ||= &&=`, `++`, `--`.
+ *
+ * The increment forms are here because `render` writes `this.frames++` and the
+ * first version of this pattern covered only `= += -=`, so that write was
+ * invisible to a test claiming to list everything the leg path writes.
+ * Deliberately not matching bare `==` or `===`.
+ */
 const assignedFields = (body: string) => {
 	const out = new Set<string>();
 	for (const [, name] of body.matchAll(
-		/this\.([A-Za-z_$][\w$]*)\s*(?:=[^=]|\+=|-=)/g,
+		/this\.([A-Za-z_$][\w$]*)\s*(?:=[^=]|\+\+|--|[+\-*/%]=|\?\?=|\|\|=|&&=)/g,
 	))
 		out.add(name);
 	return out;
@@ -129,17 +153,24 @@ const mutatedFields = (body: string) => {
 	return out;
 };
 
-/** Every field the declared leg path writes, by either mechanism. */
-const acrossLegPath = (extract: (body: string) => Set<string>) => {
+/** Every field the named methods write, by whichever mechanism `extract` reads. */
+const across = (names: string[], extract: (body: string) => Set<string>) => {
 	const out = new Set<string>();
-	for (const name of LEG_PATH)
+	for (const name of names)
 		for (const field of extract(methodBody(main, name))) out.add(field);
 	return out;
 };
 
 /** Computed once: each call re-reads ten method bodies out of the largest file
  *  in the project. */
-const MUTATED = acrossLegPath(mutatedFields);
+const MUTATED = across(LEG_PATH, mutatedFields);
+const ASSIGNED = new Set([
+	...across(LEG_PATH, assignedFields),
+	...across(DISPLAY_PATH, assignedFields),
+]);
+
+/** Likewise: four tests read this same body. */
+const RESET_BODY = methodBody(main, "resetToStart");
 
 test("every method the reset is declared against exists", () => {
 	// Its own test because the failure is different in kind: a renamed method
@@ -151,16 +182,17 @@ test("every method the reset is declared against exists", () => {
 });
 
 test("resetToStart assigns every field the flight path assigns", () => {
-	const written = acrossLegPath(assignedFields);
+	const written = ASSIGNED;
 
 	// The premise. Without it a scan that found no methods, or a regex that
 	// stopped matching, would pass by finding nothing to check — the failure mode
 	// where a green run means the check has stopped running.
 	expect(written.size).toBeGreaterThan(10);
 
-	const restored = assignedFields(methodBody(main, "resetToStart"));
-	const missing = [...written].filter((f) => !restored.has(f)).sort();
-	expect(missing).toEqual([]);
+	const restored = assignedFields(RESET_BODY);
+	expect(
+		[...written].filter((f) => !NOT_RESET[f] && !restored.has(f)).sort(),
+	).toEqual([]);
 });
 
 test("resetToStart deals with every field the flight path mutates in place", () => {
@@ -173,7 +205,7 @@ test("resetToStart deals with every field the flight path mutates in place", () 
 	const mutated = MUTATED;
 	expect(mutated.size).toBeGreaterThan(0);
 
-	const body = methodBody(main, "resetToStart");
+	const body = RESET_BODY;
 	const handled = (f: string) =>
 		NOT_RESET[f] ||
 		body.includes(`this.${f}`) ||
@@ -185,7 +217,7 @@ test("every declared restorer is a real method the reset calls", () => {
 	// Without this, `RESTORED_BY` is a way to silence the scan by naming a method
 	// that does not exist or is never called — an exemption wearing a fix's
 	// clothes.
-	const body = methodBody(main, "resetToStart");
+	const body = RESET_BODY;
 	for (const [field, method] of Object.entries(RESTORED_BY)) {
 		expect(() => methodBody(main, method)).not.toThrow();
 		expect(body).toContain(`this.${method}()`);
@@ -193,12 +225,12 @@ test("every declared restorer is a real method the reset calls", () => {
 	}
 });
 
-test("every exemption names a field the flight path actually mutates", () => {
+test("every exemption names a field the leg path actually writes", () => {
 	// An exemption for a field nothing writes is dead weight that reads as
-	// coverage: it makes the list look considered while guarding nothing.
-	const mutated = MUTATED;
+	// coverage: it makes the list look considered while guarding nothing. Either
+	// mechanism counts — `audio` is mutated in place, `frames` is incremented.
 	for (const field of Object.keys(NOT_RESET))
-		expect(mutated.has(field)).toBe(true);
+		expect(MUTATED.has(field) || ASSIGNED.has(field)).toBe(true);
 });
 
 test("resetToStart hands the world half to sim.ts", () => {
@@ -206,7 +238,7 @@ test("resetToStart hands the world half to sim.ts", () => {
 	// `resetWorldToStart` owns those and `tests/world-reset.test.ts` is what
 	// proves them right. A second spelling here is a second answer to where boot
 	// state is.
-	const body = methodBody(main, "resetToStart");
+	const body = RESET_BODY;
 	expect(body).toContain("resetWorldToStart(this.world)");
 	expect(body).not.toContain("arrivalPoint");
 	expect(body).not.toContain("gameTime =");

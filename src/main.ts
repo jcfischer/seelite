@@ -1542,7 +1542,7 @@ class Game {
 		// rather than a rail, but a cruise panel with an empty target field on
 		// boot reads as broken, and the nearest station is what a ship at the
 		// arrival point is there to reach.
-		this.targetId = this.nearestOfKind("station")?.id ?? null;
+		this.selectBootTarget();
 		this.refreshScannerContacts();
 
 		this.composer = new EffectComposer(this.renderer);
@@ -3935,6 +3935,21 @@ class Game {
 	 * clock, the bodies and the arrival point. Neither the reasoning nor the
 	 * values are restated here; what is left is this class's own session state.
 	 *
+	 * ## On being reachable from a production console
+	 *
+	 * `private` is erased at runtime and this instance is published whole as
+	 * `window.__seelite`, which is why the combat rig's loop control took three
+	 * attempts to place and why `probe-boot.mjs` walks the prototype chain to
+	 * keep it off. This method is deliberately *not* held to that, and the
+	 * difference is the state each one leaves behind. Stopping the frame loop
+	 * puts the page somewhere the game never goes and cannot leave. A rewind
+	 * lands in exactly the state boot produces — the same expressions, the same
+	 * `selectBootTarget` — and the loop keeps running. It also adds no reach: the
+	 * ship, the clock and the whole session are already writable fields on the
+	 * published object, so anything this method can do was already a few
+	 * assignments away. #89's save/load will want this shape rather than a
+	 * probe-only one.
+	 *
 	 * ## Why the list is long
 	 *
 	 * Because a short one would be wrong. `tests/leg-reset-coverage.test.ts`
@@ -3949,6 +3964,23 @@ class Game {
 	 * moves the clock backwards — a value stamped at t=900 and read at t=0 is
 	 * being asked something a forward-only game never asks it.
 	 */
+	/**
+	 * What is selected on frame one.
+	 *
+	 * One method with two callers — the constructor and `resetToStart` — because
+	 * it was briefly two copies and they diverged immediately: the reset set
+	 * `null` while a boot selects the nearest station, and a browser check with
+	 * its own hardcoded `null` reported that as boot state for five runs. The
+	 * name scan in `tests/leg-reset-coverage.test.ts` compares names, not
+	 * values, and would never have caught it. One expression cannot disagree
+	 * with itself.
+	 */
+	private selectBootTarget() {
+		// Something is selected on frame one: a cruise panel with an empty target
+		// field on boot reads as broken.
+		this.targetId = this.nearestOfKind("station")?.id ?? null;
+	}
+
 	resetToStart() {
 		resetWorldToStart(this.world);
 
@@ -3962,14 +3994,11 @@ class Game {
 		this.lastLegS = null;
 		this.lastExit = "";
 		// Selection is not written by the flight path, so the coverage scan does
-		// not ask for it. It is here because this method's claim is boot state
-		// rather than the scan's floor — and it is **the constructor's line**, not
-		// a null. A first version set null, which is a state no boot produces: the
-		// constructor selects the nearest station, because a cruise panel with an
-		// empty target field on boot reads as broken. The probe's session check
-		// had a hardcoded `null` of its own and agreed with that bug for five
-		// green runs, which is the failure `startState`'s docblock names.
-		this.targetId = this.nearestOfKind("station")?.id ?? null;
+		// not ask for it, and it is not spelled here either — the constructor and
+		// this method call the same `selectBootTarget`. Two copies is how the
+		// first version came to set `null`, a state no boot produces, and stay
+		// green for five runs.
+		this.selectBootTarget();
 
 		this.rates = { pitch: 0, yaw: 0, roll: 0 };
 		this.mouseDx = 0;
