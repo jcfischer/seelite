@@ -295,12 +295,13 @@ export function stepDockedWorld(
 		? (2 * Math.PI * station.spinRpm) / 60
 		: 0;
 
-	const interior = interiorOfStation(station);
-
 	if (session.phase === "docked") {
 		if (!session.berthId)
 			throw new Error(`docked at ${id} with no berth reserved`);
-		const berth = berthOf(interior, session.berthId);
+		// **Inside the branch that reads it.** Hoisted above, it was an allocated
+		// catalogue on every traversal frame that nothing used — the kind of dead
+		// computation a bare `void` documents rather than removes.
+		const berth = berthOf(interiorOfStation(station), session.berthId);
 		// **Placed, not interpolated.** Obligation 9's long interval is exactly
 		// this: the station translates at orbital speed and spins the whole time,
 		// and a docked position integrated from where the ship was would drift
@@ -336,7 +337,6 @@ export function stepDockedWorld(
 
 	const law = session.law;
 	if (!law) return { session: newDockSession(), ship: null };
-	void interior;
 	const u = arrivalProgress(law, world.gameTime);
 	const rel = arrivalRel(law, u, pose.phaseRad);
 	const vel = arrivalRelVelocity(law, u, pose.phaseRad, spinRadPerS);

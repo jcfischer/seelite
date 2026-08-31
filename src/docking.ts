@@ -781,6 +781,17 @@ export function tickDocking(
 		interior: StationInterior;
 		hull: HullEnvelope;
 		occupied: ReadonlySet<string>;
+		/**
+		 * Whether this ship's own dock session is at *this* station — arriving,
+		 * docked or launching.
+		 *
+		 * **Because the expiry below would otherwise evict a parked ship.**
+		 * §13.2 holds the reservation "through arrival, docking and launch", and
+		 * a grant is only 600 s: a player who sat docked for eleven minutes lost
+		 * the berth they were standing in. `tickDocking` has no view of the dock
+		 * session, so the caller supplies the one bit it needs.
+		 */
+		sessionHere?: boolean;
 	},
 ): DockingState {
 	let next = state;
@@ -796,9 +807,12 @@ export function tickDocking(
 	)
 		// Expiry returns to `none` rather than to `denied`: re-request is free
 		// (§6), and a denial the player did not earn would read as one they did.
-		// **The reservation goes with it** (§13.2): an unused grant that lapses
-		// must not leave a berth held by a ship that never arrived.
-		next = releaseBerth({ ...next, clearance: { kind: "none" } });
+		// **The reservation goes with it** (§13.2) — *unless the ship is in
+		// it*: an unused grant that lapses must not leave a berth held by a ship
+		// that never arrived, and a used one must not evict a ship that did.
+		next = traffic.sessionHere
+			? { ...next, clearance: { kind: "none" } }
+			: releaseBerth({ ...next, clearance: { kind: "none" } });
 	if (next.clearance.kind === "queued") {
 		const berth = berthFor({ ...traffic, gameTime });
 		if (berth)

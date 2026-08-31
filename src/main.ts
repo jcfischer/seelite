@@ -329,17 +329,6 @@ const PLAYER_ENVELOPE = HULL_VISUALS[PLAYER_HULL[0]];
  *  rather than allocated per station per frame. */
 const EMPTY_BERTHS: ReadonlySet<string> = new Set<string>();
 
-/** Where a session's berth parks a ship, axial km, or `null` when it holds
- *  none. On the page for the probe tier, so nothing there rebuilds a
- *  catalogue. */
-function berthAxialOf(
-	interior: StationInterior,
-	berthId: string | null,
-): number | null {
-	if (!berthId) return null;
-	return berthCentre(berthOf(interior, berthId)).axial;
-}
-
 /**
  * How fast the chase camera swings round the hull while a key is held.
  *
@@ -2001,7 +1990,16 @@ class Game {
 				// below is the same for every body regardless of kind.
 				// `body.color` is `STATION_COLORS[station.type]` — §7's secondary
 				// cue, which the mesh paints its hull with.
-				const built = buildStationMesh(station.type, body.color);
+				// **The station's own berth draw**, not the default: the drawn bay
+				// and the sim's catalogue have to agree about which side an
+				// outpost's seeded berth is on, and a mesh built at seed 0 while
+				// `interiorOfStation` reads `station.berthSeed` puts the ship on a
+				// berth with no pad under it.
+				const built = buildStationMesh(
+					station.type,
+					body.color,
+					station.berthSeed,
+				);
 				mesh = built.root;
 				// **E10's other half.** `station-mesh.ts` built the shields as
 				// geometry and supplied no pixels, because that module is
@@ -3453,7 +3451,31 @@ class Game {
 	 * berth is on the other wall from the one the ship parks in.
 	 */
 	interiorOf(id: string): StationInterior {
-		return interiorOfStation(stationOf(this.world.system, id));
+		// **Memoised, because the protocol tick reads it for every station every
+		// frame.** `stationInterior` maps `ROLE_BERTHS` into up to eight fresh
+		// `Berth` records with two offsets each; the argument it replaced was a
+		// map lookup, and the line two below it already treats one map write per
+		// station per frame as a cost worth avoiding.
+		//
+		// Safe to cache: the catalogue is a pure function of the station's type,
+		// its geometry and its `berthSeed`, none of which changes over a
+		// session. The map is cleared with the rest of the per-system state when
+		// the system changes.
+		const cached = this.interiors.get(id);
+		if (cached) return cached;
+		const built = interiorOfStation(stationOf(this.world.system, id));
+		this.interiors.set(id, built);
+		return built;
+	}
+
+	private readonly interiors = new Map<string, StationInterior>();
+
+	/** How long the traversal in progress takes, seconds, or `null` when none
+	 *  is (§13.3). On the page because the duration is priced on the *route* —
+	 *  a caller scaling by a constant is scaling by the wrong one for any berth
+	 *  but the shortest. */
+	get dockTraversalSeconds(): number | null {
+		return this.dock.law?.durationS ?? null;
 	}
 
 	/** The berth ids one station offers (§13.2), so a probe asks the sim which
@@ -3624,6 +3646,14 @@ class Game {
 		// the probe tier — `probe-dock-arrival.mjs` calls it inside a loop of
 		// several thousand simulated frames — and `stationOf` walks the contents.
 		const station = stationOf(this.world.system, target);
+		const interior = this.interiorOf(target);
+		// The berth this ship holds **at this station** — `null` at any other,
+		// which is what keeps the three fields below from asking one station's
+		// catalogue for another station's address.
+		const heldBerth =
+			this.dock.stationId === target
+				? (this.dock.berthId ?? state.berthId)
+				: state.berthId;
 		return {
 			stationId: target,
 			rangeKm: length(pose.rel),
@@ -3670,12 +3700,21 @@ class Game {
 			// where the ship parks in it. A probe reading `berthId` against
 			// `berthAxialKm` is reading the reservation the sim placed the ship
 			// by rather than re-deriving a catalogue of its own.
-			berthId: this.dock.berthId ?? state.berthId,
-			berthAxialKm: berthAxialOf(this.interiorOf(target), this.dock.berthId),
-			berthUp: this.dock.berthId
+			// **All three read one source and one catalogue.** `berthId` fell back
+			// to the protocol state while the other two read the session's, so a
+			// probe comparing them was comparing two different berths — and
+			// `berthOf` throws on an address the target's catalogue does not
+			// have, so a snapshot of a *different* station while docked
+			// (`overhead-near` against a refinery) aborted the run rather than
+			// answering.
+			berthId: heldBerth,
+			berthAxialKm: heldBerth
+				? berthCentre(berthOf(interior, heldBerth)).axial
+				: null,
+			berthUp: heldBerth
 				? recomposeDirection(
 						frame,
-						berthOf(this.interiorOf(target), this.dock.berthId).normal,
+						berthOf(interior, heldBerth).normal,
 						frame.phaseRad,
 					)
 				: null,
@@ -3719,6 +3758,7 @@ class Game {
 				interior: this.interiorOf(id),
 				hull: PLAYER_ENVELOPE,
 				occupied: this.occupiedAt(id),
+				sessionHere: this.dock.stationId === id && this.dock.phase !== "flying",
 			});
 			// `tickDocking` returns the same reference when nothing fired, which is
 			// most frames of most stations. Writing it back anyway is a map write

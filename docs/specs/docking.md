@@ -1442,14 +1442,24 @@ Seven frames:
 The first four prove the full transition. The final three prove that role,
 family and location produce distinct interiors.
 
-**Two of the seven are workbench frames, and the fixture is why.** `SEED` 47 —
-the canonical view set's pinned seed — generates a trade station and a shipyard
-and nothing else, so frames 6 and 7 are both captured from
-`?model-viewer=station`, framed from inside the role's own bay. Re-pinning the
-seed was the alternative and was declined: the eight views that predate this
-node are framed against it and #129's before/after figures were measured on it.
-The `SEED` docstring's claim of "one station of each kind" was written for
-`probe-arrival.mjs`'s purposes and is false of the station roster.
+**Two of the seven are not captured the way this list reads, and the fixture is
+why.** `SEED` 47 — the canonical view set's pinned seed — generates a trade
+station and a shipyard and nothing else. So **frame 6 names its own seed** (2,
+the lowest whose start system carries all three generated types) and is an
+in-game chase view from the cradle; **frame 7 is a workbench frame**, captured
+from `?model-viewer=station` looking in through the aperture, because no system
+generates an outpost at all and the workbench's stage always looks at the
+origin. Re-pinning `SEED` was the alternative and was declined: the eight views
+that predate this node are framed against it and #129's before/after figures
+were measured on it. The `SEED` docstring's claim of "one station of each kind"
+was written for `probe-arrival.mjs`'s purposes and is false of the station
+roster.
+
+**Frames 3 and 5 are chase views rather than cockpit free looks**, for a reason
+that belongs to #143 rather than to this contract: a docked cockpit carries a
+console on every wall, so a head turn shows the Navigation or Flight console and
+no bay at all. The chase camera is the only view in the game from which a parked
+ship's surroundings are visible.
 
 ### 13.7 Boundaries
 

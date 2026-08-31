@@ -59,7 +59,8 @@ npm run views -- --label after       # again, with the change
 open view-set/index.html             # the contact sheet, side by side
 ```
 
-Fifteen views on a fixed seed, declared in `scripts/lib/view-set.mjs` — each names
+Fifteen views on a fixed seed — bar one that declares its own — in
+`scripts/lib/view-set.mjs`, each naming
 the levers it is evidence for, and `tests/view-set.test.ts` goes red if a lever
 in that file has no view. It cannot check that the view *shows* the surface, nor
 that a lever added to the map reached the file; both are a person's job, which
@@ -103,8 +104,10 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
 - **A bay wider than the form that holds it pokes through the hull, and no
   headless check can see it.** A hull mesh is `FrontSide`, so a ray cast from
   inside passes straight through and reports nothing.
-  `BAY_HALF_LIMIT_KM` is the per-form cap, authored beside the catalogue, and
-  the evidence for each figure is a frame in the canonical view set.
+  `BAY_HALF_LIMIT_KM` is the cap, authored beside the catalogue. It is keyed on
+  the **role** and reasoned from that role's *selected* form, so the two
+  alternates each role carries inherit a figure no frame shows — a ranking round
+  that selects one of them owes it a look.
 - **A body's render layer is its distance, not its kind** — near within
   `HANDOFF_KM` of the camera, far beyond it, with a hysteresis band. Anything
   that adds a drawn object inherits this rather than picking a layer.

@@ -26,9 +26,12 @@
  * The fixture, pinned three ways. All three are decisions, not defaults.
  *
  * `SEED` is 47 because `probe-arrival.mjs` already chose it as the geometry
- * fixture: one station of each kind in a single system, a 7,046 km rocky world
- * and a 33,002 km gas giant. A sheet wants the same thing an arrival probe
- * wants — several subjects reachable without flying anywhere.
+ * fixture: a 7,046 km rocky world and a 33,002 km gas giant, with subjects
+ * reachable without flying anywhere. **Not one station of each kind**, which
+ * this docstring claimed until #147 tried to frame a refinery in it: seed 47
+ * generates a trade station and a shipyard and nothing else. The claim was
+ * written for `probe-arrival.mjs`'s purposes, where "kind" is the aperture's —
+ * slot and pad — and both of those are present.
  *
  * `GAME_TIME_S` is pinned because **bodies move**: positions are
  * `f(systemSeed, gameTime)` (`src/sim.ts:23`), so an unpinned clock draws a
@@ -98,7 +101,13 @@ export const SHOT_KINDS = Object.freeze([
 ]);
 
 /**
- * Fifteen views, one seed, one clock.
+ * Fifteen views, one clock, and — with one declared exception — one seed.
+ *
+ * **The exception is `refinery-cradle-berth`, and it names its own.** `SEED` 47
+ * generates no refinery, so that view carries `seed: 2` and its capture
+ * navigates. Saying "one seed" of this set would be the class of claim this
+ * file's own capture code refuses: a caption asserting a fixture property the
+ * frames do not have.
  *
  * #98 named four as a starting list and called it a proposal. Two things are
  * added here and both close a hole that list had. **`sky-only`**, because #100's

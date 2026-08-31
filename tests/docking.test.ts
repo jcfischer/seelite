@@ -592,6 +592,23 @@ describe("§9.1.9 the clearance state machine", () => {
 		expect(releaseBerth(denied).clearance).toEqual(denied.clearance);
 	});
 
+	test("a lapsed grant does not evict the ship standing in the berth", () => {
+		// §13.2 holds the reservation "through arrival, docking and launch", and
+		// a grant is only 600 s — so a player who sat docked for eleven minutes
+		// lost the berth they were parked in. `tickDocking` has no view of the
+		// dock session, so the caller supplies the one bit it needs.
+		const granted = requestClearance(newDockingState(), REQ);
+		const held = tickDocking(granted, GRANT_WINDOW_S, {
+			...TRAFFIC,
+			sessionHere: true,
+		});
+		expect(held.clearance).toEqual({ kind: "none" });
+		expect(held.berthId).toBe(granted.berthId);
+		// And with no ship there, the lapsed grant still gives the berth back.
+		const freed = tickDocking(granted, GRANT_WINDOW_S, TRAFFIC);
+		expect(freed.berthId).toBeNull();
+	});
+
 	test("a grant reserves one berth, and a bounce does not give it back", () => {
 		const granted = requestClearance(newDockingState(), REQ);
 		expect(granted.berthId).not.toBeNull();

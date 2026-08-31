@@ -117,6 +117,32 @@ const STRUCTURE_COLOR: Record<StationType, number> = {
 const glowMaterial = (color: number) =>
 	new THREE.MeshBasicMaterial({ color, toneMapped: false });
 
+/**
+ * The four rectangles that fill the gap between an outer half-extent and an
+ * inner one, as `[width, height, x, y]`.
+ *
+ * One rule, two consumers: the mouth bulkhead is the wall the opening is cut
+ * in, and the lane-edge strips are the lit rim of that opening. Both are "the
+ * four sides of a rectangle", and two hand-written four-entry tables encode
+ * that rule twice — which is two places a sign error can live.
+ *
+ * The rails run the full outer width and the uprights fill what is left, so the
+ * four pieces tile the frame without overlapping at the corners.
+ */
+function ringAround(
+	outer: { across: number; up: number },
+	inner: { across: number; up: number },
+): [number, number, number, number][] {
+	const lipUp = outer.up - inner.up;
+	const lipAcross = outer.across - inner.across;
+	return [
+		[outer.across * 2, lipUp, 0, (outer.up + inner.up) / 2],
+		[outer.across * 2, lipUp, 0, -(outer.up + inner.up) / 2],
+		[lipAcross, inner.up * 2, (outer.across + inner.across) / 2, 0],
+		[lipAcross, inner.up * 2, -(outer.across + inner.across) / 2, 0],
+	];
+}
+
 const box = (
 	w: number,
 	h: number,
@@ -165,76 +191,39 @@ export function buildStationInterior(
 	// is wider than the aperture, so what an arriving ship flies through is a
 	// rectangle cut in the near wall — and it is that wall the interior name
 	// shield is mounted on, facing every berth.
-	const lipAcross = interior.halfAcrossKm - interior.laneHalfAcrossKm;
 	const lipUp = interior.halfUpKm - interior.laneHalfUpKm;
-	// **Sunk a tenth of a plate behind the mouth**, not flush with it: the
-	// aperture bars straddle the plane and overlap this panel laterally, and two
-	// coplanar front faces there z-fight — the symptom is a slot that flickers
-	// as the station turns, which reads as the aperture not being there.
-	const bulkheadZ = interior.mouthAxialKm - plate * 0.6;
-	for (const [w, h, x, y] of [
-		[
-			interior.halfAcrossKm * 2,
-			lipUp,
-			0,
-			(interior.halfUpKm + interior.laneHalfUpKm) / 2,
-		],
-		[
-			interior.halfAcrossKm * 2,
-			lipUp,
-			0,
-			-(interior.halfUpKm + interior.laneHalfUpKm) / 2,
-		],
-		[
-			lipAcross,
-			interior.laneHalfUpKm * 2,
-			(interior.halfAcrossKm + interior.laneHalfAcrossKm) / 2,
-			0,
-		],
-		[
-			lipAcross,
-			interior.laneHalfUpKm * 2,
-			-(interior.halfAcrossKm + interior.laneHalfAcrossKm) / 2,
-			0,
-		],
-	] as const) {
+	for (const [w, h, x, y] of ringAround(
+		{ across: interior.halfAcrossKm, up: interior.halfUpKm },
+		{ across: interior.laneHalfAcrossKm, up: interior.laneHalfUpKm },
+	)) {
 		if (w <= 0 || h <= 0) continue;
 		const panel = box(w, h, plate, structure, "interior-bulkhead");
-		panel.position.set(x, y, bulkheadZ);
+		// **Sunk a tenth of a plate behind the mouth**, not flush with it: the
+		// aperture bars straddle the plane and overlap this panel laterally, and
+		// two coplanar front faces there z-fight — the symptom is a slot that
+		// flickers as the station turns, which reads as the aperture not being
+		// there.
+		panel.position.set(x, y, interior.mouthAxialKm - plate * 0.6);
 		group.add(panel);
 	}
 
 	// The lane's own edge, lit: four strips on the bulkhead around the opening,
 	// so the way out is the brightest line in the bay from anywhere in it.
 	//
-	// **Seated in the lip rather than centred on the boundary.** A strip
-	// straddling the lane's edge overlaps the panel it is mounted on by half its
-	// own thickness, and `tests/station-mesh.test.ts`'s connectivity check —
-	// which shrinks every part before testing contact, so a graze does not count
-	// as a joint — reported all four adrift. Flush against the opening and
-	// wholly inside the lip is both a real joint and where a lit edge belongs.
+	// **Half proud of the bulkhead, half buried in it.** Seated flush with the
+	// panel's mid-plane they are inside it and draw nothing; the panel spans a
+	// plate ending at `mouth − 1.1·plate`, so centring on that face leaves a real
+	// joint behind and a lit edge in front. Seated wholly in the lip they were
+	// adrift instead — `tests/station-mesh.test.ts`'s connectivity check shrinks
+	// every part before testing contact, so a graze is not a joint.
 	const laneGlow = glowMaterial(visuals.strobeColor);
-	const edge = plate;
-	for (const [w, h, x, y] of [
-		[interior.laneHalfAcrossKm * 2, edge, 0, interior.laneHalfUpKm + edge / 2],
-		[
-			interior.laneHalfAcrossKm * 2,
-			edge,
-			0,
-			-(interior.laneHalfUpKm + edge / 2),
-		],
-		[edge, interior.laneHalfUpKm * 2, interior.laneHalfAcrossKm + edge / 2, 0],
-		[
-			edge,
-			interior.laneHalfUpKm * 2,
-			-(interior.laneHalfAcrossKm + edge / 2),
-			0,
-		],
-	] as const) {
-		// **Half proud of the bulkhead, half buried in it.** Seated flush with
-		// the panel's mid-plane they are inside it and draw nothing; the panel
-		// spans a plate ending at `mouth − 1.1·plate`, so centring on that face
-		// leaves a real joint behind and a lit edge in front.
+	for (const [w, h, x, y] of ringAround(
+		{
+			across: interior.laneHalfAcrossKm + plate,
+			up: interior.laneHalfUpKm + plate,
+		},
+		{ across: interior.laneHalfAcrossKm, up: interior.laneHalfUpKm },
+	)) {
 		const strip = box(w, h, plate * 0.6, laneGlow, "interior-lane-edge");
 		strip.position.set(x, y, interior.mouthAxialKm - plate * 1.1);
 		group.add(strip);
@@ -278,6 +267,21 @@ export function buildStationInterior(
 	group.add(buildRoleFittings(type, interior, plate, structure));
 	return group;
 }
+
+/**
+ * A box's cross-section, given which axis it runs *along*.
+ *
+ * **One rule, four sites.** `buildBerth` lays out a pad, two guide strips, two
+ * brackets and two cradle arms, and each one is the same question: which of
+ * `x` and `y` is the berth's own axis here, and what does the other get? Four
+ * near-copies of `Math.abs(v.x) > 0 ? a : b` is four places a berth-axis change
+ * has to land, and one of them had `a` and `b` identical — a ternary that chose
+ * between one value.
+ */
+const sized = (axis: THREE.Vector3, along: number, across: number) =>
+	Math.abs(axis.x) > 0
+		? ([along, across] as const)
+		: ([across, along] as const);
 
 /** The four faces' orientation, as the basis a berth's parts are laid out in:
  *  `outward` is the berth's own normal and `beam` the direction its clear beam
@@ -338,25 +342,19 @@ function buildBerth(
 		-berth.clearHeightKm / 2,
 	);
 
-	const across = Math.abs(beam.x) > 0 ? berth.clearBeamKm : plate;
-	const up = Math.abs(beam.y) > 0 ? berth.clearBeamKm : plate;
-	const pad = box(
-		Math.abs(outward.x) > 0 ? plate : across,
-		Math.abs(outward.y) > 0 ? plate : up,
-		berth.clearLengthKm,
-		structure,
-		"berth-pad",
-	);
+	const [padW, padH] = sized(outward, plate, berth.clearBeamKm);
+	const pad = box(padW, padH, berth.clearLengthKm, structure, "berth-pad");
 	pad.position.copy(surface).addScaledVector(outward, plate / 2);
 	group.add(pad);
 
 	// Two guide strips flanking the pad, in the role's own work-light colour —
-	// §13.4's rule that light identifies role and nothing else.
+	// §13.4's rule that light identifies role and nothing else. Square in
+	// section, so they need no axis test at all.
 	const guide = glowMaterial(visuals.floodColor);
 	for (const side of [-1, 1]) {
 		const strip = box(
-			Math.abs(beam.x) > 0 ? plate * 0.4 : plate * 0.4,
-			Math.abs(beam.y) > 0 ? plate * 0.4 : plate * 0.4,
+			plate * 0.4,
+			plate * 0.4,
 			berth.clearLengthKm * 0.8,
 			guide,
 			"berth-guide",
@@ -371,13 +369,8 @@ function buildBerth(
 	if (berth.family === "wall" || berth.family === "cradle") {
 		// A bracket under the berth, which is what holds a ship off a wall.
 		for (const end of [-1, 1]) {
-			const arm = box(
-				Math.abs(outward.x) > 0 ? berth.clearHeightKm * 0.6 : plate,
-				Math.abs(outward.y) > 0 ? berth.clearHeightKm * 0.6 : plate,
-				plate,
-				structure,
-				"berth-bracket",
-			);
+			const [w, h] = sized(outward, berth.clearHeightKm * 0.6, plate);
+			const arm = box(w, h, plate, structure, "berth-bracket");
 			arm.position
 				.copy(surface)
 				.addScaledVector(outward, berth.clearHeightKm * 0.3)
@@ -392,13 +385,8 @@ function buildBerth(
 		// Two arms rising past the hull, which is what makes a cradle read as one
 		// rather than as a shelf.
 		for (const side of [-1, 1]) {
-			const arm = box(
-				Math.abs(beam.x) > 0 ? plate : berth.clearHeightKm,
-				Math.abs(beam.y) > 0 ? plate : berth.clearHeightKm,
-				plate,
-				structure,
-				"berth-cradle-arm",
-			);
+			const [w, h] = sized(beam, plate, berth.clearHeightKm);
+			const arm = box(w, h, plate, structure, "berth-cradle-arm");
 			arm.position
 				.copy(surface)
 				.addScaledVector(outward, berth.clearHeightKm / 2)
@@ -409,27 +397,35 @@ function buildBerth(
 	return group;
 }
 
+/** What a role's fittings are built against: the bay, its own materials, and
+ *  the two derived lengths every one of them uses. */
+interface FittingContext {
+	group: THREE.Group;
+	interior: StationInterior;
+	visuals: (typeof STATION_VISUALS)[StationType];
+	structure: THREE.Material;
+	plate: number;
+	depth: number;
+	backZ: number;
+}
+
 /**
  * §13.4's interior identity, as the fittings that make one role's bay different
  * from another's at a glance.
  *
+ * **A `Record<StationType, …>` for `station.ts`'s reason**, and because the four
+ * bodies share nothing but the context: a fifth station type adds a table entry
+ * and the type stops the build until it does, where a chain of `if (type ===
+ * …)` blocks would compile with none.
+ *
  * They hang off the walls behind the berth line and never enter the transit
- * lane, which `tests/station-interior-mesh.test.ts` asserts rather than trusts.
+ * lane, which `tests/station-interior-mesh.test.ts` asserts rather than trusts —
+ * with a control that moves a part onto the axis to prove the check can fail.
  */
-function buildRoleFittings(
-	type: StationType,
-	interior: StationInterior,
-	plate: number,
-	structure: THREE.Material,
-): THREE.Group {
-	const group = new THREE.Group();
-	group.name = "interior-fittings";
-	const visuals = STATION_VISUALS[type];
-	const depth = interior.mouthAxialKm - interior.endAxialKm;
-	const backZ = interior.endAxialKm + plate;
-
-	if (type === "trade") {
-		// Warm windows down both walls, high: a habitat seen from inside.
+const ROLE_FITTINGS: Record<StationType, (ctx: FittingContext) => void> = {
+	// Warm windows down both walls, high: a habitat seen from inside, and cargo
+	// markings on the back bulkhead.
+	trade: ({ group, interior, visuals, plate, depth, backZ }) => {
 		const windows = glowMaterial(visuals.windowColor);
 		for (const side of [-1, 1])
 			for (let i = 0; i < 4; i++) {
@@ -447,7 +443,6 @@ function buildRoleFittings(
 				);
 				group.add(pane);
 			}
-		// Cargo markings on the back bulkhead.
 		const marking = box(
 			interior.laneHalfAcrossKm,
 			plate * 0.3,
@@ -457,10 +452,10 @@ function buildRoleFittings(
 		);
 		marking.position.set(0, -interior.laneHalfUpKm, backZ);
 		group.add(marking);
-	}
+	},
 
-	if (type === "shipyard") {
-		// Gantries spanning the bay behind the berth line, with cold work light.
+	// Gantries spanning the bay behind the berth line, with cold work light.
+	shipyard: ({ group, interior, visuals, structure, plate, depth }) => {
 		for (const fraction of [0.35, 0.72]) {
 			const z = interior.endAxialKm + depth * fraction;
 			const beam = box(
@@ -482,11 +477,11 @@ function buildRoleFittings(
 			flood.position.set(0, interior.halfUpKm - plate * 1.5, z);
 			group.add(flood);
 		}
-	}
+	},
 
-	if (type === "refinery") {
-		// Pipes along both walls and a heat glow at the back — the role's
-		// exterior grammar carried inside.
+	// Pipes along both walls and a heat glow at the back — the role's exterior
+	// grammar carried inside.
+	refinery: ({ group, interior, visuals, structure, plate, depth, backZ }) => {
 		for (const side of [-1, 1])
 			for (let i = 0; i < 2; i++) {
 				const pipe = new THREE.Mesh(
@@ -516,11 +511,11 @@ function buildRoleFittings(
 		);
 		heat.position.set(0, 0, backZ);
 		group.add(heat);
-	}
+	},
 
-	if (type === "outpost") {
-		// Exposed conduits and one neutral light: sparse, because that is what an
-		// outpost is.
+	// Exposed conduits and one neutral light: sparse, because that is what an
+	// outpost is.
+	outpost: ({ group, interior, visuals, structure, plate, depth, backZ }) => {
 		for (let i = 0; i < 3; i++) {
 			const conduit = box(
 				plate * 0.25,
@@ -545,6 +540,28 @@ function buildRoleFittings(
 		);
 		lamp.position.set(0, interior.halfUpKm - plate * 0.5, backZ);
 		group.add(lamp);
-	}
+	},
+};
+
+/** The role's fittings, in a group of their own so the lane check has a subject
+ *  and the renderer has one handle. */
+function buildRoleFittings(
+	type: StationType,
+	interior: StationInterior,
+	plate: number,
+	structure: THREE.Material,
+): THREE.Group {
+	const group = new THREE.Group();
+	group.name = "interior-fittings";
+	const depth = interior.mouthAxialKm - interior.endAxialKm;
+	ROLE_FITTINGS[type]({
+		group,
+		interior,
+		visuals: STATION_VISUALS[type],
+		structure,
+		plate,
+		depth,
+		backZ: interior.endAxialKm + plate,
+	});
 	return group;
 }

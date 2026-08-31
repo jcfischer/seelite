@@ -47,8 +47,9 @@ export async function installViewFraming(page) {
 		 * allocation a player's does.
 		 *
 		 * **Flown by the docking computer**, not teleported into the berth: the
-		 * frames are of the arrival the game runs. `stop` is `"docked"`, or a
-		 * fraction of the traversal to freeze mid-transfer at.
+		 * frames are of the arrival the game runs. `stopAtArrivalFraction`
+		 * freezes part-way through the traversal; `launch` runs the dock and then
+		 * leaves again.
 		 */
 		window.__parkInBerth = async (stationId, berthId, opts = {}) => {
 			const g = window.__seelite;
@@ -94,11 +95,16 @@ export async function installViewFraming(page) {
 				const now = g.dockingSnapshot(stationId);
 				if (now.dockPhase === "arriving") {
 					arrivingFor += dt;
+					// **The law's own duration, not the near figure.** §13.3 prices
+					// a traversal on its route, so a deep berth runs about nine
+					// seconds where a near one runs six — scaled by the near
+					// constant, a declared `at: 0.75` to a deep berth froze at half
+					// the route.
+					const durationS = g.dockTraversalSeconds;
 					if (
 						typeof opts.stopAtArrivalFraction === "number" &&
-						arrivingFor >=
-							g.dockingTolerances.TRAVERSAL_SECONDS_NEAR *
-								opts.stopAtArrivalFraction
+						durationS !== null &&
+						arrivingFor >= durationS * opts.stopAtArrivalFraction
 					)
 						break;
 				}
@@ -114,20 +120,30 @@ export async function installViewFraming(page) {
 			// clearance and says only that the reservation landed; a run that
 			// never reached the station keeps it. That is exactly how the frame
 			// above went unnoticed — the assertion passed 115 km away.
-			const want = opts.launch
-				? "launching"
-				: opts.stopAtArrivalFraction !== undefined
-					? "arriving"
-					: "docked";
-			if (!opts.launch && settled.dockPhase !== want)
+			// **The phase too, not the berth alone.** The berth is set at
+			// clearance and says only that the reservation landed; a run that
+			// never reached the station keeps it. That is exactly how a frame
+			// went unnoticed — the assertion passed 115 km away.
+			const reached =
+				opts.stopAtArrivalFraction !== undefined ? "arriving" : "docked";
+			if (settled.dockPhase !== reached)
 				throw new Error(
-					`__parkInBerth: wanted ${want} at ${stationId} and the session is ` +
-						`${settled.dockPhase}, ${settled.rangeKm.toFixed(1)} km out`,
+					`__parkInBerth: wanted ${reached} at ${stationId} and the session ` +
+						`is ${settled.dockPhase}, ${settled.rangeKm.toFixed(1)} km out`,
 				);
 			if (opts.launch) {
+				// A launch frame is of a ship that docked first: `g.launch()` is a
+				// no-op from any other phase, so without the row above this would
+				// capture a ship that never arrived.
 				g.launch();
 				for (let i = 0; i < Math.round(60 * (opts.launchSeconds ?? 2)); i++)
 					g.step(dt);
+				const flying = g.dockingSnapshot(stationId);
+				if (flying.dockPhase !== "launching")
+					throw new Error(
+						`__parkInBerth: asked for a launch and the session is ` +
+							`${flying.dockPhase}`,
+					);
 			}
 			g.setHeadLook(opts.headLook ?? "forward");
 			await frame();

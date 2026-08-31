@@ -215,8 +215,19 @@ export const BAND_GAP_FACTOR = 0.5;
  * canopy and the parked view read as open space rather than as a room. The bay
  * is a berth's clearance *and* a berth's standoff now, which is what puts wall
  * either side of the opening.
+ *
+ * **A record rather than a constant with an outpost branch in the sizer.** The
+ * outpost keeps the tighter figure — its core is 150 m and a two-berth standoff
+ * on every face would want more room behind its aperture than the station has
+ * hull to hold it in — and a `type === "outpost"` test inside the generic sizer
+ * put a second mechanism beside `BAY_HALF_LIMIT_KM` for the same question.
  */
-export const BERTH_DEPTH_FACTOR = 2;
+export const BERTH_DEPTH_FACTOR: Record<StationType, number> = {
+	trade: 2,
+	shipyard: 2,
+	refinery: 2,
+	outpost: 1.5,
+};
 
 /**
  * How wide a bay a form can hold, kilometres of half-extent — **the form's own
@@ -282,10 +293,7 @@ export function stationInterior(
 	const aperture: StationAperture = geometry.aperture;
 	const laneHalfAcrossKm = aperture.widthKm / 2;
 	const laneHalfUpKm = aperture.heightKm / 2;
-	// The outpost keeps the tighter bay: its core is 150 m and a two-berth
-	// standoff on every face would put more room behind its aperture than the
-	// station has hull to hold it in.
-	const reach = cell.heightKm * (type === "outpost" ? 1.5 : BERTH_DEPTH_FACTOR);
+	const reach = cell.heightKm * BERTH_DEPTH_FACTOR[type];
 	const limit = BAY_HALF_LIMIT_KM[type];
 	const halfAcrossKm = Math.min(laneHalfAcrossKm + reach, limit);
 	const halfUpKm = Math.min(laneHalfUpKm + reach, limit);
