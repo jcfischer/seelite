@@ -918,8 +918,8 @@ const throatTiltDeg = (measured) => {
 };
 
 /**
- * The relation, measured and then pinned: the drawn throat's tilt is
- * `−roll`, folded.
+ * The relation, measured and then pinned: the drawn corridor's width edge sits
+ * at `−roll`, folded.
  *
  * **The offset was 90° until #158**, when the fixtures put the ship's up along
  * the slot's *width* and the rectangle's width edge therefore stood vertical on

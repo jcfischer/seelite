@@ -258,13 +258,20 @@ describe("check 4's zero and the aperture-fit measurement agree (#157)", () => {
 	});
 
 	test("the extent the aperture's width must admit is the beam, which is what the fit test sizes it from", () => {
-		// **The tie to `aperture-fit.test.ts`, through the code it actually
-		// uses.** An earlier version re-derived `w·cos θ + h·sin θ` here from a
-		// mesh box, which left the seam one-sided: swapping `size.x` for
-		// `size.y` in the fit test would have re-transposed the pair and this
-		// row would have stayed green. Both files read
-		// `tests/helpers/rolled-envelope.ts` now, so the beam is named as the
-		// `across` term in one place and this row is checking that place.
+		// **The tie to `aperture-fit.test.ts`, and what carries it.** Both files
+		// read `tests/helpers/rolled-envelope.ts`, so the beam is named as the
+		// `across` term in one place rather than derived twice.
+		//
+		// Be precise about which assertion below does the discriminating,
+		// because it is not the obvious one. The `extentAlong` rows compute an
+		// extent *from* `flat` and compare it *to* `flat`, so a transposition
+		// inside the helper flips both sides together and they pass either way —
+		// they check that the pose decomposes onto the basis, not which
+		// dimension is which. **The shape floors are the guard**: with the beam
+		// on `across` (row 1) and `flat.across` measured at 4.4x `flat.up`, a
+		// helper that handed back height as its `across` term fails them. That
+		// is the whole discrimination, and the earlier version of this comment
+		// claimed it came from somewhere else.
 		const frame = frameFor();
 		const basis = slotBasis(frame);
 		const { nose, up } = checkFourZero(frame);
@@ -279,9 +286,10 @@ describe("check 4's zero and the aperture-fit measurement agree (#157)", () => {
 		// each term over variants independently, and the widest hull need not be
 		// the tallest.
 		const flat = rolledEnvelope("courier", 0, "a");
-		// The Kestrel is 4.4x wider than it is tall, so the two readings are far
-		// apart and no tolerance can straddle them. Floored rather than pinned:
-		// what the row needs is the separation, and a hull edit may move it.
+		// The Kestrel is 4.4x wider than it is tall (51.20 / 11.65 m). Floored
+		// at 3 rather than pinned at 4.4 because a hull edit may move it — but
+		// floored well above 1, because this is the row that discriminates and a
+		// floor near 1 would stop doing so.
 		expect(flat.across / flat.up).toBeGreaterThan(3);
 
 		expect(extentAlong(beam, orth.up, basis.across, flat)).toBeCloseTo(
@@ -308,13 +316,17 @@ describe("check 4's zero and the aperture-fit measurement agree (#157)", () => {
 			(ROLL_TOLERANCE_DEG * Math.PI) / 180,
 			"a",
 		);
+		// Four decimals, not six: the pose comes from a zero this file measures
+		// as a 2.94e-6° band, and at 50° that slack maps to a few 1e-7 m of
+		// extent — within a 5e-7 m tolerance today and not for a larger hull.
+		// Still four orders below the 0.6 m the row discriminates.
 		expect(extentAlong(limitBeam, atLimit.up, basis.across, flat)).toBeCloseTo(
 			rolled.across,
-			6,
+			4,
 		);
 		expect(extentAlong(limitBeam, atLimit.up, basis.up, flat)).toBeCloseTo(
 			rolled.up,
-			6,
+			4,
 		);
 		expect(rolled.up / flat.up).toBeGreaterThan(3);
 		expect(rolled.across).toBeLessThan(flat.across);
@@ -359,10 +371,12 @@ describe("check 4's zero and the aperture-fit measurement agree (#157)", () => {
 	});
 
 	test("the HUD's signed cue reads zero at exactly the pose check 4 accepts", () => {
-		// `signedRollDeg` is display only and no check reads it — but the roll
-		// ring sends the pilot toward its zero, so a cue left on the old
-		// reference would aim at the pose the corrected check refuses. This is
-		// the agreement row: it goes red if check 4 moves and the cue does not.
+		// `signedRollDeg` has no consumer outside `docking.ts` and
+		// `docking-director.ts` — the roll ticks went with #94's corridor. Left
+		// on the old reference it would report 90° for the pose the check calls
+		// perfect, which is a correct number under a convention the repo no
+		// longer holds. This is the agreement row: it goes red if check 4 moves
+		// and the diagnostic does not.
 		const frame = frameFor();
 		const { nose, up } = checkFourZero(frame);
 		expect(signedRollDeg(frame, poseAt(frame, nose, up))).toBeCloseTo(0, 4);

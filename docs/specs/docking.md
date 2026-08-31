@@ -203,6 +203,17 @@ against a 120 × 70 m slot; transposed it needs 63.4 and 62.8, for margins of
 56.6 and 7.2. The tightest margin moves by 0.6 m on a 70 m dimension, and no
 check in the repo reads it.
 
+**One frame appeared to argue the other way, and did not.** `arrival.ts` recorded
+a docked ship "lying crossways in its own slot with the name shield running
+vertically up the canopy", and took it as evidence for `across`. A shield's
+orientation is not evidence about a ship's roll, whichever shield it was: both
+are mounted on station geometry and neither turns with the ship — the mouth
+plate rides the station mesh's own local X (`station-mesh.ts`), and the bulkhead
+plaque a parked ship reads sits square to the bay's end wall
+(`station-interior-mesh.ts`). Which one that frame showed is not recoverable and
+does not need to be. An observation of a station fitting was read as an
+observation of an attitude.
+
 What settled it is that `tests/aperture-fit.test.ts` sizes this opening with the
 hull's beam along the long side, and §5's 0.12 × 0.07 km was ratified from that
 measurement — so the row was disagreeing with the reading its own dimensions

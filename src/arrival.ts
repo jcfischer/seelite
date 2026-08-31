@@ -413,7 +413,7 @@ function unit(a: Vec3): Vec3 {
  * **Two directions are not an orientation, and interpolating them separately is
  * what went wrong.** The nose and the up-vector each took their own great
  * circle, and at a wall berth the two circles crossed: an entry rolled to the
- * opposite `across` — which check 4 accepted before #158, and refuses now — is
+ * opposite `across` — accepted by check 4 before #158, refused now — is
  * antipodal to the parked
  * up-vector, so the roll turned through the slot's `up`; the nose turned from
  * inward to outward through the same plane; and at the half-way point both
@@ -606,21 +606,8 @@ export function recomposeDirection(
  * the slot's long axis — which is the pose `tests/aperture-fit.test.ts` sizes
  * the opening from.
  *
- * It was `across` until #158, and one frame was read as evidence for that: a
- * docked ship looked to be "lying crossways in its own slot with the name
- * shield running vertically up the canopy".
- *
- * **A shield's orientation is not evidence about a ship's roll, whichever
- * shield it was.** Both are mounted on station geometry and neither turns with
- * the ship: the mouth plate rides the station mesh's own local X
- * (`station-mesh.ts`), and the bulkhead plaque a parked ship reads sits square
- * to the bay's end wall (`station-interior-mesh.ts`). Which one the frame
- * showed is not recoverable and does not need to be — an observation of a
- * station fitting was read as an observation of an attitude.
- *
- * The row that could have settled it did not exist. It does now:
- * `tests/roll-reference.test.ts` compares check 4's zero against the
- * measurement `tests/aperture-fit.test.ts` sizes the aperture from.
+ * It was `across` until #158. Why it was, and why one frame appeared to support
+ * it, is recorded once in `docking.md` §3 rather than restated here.
  */
 export function arrivalAttitude(
 	law: ArrivalLaw,

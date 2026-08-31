@@ -38,6 +38,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { ROLL_TOLERANCE_DEG } from "../src/docking";
 import { HULL_IDS, type HullId } from "../src/ship-mesh";
 import { rolledEnvelope } from "./helpers/rolled-envelope";
 import {
@@ -55,6 +56,18 @@ const CAPITALS: HullId[] = ["carrier", "dreadnought"];
  *  figure rather than re-derived: the roll limit is a chosen number, and a
  *  second copy of it here would be this file asserting against itself. */
 const ROLL_LIMIT = (50 * Math.PI) / 180;
+
+/** **And it must stay the shipped one.** `tests/roll-reference.test.ts` rolls to
+ *  `ROLL_TOLERANCE_DEG` while this file rolls to the spec's figure, and the two
+ *  are named as one angle by `docking.md` §3 — so if the tolerance ever moved,
+ *  both files would stay green and the tie between them would quietly stop
+ *  holding. Asserted at load rather than inside a row, because every row here
+ *  depends on it. */
+if (Math.abs(ROLL_LIMIT - (ROLL_TOLERANCE_DEG * Math.PI) / 180) > 1e-12)
+	throw new Error(
+		`the spec's roll limit and ROLL_TOLERANCE_DEG have diverged: ` +
+			`${(ROLL_LIMIT * 180) / Math.PI}° against ${ROLL_TOLERANCE_DEG}°`,
+	);
 
 /** The opening one hull needs at check 4's limit, metres — the shared helper,
  *  so the `across` term's `w` is the beam in exactly one place (#158). */
