@@ -817,7 +817,11 @@ async function combatRigAbsentInNormalFlight() {
 	// version of this line used `?` on a URL already carrying `?seed=42`, the
 	// flag never parsed, and the control row below failed for a reason it did
 	// not name. Appending `&` blind is the same bug facing the other way.
-	const combatUrl = new URL(URL);
+	//
+	// `globalThis.URL` spelled out, because this module's own `URL` constant
+	// shadows the constructor — `new URL(URL)` is a TypeError here, and it is
+	// one the typechecker does not see in a `.mjs`.
+	const combatUrl = new globalThis.URL(URL);
 	combatUrl.searchParams.set("combat", "1");
 	const combatPage = await open(combatUrl.href);
 	const enabled = await combatPage.evaluate(() => ({
