@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
 	COMBAT_PROTOTYPE_DEFAULTS,
 	createCombatPrototype,
+	duelInputs,
 	stepCombatPrototype,
 	duelTargetInCone,
 } from "../src/combat-prototype";
@@ -13,15 +14,7 @@ import {
 // enemy fire back on the same schedule the game drives.
 function fireFixedStepDuel(state = createCombatPrototype(), cap = 200) {
 	while (state.elapsed < cap && state.targetHull > 0)
-		state = stepCombatPrototype(state, {
-			dt: 0.1,
-			firing: "pulse",
-			targetInCone: duelTargetInCone(state.elapsed),
-			hitAft: Math.floor(state.elapsed / 2) % 2 === 1,
-			enemyFiring:
-				state.targetHull > 0 && state.playerHull > 0 && state.elapsed % 4 < 2,
-			enemyHitAft: Math.floor(state.elapsed / 3) % 2 === 1,
-		});
+		state = stepCombatPrototype(state, duelInputs(state, 0.1, "pulse"));
 	return state;
 }
 
@@ -55,17 +48,10 @@ test("starter pulse duel destroys an unshielded hull within the pacing target", 
 test("beam out-damages pulse and still heat-locks", () => {
 	const beamDuel = (state = createCombatPrototype()) => {
 		while (state.elapsed < 60 && state.targetHull > 0)
-			state = stepCombatPrototype(state, {
-				dt: 0.1,
-				firing: "beam",
-				targetInCone: duelTargetInCone(state.elapsed),
-				// Same shield-bank alternation and enemy schedule as the pulse
-				// arm, so the two duels differ only in the weapon.
-				hitAft: Math.floor(state.elapsed / 2) % 2 === 1,
-				enemyFiring:
-					state.targetHull > 0 && state.playerHull > 0 && state.elapsed % 4 < 2,
-				enemyHitAft: Math.floor(state.elapsed / 3) % 2 === 1,
-			});
+			// Same schedule as the pulse arm, from the same function the rig flies,
+			// so "the two duels differ only in the weapon" is now a property of the
+			// code rather than a claim in a comment.
+			state = stepCombatPrototype(state, duelInputs(state, 0.1, "beam"));
 		return state;
 	};
 	const beamState = beamDuel();
@@ -168,4 +154,108 @@ test("an enemy barrage depletes the player fore shield before damaging hull", ()
 	state = stepCombatPrototype(state, { dt: 1, enemyFiring: true });
 	expect(state.foreShield).toBe(0);
 	expect(state.playerHull).toBeLessThan(COMBAT_PROTOTYPE_DEFAULTS.hull);
+});
+
+// ---------------------------------------------------------------------------
+// #61 — the duel schedule is one function
+// ---------------------------------------------------------------------------
+//
+// It used to be three: `Game.step` drove the live rig, and this file wrote the
+// same arithmetic out twice more — once per weapon arm — with a comment
+// asserting the arms matched. They drifted, and the repair was a run of
+// commits that hand-mirrored one copy onto another ("match beam and pulse duel
+// arms", "mirror enemy aft alternation in duel", "mirror live rig in pacing
+// test and retune pulse"). A comment claiming two things are the same is not a
+// check that they are.
+
+test("the weapon changes `firing` and no other input", () => {
+	// **What this proves, stated exactly.** `duelInputs` is a function of the
+	// state, and the weapon reaches only the `firing` field — so two arms given
+	// the *same* state are handed the same schedule.
+	//
+	// It does **not** prove two *flown* duels see the same schedule: they
+	// diverge in hull as they run, and `enemyFiring` reads both hulls. An
+	// earlier version of this test claimed that, and could not have shown it —
+	// it walked `createCombatPrototype({ elapsed })`, whose hulls are always
+	// full, so the one state-dependent term never varied and agreed vacuously.
+	//
+	// The states below vary the hulls deliberately, so `enemyFiring` takes both
+	// values across the walk; the counters at the end refuse a run where it did
+	// not.
+	let enemyFiringTrue = 0;
+	let enemyFiringFalse = 0;
+	for (let elapsed = 0; elapsed < 40; elapsed += 0.1) {
+		for (const hulls of [
+			{},
+			{ targetHull: 0 },
+			{ playerHull: 0 },
+			{ targetHull: 12, playerHull: 30, heat: 40, energy: 55 },
+		]) {
+			const state = createCombatPrototype({ elapsed, ...hulls });
+			const pulse = duelInputs(state, 0.1, "pulse");
+			const beam = duelInputs(state, 0.1, "beam");
+			expect({ ...pulse, firing: null }).toEqual({ ...beam, firing: null });
+			expect(pulse.firing).toBe("pulse");
+			expect(beam.firing).toBe("beam");
+			if (pulse.enemyFiring) enemyFiringTrue++;
+			else enemyFiringFalse++;
+		}
+	}
+	// The control: without these the equality above would pass on a walk where
+	// `enemyFiring` was constant, which is how the earlier version read green.
+	expect(enemyFiringTrue).toBeGreaterThan(0);
+	expect(enemyFiringFalse).toBeGreaterThan(0);
+});
+
+test("the schedule drives the cone off `duelTargetInCone`, not a second copy", () => {
+	// Not a restatement of the arithmetic: this pins the schedule to the
+	// *exported* predicate, so a fourth spelling of the cone cannot appear
+	// inside `duelInputs` and agree with this file by coincidence.
+	let disagreements = 0;
+	let offCone = 0;
+	for (let elapsed = 0; elapsed < 40; elapsed += 0.1) {
+		const state = createCombatPrototype({ elapsed });
+		const expected = duelTargetInCone(elapsed);
+		if (duelInputs(state, 0.1, "pulse").targetInCone !== expected)
+			disagreements++;
+		if (!expected) offCone++;
+	}
+	expect(disagreements).toBe(0);
+	// The control. Without it a `duelInputs` that returned a constant `true`
+	// and a `duelTargetInCone` that did the same would agree perfectly, and the
+	// assertion above would read green over both.
+	expect(offCone).toBeGreaterThan(0);
+});
+
+test("the enemy stops firing once either side is dead", () => {
+	const live = createCombatPrototype({ elapsed: 0 });
+	// `elapsed % 4 < 2` is true at 0, so a live duel fires here — which is what
+	// makes the two dead cases below a difference rather than a coincidence.
+	expect(duelInputs(live, 0.1, "pulse").enemyFiring).toBe(true);
+	const targetDead = createCombatPrototype({ elapsed: 0, targetHull: 0 });
+	expect(duelInputs(targetDead, 0.1, "pulse").enemyFiring).toBe(false);
+	const playerDead = createCombatPrototype({ elapsed: 0, playerHull: 0 });
+	expect(duelInputs(playerDead, 0.1, "pulse").enemyFiring).toBe(false);
+});
+
+test("live inputs pass through, and are absent when the rig supplies none", () => {
+	const state = createCombatPrototype();
+	const bare = duelInputs(state, 0.1, null);
+	// Absent, not `false`. `toBeFalsy` passed either way, so the half of this
+	// test's name that says "absent" was checking nothing — and the two cases
+	// differ to a caller that spreads the result over defaults.
+	expect("incomingMissile" in bare).toBe(false);
+	expect("ecm" in bare).toBe(false);
+	expect("interdicting" in bare).toBe(false);
+	expect("breakAngle" in bare).toBe(false);
+	const flown = duelInputs(state, 0.1, null, {
+		incomingMissile: true,
+		ecm: true,
+		interdicting: true,
+		breakAngle: true,
+	});
+	expect(flown.incomingMissile).toBe(true);
+	expect(flown.ecm).toBe(true);
+	expect(flown.interdicting).toBe(true);
+	expect(flown.breakAngle).toBe(true);
 });

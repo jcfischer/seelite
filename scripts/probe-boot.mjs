@@ -763,5 +763,158 @@ async function settingsGate() {
 }
 await settingsGate();
 
+/**
+ * #61: normal flight carries no combat prototype.
+ *
+ * The behavioural half of the acceptance line. `tests/combat-rig-boundary.test.ts`
+ * proves the *source* no longer threads the prototype through `Game`; this
+ * proves the running game allocates none of it, which a source scan cannot see
+ * — a rig that allocated under a renamed identifier would pass the scan and
+ * fail here.
+ *
+ * The control matters more than usual, because every row below is an absence.
+ * A default boot asserting "no target mesh" reads identical to a boot that
+ * failed to build a scene at all, so the same page is asked for something that
+ * must be there, and a `?combat=1` page is asked for the objects whose absence
+ * is being claimed. Without that second page this gate would pass on a build
+ * where the rig had simply been deleted.
+ */
+async function combatRigAbsentInNormalFlight() {
+	const page = await open(URL);
+	const plain = await page.evaluate(() => ({
+		// Coerced in the page, not returned. On the regression this row exists to
+		// catch, `combatRig` is a live rig holding Three.js meshes with parent
+		// cycles, and handing that to `evaluate` serialises a scene graph instead
+		// of failing a check.
+		rigAbsent: window.__seelite.combatRig === null,
+		target: Boolean(
+			window.__seelite.nearScene.getObjectByName("combat-prototype-target"),
+		),
+		laser: Boolean(
+			window.__seelite.nearScene.getObjectByName("combat-prototype-laser"),
+		),
+		// The control: the near layer is populated, so the two absences above are
+		// about the prototype rather than about an empty scene.
+		nearChildren: window.__seelite.nearScene.children.length,
+		// **No way to stop the world.**
+		//
+		// `private` is erased at runtime and the game object is published whole,
+		// so a prototype-only capability parked on it is reachable from a
+		// production page. One was, twice: first as an own field
+		// (`probeLoopControl.freeze()`), then --- after a fix that only moved it
+		// --- as a prototype method (`loopControl().freeze()`).
+		//
+		// **What this row covers, and what it does not.** It walks the whole
+		// prototype chain and fails on any member that *is* a loop control (an
+		// object exposing `freeze`), and on the four names that have ever
+		// carried this capability on `Game`. It does **not** detect an
+		// arbitrary new void method that calls `cancelAnimationFrame` itself ---
+		// the shape `probeFreezeLoop` had before this branch removed it. Two
+		// things were tried and rejected for that: calling every zero-arity
+		// member to see what it returns invokes `animate()` and arms a second
+		// rAF chain on the page being measured, and pinning the whole
+		// `__seelite` surface is ~76 members and belongs to a declared
+		// read-model rather than to this node.
+		//
+		// So this is a real check with a named hole, rather than a broad one
+		// that would read as complete and is not.
+		//
+		// **Both halves are proven to fail, and separately.** The name list and
+		// the shape test are different mechanisms, and a scar that trips the
+		// first `continue`s before the second ever runs — so the earlier scars
+		// (`probeLoopControl`, `loopControl()`, `probeFreezeLoop`) exercised
+		// only the names. The shape half was then run red on its own against a
+		// control under a name this list has never held, and caught it:
+		//
+		//     FAIL ... freeze-capable properties on __seelite: [cadenceHarness]
+		freezers: (() => {
+			const game = window.__seelite;
+			const EVER_CARRIED_IT = [
+				"probeLoopControl",
+				"loopControl",
+				"probeFreezeLoop",
+				"probeResumeLoop",
+			];
+			const found = [];
+			for (
+				let o = game;
+				o && o !== Object.prototype;
+				o = Object.getPrototypeOf(o)
+			)
+				for (const n of Object.getOwnPropertyNames(o)) {
+					if (n === "constructor" || found.includes(n)) continue;
+					if (EVER_CARRIED_IT.includes(n)) {
+						found.push(n);
+						continue;
+					}
+					// No member is *called*. Accessors on the chain do run —
+					// `Game` has three (`dockedAt`, `dockPhase`,
+					// `dockTraversalSeconds`), all pure dock readouts — which is
+					// what the `catch` below concedes. An earlier version of this
+					// walk called every zero-arity function to see what it
+					// returned, and that reached `animate()` and armed a second
+					// rAF chain on the page being measured.
+					let v;
+					try {
+						v = game[n];
+					} catch {
+						continue;
+					}
+					if (v && typeof v === "object" && typeof v.freeze === "function")
+						found.push(n);
+				}
+			return found;
+		})(),
+	}));
+	check(
+		"a default boot builds no prototype rig",
+		plain.rigAbsent,
+		`combatRig absent: ${plain.rigAbsent}`,
+	);
+	check(
+		"a default boot exposes no way to freeze the frame loop",
+		plain.freezers.length === 0,
+		`freeze-capable properties on __seelite: [${plain.freezers.join(", ")}]`,
+	);
+	check(
+		"a default boot allocates no prototype scene objects",
+		!plain.target && !plain.laser && plain.nearChildren > 0,
+		`target ${plain.target}, laser ${plain.laser}, near children ${plain.nearChildren}`,
+	);
+	await page.close();
+
+	// The other arm: the same lookups find the objects when the rig is asked
+	// for, so the rows above are a statement about the gate and not about the
+	// names having gone away.
+	// Built rather than concatenated. `PROBE_URL` replaces the whole URL (line
+	// 51), so neither `?combat=1` nor `&combat=1` is safe against it — the first
+	// version of this line used `?` on a URL already carrying `?seed=42`, the
+	// flag never parsed, and the control row below failed for a reason it did
+	// not name. Appending `&` blind is the same bug facing the other way.
+	//
+	// `globalThis.URL` spelled out, because this module's own `URL` constant
+	// shadows the constructor — `new URL(URL)` is a TypeError here, and it is
+	// one the typechecker does not see in a `.mjs`.
+	const combatUrl = new globalThis.URL(URL);
+	combatUrl.searchParams.set("combat", "1");
+	const combatPage = await open(combatUrl.href);
+	const enabled = await combatPage.evaluate(() => ({
+		rig: window.__seelite.combatRig !== null,
+		target: Boolean(
+			window.__seelite.nearScene.getObjectByName("combat-prototype-target"),
+		),
+		laser: Boolean(
+			window.__seelite.nearScene.getObjectByName("combat-prototype-laser"),
+		),
+	}));
+	check(
+		"`?combat=1` builds the rig and its scene objects",
+		enabled.rig && enabled.target && enabled.laser,
+		`rig ${enabled.rig}, target ${enabled.target}, laser ${enabled.laser}`,
+	);
+	await combatPage.close();
+}
+await combatRigAbsentInNormalFlight();
+
 await browser.close();
 exit();
