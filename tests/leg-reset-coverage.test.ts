@@ -25,6 +25,14 @@
  * widening it is a person's judgement. And it cannot know that a boot value is
  * the *right* value to restore.
  *
+ * **It reads two kinds of write, and the second is here because the first
+ * missed one.** Assignment was the whole scan to begin with, and `step` turns
+ * the ship by mutating a `readonly` field in place — `this.orientation.multiply
+ * (turn)` — so attitude went unrestored underneath a test asserting the reset
+ * restored everything. A method call on a field is now its own class. Neither
+ * pattern sees a field written through a local alias or inside a helper it was
+ * handed to.
+ *
  * What it does catch is the drift that actually happens: cruise gains a field,
  * the reset is not updated, and nothing says so. That goes red here, on the
  * tier that runs on every push.
@@ -77,6 +85,29 @@ function methodBody(source: string, name: string): string {
 	throw new Error(`${name}() in ${SUBJECT} has no closing brace`);
 }
 
+/**
+ * Fields the flight path touches that the reset deliberately leaves alone, with
+ * the reason.
+ *
+ * An exemption is a decision, so it costs a line here rather than being
+ * silence. Anything not listed has to appear in the reset.
+ */
+const NOT_RESET: Record<string, string> = {
+	audio:
+		"the WebAudio engine is a device, not world state — a leg asks it to make " +
+		"noises and leaves nothing on it a second leg could read",
+};
+
+/**
+ * Fields restored by calling a method rather than by naming them.
+ *
+ * `orientation` is the case: a boot points the nose with `faceTheStar`, so the
+ * reset does too, and writing the quaternion out here instead would be a second
+ * spelling of the boot rule. The indirection is declared rather than allowed
+ * for, so the scan still knows which field each call is answering for.
+ */
+const RESTORED_BY: Record<string, string> = { orientation: "faceTheStar" };
+
 /** `this.foo =`, `this.foo +=`, `this.foo -=` — assignments, not reads, and not
  *  `===`. */
 const assignedFields = (body: string) => {
@@ -85,6 +116,24 @@ const assignedFields = (body: string) => {
 		/this\.([A-Za-z_$][\w$]*)\s*(?:=[^=]|\+=|-=)/g,
 	))
 		out.add(name);
+	return out;
+};
+
+/** `this.foo.bar(...)` — a field written in place rather than replaced. */
+const mutatedFields = (body: string) => {
+	const out = new Set<string>();
+	for (const [, name] of body.matchAll(
+		/this\.([A-Za-z_$][\w$]*)\s*\.\s*[A-Za-z_$][\w$]*\(/g,
+	))
+		out.add(name);
+	return out;
+};
+
+/** Every field the declared leg path writes, by either mechanism. */
+const acrossLegPath = (extract: (body: string) => Set<string>) => {
+	const out = new Set<string>();
+	for (const name of LEG_PATH)
+		for (const field of extract(methodBody(main, name))) out.add(field);
 	return out;
 };
 
@@ -98,10 +147,7 @@ test("every method the reset is declared against exists", () => {
 });
 
 test("resetToStart assigns every field the flight path assigns", () => {
-	const written = new Set<string>();
-	for (const name of LEG_PATH)
-		for (const field of assignedFields(methodBody(main, name)))
-			written.add(field);
+	const written = acrossLegPath(assignedFields);
 
 	// The premise. Without it a scan that found no methods, or a regex that
 	// stopped matching, would pass by finding nothing to check — the failure mode
@@ -111,6 +157,44 @@ test("resetToStart assigns every field the flight path assigns", () => {
 	const restored = assignedFields(methodBody(main, "resetToStart"));
 	const missing = [...written].filter((f) => !restored.has(f)).sort();
 	expect(missing).toEqual([]);
+});
+
+test("resetToStart deals with every field the flight path mutates in place", () => {
+	// The blocker this file was extended for. `step` turns the ship with
+	// `this.orientation.multiply(turn)`, which the assignment scan cannot see —
+	// so the reset shipped restoring position and velocity while leaving the nose
+	// pointing wherever the previous leg finished, under a docblock claiming boot
+	// state. A named field either appears in the reset or is exempt with a
+	// reason; there is no third option.
+	const mutated = acrossLegPath(mutatedFields);
+	expect(mutated.size).toBeGreaterThan(0);
+
+	const body = methodBody(main, "resetToStart");
+	const handled = (f: string) =>
+		NOT_RESET[f] ||
+		body.includes(`this.${f}`) ||
+		(RESTORED_BY[f] && body.includes(`this.${RESTORED_BY[f]}()`));
+	expect([...mutated].filter((f) => !handled(f)).sort()).toEqual([]);
+});
+
+test("every declared restorer is a real method the reset calls", () => {
+	// Without this, `RESTORED_BY` is a way to silence the scan by naming a method
+	// that does not exist or is never called — an exemption wearing a fix's
+	// clothes.
+	const body = methodBody(main, "resetToStart");
+	for (const [field, method] of Object.entries(RESTORED_BY)) {
+		expect(() => methodBody(main, method)).not.toThrow();
+		expect(body).toContain(`this.${method}()`);
+		expect(acrossLegPath(mutatedFields).has(field)).toBe(true);
+	}
+});
+
+test("every exemption names a field the flight path actually mutates", () => {
+	// An exemption for a field nothing writes is dead weight that reads as
+	// coverage: it makes the list look considered while guarding nothing.
+	const mutated = acrossLegPath(mutatedFields);
+	for (const field of Object.keys(NOT_RESET))
+		expect(mutated.has(field)).toBe(true);
 });
 
 test("resetToStart hands the world half to sim.ts", () => {

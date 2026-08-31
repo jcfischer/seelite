@@ -3980,6 +3980,17 @@ class Game {
 		this.chaseYaw = 0;
 		this.dockingComputerEngaged = false;
 
+		// **Attitude, and it is not one of the assignments above.** `step` turns the
+		// ship with `this.orientation.multiply(turn)` — an in-place mutation of a
+		// `readonly` field, so a scan looking for `this.x =` cannot see it, and
+		// the first version of this method restored position and velocity while
+		// leaving the nose pointing wherever the last leg finished. A boot calls
+		// `faceTheStar`, so this does. The coverage test now reads in-place
+		// mutation as its own class for exactly this reason.
+		this.faceTheStar();
+		this.keys.clear();
+		this.navEtaCache.clear();
+
 		this.massesCache = null;
 		this.massesAt = Number.NaN;
 		this.etaCache = null;

@@ -188,6 +188,7 @@ async function flyTo(stationId) {
 				regime: g.regime,
 				missKm: dist(end.pos, g.world.ship.pos),
 				endPos: { ...g.world.ship.pos },
+				endNose: { ...g.nose() },
 				hostRadiusKm: host ? host.radiusKm : null,
 				hostRangeRatio: hostNow
 					? dist(hostNow.pos, g.world.ship.pos) / hostNow.radiusKm
@@ -210,12 +211,21 @@ async function flyTo(stationId) {
  * copy of what boot state is can agree with itself while disagreeing with the
  * game.
  */
+/** Straight-line distance between two sim positions, driver-side. `flyTo` has
+ *  its own copy inside the `evaluate` callback because that runs in the page's
+ *  scope, not this one. */
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+
 async function startState() {
 	return page.evaluate(() => {
 		const g = window.__seelite;
 		return {
 			pos: { ...g.world.ship.pos },
 			vel: { ...g.world.ship.vel },
+			// The nose. `step` turns the ship by mutating `orientation` in place,
+			// which is how the first version of the reset came to restore position
+			// and velocity and leave the attitude from the previous leg.
+			nose: { ...g.nose() },
 			gameTime: g.world.gameTime,
 			regime: g.regime,
 			chargeAu: g.chargeAu,
@@ -269,21 +279,25 @@ check(
 await page.evaluate(() => window.__seelite.resetToStart());
 const back = await startState();
 
+const drift = dist(back.pos, booted.pos);
+const flown = dist(clear.endPos, booted.pos);
+
 check(
 	"the reset puts the ship back at the arrival point the fixture was chosen against",
-	back.pos.x === booted.pos.x &&
-		back.pos.y === booted.pos.y &&
-		back.pos.z === booted.pos.z,
-	`${(Math.hypot(back.pos.x - booted.pos.x, back.pos.y - booted.pos.y, back.pos.z - booted.pos.z) / 1e6).toFixed(3)}M km from where the first leg started`,
+	drift === 0,
+	`${(drift / 1e6).toFixed(3)}M km from where the first leg started`,
 );
 check(
 	"and the leg above had moved it, so that is not a comparison of nothing",
-	Math.hypot(
-		clear.endPos.x - booted.pos.x,
-		clear.endPos.y - booted.pos.y,
-		clear.endPos.z - booted.pos.z,
-	) > 1e6,
-	`the first leg ended ${(Math.hypot(clear.endPos.x - booted.pos.x, clear.endPos.y - booted.pos.y, clear.endPos.z - booted.pos.z) / 1e6).toFixed(1)}M km away`,
+	flown > 1e6,
+	`the first leg ended ${(flown / 1e6).toFixed(1)}M km away`,
+);
+check(
+	"and the nose is a fresh boot's, not the heading the last leg finished on",
+	dist(back.nose, booted.nose) < 1e-9 &&
+		dist(clear.endNose, booted.nose) > 1e-3,
+	`${dist(back.nose, booted.nose).toExponential(1)} from boot, against ` +
+		`${dist(clear.endNose, booted.nose).toFixed(3)} at the end of the leg`,
 );
 /**
  * The discrete session fields, one by one, so a failure names the field.
