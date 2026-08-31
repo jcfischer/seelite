@@ -773,9 +773,14 @@ export function advanceWorldClock(world: World, dt: number): void {
  * session state — regime, charge, spool, the last exit — is not a world concern
  * and is reset beside this call, guarded separately.
  *
- * **The values are restated, not copied from `makeWorld`.** A reset built from
- * `makeWorld` could not disagree with it, so the test comparing the two would
- * prove nothing. Restating them is what gives that test something to catch.
+ * **The values are restated rather than copied off a fresh `makeWorld`**, so
+ * `tests/world-reset.test.ts` has something to catch. Precisely what it can
+ * catch is worth being exact about, because an earlier version of this comment
+ * was not: both this function and `makeWorld` call the same `arrivalPoint`, so
+ * the test cannot disagree about that function's *output* — what it checks is
+ * the four arguments, the clock, the ordering, and that every field is written
+ * at all. A reset that built a whole world from `makeWorld` and copied its
+ * fields across could not fail any of those.
  *
  * `originPos` is `null` and the clock is `0` because that is what a new game is
  * (`makeWorld`); a reset is a return to the new game, not to some later arrival.

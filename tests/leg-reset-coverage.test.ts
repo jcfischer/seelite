@@ -137,6 +137,10 @@ const acrossLegPath = (extract: (body: string) => Set<string>) => {
 	return out;
 };
 
+/** Computed once: each call re-reads ten method bodies out of the largest file
+ *  in the project. */
+const MUTATED = acrossLegPath(mutatedFields);
+
 test("every method the reset is declared against exists", () => {
 	// Its own test because the failure is different in kind: a renamed method
 	// makes this file guard *less* than it says, and a scan that silently covers
@@ -166,7 +170,7 @@ test("resetToStart deals with every field the flight path mutates in place", () 
 	// pointing wherever the previous leg finished, under a docblock claiming boot
 	// state. A named field either appears in the reset or is exempt with a
 	// reason; there is no third option.
-	const mutated = acrossLegPath(mutatedFields);
+	const mutated = MUTATED;
 	expect(mutated.size).toBeGreaterThan(0);
 
 	const body = methodBody(main, "resetToStart");
@@ -185,14 +189,14 @@ test("every declared restorer is a real method the reset calls", () => {
 	for (const [field, method] of Object.entries(RESTORED_BY)) {
 		expect(() => methodBody(main, method)).not.toThrow();
 		expect(body).toContain(`this.${method}()`);
-		expect(acrossLegPath(mutatedFields).has(field)).toBe(true);
+		expect(MUTATED.has(field)).toBe(true);
 	}
 });
 
 test("every exemption names a field the flight path actually mutates", () => {
 	// An exemption for a field nothing writes is dead weight that reads as
 	// coverage: it makes the list look considered while guarding nothing.
-	const mutated = acrossLegPath(mutatedFields);
+	const mutated = MUTATED;
 	for (const field of Object.keys(NOT_RESET))
 		expect(mutated.has(field)).toBe(true);
 });

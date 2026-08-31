@@ -3930,17 +3930,10 @@ class Game {
 	 *
 	 * ## What it is, and what it deliberately is not
 	 *
-	 * A **ship-state reset within one system**. `makeWorld` is still called
-	 * exactly once, in the constructor: the baked `environmentMap` and the
-	 * `interiors` berth catalogue are per-system caches this class never
-	 * invalidates, on the stated basis that a `Game` holds one system for its
-	 * whole life. Rebuilding the world here would quietly be the jump path both
-	 * of those comments say they are waiting for.
-	 *
-	 * The clock, the bodies and the arrival point belong to `resetWorldToStart`
-	 * in `sim.ts` and are not restated here — that is what lets
-	 * `tests/world-reset.test.ts` check them against a real `makeWorld(seed)` on
-	 * the headless tier. What is left is this class's own session state.
+	 * A **ship-state reset within one system**, never a rebuild.
+	 * `resetWorldToStart` in `sim.ts` carries the argument for why, and owns the
+	 * clock, the bodies and the arrival point. Neither the reasoning nor the
+	 * values are restated here; what is left is this class's own session state.
 	 *
 	 * ## Why the list is long
 	 *
@@ -3969,10 +3962,14 @@ class Game {
 		this.lastLegS = null;
 		this.lastExit = "";
 		// Selection is not written by the flight path, so the coverage scan does
-		// not ask for it. It is here because a leg leaves a target selected and a
-		// fresh boot has none, and this method's claim is boot state rather than
-		// the scan's floor.
-		this.targetId = null;
+		// not ask for it. It is here because this method's claim is boot state
+		// rather than the scan's floor — and it is **the constructor's line**, not
+		// a null. A first version set null, which is a state no boot produces: the
+		// constructor selects the nearest station, because a cruise panel with an
+		// empty target field on boot reads as broken. The probe's session check
+		// had a hardcoded `null` of its own and agreed with that bug for five
+		// green runs, which is the failure `startState`'s docblock names.
+		this.targetId = this.nearestOfKind("station")?.id ?? null;
 
 		this.rates = { pitch: 0, yaw: 0, roll: 0 };
 		this.mouseDx = 0;

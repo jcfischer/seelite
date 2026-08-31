@@ -189,6 +189,7 @@ async function flyTo(stationId) {
 				missKm: dist(end.pos, g.world.ship.pos),
 				endPos: { ...g.world.ship.pos },
 				endNose: { ...g.nose() },
+				gameTimeAtEnd: g.world.gameTime,
 				hostRadiusKm: host ? host.radiusKm : null,
 				hostRangeRatio: hostNow
 					? dist(hostNow.pos, g.world.ship.pos) / hostNow.radiusKm
@@ -204,6 +205,11 @@ async function flyTo(stationId) {
 	);
 }
 
+/** Straight-line distance between two sim positions, driver-side. `flyTo` has
+ *  its own copy inside the `evaluate` callback because that runs in the page's
+ *  scope, not this one. */
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+
 /**
  * The state a leg starts from — what the reset has to put back.
  *
@@ -211,11 +217,6 @@ async function flyTo(stationId) {
  * copy of what boot state is can agree with itself while disagreeing with the
  * game.
  */
-/** Straight-line distance between two sim positions, driver-side. `flyTo` has
- *  its own copy inside the `evaluate` callback because that runs in the page's
- *  scope, not this one. */
-const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
-
 async function startState() {
 	return page.evaluate(() => {
 		const g = window.__seelite;
@@ -285,7 +286,7 @@ const flown = dist(clear.endPos, booted.pos);
 check(
 	"the reset puts the ship back at the arrival point the fixture was chosen against",
 	drift === 0,
-	`${(drift / 1e6).toFixed(3)}M km from where the first leg started`,
+	`${drift.toExponential(2)} km from where the first leg started`,
 );
 check(
 	"and the leg above had moved it, so that is not a comparison of nothing",
@@ -310,12 +311,12 @@ check(
  * which is a flake dressed as a check. What the clock owes is below.
  */
 const session = [
-	["regime", back.regime, "normal"],
-	["chargeAu", back.chargeAu, booted.chargeAu],
-	["spoolLeftS", back.spoolLeftS, 0],
-	["lastExit", back.lastExit, ""],
-	["targetId", back.targetId, null],
-];
+	"regime",
+	"chargeAu",
+	"spoolLeftS",
+	"lastExit",
+	"targetId",
+].map((field) => [field, back[field], booted[field]]);
 const wrong = session.filter(([, got, want]) => got !== want);
 check(
 	"and the session state is a fresh boot's",
@@ -330,9 +331,15 @@ check(
 		: session.map(([f, got]) => `${f} ${JSON.stringify(got)}`).join(", "),
 );
 check(
-	"and the clock went backwards, which is the only thing that moves the bodies back",
-	back.gameTime < clear.elapsed / 2,
-	`${back.gameTime.toFixed(2)} s after a leg that ran to ${clear.elapsed.toFixed(1)} s`,
+	"and the clock went back to the t0 the fixture was classified at",
+	// Against the clock *before* the reset, and against zero — not against a
+	// fraction of the leg. A reset that left the bodies at 40% of the leg would
+	// have satisfied the first version of this check, and 40% of a leg is a `t`
+	// the seed-481 classification was never run at. The tolerance is one frame
+	// because this page keeps stepping between the reset and this read: the
+	// snapshot above was taken at 0.1 s for the same reason.
+	back.gameTime < clear.gameTimeAtEnd && back.gameTime <= dt * 10,
+	`${back.gameTime.toFixed(2)} s, down from ${clear.gameTimeAtEnd.toFixed(1)} s at the end of the leg`,
 );
 
 // ------------------------------------------------------------------ occluded

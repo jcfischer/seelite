@@ -11,9 +11,16 @@
  * A reset that forgets a field measures a state no player ever has, and the
  * browser probe using it cannot detect that: it would fly a leg from a slightly
  * wrong place and report a perfectly formed number about it. So the guard is
- * here, on the tier that runs on every push, and it compares against a
- * genuinely independent construction — a fresh `makeWorld(seed)` — rather than
- * against the reset's own arithmetic.
+ * here, on the tier that runs on every push, and it compares against a fresh
+ * `makeWorld(seed)` rather than against the reset's own arithmetic.
+ *
+ * **How independent that comparison is, exactly.** Not fully, and the earlier
+ * wording here said "a genuinely independent construction", which was too
+ * strong: both sides call the same `arrivalPoint`, so this cannot catch a bug
+ * *inside* that function. What it catches is everything around it — the four
+ * arguments, the clock value, the ordering of the two, and any field the reset
+ * does not write at all. Every one of those was confirmed by deleting the line
+ * and watching this file go red.
  *
  * **The reset restates its values; this test proves they are the right ones.**
  * Building the reset *from* `makeWorld` would make the comparison a tautology:
