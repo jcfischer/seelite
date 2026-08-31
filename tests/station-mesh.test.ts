@@ -500,26 +500,6 @@ describe("nothing stands in the way of the thing you fly through", () => {
 /**
  * §13.1's opening, as a hole rather than as a picture of one (#155).
  *
- * **This is a different question from the corridor row above, and the epsilon
- * there says so.** That row measures what stands *in front of* the aperture
- * plane and skips every vertex at or behind it by construction — *"the wall the
- * aperture is cut into is not an intrusion into the corridor in front of it"*.
- * The defect #155 found lives exactly in the space that skip creates: the wall
- * itself was never cut, so all twelve forms drew a lit frame on a solid surface
- * and a docking ship crossed the station's own face. Every headless row in this
- * file was green throughout, and none of them could have gone red.
- *
- * So this measures what is *in* the band a ship traverses: from the bay's mouth
- * to its back wall, inside the aperture rectangle, nothing may be crossed that
- * is not the bay.
- *
- * **The bounds come off the drawn bay, not off the table.** An alternate form
- * cuts its aperture where its own silhouette wants — `buildTradeRing` puts one
- * at `r * 0.34` against a table figure of 0.428 — so a band derived from
- * `STATION_GEOMETRY` would be measuring somewhere the workbench's forms do not
- * have an opening at all.
- */
-/**
  * **A different question from the corridor row above, and that row's epsilon
  * says so.** It measures what stands *in front of* the aperture plane and skips
  * every vertex at or behind it by construction — *"the wall the aperture is cut
@@ -538,29 +518,14 @@ describe("nothing stands in the way of the thing you fly through", () => {
  * `hullLoft` and `buildCuboctahedron` write on the geometry they cut: the
  * Coriolis's frame stands 25 m proud of its own face and an outpost's tower leg
  * crosses the lane at 30 m.
+ *
+ * **The bounds come off the drawn bay, not off the table.** An alternate form
+ * cuts its aperture where its own silhouette wants — `buildTradeRing` puts one
+ * at `r * 0.34` against a table figure of 0.428 — so a band derived from
+ * `STATION_GEOMETRY` would be measuring somewhere the workbench's forms do not
+ * have an opening at all.
  */
 describe("§13.1 — the opening is a hole, not a lit frame on a solid face", () => {
-	/**
-	 * **This is a different question from the corridor row above, and that
-	 * row's epsilon says so.** It measures what stands *in front of* the
-	 * aperture plane and skips every vertex at or behind it by construction —
-	 * *"the wall the aperture is cut into is not an intrusion into the corridor
-	 * in front of it"*. #155's defect lived exactly in the space that skip
-	 * creates: the wall was never cut, so all twelve forms drew a lit frame on a
-	 * solid surface and a docking ship crossed the station's own face. Every
-	 * headless row in this file was green throughout and none of them could
-	 * have gone red.
-	 *
-	 * **It asserts the cut, not the lane.** `scripts/measure-aperture-cut.ts`
-	 * prints both, and on eight forms the lane behind the mouth is still
-	 * blocked — a keel through a hub, a rock ceiling 207 m in, four tower legs.
-	 * That is #147's bay placed inside solid station rather than #155's uncut
-	 * face, it needs three different fixes and none of them is a cut, and it
-	 * carries its own node. The two cannot be separated by a depth band, which
-	 * is why this reads the record `hullLoft` and `buildCuboctahedron` write on
-	 * the geometry they cut: the Coriolis's frame stands 25 m proud of its own
-	 * face and an outpost's tower leg crosses the lane at 30 m.
-	 */
 	/**
 	 * **The zero point, asserted rather than described.** Every figure this
 	 * section and `docking.md` §13.1's table produce is measured from the drawn

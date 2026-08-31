@@ -15,11 +15,24 @@
  * built where the index buffer lives, and the non-indexed surgery is
  * `appendRing` below.
  *
- * The one thing it does own is the property that makes the cut safe: **the
- * outer loop is unchanged.** Every sample it returns on the outer boundary is
- * either an original corner or a point exactly on an edge between two of them,
- * so a cut face has the same outline as the face it replaces — which is what
- * lets §13.7's *no exterior silhouette change* hold through it.
+ * **What holds §13.7's *no exterior silhouette change* is not this function.**
+ * Every sample `onLoop` returns lies on an edge of the original loop — at a
+ * corner's own angle it is that corner, between two corners the point where the
+ * ray meets that edge — but it is recomputed through `cos`/`sin` of an `atan2`
+ * and a ray-edge solve rather than being the original vertex, so the equality is
+ * float-approximate. That was offered as the reason the outline survives, and it
+ * is the wrong reason.
+ *
+ * The outline survives because **the cut is interior to a face whose boundary
+ * other geometry already owns**: a lofted cap's rim is also the side wall's last
+ * ring, and the cuboctahedron's +Z square shares all four corners with faces
+ * that are not cut. A test that lofted the same controls twice and compared
+ * reach was written to measure this and **withdrawn** — pulling every outer
+ * sample 2% inward left both figures identical, because the side wall supplies
+ * them, and a check that cannot go red on the defect it names is not a check.
+ * What does bind is the silhouette budget in `tests/station-mesh.test.ts`: no
+ * vertex outside each form's declared reach, and a cut adds no vertex anywhere
+ * the face did not already reach.
  */
 
 /** A point on a face, in the face's own plane. */

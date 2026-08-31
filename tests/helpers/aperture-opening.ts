@@ -351,7 +351,14 @@ export function collarSurfaces(
 				cut: false,
 				pastMouthKm: 0,
 			};
-			if (!found.has(surface.name)) found.set(surface.name, surface);
+			// **Keyed by ray, not by name.** Keying by name let the first ray's
+			// verdict for a mesh name win, so a later ray meeting a different,
+			// uncut mesh of the same name was discarded — and the row is titled
+			// as per-ray coverage. The name goes in the key so a failure still
+			// reads as a name, and the sample it came from is beside it.
+			found.set(`${surface.name} at (${sx.toFixed(2)}, ${sy.toFixed(2)})`, {
+				...surface,
+			});
 		}
 	});
 	return [...found].map(([name, surface]) => ({ ...surface, name }));

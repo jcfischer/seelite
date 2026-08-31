@@ -51,9 +51,10 @@ export const VIEWPORT = { width: 1440, height: 900 };
  * room behind every aperture, eight since #162 cut the aperture into the hull.
  *
  * The set's job is to cover every surface these touch — that is what makes it
- * canonical rather than a convenient handful of screenshots. Adding a seventh
- * lever to the map without adding it here leaves it judged on somebody else's
- * frame, so `uncoveredLevers` is asserted rather than described.
+ * canonical rather than a convenient handful of screenshots. Adding a lever to
+ * the map without adding it here leaves it judged on somebody else's frame, so
+ * `uncoveredLevers` is asserted rather than described. The count above is a
+ * running total and goes stale silently; the assertion is what holds.
  */
 /** @type {Readonly<Record<number, string>>} */
 export const LEVERS = Object.freeze({
