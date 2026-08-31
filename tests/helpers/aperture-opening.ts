@@ -8,12 +8,11 @@
  * came out of a throwaway script, and a figure a receipt states as measured owes
  * a shipped mode that reprints it (the map's constraint from #118).
  *
- * **The question is what is *in* the opening, not what is in front of it.**
- * `tests/station-mesh.test.ts`'s corridor row measures the volume outside the
- * aperture plane and skips every vertex at or behind it by construction — its
- * own comment says *"the wall the aperture is cut into is not an intrusion into
- * the corridor in front of it"*. #155's defect lived exactly in the space that
- * skip creates: all twelve forms drew a lit frame on an uncut surface.
+ * **The question is what is *in* the opening, not what is in front of it.** Why
+ * that is a different question from the corridor row's, and why these rows
+ * assert the cut rather than the lane, is on the `describe` in
+ * `tests/station-mesh.test.ts` that reads them — once, rather than in three
+ * copies that drift apart the first time the corridor row moves.
  */
 
 import * as THREE from "three";
@@ -215,7 +214,7 @@ export function crossings(root: THREE.Object3D, type: StationType): Crossing[] {
 	const rays = new Map<string, Set<number>>();
 	const CELLS = 9;
 	/** How far out the outermost sample sits, as a share of the half-extent. */
-	const EDGE_FRACTION = 0.98;
+	const EDGE_FRACTION = 0.99;
 	twoSided(root, () => {
 		for (let ix = 0; ix < CELLS; ix++) {
 			for (let iy = 0; iy < CELLS; iy++) {
@@ -285,15 +284,22 @@ export function collarSurfaces(
 	 * and produces fewer hits rather than more — so an oversize is invisible
 	 * there, and an oversize is what opens a gap between the hole and the four
 	 * bars that frame it. The collar is where an oversized cut is missing its
-	 * material, so this row is the one that can see it: at 1.15 any oversize
-	 * under 15% passed green, and at 1.05 a 5% oversize reads `core uncut`.
+	 * material.
+	 *
+	 * Paired with the grid's own reach: the grid stops at 0.99 of each
+	 * half-extent and this sits at 1.01, so the pair holds the cut edge to **1%
+	 * of each half-extent** rather than exactly. 1% of a slot's half-height is
+	 * 0.35 m, four orders above float32's resolution at this scale. The boundary
+	 * itself is left unsampled on purpose: the cut edge and the rectangle are
+	 * the same line there, and a ray on it asks a question about float32 rather
+	 * than about geometry.
 	 *
 	 * Still inside two things it must not reach: the aperture bars, which start
 	 * one bar-thickness out (1.4 half-widths on the widest aperture), and an
 	 * outpost's heat ring at 1.55. Both are frame rather than hull, and both are
 	 * excluded by name as well.
 	 */
-	const COLLAR = 1.05;
+	const COLLAR = 1.01;
 	const found = new Map<string, { cut: boolean; pastMouthKm: number }>();
 	twoSided(root, () => {
 		for (const [sx, sy] of [
@@ -303,14 +309,16 @@ export function collarSurfaces(
 			[0, -COLLAR],
 			// **The diagonals are outside on both axes.** At 0.8 of the collar
 			// they sat at 0.92 of each half-extent — inside the rectangle, so
-			// they went through the hole and reported whatever stands in the
-			// lane behind it. On the shipyard Gantry that is the keel, and the
-			// row read `keel uncut` on a correct build.
+			// they went through the hole and reported whatever stands in the lane
+			// behind it. On the shipyard Gantry that is the keel, and the row
+			// read `keel uncut` on a correct build.
 			[COLLAR, COLLAR],
 			[-COLLAR, COLLAR],
 			[COLLAR, -COLLAR],
 			[-COLLAR, -COLLAR],
 		]) {
+			let hull: { name: string; cut: boolean; pastMouthKm: number } | null =
+				null;
 			for (const hit of castDown(
 				root,
 				sx * (widthKm / 2),
@@ -319,20 +327,34 @@ export function collarSurfaces(
 				band,
 			)) {
 				const name = hit.object.name || hit.object.type;
-				if (FRAME_PART.test(name) || BAY_PART.test(name)) continue;
-				// The frontmost hull surface on this ray, and only that one.
-				if (!found.has(name))
-					found.set(name, {
-						cut:
-							(hit.object as THREE.Mesh).geometry?.userData?.apertureCut !==
-							undefined,
-						pastMouthKm: (band.max.z - hit.point.z) * core,
-					});
+				if (FRAME_PART.test(name)) continue;
+				// **The bay is walked past, not stopped at.** On a form with a
+				// stand-off the bay's own mouth bulkhead legitimately stands
+				// between the frame and the hull face — on the trade Coriolis it
+				// closes #128's 25 m — so stopping there reports every correct
+				// form as having no hull. What catches an oversized cut is the
+				// fallback below: the ray reaches the end having met no hull at
+				// all, and *that* is named.
+				if (BAY_PART.test(name)) continue;
+				hull = {
+					name,
+					cut:
+						(hit.object as THREE.Mesh).geometry?.userData?.apertureCut !==
+						undefined,
+					pastMouthKm: (band.max.z - hit.point.z) * core,
+				};
 				break;
 			}
+			const surface = hull ?? {
+				// A ray that met no hull at all is named rather than dropped.
+				name: `no hull at (${sx.toFixed(2)}, ${sy.toFixed(2)})`,
+				cut: false,
+				pastMouthKm: 0,
+			};
+			if (!found.has(surface.name)) found.set(surface.name, surface);
 		}
 	});
-	return [...found].map(([name, surface]) => ({ name, ...surface }));
+	return [...found].map(([name, surface]) => ({ ...surface, name }));
 }
 
 /**

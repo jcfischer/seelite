@@ -81,9 +81,14 @@ for (const type of STATION_TYPES) {
 		// owes a shipped mode that reprints it (the map's constraint from #118).
 		// Read off the collar, where a cut surface still has material.
 		const face = collarSurfaces(root, type).find((surface) => surface.cut);
+		// **No `NaN` sentinel.** The docstring above says every figure printed
+		// goes through `finite`, and a `Number.NaN` written here to mean "no cut
+		// surface" then reached the print path unguarded as `proud=NaNm` — the
+		// same `measure-market.ts` failure the guard exists to prevent. Absence
+		// is `null`, and the print branches on it.
 		const proud = face
 			? finite(`${type} ${form.id} stand-off`, face.pastMouthKm)
-			: Number.NaN;
+			: null;
 		const clear = found.length > 0 ? found[0].pastMouthKm : depth;
 		const inside = found
 			.map(
@@ -93,8 +98,12 @@ for (const type of STATION_TYPES) {
 			.join(" ");
 		console.log(
 			`${type.padEnd(9)}${form.id}${selected} frame=${mouth.toFixed(3)} ${
-				face ? `${face.name}=${(mouth - proud).toFixed(3)}` : "no cut surface"
-			} proud=${Math.round(proud * 1000) === 0 ? "0" : (proud * 1000).toFixed(0)}m  bay=${(depth * 1000).toFixed(0)}m lane clear to ${(clear * 1000).toFixed(0)}m  ${inside || "clear"}`,
+				face && proud !== null
+					? `${face.name}=${(mouth - proud).toFixed(3)} proud=${
+							Math.round(proud * 1000) === 0 ? "0" : (proud * 1000).toFixed(0)
+						}m`
+					: "NO CUT SURFACE"
+			}  bay=${(depth * 1000).toFixed(0)}m lane clear to ${(clear * 1000).toFixed(0)}m  ${inside || "clear"}`,
 		);
 	}
 }
