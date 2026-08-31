@@ -75,15 +75,14 @@ const WIDEST_STATUS =
 /**
  * The frame loop, as much of it as the rig is allowed to touch.
  *
- * **It stops the world, so only the rig may hold one.** `Game` builds it as a
- * closure at the rig's construction and keeps no field
- * (`Game.loopControl()`) — an own property would be reachable through
- * `window.__seelite` from any page, because `private` is erased at runtime.
- * That was the shape of the first attempt and it was a regression: a
- * production page could have frozen the frame loop, where the
- * `probeFreezeLoop`/`probeResumeLoop` members it replaced returned early
- * outside prototype mode. `probe-boot.mjs` now asserts a default boot exposes
- * no freeze-capable property at all.
+ * **It stops the world, so only the rig may hold one.** `Game` builds it as an
+ * inline literal at the rig's construction and keeps neither a field nor a
+ * method — both are reachable through `window.__seelite`, because `private` is
+ * erased at runtime and the instance is published whole. Two attempts got this
+ * wrong in turn, a field and then a prototype method, before the closure.
+ * `probe-boot.mjs` fails a default boot that exposes a loop control or any of
+ * the names that have carried one; its docstring records the shape it still
+ * cannot see.
  *
  * `probe-live-cockpit.mjs` uses it to compare tracer pixels against a fixed
  * simulation state. The mechanism is `Game`'s — it owns the
@@ -249,10 +248,7 @@ export class CombatPrototypeRig {
 		material.emissiveIntensity = hitting ? 4 : 1.2;
 		this.targetMesh.scale.setScalar(hitting ? 1.25 : 1);
 		this.laser.quaternion.copy(viewRotation);
-		this.laser.visible =
-			view === "cockpit" &&
-			this.state.firing !== null &&
-			!this.forceLaserHidden;
+		this.laser.visible = this.beamShown(view);
 	}
 
 	/**
@@ -272,12 +268,7 @@ export class CombatPrototypeRig {
 		view: CombatView,
 		glassBottom: number,
 	): void {
-		if (
-			view !== "cockpit" ||
-			this.state.firing === null ||
-			this.forceLaserHidden
-		)
-			return;
+		if (!this.beamShown(view)) return;
 		ctx.save();
 		// Clip the glass effect to the windscreen rather than drawing a laser over
 		// an instrument panel.
@@ -328,12 +319,25 @@ export class CombatPrototypeRig {
 		return fitted;
 	}
 
+	/** Whether the weapon is showing at all. One predicate, because the 3D beam
+	 *  and the glass tracer are two renderings of one thing: spelled twice, a
+	 *  new suppression term would silently reach only one of them. */
+	private beamShown(view: CombatView): boolean {
+		return (
+			view === "cockpit" && this.state.firing !== null && !this.forceLaserHidden
+		);
+	}
+
 	/** The glass, when there is none to draw: a focused console or a docked ship
 	 *  has replaced it, and a stale record would let a probe assert a line that
 	 *  is not on screen. */
 	clearOverlay(): void {
 		this.overlayStatus.reset();
 		this.overlayLines = [];
+		// The third record, and it was missed: `probe-live-cockpit.mjs` asserts
+		// `statusWorstWidth > 0`, so leaving it set is exactly the stale reading
+		// this method's own docstring says it exists to prevent.
+		this.statusWorstWidth = 0;
 	}
 
 	/** The status block, fitted to the glass width. */

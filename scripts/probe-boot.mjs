@@ -800,48 +800,55 @@ async function combatRigAbsentInNormalFlight() {
 		//
 		// `private` is erased at runtime and the game object is published whole,
 		// so a prototype-only capability parked on it is reachable from a
-		// production page. One was, twice: first as a field
-		// (`probeLoopControl.freeze()`), then as a method
-		// (`loopControl().freeze()`) after the first fix moved it to the
-		// prototype. The first version of *this check* looked only at own
-		// enumerable properties and so passed green over the second one --- a
-		// check that could not fail on the thing it was written to catch.
+		// production page. One was, twice: first as an own field
+		// (`probeLoopControl.freeze()`), then --- after a fix that only moved it
+		// --- as a prototype method (`loopControl().freeze()`).
 		//
-		// So: walk the whole prototype chain, and treat both shapes as
-		// reachable --- an object exposing `freeze`, and any function that
-		// returns one when called with no arguments. Names are not trusted,
-		// because the two regressions had different names.
+		// **What this row covers, and what it does not.** It walks the whole
+		// prototype chain and fails on any member that *is* a loop control (an
+		// object exposing `freeze`), and on the four names that have ever
+		// carried this capability on `Game`. It does **not** detect an
+		// arbitrary new void method that calls `cancelAnimationFrame` itself ---
+		// the shape `probeFreezeLoop` had before this branch removed it. Two
+		// things were tried and rejected for that: calling every zero-arity
+		// member to see what it returns invokes `animate()` and arms a second
+		// rAF chain on the page being measured, and pinning the whole
+		// `__seelite` surface is ~76 members and belongs to a declared
+		// read-model rather than to this node.
+		//
+		// So this is a real check with a named hole, rather than a broad one
+		// that would read as complete and is not.
 		freezers: (() => {
 			const game = window.__seelite;
-			const names = new Set();
+			const EVER_CARRIED_IT = [
+				"probeLoopControl",
+				"loopControl",
+				"probeFreezeLoop",
+				"probeResumeLoop",
+			];
+			const found = [];
 			for (
 				let o = game;
 				o && o !== Object.prototype;
 				o = Object.getPrototypeOf(o)
 			)
-				for (const n of Object.getOwnPropertyNames(o)) names.add(n);
-			const isControl = (v) =>
-				v && typeof v === "object" && typeof v.freeze === "function";
-			const found = [];
-			for (const n of names) {
-				if (n === "constructor") continue;
-				let v;
-				try {
-					v = game[n];
-				} catch {
-					continue;
-				}
-				if (isControl(v)) found.push(n);
-				// A zero-arity function that hands one back is the same hole with
-				// one more step, which is precisely what round 2 shipped.
-				else if (typeof v === "function" && v.length === 0) {
-					try {
-						if (isControl(v.call(game))) found.push(`${n}()`);
-					} catch {
-						/* not a factory; calling it proved that */
+				for (const n of Object.getOwnPropertyNames(o)) {
+					if (n === "constructor" || found.includes(n)) continue;
+					if (EVER_CARRIED_IT.includes(n)) {
+						found.push(n);
+						continue;
 					}
+					// Read-only: no member is invoked, so nothing here can perturb
+					// the page it is measuring.
+					let v;
+					try {
+						v = game[n];
+					} catch {
+						continue;
+					}
+					if (v && typeof v === "object" && typeof v.freeze === "function")
+						found.push(n);
 				}
-			}
 			return found;
 		})(),
 	}));

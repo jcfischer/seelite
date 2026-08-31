@@ -168,19 +168,43 @@ test("an enemy barrage depletes the player fore shield before damaging hull", ()
 // test and retune pulse"). A comment claiming two things are the same is not a
 // check that they are.
 
-test("both weapon arms are handed the same schedule", () => {
-	// The claim the pacing tests rest on and could not previously make: the two
-	// duels differ *only* in the weapon. Asserted over a walk rather than one
-	// sample, because every term in the schedule is periodic in `elapsed` and a
-	// single reading can agree by luck at a phase both terms happen to share.
+test("the weapon changes `firing` and no other input", () => {
+	// **What this proves, stated exactly.** `duelInputs` is a function of the
+	// state, and the weapon reaches only the `firing` field — so two arms given
+	// the *same* state are handed the same schedule.
+	//
+	// It does **not** prove two *flown* duels see the same schedule: they
+	// diverge in hull as they run, and `enemyFiring` reads both hulls. An
+	// earlier version of this test claimed that, and could not have shown it —
+	// it walked `createCombatPrototype({ elapsed })`, whose hulls are always
+	// full, so the one state-dependent term never varied and agreed vacuously.
+	//
+	// The states below vary the hulls deliberately, so `enemyFiring` takes both
+	// values across the walk; the counters at the end refuse a run where it did
+	// not.
+	let enemyFiringTrue = 0;
+	let enemyFiringFalse = 0;
 	for (let elapsed = 0; elapsed < 40; elapsed += 0.1) {
-		const state = createCombatPrototype({ elapsed });
-		const pulse = duelInputs(state, 0.1, "pulse");
-		const beam = duelInputs(state, 0.1, "beam");
-		expect({ ...pulse, firing: null }).toEqual({ ...beam, firing: null });
-		expect(pulse.firing).toBe("pulse");
-		expect(beam.firing).toBe("beam");
+		for (const hulls of [
+			{},
+			{ targetHull: 0 },
+			{ playerHull: 0 },
+			{ targetHull: 12, playerHull: 30, heat: 40, energy: 55 },
+		]) {
+			const state = createCombatPrototype({ elapsed, ...hulls });
+			const pulse = duelInputs(state, 0.1, "pulse");
+			const beam = duelInputs(state, 0.1, "beam");
+			expect({ ...pulse, firing: null }).toEqual({ ...beam, firing: null });
+			expect(pulse.firing).toBe("pulse");
+			expect(beam.firing).toBe("beam");
+			if (pulse.enemyFiring) enemyFiringTrue++;
+			else enemyFiringFalse++;
+		}
 	}
+	// The control: without these the equality above would pass on a walk where
+	// `enemyFiring` was constant, which is how the earlier version read green.
+	expect(enemyFiringTrue).toBeGreaterThan(0);
+	expect(enemyFiringFalse).toBeGreaterThan(0);
 });
 
 test("the schedule drives the cone off `duelTargetInCone`, not a second copy", () => {
