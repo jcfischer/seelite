@@ -199,12 +199,13 @@ export function stepCombatPrototype(
  * The weapon is the caller's because it is the one thing the two arms differ
  * in, and `#48`'s pacing claim is exactly that they differ in nothing else.
  */
-export interface DuelLiveInput {
-	incomingMissile?: boolean;
-	ecm?: boolean;
-	interdicting?: boolean;
-	breakAngle?: boolean;
-}
+/** Derived rather than re-typed: these are the four `CombatPrototypeInput`
+ *  fields the pilot supplies, and a copy would keep compiling against a stale
+ *  shape the day one of them changes type. */
+export type DuelLiveInput = Pick<
+	CombatPrototypeInput,
+	"incomingMissile" | "ecm" | "interdicting" | "breakAngle"
+>;
 
 export function duelInputs(
 	state: CombatPrototypeState,

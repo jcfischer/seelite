@@ -782,7 +782,11 @@ await settingsGate();
 async function combatRigAbsentInNormalFlight() {
 	const page = await open(URL);
 	const plain = await page.evaluate(() => ({
-		rig: window.__seelite.combatRig,
+		// Coerced in the page, not returned. On the regression this row exists to
+		// catch, `combatRig` is a live rig holding Three.js meshes with parent
+		// cycles, and handing that to `evaluate` serialises a scene graph instead
+		// of failing a check.
+		rigAbsent: window.__seelite.combatRig === null,
 		target: Boolean(
 			window.__seelite.nearScene.getObjectByName("combat-prototype-target"),
 		),
@@ -795,8 +799,8 @@ async function combatRigAbsentInNormalFlight() {
 	}));
 	check(
 		"a default boot builds no prototype rig",
-		plain.rig === null,
-		`combatRig ${String(plain.rig)}`,
+		plain.rigAbsent,
+		`combatRig absent: ${plain.rigAbsent}`,
 	);
 	check(
 		"a default boot allocates no prototype scene objects",
@@ -808,7 +812,14 @@ async function combatRigAbsentInNormalFlight() {
 	// The other arm: the same lookups find the objects when the rig is asked
 	// for, so the rows above are a statement about the gate and not about the
 	// names having gone away.
-	const combatPage = await open(`${URL}&combat=1`);
+	// Built rather than concatenated. `PROBE_URL` replaces the whole URL (line
+	// 51), so neither `?combat=1` nor `&combat=1` is safe against it — the first
+	// version of this line used `?` on a URL already carrying `?seed=42`, the
+	// flag never parsed, and the control row below failed for a reason it did
+	// not name. Appending `&` blind is the same bug facing the other way.
+	const combatUrl = new URL(URL);
+	combatUrl.searchParams.set("combat", "1");
+	const combatPage = await open(combatUrl.href);
 	const enabled = await combatPage.evaluate(() => ({
 		rig: window.__seelite.combatRig !== null,
 		target: Boolean(

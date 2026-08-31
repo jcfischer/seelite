@@ -3,8 +3,10 @@
  * prototype.
  *
  * **A claim about absence, which is the kind that reads green for free.** The
- * browser half of this — `probe-boot.mjs` asserting a default boot allocates no
- * rig meshes and draws no rig chrome — proves the *running* game is clean. It
+ * browser half of this — `probe-boot.mjs` asserting a default boot holds no rig
+ * and that neither prototype mesh is in the near layer — proves the *running*
+ * game is clean. (It measures allocation, not chrome: with no rig there is
+ * nothing left to draw the chrome, so the glass is not separately asserted.) It
  * cannot prove the source is: a build that still threaded the prototype through
  * eight sites in `Game` and merely guarded each one would boot identically and
  * pass it. That build is exactly what #61 exists to remove, because unpicking
@@ -98,18 +100,15 @@ test("no other combat vocabulary survives in main.ts", () => {
 	// The catch-all under the named bans above: any *other* combat identifier in
 	// `Game`'s code is a threading site the list has not caught up with.
 	//
-	// Two bare `combat` tokens are expected and are not identifiers — the module
-	// specifier `"./combat-rig"` and the `?combat=1` query flag — so they are
-	// matched exactly rather than filtered by a substring, which would also have
-	// swallowed a real `combatFoo`.
-	const words = (main.match(/[A-Za-z_$]*combat[A-Za-z0-9_$]*/gi) ?? []).filter(
-		(w) => w !== "combatRig" && w !== "CombatPrototypeRig" && w !== "combat",
-	);
-	expect(words).toEqual([]);
-	// The bare tokens are bounded too: one import path, one query flag. A third
-	// is a new place `main.ts` has learned the word.
-	const bare = (main.match(/[A-Za-z_$]*combat[A-Za-z0-9_$]*/gi) ?? []).filter(
-		(w) => w === "combat",
-	);
-	expect(bare).toHaveLength(2);
+	// One scan, two partitions, so the two halves cannot drift apart. The bare
+	// `combat` tokens are expected and are not identifiers — the module specifier
+	// `"./combat-rig"` and the `?combat=1` query flag — and they are matched
+	// exactly rather than by substring, which would also have swallowed a real
+	// `combatFoo`.
+	const ALLOWED = new Set(["combatRig", "CombatPrototypeRig"]);
+	const all = main.match(/[A-Za-z_$]*combat[A-Za-z0-9_$]*/gi) ?? [];
+	expect(all.filter((w) => !ALLOWED.has(w) && w !== "combat")).toEqual([]);
+	// Bounded too: one import path, one query flag. A third is a new place
+	// `main.ts` has learned the word.
+	expect(all.filter((w) => w === "combat")).toHaveLength(2);
 });

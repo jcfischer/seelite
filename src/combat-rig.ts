@@ -13,8 +13,19 @@
  *
  * The rig therefore owns everything the prototype touches: its scene objects,
  * its input mapping, its simulation step, its glass, and the hooks the browser
- * probe drives it with. `Game` holds one nullable field and calls six methods.
- * Deleting the prototype is deleting this file and that field.
+ * probe drives it with. `Game` holds one nullable field and calls seven methods
+ * — `onResize`, `command`, `step`, `render`, `clearOverlay`, `drawTracer`,
+ * `drawOverlay` — at nine `this.combatRig?.` sites.
+ *
+ * **What removal actually costs, stated rather than rounded down.** Deleting
+ * the prototype is deleting this file, the field, those nine call sites, and
+ * the 21 `combatRig` references in `probe-live-cockpit.mjs`. That is a larger
+ * number than "a file and a field", and it is the honest one. What changed is
+ * its *shape*: every site is now a `?.` call on one nullable field that the
+ * compiler finds for you, rather than ten fields and eight guarded branches
+ * threaded through the constructor, the command switch, the step, the render
+ * and two draw paths. A source scan can hold the line at zero
+ * (`tests/combat-rig-boundary.test.ts`); it could not have held the old one.
  *
  * ## What it is not
  *
@@ -52,6 +63,11 @@ const WIDEST_STATUS =
 
 /**
  * The frame loop, as much of it as the rig is allowed to touch.
+ *
+ * **Only a probe-driven consumer may hold one.** It stops the world, and unlike
+ * the `probeFreezeLoop`/`probeResumeLoop` members it replaces it does not
+ * self-gate on prototype mode — `Game` names its instance `probeLoopControl`
+ * for that reason.
  *
  * `probe-live-cockpit.mjs` freezes the loop to compare tracer pixels against a
  * fixed simulation state, then resumes it. The mechanism is `Game`'s — it owns
@@ -243,6 +259,39 @@ export class CombatPrototypeRig {
 		ctx.restore();
 	}
 
+	/**
+	 * The font one status line fits in, and the width its worst case occupies.
+	 *
+	 * **Fitted against the widest text the line can ever hold, not against the
+	 * live digits**, so a reading that grows by a character does not resize the
+	 * line under the player. That makes the answer a property of the line and
+	 * the glass width alone, which is what lets it be cached: the loop below
+	 * measures once per role per width, not once per frame.
+	 */
+	private fitFont(
+		ctx: CanvasRenderingContext2D,
+		key: string,
+		widest: string,
+		startSize: number,
+		w: number,
+	): { font: string; worstWidth: number } {
+		const cacheKey = `${key}|${w}`;
+		const held = this.statusFit.get(cacheKey);
+		if (held) return held;
+		let size = startSize;
+		ctx.font = `${size}px ui-monospace, monospace`;
+		while (size > 8 && ctx.measureText(widest).width > w - 16) {
+			size -= 1;
+			ctx.font = `${size}px ui-monospace, monospace`;
+		}
+		const fitted = {
+			font: ctx.font,
+			worstWidth: ctx.measureText(widest).width,
+		};
+		this.statusFit.set(cacheKey, fitted);
+		return fitted;
+	}
+
 	/** The glass, when there is none to draw: a focused console or a docked ship
 	 *  has replaced it, and a stale record would let a probe assert a line that
 	 *  is not on screen. */
@@ -273,29 +322,13 @@ export class CombatPrototypeRig {
 			key: string,
 			widest: string,
 		) => {
-			// The fit depends on the widest text for this line and the glass width,
-			// not on the live digits, so cache the fitted font by key.
-			const cacheKey = `${key}|${w}`;
-			let fitted = this.statusFit.get(cacheKey)?.font;
-			if (!fitted) {
-				ctx.font = `${startSize}px ui-monospace, monospace`;
-				let size = startSize;
-				while (size > 8 && ctx.measureText(widest).width > w - 16) {
-					size -= 1;
-					ctx.font = `${size}px ui-monospace, monospace`;
-				}
-				fitted = ctx.font;
-				this.statusFit.set(cacheKey, {
-					font: fitted,
-					worstWidth: ctx.measureText(widest).width,
-				});
-			}
-			ctx.font = fitted;
+			const { font } = this.fitFont(ctx, key, widest, startSize, w);
+			ctx.font = font;
 			const width = ctx.measureText(text).width;
-			drawnLines.push({ text, font: fitted, width });
+			drawnLines.push({ text, font, width });
 			ctx.fillStyle = fill;
 			ctx.fillText(text, w / 2, y);
-			return fitted;
+			return font;
 		};
 		const s = this.state;
 		drawFitted(
@@ -329,7 +362,18 @@ export class CombatPrototypeRig {
 					? "DUEL WON"
 					: `FIRE ${s.heatLocked ? "LOCKED" : (s.firing?.toUpperCase() ?? "SAFE")} · H ${s.heat.toFixed(0)} E ${s.energy.toFixed(0)} · LOCK ${s.missileLock ? "READY" : "ACQ"} · MISSILE ${s.incomingMissile ? "WARNING" : "CLEAR"} · INTD ${s.interdiction ? "ACTIVE" : "CLEAR"}`;
 		// The status line goes through the same fitter, keyed on its widest text
-		// so any live state fits whatever the first frame displayed.
+		// so any live state fits whatever the first frame displayed. Its fit is
+		// read directly rather than fetched back out of the cache afterwards —
+		// the value the probe asserts on and the value the line was drawn at are
+		// then the same one by construction.
+		const statusFit = this.fitFont(
+			ctx,
+			"status",
+			WIDEST_STATUS,
+			Number.parseInt(PROMPT_FONT, 10),
+			w,
+		);
+		this.statusWorstWidth = statusFit.worstWidth;
 		const statusFont = drawFitted(
 			status,
 			h * 0.84,
@@ -338,7 +382,6 @@ export class CombatPrototypeRig {
 			"status",
 			WIDEST_STATUS,
 		);
-		this.statusWorstWidth = this.statusFit.get(`status|${w}`)?.worstWidth ?? 0;
 		const statusWidth = drawnLines.at(-1)?.width ?? 0;
 		this.overlayStatus.setCenteredPrompt(
 			status,

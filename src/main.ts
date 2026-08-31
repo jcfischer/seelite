@@ -863,14 +863,17 @@ class Game {
 	/** rAF handle, so the loop can be frozen and driven by hand. */
 	private animationFrame = 0;
 	/**
-	 * Stop and restart the frame loop.
+	 * Stop and restart the frame loop, **for a probe and nothing else**.
 	 *
-	 * The only caller today is the prototype rig, which hands the pair to a
-	 * probe that renders against a fixed simulation state. The *gate* that used
-	 * to sit here — both methods returned early outside combat mode — went with
-	 * it, which is why these are plain and private now.
+	 * Named for what may hold it rather than for what it does, because what it
+	 * does is stop the world. The predecessors — `probeFreezeLoop` and
+	 * `probeResumeLoop` on this class — at least self-gated on combat mode; this
+	 * pair does not, so the constraint has to be the name and this note. It is
+	 * handed only to the prototype rig, which exposes it to
+	 * `probe-live-cockpit.mjs` for comparing tracer pixels against a fixed
+	 * simulation state. A consumer that is not a probe wants something else.
 	 */
-	private readonly loop = {
+	private readonly probeLoopControl = {
 		freeze: () => {
 			if (this.animationFrame) {
 				cancelAnimationFrame(this.animationFrame);
@@ -1526,7 +1529,7 @@ class Game {
 		// scene objects, so normal flight builds none of them (#61).
 		this.combatRig =
 			new URLSearchParams(window.location.search).get("combat") === "1"
-				? new CombatPrototypeRig(this.nearScene, this.loop)
+				? new CombatPrototypeRig(this.nearScene, this.probeLoopControl)
 				: null;
 		this.warp = warpField(this.world.seed);
 		this.nearScene.add(this.warp.object);
@@ -4297,9 +4300,6 @@ class Game {
 		// no-op today; it is written out because the moment the camera stops
 		// being pinned there, its absence is a bug that takes an hour to see.
 		this.stars.position.copy(this.backdropCamera.position);
-		// A deliberate prototype target gives the balance controls a visible object
-		// without borrowing #35's display-only traffic as a combat entity. It is
-		// built only in prototype mode, so the whole update is gated too.
 		this.combatRig?.render(this.view, this.orientation, viewRotation);
 
 		// The star, resolved once at build time rather than scanned for per frame:

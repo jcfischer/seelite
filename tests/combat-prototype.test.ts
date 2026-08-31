@@ -217,10 +217,13 @@ test("the enemy stops firing once either side is dead", () => {
 test("live inputs pass through, and are absent when the rig supplies none", () => {
 	const state = createCombatPrototype();
 	const bare = duelInputs(state, 0.1, null);
-	expect(bare.incomingMissile).toBeFalsy();
-	expect(bare.ecm).toBeFalsy();
-	expect(bare.interdicting).toBeFalsy();
-	expect(bare.breakAngle).toBeFalsy();
+	// Absent, not `false`. `toBeFalsy` passed either way, so the half of this
+	// test's name that says "absent" was checking nothing — and the two cases
+	// differ to a caller that spreads the result over defaults.
+	expect("incomingMissile" in bare).toBe(false);
+	expect("ecm" in bare).toBe(false);
+	expect("interdicting" in bare).toBe(false);
+	expect("breakAngle" in bare).toBe(false);
 	const flown = duelInputs(state, 0.1, null, {
 		incomingMissile: true,
 		ecm: true,
