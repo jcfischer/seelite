@@ -594,14 +594,21 @@ export function recomposeDirection(
  *
  * An arrival settles onto the parked pose — nose outward, up along the berth's
  * normal — from whatever the crossing left it in. A launch runs the other way:
- * it starts parked and settles onto the slot's own `across`, which is check 4's
+ * it starts parked and settles onto the slot's own `up`, which is check 4's
  * roll reference and the attitude a ship outside the plane is measured in.
  *
- * **`across`, not `up`, and that is check 4's convention rather than a
- * choice.** `evaluateEntry` measures the roll as `|dot(shipUp, basis.across)|`
- * and `signedRollDeg` reports zero when the two are parallel — so a ship rolled
- * "correctly" for a slot has its up-vector along the slot's long axis. The
- * first build aligned to `basis.up` instead, which is exactly 90° out.
+ * **`up`, not `across`, and that is check 4's convention rather than a
+ * choice** (#158). `evaluateEntry` measures the roll as `|dot(shipUp,
+ * basis.up)|`, so a ship rolled "correctly" for a slot has its *beam* along
+ * the slot's long axis — which is the pose `tests/aperture-fit.test.ts` sizes
+ * the opening from.
+ *
+ * It was `across` until #158, and one frame was read as evidence for that: a
+ * docked ship looked to be "lying crossways in its own slot with the name
+ * shield running vertically up the canopy". The shield sits on the station
+ * mesh's own local X (`station-mesh.ts`) and carries nothing about the ship's
+ * roll, so what that frame showed was the mouth plate. `tests/roll-reference.
+ * test.ts` is the row that compares the two zeros, which is what was missing.
  */
 export function arrivalAttitude(
 	law: ArrivalLaw,
@@ -617,7 +624,7 @@ export function arrivalAttitude(
 		return attitudeFromQuat(
 			quatSlerp(
 				quatFromAttitude(parked.nose, parked.up),
-				quatFromAttitude(law.frame.axis, basis.across),
+				quatFromAttitude(law.frame.axis, basis.up),
 				e,
 			),
 		);

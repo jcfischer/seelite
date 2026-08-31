@@ -71,7 +71,7 @@ const poseAt = (frame: ApertureFrame, rel: Vec3): EntryPose => ({
 	rel,
 	vRel: scale(frame.axis, -V_GATE_KMS / 2),
 	nose: scale(frame.axis, -1),
-	up: slotBasis(frame).across,
+	up: slotBasis(frame).up,
 });
 
 describe("the corridor's shape", () => {

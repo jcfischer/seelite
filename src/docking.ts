@@ -360,10 +360,15 @@ export function signedRollDeg(frame: ApertureFrame, pose: EntryPose): number {
 	// check is #9's and it refuses the pose on check 2 anyway.
 	if (norm <= ROLL_PROJECTION_FLOOR) return Number.NaN;
 	const u = scale(projected, 1 / norm);
-	const { across } = slotBasis(frame);
-	const perpendicular = cross(axis, across);
+	// **The same reference check 4 compares against** (#158) — `basis.up`, the
+	// slot's short axis. This is display only and no check reads it, but the
+	// roll ring sends the pilot toward this zero, so a cue left on `across`
+	// would aim at the pose the corrected check refuses. Same formula shape as
+	// before, so the handedness is the one the ring was built against.
+	const reference = slotBasis(frame).up;
+	const perpendicular = cross(axis, reference);
 	const deg =
-		(Math.atan2(dot(u, perpendicular), dot(u, across)) * 180) / Math.PI;
+		(Math.atan2(dot(u, perpendicular), dot(u, reference)) * 180) / Math.PI;
 	if (deg > 90) return deg - 180;
 	if (deg <= -90) return deg + 180;
 	return deg;
@@ -418,7 +423,8 @@ export interface EntryEvaluation {
 	 *  rather than reporting a boolean. */
 	positionAngleDeg: number;
 	noseAngleDeg: number;
-	/** `Number.NaN` for a pad: a square aperture has no long axis to match. */
+	/** `Number.NaN` for a pad: a square aperture has no distinguished axis, so
+	 *  there is no roll to match. */
 	rollAngleDeg: number;
 	/** Where the crossing point sits in the rolled aperture frame, km. */
 	offsetAcrossKm: number;
@@ -472,8 +478,16 @@ export function evaluateEntry(
 		Math.abs(offsetAcrossKm) <= aperture.widthKm / 2 + 1e-12 &&
 		Math.abs(offsetUpKm) <= aperture.heightKm / 2 + 1e-12;
 
-	// Check 4. Against the axis-*line*: the acute angle mod 180°, so a ship
-	// rolled exactly 180° is the identical entry it geometrically is.
+	// Check 4. Against the slot's **short** axis-line — the ship's up-vector
+	// lies along it when the ship's *beam* lies along the long one, which is
+	// the pose `tests/aperture-fit.test.ts` sizes the opening from (#157). It
+	// read `basis.across` until #158, so a ship at a perfect roll flew the slot
+	// on its side; the aperture's size cannot tell the two apart, because at
+	// the 50° limit the binding figure is 62.8 m against 63.4 m and both admit
+	// every non-capital hull.
+	//
+	// Against the axis-*line*, so the acute angle mod 180°: a ship rolled
+	// exactly 180° is the identical entry it geometrically is.
 	let rollAngleDeg = Number.NaN;
 	let rollMatch = true;
 	if (aperture.kind === "slot") {
@@ -490,7 +504,7 @@ export function evaluateEntry(
 		} else {
 			// The axis-*line*, so the acute angle mod 180°: the absolute cosine is
 			// that comparison without the round trip through degrees.
-			const rollCos = Math.abs(dot(unit(projected), basis.across));
+			const rollCos = Math.abs(dot(unit(projected), basis.up));
 			rollAngleDeg = cosToDeg(rollCos);
 			rollMatch = rollCos >= ROLL_COS - 1e-12;
 		}
@@ -1137,7 +1151,10 @@ export function dockingComputerStep(input: ComputerInput): ComputerCommand {
 		// makes the roll match a tracking problem, and starting to track only at
 		// the corridor leaves the fastest spinner a turn to make in the last
 		// three kilometres.
-		up: frame.aperture.kind === "slot" ? slotBasis(frame).across : pose.up,
+		// `up`, not `across`: check 4's reference (#158), and the computer has to
+		// fly at the pose the check accepts or the autopilot is the defect —
+		// #157 was reported as a ship entering the slot at 90°.
+		up: frame.aperture.kind === "slot" ? slotBasis(frame).up : pose.up,
 		speedKms,
 		phase: lined ? "run-in" : "line-up",
 	};

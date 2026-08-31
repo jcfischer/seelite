@@ -7,8 +7,10 @@
  *
  * **At check 4's roll limit, not axis-aligned**, which is §10's actual wording
  * and which the first version of this file ignored. A ship may arrive up to
- * `ROLL_LIMIT` off the slot's long axis and still be admitted by the docking
- * checks, so the opening has to pass its hull at that angle. A rolled rectangle
+ * `ROLL_LIMIT` off the slot's long axis — its beam along that axis is check 4's
+ * own zero, ratified in #157 against this file's measurement — and still be
+ * admitted by the docking checks, so the opening has to pass its hull at that
+ * angle. A rolled rectangle
  * needs `w·cos θ + h·sin θ` across and `w·sin θ + h·cos θ` up, and for a hull
  * that is nearly as tall as it is wide those are both larger than either.
  *

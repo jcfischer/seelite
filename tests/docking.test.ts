@@ -135,7 +135,9 @@ function nominal(
 		rel: scale(frame.axis, frame.planeKm),
 		vRel: scale(frame.axis, -V_GATE_KMS / 2),
 		nose: scale(frame.axis, -1),
-		up: basis.across,
+		// Check 4's zero: the ship's up along the slot's **short** axis, so its
+		// beam lies along the long one (#158).
+		up: basis.up,
 		...over,
 	};
 }
@@ -240,9 +242,9 @@ describe("§9.1.1 the six checks", () => {
 	test("check 4 boundary: exactly the roll tolerance passes, a hair past fails", () => {
 		const frame = frameFor();
 		const basis = slotBasis(frame);
-		const at = rotate(basis.across, frame.axis, ROLL_TOLERANCE_DEG * DEG);
+		const at = rotate(basis.up, frame.axis, ROLL_TOLERANCE_DEG * DEG);
 		const past = rotate(
-			basis.across,
+			basis.up,
 			frame.axis,
 			(ROLL_TOLERANCE_DEG + 1e-6) * DEG,
 		);
@@ -264,7 +266,7 @@ describe("§9.1.1 the six checks", () => {
 		const basis = slotBasis(frame);
 		const e = evaluateEntry(
 			frame,
-			nominal(frame, { up: scale(basis.across, -1) }),
+			nominal(frame, { up: scale(basis.up, -1) }),
 			{ hostile: false },
 		);
 		expect(e.rollAngleDeg).toBeCloseTo(0, 9);
@@ -425,7 +427,7 @@ describe("§9.1.4 a failed entry repels and keeps its grant", () => {
 			frame,
 			// Mis-rolled: a piloting error, not a protocol violation.
 			pose: nominal(frame, {
-				up: rotate(slotBasis(frame).across, frame.axis, 90 * DEG),
+				up: rotate(slotBasis(frame).up, frame.axis, 90 * DEG),
 			}),
 			state: granted,
 			gameTime: 10,
@@ -451,7 +453,7 @@ test("§9.1.5 a 90°-mis-rolled entry at 0.01 km/s still costs the floor", () =>
 		frame,
 		pose: nominal(frame, {
 			vRel: scale(frame.axis, -0.01),
-			up: rotate(slotBasis(frame).across, frame.axis, 90 * DEG),
+			up: rotate(slotBasis(frame).up, frame.axis, 90 * DEG),
 		}),
 		state: requestClearance(newDockingState(), {
 			gameTime: 0,
@@ -492,7 +494,7 @@ describe("§9.1.6 the pad is the slot minus check 4", () => {
 		"rolled %i°, the roll row is the only outcome that differs",
 		(deg) => {
 			const pose = nominal(slot, {
-				up: rotate(slotBasis(slot).across, slot.axis, deg * DEG),
+				up: rotate(slotBasis(slot).up, slot.axis, deg * DEG),
 			});
 			const a = evaluateEntry(slot, pose, { hostile: false });
 			const b = evaluateEntry(pad, pose, { hostile: false });

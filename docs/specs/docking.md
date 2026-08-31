@@ -151,7 +151,7 @@ damage depending on which an implementer picks.
 | 1 | **Not hostile** | `station.hostile === false` | bit 7 of byte 32 |
 | 2 | **Axis alignment** — **both** the station→ship vector **and** the ship's nose, each against the docking axis | ≤ **35°** each | 26° nose + 22° cone, merged |
 | 3 | **Inbound** — the axial component of `v_rel` points into the slot | sign test | sign of z |
-| 4 | **Roll match** — ship's up-vector against the slot's long **axis-line**, in the slot plane, acute angle mod 180° | ≤ **50°** | 33.6° |
+| 4 | **Roll match** — ship's up-vector against the slot's short **axis-line**, in the slot plane, acute angle mod 180°, so the ship's *beam* lies along the long one | ≤ **50°** | 33.6° |
 | 5 | **Containment** — the crossing point lies inside the aperture rectangle, in the slot's rolled frame | inside | implicit in the hull |
 | 6 | **Closing speed** `|v_rel|`, in the station's frame, at the moment of slot-plane crossing | ≤ **0.10 km/s** | *had no such check* |
 
@@ -176,7 +176,25 @@ be re-pointed rather than left to pass for a reason that has moved.
 
 **Check 4 compares against the axis-*line*, not an oriented vector.** The slot is
 a 0.12 × 0.07 km rectangle, so a ship rolled 180° is a geometrically identical
-entry; an oriented-vector comparison would reject it for no physical reason. Two consequences of *that instant*
+entry; an oriented-vector comparison would reject it for no physical reason.
+
+**And it is the *short* axis-line, corrected in #157.** This row said "long" from
+#9 until #158, and the implementation matched it — so a ship at a perfect roll
+put its 11.7 m height across the 120 m side and its 51.2 m beam across the 70 m
+one, and flew the slot on its side. It survived because the aperture's *size*
+cannot discriminate: at the 50° limit the binding figure is 62.8 m against
+63.4 m, and both conventions admit every non-capital hull. What settled it is
+that `tests/aperture-fit.test.ts` sizes this opening with the hull's beam along
+the long side, and §5's 0.12 × 0.07 km was ratified from that measurement — so
+the row was disagreeing with the reading its own dimensions came from.
+
+**Neither the 50° of §3.2 nor §5's 0.12 × 0.07 km moves with the correction.**
+The tolerance is an angle magnitude against an axis-line and only the line it is
+measured from changed; the dimensions were ratified from the surviving
+convention. `tests/roll-reference.test.ts` is the row that compares check 4's
+zero with the fit measurement's, which is the check that did not exist —
+`probe-dock-arrival.mjs` compares the drawn slot with `slotBasis`, which is the
+axis question, and nothing compared a ship pose with a slot at all. Two consequences of *that instant*
 being the evaluation point, both of which decide implementations:
 
 - **Check 2 is two angles, not one.** A purely positional cone constrains where

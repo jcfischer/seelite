@@ -112,7 +112,7 @@ export interface DirectorState {
 	 * projects — nothing here is in scene-graph units.
 	 */
 	tunnel: TunnelGeometry;
-	/** Check 4, or `null` for a pad: a square aperture has no long axis to
+	/** Check 4, or `null` for a pad: a square aperture has no distinguished axis to
 	 *  match, and an empty ring would read as a failed one. */
 	roll: DirectorCue | null;
 	/**
