@@ -159,10 +159,19 @@ describe("the view set itself", () => {
 		// And the range view is the far one. That is its whole reason: every other
 		// station framing in the set stands close, so before it nothing judged
 		// lit-window density from further out than eight radii.
+		//
+		// **Both ways a view names a station**, because the two kinds spell it
+		// differently: a `body-offset` carries `body: "station-trade"` and a
+		// `station-axis` carries `station: "trade"`. Reading only `body` would let
+		// a farther axis frame past the guard while it still reported green.
 		const stationRadii = VIEWS.map(
-			(v) => v.shot as { body?: string; radii?: number },
+			(v) => v.shot as { body?: string; station?: string; radii?: number },
 		)
-			.filter((s) => String(s.body ?? "").startsWith("station-"))
+			.filter(
+				(s) =>
+					String(s.body ?? "").startsWith("station-") ||
+					s.station !== undefined,
+			)
 			.map((s) => s.radii ?? 0);
 		// Guarded, so the comparison cannot pass by both sides being absent.
 		expect(typeof range.shot.radii).toBe("number");

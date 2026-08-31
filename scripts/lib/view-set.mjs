@@ -130,8 +130,9 @@ export const SHOT_KINDS = Object.freeze([
  * and shows nothing.
  *
  * **`station-range` stands at twenty and is not that mistake**, which is a
- * distinction #134 had to measure rather than assert: those three views were
- * set by guessing, and its ladder put the floor at 31–40 px of station width,
+ * distinction #134's receipt had to measure rather than assert: those three
+ * views were set by guessing, and its ladder put the floor at 31–40 px of
+ * station width,
  * with twenty radii of a trade station at ~70. Far is a pixel quantity, and the
  * radii that reach it differ per form — the same shipyard is past its own floor
  * by 32.
@@ -294,13 +295,15 @@ export const VIEWS = Object.freeze([
 		name: "station-range",
 		covers: [102, 101, 99],
 		/**
-		 * **The far case, and #134 measured where it ends before framing it.**
+		 * **The far case, and #134's receipt measured where it ends before it was
+		 * framed.** The figures below are that receipt's, not the node body's: the
+		 * body carries the question and the resolution comment carries the ladder.
 		 *
 		 * #129 left the residue named in the view above: nothing in the set
 		 * judged lit-window density at range, which is the half of #102's claim
 		 * that a station reads as inhabited from far enough out that the ports
-		 * are the only thing carrying it. #134 answered it on a headed 1:1
-		 * ladder — eight ranges per subject, each captured again with the panes'
+		 * are the only thing carrying it. #134's receipt answered it on a headed
+		 * 1:1 ladder — eight ranges per subject, each captured again with the panes'
 		 * instance count forced to zero and again with nothing changed for a
 		 * per-rung noise floor — and put the legibility floor at **31–40 px of
 		 * station width**: the principal read a shipyard's ports at 40 px and not
@@ -312,8 +315,8 @@ export const VIEWS = Object.freeze([
 		 * ports yields two frames that look equally empty. The floor says where
 		 * the lever ends; it is not where to stand to judge it.
 		 *
-		 * **180° because the azimuth is the lever, not the lighting.** #134's
-		 * sweep at a fixed range swung a shipyard's ports 40× between angles and
+		 * **180° because the azimuth is the lever, not the lighting.** The sweep in
+		 * #134's receipt, at a fixed range, swung a shipyard's ports 40× between angles and
 		 * a trade station's 5×, and both forms read strongest backlit — a frame
 		 * chosen for its light alone measures a blind face, which is the defect
 		 * #129 found in `station-approach` arrived at from the other side. At
@@ -345,9 +348,9 @@ export const VIEWS = Object.freeze([
 		 * framed today — seed 47 generates no refinery and `system.ts` places no
 		 * outpost, and #134 declined to buy a view for a form nobody has ranked.
 		 *
-		 * **150°, which is the angle the ladder found rather than one that looked
-		 * right.** Sweeping the camera azimuth at a fixed range, this form's
-		 * ports swing 40× — 10 px at 240° against 395 at 150 — so an unchosen
+		 * **150°, which is the angle #134's ladder found rather than one that
+		 * looked right.** Sweeping the camera azimuth at a fixed range, its receipt
+		 * reports this form's ports swinging 40× — 10 px at 240° against 395 at 150 — so an unchosen
 		 * angle is not a weaker frame but a frame of a blind face. Four radii and
 		 * not the trade station's twenty: a shipyard is a sparse frame rather
 		 * than a compact drum, so it puts far fewer pixels on screen per radius
