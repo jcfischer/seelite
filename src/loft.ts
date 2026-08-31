@@ -506,6 +506,12 @@ export function hullLoft(
 	// their own rings, and `tests/ship-mesh.test.ts` was reading them that way —
 	// a layout assumption that goes quietly wrong rather than loudly.
 	geometry.userData.caps = { front: frontCentre, rear: rearCentre };
+	// **What was cut, recorded on the thing that was cut** (#155). The gate
+	// needs to name the surfaces the ruling is about — a form's own outermost
+	// face — and a depth band cannot: the trade Coriolis's frame stands 25 m
+	// proud of its face while an outpost's tower leg crosses the lane at 30 m,
+	// so no band separates the cut from the traffic behind it.
+	if (options.aperture) geometry.userData.apertureCut = options.aperture;
 	geometry.userData.axis = rings.map((ring) => [ring.x, ring.y, ring.z]);
 	return geometry;
 }

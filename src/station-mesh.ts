@@ -1147,6 +1147,8 @@ function buildCuboctahedron(
 			"uv",
 			new THREE.BufferAttribute(new Float32Array((merged.length / 3) * 2), 2),
 		);
+		// The same record `hullLoft` writes, for the same reader.
+		geometry.userData.apertureCut = aperture;
 	}
 	// Box-projected UVs, per face — see `boxProjectUVs`.
 	boxProjectUVs(geometry, STATION_PANEL_KM);

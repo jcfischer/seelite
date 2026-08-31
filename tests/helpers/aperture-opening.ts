@@ -99,6 +99,18 @@ export interface Crossing {
 	 *  lane blocked are different defects with different fixes, and a name with
 	 *  a depth beside it cannot tell them apart. */
 	coverage: number;
+	/**
+	 * Whether this surface is one an aperture was cut into.
+	 *
+	 * Read off `userData.apertureCut`, which `hullLoft` and
+	 * `buildCuboctahedron` write on the geometry they cut. It is what lets the
+	 * gate assert the *cut* — #155's ruling — separately from the traffic
+	 * standing in the lane behind it, which is #147's and has its own fixes. No
+	 * depth band separates the two: the trade Coriolis's frame stands 25 m proud
+	 * of the face it is cut into and an outpost's tower leg crosses the lane at
+	 * 30 m.
+	 */
+	cut: boolean;
 }
 
 /**
@@ -119,6 +131,7 @@ export function crossings(root: THREE.Object3D, type: StationType): Crossing[] {
 	const { widthKm, heightKm } = STATION_GEOMETRY[type].aperture;
 	const band = bayBand(root);
 	const found = new Map<string, number>();
+	const wasCut = new Map<string, boolean>();
 	// **Rays, not hits.** Every surface is cast two-sided, so one ray through a
 	// solid object returns its front face and its back face and a hit count
 	// reports 200% of an opening it covers once.
@@ -150,6 +163,12 @@ export function crossings(root: THREE.Object3D, type: StationType): Crossing[] {
 					if (hit.point.z < band.min.z) continue;
 					const past = (band.max.z - hit.point.z) * core;
 					found.set(name, Math.min(found.get(name) ?? past, past));
+					wasCut.set(
+						name,
+						(wasCut.get(name) ?? false) ||
+							(hit.object as THREE.Mesh).geometry?.userData?.apertureCut !==
+								undefined,
+					);
 					const seen = rays.get(name) ?? new Set<number>();
 					seen.add(cell);
 					rays.set(name, seen);
@@ -162,8 +181,24 @@ export function crossings(root: THREE.Object3D, type: StationType): Crossing[] {
 			name,
 			pastMouthKm,
 			coverage: (rays.get(name)?.size ?? 0) / (CELLS * CELLS),
+			cut: wasCut.get(name) ?? false,
 		}))
 		.sort((a, b) => a.pastMouthKm - b.pastMouthKm);
+}
+
+/**
+ * Every surface an aperture was cut into, whether or not it still stands across
+ * the opening — so "no form forgot to cut" is a check rather than a comment.
+ */
+export function cutSurfaces(root: THREE.Object3D): string[] {
+	root.updateMatrixWorld(true);
+	const names = new Set<string>();
+	root.traverse((object) => {
+		const mesh = object as THREE.Mesh;
+		if (mesh.geometry?.userData?.apertureCut !== undefined)
+			names.add(mesh.name || mesh.type);
+	});
+	return [...names].sort();
 }
 
 /** One line per form, in the shape both the failure message and the instrument

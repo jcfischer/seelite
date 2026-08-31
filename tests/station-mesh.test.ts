@@ -40,7 +40,11 @@ import {
 	setStationDetail,
 } from "../src/station-mesh";
 import { berthCentre } from "../src/arrival";
-import { crossings, crossingsLine } from "./helpers/aperture-opening";
+import {
+	crossings,
+	crossingsLine,
+	cutSurfaces,
+} from "./helpers/aperture-opening";
 
 // From `station.ts`, not a literal: a fourth station type must reach every
 // loop in this file, and a hand-written list is exactly the place it would not.
@@ -513,14 +517,50 @@ describe("nothing stands in the way of the thing you fly through", () => {
  * have an opening at all.
  */
 describe("§13.1 — the opening is a hole, not a lit frame on a solid face", () => {
-	test("nothing but the bay lies inside the opening, on every form of every role", () => {
+	/**
+	 * **This is a different question from the corridor row above, and that
+	 * row's epsilon says so.** It measures what stands *in front of* the
+	 * aperture plane and skips every vertex at or behind it by construction —
+	 * *"the wall the aperture is cut into is not an intrusion into the corridor
+	 * in front of it"*. #155's defect lived exactly in the space that skip
+	 * creates: the wall was never cut, so all twelve forms drew a lit frame on a
+	 * solid surface and a docking ship crossed the station's own face. Every
+	 * headless row in this file was green throughout and none of them could
+	 * have gone red.
+	 *
+	 * **It asserts the cut, not the lane.** `scripts/measure-aperture-cut.ts`
+	 * prints both, and on eight forms the lane behind the mouth is still
+	 * blocked — a keel through a hub, a rock ceiling 207 m in, four tower legs.
+	 * That is #147's bay placed inside solid station rather than #155's uncut
+	 * face, it needs three different fixes and none of them is a cut, and it
+	 * carries its own node. The two cannot be separated by a depth band, which
+	 * is why this reads the record `hullLoft` and `buildCuboctahedron` write on
+	 * the geometry they cut: the Coriolis's frame stands 25 m proud of its own
+	 * face and an outpost's tower leg crosses the lane at 30 m.
+	 */
+	test("every form cuts its aperture into a surface", () => {
 		for (const type of TYPES) {
 			for (const form of STATION_FORMS[type]) {
 				const { root } = buildStationForm(type, form.id, GREY, 0);
-				expect([
+				expect([`${type} ${form.id}`, cutSurfaces(root).length > 0]).toEqual([
 					`${type} ${form.id}`,
-					crossingsLine(crossings(root, type)),
-				]).toEqual([`${type} ${form.id}`, ""]);
+					true,
+				]);
+			}
+		}
+	});
+
+	test("no surface a form cut still stands across its opening", () => {
+		for (const type of TYPES) {
+			for (const form of STATION_FORMS[type]) {
+				const { root } = buildStationForm(type, form.id, GREY, 0);
+				const blocked = crossingsLine(
+					crossings(root, type).filter((crossing) => crossing.cut),
+				);
+				expect([`${type} ${form.id}`, blocked]).toEqual([
+					`${type} ${form.id}`,
+					"",
+				]);
 			}
 		}
 	});
