@@ -74,12 +74,13 @@ describe("the view set itself", () => {
 		expect(sawSeed).toBe(true);
 	});
 
-	test("declares fifteen views with unique kebab-case names", () => {
+	test("declares seventeen views with unique kebab-case names", () => {
 		// Eight after #129 added `station-flank`, fifteen since #147 added
-		// §13.6's seven-frame acceptance set. A literal and not `VIEWS.length`,
+		// §13.6's seven-frame acceptance set, seventeen since #144 added the two
+		// station-port views #134 ratified. A literal and not `VIEWS.length`,
 		// which is the whole point: a view deleted by accident has to be a red
 		// run, and a check derived from its own subject cannot be one.
-		expect(VIEWS.length).toBe(15);
+		expect(VIEWS.length).toBe(17);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -119,6 +120,53 @@ describe("the view set itself", () => {
 	test("every covered id is a lever on the map", () => {
 		for (const view of VIEWS)
 			for (const id of view.covers) expect(LEVERS[id]).toBeDefined();
+	});
+
+	/**
+	 * **#134's two views, and the part of them a test can hold.**
+	 *
+	 * Not the framing numbers: #104 sets every `radii` by opening the PNG, so
+	 * pinning one here would make a deliberate re-framing a red run rather than a
+	 * decision. What is asserted is what #134 ratified and #129 measured the
+	 * absence of — that lever 102 is judged on a station seen **off** its
+	 * aperture axis, once at range on a trade station and once on a shipyard,
+	 * which is the hole the set had.
+	 */
+	test("the two range views judge lit windows off the aperture axis", () => {
+		const byName = new Map(VIEWS.map((v) => [v.name, v]));
+		const shotOf = (name: string) => {
+			const view = byName.get(name);
+			expect(view).toBeDefined();
+			return {
+				covers: view?.covers ?? [],
+				shot: (view?.shot ?? {}) as {
+					kind?: string;
+					body?: string;
+					radii?: number;
+				},
+			};
+		};
+		const range = shotOf("station-range");
+		const shipyard = shotOf("station-shipyard-flank");
+		for (const view of [range, shipyard]) {
+			expect(view.covers).toContain(102);
+			// A `station-axis` shot points down the one face a station's ports are
+			// deliberately kept off (#129), so neither of these may be one.
+			expect(view.shot.kind).toBe("body-offset");
+		}
+		expect(range.shot.body).toBe("station-trade");
+		expect(shipyard.shot.body).toBe("station-shipyard");
+		// And the range view is the far one. That is its whole reason: every other
+		// station framing in the set stands close, so before it nothing judged
+		// lit-window density from further out than eight radii.
+		const stationRadii = VIEWS.map(
+			(v) => v.shot as { body?: string; radii?: number },
+		)
+			.filter((s) => String(s.body ?? "").startsWith("station-"))
+			.map((s) => s.radii ?? 0);
+		// Guarded, so the comparison cannot pass by both sides being absent.
+		expect(typeof range.shot.radii).toBe("number");
+		expect(Math.max(...stationRadii)).toBe(range.shot.radii ?? 0);
 	});
 
 	test("every lever is covered by at least one view", () => {
@@ -169,8 +217,8 @@ describe("the contact sheet", () => {
 	test("prints the clock span the frames were taken across, not a pinned time", () => {
 		const html = contactSheet([fullRun("before")]);
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
-		// many views the set declares — fifteen since #147's acceptance frames.
-		expect(html).toContain("· clock 0.6–6.2s");
+		// many views the set declares — seventeen since #144's two range views.
+		expect(html).toContain("· clock 0.6–7.0s");
 		expect(html).not.toContain("pinned");
 	});
 

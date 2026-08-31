@@ -103,7 +103,7 @@ export const SHOT_KINDS = Object.freeze([
 ]);
 
 /**
- * Fifteen views, one clock, and — with one declared exception — one seed.
+ * Seventeen views, one clock, and — with one declared exception — one seed.
  *
  * **The exception is `refinery-cradle-berth`, and it names its own.** `SEED` 47
  * generates no refinery, so that view carries `seed: 2` and its capture
@@ -128,6 +128,13 @@ export const SHOT_KINDS = Object.freeze([
  * had three views at twelve, thirty and sixty, where the station is a bloom dot
  * with no surface to judge at all — a sheet that is captured, green, complete
  * and shows nothing.
+ *
+ * **`station-range` stands at twenty and is not that mistake**, which is a
+ * distinction #134 had to measure rather than assert: those three views were
+ * set by guessing, and its ladder put the floor at 31–40 px of station width,
+ * with twenty radii of a trade station at ~70. Far is a pixel quantity, and the
+ * radii that reach it differ per form — the same shipyard is past its own floor
+ * by 32.
  *
  * That was caught by looking, and only by looking. **No check in this repo can
  * catch it**, which is not an omission to be closed later: it is #98's finding
@@ -268,11 +275,11 @@ export const VIEWS = Object.freeze([
 		 * backdrop behind a hard outline and what bloom does to one, which is
 		 * what it is kept for.
 		 *
-		 * The residue is stated rather than papered over: **no view in this set
-		 * judges lit-window density at range.** `station-flank` judges it at
-		 * four radii and `cockpit-backlit` at eight, both on a trade station.
-		 * Whether the sheet needs a ninth view for a shipyard's own ports, or for
-		 * the far case, is a decision, and #129 is not the node that takes it.
+		 * The residue #129 stated rather than papered over — **no view in this set
+		 * judges lit-window density at range, and none a shipyard's ports at all**
+		 * — was a decision it declined to take. #134 took it and #144 built it:
+		 * `station-range` and `station-shipyard-flank` below are the two frames,
+		 * and this one keeps the backdrop and the outline it was kept for.
 		 */
 		what: "The shipyard's whole frame against the sky: the backdrop behind a hard outline, and what bloom does to one.",
 		shot: {
@@ -281,6 +288,78 @@ export const VIEWS = Object.freeze([
 			radii: 8,
 			sunAngleDeg: 140,
 			view: "cockpit",
+		},
+	},
+	{
+		name: "station-range",
+		covers: [102, 101, 99],
+		/**
+		 * **The far case, and #134 measured where it ends before framing it.**
+		 *
+		 * #129 left the residue named in the view above: nothing in the set
+		 * judged lit-window density at range, which is the half of #102's claim
+		 * that a station reads as inhabited from far enough out that the ports
+		 * are the only thing carrying it. #134 answered it on a headed 1:1
+		 * ladder — eight ranges per subject, each captured again with the panes'
+		 * instance count forced to zero and again with nothing changed for a
+		 * per-rung noise floor — and put the legibility floor at **31–40 px of
+		 * station width**: the principal read a shipyard's ports at 40 px and not
+		 * at 31, and a trade station's still at 36.
+		 *
+		 * **Twenty radii is ~70 px, roughly twice that floor, and the margin is
+		 * the decision.** A view parked at the vanishing point reads as barely
+		 * anything in *both* halves of a before/after, so a change that dims the
+		 * ports yields two frames that look equally empty. The floor says where
+		 * the lever ends; it is not where to stand to judge it.
+		 *
+		 * **180° because the azimuth is the lever, not the lighting.** #134's
+		 * sweep at a fixed range swung a shipyard's ports 40× between angles and
+		 * a trade station's 5×, and both forms read strongest backlit — a frame
+		 * chosen for its light alone measures a blind face, which is the defect
+		 * #129 found in `station-approach` arrived at from the other side. At
+		 * 180 the camera is exactly on the star–subject line, so the hull is a
+		 * cutout and the grid is the only thing emitting.
+		 *
+		 * **Judged by clicking the frame through, until #146 is fixed.** The
+		 * sheet renders every capture at about half size, so this row is ~35 px
+		 * across on it — on the floor rather than twice it.
+		 */
+		what: "A trade station backlit at twenty radii, ~70 px across on #134's ladder: lit-window density at range, where the grid is the only thing carrying the hull.",
+		shot: {
+			kind: "body-offset",
+			body: "station-trade",
+			radii: 20,
+			sunAngleDeg: 180,
+			view: "chase",
+		},
+	},
+	{
+		name: "station-shipyard-flank",
+		covers: [102, 101, 99],
+		/**
+		 * **A shipyard's ports, which nothing in the set had ever seen** (#134).
+		 * `station-outline` is the only other shipyard frame and it is at 140°,
+		 * where the ports are on neither visible face; every view that kept 102
+		 * after #129 is a trade station. Three of the four roles had their
+		 * clutter judged by nothing, and this closes the one role that can be
+		 * framed today — seed 47 generates no refinery and `system.ts` places no
+		 * outpost, and #134 declined to buy a view for a form nobody has ranked.
+		 *
+		 * **150°, which is the angle the ladder found rather than one that looked
+		 * right.** Sweeping the camera azimuth at a fixed range, this form's
+		 * ports swing 40× — 10 px at 240° against 395 at 150 — so an unchosen
+		 * angle is not a weaker frame but a frame of a blind face. Four radii and
+		 * not the trade station's twenty: a shipyard is a sparse frame rather
+		 * than a compact drum, so it puts far fewer pixels on screen per radius
+		 * and loses its ports between 26 and 32 of them.
+		 */
+		what: "A shipyard's ported faces at four radii, backlit at 150°: the one role whose ports and clutter no other view sees.",
+		shot: {
+			kind: "body-offset",
+			body: "station-shipyard",
+			radii: 4,
+			sunAngleDeg: 150,
+			view: "chase",
 		},
 	},
 	{
