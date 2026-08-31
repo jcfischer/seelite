@@ -366,10 +366,16 @@ export function signedRollDeg(frame: ApertureFrame, pose: EntryPose): number {
 	if (norm <= ROLL_PROJECTION_FLOOR) return Number.NaN;
 	const u = scale(projected, 1 / norm);
 	// **The same reference check 4 compares against** (#158) — `basis.up`, the
-	// slot's short axis. This is display only and no check reads it, but the
-	// roll ring sends the pilot toward this zero, so a cue left on `across`
-	// would aim at the pose the corrected check refuses. Same formula shape as
-	// before, so the handedness is the one the ring was built against.
+	// slot's short axis.
+	//
+	// **This has no reader.** The roll ticks went with #94's corridor
+	// (`hud-and-scanner.md` §3: "the pilot lines the cockpit up with it rather
+	// than reading ticks"), and nothing outside this module and
+	// `docking-director.ts` calls it. Moved with the check anyway, because left
+	// on `across` it would report 90° for the pose the check calls perfect — a
+	// number correct under a convention the repo no longer holds, waiting for
+	// the next instrument to trust it. Same formula shape as before, so the
+	// handedness is unchanged.
 	const rollZero = slotBasis(frame).up;
 	const perpendicular = cross(axis, rollZero);
 	const deg =
@@ -487,10 +493,9 @@ export function evaluateEntry(
 	// lies along it when the ship's *beam* lies along the long one, which is
 	// the pose `tests/aperture-fit.test.ts` sizes the opening from (#157). It
 	// read `basis.across` until #158, so a ship at a perfect roll flew the slot
-	// on its side. The aperture's size cannot tell the two apart: at the 50°
-	// limit the correct reading needs 62.8 m across and 63.4 m up against a
-	// 120 x 70 m slot, and transposing it needs 63.4 and 62.8 — both clear, and
-	// the tightest margin moves 6.6 m to 7.2 m.
+	// on its side. The aperture's size cannot tell the two apart, which is why
+	// nothing went red; `docking.md` §3 carries the measured margins, and this
+	// comment deliberately does not repeat them.
 	//
 	// Against the axis-*line*, so the acute angle mod 180°: a ship rolled
 	// exactly 180° is the identical entry it geometrically is.

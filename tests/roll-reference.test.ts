@@ -6,10 +6,10 @@
  * `|dot(shipUp, basis.across)|`, so its perfect roll stood a ship's *up-vector*
  * along the slot's 120 m side; `tests/aperture-fit.test.ts` sizes the opening
  * with the hull's *beam* along that same side. Transposed, and the aperture's
- * size cannot tell them apart: at the 50° limit the correct reading needs
- * 62.8 m across and 63.4 m up against a 120 x 70 m slot, and transposing it
- * needs 63.4 and 62.8 — both clear, so every non-capital hull is admitted
- * either way and no row in the repo went red.
+ * size cannot tell them apart — both clear a 120 x 70 m slot at the 50° limit,
+ * so every non-capital hull is admitted either way and no row in the repo went
+ * red. `docking.md` §3 carries the measured margins; a second copy here would
+ * drift the day the roster moves.
  *
  * They disagreed because **nothing here compared a ship pose with a slot.**
  * `probe-dock-arrival.mjs` compares the drawn slot with `slotBasis` — mesh
@@ -127,30 +127,16 @@ const poseAt = (
 /**
  * The centre of the band where a score reads exactly zero.
  *
- * **The score is `evaluateEntry`'s `rollAngleDeg`, and it has a plateau.** That
- * angle reaches a caller through `cosToDeg` — an `acos` of a clamped cosine,
- * worst-conditioned exactly at 1 — so the check reports **0.0** across a band
- * measured at 2.94e-6° wide — about one ulp of the cosine near 1. Four earlier
- * versions of this search
- * were written before that was understood and every one of them was wrong in
- * the same direction:
+ * **`evaluateEntry`'s `rollAngleDeg` has a plateau, so a minimum search cannot
+ * find its zero.** That angle reaches a caller through `cosToDeg` — an `acos` of
+ * a clamped cosine, worst-conditioned exactly at 1 — so the check reports 0.0
+ * across a band measured at 2.94e-6°, about one ulp of the cosine near 1. A
+ * search for the minimum stops improving at whichever edge it reaches first, and
+ * refining it further changes nothing.
  *
- * - a 0.01° sweep for the minimum found the zero to 0.005° at best, and passed
- *   only because the true zero sat on 90.00°;
- * - its replacement read a centre it reassigned inside the same loop, drifted to
- *   −2430°, and landed on an integer degree;
- * - refining that further changed nothing — the residual is 0.000e+0 at twelve
- *   passes and at sixteen alike, because a minimum search cannot see inside a
- *   plateau;
- * - and a fixed 1e-4° scan for a point inside the band hit it only because the
- *   sweep's origin happened to be a multiple of the step. Move the origin to
- *   0.37005° and nothing lands inside at all.
- *
- * So: **ternary search**, which narrows on a unimodal score without needing to
- * sample the plateau on a grid — when both probes read zero the plateau is
- * between them and the interval keeps both. Then bisect out to each sharp edge
- * and take the middle, which locates the zero to float precision while reading
- * nothing but the shipped check.
+ * Hence ternary search into the band, then bisection out to each of its sharp
+ * edges. Four earlier versions of this looked right and were not; node #158's
+ * receipt records which and why.
  */
 function zeroBandCentre(scoreAt: (deg: number) => number): number {
 	let coarse = -180;
@@ -244,13 +230,24 @@ describe("check 4's zero and the aperture-fit measurement agree (#157)", () => {
 	test("the pose check 4 calls a perfect roll puts the hull's beam along the slot's long side", () => {
 		const frame = frameFor();
 		const basis = slotBasis(frame);
-		// **`across` is the long side, asserted rather than assumed.** The row's
-		// title says "long", and without this it would only say "`across`" — it
-		// would stay green if the basis were ever re-keyed so that `across` ran
-		// along the short side, which is a transposition of exactly the class
-		// this file exists to catch. `station-mesh.ts` draws the mouth as
-		// `BoxGeometry(widthKm, heightKm, …)` on a local X that `main.ts` puts on
-		// the phase-zero `across`, so this is the tie to what is drawn.
+		// **That `across` is the long side is assumed here, not asserted — and no
+		// headless row can assert it.** `slotBasis` returns two unit vectors and
+		// nothing in the sim labels either "long": swap the two keys in it and
+		// every consumer swaps with them, so this file, `dockingTunnel` and the
+		// checks stay green together. An earlier version of this comment claimed
+		// the row below caught that re-key; it does not, and the claim was
+		// tested and withdrawn.
+		//
+		// The binding is a **renderer** fact — `station-mesh.ts` draws the mouth
+		// as `BoxGeometry(widthKm, heightKm, …)` and `main.ts` puts that local X
+		// on the phase-zero `across` — and it is checked in the browser tier, by
+		// `probe-dock-arrival.mjs`'s row that holds the drawn slot to `slotBasis`
+		// within 0.1°. That probe and these rows are the two halves: it fixes
+		// which direction `across` points, and these fix where the beam goes
+		// relative to it.
+		//
+		// What the aperture table *can* say is that the two dimensions differ, so
+		// "long" and "short" name something at all.
 		expect(frame.aperture.widthKm).toBeGreaterThan(frame.aperture.heightKm);
 		const { nose, up } = checkFourZero(frame);
 		const beam = beamAxis(nose, up);
@@ -322,7 +319,8 @@ describe("check 4's zero and the aperture-fit measurement agree (#157)", () => {
 		expect(rolled.up / flat.up).toBeGreaterThan(3);
 		expect(rolled.across).toBeLessThan(flat.across);
 		// The whole point of measuring at the limit rather than at zero: the `up`
-		// term takes a share of the beam and grows by 3.5x on this hull, while
+		// term takes a share of the beam and grows 4.0x on this hull (11.65 to
+		// 46.71 m), while
 		// the `across` term *shrinks* — a flat hull rolled presents less width
 		// and much more height. `aperture-fit.test.ts`'s "both are larger than
 		// either" holds for a near-square hull and not for this one, which is

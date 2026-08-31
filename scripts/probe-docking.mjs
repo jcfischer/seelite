@@ -176,7 +176,6 @@ async function fly(setup) {
 			const seen = g.dockingSnapshot(id);
 			if (!seen) return { noSnapshot: true, id };
 			const axis = seen.axis;
-			const across = seen.basis.across;
 			const up = seen.basis.up;
 
 			const start = D.add(
