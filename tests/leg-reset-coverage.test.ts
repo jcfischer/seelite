@@ -1,5 +1,5 @@
 /**
- * `Game.resetToStart` restores every field the flight path writes.
+ * `Game.resetFlightToStart` restores every field the flight path writes.
  *
  * ## Why a source scan and not a behavioural test
  *
@@ -190,7 +190,7 @@ const assigned = memo(
 			...across(DISPLAY_PATH, assignedFields),
 		]),
 );
-const resetBody = memo(() => methodBody(main, "resetToStart"));
+const resetBody = memo(() => methodBody(main, "resetFlightToStart"));
 
 test("every method the reset is declared against exists", () => {
 	// Its own test because the failure is different in kind: a renamed method
@@ -201,7 +201,7 @@ test("every method the reset is declared against exists", () => {
 		expect(() => methodBody(main, name)).not.toThrow();
 });
 
-test("resetToStart assigns every field the flight path assigns", () => {
+test("resetFlightToStart assigns every field the flight path assigns", () => {
 	const written = assigned();
 
 	// The premise. Without it a scan that found no methods, or a regex that
@@ -215,7 +215,7 @@ test("resetToStart assigns every field the flight path assigns", () => {
 	).toEqual([]);
 });
 
-test("resetToStart deals with every field the flight path mutates in place", () => {
+test("resetFlightToStart deals with every field the flight path mutates in place", () => {
 	// The blocker this file was extended for. `step` turns the ship with
 	// `this.orientation.multiply(turn)`, which the assignment scan cannot see —
 	// so the reset shipped restoring position and velocity while leaving the nose
@@ -253,7 +253,7 @@ test("every exemption names a field the leg path actually writes", () => {
 		expect(mutated().has(field) || assigned().has(field)).toBe(true);
 });
 
-test("resetToStart hands the world half to sim.ts", () => {
+test("resetFlightToStart hands the world half to sim.ts", () => {
 	// The renderer must not restate the clock, the bodies or the arrival point:
 	// `resetWorldToStart` owns those and `tests/world-reset.test.ts` is what
 	// proves them right. A second spelling here is a second answer to where boot

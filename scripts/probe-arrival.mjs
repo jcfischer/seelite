@@ -217,10 +217,22 @@ async function flyTo(stationId) {
  * copy of what boot state is can agree with itself while disagreeing with the
  * game.
  */
+/** The session fields the reset is checked on, named once. Two lists is how a
+ *  sixth field gets read and never compared. */
+const SESSION_FIELDS = [
+	"regime",
+	"chargeAu",
+	"spoolLeftS",
+	"lastExit",
+	"targetId",
+];
+
 async function startState() {
-	return page.evaluate(() => {
+	return page.evaluate((fields) => {
 		const g = window.__seelite;
+		const session = Object.fromEntries(fields.map((f) => [f, g[f]]));
 		return {
+			...session,
 			pos: { ...g.world.ship.pos },
 			vel: { ...g.world.ship.vel },
 			// The nose. `step` turns the ship by mutating `orientation` in place,
@@ -228,13 +240,8 @@ async function startState() {
 			// and velocity and leave the attitude from the previous leg.
 			nose: { ...g.nose() },
 			gameTime: g.world.gameTime,
-			regime: g.regime,
-			chargeAu: g.chargeAu,
-			spoolLeftS: g.spoolLeftS,
-			lastExit: g.lastExit,
-			targetId: g.targetId,
 		};
-	});
+	}, SESSION_FIELDS);
 }
 
 // ---------------------------------------------------------------- clear space
@@ -271,13 +278,13 @@ check(
  * `await`, so a navigation is the first call that has to interrupt whatever
  * that left running and the timeout lands there rather than on the cause.
  *
- * The reset is the game's own `resetToStart`, guarded on the headless tier by
+ * The reset is the game's own `resetFlightToStart`, guarded on the headless tier by
  * `tests/world-reset.test.ts` (the world half, against a real `makeWorld`) and
  * `tests/leg-reset-coverage.test.ts` (the renderer's own session fields). What
  * *this* file adds is the one thing neither of those can see: that the reset
  * ran in this browser, on this page, after a leg that actually moved the ship.
  */
-await page.evaluate(() => window.__seelite.resetToStart());
+await page.evaluate(() => window.__seelite.resetFlightToStart());
 const back = await startState();
 
 const drift = dist(back.pos, booted.pos);
@@ -315,13 +322,11 @@ check(
  * equality there would be asserting that two reads of a moving number agree,
  * which is a flake dressed as a check. What the clock owes is below.
  */
-const session = [
-	"regime",
-	"chargeAu",
-	"spoolLeftS",
-	"lastExit",
-	"targetId",
-].map((field) => [field, back[field], booted[field]]);
+const session = SESSION_FIELDS.map((field) => [
+	field,
+	back[field],
+	booted[field],
+]);
 // `undefined !== undefined` is false, so a field renamed on `Game` would make
 // both sides `undefined` and the check would go green having compared nothing —
 // on the one field the headless tier does not cover. A missing read is a

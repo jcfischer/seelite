@@ -3918,7 +3918,7 @@ class Game {
 	/**
 	 * What is selected on frame one.
 	 *
-	 * One method with two callers — the constructor and `resetToStart` — because
+	 * One method with two callers — the constructor and `resetFlightToStart` — because
 	 * it was briefly two copies and they diverged immediately: the reset set
 	 * `null` while a boot selects the nearest station, and a browser check with
 	 * its own hardcoded `null` reported that as boot state for five runs. The
@@ -3933,7 +3933,8 @@ class Game {
 	}
 
 	/**
-	 * Put the game back where a fresh boot leaves it, without rebuilding it.
+	 * Put the **flight session** back where a fresh boot leaves it, without
+	 * rebuilding the world.
 	 *
 	 * ## Who this is for
 	 *
@@ -3959,29 +3960,31 @@ class Game {
 	 * attempts to place and why `probe-boot.mjs` walks the prototype chain to
 	 * keep it off. This method is deliberately *not* held to that, and the
 	 * difference is the state each one leaves behind. Stopping the frame loop
-	 * puts the page somewhere the game never goes and cannot leave. A rewind
-	 * lands in a *legal* state — the flight session as boot produces it, by the
-	 * same expressions, with the loop still running. Not an identical one:
-	 * `frames` and the audio device are deliberately untouched, and the docking
-	 * session is out of scope below. And it adds no reach — the ship, the clock
-	 * and the whole session are already writable fields on the published object,
-	 * so anything this can do was a few assignments away already.
+	 * puts the page somewhere the game never goes and cannot leave, and there is
+	 * no way back. This lands somewhere the game does go, with the loop running —
+	 * but only for what its name covers. **Called mid-dock it leaves the docking
+	 * session part-way through**, which is a state no boot produces; that is why
+	 * the method is `resetFlightToStart` and not `resetToStart`, and it is the
+	 * limit below rather than a footnote to a safety claim.
 	 *
-	 * What it does add is a **name**: `resetToStart` is now a discoverable member
-	 * of the shipped console surface, and #89's save/load will be expected to
-	 * keep it working rather than to invent its own. That is intended, and it is
-	 * the reason this is worth stating rather than gating.
+	 * It adds no *reach*: the ship, the clock and the whole session are already
+	 * writable fields on the published object, so anything this can do was a few
+	 * assignments away. What it adds is a **name** on the shipped console
+	 * surface, which #89's save/load will be expected to keep working rather
+	 * than to replace.
 	 *
-	 * ## What it does not reset
 	 *
-	 * The **docking session**. `dock`, `interimCondition` and the commerce
-	 * clock stamp are written by `stepDockPhase`, `enterArrival` and
-	 * `applyDamage`, none of which is on the coverage scan's declared list — so
-	 * the guard cannot see this gap either, which is why it is written here. A
-	 * reset after a leg that entered an aperture would put the ship at the
-	 * arrival point with a docking phase still part-way through. `probe-arrival`
-	 * never docks, so it does not meet this; anything that does needs the
-	 * docking path added to both the reset and `LEG_PATH`.
+	 * ## What it does not reset, and why the name says so
+	 *
+	 * The **docking session**. `dock`, `interimCondition` and the commerce clock
+	 * stamp are written by `stepDockPhase`, `enterArrival` and `applyDamage`,
+	 * none of which is on the coverage scan's declared list — so the guard cannot
+	 * see this gap either, which is why it is written here and why the method is
+	 * named for the half it does deliver. Called after a leg that entered an
+	 * aperture it would put the ship at the arrival point with a docking phase
+	 * part-way through. `probe-arrival` never docks. Anything that does needs the
+	 * docking path added to this method **and** to `LEG_PATH`, and then the name
+	 * can lose its qualifier.
 	 *
 	 * ## Why the list is long
 	 *
@@ -3997,7 +4000,7 @@ class Game {
 	 * moves the clock backwards — a value stamped at t=900 and read at t=0 is
 	 * being asked something a forward-only game never asks it.
 	 */
-	resetToStart() {
+	resetFlightToStart() {
 		resetWorldToStart(this.world);
 
 		this.regime = "normal";

@@ -28,8 +28,7 @@
  * test below is what would have caught the claim.
  */
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { repoPath } from "./lib/source-scan";
+import { codeOf } from "./lib/source-scan";
 import {
 	advanceWorldClock,
 	makeWorld,
@@ -97,11 +96,20 @@ describe("resetWorldToStart", () => {
 		// Two halves, because neither alone is the claim. The source check pins the
 		// order; the behavioural half proves the order matters — swap the lines and
 		// `advanceSystem` runs on the pre-reset clock, leaving every body at t=900.
-		const source = readFileSync(repoPath("src/sim.ts"), "utf8");
-		const fn = source.slice(
-			source.indexOf("export function resetWorldToStart"),
-		);
-		expect(fn.indexOf("world.gameTime = 0")).toBeLessThan(
+		// `codeOf`, not `readFileSync`: comments are blanked, so the rejected form
+		// quoted in the comment beside the fix cannot redden this. Bounded at the
+		// next export, so a function appended below cannot widen it either.
+		const source = codeOf("src/sim.ts");
+		const from = source.indexOf("export function resetWorldToStart");
+		const next = source.indexOf("\nexport ", from + 1);
+		const fn = source.slice(from, next === -1 ? undefined : next);
+
+		// Both literals present before their order means anything: `indexOf`
+		// returns -1 for a miss, and -1 is less than every real index, so the
+		// comparison on its own goes green having matched nothing.
+		expect(fn).toContain("world.gameTime = 0;");
+		expect(fn).toContain("advanceSystem(world.system, world.gameTime)");
+		expect(fn.indexOf("world.gameTime = 0;")).toBeLessThan(
 			fn.indexOf("advanceSystem(world.system, world.gameTime)"),
 		);
 		expect(fn).not.toContain("advanceSystem(world.system, 0)");

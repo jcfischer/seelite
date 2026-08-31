@@ -795,11 +795,14 @@ export function resetWorldToStart(world: World): void {
 	// Reading the clock back is also `advanceWorldClock`'s own shape, and it
 	// leaves one line owning what the time is.
 	advanceSystem(world.system, world.gameTime);
+	// `world.gameTime` here too, for the reason four lines up: a second literal
+	// would be a second statement of what the time is, and the one place that
+	// says it should be the line that sets it.
 	world.ship.pos = arrivalPoint(
 		world.system.record,
 		world.system.contents,
 		null,
-		0,
+		world.gameTime,
 	);
 	world.ship.vel = v3();
 }
