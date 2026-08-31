@@ -818,6 +818,15 @@ async function combatRigAbsentInNormalFlight() {
 		//
 		// So this is a real check with a named hole, rather than a broad one
 		// that would read as complete and is not.
+		//
+		// **Both halves are proven to fail, and separately.** The name list and
+		// the shape test are different mechanisms, and a scar that trips the
+		// first `continue`s before the second ever runs — so the earlier scars
+		// (`probeLoopControl`, `loopControl()`, `probeFreezeLoop`) exercised
+		// only the names. The shape half was then run red on its own against a
+		// control under a name this list has never held, and caught it:
+		//
+		//     FAIL ... freeze-capable properties on __seelite: [cadenceHarness]
 		freezers: (() => {
 			const game = window.__seelite;
 			const EVER_CARRIED_IT = [
@@ -838,8 +847,13 @@ async function combatRigAbsentInNormalFlight() {
 						found.push(n);
 						continue;
 					}
-					// Read-only: no member is invoked, so nothing here can perturb
-					// the page it is measuring.
+					// No member is *called*. Accessors on the chain do run —
+					// `Game` has three (`dockedAt`, `dockPhase`,
+					// `dockTraversalSeconds`), all pure dock readouts — which is
+					// what the `catch` below concedes. An earlier version of this
+					// walk called every zero-arity function to see what it
+					// returned, and that reached `animate()` and armed a second
+					// rAF chain on the page being measured.
 					let v;
 					try {
 						v = game[n];
