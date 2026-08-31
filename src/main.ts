@@ -127,6 +127,7 @@ import {
 	bodyVelocity,
 	stationHostIdOf,
 	makeWorld,
+	resetWorldToStart,
 	stationOf,
 	stationPose,
 	stepAngular,
@@ -3912,6 +3913,79 @@ class Game {
 		this.orientation.setFromRotationMatrix(
 			new THREE.Matrix4().makeBasis(right, u, f.clone().negate()),
 		);
+	}
+
+	/**
+	 * Put the game back where a fresh boot leaves it, without rebuilding it.
+	 *
+	 * ## Who this is for
+	 *
+	 * `probe-arrival.mjs` flies two cruise legs and needs the second to start
+	 * where the first did. It used to get that by reloading the page between
+	 * them, which timed out at 30 s against a 4.2-7.4 s cold boot — the leg
+	 * before it runs a full step-and-render loop inside one `page.evaluate`, so
+	 * the navigation is the first call that has to interrupt whatever that left
+	 * running, and the timeout landed there rather than on the cause. #121
+	 * ratified removing the navigation instead of raising the number.
+	 *
+	 * ## What it is, and what it deliberately is not
+	 *
+	 * A **ship-state reset within one system**. `makeWorld` is still called
+	 * exactly once, in the constructor: the baked `environmentMap` and the
+	 * `interiors` berth catalogue are per-system caches this class never
+	 * invalidates, on the stated basis that a `Game` holds one system for its
+	 * whole life. Rebuilding the world here would quietly be the jump path both
+	 * of those comments say they are waiting for.
+	 *
+	 * The clock, the bodies and the arrival point belong to `resetWorldToStart`
+	 * in `sim.ts` and are not restated here — that is what lets
+	 * `tests/world-reset.test.ts` check them against a real `makeWorld(seed)` on
+	 * the headless tier. What is left is this class's own session state.
+	 *
+	 * ## Why the list is long
+	 *
+	 * Because a short one would be wrong. `tests/leg-reset-coverage.test.ts`
+	 * reads this method and every method a leg runs through, and goes red if the
+	 * flight path assigns a field this does not. The failure it exists to
+	 * prevent is silent: a forgotten field starts the next leg in a state no
+	 * player ever has, and the probe flying that leg reports a well-formed
+	 * number about the wrong start.
+	 *
+	 * The caches are in the list for a sharper reason than tidiness. They are
+	 * stamped with the clock, and this is the only operation in the game that
+	 * moves the clock backwards — a value stamped at t=900 and read at t=0 is
+	 * being asked something a forward-only game never asks it.
+	 */
+	resetToStart() {
+		resetWorldToStart(this.world);
+
+		this.regime = "normal";
+		this.spoolLeftS = 0;
+		this.throttle = 0;
+		this.chargeAu = CHARGE_CAPACITY_AU;
+		this.cruiseSpeedKms = 0;
+		this.closingKms = 0;
+		this.legStartedAtS = null;
+		this.lastLegS = null;
+		this.lastExit = "";
+		// Selection is not written by the flight path, so the coverage scan does
+		// not ask for it. It is here because a leg leaves a target selected and a
+		// fresh boot has none, and this method's claim is boot state rather than
+		// the scan's floor.
+		this.targetId = null;
+
+		this.rates = { pitch: 0, yaw: 0, roll: 0 };
+		this.mouseDx = 0;
+		this.mouseDy = 0;
+		this.chaseYaw = 0;
+		this.dockingComputerEngaged = false;
+
+		this.massesCache = null;
+		this.massesAt = Number.NaN;
+		this.etaCache = null;
+		this.etaAt = Number.NEGATIVE_INFINITY;
+		this.navEtaAt = Number.NEGATIVE_INFINITY;
+		this.selectableCache = null;
 	}
 
 	/**

@@ -187,6 +187,7 @@ async function flyTo(stationId) {
 				exit: g.lastExit,
 				regime: g.regime,
 				missKm: dist(end.pos, g.world.ship.pos),
+				endPos: { ...g.world.ship.pos },
 				hostRadiusKm: host ? host.radiusKm : null,
 				hostRangeRatio: hostNow
 					? dist(hostNow.pos, g.world.ship.pos) / hostNow.radiusKm
@@ -202,8 +203,32 @@ async function flyTo(stationId) {
 	);
 }
 
+/**
+ * The state a leg starts from — what the reset has to put back.
+ *
+ * Read through the handle rather than recomputed here: a probe with its own
+ * copy of what boot state is can agree with itself while disagreeing with the
+ * game.
+ */
+async function startState() {
+	return page.evaluate(() => {
+		const g = window.__seelite;
+		return {
+			pos: { ...g.world.ship.pos },
+			vel: { ...g.world.ship.vel },
+			gameTime: g.world.gameTime,
+			regime: g.regime,
+			chargeAu: g.chargeAu,
+			spoolLeftS: g.spoolLeftS,
+			lastExit: g.lastExit,
+			targetId: g.targetId,
+		};
+	});
+}
+
 // ---------------------------------------------------------------- clear space
 
+const booted = await startState();
 const clear = await flyTo("station-trade");
 await bailIfMissing(
 	clear,
@@ -225,10 +250,79 @@ check(
 	`closest was ${clear.closestId} at ${clear.closestRatio.toFixed(6)} × its radius`,
 );
 
+// --------------------------------------------------------------- the reset
+
+/**
+ * **No navigation between the legs**, which is the map constraint #121 added:
+ * a page under measurement is never navigated. This used to be a `page.reload`
+ * and it timed out at 30 s — six times a slow cold boot — because the leg above
+ * runs its whole step-and-render loop inside one `page.evaluate` with no
+ * `await`, so a navigation is the first call that has to interrupt whatever
+ * that left running and the timeout lands there rather than on the cause.
+ *
+ * The reset is the game's own `resetToStart`, guarded on the headless tier by
+ * `tests/world-reset.test.ts` (the world half, against a real `makeWorld`) and
+ * `tests/leg-reset-coverage.test.ts` (the renderer's own session fields). What
+ * *this* file adds is the one thing neither of those can see: that the reset
+ * ran in this browser, on this page, after a leg that actually moved the ship.
+ */
+await page.evaluate(() => window.__seelite.resetToStart());
+const back = await startState();
+
+check(
+	"the reset puts the ship back at the arrival point the fixture was chosen against",
+	back.pos.x === booted.pos.x &&
+		back.pos.y === booted.pos.y &&
+		back.pos.z === booted.pos.z,
+	`${(Math.hypot(back.pos.x - booted.pos.x, back.pos.y - booted.pos.y, back.pos.z - booted.pos.z) / 1e6).toFixed(3)}M km from where the first leg started`,
+);
+check(
+	"and the leg above had moved it, so that is not a comparison of nothing",
+	Math.hypot(
+		clear.endPos.x - booted.pos.x,
+		clear.endPos.y - booted.pos.y,
+		clear.endPos.z - booted.pos.z,
+	) > 1e6,
+	`the first leg ended ${(Math.hypot(clear.endPos.x - booted.pos.x, clear.endPos.y - booted.pos.y, clear.endPos.z - booted.pos.z) / 1e6).toFixed(1)}M km away`,
+);
+/**
+ * The discrete session fields, one by one, so a failure names the field.
+ *
+ * The clock is **not** among them and that is not an oversight. This page is a
+ * running game: `requestAnimationFrame` keeps stepping between the reset and
+ * the read, so `gameTime` is already off zero by the time anything can look at
+ * it — the snapshot above was taken at 0.1 s for the same reason. An exact
+ * equality there would be asserting that two reads of a moving number agree,
+ * which is a flake dressed as a check. What the clock owes is below.
+ */
+const session = [
+	["regime", back.regime, "normal"],
+	["chargeAu", back.chargeAu, booted.chargeAu],
+	["spoolLeftS", back.spoolLeftS, 0],
+	["lastExit", back.lastExit, ""],
+	["targetId", back.targetId, null],
+];
+const wrong = session.filter(([, got, want]) => got !== want);
+check(
+	"and the session state is a fresh boot's",
+	wrong.length === 0,
+	wrong.length
+		? wrong
+				.map(
+					([f, got, want]) =>
+						`${f} is ${JSON.stringify(got)}, want ${JSON.stringify(want)}`,
+				)
+				.join("; ")
+		: session.map(([f, got]) => `${f} ${JSON.stringify(got)}`).join(", "),
+);
+check(
+	"and the clock went backwards, which is the only thing that moves the bodies back",
+	back.gameTime < clear.elapsed / 2,
+	`${back.gameTime.toFixed(2)} s after a leg that ran to ${clear.elapsed.toFixed(1)} s`,
+);
+
 // ------------------------------------------------------------------ occluded
 
-await page.reload({ waitUntil: "load" });
-await bootedGame(page);
 const behind = await flyTo("station-shipyard");
 await bailIfMissing(
 	behind,

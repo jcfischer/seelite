@@ -749,3 +749,45 @@ export function advanceWorldClock(world: World, dt: number): void {
 	world.gameTime += dt;
 	advanceSystem(world.system, world.gameTime);
 }
+
+/**
+ * Put a world back where `makeWorld` left it, **without regenerating it**.
+ *
+ * The clock to zero, the bodies to where that clock puts them, the ship back at
+ * the arrival point at rest. The same `System` object throughout: same
+ * `contents`, same `byId`, same `Body` instances moved in place.
+ *
+ * ## Why in place, and why here
+ *
+ * #121 ratified a **ship-state reset within one system** for
+ * `probe-arrival.mjs`, which flies two legs on one page and needs the second to
+ * start where the first did. A world *rebuild* was ruled out rather than merely
+ * not chosen: `Game` calls `makeWorld` exactly once and holds per-system caches
+ * that are deliberately never invalidated on that basis — the baked
+ * `environmentMap`, and the `interiors` berth catalogue whose own comment says a
+ * build that adds a jump owes it a clear. Swapping the system out is that build.
+ *
+ * It lives in `sim.ts` rather than on the renderer because that is what makes it
+ * checkable: `tests/world-reset.test.ts` compares the result against a fresh
+ * `makeWorld(seed)`, on the tier that runs on every push. The renderer's own
+ * session state — regime, charge, spool, the last exit — is not a world concern
+ * and is reset beside this call, guarded separately.
+ *
+ * **The values are restated, not copied from `makeWorld`.** A reset built from
+ * `makeWorld` could not disagree with it, so the test comparing the two would
+ * prove nothing. Restating them is what gives that test something to catch.
+ *
+ * `originPos` is `null` and the clock is `0` because that is what a new game is
+ * (`makeWorld`); a reset is a return to the new game, not to some later arrival.
+ */
+export function resetWorldToStart(world: World): void {
+	world.gameTime = 0;
+	advanceSystem(world.system, 0);
+	world.ship.pos = arrivalPoint(
+		world.system.record,
+		world.system.contents,
+		null,
+		0,
+	);
+	world.ship.vel = v3();
+}
