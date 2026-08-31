@@ -349,12 +349,20 @@ export const VIEWS = Object.freeze([
 		 * console filling the canopy and no bay at all. The chase camera is the
 		 * only view in the game from which a parked ship's surroundings are
 		 * visible.
+		 *
+		 * **The near berth, not the deep one the two frames above use**, and that
+		 * is a finding rather than a preference: the chase camera sits behind the
+		 * ship along its nose, the parked nose points *out*, so from a deep berth
+		 * the camera lands behind the bay's own back wall and the frame comes
+		 * back empty — captured twice to be sure. From a near berth it is inside
+		 * the bay looking down it, which is also the better frame for what §13.6.3
+		 * asks: depth, and the other berths.
 		 */
-		what: "§13.6.3 — the same berth from the chase camera: bay depth, the other berths, and the ship in its own berth.",
+		what: "§13.6.3 — a near berth from the chase camera: bay depth, the other berths, and the ship in its own berth. Deep berths put the chase camera outside the bay.",
 		shot: {
 			kind: "berth",
 			station: "trade",
-			berth: "overhead-deep",
+			berth: "overhead-near",
 			view: "chase",
 		},
 	},

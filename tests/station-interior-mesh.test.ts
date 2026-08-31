@@ -49,8 +49,16 @@ describe("the bay is the catalogue, drawn", () => {
 	test("the shell spans exactly the volume the sim declares", () => {
 		for (const type of STATION_TYPES) {
 			const interior = interiorOf(type);
-			const [shell] = boxesNamed(built(type), (n) => n === "interior-shell");
-			expect([type, shell !== undefined]).toEqual([type, true]);
+			// **The union of the five walls.** The shell was one closed box until
+			// its sixth face turned out to be a lid across the mouth; it is four
+			// walls and a back now, so what spans the volume is their union.
+			const parts = boxesNamed(
+				built(type),
+				(n) => n === "interior-shell" || n === "interior-shell-back",
+			);
+			expect([type, parts.length]).toEqual([type, 5]);
+			const shell = { box: new THREE.Box3() };
+			for (const part of parts) shell.box.union(part.box);
 			// Six decimals is a millimetre on a kilometre; the positions are
 			// `Float32Array` by the time they are read back, so nine would be
 			// asserting the storage format rather than the dimension.
@@ -263,6 +271,7 @@ describe("§13.1 — what the bay must and must not carry", () => {
 			]).toEqual([type, "full"]);
 			for (const name of [
 				"interior-shell",
+				"interior-shell-back",
 				"interior-bulkhead",
 				"interior-lane-edge",
 				NAMEPLATE_NAME,

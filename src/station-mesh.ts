@@ -75,7 +75,11 @@ import {
 	stationDetailLevel,
 	surfaceTexels,
 } from "./station-visuals";
-import { NAMEPLATE_NAME, buildStationInterior } from "./station-interior-mesh";
+import {
+	NAMEPLATE_NAME,
+	buildStationInterior,
+	ringAround,
+} from "./station-interior-mesh";
 import { stationInterior } from "./station-interior";
 import { PLATE_TEXTURE_SIZE } from "./surface";
 
@@ -498,6 +502,41 @@ const FLOOD_MATERIAL = emissiveMaterial(
 	STATION_VISUALS.shipyard.floodColor,
 	2.0,
 );
+
+/**
+ * The frame around an aperture, as four bars rather than one slab.
+ *
+ * **The hole has to be a hole.** Every form that framed its opening did it with
+ * a box spanning the aperture, which read correctly only because a dark recess
+ * was drawn in front of it — §13.1 replaced that recess with a bay, and a slab
+ * across the mouth is then a lit plate where the way out should be.
+ *
+ * `outerScale` keeps each form's own proportions: the trade Coriolis framed its
+ * slot half again its width and three times its height, and that is what the
+ * silhouette was ranked with.
+ */
+function coamingRing(
+	aperture: StationAperture,
+	z: number,
+	depth: number,
+	outerScale = { across: 1.5, up: 3 },
+): THREE.Mesh[] {
+	const material = plainMaterial(0x79838f, 0.7, 0.45);
+	const outer = {
+		across: (aperture.widthKm * outerScale.across) / 2,
+		up: (aperture.heightKm * outerScale.up) / 2,
+	};
+	const inner = { across: aperture.widthKm / 2, up: aperture.heightKm / 2 };
+	const bars: THREE.Mesh[] = [];
+	for (const [w, h, x, y] of ringAround(outer, inner)) {
+		if (w <= 0 || h <= 0) continue;
+		const bar = new THREE.Mesh(new THREE.BoxGeometry(w, h, depth), material);
+		bar.position.set(x, y, z);
+		bar.name = "coaming";
+		bars.push(bar);
+	}
+	return bars;
+}
 
 /**
  * The aperture, drawn as a lit recess on the +Z face.
@@ -1031,14 +1070,17 @@ function buildTradeCoriolis(color: number, berthSeed: number): BuiltPart {
 	// depth the frame stood a hair clear of the coaming and the two were
 	// separate objects touching at a plane — which the connectivity check reads,
 	// correctly, as a light hanging in front of a station.
+	// **A ring, and it always claimed to be one.** It was a single box spanning
+	// the aperture, which worked while the slot in front of it was a dark recess
+	// drawn `BackSide`: from outside, the recess read as the hole. §13.1 replaced
+	// that recess with a bay, and the slab was left standing across the mouth —
+	// from inside, the way out was a lit grey plate, and no rim on the bay's own
+	// bulkhead could help, because the slab was in front of it. Four bars around
+	// the opening instead, which changes nothing about the silhouette and makes
+	// the hole a hole.
 	const slot = STATION_GEOMETRY.trade.aperture;
-	const coaming = new THREE.Mesh(
-		new THREE.BoxGeometry(slot.widthKm * 1.5, slot.heightKm * 3, face * 0.09),
-		plainMaterial(0x79838f, 0.7, 0.45),
-	);
-	coaming.position.z = face + face * 0.035;
-	coaming.name = "coaming";
-	group.add(coaming);
+	for (const bar of coamingRing(slot, face + face * 0.035, face * 0.09))
+		group.add(bar);
 	// **The declared plane, not a depth this form picks.** `station.ts` owns
 	// where the aperture is, because §3's checks are evaluated there; the number
 	// happens to be this face 6% proud, and `tests/station-mesh.test.ts` asserts

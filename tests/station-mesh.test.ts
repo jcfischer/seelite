@@ -555,7 +555,7 @@ describe("§13.1 — every form gets a bay", () => {
 				expect([
 					`${type} ${form.id}`,
 					interiorOf(root, "interior-shell").length,
-				]).toEqual([`${type} ${form.id}`, 1]);
+				]).toEqual([`${type} ${form.id}`, 4]);
 			}
 	});
 
@@ -575,9 +575,14 @@ describe("§13.1 — every form gets a bay", () => {
 			);
 			const { root } = buildStationForm(type, SELECTED_FORM[type], GREY, 0);
 			root.updateMatrixWorld(true);
-			const [shell] = interiorOf(root, "interior-shell");
 			const core = STATION_GEOMETRY[type].coreRadiusKm;
-			const box = new THREE.Box3().setFromObject(shell);
+			// The union of the bay's five walls: the shell stopped being one
+			// closed box when its sixth face turned out to be a lid on the mouth.
+			const box = new THREE.Box3();
+			for (const part of interiorOf(root, "interior-shell"))
+				box.union(new THREE.Box3().setFromObject(part));
+			for (const part of interiorOf(root, "interior-shell-back"))
+				box.union(new THREE.Box3().setFromObject(part));
 			expect([type, (box.max.z * core).toFixed(6)]).toEqual([
 				type,
 				interior.mouthAxialKm.toFixed(6),
@@ -750,8 +755,14 @@ describe("§13.5 row 3 — every berth is inside the drawn bay", () => {
 		const { root } = buildStationForm(type, formId, GREY, 0);
 		root.updateMatrixWorld(true);
 		const core = STATION_GEOMETRY[type].coreRadiusKm;
-		const shell = root.getObjectByName("interior-shell") as THREE.Object3D;
-		const box = new THREE.Box3().setFromObject(shell);
+		const box = new THREE.Box3();
+		root.traverse((object) => {
+			if (
+				object.name === "interior-shell" ||
+				object.name === "interior-shell-back"
+			)
+				box.union(new THREE.Box3().setFromObject(object));
+		});
 		return {
 			nearKm: box.max.z * core,
 			farKm: box.min.z * core,

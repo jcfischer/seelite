@@ -69,7 +69,11 @@ export const PLATE_FACTOR = 0.06;
 function shellMaterial(type: StationType): THREE.Material {
 	return new THREE.MeshLambertMaterial({
 		color: SHELL_COLOR[type],
-		side: THREE.BackSide,
+		// **`DoubleSide`, since the shell became five slabs.** One closed box
+		// wanted `BackSide` so its near faces were culled; a wall the camera can
+		// be on either side of has no near face to cull, and a `FrontSide` slab
+		// seen from the wrong side is a hole in the room.
+		side: THREE.DoubleSide,
 		// **A dim self-glow, because nothing else lights the inside.** The star is
 		// outside the hull and `scene.environment` reaches standard materials
 		// only, so a purely reflective bay is whatever the hemisphere gives it —
@@ -132,8 +136,11 @@ const glowMaterial = (color: number) =>
  *
  * The rails run the full outer width and the uprights fill what is left, so the
  * four pieces tile the frame without overlapping at the corners.
+ *
+ * Exported because `station-mesh.ts`'s coamings are the same rule: a frame
+ * around an aperture, which had been a slab spanning it.
  */
-function ringAround(
+export function ringAround(
 	outer: { across: number; up: number },
 	inner: { across: number; up: number },
 ): [number, number, number, number][] {
@@ -212,16 +219,72 @@ export function buildStationInterior(
 	const plate =
 		Math.min(interior.halfAcrossKm, interior.halfUpKm) * PLATE_FACTOR;
 
-	// The room itself.
-	const shell = box(
-		interior.halfAcrossKm * 2,
-		interior.halfUpKm * 2,
-		depth,
-		shellMaterial(type),
-		"interior-shell",
-	);
-	shell.position.z = centreZ;
-	group.add(shell);
+	// **The room itself, as five walls rather than one box — because a box has
+	// six.** `BackSide` on a closed box renders the inside of *every* face, and
+	// the sixth is a lid across the mouth: from inside the bay the way out was a
+	// flat panel the exact size of the bay's cross-section, which is what a
+	// launch frame showed and what no lit rim could fix, because the rim was
+	// behind it.
+	//
+	// Five meshes rather than a `Plane` each, so the walls keep a thickness and
+	// the connectivity check has something to overlap.
+	const shellFace = shellMaterial(type);
+	const wall = plate * 0.8;
+	// Each wall sits **inside** the declared extent — its outer face on the
+	// surface the catalogue names — so the five together span exactly the volume
+	// the sim declares and a berth's apron overlaps the wall it is bolted to.
+	const inset = wall / 2;
+	for (const [w, h, d, x, y, z, name] of [
+		[
+			interior.halfAcrossKm * 2,
+			wall,
+			depth,
+			0,
+			-interior.halfUpKm + inset,
+			centreZ,
+			"interior-shell",
+		],
+		[
+			interior.halfAcrossKm * 2,
+			wall,
+			depth,
+			0,
+			interior.halfUpKm - inset,
+			centreZ,
+			"interior-shell",
+		],
+		[
+			wall,
+			interior.halfUpKm * 2,
+			depth,
+			-interior.halfAcrossKm + inset,
+			0,
+			centreZ,
+			"interior-shell",
+		],
+		[
+			wall,
+			interior.halfUpKm * 2,
+			depth,
+			interior.halfAcrossKm - inset,
+			0,
+			centreZ,
+			"interior-shell",
+		],
+		[
+			interior.halfAcrossKm * 2,
+			interior.halfUpKm * 2,
+			wall,
+			0,
+			0,
+			interior.endAxialKm + inset,
+			"interior-shell-back",
+		],
+	] as const) {
+		const face = box(w, h, d, shellFace, name);
+		face.position.set(x, y, z);
+		group.add(face);
+	}
 
 	// **The mouth is a hole in a bulkhead, not the open end of a box.** The bay
 	// is wider than the aperture, so what an arriving ship flies through is a
@@ -245,22 +308,27 @@ export function buildStationInterior(
 	// The lane's own edge, lit: four strips on the bulkhead around the opening,
 	// so the way out is the brightest line in the bay from anywhere in it.
 	//
-	// **Half proud of the bulkhead, half buried in it.** Seated flush with the
-	// panel's mid-plane they are inside it and draw nothing; the panel spans a
-	// plate ending at `mouth − 1.1·plate`, so centring on that face leaves a real
-	// joint behind and a lit edge in front. Seated wholly in the lip they were
-	// adrift instead — `tests/station-mesh.test.ts`'s connectivity check shrinks
-	// every part before testing contact, so a graze is not a joint.
+	// **Proud of the bulkhead, and wide enough to read from the back of the
+	// bay.** One plate deep and one plate wide it was a hairline: from a berth
+	// the opening showed as a grey panel hung on a wall rather than as the way
+	// out, which is the half of §13.1 a parked pilot has to be able to see. Two
+	// and a half plates of width is about 17 m of lit border on a 120 m opening.
+	//
+	// **Part proud, part buried.** Seated flush with the panel's mid-plane they
+	// are inside it and draw nothing; seated wholly in the lip they are adrift,
+	// because `tests/station-mesh.test.ts`'s connectivity check shrinks every
+	// part before testing contact and a graze is not a joint. Straddling the
+	// panel's inner face is both.
 	const laneGlow = glowMaterial(visuals.strobeColor);
 	for (const [w, h, x, y] of ringAround(
 		{
-			across: interior.laneHalfAcrossKm + plate,
-			up: interior.laneHalfUpKm + plate,
+			across: interior.laneHalfAcrossKm + plate * 2.5,
+			up: interior.laneHalfUpKm + plate * 2.5,
 		},
 		{ across: interior.laneHalfAcrossKm, up: interior.laneHalfUpKm },
 	)) {
-		const strip = box(w, h, plate * 0.6, laneGlow, "interior-lane-edge");
-		strip.position.set(x, y, interior.mouthAxialKm - plate * 1.1);
+		const strip = box(w, h, plate * 1.2, laneGlow, "interior-lane-edge");
+		strip.position.set(x, y, interior.mouthAxialKm - plate * 1.3);
 		group.add(strip);
 	}
 
@@ -282,7 +350,9 @@ export function buildStationInterior(
 	const shield = box(
 		shieldW,
 		shieldH,
-		plate * 0.5,
+		// Thick enough to straddle the back wall rather than graze it: the wall
+		// is four fifths of a plate and the connectivity check shrinks both.
+		plate * 1.6,
 		new THREE.MeshBasicMaterial({
 			color: 0xffffff,
 			transparent: true,
@@ -292,38 +362,23 @@ export function buildStationInterior(
 		}),
 		NAMEPLATE_NAME,
 	);
-	// Proud of the back wall rather than flush with it — a plate sunk into the
-	// bulkhead draws nothing, which is exactly #131's symptom.
-	shield.position.set(0, 0, interior.endAxialKm + plate);
+	// Half in the back wall and half proud of it — a plate sunk into the
+	// bulkhead draws nothing, which is exactly #131's symptom, and one merely
+	// touching it is not joined to anything.
+	shield.position.set(0, 0, interior.endAxialKm + plate * 0.8);
 	group.add(shield);
 
-	// One flood-colour glow for every berth in the bay, hoisted for the reason
-	// `laneGlow` is: eight identical materials are eight draw batches where one
-	// would do.
+	// One flood-colour glow and one accent for every berth in the bay, hoisted
+	// for the reason `laneGlow` is: eight identical materials are eight draw
+	// batches where one would do.
 	const guide = glowMaterial(visuals.floodColor);
+	const accent = glowMaterial(visuals.heatColor);
 	for (const berth of interior.berths)
-		group.add(
-			atFullDetail(buildBerth(interior, berth, plate, structure, guide)),
-		);
+		group.add(atFullDetail(buildBerth(berth, plate, structure, guide, accent)));
 
 	group.add(atFullDetail(buildRoleFittings(type, interior, plate, structure)));
 	return group;
 }
-
-/**
- * A box's cross-section, given which axis it runs *along*.
- *
- * **One rule, four sites.** `buildBerth` lays out a pad, two guide strips, two
- * brackets and two cradle arms, and each one is the same question: which of
- * `x` and `y` is the berth's own axis here, and what does the other get? Four
- * near-copies of `Math.abs(v.x) > 0 ? a : b` is four places a berth-axis change
- * has to land, and one of them had `a` and `b` identical — a ternary that chose
- * between one value.
- */
-const sized = (axis: THREE.Vector3, along: number, across: number) =>
-	Math.abs(axis.x) > 0
-		? ([along, across] as const)
-		: ([across, along] as const);
 
 /** The four faces' orientation, as the basis a berth's parts are laid out in:
  *  `outward` is the berth's own normal and `beam` the direction its clear beam
@@ -354,87 +409,252 @@ function berthBasis(berth: Berth) {
 }
 
 /**
- * One berth: the surface a ship settles onto, its guide lights, and the
- * furniture its family carries.
+ * One berth: the surface a ship settles onto, the frame that holds it there, and
+ * the light that says where it is.
+ *
+ * **Authored in the berth's own frame**, not in the bay's. The group carries a
+ * basis — local X across the berth's beam, local Y out from its surface, local Z
+ * along the lane — so every part below is a plain triple and the four faces need
+ * no axis test between them. The previous build swizzled each part's dimensions
+ * against `outward` and `beam` at four separate sites, and one of those ternaries
+ * chose between two identical values.
  *
  * **The family changes presentation and parked pose, never the interaction**
- * (§13.2) — which is why the only thing that branches on it below is what is
- * drawn. A pad, a bracketed shelf and a recessed cradle with arms are three
- * ways of holding the same ship in the same place.
+ * (§13.2) — which is why the only thing that branches on it is what is drawn. A
+ * deck pad, a bracketed wall shelf and a recessed cradle are three ways of
+ * holding the same ship in the same place.
+ *
+ * The first version of this was five axis-aligned boxes and read, flown, as a
+ * cross painted on a flat wall. What a berth needs to read is depth — an apron
+ * standing off its wall inside a raised kerb — and machinery: chocks where a
+ * hull's feet land, a service boom reaching over its spine, and a lit outline
+ * that says the bay is a place a ship goes rather than a panel.
  */
 function buildBerth(
-	interior: StationInterior,
 	berth: Berth,
 	plate: number,
 	structure: THREE.Material,
 	guide: THREE.Material,
+	accent: THREE.Material,
 ): THREE.Group {
 	const group = new THREE.Group();
 	group.name = `berth-${berth.id}`;
 	const { outward, beam } = berthBasis(berth);
-	// The surface itself: the berth's centre pushed back down its own normal by
-	// half the clear height, which is where the sim says the wall is.
-	const surface = new THREE.Vector3(
-		berth.centre.across,
-		berth.centre.up,
-		berth.centre.axial,
-	).addScaledVector(
-		new THREE.Vector3(outward.x, outward.y, outward.z),
-		-berth.clearHeightKm / 2,
+	// Right-handed by construction: local Z is whatever completes the pair, which
+	// for a wall berth is the lane run mirrored. A berth is symmetric along the
+	// lane, so the mirror shows only in which end the boom stands at.
+	const along = new THREE.Vector3().crossVectors(beam, outward);
+	group.setRotationFromMatrix(
+		new THREE.Matrix4().makeBasis(beam, outward, along),
+	);
+	// The wall itself: the berth's centre pushed back down its own normal by half
+	// the clear height, which is where the sim says the surface is.
+	group.position
+		.set(berth.centre.across, berth.centre.up, berth.centre.axial)
+		.addScaledVector(outward, -berth.clearHeightKm / 2);
+
+	const B = berth.clearBeamKm;
+	const L = berth.clearLengthKm;
+	const H = berth.clearHeightKm;
+	const p = plate;
+	const at = (mesh: THREE.Mesh, x: number, y: number, z: number) => {
+		mesh.position.set(x, y, z);
+		group.add(mesh);
+		return mesh;
+	};
+
+	// **The apron**, standing proud of the wall rather than flush with it. Wider
+	// than the clear beam by a lip, so the bay has an edge to read against.
+	at(box(B * 1.08, p * 1.4, L * 1.04, structure, "berth-pad"), 0, p * 0.7, 0);
+
+	// A raised kerb down each long side. This is what turns a plate into a bay:
+	// from any angle but straight on, the apron now has a section.
+	for (const side of [-1, 1])
+		at(
+			box(p * 0.7, p * 2.4, L * 1.04, structure, "berth-kerb"),
+			side * B * 0.54,
+			p * 1.2,
+			0,
+		);
+
+	// The lit outline: two rails down the apron and two cross bars at its ends,
+	// in the role's own work-light colour — §13.4's rule that light identifies
+	// role and nothing else.
+	//
+	// **Every part on the apron reaches down to the wall.** Sitting on top of
+	// it, they overlapped it by a tenth of a plate — and
+	// `tests/station-mesh.test.ts`'s connectivity check shrinks a part by up to
+	// a quarter of its own extent before testing contact, so a light strip laid
+	// on a deck is not joined to it. Inlaid instead, which is where a floor
+	// light belongs anyway.
+	for (const side of [-1, 1])
+		at(
+			box(p * 0.35, p * 1.7, L * 0.86, guide, "berth-guide"),
+			side * B * 0.38,
+			p * 0.85,
+			0,
+		);
+	for (const end of [-1, 1])
+		at(
+			box(B * 0.72, p * 1.7, p * 0.35, guide, "berth-guide"),
+			0,
+			p * 0.85,
+			end * L * 0.43,
+		);
+
+	// **Chocks**, where a hull's feet come down. Four of them, inboard of the
+	// kerbs, because a ship parks between them rather than on them.
+	for (const side of [-1, 1])
+		for (const end of [-1, 1])
+			at(
+				box(p * 1.1, p * 2.8, p * 1.1, structure, "berth-chock"),
+				side * B * 0.3,
+				p * 1.4,
+				end * L * 0.26,
+			);
+
+	// **The service boom**: a post at one end of the berth and an arm reaching
+	// over where the ship's spine will be, with a lit head at its tip. It is the
+	// one part that says a berth is worked at rather than merely landed on.
+	at(
+		box(p * 0.8, H * 0.5, p * 0.8, structure, "berth-boom"),
+		-B * 0.6,
+		H * 0.25,
+		-L * 0.42,
+	);
+	at(
+		box(B * 0.78, p * 0.7, p * 0.7, structure, "berth-boom"),
+		-B * 0.21,
+		H * 0.48,
+		-L * 0.42,
+	);
+	at(
+		box(p * 0.6, p * 0.6, p * 0.6, accent, "berth-boom-head"),
+		B * 0.18,
+		H * 0.46,
+		-L * 0.42,
 	);
 
-	const [padW, padH] = sized(outward, plate, berth.clearBeamKm);
-	const pad = box(padW, padH, berth.clearLengthKm, structure, "berth-pad");
-	pad.position.copy(surface).addScaledVector(outward, plate / 2);
-	group.add(pad);
-
-	// Two guide strips flanking the pad, in the role's own work-light colour —
-	// §13.4's rule that light identifies role and nothing else. Square in
-	// section, so they need no axis test at all.
-	for (const side of [-1, 1]) {
-		const strip = box(
-			plate * 0.4,
-			plate * 0.4,
-			berth.clearLengthKm * 0.8,
-			guide,
-			"berth-guide",
+	// **The berth's mark**, as tally stubs rather than as text: this module has
+	// no `document` and may not build a texture (E10), and a number a pilot can
+	// count is worth more inside a bay than a glyph they cannot read.
+	const tally =
+		1 + (berth.band === "deep" ? 1 : 0) + (berth.family === "cradle" ? 1 : 0);
+	for (let i = 0; i < tally; i++)
+		at(
+			box(p * 0.3, p * 1.7, p * 0.9, accent, "berth-tally"),
+			B * 0.42 - i * p * 0.55,
+			p * 0.85,
+			L * 0.46,
 		);
-		strip.position
-			.copy(surface)
-			.addScaledVector(outward, plate * 0.9)
-			.addScaledVector(beam, (side * berth.clearBeamKm) / 2);
-		group.add(strip);
-	}
 
-	if (berth.family === "wall" || berth.family === "cradle") {
-		// A bracket under the berth, which is what holds a ship off a wall.
-		for (const end of [-1, 1]) {
-			const [w, h] = sized(outward, berth.clearHeightKm * 0.6, plate);
-			const arm = box(w, h, plate, structure, "berth-bracket");
-			arm.position
-				.copy(surface)
-				.addScaledVector(outward, berth.clearHeightKm * 0.3)
-				.addScaledVector(
-					new THREE.Vector3(0, 0, 1),
-					(end * berth.clearLengthKm) / 2,
+	if (berth.family === "wall" || berth.family === "cradle")
+		// **A backing frame at the head of the berth.** A wall-side berth is an
+		// alcove, and what makes it one is that it has a back.
+		at(
+			box(B * 1.08, H * 0.5, p * 0.9, structure, "berth-backing"),
+			0,
+			H * 0.25,
+			-L * 0.56,
+		);
+
+	if (berth.family === "cradle")
+		// **Two horns curving in over the hull**, three segments each. A cradle is
+		// the one family that holds a ship rather than resting it, and a pair of
+		// straight posts read as a shelf with rails.
+		for (const side of [-1, 1])
+			for (let k = 0; k < 3; k++) {
+				const angle = ((k + 0.5) / 3) * Math.PI * 0.44;
+				const arm = box(
+					p * 0.8,
+					H * 0.26,
+					p * 0.8,
+					structure,
+					"berth-cradle-arm",
 				);
-			group.add(arm);
-		}
-	}
-	if (berth.family === "cradle") {
-		// Two arms rising past the hull, which is what makes a cradle read as one
-		// rather than as a shelf.
-		for (const side of [-1, 1]) {
-			const [w, h] = sized(beam, plate, berth.clearHeightKm);
-			const arm = box(w, h, plate, structure, "berth-cradle-arm");
-			arm.position
-				.copy(surface)
-				.addScaledVector(outward, berth.clearHeightKm / 2)
-				.addScaledVector(beam, (side * berth.clearBeamKm) / 2);
-			group.add(arm);
-		}
-	}
+				arm.rotation.z = -side * angle;
+				at(
+					arm,
+					side * B * 0.55 * Math.cos(angle),
+					H * 0.52 * Math.sin(angle),
+					0,
+				);
+			}
 	return group;
+}
+
+/**
+ * The bay's own structure: four corner rails and three transverse hoops.
+ *
+ * **Role-independent, and it is here so the lane check covers it.** A bare box
+ * has no scale — the walls read as a painted backdrop until something crosses
+ * them at a known size, which is the same argument #102 makes for a station's
+ * exterior clutter.
+ *
+ * The hoops sit **between** the depth bands and clear of both, so they frame the
+ * berths rather than run through them, and every segment hugs a wall: a hoop
+ * that spanned the middle would be geometry the scripted traversal flies
+ * through, which is the one thing §13.1's lane is for.
+ */
+function buildBayFrame(
+	group: THREE.Group,
+	interior: StationInterior,
+	plate: number,
+	structure: THREE.Material,
+): void {
+	const depth = interior.mouthAxialKm - interior.endAxialKm;
+	const centreZ = (interior.mouthAxialKm + interior.endAxialKm) / 2;
+	const x = interior.halfAcrossKm - plate * 0.6;
+	const y = interior.halfUpKm - plate * 0.6;
+
+	// Corner rails, the bay's full depth: the edges of the room.
+	for (const sx of [-1, 1])
+		for (const sy of [-1, 1]) {
+			const rail = box(
+				plate * 1.4,
+				plate * 1.4,
+				depth * 0.98,
+				structure,
+				"interior-rail",
+			);
+			rail.position.set(sx * x, sy * y, centreZ);
+			group.add(rail);
+		}
+
+	// Hoops at the two band gaps and behind the deep band, so none of them lands
+	// on a berth. Read off the catalogue rather than spaced by eye.
+	const bands = [
+		...new Set(interior.berths.map((berth) => berth.centre.axial)),
+	].sort((a, b) => b - a);
+	const stations = [
+		(interior.mouthAxialKm + bands[0]) / 2,
+		...bands.slice(0, -1).map((z, i) => (z + bands[i + 1]) / 2),
+		(bands[bands.length - 1] + interior.endAxialKm) / 2,
+	];
+	for (const z of stations) {
+		for (const sy of [-1, 1]) {
+			const beam = box(
+				x * 2,
+				plate * 1.2,
+				plate * 1.2,
+				structure,
+				"interior-rib",
+			);
+			beam.position.set(0, sy * y, z);
+			group.add(beam);
+		}
+		for (const sx of [-1, 1]) {
+			const post = box(
+				plate * 1.2,
+				y * 2,
+				plate * 1.2,
+				structure,
+				"interior-rib",
+			);
+			post.position.set(sx * x, 0, z);
+			group.add(post);
+		}
+	}
 }
 
 /** What a role's fittings are built against: the bay, its own materials, and
@@ -594,6 +814,7 @@ function buildRoleFittings(
 	const group = new THREE.Group();
 	group.name = "interior-fittings";
 	const depth = interior.mouthAxialKm - interior.endAxialKm;
+	buildBayFrame(group, interior, plate, structure);
 	ROLE_FITTINGS[type]({
 		group,
 		interior,
