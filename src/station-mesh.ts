@@ -49,8 +49,8 @@
  */
 
 import * as THREE from "three";
-import { cutRing, ringTriangles } from "./face-cut";
-import { type Ring, hullLoft } from "./loft";
+import { appendRing, cutRing, ringTriangles } from "./face-cut";
+import { type ApertureCut, type Ring, hullLoft } from "./loft";
 import {
 	applyRockSurface,
 	boxProjectUVs,
@@ -791,7 +791,7 @@ function shell(
 	 * surface across the opening is its own choice of silhouette.
 	 * `scripts/measure-aperture-cut.ts` prints which one that is per form.
 	 */
-	aperture?: { halfWidth: number; halfHeight: number },
+	aperture?: ApertureCut,
 ) {
 	const geometry = hullLoft(controls, { segments, aperture });
 	// **A panel size, not a panel count.** `hullLoft` writes its UVs in
@@ -1024,7 +1024,7 @@ function buildCuboctahedron(
 	 * Half-extents in kilometres. Without it the square is the two triangles it
 	 * always was, which is what a docking ship used to fly through.
 	 */
-	aperture?: { halfWidth: number; halfHeight: number },
+	aperture?: ApertureCut,
 ) {
 	// The twelve permutations of (±1, ±1, 0). `PolyhedronGeometry` normalises
 	// every vertex to the radius, which is exact here because a cuboctahedron's
@@ -1044,69 +1044,31 @@ function buildCuboctahedron(
 	// cuboctahedron nor consistently wound, and rendered as two interpenetrating
 	// wedges with the window grid hanging in space beside them, because the
 	// faces the panes were placed against were not where the geometry put them.
+	// **Kept a plain literal, and formatted by hand.** Spreading a conditional
+	// into this array makes it non-literal, and biome then breaks every index
+	// onto a line of its own — `// the eight octant triangles` came to head a
+	// 24-line run a reader has to count through. The grouping into triangles is
+	// the table's meaning, and a face list read one digit at a time is where the
+	// first version's mis-wound cuboctahedron came from. The +Z square is the
+	// first two triangles, and it is spliced out below rather than here.
+	// biome-ignore format: the grouping into triangles is the table's meaning
 	const indices = [
-		// +Z — omitted when it is cut, because the ring below replaces it.
-		...(aperture ? [] : [4, 8, 5, 4, 5, 9]),
-		// -Z
-		7,
-		10,
-		6,
-		7,
-		6,
-		11,
+		// +Z, -Z
+		4, 8, 5, 4, 5, 9, 7, 10, 6, 7, 6, 11,
 		// +X, -X
-		0,
-		4,
-		3,
-		0,
-		3,
-		7,
-		1,
-		6,
-		2,
-		1,
-		2,
-		5,
+		0, 4, 3, 0, 3, 7, 1, 6, 2, 1, 2, 5,
 		// +Y, -Y
-		0,
-		11,
-		1,
-		0,
-		1,
-		8,
-		3,
-		9,
-		2,
-		3,
-		2,
-		10,
+		0, 11, 1, 0, 1, 8, 3, 9, 2, 3, 2, 10,
 		// the eight octant triangles
-		0,
-		8,
-		4,
-		1,
-		5,
-		8,
-		2,
-		9,
-		5,
-		3,
-		4,
-		9,
-		0,
-		7,
-		11,
-		1,
-		11,
-		6,
-		2,
-		6,
-		10,
-		3,
-		10,
-		7,
+		0, 8, 4, 1, 5, 8, 2, 9, 5, 3, 4, 9, 0, 7, 11, 1, 11, 6, 2, 6, 10, 3, 10, 7,
 	];
-	const geometry = new THREE.PolyhedronGeometry(vertices, indices, radiusKm, 0);
+	const geometry = new THREE.PolyhedronGeometry(
+		vertices,
+		// The +Z square is the first two triangles; the ring below replaces it.
+		aperture ? indices.slice(6) : indices,
+		radiusKm,
+		0,
+	);
 	if (aperture) {
 		// **The face's own plane and its own corners**, not a box round the
 		// solid: for a cuboctahedron of radius R the square face planes sit at
@@ -1125,30 +1087,7 @@ function buildCuboctahedron(
 			aperture.halfWidth,
 			aperture.halfHeight,
 		);
-		const ring = ringTriangles(outer, inner, face);
-		// Appended rather than merged through a utility: the geometry is
-		// non-indexed and one run of three vertices is one face, so the two are
-		// concatenated attribute by attribute and stay in that shape — which is
-		// what `boxProjectUVs` below needs.
-		const position = geometry.getAttribute("position") as THREE.BufferAttribute;
-		const normal = geometry.getAttribute("normal") as THREE.BufferAttribute;
-		const merged = new Float32Array(position.count * 3 + ring.length);
-		merged.set(position.array as Float32Array, 0);
-		merged.set(ring, position.count * 3);
-		const normals = new Float32Array(merged.length);
-		normals.set(normal.array as Float32Array, 0);
-		// The cut face is flat and faces +Z, which is exactly what the two
-		// triangles it replaces carried.
-		for (let i = position.count * 3; i < normals.length; i += 3)
-			normals[i + 2] = 1;
-		geometry.setAttribute("position", new THREE.BufferAttribute(merged, 3));
-		geometry.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
-		geometry.setAttribute(
-			"uv",
-			new THREE.BufferAttribute(new Float32Array((merged.length / 3) * 2), 2),
-		);
-		// The same record `hullLoft` writes, for the same reader.
-		geometry.userData.apertureCut = aperture;
+		appendRing(geometry, ringTriangles(outer, inner, face), aperture);
 	}
 	// Box-projected UVs, per face — see `boxProjectUVs`.
 	boxProjectUVs(geometry, STATION_PANEL_KM);

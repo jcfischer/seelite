@@ -7,11 +7,13 @@
  * station's own face. It read as an opening only while a dark `BackSide` recess
  * stood in front of it, which is what #147 replaced with a bay.
  *
- * **The arithmetic is here; the vertex layout is the caller's.** A
+ * **The arithmetic is the same for both callers; the vertex layout is not.** A
  * `PolyhedronGeometry` face is non-indexed and a `hullLoft` cap fan is indexed,
  * and each carries its own winding and UV rule — a helper that owned those
  * would have to know which of the two it was serving, and would be two
- * functions wearing one name.
+ * functions wearing one name. So `cutRing` is shared, the indexed strip is
+ * built where the index buffer lives, and the non-indexed surgery is
+ * `appendRing` below.
  *
  * The one thing it does own is the property that makes the cut safe: **the
  * outer loop is unchanged.** Every sample it returns on the outer boundary is
@@ -21,6 +23,8 @@
  */
 
 /** A point on a face, in the face's own plane. */
+import * as THREE from "three";
+
 export type FacePoint = readonly [number, number];
 
 /** Where a ray from the centre at `angle` leaves a convex loop. */
@@ -89,6 +93,41 @@ export function cutRing(
 ): { outer: FacePoint[]; inner: FacePoint[] } {
 	if (outer.length < 3)
 		throw new Error(`a face needs 3 points, got ${outer.length}`);
+	// **Convex, and containing the origin.** `onLoop` takes the nearest forward
+	// crossing, so a re-entrant face returns an inner boundary rather than
+	// throwing, and the strip built from it self-intersects — which renders as a
+	// plausible-looking mess. Checked here because the docstring above promises
+	// it is; the previous version promised three checks and performed one.
+	//
+	// **Sign agreement rather than a fixed sign**, because the two callers hand
+	// loops in opposite directions: a cuboctahedron's square face is written
+	// counter-clockwise from +Z and a swept ring runs from +Y towards +X, which
+	// is clockwise. A test for one winding rejects the other's every face.
+	const cross = (
+		[ax, ay]: FacePoint,
+		[bx, by]: FacePoint,
+		[cx, cy]: FacePoint,
+	) => (bx - ax) * (cy - by) - (by - ay) * (cx - bx);
+	const ORIGIN: FacePoint = [0, 0];
+	let turn = 0;
+	let side = 0;
+	for (let i = 0; i < outer.length; i++) {
+		const a = outer[i];
+		const b = outer[(i + 1) % outer.length];
+		const c = outer[(i + 2) % outer.length];
+		const t = cross(a, b, c);
+		const o = cross(a, b, ORIGIN);
+		if (Math.abs(t) > 1e-12) {
+			if (turn !== 0 && Math.sign(t) !== turn)
+				throw new Error(`the face is re-entrant at corner ${i}`);
+			turn = Math.sign(t);
+		}
+		if (Math.abs(o) > 1e-12) {
+			if (side !== 0 && Math.sign(o) !== side)
+				throw new Error(`the face does not contain the origin, at edge ${i}`);
+			side = Math.sign(o);
+		}
+	}
 	if (!(halfWidth > 0) || !(halfHeight > 0))
 		throw new Error(
 			`aperture half-extents must be positive: ${halfWidth} x ${halfHeight}`,
@@ -153,4 +192,41 @@ export function ringTriangles(
 		push(inner[i]);
 	}
 	return out;
+}
+
+/**
+ * Append a ring's loose triangles to a non-indexed geometry, and record the cut.
+ *
+ * Generic surgery on the shape `PolyhedronGeometry` produces — one run of three
+ * vertices per face, which is what lets `boxProjectUVs` give each face its own
+ * projection — so it lives beside `ringTriangles` rather than inside a form
+ * builder that otherwise only names vertices and materials.
+ *
+ * The UVs are zeroed rather than computed: every caller re-projects afterwards,
+ * and a plausible-looking wrong unwrap is worse than an obviously empty one.
+ * The normals are flat +Z, which is what the two triangles a cut face replaces
+ * carried.
+ */
+export function appendRing(
+	geometry: THREE.BufferGeometry,
+	ring: readonly number[],
+	cut: { halfWidth: number; halfHeight: number },
+) {
+	const position = geometry.getAttribute("position") as THREE.BufferAttribute;
+	const normal = geometry.getAttribute("normal") as THREE.BufferAttribute;
+	const merged = new Float32Array(position.count * 3 + ring.length);
+	merged.set(position.array as Float32Array, 0);
+	merged.set(ring, position.count * 3);
+	const normals = new Float32Array(merged.length);
+	normals.set(normal.array as Float32Array, 0);
+	for (let i = position.count * 3; i < normals.length; i += 3)
+		normals[i + 2] = 1;
+	geometry.setAttribute("position", new THREE.BufferAttribute(merged, 3));
+	geometry.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
+	geometry.setAttribute(
+		"uv",
+		new THREE.BufferAttribute(new Float32Array((merged.length / 3) * 2), 2),
+	);
+	// The same record `hullLoft` writes, for the same reader.
+	geometry.userData.apertureCut = cut;
 }

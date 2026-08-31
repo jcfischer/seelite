@@ -28,6 +28,17 @@ import { STATION_GEOMETRY, type StationType } from "../../src/station";
 const BAY_PART = /^(interior-|bay-|berth-|station-nameplate)/;
 
 /**
+ * The aperture's own frame and the fixtures mounted on it.
+ *
+ * All of these stand **proud of the surface** the opening is cut into, by
+ * construction: the four bars straddle it, the trade Coriolis's coaming spans
+ * #128's 6% stand-off, and an outpost's floods and heat ring sit on its deck.
+ * `collarSurfaces` asks which *hull* surface surrounds the opening, so a light
+ * in front of it is the wrong answer rather than a failing one.
+ */
+const FRAME_PART = /^(aperture|coaming|heat-glow|bay-flood)/;
+
+/**
  * Raycast against **geometry rather than shading**.
  *
  * A hull is `FrontSide` and the bay's shell is `DoubleSide`, so a cast that
@@ -42,7 +53,13 @@ const BAY_PART = /^(interior-|bay-|berth-|station-nameplate)/;
  * hand the next caller a different scene from the one the game builds.
  */
 function twoSided<T>(root: THREE.Object3D, body: () => T): T {
-	const saved: [THREE.Material, THREE.Side][] = [];
+	// **Keyed by material, not a list of pairs.** `hullMaterial` and
+	// `flatCloneOf` are module-level caches, so one material reaches many meshes;
+	// a list saves it a second time *after* the first mutation and the last
+	// restore writes `DoubleSide` back for good. Measured on `refinery a`: 9 of
+	// 42 materials kept the changed side, and the leak outlives the call because
+	// the cache does.
+	const saved = new Map<THREE.Material, THREE.Side>();
 	root.traverse((object) => {
 		const mesh = object as THREE.Mesh;
 		if (!mesh.isMesh) return;
@@ -51,7 +68,7 @@ function twoSided<T>(root: THREE.Object3D, body: () => T): T {
 			: [mesh.material];
 		for (const material of materials) {
 			if (!material) continue;
-			saved.push([material, material.side]);
+			if (!saved.has(material)) saved.set(material, material.side);
 			material.side = THREE.DoubleSide;
 		}
 	});
@@ -116,13 +133,18 @@ export interface Crossing {
 /**
  * Everything crossed inside the opening, nearest the mouth first.
  *
- * **A grid over the whole rectangle, not the axis and four corners.** The cut is
- * a ring, so a defect that leaves a spur or misplaces one edge shows on some
- * samples and not others; the five-ray sketch that found #155's defect found it
- * because that one was the entire face, and it would miss a cut that was merely
- * wrong. Cell centres of a 9 x 9 grid, which never samples the boundary itself —
- * the cut edge and the aperture rectangle are the same line, so a ray exactly on
- * it is asking a question about float32 rather than about geometry.
+ * **A grid over the whole rectangle, out to its edges.** The cut is a ring, so a
+ * defect that leaves a spur or misplaces one edge shows on some samples and not
+ * others; the five-ray sketch that found #155's defect found it because that one
+ * was the entire face, and it would miss a cut that was merely wrong.
+ *
+ * The grid reaches `EDGE_FRACTION` of each half-extent rather than the last
+ * cell's centre. Cell centres top out at 0.944 of the half-width at nine
+ * columns, so hull left standing across the outer 6% of each half-extent was
+ * never sampled — and the claim this gate is asked to hold is that the cut edge
+ * *is* the rectangle, with no tolerance to spend. It stops just short of the
+ * boundary itself, because the cut edge and the rectangle are the same line and
+ * a ray exactly on it asks a question about float32 rather than about geometry.
  *
  * Nothing here asserts. The assertion lives in the test.
  */
@@ -137,12 +159,14 @@ export function crossings(root: THREE.Object3D, type: StationType): Crossing[] {
 	// reports 200% of an opening it covers once.
 	const rays = new Map<string, Set<number>>();
 	const CELLS = 9;
+	/** How far out the outermost sample sits, as a share of the half-extent. */
+	const EDGE_FRACTION = 0.98;
 	twoSided(root, () => {
 		for (let ix = 0; ix < CELLS; ix++) {
 			for (let iy = 0; iy < CELLS; iy++) {
 				const cell = ix * CELLS + iy;
-				const x = ((ix + 0.5) / CELLS - 0.5) * widthKm;
-				const y = ((iy + 0.5) / CELLS - 0.5) * heightKm;
+				const x = ((ix / (CELLS - 1)) * 2 - 1) * EDGE_FRACTION * (widthKm / 2);
+				const y = ((iy / (CELLS - 1)) * 2 - 1) * EDGE_FRACTION * (heightKm / 2);
 				const ray = new THREE.Raycaster(
 					new THREE.Vector3(x / core, y / core, band.max.z + 20),
 					new THREE.Vector3(0, 0, -1),
@@ -184,6 +208,85 @@ export function crossings(root: THREE.Object3D, type: StationType): Crossing[] {
 			cut: wasCut.get(name) ?? false,
 		}))
 		.sort((a, b) => a.pastMouthKm - b.pastMouthKm);
+}
+
+/**
+ * The surface that **surrounds** the opening, per ray, and whether it was cut.
+ *
+ * `crossings` above can only see what still stands *in* the rectangle, and a
+ * cut surface leaves nothing there — so on its own it cannot tell a form that
+ * cut the right surface from one that cut a different surface and left the
+ * right one solid. Point `buildRefineryWarren`'s cut at `i === 0` instead of
+ * `i === 2` and the outermost terrace stands whole across the opening while
+ * every ray through the rectangle passes clean between the pieces of a hole cut
+ * two terraces down.
+ *
+ * So this samples the **collar** just outside the rectangle, where a cut
+ * surface still has material, and asks which hull surface is frontmost there.
+ * It must be one that was cut. The aperture's own frame is excluded — the four
+ * bars and the trade Coriolis's coaming stand proud of the surface by
+ * construction, which is what #128's 6% is.
+ */
+export function collarSurfaces(
+	root: THREE.Object3D,
+	type: StationType,
+): { name: string; cut: boolean }[] {
+	root.updateMatrixWorld(true);
+	const core = STATION_GEOMETRY[type].coreRadiusKm;
+	const { widthKm, heightKm } = STATION_GEOMETRY[type].aperture;
+	const band = bayBand(root);
+	/**
+	 * How far out the collar sits, as a multiple of each half-extent.
+	 *
+	 * Outside the rectangle, and inside three things: the aperture bars, which
+	 * start one bar-thickness out (1.4 half-widths on the widest aperture);
+	 * every form's own cut surface; and an outpost's heat ring, a fixture
+	 * standing proud of the pad deck at 1.55 half-widths, which at a wider
+	 * collar is the frontmost surface on the diagonals and is not a hull.
+	 */
+	const COLLAR = 1.15;
+	const found = new Map<string, boolean>();
+	twoSided(root, () => {
+		for (const [sx, sy] of [
+			[COLLAR, 0],
+			[-COLLAR, 0],
+			[0, COLLAR],
+			[0, -COLLAR],
+			// **The diagonals are outside on both axes.** At 0.8 of the collar
+			// they sat at 0.92 of each half-extent — inside the rectangle, so
+			// they went through the hole and reported whatever stands in the
+			// lane behind it. On the shipyard Gantry that is the keel, and the
+			// row read `keel uncut` on a correct build.
+			[COLLAR, COLLAR],
+			[-COLLAR, COLLAR],
+			[COLLAR, -COLLAR],
+			[-COLLAR, -COLLAR],
+		]) {
+			const ray = new THREE.Raycaster(
+				new THREE.Vector3(
+					(sx * (widthKm / 2)) / core,
+					(sy * (heightKm / 2)) / core,
+					band.max.z + 20,
+				),
+				new THREE.Vector3(0, 0, -1),
+			);
+			ray.far = 100;
+			for (const hit of ray.intersectObject(root, true)) {
+				const name = hit.object.name || hit.object.type;
+				if (FRAME_PART.test(name) || BAY_PART.test(name)) continue;
+				if (hit.point.z < band.min.z) continue;
+				// The frontmost hull surface on this ray, and only that one.
+				if (!found.has(name))
+					found.set(
+						name,
+						(hit.object as THREE.Mesh).geometry?.userData?.apertureCut !==
+							undefined,
+					);
+				break;
+			}
+		}
+	});
+	return [...found].map(([name, cut]) => ({ name, cut }));
 }
 
 /**

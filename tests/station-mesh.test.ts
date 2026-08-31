@@ -41,6 +41,7 @@ import {
 } from "../src/station-mesh";
 import { berthCentre } from "../src/arrival";
 import {
+	collarSurfaces,
 	crossings,
 	crossingsLine,
 	cutSurfaces,
@@ -545,6 +546,30 @@ describe("§13.1 — the opening is a hole, not a lit frame on a solid face", ()
 				expect([`${type} ${form.id}`, cutSurfaces(root).length > 0]).toEqual([
 					`${type} ${form.id}`,
 					true,
+				]);
+			}
+		}
+	});
+
+	/**
+	 * **And it is the surface that surrounds the opening.** The row below can
+	 * only see what still stands *in* the rectangle, and a cut surface leaves
+	 * nothing there — so a form that cut some other surface and left the right
+	 * one solid would satisfy both of the other rows. Point
+	 * `buildRefineryWarren`'s cut at `i === 0` and this goes red with
+	 * `terrace-2 uncut` while they stay green.
+	 */
+	test("the surface surrounding each opening is the one that was cut", () => {
+		for (const type of TYPES) {
+			for (const form of STATION_FORMS[type]) {
+				const { root } = buildStationForm(type, form.id, GREY, 0);
+				const uncut = collarSurfaces(root, type)
+					.filter((surface) => !surface.cut)
+					.map((surface) => `${surface.name} uncut`)
+					.join(", ");
+				expect([`${type} ${form.id}`, uncut]).toEqual([
+					`${type} ${form.id}`,
+					"",
 				]);
 			}
 		}

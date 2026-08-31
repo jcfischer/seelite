@@ -264,6 +264,28 @@ function computeCrease(geometry: THREE.BufferGeometry) {
 }
 
 /**
+ * A rectangle cut out of a lofted hull's cap, in the same units as `Ring.w`
+ * and `Ring.h` (#155).
+ *
+ * Exported so `station-mesh.ts`'s `shell` forwards the whole option rather than
+ * a structural copy of two of its three fields: the copy compiled only because
+ * an object literal passed straight through has no excess-property check, and
+ * its type said the second face is never cut while three callers relied on it
+ * being cut.
+ */
+export interface ApertureCut {
+	halfWidth: number;
+	halfHeight: number;
+	/**
+	 * `"last"` for a solid the ship stops inside, `"both"` for a **plate it
+	 * passes through** — a pad deck, a refinery terrace. A hole in one face of a
+	 * 24 m plate is not a hole, and the surface 24 m behind it reads on the
+	 * instrument exactly as the uncut face did.
+	 */
+	ends?: "last" | "both";
+}
+
+/**
  * Sweep a closed superellipse tube through the stations and cap both ends.
  *
  * Ring points run from +Y towards +X so the side quads wind outward; the caps
@@ -287,20 +309,13 @@ export function hullLoft(
 		 * nothing has wanted the other one, and an option nothing exercises is
 		 * an untested branch that reads as a capability.
 		 *
-		 * A cut cap has **no centre vertex**, so `userData.caps.rear` is `-1`
-		 * on a geometry built this way. Ships are never cut, which is why the
-		 * two readers of that field are unaffected.
-		 *
-		 * `ends` is `"last"` for a solid the ship stops inside and `"both"` for
-		 * a **plate it passes through** — a pad deck, a refinery terrace. A hole
-		 * in one face of a 24 m plate is not a hole, and the surface 24 m behind
-		 * it reads on the instrument exactly like the uncut face did.
+		 * A cut cap has **no centre vertex**, so the matching `userData.caps`
+		 * field is `null` on a geometry built this way — `null` rather than
+		 * `-1`, so a reader that forgets the case indexes nothing and fails
+		 * loudly instead of reading vertex `-1`. Ships are never cut, which is
+		 * why the two readers of that field are unaffected today.
 		 */
-		aperture?: {
-			halfWidth: number;
-			halfHeight: number;
-			ends?: "last" | "both";
-		};
+		aperture?: ApertureCut;
 	} = {},
 ) {
 	const segments = options.segments ?? RING_SEGMENTS;
@@ -453,7 +468,7 @@ export function hullLoft(
 		}
 	};
 
-	let frontCentre = -1;
+	let frontCentre: number | null = null;
 	if (options.aperture?.ends === "both") {
 		// The front fan is wound `(centre, point, next)` — the mirror of the
 		// rear's — so its strip is the mirror too.
@@ -470,7 +485,7 @@ export function hullLoft(
 			);
 		}
 	}
-	let rearCentre = -1;
+	let rearCentre: number | null = null;
 	if (options.aperture) {
 		capOpening(last, (rings.length - 1) * stride, 1, options.aperture);
 	} else {
