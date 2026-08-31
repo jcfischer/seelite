@@ -54,6 +54,26 @@ const fullRun = (
 });
 
 describe("the view set itself", () => {
+	test("a view that declares its own seed is followed only by navigators", () => {
+		// **Ordering the set depends on and nothing else pinned.**
+		// `refinery-cradle-berth` carries `seed: 2` and its placer navigates; the
+		// page is left on that seed, so any view after it that expects `SEED` 47
+		// would be framed in the wrong system. It happens to be followed only by
+		// the workbench frame, which navigates away again — a fact this row makes
+		// a rule.
+		const navigates = (view: (typeof VIEWS)[number]) =>
+			view.shot.kind === "workbench-interior" ||
+			(view.shot as { seed?: number }).seed !== undefined;
+		let sawSeed = false;
+		for (const view of VIEWS) {
+			if (sawSeed)
+				expect([view.name, navigates(view)]).toEqual([view.name, true]);
+			if ((view.shot as { seed?: number }).seed !== undefined) sawSeed = true;
+		}
+		// And the rule is about a real case rather than a hypothetical one.
+		expect(sawSeed).toBe(true);
+	});
+
 	test("declares fifteen views with unique kebab-case names", () => {
 		// Eight after #129 added `station-flank`, fifteen since #147 added
 		// §13.6's seven-frame acceptance set. A literal and not `VIEWS.length`,

@@ -120,28 +120,12 @@ export const newDockSession = (): DockSession => ({
 export const interiorOfStation = (station: {
 	type: keyof typeof STATION_GEOMETRY;
 	berthSeed: number;
-}): StationInterior => {
-	// **Memoised, because the docked tick reads it every frame.** A parked ship
-	// sits for as long as the player likes (§12.6's obligation 4 says ten
-	// minutes is a case), and rebuilding the catalogue at 60 Hz is ~27
-	// allocations a frame for a value that cannot change: it is a pure function
-	// of the type, the table and the seed, all three fixed for a session.
-	const key = `${station.type}:${station.berthSeed}`;
-	const cached = interiorCache.get(key);
-	if (cached) return cached;
-	const built = stationInterior(
+}): StationInterior =>
+	stationInterior(
 		station.type,
 		STATION_GEOMETRY[station.type].aperturePlaneKm,
 		station.berthSeed,
 	);
-	interiorCache.set(key, built);
-	return built;
-};
-
-/** Keyed on everything the catalogue is a function of, so it needs no
- *  invalidation — a new galaxy's stations produce new keys rather than stale
- *  answers. */
-const interiorCache = new Map<string, StationInterior>();
 
 /** The berth an id names, or a throw: a session holding an id no catalogue
  *  answers for is the reservation and the generator having diverged, not a case
@@ -276,6 +260,19 @@ export function stepDockedWorld(
 	world: World,
 	session: DockSession,
 	dt: number,
+	/**
+	 * The station's berth catalogue, supplied by the caller.
+	 *
+	 * **Built here, it was ~27 allocations a frame for as long as the player sat
+	 * docked** — and §12.6's obligation 4 says ten minutes is a case. It is a
+	 * pure function of the type, the table and the seed, so the one cache that
+	 * should hold it is the session's: `Game.interiorOf`. Passed in rather than
+	 * memoised in this module, because a module-level cache in a sim module is
+	 * a second lifetime for a value the game already owns.
+	 *
+	 * Optional so the flying path — which reads none of it — costs nothing.
+	 */
+	interior?: StationInterior,
 ): { session: DockSession; ship: DockedShip | null } {
 	if (session.phase === "flying" || !session.stationId)
 		return { session, ship: null };
@@ -315,10 +312,10 @@ export function stepDockedWorld(
 	if (session.phase === "docked") {
 		if (!session.berthId)
 			throw new Error(`docked at ${id} with no berth reserved`);
-		// **Inside the branch that reads it.** Hoisted above, it was an allocated
-		// catalogue on every traversal frame that nothing used — the kind of dead
-		// computation a bare `void` documents rather than removes.
-		const berth = berthOf(interiorOfStation(station), session.berthId);
+		const berth = berthOf(
+			interior ?? interiorOfStation(station),
+			session.berthId,
+		);
 		// **Placed, not interpolated.** Obligation 9's long interval is exactly
 		// this: the station translates at orbital speed and spins the whole time,
 		// and a docked position integrated from where the ship was would drift

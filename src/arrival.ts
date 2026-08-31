@@ -45,7 +45,7 @@ import type {
 	InteriorOffset,
 	StationInterior,
 } from "./station-interior";
-import { type Vec3, add, dot, scale, sub, v3 } from "./vec3";
+import { type Vec3, add, cross, dot, scale, sub, v3 } from "./vec3";
 
 /**
  * How far outside the aperture plane the launch releases the ship, km.
@@ -287,11 +287,12 @@ export function beginLaunch(
 		kind: "launch",
 		frame,
 		startedAtS,
-		durationS: traversalSeconds(
-			interior,
-			arc[arc.length - 1],
-			offset(frame.planeKm, 0, 0),
-		),
+		// **Priced against the same entry the spread is computed from.** The
+		// route is measured from `release`, twenty metres outside the plane, and
+		// the spread from `planeKm` — so every deep berth's launch came out past
+		// `longest`, `t` clamped to 1, and two routes that arrive 0.44 s apart
+		// left in the same nine seconds.
+		durationS: traversalSeconds(interior, arc[arc.length - 1], release),
 		path,
 		arc,
 		berthId: berth.id,
@@ -405,31 +406,152 @@ function unit(a: Vec3): Vec3 {
 }
 
 /**
- * Interpolate two directions along the great circle between them.
+ * A ship's attitude as a unit quaternion, `[x, y, z, w]`.
  *
- * **A real slerp, because the obvious `unit(lerp(a, b, t))` is degenerate
- * exactly where this is used.** An arrival turns the nose from inward to
- * outward — two *antipodal* vectors — and their normalised lerp is the zero
- * vector at the half-way point and flips sign either side of it: the ship holds
- * its entry heading for half the traversal and then snaps. That shipped once,
- * and `tests/dock-session.test.ts` holds the row that fails on it.
+ * **Two directions are not an orientation, and interpolating them separately is
+ * what went wrong.** The nose and the up-vector each took their own great
+ * circle, and at a wall berth the two circles crossed: an entry rolled to the
+ * opposite `across` — which check 4 accepts — is antipodal to the parked
+ * up-vector, so the roll turned through the slot's `up`; the nose turned from
+ * inward to outward through the same plane; and at the half-way point both
+ * landed on it. `|dot(nose, up)| = 1` — the ship's basis collapsed, mid-arrival,
+ * on four of a trade station's eight berths.
  *
- * `via` is the plane to turn through when the two are antipodal, where no
- * great circle is preferred by the geometry and one has to be chosen. Callers
- * pass the slot's own `up`, so the ship pitches over rather than rolling round
- * some axis that depends on rounding.
+ * Slerping the *orientation* cannot do that: a unit quaternion is a rotation,
+ * every point on the great circle between two of them is a rotation, and a
+ * rotation has an orthonormal basis by construction. There is no plane to
+ * choose and no degenerate pair to special-case.
+ *
+ * Hand-rolled rather than borrowed from Three.js, for this module's own reason:
+ * the authoritative world is float64 kilometres outside the scene graph and
+ * `arrival.ts` imports no renderer.
  */
-function slerp(a: Vec3, b: Vec3, t: number, via: Vec3): Vec3 {
-	const d = Math.min(1, Math.max(-1, dot(a, b)));
-	// Near-parallel: the great circle is shorter than float64 can resolve an
-	// axis for, and the lerp is the same answer to well inside a pixel.
-	if (d > 0.9995) return unit(add(scale(a, 1 - t), scale(b, t)));
-	const perpendicular =
-		d < -0.9995
-			? unit(sub(via, scale(a, dot(via, a))))
-			: unit(sub(b, scale(a, d)));
-	const theta = Math.acos(d) * t;
-	return add(scale(a, Math.cos(theta)), scale(perpendicular, Math.sin(theta)));
+type Quat = [number, number, number, number];
+
+/**
+ * The rotation that takes the ship's reference basis onto `(nose, up)`.
+ *
+ * The convention is `main.ts`'s `setAttitude`: columns are `(right, up, back)`
+ * with `back = −nose`, so the mesh's nose is local `−Z`. Shepperd's method
+ * picks the largest diagonal term, which is what keeps it conditioned when the
+ * trace is near `−1`.
+ */
+function quatFromAttitude(nose: Vec3, up: Vec3): Quat {
+	const f = unit(nose);
+	// Re-orthogonalised rather than trusted: the two come from a crossing pose
+	// and from a berth normal, and "perpendicular" is a claim about the
+	// geometry rather than about float64.
+	const u = unit(sub(up, scale(f, dot(up, f))));
+	const r = cross(f, u);
+	const b = scale(f, -1);
+	// Columns (r, u, b), read as m[row][col].
+	const m = [
+		[r.x, u.x, b.x],
+		[r.y, u.y, b.y],
+		[r.z, u.z, b.z],
+	];
+	const trace = m[0][0] + m[1][1] + m[2][2];
+	if (trace > 0) {
+		const w = Math.sqrt(1 + trace) / 2;
+		const k = 1 / (4 * w);
+		return [
+			(m[2][1] - m[1][2]) * k,
+			(m[0][2] - m[2][0]) * k,
+			(m[1][0] - m[0][1]) * k,
+			w,
+		];
+	}
+	if (m[0][0] > m[1][1] && m[0][0] > m[2][2]) {
+		const x = Math.sqrt(1 + m[0][0] - m[1][1] - m[2][2]) / 2;
+		const k = 1 / (4 * x);
+		return [
+			x,
+			(m[0][1] + m[1][0]) * k,
+			(m[0][2] + m[2][0]) * k,
+			(m[2][1] - m[1][2]) * k,
+		];
+	}
+	if (m[1][1] > m[2][2]) {
+		const y = Math.sqrt(1 + m[1][1] - m[0][0] - m[2][2]) / 2;
+		const k = 1 / (4 * y);
+		return [
+			(m[0][1] + m[1][0]) * k,
+			y,
+			(m[1][2] + m[2][1]) * k,
+			(m[0][2] - m[2][0]) * k,
+		];
+	}
+	const z = Math.sqrt(1 + m[2][2] - m[0][0] - m[1][1]) / 2;
+	const k = 1 / (4 * z);
+	return [
+		(m[0][2] + m[2][0]) * k,
+		(m[1][2] + m[2][1]) * k,
+		z,
+		(m[1][0] - m[0][1]) * k,
+	];
+}
+
+/** The `(nose, up)` pair a rotation produces — the inverse of the above, by
+ *  rotating the two reference directions it was built from. */
+function attitudeFromQuat(q: Quat): { nose: Vec3; up: Vec3 } {
+	const [x, y, z, w] = q;
+	const rotate = (v: Vec3): Vec3 => {
+		// v + 2·q_vec × (q_vec × v + w·v), the standard expansion.
+		const t = v3(
+			2 * (y * v.z - z * v.y),
+			2 * (z * v.x - x * v.z),
+			2 * (x * v.y - y * v.x),
+		);
+		return v3(
+			v.x + w * t.x + (y * t.z - z * t.y),
+			v.y + w * t.y + (z * t.x - x * t.z),
+			v.z + w * t.z + (x * t.y - y * t.x),
+		);
+	};
+	// The mesh's nose is local −Z and its up is local +Y (`setAttitude`).
+	return { nose: rotate(v3(0, 0, -1)), up: rotate(v3(0, 1, 0)) };
+}
+
+/**
+ * The shorter great-circle arc between two rotations.
+ *
+ * `q` and `−q` are the same rotation, so the sign is flipped when the dot is
+ * negative — otherwise the ship takes the long way round, which for a 180°
+ * nose turn is the difference between pitching over the lip and rolling
+ * backwards through the bay.
+ */
+function quatSlerp(a: Quat, b: Quat, t: number): Quat {
+	let [bx, by, bz, bw] = b;
+	let d = a[0] * bx + a[1] * by + a[2] * bz + a[3] * bw;
+	if (d < 0) {
+		bx = -bx;
+		by = -by;
+		bz = -bz;
+		bw = -bw;
+		d = -d;
+	}
+	// Near-parallel: the arc is shorter than float64 can resolve an axis for,
+	// and the normalised lerp is the same answer to well inside a pixel.
+	if (d > 0.9995) {
+		const q: Quat = [
+			a[0] + (bx - a[0]) * t,
+			a[1] + (by - a[1]) * t,
+			a[2] + (bz - a[2]) * t,
+			a[3] + (bw - a[3]) * t,
+		];
+		const n = Math.hypot(q[0], q[1], q[2], q[3]);
+		return [q[0] / n, q[1] / n, q[2] / n, q[3] / n];
+	}
+	const theta = Math.acos(d);
+	const s = Math.sin(theta);
+	const ka = Math.sin((1 - t) * theta) / s;
+	const kb = Math.sin(t * theta) / s;
+	return [
+		a[0] * ka + bx * kb,
+		a[1] * ka + by * kb,
+		a[2] * ka + bz * kb,
+		a[3] * ka + bw * kb,
+	];
 }
 
 /**
@@ -489,22 +611,22 @@ export function arrivalAttitude(
 	const e = ease(clamp01(u));
 	const basis = slotBasis(frameAtPhase(law.frame, phaseRad));
 	const parked = parkedAttitude(law, phaseRad);
-	if (law.kind === "launch") {
-		// **Each turn through a plane perpendicular to what it is turning.** The
-		// roll sweeps through the slot's `up` and **not** through the axis: check
-		// 4 compares against the axis *line*, so a ship parked on an overhead
-		// berth holds an up-vector antipodal to a deck berth's, and turned
-		// through the axis the half-way point would put the up-vector *on* the
-		// axis, collinear with the nose — the ship's basis collapsing mid-launch
-		// instead of rolling about its own nose.
-		return {
-			nose: law.frame.axis,
-			up: slerp(parked.up, basis.across, e, basis.up),
-		};
-	}
+	if (law.kind === "launch")
+		// A launch starts parked and ends square with the slot: the nose is
+		// already outward at both ends, so what this settles is the roll.
+		return attitudeFromQuat(
+			quatSlerp(
+				quatFromAttitude(parked.nose, parked.up),
+				quatFromAttitude(law.frame.axis, basis.across),
+				e,
+			),
+		);
 	if (!law.fromNose || !law.fromUp) return parked;
-	return {
-		nose: slerp(law.fromNose, parked.nose, e, basis.up),
-		up: slerp(law.fromUp, parked.up, e, basis.up),
-	};
+	return attitudeFromQuat(
+		quatSlerp(
+			quatFromAttitude(law.fromNose, law.fromUp),
+			quatFromAttitude(parked.nose, parked.up),
+			e,
+		),
+	);
 }

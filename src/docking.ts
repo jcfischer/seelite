@@ -740,6 +740,12 @@ export function requestClearance(
 	if (!berth)
 		return {
 			...state,
+			// **`position` is the injected occupancy, not a queue depth**, and it
+			// is that because there is no queue: §6.1 records that NPC traffic is
+			// #8's and unbuilt, so the only thing that can make a station full is
+			// the map a caller writes. At a uniform catalogue the reply is
+			// therefore always the capacity, which is honest about what is known
+			// and no more. #8 owns the real figure.
 			clearance: { kind: "queued", position: req.occupied.size },
 		};
 	return {

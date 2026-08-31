@@ -85,7 +85,8 @@ _Avoid_: Hangar, throat, docking bay corridor
 
 **Berth**:
 Where one ship parks inside a bay, addressed as **interior face × depth band** — deck, port wall, starboard wall or overhead; near or deep. Its **family** (open deck pad, wall-side berth, recessed service cradle) changes presentation and parked pose and never the docking interaction. It accepts a hull when its declared clear length, beam and height contain that hull's envelope; there is no S/M/L class. `docs/specs/docking.md` §13.2 owns the catalogue, the fit predicate and the allocation.
-_Avoid_ **as a name for a berth**: docking bay, slot, pad, landing pad. The scope note matters — "slot" is the aperture kind and `aperture.kind === "slot"` is code, "pad" names both a berth *family* (open deck pad) and the surface a ship settles onto (`berth-pad`), and the repo already had to correct one alias that read as banning an English word.
+_Avoid_: Docking bay, slot, pad, landing pad
+These are aliases for **a berth** and nothing else. "Slot" is an aperture kind — `aperture.kind === "slot"` is code — and "pad" names both a berth *family* (open deck pad) and the surface a ship settles onto (`berth-pad`). The scope note is here because the repo has already had to correct one alias that read as banning an English word.
 
 **Failed entry**:
 A crossing of the aperture plane that does not satisfy every check. It repels the ship, damages it, and keeps its clearance grant; unless it was a barge it does not turn the station hostile. Damage is quadratic in the closing speed above a floor, so a failed entry at the gate speed is survivable by design while one flown at the assist cap is not — "it costs you something, not everything" is a claim about the gate, not a guarantee at any speed. `docs/specs/docking.md` §2 owns the model.

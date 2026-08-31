@@ -858,12 +858,15 @@ const approach = await page.evaluate((stationId) => {
 	g.setHeadLook("forward");
 	const rangeKm = g.dockingSnapshot(stationId).planeKm * 3;
 	window.__placeOnAxis(stationId, rangeKm, false);
+	const out = g.dockingSnapshot(stationId);
 	return {
-		phase: g.dockingSnapshot(stationId).dockPhase,
+		phase: out.dockPhase,
 		rangeKm,
 		launchControl: launch instanceof HTMLElement,
 		consoleGone,
 		launchingGlass,
+		// Read after the traversal has ended and before anything re-requests.
+		released: { berthId: out.berthId, clearance: out.clearance.kind },
 	};
 }, slotId);
 
@@ -875,6 +878,19 @@ check(
 		approach.launchingGlass.floorHidden &&
 		approach.phase === "flying",
 	`control=${approach.launchControl}, console gone=${approach.consoleGone}, launching=${approach.launchingGlass.phase}/${approach.launchingGlass.floorHidden}, phase ${approach.phase}`,
+);
+
+check(
+	// **§13.2's release, and it is only reachable here.** The rule — the outward
+	// crossing gives the berth back and spends the grant with it — is wired in
+	// `main.ts`, and the headless tier does not construct a `Game`. So this is
+	// the one tier that can watch it happen, and §13.5 says so rather than
+	// listing it among the headless rows.
+	"the launch gave the berth back and spent the grant with it",
+	approach.released !== null &&
+		approach.released.berthId === null &&
+		approach.released.clearance === "none",
+	`berth ${approach.released?.berthId}, clearance ${approach.released?.clearance}`,
 );
 
 const mouth = await shieldInk(slotId, "mouth");

@@ -784,6 +784,42 @@ describe("§13.5 row 3 — every berth is inside the drawn bay", () => {
 		}
 	});
 
+	test("a selected form's drawn bay is the sim's catalogue, berth for berth", () => {
+		// **The two-authors seam, asserted rather than argued.** The mesh builds
+		// its catalogue from the face *its own form* cuts and the sim builds one
+		// from `aperturePlaneKm`; for a selected form those are the same number,
+		// and this is the row that says so — with the berths compared, not just
+		// the plane, so a divergence anywhere in the sizing chain shows up here.
+		for (const type of TYPES) {
+			const drawn = stationInterior(
+				type,
+				apertureOpening(
+					buildStationForm(type, SELECTED_FORM[type], GREY, 0).root,
+				).planeZ * STATION_GEOMETRY[type].coreRadiusKm,
+			);
+			const sim = stationInterior(type, STATION_GEOMETRY[type].aperturePlaneKm);
+			// The drawn plane is read back through `Float32Array`, so the two
+			// agree to a millimetre rather than exactly.
+			expect([type, drawn.berths.length]).toEqual([type, sim.berths.length]);
+			for (let i = 0; i < sim.berths.length; i++) {
+				const label = `${type} ${sim.berths[i].id}`;
+				expect([label, drawn.berths[i].id]).toEqual([label, sim.berths[i].id]);
+				expect(drawn.berths[i].centre.axial).toBeCloseTo(
+					sim.berths[i].centre.axial,
+					5,
+				);
+				expect(drawn.berths[i].centre.across).toBeCloseTo(
+					sim.berths[i].centre.across,
+					5,
+				);
+				expect(drawn.berths[i].centre.up).toBeCloseTo(
+					sim.berths[i].centre.up,
+					5,
+				);
+			}
+		}
+	});
+
 	test("an alternate form's bay meets its own aperture, not the table's", () => {
 		// **Why the builder takes a face rather than reading the table.** The
 		// workbench's alternates cut their aperture wherever their silhouette

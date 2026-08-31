@@ -3452,15 +3452,18 @@ class Game {
 	 */
 	interiorOf(id: string): StationInterior {
 		// **Memoised, because the protocol tick reads it for every station every
-		// frame.** `stationInterior` maps `ROLE_BERTHS` into up to eight fresh
-		// `Berth` records with two offsets each; the argument it replaced was a
-		// map lookup, and the line two below it already treats one map write per
+		// frame and the docked tick reads it 60 times a second.**
+		// `stationInterior` maps `ROLE_BERTHS` into up to eight fresh `Berth`
+		// records with two offsets each; the argument it replaced was a map
+		// lookup, and the line two below it already treats one map write per
 		// station per frame as a cost worth avoiding.
 		//
-		// Safe to cache: the catalogue is a pure function of the station's type,
-		// its geometry and its `berthSeed`, none of which changes over a
-		// session. The map is cleared with the rest of the per-system state when
-		// the system changes.
+		// **Session-scoped and never invalidated, which is a fact rather than a
+		// promise.** The catalogue is a pure function of the station's type, its
+		// geometry and its `berthSeed`, and a `Game` holds one system for its
+		// whole life (`makeWorld` is called once). A build that adds a jump owes
+		// this map a clear beside the other per-system state — said here because
+		// an earlier draft of this comment claimed a clear that does not exist.
 		const cached = this.interiors.get(id);
 		if (cached) return cached;
 		const built = interiorOfStation(stationOf(this.world.system, id));
@@ -3888,7 +3891,12 @@ class Game {
 	private stepDockPhase(dt: number) {
 		const wasAt = this.dock.stationId;
 		const wasLaunching = this.dock.phase === "launching";
-		const out = stepDockedWorld(this.world, this.dock, dt);
+		const out = stepDockedWorld(
+			this.world,
+			this.dock,
+			dt,
+			this.dock.stationId ? this.interiorOf(this.dock.stationId) : undefined,
+		);
 		this.dock = out.session;
 		// **§13.2's release, at the one moment the receipt names**: the outward
 		// aperture crossing, which is where the launch law ends. Held through

@@ -234,6 +234,54 @@ describe("§12.6 obligation 2 — nothing re-evaluates §3's checks during it", 
 	});
 });
 
+describe("§13.5 row 2 — the first leg stays inside the transit lane", () => {
+	test("an entry at a corner of the aperture is inside the lane to the staging point", () => {
+		// **§12.6's obligation 7, which the polyline changed the shape of.** The
+		// lane *is* the aperture rectangle carried inward (§13.1), so a ship that
+		// crossed the plane anywhere check 5 admits — a corner included — must
+		// still be inside it when it reaches the staging point. An entry on the
+		// axis cannot fail this; a corner is where it could.
+		for (const type of STATION_TYPES) {
+			const interior = interiorOf(type);
+			const frame = frameOf(type);
+			const basis = slotBasis(frame);
+			// Just inside the rectangle, which is where check 5 stops admitting.
+			const corner = add(
+				scale(frame.axis, frame.planeKm),
+				add(
+					scale(basis.across, interior.laneHalfAcrossKm * 0.98),
+					scale(basis.up, interior.laneHalfUpKm * 0.98),
+				),
+			);
+			for (const berth of interior.berths) {
+				const law = beginArrival(frame, interior, berth, corner, 0, {
+					nose: scale(frame.axis, -1),
+					up: basis.across,
+				});
+				for (let i = 0; i <= 200; i++) {
+					const at = localAt(law, i / 200);
+					// **The first leg only, which is what the lane covers.** §13.1
+					// runs it "from the open mouth to a staging point"; the transfer
+					// leg starts *at* that point and its whole job is to leave the
+					// lane for a berth, so a rule applied past it would forbid the
+					// manoeuvre §13.3 describes. A near berth's transfer runs at
+					// exactly the staging depth, hence the strict comparison.
+					if (at.axial <= interior.stagingAxialKm + 1e-9) continue;
+					const inside =
+						Math.abs(at.across) <= interior.laneHalfAcrossKm + 1e-9 &&
+						Math.abs(at.up) <= interior.laneHalfUpKm + 1e-9;
+					expect([type, berth.id, i, inside]).toEqual([
+						type,
+						berth.id,
+						i,
+						true,
+					]);
+				}
+			}
+		}
+	});
+});
+
 describe("§13.5 rows 2 and 3 — the route stays inside the bay", () => {
 	for (const type of STATION_TYPES)
 		test(`${type}: every leg stays inside the enclosed volume`, () => {
@@ -306,6 +354,45 @@ describe("§12.6 obligation 7 — the law runs in the rotating frame", () => {
 });
 
 describe("§12.6 obligation 7 — a rolled entry keeps a basis all the way in", () => {
+	test("no berth's arrival collapses the basis, from any roll check 4 admits", () => {
+		// **The row the two-direction blend passed and the orientation slerp
+		// exists for.** The nose and the up-vector each took their own great
+		// circle, and at a wall berth the two circles crossed: an entry rolled to
+		// the opposite `across` is antipodal to the parked up-vector, so the roll
+		// turned through the slot's `up`; the nose turned from inward to outward
+		// through the same plane; and half way in both landed on it. Measured on
+		// trade `port-near`, `|dot(nose, up)|` was **1.0000** at u = 0.5.
+		//
+		// Every berth against every entry roll the slot's own basis offers, which
+		// is the set check 4 admits at 0° and 180°.
+		for (const type of STATION_TYPES) {
+			const { frame, rel } = entryAt(type);
+			const basis = slotBasis(frame);
+			const rolls: [string, Vec3][] = [
+				["+across", basis.across],
+				["-across", scale(basis.across, -1)],
+				["+up", basis.up],
+				["-up", scale(basis.up, -1)],
+			];
+			for (const berth of interiorOf(type).berths)
+				for (const [name, up] of rolls) {
+					const law = beginArrival(frame, interiorOf(type), berth, rel, 0, {
+						nose: scale(frame.axis, -1),
+						up,
+					});
+					let worst = 0;
+					for (let i = 0; i <= 100; i++) {
+						const at = arrivalAttitude(law, i / 100, frame.phaseRad);
+						worst = Math.max(worst, Math.abs(dot(at.nose, at.up)));
+					}
+					const label = `${type} ${berth.id} entry ${name}`;
+					// A basis, not a line: a tenth is nowhere near a tolerance the
+					// old blend could have drifted inside — it reached 1.
+					expect([label, worst < 0.1]).toEqual([label, true]);
+				}
+		}
+	});
+
 	test("a ship entering rolled 180° never collapses its own frame", () => {
 		const { frame, rel } = entryAt("trade");
 		const basis = slotBasis(frame);

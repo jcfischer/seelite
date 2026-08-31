@@ -147,6 +147,18 @@ function ringAround(
 	];
 }
 
+/**
+ * One unit box for the whole bay, scaled per part.
+ *
+ * **A bay is fifty-odd meshes and each one had its own vertex buffer.** Every
+ * station in the game now carries one, where before only the slot-bearing forms
+ * carried a recess — so a geometry per part is a per-station cost that scales
+ * with the berth count. A box is the one shape where scale is exact: it is an
+ * affine map of the unit cube, so `Box3.setFromObject` and the connectivity
+ * check read the same numbers either way.
+ */
+const UNIT_BOX = new THREE.BoxGeometry(1, 1, 1);
+
 const box = (
 	w: number,
 	h: number,
@@ -154,7 +166,8 @@ const box = (
 	material: THREE.Material,
 	name: string,
 ) => {
-	const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
+	const mesh = new THREE.Mesh(UNIT_BOX, material);
+	mesh.scale.set(w, h, d);
 	mesh.name = name;
 	return mesh;
 };

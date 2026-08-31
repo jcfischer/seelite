@@ -1340,7 +1340,11 @@ are turned away by the ordinary fit predicate. `src/station-interior.ts`'s
 the hull roster rather than against a typed list of names.
 
 **Clearance atomically reserves a currently free, fitting berth** — the grant
-*is* the reservation. Among candidates it chooses the least spare envelope,
+*is* the reservation. The queued reply's `position` carries the **injected
+occupancy** rather than a queue depth, because there is no queue: §6.1 records
+that NPC traffic is #8's and unbuilt, so the only thing that can fill a station
+is the map a caller writes, and at a uniform catalogue the reply is therefore
+the capacity. #8 owns the real figure. Among candidates it chooses the least spare envelope,
 preserving larger capacity; equal fits use a deterministic station-local order
 rotated by clearance-request time. If no fitting berth is free, clearance
 **queues** rather than grants, which is the only state that queues now.
@@ -1419,14 +1423,32 @@ hostility, or danger state — the same rule §5 states for the exterior.
 5. Allocation picks the least spare envelope, never an occupied berth, rotates
    equal fits with the request time, and returns nothing at a full station.
 6. The reservation survives a failed entry under a live grant, is released by a
-   lapsed grant, and is released by the outward crossing.
+   lapsed grant, and is not released by one that lapses while the ship is parked
+   on it. **The outward crossing's release is the browser tier's**, because the
+   wiring lives in `main.ts` and the headless tier does not construct a `Game`.
 7. The traversal ends at the reserved berth's centre with the parked pose, and
    its duration lies in the ratified band.
 8. A skip lands an arrival at the berth and a launch outside the plane.
 
-**Browser** (`scripts/probe-dock-arrival.mjs`): the bay is enclosed from a
-parked free-look, the mouth is open from inside, and the interior name shield
-draws pixels.
+**Browser** (`scripts/probe-dock-arrival.mjs`), and stated as the rows the file
+actually asserts rather than as the rows one would want:
+
+1. every station draws a bay, and every berth in its catalogue has a pad;
+2. the bay reaches the screen from inside it;
+3. the interior name shield draws pixels, measured on the axis just inside the
+   mouth — the arriving ship's view of the end bulkhead, and the one viewpoint
+   available while the ship is still flying;
+4. a scripted approach ends **off the transit axis**, in the berth its grant
+   reserved, within a metre of where §13.3 puts it;
+5. the bay is drawn around the berth a parked ship sits in.
+
+**Two things it does not assert, named here rather than implied.** The lit rim
+of the mouth reads *zero* pixels from a deck berth and is printed: it sits about
+11° above the aim, behind the cockpit's own canopy roof, which is a fact about
+where a deck berth puts the pilot's eye. And §13.1's "no door" half is asserted
+**headlessly** instead — over every form and every detail level in
+`tests/station-mesh.test.ts` — because a name scan is exactly the kind of check
+a probe is the wrong tier for.
 
 **Human** (§13.6): the seven canonical frames. Automated checks may prove
 geometry, fit, deterministic assignment, reservation lifetime, traversal
