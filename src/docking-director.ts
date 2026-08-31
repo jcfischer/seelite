@@ -118,7 +118,8 @@ export interface DirectorState {
 	/**
 	 * The **signed** roll error, degrees, folded to (−90, 90]: positive is a
 	 * right-handed rotation of the ship's up about the outward axis away from
-	 * the slot's `across`.
+	 * the slot's `up` — check 4's own reference since #158, so the zero this
+	 * reports and the zero the gate accepts are one direction.
 	 *
 	 * Check 4 is unsigned — it compares against the axis *line*, so a ship
 	 * rolled 180° is the identical entry — and that is right for a gate and

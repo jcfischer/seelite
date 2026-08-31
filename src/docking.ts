@@ -482,9 +482,10 @@ export function evaluateEntry(
 	// lies along it when the ship's *beam* lies along the long one, which is
 	// the pose `tests/aperture-fit.test.ts` sizes the opening from (#157). It
 	// read `basis.across` until #158, so a ship at a perfect roll flew the slot
-	// on its side; the aperture's size cannot tell the two apart, because at
-	// the 50° limit the binding figure is 62.8 m against 63.4 m and both admit
-	// every non-capital hull.
+	// on its side. The aperture's size cannot tell the two apart: at the 50°
+	// limit the correct reading needs 62.8 m across and 63.4 m up against a
+	// 120 x 70 m slot, and transposing it needs 63.4 and 62.8 — both clear, and
+	// the tightest margin moves 6.6 m to 7.2 m.
 	//
 	// Against the axis-*line*, so the acute angle mod 180°: a ship rolled
 	// exactly 180° is the identical entry it geometrically is.

@@ -182,8 +182,10 @@ entry; an oriented-vector comparison would reject it for no physical reason.
 #9 until #158, and the implementation matched it — so a ship at a perfect roll
 put its 11.7 m height across the 120 m side and its 51.2 m beam across the 70 m
 one, and flew the slot on its side. It survived because the aperture's *size*
-cannot discriminate: at the 50° limit the binding figure is 62.8 m against
-63.4 m, and both conventions admit every non-capital hull. What settled it is
+cannot discriminate. At the 50° limit, over #35's roster, both admit every non-capital hull: the beam-along-long reading needs
+62.8 m across and 63.4 m up for margins of 57.2 and 6.6 m, and transposing it
+needs 63.4 and 62.8 for margins of 56.6 and 7.2 — the tightest margin moves by
+0.6 m on a 70 m dimension. What settled it is
 that `tests/aperture-fit.test.ts` sizes this opening with the hull's beam along
 the long side, and §5's 0.12 × 0.07 km was ratified from that measurement — so
 the row was disagreeing with the reading its own dimensions came from.

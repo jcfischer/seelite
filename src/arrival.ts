@@ -265,8 +265,10 @@ export function beginArrival(
  *
  * The parked ship already points outward, so unlike the old law this one does
  * not turn the nose round — what it settles is the **roll**, from the berth's
- * own normal back onto the slot's `across`, which is check 4's reference and
- * the attitude a ship outside the plane is measured in.
+ * own normal back onto the slot's `up`, which is check 4's reference since #158
+ * and the attitude a ship outside the plane is measured in. It settled onto
+ * `across` before that, which is the same right angle the check itself was
+ * out by.
  *
  * It reads no flag: **a launch is unconditionally skippable** and so, since
  * #147, is an arrival (§13.3).

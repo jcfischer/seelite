@@ -6,9 +6,10 @@
  * `|dot(shipUp, basis.across)|`, so its perfect roll stood a ship's *up-vector*
  * along the slot's 120 m side; `tests/aperture-fit.test.ts` sizes the opening
  * with the hull's *beam* along that same side. Transposed, and the aperture's
- * size cannot tell them apart — at the 50° limit the binding figure is 62.8 m
- * against 63.4 m, so both conventions admit every non-capital hull and no row
- * in the repo went red.
+ * size cannot tell them apart: at the 50° limit the correct reading needs
+ * 62.8 m across and 63.4 m up against a 120 x 70 m slot, and transposing it
+ * needs 63.4 and 62.8 — both clear, so every non-capital hull is admitted
+ * either way and no row in the repo went red.
  *
  * They disagreed because **nothing here compared a ship pose with a slot.**
  * `probe-dock-arrival.mjs` compares the drawn slot with `slotBasis` — mesh
@@ -123,6 +124,14 @@ describe("check 4's zero and the aperture-fit measurement agree (#157)", () => {
 	test("the pose check 4 calls a perfect roll puts the hull's beam along the slot's long side", () => {
 		const frame = frameFor();
 		const basis = slotBasis(frame);
+		// **`across` is the long side, asserted rather than assumed.** The row's
+		// title says "long", and without this it would only say "`across`" — it
+		// would stay green if the basis were ever re-keyed so that `across` ran
+		// along the short side, which is a transposition of exactly the class
+		// this file exists to catch. `station-mesh.ts` draws the mouth as
+		// `BoxGeometry(widthKm, heightKm, …)` on a local X that `main.ts` puts on
+		// the phase-zero `across`, so this is the tie to what is drawn.
+		expect(frame.aperture.widthKm).toBeGreaterThan(frame.aperture.heightKm);
 		const { nose, up } = checkFourZero(frame);
 		const beam = beamAxis(nose, up);
 		// The whole disagreement in one row. Pre-#158 this read 0.000 against
