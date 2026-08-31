@@ -486,8 +486,10 @@ check(
 // **E11's interior shield, and #131's answer.** The plaque sat on the throat's
 // end wall; #128 cut the throat to 105 m and it measured **zero**, with the
 // recess in front of it and with the recess hidden, and §12.7's joint 9
-// recorded that nobody had diagnosed why. §13.1's bay puts the same wall four
-// times further back and square to the lane, and this is the view an arriving
+// recorded that nobody had diagnosed why — and it is still not diagnosed. What
+// changed is the geometry around it, not an understanding of the old frame:
+// §13.1's bay puts the same wall four times further back and square to the
+// lane, and this is the view an arriving
 // ship has of it: on the axis, just inside the mouth, looking down the transit
 // lane. The ship is still flying here, which is what makes the viewpoint
 // available at all — a docked tick would put it back in its berth.
@@ -735,7 +737,7 @@ console.log(
 		`${parked.rimParts} strip(s), behind the canopy roof`,
 );
 
-// **§13.1's re-sited shield, and #131's answer.** E11's interior plaque used to
+// **§13.1's re-sited shield, and the symptom #131 recorded.** E11's interior plaque used to
 // sit on the throat's end wall, behind a ship parked nose-*inward*: #77
 // measured 14,430 pixels of it through a 280 m throat, #128 shortened the
 // throat to 105 m and it measured **zero**, and §12.7's joint 9 recorded that

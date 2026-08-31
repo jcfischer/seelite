@@ -597,6 +597,36 @@ describe("§9.1.9 the clearance state machine", () => {
 		expect(releaseBerth(denied).clearance).toEqual(denied.clearance);
 	});
 
+	test("a hull no berth fits is refused, not queued forever", () => {
+		// **A queue and a refusal are different answers**, and `chooseBerth`
+		// returns one `null` for both. A hull too big for every berth got
+		// `queued` at position 0 — a reply `tickDocking` re-evaluates every frame
+		// and can never promote, because no departure frees a berth that would
+		// fit. §13.2 refuses such a hull by the fit predicate.
+		const denied = requestClearance(newDockingState(), {
+			...REQ,
+			hull: HULL_VISUALS.carrier,
+		});
+		expect(denied.clearance).toEqual({
+			kind: "denied",
+			reason: "no berth that fits",
+		});
+		expect(denied.berthId).toBeNull();
+		// A tick does not turn it into a grant, which is the half that made the
+		// queued reply wrong rather than merely unhelpful.
+		expect(
+			tickDocking(denied, 60, { ...TRAFFIC, hull: HULL_VISUALS.carrier })
+				.clearance,
+		).toEqual({ kind: "denied", reason: "no berth that fits" });
+		// And a full station still *queues* a hull that would fit, which is the
+		// distinction this row exists for.
+		const full = new Set(INTERIOR.berths.map((berth) => berth.id));
+		expect(
+			requestClearance(newDockingState(), { ...REQ, occupied: full }).clearance
+				.kind,
+		).toBe("queued");
+	});
+
 	test("a lapsed grant does not evict the ship standing in the berth", () => {
 		// §13.2 holds the reservation "through arrival, docking and launch", and
 		// a grant is only 600 s — so a player who sat docked for eleven minutes

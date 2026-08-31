@@ -52,12 +52,15 @@ export const INTERIOR_GROUP_NAME = "station-interior";
 export const PLATE_FACTOR = 0.06;
 
 /**
- * The shell.
+ * The shell's surface: five slabs, two-sided.
  *
- * `BackSide` on one box is what makes it a room — the near faces are culled, so
- * from inside it is four walls, a deck, an overhead and a back bulkhead, in one
- * draw call, with the cross-section the sim declared rather than six wall
- * meshes whose positions could drift from it.
+ * **It was one `BackSide` box, and its sixth face was a lid.** A closed box
+ * renders the inside of *every* face, so what a pilot saw where the mouth
+ * should be was a flat panel the size of the bay's cross-section — and no lit
+ * rim on the bulkhead could help, because the rim was behind the lid. Four
+ * walls and a back, each seated inside the declared extent so the five together
+ * still span exactly the volume the sim declares, and `DoubleSide` because a
+ * wall the camera can be on either side of has no near face to cull.
  *
  * **Lambert rather than Standard**, for the reason `station-mesh.ts`'s throat
  * material carries: PBR on the surface that fills the canopy while docked costs
@@ -335,9 +338,11 @@ export function buildStationInterior(
 	// **E9/E11's shield, on the bay's end bulkhead, facing the mouth.**
 	//
 	// It sat on the throat's end wall before #128 shortened the throat, and #131
-	// records that it then drew zero pixels from inside. This is the same wall,
-	// four times further back and square to the lane — 405 m of bay against a
-	// 105 m throat on the trade station: an arriving ship flies
+	// records that it then drew zero pixels from inside, undiagnosed and still
+	// undiagnosed: what changed is the geometry around the plate rather than an
+	// account of the old frame. This is the same wall, four times further back
+	// and square to the lane — 405 m of bay against a 105 m throat on the trade
+	// station: an arriving ship flies
 	// straight at it down the transit lane, which is the one view in the game
 	// where a station's name is read from inside it.
 	//

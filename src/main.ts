@@ -3473,6 +3473,16 @@ class Game {
 
 	private readonly interiors = new Map<string, StationInterior>();
 
+	/** The traffic record `stepDockingProtocol` fills and reuses. Mutable and
+	 *  private, because `tickDocking` reads it synchronously and keeps nothing;
+	 *  the hull never changes while #26's roster is one hull. */
+	private readonly traffic = {
+		interior: null as unknown as StationInterior,
+		hull: PLAYER_ENVELOPE,
+		occupied: EMPTY_BERTHS as ReadonlySet<string>,
+		sessionHere: false,
+	};
+
 	/** How long the traversal in progress takes, seconds, or `null` when none
 	 *  is (§13.3). On the page because the duration is priced on the *route* —
 	 *  a caller scaling by a constant is scaling by the wrong one for any berth

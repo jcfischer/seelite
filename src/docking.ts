@@ -25,6 +25,7 @@ import {
 	type Berth,
 	type HullEnvelope,
 	type StationInterior,
+	berthFits,
 	chooseBerth,
 } from "./station-interior";
 import { type Vec3, add, cross, dot, length, scale, sub, v3 } from "./vec3";
@@ -634,7 +635,7 @@ export type Clearance =
 	| { kind: "none" }
 	| { kind: "granted"; expiresAtS: number }
 	| { kind: "queued"; position: number }
-	| { kind: "denied"; reason: "hostile" | "contraband" };
+	| { kind: "denied"; reason: "hostile" | "contraband" | "no berth that fits" };
 
 export interface DockingState {
 	clearance: Clearance;
@@ -663,7 +664,11 @@ export const newDockingState = (): DockingState => ({
 
 /**
  * Give the berth back (§13.2): on the outward crossing that ends a launch, and
- * on a grant that expired or was cancelled without being used.
+ * on a grant that expired without being used.
+ *
+ * **Cancellation is in the contract and has no caller**, which is said here
+ * rather than implied: §13.2 also releases a reservation the pilot cancels, and
+ * nothing in the game cancels a grant today. #8's traffic is what will need it.
  *
  * A verb rather than a field write at each site, because the two sites are in
  * two modules and a reservation released in one of them is a station that
@@ -720,6 +725,7 @@ export function requestClearance(
 	state: DockingState,
 	req: ClearanceRequest,
 ): DockingState {
+	const interior = req.interior;
 	if (req.rangeKm > VICINITY_KM) return state;
 	if (state.hostile)
 		return { ...state, clearance: { kind: "denied", reason: "hostile" } };
@@ -735,7 +741,19 @@ export function requestClearance(
 		};
 	// **The grant *is* the reservation** (§13.2). A protocol that granted first
 	// and assigned a berth on arrival could grant to a ship nothing fits, which
-	// is the one case §13.2 answers with a queue rather than a denial.
+	// is the one case §13.2 answers with a denial rather than a queue.
+	//
+	// **A queue and a refusal are different answers, and `chooseBerth` gives one
+	// `null` for both.** A hull too big for every berth in the catalogue was
+	// getting `queued` at position 0 — a reply `tickDocking` re-evaluates every
+	// frame and can never promote, because no ship leaving frees a berth that
+	// would fit. §13.2 says such a hull is refused by the fit predicate; this is
+	// where that refusal is spoken.
+	if (!interior.berths.some((berth) => berthFits(berth, req.hull)))
+		return {
+			...state,
+			clearance: { kind: "denied", reason: "no berth that fits" },
+		};
 	const berth = berthFor(req);
 	if (!berth)
 		return {
