@@ -79,16 +79,6 @@ function twoSided<T>(root: THREE.Object3D, body: () => T): T {
 }
 
 /**
- * The band a ship traverses, in mesh units: the drawn bay's own z extent.
- *
- * **Off the drawn bay, not off the table.** An alternate form cuts its aperture
- * where its own silhouette wants — `buildTradeRing` puts one at `r * 0.34`
- * against a table figure of 0.428 — so a band derived from `STATION_GEOMETRY`
- * would be measuring somewhere the workbench's forms have no opening at all.
- * Measured, the box's front face is the aperture bars' own plane on all twelve
- * forms, and its back face is the wall a parked ship stops short of.
- */
-/**
  * One ray straight down −Z through `(xKm, yKm)`, and every surface it meets
  * from the bay's back wall outward.
  *
@@ -119,6 +109,16 @@ function castDown(
 		.filter((hit) => hit.point.z >= band.min.z);
 }
 
+/**
+ * The band a ship traverses, in mesh units: the drawn bay's own z extent.
+ *
+ * **Off the drawn bay, not off the table.** An alternate form cuts its aperture
+ * where its own silhouette wants — `buildTradeRing` puts one at `r * 0.34`
+ * against a table figure of 0.428 — so a band derived from `STATION_GEOMETRY`
+ * would be measuring somewhere the workbench's forms have no opening at all.
+ * Measured, the box's front face is the aperture bars' own plane on all twelve
+ * forms, and its back face is the wall a parked ship stops short of.
+ */
 export function bayBand(root: THREE.Object3D): THREE.Box3 {
 	// **Updated here rather than by the caller.** A stale world matrix gives a
 	// box in the wrong units — the first version of the instrument read a trade

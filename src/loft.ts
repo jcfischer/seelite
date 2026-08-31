@@ -440,7 +440,7 @@ export function hullLoft(
 		source: number,
 		v: number,
 		aperture: { halfWidth: number; halfHeight: number },
-		end: "front" | "rear" = "rear",
+		end: "front" | "rear",
 	) => {
 		const loop: [number, number][] = [];
 		for (let point = 0; point < segments; point += 1) {
@@ -472,34 +472,53 @@ export function hullLoft(
 		}
 	};
 
-	let frontCentre: number | null = null;
-	if (options.aperture?.ends === "both") {
-		// The front fan is wound `(centre, point, next)` — the mirror of the
-		// rear's — so its strip is the mirror too.
-		capOpening(first, 0, 0, options.aperture, "front");
-	} else {
-		const frontCap = capRing(first, 0, 0);
-		frontCentre = frontCap.centre;
+	/**
+	 * One end of the hull: a closed fan, or a ring of quads round an opening.
+	 *
+	 * Both ends go through here rather than through a branch each, because the
+	 * two branches were near-identical — the same `capRing` call and the same
+	 * fan loop with only the index order swapped. Returns the fan's centre
+	 * vertex, or `null` when the end is cut and has none.
+	 */
+	const buildCap = (
+		ring: SolidRing,
+		source: number,
+		v: number,
+		end: "front" | "rear",
+		cut: ApertureCut | undefined,
+	): number | null => {
+		if (cut) {
+			capOpening(ring, source, v, cut, end);
+			return null;
+		}
+		const cap = capRing(ring, source, v);
 		for (let point = 0; point < segments; point += 1) {
 			const next = (point + 1) % segments;
-			indices.push(
-				frontCap.centre,
-				frontCap.start + point,
-				frontCap.start + next,
-			);
+			// The two fans are wound in opposite orders, which is what makes both
+			// of them face outward from a hull swept in one direction.
+			if (end === "front")
+				indices.push(cap.centre, cap.start + point, cap.start + next);
+			else indices.push(cap.centre, cap.start + next, cap.start + point);
 		}
-	}
-	let rearCentre: number | null = null;
-	if (options.aperture) {
-		capOpening(last, (rings.length - 1) * stride, 1, options.aperture);
-	} else {
-		const rearCap = capRing(last, (rings.length - 1) * stride, 1);
-		rearCentre = rearCap.centre;
-		for (let point = 0; point < segments; point += 1) {
-			const next = (point + 1) % segments;
-			indices.push(rearCap.centre, rearCap.start + next, rearCap.start + point);
-		}
-	}
+		return cap.centre;
+	};
+
+	// The front end is cut only for a plate the ship passes through, which is
+	// what `ends: "both"` names; the rear is the +Z end every station form cuts.
+	const frontCentre = buildCap(
+		first,
+		0,
+		0,
+		"front",
+		options.aperture?.ends === "both" ? options.aperture : undefined,
+	);
+	const rearCentre = buildCap(
+		last,
+		(rings.length - 1) * stride,
+		1,
+		"rear",
+		options.aperture,
+	);
 	const geometry = new THREE.BufferGeometry();
 	geometry.setAttribute(
 		"position",
