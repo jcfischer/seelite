@@ -763,5 +763,69 @@ async function settingsGate() {
 }
 await settingsGate();
 
+/**
+ * #61: normal flight carries no combat prototype.
+ *
+ * The behavioural half of the acceptance line. `tests/combat-rig-boundary.test.ts`
+ * proves the *source* no longer threads the prototype through `Game`; this
+ * proves the running game allocates none of it, which a source scan cannot see
+ * — a rig that allocated under a renamed identifier would pass the scan and
+ * fail here.
+ *
+ * The control matters more than usual, because every row below is an absence.
+ * A default boot asserting "no target mesh" reads identical to a boot that
+ * failed to build a scene at all, so the same page is asked for something that
+ * must be there, and a `?combat=1` page is asked for the objects whose absence
+ * is being claimed. Without that second page this gate would pass on a build
+ * where the rig had simply been deleted.
+ */
+async function combatRigAbsentInNormalFlight() {
+	const page = await open(URL);
+	const plain = await page.evaluate(() => ({
+		rig: window.__seelite.combatRig,
+		target: Boolean(
+			window.__seelite.nearScene.getObjectByName("combat-prototype-target"),
+		),
+		laser: Boolean(
+			window.__seelite.nearScene.getObjectByName("combat-prototype-laser"),
+		),
+		// The control: the near layer is populated, so the two absences above are
+		// about the prototype rather than about an empty scene.
+		nearChildren: window.__seelite.nearScene.children.length,
+	}));
+	check(
+		"a default boot builds no prototype rig",
+		plain.rig === null,
+		`combatRig ${String(plain.rig)}`,
+	);
+	check(
+		"a default boot allocates no prototype scene objects",
+		!plain.target && !plain.laser && plain.nearChildren > 0,
+		`target ${plain.target}, laser ${plain.laser}, near children ${plain.nearChildren}`,
+	);
+	await page.close();
+
+	// The other arm: the same lookups find the objects when the rig is asked
+	// for, so the rows above are a statement about the gate and not about the
+	// names having gone away.
+	const combatPage = await open(`${URL}&combat=1`);
+	const enabled = await combatPage.evaluate(() => ({
+		rig: window.__seelite.combatRig !== null,
+		target: Boolean(
+			window.__seelite.nearScene.getObjectByName("combat-prototype-target"),
+		),
+		laser: Boolean(
+			window.__seelite.nearScene.getObjectByName("combat-prototype-laser"),
+		),
+	}));
+	check(
+		"`?combat=1` builds the rig and its scene objects",
+		enabled.rig && enabled.target && enabled.laser,
+		`rig ${enabled.rig}, target ${enabled.target}, laser ${enabled.laser}`,
+	);
+	await combatPage.close();
+}
+await combatRigAbsentInNormalFlight();
+
 await browser.close();
 exit();

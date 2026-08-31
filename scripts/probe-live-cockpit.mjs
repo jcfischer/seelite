@@ -188,11 +188,16 @@ function measureLiveCockpit() {
 		),
 		flightInstrumentSecondaryReadout:
 			game.cockpit.flightInstrument?.secondaryText.text,
-		combatOverlayText: globalThis.__seeliteTextPixelsMatch(
-			overlayCanvas,
-			game.combatOverlayStatus,
-		),
-		combatOverlayReadout: game.combatOverlayStatus.text,
+		// `null` on a production page: since #61 the rig exists only under
+		// `?combat=1`, so the production run of this measure has no overlay to
+		// compare and the combat run below has one. Both call the same function.
+		combatOverlayText: game.combatRig
+			? globalThis.__seeliteTextPixelsMatch(
+					overlayCanvas,
+					game.combatRig.overlayStatus,
+				)
+			: null,
+		combatOverlayReadout: game.combatRig?.overlayStatus.text ?? null,
 		cruisePromptReadout: game.cockpitPrompt.text,
 		scannerMounted:
 			Boolean(scanner?.visible) &&
@@ -782,13 +787,14 @@ await combatPage.waitForFunction(
 	() =>
 		window.__seelite?.frames > 1 &&
 		globalThis.__seeliteCombatStatus.test(
-			window.__seelite.combatOverlayStatus.text,
+			window.__seelite.combatRig.overlayStatus.text,
 		),
 );
 await combatPage.keyboard.press("/");
 const warningShown = await combatPage
 	.waitForFunction(
-		() => window.__seelite.combatOverlayStatus.text.includes("MISSILE WARNING"),
+		() =>
+			window.__seelite.combatRig.overlayStatus.text.includes("MISSILE WARNING"),
 		{ timeout: 5000 },
 	)
 	.then(
@@ -799,7 +805,9 @@ await combatPage.keyboard.press("q");
 const warningCleared = await combatPage
 	.waitForFunction(
 		() =>
-			!window.__seelite.combatOverlayStatus.text.includes("MISSILE WARNING"),
+			!window.__seelite.combatRig.overlayStatus.text.includes(
+				"MISSILE WARNING",
+			),
 		{ timeout: 5000 },
 	)
 	.then(
@@ -815,8 +823,8 @@ await combatPage.keyboard.down("s");
 const lockShown = await combatPage
 	.waitForFunction(
 		() =>
-			window.__seelite.combat.heatLocked &&
-			window.__seelite.combatOverlayStatus.text.includes("FIRE LOCKED"),
+			window.__seelite.combatRig.state.heatLocked &&
+			window.__seelite.combatRig.overlayStatus.text.includes("FIRE LOCKED"),
 		{ timeout: 15000 },
 	)
 	.then(
@@ -830,7 +838,7 @@ await combatPage.keyboard.down("Space");
 // check if pulse feedback does not appear in time.
 const pulseFeedbackShown = await combatPage
 	.waitForFunction(
-		() => window.__seelite.combatOverlayStatus.text.includes("FIRE PULSE"),
+		() => window.__seelite.combatRig.overlayStatus.text.includes("FIRE PULSE"),
 		{ timeout: 2000 },
 	)
 	.then(
@@ -839,11 +847,11 @@ const pulseFeedbackShown = await combatPage
 	);
 check("prototype: pulse feedback appears promptly", pulseFeedbackShown);
 const combatReadout = await combatPage.evaluate(
-	() => window.__seelite.combatOverlayStatus.text,
+	() => window.__seelite.combatRig.overlayStatus.text,
 );
 const freezeProof = await combatPage.evaluate(async () => {
 	const game = window.__seelite;
-	game.probeFreezeLoop();
+	game.combatRig.freezeLoop();
 	const frozenAt = game.frames;
 	await new Promise((resolve) => setTimeout(resolve, 80));
 	const stayedFrozen = game.frames === frozenAt;
@@ -863,10 +871,10 @@ const laserTracerPixels = await combatPage.evaluate(() => {
 		return bright;
 	};
 	const shown = count();
-	game.probeForceLaserHidden = true;
+	game.combatRig.forceLaserHidden = true;
 	game.render(0);
 	const hidden = count();
-	game.probeForceLaserHidden = false;
+	game.combatRig.forceLaserHidden = false;
 	game.render(0);
 	return { shown, hidden };
 });
@@ -894,14 +902,14 @@ const combatOverlayRendered = await combatPage.evaluate(
  * Widening the window costs 650 ms and gives up nothing the check was for: a
  * loop that did not re-arm produces **zero** frames over any window, so the
  * defect it names still fails it — verified by returning early from
- * `probeResumeLoop`. What it stops asserting is a frame rate on a software
+ * `resumeLoop`. What it stops asserting is a frame rate on a software
  * rasteriser, which is a number #98 already settled is nobody's.
  */
 const RESUME_WATCH_MS = 800;
 const resumedFrames = await combatPage.evaluate(async (watchMs) => {
 	const game = window.__seelite;
 	const before = game.frames;
-	game.probeResumeLoop();
+	game.combatRig.resumeLoop();
 	// Sample after the synchronous resume call so its own rendered frame does
 	// not count; then require several more to prove rAF is re-arming.
 	const afterResume = game.frames;
@@ -936,7 +944,7 @@ await narrowCombatPage.waitForFunction(
 	() =>
 		window.__seelite?.frames > 1 &&
 		globalThis.__seeliteCombatStatus.test(
-			window.__seelite.combatOverlayStatus.text,
+			window.__seelite.combatRig.overlayStatus.text,
 		),
 );
 const narrowOverlay = await narrowCombatPage.evaluate(() => {
@@ -944,19 +952,19 @@ const narrowOverlay = await narrowCombatPage.evaluate(() => {
 	const overlay = document.querySelector("#overlay");
 	// The game exposes the four overlay lines it actually drew, at the font
 	// each was fitted to; assert on those rather than reimplementing the fitter.
-	const lines = game.combatOverlayLines;
+	const lines = game.combatRig.overlayLines;
 	const fits =
 		lines.length === 4 &&
 		lines.every((line) => line.width <= overlay.width - 16) &&
-		game.combatStatusWorstWidth > 0 &&
-		game.combatStatusWorstWidth <= overlay.width - 16;
+		game.combatRig.statusWorstWidth > 0 &&
+		game.combatRig.statusWorstWidth <= overlay.width - 16;
 	const rendered = globalThis.__seeliteMeasureCockpit().combatOverlayText;
 	return {
 		rendered,
 		fits,
 		canvas: overlay.width,
 		count: lines.length,
-		worst: game.combatStatusWorstWidth,
+		worst: game.combatRig.statusWorstWidth,
 	};
 });
 check(
