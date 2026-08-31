@@ -89,6 +89,37 @@ function twoSided<T>(root: THREE.Object3D, body: () => T): T {
  * Measured, the box's front face is the aperture bars' own plane on all twelve
  * forms, and its back face is the wall a parked ship stops short of.
  */
+/**
+ * One ray straight down −Z through `(xKm, yKm)`, and every surface it meets
+ * from the bay's back wall outward.
+ *
+ * Shared by both gate rows: they differ in where they sample and in what they
+ * exclude, and nothing else. Two copies of the cast could drift on the origin
+ * offset or on `far` and leave the rows measuring different things.
+ */
+function castDown(
+	root: THREE.Object3D,
+	xKm: number,
+	yKm: number,
+	coreKm: number,
+	band: THREE.Box3,
+): THREE.Intersection[] {
+	const ray = new THREE.Raycaster(
+		new THREE.Vector3(xKm / coreKm, yKm / coreKm, band.max.z + 20),
+		new THREE.Vector3(0, 0, -1),
+	);
+	ray.far = 100;
+	// **From the back wall outward, with no ceiling.** An upper bound at the
+	// mouth reads a surface lying exactly *in* the mouth plane — which is where
+	// ten of the twelve forms put theirs — as inside or outside on float32
+	// noise, and it silently reported two forms clear that were not. Anything
+	// drawn across the rectangle in front of the mouth is an obstruction too, so
+	// there is nothing to bound.
+	return ray
+		.intersectObject(root, true)
+		.filter((hit) => hit.point.z >= band.min.z);
+}
+
 export function bayBand(root: THREE.Object3D): THREE.Box3 {
 	// **Updated here rather than by the caller.** A stale world matrix gives a
 	// box in the wrong units — the first version of the instrument read a trade
@@ -105,6 +136,30 @@ export function bayBand(root: THREE.Object3D): THREE.Box3 {
 	});
 	if (slabs === 0) throw new Error("no bay shell to measure the band from");
 	return box;
+}
+
+/**
+ * The aperture frame's own plane, in mesh units — the mean of the four bars'
+ * centres.
+ *
+ * **The zero point of every figure this module produces.** `pastMouthKm`, the
+ * bay depths and §13.1's whole table are measured from `bayBand().max.z`, and
+ * the claim that the drawn bay's front face *is* this plane was prose until
+ * `tests/station-mesh.test.ts` began asserting the two agree. A silent drift
+ * between them would move every number here without failing anything.
+ */
+export function mouthPlane(root: THREE.Object3D): number {
+	root.updateMatrixWorld(true);
+	const centres: number[] = [];
+	root.traverse((object) => {
+		if (object.name !== "aperture-light") return;
+		centres.push(
+			new THREE.Box3().setFromObject(object).getCenter(new THREE.Vector3()).z,
+		);
+	});
+	if (centres.length !== 4)
+		throw new Error(`${centres.length} aperture bars, expected 4`);
+	return centres.reduce((a, b) => a + b, 0) / centres.length;
 }
 
 /** One surface a ship crosses inside the opening: its name, and how far past
@@ -167,24 +222,11 @@ export function crossings(root: THREE.Object3D, type: StationType): Crossing[] {
 				const cell = ix * CELLS + iy;
 				const x = ((ix / (CELLS - 1)) * 2 - 1) * EDGE_FRACTION * (widthKm / 2);
 				const y = ((iy / (CELLS - 1)) * 2 - 1) * EDGE_FRACTION * (heightKm / 2);
-				const ray = new THREE.Raycaster(
-					new THREE.Vector3(x / core, y / core, band.max.z + 20),
-					new THREE.Vector3(0, 0, -1),
-				);
-				ray.far = 100;
-				for (const hit of ray.intersectObject(root, true)) {
+				for (const hit of castDown(root, x, y, core, band)) {
 					const name = hit.object.name || hit.object.type;
 					// The aperture's own frame lives in the opening by
 					// construction — it *is* what frames it.
 					if (name.startsWith("aperture") || BAY_PART.test(name)) continue;
-					// **From the back wall outward, with no ceiling.** An upper
-					// bound at the mouth reads a surface lying exactly *in* the
-					// mouth plane — which is where ten of the twelve forms put
-					// theirs — as either inside or outside on float32 noise, and
-					// it silently reported two forms clear that were not.
-					// Anything drawn across the rectangle in front of the mouth
-					// is an obstruction too, so there is nothing to bound.
-					if (hit.point.z < band.min.z) continue;
 					const past = (band.max.z - hit.point.z) * core;
 					found.set(name, Math.min(found.get(name) ?? past, past));
 					wasCut.set(
@@ -230,7 +272,7 @@ export function crossings(root: THREE.Object3D, type: StationType): Crossing[] {
 export function collarSurfaces(
 	root: THREE.Object3D,
 	type: StationType,
-): { name: string; cut: boolean }[] {
+): { name: string; cut: boolean; pastMouthKm: number }[] {
 	root.updateMatrixWorld(true);
 	const core = STATION_GEOMETRY[type].coreRadiusKm;
 	const { widthKm, heightKm } = STATION_GEOMETRY[type].aperture;
@@ -238,14 +280,21 @@ export function collarSurfaces(
 	/**
 	 * How far out the collar sits, as a multiple of each half-extent.
 	 *
-	 * Outside the rectangle, and inside three things: the aperture bars, which
-	 * start one bar-thickness out (1.4 half-widths on the widest aperture);
-	 * every form's own cut surface; and an outpost's heat ring, a fixture
-	 * standing proud of the pad deck at 1.55 half-widths, which at a wider
-	 * collar is the frontmost surface on the diagonals and is not a hull.
+	 * **Just outside, because the gate is otherwise one-sided.** The other row
+	 * samples inside the rectangle, where a cut that is too *large* removes hull
+	 * and produces fewer hits rather than more — so an oversize is invisible
+	 * there, and an oversize is what opens a gap between the hole and the four
+	 * bars that frame it. The collar is where an oversized cut is missing its
+	 * material, so this row is the one that can see it: at 1.15 any oversize
+	 * under 15% passed green, and at 1.05 a 5% oversize reads `core uncut`.
+	 *
+	 * Still inside two things it must not reach: the aperture bars, which start
+	 * one bar-thickness out (1.4 half-widths on the widest aperture), and an
+	 * outpost's heat ring at 1.55. Both are frame rather than hull, and both are
+	 * excluded by name as well.
 	 */
-	const COLLAR = 1.15;
-	const found = new Map<string, boolean>();
+	const COLLAR = 1.05;
+	const found = new Map<string, { cut: boolean; pastMouthKm: number }>();
 	twoSided(root, () => {
 		for (const [sx, sy] of [
 			[COLLAR, 0],
@@ -262,31 +311,28 @@ export function collarSurfaces(
 			[COLLAR, -COLLAR],
 			[-COLLAR, -COLLAR],
 		]) {
-			const ray = new THREE.Raycaster(
-				new THREE.Vector3(
-					(sx * (widthKm / 2)) / core,
-					(sy * (heightKm / 2)) / core,
-					band.max.z + 20,
-				),
-				new THREE.Vector3(0, 0, -1),
-			);
-			ray.far = 100;
-			for (const hit of ray.intersectObject(root, true)) {
+			for (const hit of castDown(
+				root,
+				sx * (widthKm / 2),
+				sy * (heightKm / 2),
+				core,
+				band,
+			)) {
 				const name = hit.object.name || hit.object.type;
 				if (FRAME_PART.test(name) || BAY_PART.test(name)) continue;
-				if (hit.point.z < band.min.z) continue;
 				// The frontmost hull surface on this ray, and only that one.
 				if (!found.has(name))
-					found.set(
-						name,
-						(hit.object as THREE.Mesh).geometry?.userData?.apertureCut !==
+					found.set(name, {
+						cut:
+							(hit.object as THREE.Mesh).geometry?.userData?.apertureCut !==
 							undefined,
-					);
+						pastMouthKm: (band.max.z - hit.point.z) * core,
+					});
 				break;
 			}
 		}
 	});
-	return [...found].map(([name, cut]) => ({ name, cut }));
+	return [...found].map(([name, surface]) => ({ name, ...surface }));
 }
 
 /**

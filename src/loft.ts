@@ -310,10 +310,12 @@ export function hullLoft(
 		 * an untested branch that reads as a capability.
 		 *
 		 * A cut cap has **no centre vertex**, so the matching `userData.caps`
-		 * field is `null` on a geometry built this way — `null` rather than
-		 * `-1`, so a reader that forgets the case indexes nothing and fails
-		 * loudly instead of reading vertex `-1`. Ships are never cut, which is
-		 * why the two readers of that field are unaffected today.
+		 * field is `null` on a geometry built this way. `null` rather than `-1`
+		 * because the *type* is then `number | null` and a reader that ignores
+		 * the case does not compile — at runtime `null` coerces to 0 and reads
+		 * vertex 0 silently, exactly as `-1` would have, so this is a
+		 * compile-time signal and not a loud runtime one. Ships are never cut,
+		 * which is why the two readers of that field are unaffected today.
 		 */
 		aperture?: ApertureCut;
 	} = {},

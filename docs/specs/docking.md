@@ -393,12 +393,15 @@ port"*.
 
 **"The surface the slot is cut into" is not exactly where the plane sits, and the
 gap is the frame's** (#162, 2026-08-31). The declared plane is where the
-aperture's four bars stand; on eleven of the twelve forms that is flush with the
-surface behind them, and on the trade Coriolis the frame stands **25 m proud** of
-its hull face — #128's own 6%, bridged by that form's coaming. So a cut placed at
-the declared plane would leave the Coriolis a hole hanging in front of its own
-hull, and the cut is keyed on the surface rather than on the plane.
-`scripts/measure-aperture-cut.ts` prints the two per form.
+aperture's four bars stand, and on **ten** of the twelve forms that is flush with
+the surface behind them. Two are not: the trade Coriolis's frame stands **25 m
+proud** of its hull face — #128's own 6%, bridged by that form's coaming — and
+the refinery Warren's stands **20 m** proud of its outermost terrace. So a cut
+placed at the declared plane would leave both of those a hole hanging in front of
+their own hull, and the cut is keyed on the surface rather than on the plane.
+`scripts/measure-aperture-cut.ts` prints the frame plane, the surface, the
+stand-off and the surface's name per form — the figures above are its output, not
+a derivation beside it.
 
 `STATION_GEOMETRY.aperturePlaneKm` is one number that both tiers read: the frame
 the checks run in is built from it, and the selected form of each role cuts its

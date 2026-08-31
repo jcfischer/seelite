@@ -21,7 +21,11 @@
  * whole fleet's. On the build #155 was written against, all twelve were blocked.
  */
 
-import { crossings, bayBand } from "../tests/helpers/aperture-opening";
+import {
+	bayBand,
+	collarSurfaces,
+	crossings,
+} from "../tests/helpers/aperture-opening";
 import { STATION_GEOMETRY, STATION_TYPES } from "../src/station";
 import {
 	STATION_FORMS,
@@ -71,6 +75,15 @@ for (const type of STATION_TYPES) {
 		// what the form actually leaves clear. Where the first is larger, the
 		// bay is drawn inside the station's own solid.
 		const depth = finite(`${type} ${form.id} bay depth`, mouth - back);
+		// **How far the frame stands proud of the surface it is cut into.** The
+		// figure #155's receipt, `docking.md` §5 and `loft.ts` all quote as 25 m
+		// on the trade Coriolis and zero elsewhere — quoted as measured, so it
+		// owes a shipped mode that reprints it (the map's constraint from #118).
+		// Read off the collar, where a cut surface still has material.
+		const face = collarSurfaces(root, type).find((surface) => surface.cut);
+		const proud = face
+			? finite(`${type} ${form.id} stand-off`, face.pastMouthKm)
+			: Number.NaN;
 		const clear = found.length > 0 ? found[0].pastMouthKm : depth;
 		const inside = found
 			.map(
@@ -79,7 +92,9 @@ for (const type of STATION_TYPES) {
 			)
 			.join(" ");
 		console.log(
-			`${type.padEnd(9)}${form.id}${selected} bay=${(depth * 1000).toFixed(0)}m lane clear to ${(clear * 1000).toFixed(0)}m  ${inside || "clear"}`,
+			`${type.padEnd(9)}${form.id}${selected} frame=${mouth.toFixed(3)} ${
+				face ? `${face.name}=${(mouth - proud).toFixed(3)}` : "no cut surface"
+			} proud=${Math.round(proud * 1000) === 0 ? "0" : (proud * 1000).toFixed(0)}m  bay=${(depth * 1000).toFixed(0)}m lane clear to ${(clear * 1000).toFixed(0)}m  ${inside || "clear"}`,
 		);
 	}
 }

@@ -41,10 +41,12 @@ import {
 } from "../src/station-mesh";
 import { berthCentre } from "../src/arrival";
 import {
+	bayBand,
 	collarSurfaces,
 	crossings,
 	crossingsLine,
 	cutSurfaces,
+	mouthPlane,
 } from "./helpers/aperture-opening";
 
 // From `station.ts`, not a literal: a fourth station type must reach every
@@ -539,6 +541,29 @@ describe("§13.1 — the opening is a hole, not a lit frame on a solid face", ()
 	 * the geometry they cut: the Coriolis's frame stands 25 m proud of its own
 	 * face and an outpost's tower leg crosses the lane at 30 m.
 	 */
+	/**
+	 * **The zero point, asserted rather than described.** Every figure this
+	 * section and `docking.md` §13.1's table produce is measured from the drawn
+	 * bay's front face, on the stated ground that it *is* the aperture frame's
+	 * own plane. That was prose. A drift between the two would move every depth
+	 * in the receipt without failing anything.
+	 */
+	test("the drawn bay's mouth is the aperture frame's own plane", () => {
+		for (const type of TYPES) {
+			for (const form of STATION_FORMS[type]) {
+				const { root } = buildStationForm(type, form.id, GREY, 0);
+				const core = STATION_GEOMETRY[type].coreRadiusKm;
+				const apart = (bayBand(root).max.z - mouthPlane(root)) * core;
+				// A millimetre, against a station whose smallest feature is a
+				// 24 m bar: this is an equality with float32 slack, not a band.
+				expect([`${type} ${form.id}`, Math.abs(apart) < 1e-6]).toEqual([
+					`${type} ${form.id}`,
+					true,
+				]);
+			}
+		}
+	});
+
 	test("every form cuts its aperture into a surface", () => {
 		for (const type of TYPES) {
 			for (const form of STATION_FORMS[type]) {
