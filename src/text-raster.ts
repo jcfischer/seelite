@@ -12,10 +12,10 @@
  * contract rather than reading them back off a rescaled canvas.
  */
 
-export const INSTRUMENT_SECONDARY_FONT = "20px ui-monospace, monospace";
+const INSTRUMENT_SECONDARY_FONT = "20px ui-monospace, monospace";
 export const PROMPT_FONT = "13px ui-monospace, Menlo, monospace";
 export const PROMPT_FILL = "rgba(255, 214, 120, 0.9)";
-export const TEXT_RASTER_DEFAULTS: Readonly<{
+const TEXT_RASTER_DEFAULTS: Readonly<{
 	text: string;
 	font: string;
 	fillStyle: string;
@@ -32,7 +32,7 @@ export const TEXT_RASTER_DEFAULTS: Readonly<{
 	y: 0,
 	background: undefined as string | undefined,
 });
-export const TEXT_RASTER_BOUNDS_DEFAULTS: Readonly<{
+const TEXT_RASTER_BOUNDS_DEFAULTS: Readonly<{
 	left: number;
 	top: number;
 	width: number;

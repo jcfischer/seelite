@@ -796,11 +796,28 @@ async function combatRigAbsentInNormalFlight() {
 		// The control: the near layer is populated, so the two absences above are
 		// about the prototype rather than about an empty scene.
 		nearChildren: window.__seelite.nearScene.children.length,
+		// **No way to stop the world.** `private` is erased at runtime and the
+		// game object is published whole, so a prototype-only capability parked
+		// on it as a field is reachable from a production page. One was, for a
+		// round: `probeLoopControl.freeze()` would have halted the frame loop on
+		// a default boot. Enumerated rather than name-checked, because the
+		// regression to catch is *a* freeze capability being reachable, not that
+		// one spelling of it came back.
+		freezers: Object.entries(window.__seelite)
+			.filter(
+				([, v]) => v && typeof v === "object" && typeof v.freeze === "function",
+			)
+			.map(([k]) => k),
 	}));
 	check(
 		"a default boot builds no prototype rig",
 		plain.rigAbsent,
 		`combatRig absent: ${plain.rigAbsent}`,
+	);
+	check(
+		"a default boot exposes no way to freeze the frame loop",
+		plain.freezers.length === 0,
+		`freeze-capable properties on __seelite: [${plain.freezers.join(", ")}]`,
 	);
 	check(
 		"a default boot allocates no prototype scene objects",

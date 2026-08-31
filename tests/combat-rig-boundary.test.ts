@@ -89,10 +89,14 @@ test("main.ts declares the rig once and builds it once", () => {
 	// is the state.
 	expect(main.match(/readonly combatRig[?!]?:/g) ?? []).toHaveLength(1);
 	expect(main.match(/new CombatPrototypeRig\(/g) ?? []).toHaveLength(1);
-	// And the construction is gated, so a normal flight allocates nothing.
-	expect(main).toMatch(
-		/get\("combat"\) === "1"\s*\n?\s*\?\s*new CombatPrototypeRig/,
-	);
+	// And the construction is gated. Asserted as proximity rather than as a
+	// shape: pinning the ternary went red on an `if`/`else` or an extracted
+	// boolean, neither of which ungates anything. What the gate *does* is
+	// `probe-boot.mjs`'s to prove; this only refuses a construction with no
+	// `combat` flag anywhere near it.
+	const built = main.indexOf("new CombatPrototypeRig(");
+	expect(built).toBeGreaterThan(0);
+	expect(main.slice(Math.max(0, built - 200), built)).toContain('"combat"');
 });
 
 test("no other combat vocabulary survives in main.ts", () => {
