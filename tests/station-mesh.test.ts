@@ -40,6 +40,14 @@ import {
 	setStationDetail,
 } from "../src/station-mesh";
 import { berthCentre } from "../src/arrival";
+import {
+	bayBand,
+	collarSurfaces,
+	crossings,
+	crossingsLine,
+	cutSurfaces,
+	mouthPlane,
+} from "./helpers/aperture-opening";
 
 // From `station.ts`, not a literal: a fourth station type must reach every
 // loop in this file, and a hand-written list is exactly the place it would not.
@@ -480,6 +488,110 @@ describe("nothing stands in the way of the thing you fly through", () => {
 				const blocked = [...intrusions(root, type)]
 					.map(([name, depth]) => `${name} +${(depth * 1000).toFixed(0)}m`)
 					.join(", ");
+				expect([`${type} ${form.id}`, blocked]).toEqual([
+					`${type} ${form.id}`,
+					"",
+				]);
+			}
+		}
+	});
+});
+
+/**
+ * §13.1's opening, as a hole rather than as a picture of one (#155).
+ *
+ * **A different question from the corridor row above, and that row's epsilon
+ * says so.** It measures what stands *in front of* the aperture plane and skips
+ * every vertex at or behind it by construction — *"the wall the aperture is cut
+ * into is not an intrusion into the corridor in front of it"*. #155's defect
+ * lived exactly in the space that skip creates: the wall was never cut, so all
+ * twelve forms drew a lit frame on a solid surface and a docking ship crossed
+ * the station's own face. Every headless row in this file was green throughout
+ * and none of them could have gone red.
+ *
+ * **These rows assert the cut, not the lane.** `scripts/measure-aperture-cut.ts`
+ * prints both, and on eight forms the lane behind the mouth is still blocked — a
+ * keel through a hub, a rock ceiling 207 m in, four tower legs. That is #147's
+ * bay placed inside solid station rather than #155's uncut face; it needs three
+ * different fixes, none of them a cut, and it carries its own node. The two
+ * cannot be separated by a depth band, which is why these read the record
+ * `hullLoft` and `buildCuboctahedron` write on the geometry they cut: the
+ * Coriolis's frame stands 25 m proud of its own face and an outpost's tower leg
+ * crosses the lane at 30 m.
+ *
+ * **The bounds come off the drawn bay, not off the table.** An alternate form
+ * cuts its aperture where its own silhouette wants — `buildTradeRing` puts one
+ * at `r * 0.34` against a table figure of 0.428 — so a band derived from
+ * `STATION_GEOMETRY` would be measuring somewhere the workbench's forms do not
+ * have an opening at all.
+ */
+describe("§13.1 — the opening is a hole, not a lit frame on a solid face", () => {
+	/**
+	 * **The zero point, asserted rather than described.** Every figure this
+	 * section and `docking.md` §13.1's table produce is measured from the drawn
+	 * bay's front face, on the stated ground that it *is* the aperture frame's
+	 * own plane. That was prose. A drift between the two would move every depth
+	 * in the receipt without failing anything.
+	 */
+	test("the drawn bay's mouth is the aperture frame's own plane", () => {
+		for (const type of TYPES) {
+			for (const form of STATION_FORMS[type]) {
+				const { root } = buildStationForm(type, form.id, GREY, 0);
+				const core = STATION_GEOMETRY[type].coreRadiusKm;
+				const apart = (bayBand(root).max.z - mouthPlane(root)) * core;
+				// A millimetre, against a station whose smallest feature is a
+				// 24 m bar: this is an equality with float32 slack, not a band.
+				expect([`${type} ${form.id}`, Math.abs(apart) < 1e-6]).toEqual([
+					`${type} ${form.id}`,
+					true,
+				]);
+			}
+		}
+	});
+
+	test("every form cuts its aperture into a surface", () => {
+		for (const type of TYPES) {
+			for (const form of STATION_FORMS[type]) {
+				const { root } = buildStationForm(type, form.id, GREY, 0);
+				expect([`${type} ${form.id}`, cutSurfaces(root).length > 0]).toEqual([
+					`${type} ${form.id}`,
+					true,
+				]);
+			}
+		}
+	});
+
+	/**
+	 * **And it is the surface that surrounds the opening.** The row below can
+	 * only see what still stands *in* the rectangle, and a cut surface leaves
+	 * nothing there — so a form that cut some other surface and left the right
+	 * one solid would satisfy both of the other rows. Point
+	 * `buildRefineryWarren`'s cut at `i === 0` and this goes red with
+	 * `terrace-2 uncut` while they stay green.
+	 */
+	test("the surface surrounding each opening is the one that was cut", () => {
+		for (const type of TYPES) {
+			for (const form of STATION_FORMS[type]) {
+				const { root } = buildStationForm(type, form.id, GREY, 0);
+				const uncut = collarSurfaces(root, type)
+					.filter((surface) => !surface.cut)
+					.map((surface) => `${surface.name} uncut`)
+					.join(", ");
+				expect([`${type} ${form.id}`, uncut]).toEqual([
+					`${type} ${form.id}`,
+					"",
+				]);
+			}
+		}
+	});
+
+	test("no surface a form cut still stands across its opening", () => {
+		for (const type of TYPES) {
+			for (const form of STATION_FORMS[type]) {
+				const { root } = buildStationForm(type, form.id, GREY, 0);
+				const blocked = crossingsLine(
+					crossings(root, type).filter((crossing) => crossing.cut),
+				);
 				expect([`${type} ${form.id}`, blocked]).toEqual([
 					`${type} ${form.id}`,
 					"",

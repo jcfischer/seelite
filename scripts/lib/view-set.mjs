@@ -48,12 +48,13 @@ export const VIEWPORT = { width: 1440, height: 900 };
 
 /**
  * The levers charted under #98, by node id — six then, seven since #147 put a
- * room behind every aperture.
+ * room behind every aperture, eight since #162 cut the aperture into the hull.
  *
  * The set's job is to cover every surface these touch — that is what makes it
- * canonical rather than a convenient handful of screenshots. Adding a seventh
- * lever to the map without adding it here leaves it judged on somebody else's
- * frame, so `uncoveredLevers` is asserted rather than described.
+ * canonical rather than a convenient handful of screenshots. Adding a lever to
+ * the map without adding it here leaves it judged on somebody else's frame, so
+ * `uncoveredLevers` is asserted rather than described. The count above is a
+ * running total and goes stale silently; the assertion is what holds.
  */
 /** @type {Readonly<Record<number, string>>} */
 export const LEVERS = Object.freeze({
@@ -64,6 +65,7 @@ export const LEVERS = Object.freeze({
 	103: "selective bloom",
 	105: "the cockpit interior",
 	147: "the station interior",
+	162: "the aperture cut into the hull",
 });
 
 /**
@@ -172,7 +174,16 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "station-approach",
-		covers: [101, 103, 99],
+		/**
+		 * **Lever 162 is here rather than in a new view** (#155). The defect it
+		 * fixes — a lit frame on an uncut surface, which a ship flew through —
+		 * is only visible on the way *in*, and this is the one view on the
+		 * aperture axis. Its partner `berth-arrival` is the control rather than
+		 * the evidence: a hull is `FrontSide`, so from inside the bay the uncut
+		 * face was culled and every frame taken from a berth read correctly
+		 * throughout.
+		 */
+		covers: [162, 101, 103, 99],
 		what: "On the aperture axis at three silhouette radii — the docking face, its plating and the lit aperture.",
 		shot: { kind: "station-axis", station: "trade", radii: 3, view: "chase" },
 	},

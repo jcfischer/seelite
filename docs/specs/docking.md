@@ -391,6 +391,18 @@ the player was looking at, and the throat had to be 280 m deep to reach back pas
 it. Reported flying it as *"the tunnel is skewed in relation to the docking
 port"*.
 
+**"The surface the slot is cut into" is not exactly where the plane sits, and the
+gap is the frame's** (#162, 2026-08-31). The declared plane is where the
+aperture's four bars stand, and on **ten** of the twelve forms that is flush with
+the surface behind them. Two are not: the trade Coriolis's frame stands **25 m
+proud** of its hull face — #128's own 6%, bridged by that form's coaming — and
+the refinery Warren's stands **20 m** proud of its outermost terrace. So a cut
+placed at the declared plane would leave both of those a hole hanging in front of
+their own hull, and the cut is keyed on the surface rather than on the plane.
+`scripts/measure-aperture-cut.ts` prints the frame plane, the surface, the
+stand-off and the surface's name per form — the figures above are its output, not
+a derivation beside it.
+
 `STATION_GEOMETRY.aperturePlaneKm` is one number that both tiers read: the frame
 the checks run in is built from it, and the selected form of each role cuts its
 aperture at it. A form is free to have no surface there — the workbench
@@ -1338,6 +1350,33 @@ the exterior geometry nor the docking-entry checks.
 own rectangle, which is what makes §12.6's obligation 7 hold through the first
 leg: a ship that crossed the plane is inside the lane and cannot leave it before
 the staging point.
+
+**The opening is a cut in the hull, not a frame drawn on it** (#162,
+2026-08-31). The hull's own docking face was never opened: `buildCuboctahedron`
+wrote the trade Coriolis's +Z square as two triangles and `hullLoft` caps both
+ends, so every form drew a lit frame on a solid surface and a docking ship
+crossed the station's own face. It read as an opening only while the dark
+`BackSide` recess this section replaced stood in front of it, and it stayed
+invisible afterwards because a hull is `FrontSide`: from inside the bay the face
+is culled, so every frame taken from a berth was correct. All twelve forms are
+now cut — a ring of quads round the aperture rectangle, exactly, since the four
+bars lie strictly outside it — and a plate the ship passes through is cut on both
+faces.
+
+**"Permanently clear" is an obligation the drawn forms do not yet meet, and the
+figure is the bay's depth against the form's** (#162). Measured with
+`scripts/measure-aperture-cut.ts`: the bay is 405 m deep on trade, shipyard and
+refinery and 234 m on an outpost, while the lane runs clear for 405 m on all
+three trade forms, 60–95 m on two of the shipyard's, 58–215 m on the refinery's
+and 9–30 m on the outposts'. An outpost's core radius is 150 m, so its bay is
+1.56 times that radius deep and its own tower legs and collars stand in the lane.
+The obstructions are *inside* the bay box rather than behind it, so the shell
+does not occlude them; none yields to the cut above — a keel and a drill are
+rotated a right angle out of the aperture frame, the Rig's body is pitched
+0.34 rad, an asteroid has no cap to re-triangulate, and greebles and window panes
+are instanced, where the fix is placement. **The trade station is the only role
+whose forms have room for their bay**, which is why §13.6's accepted frames — all
+trade — read correctly.
 
 **The interior is unpressurized. There is no opaque door and no energy
 curtain.** The aperture frame and the station-name shield are visible from every
