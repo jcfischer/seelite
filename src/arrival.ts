@@ -413,7 +413,8 @@ function unit(a: Vec3): Vec3 {
  * **Two directions are not an orientation, and interpolating them separately is
  * what went wrong.** The nose and the up-vector each took their own great
  * circle, and at a wall berth the two circles crossed: an entry rolled to the
- * opposite `across` — which check 4 accepts — is antipodal to the parked
+ * opposite `across` — which check 4 accepted before #158, and refuses now — is
+ * antipodal to the parked
  * up-vector, so the roll turned through the slot's `up`; the nose turned from
  * inward to outward through the same plane; and at the half-way point both
  * landed on it. `|dot(nose, up)| = 1` — the ship's basis collapsed, mid-arrival,

@@ -38,13 +38,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import * as THREE from "three";
-import {
-	HULL_IDS,
-	HULL_VARIANTS,
-	type HullId,
-	buildShipMesh,
-} from "../src/ship-mesh";
+import { HULL_IDS, type HullId } from "../src/ship-mesh";
+import { rolledEnvelope } from "./helpers/rolled-envelope";
 import {
 	STATION_GEOMETRY,
 	STATION_TYPES,
@@ -61,33 +56,9 @@ const CAPITALS: HullId[] = ["carrier", "dreadnought"];
  *  second copy of it here would be this file asserting against itself. */
 const ROLL_LIMIT = (50 * Math.PI) / 180;
 
-/**
- * The opening one hull needs, metres, at the roll limit — across all of its
- * variants.
- *
- * The worst case is *at* the limit rather than somewhere inside it: both
- * expressions grow monotonically in θ over 0–90° for any positive `w` and `h`,
- * so nothing between 0 and 50° binds harder than 50° does.
- */
-function rolledEnvelope(id: HullId) {
-	let across = 0;
-	let up = 0;
-	for (const variant of HULL_VARIANTS[id]) {
-		const root = buildShipMesh(id, variant.id).root;
-		root.updateMatrixWorld(true);
-		const size = new THREE.Box3()
-			.setFromObject(root)
-			.getSize(new THREE.Vector3());
-		const w = size.x * 1000;
-		const h = size.y * 1000;
-		across = Math.max(
-			across,
-			w * Math.cos(ROLL_LIMIT) + h * Math.sin(ROLL_LIMIT),
-		);
-		up = Math.max(up, w * Math.sin(ROLL_LIMIT) + h * Math.cos(ROLL_LIMIT));
-	}
-	return { across, up };
-}
+/** The opening one hull needs at check 4's limit, metres — the shared helper,
+ *  so the `across` term's `w` is the beam in exactly one place (#158). */
+const rolled = (id: HullId) => rolledEnvelope(id, ROLL_LIMIT);
 
 /** The opening one type offers, metres. Read from the table, never restated. */
 const APERTURE = (type: StationType) => ({
@@ -103,7 +74,7 @@ describe("the aperture admits the hulls that have to fly through it", () => {
 			let tightest = Number.POSITIVE_INFINITY;
 			let tightestBy = "";
 			for (const id of ordinary) {
-				const hull = rolledEnvelope(id);
+				const hull = rolled(id);
 				const clearance = Math.min(
 					gap.width - hull.across,
 					gap.height - hull.up,
@@ -130,10 +101,8 @@ describe("the aperture admits the hulls that have to fly through it", () => {
 		// narrowing must not touch.
 		const gap = APERTURE("trade");
 		const ordinary = HULL_IDS.filter((id) => !CAPITALS.includes(id));
-		const needAcross = Math.max(
-			...ordinary.map((id) => rolledEnvelope(id).across),
-		);
-		const needUp = Math.max(...ordinary.map((id) => rolledEnvelope(id).up));
+		const needAcross = Math.max(...ordinary.map((id) => rolled(id).across));
+		const needUp = Math.max(...ordinary.map((id) => rolled(id).up));
 		const widthMargin = gap.width - needAcross;
 		const heightMargin = gap.height - needUp;
 		console.log(
@@ -152,7 +121,7 @@ describe("the aperture admits the hulls that have to fly through it", () => {
 		// shape that reversal would take — nobody would write "capitals may dock
 		// now", they would widen a slot for some other reason.
 		for (const id of CAPITALS) {
-			const hull = rolledEnvelope(id);
+			const hull = rolled(id);
 			for (const type of STATION_TYPES) {
 				const gap = APERTURE(type);
 				expect([

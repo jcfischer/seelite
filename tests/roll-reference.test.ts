@@ -44,10 +44,10 @@ import {
 } from "../src/docking";
 import { arrivalAttitude, beginLaunch } from "../src/arrival";
 import { ASSIST_CAP_KMS } from "../src/sim";
-import { buildShipMesh } from "../src/ship-mesh";
+import { rolledEnvelope } from "./helpers/rolled-envelope";
 import { STATION_GEOMETRY } from "../src/station";
 import { stationInterior } from "../src/station-interior";
-import { type Vec3, cross, dot, length, scale, sub, v3 } from "../src/vec3";
+import { type Vec3, add, cross, dot, length, scale, v3 } from "../src/vec3";
 
 /** Awkward on purpose, for `docking.test.ts`'s reason: on a world axis a
  *  transposition can hide behind coordinates that happen to agree. */
@@ -86,6 +86,32 @@ function beamAxis(nose: Vec3, up: Vec3): Vec3 {
  *  through 180°, so `across` and `−across` are the same answer. */
 const alignment = (a: Vec3, b: Vec3): number => Math.abs(dot(a, b));
 
+/** Rotate a direction about an axis by `deg` — Rodrigues, spelled out because
+ *  `vec3.ts` is a leaf and this is the only file that wanted it. */
+function rotateAbout(v: Vec3, axis: Vec3, deg: number): Vec3 {
+	const rad = (deg * Math.PI) / 180;
+	const k = scale(axis, 1 / length(axis));
+	const kv = cross(k, v);
+	return add(
+		add(scale(v, Math.cos(rad)), scale(kv, Math.sin(rad))),
+		scale(k, dot(k, v) * (1 - Math.cos(rad))),
+	);
+}
+
+/** An entry pose at the plane, nominal but for its attitude — the sibling
+ *  files' `nominal(frame, over)`, narrowed to the one thing these rows vary. */
+const poseAt = (
+	frame: ApertureFrame,
+	nose: Vec3,
+	up: Vec3,
+	standoffKm = 0,
+): EntryPose => ({
+	rel: scale(frame.axis, frame.planeKm + standoffKm),
+	vRel: scale(frame.axis, -V_GATE_KMS / 2),
+	nose,
+	up,
+});
+
 /**
  * The roll that check 4 scores as perfect, found by **searching the shipped
  * check** rather than by constructing it from the convention.
@@ -97,27 +123,45 @@ const alignment = (a: Vec3, b: Vec3): number => Math.abs(dot(a, b));
 function checkFourZero(frame: ApertureFrame): { nose: Vec3; up: Vec3 } {
 	const basis = slotBasis(frame);
 	const nose = scale(frame.axis, -1);
-	let best = { up: basis.across, deg: Number.POSITIVE_INFINITY };
-	for (let deg = 0; deg < 180; deg += 0.01) {
+	const atDeg = (deg: number): Vec3 => {
 		const rad = (deg * Math.PI) / 180;
-		const up = {
-			x: basis.across.x * Math.cos(rad) + basis.up.x * Math.sin(rad),
-			y: basis.across.y * Math.cos(rad) + basis.up.y * Math.sin(rad),
-			z: basis.across.z * Math.cos(rad) + basis.up.z * Math.sin(rad),
-		};
-		const pose: EntryPose = {
-			rel: scale(frame.axis, frame.planeKm),
-			vRel: scale(frame.axis, -V_GATE_KMS / 2),
-			nose,
-			up,
-		};
-		const rolled = Math.abs(
-			evaluateEntry(frame, pose, { hostile: false }).rollAngleDeg,
+		return add(
+			scale(basis.across, Math.cos(rad)),
+			scale(basis.up, Math.sin(rad)),
 		);
-		if (rolled < best.deg) best = { up, deg: rolled };
+	};
+	const scoreAt = (deg: number): number =>
+		Math.abs(
+			evaluateEntry(frame, poseAt(frame, nose, atDeg(deg)), { hostile: false })
+				.rollAngleDeg,
+		);
+
+	// **Coarse, then refined, and refined until the residual is below what the
+	// rows assert.** A single 0.01° sweep was the first version, and it found
+	// the zero to 0.005° at best — while the rows below compare metres to six
+	// decimals. It passed only because the true zero fell on 90.00°, an exact
+	// multiple of the step: the grid handed back the right answer for a reason
+	// that has nothing to do with the check, which is the constructed pose this
+	// helper exists to avoid.
+	let centre = 0;
+	let step = 1;
+	let best = Number.POSITIVE_INFINITY;
+	for (let span = 0; span < 12; span++) {
+		for (let i = -180; i <= 180; i++) {
+			const deg = centre + i * step;
+			if (span > 0 && Math.abs(i) > 2) continue;
+			const score = scoreAt(deg);
+			if (score < best) {
+				best = score;
+				centre = deg;
+			}
+		}
+		step /= 4;
 	}
-	expect(best.deg).toBeLessThan(0.01);
-	return { nose, up: best.up };
+	// Tighter than any row below reads, so a row's own tolerance is what it
+	// tests rather than this search's residual.
+	expect(best).toBeLessThan(1e-9);
+	return { nose, up: atDeg(centre) };
 }
 
 describe("check 4's zero and the aperture-fit measurement agree (#157)", () => {
@@ -141,12 +185,13 @@ describe("check 4's zero and the aperture-fit measurement agree (#157)", () => {
 	});
 
 	test("the extent the aperture's width must admit is the beam, which is what the fit test sizes it from", () => {
-		// The tie to `aperture-fit.test.ts`, in the units that test works in.
-		// It compares `w·cos θ + h·sin θ` against the aperture's **width**, with
-		// `w` the hull's beam — so at zero roll the width must be admitting the
-		// beam and the height the hull's height. Measured off a real mesh rather
-		// than a chosen pair of numbers, because a transposition is invisible in
-		// a hull that is square.
+		// **The tie to `aperture-fit.test.ts`, through the code it actually
+		// uses.** An earlier version re-derived `w·cos θ + h·sin θ` here from a
+		// mesh box, which left the seam one-sided: swapping `size.x` for
+		// `size.y` in the fit test would have re-transposed the pair and this
+		// row would have stayed green. Both files read
+		// `tests/helpers/rolled-envelope.ts` now, so the beam is named as the
+		// `across` term in one place and this row is checking that place.
 		const frame = frameFor();
 		const basis = slotBasis(frame);
 		const { nose, up } = checkFourZero(frame);
@@ -154,25 +199,25 @@ describe("check 4's zero and the aperture-fit measurement agree (#157)", () => {
 		if (!orth) throw new Error("degenerate attitude");
 		const beam = cross(orth.nose, orth.up);
 
-		const root = buildShipMesh("courier", "a").root;
-		root.updateMatrixWorld(true);
-		const size = new THREE.Box3()
-			.setFromObject(root)
-			.getSize(new THREE.Vector3());
-		const beamM = size.x * 1000;
-		const heightM = size.y * 1000;
-		// A courier is 4.4x wider than it is tall, so the two readings are far
-		// apart and no tolerance can straddle them.
-		expect(beamM / heightM).toBeGreaterThan(3);
+		// At zero roll the envelope collapses to the hull's own two dimensions:
+		// `across` is the beam and `up` is the height, which is the convention
+		// under test stated in the fit test's own units.
+		const flat = rolledEnvelope("courier", 0);
+		// The two terms differ by 2.18x over the courier's variants — the max
+		// beam and the max height need not come from the same one, so this is
+		// wider apart than any single hull but narrower than that hull's own
+		// 4.4x. Floored rather than pinned: what the row needs is that no
+		// tolerance can straddle them, and a hull edit may move the figure.
+		expect(flat.across / flat.up).toBeGreaterThan(2);
 
 		const needAcrossM =
-			alignment(beam, basis.across) * beamM +
-			alignment(orth.up, basis.across) * heightM;
+			alignment(beam, basis.across) * flat.across +
+			alignment(orth.up, basis.across) * flat.up;
 		const needUpM =
-			alignment(beam, basis.up) * beamM +
-			alignment(orth.up, basis.up) * heightM;
-		expect(needAcrossM).toBeCloseTo(beamM, 6);
-		expect(needUpM).toBeCloseTo(heightM, 6);
+			alignment(beam, basis.up) * flat.across +
+			alignment(orth.up, basis.up) * flat.up;
+		expect(needAcrossM).toBeCloseTo(flat.across, 6);
+		expect(needUpM).toBeCloseTo(flat.up, 6);
 	});
 
 	test("the docking computer flies at the pose the check accepts", () => {
@@ -181,14 +226,14 @@ describe("check 4's zero and the aperture-fit measurement agree (#157)", () => {
 		// reported as a ship entering the slot at 90°.
 		const frame = frameFor();
 		const basis = slotBasis(frame);
+		// **Seeded 30° out, not at the answer.** With `basis.up` as the input the
+		// row passed under a computer that dropped its slot branch entirely and
+		// handed `pose.up` straight back — the input already satisfied the
+		// assertion, so only the re-aim is under test here.
+		const misrolled = rotateAbout(basis.up, frame.axis, 30);
 		const aimed = dockingComputerStep({
 			frame,
-			pose: {
-				rel: scale(frame.axis, frame.planeKm + 2),
-				vRel: scale(frame.axis, -V_GATE_KMS / 2),
-				nose: scale(frame.axis, -1),
-				up: basis.up,
-			},
+			pose: poseAt(frame, scale(frame.axis, -1), misrolled, 2),
 			state: {
 				...newDockingState(),
 				clearance: { kind: "granted", expiresAtS: 600 },
@@ -197,6 +242,11 @@ describe("check 4's zero and the aperture-fit measurement agree (#157)", () => {
 			maxSpeedKms: ASSIST_CAP_KMS,
 		});
 		expect(aimed.engaged).toBe(true);
+		// The control: the pose handed in does *not* satisfy the assertion, so a
+		// pass is the computer's own work.
+		expect(
+			alignment(beamAxis(scale(frame.axis, -1), misrolled), basis.across),
+		).toBeLessThan(0.9);
 		const beam = beamAxis(aimed.nose, aimed.up);
 		expect(alignment(beam, basis.across)).toBeCloseTo(1, 6);
 	});
@@ -208,14 +258,7 @@ describe("check 4's zero and the aperture-fit measurement agree (#157)", () => {
 		// the agreement row: it goes red if check 4 moves and the cue does not.
 		const frame = frameFor();
 		const { nose, up } = checkFourZero(frame);
-		expect(
-			signedRollDeg(frame, {
-				rel: scale(frame.axis, frame.planeKm),
-				vRel: scale(frame.axis, -V_GATE_KMS / 2),
-				nose,
-				up,
-			}),
-		).toBeCloseTo(0, 4);
+		expect(signedRollDeg(frame, poseAt(frame, nose, up))).toBeCloseTo(0, 4);
 	});
 
 	test("a launch settles onto the reference the check measures", () => {

@@ -49,8 +49,13 @@ export const V_GATE_KMS = 0.1;
  *  cone that constrains only position says nothing about where the ship points. */
 export const AXIS_TOLERANCE_DEG = 35;
 
-/** §3's check 4, degrees, against the slot's long **axis-line** and not an
- *  oriented vector: a ship rolled 180° is a geometrically identical entry. */
+/** §3's check 4, degrees, against the slot's **short** axis-line and not an
+ *  oriented vector: a ship rolled 180° is a geometrically identical entry.
+ *
+ *  Short, so the ship's *beam* lies along the long side — it read "long" from
+ *  #9 until #158, and the number itself did not move with the correction,
+ *  because a tolerance is an angle magnitude and only the line it is measured
+ *  from changed. */
 export const ROLL_TOLERANCE_DEG = 50;
 
 /**
@@ -365,10 +370,10 @@ export function signedRollDeg(frame: ApertureFrame, pose: EntryPose): number {
 	// roll ring sends the pilot toward this zero, so a cue left on `across`
 	// would aim at the pose the corrected check refuses. Same formula shape as
 	// before, so the handedness is the one the ring was built against.
-	const reference = slotBasis(frame).up;
-	const perpendicular = cross(axis, reference);
+	const rollZero = slotBasis(frame).up;
+	const perpendicular = cross(axis, rollZero);
 	const deg =
-		(Math.atan2(dot(u, perpendicular), dot(u, reference)) * 180) / Math.PI;
+		(Math.atan2(dot(u, perpendicular), dot(u, rollZero)) * 180) / Math.PI;
 	if (deg > 90) return deg - 180;
 	if (deg <= -90) return deg + 180;
 	return deg;

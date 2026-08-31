@@ -178,26 +178,8 @@ be re-pointed rather than left to pass for a reason that has moved.
 a 0.12 × 0.07 km rectangle, so a ship rolled 180° is a geometrically identical
 entry; an oriented-vector comparison would reject it for no physical reason.
 
-**And it is the *short* axis-line, corrected in #157.** This row said "long" from
-#9 until #158, and the implementation matched it — so a ship at a perfect roll
-put its 11.7 m height across the 120 m side and its 51.2 m beam across the 70 m
-one, and flew the slot on its side. It survived because the aperture's *size*
-cannot discriminate. At the 50° limit, over #35's roster, both admit every non-capital hull: the beam-along-long reading needs
-62.8 m across and 63.4 m up for margins of 57.2 and 6.6 m, and transposing it
-needs 63.4 and 62.8 for margins of 56.6 and 7.2 — the tightest margin moves by
-0.6 m on a 70 m dimension. What settled it is
-that `tests/aperture-fit.test.ts` sizes this opening with the hull's beam along
-the long side, and §5's 0.12 × 0.07 km was ratified from that measurement — so
-the row was disagreeing with the reading its own dimensions came from.
-
-**Neither the 50° of §3.2 nor §5's 0.12 × 0.07 km moves with the correction.**
-The tolerance is an angle magnitude against an axis-line and only the line it is
-measured from changed; the dimensions were ratified from the surviving
-convention. `tests/roll-reference.test.ts` is the row that compares check 4's
-zero with the fit measurement's, which is the check that did not exist —
-`probe-dock-arrival.mjs` compares the drawn slot with `slotBasis`, which is the
-axis question, and nothing compared a ship pose with a slot at all. Two consequences of *that instant*
-being the evaluation point, both of which decide implementations:
+Two consequences of *that instant* being the evaluation point, both of which
+decide implementations:
 
 - **Check 2 is two angles, not one.** A purely positional cone constrains where
   the ship *is* and says nothing about where it points, so a ship translating up
@@ -208,6 +190,33 @@ being the evaluation point, both of which decide implementations:
 - **Check 3 is a velocity sign, not a position sign.** At the crossing instant
   the axial *position* is zero by construction, so a side-of-plane test has no
   defined answer there — and §9.1.1 requires boundary rows.
+
+**And it is the *short* axis-line, corrected in #157.** This row said "long"
+from #9 until #158, and the implementation matched it — so a ship at a perfect
+roll put its 11.7 m height across the 120 m side and its 51.2 m beam across the
+70 m one, and flew the slot on its side.
+
+It survived because the aperture's *size* cannot discriminate. At the 50° limit,
+over #35's roster, both readings admit every non-capital hull: beam along the
+long side needs 62.8 m across and 63.4 m up, for margins of 57.2 and 6.6 m
+against a 120 × 70 m slot; transposed it needs 63.4 and 62.8, for margins of
+56.6 and 7.2. The tightest margin moves by 0.6 m on a 70 m dimension, and no
+check in the repo reads it.
+
+What settled it is that `tests/aperture-fit.test.ts` sizes this opening with the
+hull's beam along the long side, and §5's 0.12 × 0.07 km was ratified from that
+measurement — so the row was disagreeing with the reading its own dimensions
+came from.
+
+**Neither the 50° of §3.2 nor §5's 0.12 × 0.07 km moves with the correction.**
+The tolerance is an angle magnitude against an axis-line and only the line it is
+measured from changed; the dimensions were ratified from the surviving
+convention. `tests/roll-reference.test.ts` is the row that compares check 4's
+zero with the fit measurement's, which is the check that did not exist:
+`probe-dock-arrival.mjs` compares the drawn slot with `slotBasis`, which is the
+axis question, and nothing compared a ship pose with a slot at all. Both files
+read the beam off `tests/helpers/rolled-envelope.ts`, so the two halves cannot
+be re-transposed one at a time.
 
 **Check 4 does not apply to the refinery pad** — that is the whole of #13 §6's
 "the second is *genuinely easier* rather than merely different". Dropping the
