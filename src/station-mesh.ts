@@ -49,6 +49,7 @@
  */
 
 import * as THREE from "three";
+import { cutRing, ringTriangles } from "./face-cut";
 import { type Ring, hullLoft } from "./loft";
 import {
 	applyRockSurface,
@@ -782,8 +783,17 @@ function shell(
 	 * object seen close".
 	 */
 	flat = false,
+	/**
+	 * Cut the aperture out of the last control's cap, in kilometres (#155).
+	 *
+	 * Passed by whichever call builds the surface the aperture bars sit on —
+	 * which is a per-form fact and cannot be inferred here: a form's outermost
+	 * surface across the opening is its own choice of silhouette.
+	 * `scripts/measure-aperture-cut.ts` prints which one that is per form.
+	 */
+	aperture?: { halfWidth: number; halfHeight: number },
 ) {
-	const geometry = hullLoft(controls, { segments });
+	const geometry = hullLoft(controls, { segments, aperture });
 	// **A panel size, not a panel count.** `hullLoft` writes its UVs in
 	// kilometres — chord distance round the section and distance along the
 	// sweep — so dividing by one constant gives every part of every station the
@@ -992,7 +1002,30 @@ function strobePair(
  */
 const CUBOCTAHEDRON_FACE = Math.SQRT1_2;
 
-function buildCuboctahedron(radiusKm: number, material: THREE.Material) {
+/**
+ * The rectangle a form cuts out of its own outermost surface (#155).
+ *
+ * The same row the aperture bars are sized from, so the cut edge and the frame
+ * round it are one number reached once. They meet exactly: the four bars lie
+ * strictly *outside* the rectangle, so a cut any larger shows the bay through
+ * the gap and any smaller re-closes the hole.
+ */
+function apertureCut(type: StationType, ends: "last" | "both" = "last") {
+	const { widthKm, heightKm } = STATION_GEOMETRY[type].aperture;
+	return { halfWidth: widthKm / 2, halfHeight: heightKm / 2, ends };
+}
+
+function buildCuboctahedron(
+	radiusKm: number,
+	material: THREE.Material,
+	/**
+	 * Cut the +Z square out as a ring of quads round this rectangle (#155).
+	 *
+	 * Half-extents in kilometres. Without it the square is the two triangles it
+	 * always was, which is what a docking ship used to fly through.
+	 */
+	aperture?: { halfWidth: number; halfHeight: number },
+) {
 	// The twelve permutations of (±1, ±1, 0). `PolyhedronGeometry` normalises
 	// every vertex to the radius, which is exact here because a cuboctahedron's
 	// vertices are equidistant — that is what makes it buildable this way and a
@@ -1012,16 +1045,109 @@ function buildCuboctahedron(radiusKm: number, material: THREE.Material) {
 	// wedges with the window grid hanging in space beside them, because the
 	// faces the panes were placed against were not where the geometry put them.
 	const indices = [
-		// +Z, -Z
-		4, 8, 5, 4, 5, 9, 7, 10, 6, 7, 6, 11,
+		// +Z — omitted when it is cut, because the ring below replaces it.
+		...(aperture ? [] : [4, 8, 5, 4, 5, 9]),
+		// -Z
+		7,
+		10,
+		6,
+		7,
+		6,
+		11,
 		// +X, -X
-		0, 4, 3, 0, 3, 7, 1, 6, 2, 1, 2, 5,
+		0,
+		4,
+		3,
+		0,
+		3,
+		7,
+		1,
+		6,
+		2,
+		1,
+		2,
+		5,
 		// +Y, -Y
-		0, 11, 1, 0, 1, 8, 3, 9, 2, 3, 2, 10,
+		0,
+		11,
+		1,
+		0,
+		1,
+		8,
+		3,
+		9,
+		2,
+		3,
+		2,
+		10,
 		// the eight octant triangles
-		0, 8, 4, 1, 5, 8, 2, 9, 5, 3, 4, 9, 0, 7, 11, 1, 11, 6, 2, 6, 10, 3, 10, 7,
+		0,
+		8,
+		4,
+		1,
+		5,
+		8,
+		2,
+		9,
+		5,
+		3,
+		4,
+		9,
+		0,
+		7,
+		11,
+		1,
+		11,
+		6,
+		2,
+		6,
+		10,
+		3,
+		10,
+		7,
 	];
 	const geometry = new THREE.PolyhedronGeometry(vertices, indices, radiusKm, 0);
+	if (aperture) {
+		// **The face's own plane and its own corners**, not a box round the
+		// solid: for a cuboctahedron of radius R the square face planes sit at
+		// `R / √2`, and that square's corners are the four points where the
+		// axes meet it. `CUBOCTAHEDRON_FACE` is the same figure every fixture on
+		// this hull is placed from, so the cut and the coaming round it cannot
+		// disagree about where the face is.
+		const face = radiusKm * CUBOCTAHEDRON_FACE;
+		const { outer, inner } = cutRing(
+			[
+				[face, 0],
+				[0, face],
+				[-face, 0],
+				[0, -face],
+			],
+			aperture.halfWidth,
+			aperture.halfHeight,
+		);
+		const ring = ringTriangles(outer, inner, face);
+		// Appended rather than merged through a utility: the geometry is
+		// non-indexed and one run of three vertices is one face, so the two are
+		// concatenated attribute by attribute and stay in that shape — which is
+		// what `boxProjectUVs` below needs.
+		const position = geometry.getAttribute("position") as THREE.BufferAttribute;
+		const normal = geometry.getAttribute("normal") as THREE.BufferAttribute;
+		const merged = new Float32Array(position.count * 3 + ring.length);
+		merged.set(position.array as Float32Array, 0);
+		merged.set(ring, position.count * 3);
+		const normals = new Float32Array(merged.length);
+		normals.set(normal.array as Float32Array, 0);
+		// The cut face is flat and faces +Z, which is exactly what the two
+		// triangles it replaces carried.
+		for (let i = position.count * 3; i < normals.length; i += 3)
+			normals[i + 2] = 1;
+		geometry.setAttribute("position", new THREE.BufferAttribute(merged, 3));
+		geometry.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
+		geometry.setAttribute(
+			"uv",
+			new THREE.BufferAttribute(new Float32Array((merged.length / 3) * 2), 2),
+		);
+	}
 	// Box-projected UVs, per face — see `boxProjectUVs`.
 	boxProjectUVs(geometry, STATION_PANEL_KM);
 	// Through the clone cache, not by mutating the material it was handed: hull
@@ -1055,7 +1181,11 @@ function buildTradeCoriolis(color: number, berthSeed: number): BuiltPart {
 	 */
 	const face = radius * CUBOCTAHEDRON_FACE;
 
-	const hull = buildCuboctahedron(radius, hullMaterial(color, "trade"));
+	const hull = buildCuboctahedron(
+		radius,
+		hullMaterial(color, "trade"),
+		apertureCut("trade"),
+	);
 	hull.name = "core";
 	group.add(hull);
 
@@ -1365,6 +1495,7 @@ function buildTradeRing(color: number, berthSeed: number): BuiltPart {
 			"hub",
 			8,
 			true,
+			apertureCut("trade"),
 		),
 	);
 	// **On the hub's own front cap**, at the same z its last ring sits at. Set
@@ -1439,6 +1570,7 @@ function buildTradeDrum(color: number, berthSeed: number): BuiltPart {
 			"core",
 			12,
 			true,
+			apertureCut("trade"),
 		),
 	);
 	// Two stiffening bands, which are what give the barrel a readable size.
@@ -1523,6 +1655,7 @@ function buildShipyardGantry(color: number, berthSeed: number): BuiltPart {
 		"core",
 		4,
 		true,
+		apertureCut("shipyard"),
 	);
 	const spun = new THREE.Group();
 	spun.name = "spun";
@@ -1762,6 +1895,7 @@ function buildShipyardHangar(color: number, berthSeed: number): BuiltPart {
 		"core",
 		4,
 		true,
+		apertureCut("shipyard"),
 	);
 	const spun = new THREE.Group();
 	spun.name = "spun";
@@ -1865,6 +1999,8 @@ function buildShipyardSlipway(color: number, berthSeed: number): BuiltPart {
 		plainMaterial(0x8b95a0, 0.62, 0.48),
 		"hub",
 		12,
+		false,
+		apertureCut("shipyard"),
 	);
 	const spun = new THREE.Group();
 	spun.name = "spun";
@@ -2223,6 +2359,10 @@ function buildRefineryWarren(color: number, berthSeed: number): BuiltPart {
 			i === 1 ? "core" : `terrace-${i}`,
 			8,
 			true,
+			// **The outermost terrace only.** The plant steps down towards +Z, so
+			// the last one is the surface the aperture bars stand on; cutting all
+			// three would open three holes in a staircase.
+			i === 2 ? apertureCut("refinery", "both") : undefined,
 		);
 		group.add(terrace);
 	}
@@ -2392,6 +2532,7 @@ function buildRefineryCollar(color: number, berthSeed: number): BuiltPart {
 			"boss",
 			8,
 			true,
+			apertureCut("refinery", "both"),
 		),
 	);
 	group.add(buildAperture("refinery", r * 1.0, berthSeed));
@@ -2482,6 +2623,7 @@ function buildRefinerySpar(color: number, berthSeed: number): BuiltPart {
 			"core",
 			8,
 			true,
+			apertureCut("refinery"),
 		),
 	);
 	group.add(buildAperture("refinery", r * 1.22, berthSeed));
@@ -2601,6 +2743,11 @@ function buildPadDeck(
 		"pad-deck",
 		4,
 		true,
+		// **Both faces.** A pad deck is a 24 m plate the ship passes through, so
+		// a hole in its outer face alone leaves its inner face standing across
+		// the opening — which the instrument reads exactly as it read the uncut
+		// deck.
+		apertureCut("outpost", "both"),
 	);
 	group.add(deck);
 	group.add(buildAperture("outpost", z, berthSeed));

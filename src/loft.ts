@@ -13,6 +13,7 @@
  */
 
 import * as THREE from "three";
+import { cutRing } from "./face-cut";
 
 /**
  * One station of a swept hull.
@@ -273,7 +274,34 @@ function computeCrease(geometry: THREE.BufferGeometry) {
  */
 export function hullLoft(
 	controls: ReadonlyArray<Ring>,
-	options: { segments?: number; subdivisions?: number } = {},
+	options: {
+		segments?: number;
+		subdivisions?: number;
+		/**
+		 * Cut a rectangle out of the **last** ring's cap, leaving a ring of
+		 * quads round the opening rather than a closed fan (#155).
+		 *
+		 * Half-extents, in the same units as `Ring.w` and `Ring.h`. The last
+		 * ring rather than a choice of end, because that is the +Z end every
+		 * station form sweeps towards and the end the aperture is cut into;
+		 * nothing has wanted the other one, and an option nothing exercises is
+		 * an untested branch that reads as a capability.
+		 *
+		 * A cut cap has **no centre vertex**, so `userData.caps.rear` is `-1`
+		 * on a geometry built this way. Ships are never cut, which is why the
+		 * two readers of that field are unaffected.
+		 *
+		 * `ends` is `"last"` for a solid the ship stops inside and `"both"` for
+		 * a **plate it passes through** — a pad deck, a refinery terrace. A hole
+		 * in one face of a 24 m plate is not a hole, and the surface 24 m behind
+		 * it reads on the instrument exactly like the uncut face did.
+		 */
+		aperture?: {
+			halfWidth: number;
+			halfHeight: number;
+			ends?: "last" | "both";
+		};
+	} = {},
 ) {
 	const segments = options.segments ?? RING_SEGMENTS;
 	const rings = sweep(controls, options.subdivisions ?? SUBDIVISIONS);
@@ -373,16 +401,85 @@ export function hullLoft(
 		uvs.push(ring.x + v * 0.5, ring.y);
 		return { start, centre };
 	};
-	const frontCap = capRing(first, 0, 0);
-	const rearCap = capRing(last, (rings.length - 1) * stride, 1);
-	for (let point = 0; point < segments; point += 1) {
-		const next = (point + 1) % segments;
-		indices.push(
-			frontCap.centre,
-			frontCap.start + point,
-			frontCap.start + next,
-		);
-		indices.push(rearCap.centre, rearCap.start + next, rearCap.start + point);
+	/**
+	 * The last ring's cap as a ring of quads round an opening, instead of a fan.
+	 *
+	 * The outer loop is sampled at the union of its own corner angles and the
+	 * rectangle's, so **every outer point is an original ring point or a point
+	 * exactly on the edge between two of them** — the cap's outline, and
+	 * therefore the hull's silhouette, is unchanged by the cut.
+	 *
+	 * **The winding is the loops' own, not the fan's.** `cutRing` returns both
+	 * loops at ascending angle — counter-clockwise seen from +Z — while a
+	 * swept ring runs from +Y towards +X, which is clockwise. Substituting the
+	 * fan's own `(centre, next, point)` order into a counter-clockwise strip
+	 * turns every quad inside out, and an inside-out cap is culled rather than
+	 * visibly wrong: it shows the far wall through the near one.
+	 */
+	const capOpening = (
+		ring: SolidRing,
+		source: number,
+		v: number,
+		aperture: { halfWidth: number; halfHeight: number },
+		end: "front" | "rear" = "rear",
+	) => {
+		const loop: [number, number][] = [];
+		for (let point = 0; point < segments; point += 1) {
+			const at = (source + point) * 3;
+			loop.push([vertices[at] - ring.x, vertices[at + 1] - ring.y]);
+		}
+		const cut = cutRing(loop, aperture.halfWidth, aperture.halfHeight);
+		const emit = (points: readonly (readonly [number, number])[]) => {
+			const start = vertices.length / 3;
+			for (const [x, y] of points) {
+				vertices.push(x + ring.x, y + ring.y, ring.z);
+				// The same planar unwrap in the cap's own axes the fan uses, so
+				// the plate pattern runs continuously across the cut edge.
+				uvs.push(x + ring.x + v * 0.5, y + ring.y);
+			}
+			return start;
+		};
+		const outer = emit(cut.outer);
+		const inner = emit(cut.inner);
+		for (let point = 0; point < cut.outer.length; point += 1) {
+			const next = (point + 1) % cut.outer.length;
+			if (end === "rear") {
+				indices.push(outer + point, outer + next, inner + next);
+				indices.push(outer + point, inner + next, inner + point);
+			} else {
+				indices.push(outer + next, outer + point, inner + point);
+				indices.push(outer + next, inner + point, inner + next);
+			}
+		}
+	};
+
+	let frontCentre = -1;
+	if (options.aperture?.ends === "both") {
+		// The front fan is wound `(centre, point, next)` — the mirror of the
+		// rear's — so its strip is the mirror too.
+		capOpening(first, 0, 0, options.aperture, "front");
+	} else {
+		const frontCap = capRing(first, 0, 0);
+		frontCentre = frontCap.centre;
+		for (let point = 0; point < segments; point += 1) {
+			const next = (point + 1) % segments;
+			indices.push(
+				frontCap.centre,
+				frontCap.start + point,
+				frontCap.start + next,
+			);
+		}
+	}
+	let rearCentre = -1;
+	if (options.aperture) {
+		capOpening(last, (rings.length - 1) * stride, 1, options.aperture);
+	} else {
+		const rearCap = capRing(last, (rings.length - 1) * stride, 1);
+		rearCentre = rearCap.centre;
+		for (let point = 0; point < segments; point += 1) {
+			const next = (point + 1) % segments;
+			indices.push(rearCap.centre, rearCap.start + next, rearCap.start + point);
+		}
 	}
 	const geometry = new THREE.BufferGeometry();
 	geometry.setAttribute(
@@ -408,7 +505,7 @@ export function hullLoft(
 	// left to be inferred: they were the last two vertices until the caps gained
 	// their own rings, and `tests/ship-mesh.test.ts` was reading them that way —
 	// a layout assumption that goes quietly wrong rather than loudly.
-	geometry.userData.caps = { front: frontCap.centre, rear: rearCap.centre };
+	geometry.userData.caps = { front: frontCentre, rear: rearCentre };
 	geometry.userData.axis = rings.map((ring) => [ring.x, ring.y, ring.z]);
 	return geometry;
 }

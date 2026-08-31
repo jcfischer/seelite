@@ -40,6 +40,7 @@ import {
 	setStationDetail,
 } from "../src/station-mesh";
 import { berthCentre } from "../src/arrival";
+import { crossings, crossingsLine } from "./helpers/aperture-opening";
 
 // From `station.ts`, not a literal: a fourth station type must reach every
 // loop in this file, and a hand-written list is exactly the place it would not.
@@ -484,6 +485,42 @@ describe("nothing stands in the way of the thing you fly through", () => {
 					`${type} ${form.id}`,
 					"",
 				]);
+			}
+		}
+	});
+});
+
+/**
+ * §13.1's opening, as a hole rather than as a picture of one (#155).
+ *
+ * **This is a different question from the corridor row above, and the epsilon
+ * there says so.** That row measures what stands *in front of* the aperture
+ * plane and skips every vertex at or behind it by construction — *"the wall the
+ * aperture is cut into is not an intrusion into the corridor in front of it"*.
+ * The defect #155 found lives exactly in the space that skip creates: the wall
+ * itself was never cut, so all twelve forms drew a lit frame on a solid surface
+ * and a docking ship crossed the station's own face. Every headless row in this
+ * file was green throughout, and none of them could have gone red.
+ *
+ * So this measures what is *in* the band a ship traverses: from the bay's mouth
+ * to its back wall, inside the aperture rectangle, nothing may be crossed that
+ * is not the bay.
+ *
+ * **The bounds come off the drawn bay, not off the table.** An alternate form
+ * cuts its aperture where its own silhouette wants — `buildTradeRing` puts one
+ * at `r * 0.34` against a table figure of 0.428 — so a band derived from
+ * `STATION_GEOMETRY` would be measuring somewhere the workbench's forms do not
+ * have an opening at all.
+ */
+describe("§13.1 — the opening is a hole, not a lit frame on a solid face", () => {
+	test("nothing but the bay lies inside the opening, on every form of every role", () => {
+		for (const type of TYPES) {
+			for (const form of STATION_FORMS[type]) {
+				const { root } = buildStationForm(type, form.id, GREY, 0);
+				expect([
+					`${type} ${form.id}`,
+					crossingsLine(crossings(root, type)),
+				]).toEqual([`${type} ${form.id}`, ""]);
 			}
 		}
 	});
