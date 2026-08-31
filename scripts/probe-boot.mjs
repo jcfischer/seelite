@@ -796,18 +796,54 @@ async function combatRigAbsentInNormalFlight() {
 		// The control: the near layer is populated, so the two absences above are
 		// about the prototype rather than about an empty scene.
 		nearChildren: window.__seelite.nearScene.children.length,
-		// **No way to stop the world.** `private` is erased at runtime and the
-		// game object is published whole, so a prototype-only capability parked
-		// on it as a field is reachable from a production page. One was, for a
-		// round: `probeLoopControl.freeze()` would have halted the frame loop on
-		// a default boot. Enumerated rather than name-checked, because the
-		// regression to catch is *a* freeze capability being reachable, not that
-		// one spelling of it came back.
-		freezers: Object.entries(window.__seelite)
-			.filter(
-				([, v]) => v && typeof v === "object" && typeof v.freeze === "function",
+		// **No way to stop the world.**
+		//
+		// `private` is erased at runtime and the game object is published whole,
+		// so a prototype-only capability parked on it is reachable from a
+		// production page. One was, twice: first as a field
+		// (`probeLoopControl.freeze()`), then as a method
+		// (`loopControl().freeze()`) after the first fix moved it to the
+		// prototype. The first version of *this check* looked only at own
+		// enumerable properties and so passed green over the second one --- a
+		// check that could not fail on the thing it was written to catch.
+		//
+		// So: walk the whole prototype chain, and treat both shapes as
+		// reachable --- an object exposing `freeze`, and any function that
+		// returns one when called with no arguments. Names are not trusted,
+		// because the two regressions had different names.
+		freezers: (() => {
+			const game = window.__seelite;
+			const names = new Set();
+			for (
+				let o = game;
+				o && o !== Object.prototype;
+				o = Object.getPrototypeOf(o)
 			)
-			.map(([k]) => k),
+				for (const n of Object.getOwnPropertyNames(o)) names.add(n);
+			const isControl = (v) =>
+				v && typeof v === "object" && typeof v.freeze === "function";
+			const found = [];
+			for (const n of names) {
+				if (n === "constructor") continue;
+				let v;
+				try {
+					v = game[n];
+				} catch {
+					continue;
+				}
+				if (isControl(v)) found.push(n);
+				// A zero-arity function that hands one back is the same hole with
+				// one more step, which is precisely what round 2 shipped.
+				else if (typeof v === "function" && v.length === 0) {
+					try {
+						if (isControl(v.call(game))) found.push(`${n}()`);
+					} catch {
+						/* not a factory; calling it proved that */
+					}
+				}
+			}
+			return found;
+		})(),
 	}));
 	check(
 		"a default boot builds no prototype rig",

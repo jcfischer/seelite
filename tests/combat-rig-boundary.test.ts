@@ -24,16 +24,24 @@ import { codeOf } from "./lib/source-scan";
 const RIG = "src/combat-rig.ts";
 
 /**
- * Every member `Game` used to carry for the prototype.
+ * Every prototype name `main.ts` must not contain.
  *
  * Listed rather than counted, because a count passes on a build that traded one
- * of these for two of another. Each entry was a real member of `Game` before
- * the extraction, so this list is the diff and not a wish.
+ * of these for two of another.
  *
- * The rig does not re-use these names — inside `combat-rig.ts` the file is the
- * namespace, so `combatTargetMesh` is just `targetMesh`. That is why this list
- * is only ever asserted *against* `main.ts`: it is a record of what left, not a
- * description of where it went.
+ * **Two kinds of entry, and an earlier version of this comment claimed they
+ * were one.** Most were real members of `Game` before the extraction
+ * (`combatTargetMesh`, `combatStatusFit`, `probeFreezeLoop`, …) and their bans
+ * are a record of what left. Four were never members: `stepCombatPrototype`,
+ * `createCombatPrototype` and `duelTargetInCone` were *imports* `main.ts` made,
+ * and `duelInputs` is created by this branch and never appeared there at all.
+ * Those four are bans on the prototype's vocabulary returning by any route
+ * rather than diffs — `duelInputs` in particular could not have failed on the
+ * pre-extraction tree, and saying so is the honest version.
+ *
+ * The rig does not re-use the member names — inside `combat-rig.ts` the file is
+ * the namespace, so `combatTargetMesh` is just `targetMesh`. That is why this
+ * list is only ever asserted *against* `main.ts`.
  */
 const GAME_MEMBERS_GONE = [
 	// scene objects the rig allocates

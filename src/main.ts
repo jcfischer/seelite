@@ -75,7 +75,7 @@ import { starField } from "./backdrop";
 import { LIGHT_RIG, envRotation, equirectEnvironment } from "./light-rig";
 import { SettingsStore } from "./settings";
 import { AudioFX } from "./audio";
-import { CombatPrototypeRig, type LoopControl } from "./combat-rig";
+import { CombatPrototypeRig } from "./combat-rig";
 import {
 	FLIGHT_FLOOR_LABELS,
 	SCANNER_RANGE_KM,
@@ -862,39 +862,6 @@ class Game {
 
 	/** rAF handle, so the loop can be frozen and driven by hand. */
 	private animationFrame = 0;
-	/**
-	 * Stop and restart the frame loop — built **only** when the prototype rig is,
-	 * and never held as a field.
-	 *
-	 * The first version of this was `private readonly probeLoopControl = {...}`,
-	 * and that was a regression sold as a removal. `private` is erased at
-	 * runtime and the instance is published whole as `window.__seelite`, so an
-	 * own property is reachable from any page: a default boot could call
-	 * `__seelite.probeLoopControl.freeze()` and stop the world, where the
-	 * `probeFreezeLoop`/`probeResumeLoop` members it replaced returned early
-	 * outside prototype mode. Taking two `probe`-prefixed members off the class
-	 * while widening what a production page can do is not a narrowing.
-	 *
-	 * A closure handed to the rig at construction is the fix rather than a
-	 * comment about intent: with no rig there is no object and no property, so
-	 * the capability does not exist to be found. Under `?combat=1` it is
-	 * reachable through the rig, which is the page that is meant to have it —
-	 * `probe-live-cockpit.mjs` freezes the loop to compare tracer pixels against
-	 * a fixed simulation state.
-	 */
-	private loopControl(): LoopControl {
-		return {
-			freeze: () => {
-				if (this.animationFrame) {
-					cancelAnimationFrame(this.animationFrame);
-					this.animationFrame = 0;
-				}
-			},
-			resume: () => {
-				if (!this.animationFrame) this.animate();
-			},
-		};
-	}
 	readonly audio = new AudioFX();
 	private throttle = 0;
 	private frameBody: Body | null = null;
@@ -1538,9 +1505,35 @@ class Game {
 		this.buildCockpit();
 		// THROWAWAY #48, opt-in and self-contained: the rig allocates its own
 		// scene objects, so normal flight builds none of them (#61).
+		//
+		// **The loop control is an inline literal, and that is the third attempt.**
+		// It stops the frame loop, so a production page must have no path to it —
+		// and `private` is erased at runtime while this instance is published
+		// whole as `window.__seelite`, so *neither* a field nor a method is
+		// private in the sense that matters. Round 1 made it
+		// `private readonly probeLoopControl = {...}`, reachable as
+		// `__seelite.probeLoopControl`. Round 2 made it `private loopControl()`,
+		// reachable as `__seelite.loopControl()` — the same hole moved onto the
+		// prototype, and the check written to catch it scanned only own
+		// properties, so it passed green over the regression it existed for.
+		//
+		// Built here, the closures are captured by the rig and by nothing else:
+		// with no rig there is no reference, and there is no member of `Game` —
+		// own or inherited — that is one or returns one. `probe-boot.mjs` walks
+		// the prototype chain to assert exactly that.
 		this.combatRig =
 			new URLSearchParams(window.location.search).get("combat") === "1"
-				? new CombatPrototypeRig(this.nearScene, this.loopControl())
+				? new CombatPrototypeRig(this.nearScene, {
+						freeze: () => {
+							if (this.animationFrame) {
+								cancelAnimationFrame(this.animationFrame);
+								this.animationFrame = 0;
+							}
+						},
+						resume: () => {
+							if (!this.animationFrame) this.animate();
+						},
+					})
 				: null;
 		this.warp = warpField(this.world.seed);
 		this.nearScene.add(this.warp.object);
