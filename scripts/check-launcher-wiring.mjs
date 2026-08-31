@@ -115,6 +115,10 @@ const EXEMPT = new Map([
 		"#99's headed frame-cost instrument; it asserts nothing by design — #98 settled that there is no frame-time floor to gate on — so there are no checks for a watch to report into",
 	],
 	[
+		"measure-boot-time.mjs",
+		"#142's headed boot instrument; it prints a timing and asserts nothing, so there are no checks for a watch to report into — it refuses a software renderer rather than gating on a figure",
+	],
+	[
 		"capture-views.mjs",
 		"captures #104's view set; the gate is a human looking at the sheet, so it has no checks either — it does listen for shader and page errors, and a fault removes the run and the sheet rather than reporting one",
 	],

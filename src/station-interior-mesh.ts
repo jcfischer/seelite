@@ -210,15 +210,28 @@ export function buildStationInterior(
 			0,
 		],
 	] as const) {
-		const strip = box(w, h, plate * 0.4, laneGlow, "interior-lane-edge");
-		strip.position.set(x, y, interior.mouthAxialKm - plate * 0.6);
+		// **Half proud of the bulkhead, half buried in it.** Seated flush with
+		// the panel's mid-plane they are inside it and draw nothing; the panel
+		// spans a plate ending at `mouth − 1.1·plate`, so centring on that face
+		// leaves a real joint behind and a lit edge in front.
+		const strip = box(w, h, plate * 0.6, laneGlow, "interior-lane-edge");
+		strip.position.set(x, y, interior.mouthAxialKm - plate * 1.1);
 		group.add(strip);
 	}
 
-	// **E9/E11's shield, moved inside.** It sat on the throat's end wall and
-	// drew nothing (#131); on the mouth bulkhead it faces the berths, which is
-	// where a ship parked nose-outward is looking.
-	const shieldW = interior.laneHalfAcrossKm * 0.9;
+	// **E9/E11's shield, on the bay's end bulkhead, facing the mouth.**
+	//
+	// It sat on the throat's end wall before #128 shortened the throat, and #131
+	// records that it then drew zero pixels from inside. This is the same wall,
+	// forty times further back and square to the lane: an arriving ship flies
+	// straight at it down the transit lane, which is the one view in the game
+	// where a station's name is read from inside it.
+	//
+	// **Not over the mouth**, which was built and withdrawn: a lintel above the
+	// opening is where a sign belongs on a door, and from a berth aimed at that
+	// opening it measured zero — the opening subtends most of the view and the
+	// plate sits outside it.
+	const shieldW = interior.laneHalfAcrossKm * 1.2;
 	const shieldH = shieldW * 0.28;
 	const shield = box(
 		shieldW,
@@ -233,13 +246,9 @@ export function buildStationInterior(
 		}),
 		NAMEPLATE_NAME,
 	);
-	shield.position.set(
-		0,
-		interior.laneHalfUpKm + Math.min(lipUp * 0.5, shieldH),
-		interior.mouthAxialKm - plate,
-	);
-	// Facing back down the bay rather than out of it.
-	shield.rotation.y = Math.PI;
+	// Proud of the back wall rather than flush with it — a plate sunk into the
+	// bulkhead draws nothing, which is exactly #131's symptom.
+	shield.position.set(0, 0, interior.endAxialKm + plate);
 	group.add(shield);
 
 	for (const berth of interior.berths)

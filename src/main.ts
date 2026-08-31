@@ -176,7 +176,7 @@ import {
 	slotBasis,
 	tickDocking,
 } from "./docking";
-import { berthCentre } from "./arrival";
+import { berthCentre, recomposeDirection } from "./arrival";
 import {
 	type DockPhase,
 	type DockSession,
@@ -499,6 +499,11 @@ interface DockingSnapshot {
 	dockPhase: DockPhase;
 	/** The berth this ship holds (§13.2), or `null` when it holds none. */
 	berthId: string | null;
+	/** The parked up-vector that berth gives, in world space — the direction
+	 *  away from its surface (§13.3). `null` when no berth is held. A probe
+	 *  aiming a free look needs the roll the sim parked the ship at, and
+	 *  deriving one from `basis` would be a second spelling of it. */
+	berthUp: { x: number; y: number; z: number } | null;
 	/** Where that berth parks the ship, as an axial distance from the station's
 	 *  centre — so a probe reads the bay's depth off the page instead of
 	 *  restating a constant that would go falsely red when the module retunes
@@ -3451,6 +3456,12 @@ class Game {
 		return interiorOfStation(stationOf(this.world.system, id));
 	}
 
+	/** The berth ids one station offers (§13.2), so a probe asks the sim which
+	 *  berths exist rather than rebuilding a catalogue of its own. */
+	berthIdsOfStation(id: string): string[] {
+		return this.interiorOf(id).berths.map((berth) => berth.id);
+	}
+
 	/**
 	 * The ship relative to one station, **in the station's frame** (§1).
 	 *
@@ -3661,6 +3672,13 @@ class Game {
 			// by rather than re-deriving a catalogue of its own.
 			berthId: this.dock.berthId ?? state.berthId,
 			berthAxialKm: berthAxialOf(this.interiorOf(target), this.dock.berthId),
+			berthUp: this.dock.berthId
+				? recomposeDirection(
+						frame,
+						berthOf(this.interiorOf(target), this.dock.berthId).normal,
+						frame.phaseRad,
+					)
+				: null,
 			// E9's generated name, read off the page rather than re-derived by a
 			// probe: a probe with its own copy of a rule goes falsely red the day
 			// the rule changes.

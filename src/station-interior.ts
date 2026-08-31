@@ -195,11 +195,11 @@ export const ROLE_CAPACITY: Record<StationType, number> = {
  * It is what keeps the lane's mouth clear of a berth's corner, so a ship that
  * has just crossed the plane is inside the lane and nothing else.
  */
-export const BAND_MARGIN_FACTOR = 0.35;
+export const BAND_MARGIN_FACTOR = 1;
 
 /** The gap between the two bands' cells, as a multiple of cell length. Small:
  *  the bands are neighbours down one bay, not two rooms. */
-export const BAND_GAP_FACTOR = 0.15;
+export const BAND_GAP_FACTOR = 0.5;
 
 /**
  * The lateral room a berth needs beyond the lane, as a multiple of the cell's
@@ -208,8 +208,15 @@ export const BAND_GAP_FACTOR = 0.15;
  * A parked ship's up-vector points away from its berth surface (§13.3), so what
  * a berth occupies measured out from its wall is the ship's height, whichever
  * wall it is on — which is why one factor answers for all four faces.
+ *
+ * **Two, not one, and the frame decided it.** At one the bay was exactly a
+ * berth wider than the lane on each side, and from a deck berth 76 m off the
+ * mouth the aperture subtended 64° across and 40° up: the exit filled the
+ * canopy and the parked view read as open space rather than as a room. The bay
+ * is a berth's clearance *and* a berth's standoff now, which is what puts wall
+ * either side of the opening.
  */
-export const BERTH_DEPTH_FACTOR = 1;
+export const BERTH_DEPTH_FACTOR = 2;
 
 /** Where the two bands' centres sit, axial kilometres. */
 function bandAxial(
@@ -241,7 +248,10 @@ export function stationInterior(
 	const aperture: StationAperture = geometry.aperture;
 	const laneHalfAcrossKm = aperture.widthKm / 2;
 	const laneHalfUpKm = aperture.heightKm / 2;
-	const reach = cell.heightKm * BERTH_DEPTH_FACTOR;
+	// The outpost keeps the tighter bay: its core is 150 m and a two-berth
+	// standoff on every face would put more room behind its aperture than the
+	// station has hull to hold it in.
+	const reach = cell.heightKm * (type === "outpost" ? 1.5 : BERTH_DEPTH_FACTOR);
 	const halfAcrossKm = laneHalfAcrossKm + reach;
 	const halfUpKm = laneHalfUpKm + reach;
 	const mouthAxialKm = geometry.aperturePlaneKm;

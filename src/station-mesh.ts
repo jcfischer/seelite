@@ -555,6 +555,17 @@ function buildAperture(
 		light.name = "aperture-light";
 		group.add(light);
 	}
+	// **E11's mouth shield, added before the bay** so that
+	// `buildStationForm`'s traversal collects the two plates mouth-first —
+	// which is the order `probe-dock-arrival.mjs` indexes into.
+	// **E11's mouth shield.** §3.2 records that the docking tolerances were set
+	// wide partly because the player has no visual referent at all for checks 2
+	// and 4, and a lit rectangle on the docking face says which face docks and
+	// roughly how the slot is rolled. It orients; it does not measure, and #69
+	// may not treat it as a cue (§12.5). The *interior* shield is the bulkhead
+	// plaque `station-interior-mesh.ts` mounts, which is where a ship parked
+	// nose-outward can read it.
+	group.add(buildMouthNameplate(aperture, faceZ));
 	// **The bay (§13).** Built against the face this form actually cuts its
 	// aperture into rather than against the table, so the workbench's alternate
 	// forms — which pass their own `faceZ` — get an interior that meets their
@@ -571,14 +582,6 @@ function buildAperture(
 			),
 		),
 	);
-	// **E11's mouth shield.** §3.2 records that the docking tolerances were set
-	// wide partly because the player has no visual referent at all for checks 2
-	// and 4, and a lit rectangle on the docking face says which face docks and
-	// roughly how the slot is rolled. It orients; it does not measure, and #69
-	// may not treat it as a cue (§12.5). The *interior* shield is the bulkhead
-	// plaque `station-interior-mesh.ts` mounts, which is where a ship parked
-	// nose-outward can read it.
-	group.add(buildMouthNameplate(aperture, faceZ));
 	group.name = "aperture";
 	return group;
 }

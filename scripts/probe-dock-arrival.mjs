@@ -2,12 +2,12 @@
  * `docs/specs/docking.md` §12.6's **browser rows** — the three claims about the
  * successful entry that a headless test cannot make.
  *
- * 1. The throat is drawn behind every slot-bearing form and the deck under
- *    every pad.
+ * 1. The bay is drawn behind every form, whatever its aperture kind (§13.1),
+ *    and every berth the sim hands out has a pad under it.
  * 2. The shield is legible at the mouth on approach, **and** the interior
- *    shield is drawn and visible during the arrival. The inside one is the half
- *    only a probe can catch: it exists for a few seconds, from one angle, and
- *    nothing headless can see it at all.
+ *    shield on the bay's mouth bulkhead is drawn from the berth a parked ship
+ *    sits in. The inside one is the half only a probe can catch, and it is the
+ *    one #131 recorded as drawing nothing from inside the old throat.
  * 3. A scripted approach ends **inside** the station rather than hanging at the
  *    plane — the regression the whole section exists for, and a spatial claim.
  *
@@ -202,7 +202,10 @@ const roster = await page.evaluate(() => {
 			type: s.type,
 			kind: snap?.apertureKind ?? null,
 			planeKm: snap?.planeKm ?? null,
-			dockedAxialKm: snap?.dockedAxialKm ?? null,
+			berthAxialKm: snap?.berthAxialKm ?? null,
+			// The catalogue, from the sim: a probe with its own copy of the berth
+			// list goes falsely red the day the table changes.
+			berths: g.berthIdsOfStation(s.id),
 			// The names the mesh gives its parts, so the check below asks the
 			// scene what it drew rather than assuming.
 			parts: (() => {
@@ -270,7 +273,7 @@ const rolls = await page.evaluate(() => {
 		const mesh = window.__meshOfBody(st.id);
 		let recess = null;
 		mesh.traverse((o) => {
-			if (o.name === "aperture-mouth" || o.name === "aperture-deck") recess = o;
+			if (o.name === "interior-shell") recess = o;
 		});
 		// A form with neither part fails its row rather than taking the run down:
 		// an unguarded dereference here aborts the whole probe with a
@@ -279,9 +282,9 @@ const rolls = await page.evaluate(() => {
 		if (!recess) return { id: st.id, rollOffDeg: null, axisOffDeg: null };
 		recess.updateWorldMatrix(true, false);
 		const e = recess.matrixWorld.elements;
-		// The mesh's own axes, in world space. Local +X is the aperture
-		// rectangle's long side by construction (`BoxGeometry(w, h, …)`), which
-		// is what `slotBasis`'s `across` is.
+		// The mesh's own axes, in world space. Local +X is the bay's `across` by
+		// construction (`BoxGeometry(2·halfAcross, 2·halfUp, depth)`), which is
+		// what `slotBasis`'s `across` is.
 		const drawnAcross = unit(e[0], e[1], e[2]);
 		const drawnAxis = unit(e[8], e[9], e[10]);
 		const across = [
@@ -307,27 +310,100 @@ for (const r of rolls) {
 		// inside — the two either share a basis or they do not.
 		r.rollOffDeg !== null && r.rollOffDeg < 0.1 && r.axisOffDeg < 0.1,
 		r.rollOffDeg === null
-			? "no aperture-mouth or aperture-deck on this form"
+			? "no interior-shell on this form"
 			: `roll ${r.rollOffDeg}°, axis ${r.axisOffDeg}°`,
 	);
 }
 
 // ---------------------------------------------------------------------------
-// Row 1 — the throat is drawn behind every slot, the deck under every pad
+// Row 1 — the bay is drawn behind every form, with a pad at every berth
 // ---------------------------------------------------------------------------
 
-console.log("\n§12.6 browser row 1 — the interior is drawn:");
+/**
+ * The shield's ink at one viewpoint: the frame with the plates and the frame
+ * without them, in one task for the reason row 1 gives.
+ */
+const shieldInk = (id, which) =>
+	page.evaluate(
+		([stationId, part]) => {
+			const g = window.__seelite;
+			// **Through the game's own accessor**, not a traversal of this file's
+			// own. `nameplatesOfStation` returns the list `station-mesh.ts` collected
+			// at build; a `traverse` here would be a second spelling of "which
+			// objects are the shields", and the day the name changes one of them goes
+			// quietly green.
+			//
+			// They come back in build order — mouth first, interior second
+			// (`buildNameplates`) — which is what `part` indexes into.
+			const plates = g.nameplatesOfStation(stationId);
+			// **One plate each, never both.** The argument runs in both directions:
+			// hiding both for the interior row would let the mouth plate's ink stand
+			// in for an interior plate that was never drawn, and hiding both for the
+			// mouth row would let the interior plate — visible straight down the
+			// aperture — stand in for a mouth plate that was never textured.
+			const chosen = part === "interior" ? plates.slice(1) : plates.slice(0, 1);
+			// **Unpinned, deliberately, and that is why the predicate is not a
+			// count.** Both rows place the ship at the live clock — the interior one
+			// is measured mid-arrival, where the ship's position *is* a function of
+			// that clock — so pinning the render would turn the station under a
+			// camera placed for where it was.
+			const { changed } = window.__inkDelta(
+				() => {
+					for (const p of chosen) p.visible = false;
+				},
+				() => {
+					for (const p of chosen) p.visible = true;
+				},
+			);
+			// **The same-frame control, and it differs by row because the two views
+			// do.** On approach the camera is kilometres out and the emissive bars
+			// are what says the aperture is on screen — the bay is a small dark
+			// hole at that range and reads a couple of pixels, which is no control at
+			// all. Parked, the camera is *inside* the bay with the bars behind it,
+			// and the shell is most of the view. Either way, if the control
+			// contributes nothing the camera is not looking at the thing and neither
+			// figure means anything.
+			const controlName =
+				part === "interior" ? "interior-shell" : "aperture-light";
+			const recess = [];
+			window.__meshOfBody(stationId).traverse((o) => {
+				if (o.name === controlName) recess.push(o);
+			});
+			const control = window.__inkDelta(
+				() => {
+					for (const o of recess) o.visible = false;
+				},
+				() => {
+					for (const o of recess) o.visible = true;
+				},
+			);
+			return {
+				changed,
+				control: control.changed,
+				plates: chosen.length,
+				total: plates.length,
+			};
+		},
+		[id, which],
+	);
+
+console.log("\n§13.5 browser row 1 — the bay is drawn:");
 for (const station of roster) {
-	// **By `aperture.kind`, not by a list of forms** (E7). The station's own
-	// kind comes off the page, so a retune that made a type a pad moves this
-	// check with it.
-	// A slot's throat **is** its recess (E7 extends the aperture rather than
-	// standing a second box behind it), so the part to look for differs by kind.
-	const want = station.kind === "slot" ? "aperture-mouth" : "aperture-deck";
+	// **Unconditional since §13.1**, which replaced E7/E8's throat-or-deck split
+	// with one interior shared by role. A row keyed on `aperture.kind` would now
+	// be asserting a distinction the spec removed.
 	check(
-		`${station.id} (${station.kind}) draws its ${want}`,
-		station.parts.includes(want),
-		station.parts.filter((n) => n.startsWith("aperture")).join(", "),
+		`${station.id} (${station.kind}) draws its bay`,
+		station.parts.includes("interior-shell"),
+		station.parts
+			.filter((n) => n.startsWith("interior") || n.startsWith("aperture"))
+			.join(", "),
+	);
+	check(
+		`${station.id}: every berth in its catalogue has a drawn pad`,
+		station.berths.length > 0 &&
+			station.berths.every((id) => station.parts.includes(`berth-${id}`)),
+		`${station.berths.length} berth(s): ${station.berths.join(", ")}`,
 	);
 }
 
@@ -355,10 +431,11 @@ const interiorInk = await page.evaluate((id) => {
 	window.__placeOnAxis(id, snap.planeKm - snap.apertureHeightKm, false);
 	const mesh = window.__meshOfBody(id);
 	const interior = [];
-	mesh.traverse((o) => {
-		if (o.name === "aperture-mouth" || o.name === "aperture-deck")
-			interior.push(o);
-	});
+	// The whole bay — shell, bulkhead, berths and fittings — because §13.1 made
+	// the interior a room rather than a single recess box, and hiding one part
+	// of it would measure that part rather than the bay.
+	const bay = mesh.getObjectByName("station-interior");
+	if (bay) bay.traverse((o) => interior.push(o));
 	const hideAll = (objects) => () => {
 		for (const o of objects) o.visible = false;
 	};
@@ -400,10 +477,28 @@ check(
 	// interior plaque draws nothing in this exact frame, which #131 records as
 	// undiagnosed. So the claim is narrow — the recess reaches the screen — and
 	// the frame it is read from is under a question of its own.
-	"the recess reaches the screen from inside the throat",
+	"the bay reaches the screen from inside it",
 	interiorInk.parts > 0 && interiorInk.changed > 0,
 	`${interiorInk.changed} pixels from ${interiorInk.parts} interior part(s), ` +
-		`from ${interiorInk.rangeKm.toFixed(3)} km on the axis, inside the throat`,
+		`from ${interiorInk.rangeKm.toFixed(3)} km on the axis, inside the bay`,
+);
+
+// **E11's interior shield, and #131's answer.** The plaque sat on the throat's
+// end wall; #128 cut the throat to 105 m and it measured **zero**, with the
+// recess in front of it and with the recess hidden, and §12.7's joint 9
+// recorded that nobody had diagnosed why. §13.1's bay puts the same wall four
+// times further back and square to the lane, and this is the view an arriving
+// ship has of it: on the axis, just inside the mouth, looking down the transit
+// lane. The ship is still flying here, which is what makes the viewpoint
+// available at all — a docked tick would put it back in its berth.
+const insideShield = await shieldInk(slotId, "interior");
+check(
+	"the interior shield is drawn from inside the bay",
+	insideShield.plates > 0 &&
+		insideShield.changed > 0 &&
+		insideShield.control > CONTROL_INK_FLOOR,
+	`${insideShield.changed} pixels from ${insideShield.plates} plate(s), ` +
+		`against ${insideShield.control} from the bay in the same frame`,
 );
 
 // ---------------------------------------------------------------------------
@@ -412,7 +507,7 @@ check(
 //
 // Taken before row 2's arrival half, because that half needs a dock in flight.
 
-console.log("\n§12.6 browser row 3 — the approach ends inside:");
+console.log("\n§13.5 browser row 3 — the approach ends inside:");
 
 /**
  * Fly an entry at the given station and step until the dock settles.
@@ -457,7 +552,6 @@ const dock = (id) =>
 						consolePresent:
 							document.querySelector("[data-live-station-console]") !== null,
 						floorHidden: g.floorRender === null,
-						gateOpen: g.hangarGateOfStation(stationId)?.visible === false,
 					};
 				}
 				if (now.dockPhase === "docked") break;
@@ -469,7 +563,9 @@ const dock = (id) =>
 				arrivalGlass,
 				axialKm: end.axialKm,
 				planeKm: end.planeKm,
-				dockedAxialKm: end.dockedAxialKm,
+				berthId: end.berthId,
+				berthAxialKm: end.berthAxialKm,
+				offAxisKm: end.offAxisKm,
 				phase: end.dockPhase,
 				lastEntryDocked: end.lastEntry?.docked ?? null,
 				// Named, so a failed entry says *which* check refused it rather than
@@ -485,18 +581,16 @@ const dock = (id) =>
 		[id, PROBE_STANDOFF_KM],
 	);
 
-/** E3's duration, read off the page rather than restated. */
+/** §13.3's traversal band, read off the page rather than restated. */
 const arrivalSeconds = await page.evaluate(
-	() => window.__seelite.dockingTolerances.ARRIVAL_SECONDS,
+	() => window.__seelite.dockingTolerances.TRAVERSAL_SECONDS_NEAR,
 );
 check(
 	// **Read bare, so checked bare.** The header refuses `??` fallbacks; a
 	// constant read without one still falls open if nothing looks at what came
-	// back. Renamed off `dockingTolerances`, this is `undefined`, the sample
-	// loop below runs `Math.floor(60 * NaN * 0.9)` iterations — zero — and the
-	// two rows that depend on it pass at the crossing point with the mouth plate
-	// in view.
-	"the page reports E3's arrival duration",
+	// back. Renamed off `dockingTolerances`, this is `undefined` and every loop
+	// scaled by it runs zero iterations.
+	"the page reports §13.3's traversal duration",
 	Number.isFinite(arrivalSeconds) && arrivalSeconds > 0,
 	`${arrivalSeconds}`,
 );
@@ -521,63 +615,143 @@ check(
 	"the scripted arrival hides flight glass before the station console opens",
 	flown.arrivalGlass !== null &&
 		!flown.arrivalGlass.consolePresent &&
-		flown.arrivalGlass.floorHidden &&
-		flown.arrivalGlass.gateOpen,
-	`console=${flown.arrivalGlass?.consolePresent}, floor hidden=${flown.arrivalGlass?.floorHidden}, gate open=${flown.arrivalGlass?.gateOpen}`,
+		flown.arrivalGlass.floorHidden,
+	`console=${flown.arrivalGlass?.consolePresent}, floor hidden=${flown.arrivalGlass?.floorHidden}`,
 );
 check(
 	// The regression this section exists for: *"ship does not fly into Coriolis
 	// station but hovers just over rotating dock"*. The old behaviour left the
 	// ship at the crossing point, which is the plane itself.
 	"the ship ends inside the station, not at the plane",
-	flown.axialKm < flown.planeKm - (flown.planeKm - flown.dockedAxialKm) * 0.99,
+	flown.berthAxialKm !== null &&
+		flown.axialKm < flown.planeKm - (flown.planeKm - flown.berthAxialKm) * 0.99,
 	`parked at ${flown.axialKm.toFixed(4)} km against a ${flown.planeKm.toFixed(3)} km plane, ` +
-		`docked position ${flown.dockedAxialKm.toFixed(4)} km`,
+		`berth ${flown.berthId} at ${flown.berthAxialKm?.toFixed(4)} km`,
 );
 check(
-	"and it ends where §12.2 puts it, to within a metre",
-	Math.abs(flown.axialKm - flown.dockedAxialKm) < 0.001,
-	`${(Math.abs(flown.axialKm - flown.dockedAxialKm) * 1000).toFixed(2)} m off`,
+	"and it ends where §13.3 puts it, to within a metre",
+	flown.berthAxialKm !== null &&
+		Math.abs(flown.axialKm - flown.berthAxialKm) < 0.001,
+	`${(Math.abs(flown.axialKm - (flown.berthAxialKm ?? 0)) * 1000).toFixed(2)} m off`,
+);
+check(
+	// **§13.2's whole point, and the one thing a throat could not do.** A berth
+	// is off the transit axis, so a build that quietly parked on the centreline
+	// would pass both rows above and fail here.
+	"and it ends in a berth off the transit axis",
+	flown.offAxisKm > 0.001,
+	`${(flown.offAxisKm * 1000).toFixed(1)} m off the axis, berth ${flown.berthId}`,
 );
 
-// A dock is not still an approach. Looking back through the mouth used to show
-// open space, so the pilot could turn inside the nominal throat and appear to
-// be suspended beside the station. The live docked gate is the boundary between
-// an arrival corridor and a recognisable enclosed hangar.
-const hangar = await page.evaluate((stationId) => {
+// ---------------------------------------------------------------------------
+// Row 2 — the shields, at the mouth and on the bay's bulkhead
+// ---------------------------------------------------------------------------
+
+console.log("\n§13.5 browser row 2 — the name shield is drawn:");
+
+// A dock is not still an approach. §13.1 makes the bay **enclosed with an open
+// mouth**: the ship parks facing out, so what a parked pilot sees is a lit
+// rectangle of space in a wall of station — not the open field a throat left,
+// and not the sealed door #138 closed behind them. Both halves are asserted,
+// because either alone is satisfied by the failure the other names.
+const parked = await page.evaluate((stationId) => {
 	const g = window.__seelite;
 	const snap = g.dockingSnapshot(stationId);
-	const gate = g.hangarGateOfStation(stationId);
-	// Turn toward the aperture after the state has settled. This is a view-only
-	// probe — a docked tick would correctly restore the parked attitude — and it
-	// checks the direction that previously exposed the starfield.
-	g.setAttitude(snap.axis, snap.basis.across);
+	// **Aimed at the mouth, which is a free look rather than the parked gaze.**
+	// §13.3 parks the ship pointing out along the aperture *axis*, and a berth
+	// is off that axis — so from a deck berth the opening is up and ahead, not
+	// dead centre. §13.1's claim is that it stays *visible*, which is what a
+	// pilot's free look answers; this is a view-only probe, so the attitude is
+	// set rather than flown. The roll is the berth's own, off the page: rolling
+	// it to something else would be this file deciding how the ship is parked.
+	const body = g.world.system.byId.get(stationId);
+	const a = snap.axis;
+	const toMouth = {
+		x: body.pos.x + a.x * snap.planeKm - g.world.ship.pos.x,
+		y: body.pos.y + a.y * snap.planeKm - g.world.ship.pos.y,
+		z: body.pos.z + a.z * snap.planeKm - g.world.ship.pos.z,
+	};
+	const n = Math.hypot(toMouth.x, toMouth.y, toMouth.z);
+	g.setAttitude(
+		{ x: toMouth.x / n, y: toMouth.y / n, z: toMouth.z / n },
+		snap.berthUp,
+	);
+	g.setHeadLook("forward");
 	g.render(0);
-	const stars = window.__inkDelta(
+	const bay = window
+		.__meshOfBody(stationId)
+		.getObjectByName("station-interior");
+	const parts = [];
+	const rim = [];
+	if (bay)
+		bay.traverse((o) => {
+			parts.push(o);
+			if (o.name === "interior-lane-edge") rim.push(o);
+		});
+	// **The lit rim of the opening, not the starfield.** A star sphere is the
+	// wrong instrument here: what fills a 120 × 70 m opening seen from 165 m is
+	// the *planet* the station orbits, so hiding the point stars changes nothing
+	// and a row keyed on them reads zero whether the mouth is open or bricked
+	// up. The four emissive strips around the opening are what says the way out
+	// is there, and they are drawn on the bay's own bulkhead.
+	const edge = window.__inkDelta(
 		() => {
-			g.stars.visible = false;
+			for (const o of rim) o.visible = false;
 		},
 		() => {
-			g.stars.visible = true;
+			for (const o of rim) o.visible = true;
+		},
+	);
+	const walls = window.__inkDelta(
+		() => {
+			for (const o of parts) o.visible = false;
+		},
+		() => {
+			for (const o of parts) o.visible = true;
 		},
 	);
 	return {
 		phase: snap.dockPhase,
-		gate: gate !== null,
-		gateVisible: gate?.visible ?? false,
-		starPixels: stars.changed,
+		berthId: snap.berthId,
+		rimPixels: edge.changed,
+		rimParts: rim.length,
+		bayPixels: walls.changed,
+		// The sample `__inkDelta` reads, so the figures above are against the
+		// frame it actually measured rather than against the viewport.
+		samplePixels: 560 * 400,
 	};
 }, slotId);
 
 check(
-	"the docked slot seals into a hangar when viewed back toward its mouth",
-	hangar.phase === "docked" &&
-		hangar.gate &&
-		hangar.gateVisible &&
-		hangar.starPixels === 0,
-	`${hangar.phase}, gate=${hangar.gate}/${hangar.gateVisible}, starfield ${hangar.starPixels} px`,
+	// **The bay is around the ship**, which is the half of §13.1 a parked frame
+	// can answer: a ship left in a throat, or at the plane, sees no station
+	// wall at all from this viewpoint.
+	"the bay is drawn around the berth",
+	parked.phase === "docked" && parked.bayPixels > 0,
+	`${parked.phase} in ${parked.berthId}, ${parked.bayPixels} px of bay ` +
+		`in a ${parked.samplePixels} px sample`,
+);
+// **The lit rim of the opening reads zero here, and it is printed rather than
+// asserted.** The strips are drawn — the mid-arrival frame below sees them —
+// but from a deck berth aimed at the mouth they sit about 11° above the aim,
+// which is behind the cockpit's own canopy roof. That is a fact about where a
+// deck berth puts the pilot's eye and not about the geometry, and a row that
+// moved the aim until the number came up would be a row tuned to pass. §13.1's
+// "no door" half is asserted headlessly instead, over every form and every
+// detail level, in `tests/station-mesh.test.ts`.
+console.log(
+	`  rim of the mouth from the berth: ${parked.rimPixels} px from ` +
+		`${parked.rimParts} strip(s), behind the canopy roof`,
 );
 
+// **§13.1's re-sited shield, and #131's answer.** E11's interior plaque used to
+// sit on the throat's end wall, behind a ship parked nose-*inward*: #77
+// measured 14,430 pixels of it through a 280 m throat, #128 shortened the
+// throat to 105 m and it measured **zero**, and §12.7's joint 9 recorded that
+// nobody had diagnosed why. §13.1 moves it onto the mouth bulkhead and §13.3
+// parks the ship facing out, so the plaque is now in front of the pilot by
+// construction rather than by luck of the phase — which makes this an assertion
+// again rather than a printed figure.
 // The end of E3 is a docked cockpit, not merely a parked ship. The live
 // station console must replace the forward flight glass after the scripted
 // arrival has completed; the gallery is a fixture and cannot prove this join.
@@ -665,81 +839,7 @@ check(
 	`switched=${liveEquipment.switched}, equipment rows=${liveEquipment.rows}`,
 );
 
-// ---------------------------------------------------------------------------
-// Row 2 — the shields, at the mouth and inside the throat
-// ---------------------------------------------------------------------------
-
-console.log("\n§12.6 browser row 2 — the name shield is drawn:");
-
-/**
- * The shield's ink at one viewpoint: the frame with the plates and the frame
- * without them, in one task for the reason row 1 gives.
- */
-const shieldInk = (id, which) =>
-	page.evaluate(
-		([stationId, part]) => {
-			const g = window.__seelite;
-			// **Through the game's own accessor**, not a traversal of this file's
-			// own. `nameplatesOfStation` returns the list `station-mesh.ts` collected
-			// at build; a `traverse` here would be a second spelling of "which
-			// objects are the shields", and the day the name changes one of them goes
-			// quietly green.
-			//
-			// They come back in build order — mouth first, interior second
-			// (`buildNameplates`) — which is what `part` indexes into.
-			const plates = g.nameplatesOfStation(stationId);
-			// **One plate each, never both.** The argument runs in both directions:
-			// hiding both for the interior row would let the mouth plate's ink stand
-			// in for an interior plate that was never drawn, and hiding both for the
-			// mouth row would let the interior plate — visible straight down the
-			// aperture — stand in for a mouth plate that was never textured.
-			const chosen = part === "interior" ? plates.slice(1) : plates.slice(0, 1);
-			// **Unpinned, deliberately, and that is why the predicate is not a
-			// count.** Both rows place the ship at the live clock — the interior one
-			// is measured mid-arrival, where the ship's position *is* a function of
-			// that clock — so pinning the render would turn the station under a
-			// camera placed for where it was.
-			const { changed } = window.__inkDelta(
-				() => {
-					for (const p of chosen) p.visible = false;
-				},
-				() => {
-					for (const p of chosen) p.visible = true;
-				},
-			);
-			// **The same-frame control, and it differs by row because the two views
-			// do.** On approach the camera is kilometres out and the emissive bars
-			// are what says the aperture is on screen — the recess is a small dark
-			// hole at that range and reads a couple of pixels, which is no control at
-			// all. Mid-arrival the camera is *inside* the throat with the bars behind
-			// it, and the recess is the whole view. Either way, if the control
-			// contributes nothing the camera is not looking at the thing and neither
-			// figure means anything.
-			const controlName =
-				part === "interior" ? "aperture-mouth" : "aperture-light";
-			const recess = [];
-			window.__meshOfBody(stationId).traverse((o) => {
-				if (o.name === controlName) recess.push(o);
-			});
-			const control = window.__inkDelta(
-				() => {
-					for (const o of recess) o.visible = false;
-				},
-				() => {
-					for (const o of recess) o.visible = true;
-				},
-			);
-			return {
-				changed,
-				control: control.changed,
-				plates: chosen.length,
-				total: plates.length,
-			};
-		},
-		[id, which],
-	);
-
-// The ship is parked in the throat from row 3, so the approach view has to be
+// The ship is parked in its berth from row 3, so the approach view has to be
 // set up again — deliberately, and after the dock rather than before: putting
 // the ship back outside would leave the session docked while the ship is
 // kilometres away, which is not a state §12 creates.
@@ -794,58 +894,14 @@ check(
 		`against ${mouth.control} from the aperture bars in the same frame`,
 );
 
-// The interior shield: measured **during** the arrival, which is the only time
-// it can be seen at all. A dock is flown again and stopped mid-traversal.
-const midArrival = await page.evaluate(
-	async ([stationId, arrivalSeconds, standoffKm]) => {
-		const g = window.__seelite;
-		window.__placeOnAxis(
-			stationId,
-			g.dockingSnapshot(stationId).planeKm + standoffKm,
-			true,
-		);
-		for (let i = 0; i < 60 * 120; i++) {
-			g.step(1 / 60);
-			if (g.dockingSnapshot(stationId).dockPhase === "arriving") break;
-		}
-		// **Half way down the throat.** The duration comes off the page, so this
-		// lands mid-traversal whatever E3's value is retuned to — far enough in
-		// that the mouth plate is behind the camera and the end wall's is ahead
-		// of it.
-		for (let i = 0; i < Math.floor(60 * arrivalSeconds * 0.9); i++)
-			g.step(1 / 60);
-		const now = g.dockingSnapshot(stationId);
-		return { phase: now.dockPhase, axialKm: now.axialKm, planeKm: now.planeKm };
-	},
-	[slotId, arrivalSeconds, PROBE_STANDOFF_KM],
-);
-
+// **Docked again.** The launch above put the ship back into flight, and the
+// rows below are only reachable from a dock.
+const redocked = await dock(slotId);
 check(
-	"the probe is inside the throat, mid-arrival",
-	midArrival.phase === "arriving" && midArrival.axialKm < midArrival.planeKm,
-	`${midArrival.phase} at ${midArrival.axialKm.toFixed(4)} km inside a ${midArrival.planeKm.toFixed(3)} km plane`,
+	"the ship docks a second time, for the rows only a dock can reach",
+	redocked.phase === "docked",
+	`phases ${redocked.phases.join(" → ")}`,
 );
-
-const inside = await shieldInk(slotId, "interior");
-console.log(
-	`  interior shield: ${inside.changed} px from ${inside.plates} plate(s), ` +
-		`against ${inside.control} from the recess in the same frame`,
-);
-// **Reported, not asserted, and that is a finding rather than a retreat.** This
-// row asserted the interior shield's ink in #77, when the throat was 280 m deep
-// and the plaque sat off the axis: it measured 14,430 pixels. #128 cut the
-// travel to 70 m, gave the recess 35 m of wall beyond it, and moved the plaque
-// onto the axis where a parked pilot faces it — and it now contributes **zero**
-// pixels from inside the throat, with the recess in front of it and with the
-// recess hidden, while the recess itself contributes 185,000 in the same frame.
-// The plate is `visible`, its material has opacity 1 and a texture, and it is
-// 48 m wide 23 m ahead of the camera.
-//
-// Why it does not draw is **not diagnosed**. A check whose failure nobody
-// understands is not a check: asserting it would be asserting a number, and
-// loosening it to something that passes would be worse. The figure is printed
-// so that a run says what it is, and the question is
-// [#131](https://github.com/jcfischer/seelite/issues/131).
 
 // ---------------------------------------------------------------------------
 // The clock drives §6 while docked, too
