@@ -1104,12 +1104,18 @@ position, name and station silently.
 - **The ship-roster node** — inherits 20 t and 100 Cr as v1 defaults (§6) and
   owes hull prices (§7).
 - **The save/load node** — owes the format the sparse deficit map lives in
-  (§5.5) and the permadeath stance (§9).
+  (§5.5) and the permadeath stance (§9). The *module* the map lives in is
+  settled and is no longer this one: `src/deficits.ts` since
+  [#67](https://github.com/jcfischer/seelite/issues/67), once
+  [#46](https://github.com/jcfischer/seelite/issues/46)'s persistence envelope
+  gave §5.5 a consumer whose whole job is the save. What that node still owes is
+  the encoding and where the bytes go, not where the rows are declared.
 - **The implement node** — **done, in
   [#25](https://github.com/jcfischer/seelite/issues/25)**, and the split it owed
   was performed rather than a file being moved. `src/market.ts` holds the
   shipped arithmetic — the table, `marketRowAt`, `stockResponse`,
-  `shelfQuantity`, `marketEpoch`, the deficit functions, `EQUIPMENT` — and
+  `shelfQuantity`, `marketEpoch`, §5.2's `decayDeficit` and `addDeficit`,
+  `EQUIPMENT` — and
   `tests/helpers/market-math.ts` keeps the measurement surface the game never
   calls: `NARCOTICS_BELL`, the wrapping byte close, `ALL_FLUCT`, `FLUCT_PAIRS`,
   `sweepDomain`, `bestMargin`, `forEachLegalPair`, `surveyResiduals`,

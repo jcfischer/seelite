@@ -2,29 +2,27 @@
  * §5 of `economy-trade.md`: the clock, and the memory of you.
  *
  * `market.test.ts` owns §2–§4 and §6–§7 — the arithmetic, swept over its whole
- * domain. This file owns the two properties node
+ * domain. This file owns the first of the two properties node
  * [#25](https://github.com/jcfischer/seelite/issues/25) was told it owed
  * beyond the spec's own suite (§10.3): that the **base market is derivable**
- * from `(stationSeed, epoch)` and from nothing else, and that the **deficit map
- * survives a save round trip** with its lazy decay and its drop rule intact.
+ * from `(stationSeed, epoch)` and from nothing else. It is separated from the
+ * arithmetic because it is not a claim about a formula — it is a claim about
+ * which stream a number comes out of.
  *
- * They are separated from the arithmetic because they are the two claims that
- * are not about a formula. The first is about which stream a number comes out
- * of, and the second is about the one piece of world state seelite cannot
- * regenerate from a seed (§12 weak joint 6).
+ * **The second property left with its subject.** The deficit map's save round
+ * trip was here until
+ * [#67](https://github.com/jcfischer/seelite/issues/67) moved the map to
+ * `src/deficits.ts`; `tests/deficits.test.ts` owns it now, unchanged, and this
+ * file keeps §2's identity table because it is about which key a *generated*
+ * station carries rather than about what a save does with it.
  */
 
 import { describe, expect, test } from "bun:test";
-import { type CarrierKey, carrierKey } from "../src/carrier-key";
 import { DOMAIN } from "../src/domains";
 import { generateGalaxy, systemSeedFor } from "../src/galaxy";
 import {
 	COMMODITIES,
 	commodity,
-	DEFICIT_DROP_UNITS,
-	DEFICIT_HALF_LIFE_MIN,
-	DEFICIT_MAX,
-	type DeficitMap,
 	MARKET_PERIOD_MIN,
 	type MarketStation,
 	marketEpoch,
@@ -33,10 +31,6 @@ import {
 	marketRowAt,
 	marketSeedFor,
 	marketStationOf,
-	parseDeficits,
-	pruneDeficits,
-	readDeficit,
-	recordTrade,
 	stationCommodities,
 	stationFluct,
 } from "../src/market";
@@ -304,154 +298,6 @@ describe("§5.1 the market is independent of draw order elsewhere", () => {
 			);
 			expect(played).toEqual(swept);
 		}
-	});
-});
-
-describe("§5.5 the deficit map is sparse, lazy, and round-trips", () => {
-	const KEY = carrierKey(412, LOCAL_CARRIER_ID.trade);
-	const FOOD = "Food";
-
-	test("an untouched station reads zero and costs nothing", () => {
-		const map: DeficitMap = {};
-		expect(readDeficit(map, KEY, FOOD, 0)).toBe(0);
-		expect(Object.keys(map).length).toBe(0);
-	});
-
-	test("buying adds, selling subtracts", () => {
-		const bought = recordTrade({}, KEY, FOOD, 20, 100);
-		expect(readDeficit(bought, KEY, FOOD, 100)).toBeCloseTo(20, 10);
-		const sold = recordTrade({}, KEY, FOOD, -20, 100);
-		expect(readDeficit(sold, KEY, FOOD, 100)).toBeCloseTo(-20, 10);
-	});
-
-	test("the mark halves over one half-life, on read and not on a tick", () => {
-		const map = recordTrade({}, KEY, FOOD, 40, 0);
-		expect(readDeficit(map, KEY, FOOD, DEFICIT_HALF_LIFE_MIN)).toBeCloseTo(
-			20,
-			10,
-		);
-		expect(readDeficit(map, KEY, FOOD, 2 * DEFICIT_HALF_LIFE_MIN)).toBeCloseTo(
-			10,
-			10,
-		);
-		// Nothing was written by reading it — the stored row still says 40.
-		expect(map[KEY].goods[FOOD]).toBeCloseTo(40, 10);
-	});
-
-	test("it saturates at the cap rather than running away", () => {
-		let map: DeficitMap = {};
-		for (let i = 0; i < 20; i++) map = recordTrade(map, KEY, FOOD, 63, 0);
-		expect(readDeficit(map, KEY, FOOD, 0)).toBe(DEFICIT_MAX);
-		for (let i = 0; i < 40; i++) map = recordTrade(map, KEY, FOOD, -63, 0);
-		expect(readDeficit(map, KEY, FOOD, 0)).toBe(-DEFICIT_MAX);
-	});
-
-	test("a mark under one unit reads as nothing", () => {
-		const map = recordTrade({}, KEY, FOOD, 20, 0);
-		// 20 → under 1 unit after log2(20) half-lives.
-		const faded = DEFICIT_HALF_LIFE_MIN * (Math.log2(20) + 0.01);
-		expect(Math.abs(readDeficit(map, KEY, FOOD, faded))).toBe(0);
-	});
-
-	test("a faded row is dropped, so the save does not grow forever", () => {
-		let map = recordTrade({}, KEY, FOOD, 20, 0);
-		map = recordTrade(
-			map,
-			carrierKey(9, LOCAL_CARRIER_ID.refinery),
-			"Furs",
-			5,
-			0,
-		);
-		expect(Object.keys(map).length).toBe(2);
-		const pruned = pruneDeficits(map, DEFICIT_HALF_LIFE_MIN * 8);
-		expect(Object.keys(pruned).length).toBe(0);
-	});
-
-	test("a trade that cancels itself leaves no row at all", () => {
-		let map = recordTrade({}, KEY, FOOD, 20, 0);
-		map = recordTrade(map, KEY, FOOD, -20, 0);
-		expect(map[KEY]).toBeUndefined();
-	});
-
-	test("the same carrier id in two systems is two rows", () => {
-		let map = recordTrade(
-			{},
-			carrierKey(1, LOCAL_CARRIER_ID.trade),
-			FOOD,
-			20,
-			0,
-		);
-		map = recordTrade(map, carrierKey(2, LOCAL_CARRIER_ID.trade), FOOD, -20, 0);
-		expect(Object.keys(map).length).toBe(2);
-		expect(
-			readDeficit(map, carrierKey(1, LOCAL_CARRIER_ID.trade), FOOD, 0),
-		).toBeCloseTo(20, 10);
-		expect(
-			readDeficit(map, carrierKey(2, LOCAL_CARRIER_ID.trade), FOOD, 0),
-		).toBeCloseTo(-20, 10);
-	});
-
-	test("a full map survives JSON and reads back identically", () => {
-		let map: DeficitMap = {};
-		let t = 0;
-		for (const [i, record] of SYSTEMS.slice(0, 40).entries())
-			for (const s of generateContents(record).stations) {
-				t += 7;
-				map = recordTrade(
-					map,
-					carrierKey(i, s.localCarrierId),
-					COMMODITIES[i % COMMODITIES.length].name,
-					i % 2 === 0 ? 20 : -13,
-					t,
-				);
-			}
-		// Pinned for the reason above: §10.3 quotes this as a 61-row map.
-		expect(Object.keys(map).length).toBe(61);
-
-		const back = parseDeficits(JSON.parse(JSON.stringify(map)));
-		expect(back).toEqual(map);
-		const at = t + 5;
-		for (const key of Object.keys(map) as CarrierKey[])
-			for (const good of Object.keys(map[key].goods))
-				expect(readDeficit(back, key, good, at)).toBe(
-					readDeficit(map, key, good, at),
-				);
-	});
-
-	test("a pruned map round-trips to the same readings as the original", () => {
-		let map = recordTrade({}, KEY, FOOD, 63, 0);
-		map = recordTrade(map, KEY, "Furs", -40, 0);
-		const at = DEFICIT_HALF_LIFE_MIN * 2;
-		const pruned = parseDeficits(
-			JSON.parse(JSON.stringify(pruneDeficits(map, at))),
-		);
-		for (const good of [FOOD, "Furs"])
-			expect(readDeficit(pruned, KEY, good, at)).toBeCloseTo(
-				readDeficit(map, KEY, good, at),
-				10,
-			);
-	});
-
-	test("a malformed save fails loudly rather than reading as untouched", () => {
-		expect(() => parseDeficits(null)).toThrow();
-		expect(() => parseDeficits([])).toThrow();
-		expect(() => parseDeficits({ [KEY]: 3 })).toThrow();
-		expect(() => parseDeficits({ [KEY]: { goods: {} } })).toThrow();
-		expect(() =>
-			parseDeficits({ [KEY]: { goods: {}, updatedAt: "soon" } }),
-		).toThrow();
-		expect(() =>
-			parseDeficits({ [KEY]: { goods: { Food: "lots" }, updatedAt: 0 } }),
-		).toThrow();
-		expect(() =>
-			parseDeficits({ [KEY]: { goods: { Food: Number.NaN }, updatedAt: 0 } }),
-		).toThrow();
-	});
-
-	test("the drop rule is one unit, and it is the same one everywhere", () => {
-		expect(DEFICIT_DROP_UNITS).toBe(1);
-		const map = recordTrade({}, KEY, FOOD, DEFICIT_DROP_UNITS / 2, 0);
-		expect(map[KEY]).toBeUndefined();
 	});
 });
 

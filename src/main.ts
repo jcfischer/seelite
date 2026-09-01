@@ -216,7 +216,8 @@ import {
 	type LiveCockpitState,
 	type RightTab,
 } from "./live-cockpit";
-import { marketStationOf, readDeficit } from "./market";
+import { readDeficit } from "./deficits";
+import { marketStationOf } from "./market";
 import { carrierKey } from "./carrier-key";
 import {
 	newCommander,

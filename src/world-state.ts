@@ -37,8 +37,8 @@ import {
 	compareCarrierKeys,
 	isCarrierKey,
 } from "./carrier-key";
+import { type DeficitMap, parseDeficits } from "./deficits";
 import { generateGalaxy } from "./galaxy";
-import { type DeficitMap, parseDeficits } from "./market";
 import { generateContents } from "./system";
 
 // **Not re-exported.** `carrier-key.ts` is the one owner; a second path to the
