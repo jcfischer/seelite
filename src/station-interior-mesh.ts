@@ -878,9 +878,17 @@ const plateOf = (interior: StationInterior): number =>
  * the wall it stands on. A deck flush with the surface would leave every berth
  * a loose island under the connectivity check.
  *
- * Exported because the drawn-volume row in `tests/station-mesh.test.ts` reads
- * it: a tolerance typed into a test is one that stays green against a figure
- * the module no longer uses.
+ * **A drawing convention rather than a sim dimension, and the bay is the
+ * precedent.** A bay's shell seats each wall *inside* the declared extent by
+ * the same `wall`, so the drawn surface and the catalogue's surface have always
+ * differed by a plate there too. `PLATE_FACTOR` — how thick this module draws a
+ * plate — has lived here since #147 for that reason, and no sim consumer reads
+ * either: `interiorAxialSpanKm` is `[mouth, staging]` and is what the traversal
+ * and the fit rows use, so there is no second declaration to diverge from.
+ *
+ * Exported because the drawn-volume rows read it back rather than restating the
+ * arithmetic: a tolerance typed into a test is one that stays green against a
+ * figure the module no longer uses.
  */
 export const padDeckFaceKm = (interior: StationInterior): number =>
 	interior.mouthAxialKm + plateOf(interior) * 0.8;

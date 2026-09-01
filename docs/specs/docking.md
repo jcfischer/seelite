@@ -1337,7 +1337,7 @@ the running world clock, and the station console's ownership.
 The trigger was playtest feedback against the docked view #138 shipped: a flat
 closure at the end of the aperture does not read as a hangar.
 
-**Partly reversed on 2026-09-01 by the principal, on node
+**Partly reversed on 2026-08-31 by the principal, on node
 [#165](https://github.com/jcfischer/seelite/issues/165)**: *"shrink the bays.
 Outposts don't have bays, just landing pads. also refinerie can change to
 landing pads if too small."* A **slot** role — trade, shipyard — keeps

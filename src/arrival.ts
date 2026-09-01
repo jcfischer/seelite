@@ -592,18 +592,27 @@ export function parkedAttitude(
 	law: Pick<ArrivalLaw, "frame" | "berthNormal" | "berthNose">,
 	phaseRad: number,
 ): { nose: Vec3; up: Vec3 } {
-	// **One basis for both directions.** `stepDockedWorld` calls this every
-	// docked frame, and a `recomposeDirection` each would build the phase frame
-	// and the slot basis twice for one pose.
+	// **One basis for both directions, and no closure.** `stepDockedWorld` calls
+	// this every docked frame; a `recomposeDirection` each would build the phase
+	// frame and the slot basis twice for one pose, and a local arrow would
+	// allocate once per tick to save two lines.
 	const { across, up } = slotBasis(frameAtPhase(law.frame, phaseRad));
-	const inFrame = (local: LocalOffset): Vec3 =>
-		unit(
+	const nose = law.berthNose;
+	const normal = law.berthNormal;
+	return {
+		nose: unit(
 			add(
-				scale(law.frame.axis, local.axial),
-				add(scale(across, local.across), scale(up, local.up)),
+				scale(law.frame.axis, nose.axial),
+				add(scale(across, nose.across), scale(up, nose.up)),
 			),
-		);
-	return { nose: inFrame(law.berthNose), up: inFrame(law.berthNormal) };
+		),
+		up: unit(
+			add(
+				scale(law.frame.axis, normal.axial),
+				add(scale(across, normal.across), scale(up, normal.up)),
+			),
+		),
+	};
 }
 
 /** A direction held in aperture-basis components, at one phase. Separate from
