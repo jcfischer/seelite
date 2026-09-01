@@ -40,12 +40,12 @@ import {
 	setStationDetail,
 } from "../src/station-mesh";
 import { berthCentre } from "../src/arrival";
-import { padDeckFaceKm } from "../src/station-interior-mesh";
 import {
 	bayBand,
 	collarSurfaces,
 	corridorIntrusions,
 	corridorLine,
+	drawnInteriorSpanKm,
 	crossings,
 	crossingsLine,
 	cutSurfaces,
@@ -733,12 +733,7 @@ describe("§13.1 — every form gets an interior", () => {
 			])
 				for (const part of interiorOf(root, name))
 					box.union(new THREE.Box3().setFromObject(part));
-			const pad = interior.presentation === "pad";
-			const nearKm = pad ? padDeckFaceKm(interior) : interior.mouthAxialKm;
-			const farKm = pad
-				? padDeckFaceKm(interior) -
-					(interior.stagingAxialKm - interior.mouthAxialKm)
-				: interior.endAxialKm;
+			const [farKm, nearKm] = drawnInteriorSpanKm(interior);
 			expect([type, (box.max.z * core).toFixed(6)]).toEqual([
 				type,
 				nearKm.toFixed(6),

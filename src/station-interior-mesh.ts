@@ -411,9 +411,14 @@ function berthBasis(berth: Berth) {
 			berth.parkedNose.up,
 			berth.parkedNose.axial,
 		);
-		// `buildBerth` recovers the run as `beam × outward`, and for an
-		// orthonormal pair that is `along` again.
-		return { outward, beam: new THREE.Vector3().crossVectors(along, outward) };
+		// **`outward × along`, and the order is the whole of it.** `buildBerth`
+		// recovers the run as `beam × outward`, and `(a × b) × b = −a` for an
+		// orthonormal pair — so building the beam the other way round handed it
+		// `−parkedNose`, and every pad berth's asymmetric furniture (the service
+		// boom stands at one end) faced backwards against the ship parked on it.
+		// It was written the wrong way with a comment claiming it came back
+		// right, which is the shape of error a comment cannot catch.
+		return { outward, beam: new THREE.Vector3().crossVectors(outward, along) };
 	}
 	switch (berth.face) {
 		case "deck":
@@ -858,18 +863,6 @@ function buildRoleFittings(
 	return group;
 }
 
-/**
- * How far outside the approach corridor a pad's deck begins, as a multiple of
- * the corridor's own radius.
- *
- * The corridor is a cylinder and the deck is a rectangular ring, so the two
- * meet where the ring's edges are nearest the axis: at 1.0 the ring's edge
- * midpoints lie *on* the cylinder and whether they count as inside it is a
- * float32 question. Two per cent is 1.7 m on an outpost, four orders above the
- * noise and invisible against a 120 m opening.
- */
-const PAD_HOLE_FACTOR = 1.02;
-
 /** How thick this module draws a plate, kilometres. One expression, because a
  *  pad's deck face is derived from it and `tests/station-mesh.test.ts` reads
  *  that face back rather than carrying a hand-copy of the arithmetic. */
@@ -920,12 +913,12 @@ function buildPadDeck(
 	const visuals = STATION_VISUALS[type];
 	const structure = structureMaterial(type);
 	const plate = plateOf(interior);
-	// The corridor's own radius, off the lane rather than off the table: the
-	// aperture is `2·laneHalf` on each axis, so its half-diagonal is the
-	// hypotenuse of the two half-extents.
-	const hole =
-		Math.hypot(interior.laneHalfAcrossKm, interior.laneHalfUpKm) *
-		PAD_HOLE_FACTOR;
+	// **The sim's figure, not one derived here.** Where the deck's hole is, is
+	// the same question as where a berth may stand — both are the approach
+	// corridor — so `padHoleHalfKm` is computed once in `station-interior.ts`
+	// and read back. A copy of the corridor arithmetic in this module would be
+	// the mesh authoring a dimension, which is the thing its header forbids.
+	const hole = interior.padHoleHalfKm;
 	// **As thick as a berth is tall, which is the outward span the sim
 	// declares.** It reaches inward from the deck's face far enough to meet the
 	// form's own surface, and the two pad roles differ by 20 m in how far that

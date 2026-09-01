@@ -19,6 +19,8 @@
 
 import * as THREE from "three";
 import { STATION_GEOMETRY, type StationType } from "../../src/station";
+import type { StationInterior } from "../../src/station-interior";
+import { padDeckFaceKm } from "../../src/station-interior-mesh";
 
 /**
  * The bay's own parts — what lies beyond the opening on purpose.
@@ -230,6 +232,29 @@ export function corridorIntrusions(
 		}
 	});
 	return found;
+}
+
+/**
+ * The axial span the *drawn* interior occupies, nearest the station's centre
+ * first — the box a form's `interior-shell`/`interior-deck` parts must fill.
+ *
+ * **Shared between the two suites that assert it** (#165). It was written out
+ * twice, in `tests/station-mesh.test.ts` and
+ * `tests/station-interior-mesh.test.ts`, and a change to the deck's face or its
+ * thickness would have to land in both or one row goes quietly green against
+ * the old figure.
+ *
+ * It reads the declaration, never the geometry: the row that uses it compares
+ * the drawn box against this, so a tautology would need both sides to come from
+ * the mesh.
+ */
+export function drawnInteriorSpanKm(
+	interior: StationInterior,
+): [number, number] {
+	if (interior.presentation !== "pad")
+		return [interior.endAxialKm, interior.mouthAxialKm];
+	const face = padDeckFaceKm(interior);
+	return [face - (interior.stagingAxialKm - interior.mouthAxialKm), face];
 }
 
 /** One line per form, in the shape both the corridor failure message and the

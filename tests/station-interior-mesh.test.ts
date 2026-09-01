@@ -24,8 +24,8 @@ import {
 	NAMEPLATE_NAME,
 	PLATE_FACTOR,
 	buildStationInterior,
-	padDeckFaceKm,
 } from "../src/station-interior-mesh";
+import { drawnInteriorSpanKm } from "./helpers/aperture-opening";
 
 const interiorOf = (type: (typeof STATION_TYPES)[number]) =>
 	stationInterior(type, STATION_GEOMETRY[type].aperturePlaneKm);
@@ -71,11 +71,7 @@ describe("the bay is the catalogue, drawn", () => {
 			// Six decimals is a millimetre on a kilometre; the positions are
 			// `Float32Array` by the time they are read back, so nine would be
 			// asserting the storage format rather than the dimension.
-			const nearKm = pad ? padDeckFaceKm(interior) : interior.mouthAxialKm;
-			const farKm = pad
-				? padDeckFaceKm(interior) -
-					(interior.stagingAxialKm - interior.mouthAxialKm)
-				: interior.endAxialKm;
+			const [farKm, nearKm] = drawnInteriorSpanKm(interior);
 			expect(shell.box.max.z).toBeCloseTo(nearKm, 6);
 			expect(shell.box.min.z).toBeCloseTo(farKm, 6);
 			expect(shell.box.max.x).toBeCloseTo(interior.halfAcrossKm, 6);
@@ -92,6 +88,49 @@ describe("the bay is the catalogue, drawn", () => {
 					berth.id,
 					!!group.getObjectByName(`berth-${berth.id}`),
 				]).toEqual([type, berth.id, true]);
+		}
+	});
+
+	test("a berth's drawn run lies along the nose the sim parks a ship on", () => {
+		// **The row the reversed cross product got past** (#165, sage round 2).
+		// `berthBasis` hands `buildBerth` a beam and it recovers the run as
+		// `beam × outward`; built as `along × outward` that comes back
+		// **`−along`**, because `(a × b) × b = −a`. Nothing measured it, and the
+		// comment beside it claimed the opposite.
+		//
+		// The group's local +Z *is* the run (`makeBasis(beam, outward, along)`),
+		// so this reads the drawn object's own third column.
+		//
+		// **Two strengths, and the weaker one is not a hedge.** Every berth's
+		// run must lie *along* the parked nose — a run off that axis would put
+		// the apron across the ship. The **sign** is asserted on pads only,
+		// because a bay's four faces come from a hand-written table whose wall
+		// entries mirror the run on purpose (`buildBerth`: *"a berth is
+		// symmetric along the lane, so the mirror shows only in which end the
+		// boom stands at"*), while a pad's basis is *derived* from
+		// `parkedNose` — so there the sign is a fact about the derivation rather
+		// than a convention, and it is the half that goes red if the cross
+		// product is written the other way round.
+		for (const type of STATION_TYPES) {
+			const interior = interiorOf(type);
+			const group = built(type);
+			group.updateMatrixWorld(true);
+			for (const berth of interior.berths) {
+				const holder = group.getObjectByName(`berth-${berth.id}`);
+				if (!holder) throw new Error(`no drawn ${berth.id} at ${type}`);
+				const e = holder.matrixWorld.elements;
+				const run = new THREE.Vector3(e[8], e[9], e[10]).normalize();
+				const want = new THREE.Vector3(
+					berth.parkedNose.across,
+					berth.parkedNose.up,
+					berth.parkedNose.axial,
+				);
+				const label = `${type} ${berth.id}`;
+				const along = run.dot(want);
+				expect([label, Math.abs(along)]).toEqual([label, expect.closeTo(1, 6)]);
+				if (interior.presentation === "pad")
+					expect([label, along]).toEqual([label, expect.closeTo(1, 6)]);
+			}
 		}
 	});
 

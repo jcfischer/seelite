@@ -1422,7 +1422,17 @@ left**. `SHIPYARD_KEEL_AFT_KM` moves the Gantry's keel and the Hangar's slab
 360 m aft, taking the arches, rails and the fittings mounted on them and leaving
 the two booms where #28 put them, outside the bay's 181 m swept cylinder. It
 costs 30 m of the Gantry's declared reach and nothing in the outline #28 ranked,
-which is taken down the aperture axis. All twelve forms measure clear.
+which is taken down the aperture axis.
+
+**What "clear" means here is what the two instruments sample, and neither is a
+proof.** A bay's lane is measured by `crossings()`, a 9×9 grid of rays over the
+aperture rectangle, so an obstruction narrower than the cell pitch passes
+between them. A pad's corridor is measured by `corridorIntrusions()`, which
+tests **vertices**, so a triangle spanning the cylinder with all three vertices
+outside it passes too. Both are the samplings that found every defect this node
+and #155 fixed, and both would miss a thin enough one; the claim they support is
+that no form has an obstruction either sampling can see, which is the claim
+§13.5's human row exists to sit above.
 
 **The interior is unpressurized. There is no opaque door and no energy
 curtain.** The aperture frame and the station-name shield are visible from every

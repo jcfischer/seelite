@@ -135,6 +135,16 @@ export interface StationInterior {
 	 *  and outward of it on a pad, where it is the hover height a ship rises to
 	 *  before it translates over its berth. */
 	stagingAxialKm: number;
+	/**
+	 * The half-extent of the square hole a pad's deck leaves round its landing
+	 * lane, kilometres. **Zero for a bay**, which has no deck to cut.
+	 *
+	 * The approach corridor's radius with a margin on it. It is here rather than
+	 * in the renderer because it is the same question as where a berth may
+	 * stand — `padStandoffKm` solves against the same cylinder — and two
+	 * modules computing one clearance is how the two come to disagree.
+	 */
+	padHoleHalfKm: number;
 	berths: Berth[];
 }
 
@@ -305,6 +315,29 @@ function bandAxial(
  */
 export const PAD_CORRIDOR_MARGIN_FACTOR = 0.75;
 
+/**
+ * How far outside the approach corridor a pad's deck begins, as a multiple of
+ * the corridor's own radius.
+ *
+ * The corridor is a cylinder and the deck is a rectangular ring, so the two
+ * meet where the ring's edges are nearest the axis: at 1.0 the ring's edge
+ * midpoints lie *on* the cylinder and whether they count as inside it is a
+ * float32 question. Two per cent is 1.7 m on an outpost, four orders above the
+ * noise and invisible against a 120 m opening.
+ */
+export const PAD_HOLE_FACTOR = 1.02;
+
+/**
+ * The approach corridor's radius: the aperture's own half-diagonal, which is
+ * the cylinder nothing of a station may stand in
+ * (`tests/station-mesh.test.ts`).
+ *
+ * One expression, read by the standoff that keeps berths out of it and by the
+ * hole a pad's deck is cut to.
+ */
+const corridorRadiusKm = (aperture: StationAperture): number =>
+	Math.hypot(aperture.widthKm, aperture.heightKm) / 2;
+
 /** Which way a face points in the deck plane, measured out from the lane — the
  *  opposite of the bay normal, which points from that wall *into* the bay. */
 const FACE_DIRECTION: Record<InteriorFace, { across: number; up: number }> = {
@@ -328,15 +361,13 @@ function padStandoffKm(
 	aperture: StationAperture,
 	cell: { lengthKm: number; beamKm: number; heightKm: number },
 ): number {
-	const corridorRadiusKm = Math.hypot(aperture.widthKm, aperture.heightKm) / 2;
+	const radiusKm = corridorRadiusKm(aperture);
 	const half = cell.lengthKm / 2;
 	// A corridor narrower than the berth is long has no solution on this axis;
 	// the berth then clears it on the radius alone. Not reachable at any
 	// shipped figure, and a `NaN` here would travel silently into a position.
 	const radial =
-		corridorRadiusKm > half
-			? Math.sqrt(corridorRadiusKm * corridorRadiusKm - half * half)
-			: 0;
+		radiusKm > half ? Math.sqrt(radiusKm * radiusKm - half * half) : 0;
 	return cell.beamKm / 2 + radial + cell.heightKm * PAD_CORRIDOR_MARGIN_FACTOR;
 }
 
@@ -446,6 +477,8 @@ export function stationInterior(
 		// depth, so a near berth is a short transfer and a deep one is a long
 		// one. That difference is what the traversal's duration reads (§13.3).
 		stagingAxialKm: axialOf.near,
+		// A bay has no deck, so there is no hole in one.
+		padHoleHalfKm: 0,
 		berths,
 	};
 }
@@ -520,6 +553,7 @@ function padInterior(
 		// its third the settle — and a launch runs the three back out without
 		// dipping toward the deck on the way.
 		stagingAxialKm: mouthAxialKm + cell.heightKm,
+		padHoleHalfKm: corridorRadiusKm(aperture) * PAD_HOLE_FACTOR,
 		berths,
 	};
 }
