@@ -50,10 +50,9 @@
 
 import * as THREE from "three";
 import { appendRing, cutRing, ringTriangles } from "./face-cut";
-import { type ApertureCut, type Ring, hullLoft } from "./loft";
+import { type ApertureCut, type Ring, boxProjectUVs, hullLoft } from "./loft";
 import {
 	applyRockSurface,
-	boxProjectUVs,
 	buildAsteroid,
 	displayRand,
 } from "./station-surface";

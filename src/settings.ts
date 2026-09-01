@@ -49,12 +49,37 @@ const SCHEMA = {
 	 * cost is a SwiftShader number that is nobody's. So this is the gate rather
 	 * than a budget.
 	 *
-	 * Low drops the baked lighting environment (#99) and the hulls' seam normal
-	 * map (#101), and keeps every other term. The hemisphere costs what the flat
-	 * ambient it replaced cost, so dropping it would buy nothing and lose the
-	 * gradient; the two that go are the ones with a per-fragment texture sample
-	 * — the environment on every standard material in the frame, the seam map on
-	 * every plated hull surface, which also carries a tangent frame behind it.
+	 * Low drops the baked lighting environment (#99) and the seam normal map on
+	 * every plated surface — the hulls' (#101) and the cabin's (#105) — and
+	 * keeps every other term. The hemisphere costs what the flat ambient it
+	 * replaced cost, so dropping it would buy nothing and lose the gradient; the
+	 * ones that go are the ones with a per-fragment texture sample — the
+	 * environment on every standard material in the frame, the seam map on every
+	 * plated surface, which also carries a tangent frame behind it.
+	 *
+	 * **One rule for every plated surface, not one per surface.** #105 could
+	 * have gated the cabin on its own terms; it inherits the hull's instead, so
+	 * a player moving this setting gets one answer rather than a list.
+	 *
+	 * **The cabin's lamps and its two interior lights stay on at both settings,
+	 * and that is a declaration rather than an omission** (#98: every expensive
+	 * visual term must say which side of this it is on). The lamps are
+	 * `MeshBasicMaterial` and genuinely free. The lights are **not**: a
+	 * `PointLight` parented to the cockpit group is still a light in
+	 * `nearScene`, so three evaluates it for every `MeshStandardMaterial` in
+	 * that scene — hulls and station plating included — and `distance` clamps
+	 * the contribution rather than the arithmetic. An earlier version of this
+	 * paragraph said they "cost nothing per fragment", which was simply wrong.
+	 *
+	 * So the two are split. **Low drops #105's key light** — the term this node
+	 * added, and an ungated one would make every hull and station fragment in
+	 * the game pay for a cabin gradient. Dropping it returns low to the light
+	 * count that shipped before.
+	 *
+	 * **Low keeps the pre-existing interior fill**, because dropping that is not
+	 * a degraded cabin but an unlit one: #105's finding is that the cabin is lit
+	 * almost entirely through the canopy, so that light *is* the interior
+	 * lighting, and the sentence below promises the player it stays.
 	 *
 	 * **Every later expensive visual term declares which side of this it is on**
 	 * (#98, #99). A term added without an answer here has not been gated, it has
@@ -69,7 +94,7 @@ const SCHEMA = {
 		allowed: ["high", "low"] as const,
 		label: "Lighting",
 		describe: (v: string) => (v === "high" ? "High" : "Low"),
-		note: "High reflects the star off every hull, plate and cockpit surface, and cuts the panel lines into the hulls so a moving sun breaks across them. Low drops both and keeps the sun, the star-side gradient and the cockpit fill; the picture stays lit, the panel lines stay painted, and the metal stops reading as metal.",
+		note: "High reflects the star off every hull, plate and cockpit surface, cuts the panel lines into the hulls and the cabin so a moving sun breaks across them, and lights the console from above. Low drops all three and keeps the sun, the star-side gradient and the cockpit fill; the picture stays lit, the panel lines stay painted, and the metal stops reading as metal.",
 	},
 } as const;
 

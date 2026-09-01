@@ -208,6 +208,15 @@ import {
 	type HullVariantId,
 } from "./hull";
 import { type FleetSlot, buildShipMesh, fleetLayout } from "./ship-mesh";
+import {
+	COCKPIT_KEY_LIGHT,
+	applyCockpitQuality,
+	cockpitForm,
+	cockpitMaterial,
+	plateCockpitUVs,
+	railLamps,
+	registerKeyLight,
+} from "./cockpit-surface";
 import { applyHullQuality } from "./ship-surface";
 import type { StationInterior } from "./station-interior";
 import {
@@ -2139,6 +2148,10 @@ class Game {
 		// because that record is the lighting model and a texture on a material
 		// is not part of it — `ship-surface.ts` owns what a hull surface costs.
 		applyHullQuality(this.settings.value.quality);
+		// The cabin half (#105), and the same rule for the same reason: one
+		// answer for every plated surface in the game rather than one per
+		// surface. `cockpit-surface.ts` owns what a cabin surface costs.
+		applyCockpitQuality(this.settings.value.quality);
 	}
 
 	/**
@@ -2206,29 +2219,13 @@ class Game {
 	/** The physical cockpit and its one, deck-mounted scanner. */
 	private buildCockpit() {
 		this.cockpit = {} as CockpitHardware;
-		// The first pass used a repeated cyan grid. It read as wallpaper at this
-		// distance, not a manufactured cabin. Let the hard edges and separate
-		// fittings carry the construction instead of printing a texture onto every
-		// surface.
-		const metal = new THREE.MeshStandardMaterial({
-			color: 0x0a1114,
-			roughness: 0.72,
-			metalness: 0.48,
-			emissive: 0x010304,
-			emissiveIntensity: 0.08,
-		});
-		const trim = new THREE.MeshStandardMaterial({
-			color: 0x1a2c32,
-			roughness: 0.46,
-			metalness: 0.72,
-			emissive: 0x03090b,
-			emissiveIntensity: 0.14,
-		});
-		const inset = new THREE.MeshStandardMaterial({
-			color: 0x020607,
-			roughness: 0.48,
-			metalness: 0.3,
-		});
+		// The three structural finishes, and why they are not declared here:
+		// `COCKPIT_FINISHES`. The short of it is that a finish named at this call
+		// site is one the calibration pass cannot see, and the cabin's roughest
+		// turned out not to be expressible over the wear curve without it.
+		const metal = cockpitMaterial("metal");
+		const trim = cockpitMaterial("trim");
+		const inset = cockpitMaterial("inset");
 		const canopyGlass = new THREE.MeshBasicMaterial({
 			color: 0x0a2635,
 			transparent: true,
@@ -2245,16 +2242,48 @@ class Game {
 		interiorLight.name = "cockpit-light";
 		interiorLight.position.set(0, 0.004, -0.029);
 		cockpit.add(interiorLight);
+		// #105's one added light. The lamp above lifts the cabin evenly; what it
+		// does not give is a *gradient*, and a gradient is what the deck and the
+		// console tops were missing — both cockpit views render the same flat
+		// tone whether the star is ahead of the ship or 175° behind it. Warm
+		// against the lamp's cool, which is the contrast the reference cabins
+		// have. Its range dies before the canopy on purpose: a key that reached
+		// the glass would light the frame the player sees space through.
+		const keyLight = new THREE.PointLight(
+			COCKPIT_KEY_LIGHT.color,
+			COCKPIT_KEY_LIGHT.intensity,
+			COCKPIT_KEY_LIGHT.rangeKm,
+			2,
+		);
+		keyLight.name = "cockpit-key-light";
+		keyLight.position.set(...COCKPIT_KEY_LIGHT.position);
+		cockpit.add(keyLight);
+		// **Gated, and this is the term #105 added.** A point light here is
+		// evaluated for every standard material in `nearScene`, so leaving it
+		// ungated would make every hull and station fragment pay for a cabin
+		// gradient. `cockpit-surface.ts` owns which side of `quality` it is on
+		// and puts it in the state the current setting asks for.
+		registerKeyLight(keyLight);
 		const addBox = (
 			size: [number, number, number],
 			position: [number, number, number],
 			rotation: [number, number, number] = [0, 0, 0],
 			material: THREE.Material = metal,
 		) => {
-			const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material);
+			// **A chamfered form, not a box.** The rim on every cut edge is what
+			// gives a moulding its scale — `chamfer-box.ts` has the argument, and
+			// it is what replaced the panel grid the principal rejected against
+			// the reference frames.
+			//
+			// `plateCockpitUVs` still runs: it is already non-indexed, so the call
+			// only writes the kilometre projection. It returns the geometry to use
+			// either way, and dropping that return value would leave a fitting
+			// unplated in a way that looks exactly like the map failing to load.
+			const mesh = new THREE.Mesh(cockpitForm(...size), material);
 			mesh.position.set(...position);
 			mesh.rotation.set(...rotation);
 			cockpit.add(mesh);
+			return mesh;
 		};
 		const addStrut = (
 			from: [number, number, number],
@@ -2265,12 +2294,19 @@ class Game {
 			const start = new THREE.Vector3(...from);
 			const end = new THREE.Vector3(...to);
 			const direction = end.clone().sub(start);
+			// Plated like everything else on `metal`, and `plateCockpitUVs`
+			// directly rather than `cockpitForm`: a rail is a cylinder, and
+			// chamfering one is meaningless. A normalised cylinder unwrap would
+			// tile the whole 72 m map onto a rail a metre across, which reads as
+			// noise rather than as a surface.
 			const mesh = new THREE.Mesh(
-				new THREE.CylinderGeometry(
-					radius * 0.82,
-					radius,
-					direction.length(),
-					8,
+				plateCockpitUVs(
+					new THREE.CylinderGeometry(
+						radius * 0.82,
+						radius,
+						direction.length(),
+						8,
+					),
 				),
 				metal,
 			);
@@ -2298,18 +2334,35 @@ class Game {
 		canopyPane.name = "canopy-glass";
 		canopyPane.position.z = -0.065;
 		cockpit.add(canopyPane);
-		addStrut(
-			[-0.043, -0.013, -0.065],
-			[-0.05, 0.018, -0.065],
-			0.00125,
-			"canopy-side-rail-port",
-		);
-		addStrut(
-			[0.043, -0.013, -0.065],
-			[0.05, 0.018, -0.065],
-			0.00125,
-			"canopy-side-rail-starboard",
-		);
+		/**
+		 * The two canopy side rails, and the **one** place their endpoints live.
+		 *
+		 * The lamp placement below claimed to take "the rail's own endpoints, so
+		 * the two cannot drift apart" while re-typing the same six literals — a
+		 * comment describing a binding that did not exist. An editor who trusted
+		 * it and moved only the `addStrut` call would leave six lamps floating at
+		 * the old position, with nothing going red. Both readers take this array.
+		 */
+		const CANOPY_SIDE_RAILS = [
+			{
+				side: "port",
+				from: [-0.043, -0.013, -0.065] as [number, number, number],
+				to: [-0.05, 0.018, -0.065] as [number, number, number],
+			},
+			{
+				side: "starboard",
+				from: [0.043, -0.013, -0.065] as [number, number, number],
+				to: [0.05, 0.018, -0.065] as [number, number, number],
+			},
+		];
+		for (const rail of CANOPY_SIDE_RAILS)
+			addStrut(rail.from, rail.to, 0.00125, `canopy-side-rail-${rail.side}`);
+		// Three lamps on each, and nowhere else. The first pass ran continuous
+		// lit bars under the header, under the sill and along each console; none
+		// of that is in the reference, where the canopy frame carries a few small
+		// lamps and everything else that glows is an instrument.
+		for (const rail of CANOPY_SIDE_RAILS)
+			for (const lamp of railLamps(rail.from, rail.to)) cockpit.add(lamp);
 		addBox([0.102, 0.0013, 0.002], [0, 0.018, -0.065], [0, 0, 0], trim);
 		addBox([0.088, 0.002, 0.004], [0, -0.013, -0.065], [0, 0, 0], trim);
 		// Header braces close the upper corners into the nearer cockpit frame. The
@@ -2399,14 +2452,11 @@ class Game {
 		trim: THREE.MeshStandardMaterial,
 		inset: THREE.MeshStandardMaterial,
 	) {
-		const deck = new THREE.Mesh(
-			new THREE.BoxGeometry(0.032, 0.0016, 0.022),
-			metal,
-		);
+		const deck = new THREE.Mesh(cockpitForm(0.032, 0.0016, 0.022), metal);
 		deck.name = "scanner-deck";
 		scannerMount.add(deck);
 		const scannerWell = new THREE.Mesh(
-			new THREE.BoxGeometry(0.029, 0.00025, 0.0155),
+			cockpitForm(0.029, 0.00025, 0.0155),
 			inset,
 		);
 		scannerWell.name = "scanner-well";
@@ -2418,10 +2468,7 @@ class Game {
 			[-0.015, 0, 0.0008, 0.0168],
 			[0.015, 0, 0.0008, 0.0168],
 		] as const) {
-			const bezel = new THREE.Mesh(
-				new THREE.BoxGeometry(sx, 0.00075, sz),
-				trim,
-			);
+			const bezel = new THREE.Mesh(cockpitForm(sx, 0.00075, sz), trim);
 			bezel.name = "scanner-bezel";
 			bezel.position.set(x, 0.00145, z);
 			scannerMount.add(bezel);
@@ -2449,10 +2496,7 @@ class Game {
 		scanner.rotation.x = -Math.PI / 2;
 		scannerMount.add(scanner);
 		const makeInstrument = (name: string, x: number) => {
-			const backing = new THREE.Mesh(
-				new THREE.BoxGeometry(0.014, 0.0014, 0.011),
-				trim,
-			);
+			const backing = new THREE.Mesh(cockpitForm(0.014, 0.0014, 0.011), trim);
 			backing.position.set(x, 0.0002, 0);
 			scannerMount.add(backing);
 			const canvas = document.createElement("canvas");
@@ -2478,7 +2522,7 @@ class Game {
 		this.cockpit.flightInstrument = makeInstrument("flight-instrument", -0.025);
 		this.cockpit.targetInstrument = makeInstrument("target-instrument", 0.025);
 		const throttleTrack = new THREE.Mesh(
-			new THREE.BoxGeometry(0.0022, 0.0014, 0.014),
+			cockpitForm(0.0022, 0.0014, 0.014),
 			inset,
 		);
 		throttleTrack.name = "throttle-track";

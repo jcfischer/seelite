@@ -19,51 +19,6 @@ import { SimplexNoise } from "./noise";
 import { makeSplicer } from "./shader-splice";
 import { CRATER_CELL, CRATER_PROFILE, NOISE_GLSL } from "./planet-shaders";
 
-/**
- * Give a geometry per-face box-projected UVs, in kilometres divided by `panel`.
- *
- * `PolyhedronGeometry` and `IcosahedronGeometry` both write an azimuthal
- * unwrap — longitude and latitude — which is right for a sphere and wrong for
- * anything made of flat plates or displaced into lumps: the map smears into
- * streaks towards the poles and changes scale from one triangle to the next.
- * Each face is projected onto whichever axis plane it most faces instead.
- *
- * Non-indexed geometry only, which both of those produce: each run of three
- * vertices is one face and can be given its own projection without splitting
- * anything. The cost is a seam wherever the dominant axis changes, which on a
- * rock is invisible and on a plated hull falls along a facet edge.
- */
-export function boxProjectUVs(geometry: THREE.BufferGeometry, panelKm: number) {
-	const position = geometry.getAttribute("position") as THREE.BufferAttribute;
-	const uv = geometry.getAttribute("uv") as THREE.BufferAttribute;
-	const a = new THREE.Vector3();
-	const b = new THREE.Vector3();
-	const c = new THREE.Vector3();
-	const edge = new THREE.Vector3();
-	const normal = new THREE.Vector3();
-	for (let i = 0; i < position.count; i += 3) {
-		a.fromBufferAttribute(position, i);
-		b.fromBufferAttribute(position, i + 1);
-		c.fromBufferAttribute(position, i + 2);
-		normal.copy(b).sub(a);
-		edge.copy(c).sub(a);
-		normal.cross(edge);
-		const ax = Math.abs(normal.x);
-		const ay = Math.abs(normal.y);
-		const az = Math.abs(normal.z);
-		const axis = ax > ay && ax > az ? 0 : ay > az ? 1 : 2;
-		for (let k = 0; k < 3; k++) {
-			const v = k === 0 ? a : k === 1 ? b : c;
-			uv.setXY(
-				i + k,
-				(axis === 0 ? v.y : v.x) / panelKm,
-				(axis === 2 ? v.y : v.z) / panelKm,
-			);
-		}
-	}
-	uv.needsUpdate = true;
-}
-
 /** The rock's vertex-stage additions: one varying, and the object-space
  *  position everything else is a function of. Normalised in the fragment stage
  *  rather than here — interpolating a unit vector across a triangle does not

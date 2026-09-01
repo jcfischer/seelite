@@ -184,13 +184,60 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   samples it.
 - **One surface generator, and a plate is a size rather than a count.**
   `src/surface.ts` makes the plate, wear and seam-normal texels for every plated
-  thing in the game — stations, ship hulls, and the cockpit when #105 lands —
+  thing in the game — stations, ship hulls and the cockpit interior (#105) —
   from a `PlatingProfile` and a tag. It takes a profile and never a type, which
   is what stopped it being a station's. `hullLoft` writes UVs in **kilometres**,
   so a consumer divides by its own panel size: `SHIP_PANEL_KM` 0.008 gives a
   1 m x 4 m plate, `STATION_PANEL_KM` 0.15 gives 19 m square. Multiply a
   normalised unwrap by a count instead and a dreadnought and a tug get the same
-  number of bands.
+  number of bands. The cabin is the exception that proves the rule: three's box
+  and cylinder primitives write a *normalised* unwrap, so `plateCockpitUVs`
+  rewrites them in kilometres through `boxProjectUVs` (moved to `loft.ts` in
+  #105) — and it returns a **new** geometry, because that projection needs a
+  non-indexed one. Drop the return value and the fitting is silently unplated.
+- **A cabin is a moulding, not a plated hull, and a box cannot be a moulding.**
+  #105's first pass brought the hull's panel grid inside and the principal
+  rejected it against the Elite reference: those interiors carry their scale on
+  the **rim of every cut edge**, not on lines. A `BoxGeometry` has a hard 90°
+  edge with no width for a highlight to sit on, so it reads as a slab however it
+  is lit. `src/chamfer-box.ts` is the cabin's form primitive and every fitting
+  goes through it — and note the vertex rule that makes it one: **each face is
+  inset on *both* its in-plane axes.** Pulling each corner in on one axis at a
+  time gives a box with its eight *corners* cut, where adjacent faces still meet
+  at an unbroken 90°, the twelve edge quads lie strictly inside the hull, and
+  24 of 68 triangles draw nothing. That shipped, and the test could not see it
+  because it counted distinct normals *in the buffer* — a buried triangle has a
+  perfectly good normal. What catches it is convexity: every face's plane must
+  support every vertex.
+
+  On top of that form, the plating survives only as a rare, large seam
+  (`COCKPIT_PANEL_KM` 0.072, about 3.6 plates across the scanner deck). Two
+  figures were flown and rejected on the way: 0.024 was the grid, and a chamfer
+  clamped at *half* the smallest half-extent made every thin slab more rim than
+  face — chrome piping. The clamp is a quarter.
+- **The cabin's emissive is a few discrete lamps, not a lit strip**, which is
+  what the reference actually shows. They are warm white rather than the
+  reference's red on purpose: `hud-and-scanner.md` §4 owns red as *refusal*, and
+  a red lamp on the canopy frame would be an alarm the player cannot act on.
+  A lamp also needs `COCKPIT_LAMP.standoffKm` — the first ones were smaller than
+  the rail's own radius and were drawn inside it, so the sheet showed nothing.
+- **A material dial cannot exceed 1, and clamping one is a silent repaint.**
+  `MeshStandardMaterial` multiplies `roughness` by the wear map's green channel,
+  so a finish rougher than a clean plate simply cannot be asked for. The cabin's
+  roughest is 0.72 against a clean plate of 0.702, and `Math.min(1, …)` — which
+  is still what `ship-surface.ts` does, where no finish has yet reached it —
+  renders it at 0.702 instead. `cockpit-surface.ts` calibrates the profile up by
+  exactly what the strongest declared finish needs and **throws** on a dial
+  above 1, which is why `COCKPIT_FINISHES` lives in that module rather than
+  inline in `buildCockpit`: a finish declared at the call site is one the
+  calibration cannot see.
+- **`berth-launch-chase` is not a repeatable view.** Two same-build control
+  runs during #105 put it at **70.9% and 72.7%** of pixels moved past 24/255,
+  against ≤0.4% for every other view in the same runs. Two samples, so read the
+  figure as "most of the frame" rather than as a constant — the point is the
+  order of magnitude, and it is enough. It frames a moving camera at a moving
+  moment of a scripted launch. Any before/after reading on that row is noise;
+  judge it by eye or not at all.
 - **A square grid of plates reads as scales, not as metal.** The profile carries
   the layout — `aspect`, `stagger`, `seamHalfWidthPx` — because all three were
   once hardcoded to the tiling case and the surface was flown and rejected for
