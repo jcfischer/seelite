@@ -16,8 +16,15 @@
  * What *is* here, and what the sentence above used to deny, is the **cabin's
  * own two emitters** — `COCKPIT_LAMP` and `COCKPIT_KEY_LIGHT`. They are cabin
  * furniture rather than scene lighting: parented to the cockpit group, sized in
- * its oversized frame, and reaching nothing outside it. The rig lights the
- * world; these light the room.
+ * its oversized frame, and their *contribution* dying well before anything
+ * outside it.
+ *
+ * **Their cost does not stop there, and an earlier draft of this said it did.**
+ * A `PointLight` parented to the cockpit group is still a light in `nearScene`,
+ * so three evaluates it for every `MeshStandardMaterial` in that scene — hulls
+ * and station plating included. `distance` clamps what it adds, not the
+ * arithmetic that adds nothing. `settings.ts` carries which side of the quality
+ * gate each one is on, and #105's key light is gated for exactly this reason.
  *
  * ## What #105 found before it changed anything
  *
@@ -324,17 +331,29 @@ export const COCKPIT_KEY_LIGHT = {
 	position: [0, 0.014, -0.038] as const,
 } as const;
 
-/** What each `quality` setting gives the cabin (#98's gate, #99's key).
+/**
+ * What each `quality` setting gives the cabin (#98's gate, #99's key).
  *
- *  Low drops the **seam normal map** and keeps the albedo and the wear map —
- *  `HULL_QUALITY`'s rule unchanged, deliberately, so there is one answer for
- *  every plated surface in the game rather than one per surface. It is also
- *  what `settings.ts` already promises the player: low "cuts the panel lines"
- *  goes, the painted seams stay, the cabin stays lit. The lamps and both lights
- *  are untouched by it. */
+ * Low drops the **seam normal map** and keeps the albedo and the wear map —
+ * `HULL_QUALITY`'s rule unchanged, deliberately, so there is one answer for
+ * every plated surface in the game rather than one per surface.
+ *
+ * Low also drops **#105's key light**, which is the term this node *added*.
+ * A point light in `nearScene` is evaluated for every standard material there,
+ * so an ungated one would make every hull and station fragment in the game pay
+ * for a cabin gradient; #98 requires each new expensive term to declare a side,
+ * and this is that declaration. Dropping it returns low to the light count that
+ * shipped before this node.
+ *
+ * What low does **not** drop is the pre-existing interior fill or the lamps.
+ * The fill is the cabin's own lighting — #105's finding is that the cabin is
+ * lit almost entirely through the canopy — so removing it gives an unlit cabin
+ * rather than a cheaper one, and `settings.ts` promises the player it stays.
+ * The lamps are `MeshBasicMaterial` and genuinely free.
+ */
 export const COCKPIT_QUALITY = {
-	high: { seamNormals: true },
-	low: { seamNormals: false },
+	high: { seamNormals: true, keyLight: true },
+	low: { seamNormals: false, keyLight: false },
 } as const;
 
 export type CockpitQuality = keyof typeof COCKPIT_QUALITY;
@@ -415,7 +434,14 @@ function platingPass(profile: PlatingProfile): PlatingPass {
 function calibrate(): { profile: PlatingProfile; pass: PlatingPass } {
 	const strongest = (key: WearKey) =>
 		Math.max(...COCKPIT_FINISH_IDS.map((id) => COCKPIT_FINISHES[id][key]));
-	/** One byte of headroom, so a pass that lands a texel low is not shipped. */
+	/**
+	 * A fraction of a byte of headroom — and the loop covers the rest.
+	 *
+	 * Added to a *ratio*, not to a byte: it lifts the target by `clean × TEXEL`,
+	 * about seven tenths of a texel at the cabin's clean plate. That is enough
+	 * for the case that motivated it and not a guarantee on its own, which is
+	 * why the loop re-measures rather than trusting one correction.
+	 */
 	const TEXEL = 1 / 255;
 	let profile = COCKPIT_PLATING;
 	for (let attempt = 0; attempt < 8; attempt++) {
@@ -519,6 +545,22 @@ function cleanPlate(wear: Uint8Array<ArrayBuffer>): Record<WearKey, number> {
 		return 1;
 	};
 	return { roughness: median(1), metalness: median(2) };
+}
+
+/**
+ * The cabin's key light, held so the quality gate can reach it.
+ *
+ * One, and registered by `buildCockpit` rather than made here: the light's
+ * position is a fact about the cabin's geometry and belongs beside it, while
+ * *whether it is on* is this module's gate.
+ */
+let keyLight: { visible: boolean } | null = null;
+
+/** Hand the cabin's key light to the quality gate, and put it in the state the
+ *  current setting asks for. */
+export function registerKeyLight(light: { visible: boolean }) {
+	keyLight = light;
+	light.visible = COCKPIT_QUALITY[cockpitQuality].keyLight;
 }
 
 /** The clean-plate factors, for the test that checks the three finishes
@@ -673,24 +715,15 @@ export function railLamps(
 		new THREE.Vector3(1, 0, 0),
 		along.clone().normalize(),
 	);
-	// **One geometry, six meshes.** Every lamp in the cabin is the same box at
-	// the same size; building it per stop uploaded six byte-identical buffers.
-	// Chamfered like every other cabin form — a flat-sided box at this size read
-	// as a tan card stuck to the rail rather than as a lens set into it, which is
-	// the slab problem the fittings had, on the one object small enough that its
-	// edges are most of its silhouette.
-	const geometry = chamferedBox(...COCKPIT_LAMP.size, COCKPIT_CHAMFER_KM);
 	return COCKPIT_LAMP.stops.map((t) => {
-		const mesh = new THREE.Mesh(geometry, lampMaterial());
+		const mesh = new THREE.Mesh(lampGeometry(), lampMaterial());
 		mesh.name = "cockpit-lamp";
 		mesh.quaternion.copy(orientation);
 		// **+Z is toward the pilot**, and the standoff is what makes the lamp
 		// visible at all — see `COCKPIT_LAMP.standoffKm`. The rails run at
 		// constant z, so one axis is the whole of it.
-		mesh.position
-			.copy(start)
-			.addScaledVector(along, t)
-			.setZ(start.z + along.z * t + COCKPIT_LAMP.standoffKm);
+		mesh.position.copy(start).addScaledVector(along, t);
+		mesh.position.z += COCKPIT_LAMP.standoffKm;
 		return mesh;
 	});
 }
@@ -704,6 +737,24 @@ export function railLamps(
  * as a crack in it.
  */
 let lampGlow: THREE.MeshBasicMaterial | null = null;
+
+/**
+ * The lamps' shared geometry: **one for the cabin**, not one per rail.
+ *
+ * Every lamp is the same box at the same size. It was built inside the stop
+ * loop first — six byte-identical buffers — and then per rail, which is two;
+ * module scope is the only place that makes it one. Chamfered like every other
+ * cabin form: a flat-sided box at this size read as a tan card stuck to the rail
+ * rather than as a lens set into it, which is the slab problem the fittings had,
+ * on the one object small enough that its edges are most of its silhouette.
+ */
+let lampBox: THREE.BufferGeometry | null = null;
+
+function lampGeometry() {
+	if (!lampBox)
+		lampBox = chamferedBox(...COCKPIT_LAMP.size, COCKPIT_CHAMFER_KM);
+	return lampBox;
+}
 
 function lampMaterial() {
 	if (!lampGlow)
@@ -776,6 +827,11 @@ function plateCockpit(material: THREE.MeshStandardMaterial) {
  */
 export function applyCockpitQuality(quality: CockpitQuality) {
 	cockpitQuality = quality;
+	// The key light, if the cabin has been built yet. `visible` rather than a
+	// removal: three skips an invisible light entirely when it gathers the
+	// scene's lights, so the per-fragment term goes with it, and the setting
+	// stays live — #99's finding is that a reload puts the ship somewhere else.
+	if (keyLight) keyLight.visible = COCKPIT_QUALITY[quality].keyLight;
 	// **Before `cockpitMaps`**, so a boot-time quality pass that runs ahead of
 	// `buildCockpit` does not pay for three buffers nothing is using yet.
 	if (plated.size === 0) return;

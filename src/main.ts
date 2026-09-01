@@ -214,6 +214,7 @@ import {
 	cockpitMaterial,
 	plateCockpitUVs,
 	railLamps,
+	registerKeyLight,
 } from "./cockpit-surface";
 import { applyHullQuality } from "./ship-surface";
 import type { StationInterior } from "./station-interior";
@@ -2168,19 +2169,10 @@ class Game {
 	/** The physical cockpit and its one, deck-mounted scanner. */
 	private buildCockpit() {
 		this.cockpit = {} as CockpitHardware;
-		// The first pass used a repeated cyan grid. It read as wallpaper at this
-		// distance, not a manufactured cabin, and the answer then was to let the
-		// hard edges and separate fittings carry the construction with no texture
-		// at all. #105 reopened that from a real frame: the deck, the console tops
-		// and the coaming each rendered as one flat tone, with nothing giving the
-		// cabin a scale. What replaces it is not the grid — it is #101's shared
-		// generator with the cabin's own profile, a brick bond of lining panels
-		// whose seams are cut into a normal map rather than printed.
-		//
-		// **The three finishes moved to `cockpit-surface.ts` unchanged.** A finish
-		// declared at this call site is a finish the calibration pass cannot see,
-		// and the cabin's roughest one turned out not to be expressible over the
-		// wear curve without it.
+		// The three structural finishes, and why they are not declared here:
+		// `COCKPIT_FINISHES`. The short of it is that a finish named at this call
+		// site is one the calibration pass cannot see, and the cabin's roughest
+		// turned out not to be expressible over the wear curve without it.
 		const metal = cockpitMaterial("metal");
 		const trim = cockpitMaterial("trim");
 		const inset = cockpitMaterial("inset");
@@ -2216,6 +2208,12 @@ class Game {
 		keyLight.name = "cockpit-key-light";
 		keyLight.position.set(...COCKPIT_KEY_LIGHT.position);
 		cockpit.add(keyLight);
+		// **Gated, and this is the term #105 added.** A point light here is
+		// evaluated for every standard material in `nearScene`, so leaving it
+		// ungated would make every hull and station fragment pay for a cabin
+		// gradient. `cockpit-surface.ts` owns which side of `quality` it is on
+		// and puts it in the state the current setting asks for.
+		registerKeyLight(keyLight);
 		const addBox = (
 			size: [number, number, number],
 			position: [number, number, number],

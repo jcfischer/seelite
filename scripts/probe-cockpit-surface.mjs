@@ -76,9 +76,13 @@ function state() {
 		if (!material) return;
 		meshes.push({ name: object.name, ...describe(material) });
 	});
+	// Name **and** visibility: the quality gate turns the key light off with
+	// `visible`, so a probe that only listed names would report "both lights
+	// present" at either setting and check nothing.
 	const lights = [];
 	cockpit.traverse((object) => {
-		if (object.isLight) lights.push(object.name);
+		if (object.isLight)
+			lights.push({ name: object.name, visible: object.visible });
 	});
 	// **Every plated fitting's UVs, not just the deck's.** This probe advertises
 	// catching a dropped `plateCockpitUVs` return value, and an earlier version
@@ -246,8 +250,8 @@ for (const viewport of VIEWPORTS) {
 	);
 	check(
 		`${viewport.name}: the cabin carries its own fill and #105's warm key`,
-		high.lights.includes("cockpit-light") &&
-			high.lights.includes("cockpit-key-light"),
+		high.lights.some((l) => l.name === "cockpit-light" && l.visible) &&
+			high.lights.some((l) => l.name === "cockpit-key-light" && l.visible),
 	);
 
 	// The gate, in the page, without a reload.
@@ -260,16 +264,26 @@ for (const viewport of VIEWPORTS) {
 		),
 	);
 	check(
-		`${viewport.name}: low leaves the lamps and both interior lights alone`,
-		low.lights.join(",") === high.lights.join(",") &&
-			low.meshes.filter((mesh) => mesh.name === "cockpit-lamp").length ===
-				high.meshes.filter((mesh) => mesh.name === "cockpit-lamp").length,
+		// **The term this node added, and the one it did not.** #105's key light
+		// is a point light in `nearScene`, so it costs every standard material in
+		// the frame and is gated; the pre-existing fill is the cabin's own
+		// lighting and stays, which is what `settings.ts` promises the player.
+		`${viewport.name}: low drops #105's key light and keeps the cabin's fill`,
+		low.lights.some((l) => l.name === "cockpit-key-light" && !l.visible) &&
+			low.lights.some((l) => l.name === "cockpit-light" && l.visible),
+	);
+	check(
+		`${viewport.name}: low leaves the lamps alone`,
+		low.meshes.filter((mesh) => mesh.name === "cockpit-lamp").length ===
+			high.meshes.filter((mesh) => mesh.name === "cockpit-lamp").length &&
+			high.meshes.filter((mesh) => mesh.name === "cockpit-lamp").length === 6,
 	);
 	await page.evaluate(() => window.__seelite.settings.set("quality", "high"));
 	const restored = await page.evaluate(state);
 	check(
-		`${viewport.name}: high puts the seam map back on the same materials`,
-		structuralOf(restored).every((mesh) => mesh.normalMap),
+		`${viewport.name}: high puts the seam map and the key light back`,
+		structuralOf(restored).every((mesh) => mesh.normalMap) &&
+			restored.lights.some((l) => l.name === "cockpit-key-light" && l.visible),
 	);
 
 	await page.close();

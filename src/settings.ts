@@ -71,11 +71,15 @@ const SCHEMA = {
 	 * the contribution rather than the arithmetic. An earlier version of this
 	 * paragraph said they "cost nothing per fragment", which was simply wrong.
 	 *
-	 * They stay because the cost is one more term in a loop that already runs
-	 * three, and because dropping them is not a degraded cabin but an unlit one:
-	 * #105's finding is that the cabin is lit almost entirely through the
-	 * canopy, so the interior lights *are* the interior lighting. A setting that
-	 * turned them off would be a different cockpit, not a cheaper one.
+	 * So the two are split. **Low drops #105's key light** — the term this node
+	 * added, and an ungated one would make every hull and station fragment in
+	 * the game pay for a cabin gradient. Dropping it returns low to the light
+	 * count that shipped before.
+	 *
+	 * **Low keeps the pre-existing interior fill**, because dropping that is not
+	 * a degraded cabin but an unlit one: #105's finding is that the cabin is lit
+	 * almost entirely through the canopy, so that light *is* the interior
+	 * lighting, and the sentence below promises the player it stays.
 	 *
 	 * **Every later expensive visual term declares which side of this it is on**
 	 * (#98, #99). A term added without an answer here has not been gated, it has
@@ -90,7 +94,7 @@ const SCHEMA = {
 		allowed: ["high", "low"] as const,
 		label: "Lighting",
 		describe: (v: string) => (v === "high" ? "High" : "Low"),
-		note: "High reflects the star off every hull, plate and cockpit surface, and cuts the panel lines into the hulls and the cabin so a moving sun breaks across them. Low drops both and keeps the sun, the star-side gradient and the cockpit fill; the picture stays lit, the panel lines stay painted, and the metal stops reading as metal.",
+		note: "High reflects the star off every hull, plate and cockpit surface, cuts the panel lines into the hulls and the cabin so a moving sun breaks across them, and lights the console from above. Low drops all three and keeps the sun, the star-side gradient and the cockpit fill; the picture stays lit, the panel lines stay painted, and the metal stops reading as metal.",
 	},
 } as const;
 

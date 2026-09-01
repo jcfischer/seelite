@@ -30,8 +30,14 @@
 import * as THREE from "three";
 
 /**
- * The chamfered box: six octagonal faces, twelve edge quads, eight corner
- * triangles.
+ * The chamfered box: six rectangular faces inset on both their in-plane axes,
+ * twelve edge quads and eight corner triangles — 44 triangles over 24 vertices.
+ *
+ * **Rectangles, not octagons**, and the difference is the defect this module
+ * shipped once. Octagonal faces are what the *corner-cut* version had: it pulled
+ * each corner in on one axis at a time, so every face still reached its
+ * neighbours' planes and the twelve edge quads lay buried inside the solid. See
+ * `point` below.
  *
  * `chamfer` is the cut *depth* along each axis, in the same units as the
  * extents. It is clamped to **a quarter of the smallest half-extent** rather
