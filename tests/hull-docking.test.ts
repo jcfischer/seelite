@@ -84,6 +84,18 @@ const fly = (
 /** Does this role hold a berth this hull fits? A grant *is* a berth reservation
  *  (#147), so a hull no berth fits is refused before it flies anywhere — that is
  *  the protocol working, not a failed entry, and the two are asserted apart. */
+/** Which of §3's six rows a crossing failed, joined — so a red rung names the
+ *  check rather than reporting a boolean. Empty when the crossing passed. */
+const failedChecksOf = (run: ReturnType<typeof fly>): string =>
+	run.crossing?.evaluation
+		? Object.entries(run.crossing.evaluation.checks)
+				.filter(([, ok]) => !ok)
+				.map(([name]) => name)
+				.join("+")
+		: run.crossing === null
+			? "no crossing"
+			: "";
+
 const hasBerth = (hull: HullId, type: StationType): boolean =>
 	stationInterior(type, STATION_GEOMETRY[type].aperturePlaneKm, 1).berths.some(
 		(berth) => berthFits(berth, HULL_SPECS[hull].env),
@@ -92,8 +104,8 @@ const hasBerth = (hull: HullId, type: StationType): boolean =>
 /** Both ends of the shipped range plus its midpoint, derived rather than typed:
  *  a hardcoded interior sample silently leaves the range the day
  *  `SPIN_RPM_RANGE` is narrowed, and would then sweep a spin no station builds.
- *  A landing pad does not rotate, so its only phase is zero — passing a spin for
- *  one describes something that cannot happen (`apertureFrame` normalises it
+ *  A non-turning role has one phase and it is zero — passing a spin for one
+ *  describes something that cannot happen (`apertureFrame` normalises it
  *  away). */
 const spinsFor = (type: StationType): number[] =>
 	STATION_GEOMETRY[type].spins
@@ -123,34 +135,31 @@ describe("every hull docks at every role it has a berth at", () => {
 				}
 				for (const rpm of spinsFor(type)) {
 					const run = fly(hull, type, rpm);
-					const failed = run.crossing?.evaluation
-						? Object.entries(run.crossing.evaluation.checks)
-								.filter(([, ok]) => !ok)
-								.map(([name]) => name)
-								.join("+")
-						: "no crossing";
-					expect([hull, type, rpm, run.refused]).toEqual([
+					// One `toEqual` over the whole outcome, so a failing rung prints
+					// the hull, the role, the spin **and** which of the six checks
+					// went red — rather than three near-identical label tuples for a
+					// reader to scroll past.
+					expect({
 						hull,
 						type,
 						rpm,
-						null,
-					]);
-					expect([hull, type, rpm, run.violations, failed]).toEqual([
+						refused: run.refused,
+						violations: run.violations,
+						docked: run.docked,
+						failedChecks: failedChecksOf(run),
+						// A run that "docked" on step one would satisfy `docked`
+						// without having flown anything.
+						flewSomething: run.steps > 50,
+					}).toEqual({
 						hull,
 						type,
 						rpm,
-						0,
-						"",
-					]);
-					expect([hull, type, rpm, run.docked]).toEqual([
-						hull,
-						type,
-						rpm,
-						true,
-					]);
-					// A run that "docked" on step one would satisfy the line above
-					// without having flown anything.
-					expect(run.steps).toBeGreaterThan(50);
+						refused: null,
+						violations: 0,
+						docked: true,
+						failedChecks: "",
+						flewSomething: true,
+					});
 				}
 			});
 		}
@@ -167,7 +176,8 @@ const SPINNING_TYPES = STATION_TYPES.filter(
 );
 
 /**
- * The spin above which a hull can no longer hold the aperture's roll.
+ * The spin above which a hull can no longer hold the aperture's roll, and
+ * whether it ever recovers above it.
  *
  * It is **not** the hull's roll rate expressed as an rpm, although it tracks it
  * closely. Check 4 admits 50 degrees of roll error, so a hull can hold the
@@ -175,23 +185,45 @@ const SPINNING_TYPES = STATION_TYPES.filter(
  * reaches 8 rpm on a 4.9 rpm roll cap while the freighter stops at 6.0 on a 6.6.
  * What ends a run is the lag exceeding the tolerance at the crossing.
  *
+ * **The whole range is flown, not stopped at the first failure**, and doing so
+ * found that the curve is not monotone. The first version broke on the first
+ * failure while justifying its coarse step by saying a bisection "would assume
+ * the shape of the curve it is measuring" — which is the shape a `break`
+ * assumes. Flown out, the courier fails at 13.5 rpm and then docks again at
+ * thirteen of the rungs above it, up to 24.
+ *
+ * **Those are coincidences, not capability**, and that is the reading the
+ * numbers support rather than a way of explaining them away: check 4 admits
+ * ±50° of roll error, so once a hull can no longer track the phase at all,
+ * whether the crossing happens to land inside a 100°-wide window is a matter of
+ * where the aperture was at that instant. The evidence is the pattern — above
+ * the first failure it is scattered (14, 14.5, 15, 15.5, 16, 17, …), while below
+ * it every single rung docks.
+ *
+ * So the **first failure is the measurement** and the ceiling is the rung below
+ * it. `recovered` is reported rather than asserted empty, because asserting it
+ * empty would be asserting a monotonicity the game does not have.
+ *
  * **A run that never reached the plane is not a ceiling**, and the loop says so:
  * a refusal or a timeout is thrown rather than counted, because either would
- * report a broken harness as a hull's limit. Searched upward in coarse steps
- * rather than bisected — the predicate is a whole flown approach and is not
- * guaranteed monotone, so a bisection would assume the shape of the curve it is
- * measuring.
+ * report a broken harness as a hull's limit.
  */
 function spinCeiling(
 	hull: HullId,
 	type: StationType,
 	perfHull?: HullId,
-): number {
-	let last = 0;
-	for (let rpm = 1; rpm <= 24; rpm += 0.5) {
+): {
+	rpm: number;
+	firstFailure: number;
+	unbrokenBelow: number;
+	recovered: number[];
+} {
+	let firstFailure = Number.POSITIVE_INFINITY;
+	const docks: number[] = [];
+	for (let rpm = 1; rpm <= CEILING_SEARCH_MAX_RPM; rpm += 0.5) {
 		const run = fly(hull, type, rpm, perfHull);
 		if (run.docked) {
-			last = rpm;
+			docks.push(rpm);
 			continue;
 		}
 		if (run.refused !== null)
@@ -203,24 +235,53 @@ function spinCeiling(
 				`${hull} at ${type} ${rpm} rpm never reached the plane in ` +
 					`${run.gameTime.toFixed(0)} s — a timeout, not a roll ceiling`,
 			);
-		break;
+		firstFailure = Math.min(firstFailure, rpm);
 	}
-	return last;
+	const below = docks.filter((rpm) => rpm < firstFailure);
+	return {
+		rpm: Math.max(0, ...below),
+		firstFailure,
+		/** Every rung below the first failure that docked. Its length against the
+		 *  number of rungs there is the claim that matters: no gaps inside the
+		 *  range a hull can actually hold. */
+		unbrokenBelow: below.length,
+		recovered: docks.filter((rpm) => rpm > firstFailure),
+	};
 }
+
+/** The top of the search. Well above every hull's ceiling, so a hull that never
+ *  failed inside it would be reporting a broken harness rather than a limit —
+ *  which is what the `firstFailure` row asserts. */
+const CEILING_SEARCH_MAX_RPM = 24;
 
 /** The lowest ceiling a hull has across the turning roles, and where. Computed
  *  once: three rows below read it, and each one flies up to 47 approaches per
  *  hull per role. */
 const ceilingOf = (() => {
-	const cache = new Map<string, { rpm: number; type: StationType }>();
+	const cache = new Map<
+		string,
+		{
+			rpm: number;
+			type: StationType;
+			firstFailure: number;
+			unbrokenBelow: number;
+			recovered: number[];
+		}
+	>();
 	return (hull: HullId, perfHull?: HullId) => {
 		const key = `${hull}|${perfHull ?? ""}`;
 		const hit = cache.get(key);
 		if (hit) return hit;
-		let worst = { rpm: Number.POSITIVE_INFINITY, type: SPINNING_TYPES[0] };
+		let worst = {
+			rpm: Number.POSITIVE_INFINITY,
+			type: SPINNING_TYPES[0],
+			firstFailure: Number.POSITIVE_INFINITY,
+			unbrokenBelow: 0,
+			recovered: [] as number[],
+		};
 		for (const type of SPINNING_TYPES) {
-			const rpm = spinCeiling(hull, type, perfHull);
-			if (rpm < worst.rpm) worst = { rpm, type };
+			const measured = spinCeiling(hull, type, perfHull);
+			if (measured.rpm < worst.rpm) worst = { ...measured, type };
 		}
 		cache.set(key, worst);
 		return worst;
@@ -264,13 +325,24 @@ describe("the tolerances hold for the whole roster, with margin", () => {
 		// the hull can track, and every hull has one inside the search range: a
 		// sweep that could not fail would be a ritual.
 		for (const hull of DOCKABLE_HULL_IDS) {
-			const { rpm, type } = ceilingOf(hull);
-			expect([hull, rpm]).not.toEqual([hull, 24]);
-			expect([hull, type, fly(hull, type, rpm + 0.5).docked]).toEqual([
-				hull,
-				type,
-				false,
-			]);
+			const { rpm, type, firstFailure, unbrokenBelow, recovered } =
+				ceilingOf(hull);
+			// A hull that never failed inside the search range would report the top
+			// of the range as its ceiling, which is a broken harness rather than a
+			// limit — so the failure has to be *observed*, not inferred from where
+			// a loop stopped.
+			expect([hull, Number.isFinite(firstFailure)]).toEqual([hull, true]);
+			expect([hull, firstFailure]).toEqual([hull, rpm + 0.5]);
+			// **The claim is that the working range has no holes in it**, not that
+			// nothing ever docks above the ceiling. Every rung from 1 rpm up to the
+			// ceiling docks; the search steps by 0.5 from 1, so that is `2·rpm − 1`
+			// rungs. What happens above it is scattered and is printed rather than
+			// asserted — see `spinCeiling`.
+			expect([hull, unbrokenBelow]).toEqual([hull, rpm * 2 - 1]);
+			console.log(
+				`${hull.padEnd(12)} first fails at ${firstFailure} rpm; ` +
+					`${recovered.length} coincidental crossings above it`,
+			);
 		}
 	});
 

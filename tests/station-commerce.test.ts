@@ -14,7 +14,7 @@ const KEY = carrierKey(0, "station-trade");
 const input = (
 	overrides: Partial<Parameters<typeof transactAtStation>[0]> = {},
 ) => ({
-	commander: newCommander(),
+	commander: newCommander(PLAYER_BASELINE_HULL),
 	deficits: {},
 	station: STATION,
 	stationKey: KEY,
@@ -47,7 +47,7 @@ test("a commodity buy atomically moves credits, cargo, and this station's defici
 
 test("rejected actions are atomic no-ops", () => {
 	const before = input({
-		commander: { ...newCommander(), credits: 0 },
+		commander: { ...newCommander(PLAYER_BASELINE_HULL), credits: 0 },
 	});
 	const result = transactAtStation(before);
 	expect(result).toMatchObject({
@@ -60,7 +60,7 @@ test("rejected actions are atomic no-ops", () => {
 
 test("tonne cargo observes the hold while sub-tonne goods bypass it", () => {
 	const full = {
-		...newCommander(),
+		...newCommander(PLAYER_BASELINE_HULL),
 		credits: 100_000,
 		// The hull's hold, read off the roster: `STARTING_HOLD_T` was a second
 		// copy of the courier's 20 t and is gone (#181).
@@ -82,7 +82,7 @@ test("tonne cargo observes the hold while sub-tonne goods bypass it", () => {
 
 test("available equipment is charged once, then becomes owned and unavailable", () => {
 	const before = input({
-		commander: { ...newCommander(), credits: 1_000 },
+		commander: { ...newCommander(PLAYER_BASELINE_HULL), credits: 1_000 },
 		action: { type: "buy-equipment", equipment: "Large Cargo Bay" },
 	});
 	const bought = transactAtStation(before);

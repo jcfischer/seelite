@@ -113,8 +113,9 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   has no tuning surface of its own; `ship-mesh.ts` keeps `HULL_REACH_KM`, which
   is display reach and is never what a berth's fit predicate reads. The envelope
   is the **selected variant's built box**, and `tests/hull.test.ts` rebuilds the
-  mesh to check it — the declaration this replaced was 68% out on height and the
-  berth catalogue had been sized from it.
+  mesh to check it — the declaration this replaced was one figure per hull for
+  three meshes, matched none of them, and understated height by up to 40% while
+  the berth catalogue had been sized from it.
 - **`stepFlight` and `stepAngular` take a `FlightPerformance` and it is not
   optional.** A default would let a caller that forgot to name a hull silently
   fly the courier, and the two are indistinguishable in a diff. The assist cap

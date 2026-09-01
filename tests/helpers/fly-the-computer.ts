@@ -24,6 +24,7 @@ import {
 	type EntryPose,
 	apertureFrame,
 	attemptEntry,
+	GRANT_WINDOW_S,
 	dockingComputerStep,
 	newDockingState,
 	orthonormalise,
@@ -63,7 +64,7 @@ export interface FlightOptions {
 	/** Whose handling and whose envelope. Required: a default here would let a
 	 *  sweep over the roster quietly fly one hull eleven times. */
 	hull: HullId;
-	/** The docking axis and the slot's phase-zero reference, supplied by the
+	/** The docking axis and the aperture's phase-zero reference, supplied by the
 	 *  caller so both callers fly the same deliberately awkward fixture rather
 	 *  than each inventing an axis that might agree with a sign error. */
 	axis: Vec3;
@@ -78,9 +79,15 @@ export interface FlightOptions {
 	 * #26's D5.
 	 */
 	perfHull?: HullId;
-	/** Seconds of sim time before the run is abandoned. Generous, because a
-	 *  sluggish hull takes longer and a timeout tuned to the courier would read
-	 *  as a failed entry. */
+	/**
+	 * Seconds of sim time before the run is abandoned.
+	 *
+	 * **`GRANT_WINDOW_S` and not more.** A generous 900 s was unreachable: the
+	 * computer calls `grantLive` every frame, so a run past 600 s comes back
+	 * `refused: "no-clearance"` rather than timing out, and a caller that treats
+	 * a refusal as a broken harness would report a genuinely slow hull that way.
+	 * At the window, running out of grant *is* the timeout and reads as one.
+	 */
 	limitS?: number;
 }
 
@@ -125,7 +132,7 @@ export function flyTheComputer(opts: FlightOptions): FlightRun {
 	let violations = 0;
 	let steps = 0;
 	let crossingOutcome: FlightRun["crossing"] = null;
-	const limitS = opts.limitS ?? 900;
+	const limitS = opts.limitS ?? GRANT_WINDOW_S;
 
 	const frameAt = (t: number): ApertureFrame =>
 		apertureFrame(type, axis, slotPhaseRad(opts.spinRpm, t), reference);

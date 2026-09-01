@@ -32,6 +32,15 @@
  * meshes, `miner/a` and `miner/c` are 40.0 m and 47.5 m tall to a 40 m cell and
  * fit no berth in the game at all. `tests/hull.test.ts` rebuilds each selected
  * variant's mesh and compares.
+ *
+ * **Mass is a density band, not a density table.** Each row's `massT` is its
+ * selected variant's box volume against a role density — a freighter dense for
+ * its size because cargo structure is (2.20 t per 1,000 m³), an interceptor
+ * light because it is mostly engine (1.38). A *table* of densities would be a
+ * third declared number pretending to be a derivation, so what is written down
+ * is the band: `tests/hull.test.ts` asserts 1.2 to 2.4 against the mesh's own
+ * box, which is what a later editor re-deriving a mass after the envelopes move
+ * has to work with.
  */
 
 export const HULL_IDS = [
@@ -106,15 +115,11 @@ export interface HullSpec {
 	 * Mass, tonnes, and thrust, meganewtons — #26's D5, and the two numbers every
 	 * handling figure in `sim.ts` derives from.
 	 *
-	 * Mass is set from the selected variant's box volume against a role density:
-	 * a freighter is dense for its size because cargo structure is (2.20 t per
-	 * 1,000 m³), an interceptor light because it is mostly engine (1.38). The
-	 * density is a **band and not a table** — a table would be a third declared
-	 * number pretending to be a derivation — and `tests/hull.test.ts` states it
-	 * as 1.2 to 2.4, which is what a later editor re-deriving a mass after the
-	 * envelopes move has to work with. Thrust is then solved for the acceleration
-	 * the role should feel, and `sim.ts` divides one by the other. The courier's pair reproduces #5's tuned 2.0 km/s² exactly, so the
-	 * baseline hull flies today's ship and the whole roster hangs off it.
+	 * Mass is the box volume against a role density (see the module docstring for
+	 * the band); thrust is solved for the acceleration the role should feel, and
+	 * `sim.ts` divides one by the other. The courier's pair reproduces #5's tuned
+	 * 2.0 km/s² exactly, so the baseline hull flies today's ship and the whole
+	 * roster hangs off it.
 	 */
 	readonly massT: number;
 	readonly thrustMN: number;
@@ -327,9 +332,15 @@ export const CAPITAL_HULL_IDS = [
 	"dreadnought",
 ] as const satisfies readonly HullId[];
 
+/** Membership in the capital classes, as a predicate. The cast is here once
+ *  rather than at each caller: `CAPITAL_HULL_IDS` is a narrow readonly tuple, so
+ *  every `includes` against a general `HullId` needs the same widening. */
+export const isCapital = (id: HullId): boolean =>
+	(CAPITAL_HULL_IDS as readonly HullId[]).includes(id);
+
 /** Every hull that is meant to fit through an aperture — the complement of the
  *  capitals, and the set `tests/aperture-fit.test.ts` and the docking sweep
  *  both run over. */
 export const DOCKABLE_HULL_IDS: readonly HullId[] = HULL_IDS.filter(
-	(id) => !(CAPITAL_HULL_IDS as readonly HullId[]).includes(id),
+	(id) => !isCapital(id),
 );

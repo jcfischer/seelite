@@ -6,7 +6,7 @@
  * credits, cargo, or the station's deficit half-updated.
  */
 import type { CarrierKey } from "./carrier-key";
-import { HULL_SPECS, PLAYER_BASELINE_HULL, type HullId } from "./hull";
+import { HULL_SPECS, type HullId } from "./hull";
 import {
 	type Commodity,
 	type DeficitMap,
@@ -40,9 +40,10 @@ export interface CommanderState {
 export const STARTING_CREDITS = 100;
 export const LARGE_CARGO_BAY_BONUS_T = 15;
 
-export const newCommander = (
-	hull: HullId = PLAYER_BASELINE_HULL,
-): CommanderState => ({
+/** **The hull is required, not defaulted.** Same rule as `FlightPerformance`
+ *  and for the same reason: a caller that forgot to name one would silently get
+ *  the courier's 20 t hold, and the two are indistinguishable in a diff. */
+export const newCommander = (hull: HullId): CommanderState => ({
 	credits: STARTING_CREDITS,
 	cargo: {},
 	ownedEquipment: [],

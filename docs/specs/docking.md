@@ -346,9 +346,17 @@ is the baseline hull's margin and not the roster's. The miner peaks at 29.5°/s,
 1.6× a 3 rpm spinner; the interceptor at 103°/s, 5.8×. `tests/hull-docking.test.ts`
 flies every hull at every role across the whole 0.6–3.0 rpm range, and then — at
 **both** turning roles, because a trade station and a shipyard cut their
-apertures at different planes into different interiors — finds the spin each hull
-*stops* docking at. The worst is the freighter at 6.0 rpm, at a trade station,
-two times the fastest station the generator builds. So §3's tolerances stay one
+apertures at different planes into different interiors — finds the spin at which each hull
+**first** fails. The worst is the freighter, which first fails at 6.5 rpm at a
+trade station and so holds 6.0 — two times the fastest station the generator
+builds.
+
+*First* failure, because the curve is not monotone: flown out to 24 rpm the
+courier fails at 13.5 and then docks again at thirteen scattered rungs above it.
+Those are coincidences rather than capability — check 4 admits ±50° of roll
+error, so once a hull cannot track the phase at all, whether the crossing lands
+inside a 100°-wide window depends on where the aperture happened to be. Below the
+first failure every rung docks, which is the property the margin rests on. So §3's tolerances stay one
 table rather than becoming a per-hull one — which was the open question #26's D5
 left, and it is settled by measurement rather than by assumption.
 

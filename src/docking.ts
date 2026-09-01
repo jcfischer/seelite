@@ -581,10 +581,13 @@ export function planeCrossing(
 		// the pose below mixes an interpolated position and velocity with an
 		// end-of-step attitude. A slerp between two unit vectors is not a lerp,
 		// and the step is a frame long; the error is bounded by how far the ship
-		// can turn in one — at `ANGULAR_MAX.roll` and `MAX_DT` that is 8°, and
-		// against check 2's 35° and check 4's 50° it moves a verdict only for a
-		// pose already within a frame's turn of the boundary. Slerping both by
-		// the same `t` is the exact answer if that ever matters.
+		// can turn in one — and that bound is **per hull** since #181. At
+		// `MAX_DT` and the sharpest roll on the roster (the patrol's 1.93 rad/s)
+		// it is 11.0°; at the baseline courier's `REFERENCE_ANGULAR_MAX.roll` it
+		// is the 8° this comment used to state as though it were the only one.
+		// Against check 2's 35° and check 4's 50° even the sharpest moves a
+		// verdict only for a pose already within a frame's turn of the boundary.
+		// Slerping both by the same `t` is the exact answer if that ever matters.
 		nose: after.nose,
 		up: after.up,
 	};

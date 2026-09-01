@@ -31,6 +31,7 @@ import {
 	HULL_IDS,
 	HULL_SPECS,
 	HULL_VARIANT_IDS,
+	isCapital,
 	PLAYER_BASELINE_HULL,
 	PURCHASABLE_HULL_IDS,
 	type HullEnvelope,
@@ -219,14 +220,26 @@ describe("the roster is the single owner, not a second copy", () => {
 		expect(holds.size).toBeGreaterThan(1);
 	});
 
-	test("the economy, the router and the drive read the roster rather than a copy", () => {
-		// These four were literals in four modules until #181; they are the
-		// baseline hull's row now, so the assertions below are true **by
-		// construction** and are here as a statement of the direction rather than
-		// as a check that could fail. The check that can fail is the one above:
-		// a figure that no longer flows through to behaviour.
-		expect(HOLD_REFERENCE_T).toBe(HULL_SPECS[PLAYER_BASELINE_HULL].holdT);
+	test("the jump range and the baseline tank agree, and this one can fail", () => {
+		// **`JUMP_RANGE_LY` is galaxy-owned on purpose**, and this is the only row
+		// in this file that is a genuine drift guard rather than a statement of
+		// direction. #181 first derived it from the roster; sage's second round
+		// named the cost — it is the **edge predicate for the connectivity
+		// graph**, and the roster's figures are provisional against #183 and #8,
+		// so a combat retune of one hull's tank would silently regenerate every
+		// system's edge set. Two quantities that happen to be equal, so #46's
+		// answer is the assertion rather than the derivation.
 		expect(JUMP_RANGE_LY).toBe(HULL_SPECS[PLAYER_BASELINE_HULL].tankLy);
+	});
+
+	test("the economy and the drive read the roster rather than a copy", () => {
+		// These three *are* derived — a hold reference, a purchasable tank and a
+		// drive charge are the hull's own figures, and none of them decides what a
+		// system is. So the three lines below are true **by construction**, and
+		// they are here as a statement of the ownership direction rather than as
+		// a check that could fail. The check that can fail is the hold row above:
+		// a figure that no longer reaches behaviour.
+		expect(HOLD_REFERENCE_T).toBe(HULL_SPECS[PLAYER_BASELINE_HULL].holdT);
 		expect(FUEL_TANK_LY).toBe(HULL_SPECS[PLAYER_BASELINE_HULL].tankLy);
 		expect(CHARGE_CAPACITY_AU).toBe(HULL_SPECS[PLAYER_BASELINE_HULL].chargeAu);
 	});
@@ -264,9 +277,7 @@ describe("the roster is the single owner, not a second copy", () => {
 				(PURCHASABLE_HULL_IDS as readonly HullId[]).includes(id),
 			]).toEqual([id, false]);
 		expect([...DOCKABLE_HULL_IDS].sort()).toEqual(
-			HULL_IDS.filter(
-				(id) => !(CAPITAL_HULL_IDS as readonly HullId[]).includes(id),
-			).sort(),
+			HULL_IDS.filter((id) => !isCapital(id)).sort(),
 		);
 	});
 });
