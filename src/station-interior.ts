@@ -158,8 +158,8 @@ export interface StationInterior {
  *
  * **It used to be sized from a declaration nothing measured** (#181). The prose
  * here read "the widest beam is the courier's 50 m, the tallest the miner's
- * 34 m" — figures from `HULL_VISUALS`, which disagreed with the built meshes by
- * up to 68% on height. Against the meshes, `miner/a` and `miner/c` are 40.0 m
+ * 34 m" — figures from `HULL_VISUALS`, whose meshes build at 0.49x to 1.68x the
+ * height declared for them. Against the meshes, `miner/a` and `miner/c` are 40.0 m
  * and 47.5 m tall and fit no berth in the game; the cell is unchanged and the
  * roster now names which mesh each hull is, so the two sides of the fit are the
  * same object. The outpost still rejects the miner and the explorer, which is

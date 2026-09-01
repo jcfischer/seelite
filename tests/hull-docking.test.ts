@@ -81,9 +81,6 @@ const fly = (
 		perfHull,
 	});
 
-/** Does this role hold a berth this hull fits? A grant *is* a berth reservation
- *  (#147), so a hull no berth fits is refused before it flies anywhere — that is
- *  the protocol working, not a failed entry, and the two are asserted apart. */
 /** Which of §3's six rows a crossing failed, joined — so a red rung names the
  *  check rather than reporting a boolean. Empty when the crossing passed. */
 const failedChecksOf = (run: ReturnType<typeof fly>): string =>
@@ -96,6 +93,9 @@ const failedChecksOf = (run: ReturnType<typeof fly>): string =>
 			? "no crossing"
 			: "";
 
+/** Does this role hold a berth this hull fits? A grant *is* a berth reservation
+ *  (#147), so a hull no berth fits is refused before it flies anywhere — that is
+ *  the protocol working, not a failed entry, and the two are asserted apart. */
 const hasBerth = (hull: HullId, type: StationType): boolean =>
 	stationInterior(type, STATION_GEOMETRY[type].aperturePlaneKm, 1).berths.some(
 		(berth) => berthFits(berth, HULL_SPECS[hull].env),
@@ -254,30 +254,26 @@ function spinCeiling(
  *  which is what the `firstFailure` row asserts. */
 const CEILING_SEARCH_MAX_RPM = 24;
 
+/** One hull's worst measured ceiling, and which role it was worst at. Named once
+ *  so the cache and the seed below cannot restate `spinCeiling`'s shape and go
+ *  stale against it. */
+type Ceiling = ReturnType<typeof spinCeiling> & { type: StationType };
+
 /** The lowest ceiling a hull has across the turning roles, and where. Computed
  *  once: three rows below read it, and each one flies up to 47 approaches per
  *  hull per role. */
 const ceilingOf = (() => {
-	const cache = new Map<
-		string,
-		{
-			rpm: number;
-			type: StationType;
-			firstFailure: number;
-			unbrokenBelow: number;
-			recovered: number[];
-		}
-	>();
+	const cache = new Map<string, Ceiling>();
 	return (hull: HullId, perfHull?: HullId) => {
 		const key = `${hull}|${perfHull ?? ""}`;
 		const hit = cache.get(key);
 		if (hit) return hit;
-		let worst = {
+		let worst: Ceiling = {
 			rpm: Number.POSITIVE_INFINITY,
 			type: SPINNING_TYPES[0],
 			firstFailure: Number.POSITIVE_INFINITY,
 			unbrokenBelow: 0,
-			recovered: [] as number[],
+			recovered: [],
 		};
 		for (const type of SPINNING_TYPES) {
 			const measured = spinCeiling(hull, type, perfHull);
@@ -333,25 +329,32 @@ describe("the tolerances hold for the whole roster, with margin", () => {
 			// a loop stopped.
 			expect([hull, Number.isFinite(firstFailure)]).toEqual([hull, true]);
 			expect([hull, firstFailure]).toEqual([hull, rpm + 0.5]);
-			// **The claim is that the working range has no holes in it**, not that
-			// nothing ever docks above the ceiling. Every rung from 1 rpm up to the
-			// ceiling docks; the search steps by 0.5 from 1, so that is `2·rpm − 1`
-			// rungs. What happens above it is scattered and is printed rather than
-			// asserted — see `spinCeiling`.
-			expect([hull, unbrokenBelow]).toEqual([hull, rpm * 2 - 1]);
+			// **Not "every rung below the first failure docks"** — that is true by
+			// construction, since the first failure is by definition the lowest rung
+			// that does not, and asserting it would be asserting a definition. What
+			// can fail, and what the margin actually rests on, is that the first
+			// failure is **above the whole shipped spin range**: every hull holds
+			// every station the generator builds, with room over.
+			expect([hull, firstFailure > SPIN_RPM_RANGE.maxRpm]).toEqual([
+				hull,
+				true,
+			]);
+			// `unbrokenBelow` is printed rather than asserted, for the same reason.
 			console.log(
-				`${hull.padEnd(12)} first fails at ${firstFailure} rpm; ` +
+				`${hull.padEnd(12)} first fails at ${firstFailure} rpm after ` +
+					`${unbrokenBelow} unbroken rungs; ` +
 					`${recovered.length} coincidental crossings above it`,
 			);
 		}
 	});
 
 	test("the spread is D5's and nothing else's", () => {
-		// The control arm. Every hull flown at the baseline's handling — same
-		// envelope, same berth, same fixture, same autopilot — must land on one
-		// ceiling. If it did not, the spread measured above would be coming from
-		// somewhere other than the hull's mass and thrust, and the row above would
-		// be evidence for a claim it does not make.
+		// The control arm, and **what it holds fixed is the handling alone.** Each
+		// hull keeps its own envelope, so it keeps its own berth and its own
+		// allocation; only `perfHull` is pinned to the baseline. That is the right
+		// shape for the claim: if the envelope or the berth were producing the
+		// spread, it would survive here. It collapses to zero, so what is left is
+		// mass and thrust — #26's D5 and nothing else.
 		const controlled = DOCKABLE_HULL_IDS.map(
 			(hull) => ceilingOf(hull, PLAYER_BASELINE_HULL).rpm,
 		);

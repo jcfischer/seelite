@@ -263,7 +263,7 @@ export const HULL_VARIANTS: Record<HullId, readonly HullVariant[]> = {
  * radius about a centre, an envelope is a box — and the day one is read for the
  * other is the day a berth is allocated by a number that describes a gallery.
  */
-export const HULL_REACH_KM: Record<HullId, number> = {
+export const HULL_REACH_KM: Readonly<Record<HullId, number>> = {
 	courier: 0.036,
 	interceptor: 0.036,
 	freighter: 0.04,

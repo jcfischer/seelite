@@ -232,7 +232,7 @@ describe("the roster is the single owner, not a second copy", () => {
 		expect(JUMP_RANGE_LY).toBe(HULL_SPECS[PLAYER_BASELINE_HULL].tankLy);
 	});
 
-	test("the economy and the drive read the roster rather than a copy", () => {
+	test("the hold reference, the purchasable tank and the drive charge are the roster's", () => {
 		// These three *are* derived — a hold reference, a purchasable tank and a
 		// drive charge are the hull's own figures, and none of them decides what a
 		// system is. So the three lines below are true **by construction**, and
@@ -310,6 +310,25 @@ describe("handling derives from mass and thrust, and nothing else", () => {
 		}
 	});
 
+	test("the density band had something to exclude", () => {
+		// The control the row above owes, in the shape the variant rule's has: a
+		// band wide enough to admit anything is satisfied by a mass typed in
+		// without looking at the hull, and would pass on the build it exists to
+		// catch. So the band is checked against the case it is for — the courier's
+		// mass on the miner's box, which is the shape of "a figure copied from
+		// the row above it".
+		const MIN_T_PER_1000M3 = 1.2;
+		const MAX_T_PER_1000M3 = 2.4;
+		const densityOf = (massT: number, env: HullEnvelope) =>
+			(massT * 1000) / (env.lengthKm * env.beamKm * env.heightKm * 1e9);
+		const swapped = densityOf(HULL_SPECS.courier.massT, HULL_SPECS.miner.env);
+		expect(swapped).toBeLessThan(MIN_T_PER_1000M3);
+		// And the other direction: the miner's mass on the courier's box.
+		expect(
+			densityOf(HULL_SPECS.miner.massT, HULL_SPECS.courier.env),
+		).toBeGreaterThan(MAX_T_PER_1000M3);
+	});
+
 	test("the baseline hull reproduces #5's tuning exactly", () => {
 		// Exactly rather than nearly: #5's numbers were flown and tuned, and a
 		// derivation that moved them by a rounding would have retuned the game's
@@ -320,6 +339,18 @@ describe("handling derives from mass and thrust, and nothing else", () => {
 		expect(perf.angularMax).toEqual(REFERENCE_ANGULAR_MAX);
 		expect(perf.angularAccel).toBe(REFERENCE_ANGULAR_ACCEL);
 		expect(perf.angularDampTauS).toBe(REFERENCE_ANGULAR_DAMP_TAU_S);
+	});
+
+	test("every integrity figure is the law the table states it follows", () => {
+		// Two independent artifacts — a written law and eleven typed numbers — so
+		// this is a comparison rather than a tautology: it goes red on a
+		// hand-edited row, which is what makes a deliberate deviation from #8's
+		// balance visible instead of reading as a typo.
+		for (const id of HULL_IDS)
+			expect([id, HULL_SPECS[id].integrity]).toEqual([
+				id,
+				Math.round(100 * (HULL_SPECS[id].massT / 60) ** 0.6),
+			]);
 	});
 
 	test("acceleration is thrust over mass, in the units the table declares", () => {

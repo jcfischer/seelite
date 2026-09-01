@@ -21,11 +21,13 @@
  * here is the box a berth has to admit.
  *
  * **The envelope is measured, not declared.** The table this replaces stated one
- * length, beam and height per hull for three meshes that differ by up to 2.2x in
- * beam and 4x in height, and nothing compared them with any of the three. It
- * matched none: measured, the declaration **understated** height by up to 40%
- * (the courier declared 14 m against its `c` variant's 23.5) and **overstated**
- * it by up to 2x (the raider declared 22 m against its `a` variant's 10.8).
+ * length, beam and height per hull for three meshes that differ by up to 2.78x
+ * in beam (the interceptor) and 2.60x in height (the raider), and nothing
+ * compared them with any of the three. It matched none. Stated on one basis —
+ * the built figure over the declared one — the meshes run from **0.49x to
+ * 1.68x** the declared height: the raider was declared 22 m and its `a` variant
+ * builds at 10.8, while the courier was declared 14 m and its `c` variant builds
+ * at 23.5.
  *
  * The understatement is the direction that mattered, because `berthFits` reads
  * this box and `BERTH_CELL` had been sized from the declaration: against the
@@ -133,7 +135,10 @@ export interface HullSpec {
 	readonly hardpoints: number;
 	/** Hull integrity, against the 100 the combat prototype gives every ship
 	 *  (`combat-prototype.ts`). Set from mass — structure is mass — as
-	 *  `100 × (massT / 60) ^ 0.6`, rounded. #8's prototype owns retuning any row. */
+	 *  `100 × (massT / 60) ^ 0.6`, rounded — a law `tests/hull.test.ts` asserts
+	 *  every row against, so a hand-edited figure is a deliberate deviation
+	 *  rather than a typo. #8's prototype owns retuning any row, and moving one
+	 *  means moving the law or the check with it. */
 	readonly integrity: number;
 	/** Hyperspace tank, light years, and cruise drive charge, AU. The courier's
 	 *  are the game's `JUMP_RANGE_LY` and `CHARGE_CAPACITY_AU`; `tests/hull.test.ts`
@@ -172,7 +177,7 @@ export const PURCHASABLE_HULL_IDS = [
  * provisional in the sense that #183's rating and #8's combat balance may retune
  * them; the seven civilian rows are this node's answer.
  */
-export const HULL_SPECS: Record<HullId, HullSpec> = {
+export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 	courier: {
 		role: "player-baseline",
 		variant: "a",
