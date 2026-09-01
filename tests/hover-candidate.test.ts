@@ -18,6 +18,7 @@ import { describe, expect, test } from "bun:test";
 import {
 	type HoverPoint,
 	type HoverRule,
+	clickTarget,
 	hoverCandidate,
 } from "../src/hover-candidate";
 
@@ -189,5 +190,34 @@ describe("the rule is a pure function of its arguments", () => {
 		const before = JSON.stringify(points);
 		hoverCandidate(points, 0, 0, null, RULE);
 		expect(JSON.stringify(points)).toBe(before);
+	});
+});
+
+describe("what a pointerup selects", () => {
+	test("a mouse click takes the hovered candidate over a fresh pick", () => {
+		// The whole of D1: with hysteresis in the label alone, the label could
+		// name S while the click selected a nearer T.
+		expect(clickTarget(7, "mouse", 3)).toBe(7);
+	});
+
+	test("with no hover state it falls back to the pick", () => {
+		// A pointer that has not moved since mount.
+		expect(clickTarget(null, "mouse", 3)).toBe(3);
+		expect(clickTarget(null, "mouse", null)).toBeNull();
+	});
+
+	test("a pen behaves as a mouse", () => {
+		expect(clickTarget(7, "pen", 3)).toBe(7);
+	});
+
+	test("a touch tap never inherits a hover", () => {
+		// **The case no browser tier here can reach.** `(hover: hover)` matches
+		// on a device with both, so a mouse can leave a candidate parked on 7
+		// while a finger taps 3. Chromium reports `(hover: none)` the moment
+		// touch emulation is on — through Playwright's `hasTouch` and through
+		// CDP alike, and `setEmulatedMedia` does not override it — so a hybrid
+		// is not expressible in a probe and this is the tier that binds it.
+		expect(clickTarget(7, "touch", 3)).toBe(3);
+		expect(clickTarget(7, "touch", null)).toBeNull();
 	});
 });

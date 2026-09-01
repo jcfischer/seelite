@@ -1166,112 +1166,120 @@ const plan = await page.evaluate(() => {
 		}
 		return best;
 	};
-	// **A margin wider than the pick radius, so the canvas edge cannot lie.**
-	// `__seeliteOnScreen` discards systems outside the box, and the hover rule
-	// does not — a cursor within 14 px of the edge could be inside the radius of
-	// a point this search cannot see, and every expectation below would be
-	// computed over the wrong population.
+	// **A margin wider than the pick radius, and it is no longer load-bearing.**
+	// It was: `__seeliteOnScreen` discards systems outside the box and the hover
+	// rule did not, so a cursor near an edge could be inside the radius of a
+	// point this search cannot see. That was round 1's blocker and the module
+	// shares the predicate now — the check below the finder section holds it.
+	// The margin is kept because it also keeps the label's clamp off the edge,
+	// so a text assertion is about the label and not about the clamp.
 	const inset = 2 * r + 4;
 	const inside = (x, y) =>
 		x > inset && y > inset && x < width - inset && y < height - inset;
 
-	// An uncontested spot: exactly one system inside the radius, and the cursor
-	// is 60% of the radius off that system's centre.
-	let uncontested = null;
-	for (const p of pts) {
-		if (uncontested !== null) break;
+	/** The twelve off-centre cursor positions tried around one system, at 60% of
+	 *  the pick radius. Off-centre because a hit test driven to a point's exact
+	 *  projected centre passes on a build whose radius test is wrong at the
+	 *  boundary. */
+	const offCentre = function* (p) {
 		for (let a = 0; a < 12; a++) {
 			const angle = (a / 12) * Math.PI * 2;
 			const x = p.x + Math.cos(angle) * r * 0.6;
 			const y = p.y + Math.sin(angle) * r * 0.6;
-			if (!inside(x, y)) continue;
-			const hits = within(x, y);
-			if (hits.length === 1 && hits[0].index === p.index) {
-				uncontested = { x, y, index: p.index, expectedContested: 0 };
-				break;
-			}
+			if (inside(x, y)) yield { x, y };
 		}
-	}
+	};
 
-	// A contested spot: the same off-centre offsets, keeping whichever puts the
-	// most systems inside the radius. Three or more, so the badge's number is a
-	// count rather than a value a constant could match.
-	let contested = null;
-	for (const p of pts) {
-		for (let a = 0; a < 12; a++) {
-			const angle = (a / 12) * Math.PI * 2;
-			const x = p.x + Math.cos(angle) * r * 0.6;
-			const y = p.y + Math.sin(angle) * r * 0.6;
-			if (!inside(x, y)) continue;
-			const hits = within(x, y);
-			const near = nearest(x, y);
-			if (near === null || hits.length < 3) continue;
-			if (contested === null || hits.length > contested.expectedContested + 1)
-				contested = {
-					x,
-					y,
-					index: near.index,
-					expectedContested: hits.length - 1,
-				};
-		}
-	}
+	/** Exactly one system inside the radius: the label must name it and carry no
+	 *  badge. */
+	const findUncontested = () => {
+		for (const p of pts)
+			for (const spot of offCentre(p)) {
+				const hits = within(spot.x, spot.y);
+				if (hits.length === 1 && hits[0].index === p.index)
+					return { ...spot, index: p.index, expectedContested: 0 };
+			}
+		return null;
+	};
+
+	/** The most crowded off-centre position on offer. Three or more systems, so
+	 *  the badge's number is a count rather than one a constant could match. */
+	const findContested = () => {
+		let best = null;
+		for (const p of pts)
+			for (const spot of offCentre(p)) {
+				const hits = within(spot.x, spot.y);
+				const near = nearest(spot.x, spot.y);
+				if (near === null || hits.length < 3) continue;
+				if (best === null || hits.length - 1 > best.expectedContested)
+					best = {
+						...spot,
+						index: near.index,
+						expectedContested: hits.length - 1,
+					};
+			}
+		return best;
+	};
 
 	/**
-	 * The hysteresis configuration.
+	 * A pair close enough to trade the label, with somewhere to drift to.
 	 *
-	 * `park` sits just on S's side of the perpendicular bisector of S and T, so
-	 * S is nearer by 1 px. `step` is exactly 1 px further along S -> T, which
+	 * `park` sits 0.5 px on S's side of the perpendicular bisector of S and T,
+	 * so S is nearer by 1 px. `step` is exactly 1 px further along S -> T, which
 	 * puts T nearer by 1 px — nearer, and by less than any switch margin worth
 	 * having. A nearest-wins build changes the name between those two positions;
 	 * a build with hysteresis does not.
 	 *
-	 * `drift` is 16 px from S with no other system inside the pick radius: past
-	 * the 14 px a fresh pick would allow and inside a release radius, so it is
-	 * the half of the hold the switch margin does not cover.
+	 * `drift` is 16 px from S with nothing else inside the pick radius: past the
+	 * 14 px a fresh pick would allow, and the half of the hold the switch margin
+	 * does not cover. A pair with no such direction is not usable, so this
+	 * backtracks over pairs rather than picking one and hoping.
 	 */
-	let hysteresis = null;
-	for (const s of pts) {
-		if (hysteresis !== null) break;
-		for (const t of pts) {
-			if (t.index === s.index) continue;
-			const sep = Math.hypot(t.x - s.x, t.y - s.y);
-			if (sep < 4 || sep > 12) continue;
-			const ux = (t.x - s.x) / sep;
-			const uy = (t.y - s.y) / sep;
-			const park = {
-				x: (s.x + t.x) / 2 - ux * 0.5,
-				y: (s.y + t.y) / 2 - uy * 0.5,
-			};
-			const step = { x: park.x + ux, y: park.y + uy };
-			if (!inside(park.x, park.y) || !inside(step.x, step.y)) continue;
-			if (nearest(park.x, park.y)?.index !== s.index) continue;
-			if (nearest(step.x, step.y)?.index !== t.index) continue;
-			// A direction to drift in where S is the only thing inside the
-			// radius at 16 px — so the label holding there is the release
-			// radius and nothing else.
-			let drift = null;
-			for (let a = 0; a < 36 && drift === null; a++) {
-				const angle = (a / 36) * Math.PI * 2;
-				const x = s.x + Math.cos(angle) * 16;
-				const y = s.y + Math.sin(angle) * 16;
-				if (!inside(x, y)) continue;
-				if (within(x, y).length !== 0) continue;
-				drift = { x, y };
+	const findHysteresis = () => {
+		for (const s of pts)
+			for (const t of pts) {
+				if (t.index === s.index) continue;
+				const sep = Math.hypot(t.x - s.x, t.y - s.y);
+				if (sep < 4 || sep > 12) continue;
+				const ux = (t.x - s.x) / sep;
+				const uy = (t.y - s.y) / sep;
+				const park = {
+					x: (s.x + t.x) / 2 - ux * 0.5,
+					y: (s.y + t.y) / 2 - uy * 0.5,
+				};
+				const step = { x: park.x + ux, y: park.y + uy };
+				if (!inside(park.x, park.y) || !inside(step.x, step.y)) continue;
+				if (nearest(park.x, park.y)?.index !== s.index) continue;
+				if (nearest(step.x, step.y)?.index !== t.index) continue;
+				let drift = null;
+				for (let a = 0; a < 36 && drift === null; a++) {
+					const angle = (a / 36) * Math.PI * 2;
+					const x = s.x + Math.cos(angle) * 16;
+					const y = s.y + Math.sin(angle) * 16;
+					if (!inside(x, y) || within(x, y).length !== 0) continue;
+					drift = { x, y };
+				}
+				if (drift === null) continue;
+				return {
+					park,
+					step,
+					held: s.index,
+					rival: t.index,
+					separationPx: sep,
+					drift,
+				};
 			}
-			if (drift === null) continue;
-			hysteresis = {
-				park,
-				step,
-				held: s.index,
-				rival: t.index,
-				separationPx: sep,
-				drift,
-			};
-			break;
-		}
-	}
+		return null;
+	};
 
-	return { r, width, height, uncontested, contested, hysteresis };
+	return {
+		r,
+		width,
+		height,
+		uncontested: findUncontested(),
+		contested: findContested(),
+		hysteresis: findHysteresis(),
+	};
 });
 
 /**
@@ -1444,6 +1452,78 @@ if (plan.uncontested && plan.contested && plan.hysteresis) {
 			afterDrag.selectedIndex === null,
 		`${duringDrag.map((s) => `${s.hovered === null ? "none" : s.hovered.index}/${s.shown ? "shown" : "hidden"}`).join(" ")}, after release ${afterDrag.hovered === null ? "none" : afterDrag.hovered.index}, selection ${afterDrag.selectedIndex}`,
 	);
+
+	// ---- 6. A system the chart does not draw is not nameable --------------
+	/**
+	 * **Round 1's blocker, and it was in `pick` before it was in the hover.**
+	 *
+	 * `toPixels` maps NDC linearly, so a system just off an edge lands a few
+	 * pixels outside the canvas box and is rasterised by nothing — while still
+	 * being inside the 14 px radius of a cursor just inside that edge. The
+	 * label put a name on a system the player cannot see, and `pointerup` then
+	 * selected it. `pick` had done the selecting half since #11; a click on an
+	 * invisible system reads as a click on empty space, which is why nothing
+	 * noticed until there was a label.
+	 *
+	 * Driven at a zoomed framing, because the default one frames all 256 and has
+	 * no off-screen system to name. The position is chosen so the off-screen
+	 * system is **nearer than anything on screen**, which is what makes this red
+	 * on the build that only skipped `behind`.
+	 */
+	await page.evaluate(() => {
+		const map = window.__seeliteGalaxyMap;
+		map.select(null);
+		map.resetView();
+		map.zoom(-40);
+	});
+	await nextFrames(page);
+	const edge = await page.evaluate(() => {
+		const map = window.__seeliteGalaxyMap;
+		const r = map.pickRadiusPx;
+		const { width, height } = map.viewport();
+		const all = map.projected().filter((p) => !p.behind);
+		const on = (p) => p.x >= 0 && p.y >= 0 && p.x <= width && p.y <= height;
+		for (const off of all) {
+			if (on(off)) continue;
+			// A cursor 3 px inside whichever edge this system fell off, on the
+			// same row or column, so it is a few pixels from the point.
+			const x = Math.min(Math.max(off.x, 3), width - 3);
+			const y = Math.min(Math.max(off.y, 3), height - 3);
+			const d = Math.hypot(off.x - x, off.y - y);
+			if (d >= r) continue;
+			const nearerOnScreen = all
+				.filter(on)
+				.some((p) => Math.hypot(p.x - x, p.y - y) <= d);
+			if (nearerOnScreen) continue;
+			return {
+				x,
+				y,
+				index: off.index,
+				distancePx: d,
+				onScreen: all.filter(on).length,
+			};
+		}
+		return null;
+	});
+	check(
+		"the zoomed framing puts a system just off the canvas, within the pick radius of a cursor inside it",
+		edge !== null,
+		`${JSON.stringify(edge)}`,
+	);
+	if (edge) {
+		const atEdge = await hoverAt(edge);
+		await page.mouse.down();
+		await page.mouse.up();
+		await nextFrames(page);
+		const selectedAtEdge = await page.evaluate(
+			() => window.__seeliteGalaxyMap.state.selectedIndex,
+		);
+		check(
+			"a system the chart does not draw is neither labelled nor selected, though it is the nearest thing to the cursor",
+			atEdge.hovered?.index !== edge.index && selectedAtEdge !== edge.index,
+			`off-screen system ${edge.index} is ${edge.distancePx.toFixed(1)} px from the cursor and nearest; label said ${atEdge.hovered === null ? "nothing" : atEdge.hovered.index}, click selected ${selectedAtEdge} (${edge.onScreen} of 256 drawn)`,
+		);
+	}
 
 	await page.evaluate(() => {
 		window.__seeliteGalaxyMap.select(null);

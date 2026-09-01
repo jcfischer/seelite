@@ -52,7 +52,7 @@ import {
 	reachable,
 	setCourse,
 } from "./galaxy-route";
-import { type HoverRule, hoverCandidate } from "./hover-candidate";
+import { type HoverRule, clickTarget, hoverCandidate } from "./hover-candidate";
 
 /**
  * The map's vertical axis is galaxy-space **y**, and its reference plane is
@@ -242,8 +242,9 @@ export interface Handle {
 	 *
 	 * `null` when nothing is labelled, which is also what a touch pointer and a
 	 * suppressed drag both read as. `contested` is the badge's number: systems
-	 * inside the **pick** radius other than the labelled one, so it predicts
-	 * what a click here would do rather than describing the label's tolerance.
+	 * inside the **pick** radius other than the labelled one — how many systems
+	 * the cursor cannot tell apart at this position, which is not the same as
+	 * how ambiguous the click is (§5.3: since D1 the click is deterministic).
 	 *
 	 * Exposed instead of leaving a probe to scrape the label's text for an
 	 * index. The text is a separate claim and is asserted as text; a name
@@ -941,6 +942,33 @@ export function mountGalaxyChart({
 	 * `probe-galaxy-map.mjs` measures, by finding the boundary at two camera
 	 * distances rather than by clicking dead centre.
 	 */
+	/**
+	 * Is a projected point one the chart actually **draws**?
+	 *
+	 * In front of the camera *and* inside the canvas box — the same predicate
+	 * §5.1's crowding metric counts over, and `probe-navigation-console.mjs`
+	 * installs once for the same reason.
+	 *
+	 * **The second half was missing here, and it let the chart name and select a
+	 * system it does not draw.** `toPixels` maps NDC linearly, so a system just
+	 * off the right edge lands at `rect.width + 5` — within the 14 px radius of
+	 * a cursor 9 px inside the edge, and rasterised by nothing. It was
+	 * invisible while only `pick` had it, because a click selecting a system
+	 * nobody can see looks like a click on empty space; #112's label is what
+	 * made it legible, by putting a name on it. Fixed in `pick` as well as in
+	 * the hover, because D1 makes the two one quantity and a filter on one side
+	 * alone is the divergence D1 exists to prevent.
+	 */
+	const drawn = (
+		p: { x: number; y: number; behind: boolean },
+		rect: DOMRect,
+	): boolean =>
+		!p.behind &&
+		p.x >= 0 &&
+		p.y >= 0 &&
+		p.x <= rect.width &&
+		p.y <= rect.height;
+
 	const pick = (clientX: number, clientY: number): SystemRecord | null => {
 		const rect = canvasRect();
 		freshenCluster();
@@ -951,7 +979,7 @@ export function mountGalaxyChart({
 		let bestD = Number.POSITIVE_INFINITY;
 		for (const s of galaxy.systems) {
 			const p = toPixels(s, rect);
-			if (p.behind) continue;
+			if (!drawn(p, rect)) continue;
 			const d = Math.hypot(p.x - x, p.y - y);
 			if (d < PICK_RADIUS_PX && d < bestD) {
 				bestD = d;
@@ -1048,7 +1076,7 @@ export function mountGalaxyChart({
 		const points: { index: number; x: number; y: number }[] = [];
 		for (const s of galaxy.systems) {
 			const p = toPixels(s, rect);
-			if (p.behind) continue;
+			if (!drawn(p, rect)) continue;
 			points.push({ index: s.index, x: p.x, y: p.y });
 		}
 		const next = hoverCandidate(
@@ -1080,7 +1108,8 @@ export function mountGalaxyChart({
 		// D4: suppressed the moment a button goes down. The *candidate* is kept,
 		// because `pointerup` selects it — clearing it here would send every
 		// click back through a fresh `pick()` and re-open the two-implementations
-		// gap D1 closes.
+		// gap D1 closes. What a touch tap does with it is `clickTarget`'s, which
+		// is a rule rather than a branch in this handler.
 		renderHover();
 	});
 	canvas.addEventListener("pointermove", (e) => {
@@ -1120,26 +1149,24 @@ export function mountGalaxyChart({
 	canvas.addEventListener("pointerleave", () => clearHover());
 	canvas.addEventListener("pointerup", (e) => {
 		dragging = false;
-		/**
-		 * **D1: the click takes the hovered candidate; it does not re-run
-		 * `pick()`.**
-		 *
-		 * With hysteresis in the label alone, the label could name S while a
-		 * click selected a nearer T — one quantity with two implementations,
-		 * which is the trap #46 and #69 both record. One resolution, two
-		 * consumers.
-		 *
-		 * The fallback is for where there is no hover state at all: a touch
-		 * pointer, or a pointer that has not moved since mount. That is `pick`
-		 * itself, the same function with no sticky state.
-		 */
 		const labelled = hover?.system.index ?? null;
 		// D4: the label does not come back until the pointer moves again, so it
 		// is dropped *after* the selection reads it.
 		clearHover();
 		// A drag that ends over a point is a camera move, not a selection.
 		if (travelled > CLICK_SLOP_PX) return;
-		select(labelled ?? pick(e.clientX, e.clientY)?.index ?? null);
+		// D1 and D5's touch half, both in `clickTarget` — a leaf with a headless
+		// test, because a hybrid device is not expressible in the probe tier.
+		// `pick` runs unconditionally rather than behind a `??`: it is one 256
+		// sweep at 0.084 ms, once per click, and a lazy fallback would put the
+		// rule back in this handler to decide when to evaluate it.
+		select(
+			clickTarget(
+				labelled,
+				e.pointerType,
+				pick(e.clientX, e.clientY)?.index ?? null,
+			),
+		);
 	});
 	canvas.addEventListener(
 		"wheel",

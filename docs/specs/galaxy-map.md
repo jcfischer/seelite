@@ -528,10 +528,20 @@ nearest-wins therefore names an arbitrary neighbour most of the time with
 nothing telling the player, which is the failure §5.1 already ruled the chart
 out as a *finder* for; and silence when contested is never wrong but is absent
 about seven times in ten at the framing the tab opens on, which reads as broken
-rather than as careful. The label names the nearest system and **says how many
-others it could have been**: `CELAATGE 15.2 LY ○ out of range (2 more)` reads as
-*this is the nearest of three, zoom to be sure*, which is also the instruction
-§5.1 says resolves the cluster. Listing every candidate was the third option and
+rather than as careful. The label names a system inside the pick radius and
+**says how many others it could have been**: `CELAATGE 15.2 LY ○ out of range
+(2 more)` reads as *this is one of three, zoom to be sure*, which is also the
+instruction §5.1 says resolves the cluster.
+
+**"The nearest" is not what the label promises, and the receipt's own wording
+overstates it.** #108 says "it names the nearest system within the existing
+14 px pick radius" and reads the badge as *the nearest of three* — but the same
+receipt's D1 makes the label sticky, and a held system is by construction *not*
+the nearest whenever the switch margin is doing its job. The two cannot both be
+true. The hysteresis is the ratified half and the "nearest" phrasing is the
+loose one, so the label promises **a system inside the pick radius, held
+steady** — and the badge says how many others the cursor cannot be told apart
+from. Listing every candidate was the third option and
 was declined — a 2–3 line panel is a second record card, and #70's constraint is
 that there is no second UI grammar.
 
@@ -568,9 +578,22 @@ pointer that has not moved since mount — `pointerup` falls back to `pick`,
 which is the same function with no sticky state.
 
 **The badge counts against the pick radius, never the release radius.** It is
-the number of systems inside 14 px other than the labelled one, so it means
-exactly *a click here is ambiguous too*: it predicts the click rather than
-describing the label's own tolerance. One consequence is worth stating because
+the number of systems inside 14 px other than the labelled one — the radius at
+which the cursor cannot tell two systems apart. The release radius is the
+label's own stickiness and is a different question, so counting against it would
+make the badge describe how far the label will stretch.
+
+**What the badge means is *this position* is ambiguous, not that the click is.**
+#108 words it as "a click here is ambiguous too — it predicts the click", and
+that phrasing does not survive D1: once `pointerup` takes the hovered candidate,
+the click is the *least* ambiguous thing on offer — it deterministically selects
+the labelled system, held state and all. What the count actually says is that a
+small cursor move could have named a different system, and that the point being
+read is one of several the cursor is on. That is the thing the player needs in
+order to decide to zoom, which is what the badge was ratified for; "predicts the
+click" was true of the design before D1 routed the click through the candidate,
+and is recorded here as corrected rather than quietly dropped. One consequence
+is worth stating because
 it looks like a bug: a label held between 14 and 17 px can carry a badge, and
 one held past 17 px never can — holding at all requires every system inside the
 pick radius to be no more than the switch margin nearer, which past 17 px means
@@ -828,6 +851,11 @@ whatever positions a probe happens to visit.
 6. **It is a pure function of its arguments** — the radii come in rather than
    being owned, so the constants are retunable without touching the rule, and
    the points it is handed are not mutated.
+7. **What a `pointerup` selects** (`clickTarget`): the hovered candidate over a
+   fresh pick, the pick where there is no hover state, and — the case that put
+   this rule in a leaf — **never** the hover on a touch tap. A hybrid device is
+   not expressible in the probe tier (§9.3 records the two attempts), so this is
+   the tier that binds D5's touch half. Red-built by dropping the touch branch.
 
 ### 9.2 Browser — `scripts/probe-galaxy-map.mjs`
 
@@ -1059,7 +1087,16 @@ The chart's *mount* rather than its projection, and the list beside it.
     candidate and a fresh `pick()` return the same system, so a build that
     re-ran `pick()` on `pointerup` would pass. Red-built exactly that way: the
     label said S, the nearest was T, and the click selected T.
-21. **A drag says nothing** (§5.3), sampled four times *during* the orbit rather
+21. **A system the chart does not draw is neither labelled nor selected**
+    (§5.3), driven at a zoomed framing because the default one frames all 256
+    and has nothing off screen to name. The position puts an off-canvas system
+    13.8 px from the cursor and **nearer than anything drawn**, which is what
+    makes it red on a build that skips only `behind` — and that build is what
+    shipped in `pick` from #11 until #112, invisible because a click selecting a
+    system nobody can see reads as a click on empty space. Red-built by
+    restoring the `behind`-only filter: the label said 11 and the click selected
+    11.
+22. **A drag says nothing** (§5.3), sampled four times *during* the orbit rather
     than after it — a build that drew the label through the whole drag and
     cleared it on `pointerup` passes an end-of-drag sample. The release selects
     nothing, which is §5's 4 px slop rule and not this one, and is asserted here
@@ -1093,12 +1130,22 @@ described.
 
 The hover checks — items 17 to 21 — were red-built too, and the builds are named
 where each item is described: `updateHover` made a no-op (17, 18, 19 and 20 red,
-21 vacuously green, which is what says 21 needs its own); `contested` forced to
+22 vacuously green, which is what says 22 needs its own); `contested` forced to
 0 (18 red on the crowded half alone); the release radius set to the pick radius
 and the switch margin to 0, which is #108's nearest-wins defect (19 red both
 ways, 20 red with it); `pointerup` put back on a fresh `pick()` (20 red alone,
-19 green); and the `dragging` suppression removed with the hover updated through
-the orbit (21 red).
+19 green); the drawn-predicate reduced to `behind` alone (21 red); and the
+`dragging` suppression removed with the hover updated through the orbit (22
+red).
+
+**One decision here has no browser check at all, and that is a fact about the
+tier rather than a gap left open.** D5's hybrid case — a mouse leaving a
+candidate parked while a finger taps elsewhere — needs `(hover: hover)` and a
+real touch pointer at once, and Chromium reports `(hover: none)` the moment
+touch emulation is on: through Playwright's `hasTouch` context and through CDP's
+`Emulation.setTouchEmulationEnabled` alike, with `Emulation.setEmulatedMedia`
+declining to override it. Both were tried. The rule moved into `clickTarget`
+(§9.1b item 7) so the headless tier binds it instead of a comment doing.
 
 **Item 10 has no red build**, because it asserts an absence — no per-row
 course control — and the build that fails it is a feature nobody wrote. It is

@@ -13,8 +13,9 @@
  *
  * - **The pick radius** is the click's own (`PICK_RADIUS_PX`, 14). A fresh
  *   candidate must be inside it, and the contested count is taken against it,
- *   because the badge predicts what a *click* would do rather than describing
- *   how far the label will stretch.
+ *   because that is the radius at which the cursor cannot tell two systems
+ *   apart. The release radius is the label's own stickiness and is a different
+ *   question.
  * - **The release radius** (20) holds the labelled system while the cursor
  *   drifts off it. Without it the label blinks off at exactly 14 px.
  * - **The switch margin** (3) stops two systems a pixel apart trading the label
@@ -57,8 +58,9 @@ export interface HoverCandidate {
 	 *  it is the quantity the hold is about, and a caller that recomputed it
 	 *  would be a second implementation of this rule's own arithmetic. */
 	distancePx: number;
-	/** Systems inside the **pick** radius other than the labelled one. Zero is
-	 *  the uncontested case and is what suppresses the badge. */
+	/** Systems inside the **pick** radius other than the labelled one — how many
+	 *  the cursor cannot tell apart here. Zero is the uncontested case and is
+	 *  what suppresses the badge. */
 	contested: number;
 }
 
@@ -115,4 +117,36 @@ export function hoverCandidate(
 	const contested =
 		distancePx < rule.pickRadiusPx ? insidePick - 1 : insidePick;
 	return { index, distancePx, contested };
+}
+
+/**
+ * Which system a `pointerup` selects — #108's D1, and the touch half of D5.
+ *
+ * **The click takes the hovered candidate rather than re-running `pick`.** With
+ * hysteresis in the label alone, the label could name S while a click selected
+ * a nearer T — one quantity with two implementations. `picked` is the fallback,
+ * for where there is no hover state at all: a pointer that has not moved since
+ * mount, and touch.
+ *
+ * **A touch tap never inherits a hover.** `(hover: hover)` matches on a device
+ * that has both a mouse and a screen, so a mouse can leave a candidate parked
+ * on S while a finger taps T — and without this the tap selects S. D5 says the
+ * touch path is tap-to-select exactly as it was before the label, which is
+ * `picked`.
+ *
+ * Here rather than inline in the `pointerup` handler because **no browser tier
+ * can reach it**: Chromium reports `(hover: none)` the moment touch emulation
+ * is on, both through Playwright's `hasTouch` context and through CDP's
+ * `Emulation.setTouchEmulationEnabled`, and `Emulation.setEmulatedMedia` does
+ * not override it. A hybrid device is therefore not expressible in the probe
+ * tier, and a rule only reachable through a pointer event would have been a
+ * decision nothing checks.
+ */
+export function clickTarget(
+	hovered: number | null,
+	pointerType: string,
+	picked: number | null,
+): number | null {
+	if (pointerType === "touch") return picked;
+	return hovered ?? picked;
 }
