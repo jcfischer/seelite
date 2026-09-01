@@ -166,13 +166,32 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   samples it.
 - **One surface generator, and a plate is a size rather than a count.**
   `src/surface.ts` makes the plate, wear and seam-normal texels for every plated
-  thing in the game — stations, ship hulls, and the cockpit when #105 lands —
+  thing in the game — stations, ship hulls and the cockpit interior (#105) —
   from a `PlatingProfile` and a tag. It takes a profile and never a type, which
   is what stopped it being a station's. `hullLoft` writes UVs in **kilometres**,
   so a consumer divides by its own panel size: `SHIP_PANEL_KM` 0.008 gives a
   1 m x 4 m plate, `STATION_PANEL_KM` 0.15 gives 19 m square. Multiply a
   normalised unwrap by a count instead and a dreadnought and a tug get the same
-  number of bands.
+  number of bands. The cabin is the exception that proves the rule: three's box
+  and cylinder primitives write a *normalised* unwrap, so `plateCockpitUVs`
+  rewrites them in kilometres through `boxProjectUVs` (moved to `loft.ts` in
+  #105) — and it returns a **new** geometry, because that projection needs a
+  non-indexed one. Drop the return value and the fitting is silently unplated.
+- **A material dial cannot exceed 1, and clamping one is a silent repaint.**
+  `MeshStandardMaterial` multiplies `roughness` by the wear map's green channel,
+  so a finish rougher than a clean plate simply cannot be asked for. The cabin's
+  roughest is 0.72 against a clean plate of 0.702, and `Math.min(1, …)` — which
+  is still what `ship-surface.ts` does, where no finish has yet reached it —
+  renders it at 0.702 instead. `cockpit-surface.ts` calibrates the profile up by
+  exactly what the strongest declared finish needs and **throws** on a dial
+  above 1, which is why `COCKPIT_FINISHES` lives in that module rather than
+  inline in `buildCockpit`: a finish declared at the call site is one the
+  calibration cannot see.
+- **`berth-launch-chase` is not a repeatable view.** Two captures of one build
+  move 70.9% of its pixels past 24/255, against ≤0.07% for every other view in
+  the set (#105 measured it). It frames a moving camera at a moving moment of a
+  scripted launch. Any before/after reading on that row is noise; judge it by
+  eye or not at all.
 - **A square grid of plates reads as scales, not as metal.** The profile carries
   the layout — `aspect`, `stagger`, `seamHalfWidthPx` — because all three were
   once hardcoded to the tiling case and the surface was flown and rejected for

@@ -163,6 +163,66 @@ export function setUvUnits(geometry: THREE.BufferGeometry, units: UvUnits) {
 }
 
 /**
+ * Give a geometry per-face box-projected UVs, in kilometres divided by `panel`.
+ *
+ * **Here rather than in `station-surface.ts`, where it was written**, because
+ * #105 gave it a second consumer and it knows nothing about a station. The
+ * module docstring above already claims this file for pure UV arithmetic with
+ * no material knowledge — `scaleUVs` makes the same argument — and the
+ * alternative was a cockpit module importing the asteroid builder and
+ * `SimplexNoise` to get one projection.
+ *
+ * `PolyhedronGeometry` and `IcosahedronGeometry` both write an azimuthal
+ * unwrap — longitude and latitude — which is right for a sphere and wrong for
+ * anything made of flat plates or displaced into lumps: the map smears into
+ * streaks towards the poles and changes scale from one triangle to the next.
+ * `BoxGeometry` is the opposite problem and the same fix: its unwrap is
+ * normalised per face, so a 32 m deck and a 100 m coaming come out carrying the
+ * same number of plates. Each face is projected onto whichever axis plane it
+ * most faces instead, in kilometres, so a plate is a **size**.
+ *
+ * Non-indexed geometry only: each run of three vertices is one face and can be
+ * given its own projection without splitting anything. The polyhedra produce
+ * that; `BoxGeometry` and the rest of three's primitives do not, so a caller
+ * with one of those runs `toNonIndexed()` first — `cockpit-surface.ts`'s
+ * `plateCockpitUVs` is the wrapper that does. Handed an indexed geometry this
+ * reads position triples that are not faces and writes a projection off the
+ * wrong normal, silently. The cost of the projection itself is a seam wherever
+ * the dominant axis changes, which on a rock is invisible and on a plated hull
+ * or a box falls along an edge.
+ */
+export function boxProjectUVs(geometry: THREE.BufferGeometry, panelKm: number) {
+	const position = geometry.getAttribute("position") as THREE.BufferAttribute;
+	const uv = geometry.getAttribute("uv") as THREE.BufferAttribute;
+	const a = new THREE.Vector3();
+	const b = new THREE.Vector3();
+	const c = new THREE.Vector3();
+	const edge = new THREE.Vector3();
+	const normal = new THREE.Vector3();
+	for (let i = 0; i < position.count; i += 3) {
+		a.fromBufferAttribute(position, i);
+		b.fromBufferAttribute(position, i + 1);
+		c.fromBufferAttribute(position, i + 2);
+		normal.copy(b).sub(a);
+		edge.copy(c).sub(a);
+		normal.cross(edge);
+		const ax = Math.abs(normal.x);
+		const ay = Math.abs(normal.y);
+		const az = Math.abs(normal.z);
+		const axis = ax > ay && ax > az ? 0 : ay > az ? 1 : 2;
+		for (let k = 0; k < 3; k++) {
+			const v = k === 0 ? a : k === 1 ? b : c;
+			uv.setXY(
+				i + k,
+				(axis === 0 ? v.y : v.x) / panelKm,
+				(axis === 2 ? v.y : v.z) / panelKm,
+			);
+		}
+	}
+	uv.needsUpdate = true;
+}
+
+/**
  * Multiply a geometry's UVs in place. Returns whether there were any.
  *
  * Pure UV arithmetic and no material knowledge, so it lives beside the module

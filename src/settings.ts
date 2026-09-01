@@ -49,12 +49,20 @@ const SCHEMA = {
 	 * cost is a SwiftShader number that is nobody's. So this is the gate rather
 	 * than a budget.
 	 *
-	 * Low drops the baked lighting environment (#99) and the hulls' seam normal
-	 * map (#101), and keeps every other term. The hemisphere costs what the flat
-	 * ambient it replaced cost, so dropping it would buy nothing and lose the
-	 * gradient; the two that go are the ones with a per-fragment texture sample
-	 * — the environment on every standard material in the frame, the seam map on
-	 * every plated hull surface, which also carries a tangent frame behind it.
+	 * Low drops the baked lighting environment (#99) and the seam normal map on
+	 * every plated surface — the hulls' (#101) and the cabin's (#105) — and
+	 * keeps every other term. The hemisphere costs what the flat ambient it
+	 * replaced cost, so dropping it would buy nothing and lose the gradient; the
+	 * ones that go are the ones with a per-fragment texture sample — the
+	 * environment on every standard material in the frame, the seam map on every
+	 * plated surface, which also carries a tangent frame behind it.
+	 *
+	 * **One rule for every plated surface, not one per surface.** #105 could
+	 * have gated the cabin on its own terms; it inherits the hull's instead, so
+	 * a player moving this setting gets one answer rather than a list. The
+	 * cabin's emissive trim and both its interior lights are untouched by it —
+	 * they cost nothing per fragment, and the sentence below promises the player
+	 * the cockpit fill stays.
 	 *
 	 * **Every later expensive visual term declares which side of this it is on**
 	 * (#98, #99). A term added without an answer here has not been gated, it has
@@ -69,7 +77,7 @@ const SCHEMA = {
 		allowed: ["high", "low"] as const,
 		label: "Lighting",
 		describe: (v: string) => (v === "high" ? "High" : "Low"),
-		note: "High reflects the star off every hull, plate and cockpit surface, and cuts the panel lines into the hulls so a moving sun breaks across them. Low drops both and keeps the sun, the star-side gradient and the cockpit fill; the picture stays lit, the panel lines stay painted, and the metal stops reading as metal.",
+		note: "High reflects the star off every hull, plate and cockpit surface, and cuts the panel lines into the hulls and the cabin so a moving sun breaks across them. Low drops both and keeps the sun, the star-side gradient and the cockpit fill; the picture stays lit, the panel lines stay painted, and the metal stops reading as metal.",
 	},
 } as const;
 

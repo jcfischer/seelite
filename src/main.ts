@@ -207,6 +207,13 @@ import {
 	buildShipMesh,
 	fleetLayout,
 } from "./ship-mesh";
+import {
+	COCKPIT_KEY_LIGHT,
+	COCKPIT_TRIM,
+	applyCockpitQuality,
+	cockpitMaterial,
+	plateCockpitUVs,
+} from "./cockpit-surface";
 import { applyHullQuality } from "./ship-surface";
 import type { StationInterior } from "./station-interior";
 import {
@@ -2089,6 +2096,10 @@ class Game {
 		// because that record is the lighting model and a texture on a material
 		// is not part of it — `ship-surface.ts` owns what a hull surface costs.
 		applyHullQuality(this.settings.value.quality);
+		// The cabin half (#105), and the same rule for the same reason: one
+		// answer for every plated surface in the game rather than one per
+		// surface. `cockpit-surface.ts` owns what a cabin surface costs.
+		applyCockpitQuality(this.settings.value.quality);
 	}
 
 	/**
@@ -2157,28 +2168,21 @@ class Game {
 	private buildCockpit() {
 		this.cockpit = {} as CockpitHardware;
 		// The first pass used a repeated cyan grid. It read as wallpaper at this
-		// distance, not a manufactured cabin. Let the hard edges and separate
-		// fittings carry the construction instead of printing a texture onto every
-		// surface.
-		const metal = new THREE.MeshStandardMaterial({
-			color: 0x0a1114,
-			roughness: 0.72,
-			metalness: 0.48,
-			emissive: 0x010304,
-			emissiveIntensity: 0.08,
-		});
-		const trim = new THREE.MeshStandardMaterial({
-			color: 0x1a2c32,
-			roughness: 0.46,
-			metalness: 0.72,
-			emissive: 0x03090b,
-			emissiveIntensity: 0.14,
-		});
-		const inset = new THREE.MeshStandardMaterial({
-			color: 0x020607,
-			roughness: 0.48,
-			metalness: 0.3,
-		});
+		// distance, not a manufactured cabin, and the answer then was to let the
+		// hard edges and separate fittings carry the construction with no texture
+		// at all. #105 reopened that from a real frame: the deck, the console tops
+		// and the coaming each rendered as one flat tone, with nothing giving the
+		// cabin a scale. What replaces it is not the grid — it is #101's shared
+		// generator with the cabin's own profile, a brick bond of lining panels
+		// whose seams are cut into a normal map rather than printed.
+		//
+		// **The three finishes moved to `cockpit-surface.ts` unchanged.** A finish
+		// declared at this call site is a finish the calibration pass cannot see,
+		// and the cabin's roughest one turned out not to be expressible over the
+		// wear curve without it.
+		const metal = cockpitMaterial("metal");
+		const trim = cockpitMaterial("trim");
+		const inset = cockpitMaterial("inset");
 		const canopyGlass = new THREE.MeshBasicMaterial({
 			color: 0x0a2635,
 			transparent: true,
@@ -2195,13 +2199,62 @@ class Game {
 		interiorLight.name = "cockpit-light";
 		interiorLight.position.set(0, 0.004, -0.029);
 		cockpit.add(interiorLight);
+		// #105's one added light. The lamp above lifts the cabin evenly; what it
+		// does not give is a *gradient*, and a gradient is what the deck and the
+		// console tops were missing — both cockpit views render the same flat
+		// tone whether the star is ahead of the ship or 175° behind it. Warm
+		// against the lamp's cool, which is the contrast the reference cabins
+		// have. Its range dies before the canopy on purpose: a key that reached
+		// the glass would light the frame the player sees space through.
+		const keyLight = new THREE.PointLight(
+			COCKPIT_KEY_LIGHT.color,
+			COCKPIT_KEY_LIGHT.intensity,
+			COCKPIT_KEY_LIGHT.rangeKm,
+			2,
+		);
+		keyLight.name = "cockpit-key-light";
+		keyLight.position.set(...COCKPIT_KEY_LIGHT.position);
+		cockpit.add(keyLight);
 		const addBox = (
 			size: [number, number, number],
 			position: [number, number, number],
 			rotation: [number, number, number] = [0, 0, 0],
 			material: THREE.Material = metal,
 		) => {
-			const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material);
+			// **The returned geometry, not the one passed in.** `plateCockpitUVs`
+			// converts to non-indexed and hands back a new geometry; using the
+			// original leaves the fitting unplated, which looks exactly like the
+			// map having failed to load rather than like a dropped return value.
+			const mesh = new THREE.Mesh(
+				plateCockpitUVs(new THREE.BoxGeometry(...size)),
+				material,
+			);
+			mesh.position.set(...position);
+			mesh.rotation.set(...rotation);
+			cockpit.add(mesh);
+			return mesh;
+		};
+		/**
+		 * A lit strip along an edge of the cabin — #105's answer to where the
+		 * warmth comes from, taken emissive-led.
+		 *
+		 * `MeshBasicMaterial` rather than an emissive standard one: this is a
+		 * light source in appearance, so it should not itself be shaded, and it
+		 * keeps the strip out of `plateCockpit`'s set — a seam across a glowing
+		 * edge reads as a fault in the strip.
+		 */
+		const trimGlow = new THREE.MeshBasicMaterial({
+			color: new THREE.Color(COCKPIT_TRIM.color).multiplyScalar(
+				COCKPIT_TRIM.intensity,
+			),
+		});
+		const addTrimStrip = (
+			size: [number, number, number],
+			position: [number, number, number],
+			rotation: [number, number, number] = [0, 0, 0],
+		) => {
+			const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), trimGlow);
+			mesh.name = "cockpit-trim-strip";
 			mesh.position.set(...position);
 			mesh.rotation.set(...rotation);
 			cockpit.add(mesh);
@@ -2215,12 +2268,17 @@ class Game {
 			const start = new THREE.Vector3(...from);
 			const end = new THREE.Vector3(...to);
 			const direction = end.clone().sub(start);
+			// Plated like everything else on `metal`: a normalised cylinder unwrap
+			// would tile the whole 24 m map onto a one-metre rail, which reads as
+			// noise rather than as a surface.
 			const mesh = new THREE.Mesh(
-				new THREE.CylinderGeometry(
-					radius * 0.82,
-					radius,
-					direction.length(),
-					8,
+				plateCockpitUVs(
+					new THREE.CylinderGeometry(
+						radius * 0.82,
+						radius,
+						direction.length(),
+						8,
+					),
 				),
 				metal,
 			);
@@ -2329,6 +2387,25 @@ class Game {
 				trim,
 			);
 		}
+		// The lit trim, and where it goes: the four edges that describe the
+		// cabin's shape. Under the header and the sill they draw the canopy
+		// opening; along each console's inboard edge and across the coaming they
+		// draw the console bay. Nothing here is a *reading* — see `COCKPIT_TRIM`
+		// on why the colour is deliberately near-neutral.
+		addTrimStrip([0.098, 0.0006, 0.0008], [0, 0.0172, -0.0645]);
+		addTrimStrip([0.084, 0.0006, 0.0008], [0, -0.0142, -0.0629]);
+		// **Aft of the console's mid-point, not along its whole inboard edge.**
+		// The first pass ran these from z −0.037 to −0.057, and the near end sits
+		// a few metres from the eye: on the sheet the port strip flared into a
+		// tan wedge in the bottom-left corner and the frame read as a fault
+		// rather than as a lit edge. A strip is evidence of an edge, so it wants
+		// to be seen along its length rather than end-on.
+		for (const side of [-1, 1])
+			addTrimStrip(
+				[0.0008, 0.0008, 0.013],
+				[side * 0.0333, -0.0178, -0.0522],
+				[0.24, 0, side * -0.06],
+			);
 		const dashboardPitch = 0.58;
 		const scannerMount = new THREE.Group();
 		scannerMount.name = "scanner-mount";
@@ -2350,13 +2427,13 @@ class Game {
 		inset: THREE.MeshStandardMaterial,
 	) {
 		const deck = new THREE.Mesh(
-			new THREE.BoxGeometry(0.032, 0.0016, 0.022),
+			plateCockpitUVs(new THREE.BoxGeometry(0.032, 0.0016, 0.022)),
 			metal,
 		);
 		deck.name = "scanner-deck";
 		scannerMount.add(deck);
 		const scannerWell = new THREE.Mesh(
-			new THREE.BoxGeometry(0.029, 0.00025, 0.0155),
+			plateCockpitUVs(new THREE.BoxGeometry(0.029, 0.00025, 0.0155)),
 			inset,
 		);
 		scannerWell.name = "scanner-well";
@@ -2369,7 +2446,7 @@ class Game {
 			[0.015, 0, 0.0008, 0.0168],
 		] as const) {
 			const bezel = new THREE.Mesh(
-				new THREE.BoxGeometry(sx, 0.00075, sz),
+				plateCockpitUVs(new THREE.BoxGeometry(sx, 0.00075, sz)),
 				trim,
 			);
 			bezel.name = "scanner-bezel";
@@ -2400,7 +2477,7 @@ class Game {
 		scannerMount.add(scanner);
 		const makeInstrument = (name: string, x: number) => {
 			const backing = new THREE.Mesh(
-				new THREE.BoxGeometry(0.014, 0.0014, 0.011),
+				plateCockpitUVs(new THREE.BoxGeometry(0.014, 0.0014, 0.011)),
 				trim,
 			);
 			backing.position.set(x, 0.0002, 0);
@@ -2428,7 +2505,7 @@ class Game {
 		this.cockpit.flightInstrument = makeInstrument("flight-instrument", -0.025);
 		this.cockpit.targetInstrument = makeInstrument("target-instrument", 0.025);
 		const throttleTrack = new THREE.Mesh(
-			new THREE.BoxGeometry(0.0022, 0.0014, 0.014),
+			plateCockpitUVs(new THREE.BoxGeometry(0.0022, 0.0014, 0.014)),
 			inset,
 		);
 		throttleTrack.name = "throttle-track";
