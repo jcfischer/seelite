@@ -52,6 +52,7 @@ import {
 	reachable,
 	setCourse,
 } from "./galaxy-route";
+import { type HoverRule, hoverCandidate } from "./hover-candidate";
 
 /**
  * The map's vertical axis is galaxy-space **y**, and its reference plane is
@@ -111,6 +112,29 @@ const COLOUR = {
 /** Big enough to pick reliably under a mouse, small enough that the core is not
  *  a single blob. Screen-space picking uses this as its radius in pixels. */
 const PICK_RADIUS_PX = 14;
+
+/**
+ * #108's D1: the hover label's stickiness, set against the pick radius above.
+ *
+ * The label holds the system it named while that system stays inside
+ * `releaseRadiusPx`, and lets a rival take it only when the rival is nearer by
+ * more than `switchMarginPx`. Both halves are needed and they answer different
+ * failures — the release radius stops the label blinking off at exactly 14 px
+ * as the cursor drifts, the margin stops two systems a pixel apart trading it
+ * on sub-pixel movement. §5.1 measures 68.4%-77.7% of hovers in the shipped
+ * console cell as having such a neighbour.
+ *
+ * **First values, not measured ones**, chosen against the 14 px pick radius and
+ * recorded as retune territory by #108's receipt. The browser tier pins the
+ * behaviour rather than these numbers, so a retune moves them without moving a
+ * check. The rule itself is `hover-candidate.ts`, which is a leaf and has its
+ * own headless test.
+ */
+const HOVER_RULE: HoverRule = {
+	pickRadiusPx: PICK_RADIUS_PX,
+	releaseRadiusPx: 20,
+	switchMarginPx: 3,
+};
 
 export interface GalaxyMapState {
 	galaxy: number;
@@ -213,6 +237,20 @@ export interface Handle {
 	/** The pick radius the chart itself uses, so a probe measuring crowding
 	 *  compares against the module's number rather than a copy of it. */
 	pickRadiusPx: number;
+	/**
+	 * The hover label's own state — #108's D1, as state rather than as text.
+	 *
+	 * `null` when nothing is labelled, which is also what a touch pointer and a
+	 * suppressed drag both read as. `contested` is the badge's number: systems
+	 * inside the **pick** radius other than the labelled one, so it predicts
+	 * what a click here would do rather than describing the label's tolerance.
+	 *
+	 * Exposed instead of leaving a probe to scrape the label's text for an
+	 * index. The text is a separate claim and is asserted as text; a name
+	 * parsed back into an index would make one check stand for both, and the
+	 * chart's names are not unique per galaxy in any way this module enforces.
+	 */
+	hovered(): { index: number; contested: number } | null;
 }
 
 /** A radial gradient, generated rather than downloaded — the core haze's only
@@ -450,6 +488,37 @@ export function mountGalaxyChart({
 	});
 	stage.appendChild(card);
 
+	/**
+	 * #108's D3: the hover label, and it is **its own element with its own
+	 * placement**.
+	 *
+	 * One placement rule serving two floating things stacks them by
+	 * construction, so this shares `toPixels` — the module's single conversion —
+	 * and nothing else with the card above. The offset is the mirror of the
+	 * card's `+18 / -12`: the card sits right of and above its point, this sits
+	 * left of and below, so a system that is both selected and hovered would not
+	 * put the two on top of each other even if the suppression below were
+	 * removed.
+	 *
+	 * `pointerEvents: none` because the label follows the cursor's own point: an
+	 * element that could take the pointer would steal the `pointermove` that
+	 * placed it and the label would fight itself.
+	 */
+	const hoverLabel = el("div");
+	hoverLabel.setAttribute("data-map-hover", "");
+	Object.assign(hoverLabel.style, {
+		position: "absolute",
+		display: "none",
+		padding: "4px 7px",
+		background: "rgba(8,14,22,0.92)",
+		border: "1px solid #26506e",
+		borderRadius: "3px",
+		pointerEvents: "none",
+		whiteSpace: "nowrap",
+		color: "#cfe6f5",
+	});
+	stage.appendChild(hoverLabel);
+
 	// ---- Scene -------------------------------------------------------------
 
 	const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -677,10 +746,15 @@ export function mountGalaxyChart({
 
 	let lit: SystemRecord[] = [];
 	let progress: CourseProgress | null = null;
+	/** Hoisted out of `recompute` so the hover label's 7 LY marker and the lit
+	 *  points' colour are one fact rather than two derivations of `JUMP_RANGE_LY`
+	 *  that have to agree. A label reading "in range" over a dim point would be
+	 *  the map's recurring two-implementations trap in miniature. */
+	let litSet = new Set<number>();
 
 	const recompute = (): void => {
 		lit = reachable(galaxy.systems, current);
-		const litSet = new Set(lit.map((s) => s.index));
+		litSet = new Set(lit.map((s) => s.index));
 
 		galaxy.systems.forEach((s, i) => {
 			const c =
@@ -790,6 +864,10 @@ export function mountGalaxyChart({
 				selected.description,
 			].join("\n");
 		}
+
+		// D3 suppresses the label over the *selected* system, so a selection
+		// change is a label change even though the pointer has not moved.
+		renderHover();
 	};
 
 	// ---- Interaction -------------------------------------------------------
@@ -898,6 +976,96 @@ export function mountGalaxyChart({
 	let lastX = 0;
 	let lastY = 0;
 
+	/**
+	 * #108's D5: the hover label is pointer-only.
+	 *
+	 * There is no hover on a touch screen, and a tap-to-label affordance would
+	 * be a second selection grammar — #70's constraint. The chart stays fully
+	 * usable without it: `pointerup` falls back to `pick()` wherever there is no
+	 * hover state, which is the same function the click path has always used.
+	 *
+	 * Read once at mount rather than per event. A pointer type can change under
+	 * a session, but this gates an *affordance* and not a code path: a mouse
+	 * plugged into a tablet mid-session gets no label until the tab is
+	 * re-entered, and gets the same clicks either way.
+	 */
+	const hoverCapable =
+		typeof window.matchMedia === "function" &&
+		window.matchMedia("(hover: hover)").matches;
+
+	/** The labelled system and its badge count, or `null` for no label. */
+	let hover: { system: SystemRecord; contested: number } | null = null;
+
+	/**
+	 * Draw the label, or hide it.
+	 *
+	 * D3 and D4's three suppressions live here rather than at the three call
+	 * sites that could each have forgotten one: while `dragging`, and over the
+	 * selected system, whose record card already names it with more detail.
+	 *
+	 * A function declaration, not a `const`, so `recompute` — written above and
+	 * called below — can reach it.
+	 */
+	function renderHover(): void {
+		if (hover === null || dragging || hover.system.index === selected?.index) {
+			hoverLabel.style.display = "none";
+			return;
+		}
+		// D2: name, direct distance, and the 7 LY shell marker. Economy,
+		// government and tech level stay on the record card — putting them here
+		// would make the click redundant and turn the label into a second panel.
+		hoverLabel.style.display = "block";
+		hoverLabel.textContent =
+			`${hover.system.name}  ${distanceLy(current.pos, hover.system.pos).toFixed(1)} LY  ` +
+			(litSet.has(hover.system.index)
+				? "\u25cf in range"
+				: "\u25cb out of range") +
+			(hover.contested > 0 ? `  (${hover.contested} more)` : "");
+	}
+
+	/** Drop the label without waiting for another move. Used by the three
+	 *  pointer events that end a hover and by `pointerup`, which by D4 does not
+	 *  bring it back until the pointer moves again. */
+	function clearHover(): void {
+		hover = null;
+		renderHover();
+	}
+
+	/**
+	 * Re-run the candidate search at a cursor position.
+	 *
+	 * The same nearest-within-`PICK_RADIUS_PX` sweep `pick` runs, handed to
+	 * `hoverCandidate` with whatever was labelled last. The sweep is written out
+	 * here rather than reusing `pick` because the rule needs *every* projected
+	 * point — the rivals inside the radius are what the badge counts and what
+	 * the switch margin is measured against — and `pick` returns only the
+	 * winner.
+	 */
+	function updateHover(clientX: number, clientY: number): void {
+		if (!hoverCapable) return;
+		const rect = canvasRect();
+		freshenCluster();
+		const points: { index: number; x: number; y: number }[] = [];
+		for (const s of galaxy.systems) {
+			const p = toPixels(s, rect);
+			if (p.behind) continue;
+			points.push({ index: s.index, x: p.x, y: p.y });
+		}
+		const next = hoverCandidate(
+			points,
+			clientX - rect.left,
+			clientY - rect.top,
+			hover?.system.index ?? null,
+			HOVER_RULE,
+		);
+		const system = next === null ? null : systemByIndex(next.index);
+		hover =
+			next === null || system === null
+				? null
+				: { system, contested: next.contested };
+		renderHover();
+	}
+
 	const orbit = (dx: number, dy: number): void => {
 		yaw += dx * 0.005;
 		pitch = Math.max(-1.45, Math.min(1.45, pitch + dy * 0.005));
@@ -909,9 +1077,21 @@ export function mountGalaxyChart({
 		lastX = e.clientX;
 		lastY = e.clientY;
 		canvas.setPointerCapture(e.pointerId);
+		// D4: suppressed the moment a button goes down. The *candidate* is kept,
+		// because `pointerup` selects it — clearing it here would send every
+		// click back through a fresh `pick()` and re-open the two-implementations
+		// gap D1 closes.
+		renderHover();
 	});
 	canvas.addEventListener("pointermove", (e) => {
-		if (!dragging) return;
+		// **The hover path is the else-branch on the drag's own early return.**
+		// D4: a label chasing the cursor through an orbit is noise, and the
+		// orbit is what this handler was written for — so the drag path below is
+		// untouched by the hover.
+		if (!dragging) {
+			updateHover(e.clientX, e.clientY);
+			return;
+		}
 		const dx = e.clientX - lastX;
 		const dy = e.clientY - lastY;
 		// Accumulated, not measured press-to-release: a circular drag that ends
@@ -927,13 +1107,39 @@ export function mountGalaxyChart({
 	for (const kind of ["pointercancel", "lostpointercapture"]) {
 		canvas.addEventListener(kind, () => {
 			dragging = false;
+			clearHover();
 		});
 	}
+	// **D4's third clear, and it is the label's alone.** A cursor that has left
+	// the canvas leaves a name under nothing, so the label goes — but the drag
+	// flag does not, because a capture the canvas still holds keeps orbiting
+	// while the pointer is outside the box, and that is the gesture the existing
+	// handler exists for. Adding this to the loop above would have ended an
+	// orbit the moment the cursor crossed the edge on any build where the
+	// browser fires the boundary event through a capture.
+	canvas.addEventListener("pointerleave", () => clearHover());
 	canvas.addEventListener("pointerup", (e) => {
 		dragging = false;
+		/**
+		 * **D1: the click takes the hovered candidate; it does not re-run
+		 * `pick()`.**
+		 *
+		 * With hysteresis in the label alone, the label could name S while a
+		 * click selected a nearer T — one quantity with two implementations,
+		 * which is the trap #46 and #69 both record. One resolution, two
+		 * consumers.
+		 *
+		 * The fallback is for where there is no hover state at all: a touch
+		 * pointer, or a pointer that has not moved since mount. That is `pick`
+		 * itself, the same function with no sticky state.
+		 */
+		const labelled = hover?.system.index ?? null;
+		// D4: the label does not come back until the pointer moves again, so it
+		// is dropped *after* the selection reads it.
+		clearHover();
 		// A drag that ends over a point is a camera move, not a selection.
 		if (travelled > CLICK_SLOP_PX) return;
-		select(pick(e.clientX, e.clientY)?.index ?? null);
+		select(labelled ?? pick(e.clientX, e.clientY)?.index ?? null);
 	});
 	canvas.addEventListener(
 		"wheel",
@@ -1049,21 +1255,55 @@ export function mountGalaxyChart({
 		// the plane turn with the cluster because they are of it.
 		renderer.render(scene, camera);
 
-		if (selected !== null && card.style.display !== "none") {
+		const cardShown = selected !== null && card.style.display !== "none";
+		const labelShown = hover !== null && hoverLabel.style.display !== "none";
+		// One rect and one matrix refresh for both floating elements. They share
+		// `toPixels` and nothing else — D3's seam — and refreshing twice a frame
+		// would be the churn the comment on `freshenCluster` is about.
+		if (cardShown || labelShown) {
 			const rect = canvasRect();
 			freshenCluster();
-			const p = toPixels(selected, rect);
-			// **Clamped, not merely offset.** The card is 260 px wide against a
-			// 390 px narrow viewport, so a selection right of centre pushed it
-			// off screen — and an off-screen record is the same as no record,
-			// which is what the probe's own check says. Anchoring right of the
-			// point stays the preference; the clamp is what makes it safe.
-			const w = card.offsetWidth;
-			const h = card.offsetHeight;
-			const left = Math.min(Math.max(0, p.x + 18), Math.max(0, rect.width - w));
-			const top = Math.min(Math.max(0, p.y - 12), Math.max(0, rect.height - h));
-			card.style.left = `${left}px`;
-			card.style.top = `${top}px`;
+			if (selected !== null && cardShown) {
+				const p = toPixels(selected, rect);
+				// **Clamped, not merely offset.** The card is 260 px wide against a
+				// 390 px narrow viewport, so a selection right of centre pushed it
+				// off screen — and an off-screen record is the same as no record,
+				// which is what the probe's own check says. Anchoring right of the
+				// point stays the preference; the clamp is what makes it safe.
+				const w = card.offsetWidth;
+				const h = card.offsetHeight;
+				const left = Math.min(
+					Math.max(0, p.x + 18),
+					Math.max(0, rect.width - w),
+				);
+				const top = Math.min(
+					Math.max(0, p.y - 12),
+					Math.max(0, rect.height - h),
+				);
+				card.style.left = `${left}px`;
+				card.style.top = `${top}px`;
+			}
+			if (hover !== null && labelShown) {
+				// **Anchored to the point, not to the cursor** (D3). A label
+				// offset from the cursor drifts away from the thing it names,
+				// and inside a 14 px radius it can come to sit over a different
+				// system than the one it is naming.
+				//
+				// The offset mirrors the card's `+18 / -12`, and the clamp is
+				// this element's own: the card's is written against the card's
+				// width and preference for the right of its point.
+				const q = toPixels(hover.system, rect);
+				const w = hoverLabel.offsetWidth;
+				const h = hoverLabel.offsetHeight;
+				hoverLabel.style.left = `${Math.min(
+					Math.max(0, q.x - 18 - w),
+					Math.max(0, rect.width - w),
+				)}px`;
+				hoverLabel.style.top = `${Math.min(
+					Math.max(0, q.y + 12),
+					Math.max(0, rect.height - h),
+				)}px`;
+			}
 		}
 		animationFrame = requestAnimationFrame(frame);
 	};
@@ -1174,6 +1414,10 @@ export function mountGalaxyChart({
 			};
 		},
 		pickRadiusPx: PICK_RADIUS_PX,
+		hovered: () =>
+			hover === null || hoverLabel.style.display === "none"
+				? null
+				: { index: hover.system.index, contested: hover.contested },
 	};
 
 	(
