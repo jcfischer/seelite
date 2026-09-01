@@ -9,12 +9,10 @@
  * arithmetic because it is not a claim about a formula — it is a claim about
  * which stream a number comes out of.
  *
- * **The second property left with its subject.** The deficit map's save round
- * trip was here until
- * [#67](https://github.com/jcfischer/seelite/issues/67) moved the map to
- * `src/deficits.ts`; `tests/deficits.test.ts` owns it now, unchanged, and this
- * file keeps §2's identity table because it is about which key a *generated*
- * station carries rather than about what a save does with it.
+ * **The second property left with its subject** — `tests/deficits.test.ts`
+ * owns the deficit map's save round trip since #67. §2's identity table stayed
+ * here, because it is about which key a *generated* station carries rather than
+ * about what a save does with it.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -36,8 +34,7 @@ import {
 } from "../src/market";
 import { LOCAL_CARRIER_ID } from "../src/station";
 import { type Station, generateContents } from "../src/system";
-import { readdirSync } from "node:fs";
-import { codeOf, repoPath } from "./lib/source-scan";
+import { codeOf, srcFiles } from "./lib/source-scan";
 
 const WORLD = 0x5ee11e;
 
@@ -223,11 +220,12 @@ describe("§5.1 the market is independent of draw order elsewhere", () => {
 		// Two files are excluded and both are the subject rather than a
 		// generator: `market.ts` is the one module that *should* draw from the
 		// tag, and `domains.ts` is where the tag is declared.
-		const scanned = readdirSync(repoPath("src"))
-			.filter(
-				(f) => f.endsWith(".ts") && f !== "market.ts" && f !== "domains.ts",
-			)
-			.map((f) => `src/${f}`);
+		// Through `srcFiles`, which is recursive; this scan was not, and neither
+		// was `deficits.test.ts`'s, so both would have gone silently incomplete
+		// the day `src/` grew a subdirectory.
+		const scanned = srcFiles().filter(
+			(f) => f !== "src/market.ts" && f !== "src/domains.ts",
+		);
 		expect(scanned.length).toBeGreaterThan(15);
 		for (const file of scanned) {
 			const code = codeOf(file);

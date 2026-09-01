@@ -11,8 +11,8 @@
  * **The saved deficit map is `deficits.ts`'s** since
  * [#67](https://github.com/jcfischer/seelite/issues/67). §5.2's response to a
  * deficit is pricing and is here; §5.5's record of which station holds one is
- * save format and is not. The dependency runs one way, and the §6–§7 header
- * below says which way and why.
+ * save format and is not. The §6–§7 divider below says which way the dependency
+ * runs and why.
  *
  * **It does not hold the measurement surface**, and that split is the point.
  * `tests/helpers/market-math.ts` keeps Bell's own Narcotics row, the wrapping
@@ -543,10 +543,8 @@ export function marketRow(
 // ---------------------------------------------------------------------------
 //
 // **§5.5's deficit map is not here, and this module does not import it.** It
-// was, and it was save-format concern living in a pricing module; #67 moved
-// the rows, the drop rule and the parser to `src/deficits.ts` once #46's
-// persistence envelope gave them a second consumer whose whole job is the
-// save. What stayed is §5.2's arithmetic above — `decayDeficit`, `addDeficit`,
+// was; `deficits.ts`'s header carries why it moved and when. What stayed is
+// §5.2's arithmetic above — `decayDeficit`, `addDeficit`,
 // `DEFICIT_HALF_LIFE_MIN` and `DEFICIT_MAX` — because the price response reads
 // it: `stockResponse`, `shelfQuantity` and `MIN_STOCK_RESPONSE_FACTOR` each
 // clamp by `DEFICIT_MAX`, which is `QUANTITY_CAP`, and
@@ -556,10 +554,11 @@ export function marketRow(
 // rather than move a dependency — `DEFICIT_MAX` being `QUANTITY_CAP` is what
 // makes it a cycle and not merely a redirection.
 //
-// **This paragraph is the one copy of that argument.** `deficits.ts`'s header
-// and `tests/deficits.test.ts` point at it rather than restating the call-site
-// list, so a fourth reader of `DEFICIT_MAX` leaves one comment stale and not
-// three. `tests/deficits.test.ts` is what keeps the direction itself true.
+// **This paragraph is the one copy of that argument**, as `deficits.ts`'s
+// header is the one copy of the move's history. Each points at the other
+// rather than restating it, so a fourth reader of `DEFICIT_MAX` leaves one
+// comment stale and not three. `tests/deficits.test.ts` is what keeps the
+// direction itself true.
 
 /**
  * §7's equipment list.

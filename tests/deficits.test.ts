@@ -3,8 +3,9 @@
  *
  * These tests were `market-state.test.ts`'s §5.5 half until node
  * [#67](https://github.com/jcfischer/seelite/issues/67) moved the map out of
- * the pricing module. They moved with it unchanged in substance — a refactor
- * that rewrites its own tests cannot show that behaviour survived — and the
+ * the pricing module — `src/deficits.ts`'s header is where that move's history
+ * is kept. They came with it unchanged in substance, because a refactor that
+ * rewrites its own tests cannot show that behaviour survived, and the
  * three structural tests at the bottom are the only new claims: that
  * `market.ts` carries no save format any more, that it does not import the save
  * module back, and that the half-life, the cap and the drop rule are each
@@ -16,7 +17,6 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { readdirSync } from "node:fs";
 import { type CarrierKey, carrierKey } from "../src/carrier-key";
 import {
 	DEFICIT_DROP_UNITS,
@@ -30,7 +30,7 @@ import { generateGalaxy } from "../src/galaxy";
 import { COMMODITIES, DEFICIT_HALF_LIFE_MIN, DEFICIT_MAX } from "../src/market";
 import { LOCAL_CARRIER_ID } from "../src/station";
 import { generateContents } from "../src/system";
-import { codeOf, repoPath } from "./lib/source-scan";
+import { codeOf, srcFiles } from "./lib/source-scan";
 
 const WORLD = 0x5ee11e;
 
@@ -239,16 +239,15 @@ describe("#67 the split of the deficit map out of the pricing module", () => {
 		// and not a claim to have found every literal.
 		//
 		// Read once rather than per name: `codeOf` is uncached, and three calls
-		// over a filter re-stripped every file in `src/` three times.
-		const SOURCES = readdirSync(repoPath("src"))
-			.filter((f) => f.endsWith(".ts"))
-			.map((f) => [f, codeOf(`src/${f}`)] as const);
+		// over a filter re-stripped every file in `src/` three times. `srcFiles`
+		// is recursive, so "under `src/`" stays true of a subdirectory.
+		const SOURCES = srcFiles().map((f) => [f, codeOf(f)] as const);
 		const declaredIn = (name: string) =>
 			SOURCES.filter(([, code]) =>
 				new RegExp(`(?:const|let|var)\\s+${name}\\b`).test(code),
 			).map(([f]) => f);
-		expect(declaredIn("DEFICIT_HALF_LIFE_MIN")).toEqual(["market.ts"]);
-		expect(declaredIn("DEFICIT_MAX")).toEqual(["market.ts"]);
-		expect(declaredIn("DEFICIT_DROP_UNITS")).toEqual(["deficits.ts"]);
+		expect(declaredIn("DEFICIT_HALF_LIFE_MIN")).toEqual(["src/market.ts"]);
+		expect(declaredIn("DEFICIT_MAX")).toEqual(["src/market.ts"]);
+		expect(declaredIn("DEFICIT_DROP_UNITS")).toEqual(["src/deficits.ts"]);
 	});
 });

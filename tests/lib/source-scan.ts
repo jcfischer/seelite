@@ -14,7 +14,7 @@
  * imports — its consumers are `probe-*.mjs` and `tests/probe-args.test.ts`.
  * This is test-only and reads the checkout, which is a third thing again.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 /** A path relative to the repository root, as this file can see it. */
@@ -73,3 +73,19 @@ const stripComments = (src: string) =>
  *  {@link repoPath}. */
 export const codeOf = (rel: string) =>
 	stripComments(readFileSync(repoPath(rel), "utf8"));
+
+/**
+ * Every TypeScript module under `src/`, as repo-relative paths.
+ *
+ * **Recursive**, which is the half a hand-rolled scan keeps getting wrong: two
+ * tests had grown their own `readdirSync(repoPath("src"))`, neither of them
+ * recursive, each claiming to cover `src/`. `src/` is flat today, so both were
+ * complete and would have stayed silently complete on the day it stopped being
+ * flat — a check that fails open in exactly the direction a new file arrives
+ * from. It is the same argument the stripper above records: one answer to "what
+ * is code here" rather than one per scanner.
+ */
+export const srcFiles = (): string[] =>
+	(readdirSync(repoPath("src"), { recursive: true }) as string[])
+		.filter((f) => f.endsWith(".ts"))
+		.map((f) => `src/${f}`);
