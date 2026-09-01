@@ -14,7 +14,7 @@
 
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
-import { HULL_IDS, HULL_VISUALS, type HullId } from "../src/ship-mesh";
+import { HULL_IDS, HULL_SPECS, type HullId } from "../src/hull";
 import { SELECTED_FORM, buildStationForm } from "../src/station-mesh";
 import {
 	BERTH_CELL,
@@ -254,7 +254,7 @@ describe("fit is geometric", () => {
 	test("a full-size berth admits every ordinary hull and neither capital", () => {
 		const berth = cellBerth("trade");
 		for (const id of HULL_IDS)
-			expect([id, berthFits(berth, HULL_VISUALS[id])]).toEqual([
+			expect([id, berthFits(berth, HULL_SPECS[id].env)]).toEqual([
 				id,
 				!CAPITALS.includes(id),
 			]);
@@ -265,7 +265,7 @@ describe("fit is geometric", () => {
 			expect([
 				type,
 				interiorOf(type).berths.some((berth) =>
-					berthFits(berth, HULL_VISUALS.courier),
+					berthFits(berth, HULL_SPECS.courier.env),
 				),
 			]).toEqual([type, true]);
 	});
@@ -273,7 +273,7 @@ describe("fit is geometric", () => {
 	test("an outpost berth turns away the hulls its cell is smaller than", () => {
 		const berth = cellBerth("outpost");
 		const refused = HULL_IDS.filter(
-			(id) => !berthFits(berth, HULL_VISUALS[id]),
+			(id) => !berthFits(berth, HULL_SPECS[id].env),
 		);
 		// Not a typed list of names: the claim is that the reduced cell refuses
 		// *something* and that both capitals are in it, so a cell quietly grown
@@ -286,7 +286,7 @@ describe("fit is geometric", () => {
 
 describe("clearance reserves one berth", () => {
 	const trade = () => interiorOf("trade");
-	const hull = HULL_VISUALS.courier;
+	const hull = HULL_SPECS.courier.env;
 
 	test("it never hands out an occupied berth", () => {
 		const interior = trade();

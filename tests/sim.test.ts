@@ -18,10 +18,10 @@
  */
 import { expect, test, describe } from "bun:test";
 import {
-	ANGULAR_MAX,
+	REFERENCE_ANGULAR_MAX,
 	ASSIST_CAP_KMS,
 	START_GALAXY,
-	THRUST_KMS2,
+	REFERENCE_THRUST_KMS2,
 	advanceSystem,
 	bodyVelocity,
 	makeSystem,
@@ -29,6 +29,7 @@ import {
 	stepAngular,
 	stepFlight,
 	stepWorld,
+	flightPerformance,
 } from "../src/sim";
 import { generateGalaxy, startSystem } from "../src/galaxy";
 import {
@@ -39,6 +40,19 @@ import {
 import { AU_KM, FAR_SCALE } from "../src/units";
 import { add, length, scale, sub, v3 } from "../src/vec3";
 import { codeOf } from "./lib/source-scan";
+import { PLAYER_BASELINE_HULL } from "../src/hull";
+
+/**
+ * The baseline hull's handling.
+ *
+ * #181 made `stepFlight` and `stepAngular` take a hull's performance rather than
+ * read module constants, and every row in this file was written against the
+ * courier's tuning — which `flightPerformance` reproduces exactly, so nothing
+ * here changed its subject. This file owns the model's own laws;
+ * `tests/hull.test.ts` owns the claim that the roster *varies*, and
+ * `tests/hull-docking.test.ts` owns what the variation costs a docking approach.
+ */
+const BASELINE = flightPerformance(PLAYER_BASELINE_HULL);
 
 const SEED = 20260818;
 
@@ -219,8 +233,8 @@ describe("the game clock", () => {
 		// Never compressed (#10). Cruise is fictional FTL, not a time-scale hack,
 		// so a multiplier appearing here is the thing the constraint forbids.
 		const world = makeWorld(SEED);
-		stepWorld(world, coasting, 0.5);
-		stepWorld(world, coasting, 0.25);
+		stepWorld(world, coasting, 0.5, BASELINE);
+		stepWorld(world, coasting, 0.25, BASELINE);
 		expect(world.gameTime).toBeCloseTo(0.75, 12);
 	});
 
@@ -231,7 +245,12 @@ describe("the game clock", () => {
 		// takes: `MAX_DT` caps a frame at 0.1 s, and the assist's damping is an
 		// exponential in `dt` that only means anything at that scale.
 		for (let i = 0; i < 100; i++) {
-			stepWorld(world, { nose: v3(0, 0, -1), throttle: 1, assist: true }, 0.1);
+			stepWorld(
+				world,
+				{ nose: v3(0, 0, -1), throttle: 1, assist: true },
+				0.1,
+				BASELINE,
+			);
 		}
 		expect(world.gameTime).toBeCloseTo(10, 9);
 		expect(length(world.ship.vel)).toBeGreaterThan(0);
@@ -338,7 +357,7 @@ describe("stepFlight — #5's model, both regimes", () => {
 		// A paused tab hands the loop a dt of 0, and an integrator that moved
 		// anything on that would drift while nobody was looking.
 		const ship = { pos: v3(1, 2, 3), vel: v3(4, 5, 6) };
-		stepFlight(ship, assisted(1), 0);
+		stepFlight(ship, assisted(1), 0, BASELINE);
 		expect(ship.pos).toEqual(v3(1, 2, 3));
 		expect(ship.vel).toEqual(v3(4, 5, 6));
 	});
@@ -347,7 +366,8 @@ describe("stepFlight — #5's model, both regimes", () => {
 		// This is what makes it read as a modern space sim rather than as 1984:
 		// half throttle means half the cap, held, not a thrust that accumulates.
 		const ship = { pos: v3(), vel: v3() };
-		for (let i = 0; i < 400; i++) stepFlight(ship, assisted(0.5), 0.05);
+		for (let i = 0; i < 400; i++)
+			stepFlight(ship, assisted(0.5), 0.05, BASELINE);
 		expect(length(ship.vel)).toBeCloseTo(ASSIST_CAP_KMS * 0.5, 6);
 		// And it is *along the nose*, not merely of that magnitude.
 		expect(ship.vel.z).toBeCloseTo(-ASSIST_CAP_KMS * 0.5, 6);
@@ -357,7 +377,7 @@ describe("stepFlight — #5's model, both regimes", () => {
 		// The cap cruise's exit clamp is stated against (#10 §1), so it is not a
 		// number to be approximately right about.
 		const ship = { pos: v3(), vel: v3(0, 0, -50) };
-		for (let i = 0; i < 200; i++) stepFlight(ship, assisted(1), 0.1);
+		for (let i = 0; i < 200; i++) stepFlight(ship, assisted(1), 0.1, BASELINE);
 		expect(length(ship.vel)).toBeLessThanOrEqual(ASSIST_CAP_KMS + 1e-9);
 	});
 
@@ -366,12 +386,18 @@ describe("stepFlight — #5's model, both regimes", () => {
 		// makes a velocity-vector marker load-bearing: with the assist off, the
 		// nose and the velocity disagree permanently.
 		const drifting = { pos: v3(), vel: v3(1, 0, 0) };
-		for (let i = 0; i < 100; i++) stepFlight(drifting, assisted(0), 0.1);
+		for (let i = 0; i < 100; i++)
+			stepFlight(drifting, assisted(0), 0.1, BASELINE);
 		expect(Math.abs(drifting.vel.x)).toBeLessThan(0.01);
 
 		const newtonian = { pos: v3(), vel: v3(1, 0, 0) };
 		for (let i = 0; i < 100; i++) {
-			stepFlight(newtonian, { nose: NOSE, throttle: 0, assist: false }, 0.1);
+			stepFlight(
+				newtonian,
+				{ nose: NOSE, throttle: 0, assist: false },
+				0.1,
+				BASELINE,
+			);
 		}
 		expect(newtonian.vel.x).toBeCloseTo(1, 12);
 	});
@@ -379,10 +405,15 @@ describe("stepFlight — #5's model, both regimes", () => {
 	test("assist off is Newtonian: thrust accumulates past the cap", () => {
 		const ship = { pos: v3(), vel: v3() };
 		for (let i = 0; i < 100; i++) {
-			stepFlight(ship, { nose: NOSE, throttle: 1, assist: false }, 0.1);
+			stepFlight(
+				ship,
+				{ nose: NOSE, throttle: 1, assist: false },
+				0.1,
+				BASELINE,
+			);
 		}
-		// Ten seconds at THRUST_KMS2 with nothing taking it away.
-		expect(-ship.vel.z).toBeCloseTo(THRUST_KMS2 * 10, 6);
+		// Ten seconds at REFERENCE_THRUST_KMS2 with nothing taking it away.
+		expect(-ship.vel.z).toBeCloseTo(REFERENCE_THRUST_KMS2 * 10, 6);
 		expect(-ship.vel.z).toBeGreaterThan(ASSIST_CAP_KMS);
 	});
 
@@ -392,14 +423,14 @@ describe("stepFlight — #5's model, both regimes", () => {
 		// symptom is a ship that ends up somewhere slightly different depending on
 		// frame rate.
 		const ship = { pos: v3(), vel: v3() };
-		stepFlight(ship, { nose: NOSE, throttle: 1, assist: false }, 1);
+		stepFlight(ship, { nose: NOSE, throttle: 1, assist: false }, 1, BASELINE);
 		expect(ship.pos.z).toBeLessThan(0);
 		expect(ship.pos.z).toBeCloseTo(ship.vel.z * 1, 9);
 	});
 
 	test("releasing the throttle under assist brings the ship to rest", () => {
 		const ship = { pos: v3(), vel: v3(0, 0, -ASSIST_CAP_KMS) };
-		for (let i = 0; i < 300; i++) stepFlight(ship, assisted(0), 0.1);
+		for (let i = 0; i < 300; i++) stepFlight(ship, assisted(0), 0.1, BASELINE);
 		expect(length(ship.vel)).toBeLessThan(1e-6);
 	});
 
@@ -416,6 +447,7 @@ describe("stepFlight — #5's model, both regimes", () => {
 				ship,
 				{ nose: NOSE, throttle: 0, assist: true, frameVel },
 				0.1,
+				BASELINE,
 			);
 		}
 		expect(length(sub(ship.vel, frameVel))).toBeLessThan(1e-6);
@@ -431,6 +463,7 @@ describe("stepFlight — #5's model, both regimes", () => {
 				running,
 				{ nose: NOSE, throttle: 1, assist: true, frameVel },
 				0.1,
+				BASELINE,
 			);
 		}
 		expect(length(sub(running.vel, frameVel))).toBeCloseTo(ASSIST_CAP_KMS, 6);
@@ -444,6 +477,7 @@ describe("stepFlight — #5's model, both regimes", () => {
 				ship,
 				{ nose: NOSE, throttle: 0, assist: false, frameVel },
 				0.1,
+				BASELINE,
 			);
 		}
 		expect(length(ship.vel)).toBe(0);
@@ -522,28 +556,42 @@ describe("stepAngular — rotation with momentum", () => {
 	test("a turn eases in rather than snapping to its rate", () => {
 		// One frame at full stick must not already be at the peak rate: the ship
 		// answers the stick over a third of a second, and that ramp is the feel.
-		const first = stepAngular(still, { ...still, yaw: 1 }, none, true, 0.016);
+		const first = stepAngular(
+			still,
+			{ ...still, yaw: 1 },
+			none,
+			true,
+			0.016,
+			BASELINE,
+		);
 		expect(first.yaw).toBeGreaterThan(0);
-		expect(first.yaw).toBeLessThan(ANGULAR_MAX.yaw * 0.2);
+		expect(first.yaw).toBeLessThan(REFERENCE_ANGULAR_MAX.yaw * 0.2);
 
 		let rates = still;
 		for (let i = 0; i < 60; i++) {
-			rates = stepAngular(rates, { ...still, yaw: 1 }, none, true, 0.016);
+			rates = stepAngular(
+				rates,
+				{ ...still, yaw: 1 },
+				none,
+				true,
+				0.016,
+				BASELINE,
+			);
 		}
-		expect(rates.yaw).toBeCloseTo(ANGULAR_MAX.yaw, 6);
+		expect(rates.yaw).toBeCloseTo(REFERENCE_ANGULAR_MAX.yaw, 6);
 	});
 
 	test("and eases out when the stick is released, with the assist on", () => {
 		// The half that was missing, in the principal's words: "leaving a key stops
 		// any motion immediately, not a gentle way of easing out".
-		const spinning = { pitch: 0, yaw: ANGULAR_MAX.yaw, roll: 0 };
-		const oneFrame = stepAngular(spinning, none, none, true, 0.016);
-		expect(oneFrame.yaw).toBeGreaterThan(ANGULAR_MAX.yaw * 0.8);
-		expect(oneFrame.yaw).toBeLessThan(ANGULAR_MAX.yaw);
+		const spinning = { pitch: 0, yaw: REFERENCE_ANGULAR_MAX.yaw, roll: 0 };
+		const oneFrame = stepAngular(spinning, none, none, true, 0.016, BASELINE);
+		expect(oneFrame.yaw).toBeGreaterThan(REFERENCE_ANGULAR_MAX.yaw * 0.8);
+		expect(oneFrame.yaw).toBeLessThan(REFERENCE_ANGULAR_MAX.yaw);
 
 		let rates = spinning;
 		for (let i = 0; i < 120; i++)
-			rates = stepAngular(rates, none, none, true, 0.016);
+			rates = stepAngular(rates, none, none, true, 0.016, BASELINE);
 		expect(rates.yaw).toBeLessThan(0.01);
 	});
 
@@ -551,7 +599,7 @@ describe("stepAngular — rotation with momentum", () => {
 		// Newtonian rotation, and the second place the two regimes visibly part.
 		let rates = { pitch: 0.4, yaw: -0.2, roll: 0.1 };
 		for (let i = 0; i < 200; i++)
-			rates = stepAngular(rates, none, none, false, 0.016);
+			rates = stepAngular(rates, none, none, false, 0.016, BASELINE);
 		expect(rates.pitch).toBeCloseTo(0.4, 12);
 		expect(rates.yaw).toBeCloseTo(-0.2, 12);
 	});
@@ -563,6 +611,7 @@ describe("stepAngular — rotation with momentum", () => {
 			{ ...still, yaw: 0.05 },
 			true,
 			0.016,
+			BASELINE,
 		);
 		expect(kicked.yaw).toBeGreaterThan(0);
 		// A flicked pointer cannot exceed the axis's peak rate.
@@ -572,14 +621,22 @@ describe("stepAngular — rotation with momentum", () => {
 			{ ...still, yaw: 99 },
 			true,
 			0.016,
+			BASELINE,
 		);
-		expect(flicked.yaw).toBe(ANGULAR_MAX.yaw);
+		expect(flicked.yaw).toBe(REFERENCE_ANGULAR_MAX.yaw);
 	});
 
 	test("a zero delta changes nothing", () => {
 		const rates = { pitch: 0.3, yaw: 0.2, roll: 0.1 };
 		expect(
-			stepAngular(rates, { pitch: 1, yaw: 1, roll: 1 }, none, true, 0),
+			stepAngular(
+				rates,
+				{ pitch: 1, yaw: 1, roll: 1 },
+				none,
+				true,
+				0,
+				BASELINE,
+			),
 		).toBe(rates);
 	});
 });

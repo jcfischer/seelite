@@ -117,9 +117,10 @@ import {
 	projectDirection,
 } from "./hud";
 import {
-	ANGULAR_MAX,
 	ASSIST_CAP_KMS,
 	type Angular,
+	type FlightPerformance,
+	flightPerformance,
 	type Body,
 	type FlightControl,
 	type World,
@@ -200,13 +201,13 @@ import {
 	updateStationVisuals,
 } from "./station-mesh";
 import {
+	HULL_SPECS,
+	PLAYER_BASELINE_HULL,
+	PURCHASABLE_HULL_IDS,
 	type HullId,
 	type HullVariantId,
-	type FleetSlot,
-	HULL_VISUALS,
-	buildShipMesh,
-	fleetLayout,
-} from "./ship-mesh";
+} from "./hull";
+import { type FleetSlot, buildShipMesh, fleetLayout } from "./ship-mesh";
 import {
 	COCKPIT_KEY_LIGHT,
 	applyCockpitQuality,
@@ -319,17 +320,50 @@ const CHASE_UP_KM = 0.04;
 /**
  * The hull the player flies: the courier `Kestrel`.
  *
- * Named as a pair because `buildShipMesh("courier")` defaults its variant, and
- * a default is exactly what the spec forbids a roster to take — the comment
- * that used to sit here claimed the choice was explicit while the code let the
- * builder pick. #26 still owns the roster; when it arrives it replaces this
- * constant, and it will be able to see what it is replacing.
+ * **Read off the roster now rather than declared here** (#181). This was a
+ * hardcoded pair, and its own comment said #26 would replace it — #26 ruled the
+ * courier the `player-baseline` and #181 gave every hull a selected variant, so
+ * both halves come from `HULL_SPECS` and the renderer names no roster fact of
+ * its own. A shipyard that sells a second hull changes this to a saved value; it
+ * does not change where the variant comes from.
  */
-const PLAYER_HULL: readonly [HullId, HullVariantId] = ["courier", "a"];
+const PLAYER_HULL: readonly [HullId, HullVariantId] = ((): readonly [
+	HullId,
+	HullVariantId,
+] => {
+	// **`?hull=<id>` is a development affordance and the node that closes on
+	// flying one.** #26's D5 says a freighter is sluggish and an interceptor is
+	// sharp; a probe cannot fail on *this feels wrong*, so the sluggish end of
+	// the roster has to be flown by a person, and until a shipyard exists there
+	// is no other way to be in one. It is the same shape as `?combat=1` and
+	// `?seed=` — a query the game reads once at load, not a mode.
+	//
+	// A shipyard replaces it with a **saved** value; it does not change where the
+	// variant comes from, and it does not make this a second place a hull is
+	// chosen. An unknown or absent id falls back to the baseline rather than
+	// throwing, because a typo in a URL should not be a black screen.
+	const asked = new URLSearchParams(window.location.search).get("hull");
+	const id = (PURCHASABLE_HULL_IDS as readonly string[]).includes(asked ?? "")
+		? (asked as HullId)
+		: PLAYER_BASELINE_HULL;
+	// **It says so when it falls back.** Silently flying a courier while the
+	// pilot believes they are judging a freighter is the one way this affordance
+	// could produce a wrong answer, and the whole point of it is a judgement.
+	if (asked !== null && asked !== id)
+		console.warn(
+			`[seelite] ?hull=${asked} is not one of ${PURCHASABLE_HULL_IDS.join(", ")} — flying the ${id}`,
+		);
+	return [id, HULL_SPECS[id].variant];
+})();
 
 /** The player hull's envelope, which is what a berth's fit predicate compares
- *  against (§13.2). Read off the roster rather than restated. */
-const PLAYER_ENVELOPE = HULL_VISUALS[PLAYER_HULL[0]];
+ *  against (§13.2). Read off the roster rather than restated — and it is the
+ *  *measured* box of the selected variant, which is the half #181 fixed. */
+const PLAYER_ENVELOPE = HULL_SPECS[PLAYER_HULL[0]].env;
+
+/** The player hull's handling (#26's D5). One derivation per hull, computed
+ *  once: `flightPerformance` is pure and the roster does not change mid-frame. */
+const PLAYER_PERFORMANCE: FlightPerformance = flightPerformance(PLAYER_HULL[0]);
 
 /** No other ship holds a berth in the live game — NPC traffic is #8's. Shared
  *  rather than allocated per station per frame. */
@@ -882,7 +916,7 @@ class Game {
 	/** The forward station console keeps its tab across a head turn while docked. */
 	private stationConsoleTab: StationConsoleTab = "Market";
 	/** Commander-owned mutable commerce state; no renderer may write it. */
-	private commander = newCommander();
+	private commander = newCommander(PLAYER_HULL[0]);
 	/** The game-owned per-galaxy state holds the station deficit map. */
 	private commerceWorld!: WorldState;
 	/** Docked console screens are stable until station or tab changes; do not rebuild them each frame. */
@@ -1088,6 +1122,22 @@ class Game {
 	 *  scheme is: a probe that restated it would assert against its own copy and
 	 *  go falsely red the day the flight model retunes it. */
 	readonly assistCapKms = ASSIST_CAP_KMS;
+
+	/**
+	 * Which hull is flying, and what that means — the roster's own figures, not a
+	 * probe's copy of them.
+	 *
+	 * On the handle because `?hull=` makes the answer a runtime question for the
+	 * first time (#181): a capture or a probe that assumed the courier would be
+	 * measuring whichever hull the URL happened to name, and would report a
+	 * sluggish approach as a regression.
+	 */
+	readonly playerHull = {
+		id: PLAYER_HULL[0],
+		variant: PLAYER_HULL[1],
+		spec: HULL_SPECS[PLAYER_HULL[0]],
+		performance: PLAYER_PERFORMANCE,
+	};
 
 	/** #14's shell, on the handle for the same reason: `probe-arrival.mjs` states
 	 *  its bound as a fraction of this rather than as its own 1.05. */
@@ -3922,8 +3972,9 @@ class Game {
 			this.throttle = 0;
 			return false;
 		}
-		const nose = slewToward(this.nose(), command.nose, ANGULAR_MAX.yaw * dt);
-		const up = slewToward(this.shipUp(), command.up, ANGULAR_MAX.roll * dt);
+		const rate = PLAYER_PERFORMANCE.angularMax;
+		const nose = slewToward(this.nose(), command.nose, rate.yaw * dt);
+		const up = slewToward(this.shipUp(), command.up, rate.roll * dt);
 		this.setAttitude(nose, up);
 		this.throttle = Math.min(1, command.speedKms / ASSIST_CAP_KMS);
 		// The rates are zeroed rather than left running: the computer is placing
@@ -4243,6 +4294,7 @@ class Game {
 			impulse,
 			this.assist,
 			dt,
+			PLAYER_PERFORMANCE,
 		);
 
 		// Rotations composed in the ship's own frame — multiply on the right —
@@ -4310,7 +4362,7 @@ class Game {
 		// The whole world, not just the ship: `dt` is sim seconds and the bodies
 		// are on orbits driven by the same clock. Stepping the ship alone would
 		// freeze the system around it, which is the state the scaffold was in.
-		stepWorld(this.world, this.control(), dt);
+		stepWorld(this.world, this.control(), dt, PLAYER_PERFORMANCE);
 		// §7: the tank refills passively in normal flight, and that is the
 		// anti-stranding rule rather than a convenience.
 		this.chargeAu = chargeAfterRegen(this.chargeAu, dt);
