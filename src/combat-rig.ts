@@ -145,6 +145,8 @@ const BOLT_HEAD_MAX_PX = 12;
 const BOLT_HEAD_REF_KM = 0.6;
 /** How long the canopy flashes after the model takes something off the player. */
 const HIT_FLASH_S = 0.22;
+/** How long a scored hit leaves a spark on the striker. */
+const HIT_SPARK_S = 0.16;
 /** The striker's intent rides on the target line: the status line has no room
  *  for it at the narrow viewport's fitter floor, and putting it there once
  *  displaced the MISSILE and INTD fields two probe assertions wait on. */
@@ -192,6 +194,76 @@ function statusText(s: CombatPrototypeState): string {
 	return `FIRE ${fire} · H ${s.heat.toFixed(0)} E ${s.energy.toFixed(0)} · LOCK ${s.missileLock ? "READY" : "ACQ"} · MISSILE ${s.incomingMissile ? "WARNING" : "CLEAR"} · INTD ${s.interdiction ? "ACTIVE" : "CLEAR"}`;
 }
 
+/**
+ * An additive point drawn at a floor in screen space.
+ *
+ * Two things in this rig need it and for the same reason the hulls' nav lights
+ * do: a physical size disappears at the range a fight is fought at. A bolt on
+ * approach and a spark on a hull two kilometres away are both a few metres
+ * across, which is under a pixel; a floor in *screen* space is what keeps them
+ * on the canopy. Written once because the second one was about to be a copy.
+ */
+function glowMaterial(options: {
+	color: [number, number, number];
+	nearPx: number;
+	minPx: number;
+	maxPx: number;
+	refKm: number;
+	/** How hard the core burns. The scene runs through `UnrealBloomPass`, so
+	 *  this is a bloom radius as much as a brightness. */
+	core: number;
+}): THREE.ShaderMaterial {
+	const material = new THREE.ShaderMaterial({
+		uniforms: {
+			uPixelRatio: { value: 1 },
+			uNearPx: { value: options.nearPx },
+			uMinPx: { value: options.minPx },
+			uMaxPx: { value: options.maxPx },
+			uRefKm: { value: options.refKm },
+			uCore: { value: options.core },
+			uTint: { value: new THREE.Vector3(...options.color) },
+			uOpacity: { value: 1 },
+		},
+		vertexShader: `
+			uniform float uPixelRatio;
+			uniform float uNearPx;
+			uniform float uMinPx;
+			uniform float uMaxPx;
+			uniform float uRefKm;
+			varying float vLive;
+			void main() {
+				// A retired slot is collapsed onto the camera; drawn, it would be a
+				// permanent blob in the middle of the canopy.
+				vLive = dot(position, position) > 0.0 ? 1.0 : 0.0;
+				vec4 mv = modelViewMatrix * vec4(position, 1.0);
+				float dist = max(-mv.z, 1e-5);
+				gl_PointSize =
+					clamp(uNearPx * (uRefKm / dist), uMinPx, uMaxPx) * uPixelRatio;
+				gl_Position = projectionMatrix * mv;
+			}
+		`,
+		fragmentShader: `
+			uniform vec3 uTint;
+			uniform float uCore;
+			uniform float uOpacity;
+			varying float vLive;
+			void main() {
+				if (vLive < 0.5 || uOpacity <= 0.0) discard;
+				float r = min(length(gl_PointCoord - 0.5) * 2.0, 1.0);
+				float core = 1.0 - r;
+				float hot = pow(core, 3.0);
+				vec3 lit = mix(uTint, vec3(1.0), hot * 0.7);
+				gl_FragColor =
+					vec4(lit * (core * 0.25 + hot * uCore) * uOpacity, 1.0);
+			}
+		`,
+		transparent: true,
+		blending: THREE.AdditiveBlending,
+		depthWrite: false,
+	});
+	return material;
+}
+
 /** A direction, or the fallback when there is no direction to be had. */
 const unit = (v: Vec3): Vec3 => {
 	const magnitude = length(v);
@@ -203,8 +275,6 @@ const RIG_NOSE = new THREE.Vector3();
 const RIG_UP = new THREE.Vector3();
 const RIG_ORIGIN = new THREE.Vector3();
 const RIG_ATTITUDE = new THREE.Matrix4();
-const RIG_INVERSE = new THREE.Quaternion();
-const RIG_IMPACT = new THREE.Vector3();
 
 export class CombatPrototypeRig {
 	/** Throwaway #48 balance state: it is not world or persistent combat state. */
@@ -268,8 +338,8 @@ export class CombatPrototypeRig {
 	private playerPool = 0;
 	private struckFor = 0;
 	/** Local sparks at the point the player's beam met the hull. */
-	private readonly impactSparks: THREE.Mesh;
-	private readonly impactMaterial: THREE.MeshBasicMaterial;
+	private readonly impactSparks: THREE.Points;
+	private readonly impactMaterial: THREE.ShaderMaterial;
 	private impactPoint?: Vec3;
 	private hitFlash = 0;
 	private wasHit = false;
@@ -319,23 +389,38 @@ export class CombatPrototypeRig {
 		this.targetMesh.name = "combat-prototype-target";
 		this.targetMesh.scale.setScalar(ENEMY_VISUAL_SCALE);
 		scene.add(this.targetMesh);
-		this.impactMaterial = new THREE.MeshBasicMaterial({
-			color: 0xbfeaff,
-			transparent: true,
-			opacity: 0,
-			depthWrite: false,
+		// **A mark on the metal, and it has to be seen from two kilometres.** It
+		// was a 0.06 sphere in the hull's own frame — kilometres, on a hull
+		// `HULL_VISUALS.raider.lengthKm` = 0.066 long, so bigger than the ship.
+		// Shrinking it to 0.005 made it right and invisible: fifteen metres drawn
+		// at three kilometres is under a pixel, so a scored hit left no mark at
+		// all. Physical size is the wrong lever; this is the same screen-space
+		// floor the bolts and the nav lights use.
+		this.impactMaterial = glowMaterial({
+			color: [0.75, 0.92, 1],
+			nearPx: 26,
+			minPx: 5,
+			maxPx: 34,
+			refKm: 1.2,
+			core: 1.5,
 		});
-		// **Kilometres, in the hull's own local frame.** The raider is
-		// `HULL_VISUALS.raider.lengthKm` — 0.066 — from nose to tail, so a sphere
-		// of 0.06 is the size of the whole ship, and this one was. A spark has to
-		// be a mark on the metal.
-		this.impactSparks = new THREE.Mesh(
-			new THREE.SphereGeometry(0.005, 8, 6),
-			this.impactMaterial,
+		const sparkGeometry = new THREE.BufferGeometry();
+		sparkGeometry.setAttribute(
+			"position",
+			new THREE.BufferAttribute(new Float32Array(3), 3),
 		);
+		this.impactSparks = new THREE.Points(sparkGeometry, this.impactMaterial);
 		this.impactSparks.name = "combat-prototype-impact";
+		this.impactSparks.frustumCulled = false;
 		this.impactSparks.visible = false;
-		this.targetMesh.add(this.impactSparks);
+		// In the scene rather than on the hull: it is placed camera-relative like
+		// everything else here, and a child of a mesh scaled by
+		// `ENEMY_VISUAL_SCALE` would have its point size unaffected but its
+		// position divided — two frames to keep in step for no gain.
+		scene.add(this.impactSparks);
+		this.impactSparks.onBeforeRender = (renderer) => {
+			this.impactMaterial.uniforms.uPixelRatio.value = renderer.getPixelRatio();
+		};
 		this.boltSeed = mix(seedFor(worldSeed, "combat"), 168);
 		const boltPositions = new Float32Array(BOLT_POOL * 6);
 		const boltGeometry = new THREE.BufferGeometry();
@@ -364,46 +449,13 @@ export class CombatPrototypeRig {
 			"position",
 			new THREE.BufferAttribute(new Float32Array(BOLT_POOL * 3), 3),
 		);
-		const heads = new THREE.ShaderMaterial({
-			uniforms: {
-				uPixelRatio: { value: 1 },
-				uNearPx: { value: BOLT_HEAD_NEAR_PX },
-				uMinPx: { value: BOLT_HEAD_MIN_PX },
-				uMaxPx: { value: BOLT_HEAD_MAX_PX },
-				uRefKm: { value: BOLT_HEAD_REF_KM },
-			},
-			vertexShader: `
-				uniform float uPixelRatio;
-				uniform float uNearPx;
-				uniform float uMinPx;
-				uniform float uMaxPx;
-				uniform float uRefKm;
-				varying float vLive;
-				void main() {
-					// A retired slot is collapsed onto the camera; drawn, it would be a
-					// permanent blob in the middle of the canopy.
-					vLive = dot(position, position) > 0.0 ? 1.0 : 0.0;
-					vec4 mv = modelViewMatrix * vec4(position, 1.0);
-					float dist = max(-mv.z, 1e-5);
-					gl_PointSize =
-						clamp(uNearPx * (uRefKm / dist), uMinPx, uMaxPx) * uPixelRatio;
-					gl_Position = projectionMatrix * mv;
-				}
-			`,
-			fragmentShader: `
-				varying float vLive;
-				void main() {
-					if (vLive < 0.5) discard;
-					float r = min(length(gl_PointCoord - 0.5) * 2.0, 1.0);
-					float core = 1.0 - r;
-					float hot = pow(core, 3.0);
-					vec3 lit = mix(vec3(1.0, 0.55, 0.32), vec3(1.0), hot * 0.7);
-					gl_FragColor = vec4(lit * (core * 0.25 + hot * 1.1), 1.0);
-				}
-			`,
-			transparent: true,
-			blending: THREE.AdditiveBlending,
-			depthWrite: false,
+		const heads = glowMaterial({
+			color: [1, 0.55, 0.32],
+			nearPx: BOLT_HEAD_NEAR_PX,
+			minPx: BOLT_HEAD_MIN_PX,
+			maxPx: BOLT_HEAD_MAX_PX,
+			refKm: BOLT_HEAD_REF_KM,
+			core: 1.1,
 		});
 		this.boltHeads = new THREE.Points(headGeometry, heads);
 		this.boltHeads.name = "combat-prototype-enemy-bolts";
@@ -522,7 +574,7 @@ export class CombatPrototypeRig {
 		// walk along the hull while a held trigger keeps scoring.
 		const connecting = held && flown.targetInCone;
 		if (connecting && !this.wasHit) {
-			this.hitFlash = 0.16;
+			this.hitFlash = HIT_SPARK_S;
 			this.impactPoint = add(
 				pilot.aimOrigin,
 				scale(pilot.aimNose, flown.laserEndpointKm),
@@ -635,19 +687,20 @@ export class CombatPrototypeRig {
 		this.targetMesh.quaternion.setFromRotationMatrix(RIG_ATTITUDE);
 		this.targetMesh.visible = view === "cockpit";
 
-		const flash = this.hitFlash / 0.16;
+		const flash = this.hitFlash / HIT_SPARK_S;
 		if (this.impactPoint) {
-			RIG_IMPACT.set(
-				this.impactPoint.x - ship.x,
-				this.impactPoint.y - ship.y,
-				this.impactPoint.z - ship.z,
-			)
-				.applyQuaternion(RIG_INVERSE.copy(this.targetMesh.quaternion).invert())
-				.multiplyScalar(1 / ENEMY_VISUAL_SCALE);
-			this.impactSparks.position.copy(RIG_IMPACT);
+			const at = this.impactSparks.geometry.getAttribute(
+				"position",
+			) as THREE.BufferAttribute;
+			at.setXYZ(
+				0,
+				this.impactPoint.x - camPos.x,
+				this.impactPoint.y - camPos.y,
+				this.impactPoint.z - camPos.z,
+			);
+			at.needsUpdate = true;
 		}
-		this.impactSparks.scale.setScalar(1 + (1 - flash) * 0.35);
-		this.impactMaterial.opacity = flash * 0.95;
+		this.impactMaterial.uniforms.uOpacity.value = flash;
 		this.impactSparks.visible =
 			view === "cockpit" && flash > 0 && this.impactPoint !== undefined;
 

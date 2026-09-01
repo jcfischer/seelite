@@ -17,6 +17,22 @@ export const COMBAT_PROTOTYPE_DEFAULTS = {
 	energyRegenPerSecond: 12,
 	heatCoolPerSecond: 16,
 	shieldRechargePerSecond: 6,
+	/**
+	 * How long the player's shields stay down after taking a hit.
+	 *
+	 * **Without it, intermittent fire cannot land at all.** Recharge is 6/s and
+	 * the pulse does 6/s, so a shooter has to be on target *every frame* to make
+	 * any progress — and the scripted duel this model was tuned against fired on
+	 * a 50 % schedule, so it never was. Flown, the striker holds its nose on the
+	 * player for about 13 % of a fight: measured over 787 frames of a duel it
+	 * fired on 99 of them and the player's shields did not move by a single
+	 * point. The player was invulnerable and the fight had no stakes.
+	 *
+	 * A recharge delay is the usual answer and it is a real mechanic rather than
+	 * a fudge: it makes a burst count, and it leaves a pilot who breaks contact
+	 * a way to get the shields back.
+	 */
+	shieldRechargeDelaySeconds: 3,
 	lockSeconds: 1.5,
 	interdictionSeconds: 2.5,
 } as const;
@@ -43,6 +59,8 @@ export interface CombatPrototypeState {
 	incomingMissile: boolean;
 	interdiction: boolean;
 	interdictionProgress: number;
+	/** Seconds since the player last took damage; gates the shield recharge. */
+	sinceStruck: number;
 }
 export interface CombatPrototypeInput {
 	dt: number;
@@ -81,6 +99,9 @@ export function createCombatPrototype(
 		incomingMissile: false,
 		interdiction: false,
 		interdictionProgress: 0,
+		// Starts clear of the delay, so a fresh state recharges rather than
+		// spending its first three seconds recovering from a hit it never took.
+		sinceStruck: COMBAT_PROTOTYPE_DEFAULTS.shieldRechargeDelaySeconds,
 		...overrides,
 	};
 }
@@ -175,7 +196,9 @@ export function stepCombatPrototype(
 		!next.targetHeatLocked &&
 		next.targetEnergy >= enemyEnergyCost;
 	next.enemyFiring = enemyCanFire ? "pulse" : null;
+	next.sinceStruck += dt;
 	if (enemyCanFire) {
+		next.sinceStruck = 0;
 		next.targetEnergy -= enemyEnergyCost;
 		next.targetHeat = clamp(
 			next.targetHeat + COMBAT_PROTOTYPE_DEFAULTS.pulseHeatPerSecond * dt,
@@ -198,12 +221,16 @@ export function stepCombatPrototype(
 			next.targetHeat - COMBAT_PROTOTYPE_DEFAULTS.heatCoolPerSecond * dt,
 			COMBAT_PROTOTYPE_DEFAULTS.heatLock,
 		);
-		const lower =
-			next.foreShield <= next.aftShield ? "foreShield" : "aftShield";
-		next[lower] = clamp(
-			next[lower] + COMBAT_PROTOTYPE_DEFAULTS.shieldRechargePerSecond * dt,
-			COMBAT_PROTOTYPE_DEFAULTS.shield,
-		);
+		if (
+			next.sinceStruck >= COMBAT_PROTOTYPE_DEFAULTS.shieldRechargeDelaySeconds
+		) {
+			const lower =
+				next.foreShield <= next.aftShield ? "foreShield" : "aftShield";
+			next[lower] = clamp(
+				next[lower] + COMBAT_PROTOTYPE_DEFAULTS.shieldRechargePerSecond * dt,
+				COMBAT_PROTOTYPE_DEFAULTS.shield,
+			);
+		}
 	}
 	next.targetHeatLocked =
 		next.targetHeat >= COMBAT_PROTOTYPE_DEFAULTS.heatLock ||

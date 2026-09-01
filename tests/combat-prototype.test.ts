@@ -37,13 +37,26 @@ function fireFixedStepDuel(state = createCombatPrototype(), cap = 200) {
 test("starter pulse duel destroys the shielded target within the pacing target", () => {
 	const state = fireFixedStepDuel();
 	expect(state.targetHull).toBe(0);
-	// The enemy fired back through the duel: shields were engaged (their sum
-	// is below the untouched total) while hull stayed untouched — so this is a
-	// two-sided exchange that does not threaten the player at these numbers.
+	// The enemy fired back through the duel, and it now costs the player hull.
+	//
+	// **This assertion used to be `playerHull === hull` — untouched — and that
+	// was a property of the recharge, not of the exchange.** Recharge was 6/s
+	// against a 6/s pulse, so nothing short of continuous fire could take a
+	// point off a shield, and the scripted enemy fires on a 50 % schedule. With
+	// `shieldRechargeDelaySeconds` the schedule lands: the player finishes this
+	// duel around half hull. A duel the player cannot lose is not a duel, and
+	// #48's "does not threaten the player at these numbers" was a claim about
+	// the arithmetic rather than about the fight.
+	//
+	// The bound is wide on purpose: the exact figure is a balance number the
+	// principal has to fly, and pinning it here would make a retune look like a
+	// regression. What the test holds is the shape — hull is taken, and the
+	// player is alive at the end.
 	expect(state.foreShield + state.aftShield).toBeLessThan(
 		COMBAT_PROTOTYPE_DEFAULTS.shield * 2,
 	);
-	expect(state.playerHull).toBe(COMBAT_PROTOTYPE_DEFAULTS.hull);
+	expect(state.playerHull).toBeGreaterThan(0);
+	expect(state.playerHull).toBeLessThan(COMBAT_PROTOTYPE_DEFAULTS.hull);
 	expect(state.elapsed).toBeGreaterThanOrEqual(60);
 	expect(state.elapsed).toBeLessThanOrEqual(90);
 });
@@ -99,6 +112,47 @@ test("an off-cone shot spends resources without damaging the target", () => {
 	expect(state.targetForeShield).toBe(COMBAT_PROTOTYPE_DEFAULTS.shield);
 	expect(state.targetAftShield).toBe(COMBAT_PROTOTYPE_DEFAULTS.shield);
 	expect(state.targetHull).toBe(COMBAT_PROTOTYPE_DEFAULTS.hull);
+});
+
+/**
+ * What the recharge delay is for, stated as the exchange it makes possible.
+ *
+ * A fifth of the time on target is below the recharge rate, so without the
+ * delay this volley cannot take a single point off — which is the state the
+ * flown duel was in: the striker held its nose on the player for 13 % of a
+ * fight, fired on 99 frames of 787, and the player's shields did not move.
+ */
+test("intermittent fire lands, which is what the recharge delay is for", () => {
+	const duty = 5;
+	let state = createCombatPrototype();
+	const opening = state.foreShield;
+	for (let frame = 0; frame < 600; frame++)
+		state = stepCombatPrototype(state, {
+			dt: 0.05,
+			enemyFiring: frame % duty === 0,
+		});
+	expect(state.foreShield).toBeLessThan(opening);
+});
+
+test("a shield that has just been hit waits out the delay before recharging", () => {
+	const delay = COMBAT_PROTOTYPE_DEFAULTS.shieldRechargeDelaySeconds;
+	// **The guard is the test.** The wait below is `delay - 0.25` long, so a
+	// delay of zero makes that loop empty and the assertion after it compares a
+	// value to itself — which is exactly how this read green against a build
+	// with the delay removed. A constant that makes the check vacuous has to
+	// fail it rather than satisfy it.
+	expect(delay).toBeGreaterThan(0.5);
+	let state = createCombatPrototype({ foreShield: 40 });
+	state = stepCombatPrototype(state, { dt: 0.1, enemyFiring: true });
+	const struck = state.foreShield;
+	expect(struck).toBeLessThan(40);
+	for (let elapsed = 0; elapsed < delay - 0.25; elapsed += 0.1)
+		state = stepCombatPrototype(state, { dt: 0.1 });
+	expect(state.foreShield).toBeCloseTo(struck, 6);
+	// And it does come back, or the delay would be a shield that never returns.
+	for (let elapsed = 0; elapsed < 1; elapsed += 0.1)
+		state = stepCombatPrototype(state, { dt: 0.1 });
+	expect(state.foreShield).toBeGreaterThan(struck + 3);
 });
 
 test("a shield-breaking hit bleeds exactly the unabsorbed remainder to hull", () => {

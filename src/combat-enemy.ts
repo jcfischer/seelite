@@ -152,6 +152,18 @@ const LEAD_CAP_S = 5;
 const EVADE_SPIRAL_RAD_S = 2.6;
 /** How long a tracked-into-evade locks out the next one. */
 const EVADE_COOLDOWN_S = 7;
+/**
+ * The same lockout for being *hit*, and shorter.
+ *
+ * Being hit used to ignore the lockout entirely — "a player who can hold the
+ * sight on it has earned the suppression". Flown, that is not suppression, it
+ * is a stalemate: measured against a pilot tracking the striker and holding the
+ * trigger for thirty seconds, it fired **zero** shots back and its closest
+ * approach was 5.68 km, sitting just outside its own six-kilometre gun range
+ * for the whole engagement. A break is a reaction to a hit; refusing to come
+ * back is not.
+ */
+const HIT_EVADE_COOLDOWN_S = 3.5;
 /** How near the player's sight line counts as being tracked. Measured as a
  *  miss distance rather than an angle, so it means the same thing at two
  *  kilometres as at ten. */
@@ -449,8 +461,9 @@ export function stepCombatEnemy(
 
 	if (combat.targetHull <= FLEE_HULL) {
 		if (phase !== "flee") commit("flee", 30, 30);
-	} else if (underFire && phase !== "evade") {
+	} else if (underFire && phase !== "evade" && evadeCooldown <= 0) {
 		commit("evade", 1.1, 2.1);
+		evadeCooldown = HIT_EVADE_COOLDOWN_S;
 	} else if (range <= MERGE_BREAK_KM && phase !== "break") {
 		commit("break", 1.2, 2.2);
 	} else if (
