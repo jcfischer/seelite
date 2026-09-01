@@ -228,13 +228,20 @@ export const COCKPIT_FINISH_IDS = Object.keys(
  *
  * **It is not a bloom source, and an earlier draft of this said it was.** The
  * composite pass is `UnrealBloomPass(…, 0.55, 0.6, 0.85)` — a luminance
- * threshold of 0.85 — and the lamp's colour at this intensity is about
- * 0.34/0.29/0.22, nowhere near it. That is deliberate rather than an oversight:
- * 0.9 was rejected precisely *because* its bloom lifted the coaming the
- * flight-floor strip is read against, so a value chosen to stay under the
- * threshold cannot also be claimed to cross it. #103 owns selective bloom; if
- * the lamps should glow, that is its decision and not a side effect asserted
- * here.
+ * threshold of 0.85. `0xffd9a8` is an sRGB authoring value and three's
+ * `ColorManagement` is on by default, so what the shader sees at this intensity
+ * is about **0.34/0.24/0.13 in working space**, a luminance near 0.24. Not
+ * close. (An earlier draft quoted 0.34/0.29/0.22, which is the sRGB triple
+ * scaled — the right conclusion off the wrong numbers.)
+ *
+ * **And the strips' coaming lift was not bloom either.** That is a second claim
+ * this docstring made and could not support: at 0.9 the same colour reaches a
+ * working luminance near 0.65, still under the threshold. What lifted the
+ * coaming was a large bright surface sitting beside it, not a glow around one.
+ * The 0.9 rejection stands on the frame; the mechanism I attributed to it does
+ * not, and is withdrawn rather than restated. #103 owns selective bloom, and
+ * whether these lamps should glow is its decision rather than a side effect
+ * asserted here.
  *
  * **Warm white rather than the reference's red**, and that is a deliberate
  * divergence. `hud-and-scanner.md` §4 gives red the meaning *blocking danger or
@@ -633,6 +640,79 @@ export function cockpitForm(
 	return plateCockpitUVs(
 		chamferedBox(width, height, depth, COCKPIT_CHAMFER_KM),
 	);
+}
+
+/**
+ * The three lamps on one canopy side rail, ready to be added to the cabin.
+ *
+ * **Here rather than inside `buildCockpit`**, for the reason `cockpitForm`
+ * exists: the builder was reaching past this module for `chamferedBox` and
+ * `COCKPIT_CHAMFER_KM` to make the one form that must stay *unplated*, which
+ * reopened the call-site door the wrapper had just shut. Nothing in the closure
+ * bound it to `Game` except `cockpit.add`, so the caller adds what it is given.
+ *
+ * `from` and `to` are the rail's own endpoints. The caller passes the same
+ * array it builds the rail from — a comment used to claim that binding while
+ * the two sets of literals were typed separately, which is a binding nobody has
+ * and nothing can check.
+ */
+export function railLamps(
+	from: readonly [number, number, number],
+	to: readonly [number, number, number],
+): THREE.Mesh[] {
+	const start = new THREE.Vector3(...from);
+	const along = new THREE.Vector3(...to).sub(start);
+	/**
+	 * **The lamp's long axis follows the rail.** `COCKPIT_LAMP.size` names the
+	 * long side first, and without this the lamp lay across the rail rather than
+	 * along it: these rails run mostly in Y while the box is longest in X, so its
+	 * extent along the rail was two thirds of its stated length and it read as a
+	 * tile stuck on rather than a lamp set in.
+	 */
+	const orientation = new THREE.Quaternion().setFromUnitVectors(
+		new THREE.Vector3(1, 0, 0),
+		along.clone().normalize(),
+	);
+	// **One geometry, six meshes.** Every lamp in the cabin is the same box at
+	// the same size; building it per stop uploaded six byte-identical buffers.
+	// Chamfered like every other cabin form — a flat-sided box at this size read
+	// as a tan card stuck to the rail rather than as a lens set into it, which is
+	// the slab problem the fittings had, on the one object small enough that its
+	// edges are most of its silhouette.
+	const geometry = chamferedBox(...COCKPIT_LAMP.size, COCKPIT_CHAMFER_KM);
+	return COCKPIT_LAMP.stops.map((t) => {
+		const mesh = new THREE.Mesh(geometry, lampMaterial());
+		mesh.name = "cockpit-lamp";
+		mesh.quaternion.copy(orientation);
+		// **+Z is toward the pilot**, and the standoff is what makes the lamp
+		// visible at all — see `COCKPIT_LAMP.standoffKm`. The rails run at
+		// constant z, so one axis is the whole of it.
+		mesh.position
+			.copy(start)
+			.addScaledVector(along, t)
+			.setZ(start.z + along.z * t + COCKPIT_LAMP.standoffKm);
+		return mesh;
+	});
+}
+
+/**
+ * The lamps' shared material.
+ *
+ * `MeshBasicMaterial` rather than an emissive standard one: a lamp is a light
+ * source in appearance, so it should not itself be shaded, and it keeps the
+ * lamp out of `plateCockpit`'s set — a panel seam across a glowing lamp reads
+ * as a crack in it.
+ */
+let lampGlow: THREE.MeshBasicMaterial | null = null;
+
+function lampMaterial() {
+	if (!lampGlow)
+		lampGlow = new THREE.MeshBasicMaterial({
+			color: new THREE.Color(COCKPIT_LAMP.color).multiplyScalar(
+				COCKPIT_LAMP.intensity,
+			),
+		});
+	return lampGlow;
 }
 
 /**

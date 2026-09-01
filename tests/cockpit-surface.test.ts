@@ -189,7 +189,7 @@ describe("plating a cabin material", () => {
 	});
 
 	test("every declared finish is expressible against the shipped clean plate", () => {
-		// **The boot crash this replaces.** The calibration solved its lift
+		// **The failure to boot that this replaces.** The calibration solved its lift
 		// against the *unlifted* pass and shipped the result unchecked, but the
 		// wear map is bytes and `cleanPlate` reads `median / 255` — so a lifted
 		// pass landing one texel low leaves the dial at 1.003 and

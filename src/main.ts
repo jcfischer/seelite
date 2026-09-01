@@ -207,15 +207,13 @@ import {
 	buildShipMesh,
 	fleetLayout,
 } from "./ship-mesh";
-import { chamferedBox } from "./chamfer-box";
 import {
-	COCKPIT_CHAMFER_KM,
 	COCKPIT_KEY_LIGHT,
-	COCKPIT_LAMP,
 	applyCockpitQuality,
 	cockpitForm,
 	cockpitMaterial,
 	plateCockpitUVs,
+	railLamps,
 } from "./cockpit-surface";
 import { applyHullQuality } from "./ship-surface";
 import type { StationInterior } from "./station-interior";
@@ -2239,59 +2237,6 @@ class Game {
 			cockpit.add(mesh);
 			return mesh;
 		};
-		/**
-		 * An indicator lamp on the canopy frame — #105's warmth, in the form the
-		 * reference frames actually use.
-		 *
-		 * `MeshBasicMaterial` rather than an emissive standard one: a lamp is a
-		 * light source in appearance, so it should not itself be shaded, and it
-		 * keeps the lamp out of `plateCockpit`'s set — a panel seam across a
-		 * glowing lamp reads as a crack in it.
-		 */
-		const lampGlow = new THREE.MeshBasicMaterial({
-			color: new THREE.Color(COCKPIT_LAMP.color).multiplyScalar(
-				COCKPIT_LAMP.intensity,
-			),
-		});
-		/** Lamps along one canopy side rail, at `COCKPIT_LAMP.stops` of its run.
-		 *  Placed off the rail's own endpoints rather than at authored positions,
-		 *  so moving the rail moves its lamps and the two cannot drift apart. */
-		const addRailLamps = (
-			from: [number, number, number],
-			to: [number, number, number],
-		) => {
-			const start = new THREE.Vector3(...from);
-			const along = new THREE.Vector3(...to).sub(start);
-			// **The lamp's long axis follows the rail.** Its `size` names the long
-			// side first, and without this the lamp lay across the rail rather
-			// than along it: these rails run mostly in Y while the box is longest
-			// in X, so its extent along the rail was two thirds of its stated
-			// length and it read as a tile stuck on rather than a lamp set in.
-			const orientation = new THREE.Quaternion().setFromUnitVectors(
-				new THREE.Vector3(1, 0, 0),
-				along.clone().normalize(),
-			);
-			for (const t of COCKPIT_LAMP.stops) {
-				// Chamfered like every other cabin form. A flat-sided box at this
-				// size read as a tan card stuck to the rail rather than as a lens
-				// set into it — the same slab problem the fittings had, on the one
-				// object small enough that its edges are most of its silhouette.
-				const mesh = new THREE.Mesh(
-					chamferedBox(...COCKPIT_LAMP.size, COCKPIT_CHAMFER_KM),
-					lampGlow,
-				);
-				mesh.name = "cockpit-lamp";
-				mesh.quaternion.copy(orientation);
-				// **+Z is toward the pilot**, and the standoff is what makes the lamp
-				// visible at all — see `COCKPIT_LAMP.standoffKm`. The rails run at
-				// constant z, so one axis is the whole of it.
-				mesh.position
-					.copy(start)
-					.addScaledVector(along, t)
-					.setZ(start.z + along.z * t + COCKPIT_LAMP.standoffKm);
-				cockpit.add(mesh);
-			}
-		};
 		const addStrut = (
 			from: [number, number, number],
 			to: [number, number, number],
@@ -2341,18 +2286,35 @@ class Game {
 		canopyPane.name = "canopy-glass";
 		canopyPane.position.z = -0.065;
 		cockpit.add(canopyPane);
-		addStrut(
-			[-0.043, -0.013, -0.065],
-			[-0.05, 0.018, -0.065],
-			0.00125,
-			"canopy-side-rail-port",
-		);
-		addStrut(
-			[0.043, -0.013, -0.065],
-			[0.05, 0.018, -0.065],
-			0.00125,
-			"canopy-side-rail-starboard",
-		);
+		/**
+		 * The two canopy side rails, and the **one** place their endpoints live.
+		 *
+		 * The lamp placement below claimed to take "the rail's own endpoints, so
+		 * the two cannot drift apart" while re-typing the same six literals — a
+		 * comment describing a binding that did not exist. An editor who trusted
+		 * it and moved only the `addStrut` call would leave six lamps floating at
+		 * the old position, with nothing going red. Both readers take this array.
+		 */
+		const CANOPY_SIDE_RAILS = [
+			{
+				side: "port",
+				from: [-0.043, -0.013, -0.065] as [number, number, number],
+				to: [-0.05, 0.018, -0.065] as [number, number, number],
+			},
+			{
+				side: "starboard",
+				from: [0.043, -0.013, -0.065] as [number, number, number],
+				to: [0.05, 0.018, -0.065] as [number, number, number],
+			},
+		];
+		for (const rail of CANOPY_SIDE_RAILS)
+			addStrut(rail.from, rail.to, 0.00125, `canopy-side-rail-${rail.side}`);
+		// Three lamps on each, and nowhere else. The first pass ran continuous
+		// lit bars under the header, under the sill and along each console; none
+		// of that is in the reference, where the canopy frame carries a few small
+		// lamps and everything else that glows is an instrument.
+		for (const rail of CANOPY_SIDE_RAILS)
+			for (const lamp of railLamps(rail.from, rail.to)) cockpit.add(lamp);
 		addBox([0.102, 0.0013, 0.002], [0, 0.018, -0.065], [0, 0, 0], trim);
 		addBox([0.088, 0.002, 0.004], [0, -0.013, -0.065], [0, 0, 0], trim);
 		// Header braces close the upper corners into the nearer cockpit frame. The
@@ -2422,14 +2384,6 @@ class Game {
 				trim,
 			);
 		}
-		// Three lamps on each canopy side rail, and nowhere else. The first pass
-		// ran continuous lit bars under the header, under the sill and along each
-		// console; none of that is in the reference, where the canopy frame
-		// carries a few small lamps and everything else that glows is an
-		// instrument. The rails' own endpoints are reused so a lamp cannot end up
-		// floating beside the rail it belongs to.
-		addRailLamps([-0.043, -0.013, -0.065], [-0.05, 0.018, -0.065]);
-		addRailLamps([0.043, -0.013, -0.065], [0.05, 0.018, -0.065]);
 		const dashboardPitch = 0.58;
 		const scannerMount = new THREE.Group();
 		scannerMount.name = "scanner-mount";

@@ -80,21 +80,48 @@ function state() {
 	cockpit.traverse((object) => {
 		if (object.isLight) lights.push(object.name);
 	});
-	// A fitting's UVs, read off the page rather than restated: the largest UV
-	// span on the scanner deck is what says a plate is a size.
+	// **Every plated fitting's UVs, not just the deck's.** This probe advertises
+	// catching a dropped `plateCockpitUVs` return value, and an earlier version
+	// could not: it read the three shared textures off a shared material, which
+	// every fitting carries whether or not its own UVs were ever written, and
+	// measured a span on `scanner-deck` alone. A fitting built from a bare
+	// `chamferedBox` has the zero-filled `uv` attribute the primitive allocates,
+	// so its span is exactly 0 — that is the tell, and it is per mesh.
+	const spans = [];
 	let deckSpan = null;
 	cockpit.traverse((object) => {
-		if (object.name !== "scanner-deck") return;
+		if (!object.isMesh) return;
+		const material = Array.isArray(object.material)
+			? object.material[0]
+			: object.material;
+		// Only the lit fittings go through the projection; the lamps and the
+		// glass are unplated by design.
+		if (material?.type !== "MeshStandardMaterial" || !material.map) return;
 		const uv = object.geometry.getAttribute("uv");
+		if (!uv) {
+			spans.push({ name: object.name || "(unnamed)", span: null });
+			return;
+		}
 		let min = Number.POSITIVE_INFINITY;
 		let max = Number.NEGATIVE_INFINITY;
 		for (let i = 0; i < uv.count; i++) {
 			min = Math.min(min, uv.getX(i));
 			max = Math.max(max, uv.getX(i));
 		}
-		deckSpan = max - min;
+		const span = max - min;
+		// The fitting's own largest extent **on the axes the u coordinate can
+		// take**, in the cabin's kilometres. `boxProjectUVs` writes u from `y` on
+		// the two faces that most face x and from `x` everywhere else, so the
+		// widest u run is `max(x, y)` — never z. Taking the largest of all three
+		// put the throttle track's 14 m depth against its 2.2 m u span and made
+		// this check red on a correct build.
+		object.geometry.computeBoundingBox();
+		const box = object.geometry.boundingBox;
+		const extent = Math.max(box.max.x - box.min.x, box.max.y - box.min.y);
+		spans.push({ name: object.name || "(unnamed)", span, extent });
+		if (object.name === "scanner-deck") deckSpan = span;
 	});
-	return { found: true, meshes, lights, deckSpan };
+	return { found: true, meshes, lights, spans, deckSpan };
 }
 
 /**
@@ -146,6 +173,39 @@ for (const viewport of VIEWPORTS) {
 	check(
 		`${viewport.name}: the three cabin finishes stay distinct`,
 		new Set(structural.map((mesh) => mesh.dial)).size === 3,
+	);
+	// **The advertised failure mode, guarded for every fitting.** An earlier
+	// version read the three shared textures off a shared material — which every
+	// fitting carries whether or not its own UVs were written — and measured a
+	// span on `scanner-deck` alone. A dropped `plateCockpitUVs` return passed all
+	// twelve checks.
+	//
+	// A span of zero is not the test either: that catches a bare `chamferedBox`,
+	// whose `uv` attribute is zero-filled, and *passes* a bare `BoxGeometry`,
+	// whose unwrap is a perfectly respectable 0..1. That defect was built and
+	// watched pass before this replaced it.
+	//
+	// What both break is the invariant the projection exists for: UVs in
+	// kilometres over a shared panel, so `span / extent` is **near enough the
+	// same number on every fitting**, whatever its size. A normalised unwrap
+	// gives span 1 on a 32 m deck and span 1 on a 0.8 m bezel — a fortyfold
+	// disagreement. No constant is restated; the ratios are only compared with
+	// each other.
+	//
+	// **"Near enough", and the tolerance is derived rather than fitted.** The
+	// widest u run on a chamfered form is the extent *less its two cuts*, because
+	// the faces carrying u along the long axis are the ones inset by the chamfer.
+	// `chamferedBox` clamps the cut to a quarter of the smallest half-extent, and
+	// a half-extent is at most half the extent, so `2c <= extent / 4` and the
+	// ratio can fall to three quarters of ideal — a spread bound of 4/3. That is
+	// worst-case geometry, not a measurement: the cabin's actual spread is 1.10,
+	// its thinnest fitting a 2.8 m sliver whose 0.125 m cuts take 9% of its own
+	// u run. Anything approaching 40 is the defect this is for.
+	const ratios = high.spans.map((fitting) => fitting.span / fitting.extent);
+	const spread = Math.max(...ratios) / Math.min(...ratios);
+	check(
+		`${viewport.name}: every plated fitting is projected at one panel size`,
+		high.spans.length > 1 && Number.isFinite(spread) && spread < 4 / 3,
 	);
 	check(
 		`${viewport.name}: the deck carries a few real seams — neither a grid nor none`,

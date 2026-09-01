@@ -190,7 +190,9 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   24 of 68 triangles draw nothing. That shipped, and the test could not see it
   because it counted distinct normals *in the buffer* — a buried triangle has a
   perfectly good normal. What catches it is convexity: every face's plane must
-  support every vertex. the plating survives only as a rare, large seam
+  support every vertex.
+
+  On top of that form, the plating survives only as a rare, large seam
   (`COCKPIT_PANEL_KM` 0.072, about 3.6 plates across the scanner deck). Two
   figures were flown and rejected on the way: 0.024 was the grid, and a chamfer
   clamped at *half* the smallest half-extent made every thin slab more rim than
@@ -211,11 +213,13 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   above 1, which is why `COCKPIT_FINISHES` lives in that module rather than
   inline in `buildCockpit`: a finish declared at the call site is one the
   calibration cannot see.
-- **`berth-launch-chase` is not a repeatable view.** Two captures of one build
-  move 70.9% of its pixels past 24/255, against ≤0.07% for every other view in
-  the set (#105 measured it). It frames a moving camera at a moving moment of a
-  scripted launch. Any before/after reading on that row is noise; judge it by
-  eye or not at all.
+- **`berth-launch-chase` is not a repeatable view.** Two same-build control
+  runs during #105 put it at **70.9% and 72.7%** of pixels moved past 24/255,
+  against ≤0.4% for every other view in the same runs. Two samples, so read the
+  figure as "most of the frame" rather than as a constant — the point is the
+  order of magnitude, and it is enough. It frames a moving camera at a moving
+  moment of a scripted launch. Any before/after reading on that row is noise;
+  judge it by eye or not at all.
 - **A square grid of plates reads as scales, not as metal.** The profile carries
   the layout — `aspect`, `stagger`, `seamHalfWidthPx` — because all three were
   once hardcoded to the tiling case and the surface was flown and rejected for

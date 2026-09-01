@@ -59,10 +59,23 @@ const SCHEMA = {
 	 *
 	 * **One rule for every plated surface, not one per surface.** #105 could
 	 * have gated the cabin on its own terms; it inherits the hull's instead, so
-	 * a player moving this setting gets one answer rather than a list. The
-	 * cabin's emissive trim and both its interior lights are untouched by it —
-	 * they cost nothing per fragment, and the sentence below promises the player
-	 * the cockpit fill stays.
+	 * a player moving this setting gets one answer rather than a list.
+	 *
+	 * **The cabin's lamps and its two interior lights stay on at both settings,
+	 * and that is a declaration rather than an omission** (#98: every expensive
+	 * visual term must say which side of this it is on). The lamps are
+	 * `MeshBasicMaterial` and genuinely free. The lights are **not**: a
+	 * `PointLight` parented to the cockpit group is still a light in
+	 * `nearScene`, so three evaluates it for every `MeshStandardMaterial` in
+	 * that scene — hulls and station plating included — and `distance` clamps
+	 * the contribution rather than the arithmetic. An earlier version of this
+	 * paragraph said they "cost nothing per fragment", which was simply wrong.
+	 *
+	 * They stay because the cost is one more term in a loop that already runs
+	 * three, and because dropping them is not a degraded cabin but an unlit one:
+	 * #105's finding is that the cabin is lit almost entirely through the
+	 * canopy, so the interior lights *are* the interior lighting. A setting that
+	 * turned them off would be a different cockpit, not a cheaper one.
 	 *
 	 * **Every later expensive visual term declares which side of this it is on**
 	 * (#98, #99). A term added without an answer here has not been gated, it has
