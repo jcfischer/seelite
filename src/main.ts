@@ -5581,6 +5581,10 @@ class Game {
 		ctx.stroke();
 
 		this.combatRig?.drawTracer(ctx, w, h, this.view, GLASS_BOTTOM_FRACTION);
+		// Not folded into the call above: outgoing fire is gated on the trigger
+		// being held and incoming fire is not, and a player being shot while not
+		// shooting back is the case that needs telling about most.
+		this.combatRig?.drawStruck(ctx, w, h, this.view, GLASS_BOTTOM_FRACTION);
 
 		// Prograde and retrograde — the map's HUD constraint, and the thing that
 		// makes assist-off flyable at all: with the assist off the nose and the

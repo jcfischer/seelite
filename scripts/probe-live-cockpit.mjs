@@ -933,6 +933,79 @@ check(
 		combatOverlayRendered,
 	`beam: ${beamVisible}, ${laserPixels} tracer pixels, status: ${combatReadout}, overlay glyphs: ${combatOverlayRendered}`,
 );
+/**
+ * The striker's fire, on the canopy.
+ *
+ * **The check this replaces could not have failed.** Incoming fire was a
+ * `THREE.Line` from the striker's hull to the origin of the near scene — where
+ * the camera is — so it was `visible`, it was in the scene graph, and it drew
+ * nothing at all: both ends projected to one screen point, and the far one to
+ * `NaN`, because a point at the eye has no projection. Every flag said yes and
+ * the player saw no shots for the life of the branch.
+ *
+ * So this asserts *screen* extent rather than existence: a live bolt has to
+ * project inside the viewport, at a position measurably away from the striker
+ * that fired it. The control hides the two bolt objects and requires the count
+ * to fall to zero, so a measurement that was reading the hull, the reticle or
+ * the star field cannot pass it.
+ */
+const incoming = await combatPage.evaluate(async () => {
+	const game = window.__seelite;
+	const bolts = game.nearScene.getObjectByName("combat-prototype-enemy-laser");
+	const heads = game.nearScene.getObjectByName("combat-prototype-enemy-bolts");
+	const hull = game.nearScene.getObjectByName("combat-prototype-target");
+	if (!bolts || !heads || !hull) return { found: false };
+	const V = bolts.position.constructor;
+	const camera = game.nearCamera;
+	/** Live bolt heads projecting inside the viewport, clear of the striker. */
+	const onCanopy = () => {
+		const at = heads.geometry.getAttribute("position");
+		const striker = new V(
+			hull.position.x,
+			hull.position.y,
+			hull.position.z,
+		).project(camera);
+		let clear = 0;
+		for (let i = 0; i < at.count; i++) {
+			const x = at.getX(i);
+			const y = at.getY(i);
+			const z = at.getZ(i);
+			// A retired slot is collapsed onto the camera and draws nothing.
+			if (x === 0 && y === 0 && z === 0) continue;
+			const p = new V(x, y, z).project(camera);
+			if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+			if (Math.abs(p.x) > 1 || Math.abs(p.y) > 1 || p.z > 1) continue;
+			if (Math.hypot(p.x - striker.x, p.y - striker.y) > 0.02) clear++;
+		}
+		return clear;
+	};
+	let best = 0;
+	let firingSeen = false;
+	const until = Date.now() + 25_000;
+	while (Date.now() < until && best === 0) {
+		await new Promise((resolve) => requestAnimationFrame(resolve));
+		firingSeen ||= game.combatRig.state.enemyFiring !== null;
+		best = Math.max(best, onCanopy());
+	}
+	// The control, and it has to touch the buffer rather than `visible`: hiding
+	// the objects leaves their positions exactly as they were, so a count taken
+	// off the geometry would be unchanged and the control would pass over a
+	// measurement that was reading something else entirely. Zeroing the heads is
+	// the state a fight with no bolts in the air is actually in, and the render
+	// rewrites the buffer on the next frame.
+	const at = heads.geometry.getAttribute("position");
+	for (let i = 0; i < at.count; i++) at.setXYZ(i, 0, 0, 0);
+	const empty = onCanopy();
+	return { found: true, firingSeen, onCanopy: best, empty };
+});
+check(
+	"prototype: the striker's fire reaches the canopy, clear of the ship that fired it",
+	incoming.found &&
+		incoming.firingSeen &&
+		incoming.onCanopy > 0 &&
+		incoming.empty === 0,
+	`${incoming.onCanopy} bolts on canopy, ${incoming.empty} with none in the air, striker fired ${incoming.firingSeen}`,
+);
 await combatPage.close();
 
 const narrowCombatPage = await browser.newPage({

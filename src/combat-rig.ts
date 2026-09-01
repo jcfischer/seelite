@@ -71,7 +71,7 @@ import { mix, seedFor } from "./rng";
 import { buildShipMesh } from "./ship-mesh";
 import type { Body, Ship } from "./sim";
 import { PROMPT_FILL, PROMPT_FONT, TextRaster } from "./text-raster";
-import { type Vec3, add, scale, v3 } from "./vec3";
+import { type Vec3, add, cross, length, scale, sub, v3 } from "./vec3";
 
 /** The legend, and the widest text each status line is fitted against. */
 const LEGEND =
@@ -85,6 +85,66 @@ const LEGEND =
  * old key for fifteen seconds and timed out rather than saying so.
  */
 const BEAM_KEY = "x";
+
+/**
+ * Incoming fire, as bolts that travel.
+ *
+ * **A line drawn to the camera is invisible, and that is geometry rather than a
+ * bug in the colour.** The first version ran a `THREE.Line` from the striker's
+ * hull to the origin of the near scene — where the camera is — so both ends
+ * projected to the same screen point and the tracer had no length to see.
+ * Measured on a live fight: the striker fires on 247 frames of 704, the line
+ * was `visible` on every one of them, and its far endpoint projected to `NaN`
+ * because a point at the eye has no projection at all.
+ *
+ * So the shot is drawn as short segments moving through the world instead, and
+ * they are aimed to pass *beside* the canopy rather than into it — a bolt that
+ * arrived exactly at the eye would collapse to a point again on the last frame
+ * of its flight, which is the same failure at the other end.
+ *
+ * **They are a rendering of the firing bit, not the damage.** `stepCombatPrototype`
+ * takes shields and hull off per frame while `enemyFiring` is set, with no
+ * flight time — it is a damage-per-second model, and #48 says so. A bolt that
+ * leaves the striker now and passes the canopy a third of a second later is
+ * therefore *late* against the damage it depicts, and nothing should be built
+ * on the two agreeing. What the player is owed is the two facts the model does
+ * have: that the striker is shooting, and that something is coming off.
+ */
+const BOLT_POOL = 32;
+const BOLT_SPEED_KMS = 6;
+const BOLT_LENGTH_KM = 0.16;
+const BOLT_INTERVAL_S = 0.13;
+/** How wide of the canopy a bolt is aimed, in kilometres. */
+const BOLT_MISS_KM = 0.11;
+/** A bolt is retired once it is this far past the point it was aimed at. */
+const BOLT_OVERSHOOT_KM = 1.2;
+/**
+ * The head of a bolt, drawn at a floor in screen space.
+ *
+ * **The segment alone is not enough, and measuring said so.** A bolt on its way
+ * to the canopy is pointed almost straight at the camera, so its length
+ * foreshortens to nothing: over a 30 s fight, on-screen bolts measured 0.3
+ * pixels long on approach and only reached 1709 as one whipped past. The streak
+ * is the pass; the head is the approach, and without it the volley is invisible
+ * for the whole of its flight and then briefly enormous.
+ *
+ * Same trick as the hulls' nav lights, and for the same reason: a point drawn
+ * at a floor in screen space survives a range at which a physical size does not.
+ */
+const BOLT_HEAD_NEAR_PX = 10;
+const BOLT_HEAD_MIN_PX = 3;
+/**
+ * Small, and it was 26.
+ *
+ * The scene runs through `UnrealBloomPass`, so a bright point does not stay the
+ * size it is drawn: at 26 pixels and an intensity of 2.8 a single head bloomed
+ * into a blob roughly two hundred pixels across, which hid the striker it was
+ * being fired by. The bolt has to read as a bolt, not as a light source.
+ */
+const BOLT_HEAD_MAX_PX = 12;
+const BOLT_HEAD_REF_KM = 0.6;
+/** How long the canopy flashes after the model takes something off the player. */
+const HIT_FLASH_S = 0.22;
 /** The striker's intent rides on the target line: the status line has no room
  *  for it at the narrow viewport's fitter floor, and putting it there once
  *  displaced the MISSILE and INTD fields two probe assertions wait on. */
@@ -131,6 +191,12 @@ function statusText(s: CombatPrototypeState): string {
 	const fire = s.heatLocked ? "LOCKED" : (s.firing?.toUpperCase() ?? "SAFE");
 	return `FIRE ${fire} · H ${s.heat.toFixed(0)} E ${s.energy.toFixed(0)} · LOCK ${s.missileLock ? "READY" : "ACQ"} · MISSILE ${s.incomingMissile ? "WARNING" : "CLEAR"} · INTD ${s.interdiction ? "ACTIVE" : "CLEAR"}`;
 }
+
+/** A direction, or the fallback when there is no direction to be had. */
+const unit = (v: Vec3): Vec3 => {
+	const magnitude = length(v);
+	return magnitude === 0 ? v3(0, 0, -1) : scale(v, 1 / magnitude);
+};
 
 /** Scratch for the striker's attitude and impact point; reused every frame. */
 const RIG_NOSE = new THREE.Vector3();
@@ -181,8 +247,26 @@ export class CombatPrototypeRig {
 	private readonly targetMesh: THREE.Group;
 	/** Bright, camera-local tracer shown only while the throwaway weapon is held. */
 	private readonly laser: THREE.Line;
-	/** The striker's own pulse, drawn from its hull to the cockpit. */
-	private readonly enemyLaser: THREE.Line;
+	/** The striker's pulse in flight: a fixed pool of segments, live ones first. */
+	private readonly bolts: THREE.LineSegments;
+	/** The lit head of each live bolt; see `BOLT_HEAD_NEAR_PX`. */
+	private readonly boltHeads: THREE.Points;
+	private readonly boltState: {
+		pos: Vec3;
+		vel: Vec3;
+		/** Kilometres left before the bolt is past the canopy and retired. */
+		range: number;
+	}[] = [];
+	private boltCooldown = 0;
+	private boltDraws = 0;
+	private readonly boltSeed: number;
+	/** The striker's muzzle, lit while it is shooting. */
+	private readonly muzzle: THREE.Mesh;
+	private readonly muzzleMaterial: THREE.MeshBasicMaterial;
+	/** How much of the player's shields and hull the model took last frame, and
+	 *  how long the canopy has left to say so. */
+	private playerPool = 0;
+	private struckFor = 0;
 	/** Local sparks at the point the player's beam met the hull. */
 	private readonly impactSparks: THREE.Mesh;
 	private readonly impactMaterial: THREE.MeshBasicMaterial;
@@ -241,27 +325,111 @@ export class CombatPrototypeRig {
 			opacity: 0,
 			depthWrite: false,
 		});
+		// **Kilometres, in the hull's own local frame.** The raider is
+		// `HULL_VISUALS.raider.lengthKm` — 0.066 — from nose to tail, so a sphere
+		// of 0.06 is the size of the whole ship, and this one was. A spark has to
+		// be a mark on the metal.
 		this.impactSparks = new THREE.Mesh(
-			new THREE.SphereGeometry(0.06, 8, 6),
+			new THREE.SphereGeometry(0.005, 8, 6),
 			this.impactMaterial,
 		);
 		this.impactSparks.name = "combat-prototype-impact";
 		this.impactSparks.visible = false;
 		this.targetMesh.add(this.impactSparks);
-		this.enemyLaser = new THREE.Line(
-			new THREE.BufferGeometry().setFromPoints([
-				new THREE.Vector3(),
-				new THREE.Vector3(),
-			]),
+		this.boltSeed = mix(seedFor(worldSeed, "combat"), 168);
+		const boltPositions = new Float32Array(BOLT_POOL * 6);
+		const boltGeometry = new THREE.BufferGeometry();
+		boltGeometry.setAttribute(
+			"position",
+			new THREE.BufferAttribute(boltPositions, 3),
+		);
+		this.bolts = new THREE.LineSegments(
+			boltGeometry,
 			new THREE.LineBasicMaterial({
-				color: 0xff8a6a,
+				color: 0xffb08a,
 				transparent: true,
-				opacity: 0.9,
+				opacity: 0.95,
+				blending: THREE.AdditiveBlending,
+				depthWrite: false,
 			}),
 		);
-		this.enemyLaser.name = "combat-prototype-enemy-laser";
-		this.enemyLaser.frustumCulled = false;
-		scene.add(this.enemyLaser);
+		this.bolts.name = "combat-prototype-enemy-laser";
+		// Every live bolt is inside the canopy's field or on its way there, and a
+		// pool whose unused slots sit at the origin has a bounding sphere that
+		// says nothing useful — culling it would drop the whole volley.
+		this.bolts.frustumCulled = false;
+		scene.add(this.bolts);
+		const headGeometry = new THREE.BufferGeometry();
+		headGeometry.setAttribute(
+			"position",
+			new THREE.BufferAttribute(new Float32Array(BOLT_POOL * 3), 3),
+		);
+		const heads = new THREE.ShaderMaterial({
+			uniforms: {
+				uPixelRatio: { value: 1 },
+				uNearPx: { value: BOLT_HEAD_NEAR_PX },
+				uMinPx: { value: BOLT_HEAD_MIN_PX },
+				uMaxPx: { value: BOLT_HEAD_MAX_PX },
+				uRefKm: { value: BOLT_HEAD_REF_KM },
+			},
+			vertexShader: `
+				uniform float uPixelRatio;
+				uniform float uNearPx;
+				uniform float uMinPx;
+				uniform float uMaxPx;
+				uniform float uRefKm;
+				varying float vLive;
+				void main() {
+					// A retired slot is collapsed onto the camera; drawn, it would be a
+					// permanent blob in the middle of the canopy.
+					vLive = dot(position, position) > 0.0 ? 1.0 : 0.0;
+					vec4 mv = modelViewMatrix * vec4(position, 1.0);
+					float dist = max(-mv.z, 1e-5);
+					gl_PointSize =
+						clamp(uNearPx * (uRefKm / dist), uMinPx, uMaxPx) * uPixelRatio;
+					gl_Position = projectionMatrix * mv;
+				}
+			`,
+			fragmentShader: `
+				varying float vLive;
+				void main() {
+					if (vLive < 0.5) discard;
+					float r = min(length(gl_PointCoord - 0.5) * 2.0, 1.0);
+					float core = 1.0 - r;
+					float hot = pow(core, 3.0);
+					vec3 lit = mix(vec3(1.0, 0.55, 0.32), vec3(1.0), hot * 0.7);
+					gl_FragColor = vec4(lit * (core * 0.25 + hot * 1.1), 1.0);
+				}
+			`,
+			transparent: true,
+			blending: THREE.AdditiveBlending,
+			depthWrite: false,
+		});
+		this.boltHeads = new THREE.Points(headGeometry, heads);
+		this.boltHeads.name = "combat-prototype-enemy-bolts";
+		this.boltHeads.frustumCulled = false;
+		this.boltHeads.onBeforeRender = (renderer) => {
+			heads.uniforms.uPixelRatio.value = renderer.getPixelRatio();
+		};
+		scene.add(this.boltHeads);
+		this.muzzleMaterial = new THREE.MeshBasicMaterial({
+			color: 0xffd2a8,
+			transparent: true,
+			opacity: 0,
+			depthWrite: false,
+		});
+		this.muzzle = new THREE.Mesh(
+			new THREE.SphereGeometry(0.004, 8, 6),
+			this.muzzleMaterial,
+		);
+		this.muzzle.name = "combat-prototype-muzzle";
+		// On the hull's own nose, in the mesh's local frame — kilometres, and the
+		// raider is 0.066 of them long, so its nose is at 0.033. Written as
+		// ship-lengths this sat a kilometre and a half ahead of the striker and
+		// drew a blob across a third of the canopy, growing as the range closed.
+		this.muzzle.position.set(0, 0, -0.033);
+		this.muzzle.visible = false;
+		this.targetMesh.add(this.muzzle);
 		this.laser = new THREE.Line(
 			new THREE.BufferGeometry().setFromPoints([
 				new THREE.Vector3(0, 0, -0.6),
@@ -378,6 +546,66 @@ export class CombatPrototypeRig {
 		// One-shot inputs, cleared after the step that read them.
 		this.incoming = false;
 		this.ecm = false;
+
+		this.stepBolts(dt, pilot.ship.pos);
+		// Read off the model rather than off the bolts: the canopy flash says
+		// "something came off", and the only thing that knows that is the pool
+		// `stepCombatPrototype` just decremented.
+		const pool =
+			this.state.foreShield + this.state.aftShield + this.state.playerHull;
+		if (pool < this.playerPool - 1e-9) this.struckFor = HIT_FLASH_S;
+		else this.struckFor = Math.max(0, this.struckFor - dt);
+		this.playerPool = pool;
+	}
+
+	/**
+	 * Advance the volley, and add to it while the striker is shooting.
+	 *
+	 * Bolts are aimed at the canopy with a drawn lateral offset, so they pass
+	 * beside it: see `BOLT_POOL`'s note on why a shot aimed at the eye cannot be
+	 * seen. The offset is a draw from the fight's own stream rather than a
+	 * wobble on a clock, for the same reason the flight path is.
+	 */
+	private stepBolts(dt: number, playerPos: Vec3): void {
+		for (let i = this.boltState.length - 1; i >= 0; i--) {
+			const bolt = this.boltState[i];
+			bolt.pos = add(bolt.pos, scale(bolt.vel, dt));
+			bolt.range -= BOLT_SPEED_KMS * dt;
+			if (bolt.range <= 0) this.boltState.splice(i, 1);
+		}
+		this.boltCooldown -= dt;
+		if (this.state.enemyFiring === null || this.boltCooldown > 0) return;
+		this.boltCooldown = BOLT_INTERVAL_S;
+		if (this.boltState.length >= BOLT_POOL) return;
+		const nose = this.enemy.nose;
+		const muzzle = add(this.enemy.ship.pos, scale(nose, BOLT_LENGTH_KM));
+		const toPlayer = sub(playerPos, muzzle);
+		const range = Math.max(
+			1e-4,
+			Math.hypot(toPlayer.x, toPlayer.y, toPlayer.z),
+		);
+		const straight = scale(toPlayer, 1 / range);
+		// Any two directions perpendicular to the shot, so the miss is drawn over
+		// a full circle and the volley does not all pass on one side.
+		const reference = Math.abs(straight.y) < 0.85 ? v3(0, 1, 0) : v3(1, 0, 0);
+		const across = unit(cross(straight, reference));
+		const up = cross(straight, across);
+		const angle =
+			(mix(this.boltSeed, this.boltDraws++) / 0x1_0000_0000) * Math.PI * 2;
+		const aim = unit(
+			add(
+				straight,
+				scale(
+					add(scale(across, Math.cos(angle)), scale(up, Math.sin(angle))),
+					BOLT_MISS_KM / range,
+				),
+			),
+		);
+		this.boltState.push({
+			pos: muzzle,
+			vel: scale(aim, BOLT_SPEED_KMS),
+			range: range + BOLT_OVERSHOOT_KM,
+		});
 	}
 
 	/**
@@ -426,19 +654,57 @@ export class CombatPrototypeRig {
 		this.laser.quaternion.copy(viewRotation);
 		this.laser.visible = this.beamShown(view);
 
-		const enemyLine = this.enemyLaser.geometry.getAttribute(
+		const firing = this.state.enemyFiring !== null;
+		this.muzzle.visible = view === "cockpit" && firing;
+		this.muzzleMaterial.opacity = firing ? 0.9 : 0;
+
+		// Camera-relative, like the hull: the bolts are sim-space kilometres and
+		// the near scene is drawn around the camera at its origin.
+		const segments = this.bolts.geometry.getAttribute(
 			"position",
 		) as THREE.BufferAttribute;
-		enemyLine.setXYZ(
-			0,
-			this.targetMesh.position.x,
-			this.targetMesh.position.y,
-			this.targetMesh.position.z,
-		);
-		enemyLine.setXYZ(1, 0, 0, 0);
-		enemyLine.needsUpdate = true;
-		this.enemyLaser.visible =
-			view === "cockpit" && this.state.enemyFiring !== null;
+		const headPoints = this.boltHeads.geometry.getAttribute(
+			"position",
+		) as THREE.BufferAttribute;
+		for (let i = 0; i < BOLT_POOL; i++) {
+			const bolt = this.boltState[i];
+			if (bolt)
+				headPoints.setXYZ(
+					i,
+					bolt.pos.x - camPos.x,
+					bolt.pos.y - camPos.y,
+					bolt.pos.z - camPos.z,
+				);
+			else headPoints.setXYZ(i, 0, 0, 0);
+			if (!bolt) {
+				// Collapsed onto the camera, where a zero-length segment draws
+				// nothing. Leaving a retired bolt at its last position would leave
+				// a streak hanging in the sky.
+				segments.setXYZ(i * 2, 0, 0, 0);
+				segments.setXYZ(i * 2 + 1, 0, 0, 0);
+				continue;
+			}
+			const tail = sub(
+				bolt.pos,
+				scale(bolt.vel, BOLT_LENGTH_KM / BOLT_SPEED_KMS),
+			);
+			segments.setXYZ(
+				i * 2,
+				bolt.pos.x - camPos.x,
+				bolt.pos.y - camPos.y,
+				bolt.pos.z - camPos.z,
+			);
+			segments.setXYZ(
+				i * 2 + 1,
+				tail.x - camPos.x,
+				tail.y - camPos.y,
+				tail.z - camPos.z,
+			);
+		}
+		segments.needsUpdate = true;
+		headPoints.needsUpdate = true;
+		this.bolts.visible = view === "cockpit";
+		this.boltHeads.visible = view === "cockpit";
 	}
 
 	/**
@@ -473,6 +739,48 @@ export class CombatPrototypeRig {
 		ctx.moveTo(w * 0.76, h * 0.64);
 		ctx.lineTo(w / 2, h * 0.46);
 		ctx.stroke();
+		ctx.restore();
+	}
+
+	/**
+	 * The canopy, when the player is being hit.
+	 *
+	 * Separate from `drawTracer` and *not* gated on the beam: this is incoming
+	 * fire, and it has to show while the player is not shooting back. It reads
+	 * the pool `stepCombatPrototype` decremented rather than the bolts, so it is
+	 * the damage the model actually applied and not a picture of it — the bolts
+	 * carry flight time the model does not have.
+	 */
+	drawStruck(
+		ctx: CanvasRenderingContext2D,
+		w: number,
+		h: number,
+		view: CombatView,
+		glassBottom: number,
+	): void {
+		if (view !== "cockpit" || this.struckFor <= 0) return;
+		const strength = this.struckFor / HIT_FLASH_S;
+		ctx.save();
+		ctx.beginPath();
+		ctx.rect(0, 0, w, h * glassBottom);
+		ctx.clip();
+		// A rim, not a wash. The first cut ran the gradient from the centre at
+		// half opacity and tinted the whole canopy red — it told the player they
+		// were hit by taking the view away, which on a target this small is the
+		// one thing that cannot be spared.
+		const reach = Math.hypot(w, h * glassBottom) * 0.6;
+		const glow = ctx.createRadialGradient(
+			w / 2,
+			h * glassBottom * 0.5,
+			reach * 0.55,
+			w / 2,
+			h * glassBottom * 0.5,
+			reach,
+		);
+		glow.addColorStop(0, "rgba(255, 90, 70, 0)");
+		glow.addColorStop(1, `rgba(255, 90, 70, ${(0.34 * strength).toFixed(3)})`);
+		ctx.fillStyle = glow;
+		ctx.fillRect(0, 0, w, h * glassBottom);
 		ctx.restore();
 	}
 
