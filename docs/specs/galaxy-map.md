@@ -872,8 +872,8 @@ whatever positions a probe happens to visit.
    margin applied there would be a tie-break rule nobody specified.
 4. **The badge counts against the pick radius.** A system at 17 px is inside the
    release radius and outside the pick one and is not counted — counting it
-   would make the badge describe the label's stretch rather than the click's
-   ambiguity, which is the opposite of what D1 says it means.
+   would make the badge describe how far the label will stretch, which is the
+   label's own stickiness rather than a fact about what the cursor is on.
 5. **The window where a held label can carry a badge is one switch margin
    wide**, and both sides of it are asserted. Holding *and* being contested
    requires every rival to be inside 14 px and no more than 3 px nearer, so the
