@@ -75,11 +75,62 @@ describe("the chamfered box", () => {
 		expect(reach(2) / (D / 2)).toBeCloseTo(1, 6);
 	});
 
-	test("has faces a box does not — the rim is the whole point", () => {
-		// **The assertion that separates it from `BoxGeometry`.** A box has six
-		// distinct face normals; a chamfered box has six plus twelve edges plus
-		// eight corners. A chamfer silently tuned to zero would pass every other
-		// check in this file and leave the slab that was rejected.
+	test("every triangle is on the hull — no buried geometry", () => {
+		// **The check that catches what the normal count could not.** The first
+		// version of this module cut only the eight corners: the +X and +Y faces
+		// still met at an unbroken 90° edge, and the twelve quads meant to be
+		// edge chamfers lay strictly *inside* the solid, 24 of 68 triangles
+		// drawing nothing at all. It passed a `size === 6 + 12 + 8` assertion
+		// counting distinct normals over the buffer, because a buried triangle
+		// has a perfectly good normal of its own — a check derived from its
+		// subject rather than from the property that matters.
+		//
+		// The property that matters is convexity: this solid is convex, so every
+		// face's plane must *support* it, with no vertex on the outside. A buried
+		// face fails immediately.
+		const geometry = chamferedBox(W, H, D, 0.0004);
+		const v = vertices(geometry);
+		const position = geometry.getAttribute("position") as THREE.BufferAttribute;
+		const a = new THREE.Vector3();
+		const b = new THREE.Vector3();
+		const c = new THREE.Vector3();
+		const normal = new THREE.Vector3();
+		const point = new THREE.Vector3();
+		for (let i = 0; i < position.count; i += 3) {
+			a.fromBufferAttribute(position, i);
+			b.fromBufferAttribute(position, i + 1);
+			c.fromBufferAttribute(position, i + 2);
+			normal.copy(b).sub(a).cross(c.clone().sub(a)).normalize();
+			const offset = normal.dot(a);
+			// A float32 buffer, so the tolerance is relative to the form.
+			for (const [x, y, z] of v)
+				expect(normal.dot(point.set(x, y, z)) - offset).toBeLessThan(
+					Math.max(W, H, D) * 1e-6,
+				);
+		}
+	});
+
+	test("no edge survives as a hard 90° corner", () => {
+		// The defect above, stated the way it shows: a vertex at full extent on
+		// *two* axes at once is a point where two flat faces meet directly, with
+		// no chamfer between them. A true chamfered box has none — every vertex
+		// is at full extent on exactly one axis and inset on the other two.
+		const v = vertices(chamferedBox(W, H, D, 0.0004));
+		const extents = [W / 2, H / 2, D / 2];
+		for (const p of v) {
+			const atFull = p.filter(
+				(coordinate, axis) =>
+					Math.abs(Math.abs(coordinate) - extents[axis]) < extents[axis] * 1e-6,
+			);
+			expect(atFull.length).toBe(1);
+		}
+	});
+
+	test("has the faces a box does not — six, twelve edges, eight corners", () => {
+		// Kept alongside the hull check rather than instead of it: the hull check
+		// proves nothing is buried, and this proves the cuts exist at all. A
+		// chamfer tuned to zero collapses to a box and fails here while passing
+		// the hull check perfectly.
 		const box = normals(new THREE.BoxGeometry(W, H, D).toNonIndexed());
 		const chamfered = normals(chamferedBox(W, H, D, 0.0004));
 		expect(box.size).toBe(6);

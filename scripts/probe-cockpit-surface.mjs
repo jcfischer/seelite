@@ -2,7 +2,11 @@
  * Prove #105's cabin surface reached the live renderer, and that it stopped
  * where the node said it must.
  *
- * Three claims, and only the middle one is about pixels:
+ * Three claims, and **none of them is about pixels** — every check below reads
+ * scene-graph and material state. A probe here cannot see whether a rim reads
+ * or a reflection is distracting; that is the contact sheet's and the
+ * principal's, which is #104's finding and #98's rule. What these can do is
+ * prove the mechanism the look depends on is present, wired and reversible:
  *
  * 1. **The plating landed.** A profile, a UV writer and a material patch can all
  *    be right in the headless tier while the maps never reach a material — the
@@ -144,17 +148,19 @@ for (const viewport of VIEWPORTS) {
 		new Set(structural.map((mesh) => mesh.dial)).size === 3,
 	);
 	check(
-		`${viewport.name}: the deck carries a rare seam rather than a grid`,
-		// **Stated without restating the constant.** An earlier version banded
-		// this at 0.2–0.9, which is a hand-derivation of `COCKPIT_PANEL_KM`
-		// 0.072: a legitimate retune of the panel size would have turned the
-		// probe red for no defect, which is exactly the falsely-red failure
-		// CLAUDE.md's "probes read constants off the page" entry exists to
-		// prevent. What is asserted instead is the *shape* the principal ruled —
-		// the cabin's largest surface spans less than one whole tile, so it
-		// carries a handful of seams and not a grid — and that a projection ran
-		// at all, which a zero span would deny.
-		high.deckSpan > 0 && high.deckSpan < 1,
+		`${viewport.name}: the deck carries a few real seams — neither a grid nor none`,
+		// **Both ends, and an earlier version had only one.** Banded at
+		// `> 0 && < 1` this refused the grid direction and passed a deck with no
+		// seam at all, which is half the ruling — "sparse" is a count above zero,
+		// not merely below eleven.
+		//
+		// The lower bound is one plate width in tile units, which is
+		// `COCKPIT_PLATING.pitchPx / COCKPIT_MAP_SIZE` = 1/8: below it, no seam
+		// crosses the deck. That is a restatement, and a deliberate one — it is
+		// the profile's *layout* ratio, fixed by this node, rather than
+		// `COCKPIT_PANEL_KM`, which is the tunable figure the earlier band wrongly
+		// pinned and which can now move freely between these two ends.
+		high.deckSpan > 1 / 8 && high.deckSpan < 1,
 	);
 	// **The node's line, made checkable.** Not "no reflection is visible" — a
 	// probe cannot see that — but "none of these five is a material the

@@ -183,7 +183,14 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   the **rim of every cut edge**, not on lines. A `BoxGeometry` has a hard 90°
   edge with no width for a highlight to sit on, so it reads as a slab however it
   is lit. `src/chamfer-box.ts` is the cabin's form primitive and every fitting
-  goes through it; the plating survives only as a rare, large seam
+  goes through it — and note the vertex rule that makes it one: **each face is
+  inset on *both* its in-plane axes.** Pulling each corner in on one axis at a
+  time gives a box with its eight *corners* cut, where adjacent faces still meet
+  at an unbroken 90°, the twelve edge quads lie strictly inside the hull, and
+  24 of 68 triangles draw nothing. That shipped, and the test could not see it
+  because it counted distinct normals *in the buffer* — a buried triangle has a
+  perfectly good normal. What catches it is convexity: every face's plane must
+  support every vertex. the plating survives only as a rare, large seam
   (`COCKPIT_PANEL_KM` 0.072, about 3.6 plates across the scanner deck). Two
   figures were flown and rejected on the way: 0.024 was the grid, and a chamfer
   clamped at *half* the smallest half-extent made every thin slab more rim than

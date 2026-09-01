@@ -224,7 +224,17 @@ export const COCKPIT_FINISH_IDS = Object.keys(
  * that are nowhere in the reference. What those cockpits actually carry on the
  * canopy frame is two or three *small discrete lamps* per rail, and everything
  * else that glows is an instrument. So this is a lamp rather than a strip: the
- * warmth and the bloom source survive, the invention does not.
+ * warmth survives, the invention does not.
+ *
+ * **It is not a bloom source, and an earlier draft of this said it was.** The
+ * composite pass is `UnrealBloomPass(…, 0.55, 0.6, 0.85)` — a luminance
+ * threshold of 0.85 — and the lamp's colour at this intensity is about
+ * 0.34/0.29/0.22, nowhere near it. That is deliberate rather than an oversight:
+ * 0.9 was rejected precisely *because* its bloom lifted the coaming the
+ * flight-floor strip is read against, so a value chosen to stay under the
+ * threshold cannot also be claimed to cross it. #103 owns selective bloom; if
+ * the lamps should glow, that is its decision and not a side effect asserted
+ * here.
  *
  * **Warm white rather than the reference's red**, and that is a deliberate
  * divergence. `hud-and-scanner.md` §4 gives red the meaning *blocking danger or
@@ -249,10 +259,18 @@ export const COCKPIT_LAMP = {
 	 * How far each lamp stands off its rail's axis, toward the cabin.
 	 *
 	 * **Not decoration: without it the lamps do not exist.** A canopy side rail
-	 * is a cylinder of 1.25 km-scale metres' radius and the first lamps were
-	 * 0.6 m across, so every one of them was drawn *inside* the rail and the
-	 * sheet showed nothing at all. The offset is the rail radius plus a little,
-	 * which puts the lamp on the face turned toward the pilot.
+	 * is a cylinder of 1.25 m radius in the cabin's frame — `addStrut`'s
+	 * `0.00125` — and the first lamps were 0.6 m across and centred on the rail
+	 * axis, so every one was drawn *inside* the rail and the sheet showed
+	 * nothing at all.
+	 *
+	 * 1.1 m is the lamp *centre*, which is **inside** the rail on purpose: with
+	 * a 0.3 m half-thickness the lamp's outer face stands at 1.4 m, proud of the
+	 * 1.25 m surface, and its inner half is buried in the rail it is set into.
+	 * That is a lamp in a housing rather than a tile stuck on one. An earlier
+	 * draft of this said "the rail radius plus a little", which is the opposite
+	 * of the number below and would send anyone following it back to the
+	 * invisible-lamp defect from the other side.
 	 */
 	standoffKm: 0.0011,
 	/** Where along each canopy side rail they sit, as a fraction of its run.
@@ -264,8 +282,8 @@ export const COCKPIT_LAMP = {
 /**
  * The warm key over the console — the one real light #105 adds.
  *
- * The trim above gives the cabin emissive warmth but no *gradient*: an emissive
- * strip lights itself and nothing else. This is what puts a falloff across the
+ * `COCKPIT_LAMP` gives the cabin emissive warmth but no *gradient*: a lamp
+ * lights itself and nothing else. This is what puts a falloff across the
  * deck and the console tops, which are the flat tones the node opened on.
  *
  * Parented to the cockpit group like the existing lamp, so it stays the pilot's
@@ -276,7 +294,8 @@ export const COCKPIT_LAMP = {
 export const COCKPIT_KEY_LIGHT = {
 	color: 0xffc98a,
 	/**
-	 * **0.55 was flown and rejected with the trim above.** A point light at
+	 * **0.55 was flown and rejected alongside the first pass's lit strips.** A
+	 * point light at
 	 * 20 m from a deck it is 12 m above washed the whole console assembly to a
 	 * pale warm grey and took the flight floor's dark backing with it. The
 	 * gradient is the point, not the lift: 0.18 leaves the deck reading at its
@@ -304,7 +323,7 @@ export const COCKPIT_KEY_LIGHT = {
  *  `HULL_QUALITY`'s rule unchanged, deliberately, so there is one answer for
  *  every plated surface in the game rather than one per surface. It is also
  *  what `settings.ts` already promises the player: low "cuts the panel lines"
- *  goes, the painted seams stay, the cabin stays lit. The trim and both lights
+ *  goes, the painted seams stay, the cabin stays lit. The lamps and both lights
  *  are untouched by it. */
 export const COCKPIT_QUALITY = {
 	high: { seamNormals: true },
@@ -547,6 +566,10 @@ export function plateCockpitUVs(
 	geometry: THREE.BufferGeometry,
 ): THREE.BufferGeometry {
 	const flat = geometry.index ? geometry.toNonIndexed() : geometry;
+	// The indexed source is unreferenced from here on and holds GPU-bound
+	// buffers of its own. Only the branch that actually replaced it disposes —
+	// disposing unconditionally would free the geometry being returned.
+	if (flat !== geometry) geometry.dispose();
 	boxProjectUVs(flat, COCKPIT_PANEL_KM);
 	setUvUnits(flat, "plate");
 	return flat;

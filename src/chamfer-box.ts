@@ -57,12 +57,25 @@ export function chamferedBox(
 	const c = Math.min(chamfer, Math.min(...h) / 4);
 	const positions: number[] = [];
 
-	/** One vertex of the hull: the corner at `sign`, pulled in by `c` on `axis`
-	 *  and left at full extent on the other two. */
-	const point = (sign: readonly number[], axis: number) => {
-		const v = [sign[0] * h[0], sign[1] * h[1], sign[2] * h[2]];
-		v[axis] = sign[axis] * (h[axis] - c);
-		return v;
+	/**
+	 * The vertex of face `axis`/`sign` at in-plane corner `(su, sv)`.
+	 *
+	 * **Inset on *both* in-plane axes, which is the whole of the fix for the
+	 * defect this module shipped first.** The original pulled each corner in on
+	 * one axis at a time, and that polyhedron is a box with its eight *corners*
+	 * cut — the +X and +Y faces still met at an unbroken 90° edge, and the
+	 * twelve quads meant to be edge chamfers lay strictly *inside* the hull,
+	 * 24 of 68 triangles drawing nothing. The module claimed twelve cut edges
+	 * and rendered none, and the normal-count test could not tell the difference
+	 * because it counted triangles in the buffer rather than faces on the hull.
+	 */
+	const point = (axis: number, sign: number, su: number, sv: number) => {
+		const [u, v] = [0, 1, 2].filter((k) => k !== axis);
+		const p = [0, 0, 0];
+		p[axis] = sign * h[axis];
+		p[u] = su * (h[u] - c);
+		p[v] = sv * (h[v] - c);
+		return p;
 	};
 
 	/**
@@ -78,7 +91,7 @@ export function chamferedBox(
 	 */
 	const face = (polygon: number[][]) => {
 		const centroid = [0, 1, 2].map(
-			(k) => polygon.reduce((sum, v) => sum + v[k], 0) / polygon.length,
+			(k) => polygon.reduce((sum, p) => sum + p[k], 0) / polygon.length,
 		);
 		const ab = [0, 1, 2].map((k) => polygon[1][k] - polygon[0][k]);
 		const ac = [0, 1, 2].map((k) => polygon[2][k] - polygon[0][k]);
@@ -95,53 +108,47 @@ export function chamferedBox(
 
 	const SIGNS = [-1, 1];
 
-	// The six flat faces. Each is an octagon: on the +X face, the four vertices
-	// pulled in along Y and the four pulled in along Z all lie on x = h[0].
-	// Sorted by angle in the face's own plane, because the two families
-	// interleave and a polygon taken in generation order is a self-crossing star.
+	// The six flat faces: a rectangle inset by the cut on both in-plane axes.
+	// Taken in a ring rather than in loop order, because (−,−), (−,+), (+,−),
+	// (+,+) is a bow tie.
 	for (let axis = 0; axis < 3; axis++)
-		for (const sign of SIGNS) {
-			const [u, v] = [0, 1, 2].filter((k) => k !== axis);
-			const polygon: number[][] = [];
-			for (const su of SIGNS)
-				for (const sv of SIGNS) {
-					const corner = [0, 0, 0];
-					corner[axis] = sign;
-					corner[u] = su;
-					corner[v] = sv;
-					polygon.push(point(corner, u), point(corner, v));
-				}
-			polygon.sort((a, b) => Math.atan2(a[v], a[u]) - Math.atan2(b[v], b[u]));
-			face(polygon);
-		}
+		for (const sign of SIGNS)
+			face([
+				point(axis, sign, -1, -1),
+				point(axis, sign, -1, 1),
+				point(axis, sign, 1, 1),
+				point(axis, sign, 1, -1),
+			]);
 
-	// The twelve edge chamfers. One quad per edge, spanning the full length of
-	// the edge's own axis — neither end is pulled in along that axis, so each
-	// meets a corner triangle edge-on rather than stopping short of it.
+	// The twelve edge chamfers. One quad per edge, joining the two faces that
+	// meet there along their now-inset borders, and running the length of the
+	// edge's own axis between the two corner triangles.
 	for (let along = 0; along < 3; along++) {
 		const [i, j] = [0, 1, 2].filter((k) => k !== along);
 		for (const si of SIGNS)
 			for (const sj of SIGNS) {
-				const quad: number[][] = [];
-				for (const sk of SIGNS) {
-					const corner = [0, 0, 0];
-					corner[i] = si;
-					corner[j] = sj;
-					corner[along] = sk;
-					quad.push(point(corner, i), point(corner, j));
-				}
-				// The two ends contribute (i-pulled, j-pulled) each; taken in that
-				// order the quad crosses itself, so the far end is reversed.
-				face([quad[0], quad[1], quad[3], quad[2]]);
+				/** The point on face `axis` nearest this edge, at `sk` along it. */
+				const on = (axis: number, sign: number, sk: number) => {
+					const other = [0, 1, 2].filter((k) => k !== axis);
+					const signOf = (k: number) => (k === i ? si : k === j ? sj : sk);
+					return point(axis, sign, signOf(other[0]), signOf(other[1]));
+				};
+				face([on(i, si, -1), on(j, sj, -1), on(j, sj, 1), on(i, si, 1)]);
 			}
 	}
 
-	// The eight corner cuts: the three points that corner contributes.
+	// The eight corner cuts: one point from each of the three faces meeting
+	// there.
 	for (const sx of SIGNS)
 		for (const sy of SIGNS)
 			for (const sz of SIGNS) {
-				const corner = [sx, sy, sz];
-				face([point(corner, 0), point(corner, 1), point(corner, 2)]);
+				const sign = [sx, sy, sz];
+				face(
+					[0, 1, 2].map((axis) => {
+						const [u, v] = [0, 1, 2].filter((k) => k !== axis);
+						return point(axis, sign[axis], sign[u], sign[v]);
+					}),
+				);
 			}
 
 	const geometry = new THREE.BufferGeometry();

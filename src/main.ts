@@ -2260,6 +2260,17 @@ class Game {
 			from: [number, number, number],
 			to: [number, number, number],
 		) => {
+			const start = new THREE.Vector3(...from);
+			const along = new THREE.Vector3(...to).sub(start);
+			// **The lamp's long axis follows the rail.** Its `size` names the long
+			// side first, and without this the lamp lay across the rail rather
+			// than along it: these rails run mostly in Y while the box is longest
+			// in X, so its extent along the rail was two thirds of its stated
+			// length and it read as a tile stuck on rather than a lamp set in.
+			const orientation = new THREE.Quaternion().setFromUnitVectors(
+				new THREE.Vector3(1, 0, 0),
+				along.clone().normalize(),
+			);
 			for (const t of COCKPIT_LAMP.stops) {
 				// Chamfered like every other cabin form. A flat-sided box at this
 				// size read as a tan card stuck to the rail rather than as a lens
@@ -2270,14 +2281,14 @@ class Game {
 					lampGlow,
 				);
 				mesh.name = "cockpit-lamp";
+				mesh.quaternion.copy(orientation);
 				// **+Z is toward the pilot**, and the standoff is what makes the lamp
 				// visible at all — see `COCKPIT_LAMP.standoffKm`. The rails run at
 				// constant z, so one axis is the whole of it.
-				mesh.position.set(
-					from[0] + (to[0] - from[0]) * t,
-					from[1] + (to[1] - from[1]) * t,
-					from[2] + (to[2] - from[2]) * t + COCKPIT_LAMP.standoffKm,
-				);
+				mesh.position
+					.copy(start)
+					.addScaledVector(along, t)
+					.setZ(start.z + along.z * t + COCKPIT_LAMP.standoffKm);
 				cockpit.add(mesh);
 			}
 		};
