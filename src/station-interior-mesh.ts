@@ -69,7 +69,7 @@ export const PLATE_FACTOR = 0.06;
  * takes no `scene.environment`, so it is lit by the star, the hemisphere and
  * the bay's own emissives.
  */
-function shellMaterial(type: StationType): THREE.Material {
+function shellMaterial(type: StationType, glow = AMBIENT_GLOW): THREE.Material {
 	return new THREE.MeshLambertMaterial({
 		color: SHELL_COLOR[type],
 		// **`DoubleSide`, since the shell became five slabs.** One closed box
@@ -84,7 +84,7 @@ function shellMaterial(type: StationType): THREE.Material {
 		// rather than a hole. A working bay is lit; this is that light without a
 		// second `PointLight` per station, which is the frame cost #99 owns.
 		emissive: SHELL_COLOR[type],
-		emissiveIntensity: AMBIENT_GLOW,
+		emissiveIntensity: glow,
 	});
 }
 
@@ -96,6 +96,23 @@ function shellMaterial(type: StationType): THREE.Material {
  * canonical frames, which is the only instrument for it.
  */
 const AMBIENT_GLOW = 0.45;
+
+/**
+ * How much of its own colour a **pad's** surface emits.
+ *
+ * **A fifth of a bay's, because a pad is outside** (#165). `AMBIENT_GLOW` is
+ * the figure for an enclosed room whose only light is its own: the star is
+ * outside the hull and `scene.environment` reaches standard materials only, so
+ * without it a bay reads through its opening as a panel rather than a hole.
+ *
+ * A pad's deck is an exterior surface in starlight, and these are Lambert
+ * materials that take the star and the hemisphere directly. Flown at
+ * `AMBIENT_GLOW` the refinery's cradle frame was a white field filling the
+ * lower half of the canopy — a 380 m self-lit slab beside a lit one. This is
+ * the floor that keeps the night side off pure black rather than a light
+ * source.
+ */
+const PAD_GLOW = 0.09;
 
 /** §13.4's interior treatments, as the one thing a colour can carry: how dirty
  *  and how cold the plating reads. Warm and clean for the habitat, cold and
@@ -109,11 +126,11 @@ const SHELL_COLOR: Record<StationType, number> = {
 
 /** The structure inside the bay — ribs, brackets, cradle arms. One material per
  *  role, shared: none of them is ever mutated. */
-const structureMaterial = (type: StationType) =>
+const structureMaterial = (type: StationType, glow = AMBIENT_GLOW) =>
 	new THREE.MeshLambertMaterial({
 		color: STRUCTURE_COLOR[type],
 		emissive: STRUCTURE_COLOR[type],
-		emissiveIntensity: AMBIENT_GLOW,
+		emissiveIntensity: glow,
 	});
 
 const STRUCTURE_COLOR: Record<StationType, number> = {
@@ -924,7 +941,7 @@ function buildPadDeck(
 	const group = new THREE.Group();
 	group.name = INTERIOR_GROUP_NAME;
 	const visuals = STATION_VISUALS[type];
-	const structure = structureMaterial(type);
+	const structure = structureMaterial(type, PAD_GLOW);
 	const plate = plateOf(interior);
 	// **The sim's figure, not one derived here.** Where the deck's hole is, is
 	// the same question as where a berth may stand — both are the approach
@@ -942,7 +959,7 @@ function buildPadDeck(
 	// rather than in it. The berths are seated into it instead (`padSeatKm`).
 	const faceZ = interior.mouthAxialKm;
 
-	const deckFace = shellMaterial(type);
+	const deckFace = shellMaterial(type, PAD_GLOW);
 	for (const [w, h, x, y] of ringAround(
 		{ across: interior.halfAcrossKm, up: interior.halfUpKm },
 		{ across: hole, up: hole },

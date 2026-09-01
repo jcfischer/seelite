@@ -543,9 +543,9 @@ export const VIEWS = Object.freeze([
 		shot: {
 			kind: "workbench-interior",
 			asset: "outpost",
-			radii: 0.75,
+			radii: 1.25,
 			azimuth: 0.28,
-			elevation: 0.62,
+			elevation: 0.45,
 			view: "cockpit",
 		},
 	},
