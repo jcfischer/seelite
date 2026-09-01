@@ -109,21 +109,44 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
 - **`src/sim.ts` must not import Three.js.** The authoritative world is float64
   kilometres outside the scene graph; the scene graph is display only, and
   nothing reads a position back out of an `Object3D`.
-- **A station's bay is drawn inside the spinner, and the sim owns its shape.**
-  `src/station-interior.ts` computes the volume and the berth catalogue with no
-  Three.js; `src/station-interior-mesh.ts` draws that catalogue and authors no
-  dimension of its own. A berth is off the transit axis, so the bay has to turn
-  with the station or a parked ship is left behind — which is why the group goes
-  inside `spinner` rather than beside it.
+- **A station's interior is drawn inside the spinner, and the sim owns its
+  shape.** `src/station-interior.ts` computes the volume and the berth
+  catalogue with no Three.js; `src/station-interior-mesh.ts` draws that
+  catalogue and authors no dimension of its own. A berth is off the transit
+  axis, so the interior has to turn with the station or a parked ship is left
+  behind — which is why the group goes inside `spinner` rather than beside it.
+- **There are two interiors, and the aperture's `kind` picks between them.** A
+  **slot** role — trade, shipyard — gets §13.1's enclosed bay running inward
+  from the plane. A **pad** role — refinery, outpost — gets an open deck *at*
+  the plane with its berths standing on it, no shell, and an uncut hull, which
+  is the principal's ruling on #165 reversing part of a ratified §13. So
+  `endAxialKm === mouthAxialKm` on a pad and the volume runs outward to
+  `stagingAxialKm`; `interiorAxialSpanKm` is the one place that ordering lives,
+  and a consumer that reads `[end, mouth]` directly gets a pad backwards.
+- **A pad's berths are the only parts of a station drawn in front of the
+  aperture plane, so the corridor row is their gate.**
+  `tests/station-mesh.test.ts` forbids anything inside the aperture's
+  half-diagonal cylinder extended outward, and `PAD_CORRIDOR_MARGIN_FACTOR` is
+  what keeps a berth's service boom — which reaches *inboard* of its own apron —
+  on the right side of it. At 0.5 the boom cleared by 11 cm, which is a
+  coincidence; the margin is 0.75 and it clears by 7.6 m. Anything added to a
+  pad inherits the question.
 - **A bay wider than the form that holds it pokes through the hull, and only
   half of that is checkable.** `tests/station-interior.test.ts` measures the bay
   against the **slot** forms' `core` box, which is the body their slot is cut
-  into. The two pad roles are excluded for the reason #128's row excludes them:
-  a refinery's `core` is a 48 m slab of deck sitting in the notch of a rock that
-  is a separate mesh, and an outpost's is the tank cluster *below* its pad. A
-  ray cast from inside cannot stand in — a hull mesh is `FrontSide` and the ray
-  passes straight through. Those two roles' bays are held by the canonical view
-  set alone.
+  into. The two pad roles are excluded and the exclusion is moot rather than a
+  residue since #165: they have no bay to poke through anything, and what stands
+  in front of their plane is measured by the corridor row over all twelve forms.
+  A ray cast from inside still cannot stand in for the slot roles — a hull mesh
+  is `FrontSide` and the ray passes straight through.
+- **A shipyard is a rotating drum with a static spine, and the spine goes aft.**
+  The slot is on the spin axis and #28 keeps the outboard structure still, so
+  the two are in relative rotation; both forms drew the spine through the drum's
+  interior, and §13's bay is what made it visible. A bearing has to be on the
+  spin axis, so static structure meets the drum at an axial face — and the
+  forward face is the aperture. `SHIPYARD_KEEL_AFT_KM` is that move, and
+  anything mounted on the keel or the slab moves with it while the two booms,
+  outside the bay's swept cylinder, do not.
 - **A body's render layer is its distance, not its kind** — near within
   `HANDOFF_KM` of the camera, far beyond it, with a hysteresis band. Anything
   that adds a drawn object inherits this rather than picking a layer.

@@ -98,6 +98,10 @@ export interface ArrivalLaw {
 	/** The parked up-vector, in aperture-basis components: the berth's own
 	 *  normal (§13.3). */
 	berthNormal: LocalOffset;
+	/** The parked nose, in aperture-basis components: the berth's own
+	 *  `parkedNose`. Carried rather than assumed, because a pad's berth normal
+	 *  *is* the aperture axis and a nose along it too is not an attitude. */
+	berthNose: LocalOffset;
 	/** The attitude the ship held at the crossing, blended out over the
 	 *  traversal. Absent for a launch, which starts parked. */
 	fromNose: Vec3 | null;
@@ -255,6 +259,7 @@ export function beginArrival(
 		arc,
 		berthId: berth.id,
 		berthNormal: berth.normal,
+		berthNose: berth.parkedNose,
 		fromNose: entryAttitude?.nose ?? null,
 		fromUp: entryAttitude?.up ?? null,
 	};
@@ -282,7 +287,17 @@ export function beginLaunch(
 	// **The arrival's own route, reversed.** Written out again inline, a fourth
 	// leg or a moved staging point had to land in two places or the two
 	// traversals stopped being the mirror §12.2 calls them.
-	const release = offset(frame.planeKm + LAUNCH_RELEASE_KM, 0, 0);
+	// **Outside the plane *and* outside the staging point** (#165). A bay's
+	// staging point is inward of the plane, so the two agree and this is
+	// §12.2's release unchanged. A pad's is one clear height *outward* of it —
+	// the hover the launch's second leg runs along — and a release taken from
+	// the plane alone would sit below that leg, so the ship rose off its pad,
+	// crossed to the axis and then dropped 10 m to be let go.
+	const release = offset(
+		Math.max(frame.planeKm, interior.stagingAxialKm) + LAUNCH_RELEASE_KM,
+		0,
+		0,
+	);
 	const path = [...arrivalPath(interior, berth, release)].reverse();
 	const arc = arcOf(path);
 	return {
@@ -299,6 +314,7 @@ export function beginLaunch(
 		arc,
 		berthId: berth.id,
 		berthNormal: berth.normal,
+		berthNose: berth.parkedNose,
 		fromNose: null,
 		fromUp: null,
 	};
@@ -558,21 +574,44 @@ function quatSlerp(a: Quat, b: Quat, t: number): Quat {
 }
 
 /**
- * The pose a parked ship holds (§13.3): **nose outward** along the aperture
- * axis, up-vector away from the berth surface.
+ * The pose a parked ship holds (§13.3): up-vector away from the berth surface,
+ * nose along the berth's own `parkedNose`.
  *
  * One spelling, read by the docked tick, by the end of the arrival and by the
- * launch that starts from it. The outward nose is the receipt's own wording —
- * *"the exit remains straight ahead"* — and it is why a launch no longer has to
- * turn the ship round inside the bay.
+ * launch that starts from it. In a bay the nose is the aperture axis on every
+ * berth — the receipt's own wording, *"the exit remains straight ahead"* — and
+ * it is why a launch no longer has to turn the ship round inside the bay.
+ *
+ * **It reads the berth rather than restating the axis** (#165). On a pad the
+ * up-vector *is* the axis, so a nose along it as well would leave
+ * `quatFromAttitude` re-orthogonalising a direction against itself: a zero
+ * vector, an arbitrary basis, and a parked ship rolled to whatever `unit`
+ * returns for nothing. A ship on a landing pad lies in the deck.
  */
 export function parkedAttitude(
-	law: Pick<ArrivalLaw, "frame" | "berthNormal">,
+	law: Pick<ArrivalLaw, "frame" | "berthNormal" | "berthNose">,
 	phaseRad: number,
 ): { nose: Vec3; up: Vec3 } {
+	// **One basis for both directions, and no closure.** `stepDockedWorld` calls
+	// this every docked frame; a `recomposeDirection` each would build the phase
+	// frame and the slot basis twice for one pose, and a local arrow would
+	// allocate once per tick to save two lines.
+	const { across, up } = slotBasis(frameAtPhase(law.frame, phaseRad));
+	const nose = law.berthNose;
+	const normal = law.berthNormal;
 	return {
-		nose: law.frame.axis,
-		up: recomposeDirection(law.frame, law.berthNormal, phaseRad),
+		nose: unit(
+			add(
+				scale(law.frame.axis, nose.axial),
+				add(scale(across, nose.across), scale(up, nose.up)),
+			),
+		),
+		up: unit(
+			add(
+				scale(law.frame.axis, normal.axial),
+				add(scale(across, normal.across), scale(up, normal.up)),
+			),
+		),
 	};
 }
 

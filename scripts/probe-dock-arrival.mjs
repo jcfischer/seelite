@@ -273,7 +273,15 @@ const rolls = await page.evaluate(() => {
 		const mesh = window.__meshOfBody(st.id);
 		let recess = null;
 		mesh.traverse((o) => {
+			// **A pad has no shell, and its deck is a ring** (#165) — no single
+			// panel of it is centred on the axis, so the basis is read off the
+			// interior *group*, whose local axes are the aperture frame's by
+			// construction. It is the weaker reading of the two and it is the
+			// one a pad can support; a pad does not spin and §4 removes check 4
+			// for it, so the roll is not a docking quantity there, while the
+			// axis still is.
 			if (o.name === "interior-shell") recess = o;
+			else if (!recess && o.name === "station-interior") recess = o;
 		});
 		// A form with neither part fails its row rather than taking the run down:
 		// an unguarded dereference here aborts the whole probe with a
@@ -389,12 +397,16 @@ const shieldInk = (id, which) =>
 
 console.log("\n§13.5 browser row 1 — the bay is drawn:");
 for (const station of roster) {
-	// **Unconditional since §13.1**, which replaced E7/E8's throat-or-deck split
-	// with one interior shared by role. A row keyed on `aperture.kind` would now
-	// be asserting a distinction the spec removed.
+	// **Keyed on `aperture.kind` again since #165**, which put back the half of
+	// E7/E8's split §13.1 had removed: a slot role draws an enclosed bay and a
+	// pad role draws a deck. What is unconditional is that a form draws *an*
+	// interior, and asserting the right one per kind is what stops a pad that
+	// silently kept its bay from passing.
 	check(
-		`${station.id} (${station.kind}) draws its bay`,
-		station.parts.includes("interior-shell"),
+		`${station.id} (${station.kind}) draws its interior`,
+		station.parts.includes(
+			station.kind === "pad" ? "interior-deck" : "interior-shell",
+		),
 		station.parts
 			.filter((n) => n.startsWith("interior") || n.startsWith("aperture"))
 			.join(", "),

@@ -39,7 +39,11 @@ import {
 	type StationType,
 } from "../src/station";
 import { slotPhaseRad } from "../src/station";
-import { type Berth, stationInterior } from "../src/station-interior";
+import {
+	type Berth,
+	interiorAxialSpanKm,
+	stationInterior,
+} from "../src/station-interior";
 import { type Vec3, add, cross, dot, length, scale, v3 } from "../src/vec3";
 
 /** An axis that is not a world axis, so nothing below can pass by accident on a
@@ -182,21 +186,45 @@ describe("§13.5 row 7 — it ends at the reserved berth, in the parked pose", (
 			}
 		});
 
-	test("the parked pose points out of the station, up off the berth", () => {
+	test("the parked pose is the berth's own nose and normal", () => {
+		// **Both read off the berth** (#165). In a bay the nose is the aperture
+		// axis on every berth — §13.3's "the exit remains straight ahead" — and
+		// that was written into the law as a constant. On a pad the *normal* is
+		// the axis, so a nose along it as well is not an orientation at all;
+		// the berth carries its own, lying in the deck.
 		for (const type of STATION_TYPES)
 			for (const berth of interiorOf(type).berths) {
 				const law = arrivalTo(type, berth.id);
 				const { nose, up } = arrivalAttitude(law, 1, law.frame.phaseRad);
-				// Nose outward — §13.3's "the exit remains straight ahead".
-				expect(dot(nose, law.frame.axis)).toBeCloseTo(1, 6);
+				const basis = slotBasis(law.frame);
+				const inFrame = (local: {
+					axial: number;
+					across: number;
+					up: number;
+				}) =>
+					add(
+						scale(law.frame.axis, local.axial),
+						add(scale(basis.across, local.across), scale(basis.up, local.up)),
+					);
+				expect([type, berth.id, dot(nose, inFrame(berth.parkedNose))]).toEqual([
+					type,
+					berth.id,
+					expect.closeTo(1, 6),
+				]);
 				// Up along the berth's own normal, so a wall berth and a deck berth
 				// are genuinely different roll attitudes.
-				const basis = slotBasis(law.frame);
-				const want = add(
-					scale(basis.across, berth.normal.across),
-					scale(basis.up, berth.normal.up),
-				);
-				expect(dot(up, want)).toBeCloseTo(1, 6);
+				expect([type, berth.id, dot(up, inFrame(berth.normal))]).toEqual([
+					type,
+					berth.id,
+					expect.closeTo(1, 6),
+				]);
+				// And the two are a basis rather than one direction twice, which
+				// is the failure a pad's berth would have produced silently.
+				expect([type, berth.id, Math.abs(dot(nose, up)) < 1e-6]).toEqual([
+					type,
+					berth.id,
+					true,
+				]);
 			}
 	});
 
@@ -219,19 +247,27 @@ describe("§13.5 row 7 — it ends at the reserved berth, in the parked pose", (
 });
 
 describe("§12.6 obligation 2 — nothing re-evaluates §3's checks during it", () => {
-	test("an arrival never crosses the plane outward", () => {
-		for (const type of STATION_TYPES)
-			for (const berth of interiorOf(type).berths) {
+	test("an arrival stays on one side of the plane", () => {
+		// **The side is the interior's, and a pad's is the far one** (#165).
+		// `planeCrossing` only fires on an inward transition, so what makes the
+		// obligation hold is that the route never makes one: a bay's stays at or
+		// inside the plane it entered through, and a pad's — whose berths stand
+		// *on* the deck the plane is cut at — stays at or outside it. Either way
+		// the route has no `outside → inside` step in it.
+		for (const type of STATION_TYPES) {
+			const interior = interiorOf(type);
+			const pad = interior.presentation === "pad";
+			for (const berth of interior.berths) {
 				const law = arrivalTo(type, berth.id);
 				for (let i = 0; i <= 100; i++) {
 					const axial = localAt(law, i / 100).axial;
-					expect([type, berth.id, axial <= law.frame.planeKm + 1e-9]).toEqual([
-						type,
-						berth.id,
-						true,
-					]);
+					const held = pad
+						? axial >= law.frame.planeKm - 1e-9
+						: axial <= law.frame.planeKm + 1e-9;
+					expect([type, berth.id, held]).toEqual([type, berth.id, true]);
 				}
 			}
+		}
 	});
 });
 
@@ -289,11 +325,12 @@ describe("§13.5 rows 2 and 3 — the route stays inside the bay", () => {
 			const interior = interiorOf(type);
 			for (const berth of interior.berths) {
 				const law = arrivalTo(type, berth.id);
+				const [nearKm, farKm] = interiorAxialSpanKm(interior);
 				for (let i = 0; i <= 200; i++) {
 					const at = localAt(law, i / 200);
 					const inside =
-						at.axial <= interior.mouthAxialKm + 1e-9 &&
-						at.axial >= interior.endAxialKm - 1e-9 &&
+						at.axial <= farKm + 1e-9 &&
+						at.axial >= nearKm - 1e-9 &&
 						Math.abs(at.across) <= interior.halfAcrossKm + 1e-9 &&
 						Math.abs(at.up) <= interior.halfUpKm + 1e-9;
 					expect([type, berth.id, i, inside]).toEqual([
@@ -428,21 +465,38 @@ describe("§13.3 — launch is the route run backwards", () => {
 				const start = localAt(law, 0);
 				const want = berthCentre(berth);
 				expect(start.axial).toBeCloseTo(want.axial, 9);
+				// **Clear of the plane *and* of the staging point** (#165). On a
+				// bay they are the same figure; on a pad the staging point is a
+				// clear height outward of the plane, and a release taken from
+				// the plane alone would have the ship dip back toward the deck
+				// on its way out.
 				expect(localAt(law, 1).axial).toBeCloseTo(
-					law.frame.planeKm + LAUNCH_RELEASE_KM,
+					Math.max(law.frame.planeKm, interiorOf(type).stagingAxialKm) +
+						LAUNCH_RELEASE_KM,
 					9,
 				);
 			}
 	});
 
 	test("its axial run is monotone outward, so it cannot re-trigger a crossing", () => {
-		const law = launchFrom("trade", "overhead-deep");
-		let previous = Number.NEGATIVE_INFINITY;
-		for (let i = 0; i <= 200; i++) {
-			const axial = localAt(law, i / 200).axial;
-			expect(axial).toBeGreaterThanOrEqual(previous - 1e-12);
-			previous = axial;
-		}
+		// **Every role, not just the trade station** (#165). A pad's route rises
+		// off the deck, crosses to the axis at the hover height and leaves from
+		// there; get the release wrong and the last leg runs *inward*, which is
+		// the one shape this row exists to catch and which no bay could produce.
+		for (const type of STATION_TYPES)
+			for (const berth of interiorOf(type).berths) {
+				const law = launchFrom(type, berth.id);
+				let previous = Number.NEGATIVE_INFINITY;
+				for (let i = 0; i <= 200; i++) {
+					const axial = localAt(law, i / 200).axial;
+					expect([type, berth.id, axial >= previous - 1e-12]).toEqual([
+						type,
+						berth.id,
+						true,
+					]);
+					previous = axial;
+				}
+			}
 	});
 
 	test("it settles the roll onto check 4's reference rather than turning the nose", () => {

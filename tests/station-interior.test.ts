@@ -25,6 +25,7 @@ import {
 	berthFits,
 	berthSpare,
 	chooseBerth,
+	interiorAxialSpanKm,
 	stationInterior,
 } from "../src/station-interior";
 import { STATION_GEOMETRY, STATION_TYPES } from "../src/station";
@@ -33,25 +34,39 @@ const CAPITALS: HullId[] = ["carrier", "dreadnought"];
 const interiorOf = (type: (typeof STATION_TYPES)[number], seed = 0) =>
 	stationInterior(type, STATION_GEOMETRY[type].aperturePlaneKm, seed);
 
-/** A berth's occupied box in the aperture frame, as three intervals. The berth
- *  axes are not the frame's: a wall berth's *height* runs across the bay and
- *  its beam runs up it, because the parked ship is on its side. */
+/**
+ * A berth's occupied box in the aperture frame, as three intervals.
+ *
+ * **The berth axes are not the frame's, and which is which is the berth's own
+ * basis rather than a table of faces** (#165). A wall berth's *height* runs
+ * across the bay and its beam runs up it, because the parked ship is on its
+ * side; a pad berth's height runs along the aperture axis and its length runs
+ * wherever its nose points. Both fall out of the same three directions — the
+ * normal carries the clear height, the parked nose the clear length, and what
+ * is left carries the beam — so this is one expression rather than a case per
+ * presentation, and the axes are unit and axis-aligned so the projection is
+ * exact.
+ */
 function box(berth: Berth) {
-	const half =
-		berth.face === "deck" || berth.face === "overhead"
-			? { across: berth.clearBeamKm / 2, up: berth.clearHeightKm / 2 }
-			: { across: berth.clearHeightKm / 2, up: berth.clearBeamKm / 2 };
-	return {
-		axial: [
-			berth.centre.axial - berth.clearLengthKm / 2,
-			berth.centre.axial + berth.clearLengthKm / 2,
-		] as const,
-		across: [
-			berth.centre.across - half.across,
-			berth.centre.across + half.across,
-		] as const,
-		up: [berth.centre.up - half.up, berth.centre.up + half.up] as const,
-	};
+	const dir = (o: { axial: number; across: number; up: number }) =>
+		[o.axial, o.across, o.up] as const;
+	const normal = dir(berth.normal);
+	const nose = dir(berth.parkedNose);
+	// The third axis of a right-handed triple, which carries the clear beam.
+	const beam = [
+		normal[1] * nose[2] - normal[2] * nose[1],
+		normal[2] * nose[0] - normal[0] * nose[2],
+		normal[0] * nose[1] - normal[1] * nose[0],
+	] as const;
+	const half = (axis: 0 | 1 | 2) =>
+		(Math.abs(normal[axis]) * berth.clearHeightKm +
+			Math.abs(nose[axis]) * berth.clearLengthKm +
+			Math.abs(beam[axis]) * berth.clearBeamKm) /
+		2;
+	const centre = dir(berth.centre);
+	const span = (axis: 0 | 1 | 2) =>
+		[centre[axis] - half(axis), centre[axis] + half(axis)] as const;
+	return { axial: span(0), across: span(1), up: span(2) };
 }
 
 const overlaps = (a: readonly [number, number], b: readonly [number, number]) =>
@@ -135,21 +150,27 @@ describe("the volume holds what it says it holds", () => {
 		}
 	});
 
-	test("every berth lies inside the enclosed volume", () => {
+	test("every berth lies inside the volume its interior declares", () => {
+		// **The span is the interior's, not the mouth and the back wall**
+		// (#165). A bay runs inward from the mouth to `endAxialKm`; a pad runs
+		// outward from its deck to the hover point the traversal stages at, and
+		// there is no back wall at all. `interiorAxialSpanKm` is the one place
+		// that ordering lives.
 		for (const type of STATION_TYPES) {
 			const interior = interiorOf(type);
+			const [nearKm, farKm] = interiorAxialSpanKm(interior);
 			for (const berth of interior.berths) {
 				const b = box(berth);
-				expect([
+				expect([type, berth.id, b.axial[0] >= nearKm - 1e-9]).toEqual([
 					type,
 					berth.id,
-					b.axial[0] >= interior.endAxialKm - 1e-9,
-				]).toEqual([type, berth.id, true]);
-				expect([
+					true,
+				]);
+				expect([type, berth.id, b.axial[1] <= farKm + 1e-9]).toEqual([
 					type,
 					berth.id,
-					b.axial[1] <= interior.mouthAxialKm + 1e-9,
-				]).toEqual([type, berth.id, true]);
+					true,
+				]);
 				expect([
 					type,
 					berth.id,
@@ -187,8 +208,12 @@ describe("the volume holds what it says it holds", () => {
 		// cluster *below* its pad, at negative z. Measured against those, the row
 		// would be comparing the bay with the wrong object.
 		//
-		// So the two pad roles' bays are held by the canonical view set alone.
-		// That is the residue, stated rather than papered over.
+		// **The residue that left is gone rather than still open** (#165). It
+		// used to read "the two pad roles' bays are held by the canonical view
+		// set alone"; those roles have no bay now, so there is nothing to poke
+		// through a hull, and what they draw stands in *front* of the plane,
+		// where `tests/station-mesh.test.ts`'s corridor row measures it over all
+		// twelve forms.
 		for (const type of STATION_TYPES) {
 			if (STATION_GEOMETRY[type].aperture.kind !== "slot") continue;
 			const interior = interiorOf(type);

@@ -25,6 +25,7 @@ import {
 	PLATE_FACTOR,
 	buildStationInterior,
 } from "../src/station-interior-mesh";
+import { drawnInteriorSpanKm } from "./helpers/aperture-opening";
 
 const interiorOf = (type: (typeof STATION_TYPES)[number]) =>
 	stationInterior(type, STATION_GEOMETRY[type].aperturePlaneKm);
@@ -46,24 +47,33 @@ function boxesNamed(root: THREE.Object3D, match: (name: string) => boolean) {
 }
 
 describe("the bay is the catalogue, drawn", () => {
-	test("the shell spans exactly the volume the sim declares", () => {
+	test("the shell or deck spans exactly the volume the sim declares", () => {
 		for (const type of STATION_TYPES) {
 			const interior = interiorOf(type);
+			const pad = interior.presentation === "pad";
 			// **The union of the five walls.** The shell was one closed box until
 			// its sixth face turned out to be a lid across the mouth; it is four
 			// walls and a back now, so what spans the volume is their union.
+			//
+			// **A pad draws four deck panels instead** (#165), and there is no
+			// fifth: the hole they leave is the approach corridor, which is what
+			// keeps a landing deck out of the volume a ship descends through.
 			const parts = boxesNamed(
 				built(type),
-				(n) => n === "interior-shell" || n === "interior-shell-back",
+				(n) =>
+					n === "interior-shell" ||
+					n === "interior-shell-back" ||
+					n === "interior-deck",
 			);
-			expect([type, parts.length]).toEqual([type, 5]);
+			expect([type, parts.length]).toEqual([type, pad ? 4 : 5]);
 			const shell = { box: new THREE.Box3() };
 			for (const part of parts) shell.box.union(part.box);
 			// Six decimals is a millimetre on a kilometre; the positions are
 			// `Float32Array` by the time they are read back, so nine would be
 			// asserting the storage format rather than the dimension.
-			expect(shell.box.max.z).toBeCloseTo(interior.mouthAxialKm, 6);
-			expect(shell.box.min.z).toBeCloseTo(interior.endAxialKm, 6);
+			const [farKm, nearKm] = drawnInteriorSpanKm(interior);
+			expect(shell.box.max.z).toBeCloseTo(nearKm, 6);
+			expect(shell.box.min.z).toBeCloseTo(farKm, 6);
 			expect(shell.box.max.x).toBeCloseTo(interior.halfAcrossKm, 6);
 			expect(shell.box.max.y).toBeCloseTo(interior.halfUpKm, 6);
 		}
@@ -81,40 +91,124 @@ describe("the bay is the catalogue, drawn", () => {
 		}
 	});
 
-	test("a berth's pad is drawn on the surface the sim parks a ship off", () => {
-		// The seam that matters: the pad is where the sim says the wall is, which
-		// is the berth's centre pushed back down its own normal by half the clear
-		// height. A pad drawn anywhere else is a ship settling onto nothing.
+	test("a pad's deck is under its berths, not through the ships in them", () => {
+		// **The row the deck's stand-off got past** (#165, sage round 5). The
+		// deck was drawn one wall thickness *proud* of the berth surface, on the
+		// bay's logic: a bay seats each shell wall inside the declared extent so
+		// a berth's apron overlaps it and the connectivity check passes.
+		//
+		// A pad cannot borrow that. Its "wall" is the surface a ship stands on,
+		// and a berth's clear volume starts there — so 7.5 m of proud deck is
+		// 7.5 m inside every hull whose height fills the cell. An outpost berth
+		// admits a 30 m freighter in a 30 m cell, which parks with its belly
+		// exactly on the surface. The berths are seated *into* the deck instead
+		// (`PAD_SEAT_FACTOR`), which is the same overlap the other way up.
+		//
+		// Lift the deck's face off `mouthAxialKm` and this goes red on every
+		// pad form.
 		for (const type of STATION_TYPES) {
+			const interior = interiorOf(type);
+			if (interior.presentation !== "pad") continue;
+			const deck = boxesNamed(built(type), (n) => n === "interior-deck");
+			expect([type, deck.length]).toEqual([type, 4]);
+			for (const panel of deck)
+				for (const berth of interior.berths) {
+					// The berth surface, along the berth's own normal — which on a
+					// pad is the aperture axis, so the deck's `max.z` is what has
+					// to stay under it.
+					const surface = berth.centre.axial - berth.clearHeightKm / 2;
+					const label = `${type} ${berth.id}`;
+					expect([label, panel.box.max.z <= surface + 1e-9]).toEqual([
+						label,
+						true,
+					]);
+				}
+		}
+	});
+
+	test("a berth's drawn run lies along the nose the sim parks a ship on", () => {
+		// **The row the reversed cross product got past** (#165, sage round 2).
+		// `berthBasis` hands `buildBerth` a beam and it recovers the run as
+		// `beam × outward`; built as `along × outward` that comes back
+		// **`−along`**, because `(a × b) × b = −a`. Nothing measured it, and the
+		// comment beside it claimed the opposite.
+		//
+		// The group's local +Z *is* the run (`makeBasis(beam, outward, along)`),
+		// so this reads the drawn object's own third column.
+		//
+		// **Two strengths, and the weaker one is not a hedge.** Every berth's
+		// run must lie *along* the parked nose — a run off that axis would put
+		// the apron across the ship. The **sign** is asserted on pads only,
+		// because a bay's four faces come from a hand-written table whose wall
+		// entries mirror the run on purpose (`buildBerth`: *"a berth is
+		// symmetric along the lane, so the mirror shows only in which end the
+		// boom stands at"*), while a pad's basis is *derived* from
+		// `parkedNose` — so there the sign is a fact about the derivation rather
+		// than a convention, and it is the half that goes red if the cross
+		// product is written the other way round.
+		for (const type of STATION_TYPES) {
+			const interior = interiorOf(type);
 			const group = built(type);
-			for (const berth of interiorOf(type).berths) {
+			group.updateMatrixWorld(true);
+			for (const berth of interior.berths) {
+				const holder = group.getObjectByName(`berth-${berth.id}`);
+				if (!holder) throw new Error(`no drawn ${berth.id} at ${type}`);
+				const e = holder.matrixWorld.elements;
+				const run = new THREE.Vector3(e[8], e[9], e[10]).normalize();
+				const want = new THREE.Vector3(
+					berth.parkedNose.across,
+					berth.parkedNose.up,
+					berth.parkedNose.axial,
+				);
+				const label = `${type} ${berth.id}`;
+				const along = run.dot(want);
+				expect([label, Math.abs(along)]).toEqual([label, expect.closeTo(1, 6)]);
+				if (interior.presentation === "pad")
+					expect([label, along]).toEqual([label, expect.closeTo(1, 6)]);
+			}
+		}
+	});
+
+	test("a berth's pad is drawn on the surface the sim parks a ship off", () => {
+		// The seam that matters: the pad is where the sim says the surface is,
+		// which is the berth's centre pushed back down its own normal by half the
+		// clear height. A pad drawn anywhere else is a ship settling onto
+		// nothing.
+		//
+		// **Written in the berth's own frame rather than per axis** (#165). It
+		// used to name `z` as the along-the-lane axis and `x`/`y` as the lateral
+		// pair, which is true of every wall in a bay and of no berth on a pad,
+		// where the normal *is* the axial direction. Along the normal the plate
+		// sits within a plate's thickness of the surface; off the normal it sits
+		// on the berth's centre. One rule, four faces, two presentations.
+		for (const type of STATION_TYPES) {
+			const interior = interiorOf(type);
+			const group = built(type);
+			const plate =
+				Math.min(interior.halfAcrossKm, interior.halfUpKm) * PLATE_FACTOR;
+			for (const berth of interior.berths) {
 				const holder = group.getObjectByName(`berth-${berth.id}`);
 				if (!holder) throw new Error(`no drawn ${berth.id} at ${type}`);
 				const [pad] = boxesNamed(holder, (n) => n === "berth-pad");
 				const centre = pad.box.getCenter(new THREE.Vector3());
-				const surface = {
-					across:
-						berth.centre.across -
-						(berth.normal.across * berth.clearHeightKm) / 2,
-					up: berth.centre.up - (berth.normal.up * berth.clearHeightKm) / 2,
-				};
-				const label = `${type} ${berth.id}`;
-				expect([label, Math.abs(centre.z - berth.centre.axial) < 1e-6]).toEqual(
-					[label, true],
+				const normal = new THREE.Vector3(
+					berth.normal.across,
+					berth.normal.up,
+					berth.normal.axial,
 				);
-				// Within a plate's thickness of the surface, on both lateral axes:
-				// the pad is a plate sitting *on* the wall, not a plane in it.
-				const plate =
-					Math.min(interiorOf(type).halfAcrossKm, interiorOf(type).halfUpKm) *
-					0.06;
-				expect([label, Math.abs(centre.x - surface.across) <= plate]).toEqual([
-					label,
-					true,
-				]);
-				expect([label, Math.abs(centre.y - surface.up) <= plate]).toEqual([
-					label,
-					true,
-				]);
+				const surface = new THREE.Vector3(
+					berth.centre.across,
+					berth.centre.up,
+					berth.centre.axial,
+				).addScaledVector(normal, -berth.clearHeightKm / 2);
+				const offset = centre.clone().sub(surface);
+				const alongNormal = offset.dot(normal);
+				const offNormal = offset.addScaledVector(normal, -alongNormal).length();
+				const label = `${type} ${berth.id}`;
+				// Within a plate's thickness of the surface: the pad is a plate
+				// sitting *on* the surface, not a plane in it.
+				expect([label, Math.abs(alongNormal) <= plate]).toEqual([label, true]);
+				expect([label, offNormal < 1e-6]).toEqual([label, true]);
 			}
 		}
 	});
@@ -142,9 +236,14 @@ describe("§13.1 — the transit lane is clear of everything drawn", () => {
 	 * it an intrusion. Everything past the staging point is where the berths
 	 * are, and a fitting there is beside them rather than in the way.
 	 */
+	/** **The band's ends are ordered rather than named** (#165): a bay stages
+	 *  inward of its mouth and a pad outward of its deck, so which of the two is
+	 *  the larger `z` is the presentation's answer and not this rule's. */
 	const inLane = (interior: ReturnType<typeof interiorOf>, box: THREE.Box3) =>
-		box.min.z < interior.mouthAxialKm - 1e-9 &&
-		box.max.z > interior.stagingAxialKm + 1e-9 &&
+		box.min.z <
+			Math.max(interior.mouthAxialKm, interior.stagingAxialKm) - 1e-9 &&
+		box.max.z >
+			Math.min(interior.mouthAxialKm, interior.stagingAxialKm) + 1e-9 &&
 		box.min.x < interior.laneHalfAcrossKm - 1e-9 &&
 		box.max.x > -interior.laneHalfAcrossKm + 1e-9 &&
 		box.min.y < interior.laneHalfUpKm - 1e-9 &&

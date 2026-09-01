@@ -103,7 +103,7 @@ overlap rather than a rounding.
 ## 3. The three reading distances
 
 Detail is chosen from **apparent size**, not from absolute range. A refinery's
-0.4 km core and a shipyard's 1.5 km frame are not the same object at 20 km, and
+0.4 km core and a shipyard's 1.53 km frame are not the same object at 20 km, and
 a rule written in kilometres would give the small one detail nobody can see
 while stripping the large one of detail that is still legible.
 
