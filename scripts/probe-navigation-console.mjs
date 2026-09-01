@@ -1105,6 +1105,537 @@ await page.setViewportSize({ width: 1280, height: 760 });
 await nextFrames(page);
 await clearFinder();
 
+// ---- The hover label (#112, against #108's D1-D5) --------------------------
+
+/**
+ * **The shipped framing is where the crowding lives, so the checks live here.**
+ *
+ * §5.1 measures 68.4%-77.7% of hovers in this console cell as having a second
+ * system inside the pick radius, against 39.8%-48.0% on the workbench page. A
+ * hover label is therefore ambiguous most of the time *here* and only some of
+ * the time there, which is why #108's receipt puts its five checks in this file
+ * rather than on `probe-galaxy-map.mjs`.
+ *
+ * **Every cursor position below is off its system's projected centre.** A hit
+ * test driven to a point's exact centre passes on a build whose radius
+ * comparison is wrong at the boundary — the failure §5's own picking paragraph
+ * records, and the reason §9.2 finds the pick boundary rather than clicking
+ * dead centre.
+ *
+ * The pick radius is read off the page. The release radius and the switch
+ * margin are **not**, and that is deliberate: #108 leaves both as retune
+ * retunable and asks the browser tier to pin the behaviour instead. A probe
+ * that stepped by the release radius it read off the build under test would
+ * pass on a build with any release radius at all, which is the check-derived-
+ * from-its-subject shape this file already records twice.
+ */
+await page.evaluate(() => {
+	const map = window.__seeliteGalaxyMap;
+	map.select(null);
+	map.resetView();
+});
+await nextFrames(page);
+
+/**
+ * One configuration of cursor positions, chosen from the projection rather than
+ * hard-coded, so nothing here goes red the day the generator moves a system.
+ *
+ * The whole thing is found in one pass because the pieces are not independent:
+ * check 3 needs a *pair* close enough to trade the label, and the same pair
+ * needs a direction to drift in where no third system is inside the pick radius
+ * and a far position to be released onto. A configuration missing any of those
+ * is not usable, so the search backtracks over pairs rather than picking a pair
+ * and hoping.
+ */
+const plan = await page.evaluate(() => {
+	const map = window.__seeliteGalaxyMap;
+	const r = map.pickRadiusPx;
+	const { width, height } = map.viewport();
+	const pts = window.__seeliteOnScreen();
+	const dist = (p, x, y) => Math.hypot(p.x - x, p.y - y);
+	const within = (x, y) => pts.filter((p) => dist(p, x, y) < r);
+	const nearest = (x, y) => {
+		let best = null;
+		let bestD = Number.POSITIVE_INFINITY;
+		for (const p of within(x, y)) {
+			const d = dist(p, x, y);
+			if (d < bestD) {
+				bestD = d;
+				best = p;
+			}
+		}
+		return best;
+	};
+	// **A margin wider than the pick radius, and it is no longer load-bearing.**
+	// It was: `__seeliteOnScreen` discards systems outside the box and the hover
+	// rule did not, so a cursor near an edge could be inside the radius of a
+	// point this search cannot see. That was round 1's blocker and the module
+	// shares the predicate now — the check below the finder section holds it.
+	// The margin is kept because it also keeps the label's clamp off the edge,
+	// so a text assertion is about the label and not about the clamp.
+	const inset = 2 * r + 4;
+	const inside = (x, y) =>
+		x > inset && y > inset && x < width - inset && y < height - inset;
+
+	/** The twelve off-centre cursor positions tried around one system, at 60% of
+	 *  the pick radius. Off-centre because a hit test driven to a point's exact
+	 *  projected centre passes on a build whose radius test is wrong at the
+	 *  boundary. */
+	const offCentre = function* (p) {
+		for (let a = 0; a < 12; a++) {
+			const angle = (a / 12) * Math.PI * 2;
+			const x = p.x + Math.cos(angle) * r * 0.6;
+			const y = p.y + Math.sin(angle) * r * 0.6;
+			if (inside(x, y)) yield { x, y };
+		}
+	};
+
+	/** Exactly one system inside the radius: the label must name it and carry no
+	 *  badge. */
+	const findUncontested = () => {
+		for (const p of pts)
+			for (const spot of offCentre(p)) {
+				const hits = within(spot.x, spot.y);
+				if (hits.length === 1 && hits[0].index === p.index)
+					return { ...spot, index: p.index, expectedContested: 0 };
+			}
+		return null;
+	};
+
+	/** The most crowded off-centre position on offer. Three or more systems, so
+	 *  the badge's number is a count rather than one a constant could match. */
+	const findContested = () => {
+		let best = null;
+		for (const p of pts)
+			for (const spot of offCentre(p)) {
+				const hits = within(spot.x, spot.y);
+				const near = nearest(spot.x, spot.y);
+				if (near === null || hits.length < 3) continue;
+				if (best === null || hits.length - 1 > best.expectedContested)
+					best = {
+						...spot,
+						index: near.index,
+						expectedContested: hits.length - 1,
+					};
+			}
+		return best;
+	};
+
+	/**
+	 * A pair close enough to trade the label, with somewhere to drift to.
+	 *
+	 * `park` sits 0.5 px on S's side of the perpendicular bisector of S and T,
+	 * so S is nearer by 1 px. `step` is exactly 1 px further along S -> T, which
+	 * puts T nearer by 1 px — nearer, and by less than any switch margin worth
+	 * having. A nearest-wins build changes the name between those two positions;
+	 * a build with hysteresis does not.
+	 *
+	 * `drift` is 16 px from S with nothing else inside the pick radius: past the
+	 * 14 px a fresh pick would allow, and the half of the hold the switch margin
+	 * does not cover. A pair with no such direction is not usable, so this
+	 * backtracks over pairs rather than picking one and hoping.
+	 */
+	const findHysteresis = () => {
+		for (const s of pts)
+			for (const t of pts) {
+				if (t.index === s.index) continue;
+				const sep = Math.hypot(t.x - s.x, t.y - s.y);
+				if (sep < 4 || sep > 12) continue;
+				const ux = (t.x - s.x) / sep;
+				const uy = (t.y - s.y) / sep;
+				const park = {
+					x: (s.x + t.x) / 2 - ux * 0.5,
+					y: (s.y + t.y) / 2 - uy * 0.5,
+				};
+				const step = { x: park.x + ux, y: park.y + uy };
+				if (!inside(park.x, park.y) || !inside(step.x, step.y)) continue;
+				if (nearest(park.x, park.y)?.index !== s.index) continue;
+				if (nearest(step.x, step.y)?.index !== t.index) continue;
+				let drift = null;
+				for (let a = 0; a < 36 && drift === null; a++) {
+					const angle = (a / 36) * Math.PI * 2;
+					const x = s.x + Math.cos(angle) * 16;
+					const y = s.y + Math.sin(angle) * 16;
+					if (!inside(x, y) || within(x, y).length !== 0) continue;
+					drift = { x, y };
+				}
+				if (drift === null) continue;
+				return {
+					park,
+					step,
+					held: s.index,
+					rival: t.index,
+					separationPx: sep,
+					drift,
+				};
+			}
+		return null;
+	};
+
+	/**
+	 * Where the release half of check 3 moves to.
+	 *
+	 * **Not just any uncontested spot.** Written that way first, and round 2
+	 * caught it: `findUncontested` only asks for one system inside the radius,
+	 * so nothing stopped it returning a spot a few pixels from the held system —
+	 * and the label changing there would be an ordinary switch rather than a
+	 * release, which is a check passing for the wrong reason. The floor is 60 px,
+	 * well past any release radius worth having and **not** the release radius
+	 * itself: a probe that moved by the constant it was checking would pass on a
+	 * build with any value of it.
+	 */
+	const findRelease = (from) => {
+		for (const p of pts)
+			for (const spot of offCentre(p)) {
+				if (Math.hypot(spot.x - from.x, spot.y - from.y) < 60) continue;
+				const hits = within(spot.x, spot.y);
+				if (hits.length === 1 && hits[0].index === p.index)
+					return { ...spot, index: p.index, expectedContested: 0 };
+			}
+		return null;
+	};
+
+	const hysteresis = findHysteresis();
+	return {
+		r,
+		width,
+		height,
+		uncontested: findUncontested(),
+		contested: findContested(),
+		hysteresis,
+		release: hysteresis === null ? null : findRelease(hysteresis.park),
+	};
+});
+
+/**
+ * **The configuration is a checked precondition, not an assumption.**
+ *
+ * Every check below reads one of these three, so a framing that offered none of
+ * them would leave the section silently doing nothing. `probe-galaxy-map.mjs`
+ * records the same discipline for its skipped-everywhere aspect check.
+ */
+check(
+	"the shipped framing offers an uncontested spot, a contested one, a pair close enough to trade the label, and somewhere well beyond it to be released onto",
+	plan.uncontested !== null &&
+		plan.contested !== null &&
+		plan.hysteresis !== null &&
+		plan.release !== null,
+	`uncontested ${JSON.stringify(plan.uncontested)}, contested ${JSON.stringify(plan.contested)}, pair ${plan.hysteresis && `${plan.hysteresis.held}/${plan.hysteresis.rival} ${plan.hysteresis.separationPx.toFixed(2)} px apart`}, release ${JSON.stringify(plan.release)}`,
+);
+
+/** A system's name, through the handle the game already has. `projected()`
+ *  carries indices alone, and the label's text is asserted as text. */
+const nameOf = (index) =>
+	page.evaluate((i) => {
+		const map = window.__seeliteGalaxyMap;
+		const was = map.state.selectedIndex;
+		map.select(i);
+		const name = map.state.record?.name ?? null;
+		map.select(was);
+		return name;
+	}, index);
+
+/** Move the real pointer to a canvas-relative position, and read back both the
+ *  hover state and the drawn label. */
+const hoverAt = async (spot) => {
+	const box = await page.evaluate(() => window.__seeliteGalaxyMap.viewport());
+	await page.mouse.move(box.left + spot.x, box.top + spot.y);
+	await nextFrames(page);
+	return page.evaluate(() => {
+		const map = window.__seeliteGalaxyMap;
+		const el = document.querySelector("[data-map-hover]");
+		return {
+			hovered: map.hovered(),
+			shown: el !== null && el.style.display !== "none",
+			text: el?.textContent ?? "",
+			selectedIndex: map.state.selectedIndex,
+		};
+	});
+};
+
+if (plan.uncontested && plan.contested && plan.hysteresis && plan.release) {
+	// ---- 1. It names the right system ------------------------------------
+	const quietName = await nameOf(plan.uncontested.index);
+	const quiet = await hoverAt(plan.uncontested);
+	check(
+		"a hover at an uncontested position names that system, and says it in the label",
+		quiet.hovered?.index === plan.uncontested.index &&
+			quiet.shown &&
+			quiet.text.startsWith(`${quietName} `) &&
+			/\d+\.\d LY/.test(quiet.text) &&
+			/(in range|out of range)/.test(quiet.text),
+		`hovered ${JSON.stringify(quiet.hovered)} against ${plan.uncontested.index} (${quietName}), label "${quiet.text}"`,
+	);
+
+	// ---- 2. The badge is real, in both directions -------------------------
+	const crowded = await hoverAt(plan.contested);
+	check(
+		"the badge counts the systems the cursor cannot tell apart here, and is absent where there are none",
+		crowded.hovered?.contested === plan.contested.expectedContested &&
+			crowded.hovered.contested >= 2 &&
+			crowded.text.includes(`(${plan.contested.expectedContested} more)`) &&
+			quiet.hovered?.contested === 0 &&
+			!quiet.text.includes("more)"),
+		`contested ${crowded.hovered?.contested} against the ${plan.contested.expectedContested} the same arithmetic gives, label "${crowded.text}"; uncontested ${quiet.hovered?.contested}, label "${quiet.text}"`,
+	);
+
+	// ---- 3. Hysteresis holds, and releases --------------------------------
+	const heldName = await nameOf(plan.hysteresis.held);
+	const parked = await hoverAt(plan.hysteresis.park);
+	const stepped = await hoverAt(plan.hysteresis.step);
+	const drifted = await hoverAt(plan.hysteresis.drift);
+	const released = await hoverAt(plan.release);
+	check(
+		"a 1 px step onto a nearer neighbour does not move the label, and neither does drifting past the pick radius",
+		parked.hovered?.index === plan.hysteresis.held &&
+			stepped.hovered?.index === plan.hysteresis.held &&
+			stepped.text.startsWith(`${heldName} `) &&
+			drifted.hovered?.index === plan.hysteresis.held,
+		`parked ${parked.hovered?.index}, after a 1 px step toward ${plan.hysteresis.rival} it is ${stepped.hovered?.index} ("${stepped.text}"), 16 px off it is ${drifted.hovered?.index}; expected ${plan.hysteresis.held} (${heldName}) throughout`,
+	);
+	// **Both directions, on the same pair.** A label that never changes at all
+	// passes the half above, which is why #108 writes check 3 as two claims.
+	const releaseDistancePx = Math.hypot(
+		plan.release.x - plan.hysteresis.park.x,
+		plan.release.y - plan.hysteresis.park.y,
+	);
+	check(
+		"a move well past the release radius does let the label go",
+		released.hovered?.index === plan.release.index &&
+			released.hovered.index !== plan.hysteresis.held &&
+			// **The distance is asserted, not merely reported.** Without it this
+			// passes through an ordinary switch to a system a few pixels away,
+			// which proves nothing about releasing.
+			releaseDistancePx >= 60,
+		`after moving ${Math.round(releaseDistancePx)} px from the held system the label is ${released.hovered?.index}, expected ${plan.release.index}`,
+	);
+
+	// ---- 4. The click agrees with the label -------------------------------
+	/**
+	 * **Driven to the position where the two answers differ.**
+	 *
+	 * At a plain contested position the held candidate and a fresh `pick()`
+	 * return the same system, so a build that re-ran `pick()` on `pointerup`
+	 * would pass. The discriminating position is the one check 3 just
+	 * established: park on S, step 1 px so T is nearer, and the label still says
+	 * S while `pick()` would now say T. That is the two-implementations drift
+	 * D1 routes the click through the hover candidate to prevent, and it is the
+	 * only position on the chart where the two can be told apart.
+	 */
+	await page.evaluate(() => window.__seeliteGalaxyMap.select(null));
+	await hoverAt(plan.hysteresis.park);
+	const beforeClick = await hoverAt(plan.hysteresis.step);
+	const box = await page.evaluate(() => window.__seeliteGalaxyMap.viewport());
+	await page.mouse.down();
+	await page.mouse.up();
+	await nextFrames(page);
+	const clicked = await page.evaluate(
+		() => window.__seeliteGalaxyMap.state.selectedIndex,
+	);
+	check(
+		"the click selects the system the label named, not the one nearest the cursor",
+		beforeClick.hovered?.index === plan.hysteresis.held &&
+			clicked === plan.hysteresis.held &&
+			plan.hysteresis.held !== plan.hysteresis.rival,
+		`label said ${beforeClick.hovered?.index}, nearest was ${plan.hysteresis.rival}, click selected ${clicked} at ${Math.round(box.left + plan.hysteresis.step.x)},${Math.round(box.top + plan.hysteresis.step.y)}`,
+	);
+
+	// ---- 5. A drag says nothing -------------------------------------------
+	/**
+	 * Press, orbit, release — and the label is read *during* the orbit rather
+	 * than after it. Sampling only at the end would pass on a build that drew
+	 * the label through the whole drag and cleared it on `pointerup`, which is
+	 * the noise D4 is about.
+	 */
+	await page.evaluate(() => window.__seeliteGalaxyMap.select(null));
+	await hoverAt(plan.contested);
+	await page.mouse.down();
+	const duringDrag = [];
+	for (let i = 1; i <= 4; i++) {
+		await page.mouse.move(
+			box.left + plan.contested.x + i * 12,
+			box.top + plan.contested.y + i * 7,
+		);
+		await nextFrames(page);
+		duringDrag.push(
+			await page.evaluate(() => {
+				const el = document.querySelector("[data-map-hover]");
+				return {
+					hovered: window.__seeliteGalaxyMap.hovered(),
+					shown: el !== null && el.style.display !== "none",
+				};
+			}),
+		);
+	}
+	await page.mouse.up();
+	await nextFrames(page);
+	const afterDrag = await page.evaluate(() => {
+		const el = document.querySelector("[data-map-hover]");
+		return {
+			hovered: window.__seeliteGalaxyMap.hovered(),
+			shown: el !== null && el.style.display !== "none",
+			selectedIndex: window.__seeliteGalaxyMap.state.selectedIndex,
+		};
+	});
+	check(
+		"an orbit shows no label at any point, and releasing it selects nothing",
+		duringDrag.length === 4 &&
+			duringDrag.every((s) => s.hovered === null && !s.shown) &&
+			afterDrag.hovered === null &&
+			!afterDrag.shown &&
+			afterDrag.selectedIndex === null,
+		`${duringDrag.map((s) => `${s.hovered === null ? "none" : s.hovered.index}/${s.shown ? "shown" : "hidden"}`).join(" ")}, after release ${afterDrag.hovered === null ? "none" : afterDrag.hovered.index}, selection ${afterDrag.selectedIndex}`,
+	);
+
+	// ---- 6 (§9.3 item 22). The projection can move without the pointer ----
+	/**
+	 * **A wheel zoom moves every system under a perfectly still cursor.**
+	 *
+	 * Round 3's finding, and it was a real one: the candidate was rebuilt only on
+	 * `pointermove`, so after a zoom the label named — and a click selected — a
+	 * system that had slid out from under the cursor. The same hole was open for
+	 * the finder's centre control, `resetView` and a panel resize; the fix is one
+	 * rule (recompute on the frame) rather than a clear on each of the four.
+	 *
+	 * The assertion is against what the *new* projection puts under that cursor,
+	 * computed here from `projected()`. The held system's post-zoom distance is
+	 * asserted past 60 px as well, so the expectation is unambiguous: at that
+	 * distance no release radius worth having still holds it, and a build that
+	 * merely blinked the label off would also pass — which is fine, since either
+	 * is honest and only the stale one is not.
+	 */
+	// **Back to the default framing first.** Check 5's orbit left the camera
+	// somewhere else, and `plan`'s positions are the default framing's — the
+	// first version of this check skipped the reset and hovered a different
+	// system than the one it went on to assert about.
+	await page.evaluate(() => {
+		window.__seeliteGalaxyMap.select(null);
+		window.__seeliteGalaxyMap.resetView();
+	});
+	await nextFrames(page);
+	const beforeZoom = await hoverAt(plan.uncontested);
+	// To the near stop, not a nudge: -40 LY moved this system only 53 px, which
+	// is inside a plausible release radius and would have made the expectation
+	// below ambiguous rather than wrong.
+	await page.evaluate(() => window.__seeliteGalaxyMap.zoom(-50));
+	await nextFrames(page);
+	const afterZoom = await page.evaluate((spot) => {
+		const map = window.__seeliteGalaxyMap;
+		const r = map.pickRadiusPx;
+		const { width, height } = map.viewport();
+		const pts = map
+			.projected()
+			.filter(
+				(p) =>
+					!p.behind && p.x >= 0 && p.y >= 0 && p.x <= width && p.y <= height,
+			);
+		let best = null;
+		let bestD = Number.POSITIVE_INFINITY;
+		for (const p of pts) {
+			const d = Math.hypot(p.x - spot.x, p.y - spot.y);
+			if (d < r && d < bestD) {
+				bestD = d;
+				best = p.index;
+			}
+		}
+		const held = pts.find((p) => p.index === spot.index);
+		return {
+			expected: best,
+			hovered: map.hovered(),
+			heldDistancePx:
+				held === undefined
+					? Number.POSITIVE_INFINITY
+					: Math.hypot(held.x - spot.x, held.y - spot.y),
+		};
+	}, plan.uncontested);
+	check(
+		"a zoom under a still pointer re-answers the label rather than leaving it on the system that moved away",
+		beforeZoom.hovered?.index === plan.uncontested.index &&
+			afterZoom.heldDistancePx > 60 &&
+			(afterZoom.hovered?.index ?? null) === afterZoom.expected,
+		`before the zoom the label was ${beforeZoom.hovered?.index}; after it that system is ${afterZoom.heldDistancePx.toFixed(0)} px from the unmoved cursor, the label is ${afterZoom.hovered?.index ?? null} and the new projection puts ${afterZoom.expected} there`,
+	);
+	await page.evaluate(() => window.__seeliteGalaxyMap.resetView());
+	await nextFrames(page);
+
+	// ---- 7 (§9.3 item 23). A system the chart does not draw is not nameable
+	/**
+	 * **Round 1's blocker, and it was in `pick` before it was in the hover.**
+	 *
+	 * `toPixels` maps NDC linearly, so a system just off an edge lands a few
+	 * pixels outside the canvas box and is rasterised by nothing — while still
+	 * being inside the 14 px radius of a cursor just inside that edge. The
+	 * label put a name on a system the player cannot see, and `pointerup` then
+	 * selected it. `pick` had done the selecting half since #11; a click on an
+	 * invisible system reads as a click on empty space, which is why nothing
+	 * noticed until there was a label.
+	 *
+	 * Driven at a zoomed framing, because the default one frames all 256 and has
+	 * no off-screen system to name. The position is chosen so the off-screen
+	 * system is **nearer than anything on screen**, which is what makes this red
+	 * on the build that only skipped `behind`.
+	 */
+	await page.evaluate(() => {
+		const map = window.__seeliteGalaxyMap;
+		map.select(null);
+		map.resetView();
+		map.zoom(-40);
+	});
+	await nextFrames(page);
+	const edge = await page.evaluate(() => {
+		const map = window.__seeliteGalaxyMap;
+		const r = map.pickRadiusPx;
+		const { width, height } = map.viewport();
+		const all = map.projected().filter((p) => !p.behind);
+		const on = (p) => p.x >= 0 && p.y >= 0 && p.x <= width && p.y <= height;
+		for (const off of all) {
+			if (on(off)) continue;
+			// A cursor 3 px inside whichever edge this system fell off, on the
+			// same row or column, so it is a few pixels from the point.
+			const x = Math.min(Math.max(off.x, 3), width - 3);
+			const y = Math.min(Math.max(off.y, 3), height - 3);
+			const d = Math.hypot(off.x - x, off.y - y);
+			if (d >= r) continue;
+			const nearerOnScreen = all
+				.filter(on)
+				.some((p) => Math.hypot(p.x - x, p.y - y) <= d);
+			if (nearerOnScreen) continue;
+			return {
+				x,
+				y,
+				index: off.index,
+				distancePx: d,
+				onScreen: all.filter(on).length,
+			};
+		}
+		return null;
+	});
+	check(
+		"the zoomed framing puts a system just off the canvas, within the pick radius of a cursor inside it",
+		edge !== null,
+		`${JSON.stringify(edge)}`,
+	);
+	if (edge) {
+		const atEdge = await hoverAt(edge);
+		await page.mouse.down();
+		await page.mouse.up();
+		await nextFrames(page);
+		const selectedAtEdge = await page.evaluate(
+			() => window.__seeliteGalaxyMap.state.selectedIndex,
+		);
+		check(
+			"a system the chart does not draw is neither labelled nor selected, though it is the nearest thing to the cursor",
+			atEdge.hovered?.index !== edge.index && selectedAtEdge !== edge.index,
+			`off-screen system ${edge.index} is ${edge.distancePx.toFixed(1)} px from the cursor and nearest; label said ${atEdge.hovered === null ? "nothing" : atEdge.hovered.index}, click selected ${selectedAtEdge} (${edge.onScreen} of 256 drawn)`,
+		);
+	}
+
+	await page.evaluate(() => {
+		window.__seeliteGalaxyMap.select(null);
+		window.__seeliteGalaxyMap.resetView();
+	});
+}
+
 // ---- Teardown -------------------------------------------------------------
 
 await clickTab("Navigation");
