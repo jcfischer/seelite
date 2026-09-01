@@ -125,7 +125,7 @@ describe("the switch margin decides between two systems a pixel apart", () => {
 	});
 });
 
-describe("the contested count predicts the click, not the label's tolerance", () => {
+describe("the contested count is the cursor's ambiguity, not the label's tolerance", () => {
 	test("it counts the systems inside the pick radius other than the labelled one", () => {
 		const one = candidate([at(1, 4), at(2, 9), at(3, 12)], null);
 		expect(one?.index).toBe(1);
@@ -139,15 +139,21 @@ describe("the contested count predicts the click, not the label's tolerance", ()
 	test("it is taken against the pick radius and not the release radius", () => {
 		// A system at 17 px is inside the release radius and outside the pick
 		// one. Counting it would make the badge describe how far the label will
-		// stretch rather than how ambiguous a click here is, which is the
-		// opposite of what D1 says the badge means.
+		// stretch, which is the label's own stickiness rather than a fact about
+		// what the cursor is on.
 		expect(candidate([at(1, 4), at(2, 17)], null)?.contested).toBe(0);
 	});
 
 	test("a held candidate outside the pick radius still counts what is inside it", () => {
-		// The label says the held system; the badge says a click here is
-		// ambiguous anyway. Both are true at once and the badge is the half that
-		// tells the player so.
+		// The label says the held system; the badge says the cursor is on
+		// several. Both are true at once, and the badge is the half that tells
+		// the player a small move could have named a different one.
+		//
+		// **Not "a click here is ambiguous".** That was #108's wording and it
+		// does not survive its own D1: once `clickTarget` takes the hovered
+		// candidate, the click is the least ambiguous thing on offer — it
+		// selects the held system deterministically. `galaxy-map.md` §5.3
+		// records the correction.
 		//
 		// **The window this can happen in is one switch margin wide**, and the
 		// first version of this case sat outside it: a held system at 17 px

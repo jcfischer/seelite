@@ -1370,7 +1370,7 @@ if (plan.uncontested && plan.contested && plan.hysteresis && plan.release) {
 	// ---- 2. The badge is real, in both directions -------------------------
 	const crowded = await hoverAt(plan.contested);
 	check(
-		"the badge counts the systems a click here could not tell apart, and is absent where there are none",
+		"the badge counts the systems the cursor cannot tell apart here, and is absent where there are none",
 		crowded.hovered?.contested === plan.contested.expectedContested &&
 			crowded.hovered.contested >= 2 &&
 			crowded.text.includes(`(${plan.contested.expectedContested} more)`) &&
@@ -1487,7 +1487,78 @@ if (plan.uncontested && plan.contested && plan.hysteresis && plan.release) {
 		`${duringDrag.map((s) => `${s.hovered === null ? "none" : s.hovered.index}/${s.shown ? "shown" : "hidden"}`).join(" ")}, after release ${afterDrag.hovered === null ? "none" : afterDrag.hovered.index}, selection ${afterDrag.selectedIndex}`,
 	);
 
-	// ---- 6. A system the chart does not draw is not nameable --------------
+	// ---- 6 (§9.3 item 22). The projection can move without the pointer ----
+	/**
+	 * **A wheel zoom moves every system under a perfectly still cursor.**
+	 *
+	 * Round 3's finding, and it was a real one: the candidate was rebuilt only on
+	 * `pointermove`, so after a zoom the label named — and a click selected — a
+	 * system that had slid out from under the cursor. The same hole was open for
+	 * the finder's centre control, `resetView` and a panel resize; the fix is one
+	 * rule (recompute on the frame) rather than a clear on each of the four.
+	 *
+	 * The assertion is against what the *new* projection puts under that cursor,
+	 * computed here from `projected()`. The held system's post-zoom distance is
+	 * asserted past 60 px as well, so the expectation is unambiguous: at that
+	 * distance no release radius worth having still holds it, and a build that
+	 * merely blinked the label off would also pass — which is fine, since either
+	 * is honest and only the stale one is not.
+	 */
+	// **Back to the default framing first.** Check 5's orbit left the camera
+	// somewhere else, and `plan`'s positions are the default framing's — the
+	// first version of this check skipped the reset and hovered a different
+	// system than the one it went on to assert about.
+	await page.evaluate(() => {
+		window.__seeliteGalaxyMap.select(null);
+		window.__seeliteGalaxyMap.resetView();
+	});
+	await nextFrames(page);
+	const beforeZoom = await hoverAt(plan.uncontested);
+	// To the near stop, not a nudge: -40 LY moved this system only 53 px, which
+	// is inside a plausible release radius and would have made the expectation
+	// below ambiguous rather than wrong.
+	await page.evaluate(() => window.__seeliteGalaxyMap.zoom(-50));
+	await nextFrames(page);
+	const afterZoom = await page.evaluate((spot) => {
+		const map = window.__seeliteGalaxyMap;
+		const r = map.pickRadiusPx;
+		const { width, height } = map.viewport();
+		const pts = map
+			.projected()
+			.filter(
+				(p) =>
+					!p.behind && p.x >= 0 && p.y >= 0 && p.x <= width && p.y <= height,
+			);
+		let best = null;
+		let bestD = Number.POSITIVE_INFINITY;
+		for (const p of pts) {
+			const d = Math.hypot(p.x - spot.x, p.y - spot.y);
+			if (d < r && d < bestD) {
+				bestD = d;
+				best = p.index;
+			}
+		}
+		const held = pts.find((p) => p.index === spot.index);
+		return {
+			expected: best,
+			hovered: map.hovered(),
+			heldDistancePx:
+				held === undefined
+					? Number.POSITIVE_INFINITY
+					: Math.hypot(held.x - spot.x, held.y - spot.y),
+		};
+	}, plan.uncontested);
+	check(
+		"a zoom under a still pointer re-answers the label rather than leaving it on the system that moved away",
+		beforeZoom.hovered?.index === plan.uncontested.index &&
+			afterZoom.heldDistancePx > 60 &&
+			(afterZoom.hovered?.index ?? null) === afterZoom.expected,
+		`before the zoom the label was ${beforeZoom.hovered?.index}; after it that system is ${afterZoom.heldDistancePx.toFixed(0)} px from the unmoved cursor, the label is ${afterZoom.hovered?.index ?? null} and the new projection puts ${afterZoom.expected} there`,
+	);
+	await page.evaluate(() => window.__seeliteGalaxyMap.resetView());
+	await nextFrames(page);
+
+	// ---- 7 (§9.3 item 23). A system the chart does not draw is not nameable
 	/**
 	 * **Round 1's blocker, and it was in `pick` before it was in the hover.**
 	 *

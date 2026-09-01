@@ -1025,6 +1025,29 @@ export function mountGalaxyChart({
 	let hover: { system: SystemRecord; contested: number } | null = null;
 
 	/**
+	 * Where the pointer last was, in client pixels — `null` for "no live hover".
+	 *
+	 * **The candidate is recomputed on the frame, not on the pointer event**, and
+	 * that is a correctness fix before it is a cost one. A `pointermove` is not
+	 * the only thing that moves a system under the cursor: a wheel zoom, the
+	 * finder's centre control, `resetView` and a panel resize all change the
+	 * projection with the pointer perfectly still. Recomputing only on move left
+	 * the label naming — and a click selecting — a system that had slid out from
+	 * under the cursor. Round 3 of #112's review found it on the wheel.
+	 *
+	 * Clearing this is how a hover *ends*: D4 says the label does not return
+	 * until the pointer moves again after a release, and a frame loop that
+	 * recomputed from a remembered position would bring it straight back.
+	 * `clearHover` is the one place both are dropped together.
+	 *
+	 * It also settles the sweep's cost, which is the smaller half: one 256-system
+	 * projection is 0.084 ms, so a per-move sweep is 1% of a core at 120 Hz and
+	 * a per-frame one is half that — and, unlike a cached projection, there is no
+	 * invalidation to get silently wrong.
+	 */
+	let pointerClient: { x: number; y: number } | null = null;
+
+	/**
 	 * The label's drawn box, measured only when its **text** changes.
 	 *
 	 * `offsetWidth` forces a synchronous style-and-layout pass, and the frame
@@ -1081,6 +1104,10 @@ export function mountGalaxyChart({
 	 *  bring it back until the pointer moves again. */
 	function clearHover(): void {
 		hover = null;
+		// **Both, together.** Leaving the remembered position behind would have
+		// the frame loop rebuild the candidate on the very next frame, which is
+		// precisely the return D4 forbids.
+		pointerClient = null;
 		renderHover();
 	}
 
@@ -1143,7 +1170,9 @@ export function mountGalaxyChart({
 		// orbit is what this handler was written for — so the drag path below is
 		// untouched by the hover.
 		if (!dragging) {
-			updateHover(e.clientX, e.clientY);
+			// Recorded, not swept. The frame loop does the sweep, against the
+			// projection that frame actually drew.
+			pointerClient = { x: e.clientX, y: e.clientY };
 			return;
 		}
 		const dx = e.clientX - lastX;
@@ -1306,6 +1335,12 @@ export function mountGalaxyChart({
 		// The haze is a sprite, so it faces the camera for free; the shell and
 		// the plane turn with the cluster because they are of it.
 		renderer.render(scene, camera);
+
+		// The hover, against the projection this frame just drew. Suppressed
+		// during a drag by D4, and `pointerClient` is null whenever there is no
+		// live hover at all — before the first move, and after every clear.
+		if (pointerClient !== null && !dragging)
+			updateHover(pointerClient.x, pointerClient.y);
 
 		const cardShown = selected !== null && card.style.display !== "none";
 		const labelShown = hover !== null && hoverLabel.style.display !== "none";

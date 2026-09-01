@@ -1103,7 +1103,26 @@ The chart's *mount* rather than its projection, and the list beside it.
     candidate and a fresh `pick()` return the same system, so a build that
     re-ran `pick()` on `pointerup` would pass. Red-built exactly that way: the
     label said S, the nearest was T, and the click selected T.
-21. **A system the chart does not draw is neither labelled nor selected**
+21. **A drag says nothing** (§5.3), sampled four times *during* the orbit rather
+    than after it — a build that drew the label through the whole drag and
+    cleared it on `pointerup` passes an end-of-drag sample. The release selects
+    nothing, which is §5's 4 px slop rule and not this one, and is asserted here
+    because `pointerup` now reads the hover state.
+22. **A zoom under a still pointer re-answers the label** (§5.3). A wheel zoom
+    moves every system with the cursor motionless, and the candidate was rebuilt
+    on `pointermove` alone — so the label named, and a click selected, a system
+    that had slid out from under the cursor. The same hole was open for the
+    centre control, `resetView` and a panel resize; the fix is one rule
+    (recompute on the frame) rather than a clear on each of the four. Driven to
+    the near stop, because -40 LY moved the system only 53 px and left the
+    expectation inside a plausible release radius; at the stop it is 128 px and
+    the assertion is against what the *new* projection puts under that cursor.
+    Red-built as the pre-fix build: the label still said 5 at 128 px.
+
+    The first version of this check skipped `resetView`, so it inherited the
+    orbit item 21 leaves behind and hovered a different system from the one it
+    then asserted about — it went red, which is how that was found.
+23. **A system the chart does not draw is neither labelled nor selected**
     (§5.3), driven at a zoomed framing because the default one frames all 256
     and has nothing off screen to name. The position puts an off-canvas system
     13.8 px from the cursor and **nearer than anything drawn**, which is what
@@ -1112,11 +1131,6 @@ The chart's *mount* rather than its projection, and the list beside it.
     system nobody can see reads as a click on empty space. Red-built by
     restoring the `behind`-only filter: the label said 11 and the click selected
     11.
-22. **A drag says nothing** (§5.3), sampled four times *during* the orbit rather
-    than after it — a build that drew the label through the whole drag and
-    cleared it on `pointerup` passes an end-of-drag sample. The release selects
-    nothing, which is §5's 4 px slop rule and not this one, and is asserted here
-    because `pointerup` now reads the hover state.
 
 **Every check here was built a red build to run against**, one at a time:
 the sort removed; the chart root back to `position: fixed`; a kind dropped
@@ -1146,13 +1160,13 @@ described.
 
 The hover checks — items 17 to 21 — were red-built too, and the builds are named
 where each item is described: `updateHover` made a no-op (17, 18, 19 and 20 red,
-22 vacuously green, which is what says 22 needs its own); `contested` forced to
+21 vacuously green, which is what says 21 needs its own); `contested` forced to
 0 (18 red on the crowded half alone); the release radius set to the pick radius
 and the switch margin to 0, which is #108's nearest-wins defect (19 red both
 ways, 20 red with it); `pointerup` put back on a fresh `pick()` (20 red alone,
-19 green); the drawn-predicate reduced to `behind` alone (21 red); and the
-`dragging` suppression removed with the hover updated through the orbit (22
-red).
+19 green); the `dragging` suppression removed with the hover updated through the
+orbit (21 red); the candidate rebuilt on `pointermove` alone rather than on the
+frame (22 red); and the drawn-predicate reduced to `behind` alone (23 red).
 
 **One decision here has no browser check at all, and that is a fact about the
 tier rather than a gap left open.** D5's hybrid case — a mouse leaving a
