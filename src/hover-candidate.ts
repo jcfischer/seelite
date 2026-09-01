@@ -6,7 +6,7 @@
  * `galaxy-map.ts` would make it reachable only through a `pointermove` on a
  * mounted canvas — which means its boundaries are only ever checked at whatever
  * grid positions a probe happens to drive it to. #108 pins the *behaviour* in
- * the browser tier and leaves the constants as retune territory, so the
+ * the browser tier and leaves the constants retunable, so the
  * arithmetic owes a headless test of its own.
  *
  * Three numbers, answering three different failures:
@@ -134,13 +134,18 @@ export function hoverCandidate(
  * touch path is tap-to-select exactly as it was before the label, which is
  * `picked`.
  *
+ * **The touch fallback is unconditional, not a consequence of `hovered` being
+ * null.** Written the second way it reads as the same rule and is not: on a
+ * hybrid the hover state is present and must still be ignored.
+ *
  * Here rather than inline in the `pointerup` handler because **no browser tier
  * can reach it**: Chromium reports `(hover: none)` the moment touch emulation
  * is on, both through Playwright's `hasTouch` context and through CDP's
  * `Emulation.setTouchEmulationEnabled`, and `Emulation.setEmulatedMedia` does
- * not override it. A hybrid device is therefore not expressible in the probe
- * tier, and a rule only reachable through a pointer event would have been a
- * decision nothing checks.
+ * not override it. `galaxy-map.md` §9.3 records the three attempts and their
+ * readings so the claim can be re-run. A hybrid device is therefore not
+ * expressible in the probe tier, and a rule only reachable through a pointer
+ * event would have been a decision nothing checks.
  */
 export function clickTarget(
 	hovered: number | null,

@@ -570,7 +570,7 @@ because the click takes the hovered candidate: a rival no `pick` would return
 must not become a label the click would then select.
 
 The two numbers are **first values chosen against the 14 px pick radius, not
-measured ones**, and they are retune territory. §9.3's checks pin the
+measured ones**, and they remain retunable. §9.3's checks pin the
 *behaviour* — a 1 px step that must not move the label, a drift past the pick
 radius that must not either, and a move well past the release that must — and
 none of them reads a radius off the build under test.
@@ -578,9 +578,21 @@ none of them reads a radius off the build under test.
 **The click takes the hovered candidate; it does not re-run `pick`.** With
 hysteresis in the label alone, the label could name S while a click selected a
 nearer T — one quantity with two implementations, which is the trap #46 and #69
-both record. Where there is no hover state at all — a touch pointer, or a
-pointer that has not moved since mount — `pointerup` falls back to `pick`,
-which is the same function with no sticky state.
+both record. `pointerup` falls back to `pick` — the same function with no
+sticky state — in two cases, and they are not the same case:
+
+- **when there is no hover state**, which is a pointer that has not moved since
+  mount, and every pointer at all on a touch-only device, where `(hover: hover)`
+  does not match and the label never runs;
+- **whenever the release is a touch**, hover state or not. On a device with both
+  a mouse and a screen `(hover: hover)` matches, so a mouse can leave a
+  candidate parked on S while a finger taps T — and taking the candidate would
+  select S. The touch fallback is therefore unconditional rather than a
+  consequence of the state being empty, which is how it was written first.
+
+So "the click selects what the label named" is a claim about a **mouse or pen**
+release. A tap selects what the finger touched, which is D5's promise that the
+touch path is tap-to-select exactly as it was before the label existed.
 
 **The badge counts against the pick radius, never the release radius.** It is
 the number of systems inside 14 px other than the labelled one — the radius at
@@ -591,8 +603,9 @@ make the badge describe how far the label will stretch.
 **What the badge means is *this position* is ambiguous, not that the click is.**
 #108 words it as "a click here is ambiguous too — it predicts the click", and
 that phrasing does not survive D1: once `pointerup` takes the hovered candidate,
-the click is the *least* ambiguous thing on offer — it deterministically selects
-the labelled system, held state and all. What the count actually says is that a
+a mouse click is the *least* ambiguous thing on offer — it deterministically
+selects the labelled system, held state and all (a tap does not take the label
+at all; see the two fallback cases above). What the count actually says is that a
 small cursor move could have named a different system, and that the point being
 read is one of several the cursor is on. That is the thing the player needs in
 order to decide to zoom, which is what the badge was ratified for; "predicts the
@@ -1171,11 +1184,29 @@ frame (22 red); and the drawn-predicate reduced to `behind` alone (23 red).
 **One decision here has no browser check at all, and that is a fact about the
 tier rather than a gap left open.** D5's hybrid case — a mouse leaving a
 candidate parked while a finger taps elsewhere — needs `(hover: hover)` and a
-real touch pointer at once, and Chromium reports `(hover: none)` the moment
-touch emulation is on: through Playwright's `hasTouch` context and through CDP's
-`Emulation.setTouchEmulationEnabled` alike, with `Emulation.setEmulatedMedia`
-declining to override it. Both were tried. The rule moved into `clickTarget`
-(§9.1b item 7) so the headless tier binds it instead of a comment doing.
+real touch pointer at once, and Chromium will not hold both. **The method, so
+the claim is re-runnable rather than asserted:**
+
+1. `browser.newPage({ hasTouch: true })`, then
+   `page.evaluate(() => matchMedia("(hover: hover)").matches)` → **false**. The
+   context gets `page.touchscreen.tap`, and loses the label entirely, so a check
+   written on it passes vacuously — which is what the first attempt did, and it
+   is why it is not in the file.
+2. A plain desktop page plus CDP:
+   `Emulation.setTouchEmulationEnabled { enabled: true, maxTouchPoints: 1 }`.
+   `Input.dispatchTouchEvent` then produces genuine `pointerdown`/`pointerup`
+   with `pointerType: "touch"` — confirmed by a document-level listener — but
+   the same `matchMedia` read is **false** again.
+3. The same page with `Emulation.setEmulatedMedia { features: [{ name: "hover",
+   value: "hover" }, { name: "pointer", value: "fine" }] }` applied after (2):
+   `matchMedia` still reads **false**. The override does not win over touch
+   emulation.
+
+A synthetic `PointerEvent` on the canvas was the remaining option and is worse
+than no check: `setPointerCapture` throws on an inactive pointer id, so the
+handler aborts before the branch under test and the check passes on every build.
+The rule moved into `clickTarget` (§9.1b item 7) so the headless tier binds it
+instead of a comment doing.
 
 **Item 10 has no red build**, because it asserts an absence — no per-row
 course control — and the build that fails it is a feature nobody wrote. It is

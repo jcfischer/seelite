@@ -125,7 +125,7 @@ const PICK_RADIUS_PX = 14;
  * console cell as having such a neighbour.
  *
  * **First values, not measured ones**, chosen against the 14 px pick radius and
- * recorded as retune territory by #108's receipt. The browser tier pins the
+ * recorded as retunable by #108's receipt. The browser tier pins the
  * behaviour rather than these numbers, so a retune moves them without moving a
  * check. The rule itself is `hover-candidate.ts`, which is a leaf and has its
  * own headless test.
@@ -1121,10 +1121,12 @@ export function mountGalaxyChart({
 	 * the switch margin is measured against — and `pick` returns only the
 	 * winner.
 	 */
-	function updateHover(clientX: number, clientY: number): void {
+	function updateHover(clientX: number, clientY: number, rect: DOMRect): void {
 		if (!hoverCapable) return;
-		const rect = canvasRect();
-		freshenCluster();
+		// **The rect and the matrix refresh come from the caller.** Both the
+		// hover and the two floating elements' placement need them, once each
+		// per frame — read here as well and a live hover paid for a second
+		// `updateWorldMatrix` up the whole parent chain every frame.
 		const points: { index: number; x: number; y: number }[] = [];
 		for (const s of galaxy.systems) {
 			const p = toPixels(s, rect);
@@ -1336,20 +1338,25 @@ export function mountGalaxyChart({
 		// the plane turn with the cluster because they are of it.
 		renderer.render(scene, camera);
 
-		// The hover, against the projection this frame just drew. Suppressed
-		// during a drag by D4, and `pointerClient` is null whenever there is no
-		// live hover at all — before the first move, and after every clear.
-		if (pointerClient !== null && !dragging)
-			updateHover(pointerClient.x, pointerClient.y);
-
-		const cardShown = selected !== null && card.style.display !== "none";
-		const labelShown = hover !== null && hoverLabel.style.display !== "none";
-		// One rect and one matrix refresh for both floating elements. They share
-		// `toPixels` and nothing else — D3's seam — and refreshing twice a frame
-		// would be the churn the comment on `freshenCluster` is about.
-		if (cardShown || labelShown) {
+		// **One rect and one matrix refresh, for all three readers of the
+		// projection this frame drew** — the hover sweep, the record card's
+		// placement and the label's. They share `toPixels` and nothing else,
+		// which is D3's seam; what they must not each own is the refresh, since
+		// `updateWorldMatrix` walks the whole parent chain.
+		//
+		// The hover is suppressed during a drag by D4, and `pointerClient` is
+		// null whenever there is no live hover at all — before the first move,
+		// and after every clear.
+		const hoverLive = pointerClient !== null && !dragging;
+		if (hoverLive || (selected !== null && card.style.display !== "none")) {
 			const rect = canvasRect();
 			freshenCluster();
+			// Before the two `*Shown` reads below, because `updateHover` is what
+			// decides whether there is a label to place at all.
+			if (hoverLive && pointerClient !== null)
+				updateHover(pointerClient.x, pointerClient.y, rect);
+			const cardShown = selected !== null && card.style.display !== "none";
+			const labelShown = hover !== null && hoverLabel.style.display !== "none";
 			if (selected !== null && cardShown) {
 				const p = toPixels(selected, rect);
 				// **Clamped, not merely offset.** The card is 260 px wide against a

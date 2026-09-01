@@ -1124,7 +1124,7 @@ await clearFinder();
  *
  * The pick radius is read off the page. The release radius and the switch
  * margin are **not**, and that is deliberate: #108 leaves both as retune
- * territory and asks the browser tier to pin the behaviour instead. A probe
+ * retunable and asks the browser tier to pin the behaviour instead. A probe
  * that stepped by the release radius it read off the build under test would
  * pass on a build with any release radius at all, which is the check-derived-
  * from-its-subject shape this file already records twice.
