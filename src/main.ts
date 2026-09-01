@@ -207,9 +207,11 @@ import {
 	buildShipMesh,
 	fleetLayout,
 } from "./ship-mesh";
+import { chamferedBox } from "./chamfer-box";
 import {
+	COCKPIT_CHAMFER_KM,
 	COCKPIT_KEY_LIGHT,
-	COCKPIT_TRIM,
+	COCKPIT_LAMP,
 	applyCockpitQuality,
 	cockpitMaterial,
 	plateCockpitUVs,
@@ -2221,12 +2223,17 @@ class Game {
 			rotation: [number, number, number] = [0, 0, 0],
 			material: THREE.Material = metal,
 		) => {
-			// **The returned geometry, not the one passed in.** `plateCockpitUVs`
-			// converts to non-indexed and hands back a new geometry; using the
-			// original leaves the fitting unplated, which looks exactly like the
-			// map having failed to load rather than like a dropped return value.
+			// **A chamfered form, not a box.** The rim on every cut edge is what
+			// gives a moulding its scale — `chamfer-box.ts` has the argument, and
+			// it is what replaced the panel grid the principal rejected against
+			// the reference frames.
+			//
+			// `plateCockpitUVs` still runs: it is already non-indexed, so the call
+			// only writes the kilometre projection. It returns the geometry to use
+			// either way, and dropping that return value would leave a fitting
+			// unplated in a way that looks exactly like the map failing to load.
 			const mesh = new THREE.Mesh(
-				plateCockpitUVs(new THREE.BoxGeometry(...size)),
+				plateCockpitUVs(chamferedBox(...size, COCKPIT_CHAMFER_KM)),
 				material,
 			);
 			mesh.position.set(...position);
@@ -2235,29 +2242,46 @@ class Game {
 			return mesh;
 		};
 		/**
-		 * A lit strip along an edge of the cabin — #105's answer to where the
-		 * warmth comes from, taken emissive-led.
+		 * An indicator lamp on the canopy frame — #105's warmth, in the form the
+		 * reference frames actually use.
 		 *
-		 * `MeshBasicMaterial` rather than an emissive standard one: this is a
+		 * `MeshBasicMaterial` rather than an emissive standard one: a lamp is a
 		 * light source in appearance, so it should not itself be shaded, and it
-		 * keeps the strip out of `plateCockpit`'s set — a seam across a glowing
-		 * edge reads as a fault in the strip.
+		 * keeps the lamp out of `plateCockpit`'s set — a panel seam across a
+		 * glowing lamp reads as a crack in it.
 		 */
-		const trimGlow = new THREE.MeshBasicMaterial({
-			color: new THREE.Color(COCKPIT_TRIM.color).multiplyScalar(
-				COCKPIT_TRIM.intensity,
+		const lampGlow = new THREE.MeshBasicMaterial({
+			color: new THREE.Color(COCKPIT_LAMP.color).multiplyScalar(
+				COCKPIT_LAMP.intensity,
 			),
 		});
-		const addTrimStrip = (
-			size: [number, number, number],
-			position: [number, number, number],
-			rotation: [number, number, number] = [0, 0, 0],
+		/** Lamps along one canopy side rail, at `COCKPIT_LAMP.stops` of its run.
+		 *  Placed off the rail's own endpoints rather than at authored positions,
+		 *  so moving the rail moves its lamps and the two cannot drift apart. */
+		const addRailLamps = (
+			from: [number, number, number],
+			to: [number, number, number],
 		) => {
-			const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), trimGlow);
-			mesh.name = "cockpit-trim-strip";
-			mesh.position.set(...position);
-			mesh.rotation.set(...rotation);
-			cockpit.add(mesh);
+			for (const t of COCKPIT_LAMP.stops) {
+				// Chamfered like every other cabin form. A flat-sided box at this
+				// size read as a tan card stuck to the rail rather than as a lens
+				// set into it — the same slab problem the fittings had, on the one
+				// object small enough that its edges are most of its silhouette.
+				const mesh = new THREE.Mesh(
+					chamferedBox(...COCKPIT_LAMP.size, COCKPIT_CHAMFER_KM),
+					lampGlow,
+				);
+				mesh.name = "cockpit-lamp";
+				// **+Z is toward the pilot**, and the standoff is what makes the lamp
+				// visible at all — see `COCKPIT_LAMP.standoffKm`. The rails run at
+				// constant z, so one axis is the whole of it.
+				mesh.position.set(
+					from[0] + (to[0] - from[0]) * t,
+					from[1] + (to[1] - from[1]) * t,
+					from[2] + (to[2] - from[2]) * t + COCKPIT_LAMP.standoffKm,
+				);
+				cockpit.add(mesh);
+			}
 		};
 		const addStrut = (
 			from: [number, number, number],
@@ -2392,20 +2416,14 @@ class Game {
 		// opening; along each console's inboard edge and across the coaming they
 		// draw the console bay. Nothing here is a *reading* — see `COCKPIT_TRIM`
 		// on why the colour is deliberately near-neutral.
-		addTrimStrip([0.098, 0.0006, 0.0008], [0, 0.0172, -0.0645]);
-		addTrimStrip([0.084, 0.0006, 0.0008], [0, -0.0142, -0.0629]);
-		// **Aft of the console's mid-point, not along its whole inboard edge.**
-		// The first pass ran these from z −0.037 to −0.057, and the near end sits
-		// a few metres from the eye: on the sheet the port strip flared into a
-		// tan wedge in the bottom-left corner and the frame read as a fault
-		// rather than as a lit edge. A strip is evidence of an edge, so it wants
-		// to be seen along its length rather than end-on.
-		for (const side of [-1, 1])
-			addTrimStrip(
-				[0.0008, 0.0008, 0.013],
-				[side * 0.0333, -0.0178, -0.0522],
-				[0.24, 0, side * -0.06],
-			);
+		// Three lamps on each canopy side rail, and nowhere else. The first pass
+		// ran continuous lit bars under the header, under the sill and along each
+		// console; none of that is in the reference, where the canopy frame
+		// carries a few small lamps and everything else that glows is an
+		// instrument. The rails' own endpoints are reused so a lamp cannot end up
+		// floating beside the rail it belongs to.
+		addRailLamps([-0.043, -0.013, -0.065], [-0.05, 0.018, -0.065]);
+		addRailLamps([0.043, -0.013, -0.065], [0.05, 0.018, -0.065]);
 		const dashboardPitch = 0.58;
 		const scannerMount = new THREE.Group();
 		scannerMount.name = "scanner-mount";
@@ -2427,13 +2445,13 @@ class Game {
 		inset: THREE.MeshStandardMaterial,
 	) {
 		const deck = new THREE.Mesh(
-			plateCockpitUVs(new THREE.BoxGeometry(0.032, 0.0016, 0.022)),
+			plateCockpitUVs(chamferedBox(0.032, 0.0016, 0.022, COCKPIT_CHAMFER_KM)),
 			metal,
 		);
 		deck.name = "scanner-deck";
 		scannerMount.add(deck);
 		const scannerWell = new THREE.Mesh(
-			plateCockpitUVs(new THREE.BoxGeometry(0.029, 0.00025, 0.0155)),
+			plateCockpitUVs(chamferedBox(0.029, 0.00025, 0.0155, COCKPIT_CHAMFER_KM)),
 			inset,
 		);
 		scannerWell.name = "scanner-well";
@@ -2446,7 +2464,7 @@ class Game {
 			[0.015, 0, 0.0008, 0.0168],
 		] as const) {
 			const bezel = new THREE.Mesh(
-				plateCockpitUVs(new THREE.BoxGeometry(sx, 0.00075, sz)),
+				plateCockpitUVs(chamferedBox(sx, 0.00075, sz, COCKPIT_CHAMFER_KM)),
 				trim,
 			);
 			bezel.name = "scanner-bezel";
@@ -2477,7 +2495,7 @@ class Game {
 		scannerMount.add(scanner);
 		const makeInstrument = (name: string, x: number) => {
 			const backing = new THREE.Mesh(
-				plateCockpitUVs(new THREE.BoxGeometry(0.014, 0.0014, 0.011)),
+				plateCockpitUVs(chamferedBox(0.014, 0.0014, 0.011, COCKPIT_CHAMFER_KM)),
 				trim,
 			);
 			backing.position.set(x, 0.0002, 0);
@@ -2505,7 +2523,7 @@ class Game {
 		this.cockpit.flightInstrument = makeInstrument("flight-instrument", -0.025);
 		this.cockpit.targetInstrument = makeInstrument("target-instrument", 0.025);
 		const throttleTrack = new THREE.Mesh(
-			plateCockpitUVs(new THREE.BoxGeometry(0.0022, 0.0014, 0.014)),
+			plateCockpitUVs(chamferedBox(0.0022, 0.0014, 0.014, COCKPIT_CHAMFER_KM)),
 			inset,
 		);
 		throttleTrack.name = "throttle-track";

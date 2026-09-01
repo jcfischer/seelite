@@ -44,19 +44,28 @@ import {
 /**
  * The world size of one whole texture tile inside the cabin, kilometres.
  *
- * At `COCKPIT_MAP_SIZE / pitchPx` = 8 plates across a tile and `aspect` = 2
- * rows fewer along, one plate is 3 m by 6 m in the cabin's own oversized
- * coordinates — which puts about **eleven plates across the scanner deck**, the
- * cabin's largest continuous surface and the one nearest the eye.
+ * **0.072, and the first answer was 0.024.** At 0.024 the deck carried about
+ * eleven plates and the cabin was flown against the reference frames and
+ * rejected: an Elite cockpit's interior is not planked at all. Its dash,
+ * coaming and pillars are *mouldings* — near-black satin forms with a soft
+ * mottle — and what carries their scale is the rim on every cut edge, not a
+ * grid of lines. Bringing the hull's language inside was the mistake, and a
+ * pressure cabin's lining is not sheet steel.
  *
- * Eleven is the number that was set by looking, and the metres are a
- * consequence of the cabin's hundred-fold scale rather than a claim about a
- * real spacecraft. `tests/cockpit-surface.test.ts` bands the plate count
- * against the deck so a retune cannot silently make the cabin a fine grid or a
- * pair of slabs; it does not, and cannot, assert that eleven is right. That is
- * the sheet's, and retuning this means reopening those PNGs.
+ * The principal's ruling was **sparse and much larger**: a real join, but a
+ * rare one, and nothing at all on the small fittings. Three times the tile puts
+ * about 3.6 plates across the scanner deck, which is two genuine seams on the
+ * cabin's biggest surface. The small fittings fall out of the same number
+ * without a second rule — a 0.8 m bezel spans a hundredth of a 72 m tile, so it
+ * sits inside one plate and shows no seam at all.
+ *
+ * The metres are a consequence of the cabin's hundred-fold scale (see the
+ * module docstring) rather than a claim about a real spacecraft, and this is a
+ * figure set by looking. `tests/cockpit-surface.test.ts` bands the plate count
+ * so a retune cannot silently return the grid; it does not, and cannot, assert
+ * that 3.6 is right.
  */
-export const COCKPIT_PANEL_KM = 0.024;
+export const COCKPIT_PANEL_KM = 0.072;
 
 /**
  * How large the cabin's generated maps are, texels a side.
@@ -116,13 +125,34 @@ export const COCKPIT_PLATING: PlatingProfile = {
 	aspect: 2,
 	stagger: 0.5,
 	seamHalfWidthPx: 1,
-	variation: 4,
-	seam: 0.22,
+	variation: 3,
+	seam: 0.26,
 	weathering: 0.06,
 	roughness: 1,
 	metalness: 1,
-	seamDepth: 0.5,
+	seamDepth: 0.45,
 };
+
+/**
+ * How far each cabin form's edges are cut back, kilometres.
+ *
+ * **The lever that replaced the panel grid**, and the principal's answer to
+ * where a moulding's scale actually comes from. `chamfer-box.ts` carries the
+ * argument; what belongs here is the figure, because it is set on the contact
+ * sheet like every other number in this module.
+ *
+ * 0.3 m, and on most of the cabin the clamp is what binds rather than this:
+ * the fittings are thin slabs — the scanner deck is 1.6 m through, a bezel
+ * 0.75 m — so `chamferedBox` cuts a quarter of the smallest half-extent instead
+ * and the rim is proportional to the form. That is the intent. A fixed cut
+ * would put the same rim on a 32 m deck and a 0.8 m bezel, which is a moulding
+ * on one and a bevelled sliver on the other.
+ *
+ * **0.6 m against a half-thickness clamp was flown and rejected**: at that
+ * width every console edge read as polished chrome piping, because a thin slab
+ * seen at a shallow angle is then more rim than face.
+ */
+export const COCKPIT_CHAMFER_KM = 0.0003;
 
 /**
  * The cabin's three structural finishes.
@@ -169,40 +199,54 @@ export const COCKPIT_FINISH_IDS = Object.keys(
 ) as CockpitFinish[];
 
 /**
- * The emissive trim that carries the cabin's warmth — #105's first question,
- * answered emissive-led.
+ * The canopy-frame indicator lamps — #105's answer to where the cabin's warmth
+ * comes from, after the reference corrected the first one.
  *
- * The finding it answers: `cockpit-arrival` (sun ahead) and `cockpit-backlit`
- * (sun 175° beyond the station) are near-identical *inside*. The cabin is lit
- * almost entirely through the canopy, and the one interior lamp — a point light
- * at 0.35 with a 0.065 km range — moves neither frame. The reference cabins are
- * lit from inside.
+ * The finding the node opened on stands: `cockpit-arrival` (sun ahead) and
+ * `cockpit-backlit` (sun 175° beyond the station) render the same tone inside,
+ * because the cabin is lit almost entirely through the canopy and its one lamp
+ * sits at 0.35 with a 0.065 km range.
  *
- * Emissive rather than more lights, for two reasons. It costs nothing
- * per-fragment where a light costs a term on every near-layer surface in the
- * frame; and it is what #98 said to take from the reference ("the emissive
- * density"), where raising a light is the move #99 listed to rule out.
+ * **What changed is the form, not the answer.** The first pass ran continuous
+ * lit strips under the header, under the sill and along each console — bars
+ * that are nowhere in the reference. What those cockpits actually carry on the
+ * canopy frame is two or three *small discrete lamps* per rail, and everything
+ * else that glows is an instrument. So this is a lamp rather than a strip: the
+ * warmth and the bloom source survive, the invention does not.
  *
- * **Near-neutral on purpose.** `hud-and-scanner.md` §4 gives amber, cyan, green
- * and red meanings as *readings*. A structural strip glowing in one of them is
- * a reading the player cannot act on, so this is warmth without a signal — and
- * `tests/cockpit-surface.test.ts` fails a retune that saturates it.
+ * **Warm white rather than the reference's red**, and that is a deliberate
+ * divergence. `hud-and-scanner.md` §4 gives red the meaning *blocking danger or
+ * refusal*; a red lamp on the canopy frame of this game would be an alarm the
+ * player cannot act on. The same argument makes it near-neutral rather than
+ * amber or cyan, and `tests/cockpit-surface.test.ts` fails a retune that
+ * saturates it.
  */
-export const COCKPIT_TRIM = {
+export const COCKPIT_LAMP = {
 	color: 0xffd9a8,
 	/**
-	 * Low: this is a lit edge in a dark cabin, not a lamp. It is also what
-	 * #103's selective bloom will pick up first, so it is set below the
-	 * instrument faces rather than beside them.
-	 *
-	 * **0.9 was flown and rejected on the first sheet.** At that value the
-	 * header and sill strips render as solid white bars, and the bloom around
-	 * them lifts the coaming the flight-floor strip is read against — which is
-	 * the regression this node is explicitly forbidden from causing. 0.26 is a
-	 * lit edge that describes the canopy opening without competing with the
-	 * instruments, which is the whole job.
+	 * Dim: an indicator, not a light source. 0.9 was flown on the first sheet
+	 * and the strips at that value rendered as solid white bars whose bloom
+	 * lifted the coaming the flight-floor strip is read against — the
+	 * legibility regression this node is explicitly forbidden from causing.
 	 */
-	intensity: 0.26,
+	intensity: 0.34,
+	/** One lamp, kilometres in the cabin's oversized frame — about 2 m long on a
+	 *  32 m rail, which is the proportion the reference frames show. */
+	size: [0.0014, 0.0006, 0.0006] as const,
+	/**
+	 * How far each lamp stands off its rail's axis, toward the cabin.
+	 *
+	 * **Not decoration: without it the lamps do not exist.** A canopy side rail
+	 * is a cylinder of 1.25 km-scale metres' radius and the first lamps were
+	 * 0.6 m across, so every one of them was drawn *inside* the rail and the
+	 * sheet showed nothing at all. The offset is the rail radius plus a little,
+	 * which puts the lamp on the face turned toward the pilot.
+	 */
+	standoffKm: 0.0011,
+	/** Where along each canopy side rail they sit, as a fraction of its run.
+	 *  Three, unevenly spaced: an even three reads as a decoration and the
+	 *  reference's are grouped toward the top of the rail. */
+	stops: [0.34, 0.55, 0.72] as const,
 } as const;
 
 /**

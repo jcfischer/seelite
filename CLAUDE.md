@@ -177,6 +177,23 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   rewrites them in kilometres through `boxProjectUVs` (moved to `loft.ts` in
   #105) — and it returns a **new** geometry, because that projection needs a
   non-indexed one. Drop the return value and the fitting is silently unplated.
+- **A cabin is a moulding, not a plated hull, and a box cannot be a moulding.**
+  #105's first pass brought the hull's panel grid inside and the principal
+  rejected it against the Elite reference: those interiors carry their scale on
+  the **rim of every cut edge**, not on lines. A `BoxGeometry` has a hard 90°
+  edge with no width for a highlight to sit on, so it reads as a slab however it
+  is lit. `src/chamfer-box.ts` is the cabin's form primitive and every fitting
+  goes through it; the plating survives only as a rare, large seam
+  (`COCKPIT_PANEL_KM` 0.072, about 3.6 plates across the scanner deck). Two
+  figures were flown and rejected on the way: 0.024 was the grid, and a chamfer
+  clamped at *half* the smallest half-extent made every thin slab more rim than
+  face — chrome piping. The clamp is a quarter.
+- **The cabin's emissive is a few discrete lamps, not a lit strip**, which is
+  what the reference actually shows. They are warm white rather than the
+  reference's red on purpose: `hud-and-scanner.md` §4 owns red as *refusal*, and
+  a red lamp on the canopy frame would be an alarm the player cannot act on.
+  A lamp also needs `COCKPIT_LAMP.standoffKm` — the first ones were smaller than
+  the rail's own radius and were drawn inside it, so the sheet showed nothing.
 - **A material dial cannot exceed 1, and clamping one is a silent repaint.**
   `MeshStandardMaterial` multiplies `roughness` by the wear map's green channel,
   so a finish rougher than a clean plate simply cannot be asked for. The cabin's

@@ -34,9 +34,10 @@ const VIEWPORTS = [
  * `probe-ship-visuals.mjs` records. probe-guard fingerprints a module by its
  * top-level numeric constants, so what `cockpit-surface.ts` contributes is
  * `COCKPIT_PANEL_KM` and `COCKPIT_MAP_SIZE`. `COCKPIT_PLATING`,
- * `COCKPIT_FINISHES`, `COCKPIT_TRIM` and `COCKPIT_KEY_LIGHT` are all nested and
+ * `COCKPIT_FINISHES`, `COCKPIT_LAMP` and `COCKPIT_KEY_LIGHT` are all nested and
  * the guard reads none of them: a dev server serving another checkout whose
- * profile or trim figures differ would still pass.
+ * profile or lamp figures differ would still pass. `COCKPIT_CHAMFER_KM` is
+ * top-level and is read.
  */
 await guardedOrigin(ORIGIN, ["src/main.ts", "src/cockpit-surface.ts"]);
 const browser = await launchChromium();
@@ -138,7 +139,10 @@ for (const viewport of VIEWPORTS) {
 	);
 	check(
 		`${viewport.name}: a plate is a size — the deck's UVs span its own kilometres`,
-		high.deckSpan > 1 && high.deckSpan < 2,
+		// 0.032 km of deck over a 0.072 km tile: under half a tile across, which
+		// is what "sparse, much larger panels" came to mean. Read off the page
+		// rather than restated, so the module moving the constant moves this.
+		high.deckSpan > 0.2 && high.deckSpan < 0.9,
 	);
 	// **The node's line, made checkable.** Not "no reflection is visible" — a
 	// probe cannot see that — but "none of these five is a material the
@@ -157,9 +161,9 @@ for (const viewport of VIEWPORTS) {
 		),
 	);
 	check(
-		`${viewport.name}: the trim strips glow without being plated`,
+		`${viewport.name}: the canopy lamps glow without being plated`,
 		high.meshes.some(
-			(mesh) => mesh.name === "cockpit-trim-strip" && !mesh.lit && !mesh.map,
+			(mesh) => mesh.name === "cockpit-lamp" && !mesh.lit && !mesh.map,
 		),
 	);
 	check(
@@ -178,10 +182,10 @@ for (const viewport of VIEWPORTS) {
 			.every((mesh) => !mesh.normalMap && mesh.map && mesh.roughnessMap),
 	);
 	check(
-		`${viewport.name}: low leaves the trim and both interior lights alone`,
+		`${viewport.name}: low leaves the lamps and both interior lights alone`,
 		low.lights.join(",") === high.lights.join(",") &&
-			low.meshes.filter((mesh) => mesh.name === "cockpit-trim-strip").length ===
-				high.meshes.filter((mesh) => mesh.name === "cockpit-trim-strip").length,
+			low.meshes.filter((mesh) => mesh.name === "cockpit-lamp").length ===
+				high.meshes.filter((mesh) => mesh.name === "cockpit-lamp").length,
 	);
 	await page.evaluate(() => window.__seelite.settings.set("quality", "high"));
 	const restored = await page.evaluate(state);

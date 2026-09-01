@@ -25,7 +25,7 @@ import {
 	COCKPIT_QUALITY,
 	COCKPIT_FINISHES,
 	COCKPIT_FINISH_IDS,
-	COCKPIT_TRIM,
+	COCKPIT_LAMP,
 	applyCockpitQuality,
 	calibratedProfile,
 	cockpitCleanPlate,
@@ -94,15 +94,16 @@ describe("the cabin's UVs are written in its own kilometres", () => {
 		expect(uvSpan(twice)).toEqual(first);
 	});
 
-	test("the panel size puts a legible number of plates on the scanner deck", () => {
-		// The deck is the cabin's largest continuous surface and the one nearest
-		// the eye. Banded rather than pinned: this ties the constant to a real
-		// fitting so a retune cannot silently make the cabin a fine grid or a
-		// pair of slabs, and it is not the claim that the figure is *right* —
-		// that is the contact sheet's.
+	test("the deck carries a few real seams, not a grid", () => {
+		// **The band that records the principal's ruling.** The first pass put
+		// about eleven plates across the deck and the cabin was rejected against
+		// the reference: an Elite interior is a moulding with a rare join, not a
+		// planked surface. Under 6 is what "sparse" means here; over 2 keeps at
+		// least one genuine seam on the cabin's biggest form. It is not the claim
+		// that 3.6 is *right* — that is the contact sheet's.
 		const across = platesAcross(0.032);
-		expect(across).toBeGreaterThan(6);
-		expect(across).toBeLessThan(20);
+		expect(across).toBeGreaterThan(2);
+		expect(across).toBeLessThan(6);
 	});
 });
 
@@ -213,20 +214,33 @@ describe("the quality gate", () => {
 	});
 });
 
-describe("the emissive trim", () => {
+describe("the canopy-frame lamps", () => {
 	test("is not one of the HUD's reading colours", () => {
 		// §4 of `hud-and-scanner.md` gives amber, cyan, green and red meanings as
-		// *readings*. A structural strip that glows in one of them is a reading
-		// the player cannot act on, so the trim is deliberately near-neutral:
-		// warmth without a signal. A retune that saturates it fails here.
-		const r = (COCKPIT_TRIM.color >> 16) & 255;
-		const g = (COCKPIT_TRIM.color >> 8) & 255;
-		const b = COCKPIT_TRIM.color & 255;
+		// *readings*. A lamp on the canopy frame glowing in one of them is a
+		// reading the player cannot act on, so it is deliberately near-neutral:
+		// warmth without a signal. **This is where the reference is knowingly
+		// diverged from** — those cockpits' canopy lamps are red, and red is §4's
+		// refusal colour in this game. A retune that saturates it fails here.
+		const r = (COCKPIT_LAMP.color >> 16) & 255;
+		const g = (COCKPIT_LAMP.color >> 8) & 255;
+		const b = COCKPIT_LAMP.color & 255;
 		const max = Math.max(r, g, b);
 		const saturation = (max - Math.min(r, g, b)) / max;
 		expect(saturation).toBeLessThan(0.45);
 		// Warm rather than cool: the reference cabins are lit from inside, which
 		// is the half of #105's first question the light alone does not answer.
 		expect(r).toBeGreaterThan(b);
+	});
+
+	test("there are a few of them, not a strip", () => {
+		// The first pass ran continuous lit bars, which is the thing the
+		// reference does not do. Three stops a rail, and a stop is a fraction of
+		// the rail's own run so a lamp cannot float beside the rail it is on.
+		expect(COCKPIT_LAMP.stops.length).toBe(3);
+		for (const t of COCKPIT_LAMP.stops) {
+			expect(t).toBeGreaterThan(0);
+			expect(t).toBeLessThan(1);
+		}
 	});
 });
