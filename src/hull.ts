@@ -21,11 +21,16 @@
  * here is the box a berth has to admit.
  *
  * **The envelope is measured, not declared.** The table this replaces stated one
- * length, beam and height per hull and nothing compared them with the meshes.
- * They disagreed by up to 68% on height — the courier was declared 14 m tall and
- * builds at 11.7, the miner declared 34 and builds at 47.5 in its `c` variant —
- * and `BERTH_CELL` was sized from the declaration, so the berth catalogue was
- * sized against a hull nobody flies. `tests/hull.test.ts` rebuilds each selected
+ * length, beam and height per hull for three meshes that differ by up to 2.2x in
+ * beam and 4x in height, and nothing compared them with any of the three. It
+ * matched none: measured, the declaration **understated** height by up to 40%
+ * (the courier declared 14 m against its `c` variant's 23.5) and **overstated**
+ * it by up to 2x (the raider declared 22 m against its `a` variant's 10.8).
+ *
+ * The understatement is the direction that mattered, because `berthFits` reads
+ * this box and `BERTH_CELL` had been sized from the declaration: against the
+ * meshes, `miner/a` and `miner/c` are 40.0 m and 47.5 m tall to a 40 m cell and
+ * fit no berth in the game at all. `tests/hull.test.ts` rebuilds each selected
  * variant's mesh and compares.
  */
 
@@ -102,10 +107,13 @@ export interface HullSpec {
 	 * handling figure in `sim.ts` derives from.
 	 *
 	 * Mass is set from the selected variant's box volume against a role density:
-	 * a freighter is dense for its size because cargo structure is, an
-	 * interceptor light because it is mostly engine. Thrust is then solved for
-	 * the acceleration the role should feel, and `sim.ts` divides one by the
-	 * other. The courier's pair reproduces #5's tuned 2.0 km/s² exactly, so the
+	 * a freighter is dense for its size because cargo structure is (2.20 t per
+	 * 1,000 m³), an interceptor light because it is mostly engine (1.38). The
+	 * density is a **band and not a table** — a table would be a third declared
+	 * number pretending to be a derivation — and `tests/hull.test.ts` states it
+	 * as 1.2 to 2.4, which is what a later editor re-deriving a mass after the
+	 * envelopes move has to work with. Thrust is then solved for the acceleration
+	 * the role should feel, and `sim.ts` divides one by the other. The courier's pair reproduces #5's tuned 2.0 km/s² exactly, so the
 	 * baseline hull flies today's ship and the whole roster hangs off it.
 	 */
 	readonly massT: number;
@@ -215,9 +223,14 @@ export const HULL_SPECS: Record<HullId, HullSpec> = {
 		variant: "a",
 		env: { lengthKm: 0.0586, beamKm: 0.0385, heightKm: 0.011 },
 		massT: 46,
-		// Under the interceptor's 2.800 km/s², deliberately: `fast` is the sharpest
-		// thing that flies, and a police hull that out-accelerated it would make
-		// #8's pursuit unwinnable by design rather than by skill.
+		// Under the interceptor's 2.800 km/s², deliberately: **the `fast` role
+		// accelerates hardest**, and a police hull that out-accelerated it would
+		// make #8's pursuit unwinnable by design rather than by skill.
+		//
+		// It still *turns* tighter, and that is not a contradiction: agility is
+		// `acceleration / length`, so a hull 6% shorter out-turns one with 2% more
+		// thrust-to-mass. The two are different questions, and `security` gets the
+		// one its short hull earns.
 		thrustMN: 126,
 		holdT: 6,
 		hardpoints: 2,

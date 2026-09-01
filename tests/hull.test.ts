@@ -22,7 +22,8 @@
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import { CHARGE_CAPACITY_AU } from "../src/cruise";
-import { FUEL_TANK_LY, HOLD_REFERENCE_T } from "../src/market";
+import { carrierKey } from "../src/carrier-key";
+import { FUEL_TANK_LY, HOLD_REFERENCE_T, marketStationOf } from "../src/market";
 import { JUMP_RANGE_LY } from "../src/galaxy";
 import {
 	CAPITAL_HULL_IDS,
@@ -34,6 +35,7 @@ import {
 	PURCHASABLE_HULL_IDS,
 	type HullEnvelope,
 	type HullId,
+	type HullVariantId,
 } from "../src/hull";
 import { buildShipMesh } from "../src/ship-mesh";
 import {
@@ -44,15 +46,21 @@ import {
 	REFERENCE_THRUST_KMS2,
 	flightPerformance,
 } from "../src/sim";
-import { STARTING_HOLD_T } from "../src/station-commerce";
+import { newCommander, transactAtStation } from "../src/station-commerce";
 import { STATION_GEOMETRY, STATION_TYPES } from "../src/station";
 import { berthFits, stationInterior } from "../src/station-interior";
+
+/** 0.1 m, in kilometres — the quantum the table's envelopes are rounded **up**
+ *  to, and the tolerance the row below allows. */
+const ROUNDING_KM = 0.0001;
+const ceilToRounding = (km: number) =>
+	Math.ceil(km / ROUNDING_KM) * ROUNDING_KM;
 
 /** The built box of one mesh, kilometres — the same measurement
  *  `tests/helpers/rolled-envelope.ts` takes, and for the same reason: the mesh
  *  is the ship, and anything else is a claim about it. */
-function builtEnvelope(id: HullId, variant: string): HullEnvelope {
-	const root = buildShipMesh(id, variant as never).root;
+function builtEnvelope(id: HullId, variant: HullVariantId): HullEnvelope {
+	const root = buildShipMesh(id, variant).root;
 	root.updateMatrixWorld(true);
 	const size = new THREE.Box3()
 		.setFromObject(root)
@@ -61,6 +69,23 @@ function builtEnvelope(id: HullId, variant: string): HullEnvelope {
 	// `Ship.setAttitude` puts on `cross(nose, up)` and `up`; `z` is the length.
 	return { lengthKm: size.z, beamKm: size.x, heightKm: size.y };
 }
+
+/** The box **as the roster would declare it** — rounded up, exactly as the
+ *  shipped envelopes are. The variant rule scores on this rather than on the raw
+ *  measurement, because the game fits on the rounded figure: a variant that
+ *  clears a cell raw and not after rounding would otherwise win the rule and
+ *  then fit fewer roles in play. */
+const declarableEnvelope = (
+	id: HullId,
+	variant: HullVariantId,
+): HullEnvelope => {
+	const built = builtEnvelope(id, variant);
+	return {
+		lengthKm: ceilToRounding(built.lengthKm),
+		beamKm: ceilToRounding(built.beamKm),
+		heightKm: ceilToRounding(built.heightKm),
+	};
+};
 
 const interiorOf = (type: (typeof STATION_TYPES)[number]) =>
 	stationInterior(type, STATION_GEOMETRY[type].aperturePlaneKm, 1);
@@ -75,6 +100,24 @@ const rolesAdmitting = (env: HullEnvelope): number =>
 		interior.berths.some((berth) => berthFits(berth, env)),
 	).length;
 
+/** One buy of a tonne good at a trade station — the shipped calculator's own
+ *  input, so the hold rows go through `transactAtStation` rather than around
+ *  it. Mirrors `tests/station-commerce.test.ts`'s fixture. */
+const COMMERCE_STATION = marketStationOf(
+	{ type: "trade", localCarrierId: "station-trade", blackMarket: false },
+	0x51a7_10,
+);
+const commerceInput = (commander: ReturnType<typeof newCommander>) => ({
+	commander,
+	deficits: {},
+	station: COMMERCE_STATION,
+	stationKey: carrierKey(0, "station-trade"),
+	economy: 3,
+	gameTimeMin: 0,
+	displayTL: 8,
+	action: { type: "buy-commodity" as const, commodity: "Food" },
+});
+
 describe("the envelope is the mesh, not a claim about it", () => {
 	test.each([...HULL_IDS])(
 		"%s's declared box is its selected variant's built box, rounded up",
@@ -86,7 +129,6 @@ describe("the envelope is the mesh, not a claim about it", () => {
 			// fit; **never more than 0.1 m over**, because a generous box would
 			// make the table a safety margin rather than a measurement, and the
 			// place margins belong is `Berth.clear*`, which already applies one.
-			const ROUNDING_KM = 0.0001;
 			for (const axis of ["lengthKm", "beamKm", "heightKm"] as const) {
 				const over = spec.env[axis] - built[axis];
 				expect([id, axis, over >= 0, over <= ROUNDING_KM + 1e-12]).toEqual([
@@ -112,7 +154,7 @@ describe("the envelope is the mesh, not a claim about it", () => {
 			const spec = HULL_SPECS[id];
 			const scored = HULL_VARIANT_IDS.map((v) => ({
 				v,
-				roles: rolesAdmitting(builtEnvelope(id, v)),
+				roles: rolesAdmitting(declarableEnvelope(id, v)),
 			}));
 			const best = Math.max(...scored.map((s) => s.roles));
 			const chosen = scored.find((s) => s.v === spec.variant);
@@ -132,7 +174,7 @@ describe("the envelope is the mesh, not a claim about it", () => {
 		// and the previous test would pass on a build that picked at random.
 		const contested = HULL_IDS.filter((id) => {
 			const scores = HULL_VARIANT_IDS.map((v) =>
-				rolesAdmitting(builtEnvelope(id, v)),
+				rolesAdmitting(declarableEnvelope(id, v)),
 			);
 			return Math.min(...scores) < Math.max(...scores);
 		});
@@ -143,37 +185,64 @@ describe("the envelope is the mesh, not a claim about it", () => {
 	});
 });
 
-describe("the roster agrees with the modules that already name its quantities", () => {
-	test("the baseline hull's hold is the economy's reference and the starting hold", () => {
-		// One quantity, three names, and #11's finding is that a grep cannot check
-		// a number: `FUEL_COST_PER_LY` sat wrong in `galaxy.ts` for six weeks
-		// after the specs were corrected, because the stated check was a text
-		// search. An assertion is what holds.
-		expect(HULL_SPECS[PLAYER_BASELINE_HULL].holdT).toBe(HOLD_REFERENCE_T);
-		expect(HULL_SPECS[PLAYER_BASELINE_HULL].holdT).toBe(STARTING_HOLD_T);
+describe("the roster is the single owner, not a second copy", () => {
+	test("the hold a commander actually has is the hull's", () => {
+		// **The row that stops `holdT` being decoration.** Sage's first round found
+		// it declared and unread — `STARTING_HOLD_T = 20` still decided the hold,
+		// so a freighter's stated 60 t carried 20. That constant is gone and
+		// `holdCapacityT` reads the roster, and this is asserted through the
+		// shipped calculator rather than against the table, because a test that
+		// builds its own struct is testing a different object from the one the
+		// game uses (#25's tell).
+		const at = (hull: HullId) => {
+			const commander = { ...newCommander(hull), credits: 100_000 };
+			const full = {
+				...commander,
+				cargo: { Food: HULL_SPECS[hull].holdT },
+			};
+			return {
+				refusedWhenFull: transactAtStation(commerceInput(full)).reason,
+				acceptedWhenEmpty: transactAtStation(commerceInput(commander)).accepted,
+			};
+		};
+		for (const hull of PURCHASABLE_HULL_IDS) {
+			expect([hull, at(hull)]).toEqual([
+				hull,
+				{ refusedWhenFull: "cargo-full", acceptedWhenEmpty: true },
+			]);
+		}
+		// And the hold genuinely differs, or the loop above would pass on a build
+		// that still read one constant.
+		const holds = new Set(
+			PURCHASABLE_HULL_IDS.map((id) => HULL_SPECS[id].holdT),
+		);
+		expect(holds.size).toBeGreaterThan(1);
 	});
 
-	test("the baseline hull's tank and drive charge are the game's", () => {
-		expect(HULL_SPECS[PLAYER_BASELINE_HULL].tankLy).toBe(JUMP_RANGE_LY);
-		expect(HULL_SPECS[PLAYER_BASELINE_HULL].tankLy).toBe(FUEL_TANK_LY);
-		expect(HULL_SPECS[PLAYER_BASELINE_HULL].chargeAu).toBe(CHARGE_CAPACITY_AU);
+	test("the economy, the router and the drive read the roster rather than a copy", () => {
+		// These four were literals in four modules until #181; they are the
+		// baseline hull's row now, so the assertions below are true **by
+		// construction** and are here as a statement of the direction rather than
+		// as a check that could fail. The check that can fail is the one above:
+		// a figure that no longer flows through to behaviour.
+		expect(HOLD_REFERENCE_T).toBe(HULL_SPECS[PLAYER_BASELINE_HULL].holdT);
+		expect(JUMP_RANGE_LY).toBe(HULL_SPECS[PLAYER_BASELINE_HULL].tankLy);
+		expect(FUEL_TANK_LY).toBe(HULL_SPECS[PLAYER_BASELINE_HULL].tankLy);
+		expect(CHARGE_CAPACITY_AU).toBe(HULL_SPECS[PLAYER_BASELINE_HULL].chargeAu);
 	});
 
-	test("nothing reads the other hulls' fuel yet, and the table says so", () => {
+	test("the tank and the drive charge are still one hull's, and the table says so", () => {
 		// **A property nothing reads is not shipped** — #25's rule about a rule
-		// that lives only in an instrument, one level along. The explorer's 9 LY
-		// is a declaration this node makes and a later node has to wire: the
-		// router and the finder take `maxJump` as a parameter but every caller
-		// hands them `JUMP_RANGE_LY`. This row is here so the claim is stated in
+		// that lives only in an instrument, one level along. Unlike the hold, the
+		// per-hull tank is *not* wired: every router and finder takes `maxJump` as
+		// a parameter and every caller hands it `JUMP_RANGE_LY`, which is the
+		// baseline's. This row states which hulls are affected so the gap is in
 		// the tier that can hold it rather than only in prose.
 		const varies = HULL_IDS.filter(
 			(id) => HULL_SPECS[id].tankLy !== JUMP_RANGE_LY,
 		);
 		expect(varies.length).toBeGreaterThan(0);
-		console.log(
-			`hulls whose tank is not the game's ${JUMP_RANGE_LY} LY and is not yet ` +
-				`read by the router: ${varies.join(", ")}`,
-		);
+		console.log(`tanks the router does not yet read: ${varies.join(", ")}`);
 	});
 
 	test("the seven purchasable hulls are the seven, and no capital is among them", () => {
@@ -190,17 +259,46 @@ describe("the roster agrees with the modules that already name its quantities", 
 			seven.sort() as (typeof PURCHASABLE_HULL_IDS)[number][],
 		);
 		for (const id of CAPITAL_HULL_IDS)
-			expect([id, PURCHASABLE_HULL_IDS.includes(id as never)]).toEqual([
+			expect([
 				id,
-				false,
-			]);
+				(PURCHASABLE_HULL_IDS as readonly HullId[]).includes(id),
+			]).toEqual([id, false]);
 		expect([...DOCKABLE_HULL_IDS].sort()).toEqual(
-			HULL_IDS.filter((id) => !CAPITAL_HULL_IDS.includes(id as never)).sort(),
+			HULL_IDS.filter(
+				(id) => !(CAPITAL_HULL_IDS as readonly HullId[]).includes(id),
+			).sort(),
 		);
 	});
 });
 
 describe("handling derives from mass and thrust, and nothing else", () => {
+	test("mass tracks the hull it is the mass of", () => {
+		// **The `massT` docstring says mass is set from the box volume against a
+		// role density, and sage's first round was right that nothing held it** —
+		// a later editor told to re-derive mass after the envelopes moved had
+		// nothing to re-derive it with. The density is not a table, because a
+		// table would be a third declared number pretending to be a derivation;
+		// it is a *band*, and this row is what states it.
+		//
+		// The band is the design claim: a freighter is dense for its size because
+		// cargo structure is, an interceptor light because it is mostly engine,
+		// and neither is off by a factor. A mass typed in without looking at the
+		// hull lands outside it.
+		const MIN_T_PER_1000M3 = 1.2;
+		const MAX_T_PER_1000M3 = 2.4;
+		for (const id of HULL_IDS) {
+			const env = HULL_SPECS[id].env;
+			const volumeM3 = env.lengthKm * env.beamKm * env.heightKm * 1e9;
+			const density = (HULL_SPECS[id].massT * 1000) / volumeM3;
+			expect([
+				id,
+				density >= MIN_T_PER_1000M3,
+				density <= MAX_T_PER_1000M3,
+			]).toEqual([id, true, true]);
+			console.log(`${id.padEnd(12)} ${density.toFixed(2)} t per 1000 m³`);
+		}
+	});
+
 	test("the baseline hull reproduces #5's tuning exactly", () => {
 		// Exactly rather than nearly: #5's numbers were flown and tuned, and a
 		// derivation that moved them by a rounding would have retuned the game's

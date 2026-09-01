@@ -83,18 +83,25 @@ const fly = (
 
 /** Does this role hold a berth this hull fits? A grant *is* a berth reservation
  *  (#147), so a hull no berth fits is refused before it flies anywhere — that is
- *  the protocol working, not a docking failure, and the two are asserted apart. */
+ *  the protocol working, not a failed entry, and the two are asserted apart. */
 const hasBerth = (hull: HullId, type: StationType): boolean =>
 	stationInterior(type, STATION_GEOMETRY[type].aperturePlaneKm, 1).berths.some(
 		(berth) => berthFits(berth, HULL_SPECS[hull].env),
 	);
 
-/** Both ends of the shipped range plus the midpoint. A pad does not rotate, so
- *  its only phase is zero — passing a spin for one describes something that
- *  cannot happen (`apertureFrame` normalises it away). */
+/** Both ends of the shipped range plus its midpoint, derived rather than typed:
+ *  a hardcoded interior sample silently leaves the range the day
+ *  `SPIN_RPM_RANGE` is narrowed, and would then sweep a spin no station builds.
+ *  A landing pad does not rotate, so its only phase is zero — passing a spin for
+ *  one describes something that cannot happen (`apertureFrame` normalises it
+ *  away). */
 const spinsFor = (type: StationType): number[] =>
 	STATION_GEOMETRY[type].spins
-		? [SPIN_RPM_RANGE.minRpm, 2.0, SPIN_RPM_RANGE.maxRpm]
+		? [
+				SPIN_RPM_RANGE.minRpm,
+				(SPIN_RPM_RANGE.minRpm + SPIN_RPM_RANGE.maxRpm) / 2,
+				SPIN_RPM_RANGE.maxRpm,
+			]
 		: [0];
 
 describe("every hull docks at every role it has a berth at", () => {
@@ -150,39 +157,87 @@ describe("every hull docks at every role it has a berth at", () => {
 	}
 });
 
+/** The roles that turn. The ceiling is measured at **both** of them: they cut
+ *  their apertures at different planes (0.428 km against 0.372) into different
+ *  interiors, and a ceiling taken at one and quoted for the roster would be the
+ *  #94 defect — a fixture that defaulted to one station type proving that type's
+ *  figure while its comment asserted the other's. */
+const SPINNING_TYPES = STATION_TYPES.filter(
+	(type) => STATION_GEOMETRY[type].spins,
+);
+
 /**
- * The spin above which a hull can no longer hold the slot's roll.
+ * The spin above which a hull can no longer hold the aperture's roll.
  *
- * Searched upward in coarse steps rather than bisected: the predicate is a whole
- * flown approach and is not guaranteed monotone, so a bisection would be
- * assuming the shape of the very curve it is measuring.
+ * It is **not** the hull's roll rate expressed as an rpm, although it tracks it
+ * closely. Check 4 admits 50 degrees of roll error, so a hull can hold the
+ * aperture inside tolerance while lagging its phase — which is why the miner
+ * reaches 8 rpm on a 4.9 rpm roll cap while the freighter stops at 6.0 on a 6.6.
+ * What ends a run is the lag exceeding the tolerance at the crossing.
+ *
+ * **A run that never reached the plane is not a ceiling**, and the loop says so:
+ * a refusal or a timeout is thrown rather than counted, because either would
+ * report a broken harness as a hull's limit. Searched upward in coarse steps
+ * rather than bisected — the predicate is a whole flown approach and is not
+ * guaranteed monotone, so a bisection would assume the shape of the curve it is
+ * measuring.
  */
-function spinCeiling(hull: HullId, perfHull?: HullId): number {
-	// It is **not** the hull's roll rate expressed as an rpm, although it tracks
-	// it closely. Check 4 admits 50 degrees of roll error, so a hull can hold the
-	// slot inside tolerance while lagging its phase — which is why the miner
-	// reaches 8 rpm on a 4.9 rpm roll cap while the freighter stops at 6.0 on a
-	// 6.6. What ends a run is the lag exceeding the tolerance at the crossing,
-	// not the rate falling short of the station.
+function spinCeiling(
+	hull: HullId,
+	type: StationType,
+	perfHull?: HullId,
+): number {
 	let last = 0;
 	for (let rpm = 1; rpm <= 24; rpm += 0.5) {
-		if (!fly(hull, "trade", rpm, perfHull).docked) break;
-		last = rpm;
+		const run = fly(hull, type, rpm, perfHull);
+		if (run.docked) {
+			last = rpm;
+			continue;
+		}
+		if (run.refused !== null)
+			throw new Error(
+				`${hull} at ${type} ${rpm} rpm was refused: ${run.refused}`,
+			);
+		if (run.crossing === null)
+			throw new Error(
+				`${hull} at ${type} ${rpm} rpm never reached the plane in ` +
+					`${run.gameTime.toFixed(0)} s — a timeout, not a roll ceiling`,
+			);
+		break;
 	}
 	return last;
 }
+
+/** The lowest ceiling a hull has across the turning roles, and where. Computed
+ *  once: three rows below read it, and each one flies up to 47 approaches per
+ *  hull per role. */
+const ceilingOf = (() => {
+	const cache = new Map<string, { rpm: number; type: StationType }>();
+	return (hull: HullId, perfHull?: HullId) => {
+		const key = `${hull}|${perfHull ?? ""}`;
+		const hit = cache.get(key);
+		if (hit) return hit;
+		let worst = { rpm: Number.POSITIVE_INFINITY, type: SPINNING_TYPES[0] };
+		for (const type of SPINNING_TYPES) {
+			const rpm = spinCeiling(hull, type, perfHull);
+			if (rpm < worst.rpm) worst = { rpm, type };
+		}
+		cache.set(key, worst);
+		return worst;
+	};
+})();
 
 describe("the tolerances hold for the whole roster, with margin", () => {
 	test("the worst-handling hull still docks at twice the fastest station", () => {
 		const ceilings = DOCKABLE_HULL_IDS.map((hull) => ({
 			hull,
-			rpm: spinCeiling(hull),
+			...ceilingOf(hull),
 			rollRpm: (flightPerformance(hull).angularMax.roll * 60) / (2 * Math.PI),
 		}));
 		for (const row of ceilings)
 			console.log(
 				`${row.hull.padEnd(12)} docks to ${row.rpm.toFixed(1)} rpm ` +
-					`(roll cap ${row.rollRpm.toFixed(1)} rpm)`,
+					`(worst role ${row.type}, roll cap ${row.rollRpm.toFixed(1)} rpm)`,
 			);
 		const worst = ceilings.reduce((a, b) => (a.rpm <= b.rpm ? a : b));
 		console.log(
@@ -209,10 +264,11 @@ describe("the tolerances hold for the whole roster, with margin", () => {
 		// the hull can track, and every hull has one inside the search range: a
 		// sweep that could not fail would be a ritual.
 		for (const hull of DOCKABLE_HULL_IDS) {
-			const ceiling = spinCeiling(hull);
-			expect([hull, ceiling]).not.toEqual([hull, 24]);
-			expect([hull, fly(hull, "trade", ceiling + 0.5).docked]).toEqual([
+			const { rpm, type } = ceilingOf(hull);
+			expect([hull, rpm]).not.toEqual([hull, 24]);
+			expect([hull, type, fly(hull, type, rpm + 0.5).docked]).toEqual([
 				hull,
+				type,
 				false,
 			]);
 		}
@@ -224,11 +280,11 @@ describe("the tolerances hold for the whole roster, with margin", () => {
 		// ceiling. If it did not, the spread measured above would be coming from
 		// somewhere other than the hull's mass and thrust, and the row above would
 		// be evidence for a claim it does not make.
-		const controlled = DOCKABLE_HULL_IDS.map((hull) =>
-			spinCeiling(hull, PLAYER_BASELINE_HULL),
+		const controlled = DOCKABLE_HULL_IDS.map(
+			(hull) => ceilingOf(hull, PLAYER_BASELINE_HULL).rpm,
 		);
 		const spread = Math.max(...controlled) - Math.min(...controlled);
-		const live = DOCKABLE_HULL_IDS.map((hull) => spinCeiling(hull));
+		const live = DOCKABLE_HULL_IDS.map((hull) => ceilingOf(hull).rpm);
 		const liveSpread = Math.max(...live) - Math.min(...live);
 		console.log(
 			`ceiling spread: ${liveSpread.toFixed(1)} rpm live against ` +

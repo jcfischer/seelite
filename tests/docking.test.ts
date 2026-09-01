@@ -53,12 +53,7 @@ import {
 	slotBasis,
 	tickDocking,
 } from "../src/docking";
-import {
-	REFERENCE_ANGULAR_MAX,
-	ASSIST_CAP_KMS,
-	flightPerformance,
-	stepFlight,
-} from "../src/sim";
+import { ASSIST_CAP_KMS } from "../src/sim";
 import { HULL_SPECS } from "../src/hull";
 import { STATION_GEOMETRY, slotPhaseRad } from "../src/station";
 import { stationInterior } from "../src/station-interior";
@@ -74,13 +69,6 @@ import {
 } from "../src/vec3";
 import { PLAYER_BASELINE_HULL } from "../src/hull";
 import { flyTheComputer as fly } from "./helpers/fly-the-computer";
-
-/** The baseline hull's handling. #181 made `stepFlight` and `stepAngular` take a
- *  hull's performance rather than read module constants, and these rows were all
- *  written against the courier's tuning — which `flightPerformance` reproduces
- *  exactly, so nothing here changed its subject. `tests/hull.test.ts` owns the
- *  claim that the roster *varies*; this file owns the model's own laws. */
-const BASELINE = flightPerformance(PLAYER_BASELINE_HULL);
 
 /**
  * The traffic a clearance request is answered against (§13.2).

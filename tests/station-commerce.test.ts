@@ -1,11 +1,8 @@
 import { expect, test } from "bun:test";
 import { carrierKey } from "../src/carrier-key";
 import { marketStationOf, readDeficit } from "../src/market";
-import {
-	STARTING_HOLD_T,
-	newCommander,
-	transactAtStation,
-} from "../src/station-commerce";
+import { HULL_SPECS, PLAYER_BASELINE_HULL } from "../src/hull";
+import { newCommander, transactAtStation } from "../src/station-commerce";
 import { newWorld, parseWorld, serializeWorld } from "../src/world-state";
 
 const STATION = marketStationOf(
@@ -65,7 +62,9 @@ test("tonne cargo observes the hold while sub-tonne goods bypass it", () => {
 	const full = {
 		...newCommander(),
 		credits: 100_000,
-		cargo: { Food: STARTING_HOLD_T },
+		// The hull's hold, read off the roster: `STARTING_HOLD_T` was a second
+		// copy of the courier's 20 t and is gone (#181).
+		cargo: { Food: HULL_SPECS[PLAYER_BASELINE_HULL].holdT },
 	};
 	expect(transactAtStation(input({ commander: full }))).toMatchObject({
 		accepted: false,

@@ -337,6 +337,13 @@ const PLAYER_HULL: readonly [HullId, HullVariantId] = ((): readonly [
 	const id = (PURCHASABLE_HULL_IDS as readonly string[]).includes(asked ?? "")
 		? (asked as HullId)
 		: PLAYER_BASELINE_HULL;
+	// **It says so when it falls back.** Silently flying a courier while the
+	// pilot believes they are judging a freighter is the one way this affordance
+	// could produce a wrong answer, and the whole point of it is a judgement.
+	if (asked !== null && asked !== id)
+		console.warn(
+			`[seelite] ?hull=${asked} is not one of ${PURCHASABLE_HULL_IDS.join(", ")} — flying the ${id}`,
+		);
 	return [id, HULL_SPECS[id].variant];
 })();
 
@@ -900,7 +907,7 @@ class Game {
 	/** The forward station console keeps its tab across a head turn while docked. */
 	private stationConsoleTab: StationConsoleTab = "Market";
 	/** Commander-owned mutable commerce state; no renderer may write it. */
-	private commander = newCommander();
+	private commander = newCommander(PLAYER_HULL[0]);
 	/** The game-owned per-galaxy state holds the station deficit map. */
 	private commerceWorld!: WorldState;
 	/** Docked console screens are stable until station or tab changes; do not rebuild them each frame. */

@@ -38,11 +38,8 @@ import {
 } from "../src/sim";
 import { PLAYER_BASELINE_HULL } from "../src/hull";
 
-/** The baseline hull's handling. #181 made `stepFlight` and `stepAngular` take a
- *  hull's performance rather than read module constants, and these rows were all
- *  written against the courier's tuning — which `flightPerformance` reproduces
- *  exactly, so nothing here changed its subject. `tests/hull.test.ts` owns the
- *  claim that the roster *varies*; this file owns the model's own laws. */
+/** The baseline hull's handling — see `tests/sim.test.ts` for why these rows
+ *  pass a hull's performance and why the courier's is the one they pass. */
 const BASELINE = flightPerformance(PLAYER_BASELINE_HULL);
 
 /** The probe's fixture, so this test guards the world the reset is used on. */

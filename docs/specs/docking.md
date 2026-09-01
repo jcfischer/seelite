@@ -344,9 +344,11 @@ reflex one.
 **Roll rate is a hull property since #181**, so "four times the fastest spinner"
 is the baseline hull's margin and not the roster's. The miner peaks at 29.5°/s,
 1.6× a 3 rpm spinner; the interceptor at 103°/s, 5.8×. `tests/hull-docking.test.ts`
-flies every hull at every role across the whole 0.6–3.0 rpm range and then finds
-the spin each one *stops* docking at: the worst is the freighter at 6.0 rpm, two
-times the fastest station the generator builds. So §3's tolerances stay one
+flies every hull at every role across the whole 0.6–3.0 rpm range, and then — at
+**both** turning roles, because a trade station and a shipyard cut their
+apertures at different planes into different interiors — finds the spin each hull
+*stops* docking at. The worst is the freighter at 6.0 rpm, at a trade station,
+two times the fastest station the generator builds. So §3's tolerances stay one
 table rather than becoming a per-hull one — which was the open question #26's D5
 left, and it is settled by measurement rather than by assumption.
 

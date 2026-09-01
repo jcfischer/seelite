@@ -42,11 +42,16 @@ import { add, length, scale, sub, v3 } from "../src/vec3";
 import { codeOf } from "./lib/source-scan";
 import { PLAYER_BASELINE_HULL } from "../src/hull";
 
-/** The baseline hull's handling. #181 made `stepFlight` and `stepAngular` take a
- *  hull's performance rather than read module constants, and these rows were all
- *  written against the courier's tuning — which `flightPerformance` reproduces
- *  exactly, so nothing here changed its subject. `tests/hull.test.ts` owns the
- *  claim that the roster *varies*; this file owns the model's own laws. */
+/**
+ * The baseline hull's handling.
+ *
+ * #181 made `stepFlight` and `stepAngular` take a hull's performance rather than
+ * read module constants, and every row in this file was written against the
+ * courier's tuning — which `flightPerformance` reproduces exactly, so nothing
+ * here changed its subject. This file owns the model's own laws;
+ * `tests/hull.test.ts` owns the claim that the roster *varies*, and
+ * `tests/hull-docking.test.ts` owns what the variation costs a docking approach.
+ */
 const BASELINE = flightPerformance(PLAYER_BASELINE_HULL);
 
 const SEED = 20260818;

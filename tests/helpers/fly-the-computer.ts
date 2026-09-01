@@ -46,7 +46,7 @@ export interface FlightRun {
 	docked: boolean;
 	refused: string | null;
 	/** A crossing that failed a check. Zero is the claim; a positive count names
-	 *  a hull that reached the plane in a pose §3 refuses. */
+	 *  a hull that reached the plane in a pose §3 refuses — a failed entry. */
 	violations: number;
 	steps: number;
 	gameTime: number;
@@ -80,7 +80,7 @@ export interface FlightOptions {
 	perfHull?: HullId;
 	/** Seconds of sim time before the run is abandoned. Generous, because a
 	 *  sluggish hull takes longer and a timeout tuned to the courier would read
-	 *  as a docking failure. */
+	 *  as a failed entry. */
 	limitS?: number;
 }
 

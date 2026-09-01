@@ -40,6 +40,7 @@
  * derivable from a type.
  */
 
+import { HULL_SPECS, PLAYER_BASELINE_HULL } from "./hull";
 import { type CarrierKey, carrierKey, isCarrierKey } from "./carrier-key";
 import { DOMAIN } from "./domains";
 import { mix, seededRand } from "./rng";
@@ -280,7 +281,16 @@ export function marketRowAt(
  * response legible at both ends of the table.
  */
 export const PRICE_ELASTICITY = 0.1;
-export const HOLD_REFERENCE_T = 20;
+/**
+ * The hold the deficit response is calibrated against, tonnes.
+ *
+ * **The baseline hull's, read off the roster** (#181) rather than a second copy
+ * of the figure. It is deliberately the *baseline* hull's and not the flown
+ * one: #26's D6 defers the multiplier a bigger hold leans on a market by to the
+ * pricing node, and a reference that moved with the ship would retune §5.2's
+ * response every time the player bought a freighter.
+ */
+export const HOLD_REFERENCE_T = HULL_SPECS[PLAYER_BASELINE_HULL].holdT;
 
 /** §5.1: how often the base market re-rolls, in minutes of game time. */
 export const MARKET_PERIOD_MIN = 30;
@@ -779,7 +789,10 @@ export const UNIVERSAL_ITEMS: readonly UniversalItem[] = [
 		(e): UniversalItem => ({ name: e.name, priceCr: e.priceCr, per: "unit" }),
 	),
 ];
-export const FUEL_TANK_LY = 7;
+/** The baseline hull's tank, light years — read off the roster (#181) rather
+ *  than declared twice. `galaxy.ts`'s `JUMP_RANGE_LY` is the same quantity from
+ *  the same row; the router is not hull-aware yet, which is its own node. */
+export const FUEL_TANK_LY = HULL_SPECS[PLAYER_BASELINE_HULL].tankLy;
 export const MAX_MISSILES = 4;
 
 /** §8's fitting-out cost, derived rather than asserted. */

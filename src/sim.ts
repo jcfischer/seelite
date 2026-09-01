@@ -534,8 +534,9 @@ export const ASSIST_CAP_KMS = 2.0;
  * every derived figure below is stated against, not because anything integrates
  * with it.
  *
- * (The comment here read "about 0.2 g" until #181. 2 km/s² is 2,000 m/s²,
- * a little over 200 g — the prose was two orders out and nothing read it.)
+ * (The comment here read "about 0.2 g" until #181. 2 km/s² is 2,000 m/s², a
+ * little over 200 g — the prose was three orders of magnitude out, in a line
+ * whose only job was to state a magnitude, and nothing read it.)
  */
 export const REFERENCE_THRUST_KMS2 = 2.0;
 
@@ -647,6 +648,14 @@ export interface FlightPerformance {
  *   what is left is `(thrust / mass) / length`. A longer, heavier hull is
  *   therefore slower to turn *and* slower to start turning, which is the whole
  *   of what "sluggish" means.
+ *
+ *   **Roll takes the same factor, and that is a simplification stated rather
+ *   than derived.** Roll inertia goes as the beam and not the length, so the
+ *   physics above does not reach it; what the roster gets is one angular
+ *   authority per hull, scaled by the pitch and yaw figure. A separate roll term
+ *   would be a fourth number for a difference no check in the repo can currently
+ *   see, and the place it would first matter is a hull whose beam and length
+ *   disagree far more than any of these eleven do.
  * - **Both e-folding times** scale inversely with the authority they express:
  *   the lateral one with linear acceleration, the angular one with angular.
  *

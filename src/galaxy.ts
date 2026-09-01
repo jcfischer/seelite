@@ -35,6 +35,7 @@
  * having to build 2048 solar systems.
  */
 
+import { HULL_SPECS, PLAYER_BASELINE_HULL } from "./hull";
 import { DOMAIN } from "./domains";
 import { mix, seedFor, seededRand } from "./rng";
 import { planetDescription, systemName } from "./names";
@@ -122,9 +123,16 @@ export const GALAXY_RADIUS_LY = 24.53;
  *  ratio exactly 3 (spec §3). */
 export const CORE_RADIUS_LY = GALAXY_RADIUS_LY / Math.SQRT2;
 
-/** Jump range and fuel price (spec §2, §8). The range is also the edge
- *  predicate for the connectivity graph. */
-export const JUMP_RANGE_LY = 7.0;
+/**
+ * Jump range (spec §2, §8), also the edge predicate for the connectivity graph.
+ *
+ * **The baseline hull's tank, read off the roster** (#181): the range *is* the
+ * tank, and declaring it here as well made one quantity two constants. Every
+ * router, finder and chart in the repo already takes `maxJump` as a parameter
+ * and every caller hands it this — making those callers pass the *flown* hull's
+ * tank is a separate node, and until it lands this is the game's one range.
+ */
+export const JUMP_RANGE_LY = HULL_SPECS[PLAYER_BASELINE_HULL].tankLy;
 
 /**
  * **2 Cr per LY, not 0.2** — Elite's PRXS table charges 0.2 Cr per *0.1* LY, so
