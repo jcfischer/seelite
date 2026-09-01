@@ -138,7 +138,16 @@ for (const type of STATION_TYPES) {
 	}
 }
 
+// **A sampled result, and the line says so.** A bay's lane is a 9x9 grid of
+// rays over the aperture rectangle, so an obstruction narrower than the cell
+// pitch passes between them; a pad's corridor is a vertex test, so a triangle
+// spanning the cylinder with all three vertices outside it passes too. Both
+// found every defect #155 and #165 fixed and neither is a proof — a reader who
+// transcribes "0 of 12" as exhaustive clearance is reading more than the
+// instrument measured.
 console.log(
-	`\n${blocked} of ${forms} forms have something in the volume a docking ship flies through.`,
+	`\n${blocked} of ${forms} forms have something in the volume a docking ship` +
+		` flies through, as sampled: a 9x9 ray grid down a bay's lane, and a` +
+		` vertex test for a pad's corridor.`,
 );
 console.log("* is the form the game selects for that role.");

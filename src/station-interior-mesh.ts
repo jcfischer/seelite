@@ -472,6 +472,11 @@ function buildBerth(
 	structure: THREE.Material,
 	guide: THREE.Material,
 	accent: THREE.Material,
+	/** How far to seat the whole assembly *into* its own surface, kilometres.
+	 *  Zero in a bay, where the shell wall is inset instead; a plate's worth on
+	 *  a pad, where the surface is the deck a ship stands on and cannot be
+	 *  lifted off the catalogue's plane. */
+	seatKm = 0,
 ): THREE.Group {
 	const group = new THREE.Group();
 	group.name = `berth-${berth.id}`;
@@ -487,7 +492,7 @@ function buildBerth(
 	// the clear height, which is where the sim says the surface is.
 	group.position
 		.set(berth.centre.across, berth.centre.up, berth.centre.axial)
-		.addScaledVector(outward, -berth.clearHeightKm / 2);
+		.addScaledVector(outward, -berth.clearHeightKm / 2 - seatKm);
 
 	const B = berth.clearBeamKm;
 	const L = berth.clearLengthKm;
@@ -870,28 +875,28 @@ const plateOf = (interior: StationInterior): number =>
 	Math.min(interior.halfAcrossKm, interior.halfUpKm) * PLATE_FACTOR;
 
 /**
- * Where a pad's deck face is, kilometres from the station's centre.
+ * How far a pad's berth furniture is seated **into** the deck, as a multiple of
+ * a plate.
  *
- * **One wall thickness proud of the berth surface the catalogue names**, which
- * is exactly the relationship a bay's shell has with the berths bolted to it:
- * each wall is seated inside the declared extent so a berth's apron overlaps
- * the wall it stands on. A deck flush with the surface would leave every berth
- * a loose island under the connectivity check.
+ * **The deck's face is the berth surface the catalogue names, exactly**, and
+ * this is what pays for that. `buildBerth` lays every part *up* from the
+ * surface it is given, so a deck flush with that surface and a berth sitting on
+ * top of it are two boxes that graze — and
+ * `tests/station-mesh.test.ts`'s connectivity check shrinks a part by up to 4 m
+ * before testing contact, so a berth laid on a deck is a loose island.
  *
- * **A drawing convention rather than a sim dimension, and the bay is the
- * precedent.** A bay's shell seats each wall *inside* the declared extent by
- * the same `wall`, so the drawn surface and the catalogue's surface have always
- * differed by a plate there too. `PLATE_FACTOR` — how thick this module draws a
- * plate — has lived here since #147 for that reason, and no sim consumer reads
- * either: `interiorAxialSpanKm` is `[mouth, staging]` and is what the traversal
- * and the fit rows use, so there is no second declaration to diverge from.
- *
- * Exported because the drawn-volume rows read it back rather than restating the
- * arithmetic: a tolerance typed into a test is one that stays green against a
- * figure the module no longer uses.
+ * A bay solves the same problem the other way, by seating each shell wall
+ * *inside* the declared extent so the apron overlaps it. A pad cannot: its
+ * "wall" is the surface a ship stands on, and lifting it clear of the
+ * catalogue's plane would put a slab through every parked hull — an outpost's
+ * berth admits a 30 m freighter whose belly sits *at* the surface, so a deck
+ * 7.5 m proud of it would be 7.5 m inside the ship (sage round 5).
  */
-export const padDeckFaceKm = (interior: StationInterior): number =>
-	interior.mouthAxialKm + plateOf(interior) * 0.8;
+const PAD_SEAT_FACTOR = 0.8;
+
+/** How far a pad's berth furniture drops below the deck, kilometres. */
+const padSeatKm = (interior: StationInterior): number =>
+	plateOf(interior) * PAD_SEAT_FACTOR;
 
 /**
  * A pad role's drawn interior: a deck at the aperture plane with its berths
@@ -933,7 +938,9 @@ function buildPadDeck(
 	// is — the Warren's terrace sits 20 m behind its aperture plane where an
 	// outpost's deck is flush with it.
 	const thickness = interior.stagingAxialKm - interior.mouthAxialKm;
-	const faceZ = padDeckFaceKm(interior);
+	// **The deck's face is the berth surface**, so a parked hull stands on it
+	// rather than in it. The berths are seated into it instead (`padSeatKm`).
+	const faceZ = interior.mouthAxialKm;
 
 	const deckFace = shellMaterial(type);
 	for (const [w, h, x, y] of ringAround(
@@ -989,8 +996,11 @@ function buildPadDeck(
 
 	const guide = glowMaterial(visuals.floodColor);
 	const accent = glowMaterial(visuals.heatColor);
+	const seat = padSeatKm(interior);
 	for (const berth of interior.berths)
-		group.add(atFullDetail(buildBerth(berth, plate, structure, guide, accent)));
+		group.add(
+			atFullDetail(buildBerth(berth, plate, structure, guide, accent, seat)),
+		);
 
 	group.add(atFullDetail(buildPadFittings(interior, plate, structure, guide)));
 	return group;
@@ -1019,7 +1029,7 @@ function buildPadFittings(
 	group.name = "interior-fittings";
 	const x = interior.halfAcrossKm;
 	const y = interior.halfUpKm;
-	const faceZ = padDeckFaceKm(interior);
+	const faceZ = interior.mouthAxialKm;
 	// A kerb along each edge, seated into the deck for the reason every part in
 	// this module is: a rail laid on a surface is not joined to it.
 	for (const [w, h, px, py] of ringAround(

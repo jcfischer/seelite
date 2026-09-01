@@ -20,7 +20,6 @@
 import * as THREE from "three";
 import { STATION_GEOMETRY, type StationType } from "../../src/station";
 import type { StationInterior } from "../../src/station-interior";
-import { padDeckFaceKm } from "../../src/station-interior-mesh";
 
 /**
  * The bay's own parts — what lies beyond the opening on purpose.
@@ -253,7 +252,10 @@ export function drawnInteriorSpanKm(
 ): [number, number] {
 	if (interior.presentation !== "pad")
 		return [interior.endAxialKm, interior.mouthAxialKm];
-	const face = padDeckFaceKm(interior);
+	// A pad's deck runs **inward** from the berth surface — the plane itself —
+	// by the span the interior declares outward of it, which is a berth's own
+	// clear height. Both figures are the sim's.
+	const face = interior.mouthAxialKm;
 	return [face - (interior.stagingAxialKm - interior.mouthAxialKm), face];
 }
 

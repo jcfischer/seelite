@@ -91,6 +91,41 @@ describe("the bay is the catalogue, drawn", () => {
 		}
 	});
 
+	test("a pad's deck is under its berths, not through the ships in them", () => {
+		// **The row the deck's stand-off got past** (#165, sage round 5). The
+		// deck was drawn one wall thickness *proud* of the berth surface, on the
+		// bay's logic: a bay seats each shell wall inside the declared extent so
+		// a berth's apron overlaps it and the connectivity check passes.
+		//
+		// A pad cannot borrow that. Its "wall" is the surface a ship stands on,
+		// and a berth's clear volume starts there — so 7.5 m of proud deck is
+		// 7.5 m inside every hull whose height fills the cell. An outpost berth
+		// admits a 30 m freighter in a 30 m cell, which parks with its belly
+		// exactly on the surface. The berths are seated *into* the deck instead
+		// (`PAD_SEAT_FACTOR`), which is the same overlap the other way up.
+		//
+		// Lift the deck's face off `mouthAxialKm` and this goes red on every
+		// pad form.
+		for (const type of STATION_TYPES) {
+			const interior = interiorOf(type);
+			if (interior.presentation !== "pad") continue;
+			const deck = boxesNamed(built(type), (n) => n === "interior-deck");
+			expect([type, deck.length]).toEqual([type, 4]);
+			for (const panel of deck)
+				for (const berth of interior.berths) {
+					// The berth surface, along the berth's own normal — which on a
+					// pad is the aperture axis, so the deck's `max.z` is what has
+					// to stay under it.
+					const surface = berth.centre.axial - berth.clearHeightKm / 2;
+					const label = `${type} ${berth.id}`;
+					expect([label, panel.box.max.z <= surface + 1e-9]).toEqual([
+						label,
+						true,
+					]);
+				}
+		}
+	});
+
 	test("a berth's drawn run lies along the nose the sim parks a ship on", () => {
 		// **The row the reversed cross product got past** (#165, sage round 2).
 		// `berthBasis` hands `buildBerth` a beam and it recovers the run as
