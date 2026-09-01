@@ -1272,13 +1272,38 @@ const plan = await page.evaluate(() => {
 		return null;
 	};
 
+	/**
+	 * Where the release half of check 3 moves to.
+	 *
+	 * **Not just any uncontested spot.** Written that way first, and round 2
+	 * caught it: `findUncontested` only asks for one system inside the radius,
+	 * so nothing stopped it returning a spot a few pixels from the held system —
+	 * and the label changing there would be an ordinary switch rather than a
+	 * release, which is a check passing for the wrong reason. The floor is 60 px,
+	 * well past any release radius worth having and **not** the release radius
+	 * itself: a probe that moved by the constant it was checking would pass on a
+	 * build with any value of it.
+	 */
+	const findRelease = (from) => {
+		for (const p of pts)
+			for (const spot of offCentre(p)) {
+				if (Math.hypot(spot.x - from.x, spot.y - from.y) < 60) continue;
+				const hits = within(spot.x, spot.y);
+				if (hits.length === 1 && hits[0].index === p.index)
+					return { ...spot, index: p.index, expectedContested: 0 };
+			}
+		return null;
+	};
+
+	const hysteresis = findHysteresis();
 	return {
 		r,
 		width,
 		height,
 		uncontested: findUncontested(),
 		contested: findContested(),
-		hysteresis: findHysteresis(),
+		hysteresis,
+		release: hysteresis === null ? null : findRelease(hysteresis.park),
 	};
 });
 
@@ -1290,11 +1315,12 @@ const plan = await page.evaluate(() => {
  * records the same discipline for its skipped-everywhere aspect check.
  */
 check(
-	"the shipped framing offers an uncontested spot, a contested one, and a pair close enough to trade the label",
+	"the shipped framing offers an uncontested spot, a contested one, a pair close enough to trade the label, and somewhere well beyond it to be released onto",
 	plan.uncontested !== null &&
 		plan.contested !== null &&
-		plan.hysteresis !== null,
-	`uncontested ${JSON.stringify(plan.uncontested)}, contested ${JSON.stringify(plan.contested)}, pair ${plan.hysteresis && `${plan.hysteresis.held}/${plan.hysteresis.rival} ${plan.hysteresis.separationPx.toFixed(2)} px apart`}`,
+		plan.hysteresis !== null &&
+		plan.release !== null,
+	`uncontested ${JSON.stringify(plan.uncontested)}, contested ${JSON.stringify(plan.contested)}, pair ${plan.hysteresis && `${plan.hysteresis.held}/${plan.hysteresis.rival} ${plan.hysteresis.separationPx.toFixed(2)} px apart`}, release ${JSON.stringify(plan.release)}`,
 );
 
 /** A system's name, through the handle the game already has. `projected()`
@@ -1327,7 +1353,7 @@ const hoverAt = async (spot) => {
 	});
 };
 
-if (plan.uncontested && plan.contested && plan.hysteresis) {
+if (plan.uncontested && plan.contested && plan.hysteresis && plan.release) {
 	// ---- 1. It names the right system ------------------------------------
 	const quietName = await nameOf(plan.uncontested.index);
 	const quiet = await hoverAt(plan.uncontested);
@@ -1358,7 +1384,7 @@ if (plan.uncontested && plan.contested && plan.hysteresis) {
 	const parked = await hoverAt(plan.hysteresis.park);
 	const stepped = await hoverAt(plan.hysteresis.step);
 	const drifted = await hoverAt(plan.hysteresis.drift);
-	const released = await hoverAt(plan.uncontested);
+	const released = await hoverAt(plan.release);
 	check(
 		"a 1 px step onto a nearer neighbour does not move the label, and neither does drifting past the pick radius",
 		parked.hovered?.index === plan.hysteresis.held &&
@@ -1369,11 +1395,19 @@ if (plan.uncontested && plan.contested && plan.hysteresis) {
 	);
 	// **Both directions, on the same pair.** A label that never changes at all
 	// passes the half above, which is why #108 writes check 3 as two claims.
+	const releaseDistancePx = Math.hypot(
+		plan.release.x - plan.hysteresis.park.x,
+		plan.release.y - plan.hysteresis.park.y,
+	);
 	check(
 		"a move well past the release radius does let the label go",
-		released.hovered?.index === plan.uncontested.index &&
-			released.hovered.index !== plan.hysteresis.held,
-		`after moving to a spot ${Math.round(Math.hypot(plan.uncontested.x - plan.hysteresis.park.x, plan.uncontested.y - plan.hysteresis.park.y))} px away the label is ${released.hovered?.index}, expected ${plan.uncontested.index}`,
+		released.hovered?.index === plan.release.index &&
+			released.hovered.index !== plan.hysteresis.held &&
+			// **The distance is asserted, not merely reported.** Without it this
+			// passes through an ordinary switch to a system a few pixels away,
+			// which proves nothing about releasing.
+			releaseDistancePx >= 60,
+		`after moving ${Math.round(releaseDistancePx)} px from the held system the label is ${released.hovered?.index}, expected ${plan.release.index}`,
 	);
 
 	// ---- 4. The click agrees with the label -------------------------------

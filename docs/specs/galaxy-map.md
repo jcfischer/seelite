@@ -523,7 +523,12 @@ card, so browsing a neighbourhood destroyed what you were looking at. The chart
 labels the system under the cursor instead.
 
 **The difficulty is §5.1, not the label.** 68.4%–77.7% of hovers in the shipped
-console cell have a second system inside the 14 px pick radius. Plain
+console cell have a second system inside the 14 px pick radius — §5.1's own
+eight-galaxy sweep of seed 42 at the default framing in the 1011 x 462 cell,
+taken by `probe-navigation-console.mjs` and banded there at 64–82%. The figure
+is not this section's and is not re-derived here; §5.1 owns the method, the
+population it is scoped to, and the wider spread
+`scripts/measure-galaxy-shape.ts shipped` reports over three world seeds. Plain
 nearest-wins therefore names an arbitrary neighbour most of the time with
 nothing telling the player, which is the failure §5.1 already ruled the chart
 out as a *finder* for; and silence when contested is never wrong but is absent
@@ -615,6 +620,13 @@ code — one placement rule serving two floating elements stacks them by
 construction, and two rules over one shared `toPixels` is the right seam. It is
 suppressed over the **selected** system, whose card already names it with more
 detail.
+
+**The label's box is measured on its text, not on every frame.** `offsetWidth`
+forces a synchronous layout, and the frame loop needs the box to clamp the
+label — so reading it there costs a forced layout at 60 Hz for as long as a
+label is up. The size is a pure function of the text, and the text changes a
+handful of times a second at most. Measuring in the hover handler instead would
+be worse, not better: that runs per `pointermove`, up to 120 Hz.
 
 **It is suppressed while dragging**, and does not return until the pointer moves
 again after release. A label chasing the cursor through an orbit is noise, and
@@ -1071,9 +1083,13 @@ The chart's *mount* rather than its projection, and the list beside it.
     of a pair 7.34 px apart, step **1 px** toward T so T is nearer by 1 px, and
     the label must still say S; then move 16 px from S with nothing else inside
     the pick radius, and it must still say S. The release: move to a spot 143 px
-    away and the label must become that spot's system. A label that never
-    changed would pass the first half alone, which is why the second is its own
-    check.
+    away and the label must become that spot's system — and **the distance is
+    asserted, with a 60 px floor**, because the release destination was at first
+    any uncontested spot the planner happened to find. A near one would have let
+    an ordinary switch stand in for a release. The floor is not the release
+    radius: a probe that moved by the constant it was checking would pass on a
+    build with any value of it. A label that never changed would pass the hold
+    half alone, which is why the release is its own check.
 
     Red-built as the defect #108 names — `releaseRadiusPx` set to the pick
     radius and `switchMarginPx` to 0, which is nearest-wins. The 1 px step then

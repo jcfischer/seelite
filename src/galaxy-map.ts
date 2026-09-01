@@ -1025,6 +1025,23 @@ export function mountGalaxyChart({
 	let hover: { system: SystemRecord; contested: number } | null = null;
 
 	/**
+	 * The label's drawn box, measured only when its **text** changes.
+	 *
+	 * `offsetWidth` forces a synchronous style-and-layout pass, and the frame
+	 * loop needs the box every frame to clamp the label — so reading it there
+	 * costs a forced layout at 60 Hz for the whole time a label is up. The size
+	 * is a pure function of the text (the element is `nowrap` with fixed
+	 * padding), and the text changes only when the hover moves to another system
+	 * or its badge count changes, which is a handful of times a second at most.
+	 *
+	 * Measured on the text rather than on every `renderHover`, because
+	 * `renderHover` runs once per `pointermove` — up to 120 Hz, which is worse
+	 * than the frame loop it would be replacing.
+	 */
+	let hoverLabelText = "";
+	let hoverLabelBox = { w: 0, h: 0 };
+
+	/**
 	 * Draw the label, or hide it.
 	 *
 	 * D3 and D4's three suppressions live here rather than at the three call
@@ -1043,12 +1060,20 @@ export function mountGalaxyChart({
 		// government and tech level stay on the record card — putting them here
 		// would make the click redundant and turn the label into a second panel.
 		hoverLabel.style.display = "block";
-		hoverLabel.textContent =
+		const text =
 			`${hover.system.name}  ${distanceLy(current.pos, hover.system.pos).toFixed(1)} LY  ` +
 			(litSet.has(hover.system.index)
 				? "\u25cf in range"
 				: "\u25cb out of range") +
 			(hover.contested > 0 ? `  (${hover.contested} more)` : "");
+		if (text !== hoverLabelText) {
+			hoverLabelText = text;
+			hoverLabel.textContent = text;
+			hoverLabelBox = {
+				w: hoverLabel.offsetWidth,
+				h: hoverLabel.offsetHeight,
+			};
+		}
 	}
 
 	/** Drop the label without waiting for another move. Used by the three
@@ -1320,8 +1345,9 @@ export function mountGalaxyChart({
 				// this element's own: the card's is written against the card's
 				// width and preference for the right of its point.
 				const q = toPixels(hover.system, rect);
-				const w = hoverLabel.offsetWidth;
-				const h = hoverLabel.offsetHeight;
+				// The cached box, so a visible label does not force a layout on
+				// every frame. See `hoverLabelBox`.
+				const { w, h } = hoverLabelBox;
 				hoverLabel.style.left = `${Math.min(
 					Math.max(0, q.x - 18 - w),
 					Math.max(0, rect.width - w),
