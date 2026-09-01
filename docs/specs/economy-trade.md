@@ -860,11 +860,17 @@ question, still fog on the map, and it reaches far past the economy.
 
 All headless `bun` — none of §1–§9 may require a browser, per #7's own framing.
 
-### 10.1 Suite — `market.test.ts` 38 tests, `market-state.test.ts` 24
+### 10.1 Suite — `market.test.ts` 38, `market-state.test.ts` 16, `deficits.test.ts` 15
 
 `market.test.ts` owns §2–§4 and §6–§7 — the arithmetic, swept over its whole
 domain — and is listed below. §5's two properties are not about a formula and
-live apart, in `market-state.test.ts`; §10.3 lists them.
+live apart; §10.3 lists them and says which file each is in.
+
+**The counts are measured, and one of them was already wrong.** This heading
+read "`market-state.test.ts` 24" while the file ran 28 —
+`bun test tests/market-state.test.ts` at the commit before
+[#67](https://github.com/jcfischer/seelite/issues/67). A count in prose is a
+claim like any other; these three were read off a run.
 
 1. **Table integrity** — 17 goods; `baseQuantity` signed for all five negative
    rows; exactly three illegal; the sub-tonne set is Gold/Platinum/Gem-Stones
@@ -1031,14 +1037,20 @@ the shape of a number that was an artefact of its instrument.
 moves.** All three are in the loop, and §12.5 is explicit that changing either
 of the first two re-opens the exploit with nothing else to catch it.
 
-**The determinism and save round-trip tests** — `tests/market-state.test.ts`,
-24 tests. §5.1: the byte is fixed by `(stationSeed, epoch)`, every good is
-identical across a whole epoch, the market re-rolls on the boundary for >95% of the
-corpus's 117 stations, phase staggers the stations of one system, and two stations in one
-system draw unrelated bytes. §5.5: lazy decay on read with nothing written,
-saturation at ±63, the drop-below-one-unit rule, a JSON round trip over a 61-row
-map, and a malformed save that throws rather than reading as an untouched
-healthy carrier.
+**The determinism tests** — `tests/market-state.test.ts`, 16 tests. §5.1: the
+byte is fixed by `(stationSeed, epoch)`, every good is identical across a whole
+epoch, the market re-rolls on the boundary for >95% of the corpus's 117
+stations, phase staggers the stations of one system, and two stations in one
+system draw unrelated bytes. §2's persistence-identity table is here too,
+because it is about the key a *generated* station carries.
+
+**The save round-trip tests** — `tests/deficits.test.ts`, 15 tests. §5.5: lazy
+decay on read with nothing written, saturation at ±63, the drop-below-one-unit
+rule, a JSON round trip over a 61-row map, and a malformed save that throws
+rather than reading as an untouched healthy carrier. They were in
+`market-state.test.ts` until #67 moved §5.5's map to `src/deficits.ts` and they
+followed it unchanged; the last three of the fifteen are that node's own
+structural checks and belong to it rather than to §5.5.
 
 **Three of those tests were written, found unfalsifiable, and replaced** — one
 caught here, two in review — which is worth recording because each replacement
@@ -1104,12 +1116,18 @@ position, name and station silently.
 - **The ship-roster node** — inherits 20 t and 100 Cr as v1 defaults (§6) and
   owes hull prices (§7).
 - **The save/load node** — owes the format the sparse deficit map lives in
-  (§5.5) and the permadeath stance (§9).
+  (§5.5) and the permadeath stance (§9). The *module* the map lives in is
+  settled and is no longer this one: `src/deficits.ts` since
+  [#67](https://github.com/jcfischer/seelite/issues/67), once
+  [#46](https://github.com/jcfischer/seelite/issues/46)'s persistence envelope
+  gave §5.5 a consumer whose whole job is the save. What that node still owes is
+  the encoding and where the bytes go, not where the rows are declared.
 - **The implement node** — **done, in
   [#25](https://github.com/jcfischer/seelite/issues/25)**, and the split it owed
   was performed rather than a file being moved. `src/market.ts` holds the
   shipped arithmetic — the table, `marketRowAt`, `stockResponse`,
-  `shelfQuantity`, `marketEpoch`, the deficit functions, `EQUIPMENT` — and
+  `shelfQuantity`, `marketEpoch`, §5.2's `decayDeficit` and `addDeficit`,
+  `EQUIPMENT` — and
   `tests/helpers/market-math.ts` keeps the measurement surface the game never
   calls: `NARCOTICS_BELL`, the wrapping byte close, `ALL_FLUCT`, `FLUCT_PAIRS`,
   `sweepDomain`, `bestMargin`, `forEachLegalPair`, `surveyResiduals`,

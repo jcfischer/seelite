@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { carrierKey } from "../src/carrier-key";
-import { marketStationOf, readDeficit } from "../src/market";
+import { readDeficit } from "../src/deficits";
+import { marketStationOf } from "../src/market";
 import { HULL_SPECS, PLAYER_BASELINE_HULL } from "../src/hull";
 import { newCommander, transactAtStation } from "../src/station-commerce";
 import { newWorld, parseWorld, serializeWorld } from "../src/world-state";

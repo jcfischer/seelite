@@ -8,15 +8,16 @@
  *
  * **What this file is not.** It does not test the save *encoding* — slots,
  * bytes, migration and autosave are §10's deferred decisions, and the model
- * boundary is the furthest this node reaches. `market-state.test.ts` owns the
- * deficit domain's own arithmetic; here it appears only as one of the seven
+ * boundary is the furthest this node reaches. `deficits.test.ts` owns the
+ * deficit domain's own arithmetic — `market-state.test.ts` did until #67 split
+ * the map out of the pricing module; here it appears only as one of the seven
  * typed domains the envelope must carry through a round trip.
  */
 
 import { describe, expect, test } from "bun:test";
 import { generateGalaxy } from "../src/galaxy";
 import { carrierKey, compareCarrierKeys } from "../src/carrier-key";
-import { type DeficitMap, recordTrade } from "../src/market";
+import { type DeficitMap, recordTrade } from "../src/deficits";
 import { LOCAL_CARRIER_ID } from "../src/station";
 import { generateContents } from "../src/system";
 import {

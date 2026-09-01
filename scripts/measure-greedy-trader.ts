@@ -50,6 +50,7 @@
 
 import { type CarrierKey, carrierKey } from "../src/carrier-key";
 import { DEFAULT_CRUISE, type Mass, legSeconds } from "../src/cruise";
+import { type DeficitMap, readDeficit, recordTrade } from "../src/deficits";
 import {
 	GALAXY_COUNT,
 	type SystemRecord,
@@ -68,13 +69,10 @@ import {
 	MARKET_PERIOD_MIN,
 	type MarketStation,
 	fullKitCr,
-	type DeficitMap,
 	listsCommodity,
 	marketRow,
 	marketStationOf,
 	marketEpoch,
-	readDeficit,
-	recordTrade,
 	shelfQuantity,
 	stockResponse,
 } from "../src/market";

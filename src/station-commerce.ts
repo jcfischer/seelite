@@ -6,17 +6,15 @@
  * credits, cargo, or the station's deficit half-updated.
  */
 import type { CarrierKey } from "./carrier-key";
+import { type DeficitMap, readDeficit, recordTrade } from "./deficits";
 import { HULL_SPECS, type HullId } from "./hull";
 import {
 	type Commodity,
-	type DeficitMap,
 	type MarketStation,
 	type UniversalItem,
 	commodity,
 	listsCommodity,
 	marketRow,
-	readDeficit,
-	recordTrade,
 	shelfQuantity,
 	stockResponse,
 } from "./market";
