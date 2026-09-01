@@ -41,6 +41,7 @@ const HEADLESS = [
 	"docking",
 	"galaxy",
 	"hud",
+	"hull",
 	"names",
 	"noise",
 	"planet-appearance",
@@ -87,6 +88,7 @@ test("no module has been quietly dropped from the list", () => {
 		"docking",
 		"galaxy",
 		"hud",
+		"hull",
 		"names",
 		"noise",
 		"planet-appearance",
@@ -192,6 +194,16 @@ test("src/vec3.ts is a leaf, which is why the import cycle is gone", () => {
 	// body. Moving the shared half to a leaf is what removed it, and having no
 	// imports is the property that keeps it removed: a leaf cannot close a cycle.
 	expect(importsIn("vec3.ts")).toEqual([]);
+});
+
+test("src/hull.ts is a leaf, and that is what lets both sides read it", () => {
+	// The roster is read by `sim.ts`, which may not import Three, and by
+	// `ship-mesh.ts`, which is nothing but Three. A table with an import could
+	// only ever satisfy one of them, and #181 moved it out of `ship-mesh.ts`
+	// precisely because that is where it had been — so the flight model had no
+	// way to know how heavy a ship was without dragging a renderer into the
+	// headless tier.
+	expect(importsIn("hull.ts")).toEqual([]);
 });
 
 test("src/audio.ts stays free of the rest of the game", () => {

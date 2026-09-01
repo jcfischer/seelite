@@ -20,7 +20,8 @@
  */
 
 import * as THREE from "three";
-import { HULL_VARIANTS, type HullId, buildShipMesh } from "../../src/ship-mesh";
+import type { HullId } from "../../src/hull";
+import { HULL_VARIANTS, buildShipMesh } from "../../src/ship-mesh";
 
 export function rolledEnvelope(
 	id: HullId,

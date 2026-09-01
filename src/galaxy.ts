@@ -122,8 +122,23 @@ export const GALAXY_RADIUS_LY = 24.53;
  *  ratio exactly 3 (spec §3). */
 export const CORE_RADIUS_LY = GALAXY_RADIUS_LY / Math.SQRT2;
 
-/** Jump range and fuel price (spec §2, §8). The range is also the edge
- *  predicate for the connectivity graph. */
+/**
+ * Jump range (spec §2, §8), also the edge predicate for the connectivity graph.
+ *
+ * **Galaxy-owned, and deliberately not derived from the roster.** #181 first
+ * made it `HULL_SPECS[PLAYER_BASELINE_HULL].tankLy` — the range *is* the tank,
+ * so one quantity was two constants — and sage's second round named what that
+ * costs: this is the **edge predicate for the connectivity graph**, and the
+ * roster's figures are provisional against #183's rating and #8's combat
+ * balance. Deriving it means a combat retune of one hull silently regenerates
+ * every system's edge set, which is world generation rather than ship handling,
+ * and #107 already records that changing what a system *is* must precede
+ * save/load.
+ *
+ * So the two stay separate quantities that happen to be equal, and
+ * `tests/hull.test.ts` asserts they agree — the #46 shape, which is right here
+ * precisely because they are not one thing.
+ */
 export const JUMP_RANGE_LY = 7.0;
 
 /**

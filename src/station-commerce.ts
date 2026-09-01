@@ -6,6 +6,7 @@
  * credits, cargo, or the station's deficit half-updated.
  */
 import type { CarrierKey } from "./carrier-key";
+import { HULL_SPECS, type HullId } from "./hull";
 import {
 	type Commodity,
 	type DeficitMap,
@@ -26,16 +27,27 @@ export interface CommanderState {
 	/** Quantities remain in the commodity's native unit. */
 	cargo: Readonly<Record<string, number>>;
 	ownedEquipment: readonly string[];
+	/**
+	 * The hull being flown, which is what decides the hold (#181).
+	 *
+	 * On the commander rather than looked up, for the reason every other input
+	 * to this module is: a pure calculator that reached for a renderer's notion
+	 * of "the player's ship" would be a second place the roster is read.
+	 */
+	hull: HullId;
 }
 
 export const STARTING_CREDITS = 100;
-export const STARTING_HOLD_T = 20;
 export const LARGE_CARGO_BAY_BONUS_T = 15;
 
-export const newCommander = (): CommanderState => ({
+/** **The hull is required, not defaulted.** Same rule as `FlightPerformance`
+ *  and for the same reason: a caller that forgot to name one would silently get
+ *  the courier's 20 t hold, and the two are indistinguishable in a diff. */
+export const newCommander = (hull: HullId): CommanderState => ({
 	credits: STARTING_CREDITS,
 	cargo: {},
 	ownedEquipment: [],
+	hull,
 });
 
 export type StationAction =
@@ -74,8 +86,12 @@ const rejected = (
 const quantityOf = (action: StationAction): number =>
 	"quantity" in action ? (action.quantity ?? 1) : 1;
 
+/** The hull's hold plus whatever the commander has bolted into it. **`STARTING_HOLD_T`
+ *  is gone** (#181): it was a second copy of the courier's 20 t, and a constant
+ *  named for the *start* of a game cannot answer for a hold that changes when a
+ *  shipyard sells you a freighter. */
 const holdCapacityT = (commander: CommanderState): number =>
-	STARTING_HOLD_T +
+	HULL_SPECS[commander.hull].holdT +
 	(commander.ownedEquipment.includes("Large Cargo Bay")
 		? LARGE_CARGO_BAY_BONUS_T
 		: 0);

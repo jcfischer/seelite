@@ -252,10 +252,20 @@ evaluated at a target range of 300 m, extended past the vicinity into the last
 three hundred metres. A player who flies the final approach under the same law
 cruise used to deliver them passes the gate without being told the number.
 
-Braking to it from the 2 km/s assist cap costs `(2² − 0.1²) / (2 · THRUST_KMS2)`
-with `THRUST_KMS2 = 2.0` km/s² (`src/sim.ts`, tuned in #5's prototype) =
-**1.0 km** — most of a trade station's 1.2 km width of runway. That is visible
-at approach range, and it is the reason the number is not tighter.
+Braking to it from the 2 km/s assist cap costs `(2² − 0.1²) / (2 · a)` with `a`
+the **hull's** acceleration, `thrustMN / massT` (`src/hull.ts`, derived in
+`sim.ts`). For the baseline courier `a` is 2.0 km/s² — #5's tuned figure — and
+the run-out is **1.0 km**, most of a trade station's 1.2 km width of runway.
+That is visible at approach range, and it is the reason the number is not
+tighter.
+
+**It is a per-hull figure since #181**, and the sluggish end of the roster is
+where it bites: the miner accelerates at 1.0 km/s² and needs **2.0 km** to shed
+the same speed — 1.7 times the station's own width. Nothing is
+broken by that (the gate is a speed at the plane, not a stopping distance, and
+§7's autopilot never runs the approach at the cap), but a pilot who flies a
+freighter the way they flew a courier arrives fast. The gate stays one number
+for the whole roster; what varies is how early you start slowing down.
 
 The clamp itself is cruise-only, so this coherence is a mnemonic, not a
 mechanism. **Confirm by flying it** (§9.2) before treating 0.10 as settled;
@@ -326,9 +336,29 @@ through the final approach rather than set once:
 | 3.0 rpm | 18.0 | 5.6 s |
 
 The window figures are the penalty for flying in flat. A player who tracks has
-no window at all — ship roll peaks at 1.4 rad/s (80°/s, `ANGULAR_MAX.roll`),
-four times the fastest spinner, and #21 gave rotation momentum, so holding a
-matched rate is a control problem rather than a reflex one.
+no window at all — the baseline courier's roll peaks at 1.4 rad/s (80°/s,
+`REFERENCE_ANGULAR_MAX.roll`), four times the fastest spinner, and #21 gave
+rotation momentum, so holding a matched rate is a control problem rather than a
+reflex one.
+
+**Roll rate is a hull property since #181**, so "four times the fastest spinner"
+is the baseline hull's margin and not the roster's. The miner peaks at 29.5°/s,
+1.6× a 3 rpm spinner; the interceptor at 103°/s, 5.8×. `tests/hull-docking.test.ts`
+flies every hull at every role across the whole 0.6–3.0 rpm range, and then — at
+**both** turning roles, because a trade station and a shipyard cut their
+apertures at different planes into different interiors — finds the spin at which each hull
+**first** fails. The worst is the freighter, which first fails at 6.5 rpm at a
+trade station and so holds 6.0 — two times the fastest station the generator
+builds.
+
+*First* failure, because the curve is not monotone: flown out to 24 rpm the
+courier fails at 13.5 and then docks again at thirteen scattered rungs above it.
+Those are coincidences rather than capability — check 4 admits ±50° of roll
+error, so once a hull cannot track the phase at all, whether the crossing lands
+inside a 100°-wide window depends on where the aperture happened to be. Below the
+first failure every rung docks, which is the property the margin rests on. So §3's tolerances stay one
+table rather than becoming a per-hull one — which was the open question #26's D5
+left, and it is settled by measurement rather than by assumption.
 
 **The spread is the point, and it is not softened.** A 5× range means docking
 difficulty is a felt property of the station you chose, and a 3 rpm spinner is a

@@ -48,6 +48,7 @@
  * by flying, so it is a parameter rather than a decision made here.
  */
 
+import { HULL_SPECS, PLAYER_BASELINE_HULL } from "./hull";
 import { ASSIST_CAP_KMS } from "./sim";
 import { AU_KM } from "./units";
 import { type Vec3, add, dot, length, lengthSq, scale, sub } from "./vec3";
@@ -147,8 +148,10 @@ export const DEFAULT_CRUISE: CruiseParams = {
 	approachLeadS: 3,
 };
 
-/** §7: the drive charge, in AU of cruise range. */
-export const CHARGE_CAPACITY_AU = 12;
+/** §7: the drive charge, in AU of cruise range — **the baseline hull's, read
+ *  off the roster** (#181). Like the jump range it is one quantity, and a
+ *  second declaration here is how the two come to disagree. */
+export const CHARGE_CAPACITY_AU = HULL_SPECS[PLAYER_BASELINE_HULL].chargeAu;
 /** §7: passive regeneration, ~1 AU/min, in AU per second. The anti-stranding
  *  rule, and not optional. */
 export const CHARGE_REGEN_AU_PER_S = 1 / 60;
