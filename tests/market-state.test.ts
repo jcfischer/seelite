@@ -220,9 +220,9 @@ describe("§5.1 the market is independent of draw order elsewhere", () => {
 		// Two files are excluded and both are the subject rather than a
 		// generator: `market.ts` is the one module that *should* draw from the
 		// tag, and `domains.ts` is where the tag is declared.
-		// Through `srcFiles`, which is recursive; this scan was not, and neither
-		// was `deficits.test.ts`'s, so both would have gone silently incomplete
-		// the day `src/` grew a subdirectory.
+		// Through `srcFiles`, which is recursive. The flat scan it replaced would
+		// have gone silently incomplete the day `src/` grew a subdirectory —
+		// which is the direction a new module always arrives from.
 		const scanned = srcFiles().filter(
 			(f) => f !== "src/market.ts" && f !== "src/domains.ts",
 		);

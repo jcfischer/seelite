@@ -77,13 +77,16 @@ export const codeOf = (rel: string) =>
 /**
  * Every TypeScript module under `src/`, as repo-relative paths.
  *
- * **Recursive**, which is the half a hand-rolled scan keeps getting wrong: two
- * tests had grown their own `readdirSync(repoPath("src"))`, neither of them
- * recursive, each claiming to cover `src/`. `src/` is flat today, so both were
- * complete and would have stayed silently complete on the day it stopped being
- * flat — a check that fails open in exactly the direction a new file arrives
- * from. It is the same argument the stripper above records: one answer to "what
- * is code here" rather than one per scanner.
+ * **Recursive**, which is the half a hand-rolled scan keeps getting wrong. The
+ * flat `readdirSync(repoPath("src"))` this replaced was complete only because
+ * `src/` is flat, and would have stayed silently complete on the day it stopped
+ * being — a check that fails open in exactly the direction a new module arrives
+ * from.
+ *
+ * It answers "which modules are under `src/`" for the scanners that ask, in the
+ * spirit of the stripper above. It is not the only directory walk in the suite:
+ * `nav-list.test.ts` and `crater-profile.test.ts` each keep their own, because
+ * they want `Dirent`s and raw bytes rather than a path list.
  */
 export const srcFiles = (): string[] =>
 	(readdirSync(repoPath("src"), { recursive: true }) as string[])

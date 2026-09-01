@@ -228,9 +228,21 @@ describe("#67 the split of the deficit map out of the pricing module", () => {
 		// A split's standing hazard is a second copy: `deficits.ts` needs the
 		// half-life and the cap, and declaring them locally rather than importing
 		// them would let the map decay on one figure while the price responds to
-		// another. This is also where #67's open question is pinned — §5.2's
-		// arithmetic stayed in `market.ts`, the drop rule went with the map — so
-		// moving either without revisiting the reasoning is what goes red.
+		// another.
+		//
+		// **It counts declarations, not files, and that is a fix.** A first
+		// version asserted the file list — `toEqual(["src/market.ts"])` — which
+		// measured *where* rather than *how many*. A function-scoped
+		// `const DEFICIT_MAX = 63` added to `market.ts` is legal TypeScript and
+		// was measured passing that form 15/0; it fails this one 14/1. Counting
+		// matches is the claim the title makes.
+		//
+		// **Only the drop rule's location is pinned**, and the asymmetry is
+		// deliberate. #67 settled that §5.5's drop rule belongs with the map;
+		// where §5.2's arithmetic lives is today's answer and not a boundary, and
+		// the test above refuses to pin it for exactly that reason — moving the
+		// half-life and the cap to a leaf both modules import is a legitimate
+		// later refactor, and two tests must not encode opposite rules for it.
 		//
 		// **It proves the name is declared once, not the figure.** A copy spelled
 		// `const CAP = 63`, or a bare `63` inline, is invisible to it: the regex
@@ -238,16 +250,18 @@ describe("#67 the split of the deficit map out of the pricing module", () => {
 		// catching — a split that re-declares the symbol it was meant to import —
 		// and not a claim to have found every literal.
 		//
-		// Read once rather than per name: `codeOf` is uncached, and three calls
-		// over a filter re-stripped every file in `src/` three times. `srcFiles`
-		// is recursive, so "under `src/`" stays true of a subdirectory.
+		// Read once rather than per name: `codeOf` is uncached, and a filter per
+		// name re-stripped every file in `src/` three times over. `srcFiles` is
+		// recursive, so "under `src/`" stays true of a subdirectory.
 		const SOURCES = srcFiles().map((f) => [f, codeOf(f)] as const);
-		const declaredIn = (name: string) =>
-			SOURCES.filter(([, code]) =>
-				new RegExp(`(?:const|let|var)\\s+${name}\\b`).test(code),
-			).map(([f]) => f);
-		expect(declaredIn("DEFICIT_HALF_LIFE_MIN")).toEqual(["src/market.ts"]);
-		expect(declaredIn("DEFICIT_MAX")).toEqual(["src/market.ts"]);
-		expect(declaredIn("DEFICIT_DROP_UNITS")).toEqual(["src/deficits.ts"]);
+		const declarations = (name: string) =>
+			SOURCES.flatMap(([f, code]) =>
+				(
+					code.match(new RegExp(`(?:const|let|var)\\s+${name}\\b`, "g")) ?? []
+				).map(() => f),
+			);
+		expect(declarations("DEFICIT_HALF_LIFE_MIN")).toHaveLength(1);
+		expect(declarations("DEFICIT_MAX")).toHaveLength(1);
+		expect(declarations("DEFICIT_DROP_UNITS")).toEqual(["src/deficits.ts"]);
 	});
 });

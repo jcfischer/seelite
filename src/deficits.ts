@@ -1,7 +1,7 @@
 /**
  * §5.5's stock deficit: the mark the player leaves on a market, as saved.
  *
- * `economy-trade.md` §5.5 and `persistent-world-state.md` §5. Base prices stay
+ * `economy-trade.md` §5.5 and `persistent-world-state.md` §7. Base prices stay
  * `f(stationSeed, epoch)` and are regenerated; this map is the rest of what a
  * market knows, and it is the first world state seelite cannot rebuild from a
  * seed.
@@ -20,12 +20,11 @@
  * names behind.
  *
  * **The dependency runs from here to `market.ts` and not the other way.** What
- * moved is the map — the row, the key space, the drop rule and the parser;
- * §5.2's decay, its accumulation and its ±63 cap stayed behind because the
- * price response reads them too. `market.ts`'s §6–§7 divider is where that
- * argument lives, beside the call sites it names; repeating the list here
- * would be a second copy to keep in step. `market.ts` imports nothing from
- * this file, and `tests/deficits.test.ts` is what keeps that true.
+ * moved is the map — the row, the key space, the drop rule and the parser.
+ * `market.ts`'s §6–§7 divider is the one copy of why §5.2's arithmetic did not
+ * come with it; restating any part of that argument here would be the second
+ * copy the divider exists to avoid. `market.ts` imports nothing from this
+ * file, and `tests/deficits.test.ts` is what keeps that true.
  *
  * `CarrierKey` is not re-exported here for the reason `carrier-key.ts` gives:
  * two import paths to one persisted identity is the coupling that leaf was
@@ -59,7 +58,7 @@ export interface DeficitRow {
  * §5.5's sparse map, one galaxy's worth.
  *
  * Keyed by `carrierKey(systemIndex, localCarrierId)` — the envelope-relative
- * pair `persistent-world-state.md` §5 requires. **A bare `Station.id` is not a
+ * pair `persistent-world-state.md` §7 requires. **A bare `Station.id` is not a
  * save key**: it is system-local, so `station-trade` names one station in every
  * system in the galaxy.
  */
@@ -147,7 +146,7 @@ export function pruneDeficits(
 /**
  * Reads a serialized map back, rejecting a malformed one loudly.
  *
- * `persistent-world-state.md` §5: sparse absence is meaningful, so a truncated
+ * `persistent-world-state.md` §7: sparse absence is meaningful, so a truncated
  * or half-written snapshot must not be reinterpreted as an untouched healthy
  * carrier. Anything that is not a well-formed row throws rather than being
  * silently skipped.
