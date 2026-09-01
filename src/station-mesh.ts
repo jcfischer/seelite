@@ -1565,6 +1565,32 @@ function buildTradeDrum(color: number, berthSeed: number): BuiltPart {
 	return { group, fixtures };
 }
 
+/**
+ * How far aft of the pressurised hub a shipyard's static structure sits (#165).
+ *
+ * **A topology fix, not a placement one.** The slot is on the spin axis
+ * (`docking.md` §4.2) and #28 keeps the outboard structure still, so a
+ * shipyard is a *rotating* drum with a *static* spine — and both forms drew
+ * the spine passing straight through the drum's interior. §13's bay merely
+ * made it visible: the Gantry's keel spanned `z ±0.300` and the Hangar's slab
+ * `z ±0.300` against a hub whose bay reaches back to `z = −0.045`.
+ *
+ * A bearing has to be on the spin axis, so static structure can meet the drum
+ * only at an axial face; the forward face is the aperture, so aft is the only
+ * one left. 360 m puts the Gantry's keel at `z −0.660..−0.060` and the
+ * Hangar's slab at `−0.660..0.000`, both clear of the bay's back wall with
+ * margin, and both still overlapping the hub's aft end — which is the mount.
+ *
+ * **The booms do not move.** They sit at `y = ±0.48 km`, far outside the bay's
+ * swept cylinder (181 m about the aperture axis), so they never intruded — and
+ * #28 added them precisely to reach into the approach view.
+ *
+ * It costs nothing in the view that ranked these forms: #28 rests shipyard
+ * identity on the outline down the aperture axis, and a 2.7 km keel projects
+ * the same silhouette from 360 m further aft.
+ */
+export const SHIPYARD_KEEL_AFT_KM = 0.36;
+
 /** Shipyard A — Gantry. A bridge keel with two open bays of lofted ribs
  *  along it; the bays are the silhouette, and they are obviously *for* holding
  *  something the size of a ship. */
@@ -1630,6 +1656,7 @@ function buildShipyardGantry(color: number, berthSeed: number): BuiltPart {
 		true,
 	);
 	keel.rotation.y = Math.PI / 2;
+	keel.position.z = -SHIPYARD_KEEL_AFT_KM;
 	frame.add(keel);
 	for (let i = 0; i < 7; i++) {
 		const x = -span * 0.52 + (i / 6) * span * 1.04;
@@ -1637,7 +1664,7 @@ function buildShipyardGantry(color: number, berthSeed: number): BuiltPart {
 			new THREE.TorusGeometry(r * 0.62, r * 0.05, 5, 12, Math.PI * 1.25),
 			rib,
 		);
-		arch.position.set(x, 0, 0);
+		arch.position.set(x, 0, -SHIPYARD_KEEL_AFT_KM);
 		arch.rotation.y = Math.PI / 2;
 		arch.rotation.z = -Math.PI * 0.62;
 		frame.add(arch);
@@ -1653,7 +1680,7 @@ function buildShipyardGantry(color: number, berthSeed: number): BuiltPart {
 			6,
 		);
 		rail.rotation.y = Math.PI / 2;
-		rail.position.y = y;
+		rail.position.set(0, y, -SHIPYARD_KEEL_AFT_KM);
 		frame.add(rail);
 	}
 	// Two booms carried forward past the hub, flanking the approach.
@@ -1685,8 +1712,12 @@ function buildShipyardGantry(color: number, berthSeed: number): BuiltPart {
 			fixtures,
 			r,
 			(i, position) =>
-				position.set(-span * 0.34 + i * span * 0.23, -r * 0.3, 0),
-			new THREE.Vector3(span * 0.14, -r * 0.24, 0),
+				position.set(
+					-span * 0.34 + i * span * 0.23,
+					-r * 0.3,
+					-SHIPYARD_KEEL_AFT_KM,
+				),
+			new THREE.Vector3(span * 0.14, -r * 0.24, -SHIPYARD_KEEL_AFT_KM),
 		),
 	);
 	group.add(
@@ -1700,13 +1731,13 @@ function buildShipyardGantry(color: number, berthSeed: number): BuiltPart {
 			position.set(
 				span * 0.18 + along * r * 0.64,
 				r * 0.44,
-				(row === 0 ? -1 : 1) * r * 0.16,
+				(row === 0 ? -1 : 1) * r * 0.16 - SHIPYARD_KEEL_AFT_KM,
 			);
 		}),
 	);
 	group.add(
 		strobePair("shipyard", fixtures, r * 0.07, (side, position) => {
-			position.set(side * span * 0.55, 0, 0);
+			position.set(side * span * 0.55, 0, -SHIPYARD_KEEL_AFT_KM);
 		}),
 	);
 	// Along the keel's underside, opposite the ports on its top. A yard's keel
@@ -1727,7 +1758,7 @@ function buildShipyardGantry(color: number, berthSeed: number): BuiltPart {
 						position.set(
 							-span * 0.42 + along * span * 0.84,
 							-r * 0.42,
-							(row === 0 ? -1 : 1) * r * 0.14,
+							(row === 0 ? -1 : 1) * r * 0.14 - SHIPYARD_KEEL_AFT_KM,
 						);
 					},
 				},
@@ -1773,6 +1804,12 @@ function buildShipyardHangar(color: number, berthSeed: number): BuiltPart {
 		true,
 	);
 	slab.rotation.y = Math.PI / 2;
+	// **The hub seats on the slab's forward end rather than inside it** (#165).
+	// Shipyard B has the Gantry's fault wearing a different shape: the slab *is*
+	// the station body and the rotating hub was mounted in its middle, so the
+	// bay reached 60 m past the mouth and stopped against the slab's own top
+	// face. `SHIPYARD_KEEL_AFT_KM` is the same figure and the same argument.
+	slab.position.z = -SHIPYARD_KEEL_AFT_KM;
 	frame.add(slab);
 
 	// The bay mouth: a recess cut into the flank, floodlit from inside. Its own
@@ -1794,7 +1831,7 @@ function buildShipyardHangar(color: number, berthSeed: number): BuiltPart {
 		new THREE.BoxGeometry(span * 0.5, r * 0.44, r * 0.24),
 		new THREE.MeshBasicMaterial({ color: 0x05070a }),
 	);
-	mouth.position.set(0, 0, r * 0.42);
+	mouth.position.set(0, 0, r * 0.42 - SHIPYARD_KEEL_AFT_KM);
 	mouth.name = "bay-mouth";
 	frame.add(mouth);
 	for (const side of [-1, 1]) {
@@ -1809,7 +1846,7 @@ function buildShipyardHangar(color: number, berthSeed: number): BuiltPart {
 			true,
 		);
 		lip.rotation.y = Math.PI / 2;
-		lip.position.set(0, side * r * 0.26, r * 0.5);
+		lip.position.set(0, side * r * 0.26, r * 0.5 - SHIPYARD_KEEL_AFT_KM);
 		frame.add(lip);
 	}
 	// Rib frames at a fixed pitch down the flank — the second ruler, and what
@@ -1819,7 +1856,11 @@ function buildShipyardHangar(color: number, berthSeed: number): BuiltPart {
 			new THREE.BoxGeometry(r * 0.03, r * 0.76, r * 0.54),
 			plainMaterial(0x6f7d88, 0.78, 0.42),
 		);
-		rib.position.set(-span * 0.42 + (i / 8) * span * 0.84, 0, 0);
+		rib.position.set(
+			-span * 0.42 + (i / 8) * span * 0.84,
+			0,
+			-SHIPYARD_KEEL_AFT_KM,
+		);
 		frame.add(rib);
 	}
 
@@ -1850,8 +1891,12 @@ function buildShipyardHangar(color: number, berthSeed: number): BuiltPart {
 			fixtures,
 			r,
 			(i, position) =>
-				position.set(-span * 0.2 + i * span * 0.13, r * 0.2, r * 0.4),
-			new THREE.Vector3(span * 0.1, -r * 0.18, r * 0.4),
+				position.set(
+					-span * 0.2 + i * span * 0.13,
+					r * 0.2,
+					r * 0.4 - SHIPYARD_KEEL_AFT_KM,
+				),
+			new THREE.Vector3(span * 0.1, -r * 0.18, r * 0.4 - SHIPYARD_KEEL_AFT_KM),
 		),
 	);
 	group.add(
@@ -1870,7 +1915,7 @@ function buildShipyardHangar(color: number, berthSeed: number): BuiltPart {
 			position.set(
 				-span * 0.34 + along * span * 0.68,
 				(row === 0 ? -1 : 1) * r * 0.24,
-				-r * 0.46,
+				-r * 0.46 - SHIPYARD_KEEL_AFT_KM,
 			);
 		}),
 	);
@@ -1878,7 +1923,7 @@ function buildShipyardHangar(color: number, berthSeed: number): BuiltPart {
 		strobePair("shipyard", fixtures, r * 0.07, (side, position) => {
 			// Inside the slab's own half-length (`span * 0.54`), not on it: at
 			// 0.55 one of the pair sat clear of the hull it is mounted on.
-			position.set(side * span * 0.5, 0, r * 0.36);
+			position.set(side * span * 0.5, 0, r * 0.36 - SHIPYARD_KEEL_AFT_KM);
 		}),
 	);
 	// On the slab's back face, beside the port run and set into the same
@@ -1901,7 +1946,7 @@ function buildShipyardHangar(color: number, berthSeed: number): BuiltPart {
 							// reason twenty lines up.
 							-span * 0.34 + along * span * 0.68,
 							(row === 0 ? -1 : 1) * r * 0.46,
-							-r * 0.46,
+							-r * 0.46 - SHIPYARD_KEEL_AFT_KM,
 						);
 					},
 				},
@@ -2300,10 +2345,11 @@ function buildRefineryWarren(color: number, berthSeed: number): BuiltPart {
 			i === 1 ? "core" : `terrace-${i}`,
 			8,
 			true,
-			// **The outermost terrace only.** The plant steps down towards +Z, so
-			// the last one is the surface the aperture bars stand on; cutting all
-			// three would open three holes in a staircase.
-			i === 2 ? apertureCut("refinery", "both") : undefined,
+			// **Uncut, because a refinery is a landing pad** (#165). #155 cut the
+			// outermost terrace to open the bay behind it; #165 took the bay
+			// away, so the hole now opens onto the plant's own inside. A pad is
+			// landed *on*, and the surface a ship lands on is solid.
+			undefined,
 		);
 		group.add(terrace);
 	}
@@ -2473,7 +2519,8 @@ function buildRefineryCollar(color: number, berthSeed: number): BuiltPart {
 			"boss",
 			8,
 			true,
-			apertureCut("refinery", "both"),
+			// Uncut: the pad is landed on rather than flown through (#165).
+			undefined,
 		),
 	);
 	group.add(buildAperture("refinery", r * 1.0, berthSeed));
@@ -2564,7 +2611,8 @@ function buildRefinerySpar(color: number, berthSeed: number): BuiltPart {
 			"core",
 			8,
 			true,
-			apertureCut("refinery"),
+			// Uncut: the pad is landed on rather than flown through (#165).
+			undefined,
 		),
 	);
 	group.add(buildAperture("refinery", r * 1.22, berthSeed));
@@ -2684,11 +2732,11 @@ function buildPadDeck(
 		"pad-deck",
 		4,
 		true,
-		// **Both faces.** A pad deck is a 24 m plate the ship passes through, so
-		// a hole in its outer face alone leaves its inner face standing across
-		// the opening — which the instrument reads exactly as it read the uncut
-		// deck.
-		apertureCut("outpost", "both"),
+		// **Uncut** (#165). #155 opened this plate on both faces so a ship could
+		// fly through it into the bay behind; the principal's ruling took the
+		// bay away — *"outposts don't have bays, just landing pads"* — and a
+		// hole in a landing pad is a hole into the tank cluster underneath it.
+		undefined,
 	);
 	group.add(deck);
 	group.add(buildAperture("outpost", z, berthSeed));
@@ -2746,12 +2794,19 @@ function buildOutpostDerrick(color: number, berthSeed: number): BuiltPart {
 	}
 	// The tower: four legs and three collars, which is a lattice at this size —
 	// a truss of individual members would be pixels nobody resolves.
+	//
+	// **The legs reach the deck they carry** (#165). They stopped at `r * 0.9`
+	// and the deck's underside is at `r * 0.94`, so the pad stood 6 m clear of
+	// its own tower — and `tests/station-mesh.test.ts`'s connectivity check was
+	// green throughout, because §13's bay ran 234 m down through the middle of
+	// the form and bridged the two. Take the bay away and the Derrick is two
+	// islands, which is what a bay hiding a real defect looks like.
 	for (let i = 0; i < 4; i++) {
 		const theta = (i / 4) * Math.PI * 2 + Math.PI / 4;
 		const leg = shell(
 			[
 				{ z: -r * 1.2, w: r * 0.08, h: r * 0.08, x: r * 0.46, e: 4 },
-				{ z: r * 0.9, w: r * 0.06, h: r * 0.06, x: r * 0.28, e: 4 },
+				{ z: r * 1.0, w: r * 0.06, h: r * 0.06, x: r * 0.28, e: 4 },
 			],
 			plainMaterial(0x6f7d88, 0.8, 0.4),
 			`leg-${i}`,
@@ -3050,7 +3105,16 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			id: "a",
 			name: "Gantry",
 			thesis: "bridge keel under open ribbed bays sized for a ship",
-			reachKm: 1.5,
+			// **1.53 rather than #28's 1.5, and the 30 m is the keel's move
+			// aft** (#165). The keel's far end is `hypot(1.426, 0.120, 0.156)`
+			// from the centre and reached 1.479 km; carried aft by
+			// `SHIPYARD_KEEL_AFT_KM` it reaches 1.516. There is no shift that
+			// clears the bay inside 1.5 — the keel's forward face is already
+			// 270 m proud of the axis where the bay's back wall stands — so the
+			// declaration follows the decided shape rather than the shape being
+			// trimmed to an old declaration. `docking.md` §5's "roughly 1.5 km"
+			// is unchanged by 2%.
+			reachKm: 1.53,
 			build: buildShipyardGantry,
 		},
 		{

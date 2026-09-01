@@ -213,6 +213,12 @@ export function buildStationInterior(
 	type: StationType,
 	interior: StationInterior,
 ): THREE.Group {
+	// **Two presentations, and the sim already decided which** (#165). A pad
+	// role has no enclosure to draw: no shell, no mouth bulkhead, no end wall.
+	// Dispatched here rather than branched inside each part, because half the
+	// parts below have no pad counterpart at all and a body full of
+	// `if (bay)` would read as one room with pieces missing.
+	if (interior.presentation === "pad") return buildPadDeck(type, interior);
 	const group = new THREE.Group();
 	group.name = INTERIOR_GROUP_NAME;
 	const visuals = STATION_VISUALS[type];
@@ -385,10 +391,30 @@ export function buildStationInterior(
 	return group;
 }
 
-/** The four faces' orientation, as the basis a berth's parts are laid out in:
- *  `outward` is the berth's own normal and `beam` the direction its clear beam
- *  runs. The clear length always runs along the bay. */
+/**
+ * The four faces' orientation, as the basis a berth's parts are laid out in:
+ * `outward` is the berth's own normal and `beam` the direction its clear beam
+ * runs. In a bay the clear length always runs along the bay.
+ *
+ * **On a pad the surface is the deck and the run is the berth's own nose**
+ * (#165). All four faces then share one `outward` — the aperture axis — so the
+ * face no longer decides the basis and the berth's `parkedNose` does. Read off
+ * the catalogue rather than switched on the face for this module's standing
+ * reason: the sim decided where the ship points, and a second table here is a
+ * second author of it.
+ */
 function berthBasis(berth: Berth) {
+	if (berth.normal.axial !== 0) {
+		const outward = new THREE.Vector3(0, 0, Math.sign(berth.normal.axial));
+		const along = new THREE.Vector3(
+			berth.parkedNose.across,
+			berth.parkedNose.up,
+			berth.parkedNose.axial,
+		);
+		// `buildBerth` recovers the run as `beam × outward`, and for an
+		// orthonormal pair that is `along` again.
+		return { outward, beam: new THREE.Vector3().crossVectors(along, outward) };
+	}
 	switch (berth.face) {
 		case "deck":
 			return {
@@ -829,5 +855,195 @@ function buildRoleFittings(
 		depth,
 		backZ: interior.endAxialKm + plate,
 	});
+	return group;
+}
+
+/**
+ * How far outside the approach corridor a pad's deck begins, as a multiple of
+ * the corridor's own radius.
+ *
+ * The corridor is a cylinder and the deck is a rectangular ring, so the two
+ * meet where the ring's edges are nearest the axis: at 1.0 the ring's edge
+ * midpoints lie *on* the cylinder and whether they count as inside it is a
+ * float32 question. Two per cent is 1.7 m on an outpost, four orders above the
+ * noise and invisible against a 120 m opening.
+ */
+const PAD_HOLE_FACTOR = 1.02;
+
+/** How thick this module draws a plate, kilometres. One expression, because a
+ *  pad's deck face is derived from it and `tests/station-mesh.test.ts` reads
+ *  that face back rather than carrying a hand-copy of the arithmetic. */
+const plateOf = (interior: StationInterior): number =>
+	Math.min(interior.halfAcrossKm, interior.halfUpKm) * PLATE_FACTOR;
+
+/**
+ * Where a pad's deck face is, kilometres from the station's centre.
+ *
+ * **One wall thickness proud of the berth surface the catalogue names**, which
+ * is exactly the relationship a bay's shell has with the berths bolted to it:
+ * each wall is seated inside the declared extent so a berth's apron overlaps
+ * the wall it stands on. A deck flush with the surface would leave every berth
+ * a loose island under the connectivity check.
+ *
+ * Exported because the drawn-volume row in `tests/station-mesh.test.ts` reads
+ * it: a tolerance typed into a test is one that stays green against a figure
+ * the module no longer uses.
+ */
+export const padDeckFaceKm = (interior: StationInterior): number =>
+	interior.mouthAxialKm + plateOf(interior) * 0.8;
+
+/**
+ * A pad role's drawn interior: a deck at the aperture plane with its berths
+ * standing on it (#165).
+ *
+ * **The deck is a ring, and the hole in it is the approach corridor.**
+ * `tests/station-mesh.test.ts`'s corridor row forbids any part of the station
+ * in the cylinder in front of the aperture, so the one thing a landing deck may
+ * not do is span the volume a ship descends through — the lane's floor is the
+ * form's own surface, seen through the ring. Everything drawn here is outside
+ * that cylinder by construction, which is also what lets the deck stand proud
+ * of the plane rather than being pressed flat under a 10 cm tolerance.
+ *
+ * **The deck's top face is one wall thickness proud of the berth surface**,
+ * which is exactly the relationship a bay's shell has with the berths bolted to
+ * it: `buildBerth` lays every part down from the surface the catalogue names,
+ * so a plate flush with that surface would leave each berth a loose island.
+ * `tests/station-mesh.test.ts`'s connectivity check shrinks parts by up to 4 m
+ * before testing contact, and the embedded depth is what beats it.
+ */
+function buildPadDeck(
+	type: StationType,
+	interior: StationInterior,
+): THREE.Group {
+	const group = new THREE.Group();
+	group.name = INTERIOR_GROUP_NAME;
+	const visuals = STATION_VISUALS[type];
+	const structure = structureMaterial(type);
+	const plate = plateOf(interior);
+	// The corridor's own radius, off the lane rather than off the table: the
+	// aperture is `2·laneHalf` on each axis, so its half-diagonal is the
+	// hypotenuse of the two half-extents.
+	const hole =
+		Math.hypot(interior.laneHalfAcrossKm, interior.laneHalfUpKm) *
+		PAD_HOLE_FACTOR;
+	// **As thick as a berth is tall, which is the outward span the sim
+	// declares.** It reaches inward from the deck's face far enough to meet the
+	// form's own surface, and the two pad roles differ by 20 m in how far that
+	// is — the Warren's terrace sits 20 m behind its aperture plane where an
+	// outpost's deck is flush with it.
+	const thickness = interior.stagingAxialKm - interior.mouthAxialKm;
+	const faceZ = padDeckFaceKm(interior);
+
+	const deckFace = shellMaterial(type);
+	for (const [w, h, x, y] of ringAround(
+		{ across: interior.halfAcrossKm, up: interior.halfUpKm },
+		{ across: hole, up: hole },
+	)) {
+		if (w <= 0 || h <= 0) continue;
+		const panel = box(w, h, thickness, deckFace, "interior-deck");
+		panel.position.set(x, y, faceZ - thickness / 2);
+		group.add(panel);
+	}
+
+	// The touchdown zone, lit: a square painted round the hole, so the volume a
+	// ship comes down through is the brightest line on the deck. It is the pad's
+	// answer to the bay's lane edge and it is drawn against the *corridor*
+	// rather than the aperture rectangle, because that is the shape the deck
+	// itself is cut to.
+	const laneGlow = glowMaterial(visuals.strobeColor);
+	for (const [w, h, x, y] of ringAround(
+		{ across: hole + plate * 2.5, up: hole + plate * 2.5 },
+		{ across: hole, up: hole },
+	)) {
+		const strip = box(w, h, plate * 1.2, laneGlow, "interior-lane-edge");
+		strip.position.set(x, y, faceZ - plate * 0.3);
+		group.add(strip);
+	}
+
+	// **The name, painted on the deck rather than hung on a wall.** E9/E11 put
+	// the shield on the bay's end bulkhead, facing an arriving ship down the
+	// lane; a pad has no wall to hang it on and no throat to read it from, and
+	// the one view every approach shares is the one looking straight down at the
+	// deck. It sits on a corner of the ring, where no berth stands.
+	const shieldW = interior.laneHalfAcrossKm * 0.8;
+	const shieldH = shieldW * 0.28;
+	const shield = box(
+		shieldW,
+		shieldH,
+		plate * 1.6,
+		new THREE.MeshBasicMaterial({
+			color: 0xffffff,
+			transparent: true,
+			// Nothing until the renderer supplies one (E10).
+			opacity: 0,
+		}),
+		NAMEPLATE_NAME,
+	);
+	shield.position.set(
+		interior.halfAcrossKm * 0.75,
+		interior.halfUpKm * 0.75,
+		faceZ - plate * 0.4,
+	);
+	group.add(shield);
+
+	const guide = glowMaterial(visuals.floodColor);
+	const accent = glowMaterial(visuals.heatColor);
+	for (const berth of interior.berths)
+		group.add(atFullDetail(buildBerth(berth, plate, structure, guide, accent)));
+
+	group.add(atFullDetail(buildPadFittings(interior, plate, structure, guide)));
+	return group;
+}
+
+/**
+ * A pad's own furniture: a kerb round the deck's outer edge and a lamp at each
+ * corner.
+ *
+ * **Generic, where a bay's fittings are per-role, and §13.4 is why rather than
+ * an omission.** That section's interior treatments are things you hang on a
+ * wall — windows, gantries, pipe runs, conduits — and a pad has no wall. What
+ * survives is the half of §13.4 that is a rule rather than a list: *light
+ * identifies role only*. The kerb takes the role's structure colour, the deck
+ * its plating colour and these lamps its flood colour, all three off
+ * `STATION_VISUALS`, so a refinery pad and an outpost pad differ by exactly the
+ * thing the section says they should.
+ */
+function buildPadFittings(
+	interior: StationInterior,
+	plate: number,
+	structure: THREE.Material,
+	guide: THREE.Material,
+): THREE.Group {
+	const group = new THREE.Group();
+	group.name = "interior-fittings";
+	const x = interior.halfAcrossKm;
+	const y = interior.halfUpKm;
+	const faceZ = padDeckFaceKm(interior);
+	// A kerb along each edge, seated into the deck for the reason every part in
+	// this module is: a rail laid on a surface is not joined to it.
+	for (const [w, h, px, py] of ringAround(
+		{ across: x, up: y },
+		{ across: x - plate * 1.2, up: y - plate * 1.2 },
+	)) {
+		const kerb = box(w, h, plate * 2, structure, "interior-rail");
+		kerb.position.set(px, py, faceZ - plate * 0.4);
+		group.add(kerb);
+	}
+	for (const sx of [-1, 1])
+		for (const sy of [-1, 1]) {
+			const lamp = box(
+				plate * 0.9,
+				plate * 0.9,
+				plate * 1.6,
+				guide,
+				"interior-flood",
+			);
+			lamp.position.set(
+				sx * (x - plate * 1.2),
+				sy * (y - plate * 1.2),
+				faceZ + plate * 0.5,
+			);
+			group.add(lamp);
+		}
 	return group;
 }

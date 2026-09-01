@@ -81,16 +81,48 @@ export interface Berth {
 	 *  frame — the parked ship's own up-vector (§13.3), and the axis phase 3 of
 	 *  the traversal settles along. */
 	normal: InteriorOffset;
+	/**
+	 * The direction a parked ship's nose points, in the aperture frame.
+	 *
+	 * **Carried on the berth rather than assumed by the traversal** (#165). In a
+	 * bay it is the aperture axis on every berth — §13.3's *"the exit remains
+	 * straight ahead"* — and it was written into `parkedAttitude` as a constant.
+	 * On a pad the berth's normal *is* the aperture axis, so a nose along the
+	 * axis too would be an attitude with no roll: `quatFromAttitude`
+	 * re-orthogonalises the up-vector against the nose, and two parallel
+	 * directions leave it with a zero vector and an arbitrary basis. A ship on a
+	 * landing pad lies in the deck, so its nose does too.
+	 */
+	parkedNose: InteriorOffset;
 }
+
+/**
+ * Which of the two interiors a role has (§13.1, reversed in part by #165).
+ *
+ * `bay` — an enclosed volume running *inward* from the aperture, with berths on
+ * its four walls. `pad` — an open deck at the aperture plane with berths
+ * standing on it, and no enclosure at all.
+ *
+ * **Read off `aperture.kind` rather than declared a second time.** A pad
+ * aperture and a landing pad are the same fact about a role, and the two tables
+ * would drift the first time one was retuned. It is the aperture's `kind` that
+ * already says a refinery and an outpost are not flown *into*.
+ */
+export type InteriorPresentation = "bay" | "pad";
 
 export interface StationInterior {
 	type: StationType;
+	presentation: InteriorPresentation;
 	/** The mouth, `aperturePlaneKm` — where §3's checks are evaluated and where
-	 *  the interior begins. */
+	 *  the interior begins. On a pad it is the deck's own surface. */
 	mouthAxialKm: number;
-	/** The back wall. Smaller than the mouth: the interior runs inward. */
+	/** The back wall. Smaller than the mouth: a bay runs inward. **Equal to the
+	 *  mouth on a pad**, which is what "no enclosed interior" is as a number —
+	 *  the volume a pad declares runs outward instead, from `mouthAxialKm` to
+	 *  `stagingAxialKm`. */
 	endAxialKm: number;
-	/** Half-extents of the enclosed volume across the lane. */
+	/** Half-extents of the volume across the lane — the bay's walls, or the
+	 *  pad deck's own footprint. */
 	halfAcrossKm: number;
 	halfUpKm: number;
 	/** The permanently clear central lane, as half-extents. It is the aperture's
@@ -99,7 +131,9 @@ export interface StationInterior {
 	laneHalfAcrossKm: number;
 	laneHalfUpKm: number;
 	/** Where the axial run ends and the lateral transfer begins (§13.3). One
-	 *  point, on the axis, shared by every berth. */
+	 *  point, on the axis, shared by every berth. Inward of the mouth in a bay
+	 *  and outward of it on a pad, where it is the hover height a ship rises to
+	 *  before it translates over its berth. */
 	stagingAxialKm: number;
 	berths: Berth[];
 }
@@ -168,17 +202,25 @@ export const ROLE_BERTHS: Record<
 		{ face: "deck", band: "deep", family: "cradle" },
 		{ face: "overhead", band: "deep", family: "cradle" },
 	],
-	// Two deck pads and two deep cradles.
+	// Two deck pads and two service cradles, one on each side of the landing
+	// lane. **One band, because a pad has no depth** (#165): the four sides are
+	// the whole catalogue, and a second band would be a second ring of berths
+	// further out on a deck that has no room for one.
 	refinery: [
 		{ face: "deck", band: "near", family: "deck" },
-		{ face: "deck", band: "deep", family: "deck" },
-		{ face: "port", band: "deep", family: "cradle" },
-		{ face: "starboard", band: "deep", family: "cradle" },
+		{ face: "overhead", band: "near", family: "deck" },
+		{ face: "port", band: "near", family: "cradle" },
+		{ face: "starboard", band: "near", family: "cradle" },
 	],
-	// One deck pad and one side berth, and which side is the station's own draw.
+	// One deck pad and one side pad, and which side is the station's own draw.
+	//
+	// **Both are `deck` family now, and the wall they stood against is gone**
+	// (#165). §13.2 allowed an outpost `deck or wall`; a pad has one surface, so
+	// there is no wall to be a wall berth on. The seeded draw survives intact,
+	// because which side of the lane the second pad sits on is still a choice.
 	outpost: [
 		{ face: "deck", band: "near", family: "deck" },
-		{ face: "port", band: "near", family: "wall", seeded: true },
+		{ face: "port", band: "near", family: "deck", seeded: true },
 	],
 };
 
@@ -247,6 +289,58 @@ function bandAxial(
 }
 
 /**
+ * How far a pad's berths stand clear of the approach corridor, as a multiple of
+ * the cell's clear height.
+ *
+ * **The corridor, not the aperture rectangle, and that is the whole reason a
+ * pad's deck is as wide as it is.** `tests/station-mesh.test.ts`'s corridor row
+ * measures a cylinder of the aperture's *half-diagonal* extended outward from
+ * the plane, and nothing of the station may stand in it. A bay's berths are
+ * behind the plane and never met it; a pad's stand in front of it, so they are
+ * the first thing in the game that has to clear it — and the margin is what
+ * keeps a service boom, which reaches inboard of its own apron, on the right
+ * side of the line. Measured on the outpost, the tighter of the two: at 0.5 the
+ * boom cleared the cylinder by 11 cm, which is a coincidence rather than a
+ * clearance; at 0.75 it clears by 7.6 m.
+ */
+export const PAD_CORRIDOR_MARGIN_FACTOR = 0.75;
+
+/** Which way a face points in the deck plane, measured out from the lane — the
+ *  opposite of the bay normal, which points from that wall *into* the bay. */
+const FACE_DIRECTION: Record<InteriorFace, { across: number; up: number }> = {
+	deck: { across: 0, up: -1 },
+	overhead: { across: 0, up: 1 },
+	port: { across: -1, up: 0 },
+	starboard: { across: 1, up: 0 },
+};
+
+/**
+ * How far out from the aperture axis a pad's berth centres sit.
+ *
+ * A parked ship lies **broadside to the lane** — its clear length tangential,
+ * its beam radial — so what has to clear the corridor cylinder of radius `R` is
+ * the box corner at `(c − beam/2, ±length/2)`. Solving that for `c` is the
+ * expression below, and it is the orientation that fits: nose-out instead puts
+ * the *length* on the radius and pushes an outpost's deck 30 m past the one its
+ * own form draws.
+ */
+function padStandoffKm(
+	aperture: StationAperture,
+	cell: { lengthKm: number; beamKm: number; heightKm: number },
+): number {
+	const corridorRadiusKm = Math.hypot(aperture.widthKm, aperture.heightKm) / 2;
+	const half = cell.lengthKm / 2;
+	// A corridor narrower than the berth is long has no solution on this axis;
+	// the berth then clears it on the radius alone. Not reachable at any
+	// shipped figure, and a `NaN` here would travel silently into a position.
+	const radial =
+		corridorRadiusKm > half
+			? Math.sqrt(corridorRadiusKm * corridorRadiusKm - half * half)
+			: 0;
+	return cell.beamKm / 2 + radial + cell.heightKm * PAD_CORRIDOR_MARGIN_FACTOR;
+}
+
+/**
  * The interior of one station, berths and all.
  *
  * **`aperturePlaneKm` is a parameter, not a lookup**, and that is the one thing
@@ -258,6 +352,13 @@ function bandAxial(
  * what keeps the sim's catalogue and the drawn bay in step. Everything else the
  * geometry decides is read from the table here, so there is one aperture
  * rectangle rather than a caller's copy of one.
+ *
+ * **Two presentations, and the aperture's own `kind` picks between them**
+ * (#165). A slot role gets §13.1's enclosed bay running inward from the plane;
+ * a pad role gets a deck *at* the plane with its berths standing on it. The
+ * two share the aperture frame, the fit predicate, the allocation and the
+ * three-leg traversal — what differs is where the berths are and which way a
+ * parked ship's up-vector points.
  *
  * `seed` decides only the addresses marked `seeded` — today the outpost's one
  * side berth. Passed in rather than drawn here: `system.ts` owns the per-system
@@ -273,20 +374,28 @@ export function stationInterior(
 	const aperture: StationAperture = STATION_GEOMETRY[type].aperture;
 	const laneHalfAcrossKm = aperture.widthKm / 2;
 	const laneHalfUpKm = aperture.heightKm / 2;
+	const mouthAxialKm = aperturePlaneKm;
+	const presentation: InteriorPresentation =
+		aperture.kind === "pad" ? "pad" : "bay";
+
+	// The seeded address picks a side; every other address is what it says.
+	const faces = ROLE_BERTHS[type].map((entry) =>
+		entry.seeded && seed % 2 === 1 ? ("starboard" as InteriorFace) : entry.face,
+	);
+
+	if (presentation === "pad") return padInterior(type, mouthAxialKm, faces);
+
 	const reach = cell.heightKm * BERTH_DEPTH_FACTOR[type];
 	const halfAcrossKm = laneHalfAcrossKm + reach;
 	const halfUpKm = laneHalfUpKm + reach;
-	const mouthAxialKm = aperturePlaneKm;
 	const axialOf = bandAxial(mouthAxialKm, cell.lengthKm);
 	const bands = ROLE_BERTHS[type].map((entry) => entry.band);
 	const deepest = bands.includes("deep") ? axialOf.deep : axialOf.near;
 	const endAxialKm =
 		deepest - cell.lengthKm / 2 - cell.lengthKm * BAND_MARGIN_FACTOR;
 
-	const berths = ROLE_BERTHS[type].map((entry) => {
-		// The seeded address picks a side; every other address is what it says.
-		const face: InteriorFace =
-			entry.seeded && seed % 2 === 1 ? "starboard" : entry.face;
+	const berths = ROLE_BERTHS[type].map((entry, index) => {
+		const face = faces[index];
 		const axial = axialOf[entry.band];
 		const centre: InteriorOffset = { axial, across: 0, up: 0 };
 		const normal: InteriorOffset = { axial: 0, across: 0, up: 0 };
@@ -318,11 +427,15 @@ export function stationInterior(
 			clearHeightKm: cell.heightKm,
 			centre,
 			normal,
+			// §13.3's *"the exit remains straight ahead"*: in a bay every berth
+			// parks its ship nose-out, whichever wall it is on.
+			parkedNose: { axial: 1, across: 0, up: 0 },
 		};
 	});
 
 	return {
 		type,
+		presentation,
 		mouthAxialKm,
 		endAxialKm,
 		halfAcrossKm,
@@ -335,6 +448,97 @@ export function stationInterior(
 		stagingAxialKm: axialOf.near,
 		berths,
 	};
+}
+
+/**
+ * A pad role's interior: an open deck at the aperture plane (#165).
+ *
+ * **Nothing runs inward.** `endAxialKm` equals `mouthAxialKm`, which is what
+ * "outposts don't have bays, just landing pads" is as a number, and the volume
+ * the traversal uses runs *outward* from the deck to `stagingAxialKm`, one
+ * clear height up. The berths stand on the deck around the landing lane, one to
+ * a side, and a parked ship's up-vector is the aperture axis.
+ *
+ * **The four faces still name four directions, and they are the same four.** In
+ * a bay they are the walls a berth is bolted to; on a pad there is one surface,
+ * so a face is the side of the lane a berth stands on — `deck` and `overhead`
+ * the −`up` and +`up` sides, `port` and `starboard` the −`across` and
+ * +`across`. The grammar is unchanged; what changes is that the pad lays the
+ * four out *around* the lane instead of *down* it.
+ */
+function padInterior(
+	type: StationType,
+	mouthAxialKm: number,
+	faces: InteriorFace[],
+): StationInterior {
+	const cell = BERTH_CELL[type];
+	const aperture: StationAperture = STATION_GEOMETRY[type].aperture;
+	const standoff = padStandoffKm(aperture, cell);
+	// The deck reaches past the outermost berth by the lip its own apron adds —
+	// `station-interior-mesh.ts` draws a pad 8% wider than the clear beam and a
+	// kerb outside that, and a deck that stopped at the clear box would leave
+	// both hanging over its edge.
+	const halfKm = standoff + cell.beamKm * 0.6;
+	const berths = ROLE_BERTHS[type].map((entry, index) => {
+		const face = faces[index];
+		const dir = FACE_DIRECTION[face];
+		return {
+			id: `${face}-${entry.band}`,
+			family: entry.family,
+			face,
+			band: entry.band,
+			clearLengthKm: cell.lengthKm,
+			clearBeamKm: cell.beamKm,
+			clearHeightKm: cell.heightKm,
+			centre: {
+				axial: mouthAxialKm + cell.heightKm / 2,
+				across: dir.across * standoff,
+				up: dir.up * standoff,
+			},
+			// Out of the deck, away from the station: a parked ship's up-vector.
+			normal: { axial: 1, across: 0, up: 0 },
+			// Broadside to the lane, a quarter turn anticlockwise from the
+			// berth's own radius — which is the orientation `padStandoffKm`
+			// solves for, and the one that makes four berths a flight line round
+			// the pad rather than four ships pointing at each other.
+			parkedNose: { axial: 0, across: -dir.up, up: dir.across },
+		};
+	});
+	return {
+		type,
+		presentation: "pad",
+		mouthAxialKm,
+		// No enclosed depth at all. The two coincide, and every consumer that
+		// wants the volume a ship moves through reads `[mouth, staging]`.
+		endAxialKm: mouthAxialKm,
+		halfAcrossKm: halfKm,
+		halfUpKm: halfKm,
+		laneHalfAcrossKm: aperture.widthKm / 2,
+		laneHalfUpKm: aperture.heightKm / 2,
+		// The hover height: level with every berth's settle standoff, so the
+		// traversal's first leg is a climb, its second a pure translation and
+		// its third the settle — and a launch runs the three back out without
+		// dipping toward the deck on the way.
+		stagingAxialKm: mouthAxialKm + cell.heightKm,
+		berths,
+	};
+}
+
+/**
+ * The axial span the interior occupies, nearest the station's centre first.
+ *
+ * **One expression for two presentations** (#165), because every consumer that
+ * asks "is this point inside the interior" needs both: a bay runs from its back
+ * wall out to the mouth, and a pad runs from its deck out to the hover point
+ * the traversal stages at. Written here rather than in each caller, which is
+ * three copies of a sign convention.
+ */
+export function interiorAxialSpanKm(
+	interior: StationInterior,
+): [number, number] {
+	return interior.presentation === "pad"
+		? [interior.mouthAxialKm, interior.stagingAxialKm]
+		: [interior.endAxialKm, interior.mouthAxialKm];
 }
 
 /**

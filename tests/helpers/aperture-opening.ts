@@ -8,11 +8,13 @@
  * came out of a throwaway script, and a figure a receipt states as measured owes
  * a shipped mode that reprints it (the map's constraint from #118).
  *
- * **The question is what is *in* the opening, not what is in front of it.** Why
- * that is a different question from the corridor row's, and why these rows
- * assert the cut rather than the lane, is on the `describe` in
- * `tests/station-mesh.test.ts` that reads them — once, rather than in three
- * copies that drift apart the first time the corridor row moves.
+ * **Both questions live here now** (#165). What is *in* the opening and what is
+ * in front of it were two measurements in two files, and a pad role has no
+ * opening at all — its gate is the corridor in front of the plane and nothing
+ * else. Keeping the corridor cast in `tests/station-mesh.test.ts` would have
+ * left `scripts/measure-aperture-cut.ts` unable to print a row for six of the
+ * twelve forms, which is the same "a figure a receipt states as measured owes a
+ * shipped mode that reprints it" this file's docstring already answers for.
  */
 
 import * as THREE from "three";
@@ -135,6 +137,107 @@ export function bayBand(root: THREE.Object3D): THREE.Box3 {
 	});
 	if (slabs === 0) throw new Error("no bay shell to measure the band from");
 	return box;
+}
+
+/**
+ * Does this form draw an enclosed bay at all?
+ *
+ * **A pad role draws none** (#165). `bayBand` throws rather than returning an
+ * empty box, because every figure downstream of it is measured *from* that box
+ * and a zero-size one would report a form as trivially clear. So the callers
+ * that must answer for all twelve forms ask this first, and the ones that must
+ * not be allowed to pass vacuously — `crossings` and the gate that reads it —
+ * still throw.
+ */
+export function hasBay(root: THREE.Object3D): boolean {
+	let found = false;
+	root.traverse((object) => {
+		if (/^interior-shell/.test(object.name)) found = true;
+	});
+	return found;
+}
+
+/**
+ * **Strictly past the plane, by more than float32 can move a vertex.** Since
+ * #128 the aperture plane *is* the surface the slot is cut into, so a hull's
+ * own face and the plane are the same number reached by different paths — a
+ * float64 constant against a `Float32Array` position — and the wall the
+ * aperture is cut into lands a hair either side of it. A hundred millimetres is
+ * four orders under anything `docking.md` talks about and four orders over the
+ * noise (~3e-5 m at 0.4 km).
+ */
+export const WALL_EPSILON_KM = 1e-4;
+
+/**
+ * The docking corridor: the aperture's own footprint, extended outward along
+ * +Z from the front of its mouth, as the deepest intrusion per part.
+ *
+ * A ship arrives down this axis — it is the one approach every type shares
+ * (`docking.md` §4) — so anything of the station sitting in it is something the
+ * pilot has to fly through. The failure that produced this check was the
+ * refinery's asteroid: **noise does not know where the dock is**, and a rock is
+ * the one body in the pool whose surface is not authored. Measured, the
+ * Warren's rock rose 131 m past its own pad mouth and the Collar's 74 m.
+ *
+ * Written generally rather than against the rock, because the same failure has
+ * other shapes — a flare boom swung across the approach, a gantry rib carried
+ * too far forward — and none of them would be caught by a check that only knew
+ * about asteroids.
+ *
+ * The radius is the aperture's half-*diagonal*, so the corridor contains the
+ * whole opening rather than an inscribed circle of it.
+ *
+ * **It is a pad role's whole lane gate** (#165). A pad has no bay for anything
+ * to be inside; what a ship traverses is the volume in front of the plane, and
+ * that is this. It is also why a pad's berths stand as far out as they do —
+ * they are the first parts of a station ever drawn on this side of the plane.
+ */
+export function corridorIntrusions(
+	root: THREE.Object3D,
+	type: StationType,
+): Map<string, number> {
+	root.updateMatrixWorld(true);
+	const core = STATION_GEOMETRY[type].coreRadiusKm;
+	const { widthKm, heightKm } = STATION_GEOMETRY[type].aperture;
+	const radius = Math.hypot(widthKm, heightKm) / 2;
+	// The aperture plane, read off the bars' own centre — they straddle it.
+	const front = mouthPlane(root) * core;
+	const found = new Map<string, number>();
+	const v = new THREE.Vector3();
+	const instance = new THREE.Matrix4();
+	root.traverse((object) => {
+		const mesh = object as THREE.Mesh;
+		const position = mesh.geometry?.getAttribute?.("position");
+		if (!position) return;
+		// The aperture's own frame lives in the corridor by construction — it
+		// *is* the opening.
+		if (object.name.startsWith("aperture")) return;
+		const instanced = object as THREE.InstancedMesh;
+		const count = instanced.isInstancedMesh ? instanced.count : 1;
+		for (let n = 0; n < count; n++) {
+			if (instanced.isInstancedMesh) instanced.getMatrixAt(n, instance);
+			else instance.identity();
+			for (let i = 0; i < position.count; i++) {
+				v.fromBufferAttribute(position as THREE.BufferAttribute, i);
+				v.applyMatrix4(instance);
+				mesh.localToWorld(v);
+				v.multiplyScalar(core);
+				if (v.z <= front + WALL_EPSILON_KM) continue;
+				if (Math.hypot(v.x, v.y) > radius) continue;
+				const name = object.name || object.type;
+				found.set(name, Math.max(found.get(name) ?? 0, v.z - front));
+			}
+		}
+	});
+	return found;
+}
+
+/** One line per form, in the shape both the corridor failure message and the
+ *  instrument print. Empty when the corridor is clear. */
+export function corridorLine(found: Map<string, number>): string {
+	return [...found]
+		.map(([name, depth]) => `${name} +${(depth * 1000).toFixed(0)}m`)
+		.join(", ");
 }
 
 /**

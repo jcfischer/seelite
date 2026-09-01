@@ -40,12 +40,16 @@ import {
 	setStationDetail,
 } from "../src/station-mesh";
 import { berthCentre } from "../src/arrival";
+import { padDeckFaceKm } from "../src/station-interior-mesh";
 import {
 	bayBand,
 	collarSurfaces,
+	corridorIntrusions,
+	corridorLine,
 	crossings,
 	crossingsLine,
 	cutSurfaces,
+	hasBay,
 	mouthPlane,
 } from "./helpers/aperture-opening";
 
@@ -320,7 +324,14 @@ describe("§7's secondary cue, and the detail that is not the identity", () => {
 	test("the bay's mouth bulkhead is not coplanar with the bars in front of it", () => {
 		// Coplanar faces z-fight, and the symptom is a slot that flickers as the
 		// station turns — which reads as the aperture not being there.
+		//
+		// **A bay's row, because a pad has no bulkhead** (#165). A pad's deck
+		// stands *proud* of the plane rather than behind it, and it clears the
+		// bars laterally instead — its ring's hole is cut to the approach
+		// corridor, which is wider than the bars are set. That clearance is the
+		// corridor row's, and it is asserted over all twelve forms.
 		for (const type of TYPES) {
+			if (STATION_GEOMETRY[type].aperture.kind !== "slot") continue;
 			const { root } = buildStationMesh(type, GREY, 0);
 			const opening = apertureOpening(root);
 			const [panel] = interiorOf(root, "interior-bulkhead");
@@ -414,80 +425,16 @@ describe("a station is one object, not a scatter of parts", () => {
 
 describe("nothing stands in the way of the thing you fly through", () => {
 	/**
-	 * The docking corridor: the aperture's own footprint, extended outward along
-	 * +Z from the front of its mouth.
-	 *
-	 * A ship arrives down this axis — it is the one approach every type shares
-	 * (`docking.md` §4) — so anything of the station sitting in it is something
-	 * the pilot has to fly through. The failure that produced this check was the
-	 * refinery's asteroid: **noise does not know where the dock is**, and a rock
-	 * is the one body in the pool whose surface is not authored. Measured, the
-	 * Warren's rock rose 131 m past its own pad mouth and the Collar's 74 m.
-	 *
-	 * Written generally rather than against the rock, because the same failure
-	 * has other shapes — a flare boom swung across the approach, a gantry rib
-	 * carried too far forward — and none of them would be caught by a check that
-	 * only knew about asteroids.
-	 *
-	 * The radius is the aperture's half-*diagonal*, so the corridor contains the
-	 * whole opening rather than an inscribed circle of it.
+	 * The corridor cast itself moved to `tests/helpers/aperture-opening.ts` in
+	 * #165, for that file's stated reason: `scripts/measure-aperture-cut.ts` has
+	 * to print a row for all twelve forms, and six of them have no bay for the
+	 * other measurement to look into. What lives here is the assertion.
 	 */
-	/** See the vertex test below: the wall the aperture is cut into is not an
-	 *  intrusion into the corridor in front of it. */
-	const WALL_EPSILON_KM = 1e-4;
-
-	function intrusions(root: THREE.Object3D, type: StationType) {
-		root.updateMatrixWorld(true);
-		const core = STATION_GEOMETRY[type].coreRadiusKm;
-		const { widthKm, heightKm } = STATION_GEOMETRY[type].aperture;
-		const radius = Math.hypot(widthKm, heightKm) / 2;
-		// The aperture plane, read off the bars' own centre — they straddle it.
-		const front = apertureOpening(root).planeZ * core;
-		const found = new Map<string, number>();
-		const v = new THREE.Vector3();
-		const instance = new THREE.Matrix4();
-		root.traverse((object) => {
-			const mesh = object as THREE.Mesh;
-			const position = mesh.geometry?.getAttribute?.("position");
-			if (!position) return;
-			// The aperture's own frame lives in the corridor by construction —
-			// it *is* the opening.
-			if (object.name.startsWith("aperture")) return;
-			const instanced = object as THREE.InstancedMesh;
-			const count = instanced.isInstancedMesh ? instanced.count : 1;
-			for (let n = 0; n < count; n++) {
-				if (instanced.isInstancedMesh) instanced.getMatrixAt(n, instance);
-				else instance.identity();
-				for (let i = 0; i < position.count; i++) {
-					v.fromBufferAttribute(position as THREE.BufferAttribute, i);
-					v.applyMatrix4(instance);
-					mesh.localToWorld(v);
-					v.multiplyScalar(core);
-					// **Strictly past the plane, by more than float32 can move a
-					// vertex.** Since #128 the aperture plane *is* the surface the
-					// slot is cut into, so the hull's own face and `front` are the
-					// same number reached by different paths — a float64 constant
-					// against a `Float32Array` position — and the wall the aperture
-					// is cut into lands a hair either side of it. A hundred
-					// millimetres is four orders under anything `docking.md` talks
-					// about and four orders over the noise (~3e-5 m at 0.4 km).
-					if (v.z <= front + WALL_EPSILON_KM) continue;
-					if (Math.hypot(v.x, v.y) > radius) continue;
-					const name = object.name || object.type;
-					found.set(name, Math.max(found.get(name) ?? 0, v.z - front));
-				}
-			}
-		});
-		return found;
-	}
-
 	test("the approach corridor is clear on every form of every role", () => {
 		for (const type of TYPES) {
 			for (const form of STATION_FORMS[type]) {
 				const { root } = buildStationForm(type, form.id, GREY, 0);
-				const blocked = [...intrusions(root, type)]
-					.map(([name, depth]) => `${name} +${(depth * 1000).toFixed(0)}m`)
-					.join(", ");
+				const blocked = corridorLine(corridorIntrusions(root, type));
 				expect([`${type} ${form.id}`, blocked]).toEqual([
 					`${type} ${form.id}`,
 					"",
@@ -495,10 +442,37 @@ describe("nothing stands in the way of the thing you fly through", () => {
 			}
 		}
 	});
+
+	/**
+	 * **A control, because the row above became a pad role's whole lane gate**
+	 * (#165). Until this node every part of every station was behind the
+	 * aperture plane, so the corridor row could have been asserting an emptiness
+	 * nothing was ever going to fill — and it now carries the claim that a
+	 * refinery's and an outpost's berths stand clear of the volume a ship
+	 * descends through. Moving one berth onto the axis has to make it red.
+	 */
+	test("the corridor row goes red when a berth is moved onto the axis", () => {
+		const { root } = buildStationForm(
+			"outpost",
+			SELECTED_FORM.outpost,
+			GREY,
+			0,
+		);
+		const berth = root.getObjectByName("berth-deck-near");
+		expect(berth).toBeDefined();
+		// On the axis at its own depth, which is the defect the row is for: a
+		// berth standing in the volume a ship descends through. Zeroing all
+		// three would put it at the station's centre instead, behind the plane,
+		// where the row is silent by construction.
+		(berth as THREE.Object3D).position.x = 0;
+		(berth as THREE.Object3D).position.y = 0;
+		expect(corridorLine(corridorIntrusions(root, "outpost"))).not.toBe("");
+	});
 });
 
 /**
- * §13.1's opening, as a hole rather than as a picture of one (#155).
+ * §13.1's opening, as a hole rather than as a picture of one (#155), and the
+ * lane behind it as a lane (#165).
  *
  * **A different question from the corridor row above, and that row's epsilon
  * says so.** It measures what stands *in front of* the aperture plane and skips
@@ -509,15 +483,14 @@ describe("nothing stands in the way of the thing you fly through", () => {
  * the station's own face. Every headless row in this file was green throughout
  * and none of them could have gone red.
  *
- * **These rows assert the cut, not the lane.** `scripts/measure-aperture-cut.ts`
- * prints both, and on eight forms the lane behind the mouth is still blocked — a
- * keel through a hub, a rock ceiling 207 m in, four tower legs. That is #147's
- * bay placed inside solid station rather than #155's uncut face; it needs three
- * different fixes, none of them a cut, and it carries its own node. The two
- * cannot be separated by a depth band, which is why these read the record
- * `hullLoft` and `buildCuboctahedron` write on the geometry they cut: the
- * Coriolis's frame stands 25 m proud of its own face and an outpost's tower leg
- * crosses the lane at 30 m.
+ * **These rows are the slot roles' alone now** (#165). #155 asserted the cut
+ * and deliberately not the lane, because the lane was blocked on eight of the
+ * twelve forms and no depth band separates the two defects. #165 cleared it two
+ * ways: the shipyard's static structure moved aft of the drum it was passing
+ * through, and the two pad roles lost the enclosed bay altogether, which took
+ * the cut with it — a hole in a landing pad opens onto the plant underneath it.
+ * So a pad form is asserted by the two rows at the end of this block and by the
+ * corridor row above, which is the only volume it has.
  *
  * **The bounds come off the drawn bay, not off the table.** An alternate form
  * cuts its aperture where its own silhouette wants — `buildTradeRing` puts one
@@ -525,7 +498,33 @@ describe("nothing stands in the way of the thing you fly through", () => {
  * `STATION_GEOMETRY` would be measuring somewhere the workbench's forms do not
  * have an opening at all.
  */
-describe("§13.1 — the opening is a hole, not a lit frame on a solid face", () => {
+describe("§13.1 — the opening is a hole, and the lane behind it is clear", () => {
+	/** The forms that draw a bay, which since #165 is the slot roles' six. */
+	const bayForms = () =>
+		TYPES.flatMap((type) =>
+			STATION_FORMS[type].map((form) => ({ type, form })),
+		).filter(
+			({ type, form }) =>
+				hasBay(buildStationForm(type, form.id, GREY, 0).root) &&
+				// Named so the filter cannot quietly empty itself: a bug that
+				// dropped every form would leave every row below vacuous.
+				STATION_GEOMETRY[type].aperture.kind === "slot",
+		);
+
+	test("exactly the slot roles draw a bay", () => {
+		// The filter above is a claim about the pool, so it is asserted rather
+		// than trusted — six forms, and they are the ones with a slot.
+		for (const type of TYPES)
+			for (const form of STATION_FORMS[type]) {
+				const { root } = buildStationForm(type, form.id, GREY, 0);
+				expect([`${type} ${form.id}`, hasBay(root)]).toEqual([
+					`${type} ${form.id}`,
+					STATION_GEOMETRY[type].aperture.kind === "slot",
+				]);
+			}
+		expect(bayForms().length).toBe(6);
+	});
+
 	/**
 	 * **The zero point, asserted rather than described.** Every figure this
 	 * section and `docking.md` §13.1's table produce is measured from the drawn
@@ -534,30 +533,26 @@ describe("§13.1 — the opening is a hole, not a lit frame on a solid face", ()
 	 * in the receipt without failing anything.
 	 */
 	test("the drawn bay's mouth is the aperture frame's own plane", () => {
-		for (const type of TYPES) {
-			for (const form of STATION_FORMS[type]) {
-				const { root } = buildStationForm(type, form.id, GREY, 0);
-				const core = STATION_GEOMETRY[type].coreRadiusKm;
-				const apart = (bayBand(root).max.z - mouthPlane(root)) * core;
-				// A millimetre, against a station whose smallest feature is a
-				// 24 m bar: this is an equality with float32 slack, not a band.
-				expect([`${type} ${form.id}`, Math.abs(apart) < 1e-6]).toEqual([
-					`${type} ${form.id}`,
-					true,
-				]);
-			}
+		for (const { type, form } of bayForms()) {
+			const { root } = buildStationForm(type, form.id, GREY, 0);
+			const core = STATION_GEOMETRY[type].coreRadiusKm;
+			const apart = (bayBand(root).max.z - mouthPlane(root)) * core;
+			// A millimetre, against a station whose smallest feature is a
+			// 24 m bar: this is an equality with float32 slack, not a band.
+			expect([`${type} ${form.id}`, Math.abs(apart) < 1e-6]).toEqual([
+				`${type} ${form.id}`,
+				true,
+			]);
 		}
 	});
 
-	test("every form cuts its aperture into a surface", () => {
-		for (const type of TYPES) {
-			for (const form of STATION_FORMS[type]) {
-				const { root } = buildStationForm(type, form.id, GREY, 0);
-				expect([`${type} ${form.id}`, cutSurfaces(root).length > 0]).toEqual([
-					`${type} ${form.id}`,
-					true,
-				]);
-			}
+	test("every form with a bay cuts its aperture into a surface", () => {
+		for (const { type, form } of bayForms()) {
+			const { root } = buildStationForm(type, form.id, GREY, 0);
+			expect([`${type} ${form.id}`, cutSurfaces(root).length > 0]).toEqual([
+				`${type} ${form.id}`,
+				true,
+			]);
 		}
 	});
 
@@ -570,31 +565,59 @@ describe("§13.1 — the opening is a hole, not a lit frame on a solid face", ()
 	 * `terrace-2 uncut` while they stay green.
 	 */
 	test("the surface surrounding each opening is the one that was cut", () => {
-		for (const type of TYPES) {
-			for (const form of STATION_FORMS[type]) {
-				const { root } = buildStationForm(type, form.id, GREY, 0);
-				const uncut = collarSurfaces(root, type)
-					.filter((surface) => !surface.cut)
-					.map((surface) => `${surface.name} uncut`)
-					.join(", ");
-				expect([`${type} ${form.id}`, uncut]).toEqual([
-					`${type} ${form.id}`,
-					"",
-				]);
-			}
+		for (const { type, form } of bayForms()) {
+			const { root } = buildStationForm(type, form.id, GREY, 0);
+			const uncut = collarSurfaces(root, type)
+				.filter((surface) => !surface.cut)
+				.map((surface) => `${surface.name} uncut`)
+				.join(", ");
+			expect([`${type} ${form.id}`, uncut]).toEqual([`${type} ${form.id}`, ""]);
 		}
 	});
 
-	test("no surface a form cut still stands across its opening", () => {
+	/**
+	 * **§13.1's "permanently clear", as an assertion at last** (#165).
+	 *
+	 * #155 could only assert the *cut* — the surfaces a form opened — because
+	 * the lane behind the mouth was blocked on eight of the twelve forms by
+	 * three unrelated defects, and its receipt said so. This is the whole
+	 * opening: nothing at all between the mouth and the bay's back wall,
+	 * whether it was cut or never touched.
+	 *
+	 * On `origin/main` it is red on `shipyard a` (keel +95 m), `shipyard b`
+	 * (slab +60 m, Mesh +198 m), all three refineries (58–215 m) and all three
+	 * outposts (7–30 m). Six of those forms no longer have a bay to be inside;
+	 * the two shipyards were cleared by moving the drydock spine aft of the drum
+	 * it passed through.
+	 */
+	test("the transit lane is clear from the mouth to the back wall", () => {
+		for (const { type, form } of bayForms()) {
+			const { root } = buildStationForm(type, form.id, GREY, 0);
+			const blocked = crossingsLine(crossings(root, type));
+			expect([`${type} ${form.id}`, blocked]).toEqual([
+				`${type} ${form.id}`,
+				"",
+			]);
+		}
+	});
+
+	/**
+	 * **A pad is landed on, so it is not opened** (#165).
+	 *
+	 * The principal's ruling on 2026-08-31 — *"shrink the bays. Outposts don't
+	 * have bays, just landing pads. also refinerie can change to landing pads
+	 * if too small"* — reverses #155's cut for exactly these six forms. There
+	 * is nothing behind a pad's deck but the station's own plant, so a hole in
+	 * it is a hole into the tank cluster underneath.
+	 */
+	test("no pad form cuts its deck", () => {
 		for (const type of TYPES) {
+			if (STATION_GEOMETRY[type].aperture.kind !== "pad") continue;
 			for (const form of STATION_FORMS[type]) {
 				const { root } = buildStationForm(type, form.id, GREY, 0);
-				const blocked = crossingsLine(
-					crossings(root, type).filter((crossing) => crossing.cut),
-				);
-				expect([`${type} ${form.id}`, blocked]).toEqual([
+				expect([`${type} ${form.id}`, cutSurfaces(root)]).toEqual([
 					`${type} ${form.id}`,
-					"",
+					[],
 				]);
 			}
 		}
@@ -655,23 +678,28 @@ const interiorOf = (root: THREE.Object3D, name: string) => {
 	return found;
 };
 
-describe("§13.1 — every form gets a bay", () => {
-	test("every form gets one bay, whatever its aperture kind", () => {
-		// **§13.1 replaced E7/E8's split.** A slot used to get a throat and a pad
-		// a touchdown deck, decided by `aperture.kind`; the interior is shared by
-		// *role* now, so the shell is unconditional and the row that asserted the
-		// split would go red on the thing it was written to protect.
+describe("§13.1 — every form gets an interior", () => {
+	test("a slot form gets four bay walls and a pad form gets four deck panels", () => {
+		// **#165 put the split back, and on the aperture's kind again.** §13.1
+		// had replaced E7/E8's throat-or-deck split with one shared bay; the
+		// principal's ruling — *"outposts don't have bays, just landing pads"* —
+		// reverses that half for the two pad roles. What is unconditional now is
+		// that a form has *an* interior: four `interior-shell` walls round a bay,
+		// or four `interior-deck` panels round a landing lane. Both are asserted
+		// here rather than one, so a form that drew neither, or both, goes red.
 		for (const type of TYPES)
 			for (const form of STATION_FORMS[type]) {
 				const { root } = buildStationForm(type, form.id, GREY, 0);
+				const pad = STATION_GEOMETRY[type].aperture.kind === "pad";
 				expect([
 					`${type} ${form.id}`,
 					interiorOf(root, "interior-shell").length,
-				]).toEqual([`${type} ${form.id}`, 4]);
+					interiorOf(root, "interior-deck").length,
+				]).toEqual([`${type} ${form.id}`, pad ? 0 : 4, pad ? 4 : 0]);
 			}
 	});
 
-	test("the drawn bay spans exactly the volume the sim declares", () => {
+	test("the drawn interior spans exactly the volume the sim declares", () => {
 		// **Read from `station-interior.ts`, not restated.** The drawn shell and
 		// the law that flies down it must be the same box, or the ship parks in a
 		// wall — and a test with its own copy of the numbers would not notice.
@@ -680,6 +708,13 @@ describe("§13.1 — every form gets a bay", () => {
 		// 0.256 km depth comes back a few ULPs off — the buffer's precision
 		// rather than a discrepancy. Six decimal places on a kilometre is a
 		// millimetre, four orders under anything §13 talks about.
+		//
+		// **Two spans, because there are two interiors** (#165). A bay's shell
+		// runs from the mouth back to `endAxialKm`; a pad's deck runs the other
+		// way — its face one wall thickness proud of the berth surface, its
+		// underside a berth's own clear height inside that, which is the span
+		// `stagingAxialKm` names. The near face is read back through
+		// `padDeckFaceKm` rather than restated here, for this row's own reason.
 		for (const type of TYPES) {
 			const interior = stationInterior(
 				type,
@@ -691,17 +726,26 @@ describe("§13.1 — every form gets a bay", () => {
 			// The union of the bay's five walls: the shell stopped being one
 			// closed box when its sixth face turned out to be a lid on the mouth.
 			const box = new THREE.Box3();
-			for (const part of interiorOf(root, "interior-shell"))
-				box.union(new THREE.Box3().setFromObject(part));
-			for (const part of interiorOf(root, "interior-shell-back"))
-				box.union(new THREE.Box3().setFromObject(part));
+			for (const name of [
+				"interior-shell",
+				"interior-shell-back",
+				"interior-deck",
+			])
+				for (const part of interiorOf(root, name))
+					box.union(new THREE.Box3().setFromObject(part));
+			const pad = interior.presentation === "pad";
+			const nearKm = pad ? padDeckFaceKm(interior) : interior.mouthAxialKm;
+			const farKm = pad
+				? padDeckFaceKm(interior) -
+					(interior.stagingAxialKm - interior.mouthAxialKm)
+				: interior.endAxialKm;
 			expect([type, (box.max.z * core).toFixed(6)]).toEqual([
 				type,
-				interior.mouthAxialKm.toFixed(6),
+				nearKm.toFixed(6),
 			]);
 			expect([type, (box.min.z * core).toFixed(6)]).toEqual([
 				type,
-				interior.endAxialKm.toFixed(6),
+				farKm.toFixed(6),
 			]);
 			expect(box.max.x * core).toBeCloseTo(interior.halfAcrossKm, 6);
 			expect(box.max.y * core).toBeCloseTo(interior.halfUpKm, 6);
@@ -861,8 +905,9 @@ describe("§128 — the hull comes up to the plane the checks read", () => {
 	});
 });
 
-describe("§13.5 row 3 — every berth is inside the drawn bay", () => {
-	/** The drawn shell's span, in km from the station's centre. */
+describe("§13.5 row 3 — every berth is inside its own drawn interior", () => {
+	/** The drawn interior's span, in km from the station's centre. A bay's five
+	 *  walls, or a pad's four deck panels. */
 	const shellKm = (type: StationType, formId: StationFormId) => {
 		const { root } = buildStationForm(type, formId, GREY, 0);
 		root.updateMatrixWorld(true);
@@ -871,7 +916,8 @@ describe("§13.5 row 3 — every berth is inside the drawn bay", () => {
 		root.traverse((object) => {
 			if (
 				object.name === "interior-shell" ||
-				object.name === "interior-shell-back"
+				object.name === "interior-shell-back" ||
+				object.name === "interior-deck"
 			)
 				box.union(new THREE.Box3().setFromObject(object));
 		});
@@ -883,23 +929,36 @@ describe("§13.5 row 3 — every berth is inside the drawn bay", () => {
 		};
 	};
 
-	test("the form the game ships parks every ship inside its own bay", () => {
+	test("the form the game ships parks every ship inside its own interior", () => {
 		// **The seam between the two tiers, which nothing had asserted before
 		// #128 and which a berth makes three-dimensional.** The catalogue is
-		// measured from the declared plane; the bay is drawn at the form's own
-		// aperture face, wherever its geometry has a surface. They are different
-		// quantities and a form may move one without the other.
+		// measured from the declared plane; the interior is drawn at the form's
+		// own aperture face, wherever its geometry has a surface. They are
+		// different quantities and a form may move one without the other.
+		//
+		// **Axially, a pad's ships are *above* their deck rather than inside a
+		// room** (#165), which is what "no bay" is as a number: the berth centre
+		// sits half a clear height out from the surface, so the row it has to
+		// hold is that the ship stands on the deck's own face and no further out
+		// than the hover point the traversal uses. Laterally the claim is
+		// unchanged, and it is the one that matters — a berth over the edge of
+		// its deck is a ship parked on nothing.
 		for (const type of TYPES) {
 			const interior = stationInterior(
 				type,
 				STATION_GEOMETRY[type].aperturePlaneKm,
 			);
 			const shell = shellKm(type, SELECTED_FORM[type]);
+			const pad = interior.presentation === "pad";
 			for (const berth of interior.berths) {
 				const parked = berthCentre(berth);
+				const axial = pad
+					? parked.axial >= shell.nearKm - 1e-6 &&
+						parked.axial <= interior.stagingAxialKm + 1e-6
+					: parked.axial <= shell.nearKm + 1e-6 &&
+						parked.axial >= shell.farKm - 1e-6;
 				const inside =
-					parked.axial <= shell.nearKm + 1e-6 &&
-					parked.axial >= shell.farKm - 1e-6 &&
+					axial &&
 					Math.abs(parked.across) <= shell.halfAcrossKm + 1e-6 &&
 					Math.abs(parked.up) <= shell.halfUpKm + 1e-6;
 				expect([type, berth.id, inside]).toEqual([type, berth.id, true]);

@@ -337,11 +337,14 @@ export function stepDockedWorld(
 				pos: add(body.pos, rel),
 				vel: add(stationVel, lateral),
 				// One spelling of the parked pose, which the launch also starts
-				// from: nose outward along the aperture axis, up away from the
-				// berth surface (§13.3) — so a docked ship sits square in its
-				// berth and turns with the station rather than holding a
+				// from: nose along the berth's own `parkedNose`, up away from
+				// the berth surface (§13.3) — so a docked ship sits square in
+				// its berth and turns with the station rather than holding a
 				// world-space roll it has rotated away from.
-				...parkedAttitude({ frame, berthNormal: berth.normal }, pose.phaseRad),
+				...parkedAttitude(
+					{ frame, berthNormal: berth.normal, berthNose: berth.parkedNose },
+					pose.phaseRad,
+				),
 			},
 		};
 	}

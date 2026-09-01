@@ -19,12 +19,23 @@
  * the test stops at the first form with something in its opening, and a table
  * that shows all twelve is what tells you whether a defect is one form's or the
  * whole fleet's. On the build #155 was written against, all twelve were blocked.
+ *
+ * **Two shapes of row since #165**, because there are two interiors. A slot
+ * role still prints its bay's depth against the depth the lane actually runs
+ * clear — the figures #165 was opened on. A pad role has no bay to be inside
+ * anything, so what it prints is the approach corridor: the volume in front of
+ * the plane, which is the only one a ship on a landing pad ever occupies, and
+ * which its own berths are now the first parts of a station ever drawn in.
  */
 
 import {
 	bayBand,
 	collarSurfaces,
+	corridorIntrusions,
+	corridorLine,
 	crossings,
+	hasBay,
+	mouthPlane,
 } from "../tests/helpers/aperture-opening";
 import { STATION_GEOMETRY, STATION_TYPES } from "../src/station";
 import {
@@ -61,6 +72,26 @@ for (const type of STATION_TYPES) {
 	for (const form of STATION_FORMS[type]) {
 		forms++;
 		const { root } = buildStationForm(type, form.id, GREY, 0);
+		const selected = form.id === SELECTED_FORM[type] ? "*" : " ";
+		const label = `${type.padEnd(9)}${form.id}${selected}`;
+
+		// **A pad prints the corridor instead, and it is not the same
+		// measurement wearing a different name** (#165). There is no bay, so
+		// there is nothing to be *inside*; what a ship on a pad traverses is the
+		// volume in front of the plane, and the berths standing on the deck are
+		// the first parts of a station ever drawn on that side of it.
+		if (!hasBay(root)) {
+			const front = finite(`${type} ${form.id} plane`, mouthPlane(root) * core);
+			const found = corridorIntrusions(root, type);
+			if (found.size > 0) blocked++;
+			console.log(
+				`${label} plane=${front.toFixed(3)} pad, no bay  corridor ${
+					corridorLine(found) || "clear"
+				}`,
+			);
+			continue;
+		}
+
 		const band = bayBand(root);
 		// The mouth is the bay's front face, in kilometres — read off the drawn
 		// bay rather than off `aperturePlaneKm`, because an alternate form cuts
@@ -69,7 +100,6 @@ for (const type of STATION_TYPES) {
 		const back = finite(`${type} ${form.id} back wall`, band.min.z * core);
 		const found = crossings(root, type);
 		if (found.length > 0) blocked++;
-		const selected = form.id === SELECTED_FORM[type] ? "*" : " ";
 		// **How far a ship can fly down the lane before it meets something.**
 		// The bay's own depth is what §13 says it may fly; the first crossing is
 		// what the form actually leaves clear. Where the first is larger, the
@@ -97,7 +127,7 @@ for (const type of STATION_TYPES) {
 			)
 			.join(" ");
 		console.log(
-			`${type.padEnd(9)}${form.id}${selected} frame=${mouth.toFixed(3)} ${
+			`${label} frame=${mouth.toFixed(3)} ${
 				face && proud !== null
 					? `${face.name}=${(mouth - proud).toFixed(3)} proud=${
 							Math.round(proud * 1000) === 0 ? "0" : (proud * 1000).toFixed(0)
@@ -109,6 +139,6 @@ for (const type of STATION_TYPES) {
 }
 
 console.log(
-	`\n${blocked} of ${forms} forms have something other than the bay inside the opening.`,
+	`\n${blocked} of ${forms} forms have something in the volume a docking ship flies through.`,
 );
 console.log("* is the form the game selects for that role.");
