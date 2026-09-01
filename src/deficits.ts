@@ -19,16 +19,13 @@
  * of the pricing module on exactly this argument and left the rows that key
  * names behind.
  *
- * **The dependency runs from here to `market.ts` and not the other way.**
- * §5.2's decay, its accumulation and its ±63 cap stayed there because they are
- * read by the price response and not only by this map: `stockResponse`,
- * `shelfQuantity` and `MIN_STOCK_RESPONSE_FACTOR` each read `DEFICIT_MAX`, and
- * `tests/helpers/market-math.ts` reaches `decayDeficit` and `addDeficit` to
- * price a saturated run without ever building a `DeficitMap`. `DEFICIT_MAX` is
- * `QUANTITY_CAP` besides, so moving it here would have the pricing module
- * import the save module for Bell's own quantity cap — a cycle rather than a
- * boundary. What moved is the map: the row, the key space, the drop rule and
- * the parser. `market.ts` imports nothing from this file.
+ * **The dependency runs from here to `market.ts` and not the other way.** What
+ * moved is the map — the row, the key space, the drop rule and the parser;
+ * §5.2's decay, its accumulation and its ±63 cap stayed behind because the
+ * price response reads them too. `market.ts`'s §6–§7 divider is where that
+ * argument lives, beside the call sites it names; repeating the list here
+ * would be a second copy to keep in step. `market.ts` imports nothing from
+ * this file, and `tests/deficits.test.ts` is what keeps that true.
  *
  * `CarrierKey` is not re-exported here for the reason `carrier-key.ts` gives:
  * two import paths to one persisted identity is the coupling that leaf was

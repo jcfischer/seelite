@@ -549,9 +549,17 @@ export function marketRow(
 // save. What stayed is §5.2's arithmetic above — `decayDeficit`, `addDeficit`,
 // `DEFICIT_HALF_LIFE_MIN` and `DEFICIT_MAX` — because the price response reads
 // it: `stockResponse`, `shelfQuantity` and `MIN_STOCK_RESPONSE_FACTOR` each
-// clamp by `DEFICIT_MAX`, which is `QUANTITY_CAP`. `deficits.ts` imports that
-// arithmetic from here, and the reverse would close a cycle rather than move a
-// dependency. `tests/deficits.test.ts` is what keeps the direction true.
+// clamp by `DEFICIT_MAX`, which is `QUANTITY_CAP`, and
+// `tests/helpers/market-math.ts` reaches `decayDeficit` and `addDeficit` to
+// price a saturated run without ever building a `DeficitMap`. `deficits.ts`
+// imports that arithmetic from here, and the reverse would close a cycle
+// rather than move a dependency — `DEFICIT_MAX` being `QUANTITY_CAP` is what
+// makes it a cycle and not merely a redirection.
+//
+// **This paragraph is the one copy of that argument.** `deficits.ts`'s header
+// and `tests/deficits.test.ts` point at it rather than restating the call-site
+// list, so a fourth reader of `DEFICIT_MAX` leaves one comment stale and not
+// three. `tests/deficits.test.ts` is what keeps the direction itself true.
 
 /**
  * §7's equipment list.

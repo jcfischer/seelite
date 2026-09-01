@@ -5,8 +5,10 @@
  * [#67](https://github.com/jcfischer/seelite/issues/67) moved the map out of
  * the pricing module. They moved with it unchanged in substance — a refactor
  * that rewrites its own tests cannot show that behaviour survived — and the
- * two structural tests at the bottom are the only new claims: that `market.ts`
- * carries no save format any more, and that the split did not close a cycle.
+ * three structural tests at the bottom are the only new claims: that
+ * `market.ts` carries no save format any more, that it does not import the save
+ * module back, and that the half-life, the cap and the drop rule are each
+ * declared once under `src/`.
  *
  * `market-state.test.ts` keeps §5.1's derivability claim and §2's identity
  * table, which are about the base market rather than about the player's mark
@@ -187,7 +189,7 @@ describe("§5.5 the deficit map is sparse, lazy, and round-trips", () => {
 	});
 });
 
-describe("#67 the split the deficit map out of the pricing module", () => {
+describe("#67 the split of the deficit map out of the pricing module", () => {
 	test("the pricing module names no part of the save format", () => {
 		// The whole of the node. `market.ts` said in a comment that §5.5 was
 		// save-format concern lodged in a pricing module; this is that comment
@@ -210,31 +212,41 @@ describe("#67 the split the deficit map out of the pricing module", () => {
 	});
 
 	test("the pricing module does not import the save module back", () => {
-		// The direction is the result, not an accident of where things landed.
-		// §5.2's decay and its cap are read by `stockResponse`, `shelfQuantity`
-		// and `MIN_STOCK_RESPONSE_FACTOR` — three price-response call sites that
-		// never touch a `DeficitMap` — so they stayed, and `deficits.ts` imports
-		// them. Reversing that would make the pricing module depend on the save
-		// format again, and because `DEFICIT_MAX` is `QUANTITY_CAP`, it would
-		// close a cycle rather than move a dependency.
+		// The direction is the result, not an accident of where things landed;
+		// `market.ts`'s §6-§7 divider carries the argument for it, beside the
+		// symbols that argument names.
+		//
+		// **One assertion, and the missing one is deliberate.** A first version
+		// also required `deficits.ts` to import `market.ts`, which pins today's
+		// answer rather than the boundary: moving §5.2's arithmetic to a leaf
+		// both modules import would keep the pricing module clean and still go
+		// red here. Where that arithmetic lives is the next test's business.
 		expect(codeOf("src/market.ts")).not.toContain("./deficits");
-		expect(codeOf("src/deficits.ts")).toContain('from "./market"');
 	});
 
 	test("the half-life, the cap and the drop rule are each declared once", () => {
 		// A split's standing hazard is a second copy: `deficits.ts` needs the
 		// half-life and the cap, and declaring them locally rather than importing
 		// them would let the map decay on one figure while the price responds to
-		// another. Scanned over `src/` rather than over the two files, so a third
-		// module that grows its own copy is caught too.
+		// another. This is also where #67's open question is pinned — §5.2's
+		// arithmetic stayed in `market.ts`, the drop rule went with the map — so
+		// moving either without revisiting the reasoning is what goes red.
+		//
+		// **It proves the name is declared once, not the figure.** A copy spelled
+		// `const CAP = 63`, or a bare `63` inline, is invisible to it: the regex
+		// matches a declaration of *this* name. That is the accident worth
+		// catching — a split that re-declares the symbol it was meant to import —
+		// and not a claim to have found every literal.
+		//
+		// Read once rather than per name: `codeOf` is uncached, and three calls
+		// over a filter re-stripped every file in `src/` three times.
+		const SOURCES = readdirSync(repoPath("src"))
+			.filter((f) => f.endsWith(".ts"))
+			.map((f) => [f, codeOf(`src/${f}`)] as const);
 		const declaredIn = (name: string) =>
-			readdirSync(repoPath("src"))
-				.filter((f) => f.endsWith(".ts"))
-				.filter((f) =>
-					new RegExp(`(?:const|let|var)\\s+${name}\\b`).test(
-						codeOf(`src/${f}`),
-					),
-				);
+			SOURCES.filter(([, code]) =>
+				new RegExp(`(?:const|let|var)\\s+${name}\\b`).test(code),
+			).map(([f]) => f);
 		expect(declaredIn("DEFICIT_HALF_LIFE_MIN")).toEqual(["market.ts"]);
 		expect(declaredIn("DEFICIT_MAX")).toEqual(["market.ts"]);
 		expect(declaredIn("DEFICIT_DROP_UNITS")).toEqual(["deficits.ts"]);
