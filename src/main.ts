@@ -213,6 +213,7 @@ import {
 	COCKPIT_KEY_LIGHT,
 	COCKPIT_LAMP,
 	applyCockpitQuality,
+	cockpitForm,
 	cockpitMaterial,
 	plateCockpitUVs,
 } from "./cockpit-surface";
@@ -2232,10 +2233,7 @@ class Game {
 			// only writes the kilometre projection. It returns the geometry to use
 			// either way, and dropping that return value would leave a fitting
 			// unplated in a way that looks exactly like the map failing to load.
-			const mesh = new THREE.Mesh(
-				plateCockpitUVs(chamferedBox(...size, COCKPIT_CHAMFER_KM)),
-				material,
-			);
+			const mesh = new THREE.Mesh(cockpitForm(...size), material);
 			mesh.position.set(...position);
 			mesh.rotation.set(...rotation);
 			cockpit.add(mesh);
@@ -2292,8 +2290,10 @@ class Game {
 			const start = new THREE.Vector3(...from);
 			const end = new THREE.Vector3(...to);
 			const direction = end.clone().sub(start);
-			// Plated like everything else on `metal`: a normalised cylinder unwrap
-			// would tile the whole 24 m map onto a one-metre rail, which reads as
+			// Plated like everything else on `metal`, and `plateCockpitUVs`
+			// directly rather than `cockpitForm`: a rail is a cylinder, and
+			// chamfering one is meaningless. A normalised cylinder unwrap would
+			// tile the whole 72 m map onto a rail a metre across, which reads as
 			// noise rather than as a surface.
 			const mesh = new THREE.Mesh(
 				plateCockpitUVs(
@@ -2411,11 +2411,6 @@ class Game {
 				trim,
 			);
 		}
-		// The lit trim, and where it goes: the four edges that describe the
-		// cabin's shape. Under the header and the sill they draw the canopy
-		// opening; along each console's inboard edge and across the coaming they
-		// draw the console bay. Nothing here is a *reading* — see `COCKPIT_TRIM`
-		// on why the colour is deliberately near-neutral.
 		// Three lamps on each canopy side rail, and nowhere else. The first pass
 		// ran continuous lit bars under the header, under the sill and along each
 		// console; none of that is in the reference, where the canopy frame
@@ -2444,14 +2439,11 @@ class Game {
 		trim: THREE.MeshStandardMaterial,
 		inset: THREE.MeshStandardMaterial,
 	) {
-		const deck = new THREE.Mesh(
-			plateCockpitUVs(chamferedBox(0.032, 0.0016, 0.022, COCKPIT_CHAMFER_KM)),
-			metal,
-		);
+		const deck = new THREE.Mesh(cockpitForm(0.032, 0.0016, 0.022), metal);
 		deck.name = "scanner-deck";
 		scannerMount.add(deck);
 		const scannerWell = new THREE.Mesh(
-			plateCockpitUVs(chamferedBox(0.029, 0.00025, 0.0155, COCKPIT_CHAMFER_KM)),
+			cockpitForm(0.029, 0.00025, 0.0155),
 			inset,
 		);
 		scannerWell.name = "scanner-well";
@@ -2463,10 +2455,7 @@ class Game {
 			[-0.015, 0, 0.0008, 0.0168],
 			[0.015, 0, 0.0008, 0.0168],
 		] as const) {
-			const bezel = new THREE.Mesh(
-				plateCockpitUVs(chamferedBox(sx, 0.00075, sz, COCKPIT_CHAMFER_KM)),
-				trim,
-			);
+			const bezel = new THREE.Mesh(cockpitForm(sx, 0.00075, sz), trim);
 			bezel.name = "scanner-bezel";
 			bezel.position.set(x, 0.00145, z);
 			scannerMount.add(bezel);
@@ -2494,10 +2483,7 @@ class Game {
 		scanner.rotation.x = -Math.PI / 2;
 		scannerMount.add(scanner);
 		const makeInstrument = (name: string, x: number) => {
-			const backing = new THREE.Mesh(
-				plateCockpitUVs(chamferedBox(0.014, 0.0014, 0.011, COCKPIT_CHAMFER_KM)),
-				trim,
-			);
+			const backing = new THREE.Mesh(cockpitForm(0.014, 0.0014, 0.011), trim);
 			backing.position.set(x, 0.0002, 0);
 			scannerMount.add(backing);
 			const canvas = document.createElement("canvas");
@@ -2523,7 +2509,7 @@ class Game {
 		this.cockpit.flightInstrument = makeInstrument("flight-instrument", -0.025);
 		this.cockpit.targetInstrument = makeInstrument("target-instrument", 0.025);
 		const throttleTrack = new THREE.Mesh(
-			plateCockpitUVs(chamferedBox(0.0022, 0.0014, 0.014, COCKPIT_CHAMFER_KM)),
+			cockpitForm(0.0022, 0.0014, 0.014),
 			inset,
 		);
 		throttleTrack.name = "throttle-track";

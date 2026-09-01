@@ -34,11 +34,12 @@ import * as THREE from "three";
  * triangles.
  *
  * `chamfer` is the cut *depth* along each axis, in the same units as the
- * extents. It is clamped below half the smallest half-extent rather than
- * validated, because the cabin's fittings range from a 32 m deck to a 0.75 m
- * bezel over one shared figure: a chamfer that a thin fitting cannot take
- * should thin out on that fitting, not throw and not invert it. At the clamp
- * the form is still a box with a rim, which is the intent everywhere.
+ * extents. It is clamped to **a quarter of the smallest half-extent** rather
+ * than validated, because the cabin's fittings range from a 32 m deck to a
+ * 0.75 m bezel over one shared figure: a chamfer that a thin fitting cannot
+ * take should thin out on that fitting, not throw and not invert it. At the
+ * clamp the form is still a box with a rim, which is the intent everywhere —
+ * see the clamp itself for why a quarter and not a half.
  */
 export function chamferedBox(
 	width: number,
@@ -115,7 +116,8 @@ export function chamferedBox(
 		}
 
 	// The twelve edge chamfers. One quad per edge, spanning the full length of
-	// the edge's own axis less the two corner cuts.
+	// the edge's own axis — neither end is pulled in along that axis, so each
+	// meets a corner triangle edge-on rather than stopping short of it.
 	for (let along = 0; along < 3; along++) {
 		const [i, j] = [0, 1, 2].filter((k) => k !== along);
 		for (const si of SIGNS)

@@ -30,7 +30,7 @@ import {
 	calibratedProfile,
 	cockpitCleanPlate,
 	cockpitMaterial,
-	plateCockpit,
+	dial,
 	plateCockpitUVs,
 } from "../src/cockpit-surface";
 import { uvUnitsOf } from "../src/loft";
@@ -180,13 +180,30 @@ describe("plating a cabin material", () => {
 	});
 
 	test("a finish the wear curve cannot express is refused, not clamped", () => {
-		// Proof the guard can go red — the check that #118's review round asked
-		// for and #11's finding names: build the defect and watch it fail.
-		expect(() =>
-			plateCockpit(
-				new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0.1 }),
-			),
-		).toThrow(/dial/);
+		// Proof the guard can go red — #11's finding: build the defect it names
+		// and watch it fail. `dial` rather than a material, because `plateCockpit`
+		// is no longer exported: a public one was the call-site door that let a
+		// finish reach the maps without the calibration having seen it.
+		expect(() => dial("roughness", 0.9, 0.7)).toThrow(/dial/);
+		expect(dial("roughness", 0.7, 0.7)).toBeCloseTo(1, 12);
+	});
+
+	test("every declared finish is expressible against the shipped clean plate", () => {
+		// **The boot crash this replaces.** The calibration solved its lift
+		// against the *unlifted* pass and shipped the result unchecked, but the
+		// wear map is bytes and `cleanPlate` reads `median / 255` — so a lifted
+		// pass landing one texel low leaves the dial at 1.003 and
+		// `cockpitMaterial("metal")` throws inside `Game`'s constructor. The cabin
+		// would not boot, off a quantisation of one part in 255.
+		//
+		// This is the invariant `calibrate`'s loop now guarantees, asserted
+		// against the buffer that actually ships rather than against the target.
+		const clean = cockpitCleanPlate();
+		for (const id of COCKPIT_FINISH_IDS) {
+			const spec = COCKPIT_FINISHES[id];
+			expect(spec.roughness / clean.roughness).toBeLessThanOrEqual(1);
+			expect(spec.metalness / clean.metalness).toBeLessThanOrEqual(1);
+		}
 	});
 });
 

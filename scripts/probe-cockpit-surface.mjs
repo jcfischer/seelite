@@ -93,6 +93,18 @@ function state() {
 	return { found: true, meshes, lights, deckSpan };
 }
 
+/**
+ * The lit cabin surfaces the plating claims cover.
+ *
+ * **The throttle fill is lit and deliberately not plated** — it is a bar whose
+ * length is the reading, and a seam across it would read as a fault in the
+ * value. That exclusion is the load-bearing part of every plating check below,
+ * so it is written once here rather than repeated at each of them, and it is
+ * asserted on its own so the hole is a claim.
+ */
+const structuralOf = (state) =>
+	state.meshes.filter((mesh) => mesh.lit && mesh.name !== "throttle-fill");
+
 /** The five surfaces a player *reads*. Named rather than derived, because the
  *  claim is about these specific ones and a derived set would grow silently. */
 const READABLE = [
@@ -112,13 +124,7 @@ for (const viewport of VIEWPORTS) {
 	const high = await page.evaluate(state);
 	check(`${viewport.name}: the cabin is in the near scene`, high.found);
 
-	// **The throttle fill is lit and deliberately not plated** — it is a bar
-	// whose length is the reading, and a seam across it would read as a fault in
-	// the value. Excluded by name and then asserted on its own below, so the
-	// exclusion is a claim rather than a hole in the one above it.
-	const structural = high.meshes.filter(
-		(mesh) => mesh.lit && mesh.name !== "throttle-fill",
-	);
+	const structural = structuralOf(high);
 	check(
 		`${viewport.name}: every lit cabin surface carries the shared plating`,
 		structural.length > 0 &&
@@ -138,11 +144,17 @@ for (const viewport of VIEWPORTS) {
 		new Set(structural.map((mesh) => mesh.dial)).size === 3,
 	);
 	check(
-		`${viewport.name}: a plate is a size — the deck's UVs span its own kilometres`,
-		// 0.032 km of deck over a 0.072 km tile: under half a tile across, which
-		// is what "sparse, much larger panels" came to mean. Read off the page
-		// rather than restated, so the module moving the constant moves this.
-		high.deckSpan > 0.2 && high.deckSpan < 0.9,
+		`${viewport.name}: the deck carries a rare seam rather than a grid`,
+		// **Stated without restating the constant.** An earlier version banded
+		// this at 0.2–0.9, which is a hand-derivation of `COCKPIT_PANEL_KM`
+		// 0.072: a legitimate retune of the panel size would have turned the
+		// probe red for no defect, which is exactly the falsely-red failure
+		// CLAUDE.md's "probes read constants off the page" entry exists to
+		// prevent. What is asserted instead is the *shape* the principal ruled —
+		// the cabin's largest surface spans less than one whole tile, so it
+		// carries a handful of seams and not a grid — and that a projection ran
+		// at all, which a zero span would deny.
+		high.deckSpan > 0 && high.deckSpan < 1,
 	);
 	// **The node's line, made checkable.** Not "no reflection is visible" — a
 	// probe cannot see that — but "none of these five is a material the
@@ -177,9 +189,9 @@ for (const viewport of VIEWPORTS) {
 	const low = await page.evaluate(state);
 	check(
 		`${viewport.name}: low drops the cabin's seam map and keeps the rest`,
-		low.meshes
-			.filter((mesh) => mesh.lit && mesh.name !== "throttle-fill")
-			.every((mesh) => !mesh.normalMap && mesh.map && mesh.roughnessMap),
+		structuralOf(low).every(
+			(mesh) => !mesh.normalMap && mesh.map && mesh.roughnessMap,
+		),
 	);
 	check(
 		`${viewport.name}: low leaves the lamps and both interior lights alone`,
@@ -191,9 +203,7 @@ for (const viewport of VIEWPORTS) {
 	const restored = await page.evaluate(state);
 	check(
 		`${viewport.name}: high puts the seam map back on the same materials`,
-		restored.meshes
-			.filter((mesh) => mesh.lit && mesh.name !== "throttle-fill")
-			.every((mesh) => mesh.normalMap),
+		structuralOf(restored).every((mesh) => mesh.normalMap),
 	);
 
 	await page.close();

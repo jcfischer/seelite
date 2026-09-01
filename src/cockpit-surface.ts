@@ -8,9 +8,16 @@
  * textures and the quality gate — the same shape as `ship-surface.ts` — and no
  * arithmetic that module does not already own.
  *
- * **Nothing here implements lighting.** Same line `ship-surface.ts` and
- * `station-surface.ts` hold: the sun, the hemisphere, the baked environment and
- * the tone mapping stay `light-rig.ts`'s and three's.
+ * **The scene's rig is not here.** The sun, the hemisphere, the baked
+ * environment and the tone mapping stay `light-rig.ts`'s and three's — the line
+ * `ship-surface.ts` and `station-surface.ts` hold, and for their reason: a
+ * second lighting model would have to be reconciled with #57's planet shaders.
+ *
+ * What *is* here, and what the sentence above used to deny, is the **cabin's
+ * own two emitters** — `COCKPIT_LAMP` and `COCKPIT_KEY_LIGHT`. They are cabin
+ * furniture rather than scene lighting: parented to the cockpit group, sized in
+ * its oversized frame, and reaching nothing outside it. The rig lights the
+ * world; these light the room.
  *
  * ## What #105 found before it changed anything
  *
@@ -33,6 +40,7 @@
  */
 
 import * as THREE from "three";
+import { chamferedBox } from "./chamfer-box";
 import { boxProjectUVs, setUvUnits } from "./loft";
 import {
 	type PlatingProfile,
@@ -93,11 +101,14 @@ export const COCKPIT_MAP_SIZE = 256;
  *   which are closer to square without being square. Still a brick bond at
  *   `stagger` 0.5, because 1-and-0 together is the square grid #101 shipped and
  *   the principal rejected as scales on the first frame flown.
- * - `variation` **4** against 6. A cabin lining is painted as one job in one
- *   shop; the plates should read as one skin with lines scribed into it.
- * - `seam` **0.22** against 0.18. An interior seam is a shadowed gap and there
- *   is no direct sun inside to cut it, so more of the line has to be carried by
- *   the albedo than on a hull.
+ * - `variation` **3** against 6. Half the hull's spread again: a cabin lining
+ *   is painted as one job in one shop, and once the seams went sparse the
+ *   plate-to-plate tone was the only thing still saying "grid".
+ * - `seam` **0.26** against 0.18. *More* than the hull, which looks backwards
+ *   until the count is included: there are now two or three seams on the whole
+ *   deck rather than eleven, and each surviving one is a real join. An interior
+ *   seam is also a shadowed gap with no direct sun inside to cut it, so more of
+ *   the line has to be carried by the albedo than on a hull.
  * - `weathering` **0.06**, the lowest in the game. #98 refused the grime
  *   outright and a pressurised cabin is the cleanest surface there is. Not
  *   zero, for `SHIP_PLATING`'s reason: a plate-to-plate variation that is only
@@ -117,8 +128,9 @@ export const COCKPIT_MAP_SIZE = 256;
  *   profile 1 reads 0.702, so `metal`'s dial would need 1.026 and a dial cannot
  *   exceed 1. That is `station-types.md`'s clamp-bite shape (#13) one map over:
  *   the roughest material is the one whose roughness stops being expressible.
- * - `seamDepth` **0.5**, just under the hull's 0.55. The cabin's own light is
- *   soft and close, so a deeper groove reads as a trench rather than a line.
+ * - `seamDepth` **0.45** against the hull's 0.55. The cabin's own light is soft
+ *   and close, so a deeper groove reads as a trench rather than a line — and a
+ *   rare seam is read at leisure, where a hull's is glanced at in passing.
  */
 export const COCKPIT_PLATING: PlatingProfile = {
 	pitchPx: 32,
@@ -165,7 +177,7 @@ export const COCKPIT_CHAMFER_KM = 0.0003;
  * them.
  *
  * `inset` has no emissive because it is a recess. The other two carry the faint
- * self-lift they were authored with; `COCKPIT_TRIM` is a separate, brighter
+ * self-lift they were authored with; `COCKPIT_LAMP` is a separate, brighter
  * thing and is not one of these.
  */
 export const COCKPIT_FINISHES = {
@@ -314,11 +326,23 @@ let maps: {
 	clean: { roughness: number; metalness: number };
 } | null = null;
 
+/** The two wear channels a finish is expressed through. */
+type WearKey = "roughness" | "metalness";
+
+interface PlatingPass {
+	// `Uint8Array<ArrayBuffer>` and not the bare alias: `THREE.DataTexture` takes
+	// the narrow form, and `surface.ts` returns it, so widening here would only
+	// force a cast back at the two texture sites.
+	albedo: Uint8Array<ArrayBuffer>;
+	wear: Uint8Array<ArrayBuffer>;
+	clean: Record<WearKey, number>;
+}
+
 /** One plating pass: the albedo, the wear derived from it, and what the wear
  *  reads on a clean plate. Generated together and handed to both, because
  *  `wearTexels` derives from the albedo and regenerating would leave two
  *  buffers that only happen to agree. */
-function platingPass(profile: PlatingProfile) {
+function platingPass(profile: PlatingProfile): PlatingPass {
 	const albedo = plateTexels(profile, "cockpit", COCKPIT_MAP_SIZE);
 	const wear = wearTexels(profile, albedo, COCKPIT_MAP_SIZE);
 	return { albedo, wear, clean: cleanPlate(wear) };
@@ -326,52 +350,85 @@ function platingPass(profile: PlatingProfile) {
 
 /**
  * Lift the profile's `roughness` and `metalness` until the cabin's strongest
- * finish has a dial of exactly 1, and no further.
+ * finish has a dial of at most 1 — and then check that it does.
  *
  * A material's dial is `finish / clean`, and `MeshStandardMaterial` has no dial
- * above 1 — so a finish rougher than a clean plate simply cannot be asked for,
- * and clamping it is a silent repaint of exactly the kind #101 shipped once.
- * The cabin's roughest finish is 0.72 against a clean plate of 0.702 at profile
- * 1, so the lift needed is about 2.6%; its most metallic is 0.72 against 0.726,
+ * above 1: a finish rougher than a clean plate simply cannot be asked for, and
+ * clamping it is a silent repaint of exactly the kind #101 shipped once. The
+ * cabin's roughest finish is 0.72 against a clean plate of 0.702 at profile 1,
+ * so the lift needed is about 2.6%; its most metallic is 0.72 against 0.726,
  * which needs none.
  *
- * **Measured rather than transcribed.** The factor is read off the first pass's
+ * **Measured rather than transcribed.** The factor is read off a real pass's
  * own buffer, so a change to `variation`, `seam` or `weathering` — all three
  * move the clean plate — recalibrates instead of drifting. A constant here
  * would be the transcription `cleanPlate` exists to avoid, one level up.
  *
- * The cost is that the seam and grime texels, which are the *rougher* end of
- * the curve, clip against 255 rather than running to 1.026. That is a 2.6%
- * squeeze on texels already at the ceiling, and it is the reason the lift is
- * "just enough" rather than a round number with headroom: a larger factor
- * flattens the top of the wear curve, which is the seam contrast the map is
- * for.
+ * **A loop rather than one shot, because the map requantises.** The first
+ * version solved the lift against the *unlifted* pass and shipped the result
+ * unchecked. But `wearTexels` writes bytes and `cleanPlate` reads
+ * `median / 255`, so the lifted pass's clean plate is the target rounded to a
+ * texel — and rounding *down* by one leaves the dial at 1.003 and
+ * `cockpitMaterial("metal")` throwing inside `Game`'s constructor. A cabin that
+ * cannot boot, off a quantisation of one part in 255. So each pass is measured,
+ * and a pass that still falls short is lifted again by its own shortfall plus
+ * one texel.
+ *
+ * The loop terminates because every iteration raises the target by at least
+ * `1/255` against a bounded quantity; the cap is a guard on that reasoning
+ * rather than an expected path, and it throws rather than shipping a profile it
+ * could not verify — see `dial`'s argument for loud over clamped.
+ *
+ * The cost of the lift is that the seam and grime texels, which are the
+ * *rougher* end of the curve, clip against 255 rather than running past 1. That
+ * is a squeeze of a few percent on texels already at the ceiling, and it is the
+ * reason the lift is "just enough" rather than a round number with headroom: a
+ * larger factor flattens the top of the wear curve, which is the seam contrast
+ * the map is for.
  */
-function calibrate(): { profile: PlatingProfile; needed: number } {
-	const first = platingPass(COCKPIT_PLATING);
-	const strongest = (key: "roughness" | "metalness") =>
+function calibrate(): { profile: PlatingProfile; pass: PlatingPass } {
+	const strongest = (key: WearKey) =>
 		Math.max(...COCKPIT_FINISH_IDS.map((id) => COCKPIT_FINISHES[id][key]));
-	const lift = (key: "roughness" | "metalness") =>
-		Math.max(1, strongest(key) / first.clean[key]);
-	const needed = Math.max(lift("roughness"), lift("metalness"));
-	return {
-		profile: {
-			...COCKPIT_PLATING,
-			roughness: COCKPIT_PLATING.roughness * lift("roughness"),
-			metalness: COCKPIT_PLATING.metalness * lift("metalness"),
-		},
-		needed,
-	};
+	/** One byte of headroom, so a pass that lands a texel low is not shipped. */
+	const TEXEL = 1 / 255;
+	let profile = COCKPIT_PLATING;
+	for (let attempt = 0; attempt < 8; attempt++) {
+		const pass = platingPass(profile);
+		const short = (key: WearKey) => strongest(key) / pass.clean[key];
+		if (short("roughness") <= 1 && short("metalness") <= 1)
+			return { profile, pass };
+		profile = {
+			...profile,
+			roughness: profile.roughness * Math.max(1, short("roughness") + TEXEL),
+			metalness: profile.metalness * Math.max(1, short("metalness") + TEXEL),
+		};
+	}
+	throw new Error(
+		"cockpit plating did not calibrate: no lift of the wear curve made every finish in COCKPIT_FINISHES expressible",
+	);
 }
+
+/**
+ * The calibration, memoised.
+ *
+ * Each pass generates two 256-square buffers and takes two medians, and
+ * `calibrate` runs at least two of them. Without this, `cockpitMaps` paid one
+ * calibration and `calibratedProfile()` paid a whole fresh one on every call.
+ */
+let calibrated: { profile: PlatingProfile; pass: PlatingPass } | null = null;
+
+const calibration = () => {
+	if (!calibrated) calibrated = calibrate();
+	return calibrated;
+};
 
 /** The calibrated profile the shipped maps are generated from, so a test can
  *  read what the pass decided rather than restate it. */
-export const calibratedProfile = () => calibrate().profile;
+export const calibratedProfile = () => calibration().profile;
 
 function cockpitMaps() {
 	if (maps) return maps;
-	const { profile } = calibrate();
-	const pass = platingPass(profile);
+	const { profile, pass } = calibration();
 	const plate = pass.albedo;
 	const texture = (data: Uint8Array<ArrayBuffer>, srgb: boolean) => {
 		const map = new THREE.DataTexture(
@@ -414,12 +471,26 @@ function cockpitMaps() {
  * `plateCockpit` would then scale every material by a number that no longer
  * described the map it was scaling.
  */
-function cleanPlate(wear: Uint8Array) {
+function cleanPlate(wear: Uint8Array<ArrayBuffer>): Record<WearKey, number> {
+	// **Counted, not sorted.** The channel is a byte, so a 256-bin histogram
+	// gives the same median in one linear scan with no allocation — against
+	// building and comparator-sorting a 65,536-element array per channel, which
+	// the calibration loop above would then pay for on every attempt.
 	const median = (channel: number) => {
-		const values: number[] = [];
-		for (let i = 0; i < wear.length; i += 4) values.push(wear[i + channel]);
-		values.sort((a, b) => a - b);
-		return values[values.length >> 1] / 255;
+		const bins = new Uint32Array(256);
+		let count = 0;
+		for (let i = 0; i < wear.length; i += 4) {
+			bins[wear[i + channel]] += 1;
+			count += 1;
+		}
+		// The same element `values[count >> 1]` named: the first value at or past
+		// the half-count once the bins are walked in order.
+		let seen = 0;
+		for (let value = 0; value < 256; value++) {
+			seen += bins[value];
+			if (seen > count >> 1) return value / 255;
+		}
+		return 1;
 	};
 	return { roughness: median(1), metalness: median(2) };
 }
@@ -428,11 +499,22 @@ function cleanPlate(wear: Uint8Array) {
  *  survive. */
 export const cockpitCleanPlate = () => cockpitMaps().clean;
 
-/** Every cabin material handed to `plateCockpit`, so the quality setting can
- *  reach them all. A `Set` and not a count: the gate has to put the map back.
+/**
+ * Every cabin material plated so far, so the quality setting can reach them
+ * all. A `Set` and not a count: the gate has to put the map back, which means
+ * holding the materials rather than knowing how many there were.
  *
- *  Bounded and not by eviction — `buildCockpit` runs once per `Game` and makes
- *  three structural materials, so this holds three. */
+ * **Module state, and it never shrinks.** An earlier docstring here claimed it
+ * "holds three" because `buildCockpit` runs once per `Game`; that is what one
+ * game does, not what the set is. `cockpitMaterial` mints a fresh material on
+ * every call, so the unit tests alone push it past three, and a second `Game`
+ * in one page would retain the first cabin's materials for the life of the
+ * process. Left as it is, matching `ship-surface.ts`: the retained objects are
+ * a handful of materials with no geometry behind them, and the alternative —
+ * per-cabin ownership — would put the quality gate's reach in `Game` rather
+ * than in the module that knows what a cabin surface costs. Written down
+ * because a bound nobody enforces should not be stated as one.
+ */
 const plated = new Set<THREE.MeshStandardMaterial>();
 
 /**
@@ -481,7 +563,7 @@ export function plateCockpitUVs(
  * expressible, so reaching this throw means a finish was added or a profile
  * field moved without the calibration seeing it.
  */
-function dial(key: string, finish: number, clean: number): number {
+export function dial(key: WearKey, finish: number, clean: number): number {
 	const value = finish / clean;
 	if (value > 1)
 		throw new Error(
@@ -511,13 +593,40 @@ export function cockpitMaterial(finish: CockpitFinish) {
 }
 
 /**
+ * One cabin fitting's geometry: a chamfered form with the cabin's plate
+ * projection already on it.
+ *
+ * **The one call site `buildCockpit` should have.** The pair was written out by
+ * hand at eight places, each threading `COCKPIT_CHAMFER_KM` itself, and the
+ * failure that invites is silent in the worst way: a ninth fitting that forgets
+ * the wrapper is drawn unplated, which — as `plateCockpitUVs` says — looks
+ * exactly like the map having failed to load rather than like a missing call.
+ */
+export function cockpitForm(
+	width: number,
+	height: number,
+	depth: number,
+): THREE.BufferGeometry {
+	return plateCockpitUVs(
+		chamferedBox(width, height, depth, COCKPIT_CHAMFER_KM),
+	);
+}
+
+/**
  * Give a cabin material the shared plating, its seams and its own finish back.
+ *
+ * **Not exported**, and that is the other half of `cockpitMaterial`'s claim to
+ * be the one way to make a cabin material. While this was public, a caller
+ * could hand it a `MeshStandardMaterial` carrying a finish the calibration pass
+ * had never seen; any finish at or below the clean plate slips past `dial`'s
+ * throw and renders at a dial the profile was not lifted for, which is the
+ * call-site door `COCKPIT_FINISHES` was moved here to shut.
  *
  * Idempotent by the `plated` set. **Not for a readout**: the throttle fill is a
  * `MeshStandardMaterial` and is deliberately not passed here — plating a bar
  * whose length is the reading would put a seam across the value.
  */
-export function plateCockpit(material: THREE.MeshStandardMaterial) {
+function plateCockpit(material: THREE.MeshStandardMaterial) {
 	if (plated.has(material)) return material;
 	const { albedo, wear, seams, clean } = cockpitMaps();
 	material.map = albedo;

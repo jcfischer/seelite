@@ -111,8 +111,9 @@ describe("the chamfered box", () => {
 	test("a thin fitting keeps a face rather than becoming all rim", () => {
 		// The cabin runs one chamfer figure over a 32 m deck and a 0.75 m bezel.
 		// Unclamped, the bezel's 0.4 m cut exceeds its own half-height and the
-		// form turns inside out; clamped to half, it keeps a flat face at least
-		// as wide as the cut framing it.
+		// form turns inside out; clamped to a quarter of the smallest
+		// half-extent, it keeps a flat face three times the width of the cut
+		// framing it.
 		const [w, hgt, d] = [0.0308, 0.00075, 0.0008];
 		const thin = chamferedBox(w, hgt, d, 0.0004);
 		const v = vertices(thin);
@@ -123,9 +124,11 @@ describe("the chamfered box", () => {
 			expect(Math.abs(z)).toBeLessThanOrEqual((d / 2) * (1 + EPS));
 		}
 		// The clamp: 0.4 m asked for against a 0.375 m half-height, so the cut is
-		// a quarter of the smallest half-extent and the flat top survives with an
-		// inset half-width of h − c on its narrowest axis — three times the cut
-		// that frames it, which is what stops a thin fitting reading as piping.
+		// a quarter of the smallest half-extent — 0.09375 m — and the flat top
+		// survives with an inset half-width of h − c on its narrowest axis, three
+		// times the cut framing it. That ratio is what stops a thin fitting seen
+		// at a shallow angle reading as chrome piping, which is how a half-clamp
+		// was flown and rejected.
 		const c = Math.min(hgt, d) / 2 / 4;
 		const top = v.filter(([, y]) => Math.abs(y - hgt / 2) < hgt * EPS);
 		expect(top.length).toBeGreaterThan(0);
