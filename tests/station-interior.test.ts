@@ -208,8 +208,12 @@ describe("the volume holds what it says it holds", () => {
 		// cluster *below* its pad, at negative z. Measured against those, the row
 		// would be comparing the bay with the wrong object.
 		//
-		// So the two pad roles' bays are held by the canonical view set alone.
-		// That is the residue, stated rather than papered over.
+		// **The residue that left is gone rather than still open** (#165). It
+		// used to read "the two pad roles' bays are held by the canonical view
+		// set alone"; those roles have no bay now, so there is nothing to poke
+		// through a hull, and what they draw stands in *front* of the plane,
+		// where `tests/station-mesh.test.ts`'s corridor row measures it over all
+		// twelve forms.
 		for (const type of STATION_TYPES) {
 			if (STATION_GEOMETRY[type].aperture.kind !== "slot") continue;
 			const interior = interiorOf(type);

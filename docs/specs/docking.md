@@ -1337,6 +1337,16 @@ the running world clock, and the station console's ownership.
 The trigger was playtest feedback against the docked view #138 shipped: a flat
 closure at the end of the aperture does not read as a hangar.
 
+**Partly reversed on 2026-09-01 by the principal, on node
+[#165](https://github.com/jcfischer/seelite/issues/165)**: *"shrink the bays.
+Outposts don't have bays, just landing pads. also refinerie can change to
+landing pads if too small."* A **slot** role — trade, shipyard — keeps
+everything below. A **pad** role — refinery, outpost — loses the enclosed
+volume and gets an open deck at its aperture plane with its berths standing on
+it, which is where E1/E8 stood before this section replaced them. Each
+subsection says which half it belongs to. The measurement behind the ruling is
+in §13.1.
+
 ### 13.1 Shared topology
 
 Every station has a procedural **station interior** beyond its exterior
@@ -1351,6 +1361,28 @@ own rectangle, which is what makes §12.6's obligation 7 hold through the first
 leg: a ship that crossed the plane is inside the lane and cannot leave it before
 the staging point.
 
+**A pad role has no enclosed volume, and its lane runs the other way** (#165).
+The interior is a **deck at the aperture plane** with berths standing on it
+around a central landing lane; the volume the traversal uses runs *outward*
+from that deck to a hover point one clear height above it, and `endAxialKm`
+equals `mouthAxialKm`, which is what "no bay" is as a number. The exterior
+form's own surface is the deck's floor, so **a pad's aperture is not cut**
+(reversing #162 for those six forms): there is nothing behind a landing pad but
+the station's own plant, and a hole in it opens onto that. The four faces still
+name the same four directions — a bay's are the walls a berth is bolted to, a
+pad's are the sides of the lane a berth stands on.
+
+**A pad's berths stand clear of the approach corridor**, which is the aperture's
+own half-diagonal cylinder extended outward from the plane. Nothing of a station
+may stand in it — the rule `tests/station-mesh.test.ts`'s corridor row has
+enforced since the refinery's rock rose 131 m past its own pad mouth, and which
+`corridorIntrusions` in `tests/helpers/aperture-opening.ts` measures. A pad's
+berths are the first parts of a station ever drawn on that side of the plane, so
+that row is now a pad's whole lane gate, and it is what sets how wide a pad's
+deck is:
+`PAD_CORRIDOR_MARGIN_FACTOR` in `src/station-interior.ts` carries the margin and
+the measurement behind it.
+
 **The opening is a cut in the hull, not a frame drawn on it** (#162,
 2026-08-31). The hull's own docking face was never opened: `buildCuboctahedron`
 wrote the trade Coriolis's +Z square as two triangles and `hullLoft` caps both
@@ -1363,20 +1395,34 @@ now cut — a ring of quads round the aperture rectangle, exactly, since the fou
 bars lie strictly outside it — and a plate the ship passes through is cut on both
 faces.
 
-**"Permanently clear" is an obligation the drawn forms do not yet meet, and the
-figure is the bay's depth against the form's** (#162). Measured with
-`scripts/measure-aperture-cut.ts`: the bay is 405 m deep on trade, shipyard and
-refinery and 234 m on an outpost, while the lane runs clear for 405 m on all
+**"Permanently clear" was an obligation the drawn forms did not meet, and the
+figure was the bay's depth against the form's** (#162). Measured with
+`scripts/measure-aperture-cut.ts`: the bay was 405 m deep on trade, shipyard and
+refinery and 234 m on an outpost, while the lane ran clear for 405 m on all
 three trade forms, 60–95 m on two of the shipyard's, 58–215 m on the refinery's
-and 9–30 m on the outposts'. An outpost's core radius is 150 m, so its bay is
-1.56 times that radius deep and its own tower legs and collars stand in the lane.
-The obstructions are *inside* the bay box rather than behind it, so the shell
-does not occlude them; none yields to the cut above — a keel and a drill are
-rotated a right angle out of the aperture frame, the Rig's body is pitched
-0.34 rad, an asteroid has no cap to re-triangulate, and greebles and window panes
-are instanced, where the fix is placement. **The trade station is the only role
-whose forms have room for their bay**, which is why §13.6's accepted frames — all
-trade — read correctly.
+and 7–30 m on the outposts'. An outpost's core radius is 150 m, so its bay was
+1.56 times that radius deep and its own tower legs and collars stood in the lane.
+The obstructions were *inside* the bay box rather than behind it, so the shell
+did not occlude them, and none of them yielded to #162's cut — a keel and a
+drill are rotated a right angle out of the aperture frame, the Rig's body is
+pitched 0.34 rad, an asteroid has no cap to re-triangulate, and greebles and
+window panes are instanced, where the fix is placement. **The trade station was
+the only role whose forms had room for their bay**, which is why §13.6's
+accepted frames — all trade — read correctly.
+
+**It is an assertion now, and it took two different fixes** (#165). Six of the
+eight blocked forms are the pad roles and have no bay to be inside anything.
+The other two are the shipyard's, and their defect was a **topology error rather
+than a placement one**: the slot is on the spin axis (§4.2) and #28 keeps the
+outboard structure still, so a shipyard is a rotating drum with a static spine —
+and both forms drew the spine passing straight through the drum's interior. A
+bearing has to be on the spin axis, so static structure can meet the drum only
+at an axial face; the forward face is the aperture, so **aft is the only one
+left**. `SHIPYARD_KEEL_AFT_KM` moves the Gantry's keel and the Hangar's slab
+360 m aft, taking the arches, rails and the fittings mounted on them and leaving
+the two booms where #28 put them, outside the bay's 181 m swept cylinder. It
+costs 30 m of the Gantry's declared reach and nothing in the outline #28 ranked,
+which is taken down the aperture axis. All twelve forms measure clear.
 
 **The interior is unpressurized. There is no opaque door and no energy
 curtain.** The aperture frame and the station-name shield are visible from every
@@ -1385,6 +1431,13 @@ removed by this, and E11's interior shield moves from the throat's end wall — 
 surface that no longer exists — to the **mouth bulkhead**, facing the berths,
 which is where a ship parked nose-outward can read it. That also retires the
 symptom §12.7's joint 9 records as #131.
+
+**On a pad the shield is painted on the deck** (#165), on a corner of it where
+no berth stands. There is no wall to hang it on and no throat to read it down,
+and the one view every approach to a pad shares is the one looking straight
+down at it. The half of this paragraph that is a *rule* — the route back to
+space is always recognisable — holds trivially on an open deck, where it is the
+whole sky.
 
 ### 13.2 Berths, fit, and allocation
 
@@ -1397,13 +1450,20 @@ interaction.
 | trade | deck or wall | 8 |
 | shipyard | wall or cradle | 6 |
 | refinery | deck or cradle | 4 |
-| outpost | deck or wall | 2 |
+| outpost | deck | 2 |
 
 A berth address is **interior face × depth band**: deck, port wall, starboard
 wall or overhead; near or deep. Trade fills all eight addresses. Shipyards use
-four side berths and two deep cradles. Refineries use two deck pads and two deep
-cradles. Outposts use one deck pad and one station-seeded side berth. The
-central transit axis is never a berth.
+four side berths and two deep cradles. The central transit axis is never a
+berth.
+
+**A pad role has one band and one surface** (#165). There is no depth on a
+landing deck, so every pad berth is in the `near` band and the address is
+effectively its face — the side of the landing lane it stands on. Refineries use
+two deck pads and two service cradles, one to a side; outposts use one deck pad
+and one station-seeded side pad, and the seed still chooses the side. The
+outpost's wall family goes with the wall: a pad has one surface, so a wall berth
+has nothing to be a wall berth on.
 
 **Fit is geometric, not a parallel S/M/L taxonomy.** Each berth declares a clear
 length, beam and height after safety margin, and accepts a ship exactly when
@@ -1453,12 +1513,27 @@ The successful crossing begins one scripted traversal of three legs:
 2. translation and roll toward the reserved face and depth band;
 3. a normal settle onto the assigned deck, wall, overhead berth or cradle.
 
-Parked, the ship **points outward** along the aperture axis and its local up
-points away from the berth surface. Wall and overhead addresses therefore create
-distinct roll attitudes while the exit remains straight ahead — which is why a
-launch no longer turns the ship round inside the bay, and settles the roll
-instead. Launch reverses the same route, keeps the reservation until the outward
-aperture crossing, and restores flight controls only after that crossing.
+Parked, the ship's local up points away from the berth surface and its nose
+along the berth's own **parked nose**, which in a bay is the aperture axis on
+every berth. Wall and overhead addresses therefore create distinct roll
+attitudes while the exit remains straight ahead — which is why a launch no
+longer turns the ship round inside the bay, and settles the roll instead. Launch
+reverses the same route, keeps the reservation until the outward aperture
+crossing, and restores flight controls only after that crossing.
+
+**A pad's ship lies in the deck** (#165). Its up-vector is the aperture axis,
+because that is the berth's normal, so a nose along the axis too would not be an
+orientation at all — two parallel directions leave the attitude with no roll
+reference and an arbitrary basis. A pad berth's nose is therefore broadside to
+the lane, a quarter turn from its own radius, and the four berths read as a
+flight line round the pad. A launch there rises off the deck, crosses to the
+axis at the hover height and pitches the nose up to the exit; the release point
+is outside the plane **and** outside the staging point, so the run stays
+monotone outward rather than dipping back toward the deck.
+
+**A pad's traversal is the same three legs.** The axial run is a climb from the
+touchdown to the hover point, the transfer is a pure translation over the
+reserved berth at that height, and the settle comes straight down onto it.
 
 **Traversal duration scales with route length**: about six seconds for a near
 berth to nine seconds for a deep one, interpolated on the route's own length
@@ -1492,6 +1567,13 @@ palette:
 **Light identifies role only.** It never encodes clearance, occupancy,
 hostility, or danger state — the same rule §5 states for the exterior.
 
+**The two pad roles' rows are the half of this that is a rule** (#165). Pipes,
+vent machinery, conduits and panels are things hung on a wall, and a pad has
+none; what a pad carries is a kerb, corner lamps and its deck plating, all three
+coloured from the role's own `STATION_VISUALS` row. So a refinery pad and an
+outpost pad differ by exactly the thing this section says they should — light
+and plating — and by the exterior form standing behind them.
+
 ### 13.5 Verification obligations
 
 **Headless** (`tests/station-interior.test.ts`, `tests/arrival.test.ts`,
@@ -1500,8 +1582,9 @@ hostility, or danger state — the same rule §5 states for the exterior.
 1. Each role's catalogue has exactly its ratified capacity, distinct addresses,
    and only families its palette allows.
 2. The central transit lane is clear of every berth, and no two berths overlap.
-3. Every berth lies inside the enclosed volume, and the volume lies inside the
-   drawn station.
+3. Every berth lies inside the volume its interior declares, and the volume lies
+   inside the drawn station. A bay's span runs inward from the mouth; a pad's
+   runs outward from the deck to the hover point.
 4. The fit predicate admits every ordinary hull at a full-size berth and neither
    capital, measured against the hull roster.
 5. Allocation picks the least spare envelope, never an occupied berth, rotates
@@ -1514,11 +1597,21 @@ hostility, or danger state — the same rule §5 states for the exterior.
    its duration lies in the ratified band.
 8. A skip lands an arrival at the berth and a launch outside the plane.
 
+**Headless, added by #165** (`tests/station-mesh.test.ts`):
+
+9. The transit lane is clear from the mouth to the back wall on every form that
+   draws a bay — the row #162 could not assert, red on eight of twelve before
+   this node.
+10. No pad form cuts its deck, and the approach corridor is clear on all twelve.
+    The corridor row carries a control that moves a berth onto the axis, because
+    it became a pad role's whole lane gate and a rule nothing has been seen to
+    break is a rule nobody knows is running.
+
 **Browser** (`scripts/probe-dock-arrival.mjs`), and stated as the rows the file
 actually asserts rather than as the rows one would want:
 
-1. every station draws a bay, and every berth in its catalogue has a pad;
-2. the bay reaches the screen from inside it;
+1. every station draws an interior, and every berth in its catalogue has a pad;
+2. the interior reaches the screen from inside it;
 3. the interior name shield draws pixels, measured on the axis just inside the
    mouth — the arriving ship's view of the end bulkhead, and the one viewpoint
    available while the ship is still flying;
@@ -1554,6 +1647,13 @@ Seven frames:
 The first four prove the full transition. The final three prove that role,
 family and location produce distinct interiors.
 
+**Frames 6 and 7 are landing pads now** (#165), and they are the frames the
+reversal closes on: a refinery cradle is on a deck rather than in a room, and
+the outpost workbench frame looks at a pad rather than into a bay. Frames 1–5
+are the trade station and the shipyard and are unchanged in kind, but frame 4's
+station is a shipyard whose keel has moved 360 m aft, so the flank is a
+different picture from the same viewpoint.
+
 **Two of the seven are not captured the way this list reads, and the fixture is
 why.** `SEED` 47 — the canonical view set's pinned seed — generates a trade
 station and a shipyard and nothing else. So **frame 6 names its own seed** (2,
@@ -1576,7 +1676,16 @@ ship's surroundings are visible.
 ### 13.7 Boundaries
 
 No on-foot mode, manual interior flight, second docking test, downloaded asset,
-general interior collision system, exterior silhouette change, or market and
-equipment ownership change. NPC traffic is deliberately a later decision, and
+general interior collision system, or market and equipment ownership change.
+
+**The exterior-silhouette boundary is spent, twice, and #165 spent it
+deliberately.** A pad's deck is drawn *in front of* the aperture plane and is
+wider than the surface it stands on — 157 m of half-extent on an outpost whose
+own deck reaches 142 m — so the interior is part of the silhouette on those six
+forms rather than hidden behind it. And the shipyard's keel moved 360 m aft,
+which changes the flank and raises the Gantry's declared reach from 1.5 to
+1.53 km. Both were paid to clear the lane, both are visible on the canonical
+view set, and neither is a licence for the next change: the boundary stands for
+anything that has not been ruled on. NPC traffic is deliberately a later decision, and
 when it lands it must reuse berth fit, reservation and corridor occupancy rather
 than inventing a parallel docking model.

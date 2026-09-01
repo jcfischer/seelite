@@ -48,7 +48,8 @@ export const VIEWPORT = { width: 1440, height: 900 };
 
 /**
  * The levers charted under #98, by node id — six then, seven since #147 put a
- * room behind every aperture, eight since #162 cut the aperture into the hull.
+ * room behind every aperture, eight since #162 cut the aperture into the hull,
+ * nine since #165 replaced two roles' rooms with landing pads.
  *
  * The set's job is to cover every surface these touch — that is what makes it
  * canonical rather than a convenient handful of screenshots. Adding a lever to
@@ -66,6 +67,7 @@ export const LEVERS = Object.freeze({
 	105: "the cockpit interior",
 	147: "the station interior",
 	162: "the aperture cut into the hull",
+	165: "the landing pad, and the shipyard keel aft of its hub",
 });
 
 /**
@@ -89,10 +91,13 @@ export const LEVERS = Object.freeze({
  *   allocated because §13.2 rotates equal fits by request time: an unnamed
  *   berth is a different room each run, and a before/after pair of two rooms
  *   compares nothing.
- * - `workbench-interior` — `?model-viewer=station`, framed from inside one
- *   role's bay. It exists for exactly one subject: no system generates an
+ * - `workbench-interior` — `?model-viewer=station`, framed on one role's
+ *   interior. It exists for exactly one subject: no system generates an
  *   outpost (§12.7's joint 5), so the workbench is the only place its interior
- *   exists. It **navigates the page**, so it is last in the set.
+ *   exists. It **navigates the page**, so it is last in the set. Since #165 the
+ *   outpost's interior is a landing pad rather than a bay, so the frame looks
+ *   down at a deck rather than in through an opening; the kind's name is the
+ *   mechanism — the workbench stage — and not a claim about the subject.
  */
 export const SHOT_KINDS = Object.freeze([
 	"station-axis",
@@ -484,7 +489,7 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "refinery-cradle-berth",
-		covers: [147, 99],
+		covers: [165, 147, 99],
 		/**
 		 * **The one view that names its own seed, and the fixture is why.**
 		 * **Seed 47 has no refinery** — it generates a trade station and a
@@ -498,44 +503,49 @@ export const VIEWS = Object.freeze([
 		 * measured on it, so moving it would reframe every one of them to fix
 		 * one. Seed 2 is the lowest seed whose start system carries all three
 		 * generated types.
+		 *
+		 * **`port-near`, because a pad has one band** (#165). The refinery lost
+		 * its enclosed bay to the principal's ruling; its cradles stand on a
+		 * deck now, one to a side of the landing lane, and there is no `deep`
+		 * address to name. This is the frame that reversal closes on.
 		 */
-		what: "§13.6.6 — a refinery's bay from a service cradle, chase. Seed 2, because seed 47 generates no refinery.",
+		what: "§13.6.6 — a refinery's landing pad from a service cradle, chase: the deck, the lane, and the notch around it. Seed 2, because seed 47 generates no refinery.",
 		shot: {
 			kind: "berth",
 			station: "refinery",
-			berth: "port-deep",
+			berth: "port-near",
 			seed: 2,
 			view: "chase",
 		},
 	},
 	{
 		name: "outpost-interior-workbench",
-		covers: [147],
+		covers: [165, 147],
 		/**
 		 * **A workbench frame, and the receipt says why**: no system generates an
 		 * outpost, so this is the only place its interior exists at all. It is
 		 * last because it navigates the page — every view above it needs the
 		 * game, and this one needs the game not to be there.
 		 *
-		 * **Through the aperture, not from a berth, and the stage is why.** The
-		 * workbench's camera always looks at the origin: on the axis and inside
-		 * the bay it sees the end bulkhead square on and flat, because the bay is
-		 * wider than it is deep, and off-axis at the same radius it is outside
-		 * the bay among the Derrick's own structure. Both were captured and
-		 * rejected. What the stage can do is stand off and look *in* — the view
-		 * axis passes through the opening — which is the outpost's bay as the
-		 * only place one exists.
+		 * **Standing off and looking down at the deck, and #165 is why.** It was
+		 * framed to look *in* through the aperture at a bay behind it; the
+		 * principal's ruling took the bay away, so there is nothing to look into
+		 * and the subject is the deck itself — the kerb, the corner lamps, the
+		 * lit square round the landing lane, and the two pads standing on it.
+		 * The elevation is raised for that: the stage always looks at the origin,
+		 * so what changes the view is where it stands, and a pad seen edge-on is
+		 * a line.
 		 *
 		 * `radii` is the orbit radius the stage frames from the form's **reach**,
 		 * so it is a fraction of the whole silhouette rather than of the core.
 		 */
-		what: "§13.6.7 — an outpost's bay from inside, on the station workbench. Sparse panels, exposed utilities, one neutral lamp.",
+		what: "§13.6.7 — an outpost's landing pad from above, on the station workbench. Sparse plating, a kerb, corner lamps, and the lit lane.",
 		shot: {
 			kind: "workbench-interior",
 			asset: "outpost",
 			radii: 0.75,
 			azimuth: 0.28,
-			elevation: 0.18,
+			elevation: 0.62,
 			view: "cockpit",
 		},
 	},
