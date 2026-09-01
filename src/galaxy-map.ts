@@ -229,7 +229,17 @@ export interface Handle {
 	 * and the viewport rather than about the generator. A probe that computed
 	 * it from `pos` would be checking its own arithmetic.
 	 */
-	projected(): { index: number; x: number; y: number; behind: boolean }[];
+	projected(): {
+		index: number;
+		x: number;
+		y: number;
+		behind: boolean;
+		/** NDC depth. `behind` is `depth > 1`; a point with `depth < -1` is in
+		 *  front of the near plane and is clipped just as invisibly, which
+		 *  `behind` alone does not say. A probe deciding what is *drawn* needs
+		 *  both ends. */
+		depth: number;
+	}[];
 	/** The canvas's box in CSS pixels. A probe measuring crowding has to discard
 	 *  systems projected *outside* the viewport as well as behind the camera,
 	 *  and the drawn box is the module's fact, not the window's. */
@@ -898,7 +908,7 @@ export function mountGalaxyChart({
 	const toPixels = (
 		s: SystemRecord,
 		rect: DOMRect,
-	): { x: number; y: number; behind: boolean } => {
+	): { x: number; y: number; behind: boolean; depth: number } => {
 		scratch.set(s.pos.x, s.pos.y, s.pos.z).applyMatrix4(cluster.matrixWorld);
 		scratch.project(camera);
 		// **Canvas-relative, not client.** These once carried `rect.left`/`top`,
@@ -911,6 +921,15 @@ export function mountGalaxyChart({
 			x: ((scratch.x + 1) / 2) * rect.width,
 			y: ((-scratch.y + 1) / 2) * rect.height,
 			behind: scratch.z > 1,
+			// **The near plane is a second clip and `behind` is not it.** NDC
+			// depth below -1 is a point in front of `camera.near` (0.5), which
+			// WebGL discards while `behind` — depth *above* +1 — stays false and
+			// the x/y can land anywhere inside the box. At `CAMERA_MIN_LY` the
+			// camera sits 12 LY out and the cluster is 24.5 LY across, so a
+			// handful of systems fall in that 0.5 LY slab at some orientations.
+			// Reported rather than folded into `behind`, whose name means what
+			// it says.
+			depth: scratch.z,
 		};
 	};
 
@@ -960,10 +979,13 @@ export function mountGalaxyChart({
 	 * alone is the divergence D1 exists to prevent.
 	 */
 	const drawn = (
-		p: { x: number; y: number; behind: boolean },
+		p: { x: number; y: number; behind: boolean; depth: number },
 		rect: DOMRect,
 	): boolean =>
 		!p.behind &&
+		// The near plane. `behind` alone was the first version of this and left
+		// the same class of defect open at the far end of the zoom range.
+		p.depth >= -1 &&
 		p.x >= 0 &&
 		p.y >= 0 &&
 		p.x <= rect.width &&

@@ -538,15 +538,22 @@ rather than as careful. The label names a system inside the pick radius and
 (2 more)` reads as *this is one of three, zoom to be sure*, which is also the
 instruction §5.1 says resolves the cluster.
 
-**"The nearest" is not what the label promises, and the receipt's own wording
-overstates it.** #108 says "it names the nearest system within the existing
-14 px pick radius" and reads the badge as *the nearest of three* — but the same
-receipt's D1 makes the label sticky, and a held system is by construction *not*
-the nearest whenever the switch margin is doing its job. The two cannot both be
-true. The hysteresis is the ratified half and the "nearest" phrasing is the
-loose one, so the label promises **a system inside the pick radius, held
-steady** — and the badge says how many others the cursor cannot be told apart
-from. Listing every candidate was the third option and
+**"The nearest" is not what the label promises, and #108's receipt says both
+things.** Its summary sentence is "it names the nearest system within the
+existing 14 px pick radius" and it reads the badge as *the nearest of three*;
+its D1 then specifies a release radius and a switch margin, and a held system is
+by construction *not* the nearest whenever that margin is doing its job. The two
+cannot both hold.
+
+**#112 resolved the contradiction toward the mechanism, and that is this node's
+reading rather than a claim about what was ratified.** D1 carries the numbers,
+the reasoning and the failures they answer; the "nearest" phrasing is a
+one-line summary of it. So the label promises **a system inside the pick radius,
+held steady**. Nothing in the built behaviour turns on this — the code is D1's
+either way, and the checks pin D1 — so if the principal reads the receipt the
+other way, what changes is this paragraph and not the chart. It is recorded here
+because a spec that silently narrowed a ratified promise would be the worse
+failure. Listing every candidate was the third option and
 was declined — a 2–3 line panel is a second record card, and #70's constraint is
 that there is no second UI grammar.
 
@@ -1181,6 +1188,20 @@ ways, 20 red with it); `pointerup` put back on a fresh `pick()` (20 red alone,
 orbit (21 red); the candidate rebuilt on `pointermove` alone rather than on the
 frame (22 red); and the drawn-predicate reduced to `behind` alone (23 red).
 
+**A second clip has no check either, and it is the honest kind of gap.** Round 5
+found that `behind` (NDC depth above +1) is not the only way a system goes
+undrawn: depth *below* -1 is a point in front of `camera.near`, discarded by
+WebGL with `behind` still false. `drawn` tests both ends now — one comparison,
+and it makes the predicate mean what its name says. **No check was added,
+because none could be made to fail.** Driven to the 12 LY stop and orbited
+through 20 poses, NDC depth reached **-60**, so systems certainly do cross the
+near plane; not one of them ever projected *inside* the canvas box. The
+arithmetic says why: at a view depth under `near` (0.5 LY) a point lands inside
+the viewport only within about 0.45 x 0.2 LY of the view axis, a ~0.05 LY³
+volume against a cluster of some 30,000 LY³. A green-forever check here would be
+a check derived from its subject, which this file already records twice; the fix
+ships with this paragraph instead.
+
 **One decision here has no browser check at all, and that is a fact about the
 tier rather than a gap left open.** D5's hybrid case — a mouse leaving a
 candidate parked while a finger taps elsewhere — needs `(hover: hover)` and a
@@ -1207,6 +1228,15 @@ than no check: `setPointerCapture` throws on an inactive pointer id, so the
 handler aborts before the branch under test and the check passes on every build.
 The rule moved into `clickTarget` (§9.1b item 7) so the headless tier binds it
 instead of a comment doing.
+
+**What that leaves unchecked, stated rather than implied.** §9.1b item 7 binds
+the *rule*. It does not bind the **wiring** — that `pointerup` hands
+`e.pointerType` to it, and hands the right one. That is a single argument at one
+call site, covered by no tier here, and a build that passed `"mouse"`
+unconditionally would be green everywhere. It is a known gap of the same kind
+item 3 records for `currentIndex`, not a claim of end-to-end coverage; what
+would close it is a real hybrid pointer, which is the thing Chromium will not
+give. A device with a mouse and a screen is the only place it can be seen.
 
 **Item 10 has no red build**, because it asserts an absence — no per-row
 course control — and the build that fails it is a feature nobody wrote. It is
