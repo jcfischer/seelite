@@ -1390,10 +1390,11 @@ ends, so every form drew a lit frame on a solid surface and a docking ship
 crossed the station's own face. It read as an opening only while the dark
 `BackSide` recess this section replaced stood in front of it, and it stayed
 invisible afterwards because a hull is `FrontSide`: from inside the bay the face
-is culled, so every frame taken from a berth was correct. All twelve forms are
-now cut — a ring of quads round the aperture rectangle, exactly, since the four
-bars lie strictly outside it — and a plate the ship passes through is cut on both
-faces.
+is culled, so every frame taken from a berth was correct. The **six slot forms** are
+cut — a ring of quads round the aperture rectangle, exactly, since the four bars
+lie strictly outside it — and a plate the ship passes through is cut on both
+faces. #162 cut all twelve; #165 took the cut back off the six pad forms with
+the bay it opened onto, which the paragraph below states as the contract.
 
 **"Permanently clear" was an obligation the drawn forms did not meet, and the
 figure was the bay's depth against the form's** (#162). Measured with
@@ -1694,8 +1695,11 @@ wider than the surface it stands on — 157 m of half-extent on an outpost whose
 own deck reaches 142 m — so the interior is part of the silhouette on those six
 forms rather than hidden behind it. And the shipyard's keel moved 360 m aft,
 which changes the flank and raises the Gantry's declared reach from 1.5 to
-1.53 km. Both were paid to clear the lane, both are visible on the canonical
-view set, and neither is a licence for the next change: the boundary stands for
-anything that has not been ruled on. NPC traffic is deliberately a later decision, and
-when it lands it must reuse berth fit, reservation and corridor occupancy rather
-than inventing a parallel docking model.
+1.53 km. Both were paid to clear the lane, and neither is a licence for
+the next change: the boundary stands for anything that has not been ruled on.
+**Neither is verified here.** §13.5's human row is the gate for both, and #165
+closes on the principal in front of a frame rather than on this paragraph.
+
+NPC traffic is deliberately a later decision, and when it lands it must reuse
+berth fit, reservation and corridor occupancy rather than inventing a parallel
+docking model.
