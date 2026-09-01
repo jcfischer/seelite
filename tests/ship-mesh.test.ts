@@ -4,11 +4,14 @@ import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import {
 	HULL_IDS,
-	HULL_VARIANTS,
+	HULL_SPECS,
 	HULL_VARIANT_IDS,
-	HULL_VISUALS,
-	SHIP_DESIGN_ROUND,
 	type HullVariantId,
+} from "../src/hull";
+import {
+	HULL_REACH_KM,
+	HULL_VARIANTS,
+	SHIP_DESIGN_ROUND,
 	buildShipMesh,
 	fleetLayout,
 } from "../src/ship-mesh";
@@ -31,8 +34,8 @@ describe("procedural ship visual language", () => {
 					...first.min.toArray().map(Math.abs),
 					...first.max.toArray().map(Math.abs),
 				);
-				expect(reach).toBeLessThanOrEqual(HULL_VISUALS[id].reachKm * 1.00001);
-				expect(reach).toBeGreaterThan(HULL_VISUALS[id].reachKm * 0.5);
+				expect(reach).toBeLessThanOrEqual(HULL_REACH_KM[id] * 1.00001);
+				expect(reach).toBeGreaterThan(HULL_REACH_KM[id] * 0.5);
 			}
 		}
 	});
@@ -95,8 +98,7 @@ describe("procedural ship visual language", () => {
 		for (const a of hulls)
 			for (const b of hulls) {
 				if (a.id >= b.id || a.role === b.role) continue;
-				const sizeRatio =
-					HULL_VISUALS[a.role].reachKm / HULL_VISUALS[b.role].reachKm;
+				const sizeRatio = HULL_REACH_KM[a.role] / HULL_REACH_KM[b.role];
 				if (sizeRatio > 2 || sizeRatio < 0.5) continue;
 				compared += 1;
 				const separation = Math.hypot(
@@ -115,7 +117,7 @@ describe("procedural ship visual language", () => {
 			for (const variant of HULL_VARIANT_IDS) {
 				const root = buildShipMesh(id, variant).root;
 				expect(root.name).toBe(`hull-${id}`);
-				expect(root.userData.role).toBe(HULL_VISUALS[id].role);
+				expect(root.userData.role).toBe(HULL_SPECS[id].role);
 				expect(root.userData.variant).toBe(variant);
 				expect(root.userData.designRound).toBe(SHIP_DESIGN_ROUND);
 				expect(
@@ -365,7 +367,7 @@ describe("procedural ship visual language", () => {
 				// sideways only: sampling below the eye finds the structure the
 				// canopy stands on, which is not a blocked view on any ship.
 				const halfWidth = (glass.max.x - glass.min.x) / 2;
-				const reach = HULL_VISUALS[id].reachKm;
+				const reach = HULL_REACH_KM[id];
 				let checked = 0;
 				for (const child of root.children) {
 					if (!(child instanceof THREE.Mesh)) continue;
@@ -421,7 +423,7 @@ describe("procedural ship visual language", () => {
 				// Reach is a radius, so touching is the sum of the two. The margin
 				// on top is the room to fly between them, which is the whole point
 				// of parking them in a line rather than listing them in a viewer.
-				const clear = HULL_VISUALS[a.id].reachKm + HULL_VISUALS[b.id].reachKm;
+				const clear = HULL_REACH_KM[a.id] + HULL_REACH_KM[b.id];
 				expect(
 					`${a.id}/${a.variant} to ${b.id}/${b.variant}: ${gap > clear * 1.8}`,
 				).toBe(`${a.id}/${a.variant} to ${b.id}/${b.variant}: true`);
@@ -432,7 +434,7 @@ describe("procedural ship visual language", () => {
 		for (const slot of slots) {
 			const offAxis = Math.hypot(slot.x, slot.y);
 			expect(
-				`${slot.id}/${slot.variant} clears the lane: ${offAxis > HULL_VISUALS[slot.id].reachKm * 1.8}`,
+				`${slot.id}/${slot.variant} clears the lane: ${offAxis > HULL_REACH_KM[slot.id] * 1.8}`,
 			).toBe(`${slot.id}/${slot.variant} clears the lane: true`);
 		}
 		// Smallest first: the size range only reads as deliberate if it grows.

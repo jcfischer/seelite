@@ -52,6 +52,7 @@ import {
 	generateGalaxy,
 	startSystem,
 } from "./galaxy";
+import { HULL_SPECS, type HullId, PLAYER_BASELINE_HULL } from "./hull";
 import { mix, seededRand } from "./rng";
 import { STATION_GEOMETRY, slotPhaseRad } from "./station";
 import {
@@ -523,20 +524,38 @@ export function makeWorld(seed: number): World {
  */
 export const ASSIST_CAP_KMS = 2.0;
 
-/** Thrust, km/s² — about 0.2 g. Tuned in #5's prototype so a 40 km station
- *  approach takes about twenty seconds. */
-export const THRUST_KMS2 = 2.0;
+/**
+ * The **baseline hull's** thrust, km/s². Tuned in #5's prototype so a 40 km
+ * station approach takes about twenty seconds.
+ *
+ * Every other hull's is `thrustMN / massT` (#26's D5), and the courier's pair —
+ * 120 MN over 60 t — is these 2.0 exactly, so the number #5 flew is still the
+ * number the baseline hull flies. It stays exported because it is the reference
+ * every derived figure below is stated against, not because anything integrates
+ * with it.
+ *
+ * (The comment here read "about 0.2 g" until #181. 2 km/s² is 2,000 m/s²,
+ * a little over 200 g — the prose was two orders out and nothing read it.)
+ */
+export const REFERENCE_THRUST_KMS2 = 2.0;
 
 /**
- * How fast the assist kills sideways drift: an e-folding time in seconds.
+ * How fast the assist kills sideways drift on the **baseline hull**: an
+ * e-folding time in seconds.
  *
  * This is the whole difference between the two regimes, so it is the one number
  * that decides whether assisted flight feels like a plane or like a puck. Short
  * enough that a turn ends pointed where you are going; long enough that a hard
  * turn still slides, which is what stops the assist from reading as being on
  * rails.
+ *
+ * It scales **inversely with acceleration** across the roster, because the
+ * assist removes drift with the same drive it accelerates with: a hull with half
+ * the thrust-to-mass takes twice as long to wipe the same sideways velocity.
+ * That is a derivation rather than a second tuning surface, which is the point —
+ * D5 says mass and thrust are the hull properties, so nothing else may be one.
  */
-export const ASSIST_LATERAL_TAU_S = 1.2;
+export const REFERENCE_ASSIST_LATERAL_TAU_S = 1.2;
 
 /**
  * How fast the ship is turning, radians per second, about its own axes.
@@ -553,18 +572,22 @@ export interface Angular {
 	roll: number;
 }
 
-/** Peak rate on each axis, radians per second. Roll is faster because it moves
- *  nothing on screen but the horizon. */
-export const ANGULAR_MAX: Angular = { pitch: 0.9, yaw: 0.9, roll: 1.4 };
+/** Peak rate on each axis for the **baseline hull**, radians per second. Roll is
+ *  faster because it moves nothing on screen but the horizon. */
+export const REFERENCE_ANGULAR_MAX: Angular = {
+	pitch: 0.9,
+	yaw: 0.9,
+	roll: 1.4,
+};
 
 /**
- * Angular acceleration, radians per second².
+ * Angular acceleration for the **baseline hull**, radians per second².
  *
  * About a third of a second from rest to peak rate on the pitch and yaw axes —
  * fast enough that the ship answers the stick, slow enough that the answer is
  * something you feel arrive.
  */
-export const ANGULAR_ACCEL = 3.0;
+export const REFERENCE_ANGULAR_ACCEL = 3.0;
 
 /**
  * How quickly the assist stops a turn once the stick is released: an e-folding
@@ -573,8 +596,87 @@ export const ANGULAR_ACCEL = 3.0;
  * Only with the assist **on**. With it off the ship keeps tumbling, which is
  * what Newtonian rotation means and what the assist-off regime is for — and it
  * is the second place (after lateral drift) where the two regimes visibly part.
+ *
+ * The **baseline hull's** figure; like the lateral one it scales inversely with
+ * the hull's angular authority, so a heavier ship takes longer to stop turning.
  */
-export const ANGULAR_DAMP_TAU_S = 0.28;
+export const REFERENCE_ANGULAR_DAMP_TAU_S = 0.28;
+
+/**
+ * Everything a hull's handling is, as one struct — #26's D5 made concrete.
+ *
+ * `stepFlight` and `stepAngular` take one of these rather than reading module
+ * constants, which is the whole of what makes a freighter fly differently from
+ * an interceptor. **It is a parameter and not a default**: a default here would
+ * let a caller that forgot to name a hull silently fly the courier, and the two
+ * are indistinguishable in a diff.
+ *
+ * The assist **cap** is deliberately not in it. 2 km/s is the game's one combat
+ * speed — the map's "nothing is crossable at combat speeds" is stated against
+ * it and #10's cruise exit clamps to it — so a per-hull top speed would move a
+ * constraint two other nodes are written on. What varies is how fast a hull
+ * *reaches* the cap and how sharply it turns, which is what D5's "a freighter is
+ * sluggish and an interceptor is sharp" is about: same drive tech, different
+ * mass.
+ */
+export interface FlightPerformance {
+	/** Linear acceleration along the nose, km/s² — `thrustMN / massT`. */
+	thrustKms2: number;
+	/** The assist's drift-removal e-folding time, seconds. */
+	assistLateralTauS: number;
+	/** Peak rate on each axis, radians per second. */
+	angularMax: Angular;
+	/** Angular acceleration, radians per second². */
+	angularAccel: number;
+	/** How fast the assist stops a turn, seconds. */
+	angularDampTauS: number;
+}
+
+/**
+ * A hull's handling, derived from its mass, its thrust and its length.
+ *
+ * Three derivations and no free parameters, which is what keeps D5 honest — the
+ * table declares two numbers per hull and everything a pilot feels comes out of
+ * them:
+ *
+ * - **Linear acceleration** is `thrustMN / massT`. Meganewtons over tonnes is
+ *   km/s² exactly, which is why those units and not others.
+ * - **Angular authority** scales as `acceleration / length`. Thrusters sit at
+ *   the extremities, so the couple they make is `thrust × length`, while the
+ *   pitch and yaw inertia goes as `mass × length²`; the length cancels once and
+ *   what is left is `(thrust / mass) / length`. A longer, heavier hull is
+ *   therefore slower to turn *and* slower to start turning, which is the whole
+ *   of what "sluggish" means.
+ * - **Both e-folding times** scale inversely with the authority they express:
+ *   the lateral one with linear acceleration, the angular one with angular.
+ *
+ * The courier reproduces #5's tuned figures exactly rather than nearly — its
+ * ratio is the reference divided by itself — so the baseline hull is not
+ * retuned by this node at all.
+ */
+export function flightPerformance(id: HullId): FlightPerformance {
+	const spec = HULL_SPECS[id];
+	const reference = HULL_SPECS[PLAYER_BASELINE_HULL];
+	const thrustKms2 = spec.thrustMN / spec.massT;
+	const referenceThrustKms2 = reference.thrustMN / reference.massT;
+	// The turn-rate ratio, normalised so the baseline hull is exactly 1.
+	const agility =
+		thrustKms2 /
+		spec.env.lengthKm /
+		(referenceThrustKms2 / reference.env.lengthKm);
+	return {
+		thrustKms2,
+		assistLateralTauS:
+			(REFERENCE_ASSIST_LATERAL_TAU_S * referenceThrustKms2) / thrustKms2,
+		angularMax: {
+			pitch: REFERENCE_ANGULAR_MAX.pitch * agility,
+			yaw: REFERENCE_ANGULAR_MAX.yaw * agility,
+			roll: REFERENCE_ANGULAR_MAX.roll * agility,
+		},
+		angularAccel: REFERENCE_ANGULAR_ACCEL * agility,
+		angularDampTauS: REFERENCE_ANGULAR_DAMP_TAU_S / agility,
+	};
+}
 
 /**
  * One frame of rotation: the rates the renderer then applies to the quaternion.
@@ -588,6 +690,9 @@ export const ANGULAR_DAMP_TAU_S = 0.28;
  * `command` is the stick, −1…1 per axis. `impulse` is the mouse: a relative
  * pointer delta is not a stick position, it is a nudge, so it adds straight to
  * the rate and is then subject to the same damping.
+ *
+ * `perf` is the hull's, and it is required rather than defaulted for the reason
+ * `FlightPerformance` states.
  */
 export function stepAngular(
 	rates: Angular,
@@ -595,15 +700,20 @@ export function stepAngular(
 	impulse: Angular,
 	assist: boolean,
 	dt: number,
+	perf: FlightPerformance,
 ): Angular {
 	if (dt <= 0) return rates;
-	const decay = Math.exp(-dt / ANGULAR_DAMP_TAU_S);
+	const decay = Math.exp(-dt / perf.angularDampTauS);
 	const axis = (rate: number, want: number, kick: number, max: number) => {
 		let next = rate + kick;
 		if (want !== 0) {
 			// Toward the commanded rate at a bounded acceleration — the ease-in.
 			const target = clamp(want, -1, 1) * max;
-			next += clamp(target - next, -ANGULAR_ACCEL * dt, ANGULAR_ACCEL * dt);
+			next += clamp(
+				target - next,
+				-perf.angularAccel * dt,
+				perf.angularAccel * dt,
+			);
 		} else if (assist) {
 			// The ease-*out*, which is the half that was missing.
 			next *= decay;
@@ -611,9 +721,14 @@ export function stepAngular(
 		return clamp(next, -max, max);
 	};
 	return {
-		pitch: axis(rates.pitch, command.pitch, impulse.pitch, ANGULAR_MAX.pitch),
-		yaw: axis(rates.yaw, command.yaw, impulse.yaw, ANGULAR_MAX.yaw),
-		roll: axis(rates.roll, command.roll, impulse.roll, ANGULAR_MAX.roll),
+		pitch: axis(
+			rates.pitch,
+			command.pitch,
+			impulse.pitch,
+			perf.angularMax.pitch,
+		),
+		yaw: axis(rates.yaw, command.yaw, impulse.yaw, perf.angularMax.yaw),
+		roll: axis(rates.roll, command.roll, impulse.roll, perf.angularMax.roll),
 	};
 }
 
@@ -652,8 +767,11 @@ export interface FlightControl {
  * #5's model, built: assisted Newtonian, with the assist a toggle.
  *
  * **Assist on** — the throttle commands a *speed*, not a thrust: the ship
- * accelerates toward `throttle × ASSIST_CAP_KMS` along the nose at `THRUST_KMS2`
- * and holds it, and sideways velocity decays with `ASSIST_LATERAL_TAU_S`. That
+ * accelerates toward `throttle × ASSIST_CAP_KMS` along the nose at the hull's
+ * own `thrustKms2` and holds it, and sideways velocity decays with its
+ * `assistLateralTauS`. The cap is the *game's* and the rate is the *hull's*
+ * (#181): every ship tops out at 2 km/s and they take different times to get
+ * there, which is #26's D5 as the pilot feels it. That
  * is what makes it fly like a modern space sim rather than like 1984: releasing
  * the stick mid-turn settles onto the new heading instead of continuing to
  * drift sideways forever.
@@ -673,12 +791,16 @@ export function stepFlight(
 	ship: Ship,
 	control: FlightControl,
 	dt: number,
+	perf: FlightPerformance,
 ): void {
 	if (dt <= 0) return;
 	const throttle = Math.min(1, Math.max(0, control.throttle));
 
 	if (!control.assist) {
-		ship.vel = add(ship.vel, scale(control.nose, THRUST_KMS2 * throttle * dt));
+		ship.vel = add(
+			ship.vel,
+			scale(control.nose, perf.thrustKms2 * throttle * dt),
+		);
 		ship.pos = add(ship.pos, scale(ship.vel, dt));
 		return;
 	}
@@ -691,10 +813,10 @@ export function stepFlight(
 	// governs, and everything perpendicular is drift the assist exists to remove.
 	const along = dot(relative, control.nose);
 	const lateral = sub(relative, scale(control.nose, along));
-	const damped = scale(lateral, Math.exp(-dt / ASSIST_LATERAL_TAU_S));
+	const damped = scale(lateral, Math.exp(-dt / perf.assistLateralTauS));
 
 	const want = throttle * ASSIST_CAP_KMS;
-	const authority = THRUST_KMS2 * dt;
+	const authority = perf.thrustKms2 * dt;
 	const next = along + clamp(want - along, -authority, authority);
 
 	let assisted = add(scale(control.nose, next), damped);
@@ -727,9 +849,10 @@ export function stepWorld(
 	world: World,
 	control: FlightControl,
 	dt: number,
+	perf: FlightPerformance,
 ): void {
 	advanceWorldClock(world, dt);
-	stepFlight(world.ship, control, dt);
+	stepFlight(world.ship, control, dt, perf);
 }
 
 /**

@@ -106,6 +106,20 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
 - **`src/units.ts` and `src/vec3.ts` are leaves.** They import nothing, and
   `tests/headless.test.ts` asserts it. A value import into either can close an
   import cycle or drag a renderer into the headless tier.
+- **`src/hull.ts` is the third leaf, and it is where a hull's numbers live.**
+  Role, selected variant, measured envelope, mass, thrust, hold, hardpoints,
+  integrity and fuel — one row per hull, imports nothing. `sim.ts` derives every
+  handling figure from mass and thrust (`flightPerformance`), so a hull's feel
+  has no tuning surface of its own; `ship-mesh.ts` keeps `HULL_REACH_KM`, which
+  is display reach and is never what a berth's fit predicate reads. The envelope
+  is the **selected variant's built box**, and `tests/hull.test.ts` rebuilds the
+  mesh to check it — the declaration this replaced was 68% out on height and the
+  berth catalogue had been sized from it.
+- **`stepFlight` and `stepAngular` take a `FlightPerformance` and it is not
+  optional.** A default would let a caller that forgot to name a hull silently
+  fly the courier, and the two are indistinguishable in a diff. The assist cap
+  is deliberately *not* per hull: 2 km/s is the game's one combat speed and two
+  other nodes are written against it.
 - **`src/sim.ts` must not import Three.js.** The authoritative world is float64
   kilometres outside the scene graph; the scene graph is display only, and
   nothing reads a position back out of an `Object3D`.

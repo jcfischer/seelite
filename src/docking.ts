@@ -21,9 +21,9 @@ import {
 	type StationAperture,
 	type StationType,
 } from "./station";
+import type { HullEnvelope } from "./hull";
 import {
 	type Berth,
-	type HullEnvelope,
 	type StationInterior,
 	berthFits,
 	chooseBerth,

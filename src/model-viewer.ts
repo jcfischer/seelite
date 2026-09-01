@@ -13,12 +13,11 @@
  */
 import * as THREE from "three";
 
+import { HULL_IDS, HULL_SPECS, type HullId } from "./hull";
 import {
-	HULL_IDS,
+	HULL_REACH_KM,
 	HULL_VARIANTS,
-	HULL_VISUALS,
 	SHIP_DESIGN_ROUND,
-	type HullId,
 	buildShipMesh,
 } from "./ship-mesh";
 import {
@@ -65,7 +64,7 @@ const SHIP_FAMILY: ModelFamily = {
 	assets: HULL_IDS,
 	variantIds: ["a", "b", "c"],
 	variants: (asset) => HULL_VARIANTS[asset as HullId],
-	reachKm: (asset) => HULL_VISUALS[asset as HullId].reachKm,
+	reachKm: (asset) => HULL_REACH_KM[asset as HullId],
 	build: (asset, variant) =>
 		buildShipMesh(
 			asset as HullId,
@@ -188,7 +187,7 @@ function installStyle() {
 }
 
 function displayName(id: HullId) {
-	return `${id === "courier" ? "Courier Mk I" : id[0].toUpperCase() + id.slice(1)} · ${HULL_VISUALS[id].role}`;
+	return `${id === "courier" ? "Courier Mk I" : id[0].toUpperCase() + id.slice(1)} · ${HULL_SPECS[id].role}`;
 }
 
 function variantMarkup(family: ModelFamily, role: string) {

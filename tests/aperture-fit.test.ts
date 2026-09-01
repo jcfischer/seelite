@@ -39,7 +39,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { ROLL_TOLERANCE_DEG } from "../src/docking";
-import { HULL_IDS, type HullId } from "../src/ship-mesh";
+import { HULL_IDS, type HullId } from "../src/hull";
 import { rolledEnvelope } from "./helpers/rolled-envelope";
 import {
 	STATION_GEOMETRY,

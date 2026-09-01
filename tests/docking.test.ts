@@ -53,8 +53,13 @@ import {
 	slotBasis,
 	tickDocking,
 } from "../src/docking";
-import { ANGULAR_MAX, ASSIST_CAP_KMS, stepFlight } from "../src/sim";
-import { HULL_VISUALS } from "../src/ship-mesh";
+import {
+	REFERENCE_ANGULAR_MAX,
+	ASSIST_CAP_KMS,
+	flightPerformance,
+	stepFlight,
+} from "../src/sim";
+import { HULL_SPECS } from "../src/hull";
 import { STATION_GEOMETRY, slotPhaseRad } from "../src/station";
 import { stationInterior } from "../src/station-interior";
 import {
@@ -67,6 +72,15 @@ import {
 	sub,
 	v3,
 } from "../src/vec3";
+import { PLAYER_BASELINE_HULL } from "../src/hull";
+import { flyTheComputer as fly } from "./helpers/fly-the-computer";
+
+/** The baseline hull's handling. #181 made `stepFlight` and `stepAngular` take a
+ *  hull's performance rather than read module constants, and these rows were all
+ *  written against the courier's tuning — which `flightPerformance` reproduces
+ *  exactly, so nothing here changed its subject. `tests/hull.test.ts` owns the
+ *  claim that the roster *varies*; this file owns the model's own laws. */
+const BASELINE = flightPerformance(PLAYER_BASELINE_HULL);
 
 /**
  * The traffic a clearance request is answered against (§13.2).
@@ -82,7 +96,7 @@ const INTERIOR = stationInterior(
 );
 const TRAFFIC = {
 	interior: INTERIOR,
-	hull: HULL_VISUALS.courier,
+	hull: HULL_SPECS.courier.env,
 	occupied: new Set<string>(),
 	// No ship of ours is at this station in most rows; the one that is says so.
 	sessionHere: false,
@@ -607,7 +621,7 @@ describe("§9.1.9 the clearance state machine", () => {
 		// fit. §13.2 refuses such a hull by the fit predicate.
 		const denied = requestClearance(newDockingState(), {
 			...REQ,
-			hull: HULL_VISUALS.carrier,
+			hull: HULL_SPECS.carrier.env,
 		});
 		expect(denied.clearance).toEqual({
 			kind: "denied",
@@ -617,7 +631,7 @@ describe("§9.1.9 the clearance state machine", () => {
 		// A tick does not turn it into a grant, which is the half that made the
 		// queued reply wrong rather than merely unhelpful.
 		expect(
-			tickDocking(denied, 60, { ...TRAFFIC, hull: HULL_VISUALS.carrier })
+			tickDocking(denied, 60, { ...TRAFFIC, hull: HULL_SPECS.carrier.env })
 				.clearance,
 		).toEqual({ kind: "denied", reason: "no berth that fits" });
 		// And a full station still *queues* a hull that would fit, which is the
@@ -779,117 +793,29 @@ describe("§9.1.10 the damage predicate", () => {
 // ---------------------------------------------------------------------------
 
 /**
- * A headless flight harness: the computer's command, slewed at #5's own
- * angular limits and integrated by `sim.ts`'s own assisted flight law.
+ * §9.1.11's runs, flown through the shared harness.
  *
- * Everything runs in the station's frame with `frameVel` zero, which is exactly
- * the conversion §1 requires of every caller — so this exercises the frame the
- * checks are stated in rather than a convenient one.
+ * The loop moved to `tests/helpers/fly-the-computer.ts` in #181, which gave it
+ * a second caller: this file asks whether the computer satisfies §3, and
+ * `tests/hull-docking.test.ts` asks whether every hull on #26's roster can fly
+ * the same profile. The fixture axis and reference are still this file's, so
+ * both callers fly the same deliberately awkward frame.
+ *
+ * These rows fly the **baseline hull**, which is what they always flew: before
+ * #181 nothing varied, so "the ship" and "the courier" were the same statement.
  */
-function flyTheComputer(opts: {
+const flyTheComputer = (opts: {
 	spinRpm: number;
 	type?: "trade" | "refinery";
 	hostile?: boolean;
 	granted?: boolean;
-}) {
-	const type = opts.type ?? "trade";
-	const dt = 0.05;
-	const state =
-		opts.granted === false
-			? newDockingState()
-			: {
-					...requestClearance(newDockingState(), {
-						gameTime: 0,
-						rangeKm: 500,
-						...TRAFFIC,
-					}),
-					hostile: opts.hostile ?? false,
-				};
-
-	// Start well off the axis, so the line-up phase is genuinely exercised: a
-	// start already on the corridor would never test the half of §7 that keeps
-	// the hull-face approach from happening.
-	const start = frameFor(type, 0);
-	const basis = slotBasis(start);
-	const ship = {
-		pos: add(scale(AXIS, 20), scale(basis.up, 12)),
-		vel: v3(),
-	};
-	let nose = scale(AXIS, -1);
-	let up = basis.up;
-
-	let gameTime = 0;
-	let docked = false;
-	let refused: string | null = null;
-	let violations = 0;
-	let steps = 0;
-
-	while (gameTime < 900 && !docked) {
-		const frame = apertureFrame(
-			type,
-			AXIS,
-			slotPhaseRad(opts.spinRpm, gameTime),
-			REFERENCE,
-		);
-		const pose: EntryPose = { rel: ship.pos, vRel: ship.vel, nose, up };
-		const cmd = dockingComputerStep({
-			frame,
-			pose,
-			state,
-			gameTime,
-			maxSpeedKms: ASSIST_CAP_KMS,
-		});
-		if (!cmd.engaged) {
-			refused = cmd.refused;
-			break;
-		}
-		nose = slewToward(nose, cmd.nose, ANGULAR_MAX.yaw * dt);
-		up = slewToward(up, cmd.up, ANGULAR_MAX.roll * dt);
-		// Through the module's own law, not a copy of it: `main.ts`'s
-		// `setAttitude` calls the same function, so this harness flies the
-		// autopilot the way the renderer does rather than the way a test author
-		// remembered it.
-		const attitude = orthonormalise(nose, up);
-		if (attitude) {
-			nose = attitude.nose;
-			up = attitude.up;
-		}
-
-		const before: EntryPose = { rel: ship.pos, vRel: ship.vel, nose, up };
-		stepFlight(
-			ship,
-			{
-				nose,
-				throttle: cmd.speedKms / ASSIST_CAP_KMS,
-				assist: true,
-			},
-			dt,
-		);
-		gameTime += dt;
-		steps++;
-
-		const after: EntryPose = { rel: ship.pos, vRel: ship.vel, nose, up };
-		const nextFrame = apertureFrame(
-			type,
-			AXIS,
-			slotPhaseRad(opts.spinRpm, gameTime),
-			REFERENCE,
-		);
-		const crossing = planeCrossing(nextFrame, before, after);
-		if (crossing) {
-			const outcome = attemptEntry({
-				frame: nextFrame,
-				pose: crossing,
-				state,
-				gameTime,
-			});
-			if (!outcome.docked) violations++;
-			docked = outcome.docked;
-			break;
-		}
-	}
-	return { docked, refused, violations, steps, gameTime };
-}
+}) =>
+	fly({
+		...opts,
+		hull: PLAYER_BASELINE_HULL,
+		axis: AXIS,
+		reference: REFERENCE,
+	});
 
 describe("§7's two tuning surfaces, pinned without flying anything", () => {
 	const frame = frameFor();

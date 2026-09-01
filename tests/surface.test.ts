@@ -27,7 +27,8 @@ import { describe, expect, test } from "bun:test";
 import { codeOf } from "./lib/source-scan";
 import * as THREE from "three";
 import { RING_SEGMENTS, hullLoft } from "../src/loft";
-import { HULL_IDS, buildShipMesh } from "../src/ship-mesh";
+import { HULL_IDS } from "../src/hull";
+import { buildShipMesh } from "../src/ship-mesh";
 import { STATION_PANEL_KM } from "../src/station-mesh";
 import {
 	SHIP_PANEL_KM,

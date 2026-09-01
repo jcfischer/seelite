@@ -36,24 +36,15 @@ import {
 	setUvUnits,
 	uvUnitsOf,
 } from "./loft";
+import {
+	HULL_IDS,
+	HULL_VARIANT_IDS,
+	HULL_SPECS,
+	type HullId,
+	type HullVariantId,
+} from "./hull";
 import { plate, plateUVs } from "./ship-surface";
 
-export const HULL_IDS = [
-	"courier",
-	"interceptor",
-	"freighter",
-	"miner",
-	"patrol",
-	"explorer",
-	"raider",
-	"carrier",
-	"tug",
-	"prospector",
-	"dreadnought",
-] as const;
-export type HullId = (typeof HULL_IDS)[number];
-export const HULL_VARIANT_IDS = ["a", "b", "c"] as const;
-export type HullVariantId = (typeof HULL_VARIANT_IDS)[number];
 export const SHIP_DESIGN_ROUND = 10;
 
 export interface HullVariant {
@@ -260,110 +251,37 @@ export const HULL_VARIANTS: Record<HullId, readonly HullVariant[]> = {
 	],
 };
 
-export interface HullVisual {
-	readonly role:
-		| "player-baseline"
-		| "fast"
-		| "cargo"
-		| "industrial"
-		| "security"
-		| "survey"
-		| "outlaw"
-		| "capital"
-		| "salvage"
-		| "prospect"
-		| "battle-line";
-	readonly lengthKm: number;
-	readonly beamKm: number;
-	readonly heightKm: number;
-	readonly reachKm: number;
-}
-
-export const HULL_VISUALS: Record<HullId, HullVisual> = {
-	courier: {
-		role: "player-baseline",
-		lengthKm: 0.056,
-		beamKm: 0.05,
-		heightKm: 0.014,
-		reachKm: 0.036,
-	},
-	interceptor: {
-		role: "fast",
-		lengthKm: 0.064,
-		beamKm: 0.026,
-		heightKm: 0.018,
-		reachKm: 0.036,
-	},
-	freighter: {
-		role: "cargo",
-		lengthKm: 0.066,
-		beamKm: 0.042,
-		heightKm: 0.03,
-		reachKm: 0.04,
-	},
-	miner: {
-		role: "industrial",
-		lengthKm: 0.07,
-		beamKm: 0.05,
-		heightKm: 0.034,
-		reachKm: 0.042,
-	},
-	patrol: {
-		role: "security",
-		lengthKm: 0.058,
-		beamKm: 0.036,
-		heightKm: 0.02,
-		reachKm: 0.034,
-	},
-	explorer: {
-		role: "survey",
-		lengthKm: 0.074,
-		beamKm: 0.044,
-		heightKm: 0.032,
-		reachKm: 0.044,
-	},
-	raider: {
-		role: "outlaw",
-		lengthKm: 0.066,
-		beamKm: 0.038,
-		heightKm: 0.022,
-		reachKm: 0.038,
-	},
+/**
+ * How far each drawn hull reaches from its own origin, kilometres — the
+ * **display** figure and nothing else.
+ *
+ * It is what `fleetLayout` spaces a gallery by and what `tests/ship-mesh.test.ts`
+ * measures the built mesh against. #28's rule, applied to ships: a station's
+ * display reach and its dockable geometry are separate tables in separate
+ * modules, so the box a berth has to admit is `HULL_SPECS[id].env` in
+ * `hull.ts` and is not this. The two answer different questions — a reach is a
+ * radius about a centre, an envelope is a box — and the day one is read for the
+ * other is the day a berth is allocated by a number that describes a gallery.
+ */
+export const HULL_REACH_KM: Record<HullId, number> = {
+	courier: 0.036,
+	interceptor: 0.036,
+	freighter: 0.04,
+	miner: 0.042,
+	patrol: 0.034,
+	explorer: 0.044,
+	raider: 0.038,
 	// A capital hull is roughly seven couriers long. Nothing else in the pool
 	// needs a second glance to work out which of two ships is the bigger; this
 	// one has to answer that at a distance, which is why its detail is many
 	// small repeated parts rather than a few large smooth ones.
-	carrier: {
-		role: "capital",
-		lengthKm: 0.36,
-		beamKm: 0.19,
-		heightKm: 0.12,
-		reachKm: 0.2,
-	},
-	tug: {
-		role: "salvage",
-		lengthKm: 0.054,
-		beamKm: 0.044,
-		heightKm: 0.024,
-		reachKm: 0.031,
-	},
-	prospector: {
-		role: "prospect",
-		lengthKm: 0.062,
-		beamKm: 0.026,
-		heightKm: 0.024,
-		reachKm: 0.035,
-	},
+	carrier: 0.2,
+	tug: 0.031,
+	prospector: 0.035,
 	// Longer and narrower than the carrier, and it wears its armour outside.
 	// Two capital classes only earn their places if they cannot be mistaken for
 	// each other at the range a capital ship is first seen.
-	dreadnought: {
-		role: "battle-line",
-		lengthKm: 0.4,
-		beamKm: 0.14,
-		heightKm: 0.11,
-		reachKm: 0.22,
-	},
+	dreadnought: 0.22,
 };
 
 export interface ShipMesh {
@@ -5630,13 +5548,13 @@ export interface FleetSlot {
  */
 export function fleetLayout(): FleetSlot[] {
 	const byReach = [...HULL_IDS].sort(
-		(a, b) => HULL_VISUALS[a].reachKm - HULL_VISUALS[b].reachKm,
+		(a, b) => HULL_REACH_KM[a] - HULL_REACH_KM[b],
 	);
 	const slots: FleetSlot[] = [];
 	let z = 0;
 	let previousReach = 0;
 	for (const id of byReach) {
-		const reach = HULL_VISUALS[id].reachKm;
+		const reach = HULL_REACH_KM[id];
 		z -= (previousReach + reach) * 12 + 0.8;
 		previousReach = reach;
 		const lateral = reach * 9;
@@ -5697,7 +5615,7 @@ export function buildShipMesh(
 	const root = new THREE.Group();
 	root.name = "hull-" + id;
 	root.userData.hullId = id;
-	root.userData.role = HULL_VISUALS[id].role;
+	root.userData.role = HULL_SPECS[id].role;
 	root.userData.variant = variant;
 	root.userData.designRound = SHIP_DESIGN_ROUND;
 	BUILDERS[id][variant](root, makePalette(id));

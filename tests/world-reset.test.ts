@@ -34,7 +34,16 @@ import {
 	makeWorld,
 	resetWorldToStart,
 	stepWorld,
+	flightPerformance,
 } from "../src/sim";
+import { PLAYER_BASELINE_HULL } from "../src/hull";
+
+/** The baseline hull's handling. #181 made `stepFlight` and `stepAngular` take a
+ *  hull's performance rather than read module constants, and these rows were all
+ *  written against the courier's tuning — which `flightPerformance` reproduces
+ *  exactly, so nothing here changed its subject. `tests/hull.test.ts` owns the
+ *  claim that the roster *varies*; this file owns the model's own laws. */
+const BASELINE = flightPerformance(PLAYER_BASELINE_HULL);
 
 /** The probe's fixture, so this test guards the world the reset is used on. */
 const SEED = 481;
@@ -150,8 +159,8 @@ describe("resetWorldToStart", () => {
 		const fresh = makeWorld(SEED);
 		const control = { throttle: 1, nose: { x: 1, y: 0, z: 0 }, assist: true };
 		for (let i = 0; i < 200; i++) {
-			stepWorld(flown, control, 0.05);
-			stepWorld(fresh, control, 0.05);
+			stepWorld(flown, control, 0.05, BASELINE);
+			stepWorld(fresh, control, 0.05, BASELINE);
 		}
 		expect(flown.gameTime).toBe(fresh.gameTime);
 		expect(flown.ship.pos).toEqual(fresh.ship.pos);

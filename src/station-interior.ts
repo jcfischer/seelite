@@ -23,6 +23,7 @@
  * hull was retuned.
  */
 
+import type { HullEnvelope } from "./hull";
 import {
 	STATION_GEOMETRY,
 	type StationAperture,
@@ -47,14 +48,6 @@ export type InteriorFace = "deck" | "port" | "starboard" | "overhead";
  *  `face × band` and a third would need a third traversal duration to mean
  *  anything. */
 export type DepthBand = "near" | "deep";
-
-/** A ship's bounding box, kilometres. Supplied rather than looked up:
- *  `ship-mesh.ts` imports Three, and this module may not. */
-export interface HullEnvelope {
-	lengthKm: number;
-	beamKm: number;
-	heightKm: number;
-}
 
 /** A position in the aperture frame — the decomposition `arrival.ts` holds its
  *  endpoints in, so a berth centre can be handed straight to a law. */
@@ -159,11 +152,18 @@ export interface StationInterior {
  * are small ones, and a big hull is turned away by the ordinary fit predicate
  * rather than by a rule about outposts.
  *
- * The full cell admits every non-capital hull in `HULL_VISUALS` at rest — the
- * widest beam is the courier's 50 m, the tallest the miner's 34 m, the longest
- * the explorer's 74 m — and admits neither capital, which
- * `tests/station-interior.test.ts` asserts against the roster rather than
- * against these numbers.
+ * The full cell admits every non-capital hull's **selected variant** at rest and
+ * admits neither capital, which `tests/station-interior.test.ts` asserts against
+ * the roster rather than against these numbers.
+ *
+ * **It used to be sized from a declaration nothing measured** (#181). The prose
+ * here read "the widest beam is the courier's 50 m, the tallest the miner's
+ * 34 m" — figures from `HULL_VISUALS`, which disagreed with the built meshes by
+ * up to 68% on height. Against the meshes, `miner/a` and `miner/c` are 40.0 m
+ * and 47.5 m tall and fit no berth in the game; the cell is unchanged and the
+ * roster now names which mesh each hull is, so the two sides of the fit are the
+ * same object. The outpost still rejects the miner and the explorer, which is
+ * what it was scaled down to do.
  */
 export const BERTH_CELL: Record<
 	StationType,
