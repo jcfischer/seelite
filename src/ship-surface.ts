@@ -121,9 +121,11 @@ export const SHIP_MAP_SIZE = 256;
  *   hull's 0.50/0.30, halving `trim`'s metalness. Both builds were green in
  *   both tiers, and the second one shipped a repaint under a docstring saying
  *   the fleet was not repainted.
- * - `seamDepth` 0.55 is the term the station has none of. Enough that a moving
- *   sun breaks across a seam, low enough that the line does not read as a
- *   trench — and, like the panel size, a number set in front of a frame.
+ * - `seamDepth` 0.75 is the term the station has none of. #199's broader,
+ *   lower-peak light made 0.55 move only 4.6% of hull pixels against the flat
+ *   control, below the existing 5% reach gate. 0.70 landed exactly on the
+ *   displayed 5.0% boundary but not above the strict gate; 0.75 clears it
+ *   without widening the one-pixel groove into a trench.
  */
 export const SHIP_PLATING: PlatingProfile = {
 	pitchPx: 32,
@@ -135,7 +137,7 @@ export const SHIP_PLATING: PlatingProfile = {
 	weathering: 0.1,
 	roughness: 1,
 	metalness: 1,
-	seamDepth: 0.55,
+	seamDepth: 0.75,
 };
 
 /** What each `quality` setting gives a hull surface (#98's gate, #99's key).

@@ -64,16 +64,18 @@ import {
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 
-/** `--out` and `--label`, both `--k v` and `--k=v`. Small enough to read here;
+/** `--out`, `--label` and `--quality`, both `--k v` and `--k=v`. Small enough to read here;
  *  `probe-args.mjs` parses a different grammar for a different runner. */
 function arg(name, fallback) {
 	const argv = process.argv.slice(2);
 	const eq = argv.find((a) => a.startsWith(`--${name}=`));
 	if (eq) return eq.slice(name.length + 3);
 	const i = argv.indexOf(`--${name}`);
-	return i >= 0 && argv[i + 1] && !argv[i + 1].startsWith("-")
-		? argv[i + 1]
-		: fallback;
+	if (i < 0) return fallback;
+	const value = argv[i + 1];
+	if (!value || value.startsWith("-"))
+		throw new Error(`--${name} requires a value`);
+	return value;
 }
 
 /**
@@ -102,6 +104,19 @@ function gitRef() {
 const REF = gitRef();
 const LABEL = arg("label", REF);
 const OUT = arg("out", "view-set");
+const QUALITY = arg("quality", null);
+if (QUALITY !== null && QUALITY !== "high" && QUALITY !== "low")
+	throw new Error(`--quality must be high or low, got ${QUALITY}`);
+
+/** Apply an explicitly requested quality after every boot. The setting persists
+ * across the refinery seed navigation, but writing it again there makes the
+ * capture's renderer state an observation rather than an assumption. */
+async function applyCaptureQuality(page) {
+	if (QUALITY === null) return;
+	await page.evaluate((quality) => {
+		window.__seelite.settings.set("quality", quality);
+	}, QUALITY);
+}
 
 /**
  * Both directions between the declared shot kinds and the placers built for
@@ -164,6 +179,7 @@ const PLACERS = {
 		if (shot.seed !== undefined) {
 			await page.goto(`${ORIGIN}/?seed=${shot.seed}`, { waitUntil: "load" });
 			await bootedGame(page);
+			await applyCaptureQuality(page);
 			await page.evaluate((t) => window.__startClockAt(t), GAME_TIME_S);
 		}
 		await page.evaluate(
@@ -332,6 +348,7 @@ await installViewPlacement(page);
 await installViewFraming(page);
 await page.goto(`${ORIGIN}/?seed=${SEED}`, { waitUntil: "load" });
 await bootedGame(page);
+await applyCaptureQuality(page);
 let renderer;
 const captured = [];
 try {
@@ -422,6 +439,7 @@ const manifest = {
 	capturedAt: new Date().toISOString(),
 	renderer,
 	seed: SEED,
+	quality: QUALITY ?? "default",
 	views: captured,
 };
 await writeFile(
