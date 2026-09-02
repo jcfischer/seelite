@@ -128,6 +128,7 @@ export const LEVERS = Object.freeze({
 	147: "the station interior",
 	162: "the aperture cut into the hull",
 	165: "the landing pad, and the shipyard keel aft of its hub",
+	199: "the exposure budget",
 });
 
 /**
@@ -235,7 +236,7 @@ export const VIEWS = Object.freeze([
 		// view is the whole set; the figures live there rather than being
 		// restated here, which is how this comment came to carry a superseded
 		// pair through a round of review.
-		covers: [105, 103, 102, 99],
+		covers: [199, 105, 103, 102, 99],
 		what: "The same interior with the star beyond the station: the case the camera-side fill was added for, and the dark side that only reads because it emits.",
 		shot: {
 			kind: "body-offset",
@@ -256,7 +257,7 @@ export const VIEWS = Object.freeze([
 		 * face was culled and every frame taken from a berth read correctly
 		 * throughout.
 		 */
-		covers: [162, 101, 103, 99],
+		covers: [199, 162, 101, 103, 99],
 		what: "On the aperture axis at three silhouette radii — the docking face, its plating and the lit aperture.",
 		shot: { kind: "station-axis", station: "trade", radii: 3, view: "chase" },
 	},
@@ -358,7 +359,7 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "station-range",
-		covers: [102, 101, 99],
+		covers: [199, 102, 101, 99],
 		/**
 		 * **The far case, and #134's receipt measured where it ends before it was
 		 * framed.** The figures below are that receipt's, not the node body's: the
@@ -432,7 +433,7 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "hull-chase",
-		covers: [101, 99],
+		covers: [199, 101, 99],
 		what: "The player's own hull, mostly backlit, against the system's largest planet. Flat plate shows here first.",
 		shot: {
 			kind: "body-offset",
@@ -499,7 +500,7 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "berth-free-look",
-		covers: [147, 102, 99],
+		covers: [199, 147, 102, 99],
 		/**
 		 * **Chase, not a cockpit head-turn, and the frame decided it.** §13.6.3
 		 * asks for a free look showing bay depth and the other berths; a docked
@@ -538,7 +539,7 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "shipyard-wall-berth",
-		covers: [147, 99],
+		covers: [199, 147, 99],
 		what: "§13.6.5 — a shipyard's bay from a wall berth, chase: coarse structure, cold work light, gantries.",
 		shot: {
 			kind: "berth",
@@ -549,7 +550,7 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "refinery-cradle-berth",
-		covers: [165, 147, 99],
+		covers: [199, 165, 147, 99],
 		/**
 		 * **The one view that names its own seed, and the fixture is why.**
 		 * **Seed 47 has no refinery** — it generates a trade station and a

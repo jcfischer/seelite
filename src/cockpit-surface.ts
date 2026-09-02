@@ -47,6 +47,7 @@
  */
 
 import * as THREE from "three";
+import { EMISSIVE_CEILING } from "./light-rig";
 import { chamferedBox } from "./chamfer-box";
 import { boxProjectUVs, setUvUnits } from "./loft";
 import {
@@ -187,27 +188,35 @@ export const COCKPIT_CHAMFER_KM = 0.0003;
  * self-lift they were authored with; `COCKPIT_LAMP` is a separate, brighter
  * thing and is not one of these.
  */
+/** Cabin-authored self-light, expressed against the shared exposure ceiling. */
+export const COCKPIT_EMISSIVE_INTENSITIES = {
+	metal: EMISSIVE_CEILING * 0.08,
+	trim: EMISSIVE_CEILING * 0.14,
+	inset: EMISSIVE_CEILING * 0,
+	lamp: EMISSIVE_CEILING * 0.34,
+} as const;
+
 export const COCKPIT_FINISHES = {
 	metal: {
 		color: 0x0a1114,
 		roughness: 0.72,
 		metalness: 0.48,
 		emissive: 0x010304,
-		emissiveIntensity: 0.08,
+		emissiveIntensity: COCKPIT_EMISSIVE_INTENSITIES.metal,
 	},
 	trim: {
 		color: 0x1a2c32,
 		roughness: 0.46,
 		metalness: 0.72,
 		emissive: 0x03090b,
-		emissiveIntensity: 0.14,
+		emissiveIntensity: COCKPIT_EMISSIVE_INTENSITIES.trim,
 	},
 	inset: {
 		color: 0x020607,
 		roughness: 0.48,
 		metalness: 0.3,
 		emissive: 0x000000,
-		emissiveIntensity: 0,
+		emissiveIntensity: COCKPIT_EMISSIVE_INTENSITIES.inset,
 	},
 } as const;
 
@@ -234,8 +243,8 @@ export const COCKPIT_FINISH_IDS = Object.keys(
  * warmth survives, the invention does not.
  *
  * **It is not a bloom source, and an earlier draft of this said it was.** The
- * composite pass is `UnrealBloomPass(…, 0.55, 0.6, 0.85)` — a luminance
- * threshold of 0.85. `0xffd9a8` is an sRGB authoring value and three's
+ * composite pass now takes its figures from `light-rig.ts`'s `EXPOSURE`, whose
+ * threshold is the 1.0 emissive ceiling. `0xffd9a8` is an sRGB authoring value and three's
  * `ColorManagement` is on by default, so what the shader sees at this intensity
  * is about **0.34/0.24/0.13 in working space**, a luminance near 0.24. Not
  * close. (An earlier draft quoted 0.34/0.29/0.22, which is the sRGB triple
@@ -265,7 +274,7 @@ export const COCKPIT_LAMP = {
 	 * lifted the coaming the flight-floor strip is read against — the
 	 * legibility regression this node is explicitly forbidden from causing.
 	 */
-	intensity: 0.34,
+	intensity: COCKPIT_EMISSIVE_INTENSITIES.lamp,
 	/** One lamp, kilometres in the cabin's oversized frame — about 2 m long on a
 	 *  32 m rail, which is the proportion the reference frames show. */
 	size: [0.0014, 0.0006, 0.0006] as const,

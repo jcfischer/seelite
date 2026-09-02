@@ -308,6 +308,30 @@ describe("§13.1 — the transit lane is clear of everything drawn", () => {
 });
 
 describe("§13.1 — what the bay must and must not carry", () => {
+	test("every basic-material bay light passes through tone mapping", () => {
+		for (const type of STATION_TYPES) {
+			let checked = 0;
+			built(type).traverse((object) => {
+				if (!(object as THREE.Mesh).isMesh) return;
+				const mesh = object as THREE.Mesh;
+				const materials: THREE.Material[] = Array.isArray(mesh.material)
+					? mesh.material
+					: [mesh.material];
+				for (const material of materials) {
+					if (!(material as THREE.MeshBasicMaterial).isMeshBasicMaterial)
+						continue;
+					checked++;
+					expect([type, object.name, material.toneMapped]).toEqual([
+						type,
+						object.name,
+						true,
+					]);
+				}
+			});
+			expect(checked).toBeGreaterThan(0);
+		}
+	});
+
 	test("every bay carries the name shield, and it supplies no pixels", () => {
 		// E10: this module is headless-tested and contains no `document`
 		// reference, so the plate leaves it untextured and invisible and the

@@ -34,13 +34,19 @@
 import { describe, expect, test } from "bun:test";
 import {
 	BAKE_STAR_DIR,
+	EMISSIVE_CEILING,
 	ENV_HEIGHT,
 	ENV_WIDTH,
+	EXPOSURE,
 	LIGHT_RIG,
 	envRadiance,
 	envRotation,
 	equirectEnvironment,
 } from "../src/light-rig";
+import { COCKPIT_EMISSIVE_INTENSITIES } from "../src/cockpit-surface";
+import { SHIP_EMISSIVE_INTENSITIES } from "../src/ship-mesh";
+import { STATION_INTERIOR_EMISSIVE_INTENSITIES } from "../src/station-interior-mesh";
+import { STATION_EMISSIVE_INTENSITIES } from "../src/station-mesh";
 
 /** A warm G-type tint, and a neutral one. #59's finding is that the neutral end
  *  is where an emissive tint stops carrying detail; the same palette is used
@@ -193,6 +199,37 @@ describe("the equirectangular buffer", () => {
 });
 
 describe("the rig's constants", () => {
+	test("every authored emissive stays inside the shared working-space ceiling", () => {
+		const modules = {
+			station: STATION_EMISSIVE_INTENSITIES,
+			stationInterior: STATION_INTERIOR_EMISSIVE_INTENSITIES,
+			ship: SHIP_EMISSIVE_INTENSITIES,
+			cockpit: COCKPIT_EMISSIVE_INTENSITIES,
+		};
+		for (const [module, intensities] of Object.entries(modules))
+			for (const [name, intensity] of Object.entries(intensities)) {
+				expect([module, name, Number.isFinite(intensity)]).toEqual([
+					module,
+					name,
+					true,
+				]);
+				expect([module, name, intensity >= 0]).toEqual([module, name, true]);
+				expect([module, name, intensity <= EMISSIVE_CEILING]).toEqual([
+					module,
+					name,
+					true,
+				]);
+			}
+	});
+
+	test("bloom starts at the emissive ceiling rather than below white", () => {
+		expect(EXPOSURE.bloom.threshold).toBeGreaterThanOrEqual(EMISSIVE_CEILING);
+		expect(EXPOSURE.bloom.strength).toBeGreaterThan(0);
+		expect(EXPOSURE.bloom.strength).toBeLessThan(1);
+		expect(EXPOSURE.bloom.radius).toBeGreaterThanOrEqual(0);
+		expect(EXPOSURE.bloom.radius).toBeLessThanOrEqual(1);
+	});
+
 	test("the fill is dimmer than the sun it fills for", () => {
 		// The fill exists because a backlit hull rendered as a black cutout, and
 		// it is off-axis on purpose. A fill that reached the sun's intensity

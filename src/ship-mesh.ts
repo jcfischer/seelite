@@ -16,6 +16,7 @@
  * below replaces the plate extrusion, the lathe, and the stock cylinder.
  */
 import * as THREE from "three";
+import { EMISSIVE_CEILING } from "./light-rig";
 
 // Re-exported, not merely imported: `Ring` and `hullLoft` were this module's
 // own until #56 gave them a second caller, and every existing importer and test
@@ -312,6 +313,27 @@ const liveries: Record<
 
 const palettes = new Map<HullId, Palette>();
 
+/**
+ * Lift the dark structural paints after the scene exposure comes down.
+ *
+ * The primary hull paint already owns the measured highlight, so raising the
+ * whole renderer would put it back above white. Applying the compensation only
+ * to the darker panel, trim and engine pigments opens the exterior shadows
+ * without moving the hull and accent colours that identify each livery.
+ */
+const SHADOW_PAINT_LIFT = 1.45;
+function scalePaint(color: number, scale: number): number {
+	const channel = (shift: number) =>
+		Math.min(255, Math.round(((color >> shift) & 0xff) * scale));
+	return (channel(16) << 16) | (channel(8) << 8) | channel(0);
+}
+
+/** Ship-authored emissives, expressed against the shared exposure ceiling. */
+export const SHIP_EMISSIVE_INTENSITIES = {
+	canopy: EMISSIVE_CEILING * 0.12,
+	exhaust: EMISSIVE_CEILING * 0.55,
+} as const;
+
 function makePalette(id: HullId): Palette {
 	const cached = palettes.get(id);
 	if (cached) return cached;
@@ -342,21 +364,21 @@ function makePalette(id: HullId): Palette {
 		plate(painted(color, roughness, metalness));
 	const palette: Palette = {
 		hull: platedPaint(colors.hull, 0.5, 0.3),
-		panel: platedPaint(colors.panel, 0.58, 0.36),
-		trim: platedPaint(0x33454d, 0.5, 0.55),
+		panel: platedPaint(scalePaint(colors.panel, SHADOW_PAINT_LIFT), 0.58, 0.36),
+		trim: platedPaint(scalePaint(0x33454d, SHADOW_PAINT_LIFT), 0.5, 0.55),
 		accent: platedPaint(colors.accent, 0.54, 0.24),
 		canopy: new THREE.MeshStandardMaterial({
 			color: 0x173743,
 			emissive: 0x061820,
-			emissiveIntensity: 0.12,
+			emissiveIntensity: SHIP_EMISSIVE_INTENSITIES.canopy,
 			roughness: 0.2,
 			metalness: 0.1,
 		}),
-		engine: painted(0x293b42, 0.42, 0.58),
+		engine: painted(scalePaint(0x293b42, SHADOW_PAINT_LIFT), 0.42, 0.58),
 		exhaust: new THREE.MeshStandardMaterial({
 			color: 0x7fc4df,
 			emissive: 0x4a9fca,
-			emissiveIntensity: 0.55,
+			emissiveIntensity: SHIP_EMISSIVE_INTENSITIES.exhaust,
 			roughness: 0.36,
 			metalness: 0.08,
 		}),

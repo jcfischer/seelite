@@ -89,46 +89,78 @@ export const ENV_WIDTH = 256;
 export const ENV_HEIGHT = 128;
 
 /**
+ * The brightest authored self-lit surface in working space.
+ *
+ * One ceiling for every renderer-facing module: a light expressed above it is
+ * above white before tone mapping and therefore blooms by construction. Each
+ * module publishes its own fractions of this value so the test can enumerate
+ * the complete authored budget without reaching into Three.js materials.
+ */
+export const EMISSIVE_CEILING = 1.0;
+
+/**
+ * The post-processing side of the same exposure budget.
+ *
+ * Threshold begins at the ceiling: ordinary lit paint and authored emissives
+ * remain shaped by ACES, while only energy above white contributes a halo.
+ * The record is exposed through `window.__seelite.exposure`, so a browser probe
+ * reads the figures the renderer uses instead of carrying a second copy.
+ */
+export const EXPOSURE = {
+	bloom: {
+		strength: 0.35,
+		radius: 0.6,
+		threshold: EMISSIVE_CEILING,
+	},
+} as const;
+
+/**
  * The rig, in one place because the panel, the bake and the renderer all read
  * it and three copies drift.
  *
- * The sun and the fill are carried over unchanged from the rig they replace,
- * and that is deliberate rather than incidental: the fill's docstring in
- * `main.ts` records the measurement that produced it — with the star behind the
- * ship the hull rendered as a black cutout — and #99's brief was to add depth,
- * not to re-open a fix.
+ * #199 keeps #99's directional roles but retunes every energy term together:
+ * the former sun/environment pair put a fully lit painted hull above the
+ * display-space band even after ACES, while the camera-side fill still owns the
+ * separate backlit-hull case.
  */
 export const LIGHT_RIG = {
 	/** Directional, because one light cannot serve two scenes at two scales;
 	 *  `main.ts` has the argument. */
-	sun: { color: 0xfff0d8, intensity: 3.0 },
+	/** Paired with `environmentIntensity`; see that field's measured sweep. */
+	sun: { color: 0xfff0d8, intensity: 0.2 },
 	/**
 	 * The ambient replacement. Aimed along the star, so `sky` is the lift on the
 	 * star side and `ground` the lift on the far side.
 	 *
-	 * Together these sit close to the `0x223044` at 0.6 they replace in total
-	 * energy, and spend it as a gradient instead of a wash. The far side is
-	 * *darker* than the flat ambient was, which is the point: #59 fixed the
-	 * planet classes so the crescent reads, and a flat lift is what flattens it.
+	 * #199 shifts energy out of the two directional lights and into this broad
+	 * gradient. That keeps a camera-facing hull readable across its facets
+	 * without one shoulder owning the whole exposure range. Ground remains
+	 * darker than sky, so the lift retains an edge-bearing gradient rather than
+	 * becoming a flat ambient wash.
 	 */
-	hemisphere: { sky: 0x2f4666, ground: 0x0a1018, intensity: 0.9 },
-	/** Camera-side, near layer only, off-axis. Unchanged. */
-	fill: { color: 0x9fb6d0, intensity: 0.9 },
+	hemisphere: { sky: 0xc0ccd8, ground: 0x8090a0, intensity: 8 },
+	/** Camera-side, near layer only. Still off-axis, but close enough to the lens
+	 * that the whole chase hull receives a readable base rather than one bright
+	 * shoulder surrounded by black paint. */
+	fill: {
+		color: 0x9fb6d0,
+		intensity: 0.18,
+		direction: [-0.25, 0.35, 1] as const,
+	},
 	/**
 	 * How hard the baked environment is applied, as `Scene.environmentIntensity`.
 	 *
-	 * Set by opening the sheet, and there is no check in this repo that can set
-	 * it — #104's finding one level down. **Bracketed rather than guessed**:
-	 * three captures of `station-approach` at 1.0, 2.2 and 3.6. At 1.0 the
-	 * plating grid becomes visible and nothing else changes, which is a term
-	 * that is on and not worth having; at 3.6 the star-facing facet goes pale
-	 * and loses the grid again under a wash. 2.2 is where the gradient across
-	 * the facets is strongest with the plating still legible on both.
+	 * #99 originally bracketed this at 2.2 by eye. #199 found that value and the
+	 * 3.0 sun together drove `hull-chase` past white. The final rig lowers the
+	 * sun, environment and fill together. The final masked, post-tone-map painted
+	 * hull reads 160.89 of 255 across five same-build samples, with 0.00 spread;
+	 * its lower quartile is 73.59 and median 103.99, so the band does not hide a
+	 * mostly-black exterior behind one compliant highlight.
 	 *
-	 * A number that decides whether a frame looks right cannot be checked by
-	 * anything that is not looking, so retuning it means reopening those PNGs.
+	 * That pixel band guards clipping; whether the lower-energy scene still has
+	 * the intended depth and legibility remains the canonical sheet's human gate.
 	 */
-	environmentIntensity: 2.2,
+	environmentIntensity: 0.15,
 	/**
 	 * What `quality` selects. #98 required this node to ship a low setting and
 	 * to say what it drops.
@@ -140,8 +172,8 @@ export const LIGHT_RIG = {
 	 * on every standard material in the frame, and a load-time PMREM pass.
 	 */
 	quality: {
-		high: { environment: true, hemisphere: true, exposure: 1.0 },
-		low: { environment: false, hemisphere: true, exposure: 1.0 },
+		high: { environment: true, hemisphere: true, exposure: 1 },
+		low: { environment: false, hemisphere: true, exposure: 1 },
 	},
 } as const;
 

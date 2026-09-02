@@ -583,7 +583,7 @@ for (const viewport of VIEWPORTS) {
 	const b = samples.map((s) => s.b);
 	check(
 		"the trade strobes flash on the game clock",
-		Math.max(...a) > 1 && Math.min(...a) === 0,
+		Math.max(...a) > 0 && Math.min(...a) === 0,
 		`strobe-a ${Math.min(...a).toFixed(2)}–${Math.max(...a).toFixed(2)}`,
 	);
 	// **Alternation, not absence of overlap.** The earlier check asserted that
@@ -595,10 +595,10 @@ for (const viewport of VIEWPORTS) {
 	// is that each strobe is lit at some moment the other is dark.
 	check(
 		"the two strobes alternate rather than reading as one light",
-		samples.some((s) => s.a > 1 && s.b === 0) &&
-			samples.some((s) => s.b > 1 && s.a === 0),
-		`${samples.filter((s) => s.a > 1 && s.b === 0).length} a-only, ` +
-			`${samples.filter((s) => s.b > 1 && s.a === 0).length} b-only`,
+		samples.some((s) => s.a > 0 && s.b === 0) &&
+			samples.some((s) => s.b > 0 && s.a === 0),
+		`${samples.filter((s) => s.a > 0 && s.b === 0).length} a-only, ` +
+			`${samples.filter((s) => s.b > 0 && s.a === 0).length} b-only`,
 	);
 	check(
 		"the same clock value gives the same strobe state",
