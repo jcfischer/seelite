@@ -550,9 +550,14 @@ export function makeWorld(seed: number): World {
  * What that costs is worth stating rather than leaving to be discovered: an
  * interstellar run costs ~3 s of game time per jump, so #7's 291 Cr
  * interstellar premium is a premium on *distance* and not on time, and jumping
- * is not a way to wait a market out. What it buys is the other half — an
- * out-and-back jump pair leaves the origin station's stock deficit almost
- * exactly where it was, so a jump is not a way to launder a farmed pair either.
+ * is not a way to wait a market out. The other half is narrower than it first
+ * read here: an out-and-back pair returns to the deficit **row** it left,
+ * because the carrier key moves with the ship and the clock does not advance —
+ * and that is all `tests/world-jump.test.ts` asserts. Whether it closes the
+ * farm is a claim about a *price*, and a deficit row is not a price; nothing
+ * headless here runs `stockResponse` across a jump. `galaxy-generation.md` §8.1
+ * carries the same retraction, and #191's buy-back pump is the live case of a
+ * market outcome nobody has measured.
  * If a witchspace duration is ever ratified, this function is the one place it
  * goes.
  *

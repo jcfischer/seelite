@@ -4304,23 +4304,6 @@ class Game {
 	 * being asked something a forward-only game never asks it.
 	 */
 	/**
-	 * Everything a flight session is, cleared — the state that must not survive
-	 * arriving somewhere new, whether that is a jump or a reset to the start.
-	 *
-	 * **Extracted because it was written twice** (sage round 2). `performJump`
-	 * and `resetFlightToStart` both spelled these fifteen assignments, and only
-	 * one of them is watched by `tests/leg-reset-coverage.test.ts` — so a field
-	 * added to the flight session would have been zeroed on a reset and left
-	 * running across a jump, which is the half nothing would have caught.
-	 *
-	 * What is deliberately **not** here is what the two do differently:
-	 * a reset refills the drive charge and clears the jump charge, because a
-	 * boot has both; a jump refills neither, since §7 refills the drive on
-	 * docking and a jump is not a dock. Caches and per-station protocol state
-	 * stay at their call sites for the same reason — a jump has a system's worth
-	 * to drop and a reset has a clock rewind's worth.
-	 */
-	/**
 	 * Everything held *about a system* — dropped when the ship is no longer in
 	 * one.
 	 *
@@ -4349,6 +4332,23 @@ class Game {
 		this.selectableCache = null;
 	}
 
+	/**
+	 * Everything a flight session is, cleared — the state that must not survive
+	 * arriving somewhere new, whether that is a jump or a reset to the start.
+	 *
+	 * **Extracted because it was written twice** (sage round 2). `performJump`
+	 * and `resetFlightToStart` both spelled these fifteen assignments, and only
+	 * one of them is watched by `tests/leg-reset-coverage.test.ts` — so a field
+	 * added to the flight session would have been zeroed on a reset and left
+	 * running across a jump, which is the half nothing would have caught.
+	 *
+	 * What is deliberately **not** here is what the two do differently:
+	 * a reset refills the drive charge and clears the jump charge, because a
+	 * boot has both; a jump refills neither, since §7 refills the drive on
+	 * docking and a jump is not a dock. Caches and per-station protocol state
+	 * stay at their call sites for the same reason — a jump has a system's worth
+	 * to drop and a reset has a clock rewind's worth.
+	 */
 	private clearFlightSession() {
 		this.regime = "normal";
 		this.spoolLeftS = 0;
@@ -4380,7 +4380,16 @@ class Game {
 		// has hit twice now.
 		const replacesSystem = !canResetWorldToStart(this.world);
 		resetWorldToStart(this.world);
-		if (replacesSystem) this.rebuildSystem();
+		if (replacesSystem) {
+			this.rebuildSystem();
+			// **And the state held *about* that system.** Round 3 rebuilt the
+			// meshes and stopped there; `clearSystemScopedState` did not exist
+			// until round 4, and round 5 caught that the reset never gained it.
+			// Station ids are per-system and reused, so a reset after docking in
+			// a jumped-to system would hand the start system that system's
+			// cached interior and its live docking state under the same id.
+			this.clearSystemScopedState();
+		}
 		this.clearFlightSession();
 
 		// A boot has no jump charging, so a reset has none either.
