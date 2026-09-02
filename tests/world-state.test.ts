@@ -908,14 +908,12 @@ const populated = (): WorldState => {
 		occurredAt: 21,
 		cause: PLAYER,
 	});
-	const deficits: DeficitMap = recordTrade(
-		{},
-		KEY,
-		"Food",
-		12,
-		20,
-		HOLD_REFERENCE_T,
-	);
+	const deficits: DeficitMap = recordTrade({}, KEY, {
+		goodName: "Food",
+		units: 12,
+		gameTimeMin: 20,
+		holdT: HOLD_REFERENCE_T,
+	});
 	w = {
 		...w,
 		galaxies: w.galaxies.map((g, i) =>

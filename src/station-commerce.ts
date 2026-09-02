@@ -185,14 +185,12 @@ export function transactAtStation(
 				...withCargo(input.commander, good, quantity),
 				credits: input.commander.credits - priceCr * quantity,
 			},
-			deficits: recordTrade(
-				input.deficits,
-				input.stationKey,
-				good.name,
-				quantity,
-				input.gameTimeMin,
-				holdT,
-			),
+			deficits: recordTrade(input.deficits, input.stationKey, {
+				goodName: good.name,
+				units: quantity,
+				gameTimeMin: input.gameTimeMin,
+				holdT: holdT,
+			}),
 		};
 	}
 	if ((input.commander.cargo[good.name] ?? 0) < quantity)
@@ -204,14 +202,12 @@ export function transactAtStation(
 			...withCargo(input.commander, good, -quantity),
 			credits: input.commander.credits + priceCr * quantity,
 		},
-		deficits: recordTrade(
-			input.deficits,
-			input.stationKey,
-			good.name,
-			-quantity,
-			input.gameTimeMin,
-			holdT,
-		),
+		deficits: recordTrade(input.deficits, input.stationKey, {
+			goodName: good.name,
+			units: -quantity,
+			gameTimeMin: input.gameTimeMin,
+			holdT: holdT,
+		}),
 	};
 }
 

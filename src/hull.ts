@@ -171,12 +171,18 @@ export interface HullSpec {
 /**
  * #182's measured price law: what a hull's **hold** is worth, capitalised.
  *
- * The curve is `scripts/measure-hull-pricing.ts` section C — the greedy trader
- * flown at sixteen holds over thirty-two worlds with the hold as the only thing
- * that varies, against a market with no memory. Fitted over 4-200 t it is a
- * clean power law, `rate = 97.7 x hold^0.613` Cr/min, with the pooled fit
- * within 6% of the mean curve at every hold but the two ends (7.2% at 4 t,
- * 11.0% at 200 t).
+ * **`economy-trade.md` §7.1 owns the derivation and the figures**, and this
+ * docstring deliberately does not restate it — a measurement narrative copied
+ * into three files diverges, and one copy of this one already had. What is here
+ * is what the two constants *mean*, and `scripts/measure-hull-pricing.ts`
+ * reprints both beside what a fresh run derives (the map's #118 rule).
+ *
+ * `price(hold) = HULL_PRICE_BASELINE_CR x (hold / baseline hold) ^ exponent`,
+ * rounded. The exponent is the fitted elasticity of the greedy trader's Cr/min
+ * on the hold, and the baseline is the fitted rate at the baseline hull's hold
+ * times the measured time that hull takes to earn `fullKitCr()`. So a hull
+ * costs what its hold earns back over one kit — #26's own two anchors, used as
+ * anchors.
  *
  * **The exponent is the finding, and it is well under one.** #26's D6 reasoned
  * from *"a 60 t hold moves 3x the cargo"*; measured, it earns about 1.9x,
@@ -184,33 +190,24 @@ export interface HullSpec {
  * before it. A roster priced on the assumption that income is linear in the
  * hold would have overpriced every large hull by more than two to one.
  *
- * The baseline is the fitted rate at the baseline hull's hold times the
- * economy's own progression unit — the measured time that hull takes to earn
- * `fullKitCr()`, 48.9 min median over the same thirty-two worlds, in the same
- * arm as the curve. That derivation gives 29,980 Cr and the constant is the
- * round 30,000: it is a *price*, and rounding one to a legible figure is what
- * `economy-trade.md` §7's whole table does.
- *
- * So a hull costs what its hold earns back over one kit — #26's two anchors,
- * used as anchors. Under that scale a hull is bought before the player has
- * flown; far over it and it is scenery.
- *
- * **The trading economy prices the hold and nothing else, and that is measured
- * rather than conceded.** The greedy trader fears no pirate and does not route,
- * so a hardpoint, a point of integrity, a light year of tank and an AU of
- * charge are all worth exactly zero to it. #8's combat balance and #183's
- * rating own those axes; this law invents no figure for them, which is why the
- * interceptor — the second-fastest hull in the game — prices below the courier.
+ * **The trading economy prices the hold and nothing else, and that is a
+ * concession rather than a measurement.** The greedy trader fears no pirate and
+ * does not route, so a hardpoint, a point of integrity, a light year of tank
+ * and an AU of charge were never *varied* — the sweep measured the hold and
+ * conceded the rest. #8's combat balance and #183's rating own those axes and
+ * this law invents no figure for them, which is why the interceptor — the
+ * hardest-accelerating hull in the game — prices below the courier.
  */
-export const HULL_PRICE_EXPONENT = 0.613;
+export const HULL_PRICE_EXPONENT = 0.612;
 
 /** The baseline hull's price, credits — the law's anchor. See the exponent
  *  above for where both figures come from. */
-export const HULL_PRICE_BASELINE_CR = 30_000;
+export const HULL_PRICE_BASELINE_CR = 35_000;
 
 /** Prices are quoted to the nearest hundred credits, like every other figure in
- *  `economy-trade.md` §7. Finer would be false precision against a fitted
- *  exponent whose own p10-p90 across worlds is 0.526-0.667. */
+ *  `economy-trade.md` §7. Finer would be false precision: the fitted exponent's
+ *  own standard error is about 0.013, and its p10-p90 across worlds is wider
+ *  still. */
 export const HULL_PRICE_STEP_CR = 100;
 
 /**
@@ -218,18 +215,17 @@ export const HULL_PRICE_STEP_CR = 100;
  * not the economy's.
  *
  * D7 sets the ceiling where the priced curve stops being interesting.
- * **Measured, it never does**: the curve above is a power law with no knee
- * anywhere in the ladder, and the shelves in front of the trader still fill
- * 85% of a 200 t hold. So the binding limit is geometric, and naming which one
- * it is *is* the answer rather than a substitute for one.
+ * **Measured, it never does** — a power law with no knee anywhere in the ladder,
+ * with the shelves still filling most of a 200 t hold at the top of it — so the
+ * binding limit is geometric, and naming which one it is *is* the answer rather
+ * than a substitute for one. §7.2 there carries the measured figures.
  *
- * `BERTH_CELL.trade` is 90 x 58 x 40 m — 208,800 m3 of clear envelope, the
- * largest berth in the game. Against the roster's own densest hold, the cargo
- * role's 1,060 m3 of bounding box per tonne, that admits **197 t**. It is an
- * upper bound in the safe direction: it assumes a hull can be a solid box at
- * the best density measured, and #26's constraint that beam and height are
- * nearly spent means growth is in length, which is the cheapest axis of the
- * three to spend.
+ * It is the largest clear berth envelope in the game against the roster's own
+ * densest hold: the cargo role's bounding box per tonne, carried out to the
+ * berth cell. An upper bound in the safe direction, because it assumes a hull
+ * could be a solid box at that density, and #26's constraint that beam and
+ * height are nearly spent means growth is in length — the cheapest of the three
+ * axes to spend.
  *
  * **Declared here rather than derived here, because this module is a leaf.** It
  * imports nothing and `tests/headless.test.ts` asserts it, so a `BERTH_CELL`
@@ -296,7 +292,7 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		integrity: 100,
 		tankLy: 7,
 		chargeAu: 12,
-		priceCr: 30_000,
+		priceCr: 35_000,
 	},
 	interceptor: {
 		role: "fast",
@@ -309,7 +305,7 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		integrity: 95,
 		tankLy: 5,
 		chargeAu: 10,
-		priceCr: 17_100,
+		priceCr: 20_000,
 	},
 	freighter: {
 		role: "cargo",
@@ -324,7 +320,7 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		integrity: 166,
 		tankLy: 7,
 		chargeAu: 12,
-		priceCr: 58_800,
+		priceCr: 68_600,
 	},
 	miner: {
 		role: "industrial",
@@ -337,7 +333,7 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		integrity: 215,
 		tankLy: 6,
 		chargeAu: 10,
-		priceCr: 45_900,
+		priceCr: 53_500,
 	},
 	patrol: {
 		role: "security",
@@ -358,7 +354,7 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		integrity: 85,
 		tankLy: 6,
 		chargeAu: 12,
-		priceCr: 14_300,
+		priceCr: 16_800,
 	},
 	explorer: {
 		role: "survey",
@@ -373,7 +369,7 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		// hull is for. Nothing reads it yet — see `tankLy` above.
 		tankLy: 9,
 		chargeAu: 16,
-		priceCr: 38_500,
+		priceCr: 44_900,
 	},
 	raider: {
 		role: "outlaw",
@@ -386,7 +382,7 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		integrity: 81,
 		tankLy: 6,
 		chargeAu: 10,
-		priceCr: 19_600,
+		priceCr: 22_900,
 	},
 	carrier: {
 		role: "capital",
@@ -412,7 +408,7 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		integrity: 152,
 		tankLy: 6,
 		chargeAu: 10,
-		priceCr: 33_500,
+		priceCr: 39_100,
 	},
 	prospector: {
 		role: "prospect",
@@ -425,7 +421,7 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		integrity: 98,
 		tankLy: 6,
 		chargeAu: 12,
-		priceCr: 21_900,
+		priceCr: 25_600,
 	},
 	dreadnought: {
 		role: "battle-line",

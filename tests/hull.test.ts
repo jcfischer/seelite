@@ -544,39 +544,43 @@ describe("what a hull costs (#182, #26's D4 and D7)", () => {
 			expect(HULL_SPECS[id].holdT).toBeLessThanOrEqual(HULL_CEILING_HOLD_T);
 	});
 
-	test("a hold at the ceiling still fits a berth, and one past it does not", () => {
-		// The control on the row above. Without it the ceiling could be any large
-		// number and the assertions would all still hold, because no hull in the
-		// roster is near it — the check has to reach the boundary itself.
+	test("the ceiling is the last hold a berth can admit, and one tonne more is not", () => {
+		// **The control on the re-derivation above, and it reads the ceiling.** A
+		// draft of this test built its boxes out of `BERTH_CELL` alone and claimed
+		// to pin `HULL_CEILING_HOLD_T`; it passed at any ceiling, because nothing
+		// in it mentioned one. What binds is the pair either side of the boundary.
+		//
+		// The hull is the cargo role stretched along the axis #26 leaves free —
+		// beam and height are nearly spent — so its hold grows with its length at
+		// the freighter's own measured density, which is the density the ceiling
+		// is derived from.
 		const freighter = HULL_SPECS.freighter;
-		const scale = (factor: number): HullEnvelope => ({
-			lengthKm: freighter.env.lengthKm * factor,
-			beamKm: freighter.env.beamKm * factor,
-			heightKm: freighter.env.heightKm * factor,
-		});
-		// A hull grown to the ceiling's hold at the freighter's own density.
-		const atCeiling = scale((HULL_CEILING_HOLD_T / freighter.holdT) ** (1 / 3));
 		const berths = stationInterior(
 			"trade",
 			STATION_GEOMETRY.trade.aperturePlaneKm,
 			1,
 		).berths;
-		const cell = BERTH_CELL.trade;
-		// Grown isotropically it does not fit — the box is right, the *shape* is
-		// not, which is #26's constraint that beam and height are nearly spent.
-		expect(atCeiling.beamKm).toBeGreaterThan(cell.beamKm);
-		// Grown in length alone, at the cell's own beam and height, the volume
-		// the ceiling is derived from is exactly the cell's.
-		const boxed: HullEnvelope = {
-			lengthKm: cell.lengthKm,
-			beamKm: cell.beamKm,
-			heightKm: cell.heightKm,
-		};
-		expect(berths.some((b) => berthFits(b, boxed))).toBe(true);
-		const overCeiling: HullEnvelope = {
-			...boxed,
-			lengthKm: cell.lengthKm * 1.001,
-		};
-		expect(berths.some((b) => berthFits(b, overCeiling))).toBe(false);
+		const stretched = (holdT: number): HullEnvelope => ({
+			// The cell's beam and height, which is the most a berth admits, and the
+			// length that carries `holdT` at the freighter's box volume per tonne.
+			beamKm: BERTH_CELL.trade.beamKm,
+			heightKm: BERTH_CELL.trade.heightKm,
+			lengthKm:
+				(holdT *
+					((freighter.env.lengthKm *
+						freighter.env.beamKm *
+						freighter.env.heightKm) /
+						freighter.holdT)) /
+				(BERTH_CELL.trade.beamKm * BERTH_CELL.trade.heightKm),
+		});
+		const fits = (holdT: number) =>
+			berths.some((berth) => berthFits(berth, stretched(holdT)));
+		expect(fits(HULL_CEILING_HOLD_T)).toBe(true);
+		expect(fits(HULL_CEILING_HOLD_T + 1)).toBe(false);
+		// …and it is the *first* failure, not merely a failure a long way up: the
+		// whole roster below it fits, which is what makes the boundary the ceiling
+		// rather than an arbitrary large number.
+		for (const id of DOCKABLE_HULL_IDS)
+			expect([id, fits(HULL_SPECS[id].holdT)]).toEqual([id, true]);
 	});
 });

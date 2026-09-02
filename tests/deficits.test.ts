@@ -54,14 +54,29 @@ describe("§5.5 the deficit map is sparse, lazy, and round-trips", () => {
 	});
 
 	test("buying adds, selling subtracts", () => {
-		const bought = recordTrade({}, KEY, FOOD, 20, 100, HOLD_REFERENCE_T);
+		const bought = recordTrade({}, KEY, {
+			goodName: FOOD,
+			units: 20,
+			gameTimeMin: 100,
+			holdT: HOLD_REFERENCE_T,
+		});
 		expect(readDeficit(bought, KEY, FOOD, 100)).toBeCloseTo(20, 10);
-		const sold = recordTrade({}, KEY, FOOD, -20, 100, HOLD_REFERENCE_T);
+		const sold = recordTrade({}, KEY, {
+			goodName: FOOD,
+			units: -20,
+			gameTimeMin: 100,
+			holdT: HOLD_REFERENCE_T,
+		});
 		expect(readDeficit(sold, KEY, FOOD, 100)).toBeCloseTo(-20, 10);
 	});
 
 	test("the mark halves over one half-life, on read and not on a tick", () => {
-		const map = recordTrade({}, KEY, FOOD, 40, 0, HOLD_REFERENCE_T);
+		const map = recordTrade({}, KEY, {
+			goodName: FOOD,
+			units: 40,
+			gameTimeMin: 0,
+			holdT: HOLD_REFERENCE_T,
+		});
 		expect(readDeficit(map, KEY, FOOD, DEFICIT_HALF_LIFE_MIN)).toBeCloseTo(
 			20,
 			10,
@@ -77,58 +92,82 @@ describe("§5.5 the deficit map is sparse, lazy, and round-trips", () => {
 	test("it saturates at the cap rather than running away", () => {
 		let map: DeficitMap = {};
 		for (let i = 0; i < 20; i++)
-			map = recordTrade(map, KEY, FOOD, 63, 0, HOLD_REFERENCE_T);
+			map = recordTrade(map, KEY, {
+				goodName: FOOD,
+				units: 63,
+				gameTimeMin: 0,
+				holdT: HOLD_REFERENCE_T,
+			});
 		expect(readDeficit(map, KEY, FOOD, 0)).toBe(DEFICIT_MAX);
 		for (let i = 0; i < 40; i++)
-			map = recordTrade(map, KEY, FOOD, -63, 0, HOLD_REFERENCE_T);
+			map = recordTrade(map, KEY, {
+				goodName: FOOD,
+				units: -63,
+				gameTimeMin: 0,
+				holdT: HOLD_REFERENCE_T,
+			});
 		expect(readDeficit(map, KEY, FOOD, 0)).toBe(-DEFICIT_MAX);
 	});
 
 	test("a mark under one unit reads as nothing", () => {
-		const map = recordTrade({}, KEY, FOOD, 20, 0, HOLD_REFERENCE_T);
+		const map = recordTrade({}, KEY, {
+			goodName: FOOD,
+			units: 20,
+			gameTimeMin: 0,
+			holdT: HOLD_REFERENCE_T,
+		});
 		// 20 → under 1 unit after log2(20) half-lives.
 		const faded = DEFICIT_HALF_LIFE_MIN * (Math.log2(20) + 0.01);
 		expect(Math.abs(readDeficit(map, KEY, FOOD, faded))).toBe(0);
 	});
 
 	test("a faded row is dropped, so the save does not grow forever", () => {
-		let map = recordTrade({}, KEY, FOOD, 20, 0, HOLD_REFERENCE_T);
-		map = recordTrade(
-			map,
-			carrierKey(9, LOCAL_CARRIER_ID.refinery),
-			"Furs",
-			5,
-			0,
-			HOLD_REFERENCE_T,
-		);
+		let map = recordTrade({}, KEY, {
+			goodName: FOOD,
+			units: 20,
+			gameTimeMin: 0,
+			holdT: HOLD_REFERENCE_T,
+		});
+		map = recordTrade(map, carrierKey(9, LOCAL_CARRIER_ID.refinery), {
+			goodName: "Furs",
+			units: 5,
+			gameTimeMin: 0,
+			holdT: HOLD_REFERENCE_T,
+		});
 		expect(Object.keys(map).length).toBe(2);
 		const pruned = pruneDeficits(map, DEFICIT_HALF_LIFE_MIN * 8);
 		expect(Object.keys(pruned).length).toBe(0);
 	});
 
 	test("a trade that cancels itself leaves no row at all", () => {
-		let map = recordTrade({}, KEY, FOOD, 20, 0, HOLD_REFERENCE_T);
-		map = recordTrade(map, KEY, FOOD, -20, 0, HOLD_REFERENCE_T);
+		let map = recordTrade({}, KEY, {
+			goodName: FOOD,
+			units: 20,
+			gameTimeMin: 0,
+			holdT: HOLD_REFERENCE_T,
+		});
+		map = recordTrade(map, KEY, {
+			goodName: FOOD,
+			units: -20,
+			gameTimeMin: 0,
+			holdT: HOLD_REFERENCE_T,
+		});
 		expect(map[KEY]).toBeUndefined();
 	});
 
 	test("the same carrier id in two systems is two rows", () => {
-		let map = recordTrade(
-			{},
-			carrierKey(1, LOCAL_CARRIER_ID.trade),
-			FOOD,
-			20,
-			0,
-			HOLD_REFERENCE_T,
-		);
-		map = recordTrade(
-			map,
-			carrierKey(2, LOCAL_CARRIER_ID.trade),
-			FOOD,
-			-20,
-			0,
-			HOLD_REFERENCE_T,
-		);
+		let map = recordTrade({}, carrierKey(1, LOCAL_CARRIER_ID.trade), {
+			goodName: FOOD,
+			units: 20,
+			gameTimeMin: 0,
+			holdT: HOLD_REFERENCE_T,
+		});
+		map = recordTrade(map, carrierKey(2, LOCAL_CARRIER_ID.trade), {
+			goodName: FOOD,
+			units: -20,
+			gameTimeMin: 0,
+			holdT: HOLD_REFERENCE_T,
+		});
 		expect(Object.keys(map).length).toBe(2);
 		expect(
 			readDeficit(map, carrierKey(1, LOCAL_CARRIER_ID.trade), FOOD, 0),
@@ -144,14 +183,12 @@ describe("§5.5 the deficit map is sparse, lazy, and round-trips", () => {
 		for (const [i, record] of SYSTEMS.slice(0, 40).entries())
 			for (const s of generateContents(record).stations) {
 				t += 7;
-				map = recordTrade(
-					map,
-					carrierKey(i, s.localCarrierId),
-					COMMODITIES[i % COMMODITIES.length].name,
-					i % 2 === 0 ? 20 : -13,
-					t,
-					HOLD_REFERENCE_T,
-				);
+				map = recordTrade(map, carrierKey(i, s.localCarrierId), {
+					goodName: COMMODITIES[i % COMMODITIES.length].name,
+					units: i % 2 === 0 ? 20 : -13,
+					gameTimeMin: t,
+					holdT: HOLD_REFERENCE_T,
+				});
 			}
 		// **Pinned, not bounded.** `economy-trade.md` §10.3 quotes this corpus as
 		// a 61-row map. A `>` threshold would leave a generator change that thins
@@ -170,8 +207,18 @@ describe("§5.5 the deficit map is sparse, lazy, and round-trips", () => {
 	});
 
 	test("a pruned map round-trips to the same readings as the original", () => {
-		let map = recordTrade({}, KEY, FOOD, 63, 0, HOLD_REFERENCE_T);
-		map = recordTrade(map, KEY, "Furs", -40, 0, HOLD_REFERENCE_T);
+		let map = recordTrade({}, KEY, {
+			goodName: FOOD,
+			units: 63,
+			gameTimeMin: 0,
+			holdT: HOLD_REFERENCE_T,
+		});
+		map = recordTrade(map, KEY, {
+			goodName: "Furs",
+			units: -40,
+			gameTimeMin: 0,
+			holdT: HOLD_REFERENCE_T,
+		});
 		const at = DEFICIT_HALF_LIFE_MIN * 2;
 		const pruned = parseDeficits(
 			JSON.parse(JSON.stringify(pruneDeficits(map, at))),
@@ -201,14 +248,12 @@ describe("§5.5 the deficit map is sparse, lazy, and round-trips", () => {
 
 	test("the drop rule is one unit, and it is the same one everywhere", () => {
 		expect(DEFICIT_DROP_UNITS).toBe(1);
-		const map = recordTrade(
-			{},
-			KEY,
-			FOOD,
-			DEFICIT_DROP_UNITS / 2,
-			0,
-			HOLD_REFERENCE_T,
-		);
+		const map = recordTrade({}, KEY, {
+			goodName: FOOD,
+			units: DEFICIT_DROP_UNITS / 2,
+			gameTimeMin: 0,
+			holdT: HOLD_REFERENCE_T,
+		});
 		expect(map[KEY]).toBeUndefined();
 	});
 });

@@ -109,15 +109,28 @@ export const readDeficit = (
  * name a hull would give a freighter the courier's memory cap. The units stored
  * stay tonnes — `shelfQuantity` reads them against Bell's own 63-unit shelf,
  * which is a shelf and not a memory.
+ *
+ * **The trade is a record and not three more positionals.** Adding `holdT`
+ * would have made this six arguments of which four are bare numbers, with
+ * `units`, `gameTimeMin` and `holdT` transposable without a type error — and a
+ * transposed clock and hold both read as plausible. The keyed form keeps
+ * `holdT` required and makes the call sites say which number is which.
  */
+export interface TradeRecord {
+	goodName: string;
+	/** Signed units: positive when the player buys, negative when they sell. */
+	units: number;
+	gameTimeMin: number;
+	/** The flown hull's hold, tonnes. */
+	holdT: number;
+}
+
 export function recordTrade(
 	map: DeficitMap,
 	key: CarrierKey,
-	goodName: string,
-	units: number,
-	gameTimeMin: number,
-	holdT: number,
+	trade: TradeRecord,
 ): DeficitMap {
+	const { goodName, units, gameTimeMin, holdT } = trade;
 	const current = map[key] ?? { goods: {}, updatedAt: gameTimeMin };
 	const decayed = decayRow(current, gameTimeMin);
 	const next = addDeficit(decayed.goods[goodName] ?? 0, units, holdT);

@@ -100,8 +100,6 @@ export const JUMP_SECONDS = 15;
  *  that matters. */
 export const DOCK_SECONDS = 45;
 
-/** Starting credits and hold — §6, both v1 defaults the ship-roster node
- *  inherits. */
 /** The radius `legSeconds` treats a station as reached at. A station is a
  *  kilometre across (`STATION_GEOMETRY`), and cruise drops at `dropRadiusKm`
  *  anyway, so this only has to be small against the leg — but it is a modelled
@@ -113,12 +111,15 @@ const STATION_TARGET_RADIUS_KM = 1;
  *  has to cross it, not touch it. A millisecond of game time. */
 const EPOCH_NUDGE_MIN = 1e-6;
 
+/** Starting credits and hold — §6, both v1 defaults the ship-roster node
+ *  inherited. `HOLD_T` is now the baseline hull's row rather than a literal,
+ *  and `RunOptions.holdT` is what a sweep varies. */
 export const START_CR = 100;
 export const HOLD_T = HOLD_REFERENCE_T;
 /** §6: the Large Cargo Bay is +15 t. It is §8's first purchase precisely
  *  because it lifts every later run, so a sim that bought it and kept trading
  *  20 t would understate everything after minute ~7. */
-export const LARGE_BAY_T = 15;
+const LARGE_BAY_T = 15;
 
 /**
  * What the trader keeps back rather than spending on the next upgrade.
@@ -136,8 +137,8 @@ const SUB_TONNE = new Set(["Gold", "Platinum", "Gem-Stones"]);
 
 /**
  * `station-types.md` §4.1's ten universal items, **in the order the count
- * gates them**. Fuel is slot 0 and is not in `EQUIPMENT` (§7 prices it per
- * light year, not per unit), so these nine occupy slots 1–9.
+ * gates them**. Fuel is first and is not in `EQUIPMENT` (§7 prices it per
+ * light year, not per unit), so these nine occupy ranks 1-9.
  *
  * The gate is `min(displayTL + 3, 10)` items *shown*, not a per-item tech
  * level — which is why it saturates at `displayTL = 7` and why §4.2 rejected
@@ -168,13 +169,13 @@ const UNIVERSAL_ORDER: EquipmentName[] = [
  */
 const sellsIt = (item: Equipment, port: Port): boolean => {
 	if (item.scope !== "universal") return port.station.type === item.scope;
-	const slot = 1 + UNIVERSAL_ORDER.indexOf(item.name);
+	const rank = 1 + UNIVERSAL_ORDER.indexOf(item.name);
 	// Typed against `EQUIPMENT`'s own names, so a rename in `src/market.ts` is a
 	// compile error here rather than this throw at run time. The throw stays for
 	// the case the type cannot see: an item added to `EQUIPMENT` as universal
 	// and not to this order.
-	if (slot === 0) throw new Error(`${item.name} is not in the universal order`);
-	return slot < Math.min(port.record.displayTL + 3, 10);
+	if (rank === 0) throw new Error(`${item.name} is not in the universal order`);
+	return rank < Math.min(port.record.displayTL + 3, 10);
 };
 
 /** How far the trader looks for a jump target. The whole 256-system galaxy is
@@ -339,12 +340,15 @@ interface Hop {
 function basket(
 	from: Port,
 	to: Port,
-	deficits: DeficitMap,
+	st: Stance,
 	buyMin: number,
 	sellMin: number,
-	capitalCr: number,
-	holdT: number,
 ): { profitCr: number; cargo: { good: Commodity; units: number }[] } {
+	// **The stance rather than four of its fields.** `hopTo` was unpacking
+	// `deficits`, `credits - fuelCr` and `holdT` out of a struct that already
+	// holds all three, and #182 made it five; a caller with a `Stance` in hand
+	// should not have to know which of its fields a basket reads.
+	const { deficits, credits: capitalCr, holdT } = st;
 	const cargo: { good: Commodity; units: number }[] = [];
 	let spend = capitalCr;
 	let profit = 0;
@@ -553,11 +557,9 @@ function hopTo(
 	const b = basket(
 		here,
 		to,
-		st.deficits,
+		{ ...st, credits: st.credits - fuelCr },
 		min,
 		min + seconds / 60,
-		st.credits - fuelCr,
-		st.holdT,
 	);
 	return { kind, to, seconds, fuelCr, profitCr: b.profitCr, cargo: b.cargo };
 }
@@ -822,9 +824,10 @@ export interface RunOptions {
 	 *
 	 * The Large Cargo Bay's +15 t is added on top for every arm alike when the
 	 * trader buys one, because that is the game's own rule and suspending it for
-	 * a sweep would be a different economy. It is a *larger relative* boost at a
-	 * small hold, so it flattens the low end of the measured curve; that is a
-	 * property of the game rather than of the instrument, and the report says so.
+	 * a sweep would be a different economy. It lifts a small hold by a *larger
+	 * share* than a big one, so it flattens the low end of the measured curve;
+	 * that is a property of the game rather than of the instrument, and the
+	 * report says so.
 	 */
 	holdT?: number;
 	/**
@@ -845,7 +848,7 @@ export interface RunOptions {
 	 * adding one.** With shopping on, the Large Cargo Bay's +15 t lands on every
 	 * arm — but it is a 75% boost to a 20 t hold and a 25% boost to a 60 t one,
 	 * so the swept variable stops being the hold and becomes the hold plus a
-	 * hold-dependent bonus. And the list runs out: `remaining.length === 0` ends
+	 * hold-dependent increment. And the list runs out: `remaining.length === 0` ends
 	 * the run, sooner at a large hold than at a small one, so the arms would fly
 	 * different windows of the clock and therefore different price tables — #25's
 	 * fault three, arrived at from a new direction.
@@ -895,6 +898,18 @@ export interface RunOptions {
 	 * measured rather than asserted away.
 	 */
 	capitalCapCr?: number;
+	/**
+	 * The credits the trader opens with, or `START_CR` for §6's 100.
+	 *
+	 * **The price curve needs a trader who could afford a hull.** From 100 Cr the
+	 * first several minutes of any window earn almost nothing — §6's
+	 * capital-limited opening — and that dead time is amortised over the window,
+	 * so a rate taken from `earnedCr / minutes` climbs with `hours` and a price
+	 * derived from it would move with an instrument parameter that means nothing
+	 * in the game. Opening at a hull buyer's own capital removes the transient
+	 * instead of averaging over it.
+	 */
+	startCr?: number;
 }
 
 export function run(
@@ -935,7 +950,7 @@ export function run(
 					: a.priceCr - b.priceCr,
 		);
 	const led: Ledger = {
-		credits: START_CR,
+		credits: opts.startCr ?? START_CR,
 		holdT: startHoldT,
 		spentCr: 0,
 		kitAffordableAt: null,
@@ -997,31 +1012,27 @@ export function run(
 
 		// Buy, fly, sell. The deficit is written at both ends — the whole point
 		// of §5.2 is that the market remembers which of them you did.
-		if (remembers)
+		// One writer for both ends of the trade. The pair differed only in key,
+		// sign and clock, and this diff widened both copies twice — `remembers`
+		// and the hold — so a third change would have been three edits.
+		const mark = (key: CarrierKey, sign: 1 | -1, tMin: number) => {
+			if (!remembers) return;
 			for (const { good, units } of hop.cargo)
-				deficits = recordTrade(
-					deficits,
-					here.key,
-					good.name,
-					units,
-					t / 60,
-					led.holdT,
-				);
+				deficits = recordTrade(deficits, key, {
+					goodName: good.name,
+					units: sign * units,
+					gameTimeMin: tMin,
+					holdT: led.holdT,
+				});
+		};
+
+		mark(here.key, 1, t / 60);
 		led.credits -= hop.fuelCr;
 		if (hop.kind === "jump") jumpMinutes += JUMP_SECONDS / 60;
 		dockMinutes += dockSeconds / 60;
 		t += hop.seconds;
 		const arriveMin = t / 60;
-		if (remembers)
-			for (const { good, units } of hop.cargo)
-				deficits = recordTrade(
-					deficits,
-					hop.to.key,
-					good.name,
-					-units,
-					arriveMin,
-					led.holdT,
-				);
+		mark(hop.to.key, -1, arriveMin);
 		led.credits += hop.profitCr;
 		const tonnes = hop.cargo.reduce(
 			(sum, c) => sum + (c.good.unit === "t" ? c.units : 0),
@@ -1049,7 +1060,7 @@ export function run(
 	return {
 		minutes: t / 60,
 		creditsCr: led.credits,
-		earnedCr: led.credits - START_CR + led.spentCr,
+		earnedCr: led.credits - (opts.startCr ?? START_CR) + led.spentCr,
 		holdT: led.holdT,
 		startHoldT,
 		hops,

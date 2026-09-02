@@ -2,7 +2,7 @@
  * What a hull is worth, and where the ladder's rungs and its top go — #182,
  * executing #26's D4, D6 and D7.
  *
- *   bun run scripts/measure-hull-pricing.ts [hours] [seeds]
+ *   bun run scripts/measure-hull-pricing.ts [hours]
  *
  * #26 deferred three figures on purpose rather than inventing them: the hull
  * prices, the hold multiplier, and the ceiling. All three are a measurement,
@@ -35,7 +35,7 @@
  *   fault three arrived at from a new direction.
  * - **One hold for the whole window** (`shop: false`). With shopping on the
  *   Large Cargo Bay's +15 t is a 75% boost to a 20 t hold and 25% to a 60 t
- *   one, so the swept variable would be the hold plus a hold-dependent bonus;
+ *   one, so the swept variable would be the hold plus a hold-dependent increment;
  *   and the shopping list runs out sooner at a large hold, ending the run
  *   early and shortening that arm's window.
  * - **One corpus.** Every hold is flown over every world, and the fit below is
@@ -88,6 +88,7 @@ import {
 	stockResponse,
 } from "../src/market";
 import { BERTH_CELL } from "../src/station-interior";
+import { STATION_TYPES } from "../src/station";
 import {
 	CLOSABLE_RATIO,
 	FLUCT_PAIRS,
@@ -158,10 +159,19 @@ const quantile = (xs: readonly number[], q: number): number => {
 	const s = [...xs].sort((a, b) => a - b);
 	return s[Math.min(s.length - 1, Math.floor(q * s.length))];
 };
+/** A real median, averaged across the middle pair on an even count. `quantile`
+ *  returns the upper-middle sample, which is fine for a p10/p90 and wrong for a
+ *  figure the baseline price is derived from. */
+const median = (xs: readonly number[]): number => {
+	if (xs.length === 0) return Number.NaN;
+	const s = [...xs].sort((a, b) => a - b);
+	const n = s.length;
+	return n % 2 === 1 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2;
+};
 const mean = (xs: readonly number[]): number =>
 	xs.reduce((a, b) => a + b, 0) / Math.max(xs.length, 1);
 
-const pad = (v: string | number, n: number) => String(v).padStart(n);
+const rightAlign = (v: string | number, n: number) => String(v).padStart(n);
 
 console.log(
 	`hull pricing — ${WORLDS.length} worlds (${WORLD_SEEDS.length} seeds x ` +
@@ -177,7 +187,7 @@ console.log(
 	"\n== A. one run's price move, shipped response against the one it replaced ==",
 );
 console.log(
-	"  A per-hull modifier on a bounded index gets clamped away where that type",
+	"  A per-hull scaling on a bounded index gets clamped away where that type",
 	"\n  lives (the map's #13). `DEFICIT_MAX` is 63 *tonnes*, so under the old",
 	"\n  expression a 63 t hull and a 200 t hull leave an identical mark.",
 );
@@ -191,8 +201,8 @@ for (const holdT of [8, 20, 40, 60, 63, 80, 120, 200]) {
 	// How much of one run's mark the old ±63 t clamp discarded.
 	const lost = Math.max(0, holdT - 63) / holdT;
 	console.log(
-		`${pad(holdT, 8)}${pad(`${(100 * shipped).toFixed(1)}%`, 10)}` +
-			`${pad(`${(100 * before).toFixed(1)}%`, 11)}${pad(`${(100 * lost).toFixed(0)}%`, 15)}`,
+		`${rightAlign(holdT, 8)}${rightAlign(`${(100 * shipped).toFixed(1)}%`, 10)}` +
+			`${rightAlign(`${(100 * before).toFixed(1)}%`, 11)}${rightAlign(`${(100 * lost).toFixed(0)}%`, 15)}`,
 	);
 }
 
@@ -255,10 +265,10 @@ for (const arm of ARMS)
 		});
 		const survey = surveyResiduals(holdT, arm.response);
 		console.log(
-			`  ${arm.label.padEnd(10)}${pad(holdT, 5)}` +
-				`${pad(sat.toFixed(3), 13)}${pad(closable.toFixed(3), 11)}` +
-				`${pad(ex.runs, 7)}${pad(`${finite("take", ex.profitCr).toFixed(0)} Cr`, 12)}` +
-				`${pad(`${finite("residual", survey.worst.runCr).toFixed(0)} Cr`, 15)}`,
+			`  ${arm.label.padEnd(10)}${rightAlign(holdT, 5)}` +
+				`${rightAlign(sat.toFixed(3), 13)}${rightAlign(closable.toFixed(3), 11)}` +
+				`${rightAlign(ex.runs, 7)}${rightAlign(`${finite("take", ex.profitCr).toFixed(0)} Cr`, 12)}` +
+				`${rightAlign(`${finite("residual", survey.worst.runCr).toFixed(0)} Cr`, 15)}`,
 		);
 	}
 console.log(
@@ -274,6 +284,22 @@ console.log(
 // ---------------------------------------------------------------------------
 
 /** One arm of the sweep: every world flown at one hold, same options. */
+/**
+ * One arm of the sweep: every world flown at one hold, same options.
+ *
+ * **It opens with a hull buyer's own capital, not §6's 100 Cr.** From 100 the
+ * first minutes of any window earn almost nothing — §6's capital-limited
+ * opening — and that dead time is amortised over the window, so `earnedCr /
+ * minutes` climbs with `hours`: measured over these worlds the 20 t rate went
+ * 474 -> 613 -> 690 -> 736 Cr/min at 1, 2, 4 and 8 h, and a price derived from
+ * it would move 23,099 -> 35,840 Cr with an instrument parameter that means
+ * nothing in the game. Opening at `fullKitCr()` removes the transient instead
+ * of averaging over it, and section I sweeps what is left.
+ *
+ * The *exponent* barely noticed either way — 0.621 / 0.613 / 0.605 / 0.609
+ * across the same four windows — which is why the ladder's shape survived the
+ * correction and its level did not.
+ */
 const armAt = (holdT: number, opts: RunOptions = {}): Result[] =>
 	WORLDS.map((world) =>
 		run(world, hours, {
@@ -281,6 +307,7 @@ const armAt = (holdT: number, opts: RunOptions = {}): Result[] =>
 			stopAtKit: false,
 			shop: false,
 			remembers: false,
+			startCr: fullKitCr(),
 			...opts,
 		}),
 	);
@@ -303,9 +330,9 @@ for (const holdT of HOLD_LADDER) {
 			1,
 		);
 	console.log(
-		`${pad(holdT, 6)}${pad(mean(rates).toFixed(0), 9)}` +
-			`${pad(quantile(rates, 0.1).toFixed(0), 9)}${pad(quantile(rates, 0.9).toFixed(0), 9)}` +
-			`${pad(finite("lifted", lifted).toFixed(1), 15)}${pad(`${((100 * lifted) / holdT).toFixed(0)}%`, 8)}`,
+		`${rightAlign(holdT, 6)}${rightAlign(mean(rates).toFixed(0), 9)}` +
+			`${rightAlign(quantile(rates, 0.1).toFixed(0), 9)}${rightAlign(quantile(rates, 0.9).toFixed(0), 9)}` +
+			`${rightAlign(finite("lifted", lifted).toFixed(1), 15)}${rightAlign(`${((100 * lifted) / holdT).toFixed(0)}%`, 8)}`,
 	);
 }
 
@@ -320,6 +347,11 @@ for (const holdT of HOLD_LADDER) {
 function fitPower(points: { h: number; r: number }[]): {
 	a: number;
 	b: number;
+	/** The slope's own standard error. Printed because it is what the third
+	 *  digit of the shipped exponent rests on — the world-to-world spread is far
+	 *  wider and is a different quantity, and quoting the wide one as the reason
+	 *  for three places was a non sequitur a draft of §7.1 carried. */
+	se: number;
 } {
 	const n = points.length;
 	const x = points.map((p) => Math.log(p.h));
@@ -329,7 +361,13 @@ function fitPower(points: { h: number; r: number }[]): {
 	const sxx = x.reduce((a, c) => a + c * c, 0);
 	const sxy = x.reduce((a, c, i) => a + c * y[i], 0);
 	const b = (n * sxy - sx * sy) / (n * sxx - sx * sx);
-	return { a: Math.exp((sy - b * sx) / n), b };
+	const a = Math.exp((sy - b * sx) / n);
+	const rss = y.reduce(
+		(sum, c, i) => sum + (Math.log(a) + b * x[i] - c) ** 2,
+		0,
+	);
+	const sxxCentred = sxx - (sx * sx) / n;
+	return { a, b, se: Math.sqrt(rss / (n - 2) / sxxCentred) };
 }
 
 const perWorld = WORLDS.map((_, wi) =>
@@ -343,7 +381,8 @@ console.log(
 	`\n  fitted rate = A x hold^b over ${HOLD_LADDER[0]}-${HOLD_LADDER[HOLD_LADDER.length - 1]} t`,
 );
 console.log(
-	`    pooled on the mean curve: A ${finite("A", pooled.a).toFixed(2)}, b ${finite("b", pooled.b).toFixed(3)}`,
+	`    pooled on the mean curve: A ${finite("A", pooled.a).toFixed(2)}, ` +
+		`b ${finite("b", pooled.b).toFixed(3)} ± ${finite("se", pooled.se).toFixed(3)} (the slope's own standard error)`,
 );
 console.log(
 	`    per world (n=${WORLDS.length}): b median ${quantile(betas, 0.5).toFixed(3)}, ` +
@@ -380,8 +419,8 @@ for (const holdT of [8, 20, 60, 200]) {
 	const off = mean(armAt(holdT).map(rateOf));
 	const on = mean(armAt(holdT, { remembers: true }).map(rateOf));
 	console.log(
-		`${pad(holdT, 6)}${pad(off.toFixed(0), 12)}${pad(on.toFixed(0), 14)}` +
-			`${pad(`${(on / off).toFixed(2)}x`, 18)}`,
+		`${rightAlign(holdT, 6)}${rightAlign(off.toFixed(0), 12)}${rightAlign(on.toFixed(0), 14)}` +
+			`${rightAlign(`${(on / off).toFixed(2)}x`, 18)}`,
 	);
 }
 {
@@ -402,6 +441,12 @@ console.log(
 	"\n== E. the payback window: the economy's own progression unit ==",
 );
 const kitWindow = (() => {
+	// **This arm keeps §6's 100 Cr opening, and that is not the curve's clock
+	// twice.** The window is a *unit of time* — how long the economy takes to
+	// yield one kit at its own opening pace — and it is measured from the
+	// opening because that is what the unit means. The curve is a *rate*, and a
+	// rate taken across the opening measures the opening. Two different
+	// quantities, each measured on the arm it is about.
 	const arm = WORLDS.map((world) =>
 		run(world, Math.max(hours, 4), {
 			holdT: HOLD_REFERENCE_T,
@@ -416,23 +461,29 @@ const kitWindow = (() => {
 	return {
 		n: kits.length,
 		of: arm.length,
-		median: quantile(kits, 0.5),
+		median: median(kits),
 		lo: Math.min(...kits),
 		hi: Math.max(...kits),
 	};
 })();
 console.log(
 	`  time for the baseline hull to earn fullKitCr() = ${fullKitCr()} Cr, ` +
-		`same arm as the curve:\n    ${kitWindow.n}/${kitWindow.of} worlds, ` +
+		`from §6's 100 Cr opening:\n    ${kitWindow.n}/${kitWindow.of} worlds, ` +
 		`median ${finite("kit", kitWindow.median).toFixed(1)} min, ` +
 		`${kitWindow.lo.toFixed(1)}-${kitWindow.hi.toFixed(1)}`,
 );
 console.log(
 	"  #26 gives the kit and the ceiling as the two anchors a hull price has to",
 	"\n  sit against — under that scale it is bought before the player has flown,",
-	"\n  far over it and it is scenery. The window is the *median*, and it is the",
-	"\n  same arm as the curve: a payback measured on a richer trader than the one",
-	"\n  whose rate is being capitalised would be the two-clocks fault again.",
+	"\n  far over it and it is scenery.",
+	"\n",
+	"\n  **This arm opens at 100 Cr and section C's does not, and that is not the",
+	"\n  clock counted twice.** The window is a *unit of time* — how long the",
+	"\n  economy takes to yield one kit at its own opening pace — so it is measured",
+	"\n  from the opening, because that is what the unit means. The curve is a",
+	"\n  *rate*, and a rate averaged across the opening measures the opening: it",
+	"\n  climbs with the window and would carry an instrument parameter into every",
+	"\n  price. Two different quantities, each measured on the arm it is about.",
 );
 
 // ---------------------------------------------------------------------------
@@ -447,9 +498,11 @@ console.log(
 console.log(
 	`  The baseline is the measured rate at ${HOLD_REFERENCE_T} t times the window above;`,
 	"\n  the exponent is the fitted b. What is being capitalised is the *hold*, and",
-	"\n  the trading economy prices nothing else: hardpoints, integrity, tank and",
-	"\n  charge are worth exactly zero to a trader that fears no pirate and does",
-	"\n  not route, so #8 and #183 own them and this node invents no figure.",
+	"\n  the trading economy prices nothing else — **which is a concession rather",
+	"\n  than a measurement**. A trader that fears no pirate and does not route was",
+	"\n  never handed a hardpoint, a point of integrity or a light year of tank to",
+	"\n  vary, so the sweep measured the hold and conceded the rest. #8 and #183",
+	"\n  own those axes and this node invents no figure for them.",
 );
 {
 	// **The #118 loop, closed.** A figure a spec states as measured owes a mode
@@ -478,9 +531,9 @@ for (const id of sortedByHold) {
 		: mean(armAt(holdT).map(rateOf));
 	const price = hullPriceCr(holdT);
 	console.log(
-		`  ${id.padEnd(13)}${pad(holdT, 4)}${pad(observed.toFixed(0), 18)}` +
-			`${pad(`${finite("price", price as number).toLocaleString("en-GB")} Cr`, 11)}` +
-			`${pad(`${((price as number) / fullKitCr()).toFixed(2)}x`, 12)}`,
+		`  ${id.padEnd(13)}${rightAlign(holdT, 4)}${rightAlign(observed.toFixed(0), 18)}` +
+			`${rightAlign(`${finite("price", price as number).toLocaleString("en-GB")} Cr`, 11)}` +
+			`${rightAlign(`${((price as number) / fullKitCr()).toFixed(2)}x`, 12)}`,
 	);
 }
 
@@ -497,8 +550,17 @@ console.log(
 	"\n  it is instead is the answer rather than a substitute for one.",
 );
 {
-	const cell = BERTH_CELL.trade;
-	const boxM3 = cell.lengthKm * cell.beamKm * cell.heightKm * 1e9;
+	// **The max over every station type, the way `tests/hull.test.ts` derives
+	// it.** Reading `BERTH_CELL.trade` and calling it "the largest" would let a
+	// retune of another role's cell put the instrument and the gate out of step
+	// without either noticing.
+	const boxOf = (c: { lengthKm: number; beamKm: number; heightKm: number }) =>
+		c.lengthKm * c.beamKm * c.heightKm * 1e9;
+	const largestType = STATION_TYPES.reduce((best, t) =>
+		boxOf(BERTH_CELL[t]) > boxOf(BERTH_CELL[best]) ? t : best,
+	);
+	const cell = BERTH_CELL[largestType];
+	const boxM3 = boxOf(cell);
 	const densities = PURCHASABLE_HULL_IDS.map((id) => {
 		const s = HULL_SPECS[id];
 		return {
@@ -508,13 +570,13 @@ console.log(
 	}).sort((a, b) => a.m3PerT - b.m3PerT);
 	const best = densities[0];
 	console.log(
-		`\n  largest berth cell (trade/shipyard/refinery): ` +
+		`\n  largest berth cell (${largestType}, and every type is checked): ` +
 			`${(1000 * cell.lengthKm).toFixed(0)} x ${(1000 * cell.beamKm).toFixed(0)} x ` +
 			`${(1000 * cell.heightKm).toFixed(0)} m = ${finite("box", boxM3).toFixed(0)} m3`,
 	);
 	console.log("\n  hull          m3 of box per tonne of hold");
 	for (const d of densities)
-		console.log(`  ${d.id.padEnd(13)}${pad(d.m3PerT.toFixed(0), 8)}`);
+		console.log(`  ${d.id.padEnd(13)}${rightAlign(d.m3PerT.toFixed(0), 8)}`);
 	console.log(
 		`\n  the cargo role is the densest at ${best.m3PerT.toFixed(0)} m3/t (${best.id}), so the largest`,
 		`\n  hold a berth can admit is ${finite("ceiling", boxM3 / best.m3PerT).toFixed(0)} t — ` +
@@ -539,22 +601,40 @@ console.log("\n== H. where the rungs go ==");
 		(id) => hullPriceCr(HULL_SPECS[id].holdT) as number,
 	);
 	const steps = prices.slice(1).map((p, i) => p / prices[i]);
+	const typical = median(steps);
 	const widest = Math.max(...steps);
 	console.log(
-		`  the roster's own price steps: ${steps.map((s) => s.toFixed(2)).join(", ")}`,
+		`  the roster's own price steps: ${steps.map((x) => x.toFixed(2)).join(", ")}`,
 	);
 	console.log(
-		`  median ${quantile(steps, 0.5).toFixed(2)}x, widest ${widest.toFixed(2)}x — ` +
-			"and **the widest existing step is the gap criterion**, so what counts as",
-		"\n  a hole is read off the roster rather than chosen.",
+		`  typical (median) ${typical.toFixed(2)}x, widest ${widest.toFixed(2)}x`,
+	);
+	// **The criterion is the median squared, and it is not the maximum.** An
+	// earlier version asked whether any step exceeded the widest step, which no
+	// step can and which therefore reported "no interior gap" on any roster
+	// whatever — a check derived from its own subject. A gap is an interval with
+	// room for a rung *at the ladder's own spacing*, so the threshold is one
+	// typical step squared, and an interior step can exceed it.
+	const gapThreshold = typical * typical;
+	const interior = steps.filter((x) => x > gapThreshold + 1e-9).length;
+	console.log(
+		`\n  a gap is a step wider than one typical step squared, ` +
+			`${gapThreshold.toFixed(2)}x — room for a rung at the ladder's own`,
+		"\n  spacing. It is not the maximum of the steps, which nothing could exceed.",
 	);
 	const top = prices[prices.length - 1];
+	const topHoldT = HULL_SPECS[sortedByHold[sortedByHold.length - 1]].holdT;
 	const ceiling = hullPriceCr(HULL_CEILING_HOLD_T) as number;
 	const gap = ceiling / top;
+	// The *count* is bounded by the roster's widest existing step rather than by
+	// its typical one, which is the weaker and safer claim: it is the smallest
+	// number of rungs that leaves the ladder no coarser anywhere than it already
+	// is. At the typical step it would be one more.
 	const rungs = Math.ceil(Math.log(gap) / Math.log(widest));
+	const atTypical = Math.ceil(Math.log(gap) / Math.log(typical));
 	console.log(
-		`\n  interior gaps (a step wider than ${widest.toFixed(2)}x): ` +
-			`${steps.filter((s) => s > widest + 1e-9).length} — the priced roster has none.`,
+		`\n  interior gaps: ${interior} of ${steps.length} — the priced roster has ` +
+			`${interior === 0 ? "none" : `${interior}`}.`,
 	);
 	console.log(
 		`  the one gap is above it: ${top.toLocaleString("en-GB")} Cr to the ceiling's ` +
@@ -562,21 +642,20 @@ console.log("\n== H. where the rungs go ==");
 	);
 	console.log(
 		`  which holds ${rungs} steps of at most ${widest.toFixed(2)}x — so **${rungs} new rungs**, ` +
-			"the top one being the ceiling hull itself:",
+			`the top one being the ceiling hull itself (${atTypical} at the typical step):`,
 	);
 	// Holds spaced evenly in the log between the roster's top and the ceiling,
 	// and each rung's price read back off the same law section F prices the
 	// roster with — not a second interpolation that could disagree with it.
-	const holdStep =
-		(HULL_CEILING_HOLD_T / HULL_SPECS.freighter.holdT) ** (1 / rungs);
+	const holdStep = (HULL_CEILING_HOLD_T / topHoldT) ** (1 / rungs);
 	for (let k = 1; k <= rungs; k++) {
 		const holdT = Math.min(
 			HULL_CEILING_HOLD_T,
-			Math.round(HULL_SPECS.freighter.holdT * holdStep ** k),
+			Math.round(topHoldT * holdStep ** k),
 		);
 		console.log(
-			`    rung ${k}: hold ${pad(holdT, 3)} t, ` +
-				`${pad((hullPriceCr(holdT) as number).toLocaleString("en-GB"), 8)} Cr` +
+			`    rung ${k}: hold ${rightAlign(holdT, 3)} t, ` +
+				`${rightAlign((hullPriceCr(holdT) as number).toLocaleString("en-GB"), 8)} Cr` +
 				(k === rungs ? "  (the ceiling)" : ""),
 		);
 	}
@@ -586,10 +665,6 @@ console.log("\n== H. where the rungs go ==");
 		"\n  the berth cell moves it without anybody editing a number.",
 	);
 }
-
-// ---------------------------------------------------------------------------
-// Provenance
-// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // I. Where this measurement is still biased, and which way
@@ -617,8 +692,8 @@ for (const cap of CAPITAL_CAPS) {
 	const f = fitPower(points);
 	const at = (h: number) => (points.find((p) => p.h === h) as { r: number }).r;
 	console.log(
-		`${pad(Number.isFinite(cap) ? `${cap.toLocaleString("en-GB")} Cr` : "uncapped", 17)}` +
-			`${pad(finite("b", f.b).toFixed(3), 6)}${pad(at(20).toFixed(0), 15)}${pad(at(200).toFixed(0), 16)}`,
+		`${rightAlign(Number.isFinite(cap) ? `${cap.toLocaleString("en-GB")} Cr` : "uncapped", 17)}` +
+			`${rightAlign(finite("b", f.b).toFixed(3), 6)}${rightAlign(at(20).toFixed(0), 15)}${rightAlign(at(200).toFixed(0), 16)}`,
 	);
 }
 console.log(
@@ -637,7 +712,11 @@ console.log(
 	"\n  buys its whole basket at one price, with no slippage inside a transaction",
 	"\n  (§10.1), which flatters a hold big enough to move the marginal unit. It",
 	"\n  runs the same way as the two above, so the exponent here is the upper end",
-	"\n  of what the sweep supports and every price in section F is an upper bound.",
+	"\n  of what the sweep supports. **That is not the same as every price being an",
+	"\n  upper bound**, and a draft of this line said it was: the law is a ratio",
+	`\n  against the ${HOLD_REFERENCE_T} t baseline, so a larger exponent *lowers* every price under`,
+	"\n  it. Above the baseline these prices are upper bounds; below it they are",
+	"\n  lower ones, and the baseline itself is fixed by the anchor rather than b.",
 );
 
 console.log("\n== what is gated and what is not ==");
@@ -649,9 +728,9 @@ console.log(
 );
 console.log(
 	`  run by hand, this file: the ${WORLDS.length}-world curve, its fit, the payback`,
-	"\n  window, the memory arm, and the rung count derived from them. A sweep of",
-	"\n  32 four-hour flights is not a suite's work, and #28's rule is that the",
-	"\n  split be said out loud rather than left to be discovered.",
+	"\n  window, the memory arm, the capital sweep, and the rung count derived from",
+	`\n  them — some ${WORLDS.length * (HOLD_LADDER.length * (1 + CAPITAL_CAPS.length) + 9)} flights of ${hours} h each. Not a suite's work, and #28's`,
+	"\n  rule is that the split be said out loud rather than left to be discovered.",
 );
 console.log(
 	`\n  hulls priced: ${PURCHASABLE_HULL_IDS.length} of ${HULL_IDS.length}. ` +

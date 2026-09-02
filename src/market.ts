@@ -315,7 +315,7 @@ export const decayDeficit = (deficit: number, elapsedMin: number): number =>
  * `DEFICIT_MAX` is 63 *tonnes*, which is Bell's shelf cap borrowed as a memory
  * cap, and it was the right number for exactly as long as every ship in the
  * game held 20 t. Against a roster it is the map's #13 failure in its purest
- * form: **a per-hull modifier on a bounded index gets clamped away where that
+ * form: **a per-hull scaling on a bounded index gets clamped away where that
  * type lives.** One run of a 63 t hull already reaches the clamp, so the market
  * remembers a 63 t trader and a 200 t trader identically — the response stops
  * distinguishing hulls exactly at the hold where the ladder is about to start.

@@ -50,6 +50,7 @@ import {
 	floorRate,
 	forEachLegalPair,
 	residualMarginCr,
+	richestClosablePair,
 	runsToExhaustion,
 	surveyResiduals,
 	sweepDomain,
@@ -397,27 +398,11 @@ console.log(
 // table names the richest pairs as the unclosable ones on the excluded
 // direction. The pair that matters here is the richest one the deficit *can*
 // close, since the unclosable ones are bounded by the residual instead.
-let richestClosable = {
-	buyCr: 0,
-	sellCr: 0,
-	margin: 0,
-	good: "—",
-	leg: "",
-	economy: 0,
-};
-forEachLegalPair((pair) => {
-	const margin = pair.sellCr - pair.buyCr;
-	if (margin <= richestClosable.margin) return;
-	if (residualMarginCr(pair.buyCr, pair.sellCr, HOLD_REFERENCE_T) > 0) return; // unclosable
-	richestClosable = {
-		buyCr: pair.buyCr,
-		sellCr: pair.sellCr,
-		margin,
-		good: pair.good.name,
-		leg: `${pair.buyStation}→${pair.sellStation}`,
-		economy: pair.economy,
-	};
-}, FLUCT_PAIRS);
+// The search itself lives in `market-math.ts` beside `surveyResiduals`, for
+// that helper's own reason: #182 sweeps the same pair across holds and across
+// both response arms, and two copies of the closable criterion is drift waiting
+// to happen.
+const richestClosable = richestClosablePair(HOLD_REFERENCE_T);
 const exhaustion = runsToExhaustion({
 	buyBaseCr: richestClosable.buyCr,
 	sellBaseCr: richestClosable.sellCr,
@@ -428,7 +413,9 @@ const exhaustion = runsToExhaustion({
 	maxRuns: 12,
 });
 console.log(
-	`${richestClosable.good} at economy ${richestClosable.economy}, ${richestClosable.leg}: opens at ${fixed(richestClosable.margin, 1)} Cr/t`,
+	`${richestClosable.good.name} at economy ${richestClosable.economy}, ` +
+		`${richestClosable.buyStation}→${richestClosable.sellStation}: ` +
+		`opens at ${fixed(richestClosable.margin, 1)} Cr/t`,
 );
 console.log(
 	`runs ${exhaustion.runs}\tmargins ${exhaustion.margins.map((m) => fixed(m, 1)).join(" → ")}\ttotal ${fixed(exhaustion.profitCr, 0)} Cr`,
@@ -528,7 +515,7 @@ console.log(
 	"  (legal goods over every ordered leg; contraband held to the fence leg, which §4 scopes it to)",
 );
 const valued = COMMODITIES.filter((c) => !c.sellOnly)
-	.map((c) => ({ good: c, ...bestRunValueCr(c) }))
+	.map((c) => ({ good: c, ...bestRunValueCr(c, HOLD_REFERENCE_T) }))
 	.sort((a, b) => b.runCr - a.runCr);
 for (const row of valued)
 	console.log(

@@ -397,6 +397,40 @@ export interface ResidualSurvey {
  * accumulated, so a change to the domain had to be made twice or the two
  * reported figures would silently disagree.
  */
+/**
+ * The richest intra-system pair the deficit can drive to zero, at one hold and
+ * one response — the pair §5.4 reports its runs-to-exhaustion and total take
+ * from.
+ *
+ * Here rather than in a script, because two scripts want it:
+ * `measure-market.ts` reports §5.4 and `measure-hull-pricing.ts` sweeps it
+ * across holds and both response arms. Two copies of the closable criterion is
+ * the drift `surveyResiduals` was moved here to stop.
+ */
+export function richestClosablePair(
+	holdT: number,
+	response: StockResponse = stockResponse,
+): LegalPair & { margin: number } {
+	let best: LegalPair & { margin: number } = {
+		good: COMMODITIES[0],
+		economy: 0,
+		buyStation: "trade",
+		sellStation: "trade",
+		buyCr: 0,
+		sellCr: 0,
+		margin: 0,
+	};
+	forEachLegalPair((pair) => {
+		const margin = pair.sellCr - pair.buyCr;
+		if (margin <= best.margin) return;
+		// Unclosable pairs are bounded by `surveyResiduals` instead; this search
+		// is for the richest the brake can actually shut.
+		if (residualMarginCr(pair.buyCr, pair.sellCr, holdT, response) > 0) return;
+		best = { ...pair, margin };
+	}, FLUCT_PAIRS);
+	return best;
+}
+
 export function surveyResiduals(
 	holdT: number,
 	response: StockResponse = stockResponse,
@@ -536,7 +570,7 @@ export function bestMarginAnyLeg(
  */
 export function bestRunValueCr(
 	good: Commodity,
-	holdT: number = HOLD_REFERENCE_T,
+	holdT: number,
 ): {
 	runCr: number;
 	marginCr: number;
@@ -578,12 +612,13 @@ export function runTotalCr(opts: {
 	buyFluct: number;
 	sellFluct: number;
 	holdGood: (good: Commodity) => boolean;
-	/** The flown hull's hold, tonnes. §4's run-value table is the baseline
-	 *  hull's, which is what it has always been; #182 made the figure nameable
-	 *  rather than implicit. */
-	holdT?: number;
+	/** The flown hull's hold, tonnes. Required, like every other `holdT` in this
+	 *  module: a default here would be a second policy in one helper file, and
+	 *  §4's table is the baseline hull's because its caller says so rather than
+	 *  because this signature assumes it. */
+	holdT: number;
 }): { totalCr: number; holdCr: number; subTonneCr: number } {
-	const holdT = opts.holdT ?? HOLD_REFERENCE_T;
+	const holdT = opts.holdT;
 	let holdCr = 0;
 	let subTonneCr = 0;
 	for (const good of COMMODITIES) {

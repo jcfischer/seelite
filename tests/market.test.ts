@@ -253,7 +253,7 @@ describe("§2.3 the retuned Narcotics keeps the smuggling trade alive", () => {
 		// legal goods on the contraband leg understated them, and so overstated
 		// the premium this test exists to establish.
 		const bestLegal = COMMODITIES.filter((c) => !c.illegal && !c.sellOnly)
-			.map((c) => bestRunValueCr(c).runCr)
+			.map((c) => bestRunValueCr(c, HOLD_REFERENCE_T).runCr)
 			.reduce((a, b) => Math.max(a, b), 0);
 		// Measured: Narcotics 1,624 Cr a run against Platinum's 1,386 — a 17%
 		// premium, not the 43% an earlier version claimed by holding legal goods
@@ -264,9 +264,9 @@ describe("§2.3 the retuned Narcotics keeps the smuggling trade alive", () => {
 		// that — where the ordering reverses. Kept because §4's table is a
 		// per-good ranking and this is what guards it; the run-level truth is
 		// weak joint 11 rather than something hidden behind this assertion.
-		expect(bestRunValueCr(byName("Narcotics")).runCr).toBeGreaterThan(
-			bestLegal,
-		);
+		expect(
+			bestRunValueCr(byName("Narcotics"), HOLD_REFERENCE_T).runCr,
+		).toBeGreaterThan(bestLegal);
 	});
 });
 
@@ -468,6 +468,7 @@ describe("§4/§4.1 run value", () => {
 										buyFluct,
 										sellFluct,
 										holdGood: (g) => !g.illegal,
+										holdT: HOLD_REFERENCE_T,
 									}).totalCr,
 								);
 							}
@@ -482,6 +483,7 @@ describe("§4/§4.1 run value", () => {
 								buyFluct,
 								sellFluct,
 								holdGood: (g) => g.illegal,
+								holdT: HOLD_REFERENCE_T,
 							}).totalCr,
 						);
 					}

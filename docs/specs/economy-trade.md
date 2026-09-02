@@ -450,8 +450,10 @@ priceCr          ×= 1 + PRICE_ELASTICITY
 **The deficit is read in *holds*, not in tonnes — #26's D6, measured by #182.**
 Until that node the response was `clamp(deficit, ±63) / HOLD_REFERENCE_T`, which
 is the same arithmetic for as long as every ship in the game holds 20 t and is
-the map's #13 failure the moment one does not: **a per-hull modifier on a
-bounded index gets clamped away where that type lives.** One run of a 63 t hull
+the map's #13 failure the moment one does not: **a per-hull *scaling* on a
+bounded index gets clamped away where that type lives** (the map words it
+"modifier"; the glossary reserves that word for a Carrier's effect). One run of a
+63 t hull
 already reaches a ±63 *tonne* clamp, so the market's memory of a 63 t trader and
 a 200 t trader was identical — the response stopped distinguishing hulls exactly
 at the hold where §7.1's ladder begins. Measured, at 200 t the old expression
@@ -663,16 +665,22 @@ sim §10.3 required has now been run. `MARKET_PERIOD` 30 min and
 `DEFICIT_HALF_LIFE` 20 min are set against a full trade run of 3–5 minutes so
 that parking for a re-roll or a recovery is dominated by going somewhere else.
 
-**Measured**, over the 143 decision points where parking until the next epoch
+**Measured**, over the 149 decision points where parking until the next epoch
 was a profitable option at all — the wait being costed against the *same* menu
 of onward hops a launch gets, interstellar included:
 
 | | wait rate / best flight rate |
 |---|---|
-| median | 0.150× |
-| p95 | 0.690× |
-| max | **4.679×** |
-| points where waiting won | **2 of 143 (1.4%)** |
+| median | 0.132× |
+| p95 | 0.608× |
+| max | **1.492×** |
+| points where waiting won | **4 of 149 (2.7%)** |
+
+**Re-derived at #182's constants**, which moved every row: §5.2's response now
+reads the flown hold, so the trader's own mark on a market weakens once it buys
+the Large Cargo Bay. The figures #25 reported — a 4.679× tail at 2 of 143 — were
+taken before that change, and the exploit is **more frequent and much smaller**
+under it. §8 records the same re-derivation for the milestone.
 
 **The median is not the argument, and a draft of this paragraph made it one.**
 An exploiting player selects the tail, not the median, so "waiting is worth 15%
@@ -688,8 +696,8 @@ maximiser. Neither limit makes waiting look better than it is.
 
 What the measurement does support is narrower. The greedy trader **takes the
 single best-rate option at each decision**, so it does take a wait whenever a
-wait is the best thing on the table — it did so twice in 143 — and the 48–85
-minute milestone §8 quotes already contains those. **That bounds one-hop
+wait is the best thing on the table — it did so four times in 149 — and the
+56–82 minute milestone §8 quotes already contains those. **That bounds one-hop
 waiting and nothing more.** A planner that chained waits across epochs, or held
 a hold back for a re-roll it could see coming, is a strategy this sim never
 evaluates, and a one-hop rate-maximiser is not a bound on one.
@@ -701,29 +709,30 @@ this section argues about. Over all four galaxies, each row a four-run total:
 
 | dock stop | waiting won, 4 runs | rate | best ratio |
 |---|---|---|---|
-| 15 s | 4 of 153 | 2.6% | 4.38× |
-| 30 s | 4 of 151 | 2.6% | 3.76× |
-| **45 s** | **2 of 143** | **1.4%** | **4.68×** |
-| 60 s | 7 of 146 | 4.8% | 5.72× |
-| 90 s | 4 of 137 | 2.9% | 8.31× |
+| 15 s | 3 of 139 | 2.2% | 1.69× |
+| 30 s | 3 of 133 | 2.3% | 1.62× |
+| **45 s** | **4 of 149** | **2.7%** | **1.49×** |
+| 60 s | 3 of 141 | 2.1% | 1.47× |
+| 90 s | 4 of 144 | 2.8% | 2.28× |
 
 **The rate column is not decoration.** The denominators differ — a run ends at
 its own milestone, so it offers its own number of decision points — and raw
 counts across different denominators are not comparable. A draft of this table
 had counts only and concluded "fewest wins" from them.
 
-**Waiting wins at every dock cost**, and 45 s — the value everything else here
-is measured at — has the lowest **rate** of the five, 1.4% against 2.6–4.8%. So
-the exploit is not an artefact of that choice; if anything the reported 45 s row
-understates it.
+**Waiting wins at every dock cost**, at a rate of 2.1–2.8% with no trend, and
+45 s — the value everything else here is measured at — is now the *highest* of
+the five rather than the lowest it was before #182. So the exploit is not an
+artefact of that choice, and the row this section reports is not the flattering
+one.
 
 **The tail is not monotone in the dock cost, and a draft of this paragraph said
-it was.** Read the column: 4.38×, then *down* to 3.76×, then 4.68×, 5.72×,
-8.31×. The largest tail is at the longest stop and the smallest is in the middle,
-so "the tail grows with the dock cost" is a story the table does not tell — the
-honest reading is that the phenomenon survives across the whole range and the
-worst case gets worse at the long end. On the metric this section itself calls
-decisive, 45 s sits third of five rather than lowest.
+it was.** Read the column: 1.69×, then *down* to 1.62×, 1.49× and 1.47×, then up
+to 2.28×. "The tail grows with the dock cost" is a story the table does not tell
+— the honest reading is that the phenomenon survives across the whole range and
+the worst case is at the long end. Every tail is now under 2.3× where the
+pre-#182 sweep reached 8.31×, which is the same re-derivation the rows above
+carry.
 
 An earlier draft swept galaxy 0 alone — the one galaxy that never produces a
 winning wait — reported 0 wins at four of the five costs, and concluded the
@@ -767,10 +776,10 @@ the canonical lane at zero fluctuation — Computers bought at 61.6 Cr and sold 
 seventh. A draft of this section said five and called it arithmetic while
 committing none; `runsUntilHoldLimited` derives it now and the suite pins the
 six. **The minutes are claimed now, and carefully**: §10.3's sim reaches 400 Cr — the
-Large Cargo Bay, §8's first purchase — at **5.8–14.6 minutes** from the opening
+Large Cargo Bay, §8's first purchase — at **5.8–11.0 minutes** from the opening
 100 Cr across four galaxies, against a modelled 45 s dock stop. Not "perfect
 play", which a draft said: §10.3's trader is a greedy heuristic with a named
-39.2% blind spot and no routing, so it is a *ceiling on a human* rather than an
+59.7% blind spot and no routing, so it is a *ceiling on a human* rather than an
 optimum. And the range is **transcribed script output, not a pinned value** —
 §1's rule for every figure in this document, and §12.7's recorded cost of it.
 Re-derive it with §10.2's instrument rather than trusting it.
@@ -871,21 +880,21 @@ hullPriceCr(holdT) = HULL_PRICE_BASELINE_CR
                      × (holdT / HOLD_REFERENCE_T) ^ HULL_PRICE_EXPONENT
                      rounded to HULL_PRICE_STEP_CR
 
-HULL_PRICE_BASELINE_CR = 30,000 Cr    HULL_PRICE_EXPONENT = 0.613
+HULL_PRICE_BASELINE_CR = 35,000 Cr    HULL_PRICE_EXPONENT = 0.612
 HULL_PRICE_STEP_CR     = 100 Cr       HULL_CEILING_HOLD_T = 197 t
 ```
 
 | Hull | Hold | Price | vs the kit |
 |---|---|---|---|
-| interceptor | 8 t | 17,100 Cr | 0.89× |
-| prospector | 12 t | 21,900 Cr | 1.15× |
-| **courier** (baseline) | 20 t | **30,000 Cr** | 1.57× |
-| tug | 24 t | 33,500 Cr | 1.75× |
-| explorer | 30 t | 38,500 Cr | 2.01× |
-| miner | 40 t | 45,900 Cr | 2.40× |
-| freighter | 60 t | 58,800 Cr | 3.07× |
+| interceptor | 8 t | 20,000 Cr | 1.05× |
+| prospector | 12 t | 25,600 Cr | 1.34× |
+| **courier** (baseline) | 20 t | **35,000 Cr** | 1.83× |
+| tug | 24 t | 39,100 Cr | 2.04× |
+| explorer | 30 t | 44,900 Cr | 2.35× |
+| miner | 40 t | 53,500 Cr | 2.80× |
+| freighter | 60 t | 68,600 Cr | 3.59× |
 
-`patrol` (6 t, 14,300 Cr) and `raider` (10 t, 19,600 Cr) are priced by the same
+`patrol` (6 t, 16,800 Cr) and `raider` (10 t, 22,900 Cr) are priced by the same
 law and gated behind #26's D3 rating; the two capitals carry `priceCr: null`,
 because 400 t and 200 t are past the ceiling and outside the range the curve was
 measured over, and #56 rules they dock at nothing.
@@ -899,65 +908,95 @@ large hull by more than two to one.
 **Where the two constants come from.** `scripts/measure-hull-pricing.ts` flies
 `scripts/lib/greedy-trader.ts` at sixteen holds over **32 worlds** (4 seeds × 8
 galaxies), 2 h per arm, with the hold as the only thing that varies. Fitted over
-4–200 t the rate is a power law, `97.7 × hold^0.613` Cr/min, within 6% of the
-mean curve at every hold but the two ends (7.2% at 4 t, 11.0% at 200 t); the
-per-world exponent has a median of 0.616 and a p10–p90 of **0.526–0.667**, which
-is why 0.613 is quoted to three places and not four. The baseline is the fitted
-rate at 20 t times the economy's own progression unit — the measured time the
-baseline hull takes to earn `fullKitCr()`, **48.9 min median** over the same 32
-worlds, in the same arm as the curve. That derivation gives 29,980 Cr; the
-constant is the round 30,000, and rounding a price to a legible figure is what
-this whole section does. **The instrument reprints both constants beside what
-the run derives**, per the map's #118 rule.
+4–200 t the rate is a power law, `114.8 × hold^0.612` Cr/min, within 6% of the
+mean curve at the median hold and 12.1% at its worst (4 t, below any hull in the
+roster). The third digit is the pooled slope's own **standard error of 0.014**,
+which is the quantity that supports it; the *world-to-world* spread is a
+different and much wider one — per-world exponent median 0.622, p10–p90
+0.531–0.683 — and quoting that as the reason for three places was a non sequitur
+a draft of this paragraph carried.
 
-**The trading economy prices the hold and nothing else, measured rather than
-conceded.** The greedy trader fears no pirate and does not route, so a
-hardpoint, a point of integrity, a light year of tank and an AU of charge are
-worth exactly zero to it. #8's combat balance and #183's rating own those axes,
-and this section invents no figure for them — which is why the interceptor, the
-second-hardest-accelerating hull in the game, prices below the courier.
+The baseline is the fitted rate at 20 t times the economy's own progression
+unit: the measured time the baseline hull takes to earn `fullKitCr()`, **48.7 min
+median** over the same 32 worlds. That derivation gives 34,994 Cr and the
+constant is the round 35,000 — rounding a price to a legible figure is what this
+whole section does. **The instrument reprints both constants beside what a fresh
+run derives**, per the map's #118 rule, and this run's drift is −0.0%.
 
-**Every price here is an upper bound, and the direction is stated because two of
-the sweep's own corrections moved the answer the same way** (#25's tell). One
-bias is left: §10.1's no-slippage rule means a hop buys its whole basket at one
-price, which flatters a hold big enough to move the marginal unit. The one that
-was measured rather than argued away is working capital — the exponent collapses
-to 0.084 at 500 Cr and has stopped moving by 19,125 Cr, less than the cheapest
-hull, so a player who can buy a hull at all is past where it bites.
+**The two arms open with different capital, and that is not one clock counted
+twice.** The curve arm opens at `fullKitCr()`; the window arm opens at §6's
+100 Cr. The window is a *unit of time* — how long the economy takes to yield one
+kit at its own opening pace — so it is measured from the opening, because that
+is what the unit means. The curve is a *rate*, and a rate averaged across the
+capital-limited opening measures the opening: from 100 Cr the 20 t rate ran
+474 → 613 → 690 → 736 Cr/min at windows of 1, 2, 4 and 8 h, so the price level
+would have carried an instrument parameter that means nothing in the game
+(23,099 → 35,840 Cr). Opening at a hull buyer's own capital removes the
+transient rather than averaging over it, and the *exponent* barely noticed
+either way — 0.621 / 0.613 / 0.605 / 0.609 across the same four windows.
+
+**The trading economy prices the hold and nothing else, and that is a concession
+rather than a measurement.** The greedy trader fears no pirate and does not
+route, so a hardpoint, a point of integrity, a light year of tank and an AU of
+charge were never *varied*: the sweep measured the hold and conceded the rest.
+#8's combat balance and #183's rating own those axes, and this section invents
+no figure for them — which is why the interceptor, the hardest-accelerating hull
+in the game, prices below the courier.
+
+**Two of the sweep's own corrections moved the answer the same way** (#25's
+tell), so the next known bias in that direction was measured rather than argued
+away. Working capital: the exponent collapses to 0.084 at 500 Cr — a hold you
+cannot fill is worth nothing, which is §6's capital-limited opening said a
+second way — and has stopped moving by 19,125 Cr, less than the cheapest hull,
+so a player who can buy a hull at all is past where it bites. One bias is left
+and it is §10.1's no-slippage rule rather than the instrument's: a hop buys its
+whole basket at one price, which flatters a hold big enough to move the marginal
+unit. **That makes the exponent the upper end of what the sweep supports, which
+is not the same as every price being an upper bound** — the law is a ratio
+against the 20 t baseline, so a larger exponent *lowers* every price under it.
+Above the baseline these are upper bounds; below it they are lower ones.
 
 ### 7.2 The ceiling, and how many rungs the ladder holds
 
 #26's D7 puts the ceiling where the priced curve stops being interesting.
 **Measured, it never does**: §7.1's curve is a power law with no knee anywhere
-in the ladder, and the shelves in front of the trader still fill 76% of a 200 t
+in the ladder, and a trader with one kit's capital still fills 93% of a 200 t
 hold at the top of it. So the binding limit is not the economy's, and naming
 which one it is *is* the answer rather than a substitute for one.
 
-It is the berth. `BERTH_CELL.trade` is 90 × 58 × 40 m — 208,800 m³, the largest
-clear envelope in the game — against the roster's own densest hold, the cargo
-role's **1,060 m³ of bounding box per tonne**. That admits **197 t**, priced at
-**121,900 Cr**. It is an upper bound in the safe direction: it assumes a hull
-could be a solid box at the best density measured, and #26's constraint that
-beam and height are nearly spent means growth is in length, the cheapest axis of
-the three. `HULL_CEILING_HOLD_T` is declared in `src/hull.ts` — a leaf that
-imports nothing — and re-derived from the berth catalogue in
-`tests/hull.test.ts`, which is where the two sides may meet.
+It is the berth. The largest clear envelope in the game — `BERTH_CELL.trade`, 90
+× 58 × 40 m, **208,800 m³**, the maximum over all four station types — against
+the roster's own densest hold, the cargo role's **1,060 m³ of bounding box per
+tonne**. That admits **197 t**, priced at **141,900 Cr**. It is an upper bound in
+the safe direction: it assumes a hull could be a solid box at the best density
+measured, and #26's constraint that beam and height are nearly spent means growth
+is in length, the cheapest axis of the three. `HULL_CEILING_HOLD_T` is declared
+in `src/hull.ts` — a leaf that imports nothing — and `tests/hull.test.ts`
+re-derives it from the berth catalogue, then pins it from both sides: a hull
+stretched to 197 t at the cargo role's density fits a trade berth and one at
+198 t does not.
 
 **The rung count is an output.** The priced roster's own adjacent price steps are
-1.28×, 1.37×, 1.12×, 1.15×, 1.19×, 1.28×, so **the widest existing step, 1.37×,
-is the gap criterion** — what counts as a hole is read off the roster rather
-than chosen. By it the priced roster has **no interior gap at all**. The one gap
-is above it: 58,800 Cr to the ceiling's 121,900 Cr is 2.07×, which holds three
-steps of at most 1.37×, so **three new rungs**:
+1.28×, 1.37×, 1.12×, 1.15×, 1.19×, 1.28× — a typical (median) step of **1.24×**
+and a widest of **1.37×**. A gap is an interval wider than **one typical step
+squared, 1.53×**: room for a rung at the ladder's own spacing. That threshold is
+not the maximum of the steps, which nothing could exceed — a draft used the
+maximum and reported "no interior gap" on any roster whatever, which is a check
+derived from its own subject. By the real criterion the priced roster has **no
+interior gap**, and the one gap is above it: 68,600 Cr to the ceiling's 141,900
+is 2.07×, which holds **three steps of at most the roster's widest 1.37×** — so
+**three new rungs** (four at the typical step; three is the smaller and safer
+claim, being the fewest that leave the ladder no coarser anywhere than it
+already is):
 
 | rung | hold | price |
 |---|---|---|
-| 1 | 89 t | 74,900 Cr |
-| 2 | 133 t | 95,800 Cr |
-| 3 | 197 t | 121,900 Cr — the ceiling |
+| 1 | 89 t | 87,300 Cr |
+| 2 | 133 t | 111,600 Cr |
+| 3 | 197 t | 141,900 Cr — the ceiling |
 
 Nothing chose the three: it falls out of two measured endpoints and the roster's
-own widest step, and a retune of the curve or of the berth cell moves it without
+own steps, and a retune of the curve or of the berth cell moves it without
 anybody editing a number. **What the hulls at those rungs look like is not this
 section's** — #26 puts drawing them out of scope and #130 is open on ship detail
 the existing roster already lacks.
@@ -976,11 +1015,22 @@ That is about fifteen clean runs, and the design was aiming at **1.5–2.5 hours
 of trading once §5.2's deficit forces route rotation.
 
 **Measured, the pump is faster than the aim.** §10.3's greedy trader earns the
-kit's whole 19,125 Cr in **48–85 minutes** across four galaxies, at 225–435
+kit's whole 19,125 Cr in **56–82 minutes** across four galaxies, at 233–363
 Cr/min. All four land under the target's lower bound of 90 minutes, so the
 1.5–2.5 h figure survives only as a claim about a *human*: it needs a real
-player to run at roughly 0.6× the ceiling. That is plausible and unmeasured, and
+player to run at roughly 0.7× the ceiling. That is plausible and unmeasured, and
 it is the honest form of the sentence.
+
+**The figure moved twice since #25 reported 48–85 min, and only one of the two
+is a decision.** Re-run immediately before
+[#182](https://github.com/jcfischer/seelite/issues/182)'s change it printed
+**44–66 min at 290–450 Cr/min** — drift from nodes between #25 and #182 that
+nobody re-ran the instrument after, which is exactly the cost §12.7 records.
+#182's own change accounts for the rest: §5.2's response reads the *flown* hold,
+so once the trader buys the Large Cargo Bay the market's memory of it weakens by
+20/35, and a trader that was partly farming its own mark (weak joint 12) earns
+less. Both figures are on this page because a range quoted without saying which
+build it came from is how the first one went stale.
 
 **What is measured is the capital, not the shopping.** Buying the list also
 means standing at a refinery and at a shipyard for the four exclusives
@@ -992,7 +1042,7 @@ target rather than away from it.
 **Half the clock is a modelled constant**, so the figure is a claim about that
 too. The dock-and-market stop is 45 s in the sim and is specified nowhere — #9
 sets docking tolerances, not a duration. Swept over all four galaxies, the
-milestone runs **29–87 min at 15 s and 64–116 min at 90 s**. A reader who thinks
+milestone runs **40–53 min at 15 s and 81–114 min at 90 s**. A reader who thinks
 90 s is the right stop should read this section as met rather than beaten.
 
 ---
@@ -1142,16 +1192,19 @@ conceded, because it is paid on every hop and is half the clock.
 
 It is a **ceiling, not a player**: it fears no pirate, never misjudges a docking,
 and takes the best-rated option every time. It does **not** see every price it
-can reach — the neighbour list is truncated at eight, which bit on 39.2% of
+can reach — the neighbour list is truncated at eight, which bit on 59.7% of
 neighbour lookups — and an earlier draft of this line said it did. A target is falsified by a ceiling that is
 too slow and merely unproven by one that is too fast.
 
 | | measured, world `0x5ee11e`, four galaxies |
 |---|---|
-| capital covers the full kit | **48–85 min** against §8's 1.5–2.5 h |
-| Cr/min | 225–435 |
-| hops chosen: interstellar : intra-system | 121 : 20 — **not evidence, see below** |
-| dock cost 15→90 s, all four | 29–87 → 64–116 min |
+| capital covers the full kit | **56–82 min** against §8's 1.5–2.5 h |
+| Cr/min | 233–363 |
+| hops chosen: interstellar : intra-system | 118 : 27 — **not evidence, see below** |
+| dock cost 15→90 s, all four | 40–53 → 81–114 min |
+
+Re-derived at #182's constants; §8 records what moved and why, and the figures
+#25 reported are on that page beside these.
 
 **The figure is the capital milestone, not a fit-out, and the distinction was
 forced by a review finding.** An earlier version bought equipment wherever the
@@ -1180,19 +1233,20 @@ the economy. §5.4's conclusion rests on the margin measurements in that section
 which compare like with like; the row is kept only so the trader's behaviour is
 on the page.
 
-**The neighbour list is truncated at eight**, and that bit on **39.2% of
-neighbour lookups** (112 of 286) — so the trader does not see every price in
+**The neighbour list is truncated at eight**, and that bit on **59.7% of
+neighbour lookups** (178 of 298) — so the trader does not see every price in
 range, which the instrument's header claimed until it was counted. Lookups
 rather than decisions: `jumpOptions` runs twice per decision point, once for the
 launch and once inside the wait branch, so a denominator called "decisions" was
 double what a reader would count.
 
 **What that blindness costs is measured, not left as a caveat.** Run again at
-sixteen: the milestone goes **48–85 min to 44–72 min**. So the eight nearest
-systems are most of where the money is, the limit costs the trader roughly a
-tenth of its time, and the ceiling is slightly loose — in the direction that
-makes §8's "beaten by the pump" conclusion stronger rather than weaker, since a
-looser ceiling means the true one is faster still.
+sixteen: the milestone goes **56–82 min to 45–87 min** — the fast end improves
+and the slow end does not, so the eight nearest systems are most of where the
+money is and the limit costs the trader a fifth of its best case. The ceiling is
+slightly loose, in the direction that makes §8's "beaten by the pump" conclusion
+stronger rather than weaker, since a looser ceiling means the true one is faster
+still.
 
 **The §5.5 comparison was wrong twice before it was right, and both faults
 flattered the same side.**
@@ -1212,7 +1266,9 @@ flattered the same side.**
 
 Each fix moved every figure in this table. The measured tail of waiting went
 1.326× → 1.785× → **4.679×** as the comparison stopped being rigged, which is
-the shape of a number that was an artefact of its instrument.
+the shape of a number that was an artefact of its instrument. Those three are
+#25's history and stay as written; §5.5's current figures are re-derived at
+#182's constants and are smaller again.
 
 **Re-run it whenever `MARKET_PERIOD`, `DEFICIT_HALF_LIFE` or `PRICE_ELASTICITY`
 moves.** All three are in the loop, and §12.5 is explicit that changing either
@@ -1374,10 +1430,10 @@ position, name and station silently.
    into a correction. The intra-system exhaustion in 2–3 runs is measured with
    `DEFICIT_HALF_LIFE` in the loop. **"Waiting never beats flying" turned out to
    be false as written**: `scripts/measure-greedy-trader.ts` found waiting
-   winning at 2 of 143 decision points, by up to 4.679×, against a median of
-   0.150×, and **winning at every dock cost in the sweep** — 2 to 7 wins per
-   sweep row, each row being four runs rather than one, with the tail growing
-   from 3.76× to 8.31× as the stop lengthens. §5.5
+   winning at 4 of 149 decision points, by up to 1.492×, against a median of
+   0.132×, and **winning at every dock cost in the sweep** — 3 to 4 wins per
+   sweep row, each row being four runs rather than one, with every tail under
+   2.3×. §5.5
    records what that is worth, and the answer is not "nothing": the exploit
    exists and is merely rare; §5.5 says "almost never" now and carries the
    distribution. The joint that remains is that the constants are still
