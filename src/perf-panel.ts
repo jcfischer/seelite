@@ -179,6 +179,28 @@ function setRelief(scenes: THREE.Object3D[], path: string) {
 		});
 }
 
+/**
+ * Put every planet in `scenes` into one class on one relief path.
+ *
+ * Exported because #206's sweep drives the same two switches from outside the
+ * page and had its own copy of this traversal — which meant the scene set and
+ * the setter contract had two homes that a change would have to be kept
+ * synchronised across (sage, PR #214). The panel's own cycles stay separate
+ * because each moves *one* of the two while reading the other back; this is
+ * the both-at-once case, which is what an instrument wants.
+ */
+export function setSurfaceAndRelief(
+	scenes: THREE.Object3D[],
+	surface: string,
+	relief: string,
+) {
+	for (const scene of scenes)
+		scene.traverse((object) => {
+			object.userData?.setSurfaceClass?.(surface);
+			object.userData?.setReliefPath?.(relief);
+		});
+}
+
 function readRelief(scenes: THREE.Object3D[]): string {
 	let found = "four-tap";
 	for (const scene of scenes)

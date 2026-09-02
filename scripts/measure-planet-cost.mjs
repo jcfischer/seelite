@@ -105,7 +105,7 @@ import {
 } from "./lib/planet-cost.mjs";
 import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
-import { GAME_TIME_S, SEED, VIEWPORT } from "./lib/view-set.mjs";
+import { GAME_TIME_S, SEED, VIEWPORT, VIEWS } from "./lib/view-set.mjs";
 import {
 	bootedGame,
 	guardedOrigin,
@@ -117,19 +117,34 @@ const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 const OUT = "view-set";
 
 /**
- * The subject, by id.
+ * The subject and the light, **read off the canonical view rather than copied**.
  *
- * `planet-5` is `FIXTURE`'s largest planet and the body `planet-fill` frames.
- * Naming it rather than resolving `largest-planet` is what makes the table and
- * the picture claims about one thing: `tests/view-set.test.ts` pins the two
- * together, so a generator change that re-shapes the start system goes red
- * there instead of quietly re-pointing one of them.
+ * The first version declared `planet-5` and 60 degrees here while claiming in
+ * the same breath that the table and the picture could not drift apart — two
+ * homes for one fact, which is exactly what CLAUDE.md's read-from-the-owner
+ * rule is about, and sage said so on PR #214. `planet-fill` owns the framing;
+ * this reads it. Re-frame that view and the sweep follows, including onto a
+ * different body.
+ *
+ * The `radii` is deliberately *not* taken from here — the sweep prices a whole
+ * ladder and the view is one rung of it. `RADII` must contain that rung, and
+ * `tests/planet-cost.test.ts` is what holds the two together.
  */
-const SUBJECT = "planet-5";
-
-/** The sun angle `planet-fill` is captured at, so the lit fraction of the frame
- *  is the same in the table as in the picture. */
-const SUN_ANGLE_DEG = 60;
+const PRICED_VIEW = "planet-fill";
+const priced = VIEWS.find((v) => v.name === PRICED_VIEW);
+if (!priced)
+	throw new Error(
+		`the view set no longer declares "${PRICED_VIEW}" — this sweep prices that ` +
+			`frame and has nothing to point at without it`,
+	);
+const SUBJECT = priced.shot.body;
+const SUN_ANGLE_DEG = priced.shot.sunAngleDeg;
+if (!RADII.includes(priced.shot.radii))
+	throw new Error(
+		`"${PRICED_VIEW}" is framed at ${priced.shot.radii} radii and the sweep has ` +
+			`no such column (${RADII.join(", ")}) — the table would not price the ` +
+			`frame the sheet shows`,
+	);
 
 /**
  * The two drawing-buffer scales, as two runs.
@@ -207,13 +222,19 @@ const READINGS = 3;
 /**
  * One fresh reading of the meter.
  *
- * **Fresh by elapsed time, not only by the text changing.** Waiting for the
- * string to differ is the obvious move and it is not sufficient: two
- * consecutive windows can render the same line, and at a clamped rate they
- * routinely do. So a change is *preferred* — it is the fastest correct signal —
- * and the wait itself is what makes the fallback sound: the meter's window is
- * 500 ms, so once `READ_WAIT_MS` has passed the figure on screen was written
- * after this call began whether or not its text moved.
+ * **A changed line is the only proof of freshness, and the timeout is not
+ * one.** An earlier version of this comment claimed that once `READ_WAIT_MS`
+ * had passed the figure on screen must have been written after the call began.
+ * That is false and sage said so on PR #214: the meter holds its last healthy
+ * line when the page stops painting, and its own stall watch reports one to
+ * two periods late — two to four seconds — so an 800 ms wait can read a stale
+ * healthy line and nothing about it looks stale.
+ *
+ * So the reading carries `fresh`, which is true only when the text actually
+ * moved. A cell that collected any unfresh sample is marked `!` in the table
+ * and named in the run's tail, exactly like an unsettled one. Two consecutive
+ * windows *can* legitimately render the same line, so an unfresh read is a
+ * doubt rather than a fault — which is why it is marked and not thrown on.
  *
  * **The timeout is the fallback, not a stage before one.** The first version
  * waited up to 3 s for a change and *then* slept 750 ms more, so every repeated
@@ -223,17 +244,23 @@ const READINGS = 3;
 const READ_WAIT_MS = 800;
 
 async function reading(page, previous) {
-	await page
+	// `polling` is not a detail. Playwright's default re-evaluates the predicate
+	// on every animation frame — of the very rAF stream this is measuring — so a
+	// DOM query would run in the hot path of every wait, in every settle, in
+	// every sample (sage, PR #214). 100 ms is five checks per meter window, which
+	// is plenty to catch a change and nothing the frame loop notices.
+	const fresh = await page
 		.waitForFunction(
 			(was) => document.querySelector("#seelite-fps")?.textContent !== was,
 			previous ?? null,
-			{ timeout: READ_WAIT_MS },
+			{ timeout: READ_WAIT_MS, polling: 100 },
 		)
-		.catch(() => {});
+		.then(() => true)
+		.catch(() => false);
 	const text = await page.evaluate(
 		() => document.querySelector("#seelite-fps")?.textContent ?? "",
 	);
-	return { text, read: parseFpsReadout(text) };
+	return { text, fresh, read: parseFpsReadout(text) };
 }
 
 /**
@@ -287,7 +314,7 @@ async function run(pixelRatio) {
 	// Everything after the launch is wrapped, because every refusal in this file
 	// throws: an unreadable meter line, a software renderer, a view cycle that
 	// never reached chase. Before this, any of them left a headed Chromium alive
-	// and the command with it (sage, PR #214).
+	// and the node process with it (sage, PR #214).
 	/** @type {any[]} */
 	let rows = [];
 	let renderer = "";
@@ -362,17 +389,21 @@ async function run(pixelRatio) {
 				([id, r, deg]) => window.__sunOffset(id, r, deg),
 				[SUBJECT, radii, SUN_ANGLE_DEG],
 			);
+			// Through `perf-panel.ts`'s own setter, not a copy of its traversal.
+			// The scene set and the setter contract live there; this had its own
+			// version until sage pointed out the second home (PR #214).
 			await page.evaluate(
-				([klass, path]) => {
-					for (const scene of [
-						window.__seelite.nearScene,
-						window.__seelite.approachScene,
-						window.__seelite.farScene,
-					])
-						scene.traverse((o) => {
-							o.userData?.setSurfaceClass?.(klass);
-							o.userData?.setReliefPath?.(path);
-						});
+				async ([klass, path]) => {
+					const { setSurfaceAndRelief } = await import("/src/perf-panel.ts");
+					setSurfaceAndRelief(
+						[
+							window.__seelite.nearScene,
+							window.__seelite.approachScene,
+							window.__seelite.farScene,
+						],
+						klass,
+						path,
+					);
 				},
 				[surfaceClass, relief],
 			);
@@ -382,10 +413,11 @@ async function run(pixelRatio) {
 			for (let i = 0; i < READINGS; i++) {
 				const next = await reading(page, text);
 				text = next.text;
-				samples.push(next.read);
+				samples.push({ ...next.read, fresh: next.fresh });
 			}
 			const ms = samples.map((r) => finite(label, r.ms));
 			const last = samples[samples.length - 1];
+			const stale = samples.filter((r) => !r.fresh).length;
 			return {
 				pixelRatio,
 				radii,
@@ -401,6 +433,9 @@ async function run(pixelRatio) {
 				// with a `?` and listed in the run's tail: it is a reading, not a
 				// measurement, and the difference must survive into the JSON.
 				settled: settled.settled,
+				// How many of this cell's samples were read without the meter's line
+				// having moved. Non-zero is a doubt, not a fault — see `reading`.
+				staleSamples: stale,
 				fps: finite(label, last.fps),
 				worstMs: finite(label, last.worstMs),
 				// The rise in the session peak across this cell. Zero means this cell
@@ -466,6 +501,9 @@ console.log(
 console.log(
 	`  a cell marked ? never settled: its rate was still moving when the settle timed out, so it is a reading and not a measurement`,
 );
+console.log(
+	`  a cell marked ! took a sample the meter had not refreshed — possibly a repeated line, possibly a stale one held over a stall`,
+);
 console.log("");
 
 for (const {
@@ -491,7 +529,7 @@ for (const {
 				);
 				return `${row.ms.toFixed(1)}±${row.spreadMs.toFixed(1)}${
 					row.settled ? "" : "?"
-				}`.padStart(14);
+				}${row.staleSamples ? "!" : ""}`.padStart(14);
 			});
 			console.log(`      ${surfaceClass.padEnd(10)}${cells.join("")}`);
 		}
@@ -521,13 +559,32 @@ for (const {
 					.join(", ")}`
 			: `    unsettled: none — every one of the ${runRows.length} cells held a steady rate before it was read`,
 	);
+	// The other doubt, kept separate because it has a different cause: an
+	// unsettled cell was moving, a stale one may not have been re-read at all.
+	const stale = runRows.filter((r) => r.staleSamples > 0);
+	console.log(
+		stale.length
+			? `    stale reads (!): ${stale.length} of ${runRows.length} cells — ${stale
+					.map((r) => `${r.surfaceClass}/${r.relief}@${r.radii}r`)
+					.join(", ")}`
+			: `    stale reads: none — every sample was taken on a line the meter had just written`,
+	);
 	// The drift control. Printed last because it qualifies everything above it:
 	// a column-to-column difference smaller than this is not a difference.
 	const drift = controlAfter.ms - controlBefore.ms;
+	const controlsHeld = controlBefore.settled && controlAfter.settled;
 	console.log(
 		`    drift control (${CONTROL_LABEL}): ${controlBefore.ms.toFixed(1)} ms before, ` +
 			`${controlAfter.ms.toFixed(1)} ms after — the machine moved ` +
-			`${drift >= 0 ? "+" : ""}${drift.toFixed(1)} ms under this run`,
+			`${drift >= 0 ? "+" : ""}${drift.toFixed(1)} ms end to end` +
+			(controlsHeld
+				? ""
+				: " — BUT one of the two controls never settled, so even this bound is unreliable"),
+	);
+	// Said every run, because the temptation is to read the endpoint figure as a
+	// warrant for the table and it is not one.
+	console.log(
+		`      net movement only: two endpoints cannot locate a mid-run sag that recovered, so a small figure here says the run began and ended alike and nothing about the columns between`,
 	);
 	console.log("");
 }
@@ -552,6 +609,12 @@ await writeFile(
 				cell: CONTROL_LABEL,
 				beforeMs: r.controlBefore.ms,
 				afterMs: r.controlAfter.ms,
+				// Both ends, because a control that did not settle cannot qualify
+				// anything (sage, PR #214). Dropping these while the console said
+				// "the machine moved" was the drift figure claiming a confidence
+				// its own cells did not have.
+				beforeSettled: r.controlBefore.settled,
+				afterSettled: r.controlAfter.settled,
 			})),
 			rows,
 		},

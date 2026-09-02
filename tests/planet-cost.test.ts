@@ -127,50 +127,69 @@ describe("the finite guard", () => {
  * working would produce a complete, plausible, entirely worthless table where
  * every cheap column reads the same.
  *
- * The tell is that a clamped run is **flat**: a planet drawn as a dot at 200
- * radii and one filling the frame cannot cost the same on any GPU. So the rule
- * is the run's spread and not a list of refresh rates, which is what the first
- * version got wrong.
+ * The tell is **quantization**, which took two wrong answers to reach: a
+ * clamped run's cells are integer multiples of one refresh interval, because
+ * that is all a composited frame can cost. A rate list alone missed 144 Hz; a
+ * flatness rule missed the stepped case, where heavy cells miss refreshes and
+ * the run spans 2x while every figure is still the display's.
  */
 describe("the vsync refusal", () => {
-	test("passes a run whose cells span a real range", () => {
+	test("passes a real run, whose cells are not multiples of anything", () => {
+		// The measured ratio-1 table's terran row. Its floor is 1.8 ms, which is on
+		// no refresh interval at all.
+		expect(vsyncRefusal([1.8, 1.8, 1.9, 3.6, 7.2, 11.6, 11.6])).toBe(null);
 		expect(vsyncRefusal([16.1, 4.2, 2.1, 43.6])).toBe(null);
 	});
 
-	test("refuses a run pinned at a refresh rate, and names it", () => {
-		// Every cell at 60 fps: the shape of a run where the flags did nothing.
+	test("refuses a flat run pinned at a refresh rate, and names it", () => {
 		const refusal = vsyncRefusal([16.7, 16.7, 16.68, 16.7]);
-		expect(refusal).toMatch(/flat/i);
+		expect(refusal).toMatch(/quantized/i);
 		expect(refusal).toMatch(/60 Hz/);
 	});
 
 	/**
-	 * **The case that sent the first version back** (sage, PR #214).
+	 * **The case that sent the second version back** (sage, PR #214, round 2).
 	 *
-	 * That version compared the cheapest cell against a list of 60 and 120, so a
-	 * fully clamped 144 Hz run — 6.94 ms in every cell — matched nothing and
-	 * passed as a measurement. The rule is flatness, which needs no list.
+	 * That version called a clamp *flat* and refused on `max / min`. Under vsync
+	 * a frame that misses its refresh takes two intervals, so a clamped run reads
+	 * 6.94 and 13.89 and spans 2x — it sailed through a 1.5x spread rule. The
+	 * property was never flatness; it is that every cell is a whole number of
+	 * intervals.
 	 */
-	test("refuses a flat run at a rate nothing anticipated", () => {
-		expect(vsyncRefusal([6.94, 6.94, 6.93, 6.94])).toMatch(/flat/i);
-		// 90 Hz, and an arbitrary rate on no list at all.
-		expect(vsyncRefusal([11.11, 11.1, 11.11])).toMatch(/flat/i);
-		expect(vsyncRefusal([9.4, 9.41, 9.4, 9.39])).toMatch(/flat/i);
+	test("refuses a stepped run, where heavy cells miss refreshes", () => {
+		expect(vsyncRefusal([6.94, 6.94, 13.89, 20.83])).toMatch(/quantized/i);
+		expect(vsyncRefusal([16.7, 33.3, 50.0, 16.7])).toMatch(/quantized/i);
+		// 120 Hz, doubling twice.
+		expect(vsyncRefusal([8.33, 8.33, 16.67, 33.33])).toMatch(/quantized/i);
 	});
 
 	/**
-	 * And it must not accuse a slow machine. A clamp flattens a run; a slow GPU
-	 * only scales it, so the dot-to-fill spread survives.
+	 * And it must not accuse a machine that is merely slow. A clamp quantizes; a
+	 * slow GPU only scales, so the cells land off the grid.
 	 */
-	test("passes a slow run whose spread survives", () => {
+	test("passes a slow run whose cells are off the grid", () => {
 		expect(vsyncRefusal([16.7, 40, 90, 180])).toBe(null);
+	});
+
+	/**
+	 * Both halves of the rule are needed, and each is asserted alone.
+	 *
+	 * A run *floored* on an interval but not quantized above it is a real machine
+	 * that happens to be that fast; a run quantized on a floor that is on no
+	 * interval is a coincidence, not a compositor.
+	 */
+	test("needs both a refresh floor and multiples above it", () => {
+		// Floor on 60 Hz, but 1.4x and 2.7x are not whole intervals.
+		expect(vsyncRefusal([16.7, 23.4, 45.1, 16.9])).toBe(null);
+		// Tidy multiples, but 5 ms is on no rate in the list.
+		expect(vsyncRefusal([5, 5, 10, 20])).toBe(null);
 	});
 
 	test("refuses an empty run rather than passing one with nothing in it", () => {
 		expect(vsyncRefusal([])).toMatch(/no readings/i);
 	});
 
-	test("refuses a run carrying a zero, which has no ratio", () => {
+	test("refuses a run carrying a zero, which has no floor to divide by", () => {
 		expect(vsyncRefusal([0, 12, 40])).toMatch(/not a frame cost/);
 	});
 });
