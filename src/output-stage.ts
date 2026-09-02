@@ -207,9 +207,36 @@ export class SeeliteOutputPass extends OutputPass {
 	/**
 	 * Turn the dither off.
 	 *
-	 * Here for the probe and for nothing else: banding is a claim about *more
-	 * distinct codes in a gradient*, and a claim like that needs the same frame
-	 * measured both ways in one run rather than two builds compared across two.
+	 * The player's row calls this and so does the probe: banding is a claim
+	 * about *more distinct codes in a gradient*, and a claim like that needs the
+	 * same frame measured both ways in one run rather than two builds compared
+	 * across two.
+	 *
+	 * ## What it costs, and what that cost me to establish
+	 *
+	 * **Below what the instrument can resolve.** Two shuffled sweeps of
+	 * `scripts/measure-light-cost.mjs` read −0.002 ms/frame and +0.066, with
+	 * 61/144 and 101/144 block pairings separated — a coin toss and a lean. So
+	 * the term is under roughly a tenth of a millisecond and this repo cannot
+	 * say more than that about it.
+	 *
+	 * It took three tries to get there and each wrong answer was wrong for its
+	 * own reason, which is worth recording:
+	 *
+	 * 1. "Costs nothing measurable" was asserted with nothing measured. It
+	 *    happens to be right, which is not the same as having been right.
+	 * 2. Measured at 0.20–0.27 ms with the shader multiplying by a zeroed dial,
+	 *    so the off arm still evaluated the noise and the difference excluded
+	 *    the arithmetic it was supposed to include. The shader branches now.
+	 * 3. Measured at 0.12–0.14 ms, 144/144 separated, with every round running
+	 *    the arms in the same order — dither-on immediately before dither-off,
+	 *    twelve times. Within-round thermal drift was perfectly confounded with
+	 *    the arm, and 144/144 was that confound and not the term. Shuffling the
+	 *    arm order dropped the figure to nothing.
+	 *
+	 * The last one is the one to remember: a separation statistic that assumes
+	 * nothing about the distributions still assumes the arms were not run in a
+	 * fixed order.
 	 */
 	setDither(on: boolean) {
 		this.material.uniforms.uDither.value = on ? 1 : 0;
@@ -217,46 +244,67 @@ export class SeeliteOutputPass extends OutputPass {
 }
 
 /**
- * The largest sample count this context will actually multisample RGBA16F at.
+ * The sample counts this context will multisample RGBA16F at, ascending.
  *
  * **Not `MAX_SAMPLES`.** That parameter answers for the normalised formats; a
  * *floating-point* multisampled renderbuffer is optional in WebGL2, and a
  * context that grants 4x for RGBA8 may grant 2x or none for RGBA16F. The
- * composer's targets are `HalfFloatType`, so asking for a count this returns
- * nothing for leaves the framebuffer incomplete — which is a black frame, not
+ * composer's targets are `HalfFloatType`, so asking for a count this list has
+ * no answer for leaves the framebuffer incomplete — which is a black frame, not
  * an exception.
  *
  * `getInternalformatParameter(RENDERBUFFER, RGBA16F, SAMPLES)` is the question
- * that answers for the format actually being allocated. It comes back in
- * descending order. A context that cannot answer at all — no float colour
- * buffer extension, or a driver returning nothing — reads as zero, which turns
- * the setting off rather than gambling on it.
+ * that answers for the format actually being allocated. It comes back
+ * descending and is reversed here. A context that cannot answer at all — no
+ * float colour buffer extension, or a driver returning nothing — reads as empty,
+ * which turns the setting off rather than gambling on it.
  */
-function supportedSamples(renderer: THREE.WebGLRenderer): number {
+function supportedSampleCounts(renderer: THREE.WebGLRenderer): number[] {
 	const gl = renderer.getContext() as WebGL2RenderingContext;
-	if (typeof gl.getInternalformatParameter !== "function") return 0;
+	if (typeof gl.getInternalformatParameter !== "function") return [];
 	try {
 		const counts = gl.getInternalformatParameter(
 			gl.RENDERBUFFER,
 			gl.RGBA16F,
 			gl.SAMPLES,
 		) as Int32Array | null;
-		return counts?.length ? Math.max(...counts) : 0;
+		return counts?.length ? [...counts].sort((a, b) => a - b) : [];
 	} catch {
-		return 0;
+		return [];
 	}
 }
 
 /**
- * The count to actually ask a target for, given what the player chose.
+ * The count a request will actually be **rendered at**.
  *
- * Clamped rather than refused: a machine that grants 2x should give the player
- * who asked for 4x the 2x it has, not a black frame and not an unexplained
- * revert of their setting. The settings screen keeps offering all three,
+ * **Not `Math.min(wanted, max)`, which is what this was and which quietly
+ * lied.** `renderbufferStorageMultisample` does not round a request *down* to
+ * the nearest supported count — the spec guarantees the resulting `SAMPLES` is
+ * at least what was asked for, so a request lands on the smallest supported
+ * count **at or above** it, and only falls back to the largest when it is above
+ * every one of them. A context reporting `[4]` therefore renders a 2x request at
+ * 4x, and the old clamp returned 2 — so the settings row, its qualifier and the
+ * probe all said 2 while the GPU drew 4. SwiftShader is such a context, which
+ * is where review found it.
+ *
+ * Clamped rather than refused, still: a machine that grants only 2x should give
+ * the player who asked for 4x the 2x it has, not a black frame and not a silent
+ * revert of their setting. The settings screen goes on offering all three,
  * because what a *different* machine supports is not a preference to store.
+ *
+ * This is derived from what the driver advertises. What it is actually drawing
+ * into is `gl.getParameter(SAMPLES)` on the bound framebuffer, and
+ * `probe-output-stage.mjs` compares the two rather than trusting this.
  */
-export const grantedSamples = (renderer: THREE.WebGLRenderer, wanted: number) =>
-	Math.min(wanted, supportedSamples(renderer));
+export function grantedSamples(
+	renderer: THREE.WebGLRenderer,
+	wanted: number,
+): number {
+	if (wanted <= 0) return 0;
+	const counts = supportedSampleCounts(renderer);
+	if (!counts.length) return 0;
+	return counts.find((c) => c >= wanted) ?? counts[counts.length - 1];
+}
 
 /**
  * The composer's own target, multisampled.
@@ -317,16 +365,17 @@ export function composerTarget(
  * `settings.ts`'s player-facing note rounds and points at rather than restates.
  * Twelve blocks per arm, round-robin across the counts, medians.
  *
- * **A range across three sweeps, not one run's figures.** The absolute level
- * moved 25% between sweeps of the same build — 2.34 ms unsampled on the first,
- * 1.84 on the two after it — and the ratio moved with it. One sweep quoted as a
- * constant is the trap this repo has recorded before.
+ * **A range across sweeps of *this* build, not one run's figures.** The
+ * absolute level moved 25% between sweeps early on, and one sweep quoted as a
+ * constant is a trap this repo has recorded before. These are post-depth-resolve
+ * and post-shuffle; the earlier figures this docstring carried (8.5–9.3 and
+ * 14.1–15.1) were a different build and are not comparable.
  *
  * | samples | ms/frame | fps | against unsampled |
  * | ---: | ---: | ---: | ---: |
- * | 0 | 1.8–2.3 | 430–545 | — |
- * | 2 | 8.5–9.3 | 107–118 | 4.0–4.7x |
- * | 4 | 14.1–15.1 | 66–71 | 6.4–7.8x |
+ * | 0 | 1.84–1.88 | 532–542 | — |
+ * | 2 | 7.06–7.26 | 138–142 | 3.8–3.9x |
+ * | 4 | 12.81–13.14 | 76–78 | 6.9–7.0x |
  *
  * 144 of 144 block pairings separate at both counts on every sweep, so the size
  * of the total is not in doubt. What it is *spent on* is a weaker claim, and
@@ -352,33 +401,19 @@ export function composerTarget(
  * either explanation. The mechanism argument stands on three's source and the
  * absent extension; the pass-count timings add an upper bound and nothing more.
  *
- * The count **is** a lever — 4.0x against 6.4x is not nothing — but there is no
+ * The count **is** a lever — 3.8x against 6.9x is not nothing — but there is no
  * cheap setting of it: the least this game can pay for any antialiasing at all
  * is four times its whole unsampled frame. Moving that floor means changing how
  * many layer passes share the multisampled target, which is #15's render ladder
  * rather than anything this module owns. Until it moves, the count is the
  * player's own row in `settings.ts` and it defaults to off.
  *
- * **The dither is 0.12–0.14 ms/frame**, 6–7%, 144/144 separated on both sweeps
- * that measured it — around 40% of what #99's whole baked environment costs on
- * the same runs. Small, and not the "nothing measurable" this docstring and the
- * player-facing note both asserted before anything measured it.
- *
- * That figure only means anything because the shader **branches** rather than
- * multiplying by a zeroed dial. The first version of it did the latter, so the
- * off arm still evaluated the noise; the difference then excluded the
- * arithmetic, and a decline written on the strength of it — that guarding the
- * term would buy nothing — was reasoning from a comparison whose two arms did
- * the same work. Review caught that. With the branch in, off is off: the
- * measured 0.20–0.27 ms became 0.12–0.14, and what is left is the term rather
- * than the term minus itself.
- *
  * `dispose()` on a render target drops the GPU-side framebuffer and nothing
- * else: three re-creates it from the object's current fields the next time it is
- * bound, so assigning `samples` and disposing is how a live switch is made
+ * else: three re-creates it from the object's current fields the next time it
+ * is bound, so assigning `samples` and disposing is how a live switch is made
  * without rebuilding the composer and its five passes. Skipped when the count
- * already matches, so a quality change that does not move this term does not
- * reallocate two full-frame buffers.
+ * already matches, so a change that does not move this term does not reallocate
+ * two full-frame buffers.
  */
 export function setComposerSamples(
 	targets: readonly THREE.WebGLRenderTarget[],

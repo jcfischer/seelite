@@ -113,6 +113,7 @@ const block = (page, quality, samples, dither = true) =>
 	page.evaluate(
 		([q, frames, n, d]) => {
 			const g = window.__seelite;
+			const gl0 = g.renderer.getContext();
 			g.settings.set("quality", q);
 			// The order does not matter since #200 moved the count off the quality
 			// key — `applyQuality` is lighting only again. It is written this way
@@ -120,24 +121,36 @@ const block = (page, quality, samples, dither = true) =>
 			// reader should not have to check whether something above moved it.
 			g.setComposerSamples(n);
 			g.outputPass.setDither(d);
+			// **What was allocated, not what was asked for.** A request lands on
+			// the smallest supported count at or above it, so on a context that
+			// grants only 4x a 2x block renders at 4x — and a table labelled by
+			// the request would publish that as a 2x measurement. Read off the
+			// bound framebuffer rather than off the request or the target's own
+			// field, which are both the ask.
+			g.renderer.setRenderTarget(g.composer.renderTarget1);
+			const applied = gl0.getParameter(gl0.SAMPLES);
+			g.renderer.setRenderTarget(null);
 			// One warm frame after the switch: changing `scene.environment` changes
 			// every standard material's program key, so the first frame at a new
 			// setting pays a shader recompile that no later frame pays, and a
 			// changed sample count pays a reallocation of both composer buffers.
 			// Timing either would price the switch rather than the term.
 			g.render(0);
-			const gl = g.renderer.getContext();
 			const sync = new Uint8Array(4);
 			const started = performance.now();
 			for (let i = 0; i < frames; i++) g.render(0);
 			// Drain: `readPixels` blocks until everything queued has been drawn.
 			// `gl.finish` does not reliably do so through ANGLE, which is why the
 			// pixel read is here rather than a `finish` call.
-			gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, sync);
-			return (performance.now() - started) / frames;
+			gl0.readPixels(0, 0, 1, 1, gl0.RGBA, gl0.UNSIGNED_BYTE, sync);
+			return { ms: (performance.now() - started) / frames, applied };
 		},
 		[quality, FRAMES, samples, dither],
 	);
+
+/** A block returns `{ ms, applied }`; most of the statistics below want only
+ *  the timings. */
+const ms = (xs) => xs.map((r) => r.ms);
 
 const median = (xs) => {
 	const s = [...xs].sort((a, b) => a - b);
@@ -197,26 +210,69 @@ const low = [];
  *  count rather than the strongest against zero: the choice in front of the
  *  player is three-way, and a table with a hole in the middle is one they would
  *  have to guess across. */
-const bySamples = new Map(SAMPLES.map((n) => [n, []]));
+const bySamples = new Map([[0, []]]);
 /** The dither arm, at the shipped sample count. Here because the player-facing
  *  note in `settings.ts` said it "costs nothing measurable" and nothing had
  *  measured it — the probe counts *pixels*, which is a different question. */
 const dithered = [];
 const undithered = [];
-for (let i = 0; i < BLOCKS; i++) {
-	high.push(await block(page, "high", 0));
-	low.push(await block(page, "low", 0));
-	for (const n of SAMPLES) bySamples.get(n).push(await block(page, "high", n));
-	dithered.push(await block(page, "high", 0, true));
-	undithered.push(await block(page, "high", 0, false));
-}
+/**
+ * **Every arm in a round runs in a shuffled order.**
+ *
+ * The header claimed round-robin ordering put a thermal drift on every arm
+ * rather than on whichever ran last, and that was only half true: within a
+ * round the arms ran 0, 2, 4 and then dither on, off, every time. A drift
+ * *inside* a round was therefore perfectly confounded with the arm — the 4x
+ * block always ran on a hotter machine than the 0x block beside it, and the
+ * undithered block always after the dithered one. Shuffling breaks the
+ * correlation without changing the pairing statistics, which assume nothing
+ * about order.
+ *
+ * Seeded and printed, so a suspicious run can be repeated exactly.
+ */
+const ORDER_SEED = Number(process.env.ORDER_SEED ?? 20260902);
+let orderState = ORDER_SEED >>> 0;
+const nextRandom = () => {
+	orderState = (orderState * 1664525 + 1013904223) >>> 0;
+	return orderState / 4294967296;
+};
+const shuffled = (xs) => {
+	const out = [...xs];
+	for (let i = out.length - 1; i > 0; i--) {
+		const j = Math.floor(nextRandom() * (i + 1));
+		[out[i], out[j]] = [out[j], out[i]];
+	}
+	return out;
+};
 
-const h = median(high);
-const l = median(low);
-const medians = new Map([...bySamples].map(([n, xs]) => [n, median(xs)]));
+/** Every arm as a thunk, so a round is a shuffle of one list. */
+const arms = [
+	() => block(page, "high", 0).then((r) => high.push(r)),
+	() => block(page, "low", 0).then((r) => low.push(r)),
+	...SAMPLES.map((n) => () => block(page, "high", n).then((r) => record(n, r))),
+	() => block(page, "high", 0, true).then((r) => dithered.push(r)),
+	() => block(page, "high", 0, false).then((r) => undithered.push(r)),
+];
+
+/** File a samples block under the count it was **applied** at. A context that
+ *  rounds a request up puts two requests in one bucket, which is the honest
+ *  place for them — the row then reports what was measured. */
+const record = (requested, result) => {
+	const at = result.applied;
+	if (!bySamples.has(at)) bySamples.set(at, []);
+	bySamples.get(at).push(result);
+	if (at !== requested) rounded.set(requested, at);
+};
+const rounded = new Map();
+
+for (let i = 0; i < BLOCKS; i++) for (const arm of shuffled(arms)) await arm();
+
+const h = median(ms(high));
+const l = median(ms(low));
+const medians = new Map([...bySamples].map(([n, xs]) => [n, median(ms(xs))]));
 const base = medians.get(0);
-const dOn = median(dithered);
-const dOff = median(undithered);
+const dOn = median(ms(dithered));
+const dOff = median(ms(undithered));
 console.log(`  renderer: ${renderer}`);
 console.log(
 	`  viewport: ${VIEWPORT.width}x${VIEWPORT.height}, ${SUBJECT} at ${RADII} radii`,
@@ -240,8 +296,16 @@ for (const n of SAMPLES) {
 		`  ${String(n).padStart(2)} samples             ${ms.toFixed(3)} ms/frame  ${String(Math.round(1000 / ms)).padStart(3)} fps${times}`,
 	);
 }
-console.log(`  spread — high ${high.map((x) => x.toFixed(2)).join(" ")}`);
-console.log(`  spread — low  ${low.map((x) => x.toFixed(2)).join(" ")}`);
+console.log(
+	`  spread — high ${ms(high)
+		.map((x) => x.toFixed(2))
+		.join(" ")}`,
+);
+console.log(
+	`  spread — low  ${ms(low)
+		.map((x) => x.toFixed(2))
+		.join(" ")}`,
+);
 // A difference of two medians the size of the blocks' own spread says nothing
 // on its own, and the spreads here overlap. This is the statistic that does not
 // need the reader to eyeball two rows.
@@ -269,25 +333,25 @@ console.log(
 	`  the dither costs        ${(dOn - dOff).toFixed(3)} ms/frame  (${(((dOn - dOff) / dOff) * 100).toFixed(1)}%)`,
 );
 console.log(
-	`  separation — env        ${separation(high, low)} of pairings have the environment-on block slower`,
+	`  separation — env        ${separation(ms(high), ms(low))} of pairings have the environment-on block slower`,
 );
 console.log(
-	`  separation — dither     ${separation(dithered, undithered)} of pairings have the dithered block slower`,
+	`  separation — dither     ${separation(ms(dithered), ms(undithered))} of pairings have the dithered block slower`,
 );
-for (const n of SAMPLES.filter((n) => n > 0)) {
+for (const n of [...medians.keys()]
+	.sort((a, b) => a - b)
+	.filter((n) => n > 0)) {
 	console.log(
-		`  spread — ${String(n).padStart(2)} samples     ${bySamples
-			.get(n)
+		`  spread — ${String(n).padStart(2)} samples     ${ms(bySamples.get(n))
 			.map((x) => x.toFixed(2))
 			.join(" ")}`,
 	);
 	console.log(
-		`  separation — ${String(n).padStart(2)} samples ${separation(bySamples.get(n), bySamples.get(0))} of pairings have the multisampled block slower`,
+		`  separation — ${String(n).padStart(2)} samples ${separation(ms(bySamples.get(n)), ms(bySamples.get(0)))} of pairings have the multisampled block slower`,
 	);
 }
 console.log(
-	`  spread —  0 samples     ${bySamples
-		.get(0)
+	`  spread —  0 samples     ${ms(bySamples.get(0))
 		.map((x) => x.toFixed(2))
 		.join(" ")}`,
 );

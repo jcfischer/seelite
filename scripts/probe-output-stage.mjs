@@ -173,15 +173,29 @@ t.check(
 const gate = await page.evaluate(() => {
 	const g = window.__seelite;
 	const was = g.settings.value.antialias;
+	/**
+	 * What each buffer was **allocated** at, not what it was asked for.
+	 *
+	 * `renderTarget.samples` is the request. `renderbufferStorageMultisample`
+	 * only guarantees the result is at least that, so a context advertising
+	 * `[4]` renders a 2x request at 4x — and a probe reading the field back
+	 * would confirm the number it just wrote. `gl.getParameter(SAMPLES)` on the
+	 * bound framebuffer is the allocation.
+	 */
 	const read = (n) => {
 		g.settings.set("antialias", n);
-		return [g.composer.renderTarget1.samples, g.composer.renderTarget2.samples];
+		return [g.composer.renderTarget1, g.composer.renderTarget2].map((rt) => {
+			g.renderer.setRenderTarget(rt);
+			const actual = gl.getParameter(gl.SAMPLES);
+			g.renderer.setRenderTarget(null);
+			return actual;
+		});
 	};
 	// The counts the screen offers, asked of the store rather than restated —
 	// a probe with its own copy of a constant goes falsely red when the module
 	// moves it, and this one would have gone falsely *green*.
-	const seen = g.settings.allowed("antialias").map((n) => [n, read(n)]);
 	const gl = g.renderer.getContext();
+	const seen = g.settings.allowed("antialias").map((n) => [n, read(n), 0]);
 	// What this context will multisample a *half-float* target at, which is not
 	// what `MAX_SAMPLES` answers for — a float multisampled renderbuffer is
 	// optional in WebGL2. A count above this leaves the framebuffer incomplete,
@@ -192,7 +206,14 @@ const gate = await page.evaluate(() => {
 		gl.RGBA16F,
 		gl.SAMPLES,
 	);
-	const granted = counts?.length ? Math.max(...counts) : 0;
+	const supported = counts?.length ? [...counts].sort((a, b) => a - b) : [];
+	// The same rule `grantedSamples` applies, restated here on purpose: this is
+	// the *prediction* the settings row shows the player, and the check below
+	// compares it against what was actually allocated. Importing the module's
+	// answer would make the two agree by construction.
+	const predict = (n) =>
+		n <= 0 ? 0 : (supported.find((c) => c >= n) ?? supported.at(-1) ?? 0);
+	const granted = predict(Math.max(...g.settings.allowed("antialias")));
 	g.settings.set("antialias", Math.max(...g.settings.allowed("antialias")));
 	const { frame, luma } = window.__outputStage;
 	const img = frame();
@@ -203,23 +224,21 @@ const gate = await page.evaluate(() => {
 		if (luma(img.data, i) > 8) painted++;
 	}
 	g.settings.set("antialias", was);
+	for (const row of seen) row[2] = predict(row[0]);
 	return {
 		seen,
 		was,
 		granted,
+		supported,
 		painted,
 		sampled,
 		max: gl.getParameter(gl.MAX_SAMPLES),
 	};
 });
 t.check(
-	"every count the settings screen offers reaches both buffers, clamped to what the context grants",
-	gate.seen.every(
-		([n, got]) =>
-			got[0] === Math.min(n, gate.granted) &&
-			got[1] === Math.min(n, gate.granted),
-	),
-	`${gate.seen.map(([n, got]) => `${n} → [${got}]`).join(", ")}, this context grants ${gate.granted} for RGBA16F (MAX_SAMPLES ${gate.max})`,
+	"what the settings row predicts is what the GPU allocated, for every count offered",
+	gate.seen.every(([, got, want]) => got[0] === want && got[1] === want),
+	`${gate.seen.map(([n, got, want]) => `${n} → predicted ${want}, allocated [${got}]`).join("; ")} — RGBA16F supports [${gate.supported}], MAX_SAMPLES ${gate.max}`,
 );
 t.check(
 	"and the frame is still drawn at the strongest count it granted",

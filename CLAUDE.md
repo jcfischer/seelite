@@ -297,20 +297,35 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   rather than measured, and the attempt to measure the decomposition does not
   isolate it, because disabling a pass removes its drawing too. So it is the
   player's own row (`settings.ts`, `antialias`) and it defaults to off.
-- **A count this context grants for RGBA8 it may not grant for RGBA16F.** The
-  composer's targets are half-float and a float multisampled renderbuffer is
-  optional in WebGL2, so `MAX_SAMPLES` is the wrong question —
-  `getInternalformatParameter(RENDERBUFFER, RGBA16F, SAMPLES)` is the right one,
-  and `grantedSamples` clamps to it. An ungranted count leaves the framebuffer
-  incomplete, which is a **black frame and not an exception**, so the probe
-  checks that pixels are lit and not only that a number came back.
+- **A count this context grants for RGBA8 it may not grant for RGBA16F, and a
+  request can round *up*.** The composer's targets are half-float and a float
+  multisampled renderbuffer is optional in WebGL2, so `MAX_SAMPLES` is the wrong
+  question — `getInternalformatParameter(RENDERBUFFER, RGBA16F, SAMPLES)` is the
+  right one. And `renderbufferStorageMultisample` guarantees only that the result
+  is *at least* what was asked for: SwiftShader advertises `[4]` and allocates 4
+  for a 2x request, so `Math.min(wanted, max)` was wrong in shape and made the
+  settings row, its qualifier and the probe all report 2 while the GPU drew 4.
+  `grantedSamples` takes the smallest supported count at or above the request. A
+  count with no answer at all leaves the framebuffer incomplete, which is a
+  **black frame and not an exception**, so the probe checks that pixels are lit —
+  and it reads `gl.getParameter(SAMPLES)` off the bound framebuffer rather than
+  `renderTarget.samples`, which is only the request read back.
 - **A dial at zero still evaluates everything to its right.** Switching a
   full-screen term off by multiplying it by a zeroed uniform removes the effect
-  and not the cost — and worse, an on-against-off timing then subtracts the
-  shared arithmetic out of both arms and reports the term as cheaper than it is.
-  That shipped here for a review round and the number moved by a third when it
-  was fixed. Both of `output-stage.ts`'s terms branch on their uniform, and
-  `tests/output-stage.test.ts` asserts the branch is in the spliced source.
+  and not the cost — and an on-against-off timing then subtracts the shared
+  arithmetic out of both arms. Both of `output-stage.ts`'s terms branch on their
+  uniform, and `tests/output-stage.test.ts` asserts the branch is in the spliced
+  source.
+- **A block design that always runs its arms in the same order measures the
+  order.** `measure-light-cost.mjs` ran 0, 2, 4 then dither-on, dither-off twelve
+  times over, so within-round thermal drift was perfectly confounded with the arm
+  — and the Mann-Whitney pairing count, which assumes nothing about the
+  distributions, still assumed that. It reported the dither at 0.12–0.14 ms with
+  **144/144** pairings separated; shuffling the arm order dropped the same term
+  to −0.002 and +0.066 ms at 61/144 and 101/144, which is a coin toss and a lean.
+  The arms are shuffled from a printed seed now, and `setDither` records all
+  three wrong answers this one term produced, because each was wrong for its own
+  reason.
 - **A dither belongs after the encode and a vignette before it.** The composer's
   targets are half-float and the screen is eight bits, so the quantisation
   happens in `OutputShader` — a ±0.5/255 noise added *there*, in display space,
@@ -318,11 +333,13 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   the dark, which is the only place the banding is. `output-stage.ts` splices
   both through `shader-splice.ts`, and `tests/output-stage.test.ts` asserts the
   order from the patched source.
-- **The frame loop rewrites the vignette dial every frame**, from the view. A
-  probe that assigns `uVignette` and then renders measures its own assignment
-  being overwritten, and reads a working vignette as doing nothing — which it
-  did, 1.000 against 1.000. `SeeliteOutputPass.vignetteOverride` is the pin a
-  control arm sets.
+- **The frame loop rewrites the vignette dial every frame**, from the view and
+  the settings row. A probe that assigns `uVignette` and then renders measures
+  its own assignment being overwritten, and reads a working vignette as doing
+  nothing — which it did, 1.000 against 1.000. The fix is not a pin on the pass:
+  that was tried, and a `vignetteOverride` field is production state existing for
+  one caller. Drive the settings row, which is the control the player has, so the
+  two arms differ by the thing that ships.
 - **A shader splice that misses its marker is silent.** `String.replace` with a
   renamed chunk returns the string unchanged, leaving a stock material that
   compiles, links, renders and carries the patched program's own name. Every

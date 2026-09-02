@@ -20,14 +20,14 @@
 /**
  * The two values every on/off row takes.
  *
- * Named once and shared, rather than each row spelling its own pair and `Toggle`
- * being derived from whichever happened to be first. That was the arrangement
- * for a round: `Toggle` read `SCHEMA.dither.allowed`, so editing the dither's
- * values silently retyped the vignette. A shared abstraction owns the shared
- * values.
+ * Named once and shared, rather than each row spelling its own pair and an
+ * exported alias being derived from whichever happened to be first. That was
+ * the arrangement for a round: the alias read `SCHEMA.dither.allowed`, so
+ * editing the dither's values silently retyped the vignette. The alias is gone
+ * now that `Settings` is derived from the schema — every row's type comes from
+ * its own `allowed`, and nothing outside this file needed a name for the pair.
  */
 const TOGGLE = ["on", "off"] as const;
-export type Toggle = (typeof TOGGLE)[number];
 
 /** One place for the schema, because the default and the validator drift apart
  *  when they are written separately. */
@@ -147,13 +147,13 @@ const SCHEMA = {
 	 *
 	 * A row of its own because #98's rule runs both ways: a term the player can
 	 * see is a term the player should be able to turn off and look at. An earlier
-	 * revision justified the row differently — that the term "cannot be measured
-	 * against the noise of a frame" — and that was an assertion rather than a
-	 * reading. It measures at a few percent of a frame with every block pairing
-	 * separated. **`setComposerSamples` in `output-stage.ts` owns the figures**,
-	 * and the note below stays qualitative on purpose: a number in a player-
-	 * facing string is a fourth copy of a measurement, and this entry already
-	 * carried two that had drifted apart from each other. What it fixes is banding in the
+	 * An earlier revision justified the row by asserting the term "cannot be
+	 * measured against the noise of a frame", which turned out to be true and
+	 * was an assertion when it was written. **`setDither` in `output-stage.ts`
+	 * owns what it costs and the three wrong answers on the way there**; the
+	 * note below stays qualitative on purpose, because a number in a
+	 * player-facing string is one more copy of a measurement and this entry
+	 * already carried two that drifted apart from each other. What it fixes is banding in the
 	 * dark — space and a planet's terminator cross a handful of eight-bit codes
 	 * over hundreds of pixels — and the only honest way to judge that is to
 	 * switch it.
@@ -163,7 +163,7 @@ const SCHEMA = {
 		allowed: TOGGLE,
 		label: "Dither",
 		describe: (v: string) => (v === "on" ? "On" : "Off"),
-		note: "Breaks up the banding in dark gradients — empty space, and the shadow side of a planet — by moving each pixel less than one shade at random. It costs a small but real slice of a frame — far less than Antialiasing, and off is genuinely off. Off shows the bands the eight-bit screen actually has.",
+		note: "Breaks up the banding in dark gradients — empty space, and the shadow side of a planet — by moving each pixel less than one shade at random. Too cheap to measure reliably; leave it on unless you want to see the bands the eight-bit screen actually has.",
 	},
 	/**
 	 * Whether the cockpit's corners fall off — #200.
