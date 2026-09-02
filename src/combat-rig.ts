@@ -59,6 +59,7 @@ import {
 	type CombatEnemyState,
 	ENEMY_VISUAL_SCALE,
 	PLAYER_LASER_RANGE_KM,
+	STRIKER_HULL_ID,
 	createCombatEnemy,
 	stepCombatEnemy,
 } from "./combat-enemy";
@@ -67,6 +68,7 @@ import {
 	createCombatPrototype,
 	stepCombatPrototype,
 } from "./combat-prototype";
+import { HULL_SPECS } from "./hull";
 import { mix, seedFor } from "./rng";
 import { buildShipMesh } from "./ship-mesh";
 import type { Body, Ship } from "./sim";
@@ -385,13 +387,22 @@ export class CombatPrototypeRig {
 			radiusKm: 0.75,
 			color: 0x9d2f35,
 		};
-		this.targetMesh = buildShipMesh("raider", "a").root;
+		this.targetMesh = buildShipMesh(
+			STRIKER_HULL_ID,
+			HULL_SPECS[STRIKER_HULL_ID].variant,
+		).root;
 		this.targetMesh.name = "combat-prototype-target";
+		// The built hull's own box in the mesh's **local** frame — taken before
+		// the scale, and measured rather than read off `HULL_SPECS.env`. The
+		// roster's envelope is a *size*, rounded up to 0.1 m, and what the
+		// muzzle below needs is a *position*: nothing says the mesh is centred
+		// on its own nose, and a half-length would only be the nose if it were.
+		const hullBox = new THREE.Box3().setFromObject(this.targetMesh);
 		this.targetMesh.scale.setScalar(ENEMY_VISUAL_SCALE);
 		scene.add(this.targetMesh);
 		// **A mark on the metal, and it has to be seen from two kilometres.** It
 		// was a 0.06 sphere in the hull's own frame — kilometres, on a hull
-		// `HULL_VISUALS.raider.lengthKm` = 0.066 long, so bigger than the ship.
+		// `HULL_SPECS.raider.env.lengthKm` = 0.0635 long, bigger than the ship.
 		// Shrinking it to 0.005 made it right and invisible: fifteen metres drawn
 		// at three kilometres is under a pixel, so a scored hit left no mark at
 		// all. Physical size is the wrong lever; this is the same screen-space
@@ -475,11 +486,15 @@ export class CombatPrototypeRig {
 			this.muzzleMaterial,
 		);
 		this.muzzle.name = "combat-prototype-muzzle";
-		// On the hull's own nose, in the mesh's local frame — kilometres, and the
-		// raider is 0.066 of them long, so its nose is at 0.033. Written as
-		// ship-lengths this sat a kilometre and a half ahead of the striker and
-		// drew a blob across a third of the canopy, growing as the range closed.
-		this.muzzle.position.set(0, 0, -0.033);
+		// On the hull's own nose, in the mesh's local frame — kilometres, read as
+		// `hullBox.min.z` = **-0.0345**. Written as ship-lengths this sat a
+		// kilometre and a half ahead of the striker and drew a blob across a
+		// third of the canopy, growing as the range closed. Written as a literal
+		// it was half the *declared* length, -0.033, and that was wrong twice
+		// over: #181 moved the length to 0.0635, and `raider/a` is not centred
+		// on its own box — it runs -0.0345 to +0.0290, so a half-length puts the
+		// muzzle 1.5 m **inside** the nose whatever the length says.
+		this.muzzle.position.set(0, 0, hullBox.min.z);
 		this.muzzle.visible = false;
 		this.targetMesh.add(this.muzzle);
 		this.laser = new THREE.Line(

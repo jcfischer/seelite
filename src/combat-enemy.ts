@@ -98,12 +98,17 @@ export interface CombatEnemyState {
 	 * a lockout the tail rule fires every time a manoeuvre puts the nose off the
 	 * player and the striker spends the fight breaking instead of shooting.
 	 * Measured against a player who tracks it for 45 s, over eight seeds: the
-	 * share of frames it is firing is 0.294–0.307 with the lockout and
-	 * 0.148–0.226 without. It does **not** measurably change how far the fight
-	 * ranges out — that was checked and it is the same ~8–10 km either way.
+	 * share of frames it is firing is **0.294–0.305** with the lockout and
+	 * **0.154–0.230** without. It does **not** measurably change how far the
+	 * fight ranges out — that was checked and it is the same ~8–10 km either
+	 * way. Both arms re-measured on the rebase onto #181, which gave the striker
+	 * the raider's own 2.690 km/s² in place of the courier's 2.000.
 	 *
-	 * Being *hit* ignores this: a player who can hold the sight on it has earned
-	 * the suppression.
+	 * Being *hit* runs the same lockout on a shorter clock — see
+	 * `HIT_EVADE_COOLDOWN_S`, and the flown result that put it there. It did
+	 * once ignore this entirely, on the argument that a player holding the sight
+	 * had earned the suppression; that produced a striker which never fired
+	 * back at all.
 	 */
 	evadeCooldown: number;
 	/** The fight's own RNG stream, carried as state so the step stays pure. */

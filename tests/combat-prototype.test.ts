@@ -453,8 +453,11 @@ test("the enemy presses the attack instead of holding a standoff orbit", () => {
  * A pilot holds the sight on the target, so the tail rule is live for most of
  * the fight; without `evadeCooldown` bounding it the striker breaks far more
  * than it shoots. The discriminating number is the share of frames it is
- * firing, measured over eight seeds at 45 s: 0.294–0.307 with the lockout and
- * 0.148–0.226 without, so 0.26 separates them with margin on both sides.
+ * firing, measured over eight seeds at 45 s: **0.294–0.305** with the lockout
+ * and **0.154–0.230** without, so 0.26 separates them with margin on both
+ * sides. Both arms re-measured on the rebase onto #181, which gave the striker
+ * the raider's own 2.690 km/s² in place of the courier's 2.000; the gap held
+ * its shape and both bounds moved by under a point.
  */
 test("a player who keeps their nose on it cannot suppress its guns", () => {
 	for (const seed of DUEL_SEEDS) {
