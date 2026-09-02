@@ -119,6 +119,10 @@ const EXEMPT = new Map([
 		"#142's headed boot instrument; it prints a timing and asserts nothing, so there are no checks for a watch to report into — it refuses a software renderer rather than gating on a figure",
 	],
 	[
+		"measure-planet-cost.mjs",
+		"#206's headed planet-cost sweep; like #99's it gates on nothing — the output is a table for a receipt, not a threshold — so there are no checks for a watch to report into. Its two refusals (an unreadable meter line, a vsync-clamped run) throw out of the run rather than counting a failed check",
+	],
+	[
 		"capture-views.mjs",
 		"captures #104's view set; the gate is a human looking at the sheet, so it has no checks either — it does listen for shader and page errors, and a fault removes the run and the sheet rather than reporting one",
 	],

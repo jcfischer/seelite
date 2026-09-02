@@ -77,13 +77,14 @@ describe("the view set itself", () => {
 		expect(sawSeed).toBe(true);
 	});
 
-	test("declares seventeen views with unique kebab-case names", () => {
+	test("declares eighteen views with unique kebab-case names", () => {
 		// Eight after #129 added `station-flank`, fifteen since #147 added
 		// §13.6's seven-frame acceptance set, seventeen since #144 added the two
-		// station-port views #134 ratified. A literal and not `VIEWS.length`,
-		// which is the whole point: a view deleted by accident has to be a red
-		// run, and a check derived from its own subject cannot be one.
-		expect(VIEWS.length).toBe(17);
+		// station-port views #134 ratified, eighteen since #206 added
+		// `planet-fill`. A literal and not `VIEWS.length`, which is the whole
+		// point: a view deleted by accident has to be a red run, and a check
+		// derived from its own subject cannot be one.
+		expect(VIEWS.length).toBe(18);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -179,6 +180,59 @@ describe("the view set itself", () => {
 		// Guarded, so the comparison cannot pass by both sides being absent.
 		expect(typeof range.shot.radii).toBe("number");
 		expect(Math.max(...stationRadii)).toBe(range.shot.radii ?? 0);
+	});
+
+	/**
+	 * **#206's two planet views, and the part of them a test can hold.**
+	 *
+	 * Not the framing number — `radii` is apparent size and this module's own
+	 * docstring says nothing here checks it. What is asserted is the *relation*
+	 * the pair exists for: the set judges a planet surface at two apparent
+	 * sizes, and `planet-fill` is the near one. Before it, the closest anything
+	 * in the set stood to a subject was three radii, where a planet is a disc
+	 * with sky around it and its surface detail is a few hundred pixels wide.
+	 *
+	 * The floor is asserted over **every** `body-offset` view rather than over
+	 * the two planet ones, for the reason the `station-range` row reads both
+	 * spellings of a station name: a later view added closer than this one
+	 * would silently take the role this claims, and the sheet would carry two
+	 * views both described as the near frame.
+	 */
+	test("the two planet views judge a surface at two apparent sizes", () => {
+		const byName = new Map(VIEWS.map((v) => [v.name, v]));
+		const planetView = (name: string) => {
+			const view = byName.get(name);
+			expect(view).toBeDefined();
+			return {
+				covers: view?.covers ?? [],
+				shot: (view?.shot ?? {}) as {
+					kind?: string;
+					body?: string;
+					radii?: number;
+				},
+			};
+		};
+		const fill = planetView("planet-fill");
+		const terminator = planetView("planet-terminator");
+		for (const view of [fill, terminator]) {
+			expect(view.covers).toContain(206);
+			expect(view.shot.kind).toBe("body-offset");
+		}
+		// Both frame a planet, and `planet-fill` names its subject outright
+		// rather than through `largest-planet`: the cost sweep #206 built is
+		// pointed at `planet-5` by id, and a view framed on a different body
+		// from the one the table priced is a picture of a different claim.
+		expect(fill.shot.body).toBe("planet-5");
+		expect(FIXTURE.planets[0]?.id).toBe("planet-5");
+		// And the fill view is the near one — of the whole set, not of the pair.
+		const offsetRadii = VIEWS.map(
+			(v) => v.shot as { kind?: string; radii?: number },
+		)
+			.filter((s) => s.kind === "body-offset")
+			.map((s) => s.radii ?? Number.POSITIVE_INFINITY);
+		expect(typeof fill.shot.radii).toBe("number");
+		expect(Math.min(...offsetRadii)).toBe(fill.shot.radii ?? 0);
+		expect(fill.shot.radii ?? 0).toBeLessThan(terminator.shot.radii ?? 0);
 	});
 
 	test("every lever is covered by at least one view", () => {
@@ -305,8 +359,8 @@ describe("the contact sheet", () => {
 	test("prints the clock span the frames were taken across, not a pinned time", () => {
 		const html = contactSheet([fullRun("before")]);
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
-		// many views the set declares — seventeen since #144's two range views.
-		expect(html).toContain("· clock 0.6–7.0s");
+		// many views the set declares — eighteen since #206 added `planet-fill`.
+		expect(html).toContain("· clock 0.6–7.4s");
 		expect(html).not.toContain("pinned");
 	});
 

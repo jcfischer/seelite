@@ -62,6 +62,34 @@ const WINDOW_MS = 500;
 const STALL_MS = WINDOW_MS * 4;
 
 /**
+ * The readout's one line, as HTML.
+ *
+ * **Exported because something now reads it back.** #206's planet-cost sweep
+ * drives this meter from a headed browser and parses the rendered text —
+ * `?fps` is the instrument that node's gate names, so the sweep cannot simply
+ * time its own frames instead. A parser written against a *remembered* format
+ * is the failure this repo already has on file twice: the format changes here,
+ * the regex goes on matching nothing or matching wrongly, and the sweep prints
+ * numbers with no red run anywhere. So the writer is a function, and
+ * `scripts/lib/planet-cost.mjs`'s parser is tested by round-tripping through
+ * this rather than through a string a test author typed out.
+ *
+ * Every part of it is a number this file formatted, so there is nothing to
+ * escape.
+ *
+ * The `ms` figure is whole milliseconds on purpose — it exists so a reader at
+ * 15 fps sees 67 rather than doing the division — which is also why the parser
+ * derives its own from `fps` instead of trusting this one: at 500 fps a whole
+ * millisecond is a quarter of the reading.
+ */
+export function fpsReadout(fps: number, worstMs: number, peakMs: number) {
+	return (
+		`<b>${fps.toFixed(1)}</b> fps · ${(1000 / fps).toFixed(0)} ms` +
+		` · worst ${worstMs.toFixed(0)} ms · peak ${peakMs.toFixed(0)} ms`
+	);
+}
+
+/**
  * Mount the readout, and return the function that removes it.
  *
  * **Idempotent**: two call sites can reach this on one page — `?fps` in
@@ -124,10 +152,7 @@ export function mountFpsMeter(): () => void {
 			// hitch is what a player feels — is an argument about something
 			// that happened, not about the last half second.
 			if (worst > peak) peak = worst;
-			show(
-				`<b>${fps.toFixed(1)}</b> fps · ${(1000 / fps).toFixed(0)} ms` +
-					` · worst ${worst.toFixed(0)} ms · peak ${peak.toFixed(0)} ms`,
-			);
+			show(fpsReadout(fps, worst, peak));
 			frames = 0;
 			worst = 0;
 			windowStart = now;
