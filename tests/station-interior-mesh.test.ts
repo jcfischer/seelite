@@ -308,7 +308,7 @@ describe("§13.1 — the transit lane is clear of everything drawn", () => {
 });
 
 describe("§13.1 — what the bay must and must not carry", () => {
-	test("every basic-material bay light passes through tone mapping", () => {
+	test("every basic-material station-interior light passes through tone mapping", () => {
 		for (const type of STATION_TYPES) {
 			let checked = 0;
 			built(type).traverse((object) => {

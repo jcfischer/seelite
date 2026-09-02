@@ -71,9 +71,11 @@ function arg(name, fallback) {
 	const eq = argv.find((a) => a.startsWith(`--${name}=`));
 	if (eq) return eq.slice(name.length + 3);
 	const i = argv.indexOf(`--${name}`);
-	return i >= 0 && argv[i + 1] && !argv[i + 1].startsWith("-")
-		? argv[i + 1]
-		: fallback;
+	if (i < 0) return fallback;
+	const value = argv[i + 1];
+	if (!value || value.startsWith("-"))
+		throw new Error(`--${name} requires a value`);
+	return value;
 }
 
 /**
