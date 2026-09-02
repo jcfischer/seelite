@@ -102,7 +102,7 @@ export const EMISSIVE_CEILING = 1.0;
  * The post-processing side of the same exposure budget.
  *
  * Threshold begins at the ceiling: ordinary lit paint and authored emissives
- * remain shaped by ACES, while only energy above white contributes a halo.
+ * remain shaped by ACES, while only radiance above white contributes a halo.
  * The record is exposed through `window.__seelite.exposure`, so a browser probe
  * reads the figures the renderer uses instead of carrying a second copy.
  */
@@ -118,7 +118,7 @@ export const EXPOSURE = {
  * The rig, in one place because the panel, the bake and the renderer all read
  * it and three copies drift.
  *
- * #199 keeps #99's directional roles but retunes every energy term together:
+ * #199 keeps #99's directional roles but retunes every lighting term together:
  * the former sun/environment pair put a fully lit painted hull above the
  * display-space band even after ACES, while the camera-side fill still owns the
  * separate backlit-hull case.
@@ -132,7 +132,7 @@ export const LIGHT_RIG = {
 	 * The ambient replacement. Aimed along the star, so `sky` is the lift on the
 	 * star side and `ground` the lift on the far side.
 	 *
-	 * #199 shifts energy out of the two directional lights and into this broad
+	 * #199 shifts illumination out of the two directional lights and into this broad
 	 * gradient. That keeps a camera-facing hull readable across its facets
 	 * without one shoulder owning the whole exposure range. Ground remains
 	 * darker than sky, so the lift retains an edge-bearing gradient rather than
@@ -157,7 +157,7 @@ export const LIGHT_RIG = {
 	 * its lower quartile is 73.59 and median 103.99, so the band does not hide a
 	 * mostly-black exterior behind one compliant highlight.
 	 *
-	 * That pixel band guards clipping; whether the lower-energy scene still has
+	 * That pixel band guards clipping; whether the lower-exposure scene still has
 	 * the intended depth and legibility remains the canonical sheet's human gate.
 	 */
 	environmentIntensity: 0.15,

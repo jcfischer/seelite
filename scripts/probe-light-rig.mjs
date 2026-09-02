@@ -251,13 +251,13 @@ async function measureHullChase(page) {
 	return page.evaluate(
 		([sampleCount, framedBodyId]) => {
 			const game = window.__seelite;
-			const bloomEnabled = game.bloom.enabled;
-			// A lamp can overlap the hull in screen space. Disable its convolution
-			// while reading paint so the reported pixel is post-tone-map hull energy,
-			// not a neighbouring navigation-light halo.
-			game.bloom.enabled = false;
 			const ship = game.shipMesh;
 			if (!ship) return { missing: true };
+			const bloomEnabled = game.bloom.enabled;
+			// A lamp can overlap the hull in screen space. Disable its convolution
+			// while reading paint so the reported pixel is post-tone-map hull light,
+			// not a neighbouring navigation-light halo.
+			game.bloom.enabled = false;
 			const navLights = ship.getObjectByName("nav-lights");
 			const navLightsVisible = navLights?.visible ?? false;
 			const canvas = game.renderer.domElement;
