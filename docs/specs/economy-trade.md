@@ -39,8 +39,8 @@ priceCr   = max(PRICE_STEP_CR,                                 // §3.1's floor
                   + typeOffset × gradient × PRICE_STEP_CR)
 priceCr   = max(PRICE_STEP_CR,                                 // §5.3's floor —
                 priceCr × (1 + PRICE_ELASTICITY                //   not redundant
-                               × clamp(deficit, ±63)
-                               / HOLD_REFERENCE_T))
+                               × clamp(deficit / holdT,        // §5.2 — in
+                                       ±DEFICIT_SATURATION_RUNS)))  // holds
 
 quantity  = clamp(clamp(clamp(baseQuantity + changing − product, 0, 63)
                           + max(0, −typeOffset × gradient),    // §3.2
@@ -56,8 +56,12 @@ quantity  = clamp(clamp(clamp(baseQuantity + changing − product, 0, 63)
 | `typeOffset` | trade 0, refinery +3, shipyard −2 | `station-types.md` §3 |
 | `MARKET_PERIOD` | 30 min game time | §5.1 |
 | `DEFICIT_HALF_LIFE` | 20 min game time | §5.2 |
-| `PRICE_ELASTICITY` | 0.10 per `HOLD_REFERENCE_T` | §5.3 |
-| `HOLD_REFERENCE_T` | 20 t | §6 |
+| `PRICE_ELASTICITY` | 0.10 per full hold, any hull | §5.3 |
+| `HOLD_REFERENCE_T` | 20 t — the *baseline hull's* hold | §6, `src/hull.ts` |
+| `DEFICIT_SATURATION_RUNS` | 3.15 runs of the flown hold | §5.2 |
+| `HULL_PRICE_BASELINE_CR` | 30,000 Cr | §7.1 |
+| `HULL_PRICE_EXPONENT` | 0.613 | §7.1 |
+| `HULL_CEILING_HOLD_T` | 197 t | §7.2 |
 
 The executable copy is **`src/market.ts`**, where
 [#25](https://github.com/jcfischer/seelite/issues/25) moved it. There is one
@@ -433,12 +437,56 @@ Elite's market forgets you the moment you leave. seelite's does not.
 buying  n units at a station:  deficit += n
 selling n units at a station:  deficit −= n
 
-deficit(t) = deficit₀ × 2^(−(t − t₀) / DEFICIT_HALF_LIFE),  clamped to ±63
-DEFICIT_HALF_LIFE = 20 min game time
+deficit(t)   = deficit₀ × 2^(−(t − t₀) / DEFICIT_HALF_LIFE)
+             clamped to ±DEFICIT_SATURATION_RUNS × holdT
+DEFICIT_HALF_LIFE          = 20 min game time
+DEFICIT_SATURATION_RUNS    = DEFICIT_MAX / HOLD_REFERENCE_T = 63 / 20 = 3.15
 
-effectiveQuantity = clamp(generatedQuantity − deficit, 0, 63)
-priceCr          ×= 1 + PRICE_ELASTICITY × deficit / HOLD_REFERENCE_T
+effectiveQuantity = clamp(generatedQuantity − clamp(deficit, ±63), 0, 63)
+priceCr          ×= 1 + PRICE_ELASTICITY
+                      × clamp(deficit / holdT, ±DEFICIT_SATURATION_RUNS)
 ```
+
+**The deficit is read in *holds*, not in tonnes — #26's D6, measured by #182.**
+Until that node the response was `clamp(deficit, ±63) / HOLD_REFERENCE_T`, which
+is the same arithmetic for as long as every ship in the game holds 20 t and is
+the map's #13 failure the moment one does not: **a per-hull modifier on a
+bounded index gets clamped away where that type lives.** One run of a 63 t hull
+already reaches a ±63 *tonne* clamp, so the market's memory of a 63 t trader and
+a 200 t trader was identical — the response stopped distinguishing hulls exactly
+at the hold where §7.1's ladder begins. Measured, at 200 t the old expression
+discarded 69% of one run's mark.
+
+#13's own fix applies: express the scaling on the ratio, where the clamp cannot
+reach it. **One full run of any hull now moves a price by `PRICE_ELASTICITY`,
+and every hull saturates after the same 3.15 runs.**
+
+*At the baseline hull's 20 t the new expression is the old one term for term*,
+which is why every figure §5.4 was ratified on survives: `MIN_STOCK_RESPONSE_FACTOR`
+is 0.685, the closable ratio 1.920, exhaustion in 3 runs, 953 Cr total, a 7.9
+Cr/t richest residual — and `scripts/measure-market.ts` prints output identical
+to the run before the change, line for line. **What did not survive is the
+brake's *shape* across the roster.** Swept at three holds:
+
+| response | hold | saturated factor | closable ratio | runs to exhaust | farm take |
+|---|---|---|---|---|---|
+| shipped | 20 t | 0.685 | 1.920 | 3 | 953 Cr |
+| shipped | 60 t | 0.685 | 1.920 | 3 | 2,859 Cr |
+| shipped | 200 t | 0.685 | 1.920 | 3 | 9,531 Cr |
+| pre-#182 | 20 t | 0.685 | 1.920 | 3 | 953 Cr |
+| pre-#182 | 60 t | 0.685 | 1.920 | **1** | 1,704 Cr |
+| pre-#182 | 200 t | 0.685 | 1.920 | **1** | 5,680 Cr |
+
+The steady state is identical on both arms at every hold, because the cap and
+the reference scale together; only the transient moves. `measure-hull-pricing.ts`
+section B prints it, and both arms run through the same `runsToExhaustion` and
+the same `surveyResiduals` — the response is a parameter of each, so the two
+cannot be built differently.
+
+**The accumulator's cap is a ratchet.** It is 3.15 of the *writing* hull's hold
+and never reduces a mark already larger than that; otherwise selling a
+freighter, trading once in a courier and buying the freighter back would launder
+a saturated 189 t mark down to 63, which is a brake with an off switch.
 
 **The upper clamp is not decorative.** A deficit reaches −63 when the player
 dumps cargo, so `generatedQuantity − deficit` reaches 126 — twice Bell's cap —
@@ -453,7 +501,9 @@ it pays. It is Bell's coupling a third time — price and quantity moving opposi
 — rather than a new mechanism.
 
 **The scale is the point.** Bell's cap is 63 units and the starting hold is 20 t,
-so one purchase takes 30–55% of a station's stock of that good. In a
+so one purchase takes 30–55% of a station's stock of that good. The *shelf*
+clamp stays Bell's 63 whatever the hull, because a shelf is a shelf; it is the
+memory that scales. In a
 single-player game nothing dilutes that, which is the whole reason the mechanic
 is worth having: the player is the only actor, so the effect is legible as
 theirs.
@@ -467,7 +517,8 @@ flat 8 Cr shift for one hold would move it further than the whole
 Rich→Poor geography does, and more than double it.
 
 Scaling by the price instead is scale-free and legible at both ends: a full
-reference hold moves any good by **10%**, whatever it costs. It applies in
+hold moves any good by **10%**, whatever it costs *and whatever hull is carrying
+it* — §5.2's second scale-freedom, and #182's. It applies in
 credits, after §3.1's delta, **and is floored the same way**.
 
 That floor is not redundant, though a draft of this spec removed it as though it
@@ -701,9 +752,14 @@ Changing either constant re-opens the question, and
 | Large Cargo Bay | +15 t → 35 t | PRXS, 400 Cr |
 | Sub-tonne goods | Gold, Platinum, Gem-Stones bypass the hold check | research §2.2 |
 
-The 20 t figure is a **v1 default that the ship-roster node inherits**, not a
-decision about hulls. It is fixed here because §8's pump cannot be computed
-without it.
+The 20 t figure was a **v1 default that the ship-roster node inherited**, not a
+decision about hulls, and it is fixed here because §8's pump cannot be computed
+without it. Since [#181](https://github.com/jcfischer/seelite/issues/181) it is
+derived rather than declared: `HOLD_REFERENCE_T` reads the baseline hull's row
+in `src/hull.ts`, and a commander's hold is their own hull's. It stays the
+*baseline* hull's on purpose — §5.2's response is scale-free in the flown hold
+since #182, so the reference is a naming of the ladder's bottom rung rather than
+a figure any arithmetic depends on.
 
 The compounding from 100 Cr is faster than the stingy reputation suggests: on
 the canonical lane at zero fluctuation — Computers bought at 61.6 Cr and sold at
@@ -801,9 +857,110 @@ incentive is already carried by availability: shipyards exist only at
 frontier is where you cannot buy what the frontier requires
 (`station-types.md` §4.2). Discounting on top applies the same gradient twice.
 
-**Hull prices are not specified here.** `station-types.md` §4.1 puts hulls at
-shipyards, but "one hull with modules vs multiple hulls" is still fog. Whatever
-node graduates it prices them.
+### 7.1 Hull prices
+
+[#26](https://github.com/jcfischer/seelite/issues/26) graduated the fog — both
+axes, roles horizontally and tiers vertically — and deferred the prices to a
+measurement on purpose (D4). [#182](https://github.com/jcfischer/seelite/issues/182)
+made it. `src/hull.ts` is where the figures live, as data, per §1's rule.
+
+**A hull costs what its hold earns back over one kit.**
+
+```
+hullPriceCr(holdT) = HULL_PRICE_BASELINE_CR
+                     × (holdT / HOLD_REFERENCE_T) ^ HULL_PRICE_EXPONENT
+                     rounded to HULL_PRICE_STEP_CR
+
+HULL_PRICE_BASELINE_CR = 30,000 Cr    HULL_PRICE_EXPONENT = 0.613
+HULL_PRICE_STEP_CR     = 100 Cr       HULL_CEILING_HOLD_T = 197 t
+```
+
+| Hull | Hold | Price | vs the kit |
+|---|---|---|---|
+| interceptor | 8 t | 17,100 Cr | 0.89× |
+| prospector | 12 t | 21,900 Cr | 1.15× |
+| **courier** (baseline) | 20 t | **30,000 Cr** | 1.57× |
+| tug | 24 t | 33,500 Cr | 1.75× |
+| explorer | 30 t | 38,500 Cr | 2.01× |
+| miner | 40 t | 45,900 Cr | 2.40× |
+| freighter | 60 t | 58,800 Cr | 3.07× |
+
+`patrol` (6 t, 14,300 Cr) and `raider` (10 t, 19,600 Cr) are priced by the same
+law and gated behind #26's D3 rating; the two capitals carry `priceCr: null`,
+because 400 t and 200 t are past the ceiling and outside the range the curve was
+measured over, and #56 rules they dock at nothing.
+
+**The exponent is the finding, and it is well under one.** D6 reasoned from *"a
+60 t hold moves 3× the cargo"*. Measured, it earns **1.9×**: the marginal tonne
+has to be filled with a worse good than the one before it. A roster priced on
+the assumption that income is linear in the hold would have overpriced every
+large hull by more than two to one.
+
+**Where the two constants come from.** `scripts/measure-hull-pricing.ts` flies
+`scripts/lib/greedy-trader.ts` at sixteen holds over **32 worlds** (4 seeds × 8
+galaxies), 2 h per arm, with the hold as the only thing that varies. Fitted over
+4–200 t the rate is a power law, `97.7 × hold^0.613` Cr/min, within 6% of the
+mean curve at every hold but the two ends (7.2% at 4 t, 11.0% at 200 t); the
+per-world exponent has a median of 0.616 and a p10–p90 of **0.526–0.667**, which
+is why 0.613 is quoted to three places and not four. The baseline is the fitted
+rate at 20 t times the economy's own progression unit — the measured time the
+baseline hull takes to earn `fullKitCr()`, **48.9 min median** over the same 32
+worlds, in the same arm as the curve. That derivation gives 29,980 Cr; the
+constant is the round 30,000, and rounding a price to a legible figure is what
+this whole section does. **The instrument reprints both constants beside what
+the run derives**, per the map's #118 rule.
+
+**The trading economy prices the hold and nothing else, measured rather than
+conceded.** The greedy trader fears no pirate and does not route, so a
+hardpoint, a point of integrity, a light year of tank and an AU of charge are
+worth exactly zero to it. #8's combat balance and #183's rating own those axes,
+and this section invents no figure for them — which is why the interceptor, the
+second-hardest-accelerating hull in the game, prices below the courier.
+
+**Every price here is an upper bound, and the direction is stated because two of
+the sweep's own corrections moved the answer the same way** (#25's tell). One
+bias is left: §10.1's no-slippage rule means a hop buys its whole basket at one
+price, which flatters a hold big enough to move the marginal unit. The one that
+was measured rather than argued away is working capital — the exponent collapses
+to 0.084 at 500 Cr and has stopped moving by 19,125 Cr, less than the cheapest
+hull, so a player who can buy a hull at all is past where it bites.
+
+### 7.2 The ceiling, and how many rungs the ladder holds
+
+#26's D7 puts the ceiling where the priced curve stops being interesting.
+**Measured, it never does**: §7.1's curve is a power law with no knee anywhere
+in the ladder, and the shelves in front of the trader still fill 76% of a 200 t
+hold at the top of it. So the binding limit is not the economy's, and naming
+which one it is *is* the answer rather than a substitute for one.
+
+It is the berth. `BERTH_CELL.trade` is 90 × 58 × 40 m — 208,800 m³, the largest
+clear envelope in the game — against the roster's own densest hold, the cargo
+role's **1,060 m³ of bounding box per tonne**. That admits **197 t**, priced at
+**121,900 Cr**. It is an upper bound in the safe direction: it assumes a hull
+could be a solid box at the best density measured, and #26's constraint that
+beam and height are nearly spent means growth is in length, the cheapest axis of
+the three. `HULL_CEILING_HOLD_T` is declared in `src/hull.ts` — a leaf that
+imports nothing — and re-derived from the berth catalogue in
+`tests/hull.test.ts`, which is where the two sides may meet.
+
+**The rung count is an output.** The priced roster's own adjacent price steps are
+1.28×, 1.37×, 1.12×, 1.15×, 1.19×, 1.28×, so **the widest existing step, 1.37×,
+is the gap criterion** — what counts as a hole is read off the roster rather
+than chosen. By it the priced roster has **no interior gap at all**. The one gap
+is above it: 58,800 Cr to the ceiling's 121,900 Cr is 2.07×, which holds three
+steps of at most 1.37×, so **three new rungs**:
+
+| rung | hold | price |
+|---|---|---|
+| 1 | 89 t | 74,900 Cr |
+| 2 | 133 t | 95,800 Cr |
+| 3 | 197 t | 121,900 Cr — the ceiling |
+
+Nothing chose the three: it falls out of two measured endpoints and the roster's
+own widest step, and a retune of the curve or of the berth cell moves it without
+anybody editing a number. **What the hulls at those rungs look like is not this
+section's** — #26 puts drawing them out of scope and #130 is open on ship detail
+the existing roster already lacks.
 
 ---
 
@@ -918,7 +1075,7 @@ claim like any other; these three were read off a run.
    are different pairs: run value scales by 63 for sub-tonne goods and 20 for
    tonne goods, so a single argmax cannot guard both.
 
-### 10.2 Instrument (`scripts/measure-market.ts`)
+### 10.2 Instruments (`scripts/measure-market.ts`, `scripts/measure-hull-pricing.ts`)
 
 Committed so every number in this document can be re-derived rather than
 trusted, in the discipline `scripts/measure-clamp-bite.ts` established:
@@ -945,6 +1102,30 @@ runs to exhaustion on the best intra-system pair.
 Every figure is computed through `src/market.ts`. Nothing here re-implements
 the price pipeline — an earlier version did, and its floor rate was therefore a
 second measurement that could drift from `TYPE_OFFSET` without failing anything.
+
+**§7.1 and §7.2 have their own instrument**, added by #182:
+
+```
+bun run scripts/measure-hull-pricing.ts [hours]     # default 2 h per arm
+```
+
+Nine sections: the clamp bite that §5.2's change answers, the D6 sweep of the
+hold multiplier against §5.4's brake, the hold curve and its fit, what §5.2's
+memory is worth to a greedy trader, the payback window, the priced roster, the
+ceiling, the rung count, and where the measurement is still biased. It flies
+`scripts/lib/greedy-trader.ts` — **the same engine `measure-greedy-trader.ts`
+reports §5.5 and §8 from**, which is what makes the arms of a hold sweep
+incapable of being built differently. §10.3's three riggings were all that one
+shape.
+
+**What is gated and what is run by hand**, per the map's #28 rule that the split
+be said rather than discovered. `npm test` gates §5.2's hold-invariance and its
+ratchet, every roster row against `hullPriceCr`, the exponent and baseline being
+the figures §7.1 quotes, the ceiling re-derived from the berth catalogue and the
+roster's own densities, and that no priced hull sits above it. Run by hand: the
+32-world curve, its fit, the payback window, the memory arm, the capital sweep,
+and the rung count derived from them. A sweep of 32 flights over sixteen holds
+is a minute of wall clock, which is not a suite's work.
 
 ### 10.3 Owed by the implement node — delivered, and what it found
 
@@ -1114,7 +1295,14 @@ position, name and station silently.
   the game — the market screen this spec hands the HUD node would have priced
   Narcotics at every station in the galaxy with nothing going red.
 - **The ship-roster node** — inherits 20 t and 100 Cr as v1 defaults (§6) and
-  owes hull prices (§7).
+  owed hull prices (§7). **Both halves are delivered**:
+  [#26](https://github.com/jcfischer/seelite/issues/26) settled the roster's
+  shape and [#182](https://github.com/jcfischer/seelite/issues/182) priced it in
+  §7.1, with §7.2's ceiling and rung count. What that node hands *on* is
+  narrower than what it received: the combat axes — hardpoints, integrity,
+  thrust — have no price in a trading economy and belong to
+  [#8](https://github.com/jcfischer/seelite/issues/8), and whether a shipyard
+  lists `patrol` and `raider` is #183's rating.
 - **The save/load node** — owes the format the sparse deficit map lives in
   (§5.5) and the permadeath stance (§9). The *module* the map lives in is
   settled and is no longer this one: `src/deficits.ts` since
@@ -1232,3 +1420,27 @@ position, name and station silently.
     principal's call: it reaches into #13 §5.2's fence geography and #8's risk
     pricing, and every fix (dropping the hold-check bypass, a second Narcotics
     retune, capping sub-tonne stacking) is a decision past this node's scope.
+12. **Selling a hold and buying it straight back is a money pump.** Found by
+    [#182](https://github.com/jcfischer/seelite/issues/182)'s hold sweep and
+    **not fixed by it**. §10.1 prices a whole transaction at one figure — no
+    slippage inside it — and §5.2's response then moves the price for the *next*
+    one, so a sale is quoted at the pre-trade mark and the buy-back at the
+    post-trade one. The round trip nets `PRICE_ELASTICITY` of the cargo's value,
+    **10%, per cycle, unbounded**: measured through `transactAtStation` on a
+    2.00 Cr Food row, 20 t sells for 40.0 Cr and buys back for 36.0, and six
+    cycles turn 100,000 Cr into 100,024 with the cargo unchanged.
+
+    It is not an artefact of an instrument — the shipped calculator does it, and
+    it predates #182 — but it is what made the hold sweep's first curve run
+    *backwards*: with the market's memory on, a **stronger** response makes the
+    greedy trader earn more, 8.55× at an 8 t hold and 3.11× at 20 t, because the
+    strongest mark is on the sub-tonne goods whose 63-unit stack is twenty holds
+    for a small hull. §7.1's curve is therefore measured against a market with
+    no memory, and `measure-hull-pricing.ts` section D reports what the memory is
+    worth instead of hiding it.
+
+    **Recorded rather than repaired because the repair is #7's to make.**
+    Pricing the marginal unit inside a transaction reverses §10.1's ruling and
+    moves every figure §5.4 was ratified on, including the exhaustion count and
+    the residual bound the design relies on. What it needs is a node, not a
+    patch.
