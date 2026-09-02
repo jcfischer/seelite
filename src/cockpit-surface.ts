@@ -194,6 +194,8 @@ export const COCKPIT_EMISSIVE_INTENSITIES = {
 	trim: EMISSIVE_CEILING * 0.14,
 	inset: EMISSIVE_CEILING * 0,
 	lamp: EMISSIVE_CEILING * 0.34,
+	throttleIdle: EMISSIVE_CEILING * 0.04,
+	throttleFull: EMISSIVE_CEILING * 0.32,
 } as const;
 
 export const COCKPIT_FINISHES = {

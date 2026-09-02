@@ -228,6 +228,7 @@ import {
 } from "./hull";
 import { type FleetSlot, buildShipMesh, fleetLayout } from "./ship-mesh";
 import {
+	COCKPIT_EMISSIVE_INTENSITIES,
 	COCKPIT_KEY_LIGHT,
 	applyCockpitQuality,
 	cockpitForm,
@@ -2665,7 +2666,7 @@ class Game {
 		this.cockpit.throttleFillMaterial = new THREE.MeshStandardMaterial({
 			color: 0x9b5a20,
 			emissive: 0x4a1905,
-			emissiveIntensity: 0.04,
+			emissiveIntensity: COCKPIT_EMISSIVE_INTENSITIES.throttleIdle,
 		});
 		this.cockpit.throttleFill = new THREE.Mesh(
 			new THREE.BoxGeometry(0.0011, 0.0017, 0.012),
@@ -2915,7 +2916,10 @@ class Game {
 		this.cockpit.throttleFill.scale.z = Math.max(0.08, this.throttle);
 		this.cockpit.throttleFill.position.z = (1 - this.throttle) * 0.006;
 		this.cockpit.throttleFillMaterial.emissiveIntensity =
-			0.04 + this.throttle * 0.28;
+			COCKPIT_EMISSIVE_INTENSITIES.throttleIdle +
+			this.throttle *
+				(COCKPIT_EMISSIVE_INTENSITIES.throttleFull -
+					COCKPIT_EMISSIVE_INTENSITIES.throttleIdle);
 	}
 
 	private onKey(e: KeyboardEvent, down: boolean) {

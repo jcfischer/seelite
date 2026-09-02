@@ -309,25 +309,9 @@ async function measureHullChase(page) {
 			};
 			const luma = (data, i) =>
 				0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
-			const peaks = [];
-			const peakAts = [];
-			const medians = [];
-			const lowerQuartiles = [];
-			let pixels = 0;
-			for (let sample = 0; sample < sampleCount; sample++) {
-				for (const mesh of meshes) mesh.object.visible = false;
-				const withoutShip = frame();
-				for (const mesh of meshes)
-					mesh.object.visible = mesh.visible && mesh.painted;
-				// Points are not paint. Keep this explicit even though the drawable
-				// ledger above includes them: the peak pixel sits exactly where this
-				// point sprite overlaps the fuselage, so a future Three.js type change
-				// must not silently put the lamp back into the hull sample.
-				if (navLights) navLights.visible = false;
-				const hull = frame();
+			const summarizeDifference = (hull, withoutShip) => {
 				let peak = 0;
 				let peakAt = 0;
-				let count = 0;
 				const values = [];
 				for (let i = 0; i < hull.length; i += 4) {
 					const here = luma(hull, i);
@@ -337,17 +321,41 @@ async function measureHullChase(page) {
 						peakAt = i / 4;
 					}
 					values.push(here);
-					count++;
 				}
 				values.sort((a, b) => a - b);
-				peaks.push(peak);
-				peakAts.push({
-					x: peakAt % scratch.width,
-					y: Math.floor(peakAt / scratch.width),
-				});
-				lowerQuartiles.push(values[Math.floor(values.length * 0.25)] ?? 0);
-				medians.push(values[Math.floor(values.length * 0.5)] ?? 0);
-				pixels = Math.max(pixels, count);
+				return {
+					peak,
+					peakAt: {
+						x: peakAt % scratch.width,
+						y: Math.floor(peakAt / scratch.width),
+					},
+					lowerQuartile: values[Math.floor(values.length * 0.25)] ?? 0,
+					median: values[Math.floor(values.length * 0.5)] ?? 0,
+					pixels: values.length,
+				};
+			};
+			const peaks = [];
+			const peakAts = [];
+			const medians = [];
+			const lowerQuartiles = [];
+			let pixels = 0;
+			for (const mesh of meshes) mesh.object.visible = false;
+			const withoutShip = frame();
+			for (const mesh of meshes)
+				mesh.object.visible = mesh.visible && mesh.painted;
+			// Points are not paint. Keep this explicit even though the drawable
+			// ledger above includes them: the peak pixel sits exactly where this
+			// point sprite overlaps the fuselage, so a future Three.js type change
+			// must not silently put the lamp back into the hull sample.
+			if (navLights) navLights.visible = false;
+			for (let sample = 0; sample < sampleCount; sample++) {
+				const hull = frame();
+				const summary = summarizeDifference(hull, withoutShip);
+				peaks.push(summary.peak);
+				peakAts.push(summary.peakAt);
+				lowerQuartiles.push(summary.lowerQuartile);
+				medians.push(summary.median);
+				pixels = Math.max(pixels, summary.pixels);
 			}
 			for (const mesh of meshes) mesh.object.visible = mesh.visible;
 			if (navLights) navLights.visible = navLightsVisible;
