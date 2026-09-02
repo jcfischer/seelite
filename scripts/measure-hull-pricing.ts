@@ -148,7 +148,7 @@ const CAPITAL_CAPS: readonly number[] = [
 	1_000,
 	2_000,
 	5_000,
-	19_125,
+	fullKitCr(),
 	Number.POSITIVE_INFINITY,
 ];
 
@@ -277,19 +277,30 @@ console.log(
  * across the same four windows — which is why the ladder's shape survived the
  * correction and its level did not.
  */
+let flightsFlown = 0;
 const armAt = (holdT: number, opts: RunOptions = {}): Result[] =>
-	WORLDS.map((world) =>
-		run(world, hours, {
+	WORLDS.map((world) => {
+		flightsFlown++;
+		return run(world, hours, {
 			holdT,
 			stopAtKit: false,
 			shop: false,
 			remembers: false,
 			startCr: fullKitCr(),
 			...opts,
-		}),
-	);
+		});
+	});
 
 const rateOf = (r: Result) => finite("Cr/min", r.earnedCr / r.minutes);
+
+/** Section C's stored arm, and a throw rather than `mean([])` if a caller asks
+ *  for a hold the ladder does not carry — `finite`'s rule applied to a lookup:
+ *  an instrument that quietly averages nothing is worse than one that dies. */
+const curveAt = (holdT: number): number[] => {
+	const rates = curve.get(holdT);
+	if (!rates) throw new Error(`no arm was flown at ${holdT} t`);
+	return rates;
+};
 
 console.log(
 	`\n== C. the hold curve: Cr/min against hold, ${WORLDS.length} worlds, no market memory ==`,
@@ -354,11 +365,9 @@ function fitPower(points: { h: number; r: number }[]): {
 }
 
 const perWorld = WORLDS.map((_, wi) =>
-	fitPower(HOLD_LADDER.map((h) => ({ h, r: (curve.get(h) as number[])[wi] }))),
+	fitPower(HOLD_LADDER.map((h) => ({ h, r: curveAt(h)[wi] }))),
 );
-const pooled = fitPower(
-	HOLD_LADDER.map((h) => ({ h, r: mean(curve.get(h) as number[]) })),
-);
+const pooled = fitPower(HOLD_LADDER.map((h) => ({ h, r: mean(curveAt(h)) })));
 const betas = perWorld.map((f) => f.b);
 console.log(
 	`\n  arms that ended before the ${hours} h window: ${shortArms} of ` +
@@ -379,7 +388,7 @@ console.log(
 );
 {
 	const resid = HOLD_LADDER.map((h) => {
-		const obs = mean(curve.get(h) as number[]);
+		const obs = mean(curveAt(h));
 		return Math.abs(pooled.a * h ** pooled.b - obs) / obs;
 	});
 	console.log(
@@ -407,7 +416,7 @@ console.log("\n  hold t   no memory   remembering   memory is worth");
 for (const holdT of [8, 20, 60, 200]) {
 	// Section C already flew this arm; re-flying it would be 32 identical
 	// two-hour runs per row for a figure already in hand.
-	const off = mean(curve.get(holdT) as number[]);
+	const off = mean(curveAt(holdT));
 	const on = mean(armAt(holdT, { remembers: true }).map(rateOf));
 	console.log(
 		`${rightAlign(holdT, 6)}${rightAlign(off.toFixed(0), 12)}${rightAlign(on.toFixed(0), 14)}` +
@@ -510,9 +519,28 @@ console.log(
 	);
 	console.log(
 		`  this run's fit: slope ${finite("b", pooled.b).toFixed(3)} ± ` +
-			`${finite("se", pooled.se).toFixed(3)}, which rounds to the declared ` +
-			`${HULL_PRICE_EXPONENT} at the precision it resolves`,
+			`${finite("se", pooled.se).toFixed(3)} — the standard error is over a` +
+			`\n  hundredth, so it settles neither the third digit nor the second, and the` +
+			`\n  declared ${HULL_PRICE_EXPONENT} is the mean-curve fit rounded rather than a resolved` +
+			"\n  figure. What that uncertainty costs the ladder:",
 	);
+	for (const holdT of [8, HOLD_REFERENCE_T, 60, HULL_CEILING_HOLD_T]) {
+		const at = (b: number) =>
+			Math.round(
+				(HULL_PRICE_BASELINE_CR * (holdT / HOLD_REFERENCE_T) ** b) / 100,
+			) * 100;
+		const mid = at(HULL_PRICE_EXPONENT);
+		const lo = at(HULL_PRICE_EXPONENT - pooled.se);
+		const hi = at(HULL_PRICE_EXPONENT + pooled.se);
+		console.log(
+			`    ${rightAlign(holdT, 5)} t: ${rightAlign(mid.toLocaleString("en-GB"), 8)} Cr, ` +
+				`±1σ ${Math.min(lo, hi).toLocaleString("en-GB")}-${Math.max(lo, hi).toLocaleString("en-GB")} ` +
+				// The magnitude, because a larger exponent *lowers* every price below
+				// the anchor and a signed spread there reads as a shrinking band.
+				`(${(100 * Math.max(Math.abs(hi / mid - 1), Math.abs(lo / mid - 1))).toFixed(1)}%)`,
+		);
+	}
+	console.log();
 	console.log(
 		`  this run derives the baseline at the declared exponent: ` +
 			`${finite("baseline", derivedBaseline).toFixed(0)} Cr ` +
@@ -527,7 +555,7 @@ const sortedByHold = [...PURCHASABLE_HULL_IDS].sort(
 for (const id of sortedByHold) {
 	const holdT = HULL_SPECS[id].holdT;
 	const observed = curve.has(holdT)
-		? mean(curve.get(holdT) as number[])
+		? mean(curveAt(holdT))
 		: mean(armAt(holdT).map(rateOf));
 	const price = hullPriceCr(holdT);
 	console.log(
@@ -684,7 +712,7 @@ for (const cap of CAPITAL_CAPS) {
 		// on a figure that would be identical by construction.
 		r: Number.isFinite(cap)
 			? mean(armAt(h, { capitalCapCr: cap }).map(rateOf))
-			: mean(curve.get(h) as number[]),
+			: mean(curveAt(h)),
 	}));
 	const f = fitPower(points);
 	const at = (h: number) => (points.find((p) => p.h === h) as { r: number }).r;
@@ -726,7 +754,9 @@ console.log(
 console.log(
 	`  run by hand, this file: the ${WORLDS.length}-world curve, its fit, the payback`,
 	"\n  window, the memory arm, the capital sweep, and the rung count derived from",
-	`\n  them — some ${WORLDS.length * (HOLD_LADDER.length * (1 + CAPITAL_CAPS.length) + 9)} flights of ${hours} h each. Not a suite's work, and #28's`,
+	`\n  them — ${flightsFlown} flights of ${hours} h each, counted rather than`,
+	"\n  computed from a formula: a draft's formula charged the sweep for the arms",
+	"\n  it reads back instead of re-flying. Not a suite's work, and #28's",
 	"\n  rule is that the split be said out loud rather than left to be discovered.",
 );
 console.log(

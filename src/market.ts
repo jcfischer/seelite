@@ -47,7 +47,7 @@
  */
 
 import { DOMAIN } from "./domains";
-import { HULL_SPECS, PLAYER_BASELINE_HULL } from "./hull";
+import { HULL_SPECS, PLAYER_BASELINE_HULL, requirePositiveHold } from "./hull";
 import { mix, seededRand } from "./rng";
 
 /** Elite's byte→credits step: a price byte is 0.4 Cr. */
@@ -328,33 +328,6 @@ export const decayDeficit = (deficit: number, elapsedMin: number): number =>
  */
 export const DEFICIT_SATURATION_RUNS = DEFICIT_MAX / HOLD_REFERENCE_T;
 
-/**
- * Both functions below divide by the hold, so neither may be handed a
- * non-positive one.
- *
- * A zero hold gives a non-finite price and a negative one *inverts* the
- * response, so buying a good would make it cheaper. Neither can come from the
- * roster, but a hand-edited or truncated save reaches `holdCapacityT` before
- * anything validates it, and `measure-market.ts`'s rule is that an instrument
- * dies rather than reporting garbage — a price screen has the same obligation.
- */
-const requirePositiveHold = (holdT: number): void => {
-	if (!(holdT > 0)) throw new Error(`hold must be positive, got ${holdT}`);
-};
-
-/**
- * §5.2's accumulation, which saturates rather than running away.
- *
- * **The cap is a ratchet, not a rewrite.** It is `DEFICIT_SATURATION_RUNS` of
- * the *writing* hull's hold, and it never reduces a mark already larger than
- * that — otherwise selling a freighter, trading once in a courier and buying
- * the freighter back would launder a 189 t mark down to 63, which is a brake
- * with an off switch.
- *
- * **`holdT` is required, not defaulted**, for the reason `FlightPerformance`
- * and `newCommander` give: a caller that forgot to name a hull would silently
- * get the courier's 20 t, and the two are indistinguishable in a diff.
- */
 export const addDeficit = (
 	deficit: number,
 	units: number,

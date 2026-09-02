@@ -452,8 +452,8 @@ Until that node the response was `clamp(deficit, ±63) / HOLD_REFERENCE_T`, whic
 is the same arithmetic for as long as every ship in the game holds 20 t and is
 the map's #13 failure the moment one does not: **a per-hull *scaling* on a
 bounded index gets clamped away where that type lives** — the map's own wording
-of the constraint, with the noun changed because `CONTEXT.md` reserves it for a
-Carrier's effect. One run of a 63 t hull
+of the constraint, with the noun changed because `CONTEXT.md` lists the map's
+one as an *Avoid* alias for Carrier. One run of a 63 t hull
 already reaches a ±63 *tonne* clamp, so the market's memory of a 63 t trader and
 a 200 t trader was identical — the response stopped distinguishing hulls exactly
 at the hold where §7.1's ladder begins. Measured, at 200 t the old expression
@@ -768,9 +768,13 @@ decision about hulls, and it is fixed here because §8's pump cannot be computed
 without it. Since [#181](https://github.com/jcfischer/seelite/issues/181) it is
 derived rather than declared: `HOLD_REFERENCE_T` reads the baseline hull's row
 in `src/hull.ts`, and a commander's hold is their own hull's. It stays the
-*baseline* hull's on purpose — §5.2's response is scale-free in the flown hold
-since #182, so the reference is a naming of the ladder's bottom rung rather than
-a figure any arithmetic depends on.
+*baseline* hull's on purpose: §5.2's response is scale-free in the flown hold
+since #182, so no *per-hull* arithmetic reads it. **Two laws still divide by it
+and a future roster change has to know which**: `DEFICIT_SATURATION_RUNS` is
+`DEFICIT_MAX / HOLD_REFERENCE_T`, and §7.1's price law is a ratio against the
+baseline hull's hold. Renaming which hull is `player-baseline` therefore
+re-opens §5.4's brake and §7.1's whole table together, and it is not the priced
+ladder's bottom rung either — that is the 8 t interceptor.
 
 The compounding from 100 Cr is faster than the stingy reputation suggests: on
 the canonical lane at zero fluctuation — Computers bought at 61.6 Cr and sold at
@@ -904,22 +908,31 @@ measured over, and #56 rules they dock at nothing.
 **The exponent is the finding, and it is well under one.** D6 reasoned from *"a
 60 t hold moves 3× the cargo"*. Measured, it earns **1.9×**: the marginal tonne
 has to be filled with a worse good than the one before it. A roster priced on
-the assumption that income is linear in the hold would have overpriced every
-large hull by more than two to one.
+the assumption that income is linear in the hold would have overpriced the
+freighter by **1.54×** — 105,000 Cr against 68,400 — and the 197 t ceiling by
+**2.44×**. Two-to-one is reached above the roster rather than inside it, and a
+draft of this line said "every large hull".
 
 **Where the two constants come from.** `scripts/measure-hull-pricing.ts` flies
 `scripts/lib/greedy-trader.ts` at sixteen holds over **32 worlds** (4 seeds × 8
 galaxies), 2 h per arm, with the hold as the only thing that varies. Fitted over
 4–200 t the rate is a power law, `114.8 × hold^0.612` Cr/min, within 6% of the
 mean curve at the median hold and 12.1% at its worst (4 t, below any hull in the
-roster). **The law ships two decimals, 0.61, because that is what the fit
-resolves**: the pooled slope's own standard error is 0.014, which sits in the
-third place itself, so a third digit would be inside its own noise. Two drafts
-of this paragraph got the precision argument wrong in opposite directions — one
-justified three places by the *world-to-world* spread, which is a different and
-much wider quantity (per-world exponent median 0.621, p10–p90 **0.531–0.683**),
-and the other quoted the standard error as though it supported the digit it
-sits in.
+roster). **The law ships `0.61`, and no digit of it is "resolved" by the fit.** Three
+drafts of this paragraph claimed a precision, each wrongly: by the
+*world-to-world* spread (a different and much wider quantity — per-world
+exponent median 0.621, p10–p90 **0.531–0.683**), then by the standard error as
+though it supported the digit it sits in, and the standard error is **0.014**,
+which is a hundredth and a half, so it does not settle the *second* place
+either. The honest statement is that the constant is the mean-curve fit rounded
+to two places and its uncertainty is about ±0.01, and what that costs is
+measured rather than argued: **at 0.61 ± 0.014 the courier does not move at all
+(it is the anchor), the interceptor and the freighter move 1.5% and the ceiling
+3.1%** — every one of them under a rounding step at the bottom and a few at the
+top. The ladder's shape survives its own uncertainty and the price level is
+fixed by the anchor rather than by the exponent, which is why two decimals is a
+legible constant rather than a claim about resolution.
+`measure-hull-pricing.ts` prints that band beside the declared pair.
 
 The baseline is the rate at 20 t times the economy's own progression unit: the
 measured time the baseline hull takes to earn `fullKitCr()`, **48.7 min median**
@@ -982,9 +995,12 @@ which one it is *is* the answer rather than a substitute for one.
 
 It is the berth. The largest clear envelope in the game — `BERTH_CELL.trade`, 90
 × 58 × 40 m, **208,800 m³**, the maximum over all four station types — against
-the roster's own densest hold, the cargo role's **1,060 m³ of bounding box per
+the roster's own densest hold, the cargo role's **1,059.6 m³ of bounding box per
 tonne**. Floored, because a hold that does not fit is not a ceiling, that admits
-**197 t**, priced at **141,300 Cr**. It is an upper bound in
+**197 t** (the quotient is 197.06), priced at **141,300 Cr**. The density is
+quoted to a decimal on purpose: rounded to 1,060 the same division floors to 196,
+and `tests/helpers/hull-math.ts` derives it from the envelope rather than from
+either printed figure. It is an upper bound in
 the safe direction: it assumes a hull could be a solid box at the best density
 measured, and #26's constraint that beam and height are nearly spent means growth
 is in length, the cheapest axis of the three. `HULL_CEILING_HOLD_T` is declared

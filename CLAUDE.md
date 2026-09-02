@@ -125,7 +125,8 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   `scripts/measure-hull-pricing.ts` reprints them beside what a fresh run
   derives. What is worth knowing without opening either: the exponent is well
   under one — a 60 t hold moves 3x the cargo and earns about 1.9x — so a linear
-  assumption overprices every large hull two to one.
+  assumption overprices the freighter by half again and the ceiling by better
+  than two to one.
   `HULL_CEILING_HOLD_T` is the largest hold any berth admits, declared in the
   leaf and re-derived in `tests/hull.test.ts` from the berth catalogue against
   the cargo role's hold density; the *economy* has no ceiling, so the largest

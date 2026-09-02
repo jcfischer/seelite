@@ -24,13 +24,7 @@ import { readFileSync } from "node:fs";
 import * as THREE from "three";
 import { CHARGE_CAPACITY_AU } from "../src/cruise";
 import { carrierKey } from "../src/carrier-key";
-import {
-	EQUIPMENT,
-	FUEL_TANK_LY,
-	HOLD_REFERENCE_T,
-	fullKitCr,
-	marketStationOf,
-} from "../src/market";
+import { FUEL_TANK_LY, HOLD_REFERENCE_T, marketStationOf } from "../src/market";
 import { JUMP_RANGE_LY } from "../src/galaxy";
 import {
 	CAPITAL_HULL_IDS,

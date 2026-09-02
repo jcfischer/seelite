@@ -226,6 +226,20 @@ export const HULL_PRICE_STEP_CR = 100;
 export const HULL_CEILING_HOLD_T = 197;
 
 /**
+ * Anything that divides by a hold has to refuse a non-positive one.
+ *
+ * A zero hold gives a non-finite result and a negative one *inverts* every rule
+ * built on it — §5.2's response would make a good cheaper the more of it you
+ * bought. Neither can come from the roster, but `holdCapacityT` reads a saved
+ * commander before anything validates it. **Here rather than in `market.ts`,
+ * where it also lived**: this module is the leaf both sides already import, and
+ * two copies of one guard is what the leaf rule exists to end.
+ */
+export const requirePositiveHold = (holdT: number): void => {
+	if (!(holdT > 0)) throw new Error(`hold must be positive, got ${holdT}`);
+};
+
+/**
  * A hull's price from its hold.
  *
  * Anything above `HULL_CEILING_HOLD_T` returns `null`: past the ceiling nothing
@@ -233,7 +247,7 @@ export const HULL_CEILING_HOLD_T = 197;
  * answer for the case instead of quoting an extrapolation.
  */
 export const hullPriceCr = (holdT: number): number | null => {
-	if (!(holdT > 0)) throw new Error(`hold must be positive, got ${holdT}`);
+	requirePositiveHold(holdT);
 	if (holdT > HULL_CEILING_HOLD_T) return null;
 	const raw =
 		HULL_PRICE_BASELINE_CR *
