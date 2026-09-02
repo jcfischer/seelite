@@ -19,8 +19,15 @@
  *    primitives and unit spheres are held by every station and body in the
  *    game, and taking one renders the *next* system's stations black.
  *
- * Both were built red before they were built green — see the PR body for the
- * output.
+ * **Both were built red before they were built green**, and what was broken to
+ * do it is written here rather than pointed at, because a pointer to a review
+ * thread is not a record a later reader can open. Unmarking `PANE_GEOMETRY`
+ * reddens the disjointness row on `trade`; deleting `texturesOf`'s
+ * `ShaderMaterial` uniform pass leaves `uniformMap` unfreed; deleting the
+ * texture pass and the `InstancedMesh` pass together leaves `albedo` unfreed.
+ * Writing the check also found four unmarked module-level material tables and a
+ * flat clone marked shared whose base was per-station, which is the class of
+ * defect it exists for and not a deliberate break.
  */
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";

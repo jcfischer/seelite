@@ -153,16 +153,19 @@ export function transactAtStation(
 	const { action } = input;
 	if (action.type === "buy-fuel") {
 		const wanted = JUMP_TANK_LY - input.commander.fuelLy;
-		// Rounded to the tenth of a light year §6.1 prices in, so the tank never
-		// holds a fraction of a unit nobody could have bought and the charge is
-		// always a whole number of 0.2 Cr steps.
-		const affordable =
-			Math.floor((input.commander.credits / FUEL_CR_PER_LY) * 10) / 10;
-		const ly = Math.min(Math.floor(wanted * 10) / 10, affordable);
+		const affordable = input.commander.credits / FUEL_CR_PER_LY;
+		// **Neither figure is rounded, and the first version rounded both.** A
+		// jump costs the distance flown, which is not a multiple of anything, so
+		// flooring the shortfall to the tenth §6.1 *prices* in left a residue the
+		// tank could never take back — and the next fill then asked for less than
+		// 0.1 LY, got zero, and was refused as a money problem on a full purse.
+		// The price is per light year; a fraction of one costs its fraction.
+		const ly = Math.min(wanted, affordable);
 		// Two refusals rather than one, because they send the player to
-		// different places: a full tank is not a money problem.
+		// different places — and each is read off the quantity it is about
+		// rather than off the minimum of the two.
 		if (wanted <= 0) return rejected(input, "fuel-full");
-		if (ly <= 0) return rejected(input, "insufficient-credits");
+		if (affordable <= 0) return rejected(input, "insufficient-credits");
 		return {
 			accepted: true,
 			reason: null,

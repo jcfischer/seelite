@@ -1002,10 +1002,20 @@ export function advanceWorldClock(world: World, dt: number): void {
  * is exactly what this function's own argument above rules out. So it throws,
  * and the renderer's `resetFlightToStart` inherits the limit rather than
  * papering over it.
+ *
+ * The precondition is **exported as `canResetWorldToStart`** rather than left
+ * for a caller to discover by catching. This function went from total to
+ * partial, and a partial function whose domain can only be learned from its
+ * error message is one every later caller — #89's load, a probe's reset —
+ * re-learns the hard way.
  */
+export function canResetWorldToStart(world: World): boolean {
+	return world.system.record.index === startSystem(world.galaxy).index;
+}
+
 export function resetWorldToStart(world: World): void {
 	const start = startSystem(world.galaxy);
-	if (world.system.record.index !== start.index) {
+	if (!canResetWorldToStart(world)) {
 		throw new Error(
 			`resetWorldToStart: the ship is in ${world.system.record.name}, not the start system ${start.name} — a reset does not rebuild a system (#187)`,
 		);

@@ -122,27 +122,62 @@ export interface DisposalReport {
 export function disposeSubtree(root: THREE.Object3D): DisposalReport {
 	const freed = new Set<Disposable>();
 	const kept = new Set<Disposable>();
-	const take = (resource: Disposable | null | undefined) => {
-		if (!resource) return;
-		if (isShared(resource)) {
-			kept.add(resource);
-			return;
-		}
-		if (freed.has(resource)) return;
-		freed.add(resource);
-		resource.dispose();
-	};
+	walkResources(
+		root,
+		(resource) => {
+			if (isShared(resource)) {
+				kept.add(resource);
+				return;
+			}
+			if (freed.has(resource)) return;
+			freed.add(resource);
+			resource.dispose();
+		},
+		// `InstancedMesh.dispose()` frees the instance matrix attribute, which is
+		// per-mesh and cannot be shared — so there is nothing for the `shared`
+		// rule to decide and it is not a `Disposable` in this module's sense.
+		// It rides here rather than inside the walk so `resourcesOf`, which
+		// reads a subtree that is still being drawn, has no side effect.
+		(object) => {
+			if (object instanceof THREE.InstancedMesh) object.dispose();
+		},
+	);
+	return { freed, kept };
+}
 
+/**
+ * Every GPU resource under `root`, handed to `visit` once per reference.
+ *
+ * **One traversal, because two would be two definitions of what a resource
+ * is.** `disposeSubtree` and `resourcesOf` are a pair — one frees a subtree and
+ * the other says what a second subtree is still holding — and the disjointness
+ * check in `tests/gpu-teardown.test.ts` only means anything if both are reading
+ * the same graph by the same rules. Written out twice that was a claim in a
+ * docstring; written once it is the structure.
+ *
+ * Textures come before the material that samples them, which is the order they
+ * have to be freed in for the reason `texturesOf` exists: `Material.dispose()`
+ * does not free its maps.
+ *
+ * `visitObject` is what a caller with per-object work does instead of walking
+ * again — `disposeSubtree`'s `InstancedMesh` pass is the one case, and keeping
+ * it out of the resource visit is what lets `resourcesOf` read a subtree that
+ * is still being drawn without touching it.
+ */
+function walkResources(
+	root: THREE.Object3D,
+	visit: (resource: Disposable) => void,
+	visitObject?: (object: THREE.Object3D) => void,
+) {
 	root.traverse((object) => {
 		const geometry = (object as Partial<THREE.Mesh>).geometry;
-		if (geometry) take(geometry);
+		if (geometry) visit(geometry);
 		for (const material of materialsOf(object)) {
-			for (const texture of texturesOf(material)) take(texture);
-			take(material);
+			for (const texture of texturesOf(material)) visit(texture);
+			visit(material);
 		}
-		if (object instanceof THREE.InstancedMesh) object.dispose();
+		visitObject?.(object);
 	});
-	return { freed, kept };
 }
 
 /**
@@ -150,19 +185,14 @@ export function disposeSubtree(root: THREE.Object3D): DisposalReport {
  *
  * The other half of the disjointness check: a teardown is correct when what it
  * freed from one subtree is disjoint from what a second, still-drawn subtree
- * reaches. It reads the same graph by the same rules as `disposeSubtree`, which
- * is deliberate — a second traversal with its own idea of what a resource is
- * would be comparing two different sets and calling them one.
+ * reaches. It goes through the same `walkResources` as `disposeSubtree` — not
+ * "the same rules" restated in a second loop, which is what this was and which
+ * would have let the two drift into comparing different sets and calling them
+ * one. It is side-effect free: the walk's per-object pass is a caller's, and
+ * this caller supplies none.
  */
 export function resourcesOf(root: THREE.Object3D): Set<Disposable> {
 	const out = new Set<Disposable>();
-	root.traverse((object) => {
-		const geometry = (object as Partial<THREE.Mesh>).geometry;
-		if (geometry) out.add(geometry);
-		for (const material of materialsOf(object)) {
-			for (const texture of texturesOf(material)) out.add(texture);
-			out.add(material);
-		}
-	});
+	walkResources(root, (resource) => out.add(resource));
 	return out;
 }

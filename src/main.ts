@@ -1021,7 +1021,7 @@ class Game {
 	 * rule is that the *intent* is the thing: the chain is re-derived from
 	 * wherever the ship actually is, so an off-plan jump is a re-plan rather
 	 * than a desync. It is not saved: #89 owns save/load and the galaxy
-	 * envelope has no slot for it yet.
+	 * envelope has no field for it yet.
 	 */
 	course: Course | null = null;
 	/** Why the last jump was refused, or what it did — shown on the glass beside
@@ -4401,6 +4401,11 @@ class Game {
 	 * not bound.
 	 */
 	chargeJump(): boolean {
+		// **Before the clear, not after it.** The window's own notice is what
+		// `cruisePrompt` prints while charging, so returning through the clear
+		// blanked the line for the rest of the window — and the claim below that
+		// every refusal writes a notice was false for exactly this arm.
+		if (charging(this.jumpCharge)) return false;
 		this.jumpNotice = "";
 		if (this.dock.phase !== "flying") {
 			this.jumpNotice = "cannot jump from a station";
@@ -4410,7 +4415,6 @@ class Game {
 			this.jumpNotice = "drop out of cruise first";
 			return false;
 		}
-		if (charging(this.jumpCharge)) return false;
 		const to = this.nextHop();
 		if (!to) {
 			this.jumpNotice = this.course
@@ -5361,7 +5365,7 @@ class Game {
 				.map(([name, amount]) => `${name} ${amount}`),
 			ownedEquipment: this.commander.ownedEquipment,
 			fuelLy: this.commander.fuelLy,
-			fuelCapacityLy: JUMP_TANK_LY,
+			fuelCapacityLy: this.fuelCapacityLy,
 			revision: this.stationConsoleRevision,
 		};
 		return this.stationConsoleCache;
@@ -5567,7 +5571,7 @@ class Game {
 				// not on the floor strip because `hud-and-scanner.md` §5 fixes
 				// that strip at four cells and gives the tank no home at all —
 				// which is a HUD question this node surfaced and did not settle.
-				`fuel ${this.commander.fuelLy.toFixed(1)}/${JUMP_TANK_LY} LY`,
+				`fuel ${this.commander.fuelLy.toFixed(1)}/${this.fuelCapacityLy} LY`,
 				(() => {
 					const to = this.nextHop();
 					return to ? `next ${to.name}` : "";

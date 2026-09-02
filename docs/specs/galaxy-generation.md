@@ -712,7 +712,11 @@ premium on **distance** and not on time, and jumping is not a way to wait a
 market out. The other half is a gain rather than a cost — an out-and-back jump
 pair leaves the origin station's stock deficit where it was, so a jump is not a
 way to launder a farmed pair either, which is the farm Elite's re-roll left
-open. If a witchspace duration is ever ratified, `jumpWorldTo` is the one place
+open. What `tests/world-jump.test.ts` asserts of that is the **key**: a carrier
+key derived from `world.system.record` moves with the ship and comes back, and
+the clock does not advance across the jump, so the 20-minute half-life has
+nothing to decay against. The claim about what a *market screen* then prices is
+one no headless test in this repo makes. If a witchspace duration is ever ratified, `jumpWorldTo` is the one place
 it goes.
 
 **What #187 did not build.** The Galactic Hyperdrive (§2) — a foreign-galaxy

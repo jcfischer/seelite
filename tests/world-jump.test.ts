@@ -37,6 +37,7 @@ import {
 } from "../src/system";
 import {
 	advanceWorldClock,
+	canResetWorldToStart,
 	jumpWorldTo,
 	makeSystem,
 	makeWorld,
@@ -246,27 +247,49 @@ describe("a jump moves a save key", () => {
 		);
 	});
 
-	test("a deficit recorded before a jump is still there on the way back", () => {
+	test("the key derived from the world follows the ship, and comes back", () => {
+		// **Every key here is derived from `world.system.record`**, never from a
+		// captured index. The first version of this test built its keys from two
+		// records it had already resolved and read a deficit map `jumpWorldTo`
+		// never sees, so both readings held for every possible implementation —
+		// including one that changed nothing. This one goes red on a jump that
+		// does not move `world.system`.
 		const world = makeWorld(SEED);
 		const home = world.system.record;
 		const to = neighbourOf(home);
-		const key = carrierKey(home.index, "station-trade");
-		const away = carrierKey(to.index, "station-trade");
-		const deficits = recordTrade({}, key, {
+		const liveKey = () =>
+			carrierKey(world.system.record.index, "station-trade");
+
+		const deficits = recordTrade({}, liveKey(), {
 			goodName: "Food",
 			units: 12,
 			gameTimeMin: 0,
 			holdT: 20,
 		});
+		expect(readDeficit(deficits, liveKey(), "Food", 0)).toBe(12);
 
 		jumpWorldTo(world, to);
-		// Nothing in the destination is holding the origin's memory…
-		expect(readDeficit(deficits, away, "Food", 0)).toBe(0);
+		// The market memory did not travel: the destination's trade post is a
+		// different carrier, so what the player did at home is not on its shelf.
+		expect(readDeficit(deficits, liveKey(), "Food", 0)).toBe(0);
+
 		jumpWorldTo(world, home);
-		expect(world.system.record.index).toBe(home.index);
-		// …and it is still filed under the origin when the ship comes back. The
-		// clock is what decays it (20-minute half-life, #7), and a jump does not
-		// move the clock — see `jumpWorldTo`.
-		expect(readDeficit(deficits, key, "Food", 0)).toBe(12);
+		// And it is still there on the way back, undecayed — the deficit's
+		// 20-minute half-life is driven by the clock (#7), and a jump does not
+		// move the clock. That is the property `galaxy-generation.md` §8.1 calls
+		// the gain half of this node's clock decision.
+		expect(world.gameTime).toBe(0);
+		expect(readDeficit(deficits, liveKey(), "Food", 0)).toBe(12);
 	});
+});
+
+test("the reset's precondition is askable, not only catchable", () => {
+	const world = makeWorld(SEED);
+	expect(canResetWorldToStart(world)).toBe(true);
+	jumpWorldTo(world, neighbourOf(HOME));
+	expect(canResetWorldToStart(world)).toBe(false);
+	// And the predicate and the throw agree, which is the whole point of
+	// exporting one: a gate that disagreed with the guard would be worse than
+	// no gate.
+	expect(() => resetWorldToStart(world)).toThrow();
 });

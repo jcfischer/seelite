@@ -187,3 +187,27 @@ test("the tank never overfills, however many times it is topped up", () => {
 	}
 	expect(commander.fuelLy).toBe(JUMP_TANK_LY);
 });
+
+test("a fractional shortfall can be bought back, so the tank reaches 7.0 again", () => {
+	// The defect this is written for: flooring the shortfall to §6.1's pricing
+	// tenth left a residue no purchase could take, so a tank drained by a jump
+	// of non-decimal distance — which is every jump — could never be refilled,
+	// and the next attempt was refused as *insufficient credits* on a full purse.
+	const afterAJump = {
+		...newCommander(PLAYER_BASELINE_HULL),
+		fuelLy: JUMP_TANK_LY - 2.34,
+	};
+	const filled = transactAtStation(
+		input({ commander: afterAJump, action: { type: "buy-fuel" } }),
+	);
+	expect(filled.accepted).toBe(true);
+	expect(filled.commander.fuelLy).toBeCloseTo(JUMP_TANK_LY, 12);
+	expect(STARTING_CREDITS - filled.commander.credits).toBeCloseTo(4.68, 12);
+
+	// And a second press is refused as full rather than as money.
+	const again = transactAtStation(
+		input({ commander: filled.commander, action: { type: "buy-fuel" } }),
+	);
+	expect(again.accepted).toBe(false);
+	expect(again.reason).toBe("fuel-full");
+});
