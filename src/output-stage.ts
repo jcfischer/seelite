@@ -68,8 +68,9 @@ export const VIGNETTE_MAX = 0.15;
 
 /** Where the corner falloff starts and ends, in units of half-diagonal — the
  *  centre is 0 and a corner of a 2:1 frame is 1. Well outside the HUD's own
- *  reach, so the vignette never darkens an instrument. */
-export const VIGNETTE_INNER = 0.55;
+ *  reach, so the vignette never darkens an instrument. Module-private: it is
+ *  interpolated into the GLSL below and nothing outside asks for it. */
+const VIGNETTE_INNER = 0.55;
 
 /** Peak-to-peak dither, in output codes. One code, centred: the noise spans
  *  ±0.5/255 so its mean is zero and a flat region keeps its exact value.
@@ -250,7 +251,7 @@ export class SeeliteOutputPass extends OutputPass {
  * buffer extension, or a driver returning nothing — reads as zero, which turns
  * the setting off rather than gambling on it.
  */
-export function supportedSamples(renderer: THREE.WebGLRenderer): number {
+function supportedSamples(renderer: THREE.WebGLRenderer): number {
 	const gl = renderer.getContext() as WebGL2RenderingContext;
 	if (typeof gl.getInternalformatParameter !== "function") return 0;
 	try {

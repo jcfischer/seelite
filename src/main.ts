@@ -6657,7 +6657,24 @@ if (query.has("model-viewer")) {
 	// for.
 	// The settings screen is a player-facing feature, so it is not gated.
 	import("./settings-panel").then(({ mountSettingsPanel }) =>
-		mountSettingsPanel(game.settings, () => game.releaseHeldKeys()),
+		mountSettingsPanel(
+			game.settings,
+			() => game.releaseHeldKeys(),
+			// What the antialiasing row is *actually* rendering at, when the GPU
+			// grants less than the player asked for (#200). Without this the row
+			// reads "4x" on a machine giving 2x or none, which is a setting that
+			// lies about itself — and the clamp exists precisely because the
+			// alternative to granting less is a black frame.
+			(key, value) => {
+				if (key !== "antialias" || value === 0) return null;
+				const got = grantedSamples(game.renderer, value as number);
+				return got === value
+					? null
+					: got === 0
+						? "unsupported here"
+						: `${got}x here`;
+			},
+		),
 	);
 
 	if (query.has("perf"))

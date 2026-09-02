@@ -25,7 +25,15 @@ const STYLE_ID = "seelite-settings-style";
 const STYLE = `
 #seelite-settings {
   position: fixed; inset: 0; z-index: 60; display: flex;
-  align-items: center; justify-content: center;
+  /* Centred while it fits, and scrolled from the top when it does not. Plain
+     centring clips a dialog taller than the viewport at BOTH ends, and the top
+     end cannot be scrolled back to: the overflow goes above the scroll origin.
+     #200 added three rows, which took the dialog past a 640px-tall window and
+     put the first row and the hint out of reach. No backticks in this comment,
+     deliberately - the block is a template literal. */
+  align-items: safe center; justify-content: center;
+  overflow-y: auto; overscroll-behavior: contain;
+  padding: 16px 0;
   background: rgba(2, 6, 12, 0.72);
   font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
   color: #cfe3ff;
@@ -35,6 +43,7 @@ const STYLE = `
   background: rgba(6, 12, 22, 0.96);
   border: 1px solid rgba(120, 160, 220, 0.4); border-radius: 6px;
 }
+#seelite-settings .granted { color: #7f97b8; }
 #seelite-settings h2 {
   margin: 0 0 14px; font-size: 13px; letter-spacing: .18em;
   text-transform: uppercase; color: #ffd479; font-weight: 600;
@@ -58,6 +67,21 @@ export function mountSettingsPanel(
 	store: SettingsStore,
 	/** Called as the screen opens, to drop keys the player is still holding. */
 	releaseHeldKeys?: () => void,
+	/**
+	 * What a row is *actually* getting, when that differs from what it says.
+	 *
+	 * The panel cannot work this out: only the renderer knows, and this module
+	 * deliberately holds no reference to one. It exists because #200's
+	 * antialiasing count is clamped to what the GPU will multisample a
+	 * half-float target at — so a machine that grants 2x renders 2x for a player
+	 * who chose 4x, and a row reading "4x" with no qualification is a lie the
+	 * player cannot see through. Returning `null` means the row is telling the
+	 * truth as written.
+	 */
+	granted?: <K extends keyof Settings>(
+		key: K,
+		value: Settings[K],
+	) => string | null,
 ) {
 	if (!document.getElementById(STYLE_ID)) {
 		const style = document.createElement("style");
@@ -88,9 +112,10 @@ export function mountSettingsPanel(
 			// call, not unpick a parenthesised assertion to find it.
 			const describe = spec.describe as (v: Settings[typeof key]) => string;
 			const value = describe(store.value[key]);
+			const actual = granted?.(key, store.value[key]);
 			return `<div class="row" role="option" aria-selected="${i === cursor}">
   <span class="name">${spec.label}</span>
-  <span class="value">← ${value} →</span>
+  <span class="value">← ${value}${actual ? ` <span class="granted">(${actual})</span>` : ""} →</span>
 </div>
 <div class="note">${spec.note}</div>`;
 		}).join("");

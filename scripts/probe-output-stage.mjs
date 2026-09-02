@@ -16,11 +16,12 @@
  * check renders the same frame twice with exactly one term moved and asserts a
  * **direction**.
  *
- * Moving one term is the part that needed a method on `Game`. The samples are
- * gated on the quality key beside #99's environment and #101's seam map, and
- * measuring antialiasing across that key would measure all three — each of
- * which moves the edges being counted. `Game.setComposerSamples` takes an
- * explicit count for this reason, and the gate is its default argument.
+ * Moving one term is the part that needed a method on `Game`. The count is the
+ * player's own settings row, and driving a measurement through the store would
+ * notify every other listener and write the value to `localStorage` — a probe
+ * should not leave a preference behind on the machine it measured.
+ * `Game.setComposerSamples` takes an explicit count for that reason, and the
+ * player's row is its default argument.
  *
  * ## The two statistics
  *

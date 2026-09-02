@@ -17,6 +17,18 @@
  * `0` would otherwise ask for a zero-sized drawing buffer.
  */
 
+/**
+ * The two values every on/off row takes.
+ *
+ * Named once and shared, rather than each row spelling its own pair and `Toggle`
+ * being derived from whichever happened to be first. That was the arrangement
+ * for a round: `Toggle` read `SCHEMA.dither.allowed`, so editing the dither's
+ * values silently retyped the vignette. A shared abstraction owns the shared
+ * values.
+ */
+const TOGGLE = ["on", "off"] as const;
+export type Toggle = (typeof TOGGLE)[number];
+
 /** One place for the schema, because the default and the validator drift apart
  *  when they are written separately. */
 const SCHEMA = {
@@ -148,7 +160,7 @@ const SCHEMA = {
 	 */
 	dither: {
 		fallback: "on" as const,
-		allowed: ["on", "off"] as const,
+		allowed: TOGGLE,
 		label: "Dither",
 		describe: (v: string) => (v === "on" ? "On" : "Off"),
 		note: "Breaks up the banding in dark gradients — empty space, and the shadow side of a planet — by moving each pixel less than one shade at random. It costs a small but real slice of a frame — far less than Antialiasing, and off is genuinely off. Off shows the bands the eight-bit screen actually has.",
@@ -163,7 +175,7 @@ const SCHEMA = {
 	 */
 	vignette: {
 		fallback: "on" as const,
-		allowed: ["on", "off"] as const,
+		allowed: TOGGLE,
 		label: "Vignette",
 		describe: (v: string) => (v === "on" ? "On" : "Off"),
 		note: "Darkens the corners of the cockpit view by up to 15%, so the frame's edges stop competing with the instruments. Never applied in the chase view. Off is the flat frame.",
@@ -171,7 +183,6 @@ const SCHEMA = {
 } as const;
 
 export type Quality = (typeof SCHEMA.quality.allowed)[number];
-export type Toggle = (typeof SCHEMA.dither.allowed)[number];
 export type Settings = {
 	renderScale: number;
 	quality: Quality;
@@ -340,7 +351,10 @@ export class SettingsStore {
 	 * is a target that will not allocate at all.
 	 */
 	set<K extends keyof Settings>(key: K, value: Settings[K]) {
-		if (!this.allowed(key).includes(value)) return;
+		// Through `accept`, which is the loader's own membership check — the
+		// first version of this line reimplemented it, and two paths that must
+		// agree about what a legal value is are two paths that will not.
+		if (accept(key, value) === undefined) return;
 		if (this.current[key] === value) return;
 		this.current = { ...this.current, [key]: value };
 		saveSettings(this.current);
