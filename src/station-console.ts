@@ -150,6 +150,17 @@ export interface StationMarketScreenInput {
 	 * ships no such caller, so it declares no such helper.
 	 */
 	deficitOf: (goodName: string) => number;
+	/**
+	 * The flown hull's hold, tonnes — what §5.2's response saturates against
+	 * (#182).
+	 *
+	 * On the input rather than looked up, for the reason `CommanderState.hull`
+	 * is: a pure screen that reached for a renderer's notion of "the player's
+	 * ship" would be a second place the roster is read. Required and not
+	 * defaulted, so a caller that forgot cannot silently draw the courier's
+	 * prices for a freighter.
+	 */
+	holdT: number;
 }
 
 /**
@@ -163,7 +174,7 @@ export function stationMarketScreen(
 	input: StationMarketScreenInput,
 	row: MarketRowFn = marketRow,
 ): readonly ConsoleMarketRow[] {
-	const { station, economy, gameTimeMin, deficitOf } = input;
+	const { station, economy, gameTimeMin, deficitOf, holdT } = input;
 	return COMMODITIES.map((commodity): ConsoleMarketRow => {
 		// §8.5.1: the test comes first. Asking for a price so the row can be
 		// greyed out throws at every non-fence station in the galaxy.
@@ -171,7 +182,7 @@ export function stationMarketScreen(
 			return { commodity, listed: false };
 		const base = row(commodity, economy, station, gameTimeMin);
 		const deficit = deficitOf(commodity.name);
-		const priceCr = stockResponse(base.priceCr, deficit);
+		const priceCr = stockResponse(base.priceCr, deficit, holdT);
 		const quantity = shelfQuantity(base.quantity, deficit);
 		if (deficit === 0) return { commodity, listed: true, priceCr, quantity };
 		return {

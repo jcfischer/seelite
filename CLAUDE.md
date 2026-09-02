@@ -106,6 +106,32 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
 - **`src/units.ts` and `src/vec3.ts` are leaves.** They import nothing, and
   `tests/headless.test.ts` asserts it. A value import into either can close an
   import cycle or drag a renderer into the headless tier.
+- **`stockResponse` reads a *hold*, not a station.** #182 made §5.2's deficit
+  scale with the flown hull: the mark is divided by `holdT` and clamped at
+  `DEFICIT_SATURATION_RUNS` of it, so one full run of any hull moves a price by
+  the same 10%. `holdT` is required at every call — `stockResponse`,
+  `addDeficit`, `recordTrade`, `stationMarketScreen` — for `FlightPerformance`'s
+  reason: a caller that forgot would silently get the courier's 20 t. The
+  expression it replaced divided a ±63 **tonne** clamp by a fixed 20, which is
+  identical at the baseline hull and stops distinguishing hulls entirely above
+  63 t. The rejected arm is kept runnable as `fixedReferenceResponse`.
+- **A hull's price is a law, not a figure, and the ceiling is geometric.**
+  `hullPriceCr(holdT)` in `src/hull.ts` is #182's measured curve —
+  `HULL_PRICE_BASELINE_CR × (holdT / the baseline hull's hold) ^
+  HULL_PRICE_EXPONENT` — and every row's `priceCr` is asserted against it, the
+  way `integrity` is. **The constants are not restated here**: they moved once
+  during review and this file said so for a round, which is the drift a third
+  copy buys. `economy-trade.md` §7.1 owns them and
+  `scripts/measure-hull-pricing.ts` reprints them beside what a fresh run
+  derives. What is worth knowing without opening either: the exponent is well
+  under one — a 60 t hold moves 3x the cargo and earns about 1.9x — so a linear
+  assumption overprices the freighter by half again and the ceiling by better
+  than two to one.
+  `HULL_CEILING_HOLD_T` is the largest hold any berth admits, declared in the
+  leaf and re-derived in `tests/hull.test.ts` from the berth catalogue against
+  the cargo role's hold density; the *economy* has no ceiling, so the largest
+  berth is what caps the ladder. Above it `hullPriceCr` returns `null`, which is
+  what the two capitals carry.
 - **`src/hull.ts` is the third leaf, and it is where a hull's numbers live.**
   Role, selected variant, measured envelope, mass, thrust, hold, hardpoints,
   integrity and fuel — one row per hull, imports nothing. `sim.ts` derives every

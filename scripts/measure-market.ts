@@ -50,6 +50,7 @@ import {
 	floorRate,
 	forEachLegalPair,
 	residualMarginCr,
+	richestClosablePair,
 	runsToExhaustion,
 	surveyResiduals,
 	sweepDomain,
@@ -397,34 +398,24 @@ console.log(
 // table names the richest pairs as the unclosable ones on the excluded
 // direction. The pair that matters here is the richest one the deficit *can*
 // close, since the unclosable ones are bounded by the residual instead.
-let richestClosable = {
-	buyCr: 0,
-	sellCr: 0,
-	margin: 0,
-	good: "—",
-	leg: "",
-	economy: 0,
-};
-forEachLegalPair((pair) => {
-	const margin = pair.sellCr - pair.buyCr;
-	if (margin <= richestClosable.margin) return;
-	if (residualMarginCr(pair.buyCr, pair.sellCr) > 0) return; // unclosable
-	richestClosable = {
-		buyCr: pair.buyCr,
-		sellCr: pair.sellCr,
-		margin,
-		good: pair.good.name,
-		leg: `${pair.buyStation}→${pair.sellStation}`,
-		economy: pair.economy,
-	};
-}, FLUCT_PAIRS);
+// The search itself lives in `market-math.ts` beside `surveyResiduals`, for
+// that helper's own reason: #182 sweeps the same pair across holds and across
+// both response arms, and two copies of the closable criterion is drift waiting
+// to happen.
+const richestClosable = richestClosablePair(HOLD_REFERENCE_T);
 const exhaustion = runsToExhaustion({
 	buyBaseCr: richestClosable.buyCr,
 	sellBaseCr: richestClosable.sellCr,
+	// The baseline hull's, which is what §5.4 was ratified on. #182 made the
+	// figure a parameter; the hold *sweep* over it is that node's report, and
+	// this one keeps reporting the section it belongs to.
+	holdT: HOLD_REFERENCE_T,
 	maxRuns: 12,
 });
 console.log(
-	`${richestClosable.good} at economy ${richestClosable.economy}, ${richestClosable.leg}: opens at ${fixed(richestClosable.margin, 1)} Cr/t`,
+	`${richestClosable.good.name} at economy ${richestClosable.economy}, ` +
+		`${richestClosable.buyStation}→${richestClosable.sellStation}: ` +
+		`opens at ${fixed(richestClosable.margin, 1)} Cr/t`,
 );
 console.log(
 	`runs ${exhaustion.runs}\tmargins ${exhaustion.margins.map((m) => fixed(m, 1)).join(" → ")}\ttotal ${fixed(exhaustion.profitCr, 0)} Cr`,
@@ -469,7 +460,7 @@ for (const good of COMMODITIES) {
 // reported figures would quietly disagree.
 
 console.log("\n── §5.4: sell/buy ratios the deficit cannot close ──");
-const survey = surveyResiduals();
+const survey = surveyResiduals(HOLD_REFERENCE_T);
 console.log(`the deficit closes any ratio below ${CLOSABLE_RATIO.toFixed(3)}`);
 console.log(
 	`worst legal intra-system ratio: ${survey.worstRatio.ratio.toFixed(2)} — ${survey.worstRatio.good.name} at economy ${survey.worstRatio.economy}, ${survey.worstRatio.buyStation}→${survey.worstRatio.sellStation}, margin only ${(survey.worstRatio.sellCr - survey.worstRatio.buyCr).toFixed(1)} Cr/t`,
@@ -493,7 +484,11 @@ console.log("\n── §5.4: the same comparison, both sides saturated ──");
 let bestInterFresh = 0;
 let bestInterSaturated = 0;
 forEachReachablePair({ stride: 64, maxDest: 1 }, (from, to) => {
-	const { freshCr, saturatedCr } = bestResidualBetween(from, to);
+	const { freshCr, saturatedCr } = bestResidualBetween(
+		from,
+		to,
+		HOLD_REFERENCE_T,
+	);
 	bestInterFresh = Math.max(bestInterFresh, freshCr);
 	bestInterSaturated = Math.max(bestInterSaturated, saturatedCr);
 });
@@ -520,7 +515,7 @@ console.log(
 	"  (legal goods over every ordered leg; contraband held to the fence leg, which §4 scopes it to)",
 );
 const valued = COMMODITIES.filter((c) => !c.sellOnly)
-	.map((c) => ({ good: c, ...bestRunValueCr(c) }))
+	.map((c) => ({ good: c, ...bestRunValueCr(c, HOLD_REFERENCE_T) }))
 	.sort((a, b) => b.runCr - a.runCr);
 for (const row of valued)
 	console.log(

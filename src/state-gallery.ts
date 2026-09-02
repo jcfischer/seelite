@@ -6,6 +6,7 @@
 import * as THREE from "three";
 import { TRAVERSAL_SECONDS_DEEP, TRAVERSAL_SECONDS_NEAR } from "./docking";
 import {
+	HOLD_REFERENCE_T,
 	MARKET_PERIOD_MIN,
 	type MarketStation,
 	type StationTypeKey,
@@ -324,6 +325,11 @@ function renderMarketTab(view: ConsoleView): string {
 		economy: view.station.economy,
 		gameTimeMin: view.gameTimeMin,
 		deficitOf: (name) => view.station.moved[name] ?? 0,
+		// The gallery flies the baseline hull, and `HOLD_REFERENCE_T` *is* that
+		// hull's row since #181 — reached through `market.ts`, already imported
+		// here, rather than adding a second spelling of one figure to a
+		// renderer-side module.
+		holdT: HOLD_REFERENCE_T,
 	});
 	const traded = rows.filter((row) => row.listed);
 	const absent = rows.filter((row) => !row.listed);

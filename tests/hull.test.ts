@@ -20,6 +20,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import * as THREE from "three";
 import { CHARGE_CAPACITY_AU } from "../src/cruise";
 import { carrierKey } from "../src/carrier-key";
@@ -28,9 +29,14 @@ import { JUMP_RANGE_LY } from "../src/galaxy";
 import {
 	CAPITAL_HULL_IDS,
 	DOCKABLE_HULL_IDS,
+	HULL_CEILING_HOLD_T,
 	HULL_IDS,
+	HULL_PRICE_BASELINE_CR,
+	HULL_PRICE_EXPONENT,
+	HULL_PRICE_STEP_CR,
 	HULL_SPECS,
 	HULL_VARIANT_IDS,
+	hullPriceCr,
 	isCapital,
 	PLAYER_BASELINE_HULL,
 	PURCHASABLE_HULL_IDS,
@@ -49,7 +55,16 @@ import {
 } from "../src/sim";
 import { newCommander, transactAtStation } from "../src/station-commerce";
 import { STATION_GEOMETRY, STATION_TYPES } from "../src/station";
-import { berthFits, stationInterior } from "../src/station-interior";
+import {
+	BERTH_CELL,
+	berthFits,
+	stationInterior,
+} from "../src/station-interior";
+import {
+	derivedCeiling,
+	m3PerTonneOfHold,
+	stretchedToHold,
+} from "./helpers/hull-math";
 
 /** 0.1 m, in kilometres — the quantum the table's envelopes are rounded **up**
  *  to, and the tolerance the row below allows. */
@@ -441,5 +456,208 @@ describe("who a station has a berth for", () => {
 					id,
 					interior.berths.some((b) => berthFits(b, HULL_SPECS[id].env)),
 				]).toEqual([type, id, false]);
+	});
+});
+
+describe("what a hull costs (#182, #26's D4 and D7)", () => {
+	test("every row is `hullPriceCr` of its own hold, and nothing else", () => {
+		// The same discipline `integrity` gets: the figure is stored because a
+		// screen reads a row rather than calling a function, and it is asserted
+		// against the law so a hand-edited price is a deliberate deviation.
+		for (const id of HULL_IDS)
+			expect([id, HULL_SPECS[id].priceCr]).toEqual([
+				id,
+				hullPriceCr(HULL_SPECS[id].holdT),
+			]);
+	});
+
+	test("the two capitals have no price, and it is the ceiling that says so", () => {
+		// Not a hand-maintained exemption list: the law returns `null` above the
+		// ceiling, and the capitals are above it. A capital that shrank into a
+		// dockable hold would get a price from the same rule.
+		for (const id of CAPITAL_HULL_IDS) {
+			expect(HULL_SPECS[id].holdT).toBeGreaterThan(HULL_CEILING_HOLD_T);
+			expect(HULL_SPECS[id].priceCr).toBeNull();
+		}
+		// …and every hull that is *not* a capital is priced, so `null` never
+		// silently spreads to a hull a shipyard is meant to sell.
+		for (const id of DOCKABLE_HULL_IDS)
+			expect([id, HULL_SPECS[id].priceCr]).not.toEqual([id, null]);
+	});
+
+	test("the price law is monotone in the hold and cheaper per tonne as it grows", () => {
+		// Both halves matter and the second is the measured finding: the exponent
+		// is under one, so a hull that carries three times as much does not cost
+		// three times as much, because it does not *earn* three times as much.
+		// A build with a linear law passes the first assertion and fails this one.
+		let last = 0;
+		let lastPerTonne = Number.POSITIVE_INFINITY;
+		for (let holdT = 1; holdT <= HULL_CEILING_HOLD_T; holdT++) {
+			const price = hullPriceCr(holdT) as number;
+			expect(price).toBeGreaterThanOrEqual(last);
+			last = price;
+			const perTonne = price / holdT;
+			expect(perTonne).toBeLessThanOrEqual(lastPerTonne + 1e-9);
+			lastPerTonne = perTonne;
+		}
+		expect(HULL_PRICE_EXPONENT).toBeGreaterThan(0);
+		expect(HULL_PRICE_EXPONENT).toBeLessThan(1);
+	});
+
+	test("the shipped prices are the ones §7.1 publishes, to the credit", () => {
+		// **A pin, and it is not derived from its subject.** The check it replaces
+		// was `hullPriceCr(baselineHold) === HULL_PRICE_BASELINE_CR`, which is
+		// `baseline × 1^exponent` and holds for any pair of constants — so it
+		// could not have caught the pair moving, which is exactly what happened
+		// once in this node's own review. These seven figures are the table
+		// `economy-trade.md` §7.1 prints and a shipyard screen will read; moving
+		// either constant fails here first.
+		expect(
+			Object.fromEntries(
+				PURCHASABLE_HULL_IDS.map((id) => [id, HULL_SPECS[id].priceCr]),
+			),
+		).toEqual({
+			interceptor: 20_000,
+			prospector: 25_600,
+			courier: 35_000,
+			tug: 39_100,
+			explorer: 44_800,
+			miner: 53_400,
+			freighter: 68_400,
+		});
+		expect(hullPriceCr(HULL_CEILING_HOLD_T)).toBe(141_300);
+		expect(HULL_PRICE_BASELINE_CR % HULL_PRICE_STEP_CR).toBe(0);
+		// Every quoted price is on the step, so a spec table and a shipyard screen
+		// cannot round differently.
+		for (const id of HULL_IDS) {
+			const price = HULL_SPECS[id].priceCr;
+			if (price !== null) expect(price % HULL_PRICE_STEP_CR).toBe(0);
+		}
+	});
+
+	test("the prose that quotes the constants agrees with the leaf", () => {
+		// **The drift this catches happened.** #182's review moved the pair once,
+		// and `CLAUDE.md` and §1's constant table went on printing the superseded
+		// figures with every gate green — a spec is a claim like any other, and
+		// §1's own rule is that a quoted figure has a re-derivation path.
+		// `hud-scanner-spec.test.ts` is the precedent for reading one here.
+		const read = (path: string) =>
+			readFileSync(new URL(`../${path}`, import.meta.url), "utf8").replace(
+				/\s+/g,
+				" ",
+			);
+		const withCommas = (n: number) => n.toLocaleString("en-GB");
+		// **The published tables, row by row, rather than every price-shaped number
+		// in the sections.** Two drafts of this guard got the scope wrong: one
+		// searched for `30,000 Cr x (hold`, a shape neither file writes, so it
+		// passed at any constants; the next matched every "NN,N00 Cr" in the whole
+		// spec and tripped on commodity figures and on the derivation's own
+		// intermediate. What binds is the claim actually being made — §7.1 and
+		// §7.2 publish a table of hulls and holds against prices, and every row of
+		// it has to be `hullPriceCr` of the hold in the same row.
+		const specAll = read("docs/specs/economy-trade.md");
+		const priceSections = specAll.slice(
+			specAll.indexOf("### 7.1 Hull prices"),
+			specAll.indexOf("## 8. The progression pump"),
+		);
+		expect(priceSections.length).toBeGreaterThan(1000);
+		const rows = [
+			...priceSections.matchAll(
+				/\|[^|]*\|\s*(\d+) t\s*\|\s*\*{0,2}(\d{1,3}(?:,\d{3})+) Cr\*{0,2}\s*(?:—[^|]*)?\|/g,
+			),
+		].map((m) => ({
+			holdT: Number(m[1]),
+			priceCr: Number(m[2].replace(/,/g, "")),
+		}));
+		// Seven civilian hulls and three rungs — if the tables stop being read the
+		// loop below would pass on nothing at all.
+		expect(rows.length).toBe(PURCHASABLE_HULL_IDS.length + 3);
+		for (const row of rows)
+			expect([row.holdT, row.priceCr as number | null]).toEqual([
+				row.holdT,
+				hullPriceCr(row.holdT),
+			]);
+
+		// **CLAUDE.md names the constants rather than restating them**, so there is
+		// nothing there to go stale — which is the fix for the round where it
+		// carried a superseded pair with every gate green.
+		const claudeMd = read("CLAUDE.md");
+		expect(claudeMd).toContain("HULL_PRICE_BASELINE_CR");
+		expect(claudeMd).toContain("HULL_PRICE_EXPONENT");
+		const hullTrap = claudeMd.slice(
+			claudeMd.indexOf("A hull's price is a law"),
+			claudeMd.indexOf("`src/hull.ts` is the third leaf"),
+		);
+		expect(hullTrap.length).toBeGreaterThan(200);
+		expect(hullTrap).not.toMatch(/\d{1,3}(?:,\d{3})+ Cr/);
+
+		// The spec is the owner, so it must carry the live pair and the table.
+		const spec = specAll;
+		expect(spec).toContain(
+			`HULL_PRICE_BASELINE_CR = ${withCommas(HULL_PRICE_BASELINE_CR)} Cr`,
+		);
+		expect(spec).toContain(`HULL_PRICE_EXPONENT = ${HULL_PRICE_EXPONENT}`);
+		expect(spec).toContain(`HULL_CEILING_HOLD_T = ${HULL_CEILING_HOLD_T} t`);
+		for (const id of PURCHASABLE_HULL_IDS)
+			expect([
+				id,
+				spec.includes(`${withCommas(HULL_SPECS[id].priceCr as number)} Cr`),
+			]).toEqual([id, true]);
+	});
+
+	test("the ceiling is the berth catalogue's, re-derived from it", () => {
+		// **The leaf cannot import the berth cell, so this is where the two sides
+		// meet.** `hull.ts` imports nothing and `headless.test.ts` asserts it, so
+		// `HULL_CEILING_HOLD_T` is declared there and re-derived here — the same
+		// split `env` and `integrity` already use.
+		//
+		// The derivation: the largest clear berth envelope in the game, against
+		// the densest hold the roster has measured. It is an upper bound in the
+		// safe direction, so it assumes a hull could be a solid box at that
+		// density.
+		const derived = derivedCeiling();
+		expect(HULL_CEILING_HOLD_T).toBe(derived.holdT);
+		// …and the derivation reached the rows it is supposed to: the largest
+		// berth in the game and the roster's densest hold, named rather than
+		// assumed, so a retune that moved either shows up here as a changed name
+		// rather than only as a changed number.
+		expect(derived.largestType).toBe("trade");
+		expect(derived.densestHull).toBe("freighter");
+		// …and it really is a ceiling: every hull a berth admits is under it, and
+		// the two that no berth admits are over it.
+		for (const id of DOCKABLE_HULL_IDS)
+			expect(HULL_SPECS[id].holdT).toBeLessThanOrEqual(HULL_CEILING_HOLD_T);
+	});
+
+	test("the ceiling is the last hold a berth can admit, and one tonne more is not", () => {
+		// **The control on the re-derivation above, and it reads the ceiling.** A
+		// draft of this test built its boxes out of `BERTH_CELL` alone and claimed
+		// to pin `HULL_CEILING_HOLD_T`; it passed at any ceiling, because nothing
+		// in it mentioned one. What binds is the pair either side of the boundary.
+		//
+		// The hull is the cargo role stretched along the axis #26 leaves free —
+		// beam and height are nearly spent — so its hold grows with its length at
+		// the freighter's own measured density, which is the density the ceiling
+		// is derived from.
+		const freighter = HULL_SPECS.freighter;
+		const berths = stationInterior(
+			"trade",
+			STATION_GEOMETRY.trade.aperturePlaneKm,
+			1,
+		).berths;
+		const fits = (holdT: number) =>
+			berths.some((berth) =>
+				berthFits(
+					berth,
+					stretchedToHold(holdT, m3PerTonneOfHold(freighter), BERTH_CELL.trade),
+				),
+			);
+		expect(fits(HULL_CEILING_HOLD_T)).toBe(true);
+		expect(fits(HULL_CEILING_HOLD_T + 1)).toBe(false);
+		// …and it is the *first* failure, not merely a failure a long way up: the
+		// whole roster below it fits, which is what makes the boundary the ceiling
+		// rather than an arbitrary large number.
+		for (const id of DOCKABLE_HULL_IDS)
+			expect([id, fits(HULL_SPECS[id].holdT)]).toEqual([id, true]);
 	});
 });

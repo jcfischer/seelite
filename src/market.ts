@@ -46,8 +46,8 @@
  * derivable from a type.
  */
 
-import { HULL_SPECS, PLAYER_BASELINE_HULL } from "./hull";
 import { DOMAIN } from "./domains";
+import { HULL_SPECS, PLAYER_BASELINE_HULL, requirePositiveHold } from "./hull";
 import { mix, seededRand } from "./rng";
 
 /** Elite's byte→credits step: a price byte is 0.4 Cr. */
@@ -308,9 +308,35 @@ export const DEFICIT_MAX = QUANTITY_CAP;
 export const decayDeficit = (deficit: number, elapsedMin: number): number =>
 	deficit * 2 ** (-elapsedMin / DEFICIT_HALF_LIFE_MIN);
 
-/** §5.2's accumulation, which saturates at the cap rather than running away. */
-export const addDeficit = (deficit: number, units: number): number =>
-	clamp(deficit + units, -DEFICIT_MAX, DEFICIT_MAX);
+/**
+ * §5.2's saturation point, **in runs of whatever hull is flying** — #182's
+ * answer to #26's D6.
+ *
+ * `DEFICIT_MAX` is 63 *tonnes*, which is Bell's shelf cap borrowed as a memory
+ * cap, and it was the right number for exactly as long as every ship in the
+ * game held 20 t. Against a roster it is the map's #13 failure — a per-hull
+ * scaling on a bounded index gets clamped away where that type lives — and #13's
+ * own fix applies: the deficit is read **as a multiple of the flown hold** and
+ * the clamp is on that ratio, where it cannot reach. One full run of any hull
+ * then leaves the same mark and every hull saturates after the same number of
+ * runs.
+ *
+ * **`economy-trade.md` §5.2 owns the measurement and the argument**; this
+ * docstring carries the rule and the one fact a reader of the module needs:
+ * `DEFICIT_MAX / HOLD_REFERENCE_T` and not a fresh figure, so at the baseline
+ * hull's hold the new expression is the old one term for term.
+ */
+export const DEFICIT_SATURATION_RUNS = DEFICIT_MAX / HOLD_REFERENCE_T;
+
+export const addDeficit = (
+	deficit: number,
+	units: number,
+	holdT: number,
+): number => {
+	requirePositiveHold(holdT);
+	const cap = Math.max(DEFICIT_SATURATION_RUNS * holdT, Math.abs(deficit));
+	return clamp(deficit + units, -cap, cap);
+};
 
 /**
  * §5.1: which market epoch a game time falls in for one station. The `phase`
@@ -319,10 +345,18 @@ export const addDeficit = (deficit: number, units: number): number =>
 export const marketEpoch = (phaseMin: number, gameTimeMin: number): number =>
 	Math.floor((gameTimeMin + phaseMin) / MARKET_PERIOD_MIN);
 
-/** The tightest the response can squeeze a price *before* the floor: the
- *  ±`DEFICIT_MAX` clamp bounds the multiplier at `1 − 0.1 × 63 / 20`. */
+/**
+ * The tightest the response can squeeze a price *before* the floor.
+ *
+ * **A constant again, and now it really is one.** It was `1 − 0.1 × 63 / 20`,
+ * which was the bound only for a 20 t hull; `DEFICIT_SATURATION_RUNS` makes the
+ * saturated factor the same for every hull in the roster, so §5.4's 0.685 and
+ * the 1.920 closable ratio derived from it hold at every hold rather than at
+ * one. Same value, and that is the point of deriving the new constant from the
+ * old pair rather than choosing it.
+ */
 export const MIN_STOCK_RESPONSE_FACTOR =
-	1 - (PRICE_ELASTICITY * DEFICIT_MAX) / HOLD_REFERENCE_T;
+	1 - PRICE_ELASTICITY * DEFICIT_SATURATION_RUNS;
 
 /**
  * **The floor is needed here, and an earlier version removed it on a false
@@ -333,14 +367,24 @@ export const MIN_STOCK_RESPONSE_FACTOR =
  * below it: 0.4 × 0.685 = 0.274 Cr, under the floor the row was just given.
  * A bound that holds for most of the domain is not a bound.
  */
-export const stockResponse = (priceCr: number, deficit: number): number =>
-	Math.max(
+export const stockResponse = (
+	priceCr: number,
+	deficit: number,
+	holdT: number,
+): number => {
+	requirePositiveHold(holdT);
+	return Math.max(
 		PRICE_STEP_CR,
 		priceCr *
 			(1 +
-				(PRICE_ELASTICITY * clamp(deficit, -DEFICIT_MAX, DEFICIT_MAX)) /
-					HOLD_REFERENCE_T),
+				PRICE_ELASTICITY *
+					clamp(
+						deficit / holdT,
+						-DEFICIT_SATURATION_RUNS,
+						DEFICIT_SATURATION_RUNS,
+					)),
 	);
+};
 
 /**
  * The units actually on the shelf once the deficit is applied.

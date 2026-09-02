@@ -147,7 +147,129 @@ export interface HullSpec {
 	 *  parameter but are handed the constant. */
 	readonly tankLy: number;
 	readonly chargeAu: number;
+	/**
+	 * What a shipyard charges, credits — #26's D4, measured by #182.
+	 *
+	 * `hullPriceCr(holdT)` below is the law and this is its output, stored for
+	 * the reason `integrity` is: a screen reads a row rather than calling a
+	 * function, and `tests/hull.test.ts` asserts every row against the law, so a
+	 * hand-edited figure is a deliberate deviation rather than a typo.
+	 *
+	 * **`null` where the law has nothing to say.** The two capitals hold 400 t
+	 * and 200 t, both past `HULL_CEILING_HOLD_T` and outside the hold range the
+	 * curve was measured over, and #56 rules that they dock at nothing. A number
+	 * there would be an extrapolation wearing a measurement's clothes, which is
+	 * the failure `galaxy-generation.md` §2.1 carried for years. Whether a
+	 * shipyard *lists* a priced hull is a separate question and
+	 * `PURCHASABLE_HULL_IDS` is where it is answered: `patrol` and `raider` hold
+	 * 6 t and 10 t, well inside the measured range, so the law answers for them
+	 * and #183's rating decides whether they are for sale.
+	 */
+	readonly priceCr: number | null;
 }
+
+/**
+ * #182's measured price law: what a hull's **hold** is worth, capitalised.
+ *
+ * `price(hold) = HULL_PRICE_BASELINE_CR x (hold / the baseline hold) ^ exponent`,
+ * rounded. The exponent is the fitted elasticity of the greedy trader's Cr/min
+ * on the hold; the baseline is that fit's rate at the baseline hull's hold times
+ * the measured time it takes to earn `fullKitCr()`. So a hull costs what its
+ * hold earns back over one kit — #26's own two anchors, used as anchors.
+ *
+ * **`economy-trade.md` §7.1 owns the derivation, the figures and the caveats**,
+ * and this docstring deliberately carries none of them: a measurement narrative
+ * copied into three files diverges, and one copy of this one already did.
+ * `scripts/measure-hull-pricing.ts` reprints both constants beside what a fresh
+ * run derives, which is the map's #118 rule.
+ *
+ * **Two decimals is a legible rounding of the fit, not a resolved figure.** The
+ * slope's standard error is about a hundredth and a half, so it settles neither
+ * the third place nor the second; what §7.1 measures instead is what that
+ * uncertainty costs the ladder, and the answer is under a couple of rounding
+ * steps everywhere.
+ */
+export const HULL_PRICE_EXPONENT = 0.61;
+
+/** The baseline hull's price, credits — the law's anchor. See the exponent
+ *  above for where both figures come from. */
+export const HULL_PRICE_BASELINE_CR = 35_000;
+
+/** Prices are quoted to the nearest hundred credits, like every other figure in
+ *  `economy-trade.md` §7. Finer would be false precision against a fitted
+ *  exponent; §7.1 there carries the fit's own standard error and the
+ *  world-to-world spread, and this file deliberately does not restate either. */
+export const HULL_PRICE_STEP_CR = 100;
+
+/**
+ * The largest hold that can dock anywhere, tonnes — #26's D7, and the answer is
+ * not the economy's.
+ *
+ * D7 sets the ceiling where the priced curve stops being interesting.
+ * **Measured, it never does** — a power law with no knee anywhere in the ladder,
+ * with the shelves still filling most of a 200 t hold at the top of it — so the
+ * binding limit is geometric, and naming which one it is *is* the answer rather
+ * than a substitute for one. §7.2 there carries the measured figures.
+ *
+ * It is the largest clear berth envelope in the game against the roster's own
+ * densest hold: the cargo role's bounding box per tonne, carried out to the
+ * berth cell. An upper bound in the safe direction, because it assumes a hull
+ * could be a solid box at that density, and #26's constraint that beam and
+ * height are nearly spent means growth is in length — the cheapest of the three
+ * axes to spend.
+ *
+ * **Declared here rather than derived here, because this module is a leaf.** It
+ * imports nothing and `tests/headless.test.ts` asserts it, so a `BERTH_CELL`
+ * import would drag `station-interior.ts` into the third leaf.
+ * `tests/hull.test.ts` re-derives it from the berth catalogue and the roster's
+ * measured envelopes, which is the same split `integrity` and `env` already
+ * use.
+ */
+export const HULL_CEILING_HOLD_T = 197;
+
+/**
+ * Anything that divides by a hold has to refuse a non-positive one.
+ *
+ * A zero hold gives a non-finite result and a negative one *inverts* every rule
+ * built on it — §5.2's response would make a good cheaper the more of it you
+ * bought. Neither can come from the roster, but `holdCapacityT` reads a saved
+ * commander before anything validates it. **Here because this module is the leaf
+ * both `market.ts` and `station-commerce.ts` already import**, so the one guard
+ * has one home rather than a copy at each divider.
+ */
+export const requirePositiveHold = (holdT: number): void => {
+	if (!(holdT > 0)) throw new Error(`hold must be positive, got ${holdT}`);
+};
+
+/**
+ * The law at an arbitrary exponent, and the ceiling check off.
+ *
+ * Exported for `measure-hull-pricing.ts`, which prints what the fit's own
+ * uncertainty costs the ladder by evaluating the same law at the exponent ± its
+ * standard error. Without it the instrument had the formula and the rounding
+ * step written out a second time, and a step change would have landed in the
+ * leaf while the printed band went on rounding the old way.
+ */
+export const priceAtExponent = (holdT: number, exponent: number): number => {
+	requirePositiveHold(holdT);
+	const raw =
+		HULL_PRICE_BASELINE_CR *
+		(holdT / HULL_SPECS[PLAYER_BASELINE_HULL].holdT) ** exponent;
+	return Math.round(raw / HULL_PRICE_STEP_CR) * HULL_PRICE_STEP_CR;
+};
+
+/**
+ * A hull's price from its hold.
+ *
+ * Anything above `HULL_CEILING_HOLD_T` returns `null`: past the ceiling nothing
+ * docks, so there is no price rather than a large one, and a caller has to
+ * answer for the case instead of quoting an extrapolation.
+ */
+export const hullPriceCr = (holdT: number): number | null => {
+	requirePositiveHold(holdT);
+	if (holdT > HULL_CEILING_HOLD_T) return null;
+	return priceAtExponent(holdT, HULL_PRICE_EXPONENT);
+};
 
 /**
  * The seven civilian hulls a shipyard sells (#26's D3).
@@ -189,6 +311,7 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		integrity: 100,
 		tankLy: 7,
 		chargeAu: 12,
+		priceCr: 35_000,
 	},
 	interceptor: {
 		role: "fast",
@@ -201,6 +324,7 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		integrity: 95,
 		tankLy: 5,
 		chargeAu: 10,
+		priceCr: 20_000,
 	},
 	freighter: {
 		role: "cargo",
@@ -215,6 +339,7 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		integrity: 166,
 		tankLy: 7,
 		chargeAu: 12,
+		priceCr: 68_400,
 	},
 	miner: {
 		role: "industrial",
@@ -227,6 +352,7 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		integrity: 215,
 		tankLy: 6,
 		chargeAu: 10,
+		priceCr: 53_400,
 	},
 	patrol: {
 		role: "security",
@@ -247,6 +373,7 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		integrity: 85,
 		tankLy: 6,
 		chargeAu: 12,
+		priceCr: 16_800,
 	},
 	explorer: {
 		role: "survey",
@@ -261,6 +388,7 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		// hull is for. Nothing reads it yet — see `tankLy` above.
 		tankLy: 9,
 		chargeAu: 16,
+		priceCr: 44_800,
 	},
 	raider: {
 		role: "outlaw",
@@ -273,6 +401,7 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		integrity: 81,
 		tankLy: 6,
 		chargeAu: 10,
+		priceCr: 22_900,
 	},
 	carrier: {
 		role: "capital",
@@ -285,6 +414,7 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		integrity: 2635,
 		tankLy: 12,
 		chargeAu: 30,
+		priceCr: null,
 	},
 	tug: {
 		role: "salvage",
@@ -297,6 +427,7 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		integrity: 152,
 		tankLy: 6,
 		chargeAu: 10,
+		priceCr: 39_100,
 	},
 	prospector: {
 		role: "prospect",
@@ -309,6 +440,7 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		integrity: 98,
 		tankLy: 6,
 		chargeAu: 12,
+		priceCr: 25_600,
 	},
 	dreadnought: {
 		role: "battle-line",
@@ -321,6 +453,7 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		integrity: 2402,
 		tankLy: 12,
 		chargeAu: 30,
+		priceCr: null,
 	},
 };
 

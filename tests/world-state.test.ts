@@ -18,6 +18,7 @@ import { describe, expect, test } from "bun:test";
 import { generateGalaxy } from "../src/galaxy";
 import { carrierKey, compareCarrierKeys } from "../src/carrier-key";
 import { type DeficitMap, recordTrade } from "../src/deficits";
+import { HOLD_REFERENCE_T } from "../src/market";
 import { LOCAL_CARRIER_ID } from "../src/station";
 import { generateContents } from "../src/system";
 import {
@@ -907,7 +908,12 @@ const populated = (): WorldState => {
 		occurredAt: 21,
 		cause: PLAYER,
 	});
-	const deficits: DeficitMap = recordTrade({}, KEY, "Food", 12, 20);
+	const deficits: DeficitMap = recordTrade({}, KEY, {
+		goodName: "Food",
+		units: 12,
+		gameTimeMin: 20,
+		holdT: HOLD_REFERENCE_T,
+	});
 	w = {
 		...w,
 		galaxies: w.galaxies.map((g, i) =>

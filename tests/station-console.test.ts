@@ -20,6 +20,7 @@ import {
 	type Commodity,
 	EQUIPMENT,
 	FUEL_CR_PER_LY,
+	HOLD_REFERENCE_T,
 	type MarketStation,
 	MARKET_PERIOD_MIN,
 	UNIVERSAL_GATE_CAP,
@@ -31,6 +32,12 @@ import {
 	stockResponse,
 } from "../src/market";
 import { TRAVERSAL_SECONDS_DEEP, TRAVERSAL_SECONDS_NEAR } from "../src/docking";
+import { PLAYER_BASELINE_HULL } from "../src/hull";
+import {
+	LARGE_CARGO_BAY_BONUS_T,
+	commanderHold,
+	newCommander,
+} from "../src/station-commerce";
 import {
 	flightFloorVisible,
 	requiredDisplayTL,
@@ -67,7 +74,13 @@ test("obligation 3: the builder calls marketRow only where listsCommodity is tru
 	for (const station of [TRADE, FENCE]) {
 		const asked: string[] = [];
 		stationMarketScreen(
-			{ station, economy: ECONOMY, gameTimeMin: 0, deficitOf: noDeficit },
+			{
+				station,
+				economy: ECONOMY,
+				gameTimeMin: 0,
+				deficitOf: noDeficit,
+				holdT: HOLD_REFERENCE_T,
+			},
 			(commodity, economy, s, gameTimeMin) => {
 				asked.push(commodity.name);
 				return marketRow(commodity, economy, s, gameTimeMin);
@@ -96,6 +109,7 @@ test("M5: seventeen rows at every station, priced iff the station lists the good
 			economy: ECONOMY,
 			gameTimeMin: 0,
 			deficitOf: noDeficit,
+			holdT: HOLD_REFERENCE_T,
 		});
 		expect(rows.length).toBe(COMMODITIES.length);
 		expect(rows.map((r) => r.commodity.name)).toEqual(
@@ -137,6 +151,7 @@ test("obligation 4: a non-zero deficit carries a signed delta, a zero one carrie
 		economy: ECONOMY,
 		gameTimeMin: 0,
 		deficitOf: moved(good.name, 12),
+		holdT: HOLD_REFERENCE_T,
 	});
 	const movedRow = rows.find((r) => r.commodity.name === good.name);
 	if (!movedRow) throw new Error("the moved good is not on the screen");
@@ -166,12 +181,16 @@ test("obligation 4: the delta is measured against this epoch's base, not the las
 			economy: ECONOMY,
 			gameTimeMin,
 			deficitOf: moved(good.name, 12),
+			holdT: HOLD_REFERENCE_T,
 		});
 		const row = rows.find((r) => r.commodity.name === good.name);
 		if (!row) throw new Error("the moved good is not on the screen");
-		expect(row.priceCr).toBeCloseTo(stockResponse(base.priceCr, 12), 9);
+		expect(row.priceCr).toBeCloseTo(
+			stockResponse(base.priceCr, 12, HOLD_REFERENCE_T),
+			9,
+		);
 		expect(row.priceDeltaCr as number).toBeCloseTo(
-			stockResponse(base.priceCr, 12) - base.priceCr,
+			stockResponse(base.priceCr, 12, HOLD_REFERENCE_T) - base.priceCr,
 			9,
 		);
 		expect(row.quantity).toBe(shelfQuantity(base.quantity, 12));
@@ -403,4 +422,53 @@ test("M6: a delta that rounds to zero gets no arrow", () => {
 	// screen with no deltas on it at all.
 	expect(signedDelta(4.83, 1)).toBe("↑4.8");
 	expect(signedDelta(-12, 0)).toBe("↓12");
+});
+
+test("#182: the screen's prices follow the flown hold, bay included", () => {
+	// **The rendered consequence of §5.2's change, covered headlessly.**
+	// `main.ts` feeds `stationMarketScreen` the flown hold through
+	// `commanderHold(...).capacityT`, so a Large Cargo Bay changes what a marked
+	// station *draws* — and nothing else in this repo asserts that pair. The
+	// browser tier is where the wiring itself is checked; what is checkable here
+	// is that the two functions `main.ts` composes disagree in the direction the
+	// spec says.
+	const good = priceyGood(TRADE);
+	const bare = newCommander(PLAYER_BASELINE_HULL);
+	const withBay = {
+		...bare,
+		ownedEquipment: ["Large Cargo Bay"],
+	};
+	expect(commanderHold(bare).capacityT).toBe(HOLD_REFERENCE_T);
+	expect(commanderHold(withBay).capacityT).toBe(
+		HOLD_REFERENCE_T + LARGE_CARGO_BAY_BONUS_T,
+	);
+	const priceAt = (holdT: number) => {
+		const row = stationMarketScreen({
+			station: TRADE,
+			economy: ECONOMY,
+			gameTimeMin: 0,
+			deficitOf: moved(good.name, 12),
+			holdT,
+		}).find((r) => r.commodity.name === good.name);
+		if (!row) throw new Error("the moved good is not on the screen");
+		return row.priceCr as number;
+	};
+	// A bigger hold divides the same mark by more, so the same 12 t deficit moves
+	// the price less — the response is scale-free in the hold since #182.
+	expect(priceAt(commanderHold(withBay).capacityT)).toBeLessThan(
+		priceAt(commanderHold(bare).capacityT),
+	);
+	// …and with no mark at all the hold makes no difference, which is what stops
+	// the row above passing on a build that simply scaled every price by hold.
+	const unmarked = (holdT: number) =>
+		(
+			stationMarketScreen({
+				station: TRADE,
+				economy: ECONOMY,
+				gameTimeMin: 0,
+				deficitOf: noDeficit,
+				holdT,
+			}).find((r) => r.commodity.name === good.name) as { priceCr: number }
+		).priceCr;
+	expect(unmarked(20)).toBe(unmarked(60));
 });

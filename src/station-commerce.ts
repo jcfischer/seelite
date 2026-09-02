@@ -164,7 +164,8 @@ export function transactAtStation(
 		good.name,
 		input.gameTimeMin,
 	);
-	const priceCr = stockResponse(base.priceCr, deficit);
+	const holdT = holdCapacityT(input.commander);
+	const priceCr = stockResponse(base.priceCr, deficit, holdT);
 	const shelf = shelfQuantity(base.quantity, deficit);
 	if (action.type === "buy-commodity") {
 		if (good.sellOnly) return rejected(input, "commodity-sell-only");
@@ -184,13 +185,12 @@ export function transactAtStation(
 				...withCargo(input.commander, good, quantity),
 				credits: input.commander.credits - priceCr * quantity,
 			},
-			deficits: recordTrade(
-				input.deficits,
-				input.stationKey,
-				good.name,
-				quantity,
-				input.gameTimeMin,
-			),
+			deficits: recordTrade(input.deficits, input.stationKey, {
+				goodName: good.name,
+				units: quantity,
+				gameTimeMin: input.gameTimeMin,
+				holdT,
+			}),
 		};
 	}
 	if ((input.commander.cargo[good.name] ?? 0) < quantity)
@@ -202,13 +202,12 @@ export function transactAtStation(
 			...withCargo(input.commander, good, -quantity),
 			credits: input.commander.credits + priceCr * quantity,
 		},
-		deficits: recordTrade(
-			input.deficits,
-			input.stationKey,
-			good.name,
-			-quantity,
-			input.gameTimeMin,
-		),
+		deficits: recordTrade(input.deficits, input.stationKey, {
+			goodName: good.name,
+			units: -quantity,
+			gameTimeMin: input.gameTimeMin,
+			holdT,
+		}),
 	};
 }
 

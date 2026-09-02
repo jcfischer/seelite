@@ -27,7 +27,12 @@ import {
 	recordTrade,
 } from "../src/deficits";
 import { generateGalaxy } from "../src/galaxy";
-import { COMMODITIES, DEFICIT_HALF_LIFE_MIN, DEFICIT_MAX } from "../src/market";
+import {
+	COMMODITIES,
+	DEFICIT_HALF_LIFE_MIN,
+	DEFICIT_MAX,
+	HOLD_REFERENCE_T,
+} from "../src/market";
 import { LOCAL_CARRIER_ID } from "../src/station";
 import { generateContents } from "../src/system";
 import { codeOf, srcFiles } from "./lib/source-scan";
@@ -41,6 +46,16 @@ const SYSTEMS = generateGalaxy(WORLD, 0).systems.slice(0, 80);
 describe("§5.5 the deficit map is sparse, lazy, and round-trips", () => {
 	const KEY = carrierKey(412, LOCAL_CARRIER_ID.trade);
 	const FOOD = "Food";
+	/** One trade at the baseline hull's hold, which is what every row here is
+	 *  about. `holdT` was spelled out at sixteen call sites after #182 widened
+	 *  the record, so the next field added to `TradeRecord` would have been an
+	 *  edit at every call site in this file. */
+	const trade = (units: number, gameTimeMin: number, goodName = FOOD) => ({
+		goodName,
+		units,
+		gameTimeMin,
+		holdT: HOLD_REFERENCE_T,
+	});
 
 	test("an untouched station reads zero and costs nothing", () => {
 		const map: DeficitMap = {};
@@ -49,14 +64,14 @@ describe("§5.5 the deficit map is sparse, lazy, and round-trips", () => {
 	});
 
 	test("buying adds, selling subtracts", () => {
-		const bought = recordTrade({}, KEY, FOOD, 20, 100);
+		const bought = recordTrade({}, KEY, trade(20, 100));
 		expect(readDeficit(bought, KEY, FOOD, 100)).toBeCloseTo(20, 10);
-		const sold = recordTrade({}, KEY, FOOD, -20, 100);
+		const sold = recordTrade({}, KEY, trade(-20, 100));
 		expect(readDeficit(sold, KEY, FOOD, 100)).toBeCloseTo(-20, 10);
 	});
 
 	test("the mark halves over one half-life, on read and not on a tick", () => {
-		const map = recordTrade({}, KEY, FOOD, 40, 0);
+		const map = recordTrade({}, KEY, trade(40, 0));
 		expect(readDeficit(map, KEY, FOOD, DEFICIT_HALF_LIFE_MIN)).toBeCloseTo(
 			20,
 			10,
@@ -71,27 +86,25 @@ describe("§5.5 the deficit map is sparse, lazy, and round-trips", () => {
 
 	test("it saturates at the cap rather than running away", () => {
 		let map: DeficitMap = {};
-		for (let i = 0; i < 20; i++) map = recordTrade(map, KEY, FOOD, 63, 0);
+		for (let i = 0; i < 20; i++) map = recordTrade(map, KEY, trade(63, 0));
 		expect(readDeficit(map, KEY, FOOD, 0)).toBe(DEFICIT_MAX);
-		for (let i = 0; i < 40; i++) map = recordTrade(map, KEY, FOOD, -63, 0);
+		for (let i = 0; i < 40; i++) map = recordTrade(map, KEY, trade(-63, 0));
 		expect(readDeficit(map, KEY, FOOD, 0)).toBe(-DEFICIT_MAX);
 	});
 
 	test("a mark under one unit reads as nothing", () => {
-		const map = recordTrade({}, KEY, FOOD, 20, 0);
+		const map = recordTrade({}, KEY, trade(20, 0));
 		// 20 → under 1 unit after log2(20) half-lives.
 		const faded = DEFICIT_HALF_LIFE_MIN * (Math.log2(20) + 0.01);
 		expect(Math.abs(readDeficit(map, KEY, FOOD, faded))).toBe(0);
 	});
 
 	test("a faded row is dropped, so the save does not grow forever", () => {
-		let map = recordTrade({}, KEY, FOOD, 20, 0);
+		let map = recordTrade({}, KEY, trade(20, 0));
 		map = recordTrade(
 			map,
 			carrierKey(9, LOCAL_CARRIER_ID.refinery),
-			"Furs",
-			5,
-			0,
+			trade(5, 0, "Furs"),
 		);
 		expect(Object.keys(map).length).toBe(2);
 		const pruned = pruneDeficits(map, DEFICIT_HALF_LIFE_MIN * 8);
@@ -99,8 +112,8 @@ describe("§5.5 the deficit map is sparse, lazy, and round-trips", () => {
 	});
 
 	test("a trade that cancels itself leaves no row at all", () => {
-		let map = recordTrade({}, KEY, FOOD, 20, 0);
-		map = recordTrade(map, KEY, FOOD, -20, 0);
+		let map = recordTrade({}, KEY, trade(20, 0));
+		map = recordTrade(map, KEY, trade(-20, 0));
 		expect(map[KEY]).toBeUndefined();
 	});
 
@@ -108,11 +121,13 @@ describe("§5.5 the deficit map is sparse, lazy, and round-trips", () => {
 		let map = recordTrade(
 			{},
 			carrierKey(1, LOCAL_CARRIER_ID.trade),
-			FOOD,
-			20,
-			0,
+			trade(20, 0),
 		);
-		map = recordTrade(map, carrierKey(2, LOCAL_CARRIER_ID.trade), FOOD, -20, 0);
+		map = recordTrade(
+			map,
+			carrierKey(2, LOCAL_CARRIER_ID.trade),
+			trade(-20, 0),
+		);
 		expect(Object.keys(map).length).toBe(2);
 		expect(
 			readDeficit(map, carrierKey(1, LOCAL_CARRIER_ID.trade), FOOD, 0),
@@ -131,9 +146,11 @@ describe("§5.5 the deficit map is sparse, lazy, and round-trips", () => {
 				map = recordTrade(
 					map,
 					carrierKey(i, s.localCarrierId),
-					COMMODITIES[i % COMMODITIES.length].name,
-					i % 2 === 0 ? 20 : -13,
-					t,
+					trade(
+						i % 2 === 0 ? 20 : -13,
+						t,
+						COMMODITIES[i % COMMODITIES.length].name,
+					),
 				);
 			}
 		// **Pinned, not bounded.** `economy-trade.md` §10.3 quotes this corpus as
@@ -153,8 +170,8 @@ describe("§5.5 the deficit map is sparse, lazy, and round-trips", () => {
 	});
 
 	test("a pruned map round-trips to the same readings as the original", () => {
-		let map = recordTrade({}, KEY, FOOD, 63, 0);
-		map = recordTrade(map, KEY, "Furs", -40, 0);
+		let map = recordTrade({}, KEY, trade(63, 0));
+		map = recordTrade(map, KEY, trade(-40, 0, "Furs"));
 		const at = DEFICIT_HALF_LIFE_MIN * 2;
 		const pruned = parseDeficits(
 			JSON.parse(JSON.stringify(pruneDeficits(map, at))),
@@ -184,7 +201,7 @@ describe("§5.5 the deficit map is sparse, lazy, and round-trips", () => {
 
 	test("the drop rule is one unit, and it is the same one everywhere", () => {
 		expect(DEFICIT_DROP_UNITS).toBe(1);
-		const map = recordTrade({}, KEY, FOOD, DEFICIT_DROP_UNITS / 2, 0);
+		const map = recordTrade({}, KEY, trade(DEFICIT_DROP_UNITS / 2, 0));
 		expect(map[KEY]).toBeUndefined();
 	});
 });
