@@ -163,6 +163,25 @@ describe("the jump itself", () => {
 		inOrder(reset, "resetWorldToStart(this.world)", "this.rebuildSystem()");
 	});
 
+	test("the jump prompt is not gated behind the target range", () => {
+		// **The playtest defect, pinned.** The jump line sat inside
+		// `cruisePrompt`'s `targetKm < 3600 * ASSIST_CAP_KMS` branch, so it
+		// appeared only with a target selected *and* the ship already within
+		// 7,200 km of it. A ship arrives 1 AU out, so in practice the one prompt
+		// for this node's whole mechanic was never seen — the principal set a
+		// course, flew forward and got "press J to cruise".
+		//
+		// A source scan rather than a behavioural one for this file's stated
+		// reason: `Game` needs Three and a DOM. What it can hold is the
+		// ordering, which is the whole of the bug — the hop is read before any
+		// range test, so no range can hide it.
+		const prompt = methodBody("cruisePrompt");
+		inOrder(prompt, "const hop = this.nextHop()", "if (targetKm === null)");
+		inOrder(prompt, "const hop = this.nextHop()", "3600 * ASSIST_CAP_KMS");
+		// And it is returned from that read, not merely computed there.
+		expect(prompt).toContain("if (hop) return");
+	});
+
 	test("cancelling clears the armed jump, not only the charge", () => {
 		// A charge that has fired is already idle, so a `charging` guard alone
 		// would let damage on the terminal frame report a cancellation and the

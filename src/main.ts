@@ -3439,17 +3439,32 @@ class Game {
 		// "press J to cruise" beside a cell still printing "0.0/12 AU".
 		if (chargeReadsEmpty(this.chargeAu))
 			return "no drive charge — wait for it to regenerate";
+		// **A set course outranks the cruise hint, and that is a playtest
+		// correction.** The jump line used to sit inside the `targetKm` branch
+		// below, so it appeared only with a target selected *and* the ship
+		// already within 7,200 km of it — and a ship arrives 1 AU out. The
+		// principal set a course, flew forward, and saw nothing: the one prompt
+		// for the mechanic this node exists to build was unreachable in practice.
+		// Five sage rounds and 1,110 headless tests had not found it, because
+		// none of them asks whether a player would ever see the line.
+		//
+		// It wins over "press J to cruise" rather than sharing the row, because
+		// cruise is discoverable without this line — the key help along the
+		// bottom of the frame names it — and the jump was not discoverable
+		// anywhere.
+		//
+		// **This is the prompt only.** A *persistent* indication that a course is
+		// set is #117's, and it is a real gap: today the set course appears in
+		// the legacy HUD alone (`?legacy`), because `hud-and-scanner.md` §5 fixes
+		// the floor strip at four cells and gives it no home. This line does not
+		// stand in for that.
+		const hop = this.nextHop();
+		if (hop) return `press \` to jump to ${hop.name}`;
 		if (targetKm === null) return "T selects a target";
 		// An hour at the cap, which is 7,200 km. Below that the crawl is the
 		// intended experience — #10 §3 bounds the drop radius by exactly this
 		// argument — and above it the answer is always cruise.
-		if (targetKm < 3600 * ASSIST_CAP_KMS) {
-			// Nothing to say about cruise, which is when a set course is worth
-			// saying something about: the crossing is short, so the next thing
-			// the pilot does is leave the system.
-			const to = this.nextHop();
-			return to ? `press \` to jump to ${to.name}` : "";
-		}
+		if (targetKm < 3600 * ASSIST_CAP_KMS) return "";
 		return "press J to cruise";
 	}
 
