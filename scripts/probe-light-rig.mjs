@@ -90,7 +90,7 @@ import {
 	tally,
 } from "./probe-guard.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
-import { GAME_TIME_S, SEED } from "./lib/view-set.mjs";
+import { GAME_TIME_S as CLOCK, SEED } from "./lib/view-set.mjs";
 import { installViewPlacement } from "./probe-guard.mjs";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
@@ -104,7 +104,6 @@ const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
  * `view-set.mjs`'s `SEED` and `FIXTURE` docstrings own what the fixture is and
  * is not; a test measures it.
  */
-const CLOCK = GAME_TIME_S;
 const SUBJECT = "station-trade";
 /** Eight silhouette radii: the framing `cockpit-backlit` uses, where the
  *  station is about a third of the frame and its plating is resolvable. */

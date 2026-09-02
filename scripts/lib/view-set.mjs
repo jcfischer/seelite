@@ -43,10 +43,16 @@
  *   refinery here, and rescued the phrase by reading "kind" as the aperture's —
  *   slot and pad, "and both of those are present". That reading is false too,
  *   and was when it was written: seed 47 generates a trade station and a
- *   shipyard, and `STATION_GEOMETRY` gives both of them a **slot** (`station.ts`;
- *   the pad roles are refinery and outpost, and have been since #28). There is
- *   no pad in this fixture at all, which is exactly why `refinery-cradle-berth`
- *   names seed 2 and the outpost frame is a workbench shot.
+ *   shipyard, and `STATION_GEOMETRY` gives both of them a **slot**
+ *   (`station.ts`). The pad kind is not new either — the refinery has carried
+ *   one since #28 and the outpost since #58, both before #147. There is no pad
+ *   in this fixture at all, which is exactly why `refinery-cradle-berth` names
+ *   seed 2 and the outpost frame is a workbench shot.
+ *
+ *   "Slot" and "pad" here are `aperture.kind` values, not the berth aliases
+ *   `CONTEXT.md` asks to be avoided — that entry's own scope note names
+ *   `aperture.kind === "slot"` as the case where the alias rule fires on an
+ *   English word.
  * - **No gas giant.** The largest planet is a 5,473 km rocky world, so the two
  *   `largest-planet` views below no longer caption their subject as one.
  *
@@ -88,8 +94,16 @@ export const FIXTURE = Object.freeze({
 		Object.freeze({ id: "planet-5", radiusKm: 5473, gasGiant: false }),
 		Object.freeze({ id: "planet-4", radiusKm: 4487, gasGiant: false }),
 	]),
-	/** Station roles, in generation order. Both are slot apertures (#174). */
-	stations: Object.freeze(["trade", "shipyard"]),
+	/**
+	 * Station roles in generation order, each with the `aperture.kind`
+	 * `STATION_GEOMETRY` gives it. The kind is data rather than a word in this
+	 * comment because it is half the claim: there is no pad in this fixture, and
+	 * a seed that later grew one should be an edit here and not a rewritten test.
+	 */
+	stations: Object.freeze([
+		Object.freeze({ role: "trade", aperture: "slot" }),
+		Object.freeze({ role: "shipyard", aperture: "slot" }),
+	]),
 });
 
 /**

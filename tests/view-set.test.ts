@@ -207,12 +207,11 @@ describe("the view set itself", () => {
  * **The measurement half of `FIXTURE`** — `view-set.mjs` carries why it is data
  * and not prose (#174).
  *
- * **A regression pin and not an oracle**, which is worth saying plainly because
- * the first draft of this comment claimed more. `FIXTURE` was populated by
- * reading `makeWorld(47)` back, so it is not independent evidence of what the
- * fixture *should* contain and nothing here could tell a good start system from
- * a bad one. What it does is hold the two apart in *time*: a later generator
- * change moves the world and not the constant, so the drift that ran from #118
+ * **A regression pin and not an oracle.** `FIXTURE` was populated by reading
+ * `makeWorld(SEED)` back, so it is not independent evidence of what the fixture
+ * *should* contain and nothing here can tell a good start system from a bad one.
+ * What it does is hold the constant and the world apart in *time*: a later
+ * generator change moves one and not the other, so the drift that ran from #118
  * to #174 unnoticed is a red run instead. That is the whole claim.
  */
 describe("the pinned seed's world", () => {
@@ -224,13 +223,12 @@ describe("the pinned seed's world", () => {
 
 	test("generates the planets the fixture declares, largest first", () => {
 		// **The collection and the comparator `capture-views.mjs` resolves
-		// `largest-planet` with**: `bodies` filtered to planets, sorted on raw
-		// `radiusKm` with an id tiebreak. Both halves matter and both were wrong
-		// in the first draft — it sorted `contents.planets`, a different
-		// collection, on the *rounded* figures with no tiebreak, so two planets
-		// within a kilometre of each other could have passed in an order the
-		// sheet does not use. The head of this list is the subject two views are
-		// framed on.
+		// `largest-planet` with**, and both halves decide the answer: `bodies`
+		// filtered to planets — not `contents.planets`, which coincides only
+		// because moons carry `kind: "moon"` — sorted on **raw** `radiusKm` with
+		// an id tiebreak. Sort the rounded figures instead and two planets within
+		// a kilometre of each other order differently here from on the sheet, and
+		// the head of this list is the subject two views are framed on.
 		//
 		// **The comparator is a hand-copy and the risk is stated rather than
 		// closed.** It cannot be shared: `capture-views.mjs` runs its sort inside
@@ -275,7 +273,9 @@ describe("the pinned seed's world", () => {
 			.map((b) => b.stationType)
 			.filter((role) => role !== undefined)
 			.map((role) => `${role}:${STATION_GEOMETRY[role].aperture.kind}`);
-		expect(apertures).toEqual(FIXTURE.stations.map((role) => `${role}:slot`));
+		expect(apertures).toEqual(
+			FIXTURE.stations.map((s) => `${s.role}:${s.aperture}`),
+		);
 	});
 });
 
