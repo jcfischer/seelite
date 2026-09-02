@@ -77,6 +77,7 @@ import {
 	PLAYER_BASELINE_HULL,
 	PURCHASABLE_HULL_IDS,
 	hullPriceCr,
+	priceAtExponent,
 	HULL_PRICE_EXPONENT,
 	HULL_PRICE_BASELINE_CR,
 	HULL_CEILING_HOLD_T,
@@ -151,6 +152,12 @@ const CAPITAL_CAPS: readonly number[] = [
 	fullKitCr(),
 	Number.POSITIVE_INFINITY,
 ];
+
+/** Section I needs a *slope* per cap, not a curve, so it flies four holds
+ *  spanning the ladder rather than all sixteen — five caps over the full ladder
+ *  was 2,560 two-hour runs against section C's 512, for a figure four points
+ *  determine. The uncapped row still reads section C's own arm back. */
+const CAPITAL_HOLDS: readonly number[] = [8, 20, 60, 200];
 
 const quantile = (xs: readonly number[], q: number): number => {
 	if (xs.length === 0) return Number.NaN;
@@ -293,6 +300,10 @@ const armAt = (holdT: number, opts: RunOptions = {}): Result[] =>
 
 const rateOf = (r: Result) => finite("Cr/min", r.earnedCr / r.minutes);
 
+/** Section C's arms, by hold — declared here rather than at its first use so
+ *  `curveAt` below closes over a binding a reader can already see. */
+const curve = new Map<number, number[]>();
+
 /** Section C's stored arm, and a throw rather than `mean([])` if a caller asks
  *  for a hold the ladder does not carry — `finite`'s rule applied to a lookup:
  *  an instrument that quietly averages nothing is worse than one that dies. */
@@ -306,7 +317,6 @@ console.log(
 	`\n== C. the hold curve: Cr/min against hold, ${WORLDS.length} worlds, no market memory ==`,
 );
 console.log("\n  hold t     mean      p10      p90    t lifted/hop    fill");
-const curve = new Map<number, number[]>();
 /** Arms that ended before the window did — a stance with no profitable hop at
  *  all breaks the loop, which `RunOptions.shop` cannot suppress. A short arm
  *  has a shorter denominator, so the count is reported rather than left to be
@@ -323,6 +333,11 @@ for (const holdT of HOLD_LADDER) {
 			arm.reduce((a, r) => a + r.ladenHops, 0),
 			1,
 		);
+	// `startHoldT` read back rather than assumed: the column says what the engine
+	// flew, not what this loop asked for.
+	const flown = arm[0].startHoldT;
+	if (flown !== holdT)
+		throw new Error(`asked for ${holdT} t, engine flew ${flown} t`);
 	console.log(
 		`${rightAlign(holdT, 6)}${rightAlign(mean(rates).toFixed(0), 9)}` +
 			`${rightAlign(quantile(rates, 0.1).toFixed(0), 9)}${rightAlign(quantile(rates, 0.9).toFixed(0), 9)}` +
@@ -508,27 +523,28 @@ console.log(
 	// **The #118 loop, closed.** A figure a spec states as measured owes a mode
 	// in a shipped instrument that reprints it — so this run re-derives the two
 	// declared constants and says how far it has drifted from them.
-	// **The baseline is derived at the *shipped* exponent, not the fitted one.**
-	// The law carries two decimals because that is what the fit resolves, so a
-	// baseline computed at the raw slope would be compared against a constant
-	// nobody derived that way and the printed drift would be meaningless.
-	const derivedBaseline =
-		pooled.a * HOLD_REFERENCE_T ** HULL_PRICE_EXPONENT * kitWindow.median;
+	// **§7.1's own definition, and not a third thing.** `pooled.a x 20^0.61`
+	// pairs the fit's intercept with an exponent it was not fitted against, so
+	// the drift it printed was partly that mismatch; the section says the
+	// baseline is the *rate at 20 t* times the window, and that rate is the
+	// measured one section C already holds.
+	const derivedBaseline = mean(curveAt(HOLD_REFERENCE_T)) * kitWindow.median;
 	console.log(
 		`\n  declared: exponent ${HULL_PRICE_EXPONENT}, baseline ${HULL_PRICE_BASELINE_CR} Cr`,
 	);
 	console.log(
 		`  this run's fit: slope ${finite("b", pooled.b).toFixed(3)} ± ` +
-			`${finite("se", pooled.se).toFixed(3)} — the standard error is over a` +
-			`\n  hundredth, so it settles neither the third digit nor the second, and the` +
-			`\n  declared ${HULL_PRICE_EXPONENT} is the mean-curve fit rounded rather than a resolved` +
-			"\n  figure. What that uncertainty costs the ladder:",
+			`${finite("se", pooled.se).toFixed(3)} — over a hundredth, so it settles` +
+			"\n  neither the third place nor the second. The declared " +
+			`${HULL_PRICE_EXPONENT} is a legible rounding of` +
+			"\n  the mean-curve fit rather than a resolved figure, and what its" +
+			"\n  uncertainty costs the ladder is measured instead of argued:",
 	);
 	for (const holdT of [8, HOLD_REFERENCE_T, 60, HULL_CEILING_HOLD_T]) {
-		const at = (b: number) =>
-			Math.round(
-				(HULL_PRICE_BASELINE_CR * (holdT / HOLD_REFERENCE_T) ** b) / 100,
-			) * 100;
+		// The shipped law, evaluated at a different exponent — not a second copy
+		// of it. `priceAtExponent` is what `hullPriceCr` itself calls, so the
+		// rounding step cannot drift between the leaf and this band.
+		const at = (b: number) => priceAtExponent(holdT, b);
 		const mid = at(HULL_PRICE_EXPONENT);
 		const lo = at(HULL_PRICE_EXPONENT - pooled.se);
 		const hi = at(HULL_PRICE_EXPONENT + pooled.se);
@@ -703,9 +719,17 @@ console.log(
 	"\n  exactly the shape that flatters the arm the exponent is about. Swept over",
 	"\n  what one hop may spend on cargo:",
 );
+console.log(
+	`\n  Fitted on ${CAPITAL_HOLDS.length} holds (${CAPITAL_HOLDS.join(", ")} t) rather than the full ladder —`,
+	"\n  a slope per cap needs four points, and five caps over sixteen holds was",
+	"\n  five times section C's whole flight count. **The uncapped row is section",
+	"\n  C's own arm read back and fitted the same way**, so the column is",
+	"\n  internally comparable; against section C's sixteen-hold fit it differs by",
+	"\n  the subset alone.",
+);
 console.log("\n  working capital     b   rate at 20 t   rate at 200 t");
 for (const cap of CAPITAL_CAPS) {
-	const points = HOLD_LADDER.map((h) => ({
+	const points = CAPITAL_HOLDS.map((h) => ({
 		h,
 		// The uncapped row *is* section C's arm — same options, same worlds — so
 		// it is read back rather than re-flown, which is 512 two-hour runs saved

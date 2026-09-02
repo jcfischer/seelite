@@ -49,7 +49,11 @@ import {
 	shelfQuantity,
 	stockResponse,
 } from "../src/market";
-import { HULL_SPECS, PURCHASABLE_HULL_IDS } from "../src/hull";
+import {
+	HULL_CEILING_HOLD_T,
+	HULL_SPECS,
+	PURCHASABLE_HULL_IDS,
+} from "../src/hull";
 import {
 	ALL_ECONOMIES,
 	ALL_FLUCT,
@@ -615,6 +619,32 @@ describe("§5 the stock deficit", () => {
 		// …and the control cannot tell 63 t from 197 t at all.
 		expect(oneRunFixed(63)).toBeCloseTo(oneRunFixed(197), 9);
 		expect(oneRunFixed(63)).toBeGreaterThan(oneRunFixed(20));
+	});
+
+	test("the invariance is the tonne goods', and the sub-tonne ones are not it", () => {
+		// **The claim above is narrower than it reads, so the boundary is pinned.**
+		// Gold, Platinum and Gem-Stones bypass the hold check (research §2.2), so
+		// a run of one is Bell's 63 units whatever the ship — and 63 units over a
+		// bigger hold is a *smaller* mark. A build that quietly gave sub-tonne
+		// goods the tonne goods' invariance would pass every other row in this
+		// file.
+		const goldRun = (holdT: number) =>
+			stockResponse(100, QUANTITY_CAP, holdT) / 100 - 1;
+		// At and below the reference hold the ±3.15-hold clamp binds, so the move
+		// is the saturated one; above it the run is a shrinking fraction of a hold.
+		expect(goldRun(8)).toBeCloseTo(goldRun(HOLD_REFERENCE_T), 9);
+		expect(goldRun(HULL_SPECS.freighter.holdT)).toBeLessThan(
+			goldRun(HOLD_REFERENCE_T),
+		);
+		expect(goldRun(HULL_CEILING_HOLD_T)).toBeLessThan(
+			goldRun(HULL_SPECS.freighter.holdT),
+		);
+		// The saturated end is the clamp's, so it is the same 31.5% the tonne
+		// goods reach after 3.15 runs — the two differ in how *fast*, not how far.
+		expect(goldRun(HOLD_REFERENCE_T)).toBeCloseTo(
+			PRICE_ELASTICITY * DEFICIT_SATURATION_RUNS,
+			9,
+		);
 	});
 
 	test("never prices a good below §3's floor", () => {

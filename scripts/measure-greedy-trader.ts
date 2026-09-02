@@ -29,13 +29,12 @@
  * sweep incapable of differing in the way #25's three riggings did.
  */
 
+import { HOLD_REFERENCE_T } from "../src/market";
 import {
 	DOCK_SECONDS,
 	finite,
 	GALAXY_LIST,
-	HOLD_T,
 	JUMP_SECONDS,
-	DEFAULT_NEIGHBOUR_LIMIT,
 	type Result,
 	run,
 	START_CR,
@@ -54,7 +53,7 @@ if (!Number.isInteger(worldSeed))
 
 console.log(
 	`greedy trader — world 0x${worldSeed.toString(16)}, ${hours} h cap, ` +
-		`${HOLD_T} t hold, ${START_CR} Cr start`,
+		`${HOLD_REFERENCE_T} t hold, ${START_CR} Cr start`,
 );
 console.log(
 	`modelled: jump ${JUMP_SECONDS}s, dock+market ${DOCK_SECONDS}s. ` +
@@ -209,7 +208,9 @@ for (const dock of [15, 30, 45, 60, 90]) {
 		0,
 	);
 	console.log(
-		`\nneighbour list truncated at ${DEFAULT_NEIGHBOUR_LIMIT} on ${truncated} of ` +
+		// The limit these runs *flew*, read off a result rather than off the default,
+		// so the line cannot describe a sweep it did not report.
+		`\nneighbour list truncated at ${results[0].r.neighbourLimit} on ${truncated} of ` +
 			`${enumerations} neighbour lookups (${((100 * truncated) / Math.max(enumerations, 1)).toFixed(1)}%) ` +
 			"— where it bit, the trader did not see the whole jump range.",
 	);

@@ -48,8 +48,8 @@ describe("§5.5 the deficit map is sparse, lazy, and round-trips", () => {
 	const FOOD = "Food";
 	/** One trade at the baseline hull's hold, which is what every row here is
 	 *  about. `holdT` was spelled out at sixteen call sites after #182 widened
-	 *  the record, so the next field added to `TradeRecord` would have been a
-	 *  fourteen-site edit. */
+	 *  the record, so the next field added to `TradeRecord` would have been an
+	 *  edit at every call site in this file. */
 	const trade = (units: number, gameTimeMin: number, goodName = FOOD) => ({
 		goodName,
 		units,

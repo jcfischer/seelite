@@ -111,7 +111,7 @@ export const readDeficit = (
  * which is a shelf and not a memory.
  *
  * **The trade is a record and not three more positionals.** Adding `holdT`
- * would have made this six arguments of which four are bare numbers, with
+ * would have made this six arguments of which three are bare numbers, with
  * `units`, `gameTimeMin` and `holdT` transposable without a type error — and a
  * transposed clock and hold both read as plausible. The keyed form keeps
  * `holdT` required and makes the call sites say which number is which.

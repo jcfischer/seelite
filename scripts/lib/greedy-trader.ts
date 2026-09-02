@@ -111,11 +111,11 @@ const STATION_TARGET_RADIUS_KM = 1;
  *  has to cross it, not touch it. A millisecond of game time. */
 const EPOCH_NUDGE_MIN = 1e-6;
 
-/** Starting credits and hold — §6, both v1 defaults the ship-roster node
- *  inherited. `HOLD_T` is now the baseline hull's row rather than a literal,
- *  and `RunOptions.holdT` is what a sweep varies. */
+/** Starting credits — §6's v1 default, which the ship-roster node inherited.
+ *  The default *hold* is not restated here: it is `HOLD_REFERENCE_T`, which
+ *  since #181 is the baseline hull's own row, and a second exported spelling of
+ *  one figure is what `state-gallery.ts` was corrected for in this same node. */
 export const START_CR = 100;
-export const HOLD_T = HOLD_REFERENCE_T;
 /** §6: the Large Cargo Bay is +15 t. It is §8's first purchase precisely
  *  because it lifts every later run, so a sim that bought it and kept trading
  *  20 t would understate everything after minute ~7. */
@@ -931,7 +931,7 @@ export function run(
 	opts: RunOptions = {},
 ): Result {
 	const dockSeconds = opts.dockSeconds ?? DOCK_SECONDS;
-	const startHoldT = opts.holdT ?? HOLD_T;
+	const startHoldT = opts.holdT ?? HOLD_REFERENCE_T;
 	const stopAtKit = opts.stopAtKit ?? true;
 	const buysEquipment = opts.shop ?? true;
 	const remembers = opts.remembers ?? true;

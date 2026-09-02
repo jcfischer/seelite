@@ -183,9 +183,11 @@ export interface HullSpec {
  * `scripts/measure-hull-pricing.ts` reprints both constants beside what a fresh
  * run derives, which is the map's #118 rule.
  *
- * **Two decimals, because that is what the fit resolves.** Its slope has a
- * standard error of about a hundredth, so a third digit would be inside its own
- * noise.
+ * **Two decimals is a legible rounding of the fit, not a resolved figure.** The
+ * slope's standard error is about a hundredth and a half, so it settles neither
+ * the third place nor the second; what §7.1 measures instead is what that
+ * uncertainty costs the ladder, and the answer is under a couple of rounding
+ * steps everywhere.
  */
 export const HULL_PRICE_EXPONENT = 0.61;
 
@@ -231,12 +233,29 @@ export const HULL_CEILING_HOLD_T = 197;
  * A zero hold gives a non-finite result and a negative one *inverts* every rule
  * built on it — §5.2's response would make a good cheaper the more of it you
  * bought. Neither can come from the roster, but `holdCapacityT` reads a saved
- * commander before anything validates it. **Here rather than in `market.ts`,
- * where it also lived**: this module is the leaf both sides already import, and
- * two copies of one guard is what the leaf rule exists to end.
+ * commander before anything validates it. **Here because this module is the leaf
+ * both `market.ts` and `station-commerce.ts` already import**, so the one guard
+ * has one home rather than a copy at each divider.
  */
 export const requirePositiveHold = (holdT: number): void => {
 	if (!(holdT > 0)) throw new Error(`hold must be positive, got ${holdT}`);
+};
+
+/**
+ * The law at an arbitrary exponent, and the ceiling check off.
+ *
+ * Exported for `measure-hull-pricing.ts`, which prints what the fit's own
+ * uncertainty costs the ladder by evaluating the same law at the exponent ± its
+ * standard error. Without it the instrument had the formula and the rounding
+ * step written out a second time, and a step change would have landed in the
+ * leaf while the printed band went on rounding the old way.
+ */
+export const priceAtExponent = (holdT: number, exponent: number): number => {
+	requirePositiveHold(holdT);
+	const raw =
+		HULL_PRICE_BASELINE_CR *
+		(holdT / HULL_SPECS[PLAYER_BASELINE_HULL].holdT) ** exponent;
+	return Math.round(raw / HULL_PRICE_STEP_CR) * HULL_PRICE_STEP_CR;
 };
 
 /**
@@ -249,10 +268,7 @@ export const requirePositiveHold = (holdT: number): void => {
 export const hullPriceCr = (holdT: number): number | null => {
 	requirePositiveHold(holdT);
 	if (holdT > HULL_CEILING_HOLD_T) return null;
-	const raw =
-		HULL_PRICE_BASELINE_CR *
-		(holdT / HULL_SPECS[PLAYER_BASELINE_HULL].holdT) ** HULL_PRICE_EXPONENT;
-	return Math.round(raw / HULL_PRICE_STEP_CR) * HULL_PRICE_STEP_CR;
+	return priceAtExponent(holdT, HULL_PRICE_EXPONENT);
 };
 
 /**
