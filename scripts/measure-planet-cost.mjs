@@ -53,14 +53,24 @@
  * the honest shape; for pricing one *term* against another inside a frame, that
  * one is, because it is not carrying the compositor.
  *
- * ## Two readings a cell, and the pair is the noise
+ * ## Three readings a cell, a median, and a range
  *
- * Every cell is read twice and **the second reading is the cell**; the gap
- * between the pair is printed beside it. `one-sample-is-not-a-measurement` is
- * the rule and #59's 66.9 ms spread is what it cost last time: a single reading
- * of a frame cost is not a measurement of one. The first reading is discarded
- * rather than averaged in because it is the one most likely to still carry the
- * settle.
+ * Every cell is read `READINGS` times; the **median** is the cell and the full
+ * range is printed beside it. `one-sample-is-not-a-measurement` is the rule and
+ * #59's 66.9 ms spread is what it cost last time: one reading of a frame cost
+ * is not a measurement of one.
+ *
+ * **Two were not enough either** (sage, PR #214). A pair yields a single
+ * absolute difference, and printing that as `±noise` labels one gap as an
+ * uncertainty the table then asks a reader to rely on. Three is the least that
+ * gives a figure to report *and* something to qualify it with. It is still
+ * small: the honest reading of a wide range here is "re-run this cell", not
+ * "the middle one is right".
+ *
+ * A cell whose rate never held still before the settle timed out is marked `?`
+ * in the table, carries `settled: false` into the JSON, and is named in the
+ * run's tail. Such a cell is a reading and not a measurement, and before that
+ * mark existed it was indistinguishable from one.
  *
  * **Compile hitches are not frame cost.** A class or a relief path is a
  * `#define` compiled into the program (`planet-surface.ts` — the closure exists
@@ -168,10 +178,31 @@ const SETTLE_WINDOWS = 2;
  * changes when the thing it is watching changes.
  */
 const SETTLE_TOLERANCE = 0.08;
-/** How long to keep waiting for that before reading anyway. A cell that never
- *  settles is reported through its own noise figure rather than by hanging the
- *  run — the pair is printed for exactly this reason. */
+/**
+ * How long to keep waiting for that before reading anyway.
+ *
+ * **A cell that times out is still read, and is then marked.** Hanging the run
+ * on one stubborn cell would lose the other 223; silently returning the value
+ * would sell an unsettled reading downstream as a measurement, which is what
+ * sage blocked the first version of this file for on PR #214. So `settled`
+ * rides every row into the JSON, the table prints such a cell with a `?`, and
+ * the run's tail names them.
+ */
 const SETTLE_TIMEOUT_MS = 8000;
+
+/**
+ * Readings taken per cell, after the settle.
+ *
+ * **Three rather than two, because two do not establish anything** (sage, PR
+ * #214). A pair gives one absolute difference, and calling that "the noise"
+ * labels a single gap as an uncertainty the table then asks a reader to rely
+ * on. Three gives a median to report and a range to qualify it with, which is
+ * the least that can honestly be called a spread — and it is what
+ * `one-sample-is-not-a-measurement` asks for. It is still small: the honest
+ * reading of a wide range here is "re-run this cell", not "the middle one is
+ * right".
+ */
+const READINGS = 3;
 
 /**
  * One fresh reading of the meter.
@@ -180,22 +211,25 @@ const SETTLE_TIMEOUT_MS = 8000;
  * string to differ is the obvious move and it is not sufficient: two
  * consecutive windows can render the same line, and at a clamped rate they
  * routinely do. So a change is *preferred* — it is the fastest correct signal —
- * and a full window and a half of wall clock is what makes the fallback sound.
- * Either way the value on screen is one the meter wrote after this call began.
+ * and the wait itself is what makes the fallback sound: the meter's window is
+ * 500 ms, so once `READ_WAIT_MS` has passed the figure on screen was written
+ * after this call began whether or not its text moved.
+ *
+ * **The timeout is the fallback, not a stage before one.** The first version
+ * waited up to 3 s for a change and *then* slept 750 ms more, so every repeated
+ * line cost 3.75 s — several times a cell, across every cell. Sage caught it on
+ * PR #214. One wait does both jobs.
  */
+const READ_WAIT_MS = 800;
+
 async function reading(page, previous) {
-	const changed = page
+	await page
 		.waitForFunction(
-			(was) =>
-				document.querySelector("#seelite-fps")?.textContent !== was
-					? document.querySelector("#seelite-fps")?.textContent
-					: false,
+			(was) => document.querySelector("#seelite-fps")?.textContent !== was,
 			previous ?? null,
-			{ timeout: 3000 },
+			{ timeout: READ_WAIT_MS },
 		)
-		.then(() => true)
-		.catch(() => false);
-	if (!(await changed)) await page.waitForTimeout(750);
+		.catch(() => {});
 	const text = await page.evaluate(
 		() => document.querySelector("#seelite-fps")?.textContent ?? "",
 	);
@@ -207,7 +241,10 @@ async function reading(page, previous) {
  * which is what says the recompile this switch triggered is behind us.
  *
  * Returns the session peak as it stands at the end of the settle, so the cell
- * can report the *rise* across its own readings rather than the running total.
+ * can report the *rise* across its own readings rather than the running total —
+ * and `settled`, which says whether the rate ever held still or the timeout
+ * ran out first. The caller carries that onto the row; a cell that never
+ * settled is not a measurement and must not read like one.
  */
 async function settle(page) {
 	let text = null;
@@ -222,11 +259,15 @@ async function settle(page) {
 		const spread =
 			Math.abs(next.read.ms - previous.read.ms) /
 			Math.max(next.read.ms, previous.read.ms);
-		if (spread <= SETTLE_TOLERANCE) return { peak: next.read.peakMs, text };
+		if (spread <= SETTLE_TOLERANCE)
+			return { peak: next.read.peakMs, text, settled: true };
 		previous = next;
 	}
-	return { peak: previous.read.peakMs, text };
+	return { peak: previous.read.peakMs, text, settled: false };
 }
+
+/** The middle of an odd-length sample, which is what a cell reports. */
+const median = (xs) => [...xs].sort((a, b) => a - b)[xs.length >> 1];
 
 // Before a browser is launched, because this one is a fault in the declaration
 // rather than in the run: nothing about it needs a GPU to find, and finding it
@@ -243,6 +284,15 @@ const origin = await guardedOrigin(ORIGIN, FINGERPRINT);
  * creation and the two runs must not share a warmed shader cache.
  */
 async function run(pixelRatio) {
+	// Everything after the launch is wrapped, because every refusal in this file
+	// throws: an unreadable meter line, a software renderer, a view cycle that
+	// never reached chase. Before this, any of them left a headed Chromium alive
+	// and the command with it (sage, PR #214).
+	/** @type {any[]} */
+	let rows = [];
+	let renderer = "";
+	let controlBefore;
+	let controlAfter;
 	const browser = await launchChromium({
 		headless: false,
 		// The two flags the whole measurement rests on. Without them the meter
@@ -251,116 +301,149 @@ async function run(pixelRatio) {
 		// notices if they stop working.
 		args: ["--disable-gpu-vsync", "--disable-frame-rate-limit"],
 	});
-	const page = await browser.newPage({
-		viewport: VIEWPORT,
-		deviceScaleFactor: pixelRatio,
-	});
-	await installViewPlacement(page);
-	await installViewFraming(page);
-	await page.goto(`${origin}/?seed=${SEED}&fps`);
-	await bootedGame(page);
-	const renderer = await assertPlayersRenderer(page, "measure a planet's cost");
-	await page.evaluate((t) => window.__startClockAt(t), GAME_TIME_S);
+	try {
+		const page = await browser.newPage({
+			viewport: VIEWPORT,
+			deviceScaleFactor: pixelRatio,
+		});
+		await installViewPlacement(page);
+		await installViewFraming(page);
+		await page.goto(`${origin}/?seed=${SEED}&fps`);
+		await bootedGame(page);
+		renderer = await assertPlayersRenderer(page, "measure a planet's cost");
+		await page.evaluate((t) => window.__startClockAt(t), GAME_TIME_S);
 
-	// Chase, so the cockpit interior is not drawn over the subject — #105's
-	// cabin is a lit standard-material fitting and would be a term in every cell
-	// of a table that is about a planet surface.
-	for (let i = 0; i <= 8; i++) {
-		if ((await page.evaluate(() => window.__seelite.view)) === "chase") break;
-		await page.keyboard.press("v");
-		await page
-			.waitForFunction(() => window.__seelite.view === "chase", undefined, {
-				timeout: 500,
-			})
-			.catch(() => {});
-	}
+		// Chase, so the cockpit interior is not drawn over the subject — #105's
+		// cabin is a lit standard-material fitting and would be a term in every cell
+		// of a table that is about a planet surface.
+		//
+		// **And it throws if it does not get there.** Each press swallows its own
+		// timeout, so before this the loop could run out and the sweep would carry on
+		// measuring the cockpit in all 112 cells while every comment said otherwise
+		// (sage, PR #214). A view the game does not have is a fault in the script,
+		// not something to report in a footnote.
+		for (let i = 0; i <= 8; i++) {
+			if ((await page.evaluate(() => window.__seelite.view)) === "chase") break;
+			await page.keyboard.press("v");
+			await page
+				.waitForFunction(() => window.__seelite.view === "chase", undefined, {
+					timeout: 500,
+				})
+				.catch(() => {});
+		}
+		const view = await page.evaluate(() => window.__seelite.view);
+		if (view !== "chase")
+			throw new Error(
+				`the view cycle never reached "chase" — it stopped at "${view}", so ` +
+					`every cell would be measured through the cockpit instead of at the ` +
+					`planet`,
+			);
 
-	/**
-	 * The class list, imported off the served page rather than copied.
-	 *
-	 * `PERF_CLASSES` lives in `src/perf-panel.ts` and this is a `.mjs` script
-	 * that node runs directly, so a static import would need a TypeScript
-	 * loader. The dev server already transforms that module for the browser —
-	 * so the page imports it, and the list this sweeps is the list the game
-	 * has. CLAUDE.md's rule for probes is the same one: read a constant off the
-	 * page instead of restating it, or a module change makes the instrument
-	 * quietly wrong instead of loudly red.
-	 */
-	const classes = await page.evaluate(async () => {
-		const mod = await import("/src/perf-panel.ts");
-		return [...mod.PERF_CLASSES];
-	});
+		/**
+		 * The class list, imported off the served page rather than copied.
+		 *
+		 * `PERF_CLASSES` lives in `src/perf-panel.ts` and this is a `.mjs` script
+		 * that node runs directly, so a static import would need a TypeScript
+		 * loader. The dev server already transforms that module for the browser —
+		 * so the page imports it, and the list this sweeps is the list the game
+		 * has. CLAUDE.md's rule for probes is the same one: read a constant off the
+		 * page instead of restating it, or a module change makes the instrument
+		 * quietly wrong instead of loudly red.
+		 */
+		const classes = await page.evaluate(async () => {
+			const mod = await import("/src/perf-panel.ts");
+			return [...mod.PERF_CLASSES];
+		});
 
-	/** Place the camera, set the shader, settle, and read the pair. */
-	const cell = async (surfaceClass, relief, radii) => {
-		const label = `${surfaceClass} ${relief} at ${radii} radii, ratio ${pixelRatio}`;
-		await page.evaluate(
-			([id, r, deg]) => window.__sunOffset(id, r, deg),
-			[SUBJECT, radii, SUN_ANGLE_DEG],
-		);
-		await page.evaluate(
-			([klass, path]) => {
-				for (const scene of [
-					window.__seelite.nearScene,
-					window.__seelite.approachScene,
-					window.__seelite.farScene,
-				])
-					scene.traverse((o) => {
-						o.userData?.setSurfaceClass?.(klass);
-						o.userData?.setReliefPath?.(path);
-					});
-			},
-			[surfaceClass, relief],
-		);
-		const settled = await settle(page);
-		const first = await reading(page, settled.text);
-		const second = await reading(page, first.text);
-		return {
-			pixelRatio,
-			radii,
-			surfaceClass,
-			relief,
-			// The second reading is the cell; the first is the noise half.
-			ms: finite(label, second.read.ms),
-			fps: finite(label, second.read.fps),
-			noiseMs: finite(label, Math.abs(second.read.ms - first.read.ms)),
-			worstMs: finite(label, second.read.worstMs),
-			// The rise in the session peak across this cell. Zero means this cell
-			// did not out-stall anything earlier in the run, which is not the same
-			// as "did not stall".
-			peakRiseMs: finite(label, Math.max(0, second.read.peakMs - settled.peak)),
+		/** Place the camera, set the shader, settle, and take `READINGS` samples. */
+		const cell = async (surfaceClass, relief, radii) => {
+			const label = `${surfaceClass} ${relief} at ${radii} radii, ratio ${pixelRatio}`;
+			await page.evaluate(
+				([id, r, deg]) => window.__sunOffset(id, r, deg),
+				[SUBJECT, radii, SUN_ANGLE_DEG],
+			);
+			await page.evaluate(
+				([klass, path]) => {
+					for (const scene of [
+						window.__seelite.nearScene,
+						window.__seelite.approachScene,
+						window.__seelite.farScene,
+					])
+						scene.traverse((o) => {
+							o.userData?.setSurfaceClass?.(klass);
+							o.userData?.setReliefPath?.(path);
+						});
+				},
+				[surfaceClass, relief],
+			);
+			const settled = await settle(page);
+			const samples = [];
+			let text = settled.text;
+			for (let i = 0; i < READINGS; i++) {
+				const next = await reading(page, text);
+				text = next.text;
+				samples.push(next.read);
+			}
+			const ms = samples.map((r) => finite(label, r.ms));
+			const last = samples[samples.length - 1];
+			return {
+				pixelRatio,
+				radii,
+				surfaceClass,
+				relief,
+				// The median of `READINGS`, and the full range beside it. One reading is
+				// not a measurement and two are not a spread; three is the least that
+				// gives a figure to report and something to qualify it with.
+				ms: median(ms),
+				spreadMs: finite(label, Math.max(...ms) - Math.min(...ms)),
+				samplesMs: ms,
+				// Whether the rate ever held still. A cell that timed out is printed
+				// with a `?` and listed in the run's tail: it is a reading, not a
+				// measurement, and the difference must survive into the JSON.
+				settled: settled.settled,
+				fps: finite(label, last.fps),
+				worstMs: finite(label, last.worstMs),
+				// The rise in the session peak across this cell. Zero means this cell
+				// did not out-stall anything earlier in the run, which is not the same
+				// as "did not stall".
+				peakRiseMs: finite(label, Math.max(0, last.peakMs - settled.peak)),
+			};
 		};
-	};
 
-	/**
-	 * **The drift control, and why a sweep this long needs one.**
-	 *
-	 * A run is ~200 headed cells over several minutes with the GPU pinned, so
-	 * the machine at the end is not the machine at the start — and every sweep
-	 * order pools that drift somewhere. Ordering by radius put the expensive
-	 * columns last; ordering by class puts the last class last. There is no nest
-	 * that has no end, so instead of hiding the drift the run **measures** it:
-	 * one fixed cell, read before the sweep and again after it.
-	 *
-	 * `one-sample-is-not-a-measurement` and #30's own record are the reason this
-	 * is a control rather than an assumption. A reader comparing two columns can
-	 * see what the machine moved by underneath them; without it the difference
-	 * between a real cost and a warm laptop is not recoverable from the table.
-	 */
-	const controlBefore = await cell(...CONTROL);
+		/**
+		 * **The drift control, and why a sweep this long needs one.**
+		 *
+		 * A run is ~200 headed cells over several minutes with the GPU pinned, so
+		 * the machine at the end is not the machine at the start — and every sweep
+		 * order pools that drift somewhere. Ordering by radius put the expensive
+		 * columns last; ordering by class puts the last class last. There is no nest
+		 * that has no end, so instead of hiding the drift the run **measures** it:
+		 * one fixed cell, read before the sweep and again after it.
+		 *
+		 * **What two endpoints can and cannot say.** They give the *net* movement
+		 * across the run and nothing else: they cannot locate when it happened, and
+		 * a machine that sagged in the middle and recovered reads as no drift at all
+		 * (sage, PR #214). So this bounds the claim rather than establishing it — a
+		 * large endpoint difference says the table is untrustworthy, and a small one
+		 * says only that the run began and ended in the same state. Read it as a
+		 * refutation instrument, not as a correction to apply to a column.
+		 */
+		controlBefore = await cell(...CONTROL);
 
-	const rows = [];
-	// Class outermost and radius innermost: a class or relief switch is a shader
-	// recompile and a radius change is only a camera move, so this nest pays 16
-	// recompiles a run instead of 96, and every settle after one is a settle the
-	// cheap way.
-	for (const surfaceClass of classes)
-		for (const relief of RELIEF_PATHS)
-			for (const radii of RADII)
-				rows.push(await cell(surfaceClass, relief, radii));
+		rows = [];
+		// Class outermost and radius innermost: a class or relief switch is a shader
+		// recompile and a radius change is only a camera move, so this nest pays 16
+		// recompiles a run instead of 96, and every settle after one is a settle the
+		// cheap way.
+		for (const surfaceClass of classes)
+			for (const relief of RELIEF_PATHS)
+				for (const radii of RADII)
+					rows.push(await cell(surfaceClass, relief, radii));
 
-	const controlAfter = await cell(...CONTROL);
-	await browser.close();
+		controlAfter = await cell(...CONTROL);
+	} finally {
+		await browser.close();
+	}
 
 	const refusal = vsyncRefusal(rows.map((r) => r.ms));
 	if (refusal) throw new Error(`ratio ${pixelRatio}: ${refusal}`);
@@ -378,7 +461,10 @@ console.log(
 	`  viewport: ${VIEWPORT.width}x${VIEWPORT.height}, ${SUBJECT} at ${SUN_ANGLE_DEG}° from the star, seed ${SEED}`,
 );
 console.log(
-	`  ms/frame off the ?fps readout — second of two readings; ±noise is the gap to the first`,
+	`  ms/frame off the ?fps readout — median of ${READINGS} readings, ±the full range across them`,
+);
+console.log(
+	`  a cell marked ? never settled: its rate was still moving when the settle timed out, so it is a reading and not a measurement`,
 );
 console.log("");
 
@@ -403,7 +489,9 @@ for (const {
 						r.relief === relief &&
 						r.radii === radii,
 				);
-				return `${row.ms.toFixed(1)}±${row.noiseMs.toFixed(1)}`.padStart(14);
+				return `${row.ms.toFixed(1)}±${row.spreadMs.toFixed(1)}${
+					row.settled ? "" : "?"
+				}`.padStart(14);
 			});
 			console.log(`      ${surfaceClass.padEnd(10)}${cells.join("")}`);
 		}
@@ -421,6 +509,17 @@ for (const {
 					)
 					.join(", ")}`
 			: "    stalls: none out-stalled an earlier cell in this run",
+	);
+	// The blocker sage raised on PR #214: before this, a cell that timed out came
+	// back the same shape as one that settled, and was sold downstream as a
+	// measurement. Named here and flagged in the table and the JSON.
+	const unsettled = runRows.filter((r) => !r.settled);
+	console.log(
+		unsettled.length
+			? `    unsettled (?): ${unsettled.length} of ${runRows.length} cells never held a steady rate — ${unsettled
+					.map((r) => `${r.surfaceClass}/${r.relief}@${r.radii}r`)
+					.join(", ")}`
+			: `    unsettled: none — every one of the ${runRows.length} cells held a steady rate before it was read`,
 	);
 	// The drift control. Printed last because it qualifies everything above it:
 	// a column-to-column difference smaller than this is not a difference.

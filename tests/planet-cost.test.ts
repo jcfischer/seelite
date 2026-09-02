@@ -127,39 +127,59 @@ describe("the finite guard", () => {
  * working would produce a complete, plausible, entirely worthless table where
  * every cheap column reads the same.
  *
- * The tell is the **control** column, and that is why the sweep has one: a
- * planet drawn as a dot at 200 radii cannot cost 16 ms on any GPU this targets.
- * If the cheapest cell in the run is still pinned at the refresh rate, the
- * clamp is the display and not the renderer.
+ * The tell is that a clamped run is **flat**: a planet drawn as a dot at 200
+ * radii and one filling the frame cannot cost the same on any GPU. So the rule
+ * is the run's spread and not a list of refresh rates, which is what the first
+ * version got wrong.
  */
 describe("the vsync refusal", () => {
-	test("passes a run whose cheapest cell is well above a refresh rate", () => {
+	test("passes a run whose cells span a real range", () => {
 		expect(vsyncRefusal([16.1, 4.2, 2.1, 43.6])).toBe(null);
 	});
 
-	test("refuses a run pinned at a refresh rate, and says so", () => {
+	test("refuses a run pinned at a refresh rate, and names it", () => {
 		// Every cell at 60 fps: the shape of a run where the flags did nothing.
 		const refusal = vsyncRefusal([16.7, 16.7, 16.68, 16.7]);
-		expect(refusal).toMatch(/vsync/i);
+		expect(refusal).toMatch(/flat/i);
+		expect(refusal).toMatch(/60 Hz/);
 	});
 
-	test("refuses a run pinned at 120 too, not just at 60", () => {
-		// The machine this targets has a 120 Hz panel available, so a threshold
-		// written against 60 alone would pass a fully clamped run on it. The
-		// guard is about the *spread* being absent, not about one rate.
-		expect(vsyncRefusal([8.33, 8.34, 8.33, 8.33])).toMatch(/vsync/i);
+	/**
+	 * **The case that sent the first version back** (sage, PR #214).
+	 *
+	 * That version compared the cheapest cell against a list of 60 and 120, so a
+	 * fully clamped 144 Hz run — 6.94 ms in every cell — matched nothing and
+	 * passed as a measurement. The rule is flatness, which needs no list.
+	 */
+	test("refuses a flat run at a rate nothing anticipated", () => {
+		expect(vsyncRefusal([6.94, 6.94, 6.93, 6.94])).toMatch(/flat/i);
+		// 90 Hz, and an arbitrary rate on no list at all.
+		expect(vsyncRefusal([11.11, 11.1, 11.11])).toMatch(/flat/i);
+		expect(vsyncRefusal([9.4, 9.41, 9.4, 9.39])).toMatch(/flat/i);
+	});
+
+	/**
+	 * And it must not accuse a slow machine. A clamp flattens a run; a slow GPU
+	 * only scales it, so the dot-to-fill spread survives.
+	 */
+	test("passes a slow run whose spread survives", () => {
+		expect(vsyncRefusal([16.7, 40, 90, 180])).toBe(null);
 	});
 
 	test("refuses an empty run rather than passing one with nothing in it", () => {
 		expect(vsyncRefusal([])).toMatch(/no readings/i);
+	});
+
+	test("refuses a run carrying a zero, which has no ratio", () => {
+		expect(vsyncRefusal([0, 12, 40])).toMatch(/not a frame cost/);
 	});
 });
 
 describe("the sweep's declared columns", () => {
 	/**
 	 * The control is the widest column and it is first, because the guard above
-	 * reads the cheapest cell in the run — a sweep with no cheap column has
-	 * nothing to compare a clamp against.
+	 * reads the run's spread — a sweep with no cheap column has nothing for its
+	 * dear ones to be spread against.
 	 */
 	test("opens on a control column far enough out to be a dot", () => {
 		expect(RADII[0]).toBe(200);

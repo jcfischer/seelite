@@ -1,6 +1,6 @@
 /**
  * The half of #206's planet-cost sweep that is not a browser — its columns, the
- * way a reading is lifted out of the `?fps` readout, and the two refusals.
+ * way a reading is lifted out of the `?fps` readout, and the refusals.
  *
  * Separated from `scripts/measure-planet-cost.mjs` for one reason: that script
  * cannot be tested, because the thing it exists to do is drive a real GPU, and
@@ -81,7 +81,7 @@ export const RELIEF_PATHS = Object.freeze(["four-tap", "screen-space"]);
 /**
  * A number, or a throw naming the cell it came from.
  *
- * The label is not decoration: this sweep has 192 cells, and "a value is NaN"
+ * The label is not decoration: a sweep is hundreds of cells, and "a value is NaN"
  * with no cell name behind it leaves the reader re-running the whole thing to
  * find out which one. `measure-aperture-cut.ts` and `measure-cruise-arrival.ts`
  * carry the same helper for the same reason.
@@ -145,19 +145,23 @@ export function parseFpsReadout(text) {
 }
 
 /**
- * Refresh rates a compositor might clamp a run to, in frames per second.
+ * How much a run's most expensive cell must exceed its cheapest before the run
+ * counts as measuring a renderer at all.
  *
- * Both, and not just 60: the machine #206 was measured on has a 120 Hz panel,
- * and a guard written against 60 alone would pass a completely clamped run
- * there while reporting it as measured.
+ * A dot 200 radii away and a planet filling the frame are not the same amount
+ * of work on any GPU; a run where they read alike is a run reporting something
+ * other than the renderer. Measured on a good run at pixel ratio 1, the spread
+ * is about 13x — so 1.5 is far below any real table and far above a clamp,
+ * which pins the ratio at 1.0.
  */
-const REFRESH_HZ = Object.freeze([60, 120]);
+const MIN_SPREAD = 1.5;
 
-/**
- * How close to a refresh rate counts as pinned to it. 4% is wide enough to
- * cover a compositor's jitter and narrow enough that a real 62 fps cell — which
- * would be an expensive frame, not a clamped one — is not accused.
- */
+/** Refresh rates worth *naming* in the refusal when one happens to match. Not
+ *  what the refusal is decided on — see `vsyncRefusal`. */
+const REFRESH_HZ = Object.freeze([60, 75, 90, 120, 144]);
+
+/** How close to a refresh rate counts as pinned to it, for the diagnosis only.
+ *  4% covers a compositor's jitter. */
 const PINNED = 0.04;
 
 /**
@@ -169,16 +173,26 @@ const PINNED = 0.04;
  * number for a 2 ms frame and a 16 ms one. `measure-planet-cost.mjs` launches
  * with `--disable-gpu-vsync --disable-frame-rate-limit` to lift that; a flag
  * that stops working — renamed upstream, ignored on a platform, dropped from a
- * copied command line — produces a full table where every cheap column reads
+ * copied invocation — produces a full table where every cheap column reads
  * identically. Nothing about that table looks wrong.
  *
- * **What is read is the cheapest cell, and only that.** An expensive cell
- * sitting near 16.7 ms is a perfectly ordinary expensive cell; that is what a
- * planet filling the frame at pixel ratio 2 actually costs. What cannot happen
- * on any GPU this targets is the *control* — a planet drawn as a dot 200 radii
- * away — costing a whole refresh interval. So the refusal fires on
- * `Math.min(...)` and would not fire on a slow machine that merely runs
- * everything at 60.
+ * **What is read is the spread, not a rate.** The first version of this
+ * compared the cheapest cell against a list of refresh intervals, which sage
+ * rejected on PR #214 and was right to: a fully clamped 144 Hz run reads
+ * 6.94 ms in every cell and matched nothing on a list of 60 and 120, so it
+ * passed as measured. Worse, this function's own test already described the
+ * rule as being "about the *spread* being absent, not about one rate" — the
+ * prose was right and the code was not.
+ *
+ * A clamp is a *flat* run, and flatness needs no list: the control column and
+ * the fill column cannot cost the same. So the refusal fires on
+ * `max / min`, which is rate-independent by construction and catches a panel
+ * nobody thought of. The rate list survives only to *name* the interval in the
+ * message when one matches, because "6.94 ms, a 144 Hz frame interval" points
+ * at the cause and a bare ratio does not.
+ *
+ * It does not fire on a slow machine: a slow run is still 13x from dot to
+ * fill, only with every figure larger.
  *
  * @param {number[]} msPerFrame every cell's frame time from one run
  * @returns {string | null}
@@ -186,16 +200,22 @@ const PINNED = 0.04;
 export function vsyncRefusal(msPerFrame) {
 	if (!msPerFrame.length)
 		return "no readings in this run — there is nothing to check for a vsync clamp";
-	const cheapest = Math.min(...msPerFrame.map((v) => finite("cell", v)));
-	for (const hz of REFRESH_HZ) {
-		const interval = 1000 / hz;
-		if (Math.abs(cheapest - interval) <= interval * PINNED)
-			return (
-				`the cheapest cell in this run is ${cheapest.toFixed(2)} ms, which is ` +
-				`a ${hz} Hz frame interval — this run is vsync-clamped and every ` +
-				`figure in it is the display's, not the renderer's. Check that ` +
-				`--disable-gpu-vsync and --disable-frame-rate-limit reached the browser.`
-			);
-	}
-	return null;
+	const cells = msPerFrame.map((v) => finite("cell", v));
+	const cheapest = Math.min(...cells);
+	const dearest = Math.max(...cells);
+	if (cheapest <= 0)
+		return `a cell in this run reads ${cheapest} ms, which is not a frame cost`;
+	if (dearest / cheapest >= MIN_SPREAD) return null;
+	const hz = REFRESH_HZ.find(
+		(rate) => Math.abs(cheapest - 1000 / rate) <= (1000 / rate) * PINNED,
+	);
+	return (
+		`this run is flat: ${cheapest.toFixed(2)} ms at its cheapest and ` +
+		`${dearest.toFixed(2)} ms at its dearest, a spread of ` +
+		`${(dearest / cheapest).toFixed(2)}x where a real table spans about 13x. ` +
+		(hz ? `That cheapest figure is a ${hz} Hz frame interval. ` : "") +
+		`A planet drawn as a dot and a planet filling the frame cannot cost the ` +
+		`same, so this is the display's timing and not the renderer's. Check that ` +
+		`--disable-gpu-vsync and --disable-frame-rate-limit reached the browser.`
+	);
 }

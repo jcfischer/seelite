@@ -120,7 +120,7 @@ const EXEMPT = new Map([
 	],
 	[
 		"measure-planet-cost.mjs",
-		"#206's headed planet-cost sweep; like #99's it gates on nothing — the output is a table for a receipt, not a threshold — so there are no checks for a watch to report into. Its two refusals (an unreadable meter line, a vsync-clamped run) throw out of the run rather than counting a failed check",
+		"#206's headed planet-cost sweep; like #99's it gates on nothing — the output is a table for a receipt, not a threshold — so there are no checks for a watch to report into. Its refusals — an unreadable meter line, a flat run, a column inside the body — throw out of the run rather than counting a failed check",
 	],
 	[
 		"capture-views.mjs",
