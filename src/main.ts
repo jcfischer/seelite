@@ -69,9 +69,15 @@ import * as THREE from "three";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
 import { starField } from "./backdrop";
+import {
+	COMPOSER_SAMPLES,
+	SeeliteOutputPass,
+	VIGNETTE_MAX,
+	composerTarget,
+	setComposerSamples,
+} from "./output-stage";
 import { LIGHT_RIG, envRotation, equirectEnvironment } from "./light-rig";
 import { SettingsStore } from "./settings";
 import { AudioFX } from "./audio";
@@ -813,6 +819,9 @@ class Game {
 	readonly approachScene = new THREE.Scene();
 	/** Switchable from the perf panel; see `perf-panel.ts`. */
 	private bloomPass!: UnrealBloomPass;
+	/** The last pass: tone map, dither, vignette (#200). Public so a probe can
+	 *  reach the dither's control arm through `window.__seelite`. */
+	outputPass!: SeeliteOutputPass;
 	/**
 	 * Resolution has exactly one owner, and it is the player's setting.
 	 *
@@ -1692,7 +1701,19 @@ class Game {
 		this.selectBootTarget();
 		this.refreshScannerContacts();
 
-		this.composer = new EffectComposer(this.renderer);
+		// **The composer is handed its own target, and that is what carries the
+		// antialiasing** (#200). `antialias: true` above configures the default
+		// framebuffer, which this game never draws into: every frame lands in the
+		// composer's targets and reaches the screen as a blit of an already-flat
+		// texture. So the flag was inert until this argument existed, and the
+		// samples belong here. `output-stage.ts` owns both.
+		this.composer = new EffectComposer(
+			this.renderer,
+			composerTarget(
+				this.renderer,
+				COMPOSER_SAMPLES[this.settings.value.quality],
+			),
+		);
 		// Back to front. The first pass clears colour; the third clears *depth*
 		// only, so the near layer cannot be occluded by a planet 3 AU away that
 		// the far layer drew at 1/100,000 scale. The second clears nothing,
@@ -1723,7 +1744,11 @@ class Game {
 		// a shader that is only expensive when a body fills the view.
 		this.bloomPass = new UnrealBloomPass(bloomResolution(), 0.55, 0.6, 0.85);
 		this.composer.addPass(this.bloomPass);
-		this.composer.addPass(new OutputPass());
+		// Kept as a field for the same reason `bloomPass` is: the vignette is set
+		// per frame from the view, and the dither has a control arm a probe
+		// switches. #200.
+		this.outputPass = new SeeliteOutputPass();
+		this.composer.addPass(this.outputPass);
 
 		this.overlay = document.getElementById("overlay") as HTMLCanvasElement;
 		this.overlayCtx = this.overlay.getContext("2d") as CanvasRenderingContext2D;
@@ -2274,6 +2299,42 @@ class Game {
 		// answer for every plated surface in the game rather than one per
 		// surface. `cockpit-surface.ts` owns what a cabin surface costs.
 		applyCockpitQuality(this.settings.value.quality);
+		// The composer half (#200), and the one term under this key that is not a
+		// lighting term. It is here rather than behind a setting of its own
+		// because the two questions a player is actually asking — *is this
+		// machine keeping up* and *how good does it look* — are one question, and
+		// a second switch would split it. `settings.ts`'s note says so in the
+		// words the player reads.
+		this.setComposerSamples();
+	}
+
+	/**
+	 * Re-gate the composer's multisampling — #200.
+	 *
+	 * A method rather than three lines inside `applyQuality` because
+	 * `probe-output-stage.mjs` needs the *same* switch with the lighting held
+	 * still: an antialiasing claim measured across the quality key would be
+	 * measured across #99's environment and #101's seam map as well, and every
+	 * one of those moves the edge it is counting. The default argument is the
+	 * gate; an explicit one is the control arm.
+	 */
+	setComposerSamples(
+		samples: number = COMPOSER_SAMPLES[this.settings.value.quality],
+	) {
+		// **`buildLights` runs before the composer is constructed**, and it ends
+		// in `applyQuality` — so this is called once with no composer to gate.
+		// That is harmless rather than a hole: the composer is *built* at the
+		// gated count a few lines later, from the same record. A `!` here would
+		// throw on boot, and moving the composer above the lights would reorder
+		// two constructions for the sake of one assignment.
+		if (!this.composer) return;
+		// Both buffers, because `EffectComposer` swaps them: multisampling one
+		// would antialias alternate passes and read as a flicker rather than as a
+		// missing term.
+		setComposerSamples(
+			[this.composer.renderTarget1, this.composer.renderTarget2],
+			samples,
+		);
 	}
 
 	/**
@@ -5323,6 +5384,12 @@ class Game {
 		// The hull is the camera in cockpit view, and drawing a cube around the
 		// near plane fills the screen with its inside faces.
 		this.shipMesh.visible = this.view === "chase";
+
+		// **Cockpit only** (#200). A vignette is a lens artefact; in cockpit view
+		// it reads as the canopy's own falloff and keeps the frame's corners from
+		// competing with the instruments, and on an exterior shot with no lens in
+		// the fiction it reads as a photograph of a spaceship.
+		this.outputPass.setVignette(this.view === "cockpit" ? VIGNETTE_MAX : 0);
 
 		this.composer.render();
 		this.drawMarkers(camPos);

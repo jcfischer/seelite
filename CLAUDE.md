@@ -283,6 +283,33 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   colours are hex. It joins `cockpit.ts`, `live-cockpit.ts`, `planet-shaders.ts`
   and `planet-classes.glsl.ts` in that set. Naming it in a guard list does not
   guard it; it makes the probe throw before it starts.
+- **Multisampling the composer costs a resolve per layer pass, not per sample.**
+  `output-stage.ts` hands `EffectComposer` its own target so `antialias: true`
+  on the renderer finally means something — that flag configures the default
+  framebuffer, which this game never draws into. But
+  `WEBGL_multisampled_render_to_texture` is absent on ANGLE Metal, so three
+  blits the multisampled buffer down at the end of **every**
+  `WebGLRenderer.render`, and #15's ladder runs four `RenderPass`es into one
+  target. Measured headed at 2880x1800: 3.66 ms/frame at 0 samples, 13.96 at 2,
+  22.01 at 4 — and by pass count, 7.5 ms for one pass against 18.4 for four. The
+  figures live in `output-stage.ts` beside `COMPOSER_SAMPLES` and
+  `scripts/measure-light-cost.mjs` reprints them; what is worth knowing without
+  opening either is that **the sample count is not the lever** — the number of
+  layer passes sharing the target is. Two probes fail on frame time at any
+  non-zero count (`probe-live-cockpit`, `probe-navigation-console`), which is
+  the cost showing up as a check rather than as a figure.
+- **A dither belongs after the encode and a vignette before it.** The composer's
+  targets are half-float and the screen is eight bits, so the quantisation
+  happens in `OutputShader` — a ±0.5/255 noise added *there*, in display space,
+  is one code; the same noise added in linear light is a far smaller number in
+  the dark, which is the only place the banding is. `output-stage.ts` splices
+  both through `shader-splice.ts`, and `tests/output-stage.test.ts` asserts the
+  order from the patched source.
+- **The frame loop rewrites the vignette dial every frame**, from the view. A
+  probe that assigns `uVignette` and then renders measures its own assignment
+  being overwritten, and reads a working vignette as doing nothing — which it
+  did, 1.000 against 1.000. `SeeliteOutputPass.vignetteOverride` is the pin a
+  control arm sets.
 - **A shader splice that misses its marker is silent.** `String.replace` with a
   renamed chunk returns the string unchanged, leaving a stock material that
   compiles, links, renders and carries the patched program's own name. Every

@@ -41,8 +41,16 @@ const SCHEMA = {
 		note: "Lower is faster and softer. Below 100% the cockpit's glow thins: bloom's own chain is a fixed size, but it reads a smaller frame, so fine highlights are averaged away before they can pass its brightness threshold.",
 	},
 	/**
-	 * Which lighting terms the frame gets — #98's quality key, and #99's answer
-	 * to what "low" drops.
+	 * Which lighting terms the frame gets — #98's quality key, #99's answer to
+	 * what "low" drops, and since #200 the composer's sample count too.
+	 *
+	 * **The label says Lighting and one term under it is not a lighting term.**
+	 * #200's multisampling is a fill-rate cost paid on the same buffer for the
+	 * same reason, and the alternative was a second switch. A player moving a
+	 * setting is asking one question — is this machine keeping up, and what does
+	 * it cost me to look at — and two switches would make them ask it twice and
+	 * guess which half to move. `output-stage.ts` owns the count; the note below
+	 * is where the player is told, because a docstring is not a UI.
 	 *
 	 * There is no frame-time floor in this game and deliberately so (#98): the
 	 * target is Apple Silicon, the expensive part is gated, and a probe's frame
@@ -94,7 +102,7 @@ const SCHEMA = {
 		allowed: ["high", "low"] as const,
 		label: "Lighting",
 		describe: (v: string) => (v === "high" ? "High" : "Low"),
-		note: "High reflects the star off every hull, plate and cockpit surface, cuts the panel lines into the hulls and the cabin so a moving sun breaks across them, and lights the console from above. Low drops all three and keeps the sun, the star-side gradient and the cockpit fill; the picture stays lit, the panel lines stay painted, and the metal stops reading as metal.",
+		note: "High reflects the star off every hull, plate and cockpit surface, cuts the panel lines into the hulls and the cabin so a moving sun breaks across them, lights the console from above, and smooths every edge in the frame. Low drops all four and keeps the sun, the star-side gradient and the cockpit fill; the picture stays lit, the panel lines stay painted, the metal stops reading as metal, and rails and hull edges stair-step.",
 	},
 } as const;
 
