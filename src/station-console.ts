@@ -210,6 +210,31 @@ export function stationMarketScreen(
  * report a rise the player did not cause. `shelfQuantity`'s clamp does the same
  * to an already-empty shelf.
  */
+/**
+ * A shelf price as the player reads it.
+ *
+ * **One decimal, and that is not a style choice.** `PRICE_STEP_CR` is 0.4 and a
+ * base price is `closedPrice × PRICE_STEP_CR + offset × gradient ×
+ * PRICE_STEP_CR`, so every base price is a *multiple of 0.4* and no whole
+ * number represents one exactly. A responded price is not a multiple of
+ * anything — `stockResponse` scales by `1 + elasticity × clamp(...)` — so it
+ * needs the decimal for a second reason.
+ *
+ * It exists because `live-cockpit.ts` rendered this with `Math.round`, and the
+ * principal found the result in playtest: a refinery listing Food at **`0 Cr`**
+ * while `station-commerce.ts` charged the unrounded 0.4. The floor is reachable
+ * at a whole station role rather than at an edge — it is enforced twice, by
+ * `marketRowAt` and again by `stockResponse`, so nothing on any shelf is
+ * cheaper, and a refinery is industrial where Food's gradient is positive.
+ *
+ * **Here rather than in the renderer** for the reason `signedDelta` below is:
+ * this is one of §3's rules, both screens draw it, and the defect survived
+ * because every test read `priceCr` and none read the string. A formatter in a
+ * module that needs a DOM is a formatter no headless tier can hold.
+ */
+export const priceLabel = (priceCr: number): string =>
+	`${priceCr.toFixed(1)} Cr`;
+
 export const signedDelta = (value: number, digits: number): string => {
 	const magnitude = Math.abs(value).toFixed(digits);
 	if (Number(magnitude) !== 0) return `${value > 0 ? "↑" : "↓"}${magnitude}`;

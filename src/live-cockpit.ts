@@ -16,7 +16,7 @@ import type {
 	ConsoleMarketRow,
 	StationConsoleTab,
 } from "./station-console";
-import { signedDelta } from "./station-console";
+import { priceLabel, signedDelta } from "./station-console";
 
 export type RightTab = "Flight" | "Drive" | "Tuning";
 const RIGHT_TABS: readonly RightTab[] = ["Flight", "Drive", "Tuning"];
@@ -505,7 +505,7 @@ export class LiveCockpit {
 			const name = escapeHtml(entry.commodity.name);
 			if (!entry.listed)
 				return `<div class="lc-station-row" data-live-market-row="${name}" data-live-listed="false"><span>${name}</span><span class="lc-station-cell">—</span><span class="lc-station-cell">—</span></div>`;
-			const price = `${Math.round(entry.priceCr ?? 0)} Cr`;
+			const price = priceLabel(entry.priceCr ?? 0);
 			const stock = `${entry.quantity ?? 0} ${escapeHtml(entry.commodity.unit)}`;
 			const priceDelta =
 				entry.priceDeltaCr === undefined

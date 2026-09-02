@@ -13,7 +13,7 @@
  *   count check is blind from `displayTL` 0 through 6 — exactly the half a
  *   reader thinking about frontier stations would write against.
  */
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import {
 	COMMODITIES,
@@ -22,6 +22,7 @@ import {
 	FUEL_CR_PER_LY,
 	HOLD_REFERENCE_T,
 	type MarketStation,
+	PRICE_STEP_CR,
 	MARKET_PERIOD_MIN,
 	UNIVERSAL_GATE_CAP,
 	UNIVERSAL_ITEMS,
@@ -41,6 +42,7 @@ import {
 import {
 	flightFloorVisible,
 	requiredDisplayTL,
+	priceLabel,
 	signedDelta,
 	stationConsoleVisible,
 	stationEquipmentScreen,
@@ -471,4 +473,52 @@ test("#182: the screen's prices follow the flown hold, bay included", () => {
 			}).find((r) => r.commodity.name === good.name) as { priceCr: number }
 		).priceCr;
 	expect(unmarked(20)).toBe(unmarked(60));
+});
+
+/**
+ * §8's price column, and the row the principal found in playtest.
+ *
+ * A refinery listed Food at **`0 Cr`** and charged 0.4. `live-cockpit.ts`
+ * rendered the price with `Math.round`, while `station-commerce.ts` charges the
+ * unrounded `priceCr * quantity` — so a hundred tonnes of "free" Food cost
+ * 40 Cr.
+ *
+ * The floor is ordinary rather than an edge: `PRICE_STEP_CR` is enforced twice,
+ * by `marketRowAt` and again by `stockResponse`, so no shelf price in the game
+ * can be below it — and a refinery is industrial while Food has a positive
+ * gradient, which puts Food there on the floor at a whole station role.
+ *
+ * **The formatter is here rather than in the renderer** so a headless tier can
+ * hold it at all. That is what the defect turned on: the tests read `priceCr`
+ * and nothing read the string the player sees.
+ */
+describe("the price column says what the player is charged", () => {
+	test("the cheapest possible row does not read as free", () => {
+		// The floor, not a literal: this is the row that shipped as `0 Cr`.
+		expect(priceLabel(PRICE_STEP_CR)).toBe("0.4 Cr");
+		expect(priceLabel(PRICE_STEP_CR)).not.toContain("0 Cr");
+	});
+
+	test("a whole-credit render loses every base price, not only the floor", () => {
+		// The argument for one decimal beyond the floor case. A base price is
+		// `closedPrice × PRICE_STEP_CR + offset × gradient × PRICE_STEP_CR`, so
+		// **every base price is a multiple of 0.4** and no whole number can
+		// represent one exactly. Rounding is lossy on every row.
+		for (const steps of [1, 2, 3, 7, 34]) {
+			const priceCr = steps * PRICE_STEP_CR;
+			expect([steps, priceLabel(priceCr)]).toEqual([
+				steps,
+				`${priceCr.toFixed(1)} Cr`,
+			]);
+		}
+	});
+
+	test("it agrees with the two figures drawn beside it", () => {
+		// The credits line renders `toFixed(1)` and the delta column asks
+		// `signedDelta(..., 1)`. The price column was the only one of the three
+		// rounding to whole credits, which is how it read as free next to a
+		// delta that did not.
+		expect(priceLabel(12.6)).toBe("12.6 Cr");
+		expect(signedDelta(0.4, 1)).toBe("↑0.4");
+	});
 });
