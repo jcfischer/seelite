@@ -128,6 +128,7 @@ export const LEVERS = Object.freeze({
 	147: "the station interior",
 	162: "the aperture cut into the hull",
 	165: "the landing pad, and the shipyard keel aft of its hub",
+	206: "the planet surface at the apparent size that costs a frame",
 });
 
 /**
@@ -168,7 +169,7 @@ export const SHOT_KINDS = Object.freeze([
 ]);
 
 /**
- * Seventeen views, one clock, and — with one declared exception — one seed.
+ * Eighteen views, one clock, and — with one declared exception — one seed.
  *
  * **The exception is `refinery-cradle-berth`, and it names its own.** `SEED` 47
  * generates no refinery, so that view carries `seed: 2` and its capture
@@ -444,7 +445,7 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "planet-terminator",
-		covers: [99],
+		covers: [99, 206],
 		what: "The largest planet at a crescent. The far layer takes no fill on purpose, and this is why.",
 		shot: {
 			kind: "body-offset",
@@ -452,6 +453,57 @@ export const VIEWS = Object.freeze([
 			radii: 4,
 			sunAngleDeg: 70,
 			view: "cockpit",
+		},
+	},
+	/**
+	 * **The frame the planet-cost table is a price for** (#206).
+	 *
+	 * Every other framing in this set stands well off its subject; this one is
+	 * as close as a planet can be framed and still be a planet. Two radii is
+	 * where `asin(1 / 2)` = 30° meets the camera's 30° half-fov (`main.ts`'s
+	 * `fov` 60), so the body spans the frame's height exactly and the limb sits
+	 * on the top and bottom edges — full of surface, with the silhouette still
+	 * in shot.
+	 *
+	 * **1.2 was flown first, and rejected by eye.** #206 prescribed it and the
+	 * arithmetic was right — at 1.2 the body subtends 56.4° and the surface
+	 * reaches every edge — but the capture is a featureless orange wash. The
+	 * surface noise has a fixed frequency, so under about 1.6 radii it
+	 * magnifies into blobs and there is nothing left to judge: no crater, no
+	 * terminator, no limb. A ladder at 1.2, 1.6, 2, 2.5 and 3 put the collapse
+	 * between 1.6 and 1.2, and the principal picked 2. That the detail runs
+	 * out at all is a finding for a later node; what it settles here is that a
+	 * frame prescribed for *fill* was not a frame anything could be judged on,
+	 * which is `green-is-not-legible` one more time — the view captured, the
+	 * suite stayed green, and the picture was useless.
+	 *
+	 * The pair with `planet-terminator` is what makes a surface judgeable at
+	 * both ends: four radii out at a crescent for the silhouette and the
+	 * atmosphere edge, two radii for the surface itself.
+	 *
+	 * It is also the one frame in the set that #206's sweep prices directly —
+	 * 2 is a column in `RADII` for that reason, and 1.2 stays a column too
+	 * because the expensive readings are there even though the picture is not.
+	 * Framed on `planet-5` by id rather than through `largest-planet` so the
+	 * table and the picture cannot drift apart; `tests/view-set.test.ts` pins
+	 * the two together against `FIXTURE`.
+	 *
+	 * `sunAngleDeg` 60 rather than the terminator view's 70: what is wanted is
+	 * a lit surface with the terminator still crossing it, not a crescent that
+	 * would leave most of the frame black. `chase` rather than `cockpit`
+	 * because the canopy frame would eat a third of the one thing this view
+	 * exists to show.
+	 */
+	{
+		name: "planet-fill",
+		covers: [206],
+		what: "A rocky planet spanning the frame at two radii, limb on the top and bottom edges. Surface detail at the largest apparent size it still resolves at, and the frame the planet-cost table prices.",
+		shot: {
+			kind: "body-offset",
+			body: "planet-5",
+			radii: 2,
+			sunAngleDeg: 60,
+			view: "chase",
 		},
 	},
 	{
