@@ -288,10 +288,11 @@ function quote(
 	port: Port,
 	deficits: DeficitMap,
 	gameTimeMin: number,
+	holdT: number,
 ): Quote {
 	const row = marketRow(good, port.record.economy, port.market, gameTimeMin);
 	const deficit = readDeficit(deficits, port.key, good.name, gameTimeMin);
-	const priced = stockResponse(row.priceCr, deficit);
+	const priced = stockResponse(row.priceCr, deficit, holdT);
 	return { priceCr: priced, units: shelfQuantity(row.quantity, deficit) };
 }
 
@@ -356,8 +357,8 @@ function basket(
 		(g) => !g.sellOnly && tradable(g, from) && tradable(g, to),
 	)
 		.map((g) => {
-			const here = quote(g, from, deficits, buyMin);
-			const there = quote(g, to, deficits, sellMin);
+			const here = quote(g, from, deficits, buyMin, holdT);
+			const there = quote(g, to, deficits, sellMin, holdT);
 			return { good: g, here, there, margin: there.priceCr - here.priceCr };
 		})
 		.filter((c) => c.margin > 0 && c.here.units > 0)
@@ -494,6 +495,19 @@ export interface Result {
 	 *  `bestWaitRate / bestFlyRate`. A maximum alone cannot tell one lucky
 	 *  moment from a strategy. */
 	waitRatios: number[];
+	/**
+	 * Tonnes of **hold-occupying** cargo actually lifted, and over how many
+	 * laden hops — #182's ceiling.
+	 *
+	 * A rate curve cannot say where a hold stops being worth having, because
+	 * rate keeps creeping up on galaxy-to-galaxy noise. What the load says is
+	 * physical: a hold the economy cannot fill rides empty, and the tonnage
+	 * lifted per run plateaus at whatever the shelves in front of the trader
+	 * hold. Sub-tonne goods are excluded, because they bypass the hold check
+	 * (research §2.2) and so are not evidence about hold capacity at all.
+	 */
+	tonnesLifted: number;
+	ladenHops: number;
 }
 
 /**
@@ -751,7 +765,7 @@ interface Ledger {
  * item N, item N+1 went unchecked until the following hop — a whole leg later —
  * so every figure after the first was stretched by a leg it did not take.
  */
-function shop(port: Port, led: Ledger, tMin: number): void {
+function shop(port: Port, led: Ledger, tMin: number, buys: boolean): void {
 	const probe = () => {
 		for (const item of led.remaining)
 			if (led.credits >= item.priceCr && !led.affordableAt.has(item.name))
@@ -761,6 +775,13 @@ function shop(port: Port, led: Ledger, tMin: number): void {
 	probe();
 	if (led.kitAffordableAt === null && led.credits + led.spentCr >= led.kitCr)
 		led.kitAffordableAt = tMin;
+
+	// **The stamp is above the gate, not inside it.** `RunOptions.shop` turns
+	// off *buying*, not the milestone: the capital §8 measures is what the
+	// economy yielded, and a curve arm that flew the whole window without a
+	// shopping list still has one. Gating the stamp would have made the hold
+	// curve's milestone column silently empty.
+	if (!buys) return;
 
 	for (;;) {
 		const i = led.remaining.findIndex(
@@ -817,6 +838,23 @@ export interface RunOptions {
 	 * the rate is a rate over one clock.
 	 */
 	stopAtKit?: boolean;
+	/**
+	 * Whether the trader buys equipment at all.
+	 *
+	 * **Off is what a hold curve needs, and it removes a confound rather than
+	 * adding one.** With shopping on, the Large Cargo Bay's +15 t lands on every
+	 * arm — but it is a 75% boost to a 20 t hold and a 25% boost to a 60 t one,
+	 * so the swept variable stops being the hold and becomes the hold plus a
+	 * hold-dependent bonus. And the list runs out: `remaining.length === 0` ends
+	 * the run, sooner at a large hold than at a small one, so the arms would fly
+	 * different windows of the clock and therefore different price tables — #25's
+	 * fault three, arrived at from a new direction.
+	 *
+	 * With it off, `holdT` is constant for the whole window, every arm flies the
+	 * full `hours`, and nothing terminates early. §8's milestone still needs it
+	 * on, which is why it is an option and not a deletion.
+	 */
+	shop?: boolean;
 }
 
 export function run(
@@ -827,6 +865,7 @@ export function run(
 	const dockSeconds = opts.dockSeconds ?? DOCK_SECONDS;
 	const startHoldT = opts.holdT ?? HOLD_T;
 	const stopAtKit = opts.stopAtKit ?? true;
+	const buysEquipment = opts.shop ?? true;
 	// The cache is keyed on a clock value, and every run replays the clock from
 	// zero — so it is cleared per run rather than kept, or run N would read run
 	// N−1's placements at the same instant.
@@ -869,6 +908,8 @@ export function run(
 	let intra = 0;
 	let jumps = 0;
 	let waitMinutes = 0;
+	let tonnesLifted = 0;
+	let ladenHops = 0;
 	let jumpMinutes = 0;
 	let dockMinutes = 0;
 	const waitRatios: number[] = [];
@@ -915,7 +956,14 @@ export function run(
 		// Buy, fly, sell. The deficit is written at both ends — the whole point
 		// of §5.2 is that the market remembers which of them you did.
 		for (const { good, units } of hop.cargo)
-			deficits = recordTrade(deficits, here.key, good.name, units, t / 60);
+			deficits = recordTrade(
+				deficits,
+				here.key,
+				good.name,
+				units,
+				t / 60,
+				led.holdT,
+			);
 		led.credits -= hop.fuelCr;
 		if (hop.kind === "jump") jumpMinutes += JUMP_SECONDS / 60;
 		dockMinutes += dockSeconds / 60;
@@ -928,16 +976,25 @@ export function run(
 				good.name,
 				-units,
 				arriveMin,
+				led.holdT,
 			);
 		led.credits += hop.profitCr;
+		const tonnes = hop.cargo.reduce(
+			(sum, c) => sum + (c.good.unit === "t" ? c.units : 0),
+			0,
+		);
+		if (tonnes > 0) {
+			tonnesLifted += tonnes;
+			ladenHops++;
+		}
 		here = hop.to;
 		hops++;
 		if (hop.kind === "jump") jumps++;
 		else intra++;
 
-		shop(here, led, t / 60);
+		shop(here, led, t / 60, buysEquipment);
 
-		if (led.remaining.length === 0) break;
+		if (buysEquipment && led.remaining.length === 0) break;
 		// Once the capital milestone is passed there is nothing left for §8 to
 		// measure: what remains is a routing problem this sim does not model. A
 		// rate comparison turns it off, for the reason `RunOptions.stopAtKit`
@@ -962,6 +1019,8 @@ export function run(
 		kitAffordableAtMinutes: led.kitAffordableAt,
 		tally,
 		waitRatios,
+		tonnesLifted,
+		ladenHops,
 	};
 }
 

@@ -408,7 +408,7 @@ let richestClosable = {
 forEachLegalPair((pair) => {
 	const margin = pair.sellCr - pair.buyCr;
 	if (margin <= richestClosable.margin) return;
-	if (residualMarginCr(pair.buyCr, pair.sellCr) > 0) return; // unclosable
+	if (residualMarginCr(pair.buyCr, pair.sellCr, HOLD_REFERENCE_T) > 0) return; // unclosable
 	richestClosable = {
 		buyCr: pair.buyCr,
 		sellCr: pair.sellCr,
@@ -421,6 +421,10 @@ forEachLegalPair((pair) => {
 const exhaustion = runsToExhaustion({
 	buyBaseCr: richestClosable.buyCr,
 	sellBaseCr: richestClosable.sellCr,
+	// The baseline hull's, which is what §5.4 was ratified on. #182 made the
+	// figure a parameter; the hold *sweep* over it is that node's report, and
+	// this one keeps reporting the section it belongs to.
+	holdT: HOLD_REFERENCE_T,
 	maxRuns: 12,
 });
 console.log(
@@ -469,7 +473,7 @@ for (const good of COMMODITIES) {
 // reported figures would quietly disagree.
 
 console.log("\n── §5.4: sell/buy ratios the deficit cannot close ──");
-const survey = surveyResiduals();
+const survey = surveyResiduals(HOLD_REFERENCE_T);
 console.log(`the deficit closes any ratio below ${CLOSABLE_RATIO.toFixed(3)}`);
 console.log(
 	`worst legal intra-system ratio: ${survey.worstRatio.ratio.toFixed(2)} — ${survey.worstRatio.good.name} at economy ${survey.worstRatio.economy}, ${survey.worstRatio.buyStation}→${survey.worstRatio.sellStation}, margin only ${(survey.worstRatio.sellCr - survey.worstRatio.buyCr).toFixed(1)} Cr/t`,
@@ -493,7 +497,11 @@ console.log("\n── §5.4: the same comparison, both sides saturated ──");
 let bestInterFresh = 0;
 let bestInterSaturated = 0;
 forEachReachablePair({ stride: 64, maxDest: 1 }, (from, to) => {
-	const { freshCr, saturatedCr } = bestResidualBetween(from, to);
+	const { freshCr, saturatedCr } = bestResidualBetween(
+		from,
+		to,
+		HOLD_REFERENCE_T,
+	);
 	bestInterFresh = Math.max(bestInterFresh, freshCr);
 	bestInterSaturated = Math.max(bestInterSaturated, saturatedCr);
 });

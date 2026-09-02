@@ -5,6 +5,7 @@
  */
 import * as THREE from "three";
 import { TRAVERSAL_SECONDS_DEEP, TRAVERSAL_SECONDS_NEAR } from "./docking";
+import { HULL_SPECS, PLAYER_BASELINE_HULL } from "./hull";
 import {
 	MARKET_PERIOD_MIN,
 	type MarketStation,
@@ -324,6 +325,10 @@ function renderMarketTab(view: ConsoleView): string {
 		economy: view.station.economy,
 		gameTimeMin: view.gameTimeMin,
 		deficitOf: (name) => view.station.moved[name] ?? 0,
+		// The gallery flies the baseline hull, read off the roster rather than
+		// restated: #182 made the response a function of the hold, so a gallery
+		// with its own figure would draw prices no ship in the game sees.
+		holdT: HULL_SPECS[PLAYER_BASELINE_HULL].holdT,
 	});
 	const traded = rows.filter((row) => row.listed);
 	const absent = rows.filter((row) => !row.listed);

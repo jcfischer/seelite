@@ -103,6 +103,12 @@ export const readDeficit = (
  * and leave the save describing a station that was never traded at. The whole
  * row decays to `gameTimeMin` first — the mark being added is the only one at
  * full strength.
+ *
+ * **`holdT` is the flown hull's hold** and is required rather than defaulted
+ * (#182): it is what `addDeficit` saturates against, so a caller that forgot to
+ * name a hull would give a freighter the courier's memory cap. The units stored
+ * stay tonnes — `shelfQuantity` reads them against Bell's own 63-unit shelf,
+ * which is a shelf and not a memory.
  */
 export function recordTrade(
 	map: DeficitMap,
@@ -110,10 +116,11 @@ export function recordTrade(
 	goodName: string,
 	units: number,
 	gameTimeMin: number,
+	holdT: number,
 ): DeficitMap {
 	const current = map[key] ?? { goods: {}, updatedAt: gameTimeMin };
 	const decayed = decayRow(current, gameTimeMin);
-	const next = addDeficit(decayed.goods[goodName] ?? 0, units);
+	const next = addDeficit(decayed.goods[goodName] ?? 0, units, holdT);
 	const goods = { ...decayed.goods };
 	if (Math.abs(next) < DEFICIT_DROP_UNITS) delete goods[goodName];
 	else goods[goodName] = next;

@@ -23,10 +23,12 @@ import {
 	type Commodity,
 	COMMODITIES,
 	DEFICIT_MAX,
+	DEFICIT_SATURATION_RUNS,
 	ECONOMY_MAX,
 	ECONOMY_MIN,
 	HOLD_REFERENCE_T,
 	MIN_STOCK_RESPONSE_FACTOR,
+	PRICE_ELASTICITY,
 	PRICE_STEP_CR,
 	QUANTITY_CAP,
 	SATURATE,
@@ -72,8 +74,42 @@ export const NARCOTICS_BELL: Commodity = {
  * 2.8 Cr/t because it is a 0.4 Cr good. What matters is whether any pair leaves
  * real money, and this is the number that answers it.
  */
-export const residualMarginCr = (buyCr: number, sellCr: number): number =>
-	stockResponse(sellCr, -DEFICIT_MAX) - stockResponse(buyCr, DEFICIT_MAX);
+export const saturatedDeficitT = (holdT: number): number =>
+	DEFICIT_SATURATION_RUNS * holdT;
+
+/**
+ * §5.2's response **as it stood before #182**: a ±63 *tonne* clamp over a fixed
+ * 20 t reference, whatever the hull.
+ *
+ * Kept runnable rather than described, for the reason `BELL_WRAP` above is kept
+ * — a rejection with no runnable counterpart is an assertion. It is the control
+ * arm of #182's sweep and the thing `measure-hull-pricing.ts` compares against,
+ * and the suite requires it to go *red* on the property the change was made
+ * for: above `DEFICIT_MAX` tonnes of hold this expression cannot tell one hull
+ * from another, because a single run already reaches the clamp.
+ *
+ * It agrees with `stockResponse` exactly at `HOLD_REFERENCE_T`, which is what
+ * makes every figure §5.4 was ratified on survive the change.
+ */
+export const fixedReferenceResponse = (
+	priceCr: number,
+	deficit: number,
+): number =>
+	Math.max(
+		PRICE_STEP_CR,
+		priceCr *
+			(1 +
+				(PRICE_ELASTICITY * clamp(deficit, -DEFICIT_MAX, DEFICIT_MAX)) /
+					HOLD_REFERENCE_T),
+	);
+
+export const residualMarginCr = (
+	buyCr: number,
+	sellCr: number,
+	holdT: number,
+): number =>
+	stockResponse(sellCr, -saturatedDeficitT(holdT), holdT) -
+	stockResponse(buyCr, saturatedDeficitT(holdT), holdT);
 
 /**
  * Bell's byte arithmetic, kept runnable because §2 rejects it and a rejection
@@ -156,7 +192,7 @@ export const ALL_STATIONS: readonly StationTypeKey[] = [
  * `hit` is counted when the callback returns true.
  */
 export function sweepDomain(
-	visit: (economy: number, fluct: number) => boolean | void,
+	visit: (economy: number, fluct: number) => boolean | undefined,
 ): { hits: number; rows: number } {
 	let hits = 0;
 	let rows = 0;
@@ -221,12 +257,15 @@ export const RUN_MINUTES = 4;
 export function runsToExhaustion(opts: {
 	buyBaseCr: number;
 	sellBaseCr: number;
-	holdT?: number;
+	/** The flown hull's hold, tonnes. **Required since #182**: the response
+	 *  saturates in `DEFICIT_SATURATION_RUNS` runs of *this* hold, so a default
+	 *  would silently measure the courier's brake for a freighter. */
+	holdT: number;
 	/** Game minutes a full run takes to fly — the mark fades while you do. */
 	runMinutes?: number;
 	maxRuns?: number;
 }): { runs: number; margins: number[]; profitCr: number } {
-	const holdT = opts.holdT ?? HOLD_REFERENCE_T;
+	const holdT = opts.holdT;
 	const runMinutes = opts.runMinutes ?? RUN_MINUTES;
 	const maxRuns = opts.maxRuns ?? 20;
 	const margins: number[] = [];
@@ -235,13 +274,13 @@ export function runsToExhaustion(opts: {
 	let profitCr = 0;
 	while (margins.length < maxRuns) {
 		const margin =
-			stockResponse(opts.sellBaseCr, -sold) -
-			stockResponse(opts.buyBaseCr, bought);
+			stockResponse(opts.sellBaseCr, -sold, holdT) -
+			stockResponse(opts.buyBaseCr, bought, holdT);
 		if (margin <= 0) break;
 		margins.push(margin);
 		profitCr += margin * holdT;
-		bought = addDeficit(decayDeficit(bought, runMinutes), holdT);
-		sold = addDeficit(decayDeficit(sold, runMinutes), holdT);
+		bought = addDeficit(decayDeficit(bought, runMinutes), holdT, holdT);
+		sold = addDeficit(decayDeficit(sold, runMinutes), holdT, holdT);
 	}
 	return { runs: margins.length, margins, profitCr };
 }
@@ -336,7 +375,7 @@ export interface ResidualSurvey {
  * accumulated, so a change to the domain had to be made twice or the two
  * reported figures would silently disagree.
  */
-export function surveyResiduals(): ResidualSurvey {
+export function surveyResiduals(holdT: number): ResidualSurvey {
 	const empty = COMMODITIES[0];
 	let worst = {
 		good: empty,
@@ -354,8 +393,8 @@ export function surveyResiduals(): ResidualSurvey {
 	let rows = 0;
 	forEachLegalPair((pair) => {
 		rows++;
-		const residualCr = residualMarginCr(pair.buyCr, pair.sellCr);
-		const runCr = runValueCr(pair.good, residualCr);
+		const residualCr = residualMarginCr(pair.buyCr, pair.sellCr, holdT);
+		const runCr = runValueCr(pair.good, residualCr, holdT);
 		if (runCr > worst.runCr) worst = { ...pair, residualCr, runCr };
 		if (residualCr > worstPerUnit.residualCr)
 			worstPerUnit = { ...pair, residualCr };
@@ -382,8 +421,11 @@ export function surveyResiduals(): ResidualSurvey {
  *   entirely — research §2.2 — so a run is limited only by Bell's 63-unit
  *   shelf cap, and rides *alongside* a full hold rather than inside it.
  */
-export const runValueCr = (good: Commodity, marginCr: number): number =>
-	marginCr * (good.unit === "t" ? HOLD_REFERENCE_T : QUANTITY_CAP);
+export const runValueCr = (
+	good: Commodity,
+	marginCr: number,
+	holdT: number,
+): number => marginCr * (good.unit === "t" ? holdT : QUANTITY_CAP);
 
 /**
  * Best fresh and saturated margin between two concrete endpoints, over every
@@ -397,6 +439,7 @@ export const runValueCr = (good: Commodity, marginCr: number): number =>
 export function bestResidualBetween(
 	from: { economy: number; stations: readonly StationTypeKey[] },
 	to: { economy: number; stations: readonly StationTypeKey[] },
+	holdT: number,
 	fluctPairs: readonly (readonly [number, number])[] = FLUCT_PAIRS,
 ): { freshCr: number; saturatedCr: number } {
 	let freshCr = 0;
@@ -417,7 +460,7 @@ export function bestResidualBetween(
 					freshCr = Math.max(freshCr, sellCr - buy.priceCr);
 					saturatedCr = Math.max(
 						saturatedCr,
-						residualMarginCr(buy.priceCr, sellCr),
+						residualMarginCr(buy.priceCr, sellCr, holdT),
 					);
 				}
 	}
@@ -460,7 +503,10 @@ export function bestMarginAnyLeg(
  * shipyard will not buy it at any price. Everything else is free to use the
  * whole table, which is what makes the comparison a fair one.
  */
-export function bestRunValueCr(good: Commodity): {
+export function bestRunValueCr(
+	good: Commodity,
+	holdT: number = HOLD_REFERENCE_T,
+): {
 	runCr: number;
 	marginCr: number;
 	leg: string;
@@ -468,14 +514,14 @@ export function bestRunValueCr(good: Commodity): {
 	if (good.illegal) {
 		const { margin } = bestMargin(good, "refinery", "refinery");
 		return {
-			runCr: runValueCr(good, margin),
+			runCr: runValueCr(good, margin, holdT),
 			marginCr: margin,
 			leg: "refinery→refinery",
 		};
 	}
 	const { margin, buyStation, sellStation } = bestMarginAnyLeg(good);
 	return {
-		runCr: runValueCr(good, margin),
+		runCr: runValueCr(good, margin, holdT),
 		marginCr: margin,
 		leg: `${buyStation}→${sellStation}`,
 	};
@@ -501,7 +547,12 @@ export function runTotalCr(opts: {
 	buyFluct: number;
 	sellFluct: number;
 	holdGood: (good: Commodity) => boolean;
+	/** The flown hull's hold, tonnes. §4's run-value table is the baseline
+	 *  hull's, which is what it has always been; #182 made the figure nameable
+	 *  rather than implicit. */
+	holdT?: number;
 }): { totalCr: number; holdCr: number; subTonneCr: number } {
+	const holdT = opts.holdT ?? HOLD_REFERENCE_T;
 	let holdCr = 0;
 	let subTonneCr = 0;
 	for (const good of COMMODITIES) {
@@ -517,7 +568,7 @@ export function runTotalCr(opts: {
 			marketRowAt(good, opts.sellEconomy, opts.sellFluct, opts.sellStation)
 				.priceCr - buy.priceCr;
 		if (margin <= 0) continue;
-		const value = runValueCr(good, margin);
+		const value = runValueCr(good, margin, holdT);
 		if (good.unit === "t") {
 			if (opts.holdGood(good)) holdCr = Math.max(holdCr, value);
 		} else if (!good.illegal) {

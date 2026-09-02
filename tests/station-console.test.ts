@@ -20,6 +20,7 @@ import {
 	type Commodity,
 	EQUIPMENT,
 	FUEL_CR_PER_LY,
+	HOLD_REFERENCE_T,
 	type MarketStation,
 	MARKET_PERIOD_MIN,
 	UNIVERSAL_GATE_CAP,
@@ -67,7 +68,13 @@ test("obligation 3: the builder calls marketRow only where listsCommodity is tru
 	for (const station of [TRADE, FENCE]) {
 		const asked: string[] = [];
 		stationMarketScreen(
-			{ station, economy: ECONOMY, gameTimeMin: 0, deficitOf: noDeficit },
+			{
+				station,
+				economy: ECONOMY,
+				gameTimeMin: 0,
+				deficitOf: noDeficit,
+				holdT: HOLD_REFERENCE_T,
+			},
 			(commodity, economy, s, gameTimeMin) => {
 				asked.push(commodity.name);
 				return marketRow(commodity, economy, s, gameTimeMin);
@@ -96,6 +103,7 @@ test("M5: seventeen rows at every station, priced iff the station lists the good
 			economy: ECONOMY,
 			gameTimeMin: 0,
 			deficitOf: noDeficit,
+			holdT: HOLD_REFERENCE_T,
 		});
 		expect(rows.length).toBe(COMMODITIES.length);
 		expect(rows.map((r) => r.commodity.name)).toEqual(
@@ -137,6 +145,7 @@ test("obligation 4: a non-zero deficit carries a signed delta, a zero one carrie
 		economy: ECONOMY,
 		gameTimeMin: 0,
 		deficitOf: moved(good.name, 12),
+		holdT: HOLD_REFERENCE_T,
 	});
 	const movedRow = rows.find((r) => r.commodity.name === good.name);
 	if (!movedRow) throw new Error("the moved good is not on the screen");
@@ -166,12 +175,16 @@ test("obligation 4: the delta is measured against this epoch's base, not the las
 			economy: ECONOMY,
 			gameTimeMin,
 			deficitOf: moved(good.name, 12),
+			holdT: HOLD_REFERENCE_T,
 		});
 		const row = rows.find((r) => r.commodity.name === good.name);
 		if (!row) throw new Error("the moved good is not on the screen");
-		expect(row.priceCr).toBeCloseTo(stockResponse(base.priceCr, 12), 9);
+		expect(row.priceCr).toBeCloseTo(
+			stockResponse(base.priceCr, 12, HOLD_REFERENCE_T),
+			9,
+		);
 		expect(row.priceDeltaCr as number).toBeCloseTo(
-			stockResponse(base.priceCr, 12) - base.priceCr,
+			stockResponse(base.priceCr, 12, HOLD_REFERENCE_T) - base.priceCr,
 			9,
 		);
 		expect(row.quantity).toBe(shelfQuantity(base.quantity, 12));

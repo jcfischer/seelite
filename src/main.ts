@@ -229,6 +229,7 @@ import { readDeficit } from "./deficits";
 import { marketStationOf } from "./market";
 import { carrierKey } from "./carrier-key";
 import {
+	commanderHold,
 	newCommander,
 	transactAtStation,
 	type StationAction,
@@ -4928,6 +4929,11 @@ class Game {
 				gameTimeMin,
 				deficitOf: (goodName) =>
 					readDeficit(envelope.deficits, stationKey, goodName, gameTimeMin),
+				// The flown hold, bay included — the same figure the transaction
+				// uses (#182), read through `commanderHold` rather than off the
+				// roster so the screen and the till cannot disagree about whether
+				// a Large Cargo Bay counts.
+				holdT: commanderHold(this.commander).capacityT,
 			}),
 			equipment: stationEquipmentScreen({
 				type: market.type,

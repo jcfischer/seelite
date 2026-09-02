@@ -164,7 +164,8 @@ export function transactAtStation(
 		good.name,
 		input.gameTimeMin,
 	);
-	const priceCr = stockResponse(base.priceCr, deficit);
+	const holdT = holdCapacityT(input.commander);
+	const priceCr = stockResponse(base.priceCr, deficit, holdT);
 	const shelf = shelfQuantity(base.quantity, deficit);
 	if (action.type === "buy-commodity") {
 		if (good.sellOnly) return rejected(input, "commodity-sell-only");
@@ -190,6 +191,7 @@ export function transactAtStation(
 				good.name,
 				quantity,
 				input.gameTimeMin,
+				holdT,
 			),
 		};
 	}
@@ -208,6 +210,7 @@ export function transactAtStation(
 			good.name,
 			-quantity,
 			input.gameTimeMin,
+			holdT,
 		),
 	};
 }

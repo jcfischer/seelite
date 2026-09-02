@@ -27,9 +27,11 @@ import {
 	type Commodity,
 	DEFICIT_HALF_LIFE_MIN,
 	DEFICIT_MAX,
+	DEFICIT_SATURATION_RUNS,
 	EQUIPMENT,
 	FUEL_CR_PER_LY,
 	FUEL_TANK_LY,
+	HOLD_REFERENCE_T,
 	MARKET_PERIOD_MIN,
 	MIN_STOCK_RESPONSE_FACTOR,
 	NARCOTICS_RETUNE,
@@ -47,6 +49,7 @@ import {
 	shelfQuantity,
 	stockResponse,
 } from "../src/market";
+import { HULL_SPECS, PURCHASABLE_HULL_IDS } from "../src/hull";
 import {
 	ALL_ECONOMIES,
 	ALL_FLUCT,
@@ -58,6 +61,7 @@ import {
 	OFFSET_STATIONS,
 	bestMargin,
 	bestRunValueCr,
+	fixedReferenceResponse,
 	floorRate,
 	forEachLegalPair,
 	residualMarginCr,
@@ -65,6 +69,7 @@ import {
 	runValueCr,
 	runsToExhaustion,
 	runsUntilHoldLimited,
+	saturatedDeficitT,
 	surveyResiduals,
 	sweepDomain,
 } from "./helpers/market-math";
@@ -493,6 +498,7 @@ describe("§4/§4.1 run value", () => {
 			runValueCr(
 				byName(name),
 				bestMargin(byName(name), "refinery", "refinery").margin,
+				HOLD_REFERENCE_T,
 			);
 		expect(fenceValue("Gold")).toBeGreaterThan(300);
 		expect(fenceValue("Gold")).toBeLessThan(400);
@@ -533,26 +539,80 @@ describe("§5 the stock deficit", () => {
 		// A flat byte shift would move a ~7 Cr good by more than its entire
 		// economy sweep for one hold of cargo.
 		for (const price of [7, 61, 100]) {
-			expect(stockResponse(price, 20)).toBeCloseTo(
-				price * (1 + PRICE_ELASTICITY),
-				6,
-			);
-			expect(stockResponse(price, -20)).toBeCloseTo(
-				price * (1 - PRICE_ELASTICITY),
-				6,
-			);
-			expect(stockResponse(price, 0)).toBeCloseTo(price, 6);
+			expect(
+				stockResponse(price, HOLD_REFERENCE_T, HOLD_REFERENCE_T),
+			).toBeCloseTo(price * (1 + PRICE_ELASTICITY), 6);
+			expect(
+				stockResponse(price, -HOLD_REFERENCE_T, HOLD_REFERENCE_T),
+			).toBeCloseTo(price * (1 - PRICE_ELASTICITY), 6);
+			expect(stockResponse(price, 0, HOLD_REFERENCE_T)).toBeCloseTo(price, 6);
+			// **One full run of any hull moves the price by the same 10%** — #182's
+			// answer to #26's D6, and the property the old expression lost above a
+			// 63 t hold. A hull is not punished for its size; it is punished for
+			// the number of runs it has made.
+			for (const hull of PURCHASABLE_HULL_IDS) {
+				const holdT = HULL_SPECS[hull].holdT;
+				expect(stockResponse(price, holdT, holdT)).toBeCloseTo(
+					price * (1 + PRICE_ELASTICITY),
+					6,
+				);
+			}
 		}
 	});
 
 	test("saturates at the cap rather than running away", () => {
-		expect(addDeficit(60, 40)).toBe(DEFICIT_MAX);
-		expect(addDeficit(-60, -40)).toBe(-DEFICIT_MAX);
+		expect(addDeficit(60, 40, HOLD_REFERENCE_T)).toBe(DEFICIT_MAX);
+		expect(addDeficit(-60, -40, HOLD_REFERENCE_T)).toBe(-DEFICIT_MAX);
 		// …and a price built from a runaway deficit is still bounded.
-		expect(stockResponse(61, 10_000)).toBeCloseTo(
-			stockResponse(61, DEFICIT_MAX),
+		expect(stockResponse(61, 10_000, HOLD_REFERENCE_T)).toBeCloseTo(
+			stockResponse(61, DEFICIT_MAX, HOLD_REFERENCE_T),
 			6,
 		);
+	});
+
+	test("the cap is a ratchet, so a downgrade cannot launder a mark", () => {
+		// Sell the freighter, trade once in a courier, buy the freighter back.
+		// If the courier's own cap were applied to somebody else's mark, that
+		// sequence would wash a saturated 189 t deficit down to 63 — a brake with
+		// an off switch, and the reason `addDeficit` takes the larger of the two.
+		const freighterHold = HULL_SPECS.freighter.holdT;
+		const saturated = DEFICIT_SATURATION_RUNS * freighterHold;
+		expect(addDeficit(0, saturated * 2, freighterHold)).toBeCloseTo(
+			saturated,
+			6,
+		);
+		expect(addDeficit(saturated, 5, HOLD_REFERENCE_T)).toBeCloseTo(
+			saturated,
+			6,
+		);
+		// It still fades: the ratchet is on the clamp, not on the decay.
+		expect(decayDeficit(saturated, DEFICIT_HALF_LIFE_MIN)).toBeCloseTo(
+			saturated / 2,
+			6,
+		);
+	});
+
+	test("every hull saturates after the same number of runs", () => {
+		// #26's D6 asked for a response that scales with the hold, and #13's
+		// constraint says where a scaling may not live: on a bounded index, where
+		// the clamp deletes it. The old expression divided a ±63 *tonne* clamp by
+		// a fixed 20, so a 63 t hull and a 200 t hull left an identical mark —
+		// the scaling was clamped away exactly where the ladder begins.
+		//
+		// The control is the rejected arm, kept runnable in `market-math.ts` for
+		// the reason `BELL_WRAP` is: a rejection with no runnable counterpart is
+		// an assertion. It must go *red* on this property, or the property is not
+		// evidence for the change.
+		const oneRun = (holdT: number) =>
+			stockResponse(100, holdT, holdT) / 100 - 1;
+		const oneRunFixed = (holdT: number) =>
+			fixedReferenceResponse(100, holdT) / 100 - 1;
+		const holds = [8, 20, 60, 63, 120, 197];
+		for (const holdT of holds)
+			expect(oneRun(holdT)).toBeCloseTo(PRICE_ELASTICITY, 9);
+		// …and the control cannot tell 63 t from 197 t at all.
+		expect(oneRunFixed(63)).toBeCloseTo(oneRunFixed(197), 9);
+		expect(oneRunFixed(63)).toBeGreaterThan(oneRunFixed(20));
 	});
 
 	test("never prices a good below §3's floor", () => {
@@ -562,25 +622,34 @@ describe("§5 the stock deficit", () => {
 		// 0.4 Cr are the population below it. A bound that holds for most of the
 		// domain is not a bound.
 		expect(MIN_STOCK_RESPONSE_FACTOR).toBeCloseTo(0.685, 6);
-		expect(stockResponse(PRICE_STEP_CR, -DEFICIT_MAX)).toBeCloseTo(
+		expect(
+			stockResponse(PRICE_STEP_CR, -DEFICIT_MAX, HOLD_REFERENCE_T),
+		).toBeCloseTo(PRICE_STEP_CR, 6);
+		expect(stockResponse(0.5, -DEFICIT_MAX, HOLD_REFERENCE_T)).toBeCloseTo(
 			PRICE_STEP_CR,
 			6,
 		);
-		expect(stockResponse(0.5, -DEFICIT_MAX)).toBeCloseTo(PRICE_STEP_CR, 6);
 		// …and above the crossover it is the multiplier, not the floor, that binds.
 		for (const price of [5, 61, 102])
-			expect(stockResponse(price, -DEFICIT_MAX)).toBeCloseTo(
+			expect(stockResponse(price, -DEFICIT_MAX, HOLD_REFERENCE_T)).toBeCloseTo(
 				price * MIN_STOCK_RESPONSE_FACTOR,
 				6,
 			);
-		// The strong claim, over every price the table can actually produce.
+		// The strong claim, over every price the table can actually produce —
+		// **and over every hold in the roster**, because #182 made the response a
+		// function of one. `MIN_STOCK_RESPONSE_FACTOR` is hold-invariant now, so
+		// the floor's whole domain grew and a check pinned to 20 t would no longer
+		// cover it.
 		for (const commodity of COMMODITIES)
 			for (const economy of ALL_ECONOMIES)
 				for (const station of ALL_STATIONS) {
 					const row = marketRowAt(commodity, economy, 0, station);
-					expect(
-						stockResponse(row.priceCr, -DEFICIT_MAX),
-					).toBeGreaterThanOrEqual(PRICE_STEP_CR);
+					for (const hull of PURCHASABLE_HULL_IDS) {
+						const holdT = HULL_SPECS[hull].holdT;
+						expect(
+							stockResponse(row.priceCr, -saturatedDeficitT(holdT), holdT),
+						).toBeGreaterThanOrEqual(PRICE_STEP_CR);
+					}
 				}
 	});
 
@@ -605,11 +674,13 @@ describe("§5 the stock deficit", () => {
 		let slowest = 0;
 		forEachLegalPair((pair) => {
 			if (pair.sellCr <= pair.buyCr) return; // never profitable to begin with
-			if (residualMarginCr(pair.buyCr, pair.sellCr) > 0) return; // unclosable
+			if (residualMarginCr(pair.buyCr, pair.sellCr, HOLD_REFERENCE_T) > 0)
+				return; // unclosable
 			checked++;
 			const { runs } = runsToExhaustion({
 				buyBaseCr: pair.buyCr,
 				sellBaseCr: pair.sellCr,
+				holdT: HOLD_REFERENCE_T,
 			});
 			slowest = Math.max(slowest, runs);
 		}, FLUCT_PAIRS);
@@ -630,7 +701,7 @@ describe("§5 the stock deficit", () => {
 		// because it is a 0.4 Cr good. The bound worth guarding is the richest
 		// residual, and it comes from the same survey the instrument prints.
 		const { worst, worstPerUnit, worstRatio, unclosableRows, rows } =
-			surveyResiduals();
+			surveyResiduals(HOLD_REFERENCE_T);
 		// Measured over **every** legal good, sub-tonne included: 7.9 Cr/t (Furs,
 		// refinery→shipyard at economy 7) = 158 Cr per run. Ranked by run value,
 		// because Gold's Cr/kg and Furs' Cr/t are not comparable — and because
