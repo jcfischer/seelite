@@ -14,6 +14,7 @@ import {
 	loadSettings,
 	saveSettings,
 	type Settings,
+	SETTING_KEYS,
 	SettingsStore,
 } from "../src/settings";
 
@@ -185,6 +186,10 @@ describe("the store tells its listeners, once", () => {
 		const store = new SettingsStore({ ...DEFAULT_SETTINGS });
 		let calls = 0;
 		store.subscribe(() => calls++);
+		// The cast is the point: `Settings["antialias"]` is `0 | 2 | 4` since the
+		// type was derived from the schema, so a caller writing `16` no longer
+		// compiles. What still reaches this method uncast is a value out of
+		// `localStorage`, and that is what the runtime check is for.
 		store.set("antialias", 16 as Settings["antialias"]);
 		expect(store.value.antialias).toBe(DEFAULT_SETTINGS.antialias);
 		expect(calls).toBe(0);
@@ -192,6 +197,18 @@ describe("the store tells its listeners, once", () => {
 		store.set("antialias", 4);
 		expect(store.value.antialias).toBe(4);
 		expect(calls).toBe(1);
+	});
+
+	test("every schema row has a default, without anyone writing one out", () => {
+		// `DEFAULT_SETTINGS` is derived from the schema's fallbacks, so a row
+		// added with no default is impossible rather than an `undefined` reaching
+		// the renderer. The three keys `SCHEMA`, `Settings` and this object once
+		// listed separately are now one list.
+		const store = new SettingsStore({ ...DEFAULT_SETTINGS });
+		for (const key of SETTING_KEYS) {
+			expect(DEFAULT_SETTINGS[key]).toBeDefined();
+			expect(store.allowed(key)).toContain(DEFAULT_SETTINGS[key]);
+		}
 	});
 
 	test("the store says what each key allows", () => {

@@ -184,17 +184,6 @@ export class SeeliteOutputPass extends OutputPass {
 		this.material.needsUpdate = true;
 	}
 
-	/**
-	 * A dial pinned against the frame loop, or `null` to give it back.
-	 *
-	 * `main.ts` calls `setVignette` from the view on **every** frame, so a probe
-	 * that assigns the uniform directly has its assignment overwritten before the
-	 * frame it wanted to measure is drawn — which is not a failure a readback can
-	 * distinguish from a vignette that does nothing. It read 1.000 against 1.000
-	 * and the check was right to fail. This is what a control arm sets.
-	 */
-	vignetteOverride: number | null = null;
-
 	/** What the vignette is currently rendering at. A reader rather than a raw
 	 *  uniform, so `probe-output-stage.mjs` does not have to reach through
 	 *  three's index-signature uniform bag to ask a one-word question. There is
@@ -211,7 +200,7 @@ export class SeeliteOutputPass extends OutputPass {
 	setVignette(strength: number) {
 		this.material.uniforms.uVignette.value = Math.min(
 			VIGNETTE_MAX,
-			Math.max(0, this.vignetteOverride ?? strength),
+			Math.max(0, strength),
 		);
 	}
 
@@ -227,14 +216,6 @@ export class SeeliteOutputPass extends OutputPass {
 	}
 }
 
-/**
- * The composer's own target, multisampled.
- *
- * `EffectComposer` clones whatever it is handed for its second buffer and
- * `RenderTarget.copy` carries `samples`, so both buffers are multisampled from
- * one construction. Sized at the current drawing buffer; `main.ts`'s `onResize`
- * runs once at boot and owns the size from then on.
- */
 /**
  * The largest sample count this context will actually multisample RGBA16F at.
  *
@@ -277,6 +258,14 @@ function supportedSamples(renderer: THREE.WebGLRenderer): number {
 export const grantedSamples = (renderer: THREE.WebGLRenderer, wanted: number) =>
 	Math.min(wanted, supportedSamples(renderer));
 
+/**
+ * The composer's own target, multisampled.
+ *
+ * `EffectComposer` clones whatever it is handed for its second buffer and
+ * `RenderTarget.copy` carries `samples`, so both buffers are multisampled from
+ * one construction. Sized at the current drawing buffer; `main.ts`'s `onResize`
+ * runs once at boot and owns the size from then on.
+ */
 export function composerTarget(
 	renderer: THREE.WebGLRenderer,
 	samples: number,
@@ -285,6 +274,33 @@ export function composerTarget(
 	const target = new THREE.WebGLRenderTarget(size.x, size.y, {
 		type: THREE.HalfFloatType,
 		samples: grantedSamples(renderer, samples),
+		// **Nothing downstream reads depth**: bloom and the output pass are
+		// full-screen quads over the colour texture. Resolving it is a second
+		// full-buffer blit per `render`, and this game does four of those a
+		// frame. `RenderTarget.copy` carries the flag, so the composer's cloned
+		// second buffer gets it too.
+		//
+		// Measured: 2x went 8.80 to 7.26 ms/frame and 4x 14.53 to 13.14, about
+		// 10% of each.
+		//
+		// It has a companion in `main.ts` — `farPass.clearDepth = true` — and the
+		// two are one change, because three invalidates the depth attachment of
+		// the **multisampled** framebuffer after each resolve and not only of the
+		// single-sample one (`updateMultisampleRenderTarget` pushes the depth
+		// style into `invalidationArrayRead`). A pass starting with
+		// `clear = false` and no `clearDepth` would then test against undefined
+		// content.
+		//
+		// **That companion is reasoning from three's source, not a check that
+		// was watched fail.** Removing it changes nothing measurable on either
+		// rasteriser — SwiftShader or ANGLE Metal, both tried — so either the
+		// invalidation is not reaching this configuration or the far layer's
+		// ordering does not depend on it in the framings tested. It stays
+		// because clearing depth the backdrop never wrote is free, and the
+		// alternative is relying on an invariant three explicitly discards. The
+		// probe checks that nothing *stopped being drawn* at the granted count,
+		// which is a weaker statement than the companion being necessary.
+		resolveDepthBuffer: false,
 	});
 	target.texture.name = "EffectComposer.rt1";
 	return target;
@@ -330,10 +346,11 @@ export function composerTarget(
  * its drawing as well as its resolve, so the per-pass figure is an upper bound
  * on the resolve and not a measurement of it. A run that separated the two would
  * have to keep the same geometry drawn while changing how many times the target
- * is resolved, and nothing here does that. What those three do establish is that
- * the cost is roughly linear in the pass count, which the resolve mechanism
- * predicts and a per-fragment cost would not. `resolveDepthBuffer = false`, on
- * the same run, recovered 4 ms of the 18.
+ * is resolved, and nothing here does that. **Nor does the linear shape
+ * discriminate**, which an earlier revision claimed it did: per-fragment work
+ * scales with the pass count too, so 7.5/11.9/18.4 is equally consistent with
+ * either explanation. The mechanism argument stands on three's source and the
+ * absent extension; the pass-count timings add an upper bound and nothing more.
  *
  * The count **is** a lever — 4.0x against 6.4x is not nothing — but there is no
  * cheap setting of it: the least this game can pay for any antialiasing at all

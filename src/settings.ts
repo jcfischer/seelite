@@ -183,24 +183,37 @@ const SCHEMA = {
 } as const;
 
 export type Quality = (typeof SCHEMA.quality.allowed)[number];
+
+/**
+ * One row per schema entry, each typed as **its own allowed set**.
+ *
+ * Derived rather than written out, which was worth the mapped type: the hand-
+ * written version repeated every key a third time beside `SCHEMA` and
+ * `DEFAULT_SETTINGS`, so adding a row meant three synchronised edits — and it
+ * silently widened as it went. `antialias` was declared `number` there, so
+ * `store.set("antialias", 3)` type-checked and was refused only at runtime.
+ * Here it is `0 | 2 | 4` and the compiler says so.
+ */
 export type Settings = {
-	renderScale: number;
-	quality: Quality;
-	antialias: number;
-	dither: Toggle;
-	vignette: Toggle;
+	[K in keyof typeof SCHEMA]: (typeof SCHEMA)[K]["allowed"][number];
 };
 
 export const SETTING_KEYS = Object.keys(SCHEMA) as (keyof typeof SCHEMA)[];
 export const settingSpec = (key: keyof typeof SCHEMA) => SCHEMA[key];
 
-export const DEFAULT_SETTINGS: Settings = {
-	renderScale: SCHEMA.renderScale.fallback,
-	quality: SCHEMA.quality.fallback,
-	antialias: SCHEMA.antialias.fallback,
-	dither: SCHEMA.dither.fallback,
-	vignette: SCHEMA.vignette.fallback,
-};
+/**
+ * Every row's fallback, taken from the schema.
+ *
+ * Also derived, for the same reason and with the same cast as `allowed`:
+ * building an object whose value type varies by key cannot be expressed while
+ * the key is a union, and `settings.test.ts` round-trips a legal value of each
+ * kind, which is what actually holds it. What this buys is that a row added to
+ * `SCHEMA` with no default here is now impossible rather than a `undefined`
+ * reaching the renderer.
+ */
+export const DEFAULT_SETTINGS: Settings = Object.fromEntries(
+	SETTING_KEYS.map((key) => [key, SCHEMA[key].fallback]),
+) as Settings;
 
 const STORAGE_KEY = "seelite:settings:v1";
 

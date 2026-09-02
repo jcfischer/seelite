@@ -257,6 +257,19 @@ const aa = await page.evaluate(
 	([limit, margin, strongest]) => {
 		const g = window.__seelite;
 		const { frame, luma } = window.__outputStage;
+		/** Lit pixels, as a fraction. Antialiasing changes edges and must not
+		 *  change *what is drawn* — so this is the same number at every count
+		 *  unless a layer went missing. It is here because turning the depth
+		 *  resolve off invalidates the multisampled framebuffer's depth after
+		 *  every pass, which is a way to lose the far layer that only bites with
+		 *  antialiasing on: the setting that is off by default and that no other
+		 *  probe exercises. */
+		const lit = (img) => {
+			let n = 0;
+			for (let i = 0; i < img.data.length; i += 4)
+				if (luma(img.data, i) > 8) n++;
+			return n / (img.width * img.height);
+		};
 		const intermediates = (img) => {
 			const { data, width, height } = img;
 			let found = 0;
@@ -285,21 +298,41 @@ const aa = await page.evaluate(
 		g.render(0);
 		const first = frame();
 		const on = intermediates(first);
+		const onLit = lit(first);
 		g.setComposerSamples(0);
 		g.render(0);
-		const off = intermediates(frame());
+		const plain = frame();
+		const off = intermediates(plain);
+		const offLit = lit(plain);
 		const pixels = first.width * first.height;
 		// Back to the player's row, not to the count this arm used.
 		g.setComposerSamples();
-		return { on, off, gated, pixels };
+		return { on, off, onLit, offLit, gated, pixels };
 	},
 	[EDGE_STEP, EDGE_MARGIN, STRONGEST],
 );
 
+// **Skipped rather than failed where the context grants nothing.** With no
+// multisampled half-float support the two arms are the same render, and a check
+// requiring one to differ from the other would make the documented
+// unsupported-hardware fallback a red probe. It is reported either way, so a
+// machine that quietly stopped granting samples does not look like a machine
+// that passed.
+if (aa.gated === 0) {
+	console.log(
+		"  edges     skipped — this context grants no samples for a half-float target",
+	);
+} else {
+	t.check(
+		"multisampling puts partly-covered pixels along the frame's edges",
+		aa.on > aa.off,
+		`${aa.gated} samples ${aa.on} intermediates against 0 samples ${aa.off}, over ${aa.pixels} px`,
+	);
+}
 t.check(
-	"multisampling puts partly-covered pixels along the frame's edges",
-	aa.on > aa.off,
-	`${aa.gated} samples ${aa.on} intermediates against 0 samples ${aa.off}, over ${aa.pixels} px`,
+	"and it changes the edges without changing what is drawn",
+	Math.abs(aa.onLit - aa.offLit) < 0.01,
+	`${(aa.onLit * 100).toFixed(2)}% of the frame lit at ${aa.gated} samples against ${(aa.offLit * 100).toFixed(2)}% at 0`,
 );
 
 // ── the vignette: the same lit frame, the dial moved and nothing else ───────
@@ -314,26 +347,25 @@ const vignette = await page.evaluate(() => {
 	// The dial is forced in both arms rather than read from a cockpit frame and
 	// a chase one: those two differ by the cabin filling a third of the frame,
 	// so that comparison would be a comparison of two pictures.
-	// **Through the override, not the setter.** The frame loop writes the dial
-	// from the view on every frame, so an assignment made here is overwritten
-	// before `frame()` draws anything — which is how the first version of this
-	// block read 1.000 against 1.000 with the term working perfectly.
-	const cockpitUniform = g.outputPass.vignette;
-	// The player's row, proved on the rendered dial rather than on the store:
-	// the frame loop reads the setting every frame beside the view, so a row
-	// that stopped being read would leave the dial exactly where it was.
+	// **Through the settings row, not by assigning the uniform.** The frame loop
+	// writes the dial from the view and the setting on every frame, so an
+	// assignment made here is overwritten before `frame()` draws anything —
+	// which is how the first version of this block read 1.000 against 1.000 with
+	// the term working perfectly. The row is also the control the player has, so
+	// driving it here means the arms differ by the thing that ships.
 	const wasSetting = g.settings.value.vignette;
+	const cockpitUniform = g.outputPass.vignette;
 	g.settings.set("vignette", "off");
-	g.render(0);
+	const flat = frame();
 	const settingOff = g.outputPass.vignette;
+	g.settings.set("vignette", "on");
+	const dark = frame();
+	// The cap, asked for directly and read back before the next frame rewrites
+	// the dial — no render in between, so nothing here depends on the loop.
+	g.outputPass.setVignette(1);
+	const forced = g.outputPass.vignette;
 	g.settings.set("vignette", wasSetting);
 	g.render(0);
-	g.outputPass.vignetteOverride = 0;
-	const flat = frame();
-	g.outputPass.vignetteOverride = 1;
-	const dark = frame();
-	const forced = g.outputPass.vignette;
-	g.outputPass.vignetteOverride = null;
 	g.view = "chase";
 	g.render(0);
 	const chaseUniform = g.outputPass.material.uniforms.uVignette.value;

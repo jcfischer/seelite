@@ -122,22 +122,6 @@ test("the vignette dial is clamped at both ends", () => {
 	expect(uniform.value).toBe(0);
 });
 
-test("an override holds the dial against the frame loop", () => {
-	const pass = new SeeliteOutputPass();
-	// The loop writes the dial from the view every frame, so a probe measuring
-	// the term needs a value the loop cannot move — and the override is clamped
-	// like any other, so it cannot be used to exceed the cap either.
-	pass.vignetteOverride = 0;
-	pass.setVignette(VIGNETTE_MAX);
-	expect(pass.material.uniforms.uVignette.value).toBe(0);
-	pass.vignetteOverride = 1;
-	pass.setVignette(0);
-	expect(pass.material.uniforms.uVignette.value).toBe(VIGNETTE_MAX);
-	pass.vignetteOverride = null;
-	pass.setVignette(0);
-	expect(pass.material.uniforms.uVignette.value).toBe(0);
-});
-
 test("the vignette reader reports what the uniform holds", () => {
 	const pass = new SeeliteOutputPass();
 	// `probe-output-stage.mjs` reads this rather than the uniform bag, whose

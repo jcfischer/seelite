@@ -1729,6 +1729,14 @@ class Game {
 		backdropPass.clear = true;
 		const farPass = new RenderPass(this.farScene, this.farCamera);
 		farPass.clear = false;
+		// **Depth, though — and that is `resolveDepthBuffer: false`'s companion**
+		// (#200). This used to inherit the backdrop's depth buffer, which was
+		// safe because the backdrop writes none. With the depth resolve off,
+		// three invalidates the multisampled framebuffer's depth after every
+		// `render`, so what this pass would inherit is undefined rather than
+		// empty. Clearing it is free — there was nothing in it to keep — and it
+		// is what makes the two changes one change.
+		farPass.clearDepth = true;
 		const approachPass = new RenderPass(
 			this.approachScene,
 			this.approachCamera,
