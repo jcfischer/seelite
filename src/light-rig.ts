@@ -91,10 +91,10 @@ export const ENV_HEIGHT = 128;
 /**
  * The brightest authored self-lit surface in working space.
  *
- * One ceiling for every renderer-facing module: a light expressed above it is
- * above white before tone mapping and therefore blooms by construction. Each
- * module publishes its own fractions of this value so the test can enumerate
- * the complete authored budget without reaching into Three.js materials.
+ * One ceiling for authored emissive intensities in the live scene. Intensity
+ * alone cannot guarantee bloom — material colour and the composite luminance
+ * threshold also participate — but keeping these values at or below white
+ * prevents an individual authoring dial from forcing a halo by itself.
  */
 export const EMISSIVE_CEILING = 1.0;
 
@@ -107,6 +107,7 @@ export const EMISSIVE_CEILING = 1.0;
  * reads the figures the renderer uses instead of carrying a second copy.
  */
 export const EXPOSURE = {
+	emissiveCeiling: EMISSIVE_CEILING,
 	bloom: {
 		strength: 0.35,
 		radius: 0.6,

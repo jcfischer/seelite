@@ -398,9 +398,50 @@ await page.goto(`${origin}/?seed=${SEED}`);
 await bootedGame(page);
 await page.evaluate((clock) => window.__startClockAt(clock), CLOCK);
 
+const liveEmissives = await page.evaluate(() => {
+	const game = window.__seelite;
+	const materials = new Map();
+	for (const scene of [
+		game.backdropScene,
+		game.farScene,
+		game.approachScene,
+		game.nearScene,
+	])
+		scene.traverse((object) => {
+			if (!("material" in object)) return;
+			const authored = Array.isArray(object.material)
+				? object.material
+				: [object.material];
+			for (const material of authored) {
+				if (!("emissiveIntensity" in material)) continue;
+				materials.set(material.uuid, {
+					name: material.name || object.name || material.type,
+					intensity: material.emissiveIntensity,
+				});
+			}
+		});
+	return {
+		ceiling: game.exposure.emissiveCeiling,
+		materials: [...materials.values()],
+	};
+});
+
 const front = await frameAndMeasure(page, FRONT_DEG);
 const back = await frameAndMeasure(page, BACK_DEG);
 const hull = await measureHullChase(page);
+
+const livePeak = Math.max(...liveEmissives.materials.map((m) => m.intensity));
+t.check(
+	"every live scene emissive intensity stays inside the shared ceiling",
+	liveEmissives.materials.length > 0 &&
+		liveEmissives.materials.every(
+			(material) =>
+				Number.isFinite(material.intensity) &&
+				material.intensity >= 0 &&
+				material.intensity <= liveEmissives.ceiling,
+		),
+	`${liveEmissives.materials.length} materials, peak ${livePeak.toFixed(2)} against ${liveEmissives.ceiling.toFixed(2)}`,
+);
 
 t.check(
 	"the station is on screen in both framings",
