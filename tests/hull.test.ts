@@ -28,9 +28,14 @@ import { JUMP_RANGE_LY } from "../src/galaxy";
 import {
 	CAPITAL_HULL_IDS,
 	DOCKABLE_HULL_IDS,
+	HULL_CEILING_HOLD_T,
 	HULL_IDS,
+	HULL_PRICE_BASELINE_CR,
+	HULL_PRICE_EXPONENT,
+	HULL_PRICE_STEP_CR,
 	HULL_SPECS,
 	HULL_VARIANT_IDS,
+	hullPriceCr,
 	isCapital,
 	PLAYER_BASELINE_HULL,
 	PURCHASABLE_HULL_IDS,
@@ -49,7 +54,11 @@ import {
 } from "../src/sim";
 import { newCommander, transactAtStation } from "../src/station-commerce";
 import { STATION_GEOMETRY, STATION_TYPES } from "../src/station";
-import { berthFits, stationInterior } from "../src/station-interior";
+import {
+	BERTH_CELL,
+	berthFits,
+	stationInterior,
+} from "../src/station-interior";
 
 /** 0.1 m, in kilometres — the quantum the table's envelopes are rounded **up**
  *  to, and the tolerance the row below allows. */
@@ -441,5 +450,133 @@ describe("who a station has a berth for", () => {
 					id,
 					interior.berths.some((b) => berthFits(b, HULL_SPECS[id].env)),
 				]).toEqual([type, id, false]);
+	});
+});
+
+describe("what a hull costs (#182, #26's D4 and D7)", () => {
+	test("every row is `hullPriceCr` of its own hold, and nothing else", () => {
+		// The same discipline `integrity` gets: the figure is stored because a
+		// screen reads a row rather than calling a function, and it is asserted
+		// against the law so a hand-edited price is a deliberate deviation.
+		for (const id of HULL_IDS)
+			expect([id, HULL_SPECS[id].priceCr]).toEqual([
+				id,
+				hullPriceCr(HULL_SPECS[id].holdT),
+			]);
+	});
+
+	test("the two capitals have no price, and it is the ceiling that says so", () => {
+		// Not a hand-maintained exemption list: the law returns `null` above the
+		// ceiling, and the capitals are above it. A capital that shrank into a
+		// dockable hold would get a price from the same rule.
+		for (const id of CAPITAL_HULL_IDS) {
+			expect(HULL_SPECS[id].holdT).toBeGreaterThan(HULL_CEILING_HOLD_T);
+			expect(HULL_SPECS[id].priceCr).toBeNull();
+		}
+		// …and every hull that is *not* a capital is priced, so `null` never
+		// silently spreads to a hull a shipyard is meant to sell.
+		for (const id of DOCKABLE_HULL_IDS)
+			expect([id, HULL_SPECS[id].priceCr]).not.toEqual([id, null]);
+	});
+
+	test("the price law is monotone in the hold and cheaper per tonne as it grows", () => {
+		// Both halves matter and the second is the measured finding: the exponent
+		// is under one, so a hull that carries three times as much does not cost
+		// three times as much, because it does not *earn* three times as much.
+		// A build with a linear law passes the first assertion and fails this one.
+		let last = 0;
+		let lastPerTonne = Number.POSITIVE_INFINITY;
+		for (let holdT = 1; holdT <= HULL_CEILING_HOLD_T; holdT++) {
+			const price = hullPriceCr(holdT) as number;
+			expect(price).toBeGreaterThanOrEqual(last);
+			last = price;
+			const perTonne = price / holdT;
+			expect(perTonne).toBeLessThanOrEqual(lastPerTonne + 1e-9);
+			lastPerTonne = perTonne;
+		}
+		expect(HULL_PRICE_EXPONENT).toBeGreaterThan(0);
+		expect(HULL_PRICE_EXPONENT).toBeLessThan(1);
+	});
+
+	test("the anchor is the baseline hull's, exactly", () => {
+		// The law is written as a ratio against the baseline hull's hold, so this
+		// is the one point where it is a pin rather than a curve — and
+		// `economy-trade.md` §7 quotes the figure.
+		expect(hullPriceCr(HULL_SPECS[PLAYER_BASELINE_HULL].holdT)).toBe(
+			HULL_PRICE_BASELINE_CR,
+		);
+		expect(HULL_PRICE_BASELINE_CR % HULL_PRICE_STEP_CR).toBe(0);
+		// Every quoted price is on the step, so a spec table and a shipyard screen
+		// cannot round differently.
+		for (const id of HULL_IDS) {
+			const price = HULL_SPECS[id].priceCr;
+			if (price !== null) expect(price % HULL_PRICE_STEP_CR).toBe(0);
+		}
+	});
+
+	test("the ceiling is the berth catalogue's, re-derived from it", () => {
+		// **The leaf cannot import the berth cell, so this is where the two sides
+		// meet.** `hull.ts` imports nothing and `headless.test.ts` asserts it, so
+		// `HULL_CEILING_HOLD_T` is declared there and re-derived here — the same
+		// split `env` and `integrity` already use.
+		//
+		// The derivation: the largest clear berth envelope in the game, against
+		// the densest hold the roster has measured. It is an upper bound in the
+		// safe direction, so it assumes a hull could be a solid box at that
+		// density.
+		const cells = STATION_TYPES.map((type) => BERTH_CELL[type]);
+		const largestBoxM3 = Math.max(
+			...cells.map((c) => c.lengthKm * c.beamKm * c.heightKm * 1e9),
+		);
+		const densest = Math.min(
+			...PURCHASABLE_HULL_IDS.map((id) => {
+				const spec = HULL_SPECS[id];
+				return (
+					(spec.env.lengthKm * spec.env.beamKm * spec.env.heightKm * 1e9) /
+					spec.holdT
+				);
+			}),
+		);
+		expect(HULL_CEILING_HOLD_T).toBe(Math.floor(largestBoxM3 / densest));
+		// …and it really is a ceiling: every hull a berth admits is under it, and
+		// the two that no berth admits are over it.
+		for (const id of DOCKABLE_HULL_IDS)
+			expect(HULL_SPECS[id].holdT).toBeLessThanOrEqual(HULL_CEILING_HOLD_T);
+	});
+
+	test("a hold at the ceiling still fits a berth, and one past it does not", () => {
+		// The control on the row above. Without it the ceiling could be any large
+		// number and the assertions would all still hold, because no hull in the
+		// roster is near it — the check has to reach the boundary itself.
+		const freighter = HULL_SPECS.freighter;
+		const scale = (factor: number): HullEnvelope => ({
+			lengthKm: freighter.env.lengthKm * factor,
+			beamKm: freighter.env.beamKm * factor,
+			heightKm: freighter.env.heightKm * factor,
+		});
+		// A hull grown to the ceiling's hold at the freighter's own density.
+		const atCeiling = scale((HULL_CEILING_HOLD_T / freighter.holdT) ** (1 / 3));
+		const berths = stationInterior(
+			"trade",
+			STATION_GEOMETRY.trade.aperturePlaneKm,
+			1,
+		).berths;
+		const cell = BERTH_CELL.trade;
+		// Grown isotropically it does not fit — the box is right, the *shape* is
+		// not, which is #26's constraint that beam and height are nearly spent.
+		expect(atCeiling.beamKm).toBeGreaterThan(cell.beamKm);
+		// Grown in length alone, at the cell's own beam and height, the volume
+		// the ceiling is derived from is exactly the cell's.
+		const boxed: HullEnvelope = {
+			lengthKm: cell.lengthKm,
+			beamKm: cell.beamKm,
+			heightKm: cell.heightKm,
+		};
+		expect(berths.some((b) => berthFits(b, boxed))).toBe(true);
+		const overCeiling: HullEnvelope = {
+			...boxed,
+			lengthKm: cell.lengthKm * 1.001,
+		};
+		expect(berths.some((b) => berthFits(b, overCeiling))).toBe(false);
 	});
 });

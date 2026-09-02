@@ -78,6 +78,20 @@ export const saturatedDeficitT = (holdT: number): number =>
 	DEFICIT_SATURATION_RUNS * holdT;
 
 /**
+ * A §5.2 response, as a function two arms of a sweep can both be run through.
+ *
+ * One parameter rather than two copies of every loop below: #182 compares the
+ * shipped response against the one it replaced, and #25's three riggings were
+ * all the same shape — the two arms of a comparison built by different code.
+ * The arms here differ in this argument and in nothing else.
+ */
+export type StockResponse = (
+	priceCr: number,
+	deficit: number,
+	holdT: number,
+) => number;
+
+/**
  * §5.2's response **as it stood before #182**: a ±63 *tonne* clamp over a fixed
  * 20 t reference, whatever the hull.
  *
@@ -91,7 +105,7 @@ export const saturatedDeficitT = (holdT: number): number =>
  * It agrees with `stockResponse` exactly at `HOLD_REFERENCE_T`, which is what
  * makes every figure §5.4 was ratified on survive the change.
  */
-export const fixedReferenceResponse = (
+export const fixedReferenceResponse: StockResponse = (
 	priceCr: number,
 	deficit: number,
 ): number =>
@@ -107,9 +121,10 @@ export const residualMarginCr = (
 	buyCr: number,
 	sellCr: number,
 	holdT: number,
+	response: StockResponse = stockResponse,
 ): number =>
-	stockResponse(sellCr, -saturatedDeficitT(holdT), holdT) -
-	stockResponse(buyCr, saturatedDeficitT(holdT), holdT);
+	response(sellCr, -saturatedDeficitT(holdT), holdT) -
+	response(buyCr, saturatedDeficitT(holdT), holdT);
 
 /**
  * Bell's byte arithmetic, kept runnable because §2 rejects it and a rejection
@@ -264,8 +279,11 @@ export function runsToExhaustion(opts: {
 	/** Game minutes a full run takes to fly — the mark fades while you do. */
 	runMinutes?: number;
 	maxRuns?: number;
+	/** Which §5.2 response to farm against — #182's two arms. */
+	response?: StockResponse;
 }): { runs: number; margins: number[]; profitCr: number } {
 	const holdT = opts.holdT;
+	const response = opts.response ?? stockResponse;
 	const runMinutes = opts.runMinutes ?? RUN_MINUTES;
 	const maxRuns = opts.maxRuns ?? 20;
 	const margins: number[] = [];
@@ -274,13 +292,17 @@ export function runsToExhaustion(opts: {
 	let profitCr = 0;
 	while (margins.length < maxRuns) {
 		const margin =
-			stockResponse(opts.sellBaseCr, -sold, holdT) -
-			stockResponse(opts.buyBaseCr, bought, holdT);
+			response(opts.sellBaseCr, -sold, holdT) -
+			response(opts.buyBaseCr, bought, holdT);
 		if (margin <= 0) break;
 		margins.push(margin);
 		profitCr += margin * holdT;
 		bought = addDeficit(decayDeficit(bought, runMinutes), holdT, holdT);
 		sold = addDeficit(decayDeficit(sold, runMinutes), holdT, holdT);
+		// **Both arms accumulate the same tonnes.** The rejected arm differs only
+		// in how a mark is *read*, which is the one thing #182 is comparing; an
+		// arm that also accumulated differently would be two changes wearing one
+		// label.
 	}
 	return { runs: margins.length, margins, profitCr };
 }
@@ -375,7 +397,10 @@ export interface ResidualSurvey {
  * accumulated, so a change to the domain had to be made twice or the two
  * reported figures would silently disagree.
  */
-export function surveyResiduals(holdT: number): ResidualSurvey {
+export function surveyResiduals(
+	holdT: number,
+	response: StockResponse = stockResponse,
+): ResidualSurvey {
 	const empty = COMMODITIES[0];
 	let worst = {
 		good: empty,
@@ -393,7 +418,12 @@ export function surveyResiduals(holdT: number): ResidualSurvey {
 	let rows = 0;
 	forEachLegalPair((pair) => {
 		rows++;
-		const residualCr = residualMarginCr(pair.buyCr, pair.sellCr, holdT);
+		const residualCr = residualMarginCr(
+			pair.buyCr,
+			pair.sellCr,
+			holdT,
+			response,
+		);
 		const runCr = runValueCr(pair.good, residualCr, holdT);
 		if (runCr > worst.runCr) worst = { ...pair, residualCr, runCr };
 		if (residualCr > worstPerUnit.residualCr)
@@ -441,6 +471,7 @@ export function bestResidualBetween(
 	to: { economy: number; stations: readonly StationTypeKey[] },
 	holdT: number,
 	fluctPairs: readonly (readonly [number, number])[] = FLUCT_PAIRS,
+	response: StockResponse = stockResponse,
 ): { freshCr: number; saturatedCr: number } {
 	let freshCr = 0;
 	let saturatedCr = 0;
@@ -460,7 +491,7 @@ export function bestResidualBetween(
 					freshCr = Math.max(freshCr, sellCr - buy.priceCr);
 					saturatedCr = Math.max(
 						saturatedCr,
-						residualMarginCr(buy.priceCr, sellCr, holdT),
+						residualMarginCr(buy.priceCr, sellCr, holdT, response),
 					);
 				}
 	}

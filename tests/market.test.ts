@@ -606,7 +606,7 @@ describe("§5 the stock deficit", () => {
 		const oneRun = (holdT: number) =>
 			stockResponse(100, holdT, holdT) / 100 - 1;
 		const oneRunFixed = (holdT: number) =>
-			fixedReferenceResponse(100, holdT) / 100 - 1;
+			fixedReferenceResponse(100, holdT, holdT) / 100 - 1;
 		const holds = [8, 20, 60, 63, 120, 197];
 		for (const holdT of holds)
 			expect(oneRun(holdT)).toBeCloseTo(PRICE_ELASTICITY, 9);

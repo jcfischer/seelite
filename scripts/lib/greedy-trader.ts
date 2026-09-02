@@ -855,6 +855,46 @@ export interface RunOptions {
 	 * on, which is why it is an option and not a deletion.
 	 */
 	shop?: boolean;
+	/**
+	 * Whether the market remembers this trader at all — §5.2's deficit, on or
+	 * off.
+	 *
+	 * **Off is what prices a hold, and it is not a convenience.** #182's sweep
+	 * found the deficit response, not the commodity gradients, dominating the
+	 * greedy trader's earnings: strengthen the response and the rate goes *up*.
+	 * The cause is a round trip through one station. A sale is priced at the
+	 * pre-trade mark and the buy-back at the post-trade one, with no slippage
+	 * inside a transaction (§10.1, ratified by #7), so selling a hold and buying
+	 * it straight back nets `PRICE_ELASTICITY` of the cargo's value — 4 Cr a
+	 * cycle on 20 t of 2.00 Cr Food, repeatable — and the trader takes it without
+	 * being told to, because the station it just sold into is the cheapest place
+	 * in the galaxy to buy that good.
+	 *
+	 * It is a defect of the shipped rules and not of this sim: the same sequence
+	 * through `transactAtStation` does it, on `main` as here. #182 does not fix
+	 * it — pricing the marginal unit reverses #7's ruling and moves every figure
+	 * §5.4 was ratified on — but a curve measured through it would be pricing the
+	 * pump rather than the hold, and under the hold-scaled response the pump's
+	 * strength is itself a function of the hold.
+	 *
+	 * So the price curve is measured against a market with no memory, where the
+	 * hold is the only thing that varies, and the memory arm is reported beside
+	 * it as the difference the pump is visible in.
+	 */
+	remembers?: boolean;
+	/**
+	 * A ceiling on the credits one hop may deploy as cargo, or `undefined` for
+	 * the trader's whole wallet.
+	 *
+	 * **The arm that tests whether the sweep's remaining bias is small.** With no
+	 * cap and no shopping the wallet compounds without limit, so a large hold is
+	 * never capital-limited late in a window while a player always is — a bias
+	 * that flatters exactly the arm #182's exponent is about. #25's tell is that
+	 * every correction moves the answer the same way, and two of this sweep's did
+	 * (both steepened the curve), so the next correction in that direction is
+	 * measured rather than asserted away.
+	 */
+	capitalCapCr?: number;
 }
 
 export function run(
@@ -866,6 +906,8 @@ export function run(
 	const startHoldT = opts.holdT ?? HOLD_T;
 	const stopAtKit = opts.stopAtKit ?? true;
 	const buysEquipment = opts.shop ?? true;
+	const remembers = opts.remembers ?? true;
+	const capitalCapCr = opts.capitalCapCr ?? Number.POSITIVE_INFINITY;
 	// The cache is keyed on a clock value, and every run replays the clock from
 	// zero — so it is cleared per run rather than kept, or run N would read run
 	// N−1's placements at the same instant.
@@ -920,7 +962,7 @@ export function run(
 
 		const stance = {
 			t,
-			credits: led.credits,
+			credits: Math.min(led.credits, capitalCapCr),
 			holdT: led.holdT,
 			deficits,
 			dockSeconds,
@@ -955,29 +997,31 @@ export function run(
 
 		// Buy, fly, sell. The deficit is written at both ends — the whole point
 		// of §5.2 is that the market remembers which of them you did.
-		for (const { good, units } of hop.cargo)
-			deficits = recordTrade(
-				deficits,
-				here.key,
-				good.name,
-				units,
-				t / 60,
-				led.holdT,
-			);
+		if (remembers)
+			for (const { good, units } of hop.cargo)
+				deficits = recordTrade(
+					deficits,
+					here.key,
+					good.name,
+					units,
+					t / 60,
+					led.holdT,
+				);
 		led.credits -= hop.fuelCr;
 		if (hop.kind === "jump") jumpMinutes += JUMP_SECONDS / 60;
 		dockMinutes += dockSeconds / 60;
 		t += hop.seconds;
 		const arriveMin = t / 60;
-		for (const { good, units } of hop.cargo)
-			deficits = recordTrade(
-				deficits,
-				hop.to.key,
-				good.name,
-				-units,
-				arriveMin,
-				led.holdT,
-			);
+		if (remembers)
+			for (const { good, units } of hop.cargo)
+				deficits = recordTrade(
+					deficits,
+					hop.to.key,
+					good.name,
+					-units,
+					arriveMin,
+					led.holdT,
+				);
 		led.credits += hop.profitCr;
 		const tonnes = hop.cargo.reduce(
 			(sum, c) => sum + (c.good.unit === "t" ? c.units : 0),
