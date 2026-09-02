@@ -572,14 +572,22 @@ for (const {
 	// The drift control. Printed last because it qualifies everything above it:
 	// a column-to-column difference smaller than this is not a difference.
 	const drift = controlAfter.ms - controlBefore.ms;
-	const controlsHeld = controlBefore.settled && controlAfter.settled;
+	// Settled *and* freshly read, at both ends. Checking only `settled` left a
+	// control that had taken an unrefreshed sample qualifying the whole table
+	// (sage, PR #214, round 3) — the same doubt every other cell is marked for,
+	// dropped on the one cell whose job is to qualify the others.
+	const controlsHeld =
+		controlBefore.settled &&
+		controlAfter.settled &&
+		!controlBefore.staleSamples &&
+		!controlAfter.staleSamples;
 	console.log(
 		`    drift control (${CONTROL_LABEL}): ${controlBefore.ms.toFixed(1)} ms before, ` +
 			`${controlAfter.ms.toFixed(1)} ms after — the machine moved ` +
 			`${drift >= 0 ? "+" : ""}${drift.toFixed(1)} ms end to end` +
 			(controlsHeld
 				? ""
-				: " — BUT one of the two controls never settled, so even this bound is unreliable"),
+				: " — BUT a control never settled or was read stale, so even this bound is unreliable"),
 	);
 	// Said every run, because the temptation is to read the endpoint figure as a
 	// warrant for the table and it is not one.
@@ -615,6 +623,8 @@ await writeFile(
 				// its own cells did not have.
 				beforeSettled: r.controlBefore.settled,
 				afterSettled: r.controlAfter.settled,
+				beforeStaleSamples: r.controlBefore.staleSamples,
+				afterStaleSamples: r.controlAfter.staleSamples,
 			})),
 			rows,
 		},

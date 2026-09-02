@@ -145,14 +145,21 @@ export function parseFpsReadout(text) {
 }
 
 /**
- * Refresh rates a compositor might clamp a run to, in frames per second.
+ * The band a display refresh interval can plausibly fall in, in milliseconds —
+ * 240 Hz at the fast end, 50 Hz at the slow one.
  *
- * A list is unavoidable here and it is used for the right thing: not to decide
- * the verdict, but to say whether a run's **floor** sits on a refresh interval
- * at all. A rate absent from this list makes the check fall back to passing,
- * which is the safe direction for a guard that must not accuse a real machine.
+ * **A band and not a list, because the list was the third failure.** Round 3
+ * of sage's review on PR #214 caught a fully quantized 100 Hz run —
+ * `[10, 10, 20, 30]` — passing, because 100 was not among the rates named and
+ * the check fell through to `return null`. Falling back to passing sounds like
+ * the cautious direction and is not: this guard's whole job is to refuse, and
+ * every version of it that has failed has failed *open*.
+ *
+ * A band cannot be short an entry. Rates outside 50–240 Hz are not displays
+ * anyone measures this on, and a run whose floor sits outside it is not a
+ * clamped one whatever else is true of it.
  */
-const REFRESH_HZ = Object.freeze([60, 75, 90, 120, 144, 165, 240]);
+const REFRESH_MS = Object.freeze({ fastest: 1000 / 240, slowest: 1000 / 50 });
 
 /** How close counts as sitting on an interval, or on a multiple of one. 6% is
  *  wide enough for a compositor's jitter and narrow enough that a genuine 1.06x
@@ -192,15 +199,17 @@ const QUANTIZED_SHARE = 0.9;
  *
  * 1. Take the cheapest cell as the candidate floor. Under a clamp it is one
  *    interval; a run that is not clamped has no reason to floor there.
- * 2. If that floor does not sit on any rate in `REFRESH_HZ`, pass. A renderer
- *    measured freely lands wherever the work lands.
+ * 2. If that floor is outside `REFRESH_MS`, pass. A renderer measured freely
+ *    lands wherever the work lands — this game's control cell is under 2 ms,
+ *    which no display refreshes at.
  * 3. If it does, ask whether the *rest* of the run is a multiple of it. A real
  *    table is not: 1.8, 1.9, 3.6, 7.2 and 11.6 against a 1.8 floor gives 1.06
  *    and 6.4, which are not integers. A clamped one is, by construction.
  *
  * Both conditions are needed. Step 2 alone is the first version's bug; step 3
  * alone would accuse a slow machine whose costs happened to fall in a tidy
- * ratio.
+ * ratio. Step 2 is a *band* rather than a list of rates because the list was
+ * itself the third failure — see `REFRESH_MS`.
  *
  * @param {number[]} msPerFrame every cell's frame time from one run
  * @returns {string | null}
@@ -212,21 +221,23 @@ export function vsyncRefusal(msPerFrame) {
 	const floor = Math.min(...cells);
 	if (floor <= 0)
 		return `a cell in this run reads ${floor} ms, which is not a frame cost`;
-	const hz = REFRESH_HZ.find(
-		(rate) => Math.abs(floor - 1000 / rate) <= (1000 / rate) * PINNED,
-	);
-	if (hz === undefined) return null;
+	// Outside the band no display produced this, so nothing below matters.
+	if (
+		floor < REFRESH_MS.fastest * (1 - PINNED) ||
+		floor > REFRESH_MS.slowest * (1 + PINNED)
+	)
+		return null;
 	const onMultiple = cells.filter((ms) => {
 		const steps = ms / floor;
 		return Math.abs(steps - Math.round(steps)) <= PINNED * Math.round(steps);
 	});
 	if (onMultiple.length < cells.length * QUANTIZED_SHARE) return null;
 	return (
-		`this run is quantized: its cheapest cell is ${floor.toFixed(2)} ms — a ` +
-		`${hz} Hz frame interval — and ${onMultiple.length} of ${cells.length} ` +
-		`cells sit on an integer multiple of it. A composited frame can only cost ` +
-		`whole refresh intervals, so this is the display's timing and not the ` +
-		`renderer's. Check that --disable-gpu-vsync and --disable-frame-rate-limit ` +
-		`reached the browser.`
+		`this run is quantized: its cheapest cell is ${floor.toFixed(2)} ms — ` +
+		`${(1000 / floor).toFixed(0)} Hz, inside the range a display refreshes at — ` +
+		`and ${onMultiple.length} of ${cells.length} cells sit on an integer ` +
+		`multiple of it. A composited frame can only cost whole refresh intervals, ` +
+		`so this is the display's timing and not the renderer's. Check that ` +
+		`--disable-gpu-vsync and --disable-frame-rate-limit reached the browser.`
 	);
 }

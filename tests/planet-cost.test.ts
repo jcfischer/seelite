@@ -156,6 +156,30 @@ describe("the vsync refusal", () => {
 	 * property was never flatness; it is that every cell is a whole number of
 	 * intervals.
 	 */
+	/**
+	 * **The case that sent the third version back** (sage, PR #214, round 3).
+	 *
+	 * That version asked whether the floor sat on a *named* rate and passed when
+	 * it did not, so a fully quantized 100 Hz run walked through a list that
+	 * happened to hold 90 and 120. Falling back to passing reads as the cautious
+	 * direction and is the opposite: every version of this guard that has failed
+	 * has failed open. A band cannot be short an entry.
+	 */
+	test("refuses a quantized run at a rate no list would have held", () => {
+		expect(vsyncRefusal([10, 10, 20, 30])).toMatch(/quantized/i);
+		// 110 Hz and 55 Hz — both inside the band, neither a rate anyone names.
+		expect(vsyncRefusal([9.09, 9.09, 18.18, 27.27])).toMatch(/quantized/i);
+		expect(vsyncRefusal([18.2, 18.2, 36.4, 18.2])).toMatch(/quantized/i);
+	});
+
+	/**
+	 * And the band has ends. A run flooring below 240 Hz's interval is this
+	 * game's actual control cell — under 2 ms — and no display produced it.
+	 */
+	test("passes a quantized run whose floor is faster than any display", () => {
+		expect(vsyncRefusal([1.8, 1.8, 3.6, 7.2])).toBe(null);
+	});
+
 	test("refuses a stepped run, where heavy cells miss refreshes", () => {
 		expect(vsyncRefusal([6.94, 6.94, 13.89, 20.83])).toMatch(/quantized/i);
 		expect(vsyncRefusal([16.7, 33.3, 50.0, 16.7])).toMatch(/quantized/i);
@@ -181,8 +205,13 @@ describe("the vsync refusal", () => {
 	test("needs both a refresh floor and multiples above it", () => {
 		// Floor on 60 Hz, but 1.4x and 2.7x are not whole intervals.
 		expect(vsyncRefusal([16.7, 23.4, 45.1, 16.9])).toBe(null);
-		// Tidy multiples, but 5 ms is on no rate in the list.
-		expect(vsyncRefusal([5, 5, 10, 20])).toBe(null);
+		// Tidy multiples, but a 2 ms floor is faster than any display.
+		//
+		// This row read `[5, 5, 10, 20]` while the rule was a list of named rates,
+		// on the reasoning that 5 ms was on no such rate. The band refuses it now
+		// and is right to: 5 ms is 200 Hz, which is a display. The row moved to a
+		// floor that is genuinely outside the band rather than merely unlisted.
+		expect(vsyncRefusal([2, 2, 4, 8])).toBe(null);
 	});
 
 	test("refuses an empty run rather than passing one with nothing in it", () => {
