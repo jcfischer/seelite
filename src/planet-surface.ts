@@ -193,12 +193,32 @@ export interface BodyVisual {
 	 * Its docstring used to end by saying that whether it frees what it names is
 	 * *not asserted anywhere*, because nothing here reads GPU allocations back.
 	 * That is still true of the *allocations* — no tier in this repo can ask the
-	 * driver for a byte count. What is asserted now, in
-	 * `tests/gpu-teardown.test.ts`, is the pair of failures that actually
-	 * happen: every resource this claims to free dispatched its own `dispose`,
-	 * and the freed set is disjoint from everything a second, still-drawn body
-	 * is holding. The second is the one that does not throw — a teardown that
-	 * took the shared unit sphere would render the next system blank.
+	 * driver for a byte count.
+	 *
+	 * **What `tests/gpu-teardown.test.ts` asserts, stated at the strength it
+	 * actually holds**, because sage round 2 caught this comment selling a
+	 * fixture's coverage as a real body's:
+	 *
+	 * - **Named-resource completeness on a scene-shaped fixture** — every
+	 *   resource of a hand-built subtree is freed. A fixture, so it proves the
+	 *   walker reaches every *kind* of slot, not that it reaches everything a
+	 *   generated body has.
+	 * - **Texture completeness on the real bodies**, by a rule the test writes
+	 *   itself rather than importing, since `resourcesOf` and `disposeSubtree`
+	 *   share one traversal by design and a cross-check built from either is
+	 *   that rule agreeing with itself. Only the star has a texture to cover —
+	 *   its corona — because every other class is a `ShaderMaterial` whose bands
+	 *   are computed rather than sampled (#59). The corpus carries the vacuity
+	 *   guard for that reason; asserting it per class would fail `terran` for
+	 *   being right.
+	 * - **Disjointness from a second, still-drawn body of the same class.** This
+	 *   is the failure that does not throw — a teardown that took the shared unit
+	 *   sphere would render the next system blank.
+	 *
+	 * What is *not* asserted: that a generated body has no resource the walker
+	 * cannot reach at all. One traversal is a deliberate choice, so nothing in
+	 * this repo enumerates a body's resources independently of the code under
+	 * test, and the star's corona is the only real resource named.
 	 */
 	dispose(): void;
 }

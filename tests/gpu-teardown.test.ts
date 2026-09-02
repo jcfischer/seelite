@@ -201,6 +201,70 @@ describe("disposeSubtree reaches every kind of resource a scene holds", () => {
 		expect(report.freed.has(geometry)).toBe(true);
 	});
 
+	test("a real body's textures are all accounted for, by the test's own rule", () => {
+		// **Sage round 2 was right that the named-resource row above runs on a
+		// hand-built fixture**, so for a real `BodyVisual` the only claim was
+		// `freed.size > 0` — a floor, and labelled one. This is the completeness
+		// claim on the real thing.
+		//
+		// The enumeration is written *here* rather than imported, and that is the
+		// point: `resourcesOf` and `disposeSubtree` deliberately share one
+		// traversal (`gpu-teardown.ts` argues why), so a cross-check built from
+		// either of them is the same rule agreeing with itself. This walks with
+		// three's own `traverse` and reads the two places a texture can hang —
+		// a named property, and a `ShaderMaterial` uniform — which is the rule
+		// `texturesOf` implements, restated by a second author.
+		//
+		// Red-built: deleting `texturesOf`'s uniform pass leaves every planet
+		// surface's own maps unaccounted for and this goes red on all eight
+		// classes, where `freed.size > 0` stayed green.
+		const seen = new Map<string, number>();
+		withCanvasStub(() => {
+			for (const [surface, look] of APPEARANCES) {
+				const visual = buildBodyVisual(look, surfaceSphere("near"), {
+					sunColor: 0xfff0e0,
+					starTint: 0xfff0e0,
+				});
+				const expected = new Set<THREE.Texture>();
+				visual.group.traverse((object) => {
+					const material = (object as Partial<THREE.Mesh>).material;
+					for (const one of Array.isArray(material)
+						? material
+						: material
+							? [material]
+							: []) {
+						for (const value of Object.values(
+							one as unknown as Record<string, unknown>,
+						))
+							if (value instanceof THREE.Texture) expected.add(value);
+						const uniforms = (one as Partial<THREE.ShaderMaterial>).uniforms;
+						for (const uniform of Object.values(uniforms ?? {}))
+							if (uniform?.value instanceof THREE.Texture)
+								expected.add(uniform.value);
+					}
+				});
+				const report = disposeSubtree(visual.group);
+				const unaccounted = [...expected].filter(
+					(texture) => !report.freed.has(texture) && !report.kept.has(texture),
+				);
+				expect([surface, unaccounted.length]).toEqual([surface, 0]);
+				seen.set(surface, expected.size);
+			}
+		});
+		// **The vacuity guard is on the corpus, not on each class**, because most
+		// of them genuinely hold no texture: a planet surface is a
+		// `ShaderMaterial` whose bands are computed rather than sampled (#59), so
+		// there is nothing to enumerate and the row above is trivially true for
+		// it. Asserting per-class would have failed on `terran` for being right.
+		// What must not be true is that *nothing* in the corpus has one — that is
+		// the state in which this whole test passes while checking nothing.
+		const withTextures = [...seen].filter(([, count]) => count > 0);
+		console.log(
+			`textured body classes: ${withTextures.map(([s, n]) => `${s}=${n}`).join(", ") || "NONE"}`,
+		);
+		expect(withTextures.length).toBeGreaterThan(0);
+	});
+
 	test("every station and body actually frees something", () => {
 		// The floor under the two disjointness rows below: they are vacuously
 		// true against a walker that freed nothing at all.

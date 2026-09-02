@@ -107,7 +107,7 @@ import {
 	legSeconds,
 } from "./cruise";
 import { GOVERNMENT_NAMES, type SystemRecord } from "./galaxy";
-import { type Course, courseProgress, setCourse } from "./galaxy-route";
+import { type Course, courseProgress } from "./galaxy-route";
 import {
 	JUMP_CHARGE_S,
 	JUMP_TANK_LY,
@@ -2946,7 +2946,13 @@ class Game {
 		// states, and a message that vanished on its own is one a pilot looking
 		// at the scanner never read. `chargeJump` clears and rewrites it, so the
 		// jump key itself is not a dismissal.
-		if (this.jumpNotice && key !== "`") this.jumpNotice = "";
+		// **Not while the drive is charging.** The dismissal exists so a refusal
+		// clears on the next key; during the wind-up the same line is carrying
+		// the countdown, and blanking it left an empty prompt for the rest of
+		// the window — the exact failure `chargeJump`'s comment says it fixed,
+		// reintroduced through the dismissal path (sage round 2).
+		if (this.jumpNotice && key !== "`" && !charging(this.jumpCharge))
+			this.jumpNotice = "";
 		switch (key) {
 			case "1":
 				if (this.view === "cockpit") this.setHeadLook("left");
@@ -4293,36 +4299,56 @@ class Game {
 	 * moves the clock backwards — a value stamped at t=900 and read at t=0 is
 	 * being asked something a forward-only game never asks it.
 	 */
-	resetFlightToStart() {
-		resetWorldToStart(this.world);
-
+	/**
+	 * Everything a flight session is, cleared — the state that must not survive
+	 * arriving somewhere new, whether that is a jump or a reset to the start.
+	 *
+	 * **Extracted because it was written twice** (sage round 2). `performJump`
+	 * and `resetFlightToStart` both spelled these fifteen assignments, and only
+	 * one of them is watched by `tests/leg-reset-coverage.test.ts` — so a field
+	 * added to the flight session would have been zeroed on a reset and left
+	 * running across a jump, which is the half nothing would have caught.
+	 *
+	 * What is deliberately **not** here is what the two do differently:
+	 * a reset refills the drive charge and clears the jump charge, because a
+	 * boot has both; a jump refills neither, since §7 refills the drive on
+	 * docking and a jump is not a dock. Caches and per-station protocol state
+	 * stay at their call sites for the same reason — a jump has a system's worth
+	 * to drop and a reset has a clock rewind's worth.
+	 */
+	private clearFlightSession() {
 		this.regime = "normal";
 		this.spoolLeftS = 0;
-		// A boot has no jump charging, so a reset has none either. Note the limit
-		// this method inherits from `resetWorldToStart`: after a jump that
-		// function throws rather than resetting to another star's arrival point
-		// at clock zero, which is a state no boot produces (#187).
-		this.jumpCharge = idleCharge();
-		this.jumpNotice = "";
 		this.throttle = 0;
-		this.chargeAu = CHARGE_CAPACITY_AU;
 		this.cruiseSpeedKms = 0;
 		this.closingKms = 0;
 		this.legStartedAtS = null;
 		this.lastLegS = null;
 		this.lastExit = "";
+		this.dockingComputerEngaged = false;
+		this.rates = { pitch: 0, yaw: 0, roll: 0 };
+		this.mouseDx = 0;
+		this.mouseDy = 0;
+		this.chaseYaw = 0;
+	}
+
+	resetFlightToStart() {
+		resetWorldToStart(this.world);
+		this.clearFlightSession();
+
+		// A boot has no jump charging, so a reset has none either.
+		// `resetWorldToStart` rebuilds the start system when the ship is
+		// elsewhere, so this method is total after a jump too — it was not, for
+		// one review round, and the throw reached this published handle (#187).
+		this.jumpCharge = idleCharge();
+		this.jumpNotice = "";
+		this.chargeAu = CHARGE_CAPACITY_AU;
 		// Selection is not written by the flight path, so the coverage scan does
 		// not ask for it, and it is not spelled here either — the constructor and
 		// this method call the same `selectBootTarget`. Two copies is how the
 		// first version came to set `null`, a state no boot produces, and stay
 		// green for five runs.
 		this.selectBootTarget();
-
-		this.rates = { pitch: 0, yaw: 0, roll: 0 };
-		this.mouseDx = 0;
-		this.mouseDy = 0;
-		this.chaseYaw = 0;
-		this.dockingComputerEngaged = false;
 
 		// **Attitude, and it is not one of the assignments above.** `step` turns the
 		// ship with `this.orientation.multiply(turn)` — an in-place mutation of a
@@ -4471,11 +4497,18 @@ class Game {
 		const step = stepCharge(this.jumpCharge, dt);
 		this.jumpCharge = step.charge;
 		if (step.fired === null) return;
-		// **The last frame of the wind-up is a flown frame.** `step` returns
-		// straight after a jump, so `stepWorld` never runs on it — without this
+		// **The last frame of the wind-up is a *clocked* frame, not a flown one.**
+		// It read "flown" until sage round 2 pointed out the next sentence
+		// contradicts it: `step` returns straight after a jump, so `stepWorld`
+		// never runs on that frame and no flight integration, damage or dock
+		// check happens on it. What does run is `advanceWorldClock` — without it
 		// the clock loses one frame per jump and the world the ship arrives in
 		// is placed a frame early. The wind-up is the whole of what a jump costs
 		// the clock (§8.1), so losing a frame of it is losing part of the cost.
+		//
+		// The distinction is not pedantry: the vulnerability §8 sells the window
+		// on is a property of the frames *before* this one, which are flown
+		// normally. This last one is a bookkeeping frame.
 		advanceWorldClock(this.world, dt);
 		const to = this.world.galaxy.systems.find((s) => s.index === step.fired);
 		// A destination that is not in this galaxy's records is a bug in whoever
@@ -4533,19 +4566,7 @@ class Game {
 		// normal flight, pointed at the new star, with nothing left of the leg
 		// that ended in another system. The drive charge is deliberately **not**
 		// refilled — §7 refills it on docking, and a jump is not a dock.
-		this.regime = "normal";
-		this.spoolLeftS = 0;
-		this.throttle = 0;
-		this.cruiseSpeedKms = 0;
-		this.closingKms = 0;
-		this.legStartedAtS = null;
-		this.lastLegS = null;
-		this.lastExit = "";
-		this.dockingComputerEngaged = false;
-		this.rates = { pitch: 0, yaw: 0, roll: 0 };
-		this.mouseDx = 0;
-		this.mouseDy = 0;
-		this.chaseYaw = 0;
+		this.clearFlightSession();
 		// Per-station protocol state, which is per *system*: a grant is a berth
 		// reservation (#147) and there is no berth here to honour one at.
 		this.dockingStates.clear();

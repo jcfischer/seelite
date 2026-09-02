@@ -23,7 +23,19 @@
  * otherwise regenerate every system's edge set. So the tank is that constant
  * and not `HULL_SPECS[…].tankLy`, which is the same number today by a check in
  * `tests/hull.test.ts`. #185 is the node that makes the router and the spend
- * hull-aware together; until it lands, one quantity has one name here.
+ * hull-aware together.
+ *
+ * **It is not the only name for it, and saying so was wrong** (sage round 2).
+ * `market.ts` already exports `FUEL_TANK_LY = HULL_SPECS[PLAYER_BASELINE_HULL].tankLy`
+ * and `scripts/lib/greedy-trader.ts` reasons about the tank with that, while
+ * this module fills to a range-derived figure. The two are equal today only
+ * because `tests/hull.test.ts` asserts the baseline hull's tank is the jump
+ * range — and #185 is precisely the node that would make them differ, since it
+ * asks whether reachability is a fact about the galaxy or about the ship.
+ *
+ * So they are two names for two questions that currently have one answer: what
+ * a *jump* may cross (a galaxy fact, the connectivity graph's edge predicate)
+ * and what a *hull* may carry (a roster fact). #185 is where they part.
  *
  * ## Range is the squared comparison, on purpose
  *

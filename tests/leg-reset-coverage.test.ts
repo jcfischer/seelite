@@ -198,7 +198,23 @@ const assigned = memo(
 			...across(DISPLAY_PATH, assignedFields),
 		]),
 );
-const resetBody = memo(() => methodBody(main, "resetFlightToStart"));
+/**
+ * The reset's body **and the helper it delegates to**.
+ *
+ * `clearFlightSession` was extracted in sage round 2 because `performJump` had
+ * spelled the same fifteen assignments — and extracting it immediately reddened
+ * this scan, which is the scan working: the assignments left the method it reads
+ * and it said so rather than passing on a method that now clears nothing.
+ *
+ * Concatenated rather than followed, because a scan that chased calls would be
+ * a call graph, and this file's whole argument is that it is a text scan whose
+ * one question is answerable as text. If a third site is ever added, it goes in
+ * this list rather than being discovered.
+ */
+const resetBody = memo(
+	() =>
+		`${methodBody(main, "resetFlightToStart")}\n${methodBody(main, "clearFlightSession")}`,
+);
 
 test("every method the reset is declared against exists", () => {
 	// Its own test because the failure is different in kind: a renamed method

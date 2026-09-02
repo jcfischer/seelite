@@ -199,10 +199,28 @@ describe("jumpWorldTo", () => {
 });
 
 describe("resetWorldToStart after a jump", () => {
-	test("it refuses rather than resetting to the wrong star", () => {
+	test("it rebuilds the start system rather than refusing", () => {
+		// **This row asserted a throw until sage round 2.** #187 first made the
+		// reset partial and exported a predicate so a caller could ask before
+		// calling — but the throw travelled into the published
+		// `window.__seelite.resetFlightToStart()`, so a probe resetting after a
+		// jump got an exception rather than a reset. A rebuild costs one
+		// `makeSystem`, which is what `jumpWorldTo` already does.
 		const world = makeWorld(SEED);
-		jumpWorldTo(world, neighbourOf(HOME));
-		expect(() => resetWorldToStart(world)).toThrow(/start system/);
+		const away = neighbourOf(HOME);
+		jumpWorldTo(world, away);
+		expect(world.system.record.index).toBe(away.index);
+		advanceWorldClock(world, 500);
+
+		resetWorldToStart(world);
+
+		expect(world.system.record.index).toBe(HOME.index);
+		expect(world.gameTime).toBe(0);
+		// The full state of a fresh world, not just its index — a reset that
+		// rebuilt the right record but left the ship at the old arrival point
+		// would satisfy an index check and strand the player.
+		expect(world.ship.pos).toEqual(makeWorld(SEED).ship.pos);
+		expect(world.ship.vel).toEqual(makeWorld(SEED).ship.vel);
 	});
 
 	test("it still resets a world that never left", () => {
@@ -283,13 +301,15 @@ describe("a jump moves a save key", () => {
 	});
 });
 
-test("the reset's precondition is askable, not only catchable", () => {
+test("the reset's predicate answers a question, and no longer guards a throw", () => {
 	const world = makeWorld(SEED);
 	expect(canResetWorldToStart(world)).toBe(true);
 	jumpWorldTo(world, neighbourOf(HOME));
 	expect(canResetWorldToStart(world)).toBe(false);
-	// And the predicate and the throw agree, which is the whole point of
-	// exporting one: a gate that disagreed with the guard would be worse than
-	// no gate.
-	expect(() => resetWorldToStart(world)).toThrow();
+	// **It is no longer a precondition** (sage round 2): the reset is total, so
+	// the predicate says whether a reset is a *rebuild* or a *rewind*, which a
+	// caller wanting to skip the work may still ask. What it must not do is
+	// disagree with what the reset then does.
+	resetWorldToStart(world);
+	expect(canResetWorldToStart(world)).toBe(true);
 });

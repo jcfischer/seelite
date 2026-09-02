@@ -1015,12 +1015,20 @@ export function canResetWorldToStart(world: World): boolean {
 
 export function resetWorldToStart(world: World): void {
 	const start = startSystem(world.galaxy);
-	if (!canResetWorldToStart(world)) {
-		throw new Error(
-			`resetWorldToStart: the ship is in ${world.system.record.name}, not the start system ${start.name} — a reset does not rebuild a system (#187)`,
-		);
-	}
 	world.gameTime = 0;
+	// **Total again, and that is sage round 2's correction to this node.** #187
+	// first made this throw when the ship was somewhere else, and exported
+	// `canResetWorldToStart` so a caller could ask first. But the throw reached
+	// the published `window.__seelite.resetFlightToStart()`, so any probe that
+	// reset after a jump got an exception instead of a reset — and #89's load
+	// path would have inherited the same. A reset that cannot reset is not a
+	// narrower contract, it is a broken one.
+	//
+	// Rebuilding costs one `makeSystem`, which is exactly what `jumpWorldTo`
+	// does, so there was never a reason for the partial form. The predicate
+	// stays exported because it answers a real question — *is this a rebuild or
+	// a rewind* — which a caller wanting to skip the work may still want.
+	if (!canResetWorldToStart(world)) world.system = makeSystem(start, 0);
 	// `world.gameTime`, not a second literal `0`. With the literal the two lines
 	// were independent, so their order was not load-bearing and no swap could go
 	// red — while a comment above claimed the ordering had been red-built.
