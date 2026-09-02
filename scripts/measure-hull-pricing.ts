@@ -89,12 +89,14 @@ import {
 } from "../src/market";
 import { BERTH_CELL } from "../src/station-interior";
 import { STATION_TYPES } from "../src/station";
+import { hullBoxM3, m3PerTonneOfHold } from "../tests/helpers/hull-math";
 import {
 	CLOSABLE_RATIO,
 	FLUCT_PAIRS,
 	fixedReferenceResponse,
 	forEachLegalPair,
 	residualMarginCr,
+	richestClosablePair,
 	runsToExhaustion,
 	RUN_MINUTES,
 	saturatedDeficitT,
@@ -210,26 +212,6 @@ for (const holdT of [8, 20, 40, 60, 63, 80, 120, 200]) {
 // B. #26's D6: what the multiplier does to §5.4's brake
 // ---------------------------------------------------------------------------
 
-/** The richest intra-system pair the deficit can drive to zero, at one hold and
- *  one response — the pair §5.4 reports its 3 runs and 953 Cr from. */
-function richestClosablePair(holdT: number, response: StockResponse) {
-	let best = { buyCr: 0, sellCr: 0, margin: 0, good: "", leg: "", economy: 0 };
-	forEachLegalPair((pair) => {
-		const margin = pair.sellCr - pair.buyCr;
-		if (margin <= best.margin) return;
-		if (residualMarginCr(pair.buyCr, pair.sellCr, holdT, response) > 0) return;
-		best = {
-			buyCr: pair.buyCr,
-			sellCr: pair.sellCr,
-			margin,
-			good: pair.good.name,
-			leg: `${pair.buyStation}->${pair.sellStation}`,
-			economy: pair.economy,
-		};
-	}, FLUCT_PAIRS);
-	return best;
-}
-
 console.log("\n== B. #26's D6: the hold multiplier, swept against §5.4 ==");
 console.log(
 	"  Both arms are the same search over the same pairs and the same byte set;",
@@ -283,7 +265,6 @@ console.log(
 // C. The hold curve
 // ---------------------------------------------------------------------------
 
-/** One arm of the sweep: every world flown at one hold, same options. */
 /**
  * One arm of the sweep: every world flown at one hold, same options.
  *
@@ -385,7 +366,7 @@ console.log(
 		`b ${finite("b", pooled.b).toFixed(3)} ± ${finite("se", pooled.se).toFixed(3)} (the slope's own standard error)`,
 );
 console.log(
-	`    per world (n=${WORLDS.length}): b median ${quantile(betas, 0.5).toFixed(3)}, ` +
+	`    per world (n=${WORLDS.length}): b median ${median(betas).toFixed(3)}, ` +
 		`p10 ${quantile(betas, 0.1).toFixed(3)}, p90 ${quantile(betas, 0.9).toFixed(3)}`,
 );
 {
@@ -551,23 +532,19 @@ console.log(
 );
 {
 	// **The max over every station type, the way `tests/hull.test.ts` derives
-	// it.** Reading `BERTH_CELL.trade` and calling it "the largest" would let a
-	// retune of another role's cell put the instrument and the gate out of step
-	// without either noticing.
-	const boxOf = (c: { lengthKm: number; beamKm: number; heightKm: number }) =>
-		c.lengthKm * c.beamKm * c.heightKm * 1e9;
+	// it**, and through the same helper it uses. Reading `BERTH_CELL.trade` and
+	// calling it "the largest" would let a retune of another role's cell put the
+	// instrument and the gate out of step without either noticing, and a second
+	// spelling of the km-to-m³ conversion would do it more quietly still.
 	const largestType = STATION_TYPES.reduce((best, t) =>
-		boxOf(BERTH_CELL[t]) > boxOf(BERTH_CELL[best]) ? t : best,
+		hullBoxM3(BERTH_CELL[t]) > hullBoxM3(BERTH_CELL[best]) ? t : best,
 	);
 	const cell = BERTH_CELL[largestType];
-	const boxM3 = boxOf(cell);
-	const densities = PURCHASABLE_HULL_IDS.map((id) => {
-		const s = HULL_SPECS[id];
-		return {
-			id,
-			m3PerT: (s.env.lengthKm * s.env.beamKm * s.env.heightKm * 1e9) / s.holdT,
-		};
-	}).sort((a, b) => a.m3PerT - b.m3PerT);
+	const boxM3 = hullBoxM3(cell);
+	const densities = PURCHASABLE_HULL_IDS.map((id) => ({
+		id,
+		m3PerT: m3PerTonneOfHold(HULL_SPECS[id]),
+	})).sort((a, b) => a.m3PerT - b.m3PerT);
 	const best = densities[0];
 	console.log(
 		`\n  largest berth cell (${largestType}, and every type is checked): ` +

@@ -20,6 +20,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import * as THREE from "three";
 import { CHARGE_CAPACITY_AU } from "../src/cruise";
 import { carrierKey } from "../src/carrier-key";
@@ -59,6 +60,11 @@ import {
 	berthFits,
 	stationInterior,
 } from "../src/station-interior";
+import {
+	hullBoxM3,
+	m3PerTonneOfHold,
+	stretchedToHold,
+} from "./helpers/hull-math";
 
 /** 0.1 m, in kilometres — the quantum the table's envelopes are rounded **up**
  *  to, and the tolerance the row below allows. */
@@ -498,13 +504,28 @@ describe("what a hull costs (#182, #26's D4 and D7)", () => {
 		expect(HULL_PRICE_EXPONENT).toBeLessThan(1);
 	});
 
-	test("the anchor is the baseline hull's, exactly", () => {
-		// The law is written as a ratio against the baseline hull's hold, so this
-		// is the one point where it is a pin rather than a curve — and
-		// `economy-trade.md` §7 quotes the figure.
-		expect(hullPriceCr(HULL_SPECS[PLAYER_BASELINE_HULL].holdT)).toBe(
-			HULL_PRICE_BASELINE_CR,
-		);
+	test("the shipped prices are the ones §7.1 publishes, to the credit", () => {
+		// **A pin, and it is not derived from its subject.** The check it replaces
+		// was `hullPriceCr(baselineHold) === HULL_PRICE_BASELINE_CR`, which is
+		// `baseline × 1^exponent` and holds for any pair of constants — so it
+		// could not have caught the pair moving, which is exactly what happened
+		// once in this node's own review. These seven figures are the table
+		// `economy-trade.md` §7.1 prints and a shipyard screen will read; moving
+		// either constant fails here first.
+		expect(
+			Object.fromEntries(
+				PURCHASABLE_HULL_IDS.map((id) => [id, HULL_SPECS[id].priceCr]),
+			),
+		).toEqual({
+			interceptor: 20_000,
+			prospector: 25_600,
+			courier: 35_000,
+			tug: 39_100,
+			explorer: 44_900,
+			miner: 53_500,
+			freighter: 68_600,
+		});
+		expect(hullPriceCr(HULL_CEILING_HOLD_T)).toBe(141_900);
 		expect(HULL_PRICE_BASELINE_CR % HULL_PRICE_STEP_CR).toBe(0);
 		// Every quoted price is on the step, so a spec table and a shipyard screen
 		// cannot round differently.
@@ -512,6 +533,43 @@ describe("what a hull costs (#182, #26's D4 and D7)", () => {
 			const price = HULL_SPECS[id].priceCr;
 			if (price !== null) expect(price % HULL_PRICE_STEP_CR).toBe(0);
 		}
+	});
+
+	test("the prose that quotes the constants agrees with the leaf", () => {
+		// **The drift this catches happened.** #182's review moved the pair once,
+		// and `CLAUDE.md` and §1's constant table went on printing the superseded
+		// figures with every gate green — a spec is a claim like any other, and
+		// §1's own rule is that a quoted figure has a re-derivation path.
+		// `hud-scanner-spec.test.ts` is the precedent for reading one here.
+		const read = (path: string) =>
+			readFileSync(new URL(`../${path}`, import.meta.url), "utf8").replace(
+				/\s+/g,
+				" ",
+			);
+		const withCommas = (n: number) => n.toLocaleString("en-GB");
+		for (const path of ["docs/specs/economy-trade.md", "CLAUDE.md"]) {
+			const prose = read(path);
+			// Nobody may quote a *different* baseline or exponent. The figures need
+			// not appear — CLAUDE.md deliberately names the constants instead — but
+			// a stale one must not.
+			for (const stale of [30_000, 25_000, 40_000])
+				expect([
+					path,
+					prose.includes(`${withCommas(stale)} Cr x (hold`),
+				]).toEqual([path, false]);
+		}
+		// The spec is the owner, so it must carry the live pair and the table.
+		const spec = read("docs/specs/economy-trade.md");
+		expect(spec).toContain(
+			`HULL_PRICE_BASELINE_CR = ${withCommas(HULL_PRICE_BASELINE_CR)} Cr`,
+		);
+		expect(spec).toContain(`HULL_PRICE_EXPONENT = ${HULL_PRICE_EXPONENT}`);
+		expect(spec).toContain(`HULL_CEILING_HOLD_T = ${HULL_CEILING_HOLD_T} t`);
+		for (const id of PURCHASABLE_HULL_IDS)
+			expect([
+				id,
+				spec.includes(`${withCommas(HULL_SPECS[id].priceCr as number)} Cr`),
+			]).toEqual([id, true]);
 	});
 
 	test("the ceiling is the berth catalogue's, re-derived from it", () => {
@@ -524,18 +582,11 @@ describe("what a hull costs (#182, #26's D4 and D7)", () => {
 		// the densest hold the roster has measured. It is an upper bound in the
 		// safe direction, so it assumes a hull could be a solid box at that
 		// density.
-		const cells = STATION_TYPES.map((type) => BERTH_CELL[type]);
 		const largestBoxM3 = Math.max(
-			...cells.map((c) => c.lengthKm * c.beamKm * c.heightKm * 1e9),
+			...STATION_TYPES.map((type) => hullBoxM3(BERTH_CELL[type])),
 		);
 		const densest = Math.min(
-			...PURCHASABLE_HULL_IDS.map((id) => {
-				const spec = HULL_SPECS[id];
-				return (
-					(spec.env.lengthKm * spec.env.beamKm * spec.env.heightKm * 1e9) /
-					spec.holdT
-				);
-			}),
+			...PURCHASABLE_HULL_IDS.map((id) => m3PerTonneOfHold(HULL_SPECS[id])),
 		);
 		expect(HULL_CEILING_HOLD_T).toBe(Math.floor(largestBoxM3 / densest));
 		// …and it really is a ceiling: every hull a berth admits is under it, and
@@ -560,21 +611,13 @@ describe("what a hull costs (#182, #26's D4 and D7)", () => {
 			STATION_GEOMETRY.trade.aperturePlaneKm,
 			1,
 		).berths;
-		const stretched = (holdT: number): HullEnvelope => ({
-			// The cell's beam and height, which is the most a berth admits, and the
-			// length that carries `holdT` at the freighter's box volume per tonne.
-			beamKm: BERTH_CELL.trade.beamKm,
-			heightKm: BERTH_CELL.trade.heightKm,
-			lengthKm:
-				(holdT *
-					((freighter.env.lengthKm *
-						freighter.env.beamKm *
-						freighter.env.heightKm) /
-						freighter.holdT)) /
-				(BERTH_CELL.trade.beamKm * BERTH_CELL.trade.heightKm),
-		});
 		const fits = (holdT: number) =>
-			berths.some((berth) => berthFits(berth, stretched(holdT)));
+			berths.some((berth) =>
+				berthFits(
+					berth,
+					stretchedToHold(holdT, m3PerTonneOfHold(freighter), BERTH_CELL.trade),
+				),
+			);
 		expect(fits(HULL_CEILING_HOLD_T)).toBe(true);
 		expect(fits(HULL_CEILING_HOLD_T + 1)).toBe(false);
 		// …and it is the *first* failure, not merely a failure a long way up: the

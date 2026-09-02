@@ -19,7 +19,7 @@ equipment prices; the trade→upgrade progression; the economic half of death.
 | What a station type *is* — exclusives, law, geometry, the `blackMarket` flag | `station-types.md` |
 | Legal status, bounties, police, contraband *consequences* | #8 |
 | The market screen's layout | the unowned HUD node |
-| Hull roster and prices | the ship-roster node (still fog on the map) |
+| Which hulls exist, and what each carries | `src/hull.ts` (#181); §7.1 prices them |
 | Save format, slots, permadeath | the save/load node (still fog) |
 
 Terminology is `station-types.md` §1's, unchanged: a **station** is any dockable
@@ -59,8 +59,8 @@ quantity  = clamp(clamp(clamp(baseQuantity + changing − product, 0, 63)
 | `PRICE_ELASTICITY` | 0.10 per full hold, any hull | §5.3 |
 | `HOLD_REFERENCE_T` | 20 t — the *baseline hull's* hold | §6, `src/hull.ts` |
 | `DEFICIT_SATURATION_RUNS` | 3.15 runs of the flown hold | §5.2 |
-| `HULL_PRICE_BASELINE_CR` | 30,000 Cr | §7.1 |
-| `HULL_PRICE_EXPONENT` | 0.613 | §7.1 |
+| `HULL_PRICE_BASELINE_CR` | 35,000 Cr | §7.1 |
+| `HULL_PRICE_EXPONENT` | 0.612 | §7.1 |
 | `HULL_CEILING_HOLD_T` | 197 t | §7.2 |
 
 The executable copy is **`src/market.ts`**, where
@@ -451,9 +451,9 @@ priceCr          ×= 1 + PRICE_ELASTICITY
 Until that node the response was `clamp(deficit, ±63) / HOLD_REFERENCE_T`, which
 is the same arithmetic for as long as every ship in the game holds 20 t and is
 the map's #13 failure the moment one does not: **a per-hull *scaling* on a
-bounded index gets clamped away where that type lives** (the map words it
-"modifier"; the glossary reserves that word for a Carrier's effect). One run of a
-63 t hull
+bounded index gets clamped away where that type lives** — the map's own wording
+of the constraint, with the noun changed because `CONTEXT.md` reserves it for a
+Carrier's effect. One run of a 63 t hull
 already reaches a ±63 *tonne* clamp, so the market's memory of a 63 t trader and
 a 200 t trader was identical — the response stopped distinguishing hulls exactly
 at the hold where §7.1's ladder begins. Measured, at 200 t the old expression
@@ -720,11 +720,13 @@ its own milestone, so it offers its own number of decision points — and raw
 counts across different denominators are not comparable. A draft of this table
 had counts only and concluded "fewest wins" from them.
 
-**Waiting wins at every dock cost**, at a rate of 2.1–2.8% with no trend, and
-45 s — the value everything else here is measured at — is now the *highest* of
-the five rather than the lowest it was before #182. So the exploit is not an
-artefact of that choice, and the row this section reports is not the flattering
-one.
+**Waiting wins at every dock cost**, at a rate of 2.1–2.8% with no trend across
+the five. 45 s — the value everything else here is measured at — sits **second
+of five on that rate**, behind 90 s's 2.8%, where before #182 it was the lowest
+of the five. So the exploit is not an artefact of that choice and the reported
+row is close to the worst of them rather than the flattering one; the honest
+reading of a 0.7-point spread over five rows is that the rate does not depend on
+the dock cost at all.
 
 **The tail is not monotone in the dock cost, and a draft of this paragraph said
 it was.** Read the column: 1.69×, then *down* to 1.62×, 1.49× and 1.47×, then up
@@ -912,7 +914,7 @@ galaxies), 2 h per arm, with the hold as the only thing that varies. Fitted over
 mean curve at the median hold and 12.1% at its worst (4 t, below any hull in the
 roster). The third digit is the pooled slope's own **standard error of 0.014**,
 which is the quantity that supports it; the *world-to-world* spread is a
-different and much wider one — per-world exponent median 0.622, p10–p90
+different and much wider one — per-world exponent median 0.621, p10–p90
 0.531–0.683 — and quoting that as the reason for three places was a non sequitur
 a draft of this paragraph carried.
 
@@ -1241,12 +1243,14 @@ launch and once inside the wait branch, so a denominator called "decisions" was
 double what a reader would count.
 
 **What that blindness costs is measured, not left as a caveat.** Run again at
-sixteen: the milestone goes **56–82 min to 45–87 min** — the fast end improves
-and the slow end does not, so the eight nearest systems are most of where the
-money is and the limit costs the trader a fifth of its best case. The ceiling is
-slightly loose, in the direction that makes §8's "beaten by the pump" conclusion
-stronger rather than weaker, since a looser ceiling means the true one is faster
-still.
+sixteen: the milestone goes **56–82 min to 45–87 min**. The fast end improves by
+a fifth and **the slow end gets worse, 82 to 87 min**, which is the direction
+this paragraph used to wave away — a wider option set is not monotonically
+better for a one-hop rate maximiser, because the best-rated hop it can now see
+may lead somewhere the next decision is poorer from. So the eight-neighbour
+limit loosens the ceiling on the fast galaxies and tightens it on the slowest,
+and §8's "beaten by the pump" conclusion rests on the four-galaxy *range* rather
+than on the claim that a fuller option set is uniformly faster.
 
 **The §5.5 comparison was wrong twice before it was right, and both faults
 flattered the same side.**

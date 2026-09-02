@@ -205,9 +205,9 @@ export const HULL_PRICE_EXPONENT = 0.612;
 export const HULL_PRICE_BASELINE_CR = 35_000;
 
 /** Prices are quoted to the nearest hundred credits, like every other figure in
- *  `economy-trade.md` §7. Finer would be false precision: the fitted exponent's
- *  own standard error is about 0.013, and its p10-p90 across worlds is wider
- *  still. */
+ *  `economy-trade.md` §7. Finer would be false precision against a fitted
+ *  exponent; §7.1 there carries the fit's own standard error and the
+ *  world-to-world spread, and this file deliberately does not restate either. */
 export const HULL_PRICE_STEP_CR = 100;
 
 /**
