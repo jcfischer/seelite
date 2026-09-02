@@ -263,6 +263,8 @@ const record = (requested, result) => {
 	bySamples.get(at).push(result);
 	if (at !== requested) rounded.set(requested, at);
 };
+/** Requests the driver did not honour exactly, so the report can say so rather
+ *  than leave a reader wondering where a row went. */
 const rounded = new Map();
 
 for (let i = 0; i < BLOCKS; i++) for (const arm of shuffled(arms)) await arm();
@@ -271,6 +273,9 @@ const h = median(ms(high));
 const l = median(ms(low));
 const medians = new Map([...bySamples].map(([n, xs]) => [n, median(ms(xs))]));
 const base = medians.get(0);
+/** The counts blocks were actually allocated at, ascending — the rows below and
+ *  every spread and separation line read this rather than the request list. */
+const appliedCounts = [...medians.keys()].sort((a, b) => a - b);
 const dOn = median(ms(dithered));
 const dOff = median(ms(undithered));
 console.log(`  renderer: ${renderer}`);
@@ -288,12 +293,23 @@ console.log(
 	`  the environment costs   ${(h - l).toFixed(3)} ms/frame  (${(((h - l) / l) * 100).toFixed(1)}%)`,
 );
 console.log("  both arms above unantialiased; quality high below:");
-for (const n of SAMPLES) {
-	const ms = medians.get(n);
-	const times =
-		n === 0 ? "" : `  ${(ms / base).toFixed(1)}x the unsampled frame`;
+console.log(`  arm order shuffled, seed ${ORDER_SEED}`);
+// **Rows are the counts that were *allocated*, not the ones requested.** A
+// context that rounds a request up puts two requests in one bucket, so a loop
+// over `SAMPLES` would look up a count with no bucket behind it and throw on
+// `undefined.toFixed` — which is what this did until review ran it against the
+// case its own comment described. The rounding is printed rather than silently
+// merged, so a reader can see why a row is missing.
+for (const [requested, at] of rounded)
 	console.log(
-		`  ${String(n).padStart(2)} samples             ${ms.toFixed(3)} ms/frame  ${String(Math.round(1000 / ms)).padStart(3)} fps${times}`,
+		`  note: a request for ${requested} samples was allocated at ${at}`,
+	);
+for (const n of appliedCounts) {
+	const t = medians.get(n);
+	const times =
+		n === 0 ? "" : `  ${(t / base).toFixed(1)}x the unsampled frame`;
+	console.log(
+		`  ${String(n).padStart(2)} samples             ${t.toFixed(3)} ms/frame  ${String(Math.round(1000 / t)).padStart(3)} fps${times}`,
 	);
 }
 console.log(
@@ -338,9 +354,7 @@ console.log(
 console.log(
 	`  separation — dither     ${separation(ms(dithered), ms(undithered))} of pairings have the dithered block slower`,
 );
-for (const n of [...medians.keys()]
-	.sort((a, b) => a - b)
-	.filter((n) => n > 0)) {
+for (const n of appliedCounts.filter((n) => n > 0)) {
 	console.log(
 		`  spread — ${String(n).padStart(2)} samples     ${ms(bySamples.get(n))
 			.map((x) => x.toFixed(2))
