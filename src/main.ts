@@ -72,7 +72,6 @@ import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js"
 
 import { starField } from "./backdrop";
 import {
-	COMPOSER_SAMPLES,
 	SeeliteOutputPass,
 	VIGNETTE_MAX,
 	composerTarget,
@@ -1709,10 +1708,7 @@ class Game {
 		// samples belong here. `output-stage.ts` owns both.
 		this.composer = new EffectComposer(
 			this.renderer,
-			composerTarget(
-				this.renderer,
-				COMPOSER_SAMPLES[this.settings.value.quality],
-			),
+			composerTarget(this.renderer, this.settings.value.antialias),
 		);
 		// Back to front. The first pass clears colour; the third clears *depth*
 		// only, so the near layer cannot be occluded by a planet 3 AU away that
@@ -1816,6 +1812,14 @@ class Game {
 		this.settings.subscribe((next) => {
 			if (next.renderScale !== applied.renderScale) this.onResize();
 			if (next.quality !== applied.quality) this.applyQuality();
+			// #200's three rows. The sample count reallocates both composer
+			// buffers, so it is guarded by the same comparison and for the same
+			// reason as the resolution. The vignette needs no line here at all:
+			// the frame loop reads it from the settings on every frame, because
+			// it already reads the view there.
+			if (next.antialias !== applied.antialias) this.setComposerSamples();
+			if (next.dither !== applied.dither)
+				this.outputPass.setDither(next.dither === "on");
 			applied = next;
 		});
 		/**
@@ -2299,34 +2303,22 @@ class Game {
 		// answer for every plated surface in the game rather than one per
 		// surface. `cockpit-surface.ts` owns what a cabin surface costs.
 		applyCockpitQuality(this.settings.value.quality);
-		// The composer half (#200), and the one term under this key that is not a
-		// lighting term. It is here rather than behind a setting of its own
-		// because the two questions a player is actually asking — *is this
-		// machine keeping up* and *how good does it look* — are one question, and
-		// a second switch would split it. `settings.ts`'s note says so in the
-		// words the player reads.
-		this.setComposerSamples();
 	}
 
 	/**
 	 * Re-gate the composer's multisampling — #200.
 	 *
-	 * A method rather than three lines inside `applyQuality` because
-	 * `probe-output-stage.mjs` needs the *same* switch with the lighting held
-	 * still: an antialiasing claim measured across the quality key would be
-	 * measured across #99's environment and #101's seam map as well, and every
-	 * one of those moves the edge it is counting. The default argument is the
-	 * gate; an explicit one is the control arm.
+	 * A method rather than a line in the settings subscription because
+	 * `probe-output-stage.mjs` and `scripts/measure-light-cost.mjs` both need the
+	 * *same* switch with a count they name: a claim about antialiasing measured
+	 * by moving the player's setting would move it through the store, notify
+	 * every other listener, and write it to `localStorage`. The default argument
+	 * is the player's row; an explicit one is a control arm.
 	 */
-	setComposerSamples(
-		samples: number = COMPOSER_SAMPLES[this.settings.value.quality],
-	) {
-		// **`buildLights` runs before the composer is constructed**, and it ends
-		// in `applyQuality` — so this is called once with no composer to gate.
-		// That is harmless rather than a hole: the composer is *built* at the
-		// gated count a few lines later, from the same record. A `!` here would
-		// throw on boot, and moving the composer above the lights would reorder
-		// two constructions for the sake of one assignment.
+	setComposerSamples(samples: number = this.settings.value.antialias) {
+		// Called before the composer exists on some paths — a `!` here would
+		// throw on boot. Harmless rather than a hole: the composer is *built* at
+		// the player's count a few lines after the lights, from the same field.
 		if (!this.composer) return;
 		// Both buffers, because `EffectComposer` swaps them: multisampling one
 		// would antialias alternate passes and read as a flicker rather than as a
@@ -5389,7 +5381,11 @@ class Game {
 		// it reads as the canopy's own falloff and keeps the frame's corners from
 		// competing with the instruments, and on an exterior shot with no lens in
 		// the fiction it reads as a photograph of a spaceship.
-		this.outputPass.setVignette(this.view === "cockpit" ? VIGNETTE_MAX : 0);
+		this.outputPass.setVignette(
+			this.view === "cockpit" && this.settings.value.vignette === "on"
+				? VIGNETTE_MAX
+				: 0,
+		);
 
 		this.composer.render();
 		this.drawMarkers(camPos);

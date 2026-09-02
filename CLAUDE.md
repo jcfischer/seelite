@@ -290,14 +290,14 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   `WEBGL_multisampled_render_to_texture` is absent on ANGLE Metal, so three
   blits the multisampled buffer down at the end of **every**
   `WebGLRenderer.render`, and #15's ladder runs four `RenderPass`es into one
-  target. Measured headed at 2880x1800: 3.66 ms/frame at 0 samples, 13.96 at 2,
-  22.01 at 4 — and by pass count, 7.5 ms for one pass against 18.4 for four. The
-  figures live in `output-stage.ts` beside `COMPOSER_SAMPLES` and
-  `scripts/measure-light-cost.mjs` reprints them; what is worth knowing without
-  opening either is that **the sample count is not the lever** — the number of
-  layer passes sharing the target is. Two probes fail on frame time at any
-  non-zero count (`probe-live-cockpit`, `probe-navigation-console`), which is
-  the cost showing up as a check rather than as a figure.
+  target. **The figures are not restated here**: `setComposerSamples` owns the
+  table and `scripts/measure-light-cost.mjs` reprints it. What is worth knowing
+  without opening either is the shape — the cheapest non-zero count is already
+  several times the whole rest of the frame, turning the count down does not
+  rescue it, and **the lever is the pass count rather than the sample count**.
+  So it is the player's own row (`settings.ts`, `antialias`) and it defaults to
+  off; a node that collapses the layer ladder to one resolve is what would let
+  that default move.
 - **A dither belongs after the encode and a vignette before it.** The composer's
   targets are half-float and the screen is eight bits, so the quantisation
   happens in `OutputShader` — a ±0.5/255 noise added *there*, in display space,

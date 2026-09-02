@@ -25,19 +25,19 @@
  *
  * ## Two experiments, because one key now moves two terms
  *
- * #200 put the composer's sample count behind the same `quality` setting as the
- * environment. A high-against-low reading would therefore price both at once
- * and attribute the total to whichever the header happened to name — so each
- * experiment moves **one** term and pins the other:
+ * #200 added a second frame-cost term to the renderer, and it is the larger of
+ * the two by a factor of five. A reading that let either drift would attribute
+ * the total to whichever the header happened to name — so each experiment moves
+ * **one** term and pins the other:
  *
- * - the **environment** arm toggles `quality` with the samples pinned at the
- *   count `high` ships (`Game.setComposerSamples` takes an explicit one for this
- *   reason);
+ * - the **environment** arm toggles `quality` with the samples pinned at zero
+ *   (`Game.setComposerSamples` takes an explicit count for this reason);
  * - the **samples** arm holds `quality` at `high` and moves the count alone.
  *
- * Pinned at the *high* count and not at zero, deliberately: the environment's
- * cost is wanted on the frame a player at that setting actually draws, and a
- * multisampled target changes what every fragment write costs.
+ * Pinned at *zero* and not at the strongest count, because zero is what the
+ * game ships (`settings.ts`, the `antialias` row) — the environment's cost is
+ * wanted on the frame a player actually draws, and a multisampled target
+ * changes what every fragment write costs by a factor of five.
  *
  * ## How the arms are kept comparable
  *
@@ -171,30 +171,36 @@ await page.evaluate(
 	[SUBJECT, RADII],
 );
 
-/** The count `high` gates, read off the page rather than restated here — a
- *  probe or an instrument with its own copy of a constant goes falsely red when
- *  the module moves it. */
-const SAMPLES = await page.evaluate(() => {
-	const g = window.__seelite;
-	g.settings.set("quality", "high");
-	return g.composer.renderTarget1.samples;
-});
+/**
+ * The counts the settings screen offers, **asked of the store**.
+ *
+ * This was a sweep over a list written here, and the list was wrong: it carried
+ * `8` and `16`, `SettingsStore.set` did not validate, and the instrument
+ * reported a frame cost for a 16x target no player can ask for. `set` refuses
+ * an unlisted value now, and this asks rather than guesses.
+ */
+const SAMPLES = await page.evaluate(() => [
+	...window.__seelite.settings.allowed("antialias"),
+]);
 
 const high = [];
 const low = [];
-const multisampled = [];
-const aliased = [];
+/** One list of blocks per count the screen offers, filled round-robin so a
+ *  thermal drift lands on every arm rather than on whichever ran last. Every
+ *  count rather than the strongest against zero: the choice in front of the
+ *  player is three-way, and a table with a hole in the middle is one they would
+ *  have to guess across. */
+const bySamples = new Map(SAMPLES.map((n) => [n, []]));
 for (let i = 0; i < BLOCKS; i++) {
-	high.push(await block(page, "high", SAMPLES));
-	low.push(await block(page, "low", SAMPLES));
-	multisampled.push(await block(page, "high", SAMPLES));
-	aliased.push(await block(page, "high", 0));
+	high.push(await block(page, "high", 0));
+	low.push(await block(page, "low", 0));
+	for (const n of SAMPLES) bySamples.get(n).push(await block(page, "high", n));
 }
 
 const h = median(high);
 const l = median(low);
-const ms = median(multisampled);
-const al = median(aliased);
+const medians = new Map([...bySamples].map(([n, xs]) => [n, median(xs)]));
+const base = medians.get(0);
 console.log(`  renderer: ${renderer}`);
 console.log(
 	`  viewport: ${VIEWPORT.width}x${VIEWPORT.height}, ${SUBJECT} at ${RADII} radii`,
@@ -209,16 +215,15 @@ console.log(
 console.log(
 	`  the environment costs   ${(h - l).toFixed(3)} ms/frame  (${(((h - l) / l) * 100).toFixed(1)}%)`,
 );
-console.log(`  both arms above at ${SAMPLES} samples; quality high below:`);
-console.log(
-	`  ${String(SAMPLES).padEnd(1)} samples              ${ms.toFixed(3)} ms/frame  ${(1000 / ms).toFixed(0)} fps`,
-);
-console.log(
-	`  0 samples               ${al.toFixed(3)} ms/frame  ${(1000 / al).toFixed(0)} fps`,
-);
-console.log(
-	`  multisampling costs     ${(ms - al).toFixed(3)} ms/frame  (${(((ms - al) / al) * 100).toFixed(1)}%)`,
-);
+console.log("  both arms above unantialiased; quality high below:");
+for (const n of SAMPLES) {
+	const ms = medians.get(n);
+	const times =
+		n === 0 ? "" : `  ${(ms / base).toFixed(1)}x the unsampled frame`;
+	console.log(
+		`  ${String(n).padStart(2)} samples             ${ms.toFixed(3)} ms/frame  ${String(Math.round(1000 / ms)).padStart(3)} fps${times}`,
+	);
+}
 console.log(`  spread — high ${high.map((x) => x.toFixed(2)).join(" ")}`);
 console.log(`  spread — low  ${low.map((x) => x.toFixed(2)).join(" ")}`);
 // A difference of two medians the size of the blocks' own spread says nothing
@@ -241,14 +246,22 @@ const separation = (a, b) => {
 console.log(
 	`  separation — env        ${separation(high, low)} of pairings have the environment-on block slower`,
 );
+for (const n of SAMPLES.filter((n) => n > 0)) {
+	console.log(
+		`  spread — ${String(n).padStart(2)} samples     ${bySamples
+			.get(n)
+			.map((x) => x.toFixed(2))
+			.join(" ")}`,
+	);
+	console.log(
+		`  separation — ${String(n).padStart(2)} samples ${separation(bySamples.get(n), bySamples.get(0))} of pairings have the multisampled block slower`,
+	);
+}
 console.log(
-	`  spread — ${SAMPLES} samples     ${multisampled.map((x) => x.toFixed(2)).join(" ")}`,
-);
-console.log(
-	`  spread — 0 samples      ${aliased.map((x) => x.toFixed(2)).join(" ")}`,
-);
-console.log(
-	`  separation — samples    ${separation(multisampled, aliased)} of pairings have the multisampled block slower`,
+	`  spread —  0 samples     ${bySamples
+		.get(0)
+		.map((x) => x.toFixed(2))
+		.join(" ")}`,
 );
 
 await browser.close();

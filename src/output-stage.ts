@@ -52,44 +52,7 @@
  */
 import * as THREE from "three";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
-import type { Quality } from "./settings";
 import { type SpliceLog, makeSplicer } from "./shader-splice";
-
-/**
- * Multisamples per quality setting — #200's gate.
- *
- * **This is not free, and on this stack it is not close to free.** Measured
- * headed on an M1 Pro through ANGLE Metal, at 1440x900 and `deviceScaleFactor`
- * 2, framed on the trade station at 3 radii, by
- * `scripts/measure-light-cost.mjs` — which prices this arm separately from the
- * lighting arm precisely because one setting now moves both:
- *
- * | samples | ms/frame | fps |
- * | ---: | ---: | ---: |
- * | 0 | 3.66 | 273 |
- * | 2 | 13.96 | 72 |
- * | 4 | 22.01 | 45 |
- *
- * 144 of 144 block pairings have the multisampled arm slower, so the size of it
- * is not in doubt. **The cost is the resolve, and the resolve is paid four
- * times.** `WEBGL_multisampled_render_to_texture` is absent here — checked on
- * the page, not assumed — so three.js blits the multisampled renderbuffer down
- * to its texture at the end of **every** `WebGLRenderer.render`, and the
- * composer runs four `RenderPass`es into one target before bloom ever reads it.
- * Timed against the pass count on one build: one pass costs 7.5 ms, two 11.9,
- * four 18.4 — a fixed ~3.5 ms plus ~4 ms per pass, which is a 2880x1800
- * half-float resolve each time. `resolveDepthBuffer = false` recovers 4 ms of
- * the 18 and no more, and `samples: 2` — the node's own fallback — still costs
- * 10 ms.
- *
- * So the sample count is not the lever it looks like: the lever is the number
- * of layer passes sharing the multisampled target, and that is #15's render
- * ladder rather than anything this module owns. Four is kept here because it is
- * what the node asked to be priced and what the sheet was captured on; the
- * number is the principal's to move.
- */
-export const COMPOSER_SAMPLES: Readonly<Record<Quality, number>> =
-	Object.freeze({ high: 4, low: 0 });
 
 /**
  * The strongest vignette the cockpit ever gets, as a fraction of corner
@@ -218,6 +181,18 @@ export class SeeliteOutputPass extends OutputPass {
 	 */
 	vignetteOverride: number | null = null;
 
+	/** What the vignette is currently rendering at. A reader rather than a raw
+	 *  uniform, so a consumer — `perf-panel.ts` — does not have to type three's
+	 *  index-signature uniform bag to ask a one-word question. */
+	get vignette(): number {
+		return this.material.uniforms.uVignette.value as number;
+	}
+
+	/** Whether the dither is being added. Same reason as `vignette`. */
+	get dither(): boolean {
+		return this.material.uniforms.uDither.value === 1;
+	}
+
 	/** Corner darkening, clamped to `VIGNETTE_MAX`. `main.ts` calls this with the
 	 *  cap in cockpit view and zero in chase — #200's ruling that a vignette on
 	 *  an exterior shot reads as a photograph. */
@@ -263,6 +238,40 @@ export function composerTarget(
 
 /**
  * Re-gate an existing composer's sample count.
+ *
+ * ## What this costs, measured
+ *
+ * Headed on an M1 Pro through ANGLE Metal, at 1440x900 and `deviceScaleFactor`
+ * 2, framed on the trade station at 3 radii, by
+ * `scripts/measure-light-cost.mjs` — the one home for these figures, which
+ * `settings.ts`'s player-facing note rounds and points at rather than restates.
+ * Twelve blocks per arm, round-robin across the counts, medians:
+ *
+ * | samples | ms/frame | fps | against unsampled |
+ * | ---: | ---: | ---: | ---: |
+ * | 0 | 2.34 | 427 | — |
+ * | 2 | 9.32 | 107 | 4.0x |
+ * | 4 | 15.07 | 66 | 6.4x |
+ *
+ * 144 of 144 block pairings separate at both counts, so the size of it is not
+ * in doubt. **The cost is the resolve, and the resolve is paid once per layer
+ * pass.** `WEBGL_multisampled_render_to_texture` is absent here — checked on
+ * the page, not assumed — so three.js blits the multisampled renderbuffer down
+ * to its texture at the end of **every** `WebGLRenderer.render`, and the
+ * composer runs four `RenderPass`es into one target before bloom ever reads it.
+ *
+ * Timed against the pass count by disabling passes on one build: 7.5 ms for one
+ * pass, 11.9 for two, 18.4 for four. **Those three are from a separate ad-hoc
+ * run whose unsampled baseline was 4.3 ms against this table's 2.3**, so what
+ * they establish is the *shape* and not the level — a fixed cost plus a
+ * per-pass one, the per-pass part being a 2880x1800 half-float resolve each
+ * time. `resolveDepthBuffer = false`, measured on that same run, recovered 4 ms
+ * of the 18 and no more.
+ *
+ * So the sample count is not the lever it looks like: the lever is the number
+ * of layer passes sharing the multisampled target, and that is #15's render
+ * ladder rather than anything this module owns. Until that moves, the count is
+ * the player's own row in `settings.ts` and it defaults to off.
  *
  * `dispose()` on a render target drops the GPU-side framebuffer and nothing
  * else: three re-creates it from the object's current fields the next time it is

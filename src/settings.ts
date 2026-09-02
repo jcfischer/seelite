@@ -41,16 +41,16 @@ const SCHEMA = {
 		note: "Lower is faster and softer. Below 100% the cockpit's glow thins: bloom's own chain is a fixed size, but it reads a smaller frame, so fine highlights are averaged away before they can pass its brightness threshold.",
 	},
 	/**
-	 * Which lighting terms the frame gets — #98's quality key, #99's answer to
-	 * what "low" drops, and since #200 the composer's sample count too.
+	 * Which lighting terms the frame gets — #98's quality key, and #99's answer
+	 * to what "low" drops.
 	 *
-	 * **The label says Lighting and one term under it is not a lighting term.**
-	 * #200's multisampling is a fill-rate cost paid on the same buffer for the
-	 * same reason, and the alternative was a second switch. A player moving a
-	 * setting is asking one question — is this machine keeping up, and what does
-	 * it cost me to look at — and two switches would make them ask it twice and
-	 * guess which half to move. `output-stage.ts` owns the count; the note below
-	 * is where the player is told, because a docstring is not a UI.
+	 * **#200's antialiasing is deliberately *not* here**, though it was for a
+	 * round. It is a fill-rate cost paid on the same buffer, so folding it in
+	 * looked like one question rather than two — and then it was flown. 4x is
+	 * six times the frame cost of the whole rest of the frame on the machine
+	 * this targets, which is a different order of decision from *does metal read
+	 * as metal*, and a player who wants smooth edges at low lighting cannot ask
+	 * for that through one key. It has its own row below.
 	 *
 	 * There is no frame-time floor in this game and deliberately so (#98): the
 	 * target is Apple Silicon, the expensive part is gated, and a probe's frame
@@ -102,12 +102,78 @@ const SCHEMA = {
 		allowed: ["high", "low"] as const,
 		label: "Lighting",
 		describe: (v: string) => (v === "high" ? "High" : "Low"),
-		note: "High reflects the star off every hull, plate and cockpit surface, cuts the panel lines into the hulls and the cabin so a moving sun breaks across them, lights the console from above, and smooths every edge in the frame. Low drops all four and keeps the sun, the star-side gradient and the cockpit fill; the picture stays lit, the panel lines stay painted, the metal stops reading as metal, and rails and hull edges stair-step.",
+		note: "High reflects the star off every hull, plate and cockpit surface, cuts the panel lines into the hulls and the cabin so a moving sun breaks across them, and lights the console from above. Low drops all three and keeps the sun, the star-side gradient and the cockpit fill; the picture stays lit, the panel lines stay painted, and the metal stops reading as metal.",
+	},
+	/**
+	 * How many samples the composed frame is drawn with — #200.
+	 *
+	 * **Its own row, and it defaults to off.** `antialias: true` on the
+	 * `WebGLRenderer` was inert from the first frame this game drew, because
+	 * every frame is rendered into the `EffectComposer`'s targets and that flag
+	 * configures the default framebuffer. Multisampling the composer's own
+	 * target fixes it and the sheet says so — and then it was priced, and it is
+	 * the most expensive thing in this renderer by a factor of five.
+	 * **`setComposerSamples` in `output-stage.ts` owns the table**, and the
+	 * short version is that turning the count down does not rescue it: the cost
+	 * is a full-buffer resolve paid once per layer pass, so the lever is #15's
+	 * render ladder rather than this row.
+	 *
+	 * So the default is **off**: the game a player starts is the one that runs,
+	 * and the smoother one is a row away for anyone whose machine can carry it.
+	 * A number rather than a mode name, unlike `quality`, because a sample count
+	 * *is* a point on a scale and the renderer takes it as one.
+	 */
+	antialias: {
+		fallback: 0,
+		allowed: [0, 2, 4] as const,
+		label: "Antialiasing",
+		describe: (v: number) => (v === 0 ? "Off" : `${v}x`),
+		note: "Smooths the stair-stepping on rails, hull edges and station plating. It is the most expensive setting in this game by a wide margin — on an M1 Pro at full resolution, 2x costs about four times the frame and 4x about six. Turn it up only if the frame meter says you can afford it, and turn Resolution down first if it is close.",
+	},
+	/**
+	 * Whether the output stage stipples the last bit — #200.
+	 *
+	 * A row of its own even though it is three arithmetic operations per pixel
+	 * and cannot be measured against the noise of a frame, because #98's rule
+	 * runs the other way too: a term the player can see is a term the player
+	 * should be able to turn off and look at. What it fixes is banding in the
+	 * dark — space and a planet's terminator cross a handful of eight-bit codes
+	 * over hundreds of pixels — and the only honest way to judge that is to
+	 * switch it.
+	 */
+	dither: {
+		fallback: "on" as const,
+		allowed: ["on", "off"] as const,
+		label: "Dither",
+		describe: (v: string) => (v === "on" ? "On" : "Off"),
+		note: "Breaks up the banding in dark gradients — empty space, and the shadow side of a planet — by moving each pixel less than one shade at random. Costs nothing measurable. Off shows the bands the eight-bit screen actually has.",
+	},
+	/**
+	 * Whether the cockpit's corners fall off — #200.
+	 *
+	 * Never applied outside cockpit view whatever this says: a vignette is a
+	 * lens artefact, and on an exterior shot with no lens in the fiction it
+	 * reads as a photograph of a spaceship. `main.ts` owns that half; this row
+	 * is whether the player wants it at all.
+	 */
+	vignette: {
+		fallback: "on" as const,
+		allowed: ["on", "off"] as const,
+		label: "Vignette",
+		describe: (v: string) => (v === "on" ? "On" : "Off"),
+		note: "Darkens the corners of the cockpit view by up to 15%, so the frame's edges stop competing with the instruments. Never applied in the chase view. Off is the flat frame.",
 	},
 } as const;
 
 export type Quality = (typeof SCHEMA.quality.allowed)[number];
-export type Settings = { renderScale: number; quality: Quality };
+export type Toggle = (typeof SCHEMA.dither.allowed)[number];
+export type Settings = {
+	renderScale: number;
+	quality: Quality;
+	antialias: number;
+	dither: Toggle;
+	vignette: Toggle;
+};
 
 export const SETTING_KEYS = Object.keys(SCHEMA) as (keyof typeof SCHEMA)[];
 export const settingSpec = (key: keyof typeof SCHEMA) => SCHEMA[key];
@@ -115,6 +181,9 @@ export const settingSpec = (key: keyof typeof SCHEMA) => SCHEMA[key];
 export const DEFAULT_SETTINGS: Settings = {
 	renderScale: SCHEMA.renderScale.fallback,
 	quality: SCHEMA.quality.fallback,
+	antialias: SCHEMA.antialias.fallback,
+	dither: SCHEMA.dither.fallback,
+	vignette: SCHEMA.vignette.fallback,
 };
 
 const STORAGE_KEY = "seelite:settings:v1";
@@ -230,7 +299,43 @@ export class SettingsStore {
 		return this.current;
 	}
 
+	/**
+	 * What the settings screen may offer for one key — and what a script driving
+	 * this store from outside is allowed to ask for.
+	 *
+	 * On the store rather than only as `settingSpec`, because the readers that
+	 * need it most are `.mjs`: `scripts/probe-output-stage.mjs` and
+	 * `scripts/measure-light-cost.mjs` reach the game through
+	 * `window.__seelite` and cannot import a TypeScript module. Both used to
+	 * carry their own `[0, 2, 4]`, which is the copied-constant trap
+	 * `CLAUDE.md` names — and the instrument's copy was `[0, 2, 4, 8, 16]`,
+	 * which `set` accepted and reported as a measurement of a count no player
+	 * can choose.
+	 */
+	allowed<K extends keyof Settings>(key: K): readonly Settings[K][] {
+		// Through `unknown`, for the reason `accept` below states at length:
+		// indexing `Settings` by the union of its keys collapses to `never`, so
+		// no signature written here recovers the link between a key and its set.
+		// `settings.test.ts` round-trips a legal value of each kind, which is what
+		// actually holds it.
+		return SCHEMA[key].allowed as unknown as readonly Settings[K][];
+	}
+
+	/**
+	 * Change one setting, or refuse.
+	 *
+	 * **Validated here as well as on load**, which it was not: `loadSettings`
+	 * guarded the boundary with `localStorage` and nothing guarded the boundary
+	 * with code. A caller could write any value at all, and it was saved — so
+	 * the illegal value survived until a reload cleaned it up. That is not
+	 * theoretical: `measure-light-cost.mjs` swept `antialias` over a list of its
+	 * own and set 16, the composer allocated a 16x target, and the instrument
+	 * printed a frame cost for a setting the screen does not offer. A count
+	 * reaches `WebGLRenderTarget({ samples })`, so the failure mode above that
+	 * is a target that will not allocate at all.
+	 */
 	set<K extends keyof Settings>(key: K, value: Settings[K]) {
+		if (!this.allowed(key).includes(value)) return;
 		if (this.current[key] === value) return;
 		this.current = { ...this.current, [key]: value };
 		saveSettings(this.current);

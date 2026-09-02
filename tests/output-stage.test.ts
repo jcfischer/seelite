@@ -10,8 +10,8 @@
  */
 import { expect, test } from "bun:test";
 import { OutputShader } from "three/addons/shaders/OutputShader.js";
+import { DEFAULT_SETTINGS, settingSpec } from "../src/settings";
 import {
-	COMPOSER_SAMPLES,
 	DITHER_CODES,
 	OUTPUT_MARKERS,
 	SeeliteOutputPass,
@@ -73,9 +73,20 @@ test("the dither is one output code, peak to peak, and zero-mean", () => {
 	expect(out).toContain(`(seeliteNoise(gl_FragCoord.xy) - 0.5) / 255.0`);
 });
 
-test("high multisamples the composer and low does not", () => {
-	expect(COMPOSER_SAMPLES.high).toBe(4);
-	expect(COMPOSER_SAMPLES.low).toBe(0);
+test("every count the player can choose is one a target can take", () => {
+	// The sample count is the player's row since #200 was flown, so what is
+	// asserted here is the handover: `settings.ts` offers the counts and
+	// `composerTarget` passes one straight to `WebGLRenderTarget`. Zero, two and
+	// four are the counts every WebGL2 context is required to support; an odd
+	// number or a count above the rasteriser's `MAX_SAMPLES` is a target that
+	// fails to allocate, and the loader's set membership is what stops a stored
+	// one reaching here.
+	const allowed = settingSpec("antialias").allowed as readonly number[];
+	expect(allowed).toEqual([0, 2, 4]);
+	for (const n of allowed) expect(n % 2).toBe(0);
+	// Off by default, and that is the decision #200 closed on rather than an
+	// oversight — `setComposerSamples` carries the measurement.
+	expect(DEFAULT_SETTINGS.antialias).toBe(0);
 });
 
 test("the vignette dial is clamped at both ends", () => {
@@ -106,6 +117,21 @@ test("an override holds the dial against the frame loop", () => {
 	pass.vignetteOverride = null;
 	pass.setVignette(0);
 	expect(pass.material.uniforms.uVignette.value).toBe(0);
+});
+
+test("the readers report what the uniforms hold", () => {
+	const pass = new SeeliteOutputPass();
+	// `perf-panel.ts` reads these rather than the uniform bag, whose index
+	// signature types every entry as `IUniform<any>` — so a panel reading the
+	// bag directly cannot be typed at all, and a panel reading the wrong key
+	// would report `undefined` as `off` for ever.
+	pass.setVignette(VIGNETTE_MAX);
+	expect(pass.vignette).toBe(VIGNETTE_MAX);
+	pass.setVignette(0);
+	expect(pass.vignette).toBe(0);
+	expect(pass.dither).toBe(true);
+	pass.setDither(false);
+	expect(pass.dither).toBe(false);
 });
 
 test("the pass records its splices where a probe reads them", () => {

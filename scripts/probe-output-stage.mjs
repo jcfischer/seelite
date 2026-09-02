@@ -138,32 +138,35 @@ t.check(
 		: splices.map(([k, hit]) => `${k}: ${hit ? "hit" : "MISSED"}`).join(", "),
 );
 
-// ── the samples the quality key asks for ─────────────────────────────────────
+// ── the player's row reaches both composer buffers ───────────────────────────
+// **Both**, because `EffectComposer` swaps them: a count that reached one would
+// antialias alternate frames and read as a flicker rather than as a missing
+// term — and a probe reading only `renderTarget1` would call that green.
 const gate = await page.evaluate(() => {
 	const g = window.__seelite;
-	const was = g.settings.value.quality;
-	const read = (q) => {
-		g.settings.set("quality", q);
+	const was = g.settings.value.antialias;
+	const read = (n) => {
+		g.settings.set("antialias", n);
 		return [g.composer.renderTarget1.samples, g.composer.renderTarget2.samples];
 	};
-	const high = read("high");
-	const low = read("low");
-	g.settings.set("quality", was);
+	// The counts the screen offers, asked of the store rather than restated —
+	// a probe with its own copy of a constant goes falsely red when the module
+	// moves it, and this one would have gone falsely *green*.
+	const seen = g.settings.allowed("antialias").map((n) => [n, read(n)]);
+	g.settings.set("antialias", was);
 	const gl = g.renderer.getContext();
-	return { high, low, was, max: gl.getParameter(gl.MAX_SAMPLES) };
+	return { seen, was, max: gl.getParameter(gl.MAX_SAMPLES) };
 });
 t.check(
-	"high multisamples both composer buffers and low multisamples neither",
-	gate.high[0] > 1 &&
-		gate.high[0] === gate.high[1] &&
-		gate.low[0] === 0 &&
-		gate.low[1] === 0,
-	`high [${gate.high}], low [${gate.low}], rasteriser max ${gate.max}`,
+	"every count the settings screen offers reaches both buffers",
+	gate.seen.every(([n, got]) => got[0] === n && got[1] === n),
+	gate.seen.map(([n, got]) => `${n} → [${got}]`).join(", ") +
+		`, rasteriser max ${gate.max}`,
 );
 t.check(
-	"the game ships multisampled",
-	gate.was === "high",
-	`default quality is ${gate.was}`,
+	"the game ships unantialiased",
+	gate.was === 0,
+	`default antialias is ${gate.was}`,
 );
 
 // ── antialiasing: the same frame, samples moved and nothing else ─────────────
@@ -178,8 +181,13 @@ await page.evaluate(() => {
 	window.__seelite.view = "cockpit";
 });
 
+/** The strongest count the settings screen offers, learned from the page above
+ *  rather than restated here — a probe with its own copy of a constant goes
+ *  falsely red when the module moves it. */
+const STRONGEST = Math.max(...gate.seen.map(([n]) => n));
+
 const aa = await page.evaluate(
-	([limit, margin]) => {
+	([limit, margin, strongest]) => {
 		const g = window.__seelite;
 		const src = g.renderer.domElement;
 		const scratch = document.createElement("canvas");
@@ -211,7 +219,7 @@ const aa = await page.evaluate(
 			}
 			return found;
 		};
-		const gated = g.composer.renderTarget1.samples;
+		const gated = strongest;
 		// A warm frame after each switch: `dispose()` drops the framebuffer and
 		// the next bind re-creates it, so the first frame at a new count pays an
 		// allocation that no later frame does. Counting it would still be
@@ -223,10 +231,11 @@ const aa = await page.evaluate(
 		g.setComposerSamples(0);
 		g.render(0);
 		const off = intermediates(frame());
+		// Back to the player's row, not to the count this arm used.
 		g.setComposerSamples();
 		return { on, off, gated, pixels: scratch.width * scratch.height };
 	},
-	[EDGE_STEP, EDGE_MARGIN],
+	[EDGE_STEP, EDGE_MARGIN, STRONGEST],
 );
 
 t.check(
@@ -261,12 +270,21 @@ const vignette = await page.evaluate(() => {
 	// from the view on every frame, so an assignment made here is overwritten
 	// before `frame()` draws anything — which is how the first version of this
 	// block read 1.000 against 1.000 with the term working perfectly.
-	const cockpitUniform = g.outputPass.material.uniforms.uVignette.value;
+	const cockpitUniform = g.outputPass.vignette;
+	// The player's row, proved on the rendered dial rather than on the store:
+	// the frame loop reads the setting every frame beside the view, so a row
+	// that stopped being read would leave the dial exactly where it was.
+	const wasSetting = g.settings.value.vignette;
+	g.settings.set("vignette", "off");
+	g.render(0);
+	const settingOff = g.outputPass.vignette;
+	g.settings.set("vignette", wasSetting);
+	g.render(0);
 	g.outputPass.vignetteOverride = 0;
 	const flat = frame();
 	g.outputPass.vignetteOverride = 1;
 	const dark = frame();
-	const forced = g.outputPass.material.uniforms.uVignette.value;
+	const forced = g.outputPass.vignette;
 	g.outputPass.vignetteOverride = null;
 	g.view = "chase";
 	g.render(0);
@@ -303,6 +321,7 @@ const vignette = await page.evaluate(() => {
 	return {
 		chaseUniform,
 		cockpitUniform,
+		settingOff,
 		forced,
 		inner: { kept: rings.inner.sum / rings.inner.n, px: rings.inner.n },
 		outer: { kept: rings.outer.sum / rings.outer.n, px: rings.outer.n },
@@ -313,6 +332,11 @@ t.check(
 	"the vignette is on in the cockpit and off in chase",
 	vignette.cockpitUniform > 0 && vignette.chaseUniform === 0,
 	`cockpit ${vignette.cockpitUniform}, chase ${vignette.chaseUniform}`,
+);
+t.check(
+	"and the settings row turns it off in the cockpit too",
+	vignette.settingOff === 0,
+	`with the row off the dial reads ${vignette.settingOff}`,
 );
 t.check(
 	"both rings have lit pixels to measure",
