@@ -17,7 +17,10 @@
  * the map with no view pointed at it would be judged on somebody else's frame.
  */
 import { describe, expect, test } from "bun:test";
+import { makeWorld } from "../src/sim.ts";
+import { STATION_GEOMETRY } from "../src/station.ts";
 import {
+	FIXTURE,
 	GAME_TIME_S,
 	LEVERS,
 	SEED,
@@ -197,6 +200,82 @@ describe("the view set itself", () => {
 		expect(Number.isInteger(SEED)).toBe(true);
 		expect(GAME_TIME_S).toBe(0);
 		expect(VIEWPORT).toEqual({ width: 1440, height: 900 });
+	});
+});
+
+/**
+ * **The measurement half of `FIXTURE`** — `view-set.mjs` carries why it is data
+ * and not prose (#174).
+ *
+ * **A regression pin and not an oracle.** `FIXTURE` was populated by reading
+ * `makeWorld(SEED)` back, so it is not independent evidence of what the fixture
+ * *should* contain and nothing here can tell a good start system from a bad one.
+ * What it does is hold the constant and the world apart in *time*: a later
+ * generator change moves one and not the other, so the drift that ran from #118
+ * to #174 unnoticed is a red run instead. That is the whole claim.
+ */
+describe("the pinned seed's world", () => {
+	const world = makeWorld(SEED);
+
+	test("generates the system the fixture names", () => {
+		expect(world.system.record.name).toBe(FIXTURE.system);
+	});
+
+	test("generates the planets the fixture declares, largest first", () => {
+		// **The collection and the comparator `capture-views.mjs` resolves
+		// `largest-planet` with**, and both halves decide the answer: `bodies`
+		// filtered to planets — not `contents.planets`, which coincides only
+		// because moons carry `kind: "moon"` — sorted on **raw** `radiusKm` with
+		// an id tiebreak. Sort the rounded figures instead and two planets within
+		// a kilometre of each other order differently here from on the sheet, and
+		// the head of this list is the subject two views are framed on.
+		//
+		// **The comparator is a hand-copy and the risk is stated rather than
+		// closed.** It cannot be shared: `capture-views.mjs` runs its sort inside
+		// `page.evaluate`, where the body is serialised into the browser and an
+		// imported function does not reach. A tiebreak changed there leaves this
+		// green, so the two are pinned by this comment and nothing stronger.
+		//
+		// `isGasGiant` is a generator field rather than a rendered one, so the
+		// records are joined back by id — the sort still runs over what the
+		// capture sees.
+		const records = new Map(
+			world.system.contents.planets.map((p) => [p.id, p]),
+		);
+		const planets = world.system.bodies
+			.filter((b) => b.kind === "planet")
+			.sort((a, b) => b.radiusKm - a.radiusKm || (a.id < b.id ? -1 : 1))
+			.map((b) => ({
+				id: b.id,
+				radiusKm: Math.round(b.radiusKm),
+				gasGiant: records.get(b.id)?.isGasGiant,
+			}));
+		expect(planets).toEqual([...FIXTURE.planets]);
+	});
+
+	/**
+	 * **And that neither role carries a pad aperture** — `view-set.mjs` carries
+	 * why that is the claim worth holding.
+	 *
+	 * One assertion and not two: the aperture string embeds the role, so it pins
+	 * the roster and its order as well, and a second `expect` over the bare roles
+	 * could not fail without this one failing too. Strings on both sides, so a
+	 * failure names the role rather than a position in a list.
+	 *
+	 * A station with no `stationType` drops out rather than being described by a
+	 * branch that cannot fire — `Body.stationType` is optional and every station
+	 * `sim.ts` builds carries one, so a fallback string would promise a message
+	 * no reader ever sees. Dropping shortens the list, which fails here anyway.
+	 */
+	test("generates the station roles the fixture declares, both of them slots", () => {
+		const apertures = world.system.bodies
+			.filter((b) => b.kind === "station")
+			.map((b) => b.stationType)
+			.filter((role) => role !== undefined)
+			.map((role) => `${role}:${STATION_GEOMETRY[role].aperture.kind}`);
+		expect(apertures).toEqual(
+			FIXTURE.stations.map((s) => `${s.role}:${s.aperture}`),
+		);
 	});
 });
 

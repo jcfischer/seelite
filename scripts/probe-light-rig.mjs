@@ -90,15 +90,20 @@ import {
 	tally,
 } from "./probe-guard.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
+/**
+ * The canonical view set's fixture, **imported rather than restated** (#174).
+ *
+ * This file held its own `47` and `0` beside a sentence describing the fixture,
+ * and the description was already false. A copied constant is how a probe and
+ * the sheet drift into measuring two worlds while a comment says they do not.
+ * `view-set.mjs`'s `SEED` and `FIXTURE` docstrings own what the fixture is and
+ * is not; a test measures it.
+ */
+import { GAME_TIME_S as CLOCK, SEED } from "./lib/view-set.mjs";
 import { installViewPlacement } from "./probe-guard.mjs";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 
-/** Seed 47 and a clock of 0, the canonical view set's fixture — one station of
- *  each kind in a single system, and a world state a capture can be compared
- *  against. */
-const SEED = 47;
-const CLOCK = 0;
 const SUBJECT = "station-trade";
 /** Eight silhouette radii: the framing `cockpit-backlit` uses, where the
  *  station is about a third of the frame and its plating is resolvable. */
