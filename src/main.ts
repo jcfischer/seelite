@@ -75,6 +75,7 @@ import {
 	SeeliteOutputPass,
 	VIGNETTE_MAX,
 	composerTarget,
+	grantedSamples,
 	setComposerSamples,
 } from "./output-stage";
 import { LIGHT_RIG, envRotation, equirectEnvironment } from "./light-rig";
@@ -2331,6 +2332,10 @@ class Game {
 	 * is the player's row; an explicit one is a control arm.
 	 */
 	setComposerSamples(samples: number = this.settings.value.antialias) {
+		// Clamped to what *this* context will multisample a half-float target at,
+		// which is not what `MAX_SAMPLES` answers for. `output-stage.ts` has the
+		// argument; the short version is that a count this context cannot grant
+		// leaves the framebuffer incomplete and the frame black.
 		// Called before the composer exists on some paths — a `!` here would
 		// throw on boot. Harmless rather than a hole: the composer is *built* at
 		// the player's count a few lines after the lights, from the same field.
@@ -2340,7 +2345,7 @@ class Game {
 		// missing term.
 		setComposerSamples(
 			[this.composer.renderTarget1, this.composer.renderTarget2],
-			samples,
+			grantedSamples(this.renderer, samples),
 		);
 	}
 

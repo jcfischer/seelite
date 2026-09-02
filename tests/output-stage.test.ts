@@ -78,20 +78,34 @@ test("the dither is one output code, peak to peak, and zero-mean", () => {
 	);
 });
 
-test("every count the player can choose is one a target can take", () => {
-	// The sample count is the player's row since #200 was flown, so what is
-	// asserted here is the handover: `settings.ts` offers the counts and
-	// `composerTarget` passes one straight to `WebGLRenderTarget`. Zero, two and
-	// four are the counts every WebGL2 context is required to support; an odd
-	// number or a count above the rasteriser's `MAX_SAMPLES` is a target that
-	// fails to allocate, and the loader's set membership is what stops a stored
-	// one reaching here.
+test("the counts the player is offered are the ones the screen shows", () => {
+	// **This asserts the offer and nothing about the hardware**, which an
+	// earlier version of it got wrong: it was titled "every count a target can
+	// take" while checking only membership and evenness, and no headless test
+	// can allocate a half-float target or ask a framebuffer whether it is
+	// complete. What a context will actually multisample RGBA16F at is
+	// `supportedSamples`, `grantedSamples` clamps to it, and
+	// `probe-output-stage.mjs` is where that is checked in front of a real
+	// rasteriser.
 	const allowed = settingSpec("antialias").allowed as readonly number[];
 	expect(allowed).toEqual([0, 2, 4]);
-	for (const n of allowed) expect(n % 2).toBe(0);
 	// Off by default, and that is the decision #200 closed on rather than an
 	// oversight — `setComposerSamples` carries the measurement.
 	expect(DEFAULT_SETTINGS.antialias).toBe(0);
+});
+
+test("a term switched off is branched around, not multiplied by zero", () => {
+	// The defect this names shipped and review caught it. A dial at zero still
+	// evaluates everything to its right, so the settings row removed the effect
+	// and not the cost — and an on-against-off timing then subtracts the shared
+	// arithmetic out of both arms and reports the term as cheaper than it is.
+	// That is exactly the reading this branch published for a round.
+	const { out } = spliceAgainst(OutputShader.fragmentShader);
+	expect(out).toContain("if (uDither <= 0.0) return colour;");
+	expect(out).toContain("if (uVignette <= 0.0) return colour;");
+	// And the multiplier is gone from the dither, so the uniform is a switch
+	// rather than a gain — a fraction of a code would be a silent half-dither.
+	expect(out).not.toContain("uDither * (seeliteNoise");
 });
 
 test("the vignette dial is clamped at both ends", () => {

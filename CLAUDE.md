@@ -283,21 +283,34 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   colours are hex. It joins `cockpit.ts`, `live-cockpit.ts`, `planet-shaders.ts`
   and `planet-classes.glsl.ts` in that set. Naming it in a guard list does not
   guard it; it makes the probe throw before it starts.
-- **Multisampling the composer costs a resolve per layer pass, not per sample.**
+- **Multisampling the composer is the most expensive thing in this renderer.**
   `output-stage.ts` hands `EffectComposer` its own target so `antialias: true`
   on the renderer finally means something — that flag configures the default
-  framebuffer, which this game never draws into. But
-  `WEBGL_multisampled_render_to_texture` is absent on ANGLE Metal, so three
-  blits the multisampled buffer down at the end of **every**
-  `WebGLRenderer.render`, and #15's ladder runs four `RenderPass`es into one
-  target. **The figures are not restated here**: `setComposerSamples` owns the
-  table and `scripts/measure-light-cost.mjs` reprints it. What is worth knowing
-  without opening either is the shape — the cheapest non-zero count is already
-  several times the whole rest of the frame, turning the count down does not
-  rescue it, and **the lever is the pass count rather than the sample count**.
-  So it is the player's own row (`settings.ts`, `antialias`) and it defaults to
-  off; a node that collapses the layer ladder to one resolve is what would let
-  that default move.
+  framebuffer, which this game never draws into, and it is `false` now. **The
+  figures are not restated here**: `setComposerSamples` owns the table and
+  `scripts/measure-light-cost.mjs` reprints it. What is worth knowing without
+  opening either is the shape — the *cheapest* non-zero count is already four
+  times the whole unsampled frame, so there is no cheap setting of this. The
+  mechanism is four `RenderPass`es into one target with
+  `WEBGL_multisampled_render_to_texture` absent, so three resolves the buffer at
+  the end of every `WebGLRenderer.render`; that is read off three's source
+  rather than measured, and the attempt to measure the decomposition does not
+  isolate it, because disabling a pass removes its drawing too. So it is the
+  player's own row (`settings.ts`, `antialias`) and it defaults to off.
+- **A count this context grants for RGBA8 it may not grant for RGBA16F.** The
+  composer's targets are half-float and a float multisampled renderbuffer is
+  optional in WebGL2, so `MAX_SAMPLES` is the wrong question —
+  `getInternalformatParameter(RENDERBUFFER, RGBA16F, SAMPLES)` is the right one,
+  and `grantedSamples` clamps to it. An ungranted count leaves the framebuffer
+  incomplete, which is a **black frame and not an exception**, so the probe
+  checks that pixels are lit and not only that a number came back.
+- **A dial at zero still evaluates everything to its right.** Switching a
+  full-screen term off by multiplying it by a zeroed uniform removes the effect
+  and not the cost — and worse, an on-against-off timing then subtracts the
+  shared arithmetic out of both arms and reports the term as cheaper than it is.
+  That shipped here for a review round and the number moved by a third when it
+  was fixed. Both of `output-stage.ts`'s terms branch on their uniform, and
+  `tests/output-stage.test.ts` asserts the branch is in the spliced source.
 - **A dither belongs after the encode and a vignette before it.** The composer's
   targets are half-float and the screen is eight bits, so the quantisation
   happens in `OutputShader` — a ±0.5/255 noise added *there*, in display space,

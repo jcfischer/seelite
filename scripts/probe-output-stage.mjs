@@ -180,15 +180,50 @@ const gate = await page.evaluate(() => {
 	// a probe with its own copy of a constant goes falsely red when the module
 	// moves it, and this one would have gone falsely *green*.
 	const seen = g.settings.allowed("antialias").map((n) => [n, read(n)]);
-	g.settings.set("antialias", was);
 	const gl = g.renderer.getContext();
-	return { seen, was, max: gl.getParameter(gl.MAX_SAMPLES) };
+	// What this context will multisample a *half-float* target at, which is not
+	// what `MAX_SAMPLES` answers for — a float multisampled renderbuffer is
+	// optional in WebGL2. A count above this leaves the framebuffer incomplete,
+	// and an incomplete framebuffer is a black frame rather than an exception,
+	// so the check below looks at pixels and not only at numbers.
+	const counts = gl.getInternalformatParameter(
+		gl.RENDERBUFFER,
+		gl.RGBA16F,
+		gl.SAMPLES,
+	);
+	const granted = counts?.length ? Math.max(...counts) : 0;
+	g.settings.set("antialias", Math.max(...g.settings.allowed("antialias")));
+	const { frame, luma } = window.__outputStage;
+	const img = frame();
+	let painted = 0;
+	let sampled = 0;
+	for (let i = 0; i < img.data.length; i += 4 * 97) {
+		sampled++;
+		if (luma(img.data, i) > 8) painted++;
+	}
+	g.settings.set("antialias", was);
+	return {
+		seen,
+		was,
+		granted,
+		painted,
+		sampled,
+		max: gl.getParameter(gl.MAX_SAMPLES),
+	};
 });
 t.check(
-	"every count the settings screen offers reaches both buffers",
-	gate.seen.every(([n, got]) => got[0] === n && got[1] === n),
-	gate.seen.map(([n, got]) => `${n} → [${got}]`).join(", ") +
-		`, rasteriser max ${gate.max}`,
+	"every count the settings screen offers reaches both buffers, clamped to what the context grants",
+	gate.seen.every(
+		([n, got]) =>
+			got[0] === Math.min(n, gate.granted) &&
+			got[1] === Math.min(n, gate.granted),
+	),
+	`${gate.seen.map(([n, got]) => `${n} → [${got}]`).join(", ")}, this context grants ${gate.granted} for RGBA16F (MAX_SAMPLES ${gate.max})`,
+);
+t.check(
+	"and the frame is still drawn at the strongest count it granted",
+	gate.granted === 0 || gate.painted > 0,
+	`${gate.painted} of ${gate.sampled} sampled pixels are lit at ${gate.granted} samples`,
 );
 t.check(
 	"the game ships unantialiased",
@@ -208,10 +243,14 @@ await page.evaluate(() => {
 	window.__seelite.view = "cockpit";
 });
 
-/** The strongest count the settings screen offers, learned from the page above
- *  rather than restated here — a probe with its own copy of a constant goes
- *  falsely red when the module moves it. */
-const STRONGEST = Math.max(...gate.seen.map(([n]) => n));
+/** The strongest count this context will actually grant, learned from the page
+ *  above rather than restated here — a probe with its own copy of a constant
+ *  goes falsely red when the module moves it, and one that assumed 4x would go
+ *  falsely red on a machine that grants 2x. */
+const STRONGEST = Math.min(
+	gate.granted,
+	Math.max(...gate.seen.map(([n]) => n)),
+);
 
 const aa = await page.evaluate(
 	([limit, margin, strongest]) => {
@@ -249,7 +288,6 @@ const aa = await page.evaluate(
 		g.render(0);
 		const off = intermediates(frame());
 		const pixels = first.width * first.height;
-		// Back to the player's row, not to the count this arm used.
 		// Back to the player's row, not to the count this arm used.
 		g.setComposerSamples();
 		return { on, off, gated, pixels };

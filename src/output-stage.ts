@@ -106,13 +106,21 @@ float seeliteNoise(vec2 p) {
 }
 
 vec3 seeliteVignette(vec3 colour, vec2 uv) {
+	// **Branched, not multiplied by zero.** A dial at zero still evaluates
+	// everything to its right, so a term switched off in the settings went on
+	// costing what it cost — and an on-against-off timing then subtracts the
+	// shared arithmetic out of both arms and reports it as free. Both branches
+	// here are uniform across the whole draw, so every fragment in a pass takes
+	// the same one and the branch itself is coherent.
+	if (uVignette <= 0.0) return colour;
 	// Half-diagonal units: 0 at the centre, 1 in a corner, whatever the aspect.
 	float r = length(uv - 0.5) / 0.70710678;
 	return colour * (1.0 - uVignette * smoothstep(${VIGNETTE_INNER.toFixed(2)}, 1.0, r));
 }
 
 vec3 seeliteDither(vec3 colour) {
-	return colour + uDither * (seeliteNoise(gl_FragCoord.xy) - 0.5) * ${(DITHER_CODES / 255).toFixed(8)};
+	if (uDither <= 0.0) return colour;
+	return colour + (seeliteNoise(gl_FragCoord.xy) - 0.5) * ${(DITHER_CODES / 255).toFixed(8)};
 }`;
 
 const VIGNETTE = /* glsl */ `gl_FragColor.rgb = seeliteVignette( gl_FragColor.rgb, vUv );
@@ -226,6 +234,48 @@ export class SeeliteOutputPass extends OutputPass {
  * one construction. Sized at the current drawing buffer; `main.ts`'s `onResize`
  * runs once at boot and owns the size from then on.
  */
+/**
+ * The largest sample count this context will actually multisample RGBA16F at.
+ *
+ * **Not `MAX_SAMPLES`.** That parameter answers for the normalised formats; a
+ * *floating-point* multisampled renderbuffer is optional in WebGL2, and a
+ * context that grants 4x for RGBA8 may grant 2x or none for RGBA16F. The
+ * composer's targets are `HalfFloatType`, so asking for a count this returns
+ * nothing for leaves the framebuffer incomplete — which is a black frame, not
+ * an exception.
+ *
+ * `getInternalformatParameter(RENDERBUFFER, RGBA16F, SAMPLES)` is the question
+ * that answers for the format actually being allocated. It comes back in
+ * descending order. A context that cannot answer at all — no float colour
+ * buffer extension, or a driver returning nothing — reads as zero, which turns
+ * the setting off rather than gambling on it.
+ */
+export function supportedSamples(renderer: THREE.WebGLRenderer): number {
+	const gl = renderer.getContext() as WebGL2RenderingContext;
+	if (typeof gl.getInternalformatParameter !== "function") return 0;
+	try {
+		const counts = gl.getInternalformatParameter(
+			gl.RENDERBUFFER,
+			gl.RGBA16F,
+			gl.SAMPLES,
+		) as Int32Array | null;
+		return counts?.length ? Math.max(...counts) : 0;
+	} catch {
+		return 0;
+	}
+}
+
+/**
+ * The count to actually ask a target for, given what the player chose.
+ *
+ * Clamped rather than refused: a machine that grants 2x should give the player
+ * who asked for 4x the 2x it has, not a black frame and not an unexplained
+ * revert of their setting. The settings screen keeps offering all three,
+ * because what a *different* machine supports is not a preference to store.
+ */
+export const grantedSamples = (renderer: THREE.WebGLRenderer, wanted: number) =>
+	Math.min(wanted, supportedSamples(renderer));
+
 export function composerTarget(
 	renderer: THREE.WebGLRenderer,
 	samples: number,
@@ -233,7 +283,7 @@ export function composerTarget(
 	const size = renderer.getDrawingBufferSize(new THREE.Vector2());
 	const target = new THREE.WebGLRenderTarget(size.x, size.y, {
 		type: THREE.HalfFloatType,
-		samples,
+		samples: grantedSamples(renderer, samples),
 	});
 	target.texture.name = "EffectComposer.rt1";
 	return target;
@@ -258,8 +308,8 @@ export function composerTarget(
  * | samples | ms/frame | fps | against unsampled |
  * | ---: | ---: | ---: | ---: |
  * | 0 | 1.8–2.3 | 430–545 | — |
- * | 2 | 8.5–9.3 | 107–118 | 4.0–4.6x |
- * | 4 | 14.1–15.1 | 66–71 | 6.4–7.7x |
+ * | 2 | 8.5–9.3 | 107–118 | 4.0–4.7x |
+ * | 4 | 14.1–15.1 | 66–71 | 6.4–7.8x |
  *
  * 144 of 144 block pairings separate at both counts on every sweep, so the size
  * of the total is not in doubt. What it is *spent on* is a weaker claim, and
@@ -291,12 +341,19 @@ export function composerTarget(
  * rather than anything this module owns. Until it moves, the count is the
  * player's own row in `settings.ts` and it defaults to off.
  *
- * **The dither is 0.20–0.27 ms/frame**, 11–15%, 144/144 separated on both
- * sweeps that measured it. That is small and it is not nothing: it is about
- * two-thirds of what #99's whole baked environment costs. This docstring and
- * the player-facing note both said it cost nothing measurable, which was an
- * assertion — the probe counts *pixels*, which is a different question — and
- * measuring it is what review asked for.
+ * **The dither is 0.12–0.14 ms/frame**, 6–7%, 144/144 separated on both sweeps
+ * that measured it — around 40% of what #99's whole baked environment costs on
+ * the same runs. Small, and not the "nothing measurable" this docstring and the
+ * player-facing note both asserted before anything measured it.
+ *
+ * That figure only means anything because the shader **branches** rather than
+ * multiplying by a zeroed dial. The first version of it did the latter, so the
+ * off arm still evaluated the noise; the difference then excluded the
+ * arithmetic, and a decline written on the strength of it — that guarding the
+ * term would buy nothing — was reasoning from a comparison whose two arms did
+ * the same work. Review caught that. With the branch in, off is off: the
+ * measured 0.20–0.27 ms became 0.12–0.14, and what is left is the term rather
+ * than the term minus itself.
  *
  * `dispose()` on a render target drops the GPU-side framebuffer and nothing
  * else: three re-creates it from the object's current fields the next time it is

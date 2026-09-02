@@ -137,9 +137,11 @@ const SCHEMA = {
 	 * see is a term the player should be able to turn off and look at. An earlier
 	 * revision justified the row differently — that the term "cannot be measured
 	 * against the noise of a frame" — and that was an assertion rather than a
-	 * reading. It measures at 0.20–0.27 ms/frame with 144/144 pairings
-	 * separated, about two-thirds of what the whole baked environment costs.
-	 * `setComposerSamples` in `output-stage.ts` owns the figures. What it fixes is banding in the
+	 * reading. It measures at a few percent of a frame with every block pairing
+	 * separated. **`setComposerSamples` in `output-stage.ts` owns the figures**,
+	 * and the note below stays qualitative on purpose: a number in a player-
+	 * facing string is a fourth copy of a measurement, and this entry already
+	 * carried two that had drifted apart from each other. What it fixes is banding in the
 	 * dark — space and a planet's terminator cross a handful of eight-bit codes
 	 * over hundreds of pixels — and the only honest way to judge that is to
 	 * switch it.
@@ -149,7 +151,7 @@ const SCHEMA = {
 		allowed: ["on", "off"] as const,
 		label: "Dither",
 		describe: (v: string) => (v === "on" ? "On" : "Off"),
-		note: "Breaks up the banding in dark gradients — empty space, and the shadow side of a planet — by moving each pixel less than one shade at random. It costs about a tenth of a millisecond a frame, which is a few percent on this machine and nothing beside Antialiasing. Off shows the bands the eight-bit screen actually has.",
+		note: "Breaks up the banding in dark gradients — empty space, and the shadow side of a planet — by moving each pixel less than one shade at random. It costs a small but real slice of a frame — far less than Antialiasing, and off is genuinely off. Off shows the bands the eight-bit screen actually has.",
 	},
 	/**
 	 * Whether the cockpit's corners fall off — #200.
