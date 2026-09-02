@@ -114,7 +114,7 @@ const RADII = 8;
  * exposure failures, and the same-build spread printed below qualifies it. */
 const HULL_LUMA_BAND = { min: 150, max: 200 };
 /** Floors for the distribution beneath the peak. These are deliberately well
- * below the calibrated 73.59 / 103.99 readings: they reject the failure the
+ * below the calibrated 61.04 / 85.37 readings: they reject the failure the
  * principal caught — one compliant highlight on an otherwise dark hull —
  * without turning the probe into an exact-image comparison. */
 const HULL_LUMA_FLOORS = { lowerQuartile: 55, median: 85 };

@@ -139,7 +139,7 @@ export const LIGHT_RIG = {
 	 * darker than sky, so the lift retains an edge-bearing gradient rather than
 	 * becoming a flat ambient wash.
 	 */
-	hemisphere: { sky: 0xc0ccd8, ground: 0x8090a0, intensity: 8 },
+	hemisphere: { sky: 0xc0ccd8, ground: 0x8090a0, intensity: 6.85 },
 	/** Camera-side, near layer only. Still off-axis, but close enough to the lens
 	 * that the whole chase hull receives a readable base rather than one bright
 	 * shoulder surrounded by black paint. */
@@ -154,8 +154,8 @@ export const LIGHT_RIG = {
 	 * #99 originally bracketed this at 2.2 by eye. #199 found that value and the
 	 * 3.0 sun together drove `hull-chase` past white. The final rig lowers the
 	 * sun, environment and fill together. The final masked, post-tone-map painted
-	 * hull reads 160.89 of 255 across five same-build samples, with 0.00 spread;
-	 * its lower quartile is 73.59 and median 103.99, so the band does not hide a
+	 * hull reads 154.03 of 255 across five same-build samples, with 0.00 spread;
+	 * its lower quartile is 61.04 and median 85.37, so the band does not hide a
 	 * mostly-black exterior behind one compliant highlight.
 	 *
 	 * That pixel band guards clipping; whether the lower-exposure scene still has

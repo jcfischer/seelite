@@ -321,7 +321,7 @@ const palettes = new Map<HullId, Palette>();
  * to the darker panel, trim and engine pigments opens the exterior shadows
  * without moving the hull and accent colours that identify each livery.
  */
-const SHADOW_PAINT_LIFT = 1.45;
+const SHADOW_PAINT_LIFT = 1.3;
 function scalePaint(color: number, scale: number): number {
 	const channel = (shift: number) =>
 		Math.min(255, Math.round(((color >> shift) & 0xff) * scale));
