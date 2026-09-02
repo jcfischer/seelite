@@ -201,7 +201,8 @@ export interface BodyVisual {
 	 *
 	 * - **Named-resource completeness on a scene-shaped fixture** — every
 	 *   resource of a hand-built subtree is freed. A fixture, so it proves the
-	 *   walker reaches every *kind* of slot, not that it reaches everything a
+	 *   walker reaches every *kind* of attachment a material can hang a texture
+	 *   on, not that it reaches everything a
 	 *   generated body has.
 	 * - **Texture completeness on the real bodies**, by a rule the test writes
 	 *   itself rather than importing, since `resourcesOf` and `disposeSubtree`

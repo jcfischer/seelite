@@ -123,15 +123,52 @@ describe("the jump itself", () => {
 		expect(perform).not.toContain("this.chargeAu =");
 	});
 
-	test("the last frame of the wind-up reaches the clock before the world moves", () => {
-		// `step` returns straight after a jump, so `stepWorld` never runs on the
-		// firing frame: without this line the clock loses a frame per jump, and
-		// the wind-up is the whole of what a jump costs the clock (§8.1).
+	test("the wind-up arms the jump and does not take it", () => {
+		// **This row asserted the defect until sage round 3.** It pinned
+		// `advanceWorldClock` before `performJump` *inside* `stepJumpCharge` —
+		// which is the shape that made the firing frame unflown: the clock was
+		// bumped by hand, the jump taken, and `step` returned before `stepWorld`
+		// and `stepDocking` ran. §8 sells the wind-up on the ship being
+		// vulnerable through it and on damage cancelling the charge, and on the
+		// one frame that decides the jump neither could happen.
 		const stepCharge = methodBody("stepJumpCharge");
+		expect(stepCharge).toContain("this.pendingJump = step.fired");
+		// The two things that made the frame unflown are gone from it.
+		expect(stepCharge).not.toContain("advanceWorldClock");
+		expect(stepCharge).not.toContain("performJump");
+	});
+
+	test("the firing frame is flown, and the jump is taken after the docking check", () => {
+		// The clock advances once, through `stepWorld`, like any other frame —
+		// and `stepDocking` is what applies a failed entry's damage, so it has
+		// to run before the jump is taken or a clip on the terminal frame
+		// cannot cancel it.
+		const frame = methodBody("advanceNormalFlight");
+		inOrder(frame, "stepWorld(this.world", "this.stepDocking(before)");
+		inOrder(frame, "this.stepDocking(before)", "this.takePendingJump()");
+	});
+
+	test("a reset that replaces the system rebuilds the renderer with it", () => {
+		// `resetWorldToStart` is total (round 2), so from another star it swaps
+		// `world.system` — and the renderer's meshes are the departed system's.
+		// Without this the reset simulates one system while drawing another.
+		// The predicate is read *before* the reset because afterwards it is
+		// always true.
+		const reset = methodBody("resetFlightToStart");
 		inOrder(
-			stepCharge,
-			"advanceWorldClock(this.world, dt)",
-			"this.performJump(to)",
+			reset,
+			"!canResetWorldToStart(this.world)",
+			"resetWorldToStart(this.world)",
 		);
+		inOrder(reset, "resetWorldToStart(this.world)", "this.rebuildSystem()");
+	});
+
+	test("cancelling clears the armed jump, not only the charge", () => {
+		// A charge that has fired is already idle, so a `charging` guard alone
+		// would let damage on the terminal frame report a cancellation and the
+		// jump happen anyway.
+		const cancel = methodBody("cancelJumpCharge");
+		expect(cancel).toContain("this.pendingJump === null");
+		expect(cancel).toContain("this.pendingJump = null");
 	});
 });

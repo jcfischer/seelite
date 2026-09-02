@@ -157,10 +157,23 @@ describe("disposeSubtree reaches every kind of resource a scene holds", () => {
 		// too or this walker would take it out from under every other sprite.
 		shared(sprite.geometry);
 		root.add(sprite);
-		root.add(new THREE.InstancedMesh(instanceGeometry, instanceMaterial, 4));
+		// **Held rather than dropped into the tree**, so the row below can watch
+		// it: `InstancedMesh.dispose()` frees the instance matrix, which is
+		// per-mesh and cannot be shared, and it is the one resource this fixture
+		// named only by its parts. Sage round 3 (codex) caught that removing
+		// `disposeSubtree`'s `InstancedMesh` pass left every assertion here green
+		// — the geometry and material are disposed either way, so they were a
+		// surrogate for a thing nothing observed.
+		const instanced = new THREE.InstancedMesh(
+			instanceGeometry,
+			instanceMaterial,
+			4,
+		);
+		root.add(instanced);
 
 		return {
 			root,
+			instanced,
 			owned: {
 				geometry,
 				albedo,
@@ -177,14 +190,18 @@ describe("disposeSubtree reaches every kind of resource a scene holds", () => {
 	}
 
 	test("every named resource of a scene-shaped fixture is disposed", () => {
-		const { root, owned } = fixture();
+		const { root, owned, instanced } = fixture();
 		const fired = new Set<string>();
 		for (const [name, resource] of Object.entries(owned))
 			(resource as Disposable).addEventListener("dispose", () =>
 				fired.add(name),
 			);
+		// The `InstancedMesh` is an `Object3D` rather than one of this module's
+		// `Disposable`s, so it is watched beside them rather than inside `owned`
+		// — but it is watched, which it was not before round 3.
+		instanced.addEventListener("dispose", () => fired.add("instancedMesh"));
 		disposeSubtree(root);
-		for (const name of Object.keys(owned))
+		for (const name of [...Object.keys(owned), "instancedMesh"])
 			expect([name, fired.has(name)]).toEqual([name, true]);
 	});
 

@@ -141,6 +141,7 @@ import {
 	stationHostIdOf,
 	jumpWorldTo,
 	makeWorld,
+	canResetWorldToStart,
 	resetWorldToStart,
 	stationOf,
 	stationPose,
@@ -1056,6 +1057,9 @@ class Game {
 	 *  which is why this is a field rather than a `readonly` built in the
 	 *  constructor — `performJump` clears it (#187). */
 	private selectableCache: Body[] | null = null;
+	/** The system a fired wind-up is waiting to move the world to, taken at the
+	 *  end of the frame it fired on. See `takePendingJump` (#187). */
+	private pendingJump: number | null = null;
 	/**
 	 * The parked review fleet, gated on `?fleet`.
 	 *
@@ -4326,6 +4330,11 @@ class Game {
 		this.lastLegS = null;
 		this.lastExit = "";
 		this.dockingComputerEngaged = false;
+		// An armed jump does not survive arriving somewhere. `takePendingJump`
+		// clears it before it calls `performJump`, so this is the reset's case
+		// and any later one — the coverage scan asked for it the moment the
+		// field existed, which is the scan doing its job.
+		this.pendingJump = null;
 		this.rates = { pitch: 0, yaw: 0, roll: 0 };
 		this.mouseDx = 0;
 		this.mouseDy = 0;
@@ -4333,7 +4342,16 @@ class Game {
 	}
 
 	resetFlightToStart() {
+		// **Asked before the reset, because afterwards the answer is always yes.**
+		// `resetWorldToStart` is total: from another star it rebuilds the start
+		// system rather than refusing. The renderer's meshes and body maps are
+		// the departed system's, so without the rebuild below a reset after a
+		// jump simulates one system while drawing another — sage round 3 (codex)
+		// caught this as the cost of round 2's fix, which is the shape this node
+		// has hit twice now.
+		const replacesSystem = !canResetWorldToStart(this.world);
 		resetWorldToStart(this.world);
+		if (replacesSystem) this.rebuildSystem();
 		this.clearFlightSession();
 
 		// A boot has no jump charging, so a reset has none either.
@@ -4480,8 +4498,13 @@ class Game {
 	 * calling this instead of remembering it.
 	 */
 	cancelJumpCharge(reason: string) {
-		if (!charging(this.jumpCharge)) return;
+		// **The pending jump too, and that is the half the blocker turned on.**
+		// A charge that has fired is already idle, so a `charging` guard alone
+		// would let damage on the terminal frame report a cancellation and the
+		// jump happen anyway.
+		if (!charging(this.jumpCharge) && this.pendingJump === null) return;
 		this.jumpCharge = cancelCharge();
+		this.pendingJump = null;
 		this.jumpNotice = `jump cancelled — ${reason}`;
 	}
 
@@ -4497,6 +4520,38 @@ class Game {
 		const step = stepCharge(this.jumpCharge, dt);
 		this.jumpCharge = step.charge;
 		if (step.fired === null) return;
+		// **Armed, not taken.** See `pendingJump`.
+		this.pendingJump = step.fired;
+	}
+
+	/**
+	 * The jump the wind-up armed, taken at the end of the frame it armed on.
+	 *
+	 * **This is sage round 3's blocker, and it was a real contradiction.** §8
+	 * sells the wind-up on the ship being *vulnerable* through it and on damage
+	 * cancelling the charge — but the first build fired inside `stepJumpCharge`,
+	 * advanced the clock by hand and returned before `stepWorld` and
+	 * `stepDocking` ran. So on the one frame that decides the jump, no flight,
+	 * no damage and no dock check happened, and a failed entry on exactly that
+	 * frame could not cancel anything. Round 2 made the *comment* honest about
+	 * that ("a clocked frame, not a flown one"), which documented the defect
+	 * instead of fixing it.
+	 *
+	 * Now the terminal frame is flown like any other: the charge arms this, the
+	 * rest of the step runs normally — advancing the clock once, through
+	 * `stepWorld`, rather than twice — and the jump is taken afterwards if it
+	 * survived. `cancelJumpCharge` clears it, so a clip on the last frame stops
+	 * the jump, which is what §8 says happens.
+	 */
+	private takePendingJump() {
+		const index = this.pendingJump;
+		if (index === null) return;
+		this.pendingJump = null;
+		const to = this.world.galaxy.systems.find((s) => s.index === index);
+		// A destination that is not in this galaxy's records is a bug in whoever
+		// began the charge, not a move to absorb quietly.
+		if (!to) throw new Error(`jump fired at unknown system ${index}`);
+		this.performJump(to);
 		// **The last frame of the wind-up is a *clocked* frame, not a flown one.**
 		// It read "flown" until sage round 2 pointed out the next sentence
 		// contradicts it: `step` returns straight after a jump, so `stepWorld`
@@ -4509,12 +4564,6 @@ class Game {
 		// The distinction is not pedantry: the vulnerability §8 sells the window
 		// on is a property of the frames *before* this one, which are flown
 		// normally. This last one is a bookkeeping frame.
-		advanceWorldClock(this.world, dt);
-		const to = this.world.galaxy.systems.find((s) => s.index === step.fired);
-		// A destination that is not in this galaxy's records is a bug in whoever
-		// began the charge, not a move to absorb quietly.
-		if (!to) throw new Error(`jump fired at unknown system ${step.fired}`);
-		this.performJump(to);
 	}
 
 	/**
@@ -4830,15 +4879,11 @@ class Game {
 			this.throttle = Math.max(0, this.throttle - dt);
 		this.audio.ambient(this.throttle);
 
-		// §8's wind-up first, because a jump that fires replaces the world the
-		// rest of this step would read (#187).
-		if (charging(this.jumpCharge)) {
-			this.stepJumpCharge(dt);
-			// A jump this frame: the ship is at another star's arrival point, at
-			// rest, and there is nothing of this step left that means anything
-			// there. `stepWorld` runs again on the next frame.
-			if (!charging(this.jumpCharge)) return;
-		}
+		// §8's wind-up. It only *arms* a jump — the frame it fires on is flown
+		// like any other so damage and a failed entry can still cancel it
+		// (`takePendingJump`), and the jump is taken at the end of the step,
+		// after which nothing of this frame means anything in the new system.
+		if (charging(this.jumpCharge)) this.stepJumpCharge(dt);
 
 		// The spool-up runs in whichever regime the ship is in, and hands over at
 		// zero. Cruise begins at full throttle, because a wind-up that ends with
@@ -4885,6 +4930,10 @@ class Game {
 		// anti-stranding rule rather than a convenience.
 		this.chargeAu = chargeAfterRegen(this.chargeAu, dt);
 		this.stepDocking(before);
+		// Last, because §8's wind-up is only vulnerable if the frame it fires on
+		// is flown first — `stepDocking` is what applies a failed entry's damage,
+		// and damage cancels the charge.
+		this.takePendingJump();
 	}
 
 	/**
