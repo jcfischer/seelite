@@ -74,9 +74,11 @@ export const VIEWPORT = { width: 1440, height: 900 };
  * generator change that re-shapes the start system goes red there instead of
  * silently re-framing the sheet.
  *
- * `radiusKm` is rounded to the kilometre — the frames are placed in radii of
- * their own subject, so this is the fixture's identity and never an input to a
- * framing.
+ * `radiusKm` is rounded to the kilometre. The *order* is an input to a framing —
+ * `largest-planet` resolves to the head of this list, so two views are framed on
+ * whichever planet sorts first — but the figure itself is not: every frame is
+ * placed in radii of its own subject, so it is the fixture's identity and
+ * nothing more.
  */
 export const FIXTURE = Object.freeze({
 	/** The start system's name. A re-pick of the seed cannot be quiet. */

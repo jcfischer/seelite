@@ -98,13 +98,11 @@ const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 /**
  * The canonical view set's fixture, **imported rather than restated** (#174).
  *
- * This line held its own `47` and `0` beside the sentence "the canonical view
- * set's fixture — one station of each kind in a single system". Both halves were
- * wrong to be here: the roster claim was one #147 had already retired in
- * `view-set.mjs` and seed 47 generates a trade station and a shipyard and
- * nothing else, and a copied constant is how a probe and the sheet drift into
- * measuring two worlds while a comment says they do not. `FIXTURE` is what the
- * seed generates, and a test measures it.
+ * This line held its own `47` and `0` beside a sentence describing the fixture,
+ * and the description was already false. A copied constant is how a probe and
+ * the sheet drift into measuring two worlds while a comment says they do not.
+ * `view-set.mjs`'s `SEED` and `FIXTURE` docstrings own what the fixture is and
+ * is not; a test measures it.
  */
 const CLOCK = GAME_TIME_S;
 const SUBJECT = "station-trade";

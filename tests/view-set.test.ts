@@ -207,10 +207,13 @@ describe("the view set itself", () => {
  * **The measurement half of `FIXTURE`** — `view-set.mjs` carries why it is data
  * and not prose (#174).
  *
- * The two sides are independent: `FIXTURE` is a frozen literal in a script lib
- * and the comparison comes out of `makeWorld`, which is the generator every
- * capture boots. Neither is derived from the other, so this cannot pass by
- * agreeing with itself.
+ * **A regression pin and not an oracle**, which is worth saying plainly because
+ * the first draft of this comment claimed more. `FIXTURE` was populated by
+ * reading `makeWorld(47)` back, so it is not independent evidence of what the
+ * fixture *should* contain and nothing here could tell a good start system from
+ * a bad one. What it does is hold the two apart in *time*: a later generator
+ * change moves the world and not the constant, so the drift that ran from #118
+ * to #174 unnoticed is a red run instead. That is the whole claim.
  */
 describe("the pinned seed's world", () => {
 	const world = makeWorld(SEED);
@@ -220,17 +223,34 @@ describe("the pinned seed's world", () => {
 	});
 
 	test("generates the planets the fixture declares, largest first", () => {
-		// **`capture-views.mjs`'s own sort, not a similar one.** It resolves
-		// `largest-planet` on raw `radiusKm` with an id tiebreak; sorting the
-		// rounded figures instead would let two planets within a kilometre of
-		// each other pass here in an order the sheet does not use, which is the
-		// head of the list and so the subject two views are framed on.
-		const planets = [...world.system.contents.planets]
+		// **The collection and the comparator `capture-views.mjs` resolves
+		// `largest-planet` with**: `bodies` filtered to planets, sorted on raw
+		// `radiusKm` with an id tiebreak. Both halves matter and both were wrong
+		// in the first draft — it sorted `contents.planets`, a different
+		// collection, on the *rounded* figures with no tiebreak, so two planets
+		// within a kilometre of each other could have passed in an order the
+		// sheet does not use. The head of this list is the subject two views are
+		// framed on.
+		//
+		// **The comparator is a hand-copy and the risk is stated rather than
+		// closed.** It cannot be shared: `capture-views.mjs` runs its sort inside
+		// `page.evaluate`, where the body is serialised into the browser and an
+		// imported function does not reach. A tiebreak changed there leaves this
+		// green, so the two are pinned by this comment and nothing stronger.
+		//
+		// `isGasGiant` is a generator field rather than a rendered one, so the
+		// records are joined back by id — the sort still runs over what the
+		// capture sees.
+		const records = new Map(
+			world.system.contents.planets.map((p) => [p.id, p]),
+		);
+		const planets = world.system.bodies
+			.filter((b) => b.kind === "planet")
 			.sort((a, b) => b.radiusKm - a.radiusKm || (a.id < b.id ? -1 : 1))
-			.map((p) => ({
-				id: p.id,
-				radiusKm: Math.round(p.radiusKm),
-				gasGiant: p.isGasGiant,
+			.map((b) => ({
+				id: b.id,
+				radiusKm: Math.round(b.radiusKm),
+				gasGiant: records.get(b.id)?.isGasGiant,
 			}));
 		expect(planets).toEqual([...FIXTURE.planets]);
 	});
@@ -243,15 +263,18 @@ describe("the pinned seed's world", () => {
 	 * the roster and its order as well, and a second `expect` over the bare roles
 	 * could not fail without this one failing too. Strings on both sides, so a
 	 * failure names the role rather than a position in a list.
+	 *
+	 * A station with no `stationType` drops out rather than being described by a
+	 * branch that cannot fire — `Body.stationType` is optional and every station
+	 * `sim.ts` builds carries one, so a fallback string would promise a message
+	 * no reader ever sees. Dropping shortens the list, which fails here anyway.
 	 */
 	test("generates the station roles the fixture declares, both of them slots", () => {
 		const apertures = world.system.bodies
 			.filter((b) => b.kind === "station")
-			.map((b) =>
-				b.stationType
-					? `${b.stationType}:${STATION_GEOMETRY[b.stationType].aperture.kind}`
-					: `${b.id}:no role`,
-			);
+			.map((b) => b.stationType)
+			.filter((role) => role !== undefined)
+			.map((role) => `${role}:${STATION_GEOMETRY[role].aperture.kind}`);
 		expect(apertures).toEqual(FIXTURE.stations.map((role) => `${role}:slot`));
 	});
 });
