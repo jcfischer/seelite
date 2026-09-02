@@ -17,7 +17,7 @@ import {
 	playerLaserHit,
 	stepCombatEnemy,
 } from "../src/combat-enemy";
-import { dot, length, scale, sub, v3 } from "../src/vec3";
+import { type Vec3, dot, length, scale, sub, v3 } from "../src/vec3";
 
 // The cap is far above either pacing window, so both the low and high bounds
 // are real assertions: a duel that kills too fast (under 60 s) fails the floor,
@@ -345,9 +345,9 @@ function flyDuel({
 	seed?: number;
 	seconds?: number;
 	dt?: number;
-	playerNose?: ReturnType<typeof v3>;
+	playerNose?: Vec3;
 	playerFiring?: boolean;
-	player?: { pos: ReturnType<typeof v3>; vel: ReturnType<typeof v3> };
+	player?: { pos: Vec3; vel: Vec3 };
 	/** Keep the player's nose on the enemy every frame, which is what a pilot
 	 *  in a dogfight does and the hardest case for a controller that reacts to
 	 *  being tracked. */
@@ -360,9 +360,9 @@ function flyDuel({
 	const trace: {
 		range: number;
 		phase: string;
-		pos: ReturnType<typeof v3>;
-		nose: ReturnType<typeof v3>;
-		up: ReturnType<typeof v3>;
+		pos: Vec3;
+		nose: Vec3;
+		up: Vec3;
 		aspect: number;
 		turnRate: number;
 		firing: boolean;
@@ -377,17 +377,26 @@ function flyDuel({
 		const range = length(toPlayer);
 		const bearing = scale(toPlayer, 1 / range);
 		if (tracking) playerNose = scale(bearing, -1);
+		// **What the rig feeds it, which is not the trigger.**
+		// `CombatPrototypeRig.step` passes `this.state.firing !== null` — the
+		// shot the model *accepted* on the previous frame, after the heat lock
+		// and the energy budget have had their say. Fed the raw trigger instead,
+		// this harness makes a heat-locked pilot suppress the striker for free
+		// and measures a fight the game cannot produce.
+		const landing = combat.firing !== null;
 		const step = stepCombatEnemy(
 			enemy,
 			player,
 			playerNose,
 			combat,
-			playerFiring,
+			landing,
 			dt,
 		);
 		enemy = step.state;
 		combat = stepCombatPrototype(combat, {
 			dt,
+			// The trigger reaches the *model*, which decides whether it is a shot.
+			firing: playerFiring ? "beam" : undefined,
 			targetInCone: step.targetInCone,
 			enemyFiring: step.enemyFiring,
 			enemyHitAft: step.enemyHitAft,
@@ -467,6 +476,49 @@ test("a player who keeps their nose on it cannot suppress its guns", () => {
 		expect(Math.min(...trace.map((row) => row.range))).toBeLessThan(2);
 		// And it does still break off — a ship that ignored the tail entirely
 		// would pass both checks above and fail the point of the rule.
+		expect(trace.some((row) => row.phase === "evade")).toBe(true);
+	}
+});
+
+/**
+ * The stalemate the third commit fixed, as a check that can see it come back.
+ *
+ * The suppression test above leaves `playerFiring` false, and the `evade` exit
+ * is `phaseSeconds >= maneuverSeconds && !underFire` — so a build that held the
+ * striker in evade for as long as the hits kept coming would pass it while
+ * reproducing exactly the fight that was flown and rejected: **zero** shots
+ * fired in thirty seconds and a closest approach of 5.68 km, parked just
+ * outside its own gun range for the whole engagement.
+ *
+ * The arm that catches it is the one that was missing: tracked **and** shot at.
+ *
+ * **What it catches, measured rather than assumed.** A 30-second evade —
+ * `commit("evade", 30, 30)` — turns it red, which is the shape the rejected
+ * build had: break off and do not come back. It does **not** go red on
+ * `HIT_EVADE_COOLDOWN_S = 0`, nor on dropping the `phase !== "evade"` and
+ * cooldown guards so a hit re-commits every frame, and that is worth writing
+ * down rather than leaving a reader to assume otherwise: once the striker is
+ * fed the *accepted* shot, the player's heat lock cycles the gun off by itself
+ * and hands it windows regardless. The total stalemate is now unreachable from
+ * the cooldown alone, which is a property of the weapon model and not of this
+ * test.
+ */
+test("a player who tracks it and holds the trigger still gets shot back at", () => {
+	for (const seed of DUEL_SEEDS) {
+		const { trace } = flyDuel({
+			seed,
+			seconds: 30,
+			tracking: true,
+			playerFiring: true,
+		});
+		// It comes back. Both halves matter: a striker that fired from ten
+		// kilometres would pass the first and fail the fight.
+		expect(trace.some((row) => row.firing)).toBe(true);
+		expect(Math.min(...trace.map((row) => row.range))).toBeLessThan(
+			GUN_RANGE_KM,
+		);
+		// And it still breaks when hit — a ship that ignored fire entirely would
+		// pass both lines above and lose the mechanic they are guarding.
 		expect(trace.some((row) => row.phase === "evade")).toBe(true);
 	}
 });

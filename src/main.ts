@@ -760,6 +760,21 @@ interface CockpitHardware {
 	instrumentKey: string;
 }
 
+/**
+ * A quaternion's forward direction, in sim space.
+ *
+ * `-Z` is forward throughout — `buildShipMesh`'s callers read the hull back out
+ * that way. Free rather than a method because two rotations want it and they
+ * are not the same rotation: `nose()` asks the *ship's* orientation, and
+ * `weaponAim()` the *camera's*, which differ whenever the pilot looks off the
+ * nose. Written out twice, the pair looked like a copy rather than like a
+ * distinction.
+ */
+function forwardOf(q: THREE.Quaternion): Vec3 {
+	const f = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
+	return v3(f.x, f.y, f.z);
+}
+
 class Game {
 	readonly world: World;
 	readonly renderer: THREE.WebGLRenderer;
@@ -3087,19 +3102,14 @@ class Game {
 		// its own copy of that integration for one round and it had already
 		// diverged: keyed to the nearest mass alone, it read ~30× too fast over a
 		// station's final approach and omitted the clamp's 16 s entirely.
-		// Same guard as `targetVelocity`, and for the same throw: `timeToBody`
-		// runs from the panel as well as from the cruise spool.
-		const striker = this.combatRig?.targetBody;
-		const targetVel =
-			striker && target.id === striker.id
-				? (this.combatRig?.targetVelocity() ?? v3())
-				: bodyVelocity(this.world.system, target.id, this.world.gameTime);
 		return legSeconds(
 			from,
 			{
 				pos: target.pos,
 				radiusKm: target.radiusKm,
-				vel: targetVel,
+				// Through `velocityOf`, not `bodyVelocity`: the striker is
+				// selectable and is not a world body.
+				vel: this.velocityOf(target.id),
 			},
 			this.masses(),
 			this.cruiseParams,
@@ -3328,16 +3338,24 @@ class Game {
 	/** How fast the selected target is moving through sim space, km/s — the frame
 	 *  the arrival is judged in. Zero when nothing is selected. */
 	targetVelocity(): Vec3 {
-		if (!this.targetId) return v3();
-		// The striker is not a world body, and `bodyVelocity` **throws** on an id
-		// it cannot find rather than returning zero. `stepCruise` calls this every
-		// cruise frame, so selecting the striker and pressing J killed the
-		// animation loop on the first frame of the spool — the one path where a
-		// live projection in the target list reaches the world's own arithmetic.
-		const striker = this.combatRig?.targetBody;
-		if (striker && this.targetId === striker.id)
-			return this.combatRig?.targetVelocity() ?? v3();
-		return bodyVelocity(this.world.system, this.targetId, this.world.gameTime);
+		return this.targetId ? this.velocityOf(this.targetId) : v3();
+	}
+
+	/**
+	 * How fast a **selectable** thing is moving, whether or not the world holds
+	 * it.
+	 *
+	 * One place, because `bodyVelocity` **throws** on an id it cannot find —
+	 * deliberately, since `sim.ts` reads a missing body as the two halves
+	 * disagreeing about what is in the system — and #53 put something selectable
+	 * outside `byId` for the first time. Two callers reach it: `targetVelocity`
+	 * on every cruise frame, and `timeToBody` from the panel without cruising at
+	 * all, so a guard written into only one of them left the other live.
+	 */
+	private velocityOf(id: string): Vec3 {
+		const rig = this.combatRig;
+		if (rig && id === rig.targetBody.id) return rig.targetVelocity();
+		return bodyVelocity(this.world.system, id, this.world.gameTime);
 	}
 
 	/** What the player is asking of the flight model this frame (#5's model, in
@@ -3416,16 +3434,14 @@ class Game {
 	/** The nose, as a sim-space unit vector. In cruise this *is* the direction of
 	 *  travel (§1). */
 	private nose() {
-		const f = new THREE.Vector3(0, 0, -1).applyQuaternion(this.orientation);
-		return v3(f.x, f.y, f.z);
+		return forwardOf(this.orientation);
 	}
 
-	/** The weapon ray is the sightline through the cockpit's central reticle. */
+	/** The weapon ray is the sightline through the cockpit's central reticle —
+	 *  `nose()`'s arithmetic against the camera's rotation rather than the
+	 *  ship's, which is the whole of the difference between the two. */
 	private weaponAim() {
-		const f = new THREE.Vector3(0, 0, -1).applyQuaternion(
-			this.cameraRotation(),
-		);
-		return v3(f.x, f.y, f.z);
+		return forwardOf(this.cameraRotation());
 	}
 
 	/** The ship's up-vector in sim space — what `docking.md` §3's roll match is
@@ -4590,7 +4606,7 @@ class Game {
 		// no-op today; it is written out because the moment the camera stops
 		// being pinned there, its absence is a bug that takes an hour to see.
 		this.stars.position.copy(this.backdropCamera.position);
-		this.combatRig?.render(this.view, this.orientation, viewRotation, camPos);
+		this.combatRig?.render(this.view, viewRotation, camPos);
 
 		// The star, resolved once at build time rather than scanned for per frame:
 		// every body's sun direction is measured from it, and there is no path

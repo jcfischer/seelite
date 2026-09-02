@@ -994,11 +994,19 @@ const incoming = await combatPage.evaluate(async () => {
 	// The control, and it has to touch the buffer rather than `visible`: hiding
 	// the objects leaves their positions exactly as they were, so a count taken
 	// off the geometry would be unchanged and the control would pass over a
-	// measurement that was reading something else entirely. Zeroing the heads is
-	// the state a fight with no bolts in the air is actually in, and the render
-	// rewrites the buffer on the next frame.
+	// measurement that was reading something else entirely.
+	//
+	// **It moves the heads behind the camera rather than zeroing them**, and the
+	// difference is whether the control can fail at all. `onCanopy` skips a head
+	// at the origin, because that is how the renderer retires one — so zeroing
+	// the buffer made `empty === 0` true *by construction*, and a counter that
+	// had stopped checking the viewport bounds entirely would still have passed
+	// it. Behind the camera the heads are non-zero, so the zero skip does not
+	// fire and the count has to fall to zero through the `p.z > 1` test, which
+	// is the test the live measurement depends on. The buffer is rewritten from
+	// the bolt pool on the next frame either way.
 	const at = heads.geometry.getAttribute("position");
-	for (let i = 0; i < at.count; i++) at.setXYZ(i, 0, 0, 0);
+	for (let i = 0; i < at.count; i++) at.setXYZ(i, 0, 0, 1000);
 	const empty = onCanopy();
 	return { found: true, firingSeen, onCanopy: best, empty };
 });

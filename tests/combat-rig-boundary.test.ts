@@ -158,11 +158,23 @@ test("the striker's id is not a world body, and bodyVelocity says so by throwing
 	).toThrow();
 });
 
-test("both of main.ts's target-velocity paths route the striker past bodyVelocity", () => {
+test("every bodyVelocity call on a selectable id goes through the striker guard", () => {
 	const main = codeOf("src/main.ts");
-	// Once in `targetVelocity()`, once in `timeToBody()`. Counted rather than
-	// merely present, because a guard on one of the two is the bug still live
-	// on whichever path was missed — and it was `timeToBody` that the panel
-	// reaches without cruising at all.
-	expect(main.match(/combatRig\?\.targetVelocity\(\)/g) ?? []).toHaveLength(2);
+	// Round 1 guarded `targetVelocity()` and `timeToBody()` separately and this
+	// counted the copies; round 2 folded both into `velocityOf`, so counting
+	// copies would now be **load-testing the duplication**. What has to hold is
+	// the property, and it is checkable: the two selectable-target paths call
+	// `velocityOf`, and the only `bodyVelocity` left in the file that takes a
+	// *target* id is the one inside it.
+	expect(main).toContain("private velocityOf(id: string)");
+	expect(main.match(/this\.velocityOf\(/g) ?? []).toHaveLength(2);
+	// `bodyVelocity` has five callers and each takes an id the world is
+	// guaranteed to hold: `velocityOf`'s own fallback, `localFrame` and the
+	// velocity readout's frame (both picked by walking `world.system.bodies`),
+	// `stationVelocity`, and `entryPose` — which does `byId.get(id)` and throws
+	// two lines above. A sixth is a path that has not answered the question this
+	// file asks, and the count is what makes it say so.
+	expect(main.match(/bodyVelocity\(this\.world\.system/g) ?? []).toHaveLength(
+		5,
+	);
 });

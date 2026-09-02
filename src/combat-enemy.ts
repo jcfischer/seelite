@@ -434,7 +434,6 @@ export function stepCombatEnemy(
 	const range = length(toPlayer);
 	const towardPlayer = unit(toPlayer, state.nose);
 	const awayFromPlayer = scale(towardPlayer, -1);
-	const playerToEnemy = scale(towardPlayer, -1);
 	const laser = playerLaserHit(laserOrigin, laserNose, state.ship.pos);
 
 	// How close the player's sight line passes, in kilometres. An angle would
@@ -612,6 +611,8 @@ export function stepCombatEnemy(
 		targetInCone: laser.hit,
 		laserEndpointKm: laser.distanceKm,
 		enemyFiring,
-		enemyHitAft: dot(playerNose, playerToEnemy) < 0,
+		// `awayFromPlayer` is the same vector: a hit lands aft when the
+		// player is shooting along the direction the ship is running in.
+		enemyHitAft: dot(playerNose, awayFromPlayer) < 0,
 	};
 }

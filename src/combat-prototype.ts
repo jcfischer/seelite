@@ -118,6 +118,20 @@ export function duelTargetInCone(elapsed: number) {
 	);
 }
 
+/**
+ * The heat lock, with its hysteresis — a gun that locks at the ceiling and
+ * releases at **half** of it.
+ *
+ * One function because both ships run it. Written out twice, the release
+ * fraction was in two places and #53 put it there by giving the striker the
+ * player's own weapon model; a retune that moved one and not the other would
+ * make the two guns differ in the one way the "same rules" ruling says they
+ * must not.
+ */
+const heatLocked = (heat: number, was: boolean): boolean =>
+	heat >= COMBAT_PROTOTYPE_DEFAULTS.heatLock ||
+	(was && heat > COMBAT_PROTOTYPE_DEFAULTS.heatLock * 0.5);
+
 export function stepCombatPrototype(
 	state: CombatPrototypeState,
 	input: CombatPrototypeInput,
@@ -187,9 +201,7 @@ export function stepCombatPrototype(
 			COMBAT_PROTOTYPE_DEFAULTS.heatLock,
 		);
 	}
-	next.heatLocked =
-		next.heat >= COMBAT_PROTOTYPE_DEFAULTS.heatLock ||
-		(next.heatLocked && next.heat > COMBAT_PROTOTYPE_DEFAULTS.heatLock * 0.5);
+	next.heatLocked = heatLocked(next.heat, next.heatLocked);
 	const enemyEnergyCost = COMBAT_PROTOTYPE_DEFAULTS.pulseEnergyPerSecond * dt;
 	const enemyCanFire =
 		input.enemyFiring &&
@@ -232,10 +244,7 @@ export function stepCombatPrototype(
 			);
 		}
 	}
-	next.targetHeatLocked =
-		next.targetHeat >= COMBAT_PROTOTYPE_DEFAULTS.heatLock ||
-		(next.targetHeatLocked &&
-			next.targetHeat > COMBAT_PROTOTYPE_DEFAULTS.heatLock * 0.5);
+	next.targetHeatLocked = heatLocked(next.targetHeat, next.targetHeatLocked);
 	return next;
 }
 

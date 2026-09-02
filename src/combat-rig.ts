@@ -396,6 +396,20 @@ export class CombatPrototypeRig {
 		this.targetBody = {
 			id: this.contact.id,
 			name: "ENEMY STRIKER",
+			// **A borrowed kind, and the borrow is the point.** `BodyKind` is
+			// `PlacedBody["kind"]` and `sim.ts` says so on purpose — the four
+			// kinds `placeBodies` returns and no fifth taxonomy to keep in step.
+			// A ship is none of them, and #53 delivers a *prototype*, so adding a
+			// `ship` kind would put a production taxonomy change under a
+			// throwaway.
+			//
+			// `moon` because it is the one kind `selectable()` filters out, so no
+			// world body can ever be confused with this one in that list. Every
+			// other site that dispatches on `kind` — `isMassive` in the render
+			// loop, `updateLocalFrameBody`, the velocity readout's `FRAME` label,
+			// the station scans — iterates `world.system.bodies`, which the
+			// striker is not in, so none of them can see this value. Checked, not
+			// assumed: `tests/combat-rig-boundary.test.ts` counts the sites.
 			kind: "moon",
 			pos: this.enemy.ship.pos,
 			// The hit sphere, not a blip size. This is what `timeToBody` reads as
@@ -585,13 +599,26 @@ export class CombatPrototypeRig {
 	): void {
 		this.hitFlash = Math.max(0, this.hitFlash - dt);
 		const beam = pilot.mouseFiring || keys.has(BEAM_KEY);
-		const held = beam || keys.has(" ");
+		// **The shot the model accepted, not the trigger the player held.**
+		//
+		// `stepCombatPrototype` nulls `firing` when the weapon is heat-locked or
+		// out of energy, so a held trigger and a shot in the air are different
+		// things. Fed the trigger, the striker broke off for a pilot whose gun
+		// was locked out — free suppression once every `HIT_EVADE_COOLDOWN_S`,
+		// at no energy and no heat, which is the opposite of the ruling that
+		// being hit is what earns a reaction.
+		//
+		// Last frame's, because it has to be: `stepCombatEnemy` runs before
+		// `stepCombatPrototype` below, so this frame's acceptance does not exist
+		// yet. One frame of lag on a 3.5 s lockout, against a gate that was
+		// wrong by whole seconds.
+		const landing = this.state.firing !== null;
 		const flown = stepCombatEnemy(
 			this.enemy,
 			pilot.ship,
 			pilot.nose,
 			this.state,
-			held,
+			landing,
 			dt,
 			pilot.aimOrigin,
 			pilot.aimNose,
@@ -604,7 +631,9 @@ export class CombatPrototypeRig {
 
 		// The spark is placed on the frame the beam first connects, so it does not
 		// walk along the hull while a held trigger keeps scoring.
-		const connecting = held && flown.targetInCone;
+		// The same distinction: a spark on the hull says a shot scored, and a
+		// heat-locked trigger scores nothing.
+		const connecting = landing && flown.targetInCone;
 		if (connecting && !this.wasHit) {
 			this.hitFlash = HIT_SPARK_S;
 			this.impactPoint = add(
@@ -701,12 +730,7 @@ export class CombatPrototypeRig {
 	 * it flat through every turn and go degenerate the moment the nose reached
 	 * vertical, which this controller does routinely.
 	 */
-	render(
-		view: CombatView,
-		_orientation: THREE.Quaternion,
-		viewRotation: THREE.Quaternion,
-		camPos: Vec3,
-	): void {
+	render(view: CombatView, viewRotation: THREE.Quaternion, camPos: Vec3): void {
 		const ship = this.enemy.ship.pos;
 		this.targetMesh.position.set(
 			ship.x - camPos.x,
@@ -751,40 +775,29 @@ export class CombatPrototypeRig {
 		const headPoints = this.boltHeads.geometry.getAttribute(
 			"position",
 		) as THREE.BufferAttribute;
+		// Every buffer in this method holds **camera-relative** kilometres, which
+		// is what keeps a bolt's float precision in the metres the eye is judging
+		// it in rather than in the star's frame.
+		const setRel = (attr: THREE.BufferAttribute, i: number, v: Vec3) =>
+			attr.setXYZ(i, v.x - camPos.x, v.y - camPos.y, v.z - camPos.z);
 		for (let i = 0; i < BOLT_POOL; i++) {
 			const bolt = this.boltState[i];
-			if (bolt)
-				headPoints.setXYZ(
-					i,
-					bolt.pos.x - camPos.x,
-					bolt.pos.y - camPos.y,
-					bolt.pos.z - camPos.z,
-				);
-			else headPoints.setXYZ(i, 0, 0, 0);
 			if (!bolt) {
 				// Collapsed onto the camera, where a zero-length segment draws
-				// nothing. Leaving a retired bolt at its last position would leave
-				// a streak hanging in the sky.
+				// nothing and the head shader gates itself off. Leaving a retired
+				// bolt at its last position would leave a streak hanging in the sky.
+				headPoints.setXYZ(i, 0, 0, 0);
 				segments.setXYZ(i * 2, 0, 0, 0);
 				segments.setXYZ(i * 2 + 1, 0, 0, 0);
 				continue;
 			}
+			setRel(headPoints, i, bolt.pos);
 			const tail = sub(
 				bolt.pos,
 				scale(bolt.vel, BOLT_LENGTH_KM / BOLT_SPEED_KMS),
 			);
-			segments.setXYZ(
-				i * 2,
-				bolt.pos.x - camPos.x,
-				bolt.pos.y - camPos.y,
-				bolt.pos.z - camPos.z,
-			);
-			segments.setXYZ(
-				i * 2 + 1,
-				tail.x - camPos.x,
-				tail.y - camPos.y,
-				tail.z - camPos.z,
-			);
+			setRel(segments, i * 2, bolt.pos);
+			setRel(segments, i * 2 + 1, tail);
 		}
 		segments.needsUpdate = true;
 		headPoints.needsUpdate = true;
