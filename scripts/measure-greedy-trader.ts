@@ -35,11 +35,10 @@ import {
 	GALAXY_LIST,
 	HOLD_T,
 	JUMP_SECONDS,
-	neighbourLimit,
+	DEFAULT_NEIGHBOUR_LIMIT,
 	type Result,
 	run,
 	START_CR,
-	setNeighbourLimit,
 	WORKING_FLOAT_CR,
 	worldFor,
 } from "./lib/greedy-trader";
@@ -210,20 +209,22 @@ for (const dock of [15, 30, 45, 60, 90]) {
 		0,
 	);
 	console.log(
-		`\nneighbour list truncated at ${neighbourLimit()} on ${truncated} of ` +
+		`\nneighbour list truncated at ${DEFAULT_NEIGHBOUR_LIMIT} on ${truncated} of ` +
 			`${enumerations} neighbour lookups (${((100 * truncated) / Math.max(enumerations, 1)).toFixed(1)}%) ` +
 			"— where it bit, the trader did not see the whole jump range.",
 	);
 }
 {
 	// **What the truncation costs, not just how often it bites.** Reporting a
-	// 39.2% blind rate and calling the trader a ceiling is half an answer: the
-	// question is whether the eight nearest systems are where the money is. Run
-	// again at sixteen and compare — if the milestone barely moves, the limit is
-	// bounding work rather than knowledge after all.
-	setNeighbourLimit(16);
-	const wide = WORLDS.map(({ world }) => run(world, hours));
-	setNeighbourLimit(8);
+	// blind rate and calling the trader a ceiling is half an answer: the question
+	// is whether the eight nearest systems are where the money is. Run again at
+	// sixteen and compare — if the milestone barely moves, the limit is bounding
+	// work rather than knowledge after all. **Per run rather than through a
+	// module-level setter**, which is what it was: a global a caller flips
+	// between arms is the variance surface `RunOptions` exists to close.
+	const wide = WORLDS.map(({ world }) =>
+		run(world, hours, { neighbourLimit: 16 }),
+	);
 	const kitsOf = (rs: Result[]) =>
 		rs
 			.map((r) => r.kitAffordableAtMinutes)

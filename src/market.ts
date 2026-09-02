@@ -314,24 +314,33 @@ export const decayDeficit = (deficit: number, elapsedMin: number): number =>
  *
  * `DEFICIT_MAX` is 63 *tonnes*, which is Bell's shelf cap borrowed as a memory
  * cap, and it was the right number for exactly as long as every ship in the
- * game held 20 t. Against a roster it is the map's #13 failure in its purest
- * form: **a per-hull scaling on a bounded index gets clamped away where that
- * type lives.** One run of a 63 t hull already reaches the clamp, so the market
- * remembers a 63 t trader and a 200 t trader identically — the response stops
- * distinguishing hulls exactly at the hold where the ladder is about to start.
+ * game held 20 t. Against a roster it is the map's #13 failure — a per-hull
+ * scaling on a bounded index gets clamped away where that type lives — and #13's
+ * own fix applies: the deficit is read **as a multiple of the flown hold** and
+ * the clamp is on that ratio, where it cannot reach. One full run of any hull
+ * then leaves the same mark and every hull saturates after the same number of
+ * runs.
  *
- * The fix is #13's own: express the scaling where the clamp cannot reach it.
- * The deficit is read **as a multiple of the flown hold** and the clamp is
- * applied to that ratio, so one full run of any hull leaves the same mark and
- * every hull in the game saturates after the same number of runs.
- *
- * `DEFICIT_MAX / HOLD_REFERENCE_T` and not a fresh figure: at the baseline
- * hull's 20 t hold the new expression is the old one, term for term, which is
- * why every measured constant §5.4 was ratified on survives unchanged. The
- * steady state is identical at every hold; what moves is the *transient* — how
- * many runs the brake takes to bite — and #182's report measures that.
+ * **`economy-trade.md` §5.2 owns the measurement and the argument**; this
+ * docstring carries the rule and the one fact a reader of the module needs:
+ * `DEFICIT_MAX / HOLD_REFERENCE_T` and not a fresh figure, so at the baseline
+ * hull's hold the new expression is the old one term for term.
  */
 export const DEFICIT_SATURATION_RUNS = DEFICIT_MAX / HOLD_REFERENCE_T;
+
+/**
+ * Both functions below divide by the hold, so neither may be handed a
+ * non-positive one.
+ *
+ * A zero hold gives a non-finite price and a negative one *inverts* the
+ * response, so buying a good would make it cheaper. Neither can come from the
+ * roster, but a hand-edited or truncated save reaches `holdCapacityT` before
+ * anything validates it, and `measure-market.ts`'s rule is that an instrument
+ * dies rather than reporting garbage — a price screen has the same obligation.
+ */
+const requirePositiveHold = (holdT: number): void => {
+	if (!(holdT > 0)) throw new Error(`hold must be positive, got ${holdT}`);
+};
 
 /**
  * §5.2's accumulation, which saturates rather than running away.
@@ -351,6 +360,7 @@ export const addDeficit = (
 	units: number,
 	holdT: number,
 ): number => {
+	requirePositiveHold(holdT);
 	const cap = Math.max(DEFICIT_SATURATION_RUNS * holdT, Math.abs(deficit));
 	return clamp(deficit + units, -cap, cap);
 };
@@ -388,8 +398,9 @@ export const stockResponse = (
 	priceCr: number,
 	deficit: number,
 	holdT: number,
-): number =>
-	Math.max(
+): number => {
+	requirePositiveHold(holdT);
+	return Math.max(
 		PRICE_STEP_CR,
 		priceCr *
 			(1 +
@@ -400,6 +411,7 @@ export const stockResponse = (
 						DEFICIT_SATURATION_RUNS,
 					)),
 	);
+};
 
 /**
  * The units actually on the shelf once the deficit is applied.

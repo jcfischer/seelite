@@ -15,7 +15,16 @@
  * cannot drift.
  */
 
-import type { HullEnvelope, HullSpec } from "../../src/hull";
+import {
+	HULL_SPECS,
+	type HullEnvelope,
+	type HullId,
+	type HullSpec,
+	PURCHASABLE_HULL_IDS,
+} from "../../src/hull";
+import type { StationType } from "../../src/station";
+import { STATION_TYPES } from "../../src/station";
+import { BERTH_CELL } from "../../src/station-interior";
 
 /** Cubic metres of bounding box. The envelope is kilometres (`hull.ts`), which
  *  is why this conversion exists at all rather than being inlined. */
@@ -46,3 +55,42 @@ export const stretchedToHold = (
 	// `hullBoxM3` applies has to come back out here.
 	lengthKm: (holdT * m3PerT) / 1e9 / (cell.beamKm * cell.heightKm),
 });
+
+/**
+ * §7.2's ceiling, derived from the shipped tables rather than declared.
+ *
+ * One body for the same reason the two above exist: the max-over-types step and
+ * the min-over-hulls step were written out in `tests/hull.test.ts` *and* in
+ * `scripts/measure-hull-pricing.ts` section G, so a retune that changed which
+ * station type has the largest berth had two places to agree in. The gate
+ * asserts `HULL_CEILING_HOLD_T === holdT` and the instrument prints this same
+ * record, so the two cannot report different ceilings.
+ *
+ * **Floored, not rounded.** A hold that does not fit is not a ceiling, and a
+ * quotient of 197.6 admits 197 t.
+ */
+export const derivedCeiling = (): {
+	largestType: StationType;
+	boxM3: number;
+	densestHull: HullId;
+	m3PerT: number;
+	holdT: number;
+} => {
+	const largestType = STATION_TYPES.reduce((best, type) =>
+		hullBoxM3(BERTH_CELL[type]) > hullBoxM3(BERTH_CELL[best]) ? type : best,
+	);
+	const boxM3 = hullBoxM3(BERTH_CELL[largestType]);
+	const densestHull = PURCHASABLE_HULL_IDS.reduce((best, id) =>
+		m3PerTonneOfHold(HULL_SPECS[id]) < m3PerTonneOfHold(HULL_SPECS[best])
+			? id
+			: best,
+	);
+	const m3PerT = m3PerTonneOfHold(HULL_SPECS[densestHull]);
+	return {
+		largestType,
+		boxM3,
+		densestHull,
+		m3PerT,
+		holdT: Math.floor(boxM3 / m3PerT),
+	};
+};

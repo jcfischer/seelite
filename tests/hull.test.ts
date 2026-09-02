@@ -24,7 +24,13 @@ import { readFileSync } from "node:fs";
 import * as THREE from "three";
 import { CHARGE_CAPACITY_AU } from "../src/cruise";
 import { carrierKey } from "../src/carrier-key";
-import { FUEL_TANK_LY, HOLD_REFERENCE_T, marketStationOf } from "../src/market";
+import {
+	EQUIPMENT,
+	FUEL_TANK_LY,
+	HOLD_REFERENCE_T,
+	fullKitCr,
+	marketStationOf,
+} from "../src/market";
 import { JUMP_RANGE_LY } from "../src/galaxy";
 import {
 	CAPITAL_HULL_IDS,
@@ -61,7 +67,7 @@ import {
 	stationInterior,
 } from "../src/station-interior";
 import {
-	hullBoxM3,
+	derivedCeiling,
 	m3PerTonneOfHold,
 	stretchedToHold,
 } from "./helpers/hull-math";
@@ -521,11 +527,11 @@ describe("what a hull costs (#182, #26's D4 and D7)", () => {
 			prospector: 25_600,
 			courier: 35_000,
 			tug: 39_100,
-			explorer: 44_900,
-			miner: 53_500,
-			freighter: 68_600,
+			explorer: 44_800,
+			miner: 53_400,
+			freighter: 68_400,
 		});
-		expect(hullPriceCr(HULL_CEILING_HOLD_T)).toBe(141_900);
+		expect(hullPriceCr(HULL_CEILING_HOLD_T)).toBe(141_300);
 		expect(HULL_PRICE_BASELINE_CR % HULL_PRICE_STEP_CR).toBe(0);
 		// Every quoted price is on the step, so a spec table and a shipyard screen
 		// cannot round differently.
@@ -547,19 +553,52 @@ describe("what a hull costs (#182, #26's D4 and D7)", () => {
 				" ",
 			);
 		const withCommas = (n: number) => n.toLocaleString("en-GB");
-		for (const path of ["docs/specs/economy-trade.md", "CLAUDE.md"]) {
-			const prose = read(path);
-			// Nobody may quote a *different* baseline or exponent. The figures need
-			// not appear — CLAUDE.md deliberately names the constants instead — but
-			// a stale one must not.
-			for (const stale of [30_000, 25_000, 40_000])
-				expect([
-					path,
-					prose.includes(`${withCommas(stale)} Cr x (hold`),
-				]).toEqual([path, false]);
-		}
+		// **The published tables, row by row, rather than every price-shaped number
+		// in the sections.** Two drafts of this guard got the scope wrong: one
+		// searched for `30,000 Cr x (hold`, a shape neither file writes, so it
+		// passed at any constants; the next matched every "NN,N00 Cr" in the whole
+		// spec and tripped on commodity figures and on the derivation's own
+		// intermediate. What binds is the claim actually being made — §7.1 and
+		// §7.2 publish a table of hulls and holds against prices, and every row of
+		// it has to be `hullPriceCr` of the hold in the same row.
+		const specAll = read("docs/specs/economy-trade.md");
+		const priceSections = specAll.slice(
+			specAll.indexOf("### 7.1 Hull prices"),
+			specAll.indexOf("## 8. The progression pump"),
+		);
+		expect(priceSections.length).toBeGreaterThan(1000);
+		const rows = [
+			...priceSections.matchAll(
+				/\|[^|]*\|\s*(\d+) t\s*\|\s*\*{0,2}(\d{1,3}(?:,\d{3})+) Cr\*{0,2}\s*(?:—[^|]*)?\|/g,
+			),
+		].map((m) => ({
+			holdT: Number(m[1]),
+			priceCr: Number(m[2].replace(/,/g, "")),
+		}));
+		// Seven civilian hulls and three rungs — if the tables stop being read the
+		// loop below would pass on nothing at all.
+		expect(rows.length).toBe(PURCHASABLE_HULL_IDS.length + 3);
+		for (const row of rows)
+			expect([row.holdT, row.priceCr as number | null]).toEqual([
+				row.holdT,
+				hullPriceCr(row.holdT),
+			]);
+
+		// **CLAUDE.md names the constants rather than restating them**, so there is
+		// nothing there to go stale — which is the fix for the round where it
+		// carried a superseded pair with every gate green.
+		const claudeMd = read("CLAUDE.md");
+		expect(claudeMd).toContain("HULL_PRICE_BASELINE_CR");
+		expect(claudeMd).toContain("HULL_PRICE_EXPONENT");
+		const hullTrap = claudeMd.slice(
+			claudeMd.indexOf("A hull's price is a law"),
+			claudeMd.indexOf("`src/hull.ts` is the third leaf"),
+		);
+		expect(hullTrap.length).toBeGreaterThan(200);
+		expect(hullTrap).not.toMatch(/\d{1,3}(?:,\d{3})+ Cr/);
+
 		// The spec is the owner, so it must carry the live pair and the table.
-		const spec = read("docs/specs/economy-trade.md");
+		const spec = specAll;
 		expect(spec).toContain(
 			`HULL_PRICE_BASELINE_CR = ${withCommas(HULL_PRICE_BASELINE_CR)} Cr`,
 		);
@@ -582,13 +621,14 @@ describe("what a hull costs (#182, #26's D4 and D7)", () => {
 		// the densest hold the roster has measured. It is an upper bound in the
 		// safe direction, so it assumes a hull could be a solid box at that
 		// density.
-		const largestBoxM3 = Math.max(
-			...STATION_TYPES.map((type) => hullBoxM3(BERTH_CELL[type])),
-		);
-		const densest = Math.min(
-			...PURCHASABLE_HULL_IDS.map((id) => m3PerTonneOfHold(HULL_SPECS[id])),
-		);
-		expect(HULL_CEILING_HOLD_T).toBe(Math.floor(largestBoxM3 / densest));
+		const derived = derivedCeiling();
+		expect(HULL_CEILING_HOLD_T).toBe(derived.holdT);
+		// …and the derivation reached the rows it is supposed to: the largest
+		// berth in the game and the roster's densest hold, named rather than
+		// assumed, so a retune that moved either shows up here as a changed name
+		// rather than only as a changed number.
+		expect(derived.largestType).toBe("trade");
+		expect(derived.densestHull).toBe("freighter");
 		// …and it really is a ceiling: every hull a berth admits is under it, and
 		// the two that no berth admits are over it.
 		for (const id of DOCKABLE_HULL_IDS)

@@ -171,34 +171,23 @@ export interface HullSpec {
 /**
  * #182's measured price law: what a hull's **hold** is worth, capitalised.
  *
- * **`economy-trade.md` §7.1 owns the derivation and the figures**, and this
- * docstring deliberately does not restate it — a measurement narrative copied
- * into three files diverges, and one copy of this one already had. What is here
- * is what the two constants *mean*, and `scripts/measure-hull-pricing.ts`
- * reprints both beside what a fresh run derives (the map's #118 rule).
- *
- * `price(hold) = HULL_PRICE_BASELINE_CR x (hold / baseline hold) ^ exponent`,
+ * `price(hold) = HULL_PRICE_BASELINE_CR x (hold / the baseline hold) ^ exponent`,
  * rounded. The exponent is the fitted elasticity of the greedy trader's Cr/min
- * on the hold, and the baseline is the fitted rate at the baseline hull's hold
- * times the measured time that hull takes to earn `fullKitCr()`. So a hull
- * costs what its hold earns back over one kit — #26's own two anchors, used as
- * anchors.
+ * on the hold; the baseline is that fit's rate at the baseline hull's hold times
+ * the measured time it takes to earn `fullKitCr()`. So a hull costs what its
+ * hold earns back over one kit — #26's own two anchors, used as anchors.
  *
- * **The exponent is the finding, and it is well under one.** #26's D6 reasoned
- * from *"a 60 t hold moves 3x the cargo"*; measured, it earns about 1.9x,
- * because the marginal tonne has to be filled with a worse good than the one
- * before it. A roster priced on the assumption that income is linear in the
- * hold would have overpriced every large hull by more than two to one.
+ * **`economy-trade.md` §7.1 owns the derivation, the figures and the caveats**,
+ * and this docstring deliberately carries none of them: a measurement narrative
+ * copied into three files diverges, and one copy of this one already did.
+ * `scripts/measure-hull-pricing.ts` reprints both constants beside what a fresh
+ * run derives, which is the map's #118 rule.
  *
- * **The trading economy prices the hold and nothing else, and that is a
- * concession rather than a measurement.** The greedy trader fears no pirate and
- * does not route, so a hardpoint, a point of integrity, a light year of tank
- * and an AU of charge were never *varied* — the sweep measured the hold and
- * conceded the rest. #8's combat balance and #183's rating own those axes and
- * this law invents no figure for them, which is why the interceptor — the
- * hardest-accelerating hull in the game — prices below the courier.
+ * **Two decimals, because that is what the fit resolves.** Its slope has a
+ * standard error of about a hundredth, so a third digit would be inside its own
+ * noise.
  */
-export const HULL_PRICE_EXPONENT = 0.612;
+export const HULL_PRICE_EXPONENT = 0.61;
 
 /** The baseline hull's price, credits — the law's anchor. See the exponent
  *  above for where both figures come from. */
@@ -320,7 +309,7 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		integrity: 166,
 		tankLy: 7,
 		chargeAu: 12,
-		priceCr: 68_600,
+		priceCr: 68_400,
 	},
 	miner: {
 		role: "industrial",
@@ -333,7 +322,7 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		integrity: 215,
 		tankLy: 6,
 		chargeAu: 10,
-		priceCr: 53_500,
+		priceCr: 53_400,
 	},
 	patrol: {
 		role: "security",
@@ -369,7 +358,7 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		// hull is for. Nothing reads it yet — see `tankLy` above.
 		tankLy: 9,
 		chargeAu: 16,
-		priceCr: 44_900,
+		priceCr: 44_800,
 	},
 	raider: {
 		role: "outlaw",

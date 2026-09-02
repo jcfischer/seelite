@@ -88,14 +88,10 @@ import {
 	stockResponse,
 } from "../src/market";
 import { BERTH_CELL } from "../src/station-interior";
-import { STATION_TYPES } from "../src/station";
-import { hullBoxM3, m3PerTonneOfHold } from "../tests/helpers/hull-math";
+import { derivedCeiling, m3PerTonneOfHold } from "../tests/helpers/hull-math";
 import {
 	CLOSABLE_RATIO,
-	FLUCT_PAIRS,
 	fixedReferenceResponse,
-	forEachLegalPair,
-	residualMarginCr,
 	richestClosablePair,
 	runsToExhaustion,
 	RUN_MINUTES,
@@ -110,7 +106,7 @@ import {
 	type Result,
 	type RunOptions,
 	finite,
-	neighbourLimit,
+	DEFAULT_NEIGHBOUR_LIMIT,
 	run,
 	worldFor,
 } from "./lib/greedy-trader";
@@ -178,7 +174,7 @@ const rightAlign = (v: string | number, n: number) => String(v).padStart(n);
 console.log(
 	`hull pricing — ${WORLDS.length} worlds (${WORLD_SEEDS.length} seeds x ` +
 		`${ALL_GALAXIES.length} galaxies), ${hours} h per arm, neighbour limit ` +
-		`${neighbourLimit()}, jump ${JUMP_SECONDS}s, dock ${DOCK_SECONDS}s`,
+		`${DEFAULT_NEIGHBOUR_LIMIT}, jump ${JUMP_SECONDS}s, dock ${DOCK_SECONDS}s`,
 );
 
 // ---------------------------------------------------------------------------
@@ -300,8 +296,14 @@ console.log(
 );
 console.log("\n  hold t     mean      p10      p90    t lifted/hop    fill");
 const curve = new Map<number, number[]>();
+/** Arms that ended before the window did — a stance with no profitable hop at
+ *  all breaks the loop, which `RunOptions.shop` cannot suppress. A short arm
+ *  has a shorter denominator, so the count is reported rather than left to be
+ *  assumed away. */
+let shortArms = 0;
 for (const holdT of HOLD_LADDER) {
 	const arm = armAt(holdT);
+	shortArms += arm.filter((r) => r.minutes < hours * 60 - 1).length;
 	const rates = arm.map(rateOf);
 	curve.set(holdT, rates);
 	const lifted =
@@ -359,6 +361,12 @@ const pooled = fitPower(
 );
 const betas = perWorld.map((f) => f.b);
 console.log(
+	`\n  arms that ended before the ${hours} h window: ${shortArms} of ` +
+		`${HOLD_LADDER.length * WORLDS.length} — the one terminal state left when` +
+		"\n  shopping is off is a stance with no profitable hop at all, and a short" +
+		"\n  arm divides by a shorter clock.",
+);
+console.log(
 	`\n  fitted rate = A x hold^b over ${HOLD_LADDER[0]}-${HOLD_LADDER[HOLD_LADDER.length - 1]} t`,
 );
 console.log(
@@ -397,7 +405,9 @@ console.log(
 );
 console.log("\n  hold t   no memory   remembering   memory is worth");
 for (const holdT of [8, 20, 60, 200]) {
-	const off = mean(armAt(holdT).map(rateOf));
+	// Section C already flew this arm; re-flying it would be 32 identical
+	// two-hour runs per row for a figure already in hand.
+	const off = mean(curve.get(holdT) as number[]);
 	const on = mean(armAt(holdT, { remembers: true }).map(rateOf));
 	console.log(
 		`${rightAlign(holdT, 6)}${rightAlign(off.toFixed(0), 12)}${rightAlign(on.toFixed(0), 14)}` +
@@ -489,14 +499,23 @@ console.log(
 	// **The #118 loop, closed.** A figure a spec states as measured owes a mode
 	// in a shipped instrument that reprints it — so this run re-derives the two
 	// declared constants and says how far it has drifted from them.
+	// **The baseline is derived at the *shipped* exponent, not the fitted one.**
+	// The law carries two decimals because that is what the fit resolves, so a
+	// baseline computed at the raw slope would be compared against a constant
+	// nobody derived that way and the printed drift would be meaningless.
 	const derivedBaseline =
-		pooled.a * HOLD_REFERENCE_T ** pooled.b * kitWindow.median;
+		pooled.a * HOLD_REFERENCE_T ** HULL_PRICE_EXPONENT * kitWindow.median;
 	console.log(
 		`\n  declared: exponent ${HULL_PRICE_EXPONENT}, baseline ${HULL_PRICE_BASELINE_CR} Cr`,
 	);
 	console.log(
-		`  this run derives: exponent ${finite("b", pooled.b).toFixed(3)}, ` +
-			`baseline ${finite("baseline", derivedBaseline).toFixed(0)} Cr ` +
+		`  this run's fit: slope ${finite("b", pooled.b).toFixed(3)} ± ` +
+			`${finite("se", pooled.se).toFixed(3)}, which rounds to the declared ` +
+			`${HULL_PRICE_EXPONENT} at the precision it resolves`,
+	);
+	console.log(
+		`  this run derives the baseline at the declared exponent: ` +
+			`${finite("baseline", derivedBaseline).toFixed(0)} Cr ` +
 			`(${(100 * (derivedBaseline / HULL_PRICE_BASELINE_CR - 1)).toFixed(1)}% off the declared, ` +
 			"which is a price rounded to a legible figure)",
 	);
@@ -531,32 +550,28 @@ console.log(
 	"\n  it is instead is the answer rather than a substitute for one.",
 );
 {
-	// **The max over every station type, the way `tests/hull.test.ts` derives
-	// it**, and through the same helper it uses. Reading `BERTH_CELL.trade` and
-	// calling it "the largest" would let a retune of another role's cell put the
-	// instrument and the gate out of step without either noticing, and a second
-	// spelling of the km-to-m³ conversion would do it more quietly still.
-	const largestType = STATION_TYPES.reduce((best, t) =>
-		hullBoxM3(BERTH_CELL[t]) > hullBoxM3(BERTH_CELL[best]) ? t : best,
-	);
+	// **Through `derivedCeiling`, which is the gate's own derivation.** Section G
+	// used to repeat the max-over-types and min-over-hulls steps, so a retune
+	// that changed which berth is largest had two places to agree in — and it
+	// printed a rounded quotient beside a floored constant, which reads as drift
+	// the gate cannot see.
+	const { largestType, boxM3, densestHull, m3PerT, holdT } = derivedCeiling();
 	const cell = BERTH_CELL[largestType];
-	const boxM3 = hullBoxM3(cell);
-	const densities = PURCHASABLE_HULL_IDS.map((id) => ({
-		id,
-		m3PerT: m3PerTonneOfHold(HULL_SPECS[id]),
-	})).sort((a, b) => a.m3PerT - b.m3PerT);
-	const best = densities[0];
 	console.log(
 		`\n  largest berth cell (${largestType}, and every type is checked): ` +
 			`${(1000 * cell.lengthKm).toFixed(0)} x ${(1000 * cell.beamKm).toFixed(0)} x ` +
 			`${(1000 * cell.heightKm).toFixed(0)} m = ${finite("box", boxM3).toFixed(0)} m3`,
 	);
 	console.log("\n  hull          m3 of box per tonne of hold");
-	for (const d of densities)
-		console.log(`  ${d.id.padEnd(13)}${rightAlign(d.m3PerT.toFixed(0), 8)}`);
+	for (const id of [...PURCHASABLE_HULL_IDS].sort(
+		(a, b) => m3PerTonneOfHold(HULL_SPECS[a]) - m3PerTonneOfHold(HULL_SPECS[b]),
+	))
+		console.log(
+			`  ${id.padEnd(13)}${rightAlign(finite(id, m3PerTonneOfHold(HULL_SPECS[id])).toFixed(0), 8)}`,
+		);
 	console.log(
-		`\n  the cargo role is the densest at ${best.m3PerT.toFixed(0)} m3/t (${best.id}), so the largest`,
-		`\n  hold a berth can admit is ${finite("ceiling", boxM3 / best.m3PerT).toFixed(0)} t — ` +
+		`\n  the cargo role is the densest at ${m3PerT.toFixed(0)} m3/t (${densestHull}), so the largest`,
+		`\n  hold a berth can admit is ${finite("ceiling", holdT)} t — ` +
 			`declared as HULL_CEILING_HOLD_T = ${HULL_CEILING_HOLD_T} t,`,
 		`\n  priced at ${(hullPriceCr(HULL_CEILING_HOLD_T) as number).toLocaleString("en-GB")} Cr.`,
 	);
@@ -664,7 +679,12 @@ console.log("\n  working capital     b   rate at 20 t   rate at 200 t");
 for (const cap of CAPITAL_CAPS) {
 	const points = HOLD_LADDER.map((h) => ({
 		h,
-		r: mean(armAt(h, { capitalCapCr: cap }).map(rateOf)),
+		// The uncapped row *is* section C's arm — same options, same worlds — so
+		// it is read back rather than re-flown, which is 512 two-hour runs saved
+		// on a figure that would be identical by construction.
+		r: Number.isFinite(cap)
+			? mean(armAt(h, { capitalCapCr: cap }).map(rateOf))
+			: mean(curve.get(h) as number[]),
 	}));
 	const f = fitPower(points);
 	const at = (h: number) => (points.find((p) => p.h === h) as { r: number }).r;

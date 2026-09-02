@@ -189,7 +189,7 @@ export function transactAtStation(
 				goodName: good.name,
 				units: quantity,
 				gameTimeMin: input.gameTimeMin,
-				holdT: holdT,
+				holdT,
 			}),
 		};
 	}
@@ -206,7 +206,7 @@ export function transactAtStation(
 			goodName: good.name,
 			units: -quantity,
 			gameTimeMin: input.gameTimeMin,
-			holdT: holdT,
+			holdT,
 		}),
 	};
 }

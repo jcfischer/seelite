@@ -180,14 +180,7 @@ const sellsIt = (item: Equipment, port: Port): boolean => {
 
 /** How far the trader looks for a jump target. The whole 256-system galaxy is
  *  in memory, so this bounds work rather than knowledge. */
-let NEIGHBOUR_LIMIT = 8;
-export const setNeighbourLimit = (n: number) => {
-	NEIGHBOUR_LIMIT = n;
-};
-/** Read back rather than exported as a binding: a `let` exported by value
- *  freezes at import time in the consumer, so a report printing the limit it
- *  swept at would print the one it started with. */
-export const neighbourLimit = (): number => NEIGHBOUR_LIMIT;
+export const DEFAULT_NEIGHBOUR_LIMIT = 8;
 
 // ---------------------------------------------------------------------------
 // The world, as the trader sees it
@@ -491,7 +484,9 @@ export interface Result {
 	 * two figures are reported apart rather than one standing for the other.
 	 */
 	kitAffordableAtMinutes: number | null;
-	/** How often `NEIGHBOUR_LIMIT` hid part of the jump range, over how many
+	/** The limit this run flew, so a report prints the one it swept at. */
+	neighbourLimit: number;
+	/** How often the neighbour limit hid part of the jump range, over how many
 	 *  neighbour lookups — the denominator the header's claim needs. Lookups
 	 *  rather than decisions: `jumpOptions` runs twice per decision point. */
 	tally: { truncated: number; enumerations: number };
@@ -527,6 +522,8 @@ interface Stance {
 	holdT: number;
 	deficits: DeficitMap;
 	dockSeconds: number;
+	/** How far this stance looks for a jump target. */
+	neighbourLimit: number;
 	/**
 	 * Where the neighbour-limit disclosure accumulates.
 	 *
@@ -592,9 +589,9 @@ function jumpOptions(here: Port, world: World, st: Stance): Hop[] {
 	// for each decision point — once from `flyingOptions` and once inside
 	// `waitOption` — so a denominator called "decisions" was double what a
 	// reader would count. The rate is unaffected; the absolute figure was not.
-	if (inRange.length > NEIGHBOUR_LIMIT) st.tally.truncated++;
+	if (inRange.length > st.neighbourLimit) st.tally.truncated++;
 	st.tally.enumerations++;
-	for (const record of inRange.slice(0, NEIGHBOUR_LIMIT)) {
+	for (const record of inRange.slice(0, st.neighbourLimit)) {
 		const ly = distanceLy(here.record.pos, record.pos);
 		// `neighbours` already bounds this at `JUMP_RANGE_LY`, which is
 		// `FUEL_TANK_LY` — so there is no separate range check to make, and this
@@ -853,9 +850,14 @@ export interface RunOptions {
 	 * different windows of the clock and therefore different price tables — #25's
 	 * fault three, arrived at from a new direction.
 	 *
-	 * With it off, `holdT` is constant for the whole window, every arm flies the
-	 * full `hours`, and nothing terminates early. §8's milestone still needs it
-	 * on, which is why it is an option and not a deletion.
+	 * With it off, `holdT` is constant for the whole window and no arm ends
+	 * because its shopping list ran out. **One terminal state is left and it is
+	 * not this option's**: a stance with no profitable hop at all breaks the
+	 * loop, so an arm *can* end short of the window and shrink its own `minutes`
+	 * denominator. `Result.minutes` is what a caller checks for that, and
+	 * `measure-hull-pricing.ts` reports how many arms it happened to. §8's
+	 * milestone still needs shopping on, which is why this is an option and not
+	 * a deletion.
 	 */
 	shop?: boolean;
 	/**
@@ -910,6 +912,17 @@ export interface RunOptions {
 	 * instead of averaging over it.
 	 */
 	startCr?: number;
+	/**
+	 * How far the trader looks for a jump target.
+	 *
+	 * **In here rather than in a module-level `let`, which is what it was.** This
+	 * interface's own contract is that it is the complete list of what a sweep
+	 * may vary and that everything outside it is identical across every arm by
+	 * construction; a mutable global a caller could change between arms made that
+	 * a claim about discipline rather than about the type, and two instruments
+	 * now share this engine.
+	 */
+	neighbourLimit?: number;
 }
 
 export function run(
@@ -922,6 +935,7 @@ export function run(
 	const stopAtKit = opts.stopAtKit ?? true;
 	const buysEquipment = opts.shop ?? true;
 	const remembers = opts.remembers ?? true;
+	const neighbourLimit = opts.neighbourLimit ?? DEFAULT_NEIGHBOUR_LIMIT;
 	const capitalCapCr = opts.capitalCapCr ?? Number.POSITIVE_INFINITY;
 	// The cache is keyed on a clock value, and every run replays the clock from
 	// zero — so it is cleared per run rather than kept, or run N would read run
@@ -981,6 +995,7 @@ export function run(
 			holdT: led.holdT,
 			deficits,
 			dockSeconds,
+			neighbourLimit,
 			tally,
 		};
 		options.push(...flyingOptions(here, world, stance));
@@ -1076,6 +1091,7 @@ export function run(
 		waitRatios,
 		tonnesLifted,
 		ladenHops,
+		neighbourLimit,
 	};
 }
 
