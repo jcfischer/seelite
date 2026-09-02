@@ -66,13 +66,13 @@ export const VIEWPORT = { width: 1440, height: 900 };
 /**
  * What `SEED` generates, as data rather than as prose.
  *
- * The radii lived in the `SEED` docstring and nothing read them, which is how
- * they went on describing a world the fixture had stopped being. They are a
- * constant now because #118's own rule says so: a
- * figure a file states as measured owes a mode that reprints it, and a comment
- * is not one. `tests/view-set.test.ts` measures this against `makeWorld(SEED)`,
- * so a generator change that re-shapes the start system goes red here instead
- * of silently re-framing the sheet.
+ * The radii were a sentence in the docstring above and nothing read them, which
+ * is how they went on describing a world the fixture had stopped being. They are
+ * a constant because #118's own rule says so: a figure a file states as measured
+ * owes a mode that reprints it, and a comment is not one.
+ * `tests/view-set.test.ts` measures this against `makeWorld(SEED)`, so a
+ * generator change that re-shapes the start system goes red there instead of
+ * silently re-framing the sheet.
  *
  * `radiusKm` is rounded to the kilometre — the frames are placed in radii of
  * their own subject, so this is the fixture's identity and never an input to a

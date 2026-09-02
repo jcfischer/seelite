@@ -204,14 +204,8 @@ describe("the view set itself", () => {
 });
 
 /**
- * **What the seed generates, measured rather than described** (#174).
- *
- * The `SEED` docstring quoted a rocky world and a gas giant it attributed to
- * `probe-arrival.mjs`, and #118's reshape moved every system out from under
- * both figures — that probe re-picked its own fixture to 481 and this file kept
- * the pair. Nothing read them, so nothing could go red. `FIXTURE` is those
- * claims as data and this block is the measurement, so the next reshape fails
- * here instead of quietly re-framing the sheet.
+ * **The measurement half of `FIXTURE`** — `view-set.mjs` carries why it is data
+ * and not prose (#174).
  *
  * The two sides are independent: `FIXTURE` is a frozen literal in a script lib
  * and the comparison comes out of `makeWorld`, which is the generator every
@@ -226,42 +220,38 @@ describe("the pinned seed's world", () => {
 	});
 
 	test("generates the planets the fixture declares, largest first", () => {
-		// `largest-planet` resolves at capture time (`capture-views.mjs`) by
-		// sorting descending on `radiusKm`, so the declaration is written in that
-		// order and the head of it is the subject two views are framed on.
-		const planets = world.system.contents.planets
+		// **`capture-views.mjs`'s own sort, not a similar one.** It resolves
+		// `largest-planet` on raw `radiusKm` with an id tiebreak; sorting the
+		// rounded figures instead would let two planets within a kilometre of
+		// each other pass here in an order the sheet does not use, which is the
+		// head of the list and so the subject two views are framed on.
+		const planets = [...world.system.contents.planets]
+			.sort((a, b) => b.radiusKm - a.radiusKm || (a.id < b.id ? -1 : 1))
 			.map((p) => ({
 				id: p.id,
 				radiusKm: Math.round(p.radiusKm),
 				gasGiant: p.isGasGiant,
-			}))
-			.sort((a, b) => b.radiusKm - a.radiusKm);
+			}));
 		expect(planets).toEqual([...FIXTURE.planets]);
 	});
 
 	/**
-	 * **And the roles carry no pad**, which is the second half of the claim.
+	 * **And that neither role carries a pad aperture** — `view-set.mjs` carries
+	 * why that is the claim worth holding.
 	 *
-	 * #147 rescued a false "one station of each kind" by re-reading "kind" as the
-	 * aperture's — "slot and pad, and both of those are present" — and that was
-	 * false in the same way and on the day it was written: the pad roles are
-	 * refinery and outpost (`STATION_GEOMETRY`, since #28). The set already works
-	 * around the gap, since `refinery-cradle-berth` names seed 2 and the outpost
-	 * frame is a workbench shot, so the gap itself is what is worth asserting.
-	 *
-	 * Both sides are strings so the failure names the role rather than a position
-	 * in a list.
+	 * One assertion and not two: the aperture string embeds the role, so it pins
+	 * the roster and its order as well, and a second `expect` over the bare roles
+	 * could not fail without this one failing too. Strings on both sides, so a
+	 * failure names the role rather than a position in a list.
 	 */
 	test("generates the station roles the fixture declares, both of them slots", () => {
-		const stations = world.system.bodies.filter((b) => b.kind === "station");
-		expect(stations.map((b) => String(b.stationType))).toEqual([
-			...FIXTURE.stations,
-		]);
-		const apertures = stations.map((b) =>
-			b.stationType
-				? `${b.stationType}:${STATION_GEOMETRY[b.stationType].aperture.kind}`
-				: `${b.id}:no role`,
-		);
+		const apertures = world.system.bodies
+			.filter((b) => b.kind === "station")
+			.map((b) =>
+				b.stationType
+					? `${b.stationType}:${STATION_GEOMETRY[b.stationType].aperture.kind}`
+					: `${b.id}:no role`,
+			);
 		expect(apertures).toEqual(FIXTURE.stations.map((role) => `${role}:slot`));
 	});
 });

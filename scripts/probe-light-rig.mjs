@@ -90,17 +90,23 @@ import {
 	tally,
 } from "./probe-guard.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
+import { GAME_TIME_S, SEED } from "./lib/view-set.mjs";
 import { installViewPlacement } from "./probe-guard.mjs";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 
-/** Seed 47 and a clock of 0, the canonical view set's fixture, so this probe
- *  and the sheet measure the same world. It carries a trade station, which is
- *  the subject below; "one station of each kind" is what this line said until
- *  #174, and seed 47 generates a trade station and a shipyard and nothing else
- *  (`view-set.mjs`'s `FIXTURE`, which a test measures). */
-const SEED = 47;
-const CLOCK = 0;
+/**
+ * The canonical view set's fixture, **imported rather than restated** (#174).
+ *
+ * This line held its own `47` and `0` beside the sentence "the canonical view
+ * set's fixture — one station of each kind in a single system". Both halves were
+ * wrong to be here: the roster claim was one #147 had already retired in
+ * `view-set.mjs` and seed 47 generates a trade station and a shipyard and
+ * nothing else, and a copied constant is how a probe and the sheet drift into
+ * measuring two worlds while a comment says they do not. `FIXTURE` is what the
+ * seed generates, and a test measures it.
+ */
+const CLOCK = GAME_TIME_S;
 const SUBJECT = "station-trade";
 /** Eight silhouette radii: the framing `cockpit-backlit` uses, where the
  *  station is about a third of the frame and its plating is resolvable. */
