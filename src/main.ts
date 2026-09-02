@@ -5047,7 +5047,7 @@ class Game {
 			{
 				orientation: this.orientation,
 				output: this.scannerContactBuffer,
-				extraContacts: striker ? [striker] : [],
+				flooredContacts: striker ? [striker] : [],
 			},
 		);
 	}

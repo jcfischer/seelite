@@ -202,6 +202,21 @@ export function stepCombatPrototype(
 		);
 	}
 	next.heatLocked = heatLocked(next.heat, next.heatLocked);
+	// **The striker's gun, on the player's own arithmetic — with one asymmetry
+	// that is worth naming rather than glossing.**
+	//
+	// Damage, energy cost, heat rate and the lock's hysteresis are the pulse
+	// weapon's, the same figures and the same `heatLocked`. What differs is who
+	// pays for a miss: the player's trigger reaches this function raw, so a held
+	// shot off the sightline still spends energy and still heats the gun (see
+	// `coneHeld` above). `input.enemyFiring` arrives already gated on a
+	// twelve-degree cone by `stepCombatEnemy`, so the striker never spends
+	// anything on a shot that could not land.
+	//
+	// That is trigger discipline rather than a different weapon, and it is the
+	// AI's to have — but it means "the two guns run the same rules" is true of
+	// the weapon and not of the fight, and #8's balance pass inherits the
+	// difference rather than a claim that there is none.
 	const enemyEnergyCost = COMBAT_PROTOTYPE_DEFAULTS.pulseEnergyPerSecond * dt;
 	const enemyCanFire =
 		input.enemyFiring &&

@@ -30,13 +30,19 @@ export interface ScannerProjectionOptions {
 	orientation?: Quat;
 	rangeKm?: number;
 	output?: ScannerContact[];
-	extraContacts?: readonly ScannerBody[];
+	/**
+	 * Contacts the world does not hold, drawn with `MIN_CONTACT_RADIUS` as a
+	 * floor. Named for the **policy** and not for the membership: a caller
+	 * adding one gets the floor, and the floor is the whole of what
+	 * distinguishes this list from `bodies`.
+	 */
+	flooredContacts?: readonly ScannerBody[];
 }
 
 export const SCANNER_RANGE_KM = 10_000;
 
 /**
- * How far out an **extra** contact is drawn at minimum, as a fraction of the
+ * How far out a **floored** contact is drawn at minimum, as a fraction of the
  * plate radius. World bodies are not subject to it — see the loop below.
  *
  * A ship in a dogfight is between 0.5 and 10 km away. On the square-root curve
@@ -64,23 +70,21 @@ export function projectScannerContacts(
 		orientation,
 		rangeKm = SCANNER_RANGE_KM,
 		output,
-		extraContacts = [],
+		flooredContacts = [],
 	}: ScannerProjectionOptions = {},
 ): ScannerContact[] {
 	const contacts = output ?? [];
 	let count = 0;
 	// **Two passes because the two lists take different floors, not for speed.**
-	// The earlier `[...bodies, ...extraContacts]` copied the whole body list
+	// The earlier `[...bodies, ...flooredContacts]` copied the whole body list
 	// every cockpit frame, which this avoids — but a tuple-of-tuples loop header
 	// would have allocated in its own right, so the honest reason to write it
 	// this way is that `floor` differs, and the honest saving is the copy.
 	//
-	// `MIN_CONTACT_RADIUS` is the extra contacts' and **not** the world bodies':
-	// a live combat contact spends the fight between 0.5 and 10 km out, which on
-	// the square-root curve is 0.007 to 0.032 of the plate — inside the ship's
-	// own marker, so it sits on the pilot's own dot and no bearing can be read
-	// off it. A planet never gets that close, and lifting one onto a ring it has
-	// not reached would be the display lying about range.
+	// The floor is `MIN_CONTACT_RADIUS`'s docstring's business; what belongs here
+	// is that it reaches the extra contacts and **not** the world bodies. A
+	// planet never comes near enough to want it, and lifting one onto a ring it
+	// has not reached would be the display lying about range.
 	const project = (body: ScannerBody, floor: number) => {
 		const worldRelative = sub(body.pos, shipPos);
 		// The scope is ship-local, not a tiny top-down map of the solar system.
@@ -127,7 +131,7 @@ export function projectScannerContacts(
 					54;
 	};
 	for (const body of bodies) project(body, 0);
-	for (const body of extraContacts) project(body, MIN_CONTACT_RADIUS);
+	for (const body of flooredContacts) project(body, MIN_CONTACT_RADIUS);
 	contacts.length = count;
 	return contacts;
 }

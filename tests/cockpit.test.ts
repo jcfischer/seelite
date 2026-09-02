@@ -113,7 +113,7 @@ test("the minimum contact radius applies to extra contacts only", () => {
 		null,
 	);
 	const [extra] = projectScannerContacts(v3(), [], null, {
-		extraContacts: [{ id: "striker", pos: near }],
+		flooredContacts: [{ id: "striker", pos: near }],
 	});
 	// `baseXPercent` is `50 + planarX * 42` and `baseYPercent` `50 + planarZ * 31`,
 	// so the plate fraction comes back out by undoing those rather than by

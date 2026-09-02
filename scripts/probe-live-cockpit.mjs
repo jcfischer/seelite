@@ -945,13 +945,11 @@ check(
  *
  * So this asserts *screen* extent rather than existence: a live bolt has to
  * project inside the viewport, at a position measurably away from the striker
- * that fired it. The control **zeroes the head buffer** and requires the count
- * to fall to zero, so a measurement that was reading the hull, the reticle or
- * the star field cannot pass it. Hiding the objects would not do: it leaves the
- * positions exactly as they were, so a count taken off the geometry would be
- * unchanged and the control would pass over a measurement reading something
- * else — which is the point the code comment below makes and this header used
- * to contradict.
+ * that fired it. The control **moves every head behind the camera** and requires
+ * the count to fall to zero, so a measurement that was reading the hull, the
+ * reticle or the star field cannot pass it. See the code comment below for why
+ * it is neither `visible = false` nor a zeroed buffer: one leaves the positions
+ * untouched and the other is skipped by the counter itself.
  */
 const incoming = await combatPage.evaluate(async () => {
 	const game = window.__seelite;
@@ -1003,10 +1001,20 @@ const incoming = await combatPage.evaluate(async () => {
 	// had stopped checking the viewport bounds entirely would still have passed
 	// it. Behind the camera the heads are non-zero, so the zero skip does not
 	// fire and the count has to fall to zero through the `p.z > 1` test, which
-	// is the test the live measurement depends on. The buffer is rewritten from
-	// the bolt pool on the next frame either way.
+	// is the test the live measurement depends on.
+	//
+	// **Taken off the camera, not off a world axis.** These positions are
+	// camera-*relative* but world-*oriented*, and the near camera is rotated by
+	// the boot facing, so a fixed `(0, 0, 1000)` is only behind the eye on a
+	// facing that happens to look down world −z; on the opposite facing it is
+	// 1,000 km in front, inside `NEAR_FAR_KM` (2e4), and the control would count
+	// it and fail a correct build. A thousand kilometres is well inside the near
+	// camera's far plane (`NEAR_FAR_KM`), which is the point: the control tests
+	// the frustum's *back*, not its range. The buffer is rewritten from the bolt
+	// pool on the next frame either way.
+	const behind = camera.getWorldDirection(new V()).multiplyScalar(-1000);
 	const at = heads.geometry.getAttribute("position");
-	for (let i = 0; i < at.count; i++) at.setXYZ(i, 0, 0, 1000);
+	for (let i = 0; i < at.count; i++) at.setXYZ(i, behind.x, behind.y, behind.z);
 	const empty = onCanopy();
 	return { found: true, firingSeen, onCanopy: best, empty };
 });

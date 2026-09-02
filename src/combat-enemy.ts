@@ -220,9 +220,10 @@ export const STRIKER_HULL_ID: HullId = "raider";
  * **It does not contain the hull, and the honest version says so.** `raider/a`
  * runs -0.0345 to +0.0290 about its own origin, so drawn it reaches 0.1035 km
  * forward — 8 m of nose outside this sphere — and the far box corner is at
- * 0.117 km. A sphere large enough to contain the box would be 0.117 and would
- * put a quarter of its volume in empty space beside a hull that is five times
- * longer than it is tall. The half-length is the figure a fixed forward gun
+ * 0.117 km. A sphere large enough to contain the box would be 0.117 km, and
+ * **90 % of it would be empty**: 0.0067 km³ of sphere around a drawn box of
+ * 0.1905 x 0.1032 x 0.0327 = 0.00064 km³, beside a hull five times longer than
+ * it is tall. The half-length is the figure a fixed forward gun
  * wants: generous down the axis you are aiming along, tight across it.
  *
  * The figure moved by 3.6 % under #181, which replaced a *declared* 0.066 with
@@ -239,8 +240,8 @@ export const ENEMY_COLLISION_RADIUS_KM =
  * `stepFlight` takes a `FlightPerformance` and refuses a default, so a
  * controller that forgot to name a hull cannot silently fly the courier. The
  * striker is an outlaw hull: 113 MN over 42 t is **2.690 km/s²** against the
- * courier's 2.000, so it reaches the shared 2 km/s assist cap in a little over
- * a third of the time the player's ship does. The cap is not per hull (see
+ * courier's 2.000, so it reaches the shared 2 km/s assist cap in 0.74 s against
+ * the courier's 1.00 — three-quarters of the time, not a third. The cap is not per hull (see
  * `FlightPerformance`), so this changes how quickly the fight closes and not
  * how fast either ship can run.
  */
@@ -611,8 +612,9 @@ export function stepCombatEnemy(
 		targetInCone: laser.hit,
 		laserEndpointKm: laser.distanceKm,
 		enemyFiring,
-		// `awayFromPlayer` is the same vector: a hit lands aft when the
-		// player is shooting along the direction the ship is running in.
+		// `awayFromPlayer` is the same vector under the name this line wants:
+		// the dot is negative when the striker is *behind* the player, which is
+		// the case its fire lands on the aft shield.
 		enemyHitAft: dot(playerNose, awayFromPlayer) < 0,
 	};
 }

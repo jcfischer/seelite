@@ -59,7 +59,6 @@ import {
 	type CombatEnemyState,
 	ENEMY_COLLISION_RADIUS_KM,
 	ENEMY_VISUAL_SCALE,
-	PLAYER_LASER_RANGE_KM,
 	STRIKER_HULL_ID,
 	createCombatEnemy,
 	stepCombatEnemy,
@@ -302,10 +301,6 @@ export class CombatPrototypeRig {
 	 * duel measures is aim as well as pacing.
 	 */
 	enemy: CombatEnemyState;
-	/** Whether the player's beam is on the striker this frame. */
-	targetInCone = false;
-	/** Where that beam ends — the hull if it connects, its reach if it does not. */
-	laserLengthKm = PLAYER_LASER_RANGE_KM;
 	/**
 	 * The striker as the scanner and the target list want it.
 	 *
@@ -408,8 +403,9 @@ export class CombatPrototypeRig {
 			// other site that dispatches on `kind` — `isMassive` in the render
 			// loop, `updateLocalFrameBody`, the velocity readout's `FRAME` label,
 			// the station scans — iterates `world.system.bodies`, which the
-			// striker is not in, so none of them can see this value. Checked, not
-			// assumed: `tests/combat-rig-boundary.test.ts` counts the sites.
+			// striker is not in, so none of them can see this value.
+			// `tests/combat-rig-boundary.test.ts` counts those sites, so a fourth
+			// one is a build that has to answer this comment again.
 			kind: "moon",
 			pos: this.enemy.ship.pos,
 			// The hit sphere, not a blip size. This is what `timeToBody` reads as
@@ -523,8 +519,11 @@ export class CombatPrototypeRig {
 		// third of the canopy, growing as the range closed. Written as a literal
 		// it was half the *declared* length, -0.033, and that was wrong twice
 		// over: #181 moved the length to 0.0635, and `raider/a` is not centred
-		// on its own box — it runs -0.0345 to +0.0290, so a half-length puts the
-		// muzzle 1.5 m **inside** the nose whatever the length says.
+		// on its own box — it runs -0.0345 to +0.0290. A half-length is short of
+		// the nose either way, and by *how much* is exactly what depends on the
+		// length: 1.5 m against the old declared figure, **2.75 m** against the
+		// measured one. Reading `hullBox.min.z` is what makes the question stop
+		// being asked.
 		this.muzzle.position.set(0, 0, hullBox.min.z);
 		this.muzzle.visible = false;
 		this.targetMesh.add(this.muzzle);
@@ -626,8 +625,6 @@ export class CombatPrototypeRig {
 		this.enemy = flown.state;
 		this.contact.pos = flown.state.ship.pos;
 		this.targetBody.pos = flown.state.ship.pos;
-		this.targetInCone = flown.targetInCone;
-		this.laserLengthKm = flown.laserEndpointKm;
 
 		// The spark is placed on the frame the beam first connects, so it does not
 		// walk along the hull while a held trigger keeps scoring.
