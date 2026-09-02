@@ -73,10 +73,14 @@ npm run views -- --label after       # again, with the change
 open view-set/index.html             # the contact sheet, side by side
 ```
 
-Fifteen views on a fixed seed — bar one that declares its own — in
+Views on a fixed seed — bar one that declares its own — in
 `scripts/lib/view-set.mjs`, each naming
 the levers it is evidence for, and `tests/view-set.test.ts` goes red if a lever
-in that file has no view. It cannot check that the view *shows* the surface, nor
+in that file has no view. **The count is deliberately not repeated here**: it
+said fifteen while the set held seventeen, which is the third-copy drift this
+file warns about elsewhere. `view-set.mjs` states it and
+`tests/view-set.test.ts` asserts it as a literal, so a view deleted by accident
+is a red run there. It cannot check that the view *shows* the surface, nor
 that a lever added to the map reached the file; both are a person's job, which
 is the point. A run that drops a view refuses to build a sheet at all, because a
 sheet with a hole in it reads exactly like a whole one.
