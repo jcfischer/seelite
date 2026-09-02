@@ -1,6 +1,6 @@
 /**
- * What the two terms behind the quality key cost a frame, **on the renderer the
- * player has**: #99's baked environment, and #200's multisampled composer.
+ * What the frame's switchable terms cost, **on the renderer the player has**:
+ * #99's baked environment, and #200's multisampled composer and its dither.
  *
  *   npm run dev                       # in one shell
  *   node scripts/measure-light-cost.mjs
@@ -102,17 +102,24 @@ const FRAMES = 120;
  *  that. The dispersion is printed for the same reason. */
 const BLOCKS = 12;
 
-/** Milliseconds per frame for one block at one quality and one sample count. */
-const block = (page, quality, samples) =>
+/**
+ * Milliseconds per frame for one block at one quality, sample count and dither.
+ *
+ * The dither is set through `outputPass` rather than through the settings store
+ * on purpose: the store writes `localStorage` and notifies every listener, and
+ * an instrument should not leave a preference behind on the machine it measured.
+ */
+const block = (page, quality, samples, dither = true) =>
 	page.evaluate(
-		([q, frames, n]) => {
+		([q, frames, n, d]) => {
 			const g = window.__seelite;
 			g.settings.set("quality", q);
-			// **After the quality set, not before.** `applyQuality` re-gates the
-			// samples from the setting, so a count applied first is immediately
-			// overwritten and both arms of the samples experiment would run at the
-			// gated count — which reads as the term costing nothing.
+			// The order does not matter since #200 moved the count off the quality
+			// key — `applyQuality` is lighting only again. It is written this way
+			// round because the count is the term this line is here to pin, and a
+			// reader should not have to check whether something above moved it.
 			g.setComposerSamples(n);
+			g.outputPass.setDither(d);
 			// One warm frame after the switch: changing `scene.environment` changes
 			// every standard material's program key, so the first frame at a new
 			// setting pays a shader recompile that no later frame pays, and a
@@ -129,7 +136,7 @@ const block = (page, quality, samples) =>
 			gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, sync);
 			return (performance.now() - started) / frames;
 		},
-		[quality, FRAMES, samples],
+		[quality, FRAMES, samples, dither],
 	);
 
 const median = (xs) => {
@@ -191,16 +198,25 @@ const low = [];
  *  player is three-way, and a table with a hole in the middle is one they would
  *  have to guess across. */
 const bySamples = new Map(SAMPLES.map((n) => [n, []]));
+/** The dither arm, at the shipped sample count. Here because the player-facing
+ *  note in `settings.ts` said it "costs nothing measurable" and nothing had
+ *  measured it — the probe counts *pixels*, which is a different question. */
+const dithered = [];
+const undithered = [];
 for (let i = 0; i < BLOCKS; i++) {
 	high.push(await block(page, "high", 0));
 	low.push(await block(page, "low", 0));
 	for (const n of SAMPLES) bySamples.get(n).push(await block(page, "high", n));
+	dithered.push(await block(page, "high", 0, true));
+	undithered.push(await block(page, "high", 0, false));
 }
 
 const h = median(high);
 const l = median(low);
 const medians = new Map([...bySamples].map(([n, xs]) => [n, median(xs)]));
 const base = medians.get(0);
+const dOn = median(dithered);
+const dOff = median(undithered);
 console.log(`  renderer: ${renderer}`);
 console.log(
 	`  viewport: ${VIEWPORT.width}x${VIEWPORT.height}, ${SUBJECT} at ${RADII} radii`,
@@ -244,7 +260,19 @@ const separation = (a, b) => {
 	return `${slower}/${pairs} (${((slower / pairs) * 100).toFixed(0)}%)`;
 };
 console.log(
+	`  dither on               ${dOn.toFixed(3)} ms/frame  ${Math.round(1000 / dOn)} fps`,
+);
+console.log(
+	`  dither off              ${dOff.toFixed(3)} ms/frame  ${Math.round(1000 / dOff)} fps`,
+);
+console.log(
+	`  the dither costs        ${(dOn - dOff).toFixed(3)} ms/frame  (${(((dOn - dOff) / dOff) * 100).toFixed(1)}%)`,
+);
+console.log(
 	`  separation — env        ${separation(high, low)} of pairings have the environment-on block slower`,
+);
+console.log(
+	`  separation — dither     ${separation(dithered, undithered)} of pairings have the dithered block slower`,
 );
 for (const n of SAMPLES.filter((n) => n > 0)) {
 	console.log(

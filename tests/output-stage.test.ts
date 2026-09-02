@@ -70,7 +70,12 @@ test("the dither is one output code, peak to peak, and zero-mean", () => {
 	// is what makes a flat region keep its exact value instead of getting
 	// half a code brighter everywhere.
 	expect(DITHER_CODES).toBe(1);
-	expect(out).toContain(`(seeliteNoise(gl_FragCoord.xy) - 0.5) / 255.0`);
+	// The constant is what the shader multiplies by, not a figure beside a
+	// literal — `DITHER_CODES` is interpolated into the source, so a change to
+	// it moves the amplitude the GPU applies rather than only this assertion.
+	expect(out).toContain(
+		`(seeliteNoise(gl_FragCoord.xy) - 0.5) * ${(DITHER_CODES / 255).toFixed(8)}`,
+	);
 });
 
 test("every count the player can choose is one a target can take", () => {
@@ -119,19 +124,18 @@ test("an override holds the dial against the frame loop", () => {
 	expect(pass.material.uniforms.uVignette.value).toBe(0);
 });
 
-test("the readers report what the uniforms hold", () => {
+test("the vignette reader reports what the uniform holds", () => {
 	const pass = new SeeliteOutputPass();
-	// `perf-panel.ts` reads these rather than the uniform bag, whose index
-	// signature types every entry as `IUniform<any>` — so a panel reading the
-	// bag directly cannot be typed at all, and a panel reading the wrong key
-	// would report `undefined` as `off` for ever.
+	// `probe-output-stage.mjs` reads this rather than the uniform bag, whose
+	// index signature types every entry as `IUniform<any>` — a reader reaching
+	// into the bag cannot be typed, and one reaching for the wrong key would
+	// report `undefined` for ever. There is no matching `dither` reader,
+	// deliberately: nothing outside the class wants one, and the uniform below
+	// is what the shader actually multiplies by.
 	pass.setVignette(VIGNETTE_MAX);
 	expect(pass.vignette).toBe(VIGNETTE_MAX);
 	pass.setVignette(0);
 	expect(pass.vignette).toBe(0);
-	expect(pass.dither).toBe(true);
-	pass.setDither(false);
-	expect(pass.dither).toBe(false);
 });
 
 test("the pass records its splices where a probe reads them", () => {

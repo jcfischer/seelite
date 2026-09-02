@@ -1596,7 +1596,14 @@ class Game {
 		this.faceTheStar();
 
 		this.renderer = new THREE.WebGLRenderer({
-			antialias: true,
+			// **`false`, and that is the honest setting** (#200). This flag
+			// configures the *default* framebuffer, which this game never draws
+			// into: every frame lands in the composer's targets and reaches the
+			// screen as a full-screen blit of an already-resolved texture. It was
+			// `true` from the first frame this game drew and it smoothed nothing —
+			// it only reserved a multisampled back buffer nobody rendered to.
+			// `output-stage.ts` owns the antialiasing that works.
+			antialias: false,
 			powerPreference: "high-performance",
 		});
 		this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -1744,6 +1751,14 @@ class Game {
 		// per frame from the view, and the dither has a control arm a probe
 		// switches. #200.
 		this.outputPass = new SeeliteOutputPass();
+		// **The stored choice, applied here and not only on change.** The
+		// subscription below fires on a *difference*, and `applied` starts at the
+		// loaded settings — so a player who turned the dither off and came back
+		// got it on again, silently, until they toggled it twice. The samples and
+		// the vignette do not need this line and it is worth saying why: the
+		// composer is constructed from `antialias` a few lines above, and the
+		// frame loop reads `vignette` on every frame beside the view.
+		this.outputPass.setDither(this.settings.value.dither === "on");
 		this.composer.addPass(this.outputPass);
 
 		this.overlay = document.getElementById("overlay") as HTMLCanvasElement;

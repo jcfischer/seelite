@@ -133,10 +133,13 @@ const SCHEMA = {
 	/**
 	 * Whether the output stage stipples the last bit — #200.
 	 *
-	 * A row of its own even though it is three arithmetic operations per pixel
-	 * and cannot be measured against the noise of a frame, because #98's rule
-	 * runs the other way too: a term the player can see is a term the player
-	 * should be able to turn off and look at. What it fixes is banding in the
+	 * A row of its own because #98's rule runs both ways: a term the player can
+	 * see is a term the player should be able to turn off and look at. An earlier
+	 * revision justified the row differently — that the term "cannot be measured
+	 * against the noise of a frame" — and that was an assertion rather than a
+	 * reading. It measures at 0.20–0.27 ms/frame with 144/144 pairings
+	 * separated, about two-thirds of what the whole baked environment costs.
+	 * `setComposerSamples` in `output-stage.ts` owns the figures. What it fixes is banding in the
 	 * dark — space and a planet's terminator cross a handful of eight-bit codes
 	 * over hundreds of pixels — and the only honest way to judge that is to
 	 * switch it.
@@ -146,7 +149,7 @@ const SCHEMA = {
 		allowed: ["on", "off"] as const,
 		label: "Dither",
 		describe: (v: string) => (v === "on" ? "On" : "Off"),
-		note: "Breaks up the banding in dark gradients — empty space, and the shadow side of a planet — by moving each pixel less than one shade at random. Costs nothing measurable. Off shows the bands the eight-bit screen actually has.",
+		note: "Breaks up the banding in dark gradients — empty space, and the shadow side of a planet — by moving each pixel less than one shade at random. It costs about a tenth of a millisecond a frame, which is a few percent on this machine and nothing beside Antialiasing. Off shows the bands the eight-bit screen actually has.",
 	},
 	/**
 	 * Whether the cockpit's corners fall off — #200.

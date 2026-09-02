@@ -94,16 +94,42 @@ const EDGE_STEP = 40;
 const EDGE_MARGIN = 4;
 
 /**
- * **Every readback is 1:1, and that is not an oversight.**
+ * The frame reader every measurement below shares, installed **on the page**.
  *
- * Both statistics live in single-pixel differences, and `drawImage` into a
- * smaller canvas resamples — which softens exactly the steps the first check
- * counts and averages away exactly the alternation the second one does.
- * `probe-light-rig.mjs` reads at 480x300 because it wants a *mean*, where the
- * resample is free; here it would erase the subject. The frame readers below
- * are written out in each `evaluate` rather than shared, because an `evaluate`
- * body is serialised to the page and cannot close over anything in this file.
+ * An `evaluate` body is serialised and cannot close over anything in this file,
+ * so the first version of this probe wrote the same fifteen lines out three
+ * times — and a change to the capture or to the luminance weights would then
+ * have been a three-site edit with two chances to miss one.
+ *
+ * **Every readback is 1:1, and that is not an oversight.** Both statistics live
+ * in single-pixel differences, and `drawImage` into a smaller canvas resamples —
+ * which softens exactly the steps the edge check counts and averages away
+ * exactly the alternation the dither check does. `probe-light-rig.mjs` reads at
+ * 480x300 because it wants a *mean*, where the resample is free; here it would
+ * erase the subject.
+ *
+ * Through `addInitScript` rather than a one-off `evaluate`, so it survives the
+ * reload the boot check below performs.
  */
+const CAPTURE = () => {
+	const luma = (d, i) => 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+	window.__outputStage = {
+		luma,
+		/** Render and read in the same task: a WebGL canvas without
+		 *  `preserveDrawingBuffer` is cleared at the next composite. */
+		frame() {
+			const g = window.__seelite;
+			const src = g.renderer.domElement;
+			const scratch = document.createElement("canvas");
+			scratch.width = src.width;
+			scratch.height = src.height;
+			const ctx = scratch.getContext("2d", { willReadFrequently: true });
+			g.render(0);
+			ctx.drawImage(src, 0, 0);
+			return ctx.getImageData(0, 0, scratch.width, scratch.height);
+		},
+	};
+};
 
 const origin = await guardedOrigin(ORIGIN, [
 	"src/output-stage.ts",
@@ -116,6 +142,7 @@ t.watch(page);
 
 await installViewPlacement(page);
 await installViewFraming(page);
+await page.addInitScript(CAPTURE);
 await page.goto(`${origin}/?seed=${SEED}`);
 await bootedGame(page);
 await page.evaluate((clock) => window.__startClockAt(clock), CLOCK);
@@ -189,18 +216,7 @@ const STRONGEST = Math.max(...gate.seen.map(([n]) => n));
 const aa = await page.evaluate(
 	([limit, margin, strongest]) => {
 		const g = window.__seelite;
-		const src = g.renderer.domElement;
-		const scratch = document.createElement("canvas");
-		scratch.width = src.width;
-		scratch.height = src.height;
-		const ctx = scratch.getContext("2d", { willReadFrequently: true });
-		const frame = () => {
-			g.render(0);
-			ctx.drawImage(src, 0, 0);
-			return ctx.getImageData(0, 0, scratch.width, scratch.height);
-		};
-		const luma = (d, i) =>
-			0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+		const { frame, luma } = window.__outputStage;
 		const intermediates = (img) => {
 			const { data, width, height } = img;
 			let found = 0;
@@ -227,13 +243,16 @@ const aa = await page.evaluate(
 		// realloc is the one most likely to be a clear.
 		g.setComposerSamples(gated);
 		g.render(0);
-		const on = intermediates(frame());
+		const first = frame();
+		const on = intermediates(first);
 		g.setComposerSamples(0);
 		g.render(0);
 		const off = intermediates(frame());
+		const pixels = first.width * first.height;
+		// Back to the player's row, not to the count this arm used.
 		// Back to the player's row, not to the count this arm used.
 		g.setComposerSamples();
-		return { on, off, gated, pixels: scratch.width * scratch.height };
+		return { on, off, gated, pixels };
 	},
 	[EDGE_STEP, EDGE_MARGIN, STRONGEST],
 );
@@ -252,17 +271,7 @@ t.check(
 // the lit cabin.
 const vignette = await page.evaluate(() => {
 	const g = window.__seelite;
-	const src = g.renderer.domElement;
-	const scratch = document.createElement("canvas");
-	scratch.width = src.width;
-	scratch.height = src.height;
-	const ctx = scratch.getContext("2d", { willReadFrequently: true });
-	const frame = () => {
-		g.render(0);
-		ctx.drawImage(src, 0, 0);
-		return ctx.getImageData(0, 0, scratch.width, scratch.height);
-	};
-	const luma = (d, i) => 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+	const { frame, luma } = window.__outputStage;
 	// The dial is forced in both arms rather than read from a cockpit frame and
 	// a chase one: those two differ by the cabin filling a third of the frame,
 	// so that comparison would be a comparison of two pictures.
@@ -364,17 +373,7 @@ await page.evaluate(
 
 const dither = await page.evaluate(() => {
 	const g = window.__seelite;
-	const src = g.renderer.domElement;
-	const scratch = document.createElement("canvas");
-	scratch.width = src.width;
-	scratch.height = src.height;
-	const ctx = scratch.getContext("2d", { willReadFrequently: true });
-	const frame = () => {
-		g.render(0);
-		ctx.drawImage(src, 0, 0);
-		return ctx.getImageData(0, 0, scratch.width, scratch.height);
-	};
-	const luma = (d, i) => 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+	const { frame, luma } = window.__outputStage;
 	/**
 	 * Places along the frame's middle scanline where the value changes at all,
 	 * counting only the shallow part of it.
@@ -410,6 +409,37 @@ t.check(
 	"the dither breaks up the flat parts of a dark gradient",
 	dither.on.changes > dither.off.changes,
 	`dithered ${dither.on.changes} changes against banded ${dither.off.changes}, over ~${dither.off.shallow} shallow px`,
+);
+
+// ── a stored choice survives a reload ────────────────────────────────────────
+// The defect this names shipped and review caught it: the settings subscription
+// fires on a *difference*, and `applied` starts at the loaded settings — so a
+// player who turned the dither off and came back got it on again, silently,
+// until they toggled it twice. Nothing in the probe suite could have seen that,
+// because every check above runs in the session that set the value.
+//
+// A reload rather than a second page: `localStorage` is per origin, so the
+// stored choice is what the next boot reads, and that is exactly the path that
+// was broken.
+const persisted = await page.evaluate(() => {
+	window.__seelite.settings.set("dither", "off");
+	return window.__seelite.settings.value.dither;
+});
+await page.goto(`${origin}/?seed=${SEED}`);
+await bootedGame(page);
+const booted = await page.evaluate(() => {
+	const g = window.__seelite;
+	const stored = g.settings.value.dither;
+	const applied = g.outputPass.material.uniforms.uDither.value;
+	// Put it back before anything else reads it: the store is on this origin and
+	// the next probe to boot here would inherit it.
+	g.settings.set("dither", "on");
+	return { stored, applied };
+});
+t.check(
+	"a dither turned off before a reload is still off after it",
+	persisted === "off" && booted.stored === "off" && booted.applied === 0,
+	`stored ${booted.stored}, the shader is multiplying by ${booted.applied}`,
 );
 
 console.log(

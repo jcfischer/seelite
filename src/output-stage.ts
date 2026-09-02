@@ -48,7 +48,8 @@
  * The output shader is not a `MeshStandardMaterial` chunk assembly, so the
  * markers here are three.js's own `#include` lines and two statements of
  * `OutputShader`'s `main`; they are exactly as liable to move. The log rides on
- * the material's `userData.outputSplices`, and `probe-light-rig.mjs` reads it.
+ * the material's `userData.outputSplices`, and `probe-output-stage.mjs` reads
+ * it.
  */
 import * as THREE from "three";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
@@ -71,7 +72,11 @@ export const VIGNETTE_MAX = 0.15;
 export const VIGNETTE_INNER = 0.55;
 
 /** Peak-to-peak dither, in output codes. One code, centred: the noise spans
- *  ±0.5/255 so its mean is zero and a flat region keeps its exact value. */
+ *  ±0.5/255 so its mean is zero and a flat region keeps its exact value.
+ *
+ *  Interpolated into the shader below rather than sitting beside a hard-coded
+ *  literal — a constant a consumer can read while the GLSL says something else
+ *  is a figure that documents nothing. */
 export const DITHER_CODES = 1;
 
 /**
@@ -107,7 +112,7 @@ vec3 seeliteVignette(vec3 colour, vec2 uv) {
 }
 
 vec3 seeliteDither(vec3 colour) {
-	return colour + uDither * (seeliteNoise(gl_FragCoord.xy) - 0.5) / 255.0;
+	return colour + uDither * (seeliteNoise(gl_FragCoord.xy) - 0.5) * ${(DITHER_CODES / 255).toFixed(8)};
 }`;
 
 const VIGNETTE = /* glsl */ `gl_FragColor.rgb = seeliteVignette( gl_FragColor.rgb, vUv );
@@ -182,15 +187,13 @@ export class SeeliteOutputPass extends OutputPass {
 	vignetteOverride: number | null = null;
 
 	/** What the vignette is currently rendering at. A reader rather than a raw
-	 *  uniform, so a consumer — `perf-panel.ts` — does not have to type three's
-	 *  index-signature uniform bag to ask a one-word question. */
+	 *  uniform, so `probe-output-stage.mjs` does not have to reach through
+	 *  three's index-signature uniform bag to ask a one-word question. There is
+	 *  deliberately no matching `dither` reader: nothing outside this class needs
+	 *  one, and a getter whose only caller is the test asserting it exists is
+	 *  API for its own sake. */
 	get vignette(): number {
 		return this.material.uniforms.uVignette.value as number;
-	}
-
-	/** Whether the dither is being added. Same reason as `vignette`. */
-	get dither(): boolean {
-		return this.material.uniforms.uDither.value === 1;
 	}
 
 	/** Corner darkening, clamped to `VIGNETTE_MAX`. `main.ts` calls this with the
@@ -245,33 +248,55 @@ export function composerTarget(
  * 2, framed on the trade station at 3 radii, by
  * `scripts/measure-light-cost.mjs` — the one home for these figures, which
  * `settings.ts`'s player-facing note rounds and points at rather than restates.
- * Twelve blocks per arm, round-robin across the counts, medians:
+ * Twelve blocks per arm, round-robin across the counts, medians.
+ *
+ * **A range across three sweeps, not one run's figures.** The absolute level
+ * moved 25% between sweeps of the same build — 2.34 ms unsampled on the first,
+ * 1.84 on the two after it — and the ratio moved with it. One sweep quoted as a
+ * constant is the trap this repo has recorded before.
  *
  * | samples | ms/frame | fps | against unsampled |
  * | ---: | ---: | ---: | ---: |
- * | 0 | 2.34 | 427 | — |
- * | 2 | 9.32 | 107 | 4.0x |
- * | 4 | 15.07 | 66 | 6.4x |
+ * | 0 | 1.8–2.3 | 430–545 | — |
+ * | 2 | 8.5–9.3 | 107–118 | 4.0–4.6x |
+ * | 4 | 14.1–15.1 | 66–71 | 6.4–7.7x |
  *
- * 144 of 144 block pairings separate at both counts, so the size of it is not
- * in doubt. **The cost is the resolve, and the resolve is paid once per layer
- * pass.** `WEBGL_multisampled_render_to_texture` is absent here — checked on
- * the page, not assumed — so three.js blits the multisampled renderbuffer down
- * to its texture at the end of **every** `WebGLRenderer.render`, and the
- * composer runs four `RenderPass`es into one target before bloom ever reads it.
+ * 144 of 144 block pairings separate at both counts on every sweep, so the size
+ * of the total is not in doubt. What it is *spent on* is a weaker claim, and
+ * worth keeping apart from it.
  *
- * Timed against the pass count by disabling passes on one build: 7.5 ms for one
- * pass, 11.9 for two, 18.4 for four. **Those three are from a separate ad-hoc
- * run whose unsampled baseline was 4.3 ms against this table's 2.3**, so what
- * they establish is the *shape* and not the level — a fixed cost plus a
- * per-pass one, the per-pass part being a 2880x1800 half-float resolve each
- * time. `resolveDepthBuffer = false`, measured on that same run, recovered 4 ms
- * of the 18 and no more.
+ * The **mechanism** is read rather than measured, and it is solid as far as it
+ * goes: `WebGLRenderer.render` ends in `updateMultisampleRenderTarget`,
+ * `WEBGL_multisampled_render_to_texture` is absent here — checked on the page,
+ * not assumed — so three.js blits the multisampled renderbuffer down to its
+ * texture at the end of **every** render, and the composer runs four
+ * `RenderPass`es into one target before bloom ever reads it. Four resolves per
+ * frame, by construction.
  *
- * So the sample count is not the lever it looks like: the lever is the number
- * of layer passes sharing the multisampled target, and that is #15's render
- * ladder rather than anything this module owns. Until that moves, the count is
- * the player's own row in `settings.ts` and it defaults to off.
+ * **What that costs is not established, and an earlier revision of this
+ * docstring said it was.** Disabling passes on one build gave 7.5 ms for one
+ * pass, 11.9 for two and 18.4 for four — but disabling a `RenderPass` removes
+ * its drawing as well as its resolve, so the per-pass figure is an upper bound
+ * on the resolve and not a measurement of it. A run that separated the two would
+ * have to keep the same geometry drawn while changing how many times the target
+ * is resolved, and nothing here does that. What those three do establish is that
+ * the cost is roughly linear in the pass count, which the resolve mechanism
+ * predicts and a per-fragment cost would not. `resolveDepthBuffer = false`, on
+ * the same run, recovered 4 ms of the 18.
+ *
+ * The count **is** a lever — 4.0x against 6.4x is not nothing — but there is no
+ * cheap setting of it: the least this game can pay for any antialiasing at all
+ * is four times its whole unsampled frame. Moving that floor means changing how
+ * many layer passes share the multisampled target, which is #15's render ladder
+ * rather than anything this module owns. Until it moves, the count is the
+ * player's own row in `settings.ts` and it defaults to off.
+ *
+ * **The dither is 0.20–0.27 ms/frame**, 11–15%, 144/144 separated on both
+ * sweeps that measured it. That is small and it is not nothing: it is about
+ * two-thirds of what #99's whole baked environment costs. This docstring and
+ * the player-facing note both said it cost nothing measurable, which was an
+ * assertion — the probe counts *pixels*, which is a different question — and
+ * measuring it is what review asked for.
  *
  * `dispose()` on a render target drops the GPU-side framebuffer and nothing
  * else: three re-creates it from the object's current fields the next time it is
