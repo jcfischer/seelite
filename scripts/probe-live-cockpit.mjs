@@ -819,7 +819,10 @@ check(
 	warningShown && warningCleared,
 );
 // The beam heats up and locks out; the overlay must show the lockout.
-await combatPage.keyboard.down("s");
+// `x`, not `s`: the beam moved off the pitch key when the prototype gained a
+// flying enemy, and a probe holding the old key silently tested nothing but
+// pitch-down for fifteen seconds before timing out.
+await combatPage.keyboard.down("x");
 const lockShown = await combatPage
 	.waitForFunction(
 		() =>
@@ -831,7 +834,7 @@ const lockShown = await combatPage
 		() => true,
 		() => false,
 	);
-await combatPage.keyboard.up("s");
+await combatPage.keyboard.up("x");
 check("prototype: beam heat lockout is visible on the overlay", lockShown);
 await combatPage.keyboard.down("Space");
 // The feedback is claimed immediate, so the wait is bounded and fails the
@@ -929,6 +932,99 @@ check(
 		combatReadout.includes("FIRE PULSE") &&
 		combatOverlayRendered,
 	`beam: ${beamVisible}, ${laserPixels} tracer pixels, status: ${combatReadout}, overlay glyphs: ${combatOverlayRendered}`,
+);
+/**
+ * The striker's fire, on the canopy.
+ *
+ * **The check this replaces could not have failed.** Incoming fire was a
+ * `THREE.Line` from the striker's hull to the origin of the near scene — where
+ * the camera is — so it was `visible`, it was in the scene graph, and it drew
+ * nothing at all: both ends projected to one screen point, and the far one to
+ * `NaN`, because a point at the eye has no projection. Every flag said yes and
+ * the player saw no shots for the life of the branch.
+ *
+ * So this asserts *screen* extent rather than existence: a live bolt has to
+ * project inside the viewport, at a position measurably away from the striker
+ * that fired it. The control **moves every head behind the camera** and requires
+ * the count to fall to zero, so a measurement that was reading the hull, the
+ * reticle or the star field cannot pass it. See the code comment below for why
+ * it is neither `visible = false` nor a zeroed buffer: one leaves the positions
+ * untouched and the other is skipped by the counter itself.
+ */
+const incoming = await combatPage.evaluate(async () => {
+	const game = window.__seelite;
+	const bolts = game.nearScene.getObjectByName("combat-prototype-enemy-laser");
+	const heads = game.nearScene.getObjectByName("combat-prototype-enemy-bolts");
+	const hull = game.nearScene.getObjectByName("combat-prototype-target");
+	if (!bolts || !heads || !hull) return { found: false };
+	const V = bolts.position.constructor;
+	const camera = game.nearCamera;
+	/** Live bolt heads projecting inside the viewport, clear of the striker. */
+	const onCanopy = () => {
+		const at = heads.geometry.getAttribute("position");
+		const striker = new V(
+			hull.position.x,
+			hull.position.y,
+			hull.position.z,
+		).project(camera);
+		let clear = 0;
+		for (let i = 0; i < at.count; i++) {
+			const x = at.getX(i);
+			const y = at.getY(i);
+			const z = at.getZ(i);
+			// A retired bolt is collapsed onto the camera and draws nothing.
+			if (x === 0 && y === 0 && z === 0) continue;
+			const p = new V(x, y, z).project(camera);
+			if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+			if (Math.abs(p.x) > 1 || Math.abs(p.y) > 1 || p.z > 1) continue;
+			if (Math.hypot(p.x - striker.x, p.y - striker.y) > 0.02) clear++;
+		}
+		return clear;
+	};
+	let best = 0;
+	let firingSeen = false;
+	const until = Date.now() + 25_000;
+	while (Date.now() < until && best === 0) {
+		await new Promise((resolve) => requestAnimationFrame(resolve));
+		firingSeen ||= game.combatRig.state.enemyFiring !== null;
+		best = Math.max(best, onCanopy());
+	}
+	// The control, and it has to touch the buffer rather than `visible`: hiding
+	// the objects leaves their positions exactly as they were, so a count taken
+	// off the geometry would be unchanged and the control would pass over a
+	// measurement that was reading something else entirely.
+	//
+	// **It moves the heads behind the camera rather than zeroing them**, and the
+	// difference is whether the control can fail at all. `onCanopy` skips a head
+	// at the origin, because that is how the renderer retires one — so zeroing
+	// the buffer made `empty === 0` true *by construction*, and a counter that
+	// had stopped checking the viewport bounds entirely would still have passed
+	// it. Behind the camera the heads are non-zero, so the zero skip does not
+	// fire and the count has to fall to zero through the `p.z > 1` test, which
+	// is the test the live measurement depends on.
+	//
+	// **Taken off the camera, not off a world axis.** These positions are
+	// camera-*relative* but world-*oriented*, and the near camera is rotated by
+	// the boot facing, so a fixed `(0, 0, 1000)` is only behind the eye on a
+	// facing that happens to look down world −z; on the opposite facing it is
+	// 1,000 km in front, inside `NEAR_FAR_KM` (2e4), and the control would count
+	// it and fail a correct build. A thousand kilometres is well inside the near
+	// camera's far plane (`NEAR_FAR_KM`), which is the point: the control tests
+	// the frustum's *back*, not its range. The buffer is rewritten from the bolt
+	// pool on the next frame either way.
+	const behind = camera.getWorldDirection(new V()).multiplyScalar(-1000);
+	const at = heads.geometry.getAttribute("position");
+	for (let i = 0; i < at.count; i++) at.setXYZ(i, behind.x, behind.y, behind.z);
+	const empty = onCanopy();
+	return { found: true, firingSeen, onCanopy: best, empty };
+});
+check(
+	"prototype: the striker's fire reaches the canopy, clear of the ship that fired it",
+	incoming.found &&
+		incoming.firingSeen &&
+		incoming.onCanopy > 0 &&
+		incoming.empty === 0,
+	`${incoming.onCanopy} bolts on canopy, ${incoming.empty} with none in the air, striker fired ${incoming.firingSeen}`,
 );
 await combatPage.close();
 

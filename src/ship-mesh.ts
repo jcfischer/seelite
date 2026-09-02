@@ -5608,6 +5608,240 @@ const BUILDERS: Record<HullId, Record<HullVariantId, Builder>> = {
 	},
 };
 
+/**
+ * Nav lights: red to port, green to starboard, white on the spine, amber aft.
+ *
+ * The problem they solve is that a hull is a dark shape against a star field,
+ * and at the ranges a fight happens at it is not a *shape*. The prototype
+ * striker lives between half a kilometre and ten. The measured `raider/a` box
+ * (#181) is 63.5 m long and **10.9 m tall**, and it is the second figure that
+ * decides this: at 8 km, on the 760-pixel desktop viewport the probes use at a
+ * 60-degree vertical field, the hull is 5.2 px long and **0.90 px tall** —
+ * drawn at the prototype's 3x it is 15.7 px by 2.7 px. Either way it is a
+ * horizontal sliver, and the one thing a pilot needs off it — which way it is
+ * pointing — is carried by the axis that has fallen under three pixels.
+ *
+ * No amount of albedo puts aspect back into two pixels, and brightening the
+ * paint to chase it is how a hull ends up measuring bloom (#36). A light
+ * survives it, because it is drawn at a floor in *screen* space rather than at
+ * its physical size: `NAV_LIGHT_MIN_PX` below is 4 px, wider than the hull's
+ * own height at these ranges. That is also what a real nav light does — you
+ * keep the light long after you have lost the aeroplane.
+ *
+ * The colours are the aviation convention, and that is the half that earns its
+ * place. Red to port and green to starboard means two lights showing is a merge
+ * or a stern chase and one light showing tells you which way it is turning:
+ * **aspect, read off two dots**, at a range where the hull is a smudge.
+ *
+ * Positions come from the built hull's own measured box, taken from the mesh
+ * in front of this code rather than read off `HULL_SPECS`. The roster's `env`
+ * is one *selected* variant's box (#181) and this builder runs for all three,
+ * so reading the roster would put `b` and `c`'s lights on `a`'s dimensions.
+ * A new hull needs no entry here. They are inset, so the fixture never grows
+ * the box that the fleet-review spacing and the proportion tests both measure.
+ *
+ * **They do not blink.** A strobe is the strongest "that is a ship and not a
+ * star" cue there is, and it would make every captured frame a function of the
+ * clock: the view set is judged by eye against a previous run, and a light on
+ * in one and off in the other is a difference the reviewer has to discount by
+ * hand. A strobe wants a deterministic clock first.
+ */
+const NAV_LIGHTS = [
+	{ role: "port", color: 0xff2f1c },
+	{ role: "starboard", color: 0x24ff62 },
+	{ role: "dorsal", color: 0xe8f0ff },
+	{ role: "tail", color: 0xffab3d },
+] as const;
+
+/**
+ * Screen size at `NAV_LIGHT_REF_KM`, and the floor it never falls below.
+ *
+ * The floor is the whole point: a light that attenuated all the way down would
+ * vanish at exactly the range the hull already has. It is also the number that
+ * does the work — across the band a duel is actually fought in, 1 to 10 km, a
+ * 0.2 km reference put every light on the floor, so the reference is set out at
+ * half a kilometre and the floor raised until a light reads against a star
+ * field rather than merely being present in the frame.
+ */
+const NAV_LIGHT_NEAR_PX = 15;
+const NAV_LIGHT_MIN_PX = 4;
+const NAV_LIGHT_MAX_PX = 30;
+const NAV_LIGHT_REF_KM = 0.5;
+/** Past this a light fades out, so distant traffic does not become a second
+ *  star field competing with the real one. */
+const NAV_LIGHT_FADE_KM = 40;
+/**
+ * How far proud of the hull surface a light sits, as a fraction of the hull's
+ * longest axis.
+ *
+ * The first cut placed each light at its axis extreme of the *bounding box*,
+ * at the centre of the other two — and a bounding-box extreme at the centre of
+ * the other two axes is inside the fuselage on any ship-shaped hull. Three of
+ * the four were buried in the metal and drew nothing; only the dorsal one,
+ * which happened to land on the spine, was ever visible. Lights are placed on
+ * the surface now, found by casting a ray in from outside.
+ */
+export const NAV_LIGHT_PROUD = 0.006;
+/** Where the surface search starts, as a fraction of the hull's longest axis
+ *  beyond the box — far enough that the ray begins in clear space. */
+const NAV_LIGHT_STANDOFF = 0.2;
+
+let navLightMaterial: THREE.ShaderMaterial | undefined;
+
+/**
+ * One shared material for every hull's lights.
+ *
+ * `uPixelRatio` is written in `onBeforeRender` rather than at build time
+ * because `gl_PointSize` is in device pixels and this module has no renderer:
+ * asking the renderer at draw time is the only way the floor above means the
+ * same number of *CSS* pixels on a retina panel and on a probe's viewport.
+ */
+function navLightsMaterial(): THREE.ShaderMaterial {
+	if (navLightMaterial) return navLightMaterial;
+	navLightMaterial = new THREE.ShaderMaterial({
+		uniforms: {
+			uPixelRatio: { value: 1 },
+			uNearPx: { value: NAV_LIGHT_NEAR_PX },
+			uMinPx: { value: NAV_LIGHT_MIN_PX },
+			uMaxPx: { value: NAV_LIGHT_MAX_PX },
+			uRefKm: { value: NAV_LIGHT_REF_KM },
+			uFadeKm: { value: NAV_LIGHT_FADE_KM },
+		},
+		vertexShader: `
+			attribute vec3 lightColor;
+			uniform float uPixelRatio;
+			uniform float uNearPx;
+			uniform float uMinPx;
+			uniform float uMaxPx;
+			uniform float uRefKm;
+			uniform float uFadeKm;
+			varying vec3 vColor;
+			varying float vFade;
+			void main() {
+				vColor = lightColor;
+				vec4 mv = modelViewMatrix * vec4(position, 1.0);
+				float dist = max(-mv.z, 1e-5);
+				gl_PointSize =
+					clamp(uNearPx * (uRefKm / dist), uMinPx, uMaxPx) * uPixelRatio;
+				vFade = 1.0 - smoothstep(uFadeKm * 0.5, uFadeKm, dist);
+				gl_Position = projectionMatrix * mv;
+			}
+		`,
+		fragmentShader: `
+			varying vec3 vColor;
+			varying float vFade;
+			void main() {
+				float r = min(length(gl_PointCoord - 0.5) * 2.0, 1.0);
+				float core = 1.0 - r;
+				float hot = pow(core, 4.0);
+				// A white-hot centre inside a coloured halo. The centre is what
+				// crosses the bloom threshold — a saturated red never would, its
+				// luminance is a third — and the halo is what says which light it is.
+				vec3 lit = mix(vColor, vec3(1.0), hot * 0.85);
+				float intensity = (core * 0.5 + hot * 2.4) * vFade;
+				if (intensity <= 0.0) discard;
+				gl_FragColor = vec4(lit * intensity, 1.0);
+			}
+		`,
+		transparent: true,
+		blending: THREE.AdditiveBlending,
+		depthWrite: false,
+	});
+	navLightMaterial.name = "nav-lights";
+	return navLightMaterial;
+}
+
+/** Place the four lights on a built hull's own surface. */
+function addNavLights(root: THREE.Group) {
+	root.updateMatrixWorld(true);
+	const box = new THREE.Box3().setFromObject(root);
+	if (box.isEmpty()) return;
+	const size = new THREE.Vector3();
+	const centre = new THREE.Vector3();
+	box.getSize(size);
+	box.getCenter(centre);
+	const reach = Math.max(size.x, size.y, size.z);
+	const standoff = reach * NAV_LIGHT_STANDOFF;
+	const proud = reach * NAV_LIGHT_PROUD;
+	const caster = new THREE.Raycaster();
+	/**
+	 * Come in from outside along `inward` and stop on the first metal.
+	 *
+	 * The fallback is the box face it started from: a hull with a gap on the
+	 * centre line would otherwise get no light at all, and a light a little off
+	 * the surface is a far smaller error than a missing one.
+	 */
+	const onSurface = (from: THREE.Vector3, inward: THREE.Vector3) => {
+		caster.set(from, inward);
+		const hit = caster.intersectObject(root, true).find((h) => h.face);
+		// Proud of the surface, then **clamped back into the hull's own box**.
+		//
+		// Proud on its own is not enough, and the rebase onto #181 is what
+		// proved it: `hull.test.ts` measures each roster envelope against
+		// `setFromObject(root)`, which includes these points, and five hulls —
+		// patrol, explorer, raider, carrier, dreadnought — present their aft
+		// metal *at* `box.max.z`, so a tail light `proud` beyond it grew the
+		// measured box by `reach × NAV_LIGHT_PROUD` (0.38 m on the raider) and
+		// put every one of those rows 0.38 m over its declared length. That box
+		// is what `berthFits` reads, so a lamp would have been sizing berths.
+		//
+		// On a flank the surface at the centre of the other two axes is inside
+		// the box, so the clamp does nothing and the light still stands off the
+		// metal; where it bites, the light lands exactly on the face it would
+		// otherwise have passed through, which is still in front of the hull.
+		// The clamp covers the fallback too, and not only for tidiness: `from`
+		// is a box face pushed out by `standoff`, so the fallback's
+		// `from + inward × standoff` is that face again only to within float
+		// error — on `freighter/a`, whose flanks present no metal on the centre
+		// line, it landed 0.4 um (3.8e-10 km) outside and the box grew by that.
+		const at = hit
+			? hit.point.clone().addScaledVector(inward, -proud)
+			: from.clone().addScaledVector(inward, standoff);
+		return at.clamp(box.min, box.max);
+	};
+	// The mesh's nose is -Z (`buildShipMesh`'s callers read it back out that
+	// way), so the tail light comes in from the far +Z end.
+	const at: Record<(typeof NAV_LIGHTS)[number]["role"], THREE.Vector3> = {
+		port: onSurface(
+			new THREE.Vector3(box.min.x - standoff, centre.y, centre.z),
+			new THREE.Vector3(1, 0, 0),
+		),
+		starboard: onSurface(
+			new THREE.Vector3(box.max.x + standoff, centre.y, centre.z),
+			new THREE.Vector3(-1, 0, 0),
+		),
+		dorsal: onSurface(
+			new THREE.Vector3(centre.x, box.max.y + standoff, centre.z),
+			new THREE.Vector3(0, -1, 0),
+		),
+		tail: onSurface(
+			new THREE.Vector3(centre.x, centre.y, box.max.z + standoff),
+			new THREE.Vector3(0, 0, -1),
+		),
+	};
+	const positions = new Float32Array(NAV_LIGHTS.length * 3);
+	const colors = new Float32Array(NAV_LIGHTS.length * 3);
+	const color = new THREE.Color();
+	NAV_LIGHTS.forEach((light, i) => {
+		const p = at[light.role];
+		positions.set([p.x, p.y, p.z], i * 3);
+		// The shader is raw, so its colours are linear: a hex written for the
+		// sRGB pipeline has to be converted rather than handed straight over.
+		color.setHex(light.color).convertSRGBToLinear();
+		colors.set([color.r, color.g, color.b], i * 3);
+	});
+	const geometry = new THREE.BufferGeometry();
+	geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+	geometry.setAttribute("lightColor", new THREE.BufferAttribute(colors, 3));
+	const points = new THREE.Points(geometry, navLightsMaterial());
+	points.name = "nav-lights";
+	points.userData.navLightRoles = NAV_LIGHTS.map((l) => l.role);
+	points.onBeforeRender = (renderer) => {
+		navLightsMaterial().uniforms.uPixelRatio.value = renderer.getPixelRatio();
+	};
+	root.add(points);
+}
+
 export function buildShipMesh(
 	id: HullId,
 	variant: HullVariantId = "a",
@@ -5619,5 +5853,8 @@ export function buildShipMesh(
 	root.userData.variant = variant;
 	root.userData.designRound = SHIP_DESIGN_ROUND;
 	BUILDERS[id][variant](root, makePalette(id));
+	// Last, and it has to be: the lights are placed from the built hull's own
+	// bounding box, so they cannot be added before there is a hull to measure.
+	addNavLights(root);
 	return { root };
 }

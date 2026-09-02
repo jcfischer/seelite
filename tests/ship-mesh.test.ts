@@ -11,10 +11,16 @@ import {
 import {
 	HULL_REACH_KM,
 	HULL_VARIANTS,
+	NAV_LIGHT_PROUD,
 	SHIP_DESIGN_ROUND,
 	buildShipMesh,
 	fleetLayout,
 } from "../src/ship-mesh";
+import {
+	ENEMY_COLLISION_RADIUS_KM,
+	ENEMY_VISUAL_SCALE,
+	STRIKER_HULL_ID,
+} from "../src/combat-enemy";
 
 function bounds(id: (typeof HULL_IDS)[number], variant: HullVariantId = "a") {
 	const root = buildShipMesh(id, variant).root;
@@ -470,5 +476,199 @@ describe("procedural ship visual language", () => {
 				}
 			}
 		}
+	});
+	/**
+	 * The lights are a legibility fixture, and the two things that would make
+	 * them a lie are both checked here: a convention flipped end for end, and a
+	 * fixture that grows the silhouette every other test in this file measures.
+	 */
+	test("every hull carries nav lights on its own metal, in the port/starboard convention", () => {
+		for (const id of HULL_IDS) {
+			for (const variant of HULL_VARIANT_IDS) {
+				const root = buildShipMesh(id, variant).root;
+				root.updateMatrixWorld(true);
+				const lights = root.children.find(
+					(child) => child.name === "nav-lights",
+				) as THREE.Points | undefined;
+				expect(`${id}-${variant}: ${lights !== undefined}`).toBe(
+					`${id}-${variant}: true`,
+				);
+				if (!lights) continue;
+				const roles = lights.userData.navLightRoles as string[];
+				expect(roles).toEqual(["port", "starboard", "dorsal", "tail"]);
+				const at = lights.geometry.getAttribute("position");
+				const rgb = lights.geometry.getAttribute("lightColor");
+				expect(at.count).toBe(roles.length);
+				const of = (role: string) => {
+					const i = roles.indexOf(role);
+					return {
+						pos: new THREE.Vector3(at.getX(i), at.getY(i), at.getZ(i)),
+						color: new THREE.Color(rgb.getX(i), rgb.getY(i), rgb.getZ(i)),
+					};
+				};
+				const port = of("port");
+				const starboard = of("starboard");
+				const tail = of("tail");
+
+				// Red to port, green to starboard. Flipped, the lights would still
+				// be visible and would tell the player the wrong way round, which
+				// is worse than no lights at all.
+				expect(
+					`${id}-${variant} port red: ${port.color.r > port.color.g}`,
+				).toBe(`${id}-${variant} port red: true`);
+				expect(
+					`${id}-${variant} starboard green: ${starboard.color.g > starboard.color.r}`,
+				).toBe(`${id}-${variant} starboard green: true`);
+				expect(port.pos.x).toBeLessThan(starboard.pos.x);
+
+				// The hull's nose is -Z, so the tail light is aft of its centre.
+				const metal = new THREE.Box3();
+				root.traverse((object) => {
+					if (object instanceof THREE.Mesh)
+						metal.union(new THREE.Box3().setFromObject(object));
+				});
+				expect(tail.pos.z).toBeGreaterThan(
+					metal.getCenter(new THREE.Vector3()).z,
+				);
+				// And no light stands further off the metal than it is meant to.
+				// A light *is* proud of the surface — buried in the fuselage it
+				// draws nothing — but only by `NAV_LIGHT_PROUD` of the hull's
+				// longest axis.
+				const span = metal.getSize(new THREE.Vector3());
+				const slack = Math.max(span.x, span.y, span.z) * NAV_LIGHT_PROUD;
+				const envelope = metal.clone().expandByScalar(slack * 1.01);
+				for (const role of roles)
+					expect(
+						`${id}-${variant} ${role} on the metal: ${envelope.containsPoint(of(role).pos)}`,
+					).toBe(`${id}-${variant} ${role} on the metal: true`);
+
+				// **And no light grows the box at all**, which is a stricter claim
+				// than the one above and was asserted only in prose until #181
+				// measured it: `hull.test.ts` compares `HULL_SPECS[id].env` with
+				// `setFromObject(root)`, and the lights are in `root`. Five hulls
+				// — patrol, explorer, raider, carrier, dreadnought — present
+				// their aft metal *at* `box.max.z`, so a tail light proud of it
+				// moved the declared length by 0.38 m on the raider. `berthFits`
+				// reads that box, so a lamp was sizing berths. `addNavLights`
+				// clamps back into the hull's own box; this is that clamp.
+				//
+				// Measured against everything in `root` *except* the fixture, so
+				// it does not restate the clamp's own arithmetic: whatever else
+				// the builder drew is the silhouette, and the lights may not
+				// exceed it on any axis.
+				//
+				// The band is 1 mm and it is not a fudge. Geometry positions are
+				// `Float32Array`, so a box unioned per child and the same box
+				// taken over the whole root round differently — 0.4 µm apart on
+				// `freighter/a` — and an exact comparison would be measuring
+				// that. What this has to catch is 0.38 m, which is 380 times the
+				// band and 1,000 times the noise.
+				const BOX_NOISE_KM = 1e-6;
+				const structure = new THREE.Box3();
+				for (const child of root.children)
+					if (child !== lights)
+						structure.union(new THREE.Box3().setFromObject(child));
+				// `root` above, not a second `bounds(id, variant)`: rebuilding every
+				// hull a second time lofted all 33 pairs twice for a box already in
+				// hand, and `bounds` is exactly this call.
+				const withLights = new THREE.Box3().setFromObject(root);
+				for (const axis of ["x", "y", "z"] as const) {
+					expect(
+						`${id}-${variant} lights inside the silhouette on ${axis}: ${
+							withLights.min[axis] >= structure.min[axis] - BOX_NOISE_KM &&
+							withLights.max[axis] <= structure.max[axis] + BOX_NOISE_KM
+						}`,
+					).toBe(
+						`${id}-${variant} lights inside the silhouette on ${axis}: true`,
+					);
+				}
+
+				// And no light is *behind* the metal, which is the failure that
+				// shipped first: a bounding-box extreme taken at the centre of the
+				// other two axes is inside the fuselage, and three of the four drew
+				// nothing at all. Seen from outside along its own axis, a light must
+				// not sit further away than the first surface the hull presents.
+				const centreOf = metal.getCenter(new THREE.Vector3());
+				const standoff = Math.max(span.x, span.y, span.z);
+				const views: [string, THREE.Vector3, THREE.Vector3][] = [
+					[
+						"port",
+						new THREE.Vector3(metal.min.x - standoff, centreOf.y, centreOf.z),
+						new THREE.Vector3(1, 0, 0),
+					],
+					[
+						"starboard",
+						new THREE.Vector3(metal.max.x + standoff, centreOf.y, centreOf.z),
+						new THREE.Vector3(-1, 0, 0),
+					],
+					[
+						"dorsal",
+						new THREE.Vector3(centreOf.x, metal.max.y + standoff, centreOf.z),
+						new THREE.Vector3(0, -1, 0),
+					],
+					[
+						"tail",
+						new THREE.Vector3(centreOf.x, centreOf.y, metal.max.z + standoff),
+						new THREE.Vector3(0, 0, -1),
+					],
+				];
+				const caster = new THREE.Raycaster();
+				for (const [role, from, direction] of views) {
+					caster.set(from, direction);
+					const first = caster
+						.intersectObject(root, true)
+						.find((candidate) => candidate.face);
+					// Nothing in the way is a light nothing can hide.
+					if (!first) continue;
+					expect(
+						`${id}-${variant} ${role} in front of the hull: ${
+							of(role).pos.distanceTo(from) <= first.distance + slack * 1.01
+						}`,
+					).toBe(`${id}-${variant} ${role} in front of the hull: true`);
+				}
+			}
+		}
+	});
+	/**
+	 * The hit sphere and the drawn ship are two numbers that have to agree, and
+	 * nothing in the renderer makes them. It lives here rather than beside the
+	 * controller because this is the file that can **build the mesh**: a raider
+	 * that changes length fails this rather than quietly making the beam score
+	 * on shots that miss, which is what it did at 0.28.
+	 *
+	 * Measured against the rebuilt hull rather than against `HULL_SPECS`, and
+	 * that is the point of the rebase onto #181. `ENEMY_COLLISION_RADIUS_KM` is
+	 * now *derived* from the roster, so restating its own formula here would be
+	 * a tautology that passes whatever either side says. The mesh is the
+	 * independent witness, and it is what "the drawn raider" means.
+	 *
+	 * The name says *half-length* rather than *contains*, because the sphere
+	 * does not contain the hull and the docstring beside the constant says why:
+	 * the drawn nose reaches 0.1035 km against a radius of 0.09525. A check
+	 * named for containment that measured only `size.z / 2` would be a test
+	 * whose name a reader could not have falsified.
+	 */
+	test("the prototype striker's hit sphere is its drawn raider's half-length", () => {
+		const box = bounds(STRIKER_HULL_ID, HULL_SPECS[STRIKER_HULL_ID].variant);
+		const size = box.getSize(new THREE.Vector3());
+		// And the sphere is not sold as containment. The mesh is off-centre, so
+		// the drawn nose is further from the origin than the radius: this pins
+		// the shortfall rather than leaving the name to imply it away.
+		const drawnNoseKm = Math.abs(box.min.z) * ENEMY_VISUAL_SCALE;
+		expect(drawnNoseKm).toBeGreaterThan(ENEMY_COLLISION_RADIUS_KM);
+		expect(drawnNoseKm - ENEMY_COLLISION_RADIUS_KM).toBeLessThan(0.02);
+		// The roster rounds its envelope **up** to 0.1 m, so the built box is up
+		// to 0.1 m under it; the drawn radius is half of that, scaled.
+		const slackKm = (0.0001 / 2) * ENEMY_VISUAL_SCALE;
+		expect(ENEMY_COLLISION_RADIUS_KM).toBeGreaterThanOrEqual(
+			(size.z / 2) * ENEMY_VISUAL_SCALE,
+		);
+		expect(ENEMY_COLLISION_RADIUS_KM).toBeLessThanOrEqual(
+			(size.z / 2) * ENEMY_VISUAL_SCALE + slackKm,
+		);
+		// The long axis, so the sphere contains the hull along the axis it is
+		// aimed down: the raider is longer than it is wide or tall.
+		expect(size.z).toBeGreaterThan(size.x);
+		expect(size.z).toBeGreaterThan(size.y);
 	});
 });

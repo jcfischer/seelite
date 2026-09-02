@@ -17,7 +17,22 @@ export const COMBAT_PROTOTYPE_DEFAULTS = {
 	energyRegenPerSecond: 12,
 	heatCoolPerSecond: 16,
 	shieldRechargePerSecond: 6,
-	enemyDamagePerSecond: 8,
+	/**
+	 * How long the player's shields stay down after taking a hit.
+	 *
+	 * **Without it, intermittent fire cannot land at all.** Recharge is 6/s and
+	 * the pulse does 6/s, so a shooter has to be on target *every frame* to make
+	 * any progress — and the scripted duel this model was tuned against fired on
+	 * a 50 % schedule, so it never was. Flown, the striker holds its nose on the
+	 * player for about 13 % of a fight: measured over 787 frames of a duel it
+	 * fired on 99 of them and the player's shields did not move by a single
+	 * point. The player was invulnerable and the fight had no stakes.
+	 *
+	 * A recharge delay is the usual answer and it is a real mechanic rather than
+	 * a fudge: it makes a burst count, and it leaves a pilot who breaks contact
+	 * a way to get the shields back.
+	 */
+	shieldRechargeDelaySeconds: 3,
 	lockSeconds: 1.5,
 	interdictionSeconds: 2.5,
 } as const;
@@ -29,6 +44,10 @@ export interface CombatPrototypeState {
 	heat: number;
 	heatLocked: boolean;
 	firing: WeaponMode;
+	targetEnergy: number;
+	targetHeat: number;
+	targetHeatLocked: boolean;
+	enemyFiring: WeaponMode;
 	foreShield: number;
 	aftShield: number;
 	playerHull: number;
@@ -40,6 +59,8 @@ export interface CombatPrototypeState {
 	incomingMissile: boolean;
 	interdiction: boolean;
 	interdictionProgress: number;
+	/** Seconds since the player last took damage; gates the shield recharge. */
+	sinceStruck: number;
 }
 export interface CombatPrototypeInput {
 	dt: number;
@@ -63,6 +84,10 @@ export function createCombatPrototype(
 		heat: 0,
 		heatLocked: false,
 		firing: null,
+		targetEnergy: COMBAT_PROTOTYPE_DEFAULTS.energy,
+		targetHeat: 0,
+		targetHeatLocked: false,
+		enemyFiring: null,
 		foreShield: COMBAT_PROTOTYPE_DEFAULTS.shield,
 		aftShield: COMBAT_PROTOTYPE_DEFAULTS.shield,
 		playerHull: COMBAT_PROTOTYPE_DEFAULTS.hull,
@@ -74,6 +99,9 @@ export function createCombatPrototype(
 		incomingMissile: false,
 		interdiction: false,
 		interdictionProgress: 0,
+		// Starts clear of the delay, so a fresh state recharges rather than
+		// spending its first three seconds recovering from a hit it never took.
+		sinceStruck: COMBAT_PROTOTYPE_DEFAULTS.shieldRechargeDelaySeconds,
 		...overrides,
 	};
 }
@@ -89,6 +117,20 @@ export function duelTargetInCone(elapsed: number) {
 		Math.abs(1.2 * Math.cos(elapsed * 1.1)) < 1.1
 	);
 }
+
+/**
+ * The heat lock, with its hysteresis — a gun that locks at the ceiling and
+ * releases at **half** of it.
+ *
+ * One function because both ships run it. Written out twice, the release
+ * fraction was in two places and #53 put it there by giving the striker the
+ * player's own weapon model; a retune that moved one and not the other would
+ * make the two guns differ in the one way the "same rules" ruling says they
+ * must not.
+ */
+const heatLocked = (heat: number, was: boolean): boolean =>
+	heat >= COMBAT_PROTOTYPE_DEFAULTS.heatLock ||
+	(was && heat > COMBAT_PROTOTYPE_DEFAULTS.heatLock * 0.5);
 
 export function stepCombatPrototype(
 	state: CombatPrototypeState,
@@ -159,11 +201,37 @@ export function stepCombatPrototype(
 			COMBAT_PROTOTYPE_DEFAULTS.heatLock,
 		);
 	}
-	next.heatLocked =
-		next.heat >= COMBAT_PROTOTYPE_DEFAULTS.heatLock ||
-		(next.heatLocked && next.heat > COMBAT_PROTOTYPE_DEFAULTS.heatLock * 0.5);
-	if (input.enemyFiring) {
-		const damage = COMBAT_PROTOTYPE_DEFAULTS.enemyDamagePerSecond * dt;
+	next.heatLocked = heatLocked(next.heat, next.heatLocked);
+	// **The striker's gun, on the player's own arithmetic — with one asymmetry
+	// that is worth naming rather than glossing.**
+	//
+	// Damage, energy cost, heat rate and the lock's hysteresis are the pulse
+	// weapon's, the same figures and the same `heatLocked`. What differs is who
+	// pays for a miss: the player's trigger reaches this function raw, so a held
+	// shot off the sightline still spends energy and still heats the gun (see
+	// `coneHeld` above). `input.enemyFiring` arrives already gated on a
+	// twelve-degree cone by `stepCombatEnemy`, so the striker never spends
+	// anything on a shot that could not land.
+	//
+	// That is trigger discipline rather than a different weapon, and it is the
+	// AI's to have — but it means "the two guns run the same rules" is true of
+	// the weapon and not of the fight, and #8's balance pass inherits the
+	// difference rather than a claim that there is none.
+	const enemyEnergyCost = COMBAT_PROTOTYPE_DEFAULTS.pulseEnergyPerSecond * dt;
+	const enemyCanFire =
+		input.enemyFiring &&
+		!next.targetHeatLocked &&
+		next.targetEnergy >= enemyEnergyCost;
+	next.enemyFiring = enemyCanFire ? "pulse" : null;
+	next.sinceStruck += dt;
+	if (enemyCanFire) {
+		next.sinceStruck = 0;
+		next.targetEnergy -= enemyEnergyCost;
+		next.targetHeat = clamp(
+			next.targetHeat + COMBAT_PROTOTYPE_DEFAULTS.pulseHeatPerSecond * dt,
+			COMBAT_PROTOTYPE_DEFAULTS.heatLock,
+		);
+		const damage = COMBAT_PROTOTYPE_DEFAULTS.pulseDamagePerSecond * dt;
 		const shieldKey = input.enemyHitAft ? "aftShield" : "foreShield";
 		const absorbed = Math.min(next[shieldKey], damage);
 		next[shieldKey] -= absorbed;
@@ -172,13 +240,26 @@ export function stepCombatPrototype(
 			COMBAT_PROTOTYPE_DEFAULTS.hull,
 		);
 	} else {
-		const lower =
-			next.foreShield <= next.aftShield ? "foreShield" : "aftShield";
-		next[lower] = clamp(
-			next[lower] + COMBAT_PROTOTYPE_DEFAULTS.shieldRechargePerSecond * dt,
-			COMBAT_PROTOTYPE_DEFAULTS.shield,
+		next.targetEnergy = clamp(
+			next.targetEnergy + COMBAT_PROTOTYPE_DEFAULTS.energyRegenPerSecond * dt,
+			COMBAT_PROTOTYPE_DEFAULTS.energy,
 		);
+		next.targetHeat = clamp(
+			next.targetHeat - COMBAT_PROTOTYPE_DEFAULTS.heatCoolPerSecond * dt,
+			COMBAT_PROTOTYPE_DEFAULTS.heatLock,
+		);
+		if (
+			next.sinceStruck >= COMBAT_PROTOTYPE_DEFAULTS.shieldRechargeDelaySeconds
+		) {
+			const lower =
+				next.foreShield <= next.aftShield ? "foreShield" : "aftShield";
+			next[lower] = clamp(
+				next[lower] + COMBAT_PROTOTYPE_DEFAULTS.shieldRechargePerSecond * dt,
+				COMBAT_PROTOTYPE_DEFAULTS.shield,
+			);
+		}
 	}
+	next.targetHeatLocked = heatLocked(next.targetHeat, next.targetHeatLocked);
 	return next;
 }
 

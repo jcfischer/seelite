@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
-import { cockpitView, projectScannerContacts } from "../src/cockpit";
+import {
+	MIN_CONTACT_RADIUS,
+	cockpitView,
+	projectScannerContacts,
+} from "../src/cockpit";
 import { v3 } from "../src/vec3";
 
 test("the local scanner projects nearby live bodies with vertical separation", () => {
@@ -87,4 +91,47 @@ test("a station astern stays on the lower half of the ship-local scanner", () =>
 	expect(contact.baseXPercent).toBeCloseTo(50, 1);
 	expect(contact.baseYPercent).toBeGreaterThan(50);
 	expect(contact.baseYPercent).toBeLessThanOrEqual(82);
+});
+
+/**
+ * The floor is the extra contacts' and nobody else's.
+ *
+ * It shipped as a bare `Math.max(0.14, …)` inside the shared loop, which lifted
+ * **every** body within 196 km onto the same ring — a production HUD change
+ * riding in on a prototype's scanner entry, and one that contradicts the
+ * comment above it about the curve spending the plate on the near field.
+ *
+ * Both arms at one range, so the assertion is about the *rule* and not about
+ * two positions that happen to differ.
+ */
+test("the minimum contact radius applies to extra contacts only", () => {
+	// Off both plate axes, so a bearing survives the comparison below.
+	const near = v3(3, 0, 4);
+	const [world] = projectScannerContacts(
+		v3(),
+		[{ id: "rock", pos: near }],
+		null,
+	);
+	const [extra] = projectScannerContacts(v3(), [], null, {
+		flooredContacts: [{ id: "striker", pos: near }],
+	});
+	// `baseXPercent` is `50 + planarX * 42` and `baseYPercent` `50 + planarZ * 31`,
+	// so the plate fraction comes back out by undoing those rather than by
+	// restating the projection.
+	const plateX = (c: { baseXPercent: number }) => (c.baseXPercent - 50) / 42;
+	const plateY = (c: { baseYPercent: number }) => (c.baseYPercent - 50) / 31;
+	const unfloored = Math.sqrt(5 / 10_000);
+	expect(unfloored).toBeLessThan(MIN_CONTACT_RADIUS);
+	// The world body keeps the curve — 0.022 of the plate, inside the ship's own
+	// marker, which is the price of not lying about its range.
+	expect(Math.hypot(plateX(world), plateY(world))).toBeCloseTo(unfloored, 6);
+	// The striker is lifted onto the floor, and its bearing is unchanged.
+	expect(Math.hypot(plateX(extra), plateY(extra))).toBeCloseTo(
+		MIN_CONTACT_RADIUS,
+		6,
+	);
+	expect(Math.atan2(plateY(extra), plateX(extra))).toBeCloseTo(
+		Math.atan2(plateY(world), plateX(world)),
+		9,
+	);
 });

@@ -760,6 +760,21 @@ interface CockpitHardware {
 	instrumentKey: string;
 }
 
+/**
+ * A quaternion's forward direction, in sim space.
+ *
+ * `-Z` is forward throughout — `buildShipMesh`'s callers read the hull back out
+ * that way. Free rather than a method because two rotations want it and they
+ * are not the same rotation: `nose()` asks the *ship's* orientation, and
+ * `weaponAim()` the *camera's*, which differ whenever the pilot looks off the
+ * nose. Written out twice, the pair looked like a copy rather than like a
+ * distinction.
+ */
+function forwardOf(q: THREE.Quaternion): Vec3 {
+	const f = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
+	return v3(f.x, f.y, f.z);
+}
+
 class Game {
 	readonly world: World;
 	readonly renderer: THREE.WebGLRenderer;
@@ -886,6 +901,8 @@ class Game {
 	private starMaterial!: THREE.ShaderMaterial;
 
 	private readonly keys = new Set<string>();
+	/** Primary mouse fire is held state, matching the keyboard laser control. */
+	private mouseFiring = false;
 	/**
 	 * THROWAWAY #48's prototype, or `null` in normal flight.
 	 *
@@ -1584,17 +1601,25 @@ class Game {
 		// the prototype chain to assert exactly that.
 		this.combatRig =
 			new URLSearchParams(window.location.search).get("combat") === "1"
-				? new CombatPrototypeRig(this.nearScene, {
-						freeze: () => {
-							if (this.animationFrame) {
-								cancelAnimationFrame(this.animationFrame);
-								this.animationFrame = 0;
-							}
+				? new CombatPrototypeRig(
+						this.nearScene,
+						{
+							freeze: () => {
+								if (this.animationFrame) {
+									cancelAnimationFrame(this.animationFrame);
+									this.animationFrame = 0;
+								}
+							},
+							resume: () => {
+								if (!this.animationFrame) this.animate();
+							},
 						},
-						resume: () => {
-							if (!this.animationFrame) this.animate();
-						},
-					})
+						this.world.ship,
+						// After `faceTheStar` above, and the rig's constructor says why:
+						// read before the boot facing this is the identity nose.
+						this.nose(),
+						this.world.seed,
+					)
 				: null;
 		this.warp = warpField(this.world.seed);
 		this.nearScene.add(this.warp.object);
@@ -1732,6 +1757,17 @@ class Game {
 		window.addEventListener("keydown", (e) => this.onKey(e, true));
 		window.addEventListener("keyup", (e) => this.onKey(e, false));
 		// Audio cannot open before a gesture, so it opens on the first one.
+		this.renderer.domElement.addEventListener("pointerdown", (e) => {
+			if (e.button === 0) this.mouseFiring = true;
+		});
+		window.addEventListener("pointerup", (e) => {
+			if (e.button === 0) this.mouseFiring = false;
+		});
+		// A window that loses focus never sees the release, and a trigger stuck
+		// down survives the tab switch.
+		window.addEventListener("blur", () => {
+			this.mouseFiring = false;
+		});
 		window.addEventListener("pointerdown", () => this.audio.ensure(), {
 			once: true,
 		});
@@ -3071,7 +3107,9 @@ class Game {
 			{
 				pos: target.pos,
 				radiusKm: target.radiusKm,
-				vel: bodyVelocity(this.world.system, target.id, this.world.gameTime),
+				// Through `velocityOf`, not `bodyVelocity`: the striker is
+				// selectable and is not a world body.
+				vel: this.velocityOf(target.id),
 			},
 			this.masses(),
 			this.cruiseParams,
@@ -3201,6 +3239,8 @@ class Game {
 				.sort(
 					(a, b) => order[a.kind] - order[b.kind] || a.id.localeCompare(b.id),
 				);
+			const striker = this.combatRig?.targetBody;
+			if (striker) this.selectableCache.push(striker);
 		}
 		return this.selectableCache;
 	}
@@ -3241,9 +3281,15 @@ class Game {
 	}
 
 	targetBody(): Body | null {
-		return this.targetId
-			? (this.world.system.byId.get(this.targetId) ?? null)
-			: null;
+		if (!this.targetId) return null;
+		// The striker is a live projection, never a world body, so `byId` cannot
+		// hold it and a lookup that only asked `byId` would return null for a
+		// target the player can select.
+		const striker = this.combatRig?.targetBody;
+		return (
+			this.world.system.byId.get(this.targetId) ??
+			(striker && this.targetId === striker.id ? striker : null)
+		);
 	}
 
 	/** The selected target's current range in simulation kilometres, if any. */
@@ -3292,9 +3338,24 @@ class Game {
 	/** How fast the selected target is moving through sim space, km/s — the frame
 	 *  the arrival is judged in. Zero when nothing is selected. */
 	targetVelocity(): Vec3 {
-		return this.targetId
-			? bodyVelocity(this.world.system, this.targetId, this.world.gameTime)
-			: v3();
+		return this.targetId ? this.velocityOf(this.targetId) : v3();
+	}
+
+	/**
+	 * How fast a **selectable** thing is moving, whether or not the world holds
+	 * it.
+	 *
+	 * One place, because `bodyVelocity` **throws** on an id it cannot find —
+	 * deliberately, since `sim.ts` reads a missing body as the two halves
+	 * disagreeing about what is in the system — and #53 put something selectable
+	 * outside `byId` for the first time. Two callers reach it: `targetVelocity`
+	 * on every cruise frame, and `timeToBody` from the panel without cruising at
+	 * all, so a guard written into only one of them left the other live.
+	 */
+	private velocityOf(id: string): Vec3 {
+		const rig = this.combatRig;
+		if (rig && id === rig.targetBody.id) return rig.targetVelocity();
+		return bodyVelocity(this.world.system, id, this.world.gameTime);
 	}
 
 	/** What the player is asking of the flight model this frame (#5's model, in
@@ -3373,8 +3434,14 @@ class Game {
 	/** The nose, as a sim-space unit vector. In cruise this *is* the direction of
 	 *  travel (§1). */
 	private nose() {
-		const f = new THREE.Vector3(0, 0, -1).applyQuaternion(this.orientation);
-		return v3(f.x, f.y, f.z);
+		return forwardOf(this.orientation);
+	}
+
+	/** The weapon ray is the sightline through the cockpit's central reticle —
+	 *  `nose()`'s arithmetic against the camera's rotation rather than the
+	 *  ship's, which is the whole of the difference between the two. */
+	private weaponAim() {
+		return forwardOf(this.cameraRotation());
 	}
 
 	/** The ship's up-vector in sim space — what `docking.md` §3's roll match is
@@ -4243,7 +4310,15 @@ class Game {
 		}
 		// #48 deliberately couples no combat entity to the world yet: this is a
 		// flyable balance rig over the shared flight loop, not production combat.
-		this.combatRig?.step(dt, this.keys, this.regime === "cruise");
+		this.combatRig?.step(dt, this.keys, this.regime === "cruise", {
+			ship: this.world.ship,
+			nose: this.nose(),
+			mouseFiring: this.mouseFiring,
+			// The sightline through the reticle, not the ship's attitude: a player
+			// looking off the nose aims where they are looking.
+			aimOrigin: this.cameraPos(),
+			aimNose: this.weaponAim(),
+		});
 		const yaw = this.axis(["arrowright", "d"], ["arrowleft", "a"]);
 		const pitch = this.axis(["arrowdown", "s"], ["arrowup", "w"]);
 		const roll = this.axis(["e"], ["q"]);
@@ -4531,7 +4606,7 @@ class Game {
 		// no-op today; it is written out because the moment the camera stops
 		// being pinned there, its absence is a bug that takes an hour to see.
 		this.stars.position.copy(this.backdropCamera.position);
-		this.combatRig?.render(this.view, this.orientation, viewRotation);
+		this.combatRig?.render(this.view, viewRotation, camPos);
 
 		// The star, resolved once at build time rather than scanned for per frame:
 		// every body's sun direction is measured from it, and there is no path
@@ -4964,11 +5039,16 @@ class Game {
 	}
 
 	private refreshScannerContacts() {
+		const striker = this.combatRig?.contact;
 		projectScannerContacts(
 			this.world.ship.pos,
 			this.world.system.bodies,
 			this.targetId,
-			{ orientation: this.orientation, output: this.scannerContactBuffer },
+			{
+				orientation: this.orientation,
+				output: this.scannerContactBuffer,
+				flooredContacts: striker ? [striker] : [],
+			},
 		);
 	}
 
@@ -5531,6 +5611,10 @@ class Game {
 		ctx.stroke();
 
 		this.combatRig?.drawTracer(ctx, w, h, this.view, GLASS_BOTTOM_FRACTION);
+		// Not folded into the call above: outgoing fire is gated on the trigger
+		// being held and incoming fire is not, and a player being shot while not
+		// shooting back is the case that needs telling about most.
+		this.combatRig?.drawStruck(ctx, w, h, this.view, GLASS_BOTTOM_FRACTION);
 
 		// Prograde and retrograde — the map's HUD constraint, and the thing that
 		// makes assist-off flyable at all: with the assist off the nose and the
