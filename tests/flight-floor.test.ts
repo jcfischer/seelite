@@ -33,6 +33,7 @@ import {
 const flying = (over: Partial<FlightFloorState> = {}): FlightFloorState => ({
 	regime: "normal",
 	spoolLeftS: 0,
+	jumpChargeLeftS: 0,
 	throttle: 0,
 	assist: true,
 	chargeAu: CHARGE_CAPACITY_AU,
@@ -269,6 +270,7 @@ describe("the widest reading, which the strip is laid out against", () => {
 							for (const c of flightFloorCells({
 								regime,
 								spoolLeftS,
+								jumpChargeLeftS: 0,
 								throttle,
 								assist,
 								chargeAu,
@@ -305,6 +307,7 @@ describe("the widest reading, which the strip is laid out against", () => {
 		const longestCharge = flightFloorCells({
 			regime: "normal",
 			spoolLeftS: 0,
+			jumpChargeLeftS: 0,
 			throttle: 1,
 			assist: false,
 			chargeAu: CHARGE_CAPACITY_AU - 0.05,
@@ -317,6 +320,7 @@ describe("the widest reading, which the strip is laid out against", () => {
 		const longestMode = flightFloorCells({
 			regime: "normal",
 			spoolLeftS: SPOOL_SECONDS,
+			jumpChargeLeftS: 0,
 			throttle: 0,
 			assist: true,
 			chargeAu: CHARGE_CAPACITY_AU,
@@ -334,6 +338,7 @@ describe("the widest reading, which the strip is laid out against", () => {
 						flightFloorCells({
 							regime: "normal",
 							spoolLeftS,
+							jumpChargeLeftS: 0,
 							throttle: 0,
 							assist: true,
 							chargeAu: CHARGE_CAPACITY_AU,
@@ -344,5 +349,51 @@ describe("the widest reading, which the strip is laid out against", () => {
 			),
 		);
 		expect([...spoolWidths]).toEqual([widest.MODE.length]);
+	});
+});
+
+/**
+ * §8's hyperspace wind-up on the MODE cell (#187).
+ *
+ * The strip keeps four cells: `hud-and-scanner.md` §5 fixes the set at
+ * mode/throttle/assist/charge and `probe-live-cockpit.mjs` asserts that order,
+ * so the jump reading rides the cell that already overrides the regime rather
+ * than becoming a fifth. The hyperspace tank has no home on the shipped glass
+ * at all, which is a HUD question this node deliberately did not settle.
+ */
+describe("the jump wind-up", () => {
+	test("MODE names it, and does not call it a spool", () => {
+		const mode = cell(flying({ jumpChargeLeftS: 2.34 }), "MODE");
+		expect(mode.value).toBe("JUMP 2.3s");
+		expect(mode.tone).toBe("action");
+	});
+
+	test("it outranks cruise's spool and cruise itself", () => {
+		// The two cannot run at once — the game refuses each while the other is
+		// live — but the precedence is written down rather than left to that
+		// refusal, because `SPOOL` is the wrong word for a window that ends in
+		// another star system.
+		expect(
+			cell(flying({ jumpChargeLeftS: 1, spoolLeftS: 2 }), "MODE").value,
+		).toBe("JUMP 1.0s");
+		expect(
+			cell(flying({ jumpChargeLeftS: 1, regime: "cruise" }), "MODE").value,
+		).toBe("JUMP 1.0s");
+	});
+
+	test("it does not widen the cell the strip is laid out against", () => {
+		// What this protects: the browser check solves the fit against
+		// `flightFloorWidest` and then asserts every drawn cell is at its widest.
+		// A jump reading longer than `SPOOL 3.0s` would move the bound, and the
+		// only tier that could see the consequence is the one with a canvas.
+		const widest = flightFloorWidest(
+			CHARGE_CAPACITY_AU,
+			CHARGE_REGEN_AU_PER_S,
+			SPOOL_SECONDS,
+		);
+		expect(widest.MODE).toBe("SPOOL 3.0s");
+		expect(
+			cell(flying({ jumpChargeLeftS: SPOOL_SECONDS }), "MODE").value.length,
+		).toBeLessThanOrEqual(widest.MODE.length);
 	});
 });

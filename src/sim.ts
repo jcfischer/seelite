@@ -515,6 +515,85 @@ export function makeWorld(seed: number): World {
 }
 
 /**
+ * Take a world to another system — the act §8 describes and nothing has ever
+ * performed (#187).
+ *
+ * ## What moves, and in what order
+ *
+ * The system is **replaced**, not edited: a new `System` from `makeSystem`, with
+ * its own `contents`, its own `bodies` and its own `byId`. Editing the old one
+ * in place was never on the table — a system's body set is its identity here,
+ * and `advanceSystem` throws on a count mismatch precisely so that a system
+ * quietly gaining a moon is an error rather than a drift.
+ *
+ * The ship lands at `arrivalPoint` with a **non-null `originPos` for the first
+ * time in this repo's life**. §7.4's inbound bearing is
+ * `normalize(p_origin − p_this)` in galaxy coordinates, so what is handed in is
+ * the *origin system's* position in light years — not the ship's position in
+ * kilometres, which is a different space and would produce a bearing that is
+ * deterministic, well-formed and meaningless.
+ *
+ * ## The clock, and why it is not touched here
+ *
+ * **Sim time is never compressed (#10), and this node does not argue against
+ * it.** The wind-up is flown: §8's few seconds pass in normal flight with the
+ * ship vulnerable, so those seconds are already in the clock by the time this
+ * runs, on the ordinary `stepWorld` path with the bodies moving under them. The
+ * transition itself costs no sim time, because no ratified figure says how long
+ * witchspace takes and inventing one here would settle an economy question by
+ * accident: `market.ts` records that Elite re-rolled the fluctuation byte on
+ * every jump while seelite's market is `f(seed, epoch)`, so **the clock is the
+ * only thing that re-rolls a market**, and a clock advance sized to cross
+ * #25's 30-minute epoch would make every jump a market reset that #25 measured
+ * nothing against.
+ *
+ * What that costs is worth stating rather than leaving to be discovered: an
+ * interstellar run costs ~3 s of game time per jump, so #7's 291 Cr
+ * interstellar premium is a premium on *distance* and not on time, and jumping
+ * is not a way to wait a market out. The other half is narrower than it first
+ * read here: an out-and-back pair returns to the deficit **row** it left,
+ * because the carrier key moves with the ship and the clock does not advance —
+ * and that is all `tests/world-jump.test.ts` asserts. Whether it closes the
+ * farm is a claim about a *price*, and a deficit row is not a price; nothing
+ * headless here runs `stockResponse` across a jump. `galaxy-generation.md` §8.1
+ * carries the same retraction, and #191's buy-back pump is the live case of a
+ * market outcome nobody has measured.
+ * If a witchspace duration is ever ratified, this function is the one place it
+ * goes.
+ *
+ * ## What it refuses
+ *
+ * A destination in another galaxy. Galaxies are a namespace (#6) and crossing
+ * one is the Galactic Hyperdrive (`galaxy-generation.md` §2), which is a
+ * different act at a different price with different consequences for saved
+ * state — `world.galaxy` is held whole and every saved fact is keyed on its
+ * index. It throws rather than returning a refusal because the *range* refusal
+ * belongs to `planJump`, which the caller has already run: reaching here with a
+ * foreign record is a bug in the caller, not a move the player made.
+ */
+export function jumpWorldTo(world: World, to: SystemRecord): void {
+	if (to.galaxy !== world.galaxy.index) {
+		throw new Error(
+			`jumpWorldTo: ${to.name} is in galaxy ${to.galaxy}, world is in ${world.galaxy.index}`,
+		);
+	}
+	// Read before the system is replaced. This is the one line that makes
+	// §7.4's bearing mean anything, and it is a galaxy-space position.
+	const originPos = world.system.record.pos;
+	world.system = makeSystem(to, world.gameTime);
+	world.ship.pos = arrivalPoint(
+		to,
+		world.system.contents,
+		originPos,
+		world.gameTime,
+	);
+	// At rest in the star's frame, which is the frame the arrival point is
+	// stated in. Carrying the origin system's velocity across would be carrying
+	// a number from a coordinate system that no longer exists.
+	world.ship.vel = v3();
+}
+
+/**
  * #5's assist cap, km/s — the speed assisted flight tops out at.
  *
  * It lives here, in the flight model, rather than beside the code that reads it
@@ -918,9 +997,43 @@ export function advanceWorldClock(world: World, dt: number): void {
  *
  * `originPos` is `null` and the clock is `0` because that is what a new game is
  * (`makeWorld`); a reset is a return to the new game, not to some later arrival.
+ *
+ * **It refuses a world that has jumped (#187).** Every line below reads
+ * `world.system` — the system the ship is *in* — so after a jump this would put
+ * the ship at the arrival point of the wrong star at clock zero, which is a
+ * state no boot produces and which the comparison against `makeWorld(seed)`
+ * cannot see, because that comparison is written for a world that never left.
+ * Returning a jumped world would mean rebuilding the system here, and a rebuild
+ * is exactly what this function's own argument above rules out. So it throws,
+ * and the renderer's `resetFlightToStart` inherits the limit rather than
+ * papering over it.
+ *
+ * The precondition is **exported as `canResetWorldToStart`** rather than left
+ * for a caller to discover by catching. This function went from total to
+ * partial, and a partial function whose domain can only be learned from its
+ * error message is one every later caller — #89's load, a probe's reset —
+ * re-learns the hard way.
  */
+export function canResetWorldToStart(world: World): boolean {
+	return world.system.record.index === startSystem(world.galaxy).index;
+}
+
 export function resetWorldToStart(world: World): void {
+	const start = startSystem(world.galaxy);
 	world.gameTime = 0;
+	// **Total again, and that is sage round 2's correction to this node.** #187
+	// first made this throw when the ship was somewhere else, and exported
+	// `canResetWorldToStart` so a caller could ask first. But the throw reached
+	// the published `window.__seelite.resetFlightToStart()`, so any probe that
+	// reset after a jump got an exception instead of a reset — and #89's load
+	// path would have inherited the same. A reset that cannot reset is not a
+	// narrower contract, it is a broken one.
+	//
+	// Rebuilding costs one `makeSystem`, which is exactly what `jumpWorldTo`
+	// does, so there was never a reason for the partial form. The predicate
+	// stays exported because it answers a real question — *is this a rebuild or
+	// a rewind* — which a caller wanting to skip the work may still want.
+	if (!canResetWorldToStart(world)) world.system = makeSystem(start, 0);
 	// `world.gameTime`, not a second literal `0`. With the literal the two lines
 	// were independent, so their order was not load-bearing and no swap could go
 	// red — while a comment above claimed the ordering had been red-built.

@@ -106,7 +106,19 @@ import {
 	exitVelocity,
 	legSeconds,
 } from "./cruise";
-import { GOVERNMENT_NAMES } from "./galaxy";
+import { GOVERNMENT_NAMES, type SystemRecord } from "./galaxy";
+import { type Course, courseProgress } from "./galaxy-route";
+import {
+	JUMP_CHARGE_S,
+	JUMP_TANK_LY,
+	type JumpCharge,
+	beginCharge,
+	cancelCharge,
+	charging,
+	idleCharge,
+	planJump,
+	stepCharge,
+} from "./hyperspace";
 import {
 	angleOffNose,
 	directionTo,
@@ -127,7 +139,9 @@ import {
 	advanceWorldClock,
 	bodyVelocity,
 	stationHostIdOf,
+	jumpWorldTo,
 	makeWorld,
+	canResetWorldToStart,
 	resetWorldToStart,
 	stationOf,
 	stationPose,
@@ -234,7 +248,11 @@ import {
 	transactAtStation,
 	type StationAction,
 } from "./station-commerce";
-import { newWorld as newPersistentWorld, type WorldState } from "./world-state";
+import {
+	newWorld as newPersistentWorld,
+	visit,
+	type WorldState,
+} from "./world-state";
 import {
 	type StationConsoleTab,
 	stationEquipmentScreen,
@@ -434,8 +452,14 @@ const EDGE_MARGIN = 0.07;
  * mechanic. Applying it to every entry is this prototype's reading: the wind-up
  * is what makes engaging cruise a commitment rather than a reflex, and whether
  * three seconds is the right commitment is one of the things flying it answers.
+ *
+ * **Read from `hyperspace.ts` since #187, rather than declared.** It was a `3`
+ * here because the thing §4 says it borrows from did not exist; it does now, so
+ * the borrowing runs the direction the spec states it in and the two windows
+ * cannot drift into the second mechanic §4 refuses. `probe-live-cockpit.mjs`
+ * asserts the page still reports 3.
  */
-const SPOOL_S = 3;
+const SPOOL_S = JUMP_CHARGE_S;
 
 /**
  * The dials, and why they are lists rather than a slider.
@@ -876,8 +900,8 @@ class Game {
 	/** The shader surface for every body that is a sphere — star, planet, moon.
 	 *  A station is not in here; `stationVisuals` above is its equivalent. */
 	private readonly bodyVisuals = new Map<string, BodyVisual>();
-	/** The system's star, resolved once. Every body's sun direction is measured
-	 *  from it, and the system is fixed for a game's lifetime. */
+	/** The system's star. Every body's sun direction is measured from it, and it
+	 *  is re-resolved by `buildBodies` — which a jump runs again (#187). */
 	private starBody?: Body;
 	/**
 	 * Which layer each body is currently drawn in.
@@ -980,6 +1004,30 @@ class Game {
 	chargeAu = CHARGE_CAPACITY_AU;
 	/** Seconds left of §4's spool-up before cruise actually engages. */
 	spoolLeftS = 0;
+	/**
+	 * §8's hyperspace wind-up, or the idle state (#187).
+	 *
+	 * Public for the reason the cruise regime's state is: a probe has to be able
+	 * to drive it and read it. Session state rather than world state — the
+	 * charge is something the player started, and `sim.ts` owns only what a
+	 * `World` is.
+	 */
+	jumpCharge: JumpCharge = idleCharge();
+	/**
+	 * The committed destination (`galaxy-route.ts`'s `Course`), or `null`.
+	 *
+	 * **Owned here rather than by the chart**, which is what makes it survive
+	 * closing the Navigation tab — the chart is disposed on every tab toggle and
+	 * a course held inside it went with it. `persistent-world-state.md` §8's
+	 * rule is that the *intent* is the thing: the chain is re-derived from
+	 * wherever the ship actually is, so an off-plan jump is a re-plan rather
+	 * than a desync. It is not saved: #89 owns save/load and the galaxy
+	 * envelope has no field for it yet.
+	 */
+	course: Course | null = null;
+	/** Why the last jump was refused, or what it did — shown on the glass beside
+	 *  the cruise prompt. Empty when there is nothing to say. */
+	jumpNotice = "";
 	/** What the drop-out and the readouts are measured against (§6: selection is
 	 *  a convenience, never a rail). */
 	targetId: string | null = null;
@@ -1005,10 +1053,13 @@ class Game {
 	 *  rate rather than at the hand's speed. */
 	private mouseDx = 0;
 	private mouseDy = 0;
-	/** The selectable bodies, in display order. Invalidated by changing system —
-	 *  which nothing does yet, and which is why this is a field rather than a
-	 *  `readonly` built in the constructor. */
+	/** The selectable bodies, in display order. Invalidated by changing system,
+	 *  which is why this is a field rather than a `readonly` built in the
+	 *  constructor — `performJump` clears it (#187). */
 	private selectableCache: Body[] | null = null;
+	/** The system a fired wind-up is waiting to move the world to, taken at the
+	 *  end of the frame it fired on. See `takePendingJump` (#187). */
+	private pendingJump: number | null = null;
 	/**
 	 * The parked review fleet, gated on `?fleet`.
 	 *
@@ -1093,6 +1144,7 @@ class Game {
 		source: {
 			regime: string;
 			spoolLeftS: number;
+			jumpChargeLeftS: number;
 			throttle: number;
 			assist: boolean;
 			chargeAu: number;
@@ -1522,6 +1574,14 @@ class Game {
 	constructor(seed: number) {
 		this.world = makeWorld(seed);
 		this.commerceWorld = newPersistentWorld(seed);
+		// §7's visited flag for the system a new game starts in. Recorded here
+		// rather than only on arrival, so the set is "everywhere the ship has
+		// been" rather than "everywhere it has jumped to" (#187).
+		this.commerceWorld = visit(
+			this.commerceWorld,
+			this.world.system.record.galaxy,
+			this.world.system.record.index,
+		);
 		for (const _body of this.world.system.bodies)
 			this.scannerContactBuffer.push({} as ScannerContact);
 		this.updateLocalFrameBody();
@@ -1580,6 +1640,7 @@ class Game {
 
 		this.buildBackdrop();
 		this.buildBodies();
+		this.buildLights();
 		this.buildShip();
 		this.buildCockpit();
 		// THROWAWAY #48, opt-in and self-contained: the rig allocates its own
@@ -1705,9 +1766,11 @@ class Game {
 			},
 			onStationAction: (type, name) => {
 				const action: StationAction =
-					type === "buy-equipment"
-						? { type, equipment: name }
-						: { type, commodity: name };
+					type === "buy-fuel"
+						? { type }
+						: type === "buy-equipment"
+							? { type, equipment: name }
+							: { type, commodity: name };
 				this.transactStation(action);
 			},
 			onLaunch: () => {
@@ -2039,7 +2102,28 @@ class Game {
 		}
 
 		this.starBody = this.world.system.bodies.find((b) => b.kind === "star");
+	}
 
+	/**
+	 * The rig that lights whatever `buildBodies` drew — **once per `Game`, and
+	 * not once per system** (#187).
+	 *
+	 * Split out of `buildBodies` because a jump calls that a second time and
+	 * this must not run again: `layerLights` is a `push`, and the suns and
+	 * hemispheres are `scene.add`ed, so a second pass would double every light
+	 * in every layer and the symptom would be a system that is simply twice as
+	 * bright as the one before it. Nothing here is per-system — a directional
+	 * light has no position, only a direction, and the direction is aimed at
+	 * the star every frame — which is exactly why the split is safe.
+	 *
+	 * The one part that *is* per-system is the baked environment, whose tint
+	 * comes from the star's own colour; `buildEnvironment` is called again on a
+	 * jump and disposes what it replaces.
+	 *
+	 * The `layerLights` docstring said "built once by `buildLights`" while the
+	 * loop lived in `buildBodies`. The method exists now.
+	 */
+	private buildLights() {
 		// One light per layer, both standing in for the same star. A single light
 		// cannot serve two scenes at two scales — a `PointLight` at the far
 		// layer's star position is 1,500 units away there and 1.5·10⁸ km away
@@ -2104,7 +2188,8 @@ class Game {
 	}
 
 	/** The two star-aimed lights of each layer, with the scene they belong to.
-	 *  Built once by `buildLights` and read every frame; see the push site. */
+	 *  Built once by `buildLights` — once per `Game` and not per system, which
+	 *  is what that method's docstring is about — and read every frame. */
 	private readonly layerLights: {
 		scene: THREE.Scene;
 		sun: THREE.DirectionalLight;
@@ -2115,12 +2200,11 @@ class Game {
 	 *  back after dropping it — `scene.environment = null` is how low drops it,
 	 *  and the texture has to survive that to be reassigned.
 	 *
-	 *  **Baked once per `Game`, and a `Game` is one system.** Nothing rebuilds the
-	 *  world in place — `makeWorld` is called exactly once, in the constructor —
-	 *  so the star's tint is fixed for this object's life and there is no jump
-	 *  path for it to go stale across. The day one exists it calls
-	 *  `buildEnvironment` again, which is why that method disposes what it is
-	 *  replacing rather than assuming it is the first call. */
+	 *  **Baked per system, from that system's own star.** It was baked once per
+	 *  `Game` while there was no path that changed the system a game is in;
+	 *  `rebuildSystem` calls `buildEnvironment` again on every jump (#187),
+	 *  which is why that method disposes what it is replacing rather than
+	 *  assuming it is the first call. */
 	private environmentMap: THREE.Texture | null = null;
 
 	/**
@@ -2859,6 +2943,20 @@ class Game {
 	 * long enough to forget what the first one felt like.
 	 */
 	private command(key: string) {
+		// **The jump notice is dismissed by playing** (#187). It is the last
+		// thing that happened — a refusal, a commitment, an arrival — and it
+		// holds the one prompt line until the pilot does something, which is the
+		// only clock this glass has: a timeout would need a lifetime no spec
+		// states, and a message that vanished on its own is one a pilot looking
+		// at the scanner never read. `chargeJump` clears and rewrites it, so the
+		// jump key itself is not a dismissal.
+		// **Not while the drive is charging.** The dismissal exists so a refusal
+		// clears on the next key; during the wind-up the same line is carrying
+		// the countdown, and blanking it left an empty prompt for the rest of
+		// the window — the exact failure `chargeJump`'s comment says it fixed,
+		// reintroduced through the dismissal path (sage round 2).
+		if (this.jumpNotice && key !== "`" && !charging(this.jumpCharge))
+			this.jumpNotice = "";
 		switch (key) {
 			case "1":
 				if (this.view === "cockpit") this.setHeadLook("left");
@@ -2882,6 +2980,19 @@ class Game {
 					this.spoolLeftS = 0;
 					this.lastExit = "spool-up cancelled";
 				} else this.engageCruise();
+				return;
+			case "`":
+				// §8's jump, on the one key left.
+				//
+				// **A key rather than a button on the chart**, and not the letter
+				// it wants: `h` is the perf panel's, and the comment on `Enter`
+				// below is right that every letter is bound —
+				// `tests/perf-panel-keys.test.ts` is what says so rather than a
+				// count. The chart is where a *course* is chosen (#11's set
+				// course, #70's "which tab, never which application"); this is
+				// only the commitment, and it has to be reachable from the flight
+				// view because §8's window is a thing you are vulnerable inside.
+				this.chargeJump();
 				return;
 			case "t":
 				this.cycleTarget(1);
@@ -3030,6 +3141,11 @@ class Game {
 					worldSeed: this.world.seed,
 					galaxyIndex: this.world.system.record.galaxy,
 					currentIndex: this.world.system.record.index,
+					// The course is the game's, not the chart's (#187) — the chart
+					// is disposed on every tab toggle and a course held inside it
+					// went with it.
+					course: this.course,
+					onCourse: (course) => this.setCourseTo(course),
 				});
 				// Superseded while the chunk was loading. Take it down rather than
 				// dropping the handle, which would leak the loop and the context.
@@ -3307,6 +3423,14 @@ class Game {
 	 * and is *most of a system*.
 	 */
 	private cruisePrompt(targetKm: number | null): string {
+		// §8's window and its outcome outrank everything below (#187). The pilot
+		// is committed for three seconds and then in another star system; a line
+		// about the drive charge would be answering a question nobody asked.
+		//
+		// **The notice is what a refused key press has instead of silence.** A
+		// jump key that sometimes does nothing is indistinguishable from one that
+		// is not bound, and the MODE cell can only show a window that opened.
+		if (charging(this.jumpCharge) || this.jumpNotice) return this.jumpNotice;
 		if (this.spoolLeftS > 0) return "";
 		if (this.regime === "cruise") return "";
 		// **The same predicate the strip's tone reads.** As `chargeAu <= 0` this
@@ -3315,6 +3439,27 @@ class Game {
 		// "press J to cruise" beside a cell still printing "0.0/12 AU".
 		if (chargeReadsEmpty(this.chargeAu))
 			return "no drive charge — wait for it to regenerate";
+		// **A set course outranks the cruise hint, and that is a playtest
+		// correction.** The jump line used to sit inside the `targetKm` branch
+		// below, so it appeared only with a target selected *and* the ship
+		// already within 7,200 km of it — and a ship arrives 1 AU out. The
+		// principal set a course, flew forward, and saw nothing: the one prompt
+		// for the mechanic this node exists to build was unreachable in practice.
+		// Five sage rounds and 1,110 headless tests had not found it, because
+		// none of them asks whether a player would ever see the line.
+		//
+		// It wins over "press J to cruise" rather than sharing the row, because
+		// cruise is discoverable without this line — the key help along the
+		// bottom of the frame names it — and the jump was not discoverable
+		// anywhere.
+		//
+		// **This is the prompt only.** A *persistent* indication that a course is
+		// set is #117's, and it is a real gap: today the set course appears in
+		// the legacy HUD alone (`?legacy`), because `hud-and-scanner.md` §5 fixes
+		// the floor strip at four cells and gives it no home. This line does not
+		// stand in for that.
+		const hop = this.nextHop();
+		if (hop) return `press \` to jump to ${hop.name}`;
 		if (targetKm === null) return "T selects a target";
 		// An hour at the cap, which is 7,200 km. Below that the crawl is the
 		// intended experience — #10 §3 bounds the drop radius by exactly this
@@ -3506,12 +3651,12 @@ class Game {
 		// lookup, and the line two below it already treats one map write per
 		// station per frame as a cost worth avoiding.
 		//
-		// **Session-scoped and never invalidated, which is a fact rather than a
-		// promise.** The catalogue is a pure function of the station's type, its
-		// geometry and its `berthSeed`, and a `Game` holds one system for its
-		// whole life (`makeWorld` is called once). A build that adds a jump owes
-		// this map a clear beside the other per-system state — said here because
-		// an earlier draft of this comment claimed a clear that does not exist.
+		// **System-scoped, and cleared on a jump.** The catalogue is a pure
+		// function of the station's type, its geometry and its `berthSeed`, so
+		// it never goes stale *within* a system — this comment used to say a
+		// `Game` holds one system for its whole life and that a build adding a
+		// jump owed the map a clear. #187 is that build, and `performJump`
+		// clears it beside the other per-system state.
 		const cached = this.interiors.get(id);
 		if (cached) return cached;
 		const built = interiorOfStation(stationOf(this.world.system, id));
@@ -3917,6 +4062,11 @@ class Game {
 			// without a live grant, and a live grant carries a berth.
 			const reserved = outcome.state.berthId;
 			if (!reserved) throw new Error(`docked at ${id} with no berth reserved`);
+			// A dock ends §8's window: the ship is parked inside a station on a
+			// berth reservation, which is not a place to jump from (#187). The
+			// charge is cancelled rather than frozen, because a frozen one would
+			// resume on launch with a notice from before the dock.
+			this.cancelJumpCharge("docked");
 			this.dock = enterArrival(
 				id,
 				frame,
@@ -3931,6 +4081,10 @@ class Game {
 		}
 		// §2.0: repelled, damaged, and left outside — never inside the station.
 		this.interimCondition = applyDamage(this.interimCondition, outcome.damage);
+		// §8's interruption. The only source of damage the shipped game has, and
+		// a real one rather than a hook: charge a jump on the way in, clip the
+		// aperture, and the charge goes (#187).
+		if (outcome.damage > 0) this.cancelJumpCharge("hull damage");
 		const body = this.world.system.byId.get(id);
 		if (body && outcome.repelled) {
 			this.world.ship.pos = add(body.pos, outcome.repelled.rel);
@@ -4164,30 +4318,108 @@ class Game {
 	 * moves the clock backwards — a value stamped at t=900 and read at t=0 is
 	 * being asked something a forward-only game never asks it.
 	 */
-	resetFlightToStart() {
-		resetWorldToStart(this.world);
+	/**
+	 * Everything held *about a system* — dropped when the ship is no longer in
+	 * one.
+	 *
+	 * Two kinds, and they are here together because they have one lifetime.
+	 * **Per-station protocol state**: a grant is a berth reservation (#147), and
+	 * there is no berth in the new system to honour one at. **Caches**: every one
+	 * below is keyed on a body set or on a clock that has just changed under it.
+	 *
+	 * Extracted from `performJump` in sage round 4 — that method had grown to
+	 * hold world movement, renderer rebuild, protocol teardown and cache
+	 * invalidation in one block, so the four evolved together whether or not
+	 * they meant to.
+	 */
+	private clearSystemScopedState() {
+		this.dockingStates.clear();
+		this.berthOccupancy.clear();
+		this.interiors.clear();
+		this.stationConsoleCache = null;
+		this.stationConsoleCacheKey = null;
+		this.massesCache = null;
+		this.massesAt = Number.NaN;
+		this.etaCache = null;
+		this.etaAt = Number.NEGATIVE_INFINITY;
+		this.navEtaCache.clear();
+		this.navEtaAt = Number.NEGATIVE_INFINITY;
+		this.selectableCache = null;
+	}
 
+	/**
+	 * Everything a flight session is, cleared — the state that must not survive
+	 * arriving somewhere new, whether that is a jump or a reset to the start.
+	 *
+	 * **Extracted because it was written twice** (sage round 2). `performJump`
+	 * and `resetFlightToStart` both spelled these fifteen assignments, and only
+	 * one of them is watched by `tests/leg-reset-coverage.test.ts` — so a field
+	 * added to the flight session would have been zeroed on a reset and left
+	 * running across a jump, which is the half nothing would have caught.
+	 *
+	 * What is deliberately **not** here is what the two do differently:
+	 * a reset refills the drive charge and clears the jump charge, because a
+	 * boot has both; a jump refills neither, since §7 refills the drive on
+	 * docking and a jump is not a dock. Caches and per-station protocol state
+	 * stay at their call sites for the same reason — a jump has a system's worth
+	 * to drop and a reset has a clock rewind's worth.
+	 */
+	private clearFlightSession() {
 		this.regime = "normal";
 		this.spoolLeftS = 0;
 		this.throttle = 0;
-		this.chargeAu = CHARGE_CAPACITY_AU;
 		this.cruiseSpeedKms = 0;
 		this.closingKms = 0;
 		this.legStartedAtS = null;
 		this.lastLegS = null;
 		this.lastExit = "";
+		this.dockingComputerEngaged = false;
+		// An armed jump does not survive arriving somewhere. `takePendingJump`
+		// clears it before it calls `performJump`, so this is the reset's case
+		// and any later one — the coverage scan asked for it the moment the
+		// field existed, which is the scan doing its job.
+		this.pendingJump = null;
+		this.rates = { pitch: 0, yaw: 0, roll: 0 };
+		this.mouseDx = 0;
+		this.mouseDy = 0;
+		this.chaseYaw = 0;
+	}
+
+	resetFlightToStart() {
+		// **Asked before the reset, because afterwards the answer is always yes.**
+		// `resetWorldToStart` is total: from another star it rebuilds the start
+		// system rather than refusing. The renderer's meshes and body maps are
+		// the departed system's, so without the rebuild below a reset after a
+		// jump simulates one system while drawing another — sage round 3 (codex)
+		// caught this as the cost of round 2's fix, which is the shape this node
+		// has hit twice now.
+		const replacesSystem = !canResetWorldToStart(this.world);
+		resetWorldToStart(this.world);
+		if (replacesSystem) {
+			this.rebuildSystem();
+			// **And the state held *about* that system.** Round 3 rebuilt the
+			// meshes and stopped there; `clearSystemScopedState` did not exist
+			// until round 4, and round 5 caught that the reset never gained it.
+			// Station ids are per-system and reused, so a reset after docking in
+			// a jumped-to system would hand the start system that system's
+			// cached interior and its live docking state under the same id.
+			this.clearSystemScopedState();
+		}
+		this.clearFlightSession();
+
+		// A boot has no jump charging, so a reset has none either.
+		// `resetWorldToStart` rebuilds the start system when the ship is
+		// elsewhere, so this method is total after a jump too — it was not, for
+		// one review round, and the throw reached this published handle (#187).
+		this.jumpCharge = idleCharge();
+		this.jumpNotice = "";
+		this.chargeAu = CHARGE_CAPACITY_AU;
 		// Selection is not written by the flight path, so the coverage scan does
 		// not ask for it, and it is not spelled here either — the constructor and
 		// this method call the same `selectBootTarget`. Two copies is how the
 		// first version came to set `null`, a state no boot produces, and stay
 		// green for five runs.
 		this.selectBootTarget();
-
-		this.rates = { pitch: 0, yaw: 0, roll: 0 };
-		this.mouseDx = 0;
-		this.mouseDy = 0;
-		this.chaseYaw = 0;
-		this.dockingComputerEngaged = false;
 
 		// **Attitude, and it is not one of the assignments above.** `step` turns the
 		// ship with `this.orientation.multiply(turn)` — an in-place mutation of a
@@ -4208,6 +4440,286 @@ class Game {
 		this.selectableCache = null;
 	}
 
+	// ---- §8's jump (#187) ---------------------------------------------------
+
+	/** The hyperspace tank, light years — the commander's, and on the handle so
+	 *  a probe reads the game's number rather than its own. */
+	get fuelLy(): number {
+		return this.commander.fuelLy;
+	}
+
+	/** The tank's capacity, likewise. */
+	readonly fuelCapacityLy = JUMP_TANK_LY;
+
+	/**
+	 * Commit to a destination, or clear one — the chart's "set course" button,
+	 * arriving through `onCourse`.
+	 *
+	 * Held here rather than in the chart so it survives the tab being closed;
+	 * see the `course` field.
+	 */
+	setCourseTo(course: Course | null) {
+		this.course = course;
+		this.jumpNotice = "";
+	}
+
+	/**
+	 * The next system on the set course, or `null`.
+	 *
+	 * **Re-derived every time it is asked**, never remembered as a cursor: an
+	 * off-plan jump then re-plans instead of desyncing, which is
+	 * `galaxy-route.ts`'s own rule and the reason a `Course` is a destination
+	 * and not a chain.
+	 */
+	nextHop(): SystemRecord | null {
+		if (!this.course) return null;
+		const progress = courseProgress(
+			this.world.galaxy.systems,
+			this.course,
+			this.world.system.record,
+		);
+		return progress?.nextHop?.system ?? null;
+	}
+
+	/**
+	 * Start §8's wind-up towards the next hop, or say why not.
+	 *
+	 * ## Why it refuses in the states it does
+	 *
+	 * The wind-up is the mechanic: you commit, you are vulnerable, and something
+	 * has a few seconds to stop you. That only means anything in normal flight,
+	 * so a jump is refused inside cruise, inside cruise's own spool, and while
+	 * docked — one commitment at a time. Docked is the sharpest of the three:
+	 * flight is suspended (#73's E5) and the ship is parked inside a station, so
+	 * a jump from there would take the station's berth reservation with it.
+	 *
+	 * Every refusal writes `jumpNotice` rather than failing silently, because a
+	 * key that sometimes does nothing is indistinguishable from a key that is
+	 * not bound.
+	 */
+	chargeJump(): boolean {
+		// **Before the clear, not after it.** The window's own notice is what
+		// `cruisePrompt` prints while charging, so returning through the clear
+		// blanked the line for the rest of the window — and the claim below that
+		// every refusal writes a notice was false for exactly this arm.
+		if (charging(this.jumpCharge)) return false;
+		this.jumpNotice = "";
+		if (this.dock.phase !== "flying") {
+			this.jumpNotice = "cannot jump from a station";
+			return false;
+		}
+		if (this.regime === "cruise" || this.spoolLeftS > 0) {
+			this.jumpNotice = "drop out of cruise first";
+			return false;
+		}
+		const to = this.nextHop();
+		if (!to) {
+			this.jumpNotice = this.course
+				? "course complete — set another on the galaxy chart"
+				: "no course set — pick one on the galaxy chart";
+			return false;
+		}
+		const decision = planJump(
+			this.world.system.record,
+			to,
+			this.commander.fuelLy,
+		);
+		if (!decision.ok) {
+			// The refusals are the module's, so the words the player reads and the
+			// gate that produced them cannot drift apart.
+			this.jumpNotice = {
+				"same-system": "already there",
+				"other-galaxy": "no galactic hyperdrive fitted",
+				"out-of-range": `${to.name} is out of range`,
+				"insufficient-fuel": `not enough fuel for ${to.name}`,
+			}[decision.refusal];
+			return false;
+		}
+		this.jumpCharge = beginCharge(to.index);
+		this.jumpNotice = `jumping to ${to.name}`;
+		return true;
+	}
+
+	/**
+	 * §8's interruption: **taking damage cancels the charge.**
+	 *
+	 * One method, called from the one place the shipped game applies damage — a
+	 * failed dock (`docking.md` §2.0). #8's combat is unbuilt, so this is the
+	 * only source today, and it is a real one rather than a hook waiting for a
+	 * caller: charge a jump on the way into an aperture, clip the frame, and the
+	 * charge goes. Anything that damages the ship later inherits the rule by
+	 * calling this instead of remembering it.
+	 */
+	cancelJumpCharge(reason: string) {
+		// **The pending jump too, and that is the half the blocker turned on.**
+		// A charge that has fired is already idle, so a `charging` guard alone
+		// would let damage on the terminal frame report a cancellation and the
+		// jump happen anyway.
+		if (!charging(this.jumpCharge) && this.pendingJump === null) return;
+		this.jumpCharge = cancelCharge();
+		this.pendingJump = null;
+		this.jumpNotice = `jump cancelled — ${reason}`;
+	}
+
+	/**
+	 * One frame of the wind-up, and the jump at the end of it.
+	 *
+	 * Runs before the flight step for the reason cruise's spool does not: the
+	 * jump replaces the world the rest of the step would read. Doing it after
+	 * would step the old system, tear it down and throw the result away — which
+	 * is not wrong so much as a frame of work spent on a system nobody is in.
+	 */
+	private stepJumpCharge(dt: number) {
+		const step = stepCharge(this.jumpCharge, dt);
+		this.jumpCharge = step.charge;
+		if (step.fired === null) return;
+		// **Armed, not taken.** See `pendingJump`.
+		this.pendingJump = step.fired;
+	}
+
+	/**
+	 * The jump the wind-up armed, taken at the end of the frame it armed on.
+	 *
+	 * **This is sage round 3's blocker, and it was a real contradiction.** §8
+	 * sells the wind-up on the ship being *vulnerable* through it and on damage
+	 * cancelling the charge — but the first build fired inside `stepJumpCharge`,
+	 * advanced the clock by hand and returned before `stepWorld` and
+	 * `stepDocking` ran. So on the one frame that decides the jump, no flight,
+	 * no damage and no dock check happened, and a failed entry on exactly that
+	 * frame could not cancel anything. Round 2 made the *comment* honest about
+	 * that ("a clocked frame, not a flown one"), which documented the defect
+	 * instead of fixing it.
+	 *
+	 * Now the terminal frame is flown like any other: the charge arms this, the
+	 * rest of the step runs normally — advancing the clock once, through
+	 * `stepWorld`, rather than twice — and the jump is taken afterwards if it
+	 * survived. `cancelJumpCharge` clears it, so a clip on the last frame stops
+	 * the jump, which is what §8 says happens.
+	 */
+	private takePendingJump() {
+		const index = this.pendingJump;
+		if (index === null) return;
+		this.pendingJump = null;
+		const to = this.world.galaxy.systems.find((s) => s.index === index);
+		// A destination that is not in this galaxy's records is a bug in whoever
+		// began the charge, not a move to absorb quietly.
+		if (!to) throw new Error(`jump fired at unknown system ${index}`);
+		this.performJump(to);
+		// **The frame this fires on is flown, and that is round 3's fix.** The
+		// first build advanced the clock here by hand and jumped, returning
+		// before `stepWorld` and `stepDocking` ran — so the one frame that
+		// decides the jump had no flight, no damage and no dock check, and §8's
+		// "damage cancels the charge" could not fire on it. Round 2 rewrote this
+		// comment to describe that honestly, which documented the defect instead
+		// of removing it; round 4 caught the description still standing after
+		// round 3 removed the behaviour.
+		//
+		// Nothing is advanced here now. The charge is stepped, a jump is armed,
+		// and the rest of the step runs normally — one clock advance, through
+		// `stepWorld`, like any other frame.
+	}
+
+	/**
+	 * Take the jump: spend the tank, move the world, rebuild the renderer.
+	 *
+	 * ## What the fuel spend is, and what it is not
+	 *
+	 * The tank pays the distance, and `planJump` is asked again here rather than
+	 * the plan being carried through the wind-up. That is deliberate: the ship
+	 * can lose fuel during the window in a later build (a scoop failure, #8's
+	 * damage model), and a plan priced three seconds ago would let it jump on
+	 * fuel it no longer has. A refusal at this point cancels rather than
+	 * half-jumping.
+	 *
+	 * ## What is rebuilt, and why the list is not shorter
+	 *
+	 * Everything the renderer holds that is keyed on *this* system. The
+	 * `interiors` berth catalogue's own comment named this build ("a build that
+	 * adds a jump owes it a clear"); the docking protocol's grants are per
+	 * station and a grant at a station that is now light years away is a
+	 * reservation nobody can honour; the caches are stamped with a clock and a
+	 * body set that have both moved. `selectableCache`'s comment says it is a
+	 * field rather than a `readonly` precisely because a system change would
+	 * invalidate it, "which nothing does yet".
+	 */
+	private performJump(to: SystemRecord) {
+		const decision = planJump(
+			this.world.system.record,
+			to,
+			this.commander.fuelLy,
+		);
+		if (!decision.ok) {
+			this.jumpNotice = `jump aborted — ${decision.refusal}`;
+			return;
+		}
+		this.commander = {
+			...this.commander,
+			fuelLy: decision.plan.fuelLeftLy,
+		};
+
+		jumpWorldTo(this.world, to);
+		this.rebuildSystem();
+
+		// §7's visited flag, per galaxy (`persistent-world-state.md` §7). The
+		// start system is recorded at boot; this is every system after it.
+		this.commerceWorld = visit(this.commerceWorld, to.galaxy, to.index);
+
+		// The flight session, reset to what arriving in a system is: at rest, in
+		// normal flight, pointed at the new star, with nothing left of the leg
+		// that ended in another system. The drive charge is deliberately **not**
+		// refilled — §7 refills it on docking, and a jump is not a dock.
+		this.clearFlightSession();
+		this.clearSystemScopedState();
+		this.updateLocalFrameBody();
+		this.selectBootTarget();
+		this.faceTheStar();
+		this.refreshScannerContacts();
+		// The chart, if the Navigation tab is open. `jumpTo` is the chart's own
+		// "the ship moved" entry point, so the course re-derives from the new
+		// origin instead of the chart drawing a route from a system the ship has
+		// left.
+		this.chart?.handle.jumpTo(to.index);
+		this.jumpNotice = `arrived at ${to.name}`;
+	}
+
+	/**
+	 * Tear the old system's drawn objects down and build the new one's (#187).
+	 *
+	 * **The order is teardown, then build**, and it matters for one reason that
+	 * is not obvious: `buildBodies` writes into the same three maps this clears,
+	 * so building first would overwrite the handles the teardown needs to reach.
+	 *
+	 * `buildLights` is *not* called again — see its docstring. `buildEnvironment`
+	 * is, because the bake is the star's own colour and this is a different
+	 * star; it disposes what it replaces, which its own comment says it does
+	 * "rather than assuming it is the first call". That day has arrived.
+	 *
+	 * What frees what is `gpu-teardown.ts`'s business, and the two failures it
+	 * can have are `tests/gpu-teardown.test.ts`'s.
+	 */
+	private rebuildSystem() {
+		for (const mesh of this.meshes.values()) mesh.removeFromParent();
+		for (const visual of this.bodyVisuals.values()) visual.dispose();
+		for (const station of this.stationVisuals.values()) station.dispose();
+		this.meshes.clear();
+		this.bodyVisuals.clear();
+		this.stationVisuals.clear();
+		this.layers.clear();
+		this.starBody = undefined;
+
+		this.buildBodies();
+		this.buildEnvironment();
+
+		// The scanner's buffer is one entry per body, filled in place every frame
+		// so the projection allocates nothing. A system with more bodies than the
+		// last would silently drop the surplus, and one with fewer would leave
+		// stale contacts on the scanner.
+		const bodies = this.world.system.bodies.length;
+		while (this.scannerContactBuffer.length < bodies)
+			this.scannerContactBuffer.push({} as ScannerContact);
+		this.scannerContactBuffer.length = bodies;
+	}
+
 	/**
 	 * Ask for cruise. It arrives `SPOOL_S` later, or not at all.
 	 *
@@ -4217,6 +4729,12 @@ class Game {
 	 */
 	engageCruise() {
 		if (this.regime === "cruise" || this.spoolLeftS > 0) return;
+		// One commitment at a time (#187). §8's window is a gamble the player has
+		// taken; letting cruise start inside it would let them take it back.
+		if (charging(this.jumpCharge)) {
+			this.lastExit = "jump charging";
+			return;
+		}
 		if (this.chargeAu <= 0) {
 			this.lastExit = "no drive charge";
 			return;
@@ -4333,6 +4851,19 @@ class Game {
 		// result was worse than no cancel: `stepDockingComputer` overwrites
 		// `this.throttle` on the same frame, so a player pushing the throttle got
 		// neither a cancel nor an effect — an input that visibly does nothing.
+		// §8's wind-up. It only *arms* a jump — the frame it fires on is flown
+		// like any other so damage and a failed entry can still cancel it
+		// (`takePendingJump`), and the jump is taken at the end of the step,
+		// after which nothing of this frame means anything in the new system.
+		//
+		// **Before the docking-computer branch, because that branch returns.**
+		// It sat after it until sage round 4 (codex): a player who charged a
+		// jump with the autopilot engaged got frames that flew and docked but
+		// never decremented the charge, so the jump stayed armed until docking
+		// cancelled it. The autopilot path calls `advanceNormalFlight` like any
+		// other, so it takes an armed jump — it simply never armed one.
+		if (charging(this.jumpCharge)) this.stepJumpCharge(dt);
+
 		if (this.dockingComputerEngaged && this.hasControlInput(yaw, pitch, roll))
 			this.dockingComputerEngaged = false;
 
@@ -4444,6 +4975,10 @@ class Game {
 		// anti-stranding rule rather than a convenience.
 		this.chargeAu = chargeAfterRegen(this.chargeAu, dt);
 		this.stepDocking(before);
+		// Last, because §8's wind-up is only vulnerable if the frame it fires on
+		// is flown first — `stepDocking` is what applies a failed entry's damage,
+		// and damage cancels the charge.
+		this.takePendingJump();
 	}
 
 	/**
@@ -4944,6 +5479,8 @@ class Game {
 				.filter(([, amount]) => amount > 0)
 				.map(([name, amount]) => `${name} ${amount}`),
 			ownedEquipment: this.commander.ownedEquipment,
+			fuelLy: this.commander.fuelLy,
+			fuelCapacityLy: this.fuelCapacityLy,
 			revision: this.stationConsoleRevision,
 		};
 		return this.stationConsoleCache;
@@ -5145,6 +5682,15 @@ class Game {
 				eta === null ? "eta —" : `eta ${duration(eta)}`,
 				closing,
 				`charge ${this.chargeAu.toFixed(1)}/${CHARGE_CAPACITY_AU} AU`,
+				// The hyperspace tank and the set course (#187). They are here and
+				// not on the floor strip because `hud-and-scanner.md` §5 fixes
+				// that strip at four cells and gives the tank no home at all —
+				// which is a HUD question this node surfaced and did not settle.
+				`fuel ${this.commander.fuelLy.toFixed(1)}/${this.fuelCapacityLy} LY`,
+				(() => {
+					const to = this.nextHop();
+					return to ? `next ${to.name}` : "";
+				})(),
 				// The prompt. A prototype whose central mechanic is a keypress the
 				// player has not discovered is a prototype that measures the wrong
 				// thing — the first session was flown entirely in normal flight.
@@ -5206,6 +5752,7 @@ class Game {
 		return flightFloorCells({
 			regime: this.regime,
 			spoolLeftS: this.spoolLeftS,
+			jumpChargeLeftS: this.jumpCharge.leftS,
 			throttle: this.throttle,
 			assist: this.assist,
 			chargeAu: this.chargeAu,
@@ -5302,6 +5849,7 @@ class Game {
 			source: {
 				regime: this.regime,
 				spoolLeftS: this.spoolLeftS,
+				jumpChargeLeftS: this.jumpCharge.leftS,
 				throttle: this.throttle,
 				assist: this.assist,
 				chargeAu: this.chargeAu,

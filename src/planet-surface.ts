@@ -31,6 +31,7 @@ import {
 	fragmentFor,
 } from "./planet-shaders";
 import type { ReliefPath } from "./planet-shaders";
+import { disposeSubtree, shared } from "./gpu-teardown";
 
 /**
  * The tessellation a body and its shells share, and the reason it is exported.
@@ -63,10 +64,8 @@ let nearSphere: THREE.SphereGeometry | undefined;
 let farSphere: THREE.SphereGeometry | undefined;
 export const surfaceSphere = (layer: "near" | "approach" | "far") => {
 	if (layer === "far") {
-		farSphere ??= new THREE.SphereGeometry(
-			1,
-			FAR_SPHERE_SEGMENTS,
-			FAR_SPHERE_RINGS,
+		farSphere ??= shared(
+			new THREE.SphereGeometry(1, FAR_SPHERE_SEGMENTS, FAR_SPHERE_RINGS),
 		);
 		return farSphere;
 	}
@@ -74,7 +73,9 @@ export const surfaceSphere = (layer: "near" | "approach" | "far") => {
 	// separately, but a body in the approach layer is one being flown at — that
 	// is what the layer is for — so its limb is exactly as visible as a near
 	// body's, and a coarser sphere there would be a facet nobody asked to save.
-	nearSphere ??= new THREE.SphereGeometry(1, SPHERE_SEGMENTS, SPHERE_RINGS);
+	nearSphere ??= shared(
+		new THREE.SphereGeometry(1, SPHERE_SEGMENTS, SPHERE_RINGS),
+	);
 	return nearSphere;
 };
 
@@ -182,18 +183,43 @@ export interface BodyVisual {
 	 */
 	setLayer(layer: "near" | "approach" | "far"): void;
 	/**
-	 * Free the per-body materials and the star's corona texture.
+	 * Free everything this body owns, and nothing it shares.
 	 *
-	 * `redrawBodyAs` calls it on every class swap, which is a probe path rather
-	 * than a gameplay one. **Nothing in the game does**, and that is a fact
-	 * about the renderer rather than an oversight: `buildBodies` runs once, at
-	 * construction, because there is no path that changes the system a game is
-	 * in — hyperspace is not built. It exists rather than being absent so the
-	 * node that adds that path has something to call instead of a leak to find.
+	 * `redrawBodyAs` calls it on every class swap, which is a probe path. **The
+	 * game calls it too, since #187**: a jump tears the old system's bodies down
+	 * before the new system's are built, which is the path this method was left
+	 * here in anticipation of while it had no caller at all.
 	 *
-	 * Whether it frees what it names is **not asserted anywhere** — nothing here
-	 * reads GPU allocations back — so read it as written with care, not as
-	 * verified.
+	 * Its docstring used to end by saying that whether it frees what it names is
+	 * *not asserted anywhere*, because nothing here reads GPU allocations back.
+	 * That is still true of the *allocations* — no tier in this repo can ask the
+	 * driver for a byte count.
+	 *
+	 * **What `tests/gpu-teardown.test.ts` asserts, stated at the strength it
+	 * actually holds**, because sage round 2 caught this comment selling a
+	 * fixture's coverage as a real body's:
+	 *
+	 * - **Named-resource completeness on a scene-shaped fixture** — every
+	 *   resource of a hand-built subtree is freed. A fixture, so it proves the
+	 *   walker reaches every *kind* of attachment a material can hang a texture
+	 *   on, not that it reaches everything a
+	 *   generated body has.
+	 * - **Texture completeness on the real bodies**, by a rule the test writes
+	 *   itself rather than importing, since `resourcesOf` and `disposeSubtree`
+	 *   share one traversal by design and a cross-check built from either is
+	 *   that rule agreeing with itself. Only the star has a texture to cover —
+	 *   its corona — because every other class is a `ShaderMaterial` whose bands
+	 *   are computed rather than sampled (#59). The corpus carries the vacuity
+	 *   guard for that reason; asserting it per class would fail `terran` for
+	 *   being right.
+	 * - **Disjointness from a second, still-drawn body of the same class.** This
+	 *   is the failure that does not throw — a teardown that took the shared unit
+	 *   sphere would render the next system blank.
+	 *
+	 * What is *not* asserted: that a generated body has no resource the walker
+	 * cannot reach at all. One traversal is a deliberate choice, so nothing in
+	 * this repo enumerates a body's resources independently of the code under
+	 * test, and the star's corona is the only real resource named.
 	 */
 	dispose(): void;
 }
@@ -239,12 +265,14 @@ function coronaTexture(): THREE.Texture {
  */
 let cloudGeometry: THREE.SphereGeometry | undefined;
 const cloudShell = () => {
-	cloudGeometry ??= new THREE.SphereGeometry(1.014, 128, 84);
+	cloudGeometry ??= shared(new THREE.SphereGeometry(1.014, 128, 84));
 	return cloudGeometry;
 };
 let shellGeometry: THREE.SphereGeometry | undefined;
 const atmosphereShell = () => {
-	shellGeometry ??= new THREE.SphereGeometry(1, SPHERE_SEGMENTS, SPHERE_RINGS);
+	shellGeometry ??= shared(
+		new THREE.SphereGeometry(1, SPHERE_SEGMENTS, SPHERE_RINGS),
+	);
 	return shellGeometry;
 };
 
@@ -253,7 +281,7 @@ const atmosphereShell = () => {
  *  shared like the shells rather than built per body and then leaked. */
 let ringGeometry: THREE.PlaneGeometry | undefined;
 const ringPlane = () => {
-	ringGeometry ??= new THREE.PlaneGeometry(4.8, 4.8, 1, 1);
+	ringGeometry ??= shared(new THREE.PlaneGeometry(4.8, 4.8, 1, 1));
 	return ringGeometry;
 };
 
@@ -471,6 +499,10 @@ export function buildBodyVisual(
 		);
 		corona.scale.setScalar(5.2);
 		corona.name = "decor";
+		// three.js gives every `Sprite` in the process one module-scope quad.
+		// It is not this star's to free, and a teardown that took it would pull
+		// the geometry out from under every other sprite in the game (#187).
+		shared(corona.geometry);
 		group.add(corona);
 	}
 
@@ -493,27 +525,21 @@ export function buildBodyVisual(
 			planet.geometry = surfaceSphere(layer);
 		},
 		dispose() {
-			// One pass over the children, which includes the surface mesh — an
-			// explicit `surfaceMaterial.dispose()` beside this loop disposed it
-			// twice.
+			// **One walker, shared with the station teardown** (#187). The loop
+			// this replaces made two claims it could not keep: that a hand-listed
+			// `material.map` reaches every texture a material samples — a
+			// `ShaderMaterial` hangs its textures off `uniforms`, and every
+			// surface, shell and ring here is one — and that geometry is
+			// untouchable because "every one is shared", which was prose rather
+			// than a property. The sharing is declared at each construction with
+			// `shared()` now, and `tests/gpu-teardown.test.ts` asserts that what
+			// this frees is disjoint from what a second live body is holding.
 			//
-			// Geometry is deliberately not touched: every one a body draws with —
-			// the surface sphere handed in, the two shells, the ring plane — is
-			// shared across bodies and outlives any of them. That was not true of
-			// the ring, which was built per body and would have leaked here; it is
-			// shared now, which is the fix rather than a special case in this loop.
-			for (const child of group.children) {
-				if (!(child instanceof THREE.Mesh || child instanceof THREE.Sprite))
-					continue;
-				const material = child.material as THREE.Material & {
-					map?: THREE.Texture | null;
-				};
-				// The corona's texture is drawn per star into a canvas, and
-				// `Material.dispose()` does not free a map — so a star disposed
-				// without this leaves a 128×128 texture on the GPU.
-				material.map?.dispose();
-				material.dispose();
-			}
+			// The corona's texture is still the case that makes the texture pass
+			// load-bearing: it is drawn per star into a canvas, and
+			// `Material.dispose()` does not free a map, so a star disposed
+			// without it leaves a 128×128 texture on the GPU.
+			disposeSubtree(group);
 		},
 	};
 }

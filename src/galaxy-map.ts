@@ -325,6 +325,19 @@ export interface GalaxyChartOptions {
 	 * controls are on-screen buttons, so nothing is unreachable without them.
 	 */
 	globalKeys?: boolean;
+	/**
+	 * The course the ship is already on, if any (#187).
+	 *
+	 * The chart used to be the only holder of a course, so closing the
+	 * Navigation tab threw one away — the chart is disposed on every toggle.
+	 * The game owns it now and hands it back on mount, which is
+	 * `persistent-world-state.md` §8's rule applied to a UI lifetime rather than
+	 * to a save: the intent is the thing, and the chain is re-derived here.
+	 */
+	course?: Course | null;
+	/** Committed or cleared, so the owner can hold it across a remount and jump
+	 *  along it (#187). */
+	onCourse?: (course: Course | null) => void;
 }
 
 /**
@@ -356,6 +369,8 @@ export function mountGalaxyChart({
 	galaxyIndex,
 	currentIndex,
 	globalKeys = false,
+	course: initialCourse = null,
+	onCourse,
 }: GalaxyChartOptions): GalaxyChart {
 	const galaxy: Galaxy = generateGalaxy(worldSeed, galaxyIndex);
 
@@ -377,7 +392,9 @@ export function mountGalaxyChart({
 		(currentIndex === undefined ? null : systemByIndex(currentIndex)) ??
 		startSystem(galaxy);
 	let selected: SystemRecord | null = null;
-	let course: Course | null = null;
+	// Seeded from the owner (#187), so re-opening the Navigation tab shows the
+	// course the ship is actually on rather than an empty chart.
+	let course: Course | null = initialCourse;
 	let route: Route | null = null;
 
 	// ---- DOM ---------------------------------------------------------------
@@ -1284,6 +1301,7 @@ export function mountGalaxyChart({
 		const next = setCourse(galaxy.systems, current, selected);
 		if (next === null) return false;
 		course = next;
+		onCourse?.(course);
 		recompute();
 		return true;
 	}
@@ -1297,6 +1315,7 @@ export function mountGalaxyChart({
 	courseButton.addEventListener("click", () => commitCourse());
 	clearButton.addEventListener("click", () => {
 		course = null;
+		onCourse?.(null);
 		select(null);
 	});
 	const onKeyDown = (e: KeyboardEvent): void => {
@@ -1482,6 +1501,7 @@ export function mountGalaxyChart({
 		commitCourse,
 		clearCourse: () => {
 			course = null;
+			onCourse?.(null);
 			recompute();
 		},
 		setHaze,

@@ -70,6 +70,10 @@ export interface LiveCockpitState {
 		credits: number;
 		cargo: readonly string[];
 		ownedEquipment: readonly string[];
+		/** The hyperspace tank, light years, and its capacity (#187) — the Fuel
+		 *  row prints the tank where a unit item prints nothing. */
+		fuelLy: number;
+		fuelCapacityLy: number;
 		/** Changes only when an accepted action replaces the displayed state. */
 		revision: number;
 	} | null;
@@ -266,7 +270,8 @@ export class LiveCockpit {
 				name &&
 				(action === "buy-commodity" ||
 					action === "sell-commodity" ||
-					action === "buy-equipment")
+					action === "buy-equipment" ||
+					action === "buy-fuel")
 			)
 				this.callbacks.onStationAction(action, name);
 			return;
@@ -481,7 +486,18 @@ export class LiveCockpit {
 					`<button class="lc-tab" type="button" data-live-station-tab="${tab}" aria-selected="${stationConsole.tab === tab}">${tab}</button>`,
 			)
 			.join("");
-		return `<section class="lc-station-console" data-live-station-console data-live-station-tab-active="${stationConsole.tab}"><header><h2>STATION</h2><small>${escapeHtml(stationConsole.label)}</small></header><nav class="lc-tabs" aria-label="station console tabs">${tabs}</nav>${stationConsole.tab === "Market" ? this.market(stationConsole.market) : this.equipment(stationConsole.equipment, stationConsole.ownedEquipment)}<p class="lc-station-commander" data-live-commander>${stationConsole.credits.toFixed(1)} Cr · HOLD ${escapeHtml(stationConsole.cargo.join(", ") || "EMPTY")}</p></section>`;
+		return `<section class="lc-station-console" data-live-station-console data-live-station-tab-active="${stationConsole.tab}"><header><h2>STATION</h2><small>${escapeHtml(stationConsole.label)}</small></header><nav class="lc-tabs" aria-label="station console tabs">${tabs}</nav>${
+			stationConsole.tab === "Market"
+				? this.market(stationConsole.market)
+				: this.equipment(
+						stationConsole.equipment,
+						stationConsole.ownedEquipment,
+						{
+							ly: stationConsole.fuelLy,
+							capacityLy: stationConsole.fuelCapacityLy,
+						},
+					)
+		}<p class="lc-station-commander" data-live-commander>${stationConsole.credits.toFixed(1)} Cr · HOLD ${escapeHtml(stationConsole.cargo.join(", ") || "EMPTY")}</p></section>`;
 	}
 
 	private market(rows: readonly ConsoleMarketRow[]) {
@@ -507,17 +523,30 @@ export class LiveCockpit {
 		return `<div class="lc-station-market" data-live-station-market><div class="lc-station-row lc-station-head"><span>GOOD</span><span class="lc-station-cell">PRICE</span><span class="lc-station-cell">SHELF</span><span>ACTION</span></div>${rows.map(row).join("")}</div>`;
 	}
 
-	private equipment(screen: ConsoleEquipmentScreen, owned: readonly string[]) {
+	private equipment(
+		screen: ConsoleEquipmentScreen,
+		owned: readonly string[],
+		fuel: { ly: number; capacityLy: number },
+	) {
 		const available = screen.available
 			.map((entry) => {
 				const name = escapeHtml(entry.name);
+				// **The Fuel row's action, which read "FUEL SYSTEM PENDING" until
+				// there was a hyperspace to spend it on** (#187). It is priced by
+				// the light year rather than by the unit, so the button fills the
+				// tank and the middle cell — empty on every other row — prints
+				// what is in it.
 				const action =
 					entry.per === "ly"
-						? '<span class="lc-station-owned">FUEL SYSTEM PENDING</span>'
+						? `<button class="lc-station-action" type="button" data-live-station-action="buy-fuel" data-live-station-name="${name}">FILL</button>`
 						: owned.includes(entry.name)
 							? '<span class="lc-station-owned">OWNED</span>'
 							: `<button class="lc-station-action" type="button" data-live-station-action="buy-equipment" data-live-station-name="${name}">BUY</button>`;
-				return `<div class="lc-station-row" data-live-equipment="available"><span>${name}</span><span class="lc-station-cell">${entry.priceCr} Cr</span><span></span>${action}</div>`;
+				const held =
+					entry.per === "ly"
+						? `${fuel.ly.toFixed(1)}/${fuel.capacityLy} LY`
+						: "";
+				return `<div class="lc-station-row" data-live-equipment="available"><span>${name}</span><span class="lc-station-cell">${entry.priceCr} Cr</span><span class="lc-station-cell">${held}</span>${action}</div>`;
 			})
 			.join("");
 		const unavailable = screen.unavailable

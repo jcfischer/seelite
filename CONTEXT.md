@@ -103,3 +103,34 @@ _Avoid_: Crash, docking failure
 **Operational consequence**:
 A mechanically different later situation produced by an intervention and attributable through world evidence and a persistent record.
 _Avoid_: Flavour text, global influence
+
+**Jump**:
+The act of moving between star systems (`docs/specs/galaxy-generation.md` §8),
+built in #187. Three seconds of **wind-up** flown in normal flight — the window
+§8 makes the pilot vulnerable inside, and the same seconds cruise's spool
+borrows — then a **witchspace transition** that costs no sim time, then an
+arrival 1 AU out on §7.4's **inbound bearing**. It spends the **hyperspace
+tank** by the light year and leaves the cruise **drive charge** alone; the two
+consumables are separate by `in-system-travel.md` §7. `src/hyperspace.ts` owns
+the range gate, the cost and the wind-up; `src/sim.ts`'s `jumpWorldTo` owns what
+it does to a `World`.
+_Avoid_: Warp, hyperjump, hyperspace jump (as a verb), FTL
+"Cruise" is the other superluminal regime and is *in-system*; calling either one
+"warp" makes the pair unnameable.
+
+**Hyperspace tank**:
+The 7 LY jump fuel, spent by distance and bought at any station's equipment
+screen at `economy-trade.md` §6.1's 0.2 Cr per 0.1 LY. Its capacity is
+`galaxy.ts`'s `JUMP_RANGE_LY` and deliberately **not** the flown hull's
+`tankLy`, because that constant is the connectivity graph's edge predicate —
+#185 is the node that makes both hull-aware. Distinct from the **drive charge**,
+which is cruise's own 12 AU reserve with free refills on docking.
+_Avoid_: Fuel (unqualified), drive charge, energy
+
+**Witchspace**:
+Where the ship is between two systems. It costs no sim time today: the clock
+advances by the wind-up, which is flown, and by nothing else — so a jump does
+not turn over #25's 30-minute market epoch and is not a way to wait a market
+out. Misjumps and witchspace ambushes are reserved to #8, and the tunnel as a
+*rendered* thing is unbuilt.
+_Avoid_: Hyperspace (as a place), jump space

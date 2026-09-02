@@ -64,6 +64,7 @@ import * as THREE from "three";
 import { STATION_GEOMETRY, STATION_TYPES, type StationType } from "./station";
 import { displayRand } from "./station-surface";
 import { STATION_VISUALS } from "./station-visuals";
+import { shared } from "./gpu-teardown";
 
 /**
  * A patch of one form's surface, and how much machinery it wants on it.
@@ -123,6 +124,8 @@ export interface GreebleZone {
 const tank = new THREE.CylinderGeometry(0.5, 0.5, 1, 8);
 tank.rotateX(Math.PI / 2);
 
+/** Built once for the whole game and marked as such, so a jump's teardown
+ *  frees the per-station instance data and leaves these standing (#187). */
 export const GREEBLE_PRIMITIVES: readonly THREE.BufferGeometry[] = [
 	/** A crate: the plain box, and the one that reads as a housing. */
 	new THREE.BoxGeometry(1, 1, 1),
@@ -132,7 +135,7 @@ export const GREEBLE_PRIMITIVES: readonly THREE.BufferGeometry[] = [
 	/** A fin: a plate on edge. The one primitive with a thin axis, so a run of
 	 *  them reads as ribs rather than as more boxes. */
 	new THREE.BoxGeometry(1, 0.16, 1),
-];
+].map(shared);
 
 /**
  * One material per role, from the role's own plating figures.
@@ -159,11 +162,15 @@ const MATERIALS: Record<StationType, THREE.MeshStandardMaterial> =
 	Object.fromEntries(
 		STATION_TYPES.map((type) => [
 			type,
-			new THREE.MeshStandardMaterial({
-				color: 0x6d7681,
-				roughness: Math.min(1, STATION_VISUALS[type].plating.roughness + 0.1),
-				metalness: STATION_VISUALS[type].plating.metalness,
-			}),
+			// Shared per role across every station in every system, so a jump's
+			// teardown leaves it standing (#187).
+			shared(
+				new THREE.MeshStandardMaterial({
+					color: 0x6d7681,
+					roughness: Math.min(1, STATION_VISUALS[type].plating.roughness + 0.1),
+					metalness: STATION_VISUALS[type].plating.metalness,
+				}),
+			),
 		]),
 	) as Record<StationType, THREE.MeshStandardMaterial>;
 
