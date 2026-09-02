@@ -4320,6 +4320,35 @@ class Game {
 	 * stay at their call sites for the same reason — a jump has a system's worth
 	 * to drop and a reset has a clock rewind's worth.
 	 */
+	/**
+	 * Everything held *about a system* — dropped when the ship is no longer in
+	 * one.
+	 *
+	 * Two kinds, and they are here together because they have one lifetime.
+	 * **Per-station protocol state**: a grant is a berth reservation (#147), and
+	 * there is no berth in the new system to honour one at. **Caches**: every one
+	 * below is keyed on a body set or on a clock that has just changed under it.
+	 *
+	 * Extracted from `performJump` in sage round 4 — that method had grown to
+	 * hold world movement, renderer rebuild, protocol teardown and cache
+	 * invalidation in one block, so the four evolved together whether or not
+	 * they meant to.
+	 */
+	private clearSystemScopedState() {
+		this.dockingStates.clear();
+		this.berthOccupancy.clear();
+		this.interiors.clear();
+		this.stationConsoleCache = null;
+		this.stationConsoleCacheKey = null;
+		this.massesCache = null;
+		this.massesAt = Number.NaN;
+		this.etaCache = null;
+		this.etaAt = Number.NEGATIVE_INFINITY;
+		this.navEtaCache.clear();
+		this.navEtaAt = Number.NEGATIVE_INFINITY;
+		this.selectableCache = null;
+	}
+
 	private clearFlightSession() {
 		this.regime = "normal";
 		this.spoolLeftS = 0;
@@ -4552,18 +4581,18 @@ class Game {
 		// began the charge, not a move to absorb quietly.
 		if (!to) throw new Error(`jump fired at unknown system ${index}`);
 		this.performJump(to);
-		// **The last frame of the wind-up is a *clocked* frame, not a flown one.**
-		// It read "flown" until sage round 2 pointed out the next sentence
-		// contradicts it: `step` returns straight after a jump, so `stepWorld`
-		// never runs on that frame and no flight integration, damage or dock
-		// check happens on it. What does run is `advanceWorldClock` — without it
-		// the clock loses one frame per jump and the world the ship arrives in
-		// is placed a frame early. The wind-up is the whole of what a jump costs
-		// the clock (§8.1), so losing a frame of it is losing part of the cost.
+		// **The frame this fires on is flown, and that is round 3's fix.** The
+		// first build advanced the clock here by hand and jumped, returning
+		// before `stepWorld` and `stepDocking` ran — so the one frame that
+		// decides the jump had no flight, no damage and no dock check, and §8's
+		// "damage cancels the charge" could not fire on it. Round 2 rewrote this
+		// comment to describe that honestly, which documented the defect instead
+		// of removing it; round 4 caught the description still standing after
+		// round 3 removed the behaviour.
 		//
-		// The distinction is not pedantry: the vulnerability §8 sells the window
-		// on is a property of the frames *before* this one, which are flown
-		// normally. This last one is a bookkeeping frame.
+		// Nothing is advanced here now. The charge is stepped, a jump is armed,
+		// and the rest of the step runs normally — one clock advance, through
+		// `stepWorld`, like any other frame.
 	}
 
 	/**
@@ -4616,22 +4645,7 @@ class Game {
 		// that ended in another system. The drive charge is deliberately **not**
 		// refilled — §7 refills it on docking, and a jump is not a dock.
 		this.clearFlightSession();
-		// Per-station protocol state, which is per *system*: a grant is a berth
-		// reservation (#147) and there is no berth here to honour one at.
-		this.dockingStates.clear();
-		this.berthOccupancy.clear();
-		this.interiors.clear();
-		this.stationConsoleCache = null;
-		this.stationConsoleCacheKey = null;
-		// Every cache below is keyed on a body set or on a clock that has just
-		// changed under it.
-		this.massesCache = null;
-		this.massesAt = Number.NaN;
-		this.etaCache = null;
-		this.etaAt = Number.NEGATIVE_INFINITY;
-		this.navEtaCache.clear();
-		this.navEtaAt = Number.NEGATIVE_INFINITY;
-		this.selectableCache = null;
+		this.clearSystemScopedState();
 		this.updateLocalFrameBody();
 		this.selectBootTarget();
 		this.faceTheStar();
@@ -4813,6 +4827,19 @@ class Game {
 		// result was worse than no cancel: `stepDockingComputer` overwrites
 		// `this.throttle` on the same frame, so a player pushing the throttle got
 		// neither a cancel nor an effect — an input that visibly does nothing.
+		// §8's wind-up. It only *arms* a jump — the frame it fires on is flown
+		// like any other so damage and a failed entry can still cancel it
+		// (`takePendingJump`), and the jump is taken at the end of the step,
+		// after which nothing of this frame means anything in the new system.
+		//
+		// **Before the docking-computer branch, because that branch returns.**
+		// It sat after it until sage round 4 (codex): a player who charged a
+		// jump with the autopilot engaged got frames that flew and docked but
+		// never decremented the charge, so the jump stayed armed until docking
+		// cancelled it. The autopilot path calls `advanceNormalFlight` like any
+		// other, so it takes an armed jump — it simply never armed one.
+		if (charging(this.jumpCharge)) this.stepJumpCharge(dt);
+
 		if (this.dockingComputerEngaged && this.hasControlInput(yaw, pitch, roll))
 			this.dockingComputerEngaged = false;
 
@@ -4878,12 +4905,6 @@ class Game {
 		if (this.keys.has(THROTTLE_DOWN))
 			this.throttle = Math.max(0, this.throttle - dt);
 		this.audio.ambient(this.throttle);
-
-		// §8's wind-up. It only *arms* a jump — the frame it fires on is flown
-		// like any other so damage and a failed entry can still cancel it
-		// (`takePendingJump`), and the jump is taken at the end of the step,
-		// after which nothing of this frame means anything in the new system.
-		if (charging(this.jumpCharge)) this.stepJumpCharge(dt);
 
 		// The spool-up runs in whichever regime the ship is in, and hands over at
 		// zero. Cruise begins at full throttle, because a wind-up that ends with

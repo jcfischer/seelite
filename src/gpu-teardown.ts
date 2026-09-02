@@ -28,10 +28,20 @@
  * ## So sharing is declared, not inferred
  *
  * `shared()` marks a geometry, material or texture as outliving any one system.
- * `disposeSubtree` frees everything else it can reach and **reports exactly
- * what it freed**, so `tests/gpu-teardown.test.ts` can assert the freed set is
- * disjoint from what a second, still-live subtree is holding — which is the
- * check that goes red the day a new shared resource is added without the mark.
+ * `disposeSubtree` frees everything else it can reach and reports the
+ * geometries, materials and textures it freed, so `tests/gpu-teardown.test.ts`
+ * can assert the freed set is disjoint from what a second, still-live subtree is
+ * holding — which is the check that goes red the day a new shared resource is
+ * added without the mark.
+ *
+ * **The report is that set and not a complete teardown ledger**, which the
+ * docstring claimed ("reports exactly what it freed") until sage round 4 read
+ * it against the code. An `InstancedMesh` is disposed too — that is what frees
+ * its instance matrix — but it is an `Object3D` rather than one of this
+ * module's `Disposable`s, so it is deliberately outside `freed`: nothing can
+ * share it, so the disjointness question the report exists to answer does not
+ * arise for it. `tests/gpu-teardown.test.ts` watches it by listening for its
+ * `dispose` event instead, which is why removing the pass now reddens a row.
  *
  * The mark rides in `userData`, which `BufferGeometry`, `Material` and
  * `Texture` all carry. It is a declaration by the module that built the thing,

@@ -709,15 +709,24 @@ costs no sim time. Two reasons, and a cost.
 The cost is stated so it is a decision rather than an oversight: an interstellar
 run costs ~3 s of game time per jump, so #7's 291 Cr interstellar premium is a
 premium on **distance** and not on time, and jumping is not a way to wait a
-market out. The other half is a gain rather than a cost — an out-and-back jump
-pair leaves the origin station's stock deficit where it was, so a jump is not a
-way to launder a farmed pair either, which is the farm Elite's re-roll left
-open. What `tests/world-jump.test.ts` asserts of that is the **key**: a carrier
-key derived from `world.system.record` moves with the ship and comes back, and
-the clock does not advance across the jump, so the 20-minute half-life has
-nothing to decay against. The claim about what a *market screen* then prices is
-one no headless test in this repo makes. If a witchspace duration is ever ratified, `jumpWorldTo` is the one place
-it goes.
+market out. The other half looks like a gain, and is stated only as far as it is
+measured. `tests/world-jump.test.ts` asserts **two things about the key**: a
+carrier key derived from `world.system.record` moves with the ship and comes
+back, and the clock does not advance across the jump, so the 20-minute
+half-life has nothing to decay against. Those two together mean an out-and-back
+pair returns to a deficit *row* it left.
+
+What follows from that about **laundering a farmed pair is not asserted
+anywhere**, and was written here as though it were until sage round 4 read the
+paragraph against its own next sentence. A deficit row is not a price: what a
+market screen charges is `stockResponse` over that row, and nothing headless in
+this repo joins the two across a jump. So the honest form is that a jump does
+not *decay* a mark, and whether that closes the farm is a question for the
+pricing instruments — `scripts/measure-greedy-trader.ts` and #191's buy-back
+pump, which is the live case of a market outcome nobody has measured.
+
+If a witchspace duration is ever ratified, `jumpWorldTo` is the one place it
+goes.
 
 **What #187 did not build.** The Galactic Hyperdrive (§2) — a foreign-galaxy
 destination throws rather than jumping. Misjumps and ambushes, reserved to #8.
