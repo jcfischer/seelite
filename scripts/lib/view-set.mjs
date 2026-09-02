@@ -25,13 +25,30 @@
 /**
  * The fixture, pinned three ways. All three are decisions, not defaults.
  *
- * `SEED` is 47 because `probe-arrival.mjs` already chose it as the geometry
- * fixture: a 7,046 km rocky world and a 33,002 km gas giant, with subjects
- * reachable without flying anywhere. **Not one station of each kind**, which
- * this docstring claimed until #147 tried to frame a refinery in it: seed 47
- * generates a trade station and a shipyard and nothing else. The claim was
- * written for `probe-arrival.mjs`'s purposes, where "kind" is the aperture's —
- * slot and pad — and both of those are present.
+ * `SEED` is 47 because **every captured frame was taken on it**, and that is
+ * now the whole of the reason. It was borrowed from `probe-arrival.mjs`, which
+ * chose 47 as its geometry fixture and then re-picked to 481 in #118 when the
+ * galaxy reshape moved every system (`e2844d2`, PR #124) — so the reason this
+ * docstring gave has been false since, along with the pair of radii it quoted
+ * from the world 47 had stopped being (#174). What pins the seed is the sheet:
+ * #98's gate is a before/after comparison by eye, and a re-pick re-frames every
+ * view against a different world, which invalidates every comparison anyone has
+ * already made. It is a baseline rather than a choice, and it does not move.
+ *
+ * What it generates is `FIXTURE` below, where a test can reach it rather than a
+ * reader having to take a comment's word. Two things it is **not**, both of
+ * which this docstring asserted:
+ *
+ * - **Not one station of each kind.** #147 found that when it tried to frame a
+ *   refinery here, and rescued the phrase by reading "kind" as the aperture's —
+ *   slot and pad, "and both of those are present". That reading is false too,
+ *   and was when it was written: seed 47 generates a trade station and a
+ *   shipyard, and `STATION_GEOMETRY` gives both of them a **slot** (`station.ts`;
+ *   the pad roles are refinery and outpost, and have been since #28). There is
+ *   no pad in this fixture at all, which is exactly why `refinery-cradle-berth`
+ *   names seed 2 and the outpost frame is a workbench shot.
+ * - **No gas giant.** The largest planet is a 5,473 km rocky world, so the two
+ *   `largest-planet` views below no longer caption their subject as one.
  *
  * `GAME_TIME_S` is pinned because **bodies move**: positions are
  * `f(systemSeed, gameTime)` (`src/sim.ts:23`), so an unpinned clock draws a
@@ -45,6 +62,33 @@
 export const SEED = 47;
 export const GAME_TIME_S = 0;
 export const VIEWPORT = { width: 1440, height: 900 };
+
+/**
+ * What `SEED` generates, as data rather than as prose.
+ *
+ * The radii lived in the `SEED` docstring and nothing read them, which is how
+ * they went on describing a world the fixture had stopped being. They are a
+ * constant now because #118's own rule says so: a
+ * figure a file states as measured owes a mode that reprints it, and a comment
+ * is not one. `tests/view-set.test.ts` measures this against `makeWorld(SEED)`,
+ * so a generator change that re-shapes the start system goes red here instead
+ * of silently re-framing the sheet.
+ *
+ * `radiusKm` is rounded to the kilometre — the frames are placed in radii of
+ * their own subject, so this is the fixture's identity and never an input to a
+ * framing.
+ */
+export const FIXTURE = Object.freeze({
+	/** The start system's name. A re-pick of the seed cannot be quiet. */
+	system: "ANLEONOR",
+	/** Every planet, largest first — the order `largest-planet` resolves in. */
+	planets: Object.freeze([
+		Object.freeze({ id: "planet-5", radiusKm: 5473, gasGiant: false }),
+		Object.freeze({ id: "planet-4", radiusKm: 4487, gasGiant: false }),
+	]),
+	/** Station roles, in generation order. Both are slot apertures (#174). */
+	stations: Object.freeze(["trade", "shipyard"]),
+});
 
 /**
  * The levers charted under #98, by node id — six then, seven since #147 put a
@@ -373,7 +417,7 @@ export const VIEWS = Object.freeze([
 	{
 		name: "hull-chase",
 		covers: [101, 99],
-		what: "The player's own hull, mostly backlit, against a gas giant. Flat plate shows here first.",
+		what: "The player's own hull, mostly backlit, against the system's largest planet. Flat plate shows here first.",
 		shot: {
 			kind: "body-offset",
 			body: "largest-planet",
@@ -385,7 +429,7 @@ export const VIEWS = Object.freeze([
 	{
 		name: "planet-terminator",
 		covers: [99],
-		what: "The gas giant at a crescent. The far layer takes no fill on purpose, and this is why.",
+		what: "The largest planet at a crescent. The far layer takes no fill on purpose, and this is why.",
 		shot: {
 			kind: "body-offset",
 			body: "largest-planet",

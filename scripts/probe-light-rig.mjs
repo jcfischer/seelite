@@ -94,9 +94,11 @@ import { installViewPlacement } from "./probe-guard.mjs";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 
-/** Seed 47 and a clock of 0, the canonical view set's fixture — one station of
- *  each kind in a single system, and a world state a capture can be compared
- *  against. */
+/** Seed 47 and a clock of 0, the canonical view set's fixture, so this probe
+ *  and the sheet measure the same world. It carries a trade station, which is
+ *  the subject below; "one station of each kind" is what this line said until
+ *  #174, and seed 47 generates a trade station and a shipyard and nothing else
+ *  (`view-set.mjs`'s `FIXTURE`, which a test measures). */
 const SEED = 47;
 const CLOCK = 0;
 const SUBJECT = "station-trade";
