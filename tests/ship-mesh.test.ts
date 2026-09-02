@@ -568,7 +568,10 @@ describe("procedural ship visual language", () => {
 				for (const child of root.children)
 					if (child !== lights)
 						structure.union(new THREE.Box3().setFromObject(child));
-				const withLights = bounds(id, variant);
+				// `root` above, not a second `bounds(id, variant)`: rebuilding every
+				// hull a second time lofted all 33 pairs twice for a box already in
+				// hand, and `bounds` is exactly this call.
+				const withLights = new THREE.Box3().setFromObject(root);
 				for (const axis of ["x", "y", "z"] as const) {
 					expect(
 						`${id}-${variant} lights inside the silhouette on ${axis}: ${
@@ -638,10 +641,22 @@ describe("procedural ship visual language", () => {
 	 * now *derived* from the roster, so restating its own formula here would be
 	 * a tautology that passes whatever either side says. The mesh is the
 	 * independent witness, and it is what "the drawn raider" means.
+	 *
+	 * The name says *half-length* rather than *contains*, because the sphere
+	 * does not contain the hull and the docstring beside the constant says why:
+	 * the drawn nose reaches 0.1035 km against a radius of 0.09525. A check
+	 * named for containment that measured only `size.z / 2` would be a test
+	 * whose name a reader could not have falsified.
 	 */
-	test("the prototype striker's hit sphere is the sphere that contains its drawn raider", () => {
+	test("the prototype striker's hit sphere is its drawn raider's half-length", () => {
 		const box = bounds(STRIKER_HULL_ID, HULL_SPECS[STRIKER_HULL_ID].variant);
 		const size = box.getSize(new THREE.Vector3());
+		// And the sphere is not sold as containment. The mesh is off-centre, so
+		// the drawn nose is further from the origin than the radius: this pins
+		// the shortfall rather than leaving the name to imply it away.
+		const drawnNoseKm = Math.abs(box.min.z) * ENEMY_VISUAL_SCALE;
+		expect(drawnNoseKm).toBeGreaterThan(ENEMY_COLLISION_RADIUS_KM);
+		expect(drawnNoseKm - ENEMY_COLLISION_RADIUS_KM).toBeLessThan(0.02);
 		// The roster rounds its envelope **up** to 0.1 m, so the built box is up
 		// to 0.1 m under it; the drawn radius is half of that, scaled.
 		const slackKm = (0.0001 / 2) * ENEMY_VISUAL_SCALE;

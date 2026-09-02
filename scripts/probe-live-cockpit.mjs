@@ -945,9 +945,13 @@ check(
  *
  * So this asserts *screen* extent rather than existence: a live bolt has to
  * project inside the viewport, at a position measurably away from the striker
- * that fired it. The control hides the two bolt objects and requires the count
+ * that fired it. The control **zeroes the head buffer** and requires the count
  * to fall to zero, so a measurement that was reading the hull, the reticle or
- * the star field cannot pass it.
+ * the star field cannot pass it. Hiding the objects would not do: it leaves the
+ * positions exactly as they were, so a count taken off the geometry would be
+ * unchanged and the control would pass over a measurement reading something
+ * else — which is the point the code comment below makes and this header used
+ * to contradict.
  */
 const incoming = await combatPage.evaluate(async () => {
 	const game = window.__seelite;
@@ -970,7 +974,7 @@ const incoming = await combatPage.evaluate(async () => {
 			const x = at.getX(i);
 			const y = at.getY(i);
 			const z = at.getZ(i);
-			// A retired slot is collapsed onto the camera and draws nothing.
+			// A retired bolt is collapsed onto the camera and draws nothing.
 			if (x === 0 && y === 0 && z === 0) continue;
 			const p = new V(x, y, z).project(camera);
 			if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;

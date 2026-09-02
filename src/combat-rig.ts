@@ -57,6 +57,7 @@
 import * as THREE from "three";
 import {
 	type CombatEnemyState,
+	ENEMY_COLLISION_RADIUS_KM,
 	ENEMY_VISUAL_SCALE,
 	PLAYER_LASER_RANGE_KM,
 	STRIKER_HULL_ID,
@@ -234,7 +235,7 @@ function glowMaterial(options: {
 			uniform float uRefKm;
 			varying float vLive;
 			void main() {
-				// A retired slot is collapsed onto the camera; drawn, it would be a
+				// A retired bolt is collapsed onto the camera; drawn, it would be a
 				// permanent blob in the middle of the canopy.
 				vLive = dot(position, position) > 0.0 ? 1.0 : 0.0;
 				vec4 mv = modelViewMatrix * vec4(position, 1.0);
@@ -315,6 +316,19 @@ export class CombatPrototypeRig {
 	readonly contact = { id: "combat-prototype-enemy", pos: v3() };
 	readonly targetBody: Body;
 
+	/**
+	 * The striker's velocity, km/s — the one thing `Body` does not carry.
+	 *
+	 * `main.ts` reads a target's velocity through `bodyVelocity`, which throws
+	 * on an id the system does not hold, and the striker is a live projection
+	 * rather than a world body. So the rig answers for its own contact, and
+	 * `main.ts` still names no prototype type
+	 * (`tests/combat-rig-boundary.test.ts`).
+	 */
+	targetVelocity(): Vec3 {
+		return this.enemy.ship.vel;
+	}
+
 	/** #53's striker, drawn: the raider hull from the roster, not a cone. */
 	private readonly targetMesh: THREE.Group;
 	/** Bright, camera-local tracer shown only while the throwaway weapon is held. */
@@ -384,7 +398,10 @@ export class CombatPrototypeRig {
 			name: "ENEMY STRIKER",
 			kind: "moon",
 			pos: this.enemy.ship.pos,
-			radiusKm: 0.75,
+			// The hit sphere, not a blip size. This is what `timeToBody` reads as
+			// the cruise drop radius, and 0.75 km told the panel a ship eight
+			// times its own hull was a thing you could stop at.
+			radiusKm: ENEMY_COLLISION_RADIUS_KM,
 			color: 0x9d2f35,
 		};
 		this.targetMesh = buildShipMesh(
@@ -451,7 +468,7 @@ export class CombatPrototypeRig {
 		);
 		this.bolts.name = "combat-prototype-enemy-laser";
 		// Every live bolt is inside the canopy's field or on its way there, and a
-		// pool whose unused slots sit at the origin has a bounding sphere that
+		// pool whose retired bolts sit at the origin has a bounding sphere that
 		// says nothing useful — culling it would drop the whole volley.
 		this.bolts.frustumCulled = false;
 		scene.add(this.bolts);

@@ -35,6 +35,19 @@ export interface ScannerProjectionOptions {
 
 export const SCANNER_RANGE_KM = 10_000;
 
+/**
+ * How far out an **extra** contact is drawn at minimum, as a fraction of the
+ * plate radius. World bodies are not subject to it — see the loop below.
+ *
+ * A ship in a dogfight is between 0.5 and 10 km away. On the square-root curve
+ * that is 0.007 to 0.032 of the plate, well inside the ship's own marker, so
+ * every frame of the fight would draw the striker on top of the player and the
+ * bearing — the one thing the scope is for — would be unreadable. The floor
+ * trades range fidelity for bearing fidelity, which is the right trade for a
+ * contact whose range is already on the target panel to three decimals.
+ */
+export const MIN_CONTACT_RADIUS = 0.14;
+
 const clamp = (n: number, low: number, high: number) =>
 	Math.min(high, Math.max(low, n));
 
@@ -56,51 +69,67 @@ export function projectScannerContacts(
 ): ScannerContact[] {
 	const contacts = output ?? [];
 	let count = 0;
-	for (const body of [...bodies, ...extraContacts]) {
-		const worldRelative = sub(body.pos, shipPos);
-		// The scope is ship-local, not a tiny top-down map of the solar system.
-		// A contact must walk around the plate when the pilot turns, otherwise the
-		// display is a static world overlay wearing the name "radar".
-		const relative = orientation
-			? intoCameraFrame(worldRelative, orientation)
-			: worldRelative;
-		const distanceKm = length(relative);
-		if (distanceKm > rangeKm) continue;
-		const planarDistanceKm = Math.hypot(relative.x, relative.z);
-		// A 10,000-km scanner needs to retain the outer boundary, but a linear
-		// scale makes a nearby contact at a pronounced bearing look centred. The
-		// square-root curve spends more of the plate on the immediate vicinity;
-		// direction remains exact and the edge still means scanner range.
-		const radius =
-			planarDistanceKm === 0
-				? 0
-				: Math.max(0.14, Math.sqrt(clamp(planarDistanceKm / rangeKm, 0, 1)));
-		const planarX =
-			planarDistanceKm === 0 ? 0 : (relative.x / planarDistanceKm) * radius;
-		const planarZ =
-			planarDistanceKm === 0 ? 0 : (relative.z / planarDistanceKm) * radius;
-		const verticalFraction = clamp(relative.y / rangeKm, -1, 1);
-		let contact = contacts[count];
-		if (!contact) {
-			contact = {} as ScannerContact;
-			contacts[count] = contact;
+	// Two passes over two lists rather than one over their concatenation: this
+	// runs from `updateCockpit` every cockpit frame and takes an `output` buffer
+	// precisely to stay allocation-free, so a spread here would allocate a fresh
+	// array per frame for a list that is usually empty.
+	//
+	// They also differ in one number. `MIN_CONTACT_RADIUS` is applied to the
+	// extra contacts and **not** to world bodies: a live combat contact spends
+	// the fight inside a few kilometres of the ship, which on a 10,000 km plate
+	// is 0.0004 of the radius — under the marker's own size, so it sits on the
+	// ship's own dot and the pilot cannot read a bearing off it. A planet never
+	// gets that close, and lifting one onto a ring it has not reached would be
+	// the display lying about range.
+	for (const [source, floor] of [
+		[bodies, 0],
+		[extraContacts, MIN_CONTACT_RADIUS],
+	] as const)
+		for (const body of source) {
+			const worldRelative = sub(body.pos, shipPos);
+			// The scope is ship-local, not a tiny top-down map of the solar system.
+			// A contact must walk around the plate when the pilot turns, otherwise the
+			// display is a static world overlay wearing the name "radar".
+			const relative = orientation
+				? intoCameraFrame(worldRelative, orientation)
+				: worldRelative;
+			const distanceKm = length(relative);
+			if (distanceKm > rangeKm) continue;
+			const planarDistanceKm = Math.hypot(relative.x, relative.z);
+			// A 10,000-km scanner needs to retain the outer boundary, but a linear
+			// scale makes a nearby contact at a pronounced bearing look centred. The
+			// square-root curve spends more of the plate on the immediate vicinity;
+			// direction remains exact and the edge still means scanner range.
+			const radius =
+				planarDistanceKm === 0
+					? 0
+					: Math.max(floor, Math.sqrt(clamp(planarDistanceKm / rangeKm, 0, 1)));
+			const planarX =
+				planarDistanceKm === 0 ? 0 : (relative.x / planarDistanceKm) * radius;
+			const planarZ =
+				planarDistanceKm === 0 ? 0 : (relative.z / planarDistanceKm) * radius;
+			const verticalFraction = clamp(relative.y / rangeKm, -1, 1);
+			let contact = contacts[count];
+			if (!contact) {
+				contact = {} as ScannerContact;
+				contacts[count] = contact;
+			}
+			count += 1;
+			contact.id = body.id;
+			contact.selected = body.id === targetId;
+			contact.distanceKm = distanceKm;
+			contact.baseXPercent = clamp(50 + planarX * 42, 8, 92);
+			contact.baseYPercent = clamp(50 + planarZ * 31, 18, 82);
+			// On the forward-pitched plate, an overhead contact extends toward the
+			// pilot above the scan plane. Near-field expansion makes separation
+			// legible before it has covered thousands of kilometres.
+			contact.tipOffsetPx =
+				verticalFraction === 0
+					? 0
+					: Math.sign(verticalFraction) *
+						Math.sqrt(Math.abs(verticalFraction)) *
+						54;
 		}
-		count += 1;
-		contact.id = body.id;
-		contact.selected = body.id === targetId;
-		contact.distanceKm = distanceKm;
-		contact.baseXPercent = clamp(50 + planarX * 42, 8, 92);
-		contact.baseYPercent = clamp(50 + planarZ * 31, 18, 82);
-		// On the forward-pitched plate, an overhead contact extends toward the
-		// pilot above the scan plane. Near-field expansion makes separation
-		// legible before it has covered thousands of kilometres.
-		contact.tipOffsetPx =
-			verticalFraction === 0
-				? 0
-				: Math.sign(verticalFraction) *
-					Math.sqrt(Math.abs(verticalFraction)) *
-					54;
-	}
 	contacts.length = count;
 	return contacts;
 }

@@ -174,8 +174,10 @@ const HIT_EVADE_COOLDOWN_S = 3.5;
  *  kilometres as at ten. */
 const THREAT_MISS_KM = 1.2;
 /** The ship does not read the player's mind: a tail earns a reaction only
- *  after this long in the current manoeuvre. It is the whole of the window a
- *  player has to convert a tracking solution into hits. */
+ *  after this long in the current manoeuvre. It is the window before the
+ *  *first* break and not the whole of a fight's shooting: once the striker has
+ *  evaded, `EVADE_COOLDOWN_S` owes the player seven seconds before a tail may
+ *  provoke it again. */
 const THREAT_REACTION_S = 0.45;
 /** Above this the ship is nosed at the player and the pass is a mutual merge,
  *  not a tail. A merge is jousted, not evaded — an earlier cut of this rule
@@ -206,13 +208,22 @@ export const ENEMY_VISUAL_SCALE = 3;
 export const STRIKER_HULL_ID: HullId = "raider";
 
 /**
- * The striker's hit sphere: the sphere that just contains the drawn hull.
+ * The striker's hit sphere: **the drawn hull's half-length**, not a sphere that
+ * contains it.
  *
- * `HULL_SPECS.raider.env.lengthKm` is the **measured** box of the built
- * `raider/a` mesh (0.0635 km), drawn at `ENEMY_VISUAL_SCALE`, so half of that
- * is the radius here: 0.09525 km. It was 0.28 — nearly three drawn ship
- * lengths — which meant the beam scored on shots that visibly missed, and the
- * one skill #53 is trying to make matter is keeping a sight on a moving ship.
+ * `HULL_SPECS.raider.env.lengthKm` is the measured box of the built `raider/a`
+ * mesh (0.0635 km), drawn at `ENEMY_VISUAL_SCALE`, so half of that is the
+ * radius here: 0.09525 km. It was 0.28 — nearly three drawn ship lengths —
+ * which meant the beam scored on shots that visibly missed, and the one skill
+ * #53 is trying to make matter is keeping a sight on a moving ship.
+ *
+ * **It does not contain the hull, and the honest version says so.** `raider/a`
+ * runs -0.0345 to +0.0290 about its own origin, so drawn it reaches 0.1035 km
+ * forward — 8 m of nose outside this sphere — and the far box corner is at
+ * 0.117 km. A sphere large enough to contain the box would be 0.117 and would
+ * put a quarter of its volume in empty space beside a hull that is five times
+ * longer than it is tall. The half-length is the figure a fixed forward gun
+ * wants: generous down the axis you are aiming along, tight across it.
  *
  * The figure moved by 3.6 % under #181, which replaced a *declared* 0.066 with
  * the mesh's own box; the point of reading it rather than copying it is that
@@ -572,7 +583,9 @@ export function stepCombatEnemy(
 				: 1;
 
 	const ship = { pos: { ...state.ship.pos }, vel: { ...state.ship.vel } };
-	stepFlight(ship, { nose, throttle, assist: true }, dt, STRIKER_PERFORMANCE);
+	// `step`, not `dt`: the clamp above is what stops a negative frame delta
+	// running the integrator backwards, and it has to reach the integrator too.
+	stepFlight(ship, { nose, throttle, assist: true }, step, STRIKER_PERFORMANCE);
 
 	// Firing follows pointing, in any phase but a rout: a snapshot as the nose
 	// sweeps across the player during a break is a shot a pilot would take.

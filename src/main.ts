@@ -3087,12 +3087,19 @@ class Game {
 		// its own copy of that integration for one round and it had already
 		// diverged: keyed to the nearest mass alone, it read ~30× too fast over a
 		// station's final approach and omitted the clamp's 16 s entirely.
+		// Same guard as `targetVelocity`, and for the same throw: `timeToBody`
+		// runs from the panel as well as from the cruise spool.
+		const striker = this.combatRig?.targetBody;
+		const targetVel =
+			striker && target.id === striker.id
+				? (this.combatRig?.targetVelocity() ?? v3())
+				: bodyVelocity(this.world.system, target.id, this.world.gameTime);
 		return legSeconds(
 			from,
 			{
 				pos: target.pos,
 				radiusKm: target.radiusKm,
-				vel: bodyVelocity(this.world.system, target.id, this.world.gameTime),
+				vel: targetVel,
 			},
 			this.masses(),
 			this.cruiseParams,
@@ -3321,9 +3328,16 @@ class Game {
 	/** How fast the selected target is moving through sim space, km/s — the frame
 	 *  the arrival is judged in. Zero when nothing is selected. */
 	targetVelocity(): Vec3 {
-		return this.targetId
-			? bodyVelocity(this.world.system, this.targetId, this.world.gameTime)
-			: v3();
+		if (!this.targetId) return v3();
+		// The striker is not a world body, and `bodyVelocity` **throws** on an id
+		// it cannot find rather than returning zero. `stepCruise` calls this every
+		// cruise frame, so selecting the striker and pressing J killed the
+		// animation loop on the first frame of the spool — the one path where a
+		// live projection in the target list reaches the world's own arithmetic.
+		const striker = this.combatRig?.targetBody;
+		if (striker && this.targetId === striker.id)
+			return this.combatRig?.targetVelocity() ?? v3();
+		return bodyVelocity(this.world.system, this.targetId, this.world.gameTime);
 	}
 
 	/** What the player is asking of the flight model this frame (#5's model, in

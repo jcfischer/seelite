@@ -19,6 +19,7 @@
  * naming it. This file's own doc comment is the demonstration.
  */
 import { expect, test } from "bun:test";
+import { bodyVelocity, makeWorld } from "../src/sim";
 import { codeOf } from "./lib/source-scan";
 
 const RIG = "src/combat-rig.ts";
@@ -129,4 +130,39 @@ test("no other combat vocabulary survives in main.ts", () => {
 	// Bounded too: one import path, one query flag. A third is a new place
 	// `main.ts` has learned the word.
 	expect(all.filter((w) => w === "combat")).toHaveLength(2);
+});
+
+/**
+ * The striker is in the target list and is **not** in the world, and one of
+ * those two facts throws.
+ *
+ * `bodyVelocity` refuses an id the system does not hold rather than returning
+ * zero, deliberately — `sim.ts` says a body it cannot find is the two halves
+ * having disagreed about what is in the system. `Game.targetVelocity()` runs
+ * every cruise frame and `timeToBody` runs from the panel, so selecting the
+ * striker and pressing J killed the animation loop on the first frame of the
+ * spool. #53 put the striker in `selectable()`; nothing before it had ever put
+ * something selectable outside `byId`.
+ *
+ * Two halves, and neither substitutes. The first proves the hazard is real
+ * against a shipped world, so a future `bodyVelocity` that started returning
+ * zero would fail here rather than silently making the guard decorative. The
+ * second is a source scan, which is this file's tier: `Game` needs a browser,
+ * so the behavioural half belongs to `probe-live-cockpit` and not here.
+ */
+test("the striker's id is not a world body, and bodyVelocity says so by throwing", () => {
+	const world = makeWorld(42);
+	expect(world.system.byId.has("combat-prototype-enemy")).toBe(false);
+	expect(() =>
+		bodyVelocity(world.system, "combat-prototype-enemy", world.gameTime),
+	).toThrow();
+});
+
+test("both of main.ts's target-velocity paths route the striker past bodyVelocity", () => {
+	const main = codeOf("src/main.ts");
+	// Once in `targetVelocity()`, once in `timeToBody()`. Counted rather than
+	// merely present, because a guard on one of the two is the bug still live
+	// on whichever path was missed — and it was `timeToBody` that the panel
+	// reaches without cruising at all.
+	expect(main.match(/combatRig\?\.targetVelocity\(\)/g) ?? []).toHaveLength(2);
 });
