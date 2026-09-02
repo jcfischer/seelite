@@ -662,6 +662,68 @@ the attacker has a few seconds to stop you. That is a real mechanic handed to
 **Misjumps and witchspace ambushes are a reserved hook, not specified here** —
 they are combat content and belong to #8.
 
+### 8.1 What #187 built, and the one thing it decided
+
+The table above was ratified with nothing performing it: `makeSystem` was called
+once, inside `makeWorld`, and nothing ever assigned `world.system`. #187 built
+the act. What it added to the table rather than merely implementing:
+
+| Property | Value | Where it lives |
+|---|---|---|
+| Wind-up | **3 s**, flown in normal flight | `hyperspace.ts`'s `JUMP_CHARGE_S` |
+| Tank | 7.0 LY, spent by distance | `galaxy.ts`'s `JUMP_RANGE_LY` |
+| Refuel | any station's equipment screen, §6.1's price | `station-commerce.ts` |
+| Range gate | the **squared** comparison | `hyperspace.ts`'s `planJump` |
+| Cancelled by | damage — today, a failed dock (`docking.md` §2.0) | `Game.cancelJumpCharge` |
+| Clock across a jump | **the wind-up, and nothing more** | `sim.ts`'s `jumpWorldTo` |
+
+**The wind-up is one value with two fields.** §4 of `in-system-travel.md` says
+cruise's spool-up deliberately borrows this one rather than inventing a second
+escape mechanic; the constant is declared here now and cruise reads it, so the
+borrowing runs the direction the specs state it in. The *state* is separate —
+the two windows are cancelled by different things and end in different places,
+and the flight floor's MODE cell prints `JUMP` for one and `SPOOL` for the
+other.
+
+**The range gate compares squared distances**, because §5's `isConnected` and
+the chart's `neighbours` do, and §2's own note says the squared form is the
+definition. A gate that rooted first can disagree with them for a pair sitting
+within an ulp of 7.0 LY — and a jump refused to a system the chart drew inside
+the shell is a map that lies.
+
+**The clock is the decision, and it is not ratified.** A jump is a light year in
+three seconds, so what the clock does across one is a real choice. What shipped
+is the conservative arm: the clock advances by the wind-up — which is *flown*,
+in normal flight, with the bodies moving under it — and the transition itself
+costs no sim time. Two reasons, and a cost.
+
+1. The map's constraint from #10 is that sim time is **never** compressed, and
+   it says an argument against that has to be *made*. Making one is a decision
+   node's act, not a build node's.
+2. `market.ts` records that Elite re-rolled the fluctuation byte on every jump
+   while seelite's market is `f(seed, epoch)` — so **the clock is the only thing
+   that re-rolls a market**. A clock advance sized to cross #25's 30-minute
+   epoch would turn every jump into a market reset that #25 measured nothing
+   against, which is settling an economy question by accident.
+
+The cost is stated so it is a decision rather than an oversight: an interstellar
+run costs ~3 s of game time per jump, so #7's 291 Cr interstellar premium is a
+premium on **distance** and not on time, and jumping is not a way to wait a
+market out. The other half is a gain rather than a cost — an out-and-back jump
+pair leaves the origin station's stock deficit where it was, so a jump is not a
+way to launder a farmed pair either, which is the farm Elite's re-roll left
+open. If a witchspace duration is ever ratified, `jumpWorldTo` is the one place
+it goes.
+
+**What #187 did not build.** The Galactic Hyperdrive (§2) — a foreign-galaxy
+destination throws rather than jumping. Misjumps and ambushes, reserved to #8.
+The witchspace tunnel as a rendered thing. And a **hyperspace tank reading on
+the shipped glass**: `hud-and-scanner.md` §5 fixes the flight floor at four
+cells and gives the tank no home, so it appears on the station console's Fuel
+row and on the legacy HUD only. That is a HUD gap this node surfaced and
+deliberately did not settle by squeezing a fifth cell into a strip a browser
+check asserts the shape of.
+
 ---
 
 ## 9. Verification

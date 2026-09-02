@@ -328,8 +328,12 @@ export interface FloorCell {
  */
 export interface FlightFloorState {
 	regime: "normal" | "cruise";
-	/** Seconds of hyperspace wind-up left, or 0. */
+	/** Seconds of **cruise's** spool-up left, or 0. The comment here read
+	 *  "hyperspace wind-up" until #187 built one: this is `in-system-travel.md`
+	 *  §4's, which borrows the rule and is a different window. */
 	spoolLeftS: number;
+	/** Seconds of §8's **hyperspace** wind-up left, or 0 (#187). */
+	jumpChargeLeftS: number;
 	/** 0…1. */
 	throttle: number;
 	assist: boolean;
@@ -386,6 +390,7 @@ export function flightFloorWidest(
 	const base: FlightFloorState = {
 		regime: "normal",
 		spoolLeftS: 0,
+		jumpChargeLeftS: 0,
 		throttle: 0,
 		assist: true,
 		chargeAu: chargeCapacityAu,
@@ -406,6 +411,11 @@ export function flightFloorWidest(
 	 */
 	const candidates: FlightFloorState[] = [
 		{ ...base, spoolLeftS: spoolSecondsMax },
+		// The jump window is the same seconds — one rule, two regimes
+		// (`in-system-travel.md` §4) — so it is never the widest MODE reading.
+		// It is swept anyway rather than argued: a word change here would
+		// otherwise widen the cell with nothing measuring it.
+		{ ...base, jumpChargeLeftS: spoolSecondsMax },
 		{ ...base, regime: "cruise" },
 		{ ...base, throttle: 1 },
 		{ ...base, assist: false },
@@ -442,6 +452,7 @@ export function flightFloorCells(state: FlightFloorState): FloorCell[] {
 	const {
 		regime,
 		spoolLeftS,
+		jumpChargeLeftS,
 		throttle,
 		assist,
 		chargeAu,
@@ -453,16 +464,30 @@ export function flightFloorCells(state: FlightFloorState): FloorCell[] {
 	// is committed inside, and on the frame a drop-out fires `regime` still
 	// reads cruise — so a strip keyed on `regime` alone would name the regime
 	// the ship has left.
+	//
+	// **And the jump window outranks the spool.** The two cannot run at once —
+	// the game refuses each while the other is live — but the precedence is
+	// written down rather than left to that refusal, because a MODE cell
+	// reading `SPOOL` while the ship is seconds from another star system is the
+	// wrong word for the commitment the pilot is inside. It is deliberately a
+	// different word from `SPOOL` for the same reason: §8's window ends
+	// somewhere else, and the two are cancelled by different things.
 	const mode: FloorCell =
-		spoolLeftS > 0
+		jumpChargeLeftS > 0
 			? {
 					label: "MODE",
-					value: `SPOOL ${spoolLeftS.toFixed(1)}s`,
+					value: `JUMP ${jumpChargeLeftS.toFixed(1)}s`,
 					tone: "action",
 				}
-			: regime === "cruise"
-				? { label: "MODE", value: "CRUISE", tone: "confirmed" }
-				: { label: "MODE", value: "NORMAL", tone: "passive" };
+			: spoolLeftS > 0
+				? {
+						label: "MODE",
+						value: `SPOOL ${spoolLeftS.toFixed(1)}s`,
+						tone: "action",
+					}
+				: regime === "cruise"
+					? { label: "MODE", value: "CRUISE", tone: "confirmed" }
+					: { label: "MODE", value: "NORMAL", tone: "passive" };
 
 	const thr: FloorCell = {
 		label: "THR",

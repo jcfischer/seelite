@@ -8,7 +8,9 @@
 import type { CarrierKey } from "./carrier-key";
 import { type DeficitMap, readDeficit, recordTrade } from "./deficits";
 import { HULL_SPECS, type HullId } from "./hull";
+import { JUMP_TANK_LY } from "./hyperspace";
 import {
+	FUEL_CR_PER_LY,
 	type Commodity,
 	type MarketStation,
 	type UniversalItem,
@@ -25,6 +27,16 @@ export interface CommanderState {
 	/** Quantities remain in the commodity's native unit. */
 	cargo: Readonly<Record<string, number>>;
 	ownedEquipment: readonly string[];
+	/**
+	 * The hyperspace tank, light years (#187).
+	 *
+	 * On the commander beside credits and cargo, because it is bought here and
+	 * spent by the ship — the same shape as the drive charge being session
+	 * state on the renderer. It is **not** the drive charge: §7 of
+	 * `in-system-travel.md` gives cruise its own 12 AU reserve with free
+	 * refills, and a jump does not touch it.
+	 */
+	fuelLy: number;
 	/**
 	 * The hull being flown, which is what decides the hold (#181).
 	 *
@@ -45,13 +57,27 @@ export const newCommander = (hull: HullId): CommanderState => ({
 	credits: STARTING_CREDITS,
 	cargo: {},
 	ownedEquipment: [],
+	// A full tank, which is Elite's own opening position and the only one a
+	// hundred credits can afford to be given (a full tank is 14 Cr).
+	fuelLy: JUMP_TANK_LY,
 	hull,
 });
 
 export type StationAction =
 	| { type: "buy-commodity"; commodity: string; quantity?: number }
 	| { type: "sell-commodity"; commodity: string; quantity?: number }
-	| { type: "buy-equipment"; equipment: string };
+	| { type: "buy-equipment"; equipment: string }
+	/**
+	 * Fill the hyperspace tank (#187).
+	 *
+	 * **No quantity.** §6.1 prices fuel per light year and the tank has one
+	 * capacity, so the only decision is how much of the shortfall the
+	 * commander can pay for — which is arithmetic, not a choice. A partial fill
+	 * is what happens when the credits run out, and it is accepted rather than
+	 * refused: a pilot with 3 Cr and an empty tank needs the 1.5 LY those buy
+	 * more than they need a refusal.
+	 */
+	| { type: "buy-fuel" };
 
 export interface StationCommerceInput {
 	commander: CommanderState;
@@ -125,6 +151,29 @@ export function transactAtStation(
 	input: StationCommerceInput,
 ): StationCommerceResult {
 	const { action } = input;
+	if (action.type === "buy-fuel") {
+		const wanted = JUMP_TANK_LY - input.commander.fuelLy;
+		// Rounded to the tenth of a light year §6.1 prices in, so the tank never
+		// holds a fraction of a unit nobody could have bought and the charge is
+		// always a whole number of 0.2 Cr steps.
+		const affordable =
+			Math.floor((input.commander.credits / FUEL_CR_PER_LY) * 10) / 10;
+		const ly = Math.min(Math.floor(wanted * 10) / 10, affordable);
+		// Two refusals rather than one, because they send the player to
+		// different places: a full tank is not a money problem.
+		if (wanted <= 0) return rejected(input, "fuel-full");
+		if (ly <= 0) return rejected(input, "insufficient-credits");
+		return {
+			accepted: true,
+			reason: null,
+			commander: {
+				...input.commander,
+				credits: input.commander.credits - ly * FUEL_CR_PER_LY,
+				fuelLy: input.commander.fuelLy + ly,
+			},
+			deficits: input.deficits,
+		};
+	}
 	if (action.type === "buy-equipment") {
 		const entry = availableEquipment(input).find(
 			(item) => item.name === action.equipment,

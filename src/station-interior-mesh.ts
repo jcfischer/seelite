@@ -24,6 +24,7 @@ import * as THREE from "three";
 import type { StationType } from "./station";
 import type { Berth, StationInterior } from "./station-interior";
 import { STATION_VISUALS, type StationDetailLevel } from "./station-visuals";
+import { shared } from "./gpu-teardown";
 
 /**
  * What `main.ts` looks for when it fills a name shield with pixels.
@@ -184,7 +185,7 @@ export function ringAround(
  * affine map of the unit cube, so `Box3.setFromObject` and the connectivity
  * check read the same numbers either way.
  */
-const UNIT_BOX = new THREE.BoxGeometry(1, 1, 1);
+const UNIT_BOX = shared(new THREE.BoxGeometry(1, 1, 1));
 
 const box = (
 	w: number,

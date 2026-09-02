@@ -82,6 +82,7 @@ import {
 } from "./station-interior-mesh";
 import { stationInterior } from "./station-interior";
 import { PLATE_TEXTURE_SIZE } from "./surface";
+import { disposeSubtree, isShared, shared } from "./gpu-teardown";
 
 /**
  * How far the *drawn* object reaches, kilometres — the selected form's own
@@ -197,6 +198,25 @@ export interface StationMesh {
 	 * station per frame.
 	 */
 	greebles: THREE.InstancedMesh[];
+	/**
+	 * Free everything this station owns, and nothing it shares (#187).
+	 *
+	 * **Nothing called it until hyperspace existed**, which is the same fact
+	 * `planet-surface.ts` records about its own: a `Game` built its stations
+	 * once and drew them for the session. A jump builds a new system's, so the
+	 * old one's per-station geometry — every form here is lofted per call — its
+	 * fixture materials, its nameplate texture and its greeble instance
+	 * matrices have to go.
+	 *
+	 * What it must **not** free is the plating maps (one pair per role), the
+	 * hull materials (one per type and colour), `PANE_GEOMETRY` and
+	 * `GREEBLE_PRIMITIVES`: all four are shared with every station in every
+	 * system, and freeing them renders the next system's stations black rather
+	 * than throwing. They are marked at construction with `shared()` and
+	 * `tests/gpu-teardown.test.ts` asserts the disjointness rather than
+	 * trusting the marks.
+	 */
+	dispose(): void;
 }
 
 /** One clock-driven light. `base` is its lit intensity; the waveform scales it. */
@@ -247,6 +267,9 @@ const surfaceMaps = (type: StationType) => {
 	// but "the stations look dark".
 	albedo.colorSpace = THREE.SRGBColorSpace;
 	for (const map of [albedo, wear]) {
+		// Shared by every station of this role, in this system and in every
+		// system after a jump — so a teardown must not free it (#187).
+		shared(map);
 		map.wrapS = THREE.RepeatWrapping;
 		map.wrapT = THREE.RepeatWrapping;
 		// Plating is a surface language, not a photograph: nearest sampling keeps
@@ -317,6 +340,10 @@ const hullMaterial = (color: number, type: StationType) => {
 		roughness: 1,
 		metalness: 1,
 	});
+	// Kept across systems as well as across stations — the cache is keyed on
+	// (type, colour) and nothing in it is per-system, so a jump's teardown
+	// leaves it alone (#187).
+	shared(material);
 	hullMaterials.set(cacheKey, material);
 	return material;
 };
@@ -435,7 +462,7 @@ function detail<T extends THREE.Object3D>(
  * exception and are built per station, because §7's colour cue is per type.
  */
 const PANE_COUNT = 28;
-const PANE_GEOMETRY = new THREE.BoxGeometry(0.03, 0.012, 0.004);
+const PANE_GEOMETRY = shared(new THREE.BoxGeometry(0.03, 0.012, 0.004));
 /**
  * One pane material per role, from the profile's `windowColor` — habitation
  * light is warmer on the refinery than on the two Coriolis hulls.
@@ -445,12 +472,12 @@ const PANE_GEOMETRY = new THREE.BoxGeometry(0.03, 0.012, 0.004);
  * a fault, and §5's motion belongs to the strobes, the arc and the flare.
  */
 const PANE_MATERIALS: Record<StationType, THREE.MeshStandardMaterial> = {
-	trade: emissiveMaterial(STATION_VISUALS.trade.windowColor, 1.4),
-	shipyard: emissiveMaterial(STATION_VISUALS.shipyard.windowColor, 1.4),
-	refinery: emissiveMaterial(STATION_VISUALS.refinery.windowColor, 1.2),
-	outpost: emissiveMaterial(STATION_VISUALS.outpost.windowColor, 1.2),
+	trade: shared(emissiveMaterial(STATION_VISUALS.trade.windowColor, 1.4)),
+	shipyard: shared(emissiveMaterial(STATION_VISUALS.shipyard.windowColor, 1.4)),
+	refinery: shared(emissiveMaterial(STATION_VISUALS.refinery.windowColor, 1.2)),
+	outpost: shared(emissiveMaterial(STATION_VISUALS.outpost.windowColor, 1.2)),
 };
-const APERTURE_LIGHT_MATERIAL = emissiveMaterial(0xffb347, 2.2);
+const APERTURE_LIGHT_MATERIAL = shared(emissiveMaterial(0xffb347, 2.2));
 
 /**
  * The nameplate's height, as a multiple of the aperture's.
@@ -498,9 +525,8 @@ function nameplateMaterial(): THREE.MeshBasicMaterial {
 }
 /** The shipyard's cold bay floods. Steady, so shared: what moves on that
  *  station is the welding arc, and it gets its own material per station. */
-const FLOOD_MATERIAL = emissiveMaterial(
-	STATION_VISUALS.shipyard.floodColor,
-	2.0,
+const FLOOD_MATERIAL = shared(
+	emissiveMaterial(STATION_VISUALS.shipyard.floodColor, 2.0),
 );
 
 /**
@@ -736,6 +762,12 @@ function flatCloneOf(material: THREE.Material) {
 	if (cached) return cached;
 	const clone = material.clone();
 	if (clone instanceof THREE.MeshStandardMaterial) clone.flatShading = true;
+	// **The clone inherits its base's sharing rather than assuming it** (#187).
+	// The cache is keyed on the base and lives as long as it does, so a clone of
+	// a shared material is shared and a clone of a per-station one is not —
+	// marking all of them shared leaks one material per flat-shaded part per
+	// station, which is what `tests/gpu-teardown.test.ts` went red on.
+	if (isShared(material)) shared(clone);
 	flatClones.set(material, clone);
 	return clone;
 }
@@ -3299,6 +3331,9 @@ export function buildStationForm(
 		accessories,
 		nameplates,
 		greebles,
+		// One call, and the ledger of what a system owns is `shared()` at the
+		// lines that build the kept things rather than a list here (#187).
+		dispose: () => disposeSubtree(root),
 	};
 	// Built at `full` and then set, so the tagged accessories are in a state that
 	// matches the field rather than merely defaulting to visible. The renderer

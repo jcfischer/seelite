@@ -55,6 +55,14 @@ const main = codeOf(SUBJECT);
 const LEG_PATH = [
 	"engageCruise",
 	"dropOut",
+	// §8's wind-up (#187). It is on this list and `performJump` is not, and the
+	// difference is what a reset is *for*: the charge is flight-session state a
+	// second leg must not inherit, while a jump writes the commander's tank, the
+	// per-galaxy visited set and the station console's cache — none of which a
+	// return to the start of a leg should undo. `resetWorldToStart` refuses a
+	// jumped world outright, so a reset after a jump is a throw rather than a
+	// half-restored state this scan would have to have an exemption for.
+	"stepJumpCharge",
 	"stepCruise",
 	"advanceNormalFlight",
 	"step",

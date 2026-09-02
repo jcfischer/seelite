@@ -209,6 +209,16 @@ The spool-up deliberately reuses #6's hyperspace wind-up rule rather than
 inventing a second escape mechanic: one rule the player learns once, applied in
 two places. Without it, every losing fight ends in a free escape.
 
+**Since #187 the borrowing runs the direction this sentence states it in.** The
+seconds were a `SPOOL_S = 3` inside the renderer, because the hyperspace
+wind-up it says it reuses was not built; `hyperspace.ts` declares
+`JUMP_CHARGE_S` now and cruise reads it, so a retune of one is a retune of both
+and the two cannot drift into the second mechanic this paragraph refuses. What
+is **not** shared is the state: the two windows are cancelled by different
+things and end in different places, so each has its own countdown and the
+flight floor's MODE cell prints `JUMP` for one and `SPOOL` for the other
+(`galaxy-generation.md` §8.1).
+
 Consequences handed to #8: interdiction is where hostiles reach a player in
 transit, and without it they could only exist in the small volumes around the
 arrival point and the station — which would make #6's radial danger gradient
