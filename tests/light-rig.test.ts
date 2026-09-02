@@ -199,10 +199,10 @@ describe("the equirectangular buffer", () => {
 });
 
 describe("the rig's constants", () => {
-	test("every authored standard-material emissive stays inside the shared ceiling", () => {
+	test("the four #199 emissive modules stay inside the shared ceiling", () => {
 		// Tone-mapped MeshBasicMaterial lights have no emissive intensity; the bay
-		// traversal test covers that separate path. These exported records are the
-		// complete standard-material intensity surface named by #199.
+		// traversal test covers that separate path. This is deliberately the four
+		// live-scene authoring modules named by #199, not gallery/viewer tooling.
 		const modules = {
 			station: STATION_EMISSIVE_INTENSITIES,
 			stationInterior: STATION_INTERIOR_EMISSIVE_INTENSITIES,

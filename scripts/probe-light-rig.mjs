@@ -113,6 +113,11 @@ const RADII = 8;
  * A band rather than a floor: a white hull and an under-lit hull are both
  * exposure failures, and the same-build spread printed below qualifies it. */
 const HULL_LUMA_BAND = { min: 150, max: 200 };
+/** Floors for the distribution beneath the peak. These are deliberately well
+ * below the calibrated 73.59 / 103.99 readings: they reject the failure the
+ * principal caught — one compliant highlight on an otherwise dark hull —
+ * without turning the probe into an exact-image comparison. */
+const HULL_LUMA_FLOORS = { lowerQuartile: 55, median: 85 };
 const HULL_SAMPLES = 5;
 
 /**
@@ -452,18 +457,27 @@ t.check(
 if (!hull.missing) {
 	const min = Math.min(...hull.peaks);
 	const max = Math.max(...hull.peaks);
+	const lowerQuartileMin = Math.min(...hull.lowerQuartiles);
+	const medianMin = Math.min(...hull.medians);
 	t.check(
 		"the brightest painted hull pixel stays inside the post-tone-map band",
 		min >= HULL_LUMA_BAND.min && max <= HULL_LUMA_BAND.max,
 		`${min.toFixed(2)}–${max.toFixed(2)} of 255, band ${HULL_LUMA_BAND.min}–${HULL_LUMA_BAND.max}`,
+	);
+	t.check(
+		"the painted hull distribution is not under-lit beneath that highlight",
+		lowerQuartileMin >= HULL_LUMA_FLOORS.lowerQuartile &&
+			medianMin >= HULL_LUMA_FLOORS.median,
+		`lower quartile ${lowerQuartileMin.toFixed(2)} ≥ ${HULL_LUMA_FLOORS.lowerQuartile}, ` +
+			`median ${medianMin.toFixed(2)} ≥ ${HULL_LUMA_FLOORS.median}`,
 	);
 	console.log(
 		`  hull-chase painted peak ${min.toFixed(2)}–${max.toFixed(2)} of 255 ` +
 			`(same-build noise ${(max - min).toFixed(2)}, ${hull.pixels} px, at ${hull.peakAts.map((at) => `${at.x},${at.y}`).join(" / ")})`,
 	);
 	console.log(
-		`  hull spread lower quartile ${Math.min(...hull.lowerQuartiles).toFixed(2)}–${Math.max(...hull.lowerQuartiles).toFixed(2)}, ` +
-			`median ${Math.min(...hull.medians).toFixed(2)}–${Math.max(...hull.medians).toFixed(2)} of 255`,
+		`  hull spread lower quartile ${lowerQuartileMin.toFixed(2)}–${Math.max(...hull.lowerQuartiles).toFixed(2)}, ` +
+			`median ${medianMin.toFixed(2)}–${Math.max(...hull.medians).toFixed(2)} of 255`,
 	);
 	console.log(
 		`  exposure   bloom strength ${hull.exposure.bloom.strength}  ` +
