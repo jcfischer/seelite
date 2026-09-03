@@ -101,6 +101,23 @@ const SCHEMA = {
 	 * almost entirely through the canopy, so that light *is* the interior
 	 * lighting, and the sentence below promises the player it stays.
 	 *
+	 * **#201's two occlusion passes are here, and one of them is the expensive
+	 * one.** Measured headed on an M1 Pro at 1440x900 and device scale 2, over
+	 * two runs, against a `cockpit-arrival` frame that costs 1.91–2.11 ms
+	 * without them: the shadow map adds **0.57–0.60 ms** and the ambient
+	 * occlusion **1.80–1.90 ms**, for 2.50–2.84 ms together — a little over
+	 * #201's own stated budget of one to two, and a third of what the pair cost
+	 * before the AO pass was moved to half the drawing buffer.
+	 * `scripts/measure-occlusion-cost.mjs` is the instrument and
+	 * `occlusion.ts` carries the resolution table.
+	 *
+	 * That is a *different order* from the antialiasing row below, which is
+	 * four to six times the whole frame — so this stays one key rather than
+	 * becoming two rows on #200's argument. **Whether the ambient occlusion
+	 * deserves a row of its own is a question for the principal and not a
+	 * decision taken here**, and the pair being 1.3x the unoccluded frame is
+	 * the number that question is asked with.
+	 *
 	 * **Every later expensive visual term declares which side of this it is on**
 	 * (#98, #99). A term added without an answer here has not been gated, it has
 	 * merely not been asked.
@@ -114,7 +131,7 @@ const SCHEMA = {
 		allowed: ["high", "low"] as const,
 		label: "Lighting",
 		describe: (v: string) => (v === "high" ? "High" : "Low"),
-		note: "High reflects the star off every hull, plate and cockpit surface, cuts the panel lines into the hulls and the cabin so a moving sun breaks across them, and lights the console from above. Low drops all three and keeps the sun, the star-side gradient and the cockpit fill; the picture stays lit, the panel lines stay painted, and the metal stops reading as metal.",
+		note: "High reflects the star off every hull, plate and cockpit surface, cuts the panel lines into the hulls and the cabin so a moving sun breaks across them, lights the console from above, casts the star's shadow across whatever is nearest, and darkens the corners and the contact where surfaces meet. Low drops all five and keeps the sun, the star-side gradient and the cockpit fill; the picture stays lit, the panel lines stay painted, the metal stops reading as metal and nothing casts or catches a shadow.",
 	},
 	/**
 	 * How many samples the composed frame is drawn with — #200.

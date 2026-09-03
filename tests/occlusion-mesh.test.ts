@@ -22,7 +22,9 @@ import { expect, test } from "bun:test";
 import * as THREE from "three";
 import { participatesInShadow } from "../src/occlusion";
 import {
+	hideNonOccluders,
 	markOcclusion,
+	restoreVisibility,
 	subjectOf,
 	surfaceFactsOf,
 } from "../src/occlusion-mesh";
@@ -193,4 +195,55 @@ test("a rotated subtree does not grow its own subject", () => {
 	turned.updateMatrixWorld(true);
 	const b = subjectOf(turned).radiusKm;
 	expect(b).toBeCloseTo(a, 9);
+});
+
+test("the ambient occlusion sees exactly what the shadow sees", () => {
+	// **The defect this exists for, measured before it existed.** `GTAOPass`
+	// renders its own normal-and-depth buffer with `MeshNormalMaterial` over
+	// everything visible in the scene — and `MeshNormalMaterial` writes depth
+	// even for a material that does not. The canopy glass is
+	// `depthWrite: false`, so it writes nothing in the beauty pass and covers
+	// the whole forward view in the AO buffer: with the cabin on screen, AO
+	// landed on **2.8% of the sky** at up to 77/255, and in the chase views —
+	// where the cabin is hidden — on none of it. One rule read twice fixes it:
+	// a surface that casts no shadow occludes nothing either.
+	const scene = new THREE.Scene();
+	const hull = new THREE.Mesh(
+		new THREE.BoxGeometry(1, 1, 1),
+		new THREE.MeshStandardMaterial(),
+	);
+	const glass = new THREE.Mesh(
+		new THREE.BoxGeometry(1, 1, 1),
+		new THREE.MeshBasicMaterial({
+			transparent: true,
+			opacity: 0.08,
+			depthWrite: false,
+		}),
+	);
+	const streaks = new THREE.LineSegments(new THREE.BufferGeometry());
+	scene.add(hull, glass, streaks);
+	markOcclusion(scene);
+	const cache = new Map<THREE.Object3D, boolean>();
+	hideNonOccluders(scene, cache);
+	expect(hull.visible).toBe(true);
+	expect(glass.visible).toBe(false);
+	expect(streaks.visible).toBe(false);
+	restoreVisibility(cache);
+	expect(glass.visible).toBe(true);
+	// And it puts back exactly what it found, including a mesh that was already
+	// hidden for its own reasons — the ship in cockpit view, the accessory a
+	// station's detail level turned off.
+	const alreadyHidden = new THREE.Mesh(
+		new THREE.BoxGeometry(1, 1, 1),
+		new THREE.MeshStandardMaterial(),
+	);
+	alreadyHidden.visible = false;
+	scene.add(alreadyHidden);
+	markOcclusion(scene);
+	const cache2 = new Map<THREE.Object3D, boolean>();
+	hideNonOccluders(scene, cache2);
+	restoreVisibility(cache2);
+	expect(alreadyHidden.visible).toBe(false);
+	expect(hull.visible).toBe(true);
+	expect(glass.visible).toBe(true);
 });

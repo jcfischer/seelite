@@ -92,7 +92,12 @@ import {
 	shadowBox,
 	shadowFit,
 } from "./occlusion";
-import { markOcclusion, subjectOf } from "./occlusion-mesh";
+import {
+	hideNonOccluders,
+	markOcclusion,
+	restoreVisibility,
+	subjectOf,
+} from "./occlusion-mesh";
 import { SettingsStore } from "./settings";
 import type {
 	FrameAttribution,
@@ -1899,14 +1904,15 @@ class Game {
 		// far plane and the AO shader discards, leaving the far layer's planets
 		// exactly as the near pass composited them.
 		//
-		// Sized at the drawing buffer rather than at a fraction of it, unlike
-		// bloom below: AO is a contact term read at the pixel, and the first
-		// thing a half-resolution one loses is the contact.
+		// Sized at a fraction of the drawing buffer, like bloom and for a reason
+		// that was measured rather than assumed — `OCCLUSION.ao.resolutionScale`
+		// carries the table. The short of it: at the full buffer this pass is
+		// 2.9x the whole rest of the frame, and halving it is a 3.1x saving that
+		// brings it inside the budget #201 set for itself.
 		this.gtaoPass = new GTAOPass(
 			this.nearScene,
 			this.nearCamera,
-			window.innerWidth,
-			window.innerHeight,
+			...aoResolution(this.renderer.getPixelRatio()).toArray(),
 		);
 		this.gtaoPass.blendIntensity = OCCLUSION.ao.blendIntensity;
 		this.gtaoPass.updateGtaoMaterial({
@@ -1917,6 +1923,26 @@ class Game {
 			samples: OCCLUSION.ao.samples,
 			screenSpaceRadius: OCCLUSION.ao.screenSpaceRadius,
 		});
+		// **Three's own visibility override, replaced.** The pass renders its
+		// G-buffer over everything visible in the scene with
+		// `MeshNormalMaterial`, which writes depth for materials that do not —
+		// and the canopy is one, so the occlusion of a sheet of glass was
+		// landing on the sky behind it. `occlusion-mesh.ts` owns the rule and
+		// the figures; the short of it is that the two passes now see the same
+		// surfaces, because a thing that casts no shadow occludes nothing.
+		//
+		// Replaced on the instance rather than subclassed: three calls these two
+		// as methods on itself, `_visibilityCache` is the map it hands back to
+		// `restoreVisibility`, and a subclass would exist to hold two functions.
+		const pass = this.gtaoPass as unknown as {
+			scene: THREE.Scene;
+			_visibilityCache: Map<THREE.Object3D, boolean>;
+			overrideVisibility(): void;
+			restoreVisibility(): void;
+		};
+		pass.overrideVisibility = () =>
+			hideNonOccluders(pass.scene, pass._visibilityCache);
+		pass.restoreVisibility = () => restoreVisibility(pass._visibilityCache);
 		this.composer.addPass(this.gtaoPass);
 		// Kept as a field so `perf-panel.ts` can switch it live. A full-screen
 		// multi-pass blur at up to 2x device pixel ratio is a fixed cost every
@@ -6947,6 +6973,13 @@ class Game {
 		// mip chain went on being built at 451x321, 113x81, 57x41.
 		const bloom = bloomResolution();
 		this.bloomPass?.setSize(bloom.x, bloom.y);
+		// **The same trap, and it is why this line is here rather than absent.**
+		// `EffectComposer.setSize` calls `setSize` on every pass it holds, so an
+		// AO pass sized at construction is resized to the full drawing buffer by
+		// the first resize — and boot calls `onResize` once, so it would never
+		// have run at a half in the first place.
+		const ao = aoResolution(ratio);
+		this.gtaoPass?.setSize(ao.x, ao.y);
 		this.starMaterial.uniforms.uPixelScale.value =
 			this.renderer.domElement.height * STAR_PIXEL_SCALE;
 	}
@@ -7040,6 +7073,26 @@ function paintNameplates(mesh: StationMesh, name: string) {
  * because switching bloom off removes it, and that a whole mip chain is the
  * right shape whether or not it is faster.
  */
+/**
+ * The ambient-occlusion pass's own size, as `bloomResolution` is bloom's.
+ *
+ * A fraction of the **drawing buffer**, which is why the ratio is an argument
+ * rather than read here: it follows the device pixel ratio *and* the player's
+ * `renderScale`, the way every other per-fragment cost does. Sized off
+ * `window.innerWidth` alone the pass would run at a quarter of its intended
+ * share on a retina panel. The fraction and the measurements behind it live in
+ * `occlusion.ts`.
+ *
+ * Floored at one pixel rather than at bloom's 32: this pass builds no mip
+ * chain, so there is no halving for an odd size to break.
+ */
+function aoResolution(pixelRatio: number) {
+	return new THREE.Vector2(window.innerWidth, window.innerHeight)
+		.multiplyScalar(pixelRatio * OCCLUSION.ao.resolutionScale)
+		.round()
+		.max(new THREE.Vector2(1, 1));
+}
+
 function bloomResolution() {
 	// A multiple of 32, not merely even: the chain halves five times, so only a
 	// starting size divisible by 2^5 keeps every level whole. Rounding to even

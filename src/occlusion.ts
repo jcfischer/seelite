@@ -315,5 +315,35 @@ export const OCCLUSION = {
 		scale: 1,
 		samples: 16,
 		blendIntensity: 1,
+		/**
+		 * The fraction of the drawing buffer the pass runs at.
+		 *
+		 * **A half, and it was flown at full first.** The comment that shipped
+		 * for a round said the opposite — that AO is a contact term read at the
+		 * pixel, so the first thing a half-resolution one loses is the contact —
+		 * and it was written before the pass was priced. It costs, on an M1 Pro
+		 * at 1440x900 and device scale 2, in the `cockpit-arrival` framing whose
+		 * unoccluded frame is 1.82 ms:
+		 *
+		 * | | full buffer | half |
+		 * |---|---|---|
+		 * | 16 samples | +5.215 ms | **+1.693 ms** |
+		 * | 8 samples | +4.211 ms | +1.459 ms |
+		 * | 4 samples | +3.741 ms | +1.331 ms |
+		 *
+		 * Two things fall out of that table and both are decisions. The **sample
+		 * count is not the lever** — a quarter of the samples buys 28% at full
+		 * resolution and 21% at half, because most of the pass is the
+		 * normal-and-depth render, the denoise and two full-screen blends rather
+		 * than the horizon loop. The **resolution is**: it is a 3.1x saving at
+		 * the same sample count, and it is what brings the pass from 2.9x the
+		 * whole frame down to inside #201's own stated budget of one to two
+		 * milliseconds.
+		 *
+		 * So the samples stay at three's default and this is the dial that
+		 * moved. What a half costs in the picture is a person's to judge on the
+		 * canonical sheet, which is the tier this repo has for exactly that.
+		 */
+		resolutionScale: 0.5,
 	},
 } as const;

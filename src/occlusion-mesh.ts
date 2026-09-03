@@ -146,3 +146,51 @@ export function subjectOf(root: THREE.Object3D): ShadowSubject {
 		radiusKm: world.radius,
 	};
 }
+
+/**
+ * Hide everything the ambient-occlusion pass must not see, remembering what it
+ * found — three's `GTAOPass.overrideVisibility`, with one clause added.
+ *
+ * **The clause is the whole point, and it is a defect that shipped for a
+ * round.** `GTAOPass` renders its own normal-and-depth buffer over everything
+ * visible in the scene, using `MeshNormalMaterial` — which writes depth even
+ * for a material that does not. The cabin's canopy is `depthWrite: false`, so
+ * it writes nothing in the beauty pass and everything in the AO buffer: it
+ * covers the whole forward view, so the occlusion computed for a sheet of glass
+ * was applied to the sky behind it. Measured across four framings, same build,
+ * AO on against off: **2.8% of `sky-only`'s background moved, by up to 77 of
+ * 255**, and 3.2% of `planet-terminator`'s — against 0.000% in both chase
+ * framings, where the cabin is hidden and there is no canopy in the scene.
+ *
+ * The rule it adds is the shadow's own, read a second time: **a surface that
+ * casts no shadow occludes nothing either.** That is one predicate serving both
+ * passes rather than a second list, and it also keeps the AO off the near
+ * layer's planets — which are `ShaderMaterial` and so were never marked — which
+ * is what #201 asks for in as many words.
+ *
+ * Points and lines are hidden for three's own reason, kept here because this
+ * replaces its method rather than wrapping it: neither has a surface, so
+ * neither has a normal for the buffer.
+ */
+export function hideNonOccluders(
+	scene: THREE.Object3D,
+	cache: Map<THREE.Object3D, boolean>,
+): void {
+	scene.traverse((object) => {
+		cache.set(object, object.visible);
+		const drawn = object as THREE.Mesh & {
+			isPoints?: boolean;
+			isLine?: boolean;
+		};
+		if (drawn.isPoints || drawn.isLine) object.visible = false;
+		else if (drawn.isMesh && !drawn.castShadow) object.visible = false;
+	});
+}
+
+/** Put back exactly what `hideNonOccluders` found — including a mesh that was
+ *  already hidden for its own reasons, which is every ship in cockpit view and
+ *  every station accessory its detail level has switched off. */
+export function restoreVisibility(cache: Map<THREE.Object3D, boolean>): void {
+	for (const [object, visible] of cache) object.visible = visible;
+	cache.clear();
+}
