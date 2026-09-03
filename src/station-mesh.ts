@@ -49,6 +49,7 @@
  */
 
 import * as THREE from "three";
+import { EMISSIVE_CEILING } from "./light-rig";
 import { appendRing, cutRing, ringTriangles } from "./face-cut";
 import { type ApertureCut, type Ring, boxProjectUVs, hullLoft } from "./loft";
 import {
@@ -361,6 +362,25 @@ const emissiveMaterial = (color: number, intensity: number) =>
 		roughness: 0.4,
 	});
 
+/**
+ * Every station-authored emissive, as a fraction of the scene-wide ceiling.
+ * Exported as the test surface; material call sites read this record rather
+ * than carrying numbers the exposure budget cannot enumerate.
+ */
+export const STATION_EMISSIVE_INTENSITIES = {
+	off: EMISSIVE_CEILING * 0,
+	tradeWindow: EMISSIVE_CEILING * 1,
+	shipyardWindow: EMISSIVE_CEILING * 1,
+	refineryWindow: EMISSIVE_CEILING * 0.85,
+	outpostWindow: EMISSIVE_CEILING * 0.85,
+	aperture: EMISSIVE_CEILING * 1,
+	flood: EMISSIVE_CEILING * 0.9,
+	strobe: EMISSIVE_CEILING * 0.95,
+	weldArc: EMISSIVE_CEILING * 1,
+	refineryFlare: EMISSIVE_CEILING * 0.9,
+	heatRing: EMISSIVE_CEILING * 0.65,
+} as const;
+
 /** What a part builder hands back: its group, and whatever clock-driven
  *  materials it created. Returned rather than pushed into an array the caller
  *  owns — an out-parameter let the return type say a builder produced no lights
@@ -472,12 +492,34 @@ const PANE_GEOMETRY = shared(new THREE.BoxGeometry(0.03, 0.012, 0.004));
  * a fault, and §5's motion belongs to the strobes, the arc and the flare.
  */
 const PANE_MATERIALS: Record<StationType, THREE.MeshStandardMaterial> = {
-	trade: shared(emissiveMaterial(STATION_VISUALS.trade.windowColor, 1.4)),
-	shipyard: shared(emissiveMaterial(STATION_VISUALS.shipyard.windowColor, 1.4)),
-	refinery: shared(emissiveMaterial(STATION_VISUALS.refinery.windowColor, 1.2)),
-	outpost: shared(emissiveMaterial(STATION_VISUALS.outpost.windowColor, 1.2)),
+	trade: shared(
+		emissiveMaterial(
+			STATION_VISUALS.trade.windowColor,
+			STATION_EMISSIVE_INTENSITIES.tradeWindow,
+		),
+	),
+	shipyard: shared(
+		emissiveMaterial(
+			STATION_VISUALS.shipyard.windowColor,
+			STATION_EMISSIVE_INTENSITIES.shipyardWindow,
+		),
+	),
+	refinery: shared(
+		emissiveMaterial(
+			STATION_VISUALS.refinery.windowColor,
+			STATION_EMISSIVE_INTENSITIES.refineryWindow,
+		),
+	),
+	outpost: shared(
+		emissiveMaterial(
+			STATION_VISUALS.outpost.windowColor,
+			STATION_EMISSIVE_INTENSITIES.outpostWindow,
+		),
+	),
 };
-const APERTURE_LIGHT_MATERIAL = shared(emissiveMaterial(0xffb347, 2.2));
+const APERTURE_LIGHT_MATERIAL = shared(
+	emissiveMaterial(0xffb347, STATION_EMISSIVE_INTENSITIES.aperture),
+);
 
 /**
  * The nameplate's height, as a multiple of the aperture's.
@@ -526,7 +568,10 @@ function nameplateMaterial(): THREE.MeshBasicMaterial {
 /** The shipyard's cold bay floods. Steady, so shared: what moves on that
  *  station is the welding arc, and it gets its own material per station. */
 const FLOOD_MATERIAL = shared(
-	emissiveMaterial(STATION_VISUALS.shipyard.floodColor, 2.0),
+	emissiveMaterial(
+		STATION_VISUALS.shipyard.floodColor,
+		STATION_EMISSIVE_INTENSITIES.flood,
+	),
 );
 
 /**
@@ -985,7 +1030,10 @@ function strobePair(
 		["strobe-b", 1],
 	];
 	for (const [kind, side] of sides) {
-		const material = emissiveMaterial(STATION_VISUALS[type].strobeColor, 0);
+		const material = emissiveMaterial(
+			STATION_VISUALS[type].strobeColor,
+			STATION_EMISSIVE_INTENSITIES.off,
+		);
 		const lamp = new THREE.Mesh(
 			new THREE.BoxGeometry(size, size, size * 0.6),
 			material,
@@ -994,7 +1042,11 @@ function strobePair(
 		lamp.name = kind;
 		detail(lamp, "reduced");
 		group.add(lamp);
-		fixtures.push({ material, base: 2.6, kind });
+		fixtures.push({
+			material,
+			base: STATION_EMISSIVE_INTENSITIES.strobe,
+			kind,
+		});
 	}
 	return group;
 }
@@ -2159,7 +2211,10 @@ function buildBayLights(
 		detail(flood, "reduced");
 		group.add(flood);
 	}
-	const arcMaterial = emissiveMaterial(STATION_VISUALS.shipyard.floodColor, 0);
+	const arcMaterial = emissiveMaterial(
+		STATION_VISUALS.shipyard.floodColor,
+		STATION_EMISSIVE_INTENSITIES.off,
+	);
 	const arc = new THREE.Mesh(
 		new THREE.SphereGeometry(r * 0.05, 8, 6),
 		arcMaterial,
@@ -2168,7 +2223,11 @@ function buildBayLights(
 	arc.name = "weld-arc";
 	detail(arc, "reduced");
 	group.add(arc);
-	fixtures.push({ material: arcMaterial, base: 4.5, kind: "work" });
+	fixtures.push({
+		material: arcMaterial,
+		base: STATION_EMISSIVE_INTENSITIES.weldArc,
+		kind: "work",
+	});
 	return group;
 }
 
@@ -2218,7 +2277,10 @@ function buildVentBank(
 
 	// Four nozzles down the manifold, angled outboard. Their number and spacing
 	// is the same ruler the ring's modules are: repeated parts at a fixed pitch.
-	const glow = emissiveMaterial(STATION_VISUALS.refinery.heatColor, 0);
+	const glow = emissiveMaterial(
+		STATION_VISUALS.refinery.heatColor,
+		STATION_EMISSIVE_INTENSITIES.off,
+	);
 	for (let i = 0; i < 4; i++) {
 		const nozzle = shell(
 			[
@@ -2251,7 +2313,11 @@ function buildVentBank(
 	}
 	// One fixture for the bank, kind `flare`: it is the flare system's light,
 	// and it is now the only light it has.
-	fixtures.push({ material: glow, base: 3, kind: "flare" });
+	fixtures.push({
+		material: glow,
+		base: STATION_EMISSIVE_INTENSITIES.refineryFlare,
+		kind: "flare",
+	});
 	return stack;
 }
 
@@ -2721,7 +2787,10 @@ function buildHeatRing(
 	radius: number,
 	z: number,
 ): THREE.Mesh {
-	const material = emissiveMaterial(STATION_VISUALS.refinery.heatColor, 0);
+	const material = emissiveMaterial(
+		STATION_VISUALS.refinery.heatColor,
+		STATION_EMISSIVE_INTENSITIES.off,
+	);
 	const glow = new THREE.Mesh(
 		new THREE.TorusGeometry(radius, radius * 0.07, 6, 20),
 		material,
@@ -2729,7 +2798,11 @@ function buildHeatRing(
 	glow.position.z = z;
 	glow.name = "heat-glow";
 	detail(glow, "reduced");
-	fixtures.push({ material, base: 1.1, kind: "work" });
+	fixtures.push({
+		material,
+		base: STATION_EMISSIVE_INTENSITIES.heatRing,
+		kind: "work",
+	});
 	return glow;
 }
 

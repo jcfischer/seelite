@@ -21,6 +21,7 @@
  */
 
 import * as THREE from "three";
+import { EMISSIVE_CEILING } from "./light-rig";
 import type { StationType } from "./station";
 import type { Berth, StationInterior } from "./station-interior";
 import { STATION_VISUALS, type StationDetailLevel } from "./station-visuals";
@@ -96,7 +97,12 @@ function shellMaterial(type: StationType, glow = AMBIENT_GLOW): THREE.Material {
  * from outside, and not so much that it reads as a light box. Judged on the
  * canonical frames, which is the only instrument for it.
  */
-const AMBIENT_GLOW = 0.45;
+export const STATION_INTERIOR_EMISSIVE_INTENSITIES = {
+	bayShell: EMISSIVE_CEILING * 0.45,
+	padShell: EMISSIVE_CEILING * 0.09,
+} as const;
+
+const AMBIENT_GLOW = STATION_INTERIOR_EMISSIVE_INTENSITIES.bayShell;
 
 /**
  * How much of its own colour a **pad's** surface emits.
@@ -113,7 +119,7 @@ const AMBIENT_GLOW = 0.45;
  * the floor that keeps the night side off pure black rather than a light
  * source.
  */
-const PAD_GLOW = 0.09;
+const PAD_GLOW = STATION_INTERIOR_EMISSIVE_INTENSITIES.padShell;
 
 /** §13.4's interior treatments, as the one thing a colour can carry: how dirty
  *  and how cold the plating reads. Warm and clean for the habitat, cold and
@@ -143,8 +149,7 @@ const STRUCTURE_COLOR: Record<StationType, number> = {
 
 /** An unlit emissive, which is what every light in this bay is: a strip that
  *  reads at its own brightness whatever the star is doing. */
-const glowMaterial = (color: number) =>
-	new THREE.MeshBasicMaterial({ color, toneMapped: false });
+const glowMaterial = (color: number) => new THREE.MeshBasicMaterial({ color });
 
 /**
  * The four rectangles that fill the gap between an outer half-extent and an

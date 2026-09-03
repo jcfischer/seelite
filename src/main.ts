@@ -78,7 +78,12 @@ import {
 	grantedSamples,
 	setComposerSamples,
 } from "./output-stage";
-import { LIGHT_RIG, envRotation, equirectEnvironment } from "./light-rig";
+import {
+	EXPOSURE,
+	LIGHT_RIG,
+	envRotation,
+	equirectEnvironment,
+} from "./light-rig";
 import { SettingsStore } from "./settings";
 import { AudioFX } from "./audio";
 import { CombatPrototypeRig } from "./combat-rig";
@@ -229,6 +234,7 @@ import {
 } from "./hull";
 import { type FleetSlot, buildShipMesh, fleetLayout } from "./ship-mesh";
 import {
+	COCKPIT_EMISSIVE_INTENSITIES,
 	COCKPIT_KEY_LIGHT,
 	applyCockpitQuality,
 	cockpitForm,
@@ -810,6 +816,8 @@ class Game {
 	readonly world: World;
 	readonly renderer: THREE.WebGLRenderer;
 	readonly composer: EffectComposer;
+	/** The exact post-processing budget browser probes read back. */
+	readonly exposure = EXPOSURE;
 
 	/** Background: stars only, no depth, re-centred on the camera each frame. */
 	readonly backdropScene = new THREE.Scene();
@@ -1709,11 +1717,12 @@ class Game {
 		this.refreshScannerContacts();
 
 		// **The composer is handed its own target, and that is what carries the
-		// antialiasing** (#200). `antialias: true` above configures the default
-		// framebuffer, which this game never draws into: every frame lands in the
-		// composer's targets and reaches the screen as a blit of an already-flat
-		// texture. So the flag was inert until this argument existed, and the
-		// samples belong here. `output-stage.ts` owns both.
+		// antialiasing** (#200). The renderer's own `antialias` flag configures
+		// the *default* framebuffer, which this game never draws into: every
+		// frame lands in the composer's targets and reaches the screen as a blit
+		// of an already-resolved texture. It was `true` for years and smoothed
+		// nothing, which is why it is `false` above. `output-stage.ts` owns the
+		// antialiasing that works.
 		this.composer = new EffectComposer(
 			this.renderer,
 			composerTarget(this.renderer, this.settings.value.antialias),
@@ -1754,7 +1763,12 @@ class Game {
 		// multi-pass blur at up to 2x device pixel ratio is a fixed cost every
 		// frame whatever is on screen, so it is the first thing to price against
 		// a shader that is only expensive when a body fills the view.
-		this.bloomPass = new UnrealBloomPass(bloomResolution(), 0.55, 0.6, 0.85);
+		this.bloomPass = new UnrealBloomPass(
+			bloomResolution(),
+			EXPOSURE.bloom.strength,
+			EXPOSURE.bloom.radius,
+			EXPOSURE.bloom.threshold,
+		);
 		this.composer.addPass(this.bloomPass);
 		// Kept as a field for the same reason `bloomPass` is: the vignette is set
 		// per frame from the view, and the dither has a control arm a probe
@@ -2734,7 +2748,7 @@ class Game {
 		this.cockpit.throttleFillMaterial = new THREE.MeshStandardMaterial({
 			color: 0x9b5a20,
 			emissive: 0x4a1905,
-			emissiveIntensity: 0.04,
+			emissiveIntensity: COCKPIT_EMISSIVE_INTENSITIES.throttleIdle,
 		});
 		this.cockpit.throttleFill = new THREE.Mesh(
 			new THREE.BoxGeometry(0.0011, 0.0017, 0.012),
@@ -2984,7 +2998,10 @@ class Game {
 		this.cockpit.throttleFill.scale.z = Math.max(0.08, this.throttle);
 		this.cockpit.throttleFill.position.z = (1 - this.throttle) * 0.006;
 		this.cockpit.throttleFillMaterial.emissiveIntensity =
-			0.04 + this.throttle * 0.28;
+			COCKPIT_EMISSIVE_INTENSITIES.throttleIdle +
+			this.throttle *
+				(COCKPIT_EMISSIVE_INTENSITIES.throttleFull -
+					COCKPIT_EMISSIVE_INTENSITIES.throttleIdle);
 	}
 
 	private onKey(e: KeyboardEvent, down: boolean) {
@@ -5387,7 +5404,7 @@ class Game {
 		) as THREE.DirectionalLight;
 		if (fill)
 			fill.position
-				.set(-0.5, 0.7, 1)
+				.fromArray(LIGHT_RIG.fill.direction)
 				.normalize()
 				.applyQuaternion(this.orientation);
 
