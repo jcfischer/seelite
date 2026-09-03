@@ -10,13 +10,19 @@
  *
  * ## The problem this module is the answer to
  *
- * The near layer holds three kinds of subject and their sizes are not close:
+ * The near layer holds three kinds of subject and their sizes are not close.
+ * The cabin is around the camera, the player hull is 146 m ahead of it in
+ * chase, and a station is a kilometre of structure anywhere out to
+ * `HANDOFF_KM` — ten thousand of them.
  *
- * | subject | radius | distance from the camera |
- * |---|---|---|
- * | the cabin (`buildCockpit`) | ~0.03 km | 0 — it is around the camera |
- * | the player hull | ~0.1 km | 0.146 km in chase |
- * | a station | ~1.4 km | up to `HANDOFF_KM` |
+ * **No table of radii here, and that is deliberate.** The first version of this
+ * docstring carried one, and every figure in it was arithmetic done in my head
+ * rather than a reading — which is the failure this repo has a rule about. What
+ * a shadow's quality actually depends on is the *texel*, and
+ * `scripts/probe-occlusion.mjs` prints it on every run for two framings and
+ * goes red if either leaves its ceiling. On a passing run it reports **1.85 m**
+ * for the `station-flank` box, which spans the hull and the station beyond it,
+ * and **68 mm** for the cabin's — three runs, no digit moving. Read them there.
  *
  * A 2048² shadow map is 2048 texels across whatever box it is given, so the
  * box has to be *fitted to the subject* every frame or it is either a metre of
@@ -51,9 +57,8 @@
  * guard list without this line would make the probe throw before it started,
  * which is the trap `CLAUDE.md` records against `station-visuals.ts`.
  *
- * 2048 rather than 1024 or 4096 because #201 asked for it, and because the
- * texel table in `shadowFit`'s docstring is what a framing is judged against:
- * at 2048 a station's fitted box gives 1.6 m texels and a cabin's 34 mm.
+ * 2048 rather than 1024 or 4096 because #201 asked for it. What that buys is
+ * `shadowFit`'s to describe and `scripts/probe-occlusion.mjs`'s to measure.
  */
 export const SHADOW_MAP_TEXELS = 2048;
 
@@ -120,19 +125,18 @@ export type ShadowFit = {
 /**
  * Fit the orthographic shadow camera to a subject of this radius.
  *
- * Measured footprints, since the whole point is that they differ:
+ * `texelKm` is the figure a framing's shadow quality is read from, and it is
+ * the one this returns for somebody else to print rather than one this
+ * docstring asserts: `main.ts` holds the last frame's on `Game.shadowTexelKm`
+ * and `scripts/probe-occlusion.mjs` reads it back and bounds it.
  *
- * | subject | radius | texel |
- * |---|---|---|
- * | the cabin | 0.03 km | 34 mm |
- * | the player hull | 0.1 km | 112 mm |
- * | a trade station | 1.4 km | 1.6 m |
- *
- * A station's 1.6 m is what decides which of #201's complaints this half can
- * answer: an aperture and a boom are hundreds of metres and cast cleanly, a
- * greeble is ten or twenty and casts something soft. The bay's corners are the
- * ambient-occlusion pass's to darken, not this one's, and that division is
- * `main.ts`'s to state where the two are wired.
+ * What the two framings it bounds actually measure, and what that buys: the
+ * `station-flank` box spans the hull and the station beyond it at **1.85 m** a
+ * texel, and the cabin's box at **68 mm**. At metres, a station's aperture and
+ * its booms — hundreds of metres each — cast cleanly and a greeble of ten or
+ * twenty casts something soft. The bay's corners are the ambient-occlusion
+ * pass's to darken rather than this one's, and that division is `main.ts`'s to
+ * state where the two are wired.
  */
 export function shadowFit(radiusKm: number): ShadowFit {
 	const r = Math.max(radiusKm, SHADOW_MIN_RADIUS_KM);

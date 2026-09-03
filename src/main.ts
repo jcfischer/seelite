@@ -5800,10 +5800,14 @@ class Game {
 	 *   of this unioned the fixture's second station 405 km away and cut a box
 	 *   with a 455 m texel. `occlusion.ts` owns the two admissions and the
 	 *   figures behind them. In `hull-chase` nothing else is near, so the box
-	 *   is the hull at a 22 mm texel; in `station-flank` it spans the hull and
-	 *   the station it is beside, at metres — where an aperture and a boom cast
-	 *   cleanly, a greeble casts something soft, and the bay's corners are the
-	 *   ambient occlusion's job rather than this map's.
+	 *   is the hull alone and its texel is the smallest in the game; in
+	 *   `station-flank` it spans the hull and the station it is beside, at a
+	 *   measured 1.85 m — where an aperture and a boom cast cleanly, a greeble
+	 *   casts something soft, and the bay's corners are the ambient occlusion's
+	 *   job rather than this map's. The figures a run reports are
+	 *   `scripts/probe-occlusion.mjs`'s to print and to bound; `hull-chase` has
+	 *   no reading because no check frames it, which is worth saying rather
+	 *   than filling in.
 	 *
 	 * ## Moving the light without moving the light
 	 *
