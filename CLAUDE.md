@@ -313,12 +313,12 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   so it establishes that two implementations do not discard and nothing about a
   third. What bounds the exposure is that `antialias` defaults to 0, where the
   target is not multisampled at all. Node #219 owns the structural fix, which is
-  the same restructure the frame cost wants. Shipped this way on the principal's
-  ruling, not by default. **A count
-  reads as a scalar and cannot see a lost layer**; that check compares masks per
-  pixel for exactly this reason. The structural fix is one resolve for the whole
-  ladder, which is the render ladder's to make and not the output stage's.
-
+  the same restructure the frame cost wants — one resolve for the whole ladder,
+  which is the render ladder's to make and not the output stage's. Shipped this
+  way on the principal's ruling, not by default. And note what the second check
+  had to become: **a count is a scalar and cannot see a lost layer**, because a
+  frame that loses one region and gains another of equal area passes it. It
+  compares masks per pixel.
 - **A count this context grants for RGBA8 it may not grant for RGBA16F, and a
   request can round *up*.** The composer's targets are half-float and a float
   multisampled renderbuffer is optional in WebGL2, so `MAX_SAMPLES` is the wrong
