@@ -26,3 +26,7 @@ view-set/
 # Claude Code scratch: agent worktrees are checkouts, not content.
 .claude/worktrees/
 .worktrees/
+
+# Claude Code: the shared allowlist is tracked so a fresh worktree gets it;
+# per-machine preferences are not.
+.claude/settings.local.json
