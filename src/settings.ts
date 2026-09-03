@@ -163,7 +163,7 @@ const SCHEMA = {
 		allowed: TOGGLE,
 		label: "Dither",
 		describe: (v: string) => (v === "on" ? "On" : "Off"),
-		note: "Breaks up the banding in dark gradients — empty space, and the shadow side of a planet — by moving each pixel less than one shade at random. Too cheap to measure reliably; leave it on unless you want to see the bands the eight-bit screen actually has.",
+		note: "Breaks up the banding in dark gradients — empty space, and the shadow side of a planet — by moving each pixel less than one shade at random. Too cheap for this game's own frame-cost instrument to resolve; leave it on unless you want to see the bands the eight-bit screen actually has.",
 	},
 	/**
 	 * Whether the cockpit's corners fall off — #200.

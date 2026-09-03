@@ -138,10 +138,12 @@ test("the vignette reader reports what the uniform holds", () => {
 
 test("the pass records its splices where a probe reads them", () => {
 	const pass = new SeeliteOutputPass();
-	// `probe-light-rig.mjs` traverses for this key by name, so the name is part
-	// of the contract and not an implementation detail.
-	expect(pass.material.userData.outputSplices).toBe(pass.splices);
-	expect(Object.values(pass.splices).every(Boolean)).toBe(true);
+	// `probe-output-stage.mjs` traverses for this key by name, so the name is
+	// part of the contract and not an implementation detail. It is also the only
+	// way in: a `splices` field beside it was a second name for one thing.
+	const log = pass.material.userData.outputSplices as Record<string, boolean>;
+	expect(Object.keys(log).length).toBe(3);
+	expect(Object.values(log).every(Boolean)).toBe(true);
 	// The dither is on unless a probe turns it off — the player never sees the
 	// control arm.
 	expect(pass.material.uniforms.uDither.value).toBe(1);

@@ -53,7 +53,7 @@
  */
 import * as THREE from "three";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
-import { type SpliceLog, makeSplicer } from "./shader-splice";
+import { makeSplicer } from "./shader-splice";
 
 /**
  * The strongest vignette the cockpit ever gets, as a fraction of corner
@@ -166,10 +166,6 @@ export function spliceOutputShader(
  * program builder, so there is no later moment when the answer could change.
  */
 export class SeeliteOutputPass extends OutputPass {
-	/** Every splice this pass made, by stage and marker. Also on
-	 *  `material.userData.outputSplices`, which is where a probe reads it. */
-	readonly splices: SpliceLog;
-
 	constructor() {
 		super();
 		const { log, splice } = makeSplicer("output stage");
@@ -177,9 +173,12 @@ export class SeeliteOutputPass extends OutputPass {
 			this.material.fragmentShader,
 			splice,
 		);
-		this.splices = log;
 		this.material.uniforms.uVignette = { value: 0 };
 		this.material.uniforms.uDither = { value: 1 };
+		// **The only way in.** A `readonly splices` field beside this was a second
+		// name for one thing, read by nothing but the test asserting the two
+		// agreed. `probe-output-stage.mjs` reads `userData` by name, as every
+		// other patched material in this repo is read.
 		this.material.userData.outputSplices = log;
 		this.material.needsUpdate = true;
 	}
@@ -212,31 +211,24 @@ export class SeeliteOutputPass extends OutputPass {
 	 * same frame measured both ways in one run rather than two builds compared
 	 * across two.
 	 *
-	 * ## What it costs, and what that cost me to establish
+	 * ## What it costs
 	 *
-	 * **Below what the instrument can resolve.** Two shuffled sweeps of
-	 * `scripts/measure-light-cost.mjs` read −0.002 ms/frame and +0.066, with
-	 * 61/144 and 101/144 block pairings separated — a coin toss and a lean. So
-	 * the term is under roughly a tenth of a millisecond and this repo cannot
-	 * say more than that about it.
+	 * **Not resolvable by the instrument that measured it.** Two shuffled sweeps
+	 * of `scripts/measure-light-cost.mjs` read −0.002 ms/frame and +0.066, at
+	 * 61/144 and 101/144 block pairings separated — a coin toss and a lean.
 	 *
-	 * It took three tries to get there and each wrong answer was wrong for its
-	 * own reason, which is worth recording:
+	 * That is a failure to separate, and on its own it establishes nothing; an
+	 * earlier revision turned it straight into "under a tenth of a millisecond",
+	 * which review was right to refuse. What licenses a bound is the
+	 * instrument's own resolution, and the run prints it: the unsampled arm's
+	 * twelve blocks spread 1.84–1.98 ms, so a difference smaller than about
+	 * 0.07 ms lies inside one arm's own block-to-block variation and this design
+	 * cannot see it. Both readings do. So the honest statement is that the term
+	 * is **smaller than this instrument resolves, which is around 0.07 ms**, and
+	 * that separating it would need a different design rather than more blocks.
 	 *
-	 * 1. "Costs nothing measurable" was asserted with nothing measured. It
-	 *    happens to be right, which is not the same as having been right.
-	 * 2. Measured at 0.20–0.27 ms with the shader multiplying by a zeroed dial,
-	 *    so the off arm still evaluated the noise and the difference excluded
-	 *    the arithmetic it was supposed to include. The shader branches now.
-	 * 3. Measured at 0.12–0.14 ms, 144/144 separated, with every round running
-	 *    the arms in the same order — dither-on immediately before dither-off,
-	 *    twelve times. Within-round thermal drift was perfectly confounded with
-	 *    the arm, and 144/144 was that confound and not the term. Shuffling the
-	 *    arm order dropped the figure to nothing.
-	 *
-	 * The last one is the one to remember: a separation statistic that assumes
-	 * nothing about the distributions still assumes the arms were not run in a
-	 * fixed order.
+	 * `CLAUDE.md` carries the three wrong answers this one term produced and why
+	 * each was wrong — it is a lesson about measuring, not about dithering.
 	 */
 	setDither(on: boolean) {
 		this.material.uniforms.uDither.value = on ? 1 : 0;
@@ -322,6 +314,27 @@ export function composerTarget(
 	const target = new THREE.WebGLRenderTarget(size.x, size.y, {
 		type: THREE.HalfFloatType,
 		samples: grantedSamples(renderer, samples),
+		// **Four layer passes share this target, and three says that is
+		// undefined** (#200, sage round 7). `updateMultisampleRenderTarget`
+		// pushes `COLOR_ATTACHMENT0` into the invalidation list for the *read*
+		// framebuffer — the multisampled one — after every `WebGLRenderer.render`,
+		// so the far, approach and near passes composite with `clear = false`
+		// over a backdrop the driver has been told it may discard.
+		//
+		// It is not discarded on either rasteriser this repo can reach. Deep sky
+		// keeps 333k lit pixels at 0 samples against 341k at 4 on SwiftShader and
+		// 335k against 343k on ANGLE Metal, and the whole frame's lit mask
+		// disagrees on 0.35–0.47% of pixels, which is edges.
+		// `probe-output-stage.mjs` holds both of those as checks, so a driver
+		// that starts honouring the hint goes red instead of shipping a black
+		// sky. The exposure is also opt-in: `antialias` defaults to 0 and none of
+		// this applies at that setting.
+		//
+		// The fix is structural — one resolve for the whole ladder rather than
+		// one per pass — and it is #15's render ladder to make, not this
+		// module's. Charted as node #219, which answers this and the frame cost
+		// together, because they are the same restructure.
+		//
 		// **Nothing downstream reads depth**: bloom and the output pass are
 		// full-screen quads over the colour texture. Resolving it is a second
 		// full-buffer blit per `render`, and this game does four of those a

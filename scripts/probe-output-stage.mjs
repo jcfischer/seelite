@@ -276,6 +276,25 @@ const aa = await page.evaluate(
 	([limit, margin, strongest]) => {
 		const g = window.__seelite;
 		const { frame, luma } = window.__outputStage;
+		/** Where two frames disagree about a pixel being lit, as a fraction of
+		 *  the frame.
+		 *
+		 *  **Spatial, because a count is not.** Comparing only *how many* pixels
+		 *  are lit passes a frame that lost a layer and gained an equal area
+		 *  somewhere else, which is exactly the failure this is watching for —
+		 *  three invalidates the multisampled colour attachment after every
+		 *  `render`, so a later `clear = false` pass could in principle composite
+		 *  over undefined content. Disagreement is per pixel and cannot be
+		 *  cancelled out. Antialiasing itself moves only edge pixels, so a
+		 *  correct pair disagrees on a fraction of a percent.
+		 */
+		const disagreement = (a, b) => {
+			let n = 0;
+			for (let i = 0; i < a.data.length; i += 4)
+				if (luma(a.data, i) > 8 !== luma(b.data, i) > 8) n++;
+			return n / (a.width * a.height);
+		};
+
 		/** Lit pixels, as a fraction. Antialiasing changes edges and must not
 		 *  change *what is drawn* — so this is the same number at every count
 		 *  unless a layer went missing. It is here because turning the depth
@@ -323,10 +342,11 @@ const aa = await page.evaluate(
 		const plain = frame();
 		const off = intermediates(plain);
 		const offLit = lit(plain);
+		const disagree = disagreement(first, plain);
 		const pixels = first.width * first.height;
 		// Back to the player's row, not to the count this arm used.
 		g.setComposerSamples();
-		return { on, off, onLit, offLit, gated, pixels };
+		return { on, off, onLit, offLit, disagree, gated, pixels };
 	},
 	[EDGE_STEP, EDGE_MARGIN, STRONGEST],
 );
@@ -350,8 +370,8 @@ if (aa.gated === 0) {
 }
 t.check(
 	"and it changes the edges without changing what is drawn",
-	Math.abs(aa.onLit - aa.offLit) < 0.01,
-	`${(aa.onLit * 100).toFixed(2)}% of the frame lit at ${aa.gated} samples against ${(aa.offLit * 100).toFixed(2)}% at 0`,
+	aa.disagree < 0.01,
+	`${(aa.disagree * 100).toFixed(2)}% of pixels disagree about being lit between ${aa.gated} samples and 0 (${(aa.onLit * 100).toFixed(2)}% lit against ${(aa.offLit * 100).toFixed(2)}%)`,
 );
 
 // ── the vignette: the same lit frame, the dial moved and nothing else ───────
@@ -453,6 +473,47 @@ t.check(
 	"and it never exceeds the cap the node set",
 	vignette.forced === vignette.cockpitUniform,
 	`asked for 1, got ${vignette.forced}; the cockpit runs at ${vignette.cockpitUniform}`,
+);
+
+// ── the backdrop survives three passes drawn after it ────────────────────────
+// **The layer the blocker would take first.** three pushes `COLOR_ATTACHMENT0`
+// into the invalidation list for the *read* framebuffer — the multisampled one —
+// after every `render`, so the backdrop's pixels are formally undefined by the
+// time the far pass composites over them with `clear = false`. Whether that
+// bites is a driver question, and a driver question is measured rather than
+// reasoned about.
+//
+// Deep sky is the framing that answers it: nothing but the backdrop draws, so if
+// its colour were being discarded the frame would come back empty at a non-zero
+// count and unchanged at zero.
+await page.evaluate(() => window.__lookAt(window.__emptiestDirection()));
+const backdrop = await page.evaluate(
+	([strongest]) => {
+		const g = window.__seelite;
+		const { frame, luma } = window.__outputStage;
+		const stars = (img) => {
+			let n = 0;
+			for (let i = 0; i < img.data.length; i += 4)
+				if (luma(img.data, i) > 8) n++;
+			return n;
+		};
+		g.setComposerSamples(0);
+		g.render(0);
+		const plain = stars(frame());
+		g.setComposerSamples(strongest);
+		g.render(0);
+		const sampled = stars(frame());
+		g.setComposerSamples();
+		return { plain, sampled };
+	},
+	[STRONGEST],
+);
+t.check(
+	"the backdrop is still there when the frame is multisampled",
+	backdrop.plain > 200 &&
+		backdrop.sampled > backdrop.plain * 0.5 &&
+		backdrop.sampled < backdrop.plain * 2,
+	`${backdrop.plain} lit pixels at 0 samples against ${backdrop.sampled} at ${STRONGEST}`,
 );
 
 // ── the dither: the same dark gradient, noise on and off ─────────────────────

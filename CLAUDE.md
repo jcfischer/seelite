@@ -297,6 +297,24 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   rather than measured, and the attempt to measure the decomposition does not
   isolate it, because disabling a pass removes its drawing too. So it is the
   player's own row (`settings.ts`, `antialias`) and it defaults to off.
+- **Four layer passes into one multisampled target is undefined by three's own
+  contract, and it currently works anyway.** `updateMultisampleRenderTarget`
+  pushes `COLOR_ATTACHMENT0` into the invalidation list for the **read**
+  framebuffer — the multisampled one — after *every* `WebGLRenderer.render`. So
+  with `antialias` non-zero, #15's ladder composites the far, approach and near
+  layers over a backdrop whose pixels three has formally told the driver are
+  discardable. Measured on both rasterisers available here and neither honours
+  the hint: deep sky keeps 335k lit pixels at 4 samples against 333k at 0 on
+  SwiftShader and 343k against 335k on ANGLE Metal, and the whole frame's lit
+  mask disagrees on 0.35–0.47% of pixels, which is edges. Two probe checks watch
+  it — `the backdrop is still there when the frame is multisampled` and the
+  spatial `changes the edges without changing what is drawn` — so a driver that
+  starts honouring it goes red rather than shipping a black sky. Node #219 owns
+  the structural fix, which is the same restructure the frame cost wants. **A count
+  reads as a scalar and cannot see a lost layer**; that check compares masks per
+  pixel for exactly this reason. The structural fix is one resolve for the whole
+  ladder, which is the render ladder's to make and not the output stage's.
+
 - **A count this context grants for RGBA8 it may not grant for RGBA16F, and a
   request can round *up*.** The composer's targets are half-float and a float
   multisampled renderbuffer is optional in WebGL2, so `MAX_SAMPLES` is the wrong
