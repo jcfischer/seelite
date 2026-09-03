@@ -250,7 +250,7 @@ describe("the rig's constants", () => {
 		);
 	});
 
-	test("the low quality setting drops the environment and nothing else", () => {
+	test("the low quality setting drops the environment and the occlusion", () => {
 		// #98: this node must ship a low setting and say what it drops. The
 		// hemisphere is the same cost as the flat ambient it replaced, so there
 		// is nothing to gain by dropping it; the image-based term is the one
@@ -263,6 +263,30 @@ describe("the rig's constants", () => {
 		expect(LIGHT_RIG.quality.low.exposure).toBe(
 			LIGHT_RIG.quality.high.exposure,
 		);
+	});
+
+	test("#201's two occlusion terms are on the same side of the gate", () => {
+		// Both, and both off at low. Each is a per-frame pass rather than a
+		// per-fragment sample: the shadow map redraws every caster in the near
+		// scene from the star's side, and the ambient occlusion redraws the
+		// whole near scene into a normal buffer before it samples anything.
+		// Neither is the kind of term the hemisphere's argument covers.
+		expect(LIGHT_RIG.quality.high.shadows).toBe(true);
+		expect(LIGHT_RIG.quality.high.ao).toBe(true);
+		expect(LIGHT_RIG.quality.low.shadows).toBe(false);
+		expect(LIGHT_RIG.quality.low.ao).toBe(false);
+	});
+
+	test("every quality mode answers for every term", () => {
+		// The check the two tests above cannot make, and the one that catches
+		// the real failure: a term added to `high` and forgotten in `low` reads
+		// as `undefined`, which is falsy, so the gate silently works and the
+		// settings note silently stops describing the game. Asserted over the
+		// key sets rather than over a list written here, which would be the
+		// third copy.
+		const modes = Object.values(LIGHT_RIG.quality);
+		const keys = modes.map((m) => Object.keys(m).sort().join(","));
+		expect(new Set(keys).size).toBe(1);
 	});
 });
 

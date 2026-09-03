@@ -131,6 +131,7 @@ export const LEVERS = Object.freeze({
 	199: "the exposure budget",
 	206: "the planet surface at the apparent size that costs a frame",
 	200: "the composed frame's edges, its dither, and the cockpit vignette",
+	201: "the sun's shadow and the ambient occlusion on the near layer",
 });
 
 /**
@@ -216,7 +217,7 @@ export const SHOT_KINDS = Object.freeze([
 export const VIEWS = Object.freeze([
 	{
 		name: "cockpit-arrival",
-		covers: [105, 103, 99, 200],
+		covers: [105, 103, 99, 200, 201],
 		what: "The interior and the HUD, station ahead at arrival range. ~40% of this frame is cockpit.",
 		shot: {
 			kind: "station-axis",
@@ -238,7 +239,7 @@ export const VIEWS = Object.freeze([
 		// view is the whole set; the figures live there rather than being
 		// restated here, which is how this comment came to carry a superseded
 		// pair through a round of review.
-		covers: [199, 105, 103, 102, 99],
+		covers: [199, 105, 103, 102, 99, 201],
 		what: "The same interior with the star beyond the station: the case the camera-side fill was added for, and the dark side that only reads because it emits.",
 		shot: {
 			kind: "body-offset",
@@ -265,7 +266,7 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "station-flank",
-		covers: [102, 101, 99],
+		covers: [102, 101, 99, 201],
 		what: "A trade station's lit flank at four radii: the window grid and the plant beside it, which the axis view cannot show.",
 		/**
 		 * **Added by #129, and the reason is a frame rather than an argument.**
@@ -406,7 +407,7 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "station-shipyard-flank",
-		covers: [102, 101, 99],
+		covers: [102, 101, 99, 201],
 		/**
 		 * **A shipyard's ports, which nothing in the set had ever seen** (#134).
 		 * `station-outline` is the only other shipyard frame and it is at 140°,
@@ -435,7 +436,7 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "hull-chase",
-		covers: [199, 101, 99, 200],
+		covers: [199, 101, 99, 200, 201],
 		what: "The player's own hull, mostly backlit, against the system's largest planet. Flat plate shows here first.",
 		shot: {
 			kind: "body-offset",
@@ -530,7 +531,7 @@ export const VIEWS = Object.freeze([
 	 */
 	{
 		name: "berth-arrival",
-		covers: [147, 105, 99],
+		covers: [147, 105, 99, 201],
 		what: "§13.6.1 — a trade station's bay mid-transfer to a deep overhead berth, in the cockpit. The scripted traversal, at the leg that leaves the lane.",
 		shot: {
 			kind: "berth",
@@ -553,7 +554,7 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "berth-free-look",
-		covers: [199, 147, 102, 99],
+		covers: [199, 147, 102, 99, 201],
 		/**
 		 * **Chase, not a cockpit head-turn, and the frame decided it.** §13.6.3
 		 * asks for a free look showing bay depth and the other berths; a docked

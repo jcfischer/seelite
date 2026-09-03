@@ -166,15 +166,38 @@ export const LIGHT_RIG = {
 	 * What `quality` selects. #98 required this node to ship a low setting and
 	 * to say what it drops.
 	 *
-	 * Low drops the image-based term and keeps everything else. The hemisphere
-	 * costs exactly what the flat ambient it replaced cost — one more term in a
-	 * loop that already runs — so dropping it would buy nothing and lose the
-	 * gradient; the environment is the term with a per-fragment texture sample
-	 * on every standard material in the frame, and a load-time PMREM pass.
+	 * Low drops the image-based term and #201's two occlusion passes, and keeps
+	 * everything else. The hemisphere costs exactly what the flat ambient it
+	 * replaced cost — one more term in a loop that already runs — so dropping it
+	 * would buy nothing and lose the gradient; the environment is the term with
+	 * a per-fragment texture sample on every standard material in the frame, and
+	 * a load-time PMREM pass.
+	 *
+	 * **`shadows` and `ao` are #201's, and neither is a per-fragment sample** —
+	 * which is why they sit here rather than being argued about the way the
+	 * hemisphere was. Each is a whole extra pass over the near scene: the shadow
+	 * map redraws every caster from the star's side into a 2048² depth buffer,
+	 * and the ambient occlusion redraws the near scene into a normal-and-depth
+	 * buffer before it samples anything. They are two booleans rather than one
+	 * because they are two passes and a receipt has to be able to price them
+	 * apart; they are on one *key* because what the player is being asked is how
+	 * much of the light model they want, not which of two passes they prefer.
 	 */
 	quality: {
-		high: { environment: true, hemisphere: true, exposure: 1 },
-		low: { environment: false, hemisphere: true, exposure: 1 },
+		high: {
+			environment: true,
+			hemisphere: true,
+			exposure: 1,
+			shadows: true,
+			ao: true,
+		},
+		low: {
+			environment: false,
+			hemisphere: true,
+			exposure: 1,
+			shadows: false,
+			ao: false,
+		},
 	},
 } as const;
 
