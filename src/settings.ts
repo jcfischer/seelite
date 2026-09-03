@@ -148,8 +148,9 @@ const SCHEMA = {
 	 * A row of its own because #98's rule runs both ways: a term the player can
 	 * see is a term the player should be able to turn off and look at. An earlier
 	 * An earlier revision justified the row by asserting the term "cannot be
-	 * measured against the noise of a frame", which turned out to be true and
-	 * was an assertion when it was written. **`setDither` in `output-stage.ts`
+	 * measured against the noise of a frame". Two instruments later that is
+	 * still where it stands — the difference is that it has now been looked for
+	 * and not found, rather than assumed. **`setDither` in `output-stage.ts`
 	 * owns what it costs and the three wrong answers on the way there**; the
 	 * note below stays qualitative on purpose, because a number in a
 	 * player-facing string is one more copy of a measurement and this entry
@@ -163,7 +164,7 @@ const SCHEMA = {
 		allowed: TOGGLE,
 		label: "Dither",
 		describe: (v: string) => (v === "on" ? "On" : "Off"),
-		note: "Breaks up the banding in dark gradients — empty space, and the shadow side of a planet — by moving each pixel less than one shade at random. Too cheap for this game's own frame-cost instrument to resolve; leave it on unless you want to see the bands the eight-bit screen actually has.",
+		note: "Breaks up the banding in dark gradients — empty space, and the shadow side of a planet — by moving each pixel less than one shade at random. Its cost is too small for this game's own frame-cost instrument to separate from noise; leave it on unless you want to see the bands the eight-bit screen actually has.",
 	},
 	/**
 	 * Whether the cockpit's corners fall off — #200.

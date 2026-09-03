@@ -99,9 +99,14 @@ const PARS = /* glsl */ `#include <colorspace_pars_fragment>
 uniform float uVignette;
 uniform float uDither;
 
-// Interleaved gradient noise (Jimenez). Zero-mean once the 0.5 is taken off,
-// and its period is long enough across a 1440x900 frame that a flat area
-// stipples rather than tiles.
+// Interleaved gradient noise (Jimenez), centred by the 0.5 below so the offset
+// it adds is signed rather than always positive. **Centred is not the same as
+// zero-mean**: that would need the hash to be exactly uniform over the pixels
+// actually rendered, which neither this implementation nor any test here
+// establishes, and an earlier comment claimed a flat region "keeps its exact
+// value" on the strength of it. What is wanted of it is weaker and is what a
+// dither needs — a signed sub-code offset with no visible period across a
+// 1440x900 frame.
 float seeliteNoise(vec2 p) {
 	return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));
 }
@@ -211,21 +216,24 @@ export class SeeliteOutputPass extends OutputPass {
 	 * same frame measured both ways in one run rather than two builds compared
 	 * across two.
 	 *
-	 * ## What it costs
+	 * ## What it costs — and what this repo can and cannot say about it
 	 *
-	 * **Not resolvable by the instrument that measured it.** Two shuffled sweeps
-	 * of `scripts/measure-light-cost.mjs` read −0.002 ms/frame and +0.066, at
-	 * 61/144 and 101/144 block pairings separated — a coin toss and a lean.
+	 * **Not separated, and no bound claimed.** Two shuffled sweeps of
+	 * `scripts/measure-light-cost.mjs` read −0.002 ms/frame and +0.066, at
+	 * 61/144 and 101/144 block pairings — a coin toss and a lean. The unsampled
+	 * arm's own twelve blocks spread 1.84–1.98 ms in the same runs, which is
+	 * wider than either estimate.
 	 *
-	 * That is a failure to separate, and on its own it establishes nothing; an
-	 * earlier revision turned it straight into "under a tenth of a millisecond",
-	 * which review was right to refuse. What licenses a bound is the
-	 * instrument's own resolution, and the run prints it: the unsampled arm's
-	 * twelve blocks spread 1.84–1.98 ms, so a difference smaller than about
-	 * 0.07 ms lies inside one arm's own block-to-block variation and this design
-	 * cannot see it. Both readings do. So the honest statement is that the term
-	 * is **smaller than this instrument resolves, which is around 0.07 ms**, and
-	 * that separating it would need a different design rather than more blocks.
+	 * That is a **failure to detect** and it is left as one. Two revisions of
+	 * this docstring turned it into an upper bound — first "under a tenth of a
+	 * millisecond", then "smaller than this instrument resolves, around 0.07 ms"
+	 * — and neither had a calibration behind it: a within-arm range is not a
+	 * detection threshold, and no power analysis was run. Review refused both,
+	 * correctly.
+	 *
+	 * So: this design did not measure a difference, a design that could would
+	 * have to isolate a full-screen term far smaller than a frame's own
+	 * block-to-block variation, and nothing here says how small the term is.
 	 *
 	 * `CLAUDE.md` carries the three wrong answers this one term produced and why
 	 * each was wrong — it is a lesson about measuring, not about dithering.
@@ -325,10 +333,19 @@ export function composerTarget(
 		// keeps 333k lit pixels at 0 samples against 341k at 4 on SwiftShader and
 		// 335k against 343k on ANGLE Metal, and the whole frame's lit mask
 		// disagrees on 0.35–0.47% of pixels, which is edges.
-		// `probe-output-stage.mjs` holds both of those as checks, so a driver
-		// that starts honouring the hint goes red instead of shipping a black
-		// sky. The exposure is also opt-in: `antialias` defaults to 0 and none of
-		// this applies at that setting.
+		//
+		// **Those checks guard this repo's rasterisers and not a player's.** An
+		// earlier revision of this comment said a driver that started honouring
+		// the hint would go red; it would not. `probe-output-stage.mjs` runs on
+		// SwiftShader and the view capture on whatever this machine has, so what
+		// they establish is that two implementations do not discard — which is
+		// evidence about those two and nothing about a third. A player on a
+		// driver that does honour it, with the setting turned up, would see
+		// layers go missing and no check here would know.
+		//
+		// What actually bounds the exposure is that it is opt-in: `antialias`
+		// defaults to 0, and at that setting the target is not multisampled and
+		// none of this applies.
 		//
 		// The fix is structural — one resolve for the whole ladder rather than
 		// one per pass — and it is #15's render ladder to make, not this

@@ -308,9 +308,13 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   SwiftShader and 343k against 335k on ANGLE Metal, and the whole frame's lit
   mask disagrees on 0.35–0.47% of pixels, which is edges. Two probe checks watch
   it — `the backdrop is still there when the frame is multisampled` and the
-  spatial `changes the edges without changing what is drawn` — so a driver that
-  starts honouring it goes red rather than shipping a black sky. Node #219 owns
-  the structural fix, which is the same restructure the frame cost wants. **A count
+  spatial `changes the edges without changing what is drawn` — but **those guard
+  this repo's rasterisers and not a player's**: the probe runs on SwiftShader,
+  so it establishes that two implementations do not discard and nothing about a
+  third. What bounds the exposure is that `antialias` defaults to 0, where the
+  target is not multisampled at all. Node #219 owns the structural fix, which is
+  the same restructure the frame cost wants. Shipped this way on the principal's
+  ruling, not by default. **A count
   reads as a scalar and cannot see a lost layer**; that check compares masks per
   pixel for exactly this reason. The structural fix is one resolve for the whole
   ladder, which is the render ladder's to make and not the output stage's.
@@ -341,9 +345,13 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   distributions, still assumed that. It reported the dither at 0.12–0.14 ms with
   **144/144** pairings separated; shuffling the arm order dropped the same term
   to −0.002 and +0.066 ms at 61/144 and 101/144, which is a coin toss and a lean.
-  The arms are shuffled from a printed seed now, and `setDither` records all
-  three wrong answers this one term produced, because each was wrong for its own
-  reason.
+  The arms are shuffled from a printed seed now. **And a failure to separate is
+  not a bound**: two further revisions turned those readings into "under a tenth
+  of a millisecond" and then into "smaller than this instrument resolves, around
+  0.07 ms", and neither had a calibration or a power analysis behind it — a
+  within-arm range is not a detection threshold. It is left as a failure to
+  detect. `setDither` records all four wrong answers this one term produced,
+  because each was wrong for its own reason.
 - **A dither belongs after the encode and a vignette before it.** The composer's
   targets are half-float and the screen is eight bits, so the quantisation
   happens in `OutputShader` — a ±0.5/255 noise added *there*, in display space,

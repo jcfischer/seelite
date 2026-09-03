@@ -114,6 +114,14 @@ const EDGE_MARGIN = 4;
  */
 const CAPTURE = () => {
 	const luma = (d, i) => 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+	// One canvas and one context for the whole probe. A fresh canvas per capture
+	// allocates a full-frame backing store every time — this probe takes a dozen
+	// captures at 2880x1800, which is tens of megabytes of transient allocation
+	// and a garbage collector running in the middle of the frames being timed.
+	// Sized lazily, because the drawing buffer's size is not known until the game
+	// has booted, and re-sized only if it changes.
+	let scratch = null;
+	let ctx = null;
 	window.__outputStage = {
 		luma,
 		/** Render and read in the same task: a WebGL canvas without
@@ -121,10 +129,14 @@ const CAPTURE = () => {
 		frame() {
 			const g = window.__seelite;
 			const src = g.renderer.domElement;
-			const scratch = document.createElement("canvas");
-			scratch.width = src.width;
-			scratch.height = src.height;
-			const ctx = scratch.getContext("2d", { willReadFrequently: true });
+			if (!scratch) {
+				scratch = document.createElement("canvas");
+				ctx = scratch.getContext("2d", { willReadFrequently: true });
+			}
+			if (scratch.width !== src.width || scratch.height !== src.height) {
+				scratch.width = src.width;
+				scratch.height = src.height;
+			}
 			g.render(0);
 			ctx.drawImage(src, 0, 0);
 			return ctx.getImageData(0, 0, scratch.width, scratch.height);
