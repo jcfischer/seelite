@@ -747,6 +747,45 @@ async function settingsGate() {
 		`view ${viewBefore} -> ${viewAfter}`,
 	);
 
+	/*
+	 * Every row is reachable on a short window.
+	 *
+	 * This page is 900x620, which is where the defect lived: a flex container
+	 * centring a box taller than itself pushes the box's top *above* the scroll
+	 * origin, and there is no scroll position that brings it back. #200 added
+	 * three rows and took the dialog past this height, so the first row and the
+	 * hint were both off the screen with no way to reach either.
+	 *
+	 * Asserted on the box's own rectangle rather than on a height: what matters
+	 * is that nothing sits above the scrollable origin and that scrolling to the
+	 * end reveals the last row. A height threshold would need retuning every
+	 * time a setting is added, which is the change that broke it.
+	 */
+	const reach = await page.evaluate(() => {
+		const root = document.getElementById("seelite-settings");
+		const box = root.querySelector(".box");
+		root.scrollTop = 0;
+		const top = box.getBoundingClientRect().top;
+		root.scrollTop = root.scrollHeight;
+		const bottom = box.getBoundingClientRect().bottom;
+		return {
+			top,
+			bottom,
+			viewport: root.clientHeight,
+			overflows: root.scrollHeight > root.clientHeight,
+		};
+	});
+	check(
+		"scrolled to the top, no part of the settings box is above the window",
+		reach.top >= 0,
+		`box top ${reach.top.toFixed(1)} px, ${reach.overflows ? "taller" : "shorter"} than the ${reach.viewport} px window`,
+	);
+	check(
+		"and scrolled to the end, its last row is on screen",
+		reach.bottom <= reach.viewport + 1,
+		`box bottom ${reach.bottom.toFixed(1)} px against a ${reach.viewport} px window`,
+	);
+
 	await page.keyboard.up("Shift");
 	await page.keyboard.press("Escape");
 	check("`Escape` closes it", !(await page.$("[data-settings-panel]")));

@@ -283,6 +283,89 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   colours are hex. It joins `cockpit.ts`, `live-cockpit.ts`, `planet-shaders.ts`
   and `planet-classes.glsl.ts` in that set. Naming it in a guard list does not
   guard it; it makes the probe throw before it starts.
+- **Multisampling the composer is the most expensive thing in this renderer.**
+  `output-stage.ts` hands `EffectComposer` its own target so `antialias: true`
+  on the renderer finally means something — that flag configures the default
+  framebuffer, which this game never draws into, and it is `false` now. **The
+  figures are not restated here**: `setComposerSamples` owns the table and
+  `scripts/measure-light-cost.mjs` reprints it. What is worth knowing without
+  opening either is the shape — the *cheapest* non-zero count is already four
+  times the whole unsampled frame, so there is no cheap setting of this. The
+  mechanism is four `RenderPass`es into one target with
+  `WEBGL_multisampled_render_to_texture` absent, so three resolves the buffer at
+  the end of every `WebGLRenderer.render`; that is read off three's source
+  rather than measured, and the attempt to measure the decomposition does not
+  isolate it, because disabling a pass removes its drawing too. So it is the
+  player's own row (`settings.ts`, `antialias`) and it defaults to off.
+- **Four layer passes into one multisampled target is undefined by three's own
+  contract, and it currently works anyway.** `updateMultisampleRenderTarget`
+  pushes `COLOR_ATTACHMENT0` into the invalidation list for the **read**
+  framebuffer — the multisampled one — after *every* `WebGLRenderer.render`. So
+  with `antialias` non-zero, #15's ladder composites the far, approach and near
+  layers over a backdrop whose pixels three has formally told the driver are
+  discardable. Measured on both rasterisers available here and neither honours
+  the hint: deep sky keeps 335k lit pixels at 4 samples against 333k at 0 on
+  SwiftShader and 343k against 335k on ANGLE Metal, and the whole frame's lit
+  mask disagrees on 0.35–0.47% of pixels, which is edges. Two probe checks watch
+  it — `the backdrop is still there when the frame is multisampled` and the
+  spatial `changes the edges without changing what is drawn` — but **those guard
+  this repo's rasterisers and not a player's**: the probe runs on SwiftShader,
+  so it establishes that two implementations do not discard and nothing about a
+  third. What bounds the exposure is that `antialias` defaults to 0, where the
+  target is not multisampled at all. Node #219 owns the structural fix, which is
+  the same restructure the frame cost wants. Shipped this way on the principal's
+  ruling, not by default. **A count
+  reads as a scalar and cannot see a lost layer**; that check compares masks per
+  pixel for exactly this reason. The structural fix is one resolve for the whole
+  ladder, which is the render ladder's to make and not the output stage's.
+
+- **A count this context grants for RGBA8 it may not grant for RGBA16F, and a
+  request can round *up*.** The composer's targets are half-float and a float
+  multisampled renderbuffer is optional in WebGL2, so `MAX_SAMPLES` is the wrong
+  question — `getInternalformatParameter(RENDERBUFFER, RGBA16F, SAMPLES)` is the
+  right one. And `renderbufferStorageMultisample` guarantees only that the result
+  is *at least* what was asked for: SwiftShader advertises `[4]` and allocates 4
+  for a 2x request, so `Math.min(wanted, max)` was wrong in shape and made the
+  settings row, its qualifier and the probe all report 2 while the GPU drew 4.
+  `grantedSamples` takes the smallest supported count at or above the request. A
+  count with no answer at all leaves the framebuffer incomplete, which is a
+  **black frame and not an exception**, so the probe checks that pixels are lit —
+  and it reads `gl.getParameter(SAMPLES)` off the bound framebuffer rather than
+  `renderTarget.samples`, which is only the request read back.
+- **A dial at zero still evaluates everything to its right.** Switching a
+  full-screen term off by multiplying it by a zeroed uniform removes the effect
+  and not the cost — and an on-against-off timing then subtracts the shared
+  arithmetic out of both arms. Both of `output-stage.ts`'s terms branch on their
+  uniform, and `tests/output-stage.test.ts` asserts the branch is in the spliced
+  source.
+- **A block design that always runs its arms in the same order measures the
+  order.** `measure-light-cost.mjs` ran 0, 2, 4 then dither-on, dither-off twelve
+  times over, so within-round thermal drift was perfectly confounded with the arm
+  — and the Mann-Whitney pairing count, which assumes nothing about the
+  distributions, still assumed that. It reported the dither at 0.12–0.14 ms with
+  **144/144** pairings separated; shuffling the arm order dropped the same term
+  to −0.002 and +0.066 ms at 61/144 and 101/144, which is a coin toss and a lean.
+  The arms are shuffled from a printed seed now. **And a failure to separate is
+  not a bound**: two further revisions turned those readings into "under a tenth
+  of a millisecond" and then into "smaller than this instrument resolves, around
+  0.07 ms", and neither had a calibration or a power analysis behind it — a
+  within-arm range is not a detection threshold. It is left as a failure to
+  detect. `setDither` records all four wrong answers this one term produced,
+  because each was wrong for its own reason.
+- **A dither belongs after the encode and a vignette before it.** The composer's
+  targets are half-float and the screen is eight bits, so the quantisation
+  happens in `OutputShader` — a ±0.5/255 noise added *there*, in display space,
+  is one code; the same noise added in linear light is a far smaller number in
+  the dark, which is the only place the banding is. `output-stage.ts` splices
+  both through `shader-splice.ts`, and `tests/output-stage.test.ts` asserts the
+  order from the patched source.
+- **The frame loop rewrites the vignette dial every frame**, from the view and
+  the settings row. A probe that assigns `uVignette` and then renders measures
+  its own assignment being overwritten, and reads a working vignette as doing
+  nothing — which it did, 1.000 against 1.000. The fix is not a pin on the pass:
+  that was tried, and a `vignetteOverride` field is production state existing for
+  one caller. Drive the settings row, which is the control the player has, so the
+  two arms differ by the thing that ships.
 - **A shader splice that misses its marker is silent.** `String.replace` with a
   renamed chunk returns the string unchanged, leaving a stock material that
   compiles, links, renders and carries the patched program's own name. Every

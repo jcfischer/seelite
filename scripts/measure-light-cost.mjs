@@ -1,5 +1,6 @@
 /**
- * What #99's baked environment costs a frame, **on the renderer the player has**.
+ * What the frame's switchable terms cost, **on the renderer the player has**:
+ * #99's baked environment, and #200's multisampled composer and its dither.
  *
  *   npm run dev                       # in one shell
  *   node scripts/measure-light-cost.mjs
@@ -22,15 +23,35 @@
  * `measure-` prefix keeps it out of `probe-all`, like every other instrument in
  * this directory.
  *
- * ## How the two arms are kept comparable
+ * ## Two experiments, because one key now moves two terms
  *
- * One page, one camera, one clock start, and the quality setting toggled **in
- * place** between blocks. Nothing is reloaded: a reload puts the ship somewhere
- * else and the two arms would then differ by their position as much as by the
- * term, which is `perf-panel.ts`'s whole argument for live switches. The blocks
- * alternate (high, low, high, low, …) so a thermal drift or a background task
- * lands on both arms rather than on whichever ran second, and the reported
- * figure is the **median** block, so one interrupted block does not carry it.
+ * #200 added a second frame-cost term to the renderer, and it is the larger of
+ * the two by a factor of five. A reading that let either drift would attribute
+ * the total to whichever the header happened to name — so each experiment moves
+ * **one** term and pins the other:
+ *
+ * - the **environment** arm toggles `quality` with the samples pinned at zero
+ *   (`Game.setComposerSamples` takes an explicit count for this reason);
+ * - the **samples** arm holds `quality` at `high` and moves the count alone.
+ *
+ * Pinned at *zero* and not at the strongest count, because zero is what the
+ * game ships (`settings.ts`, the `antialias` row) — the environment's cost is
+ * wanted on the frame a player actually draws, and a multisampled target
+ * changes what every fragment write costs by a factor of five.
+ *
+ * ## How the arms are kept comparable
+ *
+ * One page, one camera, one clock start, and the setting toggled **in place**
+ * between blocks. Nothing is reloaded: a reload puts the ship somewhere else and
+ * the two arms would then differ by their position as much as by the term, which
+ * is `perf-panel.ts`'s whole argument for live switches. The blocks alternate
+ * (high, low, high, low, …) so a thermal drift or a background task lands on
+ * both arms rather than on whichever ran second, and the reported figure is the
+ * **median** block, so one interrupted block does not carry it.
+ *
+ * A samples switch reallocates two full-frame buffers, which the environment
+ * switch does not — so that arm's warm frame is doing more work than the other's
+ * and is excluded from the timing for the same reason.
  *
  * ## What the number is, stated rather than implied
  *
@@ -81,29 +102,55 @@ const FRAMES = 120;
  *  that. The dispersion is printed for the same reason. */
 const BLOCKS = 12;
 
-/** Milliseconds per frame for one block at one quality. */
-const block = (page, quality) =>
+/**
+ * Milliseconds per frame for one block at one quality, sample count and dither.
+ *
+ * The dither is set through `outputPass` rather than through the settings store
+ * on purpose: the store writes `localStorage` and notifies every listener, and
+ * an instrument should not leave a preference behind on the machine it measured.
+ */
+const block = (page, quality, samples, dither = true) =>
 	page.evaluate(
-		([q, frames]) => {
+		([q, frames, n, d]) => {
 			const g = window.__seelite;
+			const gl0 = g.renderer.getContext();
 			g.settings.set("quality", q);
+			// The order does not matter since #200 moved the count off the quality
+			// key — `applyQuality` is lighting only again. It is written this way
+			// round because the count is the term this line is here to pin, and a
+			// reader should not have to check whether something above moved it.
+			g.setComposerSamples(n);
+			g.outputPass.setDither(d);
+			// **What was allocated, not what was asked for.** A request lands on
+			// the smallest supported count at or above it, so on a context that
+			// grants only 4x a 2x block renders at 4x — and a table labelled by
+			// the request would publish that as a 2x measurement. Read off the
+			// bound framebuffer rather than off the request or the target's own
+			// field, which are both the ask.
+			g.renderer.setRenderTarget(g.composer.renderTarget1);
+			const applied = gl0.getParameter(gl0.SAMPLES);
+			g.renderer.setRenderTarget(null);
 			// One warm frame after the switch: changing `scene.environment` changes
 			// every standard material's program key, so the first frame at a new
-			// setting pays a shader recompile that no later frame pays. Timing it
-			// would price the switch rather than the term.
+			// setting pays a shader recompile that no later frame pays, and a
+			// changed sample count pays a reallocation of both composer buffers.
+			// Timing either would price the switch rather than the term.
 			g.render(0);
-			const gl = g.renderer.getContext();
 			const sync = new Uint8Array(4);
 			const started = performance.now();
 			for (let i = 0; i < frames; i++) g.render(0);
 			// Drain: `readPixels` blocks until everything queued has been drawn.
 			// `gl.finish` does not reliably do so through ANGLE, which is why the
 			// pixel read is here rather than a `finish` call.
-			gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, sync);
-			return (performance.now() - started) / frames;
+			gl0.readPixels(0, 0, 1, 1, gl0.RGBA, gl0.UNSIGNED_BYTE, sync);
+			return { ms: (performance.now() - started) / frames, applied };
 		},
-		[quality, FRAMES],
+		[quality, FRAMES, samples, dither],
 	);
+
+/** A block returns `{ ms, applied }`; most of the statistics below want only
+ *  the timings. */
+const ms = (xs) => xs.map((r) => r.ms);
 
 const median = (xs) => {
 	const s = [...xs].sort((a, b) => a - b);
@@ -114,7 +161,11 @@ const median = (xs) => {
 // The guard's *return* is what gets navigated, not the raw `ORIGIN` — the
 // probes do it that way, and measuring a target the guard did not resolve is a
 // silent way to measure a different server.
-const origin = await guardedOrigin(ORIGIN, ["src/main.ts", "src/light-rig.ts"]);
+const origin = await guardedOrigin(ORIGIN, [
+	"src/main.ts",
+	"src/light-rig.ts",
+	"src/output-stage.ts",
+]);
 const browser = await launchChromium({ headless: false });
 // `deviceScaleFactor: 2` and not the default 1: the drawing buffer is what the
 // fill-rate-bound terms are paid over, and the machine this targets has a
@@ -140,15 +191,93 @@ await page.evaluate(
 	[SUBJECT, RADII],
 );
 
+/**
+ * The counts the settings screen offers, **asked of the store**.
+ *
+ * This was a sweep over a list written here, and the list was wrong: it carried
+ * `8` and `16`, `SettingsStore.set` did not validate, and the instrument
+ * reported a frame cost for a 16x target no player can ask for. `set` refuses
+ * an unlisted value now, and this asks rather than guesses.
+ */
+const SAMPLES = await page.evaluate(() => [
+	...window.__seelite.settings.allowed("antialias"),
+]);
+
 const high = [];
 const low = [];
-for (let i = 0; i < BLOCKS; i++) {
-	high.push(await block(page, "high"));
-	low.push(await block(page, "low"));
-}
+/** One list of blocks per count the screen offers, filled round-robin so a
+ *  thermal drift lands on every arm rather than on whichever ran last. Every
+ *  count rather than the strongest against zero: the choice in front of the
+ *  player is three-way, and a table with a hole in the middle is one they would
+ *  have to guess across. */
+const bySamples = new Map([[0, []]]);
+/** The dither arm, at the shipped sample count. Here because the player-facing
+ *  note in `settings.ts` said it "costs nothing measurable" and nothing had
+ *  measured it — the probe counts *pixels*, which is a different question. */
+const dithered = [];
+const undithered = [];
+/**
+ * **Every arm in a round runs in a shuffled order.**
+ *
+ * The header claimed round-robin ordering put a thermal drift on every arm
+ * rather than on whichever ran last, and that was only half true: within a
+ * round the arms ran 0, 2, 4 and then dither on, off, every time. A drift
+ * *inside* a round was therefore perfectly confounded with the arm — the 4x
+ * block always ran on a hotter machine than the 0x block beside it, and the
+ * undithered block always after the dithered one. Shuffling breaks the
+ * correlation without changing the pairing statistics, which assume nothing
+ * about order.
+ *
+ * Seeded and printed, so a suspicious run can be repeated exactly.
+ */
+const ORDER_SEED = Number(process.env.ORDER_SEED ?? 20260902);
+let orderState = ORDER_SEED >>> 0;
+const nextRandom = () => {
+	orderState = (orderState * 1664525 + 1013904223) >>> 0;
+	return orderState / 4294967296;
+};
+const shuffled = (xs) => {
+	const out = [...xs];
+	for (let i = out.length - 1; i > 0; i--) {
+		const j = Math.floor(nextRandom() * (i + 1));
+		[out[i], out[j]] = [out[j], out[i]];
+	}
+	return out;
+};
 
-const h = median(high);
-const l = median(low);
+/** Every arm as a thunk, so a round is a shuffle of one list. */
+const arms = [
+	() => block(page, "high", 0).then((r) => high.push(r)),
+	() => block(page, "low", 0).then((r) => low.push(r)),
+	...SAMPLES.map((n) => () => block(page, "high", n).then((r) => record(n, r))),
+	() => block(page, "high", 0, true).then((r) => dithered.push(r)),
+	() => block(page, "high", 0, false).then((r) => undithered.push(r)),
+];
+
+/** File a samples block under the count it was **applied** at. A context that
+ *  rounds a request up puts two requests in one bucket, which is the honest
+ *  place for them — the row then reports what was measured. */
+const record = (requested, result) => {
+	const at = result.applied;
+	if (!bySamples.has(at)) bySamples.set(at, []);
+	bySamples.get(at).push(result);
+	if (at !== requested) rounded.set(requested, at);
+};
+/** Requests the driver did not honour exactly, so the report can say so rather
+ *  than leave a reader wondering where a row went. */
+const rounded = new Map();
+
+for (let i = 0; i < BLOCKS; i++) for (const arm of shuffled(arms)) await arm();
+
+const h = median(ms(high));
+const l = median(ms(low));
+const medians = new Map([...bySamples].map(([n, xs]) => [n, median(ms(xs))]));
+const base = medians.get(0);
+/** The counts blocks were actually allocated at, ascending — the rows below and
+ *  every spread and separation line read this rather than the request list. */
+const appliedCounts = [...medians.keys()].sort((a, b) => a - b);
+const dOn = median(ms(dithered));
+const dOff = median(ms(undithered));
 console.log(`  renderer: ${renderer}`);
 console.log(
 	`  viewport: ${VIEWPORT.width}x${VIEWPORT.height}, ${SUBJECT} at ${RADII} radii`,
@@ -163,8 +292,36 @@ console.log(
 console.log(
 	`  the environment costs   ${(h - l).toFixed(3)} ms/frame  (${(((h - l) / l) * 100).toFixed(1)}%)`,
 );
-console.log(`  spread — high ${high.map((x) => x.toFixed(2)).join(" ")}`);
-console.log(`  spread — low  ${low.map((x) => x.toFixed(2)).join(" ")}`);
+console.log("  both arms above unantialiased; quality high below:");
+console.log(`  arm order shuffled, seed ${ORDER_SEED}`);
+// **Rows are the counts that were *allocated*, not the ones requested.** A
+// context that rounds a request up puts two requests in one bucket, so a loop
+// over `SAMPLES` would look up a count with no bucket behind it and throw on
+// `undefined.toFixed` — which is what this did until review ran it against the
+// case its own comment described. The rounding is printed rather than silently
+// merged, so a reader can see why a row is missing.
+for (const [requested, at] of rounded)
+	console.log(
+		`  note: a request for ${requested} samples was allocated at ${at}`,
+	);
+for (const n of appliedCounts) {
+	const t = medians.get(n);
+	const times =
+		n === 0 ? "" : `  ${(t / base).toFixed(1)}x the unsampled frame`;
+	console.log(
+		`  ${String(n).padStart(2)} samples             ${t.toFixed(3)} ms/frame  ${String(Math.round(1000 / t)).padStart(3)} fps${times}`,
+	);
+}
+console.log(
+	`  spread — high ${ms(high)
+		.map((x) => x.toFixed(2))
+		.join(" ")}`,
+);
+console.log(
+	`  spread — low  ${ms(low)
+		.map((x) => x.toFixed(2))
+		.join(" ")}`,
+);
 // A difference of two medians the size of the blocks' own spread says nothing
 // on its own, and the spreads here overlap. This is the statistic that does not
 // need the reader to eyeball two rows.
@@ -176,11 +333,41 @@ console.log(`  spread — low  ${low.map((x) => x.toFixed(2)).join(" ")}`);
 // while the medians barely moved. Counting every (high, low) pairing instead
 // is the Mann-Whitney count: it assumes nothing about either distribution's
 // shape, and one outlier can move it by at most a twelfth.
-let slower = 0;
-for (const h of high) for (const l of low) if (h > l) slower++;
-const pairs = high.length * low.length;
+const separation = (a, b) => {
+	let slower = 0;
+	for (const x of a) for (const y of b) if (x > y) slower++;
+	const pairs = a.length * b.length;
+	return `${slower}/${pairs} (${((slower / pairs) * 100).toFixed(0)}%)`;
+};
 console.log(
-	`  separation              ${slower}/${pairs} pairings have the environment-on block slower (${((slower / pairs) * 100).toFixed(0)}%)`,
+	`  dither on               ${dOn.toFixed(3)} ms/frame  ${Math.round(1000 / dOn)} fps`,
+);
+console.log(
+	`  dither off              ${dOff.toFixed(3)} ms/frame  ${Math.round(1000 / dOff)} fps`,
+);
+console.log(
+	`  the dither costs        ${(dOn - dOff).toFixed(3)} ms/frame  (${(((dOn - dOff) / dOff) * 100).toFixed(1)}%)`,
+);
+console.log(
+	`  separation — env        ${separation(ms(high), ms(low))} of pairings have the environment-on block slower`,
+);
+console.log(
+	`  separation — dither     ${separation(ms(dithered), ms(undithered))} of pairings have the dithered block slower`,
+);
+for (const n of appliedCounts.filter((n) => n > 0)) {
+	console.log(
+		`  spread — ${String(n).padStart(2)} samples     ${ms(bySamples.get(n))
+			.map((x) => x.toFixed(2))
+			.join(" ")}`,
+	);
+	console.log(
+		`  separation — ${String(n).padStart(2)} samples ${separation(ms(bySamples.get(n)), ms(bySamples.get(0)))} of pairings have the multisampled block slower`,
+	);
+}
+console.log(
+	`  spread —  0 samples     ${ms(bySamples.get(0))
+		.map((x) => x.toFixed(2))
+		.join(" ")}`,
 );
 
 await browser.close();

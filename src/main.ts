@@ -69,9 +69,15 @@ import * as THREE from "three";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
 import { starField } from "./backdrop";
+import {
+	SeeliteOutputPass,
+	VIGNETTE_MAX,
+	composerTarget,
+	grantedSamples,
+	setComposerSamples,
+} from "./output-stage";
 import {
 	EXPOSURE,
 	LIGHT_RIG,
@@ -821,6 +827,9 @@ class Game {
 	readonly approachScene = new THREE.Scene();
 	/** Switchable from the perf panel; see `perf-panel.ts`. */
 	private bloomPass!: UnrealBloomPass;
+	/** The last pass: tone map, dither, vignette (#200). Public so a probe can
+	 *  reach the dither's control arm through `window.__seelite`. */
+	outputPass!: SeeliteOutputPass;
 	/**
 	 * Resolution has exactly one owner, and it is the player's setting.
 	 *
@@ -1596,7 +1605,14 @@ class Game {
 		this.faceTheStar();
 
 		this.renderer = new THREE.WebGLRenderer({
-			antialias: true,
+			// **`false`, and that is the honest setting** (#200). This flag
+			// configures the *default* framebuffer, which this game never draws
+			// into: every frame lands in the composer's targets and reaches the
+			// screen as a full-screen blit of an already-resolved texture. It was
+			// `true` from the first frame this game drew and it smoothed nothing —
+			// it only reserved a multisampled back buffer nobody rendered to.
+			// `output-stage.ts` owns the antialiasing that works.
+			antialias: false,
 			powerPreference: "high-performance",
 		});
 		this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -1700,7 +1716,17 @@ class Game {
 		this.selectBootTarget();
 		this.refreshScannerContacts();
 
-		this.composer = new EffectComposer(this.renderer);
+		// **The composer is handed its own target, and that is what carries the
+		// antialiasing** (#200). The renderer's own `antialias` flag configures
+		// the *default* framebuffer, which this game never draws into: every
+		// frame lands in the composer's targets and reaches the screen as a blit
+		// of an already-resolved texture. It was `true` for years and smoothed
+		// nothing, which is why it is `false` above. `output-stage.ts` owns the
+		// antialiasing that works.
+		this.composer = new EffectComposer(
+			this.renderer,
+			composerTarget(this.renderer, this.settings.value.antialias),
+		);
 		// Back to front. The first pass clears colour; the third clears *depth*
 		// only, so the near layer cannot be occluded by a planet 3 AU away that
 		// the far layer drew at 1/100,000 scale. The second clears nothing,
@@ -1712,6 +1738,14 @@ class Game {
 		backdropPass.clear = true;
 		const farPass = new RenderPass(this.farScene, this.farCamera);
 		farPass.clear = false;
+		// **Depth, though — and that is `resolveDepthBuffer: false`'s companion**
+		// (#200). This used to inherit the backdrop's depth buffer, which was
+		// safe because the backdrop writes none. With the depth resolve off,
+		// three invalidates the multisampled framebuffer's depth after every
+		// `render`, so what this pass would inherit is undefined rather than
+		// empty. Clearing it is free — there was nothing in it to keep — and it
+		// is what makes the two changes one change.
+		farPass.clearDepth = true;
 		const approachPass = new RenderPass(
 			this.approachScene,
 			this.approachCamera,
@@ -1736,7 +1770,19 @@ class Game {
 			EXPOSURE.bloom.threshold,
 		);
 		this.composer.addPass(this.bloomPass);
-		this.composer.addPass(new OutputPass());
+		// Kept as a field for the same reason `bloomPass` is: the vignette is set
+		// per frame from the view, and the dither has a control arm a probe
+		// switches. #200.
+		this.outputPass = new SeeliteOutputPass();
+		// **The stored choice, applied here and not only on change.** The
+		// subscription below fires on a *difference*, and `applied` starts at the
+		// loaded settings — so a player who turned the dither off and came back
+		// got it on again, silently, until they toggled it twice. The samples and
+		// the vignette do not need this line and it is worth saying why: the
+		// composer is constructed from `antialias` a few lines above, and the
+		// frame loop reads `vignette` on every frame beside the view.
+		this.outputPass.setDither(this.settings.value.dither === "on");
+		this.composer.addPass(this.outputPass);
 
 		this.overlay = document.getElementById("overlay") as HTMLCanvasElement;
 		this.overlayCtx = this.overlay.getContext("2d") as CanvasRenderingContext2D;
@@ -1804,6 +1850,14 @@ class Game {
 		this.settings.subscribe((next) => {
 			if (next.renderScale !== applied.renderScale) this.onResize();
 			if (next.quality !== applied.quality) this.applyQuality();
+			// #200's three rows. The sample count reallocates both composer
+			// buffers, so it is guarded by the same comparison and for the same
+			// reason as the resolution. The vignette needs no line here at all:
+			// the frame loop reads it from the settings on every frame, because
+			// it already reads the view there.
+			if (next.antialias !== applied.antialias) this.setComposerSamples();
+			if (next.dither !== applied.dither)
+				this.outputPass.setDither(next.dither === "on");
 			applied = next;
 		});
 		/**
@@ -2287,6 +2341,34 @@ class Game {
 		// answer for every plated surface in the game rather than one per
 		// surface. `cockpit-surface.ts` owns what a cabin surface costs.
 		applyCockpitQuality(this.settings.value.quality);
+	}
+
+	/**
+	 * Re-gate the composer's multisampling — #200.
+	 *
+	 * A method rather than a line in the settings subscription because
+	 * `probe-output-stage.mjs` and `scripts/measure-light-cost.mjs` both need the
+	 * *same* switch with a count they name: a claim about antialiasing measured
+	 * by moving the player's setting would move it through the store, notify
+	 * every other listener, and write it to `localStorage`. The default argument
+	 * is the player's row; an explicit one is a control arm.
+	 */
+	setComposerSamples(samples: number = this.settings.value.antialias) {
+		// Clamped to what *this* context will multisample a half-float target at,
+		// which is not what `MAX_SAMPLES` answers for. `output-stage.ts` has the
+		// argument; the short version is that a count this context cannot grant
+		// leaves the framebuffer incomplete and the frame black.
+		// Called before the composer exists on some paths — a `!` here would
+		// throw on boot. Harmless rather than a hole: the composer is *built* at
+		// the player's count a few lines after the lights, from the same field.
+		if (!this.composer) return;
+		// Both buffers, because `EffectComposer` swaps them: multisampling one
+		// would antialias alternate passes and read as a flicker rather than as a
+		// missing term.
+		setComposerSamples(
+			[this.composer.renderTarget1, this.composer.renderTarget2],
+			grantedSamples(this.renderer, samples),
+		);
 	}
 
 	/**
@@ -5340,6 +5422,16 @@ class Game {
 		// near plane fills the screen with its inside faces.
 		this.shipMesh.visible = this.view === "chase";
 
+		// **Cockpit only** (#200). A vignette is a lens artefact; in cockpit view
+		// it reads as the canopy's own falloff and keeps the frame's corners from
+		// competing with the instruments, and on an exterior shot with no lens in
+		// the fiction it reads as a photograph of a spaceship.
+		this.outputPass.setVignette(
+			this.view === "cockpit" && this.settings.value.vignette === "on"
+				? VIGNETTE_MAX
+				: 0,
+		);
+
 		this.composer.render();
 		this.drawMarkers(camPos);
 		this.frames++;
@@ -6590,7 +6682,24 @@ if (query.has("model-viewer")) {
 	// for.
 	// The settings screen is a player-facing feature, so it is not gated.
 	import("./settings-panel").then(({ mountSettingsPanel }) =>
-		mountSettingsPanel(game.settings, () => game.releaseHeldKeys()),
+		mountSettingsPanel(
+			game.settings,
+			() => game.releaseHeldKeys(),
+			// What the antialiasing row is *actually* rendering at, when the GPU
+			// grants less than the player asked for (#200). Without this the row
+			// reads "4x" on a machine giving 2x or none, which is a setting that
+			// lies about itself — and the clamp exists precisely because the
+			// alternative to granting less is a black frame.
+			(key, value) => {
+				if (key !== "antialias" || value === 0) return null;
+				const got = grantedSamples(game.renderer, value as number);
+				return got === value
+					? null
+					: got === 0
+						? "unsupported here"
+						: `${got}x here`;
+			},
+		),
 	);
 
 	if (query.has("perf"))

@@ -17,6 +17,18 @@
  * `0` would otherwise ask for a zero-sized drawing buffer.
  */
 
+/**
+ * The two values every on/off row takes.
+ *
+ * Named once and shared, rather than each row spelling its own pair and an
+ * exported alias being derived from whichever happened to be first. That was
+ * the arrangement for a round: the alias read `SCHEMA.dither.allowed`, so
+ * editing the dither's values silently retyped the vignette. The alias is gone
+ * now that `Settings` is derived from the schema — every row's type comes from
+ * its own `allowed`, and nothing outside this file needed a name for the pair.
+ */
+const TOGGLE = ["on", "off"] as const;
+
 /** One place for the schema, because the default and the validator drift apart
  *  when they are written separately. */
 const SCHEMA = {
@@ -43,6 +55,14 @@ const SCHEMA = {
 	/**
 	 * Which lighting terms the frame gets — #98's quality key, and #99's answer
 	 * to what "low" drops.
+	 *
+	 * **#200's antialiasing is deliberately *not* here**, though it was for a
+	 * round. It is a fill-rate cost paid on the same buffer, so folding it in
+	 * looked like one question rather than two — and then it was flown. 4x is
+	 * six times the frame cost of the whole rest of the frame on the machine
+	 * this targets, which is a different order of decision from *does metal read
+	 * as metal*, and a player who wants smooth edges at low lighting cannot ask
+	 * for that through one key. It has its own row below.
 	 *
 	 * There is no frame-time floor in this game and deliberately so (#98): the
 	 * target is Apple Silicon, the expensive part is gated, and a probe's frame
@@ -96,18 +116,105 @@ const SCHEMA = {
 		describe: (v: string) => (v === "high" ? "High" : "Low"),
 		note: "High reflects the star off every hull, plate and cockpit surface, cuts the panel lines into the hulls and the cabin so a moving sun breaks across them, and lights the console from above. Low drops all three and keeps the sun, the star-side gradient and the cockpit fill; the picture stays lit, the panel lines stay painted, and the metal stops reading as metal.",
 	},
+	/**
+	 * How many samples the composed frame is drawn with — #200.
+	 *
+	 * **Its own row, and it defaults to off.** `antialias: true` on the
+	 * `WebGLRenderer` was inert from the first frame this game drew, because
+	 * every frame is rendered into the `EffectComposer`'s targets and that flag
+	 * configures the default framebuffer. Multisampling the composer's own
+	 * target fixes it and the sheet says so — and then it was priced, and it is
+	 * the most expensive thing in this renderer by a factor of five.
+	 * **`setComposerSamples` in `output-stage.ts` owns the table**, and the
+	 * short version is that turning the count down does not rescue it: the cost
+	 * is a full-buffer resolve paid once per layer pass, so the lever is #15's
+	 * render ladder rather than this row.
+	 *
+	 * So the default is **off**: the game a player starts is the one that runs,
+	 * and the smoother one is a row away for anyone whose machine can carry it.
+	 * A number rather than a mode name, unlike `quality`, because a sample count
+	 * *is* a point on a scale and the renderer takes it as one.
+	 */
+	antialias: {
+		fallback: 0,
+		allowed: [0, 2, 4] as const,
+		label: "Antialiasing",
+		describe: (v: number) => (v === 0 ? "Off" : `${v}x`),
+		note: "Smooths the stair-stepping on rails, hull edges and station plating. It is the most expensive setting in this game by a wide margin — on an M1 Pro at full resolution, 2x costs about four times the frame and 4x about six. Turn it up only if the frame meter says you can afford it, and turn Resolution down first if it is close.",
+	},
+	/**
+	 * Whether the output stage stipples the last bit — #200.
+	 *
+	 * A row of its own because #98's rule runs both ways: a term the player can
+	 * see is a term the player should be able to turn off and look at. An earlier
+	 * An earlier revision justified the row by asserting the term "cannot be
+	 * measured against the noise of a frame". Two instruments later that is
+	 * still where it stands — the difference is that it has now been looked for
+	 * and not found, rather than assumed. **`setDither` in `output-stage.ts`
+	 * owns what it costs and the three wrong answers on the way there**; the
+	 * note below stays qualitative on purpose, because a number in a
+	 * player-facing string is one more copy of a measurement and this entry
+	 * already carried two that drifted apart from each other. What it fixes is banding in the
+	 * dark — space and a planet's terminator cross a handful of eight-bit codes
+	 * over hundreds of pixels — and the only honest way to judge that is to
+	 * switch it.
+	 */
+	dither: {
+		fallback: "on" as const,
+		allowed: TOGGLE,
+		label: "Dither",
+		describe: (v: string) => (v === "on" ? "On" : "Off"),
+		note: "Breaks up the banding in dark gradients — empty space, and the shadow side of a planet — by moving each pixel less than one shade at random. Its cost is too small for this game's own frame-cost instrument to separate from noise; leave it on unless you want to see the bands the eight-bit screen actually has.",
+	},
+	/**
+	 * Whether the cockpit's corners fall off — #200.
+	 *
+	 * Never applied outside cockpit view whatever this says: a vignette is a
+	 * lens artefact, and on an exterior shot with no lens in the fiction it
+	 * reads as a photograph of a spaceship. `main.ts` owns that half; this row
+	 * is whether the player wants it at all.
+	 */
+	vignette: {
+		fallback: "on" as const,
+		allowed: TOGGLE,
+		label: "Vignette",
+		describe: (v: string) => (v === "on" ? "On" : "Off"),
+		note: "Darkens the corners of the cockpit view by up to 15%, so the frame's edges stop competing with the instruments. Never applied in the chase view. Off is the flat frame.",
+	},
 } as const;
 
 export type Quality = (typeof SCHEMA.quality.allowed)[number];
-export type Settings = { renderScale: number; quality: Quality };
+
+/**
+ * One row per schema entry, each typed as **its own allowed set**.
+ *
+ * Derived rather than written out, which was worth the mapped type: the hand-
+ * written version repeated every key a third time beside `SCHEMA` and
+ * `DEFAULT_SETTINGS`, so adding a row meant three synchronised edits — and it
+ * silently widened as it went. `antialias` was declared `number` there, so
+ * `store.set("antialias", 3)` type-checked and was refused only at runtime.
+ * Here it is `0 | 2 | 4` and the compiler says so.
+ */
+export type Settings = {
+	[K in keyof typeof SCHEMA]: (typeof SCHEMA)[K]["allowed"][number];
+};
 
 export const SETTING_KEYS = Object.keys(SCHEMA) as (keyof typeof SCHEMA)[];
 export const settingSpec = (key: keyof typeof SCHEMA) => SCHEMA[key];
 
-export const DEFAULT_SETTINGS: Settings = {
-	renderScale: SCHEMA.renderScale.fallback,
-	quality: SCHEMA.quality.fallback,
-};
+/**
+ * Every row's fallback, taken from the schema.
+ *
+ * Also derived, for the same reason and with the same cast as `allowed`:
+ * building an object whose value type varies by key cannot be expressed while
+ * the key is a union, and `settings.test.ts` round-trips a legal value of each
+ * kind, which is what actually holds it. What this buys is that a row added to
+ * `SCHEMA` with no default here is now impossible rather than a `undefined`
+ * reaching the renderer.
+ */
+export const DEFAULT_SETTINGS: Settings = Object.fromEntries(
+	SETTING_KEYS.map((key) => [key, SCHEMA[key].fallback]),
+) as Settings;
 
 const STORAGE_KEY = "seelite:settings:v1";
 
@@ -222,7 +329,46 @@ export class SettingsStore {
 		return this.current;
 	}
 
+	/**
+	 * What the settings screen may offer for one key — and what a script driving
+	 * this store from outside is allowed to ask for.
+	 *
+	 * On the store rather than only as `settingSpec`, because the readers that
+	 * need it most are `.mjs`: `scripts/probe-output-stage.mjs` and
+	 * `scripts/measure-light-cost.mjs` reach the game through
+	 * `window.__seelite` and cannot import a TypeScript module. Both used to
+	 * carry their own `[0, 2, 4]`, which is the copied-constant trap
+	 * `CLAUDE.md` names — and the instrument's copy was `[0, 2, 4, 8, 16]`,
+	 * which `set` accepted and reported as a measurement of a count no player
+	 * can choose.
+	 */
+	allowed<K extends keyof Settings>(key: K): readonly Settings[K][] {
+		// Through `unknown`, for the reason `accept` below states at length:
+		// indexing `Settings` by the union of its keys collapses to `never`, so
+		// no signature written here recovers the link between a key and its set.
+		// `settings.test.ts` round-trips a legal value of each kind, which is what
+		// actually holds it.
+		return SCHEMA[key].allowed as unknown as readonly Settings[K][];
+	}
+
+	/**
+	 * Change one setting, or refuse.
+	 *
+	 * **Validated here as well as on load**, which it was not: `loadSettings`
+	 * guarded the boundary with `localStorage` and nothing guarded the boundary
+	 * with code. A caller could write any value at all, and it was saved — so
+	 * the illegal value survived until a reload cleaned it up. That is not
+	 * theoretical: `measure-light-cost.mjs` swept `antialias` over a list of its
+	 * own and set 16, the composer allocated a 16x target, and the instrument
+	 * printed a frame cost for a setting the screen does not offer. A count
+	 * reaches `WebGLRenderTarget({ samples })`, so the failure mode above that
+	 * is a target that will not allocate at all.
+	 */
 	set<K extends keyof Settings>(key: K, value: Settings[K]) {
+		// Through `accept`, which is the loader's own membership check — the
+		// first version of this line reimplemented it, and two paths that must
+		// agree about what a legal value is are two paths that will not.
+		if (accept(key, value) === undefined) return;
 		if (this.current[key] === value) return;
 		this.current = { ...this.current, [key]: value };
 		saveSettings(this.current);

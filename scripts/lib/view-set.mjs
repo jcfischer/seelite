@@ -130,6 +130,7 @@ export const LEVERS = Object.freeze({
 	165: "the landing pad, and the shipyard keel aft of its hub",
 	199: "the exposure budget",
 	206: "the planet surface at the apparent size that costs a frame",
+	200: "the composed frame's edges, its dither, and the cockpit vignette",
 });
 
 /**
@@ -215,7 +216,7 @@ export const SHOT_KINDS = Object.freeze([
 export const VIEWS = Object.freeze([
 	{
 		name: "cockpit-arrival",
-		covers: [105, 103, 99],
+		covers: [105, 103, 99, 200],
 		what: "The interior and the HUD, station ahead at arrival range. ~40% of this frame is cockpit.",
 		shot: {
 			kind: "station-axis",
@@ -434,7 +435,7 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "hull-chase",
-		covers: [199, 101, 99],
+		covers: [199, 101, 99, 200],
 		what: "The player's own hull, mostly backlit, against the system's largest planet. Flat plate shows here first.",
 		shot: {
 			kind: "body-offset",
@@ -446,7 +447,7 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "planet-terminator",
-		covers: [99, 206],
+		covers: [99, 206, 200],
 		what: "The largest planet at a crescent. The far layer takes no fill on purpose, and this is why.",
 		shot: {
 			kind: "body-offset",
@@ -509,7 +510,7 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "sky-only",
-		covers: [100],
+		covers: [100, 200],
 		what: "Away from the star and every body. The backdrop with nothing in front of it.",
 		shot: { kind: "deep-sky", view: "cockpit" },
 	},
