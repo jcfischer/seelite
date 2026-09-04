@@ -23,6 +23,7 @@ import {
 	START_GALAXY,
 	REFERENCE_THRUST_KMS2,
 	advanceSystem,
+	bodyAccelerationBound,
 	bodyVelocity,
 	makeSystem,
 	makeWorld,
@@ -697,9 +698,28 @@ describe("body velocities, which arrival turned out to depend on", () => {
 		expect(Math.abs(stationKms - planetKms)).toBeLessThan(planetKms);
 	});
 
+	test("the acceleration bound contains frame-tangent orbital error", () => {
+		const dt = 0.1;
+		const after = makeSystem(world.system.record, world.gameTime + dt);
+		for (const body of world.system.bodies) {
+			const acceleration = bodyAccelerationBound(world.system, body.id);
+			const predicted = add(
+				body.pos,
+				scale(bodyVelocity(world.system, body.id, world.gameTime), dt),
+			);
+			const exact = after.byId.get(body.id);
+			if (!exact) throw new Error(`no ${body.id}`);
+			const error = length(sub(exact.pos, predicted));
+			expect(error, body.id).toBeLessThanOrEqual(
+				0.5 * acceleration * dt * dt + 1e-7,
+			);
+		}
+	});
+
 	test("an unknown body is an error rather than a zero velocity", () => {
 		// A zero would be a silent claim that the target is stationary, which
 		// is exactly the assumption that made the first cruise approach unarrivable.
 		expect(() => bodyVelocity(world.system, "no-such-body", 0)).toThrow();
+		expect(() => bodyAccelerationBound(world.system, "no-such-body")).toThrow();
 	});
 });

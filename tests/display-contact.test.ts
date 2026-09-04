@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { projectNavTargets } from "../src/cockpit";
-import { bodyVelocity, makeWorld } from "../src/sim";
+import { bodyAccelerationBound, bodyVelocity, makeWorld } from "../src/sim";
 import { type DisplayContact, isDisplayContact } from "../src/display-contact";
 import { v3 } from "../src/vec3";
 import { repoPath } from "./lib/source-scan";
@@ -90,7 +90,12 @@ test("selection includes contacts without putting them in generated bodies or ma
 		scannerClass: "unknown",
 	};
 	const subject = Object.assign(
-		Object.create(methods(["selectable", "masses"])),
+		Object.create(
+			methods(["selectable", "masses"], {
+				bodyVelocity,
+				bodyAccelerationBound,
+			}),
+		),
 		{
 			world,
 			contacts: [contact],

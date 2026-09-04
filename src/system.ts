@@ -429,6 +429,19 @@ export function velocityOnOrbit(orbit: Orbit, gameTime: number): Vec3 {
 	return { x: vx * cn - vyi * sn, y: vx * sn + vyi * cn, z: vzi };
 }
 
+/**
+ * Maximum acceleration contributed by one circular orbit, km/s².
+ *
+ * Circular motion has constant acceleration magnitude `R * omega²`.  Cruise
+ * uses it to bound the departure of the exact orbit from its frame-start
+ * tangent by `0.5 * a * dt²`; the bound travels with the motion snapshot so
+ * the pure collision kernel never reads the world clock.
+ */
+export function accelerationBoundOnOrbit(orbit: Orbit): number {
+	const omega = TAU / orbit.periodS;
+	return orbit.radiusKm * omega * omega;
+}
+
 /** Summed once. The table is frozen, so recomputing it per system was 2048
  *  reductions over five constants. */
 const STAR_WEIGHT_TOTAL = STAR_CLASSES.reduce((sum, c) => sum + c.weight, 0);

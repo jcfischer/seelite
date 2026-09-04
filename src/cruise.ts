@@ -263,6 +263,10 @@ export interface Mass {
 	id: string;
 	pos: Vec3;
 	radiusKm: number;
+	/** Frame-start inertial velocity, km/s. Omitted means stationary. */
+	vel?: Vec3;
+	/** Conservative magnitude of orbital acceleration, km/s². */
+	accelerationBoundKms2?: number;
 }
 
 /**
@@ -291,6 +295,30 @@ export function nearestMass(
 		if (sq < bestSq) {
 			bestSq = sq;
 			bestId = m.id;
+		}
+	}
+	return bestId === null ? null : { id: bestId, km: Math.sqrt(bestSq) };
+}
+
+/** `nearestMass` at an elapsed frame time, without allocating moved bodies. */
+function nearestMovingMass(
+	pos: Vec3,
+	masses: readonly Mass[],
+	elapsed: number,
+): { id: string; km: number } | null {
+	let bestId: string | null = null;
+	let bestSq = Number.POSITIVE_INFINITY;
+	for (const mass of masses) {
+		const vx = mass.vel?.x ?? 0;
+		const vy = mass.vel?.y ?? 0;
+		const vz = mass.vel?.z ?? 0;
+		const dx = pos.x - (mass.pos.x + vx * elapsed);
+		const dy = pos.y - (mass.pos.y + vy * elapsed);
+		const dz = pos.z - (mass.pos.z + vz * elapsed);
+		const sq = dx * dx + dy * dy + dz * dz;
+		if (sq < bestSq) {
+			bestSq = sq;
+			bestId = mass.id;
 		}
 	}
 	return bestId === null ? null : { id: bestId, km: Math.sqrt(bestSq) };
@@ -511,7 +539,12 @@ export interface CruiseInput {
 	masses: readonly Mass[];
 	/** What the drop-out is measured against. `null` is free cruise with nothing
 	 *  selected, which §6 explicitly allows — you can point anywhere and go. */
-	target: { pos: Vec3; radiusKm: number; vel?: Vec3 } | null;
+	target: {
+		pos: Vec3;
+		radiusKm: number;
+		vel?: Vec3;
+		accelerationBoundKms2?: number;
+	} | null;
 	params: CruiseParams;
 	/** Remaining drive charge, AU. Omitted means "not metered", which is what
 	 *  the tests of the speed law want; the renderer always passes it. */
@@ -531,6 +564,15 @@ export interface CruiseInput {
 	 * rule nobody chose.
 	 */
 	targetParentId: string | null;
+	/** Optional measurement hook. Production leaves it absent; corpus tooling
+	 * receives the exact powered and passive segments the pure step resolved. */
+	onSegment?: (segment: {
+		from: Vec3;
+		velocity: Vec3;
+		elapsed: number;
+		duration: number;
+		powered: boolean;
+	}) => void;
 }
 
 export interface CruiseStep {
@@ -609,7 +651,115 @@ function rayGoesDeeper(
 }
 
 /**
- * How far along this step a body stops the ship, or `null` if it does not —
+ * First contact time between a linearly moving point and sphere, seconds.
+ *
+ * Both states are expressed at the same physical instant.  Subtracting the
+ * sphere velocity makes the existing ray/sphere arithmetic a relative-motion
+ * sweep.  `releaseRadiusKm` is the true-surface floor used when the point
+ * starts inside a wider guard shell: outward and safe grazing motion is free,
+ * while motion that goes deeper is stopped in place.
+ */
+export function relativeSphereEntryTime(
+	from: Vec3,
+	velocity: Vec3,
+	duration: number,
+	centre: Vec3,
+	centreVelocity: Vec3,
+	radiusKm: number,
+	releaseRadiusKm = radiusKm,
+): number | null {
+	const relativeVelocity = sub(velocity, centreVelocity);
+	const relativeSpeed = length(relativeVelocity);
+	if (relativeSpeed === 0 || duration < 0) return null;
+	const relativeNose = scale(relativeVelocity, 1 / relativeSpeed);
+	const startsInside = lengthSq(sub(centre, from)) <= radiusKm * radiusKm;
+	if (startsInside) {
+		return rayGoesDeeper(from, relativeNose, centre, releaseRadiusKm)
+			? 0
+			: null;
+	}
+	const entryKm = sphereEntry(
+		from,
+		relativeNose,
+		relativeSpeed * duration,
+		centre,
+		radiusKm,
+	);
+	return entryKm === null ? null : entryKm / relativeSpeed;
+}
+
+/** Minimum centre distance over one finite relative linear segment. */
+export function relativeClosestApproachKm(
+	from: Vec3,
+	velocity: Vec3,
+	duration: number,
+	centre: Vec3,
+	centreVelocity: Vec3,
+): number {
+	const relativePos = sub(from, centre);
+	const relativeVelocity = sub(velocity, centreVelocity);
+	const speedSq = lengthSq(relativeVelocity);
+	const at =
+		speedSq === 0
+			? 0
+			: Math.min(
+					duration,
+					Math.max(0, -dot(relativePos, relativeVelocity) / speedSq),
+				);
+	return length(add(relativePos, scale(relativeVelocity, at)));
+}
+
+/** Float64 subtraction allowance at the coordinate scale of one sweep. */
+function numericalSweepAllowanceKm(
+	from: Vec3,
+	centre: Vec3,
+	relativeTravelKm: number,
+	radiusKm: number,
+): number {
+	const coordinateScale = Math.max(
+		1,
+		Math.abs(from.x),
+		Math.abs(from.y),
+		Math.abs(from.z),
+		Math.abs(centre.x),
+		Math.abs(centre.y),
+		Math.abs(centre.z),
+		Math.abs(relativeTravelKm),
+		Math.abs(radiusKm),
+	);
+	return Math.max(1e-9, 32 * Number.EPSILON * coordinateScale);
+}
+
+function motionPosition(
+	body: { pos: Vec3; vel?: Vec3 },
+	elapsed: number,
+): Vec3 {
+	return body.vel ? add(body.pos, scale(body.vel, elapsed)) : body.pos;
+}
+
+function motionAllowanceKm(
+	from: Vec3,
+	velocity: Vec3,
+	body: {
+		pos: Vec3;
+		vel?: Vec3;
+		radiusKm: number;
+		accelerationBoundKms2?: number;
+	},
+	centre: Vec3,
+	frameDt: number,
+): number {
+	const bodyVelocity = body.vel ?? { x: 0, y: 0, z: 0 };
+	const curvature = 0.5 * (body.accelerationBoundKms2 ?? 0) * frameDt * frameDt;
+	const relativeTravel = length(sub(velocity, bodyVelocity)) * frameDt;
+	return (
+		curvature +
+		numericalSweepAllowanceKm(from, centre, relativeTravel, body.radiusKm)
+	);
+}
+
+/**
+ * How long into this step a body stops the ship, or `null` if it does not —
  * #14's surface rule and #30's two amendments, in one place.
  *
  * Extracted from `advanceCruise`'s sub-step loop because it had become a
@@ -618,10 +768,12 @@ function rayGoesDeeper(
  * and where*. It takes the host id rather than a boolean so that both halves of
  * #30's rule — which body is exempt, and what the exemption is — live here.
  */
-function guardStopKm(
+function guardStopTime(
 	from: Vec3,
-	nose: Vec3,
-	stepKm: number,
+	velocity: Vec3,
+	duration: number,
+	elapsed: number,
+	frameDt: number,
 	m: Mass,
 	targetParentId: string | null | undefined,
 ): number | null {
@@ -632,21 +784,17 @@ function guardStopKm(
 		m.id === targetParentId
 			? m.radiusKm + HOST_CLEARANCE_KM
 			: m.radiusKm * SURFACE_MARGIN;
-	const entryKm = sphereEntry(from, nose, stepKm, m.pos, guardKm);
-	if (entryKm === null || entryKm > stepKm) return null;
-	if (entryKm > 0) return entryKm;
-
-	// Already inside this guard volume, where `sphereEntry`'s 0 means "starts
-	// inside" rather than "stop here". §12.2 has the argument; the two branches:
-	//
-	// A heading that does not get deeper is released — measured against the true
-	// surface, because a stop leaves the ship *on* the guard boundary and testing
-	// that same boundary is a tangent test at the start point. §12.2 has what
-	// that admits, which is more than §11.4's grazing pass did.
-	if (!rayGoesDeeper(from, nose, m.pos, m.radiusKm)) return null;
-	// One that does is stopped here, at the altitude the ship already has, not
-	// at the surface the ray meets.
-	return 0;
+	const centre = motionPosition(m, elapsed);
+	const allowance = motionAllowanceKm(from, velocity, m, centre, frameDt);
+	return relativeSphereEntryTime(
+		from,
+		velocity,
+		duration,
+		centre,
+		m.vel ?? { x: 0, y: 0, z: 0 },
+		guardKm + allowance,
+		m.radiusKm + allowance,
+	);
 }
 
 /**
@@ -666,7 +814,7 @@ function guardStopKm(
 export function advanceCruise(input: CruiseInput): CruiseStep {
 	const p = input.params;
 	let pos = input.pos;
-	let remaining = input.dt;
+	let remaining = Math.max(0, input.dt);
 	let travelledKm = 0;
 	let substeps = 0;
 	let dropped = false;
@@ -675,6 +823,7 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 	let speedKms = 0;
 	let closingKms = 0;
 	let charge = input.chargeAu;
+	let starved = charge !== undefined && charge <= 0;
 
 	// One shape for every exit, so a new field on `CruiseStep` is added once
 	// rather than in the four places this function returns from.
@@ -685,39 +834,21 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 		speedKms,
 		closingKms,
 		substeps,
-		starved: false,
+		starved,
 		exit,
 		...(exitBodyId !== undefined ? { exitBodyId } : {}),
 		...over,
 	});
 
-	if (charge !== undefined && charge <= 0) return halt({ starved: true });
-	if (input.throttle <= 0) {
-		// A shut throttle still *arrives*: §3's cut-the-throttle mode is the whole
-		// point of the `dropSpeedKms` dial, and returning here before the arrival
-		// test meant a ship sitting inside the drop radius with the throttle
-		// closed never dropped out — the one state that mode consists of.
-		//
-		// Closing speed at zero throttle is the target's own motion, not
-		// zero: nose-locked and stationary beside a station doing 30 km/s is not
-		// station-keeping, it is being left behind. Reporting 0 there was the
-		// panel's honest-arrival readout lying in exactly that state.
-		if (input.target) {
-			closingKms = closingSpeed(input.nose, 0, input.target.vel);
-			const km = length(sub(pos, input.target.pos));
-			if (km <= p.dropRadiusKm && closingKms <= p.dropSpeedKms) {
-				dropped = true;
-				exit = "arrival";
-			}
-		}
-		return halt();
-	}
-
 	while (remaining > 0 && !dropped && substeps < MAX_SUBSTEPS) {
-		const mass = nearestMass(pos, input.masses);
+		const elapsed = input.dt - remaining;
+		const mass = nearestMovingMass(pos, input.masses, elapsed);
 		const massKm = mass ? mass.km : Number.POSITIVE_INFINITY;
+		const targetPos = input.target
+			? motionPosition(input.target, elapsed)
+			: null;
 		const targetKm = input.target
-			? length(sub(pos, input.target.pos))
+			? length(sub(pos, targetPos!))
 			: Number.POSITIVE_INFINITY;
 
 		// **The law is keyed to the nearer of the mass and the target.**
@@ -735,20 +866,23 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 		// brake. With it, the ship is doing §2.3's own 140 km/s at 50 km out and
 		// the drop-out fires the way that table always said it would.
 		const keyedKm = Math.min(massKm, targetKm);
-		speedKms = speedFor(
-			massKm,
-			targetKm,
-			p,
-			input.target?.vel ? length(input.target.vel) : 0,
-			input.throttle,
-		);
-		if (speedKms <= 0) break;
+		const powered = input.throttle > 0 && !starved;
+		speedKms = powered
+			? speedFor(
+					massKm,
+					targetKm,
+					p,
+					input.target?.vel ? length(input.target.vel) : 0,
+					input.throttle,
+				)
+			: 0;
+		const velocity = scale(input.nose, speedKms);
 
 		// Speed in the target's own frame — see `closingSpeed`. Against an
 		// absolute threshold a station's 30 km/s orbital motion decides the
 		// drop-out on its own.
 		const closing = input.target
-			? closingSpeed(input.nose, speedKms, input.target.vel)
+			? length(sub(velocity, input.target.vel ?? { x: 0, y: 0, z: 0 }))
 			: speedKms;
 		closingKms = closing;
 
@@ -770,27 +904,48 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 		// every frame than the last, and the run stalls against `MAX_SUBSTEPS` a
 		// few thousand km short. Both the drop-out and the surfaces below are
 		// **swept** instead (§8.1's own word), which is exact at any step size.
-		const cap = Number.isFinite(keyedKm)
-			? (SUBSTEP_FRACTION * keyedKm) / speedKms
-			: remaining;
-		const dt = Math.min(remaining, Math.max(cap, 1e-9));
-		let stepKm = speedKms * dt;
+		const cap =
+			speedKms > 0 && Number.isFinite(keyedKm)
+				? (SUBSTEP_FRACTION * keyedKm) / speedKms
+				: remaining;
+		let dt = Math.min(remaining, Math.max(cap, 1e-9));
+		if (charge !== undefined && speedKms > 0) {
+			const chargeKm = (charge * AU_KM) / CHARGE_PER_AU;
+			dt = Math.min(dt, chargeKm / speedKms);
+		}
 
-		// Sweep the step against the drop sphere: where along this segment, if
-		// anywhere, does the ship first come within the drop radius of the target?
+		type Event = {
+			time: number;
+			exit: Exclude<CruiseExit, null>;
+			body?: Mass;
+		};
+		let event: Event | null = null;
+
+		// Sweep the moving target at the same physical sub-step time as the ship.
 		if (input.target && closing <= p.dropSpeedKms) {
-			const entryKm = sphereEntry(
+			const targetVelocity = input.target.vel ?? { x: 0, y: 0, z: 0 };
+			const allowance = motionAllowanceKm(
 				pos,
-				input.nose,
-				stepKm,
-				input.target.pos,
-				p.dropRadiusKm,
+				velocity,
+				input.target,
+				targetPos!,
+				input.dt,
 			);
-			if (entryKm !== null) {
-				stepKm = entryKm;
-				dropped = true;
-				exit = "arrival";
-			}
+			// Arrival is an inclusion promise, so uncertainty contracts its sphere;
+			// a surface guard is an exclusion promise and expands below.
+			const arrivalRadius = Math.max(0, p.dropRadiusKm - allowance);
+			const arrivalTime =
+				targetKm <= arrivalRadius
+					? 0
+					: relativeSphereEntryTime(
+							pos,
+							velocity,
+							dt,
+							targetPos!,
+							targetVelocity,
+							arrivalRadius,
+						);
+			if (arrivalTime !== null) event = { time: arrivalTime, exit: "arrival" };
 		}
 
 		// And against every body's surface. A planet has to *stop* you — the law
@@ -802,24 +957,64 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 		// Swept, and taken **before** the drop-out if it happens first, so the
 		// nearer event is the one that fires.
 		for (const m of input.masses) {
-			const stopKm = guardStopKm(
+			const stopTime = guardStopTime(
 				pos,
-				input.nose,
-				stepKm,
+				velocity,
+				dt,
+				elapsed,
+				input.dt,
 				m,
 				input.targetParentId,
 			);
-			if (stopKm === null) continue;
-			stepKm = stopKm;
-			dropped = true;
-			exit = "proximity";
-			exitBodyId = m.id;
+			if (stopTime === null) continue;
+			// A surface wins an exact tie with arrival: touching the station sphere
+			// cannot license crossing its host on the same physical instant.
+			if (event === null || stopTime <= event.time)
+				event = { time: stopTime, exit: "proximity", body: m };
 		}
 
-		pos = add(pos, scale(input.nose, stepKm));
-		travelledKm += stepKm;
-		remaining -= dt;
+		const used = event?.time ?? dt;
+		const poweredKm = speedKms * used;
+		input.onSegment?.({
+			from: pos,
+			velocity,
+			elapsed,
+			duration: used,
+			powered: speedKms > 0,
+		});
+		pos = add(pos, scale(velocity, used));
+		travelledKm += poweredKm;
+		remaining = Math.max(0, remaining - used);
 		substeps++;
+
+		if (charge !== undefined && poweredKm > 0) {
+			charge = chargeAfterTravel(charge, poweredKm);
+			if (charge <= 0) starved = true;
+		}
+
+		if (event?.exit === "proximity") {
+			dropped = true;
+			exit = "proximity";
+			exitBodyId = event.body!.id;
+			// Cruise has ended.  Preserve the stop point in the blocker's frame
+			// through the part of this render frame that the drive did not consume.
+			const carry = event.body!.vel ?? { x: 0, y: 0, z: 0 };
+			input.onSegment?.({
+				from: pos,
+				velocity: carry,
+				elapsed: input.dt - remaining,
+				duration: remaining,
+				powered: false,
+			});
+			pos = add(pos, scale(carry, remaining));
+			remaining = 0;
+			break;
+		}
+		if (event?.exit === "arrival") {
+			dropped = true;
+			exit = "arrival";
+			break;
+		}
 
 		// Closest approach: the range stopped falling, so this is as near as this
 		// pass gets, and ending cruise here turns an overshoot into an arrival
@@ -833,18 +1028,14 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 		// course that did not go there, and the ship carries on. Outside the
 		// vicinity a receding range means nothing at all.
 		if (!dropped && input.target && closing <= p.dropSpeedKms) {
-			const now = length(sub(pos, input.target.pos));
+			const nowTarget = motionPosition(input.target, input.dt - remaining);
+			const now = length(sub(pos, nowTarget));
 			if (now <= p.vicinityKm && now > targetKm) {
 				dropped = true;
 				exit = "arrival";
 			}
 		}
-
-		if (charge !== undefined) {
-			charge = chargeAfterTravel(charge, stepKm);
-			if (charge <= 0) return halt({ starved: true });
-		}
 	}
 
-	return halt();
+	return halt({ starved: starved && !dropped });
 }
