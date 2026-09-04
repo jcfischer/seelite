@@ -154,8 +154,7 @@ test("only an opaque lit surface takes part in the shadow", () => {
 	expect(
 		participatesInShadow({ lit: false, transparent: false, opacity: 1 }),
 	).toBe(false);
-	// A planet's surface and the cruise streak field (`warp.ts`):
-	// `ShaderMaterial` and
+	// A planet's surface and the cruise streaks: `ShaderMaterial` and
 	// `LineSegments`, neither of which three lights either.
 	expect(
 		participatesInShadow({ lit: false, transparent: true, opacity: 1 }),

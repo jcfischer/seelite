@@ -82,21 +82,28 @@ const TEXEL_CEILING_KM = { exterior: 0.01, cockpit: 0.001 };
  * How much of the `station-flank` frame the shadow may darken — a **band**, and
  * the reason it is one is the more interesting half.
  *
- * A floor catches the pass silently not running. What a floor cannot catch is
- * the failure a shadow map actually has, which is **acne**: a depth bias too
- * small, or of the wrong sign, makes a lit surface shadow itself in a speckle,
- * and that moves *more* pixels rather than fewer. Measured on this build, same
- * framing, by flipping `shadowFit`'s bias: the correct rig darkens 0.467% of
- * the frame across three runs with no digit moving, a bias 40 texels positive
- * gives 0.847%, and 200 texels gives 2.223%.
+ * A floor catches the pass silently not running, and that is all this claims to
+ * do. **The ceiling is a sanity bound and not an acne guard**, which took a red
+ * build to establish rather than to confirm: a depth bias 200 texels positive
+ * — the wrong sign, two hundred times over — left the bay reading at 6.015%,
+ * inside the band, with every other row green. An earlier revision of this file
+ * asserted that the ceiling watched the bias, on the strength of a sweep taken
+ * in the `station-flank` framing whose readings were themselves the relighting
+ * artefact sage found in round 2. It does not. What pins the bias is
+ * `tests/occlusion.test.ts`, where its sign and its scale-freedom are
+ * arithmetic; nothing in this repo watches a shadow for speckle, and the
+ * canonical sheet is the only instrument that would see it.
  *
- * So the ceiling is what watches the bias, and **it is honest about its reach**:
- * at 1.5% it rejects the 200-texel error and does not reject the 40-texel one.
- * The sign and the scale-freedom of the bias are pinned exactly in
- * `tests/occlusion.test.ts`, where they are arithmetic; this is the arm that
- * says the arithmetic reached the frame.
+ * The band is around the bay reading — see the check itself for why the bay and
+ * not the exterior. Five runs of this build put that reading at 6.06, 6.02,
+ * 6.06, 6.13 and one outlier at **1.37**: the framing flies the docking
+ * computer and occasionally stops a little short, so the floor is at 1 rather
+ * than snug under six. That is still six times what a shadow that had stopped
+ * being drawn would give, which is the 0.00-something the exterior row prints. The sign and the scale-freedom of the bias are pinned
+ * exactly in `tests/occlusion.test.ts`, where they are arithmetic; this is the
+ * arm that says the arithmetic reached the frame.
  */
-const SHADOW_BAND_PCT = { min: 0.15, max: 1.5 };
+const SHADOW_BAND_PCT = { min: 1, max: 15 };
 
 /** How much of the near subject the ambient occlusion has to reach before it
  *  counts as present. A bay is a room of corners; measured on a passing run it
@@ -362,11 +369,8 @@ t.check(
 	flank.texelKm > 0 && flank.texelKm < TEXEL_CEILING_KM.exterior,
 	`${(flank.texelKm * 1000).toFixed(2)} m per texel, ceiling ${TEXEL_CEILING_KM.exterior * 1000} m`,
 );
-t.check(
-	"the shadow darkens the exterior, and by a fraction of it",
-	flank.shadow.darkerPct > SHADOW_BAND_PCT.min &&
-		flank.shadow.darkerPct < SHADOW_BAND_PCT.max,
-	`${flank.shadow.darkerPct.toFixed(3)}% darker, ${flank.shadow.lighterPct.toFixed(3)}% lighter, deepest ${flank.shadow.deepest.toFixed(1)}/255`,
+console.log(
+	`  shadow — exterior ${flank.shadow.darkerPct.toFixed(3)}% darker, deepest ${flank.shadow.deepest.toFixed(1)}/255`,
 );
 
 // ---- inside a bay, which is the frame the AO was asked for ----
@@ -430,6 +434,51 @@ t.check(
 		bay.ao.lighterPct === 0 &&
 		cabin.ao.lighterPct === 0,
 	`exterior ${flank.ao.lighterPct.toFixed(3)}%, bay ${bay.ao.lighterPct.toFixed(3)}%, cabin ${cabin.ao.lighterPct.toFixed(3)}% lighter`,
+);
+
+console.log(
+	`  shadow — bay ${bay.shadow.darkerPct.toFixed(3)}% darker, deepest ${bay.shadow.deepest.toFixed(1)}/255`,
+);
+/**
+ * **The shadow is checked in the bay, and the exterior and cabin figures above
+ * are printed rather than asserted. That is a finding, not a convenience.**
+ *
+ * The star is one of three terms lighting this game and much the smallest:
+ * `LIGHT_RIG` puts the sun at 0.2 against a hemisphere at 6.85, so a surface
+ * receives about 3% of its light along the direction that casts a shadow — and
+ * a shadow can only ever subtract the light of the light that casts it. A
+ * hemisphere cannot be shadowed at all. Measured on this build, same builds and
+ * framings, shadow on against off:
+ *
+ * | framing | pixels darkened | deepest |
+ * |---|---|---|
+ * | `station-flank` | 0.003% | 3.2/255 |
+ * | `cockpit-arrival` | 0.002% | 14.1/255 |
+ * | `berth-free-look` | 6.2% | 11.6/255 |
+ *
+ * The bay is where it reads at all, and the reason is geometric: an enclosed
+ * room is the one place a hull can put a large fraction of another surface out
+ * of the star's line. A floor there is a real check on the whole path — the
+ * box, the biases, the caster flags — where the same floor on either other
+ * framing would be asserting a term the rig does not currently fund.
+ *
+ * **An earlier revision of this file checked `station-flank` at 0.467% and
+ * passed**, with a ceiling calibrated against that figure. It was measuring a
+ * bug: with the shadow off, `fitShadowCamera` left the sun's target at the last
+ * fitted subject while `render` put the light's position back on a unit vector,
+ * so the "off" arm was a **relit** frame rather than an unshadowed one. Sage
+ * found it in round 2. The exterior number is 0.003% once the two arms differ
+ * only by the shadow.
+ */
+t.check(
+	"the shadow darkens the bay, and by a fraction of it",
+	bay.shadow.darkerPct > SHADOW_BAND_PCT.min &&
+		bay.shadow.darkerPct < SHADOW_BAND_PCT.max &&
+		bay.shadow.lighterPct === 0,
+	`${bay.shadow.darkerPct.toFixed(3)}% darker, ${bay.shadow.lighterPct.toFixed(3)}% lighter, deepest ${bay.shadow.deepest.toFixed(1)}/255`,
+);
+console.log(
+	`  shadow — cabin ${cabin.shadow.darkerPct.toFixed(3)}% darker, deepest ${cabin.shadow.deepest.toFixed(1)}/255`,
 );
 
 const refused = await compare(page, "refused-only");

@@ -1910,7 +1910,7 @@ class Game {
 		// is 2.9x the whole rest of the frame, and halving it is a 3.1x saving.
 		// **That brings this pass inside #201's one-to-two-millisecond estimate
 		// and it does not bring the pair inside it**: with the shadow map beside
-		// it the two cost 2.50–2.84 ms against a 1.91–2.11 ms frame.
+		// it the two cost 2.32–2.46 ms against a 1.85–2.03 ms frame.
 		// `settings.ts` carries the table and the open question.
 		this.gtaoPass = new GTAOPass(
 			this.nearScene,
@@ -1943,9 +1943,24 @@ class Game {
 			overrideVisibility(): void;
 			restoreVisibility(): void;
 		};
-		pass.overrideVisibility = () =>
+		//
+		// **And the shadow map is pinned across it, which is a frame the pass was
+		// paying twice.** `GTAOPass.renderOverride` is a full
+		// `WebGLRenderer.render` of the near scene with a normal material — so
+		// three re-rendered the whole 2048² depth map, every caster in it, for a
+		// G-buffer that samples no shadow at all. `shadowMap.autoUpdate` off for
+		// the duration is the standard way to say "the map you have is current",
+		// and these two hooks are the natural place because they already bracket
+		// exactly that render.
+		pass.overrideVisibility = () => {
+			this.shadowAutoUpdate = this.renderer.shadowMap.autoUpdate;
+			this.renderer.shadowMap.autoUpdate = false;
 			hideNonOccluders(pass.scene, pass._visibilityCache);
-		pass.restoreVisibility = () => restoreVisibility(pass._visibilityCache);
+		};
+		pass.restoreVisibility = () => {
+			restoreVisibility(pass._visibilityCache);
+			this.renderer.shadowMap.autoUpdate = this.shadowAutoUpdate;
+		};
 		this.composer.addPass(this.gtaoPass);
 		// **The stored choice, applied once both passes exist to apply it to.**
 		//
@@ -2530,6 +2545,11 @@ class Game {
 		sun: THREE.DirectionalLight;
 		hemisphere: THREE.HemisphereLight;
 	}[] = [];
+
+	/** What `shadowMap.autoUpdate` was before the ambient-occlusion pass pinned
+	 *  it, so the pass restores the renderer's setting rather than assuming it
+	 *  was on (#201). */
+	private shadowAutoUpdate = true;
 
 	/** #201's ambient-occlusion pass, kept as a field for the reason `bloomPass`
 	 *  is: the quality gate enables and disables it per frame, and
@@ -5869,7 +5889,23 @@ class Game {
 	 */
 	private fitShadowCamera() {
 		const sun = this.shadowSun;
-		if (!sun || !sun.castShadow) return;
+		if (!sun) return;
+		if (!sun.castShadow) {
+			// **The target goes home, and that is a fix rather than tidiness.**
+			// A directional light's contribution is `position - target`, and
+			// `render` puts `position` back on `STAR_DIR` — a *unit* vector —
+			// every frame. Leave the target at the last fitted subject's centre
+			// and the difference is `STAR_DIR - centre`, which for a station four
+			// kilometres away is barely `STAR_DIR` at all. So turning the shadow
+			// off did not turn a shadow off: it swung the near layer's sun onto a
+			// new bearing, and every shadow-on-against-off reading in
+			// `probe-occlusion.mjs` was a comparison against a **relit** frame
+			// rather than an unshadowed one. Sage found it; the exterior figure
+			// went from a confident 0.467% to 0.003% when the two arms started
+			// differing only by the shadow.
+			this.shadowTarget.position.set(0, 0, 0);
+			return;
+		}
 		const candidates = this.shadowCandidates;
 		candidates.length = 0;
 		if (this.view === "cockpit") {

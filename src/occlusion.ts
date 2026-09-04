@@ -275,8 +275,7 @@ export type SurfaceFacts = {
  * berths in, and the emissive lamps, the canopy glass and the star field out.
  * Every one of those falls out of *lit and opaque*: the lamps and the
  * nameplates are `MeshBasicMaterial`, the canopy is a transparent one, the
- * planets and the cruise streak field (`warp.ts`) are a `ShaderMaterial` and a
- * `LineSegments`,
+ * planets and the cruise streaks are a `ShaderMaterial` and a `LineSegments`,
  * and everything the node wants in is a `MeshStandardMaterial` or the bay's
  * `MeshLambertMaterial`.
  *
@@ -343,7 +342,7 @@ export const OCCLUSION = {
 		 * the same sample count, and it is what brings **this pass** from 2.9x
 		 * the whole frame down to inside #201's own estimate of one to two
 		 * milliseconds. It does not bring the *pair* inside it: with the shadow
-		 * map beside it the two cost 2.50–2.84 ms against a 1.91–2.11 ms frame,
+		 * map beside it the two cost 2.32–2.46 ms against a 1.85–2.03 ms frame,
 		 * which `settings.ts` states and leaves open rather than answered.
 		 *
 		 * So the samples stay at three's default and this is the dial that

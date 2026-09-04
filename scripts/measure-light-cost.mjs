@@ -81,6 +81,7 @@
  */
 import { guardedOrigin, bootedGame, launchChromium } from "./probe-guard.mjs";
 import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
+import { median, seededShuffler, separation } from "./lib/measurement.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
 import { installViewPlacement } from "./probe-guard.mjs";
 import { GAME_TIME_S, SEED, VIEWPORT } from "./lib/view-set.mjs";
@@ -152,12 +153,6 @@ const block = (page, quality, samples, dither = true) =>
  *  the timings. */
 const ms = (xs) => xs.map((r) => r.ms);
 
-const median = (xs) => {
-	const s = [...xs].sort((a, b) => a - b);
-	const mid = s.length >> 1;
-	return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
-};
-
 // The guard's *return* is what gets navigated, not the raw `ORIGIN` — the
 // probes do it that way, and measuring a target the guard did not resolve is a
 // silent way to measure a different server.
@@ -217,33 +212,15 @@ const bySamples = new Map([[0, []]]);
 const dithered = [];
 const undithered = [];
 /**
- * **Every arm in a round runs in a shuffled order.**
+ * **Every arm in a round runs in a shuffled order**, from a printed seed.
  *
- * The header claimed round-robin ordering put a thermal drift on every arm
- * rather than on whichever ran last, and that was only half true: within a
- * round the arms ran 0, 2, 4 and then dither on, off, every time. A drift
- * *inside* a round was therefore perfectly confounded with the arm — the 4x
- * block always ran on a hotter machine than the 0x block beside it, and the
- * undithered block always after the dithered one. Shuffling breaks the
- * correlation without changing the pairing statistics, which assume nothing
- * about order.
- *
- * Seeded and printed, so a suspicious run can be repeated exactly.
+ * `lib/measurement.mjs` owns the shuffler and the argument for it — the short
+ * version is that a fixed arm order confounds a within-round thermal drift with
+ * the arm perfectly, and once reported this script's dither term at 144/144
+ * separation where shuffling makes it a coin toss.
  */
 const ORDER_SEED = Number(process.env.ORDER_SEED ?? 20260902);
-let orderState = ORDER_SEED >>> 0;
-const nextRandom = () => {
-	orderState = (orderState * 1664525 + 1013904223) >>> 0;
-	return orderState / 4294967296;
-};
-const shuffled = (xs) => {
-	const out = [...xs];
-	for (let i = out.length - 1; i > 0; i--) {
-		const j = Math.floor(nextRandom() * (i + 1));
-		[out[i], out[j]] = [out[j], out[i]];
-	}
-	return out;
-};
+const shuffled = seededShuffler(ORDER_SEED);
 
 /** Every arm as a thunk, so a round is a shuffle of one list. */
 const arms = [
@@ -333,12 +310,6 @@ console.log(
 // while the medians barely moved. Counting every (high, low) pairing instead
 // is the Mann-Whitney count: it assumes nothing about either distribution's
 // shape, and one outlier can move it by at most a twelfth.
-const separation = (a, b) => {
-	let slower = 0;
-	for (const x of a) for (const y of b) if (x > y) slower++;
-	const pairs = a.length * b.length;
-	return `${slower}/${pairs} (${((slower / pairs) * 100).toFixed(0)}%)`;
-};
 console.log(
 	`  dither on               ${dOn.toFixed(3)} ms/frame  ${Math.round(1000 / dOn)} fps`,
 );

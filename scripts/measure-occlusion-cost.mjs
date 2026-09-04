@@ -46,6 +46,7 @@
  */
 import { GAME_TIME_S, SEED, VIEWPORT } from "./lib/view-set.mjs";
 import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
+import { median, seededShuffler, separation } from "./lib/measurement.mjs";
 import {
 	installViewFraming,
 	setView,
@@ -94,21 +95,6 @@ const block = (page, shadows, ao) =>
 		},
 		[shadows, ao, FRAMES],
 	);
-
-const median = (xs) => {
-	const s = [...xs].sort((a, b) => a - b);
-	const mid = s.length >> 1;
-	return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
-};
-
-/** The Mann-Whitney pairing count: of every (a, b) pairing, how often a is
- *  slower. Assumes nothing about either distribution's shape, and one outlier
- *  can move it by at most a block's worth. */
-const separation = (a, b) => {
-	let slower = 0;
-	for (const x of a) for (const y of b) if (x > y) slower++;
-	return `${slower}/${a.length * b.length} (${((100 * slower) / (a.length * b.length)).toFixed(0)}%)`;
-};
 
 const origin = await guardedOrigin(ORIGIN, [
 	"src/main.ts",
@@ -162,19 +148,7 @@ const FRAMINGS = [
 ];
 
 const ORDER_SEED = Number(process.env.ORDER_SEED ?? 20260903);
-let orderState = ORDER_SEED >>> 0;
-const nextRandom = () => {
-	orderState = (orderState * 1664525 + 1013904223) >>> 0;
-	return orderState / 4294967296;
-};
-const shuffled = (xs) => {
-	const out = [...xs];
-	for (let i = out.length - 1; i > 0; i--) {
-		const j = Math.floor(nextRandom() * (i + 1));
-		[out[i], out[j]] = [out[j], out[i]];
-	}
-	return out;
-};
+const shuffled = seededShuffler(ORDER_SEED);
 
 console.log(`  renderer: ${renderer}`);
 console.log(

@@ -103,11 +103,11 @@ const SCHEMA = {
 	 *
 	 * **#201's two occlusion passes are here, and one of them is the expensive
 	 * one.** Measured headed on an M1 Pro at 1440x900 and device scale 2, over
-	 * two runs, against a `cockpit-arrival` frame that costs 1.91–2.11 ms
-	 * without them: the shadow map adds **0.57–0.60 ms** and the ambient
-	 * occlusion **1.80–1.90 ms**, for 2.50–2.84 ms together — a little over
-	 * #201's own stated budget of one to two, and a third of what the pair cost
-	 * before the AO pass was moved to half the drawing buffer.
+	 * two runs, against a `cockpit-arrival` frame that costs 1.85–2.03 ms
+	 * without them: the shadow map adds **0.59 ms** and the ambient occlusion
+	 * **1.76–1.84 ms**, for **2.32–2.46 ms** together — a little over #201's own
+	 * estimate of one to two, and a third of what the pair cost before the AO
+	 * pass was moved to half the drawing buffer.
 	 * `scripts/measure-occlusion-cost.mjs` is the instrument and
 	 * `occlusion.ts` carries the resolution table.
 	 *
@@ -115,8 +115,14 @@ const SCHEMA = {
 	 * four to six times the whole frame — so this stays one key rather than
 	 * becoming two rows on #200's argument. **Whether the ambient occlusion
 	 * deserves a row of its own is a question for the principal and not a
-	 * decision taken here**, and the pair being 1.3x the unoccluded frame is
+	 * decision taken here**, and the pair being 1.2x the unoccluded frame is
 	 * the number that question is asked with.
+	 *
+	 * The other framing the instrument takes, `berth-free-look`, is **not a
+	 * measurement and is not quoted**: its own frame is 44 ms with a 39–54 ms
+	 * spread, and the two single-term arms separate at 56% and 63% of pairings,
+	 * which is a coin toss. A bay at device scale 2 is expensive before either
+	 * of these passes touches it.
 	 *
 	 * **Every later expensive visual term declares which side of this it is on**
 	 * (#98, #99). A term added without an answer here has not been gated, it has
