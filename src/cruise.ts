@@ -670,9 +670,12 @@ export function relativeSphereEntryTime(
 ): number | null {
 	const relativeVelocity = sub(velocity, centreVelocity);
 	const relativeSpeed = length(relativeVelocity);
-	if (relativeSpeed === 0 || duration < 0) return null;
-	const relativeNose = scale(relativeVelocity, 1 / relativeSpeed);
 	const startsInside = lengthSq(sub(centre, from)) <= radiusKm * radiusKm;
+	const startsInsideRelease =
+		lengthSq(sub(centre, from)) <= releaseRadiusKm * releaseRadiusKm;
+	if (duration < 0) return null;
+	if (relativeSpeed === 0) return startsInsideRelease ? 0 : null;
+	const relativeNose = scale(relativeVelocity, 1 / relativeSpeed);
 	if (startsInside) {
 		return rayGoesDeeper(from, relativeNose, centre, releaseRadiusKm)
 			? 0
@@ -1013,6 +1016,16 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 		if (event?.exit === "arrival") {
 			dropped = true;
 			exit = "arrival";
+			const carry = input.target?.vel ?? { x: 0, y: 0, z: 0 };
+			input.onSegment?.({
+				from: pos,
+				velocity: carry,
+				elapsed: input.dt - remaining,
+				duration: remaining,
+				powered: false,
+			});
+			pos = add(pos, scale(carry, remaining));
+			remaining = 0;
 			break;
 		}
 
@@ -1027,7 +1040,12 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 		// by more than that is not a near-miss the regime should end on — it is a
 		// course that did not go there, and the ship carries on. Outside the
 		// vicinity a receding range means nothing at all.
-		if (!dropped && input.target && closing <= p.dropSpeedKms) {
+		if (
+			!dropped &&
+			poweredKm > 0 &&
+			input.target &&
+			closing <= p.dropSpeedKms
+		) {
 			const nowTarget = motionPosition(input.target, input.dt - remaining);
 			const now = length(sub(pos, nowTarget));
 			if (now <= p.vicinityKm && now > targetKm) {

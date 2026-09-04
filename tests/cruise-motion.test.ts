@@ -208,7 +208,7 @@ test("charge exhaustion does not bypass a moving-body check", () => {
 	expect(step.travelledKm).toBe(0);
 });
 
-test("zero relative speed and an initially intersecting outward state are recoverable", () => {
+test("co-moving below-surface states stop while relative outward motion recovers", () => {
 	expect(
 		relativeSphereEntryTime(
 			v3(0, 9, 0),
@@ -219,7 +219,7 @@ test("zero relative speed and an initially intersecting outward state are recove
 			10.5,
 			10,
 		),
-	).toBeNull();
+	).toBe(0);
 	expect(
 		relativeSphereEntryTime(
 			v3(0, 9, 0),
@@ -231,6 +231,39 @@ test("zero relative speed and an initially intersecting outward state are recove
 			10,
 		),
 	).toBeNull();
+});
+
+test("an idle ship does not call target recession a closest-approach arrival", () => {
+	const step = advanceCruise({
+		pos: v3(),
+		nose: v3(1, 0, 0),
+		throttle: 0,
+		dt: 0.1,
+		masses: [],
+		target: { pos: v3(500, 0, 0), radiusKm: 1, vel: v3(30, 0, 0) },
+		params: DEFAULT_CRUISE,
+		targetParentId: null,
+	});
+	expect(step.dropped).toBe(false);
+	expect(step.exit).toBeNull();
+	expect(step.pos).toEqual(v3());
+});
+
+test("an early arrival follows its target through the frame remainder", () => {
+	const target = { pos: v3(10, 0, 0), radiusKm: 1, vel: v3(20, 0, 0) };
+	const step = advanceCruise({
+		pos: v3(),
+		nose: v3(1, 0, 0),
+		throttle: 1,
+		dt: 0.2,
+		masses: [],
+		target,
+		params: CONSTANT_CRUISE,
+		targetParentId: null,
+	});
+	const targetEnd = add(target.pos, scale(target.vel, 0.2));
+	expect(step.exit).toBe("arrival");
+	expect(length(sub(step.pos, targetEnd))).toBeCloseTo(1, 8);
 });
 
 test("the earliest blocker wins independent of mass order", () => {

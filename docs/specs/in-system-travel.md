@@ -746,9 +746,10 @@ through its host.
 
 Starting inside a guard shell is not itself a stop. The relative heading must
 go deeper than the true surface (with the same error allowance), so outward and
-safe grazing headings remain releasable. Zero relative speed is also released:
-a stopped ship is not pinned merely because a wider shell contains it. The
-moving-body sweep still runs at zero throttle and with exhausted charge, which
+safe grazing headings remain releasable. Zero relative speed is released while
+the ship is only inside the wider shell; a co-moving ship already at or below
+the true-surface exclusion stops. The moving-body sweep still runs at zero
+throttle and with exhausted charge, which
 closes the old early-return hole where a body could cross a stationary ship
 between two endpoint samples.
 
