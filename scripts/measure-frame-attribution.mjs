@@ -17,25 +17,13 @@
  */
 import { bootedGame, guardedOrigin, launchChromium } from "./probe-guard.mjs";
 import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
+import { rollingStatistics } from "../src/frame-statistics.js";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 const SEED = 47;
 const VIEWPORT = { width: 1440, height: 900 };
 const BLOCKS = 8;
 const FRAMES_PER_BLOCK = 40;
-
-const median = (values) => {
-	const sorted = [...values].sort((a, b) => a - b);
-	const middle = sorted.length >> 1;
-	return sorted.length % 2
-		? sorted[middle]
-		: (sorted[middle - 1] + sorted[middle]) / 2;
-};
-
-const p95 = (values) => {
-	const sorted = [...values].sort((a, b) => a - b);
-	return sorted[Math.max(0, Math.ceil(sorted.length * 0.95) - 1)];
-};
 
 const origin = await guardedOrigin(ORIGIN, [
 	"src/main.ts",
@@ -101,7 +89,9 @@ for (let block = 0; block < BLOCKS; block++) {
 	// Reverse every other pair so neither arm always lands first.
 	for (const enabled of block % 2 === 0 ? [false, true] : [true, false]) {
 		const result = await measureBlock(enabled);
-		const blockMedian = median(result.samples);
+		const blockMedian = rollingStatistics(result.samples).medianMs;
+		if (blockMedian === null)
+			throw new Error("render block produced no samples");
 		(enabled ? attached : detached).push(blockMedian);
 		if (enabled) lastAttached = result.snapshot;
 		buffer = result.buffer;
@@ -109,8 +99,17 @@ for (let block = 0; block < BLOCKS; block++) {
 }
 await page.evaluate(() => window.__seelite.disableFrameAttribution());
 
-const detachedMedian = median(detached);
-const attachedMedian = median(attached);
+const detachedStats = rollingStatistics(detached);
+const attachedStats = rollingStatistics(attached);
+if (
+	detachedStats.medianMs === null ||
+	detachedStats.p95Ms === null ||
+	attachedStats.medianMs === null ||
+	attachedStats.p95Ms === null
+)
+	throw new Error("attached/detached blocks produced no samples");
+const detachedMedian = detachedStats.medianMs;
+const attachedMedian = attachedStats.medianMs;
 const deltaMs = attachedMedian - detachedMedian;
 const deltaPercent = (deltaMs / detachedMedian) * 100;
 
@@ -119,10 +118,10 @@ console.log(
 	`buffer: ${buffer.width}x${buffer.height} at pixel ratio ${buffer.pixelRatio}`,
 );
 console.log(
-	`detached CPU submission: ${detachedMedian.toFixed(3)} ms median block, ${p95(detached).toFixed(3)} ms p95 block`,
+	`detached CPU submission: ${detachedMedian.toFixed(3)} ms median block, ${detachedStats.p95Ms.toFixed(3)} ms p95 block`,
 );
 console.log(
-	`attached CPU submission: ${attachedMedian.toFixed(3)} ms median block, ${p95(attached).toFixed(3)} ms p95 block`,
+	`attached CPU submission: ${attachedMedian.toFixed(3)} ms median block, ${attachedStats.p95Ms.toFixed(3)} ms p95 block`,
 );
 console.log(
 	`observed attached-minus-detached delta: ${deltaMs >= 0 ? "+" : ""}${deltaMs.toFixed(3)} ms (${deltaPercent >= 0 ? "+" : ""}${deltaPercent.toFixed(1)}%)`,

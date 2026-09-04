@@ -6813,13 +6813,16 @@ if (query.has("model-viewer")) {
 				attribution,
 			});
 			let tornDown = false;
-			const teardown = () => {
+			const teardown = (event: PageTransitionEvent) => {
+				// A persisted page is frozen, not gone. Keep its diagnostic ownership
+				// intact so it resumes with the rest of the BFCache document.
+				if (event.persisted) return;
 				if (tornDown) return;
 				tornDown = true;
 				unmount();
 				game.disableFrameAttribution();
 			};
-			window.addEventListener("pagehide", teardown, { once: true });
+			window.addEventListener("pagehide", teardown);
 		});
 }
 
