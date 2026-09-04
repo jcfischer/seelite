@@ -475,12 +475,26 @@ check(
 // Sampled and compared, not `waitForFunction` followed by `check(..., true)`:
 // that pair reports a pass the tally never evaluated, and a wait that times out
 // throws instead of failing the check it was standing in for.
-await new Promise((resolve) => setTimeout(resolve, 500));
+//
+// **Two seconds, not the half it was** (#201). What this check discriminates is
+// *running* against *stopped*, and a stopped loop draws zero frames however long
+// the window is — so the window is free to be long and the floor is what has to
+// be defended. At 500 ms the floor of five frames was a **10 fps** bar on a
+// SwiftShader page (`CLAUDE.md`, #98: every probe here renders through it), and
+// this repo has already recorded one node reddening this exact row by adding a
+// per-frame cost — `station-interior-mesh.ts`'s Lambert note. #201's shadow map
+// took it from 49 frames to 39 in 500 ms, which is 78 fps of a player's frame
+// and a hair under a bar nobody meant to set at 10.
+//
+// Lengthening the window rather than lowering the floor keeps every failure the
+// check could ever catch and adds four times the margin: a loop stopped by an
+// open chart still draws nothing in two seconds.
+await new Promise((resolve) => setTimeout(resolve, 2000));
 const framesAfter = await page.evaluate(() => window.__seelite.frames);
 check(
 	"the simulation keeps running while the chart is open",
 	framesAfter > framesBefore + 5,
-	`${framesBefore} → ${framesAfter}`,
+	`${framesBefore} → ${framesAfter} over 2 s`,
 );
 
 // ---- Crowding at the framing the player actually gets ----------------------

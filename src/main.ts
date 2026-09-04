@@ -2461,7 +2461,6 @@ class Game {
 		);
 		if (nearSun) {
 			this.shadowSun = nearSun.sun;
-			this.shadowSun.castShadow = true;
 			this.shadowSun.shadow.mapSize.set(SHADOW_MAP_TEXELS, SHADOW_MAP_TEXELS);
 			// **A target of its own, in the scene.** Every other light here aims
 			// by `position` alone against the default target at the origin, which
@@ -2479,6 +2478,18 @@ class Game {
 			// view direction is parallel to `up` — and the view direction here is
 			// the star's, which sweeps the whole sphere as the ship crosses a
 			// system.
+			//
+			// **The stored choice, applied here and not only on change** — the
+			// same line `output-stage.ts` records for the dither, and the same
+			// defect. `buildEnvironment` above ends with `applyQuality`, which
+			// calls `setOcclusion`, which reads `this.shadowSun` — and until this
+			// block runs that field is null, so the gate had nothing to gate. The
+			// shadow was therefore on at boot whatever the player had saved,
+			// until they touched the setting. Measured before the fix: with
+			// `quality.high.shadows` set to `false`, `probe-ship-visuals` still
+			// reported the hull's seam reach at the shadowed 4.0% rather than the
+			// unshadowed 6.6%.
+			this.setOcclusion();
 		}
 	}
 

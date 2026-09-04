@@ -425,9 +425,33 @@ for (const viewport of VIEWPORTS.slice(0, 1)) {
 		surface.hullPixels > 500 && surface.stdev > 2,
 		`${surface.hullPixels} px, stdev ${surface.stdev.toFixed(1)}`,
 	);
+	/**
+	 * **The floor moved from 5% to 3% in #201, and the reason is a measurement.**
+	 *
+	 * The lever is still the seam map's own bytes — flat texels written over the
+	 * real ones — so a map that has gone flat or stopped being sampled still
+	 * reads exactly zero and this still catches it. What changed is the size of
+	 * the signal, because #201 put the star's shadow on the hull and an
+	 * ambient-occlusion pass over it, and both subtract from the direct light
+	 * the seam map is most visible in. Measured on one build, same framing, with
+	 * those two passes off and on: **6.6%** against **3.9%** of hull pixels
+	 * moved. The off reading reproduces the pre-#201 build's 6.3%, so nothing
+	 * else moved.
+	 *
+	 * 3% leaves the same headroom over the shipped reading that 5% left over the
+	 * old one — about a quarter — so the check is no weaker than it was. It is
+	 * simply measuring a hull with occlusion on it. **The 40% reduction in the
+	 * seam map's visible contribution is a real change to the picture** and the
+	 * canonical sheet is where it is judged, not here.
+	 *
+	 * Pinning the occlusion off inside the measurement was tried first and is
+	 * worse: toggling `setOcclusion` between the frames of one evaluate reported
+	 * 13.2% — double the unoccluded baseline — and a warm frame did not fix it,
+	 * so whatever it measures is not the seam map.
+	 */
 	check(
 		`hull surface: the seam map reaches the frame`,
-		surface.moved / Math.max(1, surface.hullPixels) > 0.05,
+		surface.moved / Math.max(1, surface.hullPixels) > 0.03,
 		`${((surface.moved / Math.max(1, surface.hullPixels)) * 100).toFixed(1)}% of hull pixels moved`,
 	);
 	await page.close();
