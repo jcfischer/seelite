@@ -889,18 +889,6 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 			: speedKms;
 		closingKms = closing;
 
-		// Already inside the radius when the frame begins, and slow enough: end
-		// cruise here rather than flying one more step out of it.
-		if (
-			input.target &&
-			targetKm <= p.dropRadiusKm &&
-			closing <= p.dropSpeedKms
-		) {
-			dropped = true;
-			exit = "arrival";
-			break;
-		}
-
 		// The sub-step is sized off whichever distance the law is reading, which is
 		// what keeps `v` accurate along the curve. It is **not** what finds the
 		// drop-out: closing on a 50 km radius at 20 c would need more sub-steps

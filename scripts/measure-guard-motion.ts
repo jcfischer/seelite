@@ -9,6 +9,7 @@
  */
 import {
 	DEFAULT_CRUISE,
+	SURFACE_MARGIN,
 	advanceCruise,
 	relativeClosestApproachKm,
 	sphereEntry,
@@ -261,8 +262,16 @@ for (let seed = 1; seed <= SEEDS; seed++) {
 				stats.minimumEscapeClearanceKm,
 				escape.continuousClearanceKm,
 			);
-			bestKm = Math.max(bestKm, escape.travelledKm);
-			if (escape.travelledKm > 100) flyable++;
+			const blockerEnd = world.system.byId.get(blocker.id);
+			if (!blockerEnd) throw new Error(`missing blocker ${blocker.id}`);
+			const clearedGuard =
+				length(sub(escape.pos, blockerEnd.pos)) >=
+				blockerEnd.radiusKm * SURFACE_MARGIN;
+			const escaped = escape.exit !== "proximity" && clearedGuard;
+			if (escaped) {
+				bestKm = Math.max(bestKm, escape.travelledKm);
+				flyable++;
+			}
 		}
 		if (flyable === 0) stats.stopsWithNoEscape++;
 		flyableHeadingCounts.push(flyable);
@@ -278,6 +287,6 @@ for (const [key, value] of Object.entries(stats)) {
 }
 await Bun.write(
 	new URL("./guard-motion-production-results.json", import.meta.url),
-	`${JSON.stringify(stats, null, 2)}\n`,
+	`${JSON.stringify(stats, null, "\t")}\n`,
 );
 console.log(JSON.stringify(stats));

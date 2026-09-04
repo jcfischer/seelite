@@ -766,9 +766,10 @@ handoff.
 one frame-start convention and a continuous relative-segment oracle. At
 `MAX_DT = 0.1 s` it reports **370/416 arrivals**, **299/302 initially
 clear-of-host arrivals**, **46 stopped legs**, zero timeouts, zero stops without
-an escape heading, and at least **5.000000 km** clearance over primary, retry
-and sampled escape paths. The median stop has three of six flyable escape
-headings and a best five-second escape of 1.366 million km. The eight decision
+an escape heading that finishes outside the blocker's guard without another
+proximity stop, and at least **5.000000 km** clearance over primary, retry and
+sampled escape paths. The median stop has three of six such escape headings and
+a best five-second escape of 1.366 million km. The eight decision
 fixtures and production tests additionally bind moving interception, outward
 release, a receding tangent, shared-frame invariance, mid-step crossing,
 post-stop carry, multiple blockers, and 30/60/120 Hz plus `MAX_DT` behaviour.
