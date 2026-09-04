@@ -85,6 +85,10 @@ import {
 	equirectEnvironment,
 } from "./light-rig";
 import { SettingsStore } from "./settings";
+import type {
+	FrameAttribution,
+	FrameAttributionSnapshot,
+} from "./frame-attribution";
 import { AudioFX } from "./audio";
 import { CombatPrototypeRig } from "./combat-rig";
 import {
@@ -966,6 +970,16 @@ class Game {
 
 	/** rAF handle, so the loop can be frozen and driven by hand. */
 	private animationFrame = 0;
+	/**
+	 * Optional because frame attribution is a query-gated diagnostic. The
+	 * default route never constructs or attaches one, so these two guarded reads
+	 * are its entire footprint there and no timer query is issued.
+	 */
+	private frameAttribution: FrameAttribution | null = null;
+	private frameAttributionEnable: Promise<FrameAttribution | null> | null =
+		null;
+	private frameAttributionGeneration = 0;
+	private rendererInfoAutoReset: boolean | null = null;
 	readonly audio = new AudioFX();
 	private throttle = 0;
 	private frameBody: Body | null = null;
@@ -1179,6 +1193,74 @@ class Game {
 	private hudKey = "";
 	/** Frames drawn since boot. A probe's cheapest proof that the loop runs. */
 	frames = 0;
+
+	/**
+	 * Explicitly start attribution without coupling its enable/disable cycle to
+	 * the panel.
+	 *
+	 * The dynamic import is the default-route boundary: constructing Game does
+	 * not evaluate the sampler module, allocate queries, or change renderer.info.
+	 * A later adaptive controller can call this same method without mounting DOM.
+	 */
+	async enableFrameAttribution(): Promise<FrameAttribution | null> {
+		if (this.frameAttribution) return this.frameAttribution;
+		if (this.frameAttributionEnable) return this.frameAttributionEnable;
+		const generation = this.frameAttributionGeneration;
+		const pending = (async () => {
+			const { FrameAttribution } = await import("./frame-attribution");
+			if (generation !== this.frameAttributionGeneration) return null;
+			// A second caller may have completed while this import was pending.
+			if (this.frameAttribution) return this.frameAttribution;
+			const attribution = new FrameAttribution({
+				gl: this.renderer.getContext() as WebGL2RenderingContext,
+				contextEvents: this.renderer.domElement,
+				rendererFacts: () => ({
+					calls: this.renderer.info.render.calls,
+					triangles: this.renderer.info.render.triangles,
+					programs: this.renderer.info.programs?.length ?? 0,
+					geometries: this.renderer.info.memory.geometries,
+					textures: this.renderer.info.memory.textures,
+					drawingBufferWidth: this.renderer.domElement.width,
+					drawingBufferHeight: this.renderer.domElement.height,
+					effectivePixelRatio: this.renderer.getPixelRatio(),
+					renderScale: this.settings.value.renderScale,
+					composerPassCount: this.composer.passes.filter((pass) => pass.enabled)
+						.length,
+				}),
+			});
+			attribution.enable();
+			this.rendererInfoAutoReset = this.renderer.info.autoReset;
+			this.renderer.info.autoReset = false;
+			this.frameAttribution = attribution;
+			return attribution;
+		})();
+		this.frameAttributionEnable = pending;
+		try {
+			return await pending;
+		} finally {
+			if (this.frameAttributionEnable === pending)
+				this.frameAttributionEnable = null;
+		}
+	}
+
+	/** Stop attribution, delete its query ring, and restore Three's counter mode. */
+	disableFrameAttribution(): void {
+		this.frameAttributionGeneration++;
+		this.frameAttributionEnable = null;
+		const attribution = this.frameAttribution;
+		if (!attribution) return;
+		this.frameAttribution = null;
+		if (this.rendererInfoAutoReset !== null) {
+			this.renderer.info.autoReset = this.rendererInfoAutoReset;
+			this.rendererInfoAutoReset = null;
+		}
+		attribution.disable();
+	}
+
+	/** Probe/diagnostic access to the immutable sampler-owned snapshot. */
+	attributionSnapshot(): FrameAttributionSnapshot | null {
+		return this.frameAttribution?.snapshot() ?? null;
+	}
 
 	/**
 	 * The unit scheme, reachable from the handle — the whole module, not a copy.
@@ -5432,7 +5514,20 @@ class Game {
 				: 0,
 		);
 
-		this.composer.render();
+		const attribution = this.frameAttribution;
+		if (attribution) this.renderer.info.reset();
+		const renderStartedAt = attribution ? performance.now() : 0;
+		attribution?.beginGpuFrame(renderStartedAt);
+		try {
+			this.composer.render();
+		} finally {
+			attribution?.endGpuFrame();
+		}
+		if (attribution)
+			attribution.recordCpu(
+				"render submission/composer",
+				performance.now() - renderStartedAt,
+			);
 		this.drawMarkers(camPos);
 		this.frames++;
 	}
@@ -5444,7 +5539,13 @@ class Game {
 			? Math.min(MAX_DT, (now - this.lastTime) / 1000)
 			: 0;
 		this.lastTime = now;
+		const updateStartedAt = this.frameAttribution ? performance.now() : 0;
 		if (dt > 0) this.step(dt);
+		if (this.frameAttribution)
+			this.frameAttribution.recordCpu(
+				"simulation/step",
+				performance.now() - updateStartedAt,
+			);
 		this.render(dt);
 		this.updateCockpit();
 		if (this.legacyHud) this.updateHud();
@@ -6703,12 +6804,26 @@ if (query.has("model-viewer")) {
 	);
 
 	if (query.has("perf"))
-		import("./perf-panel").then(({ mountPerfPanel }) =>
-			mountPerfPanel({
+		import("./perf-panel").then(async ({ mountPerfPanel }) => {
+			const attribution = await game.enableFrameAttribution();
+			if (!attribution) return;
+			const unmount = mountPerfPanel({
 				scenes: [game.nearScene, game.approachScene, game.farScene],
 				bloom: game.bloom,
-			}),
-		);
+				attribution,
+			});
+			let tornDown = false;
+			const teardown = (event: PageTransitionEvent) => {
+				// A persisted page is frozen, not gone. Keep its diagnostic ownership
+				// intact so it resumes with the rest of the BFCache document.
+				if (event.persisted) return;
+				if (tornDown) return;
+				tornDown = true;
+				unmount();
+				game.disableFrameAttribution();
+			};
+			window.addEventListener("pagehide", teardown);
+		});
 }
 
 export type { Game };

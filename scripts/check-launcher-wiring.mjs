@@ -123,6 +123,10 @@ const EXEMPT = new Map([
 		"#206's headed planet-cost sweep; like #99's it gates on nothing — the output is a table for a receipt, not a threshold — so there are no checks for a watch to report into. Its refusals — an unreadable meter line, a flat run, a column inside the body — throw out of the run rather than counting a failed check",
 	],
 	[
+		"measure-frame-attribution.mjs",
+		"#223's headed sampler-overhead instrument; it reports paired CPU submission timings on a proven player renderer without imposing a machine-independent performance threshold",
+	],
+	[
 		"capture-views.mjs",
 		"captures #104's view set; the gate is a human looking at the sheet, so it has no checks either — it does listen for shader and page errors, and a fault removes the run and the sheet rather than reporting one",
 	],
@@ -199,7 +203,12 @@ for (const path of scripts(DIR).sort()) {
 	// them — a URL *is* a string, so the version of this that read `bare` was
 	// checking source with the thing it looks for already removed. It passed a
 	// probe with `?perf` in it, which is how that was found.
-	if (/[?&]perf\b/.test(code))
+	// One probe owns the diagnostic itself. It never sends keys and checks that
+	// no readPixels fence is introduced, so mounting the panel is its subject
+	// rather than accidental contamination of some other rendering assertion.
+	// Keeping the exception exact preserves the suite-wide refusal for every
+	// other probe.
+	if (name !== "probe-frame-attribution.mjs" && /[?&]perf\b/.test(code))
 		problems.push(
 			`${name}: opens a page with ?perf — that mounts the diagnostic panel, ` +
 				`whose key listener would then see this probe's keystrokes`,

@@ -38,6 +38,7 @@
  * every jump, and this cannot go stale.
  */
 import type * as THREE from "three";
+import type { FrameAttribution } from "./frame-attribution";
 
 /** What a switch does to the frame, and the key that flips it. */
 type Switch = {
@@ -261,7 +262,28 @@ export type PerfTargets = {
 	scenes: THREE.Object3D[];
 	/** The bloom pass, so it can be switched without rebuilding the composer. */
 	bloom: { enabled: boolean } | null;
+	/** Query-gated frame timing and render-shape evidence. */
+	attribution: FrameAttribution;
 };
+
+function metric(value: number | null): string {
+	return value === null ? "—" : `${value.toFixed(2)} ms`;
+}
+
+function identity(value: string | null): string {
+	return (
+		value?.replace(/[&<>"']/g, (character) => {
+			const escaped: Record<string, string> = {
+				"&": "&amp;",
+				"<": "&lt;",
+				">": "&gt;",
+				'"': "&quot;",
+				"'": "&#39;",
+			};
+			return escaped[character];
+		}) ?? "unavailable"
+	);
+}
 
 /**
  * Mount the panel and bind its keys. Returns a teardown.
@@ -358,6 +380,9 @@ export function mountPerfPanel(targets: PerfTargets) {
 	];
 
 	const draw = () => {
+		const attribution = targets.attribution.snapshot();
+		panel.dataset.attributionEnabled = String(attribution.enabled);
+		panel.dataset.gpuStatus = attribution.gpu.status;
 		panel.innerHTML = `${switches
 			.map((s) => {
 				const v = s.state();
@@ -366,7 +391,22 @@ export function mountPerfPanel(targets: PerfTargets) {
 					off ? "off" : ""
 				}">${v}</span>`;
 			})
-			.join("\n")}\n<b>${RESTORE_KEY}</b> restore all`;
+			.join("\n")}\n<b>${RESTORE_KEY}</b> restore all
+
+FRAME ATTRIBUTION
+CPU simulation/step         ${metric(attribution.cpu["simulation/step"].medianMs)} med  ${metric(attribution.cpu["simulation/step"].p95Ms)} p95
+CPU render submission       ${metric(attribution.cpu["render submission/composer"].medianMs)} med  ${metric(attribution.cpu["render submission/composer"].p95Ms)} p95
+GPU status                  ${attribution.gpu.status}
+GPU composer execution      ${metric(attribution.gpu.medianMs)} med  ${metric(attribution.gpu.p95Ms)} p95
+GPU samples / age           ${attribution.gpu.sampleCount} / ${attribution.gpu.sampleAgeMs === null ? "—" : `${attribution.gpu.sampleAgeMs.toFixed(0)} ms`}
+draw calls / triangles      ${attribution.renderer.calls} / ${attribution.renderer.triangles}
+programs / geometries       ${attribution.renderer.programs} / ${attribution.renderer.geometries}
+textures                    ${attribution.renderer.textures}
+drawing buffer              ${attribution.renderer.drawingBufferWidth} × ${attribution.renderer.drawingBufferHeight}
+pixel ratio / render scale  ${attribution.renderer.effectivePixelRatio.toFixed(2)} / ${attribution.renderer.renderScale.toFixed(2)}
+composer passes             ${attribution.renderer.composerPassCount}
+renderer                    ${identity(attribution.renderer.api)}
+rasterizer                  ${identity(attribution.renderer.rasterizer)}`;
 	};
 
 	const onKey = (e: KeyboardEvent) => {
