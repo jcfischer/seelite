@@ -4,6 +4,18 @@ This glossary defines vocabulary for seelite's planned causal world model and po
 
 ## Language
 
+**Display contact**:
+A targetable presentation identity outside the generated body list. Its producer
+supplies position, velocity, name, hull type and scanner classification;
+`src/display-contact.ts` owns this shape under work-graph decision #52. A
+contact's display name is a label, with no persistence identity or Carrier slot
+meaning. `ship-visuals.md` §2 owns the review fleet's use of it.
+
+**Review fleet slot**:
+A `FleetSlot` layout position in the query-gated showroom avenue. Its `slot`
+identifier describes the model and its placement; it has no Berth reservation,
+aperture, station or docking semantics. `src/ship-mesh.ts` owns the layout.
+
 **Carrier**:
 A named physical asset, actor, or condition in the universe that enables a capability in a bounded consequence area.
 _Avoid_: Modifier, influence point
