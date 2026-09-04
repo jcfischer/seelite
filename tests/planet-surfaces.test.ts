@@ -87,6 +87,8 @@ test("the renderer's bodies carry the appearance the generator implies", () => {
 	const contents = generateContents(record);
 	let drawn = 0;
 	for (const body of system.bodies) {
+		if (body.kind === "ship")
+			throw new Error("Generated bodies contain a display ship");
 		if (body.kind === "station") {
 			expect(body.appearance).toBeUndefined();
 			continue;

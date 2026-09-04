@@ -60,6 +60,14 @@ target records therefore belong to the left Navigation panel.
 
 ## 3. Target and docking director
 
+The right-hand cockpit Target instrument shows a designation between its title
+and target name/range: `STAR`, `PLANET`, `MOON`, `STATION · <TYPE>`, or
+`SHIP · <HULL TYPE> · <SCANNER STATUS>`. The producer supplies a ship's type;
+it is never inferred from the display name. Unclassified review hulls show
+`UNKNOWN`, not a fabricated legal status. The designation updates on target or
+classification changes and leaves the separate ETA line in place (principal
+request during #198).
+
 The on-glass director retains the selected target after Navigation chooses it.
 During target acquisition, an amber **target-circle arrow** rotates around the
 circle's perimeter to the target bearing and points in the direction the pilot

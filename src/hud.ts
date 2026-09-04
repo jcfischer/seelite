@@ -27,6 +27,34 @@
 
 import { type Vec3, dot, length, scale, sub } from "./vec3";
 
+export interface MarkerLabelBounds {
+	left: number;
+	top: number;
+	right: number;
+	bottom: number;
+}
+
+/** Keep unselected ship names readable when several hulls share a bearing.
+ * Callers reserve the selected label first; it always wins over context.
+ */
+export function claimMarkerLabel(
+	bounds: MarkerLabelBounds,
+	occupied: MarkerLabelBounds[],
+): boolean {
+	if (
+		occupied.some(
+			(other) =>
+				bounds.left < other.right &&
+				bounds.right > other.left &&
+				bounds.top < other.bottom &&
+				bounds.bottom > other.top,
+		)
+	)
+		return false;
+	occupied.push(bounds);
+	return true;
+}
+
 /** A quaternion, structurally — the renderer's `THREE.Quaternion` satisfies it,
  *  which is how this module stays free of Three.js while being handed one. */
 export interface Quat {

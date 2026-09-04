@@ -71,7 +71,8 @@ import {
 import { HULL_SPECS } from "./hull";
 import { mix, seedFor } from "./rng";
 import { buildShipMesh } from "./ship-mesh";
-import type { Body, Ship } from "./sim";
+import type { Ship } from "./sim";
+import type { DisplayContact } from "./display-contact";
 import { PROMPT_FILL, PROMPT_FONT, TextRaster } from "./text-raster";
 import { type Vec3, add, cross, length, scale, sub, v3 } from "./vec3";
 
@@ -301,28 +302,8 @@ export class CombatPrototypeRig {
 	 * duel measures is aim as well as pacing.
 	 */
 	enemy: CombatEnemyState;
-	/**
-	 * The striker as the scanner and the target list want it.
-	 *
-	 * Exposed rather than reached for: `main.ts` may not name the prototype
-	 * (`tests/combat-rig-boundary.test.ts`), so the two production surfaces the
-	 * striker has to appear on read one field each off the nullable rig.
-	 */
-	readonly contact = { id: "combat-prototype-enemy", pos: v3() };
-	readonly targetBody: Body;
-
-	/**
-	 * The striker's velocity, km/s — the one thing `Body` does not carry.
-	 *
-	 * `main.ts` reads a target's velocity through `bodyVelocity`, which throws
-	 * on an id the system does not hold, and the striker is a live projection
-	 * rather than a world body. So the rig answers for its own contact, and
-	 * `main.ts` still names no prototype type
-	 * (`tests/combat-rig-boundary.test.ts`).
-	 */
-	targetVelocity(): Vec3 {
-		return this.enemy.ship.vel;
-	}
+	/** One producer-owned identity for targeting, Navigation and scanner. */
+	readonly contact: DisplayContact;
 
 	/** #53's striker, drawn: the raider hull from the roster, not a cone. */
 	private readonly targetMesh: THREE.Group;
@@ -387,27 +368,15 @@ export class CombatPrototypeRig {
 			playerNose,
 			mix(seedFor(worldSeed, "combat"), 53),
 		);
-		this.contact.pos = this.enemy.ship.pos;
-		this.targetBody = {
-			id: this.contact.id,
+		this.contact = {
+			id: "combat-prototype-enemy",
 			name: "ENEMY STRIKER",
-			// **A borrowed kind, and the borrow is the point.** `BodyKind` is
-			// `PlacedBody["kind"]` and `sim.ts` says so on purpose — the four
-			// kinds `placeBodies` returns and no fifth taxonomy to keep in step.
-			// A ship is none of them, and #53 delivers a *prototype*, so adding a
-			// `ship` kind would put a production taxonomy change under a
-			// throwaway.
-			//
-			// `moon` because it is the one kind `selectable()` filters out, so no
-			// world body can ever be confused with this one in that list. Every
-			// other site that dispatches on `kind` — `isMassive` in the render
-			// loop, `updateLocalFrameBody`, the velocity readout's `FRAME` label,
-			// the station scans — iterates `world.system.bodies`, which the
-			// striker is not in, so none of them can see this value.
-			// `tests/combat-rig-boundary.test.ts` counts those sites, so a fourth
-			// one is a build that has to answer this comment again.
-			kind: "moon",
+			kind: "ship",
+			shipType: STRIKER_HULL_ID,
 			pos: this.enemy.ship.pos,
+			velocity: this.enemy.ship.vel,
+			legalStatus: null,
+			scannerClass: "unknown",
 			// The hit sphere, not a blip size. This is what `timeToBody` reads as
 			// the cruise drop radius, and 0.75 km told the panel a ship eight
 			// times its own hull was a thing you could stop at.
@@ -624,7 +593,7 @@ export class CombatPrototypeRig {
 		);
 		this.enemy = flown.state;
 		this.contact.pos = flown.state.ship.pos;
-		this.targetBody.pos = flown.state.ship.pos;
+		this.contact.velocity = flown.state.ship.vel;
 
 		// The spark is placed on the frame the beam first connects, so it does not
 		// walk along the hull while a held trigger keeps scoring.
