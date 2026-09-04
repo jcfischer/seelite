@@ -179,31 +179,11 @@ test("every bodyVelocity call on a selectable id goes through the striker guard"
 	);
 });
 
-/**
- * The striker's borrowed `kind`, and the sites that could see it.
- *
- * `combat-rig.ts` gives `targetBody` `kind: "moon"` — a ship is none of
- * `PlacedBody`'s four kinds, and adding a fifth is a production taxonomy change
- * that a throwaway prototype has no business making. The comment there argues
- * the borrow is inert because every other `kind` dispatch in `main.ts` reads a
- * body that came out of `world.system.bodies`, which the striker is not in, and
- * it cited this file for that. The citation was false until now; this is it.
- *
- * Counted rather than inspected, because what has to hold is that no *new* site
- * appears. Thirteen reads of `.kind` today — twelve on a body and one on a
- * station aperture, which is a different taxonomy — and every body one is
- * either a literal comparison against a generated kind or a read of something
- * pulled from `world.system.bodies`. A fourteenth is a build that has to answer
- * the comment in `combat-rig.ts` again.
- */
-test("main.ts's body-kind dispatch sites are the ones the striker cannot reach", () => {
-	const main = codeOf("src/main.ts");
-	expect(main.match(/\.kind\b/g) ?? []).toHaveLength(13);
-	// `selectable()` is the one list the striker joins, and it joins it by being
-	// **pushed after** the filter and the sort rather than by passing them.
-	// Pinned as an ordering, because that ordering is the whole argument.
-	const filtered = main.indexOf('b.kind !== "moon"');
-	const pushed = main.indexOf("selectableCache.push(striker)");
-	expect(filtered).toBeGreaterThan(0);
-	expect(pushed).toBeGreaterThan(filtered);
+test("the rig supplies one ship contact rather than borrowing a generated kind", () => {
+	const rig = codeOf(RIG);
+	expect(rig).toContain("readonly contact: DisplayContact");
+	expect(rig).toContain('kind: "ship"');
+	expect(rig).not.toContain('kind: "moon"');
+	expect(rig).not.toContain("targetBody");
+	expect(rig).not.toContain("targetVelocity");
 });

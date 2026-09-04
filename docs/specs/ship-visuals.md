@@ -191,14 +191,20 @@ which are #26's to give. A browser probe now asserts the count of hulls in the
 near scene rather than the absence of two particular names, so anything parented
 there in future has to be a deliberate change to that line.
 
+Target identity follows [#52's contact model](https://github.com/jcfischer/seelite/issues/52), implemented by `display-contact.ts`: producers supply velocity, neutral legal status and scanner classification outside the generated body list.
+
 Hulls do not participate in the body far/near handoff, so the existing
 kilometre-scale body handoff stays untouched.
 
 `?fleet` parks every model in an avenue the player can fly down, ordered by
 declared reach so the walk runs smallest to largest. It is gated because
-thirty-three hulls is a showroom rather than a star system, and because a hull
-the player can fly past but never scan, target or collide with would be a lie in
-the shipped game. Behind the gate it is honest: a static arrangement anchored
+thirty-three hulls is a showroom rather than a star system. Each hull is a
+targetable `ship` contact, named for its model, with zero velocity, `null` legal
+status and `unknown` scanner classification. Unselected ship markers show the
+model name and range where the label fits without overlapping another label;
+selecting one always uses the existing amber target cue and reserves its label
+space first. There is no NPC behaviour or collision.
+Behind the gate it is a static arrangement anchored
 once to the ship's boot position and facing, with no entry in `sim.ts` and no
 roster meaning.
 

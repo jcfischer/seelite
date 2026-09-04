@@ -135,6 +135,8 @@ import {
 	stepCharge,
 } from "./hyperspace";
 import {
+	type MarkerLabelBounds,
+	claimMarkerLabel,
 	angleOffNose,
 	directionTo,
 	duration,
@@ -236,7 +238,18 @@ import {
 	type HullId,
 	type HullVariantId,
 } from "./hull";
-import { type FleetSlot, buildShipMesh, fleetLayout } from "./ship-mesh";
+import {
+	type FleetSlot,
+	HULL_REACH_KM,
+	HULL_VARIANTS,
+	buildShipMesh,
+	fleetLayout,
+} from "./ship-mesh";
+import {
+	type DisplayContact,
+	isDisplayContact,
+	targetDesignation,
+} from "./display-contact";
 import {
 	COCKPIT_EMISSIVE_INTENSITIES,
 	COCKPIT_KEY_LIGHT,
@@ -1088,6 +1101,8 @@ class Game {
 	 *  which is why this is a field rather than a `readonly` built in the
 	 *  constructor — `performJump` clears it (#187). */
 	private selectableCache: Body[] | null = null;
+	/** Producers register stable objects; only selection and scanner merge them. */
+	private readonly contacts: DisplayContact[] = [];
 	/** The system a fired wind-up is waiting to move the world to, taken at the
 	 *  end of the frame it fired on. See `takePendingJump` (#187). */
 	private pendingJump: number | null = null;
@@ -1095,8 +1110,7 @@ class Game {
 	 * The parked review fleet, gated on `?fleet`.
 	 *
 	 * Off by default because thirty-three hulls is a showroom, not a star
-	 * system: it is a lot of geometry, and a hull the player can fly past but
-	 * never scan, target or collide with would be a lie in the shipped game.
+	 * system: these targetable, scannable hulls have no behaviour or collision.
 	 * Behind the gate it is honest — a static display arrangement, anchored
 	 * once, with no entry in `sim.ts` and no roster meaning. #26 still owns
 	 * anything that is meant to be a ship rather than a picture of one.
@@ -1104,7 +1118,11 @@ class Game {
 	private readonly fleetReview = new URLSearchParams(
 		window.location.search,
 	).has("fleet");
-	private fleet: { mesh: THREE.Object3D; slot: FleetSlot; pos: Vec3 }[] = [];
+	private fleet: {
+		mesh: THREE.Object3D;
+		slot: FleetSlot;
+		contact: DisplayContact;
+	}[] = [];
 	private fleetAnchored = false;
 	/** The speed law's masses, rebuilt once per clock value. See `masses()`. */
 	private massesCache: { id: string; pos: Vec3; radiusKm: number }[] | null =
@@ -1790,6 +1808,7 @@ class Game {
 					)
 				: null;
 		this.warp = warpField(this.world.seed);
+		if (this.combatRig) this.contacts.push(this.combatRig.contact);
 		this.nearScene.add(this.warp.object);
 		// Something is selected on frame one. §6 makes selection a convenience
 		// rather than a rail, but a cruise panel with an empty target field on
@@ -2510,7 +2529,22 @@ class Game {
 			const hull = buildShipMesh(slot.id, slot.variant).root;
 			hull.name = `fleet-${slot.id}-${slot.variant}`;
 			group.add(hull);
-			this.fleet.push({ mesh: hull, slot, pos: v3(0, 0, 0) });
+			const contact: DisplayContact = {
+				id: hull.name,
+				name: HULL_VARIANTS[slot.id].find(
+					(variant) => variant.id === slot.variant,
+				)!.name,
+				kind: "ship",
+				shipType: slot.id,
+				pos: v3(),
+				velocity: v3(),
+				radiusKm: HULL_REACH_KM[slot.id],
+				color: 0x8cbedc,
+				legalStatus: null,
+				scannerClass: "unknown",
+			};
+			this.fleet.push({ mesh: hull, slot, contact });
+			this.contacts.push(contact);
 		}
 		this.nearScene.add(group);
 	}
@@ -3010,11 +3044,12 @@ class Game {
 			? `${target.name}  ${range(targetKm)}`
 			: "NO TARGET";
 		const eta = this.etaCache === null ? "CALC" : duration(this.etaCache);
+		const designation = targetDesignation(target);
 		// `chargeAu` is **not** in this key any more: the target instrument stopped
 		// printing it when §5's strip took it, and a key holding a value no
 		// painted pixel depends on repaints two canvas textures on the frame the
 		// drive regenerates a hundredth of an AU — about once a second, forever.
-		const key = `${speed}|${velocity.context}|${targetText}|${eta}|${this.throttle}|${this.assist}`;
+		const key = `${speed}|${velocity.context}|${targetText}|${designation}|${eta}|${this.throttle}|${this.assist}`;
 		if (key === this.cockpit.instrumentKey) return;
 		this.cockpit.instrumentKey = key;
 		const paint = (
@@ -3023,6 +3058,7 @@ class Game {
 			primary: string,
 			secondary: string,
 			accent: string,
+			designation = "",
 		) => {
 			const { ctx, secondaryText: raster } = instrument;
 			const { width, height } = ctx.canvas;
@@ -3037,6 +3073,7 @@ class Game {
 			ctx.fillStyle = accent;
 			ctx.font = "22px ui-monospace, monospace";
 			ctx.fillText(title, 28, 46);
+			if (designation) ctx.fillText(designation, 28, 78);
 			let primarySize = 42;
 			const primaryWidth = width - 56;
 			ctx.font = `${primarySize}px ui-monospace, monospace`;
@@ -3071,6 +3108,7 @@ class Game {
 			// instrument made it read as a property of the thing being flown to.
 			`ETA ${eta}`,
 			"#ffd17a",
+			designation,
 		);
 		this.cockpit.flightInstrument.texture.needsUpdate = true;
 		this.cockpit.targetInstrument.texture.needsUpdate = true;
@@ -3530,14 +3568,19 @@ class Game {
 	 */
 	private selectable(): Body[] {
 		if (!this.selectableCache) {
-			const order = { station: 0, planet: 1, star: 2, moon: 3 } as const;
+			const order = {
+				station: 0,
+				planet: 1,
+				star: 2,
+				moon: 3,
+				ship: 4,
+			} as const;
 			this.selectableCache = this.world.system.bodies
 				.filter((b) => b.kind !== "moon")
 				.sort(
 					(a, b) => order[a.kind] - order[b.kind] || a.id.localeCompare(b.id),
 				);
-			const striker = this.combatRig?.targetBody;
-			if (striker) this.selectableCache.push(striker);
+			this.selectableCache.push(...this.contacts);
 		}
 		return this.selectableCache;
 	}
@@ -3579,13 +3622,15 @@ class Game {
 
 	targetBody(): Body | null {
 		if (!this.targetId) return null;
-		// The striker is a live projection, never a world body, so `byId` cannot
-		// hold it and a lookup that only asked `byId` would return null for a
-		// target the player can select.
-		const striker = this.combatRig?.targetBody;
+		return this.bodyFor(this.targetId);
+	}
+
+	/** Resolve through the same selection projection that exposes contacts. */
+	private bodyFor(id: string): Body | null {
 		return (
-			this.world.system.byId.get(this.targetId) ??
-			(striker && this.targetId === striker.id ? striker : null)
+			this.world.system.byId.get(id) ??
+			this.selectable().find((body) => body.id === id) ??
+			null
 		);
 	}
 
@@ -3679,8 +3724,8 @@ class Game {
 	 * all, so a guard written into only one of them left the other live.
 	 */
 	private velocityOf(id: string): Vec3 {
-		const rig = this.combatRig;
-		if (rig && id === rig.targetBody.id) return rig.targetVelocity();
+		const body = this.bodyFor(id);
+		if (body && isDisplayContact(body)) return body.velocity;
 		return bodyVelocity(this.world.system, id, this.world.gameTime);
 	}
 
@@ -5496,9 +5541,9 @@ class Game {
 		this.anchorFleet();
 		for (const parked of this.fleet)
 			parked.mesh.position.set(
-				parked.pos.x - camPos.x,
-				parked.pos.y - camPos.y,
-				parked.pos.z - camPos.z,
+				parked.contact.pos.x - camPos.x,
+				parked.contact.pos.y - camPos.y,
+				parked.contact.pos.z - camPos.z,
 			);
 		// The hull is the camera in cockpit view, and drawing a cube around the
 		// near plane fills the screen with its inside faces.
@@ -5576,7 +5621,7 @@ class Game {
 				parked.slot.y,
 				parked.slot.z,
 			).applyQuaternion(facing);
-			parked.pos = v3(
+			parked.contact.pos = v3(
 				anchor.x + offset.x,
 				anchor.y + offset.y,
 				anchor.z + offset.z,
@@ -5781,7 +5826,7 @@ class Game {
 				etaFor: ({ id }) => {
 					const cached = this.navEtaCache.get(id);
 					if (cached !== undefined) return cached;
-					const body = this.world.system.byId.get(id);
+					const body = this.bodyFor(id);
 					const eta = body ? this.timeToBody(body) : null;
 					this.navEtaCache.set(id, eta);
 					return eta;
@@ -5791,7 +5836,6 @@ class Game {
 	}
 
 	private refreshScannerContacts() {
-		const striker = this.combatRig?.contact;
 		projectScannerContacts(
 			this.world.ship.pos,
 			this.world.system.bodies,
@@ -5799,7 +5843,7 @@ class Game {
 			{
 				orientation: this.orientation,
 				output: this.scannerContactBuffer,
-				flooredContacts: striker ? [striker] : [],
+				flooredContacts: this.contacts,
 			},
 		);
 	}
@@ -6439,6 +6483,29 @@ class Game {
 		// The selected target owns the amber sky marker. Green remains prograde,
 		// and the other bodies stay cool blue navigation context.
 		ctx.font = "11px ui-monospace, Menlo, monospace";
+		const labelBounds = (
+			x: number,
+			y: number,
+			text: string,
+		): MarkerLabelBounds => ({
+			left: x - 3,
+			top: y - 12,
+			right: x + ctx.measureText(text).width + 3,
+			bottom: y + 5,
+		});
+		const occupiedLabels: MarkerLabelBounds[] = [];
+		const selectedBody = this.targetBody();
+		const selectedDir = selectedBody && directionTo(camPos, selectedBody.pos);
+		const selectedAt = selectedDir && place(selectedDir);
+		if (selectedBody && selectedAt?.on) {
+			occupiedLabels.push(
+				labelBounds(
+					selectedAt.x + 20,
+					selectedAt.y + 4,
+					`${selectedBody.name}  ${range(length(sub(selectedBody.pos, camPos)))}`,
+				),
+			);
+		}
 		for (const body of this.selectable()) {
 			const dir = directionTo(camPos, body.pos);
 			if (!dir) continue;
@@ -6473,10 +6540,21 @@ class Game {
 					ctx.lineTo(at.x + sx * r - sx * (r * 0.45), at.y + sy * r);
 					ctx.stroke();
 				}
-				if (body.kind === "station") {
+				if (body.kind === "station" || body.kind === "ship") {
 					const km = length(sub(body.pos, camPos));
+					const text = `${body.name}  ${range(km)}`;
+					const bounds = labelBounds(at.x + r + 6, at.y + 4, text);
+					if (body.kind === "ship") {
+						if (
+							bounds.right > w ||
+							bounds.top < 0 ||
+							bounds.bottom > h ||
+							!claimMarkerLabel(bounds, occupiedLabels)
+						)
+							continue;
+					} else occupiedLabels.push(bounds);
 					ctx.fillStyle = "rgba(140, 190, 220, 0.55)";
-					ctx.fillText(`${body.name}  ${range(km)}`, at.x + r + 6, at.y + 4);
+					ctx.fillText(text, at.x + r + 6, at.y + 4);
 				}
 				continue;
 			}

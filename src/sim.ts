@@ -71,11 +71,10 @@ import { type Vec3, add, cross, dot, length, scale, sub, v3 } from "./vec3";
 /**
  * What a body is for rendering purposes.
  *
- * The same four kinds `placeBodies` returns, and that is not a coincidence —
- * anything else here would be a second taxonomy to keep in step with the first.
- * `moon` is new to this module: the placeholder had none.
+ * Includes display ships (#52). The generator retains its narrower
+ * `PlacedBody["kind"]`; a display contact never joins the generated body list.
  */
-export type BodyKind = PlacedBody["kind"];
+export type BodyKind = "star" | "planet" | "moon" | "station" | "ship";
 
 export interface Body {
 	id: string;

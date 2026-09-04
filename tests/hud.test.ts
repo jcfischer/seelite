@@ -18,11 +18,30 @@ import {
 	intoCameraFrame,
 	prograde,
 	projectDirection,
+	claimMarkerLabel,
 } from "../src/hud";
 import { type Vec3, length, scale, v3 } from "../src/vec3";
 
 const IDENTITY = { x: 0, y: 0, z: 0, w: 1 };
 const FOV = (60 * Math.PI) / 180;
+
+test("marker labels reserve space and refuse overlaps, including containment", () => {
+	const occupied = [{ left: 10, top: 10, right: 100, bottom: 30 }];
+	for (const box of [
+		{ left: 20, top: 15, right: 80, bottom: 25 },
+		{ left: 0, top: 0, right: 110, bottom: 40 },
+		{ left: 90, top: 20, right: 120, bottom: 40 },
+	])
+		expect(claimMarkerLabel(box, occupied)).toBe(false);
+	expect(occupied).toHaveLength(1);
+	expect(
+		claimMarkerLabel({ left: 101, top: 10, right: 150, bottom: 30 }, occupied),
+	).toBe(true);
+	expect(occupied).toHaveLength(2);
+	expect(
+		claimMarkerLabel({ left: 110, top: 15, right: 140, bottom: 25 }, occupied),
+	).toBe(false);
+});
 
 /** A quaternion that rotates by `angle` about `axis` — the renderer builds
  *  these with Three.js; the tests need them without it. */
