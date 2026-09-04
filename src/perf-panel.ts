@@ -394,7 +394,7 @@ export function mountPerfPanel(targets: PerfTargets) {
 			.join("\n")}\n<b>${RESTORE_KEY}</b> restore all
 
 FRAME ATTRIBUTION
-CPU simulation/update       ${metric(attribution.cpu["simulation/update"].medianMs)} med  ${metric(attribution.cpu["simulation/update"].p95Ms)} p95
+CPU simulation/step         ${metric(attribution.cpu["simulation/step"].medianMs)} med  ${metric(attribution.cpu["simulation/step"].p95Ms)} p95
 CPU render submission       ${metric(attribution.cpu["render submission/composer"].medianMs)} med  ${metric(attribution.cpu["render submission/composer"].p95Ms)} p95
 GPU status                  ${attribution.gpu.status}
 GPU execution               ${metric(attribution.gpu.medianMs)} med  ${metric(attribution.gpu.p95Ms)} p95

@@ -139,10 +139,10 @@ describe("FrameAttribution", () => {
 	test("does nothing until explicitly enabled", () => {
 		const { attribution, gl } = fixture();
 		expect(attribution.beginGpuFrame()).toBe(false);
-		attribution.recordCpu("simulation/update", 2);
+		attribution.recordCpu("simulation/step", 2);
 		expect(attribution.snapshot().enabled).toBe(false);
 		expect(attribution.snapshot().gpu.status).toBe("unavailable");
-		expect(attribution.snapshot().cpu["simulation/update"].sampleCount).toBe(0);
+		expect(attribution.snapshot().cpu["simulation/step"].sampleCount).toBe(0);
 		expect(gl.calls).toEqual([]);
 	});
 
@@ -167,7 +167,7 @@ describe("FrameAttribution", () => {
 			medianMs: 4.25,
 			p95Ms: 4.25,
 			sampleCount: 1,
-			sampleAgeMs: 0,
+			sampleAgeMs: 20,
 		});
 	});
 
@@ -218,6 +218,15 @@ describe("FrameAttribution", () => {
 		});
 	});
 
+	test("does not start a query while the GPU is known disjoint", () => {
+		const { attribution, gl } = fixture();
+		attribution.enable();
+		gl.disjoint = true;
+		expect(attribution.beginGpuFrame(30)).toBe(false);
+		expect(gl.calls.some((call) => call.startsWith("begin:"))).toBe(false);
+		expect(attribution.snapshot(30).gpu.status).toBe("disjoint");
+	});
+
 	test("makes unsupported timing an explicit unavailable state", () => {
 		const { attribution, gl } = fixture({ supported: false });
 		attribution.enable();
@@ -242,7 +251,7 @@ describe("FrameAttribution", () => {
 		expect(attribution.snapshot().gpu).toMatchObject({
 			status: "stale",
 			medianMs: 2,
-			sampleAgeMs: 51,
+			sampleAgeMs: 61,
 		});
 	});
 
@@ -253,7 +262,7 @@ describe("FrameAttribution", () => {
 		});
 		attribution.enable();
 		for (let i = 1; i <= 3; i++) {
-			attribution.recordCpu("simulation/update", i);
+			attribution.recordCpu("simulation/step", i);
 			attribution.beginGpuFrame();
 			attribution.endGpuFrame();
 			gl.available.add(1);
@@ -261,7 +270,7 @@ describe("FrameAttribution", () => {
 			attribution.poll(i);
 		}
 		const snapshot = attribution.snapshot(3);
-		expect(snapshot.cpu["simulation/update"]).toEqual({
+		expect(snapshot.cpu["simulation/step"]).toEqual({
 			medianMs: 2.5,
 			p95Ms: 3,
 			sampleCount: 2,
@@ -276,11 +285,11 @@ describe("FrameAttribution", () => {
 	test("deep-freezes statistics and renderer facts", () => {
 		const { attribution } = fixture();
 		attribution.enable();
-		attribution.recordCpu("simulation/update", 3);
+		attribution.recordCpu("simulation/step", 3);
 		const snapshot = attribution.snapshot();
 		expect(Object.isFrozen(snapshot)).toBe(true);
 		expect(Object.isFrozen(snapshot.cpu)).toBe(true);
-		expect(Object.isFrozen(snapshot.cpu["simulation/update"])).toBe(true);
+		expect(Object.isFrozen(snapshot.cpu["simulation/step"])).toBe(true);
 		expect(Object.isFrozen(snapshot.gpu)).toBe(true);
 		expect(Object.isFrozen(snapshot.renderer)).toBe(true);
 		expect(snapshot.renderer).toMatchObject({

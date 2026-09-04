@@ -13,7 +13,7 @@
  */
 
 export const CPU_INTERVALS = [
-	"simulation/update",
+	"simulation/step",
 	"render submission/composer",
 ] as const;
 
@@ -95,12 +95,50 @@ export type FrameAttributionOptions = {
 type QueryEntry = {
 	query: WebGLQuery;
 	state: "idle" | "active" | "pending";
+	submittedAtMs: number | null;
 };
 
 type GpuSample = {
 	valueMs: number;
-	resolvedAtMs: number;
+	submittedAtMs: number;
 };
+
+/** Fixed storage whose write cost stays constant after reaching capacity. */
+class SampleRing<T> {
+	private values: T[] = [];
+	private next = 0;
+
+	constructor(private readonly capacity: number) {}
+
+	push(value: T): void {
+		if (this.values.length < this.capacity) {
+			this.values.push(value);
+			return;
+		}
+		this.values[this.next] = value;
+		this.next = (this.next + 1) % this.capacity;
+	}
+
+	clear(): void {
+		this.values = [];
+		this.next = 0;
+	}
+
+	ordered(): T[] {
+		if (this.values.length < this.capacity || this.next === 0)
+			return this.values.slice();
+		return this.values.slice(this.next).concat(this.values.slice(0, this.next));
+	}
+
+	latest(): T | null {
+		if (this.values.length === 0) return null;
+		const index =
+			this.values.length < this.capacity
+				? this.values.length - 1
+				: (this.next + this.capacity - 1) % this.capacity;
+		return this.values[index];
+	}
+}
 
 const DEFAULT_MAX_QUERIES = 4;
 const DEFAULT_SAMPLE_CAPACITY = 120;
@@ -160,9 +198,10 @@ export class FrameAttribution {
 	private queries: QueryEntry[] = [];
 	private nextQuery = 0;
 	private activeQuery: number | null = null;
-	private readonly cpuSamples = new Map<CpuInterval, number[]>();
-	private gpuSamples: GpuSample[] = [];
+	private readonly cpuSamples = new Map<CpuInterval, SampleRing<number>>();
+	private readonly gpuSamples: SampleRing<GpuSample>;
 	private lastDisjointAtMs: number | null = null;
+	private disjointActive = false;
 
 	constructor(options: FrameAttributionOptions) {
 		this.gl = options.gl;
@@ -177,7 +216,9 @@ export class FrameAttribution {
 		this.staleAfterMs = options.staleAfterMs ?? DEFAULT_STALE_AFTER_MS;
 		if (!(this.staleAfterMs > 0) || !Number.isFinite(this.staleAfterMs))
 			throw new RangeError("staleAfterMs must be a positive finite number");
-		for (const name of CPU_INTERVALS) this.cpuSamples.set(name, []);
+		for (const name of CPU_INTERVALS)
+			this.cpuSamples.set(name, new SampleRing(this.sampleCapacity));
+		this.gpuSamples = new SampleRing(this.sampleCapacity);
 	}
 
 	/** Allocate the ring and start listening for WebGL context events. */
@@ -219,8 +260,6 @@ export class FrameAttribution {
 		const samples = this.cpuSamples.get(name);
 		if (!samples) return;
 		samples.push(durationMs);
-		if (samples.length > this.sampleCapacity)
-			samples.splice(0, samples.length - this.sampleCapacity);
 	}
 
 	/**
@@ -235,13 +274,14 @@ export class FrameAttribution {
 			this.activeQuery !== null
 		)
 			return false;
-		this.poll(atMs);
+		if (this.poll(atMs)) return false;
 		for (let offset = 0; offset < this.queries.length; offset++) {
 			const index = (this.nextQuery + offset) % this.queries.length;
 			const entry = this.queries[index];
 			if (entry.state !== "idle") continue;
 			this.gl.beginQuery(this.extension.TIME_ELAPSED_EXT, entry.query);
 			entry.state = "active";
+			entry.submittedAtMs = atMs;
 			this.activeQuery = index;
 			this.nextQuery = (index + 1) % this.queries.length;
 			return true;
@@ -258,15 +298,21 @@ export class FrameAttribution {
 	}
 
 	/** Poll pending queries without asking for a result until it is available. */
-	poll(atMs = this.now()): void {
-		if (!this.enabled || this.contextLost || !this.extension) return;
+	poll(atMs = this.now()): boolean {
+		if (!this.enabled || this.contextLost || !this.extension) return false;
 		if (this.gl.getParameter(this.extension.GPU_DISJOINT_EXT)) {
-			this.gpuSamples = [];
+			this.gpuSamples.clear();
 			this.lastDisjointAtMs = atMs;
-			for (const entry of this.queries)
-				if (entry.state === "pending") entry.state = "idle";
-			return;
+			// Results from every allocated query are now untrustworthy. Recreate the
+			// small ring instead of reusing a possibly still-pending query object.
+			if (!this.disjointActive) {
+				this.disjointActive = true;
+				this.disposeQueries();
+				this.allocateQueries();
+			}
+			return true;
 		}
+		this.disjointActive = false;
 		for (const entry of this.queries) {
 			if (entry.state !== "pending") continue;
 			const available = this.gl.getQueryParameter(
@@ -278,14 +324,15 @@ export class FrameAttribution {
 				this.gl.getQueryParameter(entry.query, this.gl.QUERY_RESULT),
 			);
 			entry.state = "idle";
+			const submittedAtMs = entry.submittedAtMs ?? atMs;
+			entry.submittedAtMs = null;
 			if (!Number.isFinite(nanoseconds) || nanoseconds < 0) continue;
 			this.gpuSamples.push({
 				valueMs: nanoseconds / 1_000_000,
-				resolvedAtMs: atMs,
+				submittedAtMs,
 			});
-			if (this.gpuSamples.length > this.sampleCapacity)
-				this.gpuSamples.splice(0, this.gpuSamples.length - this.sampleCapacity);
 		}
+		return false;
 	}
 
 	/** Deep-frozen state suitable for diagnostics or a later control policy. */
@@ -293,17 +340,19 @@ export class FrameAttribution {
 		this.poll(atMs);
 		const cpu = {} as Record<CpuInterval, RollingStatistics>;
 		for (const name of CPU_INTERVALS)
-			cpu[name] = rollingStatistics(this.cpuSamples.get(name) ?? []);
+			cpu[name] = rollingStatistics(this.cpuSamples.get(name)?.ordered() ?? []);
 
-		const latest = this.gpuSamples.at(-1) ?? null;
-		const sampleAgeMs = latest ? Math.max(0, atMs - latest.resolvedAtMs) : null;
+		const latest = this.gpuSamples.latest();
+		const sampleAgeMs = latest
+			? Math.max(0, atMs - latest.submittedAtMs)
+			: null;
 		const supported =
 			this.enabled && !this.contextLost && this.extension !== null;
 		let status: GpuTimingStatus = "unavailable";
 		if (supported) {
 			if (
 				this.lastDisjointAtMs !== null &&
-				(!latest || this.lastDisjointAtMs >= latest.resolvedAtMs)
+				(!latest || this.lastDisjointAtMs >= latest.submittedAtMs)
 			)
 				status = "disjoint";
 			else if (
@@ -316,7 +365,7 @@ export class FrameAttribution {
 		}
 
 		const gpuStats = rollingStatistics(
-			this.gpuSamples.map((sample) => sample.valueMs),
+			this.gpuSamples.ordered().map((sample) => sample.valueMs),
 		);
 		const facts = frozenFacts(this.rendererFacts());
 		const rendererApi = this.readStringParameter(this.gl.RENDERER);
@@ -356,7 +405,7 @@ export class FrameAttribution {
 				this.extension = null;
 				return;
 			}
-			this.queries.push({ query, state: "idle" });
+			this.queries.push({ query, state: "idle", submittedAtMs: null });
 		}
 	}
 
@@ -381,9 +430,10 @@ export class FrameAttribution {
 	}
 
 	private resetSamples(): void {
-		for (const samples of this.cpuSamples.values()) samples.length = 0;
-		this.gpuSamples = [];
+		for (const samples of this.cpuSamples.values()) samples.clear();
+		this.gpuSamples.clear();
 		this.lastDisjointAtMs = null;
+		this.disjointActive = false;
 	}
 
 	private readStringParameter(parameter: number): string | null {

@@ -137,6 +137,10 @@ t.check(
 const concurrentEnable = await page.evaluate(async () => {
 	const game = window.__seelite;
 	const before = game.renderer.info.autoReset;
+	const canceled = game.enableFrameAttribution();
+	game.disableFrameAttribution();
+	const canceledResult = await canceled;
+	const canceledStayedDetached = game.attributionSnapshot() === null;
 	const [first, second] = await Promise.all([
 		game.enableFrameAttribution(),
 		game.enableFrameAttribution(),
@@ -144,6 +148,8 @@ const concurrentEnable = await page.evaluate(async () => {
 	const during = game.renderer.info.autoReset;
 	game.disableFrameAttribution();
 	return {
+		canceledResult,
+		canceledStayedDetached,
 		sameSampler: first === second,
 		before,
 		during,
@@ -153,7 +159,9 @@ const concurrentEnable = await page.evaluate(async () => {
 });
 t.check(
 	"concurrent enables share one sampler and disable restores renderer counters",
-	concurrentEnable.sameSampler &&
+	concurrentEnable.canceledResult === null &&
+		concurrentEnable.canceledStayedDetached &&
+		concurrentEnable.sameSampler &&
 		!concurrentEnable.during &&
 		concurrentEnable.after === concurrentEnable.before &&
 		concurrentEnable.snapshotAfter === null,
@@ -200,7 +208,7 @@ const perf = await page.evaluate(() => {
 
 const labels = [
 	"FRAME ATTRIBUTION",
-	"CPU simulation/update",
+	"CPU simulation/step",
 	"CPU render submission",
 	"GPU status",
 	"GPU execution",
@@ -244,7 +252,7 @@ t.check(
 );
 t.check(
 	"named CPU intervals carry samples",
-	snapshot.cpu["simulation/update"].sampleCount > 0 &&
+	snapshot.cpu["simulation/step"].sampleCount > 0 &&
 		snapshot.cpu["render submission/composer"].sampleCount > 0,
 	JSON.stringify(snapshot.cpu),
 );

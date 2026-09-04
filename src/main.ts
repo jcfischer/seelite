@@ -976,7 +976,9 @@ class Game {
 	 * are its entire footprint there and no timer query is issued.
 	 */
 	private frameAttribution: FrameAttribution | null = null;
-	private frameAttributionEnable: Promise<FrameAttribution> | null = null;
+	private frameAttributionEnable: Promise<FrameAttribution | null> | null =
+		null;
+	private frameAttributionGeneration = 0;
 	private rendererInfoAutoReset: boolean | null = null;
 	readonly audio = new AudioFX();
 	private throttle = 0;
@@ -1200,11 +1202,13 @@ class Game {
 	 * not evaluate the sampler module, allocate queries, or change renderer.info.
 	 * A later adaptive controller can call this same method without mounting DOM.
 	 */
-	async enableFrameAttribution(): Promise<FrameAttribution> {
+	async enableFrameAttribution(): Promise<FrameAttribution | null> {
 		if (this.frameAttribution) return this.frameAttribution;
 		if (this.frameAttributionEnable) return this.frameAttributionEnable;
+		const generation = this.frameAttributionGeneration;
 		const pending = (async () => {
 			const { FrameAttribution } = await import("./frame-attribution");
+			if (generation !== this.frameAttributionGeneration) return null;
 			// A second caller may have completed while this import was pending.
 			if (this.frameAttribution) return this.frameAttribution;
 			const attribution = new FrameAttribution({
@@ -1241,6 +1245,8 @@ class Game {
 
 	/** Stop attribution, delete its query ring, and restore Three's counter mode. */
 	disableFrameAttribution(): void {
+		this.frameAttributionGeneration++;
+		this.frameAttributionEnable = null;
 		const attribution = this.frameAttribution;
 		if (!attribution) return;
 		this.frameAttribution = null;
@@ -5537,7 +5543,7 @@ class Game {
 		if (dt > 0) this.step(dt);
 		if (this.frameAttribution)
 			this.frameAttribution.recordCpu(
-				"simulation/update",
+				"simulation/step",
 				performance.now() - updateStartedAt,
 			);
 		this.render(dt);
@@ -6800,6 +6806,7 @@ if (query.has("model-viewer")) {
 	if (query.has("perf"))
 		import("./perf-panel").then(async ({ mountPerfPanel }) => {
 			const attribution = await game.enableFrameAttribution();
+			if (!attribution) return;
 			const unmount = mountPerfPanel({
 				scenes: [game.nearScene, game.approachScene, game.farScene],
 				bloom: game.bloom,
