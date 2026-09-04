@@ -171,6 +171,29 @@ describe("FrameAttribution", () => {
 		});
 	});
 
+	test("uses submission order for age when older queries resolve later", () => {
+		const { attribution, gl } = fixture({ maxQueries: 2 });
+		attribution.enable();
+		attribution.beginGpuFrame(10);
+		attribution.endGpuFrame();
+		attribution.beginGpuFrame(20);
+		attribution.endGpuFrame();
+
+		gl.available.add(2);
+		gl.results.set(2, 2_000_000);
+		attribution.poll(30);
+		gl.available.add(1);
+		gl.results.set(1, 1_000_000);
+		attribution.poll(40);
+
+		expect(attribution.snapshot(40).gpu).toMatchObject({
+			medianMs: 1.5,
+			sampleCount: 2,
+			sampleAgeMs: 20,
+			status: "supported",
+		});
+	});
+
 	test("wraps and reuses a bounded ring", () => {
 		const { attribution, gl } = fixture({ maxQueries: 2 });
 		attribution.enable();

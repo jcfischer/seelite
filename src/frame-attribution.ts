@@ -129,15 +129,6 @@ class SampleRing<T> {
 			return this.values.slice();
 		return this.values.slice(this.next).concat(this.values.slice(0, this.next));
 	}
-
-	latest(): T | null {
-		if (this.values.length === 0) return null;
-		const index =
-			this.values.length < this.capacity
-				? this.values.length - 1
-				: (this.next + this.capacity - 1) % this.capacity;
-		return this.values[index];
-	}
 }
 
 const DEFAULT_MAX_QUERIES = 4;
@@ -342,7 +333,14 @@ export class FrameAttribution {
 		for (const name of CPU_INTERVALS)
 			cpu[name] = rollingStatistics(this.cpuSamples.get(name)?.ordered() ?? []);
 
-		const latest = this.gpuSamples.latest();
+		const gpuSamples = this.gpuSamples.ordered();
+		const latest = gpuSamples.reduce<GpuSample | null>(
+			(newest, sample) =>
+				!newest || sample.submittedAtMs > newest.submittedAtMs
+					? sample
+					: newest,
+			null,
+		);
 		const sampleAgeMs = latest
 			? Math.max(0, atMs - latest.submittedAtMs)
 			: null;
@@ -365,7 +363,7 @@ export class FrameAttribution {
 		}
 
 		const gpuStats = rollingStatistics(
-			this.gpuSamples.ordered().map((sample) => sample.valueMs),
+			gpuSamples.map((sample) => sample.valueMs),
 		);
 		const facts = frozenFacts(this.rendererFacts());
 		const rendererApi = this.readStringParameter(this.gl.RENDERER);
