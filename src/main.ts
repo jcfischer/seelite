@@ -976,6 +976,7 @@ class Game {
 	 * are its entire footprint there and no timer query is issued.
 	 */
 	private frameAttribution: FrameAttribution | null = null;
+	private frameAttributionEnable: Promise<FrameAttribution> | null = null;
 	private rendererInfoAutoReset: boolean | null = null;
 	readonly audio = new AudioFX();
 	private throttle = 0;
@@ -1192,7 +1193,8 @@ class Game {
 	frames = 0;
 
 	/**
-	 * Explicitly start attribution without coupling its lifecycle to the panel.
+	 * Explicitly start attribution without coupling its enable/disable cycle to
+	 * the panel.
 	 *
 	 * The dynamic import is the default-route boundary: constructing Game does
 	 * not evaluate the sampler module, allocate queries, or change renderer.info.
@@ -1200,29 +1202,41 @@ class Game {
 	 */
 	async enableFrameAttribution(): Promise<FrameAttribution> {
 		if (this.frameAttribution) return this.frameAttribution;
-		const { FrameAttribution } = await import("./frame-attribution");
-		const attribution = new FrameAttribution({
-			gl: this.renderer.getContext() as WebGL2RenderingContext,
-			contextEvents: this.renderer.domElement,
-			rendererFacts: () => ({
-				calls: this.renderer.info.render.calls,
-				triangles: this.renderer.info.render.triangles,
-				programs: this.renderer.info.programs?.length ?? 0,
-				geometries: this.renderer.info.memory.geometries,
-				textures: this.renderer.info.memory.textures,
-				drawingBufferWidth: this.renderer.domElement.width,
-				drawingBufferHeight: this.renderer.domElement.height,
-				effectivePixelRatio: this.renderer.getPixelRatio(),
-				renderScale: this.settings.value.renderScale,
-				composerPassCount: this.composer.passes.filter((pass) => pass.enabled)
-					.length,
-			}),
-		});
-		attribution.enable();
-		this.rendererInfoAutoReset = this.renderer.info.autoReset;
-		this.renderer.info.autoReset = false;
-		this.frameAttribution = attribution;
-		return attribution;
+		if (this.frameAttributionEnable) return this.frameAttributionEnable;
+		const pending = (async () => {
+			const { FrameAttribution } = await import("./frame-attribution");
+			// A second caller may have completed while this import was pending.
+			if (this.frameAttribution) return this.frameAttribution;
+			const attribution = new FrameAttribution({
+				gl: this.renderer.getContext() as WebGL2RenderingContext,
+				contextEvents: this.renderer.domElement,
+				rendererFacts: () => ({
+					calls: this.renderer.info.render.calls,
+					triangles: this.renderer.info.render.triangles,
+					programs: this.renderer.info.programs?.length ?? 0,
+					geometries: this.renderer.info.memory.geometries,
+					textures: this.renderer.info.memory.textures,
+					drawingBufferWidth: this.renderer.domElement.width,
+					drawingBufferHeight: this.renderer.domElement.height,
+					effectivePixelRatio: this.renderer.getPixelRatio(),
+					renderScale: this.settings.value.renderScale,
+					composerPassCount: this.composer.passes.filter((pass) => pass.enabled)
+						.length,
+				}),
+			});
+			attribution.enable();
+			this.rendererInfoAutoReset = this.renderer.info.autoReset;
+			this.renderer.info.autoReset = false;
+			this.frameAttribution = attribution;
+			return attribution;
+		})();
+		this.frameAttributionEnable = pending;
+		try {
+			return await pending;
+		} finally {
+			if (this.frameAttributionEnable === pending)
+				this.frameAttributionEnable = null;
+		}
 	}
 
 	/** Stop attribution, delete its query ring, and restore Three's counter mode. */

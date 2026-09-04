@@ -9,8 +9,8 @@
  * ANGLE rasterizer, and alternates detached/attached blocks on one page so
  * scene, drawing buffer, browser, and thermal drift stay comparable.
  *
- * The measured duration is JavaScript submission time around one `Game.render`
- * per display frame. It is the sampler's CPU overhead, not GPU execution time.
+ * The measured duration wraps the `Game.render` already called by the live
+ * loop. It is the sampler's CPU overhead, not GPU execution time.
  * GPU execution comes separately from the sampler's delayed timer queries;
  * requestAnimationFrame cadence is intentionally not presented as GPU cost.
  */
@@ -50,20 +50,37 @@ const measureBlock = (enabled) =>
 	page.evaluate(
 		async ({ enabled: attach, frames }) => {
 			const game = window.__seelite;
+			if (!window.__frameAttributionMeasure) {
+				const state = { capture: false, samples: [] };
+				const render = game.render.bind(game);
+				game.render = (...args) => {
+					const started = performance.now();
+					try {
+						return render(...args);
+					} finally {
+						if (state.capture) state.samples.push(performance.now() - started);
+					}
+				};
+				window.__frameAttributionMeasure = state;
+			}
+			const state = window.__frameAttributionMeasure;
 			if (attach) await game.enableFrameAttribution();
 			else game.disableFrameAttribution();
-			// Let the lifecycle change and query ring settle outside the samples.
+			// Let the enable/disable change and query ring settle outside the samples.
 			for (let i = 0; i < 8; i++)
 				await new Promise((resolve) => requestAnimationFrame(resolve));
-			const samples = [];
-			for (let i = 0; i < frames; i++) {
-				await new Promise((resolve) => requestAnimationFrame(resolve));
-				const started = performance.now();
-				game.render(0);
-				samples.push(performance.now() - started);
-			}
+			state.samples = [];
+			state.capture = true;
+			await new Promise((resolve) => {
+				const waitForSamples = () =>
+					state.samples.length >= frames
+						? resolve()
+						: requestAnimationFrame(waitForSamples);
+				requestAnimationFrame(waitForSamples);
+			});
+			state.capture = false;
 			return {
-				samples,
+				samples: state.samples.slice(0, frames),
 				snapshot: game.attributionSnapshot(),
 				buffer: {
 					width: game.renderer.domElement.width,

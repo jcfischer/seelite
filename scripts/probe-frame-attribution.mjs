@@ -29,29 +29,56 @@ const WATCH_WEBGL = () => {
 		resultReads: 0,
 		readPixels: 0,
 		timerExtensionReads: 0,
+		queryEvents: [],
 	};
 	window.__frameAttributionCalls = calls;
 	const proto = globalThis.WebGL2RenderingContext?.prototype;
 	if (!proto) return;
-	const wrap = (name, count) => {
+	const queryIds = new WeakMap();
+	let nextQueryId = 1;
+	const queryId = (query) => {
+		if (!queryIds.has(query)) queryIds.set(query, nextQueryId++);
+		return queryIds.get(query);
+	};
+	const wrap = (name, before, after = () => {}) => {
 		const original = proto[name];
 		if (typeof original !== "function") return;
 		proto[name] = function (...args) {
-			count.call(this, args);
-			return Reflect.apply(original, this, args);
+			before.call(this, args);
+			const result = Reflect.apply(original, this, args);
+			after.call(this, args, result);
+			return result;
 		};
 	};
-	wrap("beginQuery", () => calls.beginQuery++);
+	wrap("beginQuery", (args) => {
+		calls.beginQuery++;
+		calls.queryEvents.push({ kind: "begin", id: queryId(args[1]) });
+	});
 	wrap("endQuery", () => calls.endQuery++);
 	wrap("readPixels", () => calls.readPixels++);
 	wrap("getExtension", (args) => {
 		if (args[0] === "EXT_disjoint_timer_query_webgl2")
 			calls.timerExtensionReads++;
 	});
-	wrap("getQueryParameter", function (args) {
-		if (args[1] === this.QUERY_RESULT_AVAILABLE) calls.availableReads++;
-		if (args[1] === this.QUERY_RESULT) calls.resultReads++;
-	});
+	wrap(
+		"getQueryParameter",
+		() => {},
+		function (args, result) {
+			const id = queryId(args[0]);
+			if (args[1] === this.QUERY_RESULT_AVAILABLE) {
+				calls.availableReads++;
+				calls.queryEvents.push({
+					kind: "available",
+					id,
+					ready: Boolean(result),
+				});
+			}
+			if (args[1] === this.QUERY_RESULT) {
+				calls.resultReads++;
+				calls.queryEvents.push({ kind: "result", id });
+			}
+		},
+	);
 };
 
 const origin = await guardedOrigin(ORIGIN, [
@@ -105,6 +132,32 @@ t.check(
 		fpsRoute.calls.endQuery === 0 &&
 		fpsRoute.calls.resultReads === 0,
 	JSON.stringify(fpsRoute.calls),
+);
+
+const concurrentEnable = await page.evaluate(async () => {
+	const game = window.__seelite;
+	const before = game.renderer.info.autoReset;
+	const [first, second] = await Promise.all([
+		game.enableFrameAttribution(),
+		game.enableFrameAttribution(),
+	]);
+	const during = game.renderer.info.autoReset;
+	game.disableFrameAttribution();
+	return {
+		sameSampler: first === second,
+		before,
+		during,
+		after: game.renderer.info.autoReset,
+		snapshotAfter: game.attributionSnapshot(),
+	};
+});
+t.check(
+	"concurrent enables share one sampler and disable restores renderer counters",
+	concurrentEnable.sameSampler &&
+		!concurrentEnable.during &&
+		concurrentEnable.after === concurrentEnable.before &&
+		concurrentEnable.snapshotAfter === null,
+	JSON.stringify(concurrentEnable),
 );
 
 // ── ?perf owns the sampler and reports the rendered frame ──────────────────
@@ -167,6 +220,15 @@ t.check(
 );
 
 const snapshot = perf.snapshot;
+const readyQueries = new Set();
+const resultOrderIsValid = perf.calls.queryEvents.every((event) => {
+	if (event.kind === "begin") readyQueries.delete(event.id);
+	if (event.kind === "available" && event.ready) readyQueries.add(event.id);
+	if (event.kind !== "result") return true;
+	if (!readyQueries.has(event.id)) return false;
+	readyQueries.delete(event.id);
+	return true;
+});
 const timingIsExplicit = snapshot.gpu.supported
 	? snapshot.gpu.status === "supported" &&
 		snapshot.gpu.sampleCount > 0 &&
@@ -210,7 +272,7 @@ t.check(
 	!snapshot.gpu.supported ||
 		(perf.calls.beginQuery > 0 &&
 			perf.calls.endQuery > 0 &&
-			perf.calls.availableReads >= perf.calls.resultReads &&
+			resultOrderIsValid &&
 			perf.calls.resultReads > 0),
 	JSON.stringify(perf.calls),
 );

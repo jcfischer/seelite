@@ -92,7 +92,7 @@ export type FrameAttributionOptions = {
 	staleAfterMs?: number;
 };
 
-type QuerySlot = {
+type QueryEntry = {
 	query: WebGLQuery;
 	state: "idle" | "active" | "pending";
 };
@@ -140,8 +140,8 @@ function frozenFacts(facts: RendererFacts): RendererFacts {
 /**
  * A fixed-size reusable WebGL query ring plus bounded rolling CPU/GPU samples.
  *
- * `beginGpuFrame` polls older slots before starting a new one. It skips a frame
- * when every slot is pending rather than waiting for the GPU. Query objects are
+ * `beginGpuFrame` polls older entries before starting a new one. It skips a
+ * frame when every entry is pending rather than waiting for the GPU. Queries are
  * reused after their results resolve, so a long-running diagnostic stays at
  * `maxQueries` allocations.
  */
@@ -157,9 +157,9 @@ export class FrameAttribution {
 	private contextLost = false;
 	private extension: TimerQueryExtension | null = null;
 	private debugRenderer: DebugRendererExtension | null = null;
-	private slots: QuerySlot[] = [];
-	private nextSlot = 0;
-	private activeSlot: number | null = null;
+	private queries: QueryEntry[] = [];
+	private nextQuery = 0;
+	private activeQuery: number | null = null;
 	private readonly cpuSamples = new Map<CpuInterval, number[]>();
 	private gpuSamples: GpuSample[] = [];
 	private lastDisjointAtMs: number | null = null;
@@ -180,7 +180,7 @@ export class FrameAttribution {
 		for (const name of CPU_INTERVALS) this.cpuSamples.set(name, []);
 	}
 
-	/** Allocate the ring and start listening for context lifecycle events. */
+	/** Allocate the ring and start listening for WebGL context events. */
 	enable(): void {
 		if (this.enabled) return;
 		this.enabled = true;
@@ -224,7 +224,7 @@ export class FrameAttribution {
 	}
 
 	/**
-	 * Poll ready older slots, then begin a timer query if one is idle.
+	 * Poll ready older entries, then begin a timer query if one is idle.
 	 * Returns false when unsupported, disabled, lost, already active, or full.
 	 */
 	beginGpuFrame(atMs = this.now()): boolean {
@@ -232,18 +232,18 @@ export class FrameAttribution {
 			!this.enabled ||
 			this.contextLost ||
 			!this.extension ||
-			this.activeSlot !== null
+			this.activeQuery !== null
 		)
 			return false;
 		this.poll(atMs);
-		for (let offset = 0; offset < this.slots.length; offset++) {
-			const index = (this.nextSlot + offset) % this.slots.length;
-			const slot = this.slots[index];
-			if (slot.state !== "idle") continue;
-			this.gl.beginQuery(this.extension.TIME_ELAPSED_EXT, slot.query);
-			slot.state = "active";
-			this.activeSlot = index;
-			this.nextSlot = (index + 1) % this.slots.length;
+		for (let offset = 0; offset < this.queries.length; offset++) {
+			const index = (this.nextQuery + offset) % this.queries.length;
+			const entry = this.queries[index];
+			if (entry.state !== "idle") continue;
+			this.gl.beginQuery(this.extension.TIME_ELAPSED_EXT, entry.query);
+			entry.state = "active";
+			this.activeQuery = index;
+			this.nextQuery = (index + 1) % this.queries.length;
 			return true;
 		}
 		return false;
@@ -251,10 +251,10 @@ export class FrameAttribution {
 
 	/** End only the query begun by `beginGpuFrame`; never waits for it. */
 	endGpuFrame(): void {
-		if (this.activeSlot === null || !this.extension) return;
+		if (this.activeQuery === null || !this.extension) return;
 		this.gl.endQuery(this.extension.TIME_ELAPSED_EXT);
-		this.slots[this.activeSlot].state = "pending";
-		this.activeSlot = null;
+		this.queries[this.activeQuery].state = "pending";
+		this.activeQuery = null;
 	}
 
 	/** Poll pending queries without asking for a result until it is available. */
@@ -263,21 +263,21 @@ export class FrameAttribution {
 		if (this.gl.getParameter(this.extension.GPU_DISJOINT_EXT)) {
 			this.gpuSamples = [];
 			this.lastDisjointAtMs = atMs;
-			for (const slot of this.slots)
-				if (slot.state === "pending") slot.state = "idle";
+			for (const entry of this.queries)
+				if (entry.state === "pending") entry.state = "idle";
 			return;
 		}
-		for (const slot of this.slots) {
-			if (slot.state !== "pending") continue;
+		for (const entry of this.queries) {
+			if (entry.state !== "pending") continue;
 			const available = this.gl.getQueryParameter(
-				slot.query,
+				entry.query,
 				this.gl.QUERY_RESULT_AVAILABLE,
 			);
 			if (!available) continue;
 			const nanoseconds = Number(
-				this.gl.getQueryParameter(slot.query, this.gl.QUERY_RESULT),
+				this.gl.getQueryParameter(entry.query, this.gl.QUERY_RESULT),
 			);
-			slot.state = "idle";
+			entry.state = "idle";
 			if (!Number.isFinite(nanoseconds) || nanoseconds < 0) continue;
 			this.gpuSamples.push({
 				valueMs: nanoseconds / 1_000_000,
@@ -356,28 +356,28 @@ export class FrameAttribution {
 				this.extension = null;
 				return;
 			}
-			this.slots.push({ query, state: "idle" });
+			this.queries.push({ query, state: "idle" });
 		}
 	}
 
 	private disposeQueries(): void {
-		if (this.activeSlot !== null && this.extension) {
+		if (this.activeQuery !== null && this.extension) {
 			try {
 				this.gl.endQuery(this.extension.TIME_ELAPSED_EXT);
 			} catch {
 				// A lost context may already have invalidated the active query.
 			}
 		}
-		for (const slot of this.slots) {
+		for (const entry of this.queries) {
 			try {
-				this.gl.deleteQuery(slot.query);
+				this.gl.deleteQuery(entry.query);
 			} catch {
 				// Deletion on a lost context is best-effort; references are dropped below.
 			}
 		}
-		this.slots = [];
-		this.activeSlot = null;
-		this.nextSlot = 0;
+		this.queries = [];
+		this.activeQuery = null;
+		this.nextQuery = 0;
 	}
 
 	private resetSamples(): void {
