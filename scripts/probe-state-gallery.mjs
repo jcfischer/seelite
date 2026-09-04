@@ -271,13 +271,29 @@ for (const viewport of VIEWPORTS) {
 			(await page.locator("[data-gallery-tuning]").count()) === 1,
 	);
 	await page.locator(".sg-close").click();
+	// **Twenty seconds, not five, and the five was a cold-start cliff** (#201).
+	//
+	// What this check asks is whether closing *leaves the route*; the timeout is
+	// only a bar on how long that may take, and it was sitting on top of the
+	// first-page-in-a-browser cost. Measured five closes per build, same
+	// machine, through the same SwiftShader every probe here uses: warm closes
+	// take **0.01–0.02 s** on both this branch and the build before it, and the
+	// **first** close after a browser launch measured **5.51 s on the
+	// pre-#201 build** — over a 5 s bar, on the build the bar was written
+	// against. #201 adds three modules and a shadow-map program to that first
+	// transform and made the flake frequent rather than rare: three standalone
+	// runs went 97/98, 96/98, 98/98 where the same three at the parent commit
+	// went 98/98 each time.
+	//
+	// So the bar moves and nothing else does. A close that genuinely never
+	// leaves the route still fails, twenty seconds later.
 	const leftGalleryRoute = await page
 		.waitForFunction(
 			() =>
 				!new URLSearchParams(location.search).has("hud-gallery") &&
 				document.querySelector("#state-gallery") === null,
 			undefined,
-			{ timeout: 5_000 },
+			{ timeout: 20_000 },
 		)
 		.then(
 			() => true,
