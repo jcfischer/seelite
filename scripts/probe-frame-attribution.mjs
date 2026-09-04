@@ -211,7 +211,7 @@ const labels = [
 	"CPU simulation/step",
 	"CPU render submission",
 	"GPU status",
-	"GPU execution",
+	"GPU composer execution",
 	"draw calls / triangles",
 	"programs / geometries",
 	"drawing buffer",

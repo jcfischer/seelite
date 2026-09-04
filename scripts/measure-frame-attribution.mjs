@@ -1,5 +1,5 @@
 /**
- * Headed CPU-overhead evidence for the live frame-attribution sampler.
+ * Headed attached/detached CPU evidence for the live frame-attribution sampler.
  *
  *   npm run dev
  *   node scripts/measure-frame-attribution.mjs
@@ -10,8 +10,9 @@
  * scene, drawing buffer, browser, and thermal drift stay comparable.
  *
  * The measured duration wraps the `Game.render` already called by the live
- * loop. It is the sampler's CPU overhead, not GPU execution time.
- * GPU execution comes separately from the sampler's delayed timer queries;
+ * loop. The between-block delta is an observed association, not an isolated
+ * sampler cost: it also contains ordinary render variation between blocks.
+ * Composer GPU time comes separately from the sampler's delayed timer queries;
  * requestAnimationFrame cadence is intentionally not presented as GPU cost.
  */
 import { bootedGame, guardedOrigin, launchChromium } from "./probe-guard.mjs";
@@ -124,13 +125,13 @@ console.log(
 	`attached CPU submission: ${attachedMedian.toFixed(3)} ms median block, ${p95(attached).toFixed(3)} ms p95 block`,
 );
 console.log(
-	`attribution CPU overhead: ${deltaMs >= 0 ? "+" : ""}${deltaMs.toFixed(3)} ms (${deltaPercent >= 0 ? "+" : ""}${deltaPercent.toFixed(1)}%)`,
+	`observed attached-minus-detached delta: ${deltaMs >= 0 ? "+" : ""}${deltaMs.toFixed(3)} ms (${deltaPercent >= 0 ? "+" : ""}${deltaPercent.toFixed(1)}%)`,
 );
 console.log(
-	`delayed GPU state: ${lastAttached.gpu.status}, ${lastAttached.gpu.sampleCount} retained samples, ${lastAttached.gpu.medianMs?.toFixed(3) ?? "—"} ms median`,
+	`delayed composer GPU state: ${lastAttached.gpu.status}, ${lastAttached.gpu.sampleCount} retained samples, ${lastAttached.gpu.medianMs?.toFixed(3) ?? "—"} ms median`,
 );
 console.log(
-	"scope: CPU submission overhead only; requestAnimationFrame cadence is not GPU execution time",
+	"scope: whole-render CPU submission A/B plus composer-only GPU time; requestAnimationFrame cadence is not GPU execution time",
 );
 
 await browser.close();
