@@ -197,6 +197,7 @@ try {
 				const c = g.contacts.find((c) => c.id === id);
 				const pos = c.pos;
 				const regime = g.regime;
+				const throttle = g.throttle;
 				// All review hulls boot inside the existing 50 km ETA arrival
 				// radius. Move one outside it to exercise both non-zero paths.
 				c.pos = {
@@ -208,6 +209,7 @@ try {
 					const normal = g.navRows().find((row) => row.id === id).etaSeconds;
 					const expectedNormal = g.timeToBody(c);
 					g.regime = "cruise";
+					g.throttle = 1;
 					g.navEtaCache.clear();
 					const cruise = g.navRows().find((row) => row.id === id).etaSeconds;
 					return {
@@ -219,14 +221,17 @@ try {
 				} finally {
 					c.pos = pos;
 					g.regime = regime;
+					g.throttle = throttle;
 					g.navEtaCache.clear();
 				}
 			}, id);
 			check(
 				`${query}: non-zero Navigation ETA uses the existing flight and cruise laws`,
 				estimates.normal > 0 &&
+					Number.isFinite(estimates.normal) &&
 					estimates.normal === estimates.expectedNormal &&
 					estimates.cruise > 0 &&
+					Number.isFinite(estimates.cruise) &&
 					estimates.cruise === estimates.expectedCruise,
 				JSON.stringify(estimates),
 			);
