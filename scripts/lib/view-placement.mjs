@@ -385,3 +385,95 @@ export async function installViewFraming(page) {
 		};
 	});
 }
+
+/**
+ * Cycle to a view through the key the player has, and stop when it arrives.
+ *
+ * Here rather than in each caller because #201 added two scripts that both
+ * needed it and both wrote it — and the loop is not the obvious one. `v`
+ * *cycles*, so a single press reaches the second view and not the named one,
+ * and a third view arriving later would turn a wrong frame into a
+ * `waitForFunction` timeout that reads as a hung browser rather than as the
+ * one-line cause it is. The bound is what makes the failure legible.
+ *
+ * The key rather than `game.view =`: pressing it runs the transition the game
+ * runs on a real toggle, including the head-look reset, and an assignment
+ * skips both. `capture-views.mjs` has its own copy for its own reason — it
+ * must not fire on the workbench page, which has no view cycle at all.
+ */
+export async function setView(page, want) {
+	for (let i = 0; i < 8; i++) {
+		if ((await page.evaluate(() => window.__seelite.view)) === want) return;
+		await page.keyboard.press("v");
+	}
+	throw new Error(`could not reach the ${want} view in eight presses`);
+}
+
+/**
+ * Let three frames go by, which is what a re-framed shot needs before it can be
+ * measured.
+ *
+ * Three and not one: the near/far handoff has a hysteresis band and a station's
+ * surface is built lazily, so the first frame after a camera move can be drawn
+ * before either has caught up. `capture-views.mjs` waits the same three before
+ * every shutter and says so.
+ */
+export function settleFrames(page, frames = 3) {
+	return page.evaluate(
+		(n) =>
+			new Promise((done) => {
+				let left = n;
+				const tick = () => (left-- ? requestAnimationFrame(tick) : done());
+				requestAnimationFrame(tick);
+			}),
+		frames,
+	);
+}
+
+/**
+ * The two framings #201's probe and its cost instrument both take, in one
+ * place.
+ *
+ * Not a third copy of the view set — `view-set.mjs` owns the canonical sheet
+ * and these are not on it. What they are is a *pair* of scripts that must frame
+ * the same shot: `probe-occlusion.mjs` checks what the occlusion does to a
+ * frame and `measure-occlusion-cost.mjs` prices the same frame, and a receipt
+ * that quotes both is only coherent if the camera was in the same place. Two
+ * copies of `headLook: { yaw: -0.75, pitch: -0.2 }` is exactly how that stops
+ * being true without anything going red.
+ */
+export const OCCLUSION_FRAMINGS = Object.freeze({
+	/** Five silhouette radii down a trade station's aperture axis, from inside
+	 *  the cabin — `cockpit-arrival`'s framing, where about 40% of the frame is
+	 *  cockpit and the ambient occlusion has fittings to find. */
+	cockpit: {
+		view: "cockpit",
+		place: (page) =>
+			page.evaluate(
+				([id, radii]) =>
+					window.__viewAlongAxis(id, window.__radiusOf(id) * radii, {
+						comoving: true,
+					}),
+				["station-trade", 5],
+			),
+	},
+	/** Docked at a trade station's overhead-near berth, looking off-axis —
+	 *  `berth-free-look`'s framing. The enclosed bay is the one place in this
+	 *  game where the star's shadow reads at all, and the room #201 was opened
+	 *  over for its corners. */
+	berth: {
+		view: "chase",
+		place: (page) =>
+			page.evaluate(
+				([id, berth, opts]) => window.__parkInBerth(id, berth, opts),
+				[
+					"station-trade",
+					"overhead-near",
+					{
+						stopAtArrivalFraction: 1,
+						headLook: { yaw: -0.75, pitch: -0.2 },
+					},
+				],
+			),
+	},
+});

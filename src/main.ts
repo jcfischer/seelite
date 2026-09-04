@@ -67,6 +67,7 @@
 
 import * as THREE from "three";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 
@@ -84,6 +85,19 @@ import {
 	envRotation,
 	equirectEnvironment,
 } from "./light-rig";
+import {
+	OCCLUSION,
+	SHADOW_MAP_TEXELS,
+	type ShadowSubject,
+	shadowBox,
+	shadowFit,
+} from "./occlusion";
+import {
+	hideNonOccluders,
+	markOcclusion,
+	restoreVisibility,
+	subjectOf,
+} from "./occlusion-mesh";
 import { SettingsStore } from "./settings";
 import type {
 	FrameAttribution,
@@ -1725,6 +1739,18 @@ class Game {
 		// depth surviving between two of them and being dropped between two
 		// others, which an automatic clear would undo.
 		this.renderer.autoClear = false;
+		// **#201's shadow map, and it is enabled here rather than in
+		// `applyQuality`.** `WebGLRenderer.shadowMap.enabled` is a program key:
+		// flipping it recompiles every material in the frame, which is a stall
+		// the player would feel on a settings change. The gate is on the *light*
+		// instead — `sun.castShadow` — so low pays a boolean per frame and not a
+		// recompile, and the map is simply never rendered.
+		//
+		// `PCFSoftShadowMap` because the alternative at this map size is a hard
+		// stair-stepped edge on a hull's own self-shadow, which reads as a
+		// texture artefact rather than as a shadow.
+		this.renderer.shadowMap.enabled = true;
+		this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 		document.body.appendChild(this.renderer.domElement);
 
 		const aspect = window.innerWidth / window.innerHeight;
@@ -1860,6 +1886,99 @@ class Game {
 		this.composer.addPass(farPass);
 		this.composer.addPass(approachPass);
 		this.composer.addPass(nearPass);
+		// **#201's ambient occlusion, between the near pass and the bloom.**
+		//
+		// Between them and not after, because bloom reads luminance: AO applied
+		// afterwards would darken a contact the halo had already been computed
+		// from, and the halo would go on glowing out of a crevice that is now
+		// dark. Before the near pass is not an option either — there is nothing
+		// to occlude yet.
+		//
+		// **It is scoped to the near scene by construction, which is what
+		// answers the node's worry about `clearDepth`.** `GTAOPass` does not read
+		// the composite's depth at all: it renders its *own* normal-and-depth
+		// buffer from the scene and camera handed to it here, so the depth it
+		// samples is the near layer's whether or not the near pass cleared
+		// anything. The fallback to `SAOPass` the node allowed for is not needed
+		// and is not taken. Where the near layer drew nothing the depth is the
+		// far plane and the AO shader discards, leaving the far layer's planets
+		// exactly as the near pass composited them.
+		//
+		// Sized at a fraction of the drawing buffer, like bloom and for a reason
+		// that was measured rather than assumed — `OCCLUSION.ao.resolutionScale`
+		// carries the table. The short of it: at the full buffer this pass alone
+		// is 2.9x the whole rest of the frame, and halving it is a 3.1x saving.
+		// **That brings this pass inside #201's one-to-two-millisecond estimate
+		// and it does not bring the pair inside it**: with the shadow map beside
+		// it the two cost 2.32–2.46 ms against a 1.85–2.03 ms frame.
+		// `settings.ts` carries the table and the open question.
+		this.gtaoPass = new GTAOPass(
+			this.nearScene,
+			this.nearCamera,
+			...aoResolution(this.renderer.getPixelRatio()).toArray(),
+		);
+		this.gtaoPass.blendIntensity = OCCLUSION.ao.blendIntensity;
+		this.gtaoPass.updateGtaoMaterial({
+			radius: OCCLUSION.ao.radius,
+			distanceExponent: OCCLUSION.ao.distanceExponent,
+			thickness: OCCLUSION.ao.thicknessKm,
+			scale: OCCLUSION.ao.scale,
+			samples: OCCLUSION.ao.samples,
+			screenSpaceRadius: OCCLUSION.ao.screenSpaceRadius,
+		});
+		// **Three's own visibility override, replaced.** The pass renders its
+		// G-buffer over everything visible in the scene with
+		// `MeshNormalMaterial`, which writes depth for materials that do not —
+		// and the canopy is one, so the occlusion of a sheet of glass was
+		// landing on the sky behind it. `occlusion-mesh.ts` owns the rule and
+		// the figures; the short of it is that the two passes now see the same
+		// surfaces, because a thing that casts no shadow occludes nothing.
+		//
+		// Replaced on the instance rather than subclassed: three calls these two
+		// as methods on itself, `_visibilityCache` is the map it hands back to
+		// `restoreVisibility`, and a subclass would exist to hold two functions.
+		const pass = this.gtaoPass as unknown as {
+			scene: THREE.Scene;
+			_visibilityCache: Map<THREE.Object3D, boolean>;
+			overrideVisibility(): void;
+			restoreVisibility(): void;
+		};
+		//
+		// **And the shadow map is pinned across it, which is a frame the pass was
+		// paying twice.** `GTAOPass.renderOverride` is a full
+		// `WebGLRenderer.render` of the near scene with a normal material — so
+		// three re-rendered the whole 2048² depth map, every caster in it, for a
+		// G-buffer that samples no shadow at all. `shadowMap.autoUpdate` off for
+		// the duration is the standard way to say "the map you have is current",
+		// and these two hooks are the natural place because they already bracket
+		// exactly that render.
+		pass.overrideVisibility = () => {
+			this.shadowAutoUpdate = this.renderer.shadowMap.autoUpdate;
+			this.renderer.shadowMap.autoUpdate = false;
+			hideNonOccluders(pass.scene, pass._visibilityCache);
+		};
+		pass.restoreVisibility = () => {
+			restoreVisibility(pass._visibilityCache);
+			this.renderer.shadowMap.autoUpdate = this.shadowAutoUpdate;
+		};
+		this.composer.addPass(this.gtaoPass);
+		// **The stored choice, applied once both passes exist to apply it to.**
+		//
+		// The settings subscription fires on a *difference*, so nothing reruns
+		// the gate on a page that simply loads with a stored preference — the
+		// same line `output-stage.ts` records for the dither. #201 needed it
+		// twice over: `applyQuality` runs from `buildEnvironment`, which is
+		// inside `buildLights`, and at that moment neither the shadow-casting
+		// sun nor this pass exists, so `setOcclusion` guarded both fields and
+		// returned. `Pass.enabled` then defaults to `true` and
+		// `DirectionalLight.castShadow` is set a few lines later, so a player who
+		// had chosen `low` and come back got both passes anyway until they
+		// touched the setting.
+		//
+		// This is the last of the two constructions, so one call here covers
+		// both. `probe-occlusion.mjs`'s cold-boot row is the check, and it goes
+		// red on this line alone being removed.
+		this.setOcclusion();
 		// Kept as a field so `perf-panel.ts` can switch it live. A full-screen
 		// multi-pass blur at up to 2x device pixel ratio is a fixed cost every
 		// frame whatever is on screen, so it is the first thing to price against
@@ -2228,6 +2347,13 @@ class Game {
 				// changes, and #109 makes it a fixed-slot seeded value that does
 				// not move.
 				paintNameplates(built, this.nameOfStation(body.id));
+				// #201. After the nameplates, so the plates — `MeshBasicMaterial`,
+				// a lit sign — are already in the subtree the rule refuses them
+				// from rather than being added behind the walk's back.
+				this.markedOcclusion.push([
+					`station-${station.type}`,
+					markOcclusion(built.root),
+				]);
 				this.stationVisuals.set(body.id, built);
 			} else if (body.appearance) {
 				// #54's classes, drawn by the game rather than by the gallery.
@@ -2353,7 +2479,63 @@ class Game {
 		);
 		fill.name = "fill";
 		this.nearScene.add(fill);
+
+		// **#201: one shadow-casting light in the game, and it is the near
+		// layer's sun.** The far and approach suns are left alone — a planet
+		// three astronomical units away has nothing in front of it to receive,
+		// and its own surface shader never samples a shadow map in any case
+		// (`planet-surface.ts` is a `ShaderMaterial`; the environment does not
+		// reach it either, for the same reason).
+		//
+		// The cockpit's two point lights are left alone too, and that is a
+		// decision rather than an omission: a point light's shadow is six
+		// renders of the scene into a cube, per light, per frame. The sun is the
+		// direction the cabin was missing.
+		const nearSun = this.layerLights.find(
+			(rig) => rig.scene === this.nearScene,
+		);
+		if (nearSun) {
+			this.shadowSun = nearSun.sun;
+			this.shadowSun.shadow.mapSize.set(SHADOW_MAP_TEXELS, SHADOW_MAP_TEXELS);
+			// **A target of its own, in the scene.** Every other light here aims
+			// by `position` alone against the default target at the origin, which
+			// works because a directional light's *direction* is all three layers
+			// read. A shadow camera reads the position as well: it stands at the
+			// light and looks at the target, so a subject that is not at the
+			// origin — a station four kilometres away — needs the pair moved
+			// together. `render` sets both, and the direction between them stays
+			// exactly `STAR_DIR`, so nothing about the lighting changes.
+			this.shadowTarget.name = "sun-shadow-target";
+			this.nearScene.add(this.shadowTarget);
+			this.shadowSun.target = this.shadowTarget;
+			// `up` is set per frame in `fitShadowCamera`, not here: three's
+			// shadow camera is aimed with `lookAt`, which is degenerate when the
+			// view direction is parallel to `up` — and the view direction here is
+			// the star's, which sweeps the whole sphere as the ship crosses a
+			// system.
+			//
+			// **The stored choice is applied where the composer is built, not
+			// here**, and the difference took a red build to establish. Both
+			// passes were on at boot whatever the player had saved — the shadow
+			// because `buildEnvironment` ends with `applyQuality` before this
+			// block assigns `shadowSun`, the ambient occlusion because the
+			// composer does not exist yet either — and the obvious repair was a
+			// `setOcclusion()` at each of the two sites. It is one call, at the
+			// later of them: by the time the composer has its pass this field is
+			// long since set, so a call here is inert. Deleting it leaves
+			// `probe-occlusion.mjs`'s cold-boot row green, which is how that was
+			// found and why it is not here.
+		}
 	}
+
+	/** The near layer's sun, once `buildLights` has given it a shadow camera —
+	 *  the one shadow-casting light in the game (#201). */
+	private shadowSun: THREE.DirectionalLight | null = null;
+	/** What that sun looks at. Moved to the fitted subject's centre each frame;
+	 *  `buildLights` says why a target object is needed at all. */
+	private readonly shadowTarget = new THREE.Object3D();
+	/** Scratch for the frame's subject list, so a render allocates no array. */
+	private readonly shadowCandidates: ShadowSubject[] = [];
 
 	/** The two star-aimed lights of each layer, with the scene they belong to.
 	 *  Built once by `buildLights` — once per `Game` and not per system, which
@@ -2363,6 +2545,17 @@ class Game {
 		sun: THREE.DirectionalLight;
 		hemisphere: THREE.HemisphereLight;
 	}[] = [];
+
+	/** What `shadowMap.autoUpdate` was before the ambient-occlusion pass pinned
+	 *  it, so the pass restores the renderer's setting rather than assuming it
+	 *  was on (#201). */
+	private shadowAutoUpdate = true;
+
+	/** #201's ambient-occlusion pass, kept as a field for the reason `bloomPass`
+	 *  is: the quality gate enables and disables it per frame, and
+	 *  `measure-occlusion-cost.mjs` needs the same switch without going through
+	 *  the settings store. Built with the composer. */
+	private gtaoPass!: GTAOPass;
 
 	/** The baked lighting environment, kept so the quality setting can put it
 	 *  back after dropping it — `scene.environment = null` is how low drops it,
@@ -2442,6 +2635,46 @@ class Game {
 		// answer for every plated surface in the game rather than one per
 		// surface. `cockpit-surface.ts` owns what a cabin surface costs.
 		applyCockpitQuality(this.settings.value.quality);
+		// #201's two passes. A call rather than two lines here for
+		// `setComposerSamples`'s reason: an instrument that priced them by moving
+		// the player's setting would write `localStorage` and notify every other
+		// listener, and each term has to be movable on its own to be priced apart
+		// from the other.
+		this.setOcclusion();
+	}
+
+	/**
+	 * Turn #201's shadow map and ambient occlusion on or off — the player's
+	 * quality row by default, an explicit pair for an instrument.
+	 *
+	 * The shadow gate is `castShadow` on the one light rather than
+	 * `renderer.shadowMap.enabled`. **Both are program keys and the difference
+	 * is not that one is free** — that is what an earlier version of this
+	 * paragraph claimed, and it is wrong: `WebGLLights` counts shadow-casting
+	 * directional lights, `WebGLPrograms` puts `numDirLightShadows` in the cache
+	 * key, so flipping the light's flag also lands on a shader variant the
+	 * context may not have built yet. What it buys is *which* variants: the two
+	 * this setting moves between are the two the game already draws, so the pair
+	 * is compiled once each and switching thereafter is a cache hit, while
+	 * `shadowMap.enabled` is a renderer-wide flag whose effect on the frame was
+	 * measured and is larger than the pass it gates —
+	 * `probe-ship-visuals.mjs`'s seam row and `probe-navigation-console.mjs`'s
+	 * frame count both moved when it alone was flipped.
+	 */
+	setOcclusion(
+		shadows: boolean = LIGHT_RIG.quality[this.settings.value.quality].shadows,
+		ao: boolean = LIGHT_RIG.quality[this.settings.value.quality].ao,
+	) {
+		if (this.shadowSun) this.shadowSun.castShadow = shadows;
+		// **Both guards are real and both have a call site that follows them.**
+		// `applyQuality` runs from `buildEnvironment`, which is inside
+		// `buildLights` — before the sun is wired and long before the composer
+		// exists — so on the boot path this method is called twice against two
+		// null fields. Each field's own construction site calls it again, which
+		// is what makes the player's saved setting arrive. Neither guard is a
+		// "harmless" skip: dropping either call site leaves that pass on at boot
+		// whatever was saved, and nothing in the frame says so.
+		if (this.gtaoPass) this.gtaoPass.enabled = ao;
 	}
 
 	/**
@@ -2516,8 +2749,24 @@ class Game {
 		// #26's to give.
 		this.shipMesh = buildShipMesh(...PLAYER_HULL).root;
 		this.shipMesh.name = "ship";
+		// #201. Once at build, not per frame: a hull's materials do not change
+		// class after it is built, and the walk is a full traverse.
+		this.markedOcclusion.push(["ship", markOcclusion(this.shipMesh)]);
 		this.nearScene.add(this.shipMesh);
-		if (this.fleetReview) this.buildFleetReview();
+		if (this.fleetReview) {
+			this.buildFleetReview();
+			// **After the review's hulls exist, and it is not decoration.** An
+			// unmarked mesh has `castShadow` false, and `hideNonOccluders` reads
+			// exactly that flag — so a review hull would be hidden from the
+			// ambient occlusion's own G-buffer as well as casting nothing, and
+			// the mode that exists to compare hulls side by side would compare
+			// them under a different renderer from the one the game ships.
+			for (const parked of this.fleet)
+				this.markedOcclusion.push([
+					`fleet-${parked.mesh.name || "hull"}`,
+					markOcclusion(parked.mesh),
+				]);
+		}
 	}
 
 	/** Build the review hulls. Where they go is settled on the first frame. */
@@ -2775,8 +3024,23 @@ class Game {
 
 		this.buildHologramSystem(scannerMount);
 		this.cockpit.mesh = cockpit;
+		// #201, and the cabin is the frame the node was opened over: both cockpit
+		// views rendered the same tone with the star ahead and 175° behind, which
+		// `cockpit-surface.ts` records as an open weakness. The lamps and the
+		// canopy glass fall out of the walk by the rule — they are
+		// `MeshBasicMaterial` — so what is left casting is the fittings.
+		this.markedOcclusion.push(["cockpit", markOcclusion(cockpit)]);
 		this.nearScene.add(cockpit);
 	}
+
+	/** What each occlusion walk marked, kept for `probe-occlusion.mjs` to read
+	 *  off the page. A walk that matched nothing renders a perfect frame with
+	 *  the feature silently missing, so the count is the only evidence there
+	 *  is that the rule found anything (#201). */
+	readonly markedOcclusion: [
+		string,
+		{ participating: number; excluded: number },
+	][] = [];
 
 	/** Build the fitted scanner plate, instrument canvases, and throttle hardware. */
 	private buildScannerAssembly(
@@ -4932,6 +5196,14 @@ class Game {
 		this.layers.clear();
 		this.starBody = undefined;
 
+		// #201's per-station walk runs again inside `buildBodies`, so the record
+		// of what it marked has to drop the system being left or it grows by a
+		// station per jump — and a probe reading the last entry would be reading
+		// a station that is no longer in the scene.
+		for (let i = this.markedOcclusion.length - 1; i >= 0; i--)
+			if (this.markedOcclusion[i][0].startsWith("station-"))
+				this.markedOcclusion.splice(i, 1);
+
 		this.buildBodies();
 		this.buildEnvironment();
 
@@ -5549,6 +5821,10 @@ class Game {
 		// near plane fills the screen with its inside faces.
 		this.shipMesh.visible = this.view === "chase";
 
+		// #201's shadow camera, fitted after everything above has been placed and
+		// before the composer draws anything.
+		this.fitShadowCamera();
+
 		// **Cockpit only** (#200). A vignette is a lens artefact; in cockpit view
 		// it reads as the canopy's own falloff and keeps the frame's corners from
 		// competing with the instruments, and on an exterior shot with no lens in
@@ -5576,6 +5852,131 @@ class Game {
 		this.drawMarkers(camPos);
 		this.frames++;
 	}
+
+	/**
+	 * Point the sun's shadow camera at this frame's near subject and cut its box
+	 * to fit — #201.
+	 *
+	 * ## Which subject, and why it is not all of them
+	 *
+	 * One 2048² map serves a near layer whose subjects are four orders of
+	 * magnitude apart, so the box is the thing that decides what a shadow can
+	 * resolve. The rule is the node's, written out:
+	 *
+	 * - **cockpit view — the cabin alone.** The cabin is a ~30 m box *at* the
+	 *   camera and a station is a kilometre of structure some kilometres away;
+	 *   the union of the two is the station, and the cabin's shadows would be
+	 *   drawn at a texel two metres across. The cabin is what the player looks
+	 *   through and what the node's defect is about, so it wins and the station
+	 *   ahead takes no shadow. That is a stated limit, not an oversight — it
+	 *   took none before either, and the ambient occlusion still reaches it.
+	 * - **otherwise — the hull, and whichever near-layer stations `shadowBox`
+	 *   admits.** Not every one of them: the near layer reaches ten thousand
+	 *   kilometres and a system has one to three stations, so the first version
+	 *   of this unioned the fixture's second station 405 km away and cut a box
+	 *   with a 455 m texel. `occlusion.ts` owns the two admissions and the
+	 *   figures behind them. In `hull-chase` nothing else is near, so the box
+	 *   is the hull alone and its texel is the smallest in the game; in
+	 *   `station-flank` it spans the hull and the station it is beside, at a
+	 *   measured 1.85 m — where an aperture and a boom cast cleanly, a greeble
+	 *   casts something soft, and the bay's corners are the ambient occlusion's
+	 *   job rather than this map's. The figures a run reports are
+	 *   `scripts/probe-occlusion.mjs`'s to print and to bound; `hull-chase` has
+	 *   no reading because no check frames it, which is worth saying rather
+	 *   than filling in.
+	 *
+	 * ## Moving the light without moving the light
+	 *
+	 * `render` above has already put every sun's `position` on `STAR_DIR`, a
+	 * unit vector, against a target at the origin — which is all the other two
+	 * layers need, because a directional light's contribution is a direction.
+	 * A shadow camera also reads the position, so this moves the pair: the
+	 * target to the subject's centre and the light to `centre + STAR_DIR ×
+	 * pushback`. The difference between them is still exactly `STAR_DIR`, so
+	 * nothing the player sees is lit differently by this.
+	 */
+	private fitShadowCamera() {
+		const sun = this.shadowSun;
+		if (!sun) return;
+		if (!sun.castShadow) {
+			// **The target goes home, and that is a fix rather than tidiness.**
+			// A directional light's contribution is `position - target`, and
+			// `render` puts `position` back on `STAR_DIR` — a *unit* vector —
+			// every frame. Leave the target at the last fitted subject's centre
+			// and the difference is `STAR_DIR - centre`, which for a station four
+			// kilometres away is barely `STAR_DIR` at all. So turning the shadow
+			// off did not turn a shadow off: it swung the near layer's sun onto a
+			// new bearing, and every shadow-on-against-off reading in
+			// `probe-occlusion.mjs` was a comparison against a **relit** frame
+			// rather than an unshadowed one. Sage found it; the exterior figure
+			// went from a confident 0.467% to 0.003% when the two arms started
+			// differing only by the shadow.
+			this.shadowTarget.position.set(0, 0, 0);
+			return;
+		}
+		const candidates = this.shadowCandidates;
+		candidates.length = 0;
+		if (this.view === "cockpit") {
+			if (this.cockpit.mesh.visible)
+				candidates.push(subjectOf(this.cockpit.mesh));
+		} else {
+			if (this.shipMesh.visible) candidates.push(subjectOf(this.shipMesh));
+			for (const [id, layer] of this.layers) {
+				if (layer !== "near") continue;
+				const mesh = this.stationVisuals.get(id)?.root;
+				if (mesh) candidates.push(subjectOf(mesh));
+			}
+		}
+		const subject = shadowBox(candidates);
+		if (!subject) {
+			// Nothing in the near layer this frame. Leave the map as it was
+			// rather than fitting a degenerate box: three still renders it, and
+			// an empty one is a map of nothing that shadows nothing.
+			sun.castShadow = false;
+			this.shadowSunIdle = true;
+			return;
+		}
+		if (this.shadowSunIdle) {
+			sun.castShadow = true;
+			this.shadowSunIdle = false;
+		}
+		const fit = shadowFit(subject.radiusKm);
+		// A reference axis the star is not on. `lookAt` builds the camera's frame
+		// from the view direction and `up`, and returns a degenerate one — every
+		// shadow NaN, the map black — when the two are parallel. `STAR_DIR`
+		// sweeps the whole sphere over a system crossing, so it passes through
+		// the world's up axis for real rather than in principle.
+		const camera = sun.shadow.camera;
+		if (Math.abs(STAR_DIR.y) > 0.99) camera.up.set(1, 0, 0);
+		else camera.up.set(0, 1, 0);
+		this.shadowTarget.position.set(...subject.center);
+		sun.position.set(
+			subject.center[0] + STAR_DIR.x * fit.pushbackKm,
+			subject.center[1] + STAR_DIR.y * fit.pushbackKm,
+			subject.center[2] + STAR_DIR.z * fit.pushbackKm,
+		);
+		camera.left = -fit.halfExtentKm;
+		camera.right = fit.halfExtentKm;
+		camera.top = fit.halfExtentKm;
+		camera.bottom = -fit.halfExtentKm;
+		camera.near = fit.nearKm;
+		camera.far = fit.farKm;
+		camera.updateProjectionMatrix();
+		sun.shadow.bias = fit.bias;
+		sun.shadow.normalBias = fit.normalBias;
+		// Held for `probe-occlusion.mjs`, which cannot otherwise tell a box that
+		// was fitted from one that was left at three's 5-unit default — both
+		// render, and only one of them renders the right thing.
+		this.shadowTexelKm = fit.texelKm;
+	}
+
+	/** Whether `fitShadowCamera` turned the sun's shadow off for want of a
+	 *  subject, so it knows to turn it back on rather than leaving the quality
+	 *  gate's answer overwritten. */
+	private shadowSunIdle = false;
+	/** The footprint of one shadow texel on the last frame's subject, in
+	 *  kilometres — the figure a framing's shadow quality is read from. */
+	shadowTexelKm = 0;
 
 	private animate = () => {
 		this.animationFrame = requestAnimationFrame(this.animate);
@@ -6668,6 +7069,13 @@ class Game {
 		// mip chain went on being built at 451x321, 113x81, 57x41.
 		const bloom = bloomResolution();
 		this.bloomPass?.setSize(bloom.x, bloom.y);
+		// **The same trap, and it is why this line is here rather than absent.**
+		// `EffectComposer.setSize` calls `setSize` on every pass it holds, so an
+		// AO pass sized at construction is resized to the full drawing buffer by
+		// the first resize — and boot calls `onResize` once, so it would never
+		// have run at a half in the first place.
+		const ao = aoResolution(ratio);
+		this.gtaoPass?.setSize(ao.x, ao.y);
 		this.starMaterial.uniforms.uPixelScale.value =
 			this.renderer.domElement.height * STAR_PIXEL_SCALE;
 	}
@@ -6761,6 +7169,26 @@ function paintNameplates(mesh: StationMesh, name: string) {
  * because switching bloom off removes it, and that a whole mip chain is the
  * right shape whether or not it is faster.
  */
+/**
+ * The ambient-occlusion pass's own size, as `bloomResolution` is bloom's.
+ *
+ * A fraction of the **drawing buffer**, which is why the ratio is an argument
+ * rather than read here: it follows the device pixel ratio *and* the player's
+ * `renderScale`, the way every other per-fragment cost does. Sized off
+ * `window.innerWidth` alone the pass would run at a quarter of its intended
+ * share on a retina panel. The fraction and the measurements behind it live in
+ * `occlusion.ts`.
+ *
+ * Floored at one pixel rather than at bloom's 32: this pass builds no mip
+ * chain, so there is no halving for an odd size to break.
+ */
+function aoResolution(pixelRatio: number) {
+	return new THREE.Vector2(window.innerWidth, window.innerHeight)
+		.multiplyScalar(pixelRatio * OCCLUSION.ao.resolutionScale)
+		.round()
+		.max(new THREE.Vector2(1, 1));
+}
+
 function bloomResolution() {
 	// A multiple of 32, not merely even: the chain halves five times, so only a
 	// starting size divisible by 2^5 keeps every level whole. Rounding to even

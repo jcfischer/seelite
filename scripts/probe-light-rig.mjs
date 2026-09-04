@@ -113,11 +113,35 @@ const RADII = 8;
  * A band rather than a floor: a white hull and an under-lit hull are both
  * exposure failures, and the same-build spread printed below qualifies it. */
 const HULL_LUMA_BAND = { min: 150, max: 200 };
-/** Floors for the distribution beneath the peak. These are deliberately well
- * below the calibrated 61.04 / 85.37 readings: they reject the failure the
+/**
+ * Floors for the distribution beneath the peak. They reject the failure the
  * principal caught — one compliant highlight on an otherwise dark hull —
- * without turning the probe into an exact-image comparison. */
-const HULL_LUMA_FLOORS = { lowerQuartile: 55, median: 85 };
+ * without turning the probe into an exact-image comparison.
+ *
+ * **Lowered by #201, and the honest version of why.** #199 set these at 55 and
+ * 85 against its own calibrated 61.04 / 85.37, and called them "deliberately
+ * well below" those readings — which the median never was: 85 against 85.29 is
+ * three tenths of a percent, a floor with no margin at all. #201 then added a
+ * shadow map and an ambient-occlusion pass, both of which **subtract** light
+ * from every frame by construction, and the row went red on the first run.
+ *
+ * Measured on #201's branch, same framing, one build, with its two occlusion
+ * passes off and on:
+ *
+ * | | occlusion off | on (shipped) |
+ * |---|---|---|
+ * | lower quartile | 60.93 | 55.38 |
+ * | median | 85.29 | 82.22 |
+ *
+ * The off column reproduces #199's build to the digit, so nothing else moved.
+ * The floors below sit under the *shipped* column with the margin #199 meant
+ * and did not have — 10% under the quartile and 5% under the median — and they
+ * still reject a hull that is dark everywhere but one pixel, which is the only
+ * thing they were ever for. **That the occlusion darkens the hull by 3.6% of a
+ * median is a real change to the picture, not a rounding**, and the canonical
+ * sheet is where a person judges whether it is the right one.
+ */
+const HULL_LUMA_FLOORS = { lowerQuartile: 50, median: 78 };
 const HULL_SAMPLES = 5;
 
 /**
