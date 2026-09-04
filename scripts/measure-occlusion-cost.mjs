@@ -49,6 +49,7 @@ import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
 import { median, seededShuffler, separation } from "./lib/measurement.mjs";
 import {
 	installViewFraming,
+	OCCLUSION_FRAMINGS,
 	setView,
 	settleFrames,
 } from "./lib/view-placement.mjs";
@@ -116,35 +117,12 @@ await bootedGame(page);
 const renderer = await assertPlayersRenderer(page, "measure");
 await page.evaluate((t) => window.__startClockAt(t), GAME_TIME_S);
 
+// The same two shots `probe-occlusion.mjs` checks, from the one definition —
+// a receipt that quotes a pixel reading beside a millisecond is only coherent
+// if the camera was in the same place for both.
 const FRAMINGS = [
-	{
-		name: "cockpit-arrival",
-		view: "cockpit",
-		place: () =>
-			page.evaluate(
-				([id, radii]) =>
-					window.__viewAlongAxis(id, window.__radiusOf(id) * radii, {
-						comoving: true,
-					}),
-				["station-trade", 5],
-			),
-	},
-	{
-		name: "berth-free-look",
-		view: "chase",
-		place: () =>
-			page.evaluate(
-				([id, berth, opts]) => window.__parkInBerth(id, berth, opts),
-				[
-					"station-trade",
-					"overhead-near",
-					{
-						stopAtArrivalFraction: 1,
-						headLook: { yaw: -0.75, pitch: -0.2 },
-					},
-				],
-			),
-	},
+	{ name: "cockpit-arrival", ...OCCLUSION_FRAMINGS.cockpit },
+	{ name: "berth-free-look", ...OCCLUSION_FRAMINGS.berth },
 ];
 
 const ORDER_SEED = Number(process.env.ORDER_SEED ?? 20260903);
@@ -160,7 +138,7 @@ console.log(
 
 for (const framing of FRAMINGS) {
 	await setView(page, framing.view);
-	await framing.place();
+	await framing.place(page);
 	await setView(page, framing.view);
 	await settleFrames(page);
 	const arms = {

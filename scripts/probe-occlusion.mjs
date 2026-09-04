@@ -44,6 +44,7 @@
 import { GAME_TIME_S as CLOCK, SEED } from "./lib/view-set.mjs";
 import {
 	installViewFraming,
+	OCCLUSION_FRAMINGS,
 	setView,
 	settleFrames,
 } from "./lib/view-placement.mjs";
@@ -295,6 +296,10 @@ t.check(
  */
 const coldBootAt = async (quality) => {
 	const writer = await context.newPage();
+	// Watched like every other page here: an unwatched one reports neither a
+	// page error nor a shader failure, and `check-launcher-wiring.mjs` refuses
+	// the file over it — which is how these two were caught.
+	t.watch(writer);
 	await writer.goto(`${origin}/?seed=${SEED}`);
 	await bootedGame(writer);
 	const saved = await writer.evaluate((want) => {
@@ -303,6 +308,7 @@ const coldBootAt = async (quality) => {
 	}, quality);
 	await writer.close();
 	const reader = await context.newPage();
+	t.watch(reader);
 	await reader.goto(`${origin}/?seed=${SEED}`);
 	await bootedGame(reader);
 	const read = await reader.evaluate(() => {
@@ -375,16 +381,9 @@ console.log(
 
 // ---- inside a bay, which is the frame the AO was asked for ----
 
-await setView(page, "chase");
-await page.evaluate(
-	([id, berth, opts]) => window.__parkInBerth(id, berth, opts),
-	[
-		STATION,
-		"overhead-near",
-		{ stopAtArrivalFraction: 1, headLook: { yaw: -0.75, pitch: -0.2 } },
-	],
-);
-await setView(page, "chase");
+await setView(page, OCCLUSION_FRAMINGS.berth.view);
+await OCCLUSION_FRAMINGS.berth.place(page);
+await setView(page, OCCLUSION_FRAMINGS.berth.view);
 await settleFrames(page);
 const bay = await compare(page, "normal");
 
@@ -396,15 +395,9 @@ t.check(
 
 // ---- the cabin, where the box is four orders of magnitude smaller ----
 
-await setView(page, "cockpit");
-await page.evaluate(
-	([id, radii]) =>
-		window.__viewAlongAxis(id, window.__radiusOf(id) * radii, {
-			comoving: true,
-		}),
-	[STATION, 5],
-);
-await setView(page, "cockpit");
+await setView(page, OCCLUSION_FRAMINGS.cockpit.view);
+await OCCLUSION_FRAMINGS.cockpit.place(page);
+await setView(page, OCCLUSION_FRAMINGS.cockpit.view);
 await settleFrames(page);
 const cabin = await compare(page, "normal");
 

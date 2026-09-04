@@ -2648,10 +2648,18 @@ class Game {
 	 * quality row by default, an explicit pair for an instrument.
 	 *
 	 * The shadow gate is `castShadow` on the one light rather than
-	 * `renderer.shadowMap.enabled`, and that is the whole reason this is not two
-	 * lines in `applyQuality`: the renderer flag is a program key, so moving it
-	 * recompiles every material in the frame. Moving the light's flag costs a
-	 * boolean, and three simply does not render the map.
+	 * `renderer.shadowMap.enabled`. **Both are program keys and the difference
+	 * is not that one is free** — that is what an earlier version of this
+	 * paragraph claimed, and it is wrong: `WebGLLights` counts shadow-casting
+	 * directional lights, `WebGLPrograms` puts `numDirLightShadows` in the cache
+	 * key, so flipping the light's flag also lands on a shader variant the
+	 * context may not have built yet. What it buys is *which* variants: the two
+	 * this setting moves between are the two the game already draws, so the pair
+	 * is compiled once each and switching thereafter is a cache hit, while
+	 * `shadowMap.enabled` is a renderer-wide flag whose effect on the frame was
+	 * measured and is larger than the pass it gates —
+	 * `probe-ship-visuals.mjs`'s seam row and `probe-navigation-console.mjs`'s
+	 * frame count both moved when it alone was flipped.
 	 */
 	setOcclusion(
 		shadows: boolean = LIGHT_RIG.quality[this.settings.value.quality].shadows,
