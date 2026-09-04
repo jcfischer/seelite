@@ -5,8 +5,9 @@
  *   node scripts/measure-cruise-guard-cost.mjs
  *
  * This times `Game.step`, not rendering, and reports milliseconds per
- * simulation frame. It is neither an FPS claim nor a gate. The page counters
- * prove motion preparation ran once per mass/frame inside the measured path.
+ * simulation frame. It is neither an FPS claim nor a gate. The instrument
+ * counts only stale-cache rebuilds and verifies every rebuilt mass carries the
+ * velocity and acceleration fields consumed by the guard.
  */
 import { bootedGame, guardedOrigin, launchChromium } from "./probe-guard.mjs";
 import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
@@ -53,9 +54,24 @@ const report = await page.evaluate(
 		let preparedFrames = 0;
 		let preparedBodies = 0;
 		g.masses = () => {
+			const frameTime = g.world.gameTime;
+			const stale = g.massesAt !== frameTime || !g.massesCache;
+			const priorCache = g.massesCache;
 			const masses = productionMasses();
-			preparedFrames++;
-			preparedBodies += masses.length;
+			if (stale) {
+				if (g.massesAt !== frameTime || g.massesCache === priorCache)
+					throw new Error("stale mass cache was not rebuilt for the frame");
+				const withMotion = masses.filter(
+					(mass) =>
+						mass.vel !== undefined && mass.accelerationBoundKms2 !== undefined,
+				).length;
+				if (withMotion !== masses.length)
+					throw new Error(
+						`motion prepared for ${withMotion}/${masses.length} masses`,
+					);
+				preparedFrames++;
+				preparedBodies += withMotion;
+			}
 			return masses;
 		};
 		const samples = [];

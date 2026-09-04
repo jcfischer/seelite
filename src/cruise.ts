@@ -1039,6 +1039,16 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 			if (now <= p.vicinityKm && now > targetKm) {
 				dropped = true;
 				exit = "arrival";
+				const carry = input.target.vel ?? { x: 0, y: 0, z: 0 };
+				input.onSegment?.({
+					from: pos,
+					velocity: carry,
+					elapsed: input.dt - remaining,
+					duration: remaining,
+					powered: false,
+				});
+				pos = add(pos, scale(carry, remaining));
+				remaining = 0;
 			}
 		}
 	}

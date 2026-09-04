@@ -289,6 +289,25 @@ test("a time-zero arrival carries with its target and still loses a surface tie"
 	expect(blocked.exitBodyId).toBe("surface");
 });
 
+test("a closest-approach arrival carries through the unconsumed frame", () => {
+	const segments: { duration: number; powered: boolean }[] = [];
+	const step = advanceCruise({
+		pos: v3(),
+		nose: v3(1, 0, 0),
+		throttle: 1,
+		dt: 0.1,
+		masses: [],
+		target: { pos: v3(5, 2, 0), radiusKm: 1, vel: v3(20, 0, 0) },
+		params: { ...CONSTANT_CRUISE, vicinityKm: 100, approachLeadS: 0.001 },
+		targetParentId: null,
+		onSegment: ({ duration, powered }) => segments.push({ duration, powered }),
+	});
+	expect(step.exit).toBe("arrival");
+	expect(segments.at(-1)?.powered).toBe(false);
+	expect(segments.at(-1)?.duration).toBeGreaterThan(0);
+	expect(step.pos.x).toBeGreaterThan(step.travelledKm);
+});
+
 test("the earliest blocker wins independent of mass order", () => {
 	const near: Mass = { id: "near", pos: v3(10, 0, 0), radiusKm: 1 };
 	const far: Mass = { id: "far", pos: v3(20, 0, 0), radiusKm: 1 };
