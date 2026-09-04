@@ -42,7 +42,11 @@
  * prices the two passes headed.
  */
 import { GAME_TIME_S as CLOCK, SEED } from "./lib/view-set.mjs";
-import { installViewFraming } from "./lib/view-placement.mjs";
+import {
+	installViewFraming,
+	setView,
+	settleFrames,
+} from "./lib/view-placement.mjs";
 import {
 	bootedGame,
 	guardedOrigin,
@@ -114,78 +118,81 @@ const MOVED = 2;
  * with nothing else moving.
  */
 const compare = (page, mode) =>
-	page.evaluate((how) => {
-		const game = window.__seelite;
-		const W = 480;
-		const H = 300;
-		const scratch = document.createElement("canvas");
-		scratch.width = W;
-		scratch.height = H;
-		const ctx = scratch.getContext("2d", { willReadFrequently: true });
-		const src = game.renderer.domElement;
-		const frame = () => {
-			// Render and read in the same task: a WebGL canvas without
-			// `preserveDrawingBuffer` is cleared at the next composite.
-			game.render(0);
-			ctx.drawImage(src, 0, 0, W, H);
-			return ctx.getImageData(0, 0, W, H).data;
-		};
-		const dither = game.settings.value.dither;
-		// Through the pass rather than the store: an instrument should not leave
-		// a preference behind on the machine it measured.
-		game.outputPass.setDither(false);
-
-		// **Only the surfaces the rule refused.** Hiding every participant leaves
-		// the canopy, the lamps, the nameplates and the star field — none of
-		// which may contribute a single occluded pixel. This is the arm that
-		// fails when a transparent mesh writes depth into the AO buffer.
-		const hidden = [];
-		if (how === "refused-only")
-			game.nearScene.traverse((object) => {
-				if (object.isMesh && object.castShadow) {
-					hidden.push([object, object.visible]);
-					object.visible = false;
-				}
-			});
-
-		game.setOcclusion(false, false);
-		const none = frame();
-		game.setOcclusion(true, false);
-		const shadowOnly = frame();
-		game.setOcclusion(false, true);
-		const aoOnly = frame();
-
-		for (const [object, was] of hidden) object.visible = was;
-		game.setOcclusion();
-		game.outputPass.setDither(dither === "on");
-
-		const luma = (d, i) =>
-			0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
-		const against = (later) => {
-			let darker = 0;
-			let lighter = 0;
-			let deepest = 0;
-			let pixels = 0;
-			for (let i = 0; i < none.length; i += 4) {
-				pixels++;
-				const delta = luma(later, i) - luma(none, i);
-				if (delta < -2) darker++;
-				else if (delta > 2) lighter++;
-				if (-delta > deepest) deepest = -delta;
-			}
-			return {
-				darkerPct: (100 * darker) / pixels,
-				lighterPct: (100 * lighter) / pixels,
-				deepest,
+	page.evaluate(
+		([how, moved]) => {
+			const game = window.__seelite;
+			const W = 480;
+			const H = 300;
+			const scratch = document.createElement("canvas");
+			scratch.width = W;
+			scratch.height = H;
+			const ctx = scratch.getContext("2d", { willReadFrequently: true });
+			const src = game.renderer.domElement;
+			const frame = () => {
+				// Render and read in the same task: a WebGL canvas without
+				// `preserveDrawingBuffer` is cleared at the next composite.
+				game.render(0);
+				ctx.drawImage(src, 0, 0, W, H);
+				return ctx.getImageData(0, 0, W, H).data;
 			};
-		};
-		return {
-			shadow: against(shadowOnly),
-			ao: against(aoOnly),
-			texelKm: game.shadowTexelKm,
-			mapTexels: game.nearScene.getObjectByName("sun")?.shadow.mapSize.x,
-		};
-	}, mode);
+			const dither = game.settings.value.dither;
+			// Through the pass rather than the store: an instrument should not leave
+			// a preference behind on the machine it measured.
+			game.outputPass.setDither(false);
+
+			// **Only the surfaces the rule refused.** Hiding every participant leaves
+			// the canopy, the lamps, the nameplates and the star field — none of
+			// which may contribute a single occluded pixel. This is the arm that
+			// fails when a transparent mesh writes depth into the AO buffer.
+			const hidden = [];
+			if (how === "refused-only")
+				game.nearScene.traverse((object) => {
+					if (object.isMesh && object.castShadow) {
+						hidden.push([object, object.visible]);
+						object.visible = false;
+					}
+				});
+
+			game.setOcclusion(false, false);
+			const none = frame();
+			game.setOcclusion(true, false);
+			const shadowOnly = frame();
+			game.setOcclusion(false, true);
+			const aoOnly = frame();
+
+			for (const [object, was] of hidden) object.visible = was;
+			game.setOcclusion();
+			game.outputPass.setDither(dither === "on");
+
+			const luma = (d, i) =>
+				0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+			const against = (later) => {
+				let darker = 0;
+				let lighter = 0;
+				let deepest = 0;
+				let pixels = 0;
+				for (let i = 0; i < none.length; i += 4) {
+					pixels++;
+					const delta = luma(later, i) - luma(none, i);
+					if (delta < -moved) darker++;
+					else if (delta > moved) lighter++;
+					if (-delta > deepest) deepest = -delta;
+				}
+				return {
+					darkerPct: (100 * darker) / pixels,
+					lighterPct: (100 * lighter) / pixels,
+					deepest,
+				};
+			};
+			return {
+				shadow: against(shadowOnly),
+				ao: against(aoOnly),
+				texelKm: game.shadowTexelKm,
+				mapTexels: game.nearScene.getObjectByName("sun")?.shadow.mapSize.x,
+			};
+		},
+		[mode, MOVED],
+	);
 
 const origin = await guardedOrigin(ORIGIN, [
 	"src/occlusion.ts",
@@ -193,7 +200,14 @@ const origin = await guardedOrigin(ORIGIN, [
 	"src/light-rig.ts",
 ]);
 const browser = await launchChromium();
-const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+// **An explicit context, because one row below needs a second page that shares
+// this one's `localStorage`.** `browser.newPage()` makes a throwaway context of
+// its own and then refuses to open a second page in it, so the cold-boot check
+// could not be written against a page created that way.
+const context = await browser.newContext({
+	viewport: { width: 1440, height: 900 },
+});
+const page = await context.newPage();
 const t = tally();
 t.watch(page);
 await installViewPlacement(page);
@@ -201,25 +215,6 @@ await installViewFraming(page);
 await page.goto(`${origin}/?seed=${SEED}`);
 await bootedGame(page);
 await page.evaluate((clock) => window.__startClockAt(clock), CLOCK);
-
-/** Cycle to a view through the key the player has, so the transition and the
- *  head-look reset run the way they run in the game. */
-const setView = async (want) => {
-	for (let i = 0; i < 8; i++) {
-		if ((await page.evaluate(() => window.__seelite.view)) === want) return;
-		await page.keyboard.press("v");
-	}
-	throw new Error(`could not reach the ${want} view`);
-};
-const settle = () =>
-	page.evaluate(
-		() =>
-			new Promise((done) => {
-				let n = 3;
-				const tick = () => (n-- ? requestAnimationFrame(tick) : done());
-				requestAnimationFrame(tick);
-			}),
-	);
 
 // ---- what the walk marked, before any pixel is looked at ----
 
@@ -271,15 +266,90 @@ t.check(
 	`far ${gate.high.far}, approach ${gate.high.approach}`,
 );
 
+// ---- the gate on a *cold boot*, which is where it was broken twice ----
+
+/**
+ * **A saved `low` must boot into `low`, and this is the check that says so.**
+ *
+ * The settings subscription fires on a *difference*, so nothing reruns the gate
+ * on a page that simply loads with a stored preference — the shipped value has
+ * to be applied at construction. #201 got that wrong twice, once per pass, and
+ * for the same structural reason both times: `applyQuality` runs from
+ * `buildEnvironment`, which is inside `buildLights`, and at that moment neither
+ * the shadow-casting sun nor the composer's ambient-occlusion pass exists yet.
+ * `setOcclusion` guarded both fields and returned, and each pass then defaulted
+ * to on for the whole session.
+ *
+ * Neither half was visible to any other row here: every check above sets the
+ * quality itself, which fires the subscription and repairs the state before it
+ * measures. So this one opens a **second page in the same context** — same
+ * `localStorage`, no assignment — and reads the two flags off a game nobody has
+ * touched.
+ */
+const coldBootAt = async (quality) => {
+	const writer = await context.newPage();
+	await writer.goto(`${origin}/?seed=${SEED}`);
+	await bootedGame(writer);
+	const saved = await writer.evaluate((want) => {
+		window.__seelite.settings.set("quality", want);
+		return window.__seelite.settings.value.quality;
+	}, quality);
+	await writer.close();
+	const reader = await context.newPage();
+	await reader.goto(`${origin}/?seed=${SEED}`);
+	await bootedGame(reader);
+	const read = await reader.evaluate(() => {
+		const game = window.__seelite;
+		return {
+			quality: game.settings.value.quality,
+			castShadow: !!game.nearScene.getObjectByName("sun")?.castShadow,
+			ao: game.gtaoPass?.enabled ?? null,
+		};
+	});
+	await reader.close();
+	return { saved, ...read };
+};
+
+const coldLow = await coldBootAt("low");
+t.check(
+	"a saved low quality boots with both passes already off",
+	coldLow.saved === "low" &&
+		coldLow.quality === "low" &&
+		!coldLow.castShadow &&
+		coldLow.ao === false,
+	`saved ${coldLow.saved}, booted ${coldLow.quality} with castShadow ${coldLow.castShadow} and ao ${coldLow.ao}`,
+);
+
+/**
+ * **And the same question the other way round, which the red build demanded.**
+ *
+ * Removing the gate call to prove the row above could fail reddened it on the
+ * ambient occlusion and *not* on the shadow — because with the call gone
+ * `castShadow` never leaves `DirectionalLight`'s own `false`, which happens to
+ * be the answer the `low` arm wanted. So the low arm alone would pass a build
+ * where a player who chose `high` got no shadow at all. Two arms, and neither
+ * is redundant: the flags' defaults are `enabled: true` and `castShadow: false`,
+ * so each pass has a failure mode the other arm cannot see.
+ */
+const coldHigh = await coldBootAt("high");
+t.check(
+	"a saved high quality boots with both passes already on",
+	coldHigh.saved === "high" &&
+		coldHigh.quality === "high" &&
+		coldHigh.castShadow &&
+		coldHigh.ao === true,
+	`saved ${coldHigh.saved}, booted ${coldHigh.quality} with castShadow ${coldHigh.castShadow} and ao ${coldHigh.ao}`,
+);
+
 // ---- the exterior framing: the hull in front, the station beyond ----
 
-await setView("chase");
+await setView(page, "chase");
 await page.evaluate(
 	([id, radii, deg]) => window.__sunOffset(id, radii, deg),
 	[STATION, 4, 40],
 );
-await setView("chase");
-await settle();
+await setView(page, "chase");
+await settleFrames(page);
 const flank = await compare(page, "normal");
 
 t.check(
@@ -301,7 +371,7 @@ t.check(
 
 // ---- inside a bay, which is the frame the AO was asked for ----
 
-await setView("chase");
+await setView(page, "chase");
 await page.evaluate(
 	([id, berth, opts]) => window.__parkInBerth(id, berth, opts),
 	[
@@ -310,8 +380,8 @@ await page.evaluate(
 		{ stopAtArrivalFraction: 1, headLook: { yaw: -0.75, pitch: -0.2 } },
 	],
 );
-await setView("chase");
-await settle();
+await setView(page, "chase");
+await settleFrames(page);
 const bay = await compare(page, "normal");
 
 t.check(
@@ -319,15 +389,10 @@ t.check(
 	bay.ao.darkerPct > AO_FLOOR_PCT,
 	`${bay.ao.darkerPct.toFixed(2)}% of the frame darker, floor ${AO_FLOOR_PCT}%, deepest ${bay.ao.deepest.toFixed(1)}/255`,
 );
-t.check(
-	"the ambient occlusion only ever subtracts light",
-	bay.ao.lighterPct === 0,
-	`${bay.ao.lighterPct.toFixed(3)}% lighter`,
-);
 
 // ---- the cabin, where the box is four orders of magnitude smaller ----
 
-await setView("cockpit");
+await setView(page, "cockpit");
 await page.evaluate(
 	([id, radii]) =>
 		window.__viewAlongAxis(id, window.__radiusOf(id) * radii, {
@@ -335,8 +400,8 @@ await page.evaluate(
 		}),
 	[STATION, 5],
 );
-await setView("cockpit");
-await settle();
+await setView(page, "cockpit");
+await settleFrames(page);
 const cabin = await compare(page, "normal");
 
 t.check(
@@ -351,6 +416,21 @@ t.check(
 );
 
 // ---- the regression that shipped for a round ----
+
+// **Every framing, not the one that reads best.** This row said "the ambient
+// occlusion only ever subtracts light" against a single berth framing, which is
+// a universal claim checked in one place: it would pass while AO brightened
+// pixels in a cockpit or on an exterior. Occlusion is subtractive by
+// construction — the pass multiplies a value in [0, 1] over the frame — so
+// there is no framing where a brighter pixel is anything but a bug, and the
+// check now spends all three it has already taken.
+t.check(
+	"the ambient occlusion only ever subtracts light, in every framing",
+	flank.ao.lighterPct === 0 &&
+		bay.ao.lighterPct === 0 &&
+		cabin.ao.lighterPct === 0,
+	`exterior ${flank.ao.lighterPct.toFixed(3)}%, bay ${bay.ao.lighterPct.toFixed(3)}%, cabin ${cabin.ao.lighterPct.toFixed(3)}% lighter`,
+);
 
 const refused = await compare(page, "refused-only");
 t.check(

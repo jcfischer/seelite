@@ -385,3 +385,47 @@ export async function installViewFraming(page) {
 		};
 	});
 }
+
+/**
+ * Cycle to a view through the key the player has, and stop when it arrives.
+ *
+ * Here rather than in each caller because #201 added two scripts that both
+ * needed it and both wrote it — and the loop is not the obvious one. `v`
+ * *cycles*, so a single press reaches the second view and not the named one,
+ * and a third view arriving later would turn a wrong frame into a
+ * `waitForFunction` timeout that reads as a hung browser rather than as the
+ * one-line cause it is. The bound is what makes the failure legible.
+ *
+ * The key rather than `game.view =`: pressing it runs the transition the game
+ * runs on a real toggle, including the head-look reset, and an assignment
+ * skips both. `capture-views.mjs` has its own copy for its own reason — it
+ * must not fire on the workbench page, which has no view cycle at all.
+ */
+export async function setView(page, want) {
+	for (let i = 0; i < 8; i++) {
+		if ((await page.evaluate(() => window.__seelite.view)) === want) return;
+		await page.keyboard.press("v");
+	}
+	throw new Error(`could not reach the ${want} view in eight presses`);
+}
+
+/**
+ * Let three frames go by, which is what a re-framed shot needs before it can be
+ * measured.
+ *
+ * Three and not one: the near/far handoff has a hysteresis band and a station's
+ * surface is built lazily, so the first frame after a camera move can be drawn
+ * before either has caught up. `capture-views.mjs` waits the same three before
+ * every shutter and says so.
+ */
+export function settleFrames(page, frames = 3) {
+	return page.evaluate(
+		(n) =>
+			new Promise((done) => {
+				let left = n;
+				const tick = () => (left-- ? requestAnimationFrame(tick) : done());
+				requestAnimationFrame(tick);
+			}),
+		frames,
+	);
+}

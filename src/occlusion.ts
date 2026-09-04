@@ -275,7 +275,8 @@ export type SurfaceFacts = {
  * berths in, and the emissive lamps, the canopy glass and the star field out.
  * Every one of those falls out of *lit and opaque*: the lamps and the
  * nameplates are `MeshBasicMaterial`, the canopy is a transparent one, the
- * planets and the warp streaks are a `ShaderMaterial` and a `LineSegments`,
+ * planets and the cruise streak field (`warp.ts`) are a `ShaderMaterial` and a
+ * `LineSegments`,
  * and everything the node wants in is a `MeshStandardMaterial` or the bay's
  * `MeshLambertMaterial`.
  *
@@ -307,7 +308,6 @@ export function participatesInShadow(surface: SurfaceFacts): boolean {
  * whatever is in front of it.
  */
 export const OCCLUSION = {
-	shadow: { mapTexels: SHADOW_MAP_TEXELS },
 	ao: {
 		screenSpaceRadius: true,
 		/** In hundreds of drawing-buffer pixels — 25 of them at this figure. */
@@ -340,9 +340,11 @@ export const OCCLUSION = {
 		 * resolution and 21% at half, because most of the pass is the
 		 * normal-and-depth render, the denoise and two full-screen blends rather
 		 * than the horizon loop. The **resolution is**: it is a 3.1x saving at
-		 * the same sample count, and it is what brings the pass from 2.9x the
-		 * whole frame down to inside #201's own stated budget of one to two
-		 * milliseconds.
+		 * the same sample count, and it is what brings **this pass** from 2.9x
+		 * the whole frame down to inside #201's own estimate of one to two
+		 * milliseconds. It does not bring the *pair* inside it: with the shadow
+		 * map beside it the two cost 2.50–2.84 ms against a 1.91–2.11 ms frame,
+		 * which `settings.ts` states and leaves open rather than answered.
 		 *
 		 * So the samples stay at three's default and this is the dial that
 		 * moved. What a half costs in the picture is a person's to judge on the

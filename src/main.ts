@@ -1906,9 +1906,12 @@ class Game {
 		//
 		// Sized at a fraction of the drawing buffer, like bloom and for a reason
 		// that was measured rather than assumed — `OCCLUSION.ao.resolutionScale`
-		// carries the table. The short of it: at the full buffer this pass is
-		// 2.9x the whole rest of the frame, and halving it is a 3.1x saving that
-		// brings it inside the budget #201 set for itself.
+		// carries the table. The short of it: at the full buffer this pass alone
+		// is 2.9x the whole rest of the frame, and halving it is a 3.1x saving.
+		// **That brings this pass inside #201's one-to-two-millisecond estimate
+		// and it does not bring the pair inside it**: with the shadow map beside
+		// it the two cost 2.50–2.84 ms against a 1.91–2.11 ms frame.
+		// `settings.ts` carries the table and the open question.
 		this.gtaoPass = new GTAOPass(
 			this.nearScene,
 			this.nearCamera,
@@ -1944,6 +1947,23 @@ class Game {
 			hideNonOccluders(pass.scene, pass._visibilityCache);
 		pass.restoreVisibility = () => restoreVisibility(pass._visibilityCache);
 		this.composer.addPass(this.gtaoPass);
+		// **The stored choice, applied once both passes exist to apply it to.**
+		//
+		// The settings subscription fires on a *difference*, so nothing reruns
+		// the gate on a page that simply loads with a stored preference — the
+		// same line `output-stage.ts` records for the dither. #201 needed it
+		// twice over: `applyQuality` runs from `buildEnvironment`, which is
+		// inside `buildLights`, and at that moment neither the shadow-casting
+		// sun nor this pass exists, so `setOcclusion` guarded both fields and
+		// returned. `Pass.enabled` then defaults to `true` and
+		// `DirectionalLight.castShadow` is set a few lines later, so a player who
+		// had chosen `low` and come back got both passes anyway until they
+		// touched the setting.
+		//
+		// This is the last of the two constructions, so one call here covers
+		// both. `probe-occlusion.mjs`'s cold-boot row is the check, and it goes
+		// red on this line alone being removed.
+		this.setOcclusion();
 		// Kept as a field so `perf-panel.ts` can switch it live. A full-screen
 		// multi-pass blur at up to 2x device pixel ratio is a fixed cost every
 		// frame whatever is on screen, so it is the first thing to price against
@@ -2479,17 +2499,17 @@ class Game {
 			// the star's, which sweeps the whole sphere as the ship crosses a
 			// system.
 			//
-			// **The stored choice, applied here and not only on change** — the
-			// same line `output-stage.ts` records for the dither, and the same
-			// defect. `buildEnvironment` above ends with `applyQuality`, which
-			// calls `setOcclusion`, which reads `this.shadowSun` — and until this
-			// block runs that field is null, so the gate had nothing to gate. The
-			// shadow was therefore on at boot whatever the player had saved,
-			// until they touched the setting. Measured before the fix: with
-			// `quality.high.shadows` set to `false`, `probe-ship-visuals` still
-			// reported the hull's seam reach at the shadowed 4.0% rather than the
-			// unshadowed 6.6%.
-			this.setOcclusion();
+			// **The stored choice is applied where the composer is built, not
+			// here**, and the difference took a red build to establish. Both
+			// passes were on at boot whatever the player had saved — the shadow
+			// because `buildEnvironment` ends with `applyQuality` before this
+			// block assigns `shadowSun`, the ambient occlusion because the
+			// composer does not exist yet either — and the obvious repair was a
+			// `setOcclusion()` at each of the two sites. It is one call, at the
+			// later of them: by the time the composer has its pass this field is
+			// long since set, so a call here is inert. Deleting it leaves
+			// `probe-occlusion.mjs`'s cold-boot row green, which is how that was
+			// found and why it is not here.
 		}
 	}
 
@@ -2618,10 +2638,14 @@ class Game {
 		ao: boolean = LIGHT_RIG.quality[this.settings.value.quality].ao,
 	) {
 		if (this.shadowSun) this.shadowSun.castShadow = shadows;
-		// Called from `buildEnvironment`, which runs before the composer exists
-		// on the boot path. Harmless rather than a hole: the pass is constructed
-		// a few lines after the lights and `applyQuality` runs again from the
-		// settings subscription.
+		// **Both guards are real and both have a call site that follows them.**
+		// `applyQuality` runs from `buildEnvironment`, which is inside
+		// `buildLights` — before the sun is wired and long before the composer
+		// exists — so on the boot path this method is called twice against two
+		// null fields. Each field's own construction site calls it again, which
+		// is what makes the player's saved setting arrive. Neither guard is a
+		// "harmless" skip: dropping either call site leaves that pass on at boot
+		// whatever was saved, and nothing in the frame says so.
 		if (this.gtaoPass) this.gtaoPass.enabled = ao;
 	}
 
@@ -2701,7 +2725,20 @@ class Game {
 		// class after it is built, and the walk is a full traverse.
 		this.markedOcclusion.push(["ship", markOcclusion(this.shipMesh)]);
 		this.nearScene.add(this.shipMesh);
-		if (this.fleetReview) this.buildFleetReview();
+		if (this.fleetReview) {
+			this.buildFleetReview();
+			// **After the review's hulls exist, and it is not decoration.** An
+			// unmarked mesh has `castShadow` false, and `hideNonOccluders` reads
+			// exactly that flag — so a review hull would be hidden from the
+			// ambient occlusion's own G-buffer as well as casting nothing, and
+			// the mode that exists to compare hulls side by side would compare
+			// them under a different renderer from the one the game ships.
+			for (const parked of this.fleet)
+				this.markedOcclusion.push([
+					`fleet-${parked.mesh.name || "hull"}`,
+					markOcclusion(parked.mesh),
+				]);
+		}
 	}
 
 	/** Build the review hulls. Where they go is settled on the first frame. */

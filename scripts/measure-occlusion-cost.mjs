@@ -17,10 +17,14 @@
  * pairing count beside it, because a difference of two medians the size of the
  * blocks' own spread says nothing on its own.
  *
- * It asserts nothing and always exits 0. #98 settled that there is no frame-time
- * floor in this game, so what is wanted is a figure for a receipt rather than a
- * threshold that would fail on somebody else's laptop. The `measure-` prefix
- * keeps it out of `probe-all`.
+ * **It gates on no figure it prints.** #98 settled that there is no frame-time
+ * floor in this game, so what is wanted here is a number for a receipt rather
+ * than a threshold that would fail on somebody else's laptop. That is not the
+ * same as "always exits 0", which an earlier draft of this paragraph claimed and
+ * which is false: `guardedOrigin` throws on a dev server that is not serving
+ * this tree and `assertPlayersRenderer` throws on a software rasteriser, and
+ * both are refusals to measure rather than measurements that failed. The
+ * `measure-` prefix keeps it out of `probe-all`.
  *
  * ## Four arms, because one key moves two passes
  *
@@ -42,7 +46,11 @@
  */
 import { GAME_TIME_S, SEED, VIEWPORT } from "./lib/view-set.mjs";
 import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
-import { installViewFraming } from "./lib/view-placement.mjs";
+import {
+	installViewFraming,
+	setView,
+	settleFrames,
+} from "./lib/view-placement.mjs";
 import {
 	bootedGame,
 	guardedOrigin,
@@ -122,14 +130,6 @@ await bootedGame(page);
 const renderer = await assertPlayersRenderer(page, "measure");
 await page.evaluate((t) => window.__startClockAt(t), GAME_TIME_S);
 
-const setView = async (want) => {
-	for (let i = 0; i < 8; i++) {
-		if ((await page.evaluate(() => window.__seelite.view)) === want) return;
-		await page.keyboard.press("v");
-	}
-	throw new Error(`could not reach the ${want} view`);
-};
-
 const FRAMINGS = [
 	{
 		name: "cockpit-arrival",
@@ -185,17 +185,10 @@ console.log(
 );
 
 for (const framing of FRAMINGS) {
-	await setView(framing.view);
+	await setView(page, framing.view);
 	await framing.place();
-	await setView(framing.view);
-	await page.evaluate(
-		() =>
-			new Promise((done) => {
-				let n = 3;
-				const tick = () => (n-- ? requestAnimationFrame(tick) : done());
-				requestAnimationFrame(tick);
-			}),
-	);
+	await setView(page, framing.view);
+	await settleFrames(page);
 	const arms = {
 		neither: [],
 		"shadow only": [],
