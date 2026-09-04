@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
 	DEFAULT_CRUISE,
+	MAX_SUBSTEPS,
 	advanceCruise,
 	relativeSphereEntryTime,
 	sphereEntry,
@@ -183,6 +184,31 @@ test("relative sweep catches a body crossing between both endpoint samples", () 
 	expect(
 		length(sub(step.pos, add(body.pos, scale(body.vel!, 0.1)))),
 	).toBeCloseTo(body.radiusKm * 1.05, 8);
+});
+
+test("the last adaptive substep sweeps the frame remainder", () => {
+	const step = advanceCruise({
+		pos: v3(),
+		nose: v3(1, 0, 0),
+		throttle: 1,
+		dt: 0.1,
+		masses: [
+			{
+				id: "late-crossing",
+				pos: v3(0, -30, 0),
+				radiusKm: 10,
+				vel: v3(0, 600, 0),
+			},
+		],
+		// Near-zero target range forces the 1 ns adaptive floor. Its arrival-speed
+		// gate is closed, so only the body crossing later in the frame can end it.
+		target: { pos: v3(1e-12, 0, 0), radiusKm: 0 },
+		params: { ...CONSTANT_CRUISE, dropSpeedKms: 0 },
+		targetParentId: null,
+	});
+	expect(step.substeps).toBe(MAX_SUBSTEPS);
+	expect(step.exit).toBe("proximity");
+	expect(step.exitBodyId).toBe("late-crossing");
 });
 
 test("charge exhaustion does not bypass a moving-body check", () => {

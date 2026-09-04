@@ -843,7 +843,7 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 		...over,
 	});
 
-	while (remaining > 0 && !dropped && substeps < MAX_SUBSTEPS) {
+	while (remaining > 0 && !dropped && (substeps < MAX_SUBSTEPS || starved)) {
 		const elapsed = input.dt - remaining;
 		const mass = nearestMovingMass(pos, input.masses, elapsed);
 		const massKm = mass ? mass.km : Number.POSITIVE_INFINITY;
@@ -900,6 +900,11 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 				? (SUBSTEP_FRACTION * keyedKm) / speedKms
 				: remaining;
 		let dt = Math.min(remaining, Math.max(cap, 1e-9));
+		// The adaptive budget is an accuracy bound, not permission to discard
+		// time. Its final powered step sweeps the whole remainder. If charge caps
+		// that step first, `starved` admits one passive iteration above the budget,
+		// which sweeps the still-moving bodies with a stationary ship.
+		if (substeps === MAX_SUBSTEPS - 1) dt = remaining;
 		if (charge !== undefined && speedKms > 0) {
 			const chargeKm = (charge * AU_KM) / CHARGE_PER_AU;
 			dt = Math.min(dt, chargeKm / speedKms);
