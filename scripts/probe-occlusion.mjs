@@ -527,6 +527,24 @@ await setView(page, OCCLUSION_FRAMINGS.berth.view);
 await OCCLUSION_FRAMINGS.berth.place(page);
 await setView(page, OCCLUSION_FRAMINGS.berth.view);
 await settleFrames(page);
+/**
+ * **The gate is open in the bay, and the ladder cannot say so.**
+ *
+ * Every rung above is on the aperture axis *outside* the station, so the rows
+ * there establish that the gate opens somewhere before the plane and never
+ * re-closes on the way in. Neither is the same claim as "the frame the ambient
+ * occlusion was asked for renders with it on" — a build whose gate closed again
+ * once the camera was inside its subject would pass all four. `berth-arrival`
+ * is a canonical view captured mid-traversal, so this is also the row that says
+ * nothing pops on during it.
+ */
+const bayGate = await page.evaluate(() => window.__seelite.occlusionState);
+t.check(
+	"the gate is open inside a bay, which is where the pair earns its cost",
+	bayGate.open,
+	`gate ${bayGate.open ? "open" : "shut"}, enclosure ${bayGate.enclosureRad.toFixed(3)} rad`,
+);
+
 const bay = await compare(page, "normal");
 
 t.check(

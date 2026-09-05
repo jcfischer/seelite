@@ -283,6 +283,31 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   colours are hex. It joins `cockpit.ts`, `live-cockpit.ts`, `planet-shaders.ts`
   and `planet-classes.glsl.ts` in that set. Naming it in a guard list does not
   guard it; it makes the probe throw before it starts.
+- **The occlusion passes are gated on enclosure, and a frame-cost claim owes
+  the antialias arm.** #241. The pair doubles the open-space frame — 3.740 ms
+  to 7.303 at the default sample count — and darkens 0.002% of it; in a bay it
+  darkens 6.06% and costs 8%. So `stepOcclusionGate` in `src/occlusion.ts`
+  decides per frame whether either pass draws, from the apparent size of the
+  nearest admitted **station**. Neither the cabin nor the hull is a subject for
+  it, and that is the point rather than an omission: the cabin is visible in
+  every cockpit frame, so a gate that counted it would never close. `main.ts`
+  steps it before `fitShadowCamera` and `applyOcclusion` combines the player's
+  row, an instrument's pin and the gate — an explicit `setOcclusion(a, b)` wins
+  over the gate, a bare `setOcclusion()` gives it back. **And the figure that
+  made this a regression is the second one:** multisampling multiplies every
+  later fill-rate term rather than adding beside it, so the pair costs +3.563 ms
+  at 0 samples and +7.130 at 2. Every one of #222's figures was taken at 0,
+  which is the default and not what the principal plays at.
+- **A whole-frame pixel reading cannot isolate a distant subject.** #241's
+  approach ladder flown in cockpit view reported the pair darkening 4.6% of the
+  frame at *twenty* station radii; that is the cabin, whose own AO is 22.5% of a
+  `cockpit-arrival` frame. In chase the same reading is 0.58%, which is the
+  player hull. There is always a subject at a fixed distance from the camera, so
+  `probe-occlusion.mjs`'s `compare` has a `world-only` mode that hides both
+  roots — #233 needed the same column for the same reason. And even world-only
+  there is **no cliff**: 0.57% at twenty radii rising smoothly to 15.5% at one
+  and a half. The probe checks the curve's shape and the threshold is the
+  principal's, off the printed ladder.
 - **Multisampling the composer is the most expensive thing in this renderer.**
   `output-stage.ts` hands `EffectComposer` its own target so `antialias: true`
   on the renderer finally means something — that flag configures the default

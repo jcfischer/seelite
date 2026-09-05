@@ -111,12 +111,33 @@ const SCHEMA = {
 	 * `scripts/measure-occlusion-cost.mjs` is the instrument and
 	 * `occlusion.ts` carries the resolution table.
 	 *
+	 * **Those figures are the pair at the default sample count, and they were
+	 * the wrong half of the question — #241.** The principal flew this build at
+	 * antialias 2x and reported empty space falling from a comfortable 60 fps to
+	 * around 40. Re-measured on the same machine, same design, three framings and
+	 * both sample counts, in milliseconds a frame:
+	 *
+	 * | framing | pair off | pair on | pair off, 2x | pair on, 2x |
+	 * |---|---|---|---|---|
+	 * | empty space | 3.740 | 7.303 | 11.552 | 18.681 |
+	 * | `cockpit-arrival` | 3.784 | 7.403 | 11.650 | 18.519 |
+	 * | `berth-free-look` | 38.861 | 41.909 | 48.025 | 54.228 |
+	 *
+	 * Two things fall out of it. **The pair doubles the open-space frame**, not
+	 * the fifth the `cockpit-arrival` reading above suggested — and it darkens
+	 * 0.002% of it. And **multisampling multiplies the pair rather than adding
+	 * beside it**: +3.563 ms at 0 samples against +7.130 at 2, a factor of 2.00.
+	 * A term priced only at the default understates a 2x player's cost by half,
+	 * which is how this shipped.
+	 *
+	 * So #241 put a gate in front of both passes rather than a row here: they
+	 * draw when a station is close enough to be worth them and not otherwise,
+	 * and `occlusion.ts` owns the predicate and the thresholds. This key still
+	 * decides whether the player wants them at all.
+	 *
 	 * That is a *different order* from the antialiasing row below, which is
 	 * four to six times the whole frame — so this stays one key rather than
-	 * becoming two rows on #200's argument. **Whether the ambient occlusion
-	 * deserves a row of its own is a question for the principal and not a
-	 * decision taken here**, and the pair being 1.2x the unoccluded frame is
-	 * the number that question is asked with.
+	 * becoming two rows on #200's argument.
 	 *
 	 * The other framing the instrument takes, `berth-free-look`, is **not a
 	 * measurement and is not quoted**: its own frame is 44 ms with a 39–54 ms

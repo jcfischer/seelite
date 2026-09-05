@@ -443,6 +443,31 @@ export function settleFrames(page, frames = 3) {
  * being true without anything going red.
  */
 export const OCCLUSION_FRAMINGS = Object.freeze({
+	/**
+	 * The arrival point, looking at nothing — `view-set.mjs`'s `sky-only`
+	 * framing, and the one the principal reported at 40 fps.
+	 *
+	 * Here rather than only in the view set because #241 made it a *measured*
+	 * framing as well as a captured one: it is where the occlusion pair doubles
+	 * the frame and darkens 0.002% of it, so both the probe and the cost
+	 * instrument frame it, and two copies of this placement is how that stops
+	 * being the same shot.
+	 */
+	deepSky: {
+		view: "cockpit",
+		place: (page) =>
+			page.evaluate(async () => {
+				await window.__returnToBootPosition();
+				const g = window.__seelite;
+				const d = window.__emptiestDirection();
+				const p = g.world.ship.pos;
+				await window.__lookAt({
+					x: p.x + d.x * 1e9,
+					y: p.y + d.y * 1e9,
+					z: p.z + d.z * 1e9,
+				});
+			}),
+	},
 	/** Five silhouette radii down a trade station's aperture axis, from inside
 	 *  the cabin — `cockpit-arrival`'s framing, where about 40% of the frame is
 	 *  cockpit and the ambient occlusion has fittings to find. */

@@ -7647,6 +7647,7 @@ if (query.has("model-viewer")) {
 				scenes: [game.nearScene, game.approachScene, game.farScene],
 				bloom: game.bloom,
 				attribution,
+				occlusion: () => game.occlusionState,
 			});
 			let tornDown = false;
 			const teardown = (event: PageTransitionEvent) => {
