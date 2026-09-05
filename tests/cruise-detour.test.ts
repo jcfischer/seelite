@@ -77,3 +77,10 @@ test("allows an outward preview from inside a host guard shell", () => {
 		cruiseRouteBlocker(v3(6_005, 0, 0), outward, [host], "host"),
 	).toBeNull();
 });
+
+test("does not grant release from the detour-only clearance margin", () => {
+	const host: Mass = { id: "host", pos: v3(), radiusKm: 6_000 };
+	expect(
+		cruiseRouteBlocker(v3(6_002, 200, 0), v3(6_002, -1_000, 0), [host], "host"),
+	).toBe(host);
+});

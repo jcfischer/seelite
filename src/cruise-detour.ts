@@ -37,10 +37,14 @@ const unit = (v: Vec3): Vec3 | null => {
 	return n > EPSILON ? scale(v, 1 / n) : null;
 };
 
-const guardKm = (mass: Mass, targetParentId: string | null): number =>
+const liveGuardKm = (mass: Mass, targetParentId: string | null): number =>
 	mass.id === targetParentId
-		? mass.radiusKm + HOST_CLEARANCE_KM + ROUTE_MARGIN_KM
-		: mass.radiusKm * SURFACE_MARGIN + ROUTE_MARGIN_KM;
+		? mass.radiusKm + HOST_CLEARANCE_KM
+		: mass.radiusKm * SURFACE_MARGIN;
+
+/** The planner keeps a small extra clearance beyond the live guard. */
+const guardKm = (mass: Mass, targetParentId: string | null): number =>
+	liveGuardKm(mass, targetParentId) + ROUTE_MARGIN_KM;
 
 /** Squared distance from a finite segment to a point, without allocation. */
 function segmentDistanceKm(
@@ -87,12 +91,13 @@ function projectedGuardBlocked(
 	const centreY = mass.pos.y + vy * projectionS;
 	const centreZ = mass.pos.z + vz * projectionS;
 	const guard = guardKm(mass, targetParentId);
+	const liveGuard = liveGuardKm(mass, targetParentId);
 	const fromX = a.x - centreX;
 	const fromY = a.y - centreY;
 	const fromZ = a.z - centreZ;
-	const startsInsideGuard =
-		fromX * fromX + fromY * fromY + fromZ * fromZ <= guard * guard;
-	if (!startsInsideGuard)
+	const startsInsideLiveGuard =
+		fromX * fromX + fromY * fromY + fromZ * fromZ <= liveGuard * liveGuard;
+	if (!startsInsideLiveGuard)
 		return segmentDistanceKm(a, b, centreX, centreY, centreZ) <= guard;
 
 	const direction = sub(b, a);
