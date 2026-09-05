@@ -136,6 +136,11 @@ import {
 	exitVelocity,
 	legSeconds,
 } from "./cruise";
+import {
+	cruiseRouteBlocker,
+	planCruiseDetour,
+	type DetourPlan,
+} from "./cruise-detour";
 import { GOVERNMENT_NAMES, type SystemRecord } from "./galaxy";
 import { type Course, courseProgress } from "./galaxy-route";
 import {
@@ -1166,6 +1171,8 @@ class Game {
 	 *  as an overshoot rather than as the regime having dropped out for no
 	 *  visible reason. */
 	lastExit = "";
+	/** Internal route state only: targetId remains the selected station. */
+	private detour: (DetourPlan & { targetId: string; waypoint: 0 | 1 | 2 }) | null = null;
 	private warp!: WarpField;
 	private lastTime = 0;
 	private hud: HTMLElement;
@@ -3932,6 +3939,8 @@ class Game {
 		// is not bound, and the MODE cell can only show a window that opened.
 		if (charging(this.jumpCharge) || this.jumpNotice) return this.jumpNotice;
 		if (this.spoolLeftS > 0) return "";
+		if (this.detour)
+			return `DETOUR AROUND ${this.bodyFor(this.detour.bodyId)?.name ?? this.detour.bodyId}`;
 		if (this.regime === "cruise") return "";
 		// **The same predicate the strip's tone reads.** As `chargeAu <= 0` this
 		// and the strip disagreed on the frame after a starve-out: regeneration
@@ -4885,6 +4894,7 @@ class Game {
 		this.legStartedAtS = null;
 		this.lastLegS = null;
 		this.lastExit = "";
+		this.detour = null;
 		this.frameBody = null;
 		this.proximityFrameBodyId = null;
 		this.dockingComputerEngaged = false;
@@ -5261,6 +5271,31 @@ class Game {
 			this.lastExit = "no drive charge";
 			return;
 		}
+		this.detour = null;
+		const target = this.targetBody();
+		if (target && this.targetParentId()) {
+			const masses = this.masses();
+			const blocker = cruiseRouteBlocker(
+				this.world.ship.pos,
+				target.pos,
+				masses,
+				this.targetParentId(),
+			);
+			if (blocker) {
+				const route = planCruiseDetour({
+					from: this.world.ship.pos,
+					target: target.pos,
+					blocker,
+					masses,
+					targetParentId: this.targetParentId(),
+				});
+				if (!route) {
+					this.lastExit = `detour unavailable: ${this.bodyFor(blocker.id)?.name ?? blocker.id}`;
+					return;
+				}
+				this.detour = { ...route, targetId: target.id, waypoint: 0 };
+			}
+		}
 		this.spoolLeftS = SPOOL_S;
 		this.lastExit = "";
 	}
@@ -5300,6 +5335,7 @@ class Game {
 			this.frameBody =
 				this.world.system.byId.get(this.proximityFrameBodyId) ?? null;
 		this.regime = "normal";
+		this.detour = null;
 		this.cruiseSpeedKms = 0;
 		this.throttle = 0;
 		this.lastExit = reason;
@@ -5411,6 +5447,7 @@ class Game {
 
 		if (this.dockingComputerEngaged && this.hasControlInput(yaw, pitch, roll))
 			this.dockingComputerEngaged = false;
+		if (this.detour && this.hasControlInput(yaw, pitch, roll)) this.detour = null;
 
 		// One range scan and one orbital evaluation per station for the whole
 		// step: the autopilot reads the same approach the crossing test then uses
@@ -5569,6 +5606,7 @@ class Game {
 	 * one line of code.
 	 */
 	private stepCruise(dt: number, contactTargetAtFrameStart: Mass | null) {
+		this.stepDetour(dt);
 		const nose = this.nose();
 		const target = this.targetBody();
 		const targetMotion = target
@@ -5621,6 +5659,42 @@ class Game {
 		// dry is an arrival — the ship is at its target, and reporting an
 		// empty tank instead would drop it there in the wrong frame.
 		if (step.starved) this.dropOut("drive charge exhausted");
+	}
+
+	/** Turn toward the current internal waypoint; physical motion remains cruise. */
+	private stepDetour(dt: number) {
+		const detour = this.detour;
+		if (!detour || detour.targetId !== this.targetId) return;
+		const target = this.targetBody();
+		if (!target) {
+			this.detour = null;
+			return;
+		}
+		const point = detour.waypoint === 2 ? target.pos : detour.waypoints[detour.waypoint];
+		// Cruise can cover far more than a kilometre per frame.  Treat a waypoint
+		// as reached over the next swept frame rather than demanding an endpoint
+		// sample land on it, or a fast ship turns back and spends its charge circling.
+		if (
+			length(sub(point, this.world.ship.pos)) <
+			Math.max(1_000, this.cruiseSpeedKms * dt * 2)
+		) {
+			if (detour.waypoint === 0) detour.waypoint = 1;
+			else if (detour.waypoint === 1) detour.waypoint = 2;
+		}
+		const next = detour.waypoint === 2 ? target.pos : detour.waypoints[detour.waypoint];
+		const direction = sub(next, this.world.ship.pos);
+		const distance = length(direction);
+		if (distance === 0) return;
+		const desired = new THREE.Vector3(direction.x / distance, direction.y / distance, direction.z / distance);
+		const desiredOrientation = new THREE.Quaternion().setFromUnitVectors(
+			new THREE.Vector3(0, 0, -1),
+			desired,
+		);
+		const angle = this.orientation.angleTo(desiredOrientation);
+		this.orientation.rotateTowards(desiredOrientation, 0.6 * dt);
+		// Turning at cruise speed is bounded by the visible nose, not an invisible
+		// velocity vector. Slow while the turn is materially unfinished.
+		if (angle > 0.1) this.throttle = Math.min(this.throttle, 0.35);
 	}
 
 	/**
