@@ -131,6 +131,10 @@ const EXEMPT = new Map([
 		"#201's headed occlusion-cost instrument; a sibling of #99's and exempt for the same reason — #98 settled that there is no frame-time floor in this game, so it prints four arms and a separation count for a receipt and gates on nothing. What it does refuse is a software rasteriser, which throws out of the run rather than counting a failed check",
 	],
 	[
+		"measure-shadow-enclosure.mjs",
+		"#231's headed enclosure ladder; a sibling of #99's and #201's and exempt for the same reason — it walks a ladder and prints a table for a decision node to read, and gates on nothing it measures. Its refusals are `guardedOrigin`'s and `__parkInBerth`'s, which throw out of the run rather than counting a failed check",
+	],
+	[
 		"capture-views.mjs",
 		"captures #104's view set; the gate is a human looking at the sheet, so it has no checks either — it does listen for shader and page errors, and a fault removes the run and the sheet rather than reporting one",
 	],

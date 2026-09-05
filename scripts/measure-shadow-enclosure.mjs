@@ -1,0 +1,413 @@
+/**
+ * What the sun's shadow is worth, as a function of **enclosure** — node #231's
+ * missing measurement.
+ *
+ *   npm run dev                                # in one shell
+ *   node scripts/measure-shadow-enclosure.mjs
+ *
+ * ## The claim this exists to test
+ *
+ * #201 shipped a fitted sun shadow map and closed with three figures: the
+ * shadow darkens 0.003% of `station-flank`, 0.002% of `cockpit-arrival` and
+ * 6.2% of `berth-free-look`. #231 reads that as *enclosure is the lever* — the
+ * sun's intensity is a constant, so nothing about flying nearer the star
+ * changes what a shadow can remove, and what differs between those three
+ * frames is how much of the surrounding hemisphere is hull.
+ *
+ * **That is three numbers from one frame each, and it is exactly the shape that
+ * turned out to be an artefact twice.** #200 published a 144/144 separation
+ * that was its own arm ordering. #201 published 0.467% for `station-flank`
+ * that was a relighting bug — with the shadow off, the sun's target was left at
+ * the last fitted subject while its position was reset to a unit vector, so the
+ * "off" arm was a differently-lit frame rather than an unshadowed one. Both
+ * survived because nobody had a control.
+ *
+ * So this walks a **ladder** rather than sampling three points, and every rung
+ * carries a control.
+ *
+ * ## The ladder
+ *
+ * Two segments of one physical journey, because enclosure has no dial:
+ *
+ * 1. **The approach.** Down a trade station's aperture axis at a descending
+ *    range of silhouette radii. The ship is in open space and the station is
+ *    ahead; nothing but the hull itself occludes anything.
+ * 2. **The traversal.** Inside the bay, at fractions of the docking computer's
+ *    run from the aperture plane to the berth. This is the enclosure ramp: at
+ *    the end the camera is in a room.
+ *
+ * ## The x-axis is measured, not asserted
+ *
+ * Calling the rungs "more enclosed" as they go would be the same assertion #231
+ * is trying to check. So each rung also measures **what the ambient occlusion
+ * does to the same frame**, and that is the abscissa: AO is by construction a
+ * per-pixel estimate of how much of a point's hemisphere is blocked, so the
+ * fraction of a frame it darkens *is* an enclosure measurement, taken by the
+ * renderer rather than by me.
+ *
+ * The finding is therefore a relationship between two measured quantities on
+ * one build, and not a story told over three screenshots.
+ *
+ * ## Every rung has a control, and it is the row to read first
+ *
+ * Each rung renders the baseline **twice** and differences those two frames
+ * against each other. That is the noise floor: whatever the control reports is
+ * what "no change at all" looks like through an eight-bit canvas readback, and
+ * a shadow reading at or under it is not a reading. Without this row, 0.003% is
+ * a number with no scale.
+ *
+ * ## Why the arms are shuffled
+ *
+ * Not for #200's reason — nothing here is timed, and the world does not advance
+ * inside one `evaluate`, so a pixel difference is deterministic given the state.
+ * The confound this shuffles out is **order-dependent renderer state**, which is
+ * not hypothetical: enabling or disabling a composer pass changes how many
+ * passes are enabled, and #201 measured 13.2% against a 6.6% baseline once
+ * because the frame a toggle landed on composited out of the wrong buffer. If
+ * an arm's reading depends on which arm preceded it, shuffling across repeats
+ * makes it show up as spread instead of as a clean wrong answer.
+ *
+ * ## It drives the passes directly, on purpose
+ *
+ * `Game.setOcclusion(shadows, ao)` takes both terms explicitly, so this
+ * measures the shadow whether or not the shipped gate has it on. #231 has it
+ * gated off pending its own answer; that must not stop the instrument that
+ * informs the answer from running.
+ *
+ * Gates on nothing it prints, like every other `measure-` script here (#98:
+ * this game has no frame-time floor and no pixel floor either). It does refuse
+ * to measure a dev server that is not this tree.
+ */
+import { GAME_TIME_S, SEED, VIEWPORT } from "./lib/view-set.mjs";
+import { median, seededShuffler } from "./lib/measurement.mjs";
+import {
+	installViewFraming,
+	setView,
+	settleFrames,
+} from "./lib/view-placement.mjs";
+import {
+	bootedGame,
+	guardedOrigin,
+	installViewPlacement,
+	launchChromium,
+} from "./probe-guard.mjs";
+
+const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
+const STATION = "station-trade";
+const BERTH = "overhead-near";
+
+/** Repeats per rung. Five, so the spread printed beside each median is a range
+ *  rather than a pair, and one bad frame cannot carry a row. */
+const REPEATS = 5;
+
+/**
+ * The rungs, outside then in.
+ *
+ * The approach distances are in silhouette radii and stop at 1.2 rather than at
+ * the plane: `__viewAlongAxis` puts the camera on the axis at that range, and
+ * inside the silhouette it would be inside the hull. The traversal fractions
+ * pick up where that leaves off — `stopAtArrivalFraction` is measured over the
+ * docking computer's run from the aperture plane to the berth, so 0 is the
+ * mouth and 1 is parked.
+ */
+/**
+ * **Both views at every rung, and that is not thoroughness — it is the only way
+ * the exterior rows mean anything.**
+ *
+ * `fitShadowCamera` fits the box to the cabin alone in cockpit view and
+ * excludes every station, which #201 shipped as a stated limit: the cabin is a
+ * 30 m box at the camera and a station is a kilometre of structure some
+ * kilometres away, and their union is the station. So a cockpit-view exterior
+ * rung *cannot* show a shadow on a station however enclosed the frame is, and
+ * a ladder that measured only that view would report a design decision as
+ * though it were a property of enclosure. The first run of this instrument did
+ * exactly that.
+ */
+const VIEWS = ["cockpit", "chase"];
+
+const RUNGS = [
+	{ kind: "approach", radii: 20 },
+	{ kind: "approach", radii: 12 },
+	{ kind: "approach", radii: 8 },
+	{ kind: "approach", radii: 5 },
+	{ kind: "approach", radii: 3 },
+	{ kind: "approach", radii: 2 },
+	{ kind: "approach", radii: 1.2 },
+	{ kind: "traversal", at: 0 },
+	{ kind: "traversal", at: 0.25 },
+	{ kind: "traversal", at: 0.5 },
+	{ kind: "traversal", at: 0.75 },
+	{ kind: "traversal", at: 1 },
+];
+
+const label = (rung, view) =>
+	`${
+		rung.kind === "approach"
+			? `approach ${String(rung.radii).padStart(4)} radii`
+			: `bay traversal ${(rung.at * 100).toFixed(0).padStart(3)}%`
+	} ${view.padEnd(7)}`;
+
+/**
+ * One rung's three differences, in a single evaluate.
+ *
+ * One evaluate because between two of them the frame loop runs, the station
+ * spins and its orbit carries it — and that drift is larger than the effect
+ * being measured. Everything below happens between `render` calls with nothing
+ * else moving.
+ *
+ * The dither is switched off for the duration: it adds a per-pixel ±0.5/255 to
+ * every frame, which is most of what any naive pixel comparison would find.
+ */
+const differences = (page, order) =>
+	page.evaluate((arms) => {
+		const game = window.__seelite;
+		const W = 480;
+		const H = 300;
+		const scratch = document.createElement("canvas");
+		scratch.width = W;
+		scratch.height = H;
+		const ctx = scratch.getContext("2d", { willReadFrequently: true });
+		const source = game.renderer.domElement;
+		const dither = game.settings.value.dither;
+		// Through the pass rather than the store: an instrument should not leave
+		// a preference behind on the machine it measured.
+		game.outputPass.setDither(false);
+		// **Hide the two things that are always in frame at a fixed place.** The
+		// cabin surrounds the camera and the hull sits 146 m in front of it in
+		// chase, so both shadow themselves identically at every rung whatever the
+		// world is doing — and a constant is exactly what the first run of this
+		// ladder found, 0.071% at every approach distance to three decimals while
+		// the enclosure measure rose sixfold. Differencing with them hidden is
+		// what separates "the shadow draws on the player's own geometry" from
+		// "the shadow draws on the world".
+		// **Removed from the scene, not hidden** — `probe-ship-visuals.mjs`'s
+		// lever, for its reason, and this instrument reported a false answer for
+		// one run without it. `render` assigns `cockpit.mesh.visible = view ===
+		// "cockpit"` and `shipMesh.visible = view === "chase"` on *every* frame,
+		// so clearing a flag and then rendering gives the object straight back:
+		// the world-only column came out identical to the all-geometry column to
+		// three decimals at all twelve rungs, which reads exactly like a real
+		// finding. Re-parenting is the one lever the frame loop does not own.
+		const detached = [];
+		const hide = (object) => {
+			if (!object?.parent) return;
+			detached.push([object, object.parent]);
+			object.parent.remove(object);
+		};
+		const frame = (shadows, ao, ownGeometry = true) => {
+			if (!ownGeometry) {
+				hide(game.cockpit?.mesh);
+				hide(game.shipMesh);
+			}
+			game.setOcclusion(shadows, ao);
+			// Twice. The first render after a pass is enabled or disabled is the
+			// one that composites out of the previous parity's buffer, which is
+			// the defect the shuffle above exists to expose rather than to hide.
+			game.render(0);
+			game.render(0);
+			ctx.drawImage(source, 0, 0, W, H);
+			const pixels = ctx.getImageData(0, 0, W, H).data;
+			for (const [object, parent] of detached.splice(0)) parent.add(object);
+			return pixels;
+		};
+		const taken = {};
+		for (const arm of arms) {
+			if (arm === "base") taken.base = frame(false, false);
+			if (arm === "control") taken.control = frame(false, false);
+			if (arm === "shadow") taken.shadow = frame(true, false);
+			if (arm === "ao") taken.ao = frame(false, true);
+			// The world without the player's own geometry, and the shadow on it.
+			// Differenced against each other rather than against `base`, because
+			// hiding the cabin changes most of the frame on its own.
+			if (arm === "world") {
+				taken.worldBase = frame(false, false, false);
+				taken.worldShadow = frame(true, false, false);
+			}
+		}
+		game.setOcclusion();
+		game.outputPass.setDither(dither === "on");
+
+		const luma = (d, i) =>
+			0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+		const against = (later) => {
+			let darker = 0;
+			let lighter = 0;
+			let deepest = 0;
+			let sum = 0;
+			let pixels = 0;
+			for (let i = 0; i < taken.base.length; i += 4) {
+				pixels++;
+				const delta = luma(later, i) - luma(taken.base, i);
+				sum += Math.abs(delta);
+				if (delta < -2) darker++;
+				else if (delta > 2) lighter++;
+				if (-delta > deepest) deepest = -delta;
+			}
+			return {
+				darkerPct: (100 * darker) / pixels,
+				lighterPct: (100 * lighter) / pixels,
+				meanAbs: sum / pixels,
+				deepest,
+			};
+		};
+		const worldDelta = () => {
+			let darker = 0;
+			let deepest = 0;
+			let pixels = 0;
+			for (let i = 0; i < taken.worldBase.length; i += 4) {
+				pixels++;
+				const delta = luma(taken.worldShadow, i) - luma(taken.worldBase, i);
+				if (delta < -2) darker++;
+				if (-delta > deepest) deepest = -delta;
+			}
+			return { darkerPct: (100 * darker) / pixels, deepest };
+		};
+		return {
+			control: against(taken.control),
+			shadow: against(taken.shadow),
+			ao: against(taken.ao),
+			world: worldDelta(),
+			texelKm: game.shadowTexelKm,
+		};
+	}, order);
+
+const origin = await guardedOrigin(ORIGIN, [
+	"src/main.ts",
+	"src/occlusion.ts",
+	"src/light-rig.ts",
+]);
+const browser = await launchChromium();
+const page = await browser.newPage({ viewport: VIEWPORT });
+await installViewPlacement(page);
+await installViewFraming(page);
+await page.goto(`${origin}/?seed=${SEED}`);
+await bootedGame(page);
+await page.evaluate((clock) => window.__startClockAt(clock), GAME_TIME_S);
+
+// **Read off the scene, not off the record.** The ratio that decides what a
+// shadow can remove is the one the renderer is actually using, and #201 has
+// already been caught once quoting a record while the renderer did something
+// else. These are the lights in the near layer.
+const rig = await page.evaluate(() => {
+	const near = window.__seelite.nearScene;
+	return {
+		sun: near.getObjectByName("sun")?.intensity ?? null,
+		hemisphere: near.getObjectByName("hemisphere")?.intensity ?? null,
+		fill: near.getObjectByName("fill")?.intensity ?? null,
+		environment: near.environmentIntensity ?? null,
+	};
+});
+
+const ORDER_SEED = Number(process.env.ORDER_SEED ?? 20260905);
+const shuffled = seededShuffler(ORDER_SEED);
+
+console.log(`  seed ${SEED}, clock ${GAME_TIME_S}, ${STATION} / ${BERTH}`);
+console.log(
+	`  rig, read off the near scene: sun ${rig.sun}, hemisphere ${rig.hemisphere}, fill ${rig.fill}, environment ${rig.environment}`,
+);
+console.log(
+	`  ${REPEATS} repeats per rung, arm order shuffled from seed ${ORDER_SEED}`,
+);
+console.log("");
+console.log(
+	"  the `world` column hides the cabin and the player hull before differencing,",
+);
+console.log(
+	"  so it is the shadow on everything that is not the player's own geometry.",
+);
+console.log("");
+console.log(
+	"  rung                             enclosure     shadow      world     control   mean|d|  box texel",
+);
+
+const rows = [];
+for (const rung of RUNGS) {
+	if (rung.kind === "approach") {
+		await page.evaluate(
+			([id, radii]) =>
+				window.__viewAlongAxis(id, window.__radiusOf(id) * radii, {
+					comoving: true,
+				}),
+			[STATION, rung.radii],
+		);
+	} else {
+		await page.evaluate(
+			([id, berth, at]) =>
+				window.__parkInBerth(id, berth, { stopAtArrivalFraction: at }),
+			[STATION, BERTH, rung.at],
+		);
+	}
+	await settleFrames(page);
+
+	for (const view of VIEWS) {
+		await setView(page, view);
+		await settleFrames(page);
+		const samples = [];
+		for (let i = 0; i < REPEATS; i++) {
+			// **`base` is always drawn first and the rest are shuffled after it.**
+			// Everything is differenced against the baseline, so the baseline cannot
+			// be one of the things whose order varies without changing what every
+			// other arm means.
+			samples.push(
+				await differences(page, [
+					"base",
+					...shuffled(["control", "shadow", "ao", "world"]),
+				]),
+			);
+		}
+		const of = (arm, field) => samples.map((s) => s[arm][field]);
+		const row = {
+			label: label(rung, view),
+			ao: median(of("ao", "darkerPct")),
+			shadow: median(of("shadow", "darkerPct")),
+			control: median(of("control", "darkerPct")),
+			shadowDeepest: median(of("shadow", "deepest")),
+			world: median(of("world", "darkerPct")),
+			worldDeepest: median(of("world", "deepest")),
+			// **Mean absolute change, which has no threshold, and it is the
+			// number #231 actually needs.** A pixel counts as "darker" above
+			// 2/255, and the sun is about 3% of the light — so a fully shadowed
+			// surface at luma 60 moves 1.8 codes and is invisible to the
+			// percentage columns while being perfectly real. A row reading
+			// 0.000% with a non-zero mean is a shadow that more light would
+			// reveal; a row where both are zero has no receiver at all, and no
+			// change to the rig reaches it.
+			shadowMean: median(samples.map((x) => x.shadow.meanAbs)),
+			// What the box was fitted to on the frame just drawn. The
+			// non-monotone rows are not explicable without it: a shadow appears
+			// when the box happens to hold a caster and a lit receiver, and
+			// `shadowBox`'s admission rule decides that per frame.
+			texelKm: median(samples.map((x) => x.texelKm)),
+			shadowSpread: of("shadow", "darkerPct"),
+			aoSpread: of("ao", "darkerPct"),
+		};
+		rows.push(row);
+		// A shadow at or under the control is not a reading, so the last column says
+		console.log(
+			`  ${row.label.padEnd(32)} ${row.ao.toFixed(2).padStart(7)}%  ${row.shadow
+				.toFixed(3)
+				.padStart(8)}%  ${row.world.toFixed(3).padStart(8)}%  ${row.control
+				.toFixed(3)
+				.padStart(
+					8,
+				)}%  ${row.shadowMean.toFixed(4).padStart(7)}  ${(row.texelKm * 1000).toFixed(1).padStart(7)} m`,
+		);
+	}
+}
+
+console.log("");
+console.log("  spreads, one line per rung (shadow % across the repeats):");
+for (const row of rows)
+	console.log(
+		`  ${row.label.padEnd(32)} ${row.shadowSpread.map((x) => x.toFixed(3)).join(" ")}`,
+	);
+console.log("");
+console.log(
+	"  deepest pixel the shadow moves, of 255 — everything, then world only:",
+);
+for (const row of rows)
+	console.log(
+		`  ${row.label.padEnd(32)} ${row.shadowDeepest.toFixed(1).padStart(6)}  ${row.worldDeepest.toFixed(1).padStart(6)}`,
+	);
+
+await browser.close();
