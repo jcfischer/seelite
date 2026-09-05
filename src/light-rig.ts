@@ -163,50 +163,20 @@ export const LIGHT_RIG = {
 	 */
 	environmentIntensity: 0.15,
 	/**
-	 * What `quality` selects. #98 required this node to ship a low setting and
-	 * to say what it drops.
-	 *
-	 * Low drops the image-based term and #201's two occlusion passes, and keeps
-	 * everything else. The hemisphere costs exactly what the flat ambient it
-	 * replaced cost — one more term in a loop that already runs — so dropping it
-	 * would buy nothing and lose the gradient; the environment is the term with
-	 * a per-fragment texture sample on every standard material in the frame, and
-	 * a load-time PMREM pass.
-	 *
-	 * **`shadows` and `ao` are #201's, and neither is a per-fragment sample** —
-	 * which is why they sit here rather than being argued about the way the
-	 * hemisphere was. Each is a whole extra pass over the near scene: the shadow
-	 * map redraws every caster from the star's side into a 2048² depth buffer,
-	 * and the ambient occlusion redraws the near scene into a normal-and-depth
-	 * buffer before it samples anything. They are two booleans rather than one
-	 * because they are two passes and a receipt has to be able to price them
-	 * apart; they are on one *key* because what the player is being asked is how
-	 * much of the light model they want, not which of two passes they prefer.
-	 */
-	/**
 	 * What each lighting setting includes.
 	 *
-	 * **`ao` is no longer here.** #201's ambient occlusion is the player's own
-	 * `ao` row in `settings.ts` on the principal's ruling, against the node's own
-	 * specification — a player who wants contact shading on a machine that
-	 * cannot afford the baked environment cannot ask for that through one key.
-	 * One term with two owners is the arrangement that once let the perf panel
-	 * and the settings screen each apply half of `renderScale`.
+	 * **`ao` is not here**, and that is the one thing about this record worth
+	 * knowing: #201's ambient occlusion is the player's own `ao` row in
+	 * `settings.ts`. One term with two owners is the arrangement that once let
+	 * the perf panel and the settings screen each apply half of `renderScale`.
 	 *
-	 * **`shadows` stays**, and the line is not cost. A shadow is what the star
-	 * does to a surface another surface stands in front of, so it belongs to the
-	 * light model; ambient occlusion is a post pass and sits with antialias,
-	 * dither and vignette, each of which already has a row.
+	 * `shadows` is here because a shadow is what the star does to a surface
+	 * another surface stands in front of — the light model — while ambient
+	 * occlusion is a post pass. Not because of what either costs.
 	 *
-	 * It is worth knowing that at this rig the shadow is very nearly invisible —
-	 * `LIGHT_RIG` gives the sun 0.2 against a hemisphere at 6.85, and a
-	 * hemisphere cannot be shadowed, so it darkens 0.003% of an exterior frame
-	 * and 6.3% of a bay. Gating it off to stop paying 0.59 ms for that was tried
-	 * and reverted: `fitShadowCamera` idles while the sun is not casting, so a
-	 * shadow that is off during the approach is *unfitted* when anything turns it
-	 * on, and `probe-occlusion.mjs` then measures 0.9% where it should read 6.3%.
-	 * The gate and the probe cannot both be right as they stand. Node #231 owns
-	 * that, together with moving light into the sun.
+	 * The decision history, and the measurement that says this shadow is very
+	 * nearly invisible at this rig, live on nodes #231 and #233 rather than in
+	 * this comment.
 	 */
 	quality: {
 		high: {

@@ -268,16 +268,10 @@ const gate = await page.evaluate(async () => {
  * **Each row moves its own term and not the other's.**
  *
  * This asserted that `quality` moved both, which is what #201 shipped and what
- * the principal then overruled: the ambient occlusion is its own row, and the
- * shadow is gated off on both lighting modes until #231 gives it light. Left as
- * it was, this row went red for the right reason — the ownership it encoded no
- * longer existed — and it is the check that caught the split, so it is worth
- * saying which half is now load-bearing.
- *
- * The `ao` pair is. The `quality` pair can only ever read false now, so it
- * cannot distinguish a working gate from an absent one; `tests/light-rig.test.ts`
- * pins the record and the cold-boot crossed arm below is what proves the two
- * rows are independent.
+ * the principal then overruled: the ambient occlusion is its own row. The
+ * shadow stays on the lighting key, so both pairs are live and neither is
+ * decoration — and this row is the check that caught the split when it was
+ * still encoding the old ownership.
  */
 t.check(
 	"the occlusion row moves the occlusion pass, in both directions",
@@ -288,6 +282,49 @@ t.check(
 	"and the lighting key still moves the shadow, in both directions",
 	gate.high.castShadow && !gate.low.castShadow,
 	`high ${gate.high.castShadow}, low ${gate.low.castShadow}`,
+);
+
+/**
+ * **The lighting key's authority survives the idle path**, which review doubted
+ * and which the immediate toggle above cannot speak to.
+ *
+ * `fitShadowCamera` sets `castShadow = false` and raises `shadowSunIdle` when a
+ * frame has no near-layer subject, and restores it when one returns. Read on
+ * its own that restore is unconditional, so the question is fair: can a player
+ * on low lighting get the shadow back by flying somewhere empty and returning?
+ *
+ * No — the method's first guard returns before the restore is reached — but a
+ * reading of the source is not what settles it. This raises the flag by hand at
+ * low and renders with subjects present.
+ *
+ * **The `high` arm is the control and is not optional.** `castShadow` reads
+ * false for many reasons; without an arm where the same forced state produces
+ * `true`, this would pass on a build where the restore never runs at all.
+ */
+const idle = await page.evaluate(() => {
+	const game = window.__seelite;
+	const kept = game.settings.value.quality;
+	const sun = () => !!game.nearScene.getObjectByName("sun")?.castShadow;
+	game.settings.set("quality", "low");
+	game.render(0);
+	game.shadowSunIdle = true;
+	game.render(0);
+	game.render(0);
+	const low = sun();
+	game.settings.set("quality", "high");
+	game.render(0);
+	game.shadowSunIdle = true;
+	game.render(0);
+	game.render(0);
+	const high = sun();
+	game.settings.set("quality", kept);
+	game.render(0);
+	return { low, high };
+});
+t.check(
+	"a raised idle flag cannot give the shadow back to a player on low lighting",
+	idle.low === false && idle.high === true,
+	`low ${idle.low}, high ${idle.high} — the high arm is the control`,
 );
 t.check(
 	"the game ships with the occlusion on",
@@ -369,9 +406,14 @@ const coldBootAt = async (settings) => {
  * so `__parkInBerth` below refused with "the session is docked". The arms are
  * cheap to add and the page they leave running is not.
  *
- * The defaults each pass would fall back to are opposites — `GTAOPass`
- * constructs `enabled: true`, `DirectionalLight` constructs `castShadow: false`
- * — so neither arm can pass by a default happening to match.
+ * **The two arms are not equally strong, and saying they were was wrong.**
+ * `GTAOPass` constructs `enabled: true` and `DirectionalLight` constructs
+ * `castShadow: false`, so the low/on arm below expects exactly the two defaults
+ * — it cannot tell a boot that read the saved rows from one that ignored them
+ * and got lucky. The high/off arm expects the opposite of both, and it is that
+ * arm alone which establishes the rows are read at all. The low/on arm still
+ * earns its place: it is the one that would catch `ao` being dragged down by a
+ * saved `low`, which is the coupling this PR removes.
  */
 const coldLowOn = await coldBootAt({ quality: "low", ao: "on" });
 t.check(
