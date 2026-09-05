@@ -36,6 +36,16 @@
  *    run from the aperture plane to the berth. This is the enclosure ramp: at
  *    the end the camera is in a room.
  *
+ * **The traversal is one flight, sampled along the way, and that took a review
+ * round to get right.** Every fraction used to call `__parkInBerth`, which
+ * leaves the previous dock, flies out and approaches again — advancing
+ * `world.gameTime` the whole time. The station's spin phase reads that clock,
+ * so consecutive "fractions" differed in the station's orientation and in where
+ * the star fell on it as much as in how far along the route the ship was. The
+ * segment now parks once and advances the same flight in explicit sim steps
+ * with the frame loop stopped, so between two rungs the only thing that has
+ * moved is the ship along its own route.
+ *
  * ## The x-axis is measured, not asserted
  *
  * The ladder's abscissa is **the journey**, and it needs no instrument: the
@@ -435,6 +445,11 @@ console.log(
 );
 
 const rows = [];
+/** Where the one docking flight has reached, or `null` before it starts.
+ *  `traversalSeconds` is §13.3's own duration for this route, read off the page
+ *  once the flight exists rather than assumed from the near constant. */
+let traversalAt = null;
+let traversalSeconds = 0;
 for (const rung of RUNGS) {
 	// **Frozen before the placement, not after it.** The freeze sat after
 	// `settleFrames`, and `__parkInBerth` itself awaits two animation frames
@@ -458,12 +473,38 @@ for (const rung of RUNGS) {
 				}),
 			[STATION, rung.radii],
 		);
-	} else {
+	} else if (traversalAt === null) {
+		// **The first traversal rung parks; the rest advance the same flight.**
+		// Every rung used to call `__parkInBerth`, which leaves the previous dock,
+		// flies out and approaches again — advancing `world.gameTime` throughout.
+		// The station's spin phase reads that clock, so successive "fractions"
+		// differed in the station's orientation and in the lighting geometry as
+		// much as in traversal position, and no amount of freezing removed it:
+		// the confound was in the placement, not in the sampling. A claim about
+		// what changes *within* one traversal cannot be built out of four
+		// separate journeys.
 		await page.evaluate(
 			([id, berth, at]) =>
 				window.__parkInBerth(id, berth, { stopAtArrivalFraction: at }),
 			[STATION, BERTH, rung.at],
 		);
+		traversalAt = rung.at;
+		traversalSeconds = await page.evaluate(
+			() => window.__seelite.dockTraversalSeconds,
+		);
+	} else {
+		// Advance the flight already in progress by the difference, in explicit
+		// sim steps with the frame loop stopped, so nothing moves but the ship
+		// along its own route.
+		await page.evaluate(
+			(seconds) => {
+				const game = window.__seelite;
+				const dt = 1 / 60;
+				for (let i = 0; i < Math.round(seconds / dt); i++) game.step(dt);
+			},
+			(rung.at - traversalAt) * traversalSeconds,
+		);
+		traversalAt = rung.at;
 	}
 
 	for (const view of VIEWS) {
@@ -539,8 +580,13 @@ for (const rung of RUNGS) {
 			}`,
 		);
 	}
-	await unfreeze(page);
+	// **The loop stays off across the traversal rungs**, because they are one
+	// flight now: restarting it would let `Game.animate` advance the ship
+	// between two fractions of the journey this ladder is walking. The approach
+	// rungs are teleports and each wants a running game to place from.
+	if (rung.kind === "approach") await unfreeze(page);
 }
+await unfreeze(page);
 
 console.log("");
 console.log("  spreads, one line per rung (shadow % across the repeats):");
