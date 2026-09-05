@@ -251,22 +251,167 @@ const gate = await page.evaluate(async () => {
 		far: !!game.farScene.getObjectByName("sun")?.castShadow,
 		approach: !!game.approachScene.getObjectByName("sun")?.castShadow,
 	});
+	const keptAo = game.settings.value.ao;
 	game.settings.set("quality", "high");
 	const high = read();
 	game.settings.set("quality", "low");
 	const low = read();
 	game.settings.set("quality", kept);
-	return { high, low, kept };
+	game.settings.set("ao", "on");
+	const aoOn = read();
+	game.settings.set("ao", "off");
+	const aoOff = read();
+	game.settings.set("ao", keptAo);
+	return { high, low, aoOn, aoOff, kept, keptAo };
 });
+/**
+ * **Each row moves its own term and not the other's.**
+ *
+ * This asserted that `quality` moved both, which is what #201 shipped and what
+ * the principal then overruled: the ambient occlusion is its own row. The
+ * shadow stays on the lighting key, so both pairs are live and neither is
+ * decoration — and this row is the check that caught the split when it was
+ * still encoding the old ownership.
+ */
 t.check(
-	"high turns both passes on and low turns both off",
-	gate.high.castShadow && gate.high.ao && !gate.low.castShadow && !gate.low.ao,
-	`high ${gate.high.castShadow}/${gate.high.ao}, low ${gate.low.castShadow}/${gate.low.ao}`,
+	"the occlusion row moves the occlusion pass, in both directions",
+	gate.aoOn.ao === true && gate.aoOff.ao === false,
+	`ao on ${gate.aoOn.ao}, ao off ${gate.aoOff.ao}`,
+);
+t.check(
+	"and the lighting key still moves the shadow, in both directions",
+	gate.high.castShadow && !gate.low.castShadow,
+	`high ${gate.high.castShadow}, low ${gate.low.castShadow}`,
+);
+
+/**
+ * **The lighting key's authority survives the idle path**, which review doubted
+ * and which the immediate toggle above cannot speak to.
+ *
+ * `fitShadowCamera` sets `castShadow = false` and raises `shadowSunIdle` when a
+ * frame has no near-layer subject, and restores it when one returns. Read on
+ * its own that restore is unconditional, so the question is fair: can a player
+ * on low lighting get the shadow back by flying somewhere empty and returning?
+ *
+ * No — the method's first guard returns before the restore is reached — but a
+ * reading of the source is not what settles it. This raises the flag by hand at
+ * low and renders with subjects present. What the same experiment at high then
+ * showed is that the restore never runs at all; see below.
+ *
+ * **Both arms are forced into the same state**, `castShadow` false with the flag
+ * raised, so the restore is the only thing that can turn it back on and the two
+ * differ only by the lighting row. An earlier version reached `high` by moving
+ * the quality row instead, which sets the field directly — that arm would have
+ * passed with the restore deleted, and it was presented as the control.
+ */
+const idle = await page.evaluate(() => {
+	const game = window.__seelite;
+	const kept = game.settings.value.quality;
+	const light = () => game.nearScene.getObjectByName("sun");
+	/**
+	 * Both arms enter in the **same** state — shadow down, idle raised, subjects
+	 * present — so the only thing that differs is the lighting row.
+	 *
+	 * The first version of this set the high arm by moving the quality row,
+	 * which turns `castShadow` on *directly* through `setOcclusion` before the
+	 * flag is raised. Deleting the restore outright would have satisfied it. It
+	 * was offered as the control that made the low arm mean something and it
+	 * established nothing; review caught that. Forcing the field by hand is what
+	 * makes the restore the only thing that can produce `true`.
+	 */
+	const enter = (quality) => {
+		game.settings.set("quality", quality);
+		game.render(0);
+		const sun = light();
+		sun.castShadow = false;
+		game.shadowSunIdle = true;
+		game.render(0);
+		game.render(0);
+		return !!light()?.castShadow;
+	};
+	const low = enter("low");
+	const high = enter("high");
+	game.settings.set("quality", kept);
+	game.render(0);
+	return { low, high };
+});
+/**
+ * **Both arms read false, and the high one is a defect rather than a pass.**
+ *
+ * The safety property review asked about holds: a raised idle flag cannot give
+ * the shadow back to a player on low lighting. That is what this asserts.
+ *
+ * It does not come back at **high** either, and that is not intended. The only
+ * way into `shadowSunIdle` is the no-subject branch, which sets
+ * `castShadow = false` on its way — and from then on `fitShadowCamera`'s first
+ * guard returns before the restore is reached. So the restore is unreachable in
+ * the one state it exists for, and a shadow lost to a subject-less frame stays
+ * lost until the player moves the lighting row.
+ *
+ * Recorded here rather than fixed: it is #201's code and node #233 owns it,
+ * alongside the ladder's finding that the pass fires at 12.8% and then exactly
+ * 0.000% along one flight. The `high` figure is printed rather than asserted so
+ * that a fix reddens nothing here and shows up as a changed number.
+ */
+/**
+ * **An occlusion toggle does move the shadow, and this measures it.**
+ *
+ * `setOcclusion` re-reads both terms from their owners, so the `ao` row's
+ * subscription rewrites `castShadow` from the *lighting* row on its way past.
+ * In every ordinary state that is what keeps the two rows agreeing. In the idle
+ * state it is a way the shadow comes back, so at high lighting an occlusion
+ * toggle brings it back.
+ *
+ * **Not "unfitted", which an earlier version of this claimed.** With subjects
+ * present the next render runs `fitShadowCamera`, which fits the projection and
+ * clears the flag before the composer draws — and this measures `castShadow`
+ * and nothing else, so it could not have evidenced a claim about the rendered
+ * shadow either way.
+ *
+ * The PR claimed the rows could not disagree about the shadow. They can, and a
+ * check that asserted only the `ao` half could not have said so. So this is
+ * *printed* rather than asserted: the behaviour is #233's to change, and a row
+ * demanding it stay would be a check against its own fix.
+ */
+const resurrect = await page.evaluate(() => {
+	const game = window.__seelite;
+	const kept = {
+		quality: game.settings.value.quality,
+		ao: game.settings.value.ao,
+	};
+	const light = () => game.nearScene.getObjectByName("sun");
+	game.settings.set("quality", "high");
+	game.render(0);
+	light().castShadow = false;
+	game.shadowSunIdle = true;
+	game.render(0);
+	const beforeToggle = !!light()?.castShadow;
+	game.settings.set("ao", game.settings.value.ao === "on" ? "off" : "on");
+	game.render(0);
+	const afterToggle = !!light()?.castShadow;
+	game.settings.set("quality", kept.quality);
+	game.settings.set("ao", kept.ao);
+	game.render(0);
+	return { beforeToggle, afterToggle };
+});
+// **Printed, not asserted, and the difference matters.** Requiring
+// `beforeToggle === false && afterToggle === true` would make #233's defect the
+// passing condition: the day the restore works, `beforeToggle` is true and this
+// row goes red for the fix. A check that a deferred bug must still be present is
+// a check against repairing it.
+console.log(
+	`  coupling  castShadow ${resurrect.beforeToggle} before an occlusion toggle at high, ${resurrect.afterToggle} after`,
+);
+
+t.check(
+	"a raised idle flag cannot give the shadow back to a player on low lighting",
+	idle.low === false,
+	`low ${idle.low}, high ${idle.high} (high is the defect #233 owns — the restore is unreachable); both entered with castShadow forced false`,
 );
 t.check(
 	"the game ships with the occlusion on",
-	gate.kept === "high",
-	`default quality is ${gate.kept}`,
+	gate.kept === "high" && gate.keptAo === "on",
+	`default quality is ${gate.kept}, default occlusion is ${gate.keptAo}`,
 );
 t.check(
 	"only the near layer's sun casts a shadow",
@@ -294,7 +439,7 @@ t.check(
  * `localStorage`, no assignment — and reads the two flags off a game nobody has
  * touched.
  */
-const coldBootAt = async (quality) => {
+const coldBootAt = async (settings) => {
 	const writer = await context.newPage();
 	// Watched like every other page here: an unwatched one reports neither a
 	// page error nor a shader failure, and `check-launcher-wiring.mjs` refuses
@@ -302,10 +447,10 @@ const coldBootAt = async (quality) => {
 	t.watch(writer);
 	await writer.goto(`${origin}/?seed=${SEED}`);
 	await bootedGame(writer);
-	const saved = await writer.evaluate((want) => {
-		window.__seelite.settings.set("quality", want);
-		return window.__seelite.settings.value.quality;
-	}, quality);
+	await writer.evaluate((want) => {
+		const store = window.__seelite.settings;
+		for (const [key, value] of Object.entries(want)) store.set(key, value);
+	}, settings);
 	await writer.close();
 	const reader = await context.newPage();
 	t.watch(reader);
@@ -315,43 +460,58 @@ const coldBootAt = async (quality) => {
 		const game = window.__seelite;
 		return {
 			quality: game.settings.value.quality,
+			aoRow: game.settings.value.ao,
 			castShadow: !!game.nearScene.getObjectByName("sun")?.castShadow,
 			ao: game.gtaoPass?.enabled ?? null,
 		};
 	});
 	await reader.close();
-	return { saved, ...read };
+	return read;
 };
 
-const coldLow = await coldBootAt("low");
+/**
+ * **Two boots, both crossed, and the crossing is what makes them two.**
+ *
+ * The rows have different owners since the principal's ruling, so what has to
+ * be proved is no longer "the gate ran" but "each row moved its own term and
+ * not the other's". A boot per row would need four to cover both directions of
+ * both; two boots with the rows *disagreeing* cover all four, because each one
+ * reads one row up and the other down.
+ *
+ * That matters beyond elegance. Each `coldBootAt` opens two pages and costs
+ * about twenty-five seconds, and the main page is a **running game** the whole
+ * time: a third arm pushed this probe from 95s to 145s, and somewhere in the
+ * extra fifty the ship's docking computer took its clearance and docked itself,
+ * so `__parkInBerth` below refused with "the session is docked". The arms are
+ * cheap to add and the page they leave running is not.
+ *
+ * **The two arms are not equally strong, and saying they were was wrong.**
+ * `GTAOPass` constructs `enabled: true` and `DirectionalLight` constructs
+ * `castShadow: false`, so the low/on arm below expects exactly the two defaults
+ * — it cannot tell a boot that read the saved rows from one that ignored them
+ * and got lucky. The high/off arm expects the opposite of both, and it is that
+ * arm alone which establishes the rows are read at all. The low/on arm still
+ * earns its place: it is the one that would catch `ao` being dragged down by a
+ * saved `low`, which is the coupling this PR removes.
+ */
+const coldLowOn = await coldBootAt({ quality: "low", ao: "on" });
 t.check(
-	"a saved low quality boots with both passes already off",
-	coldLow.saved === "low" &&
-		coldLow.quality === "low" &&
-		!coldLow.castShadow &&
-		coldLow.ao === false,
-	`saved ${coldLow.saved}, booted ${coldLow.quality} with castShadow ${coldLow.castShadow} and ao ${coldLow.ao}`,
+	"a saved low quality boots with no shadow, and does not take the occlusion with it",
+	coldLowOn.quality === "low" &&
+		coldLowOn.aoRow === "on" &&
+		!coldLowOn.castShadow &&
+		coldLowOn.ao === true,
+	`booted ${coldLowOn.quality}/${coldLowOn.aoRow} with castShadow ${coldLowOn.castShadow} and ao ${coldLowOn.ao}`,
 );
 
-/**
- * **And the same question the other way round, which the red build demanded.**
- *
- * Removing the gate call to prove the row above could fail reddened it on the
- * ambient occlusion and *not* on the shadow — because with the call gone
- * `castShadow` never leaves `DirectionalLight`'s own `false`, which happens to
- * be the answer the `low` arm wanted. So the low arm alone would pass a build
- * where a player who chose `high` got no shadow at all. Two arms, and neither
- * is redundant: the flags' defaults are `enabled: true` and `castShadow: false`,
- * so each pass has a failure mode the other arm cannot see.
- */
-const coldHigh = await coldBootAt("high");
+const coldHighOff = await coldBootAt({ quality: "high", ao: "off" });
 t.check(
-	"a saved high quality boots with both passes already on",
-	coldHigh.saved === "high" &&
-		coldHigh.quality === "high" &&
-		coldHigh.castShadow &&
-		coldHigh.ao === true,
-	`saved ${coldHigh.saved}, booted ${coldHigh.quality} with castShadow ${coldHigh.castShadow} and ao ${coldHigh.ao}`,
+	"and a saved high quality boots with the shadow on, without turning the occlusion back on",
+	coldHighOff.quality === "high" &&
+		coldHighOff.aoRow === "off" &&
+		coldHighOff.castShadow &&
+		coldHighOff.ao === false,
+	`booted ${coldHighOff.quality}/${coldHighOff.aoRow} with castShadow ${coldHighOff.castShadow} and ao ${coldHighOff.ao}`,
 );
 
 // ---- the exterior framing: the hull in front, the station beyond ----

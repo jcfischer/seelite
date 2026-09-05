@@ -137,7 +137,7 @@ const SCHEMA = {
 		allowed: ["high", "low"] as const,
 		label: "Lighting",
 		describe: (v: string) => (v === "high" ? "High" : "Low"),
-		note: "High reflects the star off every hull, plate and cockpit surface, cuts the panel lines into the hulls and the cabin so a moving sun breaks across them, lights the console from above, casts the star's shadow across whatever is nearest, and darkens the corners and the contact where surfaces meet. Low drops all five and keeps the sun, the star-side gradient and the cockpit fill; the picture stays lit, the panel lines stay painted, the metal stops reading as metal and nothing casts or catches a shadow.",
+		note: "High reflects the star off every hull, plate and cockpit surface, cuts the panel lines into the hulls and the cabin so a moving sun breaks across them, lights the console from above, and casts the star's shadow across whatever is nearest. Low drops all four and keeps the sun, the star-side gradient and the cockpit fill; the picture stays lit, the panel lines stay painted, and the metal stops reading as metal. Corner and contact shading is the Occlusion row, not this one.",
 	},
 	/**
 	 * How many samples the composed frame is drawn with — #200.
@@ -203,6 +203,21 @@ const SCHEMA = {
 		label: "Vignette",
 		describe: (v: string) => (v === "on" ? "On" : "Off"),
 		note: "Darkens the corners of the cockpit view by up to 15%, so the frame's edges stop competing with the instruments. Never applied in the chase view. Off is the flat frame.",
+	},
+	/**
+	 * Whether corners and contacts darken — #201's ambient occlusion.
+	 *
+	 * Its own row rather than the `quality` key. The ruling and what was traded
+	 * for it live on node #201, which is where `CLAUDE.md` puts a decision; what
+	 * belongs here is the consequence — `LIGHT_RIG.quality` does not carry `ao`,
+	 * and this row is its only owner.
+	 */
+	ao: {
+		fallback: "on" as const,
+		allowed: TOGGLE,
+		label: "Occlusion",
+		describe: (v: string) => (v === "on" ? "On" : "Off"),
+		note: "Darkens corners, seams and the ground a ship stands on, so an interior reads as a room rather than as flat boxes. It shows most inside a station bay and barely at all in open space, and it is not cheap — on the machine this was measured on it costs roughly as much again as the rest of a cockpit frame. Turn it off first if you are short of frames and Antialiasing is already off.",
 	},
 } as const;
 
