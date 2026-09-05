@@ -348,6 +348,41 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   there is **no cliff**: 0.03% at twenty radii rising smoothly to 5.64% at one
   and a half. The probe checks the curve's shape and the threshold is the
   principal's, off the printed ladder.
+- **A place is not a cost. What is in the frustum is (#242).** A bay was read at
+  38.9 ms twice and attributed neither time, and this file carried the
+  attribution as a warning about bays until #235 deleted the line — #242 was
+  opened quoting it after it was gone. It is not the bay. `berth-free-look` is
+  the only framing in that table with a planet in frame, and **that planet is
+  86.6% of it**: hiding it alone takes the frame from 40.29 ms to 5.40 (144/144),
+  and hiding every body reads the same 5.38. The station's whole footprint
+  measured in place is 2.88 ms and §13.1's interior 2.06. The same framing in
+  **open space with no station within a thousand kilometres** costs 36.76.
+  `scripts/measure-bay-frame-cost.mjs` is the instrument and prints all four
+  framings.
+
+  Three things fall out of it that outlive the number. **It is fill-rate bound**
+  — the `renderScale` sweep is linear to a floor of 0.70 ms out of 40.50, so 98%
+  of the frame scales with pixels and #225's lever reaches a bay. **92.7% of
+  that planet is never seen**: it is in the *approach* layer, its own pass with
+  its own depth buffer, so the near-layer hull rejects none of its fragments —
+  231,564 visible pixels against 3,159,448 drawn, against 62.7% showing in open
+  space. And **an angular radius is not a frustum test**: `cockpit-arrival`
+  frames the same planet at the same 41.8° half-angle for nothing, because it is
+  behind the camera, which is why its draw-call count does not move when the
+  planet is hidden. Any later claim that a *place* is expensive owes the arm
+  that hides what is in front of the camera — and a body's layer is its distance,
+  so an arm keyed on a *scene* names a different set of objects at every framing.
+- **#223's GPU timer query reports three to four times the frame, and says
+  `supported` (#242).** 118.25 ms at `berth-free-look` and 145.45 at an
+  open-space planet, p95 tight, against two independent wall clocks that agree
+  with each other — a tight `g.render(0)` loop at 40.29 and 36.76, and the live
+  rAF period at 35.20 and 33.30. `GpuTimingStatus` already has `unavailable`,
+  `disjoint` and `stale`, so the module is built to refuse and is not refusing.
+  Do not quote a `frame-attribution` GPU median as a cost until that is
+  diagnosed; the CPU interval columns are not implicated. Note also that neither
+  wall clock is the player's frame either — the tight loop removes vsync and
+  lets the GPU pipeline, so a decomposition quotes **arm deltas**, and only the
+  rAF period is a cadence.
 - **Multisampling the composer is the most expensive thing in this renderer.**
   `output-stage.ts` hands `EffectComposer` its own target so `antialias: true`
   on the renderer finally means something — that flag configures the default
