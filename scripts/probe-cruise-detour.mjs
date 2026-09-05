@@ -53,9 +53,9 @@ const result = await page.evaluate(() => {
 	g.engageCruise();
 	for (let i = 0; i < 80 && g.regime !== "cruise"; i++) g.step(dt);
 	for (let i = 0; i < 20; i++) g.step(dt);
-	g.keys.add("d");
+	g.keys.add("shift");
 	g.step(dt);
-	g.keys.delete("d");
+	g.keys.delete("shift");
 	const cancelled = g.detour === null;
 	g.resetFlightToStart();
 	g.targetId = station.id;
@@ -75,7 +75,7 @@ check("detour state names the blocker to the player", result.active.prompt.start
 check("cruise velocity follows the visible nose", result.alignment > 0.999);
 check("changing target clears the old detour", result.retargetCleared);
 check("cancelling spool-up clears its detour", result.spoolCancelClears);
-check("manual steering cancels automatic detour immediately", result.cancelled);
+check("manual throttle cancels automatic detour immediately", result.cancelled);
 check("arrival never changes the selected station", result.finalTargetId === result.stationId);
 check("detour reaches the selected station", result.finalExit === `arrived at ${result.stationId}`);
 console.log(JSON.stringify(result));

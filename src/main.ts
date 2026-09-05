@@ -5669,6 +5669,52 @@ class Game {
 		if (step.starved) this.dropOut("drive charge exhausted");
 	}
 
+	/** Replan the currently active leg against current and linearly projected masses. */
+	private replanDetourLeg(
+		detour: DetourPlan & { targetId: string; waypoint: 0 | 1 | 2 },
+		target: Body,
+		point: Vec3,
+		masses: readonly Mass[],
+		dt: number,
+	): { detour: DetourPlan & { targetId: string; waypoint: 0 | 1 | 2 }; point: Vec3 } | null {
+		const currentBlocker = cruiseRouteBlocker(
+			this.world.ship.pos,
+			point,
+			masses,
+			this.targetParentId(),
+		);
+		const blocker =
+			currentBlocker ??
+			cruiseRouteBlocker(
+				this.world.ship.pos,
+				point,
+				masses,
+				this.targetParentId(),
+				dt,
+			);
+		if (!blocker) return { detour, point };
+		const route = planCruiseDetour({
+			from: this.world.ship.pos,
+			target: target.pos,
+			blocker,
+			masses,
+			targetParentId: this.targetParentId(),
+			previousSide: blocker.id === detour.bodyId ? detour.side : undefined,
+			// Route candidates use one consistent future snapshot, even when the
+			// blocker already intersects the current leg. Planning that case at `t`
+			// while testing its next leg at `t + dt` can send the ship into a body
+			// that has already crossed the newly chosen side by the next frame.
+			projectionS: dt,
+		});
+		if (!route) {
+			this.dropOut(`detour unavailable: ${this.bodyFor(blocker.id)?.name ?? blocker.id}`);
+			return null;
+		}
+		const replanned = { ...route, targetId: target.id, waypoint: 0 as const };
+		this.detour = replanned;
+		return { detour: replanned, point: replanned.waypoints[0] };
+	}
+
 	/** Turn toward the current internal waypoint; physical motion remains cruise. */
 	private stepDetour(dt: number): boolean {
 		let detour = this.detour;
@@ -5683,52 +5729,11 @@ class Game {
 			return true;
 		}
 		let point = detour.waypoint === 2 ? target.pos : detour.waypoints[detour.waypoint];
-		// A candidate is checked against the frame-start mass snapshot, but bodies
-		// move while a long cruise leg is flown. Replan only when the *current*
-		// leg becomes obstructed: continuously rebuilding a still-safe route would
-		// chase its own waypoints forever, while waiting for `advanceCruise` would
-		// turn an avoidable second-body crossing into a safety stop.
 		const masses = this.masses();
-		const currentBlocker = cruiseRouteBlocker(
-			this.world.ship.pos,
-			point,
-			masses,
-			this.targetParentId(),
-		);
-		// Route candidates use one consistent future snapshot, even when the
-		// blocker already intersects the current leg. Planning that case at `t`
-		// while testing its next leg at `t + dt` can send the ship into a body
-		// that has already crossed the newly chosen side by the next frame.
-		const projectionS = dt;
-		const blocker =
-			currentBlocker ??
-			cruiseRouteBlocker(
-				this.world.ship.pos,
-				point,
-				masses,
-				this.targetParentId(),
-				dt,
-			);
-		if (blocker) {
-			const route = planCruiseDetour({
-				from: this.world.ship.pos,
-				target: target.pos,
-				blocker,
-				masses,
-				targetParentId: this.targetParentId(),
-				previousSide: blocker.id === detour.bodyId ? detour.side : undefined,
-				projectionS,
-			});
-			if (route) {
-				detour = { ...route, targetId: target.id, waypoint: 0 };
-				this.detour = detour;
-				point = detour.waypoints[0];
-			}
-			else {
-				this.dropOut(`detour unavailable: ${this.bodyFor(blocker.id)?.name ?? blocker.id}`);
-				return false;
-			}
-		}
+		let active = this.replanDetourLeg(detour, target, point, masses, dt);
+		if (!active) return false;
+		detour = active.detour;
+		point = active.point;
 		// Cruise can cover far more than a kilometre per frame.  Treat a waypoint
 		// as reached over the next swept frame rather than demanding an endpoint
 		// sample land on it, or a fast ship turns back and spends its charge circling.
@@ -5739,7 +5744,14 @@ class Game {
 			if (detour.waypoint === 0) detour.waypoint = 1;
 			else if (detour.waypoint === 1) detour.waypoint = 2;
 		}
-		const next = detour.waypoint === 2 ? target.pos : detour.waypoints[detour.waypoint];
+		point = detour.waypoint === 2 ? target.pos : detour.waypoints[detour.waypoint];
+		// A swept waypoint reach can select a new leg this frame. Re-evaluate it
+		// before the physical cruise step so the moving guard is a backstop, not
+		// the first response to a newly closed route.
+		active = this.replanDetourLeg(detour, target, point, masses, dt);
+		if (!active) return false;
+		detour = active.detour;
+		const next = active.point;
 		const direction = sub(next, this.world.ship.pos);
 		const distance = length(direction);
 		if (distance === 0) return true;
