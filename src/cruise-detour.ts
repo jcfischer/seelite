@@ -143,10 +143,13 @@ export function planCruiseDetour(input: DetourInput): DetourPlan | null {
 				add(blockerPos, entry),
 				add(blockerPos, exit),
 			];
-			const clear =
-				segmentIsClear(input.from, waypoints[0], input.masses, input.targetParentId, projectionS) &&
-				segmentIsClear(waypoints[0], waypoints[1], input.masses, input.targetParentId, projectionS) &&
-				segmentIsClear(waypoints[1], input.target, input.masses, input.targetParentId, projectionS);
+			// Keep the reported six-segment work bound honest: all three limbs are
+			// evaluated for both candidates, even when an early limb is blocked.
+			const clear = [
+				segmentIsClear(input.from, waypoints[0], input.masses, input.targetParentId, projectionS),
+				segmentIsClear(waypoints[0], waypoints[1], input.masses, input.targetParentId, projectionS),
+				segmentIsClear(waypoints[1], input.target, input.masses, input.targetParentId, projectionS),
+			].every(Boolean);
 			const score =
 				length(sub(waypoints[0], input.from)) +
 				length(sub(waypoints[1], waypoints[0])) +

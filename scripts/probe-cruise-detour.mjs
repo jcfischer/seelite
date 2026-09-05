@@ -48,6 +48,9 @@ const result = await page.evaluate(() => {
 	g.resetFlightToStart();
 	g.targetId = station.id;
 	g.engageCruise();
+	g.command("j");
+	const spoolCancelClears = g.detour === null;
+	g.engageCruise();
 	for (let i = 0; i < 80 && g.regime !== "cruise"; i++) g.step(dt);
 	for (let i = 0; i < 20; i++) g.step(dt);
 	g.keys.add("d");
@@ -63,7 +66,7 @@ const result = await page.evaluate(() => {
 		if (g.regime === "cruise") flew = true;
 		if (flew && g.regime === "normal") break;
 	}
-	return { stationId: station.id, active, alignment, retargetCleared, cancelled, finalTargetId: g.targetId, finalExit: g.lastExit, finalDetour: g.detour, finalRangeKm: g.targetRange() };
+	return { stationId: station.id, active, alignment, retargetCleared, spoolCancelClears, cancelled, finalTargetId: g.targetId, finalExit: g.lastExit, finalDetour: g.detour, finalRangeKm: g.targetRange() };
 });
 
 check("detour retains the selected station", result.active.detour?.targetId === result.stationId);
@@ -71,6 +74,7 @@ check("detour has exactly two internal waypoints", result.active.detour?.waypoin
 check("detour state names the blocker to the player", result.active.prompt.startsWith("DETOUR AROUND"));
 check("cruise velocity follows the visible nose", result.alignment > 0.999);
 check("changing target clears the old detour", result.retargetCleared);
+check("cancelling spool-up clears its detour", result.spoolCancelClears);
 check("manual steering cancels automatic detour immediately", result.cancelled);
 check("arrival never changes the selected station", result.finalTargetId === result.stationId);
 check("detour reaches the selected station", result.finalExit === `arrived at ${result.stationId}`);

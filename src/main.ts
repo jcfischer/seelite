@@ -3474,8 +3474,9 @@ class Game {
 				break;
 			case "j":
 				if (this.regime === "cruise") this.dropOut("dropped by the player");
-				else if (this.spoolLeftS > 0) {
+			else if (this.spoolLeftS > 0) {
 					this.spoolLeftS = 0;
+					this.detour = null;
 					this.lastExit = "spool-up cancelled";
 				} else this.engageCruise();
 				return;
