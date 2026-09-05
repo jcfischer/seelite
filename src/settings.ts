@@ -111,12 +111,32 @@ const SCHEMA = {
 	 * `scripts/measure-occlusion-cost.mjs` is the instrument and
 	 * `occlusion.ts` carries the resolution table.
 	 *
+	 * **Those figures are the pair at the default sample count, and they were
+	 * the wrong half of the question — #241.** The principal flew this build at
+	 * antialias 2x and reported empty space falling from a comfortable 60 fps to
+	 * around 40. Re-measured, the pair **doubles** the open-space frame rather
+	 * than costing the fifth the `cockpit-arrival` reading above suggested, and
+	 * **multisampling multiplies it rather than adding beside it** — a term
+	 * priced only at the default understates a 2x player's cost by half, which
+	 * is how this shipped. What that frame buys is **two** answers, not one: the
+	 * shadow darkens a fraction of a percent of an exterior frame, the ambient
+	 * occlusion about a fifth of a cockpit one, nearly all of it the cabin's
+	 * corners.
+	 *
+	 * **The figures themselves are not repeated here.** `occlusion.ts` owns the
+	 * table and `scripts/measure-occlusion-cost.mjs` reprints it beside what a
+	 * fresh run derives — this entry already carried two measurements that
+	 * drifted apart from each other, which is the argument the `dither` row
+	 * below makes for staying qualitative.
+	 *
+	 * So #241 put a gate in front of both passes rather than a row here: they
+	 * draw when a station is close enough to be worth them and not otherwise,
+	 * and `occlusion.ts` owns the predicate and the thresholds. This key still
+	 * decides whether the player wants them at all.
+	 *
 	 * That is a *different order* from the antialiasing row below, which is
 	 * four to six times the whole frame — so this stays one key rather than
-	 * becoming two rows on #200's argument. **Whether the ambient occlusion
-	 * deserves a row of its own is a question for the principal and not a
-	 * decision taken here**, and the pair being 1.2x the unoccluded frame is
-	 * the number that question is asked with.
+	 * becoming two rows on #200's argument.
 	 *
 	 * The other framing the instrument takes, `berth-free-look`, is **not a
 	 * measurement and is not quoted**: its own frame is 44 ms with a 39–54 ms
@@ -137,7 +157,7 @@ const SCHEMA = {
 		allowed: ["high", "low"] as const,
 		label: "Lighting",
 		describe: (v: string) => (v === "high" ? "High" : "Low"),
-		note: "High reflects the star off every hull, plate and cockpit surface, cuts the panel lines into the hulls and the cabin so a moving sun breaks across them, lights the console from above, and casts the star's shadow across whatever is nearest. Low drops all four and keeps the sun, the star-side gradient and the cockpit fill; the picture stays lit, the panel lines stay painted, and the metal stops reading as metal. Corner and contact shading is the Occlusion row, not this one.",
+		note: "High reflects the star off every hull, plate and cockpit surface, cuts the panel lines into the hulls and the cabin so a moving sun breaks across them, lights the console from above, and — once a station is close enough to be worth the frame it costs — casts the star's shadow across whatever is nearest. Low drops all four and keeps the sun, the star-side gradient and the cockpit fill; the picture stays lit, the panel lines stay painted, and the metal stops reading as metal. Corner and contact shading is the Occlusion row, not this one.",
 	},
 	/**
 	 * How many samples the composed frame is drawn with — #200.

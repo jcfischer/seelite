@@ -153,6 +153,28 @@ const compare = (page, mode) =>
 			// which may contribute a single occluded pixel. This is the arm that
 			// fails when a transparent mesh writes depth into the AO buffer.
 			const hidden = [];
+			// **The world without the ship**, for #241's ladder. There is always a
+			// subject at a fixed distance from the camera — the cabin in cockpit
+			// view, the player hull in chase — so the pair's whole-frame reading
+			// never falls to zero however far the station is, and what it reports
+			// is the near subject rather than the station.
+			//
+			// **The two roots' own `visible` cannot be used, and the first version
+			// of this did.** `Game.render` writes `shipMesh.visible = view ===
+			// "chase"` and `cockpit.mesh.visible = view === "cockpit"` on every
+			// frame, and `frame()` below renders — so a flag set here was restored
+			// before the pixels it was meant to change were read, and the ladder
+			// reported hull occlusion as station evidence at twenty times its real
+			// size. Their *children* are nothing `render` touches. #233 needed the
+			// same column for the same reason.
+			if (how === "world-only")
+				for (const root of [game.shipMesh, game.cockpit.mesh]) {
+					if (!root) continue;
+					for (const child of root.children) {
+						hidden.push([child, child.visible]);
+						child.visible = false;
+					}
+				}
 			if (how === "refused-only")
 				game.nearScene.traverse((object) => {
 					if (object.isMesh && object.castShadow) {
@@ -245,9 +267,16 @@ t.check(
 const gate = await page.evaluate(async () => {
 	const game = window.__seelite;
 	const kept = game.settings.value.quality;
+	// **What each row asks for, not what is drawn — #241.** This page sits at
+	// the arrival point, where the gate is shut, so the two drawn flags are
+	// `false` on every arm below and a row that moved nothing would read
+	// identically to one that moved both. What is being asked here is whether
+	// each row reaches its own term; whether the gate then lets it draw is the
+	// boot rows and the ladder further down. The `far`/`approach` suns have no
+	// gate in front of them and are read off the scene.
 	const read = () => ({
-		castShadow: !!game.nearScene.getObjectByName("sun")?.castShadow,
-		ao: game.gtaoPass?.enabled ?? null,
+		castShadow: game.occlusionState.wanted.shadows,
+		ao: game.occlusionState.wanted.ao,
 		far: !!game.farScene.getObjectByName("sun")?.castShadow,
 		approach: !!game.approachScene.getObjectByName("sun")?.castShadow,
 	});
@@ -461,6 +490,16 @@ const coldBootAt = async (settings) => {
 		return {
 			quality: game.settings.value.quality,
 			aoRow: game.settings.value.ao,
+			// **What each row asked for, and what is actually drawn — #241 made
+			// those two different things.** A boot happens at the arrival point,
+			// where the gate is shut, so both drawn flags are `false` whatever
+			// the rows say. Asserting the drawn flags alone would make a saved
+			// `high` and a saved `low` indistinguishable here and retire the arm
+			// that caught #201's boot bug twice; asserting the rows alone would
+			// pass on a build that had lost the gate. Both, and they are checked
+			// separately.
+			wanted: game.occlusionState.wanted,
+			gateOpen: game.occlusionState.open,
 			castShadow: !!game.nearScene.getObjectByName("sun")?.castShadow,
 			ao: game.gtaoPass?.enabled ?? null,
 		};
@@ -496,22 +535,46 @@ const coldBootAt = async (settings) => {
  */
 const coldLowOn = await coldBootAt({ quality: "low", ao: "on" });
 t.check(
-	"a saved low quality boots with no shadow, and does not take the occlusion with it",
+	"a saved low quality boots asking for no shadow, and does not take the occlusion with it",
 	coldLowOn.quality === "low" &&
 		coldLowOn.aoRow === "on" &&
-		!coldLowOn.castShadow &&
-		coldLowOn.ao === true,
-	`booted ${coldLowOn.quality}/${coldLowOn.aoRow} with castShadow ${coldLowOn.castShadow} and ao ${coldLowOn.ao}`,
+		!coldLowOn.wanted.shadows &&
+		coldLowOn.wanted.ao === true,
+	`booted ${coldLowOn.quality}/${coldLowOn.aoRow} asking for shadow ${coldLowOn.wanted.shadows} and ao ${coldLowOn.wanted.ao}`,
 );
 
 const coldHighOff = await coldBootAt({ quality: "high", ao: "off" });
 t.check(
-	"and a saved high quality boots with the shadow on, without turning the occlusion back on",
+	"and a saved high quality boots asking for the shadow, without turning the occlusion back on",
 	coldHighOff.quality === "high" &&
 		coldHighOff.aoRow === "off" &&
-		coldHighOff.castShadow &&
-		coldHighOff.ao === false,
-	`booted ${coldHighOff.quality}/${coldHighOff.aoRow} with castShadow ${coldHighOff.castShadow} and ao ${coldHighOff.ao}`,
+		coldHighOff.wanted.shadows &&
+		coldHighOff.wanted.ao === false,
+	`booted ${coldHighOff.quality}/${coldHighOff.aoRow} asking for shadow ${coldHighOff.wanted.shadows} and ao ${coldHighOff.wanted.ao}`,
+);
+
+/**
+ * **And neither boot draws anything, because a boot is in open space — #241.**
+ *
+ * The two arms above establish that each row is read and moves its own term.
+ * This is the other half: the arrival point is where the principal measured 40
+ * fps, so a `high` boot must *ask* for the shadow and still draw neither pass
+ * until something is close enough to be worth them.
+ *
+ * It reads the two flags rather than the gate's own boolean. Asserting
+ * `gateOpen === false` alone would pass on a build whose `applyOcclusion` had
+ * dropped the gate from its conjunction — the gate would read shut and both
+ * passes would draw. Built red exactly that way.
+ */
+t.check(
+	"and neither boot draws either pass, because a boot is in open space",
+	coldHighOff.gateOpen === false &&
+		coldHighOff.castShadow === false &&
+		coldHighOff.ao === false &&
+		coldLowOn.gateOpen === false &&
+		coldLowOn.castShadow === false &&
+		coldLowOn.ao === false,
+	`high/off gate ${coldHighOff.gateOpen} drawing ${coldHighOff.castShadow}/${coldHighOff.ao}; low/on gate ${coldLowOn.gateOpen} drawing ${coldLowOn.castShadow}/${coldLowOn.ao}`,
 );
 
 // ---- the exterior framing: the hull in front, the station beyond ----
@@ -539,12 +602,133 @@ console.log(
 	`  shadow — exterior ${flank.shadow.darkerPct.toFixed(3)}% darker, deepest ${flank.shadow.deepest.toFixed(1)}/255`,
 );
 
+// ---- #241's approach ladder: where the pair starts to be worth its cost ----
+
+/**
+ * **What the two passes buy along the approach, printed for the principal.**
+ *
+ * `OCCLUSION.gate.openRad` decides when they start drawing, and this ladder is
+ * what that number is judged against — but it does not *derive* it, and an
+ * earlier revision of this comment said it did. `occlusion.ts` carries why:
+ * there is no onset on this curve to read a threshold off. So the rungs are
+ * flown, what the pair darkens is measured at each on the same threshold-free
+ * arithmetic every other row here uses, and the rows below check the curve's
+ * shape rather than a floor.
+ *
+ * The rungs are in station silhouette radii down the aperture axis, which is
+ * `cockpit-arrival`'s own axis: it is captured at five of them.
+ *
+ * **Flown in chase and not in cockpit, and that is the whole reason this
+ * measurement was rebuilt.** The first version flew it in cockpit view and
+ * reported the pair darkening 4.6% of the frame at *twenty* radii, falling
+ * monotonically to nothing — which is not a station at all. It is the cabin:
+ * the ambient occlusion darkens 22.5% of a `cockpit-arrival` frame, and a
+ * ladder that includes it measures the one subject that is in every frame at
+ * the same distance. #233 reached the same wall and answered it the same way,
+ * with a world-only column. Chase has no cabin, so what moves across these
+ * rungs is the station.
+ */
+const LADDER_RUNGS = [20, 12, 8, 5, 3, 2, 1.5];
+
+await setView(page, "chase");
+const ladder = [];
+for (const rung of LADDER_RUNGS) {
+	await page.evaluate(
+		([id, radii]) =>
+			window.__viewAlongAxis(id, window.__radiusOf(id) * radii, {
+				comoving: true,
+			}),
+		[STATION, rung],
+	);
+	await setView(page, "chase");
+	await settleFrames(page);
+	// The gate is advanced by the frame loop, and `settleFrames` has just run
+	// enough of them for `openFrames` to have been satisfied if it was going to
+	// be. Read before `compare`, which pins both passes and would report the pin
+	// rather than the gate.
+	const state = await page.evaluate(() => window.__seelite.occlusionState);
+	const seen = await compare(page, "world-only");
+	ladder.push({
+		rung,
+		open: state.open,
+		enclosureRad: state.enclosureRad,
+		pairPct: seen.shadow.darkerPct + seen.ao.darkerPct,
+	});
+}
+for (const r of ladder)
+	console.log(
+		`  ladder — ${String(r.rung).padStart(4)} radii  enclosure ${r.enclosureRad.toFixed(3)} rad  gate ${r.open ? "open" : "shut"}  pair ${r.pairPct.toFixed(3)}% darker`,
+	);
+
+/**
+ * **There is no cliff on this ladder, and the checks below are shaped by that
+ * rather than around it.**
+ *
+ * It rises smoothly with enclosure and never falls to nothing, because at
+ * twenty radii the station is still a small disc and the pass still darkens it.
+ * **The seven readings are not repeated here** — `OCCLUSION.gate` in
+ * `occlusion.ts` owns them beside the thresholds they are judged against, and
+ * this comment carried a stale copy for a round after the world-only mode was
+ * fixed, which is the third-copy drift `CLAUDE.md` warns about.
+ *
+ * So "where does the pair start to read" has no answer a probe can pick, and an
+ * earlier draft of this section picked one anyway — a 0.1% floor that every
+ * rung cleared, and then a floor that would have had to be set between 2.07 and
+ * 5.21 to make the current thresholds come out right. That is the failure
+ * `CLAUDE.md` records as a constant tuned until the verdict came out.
+ *
+ * What is checkable without choosing the trade is the *shape*: the contribution
+ * rises with enclosure, the gate follows it in one direction only, and it opens
+ * while the station is still outside its own silhouette — which is what makes
+ * `berth-arrival` a frame with the passes already on rather than one they pop
+ * on during. **Where exactly to put the threshold on that curve is the
+ * principal's, on the canonical sheet, and this ladder is what it is read
+ * from.**
+ */
+t.check(
+	"what the pair darkens rises as the station closes",
+	ladder[ladder.length - 1].pairPct > ladder[0].pairPct * 3,
+	ladder.map((r) => `${r.rung}:${r.pairPct.toFixed(2)}%`).join(" "),
+);
+t.check(
+	"the gate never re-closes as the station closes",
+	ladder.every((r, i) => i === 0 || !ladder[i - 1].open || r.open),
+	ladder.map((r) => `${r.rung}:${r.open ? "open" : "shut"}`).join(" "),
+);
+t.check(
+	"the gate is shut at the far end of the ladder and open at the near end",
+	!ladder[0].open && !ladder[1].open && ladder[ladder.length - 1].open,
+	`${ladder[0].rung} radii ${ladder[0].open ? "open" : "shut"}, ${ladder[1].rung} ${ladder[1].open ? "open" : "shut"}, ${ladder[ladder.length - 1].rung} ${ladder[ladder.length - 1].open ? "open" : "shut"}`,
+);
+const opensAt = ladder.find((r) => r.open);
+t.check(
+	"the gate opens while the station is still outside its own silhouette",
+	opensAt !== undefined && opensAt.enclosureRad < Math.PI / 2,
+	opensAt
+		? `opens at ${opensAt.rung} radii, enclosure ${opensAt.enclosureRad.toFixed(3)} rad against ${(Math.PI / 2).toFixed(3)} inside`
+		: "the gate never opened on the ladder",
+);
+
 // ---- inside a bay, which is the frame the AO was asked for ----
 
 await setView(page, OCCLUSION_FRAMINGS.berth.view);
 await OCCLUSION_FRAMINGS.berth.place(page);
 await setView(page, OCCLUSION_FRAMINGS.berth.view);
 await settleFrames(page);
+const bayGate = await page.evaluate(() => {
+	const game = window.__seelite;
+	return {
+		...game.occlusionState,
+		drawnShadow: !!game.nearScene.getObjectByName("sun")?.castShadow,
+		drawnAo: game.gtaoPass?.enabled ?? null,
+	};
+});
+t.check(
+	"the gate is open inside a bay, which is where the pair earns its cost",
+	bayGate.open && bayGate.drawnShadow && bayGate.drawnAo,
+	`gate ${bayGate.open ? "open" : "shut"}, enclosure ${bayGate.enclosureRad.toFixed(3)} rad, drawing shadow ${bayGate.drawnShadow} and ao ${bayGate.drawnAo}`,
+);
+
 const bay = await compare(page, "normal");
 
 t.check(

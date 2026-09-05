@@ -86,11 +86,15 @@ import {
 	equirectEnvironment,
 } from "./light-rig";
 import {
+	CLOSED_GATE,
+	enclosureRad,
 	OCCLUSION,
+	type OcclusionGate,
 	SHADOW_MAP_TEXELS,
 	type ShadowSubject,
 	shadowBox,
 	shadowFit,
+	stepOcclusionGate,
 } from "./occlusion";
 import {
 	hideNonOccluders,
@@ -2689,22 +2693,105 @@ class Game {
 	 * `probe-ship-visuals.mjs`'s seam row and `probe-navigation-console.mjs`'s
 	 * frame count both moved when it alone was flipped.
 	 */
-	setOcclusion(
-		shadows: boolean = LIGHT_RIG.quality[this.settings.value.quality].shadows,
-		// The player's own row since the principal's ruling, not the lighting
-		// key. `light-rig.ts` says why the two were separated.
-		ao: boolean = this.settings.value.ao === "on",
-	) {
-		if (this.shadowSun) this.shadowSun.castShadow = shadows;
-		// **Both guards are real and both have a call site that follows them.**
-		// `applyQuality` runs from `buildEnvironment`, which is inside
-		// `buildLights` — before the sun is wired and long before the composer
-		// exists — so on the boot path this method is called twice against two
-		// null fields. Each field's own construction site calls it again, which
-		// is what makes the player's saved setting arrive. Neither guard is a
-		// "harmless" skip: dropping either call site leaves that pass on at boot
-		// whatever was saved, and nothing in the frame says so.
-		if (this.gtaoPass) this.gtaoPass.enabled = ao;
+	setOcclusion(shadows?: boolean, ao?: boolean) {
+		this.occlusionWanted = {
+			shadows:
+				shadows ?? LIGHT_RIG.quality[this.settings.value.quality].shadows,
+			// The player's own row since the principal's ruling on #235, not the
+			// lighting key. `light-rig.ts` says why the two were separated, and
+			// #241's gate sits in front of both of them either way: a row says
+			// whether the player wants the term at all, the gate says whether
+			// this frame is one where it shows anything.
+			ao: ao ?? this.settings.value.ao === "on",
+		};
+		// **An explicit argument pins the pass past #241's gate, and a bare call
+		// un-pins it.** `probe-occlusion.mjs` and
+		// `scripts/measure-occlusion-cost.mjs` both name the arm they are
+		// measuring, and a gate that overrode them would silently re-arm the
+		// control: an instrument asking for "shadow on" in empty space would
+		// measure the gate refusing, and report the pass as free. `undefined`
+		// rather than `arguments.length` so a caller reading the signature can
+		// see which half it is pinning.
+		this.occlusionPinned = shadows !== undefined || ao !== undefined;
+		this.applyOcclusion();
+	}
+
+	/**
+	 * Write the two flags from the player's row, the pin, and #241's gate.
+	 *
+	 * **Both guards are real and both have a call site that follows them.**
+	 * `applyQuality` runs from `buildEnvironment`, which is inside `buildLights`
+	 * — before the sun is wired and long before the composer exists — so on the
+	 * boot path this runs twice against two null fields. Each field's own
+	 * construction site calls `setOcclusion` again, which is what makes the
+	 * player's saved setting arrive. Neither guard is a "harmless" skip:
+	 * dropping either call site leaves that pass on at boot whatever was saved,
+	 * and nothing in the frame says so.
+	 *
+	 * The gate is an `&&` rather than a third state: `quality: low` still turns
+	 * both passes off outright, and the gate only ever declines work that
+	 * `quality: high` would otherwise pay for nothing.
+	 */
+	private applyOcclusion() {
+		const gated = this.occlusionPinned || this.occlusionGate.open;
+		if (this.shadowSun)
+			this.shadowSun.castShadow = this.occlusionWanted.shadows && gated;
+		if (this.gtaoPass) this.gtaoPass.enabled = this.occlusionWanted.ao && gated;
+	}
+
+	/**
+	 * What the gate is doing, for a probe and for an instrument — #241.
+	 *
+	 * A read-only view rather than four public fields, and no permanent HUD
+	 * element: the four numbers a check needs are the row's answer, whether an
+	 * instrument has pinned it, whether the gate is open, and the enclosure the
+	 * gate read. Without this, `probe-occlusion.mjs`'s cold-boot arms could only
+	 * see the two flags — and with a gate in front of them, a saved `high` in
+	 * open space produces the same two `false`s as a saved `low`, so the arm
+	 * that caught #201's boot bug twice would stop being able to.
+	 */
+	get occlusionState() {
+		return {
+			wanted: this.occlusionWanted,
+			pinned: this.occlusionPinned,
+			open: this.occlusionGate.open,
+			pending: this.occlusionGate.pending,
+			enclosureRad: enclosureRad(this.stationSubjects),
+		};
+	}
+
+	/** What the player's row and any instrument pin ask for, before #241's gate
+	 *  is applied to it. */
+	private occlusionWanted = { shadows: false, ao: false };
+	/** Whether an instrument named both halves explicitly, which wins over the
+	 *  gate for as long as it is held. */
+	private occlusionPinned = false;
+	/** #241's gate, advanced once per frame in `render`. */
+	private occlusionGate: OcclusionGate = CLOSED_GATE;
+	/** This frame's near-layer stations, as shadow subjects. Built once at the
+	 *  top of the shadow work and read by both the gate and `fitShadowCamera`,
+	 *  because `subjectOf` walks a mesh's world matrix and doing it twice a
+	 *  frame for the same station buys nothing. */
+	private readonly stationSubjects: ShadowSubject[] = [];
+
+	/**
+	 * The near-layer stations, as shadow subjects, into the scratch array.
+	 *
+	 * Neither the cabin nor the player hull is one, and that is #241's whole
+	 * point rather than an omission: the cabin is visible in every cockpit frame,
+	 * so a gate that counted it would never close; and #233 measures the
+	 * exterior shadow on the hull alone as *absent* rather than small —
+	 * `mean|d|` 0.0000 at 20, 12 and 8 radii on a threshold-free column.
+	 */
+	private buildStationSubjects() {
+		const into = this.stationSubjects;
+		into.length = 0;
+		for (const [id, layer] of this.layers) {
+			if (layer !== "near") continue;
+			const mesh = this.stationVisuals.get(id)?.root;
+			if (mesh) into.push(subjectOf(mesh));
+		}
+		return into;
 	}
 
 	/**
@@ -4950,6 +5037,15 @@ class Game {
 		}
 		this.clearFlightSession();
 
+		// **#241's gate goes back to shut, which is where a boot in open space
+		// finds it.** Left open, a reset would draw both passes for the whole
+		// close window — thirty frames of a doubled frame at the arrival point,
+		// where they darken 0.002% of it. `applyOcclusion` writes the two flags
+		// straight away rather than waiting for the next `render`, so a probe
+		// that resets and reads them back sees the reset state.
+		this.occlusionGate = CLOSED_GATE;
+		this.applyOcclusion();
+
 		// A boot has no jump charging, so a reset has none either.
 		// `resetWorldToStart` rebuilds the start system when the ship is
 		// elsewhere, so this method is total after a jump too — it was not, for
@@ -6063,8 +6159,19 @@ class Game {
 		// near plane fills the screen with its inside faces.
 		this.shipMesh.visible = this.view === "chase";
 
-		// #201's shadow camera, fitted after everything above has been placed and
-		// before the composer draws anything.
+		// **#241's gate, then #201's shadow camera** — in that order, because the
+		// gate decides whether there is a shadow to fit at all and
+		// `fitShadowCamera` reads `castShadow` on its first line.
+		//
+		// Stepped every frame whatever the gate says, including while it is shut:
+		// a gate that stopped being advanced when it closed could never open
+		// again. And stepped before the passes are drawn rather than after, so
+		// the frame that opens it is the frame that draws with it.
+		this.occlusionGate = stepOcclusionGate(
+			this.occlusionGate,
+			this.buildStationSubjects(),
+		);
+		this.applyOcclusion();
 		this.fitShadowCamera();
 
 		// **Cockpit only** (#200). A vignette is a lens artefact; in cockpit view
@@ -6163,11 +6270,10 @@ class Game {
 				candidates.push(subjectOf(this.cockpit.mesh));
 		} else {
 			if (this.shipMesh.visible) candidates.push(subjectOf(this.shipMesh));
-			for (const [id, layer] of this.layers) {
-				if (layer !== "near") continue;
-				const mesh = this.stationVisuals.get(id)?.root;
-				if (mesh) candidates.push(subjectOf(mesh));
-			}
+			// Already built this frame, for #241's gate a few lines up in
+			// `render`. Rebuilding them here would walk every station's world
+			// matrix a second time for the same answer.
+			for (const station of this.stationSubjects) candidates.push(station);
 		}
 		const subject = shadowBox(candidates);
 		if (!subject) {
@@ -7559,6 +7665,7 @@ if (query.has("model-viewer")) {
 				scenes: [game.nearScene, game.approachScene, game.farScene],
 				bloom: game.bloom,
 				attribution,
+				occlusion: () => game.occlusionState,
 			});
 			let tornDown = false;
 			const teardown = (event: PageTransitionEvent) => {

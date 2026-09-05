@@ -264,6 +264,22 @@ export type PerfTargets = {
 	bloom: { enabled: boolean } | null;
 	/** Query-gated frame timing and render-shape evidence. */
 	attribution: FrameAttribution;
+	/**
+	 * #241's occlusion gate, read fresh each redraw.
+	 *
+	 * A getter rather than a value because the gate is a per-frame decision and
+	 * this panel redraws on a one-second interval — a snapshot handed in at mount
+	 * would show the state the game booted in for the whole session. And here
+	 * rather than as a HUD element because #225's build contract asks for the
+	 * gate's state to be reachable "without adding a permanent HUD element", and
+	 * this panel is already the query-gated surface for exactly that.
+	 */
+	occlusion: () => {
+		wanted: { shadows: boolean; ao: boolean };
+		pinned: boolean;
+		open: boolean;
+		enclosureRad: number;
+	};
 };
 
 function metric(value: number | null): string {
@@ -381,6 +397,7 @@ export function mountPerfPanel(targets: PerfTargets) {
 
 	const draw = () => {
 		const attribution = targets.attribution.snapshot();
+		const occlusion = targets.occlusion();
 		panel.dataset.attributionEnabled = String(attribution.enabled);
 		panel.dataset.gpuStatus = attribution.gpu.status;
 		panel.innerHTML = `${switches
@@ -405,6 +422,9 @@ textures                    ${attribution.renderer.textures}
 drawing buffer              ${attribution.renderer.drawingBufferWidth} × ${attribution.renderer.drawingBufferHeight}
 pixel ratio / render scale  ${attribution.renderer.effectivePixelRatio.toFixed(2)} / ${attribution.renderer.renderScale.toFixed(2)}
 composer passes             ${attribution.renderer.composerPassCount}
+occlusion gate              ${occlusion.open ? "open" : "shut"}${occlusion.pinned ? " (pinned by an instrument)" : ""}
+occlusion asked / drawn     ${occlusion.wanted.shadows ? "shadow" : "—"} ${occlusion.wanted.ao ? "ao" : "—"} / ${occlusion.wanted.shadows && (occlusion.open || occlusion.pinned) ? "shadow" : "—"} ${occlusion.wanted.ao && (occlusion.open || occlusion.pinned) ? "ao" : "—"}
+enclosure                   ${occlusion.enclosureRad.toFixed(3)} rad
 renderer                    ${identity(attribution.renderer.api)}
 rasterizer                  ${identity(attribution.renderer.rasterizer)}`;
 	};

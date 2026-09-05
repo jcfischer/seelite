@@ -226,6 +226,128 @@ const SHADOW_MIN_APPARENT_RAD = 0.0087;
 const SHADOW_UNION_LIMIT = 4;
 
 /**
+ * #241's gate: whether the two passes run at all this frame.
+ *
+ * ## What it is for
+ *
+ * The pair is most expensive exactly where it shows least. Measured headed on
+ * an M1 Pro at 1440x900 and device scale 2, six shuffled blocks of 120 frames,
+ * every arm separating 36/36 against the plain frame:
+ *
+ * | framing | pair off | pair on | pair off, 2x | pair on, 2x |
+ * |---|---:|---:|---:|---:|
+ * | empty space | 3.740 ms | 7.303 | 11.552 | 18.681 |
+ * | `cockpit-arrival` | 3.784 | 7.403 | 11.650 | 18.519 |
+ * | `berth-free-look` | 38.861 | 41.909 | 48.025 | 54.228 |
+ *
+ * The pair **doubles** the open-space frame, and doubles again at the player's
+ * antialias setting because multisampling multiplies every later fill-rate term
+ * rather than adding beside it.
+ *
+ * **What it buys there is two different answers and they must not be run
+ * together.** The *shadow* buys almost nothing: #222's round-2 reading is
+ * **0.003%** of pixels darkened at `station-flank` and **0.002%** at
+ * `cockpit-arrival` against **6.06%** in a bay, and #233 reaches the same place
+ * from the other side — its world-only column is 0.000% at every approach rung,
+ * so the shadow's entire output in open space is the cabin shadowing itself.
+ * The *ambient occlusion* buys a great deal: it darkens **22.5%** of a
+ * `cockpit-arrival` frame and 20.3% of a bay's, almost all of it on the cabin.
+ *
+ * So gating in open space is not "removing a pass that shows nothing". It is
+ * removing the star's shadow, which shows nothing, **and** the cabin's corner
+ * darkening, which shows plenty — and the second of those is a look decision
+ * rather than a saving. The canonical sheet is where it is taken: the whole
+ * frame moves about 1% of its pixels past 24/255, against a same-build control
+ * of 0.00–0.02%. Keeping the ambient occlusion in open space leaves the frame
+ * at roughly 57 fps at the principal's 2x, which is why the two are gated
+ * together rather than separately.
+ *
+ * ## Why apparent size, and not the two obvious alternatives
+ *
+ * Both were tried on paper and #241 records them, because each looks right.
+ *
+ * **"Any subject besides the cabin"** is the fix for the trap that
+ * `fitShadowCamera`'s existing no-subject idle path never fires: in cockpit view
+ * its only candidate is the cabin mesh, visible in every frame, so `shadowBox`
+ * always admits. But a *world* subject is admitted at `cockpit-arrival`'s five
+ * radii, where the shadow darkens 0.002% and the pair costs 6.9 ms at 2x. The
+ * approach would stay at 54 fps.
+ *
+ * **`DockPhase !== "flying"`** reads exactly like "inside a station" and is a
+ * fact about a grant rather than about what is in front of the camera. It fires
+ * on the aperture plane, and #233 measures enclosure rising sixfold *before*
+ * that plane — `berth-arrival` is a canonical view framed at the leg that
+ * leaves the lane, so the passes would pop on mid-traversal on a frame in the
+ * acceptance set.
+ *
+ * Apparent size is the axis those three pixel readings actually sit on, it is
+ * the arithmetic `shadowBox` already admits by one order of magnitude further
+ * down, and it moves in both directions.
+ *
+ * ## The cabin and the hull are not subjects for this
+ *
+ * The caller passes stations only. The cabin is what the gate exists to stop
+ * paying for, and the hull alone does not earn the pass either: #233's chase
+ * column is `mean|d|` 0.0000 at 20, 12 and 8 radii on a threshold-free
+ * measurement, so the exterior shadow there is absent rather than small.
+ */
+export type OcclusionGate = {
+	/** Whether the shadow map and the ambient occlusion draw this frame. */
+	readonly open: boolean;
+	/** How many consecutive frames have asked for the state it is not in. */
+	readonly pending: number;
+};
+
+/** The state a frame starts in: empty space, both passes idle. */
+export const CLOSED_GATE: OcclusionGate = { open: false, pending: 0 };
+
+/**
+ * How enclosed the camera is, as the largest apparent radius among the
+ * stations in the frame.
+ *
+ * The near scene is camera-relative and every camera sits at its origin
+ * (`main.ts`, `render`), so this needs no camera passed in — the same reason
+ * `shadowBox` does not take one. A camera **inside** a subject is the most
+ * enclosed it can be rather than a division to be guarded: that is the bay,
+ * which is the one framing where #222 measured the shadow reading at all.
+ */
+export function enclosureRad(stations: readonly ShadowSubject[]): number {
+	let widest = 0;
+	for (const s of stations) {
+		const d = Math.hypot(s.center[0], s.center[1], s.center[2]);
+		const rad = d <= s.radiusKm ? Math.PI / 2 : Math.asin(s.radiusKm / d);
+		if (rad > widest) widest = rad;
+	}
+	return widest;
+}
+
+/**
+ * Advance the gate by one frame.
+ *
+ * A reducer rather than a mutable flag so the whole rule — both thresholds,
+ * both frame counts, and the band between them — is pure and testable without
+ * a renderer. `main.ts` holds the returned value and passes it back.
+ */
+export function stepOcclusionGate(
+	gate: OcclusionGate,
+	stations: readonly ShadowSubject[],
+): OcclusionGate {
+	const rad = enclosureRad(stations);
+	// Asymmetric by construction: an open gate is held by the *lower* threshold,
+	// so a station drifting between the two leaves the state it is in alone.
+	const wants = gate.open
+		? rad >= OCCLUSION.gate.closeRad
+		: rad >= OCCLUSION.gate.openRad;
+	if (wants === gate.open)
+		return gate.pending === 0 ? gate : { open: gate.open, pending: 0 };
+	const pending = gate.pending + 1;
+	const needed = wants ? OCCLUSION.gate.openFrames : OCCLUSION.gate.closeFrames;
+	return pending >= needed
+		? { open: wants, pending: 0 }
+		: { open: gate.open, pending };
+}
+
+/**
  * The subjects the shadow box is actually cut to, or `null` for none.
  *
  * The camera sits at the origin of the near scene — every frame places the
@@ -307,6 +429,48 @@ export function participatesInShadow(surface: SurfaceFacts): boolean {
  * whatever is in front of it.
  */
 export const OCCLUSION = {
+	/**
+	 * #241's gate — the two thresholds and the two frame counts.
+	 *
+	 * **The two radii are not derived, and saying so is the point.**
+	 * `scripts/probe-occlusion.mjs` flies 20, 12, 8, 5, 3, 2 and 1.5 station
+	 * radii and prints what the pair darkens at each on a threshold-free
+	 * world-only column. What a run reports, in percent of the frame: 0.03,
+	 * 0.07, 0.18, 0.55, 1.51, 3.26, 5.64. **There is no cliff on that curve** —
+	 * a distant station is a small disc and the pass still darkens it — so there
+	 * is no onset a threshold can be read off, and an earlier revision of this
+	 * comment claimed there was one and that the probe bounded it. It does not.
+	 * The probe checks the curve's *shape*: that the contribution rises, that
+	 * the gate follows it in one direction only, and that it opens while the
+	 * station is still outside its own silhouette, which is what makes
+	 * `berth-arrival` a frame the passes are already on for.
+	 *
+	 * At these figures the gate opens between three radii and two — 1.51% of the
+	 * frame against 3.26%. **Where it belongs on that curve is the principal's,
+	 * off the printed ladder and the canonical sheet**, and moving it is one
+	 * number here and a probe re-run.
+	 *
+	 * In radians of apparent radius, which is what `enclosure` returns. For
+	 * scale: a station five silhouette radii off subtends 0.201, two radii
+	 * 0.524, and a camera inside its bounding sphere is π/2 by construction.
+	 * `SHADOW_MIN_APPARENT_RAD` above is 0.0087 — this gate sits nearly two
+	 * orders of magnitude further up, because admitting a subject to a box and
+	 * paying two full-screen passes for it are different questions.
+	 *
+	 * The frame counts are asymmetric for the reason the gate is: opening late
+	 * is a visible pop on a view in the acceptance set, and closing early is a
+	 * pass that flickers back on. Turning the shadow on allocates the 2048²
+	 * depth target and turning the ambient occlusion on compiles its chain, so a
+	 * toggle is not free even where the frame it draws would be.
+	 */
+	gate: {
+		/** Shut, and rising past this opens it. */
+		openRad: 0.5,
+		/** Open, and falling below this closes it. */
+		closeRad: 0.35,
+		openFrames: 2,
+		closeFrames: 30,
+	},
 	ao: {
 		screenSpaceRadius: true,
 		/** In hundreds of drawing-buffer pixels — 25 of them at this figure. */

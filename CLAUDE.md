@@ -261,6 +261,21 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   above 1, which is why `COCKPIT_FINISHES` lives in that module rather than
   inline in `buildCockpit`: a finish declared at the call site is one the
   calibration cannot see.
+- **`berth-arrival` cannot carry a before/after reading of a *performance*
+  change, and that is a different reason from the one below.** #241 measured it
+  at 12.22% of pixels moved past 24/255 against a same-build control of 0.54% —
+  which reads as a real change and is not one. The frame is `at: 0.75` of a
+  scripted traversal that runs on **wall-clock** time, so a build with a
+  different per-frame cost takes a different real duration to reach the same
+  fraction, and the world clock has advanced further when it gets there. Read
+  off the two builds at that frame: the ship is 2.56 km apart and its attitude
+  1.83° apart, with the gate open and both passes drawing in each. So the two
+  frames differ because the camera is somewhere else, not because the picture
+  changed. Any node that changes frame cost inherits this on every mid-traversal
+  view; the docked ones (`berth-docked-forward`, `berth-free-look`,
+  `shipyard-wall-berth`, `refinery-cradle-berth`) are stationary and read 0.03%
+  to 0.33% against controls of the same size, which is how #241 knew its bays
+  were untouched.
 - **`berth-launch-chase` is not a repeatable view.** Two same-build control
   runs during #105 put it at **70.9% and 72.7%** of pixels moved past 24/255,
   against ≤0.4% for every other view in the same runs. Two samples, so read the
@@ -283,6 +298,56 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   colours are hex. It joins `cockpit.ts`, `live-cockpit.ts`, `planet-shaders.ts`
   and `planet-classes.glsl.ts` in that set. Naming it in a guard list does not
   guard it; it makes the probe throw before it starts.
+- **The occlusion passes are gated on enclosure, and a frame-cost claim owes
+  the antialias arm.** #241. The pair **doubles** the open-space frame. **The
+  figures are not restated here** — `occlusion.ts` owns the table and
+  `scripts/measure-occlusion-cost.mjs` reprints it beside a fresh run, and this
+  file already carried one copy that went stale inside a round. **What it buys
+  there is two answers, not one:** the *shadow* darkens 0.002–0.003% of an exterior frame and 6.06% of a
+  bay's, while the *ambient occlusion* darkens 22.5% of a `cockpit-arrival`
+  frame, almost all of it the cabin's own corners. So gating open space removes
+  a shadow that shows nothing **and** a cabin term that shows plenty, and the
+  second is a look decision on the sheet rather than a free saving. Quoting the
+  shadow's figure for the pair is a mistake this file made for a round.
+  `stepOcclusionGate` in `src/occlusion.ts`
+  decides per frame whether either pass draws, from the apparent size of the
+  nearest admitted **station**. Neither the cabin nor the hull is a subject for
+  it, and that is the point rather than an omission: the cabin is visible in
+  every cockpit frame, so a gate that counted it would never close. `main.ts`
+  steps it before `fitShadowCamera` and `applyOcclusion` combines the player's
+  row, an instrument's pin and the gate — an explicit `setOcclusion(a, b)` wins
+  over the gate, a bare `setOcclusion()` gives it back. **And the figure that
+  made this a regression is the second one:** multisampling multiplies every
+  later fill-rate term rather than adding beside it, so the pair costs +3.563 ms
+  at 0 samples and +7.130 at 2. Every one of #222's figures was taken at 0,
+  which is the default and not what the principal plays at.
+- **A bay's shadow figure is not a stable property of a build.** #241 measured
+  the same check three ways on one machine: `main` at 5.917% and 5.881%, the
+  gated build at 5.324–5.326%, and the gate forced permanently open at
+  **0.272–0.274%** — every one of them repeatable to three digits. The outlier
+  is not a bug in the gate; it is #233's box instability reached by a different
+  route. The bay is entered by a **wall-clock** traversal, so any change to
+  per-frame cost lands the ship somewhere else, and somewhere else is where
+  `shadowBox` unions a second subject and spreads 2048 texels over twice the
+  ground. #235's commit message records the opposite sign of the same effect —
+  a shadow gate reverted there for reading 0.897% against 6.310% — and that does
+  not reproduce against `applyOcclusion`, which writes `castShadow` from the
+  gate every frame rather than through `shadowSunIdle`'s restore, which #235
+  proved unreachable. Quote a bay shadow only beside the build it was taken on.
+- **A whole-frame pixel reading cannot isolate a distant subject.** #241's
+  approach ladder flown in cockpit view reported the pair darkening 4.6% of the
+  frame at *twenty* station radii; that is the cabin, whose own AO is 22.5% of a
+  `cockpit-arrival` frame. In chase the same reading is 0.58%, which is the
+  player hull. There is always a subject at a fixed distance from the camera, so
+  `probe-occlusion.mjs`'s `compare` has a `world-only` mode that hides both
+  roots — #233 needed the same column for the same reason, and **hiding them is
+  not setting `visible` on the two roots**, because `render` rewrites both flags
+  from the view on every frame; their children are what the mode hides. Getting
+  that wrong left the hull in every ladder capture and inflated the far end
+  twentyfold, 0.58% against the 0.03% it actually reads. And even world-only
+  there is **no cliff**: 0.03% at twenty radii rising smoothly to 5.64% at one
+  and a half. The probe checks the curve's shape and the threshold is the
+  principal's, off the printed ladder.
 - **Multisampling the composer is the most expensive thing in this renderer.**
   `output-stage.ts` hands `EffectComposer` its own target so `antialias: true`
   on the renderer finally means something — that flag configures the default

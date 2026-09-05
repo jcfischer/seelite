@@ -35,6 +35,19 @@
  * alone, and both, and the sum of the two singles against the pair is its own
  * check on whether they interact.
  *
+ * ## Three framings, and the antialias row beside them — #241
+ *
+ * The regression the principal flew was in **empty space**, which this
+ * instrument did not frame: it priced the pair at a station and in a bay, where
+ * the pair is a fifth and a twelfth of the frame, and missed that in open space
+ * it is the whole of it again. `deepSky` is the third framing.
+ *
+ * And every figure was taken at the **default** sample count, which the
+ * principal does not play at. Multisampling multiplies every later fill-rate
+ * term rather than adding beside it, so a term priced at 0 samples understates
+ * a 2x player's cost by a factor of two — measured, +3.563 ms against +7.130 in
+ * empty space. The second table below is the shipped build at both counts.
+ *
  * ## Two framings, because the passes scale with different things
  *
  * The shadow map redraws every **caster**, so it is paid per object in the near
@@ -75,27 +88,70 @@ const BLOCKS = 12;
  * settings store, so the instrument leaves no preference behind on the machine
  * it measured — and so each pass can be moved without the other.
  */
-const block = (page, shadows, ao) =>
+/**
+ * `warm` is a parameter and not a constant, and every arm of one comparison
+ * must pass the same number — #241 paid a run to learn it.
+ *
+ * One warm frame is what the four-arm table needs: turning the shadow on makes
+ * three allocate the 2048² depth target and compile the depth material for
+ * every caster, and turning the AO on compiles its own chain, so timing the
+ * first frame would price the switch rather than the term. The shipped-build
+ * rows below want sixty, because the gate is a per-frame decision that has to
+ * have settled before the clock starts.
+ *
+ * **Two things went wrong here in one node and only the second was the real
+ * one.** The first version gave sixty warm frames to the shipped arm alone and
+ * one to the two it was compared against, and reported the shipped build at
+ * 2.378 ms against a pinned-off 1.710 with the gate **shut** — two builds
+ * writing the same two flags. Equalising the counts fixed the symptom and hid
+ * the cause: `render` only *queues*, and the drain below blocks until everything
+ * outstanding has been drawn, so the warm frames' GPU work was inside the timed
+ * interval and divided by the block's frame count alone. Equal counts do not
+ * cancel that — they give each arm a backlog proportional to its own frame cost,
+ * which is exactly the term being measured, and it read as a bay that was
+ * "load-dependent" at 37.7 ms against 55.8. Draining before the clock starts is
+ * the fix, and the bay's two independent readings are then 37.100 and 37.113.
+ */
+const timed = (page, shadows, ao, warm = 1) =>
 	page.evaluate(
-		([sh, a, frames]) => {
+		([sh, a, frames, warmFrames]) => {
 			const g = window.__seelite;
 			const gl = g.renderer.getContext();
-			g.setOcclusion(sh, a);
-			// One warm frame after the switch. Turning the shadow on makes three
-			// allocate the 2048² depth target and compile the depth material for
-			// every caster; turning the AO on compiles its own chain. Timing the
-			// first frame would price the switch rather than the term.
-			g.render(0);
+			// `null` is the shipped arm: a bare call gives the gate back, an
+			// explicit pair pins past it. One implementation for all three rows,
+			// because a second copy of the warm-up and the drain is exactly how
+			// two arms of one comparison come to differ.
+			if (sh === null) g.setOcclusion();
+			else g.setOcclusion(sh, a);
 			const sync = new Uint8Array(4);
+			for (let i = 0; i < warmFrames; i++) g.render(0);
+			// **Drain the warm-up before the clock starts, not just the block
+			// after it.** `render` only queues; the trailing `readPixels` blocks
+			// until everything outstanding has been drawn, so without this the
+			// warm frames' unfinished GPU work is inside the timed interval and
+			// divided by the block's frame count alone. Equal warm-up counts
+			// across the arms do not cancel it — they make every arm carry a
+			// backlog proportional to its own frame cost, which is the term being
+			// measured. Sage found it; the shipped arm was carrying sixty frames
+			// of it against the four-arm table's one.
+			gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, sync);
 			const started = performance.now();
 			for (let i = 0; i < frames; i++) g.render(0);
 			// Drain: `readPixels` blocks until everything queued has been drawn.
 			// `gl.finish` does not reliably do so through ANGLE.
 			gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, sync);
-			return (performance.now() - started) / frames;
+			return {
+				ms: (performance.now() - started) / frames,
+				open: g.occlusionState.open,
+				drawnShadow: !!g.nearScene.getObjectByName("sun")?.castShadow,
+				drawnAo: g.gtaoPass?.enabled ?? null,
+			};
 		},
-		[shadows, ao, FRAMES],
+		[shadows, ao, FRAMES, warm],
 	);
+
+const block = (page, shadows, ao, warm = 1) =>
+	timed(page, shadows, ao, warm).then((r) => r.ms);
 
 const origin = await guardedOrigin(ORIGIN, [
 	"src/main.ts",
@@ -116,11 +172,17 @@ await page.goto(`${origin}/?seed=${SEED}`);
 await bootedGame(page);
 const renderer = await assertPlayersRenderer(page, "measure");
 await page.evaluate((t) => window.__startClockAt(t), GAME_TIME_S);
+await page.evaluate(() => window.__rememberBootPosition());
 
 // The same two shots `probe-occlusion.mjs` checks, from the one definition —
 // a receipt that quotes a pixel reading beside a millisecond is only coherent
 // if the camera was in the same place for both.
+// **`deepSky` first, and that ordering is load-bearing.** Its placement returns
+// the ship to where it booted, which is only knowable before anything has moved
+// it — `__rememberBootPosition` is called once above, and a framing that flew
+// somewhere else first would have nothing to return to.
 const FRAMINGS = [
+	{ name: "sky-only", ...OCCLUSION_FRAMINGS.deepSky },
 	{ name: "cockpit-arrival", ...OCCLUSION_FRAMINGS.cockpit },
 	{ name: "berth-free-look", ...OCCLUSION_FRAMINGS.berth },
 ];
@@ -135,6 +197,40 @@ console.log(
 console.log(
 	`  ${BLOCKS} blocks per arm, ${FRAMES} frames per block, arm order shuffled from seed ${ORDER_SEED}`,
 );
+
+/**
+ * ## What the build actually ships, at both sample counts — #241
+ *
+ * The four arms above price the two passes with each pinned, which is what a
+ * receipt about *the passes* needs. This prices **the game**: the gate live,
+ * against the two builds it sits between, at the default count and at the
+ * principal's 2x.
+ *
+ * **Run inside the framing loop and not after it**, which cost a run to learn:
+ * a second pass over `FRAMINGS` re-places from wherever the last one left the
+ * ship, and the berth framing leaves it docked — `sky-only` then reported the
+ * bay's 38 ms, and the page navigated out from under the next `evaluate`.
+ *
+ * Fewer blocks than the table above on purpose. This one is answering whether
+ * the shipped frame is back where it was, which is a difference of tens of
+ * milliseconds at 2x, rather than separating a sub-millisecond term.
+ */
+const SAMPLE_ARMS = [0, 2];
+const SHIPPED_BLOCKS = 5;
+const SHIPPED_WARM = 60;
+const shipped = (page) => timed(page, null, null, SHIPPED_WARM);
+
+const grantedSampleCount = (page) =>
+	page.evaluate(() => {
+		const g = window.__seelite;
+		const gl = g.renderer.getContext();
+		// Off the bound framebuffer rather than off the request: a count can be
+		// rounded *up*, and `renderTarget.samples` is only the request read back.
+		g.renderer.setRenderTarget(g.composer.renderTarget1);
+		const n = gl.getParameter(gl.SAMPLES);
+		g.renderer.setRenderTarget(null);
+		return n;
+	});
 
 for (const framing of FRAMINGS) {
 	await setView(page, framing.view);
@@ -181,6 +277,26 @@ for (const framing of FRAMINGS) {
 		console.log(
 			`  spread — ${name.padEnd(12)} ${xs.map((x) => x.toFixed(2)).join(" ")}`,
 		);
+
+	for (const samples of SAMPLE_ARMS) {
+		await page.evaluate((n) => window.__seelite.setComposerSamples(n), samples);
+		const granted = await grantedSampleCount(page);
+		const off = [];
+		const on = [];
+		const live = [];
+		const rows = [
+			() => block(page, false, false, SHIPPED_WARM).then((r) => off.push(r)),
+			() => block(page, true, true, SHIPPED_WARM).then((r) => on.push(r)),
+			() => shipped(page).then((r) => live.push(r)),
+		];
+		for (let i = 0; i < SHIPPED_BLOCKS; i++)
+			for (const arm of shuffled(rows)) await arm();
+		const liveMs = median(live.map((r) => r.ms));
+		console.log(
+			`  as it ships — ${granted} samples, gate ${live[live.length - 1].open ? "open" : "shut"}: off ${median(off).toFixed(3)} ms, shipped ${liveMs.toFixed(3)} ms, on ${median(on).toFixed(3)} ms — ${String(Math.round(1000 / liveMs)).padStart(4)} fps`,
+		);
+	}
+	await page.evaluate(() => window.__seelite.setComposerSamples());
 }
 
 await browser.close();
