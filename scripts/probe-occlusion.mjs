@@ -363,8 +363,9 @@ const idle = await page.evaluate(() => {
  * occlusion toggle resurrects it — unfitted.
  *
  * The PR claimed the rows could not disagree about the shadow. They can, and a
- * check that asserted only the `ao` half could not have said so. This is the
- * cross-row effect stated as a measurement, on #233's account.
+ * check that asserted only the `ao` half could not have said so. So this is
+ * *printed* rather than asserted: the behaviour is #233's to change, and a row
+ * demanding it stay would be a check against its own fix.
  */
 const resurrect = await page.evaluate(() => {
 	const game = window.__seelite;
@@ -387,10 +388,13 @@ const resurrect = await page.evaluate(() => {
 	game.render(0);
 	return { beforeToggle, afterToggle };
 });
-t.check(
-	"an occlusion toggle brings an idled shadow back at high lighting — the coupling #233 owns",
-	resurrect.beforeToggle === false && resurrect.afterToggle === true,
-	`castShadow ${resurrect.beforeToggle} before the toggle, ${resurrect.afterToggle} after`,
+// **Printed, not asserted, and the difference matters.** Requiring
+// `beforeToggle === false && afterToggle === true` would make #233's defect the
+// passing condition: the day the restore works, `beforeToggle` is true and this
+// row goes red for the fix. A check that a deferred bug must still be present is
+// a check against repairing it.
+console.log(
+	`  coupling  castShadow ${resurrect.beforeToggle} before an occlusion toggle at high, ${resurrect.afterToggle} after`,
 );
 
 t.check(
@@ -437,12 +441,9 @@ const coldBootAt = async (settings) => {
 	t.watch(writer);
 	await writer.goto(`${origin}/?seed=${SEED}`);
 	await bootedGame(writer);
-	const saved = await writer.evaluate((want) => {
+	await writer.evaluate((want) => {
 		const store = window.__seelite.settings;
 		for (const [key, value] of Object.entries(want)) store.set(key, value);
-		return Object.fromEntries(
-			Object.keys(want).map((key) => [key, store.value[key]]),
-		);
 	}, settings);
 	await writer.close();
 	const reader = await context.newPage();
@@ -459,7 +460,7 @@ const coldBootAt = async (settings) => {
 		};
 	});
 	await reader.close();
-	return { saved, ...read };
+	return read;
 };
 
 /**
