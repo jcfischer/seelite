@@ -5353,6 +5353,25 @@ class Game {
 			this.stepDockPhase(dt);
 			return;
 		}
+		// Combat contacts integrate below, before the player flight step. Cruise
+		// needs their position and velocity at the same frame-start instant as the
+		// ship and world masses, including the frame on which spool-up completes.
+		let contactTargetAtFrameStart: Mass | null = null;
+		if (
+			this.regime === "cruise" ||
+			(this.spoolLeftS > 0 && this.spoolLeftS <= dt)
+		) {
+			const target = this.targetBody();
+			if (target && isDisplayContact(target)) {
+				contactTargetAtFrameStart = {
+					id: target.id,
+					pos: { ...target.pos },
+					radiusKm: target.radiusKm,
+					vel: { ...target.velocity },
+					accelerationBoundKms2: 0,
+				};
+			}
+		}
 		// #48 deliberately couples no combat entity to the world yet: this is a
 		// flyable balance rig over the shared flight loop, not production combat.
 		this.combatRig?.step(dt, this.keys, this.regime === "cruise", {
@@ -5471,7 +5490,7 @@ class Game {
 		}
 
 		if (this.regime === "cruise") {
-			this.stepCruise(dt);
+			this.stepCruise(dt, contactTargetAtFrameStart);
 			return;
 		}
 
@@ -5549,18 +5568,20 @@ class Game {
 	 * frame integrates. That is the difference between the two regimes stated in
 	 * one line of code.
 	 */
-	private stepCruise(dt: number) {
+	private stepCruise(dt: number, contactTargetAtFrameStart: Mass | null) {
 		const nose = this.nose();
 		const target = this.targetBody();
 		const targetMotion = target
-			? {
-					pos: { ...target.pos },
-					radiusKm: target.radiusKm,
-					vel: this.targetVelocity(),
-					accelerationBoundKms2: isDisplayContact(target)
-						? 0
-						: bodyAccelerationBound(this.world.system, target.id),
-				}
+			? isDisplayContact(target) && contactTargetAtFrameStart?.id === target.id
+				? contactTargetAtFrameStart
+				: {
+						pos: { ...target.pos },
+						radiusKm: target.radiusKm,
+						vel: this.targetVelocity(),
+						accelerationBoundKms2: isDisplayContact(target)
+							? 0
+							: bodyAccelerationBound(this.world.system, target.id),
+					}
 			: null;
 		const step = advanceCruise({
 			pos: this.world.ship.pos,

@@ -60,7 +60,7 @@ interface FlightResult {
 	gameTime: number;
 	seconds: number;
 	travelledKm: number;
-	continuousClearanceKm: number;
+	linearSweepAndEndpointClearanceKm: number;
 }
 
 function fly(
@@ -71,7 +71,7 @@ function fly(
 ): FlightResult {
 	let pos = { ...world.ship.pos };
 	let travelledKm = 0;
-	let continuousClearanceKm = Number.POSITIVE_INFINITY;
+	let linearSweepAndEndpointClearanceKm = Number.POSITIVE_INFINITY;
 	const startedAt = world.gameTime;
 	const farTarget = fixedNose ? add(pos, scale(fixedNose, AU_KM)) : null;
 	for (let frame = 0; frame < Math.ceil(limitS / DT); frame++) {
@@ -102,8 +102,8 @@ function fly(
 						mass.pos,
 						scale(mass.vel ?? v3(), segment.elapsed),
 					);
-					continuousClearanceKm = Math.min(
-						continuousClearanceKm,
+					linearSweepAndEndpointClearanceKm = Math.min(
+						linearSweepAndEndpointClearanceKm,
 						relativeClosestApproachKm(
 							segment.from,
 							segment.velocity,
@@ -120,8 +120,8 @@ function fly(
 		advanceWorldClock(world, DT);
 		for (const mass of world.system.bodies) {
 			if (mass.kind !== "star" && mass.kind !== "planet") continue;
-			continuousClearanceKm = Math.min(
-				continuousClearanceKm,
+			linearSweepAndEndpointClearanceKm = Math.min(
+				linearSweepAndEndpointClearanceKm,
 				length(sub(pos, mass.pos)) - mass.radiusKm,
 			);
 		}
@@ -133,9 +133,9 @@ function fly(
 				gameTime: world.gameTime,
 				seconds: world.gameTime - startedAt,
 				travelledKm,
-				continuousClearanceKm: finite(
-					"continuous clearance",
-					continuousClearanceKm,
+				linearSweepAndEndpointClearanceKm: finite(
+					"linear-sweep and endpoint clearance",
+					linearSweepAndEndpointClearanceKm,
 				),
 			};
 	}
@@ -145,9 +145,9 @@ function fly(
 		gameTime: world.gameTime,
 		seconds: world.gameTime - startedAt,
 		travelledKm,
-		continuousClearanceKm: finite(
-			"continuous clearance",
-			continuousClearanceKm,
+		linearSweepAndEndpointClearanceKm: finite(
+			"linear-sweep and endpoint clearance",
+			linearSweepAndEndpointClearanceKm,
 		),
 	};
 }
@@ -176,7 +176,7 @@ const stats = {
 	retryStops: 0,
 	escapeSamples: 0,
 	stopsWithNoEscape: 0,
-	minimumContinuousClearanceKm: Number.POSITIVE_INFINITY,
+	minimumLinearSweepAndEndpointClearanceKm: Number.POSITIVE_INFINITY,
 	minimumRetryClearanceKm: Number.POSITIVE_INFINITY,
 	minimumEscapeClearanceKm: Number.POSITIVE_INFINITY,
 	medianFlyableEscapeHeadings: 0,
@@ -211,9 +211,9 @@ for (let seed = 1; seed <= SEEDS; seed++) {
 		}
 		const first = fly(world, station.id);
 		stats.legs++;
-		stats.minimumContinuousClearanceKm = Math.min(
-			stats.minimumContinuousClearanceKm,
-			first.continuousClearanceKm,
+		stats.minimumLinearSweepAndEndpointClearanceKm = Math.min(
+			stats.minimumLinearSweepAndEndpointClearanceKm,
+			first.linearSweepAndEndpointClearanceKm,
 		);
 		if (first.exit === "arrival") {
 			stats.arrivals++;
@@ -235,7 +235,7 @@ for (let seed = 1; seed <= SEEDS; seed++) {
 		stats.retries++;
 		stats.minimumRetryClearanceKm = Math.min(
 			stats.minimumRetryClearanceKm,
-			retry.continuousClearanceKm,
+			retry.linearSweepAndEndpointClearanceKm,
 		);
 		if (retry.exit === "arrival") stats.retryArrivals++;
 		if (retry.exit === "proximity") stats.retryStops++;
@@ -261,7 +261,7 @@ for (let seed = 1; seed <= SEEDS; seed++) {
 			stats.escapeSamples++;
 			stats.minimumEscapeClearanceKm = Math.min(
 				stats.minimumEscapeClearanceKm,
-				escape.continuousClearanceKm,
+				escape.linearSweepAndEndpointClearanceKm,
 			);
 			const blockerEnd = world.system.byId.get(blocker.id);
 			if (!blockerEnd) throw new Error(`missing blocker ${blocker.id}`);

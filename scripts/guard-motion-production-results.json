@@ -15,7 +15,7 @@
 	"retryStops": 46,
 	"escapeSamples": 276,
 	"stopsWithNoEscape": 0,
-	"minimumContinuousClearanceKm": 5.000000291490323,
+	"minimumLinearSweepAndEndpointClearanceKm": 5.000000291490323,
 	"minimumRetryClearanceKm": 5.000000172553882,
 	"minimumEscapeClearanceKm": 5.000000172553882,
 	"medianFlyableEscapeHeadings": 3,

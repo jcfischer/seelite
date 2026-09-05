@@ -181,3 +181,16 @@ test("target lookup and velocity follow the live contact, while bodies keep orbi
 	expect(subject.targetBody()).toBeNull();
 	expect(subject.targetVelocity()).toEqual(v3());
 });
+
+test("cruise snapshots a moving contact before combat integrates the frame", () => {
+	const step = method("step");
+	const snapshot = step.indexOf("let contactTargetAtFrameStart");
+	const combat = step.indexOf("this.combatRig?.step");
+	const cruise = step.indexOf("this.stepCruise(dt, contactTargetAtFrameStart)");
+	expect(snapshot).toBeGreaterThanOrEqual(0);
+	expect(combat).toBeGreaterThan(snapshot);
+	expect(cruise).toBeGreaterThan(combat);
+	expect(method("stepCruise")).toContain(
+		"contactTargetAtFrameStart?.id === target.id",
+	);
+});
