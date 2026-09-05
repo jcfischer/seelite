@@ -97,12 +97,20 @@ const BLOCKS = 12;
  * every caster, and turning the AO on compiles its own chain, so timing the
  * first frame would price the switch rather than the term. The shipped-build
  * rows below want sixty, because the gate is a per-frame decision that has to
- * have settled before the clock starts — and the first version gave sixty to
- * that arm alone. It reported the shipped build at 2.378 ms against a pinned-off
- * 1.710 with the gate **shut**, which is two builds writing the same two flags:
- * what separated them was that one arm's hundred and twenty timed frames began
- * after sixty frames of load and the other's began cold. Same sign in both
- * framings.
+ * have settled before the clock starts.
+ *
+ * **Two things went wrong here in one node and only the second was the real
+ * one.** The first version gave sixty warm frames to the shipped arm alone and
+ * one to the two it was compared against, and reported the shipped build at
+ * 2.378 ms against a pinned-off 1.710 with the gate **shut** — two builds
+ * writing the same two flags. Equalising the counts fixed the symptom and hid
+ * the cause: `render` only *queues*, and the drain below blocks until everything
+ * outstanding has been drawn, so the warm frames' GPU work was inside the timed
+ * interval and divided by the block's frame count alone. Equal counts do not
+ * cancel that — they give each arm a backlog proportional to its own frame cost,
+ * which is exactly the term being measured, and it read as a bay that was
+ * "load-dependent" at 37.7 ms against 55.8. Draining before the clock starts is
+ * the fix, and the bay's two independent readings are then 37.100 and 37.113.
  */
 const timed = (page, shadows, ao, warm = 1) =>
 	page.evaluate(
@@ -115,8 +123,18 @@ const timed = (page, shadows, ao, warm = 1) =>
 			// two arms of one comparison come to differ.
 			if (sh === null) g.setOcclusion();
 			else g.setOcclusion(sh, a);
-			for (let i = 0; i < warmFrames; i++) g.render(0);
 			const sync = new Uint8Array(4);
+			for (let i = 0; i < warmFrames; i++) g.render(0);
+			// **Drain the warm-up before the clock starts, not just the block
+			// after it.** `render` only queues; the trailing `readPixels` blocks
+			// until everything outstanding has been drawn, so without this the
+			// warm frames' unfinished GPU work is inside the timed interval and
+			// divided by the block's frame count alone. Equal warm-up counts
+			// across the arms do not cancel it — they make every arm carry a
+			// backlog proportional to its own frame cost, which is the term being
+			// measured. Sage found it; the shipped arm was carrying sixty frames
+			// of it against the four-arm table's one.
+			gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, sync);
 			const started = performance.now();
 			for (let i = 0; i < frames; i++) g.render(0);
 			// Drain: `readPixels` blocks until everything queued has been drawn.

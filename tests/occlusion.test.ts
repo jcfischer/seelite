@@ -284,7 +284,10 @@ test("nothing in the near layer means no box rather than a box of nothing", () =
  */
 test("a station far enough off to show no shadow does not open the gate", () => {
 	// `cockpit-arrival`'s framing: five silhouette radii down the aperture axis,
-	// where the pair is measured to darken 0.002% of the frame.
+	// where the *shadow* is measured to darken 0.002% of the frame. The ambient
+	// occlusion darkens far more of it than that, nearly all of it the cabin's
+	// own corners — `occlusion.ts` separates the two, and gating them together
+	// is a look decision on the canonical sheet rather than a free saving.
 	const station = { center: [0, 0, -5 * 0.87] as const, radiusKm: 0.87 };
 	let gate = CLOSED_GATE;
 	for (let i = 0; i < 120; i++) gate = stepOcclusionGate(gate, [station]);

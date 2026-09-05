@@ -664,11 +664,12 @@ for (const r of ladder)
  * **There is no cliff on this ladder, and the checks below are shaped by that
  * rather than around it.**
  *
- * What a run reports, world-only, in percent of the frame the pair darkens:
- * 0.59 at twenty radii, 0.62 at twelve, 0.73 at eight, 1.10 at five, 2.07 at
- * three, 5.21 at two, 7.73 at one and a half. It rises smoothly with enclosure
- * and never falls to nothing, because at twenty radii the station is still a
- * twenty-pixel disc and the pass still darkens it.
+ * It rises smoothly with enclosure and never falls to nothing, because at
+ * twenty radii the station is still a small disc and the pass still darkens it.
+ * **The seven readings are not repeated here** — `OCCLUSION.gate` in
+ * `occlusion.ts` owns them beside the thresholds they are judged against, and
+ * this comment carried a stale copy for a round after the world-only mode was
+ * fixed, which is the third-copy drift `CLAUDE.md` warns about.
  *
  * So "where does the pair start to read" has no answer a probe can pick, and an
  * earlier draft of this section picked one anyway — a 0.1% floor that every
