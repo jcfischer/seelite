@@ -163,19 +163,20 @@ test("every bodyVelocity call on a selectable id goes through the striker guard"
 	// Round 1 guarded `targetVelocity()` and `timeToBody()` separately and this
 	// counted the copies; round 2 folded both into `velocityOf`, so counting
 	// copies would now be **load-testing the duplication**. What has to hold is
-	// the property, and it is checkable: the two selectable-target paths call
-	// `velocityOf`, and the only `bodyVelocity` left in the file that takes a
-	// *target* id is the one inside it.
+	// the property, and it is checkable: the two selectable-target paths and the
+	// body-frame cruise exit call `velocityOf`, and the only `bodyVelocity` left
+	// in the file that takes a selectable id is the one inside it.
 	expect(main).toContain("private velocityOf(id: string)");
-	expect(main.match(/this\.velocityOf\(/g) ?? []).toHaveLength(2);
-	// `bodyVelocity` has five callers and each takes an id the world is
+	expect(main.match(/this\.velocityOf\(/g) ?? []).toHaveLength(3);
+	// `bodyVelocity` has six callers and each takes an id the world is
 	// guaranteed to hold: `velocityOf`'s own fallback, `localFrame` and the
 	// velocity readout's frame (both picked by walking `world.system.bodies`),
 	// `stationVelocity`, and `entryPose` — which does `byId.get(id)` and throws
-	// two lines above. A sixth is a path that has not answered the question this
+	// two lines above. The sixth prepares known world masses for the relative
+	// cruise sweep. A seventh is a path that has not answered the question this
 	// file asks, and the count is what makes it say so.
 	expect(main.match(/bodyVelocity\(this\.world\.system/g) ?? []).toHaveLength(
-		5,
+		6,
 	);
 });
 

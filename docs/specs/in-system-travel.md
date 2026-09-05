@@ -725,26 +725,57 @@ Every worst-case leg in the corpus is a gas-giant shipyard, up to 141,000 km
 short. **The lever is the orbital altitude, which belongs to the generator, not
 to cruise** — carried as its own node under #30 rather than resolved here.
 
-### 12.4 What #30 did not answer
+### 12.4 The moving-body guard
 
-**A released chord can end inside a body that moved into it.** The guard is a
-snapshot: it tests a ray against where the masses are at the top of the frame.
-A body on a 30 km/s orbit moves ~3 km in one frame, so a chord released with
-3 km of clearance can be 1 km inside by the next test — released at one frame,
-stopped at the next, already inside.
+**The guard is relative motion, over one explicit frame timeline.** At frame
+start the game snapshots each mass and the selected target: position, analytic
+velocity and a conservative acceleration magnitude. `advanceCruise` evaluates
+the ship and those linearised bodies at the same sub-step time. Only after that
+pure step returns does the game advance the world clock once to the frame end.
+There is no clock read inside the sweep and no second clock advance.
 
-`measure-cruise-arrival.ts` prints it: **1 of 90 re-engagement legs, worst
-−1.041 km, seed 51's shipyard over a 5,146 km host.** It surfaced when the row
-was changed from a median to a minimum — the median had been sitting on it.
+The collision ray uses ship velocity minus body velocity. A body's guard radius
+is expanded by `0.5 · a · dt²`, the tangent-deviation bound for the current
+circular-orbit model, plus a coordinate-scale float64 tolerance. The station
+arrival sphere contracts by the same uncertainty, because a surface is an
+exclusion promise while arrival is an inclusion promise. Existing host and
+non-host radii, the speed law, the drop radius and the arrival-speed threshold
+remain the inputs. The earliest physical event wins across every mass and the
+station; a surface wins an exact tie, so arrival cannot license tunnelling
+through its host.
 
-It is **not** §12.1's or §12.2's doing: running this column against `main`'s
-`cruise.ts` gives the identical figure on the identical leg. That is an ad-hoc
-port, because the column is new here — `main`'s sweep has no
-`reengagedClearanceKm` — so the check is reproducible by hand and is not a
-`main` command someone can run today.
+Starting inside a guard shell is not itself a stop. The relative heading must
+go deeper than the true surface (with the same error allowance), so outward and
+safe grazing headings remain releasable. Zero relative speed is released while
+the ship is only inside the wider shell; a co-moving ship already at or below
+the true-surface exclusion stops. The moving-body sweep still runs at zero
+throttle and with exhausted charge, which
+closes the old early-return hole where a body could cross a stationary ship
+between two endpoint samples.
 
-It is also why the minimum is the wrong figure to verify §12.2 by: this leg
-dominates it identically on both builds.
+A proximity event ends powered travel at its event time, then carries the ship
+with the blocking body's velocity through the unconsumed part of the frame.
+Only the powered segment is metered against §7's 12 AU in-system cruise reserve.
+Normal flight receives that same blocking-body velocity and holds that one
+body's frame while the ship is within `NEAR_FAR_KM` of its surface. This scoped
+handoff matters for a giant whose centre is farther than `NEAR_FAR_KM`; ordinary
+nearest-centre frame selection is unchanged everywhere else, and a new cruise
+engagement clears the handoff.
+
+`measure-guard-motion.ts` flies the production integrator over seeds 1–200 with
+one frame-start convention. It measures the full linear relative sweep of every
+integrator segment and the exact orbital endpoints; curved motion inside a
+frame is protected by the bound above rather than directly sampled. At
+`MAX_DT = 0.1 s` it reports **370/416 arrivals**, **299/302 initially
+clear-of-host arrivals**, **46 stopped legs**, zero timeouts, zero stops without
+an escape heading that finishes outside the blocker's guard without another
+proximity stop, and at least **5.000000 km** across those linear-sweep and exact
+endpoint samples over primary, retry and sampled escape paths. The median stop
+has three of six such escape headings and
+a best five-second escape of 1.366 million km. The eight decision
+fixtures and production tests additionally bind moving interception, outward
+release, a receding tangent, shared-frame invariance, mid-step crossing,
+post-stop carry, multiple blockers, and 30/60/120 Hz plus `MAX_DT` behaviour.
 
 
 - The occluded quarter. Raising station orbits is measured above but not

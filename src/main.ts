@@ -124,6 +124,7 @@ import {
 import {
 	CHARGE_CAPACITY_AU,
 	CHARGE_REGEN_AU_PER_S,
+	type Mass,
 	type CruiseParams,
 	DEFAULT_CRUISE,
 	HOST_CLEARANCE_KM,
@@ -168,6 +169,7 @@ import {
 	type FlightControl,
 	type World,
 	advanceWorldClock,
+	bodyAccelerationBound,
 	bodyVelocity,
 	stationHostIdOf,
 	jumpWorldTo,
@@ -1010,6 +1012,10 @@ class Game {
 	readonly audio = new AudioFX();
 	private throttle = 0;
 	private frameBody: Body | null = null;
+	/** A surface stop can happen farther than `NEAR_FAR_KM` from a giant's
+	 * centre. Hold that one blocker's frame while the ship remains in its
+	 * near-surface band; ordinary nearest-centre selection is unchanged. */
+	private proximityFrameBodyId: string | null = null;
 	/** View-local head direction. It does not change the ship's orientation. */
 	headLook: HeadLook = "forward";
 	private rightTab: RightTab = "Flight";
@@ -1139,8 +1145,7 @@ class Game {
 	}[] = [];
 	private fleetAnchored = false;
 	/** The speed law's masses, rebuilt once per clock value. See `masses()`. */
-	private massesCache: { id: string; pos: Vec3; radiusKm: number }[] | null =
-		null;
+	private massesCache: Mass[] | null = null;
 	private massesAt = Number.NaN;
 	/** The overlay the markers are drawn on: a 2D canvas over the WebGL one. */
 	private overlay!: HTMLCanvasElement;
@@ -3814,7 +3819,13 @@ class Game {
 		if (this.massesAt !== this.world.gameTime || !this.massesCache) {
 			this.massesCache = this.world.system.bodies
 				.filter((b) => b.kind === "star" || b.kind === "planet")
-				.map((b) => ({ id: b.id, pos: b.pos, radiusKm: b.radiusKm }));
+				.map((b) => ({
+					id: b.id,
+					pos: { ...b.pos },
+					radiusKm: b.radiusKm,
+					vel: bodyVelocity(this.world.system, b.id, this.world.gameTime),
+					accelerationBoundKms2: bodyAccelerationBound(this.world.system, b.id),
+				}));
 			this.massesAt = this.world.gameTime;
 		}
 		return this.massesCache;
@@ -4029,6 +4040,18 @@ class Game {
 
 	/** The nearby body's inertial frame makes station-keeping legible at idle. */
 	private updateLocalFrameBody() {
+		if (this.proximityFrameBodyId) {
+			const held = this.world.system.byId.get(this.proximityFrameBodyId);
+			if (held) {
+				const surfaceKm =
+					length(sub(held.pos, this.world.ship.pos)) - held.radiusKm;
+				if (surfaceKm <= NEAR_FAR_KM) {
+					this.frameBody = held;
+					return;
+				}
+			}
+			this.proximityFrameBodyId = null;
+		}
 		let best: Body | null = null;
 		let bestKm = NEAR_FAR_KM;
 		for (const b of this.world.system.bodies) {
@@ -4862,6 +4885,8 @@ class Game {
 		this.legStartedAtS = null;
 		this.lastLegS = null;
 		this.lastExit = "";
+		this.frameBody = null;
+		this.proximityFrameBodyId = null;
 		this.dockingComputerEngaged = false;
 		// An armed jump does not survive arriving somewhere. `takePendingJump`
 		// clears it before it calls `performJump`, so this is the reset's case
@@ -5249,14 +5274,15 @@ class Game {
 	 * rule is the same for all three. A per-site clamp is how one of them ends up
 	 * leaving the ship at 140 km/s.
 	 *
-	 * `matchTarget` is what separates them. **Only an arrival** leaves the ship in
-	 * the target's frame: dropping out half an AU away and inheriting the
-	 * station's 30 km/s would fling the ship across the system in a direction it
-	 * never asked to go, and the 2 km/s assist cap cannot take it back off. Away
-	 * from the target the frame is the star's, which is what the sim's
-	 * coordinates are stated in anyway.
+	 * `matchBodyId` is what separates them. An arrival uses the selected body's
+	 * frame; a proximity stop uses the blocker and stops at zero relative speed.
+	 * A manual or charge exit passes no body and remains in the star frame.
 	 */
-	dropOut(reason: string, matchTarget = false) {
+	dropOut(
+		reason: string,
+		matchBodyId: string | null = null,
+		stopInBodyFrame = false,
+	) {
 		if (this.regime !== "cruise") {
 			this.spoolLeftS = 0;
 			return;
@@ -5265,11 +5291,14 @@ class Game {
 		// 1 AU orbit moves at ~30 km/s, so an absolute clamp to the 2 km/s assist
 		// cap would drop the player next to a target already leaving at fifteen
 		// times the speed normal flight can manage.
-		this.world.ship.vel = exitVelocity(
-			this.nose(),
-			this.cruiseSpeedKms,
-			matchTarget ? this.targetVelocity() : v3(),
-		);
+		const frameVelocity = matchBodyId ? this.velocityOf(matchBodyId) : v3();
+		this.world.ship.vel = stopInBodyFrame
+			? frameVelocity
+			: exitVelocity(this.nose(), this.cruiseSpeedKms, frameVelocity);
+		this.proximityFrameBodyId = stopInBodyFrame ? matchBodyId : null;
+		if (this.proximityFrameBodyId)
+			this.frameBody =
+				this.world.system.byId.get(this.proximityFrameBodyId) ?? null;
 		this.regime = "normal";
 		this.cruiseSpeedKms = 0;
 		this.throttle = 0;
@@ -5323,6 +5352,25 @@ class Game {
 		if (!flightLive(this.dock.phase)) {
 			this.stepDockPhase(dt);
 			return;
+		}
+		// Combat contacts integrate below, before the player flight step. Cruise
+		// needs their position and velocity at the same frame-start instant as the
+		// ship and world masses, including the frame on which spool-up completes.
+		let contactTargetAtFrameStart: Mass | null = null;
+		if (
+			this.regime === "cruise" ||
+			(this.spoolLeftS > 0 && this.spoolLeftS <= dt)
+		) {
+			const target = this.targetBody();
+			if (target && isDisplayContact(target)) {
+				contactTargetAtFrameStart = {
+					id: target.id,
+					pos: { ...target.pos },
+					radiusKm: target.radiusKm,
+					vel: { ...target.velocity },
+					accelerationBoundKms2: 0,
+				};
+			}
 		}
 		// #48 deliberately couples no combat entity to the world yet: this is a
 		// flyable balance rig over the shared flight loop, not production combat.
@@ -5435,13 +5483,14 @@ class Game {
 			this.spoolLeftS = Math.max(0, this.spoolLeftS - dt);
 			if (this.spoolLeftS === 0) {
 				this.regime = "cruise";
+				this.proximityFrameBodyId = null;
 				this.throttle = 1;
 				this.legStartedAtS = this.world.gameTime;
 			}
 		}
 
 		if (this.regime === "cruise") {
-			this.stepCruise(dt);
+			this.stepCruise(dt, contactTargetAtFrameStart);
 			return;
 		}
 
@@ -5508,58 +5557,63 @@ class Game {
 	/**
 	 * One frame of cruise.
 	 *
-	 * The clock and the bodies move first, exactly as `stepWorld` does it and
-	 * for the same reason — a frame must not mix a body position from one clock
-	 * value with a ship position from another. Then the ship is *placed* rather
-	 * than integrated: §1 nose-locks velocity, so there is no momentum here to
-	 * carry across frames, and `cruise.ts` computes the whole displacement from
-	 * where the ship is.
+	 * Ship, target and mass snapshots are all taken at the frame-start clock.
+	 * `advanceCruise` evaluates their relative motion at the same sub-step times;
+	 * the world clock moves exactly once after it returns. The ship is *placed*
+	 * rather than integrated: §1 nose-locks velocity, so there is no momentum
+	 * here to carry across frames.
 	 *
 	 * `ship.vel` is still written, because the HUD and everything downstream read
 	 * it — but it is a **report** of this frame's motion, not a state the next
 	 * frame integrates. That is the difference between the two regimes stated in
 	 * one line of code.
 	 */
-	private stepCruise(dt: number) {
-		advanceWorldClock(this.world, dt);
+	private stepCruise(dt: number, contactTargetAtFrameStart: Mass | null) {
 		const nose = this.nose();
 		const target = this.targetBody();
+		const targetMotion = target
+			? isDisplayContact(target) && contactTargetAtFrameStart?.id === target.id
+				? contactTargetAtFrameStart
+				: {
+						pos: { ...target.pos },
+						radiusKm: target.radiusKm,
+						vel: this.targetVelocity(),
+						accelerationBoundKms2: isDisplayContact(target)
+							? 0
+							: bodyAccelerationBound(this.world.system, target.id),
+					}
+			: null;
 		const step = advanceCruise({
 			pos: this.world.ship.pos,
 			nose,
 			throttle: this.throttle,
 			dt,
 			masses: this.masses(),
-			target: target
-				? {
-						pos: target.pos,
-						radiusKm: target.radiusKm,
-						vel: this.targetVelocity(),
-					}
-				: null,
+			target: targetMotion,
 			params: this.cruiseParams,
 			chargeAu: this.chargeAu,
 			targetParentId: this.targetParentId(),
 		});
+		// One explicit frame timeline: cruise consumes snapshots at `t`, then the
+		// world moves once to `t + dt`. The pure step already carried a proximity
+		// stop with its blocker through the unconsumed interval.
+		advanceWorldClock(this.world, dt);
 		this.world.ship.pos = step.pos;
 		this.cruiseSpeedKms = step.speedKms;
 		this.closingKms = step.closingKms;
 		this.world.ship.vel = scale(nose, step.speedKms);
 		this.chargeAu = chargeAfterTravel(this.chargeAu, step.travelledKm);
 		if (step.dropped) {
-			// The frame the ship is left in follows the *reason*. An arrival matches
-			// the target. A surface drop matches it too **when the body is the
-			// one selected** — cruising to a planet is a target like any other,
-			// and leaving the ship in the star's frame beside it would strand it the
-			// same way an absolute clamp strands an arrival at a station. Against
-			// some other body it was flown at by accident, the star's frame is right.
-			const atTarget =
-				step.exit === "arrival" || step.exitBodyId === this.targetId;
+			// The frame follows the physical event. Arrival matches the target;
+			// proximity matches the blocker even when another target is selected.
+			const matchBodyId =
+				step.exit === "arrival" ? this.targetId : (step.exitBodyId ?? null);
 			this.dropOut(
 				step.exit === "proximity"
 					? `dropped by proximity to ${step.exitBodyId ?? "a body"}`
 					: `arrived at ${this.targetId ?? "target"}`,
-				atTarget,
+				matchBodyId,
+				step.exit === "proximity",
 			);
 			return;
 		}
