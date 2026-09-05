@@ -313,6 +313,14 @@ const split = async (page, frames) => {
 			);
 		const s = g.attributionSnapshot();
 		g.disableFrameAttribution();
+		// **`null` in, `null` out.** `attributionSnapshot()` returns null when the
+		// sampler did not come up, and the first version spread it —
+		// `{ ...null, framePeriodMs }` is a perfectly truthy object with no `gpu`
+		// on it, so the caller's guard against a missing sampler became
+		// unreachable *and* the failure it guarded moved from a printed line to a
+		// crash one property later. Sage read it as dead code, which it was; the
+		// repair is the contract rather than the guard.
+		if (!s) return null;
 		const sorted = marks.sort((a, b) => a - b);
 		return { ...s, framePeriodMs: sorted[sorted.length >> 1] ?? null };
 	}, frames);
@@ -590,14 +598,29 @@ console.log(
 console.log(
 	`  ${BLOCKS} blocks per arm, ${FRAMES} frames per block, arm order shuffled from seed ${ORDER_SEED}`,
 );
-// **The settings row is printed, not assumed.** The arms are subjects rather
-// than terms, so every optional term is inside all of them equally and cancels
-// — but the *absolute* milliseconds are only comparable with another table if
-// that table's settings are known, and this instrument reads whatever the
-// machine has stored rather than a default it could name here. #242's table
-// says "aa 0, occl off" and this run's `sky-only` reads less than half of it;
-// without this line there is no way to tell a settings difference from a
-// mystery.
+// **The settings row is printed, not assumed**, because the absolute
+// milliseconds are only comparable with another table if that table's settings
+// are known, and this reads whatever the machine has stored rather than a
+// default it could name here. #242's table says "aa 0, occl off" and this run's
+// `sky-only` reads less than half of it; without this line there is no way to
+// tell a settings difference from a mystery.
+//
+// **An earlier version of this comment said the optional terms "cancel", and
+// that is false for the near-scene arms.** Sage's HonestOracle lens caught it.
+// The shadow map redraws every caster and the ambient occlusion redraws the
+// near scene into a normal buffer, so hiding a station or its interior removes
+// work from those passes as well as from the main one, and the arm's delta
+// contains that induced saving. Leaving the settings unchanged across arms is
+// not the same as the terms cancelling.
+//
+// It is a bias with a known sign and it does not reach the headline. A
+// near-scene arm's saving is an **over**-estimate of that subject's own fill —
+// so `no stations` at 2.91 ms and `no interior` at 2.12 bound the station's
+// contribution from above, and the finding they support is that both are small.
+// The planet arm is untouched by it: a body in the *approach* layer is neither
+// a shadow caster nor an ambient-occlusion subject in the near scene, which is
+// the whole reason its fragments are never rejected. Pinning the passes off
+// would remove the bias and would price a build the principal does not play.
 const settings = await page.evaluate(() => ({
 	...window.__seelite.settings.value,
 }));
@@ -605,7 +628,10 @@ console.log(
 	`  settings as stored on this machine: ${JSON.stringify(settings)}`,
 );
 console.log(
-	"  every optional term is left where the build puts it; the arms are subjects, not terms, so it cancels within a framing.",
+	"  every optional term is left where the build puts it. Near-scene arms " +
+		"(stations, interior, player) therefore also drop that subject's shadow " +
+		"and AO work, so their savings bound the subject from above; the body " +
+		"arms are in the approach layer and neither pass touches them.",
 );
 
 for (const framing of FRAMINGS) {
