@@ -20,6 +20,7 @@ const { check, watch, exit } = tally();
 const page = await browser.newPage({ viewport: { width: 900, height: 620 } });
 watch(page);
 const rows = [];
+const nonEngagingSeeds = [];
 for (let seed = FIRST_SEED; seed < FIRST_SEED + SEEDS; seed++) {
 	await page.goto(`${origin}/?seed=${seed}`);
 	await bootedGame(page);
@@ -76,6 +77,7 @@ for (let seed = FIRST_SEED; seed < FIRST_SEED + SEEDS; seed++) {
 		};
 	}, seed);
 	if (row) rows.push(row);
+	else nonEngagingSeeds.push(seed);
 }
 const arrivals = rows.filter(
 	(row) => row.exit === `arrived at ${row.stationId}`,
@@ -86,9 +88,11 @@ const cpuMs = rows.reduce((sum, row) => sum + row.cpuMs, 0);
 console.log(
 	JSON.stringify(
 		{
-			seeds: SEEDS,
+			requestedSeeds: SEEDS,
 			firstSeed: FIRST_SEED,
 			detourLegs: rows.length,
+			nonEngagingSeeds,
+			accountedSeeds: rows.length + nonEngagingSeeds.length,
 			arrivals,
 			timeouts,
 			detours,
@@ -100,6 +104,10 @@ console.log(
 		null,
 		2,
 	),
+);
+check(
+	"every requested seed is accounted for as an engagement or a non-engagement",
+	rows.length + nonEngagingSeeds.length === SEEDS,
 );
 check("corpus contains at least one production detour leg", rows.length > 0);
 check(
