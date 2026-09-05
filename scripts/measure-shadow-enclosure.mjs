@@ -43,8 +43,16 @@
  * so consecutive "fractions" differed in the station's orientation and in where
  * the star fell on it as much as in how far along the route the ship was. The
  * segment now parks once and advances the same flight in explicit sim steps
- * with the frame loop stopped, so between two rungs the only thing that has
- * moved is the ship along its own route.
+ * with the frame loop stopped.
+ *
+ * **The clock still advances, and it must**: a traversal *is* time, and
+ * `step(dt)` advances the world clock that body positions and the station's
+ * pose are functions of. What the fix removes is the *extra* journey — the
+ * out-and-back each `__parkInBerth` flew before it started measuring — not the
+ * seconds the route itself takes. So consecutive rungs still differ in station
+ * phase by the seconds between them, which is a property of the thing being
+ * measured rather than an artefact of measuring it. An earlier version of this
+ * paragraph claimed the ship was the only thing moving, and that was false.
  *
  * ## The x-axis is measured, not asserted
  *
@@ -450,6 +458,15 @@ const rows = [];
  *  once the flight exists rather than assumed from the near constant. */
 let traversalAt = null;
 let traversalSeconds = 0;
+// **Frozen once, for the whole ladder.** Freezing and thawing per rung let
+// `animate()` advance the clock by a timing-dependent amount between rungs —
+// `animate` steps and re-schedules immediately — so the station's spin phase
+// moved between rows by an amount nothing recorded, which is the same confound
+// the traversal fix removed one level up. Every placement helper here works
+// frozen: `__viewAlongAxis` is a teleport and `__parkInBerth` drives its flight
+// with explicit `step(dt)` calls.
+await freeze(page);
+
 for (const rung of RUNGS) {
 	// **Frozen before the placement, not after it.** The freeze sat after
 	// `settleFrames`, and `__parkInBerth` itself awaits two animation frames
@@ -464,7 +481,6 @@ for (const rung of RUNGS) {
 	// and `requestAnimationFrame` still fires for anything awaiting a frame —
 	// what stops is the game re-scheduling itself, which is exactly the part
 	// that was moving the ship.
-	await freeze(page);
 	if (rung.kind === "approach") {
 		await page.evaluate(
 			([id, radii]) =>
@@ -580,11 +596,6 @@ for (const rung of RUNGS) {
 			}`,
 		);
 	}
-	// **The loop stays off across the traversal rungs**, because they are one
-	// flight now: restarting it would let `Game.animate` advance the ship
-	// between two fractions of the journey this ladder is walking. The approach
-	// rungs are teleports and each wants a running game to place from.
-	if (rung.kind === "approach") await unfreeze(page);
 }
 await unfreeze(page);
 
