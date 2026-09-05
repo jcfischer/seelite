@@ -1173,6 +1173,10 @@ class Game {
 	lastExit = "";
 	/** Internal route state only: targetId remains the selected station. */
 	private detour: (DetourPlan & { targetId: string; waypoint: 0 | 1 | 2 }) | null = null;
+	/** Reused while steering an active detour; cruise must not make per-frame Three allocations. */
+	private readonly detourDirection = new THREE.Vector3();
+	private readonly detourOrientation = new THREE.Quaternion();
+	private readonly detourForward = new THREE.Vector3(0, 0, -1);
 	private warp!: WarpField;
 	private lastTime = 0;
 	private hud: HTMLElement;
@@ -5735,9 +5739,13 @@ class Game {
 		const direction = sub(next, this.world.ship.pos);
 		const distance = length(direction);
 		if (distance === 0) return true;
-		const desired = new THREE.Vector3(direction.x / distance, direction.y / distance, direction.z / distance);
-		const desiredOrientation = new THREE.Quaternion().setFromUnitVectors(
-			new THREE.Vector3(0, 0, -1),
+		const desired = this.detourDirection.set(
+			direction.x / distance,
+			direction.y / distance,
+			direction.z / distance,
+		);
+		const desiredOrientation = this.detourOrientation.setFromUnitVectors(
+			this.detourForward,
 			desired,
 		);
 		const angle = this.orientation.angleTo(desiredOrientation);
