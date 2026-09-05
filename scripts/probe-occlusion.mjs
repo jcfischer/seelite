@@ -251,22 +251,48 @@ const gate = await page.evaluate(async () => {
 		far: !!game.farScene.getObjectByName("sun")?.castShadow,
 		approach: !!game.approachScene.getObjectByName("sun")?.castShadow,
 	});
+	const keptAo = game.settings.value.ao;
 	game.settings.set("quality", "high");
 	const high = read();
 	game.settings.set("quality", "low");
 	const low = read();
 	game.settings.set("quality", kept);
-	return { high, low, kept };
+	game.settings.set("ao", "on");
+	const aoOn = read();
+	game.settings.set("ao", "off");
+	const aoOff = read();
+	game.settings.set("ao", keptAo);
+	return { high, low, aoOn, aoOff, kept, keptAo };
 });
+/**
+ * **Each row moves its own term and not the other's.**
+ *
+ * This asserted that `quality` moved both, which is what #201 shipped and what
+ * the principal then overruled: the ambient occlusion is its own row, and the
+ * shadow is gated off on both lighting modes until #231 gives it light. Left as
+ * it was, this row went red for the right reason — the ownership it encoded no
+ * longer existed — and it is the check that caught the split, so it is worth
+ * saying which half is now load-bearing.
+ *
+ * The `ao` pair is. The `quality` pair can only ever read false now, so it
+ * cannot distinguish a working gate from an absent one; `tests/light-rig.test.ts`
+ * pins the record and the cold-boot crossed arm below is what proves the two
+ * rows are independent.
+ */
 t.check(
-	"high turns both passes on and low turns both off",
-	gate.high.castShadow && gate.high.ao && !gate.low.castShadow && !gate.low.ao,
-	`high ${gate.high.castShadow}/${gate.high.ao}, low ${gate.low.castShadow}/${gate.low.ao}`,
+	"the occlusion row moves the occlusion pass, in both directions",
+	gate.aoOn.ao === true && gate.aoOff.ao === false,
+	`ao on ${gate.aoOn.ao}, ao off ${gate.aoOff.ao}`,
+);
+t.check(
+	"and the lighting key still moves the shadow, in both directions",
+	gate.high.castShadow && !gate.low.castShadow,
+	`high ${gate.high.castShadow}, low ${gate.low.castShadow}`,
 );
 t.check(
 	"the game ships with the occlusion on",
-	gate.kept === "high",
-	`default quality is ${gate.kept}`,
+	gate.kept === "high" && gate.keptAo === "on",
+	`default quality is ${gate.kept}, default occlusion is ${gate.keptAo}`,
 );
 t.check(
 	"only the near layer's sun casts a shadow",
@@ -294,7 +320,7 @@ t.check(
  * `localStorage`, no assignment — and reads the two flags off a game nobody has
  * touched.
  */
-const coldBootAt = async (quality) => {
+const coldBootAt = async (settings) => {
 	const writer = await context.newPage();
 	// Watched like every other page here: an unwatched one reports neither a
 	// page error nor a shader failure, and `check-launcher-wiring.mjs` refuses
@@ -303,9 +329,12 @@ const coldBootAt = async (quality) => {
 	await writer.goto(`${origin}/?seed=${SEED}`);
 	await bootedGame(writer);
 	const saved = await writer.evaluate((want) => {
-		window.__seelite.settings.set("quality", want);
-		return window.__seelite.settings.value.quality;
-	}, quality);
+		const store = window.__seelite.settings;
+		for (const [key, value] of Object.entries(want)) store.set(key, value);
+		return Object.fromEntries(
+			Object.keys(want).map((key) => [key, store.value[key]]),
+		);
+	}, settings);
 	await writer.close();
 	const reader = await context.newPage();
 	t.watch(reader);
@@ -315,6 +344,7 @@ const coldBootAt = async (quality) => {
 		const game = window.__seelite;
 		return {
 			quality: game.settings.value.quality,
+			aoRow: game.settings.value.ao,
 			castShadow: !!game.nearScene.getObjectByName("sun")?.castShadow,
 			ao: game.gtaoPass?.enabled ?? null,
 		};
@@ -323,35 +353,44 @@ const coldBootAt = async (quality) => {
 	return { saved, ...read };
 };
 
-const coldLow = await coldBootAt("low");
+/**
+ * **Two boots, both crossed, and the crossing is what makes them two.**
+ *
+ * The rows have different owners since the principal's ruling, so what has to
+ * be proved is no longer "the gate ran" but "each row moved its own term and
+ * not the other's". A boot per row would need four to cover both directions of
+ * both; two boots with the rows *disagreeing* cover all four, because each one
+ * reads one row up and the other down.
+ *
+ * That matters beyond elegance. Each `coldBootAt` opens two pages and costs
+ * about twenty-five seconds, and the main page is a **running game** the whole
+ * time: a third arm pushed this probe from 95s to 145s, and somewhere in the
+ * extra fifty the ship's docking computer took its clearance and docked itself,
+ * so `__parkInBerth` below refused with "the session is docked". The arms are
+ * cheap to add and the page they leave running is not.
+ *
+ * The defaults each pass would fall back to are opposites — `GTAOPass`
+ * constructs `enabled: true`, `DirectionalLight` constructs `castShadow: false`
+ * — so neither arm can pass by a default happening to match.
+ */
+const coldLowOn = await coldBootAt({ quality: "low", ao: "on" });
 t.check(
-	"a saved low quality boots with both passes already off",
-	coldLow.saved === "low" &&
-		coldLow.quality === "low" &&
-		!coldLow.castShadow &&
-		coldLow.ao === false,
-	`saved ${coldLow.saved}, booted ${coldLow.quality} with castShadow ${coldLow.castShadow} and ao ${coldLow.ao}`,
+	"a saved low quality boots with no shadow, and does not take the occlusion with it",
+	coldLowOn.quality === "low" &&
+		coldLowOn.aoRow === "on" &&
+		!coldLowOn.castShadow &&
+		coldLowOn.ao === true,
+	`booted ${coldLowOn.quality}/${coldLowOn.aoRow} with castShadow ${coldLowOn.castShadow} and ao ${coldLowOn.ao}`,
 );
 
-/**
- * **And the same question the other way round, which the red build demanded.**
- *
- * Removing the gate call to prove the row above could fail reddened it on the
- * ambient occlusion and *not* on the shadow — because with the call gone
- * `castShadow` never leaves `DirectionalLight`'s own `false`, which happens to
- * be the answer the `low` arm wanted. So the low arm alone would pass a build
- * where a player who chose `high` got no shadow at all. Two arms, and neither
- * is redundant: the flags' defaults are `enabled: true` and `castShadow: false`,
- * so each pass has a failure mode the other arm cannot see.
- */
-const coldHigh = await coldBootAt("high");
+const coldHighOff = await coldBootAt({ quality: "high", ao: "off" });
 t.check(
-	"a saved high quality boots with both passes already on",
-	coldHigh.saved === "high" &&
-		coldHigh.quality === "high" &&
-		coldHigh.castShadow &&
-		coldHigh.ao === true,
-	`saved ${coldHigh.saved}, booted ${coldHigh.quality} with castShadow ${coldHigh.castShadow} and ao ${coldHigh.ao}`,
+	"and a saved high quality boots with the shadow on, without turning the occlusion back on",
+	coldHighOff.quality === "high" &&
+		coldHighOff.aoRow === "off" &&
+		coldHighOff.castShadow &&
+		coldHighOff.ao === false,
+	`booted ${coldHighOff.quality}/${coldHighOff.aoRow} with castShadow ${coldHighOff.castShadow} and ao ${coldHighOff.ao}`,
 );
 
 // ---- the exterior framing: the hull in front, the station beyond ----

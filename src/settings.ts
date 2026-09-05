@@ -137,7 +137,7 @@ const SCHEMA = {
 		allowed: ["high", "low"] as const,
 		label: "Lighting",
 		describe: (v: string) => (v === "high" ? "High" : "Low"),
-		note: "High reflects the star off every hull, plate and cockpit surface, cuts the panel lines into the hulls and the cabin so a moving sun breaks across them, lights the console from above, casts the star's shadow across whatever is nearest, and darkens the corners and the contact where surfaces meet. Low drops all five and keeps the sun, the star-side gradient and the cockpit fill; the picture stays lit, the panel lines stay painted, the metal stops reading as metal and nothing casts or catches a shadow.",
+		note: "High reflects the star off every hull, plate and cockpit surface, cuts the panel lines into the hulls and the cabin so a moving sun breaks across them, lights the console from above, and casts the star's shadow across whatever is nearest. Low drops all four and keeps the sun, the star-side gradient and the cockpit fill; the picture stays lit, the panel lines stay painted, and the metal stops reading as metal. Corner and contact shading is the Occlusion row, not this one.",
 	},
 	/**
 	 * How many samples the composed frame is drawn with — #200.
@@ -203,6 +203,29 @@ const SCHEMA = {
 		label: "Vignette",
 		describe: (v: string) => (v === "on" ? "On" : "Off"),
 		note: "Darkens the corners of the cockpit view by up to 15%, so the frame's edges stop competing with the instruments. Never applied in the chase view. Off is the flat frame.",
+	},
+	/**
+	 * Whether corners and contacts darken — #201's ambient occlusion.
+	 *
+	 * **Its own row rather than the `quality` key, which is the principal's
+	 * ruling and not what #201 specified.** The node put it behind Lighting, and
+	 * the argument for leaving it there was that the pair costs 1.2x the frame
+	 * where #200's antialiasing earned a row at 4-6x. The argument against is
+	 * the one #200 already settled: a player who wants contact shadows at low
+	 * lighting, or wants their frame back without giving up the metal, cannot
+	 * ask for either through one switch.
+	 *
+	 * So `LIGHT_RIG.quality` no longer carries `ao` at all. Two owners of one
+	 * term is the arrangement this game has been bitten by before — the perf
+	 * panel and the settings screen once co-owned resolution and multiplied
+	 * their two halves together.
+	 */
+	ao: {
+		fallback: "on" as const,
+		allowed: TOGGLE,
+		label: "Occlusion",
+		describe: (v: string) => (v === "on" ? "On" : "Off"),
+		note: "Darkens corners, seams and the ground a ship stands on, so an interior reads as a room rather than as flat boxes. It shows most inside a station bay and barely at all in open space. It is the most expensive thing in the frame after Antialiasing; `occlusion.ts` carries the figures.",
 	},
 } as const;
 

@@ -2078,6 +2078,10 @@ class Game {
 			if (next.antialias !== applied.antialias) this.setComposerSamples();
 			if (next.dither !== applied.dither)
 				this.outputPass.setDither(next.dither === "on");
+			// #201's occlusion, on its own row. `setOcclusion` re-reads both
+			// terms from their owners rather than taking this one, so a quality
+			// change and an occlusion change cannot disagree about the shadow.
+			if (next.ao !== applied.ao) this.setOcclusion();
 			applied = next;
 		});
 		/**
@@ -2663,7 +2667,9 @@ class Game {
 	 */
 	setOcclusion(
 		shadows: boolean = LIGHT_RIG.quality[this.settings.value.quality].shadows,
-		ao: boolean = LIGHT_RIG.quality[this.settings.value.quality].ao,
+		// The player's own row since the principal's ruling, not the lighting
+		// key. `light-rig.ts` says why the two were separated.
+		ao: boolean = this.settings.value.ao === "on",
 	) {
 		if (this.shadowSun) this.shadowSun.castShadow = shadows;
 		// **Both guards are real and both have a call site that follows them.**

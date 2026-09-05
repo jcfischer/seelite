@@ -183,20 +183,43 @@ export const LIGHT_RIG = {
 	 * apart; they are on one *key* because what the player is being asked is how
 	 * much of the light model they want, not which of two passes they prefer.
 	 */
+	/**
+	 * What each lighting setting includes.
+	 *
+	 * **`ao` is no longer here.** #201's ambient occlusion is the player's own
+	 * `ao` row in `settings.ts` on the principal's ruling, against the node's own
+	 * specification — a player who wants contact shading on a machine that
+	 * cannot afford the baked environment cannot ask for that through one key.
+	 * One term with two owners is the arrangement that once let the perf panel
+	 * and the settings screen each apply half of `renderScale`.
+	 *
+	 * **`shadows` stays**, and the line is not cost. A shadow is what the star
+	 * does to a surface another surface stands in front of, so it belongs to the
+	 * light model; ambient occlusion is a post pass and sits with antialias,
+	 * dither and vignette, each of which already has a row.
+	 *
+	 * It is worth knowing that at this rig the shadow is very nearly invisible —
+	 * `LIGHT_RIG` gives the sun 0.2 against a hemisphere at 6.85, and a
+	 * hemisphere cannot be shadowed, so it darkens 0.003% of an exterior frame
+	 * and 6.3% of a bay. Gating it off to stop paying 0.59 ms for that was tried
+	 * and reverted: `fitShadowCamera` idles while the sun is not casting, so a
+	 * shadow that is off during the approach is *unfitted* when anything turns it
+	 * on, and `probe-occlusion.mjs` then measures 0.9% where it should read 6.3%.
+	 * The gate and the probe cannot both be right as they stand. Node #231 owns
+	 * that, together with moving light into the sun.
+	 */
 	quality: {
 		high: {
 			environment: true,
 			hemisphere: true,
 			exposure: 1,
 			shadows: true,
-			ao: true,
 		},
 		low: {
 			environment: false,
 			hemisphere: true,
 			exposure: 1,
 			shadows: false,
-			ao: false,
 		},
 	},
 } as const;
