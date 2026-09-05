@@ -848,6 +848,7 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 		velocity: Vec3,
 		activeBodyId?: string,
 		settled = new Set<string>(),
+		duration = remaining,
 	): { time: number; body: Mass } | null => {
 		const elapsed = input.dt - remaining;
 		let earliest: { time: number; body: Mass } | null = null;
@@ -858,7 +859,7 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 			const time = guardStopTime(
 				pos,
 				velocity,
-				remaining,
+				duration,
 				elapsed,
 				input.dt,
 				mass,
@@ -878,9 +879,9 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 		exit = "proximity";
 		const settled = new Set<string>();
 		let blocker = initialBlocker;
+		exitBodyId = blocker.id;
 		while (remaining > 0) {
 			settled.add(blocker.id);
-			exitBodyId = blocker.id;
 			const carry = blocker.vel ?? { x: 0, y: 0, z: 0 };
 			const next = earliestGuardStop(carry, blocker.id, settled);
 			const duration = next?.time ?? remaining;
@@ -895,6 +896,7 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 			remaining = Math.max(0, remaining - duration);
 			if (!next) break;
 			blocker = next.body;
+			exitBodyId = blocker.id;
 		}
 	};
 	const finishArrival = (carry: Vec3) => {
@@ -1028,22 +1030,15 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 		//
 		// Swept, and taken **before** the drop-out if it happens first, so the
 		// nearer event is the one that fires.
-		for (const m of input.masses) {
-			const stopTime = guardStopTime(
-				pos,
-				velocity,
-				dt,
-				elapsed,
-				input.dt,
-				m,
-				input.targetParentId,
-			);
-			if (stopTime === null) continue;
-			// A surface wins an exact tie with arrival: touching the station sphere
-			// cannot license crossing its host on the same physical instant.
-			if (event === null || stopTime <= event.time)
-				event = { time: stopTime, exit: "proximity", body: m };
-		}
+		const blocker = earliestGuardStop(velocity, undefined, undefined, dt);
+		// A surface wins an exact tie with arrival: touching the station sphere
+		// cannot license crossing its host on the same physical instant.
+		if (blocker && (event === null || blocker.time <= event.time))
+			event = {
+				time: blocker.time,
+				exit: "proximity",
+				body: blocker.body,
+			};
 
 		const used = event?.time ?? dt;
 		const poweredKm = speedKms * used;

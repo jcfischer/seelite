@@ -191,6 +191,28 @@ test("post-stop carry sweeps a second body's surface", () => {
 	);
 });
 
+test("a frame-end proximity stop retains its blocker identity", () => {
+	const step = advanceCruise({
+		pos: v3(),
+		nose: v3(1, 0, 0),
+		throttle: 0,
+		dt: 0.02949999999,
+		masses: [
+			{
+				id: "frame-end",
+				pos: v3(4, 0, 0),
+				radiusKm: 1,
+				vel: v3(-100, 0, 0),
+			},
+		],
+		target: null,
+		params: CONSTANT_CRUISE,
+		targetParentId: null,
+	});
+	expect(step.exit).toBe("proximity");
+	expect(step.exitBodyId).toBe("frame-end");
+});
+
 test("relative sweep catches a body crossing between both endpoint samples", () => {
 	const body: Mass = {
 		id: "crossing",
