@@ -298,7 +298,7 @@ export const CLOSED_GATE: OcclusionGate = { open: false, pending: 0 };
  * enclosed it can be rather than a division to be guarded: that is the bay,
  * which is the one framing where #222 measured the shadow reading at all.
  */
-function enclosure(stations: readonly ShadowSubject[]): number {
+export function enclosureRad(stations: readonly ShadowSubject[]): number {
 	let widest = 0;
 	for (const s of stations) {
 		const d = Math.hypot(s.center[0], s.center[1], s.center[2]);
@@ -319,7 +319,7 @@ export function stepOcclusionGate(
 	gate: OcclusionGate,
 	stations: readonly ShadowSubject[],
 ): OcclusionGate {
-	const rad = enclosure(stations);
+	const rad = enclosureRad(stations);
 	// Asymmetric by construction: an open gate is held by the *lower* threshold,
 	// so a station drifting between the two leaves the state it is in alone.
 	const wants = gate.open

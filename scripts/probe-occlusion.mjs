@@ -160,6 +160,19 @@ const compare = (page, mode) =>
 						object.visible = false;
 					}
 				});
+			// **The world without the ship**, for #241's ladder. There is always a
+			// subject at a fixed distance from the camera — the cabin in cockpit
+			// view, the player hull in chase — so the pair's whole-frame reading
+			// never falls to zero however far the station is: 4.6% at twenty radii
+			// in cockpit and 0.58% in chase, both of them the near subject rather
+			// than the station. Hiding the two roots leaves what actually moves
+			// across the rungs. #233 needed the same column for the same reason.
+			if (how === "world-only")
+				for (const root of [game.shipMesh, game.cockpit.mesh]) {
+					if (!root) continue;
+					hidden.push([root, root.visible]);
+					root.visible = false;
+				}
 
 			game.setOcclusion(false, false);
 			const none = frame();
@@ -246,8 +259,7 @@ const gate = await page.evaluate(async () => {
 	const game = window.__seelite;
 	const kept = game.settings.value.quality;
 	const read = () => ({
-		castShadow: !!game.nearScene.getObjectByName("sun")?.castShadow,
-		ao: game.gtaoPass?.enabled ?? null,
+		...game.occlusionState.wanted,
 		far: !!game.farScene.getObjectByName("sun")?.castShadow,
 		approach: !!game.approachScene.getObjectByName("sun")?.castShadow,
 	});
@@ -259,9 +271,9 @@ const gate = await page.evaluate(async () => {
 	return { high, low, kept };
 });
 t.check(
-	"high turns both passes on and low turns both off",
-	gate.high.castShadow && gate.high.ao && !gate.low.castShadow && !gate.low.ao,
-	`high ${gate.high.castShadow}/${gate.high.ao}, low ${gate.low.castShadow}/${gate.low.ao}`,
+	"high asks for both passes and low asks for neither",
+	gate.high.shadows && gate.high.ao && !gate.low.shadows && !gate.low.ao,
+	`high ${gate.high.shadows}/${gate.high.ao}, low ${gate.low.shadows}/${gate.low.ao}`,
 );
 t.check(
 	"the game ships with the occlusion on",
@@ -315,8 +327,17 @@ const coldBootAt = async (quality) => {
 		const game = window.__seelite;
 		return {
 			quality: game.settings.value.quality,
-			castShadow: !!game.nearScene.getObjectByName("sun")?.castShadow,
-			ao: game.gtaoPass?.enabled ?? null,
+			// **The row's answer, not the two flags** — #241 put a gate between
+			// them, and a boot happens at the arrival point where that gate is
+			// shut. Read off the flags, a saved `high` and a saved `low` both
+			// produce two `false`s in open space, and the arm below that caught
+			// #201's boot bug twice would go green on a build that had lost the
+			// row entirely. What is being asked here is whether the *stored*
+			// preference reached the constructor; whether the gate then lets it
+			// draw is the two rows further down.
+			castShadow: game.occlusionState.wanted.shadows,
+			ao: game.occlusionState.wanted.ao,
+			gateOpen: game.occlusionState.open,
 		};
 	});
 	await reader.close();
@@ -325,7 +346,7 @@ const coldBootAt = async (quality) => {
 
 const coldLow = await coldBootAt("low");
 t.check(
-	"a saved low quality boots with both passes already off",
+	"a saved low quality boots asking for neither pass",
 	coldLow.saved === "low" &&
 		coldLow.quality === "low" &&
 		!coldLow.castShadow &&
@@ -346,12 +367,27 @@ t.check(
  */
 const coldHigh = await coldBootAt("high");
 t.check(
-	"a saved high quality boots with both passes already on",
+	"a saved high quality boots asking for both passes",
 	coldHigh.saved === "high" &&
 		coldHigh.quality === "high" &&
 		coldHigh.castShadow &&
 		coldHigh.ao === true,
 	`saved ${coldHigh.saved}, booted ${coldHigh.quality} with castShadow ${coldHigh.castShadow} and ao ${coldHigh.ao}`,
+);
+
+/**
+ * **And #241's gate is shut on that boot, which is the other half.**
+ *
+ * A boot puts the ship at the arrival point with nothing near it, and that is
+ * the frame the principal reported at 40 fps: the pair doubles it and darkens
+ * 0.002% of it. So a `high` boot must ask for both passes *and* draw neither
+ * until something is close enough to be worth them. Without this row, a build
+ * whose gate was stuck open would pass every arm above.
+ */
+t.check(
+	"a high boot in open space still draws neither pass",
+	coldHigh.gateOpen === false,
+	`gate open ${coldHigh.gateOpen} at the arrival point`,
 );
 
 // ---- the exterior framing: the hull in front, the station beyond ----
@@ -377,6 +413,112 @@ t.check(
 );
 console.log(
 	`  shadow — exterior ${flank.shadow.darkerPct.toFixed(3)}% darker, deepest ${flank.shadow.deepest.toFixed(1)}/255`,
+);
+
+// ---- #241's approach ladder: where the pair starts to be worth its cost ----
+
+/**
+ * **The gate's two thresholds are read off this ladder rather than chosen.**
+ *
+ * `OCCLUSION.gate.openRad` decides when the two passes start drawing, and a
+ * number picked in a docstring would be the thing `CLAUDE.md` calls a
+ * prediction that reads as a measurement. So the rungs are flown, what the pair
+ * darkens is measured at each on the same threshold-free arithmetic every other
+ * row here uses, and the check below is that the gate is **already open** by the
+ * time the pair moves the frame — one rung of margin, not zero, because a gate
+ * that opens exactly when the shadow appears makes the shadow appear by opening.
+ *
+ * The rungs are in station silhouette radii down the aperture axis, which is
+ * `cockpit-arrival`'s own axis: it is captured at five of them.
+ *
+ * **Flown in chase and not in cockpit, and that is the whole reason this
+ * measurement was rebuilt.** The first version flew it in cockpit view and
+ * reported the pair darkening 4.6% of the frame at *twenty* radii, falling
+ * monotonically to nothing — which is not a station at all. It is the cabin:
+ * the ambient occlusion darkens 22.5% of a `cockpit-arrival` frame, and a
+ * ladder that includes it measures the one subject that is in every frame at
+ * the same distance. #233 reached the same wall and answered it the same way,
+ * with a world-only column. Chase has no cabin, so what moves across these
+ * rungs is the station.
+ */
+const LADDER_RUNGS = [20, 12, 8, 5, 3, 2, 1.5];
+
+await setView(page, "chase");
+const ladder = [];
+for (const rung of LADDER_RUNGS) {
+	await page.evaluate(
+		([id, radii]) =>
+			window.__viewAlongAxis(id, window.__radiusOf(id) * radii, {
+				comoving: true,
+			}),
+		[STATION, rung],
+	);
+	await setView(page, "chase");
+	await settleFrames(page);
+	// The gate is advanced by the frame loop, and `settleFrames` has just run
+	// enough of them for `openFrames` to have been satisfied if it was going to
+	// be. Read before `compare`, which pins both passes and would report the pin
+	// rather than the gate.
+	const state = await page.evaluate(() => window.__seelite.occlusionState);
+	const seen = await compare(page, "world-only");
+	ladder.push({
+		rung,
+		open: state.open,
+		enclosureRad: state.enclosureRad,
+		pairPct: seen.shadow.darkerPct + seen.ao.darkerPct,
+	});
+}
+for (const r of ladder)
+	console.log(
+		`  ladder — ${String(r.rung).padStart(4)} radii  enclosure ${r.enclosureRad.toFixed(3)} rad  gate ${r.open ? "open" : "shut"}  pair ${r.pairPct.toFixed(3)}% darker`,
+	);
+
+/**
+ * **There is no cliff on this ladder, and the checks below are shaped by that
+ * rather than around it.**
+ *
+ * What a run reports, world-only, in percent of the frame the pair darkens:
+ * 0.59 at twenty radii, 0.62 at twelve, 0.73 at eight, 1.10 at five, 2.07 at
+ * three, 5.21 at two, 7.73 at one and a half. It rises smoothly with enclosure
+ * and never falls to nothing, because at twenty radii the station is still a
+ * twenty-pixel disc and the pass still darkens it.
+ *
+ * So "where does the pair start to read" has no answer a probe can pick, and an
+ * earlier draft of this section picked one anyway — a 0.1% floor that every
+ * rung cleared, and then a floor that would have had to be set between 2.07 and
+ * 5.21 to make the current thresholds come out right. That is the failure
+ * `CLAUDE.md` records as a constant tuned until the verdict came out.
+ *
+ * What is checkable without choosing the trade is the *shape*: the contribution
+ * rises with enclosure, the gate follows it in one direction only, and it opens
+ * while the station is still outside its own silhouette — which is what makes
+ * `berth-arrival` a frame with the passes already on rather than one they pop
+ * on during. **Where exactly to put the threshold on that curve is the
+ * principal's, on the canonical sheet, and this ladder is what it is read
+ * from.**
+ */
+t.check(
+	"what the pair darkens rises as the station closes",
+	ladder[ladder.length - 1].pairPct > ladder[0].pairPct * 3,
+	ladder.map((r) => `${r.rung}:${r.pairPct.toFixed(2)}%`).join(" "),
+);
+t.check(
+	"the gate never re-closes as the station closes",
+	ladder.every((r, i) => i === 0 || !ladder[i - 1].open || r.open),
+	ladder.map((r) => `${r.rung}:${r.open ? "open" : "shut"}`).join(" "),
+);
+t.check(
+	"the gate is shut at the far end of the ladder and open at the near end",
+	!ladder[0].open && !ladder[1].open && ladder[ladder.length - 1].open,
+	`${ladder[0].rung} radii ${ladder[0].open ? "open" : "shut"}, ${ladder[1].rung} ${ladder[1].open ? "open" : "shut"}, ${ladder[ladder.length - 1].rung} ${ladder[ladder.length - 1].open ? "open" : "shut"}`,
+);
+const opensAt = ladder.find((r) => r.open);
+t.check(
+	"the gate opens while the station is still outside its own silhouette",
+	opensAt !== undefined && opensAt.enclosureRad < Math.PI / 2,
+	opensAt
+		? `opens at ${opensAt.rung} radii, enclosure ${opensAt.enclosureRad.toFixed(3)} rad against ${(Math.PI / 2).toFixed(3)} inside`
+		: "the gate never opened on the ladder",
 );
 
 // ---- inside a bay, which is the frame the AO was asked for ----

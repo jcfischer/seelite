@@ -87,6 +87,7 @@ import {
 } from "./light-rig";
 import {
 	CLOSED_GATE,
+	enclosureRad,
 	OCCLUSION,
 	type OcclusionGate,
 	SHADOW_MAP_TEXELS,
@@ -2718,6 +2719,27 @@ class Game {
 		if (this.shadowSun)
 			this.shadowSun.castShadow = this.occlusionWanted.shadows && gated;
 		if (this.gtaoPass) this.gtaoPass.enabled = this.occlusionWanted.ao && gated;
+	}
+
+	/**
+	 * What the gate is doing, for a probe and for an instrument — #241.
+	 *
+	 * A read-only view rather than four public fields, and no permanent HUD
+	 * element: the four numbers a check needs are the row's answer, whether an
+	 * instrument has pinned it, whether the gate is open, and the enclosure the
+	 * gate read. Without this, `probe-occlusion.mjs`'s cold-boot arms could only
+	 * see the two flags — and with a gate in front of them, a saved `high` in
+	 * open space produces the same two `false`s as a saved `low`, so the arm
+	 * that caught #201's boot bug twice would stop being able to.
+	 */
+	get occlusionState() {
+		return {
+			wanted: this.occlusionWanted,
+			pinned: this.occlusionPinned,
+			open: this.occlusionGate.open,
+			pending: this.occlusionGate.pending,
+			enclosureRad: enclosureRad(this.stationSubjects),
+		};
 	}
 
 	/** What the player's row and any instrument pin ask for, before #241's gate
