@@ -136,6 +136,11 @@ import {
 	exitVelocity,
 	legSeconds,
 } from "./cruise";
+import {
+	cruiseRouteBlocker,
+	planCruiseDetour,
+	type DetourPlan,
+} from "./cruise-detour";
 import { GOVERNMENT_NAMES, type SystemRecord } from "./galaxy";
 import { type Course, courseProgress } from "./galaxy-route";
 import {
@@ -1166,6 +1171,14 @@ class Game {
 	 *  as an overshoot rather than as the regime having dropped out for no
 	 *  visible reason. */
 	lastExit = "";
+	/** Internal route state only: targetId remains the selected station. */
+	private detour:
+		| (DetourPlan & { targetId: string; waypoint: 0 | 1 | 2 })
+		| null = null;
+	/** Reused while steering an active detour; cruise must not make per-frame Three allocations. */
+	private readonly detourDirection = new THREE.Vector3();
+	private readonly detourOrientation = new THREE.Quaternion();
+	private readonly detourForward = new THREE.Vector3(0, 0, -1);
 	private warp!: WarpField;
 	private lastTime = 0;
 	private hud: HTMLElement;
@@ -3465,6 +3478,7 @@ class Game {
 				if (this.regime === "cruise") this.dropOut("dropped by the player");
 				else if (this.spoolLeftS > 0) {
 					this.spoolLeftS = 0;
+					this.detour = null;
 					this.lastExit = "spool-up cancelled";
 				} else this.engageCruise();
 				return;
@@ -3932,6 +3946,8 @@ class Game {
 		// is not bound, and the MODE cell can only show a window that opened.
 		if (charging(this.jumpCharge) || this.jumpNotice) return this.jumpNotice;
 		if (this.spoolLeftS > 0) return "";
+		if (this.detour?.targetId === this.targetId)
+			return `DETOUR AROUND ${this.bodyFor(this.detour.bodyId)?.name ?? this.detour.bodyId}`;
 		if (this.regime === "cruise") return "";
 		// **The same predicate the strip's tone reads.** As `chargeAu <= 0` this
 		// and the strip disagreed on the frame after a starve-out: regeneration
@@ -4885,6 +4901,7 @@ class Game {
 		this.legStartedAtS = null;
 		this.lastLegS = null;
 		this.lastExit = "";
+		this.detour = null;
 		this.frameBody = null;
 		this.proximityFrameBodyId = null;
 		this.dockingComputerEngaged = false;
@@ -5261,6 +5278,31 @@ class Game {
 			this.lastExit = "no drive charge";
 			return;
 		}
+		this.detour = null;
+		const target = this.targetBody();
+		if (target && this.targetParentId()) {
+			const masses = this.masses();
+			const blocker = cruiseRouteBlocker(
+				this.world.ship.pos,
+				target.pos,
+				masses,
+				this.targetParentId(),
+			);
+			if (blocker) {
+				const route = planCruiseDetour({
+					from: this.world.ship.pos,
+					target: target.pos,
+					blocker,
+					masses,
+					targetParentId: this.targetParentId(),
+				});
+				if (!route) {
+					this.lastExit = `detour unavailable: ${this.bodyFor(blocker.id)?.name ?? blocker.id}`;
+					return;
+				}
+				this.detour = { ...route, targetId: target.id, waypoint: 0 };
+			}
+		}
 		this.spoolLeftS = SPOOL_S;
 		this.lastExit = "";
 	}
@@ -5300,6 +5342,7 @@ class Game {
 			this.frameBody =
 				this.world.system.byId.get(this.proximityFrameBodyId) ?? null;
 		this.regime = "normal";
+		this.detour = null;
 		this.cruiseSpeedKms = 0;
 		this.throttle = 0;
 		this.lastExit = reason;
@@ -5411,6 +5454,10 @@ class Game {
 
 		if (this.dockingComputerEngaged && this.hasControlInput(yaw, pitch, roll))
 			this.dockingComputerEngaged = false;
+		if (this.detour && this.hasControlInput(yaw, pitch, roll)) {
+			this.detour = null;
+			this.throttle = 1;
+		}
 
 		// One range scan and one orbital evaluation per station for the whole
 		// step: the autopilot reads the same approach the crossing test then uses
@@ -5569,6 +5616,7 @@ class Game {
 	 * one line of code.
 	 */
 	private stepCruise(dt: number, contactTargetAtFrameStart: Mass | null) {
+		if (!this.stepDetour(dt)) return;
 		const nose = this.nose();
 		const target = this.targetBody();
 		const targetMotion = target
@@ -5621,6 +5669,128 @@ class Game {
 		// dry is an arrival — the ship is at its target, and reporting an
 		// empty tank instead would drop it there in the wrong frame.
 		if (step.starved) this.dropOut("drive charge exhausted");
+	}
+
+	/** Replan the currently active leg against current and linearly projected masses. */
+	private replanDetourLeg(
+		detour: DetourPlan & { targetId: string; waypoint: 0 | 1 | 2 },
+		target: Body,
+		point: Vec3,
+		masses: readonly Mass[],
+		dt: number,
+	): {
+		detour: DetourPlan & { targetId: string; waypoint: 0 | 1 | 2 };
+		point: Vec3;
+	} | null {
+		const currentBlocker = cruiseRouteBlocker(
+			this.world.ship.pos,
+			point,
+			masses,
+			this.targetParentId(),
+		);
+		const blocker =
+			currentBlocker ??
+			cruiseRouteBlocker(
+				this.world.ship.pos,
+				point,
+				masses,
+				this.targetParentId(),
+				dt,
+			);
+		if (!blocker) return { detour, point };
+		const route = planCruiseDetour({
+			from: this.world.ship.pos,
+			target: target.pos,
+			blocker,
+			masses,
+			targetParentId: this.targetParentId(),
+			previousSide: blocker.id === detour.bodyId ? detour.side : undefined,
+			// Route candidates use one consistent future snapshot, even when the
+			// blocker already intersects the current leg. Planning that case at `t`
+			// while testing its next leg at `t + dt` can send the ship into a body
+			// that has already crossed the newly chosen side by the next frame.
+			projectionS: dt,
+		});
+		if (!route) {
+			this.dropOut(
+				`detour unavailable: ${this.bodyFor(blocker.id)?.name ?? blocker.id}`,
+			);
+			return null;
+		}
+		const replanned = { ...route, targetId: target.id, waypoint: 0 as const };
+		this.detour = replanned;
+		return { detour: replanned, point: replanned.waypoints[0] };
+	}
+
+	/** Turn toward the current internal waypoint; physical motion remains cruise. */
+	private stepDetour(dt: number): boolean {
+		let detour = this.detour;
+		if (!detour) return true;
+		if (detour.targetId !== this.targetId) {
+			this.detour = null;
+			return true;
+		}
+		const target = this.targetBody();
+		if (!target) {
+			this.detour = null;
+			return true;
+		}
+		let point =
+			detour.waypoint === 2 ? target.pos : detour.waypoints[detour.waypoint];
+		const masses = this.masses();
+		let active = this.replanDetourLeg(detour, target, point, masses, dt);
+		if (!active) return false;
+		detour = active.detour;
+		point = active.point;
+		// Cruise can cover far more than a kilometre per frame.  Treat a waypoint
+		// as reached over the next swept frame rather than demanding an endpoint
+		// sample land on it, or a fast ship turns back and spends its charge circling.
+		let advancedWaypoint = false;
+		if (
+			length(sub(point, this.world.ship.pos)) <
+			Math.max(1_000, this.cruiseSpeedKms * dt * 2)
+		) {
+			if (detour.waypoint === 0) {
+				detour.waypoint = 1;
+				advancedWaypoint = true;
+			} else if (detour.waypoint === 1) {
+				detour.waypoint = 2;
+				advancedWaypoint = true;
+			}
+		}
+		let next = point;
+		if (advancedWaypoint) {
+			point =
+				detour.waypoint === 2 ? target.pos : detour.waypoints[detour.waypoint];
+			// A swept waypoint reach can select a new leg this frame. Re-evaluate it
+			// before the physical cruise step so the moving guard is a backstop, not
+			// the first response to a newly closed route.
+			active = this.replanDetourLeg(detour, target, point, masses, dt);
+			if (!active) return false;
+			detour = active.detour;
+			next = active.point;
+		}
+		const direction = sub(next, this.world.ship.pos);
+		const distance = length(direction);
+		if (distance === 0) return true;
+		const desired = this.detourDirection.set(
+			direction.x / distance,
+			direction.y / distance,
+			direction.z / distance,
+		);
+		const desiredOrientation = this.detourOrientation.setFromUnitVectors(
+			this.detourForward,
+			desired,
+		);
+		const angle = this.orientation.angleTo(desiredOrientation);
+		this.orientation.rotateTowards(desiredOrientation, 0.6 * dt);
+		// Turning at cruise speed is bounded by the visible nose, not an invisible
+		// velocity vector. Hold translation while the turn is materially unfinished:
+		// a fractional throttle is still millions of km/s far from a planet, which
+		// can carry a nose that is visibly turning into the guard before it aligns.
+		// Manual throttle input cancels the detour before this method runs.
+		this.throttle = angle > 0.1 ? 0 : 1;
+		return true;
 	}
 
 	/**
