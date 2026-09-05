@@ -2653,8 +2653,10 @@ class Game {
 	}
 
 	/**
-	 * Turn #201's shadow map and ambient occlusion on or off — the player's
-	 * quality row by default, an explicit pair for an instrument.
+	 * Turn #201's shadow map and ambient occlusion on or off — **one row each**
+	 * by default, an explicit pair for an instrument. The shadow reads the
+	 * lighting row through `LIGHT_RIG.quality`; the occlusion reads its own `ao`
+	 * row, which is the whole of what the principal's ruling changed.
 	 *
 	 * The shadow gate is `castShadow` on the one light rather than
 	 * `renderer.shadowMap.enabled`. **Both are program keys and the difference

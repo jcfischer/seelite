@@ -207,25 +207,17 @@ const SCHEMA = {
 	/**
 	 * Whether corners and contacts darken — #201's ambient occlusion.
 	 *
-	 * **Its own row rather than the `quality` key, which is the principal's
-	 * ruling and not what #201 specified.** The node put it behind Lighting, and
-	 * the argument for leaving it there was that the pair costs 1.2x the frame
-	 * where #200's antialiasing earned a row at 4-6x. The argument against is
-	 * the one #200 already settled: a player who wants contact shadows at low
-	 * lighting, or wants their frame back without giving up the metal, cannot
-	 * ask for either through one switch.
-	 *
-	 * So `LIGHT_RIG.quality` no longer carries `ao` at all. Two owners of one
-	 * term is the arrangement this game has been bitten by before — the perf
-	 * panel and the settings screen once co-owned resolution and multiplied
-	 * their two halves together.
+	 * Its own row rather than the `quality` key. The ruling and what was traded
+	 * for it live on node #201, which is where `CLAUDE.md` puts a decision; what
+	 * belongs here is the consequence — `LIGHT_RIG.quality` does not carry `ao`,
+	 * and this row is its only owner.
 	 */
 	ao: {
 		fallback: "on" as const,
 		allowed: TOGGLE,
 		label: "Occlusion",
 		describe: (v: string) => (v === "on" ? "On" : "Off"),
-		note: "Darkens corners, seams and the ground a ship stands on, so an interior reads as a room rather than as flat boxes. It shows most inside a station bay and barely at all in open space. It is the most expensive thing in the frame after Antialiasing; `occlusion.ts` carries the figures.",
+		note: "Darkens corners, seams and the ground a ship stands on, so an interior reads as a room rather than as flat boxes. It shows most inside a station bay and barely at all in open space, and it is not cheap — on the machine this was measured on it costs roughly as much again as the rest of a cockpit frame. Turn it off first if you are short of frames and Antialiasing is already off.",
 	},
 } as const;
 
