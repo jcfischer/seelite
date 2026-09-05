@@ -261,6 +261,21 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   above 1, which is why `COCKPIT_FINISHES` lives in that module rather than
   inline in `buildCockpit`: a finish declared at the call site is one the
   calibration cannot see.
+- **`berth-arrival` cannot carry a before/after reading of a *performance*
+  change, and that is a different reason from the one below.** #241 measured it
+  at 12.22% of pixels moved past 24/255 against a same-build control of 0.54% —
+  which reads as a real change and is not one. The frame is `at: 0.75` of a
+  scripted traversal that runs on **wall-clock** time, so a build with a
+  different per-frame cost takes a different real duration to reach the same
+  fraction, and the world clock has advanced further when it gets there. Read
+  off the two builds at that frame: the ship is 2.56 km apart and its attitude
+  1.83° apart, with the gate open and both passes drawing in each. So the two
+  frames differ because the camera is somewhere else, not because the picture
+  changed. Any node that changes frame cost inherits this on every mid-traversal
+  view; the docked ones (`berth-docked-forward`, `berth-free-look`,
+  `shipyard-wall-berth`, `refinery-cradle-berth`) are stationary and read 0.03%
+  to 0.33% against controls of the same size, which is how #241 knew its bays
+  were untouched.
 - **`berth-launch-chase` is not a repeatable view.** Two same-build control
   runs during #105 put it at **70.9% and 72.7%** of pixels moved past 24/255,
   against ≤0.4% for every other view in the same runs. Two samples, so read the
