@@ -2,8 +2,9 @@
  * Production moving-body cruise corpus.
  *
  * All ship, target and mass states are sampled at frame start. The exact
- * production segment hook supplies continuous linear relative clearance; exact
- * orbital endpoints are checked after the world advances once.
+ * production segment hook supplies full linear relative sweeps; exact orbital
+ * endpoints are checked after the world advances once. Curved interiors are
+ * protected by the production acceleration bound, not sampled by this corpus.
  *
  *   bun run scripts/measure-guard-motion.ts [seeds]
  */

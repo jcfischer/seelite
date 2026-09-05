@@ -4,8 +4,9 @@
  *   npm run dev
  *   node scripts/measure-cruise-guard-cost.mjs
  *
- * This times `Game.step`, not rendering, and reports milliseconds per
- * simulation frame. It is neither an FPS claim nor a gate. The instrument
+ * This times the small control-and-`Game.step` loop below, without rendering,
+ * and reports elapsed milliseconds per simulation frame. It is neither an FPS
+ * claim nor a gate. The instrument
  * counts only stale-cache rebuilds and verifies every rebuilt mass carries the
  * velocity and acceleration fields consumed by the guard.
  */
@@ -120,6 +121,7 @@ console.log(
 	JSON.stringify({
 		...report,
 		renderer,
-		measurement: "headed browser Game.step CPU; excludes render; not FPS",
+		measurement:
+			"headed browser simulation-loop elapsed time; includes control/check overhead, excludes render; not FPS",
 	}),
 );

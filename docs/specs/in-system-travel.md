@@ -763,12 +763,15 @@ selection is unchanged everywhere else, and a new cruise engagement clears the
 handoff.
 
 `measure-guard-motion.ts` flies the production integrator over seeds 1–200 with
-one frame-start convention and a continuous relative-segment oracle. At
+one frame-start convention. It measures the full linear relative sweep of every
+integrator segment and the exact orbital endpoints; curved motion inside a
+frame is protected by the bound above rather than directly sampled. At
 `MAX_DT = 0.1 s` it reports **370/416 arrivals**, **299/302 initially
 clear-of-host arrivals**, **46 stopped legs**, zero timeouts, zero stops without
 an escape heading that finishes outside the blocker's guard without another
-proximity stop, and at least **5.000000 km** clearance over primary, retry and
-sampled escape paths. The median stop has three of six such escape headings and
+proximity stop, and at least **5.000000 km** across those linear-sweep and exact
+endpoint samples over primary, retry and sampled escape paths. The median stop
+has three of six such escape headings and
 a best five-second escape of 1.366 million km. The eight decision
 fixtures and production tests additionally bind moving interception, outward
 release, a receding tangent, shared-frame invariance, mid-step crossing,
