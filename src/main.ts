@@ -5452,7 +5452,10 @@ class Game {
 
 		if (this.dockingComputerEngaged && this.hasControlInput(yaw, pitch, roll))
 			this.dockingComputerEngaged = false;
-		if (this.detour && this.hasControlInput(yaw, pitch, roll)) this.detour = null;
+		if (this.detour && this.hasControlInput(yaw, pitch, roll)) {
+			this.detour = null;
+			this.throttle = 1;
+		}
 
 		// One range scan and one orbital evaluation per station for the whole
 		// step: the autopilot reads the same approach the crossing test then uses

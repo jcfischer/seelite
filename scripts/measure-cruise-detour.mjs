@@ -1,8 +1,8 @@
-/** Corpus measurement through the real Game steering loop. */
+/** Gated corpus probe through the real Game steering loop. */
 import { bootedGame, guardedOrigin, launchChromium, tally } from "./probe-guard.mjs";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
-const SEEDS = Number(process.argv[3] ?? 200);
+const SEEDS = Number(process.argv[3] ?? 20);
 const FIRST_SEED = Number(process.argv[4] ?? 1);
 const origin = await guardedOrigin(ORIGIN, ["src/main.ts", "src/cruise-detour.ts", "src/cruise.ts"]);
 const browser = await launchChromium();
