@@ -48,7 +48,7 @@ const result = await page.evaluate(() => {
 	g.resetFlightToStart();
 	g.targetId = station.id;
 	g.engageCruise();
-	g.command("j");
+	window.dispatchEvent(new KeyboardEvent("keydown", { key: "j" }));
 	const spoolCancelClears = g.detour === null;
 	g.engageCruise();
 	for (let i = 0; i < 80 && g.regime !== "cruise"; i++) g.step(dt);

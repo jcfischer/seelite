@@ -45,6 +45,16 @@ test("uses a deterministic perpendicular for collinear geometry", () => {
 	expect(a?.waypoints).toEqual(b?.waypoints);
 });
 
+test("finds a fallback perpendicular when the keyed axis is radial", () => {
+	const route = plan({
+		from: v3(0, -1000, 0),
+		target: v3(0, 1000, 0),
+		blocker: { id: "planet", pos: v3(), radiusKm: 100 },
+		masses: [{ id: "planet", pos: v3(), radiusKm: 100 }],
+	});
+	expect(route).not.toBeNull();
+});
+
 test("finds a moving obstruction in a linear projection without cloning masses", () => {
 	const crossing: Mass = {
 		id: "crossing",

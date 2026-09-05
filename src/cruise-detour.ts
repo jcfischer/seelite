@@ -104,8 +104,13 @@ function stablePerpendicular(radial: Vec3, target: Vec3, key: string): Vec3 | nu
 	// Directly-behind is collinear. Pick a reproducible axis, then remove its
 	// radial component so no RNG or frame orientation leaks into the choice.
 	const sum = Array.from(key).reduce((n, c) => n + c.charCodeAt(0), 0);
-	const axis = [v3(1, 0, 0), v3(0, 1, 0), v3(0, 0, 1)][sum % 3]!;
-	return unit(sub(axis, scale(radial, dot(radial, axis))));
+	const axes = [v3(1, 0, 0), v3(0, 1, 0), v3(0, 0, 1)];
+	for (let i = 0; i < axes.length; i++) {
+		const axis = axes[(sum + i) % axes.length]!;
+		const perpendicular = unit(sub(axis, scale(radial, dot(radial, axis))));
+		if (perpendicular) return perpendicular;
+	}
+	return null;
 }
 
 /**
