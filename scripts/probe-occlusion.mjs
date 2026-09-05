@@ -359,8 +359,14 @@ const idle = await page.evaluate(() => {
  * `setOcclusion` re-reads both terms from their owners, so the `ao` row's
  * subscription rewrites `castShadow` from the *lighting* row on its way past.
  * In every ordinary state that is what keeps the two rows agreeing. In the idle
- * state it is the only way the shadow comes back at all, so at high lighting an
- * occlusion toggle resurrects it — unfitted.
+ * state it is a way the shadow comes back, so at high lighting an occlusion
+ * toggle brings it back.
+ *
+ * **Not "unfitted", which an earlier version of this claimed.** With subjects
+ * present the next render runs `fitShadowCamera`, which fits the projection and
+ * clears the flag before the composer draws — and this measures `castShadow`
+ * and nothing else, so it could not have evidenced a claim about the rendered
+ * shadow either way.
  *
  * The PR claimed the rows could not disagree about the shadow. They can, and a
  * check that asserted only the `ao` half could not have said so. So this is

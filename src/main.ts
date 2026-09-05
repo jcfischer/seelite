@@ -2097,28 +2097,12 @@ class Game {
 			if (next.dither !== applied.dither)
 				this.outputPass.setDither(next.dither === "on");
 			// #201's occlusion, on its own row. `setOcclusion` re-reads **both**
-			// terms from their owners rather than taking the one that changed —
-			// which keeps the two rows from disagreeing in every ordinary state,
-			// and has one consequence worth naming rather than denying.
-			//
-			// In the idle state — `castShadow` false with `shadowSunIdle`
-			// raised, which `fitShadowCamera` cannot get out of on its own —
-			// this call is the *only* way the shadow comes back. So at high
-			// lighting an occlusion toggle resurrects it, unfitted. An earlier
-			// version of this comment said the two rows could not disagree about
-			// the shadow, which review refused: they can, here.
-			//
-			// It is not repaired here because the fault is the unreachable
-			// restore rather than this line — node #233 owns both.
-			//
-			// An earlier version of this comment justified it further, claiming a
-			// fix that stopped this call writing `castShadow` would leave the
-			// idle state with no way out at all. That is false and review said
-			// so: moving the lighting row low and back runs `applyQuality` into
-			// `setOcclusion` and restores it just as well. The coupling is a
-			// consequence of re-reading both owners, not a recovery path the
-			// design needs. `probe-occlusion.mjs` prints it rather than
-			// asserting it.
+			// terms from their owners rather than taking the one that changed, so
+			// this call rewrites `castShadow` from the lighting row on its way
+			// past. In the idle state that makes an occlusion toggle bring an
+			// idled shadow back — a cross-row effect, measured and printed by
+			// `probe-occlusion.mjs` and owned by node #233 along with the
+			// unreachable restore behind it.
 			if (next.ao !== applied.ao) this.setOcclusion();
 			applied = next;
 		});
