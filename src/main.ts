@@ -1172,7 +1172,9 @@ class Game {
 	 *  visible reason. */
 	lastExit = "";
 	/** Internal route state only: targetId remains the selected station. */
-	private detour: (DetourPlan & { targetId: string; waypoint: 0 | 1 | 2 }) | null = null;
+	private detour:
+		| (DetourPlan & { targetId: string; waypoint: 0 | 1 | 2 })
+		| null = null;
 	/** Reused while steering an active detour; cruise must not make per-frame Three allocations. */
 	private readonly detourDirection = new THREE.Vector3();
 	private readonly detourOrientation = new THREE.Quaternion();
@@ -3474,7 +3476,7 @@ class Game {
 				break;
 			case "j":
 				if (this.regime === "cruise") this.dropOut("dropped by the player");
-			else if (this.spoolLeftS > 0) {
+				else if (this.spoolLeftS > 0) {
 					this.spoolLeftS = 0;
 					this.detour = null;
 					this.lastExit = "spool-up cancelled";
@@ -5676,7 +5678,10 @@ class Game {
 		point: Vec3,
 		masses: readonly Mass[],
 		dt: number,
-	): { detour: DetourPlan & { targetId: string; waypoint: 0 | 1 | 2 }; point: Vec3 } | null {
+	): {
+		detour: DetourPlan & { targetId: string; waypoint: 0 | 1 | 2 };
+		point: Vec3;
+	} | null {
 		const currentBlocker = cruiseRouteBlocker(
 			this.world.ship.pos,
 			point,
@@ -5707,7 +5712,9 @@ class Game {
 			projectionS: dt,
 		});
 		if (!route) {
-			this.dropOut(`detour unavailable: ${this.bodyFor(blocker.id)?.name ?? blocker.id}`);
+			this.dropOut(
+				`detour unavailable: ${this.bodyFor(blocker.id)?.name ?? blocker.id}`,
+			);
 			return null;
 		}
 		const replanned = { ...route, targetId: target.id, waypoint: 0 as const };
@@ -5728,7 +5735,8 @@ class Game {
 			this.detour = null;
 			return true;
 		}
-		let point = detour.waypoint === 2 ? target.pos : detour.waypoints[detour.waypoint];
+		let point =
+			detour.waypoint === 2 ? target.pos : detour.waypoints[detour.waypoint];
 		const masses = this.masses();
 		let active = this.replanDetourLeg(detour, target, point, masses, dt);
 		if (!active) return false;
@@ -5752,7 +5760,8 @@ class Game {
 		}
 		let next = point;
 		if (advancedWaypoint) {
-			point = detour.waypoint === 2 ? target.pos : detour.waypoints[detour.waypoint];
+			point =
+				detour.waypoint === 2 ? target.pos : detour.waypoints[detour.waypoint];
 			// A swept waypoint reach can select a new leg this frame. Re-evaluate it
 			// before the physical cruise step so the moving guard is a backstop, not
 			// the first response to a newly closed route.

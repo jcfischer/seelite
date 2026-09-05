@@ -7,7 +7,9 @@ const blocker: Mass = { id: "planet", pos: v3(), radiusKm: 100 };
 const target = v3(1000, 0, 0);
 const from = v3(-1000, 0, 0);
 
-const plan = (overrides: Partial<Parameters<typeof planCruiseDetour>[0]> = {}) =>
+const plan = (
+	overrides: Partial<Parameters<typeof planCruiseDetour>[0]> = {},
+) =>
 	planCruiseDetour({
 		from,
 		target,
@@ -63,5 +65,7 @@ test("finds a moving obstruction in a linear projection without cloning masses",
 		radiusKm: 100,
 	};
 	expect(cruiseRouteBlocker(from, target, [crossing], null)).toBeNull();
-	expect(cruiseRouteBlocker(from, target, [crossing], null, 0.1)?.id).toBe("crossing");
+	expect(cruiseRouteBlocker(from, target, [crossing], null, 0.1)?.id).toBe(
+		"crossing",
+	);
 });

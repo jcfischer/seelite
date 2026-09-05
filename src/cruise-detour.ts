@@ -43,7 +43,13 @@ const guardKm = (mass: Mass, targetParentId: string | null): number =>
 		: mass.radiusKm * SURFACE_MARGIN + ROUTE_MARGIN_KM;
 
 /** Squared distance from a finite segment to a point, without allocation. */
-function segmentDistanceKm(a: Vec3, b: Vec3, px: number, py: number, pz: number): number {
+function segmentDistanceKm(
+	a: Vec3,
+	b: Vec3,
+	px: number,
+	py: number,
+	pz: number,
+): number {
 	const abx = b.x - a.x;
 	const aby = b.y - a.y;
 	const abz = b.z - a.z;
@@ -52,11 +58,19 @@ function segmentDistanceKm(a: Vec3, b: Vec3, px: number, py: number, pz: number)
 	const apy = py - a.y;
 	const apz = pz - a.z;
 	if (abSq <= EPSILON) return Math.hypot(apx, apy, apz);
-	const t = Math.max(0, Math.min(1, (apx * abx + apy * aby + apz * abz) / abSq));
+	const t = Math.max(
+		0,
+		Math.min(1, (apx * abx + apy * aby + apz * abz) / abSq),
+	);
 	return Math.hypot(apx - abx * t, apy - aby * t, apz - abz * t);
 }
 
-function projectedDistanceKm(a: Vec3, b: Vec3, mass: Mass, projectionS: number): number {
+function projectedDistanceKm(
+	a: Vec3,
+	b: Vec3,
+	mass: Mass,
+	projectionS: number,
+): number {
 	const vx = mass.vel?.x ?? 0;
 	const vy = mass.vel?.y ?? 0;
 	const vz = mass.vel?.z ?? 0;
@@ -76,8 +90,10 @@ function segmentIsClear(
 	targetParentId: string | null,
 	projectionS = 0,
 ): boolean {
-	return masses.every((mass) =>
-		projectedDistanceKm(a, b, mass, projectionS) > guardKm(mass, targetParentId),
+	return masses.every(
+		(mass) =>
+			projectedDistanceKm(a, b, mass, projectionS) >
+			guardKm(mass, targetParentId),
 	);
 }
 
@@ -98,7 +114,11 @@ export function cruiseRouteBlocker(
 	);
 }
 
-function stablePerpendicular(radial: Vec3, target: Vec3, key: string): Vec3 | null {
+function stablePerpendicular(
+	radial: Vec3,
+	target: Vec3,
+	key: string,
+): Vec3 | null {
 	const normal = unit(cross(radial, target));
 	if (normal) return normal;
 	// Directly-behind is collinear. Pick a reproducible axis, then remove its
@@ -151,9 +171,27 @@ export function planCruiseDetour(input: DetourInput): DetourPlan | null {
 			// Keep the reported six-segment work bound honest: all three limbs are
 			// evaluated for both candidates, even when an early limb is blocked.
 			const clear = [
-				segmentIsClear(input.from, waypoints[0], input.masses, input.targetParentId, projectionS),
-				segmentIsClear(waypoints[0], waypoints[1], input.masses, input.targetParentId, projectionS),
-				segmentIsClear(waypoints[1], input.target, input.masses, input.targetParentId, projectionS),
+				segmentIsClear(
+					input.from,
+					waypoints[0],
+					input.masses,
+					input.targetParentId,
+					projectionS,
+				),
+				segmentIsClear(
+					waypoints[0],
+					waypoints[1],
+					input.masses,
+					input.targetParentId,
+					projectionS,
+				),
+				segmentIsClear(
+					waypoints[1],
+					input.target,
+					input.masses,
+					input.targetParentId,
+					projectionS,
+				),
 			].every(Boolean);
 			const score =
 				length(sub(waypoints[0], input.from)) +
@@ -163,8 +201,12 @@ export function planCruiseDetour(input: DetourInput): DetourPlan | null {
 		})
 		.filter((candidate) => candidate.clear);
 	if (!candidates.length) return null;
-	const retained = candidates.find((candidate) => candidate.side === input.previousSide);
-	const chosen = retained ?? candidates.sort((a, b) => a.score - b.score || a.side - b.side)[0]!;
+	const retained = candidates.find(
+		(candidate) => candidate.side === input.previousSide,
+	);
+	const chosen =
+		retained ??
+		candidates.sort((a, b) => a.score - b.score || a.side - b.side)[0]!;
 	return {
 		bodyId: input.blocker.id,
 		side: chosen.side,
