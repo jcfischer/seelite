@@ -101,28 +101,24 @@ const SCHEMA = {
 	 * almost entirely through the canopy, so that light *is* the interior
 	 * lighting, and the sentence below promises the player it stays.
 	 *
-	 * **#201's two occlusion passes are here, and one of them is the expensive
-	 * one.** Measured headed on an M1 Pro at 1440x900 and device scale 2, over
-	 * two runs, against a `cockpit-arrival` frame that costs 1.85–2.03 ms
-	 * without them: the shadow map adds **0.59 ms** and the ambient occlusion
-	 * **1.76–1.84 ms**, for **2.32–2.46 ms** together — a little over #201's own
-	 * estimate of one to two, and a third of what the pair cost before the AO
-	 * pass was moved to half the drawing buffer.
-	 * `scripts/measure-occlusion-cost.mjs` is the instrument and
-	 * `occlusion.ts` carries the resolution table.
+	 * **#201's shadow map is here; its ambient occlusion is not, any more.**
+	 * The question this docstring used to leave open — whether the occlusion
+	 * deserved a row of its own — the principal has answered yes, so the `ao`
+	 * row below owns it and the argument for the split lives there. What stays
+	 * is the cheaper half: measured headed on an M1 Pro at 1440x900 and device
+	 * scale 2, over two runs, the shadow map adds **0.59 ms** to a
+	 * `cockpit-arrival` frame costing 1.85–2.03 ms without it.
+	 * `scripts/measure-occlusion-cost.mjs` is the instrument.
 	 *
-	 * That is a *different order* from the antialiasing row below, which is
-	 * four to six times the whole frame — so this stays one key rather than
-	 * becoming two rows on #200's argument. **Whether the ambient occlusion
-	 * deserves a row of its own is a question for the principal and not a
-	 * decision taken here**, and the pair being 1.2x the unoccluded frame is
-	 * the number that question is asked with.
+	 * That is well under the antialiasing row below, which is four to six times
+	 * the whole frame.
 	 *
-	 * The other framing the instrument takes, `berth-free-look`, is **not a
-	 * measurement and is not quoted**: its own frame is 44 ms with a 39–54 ms
-	 * spread, and the two single-term arms separate at 56% and 63% of pairings,
-	 * which is a coin toss. A bay at device scale 2 is expensive before either
-	 * of these passes touches it.
+	 * **And the shadow map is worth almost nothing in open space**, which is a
+	 * finding rather than a caveat: `LIGHT_RIG` gives the sun 0.2 against a
+	 * hemisphere of 6.85, so about 3% of a surface's light arrives along the one
+	 * direction that can cast a shadow, and a hemisphere cannot be shadowed at
+	 * all. `scripts/measure-shadow-enclosure.mjs` is the ladder that measures
+	 * where it does and does not read.
 	 *
 	 * **Every later expensive visual term declares which side of this it is on**
 	 * (#98, #99). A term added without an answer here has not been gated, it has
@@ -137,7 +133,7 @@ const SCHEMA = {
 		allowed: ["high", "low"] as const,
 		label: "Lighting",
 		describe: (v: string) => (v === "high" ? "High" : "Low"),
-		note: "High reflects the star off every hull, plate and cockpit surface, cuts the panel lines into the hulls and the cabin so a moving sun breaks across them, lights the console from above, casts the star's shadow across whatever is nearest, and darkens the corners and the contact where surfaces meet. Low drops all five and keeps the sun, the star-side gradient and the cockpit fill; the picture stays lit, the panel lines stay painted, the metal stops reading as metal and nothing casts or catches a shadow.",
+		note: "High reflects the star off every hull, plate and cockpit surface, cuts the panel lines into the hulls and the cabin so a moving sun breaks across them, lights the console from above, and casts the star's shadow across whatever is nearest. Low drops all four and keeps the sun, the star-side gradient and the cockpit fill; the picture stays lit, the panel lines stay painted, the metal stops reading as metal and nothing casts a shadow. Contact and corner shading is the Occlusion row, not this one.",
 	},
 	/**
 	 * How many samples the composed frame is drawn with — #200.
@@ -197,6 +193,39 @@ const SCHEMA = {
 	 * reads as a photograph of a spaceship. `main.ts` owns that half; this row
 	 * is whether the player wants it at all.
 	 */
+	/**
+	 * Whether the near layer gets #201's ambient occlusion — **its own row, on
+	 * the principal's ruling, against the node's own specification.**
+	 *
+	 * #201 said "gate both on quality" and both passes shipped there. The row
+	 * exists for #200's reason rather than a new one: folding a term into
+	 * `quality` means a player who wants *this* on a machine that cannot afford
+	 * the baked environment has no way to ask, and that is the argument that
+	 * moved antialiasing out.
+	 *
+	 * **The shadow map stays on `quality` and this does not, and the line
+	 * between them is not cost.** A shadow is part of the light model — it is
+	 * what the star does to a surface another surface stands in front of — so it
+	 * belongs on the key that asks how much of the light model the player wants.
+	 * Ambient occlusion is not a light at all: it is a screen-space
+	 * approximation of contact, computed after the scene is drawn, and it sits
+	 * with the other post passes below, each of which already has a row.
+	 *
+	 * **On by default, and that is where it differs from antialiasing.** That
+	 * row defaults off because it costs four to six times the whole frame. This
+	 * is +1.76–1.84 ms on a cockpit frame that costs 1.85–2.03 ms without it —
+	 * about nine tenths of one frame, a different order of decision — and it is
+	 * the half of #201 that visibly changed the picture. `occlusion.ts` owns the
+	 * table, including why the pass runs at half the drawing buffer and why the
+	 * sample count is not the lever.
+	 */
+	ao: {
+		fallback: "on" as const,
+		allowed: TOGGLE,
+		label: "Occlusion",
+		describe: (v: string) => (v === "on" ? "On" : "Off"),
+		note: "Darkens the crease where two surfaces meet and the corners of an enclosed space, so a hull sits in its cradle rather than floating on it and a docking bay has corners. Most visible inside a station; barely visible in open space, where there is nothing close enough to occlude anything. The most expensive lighting term in the game after antialiasing.",
+	},
 	vignette: {
 		fallback: "on" as const,
 		allowed: TOGGLE,

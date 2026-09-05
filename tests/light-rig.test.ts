@@ -265,16 +265,20 @@ describe("the rig's constants", () => {
 		);
 	});
 
-	test("#201's two occlusion terms are on the same side of the gate", () => {
-		// Both, and both off at low. Each is a per-frame pass rather than a
-		// per-fragment sample: the shadow map redraws every caster in the near
-		// scene from the star's side, and the ambient occlusion redraws the
-		// whole near scene into a normal buffer before it samples anything.
-		// Neither is the kind of term the hemisphere's argument covers.
+	test("the shadow map is on the quality key and the occlusion is not", () => {
+		// The shadow is part of the **light model** — it is what the sun does to
+		// a surface another surface is in front of — so it belongs on the key
+		// that asks how much of the light model the player wants.
 		expect(LIGHT_RIG.quality.high.shadows).toBe(true);
-		expect(LIGHT_RIG.quality.high.ao).toBe(true);
 		expect(LIGHT_RIG.quality.low.shadows).toBe(false);
-		expect(LIGHT_RIG.quality.low.ao).toBe(false);
+		// The ambient occlusion is **not a light** and no longer lives here. It
+		// is a screen-space post pass, so it sits beside the other post passes —
+		// antialiasing, dither, vignette — with a row of its own in
+		// `settings.ts`. Asserted as an absence rather than left to a comment:
+		// a second configuration path for one term is what `OCCLUSION.shadow`
+		// was, and it was dead for a round before review noticed.
+		for (const mode of Object.values(LIGHT_RIG.quality))
+			expect(Object.keys(mode)).not.toContain("ao");
 	});
 
 	test("every quality mode answers for every term", () => {

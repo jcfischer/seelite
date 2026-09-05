@@ -259,9 +259,14 @@ const gate = await page.evaluate(async () => {
 	return { high, low, kept };
 });
 t.check(
-	"high turns both passes on and low turns both off",
-	gate.high.castShadow && gate.high.ao && !gate.low.castShadow && !gate.low.ao,
-	`high ${gate.high.castShadow}/${gate.high.ao}, low ${gate.low.castShadow}/${gate.low.ao}`,
+	"the quality key moves the shadow and leaves the occlusion alone",
+	gate.high.castShadow && !gate.low.castShadow,
+	`castShadow high ${gate.high.castShadow}, low ${gate.low.castShadow}`,
+);
+t.check(
+	"and the occlusion does not follow it, because it has a row of its own",
+	gate.high.ao === true && gate.low.ao === true,
+	`ao high ${gate.high.ao}, low ${gate.low.ao} with the row on`,
 );
 t.check(
 	"the game ships with the occlusion on",
@@ -294,7 +299,7 @@ t.check(
  * `localStorage`, no assignment — and reads the two flags off a game nobody has
  * touched.
  */
-const coldBootAt = async (quality) => {
+const coldBootAt = async (quality, ao = "on") => {
 	const writer = await context.newPage();
 	// Watched like every other page here: an unwatched one reports neither a
 	// page error nor a shader failure, and `check-launcher-wiring.mjs` refuses
@@ -302,10 +307,15 @@ const coldBootAt = async (quality) => {
 	t.watch(writer);
 	await writer.goto(`${origin}/?seed=${SEED}`);
 	await bootedGame(writer);
-	const saved = await writer.evaluate((want) => {
-		window.__seelite.settings.set("quality", want);
-		return window.__seelite.settings.value.quality;
-	}, quality);
+	const saved = await writer.evaluate(
+		([wantQuality, wantAo]) => {
+			window.__seelite.settings.set("quality", wantQuality);
+			window.__seelite.settings.set("ao", wantAo);
+			const now = window.__seelite.settings.value;
+			return { quality: now.quality, ao: now.ao };
+		},
+		[quality, ao],
+	);
 	await writer.close();
 	const reader = await context.newPage();
 	t.watch(reader);
@@ -315,6 +325,7 @@ const coldBootAt = async (quality) => {
 		const game = window.__seelite;
 		return {
 			quality: game.settings.value.quality,
+			aoRow: game.settings.value.ao,
 			castShadow: !!game.nearScene.getObjectByName("sun")?.castShadow,
 			ao: game.gtaoPass?.enabled ?? null,
 		};
@@ -323,14 +334,40 @@ const coldBootAt = async (quality) => {
 	return { saved, ...read };
 };
 
-const coldLow = await coldBootAt("low");
+const coldLow = await coldBootAt("low", "off");
 t.check(
-	"a saved low quality boots with both passes already off",
-	coldLow.saved === "low" &&
+	"a saved low quality and occlusion off boot with both passes already off",
+	coldLow.saved.quality === "low" &&
+		coldLow.saved.ao === "off" &&
 		coldLow.quality === "low" &&
+		coldLow.aoRow === "off" &&
 		!coldLow.castShadow &&
 		coldLow.ao === false,
-	`saved ${coldLow.saved}, booted ${coldLow.quality} with castShadow ${coldLow.castShadow} and ao ${coldLow.ao}`,
+	`saved ${JSON.stringify(coldLow.saved)}, booted ${coldLow.quality}/${coldLow.aoRow} with castShadow ${coldLow.castShadow} and ao ${coldLow.ao}`,
+);
+
+/**
+ * **The two rows are independent, and a cold boot is the only place that shows
+ * it.** The occlusion moved off the `quality` key onto a row of its own, so the
+ * failure this arm exists for is a build where one of them silently still
+ * carries the other — either `quality: low` forcing the occlusion off against
+ * the player's row, or the row being read where the quality key should be.
+ *
+ * Neither shows in the session that set the values: the settings subscription
+ * repairs the state on the way through, which is exactly why the two rows
+ * cannot be checked by setting them and reading back. This boots a *third*
+ * page on the same `localStorage` with the two rows deliberately crossed —
+ * lighting down, occlusion up — and reads both flags off a game nobody has
+ * touched.
+ */
+const coldCrossed = await coldBootAt("low", "on");
+t.check(
+	"the occlusion row survives a saved low quality — the two are independent",
+	coldCrossed.quality === "low" &&
+		coldCrossed.aoRow === "on" &&
+		!coldCrossed.castShadow &&
+		coldCrossed.ao === true,
+	`booted ${coldCrossed.quality}/${coldCrossed.aoRow} with castShadow ${coldCrossed.castShadow} and ao ${coldCrossed.ao}`,
 );
 
 /**
@@ -344,14 +381,14 @@ t.check(
  * is redundant: the flags' defaults are `enabled: true` and `castShadow: false`,
  * so each pass has a failure mode the other arm cannot see.
  */
-const coldHigh = await coldBootAt("high");
+const coldHigh = await coldBootAt("high", "on");
 t.check(
 	"a saved high quality boots with both passes already on",
-	coldHigh.saved === "high" &&
+	coldHigh.saved.quality === "high" &&
 		coldHigh.quality === "high" &&
 		coldHigh.castShadow &&
 		coldHigh.ao === true,
-	`saved ${coldHigh.saved}, booted ${coldHigh.quality} with castShadow ${coldHigh.castShadow} and ao ${coldHigh.ao}`,
+	`booted ${coldHigh.quality}/${coldHigh.aoRow} with castShadow ${coldHigh.castShadow} and ao ${coldHigh.ao}`,
 );
 
 // ---- the exterior framing: the hull in front, the station beyond ----

@@ -211,6 +211,21 @@ describe("the store tells its listeners, once", () => {
 		}
 	});
 
+	test("the occlusion is a row of its own, and it ships on", () => {
+		// The principal's ruling, against #201's own specification, which put the
+		// ambient occlusion on the `quality` key. It is here for #200's reason
+		// rather than for a new one: a player who wants contact shadows on a
+		// machine that cannot afford the baked environment cannot ask for that
+		// through one key.
+		const store = new SettingsStore({ ...DEFAULT_SETTINGS });
+		expect(store.allowed("ao")).toEqual(["on", "off"]);
+		// **On**, and the difference from #200 is the order of magnitude.
+		// Antialiasing defaults off at four to six times the whole frame; this
+		// is +1.76–1.84 ms on a 1.85–2.03 ms cockpit frame, and it is the half
+		// of #201 that actually changed the picture.
+		expect(DEFAULT_SETTINGS.ao).toBe("on");
+	});
+
 	test("the store says what each key allows", () => {
 		// `.mjs` scripts read this through `window.__seelite.settings` because
 		// they cannot import the schema.

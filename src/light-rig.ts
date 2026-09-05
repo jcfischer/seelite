@@ -166,22 +166,29 @@ export const LIGHT_RIG = {
 	 * What `quality` selects. #98 required this node to ship a low setting and
 	 * to say what it drops.
 	 *
-	 * Low drops the image-based term and #201's two occlusion passes, and keeps
-	 * everything else. The hemisphere costs exactly what the flat ambient it
+	 * Low drops the image-based term and #201's shadow map, and keeps everything
+	 * else. The hemisphere costs exactly what the flat ambient it
 	 * replaced cost — one more term in a loop that already runs — so dropping it
 	 * would buy nothing and lose the gradient; the environment is the term with
 	 * a per-fragment texture sample on every standard material in the frame, and
 	 * a load-time PMREM pass.
 	 *
-	 * **`shadows` and `ao` are #201's, and neither is a per-fragment sample** —
-	 * which is why they sit here rather than being argued about the way the
-	 * hemisphere was. Each is a whole extra pass over the near scene: the shadow
-	 * map redraws every caster from the star's side into a 2048² depth buffer,
-	 * and the ambient occlusion redraws the near scene into a normal-and-depth
-	 * buffer before it samples anything. They are two booleans rather than one
-	 * because they are two passes and a receipt has to be able to price them
-	 * apart; they are on one *key* because what the player is being asked is how
-	 * much of the light model they want, not which of two passes they prefer.
+	 * **`shadows` is #201's and it is not a per-fragment sample** — which is why
+	 * it sits here rather than being argued about the way the hemisphere was.
+	 * It is a whole extra pass: the shadow map redraws every caster in the near
+	 * scene from the star's side into a 2048² depth buffer.
+	 *
+	 * **#201's ambient occlusion shipped here too and no longer does.** The
+	 * principal moved it to a row of its own, and `settings.ts` carries the
+	 * argument. The short version is that the line is not cost: a shadow is what
+	 * the star does to a surface another surface stands in front of, so it is
+	 * part of the light model this key asks about, and ambient occlusion is a
+	 * screen-space post pass that is not a light at all.
+	 *
+	 * Note what is *not* here as a result. A second copy of a term's gate is
+	 * exactly what `OCCLUSION.shadow` was before review found it dead, so `ao`
+	 * is gone from this record rather than kept and ignored, and
+	 * `tests/light-rig.test.ts` asserts its absence.
 	 */
 	quality: {
 		high: {
@@ -189,14 +196,12 @@ export const LIGHT_RIG = {
 			hemisphere: true,
 			exposure: 1,
 			shadows: true,
-			ao: true,
 		},
 		low: {
 			environment: false,
 			hemisphere: true,
 			exposure: 1,
 			shadows: false,
-			ao: false,
 		},
 	},
 } as const;

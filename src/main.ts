@@ -2076,6 +2076,12 @@ class Game {
 			// the frame loop reads it from the settings on every frame, because
 			// it already reads the view there.
 			if (next.antialias !== applied.antialias) this.setComposerSamples();
+			// #201's occlusion row. The gate is a boolean on a pass, so this is a
+			// comparison rather than an unconditional call for the same reason
+			// the two above are: `setOcclusion` with no arguments re-reads both
+			// terms, and firing it on every unrelated settings change would flip
+			// `shadowMap` state the player did not ask to move.
+			if (next.ao !== applied.ao) this.setOcclusion();
 			if (next.dither !== applied.dither)
 				this.outputPass.setDither(next.dither === "on");
 			applied = next;
@@ -2644,8 +2650,14 @@ class Game {
 	}
 
 	/**
-	 * Turn #201's shadow map and ambient occlusion on or off — the player's
-	 * quality row by default, an explicit pair for an instrument.
+	 * Turn #201's shadow map and ambient occlusion on or off — **each from its
+	 * own player row** by default, an explicit pair for an instrument.
+	 *
+	 * The two defaults read different settings and that is the principal's
+	 * ruling rather than an inconsistency: the shadow is part of the light model
+	 * and rides `quality`, the ambient occlusion is a post pass and has a row
+	 * beside the other post passes. `settings.ts` carries the argument for the
+	 * split.
 	 *
 	 * The shadow gate is `castShadow` on the one light rather than
 	 * `renderer.shadowMap.enabled`. **Both are program keys and the difference
@@ -2663,7 +2675,7 @@ class Game {
 	 */
 	setOcclusion(
 		shadows: boolean = LIGHT_RIG.quality[this.settings.value.quality].shadows,
-		ao: boolean = LIGHT_RIG.quality[this.settings.value.quality].ao,
+		ao: boolean = this.settings.value.ao === "on",
 	) {
 		if (this.shadowSun) this.shadowSun.castShadow = shadows;
 		// **Both guards are real and both have a call site that follows them.**
