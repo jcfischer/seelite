@@ -101,6 +101,18 @@ const BERTH = "overhead-near";
 const REPEATS = 5;
 
 /**
+ * How much the `bright` arm scales the sun by.
+ *
+ * Ten, which is far past anything #231 would actually ship — the point is not
+ * to propose a rig but to make the question decidable. `LIGHT_RIG` gives the
+ * sun 0.2 against a hemisphere of 6.85; at ten times that the sun is a quarter
+ * of the scene's light instead of three percent, so a surface that receives any
+ * of it at all cannot hide under an eight-bit readback. A rung that is still
+ * exactly zero here has no receiver, and no rig change reaches it.
+ */
+const BRIGHT = 10;
+
+/**
  * The rungs, outside then in.
  *
  * The approach distances are in silhouette radii and stop at 1.2 rather than at
@@ -159,117 +171,163 @@ const label = (rung, view) =>
  * every frame, which is most of what any naive pixel comparison would find.
  */
 const differences = (page, order) =>
-	page.evaluate((arms) => {
-		const game = window.__seelite;
-		const W = 480;
-		const H = 300;
-		const scratch = document.createElement("canvas");
-		scratch.width = W;
-		scratch.height = H;
-		const ctx = scratch.getContext("2d", { willReadFrequently: true });
-		const source = game.renderer.domElement;
-		const dither = game.settings.value.dither;
-		// Through the pass rather than the store: an instrument should not leave
-		// a preference behind on the machine it measured.
-		game.outputPass.setDither(false);
-		// **Hide the two things that are always in frame at a fixed place.** The
-		// cabin surrounds the camera and the hull sits 146 m in front of it in
-		// chase, so both shadow themselves identically at every rung whatever the
-		// world is doing — and a constant is exactly what the first run of this
-		// ladder found, 0.071% at every approach distance to three decimals while
-		// the enclosure measure rose sixfold. Differencing with them hidden is
-		// what separates "the shadow draws on the player's own geometry" from
-		// "the shadow draws on the world".
-		// **Removed from the scene, not hidden** — `probe-ship-visuals.mjs`'s
-		// lever, for its reason, and this instrument reported a false answer for
-		// one run without it. `render` assigns `cockpit.mesh.visible = view ===
-		// "cockpit"` and `shipMesh.visible = view === "chase"` on *every* frame,
-		// so clearing a flag and then rendering gives the object straight back:
-		// the world-only column came out identical to the all-geometry column to
-		// three decimals at all twelve rungs, which reads exactly like a real
-		// finding. Re-parenting is the one lever the frame loop does not own.
-		const detached = [];
-		const hide = (object) => {
-			if (!object?.parent) return;
-			detached.push([object, object.parent]);
-			object.parent.remove(object);
-		};
-		const frame = (shadows, ao, ownGeometry = true) => {
-			if (!ownGeometry) {
-				hide(game.cockpit?.mesh);
-				hide(game.shipMesh);
-			}
-			game.setOcclusion(shadows, ao);
-			// Twice. The first render after a pass is enabled or disabled is the
-			// one that composites out of the previous parity's buffer, which is
-			// the defect the shuffle above exists to expose rather than to hide.
-			game.render(0);
-			game.render(0);
-			ctx.drawImage(source, 0, 0, W, H);
-			const pixels = ctx.getImageData(0, 0, W, H).data;
-			for (const [object, parent] of detached.splice(0)) parent.add(object);
-			return pixels;
-		};
-		const taken = {};
-		for (const arm of arms) {
-			if (arm === "base") taken.base = frame(false, false);
-			if (arm === "control") taken.control = frame(false, false);
-			if (arm === "shadow") taken.shadow = frame(true, false);
-			if (arm === "ao") taken.ao = frame(false, true);
-			// The world without the player's own geometry, and the shadow on it.
-			// Differenced against each other rather than against `base`, because
-			// hiding the cabin changes most of the frame on its own.
-			if (arm === "world") {
-				taken.worldBase = frame(false, false, false);
-				taken.worldShadow = frame(true, false, false);
-			}
-		}
-		game.setOcclusion();
-		game.outputPass.setDither(dither === "on");
-
-		const luma = (d, i) =>
-			0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
-		const against = (later) => {
-			let darker = 0;
-			let lighter = 0;
-			let deepest = 0;
-			let sum = 0;
-			let pixels = 0;
-			for (let i = 0; i < taken.base.length; i += 4) {
-				pixels++;
-				const delta = luma(later, i) - luma(taken.base, i);
-				sum += Math.abs(delta);
-				if (delta < -2) darker++;
-				else if (delta > 2) lighter++;
-				if (-delta > deepest) deepest = -delta;
-			}
-			return {
-				darkerPct: (100 * darker) / pixels,
-				lighterPct: (100 * lighter) / pixels,
-				meanAbs: sum / pixels,
-				deepest,
+	page.evaluate(
+		([arms, bright]) => {
+			const game = window.__seelite;
+			const W = 480;
+			const H = 300;
+			const scratch = document.createElement("canvas");
+			scratch.width = W;
+			scratch.height = H;
+			const ctx = scratch.getContext("2d", { willReadFrequently: true });
+			const source = game.renderer.domElement;
+			const dither = game.settings.value.dither;
+			// Through the pass rather than the store: an instrument should not leave
+			// a preference behind on the machine it measured.
+			game.outputPass.setDither(false);
+			// **Hide the two things that are always in frame at a fixed place.** The
+			// cabin surrounds the camera and the hull sits 146 m in front of it in
+			// chase, so both shadow themselves identically at every rung whatever the
+			// world is doing — and a constant is exactly what the first run of this
+			// ladder found, 0.071% at every approach distance to three decimals while
+			// the enclosure measure rose sixfold. Differencing with them hidden is
+			// what separates "the shadow draws on the player's own geometry" from
+			// "the shadow draws on the world".
+			// **Removed from the scene, not hidden** — `probe-ship-visuals.mjs`'s
+			// lever, for its reason, and this instrument reported a false answer for
+			// one run without it. `render` assigns `cockpit.mesh.visible = view ===
+			// "cockpit"` and `shipMesh.visible = view === "chase"` on *every* frame,
+			// so clearing a flag and then rendering gives the object straight back:
+			// the world-only column came out identical to the all-geometry column to
+			// three decimals at all twelve rungs, which reads exactly like a real
+			// finding. Re-parenting is the one lever the frame loop does not own.
+			const detached = [];
+			const hide = (object) => {
+				if (!object?.parent) return;
+				detached.push([object, object.parent]);
+				object.parent.remove(object);
 			};
-		};
-		const worldDelta = () => {
-			let darker = 0;
-			let deepest = 0;
-			let pixels = 0;
-			for (let i = 0; i < taken.worldBase.length; i += 4) {
-				pixels++;
-				const delta = luma(taken.worldShadow, i) - luma(taken.worldBase, i);
-				if (delta < -2) darker++;
-				if (-delta > deepest) deepest = -delta;
+			const frame = (shadows, ao, ownGeometry = true) => {
+				if (!ownGeometry) {
+					hide(game.cockpit?.mesh);
+					hide(game.shipMesh);
+				}
+				game.setOcclusion(shadows, ao);
+				// Twice. The first render after a pass is enabled or disabled is the
+				// one that composites out of the previous parity's buffer, which is
+				// the defect the shuffle above exists to expose rather than to hide.
+				game.render(0);
+				game.render(0);
+				ctx.drawImage(source, 0, 0, W, H);
+				const pixels = ctx.getImageData(0, 0, W, H).data;
+				for (const [object, parent] of detached.splice(0)) parent.add(object);
+				return pixels;
+			};
+			const sun = game.nearScene.getObjectByName("sun");
+			const sunIntensity = sun.intensity;
+			const taken = {};
+			let texelKm = 0;
+			for (const arm of arms) {
+				if (arm === "base") taken.base = frame(false, false);
+				if (arm === "control") taken.control = frame(false, false);
+				if (arm === "shadow") {
+					taken.shadow = frame(true, false);
+					// **Read here and not at the end.** `shadowTexelKm` is whatever the
+					// last fit wrote, and two of the arms below change what the box is
+					// fitted to — the world arm by removing candidates, the bright arm
+					// not at all but the ordering is shuffled. Read after any other arm
+					// it describes a different subject from the percentage beside it.
+					texelKm = game.shadowTexelKm;
+				}
+				if (arm === "ao") taken.ao = frame(false, true);
+				// **#231's proposed fix, flown.** The blocker this arm answers: every
+				// zero in this table comes through an 8-bit `getImageData`, so a real
+				// shadow of 0.4 of a code reads as exactly nothing — and the whole
+				// question is whether more light would reveal it. Rather than argue
+				// about quantisation, scale the sun by `BRIGHT` and measure again. A
+				// rung that stays at zero with ten times the sun has no receiver; one
+				// that lights up had a shadow under the readback all along.
+				if (arm === "bright") {
+					sun.intensity = sunIntensity * bright;
+					taken.brightBase = frame(false, false);
+					taken.brightShadow = frame(true, false);
+					sun.intensity = sunIntensity;
+				}
+				// The world without the player's own geometry, and the shadow on it.
+				// Differenced against each other rather than against `base`, because
+				// hiding the cabin changes most of the frame on its own.
+				// **Chase only, and that is sage's correction rather than a shortcut.**
+				// `fitShadowCamera` considers the cabin and *nothing else* in cockpit
+				// view, so detaching the cabin leaves `shadowBox` no candidate at all
+				// and the arm reports a guaranteed zero. It was reported as evidence
+				// that nothing in the world receives, which it cannot be: it is the
+				// arm removing its own caster. In cockpit view the same fact is a
+				// property of the code and is stated as one, not measured.
+				if (arm === "world" && game.view === "chase") {
+					taken.worldBase = frame(false, false, false);
+					taken.worldShadow = frame(true, false, false);
+				}
 			}
-			return { darkerPct: (100 * darker) / pixels, deepest };
-		};
-		return {
-			control: against(taken.control),
-			shadow: against(taken.shadow),
-			ao: against(taken.ao),
-			world: worldDelta(),
-			texelKm: game.shadowTexelKm,
-		};
-	}, order);
+			game.setOcclusion();
+			game.outputPass.setDither(dither === "on");
+
+			const luma = (d, i) =>
+				0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+			const against = (later) => {
+				let darker = 0;
+				let deepest = 0;
+				let sum = 0;
+				let pixels = 0;
+				for (let i = 0; i < taken.base.length; i += 4) {
+					pixels++;
+					const delta = luma(later, i) - luma(taken.base, i);
+					sum += Math.abs(delta);
+					if (delta < -2) darker++;
+					if (-delta > deepest) deepest = -delta;
+				}
+				return {
+					darkerPct: (100 * darker) / pixels,
+					meanAbs: sum / pixels,
+					deepest,
+				};
+			};
+			const pairDelta = (before, after) => {
+				if (!before || !after) return { darkerPct: null, meanAbs: null };
+				let darker = 0;
+				let sum = 0;
+				let pixels = 0;
+				for (let i = 0; i < before.length; i += 4) {
+					pixels++;
+					const delta = luma(after, i) - luma(before, i);
+					sum += Math.abs(delta);
+					if (delta < -2) darker++;
+				}
+				return { darkerPct: (100 * darker) / pixels, meanAbs: sum / pixels };
+			};
+			const worldDelta = () => {
+				if (!taken.worldBase) return { darkerPct: null, deepest: null };
+				let darker = 0;
+				let deepest = 0;
+				let pixels = 0;
+				for (let i = 0; i < taken.worldBase.length; i += 4) {
+					pixels++;
+					const delta = luma(taken.worldShadow, i) - luma(taken.worldBase, i);
+					if (delta < -2) darker++;
+					if (-delta > deepest) deepest = -delta;
+				}
+				return { darkerPct: (100 * darker) / pixels, deepest };
+			};
+			return {
+				control: against(taken.control),
+				shadow: against(taken.shadow),
+				ao: against(taken.ao),
+				world: worldDelta(),
+				bright: pairDelta(taken.brightBase, taken.brightShadow),
+				texelKm,
+			};
+		},
+		[order, BRIGHT],
+	);
 
 const origin = await guardedOrigin(ORIGIN, [
 	"src/main.ts",
@@ -310,14 +368,28 @@ console.log(
 );
 console.log("");
 console.log(
-	"  the `world` column hides the cabin and the player hull before differencing,",
+	"  `world` removes the cabin and the hull by re-parenting, so it is the shadow",
 );
 console.log(
-	"  so it is the shadow on everything that is not the player's own geometry.",
+	"  on everything that is not the player's own geometry. Chase only: in cockpit",
 );
+console.log(
+	"  view the cabin is the box's only candidate, so removing it removes the",
+);
+console.log("  caster and the arm would report a guaranteed zero.");
 console.log("");
 console.log(
-	"  rung                             enclosure     shadow      world     control   mean|d|  box texel",
+	"  `sun x" +
+		BRIGHT +
+		"` re-measures the shadow with the sun scaled — #231's own proposed fix,",
+);
+console.log(
+	"  flown. It is the column that decides whether a zero is a shadow under the",
+);
+console.log("  eight-bit readback or no receiver at all.");
+console.log("");
+console.log(
+	`  rung                             enclosure     shadow      world   mean|d|   sun x${BRIGHT}  bright|d|  box texel`,
 );
 
 const rows = [];
@@ -351,7 +423,7 @@ for (const rung of RUNGS) {
 			samples.push(
 				await differences(page, [
 					"base",
-					...shuffled(["control", "shadow", "ao", "world"]),
+					...shuffled(["control", "shadow", "ao", "world", "bright"]),
 				]),
 			);
 		}
@@ -362,8 +434,19 @@ for (const rung of RUNGS) {
 			shadow: median(of("shadow", "darkerPct")),
 			control: median(of("control", "darkerPct")),
 			shadowDeepest: median(of("shadow", "deepest")),
-			world: median(of("world", "darkerPct")),
-			worldDeepest: median(of("world", "deepest")),
+			// `null` rather than `NaN` when the arm did not run — a median of nothing
+			// is `NaN`, and `NaN%` in a table reads as a broken measurement rather
+			// than as a column that deliberately has no value in cockpit view.
+			world: (() => {
+				const seen = of("world", "darkerPct").filter((x) => x !== null);
+				return seen.length ? median(seen) : null;
+			})(),
+			bright: median(of("bright", "darkerPct")),
+			brightMean: median(of("bright", "meanAbs")),
+			worldDeepest: (() => {
+				const seen = of("world", "deepest").filter((x) => x !== null);
+				return seen.length ? median(seen) : null;
+			})(),
 			// **Mean absolute change, which has no threshold, and it is the
 			// number #231 actually needs.** A pixel counts as "darker" above
 			// 2/255, and the sun is about 3% of the light — so a fully shadowed
@@ -379,18 +462,19 @@ for (const rung of RUNGS) {
 			// `shadowBox`'s admission rule decides that per frame.
 			texelKm: median(samples.map((x) => x.texelKm)),
 			shadowSpread: of("shadow", "darkerPct"),
-			aoSpread: of("ao", "darkerPct"),
 		};
 		rows.push(row);
 		// A shadow at or under the control is not a reading, so the last column says
+		const pct = (v) =>
+			v === null ? "     -  " : `${v.toFixed(3).padStart(7)}%`;
 		console.log(
-			`  ${row.label.padEnd(32)} ${row.ao.toFixed(2).padStart(7)}%  ${row.shadow
-				.toFixed(3)
-				.padStart(8)}%  ${row.world.toFixed(3).padStart(8)}%  ${row.control
-				.toFixed(3)
-				.padStart(
-					8,
-				)}%  ${row.shadowMean.toFixed(4).padStart(7)}  ${(row.texelKm * 1000).toFixed(1).padStart(7)} m`,
+			`  ${row.label.padEnd(32)} ${row.ao.toFixed(2).padStart(7)}%  ${pct(
+				row.shadow,
+			)}  ${pct(row.world)}  ${row.shadowMean.toFixed(4).padStart(7)}  ${pct(
+				row.bright,
+			)}  ${row.brightMean.toFixed(4).padStart(8)}  ${(row.texelKm * 1000)
+				.toFixed(1)
+				.padStart(6)} m`,
 		);
 	}
 }
@@ -403,11 +487,16 @@ for (const row of rows)
 	);
 console.log("");
 console.log(
-	"  deepest pixel the shadow moves, of 255 — everything, then world only:",
+	"  deepest pixel the shadow moves, of 255 — everything, then world only",
 );
+console.log("  (world is chase-only; the arm's own note says why):");
 for (const row of rows)
 	console.log(
-		`  ${row.label.padEnd(32)} ${row.shadowDeepest.toFixed(1).padStart(6)}  ${row.worldDeepest.toFixed(1).padStart(6)}`,
+		`  ${row.label.padEnd(32)} ${row.shadowDeepest.toFixed(1).padStart(6)}  ${
+			row.worldDeepest === null
+				? "     -"
+				: row.worldDeepest.toFixed(1).padStart(6)
+		}`,
 	);
 
 await browser.close();
