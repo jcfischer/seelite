@@ -352,6 +352,36 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   within-arm range is not a detection threshold. It is left as a failure to
   detect. `setDither` records all four wrong answers this one term produced,
   because each was wrong for its own reason.
+- **A count of pixels past a threshold cannot bound what any one pixel did.**
+  #200 turned a failure to detect into an upper bound twice; #231's ladder
+  arrived at the same error from the other side and called a zero "no receiver,
+  and no rig change reaches it". Over a 1440x900 frame, **one** pixel darkening
+  by a hundred codes still prints `0.000%`, and *every* pixel darkening by
+  exactly one code prints `0.000%` with a mean of 1. So coverage answers "how
+  much of the frame moved past visibility" and nothing else. If the claim is
+  about a per-pixel magnitude, the deepest single change is the statistic, and
+  `measure-shadow-enclosure.mjs` prints both columns side by side because only
+  *both* at zero is nothing happening. And note the shape the two share: a
+  measurement that fails to find something is not a measurement of how small it
+  is.
+- **Grep the claim, not the copy the finding points at.** The same sentence —
+  a zero meaning "no receiver" — was corrected in a docstring, reported fixed,
+  and found still standing in an arm comment and a row comment; then corrected
+  again, reported fixed, and found still standing in a printed header. Three
+  review rounds on one claim. Prose in this repo is deliberately repeated at the
+  point of use, so a claim almost always has more than one copy, and a reviewer
+  naming one line is naming an instance rather than the set. The rule that works
+  is: grep the claim, fix every copy, grep again — the last step being the one
+  that was missing all three times.
+- **An instrument that toggles a term re-arms it, and so cannot see a gate that
+  fails to re-arm.** `setOcclusion` sets `castShadow` on every call, and
+  `fitShadowCamera`'s idle restore is unreachable — the no-subject branch clears
+  `castShadow` on its way out, so the next frame returns at the method's first
+  guard before the restore runs, and a shadow lost to one subject-less frame
+  stays lost for the session. No arm of `measure-shadow-enclosure.mjs` could
+  detect that, because every arm begins by calling `setOcclusion`. A check for a
+  restore has to render **without** touching the setter between frames; one that
+  toggles will pass on a build where the restore does not exist.
 - **A dither belongs after the encode and a vignette before it.** The composer's
   targets are half-float and the screen is eight bits, so the quantisation
   happens in `OutputShader` — a ±0.5/255 noise added *there*, in display space,
