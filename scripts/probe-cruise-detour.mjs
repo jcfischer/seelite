@@ -4,8 +4,9 @@ import { bootedGame, guardedOrigin, launchChromium, tally } from "./probe-guard.
 const ORIGIN = process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
 const origin = await guardedOrigin(ORIGIN, ["src/main.ts", "src/cruise-detour.ts", "src/cruise.ts"]);
 const browser = await launchChromium();
-const { check, exit } = tally();
+const { check, watch, exit } = tally();
 const page = await browser.newPage({ viewport: { width: 900, height: 620 } });
+watch(page);
 await page.goto(`${origin}/?seed=19`);
 await bootedGame(page);
 
@@ -55,13 +56,13 @@ const result = await page.evaluate(() => {
 	return { stationId: station.id, active, alignment, cancelled, finalTargetId: g.targetId, finalExit: g.lastExit, finalDetour: g.detour, finalRangeKm: g.targetRange() };
 });
 
-check(result.active.detour?.targetId === result.stationId, "detour retains the selected station");
-check(result.active.detour?.waypoints?.length === 2, "detour has exactly two internal waypoints");
-check(result.active.prompt.startsWith("DETOUR AROUND"), "detour state names the blocker to the player");
-check(result.alignment > 0.999, "cruise velocity follows the visible nose");
-check(result.cancelled, "manual steering cancels automatic detour immediately");
-check(result.finalTargetId === result.stationId, "arrival never changes the selected station");
-check(result.finalExit === `arrived at ${result.stationId}`, "detour reaches the selected station");
+check("detour retains the selected station", result.active.detour?.targetId === result.stationId);
+check("detour has exactly two internal waypoints", result.active.detour?.waypoints?.length === 2);
+check("detour state names the blocker to the player", result.active.prompt.startsWith("DETOUR AROUND"));
+check("cruise velocity follows the visible nose", result.alignment > 0.999);
+check("manual steering cancels automatic detour immediately", result.cancelled);
+check("arrival never changes the selected station", result.finalTargetId === result.stationId);
+check("detour reaches the selected station", result.finalExit === `arrived at ${result.stationId}`);
 console.log(JSON.stringify(result));
 await browser.close();
 exit();

@@ -5671,6 +5671,43 @@ class Game {
 			return;
 		}
 		const point = detour.waypoint === 2 ? target.pos : detour.waypoints[detour.waypoint];
+		// A candidate is checked against the frame-start mass snapshot, but bodies
+		// move while a long cruise leg is flown. Replan only when the *current*
+		// leg becomes obstructed: continuously rebuilding a still-safe route would
+		// chase its own waypoints forever, while waiting for `advanceCruise` would
+		// turn an avoidable second-body crossing into a safety stop.
+		const masses = this.masses();
+		const projectedMasses = masses.map((mass) => ({
+			...mass,
+			pos: mass.vel ? add(mass.pos, scale(mass.vel, dt)) : mass.pos,
+		}));
+		const blocker =
+			cruiseRouteBlocker(
+			this.world.ship.pos,
+			point,
+			masses,
+			this.targetParentId(),
+			) ??
+			cruiseRouteBlocker(
+				this.world.ship.pos,
+				point,
+				projectedMasses,
+				this.targetParentId(),
+			);
+		if (blocker) {
+			const route = planCruiseDetour({
+				from: this.world.ship.pos,
+				target: target.pos,
+				blocker,
+				masses: projectedMasses,
+				targetParentId: this.targetParentId(),
+				previousSide: blocker.id === detour.bodyId ? detour.side : undefined,
+			});
+			if (route) {
+				this.detour = { ...route, targetId: target.id, waypoint: 0 };
+				return;
+			}
+		}
 		// Cruise can cover far more than a kilometre per frame.  Treat a waypoint
 		// as reached over the next swept frame rather than demanding an endpoint
 		// sample land on it, or a fast ship turns back and spends its charge circling.
