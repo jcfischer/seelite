@@ -386,9 +386,15 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   intercept, never a residual.
 - **#223's GPU timer query reports three to four times the frame, and says
   `supported` (#242).** 119.05 ms at `berth-free-look` and 145.67 at an
-  open-space planet, p95 tight, against two independent wall clocks that agree
-  with each other — a tight `g.render(0)` loop at 40.29 and 36.76, and the live
-  rAF period at 35.20 and 33.30. `GpuTimingStatus` already has `unavailable`,
+  open-space planet, against two independent wall clocks that agree with each
+  other — a tight `g.render(0)` loop at 40.29 and 36.76, and the live rAF period
+  at 35.20 and 33.30. The bay's reading is steady rather than noisy (p95 119.71
+  against a median of 119.05); **the open-space one is not, and this file said
+  "p95 tight" of both for a round** — 227.00 against 145.67 is 56% wider, so
+  that row is a large median with a long tail and only the bay's supports a
+  "steady state, not a backlog" reading. Both are still three to four times two
+  clocks that agree, which is the finding.
+  `GpuTimingStatus` already has `unavailable`,
   `disjoint` and `stale`, so the module is built to refuse and is not refusing.
   Do not quote a `frame-attribution` GPU median as a cost until that is
   diagnosed; the CPU interval columns are not implicated. Note also that neither

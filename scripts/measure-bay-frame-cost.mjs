@@ -630,14 +630,22 @@ console.log(
 // contains that induced saving. Leaving the settings unchanged across arms is
 // not the same as the terms cancelling.
 //
-// It is a bias with a known sign and it does not reach the headline. A
-// near-scene arm's saving is an **over**-estimate of that subject's own fill —
-// so `no stations` at 2.91 ms and `no interior` at 2.12 bound the station's
-// contribution from above, and the finding they support is that both are small.
-// The planet arm is untouched by it: a body in the *approach* layer is neither
-// a shadow caster nor an ambient-occlusion subject in the near scene, which is
-// the whole reason its fragments are never rejected. Pinning the passes off
-// would remove the bias and would price a build the principal does not play.
+// **A near-scene arm's delta is therefore a net figure and not a bound**, and
+// the round after the one that found the induced saving found that too: an
+// earlier version of this comment called it an over-estimate of that subject's
+// own fill, which only counts the work that *goes away*. Removing opaque
+// near-layer geometry also exposes whatever stood behind it, and that work is
+// added rather than removed. Neither term is measured here, so `no stations` at
+// 2.91 ms and `no interior` at 2.12 are what removing that subject does to the
+// frame — which is the honest reading of a subject arm, and enough for the only
+// claim made from them, that both are small beside the planet's 34.9.
+//
+// The planet arm carries neither term: a body in the *approach* layer is
+// neither a shadow caster nor an ambient-occlusion subject in the near scene,
+// and nothing is behind it to expose. That is the whole reason its fragments
+// are never rejected, so the correction and the finding have one cause. Pinning
+// the passes off would remove the induced saving and would price a build the
+// principal does not play.
 const settings = await page.evaluate(() => ({
 	...window.__seelite.settings.value,
 }));
@@ -645,10 +653,11 @@ console.log(
 	`  settings this run used (defaults — the context has no stored profile): ${JSON.stringify(settings)}`,
 );
 console.log(
-	"  every optional term is left where the build puts it. Near-scene arms " +
-		"(stations, interior, player) therefore also drop that subject's shadow " +
-		"and AO work, so their savings bound the subject from above; the body " +
-		"arms are in the approach layer and neither pass touches them.",
+	"  every optional term is left where the build puts it. A near-scene arm " +
+		"(stations, interior, player) therefore also drops that subject's shadow " +
+		"and AO work and exposes what stood behind it, so its delta is a net " +
+		"figure rather than that subject's own fill; the body arms are in the " +
+		"approach layer, where neither pass reaches and nothing is behind.",
 );
 
 for (const framing of FRAMINGS) {
