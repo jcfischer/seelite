@@ -60,8 +60,17 @@
  * three allowed values, so the sweep is the dial the player has and not a
  * fixture. Milliseconds linear in the pixel count at the bay and not at
  * deep-sky is fill-rate bound; flat is not, and resolution is then not the
- * lever. Measured: linear to a floor of 0.6–0.7 ms out of 40, so 98% of the
- * bay frame scales with pixels and #225 reaches it.
+ * lever.
+ *
+ * **The fixed cost is the fitted intercept, not the residual**, and the first
+ * version of this got that wrong. Under `T(p) = F + k·p` the gap between a
+ * measured row and the pure-fill prediction is `F·(1 − p)` rather than `F`, so
+ * reading it as the floor understates it by 25% at quarter resolution. The
+ * conclusion did not change, which is precisely why the wrong number would have
+ * travelled — it was already quoted in a PR body and a `CLAUDE.md` bullet
+ * before sage caught it. A least-squares fit over every rung replaces it, with
+ * the worst residual printed so a rung that disagrees with the model is visible
+ * rather than absorbed.
  *
  * ## The subject arms, and the one #242 does not list
  *
@@ -75,7 +84,7 @@
  * composited away. That candidate is absent from #242's five and it is the one
  * `main.ts:878` already asserts without measuring ("this game is fill-rate
  * bound — a planet filling the view costs its surface shader per pixel"). It
- * is 86.6% of the bay's frame, and 92.7% of what it draws there is never seen.
+ * is 86.6% of the bay's frame.
  *
  * **An angular radius is not a frustum test, and the run says so twice.**
  * `cockpit-arrival` frames the *same* planet at the *same* 41.8° half-angle and
@@ -173,46 +182,67 @@ const ARMS = [
  * renderer: an arm whose draw-call count equals the control's hid nothing, and
  * a hide that silently no-ops reads exactly like a term that costs nothing.
  */
+/**
+ * The one browser-side definition of "what does an arm name", installed once.
+ *
+ * **Extracted after review.** The timing arms and the coverage mask both need
+ * to name the same subjects, and both had their own copy of two non-obvious
+ * rules: that a body must be looked for across all three scenes because its
+ * layer is its distance (#15), and that the two player roots must be hidden by
+ * their *children* because `render` rewrites the roots' `visible` from the view
+ * on every frame. Two copies of a rule like that is the two-authoritative-homes
+ * problem this repo has in writing — and the failure would be silent, because a
+ * mask that named a different set from the arms would still print a percentage.
+ *
+ * It returns the objects and hides nothing: restoring visibility stays with the
+ * caller, which is the half that has to be exception-safe around a render.
+ */
+const installSubjects = (page) =>
+	page.addInitScript(() => {
+		window.__baySubjects = (how) => {
+			const g = window.__seelite;
+			const scenes = [g.farScene, g.approachScene, g.nearScene];
+			const inEveryScene = (name) =>
+				scenes.map((s) => s.getObjectByName(name)).filter(Boolean);
+			const bodiesOfKind = (kinds) =>
+				g.world.system.bodies
+					.filter((b) => kinds.includes(b.kind))
+					.flatMap((b) => inEveryScene(b.id));
+
+			if (how === "player") {
+				// Children, not the roots: `render` writes `shipMesh.visible` and
+				// `cockpit.mesh.visible` from the view every frame, so a flag set on
+				// a root is gone before the frame it was meant to change.
+				const out = [];
+				for (const root of [g.shipMesh, g.cockpit?.mesh])
+					if (root) out.push(...root.children);
+				return out;
+			}
+			if (how === "massive") return bodiesOfKind(["star", "planet", "moon"]);
+			if (how === "stations") return bodiesOfKind(["station"]);
+			if (how?.startsWith("body:")) return inEveryScene(how.slice(5));
+			if (how === "station-interior" || how === "greebles") {
+				const out = [];
+				for (const s of scenes)
+					s.traverse((o) => {
+						if (o.name === how) out.push(o);
+					});
+				return out;
+			}
+			return [];
+		};
+	});
+
 const timed = (page, arm, frames) =>
 	page.evaluate(
 		([how, n]) => {
 			const g = window.__seelite;
 			const gl = g.renderer.getContext();
 			const hidden = [];
-			const conceal = (object) => {
+			for (const object of window.__baySubjects(how)) {
 				hidden.push([object, object.visible]);
 				object.visible = false;
-			};
-			if (how === "player")
-				// Children, not the roots: `render` rewrites both roots' `visible`
-				// from the view every frame.
-				for (const root of [g.shipMesh, g.cockpit?.mesh]) {
-					if (!root) continue;
-					for (const child of root.children) conceal(child);
-				}
-			if (how === "massive" || how === "stations") {
-				const want =
-					how === "stations" ? ["station"] : ["star", "planet", "moon"];
-				for (const body of g.world.system.bodies) {
-					if (!want.includes(body.kind)) continue;
-					for (const scene of [g.farScene, g.approachScene, g.nearScene]) {
-						const mesh = scene.getObjectByName(body.id);
-						if (mesh) conceal(mesh);
-					}
-				}
 			}
-			if (how?.startsWith("body:")) {
-				const id = how.slice(5);
-				for (const scene of [g.farScene, g.approachScene, g.nearScene]) {
-					const mesh = scene.getObjectByName(id);
-					if (mesh) conceal(mesh);
-				}
-			}
-			if (how === "station-interior" || how === "greebles")
-				for (const scene of [g.farScene, g.approachScene, g.nearScene])
-					scene.traverse((object) => {
-						if (object.name === how) conceal(object);
-					});
 
 			const sync = new Uint8Array(4);
 			// **`renderer.info` is reset by every `render`, so it must be read from
@@ -348,16 +378,31 @@ const bodies = (page) =>
  * reached from a different direction. A disc mostly visible through the mouth
  * wants the surface shader cheaper, which is #207, #217 and #224's ground.
  *
- * Two frames, one camera, nothing timed: the near scene shown, then hidden, and
- * the planet-only pixels counted in each. **Hidden by its children and not by
- * the roots**, for `probe-occlusion.mjs`'s reason — `render` rewrites the two
- * player roots' `visible` from the view every frame — and the station bodies by
- * their meshes, which `render` does not touch.
+ * **It does not compare two shaded frames, and the first version did.** That
+ * version counted pixels where hiding the planet changed the post-processed
+ * image by more than 24/255, which is not a coverage measure and was caught in
+ * review: it silently drops every planet pixel whose shaded colour resembles
+ * whatever is behind it — the whole dark limb against deep space — and it
+ * counts bloom, which spreads a bright disc's light *outside* its own geometry.
+ * The denominator was the one it damaged most, and the denominator is what the
+ * percentage is made of.
  *
- * The mask is "a pixel that changes when the planet alone is hidden", taken
- * against a same-frame control rather than against a colour threshold: a
- * threshold has to name a brightness, and a planet's terminator crosses every
- * brightness there is.
+ * What replaces it cannot be fooled by either, because it never looks at what
+ * the planet looks like. The body's materials are swapped for a flat unlit
+ * colour, the frame is drawn twice with two different flat colours, and a pixel
+ * belongs to the disc exactly when those two frames disagree. A shaded pixel
+ * that matched its background still differs between red and green; a
+ * background pixel is identical in both however bright it is. **Bloom is
+ * switched off** for the same reason it was a problem — it is a spatial spread,
+ * so it would smear the red/green disagreement past the geometry — and the
+ * vignette and dither may stay, because neither can make red equal green.
+ *
+ * The surface *and* its shells are overridden together: an atmosphere shell is
+ * drawn and costs fill, so it is part of the disc this is measuring.
+ *
+ * Subjects come from `__baySubjects`, the same selector the timing arms use, so
+ * "the near layer" means one thing in both. A mask that named a different set
+ * from the arms would still print a percentage.
  */
 const apertureFraction = (page) =>
 	page.evaluate(async (planetId) => {
@@ -365,60 +410,94 @@ const apertureFraction = (page) =>
 		const gl = g.renderer.getContext();
 		const w = g.renderer.domElement.width;
 		const h = g.renderer.domElement.height;
-		const shot = () => {
+
+		const planet = window.__baySubjects(`body:${planetId}`);
+		if (planet.length === 0) return { visible: 0, whole: 0, pixels: w * h };
+
+		// **The flat material is built from a constructor already in the scene,
+		// not from the THREE namespace, because the page does not expose one.**
+		// The alternative was a handle on `Game` for a single diagnostic caller,
+		// which is the production-state-for-one-consumer that `main.ts` refuses
+		// by name where the vignette wanted the same thing.
+		//
+		// A *standard* material driven by `emissive` rather than a basic one:
+		// emissive is unlit and constant, so it is flat under any light rig, and
+		// station plating is standard (`CLAUDE.md`) so an instance is always
+		// there to take the constructor from. Throwing rather than falling back
+		// to a threshold — a coverage mask that quietly degrades into the
+		// brightness comparison this replaced is worse than one that stops.
+		let Standard = null;
+		for (const scene of [g.nearScene, g.approachScene, g.farScene]) {
+			scene.traverse((o) => {
+				if (Standard) return;
+				const m = Array.isArray(o.material) ? o.material[0] : o.material;
+				if (m?.isMeshStandardMaterial) Standard = m.constructor;
+			});
+			if (Standard) break;
+		}
+		if (!Standard)
+			throw new Error(
+				"apertureFraction: no MeshStandardMaterial in any scene to take a " +
+					"constructor from — the coverage mask cannot be built flat",
+			);
+
+		// Kept as pairs rather than a Map because a mesh may legitimately carry a
+		// material *array*, and restoring the wrong shape is a silently repainted
+		// planet that survives the rest of the run.
+		const painted = [];
+		for (const root of planet)
+			root.traverse((o) => {
+				if (o.isMesh) painted.push([o, o.material]);
+			});
+		const flat = new Standard();
+		flat.color.setHex(0x000000);
+		flat.roughness = 1;
+		flat.metalness = 0;
+		flat.transparent = false;
+		flat.depthWrite = true;
+		flat.emissiveIntensity = 1;
+		for (const [mesh] of painted) mesh.material = flat;
+
+		const bloom = g.bloom;
+		const bloomWas = bloom?.enabled ?? null;
+		if (bloom) bloom.enabled = false;
+
+		const shot = (hex) => {
+			flat.emissive.setHex(hex);
 			g.render(0);
 			const buf = new Uint8Array(w * h * 4);
 			gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, buf);
 			return buf;
 		};
-		const hidden = [];
-		const conceal = (o) => {
-			hidden.push([o, o.visible]);
-			o.visible = false;
-		};
-		const planet = [g.farScene, g.approachScene, g.nearScene]
-			.map((s) => s.getObjectByName(planetId))
-			.filter(Boolean);
-
-		// 1. Everything, and everything but the planet: the difference is the
-		//    disc as the player sees it, occlusion included.
-		const withAll = shot();
-		for (const m of planet) conceal(m);
-		const withoutPlanet = shot();
-		for (const [o, was] of hidden) o.visible = was;
-		hidden.length = 0;
-
-		// 2. The same pair with every near-layer subject gone: the difference is
-		//    the whole disc, nothing standing in front of it.
-		for (const body of g.world.system.bodies)
-			if (body.kind === "station")
-				for (const s of [g.farScene, g.approachScene, g.nearScene]) {
-					const m = s.getObjectByName(body.id);
-					if (m) conceal(m);
-				}
-		for (const root of [g.shipMesh, g.cockpit?.mesh])
-			if (root) for (const child of root.children) conceal(child);
-		const bareAll = shot();
-		for (const m of planet) conceal(m);
-		const bareWithout = shot();
-		for (const [o, was] of hidden) o.visible = was;
-		g.render(0);
-
-		const differing = (a, b) => {
+		// A pixel is the disc exactly when the two flat colours disagree there.
+		// No threshold: red against green is a whole channel apart, and every
+		// other pixel is bit-identical because nothing else in the frame changed.
+		const covered = (a, b) => {
 			let n = 0;
-			// 24/255 is `probe-occlusion.mjs`'s threshold, kept so a reader who
-			// knows one number knows both. A dither of ±0.5/255 is far below it.
 			for (let i = 0; i < a.length; i += 4)
-				if (
-					Math.abs(a[i] - b[i]) > 24 ||
-					Math.abs(a[i + 1] - b[i + 1]) > 24 ||
-					Math.abs(a[i + 2] - b[i + 2]) > 24
-				)
+				if (a[i] !== b[i] || a[i + 1] !== b[i + 1] || a[i + 2] !== b[i + 2])
 					n++;
 			return n;
 		};
-		const visible = differing(withAll, withoutPlanet);
-		const whole = differing(bareAll, bareWithout);
+
+		// 1. As the player sees it, with everything in front of the planet drawn.
+		const visible = covered(shot(0xff0000), shot(0x00ff00));
+
+		// 2. The whole disc, with the near layer gone. `stations` and `player`
+		//    together are what stands between this camera and the sky.
+		const hidden = [];
+		for (const how of ["stations", "player"])
+			for (const object of window.__baySubjects(how)) {
+				hidden.push([object, object.visible]);
+				object.visible = false;
+			}
+		const whole = covered(shot(0xff0000), shot(0x00ff00));
+
+		for (const [object, was] of hidden) object.visible = was;
+		for (const [mesh, material] of painted) mesh.material = material;
+		flat.dispose();
+		if (bloom && bloomWas !== null) bloom.enabled = bloomWas;
+		g.render(0);
 		return { visible, whole, pixels: w * h };
 	}, "planet-4");
 
@@ -437,6 +516,7 @@ const page = await browser.newPage({
 });
 await installViewPlacement(page);
 await installViewFraming(page);
+await installSubjects(page);
 await page.goto(`${origin}/?seed=${SEED}`);
 await bootedGame(page);
 const renderer = await assertPlayersRenderer(page, "decompose a bay frame");
@@ -671,22 +751,50 @@ for (const framing of FRAMINGS) {
 	const full = median(sweep.get(1));
 	const fullShape = sweepShape.get(1);
 	const fullPx = fullShape.w * fullShape.h;
-	for (const scale of SCALES) {
-		const m = median(sweep.get(scale));
+	const rows = SCALES.map((scale) => {
 		const shape = sweepShape.get(scale);
-		const px = shape.w * shape.h;
-		// **Perfectly fill-rate bound predicts ms scaling with the pixel count.**
-		// A frame with a fixed per-object cost does not move at all. The residual
-		// at the smallest scale is therefore the frame's floor, and it is the
-		// number that says whether #225 reaches this framing.
-		const predicted = full * (px / fullPx);
+		return {
+			scale,
+			shape,
+			ms: median(sweep.get(scale)),
+			p: (shape.w * shape.h) / fullPx,
+		};
+	});
+	for (const row of rows)
 		console.log(
-			`    scale ${scale.toFixed(2)}  ${shape.w}x${shape.h} ` +
-				`(${(px / fullPx).toFixed(3)}x pixels)   ${m.toFixed(3)} ms   ` +
-				`pure-fill would be ${predicted.toFixed(3)}   ` +
-				`floor ${(m - predicted).toFixed(3)} ms`,
+			`    scale ${row.scale.toFixed(2)}  ${row.shape.w}x${row.shape.h} ` +
+				`(${row.p.toFixed(3)}x pixels)   ${row.ms.toFixed(3)} ms   ` +
+				`pure-fill would be ${(full * row.p).toFixed(3)}`,
 		);
-	}
+
+	// **The fixed cost is the model's intercept, and the residual is not it.**
+	// Under `T(p) = F + k·p` the difference between a measured row and the
+	// pure-fill prediction is `F·(1 − p)`, not `F` — so reading the residual as
+	// the floor understates it by a factor of `1 − p`, which at quarter
+	// resolution is 25%. The first version of this printed that residual and
+	// called it "the frame's floor"; sage caught it, and on the bay's own rows
+	// it read 0.695 ms where the model gives 0.927. The fill-rate conclusion
+	// survives either way, which is exactly why the wrong number would have
+	// travelled: it changed no verdict and would have been quoted as a fact.
+	//
+	// Fitted across every row rather than solved from two, so a third rung that
+	// disagrees shows up in the residuals instead of being invisible.
+	const n = rows.length;
+	const sp = rows.reduce((a, r) => a + r.p, 0);
+	const st = rows.reduce((a, r) => a + r.ms, 0);
+	const spp = rows.reduce((a, r) => a + r.p * r.p, 0);
+	const spt = rows.reduce((a, r) => a + r.p * r.ms, 0);
+	const slope = (n * spt - sp * st) / (n * spp - sp * sp);
+	const floor = (st - slope * sp) / n;
+	const worst = Math.max(
+		...rows.map((r) => Math.abs(r.ms - (floor + slope * r.p))),
+	);
+	console.log(
+		`    least-squares fit over ${n} rungs: floor ${floor.toFixed(3)} ms + ` +
+			`${slope.toFixed(3)} ms of fill at full resolution ` +
+			`(${((slope / (floor + slope)) * 100).toFixed(1)}% of the frame scales ` +
+			`with pixels; worst residual ${worst.toFixed(3)} ms)`,
+	);
 }
 
 await browser.close();
