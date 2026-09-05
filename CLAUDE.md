@@ -321,6 +321,19 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   later fill-rate term rather than adding beside it, so the pair costs +3.563 ms
   at 0 samples and +7.130 at 2. Every one of #222's figures was taken at 0,
   which is the default and not what the principal plays at.
+- **A bay's shadow figure is not a stable property of a build.** #241 measured
+  the same check three ways on one machine: `main` at 5.917% and 5.881%, the
+  gated build at 5.324–5.326%, and the gate forced permanently open at
+  **0.272–0.274%** — every one of them repeatable to three digits. The outlier
+  is not a bug in the gate; it is #233's box instability reached by a different
+  route. The bay is entered by a **wall-clock** traversal, so any change to
+  per-frame cost lands the ship somewhere else, and somewhere else is where
+  `shadowBox` unions a second subject and spreads 2048 texels over twice the
+  ground. #235's commit message records the opposite sign of the same effect —
+  a shadow gate reverted there for reading 0.897% against 6.310% — and that does
+  not reproduce against `applyOcclusion`, which writes `castShadow` from the
+  gate every frame rather than through `shadowSunIdle`'s restore, which #235
+  proved unreachable. Quote a bay shadow only beside the build it was taken on.
 - **A whole-frame pixel reading cannot isolate a distant subject.** #241's
   approach ladder flown in cockpit view reported the pair darkening 4.6% of the
   frame at *twenty* station radii; that is the cabin, whose own AO is 22.5% of a

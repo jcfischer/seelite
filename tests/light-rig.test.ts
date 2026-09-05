@@ -47,6 +47,7 @@ import { COCKPIT_EMISSIVE_INTENSITIES } from "../src/cockpit-surface";
 import { SHIP_EMISSIVE_INTENSITIES } from "../src/ship-mesh";
 import { STATION_INTERIOR_EMISSIVE_INTENSITIES } from "../src/station-interior-mesh";
 import { STATION_EMISSIVE_INTENSITIES } from "../src/station-mesh";
+import { DEFAULT_SETTINGS, settingSpec } from "../src/settings";
 
 /** A warm G-type tint, and a neutral one. #59's finding is that the neutral end
  *  is where an emissive tint stops carrying detail; the same palette is used
@@ -265,16 +266,30 @@ describe("the rig's constants", () => {
 		);
 	});
 
-	test("#201's two occlusion terms are on the same side of the gate", () => {
-		// Both, and both off at low. Each is a per-frame pass rather than a
-		// per-fragment sample: the shadow map redraws every caster in the near
-		// scene from the star's side, and the ambient occlusion redraws the
-		// whole near scene into a normal buffer before it samples anything.
-		// Neither is the kind of term the hemisphere's argument covers.
+	test("the shadow stays on the lighting key, in both directions", () => {
+		// It stays because a shadow is what the star does to a surface another
+		// surface stands in front of — the light model — while ambient occlusion
+		// is a post pass. Not because of what either costs.
+		//
+		// Gating it off to stop paying 0.59 ms for a term that darkens 0.003% of
+		// an exterior frame was tried and reverted: `fitShadowCamera` idles while
+		// the sun is not casting, so a shadow off during an approach is unfitted
+		// when anything turns it on, and `probe-occlusion.mjs` then reads 0.9%
+		// where it should read 6.3%. #231 owns that with the rig.
 		expect(LIGHT_RIG.quality.high.shadows).toBe(true);
-		expect(LIGHT_RIG.quality.high.ao).toBe(true);
 		expect(LIGHT_RIG.quality.low.shadows).toBe(false);
-		expect(LIGHT_RIG.quality.low.ao).toBe(false);
+	});
+
+	test("the ambient occlusion is not this key's to gate", () => {
+		// It is the player's own `ao` row since the principal's ruling. The
+		// assertion is that the term has exactly one owner: two owners of one
+		// switch is the arrangement that once let the perf panel and the
+		// settings screen multiply their two halves of `renderScale` together,
+		// and the panel's readout reported only its own half.
+		for (const mode of Object.values(LIGHT_RIG.quality))
+			expect(Object.keys(mode)).not.toContain("ao");
+		expect(settingSpec("ao").allowed).toEqual(["on", "off"]);
+		expect(DEFAULT_SETTINGS.ao).toBe("on");
 	});
 
 	test("every quality mode answers for every term", () => {

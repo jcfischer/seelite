@@ -2100,6 +2100,14 @@ class Game {
 			if (next.antialias !== applied.antialias) this.setComposerSamples();
 			if (next.dither !== applied.dither)
 				this.outputPass.setDither(next.dither === "on");
+			// #201's occlusion, on its own row. `setOcclusion` re-reads **both**
+			// terms from their owners rather than taking the one that changed, so
+			// this call rewrites `castShadow` from the lighting row on its way
+			// past. In the idle state that makes an occlusion toggle bring an
+			// idled shadow back — a cross-row effect, measured and printed by
+			// `probe-occlusion.mjs` and owned by node #233 along with the
+			// unreachable restore behind it.
+			if (next.ao !== applied.ao) this.setOcclusion();
 			applied = next;
 		});
 		/**
@@ -2666,8 +2674,10 @@ class Game {
 	}
 
 	/**
-	 * Turn #201's shadow map and ambient occlusion on or off — the player's
-	 * quality row by default, an explicit pair for an instrument.
+	 * Turn #201's shadow map and ambient occlusion on or off — **one row each**
+	 * by default, an explicit pair for an instrument. The shadow reads the
+	 * lighting row through `LIGHT_RIG.quality`; the occlusion reads its own `ao`
+	 * row, which is the whole of what the principal's ruling changed.
 	 *
 	 * The shadow gate is `castShadow` on the one light rather than
 	 * `renderer.shadowMap.enabled`. **Both are program keys and the difference
@@ -2684,8 +2694,16 @@ class Game {
 	 * frame count both moved when it alone was flipped.
 	 */
 	setOcclusion(shadows?: boolean, ao?: boolean) {
-		const q = LIGHT_RIG.quality[this.settings.value.quality];
-		this.occlusionWanted = { shadows: shadows ?? q.shadows, ao: ao ?? q.ao };
+		this.occlusionWanted = {
+			shadows:
+				shadows ?? LIGHT_RIG.quality[this.settings.value.quality].shadows,
+			// The player's own row since the principal's ruling on #235, not the
+			// lighting key. `light-rig.ts` says why the two were separated, and
+			// #241's gate sits in front of both of them either way: a row says
+			// whether the player wants the term at all, the gate says whether
+			// this frame is one where it shows anything.
+			ao: ao ?? this.settings.value.ao === "on",
+		};
 		// **An explicit argument pins the pass past #241's gate, and a bare call
 		// un-pins it.** `probe-occlusion.mjs` and
 		// `scripts/measure-occlusion-cost.mjs` both name the arm they are

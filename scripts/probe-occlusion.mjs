@@ -153,27 +153,20 @@ const compare = (page, mode) =>
 			// which may contribute a single occluded pixel. This is the arm that
 			// fails when a transparent mesh writes depth into the AO buffer.
 			const hidden = [];
-			if (how === "refused-only")
-				game.nearScene.traverse((object) => {
-					if (object.isMesh && object.castShadow) {
-						hidden.push([object, object.visible]);
-						object.visible = false;
-					}
-				});
 			// **The world without the ship**, for #241's ladder. There is always a
 			// subject at a fixed distance from the camera — the cabin in cockpit
 			// view, the player hull in chase — so the pair's whole-frame reading
-			// never falls to zero however far the station is: 4.6% at twenty radii
-			// in cockpit and 0.58% in chase, both of them the near subject rather
-			// than the station. #233 needed the same column for the same reason.
+			// never falls to zero however far the station is, and what it reports
+			// is the near subject rather than the station.
 			//
 			// **The two roots' own `visible` cannot be used, and the first version
 			// of this did.** `Game.render` writes `shipMesh.visible = view ===
 			// "chase"` and `cockpit.mesh.visible = view === "cockpit"` on every
 			// frame, and `frame()` below renders — so a flag set here was restored
 			// before the pixels it was meant to change were read, and the ladder
-			// reported hull occlusion as station evidence. Their *children* are
-			// nothing `render` touches, so that is where the hiding goes.
+			// reported hull occlusion as station evidence at twenty times its real
+			// size. Their *children* are nothing `render` touches. #233 needed the
+			// same column for the same reason.
 			if (how === "world-only")
 				for (const root of [game.shipMesh, game.cockpit.mesh]) {
 					if (!root) continue;
@@ -182,6 +175,13 @@ const compare = (page, mode) =>
 						child.visible = false;
 					}
 				}
+			if (how === "refused-only")
+				game.nearScene.traverse((object) => {
+					if (object.isMesh && object.castShadow) {
+						hidden.push([object, object.visible]);
+						object.visible = false;
+					}
+				});
 
 			game.setOcclusion(false, false);
 			const none = frame();
@@ -267,27 +267,180 @@ t.check(
 const gate = await page.evaluate(async () => {
 	const game = window.__seelite;
 	const kept = game.settings.value.quality;
+	// **What each row asks for, not what is drawn — #241.** This page sits at
+	// the arrival point, where the gate is shut, so the two drawn flags are
+	// `false` on every arm below and a row that moved nothing would read
+	// identically to one that moved both. What is being asked here is whether
+	// each row reaches its own term; whether the gate then lets it draw is the
+	// boot rows and the ladder further down. The `far`/`approach` suns have no
+	// gate in front of them and are read off the scene.
 	const read = () => ({
-		...game.occlusionState.wanted,
+		castShadow: game.occlusionState.wanted.shadows,
+		ao: game.occlusionState.wanted.ao,
 		far: !!game.farScene.getObjectByName("sun")?.castShadow,
 		approach: !!game.approachScene.getObjectByName("sun")?.castShadow,
 	});
+	const keptAo = game.settings.value.ao;
 	game.settings.set("quality", "high");
 	const high = read();
 	game.settings.set("quality", "low");
 	const low = read();
 	game.settings.set("quality", kept);
-	return { high, low, kept };
+	game.settings.set("ao", "on");
+	const aoOn = read();
+	game.settings.set("ao", "off");
+	const aoOff = read();
+	game.settings.set("ao", keptAo);
+	return { high, low, aoOn, aoOff, kept, keptAo };
 });
+/**
+ * **Each row moves its own term and not the other's.**
+ *
+ * This asserted that `quality` moved both, which is what #201 shipped and what
+ * the principal then overruled: the ambient occlusion is its own row. The
+ * shadow stays on the lighting key, so both pairs are live and neither is
+ * decoration — and this row is the check that caught the split when it was
+ * still encoding the old ownership.
+ */
 t.check(
-	"high asks for both passes and low asks for neither",
-	gate.high.shadows && gate.high.ao && !gate.low.shadows && !gate.low.ao,
-	`high ${gate.high.shadows}/${gate.high.ao}, low ${gate.low.shadows}/${gate.low.ao}`,
+	"the occlusion row moves the occlusion pass, in both directions",
+	gate.aoOn.ao === true && gate.aoOff.ao === false,
+	`ao on ${gate.aoOn.ao}, ao off ${gate.aoOff.ao}`,
+);
+t.check(
+	"and the lighting key still moves the shadow, in both directions",
+	gate.high.castShadow && !gate.low.castShadow,
+	`high ${gate.high.castShadow}, low ${gate.low.castShadow}`,
+);
+
+/**
+ * **The lighting key's authority survives the idle path**, which review doubted
+ * and which the immediate toggle above cannot speak to.
+ *
+ * `fitShadowCamera` sets `castShadow = false` and raises `shadowSunIdle` when a
+ * frame has no near-layer subject, and restores it when one returns. Read on
+ * its own that restore is unconditional, so the question is fair: can a player
+ * on low lighting get the shadow back by flying somewhere empty and returning?
+ *
+ * No — the method's first guard returns before the restore is reached — but a
+ * reading of the source is not what settles it. This raises the flag by hand at
+ * low and renders with subjects present. What the same experiment at high then
+ * showed is that the restore never runs at all; see below.
+ *
+ * **Both arms are forced into the same state**, `castShadow` false with the flag
+ * raised, so the restore is the only thing that can turn it back on and the two
+ * differ only by the lighting row. An earlier version reached `high` by moving
+ * the quality row instead, which sets the field directly — that arm would have
+ * passed with the restore deleted, and it was presented as the control.
+ */
+const idle = await page.evaluate(() => {
+	const game = window.__seelite;
+	const kept = game.settings.value.quality;
+	const light = () => game.nearScene.getObjectByName("sun");
+	/**
+	 * Both arms enter in the **same** state — shadow down, idle raised, subjects
+	 * present — so the only thing that differs is the lighting row.
+	 *
+	 * The first version of this set the high arm by moving the quality row,
+	 * which turns `castShadow` on *directly* through `setOcclusion` before the
+	 * flag is raised. Deleting the restore outright would have satisfied it. It
+	 * was offered as the control that made the low arm mean something and it
+	 * established nothing; review caught that. Forcing the field by hand is what
+	 * makes the restore the only thing that can produce `true`.
+	 */
+	const enter = (quality) => {
+		game.settings.set("quality", quality);
+		game.render(0);
+		const sun = light();
+		sun.castShadow = false;
+		game.shadowSunIdle = true;
+		game.render(0);
+		game.render(0);
+		return !!light()?.castShadow;
+	};
+	const low = enter("low");
+	const high = enter("high");
+	game.settings.set("quality", kept);
+	game.render(0);
+	return { low, high };
+});
+/**
+ * **Both arms read false, and the high one is a defect rather than a pass.**
+ *
+ * The safety property review asked about holds: a raised idle flag cannot give
+ * the shadow back to a player on low lighting. That is what this asserts.
+ *
+ * It does not come back at **high** either, and that is not intended. The only
+ * way into `shadowSunIdle` is the no-subject branch, which sets
+ * `castShadow = false` on its way — and from then on `fitShadowCamera`'s first
+ * guard returns before the restore is reached. So the restore is unreachable in
+ * the one state it exists for, and a shadow lost to a subject-less frame stays
+ * lost until the player moves the lighting row.
+ *
+ * Recorded here rather than fixed: it is #201's code and node #233 owns it,
+ * alongside the ladder's finding that the pass fires at 12.8% and then exactly
+ * 0.000% along one flight. The `high` figure is printed rather than asserted so
+ * that a fix reddens nothing here and shows up as a changed number.
+ */
+/**
+ * **An occlusion toggle does move the shadow, and this measures it.**
+ *
+ * `setOcclusion` re-reads both terms from their owners, so the `ao` row's
+ * subscription rewrites `castShadow` from the *lighting* row on its way past.
+ * In every ordinary state that is what keeps the two rows agreeing. In the idle
+ * state it is a way the shadow comes back, so at high lighting an occlusion
+ * toggle brings it back.
+ *
+ * **Not "unfitted", which an earlier version of this claimed.** With subjects
+ * present the next render runs `fitShadowCamera`, which fits the projection and
+ * clears the flag before the composer draws — and this measures `castShadow`
+ * and nothing else, so it could not have evidenced a claim about the rendered
+ * shadow either way.
+ *
+ * The PR claimed the rows could not disagree about the shadow. They can, and a
+ * check that asserted only the `ao` half could not have said so. So this is
+ * *printed* rather than asserted: the behaviour is #233's to change, and a row
+ * demanding it stay would be a check against its own fix.
+ */
+const resurrect = await page.evaluate(() => {
+	const game = window.__seelite;
+	const kept = {
+		quality: game.settings.value.quality,
+		ao: game.settings.value.ao,
+	};
+	const light = () => game.nearScene.getObjectByName("sun");
+	game.settings.set("quality", "high");
+	game.render(0);
+	light().castShadow = false;
+	game.shadowSunIdle = true;
+	game.render(0);
+	const beforeToggle = !!light()?.castShadow;
+	game.settings.set("ao", game.settings.value.ao === "on" ? "off" : "on");
+	game.render(0);
+	const afterToggle = !!light()?.castShadow;
+	game.settings.set("quality", kept.quality);
+	game.settings.set("ao", kept.ao);
+	game.render(0);
+	return { beforeToggle, afterToggle };
+});
+// **Printed, not asserted, and the difference matters.** Requiring
+// `beforeToggle === false && afterToggle === true` would make #233's defect the
+// passing condition: the day the restore works, `beforeToggle` is true and this
+// row goes red for the fix. A check that a deferred bug must still be present is
+// a check against repairing it.
+console.log(
+	`  coupling  castShadow ${resurrect.beforeToggle} before an occlusion toggle at high, ${resurrect.afterToggle} after`,
+);
+
+t.check(
+	"a raised idle flag cannot give the shadow back to a player on low lighting",
+	idle.low === false,
+	`low ${idle.low}, high ${idle.high} (high is the defect #233 owns — the restore is unreachable); both entered with castShadow forced false`,
 );
 t.check(
 	"the game ships with the occlusion on",
-	gate.kept === "high",
-	`default quality is ${gate.kept}`,
+	gate.kept === "high" && gate.keptAo === "on",
+	`default quality is ${gate.kept}, default occlusion is ${gate.keptAo}`,
 );
 t.check(
 	"only the near layer's sun casts a shadow",
@@ -315,7 +468,7 @@ t.check(
  * `localStorage`, no assignment — and reads the two flags off a game nobody has
  * touched.
  */
-const coldBootAt = async (quality) => {
+const coldBootAt = async (settings) => {
 	const writer = await context.newPage();
 	// Watched like every other page here: an unwatched one reports neither a
 	// page error nor a shader failure, and `check-launcher-wiring.mjs` refuses
@@ -323,10 +476,10 @@ const coldBootAt = async (quality) => {
 	t.watch(writer);
 	await writer.goto(`${origin}/?seed=${SEED}`);
 	await bootedGame(writer);
-	const saved = await writer.evaluate((want) => {
-		window.__seelite.settings.set("quality", want);
-		return window.__seelite.settings.value.quality;
-	}, quality);
+	await writer.evaluate((want) => {
+		const store = window.__seelite.settings;
+		for (const [key, value] of Object.entries(want)) store.set(key, value);
+	}, settings);
 	await writer.close();
 	const reader = await context.newPage();
 	t.watch(reader);
@@ -336,77 +489,92 @@ const coldBootAt = async (quality) => {
 		const game = window.__seelite;
 		return {
 			quality: game.settings.value.quality,
-			// **The row's answer, not the two flags** — #241 put a gate between
-			// them, and a boot happens at the arrival point where that gate is
-			// shut. Read off the flags, a saved `high` and a saved `low` both
-			// produce two `false`s in open space, and the arm below that caught
-			// #201's boot bug twice would go green on a build that had lost the
-			// row entirely. What is being asked here is whether the *stored*
-			// preference reached the constructor; whether the gate then lets it
-			// draw is the row after.
-			castShadow: game.occlusionState.wanted.shadows,
-			ao: game.occlusionState.wanted.ao,
+			aoRow: game.settings.value.ao,
+			// **What each row asked for, and what is actually drawn — #241 made
+			// those two different things.** A boot happens at the arrival point,
+			// where the gate is shut, so both drawn flags are `false` whatever
+			// the rows say. Asserting the drawn flags alone would make a saved
+			// `high` and a saved `low` indistinguishable here and retire the arm
+			// that caught #201's boot bug twice; asserting the rows alone would
+			// pass on a build that had lost the gate. Both, and they are checked
+			// separately.
+			wanted: game.occlusionState.wanted,
 			gateOpen: game.occlusionState.open,
-			// And the two flags themselves, which is what that next row needs.
-			// Asserting the gate's own boolean would pass on a build whose
-			// `applyOcclusion` had dropped the gate from its conjunction — the
-			// gate would read shut and both passes would draw.
-			drawnShadow: !!game.nearScene.getObjectByName("sun")?.castShadow,
-			drawnAo: game.gtaoPass?.enabled ?? null,
+			castShadow: !!game.nearScene.getObjectByName("sun")?.castShadow,
+			ao: game.gtaoPass?.enabled ?? null,
 		};
 	});
 	await reader.close();
-	return { saved, ...read };
+	return read;
 };
 
-const coldLow = await coldBootAt("low");
+/**
+ * **Two boots, both crossed, and the crossing is what makes them two.**
+ *
+ * The rows have different owners since the principal's ruling, so what has to
+ * be proved is no longer "the gate ran" but "each row moved its own term and
+ * not the other's". A boot per row would need four to cover both directions of
+ * both; two boots with the rows *disagreeing* cover all four, because each one
+ * reads one row up and the other down.
+ *
+ * That matters beyond elegance. Each `coldBootAt` opens two pages and costs
+ * about twenty-five seconds, and the main page is a **running game** the whole
+ * time: a third arm pushed this probe from 95s to 145s, and somewhere in the
+ * extra fifty the ship's docking computer took its clearance and docked itself,
+ * so `__parkInBerth` below refused with "the session is docked". The arms are
+ * cheap to add and the page they leave running is not.
+ *
+ * **The two arms are not equally strong, and saying they were was wrong.**
+ * `GTAOPass` constructs `enabled: true` and `DirectionalLight` constructs
+ * `castShadow: false`, so the low/on arm below expects exactly the two defaults
+ * — it cannot tell a boot that read the saved rows from one that ignored them
+ * and got lucky. The high/off arm expects the opposite of both, and it is that
+ * arm alone which establishes the rows are read at all. The low/on arm still
+ * earns its place: it is the one that would catch `ao` being dragged down by a
+ * saved `low`, which is the coupling this PR removes.
+ */
+const coldLowOn = await coldBootAt({ quality: "low", ao: "on" });
 t.check(
-	"a saved low quality boots asking for neither pass",
-	coldLow.saved === "low" &&
-		coldLow.quality === "low" &&
-		!coldLow.castShadow &&
-		coldLow.ao === false,
-	`saved ${coldLow.saved}, booted ${coldLow.quality} with castShadow ${coldLow.castShadow} and ao ${coldLow.ao}`,
+	"a saved low quality boots asking for no shadow, and does not take the occlusion with it",
+	coldLowOn.quality === "low" &&
+		coldLowOn.aoRow === "on" &&
+		!coldLowOn.wanted.shadows &&
+		coldLowOn.wanted.ao === true,
+	`booted ${coldLowOn.quality}/${coldLowOn.aoRow} asking for shadow ${coldLowOn.wanted.shadows} and ao ${coldLowOn.wanted.ao}`,
+);
+
+const coldHighOff = await coldBootAt({ quality: "high", ao: "off" });
+t.check(
+	"and a saved high quality boots asking for the shadow, without turning the occlusion back on",
+	coldHighOff.quality === "high" &&
+		coldHighOff.aoRow === "off" &&
+		coldHighOff.wanted.shadows &&
+		coldHighOff.wanted.ao === false,
+	`booted ${coldHighOff.quality}/${coldHighOff.aoRow} asking for shadow ${coldHighOff.wanted.shadows} and ao ${coldHighOff.wanted.ao}`,
 );
 
 /**
- * **And the same question the other way round, which the red build demanded.**
+ * **And neither boot draws anything, because a boot is in open space — #241.**
  *
- * Removing the gate call to prove the row above could fail reddened it on the
- * ambient occlusion and *not* on the shadow — because with the call gone
- * `castShadow` never leaves `DirectionalLight`'s own `false`, which happens to
- * be the answer the `low` arm wanted. So the low arm alone would pass a build
- * where a player who chose `high` got no shadow at all. Two arms, and neither
- * is redundant: the flags' defaults are `enabled: true` and `castShadow: false`,
- * so each pass has a failure mode the other arm cannot see.
- */
-const coldHigh = await coldBootAt("high");
-t.check(
-	"a saved high quality boots asking for both passes",
-	coldHigh.saved === "high" &&
-		coldHigh.quality === "high" &&
-		coldHigh.castShadow &&
-		coldHigh.ao === true,
-	`saved ${coldHigh.saved}, booted ${coldHigh.quality} with castShadow ${coldHigh.castShadow} and ao ${coldHigh.ao}`,
-);
-
-/**
- * **And #241's gate is shut on that boot, which is the other half.**
+ * The two arms above establish that each row is read and moves its own term.
+ * This is the other half: the arrival point is where the principal measured 40
+ * fps, so a `high` boot must *ask* for the shadow and still draw neither pass
+ * until something is close enough to be worth them.
  *
- * A boot puts the ship at the arrival point with nothing near it, and that is
- * the frame the principal reported at 40 fps: the pair doubles it and darkens
- * 0.002% of it with the shadow and 22.5% with the ambient occlusion — a term
- * the player can see, which is why the sheet and not this row is where that
- * trade is settled. So a `high` boot must ask for both passes *and* draw
- * neither until something is close enough to be worth them. Without this row, a build
- * whose gate was stuck open would pass every arm above.
+ * It reads the two flags rather than the gate's own boolean. Asserting
+ * `gateOpen === false` alone would pass on a build whose `applyOcclusion` had
+ * dropped the gate from its conjunction — the gate would read shut and both
+ * passes would draw. Built red exactly that way.
  */
 t.check(
-	"a high boot in open space still draws neither pass",
-	coldHigh.gateOpen === false &&
-		coldHigh.drawnShadow === false &&
-		coldHigh.drawnAo === false,
-	`gate open ${coldHigh.gateOpen} at the arrival point, drawing shadow ${coldHigh.drawnShadow} and ao ${coldHigh.drawnAo}`,
+	"and neither boot draws either pass, because a boot is in open space",
+	coldHighOff.gateOpen === false &&
+		coldHighOff.castShadow === false &&
+		coldHighOff.ao === false &&
+		coldLowOn.gateOpen === false &&
+		coldLowOn.castShadow === false &&
+		coldLowOn.ao === false,
+	`high/off gate ${coldHighOff.gateOpen} drawing ${coldHighOff.castShadow}/${coldHighOff.ao}; low/on gate ${coldLowOn.gateOpen} drawing ${coldLowOn.castShadow}/${coldLowOn.ao}`,
 );
 
 // ---- the exterior framing: the hull in front, the station beyond ----
@@ -546,17 +714,6 @@ await setView(page, OCCLUSION_FRAMINGS.berth.view);
 await OCCLUSION_FRAMINGS.berth.place(page);
 await setView(page, OCCLUSION_FRAMINGS.berth.view);
 await settleFrames(page);
-/**
- * **The gate is open in the bay, and the ladder cannot say so.**
- *
- * Every rung above is on the aperture axis *outside* the station, so the rows
- * there establish that the gate opens somewhere before the plane and never
- * re-closes on the way in. Neither is the same claim as "the frame the ambient
- * occlusion was asked for renders with it on" — a build whose gate closed again
- * once the camera was inside its subject would pass all four. `berth-arrival`
- * is a canonical view captured mid-traversal, so this is also the row that says
- * nothing pops on during it.
- */
 const bayGate = await page.evaluate(() => {
 	const game = window.__seelite;
 	return {
