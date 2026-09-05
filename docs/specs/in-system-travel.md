@@ -762,6 +762,10 @@ whose centre is farther than `NEAR_FAR_KM`; ordinary nearest-centre frame
 selection is unchanged everywhere else, and a new cruise engagement clears the
 handoff.
 
+Here **drive charge** means §7's distinct 12 AU in-system cruise reserve. The
+term is intentional: it is not the separate 7 LY **Hyperspace tank** used for
+inter-system jumps.
+
 `measure-guard-motion.ts` flies the production integrator over seeds 1–200 with
 one frame-start convention. It measures the full linear relative sweep of every
 integrator segment and the exact orbital endpoints; curved motion inside a
