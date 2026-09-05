@@ -38,15 +38,20 @@
  *
  * ## The x-axis is measured, not asserted
  *
- * Calling the rungs "more enclosed" as they go would be the same assertion #231
- * is trying to check. So each rung also measures **what the ambient occlusion
- * does to the same frame**, and that is the abscissa: AO is by construction a
- * per-pixel estimate of how much of a point's hemisphere is blocked, so the
- * fraction of a frame it darkens *is* an enclosure measurement, taken by the
- * renderer rather than by me.
+ * The ladder's abscissa is **the journey**, and it needs no instrument: the
+ * approach runs down a station's aperture axis from twenty silhouette radii to
+ * 1.2, and the traversal runs from the aperture plane to a berth inside the
+ * hull. That is monotonically more enclosed by construction, whatever any
+ * measurement says.
  *
- * The finding is therefore a relationship between two measured quantities on
- * one build, and not a story told over three screenshots.
+ * Each rung *also* reports what the ambient occlusion does to the same frame,
+ * and **that column is a correlate, not a measurement of enclosure** — which is
+ * the honest version of a claim this file made for a round. GTAO's radius is in
+ * drawing-buffer pixels (`occlusion.ts`), so its screen coverage moves with
+ * framing and with what happens to be on screen, not with blocked hemisphere
+ * alone. It is worth printing because it moves with the journey and gives the
+ * shadow column something to be flat against; it is not worth resting a
+ * conclusion on, and none is rested on it.
  *
  * ## Every rung has a control, and it is the row to read first
  *
@@ -106,9 +111,17 @@ const REPEATS = 5;
  * Ten, which is far past anything #231 would actually ship — the point is not
  * to propose a rig but to make the question decidable. `LIGHT_RIG` gives the
  * sun 0.2 against a hemisphere of 6.85; at ten times that the sun is a quarter
- * of the scene's light instead of three percent, so a surface that receives any
- * of it at all cannot hide under an eight-bit readback. A rung that is still
- * exactly zero here has no receiver, and no rig change reaches it.
+ * of the scene's light instead of three percent.
+ *
+ * **What a zero here does and does not establish.** It is still a thresholded
+ * read of an eight-bit canvas, so it cannot prove physical absence — a grazing
+ * receiver taking a sliver of the sun can stay under the cut at any multiplier,
+ * and saying otherwise was this file's claim for a round and was wrong twice in
+ * the same shape. What it *does* establish is a bound, and the bound is tight
+ * enough to decide with: a rung reading zero here has, at ten times the sun, no
+ * pixel moved by more than 2/255 and a mean absolute change under half a code.
+ * Whatever is there is at least fifty times smaller than the effect the node
+ * wants. Report the bound; do not call it emptiness.
  */
 const BRIGHT = 10;
 
@@ -174,13 +187,20 @@ const differences = (page, order) =>
 	page.evaluate(
 		([arms, bright]) => {
 			const game = window.__seelite;
-			const W = 480;
-			const H = 300;
+			// **The drawing buffer's own size, not a thumbnail.** This read into a
+			// 480x300 scratch for a round, which averages four by three rendered
+			// pixels into one before anything is thresholded — so a thin shadow,
+			// or a grazing one, is diluted below the cut before it is counted,
+			// and a zero could not distinguish "no shadow" from "a shadow this
+			// readback blurred away". At native size a rendered pixel is a
+			// sample.
+			const source = game.renderer.domElement;
+			const W = source.width;
+			const H = source.height;
 			const scratch = document.createElement("canvas");
 			scratch.width = W;
 			scratch.height = H;
 			const ctx = scratch.getContext("2d", { willReadFrequently: true });
-			const source = game.renderer.domElement;
 			const dither = game.settings.value.dither;
 			// Through the pass rather than the store: an instrument should not leave
 			// a preference behind on the machine it measured.
@@ -218,7 +238,7 @@ const differences = (page, order) =>
 				// the defect the shuffle above exists to expose rather than to hide.
 				game.render(0);
 				game.render(0);
-				ctx.drawImage(source, 0, 0, W, H);
+				ctx.drawImage(source, 0, 0);
 				const pixels = ctx.getImageData(0, 0, W, H).data;
 				for (const [object, parent] of detached.splice(0)) parent.add(object);
 				return pixels;
@@ -273,14 +293,20 @@ const differences = (page, order) =>
 
 			const luma = (d, i) =>
 				0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
-			const against = (later) => {
+			// **One scan, three callers.** The three delta helpers each carried
+			// their own copy of the loop and the `delta < -2` cut, so a change to
+			// the threshold or to what is counted had to be made three times and
+			// kept aligned by hand.
+			const scan = (before, after) => {
+				if (!before || !after)
+					return { darkerPct: null, meanAbs: null, deepest: null };
 				let darker = 0;
 				let deepest = 0;
 				let sum = 0;
 				let pixels = 0;
-				for (let i = 0; i < taken.base.length; i += 4) {
+				for (let i = 0; i < before.length; i += 4) {
 					pixels++;
-					const delta = luma(later, i) - luma(taken.base, i);
+					const delta = luma(after, i) - luma(before, i);
 					sum += Math.abs(delta);
 					if (delta < -2) darker++;
 					if (-delta > deepest) deepest = -delta;
@@ -291,38 +317,13 @@ const differences = (page, order) =>
 					deepest,
 				};
 			};
-			const pairDelta = (before, after) => {
-				if (!before || !after) return { darkerPct: null, meanAbs: null };
-				let darker = 0;
-				let sum = 0;
-				let pixels = 0;
-				for (let i = 0; i < before.length; i += 4) {
-					pixels++;
-					const delta = luma(after, i) - luma(before, i);
-					sum += Math.abs(delta);
-					if (delta < -2) darker++;
-				}
-				return { darkerPct: (100 * darker) / pixels, meanAbs: sum / pixels };
-			};
-			const worldDelta = () => {
-				if (!taken.worldBase) return { darkerPct: null, deepest: null };
-				let darker = 0;
-				let deepest = 0;
-				let pixels = 0;
-				for (let i = 0; i < taken.worldBase.length; i += 4) {
-					pixels++;
-					const delta = luma(taken.worldShadow, i) - luma(taken.worldBase, i);
-					if (delta < -2) darker++;
-					if (-delta > deepest) deepest = -delta;
-				}
-				return { darkerPct: (100 * darker) / pixels, deepest };
-			};
+			const against = (later) => scan(taken.base, later);
 			return {
 				control: against(taken.control),
 				shadow: against(taken.shadow),
 				ao: against(taken.ao),
-				world: worldDelta(),
-				bright: pairDelta(taken.brightBase, taken.brightShadow),
+				world: scan(taken.worldBase, taken.worldShadow),
+				bright: scan(taken.brightBase, taken.brightShadow),
 				texelKm,
 			};
 		},
