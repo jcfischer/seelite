@@ -272,9 +272,12 @@ const differences = (page, order) =>
 			// every one of 120 samples. The `bright` arm has its own baseline and
 			// pays for one more.
 			const lumaOf = (d) => {
-				const out = new Float32Array(d.length / 4);
-				for (let i = 0, j = 0; i < d.length; i += 4, j++)
-					out[j] = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+				// Float64, not Float32. Rounding only the baseline moves a delta of
+				// exactly two codes to either side of the `< -2` cut: for
+				// [100,120,140] darkening to [98,118,138] the float32 baseline gives
+				// -2.0000013, which counts a two-code reduction that should not.
+				const out = new Float64Array(d.length / 4);
+				for (let i = 0, j = 0; i < d.length; i += 4, j++) out[j] = luma(d, i);
 				return out;
 			};
 			const scanAgainst = (beforeLuma, after) => {
@@ -285,11 +288,7 @@ const differences = (page, order) =>
 				let sum = 0;
 				const pixels = beforeLuma.length;
 				for (let i = 0, j = 0; j < pixels; i += 4, j++) {
-					const delta =
-						0.2126 * after[i] +
-						0.7152 * after[i + 1] +
-						0.0722 * after[i + 2] -
-						beforeLuma[j];
+					const delta = luma(after, i) - beforeLuma[j];
 					sum += Math.abs(delta);
 					if (delta < -2) darker++;
 					if (-delta > deepest) deepest = -delta;
@@ -387,7 +386,7 @@ console.log(
 console.log("  is the journey itself; nothing is concluded from this column.");
 console.log("");
 console.log(
-	`  rung                            AO resp     shadow    control   mean|d|   sun x${BRIGHT}  bright|d|  box texel`,
+	`  rung                            AO resp     shadow    control   mean|d|   sun x${BRIGHT}  bright|d| deepest  box texel`,
 );
 
 const rows = [];
@@ -408,6 +407,25 @@ for (const rung of RUNGS) {
 		);
 	}
 	await settleFrames(page);
+	// **Stop the frame loop for the whole rung**, and this is a correctness fix
+	// rather than a speed one. `stopAtArrivalFraction` stops
+	// `__parkInBerth`'s own stepping loop; it does not stop `Game.animate`,
+	// which keeps advancing the docking traversal through the settle, the view
+	// switch and every repeat. So a row labelled "50%" was measured at
+	// wherever the traversal had drifted to by then, differently in each
+	// repeat and in each view — which is both the run-to-run instability in
+	// the bay rows and a confound on any claim about *why* a shadow appears at
+	// one fraction and not another.
+	//
+	// `animationFrame` is `private` and that is erased at runtime; the whole
+	// `Game` is published as `window.__seelite`. Cancelling it leaves
+	// `render(0)` working, since every frame this instrument measures is drawn
+	// by an explicit call.
+	await page.evaluate(() => {
+		const game = window.__seelite;
+		if (game.animationFrame) cancelAnimationFrame(game.animationFrame);
+		game.animationFrame = 0;
+	});
 
 	for (const view of VIEWS) {
 		await setView(page, view);
@@ -434,6 +452,13 @@ for (const rung of RUNGS) {
 			shadowDeepest: median(of("shadow", "deepest")),
 			bright: median(of("bright", "darkerPct")),
 			brightMean: median(of("bright", "meanAbs")),
+			// **The per-pixel bound, and without it the zero rows claim nothing.**
+			// `darkerPct` counts pixels past the cut, so at 1.3 million pixels a
+			// single one darkening by a hundred codes still prints 0.000% — the
+			// coverage column cannot bound what any individual pixel did. The
+			// deepest single darkening can, and it is what the exterior rows rest
+			// on.
+			brightDeepest: median(of("bright", "deepest")),
 			// **Mean absolute change, which has no threshold, and it is the
 			// number #231 actually needs.** A pixel counts as "darker" above
 			// 2/255, and the sun is about 3% of the light — so a fully shadowed
@@ -459,11 +484,17 @@ for (const rung of RUNGS) {
 				row.shadow,
 			)}  ${pct(row.control)}  ${row.shadowMean.toFixed(4).padStart(7)}  ${pct(
 				row.bright,
-			)}  ${row.brightMean.toFixed(4).padStart(8)}  ${(row.texelKm * 1000)
+			)}  ${row.brightMean.toFixed(4).padStart(8)}  ${row.brightDeepest
 				.toFixed(1)
-				.padStart(6)} m`,
+				.padStart(6)}  ${(row.texelKm * 1000).toFixed(1).padStart(6)} m`,
 		);
 	}
+	// The loop goes back on before the next rung, which needs a running game to
+	// fly the docking computer to it.
+	await page.evaluate(() => {
+		const game = window.__seelite;
+		if (!game.animationFrame) game.animate();
+	});
 }
 
 console.log("");
