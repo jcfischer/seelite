@@ -151,10 +151,18 @@ const CONCURRENCY = Number(process.env.PROBE_CONCURRENCY ?? 1);
  */
 const NOT_PROBES = new Set(["probe-all.mjs", "probe-guard.mjs"]);
 
+/**
+ * Gating browser checks whose names describe their measurement, not their
+ * verdict. They stay explicit so the `probe-` convention remains useful while
+ * this suite cannot accidentally omit a release gate.
+ */
+const ADDITIONAL_GATES = ["measure-cruise-detour.mjs"];
+
 // Which probes to run: everything here, or the subset `resolveOnly` selects.
 const allProbes = readdirSync(HERE)
 	.filter((f) => f.startsWith("probe-") && f.endsWith(".mjs"))
 	.filter((f) => !NOT_PROBES.has(f))
+	.concat(ADDITIONAL_GATES)
 	.sort();
 
 /** A probe whose exit code is a verdict — not a reporter, not quarantined. */

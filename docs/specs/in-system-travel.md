@@ -777,6 +777,31 @@ fixtures and production tests additionally bind moving interception, outward
 release, a receding tangent, shared-frame invariance, mid-step crossing,
 post-stop carry, multiple blockers, and 30/60/120 Hz plus `MAX_DT` behaviour.
 
+### 12.5 Automatic station detours
+
+When the selected station lies behind a guarded body, cruise may take a bounded
+automatic detour while keeping that station selected. The route is exactly two
+internal waypoints on one of two deterministic sides of the blocker; it is not
+a target, arrival point, docking instruction, or general autopilot. The planner
+checks three segments per side against every relevant guard volume, retains a
+safe side across replans, and reports its bounded work. Each frame also checks
+the active leg at the current body positions and one linear velocity projection;
+when either sample is blocked, a fresh bounded route is attempted without
+replacing the station. The continuous moving-body guard remains the authority
+for crossings between those samples. If neither side is safe, cruise drops to
+normal flight with an explicit detour-unavailable reason rather than pretending
+a route exists.
+The real moving-body guard remains authoritative for every flown segment.
+
+The controller turns the physical nose toward each waypoint at a bounded rate
+and holds translation until the material part of that turn is complete; cruise
+velocity therefore agrees with the cockpit and chase view. Any keyboard or mouse
+flight input, including throttle, cancels in that same frame and never
+auto-recaptures. While active the cockpit reads `DETOUR AROUND <body>`; no safe
+candidate ends in normal flight with an explicit reason. Charge remains distance
+metered by the cruise integrator, and normal station arrival and docking remain
+unchanged.
+
 
 - The occluded quarter. Raising station orbits is measured above but not
   decided, and it moves the `station-orbits.json` baseline.
