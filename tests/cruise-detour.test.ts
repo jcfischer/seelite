@@ -69,3 +69,11 @@ test("finds a moving obstruction in a linear projection without cloning masses",
 		"crossing",
 	);
 });
+
+test("allows an outward preview from inside a host guard shell", () => {
+	const host: Mass = { id: "host", pos: v3(), radiusKm: 6_000 };
+	const outward = v3(10_000, 0, 0);
+	expect(
+		cruiseRouteBlocker(v3(6_005, 0, 0), outward, [host], "host"),
+	).toBeNull();
+});

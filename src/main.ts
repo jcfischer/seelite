@@ -5456,7 +5456,11 @@ class Game {
 			this.dockingComputerEngaged = false;
 		if (this.detour && this.hasControlInput(yaw, pitch, roll)) {
 			this.detour = null;
-			this.throttle = 1;
+			// A throttle key is the player's chosen value for this same frame.
+			// Do not briefly promote throttle-down to full cruise before its normal
+			// input handling below can apply it.
+			if (!this.keys.has(THROTTLE_UP) && !this.keys.has(THROTTLE_DOWN))
+				this.throttle = 1;
 		}
 
 		// One range scan and one orbital evaluation per station for the whole
@@ -5728,11 +5732,13 @@ class Game {
 		if (!detour) return true;
 		if (detour.targetId !== this.targetId) {
 			this.detour = null;
+			this.throttle = 1;
 			return true;
 		}
 		const target = this.targetBody();
 		if (!target) {
 			this.detour = null;
+			this.throttle = 1;
 			return true;
 		}
 		let point =

@@ -65,21 +65,47 @@ function segmentDistanceKm(
 	return Math.hypot(apx - abx * t, apy - aby * t, apz - abz * t);
 }
 
-function projectedDistanceKm(
+/**
+ * Whether a preview limb is stopped by the same shell rule as cruise.
+ *
+ * A ship already within a widened guard shell may leave it freely unless its
+ * heading would take it into the real body.  The live integrator owns that
+ * release rule; the preview mirrors it only to avoid refusing a safe outward
+ * cruise before the integrator can apply it.
+ */
+function projectedGuardBlocked(
 	a: Vec3,
 	b: Vec3,
 	mass: Mass,
+	targetParentId: string | null,
 	projectionS: number,
-): number {
+): boolean {
 	const vx = mass.vel?.x ?? 0;
 	const vy = mass.vel?.y ?? 0;
 	const vz = mass.vel?.z ?? 0;
-	return segmentDistanceKm(
-		a,
-		b,
-		mass.pos.x + vx * projectionS,
-		mass.pos.y + vy * projectionS,
-		mass.pos.z + vz * projectionS,
+	const centreX = mass.pos.x + vx * projectionS;
+	const centreY = mass.pos.y + vy * projectionS;
+	const centreZ = mass.pos.z + vz * projectionS;
+	const guard = guardKm(mass, targetParentId);
+	const fromX = a.x - centreX;
+	const fromY = a.y - centreY;
+	const fromZ = a.z - centreZ;
+	const startsInsideGuard =
+		fromX * fromX + fromY * fromY + fromZ * fromZ <= guard * guard;
+	if (!startsInsideGuard)
+		return segmentDistanceKm(a, b, centreX, centreY, centreZ) <= guard;
+
+	const direction = sub(b, a);
+	const directionLength = length(direction);
+	if (directionLength <= EPSILON)
+		return fromX * fromX + fromY * fromY + fromZ * fromZ <= mass.radiusKm ** 2;
+	const towardCentre =
+		(-fromX * direction.x - fromY * direction.y - fromZ * direction.z) /
+		directionLength;
+	if (towardCentre <= 0) return false;
+	return (
+		fromX * fromX + fromY * fromY + fromZ * fromZ - towardCentre ** 2 <
+		mass.radiusKm ** 2
 	);
 }
 
@@ -91,9 +117,7 @@ function segmentIsClear(
 	projectionS = 0,
 ): boolean {
 	return masses.every(
-		(mass) =>
-			projectedDistanceKm(a, b, mass, projectionS) >
-			guardKm(mass, targetParentId),
+		(mass) => !projectedGuardBlocked(a, b, mass, targetParentId, projectionS),
 	);
 }
 
@@ -106,10 +130,8 @@ export function cruiseRouteBlocker(
 	projectionS = 0,
 ): Mass | null {
 	return (
-		masses.find(
-			(mass) =>
-				projectedDistanceKm(from, target, mass, projectionS) <=
-				guardKm(mass, targetParentId),
+		masses.find((mass) =>
+			projectedGuardBlocked(from, target, mass, targetParentId, projectionS),
 		) ?? null
 	);
 }
