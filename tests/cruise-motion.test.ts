@@ -213,6 +213,30 @@ test("a frame-end proximity stop retains its blocker identity", () => {
 	expect(step.exitBodyId).toBe("frame-end");
 });
 
+test("simultaneous incompatible blocker carries terminate", () => {
+	const step = advanceCruise({
+		pos: v3(),
+		nose: v3(0, 1, 0),
+		throttle: 0,
+		dt: 0.1,
+		masses: [
+			{ id: "left", pos: v3(-1.04, 0, 0), radiusKm: 1, vel: v3(1, 0, 0) },
+			{
+				id: "right",
+				pos: v3(1.04, 0, 0),
+				radiusKm: 1,
+				vel: v3(-1, 0, 0),
+			},
+		],
+		target: null,
+		params: CONSTANT_CRUISE,
+		targetParentId: null,
+	});
+	expect(step.exit).toBe("proximity");
+	expect(Number.isFinite(step.pos.x)).toBe(true);
+	expect(Math.abs(step.pos.x)).toBeLessThanOrEqual(0.05);
+});
+
 test("relative sweep catches a body crossing between both endpoint samples", () => {
 	const body: Mass = {
 		id: "crossing",

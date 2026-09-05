@@ -885,6 +885,16 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 			const carry = blocker.vel ?? { x: 0, y: 0, z: 0 };
 			const next = earliestGuardStop(carry, blocker.id, settled);
 			const duration = next?.time ?? remaining;
+			// Two bodies can present incompatible simultaneous constraints in a
+			// synthetic input where their physical surfaces close onto the same
+			// point. No carry velocity can remain outside both. Once a zero-time
+			// event returns to a blocker already seen by this chain, hold the last
+			// mutually nonpenetrating point and terminate instead of alternating
+			// blocker identities forever. Generated orbital bodies do not overlap.
+			if (next && duration <= 1e-12 && settled.has(next.body.id)) {
+				remaining = 0;
+				break;
+			}
 			input.onSegment?.({
 				from: pos,
 				velocity: carry,
