@@ -13,7 +13,7 @@
  * **The name is a leftover and is kept on purpose.** What it measured is that
  * the bay is not the subject: the same framing in open space, with no station
  * within a thousand kilometres, costs the same, and the whole of §13.1's
- * interior is 2.0 ms of 40.3. Renaming the file would lose the thread from
+ * interior is 2.12 ms of 40.29. Renaming the file would lose the thread from
  * #242's title to the answer, which is that the question named the wrong room.
  *
  * ## The design is `measure-occlusion-cost.mjs`'s, deliberately
@@ -39,7 +39,7 @@
  * our favour, because the sampler existed and only the comparison did not.
  *
  * **It was not half wrong, and this is a finding rather than a caveat.** The
- * timer query reports 118 ms at the bay and 145 ms (p95 185) at the open-space
+ * timer query reports 119 ms at the bay and 146 ms (p95 227) at the open-space
  * planet, with `status: "supported"`. Two independent wall-clock readings
  * disagree with it by three to four times and agree with each other to within a
  * few percent: the arms below, and the live rAF period column, which is the
@@ -50,7 +50,7 @@
  * it is not.
  *
  * The CPU submission column survives that, and it is the one that disposes of
- * #242's candidate 2 on its own: 2.45 ms of a 40 ms bay frame.
+ * #242's candidate 2 on its own: 1.10 ms of a 40 ms bay frame.
  *
  * ## It sweeps the drawing buffer, because #242 says to
  *
@@ -318,8 +318,8 @@ const split = async (page, frames) => {
 		// `{ ...null, framePeriodMs }` is a perfectly truthy object with no `gpu`
 		// on it, so the caller's guard against a missing sampler became
 		// unreachable *and* the failure it guarded moved from a printed line to a
-		// crash one property later. Sage read it as dead code, which it was; the
-		// repair is the contract rather than the guard.
+		// throw one property later, at `s.gpu.status`. Sage read it as dead code,
+		// which it was; the repair is the contract rather than the guard.
 		if (!s) return null;
 		const sorted = marks.sort((a, b) => a - b);
 		return { ...s, framePeriodMs: sorted[sorted.length >> 1] ?? null };
@@ -382,9 +382,17 @@ const bodies = (page) =>
  * rejects none of its fragments however much of the disc it covers: the arms
  * price the planet in full either way. What this number decides is *which*
  * existing node absorbs the cost. A disc the bay's wall hides almost all of
- * wants near-layer depth carried into the approach pass — #219's restructure,
- * reached from a different direction. A disc mostly visible through the mouth
- * wants the surface shader cheaper, which is #207, #217 and #224's ground.
+ * wants near-layer depth carried into the approach pass. A disc mostly visible
+ * through the mouth wants the surface shader cheaper, which is #207, #217 and
+ * #224's ground.
+ *
+ * **That is not #219, and an earlier version of this said it was.** #219 is
+ * about the multisampled *colour* target the four `RenderPass`es share and
+ * three's invalidation of it — resolving the ladder once. It can be satisfied
+ * in full while every layer keeps its own depth clear, so it does not address
+ * the cost measured here. The two are separate changes to the same ladder, and
+ * whoever takes one should know the other is there; saying one *is* the other
+ * would have let a reader believe this was already owned.
  *
  * **It does not compare two shaded frames, and the first version did.** That
  * version counted pixels where hiding the planet changed the post-processed
@@ -600,10 +608,19 @@ console.log(
 );
 // **The settings row is printed, not assumed**, because the absolute
 // milliseconds are only comparable with another table if that table's settings
-// are known, and this reads whatever the machine has stored rather than a
-// default it could name here. #242's table says "aa 0, occl off" and this run's
-// `sky-only` reads less than half of it; without this line there is no way to
-// tell a settings difference from a mystery.
+// are known. #242's table says "aa 0, occl off" and this run's `sky-only` reads
+// less than half of it; without this line there is no way to tell a settings
+// difference from a mystery.
+//
+// **What it prints is the defaults, not the principal's saved configuration**,
+// and an earlier version of this comment claimed the latter — sage caught it.
+// `browser.newPage()` opens an isolated context with no persistent profile and
+// no `storageState`, so `loadSettings` finds empty storage and falls back to
+// every row's `fallback`. That is the right thing for an instrument, because a
+// figure is then a property of the build rather than of whoever last moved a
+// slider — but it means this line establishes *reproducibility*, not what the
+// player has. Reading it as the machine's stored settings would be reading a
+// constant as a measurement.
 //
 // **An earlier version of this comment said the optional terms "cancel", and
 // that is false for the near-scene arms.** Sage's HonestOracle lens caught it.
@@ -625,7 +642,7 @@ const settings = await page.evaluate(() => ({
 	...window.__seelite.settings.value,
 }));
 console.log(
-	`  settings as stored on this machine: ${JSON.stringify(settings)}`,
+	`  settings this run used (defaults — the context has no stored profile): ${JSON.stringify(settings)}`,
 );
 console.log(
 	"  every optional term is left where the build puts it. Near-scene arms " +
