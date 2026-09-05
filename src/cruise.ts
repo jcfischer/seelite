@@ -842,6 +842,53 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 		...(exitBodyId !== undefined ? { exitBodyId } : {}),
 		...over,
 	});
+	const finishArrival = (carry: Vec3) => {
+		const elapsed = input.dt - remaining;
+		let stopTime: number | null = null;
+		let blocker: Mass | null = null;
+		for (const mass of input.masses) {
+			const candidate = guardStopTime(
+				pos,
+				carry,
+				remaining,
+				elapsed,
+				input.dt,
+				mass,
+				input.targetParentId,
+			);
+			if (candidate === null || (stopTime !== null && candidate > stopTime))
+				continue;
+			stopTime = candidate;
+			blocker = mass;
+		}
+		const targetCarryTime = stopTime ?? remaining;
+		input.onSegment?.({
+			from: pos,
+			velocity: carry,
+			elapsed,
+			duration: targetCarryTime,
+			powered: false,
+		});
+		pos = add(pos, scale(carry, targetCarryTime));
+		remaining = Math.max(0, remaining - targetCarryTime);
+		dropped = true;
+		if (blocker) {
+			exit = "proximity";
+			exitBodyId = blocker.id;
+			const blockerCarry = blocker.vel ?? { x: 0, y: 0, z: 0 };
+			input.onSegment?.({
+				from: pos,
+				velocity: blockerCarry,
+				elapsed: input.dt - remaining,
+				duration: remaining,
+				powered: false,
+			});
+			pos = add(pos, scale(blockerCarry, remaining));
+		} else {
+			exit = "arrival";
+		}
+		remaining = 0;
+	};
 
 	while (remaining > 0 && !dropped && (substeps < MAX_SUBSTEPS || starved)) {
 		const elapsed = input.dt - remaining;
@@ -1007,18 +1054,8 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 			break;
 		}
 		if (event?.exit === "arrival") {
-			dropped = true;
-			exit = "arrival";
 			const carry = input.target?.vel ?? { x: 0, y: 0, z: 0 };
-			input.onSegment?.({
-				from: pos,
-				velocity: carry,
-				elapsed: input.dt - remaining,
-				duration: remaining,
-				powered: false,
-			});
-			pos = add(pos, scale(carry, remaining));
-			remaining = 0;
+			finishArrival(carry);
 			break;
 		}
 
@@ -1042,18 +1079,8 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 			const nowTarget = motionPosition(input.target, input.dt - remaining);
 			const now = length(sub(pos, nowTarget));
 			if (now <= p.vicinityKm && now > targetKm) {
-				dropped = true;
-				exit = "arrival";
 				const carry = input.target.vel ?? { x: 0, y: 0, z: 0 };
-				input.onSegment?.({
-					from: pos,
-					velocity: carry,
-					elapsed: input.dt - remaining,
-					duration: remaining,
-					powered: false,
-				});
-				pos = add(pos, scale(carry, remaining));
-				remaining = 0;
+				finishArrival(carry);
 			}
 		}
 	}

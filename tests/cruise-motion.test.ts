@@ -334,6 +334,22 @@ test("a closest-approach arrival carries through the unconsumed frame", () => {
 	expect(step.pos.x).toBeGreaterThan(step.travelledKm);
 });
 
+test("a surface crossing during closest-approach carry overrides arrival", () => {
+	const step = advanceCruise({
+		pos: v3(),
+		nose: v3(1, 0, 0),
+		throttle: 1,
+		dt: 0.1,
+		masses: [{ id: "carry-blocker", pos: v3(6.9, 0, 0), radiusKm: 0.2 }],
+		target: { pos: v3(5, 2, 0), radiusKm: 1, vel: v3(20, 0, 0) },
+		params: { ...CONSTANT_CRUISE, vicinityKm: 100, approachLeadS: 0.001 },
+		targetParentId: null,
+	});
+	expect(step.exit).toBe("proximity");
+	expect(step.exitBodyId).toBe("carry-blocker");
+	expect(step.pos.x).toBeCloseTo(6.9 - 0.2 * 1.05, 8);
+});
+
 test("the earliest blocker wins independent of mass order", () => {
 	const near: Mass = { id: "near", pos: v3(10, 0, 0), radiusKm: 1 };
 	const far: Mass = { id: "far", pos: v3(20, 0, 0), radiusKm: 1 };
