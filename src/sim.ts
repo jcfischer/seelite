@@ -56,6 +56,7 @@ import { HULL_SPECS, type HullId, PLAYER_BASELINE_HULL } from "./hull";
 import { mix, seededRand } from "./rng";
 import { STATION_GEOMETRY, slotPhaseRad } from "./station";
 import {
+	accelerationBoundOnOrbit,
 	type PlacedBody,
 	type Station,
 	type StationType,
@@ -363,6 +364,38 @@ export function bodyVelocity(
 		if (!parent)
 			throw new Error(`station ${id} orbits unknown ${station.parentId}`);
 		return add(velocityOnOrbit(parent.orbit, gameTime), own);
+	}
+	throw new Error(`no body ${id} in this system`);
+}
+
+/**
+ * Conservative acceleration magnitude for a body's composed circular motion.
+ *
+ * A moon or planet-hosted station has two rotating terms.  Their acceleration
+ * vectors need not align, so summing magnitudes is the safe bound.  The star is
+ * fixed in the system frame.  This mirrors `bodyVelocity`'s ownership and its
+ * missing-parent failure rather than inventing a second lookup policy.
+ */
+export function bodyAccelerationBound(system: System, id: string): number {
+	const { contents } = system;
+	if (id === contents.star.id) return 0;
+	const planet = contents.planets.find((p) => p.id === id);
+	if (planet) return accelerationBoundOnOrbit(planet.orbit);
+	for (const p of contents.planets) {
+		const moon = p.moons.find((m) => m.id === id);
+		if (moon)
+			return (
+				accelerationBoundOnOrbit(p.orbit) + accelerationBoundOnOrbit(moon.orbit)
+			);
+	}
+	const station = contents.stations.find((s) => s.id === id);
+	if (station) {
+		const own = accelerationBoundOnOrbit(station.orbit);
+		if (!station.parentId) return own;
+		const parent = contents.planets.find((p) => p.id === station.parentId);
+		if (!parent)
+			throw new Error(`station ${id} orbits unknown ${station.parentId}`);
+		return own + accelerationBoundOnOrbit(parent.orbit);
 	}
 	throw new Error(`no body ${id} in this system`);
 }
