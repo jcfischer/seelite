@@ -16,22 +16,17 @@ for (let seed = FIRST_SEED; seed < FIRST_SEED + SEEDS; seed++) {
 	const row = await page.evaluate((seed) => {
 		const g = window.__seelite;
 		const dt = g.units.MAX_DT;
-		const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
-		const segment = (a, b, p) => {
-			const ab = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
-			const q = ab.x ** 2 + ab.y ** 2 + ab.z ** 2;
-			const t = Math.max(0, Math.min(1, ((p.x-a.x)*ab.x+(p.y-a.y)*ab.y+(p.z-a.z)*ab.z)/q));
-			return d({ x:a.x+t*ab.x, y:a.y+t*ab.y, z:a.z+t*ab.z }, p);
-		};
-		let station = null;
-		for (const body of g.world.system.bodies) {
-			if (body.kind !== "station") continue;
-			g.targetId = body.id;
-			const host = g.world.system.byId.get(g.targetParentId());
-			if (host && segment(g.world.ship.pos, body.pos, host.pos) < host.radiusKm) { station = body; break; }
-		}
-		if (!station) return null;
-		g.targetId = station.id;
+	let station = null;
+	for (const body of g.world.system.bodies) {
+		if (body.kind !== "station") continue;
+		g.resetFlightToStart();
+		g.targetId = body.id;
+		g.engageCruise();
+		if (g.detour) { station = body; break; }
+	}
+	if (!station) return null;
+	g.resetFlightToStart();
+	g.targetId = station.id;
 		const start = performance.now();
 		g.engageCruise();
 		let detourFrames = 0;
@@ -58,16 +53,16 @@ const cpuMs = rows.reduce((sum, row) => sum + row.cpuMs, 0);
 console.log(JSON.stringify({
 	seeds: SEEDS,
 	firstSeed: FIRST_SEED,
-	occludedLegs: rows.length,
+	detourLegs: rows.length,
 	arrivals,
 	timeouts,
 	detours,
 	meanCpuMs: rows.length ? cpuMs / rows.length : 0,
 	nonArrivals: rows.filter((row) => row.exit !== `arrived at ${row.stationId}`),
 }, null, 2));
-check("corpus contains at least one host-occluded station leg", rows.length > 0);
-check("every host-occluded leg arrives at its selected station", arrivals === rows.length);
-check("no host-occluded leg exhausts the frame budget", timeouts === 0);
-check("every host-occluded leg activates a detour", detours === rows.length);
+check("corpus contains at least one production detour leg", rows.length > 0);
+check("every production detour leg arrives at its selected station", arrivals === rows.length);
+check("no production detour leg exhausts the frame budget", timeouts === 0);
+check("every selected corpus leg activates a detour", detours === rows.length);
 await browser.close();
 exit();

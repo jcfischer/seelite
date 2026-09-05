@@ -786,10 +786,11 @@ a target, arrival point, docking instruction, or general autopilot. The planner
 checks three segments per side against every relevant guard volume, retains a
 safe side across replans, and reports its bounded work. Each frame also checks
 the active leg at the current body positions and one linear velocity projection;
-if a moving second body closes that leg, a fresh bounded route is attempted
-without replacing the station. If neither side is safe, cruise drops to normal
-flight with an explicit detour-unavailable reason rather than pretending a
-route exists.
+when either sample is blocked, a fresh bounded route is attempted without
+replacing the station. The continuous moving-body guard remains the authority
+for crossings between those samples. If neither side is safe, cruise drops to
+normal flight with an explicit detour-unavailable reason rather than pretending
+a route exists.
 The real moving-body guard remains authoritative for every flown segment.
 
 The controller turns the physical nose toward each waypoint at a bounded rate
