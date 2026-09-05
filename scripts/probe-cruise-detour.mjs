@@ -69,9 +69,13 @@ const result = await page.evaluate(() => {
 		(body) => body.id !== station.id,
 	);
 	if (!alternate) throw new Error("seed 19 has no alternate target fixture");
+	// Match the detour's material-turn hold before switching targets: clearing a
+	// route must not leave cruise stopped at its internal zero throttle.
+	g.throttle = 0;
 	g.targetId = alternate.id;
 	g.step(dt);
 	const retargetCleared = g.detour === null;
+	const retargetRestoresThrottle = g.throttle > 0;
 	g.resetFlightToStart();
 	g.targetId = station.id;
 	g.engageCruise();
@@ -80,10 +84,14 @@ const result = await page.evaluate(() => {
 	g.engageCruise();
 	for (let i = 0; i < 80 && g.regime !== "cruise"; i++) g.step(dt);
 	for (let i = 0; i < 20; i++) g.step(dt);
-	g.keys.add("shift");
+	// Reproduce the detour's turn hold. Throttle-down must take over at zero,
+	// not be overwritten to full before the player input is applied.
+	g.throttle = 0;
+	g.keys.add("control");
 	g.step(dt);
-	g.keys.delete("shift");
+	g.keys.delete("control");
 	const cancelled = g.detour === null;
+	const throttleDownDidNotLaunch = g.throttle < 0.1;
 	g.resetFlightToStart();
 	g.targetId = station.id;
 	g.engageCruise();
@@ -98,8 +106,10 @@ const result = await page.evaluate(() => {
 		active,
 		alignment,
 		retargetCleared,
+		retargetRestoresThrottle,
 		spoolCancelClears,
 		cancelled,
+		throttleDownDidNotLaunch,
 		finalTargetId: g.targetId,
 		finalExit: g.lastExit,
 		finalDetour: g.detour,
@@ -121,8 +131,16 @@ check(
 );
 check("cruise velocity follows the visible nose", result.alignment > 0.999);
 check("changing target clears the old detour", result.retargetCleared);
+check(
+	"retargeting releases the detour turn throttle hold",
+	result.retargetRestoresThrottle,
+);
 check("cancelling spool-up clears its detour", result.spoolCancelClears);
 check("manual throttle cancels automatic detour immediately", result.cancelled);
+check(
+	"manual throttle-down does not launch a stopped detour",
+	result.throttleDownDidNotLaunch,
+);
 check(
 	"arrival never changes the selected station",
 	result.finalTargetId === result.stationId,
