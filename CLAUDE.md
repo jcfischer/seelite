@@ -348,6 +348,59 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   there is **no cliff**: 0.03% at twenty radii rising smoothly to 5.64% at one
   and a half. The probe checks the curve's shape and the threshold is the
   principal's, off the printed ladder.
+- **A place is not a cost. What is in the frustum is (#242).** A bay was read at
+  38.9 ms twice and attributed neither time, and this file carried the
+  attribution as a warning about bays until #235 deleted the line — #242 was
+  opened quoting it after it was gone. It is not the bay. `berth-free-look` is
+  the only framing in that table with a planet in frame, and **that planet is
+  86.6% of it**: hiding it alone takes the frame from 40.29 ms to 5.39 (144/144),
+  and hiding every body reads the same 5.36. The station's whole footprint
+  measured in place is 2.91 ms and §13.1's interior 2.12. The same framing in
+  **open space with no station within a thousand kilometres** costs 36.76.
+  `scripts/measure-bay-frame-cost.mjs` is the instrument and prints all four
+  framings.
+
+  Three things fall out of it that outlive the number. **It is fill-rate bound**
+  — a least-squares fit over the `renderScale` rungs gives a floor of 1.01 ms
+  against 39.56 ms of fill, so 97.5% of the frame scales with pixels and #225's
+  lever reaches a bay. **95.4% of that planet is never seen**: it is in the
+  *approach* layer, its own pass with its own depth buffer, so the near-layer
+  hull rejects none of its fragments — 236,024 visible pixels against 5,182,559
+  drawn, which is all but 1,441 of the whole frame, against 66.0% showing in open
+  space. And **an angular radius is not a frustum test**: `cockpit-arrival`
+  frames the same planet at the same 41.8° half-angle for nothing, because it is
+  behind the camera, which is why its draw-call count does not move when the
+  planet is hidden. Any later claim that a *place* is expensive owes the arm
+  that hides what is in front of the camera — and a body's layer is its distance,
+  so an arm keyed on a *scene* names a different set of objects at every framing.
+
+  **Both of those figures were published wrong first, and each was wrong in a way
+  that changed no verdict.** The coverage was 92.7% from a mask that compared two
+  *shaded* frames at 24/255 — which drops every planet pixel resembling what is
+  behind it and counts bloom outside the disc, and understated the denominator by
+  two million pixels. The floor was 0.70 ms from reading the residual `m − full·p`
+  as the fixed cost, when under `T(p) = F + k·p` that residual is `F·(1 − p)` and
+  understates `F` by 25% at quarter resolution. Sage caught both. A coverage mask
+  must not look at what the subject *looks like* — differencing two flat colours
+  with bloom off is exact and needs no threshold — and a fixed cost is a fitted
+  intercept, never a residual.
+- **#223's GPU timer query reports three to four times the frame, and says
+  `supported` (#242).** 119.05 ms at `berth-free-look` and 145.67 at an
+  open-space planet, against two independent wall clocks that agree with each
+  other — a tight `g.render(0)` loop at 40.29 and 36.76, and the live rAF period
+  at 35.20 and 33.30. The bay's reading is steady rather than noisy (p95 119.71
+  against a median of 119.05); **the open-space one is not, and this file said
+  "p95 tight" of both for a round** — 227.00 against 145.67 is 56% wider, so
+  that row is a large median with a long tail and only the bay's supports a
+  "steady state, not a backlog" reading. Both are still three to four times two
+  clocks that agree, which is the finding.
+  `GpuTimingStatus` already has `unavailable`,
+  `disjoint` and `stale`, so the module is built to refuse and is not refusing.
+  Do not quote a `frame-attribution` GPU median as a cost until that is
+  diagnosed; the CPU interval columns are not implicated. Note also that neither
+  wall clock is the player's frame either — the tight loop removes vsync and
+  lets the GPU pipeline, so a decomposition quotes **arm deltas**, and only the
+  rAF period is a cadence.
 - **Multisampling the composer is the most expensive thing in this renderer.**
   `output-stage.ts` hands `EffectComposer` its own target so `antialias: true`
   on the renderer finally means something — that flag configures the default
