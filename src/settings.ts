@@ -124,11 +124,17 @@ const SCHEMA = {
 	 * | `berth-free-look` | 38.861 | 41.909 | 48.025 | 54.228 |
 	 *
 	 * Two things fall out of it. **The pair doubles the open-space frame**, not
-	 * the fifth the `cockpit-arrival` reading above suggested — and it darkens
-	 * 0.002% of it. And **multisampling multiplies the pair rather than adding
-	 * beside it**: +3.563 ms at 0 samples against +7.130 at 2, a factor of 2.00.
-	 * A term priced only at the default understates a 2x player's cost by half,
-	 * which is how this shipped.
+	 * the fifth the `cockpit-arrival` reading above suggested. And
+	 * **multisampling multiplies the pair rather than adding beside it**:
+	 * +3.563 ms at 0 samples against +7.130 at 2, a factor of 2.00. A term
+	 * priced only at the default understates a 2x player's cost by half, which
+	 * is how this shipped.
+	 *
+	 * What that frame buys is **two** answers. The shadow darkens 0.002–0.003%
+	 * of an exterior frame; the ambient occlusion darkens 22.5% of a
+	 * `cockpit-arrival` one, nearly all of it the cabin's corners. So the gate
+	 * below trades a shadow nobody can see *and* a cabin term the player can,
+	 * and the note this row shows them says so.
 	 *
 	 * So #241 put a gate in front of both passes rather than a row here: they
 	 * draw when a station is close enough to be worth them and not otherwise,
@@ -158,7 +164,7 @@ const SCHEMA = {
 		allowed: ["high", "low"] as const,
 		label: "Lighting",
 		describe: (v: string) => (v === "high" ? "High" : "Low"),
-		note: "High reflects the star off every hull, plate and cockpit surface, cuts the panel lines into the hulls and the cabin so a moving sun breaks across them, lights the console from above, casts the star's shadow across whatever is nearest, and darkens the corners and the contact where surfaces meet. Low drops all five and keeps the sun, the star-side gradient and the cockpit fill; the picture stays lit, the panel lines stay painted, the metal stops reading as metal and nothing casts or catches a shadow.",
+		note: "High reflects the star off every hull, plate and cockpit surface, cuts the panel lines into the hulls and the cabin so a moving sun breaks across them, lights the console from above, and — once a station is close enough to be worth the frame it costs — casts the star's shadow across whatever is nearest and darkens the corners and the contact where surfaces meet. Low drops all five and keeps the sun, the star-side gradient and the cockpit fill; the picture stays lit, the panel lines stay painted, the metal stops reading as metal and nothing casts or catches a shadow.",
 	},
 	/**
 	 * How many samples the composed frame is drawn with — #200.

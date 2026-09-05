@@ -242,12 +242,25 @@ const SHADOW_UNION_LIMIT = 4;
  *
  * The pair **doubles** the open-space frame, and doubles again at the player's
  * antialias setting because multisampling multiplies every later fill-rate term
- * rather than adding beside it. What it buys there, from #222's own round-2
- * reading: **0.003%** of pixels darkened at `station-flank` and **0.002%** at
- * `cockpit-arrival`, against **6.06%** in a bay. #233 reaches the same place
- * from the other side — in cockpit view its world-only column is 0.000% at
- * every approach rung, so the shadow's entire output in open space is the cabin
- * shadowing itself.
+ * rather than adding beside it.
+ *
+ * **What it buys there is two different answers and they must not be run
+ * together.** The *shadow* buys almost nothing: #222's round-2 reading is
+ * **0.003%** of pixels darkened at `station-flank` and **0.002%** at
+ * `cockpit-arrival` against **6.06%** in a bay, and #233 reaches the same place
+ * from the other side — its world-only column is 0.000% at every approach rung,
+ * so the shadow's entire output in open space is the cabin shadowing itself.
+ * The *ambient occlusion* buys a great deal: it darkens **22.5%** of a
+ * `cockpit-arrival` frame and 20.3% of a bay's, almost all of it on the cabin.
+ *
+ * So gating in open space is not "removing a pass that shows nothing". It is
+ * removing the star's shadow, which shows nothing, **and** the cabin's corner
+ * darkening, which shows plenty — and the second of those is a look decision
+ * rather than a saving. The canonical sheet is where it is taken: the whole
+ * frame moves about 1% of its pixels past 24/255, against a same-build control
+ * of 0.00–0.02%. Keeping the ambient occlusion in open space leaves the frame
+ * at roughly 57 fps at the principal's 2x, which is why the two are gated
+ * together rather than separately.
  *
  * ## Why apparent size, and not the two obvious alternatives
  *
@@ -419,13 +432,23 @@ export const OCCLUSION = {
 	/**
 	 * #241's gate — the two thresholds and the two frame counts.
 	 *
-	 * **The radii are a reading off the approach ladder, not a choice.**
-	 * `scripts/probe-occlusion.mjs` flies 20, 12, 8, 5, 2 and 1 station radii
-	 * and prints what the pair darkens at each on a threshold-free column; the
-	 * open threshold is set one rung earlier than the first rung where it moves
-	 * the frame, and the probe bounds it. A figure picked here rather than read
-	 * there would be the thing `CLAUDE.md` calls a prediction that reads as a
-	 * measurement.
+	 * **The two radii are not derived, and saying so is the point.**
+	 * `scripts/probe-occlusion.mjs` flies 20, 12, 8, 5, 3, 2 and 1.5 station
+	 * radii and prints what the pair darkens at each on a threshold-free
+	 * world-only column. What a run reports, in percent of the frame: 0.03,
+	 * 0.07, 0.18, 0.55, 1.51, 3.26, 5.64. **There is no cliff on that curve** —
+	 * a distant station is a small disc and the pass still darkens it — so there
+	 * is no onset a threshold can be read off, and an earlier revision of this
+	 * comment claimed there was one and that the probe bounded it. It does not.
+	 * The probe checks the curve's *shape*: that the contribution rises, that
+	 * the gate follows it in one direction only, and that it opens while the
+	 * station is still outside its own silhouette, which is what makes
+	 * `berth-arrival` a frame the passes are already on for.
+	 *
+	 * At these figures the gate opens between three radii and two — 1.51% of the
+	 * frame against 3.26%. **Where it belongs on that curve is the principal's,
+	 * off the printed ladder and the canonical sheet**, and moving it is one
+	 * number here and a probe re-run.
 	 *
 	 * In radians of apparent radius, which is what `enclosure` returns. For
 	 * scale: a station five silhouette radii off subtends 0.201, two radii

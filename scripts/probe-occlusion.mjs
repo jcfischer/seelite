@@ -165,13 +165,22 @@ const compare = (page, mode) =>
 			// view, the player hull in chase — so the pair's whole-frame reading
 			// never falls to zero however far the station is: 4.6% at twenty radii
 			// in cockpit and 0.58% in chase, both of them the near subject rather
-			// than the station. Hiding the two roots leaves what actually moves
-			// across the rungs. #233 needed the same column for the same reason.
+			// than the station. #233 needed the same column for the same reason.
+			//
+			// **The two roots' own `visible` cannot be used, and the first version
+			// of this did.** `Game.render` writes `shipMesh.visible = view ===
+			// "chase"` and `cockpit.mesh.visible = view === "cockpit"` on every
+			// frame, and `frame()` below renders — so a flag set here was restored
+			// before the pixels it was meant to change were read, and the ladder
+			// reported hull occlusion as station evidence. Their *children* are
+			// nothing `render` touches, so that is where the hiding goes.
 			if (how === "world-only")
 				for (const root of [game.shipMesh, game.cockpit.mesh]) {
 					if (!root) continue;
-					hidden.push([root, root.visible]);
-					root.visible = false;
+					for (const child of root.children) {
+						hidden.push([child, child.visible]);
+						child.visible = false;
+					}
 				}
 
 			game.setOcclusion(false, false);
@@ -334,10 +343,16 @@ const coldBootAt = async (quality) => {
 			// #201's boot bug twice would go green on a build that had lost the
 			// row entirely. What is being asked here is whether the *stored*
 			// preference reached the constructor; whether the gate then lets it
-			// draw is the two rows further down.
+			// draw is the row after.
 			castShadow: game.occlusionState.wanted.shadows,
 			ao: game.occlusionState.wanted.ao,
 			gateOpen: game.occlusionState.open,
+			// And the two flags themselves, which is what that next row needs.
+			// Asserting the gate's own boolean would pass on a build whose
+			// `applyOcclusion` had dropped the gate from its conjunction — the
+			// gate would read shut and both passes would draw.
+			drawnShadow: !!game.nearScene.getObjectByName("sun")?.castShadow,
+			drawnAo: game.gtaoPass?.enabled ?? null,
 		};
 	});
 	await reader.close();
@@ -386,8 +401,10 @@ t.check(
  */
 t.check(
 	"a high boot in open space still draws neither pass",
-	coldHigh.gateOpen === false,
-	`gate open ${coldHigh.gateOpen} at the arrival point`,
+	coldHigh.gateOpen === false &&
+		coldHigh.drawnShadow === false &&
+		coldHigh.drawnAo === false,
+	`gate open ${coldHigh.gateOpen} at the arrival point, drawing shadow ${coldHigh.drawnShadow} and ao ${coldHigh.drawnAo}`,
 );
 
 // ---- the exterior framing: the hull in front, the station beyond ----
@@ -538,11 +555,18 @@ await settleFrames(page);
  * is a canonical view captured mid-traversal, so this is also the row that says
  * nothing pops on during it.
  */
-const bayGate = await page.evaluate(() => window.__seelite.occlusionState);
+const bayGate = await page.evaluate(() => {
+	const game = window.__seelite;
+	return {
+		...game.occlusionState,
+		drawnShadow: !!game.nearScene.getObjectByName("sun")?.castShadow,
+		drawnAo: game.gtaoPass?.enabled ?? null,
+	};
+});
 t.check(
 	"the gate is open inside a bay, which is where the pair earns its cost",
-	bayGate.open,
-	`gate ${bayGate.open ? "open" : "shut"}, enclosure ${bayGate.enclosureRad.toFixed(3)} rad`,
+	bayGate.open && bayGate.drawnShadow && bayGate.drawnAo,
+	`gate ${bayGate.open ? "open" : "shut"}, enclosure ${bayGate.enclosureRad.toFixed(3)} rad, drawing shadow ${bayGate.drawnShadow} and ao ${bayGate.drawnAo}`,
 );
 
 const bay = await compare(page, "normal");

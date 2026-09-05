@@ -104,12 +104,17 @@ const BLOCKS = 12;
  * after sixty frames of load and the other's began cold. Same sign in both
  * framings.
  */
-const block = (page, shadows, ao, warm = 1) =>
+const timed = (page, shadows, ao, warm = 1) =>
 	page.evaluate(
 		([sh, a, frames, warmFrames]) => {
 			const g = window.__seelite;
 			const gl = g.renderer.getContext();
-			g.setOcclusion(sh, a);
+			// `null` is the shipped arm: a bare call gives the gate back, an
+			// explicit pair pins past it. One implementation for all three rows,
+			// because a second copy of the warm-up and the drain is exactly how
+			// two arms of one comparison come to differ.
+			if (sh === null) g.setOcclusion();
+			else g.setOcclusion(sh, a);
 			for (let i = 0; i < warmFrames; i++) g.render(0);
 			const sync = new Uint8Array(4);
 			const started = performance.now();
@@ -117,10 +122,18 @@ const block = (page, shadows, ao, warm = 1) =>
 			// Drain: `readPixels` blocks until everything queued has been drawn.
 			// `gl.finish` does not reliably do so through ANGLE.
 			gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, sync);
-			return (performance.now() - started) / frames;
+			return {
+				ms: (performance.now() - started) / frames,
+				open: g.occlusionState.open,
+				drawnShadow: !!g.nearScene.getObjectByName("sun")?.castShadow,
+				drawnAo: g.gtaoPass?.enabled ?? null,
+			};
 		},
 		[shadows, ao, FRAMES, warm],
 	);
+
+const block = (page, shadows, ao, warm = 1) =>
+	timed(page, shadows, ao, warm).then((r) => r.ms);
 
 const origin = await guardedOrigin(ORIGIN, [
 	"src/main.ts",
@@ -187,28 +200,7 @@ console.log(
 const SAMPLE_ARMS = [0, 2];
 const SHIPPED_BLOCKS = 5;
 const SHIPPED_WARM = 60;
-const shipped = (page) =>
-	page.evaluate(
-		([frames, warm]) => {
-			const g = window.__seelite;
-			const gl = g.renderer.getContext();
-			// Bare, so the gate decides — an explicit pair would measure the pin.
-			g.setOcclusion();
-			// Enough frames for the gate to have settled either way before the clock
-			// starts: `openFrames` is small and `closeFrames` is thirty. The two rows
-			// this is compared against are given the same count.
-			for (let i = 0; i < warm; i++) g.render(0);
-			const sync = new Uint8Array(4);
-			const started = performance.now();
-			for (let i = 0; i < frames; i++) g.render(0);
-			gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, sync);
-			return {
-				ms: (performance.now() - started) / frames,
-				open: g.occlusionState.open,
-			};
-		},
-		[FRAMES, SHIPPED_WARM],
-	);
+const shipped = (page) => timed(page, null, null, SHIPPED_WARM);
 
 const grantedSampleCount = (page) =>
 	page.evaluate(() => {

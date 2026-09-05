@@ -300,8 +300,14 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   guard it; it makes the probe throw before it starts.
 - **The occlusion passes are gated on enclosure, and a frame-cost claim owes
   the antialias arm.** #241. The pair doubles the open-space frame — 3.740 ms
-  to 7.303 at the default sample count — and darkens 0.002% of it; in a bay it
-  darkens 6.06% and costs 8%. So `stepOcclusionGate` in `src/occlusion.ts`
+  to 7.303 at the default sample count. **What it buys there is two answers, not
+  one:** the *shadow* darkens 0.002–0.003% of an exterior frame and 6.06% of a
+  bay's, while the *ambient occlusion* darkens 22.5% of a `cockpit-arrival`
+  frame, almost all of it the cabin's own corners. So gating open space removes
+  a shadow that shows nothing **and** a cabin term that shows plenty, and the
+  second is a look decision on the sheet rather than a free saving. Quoting the
+  shadow's figure for the pair is a mistake this file made for a round.
+  `stepOcclusionGate` in `src/occlusion.ts`
   decides per frame whether either pass draws, from the apparent size of the
   nearest admitted **station**. Neither the cabin nor the hull is a subject for
   it, and that is the point rather than an omission: the cabin is visible in
@@ -319,8 +325,12 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   `cockpit-arrival` frame. In chase the same reading is 0.58%, which is the
   player hull. There is always a subject at a fixed distance from the camera, so
   `probe-occlusion.mjs`'s `compare` has a `world-only` mode that hides both
-  roots — #233 needed the same column for the same reason. And even world-only
-  there is **no cliff**: 0.57% at twenty radii rising smoothly to 15.5% at one
+  roots — #233 needed the same column for the same reason, and **hiding them is
+  not setting `visible` on the two roots**, because `render` rewrites both flags
+  from the view on every frame; their children are what the mode hides. Getting
+  that wrong left the hull in every ladder capture and inflated the far end
+  twentyfold, 0.58% against the 0.03% it actually reads. And even world-only
+  there is **no cliff**: 0.03% at twenty radii rising smoothly to 5.64% at one
   and a half. The probe checks the curve's shape and the threshold is the
   principal's, off the printed ladder.
 - **Multisampling the composer is the most expensive thing in this renderer.**
