@@ -158,6 +158,39 @@ test("drive travel excludes passive carry after a proximity stop", () => {
 	expect(length(step.pos)).toBeGreaterThan(step.travelledKm);
 });
 
+test("post-stop carry sweeps a second body's surface", () => {
+	const crossing: Mass = {
+		id: "crossing",
+		pos: v3(0, -30, 0),
+		radiusKm: 10,
+		vel: v3(0, 600, 0),
+	};
+	const second: Mass = {
+		id: "second",
+		pos: v3(0, 40.5, 0),
+		radiusKm: 0.1,
+	};
+	const step = advanceCruise({
+		pos: v3(),
+		nose: v3(1, 0, 0),
+		throttle: 0,
+		dt: 0.1,
+		masses: [crossing, second],
+		target: null,
+		params: CONSTANT_CRUISE,
+		targetParentId: null,
+	});
+	const crossingEnd = add(crossing.pos, scale(crossing.vel!, 0.1));
+	expect(step.exit).toBe("proximity");
+	expect(step.exitBodyId).toBe("second");
+	expect(length(sub(step.pos, second.pos))).toBeGreaterThanOrEqual(
+		second.radiusKm,
+	);
+	expect(length(sub(step.pos, crossingEnd))).toBeGreaterThanOrEqual(
+		crossing.radiusKm,
+	);
+});
+
 test("relative sweep catches a body crossing between both endpoint samples", () => {
 	const body: Mass = {
 		id: "crossing",

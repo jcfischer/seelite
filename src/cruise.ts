@@ -779,12 +779,14 @@ function guardStopTime(
 	frameDt: number,
 	m: Mass,
 	targetParentId: string | null | undefined,
+	surfaceOnly = false,
 ): number | null {
 	// #30: the host guards at an absolute standoff, everything else at the
 	// proportional shell. See `SURFACE_MARGIN` and `HOST_CLEARANCE_KM` above for
 	// why, and `in-system-travel.md` §12.1 for what it cost and bought.
-	const guardKm =
-		m.id === targetParentId
+	const guardKm = surfaceOnly
+		? m.radiusKm
+		: m.id === targetParentId
 			? m.radiusKm + HOST_CLEARANCE_KM
 			: m.radiusKm * SURFACE_MARGIN;
 	const centre = motionPosition(m, elapsed);
@@ -842,26 +844,63 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 		...(exitBodyId !== undefined ? { exitBodyId } : {}),
 		...over,
 	});
-	const finishArrival = (carry: Vec3) => {
+	const earliestGuardStop = (
+		velocity: Vec3,
+		activeBodyId?: string,
+		settled = new Set<string>(),
+	): { time: number; body: Mass } | null => {
 		const elapsed = input.dt - remaining;
-		let stopTime: number | null = null;
-		let blocker: Mass | null = null;
+		let earliest: { time: number; body: Mass } | null = null;
 		for (const mass of input.masses) {
-			const candidate = guardStopTime(
+			// Co-moving with the active blocker is the constraint already being
+			// honoured. Re-testing it would report the boundary at time zero.
+			if (mass.id === activeBodyId) continue;
+			const time = guardStopTime(
 				pos,
-				carry,
+				velocity,
 				remaining,
 				elapsed,
 				input.dt,
 				mass,
 				input.targetParentId,
+				// Guard shells can overlap even when the bodies do not. Once a body
+				// has already stopped this carry chain, preserve its true surface
+				// while allowing a later blocker to determine the safe final frame.
+				settled.has(mass.id),
 			);
-			if (candidate === null || (stopTime !== null && candidate > stopTime))
-				continue;
-			stopTime = candidate;
-			blocker = mass;
+			if (time === null || (earliest && time > earliest.time)) continue;
+			earliest = { time, body: mass };
 		}
-		const targetCarryTime = stopTime ?? remaining;
+		return earliest;
+	};
+	const finishProximity = (initialBlocker: Mass) => {
+		dropped = true;
+		exit = "proximity";
+		const settled = new Set<string>();
+		let blocker = initialBlocker;
+		while (remaining > 0) {
+			settled.add(blocker.id);
+			exitBodyId = blocker.id;
+			const carry = blocker.vel ?? { x: 0, y: 0, z: 0 };
+			const next = earliestGuardStop(carry, blocker.id, settled);
+			const duration = next?.time ?? remaining;
+			input.onSegment?.({
+				from: pos,
+				velocity: carry,
+				elapsed: input.dt - remaining,
+				duration,
+				powered: false,
+			});
+			pos = add(pos, scale(carry, duration));
+			remaining = Math.max(0, remaining - duration);
+			if (!next) break;
+			blocker = next.body;
+		}
+	};
+	const finishArrival = (carry: Vec3) => {
+		const elapsed = input.dt - remaining;
+		const blocker = earliestGuardStop(carry);
+		const targetCarryTime = blocker?.time ?? remaining;
 		input.onSegment?.({
 			from: pos,
 			velocity: carry,
@@ -873,21 +912,11 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 		remaining = Math.max(0, remaining - targetCarryTime);
 		dropped = true;
 		if (blocker) {
-			exit = "proximity";
-			exitBodyId = blocker.id;
-			const blockerCarry = blocker.vel ?? { x: 0, y: 0, z: 0 };
-			input.onSegment?.({
-				from: pos,
-				velocity: blockerCarry,
-				elapsed: input.dt - remaining,
-				duration: remaining,
-				powered: false,
-			});
-			pos = add(pos, scale(blockerCarry, remaining));
+			finishProximity(blocker.body);
 		} else {
 			exit = "arrival";
+			remaining = 0;
 		}
-		remaining = 0;
 	};
 
 	while (remaining > 0 && !dropped && (substeps < MAX_SUBSTEPS || starved)) {
@@ -1036,21 +1065,7 @@ export function advanceCruise(input: CruiseInput): CruiseStep {
 		}
 
 		if (event?.exit === "proximity") {
-			dropped = true;
-			exit = "proximity";
-			exitBodyId = event.body!.id;
-			// Cruise has ended.  Preserve the stop point in the blocker's frame
-			// through the part of this render frame that the drive did not consume.
-			const carry = event.body!.vel ?? { x: 0, y: 0, z: 0 };
-			input.onSegment?.({
-				from: pos,
-				velocity: carry,
-				elapsed: input.dt - remaining,
-				duration: remaining,
-				powered: false,
-			});
-			pos = add(pos, scale(carry, remaining));
-			remaining = 0;
+			finishProximity(event.body!);
 			break;
 		}
 		if (event?.exit === "arrival") {
