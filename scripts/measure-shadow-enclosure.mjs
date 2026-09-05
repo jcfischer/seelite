@@ -229,11 +229,23 @@ const differences = (page, order) =>
 			const sunIntensity = sun.intensity;
 			const taken = {};
 			let texelKm = 0;
+			let armed = null;
 			for (const arm of arms) {
 				if (arm === "base") taken.base = frame(false, false);
 				if (arm === "control") taken.control = frame(false, false);
 				if (arm === "shadow") {
 					taken.shadow = frame(true, false);
+					// **Was the shadow still armed when the frame was read?** #201's
+					// `fitShadowCamera` has an unreachable idle restore: a frame with
+					// no near-layer subject sets `castShadow = false` and raises
+					// `shadowSunIdle`, and from the next frame the method's own first
+					// guard returns before the restore can run. `frame()` renders
+					// twice, so a rung whose first render goes idle is *read* on a
+					// frame with no shadow at all — and `shadowTexelKm` keeps its
+					// previous value, so the box texel printed beside it is stale.
+					// Both would look exactly like a rung where the shadow correctly
+					// drew nothing. This is what tells the two apart.
+					armed = !!game.nearScene.getObjectByName("sun")?.castShadow;
 					// **Read here and not at the end.** `shadowTexelKm` is whatever the
 					// last fit wrote, and two of the arms below change what the box is
 					// fitted to. Read after any other arm it could describe a different
@@ -323,6 +335,7 @@ const differences = (page, order) =>
 				ao: against(taken.ao),
 				bright: scan(taken.brightBase, taken.brightShadow),
 				texelKm,
+				armed,
 			};
 		},
 		[order, BRIGHT],
@@ -502,6 +515,9 @@ for (const rung of RUNGS) {
 			// when the box happens to hold a caster and a lit receiver, and
 			// `shadowBox`'s admission rule decides that per frame.
 			texelKm: median(samples.map((x) => x.texelKm)),
+			// Every repeat, not a median: a rung that disarms on some repeats and
+			// not others is a different animal from one that never arms.
+			armed: samples.map((x) => x.armed),
 			shadowSpread: of("shadow", "darkerPct"),
 		};
 		rows.push(row);
@@ -514,7 +530,13 @@ for (const rung of RUNGS) {
 				row.bright,
 			)}  ${row.brightMean.toFixed(4).padStart(8)}  ${row.brightDeepest
 				.toFixed(1)
-				.padStart(6)}  ${(row.texelKm * 1000).toFixed(1).padStart(6)} m`,
+				.padStart(6)}  ${(row.texelKm * 1000).toFixed(1).padStart(6)} m  ${
+				row.armed.every(Boolean)
+					? "armed"
+					: row.armed.some(Boolean)
+						? "PARTLY DISARMED"
+						: "DISARMED"
+			}`,
 		);
 	}
 	await unfreeze(page);
