@@ -353,6 +353,46 @@ const idle = await page.evaluate(() => {
  * 0.000% along one flight. The `high` figure is printed rather than asserted so
  * that a fix reddens nothing here and shows up as a changed number.
  */
+/**
+ * **An occlusion toggle does move the shadow, and this measures it.**
+ *
+ * `setOcclusion` re-reads both terms from their owners, so the `ao` row's
+ * subscription rewrites `castShadow` from the *lighting* row on its way past.
+ * In every ordinary state that is what keeps the two rows agreeing. In the idle
+ * state it is the only way the shadow comes back at all, so at high lighting an
+ * occlusion toggle resurrects it — unfitted.
+ *
+ * The PR claimed the rows could not disagree about the shadow. They can, and a
+ * check that asserted only the `ao` half could not have said so. This is the
+ * cross-row effect stated as a measurement, on #233's account.
+ */
+const resurrect = await page.evaluate(() => {
+	const game = window.__seelite;
+	const kept = {
+		quality: game.settings.value.quality,
+		ao: game.settings.value.ao,
+	};
+	const light = () => game.nearScene.getObjectByName("sun");
+	game.settings.set("quality", "high");
+	game.render(0);
+	light().castShadow = false;
+	game.shadowSunIdle = true;
+	game.render(0);
+	const beforeToggle = !!light()?.castShadow;
+	game.settings.set("ao", game.settings.value.ao === "on" ? "off" : "on");
+	game.render(0);
+	const afterToggle = !!light()?.castShadow;
+	game.settings.set("quality", kept.quality);
+	game.settings.set("ao", kept.ao);
+	game.render(0);
+	return { beforeToggle, afterToggle };
+});
+t.check(
+	"an occlusion toggle brings an idled shadow back at high lighting — the coupling #233 owns",
+	resurrect.beforeToggle === false && resurrect.afterToggle === true,
+	`castShadow ${resurrect.beforeToggle} before the toggle, ${resurrect.afterToggle} after`,
+);
+
 t.check(
 	"a raised idle flag cannot give the shadow back to a player on low lighting",
 	idle.low === false,

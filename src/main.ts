@@ -2083,9 +2083,23 @@ class Game {
 			if (next.antialias !== applied.antialias) this.setComposerSamples();
 			if (next.dither !== applied.dither)
 				this.outputPass.setDither(next.dither === "on");
-			// #201's occlusion, on its own row. `setOcclusion` re-reads both
-			// terms from their owners rather than taking this one, so a quality
-			// change and an occlusion change cannot disagree about the shadow.
+			// #201's occlusion, on its own row. `setOcclusion` re-reads **both**
+			// terms from their owners rather than taking the one that changed —
+			// which keeps the two rows from disagreeing in every ordinary state,
+			// and has one consequence worth naming rather than denying.
+			//
+			// In the idle state — `castShadow` false with `shadowSunIdle`
+			// raised, which `fitShadowCamera` cannot get out of on its own —
+			// this call is the *only* way the shadow comes back. So at high
+			// lighting an occlusion toggle resurrects it, unfitted. An earlier
+			// version of this comment said the two rows could not disagree about
+			// the shadow, which review refused: they can, here.
+			//
+			// It is not repaired here because the fault is the unreachable
+			// restore rather than this line — node #233 owns both — and a fix
+			// that stopped this call writing `castShadow` would leave the idle
+			// state with no way out at all. `probe-occlusion.mjs` measures the
+			// resurrection rather than asserting it away.
 			if (next.ao !== applied.ao) this.setOcclusion();
 			applied = next;
 		});
