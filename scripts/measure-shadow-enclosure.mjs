@@ -245,8 +245,11 @@ const differences = (page, order) =>
 				// shadow of 0.4 of a code reads as exactly nothing — and the whole
 				// question is whether more light would reveal it. Rather than argue
 				// about quantisation, scale the sun by `BRIGHT` and measure again. A
-				// rung that stays at zero with ten times the sun has no receiver; one
-				// that lights up had a shadow under the readback all along.
+				// rung that lights up had a shadow under the readback all along; one
+				// that does not is **bounded, not proved empty** — `BRIGHT` says
+				// what the bound is worth. This comment claimed physical absence for
+				// three review rounds: corrected once in the docstring and left
+				// standing here and in the row note, twice over.
 				if (arm === "bright") {
 					sun.intensity = sunIntensity * bright;
 					taken.brightBase = frame(false, false);
@@ -263,16 +266,30 @@ const differences = (page, order) =>
 			// their own copy of the loop and the `delta < -2` cut, so a change to
 			// the threshold or to what is counted had to be made three times and
 			// kept aligned by hand.
-			const scan = (before, after) => {
-				if (!before || !after)
+			// **The base frame's luma is computed once and reused.** Three of the
+			// four arms difference against the same baseline, so recomputing its
+			// luma per arm evaluated it four times over 1.3 million pixels for
+			// every one of 120 samples. The `bright` arm has its own baseline and
+			// pays for one more.
+			const lumaOf = (d) => {
+				const out = new Float32Array(d.length / 4);
+				for (let i = 0, j = 0; i < d.length; i += 4, j++)
+					out[j] = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+				return out;
+			};
+			const scanAgainst = (beforeLuma, after) => {
+				if (!beforeLuma || !after)
 					return { darkerPct: null, meanAbs: null, deepest: null };
 				let darker = 0;
 				let deepest = 0;
 				let sum = 0;
-				let pixels = 0;
-				for (let i = 0; i < before.length; i += 4) {
-					pixels++;
-					const delta = luma(after, i) - luma(before, i);
+				const pixels = beforeLuma.length;
+				for (let i = 0, j = 0; j < pixels; i += 4, j++) {
+					const delta =
+						0.2126 * after[i] +
+						0.7152 * after[i + 1] +
+						0.0722 * after[i + 2] -
+						beforeLuma[j];
 					sum += Math.abs(delta);
 					if (delta < -2) darker++;
 					if (-delta > deepest) deepest = -delta;
@@ -283,6 +300,11 @@ const differences = (page, order) =>
 					deepest,
 				};
 			};
+			const baseLuma = lumaOf(taken.base);
+			const scan = (before, after) =>
+				before === taken.base
+					? scanAgainst(baseLuma, after)
+					: scanAgainst(before ? lumaOf(before) : null, after);
 			const against = (later) => scan(taken.base, later);
 			return {
 				control: against(taken.control),
@@ -346,6 +368,14 @@ console.log(
 );
 console.log("");
 console.log(
+	"  `control` is the baseline differenced against a second baseline — the noise",
+);
+console.log(
+	"  floor. A shadow reading at or under it is not a reading. It is printed and",
+);
+console.log("  not merely computed, so a rerun can show the floor it cleared.");
+console.log("");
+console.log(
 	"  `AO resp` is the ambient occlusion's own coverage on the same frame — a",
 );
 console.log(
@@ -357,7 +387,7 @@ console.log(
 console.log("  is the journey itself; nothing is concluded from this column.");
 console.log("");
 console.log(
-	`  rung                            AO resp     shadow   mean|d|   sun x${BRIGHT}  bright|d|  box texel`,
+	`  rung                            AO resp     shadow    control   mean|d|   sun x${BRIGHT}  bright|d|  box texel`,
 );
 
 const rows = [];
@@ -410,8 +440,9 @@ for (const rung of RUNGS) {
 			// surface at luma 60 moves 1.8 codes and is invisible to the
 			// percentage columns while being perfectly real. A row reading
 			// 0.000% with a non-zero mean is a shadow that more light would
-			// reveal; a row where both are zero has no receiver at all, and no
-			// change to the rig reaches it.
+			// reveal. A row where both are zero is **bounded and not empty**: this
+			// cut ignores positive deltas and applies no threshold to the mean, so
+			// it excludes a visible shadow and not a physical one.
 			shadowMean: median(samples.map((x) => x.shadow.meanAbs)),
 			// What the box was fitted to on the frame just drawn. The
 			// non-monotone rows are not explicable without it: a shadow appears
@@ -421,13 +452,12 @@ for (const rung of RUNGS) {
 			shadowSpread: of("shadow", "darkerPct"),
 		};
 		rows.push(row);
-		// A shadow at or under the control is not a reading, so the last column says
 		const pct = (v) =>
 			v === null ? "     -  " : `${v.toFixed(3).padStart(7)}%`;
 		console.log(
 			`  ${row.label.padEnd(32)} ${row.ao.toFixed(2).padStart(7)}%  ${pct(
 				row.shadow,
-			)}  ${row.shadowMean.toFixed(4).padStart(7)}  ${pct(
+			)}  ${pct(row.control)}  ${row.shadowMean.toFixed(4).padStart(7)}  ${pct(
 				row.bright,
 			)}  ${row.brightMean.toFixed(4).padStart(8)}  ${(row.texelKm * 1000)
 				.toFixed(1)
