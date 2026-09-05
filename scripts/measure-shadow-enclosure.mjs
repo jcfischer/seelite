@@ -85,11 +85,7 @@
  */
 import { GAME_TIME_S, SEED, VIEWPORT } from "./lib/view-set.mjs";
 import { median, seededShuffler } from "./lib/measurement.mjs";
-import {
-	installViewFraming,
-	setView,
-	settleFrames,
-} from "./lib/view-placement.mjs";
+import { installViewFraming, setView } from "./lib/view-placement.mjs";
 import {
 	bootedGame,
 	guardedOrigin,
@@ -117,11 +113,16 @@ const REPEATS = 5;
  * read of an eight-bit canvas, so it cannot prove physical absence — a grazing
  * receiver taking a sliver of the sun can stay under the cut at any multiplier,
  * and saying otherwise was this file's claim for a round and was wrong twice in
- * the same shape. What it *does* establish is a bound, and the bound is tight
- * enough to decide with: a rung reading zero here has, at ten times the sun, no
- * pixel moved by more than 2/255 and a mean absolute change under half a code.
- * Whatever is there is at least fifty times smaller than the effect the node
- * wants. Report the bound; do not call it emptiness.
+ * the same shape. **And a zero in the coverage column establishes less than I
+ * claimed here for two rounds.** Coverage counts pixels past the cut, so one
+ * pixel darkening by a hundred codes still reads 0.000% at 1.3 million pixels,
+ * and every pixel darkening by exactly one code reads 0.000% with a mean of 1.
+ * It cannot bound what any individual pixel did.
+ *
+ * What bounds that is the `deepest` column beside it, which is why this arm
+ * prints one. Read the two together: coverage says how much of the frame moved
+ * past visibility, `deepest` says how far the worst pixel moved, and only both
+ * at zero is nothing happening.
  */
 const BRIGHT = 10;
 
@@ -260,8 +261,17 @@ const differences = (page, order) =>
 			game.setOcclusion();
 			game.outputPass.setDither(dither === "on");
 
-			const luma = (d, i) =>
-				0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+			// **Integer weights, and the cut compared against an integer.** The
+			// weights sum to 10000, so this is Rec.709 luma in ten-thousandths of
+			// a code and every value is exact. In floating point the same
+			// arithmetic put [100,120,140] darkening to [98,118,138] at
+			// -2.000000000000014, so an exactly-two-code reduction fell on the
+			// wrong side of `< -2` — at the boundary the whole measurement lives
+			// on. Float64 did not fix that and could not; the weights themselves
+			// are not representable.
+			const luma = (d, i) => 2126 * d[i] + 7152 * d[i + 1] + 722 * d[i + 2];
+			/** Two codes, in the same ten-thousandths. */
+			const CUT = -20000;
 			// **One scan, three callers.** The three delta helpers each carried
 			// their own copy of the loop and the `delta < -2` cut, so a change to
 			// the threshold or to what is counted had to be made three times and
@@ -290,13 +300,15 @@ const differences = (page, order) =>
 				for (let i = 0, j = 0; j < pixels; i += 4, j++) {
 					const delta = luma(after, i) - beforeLuma[j];
 					sum += Math.abs(delta);
-					if (delta < -2) darker++;
+					if (delta < CUT) darker++;
 					if (-delta > deepest) deepest = -delta;
 				}
 				return {
 					darkerPct: (100 * darker) / pixels,
-					meanAbs: sum / pixels,
-					deepest,
+					// Back into codes for the report; the scan carries
+					// ten-thousandths so the comparison above can be exact.
+					meanAbs: sum / pixels / 10000,
+					deepest: deepest / 10000,
 				};
 			};
 			const baseLuma = lumaOf(taken.base);
@@ -342,6 +354,26 @@ const rig = await page.evaluate(() => {
 		environment: near.environmentIntensity ?? null,
 	};
 });
+
+/**
+ * Stop and restart `Game.animate`.
+ *
+ * `animationFrame` is `private` and that is erased at runtime; the whole `Game`
+ * is published as `window.__seelite`. Cancelling it leaves `render(0)` working,
+ * because every frame this instrument measures is drawn by an explicit call —
+ * what stops is the game advancing the world between those calls.
+ */
+const freeze = (page) =>
+	page.evaluate(() => {
+		const game = window.__seelite;
+		if (game.animationFrame) cancelAnimationFrame(game.animationFrame);
+		game.animationFrame = 0;
+	});
+const unfreeze = (page) =>
+	page.evaluate(() => {
+		const game = window.__seelite;
+		if (!game.animationFrame) game.animate();
+	});
 
 const ORDER_SEED = Number(process.env.ORDER_SEED ?? 20260905);
 const shuffled = seededShuffler(ORDER_SEED);
@@ -391,6 +423,20 @@ console.log(
 
 const rows = [];
 for (const rung of RUNGS) {
+	// **Frozen before the placement, not after it.** The freeze sat after
+	// `settleFrames`, and `__parkInBerth` itself awaits two animation frames
+	// once it reaches the requested fraction — so four callbacks of
+	// `Game.animate` advanced the docking traversal before anything was
+	// measured, and every rung sat at a frame-rate-dependent position past its
+	// own label. Five identical repeats confirmed that displaced position
+	// rather than the labelled one.
+	//
+	// Freezing first is safe because the placement helpers do not need the
+	// loop: `__parkInBerth` drives the traversal with explicit `step(dt)` calls
+	// and `requestAnimationFrame` still fires for anything awaiting a frame —
+	// what stops is the game re-scheduling itself, which is exactly the part
+	// that was moving the ship.
+	await freeze(page);
 	if (rung.kind === "approach") {
 		await page.evaluate(
 			([id, radii]) =>
@@ -406,30 +452,12 @@ for (const rung of RUNGS) {
 			[STATION, BERTH, rung.at],
 		);
 	}
-	await settleFrames(page);
-	// **Stop the frame loop for the whole rung**, and this is a correctness fix
-	// rather than a speed one. `stopAtArrivalFraction` stops
-	// `__parkInBerth`'s own stepping loop; it does not stop `Game.animate`,
-	// which keeps advancing the docking traversal through the settle, the view
-	// switch and every repeat. So a row labelled "50%" was measured at
-	// wherever the traversal had drifted to by then, differently in each
-	// repeat and in each view — which is both the run-to-run instability in
-	// the bay rows and a confound on any claim about *why* a shadow appears at
-	// one fraction and not another.
-	//
-	// `animationFrame` is `private` and that is erased at runtime; the whole
-	// `Game` is published as `window.__seelite`. Cancelling it leaves
-	// `render(0)` working, since every frame this instrument measures is drawn
-	// by an explicit call.
-	await page.evaluate(() => {
-		const game = window.__seelite;
-		if (game.animationFrame) cancelAnimationFrame(game.animationFrame);
-		game.animationFrame = 0;
-	});
 
 	for (const view of VIEWS) {
 		await setView(page, view);
-		await settleFrames(page);
+		// An explicit draw rather than `settleFrames`: the loop is stopped, so
+		// waiting on animation frames would wait on nothing being drawn.
+		await page.evaluate(() => window.__seelite.render(0));
 		const samples = [];
 		for (let i = 0; i < REPEATS; i++) {
 			// **`base` is always drawn first and the rest are shuffled after it.**
@@ -489,12 +517,7 @@ for (const rung of RUNGS) {
 				.padStart(6)}  ${(row.texelKm * 1000).toFixed(1).padStart(6)} m`,
 		);
 	}
-	// The loop goes back on before the next rung, which needs a running game to
-	// fly the docking computer to it.
-	await page.evaluate(() => {
-		const game = window.__seelite;
-		if (!game.animationFrame) game.animate();
-	});
+	await unfreeze(page);
 }
 
 console.log("");
