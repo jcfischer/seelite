@@ -5737,21 +5737,30 @@ class Game {
 		// Cruise can cover far more than a kilometre per frame.  Treat a waypoint
 		// as reached over the next swept frame rather than demanding an endpoint
 		// sample land on it, or a fast ship turns back and spends its charge circling.
+		let advancedWaypoint = false;
 		if (
 			length(sub(point, this.world.ship.pos)) <
 			Math.max(1_000, this.cruiseSpeedKms * dt * 2)
 		) {
-			if (detour.waypoint === 0) detour.waypoint = 1;
-			else if (detour.waypoint === 1) detour.waypoint = 2;
+			if (detour.waypoint === 0) {
+				detour.waypoint = 1;
+				advancedWaypoint = true;
+			} else if (detour.waypoint === 1) {
+				detour.waypoint = 2;
+				advancedWaypoint = true;
+			}
 		}
-		point = detour.waypoint === 2 ? target.pos : detour.waypoints[detour.waypoint];
-		// A swept waypoint reach can select a new leg this frame. Re-evaluate it
-		// before the physical cruise step so the moving guard is a backstop, not
-		// the first response to a newly closed route.
-		active = this.replanDetourLeg(detour, target, point, masses, dt);
-		if (!active) return false;
-		detour = active.detour;
-		const next = active.point;
+		let next = point;
+		if (advancedWaypoint) {
+			point = detour.waypoint === 2 ? target.pos : detour.waypoints[detour.waypoint];
+			// A swept waypoint reach can select a new leg this frame. Re-evaluate it
+			// before the physical cruise step so the moving guard is a backstop, not
+			// the first response to a newly closed route.
+			active = this.replanDetourLeg(detour, target, point, masses, dt);
+			if (!active) return false;
+			detour = active.detour;
+			next = active.point;
+		}
 		const direction = sub(next, this.world.ship.pos);
 		const distance = length(direction);
 		if (distance === 0) return true;
