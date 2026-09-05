@@ -755,16 +755,12 @@ between two endpoint samples.
 
 A proximity event ends powered travel at its event time, then carries the ship
 with the blocking body's velocity through the unconsumed part of the frame.
-Only the powered segment counts against drive charge. Normal flight receives
-that same blocking-body velocity and holds that one body's frame while the ship
-is within `NEAR_FAR_KM` of its surface. This scoped handoff matters for a giant
-whose centre is farther than `NEAR_FAR_KM`; ordinary nearest-centre frame
-selection is unchanged everywhere else, and a new cruise engagement clears the
-handoff.
-
-Here **drive charge** means §7's distinct 12 AU in-system cruise reserve. The
-term is intentional: it is not the separate 7 LY **Hyperspace tank** used for
-inter-system jumps.
+Only the powered segment is metered against §7's 12 AU in-system cruise reserve.
+Normal flight receives that same blocking-body velocity and holds that one
+body's frame while the ship is within `NEAR_FAR_KM` of its surface. This scoped
+handoff matters for a giant whose centre is farther than `NEAR_FAR_KM`; ordinary
+nearest-centre frame selection is unchanged everywhere else, and a new cruise
+engagement clears the handoff.
 
 `measure-guard-motion.ts` flies the production integrator over seeds 1–200 with
 one frame-start convention. It measures the full linear relative sweep of every
