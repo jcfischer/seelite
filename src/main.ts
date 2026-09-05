@@ -3939,7 +3939,7 @@ class Game {
 		// is not bound, and the MODE cell can only show a window that opened.
 		if (charging(this.jumpCharge) || this.jumpNotice) return this.jumpNotice;
 		if (this.spoolLeftS > 0) return "";
-		if (this.detour)
+		if (this.detour?.targetId === this.targetId)
 			return `DETOUR AROUND ${this.bodyFor(this.detour.bodyId)?.name ?? this.detour.bodyId}`;
 		if (this.regime === "cruise") return "";
 		// **The same predicate the strip's tone reads.** As `chargeAu <= 0` this
@@ -5606,7 +5606,7 @@ class Game {
 	 * one line of code.
 	 */
 	private stepCruise(dt: number, contactTargetAtFrameStart: Mass | null) {
-		this.stepDetour(dt);
+		if (!this.stepDetour(dt)) return;
 		const nose = this.nose();
 		const target = this.targetBody();
 		const targetMotion = target
@@ -5662,50 +5662,63 @@ class Game {
 	}
 
 	/** Turn toward the current internal waypoint; physical motion remains cruise. */
-	private stepDetour(dt: number) {
-		const detour = this.detour;
-		if (!detour || detour.targetId !== this.targetId) return;
+	private stepDetour(dt: number): boolean {
+		let detour = this.detour;
+		if (!detour) return true;
+		if (detour.targetId !== this.targetId) {
+			this.detour = null;
+			return true;
+		}
 		const target = this.targetBody();
 		if (!target) {
 			this.detour = null;
-			return;
+			return true;
 		}
-		const point = detour.waypoint === 2 ? target.pos : detour.waypoints[detour.waypoint];
+		let point = detour.waypoint === 2 ? target.pos : detour.waypoints[detour.waypoint];
 		// A candidate is checked against the frame-start mass snapshot, but bodies
 		// move while a long cruise leg is flown. Replan only when the *current*
 		// leg becomes obstructed: continuously rebuilding a still-safe route would
 		// chase its own waypoints forever, while waiting for `advanceCruise` would
 		// turn an avoidable second-body crossing into a safety stop.
 		const masses = this.masses();
-		const projectedMasses = masses.map((mass) => ({
-			...mass,
-			pos: mass.vel ? add(mass.pos, scale(mass.vel, dt)) : mass.pos,
-		}));
-		const blocker =
-			cruiseRouteBlocker(
+		const currentBlocker = cruiseRouteBlocker(
 			this.world.ship.pos,
 			point,
 			masses,
 			this.targetParentId(),
-			) ??
+		);
+		// Route candidates use one consistent future snapshot, even when the
+		// blocker already intersects the current leg. Planning that case at `t`
+		// while testing its next leg at `t + dt` can send the ship into a body
+		// that has already crossed the newly chosen side by the next frame.
+		const projectionS = dt;
+		const blocker =
+			currentBlocker ??
 			cruiseRouteBlocker(
 				this.world.ship.pos,
 				point,
-				projectedMasses,
+				masses,
 				this.targetParentId(),
+				dt,
 			);
 		if (blocker) {
 			const route = planCruiseDetour({
 				from: this.world.ship.pos,
 				target: target.pos,
 				blocker,
-				masses: projectedMasses,
+				masses,
 				targetParentId: this.targetParentId(),
 				previousSide: blocker.id === detour.bodyId ? detour.side : undefined,
+				projectionS,
 			});
 			if (route) {
-				this.detour = { ...route, targetId: target.id, waypoint: 0 };
-				return;
+				detour = { ...route, targetId: target.id, waypoint: 0 };
+				this.detour = detour;
+				point = detour.waypoints[0];
+			}
+			else {
+				this.dropOut(`detour unavailable: ${this.bodyFor(blocker.id)?.name ?? blocker.id}`);
+				return false;
 			}
 		}
 		// Cruise can cover far more than a kilometre per frame.  Treat a waypoint
@@ -5721,7 +5734,7 @@ class Game {
 		const next = detour.waypoint === 2 ? target.pos : detour.waypoints[detour.waypoint];
 		const direction = sub(next, this.world.ship.pos);
 		const distance = length(direction);
-		if (distance === 0) return;
+		if (distance === 0) return true;
 		const desired = new THREE.Vector3(direction.x / distance, direction.y / distance, direction.z / distance);
 		const desiredOrientation = new THREE.Quaternion().setFromUnitVectors(
 			new THREE.Vector3(0, 0, -1),
@@ -5730,8 +5743,12 @@ class Game {
 		const angle = this.orientation.angleTo(desiredOrientation);
 		this.orientation.rotateTowards(desiredOrientation, 0.6 * dt);
 		// Turning at cruise speed is bounded by the visible nose, not an invisible
-		// velocity vector. Slow while the turn is materially unfinished.
-		if (angle > 0.1) this.throttle = Math.min(this.throttle, 0.35);
+		// velocity vector. Hold translation while the turn is materially unfinished:
+		// a fractional throttle is still millions of km/s far from a planet, which
+		// can carry a nose that is visibly turning into the guard before it aligns.
+		// Manual throttle input cancels the detour before this method runs.
+		this.throttle = angle > 0.1 ? 0 : 1;
+		return true;
 	}
 
 	/**

@@ -785,13 +785,15 @@ internal waypoints on one of two deterministic sides of the blocker; it is not
 a target, arrival point, docking instruction, or general autopilot. The planner
 checks three segments per side against every relevant guard volume, retains a
 safe side across replans, and reports its bounded work. Each frame also checks
-the active leg at the current and next body snapshot; if a moving second body
-closes that leg, a fresh bounded route is selected without replacing the station.
+the active leg at the current body positions and one linear velocity projection;
+if a moving second body closes that leg, a fresh bounded route is selected
+without replacing the station.
 The real moving-body guard remains authoritative for every flown segment.
 
-The controller turns the physical nose toward each waypoint at a bounded rate;
-cruise velocity therefore agrees with the cockpit and chase view. Any keyboard
-or mouse flight input, including throttle, cancels in that same frame and never
+The controller turns the physical nose toward each waypoint at a bounded rate
+and holds translation until the material part of that turn is complete; cruise
+velocity therefore agrees with the cockpit and chase view. Any keyboard or mouse
+flight input, including throttle, cancels in that same frame and never
 auto-recaptures. While active the cockpit reads `DETOUR AROUND <body>`; no safe
 candidate ends in normal flight with an explicit reason. Charge remains distance
 metered by the cruise integrator, and normal station arrival and docking remain

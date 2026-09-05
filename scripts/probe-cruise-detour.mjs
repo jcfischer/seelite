@@ -40,6 +40,16 @@ const result = await page.evaluate(() => {
 	const speed = Math.hypot(velocity.x, velocity.y, velocity.z);
 	const nose = g.nose();
 	const alignment = speed ? (velocity.x * nose.x + velocity.y * nose.y + velocity.z * nose.z) / speed : 0;
+	const alternate = g.world.system.bodies.find((body) => body.id !== station.id);
+	if (!alternate) throw new Error("seed 19 has no alternate target fixture");
+	g.targetId = alternate.id;
+	g.step(dt);
+	const retargetCleared = g.detour === null;
+	g.resetFlightToStart();
+	g.targetId = station.id;
+	g.engageCruise();
+	for (let i = 0; i < 80 && g.regime !== "cruise"; i++) g.step(dt);
+	for (let i = 0; i < 20; i++) g.step(dt);
 	g.keys.add("d");
 	g.step(dt);
 	g.keys.delete("d");
@@ -53,13 +63,14 @@ const result = await page.evaluate(() => {
 		if (g.regime === "cruise") flew = true;
 		if (flew && g.regime === "normal") break;
 	}
-	return { stationId: station.id, active, alignment, cancelled, finalTargetId: g.targetId, finalExit: g.lastExit, finalDetour: g.detour, finalRangeKm: g.targetRange() };
+	return { stationId: station.id, active, alignment, retargetCleared, cancelled, finalTargetId: g.targetId, finalExit: g.lastExit, finalDetour: g.detour, finalRangeKm: g.targetRange() };
 });
 
 check("detour retains the selected station", result.active.detour?.targetId === result.stationId);
 check("detour has exactly two internal waypoints", result.active.detour?.waypoints?.length === 2);
 check("detour state names the blocker to the player", result.active.prompt.startsWith("DETOUR AROUND"));
 check("cruise velocity follows the visible nose", result.alignment > 0.999);
+check("changing target clears the old detour", result.retargetCleared);
 check("manual steering cancels automatic detour immediately", result.cancelled);
 check("arrival never changes the selected station", result.finalTargetId === result.stationId);
 check("detour reaches the selected station", result.finalExit === `arrived at ${result.stationId}`);

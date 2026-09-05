@@ -3,13 +3,14 @@ import { bootedGame, guardedOrigin, launchChromium, tally } from "./probe-guard.
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
 const SEEDS = Number(process.argv[3] ?? 200);
+const FIRST_SEED = Number(process.argv[4] ?? 1);
 const origin = await guardedOrigin(ORIGIN, ["src/main.ts", "src/cruise-detour.ts", "src/cruise.ts"]);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 const page = await browser.newPage({ viewport: { width: 900, height: 620 } });
 watch(page);
 const rows = [];
-for (let seed = 1; seed <= SEEDS; seed++) {
+for (let seed = FIRST_SEED; seed < FIRST_SEED + SEEDS; seed++) {
 	await page.goto(`${origin}/?seed=${seed}`);
 	await bootedGame(page);
 	const row = await page.evaluate((seed) => {
@@ -56,6 +57,7 @@ const detours = rows.filter((row) => row.detourFrames > 0).length;
 const cpuMs = rows.reduce((sum, row) => sum + row.cpuMs, 0);
 console.log(JSON.stringify({
 	seeds: SEEDS,
+	firstSeed: FIRST_SEED,
 	occludedLegs: rows.length,
 	arrivals,
 	timeouts,

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { planCruiseDetour } from "../src/cruise-detour";
+import { cruiseRouteBlocker, planCruiseDetour } from "../src/cruise-detour";
 import { type Mass } from "../src/cruise";
 import { type Vec3, v3 } from "../src/vec3";
 
@@ -43,4 +43,15 @@ test("uses a deterministic perpendicular for collinear geometry", () => {
 	const b = plan();
 	expect(a?.side).toBe(b?.side);
 	expect(a?.waypoints).toEqual(b?.waypoints);
+});
+
+test("finds a moving obstruction in a linear projection without cloning masses", () => {
+	const crossing: Mass = {
+		id: "crossing",
+		pos: v3(0, 500, 0),
+		vel: v3(0, -5_000, 0),
+		radiusKm: 100,
+	};
+	expect(cruiseRouteBlocker(from, target, [crossing], null)).toBeNull();
+	expect(cruiseRouteBlocker(from, target, [crossing], null, 0.1)?.id).toBe("crossing");
 });

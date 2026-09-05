@@ -25,6 +25,8 @@ export interface DetourInput {
 	targetParentId: string | null;
 	/** Preserve a valid side across replans rather than oscillating. */
 	previousSide?: -1 | 1;
+	/** Evaluate mass centres at this linear frame offset without cloning them. */
+	projectionS?: number;
 }
 
 const ROUTE_MARGIN_KM = 20;
@@ -41,12 +43,30 @@ const guardKm = (mass: Mass, targetParentId: string | null): number =>
 		: mass.radiusKm * SURFACE_MARGIN + ROUTE_MARGIN_KM;
 
 /** Squared distance from a finite segment to a point, without allocation. */
-function segmentDistanceKm(a: Vec3, b: Vec3, point: Vec3): number {
-	const ab = sub(b, a);
-	const abSq = dot(ab, ab);
-	if (abSq <= EPSILON) return length(sub(point, a));
-	const t = Math.max(0, Math.min(1, dot(sub(point, a), ab) / abSq));
-	return length(sub(point, add(a, scale(ab, t))));
+function segmentDistanceKm(a: Vec3, b: Vec3, px: number, py: number, pz: number): number {
+	const abx = b.x - a.x;
+	const aby = b.y - a.y;
+	const abz = b.z - a.z;
+	const abSq = abx * abx + aby * aby + abz * abz;
+	const apx = px - a.x;
+	const apy = py - a.y;
+	const apz = pz - a.z;
+	if (abSq <= EPSILON) return Math.hypot(apx, apy, apz);
+	const t = Math.max(0, Math.min(1, (apx * abx + apy * aby + apz * abz) / abSq));
+	return Math.hypot(apx - abx * t, apy - aby * t, apz - abz * t);
+}
+
+function projectedDistanceKm(a: Vec3, b: Vec3, mass: Mass, projectionS: number): number {
+	const vx = mass.vel?.x ?? 0;
+	const vy = mass.vel?.y ?? 0;
+	const vz = mass.vel?.z ?? 0;
+	return segmentDistanceKm(
+		a,
+		b,
+		mass.pos.x + vx * projectionS,
+		mass.pos.y + vy * projectionS,
+		mass.pos.z + vz * projectionS,
+	);
 }
 
 function segmentIsClear(
@@ -54,9 +74,10 @@ function segmentIsClear(
 	b: Vec3,
 	masses: readonly Mass[],
 	targetParentId: string | null,
+	projectionS = 0,
 ): boolean {
 	return masses.every((mass) =>
-		segmentDistanceKm(a, b, mass.pos) > guardKm(mass, targetParentId),
+		projectedDistanceKm(a, b, mass, projectionS) > guardKm(mass, targetParentId),
 	);
 }
 
@@ -66,10 +87,13 @@ export function cruiseRouteBlocker(
 	target: Vec3,
 	masses: readonly Mass[],
 	targetParentId: string | null,
+	projectionS = 0,
 ): Mass | null {
 	return (
 		masses.find(
-			(mass) => segmentDistanceKm(from, target, mass.pos) <= guardKm(mass, targetParentId),
+			(mass) =>
+				projectedDistanceKm(from, target, mass, projectionS) <=
+				guardKm(mass, targetParentId),
 		) ?? null
 	);
 }
@@ -90,8 +114,14 @@ function stablePerpendicular(radial: Vec3, target: Vec3, key: string): Vec3 | nu
  * finite: no search tree, no unbounded orbit following, no target replacement.
  */
 export function planCruiseDetour(input: DetourInput): DetourPlan | null {
-	const radialFrom = unit(sub(input.from, input.blocker.pos));
-	const radialTarget = unit(sub(input.target, input.blocker.pos));
+	const projectionS = input.projectionS ?? 0;
+	const blockerPos = {
+		x: input.blocker.pos.x + (input.blocker.vel?.x ?? 0) * projectionS,
+		y: input.blocker.pos.y + (input.blocker.vel?.y ?? 0) * projectionS,
+		z: input.blocker.pos.z + (input.blocker.vel?.z ?? 0) * projectionS,
+	};
+	const radialFrom = unit(sub(input.from, blockerPos));
+	const radialTarget = unit(sub(input.target, blockerPos));
 	if (!radialFrom || !radialTarget) return null;
 	const lateral = stablePerpendicular(
 		radialFrom,
@@ -110,13 +140,13 @@ export function planCruiseDetour(input: DetourInput): DetourPlan | null {
 			const entry = scale(add(radialFrom, offset), radius / Math.SQRT2);
 			const exit = scale(add(radialTarget, offset), radius / Math.SQRT2);
 			const waypoints: [Vec3, Vec3] = [
-				add(input.blocker.pos, entry),
-				add(input.blocker.pos, exit),
+				add(blockerPos, entry),
+				add(blockerPos, exit),
 			];
 			const clear =
-				segmentIsClear(input.from, waypoints[0], input.masses, input.targetParentId) &&
-				segmentIsClear(waypoints[0], waypoints[1], input.masses, input.targetParentId) &&
-				segmentIsClear(waypoints[1], input.target, input.masses, input.targetParentId);
+				segmentIsClear(input.from, waypoints[0], input.masses, input.targetParentId, projectionS) &&
+				segmentIsClear(waypoints[0], waypoints[1], input.masses, input.targetParentId, projectionS) &&
+				segmentIsClear(waypoints[1], input.target, input.masses, input.targetParentId, projectionS);
 			const score =
 				length(sub(waypoints[0], input.from)) +
 				length(sub(waypoints[1], waypoints[0])) +
