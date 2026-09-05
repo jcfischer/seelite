@@ -23,11 +23,13 @@
  */
 import { expect, test } from "bun:test";
 import {
+	CLOSED_GATE,
 	OCCLUSION,
 	SHADOW_MAP_TEXELS,
 	participatesInShadow,
 	shadowBox,
 	shadowFit,
+	stepOcclusionGate,
 	unionOfSubjects,
 } from "../src/occlusion";
 
@@ -256,4 +258,129 @@ test("a subject at the camera is always admitted", () => {
 
 test("nothing in the near layer means no box rather than a box of nothing", () => {
 	expect(shadowBox([])).toBeNull();
+});
+
+/**
+ * #241's gate — whether the two passes run at all this frame.
+ *
+ * The cost that opened the node, measured headed on an M1 Pro at 1440x900 and
+ * device scale 2, in empty space: the pair takes a 3.740 ms frame to 7.303 at
+ * the default sample count and an 11.552 ms one to 18.681 at the principal's
+ * 2x, because antialias multiplies every later fill-rate term. What it buys
+ * there is 0.003% of pixels darkened at `station-flank` and 0.002% at
+ * `cockpit-arrival`, against 6.06% in a bay.
+ *
+ * So the gate's axis is **enclosure**, and the quantity that measures it is the
+ * apparent size of the largest station in the frame — the same arithmetic
+ * `shadowBox` already admits by, one order of magnitude further up. Two drafts
+ * were rejected on paper before this one and the node records both: "any
+ * subject besides the cabin" opens at five radii where the pair shows nothing,
+ * and `DockPhase !== "flying"` fires on the aperture plane, which is well after
+ * the bay fills the canopy.
+ *
+ * The tests below are written against the exported thresholds rather than
+ * against their values, because the values are a reading off the approach
+ * ladder and the behaviour is not.
+ */
+test("a station far enough off to show no shadow does not open the gate", () => {
+	// `cockpit-arrival`'s framing: five silhouette radii down the aperture axis,
+	// where the pair is measured to darken 0.002% of the frame.
+	const station = { center: [0, 0, -5 * 0.87] as const, radiusKm: 0.87 };
+	let gate = CLOSED_GATE;
+	for (let i = 0; i < 120; i++) gate = stepOcclusionGate(gate, [station]);
+	expect(gate.open).toBe(false);
+});
+
+test("a station that fills the canopy opens the gate", () => {
+	const station = { center: [0, 0, -0.4] as const, radiusKm: 0.87 };
+	let gate = CLOSED_GATE;
+	for (let i = 0; i < OCCLUSION.gate.openFrames; i++)
+		gate = stepOcclusionGate(gate, [station]);
+	expect(gate.open).toBe(true);
+});
+
+test("nothing in the frame keeps the gate shut, which is empty space", () => {
+	let gate = CLOSED_GATE;
+	for (let i = 0; i < 120; i++) gate = stepOcclusionGate(gate, []);
+	expect(gate.open).toBe(false);
+});
+
+test("the gate opens promptly and closes slowly", () => {
+	// Asymmetric on purpose. Opening late is a visible pop on a view in the
+	// acceptance set; closing early is a pass that flickers back on.
+	expect(OCCLUSION.gate.openFrames).toBeLessThan(OCCLUSION.gate.closeFrames);
+	const inside = { center: [0, 0, 0] as const, radiusKm: 0.87 };
+	let gate = CLOSED_GATE;
+	for (let i = 1; i < OCCLUSION.gate.openFrames; i++) {
+		gate = stepOcclusionGate(gate, [inside]);
+		expect(gate.open).toBe(false);
+	}
+	gate = stepOcclusionGate(gate, [inside]);
+	expect(gate.open).toBe(true);
+	for (let i = 1; i < OCCLUSION.gate.closeFrames; i++) {
+		gate = stepOcclusionGate(gate, []);
+		expect(gate.open).toBe(true);
+	}
+	expect(stepOcclusionGate(gate, []).open).toBe(false);
+});
+
+test("a station sitting between the two thresholds does not chatter", () => {
+	// The hysteresis band. A subject whose apparent size is inside it must leave
+	// the gate in whichever state it was already in, in both directions —
+	// otherwise a station drifting across the threshold reallocates the 2048²
+	// depth target and recompiles the ambient occlusion's chain on alternate
+	// frames.
+	expect(OCCLUSION.gate.closeRad).toBeLessThan(OCCLUSION.gate.openRad);
+	const between = (OCCLUSION.gate.openRad + OCCLUSION.gate.closeRad) / 2;
+	const radiusKm = 0.87;
+	const band = {
+		center: [0, 0, -radiusKm / Math.sin(between)] as const,
+		radiusKm,
+	};
+	let shut = CLOSED_GATE;
+	for (let i = 0; i < 240; i++) shut = stepOcclusionGate(shut, [band]);
+	expect(shut.open).toBe(false);
+
+	const inside = { center: [0, 0, 0] as const, radiusKm };
+	let open = CLOSED_GATE;
+	for (let i = 0; i < OCCLUSION.gate.openFrames; i++)
+		open = stepOcclusionGate(open, [inside]);
+	expect(open.open).toBe(true);
+	for (let i = 0; i < 240; i++) open = stepOcclusionGate(open, [band]);
+	expect(open.open).toBe(true);
+});
+
+test("a single frame's dropout does not close an open gate", () => {
+	// A station leaving the near layer for one frame at the handoff hysteresis
+	// band, or a candidate list built a frame late. The consecutive count is
+	// what makes this a non-event rather than a switch.
+	const inside = { center: [0, 0, 0] as const, radiusKm: 0.87 };
+	let gate = CLOSED_GATE;
+	for (let i = 0; i < OCCLUSION.gate.openFrames; i++)
+		gate = stepOcclusionGate(gate, [inside]);
+	expect(gate.open).toBe(true);
+	gate = stepOcclusionGate(gate, []);
+	gate = stepOcclusionGate(gate, [inside]);
+	expect(gate.open).toBe(true);
+	expect(gate.pending).toBe(0);
+});
+
+test("the largest station in the frame decides, not the nearest", () => {
+	// Two subjects, and the one that opens the gate is whichever subtends more.
+	// A greeble at arm's length is not a station filling the canopy, and the
+	// rule that separates them is apparent size rather than distance.
+	const radiusKm = 0.87;
+	const looming = {
+		center: [0, 0, -radiusKm / Math.sin(OCCLUSION.gate.openRad * 1.2)] as const,
+		radiusKm,
+	};
+	const tiny = { center: [0, 0, -0.05] as const, radiusKm: 0.001 };
+	let gate = CLOSED_GATE;
+	for (let i = 0; i < OCCLUSION.gate.openFrames; i++)
+		gate = stepOcclusionGate(gate, [tiny, looming]);
+	expect(gate.open).toBe(true);
+
+	let onlyTiny = CLOSED_GATE;
+	for (let i = 0; i < 120; i++) onlyTiny = stepOcclusionGate(onlyTiny, [tiny]);
+	expect(onlyTiny.open).toBe(false);
 });

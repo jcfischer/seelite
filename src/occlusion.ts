@@ -226,6 +226,115 @@ const SHADOW_MIN_APPARENT_RAD = 0.0087;
 const SHADOW_UNION_LIMIT = 4;
 
 /**
+ * #241's gate: whether the two passes run at all this frame.
+ *
+ * ## What it is for
+ *
+ * The pair is most expensive exactly where it shows least. Measured headed on
+ * an M1 Pro at 1440x900 and device scale 2, six shuffled blocks of 120 frames,
+ * every arm separating 36/36 against the plain frame:
+ *
+ * | framing | pair off | pair on | pair off, 2x | pair on, 2x |
+ * |---|---:|---:|---:|---:|
+ * | empty space | 3.740 ms | 7.303 | 11.552 | 18.681 |
+ * | `cockpit-arrival` | 3.784 | 7.403 | 11.650 | 18.519 |
+ * | `berth-free-look` | 38.861 | 41.909 | 48.025 | 54.228 |
+ *
+ * The pair **doubles** the open-space frame, and doubles again at the player's
+ * antialias setting because multisampling multiplies every later fill-rate term
+ * rather than adding beside it. What it buys there, from #222's own round-2
+ * reading: **0.003%** of pixels darkened at `station-flank` and **0.002%** at
+ * `cockpit-arrival`, against **6.06%** in a bay. #233 reaches the same place
+ * from the other side — in cockpit view its world-only column is 0.000% at
+ * every approach rung, so the shadow's entire output in open space is the cabin
+ * shadowing itself.
+ *
+ * ## Why apparent size, and not the two obvious alternatives
+ *
+ * Both were tried on paper and #241 records them, because each looks right.
+ *
+ * **"Any subject besides the cabin"** is the fix for the trap that
+ * `fitShadowCamera`'s existing no-subject idle path never fires: in cockpit view
+ * its only candidate is the cabin mesh, visible in every frame, so `shadowBox`
+ * always admits. But a *world* subject is admitted at `cockpit-arrival`'s five
+ * radii, where the pair darkens 0.002% and costs 6.9 ms at 2x. The approach
+ * would stay at 54 fps.
+ *
+ * **`DockPhase !== "flying"`** reads exactly like "inside a station" and is a
+ * fact about a grant rather than about what is in front of the camera. It fires
+ * on the aperture plane, and #233 measures enclosure rising sixfold *before*
+ * that plane — `berth-arrival` is a canonical view framed at the leg that
+ * leaves the lane, so the passes would pop on mid-traversal on a frame in the
+ * acceptance set.
+ *
+ * Apparent size is the axis those three pixel readings actually sit on, it is
+ * the arithmetic `shadowBox` already admits by one order of magnitude further
+ * down, and it moves in both directions.
+ *
+ * ## The cabin and the hull are not subjects for this
+ *
+ * The caller passes stations only. The cabin is what the gate exists to stop
+ * paying for, and the hull alone does not earn the pass either: #233's chase
+ * column is `mean|d|` 0.0000 at 20, 12 and 8 radii on a threshold-free
+ * measurement, so the exterior shadow there is absent rather than small.
+ */
+export type OcclusionGate = {
+	/** Whether the shadow map and the ambient occlusion draw this frame. */
+	readonly open: boolean;
+	/** How many consecutive frames have asked for the state it is not in. */
+	readonly pending: number;
+};
+
+/** The state a frame starts in: empty space, both passes idle. */
+export const CLOSED_GATE: OcclusionGate = { open: false, pending: 0 };
+
+/**
+ * How enclosed the camera is, as the largest apparent radius among the
+ * stations in the frame.
+ *
+ * The near scene is camera-relative and every camera sits at its origin
+ * (`main.ts`, `render`), so this needs no camera passed in — the same reason
+ * `shadowBox` does not take one. A camera **inside** a subject is the most
+ * enclosed it can be rather than a division to be guarded: that is the bay,
+ * which is the one framing where #222 measured the shadow reading at all.
+ */
+function enclosure(stations: readonly ShadowSubject[]): number {
+	let widest = 0;
+	for (const s of stations) {
+		const d = Math.hypot(s.center[0], s.center[1], s.center[2]);
+		const rad = d <= s.radiusKm ? Math.PI / 2 : Math.asin(s.radiusKm / d);
+		if (rad > widest) widest = rad;
+	}
+	return widest;
+}
+
+/**
+ * Advance the gate by one frame.
+ *
+ * A reducer rather than a mutable flag so the whole rule — both thresholds,
+ * both frame counts, and the band between them — is pure and testable without
+ * a renderer. `main.ts` holds the returned value and passes it back.
+ */
+export function stepOcclusionGate(
+	gate: OcclusionGate,
+	stations: readonly ShadowSubject[],
+): OcclusionGate {
+	const rad = enclosure(stations);
+	// Asymmetric by construction: an open gate is held by the *lower* threshold,
+	// so a station drifting between the two leaves the state it is in alone.
+	const wants = gate.open
+		? rad >= OCCLUSION.gate.closeRad
+		: rad >= OCCLUSION.gate.openRad;
+	if (wants === gate.open)
+		return gate.pending === 0 ? gate : { open: gate.open, pending: 0 };
+	const pending = gate.pending + 1;
+	const needed = wants ? OCCLUSION.gate.openFrames : OCCLUSION.gate.closeFrames;
+	return pending >= needed
+		? { open: wants, pending: 0 }
+		: { open: gate.open, pending };
+}
+
+/**
  * The subjects the shadow box is actually cut to, or `null` for none.
  *
  * The camera sits at the origin of the near scene — every frame places the
@@ -307,6 +416,38 @@ export function participatesInShadow(surface: SurfaceFacts): boolean {
  * whatever is in front of it.
  */
 export const OCCLUSION = {
+	/**
+	 * #241's gate — the two thresholds and the two frame counts.
+	 *
+	 * **The radii are a reading off the approach ladder, not a choice.**
+	 * `scripts/probe-occlusion.mjs` flies 20, 12, 8, 5, 2 and 1 station radii
+	 * and prints what the pair darkens at each on a threshold-free column; the
+	 * open threshold is set one rung earlier than the first rung where it moves
+	 * the frame, and the probe bounds it. A figure picked here rather than read
+	 * there would be the thing `CLAUDE.md` calls a prediction that reads as a
+	 * measurement.
+	 *
+	 * In radians of apparent radius, which is what `enclosure` returns. For
+	 * scale: a station five silhouette radii off subtends 0.201, two radii
+	 * 0.524, and a camera inside its bounding sphere is π/2 by construction.
+	 * `SHADOW_MIN_APPARENT_RAD` above is 0.0087 — this gate sits nearly two
+	 * orders of magnitude further up, because admitting a subject to a box and
+	 * paying two full-screen passes for it are different questions.
+	 *
+	 * The frame counts are asymmetric for the reason the gate is: opening late
+	 * is a visible pop on a view in the acceptance set, and closing early is a
+	 * pass that flickers back on. Turning the shadow on allocates the 2048²
+	 * depth target and turning the ambient occlusion on compiles its chain, so a
+	 * toggle is not free even where the frame it draws would be.
+	 */
+	gate: {
+		/** Shut, and rising past this opens it. */
+		openRad: 0.5,
+		/** Open, and falling below this closes it. */
+		closeRad: 0.35,
+		openFrames: 2,
+		closeFrames: 30,
+	},
 	ao: {
 		screenSpaceRadius: true,
 		/** In hundreds of drawing-buffer pixels — 25 of them at this figure. */
