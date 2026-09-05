@@ -299,9 +299,11 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   and `planet-classes.glsl.ts` in that set. Naming it in a guard list does not
   guard it; it makes the probe throw before it starts.
 - **The occlusion passes are gated on enclosure, and a frame-cost claim owes
-  the antialias arm.** #241. The pair doubles the open-space frame — 3.740 ms
-  to 7.303 at the default sample count. **What it buys there is two answers, not
-  one:** the *shadow* darkens 0.002–0.003% of an exterior frame and 6.06% of a
+  the antialias arm.** #241. The pair **doubles** the open-space frame. **The
+  figures are not restated here** — `occlusion.ts` owns the table and
+  `scripts/measure-occlusion-cost.mjs` reprints it beside a fresh run, and this
+  file already carried one copy that went stale inside a round. **What it buys
+  there is two answers, not one:** the *shadow* darkens 0.002–0.003% of an exterior frame and 6.06% of a
   bay's, while the *ambient occlusion* darkens 22.5% of a `cockpit-arrival`
   frame, almost all of it the cabin's own corners. So gating open space removes
   a shadow that shows nothing **and** a cabin term that shows plenty, and the

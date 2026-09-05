@@ -270,8 +270,8 @@ const SHADOW_UNION_LIMIT = 4;
  * `fitShadowCamera`'s existing no-subject idle path never fires: in cockpit view
  * its only candidate is the cabin mesh, visible in every frame, so `shadowBox`
  * always admits. But a *world* subject is admitted at `cockpit-arrival`'s five
- * radii, where the pair darkens 0.002% and costs 6.9 ms at 2x. The approach
- * would stay at 54 fps.
+ * radii, where the shadow darkens 0.002% and the pair costs 6.9 ms at 2x. The
+ * approach would stay at 54 fps.
  *
  * **`DockPhase !== "flying"`** reads exactly like "inside a station" and is a
  * fact about a grant rather than about what is in front of the camera. It fires

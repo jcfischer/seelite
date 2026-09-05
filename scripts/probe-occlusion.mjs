@@ -395,8 +395,10 @@ t.check(
  *
  * A boot puts the ship at the arrival point with nothing near it, and that is
  * the frame the principal reported at 40 fps: the pair doubles it and darkens
- * 0.002% of it. So a `high` boot must ask for both passes *and* draw neither
- * until something is close enough to be worth them. Without this row, a build
+ * 0.002% of it with the shadow and 22.5% with the ambient occlusion — a term
+ * the player can see, which is why the sheet and not this row is where that
+ * trade is settled. So a `high` boot must ask for both passes *and* draw
+ * neither until something is close enough to be worth them. Without this row, a build
  * whose gate was stuck open would pass every arm above.
  */
 t.check(
@@ -435,15 +437,15 @@ console.log(
 // ---- #241's approach ladder: where the pair starts to be worth its cost ----
 
 /**
- * **The gate's two thresholds are read off this ladder rather than chosen.**
+ * **What the two passes buy along the approach, printed for the principal.**
  *
- * `OCCLUSION.gate.openRad` decides when the two passes start drawing, and a
- * number picked in a docstring would be the thing `CLAUDE.md` calls a
- * prediction that reads as a measurement. So the rungs are flown, what the pair
- * darkens is measured at each on the same threshold-free arithmetic every other
- * row here uses, and the check below is that the gate is **already open** by the
- * time the pair moves the frame — one rung of margin, not zero, because a gate
- * that opens exactly when the shadow appears makes the shadow appear by opening.
+ * `OCCLUSION.gate.openRad` decides when they start drawing, and this ladder is
+ * what that number is judged against — but it does not *derive* it, and an
+ * earlier revision of this comment said it did. `occlusion.ts` carries why:
+ * there is no onset on this curve to read a threshold off. So the rungs are
+ * flown, what the pair darkens is measured at each on the same threshold-free
+ * arithmetic every other row here uses, and the rows below check the curve's
+ * shape rather than a floor.
  *
  * The rungs are in station silhouette radii down the aperture axis, which is
  * `cockpit-arrival`'s own axis: it is captured at five of them.

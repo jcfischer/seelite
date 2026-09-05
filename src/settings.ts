@@ -114,27 +114,20 @@ const SCHEMA = {
 	 * **Those figures are the pair at the default sample count, and they were
 	 * the wrong half of the question — #241.** The principal flew this build at
 	 * antialias 2x and reported empty space falling from a comfortable 60 fps to
-	 * around 40. Re-measured on the same machine, same design, three framings and
-	 * both sample counts, in milliseconds a frame:
-	 *
-	 * | framing | pair off | pair on | pair off, 2x | pair on, 2x |
-	 * |---|---|---|---|---|
-	 * | empty space | 3.740 | 7.303 | 11.552 | 18.681 |
-	 * | `cockpit-arrival` | 3.784 | 7.403 | 11.650 | 18.519 |
-	 * | `berth-free-look` | 38.861 | 41.909 | 48.025 | 54.228 |
-	 *
-	 * Two things fall out of it. **The pair doubles the open-space frame**, not
-	 * the fifth the `cockpit-arrival` reading above suggested. And
-	 * **multisampling multiplies the pair rather than adding beside it**:
-	 * +3.563 ms at 0 samples against +7.130 at 2, a factor of 2.00. A term
+	 * around 40. Re-measured, the pair **doubles** the open-space frame rather
+	 * than costing the fifth the `cockpit-arrival` reading above suggested, and
+	 * **multisampling multiplies it rather than adding beside it** — a term
 	 * priced only at the default understates a 2x player's cost by half, which
-	 * is how this shipped.
+	 * is how this shipped. What that frame buys is **two** answers, not one: the
+	 * shadow darkens a fraction of a percent of an exterior frame, the ambient
+	 * occlusion about a fifth of a cockpit one, nearly all of it the cabin's
+	 * corners.
 	 *
-	 * What that frame buys is **two** answers. The shadow darkens 0.002–0.003%
-	 * of an exterior frame; the ambient occlusion darkens 22.5% of a
-	 * `cockpit-arrival` one, nearly all of it the cabin's corners. So the gate
-	 * below trades a shadow nobody can see *and* a cabin term the player can,
-	 * and the note this row shows them says so.
+	 * **The figures themselves are not repeated here.** `occlusion.ts` owns the
+	 * table and `scripts/measure-occlusion-cost.mjs` reprints it beside what a
+	 * fresh run derives — this entry already carried two measurements that
+	 * drifted apart from each other, which is the argument the `dither` row
+	 * below makes for staying qualitative.
 	 *
 	 * So #241 put a gate in front of both passes rather than a row here: they
 	 * draw when a station is close enough to be worth them and not otherwise,
