@@ -305,15 +305,44 @@ float height(vec3 p) {
   return fbm4(p * 3.0 + seedOffset) * 0.5 - rift(p, 1.9, 0.06) * 0.4;
 }
 
-void surface(vec3 p, inout vec3 albedo, inout vec3 N,
-             inout vec3 emissive, inout float specPower, inout float specMask) {
+/*
+ * **The one static field this class has**, and #208 is why it is a function.
+ *
+ * The crack network is a pure function of position: pulse below is the only
+ * term that reads the clock. So a baked lava world stores this in a channel
+ * and recomputes the glow per frame, which is what lets the class bake at all
+ * — and the bake fragment and the baked draw program must agree about it to
+ * the bit, or the surface changes when the band is crossed. Spelled twice they
+ * drift, which is the argument landMask makes two hundred lines up.
+ *
+ * No backticks in this file's comments: the chunks are JS template literals and
+ * one would end the string.
+ */
+float lavaCrack(vec3 p) {
   float major = rift(p, 1.9, 0.055);
   float minor = rift(p, 5.2, 0.035) * 0.55;
-  float crack = clamp(major + minor, 0.0, 1.0);
+  return clamp(major + minor, 0.0, 1.0);
+}
 
-  // Convection makes the flow breathe rather than sit still.
+/**
+ * The blackbody glow, from the static crack and the clock.
+ *
+ * Deliberately over 1.0 so the bloom pass has something to catch. This is the
+ * one class visible on its own night side, and the one term #208 leaves
+ * per-frame on a baked body: convection makes the flow breathe rather than sit
+ * still, so freezing it into a texture would freeze the planet.
+ */
+vec3 lavaEmissive(vec3 p, float crack) {
   float pulse = 0.62 + 0.38 * fbm3(p * 5.0 + vec3(time * 0.06, 0.0, time * 0.04));
   float heat  = crack * pulse;
+  vec3 dull   = vec3(0.85, 0.13, 0.02);
+  vec3 bright = vec3(2.60, 1.35, 0.35);
+  return mix(dull, bright, pow(heat, 2.2)) * pow(heat, 1.6) * 1.4;
+}
+
+void surface(vec3 p, inout vec3 albedo, inout vec3 N,
+             inout vec3 emissive, inout float specPower, inout float specMask) {
+  float crack = lavaCrack(p);
 
   // Chilled basalt: almost black, and it has to be, or the glow has nothing to
   // be brighter than.
@@ -321,11 +350,7 @@ void surface(vec3 p, inout vec3 albedo, inout vec3 N,
                    fbm4(p * 7.0 + seedOffset));
   albedo = mix(crust, vec3(0.090, 0.035, 0.020), smoothstep(0.15, 0.6, crack));
 
-  // Blackbody ramp, and deliberately over 1.0 so the bloom pass has something
-  // to catch. This is the one class visible on its own night side.
-  vec3 dull   = vec3(0.85, 0.13, 0.02);
-  vec3 bright = vec3(2.60, 1.35, 0.35);
-  emissive = mix(dull, bright, pow(heat, 2.2)) * pow(heat, 1.6) * 1.4;
+  emissive = lavaEmissive(p, crack);
 
   N = reliefNormal(p, N, 2.0);
   specPower = 0.0;

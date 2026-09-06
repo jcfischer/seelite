@@ -123,6 +123,16 @@ const NOT_RESET: Record<string, string> = {
 		"a monotonic count of frames drawn since boot, read by the probes' own " +
 		"boot wait — rewinding it would make `bootedGame` wait again for a page " +
 		"that never left, and nothing in the sim reads it",
+	widestRadiusPx:
+		"#208's cube-size policy, and it is cleared at the top of the body loop " +
+		"on every frame — a reset would be writing a zero the next frame writes " +
+		"anyway, and there is no frame on which it is read before it is written",
+	widestBodyId:
+		"the other half of that policy: which body may hold the large cube pair, " +
+		"which is last frame's answer by construction. A leg that started with a " +
+		"stale id gives one body the large pair for one frame and then the right " +
+		"one; a jump clears it, because there the id names a body that no longer " +
+		"exists",
 };
 
 /**

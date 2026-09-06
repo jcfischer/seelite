@@ -393,6 +393,47 @@ try {
 					requestAnimationFrame(tick);
 				}),
 		);
+		/**
+		 * **No frame is written while a cube bake is still filling** (#208).
+		 *
+		 * A bake draws one face a frame and a system holds up to fourteen bakeable
+		 * bodies, so a capture taken three frames after a placement finds every
+		 * planet on the *procedural* program. The sheet would then show the before
+		 * build twice, `views:diff` would read 0.00%, and the honest reading of
+		 * that is "no change" — which is the one lie a before/after sheet cannot
+		 * survive, and it fails in the direction that looks like success.
+		 *
+		 * Waited on rather than driven, so the game's own loop is what advances it.
+		 * Absent on the workbench page, which constructs no `Game`.
+		 */
+		await page.waitForFunction(
+			() => (window.__seelite?.bakeQueue?.length ?? 0) === 0,
+			undefined,
+			{ timeout: 60_000 },
+		);
+		/**
+		 * And every bakeable body in the world is actually drawn from its cube.
+		 *
+		 * An empty queue says the schedule finished, not that the band chose the
+		 * cube — a planet inside two radii is procedural by design and must not
+		 * fail this. So the refusal is narrowed to bodies the band *did* put on the
+		 * baked path: it catches a body whose bake was dropped and never restarted,
+		 * which is the state a handoff bug leaves behind and the one a frame cannot
+		 * be judged in.
+		 */
+		const unbaked = await page.evaluate(() => {
+			const g = window.__seelite;
+			if (!g) return [];
+			const out = [];
+			for (const [id, visual] of g.bodyVisuals)
+				if (visual.canBake() && visual.bakedFacePx() === 0) out.push(id);
+			return out;
+		});
+		if (unbaked.length > 0)
+			throw new Error(
+				`${view.name}: ${unbaked.join(", ")} can bake and hold no cube — the ` +
+					'frame would show the procedural program under an "after" label',
+			);
 		const file = `${LABEL}/${view.name}.png`;
 		// Read at the shutter, not at the top of the run: the clock is normalised
 		// and then left to run, so each frame has its own. The sheet prints the

@@ -40,7 +40,29 @@ import {
 } from "../src/gpu-teardown";
 import { generateGalaxy } from "../src/galaxy";
 import { type PlanetAppearance, appearanceOf } from "../src/planet-appearance";
-import { buildBodyVisual, surfaceSphere } from "../src/planet-surface";
+import {
+	type BodyVisual,
+	buildBodyVisual,
+	surfaceSphere,
+} from "../src/planet-surface";
+
+/**
+ * Every cube render target a body is holding, found the way a leak would be.
+ *
+ * By walking the subtree for a baked material's `samplerCube` uniforms and
+ * mapping each back to its target through `userData.bakeCubes` — rather than
+ * by asking the handle, which would be the module reporting on itself. A target
+ * the handle forgot is a target this still finds, which is the direction that
+ * matters.
+ */
+const cubeTargetsOf = (visual: BodyVisual): THREE.WebGLCubeRenderTarget[] => {
+	const out: THREE.WebGLCubeRenderTarget[] = [];
+	visual.group.traverse((object) => {
+		for (const pair of object.userData?.bakeCubes?.() ?? [])
+			out.push(pair.albedo, pair.normal);
+	});
+	return out;
+};
 import { STATION_TYPES } from "../src/station";
 import { buildStationMesh } from "../src/station-mesh";
 import { generateContents } from "../src/system";
@@ -343,6 +365,77 @@ describe("disposeSubtree keeps what the next system needs", () => {
 				// never an empty claim.
 				expect([surface, report.kept.size > 0]).toEqual([surface, true]);
 			}
+		});
+	});
+
+	/**
+	 * **#208's cubes are freed, and nothing here can see it any other way.**
+	 *
+	 * A `WebGLCubeRenderTarget` is not one of this module's `Disposable`s — it
+	 * has no `userData` and nothing can share it — so it is outside `freed` for
+	 * exactly the reason `InstancedMesh` is, and it is watched the same way:
+	 * by listening for its own `dispose` event. That is not a stand-in for the
+	 * real claim, it *is* the claim, because the FBO a cube target owns is freed
+	 * only by the target and `disposeSubtree` frees textures.
+	 *
+	 * Two cubes per bake and two bakes when one is in flight, so the count is
+	 * what says all of them went rather than the one the material happened to be
+	 * holding.
+	 */
+	test("a body's cube targets are freed when the body is", () => {
+		withCanvasStub(() => {
+			for (const [surface, look] of APPEARANCES) {
+				const visual = buildBodyVisual(look, surfaceSphere("near"), {
+					sunColor: 0xfff0e0,
+					starTint: 0xfff0e0,
+				});
+				if (!visual.canBake()) {
+					visual.dispose();
+					continue;
+				}
+				let disposed = 0;
+				const watch = (v: BodyVisual) => {
+					for (const target of cubeTargetsOf(v)) {
+						target.addEventListener("dispose", () => {
+							disposed++;
+						});
+					}
+				};
+				// No renderer is needed to *start* a bake — the targets and the
+				// materials are allocated up front and only the faces need one — so
+				// this stays in the headless tier where the rest of the teardown
+				// rules are.
+				visual.startBake(256);
+				watch(visual);
+				expect([surface, disposed]).toEqual([surface, 0]);
+				visual.dispose();
+				expect([surface, disposed]).toEqual([surface, 2]);
+			}
+		});
+	});
+
+	test("a second bake started before the first landed frees the first", () => {
+		// The double-buffer's own leak. `startBake` keeps the *ready* pair on
+		// screen and discards any bake still filling; a version that kept both
+		// would grow by 4 MB every time a body crossed two handoffs in a few
+		// frames, and nothing would fail.
+		withCanvasStub(() => {
+			const surface = "terran";
+			const look = APPEARANCES.get(surface);
+			if (!look) throw new Error("the fixture no longer has a terran world");
+			const visual = buildBodyVisual(look, surfaceSphere("near"), {
+				sunColor: 0xfff0e0,
+				starTint: 0xfff0e0,
+			});
+			visual.startBake(256);
+			let disposed = 0;
+			for (const target of cubeTargetsOf(visual))
+				target.addEventListener("dispose", () => {
+					disposed++;
+				});
+			visual.startBake(512);
+			expect([surface, disposed]).toEqual([surface, 2]);
+			visual.dispose();
 		});
 	});
 

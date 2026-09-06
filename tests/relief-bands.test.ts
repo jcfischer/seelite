@@ -14,13 +14,18 @@
  */
 import { describe, expect, test } from "bun:test";
 import {
+	BAKE_MAX_PX_PER_TEXEL,
 	RELIEF_BAND_HYSTERESIS,
 	RELIEF_OFF_BELOW_PX,
 	SCREEN_SPACE_BELOW_PX,
 	focalPx,
 	projectedRadiusPx,
+	peakPxPerCubeTexel,
+	pxPerCubeTexel,
 	reliefPathFor,
+	surfacePathFor,
 } from "../src/relief-bands";
+import { radiusAtTexelRatio } from "./lib/texel-radius";
 import { CLASS_GLSL, RELIEF } from "../src/planet-classes.glsl";
 import { fragmentFor } from "../src/planet-shaders";
 
@@ -253,5 +258,164 @@ describe("the three fragment programs", () => {
 		expect(guard).toBeLessThan(fn.indexOf("cratersAndGradient"));
 		// And the shared one, which is a different function in a different chunk.
 		expect(RELIEF).toContain("#ifdef RELIEF_NONE");
+	});
+});
+
+/**
+ * #208's band, and why it is arithmetic rather than a chosen pixel figure.
+ *
+ * A cube-map texel subtends a fixed angle; the visible cap of a sphere shrinks
+ * as the camera approaches while the disc grows. So the resolution question the
+ * node asks ("256 or 512 per layer?") has an answer that is a *function* of
+ * apparent size, and the interesting part of it is that no face size serves a
+ * filling planet.
+ */
+describe("the bake band", () => {
+	// The repo's own framing: fov 60, a 900 px frame.
+	const FOCAL = focalPx(900, 60);
+
+	test("the px-per-texel table this node's proposal was posted with", () => {
+		// Not a restatement of the docstring's table — this recomputes every cell
+		// from the two things the frame loop actually has, so a change to the
+		// formula reddens here and the docstring is the thing that goes stale
+		// visibly rather than silently.
+		//
+		// `radiusPx = focal / m` is how the frame loop's `projectedRadiusPx` and
+		// this function are the same fact, which is why `m` is not an argument.
+		const cell = (m: number, facePx: number) =>
+			Number(pxPerCubeTexel(FOCAL / m, FOCAL, facePx).toFixed(2));
+
+		expect(cell(1.02, 256)).toBe(23.64);
+		expect(cell(1.02, 512)).toBe(11.82);
+		expect(cell(1.02, 1024)).toBe(5.91);
+		expect(cell(2, 512)).toBe(1.14);
+		expect(cell(3, 512)).toBe(0.65);
+		expect(cell(8, 256)).toBe(0.41);
+		expect(cell(20, 256)).toBe(0.16);
+
+		// And the **peak**, which is the other question and about 2.5x this at
+		// the band's own threshold. Kept beside the average so the pair cannot
+		// drift into being read as one number (sage, PR #256).
+		const peak = (m: number, facePx: number) =>
+			Number(peakPxPerCubeTexel(FOCAL / m, FOCAL, facePx).toFixed(2));
+		expect(peak(1.02, 512)).toBe(152.23);
+		expect(peak(2, 512)).toBe(3.04);
+		expect(peak(3, 512)).toBe(1.52);
+		expect(peak(8, 256)).toBe(0.87);
+		// The threshold the band actually selects on, read both ways.
+		expect(cell(2.18, 512)).toBeCloseTo(1.0, 1);
+		expect(peak(2.18, 512)).toBeCloseTo(2.58, 1);
+	});
+
+	test("no face size a GPU will allocate serves a filling planet", () => {
+		// The finding, as a check rather than as prose. Doubling the faces halves
+		// the pixels per texel, so this is the claim that the doubling has to go on
+		// far past anything sane — and it is what makes #208 a band rather than a
+		// replacement for the procedural program.
+		//
+		const fill = FOCAL / 1.02;
+		for (const facePx of [2048, 4096])
+			expect(
+				pxPerCubeTexel(fill, FOCAL, facePx),
+				`${facePx} px faces`,
+			).toBeGreaterThan(BAKE_MAX_PX_PER_TEXEL);
+		// The size it would take, to within a power of two — and the point is what
+		// that costs rather than that it exists: six faces of 8192 is 1.6 GB per
+		// body at RGBA8, on one planet, so the refusal is memory and not
+		// arithmetic. By the **peak** measure even this is 9.5 screen pixels per
+		// texel at the sub-camera point, which is the sharper way to say it: the
+		// average reaching parity does not mean the worst pixel has.
+		expect(pxPerCubeTexel(fill, FOCAL, 8192)).toBeLessThanOrEqual(
+			BAKE_MAX_PX_PER_TEXEL,
+		);
+		expect(peakPxPerCubeTexel(fill, FOCAL, 8192)).toBeGreaterThan(9);
+	});
+
+	test("inside the surface there is no cap and no finite answer", () => {
+		// A caller must not silently bake a body the camera is inside: `m ≤ 1` has
+		// no visible cap at all, and any finite number here would read as "one
+		// texel covers this many pixels" for a geometry that does not exist.
+		expect(pxPerCubeTexel(FOCAL, FOCAL, 512)).toBe(Number.POSITIVE_INFINITY);
+		expect(pxPerCubeTexel(FOCAL * 2, FOCAL, 512)).toBe(
+			Number.POSITIVE_INFINITY,
+		);
+		// And a disc of no size, which is what a body at infinity reads as.
+		expect(pxPerCubeTexel(0, FOCAL, 512)).toBe(Number.POSITIVE_INFINITY);
+	});
+
+	test("512 px faces reach parity at about two radii, where four-tap begins", () => {
+		// The composition claim: #208's band starts where #207's top band starts,
+		// so the two do not fight over the same rung. Bisected rather than asserted
+		// as a figure, because the figure is derived and would drift with the fov.
+		const crossingPx = radiusAtTexelRatio(FOCAL, 512, BAKE_MAX_PX_PER_TEXEL);
+		expect(FOCAL / crossingPx).toBeGreaterThan(1.8);
+		expect(FOCAL / crossingPx).toBeLessThan(2.4);
+		// And the disc at that crossing is inside #207's four-tap band, so a body
+		// leaving the bake lands on four-tap and not on screen-space.
+		expect(crossingPx).toBeGreaterThan(SCREEN_SPACE_BELOW_PX);
+		expect(reliefPathFor(crossingPx, null)).toBe("four-tap");
+	});
+
+	test("a class that cannot bake is handed straight to #207's bands", () => {
+		// The whole of `bakeable: false` — a gas giant, a star, a venusian deck, or
+		// a rocky body whose cube has not landed yet. Every rung must read exactly
+		// what #207 alone reads, or the two bands are two answers to one question.
+		for (const m of [1.02, 2, 3, 8, 20, 60, 400]) {
+			const radiusPx = FOCAL / m;
+			expect(surfacePathFor(radiusPx, null, false, FOCAL, 512)).toBe(
+				reliefPathFor(radiusPx, null),
+			);
+		}
+	});
+
+	test("the band holds and releases on the right sides, and it is a ratio", () => {
+		// The hysteresis, stepped twice — the reason this module is pure. Note the
+		// direction: baked is the band *below* the threshold, so the widened limit
+		// is the one that keeps a body baked, and getting that backwards gives a
+		// body that recompiles on alternate frames at exactly the range a slow
+		// approach spends seconds at.
+		const at = (ratio: number) => radiusAtTexelRatio(FOCAL, 512, ratio);
+		const inBand = at(BAKE_MAX_PX_PER_TEXEL * 1.02);
+		const outside = at(BAKE_MAX_PX_PER_TEXEL * 1.2);
+		const wellInside = at(BAKE_MAX_PX_PER_TEXEL * 0.5);
+
+		// Coming from a procedural path: the bare limit, so the hysteresis band is
+		// not a second chance to be admitted.
+		expect(surfacePathFor(inBand, "four-tap", true, FOCAL, 512)).toBe(
+			"four-tap",
+		);
+		expect(surfacePathFor(wellInside, "four-tap", true, FOCAL, 512)).toBe(
+			"baked",
+		);
+		// Already baked: held through the band, released past it.
+		expect(surfacePathFor(inBand, "baked", true, FOCAL, 512)).toBe("baked");
+		expect(surfacePathFor(outside, "baked", true, FOCAL, 512)).toBe("four-tap");
+	});
+
+	test("a smaller cube leaves the band further out", () => {
+		// `facePx` is the resolution of the cube this body actually has, not the
+		// resolution its layer would like — a body still carrying the approach
+		// layer's 256 must stop being drawn from it earlier than one that has
+		// re-baked at 512. One argument, so a caller cannot hold the two apart.
+		// 2.4 radii: 0.88 px per texel on a 512 cube and 1.76 on a 256, and the
+		// disc is 324.8 px, which is inside #207's four-tap band — so the body
+		// that leaves the bake here lands on four-tap and the two thresholds are
+		// visibly independent.
+		const m = 2.4;
+		const radiusPx = FOCAL / m;
+		expect(surfacePathFor(radiusPx, "baked", true, FOCAL, 512)).toBe("baked");
+		expect(surfacePathFor(radiusPx, "baked", true, FOCAL, 256)).toBe(
+			"four-tap",
+		);
+	});
+
+	test("a body that has just appeared lands in the band its size says", () => {
+		// `current: null` is a body after a jump or on its first frame. It inherits
+		// nothing — the same rule #207's own bands follow, and the reason the
+		// hysteresis cannot be written as "keep what you had".
+		expect(surfacePathFor(FOCAL / 20, null, true, FOCAL, 256)).toBe("baked");
+		expect(surfacePathFor(FOCAL / 1.02, null, true, FOCAL, 512)).toBe(
+			"four-tap",
+		);
 	});
 });

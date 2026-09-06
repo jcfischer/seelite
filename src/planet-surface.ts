@@ -24,13 +24,23 @@ import * as THREE from "three";
 import type { PlanetAppearance, SurfaceClass } from "./planet-appearance";
 import {
 	ATMOSPHERE_FRAGMENT,
+	BAKED_SURFACE_VERTEX,
 	CLOUD_FRAGMENT,
 	RING_FRAGMENT,
 	RING_VERTEX,
 	SURFACE_VERTEX,
+	bakedFragmentFor,
 	fragmentFor,
+	isBakeable,
 } from "./planet-shaders";
 import type { ReliefPath } from "./planet-shaders";
+import {
+	type BakePrograms,
+	type BodyBake,
+	createBakePrograms,
+	startBodyBake,
+} from "./planet-bake";
+import type { SurfacePath } from "./relief-bands";
 import { disposeSubtree, shared } from "./gpu-teardown";
 
 /**
@@ -196,24 +206,99 @@ export interface BodyVisual {
 	 * do it — the panel walks a scene and has no handles — and the frame loop
 	 * has the handle already.
 	 */
-	setReliefPath(path: ReliefPath): boolean;
+	setSurfacePath(path: SurfacePath): boolean;
 	/**
-	 * The frame loop's door: set the band's choice **unless this body is pinned**.
+	 * Set the relief band's choice **unless this body is pinned**.
 	 *
-	 * The two doors are the `applyOcclusion` pattern (`main.ts`), and the reason
-	 * is the same one that file gives: an instrument naming an arm must not have
-	 * the frame loop overwrite it. Any external write — the perf panel's relief
-	 * cycle, `setSurfaceAndRelief`, `setAblation` — goes through
-	 * `setReliefPath`, which pins; the selector goes through this, which yields.
+	 * **The frame loop no longer calls this**; `applySurfaceBand` supersedes it
+	 * and the pre-warm is the one caller left. It is kept because that caller
+	 * needs exactly this and not the wider door: the warm-up walks the three
+	 * relief programs to get them compiled, and going through
+	 * `applySurfaceBand` would have it argue with #208's band about which
+	 * program the body should be drawn with while it does so.
+	 *
+	 * The yield-to-a-pin contract is the `applyOcclusion` pattern (`main.ts`) and
+	 * the reason is the same one that file gives: an instrument naming an arm
+	 * must not have the frame loop overwrite it. Any external write — the perf
+	 * panel's cycle, `setSurfaceAndRelief`, `setAblation` — goes through
+	 * `setSurfacePath`, which pins.
 	 *
 	 * Per body rather than per game, so nothing has to hand a `Game` handle to a
 	 * function that walks scenes.
 	 */
 	applyReliefBand(path: ReliefPath): boolean;
 	/** Hand this body back to the bands. The perf panel's restore key. */
-	unpinRelief(): void;
+	unpinSurface(): void;
 	/** What it is drawn with now, so the frame loop needs no parallel map. */
 	reliefPath(): ReliefPath;
+	/**
+	 * Whether the class this body is **wearing now** can be baked (#208).
+	 *
+	 * `venusian`, the two gas giants and the star read the clock in `surface()`,
+	 * so a cube of them would be a frozen frame.
+	 *
+	 * A method rather than the field it replaced, and that is not tidiness: the
+	 * perf panel can put any class on any body, so a terran cycled to jovian is a
+	 * body whose *construction* class bakes and whose current one does not. The
+	 * field said yes, the scheduler started a bake, and `startBodyBake` threw
+	 * inside the frame loop — on every frame, from the first size threshold the
+	 * body crossed (sage, PR #256, round 3).
+	 */
+	canBake(): boolean;
+	/**
+	 * Begin a bake at this face size, discarding any cube this body already has.
+	 *
+	 * Called on the layer handoff that re-parents the body, which is where the
+	 * resolution changes. Discarding rather than keeping both is the memory
+	 * answer: the census in `planet-bake.ts` puts the worst system at 14 bakeable
+	 * bodies, and holding a 256 pair beside a 512 pair on each would add 4.0 MB
+	 * a body for a cube nothing is sampling.
+	 */
+	startBake(facePx: number): void;
+	/**
+	 * Draw one face of a bake in flight; `false` when there is nothing to draw.
+	 *
+	 * The caller's loop decides how many faces a frame gets, which is what makes
+	 * "do not let a bake block the first frame after a jump" a property of the
+	 * schedule rather than a promise this module makes.
+	 */
+	stepBake(renderer: THREE.WebGLRenderer): boolean;
+	/** Compile the bake programs for the bake in flight, so no compile lands on
+	 *  the frame the first face is drawn. `false` when there is nothing to warm. */
+	prewarmBake(renderer: THREE.WebGLRenderer): boolean;
+	/** The face size of the cube this body can be drawn from, or 0 while there
+	 *  is none — which is what the band reads to know it may not offer one. */
+	bakedFacePx(): number;
+	/**
+	 * The frame loop's door for #208's band, over #207's.
+	 *
+	 * The same contract `applyReliefBand` has and for the same reason: it yields
+	 * to a pin. It supersedes rather than sits beside it — a body cannot be baked
+	 * and four-tap at once — so the frame loop calls this one and nothing calls
+	 * both.
+	 */
+	applySurfaceBand(path: SurfacePath): boolean;
+	/** Baked, or one of #207's three relief programs. */
+	surfacePath(): SurfacePath;
+	/**
+	 * Attach the baked program so a caller's `compile` reaches it, and hand back
+	 * the undo.
+	 *
+	 * `null` for a class that cannot bake. The band refuses `"baked"` until the
+	 * cube is complete, which is right for drawing and wrong for a warm-up: the
+	 * program has to be compiled *before* the first crossing or the crossing is
+	 * the hitch. Compiling against an unfilled cube is harmless — `compile` does
+	 * not draw — and this is the only caller that may look past `complete`.
+	 */
+	prewarmBaked(): (() => void) | null;
+	/**
+	 * Take the baked program off this body's menu, or put it back (#208).
+	 *
+	 * The ablation ladder's `baked` lever. Not a pin: #207's bands keep running
+	 * underneath, which is what makes `baked: off` a control arm for the bake
+	 * rather than for every program selector at once.
+	 */
+	setBakeAllowed(allowed: boolean): void;
 	/**
 	 * Free everything this body owns, and nothing it shares.
 	 *
@@ -434,7 +519,7 @@ export function buildBodyVisual(
 	 * the panel and a pin set from the frame loop's own door have to be the same
 	 * bit, or the two would disagree about who owns the path.
 	 */
-	planet.userData.reliefPinned = false;
+	planet.userData.surfacePinned = false;
 	/**
 	 * Swap the program, and nothing else. The half both doors share.
 	 *
@@ -442,34 +527,200 @@ export function buildBodyVisual(
 	 * *same* swap and the *opposite* answer about ownership: an external write
 	 * takes the body off #207's bands, and the bands' own write must not.
 	 */
+	/** The program that shipped before #208, and the one every class and relief
+	 *  patch below targets **by name**. Reaching `planet.material` instead
+	 *  reaches whichever is attached, which on a baked body is the cube's. */
+	const proceduralMaterial = planet.material as THREE.ShaderMaterial;
 	const swapReliefProgram = (next: ReliefPath) => {
 		if (look.surface === "star") return;
 		if (planet.userData.reliefPath === next) return;
-		const material = planet.material as THREE.ShaderMaterial;
-		material.fragmentShader = cachedFragment(
+		proceduralMaterial.fragmentShader = cachedFragment(
 			planet.userData.surfaceClass,
 			next,
 		);
-		material.needsUpdate = true;
+		proceduralMaterial.needsUpdate = true;
 		planet.userData.reliefPath = next;
 	};
-	planet.userData.setReliefPath = (next: ReliefPath) => {
+	planet.userData.setSurfacePath = (next: SurfacePath) => {
 		// A write through this door is an external one — the perf panel's cycle,
 		// `setSurfaceAndRelief`, `setAblation` — so it takes the body off #207's
-		// bands. The frame loop uses `BodyVisual.applyReliefBand`, which shares
-		// the swap above and leaves the pin alone.
-		planet.userData.reliefPinned = true;
+		// bands. The frame loop uses `BodyVisual.applySurfaceBand`, which shares
+		// the swaps below and leaves the pin alone.
+		planet.userData.surfacePinned = true;
+		// And off the bake (#208), for the reason the handle's own door gives: a
+		// relief path is a statement about the procedural program, so a body that
+		// answered it with a cube would leave the panel showing an arm it is not
+		// drawing. `swapSurfaceProgram` is declared below and this is a closure.
+		swapSurfaceProgram(next);
+	};
+	/**
+	 * The baked half of the surface, and the door between the two programs.
+	 *
+	 * Two materials rather than one recompiled: the baked program has a
+	 * different **vertex** shader too — it carries the body's own rotation into
+	 * the fragment, which `SURFACE_VERTEX` has no reason to — so the swap is a
+	 * material swap and both stay warm. The procedural material is the one that
+	 * shipped and is untouched, which is what keeps #207's programs identical.
+	 */
+	/** The class this body is wearing now, which the panel can change. */
+	const canBakeNow = () =>
+		isBakeable(planet.userData.surfaceClass as SurfaceClass);
+	/**
+	 * **Two bakes, and the reason is the handoff.**
+	 *
+	 * `ready` is a complete pair of cubes and `filling` is a bake in flight; the
+	 * material that samples them is below and outlives both. A body crossing into the near layer starts a
+	 * 512 bake while it is being drawn from its 256 one, and freeing the old pair
+	 * at that moment would drop it back to the procedural program for the twelve
+	 * frames the new one takes — a visible pop, at the moment the player is
+	 * closest to the body and most likely to be looking at it.
+	 *
+	 * The price is one extra pair of cubes per body *while a re-bake is in
+	 * flight*, which is 4.0 MB and transient. `bakedFacePx()` reports the ready
+	 * one, so the band keeps reading the resolution that is actually on screen.
+	 */
+	let ready: BodyBake | undefined;
+	let filling: BodyBake | undefined;
+	/**
+	 * The class the ready cube was baked from.
+	 *
+	 * **A cube outlives nothing but its own class**, and that is what
+	 * `setSurfaceClass` needs from this module rather than a pin (sage, PR #256,
+	 * round 2). The panel's class cycle takes the body off the cube, and without
+	 * this the very next frame's band put it straight back — drawing the *old*
+	 * class from the old cube while `surfaceClass` reported the new one, which
+	 * is a class comparison measuring the class it was told to leave.
+	 *
+	 * A tag rather than a pin because it restores itself: cycle back round to the
+	 * class the cube holds and the body is eligible for it again, with no state
+	 * for an instrument to forget to clear.
+	 */
+	let bakedClass: SurfaceClass | undefined;
+	/** The class the bake in flight will be tagged with when it lands. */
+	let fillingClass: SurfaceClass | undefined;
+	/** The bake programs, built on first use per class and kept across every
+	 *  cube replacement. Built lazily so a body that never bakes never has any. */
+	let bakePrograms: BakePrograms | undefined;
+	/**
+	 * **One baked material for the life of the body**, whichever cube it points
+	 * at.
+	 *
+	 * A material per bake was the first shape, and it disposes the outgoing one
+	 * at promotion — which, for a class only one body in the system wears, drops
+	 * the last reference to a compiled program the replacement has not drawn with
+	 * yet, so three deletes it and links it again on the next frame (sage,
+	 * PR #256). The program is identical either way: same class, same source
+	 * string. Only the two `samplerCube` uniforms differ, and they are values.
+	 */
+	let bakedMaterial: THREE.ShaderMaterial | undefined;
+	/** One draw program per class this body has ever baked, kept for the life of
+	 *  the body — the panel's class cycle is a round trip and relinking on each
+	 *  leg is the cost this avoids. */
+	const drawMaterials = new Map<SurfaceClass, THREE.ShaderMaterial>();
+	planet.userData.baked = false;
+	/**
+	 * The bake lever, off the perf panel's ablation ladder (#208).
+	 *
+	 * A **separate** bit from `surfacePinned`, and the two are separate because
+	 * they answer different questions. The pin says "an instrument has taken this
+	 * body's program, leave it alone"; this says "the baked program is not on the
+	 * menu", which leaves #207's bands running normally underneath. An arm that
+	 * pinned instead would switch the thing it is trying to measure the *other*
+	 * lever against off as well.
+	 *
+	 * On the mesh rather than on the handle for the reason `surfacePinned` is: the
+	 * panel walks scenes and has no handle.
+	 */
+	planet.userData.bakeAllowed = true;
+	/**
+	 * Every cube pair this body is holding, the drawable one first.
+	 *
+	 * **A list rather than the drawable pair**, because the two callers want
+	 * different halves of the same fact and one of them is a leak check: an
+	 * instrument reading texels back wants the pair on screen, and
+	 * `tests/gpu-teardown.test.ts` wants everything that has to be freed —
+	 * including the pair filling behind the one being drawn. Handing back only
+	 * the first would make the leak the double-buffer can have invisible to the
+	 * test written to catch it.
+	 *
+	 * **Render targets** rather than the textures hanging off the baked
+	 * material's uniforms, because `WebGLRenderer.readRenderTargetPixels` takes
+	 * a target and a face index and there is no route to that from a
+	 * `CubeTexture` — and the node's determinism proof is a pixel read.
+	 *
+	 * On `userData` like the rest of the probe surface here: a probe walks scenes
+	 * and holds no handle.
+	 */
+	planet.userData.bakeCubes = () =>
+		[ready, filling]
+			.filter((bake) => bake !== undefined)
+			.map((bake) => ({ albedo: bake.albedo, normal: bake.normal }));
+	planet.userData.setBakeAllowed = (allowed: boolean) => {
+		planet.userData.bakeAllowed = allowed;
+		if (!allowed && planet.userData.baked) {
+			planet.material = proceduralMaterial;
+			planet.userData.baked = false;
+		}
+	};
+
+	/**
+	 * Swap the program, and nothing else — the #208 half of the pair above.
+	 *
+	 * A request to be baked is **refused** while there is no complete cube, and
+	 * refused silently rather than by throwing: the band asks every frame and the
+	 * bake lands some frames later, so the refusal is the normal path for the
+	 * dozen frames after a jump. What makes it safe is that both doors read the
+	 * answer back rather than assuming it, the way the relief swap already has to
+	 * for a star.
+	 */
+	const swapSurfaceProgram = (next: SurfacePath) => {
+		if (look.surface === "star") return;
+		if (next === "baked") {
+			if (!planet.userData.bakeAllowed) return;
+			if (!ready || !bakedMaterial) return;
+			// The cube belongs to the class it was baked from; a body wearing a
+			// different one is drawn procedurally until it is re-baked or cycled
+			// back.
+			if (bakedClass !== planet.userData.surfaceClass) return;
+			planet.material = bakedMaterial;
+			planet.userData.baked = true;
+			return;
+		}
+		if (planet.userData.baked) {
+			planet.material = proceduralMaterial;
+			planet.userData.baked = false;
+		}
 		swapReliefProgram(next);
 	};
+	const surfacePathNow = (): SurfacePath =>
+		planet.userData.baked
+			? "baked"
+			: (planet.userData.reliefPath as ReliefPath);
+
 	planet.userData.setSurfaceClass = (next: SurfaceClass) => {
 		// A star keeps its own shader. It is not a planet surface, it is the
 		// brightest thing in the frame and therefore what the bloom pass is
 		// mostly working on, and drawing it as a desert would change the one
 		// term the panel is trying to hold still while another is measured.
 		if (look.surface === "star") return;
-		const material = planet.material as THREE.ShaderMaterial;
-		material.fragmentShader = cachedFragment(next, planet.userData.reliefPath);
-		material.needsUpdate = true;
+		/**
+		 * **Off the cube, and the patch goes to the procedural material by name**
+		 * (sage, PR #256).
+		 *
+		 * Two things went wrong through one line. `planet.material` is whichever
+		 * program is attached, so on a baked body this wrote a *class* fragment
+		 * into the **baked** material — a shader with no `surface()` in it,
+		 * patched with one. And the cube itself was baked from the old class, so
+		 * even a correct patch would have drawn the body as the class it was
+		 * before while the panel reported the new one. An instrument's class cycle
+		 * has to leave the body procedural; the cube belongs to the old class.
+		 */
+		swapSurfaceProgram(planet.userData.reliefPath as ReliefPath);
+		proceduralMaterial.fragmentShader = cachedFragment(
+			next,
+			planet.userData.reliefPath,
+		);
+		proceduralMaterial.needsUpdate = true;
 		planet.userData.surfaceClass = next;
 	};
 	group.add(planet);
@@ -581,31 +832,135 @@ export function buildBodyVisual(
 		setLayer(layer) {
 			planet.geometry = surfaceSphere(layer);
 		},
-		setReliefPath(path) {
+		setSurfacePath(path) {
 			// **The pin is taken even when the path did not change.** An instrument
 			// asking for the path a body already has is still asking to hold it
 			// there, and returning early before the pin would leave the frame loop
 			// free to move it on the next frame — which is the whole failure this
 			// exists to prevent, arriving through the one case that looks free.
-			planet.userData.reliefPinned = true;
-			const was = planet.userData.reliefPath;
-			swapReliefProgram(path);
+			planet.userData.surfacePinned = true;
+			const was = surfacePathNow();
+			// **Through the surface door, so a pin also takes the body off the
+			// bake** (#208). A relief path is a statement about the procedural
+			// program, and a baked body is not running one — an instrument that
+			// asked for `none` and got a cube would be measuring the wrong arm and
+			// nothing would say so.
+			swapSurfaceProgram(path);
 			// A star refuses the swap, so the answer is read back rather than
 			// assumed: a caller told "yes, it changed" about a body that ignored it
 			// would keep asking on every frame for ever.
-			return planet.userData.reliefPath !== was;
+			return surfacePathNow() !== was;
 		},
 		applyReliefBand(path) {
-			if (planet.userData.reliefPinned) return false;
+			if (planet.userData.surfacePinned) return false;
 			const was = planet.userData.reliefPath;
 			swapReliefProgram(path);
 			return planet.userData.reliefPath !== was;
 		},
-		unpinRelief() {
-			planet.userData.reliefPinned = false;
+		unpinSurface() {
+			planet.userData.surfacePinned = false;
 		},
 		reliefPath() {
 			return planet.userData.reliefPath as ReliefPath;
+		},
+		canBake: () => canBakeNow(),
+		startBake(facePx) {
+			if (!canBakeNow()) return;
+			// Only the bake in flight is discarded. The ready pair stays on screen
+			// until the new one lands, which is the whole of the no-pop guarantee
+			// above — and a second `startBake` before the first finished (a body
+			// crossing two handoffs in a few frames) must not free the pair the
+			// body is being drawn from.
+			filling?.dispose();
+			// The class as it is **now**, not the one the body was built with: the
+			// perf panel can put any class on any body, and a re-bake after that
+			// has to produce — and be tagged with — what is being drawn.
+			fillingClass = planet.userData.surfaceClass as SurfaceClass;
+			bakePrograms ??= createBakePrograms(uniforms);
+			filling = startBodyBake(fillingClass, facePx, bakePrograms);
+			// The draw program is per class too, and cached for the same reason the
+			// bake programs are: cycling a body's class back and forth must not
+			// relink a shader each way.
+			bakedMaterial = drawMaterials.get(fillingClass);
+			if (!bakedMaterial) {
+				bakedMaterial = new THREE.ShaderMaterial({
+					uniforms: {
+						...uniforms,
+						bakedAlbedo: { value: null },
+						bakedNormal: { value: null },
+					},
+					vertexShader: BAKED_SURFACE_VERTEX,
+					fragmentShader: bakedFragmentFor(fillingClass),
+				});
+				drawMaterials.set(fillingClass, bakedMaterial);
+			}
+		},
+		stepBake(renderer) {
+			if (!filling) return false;
+			const drew = filling.step(renderer);
+			if (!filling.complete) return drew;
+			// Promoted the moment the last face lands, and **the uniforms are
+			// repointed before the free**: a body drawn from the outgoing pair
+			// would otherwise sample a disposed texture for a frame, which renders
+			// black rather than throwing.
+			const outgoing = ready;
+			ready = filling;
+			filling = undefined;
+			bakedClass = fillingClass;
+			if (bakedMaterial) {
+				bakedMaterial.uniforms.bakedAlbedo.value = ready.albedo.texture;
+				bakedMaterial.uniforms.bakedNormal.value = ready.normal.texture;
+			}
+			outgoing?.dispose();
+			return drew;
+		},
+		prewarmBake(renderer) {
+			if (!filling) return false;
+			filling.prewarm(renderer);
+			return true;
+		},
+		bakedFacePx() {
+			/**
+			 * **Zero whenever the cube is not on this body's menu** (sage, PR #256,
+			 * rounds 1 and 4).
+			 *
+			 * This is what the band reads to decide whether `"baked"` is even a
+			 * candidate, and every reason the swap can refuse has to be visible
+			 * here or the band asks for a program that is silently declined — which
+			 * leaves the body on whatever relief program it happened to have, with
+			 * #207's selector not running on it at all. There is no error and
+			 * nothing changes on screen until something else forces a rebake.
+			 *
+			 * That defect arrived **twice through different doors**: round 1 through
+			 * `bakeAllowed`, and round 4 through the class tag that round 2 added —
+			 * a perf-panel class cycle left `bakedClass` disagreeing with
+			 * `surfaceClass` and the refusal was invisible here. Both conditions are
+			 * read now, and the rule for anything added to `swapSurfaceProgram`'s
+			 * `"baked"` branch is that it belongs in this expression too.
+			 */
+			if (!planet.userData.bakeAllowed) return 0;
+			if (bakedClass !== planet.userData.surfaceClass) return 0;
+			return ready?.facePx ?? 0;
+		},
+		applySurfaceBand(path) {
+			if (planet.userData.surfacePinned) return false;
+			const was = surfacePathNow();
+			swapSurfaceProgram(path);
+			return surfacePathNow() !== was;
+		},
+		surfacePath() {
+			return surfacePathNow();
+		},
+		setBakeAllowed(allowed) {
+			planet.userData.setBakeAllowed(allowed);
+		},
+		prewarmBaked() {
+			if (!bakedMaterial) return null;
+			const was = planet.material;
+			planet.material = bakedMaterial;
+			return () => {
+				planet.material = was;
+			};
 		},
 		dispose() {
 			// **One walker, shared with the station teardown** (#187). The loop
@@ -622,7 +977,29 @@ export function buildBodyVisual(
 			// load-bearing: it is drawn per star into a canvas, and
 			// `Material.dispose()` does not free a map, so a star disposed
 			// without it leaves a 128×128 texture on the GPU.
+			// **Off the baked material before the walk**, so nothing is freed
+			// twice. `disposeSubtree` reaches whatever is attached to the mesh, and
+			// this module's own history is the argument: its docstring records
+			// disposing a material twice as the thing the old hand-written loop
+			// tripped over.
+			planet.material = proceduralMaterial;
+			planet.userData.baked = false;
 			disposeSubtree(group);
+			// **And the cubes are not reachable from the subtree, which is the
+			// point** (#208). A cube render target owns a framebuffer as well as a
+			// texture, and `disposeSubtree` frees textures — so freeing the target
+			// is the only thing that frees the FBO. With the material detached
+			// above, the walk never sees its uniforms either, so both halves are
+			// these two lines and neither is a repeat of the other.
+			for (const material of drawMaterials.values()) material.dispose();
+			drawMaterials.clear();
+			bakedMaterial = undefined;
+			bakePrograms?.dispose();
+			bakePrograms = undefined;
+			ready?.dispose();
+			filling?.dispose();
+			ready = undefined;
+			filling = undefined;
 		},
 	};
 }

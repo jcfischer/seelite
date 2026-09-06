@@ -51,7 +51,7 @@ describe("the ablation ladder", () => {
 	test("full is the shipped state", () => {
 		const full = armByName("full");
 		expect(full.perfAblate).toBe(0);
-		expect(full.relief).toBe("four-tap");
+		expect(full.surface).toBe("four-tap");
 		expect(full.atmosphere).toBe(true);
 		expect(full.clouds).toBe(true);
 	});

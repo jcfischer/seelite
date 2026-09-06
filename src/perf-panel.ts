@@ -173,10 +173,10 @@ function cycleClass(scenes: THREE.Object3D[], step: number) {
  * on a uniform is undefined on some drivers, so the derivative calls must not
  * be in the program at all when the four-tap path is selected.
  */
-function setRelief(scenes: THREE.Object3D[], path: string) {
+function setSurface(scenes: THREE.Object3D[], path: string) {
 	for (const scene of scenes)
 		scene.traverse((object) => {
-			object.userData?.setReliefPath?.(path);
+			object.userData?.setSurfacePath?.(path);
 		});
 }
 
@@ -198,8 +198,31 @@ export function setSurfaceAndRelief(
 	for (const scene of scenes)
 		scene.traverse((object) => {
 			object.userData?.setSurfaceClass?.(surface);
-			object.userData?.setReliefPath?.(relief);
+			object.userData?.setSurfacePath?.(relief);
 		});
+}
+
+/**
+ * Show or hide a body's shells, without touching which program draws it.
+ *
+ * Exported because #208's probe has to compare the *surface* the baked and
+ * procedural programs produce, and a terran world's cloud deck drifts with the
+ * clock — so two frames taken a second apart differ by the weather whatever the
+ * surface did. `setAblation`'s `no-clouds` arm would do it and would also pin
+ * the surface path, which is the other half of what that comparison holds still
+ * on its own terms.
+ *
+ * Through the same `shell` tag the panel's own keys read, so a shell added to
+ * `planet-surface.ts` without one is invisible to both rather than to only one.
+ */
+export function setShells(
+	scenes: THREE.Object3D[],
+	wanted: { atmosphere?: boolean; clouds?: boolean },
+) {
+	if (wanted.atmosphere !== undefined)
+		for (const s of shells(scenes, "atmosphere")) s.visible = wanted.atmosphere;
+	if (wanted.clouds !== undefined)
+		for (const s of shells(scenes, "cloud")) s.visible = wanted.clouds;
 }
 
 /**
@@ -221,7 +244,7 @@ export function setSurfaceAndRelief(
  * deltas would price whatever the previous arm left behind.
  */
 export const ABLATION_LEVERS = [
-	"relief",
+	"surface",
 	"perfAblate",
 	"atmosphere",
 	"clouds",
@@ -229,7 +252,18 @@ export const ABLATION_LEVERS = [
 
 export type AblationArm = {
 	name: string;
-	relief: string;
+	/**
+	 * Which program draws the surface: one of #207's three relief paths, or
+	 * #208's `"baked"`.
+	 *
+	 * A `SurfacePath` and not a `ReliefPath`, because the two are alternatives
+	 * for one lever position rather than two levers. A separate `baked: boolean`
+	 * would let
+	 * an arm declare `baked` *and* `screen-space`, which is a state the renderer
+	 * has no way to be in — and the ladder's whole contract is that an arm names
+	 * a state exactly.
+	 */
+	surface: string;
 	perfAblate: number;
 	atmosphere: boolean;
 	clouds: boolean;
@@ -263,16 +297,16 @@ export type AblationArm = {
 export const ABLATION_ARMS: readonly AblationArm[] = Object.freeze([
 	{
 		name: "full",
-		relief: "four-tap",
+		surface: "four-tap",
 		perfAblate: 0,
 		atmosphere: true,
 		clouds: true,
 		prices:
-			"the shipped frame — the denominator every other arm subtracts from",
+			"the procedural reference — the denominator every other arm subtracts from, and **no longer the shipped frame at every rung** (#208): the band draws a body from its cube from about two radii outward, so from there out the game costs what `baked` costs and this arm costs what it cost before #208. Nearer than that the two are the same thing",
 	},
 	{
 		name: "screen-space",
-		relief: "screen-space",
+		surface: "screen-space",
 		perfAblate: 0,
 		atmosphere: true,
 		clouds: true,
@@ -280,7 +314,7 @@ export const ABLATION_ARMS: readonly AblationArm[] = Object.freeze([
 	},
 	{
 		name: "no-relief",
-		relief: "four-tap",
+		surface: "four-tap",
 		perfAblate: 1,
 		atmosphere: true,
 		clouds: true,
@@ -288,7 +322,7 @@ export const ABLATION_ARMS: readonly AblationArm[] = Object.freeze([
 	},
 	{
 		name: "flat",
-		relief: "four-tap",
+		surface: "four-tap",
 		perfAblate: 2,
 		atmosphere: true,
 		clouds: true,
@@ -297,7 +331,7 @@ export const ABLATION_ARMS: readonly AblationArm[] = Object.freeze([
 	},
 	{
 		name: "no-atmosphere",
-		relief: "four-tap",
+		surface: "four-tap",
 		perfAblate: 0,
 		atmosphere: false,
 		clouds: true,
@@ -305,15 +339,24 @@ export const ABLATION_ARMS: readonly AblationArm[] = Object.freeze([
 	},
 	{
 		name: "no-clouds",
-		relief: "four-tap",
+		surface: "four-tap",
 		perfAblate: 0,
 		atmosphere: true,
 		clouds: false,
 		prices: "the cloud shell, on the classes that carry one",
 	},
 	{
+		name: "baked",
+		surface: "baked",
+		perfAblate: 0,
+		atmosphere: true,
+		clouds: true,
+		prices:
+			"#208's cube against the procedural program that made it — the whole of surface() traded for two texture fetches. Refused where the body has no complete cube, so a sweep settles the bake queue and reads the path back rather than trusting the request",
+	},
+	{
 		name: "bare",
-		relief: "four-tap",
+		surface: "four-tap",
 		perfAblate: 2,
 		atmosphere: false,
 		clouds: false,
@@ -352,10 +395,9 @@ export function setAblation(
 	name: string,
 ): AblationArm {
 	const arm = armByName(name);
-	setRelief(scenes, arm.relief);
+	setSurface(scenes, arm.surface);
 	setAblate(scenes, arm.perfAblate);
-	for (const s of shells(scenes, "atmosphere")) s.visible = arm.atmosphere;
-	for (const s of shells(scenes, "cloud")) s.visible = arm.clouds;
+	setShells(scenes, { atmosphere: arm.atmosphere, clouds: arm.clouds });
 	return arm;
 }
 
@@ -384,8 +426,18 @@ function readReliefState(scenes: THREE.Object3D[]): {
 		scene.traverse((object) => {
 			const klass = object.userData?.surfaceClass;
 			if (!klass || klass === "star" || !object.userData?.reliefPath) return;
-			paths.add(object.userData.reliefPath);
-			if (object.userData.reliefPinned) pinned = true;
+			// **What is drawn, not what is compiled** (#208). A baked body keeps the
+			// relief path its procedural material carries — both programs exist — so
+			// reading `reliefPath` alone would report `four-tap` for a body drawn
+			// from a cube, which is the class of readout error round 2 of #254
+			// caught in this same function.
+			paths.add(object.userData.baked ? "baked" : object.userData.reliefPath);
+			// **`surfacePinned` since #208 renamed the flag.** The rename left this
+			// line reading a key nothing writes any more, so the panel reported
+			// `(auto)` under a pinned body — the same shape of readout defect round
+			// 2 of #254 caught in this very function, arriving the second time
+			// through a rename (sage, PR #256, round 2).
+			if (object.userData.surfacePinned) pinned = true;
 		});
 	return { paths, pinned };
 }
@@ -396,7 +448,7 @@ function readRelief(scenes: THREE.Object3D[]): string {
 		scene.traverse((object) => {
 			const klass = object.userData?.surfaceClass;
 			if (klass && klass !== "star" && object.userData?.reliefPath)
-				found = object.userData.reliefPath;
+				found = object.userData.baked ? "baked" : object.userData.reliefPath;
 		});
 	return found;
 }
@@ -423,8 +475,8 @@ function readClass(scenes: THREE.Object3D[]): string {
 function unpinRelief(scenes: THREE.Object3D[]) {
 	for (const scene of scenes)
 		scene.traverse((object) => {
-			if (object.userData?.reliefPinned !== undefined)
-				object.userData.reliefPinned = false;
+			if (object.userData?.surfacePinned !== undefined)
+				object.userData.surfacePinned = false;
 		});
 }
 
@@ -600,16 +652,41 @@ export function mountPerfPanel(targets: PerfTargets) {
 			toggle: () => {
 				if (readAblate(scenes) === 2) {
 					setAblate(scenes, 0);
-					setRelief(scenes, "four-tap");
+					setSurface(scenes, "four-tap");
 					return;
 				}
 				const next: Record<string, string> = {
 					"four-tap": "screen-space",
 					"screen-space": "none",
+					// #208's cube is a fourth program on the same lever, so it is a rung
+					// of this cycle rather than a switch of its own — but it is the one
+					// rung that can be *refused*, so `none` is handled below rather
+					// than here.
 				};
 				const path = readRelief(scenes);
-				if (path === "none") {
+				if (path === "baked") {
 					setAblate(scenes, 2);
+					setSurface(scenes, "four-tap");
+					return;
+				}
+				if (path === "none") {
+					/**
+					 * **The baked rung is the one that can be refused**, so the cycle
+					 * has to read back rather than assume it moved.
+					 *
+					 * A gas giant, a venusian deck, or any body whose cube has not
+					 * landed keeps the program it had — and since the next rung is
+					 * reached by seeing `baked`, the cycle simply stopped at `none`
+					 * and `flat` became unreachable on those bodies (sage, PR #256,
+					 * round 3). Asking and then looking is the only way to tell a
+					 * refusal from a move; there is no state to consult, because
+					 * whether a cube exists is per body and this walks scenes.
+					 */
+					setSurface(scenes, "baked");
+					if (readRelief(scenes) !== "baked") {
+						setAblate(scenes, 2);
+						setSurface(scenes, "four-tap");
+					}
 					return;
 				}
 				// **Clear the ablation on the way into a path** (sage, PR #254).
@@ -621,7 +698,7 @@ export function mountPerfPanel(targets: PerfTargets) {
 				// what they mean and only one of them ships, so the cycle owns
 				// putting the other back.
 				setAblate(scenes, 0);
-				setRelief(scenes, next[path] ?? "four-tap");
+				setSurface(scenes, next[path] ?? "four-tap");
 			},
 		},
 		{
@@ -683,17 +760,16 @@ rasterizer                  ${identity(attribution.renderer.rasterizer)}`;
 		if (e.metaKey || e.ctrlKey || e.altKey) return;
 		if (e.key === RESTORE_KEY) {
 			if (targets.bloom) targets.bloom.enabled = true;
-			for (const kind of ["atmosphere", "cloud"])
-				for (const s of shells(scenes, kind)) s.visible = true;
+			setShells(scenes, { atmosphere: true, clouds: true });
 			setAblate(scenes, 0);
-			// **Set, then un-pin, in that order and only once.** `setRelief` pins
+			// **Set, then un-pin, in that order and only once.** `setSurface` pins
 			// the bodies it touches (#207), so clearing the pin first and setting
 			// after would leave every planet held at four-tap for the rest of the
 			// session — with the picture looking exactly right until a planet got
 			// small. The first version did both, which worked and read as though
 			// the ordering did not matter (sage, PR #254). Handing the bands back
 			// is what "restore all" means for this row.
-			setRelief(scenes, "four-tap");
+			setSurface(scenes, "four-tap");
 			unpinRelief(scenes);
 			setCrater(scenes, false);
 			draw();
