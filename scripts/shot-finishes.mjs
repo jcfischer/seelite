@@ -31,9 +31,11 @@ import { SOFTWARE } from "./lib/players-renderer.mjs";
 import { guardedOrigin, launchChromium } from "./probe-guard.mjs";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
+const labelFlag = process.argv.indexOf("--label");
 const label =
-	process.argv[process.argv.indexOf("--label") + 1] ??
-	new Date().toISOString().replace(/[:.]/g, "-");
+	labelFlag >= 0 && process.argv[labelFlag + 1]
+		? process.argv[labelFlag + 1]
+		: new Date().toISOString().replace(/[:.]/g, "-");
 const OUT = join("view-set", "finishes", label);
 
 const FAMILIES = (process.env.FAMILY ?? "ship,station").split(",");
@@ -51,13 +53,17 @@ const FINISHES = (process.env.FINISHES ?? "stock,plated,industrial,worn").split(
 );
 /**
  * Camera framings, in the workbench's orbit terms. The workbench's up is Y
- * and a station's aperture axis is Z, so `front` looks down −Z at the
- * docking face and `aft` up +Z at a hull's drives.
+ * and its camera sits at `(sin az, ·, cos az)`, so azimuth 0 is **on +Z
+ * looking down −Z** — at a station's aperture, which faces +Z, and at a
+ * hull's drives, since a hull flies towards −Z, which is why `aft` sits near
+ * it. `front` was first authored at π, which is the docking face's back —
+ * and a hull's nose, which is what `bow` is for.
  */
 const VIEWS = {
 	hero: { azimuth: 2.35, elevation: 0.3 },
 	aft: { azimuth: 0.4, elevation: 0.2 },
-	front: { azimuth: Math.PI, elevation: 0.12 },
+	front: { azimuth: 0, elevation: 0.12 },
+	bow: { azimuth: Math.PI, elevation: 0.12 },
 	close: { azimuth: 2.0, elevation: 0.25, zoom: 0.55 },
 };
 const VIEW_NAMES = (process.env.VIEWS ?? "hero,aft,close").split(",");

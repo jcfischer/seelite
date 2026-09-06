@@ -162,15 +162,27 @@ export class Pools {
 
 const UNIT_Z = new THREE.Vector3(0, 0, 1);
 
-/** A frame perpendicular to `direction`: two unit vectors spanning its plane,
- *  the first as close to `upHint` as the direction allows. */
+/**
+ * A frame perpendicular to `direction`: two unit vectors spanning its plane,
+ * the first as close to `upHint` as the direction allows.
+ *
+ * **Right-handed, and it matters.** `side × up = axis`, so
+ * `makeBasis(side, up, axis)` is a rotation. The first build took
+ * `side = axis × up`, which is the same three vectors with one sign flipped
+ * — a reflection — and `Quaternion.setFromRotationMatrix` on a reflection
+ * does not fail, it answers wrongly: for the shipyard's spine (+X, up +Y) it
+ * returned the identity, so every radiator panel lay flat along the spine
+ * instead of standing across it and the bank drew as one overlapping slab.
+ * Sage read it off the matrix; `tests/station-finish.test.ts` reads every
+ * panel's thin axis back against its spine now.
+ */
 function frameAround(direction: THREE.Vector3, upHint: THREE.Vector3) {
 	const axis = direction.clone().normalize();
 	let up = upHint.clone().sub(axis.clone().multiplyScalar(upHint.dot(axis)));
 	if (up.lengthSq() < 1e-8)
 		up = new THREE.Vector3(1, 0, 0).sub(axis.clone().multiplyScalar(axis.x));
 	up.normalize();
-	const side = new THREE.Vector3().crossVectors(axis, up).normalize();
+	const side = new THREE.Vector3().crossVectors(up, axis).normalize();
 	return { axis, up, side };
 }
 
@@ -242,12 +254,26 @@ export function truss(
  */
 export function radiatorArray(
 	pools: Pools,
-	origin: THREE.Vector3,
-	along: THREE.Vector3,
-	up: THREE.Vector3,
-	count: number,
-	panelWidthKm: number,
-	panelHeightKm: number,
+	{
+		origin,
+		along,
+		up,
+		count,
+		panelWidthKm,
+		panelHeightKm,
+	}: {
+		/** Where the first panel stands. */
+		origin: THREE.Vector3;
+		/** The spine's direction; the panels are spaced along it. */
+		along: THREE.Vector3;
+		/** Which way the panels rise off the surface. */
+		up: THREE.Vector3;
+		count: number;
+		/** A panel's extent across the spine. */
+		panelWidthKm: number;
+		/** A panel's extent along `up`. */
+		panelHeightKm: number;
+	},
 ) {
 	const { axis, up: rise, side } = frameAround(along, up);
 	const pitch = panelWidthKm * 0.55;
@@ -286,12 +312,26 @@ export function radiatorArray(
 /** Cylinders side by side in two saddles, resting on the surface. */
 export function tankRack(
 	pools: Pools,
-	origin: THREE.Vector3,
-	along: THREE.Vector3,
-	up: THREE.Vector3,
-	count: number,
-	radiusKm: number,
-	lengthKm: number,
+	{
+		origin,
+		along,
+		up,
+		count,
+		radiusKm,
+		lengthKm,
+	}: {
+		/** The rack's centre on the surface. */
+		origin: THREE.Vector3;
+		/** The tanks' long axis. */
+		along: THREE.Vector3;
+		/** Which way the tanks stand off the surface. */
+		up: THREE.Vector3;
+		count: number;
+		/** One tank's radius. */
+		radiusKm: number;
+		/** One tank's length. */
+		lengthKm: number;
+	},
 ) {
 	const { axis, up: rise, side } = frameAround(along, up);
 	const pitch = radiusKm * 2.25;
@@ -348,10 +388,21 @@ export function pipeRun(
 export function mast(
 	pools: Pools,
 	into: THREE.Group,
-	base: THREE.Vector3,
-	up: THREE.Vector3,
-	heightKm: number,
-	widthKm: number,
+	{
+		base,
+		up,
+		heightKm,
+		widthKm,
+	}: {
+		/** The mast's foot on the surface. */
+		base: THREE.Vector3;
+		/** Which way it stands. */
+		up: THREE.Vector3;
+		/** Foot to dish. */
+		heightKm: number;
+		/** The truss's width; the dish is 1.9 of it across. */
+		widthKm: number;
+	},
 ) {
 	const top = base.clone().addScaledVector(up.clone().normalize(), heightKm);
 	truss(pools, base, top, widthKm, new THREE.Vector3(0, 0, 1));
@@ -578,23 +629,34 @@ const DECLARATIONS: Record<string, (context: DeclarationContext) => void> = {
 		// corner.
 		for (const sign of [1, -1]) {
 			const base = mount(V(0, sign * face, 0), V(0, sign, 0), face * 0.2);
-			radiatorArray(
-				pools,
-				base.clone().add(V(0, 0, -face * 0.42)),
-				V(0, 0, 1),
-				V(0, sign, 0),
-				4,
-				face * 0.42,
-				face * 0.19,
-			);
+			radiatorArray(pools, {
+				origin: base.clone().add(V(0, 0, -face * 0.42)),
+				along: V(0, 0, 1),
+				up: V(0, sign, 0),
+				count: 4,
+				panelWidthKm: face * 0.42,
+				panelHeightKm: face * 0.19,
+			});
 		}
 		// A tank rack on the back face, opposite the slot.
 		const back = mount(V(0, 0, -face), V(0, 0, -1), face * 0.2);
-		tankRack(pools, back, V(1, 0, 0), V(0, 0, -1), 3, face * 0.09, face * 0.75);
+		tankRack(pools, {
+			origin: back,
+			along: V(1, 0, 0),
+			up: V(0, 0, -1),
+			count: 3,
+			radiusKm: face * 0.09,
+			lengthKm: face * 0.75,
+		});
 		// A comms mast off the +X face, aft of the truss: 0.5·face along −Z
 		// leaves 0.15·face of headroom, and the mast is 0.13 with its dish.
 		const foot = mount(V(face, 0, -face * 0.5), V(1, 0, 0), face * 0.2);
-		const top = mast(pools, group, foot, V(1, 0, 0), face * 0.1, face * 0.06);
+		const top = mast(pools, group, {
+			base: foot,
+			up: V(1, 0, 0),
+			heightKm: face * 0.1,
+			widthKm: face * 0.06,
+		});
 		beaconAt(top.clone().add(V(face * 0.05, 0, 0)), r * 0.05);
 		// Pipe runs from the tank rack round onto the ±X faces.
 		for (const sign of [1, -1])
@@ -621,18 +683,24 @@ const DECLARATIONS: Record<string, (context: DeclarationContext) => void> = {
 		const aft = 0.36;
 		// Radiator bank on the keel's top, aft half.
 		const keelTop = mount(V(-r * 1.2, r * 0.3, -aft), V(0, 1, 0), r * 0.3);
-		radiatorArray(
-			pools,
-			keelTop,
-			V(1, 0, 0),
-			V(0, 1, 0),
-			6,
-			r * 0.22,
-			r * 0.28,
-		);
+		radiatorArray(pools, {
+			origin: keelTop,
+			along: V(1, 0, 0),
+			up: V(0, 1, 0),
+			count: 6,
+			panelWidthKm: r * 0.22,
+			panelHeightKm: r * 0.28,
+		});
 		// Tank rack under the keel, forward half.
 		const keelUnder = mount(V(r * 1.1, -r * 0.3, -aft), V(0, -1, 0), r * 0.3);
-		tankRack(pools, keelUnder, V(1, 0, 0), V(0, -1, 0), 3, r * 0.08, r * 0.7);
+		tankRack(pools, {
+			origin: keelUnder,
+			along: V(1, 0, 0),
+			up: V(0, -1, 0),
+			count: 3,
+			radiusKm: r * 0.08,
+			lengthKm: r * 0.7,
+		});
 		// Two braces from each boom's tip back to the keel's rail: the frame
 		// reads as carried rather than as sticks in a row.
 		for (const sign of [1, -1]) {
@@ -656,7 +724,12 @@ const DECLARATIONS: Record<string, (context: DeclarationContext) => void> = {
 			);
 		// A mast on the keel's aft end.
 		const foot = mount(V(-r * 2.1, r * 0.2, -aft), V(0, 1, 0), r * 0.3);
-		const top = mast(pools, group, foot, V(0, 1, 0), r * 0.5, r * 0.07);
+		const top = mast(pools, group, {
+			base: foot,
+			up: V(0, 1, 0),
+			heightKm: r * 0.5,
+			widthKm: r * 0.07,
+		});
 		beaconAt(top.clone().add(V(0, r * 0.05, 0)), r * 0.06);
 	},
 
@@ -671,7 +744,14 @@ const DECLARATIONS: Record<string, (context: DeclarationContext) => void> = {
 		const r = STATION_GEOMETRY.refinery.coreRadiusKm;
 		// A tank rack on the rock's −Y flank.
 		const flank = mount(V(0, -r * 0.9, r * 0.1), V(0, -1, 0), r * 0.6);
-		tankRack(pools, flank, V(1, 0, 0), V(0, -1, 0), 4, r * 0.09, r * 0.6);
+		tankRack(pools, {
+			origin: flank,
+			along: V(1, 0, 0),
+			up: V(0, -1, 0),
+			count: 4,
+			radiusKm: r * 0.09,
+			lengthKm: r * 0.6,
+		});
 		// Pipe runs from the terraces over the rock to the tanks, each point
 		// landed on the surface.
 		for (const sign of [1, -1]) {
@@ -696,7 +776,12 @@ const DECLARATIONS: Record<string, (context: DeclarationContext) => void> = {
 		);
 		// A mast on the rock's +Y crown, between the stacks.
 		const crown = mount(V(0, r * 0.95, -r * 0.2), V(0, 1, 0), r * 0.6);
-		mast(pools, group, crown, V(0, 1, 0), r * 0.35, r * 0.07);
+		mast(pools, group, {
+			base: crown,
+			up: V(0, 1, 0),
+			heightKm: r * 0.35,
+			widthKm: r * 0.07,
+		});
 	},
 
 	/**
@@ -712,15 +797,14 @@ const DECLARATIONS: Record<string, (context: DeclarationContext) => void> = {
 		// `tests/station-finish.test.ts` read the outline moving between
 		// `reduced` and `outline` on the first build.
 		const flank = mount(V(-r * 0.76, 0, -r * 1.5), V(-1, 0, 0), r * 0.4);
-		radiatorArray(
-			pools,
-			flank.clone().add(V(0, 0, -r * 0.1)),
-			V(0, 0, 1),
-			V(-1, 0, 0),
-			4,
-			r * 0.2,
-			r * 0.22,
-		);
+		radiatorArray(pools, {
+			origin: flank.clone().add(V(0, 0, -r * 0.1)),
+			along: V(0, 0, 1),
+			up: V(-1, 0, 0),
+			count: 4,
+			panelWidthKm: r * 0.2,
+			panelHeightKm: r * 0.22,
+		});
 		// A ring main round the cluster's waist.
 		const ring: THREE.Vector3[] = [];
 		for (let i = 0; i <= 8; i++) {
@@ -732,7 +816,12 @@ const DECLARATIONS: Record<string, (context: DeclarationContext) => void> = {
 		pipeRun(pools, ring, r * 0.03);
 		// A short mast off the tower, leaning outward and clear of the pad.
 		const leg = V(r * 0.46 * Math.SQRT1_2, r * 0.46 * Math.SQRT1_2, -r * 0.6);
-		const top = mast(pools, group, leg, V(0.7, 0.7, 0.6), r * 0.9, r * 0.06);
+		const top = mast(pools, group, {
+			base: leg,
+			up: V(0.7, 0.7, 0.6),
+			heightKm: r * 0.9,
+			widthKm: r * 0.06,
+		});
 		beaconAt(top.clone().add(V(r * 0.05, r * 0.05, 0)), r * 0.06);
 		beaconAt(V(-r * 0.76, 0, -r * 1.25), r * 0.06);
 	},

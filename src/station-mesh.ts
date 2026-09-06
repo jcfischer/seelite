@@ -3431,7 +3431,14 @@ function buildTradeModular(color: number, berthSeed: number): BuiltPart {
 				const away = toward(host).negate();
 				const origin = centre.clone().addScaledVector(toward(host), c * 0.5);
 				for (const up of [V(0, 0, 1), V(0, 0, -1)])
-					radiatorArray(pools, origin, away, up, 4, c * 0.4, c * 0.4);
+					radiatorArray(pools, {
+						origin,
+						along: away,
+						up,
+						count: 4,
+						panelWidthKm: c * 0.4,
+						panelHeightKm: c * 0.4,
+					});
 				break;
 			}
 			case TANKS: {
@@ -3444,15 +3451,14 @@ function buildTradeModular(color: number, berthSeed: number): BuiltPart {
 					c * 0.1,
 					V(0, 0, 1),
 				);
-				tankRack(
-					pools,
-					centre.clone().add(V(0, 0, -c * 0.1)),
-					toward(host),
-					V(0, 0, 1),
-					3,
-					c * 0.09,
-					c * 0.7,
-				);
+				tankRack(pools, {
+					origin: centre.clone().add(V(0, 0, -c * 0.1)),
+					along: toward(host),
+					up: V(0, 0, 1),
+					count: 3,
+					radiusKm: c * 0.09,
+					lengthKm: c * 0.7,
+				});
 				break;
 			}
 			case DISH: {
@@ -3464,7 +3470,12 @@ function buildTradeModular(color: number, berthSeed: number): BuiltPart {
 					c * 0.1,
 					V(0, 0, 1),
 				);
-				mast(pools, group, centre, V(0, 0, 1), c * 0.6, c * 0.12);
+				mast(pools, group, {
+					base: centre,
+					up: V(0, 0, 1),
+					heightKm: c * 0.6,
+					widthKm: c * 0.12,
+				});
 				break;
 			}
 		}

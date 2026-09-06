@@ -135,8 +135,12 @@ const STATION_FAMILY: ModelFamily = {
 			// form differ for a reason that has nothing to do with the form.
 			0,
 		).root.getObjectByName("km") as THREE.Group,
+	// `beacon-` is #202's macro-structure lamp, driven in the game by the
+	// same fixture list as the strobes; here it is lit by name like they are,
+	// or the sheet shows every beacon dark under the one finish that has them.
 	emissive: (name) =>
 		name.startsWith("strobe") ||
+		name.startsWith("beacon") ||
 		name === "flare" ||
 		name === "heat-glow" ||
 		name === "weld-arc" ||
@@ -387,6 +391,11 @@ export function mountModelViewer(): void {
 			// — including the next one this workbench builds.
 			mesh.traverse((object) => {
 				if (object instanceof THREE.Mesh) object.geometry.dispose();
+				// An instanced mesh's matrices are a buffer the geometry does not
+				// own, released only by its own `dispose`; without it every
+				// finish switch left an industrial station's fixture matrices
+				// on the GPU.
+				if (object instanceof THREE.InstancedMesh) object.dispose();
 			});
 			// Dropped after disposal so the old tree is unreachable rather than
 			// held alive by this closure until the next rebuild replaces it.
@@ -598,14 +607,17 @@ export function mountModelViewer(): void {
 	// The renderer beside the state, so `scripts/shot-finishes.mjs` can read
 	// the real rasteriser back the way `capture-views.mjs` does through
 	// `window.__seelite` — which the workbench deliberately never sets.
+	// And the holder, so `probe-model-viewer.mjs` can read a fixture's
+	// material back rather than trust the selector above by name.
 	(
 		window as unknown as {
 			__seeliteModelViewer: {
 				state: ViewerState;
 				renderer: THREE.WebGLRenderer;
+				holder: THREE.Group;
 			};
 		}
-	).__seeliteModelViewer = { state, renderer };
+	).__seeliteModelViewer = { state, renderer, holder };
 	updateTournament();
 	reframe(state.asset, state.variant);
 	rebuild();

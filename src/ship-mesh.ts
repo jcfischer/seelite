@@ -841,9 +841,19 @@ function hoop(radius: number, tube: number) {
  * from the surface where the torus reached one; a hull whose hoop was its
  * farthest vertex would move by that much, and the reach test would say so.
  *
- * Solid rather than hollow — the loft caps close it into a drum — because the
- * inside is buried in the nacelle it grips and a hole there is triangles for
- * nothing. Marked `ring` for the forward-view test's reason.
+ * **Hollow, like the torus it replaces.** The first build let the loft cap it
+ * into a drum on the argument that the inside is buried in the nacelle it
+ * grips — which is true of a nacelle hoop and false of the two other things
+ * `hoop` is asked for: carrier B's bay lip stands round the bay's mouth and
+ * explorer A's habitat ring round open space, and a drum there is a wall
+ * across the opening. Sage's forward ray at the carrier's mouth found the lip
+ * under this finish and the mouth under stock. So the profile is a closed
+ * section swept round the axis — out across the front face, over the flange,
+ * back across the rear face and **home along the bore** — with `open` on the
+ * loft so no fan is drawn across either end. Twelve more quads than the drum,
+ * and `tests/ship-finish.test.ts` casts a ray along every ring's axis to
+ * prove the middle is empty. Marked `ring` for the forward-view test's reason,
+ * which is now true of it.
  */
 function collar(radius: number, tube: number) {
 	const ring = (r: number, z: number): Ring => ({
@@ -853,18 +863,23 @@ function collar(radius: number, tube: number) {
 		e: 2,
 		hard: true,
 	});
+	const bore = radius - tube * 0.5;
 	const geometry = hullLoft(
 		[
-			ring(radius - tube * 0.5, -tube * 1.4),
+			ring(bore, -tube * 1.4),
 			ring(radius + tube * 0.45, -tube * 1.4),
 			ring(radius + tube * 0.45, -tube * 0.5),
 			ring(radius + tube * 1.15, -tube * 0.5),
 			ring(radius + tube * 1.15, tube * 0.5),
 			ring(radius + tube * 0.45, tube * 0.5),
 			ring(radius + tube * 0.45, tube * 1.4),
-			ring(radius - tube * 0.5, tube * 1.4),
+			ring(bore, tube * 1.4),
+			// The bore, swept back to the first ring. A sweep run towards -Z
+			// winds its quads the other way, which is what an inner wall needs:
+			// its front faces the axis.
+			ring(bore, -tube * 1.4),
 		],
-		{ segments: 12, subdivisions: 1 },
+		{ segments: 12, subdivisions: 1, open: true },
 	);
 	geometry.userData.ring = true;
 	return geometry;

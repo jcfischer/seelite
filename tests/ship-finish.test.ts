@@ -263,3 +263,80 @@ describe("the finish reaches the material and the tile", () => {
 		}
 	});
 });
+
+describe("a ring is hollow", () => {
+	/**
+	 * The first collar was a capped loft — a drum — on the argument that a
+	 * hoop's inside is buried in the nacelle it grips. Two of `hoop`'s callers
+	 * are not nacelles: carrier B's bay lip stands round the bay's mouth and
+	 * explorer A's habitat ring round open space, and sage's forward ray at
+	 * the carrier's mouth met the lip under `industrial` and the mouth under
+	 * `stock`. The forward-view test exempts a `ring` on the promise that its
+	 * middle is empty, so this is where the promise is checked: in the
+	 * geometry's own frame a ray along its axis passes through, and a ray from
+	 * its centre outward meets a wall that faces the axis; in the hull's frame
+	 * a ray along the ring's own axis never meets the ring, whatever else it
+	 * meets.
+	 */
+	test("a ray along every ring's axis passes through it, under every finish", () => {
+		for (const finish of HULL_FINISH_IDS) {
+			setHullFinish(finish);
+			let rings = 0;
+			for (const id of HULL_IDS)
+				for (const variant of HULL_VARIANT_IDS) {
+					const root = buildShipMesh(id, variant).root;
+					root.updateMatrixWorld(true);
+					const meshes: THREE.Mesh[] = [];
+					root.traverse((object) => {
+						if (object instanceof THREE.Mesh) meshes.push(object);
+					});
+					for (const mesh of meshes) {
+						if (mesh.geometry.userData.ring !== true) continue;
+						rings += 1;
+						const tag = [finish, id, variant, mesh.name];
+						const alone = new THREE.Mesh(
+							mesh.geometry,
+							new THREE.MeshBasicMaterial(),
+						);
+						const through = new THREE.Raycaster(
+							new THREE.Vector3(0, 0, -1),
+							new THREE.Vector3(0, 0, 1),
+							0,
+							2,
+						);
+						expect([...tag, through.intersectObject(alone).length]).toEqual([
+							...tag,
+							0,
+						]);
+						const outward = new THREE.Raycaster(
+							new THREE.Vector3(),
+							new THREE.Vector3(1, 0, 0),
+							0,
+							1,
+						);
+						expect([...tag, outward.intersectObject(alone).length > 0]).toEqual(
+							[...tag, true],
+						);
+						const axis = new THREE.Vector3(0, 0, 1).transformDirection(
+							mesh.matrixWorld,
+						);
+						const centre = new THREE.Vector3().setFromMatrixPosition(
+							mesh.matrixWorld,
+						);
+						const along = new THREE.Raycaster(
+							centre.clone().addScaledVector(axis, -5),
+							axis,
+							0,
+							10,
+						);
+						const hits = along.intersectObjects(meshes, false);
+						expect([...tag, hits.some((hit) => hit.object === mesh)]).toEqual([
+							...tag,
+							false,
+						]);
+					}
+				}
+			expect([finish, rings > 0]).toEqual([finish, true]);
+		}
+	});
+});

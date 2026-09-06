@@ -98,6 +98,7 @@ _Avoid_: Hangar, throat, docking bay corridor
 **Bay**:
 A **slot** role's interior — trade and shipyard: the enclosed, unpressurized volume *beyond* the aperture, a role-scaled room with a permanently clear central **transit lane** running from the open mouth to a **staging point**, and berths on its four walls. It has no door — the aperture frame and the name shield stay visible from every berth.
 _Avoid_: Hangar, throat
+"Throat" is an alias for this and for **Station interior** when it means the way into a station. An engine bell has a **throat** of its own — a nozzle's narrowest section, where `ship-mesh.ts`'s open bell (#203) starts its glow — and that is the rocket's word rather than a synonym for a bay. A reviewer flagging it there has found the English word.
 
 **Landing pad**:
 A **pad** role's interior — refinery and outpost: an open deck *at* the aperture plane with berths standing on it around a central landing lane, no enclosure, and an uncut hull behind it. Its volume runs **outward** from the deck to the staging point, so `endAxialKm === mouthAxialKm` and `interiorAxialSpanKm` is the one place that ordering lives. Ratified by the principal on #165, reversing §13.1's bay for those two roles.

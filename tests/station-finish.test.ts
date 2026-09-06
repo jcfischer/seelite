@@ -19,6 +19,7 @@ import {
 	STATION_TYPES,
 	type StationType,
 } from "../src/station";
+import { Pools, radiatorArray } from "../src/station-fixtures";
 import {
 	SELECTED_FORM,
 	STATION_FORMS,
@@ -39,42 +40,12 @@ import {
 } from "../src/station-visuals";
 import { PLATE_TEXTURE_SIZE, plateTexels } from "../src/surface";
 import { corridorIntrusions, corridorLine } from "./helpers/aperture-opening";
+import { reachKm } from "./helpers/station-reach";
 
 const GREY = 0x9aa6b2;
 const LEVELS: StationDetailLevel[] = ["full", "reduced", "outline"];
 
 afterEach(() => setStationFinish("stock"));
-
-/** The reach `station-visuals.test.ts` measures: every drawn vertex, instanced
- *  copies included, hidden parts excluded, back in kilometres. */
-function reachKm(root: THREE.Object3D, type: StationType): number {
-	root.updateMatrixWorld(true);
-	let maxSq = 0;
-	const v = new THREE.Vector3();
-	const instance = new THREE.Matrix4();
-	const stack: THREE.Object3D[] = [root];
-	while (stack.length) {
-		const object = stack.pop() as THREE.Object3D;
-		if (!object.visible) continue;
-		for (const child of object.children) stack.push(child);
-		const mesh = object as THREE.Mesh;
-		const position = mesh.geometry?.getAttribute?.("position");
-		if (!position) continue;
-		const instanced = object as THREE.InstancedMesh;
-		const count = instanced.isInstancedMesh ? instanced.count : 1;
-		for (let n = 0; n < count; n++) {
-			if (instanced.isInstancedMesh) instanced.getMatrixAt(n, instance);
-			else instance.identity();
-			for (let i = 0; i < position.count; i++) {
-				v.fromBufferAttribute(position as THREE.BufferAttribute, i);
-				v.applyMatrix4(instance);
-				mesh.localToWorld(v);
-				maxSq = Math.max(maxSq, v.lengthSq());
-			}
-		}
-	}
-	return Math.sqrt(maxSq) * STATION_GEOMETRY[type].coreRadiusKm;
-}
 
 const formOf = (type: StationType) =>
 	STATION_FORMS[type].find(
@@ -261,5 +232,59 @@ describe("the finish reaches the material", () => {
 		};
 		expect(normalOf("stock")).toBeNull();
 		expect(normalOf("plated")).toBeTruthy();
+	});
+});
+
+describe("a fixture's frame", () => {
+	/**
+	 * Sage read the radiator basis off the matrix: `side = axis × up` is a
+	 * reflection, and `setFromRotationMatrix` on a reflection answered the
+	 * identity for the shipyard's keel, so every panel lay along the spine and
+	 * the bank drew as one slab. The frame is right-handed now, and this reads
+	 * every panel's thin axis back against the spine it stands on — for the
+	 * pair that failed and for the three other orientations the forms use.
+	 */
+	test("a radiator panel stands across its spine, whichever way the spine runs", () => {
+		const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+		const cases: [string, THREE.Vector3, THREE.Vector3][] = [
+			["shipyard keel", V(1, 0, 0), V(0, 1, 0)],
+			["trade +Y face", V(0, 0, 1), V(0, 1, 0)],
+			["outpost flank", V(0, 0, 1), V(-1, 0, 0)],
+			["assembly cell", V(-1, 0, 0), V(0, 0, -1)],
+		];
+		const matrix = new THREE.Matrix4();
+		const position = new THREE.Vector3();
+		const rotation = new THREE.Quaternion();
+		const scale = new THREE.Vector3();
+		for (const [label, along, up] of cases) {
+			const pools = new Pools();
+			radiatorArray(pools, {
+				origin: V(1, 2, 3),
+				along,
+				up,
+				count: 4,
+				panelWidthKm: 0.1,
+				panelHeightKm: 0.08,
+			});
+			const group = new THREE.Group();
+			pools.emit(group, "fx");
+			const panels = group.getObjectByName(
+				"fx-radiator",
+			) as THREE.InstancedMesh;
+			expect([label, panels.count]).toEqual([label, 4]);
+			for (let i = 0; i < panels.count; i++) {
+				panels.getMatrixAt(i, matrix);
+				// A rotation, not a reflection.
+				expect([label, i, matrix.determinant() > 0]).toEqual([label, i, true]);
+				matrix.decompose(position, rotation, scale);
+				const thin = V(0, 0, 1).applyQuaternion(rotation);
+				const rise = V(0, 1, 0).applyQuaternion(rotation);
+				// The panel's thin dimension runs along the spine — it stands
+				// across it — and its height runs up off the surface.
+				expect(Math.abs(thin.dot(along))).toBeCloseTo(1, 6);
+				expect(rise.dot(up)).toBeCloseTo(1, 6);
+				expect(scale.z).toBeLessThan(scale.x * 0.1);
+			}
+		}
 	});
 });
