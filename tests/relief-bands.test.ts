@@ -228,9 +228,30 @@ describe("the three fragment programs", () => {
 	 * reach it too — otherwise the one class whose relief is a crater walk keeps
 	 * paying for it at four pixels across.
 	 */
-	test("the airless class's crater relief is under the same macro", () => {
-		expect(fragmentFor("airless", "none")).toContain("#define RELIEF_NONE");
-		expect(CLASS_GLSL.airless).toBeDefined();
+	/**
+	 * **The airless class's own relief has its own guard, and the first version
+	 * of this test could not see it** (sage, PR #254).
+	 *
+	 * It asserted that `RELIEF` carries an `#ifdef RELIEF_NONE` and that the
+	 * airless program defines the macro — both true with `craterRelief` left
+	 * wide open, because `craterRelief` is in `CLASS_GLSL.airless` and not in
+	 * `RELIEF`. So the one class whose relief is a crater walk could have gone on
+	 * paying for it at four pixels across, under a green test.
+	 *
+	 * What is asserted now is the guard itself, inside that function's body, and
+	 * that it comes before the walk — a guard after the first
+	 * `cratersAndGradient` would compile and would save nothing.
+	 */
+	test("the airless class's crater relief is guarded, before the walk", () => {
+		const body = CLASS_GLSL.airless;
+		const start = body.indexOf("vec3 craterRelief(");
+		expect(start).toBeGreaterThanOrEqual(0);
+		const fn = body.slice(start, body.indexOf("\n}", start));
+		const guard = fn.indexOf("#ifdef RELIEF_NONE");
+		expect(guard).toBeGreaterThanOrEqual(0);
+		expect(fn.slice(guard, fn.indexOf("#endif", guard))).toContain("return N;");
+		expect(guard).toBeLessThan(fn.indexOf("cratersAndGradient"));
+		// And the shared one, which is a different function in a different chunk.
 		expect(RELIEF).toContain("#ifdef RELIEF_NONE");
 	});
 });

@@ -359,6 +359,37 @@ export function setAblation(
 	return arm;
 }
 
+/**
+ * What the planets are wearing and whether anything is holding them there.
+ *
+ * **Two facts, and the panel had been asserting the second one** (sage, PR
+ * #254). It printed `(pinned)` unconditionally, so on mount and after a restore
+ * — the two moments when nothing is pinned — it claimed a fixed measurement arm
+ * while #207's bands were free to move the program on the next frame. That is
+ * the class of diagnostic error this repo has several of: a readout that says
+ * what the code meant rather than what the state is.
+ *
+ * And `mixed`, because automatic selection is *per body*: a system with a
+ * planet filling the view and another as a dot has two programs running, and
+ * reporting the last one the traversal happened to reach names a scene state
+ * that does not exist.
+ */
+function readReliefState(scenes: THREE.Object3D[]): {
+	paths: Set<string>;
+	pinned: boolean;
+} {
+	const paths = new Set<string>();
+	let pinned = false;
+	for (const scene of scenes)
+		scene.traverse((object) => {
+			const klass = object.userData?.surfaceClass;
+			if (!klass || klass === "star" || !object.userData?.reliefPath) return;
+			paths.add(object.userData.reliefPath);
+			if (object.userData.reliefPinned) pinned = true;
+		});
+	return { paths, pinned };
+}
+
 function readRelief(scenes: THREE.Object3D[]): string {
 	let found = "four-tap";
 	for (const scene of scenes)
@@ -528,8 +559,13 @@ export function mountPerfPanel(targets: PerfTargets) {
 			// the two ablations that price them. Cycling them on one key keeps
 			// them in one column, which is what makes a reading comparable.
 			label: "relief",
-			state: () =>
-				readAblate(scenes) === 2 ? "flat" : `${readRelief(scenes)} (pinned)`,
+			state: () => {
+				if (readAblate(scenes) === 2) return "flat";
+				const { paths, pinned } = readReliefState(scenes);
+				const what =
+					paths.size === 0 ? "—" : paths.size > 1 ? "mixed" : [...paths][0];
+				return pinned ? `${what} (pinned)` : `${what} (auto)`;
+			},
 			/**
 			 * four-tap → screen-space → none → flat → four-tap.
 			 *
@@ -555,8 +591,20 @@ export function mountPerfPanel(targets: PerfTargets) {
 					"screen-space": "none",
 				};
 				const path = readRelief(scenes);
-				if (path === "none") setAblate(scenes, 2);
-				else setRelief(scenes, next[path] ?? "four-tap");
+				if (path === "none") {
+					setAblate(scenes, 2);
+					return;
+				}
+				// **Clear the ablation on the way into a path** (sage, PR #254).
+				// `setAblation`'s `no-relief` arm leaves `perfAblate` at 1, and
+				// without this the next press would show `screen-space` over a
+				// shader with the perturbation still switched off — the panel
+				// reporting one arm while the GPU drew another, which invalidates
+				// whatever comparison the press was for. The two levers overlap in
+				// what they mean and only one of them ships, so the cycle owns
+				// putting the other back.
+				setAblate(scenes, 0);
+				setRelief(scenes, next[path] ?? "four-tap");
 			},
 		},
 		{
@@ -621,13 +669,13 @@ rasterizer                  ${identity(attribution.renderer.rasterizer)}`;
 			for (const kind of ["atmosphere", "cloud"])
 				for (const s of shells(scenes, kind)) s.visible = true;
 			setAblate(scenes, 0);
-			// **Un-pin before setting**, not after: `setReliefPath` pins, so a
-			// restore that set the path and then cleared the pin would work, and a
-			// restore that cleared it first and then set it would leave every body
-			// pinned to four-tap for the rest of the session — with the picture
-			// looking exactly right until a planet got small. Un-pinning is what
-			// "restore all" means here: hand the bands back (#207).
-			unpinRelief(scenes);
+			// **Set, then un-pin, in that order and only once.** `setRelief` pins
+			// the bodies it touches (#207), so clearing the pin first and setting
+			// after would leave every planet held at four-tap for the rest of the
+			// session — with the picture looking exactly right until a planet got
+			// small. The first version did both, which worked and read as though
+			// the ordering did not matter (sage, PR #254). Handing the bands back
+			// is what "restore all" means for this row.
 			setRelief(scenes, "four-tap");
 			unpinRelief(scenes);
 			setCrater(scenes, false);

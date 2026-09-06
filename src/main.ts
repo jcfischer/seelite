@@ -2450,11 +2450,17 @@ class Game {
 	 * body — the worst possible place to spend a compile.
 	 *
 	 * **`renderer.compile` on the live scenes, not on a hidden mesh.** The node
-	 * suggested a hidden one; a hidden mesh is `visible: false` and three skips
-	 * those, so it would compile nothing and the hitch would still be there on
-	 * the first crossing with a green build behind it. Walking the real bodies
-	 * through each path and compiling costs the same and cannot silently do
-	 * nothing.
+	 * suggested a hidden one, and an earlier version of this comment rejected
+	 * that by claiming three skips invisible objects — which is false, and sage
+	 * caught it (PR #254). `WebGLRenderer.compile` uses `traverseVisible` only to
+	 * gather lights; materials are initialised through a plain `scene.traverse`,
+	 * so a hidden mesh would have compiled perfectly well.
+	 *
+	 * The real reason is smaller and holds: the bodies are already here, already
+	 * carry the right class, and are the exact materials the frame loop will
+	 * switch. A hidden stand-in is a second thing to build, keep in step with
+	 * the class roster, and dispose — for a warm-up that costs the same either
+	 * way.
 	 *
 	 * Every body is put back on the path it had, which on a fresh system is
 	 * four-tap for all of them; `render` selects the real band on the first
