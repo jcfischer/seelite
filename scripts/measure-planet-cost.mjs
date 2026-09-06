@@ -516,6 +516,35 @@ async function run(pixelRatio) {
 				([id, r, deg]) => window.__sunOffset(id, r, deg),
 				[SUBJECT, radii, SUN_ANGLE_DEG],
 			);
+			await settleBakes();
+		};
+
+		/**
+		 * Drive frames until no cube bake is still filling (#208).
+		 *
+		 * **A placement is a layer handoff**, and a handoff re-bakes at the new
+		 * layer's face size — so every `place` refills the queue and the frames
+		 * that empty it draw an extra full-screen quad each. Sampling through that
+		 * would put twelve bake faces inside a cost cell and attribute them to
+		 * whatever arm the cell is labelled with.
+		 *
+		 * Bounded, and the timeout **throws** rather than giving up quietly: one
+		 * face is drawn per frame, so a queue still filling after a minute is a
+		 * scheduler defect and not a slow machine — and an instrument that measured
+		 * around it would print a plausible table for a page in a state nothing
+		 * describes (#7).
+		 */
+		const settleBakes = async () => {
+			// **Waited on, never driven.** Calling `render` in a loop from here does
+			// empty the queue, and it also blocks the page's own `requestAnimationFrame`
+			// — which is what `src/fps-meter.ts` measures, so the readout this sweep
+			// parses comes back empty and every cell throws. The game's loop is
+			// already running; this only has to stop before it.
+			await page.waitForFunction(
+				() => window.__seelite.bakeQueue.length === 0,
+				undefined,
+				{ timeout: 60_000 },
+			);
 		};
 
 		/** Place the camera, set the shader, settle, and take `READINGS` samples. */
@@ -567,6 +596,32 @@ async function run(pixelRatio) {
 					name,
 				);
 			}, arm);
+			/**
+			 * **The arm landed, checked rather than assumed** (#208).
+			 *
+			 * `setAblation`'s `baked` arm is the one lever in the ladder that can be
+			 * *refused*: a body with no complete cube, or a class that cannot bake
+			 * at all, keeps the procedural program. Without this the run prints the
+			 * procedural cost in the `baked` column, three digits and no marker —
+			 * which is the shape of every measurement defect this instrument has
+			 * had. A refusal here names the subject and the path it is actually on.
+			 */
+			const drawnWith = await page.evaluate(
+				(id) =>
+					window.__seelite.bodyVisuals.get(id)?.surfacePath() ?? "no such body",
+				SUBJECT,
+			);
+			const wanted = await page.evaluate(async (name) => {
+				const mod = await import("/src/perf-panel.ts");
+				return mod.armByName(name).surface;
+			}, arm);
+			if (drawnWith !== wanted) {
+				throw new Error(
+					`${label}: the ladder asked for "${wanted}" and ${SUBJECT} is drawn ` +
+						`with "${drawnWith}". A baked arm is refused where the body has ` +
+						"no complete cube or the class reads the clock in surface().",
+				);
+			}
 			return sampleHere(label, { radii, arm });
 		};
 

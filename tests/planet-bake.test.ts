@@ -1,0 +1,307 @@
+/**
+ * Baking a rocky planet into two cube maps — node #208.
+ *
+ * What is arithmetic lives here; what needs a GPU lives in
+ * `scripts/probe-planet-surfaces.mjs`, and the split is the usual one. The band
+ * itself is in `tests/relief-bands.test.ts` beside #207's, because the two are
+ * one rule over one apparent size and splitting them was how they would come to
+ * disagree.
+ */
+import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { codeOf } from "./lib/source-scan";
+import { CLASS_GLSL } from "../src/planet-classes.glsl";
+import type { SurfaceClass } from "../src/planet-appearance";
+import {
+	BAKE_FACE_PX,
+	CUBE_FACE_COUNT,
+	cubeFaceBasis,
+} from "../src/planet-bake";
+import {
+	BAKEABLE_CLASSES,
+	BAKE_DESCRIPTORS,
+	bakeFragmentFor,
+	bakedFragmentFor,
+	isBakeable,
+} from "../src/planet-shaders";
+
+/**
+ * The body of one class's `surface()`, and everything it reaches inside its own
+ * chunk.
+ *
+ * The whole chunk, in other words — which is deliberate and is the point of the
+ * check below. `lava`'s clock term moved out of `surface()` into
+ * `lavaEmissive()` when #208 extracted it, so a scan of the `surface()` braces
+ * alone would now report lava as static and would have reported it as animated
+ * the day before. A rule that changes its answer when a function is extracted
+ * is not the rule anyone meant.
+ */
+const chunkOf = (surface: SurfaceClass) => CLASS_GLSL[surface];
+
+describe("which classes bake", () => {
+	/**
+	 * **A class bakes exactly when nothing it evaluates reads the clock**, and
+	 * this is read off the shader source rather than off the table.
+	 *
+	 * The rule matters more than it looks, because the *other* checks cannot see
+	 * a violation of it. The bake pins `time` to 0, so "bake twice and diff" — the
+	 * determinism proof the node asks for — passes perfectly on a class whose
+	 * animation has been frozen into a texture. Nothing renders wrong; the planet
+	 * simply stops moving, on one body, in one system, and no tier says so.
+	 *
+	 * A bakeable class may still name the clock, but only inside the function its
+	 * descriptor's `perFrame` calls — that is lava's whole arrangement: the static
+	 * crack network bakes and the glow over it is recomputed. So the exemption is
+	 * derived from the descriptor rather than listed here.
+	 */
+	test("a bakeable class reads the clock only where its descriptor says", () => {
+		for (const [name, chunk] of Object.entries(CLASS_GLSL)) {
+			const surface = name as SurfaceClass;
+			const usesClock = /\btime\b/.test(chunk);
+			if (!isBakeable(surface)) continue;
+			if (!usesClock) continue;
+			// Every clock reference must be inside a function the per-frame term
+			// names. Lava names `lavaEmissive`, so `time` inside it is the arm the
+			// draw program still evaluates; `time` anywhere else in the chunk would
+			// be a term the cube has frozen.
+			const perFrame = BAKE_DESCRIPTORS[surface]?.perFrame ?? "";
+			const named = [...perFrame.matchAll(/\b([a-zA-Z_][\w]*)\s*\(/g)].map(
+				(m) => m[1],
+			);
+			expect(
+				named.length,
+				`${surface} reads the clock and names nothing`,
+			).toBeGreaterThan(0);
+			// Strip each named function's body, then insist nothing is left.
+			let rest = chunk;
+			for (const fn of named) {
+				const at = rest.indexOf(`${fn}(`);
+				if (at < 0) continue;
+				const open = rest.indexOf("{", at);
+				let depth = 0;
+				let end = open;
+				for (; end < rest.length; end++) {
+					if (rest[end] === "{") depth++;
+					else if (rest[end] === "}" && --depth === 0) break;
+				}
+				rest = rest.slice(0, at) + rest.slice(end + 1);
+			}
+			// `uniform float time;` is a declaration, not an evaluation.
+			rest = rest.replace(/uniform\s+float\s+time\s*;/g, "");
+			expect(
+				/\btime\b/.test(rest),
+				`${surface} evaluates the clock outside ${named.join(", ")}`,
+			).toBe(false);
+		}
+	});
+
+	test("every class that reads the clock everywhere is left procedural", () => {
+		// The other direction, which is the one that fails open. `venusian` is the
+		// class the node was unsure about — "if its albedo noise justifies it" —
+		// and the answer is no: its whole deck drifts and its `height` is `0.0`, so
+		// there is nothing static to bake.
+		for (const surface of ["venusian", "jovian", "iceGiant", "star"] as const) {
+			expect(isBakeable(surface), surface).toBe(false);
+			expect(/\btime\b/.test(chunkOf(surface)), surface).toBe(true);
+		}
+	});
+
+	test("the roster is derived from the table and matches it", () => {
+		expect([...BAKEABLE_CLASSES].sort()).toEqual(
+			(["airless", "desert", "ice", "lava", "terran"] as SurfaceClass[]).sort(),
+		);
+		for (const surface of BAKEABLE_CLASSES)
+			expect(BAKE_DESCRIPTORS[surface]).toBeDefined();
+	});
+
+	test("a class with no descriptor refuses to assemble a program", () => {
+		// Loudly, per #7: a missing descriptor arriving as `undefined` would give a
+		// shader with the literal string "undefined" spliced into it, which fails
+		// at link time in a browser and never in this tier.
+		expect(() => bakeFragmentFor("jovian", "albedo")).toThrow(
+			/bake descriptor/,
+		);
+		expect(() => bakedFragmentFor("venusian")).toThrow(/bake descriptor/);
+	});
+});
+
+describe("the two programs a bake needs", () => {
+	test("the bake writes both channels and never shades", () => {
+		for (const surface of BAKEABLE_CLASSES) {
+			const albedo = bakeFragmentFor(surface, "albedo");
+			const normal = bakeFragmentFor(surface, "normal");
+			// The whole reason the bake needs its own fragment: `fragmentFor`'s
+			// `main()` calls `shade(albedo, N, V)` with the bake camera's own `V`,
+			// so what would land in the cube is *lit* colour and the draw program
+			// would light it again.
+			for (const source of [albedo, normal]) {
+				expect(source).not.toMatch(/\bshade\s*\(/);
+				expect(source).toMatch(/surface\(p, albedo, N, emissive/);
+			}
+			expect(albedo).toMatch(/gl_FragColor = vec4\(sane\(albedo\)/);
+			// **Encoded, then sanitised**, and asserted in that order because the
+			// other order is what shipped for an hour: `saneF` clamps a negative to
+			// zero, so wrapping the normal first read every face's negative axis
+			// back as exactly 0.5 and the planet lost its terrain while compiling,
+			// rendering and erroring in no way at all.
+			expect(normal).toMatch(/sane4\(vec4\(normalize\(N\) \* 0\.5 \+ 0\.5,/);
+			expect(normal).not.toMatch(/sane\(normalize\(N\)\)/);
+		}
+	});
+
+	test("the draw program samples two cubes and runs no noise it need not", () => {
+		// The saving, as a property of the source. A class with no per-frame term
+		// must not carry the noise library at all — that is what "two texture
+		// fetches instead of 100 to 150 noise calls" means, and a prelude included
+		// unconditionally would leave the program looking identical to the one it
+		// replaces.
+		const desert = bakedFragmentFor("desert");
+		expect(desert).toMatch(/textureCube\(bakedAlbedo, p\)/);
+		expect(desert).toMatch(/textureCube\(bakedNormal, p\)/);
+		expect(desert).not.toMatch(/float fbm4\(/);
+		expect(desert).not.toMatch(/reliefNormal/);
+
+		// Lava is the exception and carries its prelude for one function.
+		const lava = bakedFragmentFor("lava");
+		expect(lava).toMatch(/emissive = lavaEmissive\(p, aux\);/);
+		expect(lava).toMatch(/float fbm3\(/);
+	});
+
+	test("the specular exponent is compiled in, not baked, and only where there is one", () => {
+		// `specPower` is a per-class literal in `CLASS_GLSL` — spending a channel
+		// on a constant would be the one decision here that buys nothing.
+		expect(bakedFragmentFor("terran")).toMatch(/specular\(N, V, 230\.0\)/);
+		expect(bakedFragmentFor("ice")).toMatch(/specular\(N, V, 46\.0\)/);
+		// The **call**, not the definition: `specular` is declared in
+		// `LIGHT_GLSL`, which every one of these programs includes, so a bare
+		// `/specular\(/` matches the shared prelude and can never fail.
+		for (const surface of ["desert", "airless", "lava"] as const)
+			expect(bakedFragmentFor(surface)).not.toMatch(/specular\(N, V,/);
+	});
+
+	test("the exponent in the table is the one the class shader declares", () => {
+		// The table and the shader are two homes for one number, and this is what
+		// stops them drifting: the literal is read out of `CLASS_GLSL` rather than
+		// restated. A class that changed its water exponent without the table would
+		// bake a highlight the draw program does not reproduce.
+		for (const surface of BAKEABLE_CLASSES) {
+			const declared = chunkOf(surface).match(/specPower\s*=\s*([\d.]+)\s*;/);
+			expect(declared, `${surface} declares no specPower`).not.toBeNull();
+			expect(Number(declared?.[1]), surface).toBe(
+				BAKE_DESCRIPTORS[surface]?.specPower ?? Number.NaN,
+			);
+		}
+	});
+
+	test("the baked program honours the ladder's ablation levels", () => {
+		// So an arm named on the perf panel means the same thing on a baked body as
+		// on a procedural one. Without it half the bodies in a frame would ignore
+		// the dial and the ladder's floor would be measured against a mixture.
+		const source = bakedFragmentFor("terran");
+		expect(source).toMatch(/perfAblate > 1\.5/);
+		expect(source).toMatch(/perfAblate > 0\.5/);
+	});
+});
+
+describe("the six faces", () => {
+	test("each basis is orthonormal and right-handed", () => {
+		for (let face = 0; face < CUBE_FACE_COUNT; face++) {
+			const e = cubeFaceBasis(face).elements; // column-major
+			const cols = [e.slice(0, 3), e.slice(3, 6), e.slice(6, 9)];
+			for (const c of cols)
+				expect(Math.hypot(c[0], c[1], c[2])).toBeCloseTo(1, 12);
+			const dot = (a: number[], b: number[]) =>
+				a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+			expect(dot(cols[0], cols[1])).toBeCloseTo(0, 12);
+			expect(dot(cols[0], cols[2])).toBeCloseTo(0, 12);
+			expect(dot(cols[1], cols[2])).toBeCloseTo(0, 12);
+		}
+	});
+
+	test("the six forwards are the six axes, each exactly once", () => {
+		// The property that makes it a cube. Derived from three's own
+		// `CubeCamera.updateCoordinateSystem` table rather than transcribed from
+		// the GL sign convention, which is where a bake of this shape usually goes
+		// wrong — and a flipped face is a seam on one edge of one body, which is
+		// exactly the failure nothing here would see.
+		const seen = new Set<string>();
+		for (let face = 0; face < CUBE_FACE_COUNT; face++) {
+			const e = cubeFaceBasis(face).elements;
+			const f = [e[6], e[7], e[8]].map((v) => Math.round(v));
+			expect(Math.abs(f[0]) + Math.abs(f[1]) + Math.abs(f[2])).toBe(1);
+			seen.add(f.join(","));
+		}
+		expect(seen.size).toBe(6);
+	});
+
+	test("the corner rays of every face reach the same eight directions", () => {
+		// Coverage without gaps or overlap: the twenty-four corner rays of a cube
+		// map are the eight corners of a cube, three faces each. A basis with a
+		// wrong handedness passes the orthonormality check above and fails here.
+		const corners = new Map<string, number>();
+		for (let face = 0; face < CUBE_FACE_COUNT; face++) {
+			const e = cubeFaceBasis(face).elements;
+			for (const x of [-1, 1])
+				for (const y of [-1, 1]) {
+					const v = [0, 1, 2].map((i) => e[i] * x + e[3 + i] * y + e[6 + i]);
+					const key = v.map((c) => Math.round(c)).join(",");
+					corners.set(key, (corners.get(key) ?? 0) + 1);
+				}
+		}
+		expect(corners.size).toBe(8);
+		for (const [key, n] of corners) expect(n, key).toBe(3);
+	});
+
+	test("a face that does not exist is a throw and not an undefined", () => {
+		expect(() => cubeFaceBasis(6)).toThrow(/cube face 6/);
+		expect(() => cubeFaceBasis(-1)).toThrow(/cube face -1/);
+	});
+});
+
+describe("resolution and memory", () => {
+	test("the near layer is the only one that gets the large face", () => {
+		expect(BAKE_FACE_PX.near).toBe(512);
+		expect(BAKE_FACE_PX.approach).toBe(BAKE_FACE_PX.far);
+		expect(BAKE_FACE_PX.approach).toBeLessThan(BAKE_FACE_PX.near);
+	});
+
+	test("every face size is a power of two", () => {
+		// Not a style rule: mipmaps are what stop a body at twenty radii
+		// shimmering, and a non-power-of-two cube face has no complete chain.
+		for (const px of Object.values(BAKE_FACE_PX))
+			expect(Math.log2(px) % 1).toBe(0);
+	});
+
+	test("the memory figure in the docstring is the one the census derives", () => {
+		// The rule `measure-hull-pricing.ts` set. The census itself is a script
+		// because it sweeps 8,192 systems; what is held here is the arithmetic it
+		// prints the totals with, so a change to the format or the mip assumption
+		// reddens beside the prose that quotes it.
+		const pairBytes = (px: number) => (6 * px * px * 4 * 2 * 4) / 3;
+		const mb = (b: number) => b / 1024 / 1024;
+		expect(mb(pairBytes(BAKE_FACE_PX.near))).toBeCloseTo(16.0, 1);
+		expect(mb(pairBytes(BAKE_FACE_PX.approach))).toBeCloseTo(4.0, 1);
+		// Typical is 3.40 bakeable bodies and the worst case is 14, one of them in
+		// the near layer.
+		const held = (n: number) =>
+			pairBytes(BAKE_FACE_PX.near) +
+			Math.max(0, n - 1) * pairBytes(BAKE_FACE_PX.approach);
+		expect(mb(held(3.4))).toBeCloseTo(25.6, 1);
+		expect(mb(held(14))).toBeCloseTo(68.0, 1);
+	});
+
+	test("the census script exists and is the one the docstring names", () => {
+		// A docstring that names an instrument which does not exist is the defect
+		// this repo has hit twice; `check-launcher-wiring.mjs` catches the launcher
+		// half and nothing catches this half.
+		expect(codeOf("scripts/measure-bake-census.ts")).toMatch(
+			/bakeable bodies per system/,
+		);
+		// Read raw rather than through `codeOf`, which strips comments — the
+		// reference being checked *is* a comment, so the stripped form can never
+		// contain it and the check could never fail.
+		expect(readFileSync("src/planet-bake.ts", "utf8")).toMatch(
+			/scripts\/measure-bake-census\.ts/,
+		);
+	});
+});

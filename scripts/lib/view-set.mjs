@@ -135,6 +135,7 @@ export const LEVERS = Object.freeze({
 	207: "the relief program picked by how big the planet looks",
 	202: "the station finish: a second plating octave, a cut seam, macro fixtures",
 	203: "the hull finish: a second plating octave, muted paint, a rim, collars, open bells",
+	208: "the baked cube a planet is drawn from below two radii",
 });
 
 /**
@@ -269,7 +270,7 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "station-flank",
-		covers: [102, 101, 99, 201, 207, 202],
+		covers: [208, 102, 101, 99, 201, 207, 202],
 		what: "A trade station's lit flank at four radii: the window grid and the plant beside it, which the axis view cannot show.",
 		/**
 		 * **Added by #129, and the reason is a frame rather than an argument.**
@@ -410,7 +411,7 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "station-shipyard-flank",
-		covers: [102, 101, 99, 201, 202],
+		covers: [208, 102, 101, 99, 201, 202],
 		/**
 		 * **A shipyard's ports, which nothing in the set had ever seen** (#134).
 		 * `station-outline` is the only other shipyard frame and it is at 140°,
@@ -439,7 +440,7 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "hull-chase",
-		covers: [199, 101, 99, 200, 201, 207, 203],
+		covers: [208, 199, 101, 99, 200, 201, 207, 203],
 		what: "The player's own hull, mostly backlit, against the system's largest planet. Flat plate shows here first.",
 		shot: {
 			kind: "body-offset",
@@ -451,7 +452,7 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "planet-terminator",
-		covers: [99, 206, 200, 207],
+		covers: [208, 99, 206, 200, 207],
 		what: "The largest planet at a crescent. The far layer takes no fill on purpose, and this is why.",
 		shot: {
 			kind: "body-offset",
@@ -502,7 +503,7 @@ export const VIEWS = Object.freeze([
 	 */
 	{
 		name: "planet-fill",
-		covers: [206, 207],
+		covers: [208, 206, 207],
 		what: "A rocky planet spanning the frame at two radii, limb on the top and bottom edges. Surface detail at the largest apparent size it still resolves at, and the frame the planet-cost table prices.",
 		shot: {
 			kind: "body-offset",

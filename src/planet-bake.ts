@@ -65,9 +65,9 @@ import {
  * **Memory, from a census rather than an estimate.** Over 4 worlds x 8 galaxies
  * x 256 systems — 8,192 systems — the bakeable bodies per system (moons are
  * always `airless`) run 1 to 14, mean 3.40, with the worst at 14. RGBA8 with
- * mipmaps is 1.33 x 6 x size² x 4 bytes per cube, so a 256 **pair** is 4.19 MB
- * and a 512 pair 16.7 MB. A typical system therefore holds about **27 MB** and
- * the worst case **71 MB**. `scripts/measure-bake-census.ts` reprints it.
+ * mipmaps is 1.33 x 6 x size² x 4 bytes per cube, so a 256 **pair** is 4.0 MB
+ * and a 512 pair 16.0 MB. A typical system therefore holds **25.6 MB** and the
+ * worst case **68.0 MB**. `scripts/measure-bake-census.ts` reprints all of it.
  *
  * Mipmaps are not optional: a body at 8 radii is 0.41 px per texel on a 256
  * cube and 0.16 at 20 radii, which is minification by a factor of six and it
@@ -168,6 +168,18 @@ export interface BodyBake {
 	 * expensive shader in the game.
 	 */
 	step(renderer: THREE.WebGLRenderer): boolean;
+	/**
+	 * Compile both bake programs against the cube target, without drawing.
+	 *
+	 * Otherwise the first `step` after a jump compiles them, and on a system with
+	 * several bakeable classes that is a handful of synchronous shader compiles
+	 * on exactly the frame the node's "do not let a bake block the first frame
+	 * after a jump" is about. **Bound to the cube target**, because
+	 * `outputColorSpace` is in three's program cache key and a compile with
+	 * nothing bound produces a variant the bake never uses — the defect sage
+	 * caught in #254's warm-up, arriving by the same door.
+	 */
+	prewarm(renderer: THREE.WebGLRenderer): void;
 	dispose(): void;
 }
 
@@ -264,6 +276,17 @@ export function startBodyBake(
 			drawn++;
 			bake.complete = drawn >= total;
 			return true;
+		},
+		prewarm(renderer) {
+			const wasTarget = renderer.getRenderTarget();
+			const wasFace = renderer.getActiveCubeFace();
+			const wasLevel = renderer.getActiveMipmapLevel();
+			for (const which of ["albedo", "normal"] as const) {
+				mesh.material = materials[which];
+				renderer.setRenderTarget(which === "albedo" ? albedo : normal, 0);
+				renderer.compile(scene, BAKE_CAMERA);
+			}
+			renderer.setRenderTarget(wasTarget, wasFace, wasLevel);
 		},
 		dispose() {
 			materials.albedo.dispose();

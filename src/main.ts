@@ -2552,6 +2552,13 @@ class Game {
 		this.renderer.setRenderTarget(this.composer.renderTarget1);
 		// The roster from the module that owns it. A second exhaustive list here
 		// is how the instrument's copy went stale for a commit (sage, PR #254).
+		// **The bake off for the relief walk** (#208). `applyReliefBand` swaps the
+		// *procedural* material's program, and a body already drawn from a cube
+		// would have the walk change a shader nothing is rendering — so `compile`
+		// would not see the variant and the warm-up would silently do nothing for
+		// that body. Nothing is baked this early on the boot path; it is the jump
+		// path, where the previous system's bodies were, that this is for.
+		this.setBakeAllowed(false);
 		const paths = RELIEF_PATHS;
 		const before = new Map<string, ReliefPath>();
 		for (const [id, visual] of this.bodyVisuals)
@@ -2585,6 +2592,13 @@ class Game {
 		 * One compile per class, like the loop above, because the source string is
 		 * what three's program cache keys on.
 		 */
+		this.setBakeAllowed(true);
+		// The **bake** programs, which nothing above reaches: they draw a quad
+		// into a cube target and are not in any of the three scenes. Left to the
+		// first `stepBakes` they would compile on the frame after a jump, which
+		// is the frame the node says must not stall.
+		for (const visual of this.bodyVisuals.values())
+			visual.prewarmBake(this.renderer);
 		const restores: (() => void)[] = [];
 		for (const visual of this.bodyVisuals.values()) {
 			const undo = visual.prewarmBaked();
@@ -2891,7 +2905,14 @@ class Game {
 	}
 
 	/**
-	 * Pin every planet's relief program, or hand them back to #207's bands.
+	 * Pin every planet's surface program, or hand them back to the bands.
+	 *
+	 * **`"baked"` is a pinnable path** (#208), which is what lets an instrument
+	 * take a reading inside a band the selector would refuse — the `planet-fill`
+	 * capture the resolution finding owes, and the 2 radii and 1.02 radii cells
+	 * of the ablation ladder. It is still refused where there is no complete
+	 * cube, so an instrument settles the bake queue first and reads the path
+	 * back.
 	 *
 	 * **The same shape as `setOcclusion`, and for the same reason**, which the
 	 * comment above states in full: an instrument that names an arm must not
@@ -2907,12 +2928,12 @@ class Game {
 	 * `null` un-pins. A pinned path is written once, here, rather than every
 	 * frame: the recompile is the expensive part and a pin does not change.
 	 */
-	setReliefPin(path: ReliefPath | null) {
+	setSurfacePin(path: SurfacePath | null) {
 		if (path === null) {
-			for (const visual of this.bodyVisuals.values()) visual.unpinRelief();
+			for (const visual of this.bodyVisuals.values()) visual.unpinSurface();
 			return;
 		}
-		for (const visual of this.bodyVisuals.values()) visual.setReliefPath(path);
+		for (const visual of this.bodyVisuals.values()) visual.setSurfacePath(path);
 	}
 
 	/**

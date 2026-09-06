@@ -468,6 +468,29 @@ await installViewFraming(page);
 await page.goto(URL, { waitUntil: "domcontentloaded" });
 await bootedGame(page);
 
+/**
+ * Wait until every cube bake has landed (#208).
+ *
+ * **Waited on, never driven.** Calling `render` in a loop from here does empty
+ * the queue and it also blocks the page's own `requestAnimationFrame`, which
+ * every timing readout in this repo is measured from. The game's loop is
+ * already running; this only has to stop before it.
+ *
+ * Every baked assertion below is timing-dependent without it: one face is drawn
+ * per frame and a system holds a dozen bakeable bodies, so `pathAt`'s two
+ * frames are not remotely enough and the first read would find every body
+ * procedural — a green run for the wrong reason.
+ */
+const settleBakes = () =>
+	page.waitForFunction(
+		() => window.__seelite.bakeQueue.length === 0,
+		undefined,
+		{
+			timeout: 60_000,
+		},
+	);
+await settleBakes();
+
 /* 2. #207's bands: the program a planet is drawn with follows its apparent size.
  *
  * Read off `userData.reliefPath`, which is what the frame loop writes, rather
@@ -501,6 +524,10 @@ await bootedGame(page);
 			([id, r]) => window.__sunOffset(id, r, 60),
 			[subject.id, radii],
 		);
+		// A placement is a layer handoff and a handoff re-bakes (#208), so the
+		// queue has to be empty before the path is read or the answer is "still
+		// procedural, ask again".
+		await settleBakes();
 		// Two frames: one for the placement to land, one for the selector to run
 		// against it. The hysteresis makes a single frame's reading depend on
 		// where the camera was before, which is the thing being relied on.
@@ -516,7 +543,13 @@ await bootedGame(page);
 				window.__seelite.farScene,
 			])
 				scene.getObjectByName(id)?.traverse((o) => {
-					if (o.userData?.reliefPath) found = o.userData.reliefPath;
+					// **What is drawn, not what is compiled.** A baked body keeps the
+					// relief path its procedural material carries, so reading
+					// `reliefPath` alone reports `four-tap` for a body being drawn
+					// from a cube — and every assertion below would be about a
+					// program that is not running.
+					if (o.userData?.reliefPath)
+						found = o.userData.baked ? "baked" : o.userData.reliefPath;
 				});
 			return found;
 		}, subject.id);
@@ -525,6 +558,19 @@ await bootedGame(page);
 	const programsAtBoot = await page.evaluate(
 		() => window.__seelite.renderer.info.programs?.length ?? -1,
 	);
+
+	/**
+	 * **#207's bands, with #208's cube off the menu.**
+	 *
+	 * Not a pin: `setBakeAllowed(false)` leaves the apparent-size selector
+	 * running and only removes one of the programs it may choose. A pin would
+	 * switch off the thing being tested along with the thing being excluded.
+	 *
+	 * Without it these three reads are all `baked` — 30 and 5 radii are deep
+	 * inside #208's band and 1.2 is outside it — so #207's own bands would go
+	 * entirely unchecked from this round on, with the section still green.
+	 */
+	await page.evaluate(() => window.__seelite.setBakeAllowed(false));
 
 	const far = await pathAt(30);
 	check(
@@ -547,7 +593,7 @@ await bootedGame(page);
 	// The pin, which every instrument in this repo depends on: an external write
 	// must survive the frame loop. Without it `measure-planet-cost.mjs` would
 	// print the selector's choice under whatever arm it thought it had set.
-	await page.evaluate(() => window.__seelite.setReliefPin("none"));
+	await page.evaluate(() => window.__seelite.setSurfacePin("none"));
 	await page.evaluate(() => {
 		window.__seelite.render(0);
 		window.__seelite.render(0);
@@ -558,7 +604,7 @@ await bootedGame(page);
 		pinned === "none",
 		`pinned to none, framed at 1.2 radii: ${pinned}`,
 	);
-	await page.evaluate(() => window.__seelite.setReliefPin(null));
+	await page.evaluate(() => window.__seelite.setSurfacePin(null));
 	const released = await pathAt(1.2);
 	check(
 		"and un-pinning hands the body back to the bands",
@@ -594,6 +640,201 @@ await bootedGame(page);
 		programsBefore > 0 && programsAfter === programsBefore,
 		`${programsBefore} programs before the walk, ${programsAfter} after`,
 	);
+
+	/* #208's band, over #207's, and the cube it selects.
+	 *
+	 * Run inside the same section because it needs the same subject and the same
+	 * "first, before anything else moves the camera" ordering — and because the
+	 * lever it restores is the one the reads above switched off.
+	 */
+	await page.evaluate(() => window.__seelite.setBakeAllowed(true));
+	const bakeable = await page.evaluate(
+		(id) => window.__seelite.bodyVisuals.get(id)?.bakeable === true,
+		subject.id,
+	);
+	check(
+		"the widest body in this system is a class that bakes",
+		bakeable,
+		// Not a property of the change — a system whose largest body is a gas
+		// giant is a legitimate system — but every check below is vacuous without
+		// it, and a vacuous check that reports green is the failure this file's
+		// own history is mostly about. It refuses rather than skipping.
+		`${subject.id} bakeable: ${bakeable}`,
+	);
+	if (bakeable) {
+		const bakedFar = await pathAt(30);
+		check(
+			"a planet 30 radii away is drawn from its cube, not from noise",
+			bakedFar === "baked",
+			`${subject.id} at 30 radii: ${bakedFar}`,
+		);
+		const bakedMid = await pathAt(5);
+		check(
+			"and at five radii, where a 256 face is still under a pixel per texel",
+			bakedMid === "baked",
+			`${subject.id} at 5 radii: ${bakedMid}`,
+		);
+		const bakedNear = await pathAt(1.2);
+		check(
+			"filling the frame it is procedural again — no face size serves that rung",
+			bakedNear === "four-tap",
+			// The finding the node's resolution question has as its answer. A 512
+			// face is 11.8 screen pixels per texel at 1.02 radii and it would take
+			// faces around 6,000 px to reach parity, so the band refuses rather
+			// than drawing a soft planet. `tests/relief-bands.test.ts` has the
+			// arithmetic; this is that arithmetic reaching the frame loop.
+			`${subject.id} at 1.2 radii: ${bakedNear}`,
+		);
+
+		/**
+		 * **The cube agrees with the program that made it**, which is the check
+		 * the node asks for and the only one that can see a wrong face basis.
+		 *
+		 * Measured on the existing lit-face signature — patch means over a grid
+		 * laid on the disc — with the bake allowed and then refused, at one rung
+		 * inside the band. A flipped or rotated face would move a patch by far
+		 * more than the band below; a whole-disc mean would not see it at all,
+		 * which is why this is per patch.
+		 *
+		 * The band is **stated rather than tuned**: the two programs do not agree
+		 * exactly and are not meant to. A 256 cube samples the height field at
+		 * 0.35° a texel and the procedural path samples it per pixel, and both are
+		 * under the field's own frequency — so the relief normals differ by
+		 * genuinely different undersampling, not by an error in either. 12% of the
+		 * patch mean is what that is worth here; a face basis error is several
+		 * times it.
+		 */
+		const AGREEMENT = 0.12;
+		const signatureAt = async (radii, allowed) => {
+			await page.evaluate((v) => window.__seelite.setBakeAllowed(v), allowed);
+			await page.evaluate(
+				([id, r]) => window.__sunOffset(id, r, 60),
+				[subject.id, radii],
+			);
+			await settleBakes();
+			await page.evaluate(() => {
+				window.__seelite.render(0);
+				window.__seelite.render(0);
+			});
+			return page.evaluate(
+				([id, grid]) => window.__bodySignature(id, grid),
+				[subject.id, 6],
+			);
+		};
+		for (const radii of [8, 4]) {
+			const withBake = await signatureAt(radii, true);
+			const without = await signatureAt(radii, false);
+			const pairs = withBake.patches
+				.map((a, i) => [a, without.patches[i]])
+				.filter(([a, b]) => a && b);
+			const worst = pairs.reduce((m, [a, b]) => {
+				const luma = (c) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+				const [x, y] = [luma(a), luma(b)];
+				const scale = Math.max(x, y, 1);
+				return Math.max(m, Math.abs(x - y) / scale);
+			}, 0);
+			check(
+				`the baked and procedural programs agree on the lit face at ${radii} radii`,
+				pairs.length >= 8 && worst <= AGREEMENT,
+				`${pairs.length} comparable patches, worst ${(worst * 100).toFixed(1)}%` +
+					` against a ${(AGREEMENT * 100).toFixed(0)}% band`,
+			);
+		}
+		await page.evaluate(() => window.__seelite.setBakeAllowed(true));
+
+		/**
+		 * **Bake twice, and the texels are identical** — the node's step 5.
+		 *
+		 * Read off the cube rather than off the frame, because a frame comparison
+		 * would fold in the camera, the clock and the shells and could not tell a
+		 * non-deterministic bake from a moved ship.
+		 *
+		 * Note what this **cannot** see, which is the reason
+		 * `tests/planet-bake.test.ts` scans the class source for the clock as well:
+		 * the bake pins `time` to 0, so a class whose animation has been frozen
+		 * into a texture bakes identically every time and passes this perfectly.
+		 * The planet simply stops moving.
+		 */
+		await pathAt(8);
+		const face = async () =>
+			page.evaluate((id) => {
+				const g = window.__seelite;
+				let targets = null;
+				for (const scene of [g.nearScene, g.approachScene, g.farScene])
+					scene.getObjectByName(id)?.traverse((o) => {
+						// The drawable pair is first. The queue is settled before this
+						// runs, so there is never a second one — reading `[0]` rather
+						// than asserting a length of one because a body mid-handoff is
+						// a legitimate state and not this check's subject.
+						targets = o.userData?.bakeCubes?.()[0] ?? targets;
+					});
+				if (!targets) return null;
+				const out = {};
+				for (const key of ["albedo", "normal"]) {
+					const rt = targets[key];
+					const buf = new Uint8Array(rt.width * rt.height * 4);
+					// Face 3 rather than face 0: −Y is the one whose basis carries a
+					// sign on two axes at once, so a transcription error that left the
+					// positive faces right shows here.
+					g.renderer.readRenderTargetPixels(
+						rt,
+						0,
+						0,
+						rt.width,
+						rt.height,
+						buf,
+						3,
+					);
+					out[key] = Array.from(buf);
+				}
+				return out;
+			}, subject.id);
+		const first = await face();
+		await page.evaluate(
+			(id) => window.__seelite.bodyVisuals.get(id)?.startBake(256),
+			subject.id,
+		);
+		await settleBakes();
+		const second = await face();
+		const differing =
+			first && second
+				? ["albedo", "normal"].reduce(
+						(n, k) => n + first[k].filter((v, i) => v !== second[k][i]).length,
+						0,
+					)
+				: -1;
+		check(
+			"baking the same body twice writes the same texels",
+			differing === 0,
+			`${differing} of ${first ? first.albedo.length * 2 : 0} channel bytes differ across two bakes`,
+		);
+
+		/**
+		 * **The bake programs were pre-warmed**, on the same argument as the band
+		 * warm-up above and with the same trap: compiled with no target bound they
+		 * are keyed to the wrong colour space, and left uncompiled they land on the
+		 * frame after a jump — the one frame the node says must not stall.
+		 *
+		 * A fresh bake is started and stepped to completion; if the two programs
+		 * were already there the count does not move.
+		 */
+		const beforeBake = await page.evaluate(
+			() => window.__seelite.renderer.info.programs?.length ?? -1,
+		);
+		await page.evaluate(
+			(id) => window.__seelite.bodyVisuals.get(id)?.startBake(256),
+			subject.id,
+		);
+		await settleBakes();
+		const afterBake = await page.evaluate(
+			() => window.__seelite.renderer.info.programs?.length ?? -1,
+		);
+		check(
+			"a fresh bake compiles no new program",
+			beforeBake > 0 && afterBake === beforeBake,
+			`${beforeBake} programs before the bake, ${afterBake} after`,
+		);
+	}
 }
 
 /* 1. Every sphere in the live scene is drawn by a class. */
