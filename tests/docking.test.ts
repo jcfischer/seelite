@@ -74,8 +74,8 @@ import { flyTheComputer as fly } from "./helpers/fly-the-computer";
  * The traffic a clearance request is answered against (§13.2).
  *
  * A grant reserves a berth now, so the protocol needs the catalogue and the
- * envelope it has to fit. Empty occupancy is the live game's state — NPC
- * traffic is #8's — and the rows that need a full station build their own set
+ * envelope it has to fit. Empty occupancy is the live game's state — station
+ * traffic is #148's — and the rows that need a full station build their own set
  * rather than moving this one.
  */
 const INTERIOR = stationInterior(
@@ -556,7 +556,7 @@ describe("§9.1.9 the clearance state machine", () => {
 
 	test("a station with no free berth queues, and frees into a grant", () => {
 		// §6.1 and §13.2: driven by an injected occupancy, so the branch is
-		// exercised code from the day it is written rather than waiting on #8's
+		// exercised code from the day it is written rather than waiting on #148's
 		// traffic. Every berth held is the only state that queues now — a grant
 		// *is* a reservation, so there is nothing to grant.
 		const full = new Set(INTERIOR.berths.map((berth) => berth.id));

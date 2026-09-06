@@ -7,7 +7,8 @@
 [#10](https://github.com/jcfischer/seelite/issues/10) / [#14](https://github.com/jcfischer/seelite/issues/14) (in-system travel, flown),
 [#13](https://github.com/jcfischer/seelite/issues/13) (station types),
 [#7](https://github.com/jcfischer/seelite/issues/7) (economy)
-**Binds:** [#8](https://github.com/jcfischer/seelite/issues/8) (combat, legal status, NPC traffic),
+**Binds:** [#8](https://github.com/jcfischer/seelite/issues/8) (combat and legal status),
+[#148](https://github.com/jcfischer/seelite/issues/148) (station traffic),
 the unowned HUD node
 
 Decided with the principal in a grilling session on node #9; six decisions, one
@@ -24,7 +25,8 @@ dockable geometry; the clearance protocol; and the docking computer's behaviour.
 
 **Does not own:** which interactions exist and which type gets which — #13 §6
 settled that at two, and this spec builds two. Nor the legal-status predicate
-behind the shipyard scan, the absolute damage scale, or NPC traffic (all #8);
+behind the shipyard scan or the absolute damage scale (both #8), nor station
+traffic (#148);
 nor the equipment price table (#7 §equipment, unamended by this spec); nor the
 HUD (fog — §8 records what it owes docking without designing it); nor the
 **collision system** (§12.3 states the boundary and hands it on); nor what the
@@ -506,8 +508,8 @@ RNG stream and the `tests/station-orbits.test.ts` fixture is unaffected. Only
 
 ## 6. Clearance
 
-**Decision D5: Oolite's full protocol — granted, queued, or denied — and
-barging in turns the station hostile.**
+**Decision D5, amended by #148: Oolite's protocol — granted, berth queued,
+lane queued, or denied — and true barging turns the station hostile.**
 
 Requestable when a station is the selected target and range is inside
 **`VICINITY_KM`**, a gameplay constant set to 10,000 km — numerically
@@ -518,8 +520,9 @@ silently retunes both. Same value, two reasons, two constants.
 
 | Reply | When | Effect |
 |---|---|---|
-| **granted** | slot free, station not hostile, scan passed | a **600 s** window. Expiry returns to `none`; re-request is free |
-| **queued (n)** | slot occupied | promoted when a slot frees |
+| **granted** | a fitting berth is reserved and the Transit lane is awarded | a **600 s** window. Expiry returns to `none`; re-request is free |
+| **queued (n)** | no fitting berth is free | promoted when compatible capacity frees; `n` is the live one-based queue position |
+| **lane queued (n)** | a fitting berth is reserved but the Transit lane is unavailable | promoted by station-traffic arbitration; the 600 s window has not started |
 | **denied** | station already hostile, or #13 §5.1.1's shipyard contraband scan fails | no window; the reason is #8's to compute |
 
 **600 s, because a shorter window expires before the approach can be flown.**
@@ -530,12 +533,13 @@ expired on every grant taken where the player is actually flying, which is the
 failure mode of a timer sized against nothing.
 
 **Clearance is a precondition, evaluated before §3's checks — not check 1.**
-Crossing the slot plane without a live grant is a failed entry *and* turns the
-station hostile, and the ordering has to be written down because the flip and
-check 1 would otherwise resolve at the same instant: an implementation that read
-`station.hostile` before applying the flip would let barging dock cleanly, and
-clearance would stop being mandatory through a read ordering nobody chose. So
-the entry condition is `grantLive && !hostile`, in that order.
+Crossing the slot plane with neither a berth reservation nor a live grant is a
+failed entry *and* turns the station hostile. Crossing with a reserved berth
+while still lane queued is repelled without hostility: #148 distinguishes
+disobeying a hold from barging without clearance. The ordering still matters:
+an implementation that read `station.hostile` before applying a true barge flip
+would let it dock cleanly. The entry condition remains `grantLive && !hostile`,
+in that order.
 
 **Hostility must expire, and #8 is not here yet.** The flip ships in this node;
 the decay that clears it is #8's, and #8 is unbuilt — so as written a player who
@@ -556,16 +560,16 @@ than something that happens to them silently.
 
 ### 6.1 The queue has no traffic yet
 
-**Decision D6: build the queue path; grant immediately until #8 supplies
-traffic.**
+**Decision D6: build the queue path; grant immediately until station traffic
+is built.**
 
-NPC traffic is #8's and unbuilt, so slot occupancy is always zero in the live
-game and every request is granted at once. The objection to this is that an
-unexercised branch rots, and the answer is a build obligation rather than a
+Station traffic is #148's and unbuilt, so slot occupancy is always zero in the
+live game and every request is granted at once. The objection to this is that
+an unexercised branch rots, and the answer is a build obligation rather than a
 promise: **the queued and denied branches are driven by an injected occupancy
 input in the headless tests** (§9.1), so they are exercised code from the day
-they are written. #8 replaces the injection with real ships; it does not
-implement the branch.
+they are written. #148 replaces the injection with real ships; it does not
+implement the branch. #8 retains combat AI and interdiction.
 
 ---
 
@@ -765,8 +769,9 @@ before merge.
   owner on neither side. #8 also owns replacing §6's interim hostility cooldown;
   the
   legal-status predicate behind §6's shipyard scan and the decay that clears
-  station hostility; and the NPC traffic that replaces §6.1's injected
-  occupancy. It inherits §9.1.10 as a test it must satisfy, not author.
+  station hostility. It inherits §9.1.10 as a test it must satisfy, not author.
+- **#148 (station traffic)** — owns the Traffic actors and replaces §6.1's
+  injected occupancy with real berth and Transit-lane queues.
 - **The HUD node** — inherits §8's two cues.
 - **#26 (ship roster)** — the slot at 0.12 × 0.07 km must admit the largest hull
   it introduces **at check 4's 50° roll limit**, not merely axis-aligned: a hull
@@ -1052,9 +1057,9 @@ is somewhere the law did not put it. That is only half an argument, and the othe
 half is what keeps something *else* out of the throat:
 
 - **Another ship.** §6's clearance protocol is exactly that mechanism. A grant is
-  refused while the slot is occupied (§6.1's `queued`), so two ships are never
-  cleared into one throat. Occupancy is injected and always zero today; #8's
-  traffic replaces the injection and inherits the rule rather than reopening it.
+  refused while the Transit lane is reserved, so two ships are never cleared
+  into one throat. Occupancy is injected and always zero today; #148's traffic
+  replaces the injection and inherits the rule rather than reopening it.
 - **The station's own rotation.** The throat turns with the station, so the
   arrival law carries the ship in the **rotating** frame — the same frame §4.1
   computes the slot phase in. A law written in the station's translating frame
@@ -1523,28 +1528,26 @@ are turned away by the ordinary fit predicate. `src/station-interior.ts`'s
 `BERTH_CELL` is the table; `tests/station-interior.test.ts` measures it against
 the hull roster rather than against a typed list of names.
 
-**Clearance atomically reserves a currently free, fitting berth** — the grant
-*is* the reservation. The queued reply's `position` carries the **injected
-occupancy** rather than a queue depth, because there is no queue: §6.1 records
-that NPC traffic is #8's and unbuilt, so the only thing that can fill a station
-is the map a caller writes, and at a uniform catalogue the reply is therefore
-the capacity. #8 owns the real figure. Among candidates it chooses the least spare envelope,
-preserving larger capacity; equal fits use a deterministic station-local order
-rotated by clearance-request time. If no fitting berth is free, clearance
-**queues** rather than grants, which is the only state that queues now.
+**Promotion atomically reserves a currently free, fitting berth.** With the
+Transit lane free, reservation and grant remain one operation as before. When
+the lane is busy, #148 inserts a lane-queued state between them: the berth is
+reserved, but the 600-second entry window starts only when lane arbitration
+awards the grant. A capacity-queued reply's `position` is the live one-based
+place in the real station-local queue, replacing the injected occupancy count.
+Among candidates the allocator chooses the least spare envelope, preserving
+larger capacity; equal fits use a deterministic station-local order rotated by
+clearance-request time. If no fitting berth is free, the request remains in the
+Clearance queue.
 
-The reservation survives a failed entry while its grant remains live, is held
-through arrival, docking and launch, and releases when the ship crosses the
-aperture outward — **and the grant is spent with it**. That last clause is
-derived rather than ratified: the grant *is* the reservation, so a grant that
-outlived its berth would be a clearance no berth answers for, and `attemptEntry`
-would dock on it and hand the arrival nothing to park in. Re-requesting is free
-(§6), so what the player loses is a keystroke. An unused reservation releases
-when its grant expires or is cancelled — the cancellation half being contract rather than shipped behaviour,
-since nothing in the game cancels a grant yet — **unless the ship is in it**: a lapsed
-grant does not evict a ship that arrived on it, which is what "held through
-docking" means when a dock outlasts the 600 s window. Berth reservation is separate from approach-corridor occupancy;
-future traffic consumes both contracts.
+The reservation survives lane waiting and a failed entry while its grant
+remains live, is held through arrival, docking and launch, and releases when the
+ship crosses the aperture outward — **and the grant is spent with it**. An
+unused reservation releases when its lane wait or grant is cancelled, or when a
+live grant expires — **unless the ship is in it**: a lapsed grant does not evict
+a ship that arrived on it, which is what "held through docking" means when a
+dock outlasts the 600 s window. Berth reservation is separate from external
+approach-corridor occupancy and Transit-lane occupancy; #148 consumes all three
+contracts.
 
 ### 13.3 Arrival, parked state, and launch
 
@@ -1731,6 +1734,6 @@ the next change: the boundary stands for anything that has not been ruled on.
 **Neither is verified here.** §13.5's human row is the gate for both, and #165
 closes on the principal in front of a frame rather than on this paragraph.
 
-NPC traffic is deliberately a later decision, and when it lands it must reuse
-berth fit, reservation and corridor occupancy rather than inventing a parallel
-docking model.
+Station traffic is #148 and is specified in `station-traffic.md`. It must reuse
+berth fit, reservation, clearance and Transit-lane occupancy rather than
+inventing a parallel docking model. Combat AI and interdiction remain #8's.

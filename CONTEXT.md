@@ -41,6 +41,36 @@ The canonical persisted identity of a carrier slot; a galaxy envelope may store 
 The original or a numbered replacement occupying a carrier slot.
 _Avoid_: Replacement state
 
+**Traffic actor**:
+A ship in a station's stable **Traffic roster**, continuous across departures,
+arrivals and time outside the player's view. It occupies a **Carrier slot**;
+routine movement is not saved history. Its visible callsign and hull variant
+derive from that identity and remain stable when it returns.
+_Avoid_: Spawn, ambient ship, anonymous ship
+
+**Traffic roster**:
+The finite set of **Traffic actor** Carrier slots belonging to one station,
+one actor per berth. Roster size is a population ceiling: each actor's own
+**Traffic schedule** takes it away from its berth for part of the cycle. Hulls
+are deterministic draws from the station role's compatible pool, including its
+required signature hull, so stations of one role can have different casts.
+_Avoid_: Spawn table, traffic density
+
+**Traffic schedule**:
+A Traffic actor's game-clock sequence of parked and away intervals. An away
+interval has no local position until a later route decision attaches travel
+between stations. Each station role sets a parked-duty band, while actor phases
+vary within it. At most one pending movement intent reconciles the actor toward
+its current scheduled state. A full station's schedules always produce a
+departure within one minute.
+_Avoid_: Random spawn timer
+
+**Traffic hold**:
+A deterministic station-relative point outside the docking cone where a
+Traffic actor waits for a compatible Berth and the Transit lane. Holds are
+off-axis and leave the player's approach corridor clear.
+_Avoid_: Staging point, queue slot, parking berth
+
 **Instance ordinal**:
 The stable sequence number distinguishing the original carrier instance from its replacements. `docs/specs/persistent-world-state.md` §2 owns its allocation rule.
 
@@ -90,6 +120,20 @@ _Avoid_: Approach speed limit, docking speed
 **Clearance grant**:
 A station's time-boxed permission to enter, and a **precondition** rather than one of the checks. Crossing without a live one is a failed entry *and* turns the station hostile. Since §13.2 the grant **is** a berth reservation — it names the berth the ship will park in, it queues when no free berth fits, and it is spent when the ship crosses the aperture outward. `docs/specs/docking.md` §6 owns the protocol and its queued and denied replies; §13.2 owns the reservation.
 _Avoid_: Docking permission flag, landing request
+
+**Clearance queue**:
+The station-local order of ships waiting for a fitting free **Berth**. The
+oldest compatible request advances first; request time orders it and stable
+**Carrier** identity breaks a tie, equally for the player and Traffic actors.
+Its visible position is one-based and updates with the live queue.
+_Avoid_: Occupancy count, player queue, NPC queue
+
+**Transit lane**:
+The one-ship path through a Station interior between its aperture and staging
+point. A traversal is non-preemptive; the oldest ready arrival or launch goes
+next, with a simultaneous launch first because it releases a Berth. A Traffic
+arrival reserves it before leaving its Traffic hold.
+_Avoid_: Berth, Clearance queue, approach corridor
 
 **Station interior**:
 What lies at a station's aperture, in one of two **presentations** decided by `aperture.kind` (#165). Computed in exactly one place, `src/station-interior.ts`, and drawn in exactly one, `src/station-interior-mesh.ts`; `docs/specs/docking.md` §13.1 owns the topology of both.

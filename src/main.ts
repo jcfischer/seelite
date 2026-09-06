@@ -463,7 +463,7 @@ const PLAYER_ENVELOPE = HULL_SPECS[PLAYER_HULL[0]].env;
  *  once: `flightPerformance` is pure and the roster does not change mid-frame. */
 const PLAYER_PERFORMANCE: FlightPerformance = flightPerformance(PLAYER_HULL[0]);
 
-/** No other ship holds a berth in the live game — NPC traffic is #8's. Shared
+/** No other ship holds a berth in the live game — station traffic is #148's. Shared
  *  rather than allocated per station per frame. */
 const EMPTY_BERTHS: ReadonlySet<string> = new Set<string>();
 
@@ -1514,8 +1514,8 @@ class Game {
 	/**
 	 * §6.1's injected slot occupancy, per station.
 	 *
-	 * Empty in the live game, and that is the spec's own state of affairs: NPC
-	 * traffic is #8's and unbuilt, so every request is granted at once. It is a
+	 * Empty in the live game, and that is the spec's own state of affairs: station
+	 * traffic is #148's and unbuilt, so every request is granted at once. It is a
 	 * writable map rather than a constant zero so the queued branch is reachable
 	 * from a probe as well as from the headless tests — an unexercised branch is
 	 * what §6.1 refuses.
@@ -4667,7 +4667,7 @@ class Game {
 			// and the envelope it has to fit.
 			interior: this.interiorOf(chosen.id),
 			hull: PLAYER_ENVELOPE,
-			// §6.1: empty in the live game. #8 replaces the map, not the branch.
+			// §6.1: empty in the live game. #148 replaces the map, not the branch.
 			occupied: this.occupiedAt(chosen.id),
 			// #13 §5.1.1's shipyard scan. The predicate behind it is #8's and
 			// unbuilt, so nothing fails one yet — the *moment* is what this node

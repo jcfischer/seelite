@@ -20,7 +20,7 @@ A generated carrier has a structured identity:
 
 - `galaxyIndex` is in `0..7`.
 - `systemIndex` is in `0..255`.
-- `localCarrierId` is a dedicated stable system-local carrier-slot persistence ID emitted by the generator, separate in contract from display names and incidental lookup keys. V1 may use the same strings as the current fixed IDs in `src/system.ts` — `station-trade`, `station-refinery`, and `station-shipyard` — but the implementation must expose and test the persistence table explicitly.
+- `localCarrierId` is a dedicated stable system-local carrier-slot persistence ID emitted by the generator, separate in contract from display names and incidental lookup keys. Stations use the fixed IDs in `src/system.ts` — `station-trade`, `station-refinery`, and `station-shipyard`; #148's Traffic actors extend their home station with a roster ordinal, for example `station-trade/traffic-00`. The implementation must expose and test the persistence table explicitly.
 - Renaming a persistence ID requires a save migration. Every snapshot carries `worldSchemaVersion` for the mutable-state schema and `worldGeneratorVersion` for the seeded baseline. Any generator change that can alter a carrier's identity, type, parent, or generated placement must bump the generator version; the save/load decision owns migration policy and rejection of unsupported versions.
 - Display names, positions, array order, and raw seeds are not identities.
 
