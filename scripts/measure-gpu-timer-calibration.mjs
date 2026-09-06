@@ -185,7 +185,8 @@ const run = await page.evaluate(
 		 * `arm` is "timer", "drained" (GPU emptied before `beginQuery`), "wall"
 		 * (fenced, no query), "floor" (one scissored clear under a query) or
 		 * "floorWall" (the same clear, fenced and untimed — the floor arm's own
-		 * control, and without it 0.03 ms has nothing to be small against).
+		 * control, and mostly the fence's own cost rather than the clear's,
+		 * which is why it is read as an upper bound and not as the truth).
 		 */
 		const once = (k, arm) =>
 			new Promise((resolve, reject) => {
@@ -352,11 +353,33 @@ if (fT !== null && fW !== null) {
 	console.log(
 		`\n  one scissored clear — timer ${fT.toFixed(2)} ms against a fenced ${fW.toFixed(2)} ms`,
 	);
+	/**
+	 * **What this arm can and cannot settle.** The fenced wall figure beside it
+	 * is dominated by the fence itself — a `readPixels` round trip — not by a
+	 * one-pixel clear, so it is an *upper bound* on the work and nothing more.
+	 * A timer reading under it therefore does **not** show the timer accurate:
+	 * an inflated reading hidden beneath that overhead would look the same. The
+	 * first version of this line said "reported honestly" and Sage was right
+	 * that it certified something it had not measured.
+	 *
+	 * What it does settle is a magnitude. If the excess on the ladder above
+	 * were a fixed cost the driver charges per query, this query would carry it
+	 * too — the workload is smaller, the query is not — so the reading here
+	 * bounds any such fixed cost from above, and the line prints that bound
+	 * against the per-render excess it would have to explain.
+	 */
+	if (marginalIsReadable) {
+		const excess =
+			(last.timer - first.timer - (last.wall - first.wall)) /
+			(last.k - first.k);
+		console.log(
+			`  a fixed cost per query is bounded above by that ${fT.toFixed(2)} ms, ` +
+				`against the ${excess.toFixed(2)} ms per render it would have to explain`,
+		);
+	}
 	console.log(
-		fT > fW
-			? "  a workload this small is reported above its cost — there is a per-query floor"
-			: "  a workload small enough to fit one command buffer is reported honestly,\n" +
-					"  so the excess above is summing rather than a fixed cost per query",
+		"  this arm bounds a per-query cost; it does not show the timer accurate —\n" +
+			"  the fenced figure beside it is mostly the fence, so it is an upper bound",
 	);
 }
 console.log(

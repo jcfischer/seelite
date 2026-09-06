@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
 	FrameAttribution,
+	type FrameAttributionSnapshot,
+	type GpuTimingStatus,
 	rollingStatistics,
 	type TimerQueryContext,
 } from "../src/frame-attribution";
@@ -385,18 +387,33 @@ describe("FrameAttribution", () => {
  * cadence contradiction catches a backend nobody has qualified.
  */
 describe("a GPU reading that cannot be trusted says so", () => {
+	/**
+	 * Submit one frame and resolve it with `ns` nanoseconds.
+	 *
+	 * The refusal tests are about policy, not about the query ring; five of them
+	 * were spelling out the same begin/end/available/poll sequence with only the
+	 * result or the backend differing.
+	 */
+	const oneSample = (
+		f: Pick<ReturnType<typeof fixture>, "attribution" | "gl" | "setNow">,
+		ns: number,
+		atMs = 10,
+	) => {
+		f.attribution.beginGpuFrame(0);
+		f.attribution.endGpuFrame();
+		f.gl.available.add(1);
+		f.gl.results.set(1, ns);
+		f.setNow(atMs);
+		f.attribution.poll(atMs);
+	};
+
 	test("refuses a backend that is known to sum command-buffer spans", () => {
 		const { attribution, gl, setNow } = fixture({
 			maxQueries: 2,
 			rasterizer: "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro)",
 		});
 		attribution.enable();
-		attribution.beginGpuFrame(0);
-		attribution.endGpuFrame();
-		gl.available.add(1);
-		gl.results.set(1, 4_000_000);
-		setNow(10);
-		attribution.poll(10);
+		oneSample({ attribution, gl, setNow }, 4_000_000);
 
 		const gpu = attribution.snapshot(10).gpu;
 		expect(gpu.status).toBe("untrusted");
@@ -498,44 +515,121 @@ describe("a GPU reading that cannot be trusted says so", () => {
 	});
 
 	/**
-	 * The contract every refused status owes, checked over the vocabulary
-	 * itself rather than over the two that exist today: a seventh added to the
-	 * union and not to `REFUSED_GPU_STATUSES` would otherwise ship a figure
-	 * beside a refusal with nothing going red.
+	 * The contract every refused status owes, checked by **reaching each status
+	 * in the module** and reading its snapshot.
+	 *
+	 * The first version compared `isRefusedGpuStatus(status)` against the list
+	 * that helper is implemented from, which is the same list restated — it
+	 * inspected no snapshot and no figure, so a seventh status added to the
+	 * vocabulary and classified nowhere left every assertion passing. That is
+	 * the tautology this repo keeps re-learning: a check derived from its own
+	 * subject cannot fail.
+	 *
+	 * Each row drives the sampler into one status; the expectation beside it is
+	 * written out rather than computed from `REFUSED_GPU_STATUSES`. The last
+	 * assertion is what makes a seventh status a red build: every member of the
+	 * vocabulary must appear here.
 	 */
-	test("every refused status withholds its figure, and no other does", () => {
-		expect(GPU_TIMING_STATUSES.length).toBeGreaterThan(
-			REFUSED_GPU_STATUSES.length,
-		);
-		for (const status of GPU_TIMING_STATUSES)
-			expect(isRefusedGpuStatus(status)).toBe(
-				(REFUSED_GPU_STATUSES as readonly string[]).includes(status),
+	describe("every status the module can reach", () => {
+		const reach: Record<
+			GpuTimingStatus,
+			{ carriesFigure: boolean; snapshot: () => FrameAttributionSnapshot }
+		> = {
+			unavailable: {
+				carriesFigure: false,
+				snapshot: () => {
+					const f = fixture({ supported: false });
+					f.attribution.enable();
+					return f.attribution.snapshot(10);
+				},
+			},
+			stale: {
+				carriesFigure: true,
+				snapshot: () => {
+					const f = fixture({ maxQueries: 2, staleAfterMs: 100 });
+					f.attribution.enable();
+					oneSample(f, 4_000_000);
+					f.setNow(5000);
+					return f.attribution.snapshot(5000);
+				},
+			},
+			disjoint: {
+				carriesFigure: false,
+				snapshot: () => {
+					const f = fixture({ maxQueries: 2 });
+					f.attribution.enable();
+					oneSample(f, 4_000_000);
+					f.gl.disjoint = true;
+					f.attribution.poll(20);
+					return f.attribution.snapshot(20);
+				},
+			},
+			supported: {
+				carriesFigure: true,
+				snapshot: () => {
+					const f = fixture({ maxQueries: 2 });
+					f.attribution.enable();
+					oneSample(f, 4_000_000);
+					return f.attribution.snapshot(10);
+				},
+			},
+			untrusted: {
+				carriesFigure: false,
+				snapshot: () => {
+					const f = fixture({
+						maxQueries: 2,
+						rasterizer: "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro)",
+					});
+					f.attribution.enable();
+					oneSample(f, 4_000_000);
+					return f.attribution.snapshot(10);
+				},
+			},
+			implausible: {
+				carriesFigure: false,
+				snapshot: () => {
+					const f = fixture({ maxQueries: 4 });
+					f.attribution.enable();
+					for (let frame = 0; frame < 4; frame++) {
+						f.attribution.beginGpuFrame(frame * 16);
+						f.attribution.endGpuFrame();
+					}
+					for (let id = 1; id <= 4; id++) {
+						f.gl.available.add(id);
+						f.gl.results.set(id, 50_000_000);
+					}
+					f.setNow(64);
+					f.attribution.poll(64);
+					return f.attribution.snapshot(64);
+				},
+			},
+		};
+
+		for (const [name, row] of Object.entries(reach)) {
+			const status = name as GpuTimingStatus;
+			test(`${status}: ${row.carriesFigure ? "reports" : "withholds"} its figure`, () => {
+				const gpu = row.snapshot().gpu;
+				expect(gpu.status).toBe(status);
+				if (row.carriesFigure) {
+					expect(gpu.medianMs).not.toBeNull();
+					expect(gpu.reason).toBeNull();
+				} else {
+					expect(gpu.medianMs).toBeNull();
+					expect(gpu.p95Ms).toBeNull();
+				}
+				// The one thing the two sides share: a refusal owes a reason and
+				// nothing else does.
+				expect(gpu.reason !== null).toBe(isRefusedGpuStatus(status));
+			});
+		}
+
+		test("the vocabulary has no status this table does not reach", () => {
+			expect(Object.keys(reach).sort()).toEqual(
+				[...GPU_TIMING_STATUSES].sort(),
 			);
-		// Not derivable from the two lists: a refused status must be one the
-		// module can actually reach.
-		for (const status of REFUSED_GPU_STATUSES)
-			expect(GPU_TIMING_STATUSES).toContain(status);
-	});
-
-	test("a qualified backend does go stale, with its number", () => {
-		const { attribution, gl, setNow } = fixture({
-			maxQueries: 2,
-			staleAfterMs: 100,
-		});
-		attribution.enable();
-		attribution.beginGpuFrame(0);
-		attribution.endGpuFrame();
-		gl.available.add(1);
-		gl.results.set(1, 4_000_000);
-		setNow(10);
-		attribution.poll(10);
-		setNow(5000);
-
-		// Without this the check above passes on a module that refuses
-		// everything old, whatever backend it is on.
-		expect(attribution.snapshot(5000).gpu).toMatchObject({
-			status: "stale",
-			medianMs: 4,
+			// And every refused status is one the module can actually reach.
+			for (const status of REFUSED_GPU_STATUSES)
+				expect(GPU_TIMING_STATUSES).toContain(status);
 		});
 	});
 
