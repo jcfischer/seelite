@@ -293,11 +293,12 @@ export const PURCHASABLE_HULL_IDS = [
  * The roster, all eleven.
  *
  * **Eleven and not the seven**, although only seven are purchasable: the four
- * others are drawn, and `patrol` and `raider` will be flown by #8's traffic. A
- * `Partial` record would make every consumer answer for a hull with no mass,
- * and the hole would be found by whichever one forgot. Their figures are
- * provisional in the sense that #183's rating and #8's combat balance may retune
- * them; the seven civilian rows are this node's answer.
+ * others are drawn. `patrol` joins #148's station traffic; `raider` and the
+ * capital hulls remain available to #8's encounters. A `Partial` record would
+ * make every consumer answer for a hull with no mass, and the hole would be
+ * found by whichever one forgot. Their figures are provisional in the sense
+ * that #183's rating and #8's combat balance may retune them; the seven civilian
+ * rows are this node's answer.
  */
 export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 	courier: {

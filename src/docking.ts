@@ -697,7 +697,7 @@ export const newDockingState = (): DockingState => ({
  *
  * **Cancellation is in the contract and has no caller**, which is said here
  * rather than implied: §13.2 also releases a reservation the pilot cancels, and
- * nothing in the game cancels a grant today. #8's traffic is what will need it.
+ * nothing in the game cancels a grant today. #148's traffic is what will need it.
  *
  * A verb rather than a field write at each site, because the two sites are in
  * two modules and a reservation released in one of them is a station that
@@ -733,7 +733,7 @@ export interface ClearanceRequest {
 	hull: HullEnvelope;
 	/**
 	 * Which berths other ships hold (§6.1, §13.2). Injected, and that is a build
-	 * obligation rather than a placeholder: NPC traffic is #8's and unbuilt, so
+	 * obligation rather than a placeholder: station traffic is #148's and unbuilt, so
 	 * without an injected input the queued branch would be unexercised code from
 	 * the day it was written.
 	 */
@@ -788,11 +788,11 @@ export function requestClearance(
 		return {
 			...state,
 			// **`position` is the injected occupancy, not a queue depth**, and it
-			// is that because there is no queue: §6.1 records that NPC traffic is
-			// #8's and unbuilt, so the only thing that can make a station full is
+			// is that because there is no queue: §6.1 records that station traffic is
+			// #148's and unbuilt, so the only thing that can make a station full is
 			// the map a caller writes. At a uniform catalogue the reply is
 			// therefore always the capacity, which is honest about what is known
-			// and no more. #8 owns the real figure.
+			// and no more. #148 owns the real figure.
 			clearance: { kind: "queued", position: req.occupied.size },
 		};
 	return {
