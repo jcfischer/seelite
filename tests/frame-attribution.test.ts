@@ -388,6 +388,34 @@ describe("FrameAttribution", () => {
  */
 describe("a GPU reading that cannot be trusted says so", () => {
 	/**
+	 * Submit `frames` frames `cadenceMs` apart and resolve each with `ns`.
+	 *
+	 * Three tests were repeating the paired submit/resolve loops with only the
+	 * duration and the snapshot time differing.
+	 */
+	const cadenceSamples = (
+		f: Pick<ReturnType<typeof fixture>, "attribution" | "gl" | "setNow">,
+		{
+			frames,
+			cadenceMs,
+			ns,
+		}: { frames: number; cadenceMs: number; ns: number },
+	) => {
+		for (let frame = 0; frame < frames; frame++) {
+			f.attribution.beginGpuFrame(frame * cadenceMs);
+			f.attribution.endGpuFrame();
+		}
+		for (let id = 1; id <= frames; id++) {
+			f.gl.available.add(id);
+			f.gl.results.set(id, ns);
+		}
+		const endedAt = frames * cadenceMs;
+		f.setNow(endedAt);
+		f.attribution.poll(endedAt);
+		return endedAt;
+	};
+
+	/**
 	 * Submit one frame and resolve it with `ns` nanoseconds.
 	 *
 	 * The refusal tests are about policy, not about the query ring; five of them
@@ -467,20 +495,14 @@ describe("a GPU reading that cannot be trusted says so", () => {
 	 */
 	test("refuses an implausible median even where the sample has gone stale", () => {
 		const { attribution, gl, setNow } = fixture({
-			maxQueries: 4,
+			maxQueries: 12,
 			staleAfterMs: 100,
 		});
 		attribution.enable();
-		for (let frame = 0; frame < 4; frame++) {
-			attribution.beginGpuFrame(frame * 16);
-			attribution.endGpuFrame();
-		}
-		for (let id = 1; id <= 4; id++) {
-			gl.available.add(id);
-			gl.results.set(id, 50_000_000);
-		}
-		setNow(64);
-		attribution.poll(64);
+		cadenceSamples(
+			{ attribution, gl, setNow },
+			{ frames: 12, cadenceMs: 16, ns: 50_000_000 },
+		);
 		setNow(5000);
 
 		const gpu = attribution.snapshot(5000).gpu;
@@ -588,19 +610,14 @@ describe("a GPU reading that cannot be trusted says so", () => {
 			implausible: {
 				carriesFigure: false,
 				snapshot: () => {
-					const f = fixture({ maxQueries: 4 });
+					const f = fixture({ maxQueries: 12 });
 					f.attribution.enable();
-					for (let frame = 0; frame < 4; frame++) {
-						f.attribution.beginGpuFrame(frame * 16);
-						f.attribution.endGpuFrame();
-					}
-					for (let id = 1; id <= 4; id++) {
-						f.gl.available.add(id);
-						f.gl.results.set(id, 50_000_000);
-					}
-					f.setNow(64);
-					f.attribution.poll(64);
-					return f.attribution.snapshot(64);
+					const at = cadenceSamples(f, {
+						frames: 12,
+						cadenceMs: 16,
+						ns: 50_000_000,
+					});
+					return f.attribution.snapshot(at);
 				},
 			},
 		};
@@ -656,43 +673,81 @@ describe("a GPU reading that cannot be trusted says so", () => {
 	 * this repo has never seen.
 	 */
 	test("refuses a median that exceeds the frame cadence it was sampled at", () => {
-		const { attribution, gl, setNow } = fixture({ maxQueries: 4 });
+		const { attribution, gl, setNow } = fixture({ maxQueries: 12 });
 		attribution.enable();
-		// Four frames, 16 ms apart: a 60 Hz cadence.
-		for (let frame = 0; frame < 4; frame++) {
-			attribution.beginGpuFrame(frame * 16);
-			attribution.endGpuFrame();
-		}
-		for (let id = 1; id <= 4; id++) {
-			gl.available.add(id);
-			gl.results.set(id, 50_000_000); // 50 ms of "GPU time" per 16 ms frame
-		}
-		setNow(64);
-		attribution.poll(64);
+		// Twelve frames 16 ms apart — a 60 Hz cadence, sustained past
+		// `IMPLAUSIBLE_MIN_SAMPLES` — each claiming 50 ms of GPU time.
+		const at = cadenceSamples(
+			{ attribution, gl, setNow },
+			{ frames: 12, cadenceMs: 16, ns: 50_000_000 },
+		);
 
-		const gpu = attribution.snapshot(64).gpu;
+		const gpu = attribution.snapshot(at).gpu;
 		expect(gpu.status).toBe("implausible");
 		expect(gpu.medianMs).toBeNull();
 		expect(gpu.reason).toContain("cadence");
 	});
 
 	test("a median inside the cadence is not refused", () => {
-		const { attribution, gl, setNow } = fixture({ maxQueries: 4 });
+		const { attribution, gl, setNow } = fixture({ maxQueries: 12 });
 		attribution.enable();
-		for (let frame = 0; frame < 4; frame++) {
-			attribution.beginGpuFrame(frame * 16);
-			attribution.endGpuFrame();
-		}
-		for (let id = 1; id <= 4; id++) {
-			gl.available.add(id);
-			gl.results.set(id, 15_000_000); // 15 ms, a GPU-bound 60 Hz frame
-		}
-		setNow(64);
-		attribution.poll(64);
+		// 15 ms is a GPU-bound 60 Hz frame, not an impossible one.
+		const at = cadenceSamples(
+			{ attribution, gl, setNow },
+			{ frames: 12, cadenceMs: 16, ns: 15_000_000 },
+		);
 
-		expect(attribution.snapshot(64).gpu).toMatchObject({
+		expect(attribution.snapshot(at).gpu).toMatchObject({
 			status: "supported",
 			medianMs: 15,
+		});
+	});
+
+	/**
+	 * Round 4. Classification ran over `disjoint` too, so a query invalidation
+	 * on a summing backend was reported as `untrusted` and the state that says
+	 * *the driver threw these results away* disappeared from the snapshot. No
+	 * figure leaked either way — `disjoint` clears the samples — but the two
+	 * mean different things and only one of them is transient.
+	 */
+	test.each([
+		["a named summing backend", "ANGLE (Apple, ANGLE Metal Renderer: M1 Pro)"],
+		["an unreadable renderer name", null],
+	])("keeps disjoint distinct from a refusal on %s", (_label, rasterizer) => {
+		const { attribution, gl, setNow } = fixture({ maxQueries: 2, rasterizer });
+		attribution.enable();
+		oneSample({ attribution, gl, setNow }, 4_000_000);
+		gl.disjoint = true;
+		attribution.poll(20);
+
+		const gpu = attribution.snapshot(20).gpu;
+		expect(gpu.status).toBe("disjoint");
+		expect(gpu.medianMs).toBeNull();
+		expect(gpu.reason).toBeNull();
+	});
+
+	/**
+	 * The blocker from round 4, and it is about what the check may *claim*.
+	 *
+	 * "A GPU cannot spend longer per frame than the interval between frames" is
+	 * true of a **sustained** state and false of a burst: a jump, a bake or a
+	 * tab restored puts real work behind the compositor for a few frames, and a
+	 * rolling median over a short window reads that honestly. The first version
+	 * refused on the median alone and called it impossible.
+	 */
+	test("does not refuse a short burst over the cadence", () => {
+		const { attribution, gl, setNow } = fixture({ maxQueries: 4 });
+		attribution.enable();
+		const at = cadenceSamples(
+			{ attribution, gl, setNow },
+			{ frames: 4, cadenceMs: 16, ns: 50_000_000 },
+		);
+
+		// The same ratio the sustained case refuses, over too few samples to
+		// call it sustained.
+		expect(attribution.snapshot(at).gpu).toMatchObject({
+			status: "supported",
+			medianMs: 50,
 		});
 	});
 
@@ -724,7 +779,8 @@ describe("a GPU reading that cannot be trusted says so", () => {
 		 * fixtures were written before this one that alternated in the comment
 		 * and not in the fake, and both passed against the naive cadence.
 		 */
-		for (let frame = 0; frame < 8; frame += 2) {
+		// Twenty frames so the timed half clears `IMPLAUSIBLE_MIN_SAMPLES`.
+		for (let frame = 0; frame < 20; frame += 2) {
 			// Resolves the previous result, then takes the only entry.
 			attribution.beginGpuFrame(frame * 16);
 			gl.available.clear();
@@ -736,10 +792,10 @@ describe("a GPU reading that cannot be trusted says so", () => {
 			gl.available.add(1);
 			gl.results.set(1, 30_000_000);
 		}
-		setNow(128);
-		attribution.poll(128);
+		setNow(320);
+		attribution.poll(320);
 
 		// It is over the 16 ms cadence the frames actually ran at.
-		expect(attribution.snapshot(128).gpu.status).toBe("implausible");
+		expect(attribution.snapshot(320).gpu.status).toBe("implausible");
 	});
 });

@@ -50,9 +50,12 @@ export type GpuTimingStatus = (typeof GPU_TIMING_STATUSES)[number];
  * there is no shipped copy to go stale. What is worth knowing without running
  * it is the *shape* — the over-report is a gain that **grows with how much of
  * the frame the work spans**, and a workload small enough to fit one command
- * buffer is reported honestly, which is what rules out a fixed cost per query
- * and leaves the summing. The magnitude is measured rather than derived: how
- * many command buffers a composer render spans is not known.
+ * buffer reads far below the excess, which **bounds** a fixed cost per query
+ * from above and leaves the summing. It does not show the timer accurate: the
+ * fenced figure that arm is read against is mostly the fence, so an inflated
+ * reading hidden beneath it would look the same. The magnitude is measured
+ * rather than derived: how many command buffers a composer render spans is not
+ * known.
  *
  * **A name match is the right shape here even though it is brittle**, and the
  * two reasons are the mechanism and the alternative. The defect is a property
@@ -79,6 +82,18 @@ export const SUMMING_TIMER_BACKENDS: readonly Readonly<{
 ]);
 
 export const IMPLAUSIBLE_CADENCE_FACTOR = 1.25;
+
+/**
+ * How many GPU samples the window needs before a cadence contradiction counts.
+ *
+ * The physical argument — a GPU cannot spend longer per frame than the interval
+ * between frames — holds of a **sustained** state and not of a burst, and the
+ * first version of the check made the claim off a rolling median with no floor
+ * under its sample count. Two or three slow frames from a jump or a bake would
+ * have been reported as an impossibility. This is not a calibrated figure; it
+ * is a count large enough that a handful of frames cannot reach it.
+ */
+export const IMPLAUSIBLE_MIN_SAMPLES = 8;
 
 export type RollingStatistics = Readonly<{
 	medianMs: number | null;
@@ -430,70 +445,10 @@ export class FrameAttribution {
 			? this.readStringParameter(this.debugRenderer.UNMASKED_RENDERER_WEBGL)
 			: null;
 
-		/**
-		 * #246, and both refusals are keyed on **whether there is a figure**
-		 * rather than on which sample state the module landed in.
-		 *
-		 * Two rounds of review found the same fail-open, one level apart. Gated
-		 * on `status === "supported"`, a backend whose last sample had aged past
-		 * `staleAfterMs` fell through to `stale` and printed the very figure the
-		 * refusal exists to withhold — round 1 caught that for the named
-		 * backend, round 2 for the cadence backstop that is supposed to cover
-		 * the backends nobody has named. `stale` reads as *old but real*, so it
-		 * is the status a leak hides best in.
-		 *
-		 * `disjoint` needs no exclusion: it clears the samples, so there is no
-		 * median to refuse and neither branch is reached.
-		 */
-		let reason: string | null = null;
-		if (supported) {
-			const backend = SUMMING_TIMER_BACKENDS.find((entry) =>
-				(rasterizer ?? "").includes(entry.match),
-			);
-			const cadenceMs = this.frameCadenceMs();
-			if (backend) {
-				status = "untrusted";
-				reason = backend.reason;
-			} else if (rasterizer === null) {
-				/**
-				 * An unreadable name is **unproven, not qualified**. The first
-				 * version read it as qualified — `(rasterizer ?? "")` matches
-				 * nothing, so a context with no `WEBGL_debug_renderer_info` was
-				 * handed a `supported` figure it could not stand behind. The
-				 * repo settles this the same way from the other side:
-				 * `capture-views.mjs` refuses a frame unless the renderer can be
-				 * *shown* not to be a software rasteriser.
-				 */
-				status = "untrusted";
-				reason =
-					"the renderer name could not be read, so the backend cannot be " +
-					"qualified — run scripts/measure-gpu-timer-calibration.mjs to " +
-					"see what this one reports";
-			} else if (
-				cadenceMs !== null &&
-				gpuStats.medianMs !== null &&
-				gpuStats.medianMs > cadenceMs * IMPLAUSIBLE_CADENCE_FACTOR
-			) {
-				status = "implausible";
-				/**
-				 * Neither the median nor the cadence, because their product is
-				 * the median. Round 2 caught the ratio-and-cadence version
-				 * reconstructing exactly what the sentence refuses to print.
-				 */
-				reason =
-					`the GPU median exceeds the frame cadence by more than ` +
-					`${IMPLAUSIBLE_CADENCE_FACTOR}x, which cannot be sustained on ` +
-					`one command stream`;
-			}
-		}
-		// **A status instead of a number, not beside one.** A refused figure that
-		// is still printed is a figure that gets transcribed into a receipt.
-		if (isRefusedGpuStatus(status))
-			gpuStats = {
-				medianMs: null,
-				p95Ms: null,
-				sampleCount: gpuStats.sampleCount,
-			};
+		const trust = this.classifyTrust(status, rasterizer, gpuStats);
+		status = trust.status;
+		const reason = trust.reason;
+		gpuStats = trust.gpuStats;
 
 		return Object.freeze({
 			enabled: this.enabled,
@@ -511,6 +466,103 @@ export class FrameAttribution {
 				rasterizer,
 			}),
 		});
+	}
+
+	/**
+	 * Whether this snapshot's figure can be stood behind, and what to say when
+	 * it cannot — #246.
+	 *
+	 * Lifted out of `snapshot()`, which had grown the whole policy inline
+	 * beside the assembly of the object it returns.
+	 *
+	 * **Both refusals are keyed on whether there is a figure**, not on which
+	 * sample state the module landed in. Two rounds found the same fail-open
+	 * one level apart: gated on `status === "supported"`, a backend whose last
+	 * sample had aged past `staleAfterMs` fell through to `stale` and printed
+	 * the very figure the refusal exists to withhold — round 1 for the named
+	 * backend, round 2 for the cadence backstop covering the ones nobody has
+	 * named. `stale` reads as *old but real*, which is the status a leak hides
+	 * best in.
+	 *
+	 * **`disjoint` is excluded, and that is not the same argument.** It clears
+	 * the samples, so no figure leaks either way — but it is a distinct and
+	 * more actionable state, and classifying over it meant a disjoint event on
+	 * a summing backend was reported as `untrusted` and the query invalidation
+	 * disappeared from the snapshot. Round 4.
+	 */
+	private classifyTrust(
+		status: GpuTimingStatus,
+		rasterizer: string | null,
+		gpuStats: RollingStatistics,
+	): {
+		status: GpuTimingStatus;
+		reason: string | null;
+		gpuStats: RollingStatistics;
+	} {
+		const withheld = (next: GpuTimingStatus, reason: string) => ({
+			// **A status instead of a number, not beside one.** A refused figure
+			// that is still printed is one that gets transcribed into a receipt.
+			status: next,
+			reason,
+			gpuStats: {
+				medianMs: null,
+				p95Ms: null,
+				sampleCount: gpuStats.sampleCount,
+			},
+		});
+		const kept = { status, reason: null, gpuStats };
+		if (status === "unavailable" || status === "disjoint") return kept;
+
+		const backend = SUMMING_TIMER_BACKENDS.find((entry) =>
+			(rasterizer ?? "").includes(entry.match),
+		);
+		if (backend) return withheld("untrusted", backend.reason);
+		/**
+		 * An unreadable name is **unproven, not qualified**. The first version
+		 * read it as qualified — `(rasterizer ?? "")` matches nothing, so a
+		 * context with no `WEBGL_debug_renderer_info` was handed a figure it
+		 * could not stand behind. `capture-views.mjs` settles the same
+		 * condition the same way from the other side.
+		 */
+		if (rasterizer === null)
+			return withheld(
+				"untrusted",
+				"the renderer name could not be read, so the backend cannot be " +
+					"qualified — run scripts/measure-gpu-timer-calibration.mjs to " +
+					"see what this one reports",
+			);
+
+		if (gpuStats.medianMs === null) return kept;
+		/**
+		 * **A burst is not a steady state, and only a steady state is
+		 * impossible.** The first version refused on the median alone and said
+		 * the reading "cannot be sustained" — but a genuine transient backlog,
+		 * a jump or a bake landing in a short window, can put a rolling median
+		 * over the cadence honestly. Requiring the window to be full-ish is
+		 * what makes "sustained" a claim about the samples rather than a
+		 * sentence attached to them; the reason below says what was observed
+		 * and no more.
+		 */
+		if (gpuStats.sampleCount < IMPLAUSIBLE_MIN_SAMPLES) return kept;
+		const cadenceMs = this.frameCadenceMs();
+		if (
+			cadenceMs !== null &&
+			gpuStats.medianMs > cadenceMs * IMPLAUSIBLE_CADENCE_FACTOR
+		)
+			/**
+			 * Neither the median nor the cadence, because their product is the
+			 * median. Round 2 caught the ratio-and-cadence version
+			 * reconstructing exactly what the sentence refuses to print.
+			 */
+			return withheld(
+				"implausible",
+				`over the last ${gpuStats.sampleCount} samples the GPU median ran ` +
+					`more than ${IMPLAUSIBLE_CADENCE_FACTOR}x the frame cadence, ` +
+					`which one command stream cannot sustain — a long enough ` +
+					`backlog would read the same way, and the figure is withheld ` +
+					`either way`,
+			);
+		return kept;
 	}
 
 	/**

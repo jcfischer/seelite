@@ -400,9 +400,11 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   so there is no shipped copy to go stale. What is worth knowing without
   running it is the **shape** — the over-report is a gain that grows with how
   much of the frame the work spans, rather than a fixed cost per query, and a
-  workload small enough to fit one command buffer is reported honestly. That
-  last arm was written expecting a floor and did not find one, which is what
-  leaves the summing. The magnitude is measured, not derived: how many command
+  workload small enough to fit one command buffer reads far below the excess,
+  which **bounds** a fixed cost per query from above and leaves the summing.
+  That arm was written expecting a floor and did not find one — but it does
+  **not** show the timer accurate, because the fenced figure it is read against
+  is mostly the fence rather than the work. The magnitude is measured, not derived: how many command
   buffers a composer render spans is not known.
 
   `status` is now `untrusted` on that backend and `medianMs` is **`null`**, so

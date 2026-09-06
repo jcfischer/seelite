@@ -18,8 +18,11 @@
  * whatever the GPU is doing while it is open.
  *
  * **Gain.** *How much* does it say that work costs? The workload is scaled by
- * rendering the composer K times inside one bracket, so true cost is linear in
- * K by construction. Beside it a **fenced** wall clock: K renders then a 1x1
+ * rendering the composer K times inside one bracket. That does not *make* the
+ * true cost linear in K — nothing here guarantees the GPU charges the same for
+ * the second render as the first — so linearity is something the fenced column
+ * either shows for a given run or does not, and it is read off that column
+ * rather than assumed. Beside it a **fenced** wall clock: K renders then a 1x1
  * `readPixels`, which blocks until the GPU is done. Two other fences were tried
  * and neither fences on this stack — `gl.finish()`, which this repo had already
  * measured, and `clientWaitSync`, which returns without blocking and reads far
@@ -92,208 +95,234 @@ await setView(page, framing.view);
 await framing.place(page);
 await settleFrames(page, 10);
 
-const run = await page.evaluate(
-	async ({ ks, reps, spanFrames }) => {
-		const g = window.__seelite;
-		const gl = g.renderer.getContext();
-		const ext = gl.getExtension("EXT_disjoint_timer_query_webgl2");
-		if (!ext) return { error: "EXT_disjoint_timer_query_webgl2 is absent" };
-		const composer = g.composer;
-		const px = new Uint8Array(4);
-		const frame = () => new Promise((r) => requestAnimationFrame(r));
+/**
+ * The browser closes whatever the page does.
+ *
+ * A rejected `page.evaluate` used to leave a headed Chromium and this process
+ * alive, which is the same leak `probe-pages-are-running-games` records from
+ * the other direction — a leaked page starves every later boot on the machine.
+ */
+let run;
+try {
+	run = await page.evaluate(
+		async ({ ks, reps, spanFrames }) => {
+			const g = window.__seelite;
+			const gl = g.renderer.getContext();
+			const ext = gl.getExtension("EXT_disjoint_timer_query_webgl2");
+			if (!ext) return { error: "EXT_disjoint_timer_query_webgl2 is absent" };
+			const composer = g.composer;
+			const px = new Uint8Array(4);
+			const frame = () => new Promise((r) => requestAnimationFrame(r));
+			const RESULT_DEADLINE_MS = 10_000;
 
-		/** Block until the GPU has finished everything submitted so far. */
-		const fence = () => {
-			gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-			gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
-		};
+			/** Block until the GPU has finished everything submitted so far. */
+			const fence = () => {
+				gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+				gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+			};
 
-		let spanDisjoint = 0;
-		const med = (xs) => {
-			const s = xs.filter((x) => x !== null).sort((a, b) => a - b);
-			return s.length ? s[s.length >> 1] : null;
-		};
-		const pick = (xs, q) => {
-			const s = xs.filter((x) => x !== null).sort((a, b) => a - b);
-			return s.length
-				? s[Math.min(s.length - 1, Math.floor(s.length * q))]
-				: null;
-		};
+			let spanDisjoint = 0;
+			const med = (xs) => {
+				const s = xs.filter((x) => x !== null).sort((a, b) => a - b);
+				return s.length ? s[s.length >> 1] : null;
+			};
+			const pick = (xs, q) => {
+				const s = xs.filter((x) => x !== null).sort((a, b) => a - b);
+				return s.length
+					? s[Math.min(s.length - 1, Math.floor(s.length * q))]
+					: null;
+			};
 
-		// ---- Section 1: span -------------------------------------------------
-		/** One span arm, wrapping `composer.render` for `frames` frames. */
-		const spanArm = async (mode) => {
-			const samples = [];
-			const cadence = [];
-			let last = null;
-			let pending = null;
-			const real = composer.render.bind(composer);
-			const drain = () => {
-				if (!pending) return;
-				if (gl.getParameter(ext.GPU_DISJOINT_EXT)) {
+			// ---- Section 1: span -------------------------------------------------
+			/** One span arm, wrapping `composer.render` for `frames` frames. */
+			const spanArm = async (mode) => {
+				const samples = [];
+				const cadence = [];
+				let last = null;
+				let pending = null;
+				const real = composer.render.bind(composer);
+				const drain = () => {
+					if (!pending) return;
+					if (gl.getParameter(ext.GPU_DISJOINT_EXT)) {
+						gl.deleteQuery(pending);
+						pending = null;
+						spanDisjoint++;
+						return;
+					}
+					if (!gl.getQueryParameter(pending, gl.QUERY_RESULT_AVAILABLE)) return;
+					const ns = Number(gl.getQueryParameter(pending, gl.QUERY_RESULT));
 					gl.deleteQuery(pending);
 					pending = null;
-					spanDisjoint++;
-					return;
-				}
-				if (!gl.getQueryParameter(pending, gl.QUERY_RESULT_AVAILABLE)) return;
-				const ns = Number(gl.getQueryParameter(pending, gl.QUERY_RESULT));
-				gl.deleteQuery(pending);
-				pending = null;
-				if (Number.isFinite(ns) && ns >= 0) samples.push(ns / 1e6);
-			};
-			composer.render = (...args) => {
-				drain();
-				if (pending) return mode === "skip" ? undefined : real(...args);
-				const q = gl.createQuery();
-				gl.beginQuery(ext.TIME_ELAPSED_EXT, q);
-				if (mode === "around") {
-					const out = real(...args);
+					if (Number.isFinite(ns) && ns >= 0) samples.push(ns / 1e6);
+				};
+				composer.render = (...args) => {
+					drain();
+					if (pending) return mode === "skip" ? undefined : real(...args);
+					const q = gl.createQuery();
+					gl.beginQuery(ext.TIME_ELAPSED_EXT, q);
+					if (mode === "around") {
+						const out = real(...args);
+						gl.endQuery(ext.TIME_ELAPSED_EXT);
+						pending = q;
+						return out;
+					}
 					gl.endQuery(ext.TIME_ELAPSED_EXT);
 					pending = q;
-					return out;
+					return mode === "skip" ? undefined : real(...args);
+				};
+				for (let i = 0; i < spanFrames; i++)
+					await new Promise((r) =>
+						requestAnimationFrame((t) => {
+							if (last !== null) cadence.push(t - last);
+							last = t;
+							r();
+						}),
+					);
+				for (let i = 0; i < 20; i++) {
+					drain();
+					await frame();
 				}
-				gl.endQuery(ext.TIME_ELAPSED_EXT);
-				pending = q;
-				return mode === "skip" ? undefined : real(...args);
+				composer.render = real;
+				for (let i = 0; i < 10; i++) await frame();
+				return {
+					mode,
+					n: samples.length,
+					median: med(samples),
+					p95: pick(samples, 0.95),
+					cadence: med(cadence),
+				};
 			};
-			for (let i = 0; i < spanFrames; i++)
-				await new Promise((r) =>
-					requestAnimationFrame((t) => {
-						if (last !== null) cadence.push(t - last);
-						last = t;
-						r();
-					}),
-				);
-			for (let i = 0; i < 20; i++) {
-				drain();
-				await frame();
-			}
-			composer.render = real;
-			for (let i = 0; i < 10; i++) await frame();
-			return {
-				mode,
-				n: samples.length,
-				median: med(samples),
-				p95: pick(samples, 0.95),
-				cadence: med(cadence),
-			};
-		};
 
-		// ---- Section 2 and 3: one timed reading ------------------------------
-		/**
-		 * `arm` is "timer", "drained" (GPU emptied before `beginQuery`), "wall"
-		 * (fenced, no query), "floor" (one scissored clear under a query) or
-		 * "floorWall" (the same clear, fenced and untimed — the floor arm's own
-		 * control, and mostly the fence's own cost rather than the clear's,
-		 * which is why it is read as an upper bound and not as the truth).
-		 */
-		const once = (k, arm) =>
-			new Promise((resolve, reject) => {
-				requestAnimationFrame(() => {
-					try {
-						// The workload each arm brackets. Hoisted so the fenced and the
-						// timed paths select it once instead of each spelling out both.
-						const work = () => {
-							if (arm === "floor" || arm === "floorWall") trivial();
-							else for (let i = 0; i < k; i++) composer.render();
-						};
-						if (arm === "wall" || arm === "floorWall") {
-							fence();
-							const t0 = performance.now();
+			// ---- Section 2 and 3: one timed reading ------------------------------
+			/**
+			 * `arm` is "timer", "drained" (GPU emptied before `beginQuery`), "wall"
+			 * (fenced, no query), "floor" (one scissored clear under a query) or
+			 * "floorWall" (the same clear, fenced and untimed — the floor arm's own
+			 * control, and mostly the fence's own cost rather than the clear's,
+			 * which is why it is read as an upper bound and not as the truth).
+			 */
+			const once = (k, arm) =>
+				new Promise((resolve, reject) => {
+					requestAnimationFrame(() => {
+						try {
+							// The workload each arm brackets. Hoisted so the fenced and the
+							// timed paths select it once instead of each spelling out both.
+							const work = () => {
+								if (arm === "floor" || arm === "floorWall") trivial();
+								else for (let i = 0; i < k; i++) composer.render();
+							};
+							if (arm === "wall" || arm === "floorWall") {
+								fence();
+								const t0 = performance.now();
+								work();
+								fence();
+								resolve({ value: performance.now() - t0 });
+								return;
+							}
+
+							if (arm === "drained" || arm === "floor") fence();
+							const q = gl.createQuery();
+							gl.beginQuery(ext.TIME_ELAPSED_EXT, q);
 							work();
-							fence();
-							resolve({ value: performance.now() - t0 });
-							return;
-						}
-
-						if (arm === "drained" || arm === "floor") fence();
-						const q = gl.createQuery();
-						gl.beginQuery(ext.TIME_ELAPSED_EXT, q);
-						work();
-						gl.endQuery(ext.TIME_ELAPSED_EXT);
-						const poll = () => {
-							if (gl.getParameter(ext.GPU_DISJOINT_EXT)) {
+							gl.endQuery(ext.TIME_ELAPSED_EXT);
+							// A result that never arrives used to leave this promise
+							// unsettled, and with it the browser and the process.
+							const deadline = performance.now() + RESULT_DEADLINE_MS;
+							const poll = () => {
+								if (gl.getParameter(ext.GPU_DISJOINT_EXT)) {
+									gl.deleteQuery(q);
+									resolve({ value: null, disjoint: true });
+									return;
+								}
+								if (!gl.getQueryParameter(q, gl.QUERY_RESULT_AVAILABLE)) {
+									if (performance.now() > deadline) {
+										gl.deleteQuery(q);
+										reject(
+											new Error(
+												`a timer query never resolved within ${RESULT_DEADLINE_MS} ms`,
+											),
+										);
+										return;
+									}
+									requestAnimationFrame(poll);
+									return;
+								}
+								const ns = Number(gl.getQueryParameter(q, gl.QUERY_RESULT));
 								gl.deleteQuery(q);
-								resolve({ value: null, disjoint: true });
-								return;
-							}
-							if (!gl.getQueryParameter(q, gl.QUERY_RESULT_AVAILABLE)) {
-								requestAnimationFrame(poll);
-								return;
-							}
-							const ns = Number(gl.getQueryParameter(q, gl.QUERY_RESULT));
-							gl.deleteQuery(q);
-							resolve({
-								value: Number.isFinite(ns) && ns >= 0 ? ns / 1e6 : null,
-							});
-						};
-						requestAnimationFrame(poll);
-					} catch (err) {
-						reject(err);
-					}
+								resolve({
+									value: Number.isFinite(ns) && ns >= 0 ? ns / 1e6 : null,
+								});
+							};
+							requestAnimationFrame(poll);
+						} catch (err) {
+							reject(err);
+						}
+					});
 				});
-			});
 
-		/** Microseconds of real GPU work: one pixel cleared on the backbuffer. */
-		const trivial = () => {
-			gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-			gl.enable(gl.SCISSOR_TEST);
-			gl.scissor(0, 0, 1, 1);
-			gl.clearColor(0, 0, 0, 1);
-			gl.clear(gl.COLOR_BUFFER_BIT);
-			gl.disable(gl.SCISSOR_TEST);
-		};
+			/** Microseconds of real GPU work: one pixel cleared on the backbuffer. */
+			const trivial = () => {
+				gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+				gl.enable(gl.SCISSOR_TEST);
+				gl.scissor(0, 0, 1, 1);
+				gl.clearColor(0, 0, 0, 1);
+				gl.clear(gl.COLOR_BUFFER_BIT);
+				gl.disable(gl.SCISSOR_TEST);
+			};
 
-		const spans = [];
-		// Interleaved rather than blocked: a fixed arm order measures the order.
-		for (let round = 0; round < 3; round++)
-			for (const mode of ["empty", "around", "skip"])
-				spans.push({ round, ...(await spanArm(mode)) });
+			const spans = [];
+			// Interleaved rather than blocked: a fixed arm order measures the order.
+			for (let round = 0; round < 3; round++)
+				for (const mode of ["empty", "around", "skip"])
+					spans.push({ round, ...(await spanArm(mode)) });
 
-		for (let i = 0; i < 20; i++) await frame();
-		for (const k of ks)
-			for (const arm of ["timer", "drained", "wall"]) await once(k, arm);
-
-		const rows = new Map(
-			ks.map((k) => [k, { timer: [], drained: [], wall: [] }]),
-		);
-		// Counted across **every** arm. It was incremented in the K loop only,
-		// while `spanArm`'s drain deleted a disjoint query silently and the floor
-		// loop read `.value` and dropped `.disjoint` — so a printed "0 disjoint"
-		// covered a third of the run and was quoted as covering all of it.
-		let disjointSeen = 0;
-		for (let r = 0; r < reps; r++)
+			for (let i = 0; i < 20; i++) await frame();
 			for (const k of ks)
-				for (const arm of ["timer", "drained", "wall"]) {
-					const out = await once(k, arm);
-					if (out.disjoint) disjointSeen++;
-					rows.get(k)[arm].push(out.value);
-				}
+				for (const arm of ["timer", "drained", "wall"]) await once(k, arm);
 
-		const floor = { timer: [], wall: [] };
-		for (let r = 0; r < reps; r++) {
-			const t = await once(1, "floor");
-			if (t.disjoint) disjointSeen++;
-			floor.timer.push(t.value);
-			floor.wall.push((await once(1, "floorWall")).value);
-		}
+			const rows = new Map(
+				ks.map((k) => [k, { timer: [], drained: [], wall: [] }]),
+			);
+			// Counted across **every** arm. It was incremented in the K loop only,
+			// while `spanArm`'s drain deleted a disjoint query silently and the floor
+			// loop read `.value` and dropped `.disjoint` — so a printed "0 disjoint"
+			// covered a third of the run and was quoted as covering all of it.
+			let disjointSeen = 0;
+			for (let r = 0; r < reps; r++)
+				for (const k of ks)
+					for (const arm of ["timer", "drained", "wall"]) {
+						const out = await once(k, arm);
+						if (out.disjoint) disjointSeen++;
+						rows.get(k)[arm].push(out.value);
+					}
 
-		return {
-			spans,
-			disjointSeen: disjointSeen + spanDisjoint,
-			rows: ks.map((k) => ({
-				k,
-				timer: med(rows.get(k).timer),
-				drained: med(rows.get(k).drained),
-				wall: med(rows.get(k).wall),
-				n: rows.get(k).timer.filter((x) => x !== null).length,
-			})),
-			floor: { timer: med(floor.timer), wall: med(floor.wall) },
-		};
-	},
-	{ ks: KS, reps: REPS, spanFrames: SPAN_FRAMES },
-);
+			const floor = { timer: [], wall: [] };
+			for (let r = 0; r < reps; r++) {
+				const t = await once(1, "floor");
+				if (t.disjoint) disjointSeen++;
+				floor.timer.push(t.value);
+				floor.wall.push((await once(1, "floorWall")).value);
+			}
+
+			return {
+				spans,
+				disjointSeen: disjointSeen + spanDisjoint,
+				rows: ks.map((k) => ({
+					k,
+					timer: med(rows.get(k).timer),
+					drained: med(rows.get(k).drained),
+					wall: med(rows.get(k).wall),
+					n: rows.get(k).timer.filter((x) => x !== null).length,
+				})),
+				floor: { timer: med(floor.timer), wall: med(floor.wall) },
+			};
+		},
+		{ ks: KS, reps: REPS, spanFrames: SPAN_FRAMES },
+	);
+} catch (err) {
+	await browser.close();
+	throw err;
+}
 
 console.log(`renderer: ${renderer}`);
 if (run.error) {
