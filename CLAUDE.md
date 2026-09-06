@@ -396,15 +396,17 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   an open-space planet against two agreeing wall clocks at 40.29/36.76 and
   35.20/33.30.
 
-  **The figures are not restated here**: `SUMMING_TIMER_BACKENDS` in
-  `src/frame-attribution.ts` owns them and
-  `scripts/measure-gpu-timer-calibration.mjs` reprints them beside a fresh run.
-  What is worth knowing without opening either is the shape — **1.71x** the
-  fenced cost of one composer render rising to **3.01x** at four, so it is a
-  gain that grows with the work rather than a fixed cost, and a workload small
-  enough to fit one command buffer (a scissored `clear`, 0.03 ms) is reported
-  honestly. The magnitude is measured, not derived: how many command buffers a
-  composer render spans is not known.
+  **The figures are not restated here**, and this paragraph carried five of
+  them for a round with two of them disagreeing about the same ramp.
+  `scripts/measure-gpu-timer-calibration.mjs` is the only owner: it measures
+  the span, the gain and the floor on the machine it is run on and prints them,
+  so there is no shipped copy to go stale. What is worth knowing without
+  running it is the **shape** — the over-report is a gain that grows with how
+  much of the frame the work spans, rather than a fixed cost per query, and a
+  workload small enough to fit one command buffer is reported honestly. That
+  last arm was written expecting a floor and did not find one, which is what
+  leaves the summing. The magnitude is measured, not derived: how many command
+  buffers a composer render spans is not known.
 
   `status` is now `untrusted` on that backend and `medianMs` is **`null`**, so
   there is no figure to transcribe. `implausible` is the backstop for a backend
@@ -420,10 +422,11 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   The CPU interval columns were never implicated. And note that neither wall
   clock is the player's frame either — the tight loop removes vsync and lets the
   GPU pipeline, so a decomposition quotes **arm deltas**, and only the rAF
-  period is a cadence. Two fences were tried and only one fences here:
-  `gl.finish()` does not, and `clientWaitSync` read 0.40–1.50 ms against an
-  11.5 ms/render ramp. A 1x1 `readPixels` is what this repo measures GPU
-  completion with.
+  period is a cadence. **Two of the three fences do not fence here**:
+  `gl.finish()` does not, and `clientWaitSync` returns without blocking, so a
+  1x1 `readPixels` is what this repo measures GPU completion with. The
+  instrument runs all three and prints them, which is how that stays checkable
+  rather than remembered.
 - **Multisampling the composer is the most expensive thing in this renderer.**
   `output-stage.ts` hands `EffectComposer` its own target so `antialias: true`
   on the renderer finally means something — that flag configures the default

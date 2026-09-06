@@ -372,9 +372,11 @@ describe("FrameAttribution", () => {
  * **sum of the wall spans of every command buffer** that was open while the
  * query was — `entry.elapsed_seconds += [buf GPUEndTime] - [buf GPUStartTime]`
  * in `mtl_command_buffer.mm` — rather than the duration of the work between the
- * two tokens. Measured headed on an M1 Pro: 1.71x the fenced cost of one
- * composer render, rising to 3.01x at four, while a workload small enough to
- * fit one command buffer reads honestly.
+ * two tokens. The figures live in
+ * `scripts/measure-gpu-timer-calibration.mjs`, which measures them fresh; the
+ * shape is that the over-report grows with how much of the frame the work
+ * spans, while a workload small enough to fit one command buffer reads
+ * honestly.
  *
  * The module was built to refuse and was not refusing, and a diagnostic that
  * cannot be trusted and does not say so is worse than one that is absent. Two
@@ -404,7 +406,60 @@ describe("a GPU reading that cannot be trusted says so", () => {
 		// The samples are still counted, because the refusal is about what they
 		// mean rather than about whether they arrived.
 		expect(gpu.sampleCount).toBe(1);
-		expect(gpu.reason).toContain("command-buffer");
+		expect(gpu.reason).toContain("command buffer");
+	});
+
+	/**
+	 * Found by Sage on round 1, and it is the failure the whole node is about.
+	 * Both refusals were gated on `status === "supported"`, so a summing backend
+	 * whose last sample had aged past `staleAfterMs` fell through to `stale` and
+	 * carried the summed median with `reason: null` — and `stale` reads as
+	 * old-but-real, so `perf-panel.ts` and `measure-bay-frame-cost.mjs` printed
+	 * the figure the refusal exists to withhold. It failed **open**, under the
+	 * status a long frame reaches on its own.
+	 */
+	test("refuses a summing backend even where the sample has gone stale", () => {
+		const { attribution, gl, setNow } = fixture({
+			maxQueries: 2,
+			staleAfterMs: 100,
+			rasterizer: "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro)",
+		});
+		attribution.enable();
+		attribution.beginGpuFrame(0);
+		attribution.endGpuFrame();
+		gl.available.add(1);
+		gl.results.set(1, 119_050_000);
+		setNow(10);
+		attribution.poll(10);
+		// Long enough that the sample would otherwise be reported as `stale`.
+		setNow(5000);
+
+		const gpu = attribution.snapshot(5000).gpu;
+		expect(gpu.status).toBe("untrusted");
+		expect(gpu.medianMs).toBeNull();
+		expect(gpu.reason).toContain("command buffer");
+	});
+
+	test("a qualified backend does go stale, with its number", () => {
+		const { attribution, gl, setNow } = fixture({
+			maxQueries: 2,
+			staleAfterMs: 100,
+		});
+		attribution.enable();
+		attribution.beginGpuFrame(0);
+		attribution.endGpuFrame();
+		gl.available.add(1);
+		gl.results.set(1, 4_000_000);
+		setNow(10);
+		attribution.poll(10);
+		setNow(5000);
+
+		// Without this the check above passes on a module that refuses
+		// everything old, whatever backend it is on.
+		expect(attribution.snapshot(5000).gpu).toMatchObject({
+			status: "stale",
+			medianMs: 4,
+		});
 	});
 
 	test("a qualified backend still reports its number", () => {
@@ -479,14 +534,37 @@ describe("a GPU reading that cannot be trusted says so", () => {
 	test("counts frames the ring had no query for", () => {
 		const { attribution, gl, setNow } = fixture({ maxQueries: 1 });
 		attribution.enable();
-		// Eight frames 16 ms apart, but one query: every other frame is skipped
-		// because the single entry is still pending.
-		for (let frame = 0; frame < 8; frame++) {
+		/**
+		 * Eight frames 16 ms apart through a one-entry ring, arranged so that
+		 * **exactly every other frame is timed**: a query is started, the next
+		 * frame finds the entry still pending and is skipped, and only then is
+		 * the result made available for the frame after it.
+		 *
+		 * The alternation is the point. A cadence built from the timed frames
+		 * reads **32 ms**, and a 30 ms median sits under 32 x 1.25, so the naive
+		 * implementation returns `supported` here. Built from every frame it
+		 * reads 16 ms, and 30 is over 16 x 1.25. Reverting `beginGpuFrame` to
+		 * mark only the frames that got a query turns this test red, which a
+		 * fixture where nothing is skipped — or where everything is — does not.
+		 */
+		/**
+		 * `gl.available` is a set the fake never empties, so a result added once
+		 * resolves on **every** later poll and nothing is ever skipped. Two
+		 * fixtures were written before this one that alternated in the comment
+		 * and not in the fake, and both passed against the naive cadence.
+		 */
+		for (let frame = 0; frame < 8; frame += 2) {
+			// Resolves the previous result, then takes the only entry.
 			attribution.beginGpuFrame(frame * 16);
+			gl.available.clear();
 			attribution.endGpuFrame();
+			// The entry is pending and no result is available: this frame is
+			// skipped, and `endGpuFrame` has no active query to end.
+			attribution.beginGpuFrame((frame + 1) * 16);
+			attribution.endGpuFrame();
+			gl.available.add(1);
+			gl.results.set(1, 30_000_000);
 		}
-		gl.available.add(1);
-		gl.results.set(1, 30_000_000); // 30 ms — under a 32 ms *timed* cadence
 		setNow(128);
 		attribution.poll(128);
 

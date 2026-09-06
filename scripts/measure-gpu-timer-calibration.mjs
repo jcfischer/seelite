@@ -10,7 +10,7 @@
  * frame under `status: "supported"` (#246), and because whatever ships as a
  * refusal has to be re-runnable by whoever wants to lift it later.
  *
- * ## Three sections, and each answers a different question
+ * ## Four sections, in the order the script runs them
  *
  * **Span.** Does the query measure the work between its own tokens? An empty
  * bracket, a bracket around the composer, and an empty bracket in a frame that
@@ -31,12 +31,6 @@
  * four rungs whose first row carries the previous frame's tail is not a
  * quantity to quote.
  *
- * **Verdict.** What the shipped sampler says on this renderer, from
- * `attributionSnapshot()` itself. `probe-frame-attribution.mjs` runs through
- * SwiftShader, which does not expose the extension at all — it reads
- * `unavailable` there and cannot exercise a refusal — so this is the only place
- * the refused states are shown firing.
- *
  * **Floor.** Does the reading carry a fixed cost per query? A single scissored
  * `clear` — microseconds of real GPU work, and small enough to fit one command
  * buffer — bracketed by a query. This arm was written expecting a floor and did
@@ -45,6 +39,12 @@
  * it is why the numbers above are stated as measured rather than derived — how
  * many command buffers a composer render spans, and how far their spans
  * overlap, would need instrumentation inside Metal.
+ * **Verdict.** What the shipped sampler says on this renderer, from
+ * `attributionSnapshot()` itself. `probe-frame-attribution.mjs` runs through
+ * SwiftShader, which does not expose the extension at all — it reads
+ * `unavailable` there and cannot exercise a refusal — so this is the only place
+ * the refused states are shown firing.
+ *
  */
 import {
 	bootedGame,
@@ -177,7 +177,9 @@ const run = await page.evaluate(
 		// ---- Section 2 and 3: one timed reading ------------------------------
 		/**
 		 * `arm` is "timer", "drained" (GPU emptied before `beginQuery`), "wall"
-		 * (fenced, no query) or "floor" (one scissored clear under a query).
+		 * (fenced, no query), "floor" (one scissored clear under a query) or
+		 * "floorWall" (the same clear, fenced and untimed — the floor arm's own
+		 * control, and without it 0.03 ms has nothing to be small against).
 		 */
 		const once = (k, arm) =>
 			new Promise((resolve, reject) => {
@@ -312,7 +314,16 @@ for (const r of run.rows) {
 
 const first = run.rows[0];
 const last = run.rows[run.rows.length - 1];
-if (first && last && last.k > first.k) {
+// `null - null` is 0, so a run where every timer rep came back disjoint would
+// otherwise print a confident `timer 0.00 ms` where the rows above print a dash.
+const marginalIsReadable =
+	first &&
+	last &&
+	last.k > first.k &&
+	[first, last].every(
+		(r) => r.timer !== null && r.drained !== null && r.wall !== null,
+	);
+if (marginalIsReadable) {
 	const dk = last.k - first.k;
 	const per = (a, b) => (b - a) / dk;
 	const dT = per(first.timer, last.timer);

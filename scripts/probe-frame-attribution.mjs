@@ -14,6 +14,9 @@ import {
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
+// Read off the module rather than restated here: a third refused status would
+// otherwise turn this probe falsely red.
+import { isRefusedGpuStatus } from "../src/gpu-timing-status.js";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 
@@ -243,21 +246,32 @@ const resultOrderIsValid = perf.calls.queryEvents.every((event) => {
  * to be believed. A refusal owes a reason and **no figure** — a refused median
  * that is still printed is one that gets transcribed into a receipt.
  */
-const REFUSED = new Set(["untrusted", "implausible"]);
-const timingIsExplicit = !snapshot.gpu.supported
-	? snapshot.gpu.status === "unavailable" &&
-		snapshot.gpu.medianMs === null &&
-		snapshot.gpu.p95Ms === null
-	: REFUSED.has(snapshot.gpu.status)
-		? snapshot.gpu.medianMs === null &&
-			snapshot.gpu.p95Ms === null &&
-			typeof snapshot.gpu.reason === "string" &&
-			snapshot.gpu.reason.length > 0
-		: snapshot.gpu.status === "supported" &&
-			snapshot.gpu.sampleCount > 0 &&
-			snapshot.gpu.medianMs !== null &&
-			snapshot.gpu.p95Ms !== null &&
-			snapshot.gpu.reason === null;
+const explicitFor = (gpu) => {
+	if (!gpu.supported)
+		return (
+			gpu.status === "unavailable" &&
+			gpu.medianMs === null &&
+			gpu.p95Ms === null
+		);
+	if (isRefusedGpuStatus(gpu.status))
+		return (
+			gpu.medianMs === null &&
+			gpu.p95Ms === null &&
+			typeof gpu.reason === "string" &&
+			gpu.reason.length > 0
+		);
+	if (gpu.status === "supported")
+		return (
+			gpu.sampleCount > 0 &&
+			gpu.medianMs !== null &&
+			gpu.p95Ms !== null &&
+			gpu.reason === null
+		);
+	// `disjoint` and `stale` are the module's own two, and they carry whatever
+	// the samples last said; neither is this check's business.
+	return true;
+};
+const timingIsExplicit = explicitFor(snapshot.gpu);
 t.check(
 	"GPU timing is supported evidence, an explicit refusal with a reason, or unavailable",
 	timingIsExplicit,

@@ -13,8 +13,21 @@
  */
 
 import { rollingStatistics } from "./frame-statistics.js";
+import {
+	isRefusedGpuStatus,
+	REFUSED_GPU_STATUSES,
+} from "./gpu-timing-status.js";
 
 export { rollingStatistics } from "./frame-statistics.js";
+/**
+ * Re-exported so a TypeScript consumer has one import, while the definition
+ * stays in a `.js` leaf a Node probe can read. `probe-frame-attribution.mjs`
+ * imports the leaf directly.
+ */
+export {
+	isRefusedGpuStatus,
+	REFUSED_GPU_STATUSES,
+} from "./gpu-timing-status.js";
 
 export const CPU_INTERVALS = [
 	"simulation/step",
@@ -42,13 +55,15 @@ export type GpuTimingStatus =
  * overlap or one contains a wait, so a frame whose work spans several command
  * buffers is reported as the sum of their whole durations.
  *
- * Measured headed on an M1 Pro at 1440x900, device scale 2 — the figures are
- * `scripts/measure-gpu-timer-calibration.mjs` and it reprints them: **1.71x**
- * the fenced cost of one composer render, 2.56x at two, 2.73x at three and
- * **3.01x** at four, against a fenced ramp of 11.7 ms per render. A workload
- * small enough to fit one command buffer is reported honestly — one scissored
- * `clear` reads 0.03 ms — which is what rules out a fixed per-query cost and
- * leaves the summing.
+ * **The figures are not restated here.**
+ * `scripts/measure-gpu-timer-calibration.mjs` is the owner: it measures the
+ * span, the gain and the floor on the machine it runs on and prints them, so
+ * there is no shipped copy to go stale. What is worth knowing without running
+ * it is the *shape* — the over-report is a gain that **grows with how much of
+ * the frame the work spans**, and a workload small enough to fit one command
+ * buffer is reported honestly, which is what rules out a fixed cost per query
+ * and leaves the summing. The magnitude is measured rather than derived: how
+ * many command buffers a composer render spans is not known.
  *
  * **A name match is the right shape here even though it is brittle**, and the
  * two reasons are the mechanism and the alternative. The defect is a property
@@ -60,16 +75,20 @@ export type GpuTimingStatus =
  * module. `scripts/measure-gpu-timer-calibration.mjs` is how a later ANGLE gets
  * re-qualified and this list shortened.
  */
-export const SUMMING_TIMER_BACKENDS = Object.freeze(["ANGLE Metal"] as const);
+export const SUMMING_TIMER_BACKENDS: readonly Readonly<{
+	match: string;
+	reason: string;
+}>[] = Object.freeze([
+	Object.freeze({
+		match: "ANGLE Metal",
+		reason:
+			"ANGLE Metal sums the wall spans of every command buffer open while " +
+			"a timer query is, rather than timing the work between its tokens, " +
+			"so a frame reads several times its cost — run " +
+			"scripts/measure-gpu-timer-calibration.mjs for this machine's figures",
+	}),
+]);
 
-/**
- * How far above the frame cadence a GPU median may sit before it is refused.
- *
- * A GPU-bound frame legitimately reads at about the cadence — that is what
- * GPU-bound means — so the margin has to clear 1.0 without swallowing the 1.7x
- * to 3x this exists to catch. It is a backstop for a backend nobody has
- * qualified, not the primary check.
- */
 export const IMPLAUSIBLE_CADENCE_FACTOR = 1.25;
 
 export type RollingStatistics = Readonly<{
@@ -423,39 +442,42 @@ export class FrameAttribution {
 			: null;
 
 		/**
-		 * #246, and the two refusals are checked only where there is a number to
-		 * refuse. `disjoint` and `stale` are about whether a sample is usable at
-		 * all and are settled above; these are about whether a usable one means
-		 * what it says.
+		 * #246. **The backend refusal is not gated on `supported`**, and the first
+		 * version was: a summing backend under `stale` then carried the summed
+		 * median with `reason: null`, and `stale` reads as old-but-real, so the
+		 * perf panel and `measure-bay-frame-cost.mjs` printed the very figure
+		 * this exists to withhold. The backend is wrong at every status that
+		 * carries a number, so it is settled before the sample states are.
+		 *
+		 * `implausible` is the other way round: it is a statement *about the
+		 * samples*, so it can only be reached where they are usable.
 		 */
 		let reason: string | null = null;
-		if (status === "supported") {
-			const backend = SUMMING_TIMER_BACKENDS.find((name) =>
-				(rasterizer ?? "").includes(name),
-			);
+		const backend = SUMMING_TIMER_BACKENDS.find((entry) =>
+			(rasterizer ?? "").includes(entry.match),
+		);
+		if (supported && backend) {
+			status = "untrusted";
+			reason = backend.reason;
+		} else if (status === "supported") {
 			const cadenceMs = this.frameCadenceMs();
-			if (backend) {
-				status = "untrusted";
-				reason =
-					`${backend} sums command-buffer wall spans into a timer query ` +
-					`rather than timing the work between its tokens, and reports ` +
-					`1.7x to 3x the fenced cost of a frame — see ` +
-					`scripts/measure-gpu-timer-calibration.mjs`;
-			} else if (
+			if (
 				cadenceMs !== null &&
 				gpuStats.medianMs !== null &&
 				gpuStats.medianMs > cadenceMs * IMPLAUSIBLE_CADENCE_FACTOR
 			) {
 				status = "implausible";
+				// The ratio, not the median. Quoting the refused figure in the
+				// sentence that refuses it is how it reaches a receipt anyway.
 				reason =
-					`a GPU median of ${gpuStats.medianMs.toFixed(2)} ms cannot be ` +
-					`sustained at a frame cadence of ${cadenceMs.toFixed(2)} ms on ` +
-					`one command stream`;
+					`the GPU median is ${(gpuStats.medianMs / cadenceMs).toFixed(2)}x ` +
+					`the frame cadence of ${cadenceMs.toFixed(2)} ms, which cannot be ` +
+					`sustained on one command stream`;
 			}
 		}
 		// **A status instead of a number, not beside one.** A refused figure that
 		// is still printed is a figure that gets transcribed into a receipt.
-		if (status === "untrusted" || status === "implausible")
+		if (isRefusedGpuStatus(status))
 			gpuStats = {
 				medianMs: null,
 				p95Ms: null,
@@ -496,8 +518,10 @@ export class FrameAttribution {
 			if (Number.isFinite(gap) && gap > 0) gaps.push(gap);
 		}
 		if (!gaps.length) return null;
-		gaps.sort((a, b) => a - b);
-		return gaps[gaps.length >> 1];
+		// `rollingStatistics` rather than a local midpoint: `frame-statistics.ts`
+		// exists so the sampler and the headed instrument share one percentile
+		// policy, and a second rule here would put two of them in one snapshot.
+		return rollingStatistics(gaps).medianMs;
 	}
 
 	private allocateQueries(): void {
@@ -543,6 +567,12 @@ export class FrameAttribution {
 	private resetSamples(): void {
 		for (const samples of this.cpuSamples.values()) samples.clear();
 		this.gpuSamples.clear();
+		// The cadence ring too, and it was the one ring left out. A sampler
+		// re-enabled in a 40 ms scene after a 16 ms one would have compared fresh
+		// GPU samples against a cadence blended from the previous enabled period
+		// for up to `sampleCapacity` frames, which is `implausible` firing on a
+		// frame rate that no longer exists.
+		this.frameMarks.clear();
 		this.lastDisjointAtMs = null;
 		this.disjointActive = false;
 	}
