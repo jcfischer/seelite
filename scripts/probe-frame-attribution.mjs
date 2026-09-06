@@ -237,16 +237,29 @@ const resultOrderIsValid = perf.calls.queryEvents.every((event) => {
 	readyQueries.delete(event.id);
 	return true;
 });
-const timingIsExplicit = snapshot.gpu.supported
-	? snapshot.gpu.status === "supported" &&
-		snapshot.gpu.sampleCount > 0 &&
-		snapshot.gpu.medianMs !== null &&
-		snapshot.gpu.p95Ms !== null
-	: snapshot.gpu.status === "unavailable" &&
+/**
+ * Three outcomes rather than two, because #246 added a third shape: a backend
+ * whose extension is present, whose queries resolve, and whose numbers are not
+ * to be believed. A refusal owes a reason and **no figure** — a refused median
+ * that is still printed is one that gets transcribed into a receipt.
+ */
+const REFUSED = new Set(["untrusted", "implausible"]);
+const timingIsExplicit = !snapshot.gpu.supported
+	? snapshot.gpu.status === "unavailable" &&
 		snapshot.gpu.medianMs === null &&
-		snapshot.gpu.p95Ms === null;
+		snapshot.gpu.p95Ms === null
+	: REFUSED.has(snapshot.gpu.status)
+		? snapshot.gpu.medianMs === null &&
+			snapshot.gpu.p95Ms === null &&
+			typeof snapshot.gpu.reason === "string" &&
+			snapshot.gpu.reason.length > 0
+		: snapshot.gpu.status === "supported" &&
+			snapshot.gpu.sampleCount > 0 &&
+			snapshot.gpu.medianMs !== null &&
+			snapshot.gpu.p95Ms !== null &&
+			snapshot.gpu.reason === null;
 t.check(
-	"GPU timing is either supported evidence or explicitly unavailable",
+	"GPU timing is supported evidence, an explicit refusal with a reason, or unavailable",
 	timingIsExplicit,
 	JSON.stringify(snapshot.gpu),
 );

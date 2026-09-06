@@ -20,6 +20,16 @@ class FakeGl {
 	readonly deleted: number[] = [];
 	supported = true;
 	disjoint = false;
+	/**
+	 * Which backend the fake claims to be.
+	 *
+	 * A neutral default on purpose: `#246` makes the module refuse a reading on
+	 * a backend that sums command-buffer spans, and every other test in this
+	 * file is about the ring, the ages and the explicit states rather than about
+	 * the backend. A fake that named one of the refused backends by default
+	 * would turn all of them into tests of the refusal.
+	 */
+	rasterizer = "Fake Rasterizer (test)";
 	private nextId = 1;
 
 	getExtension(name: string): unknown {
@@ -68,7 +78,7 @@ class FakeGl {
 	getParameter(parameter: number): unknown {
 		if (parameter === this.GPU_DISJOINT_EXT) return this.disjoint;
 		if (parameter === this.RENDERER) return "WebKit WebGL";
-		if (parameter === this.UNMASKED_RENDERER_WEBGL) return "ANGLE Metal";
+		if (parameter === this.UNMASKED_RENDERER_WEBGL) return this.rasterizer;
 		return null;
 	}
 }
@@ -92,11 +102,13 @@ function fixture(
 		maxQueries?: number;
 		sampleCapacity?: number;
 		staleAfterMs?: number;
+		rasterizer?: string;
 	} = {},
 ) {
 	let now = 0;
 	const gl = new FakeGl();
 	gl.supported = options.supported ?? true;
+	if (options.rasterizer !== undefined) gl.rasterizer = options.rasterizer;
 	const events = new EventTarget();
 	const attribution = new FrameAttribution({
 		gl: gl as unknown as TimerQueryContext,
@@ -318,7 +330,7 @@ describe("FrameAttribution", () => {
 		expect(snapshot.renderer).toMatchObject({
 			...facts(),
 			api: "WebKit WebGL",
-			rasterizer: "ANGLE Metal",
+			rasterizer: "Fake Rasterizer (test)",
 		});
 	});
 
@@ -352,5 +364,133 @@ describe("FrameAttribution", () => {
 		events.dispatchEvent(new Event("webglcontextrestored"));
 		expect(attribution.beginGpuFrame()).toBe(true);
 		expect(gl.calls).toContain("begin:3");
+	});
+});
+
+/**
+ * #246. On ANGLE's Metal backend `EXT_disjoint_timer_query_webgl2` reports the
+ * **sum of the wall spans of every command buffer** that was open while the
+ * query was — `entry.elapsed_seconds += [buf GPUEndTime] - [buf GPUStartTime]`
+ * in `mtl_command_buffer.mm` — rather than the duration of the work between the
+ * two tokens. Measured headed on an M1 Pro: 1.71x the fenced cost of one
+ * composer render, rising to 3.01x at four, while a workload small enough to
+ * fit one command buffer reads honestly.
+ *
+ * The module was built to refuse and was not refusing, and a diagnostic that
+ * cannot be trusted and does not say so is worse than one that is absent. Two
+ * refusals, because neither covers the other: the backend is known from its
+ * name before any sample exists, and the cadence contradiction catches a
+ * backend nobody has qualified.
+ */
+describe("a GPU reading that cannot be trusted says so", () => {
+	test("refuses a backend that is known to sum command-buffer spans", () => {
+		const { attribution, gl, setNow } = fixture({
+			maxQueries: 2,
+			rasterizer: "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro)",
+		});
+		attribution.enable();
+		attribution.beginGpuFrame(0);
+		attribution.endGpuFrame();
+		gl.available.add(1);
+		gl.results.set(1, 4_000_000);
+		setNow(10);
+		attribution.poll(10);
+
+		const gpu = attribution.snapshot(10).gpu;
+		expect(gpu.status).toBe("untrusted");
+		// A status instead of a number, not beside one.
+		expect(gpu.medianMs).toBeNull();
+		expect(gpu.p95Ms).toBeNull();
+		// The samples are still counted, because the refusal is about what they
+		// mean rather than about whether they arrived.
+		expect(gpu.sampleCount).toBe(1);
+		expect(gpu.reason).toContain("command-buffer");
+	});
+
+	test("a qualified backend still reports its number", () => {
+		const { attribution, gl, setNow } = fixture({ maxQueries: 2 });
+		attribution.enable();
+		attribution.beginGpuFrame(0);
+		attribution.endGpuFrame();
+		gl.available.add(1);
+		gl.results.set(1, 4_000_000);
+		setNow(10);
+		attribution.poll(10);
+
+		const gpu = attribution.snapshot(10).gpu;
+		expect(gpu.status).toBe("supported");
+		expect(gpu.medianMs).toBe(4);
+		expect(gpu.reason).toBeNull();
+	});
+
+	/**
+	 * The physical contradiction, and it needs no fence and no renderer name: a
+	 * GPU cannot spend longer on a frame than the interval between frames, on
+	 * one command stream, in a steady state. It is the backstop for a backend
+	 * this repo has never seen.
+	 */
+	test("refuses a median that exceeds the frame cadence it was sampled at", () => {
+		const { attribution, gl, setNow } = fixture({ maxQueries: 4 });
+		attribution.enable();
+		// Four frames, 16 ms apart: a 60 Hz cadence.
+		for (let frame = 0; frame < 4; frame++) {
+			attribution.beginGpuFrame(frame * 16);
+			attribution.endGpuFrame();
+		}
+		for (let id = 1; id <= 4; id++) {
+			gl.available.add(id);
+			gl.results.set(id, 50_000_000); // 50 ms of "GPU time" per 16 ms frame
+		}
+		setNow(64);
+		attribution.poll(64);
+
+		const gpu = attribution.snapshot(64).gpu;
+		expect(gpu.status).toBe("implausible");
+		expect(gpu.medianMs).toBeNull();
+		expect(gpu.reason).toContain("cadence");
+	});
+
+	test("a median inside the cadence is not refused", () => {
+		const { attribution, gl, setNow } = fixture({ maxQueries: 4 });
+		attribution.enable();
+		for (let frame = 0; frame < 4; frame++) {
+			attribution.beginGpuFrame(frame * 16);
+			attribution.endGpuFrame();
+		}
+		for (let id = 1; id <= 4; id++) {
+			gl.available.add(id);
+			gl.results.set(id, 15_000_000); // 15 ms, a GPU-bound 60 Hz frame
+		}
+		setNow(64);
+		attribution.poll(64);
+
+		expect(attribution.snapshot(64).gpu).toMatchObject({
+			status: "supported",
+			medianMs: 15,
+		});
+	});
+
+	/**
+	 * **The cadence is every frame's, not every timed frame's.** The ring skips
+	 * a frame when every entry is pending, so a cadence built from the frames
+	 * that got a query reads two or three times the real one — and a check that
+	 * divides by it goes quietly lenient exactly when the sampler is busiest.
+	 */
+	test("counts frames the ring had no query for", () => {
+		const { attribution, gl, setNow } = fixture({ maxQueries: 1 });
+		attribution.enable();
+		// Eight frames 16 ms apart, but one query: every other frame is skipped
+		// because the single entry is still pending.
+		for (let frame = 0; frame < 8; frame++) {
+			attribution.beginGpuFrame(frame * 16);
+			attribution.endGpuFrame();
+		}
+		gl.available.add(1);
+		gl.results.set(1, 30_000_000); // 30 ms — under a 32 ms *timed* cadence
+		setNow(128);
+		attribution.poll(128);
+
+		// It is over the 16 ms cadence the frames actually ran at.
+		expect(attribution.snapshot(128).gpu.status).toBe("implausible");
 	});
 });

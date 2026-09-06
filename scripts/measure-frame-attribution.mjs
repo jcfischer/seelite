@@ -129,6 +129,8 @@ console.log(
 console.log(
 	`delayed composer GPU state: ${lastAttached.gpu.status}, ${lastAttached.gpu.sampleCount} retained samples, ${lastAttached.gpu.medianMs?.toFixed(3) ?? "—"} ms median`,
 );
+if (lastAttached.gpu.reason)
+	console.log(`  GPU refused: ${lastAttached.gpu.reason}`);
 console.log(
 	"scope: whole-render CPU submission A/B plus composer-only GPU time; requestAnimationFrame cadence is not GPU execution time",
 );

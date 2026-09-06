@@ -738,7 +738,7 @@ export function mountPerfPanel(targets: PerfTargets) {
 FRAME ATTRIBUTION
 CPU simulation/step         ${metric(attribution.cpu["simulation/step"].medianMs)} med  ${metric(attribution.cpu["simulation/step"].p95Ms)} p95
 CPU render submission       ${metric(attribution.cpu["render submission/composer"].medianMs)} med  ${metric(attribution.cpu["render submission/composer"].p95Ms)} p95
-GPU status                  ${attribution.gpu.status}
+GPU status                  ${attribution.gpu.status}${attribution.gpu.reason ? `\nGPU refused because        ${attribution.gpu.reason}` : ""}
 GPU composer execution      ${metric(attribution.gpu.medianMs)} med  ${metric(attribution.gpu.p95Ms)} p95
 GPU samples / age           ${attribution.gpu.sampleCount} / ${attribution.gpu.sampleAgeMs === null ? "—" : `${attribution.gpu.sampleAgeMs.toFixed(0)} ms`}
 draw calls / triangles      ${attribution.renderer.calls} / ${attribution.renderer.triangles}
