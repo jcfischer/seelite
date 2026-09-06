@@ -267,9 +267,18 @@ const explicitFor = (gpu) => {
 			gpu.p95Ms !== null &&
 			gpu.reason === null
 		);
-	// `disjoint` and `stale` are the module's own two, and they carry whatever
-	// the samples last said; neither is this check's business.
-	return true;
+	if (gpu.status === "stale")
+		// Old but real: it owes an age and it owes no reason, which is what
+		// separates it from a refusal. A bare `return true` here made this a
+		// fourth outcome that could not fail — and the arm the old expression
+		// did check, a supported-but-stale sampler, stopped being checked at all.
+		return gpu.sampleAgeMs !== null && gpu.reason === null;
+	if (gpu.status === "disjoint")
+		// The samples were discarded, so there is nothing to report and nothing
+		// to explain.
+		return gpu.medianMs === null && gpu.p95Ms === null && gpu.reason === null;
+	// A status the module grew and this probe has never heard of.
+	return false;
 };
 const timingIsExplicit = explicitFor(snapshot.gpu);
 t.check(

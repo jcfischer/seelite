@@ -4,6 +4,11 @@ import {
 	rollingStatistics,
 	type TimerQueryContext,
 } from "../src/frame-attribution";
+import {
+	GPU_TIMING_STATUSES,
+	isRefusedGpuStatus,
+	REFUSED_GPU_STATUSES,
+} from "../src/gpu-timing-status.js";
 
 type FakeQuery = WebGLQuery & { id: number };
 
@@ -29,7 +34,7 @@ class FakeGl {
 	 * the backend. A fake that named one of the refused backends by default
 	 * would turn all of them into tests of the refusal.
 	 */
-	rasterizer = "Fake Rasterizer (test)";
+	rasterizer: string | null = "Fake Rasterizer (test)";
 	private nextId = 1;
 
 	getExtension(name: string): unknown {
@@ -102,7 +107,7 @@ function fixture(
 		maxQueries?: number;
 		sampleCapacity?: number;
 		staleAfterMs?: number;
-		rasterizer?: string;
+		rasterizer?: string | null;
 	} = {},
 ) {
 	let now = 0;
@@ -368,21 +373,16 @@ describe("FrameAttribution", () => {
 });
 
 /**
- * #246. On ANGLE's Metal backend `EXT_disjoint_timer_query_webgl2` reports the
- * **sum of the wall spans of every command buffer** that was open while the
- * query was — `entry.elapsed_seconds += [buf GPUEndTime] - [buf GPUStartTime]`
- * in `mtl_command_buffer.mm` — rather than the duration of the work between the
- * two tokens. The figures live in
- * `scripts/measure-gpu-timer-calibration.mjs`, which measures them fresh; the
- * shape is that the over-report grows with how much of the frame the work
- * spans, while a workload small enough to fit one command buffer reads
- * honestly.
+ * #246. On ANGLE's Metal backend `EXT_disjoint_timer_query_webgl2` does not
+ * time the work between its tokens — `SUMMING_TIMER_BACKENDS` in
+ * `src/frame-attribution.ts` carries the mechanism and
+ * `scripts/measure-gpu-timer-calibration.mjs` measures what it costs.
  *
- * The module was built to refuse and was not refusing, and a diagnostic that
- * cannot be trusted and does not say so is worse than one that is absent. Two
- * refusals, because neither covers the other: the backend is known from its
- * name before any sample exists, and the cadence contradiction catches a
- * backend nobody has qualified.
+ * What matters here is that the module was built to refuse and was not
+ * refusing, and that a diagnostic which cannot be trusted and does not say so
+ * is worse than one that is absent. Two refusals, because neither covers the
+ * other: the backend is known from its name before any sample exists, and the
+ * cadence contradiction catches a backend nobody has qualified.
  */
 describe("a GPU reading that cannot be trusted says so", () => {
 	test("refuses a backend that is known to sum command-buffer spans", () => {
@@ -438,6 +438,83 @@ describe("a GPU reading that cannot be trusted says so", () => {
 		expect(gpu.status).toBe("untrusted");
 		expect(gpu.medianMs).toBeNull();
 		expect(gpu.reason).toContain("command buffer");
+	});
+
+	/**
+	 * Round 2, and it is round 1's blocker one level in. `implausible` is sold
+	 * as the backstop for a backend nobody has qualified, and it was reachable
+	 * only from `supported` — so an unqualified backend over-reporting by four
+	 * times, whose last sample aged out, landed on `stale` and printed the
+	 * figure. The arm covering the unknown backend had the fail-open the named
+	 * one had just lost.
+	 */
+	test("refuses an implausible median even where the sample has gone stale", () => {
+		const { attribution, gl, setNow } = fixture({
+			maxQueries: 4,
+			staleAfterMs: 100,
+		});
+		attribution.enable();
+		for (let frame = 0; frame < 4; frame++) {
+			attribution.beginGpuFrame(frame * 16);
+			attribution.endGpuFrame();
+		}
+		for (let id = 1; id <= 4; id++) {
+			gl.available.add(id);
+			gl.results.set(id, 50_000_000);
+		}
+		setNow(64);
+		attribution.poll(64);
+		setNow(5000);
+
+		const gpu = attribution.snapshot(5000).gpu;
+		expect(gpu.status).toBe("implausible");
+		expect(gpu.medianMs).toBeNull();
+	});
+
+	/**
+	 * The repo's capture doctrine already settles this one from the other side:
+	 * `capture-views.mjs` refuses to write a frame unless the renderer can be
+	 * *shown* not to be a software rasteriser, and "an unreadable name counts as
+	 * unproven". A backend gate that reads an unreadable name as *qualified* is
+	 * that rule inverted.
+	 */
+	test("refuses a backend whose name cannot be read", () => {
+		const { attribution, gl, setNow } = fixture({
+			maxQueries: 2,
+			rasterizer: null,
+		});
+		attribution.enable();
+		attribution.beginGpuFrame(0);
+		attribution.endGpuFrame();
+		gl.available.add(1);
+		gl.results.set(1, 4_000_000);
+		setNow(10);
+		attribution.poll(10);
+
+		const gpu = attribution.snapshot(10).gpu;
+		expect(gpu.status).toBe("untrusted");
+		expect(gpu.medianMs).toBeNull();
+		expect(gpu.reason).toContain("could not be read");
+	});
+
+	/**
+	 * The contract every refused status owes, checked over the vocabulary
+	 * itself rather than over the two that exist today: a seventh added to the
+	 * union and not to `REFUSED_GPU_STATUSES` would otherwise ship a figure
+	 * beside a refusal with nothing going red.
+	 */
+	test("every refused status withholds its figure, and no other does", () => {
+		expect(GPU_TIMING_STATUSES.length).toBeGreaterThan(
+			REFUSED_GPU_STATUSES.length,
+		);
+		for (const status of GPU_TIMING_STATUSES)
+			expect(isRefusedGpuStatus(status)).toBe(
+				(REFUSED_GPU_STATUSES as readonly string[]).includes(status),
+			);
+		// Not derivable from the two lists: a refused status must be one the
+		// module can actually reach.
+		for (const status of REFUSED_GPU_STATUSES)
+			expect(GPU_TIMING_STATUSES).toContain(status);
 	});
 
 	test("a qualified backend does go stale, with its number", () => {

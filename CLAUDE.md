@@ -386,15 +386,12 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   intercept, never a residual.
 - **The GPU timer refuses on ANGLE Metal, and the reason is in ANGLE (#246).**
   `EXT_disjoint_timer_query_webgl2` there does not time the work between its
-  tokens. `QueryMtl.mm` flushes the command buffer at `begin` and at `end` to
-  get clean boundaries, and `mtl_command_buffer.mm` then accumulates, **per
-  command buffer**, `[buf GPUEndTime] - [buf GPUStartTime]` into the entry the
-  query owns. A sum of wall spans is at least the busy time and strictly more
-  wherever two spans overlap or one contains a wait, so a frame whose work
-  spans several command buffers is reported as the sum of their whole
-  durations. That is why it read 119.05 ms at `berth-free-look` and 145.67 at
-  an open-space planet against two agreeing wall clocks at 40.29/36.76 and
-  35.20/33.30.
+  tokens; it sums whole command-buffer wall spans, which is at least the busy
+  time and strictly more wherever two spans overlap. **The mechanism is not
+  restated here** — `SUMMING_TIMER_BACKENDS` in `src/frame-attribution.ts`
+  carries it with the two ANGLE files and the lines quoted. That is why the
+  sampler read 119.05 ms at `berth-free-look` and 145.67 at an open-space
+  planet against two agreeing wall clocks at 40.29/36.76 and 35.20/33.30.
 
   **The figures are not restated here**, and this paragraph carried five of
   them for a round with two of them disagreeing about the same ramp.

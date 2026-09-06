@@ -20,31 +20,35 @@
  * **Gain.** *How much* does it say that work costs? The workload is scaled by
  * rendering the composer K times inside one bracket, so true cost is linear in
  * K by construction. Beside it a **fenced** wall clock: K renders then a 1x1
- * `readPixels`, which blocks until the GPU is done. `gl.finish()` is not used —
- * this repo has already measured that it does not fence here. `clientWaitSync`
- * was tried and read 0.40-1.50 ms against an 11.50 ms/render ramp, so it does
- * not fence here either; the mechanism was not chased.
+ * `readPixels`, which blocks until the GPU is done. Two other fences were tried
+ * and neither fences on this stack — `gl.finish()`, which this repo had already
+ * measured, and `clientWaitSync`, which returns without blocking and reads far
+ * below the fenced ramp. The table prints all of it.
  *
- * Read the **marginal** cost of one more render, not the fitted intercept. The
- * intercept moved +36.2, -30.5 and +3.1 ms across three runs of this script
- * while the marginal held at 38.9-45.1 ms against a true 11.5; a slope over
- * four rungs whose first row carries the previous frame's tail is not a
- * quantity to quote.
+ * Read the **marginal** cost of one more render rather than a fitted intercept.
+ * The intercept is unstable across runs while the marginal holds, because the
+ * K = 1 row carries the previous frame's tail; a slope over four rungs whose
+ * first row is contaminated is not a quantity to quote.
  *
  * **Floor.** Does the reading carry a fixed cost per query? A single scissored
  * `clear` — microseconds of real GPU work, and small enough to fit one command
- * buffer — bracketed by a query. This arm was written expecting a floor and did
- * not find one: it reads **0.03 ms** on ANGLE Metal against a fenced 0.60 ms.
- * That is what rules out "a fixed cost per query" and leaves the summing, and
- * it is why the numbers above are stated as measured rather than derived — how
- * many command buffers a composer render spans, and how far their spans
- * overlap, would need instrumentation inside Metal.
+ * buffer — bracketed by a query, against the same clear fenced and untimed.
+ * This arm was written expecting a floor and did not find one, which is what
+ * rules out a fixed cost per query and leaves the summing. It is also why the
+ * gain is stated as measured rather than derived: how many command buffers a
+ * composer render spans, and how far their spans overlap, would need
+ * instrumentation inside Metal.
+ *
  * **Verdict.** What the shipped sampler says on this renderer, from
  * `attributionSnapshot()` itself. `probe-frame-attribution.mjs` runs through
  * SwiftShader, which does not expose the extension at all — it reads
  * `unavailable` there and cannot exercise a refusal — so this is the only place
  * the refused states are shown firing.
  *
+ * **No figure is written down in this file.** It is the owner of the numbers,
+ * which means it measures them; a header that also stated them would be the
+ * copy that the next machine's run disagrees with, which is the drift round 1
+ * found in five other places and round 2 found here.
  */
 import {
 	bootedGame,
@@ -104,6 +108,7 @@ const run = await page.evaluate(
 			gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
 		};
 
+		let spanDisjoint = 0;
 		const med = (xs) => {
 			const s = xs.filter((x) => x !== null).sort((a, b) => a - b);
 			return s.length ? s[s.length >> 1] : null;
@@ -128,6 +133,7 @@ const run = await page.evaluate(
 				if (gl.getParameter(ext.GPU_DISJOINT_EXT)) {
 					gl.deleteQuery(pending);
 					pending = null;
+					spanDisjoint++;
 					return;
 				}
 				if (!gl.getQueryParameter(pending, gl.QUERY_RESULT_AVAILABLE)) return;
@@ -185,27 +191,25 @@ const run = await page.evaluate(
 			new Promise((resolve, reject) => {
 				requestAnimationFrame(() => {
 					try {
-						if (arm === "wall") {
+						// The workload each arm brackets. Hoisted so the fenced and the
+						// timed paths select it once instead of each spelling out both.
+						const work = () => {
+							if (arm === "floor" || arm === "floorWall") trivial();
+							else for (let i = 0; i < k; i++) composer.render();
+						};
+						if (arm === "wall" || arm === "floorWall") {
 							fence();
 							const t0 = performance.now();
-							for (let i = 0; i < k; i++) composer.render();
+							work();
 							fence();
 							resolve({ value: performance.now() - t0 });
 							return;
 						}
-						if (arm === "floorWall") {
-							fence();
-							const t0 = performance.now();
-							trivial();
-							fence();
-							resolve({ value: performance.now() - t0 });
-							return;
-						}
+
 						if (arm === "drained" || arm === "floor") fence();
 						const q = gl.createQuery();
 						gl.beginQuery(ext.TIME_ELAPSED_EXT, q);
-						if (arm === "floor") trivial();
-						else for (let i = 0; i < k; i++) composer.render();
+						work();
 						gl.endQuery(ext.TIME_ELAPSED_EXT);
 						const poll = () => {
 							if (gl.getParameter(ext.GPU_DISJOINT_EXT)) {
@@ -253,6 +257,10 @@ const run = await page.evaluate(
 		const rows = new Map(
 			ks.map((k) => [k, { timer: [], drained: [], wall: [] }]),
 		);
+		// Counted across **every** arm. It was incremented in the K loop only,
+		// while `spanArm`'s drain deleted a disjoint query silently and the floor
+		// loop read `.value` and dropped `.disjoint` — so a printed "0 disjoint"
+		// covered a third of the run and was quoted as covering all of it.
 		let disjointSeen = 0;
 		for (let r = 0; r < reps; r++)
 			for (const k of ks)
@@ -264,13 +272,15 @@ const run = await page.evaluate(
 
 		const floor = { timer: [], wall: [] };
 		for (let r = 0; r < reps; r++) {
-			floor.timer.push((await once(1, "floor")).value);
+			const t = await once(1, "floor");
+			if (t.disjoint) disjointSeen++;
+			floor.timer.push(t.value);
 			floor.wall.push((await once(1, "floorWall")).value);
 		}
 
 		return {
 			spans,
-			disjointSeen,
+			disjointSeen: disjointSeen + spanDisjoint,
 			rows: ks.map((k) => ({
 				k,
 				timer: med(rows.get(k).timer),

@@ -14,20 +14,11 @@
 
 import { rollingStatistics } from "./frame-statistics.js";
 import {
+	GPU_TIMING_STATUSES,
 	isRefusedGpuStatus,
-	REFUSED_GPU_STATUSES,
 } from "./gpu-timing-status.js";
 
 export { rollingStatistics } from "./frame-statistics.js";
-/**
- * Re-exported so a TypeScript consumer has one import, while the definition
- * stays in a `.js` leaf a Node probe can read. `probe-frame-attribution.mjs`
- * imports the leaf directly.
- */
-export {
-	isRefusedGpuStatus,
-	REFUSED_GPU_STATUSES,
-} from "./gpu-timing-status.js";
 
 export const CPU_INTERVALS = [
 	"simulation/step",
@@ -35,13 +26,11 @@ export const CPU_INTERVALS = [
 ] as const;
 
 export type CpuInterval = (typeof CPU_INTERVALS)[number];
-export type GpuTimingStatus =
-	| "supported"
-	| "unavailable"
-	| "disjoint"
-	| "stale"
-	| "untrusted"
-	| "implausible";
+/**
+ * Derived from the runtime list rather than declared beside it: the two were
+ * two copies for a round, with `checkJs` off so nothing compared them.
+ */
+export type GpuTimingStatus = (typeof GPU_TIMING_STATUSES)[number];
 
 /**
  * Backends whose `EXT_disjoint_timer_query_webgl2` does not measure the work
@@ -442,37 +431,59 @@ export class FrameAttribution {
 			: null;
 
 		/**
-		 * #246. **The backend refusal is not gated on `supported`**, and the first
-		 * version was: a summing backend under `stale` then carried the summed
-		 * median with `reason: null`, and `stale` reads as old-but-real, so the
-		 * perf panel and `measure-bay-frame-cost.mjs` printed the very figure
-		 * this exists to withhold. The backend is wrong at every status that
-		 * carries a number, so it is settled before the sample states are.
+		 * #246, and both refusals are keyed on **whether there is a figure**
+		 * rather than on which sample state the module landed in.
 		 *
-		 * `implausible` is the other way round: it is a statement *about the
-		 * samples*, so it can only be reached where they are usable.
+		 * Two rounds of review found the same fail-open, one level apart. Gated
+		 * on `status === "supported"`, a backend whose last sample had aged past
+		 * `staleAfterMs` fell through to `stale` and printed the very figure the
+		 * refusal exists to withhold — round 1 caught that for the named
+		 * backend, round 2 for the cadence backstop that is supposed to cover
+		 * the backends nobody has named. `stale` reads as *old but real*, so it
+		 * is the status a leak hides best in.
+		 *
+		 * `disjoint` needs no exclusion: it clears the samples, so there is no
+		 * median to refuse and neither branch is reached.
 		 */
 		let reason: string | null = null;
-		const backend = SUMMING_TIMER_BACKENDS.find((entry) =>
-			(rasterizer ?? "").includes(entry.match),
-		);
-		if (supported && backend) {
-			status = "untrusted";
-			reason = backend.reason;
-		} else if (status === "supported") {
+		if (supported) {
+			const backend = SUMMING_TIMER_BACKENDS.find((entry) =>
+				(rasterizer ?? "").includes(entry.match),
+			);
 			const cadenceMs = this.frameCadenceMs();
-			if (
+			if (backend) {
+				status = "untrusted";
+				reason = backend.reason;
+			} else if (rasterizer === null) {
+				/**
+				 * An unreadable name is **unproven, not qualified**. The first
+				 * version read it as qualified — `(rasterizer ?? "")` matches
+				 * nothing, so a context with no `WEBGL_debug_renderer_info` was
+				 * handed a `supported` figure it could not stand behind. The
+				 * repo settles this the same way from the other side:
+				 * `capture-views.mjs` refuses a frame unless the renderer can be
+				 * *shown* not to be a software rasteriser.
+				 */
+				status = "untrusted";
+				reason =
+					"the renderer name could not be read, so the backend cannot be " +
+					"qualified — run scripts/measure-gpu-timer-calibration.mjs to " +
+					"see what this one reports";
+			} else if (
 				cadenceMs !== null &&
 				gpuStats.medianMs !== null &&
 				gpuStats.medianMs > cadenceMs * IMPLAUSIBLE_CADENCE_FACTOR
 			) {
 				status = "implausible";
-				// The ratio, not the median. Quoting the refused figure in the
-				// sentence that refuses it is how it reaches a receipt anyway.
+				/**
+				 * Neither the median nor the cadence, because their product is
+				 * the median. Round 2 caught the ratio-and-cadence version
+				 * reconstructing exactly what the sentence refuses to print.
+				 */
 				reason =
-					`the GPU median is ${(gpuStats.medianMs / cadenceMs).toFixed(2)}x ` +
-					`the frame cadence of ${cadenceMs.toFixed(2)} ms, which cannot be ` +
-					`sustained on one command stream`;
+					`the GPU median exceeds the frame cadence by more than ` +
+					`${IMPLAUSIBLE_CADENCE_FACTOR}x, which cannot be sustained on ` +
+					`one command stream`;
 			}
 		}
 		// **A status instead of a number, not beside one.** A refused figure that
