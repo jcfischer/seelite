@@ -12,11 +12,14 @@ import { readFileSync } from "node:fs";
 import { codeOf } from "./lib/source-scan";
 import { CLASS_GLSL } from "../src/planet-classes.glsl";
 import type { SurfaceClass } from "../src/planet-appearance";
+import { CUBE_FACE_COUNT, cubeFaceBasis } from "../src/planet-bake";
 import {
-	BAKE_FACE_PX,
-	CUBE_FACE_COUNT,
-	cubeFaceBasis,
-} from "../src/planet-bake";
+	BAKE_FACE_SIZES,
+	BAKE_MAX_PX_PER_TEXEL,
+	bakeFacePxFor,
+	focalPx,
+	pxPerCubeTexel,
+} from "../src/relief-bands";
 import {
 	BAKEABLE_CLASSES,
 	BAKE_DESCRIPTORS,
@@ -336,17 +339,53 @@ describe("the six faces", () => {
 });
 
 describe("resolution and memory", () => {
-	test("the near layer is the only one that gets the large face", () => {
-		expect(BAKE_FACE_PX.near).toBe(512);
-		expect(BAKE_FACE_PX.approach).toBe(BAKE_FACE_PX.far);
-		expect(BAKE_FACE_PX.approach).toBeLessThan(BAKE_FACE_PX.near);
+	test("the face size follows apparent size, and never the render layer", () => {
+		// The defect this replaced rendered nothing differently: the table was
+		// keyed on the render layer and gave `near` the large face, and
+		// `massiveLayerFor` never admits a *massive* body to the near layer — so
+		// every planet in the game held the small cube however close it got, and
+		// the large rung was never allocated at all.
+		const FOCAL = focalPx(900, 60);
+		expect([...BAKE_FACE_SIZES]).toEqual([256, 512]);
+		// Far away the small cube is ample, and holding the large one would be
+		// 16 MB to draw a body four pixels across.
+		expect(bakeFacePxFor(FOCAL / 30, FOCAL, null)).toBe(256);
+		expect(bakeFacePxFor(FOCAL / 8, FOCAL, null)).toBe(256);
+		// Inside the small cube's reach — about 3.4 radii — the large one.
+		expect(bakeFacePxFor(FOCAL / 3, FOCAL, null)).toBe(512);
+		expect(bakeFacePxFor(FOCAL / 2, FOCAL, null)).toBe(512);
+		// And past the largest face's reach it stays at the cap rather than
+		// dropping back: a body that close is about to leave the band, and
+		// re-baking it small on the way in would be two recompiles for nothing.
+		expect(bakeFacePxFor(FOCAL / 1.02, FOCAL, null)).toBe(512);
+	});
+
+	test("the size a body holds is sticky at the threshold", () => {
+		// A re-bake is twelve full-screen evaluations of the most expensive shader
+		// in the game and a body on a slow approach sits on a threshold for
+		// seconds. Stepped twice, because that is the only way to see hysteresis.
+		const FOCAL = focalPx(900, 60);
+		let lo = 1.001;
+		let hi = 100;
+		for (let i = 0; i < 60; i++) {
+			const mid = (lo + hi) / 2;
+			if (pxPerCubeTexel(FOCAL / mid, FOCAL, 256) > BAKE_MAX_PX_PER_TEXEL)
+				lo = mid;
+			else hi = mid;
+		}
+		// Just inside the crossing, where a body arriving fresh would take 512.
+		const inside = FOCAL / (hi * 0.99);
+		expect(bakeFacePxFor(inside, FOCAL, null)).toBe(512);
+		// A body already holding 256 keeps it rather than re-baking.
+		expect(bakeFacePxFor(inside, FOCAL, 256)).toBe(256);
+		// And gives it up once it is properly past.
+		expect(bakeFacePxFor(FOCAL / (hi * 0.8), FOCAL, 256)).toBe(512);
 	});
 
 	test("every face size is a power of two", () => {
 		// Not a style rule: mipmaps are what stop a body at twenty radii
 		// shimmering, and a non-power-of-two cube face has no complete chain.
-		for (const px of Object.values(BAKE_FACE_PX))
-			expect(Math.log2(px) % 1).toBe(0);
+		for (const px of BAKE_FACE_SIZES) expect(Math.log2(px) % 1).toBe(0);
 	});
 
 	test("the memory figure in the docstring is the one the census derives", () => {
@@ -356,13 +395,13 @@ describe("resolution and memory", () => {
 		// reddens beside the prose that quotes it.
 		const pairBytes = (px: number) => (6 * px * px * 4 * 2 * 4) / 3;
 		const mb = (b: number) => b / 1024 / 1024;
-		expect(mb(pairBytes(BAKE_FACE_PX.near))).toBeCloseTo(16.0, 1);
-		expect(mb(pairBytes(BAKE_FACE_PX.approach))).toBeCloseTo(4.0, 1);
-		// Typical is 3.40 bakeable bodies and the worst case is 14, one of them in
-		// the near layer.
+		const [small, large] = BAKE_FACE_SIZES;
+		expect(mb(pairBytes(large))).toBeCloseTo(16.0, 1);
+		expect(mb(pairBytes(small))).toBeCloseTo(4.0, 1);
+		// Typical is 3.40 bakeable bodies and the worst case is 14, with at most
+		// one of them near enough to want the large pair.
 		const held = (n: number) =>
-			pairBytes(BAKE_FACE_PX.near) +
-			Math.max(0, n - 1) * pairBytes(BAKE_FACE_PX.approach);
+			pairBytes(large) + Math.max(0, n - 1) * pairBytes(small);
 		expect(mb(held(3.4))).toBeCloseTo(25.6, 1);
 		expect(mb(held(14))).toBeCloseTo(68.0, 1);
 	});

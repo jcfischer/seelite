@@ -55,31 +55,24 @@ import {
 } from "./planet-shaders";
 
 /**
- * Face size per render layer, and the memory that follows from it.
+ * What the cubes cost, from a census rather than an estimate.
  *
- * 512 for the body the ship is nearest, 256 for everything in the approach and
- * far layers, which is the node's own answer and survives the arithmetic above:
- * a 256 cube reaches one pixel per texel at about 3.4 radii, and nothing in the
- * approach layer is nearer than that in a frame worth measuring.
+ * The sizes themselves are `BAKE_FACE_SIZES` in `relief-bands.ts`, beside the
+ * band that selects them — they are a function of apparent size and belong with
+ * the arithmetic that decides it, not here.
  *
- * **Memory, from a census rather than an estimate.** Over 4 worlds x 8 galaxies
- * x 256 systems — 8,192 systems — the bakeable bodies per system (moons are
- * always `airless`) run 1 to 14, mean 3.40, with the worst at 14. RGBA8 with
- * mipmaps is 1.33 x 6 x size² x 4 bytes per cube, so a 256 **pair** is 4.0 MB
- * and a 512 pair 16.0 MB. A typical system therefore holds **25.6 MB** and the
- * worst case **68.0 MB**. `scripts/measure-bake-census.ts` reprints all of it.
+ * Over 4 worlds x 8 galaxies x 256 systems — 8,192 systems — the bakeable
+ * bodies per system (moons are always `airless`) run 1 to 14, mean 3.40, with
+ * the worst at 14. RGBA8 with mipmaps is 1.33 x 6 x size² x 4 bytes per cube,
+ * so a 256 **pair** is 4.0 MB and a 512 pair 16.0 MB. At most one or two bodies
+ * are near enough to hold the large pair, so a typical system holds about
+ * **25.6 MB** and the worst case **68.0 MB**.
+ * `scripts/measure-bake-census.ts` reprints all of it.
  *
- * Mipmaps are not optional: a body at 8 radii is 0.41 px per texel on a 256
- * cube and 0.16 at 20 radii, which is minification by a factor of six and it
- * shimmers without them.
+ * Mipmaps are not optional: a body at 8 radii is 0.41 screen pixels per texel
+ * on a 256 cube and 0.16 at 20 radii, which is minification by a factor of six
+ * and it shimmers without them.
  */
-export const BAKE_FACE_PX = {
-	near: 512,
-	approach: 256,
-	far: 256,
-} as const;
-
-export type BakeLayer = keyof typeof BAKE_FACE_PX;
 
 /**
  * The six faces, as three's `CubeCamera` orients them for a WebGL context.

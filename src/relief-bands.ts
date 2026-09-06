@@ -195,6 +195,55 @@ export function pxPerCubeTexel(
 export const BAKE_MAX_PX_PER_TEXEL = 1;
 
 /**
+ * The cube face sizes a body may hold, smallest first.
+ *
+ * **Chosen by apparent size, not by render layer**, and the first version of
+ * this node got that wrong in a way nothing rendered differently. It gave the
+ * `near` layer 512 and the other two 256 — which reads sensibly and is dead
+ * code, because `massiveLayerFor` (`units.ts`) admits a massive body to
+ * `approach` or `far` and **never** to `near`: the near layer is for stations
+ * and the ship. Every planet in the game held a 256 cube however close it got,
+ * and the 512 rung was never allocated.
+ *
+ * Two sizes and a cap of 512. A 256 face reaches one screen pixel per texel at
+ * about 3.4 radii and a 512 at about 2.15, so the second rung is what brings
+ * the 3-radius and 2-radius frames — 14.3 ms and 27.5 ms procedural against
+ * 5.6 and 7.7 baked, at device scale 2 — inside the band at all. A third rung
+ * would buy the 1.5-radius frame and cost 64 MB on one body; `pxPerCubeTexel`'s
+ * table says what it would take to reach a *filling* planet, which is faces
+ * around 6,000 px, and that is the rung no cap reaches.
+ */
+export const BAKE_FACE_SIZES = [256, 512] as const;
+
+/**
+ * The face size this body should hold, given the one it has.
+ *
+ * The **smallest** that reaches parity, so a body two hundred radii away is not
+ * holding 16 MB to be drawn four pixels across; the largest allowed when none
+ * does, because a body inside the cap's reach is about to leave the band anyway
+ * and re-baking it smaller on the way in would be two recompiles instead of
+ * none.
+ *
+ * Hysteresis on the size it already has, for the reason every band here has it:
+ * a re-bake is twelve full-screen evaluations of the most expensive shader in
+ * the game, and a body on a slow approach sits on a threshold for seconds.
+ */
+export function bakeFacePxFor(
+	radiusPx: number,
+	focal: number,
+	current: number | null,
+): number {
+	for (const facePx of BAKE_FACE_SIZES) {
+		const limit =
+			facePx === current
+				? BAKE_MAX_PX_PER_TEXEL * RELIEF_BAND_HYSTERESIS
+				: BAKE_MAX_PX_PER_TEXEL;
+		if (pxPerCubeTexel(radiusPx, focal, facePx) <= limit) return facePx;
+	}
+	return BAKE_FACE_SIZES[BAKE_FACE_SIZES.length - 1];
+}
+
+/**
  * What draws a body's surface: a baked cube, or one of #207's relief programs.
  *
  * `"baked"` is not a `ReliefPath` and deliberately does not join that union —

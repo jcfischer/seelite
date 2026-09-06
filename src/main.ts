@@ -198,12 +198,13 @@ import {
 } from "./planet-surface";
 import { type ReliefPath, RELIEF_PATHS } from "./planet-shaders";
 import {
+	BAKE_FACE_SIZES,
 	type SurfacePath,
+	bakeFacePxFor,
 	focalPx,
 	projectedRadiusPx,
 	surfacePathFor,
 } from "./relief-bands";
-import { BAKE_FACE_PX } from "./planet-bake";
 
 /**
  * Cube faces drawn per frame, across every bake in flight (#208).
@@ -3104,18 +3105,18 @@ class Game {
 		const visual = this.bodyVisuals.get(body.id);
 		visual?.setLayer(layer);
 		/**
-		 * The layer is also the cube's resolution (#208), so the handoff that
-		 * re-parents a body is the moment it re-bakes.
+		 * A body with no cube at all gets one started, at the smallest size (#208).
 		 *
-		 * Guarded on the size rather than on the layer, because two of the three
-		 * layers ask for the same 256 and a body crossing between them must not
-		 * throw away a cube it can keep. The body keeps drawing procedurally while
-		 * the new one fills — `bakedFacePx()` returns 0 until it is complete — so
-		 * a handoff never shows a half-filled cube.
+		 * **Not sized by the layer**, which is where the first version of this
+		 * looked and was wrong in a way nothing rendered differently:
+		 * `massiveLayerFor` admits a massive body to `approach` or `far` and never
+		 * to `near`, so a per-layer table gave every planet in the game the small
+		 * cube however close it got and the large rung was never allocated at all.
+		 * The size follows apparent size and is chosen in `render`, where the
+		 * apparent size is; this only has to make sure something exists to
+		 * pre-warm and to draw from before the first frame runs.
 		 */
-		const wantFacePx = BAKE_FACE_PX[layer];
-		if (this.bakeFacePx.get(body.id) !== wantFacePx)
-			this.rebake(body.id, wantFacePx);
+		if (!this.bakeFacePx.has(body.id)) this.rebake(body.id, BAKE_FACE_SIZES[0]);
 		const scene =
 			layer === "near"
 				? this.nearScene
@@ -6355,6 +6356,21 @@ class Game {
 				 * than one that has re-baked at 512, and that is correct rather
 				 * than an approximation.
 				 */
+				/**
+				 * The cube's **size** follows the apparent radius too (#208).
+				 *
+				 * Here rather than at the layer handoff, because the layer is not the
+				 * question: a 256 face reaches one screen pixel per texel at about
+				 * 3.4 radii and a 512 at about 2.15, and which of those a body needs
+				 * is a fact about how big it looks. Hysteresis lives inside
+				 * `bakeFacePxFor` for the reason the band's does — a re-bake is
+				 * twelve full-screen evaluations of the most expensive shader here.
+				 */
+				const held = this.bakeFacePx.get(body.id) ?? null;
+				const wantFacePx = bakeFacePxFor(radiusPx, this.focalPx, held);
+				if (visual.bakeable && held !== wantFacePx)
+					this.rebake(body.id, wantFacePx);
+
 				const facePx = visual.bakedFacePx();
 				visual.applySurfaceBand(
 					surfacePathFor(

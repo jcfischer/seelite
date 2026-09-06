@@ -5,7 +5,7 @@
  * bun scripts/measure-bake-census.ts [worlds]
  * ```
  *
- * `planet-bake.ts`'s `BAKE_FACE_PX` states the answer and this reprints what a
+ * `planet-bake.ts` states the answer and this reprints what a
  * fresh run derives, which is the rule `measure-hull-pricing.ts` set: a figure
  * stated as measured owes a shipped instrument that reproduces it.
  *
@@ -22,7 +22,7 @@
  */
 import { GALAXY_COUNT, generateGalaxy } from "../src/galaxy";
 import { classify } from "../src/planet-appearance";
-import { BAKE_FACE_PX } from "../src/planet-bake";
+import { BAKE_FACE_SIZES } from "../src/relief-bands";
 import { isBakeable } from "../src/planet-shaders";
 import { generateContents, orbitWarmth } from "../src/system";
 
@@ -77,14 +77,12 @@ const histogram = new Map<number, number>();
 for (const n of counts) histogram.set(n, (histogram.get(n) ?? 0) + 1);
 
 const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-// One body is in the near layer at any moment and holds the large pair; the
-// rest hold the small one. Whether that near cube is ever *sampled* is a
-// separate question — a large planet at two radii is past the band and drawn
-// procedurally with its 512 pair idle, which is the one case this figure counts
-// and the frame does not.
+// At most one body at a time is near enough to want the large pair; the rest
+// hold the small one. An upper bound rather than a reading — a system where
+// every body is distant holds nothing but small pairs.
+const [SMALL, LARGE] = BAKE_FACE_SIZES;
 const held = (n: number) =>
-	pairBytes(BAKE_FACE_PX.near) +
-	Math.max(0, n - 1) * pairBytes(BAKE_FACE_PX.approach);
+	pairBytes(LARGE) + Math.max(0, n - 1) * pairBytes(SMALL);
 
 console.log(
 	`worlds 1..${WORLDS} x ${GALAXY_COUNT} galaxies = ${counts.length} systems`,
@@ -99,8 +97,7 @@ console.log(
 		.join("  "),
 );
 console.log(
-	`one ${BAKE_FACE_PX.near} pair ${mb(pairBytes(BAKE_FACE_PX.near))}, ` +
-		`one ${BAKE_FACE_PX.approach} pair ${mb(pairBytes(BAKE_FACE_PX.approach))}`,
+	`one ${LARGE} pair ${mb(pairBytes(LARGE))}, one ${SMALL} pair ${mb(pairBytes(SMALL))}`,
 );
 console.log(
 	`held: typical (${mean.toFixed(2)} bodies) ${mb(held(mean))}, ` +
