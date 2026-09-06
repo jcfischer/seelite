@@ -98,6 +98,7 @@ import { join } from "node:path";
 import {
 	RADII,
 	RELIEF_PATHS,
+	farColumnVerdict,
 	finite,
 	parseFpsReadout,
 	radiiRefusal,
@@ -625,6 +626,22 @@ const runs = [];
 for (const ratio of PIXEL_RATIOS) runs.push(await run(ratio));
 
 const rows = runs.flatMap((r) => r.rows);
+
+/**
+ * One verdict per run, computed before anything is printed or written, so the
+ * console line and the JSON cannot disagree about whether a run is quotable.
+ * Keyed by pixel ratio because each ratio is its own browser and its own run.
+ */
+const verdicts = Object.fromEntries(
+	runs.map((r, i) => [PIXEL_RATIOS[i], farColumnVerdict(r.rows, RADII[0])]),
+);
+// The flag rides every row, not only the run summary: a consumer that pulls one
+// cell out of `rows` gets the doubt with it rather than having to know to look
+// elsewhere for it.
+for (const [ratio, verdict] of Object.entries(verdicts))
+	for (const row of rows)
+		if (row.pixelRatio === Number(ratio) && row.radii >= RADII[0])
+			row.farColumnsQuotable = verdict.farColumnsQuotable;
 const renderer = runs[0].renderer;
 
 console.log(`  renderer: ${renderer}`);
@@ -732,34 +749,23 @@ for (const {
 	/**
 	 * **The widest column is the run's own control, and it must not move.**
 	 *
-	 * At `RADII[0]` the subject is a few pixels across, so no arm of the ladder
-	 * and no class can matter there: every cell in that column is the same frame
-	 * with the same planet in it, and the spread across them is the run's noise
-	 * floor. A spread larger than the cells' own is the world having moved under
-	 * the sweep — which is what the first decomposition run did, at seventeen
-	 * times over, with every cell settled and unmarked.
-	 *
-	 * Printed rather than thrown on, because "how much larger is too much"
-	 * depends on the machine and there is no threshold in this file to borrow.
-	 * A reader who sees a wide figure here should not quote the far columns.
+	 * The verdict itself lives in `lib/planet-cost.mjs` beside the other
+	 * refusals, so a test can watch it fire — and so the same object can be
+	 * printed here *and* written into the JSON. A qualification that exists only
+	 * on the console is one every later reader of the file is missing (sage,
+	 * PR #250).
 	 */
-	const widest = runRows.filter((r) => r.radii === RADII[0]);
-	const widestFloor = Math.min(...widest.map((r) => r.ms));
-	/**
-	 * A cell in that column costing more than twice the cheapest one in it. The
-	 * factor is blunt on purpose: the honest cells here sit within a few percent
-	 * of each other, so anything at twice the floor is a different phenomenon
-	 * rather than a wide reading of the same one.
-	 */
-	const outliers = widest.filter((r) => r.ms > 2 * widestFloor);
+	const far = verdicts[pixelRatio];
 	console.log(
-		`    widest column (${RADII[0]}r, where the subject is a few pixels and nothing should differ): ` +
-			`${widest.length} cells, floor ${widestFloor.toFixed(1)} ms` +
-			(outliers.length
-				? ` — ${outliers.length} over twice it: ${outliers
+		`    widest column (${far.radii}r, where the subject is a few pixels and nothing should differ): ` +
+			`${far.cells} cells, floor ${far.floorMs.toFixed(1)} ms` +
+			(far.farColumnsQuotable
+				? ` — every cell inside ${far.factor}x it, which is what this column should look like`
+				: ` — ${far.outliers.length} over ${far.factor}x it: ${far.outliers
 						.map((r) => `${cellName(r)} ${r.ms.toFixed(1)}ms`)
-						.join(", ")}. DO NOT QUOTE THIS RUN'S FAR COLUMNS.`
-				: ` — every cell inside twice it, which is what this column should look like`),
+						.join(
+							", ",
+						)}. DO NOT QUOTE THIS RUN'S FAR COLUMNS; the JSON says so too, as farColumnsQuotable.`),
 	);
 
 	const stalls = runRows.filter((r) => r.peakRiseMs > 0);
@@ -837,6 +843,24 @@ await writeFile(
 			subject: SUBJECT,
 			sunAngleDeg: SUN_ANGLE_DEG,
 			mode: DECOMPOSE ? "decomposition" : "class-sweep",
+			// The widest column's verdict, per run. `farColumnsQuotable: false`
+			// means that run had an excursion the endpoint drift control cannot
+			// see, and its far columns are readings rather than measurements. It
+			// is here and on every row of those columns, because a consumer that
+			// pulls one cell out of `rows` would otherwise get a row marked
+			// settled, fresh and endpoint-controlled with nothing saying it is
+			// unquotable (sage, PR #250).
+			farColumns: PIXEL_RATIOS.map((ratio) => ({
+				pixelRatio: ratio,
+				...verdicts[ratio],
+				outliers: verdicts[ratio].outliers.map((r) => ({
+					arm: r.arm ?? null,
+					surfaceClass: r.surfaceClass ?? null,
+					relief: r.relief ?? null,
+					radii: r.radii,
+					ms: r.ms,
+				})),
+			})),
 			// What each arm's subtraction prices, carried out of `perf-panel.ts` so a
 			// reader of the JSON does not have to open the module to know what a
 			// column means. Empty in the class-sweep mode, which has no ladder.

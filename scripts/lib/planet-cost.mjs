@@ -79,6 +79,73 @@ export function radiiRefusal(radii) {
 export const RELIEF_PATHS = Object.freeze(["four-tap", "screen-space"]);
 
 /**
+ * How far above the widest column's floor a cell has to sit to be an outlier.
+ *
+ * Blunt on purpose. The honest cells in that column sit within a few percent of
+ * each other — the subject is a few pixels across, so no arm of the ablation
+ * ladder and no class can matter there — and the ones this exists to catch run
+ * seventeen times the floor. Anything at twice it is a different phenomenon
+ * rather than a wide reading of the same one, and there is no value between the
+ * two populations for the threshold to be sensitive to.
+ */
+export const FAR_COLUMN_OUTLIER_FACTOR = 2;
+
+/**
+ * Whether a run's widest column holds together, and which cells do not.
+ *
+ * **This is the check the endpoint drift control cannot be.** That control reads
+ * one cell before the sweep and again after it, and its own docstring concedes
+ * that two endpoints cannot locate an excursion that recovered. #248's first
+ * decomposition runs are exactly that case: `full at 200r` read 2.5 ms at both
+ * ends of a run whose intermediate cells in the same column read 44.
+ *
+ * So the widest column is used as an invariant instead. Every cell in it frames
+ * the same few-pixel subject, so they must agree; a cell at
+ * `FAR_COLUMN_OUTLIER_FACTOR` times the column's floor says the run had an
+ * excursion, and the far columns of that run are not quotable.
+ *
+ * **It returns a verdict rather than throwing**, and rides into the JSON rather
+ * than only onto the console (sage, PR #250). A console line is a qualification
+ * only the operator sees; the JSON is what a later run diffs against and what a
+ * receipt quotes, and a row that was unquotable at write time reads there as
+ * settled, fresh and endpoint-controlled — every qualification the format has,
+ * all of them saying it is fine. Throwing is wrong for the opposite reason: the
+ * near columns of such a run are the ones the sweep exists for and they are
+ * unaffected, so losing them would cost more than the doubt is worth.
+ *
+ * Generic in the row, because it hands the offending rows straight back and a
+ * caller names them by whichever field its own sweep keys on — the ablation
+ * ladder's `arm`, the class sweep's `surfaceClass` and `relief`. Narrowing the
+ * parameter to the two fields this reads would erase the rest from the return.
+ *
+ * @template {{ms: number, radii: number}} Row
+ * @param {ReadonlyArray<Row>} rows one run's cells
+ * @param {number} widestRadii the column that must not move
+ */
+export function farColumnVerdict(rows, widestRadii) {
+	const column = rows.filter((r) => r.radii === widestRadii);
+	if (!column.length)
+		throw new Error(
+			`no cells at ${widestRadii} radii — the widest column is the run's own ` +
+				`invariant and a run without one has nothing to check itself against`,
+		);
+	const floorMs = Math.min(...column.map((r) => finite("widest cell", r.ms)));
+	const outliers = column.filter(
+		(r) => r.ms > FAR_COLUMN_OUTLIER_FACTOR * floorMs,
+	);
+	return {
+		radii: widestRadii,
+		cells: column.length,
+		floorMs,
+		factor: FAR_COLUMN_OUTLIER_FACTOR,
+		outliers,
+		// The name a consumer reads. `false` means every column measured at or
+		// beyond `widestRadii` is a reading of a run that had an excursion in it.
+		farColumnsQuotable: outliers.length === 0,
+	};
+}
+
+/**
  * A number, or a throw naming the cell it came from.
  *
  * The label is not decoration: a sweep is hundreds of cells, and "a value is NaN"

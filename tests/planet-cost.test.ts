@@ -18,8 +18,10 @@ import { describe, expect, test } from "bun:test";
 import { fpsReadout } from "../src/fps-meter.ts";
 import { VIEWS } from "../scripts/lib/view-set.mjs";
 import {
+	FAR_COLUMN_OUTLIER_FACTOR,
 	RADII,
 	RELIEF_PATHS,
+	farColumnVerdict,
 	finite,
 	parseFpsReadout,
 	radiiRefusal,
@@ -292,5 +294,81 @@ describe("the sweep's declared columns", () => {
 
 	test("sweeps both relief paths, which is what makes the third column a comparison", () => {
 		expect([...RELIEF_PATHS]).toEqual(["four-tap", "screen-space"]);
+	});
+});
+
+/**
+ * The widest column as the run's own invariant.
+ *
+ * Asserted from both sides, like every other guard here: it passes a column
+ * whose cells agree, and it names the ones in a column that does not. The
+ * numbers in the failing case are #248's actual first run — 44.1 ms against a
+ * 2.4 ms floor — rather than round invented ones, so the test fails the day the
+ * factor stops catching the thing it was written for.
+ */
+describe("the widest column's verdict", () => {
+	const at = (radii: number, ms: number, arm: string) => ({ radii, ms, arm });
+
+	test("a column whose cells agree is quotable", () => {
+		const v = farColumnVerdict(
+			[
+				at(200, 2.6, "full"),
+				at(200, 2.5, "screen-space"),
+				at(200, 2.4, "bare"),
+				at(1.02, 43.5, "full"),
+			],
+			200,
+		);
+		expect(v.farColumnsQuotable).toBe(true);
+		expect(v.outliers).toHaveLength(0);
+		expect(v.floorMs).toBeCloseTo(2.4, 5);
+		// The close column is not the invariant and must not be dragged into it:
+		// 43.5 is eighteen times the floor and is the reading the sweep exists for.
+		expect(v.cells).toBe(3);
+	});
+
+	test("the excursion #248 measured is named and the run is not quotable", () => {
+		const v = farColumnVerdict(
+			[
+				at(200, 2.6, "full"),
+				at(200, 2.4, "no-atmosphere"),
+				at(200, 44.1, "no-clouds"),
+			],
+			200,
+		);
+		expect(v.farColumnsQuotable).toBe(false);
+		expect(v.outliers.map((r) => r.arm)).toEqual(["no-clouds"]);
+	});
+
+	/**
+	 * The endpoint drift control passes this run and the invariant does not,
+	 * which is the whole reason the invariant exists — `full at 200r` read 2.5 ms
+	 * at both ends of the run whose middle read 44.
+	 */
+	test("a cell exactly at the factor is not an outlier and just past it is", () => {
+		const floor = 2.4;
+		const edge = farColumnVerdict(
+			[at(200, floor, "full"), at(200, floor * FAR_COLUMN_OUTLIER_FACTOR, "x")],
+			200,
+		);
+		expect(edge.farColumnsQuotable).toBe(true);
+		const past = farColumnVerdict(
+			[
+				at(200, floor, "full"),
+				at(200, floor * FAR_COLUMN_OUTLIER_FACTOR + 0.01, "x"),
+			],
+			200,
+		);
+		expect(past.farColumnsQuotable).toBe(false);
+	});
+
+	test("a run with no cell in that column is a throw, not a pass", () => {
+		expect(() => farColumnVerdict([at(3, 10.5, "full")], 200)).toThrow(/200/);
+	});
+
+	test("a non-finite cell in the column is named rather than compared", () => {
+		expect(() =>
+			farColumnVerdict([{ radii: 200, ms: Number.NaN, arm: "full" }], 200),
+		).toThrow(/widest cell/);
 	});
 });
