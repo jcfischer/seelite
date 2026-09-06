@@ -2178,6 +2178,11 @@ class Game {
 			this.mouseDy += e.movementY;
 		});
 
+		// #207's three relief programs per class, compiled before the first frame
+		// and **after the composer**, which is what makes them the variants the
+		// game will actually use (sage, PR #254).
+		this.prewarmReliefPrograms();
+
 		this.animate();
 	}
 
@@ -2437,7 +2442,11 @@ class Game {
 		}
 
 		this.starBody = this.world.system.bodies.find((b) => b.kind === "star");
-		this.prewarmReliefPrograms();
+		// The warm-up is **not** called here, and that is deliberate: this runs
+		// before the composer exists, and a program compiled with no render
+		// target bound is keyed to the default framebuffer's colour space rather
+		// than the composer target's (sage, PR #254). The constructor and the
+		// jump path both call it once the composer is up.
 	}
 
 	/**
@@ -2469,6 +2478,16 @@ class Game {
 	 * cache keys on the source string.
 	 */
 	private prewarmReliefPrograms() {
+		// **Bound to the composer's target, because the colour space is in the
+		// program's cache key** (sage, PR #254). `getProgramCacheKeyParameters`
+		// pushes `outputColorSpace`, and `getParameters` derives it as the
+		// renderer's own when no target is bound and `LinearSRGBColorSpace` when
+		// one is. Every planet is drawn by a `RenderPass` into the composer's
+		// target, so a warm-up with nothing bound compiles a variant the game
+		// never uses and leaves the real one to compile on the first crossing —
+		// a warm-up that is *entirely* wasted, with a green build behind it.
+		const wasTarget = this.renderer.getRenderTarget();
+		this.renderer.setRenderTarget(this.composer.renderTarget1);
 		// The roster from the module that owns it. A second exhaustive list here
 		// is how the instrument's copy went stale for a commit (sage, PR #254).
 		const paths = RELIEF_PATHS;
@@ -2492,6 +2511,7 @@ class Game {
 			const was = before.get(id);
 			if (was) visual.applyReliefBand(was);
 		}
+		this.renderer.setRenderTarget(wasTarget);
 	}
 
 	/**
@@ -5447,6 +5467,10 @@ class Game {
 
 		this.buildBodies();
 		this.buildEnvironment();
+		// #207's programs for the new system's classes, now that its bodies exist.
+		// The composer is long up on this path, so the target below is the one the
+		// game renders into.
+		this.prewarmReliefPrograms();
 
 		// The scanner's buffer is one entry per body, filled in place every frame
 		// so the projection allocates nothing. A system with more bodies than the
