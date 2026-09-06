@@ -10,7 +10,12 @@
  * stated as measured owes a shipped instrument that reproduces it.
  *
  * **A census rather than an estimate**, because the interesting number is the
- * worst case and the worst case is not the mean times anything. The bakeable
+ * worst case and the worst case is not the mean times anything — but read `max`
+ * as a **sample** maximum: `worldSeed` is a free number and this sweeps four of
+ * them, so 14 is the largest count seen over 8,192 systems and not a proof that
+ * no seed makes fifteen (sage, PR #256, round 5). The megabyte figures inherit
+ * that, and `main.ts`'s one-large-pair policy is what keeps them from growing
+ * with the count rather than the census. The bakeable
  * bodies in a system are its rocky planets plus **every** moon — a moon is
  * always `airless` — so the count follows the generator's moon draw rather than
  * its planet count, and the distribution has a long right tail.
@@ -32,7 +37,6 @@ const WORLDS = Number(process.argv[2] ?? 4);
 // The memory model is `planet-bake.ts`'s, imported rather than restated: this
 // script exists to reprint what that module claims, and a second spelling of
 // the arithmetic would let the two disagree silently.
-const pairBytes = bakePairBytes;
 
 const bakeableIn = (world: number, galaxy: number): number[] => {
 	const out: number[] = [];
@@ -45,7 +49,9 @@ const bakeableIn = (world: number, galaxy: number): number[] => {
 			// A moon is `airless` by `classify`'s first line, and `airless` bakes.
 			// Counted from the roster rather than re-derived, so a class that stops
 			// baking moves this figure without anything here being edited.
-			for (const _ of planet.moons) if (isBakeable("airless")) n++;
+			// A moon is `airless` by `classify`'s first line. Read off the roster
+			// rather than assumed, so a class that stops baking moves this figure.
+			if (isBakeable("airless")) n += planet.moons.length;
 		}
 		out.push(n);
 	}
@@ -91,7 +97,7 @@ console.log(
 		.join("  "),
 );
 console.log(
-	`one ${LARGE} pair ${mb(pairBytes(LARGE))}, one ${SMALL} pair ${mb(pairBytes(SMALL))}`,
+	`one ${LARGE} pair ${mb(bakePairBytes(LARGE))}, one ${SMALL} pair ${mb(bakePairBytes(SMALL))}`,
 );
 console.log(
 	`held: typical (${mean.toFixed(2)} bodies) ${mb(held(mean))}, ` +

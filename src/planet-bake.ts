@@ -65,12 +65,12 @@ import {
  * the arithmetic that decides it, not here.
  *
  * Over 4 worlds x 8 galaxies x 256 systems — 8,192 systems — the bakeable
- * bodies per system (moons are always `airless`) run 1 to 14, mean 3.40, with
- * the worst at 14. RGBA8 with mipmaps is 1.33 x 6 x size² x 4 bytes per cube,
+ * bodies per system (moons are always `airless`) run 1 to 14, mean **3.27** —
+ * it was 3.40 before lava left the table. RGBA8 with mipmaps is 1.33 x 6 x size² x 4 bytes per cube,
  * so a 256 **pair** is 4.0 MB and a 512 pair 16.0 MB.
  *
  * **The census counts bodies; the megabytes are a policy** (sage, PR #256,
- * round 4). Two figures were quoted here as though both were measured: 25.6 MB
+ * round 4). Two figures were quoted here as though both were measured: 25.1 MB
  * typical and 68.0 MB worst, both of which assume exactly one body holds the
  * large pair. Nothing enforced that — `bakeFacePxFor` hands 512 to every body
  * inside about 3.69 of its own radii, and a system can have several — so the
@@ -89,9 +89,12 @@ import {
  * worst case to **72.0 MB**, and nothing bounds how many cross at once beyond
  * the fact that they cross at different apparent sizes.
  *
- * Mipmaps are not optional: a body at 8 radii is 0.41 screen pixels per texel
- * on a 256 cube and 0.16 at 20 radii, which is minification by a factor of six
- * and it shimmers without them.
+ * Mipmaps are 4/3 of the memory above and the case for them is **arithmetic and
+ * not a frame**: a body at 8 radii is 0.41 screen pixels per texel on a 256 cube
+ * and 0.16 at 20, which is minification by a factor of six, and unfiltered
+ * minification of that order aliases. No arm with them off was run (sage,
+ * PR #256, round 5), so read this as the reason they are on rather than as a
+ * measurement of what happens when they are not.
  */
 
 /**

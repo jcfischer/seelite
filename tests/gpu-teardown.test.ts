@@ -50,7 +50,7 @@ import {
  * Every cube render target a body is holding, found the way a leak would be.
  *
  * By walking the subtree for a baked material's `samplerCube` uniforms and
- * mapping each back to its target through `userData.bakeTargets` — rather than
+ * mapping each back to its target through `userData.bakeCubes` — rather than
  * by asking the handle, which would be the module reporting on itself. A target
  * the handle forgot is a target this still finds, which is the direction that
  * matters.

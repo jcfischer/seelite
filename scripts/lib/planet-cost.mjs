@@ -41,7 +41,17 @@
  * came back at 1.9 ms — the cheapest cell in the table, level with a control
  * 200 radii out. `radiiRefusal` is what stops that shape recurring.
  */
-export const RADII = Object.freeze([200, 30, 8, 3, 2, 1.2, 1.02]);
+/**
+ * **2.5 is #208's rung and it is here because the shipped band reaches it.**
+ *
+ * The ladder's 2 was the closest column to where a baked planet becomes cheap,
+ * and the band refuses the cube there — a 512 face is 1.14 screen pixels per
+ * texel at two radii and the tolerance is one — so every figure quoted from that
+ * column had to be taken with the band pinned, which is a measurement of a state
+ * the game is never in (sage, PR #256, round 5). 2.5 is inside the band on the
+ * larger face and outside the small one, so the column exists at all.
+ */
+export const RADII = Object.freeze([200, 30, 8, 3, 2.5, 2, 1.2, 1.02]);
 
 /**
  * `null` if every column stands outside the body, a sentence naming the ones

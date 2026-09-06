@@ -961,8 +961,6 @@ await settleBakes();
 						`\n           ${pairs.map(([a, b]) => `${luma(a).toFixed(0)}/${luma(b).toFixed(0)}`).join(" ")}`,
 				);
 			}
-		await page.evaluate(() => window.__seelite.setSurfacePin(null));
-		await page.evaluate(() => window.__seelite.setBakeAllowed(true));
 		await setShells(true);
 		// The class cycle above is an external write like any other; hand the body
 		// back the class the generator gave it before section 3 reads one.

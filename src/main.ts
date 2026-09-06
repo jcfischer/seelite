@@ -1009,10 +1009,14 @@ class Game {
 	 * Bodies with a bake in flight, oldest first.
 	 *
 	 * A queue rather than a scan of every visual, so the per-frame cost of the
-	 * schedule is the faces it draws and not the bodies it does not. A body
-	 * re-baked while already queued is enqueued twice; the stale entry draws
-	 * nothing and is dropped on the frame it reaches the front, which is cheaper
-	 * than keeping the queue unique.
+	 * schedule is the faces it draws and not the bodies it does not.
+	 *
+	 * A body re-baked while already queued is enqueued twice, and **it is the
+	 * later duplicate that is dropped**: `stepBake` reads the visual's current
+	 * bake rather than one carried on the entry, so the older entry steps the new
+	 * bake and the body is served in its original place. The comment here said
+	 * the opposite for four rounds (sage, PR #256, round 5). Cheaper than keeping
+	 * the queue unique, and the ordering it costs is one body's turn.
 	 */
 	private readonly bakeQueue: string[] = [];
 	/**
@@ -6285,9 +6289,20 @@ class Game {
 		const star = this.starBody;
 		const starPos = star ? star.pos : ORIGIN;
 
-		// Last frame's answer, cleared here so the loop below can both read it and
-		// write this frame's — see the sizing comment inside it.
-		this.widestRadiusPx = 0;
+		/**
+		 * **This frame's answer is accumulated in locals and assigned after the
+		 * loop**, so the read inside it is genuinely last frame's (sage, PR #256,
+		 * round 5).
+		 *
+		 * Clearing the field here instead made it a *running max*: the first body
+		 * reached always beat 0 and took the id, and so did every body that was
+		 * the running max when its turn came — so a system whose bodies arrive in
+		 * ascending apparent size handed the large pair to all of them, which is
+		 * the 224 MB the policy exists to refuse. Three files said "last frame's
+		 * answer by construction" and it was a running one.
+		 */
+		let widestId: string | undefined;
+		let widestPx = 0;
 
 		for (const body of this.world.system.bodies) {
 			const mesh = this.meshes.get(body.id);
@@ -6397,11 +6412,13 @@ class Game {
 				 * Decided against the *previous* frame's widest, held in a field, so
 				 * this stays a single pass over the bodies rather than a pass to find
 				 * the winner and a pass to size everything. One frame of lag on a
-				 * threshold nothing crosses abruptly.
+				 * threshold nothing crosses abruptly — and the field is written after
+				 * the loop, not during it, or the answer is a running max and every
+				 * body in ascending order takes the large pair.
 				 */
-				if (radiusPx > this.widestRadiusPx) {
-					this.widestRadiusPx = radiusPx;
-					this.widestBodyId = body.id;
+				if (radiusPx > widestPx) {
+					widestPx = radiusPx;
+					widestId = body.id;
 				}
 				const mayHoldLarge = body.id === this.widestBodyId;
 				const wantFacePx = mayHoldLarge
@@ -6480,6 +6497,9 @@ class Game {
 				spinner.rotation.z = pose.phaseRad;
 			}
 		}
+		// **After the loop, not inside it** — see the declaration above.
+		this.widestBodyId = widestId;
+		this.widestRadiusPx = widestPx;
 
 		// The star also aims the light, in both scenes. Its direction is the same
 		// at either scale, which is the property that let one light stand for two.

@@ -665,10 +665,6 @@ void main() {
  * attempt needs, and a test asserts they are inert so a class cannot acquire one
  * without that being a visible change.
  *
- * `perFrame` is the GLSL the draw program runs each frame, with `p`, `aux` and
- * `emissive` in scope. It is the node's "emissive lava stays a per-frame term",
- * and it is the *whole* of what a baked body still evaluates procedurally.
- *
  * **A class is bakeable exactly when its `surface()` does not read the clock.**
  * That is the rule, and `tests/planet-bake.test.ts` reads it off
  * `planet-classes.glsl.ts`'s own source rather than off this table — so adding
