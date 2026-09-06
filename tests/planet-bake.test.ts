@@ -252,6 +252,83 @@ describe("the six faces", () => {
 		for (const [key, n] of corners) expect(n, key).toBe(3);
 	});
 
+	/**
+	 * **The texel a direction samples is the texel that direction was written
+	 * to** — the round trip, against GL's own rule rather than against the code
+	 * that does the writing.
+	 *
+	 * This is the check the first version of the bake needed and did not have.
+	 * The basis was built straight from three's `CubeCamera` table, which is a
+	 * *camera* basis, and a cube face's `(s, t)` is not one: `s` runs against the
+	 * camera's right and `t` against its up, so every face was written rotated by
+	 * 180°.
+	 *
+	 * Nothing else could see it. Each face still held the right hemisphere, so
+	 * the face means read back perfectly symmetric — `+X` at 228/255 against
+	 * `-X` at 26. The six forwards were still the six axes and the corner rays
+	 * still landed on the eight corners of a cube, three each, because both of
+	 * those are invariant under an in-plane rotation. The planet rendered lit,
+	 * seamless and the right colour, with its continents in the wrong place.
+	 *
+	 * So the rule is transcribed here from ES 3.0 §8.13 table 8.19 — a second
+	 * author, deliberately — and the basis is required to invert it.
+	 */
+	test("the direction a texel holds is the direction that samples it", () => {
+		/** GL's own dir → (face, s, t). `t = 0` is the first row of the face. */
+		const sample = (d: number[]) => {
+			const [x, y, z] = d;
+			const [ax, ay, az] = [Math.abs(x), Math.abs(y), Math.abs(z)];
+			let face: number;
+			let sc: number;
+			let tc: number;
+			let ma: number;
+			if (ax >= ay && ax >= az) {
+				face = x > 0 ? 0 : 1;
+				sc = x > 0 ? -z : z;
+				tc = -y;
+				ma = ax;
+			} else if (ay >= az) {
+				face = y > 0 ? 2 : 3;
+				sc = x;
+				tc = y > 0 ? z : -z;
+				ma = ay;
+			} else {
+				face = z > 0 ? 4 : 5;
+				sc = z > 0 ? x : -x;
+				tc = -y;
+				ma = az;
+			}
+			return { face, s: (sc / ma + 1) / 2, t: (tc / ma + 1) / 2 };
+		};
+
+		// The other direction: what the bake writes at a normalised (s, t) of one
+		// face. `s` and `t` come from the framebuffer, so `s = (ndc.x + 1) / 2`
+		// and `t = (ndc.y + 1) / 2` — the render target's first row is the first
+		// row of the face image.
+		const written = (face: number, s: number, t: number) => {
+			const e = cubeFaceBasis(face).elements;
+			const [u, v] = [s * 2 - 1, t * 2 - 1];
+			const d = [0, 1, 2].map((i) => e[i] * u + e[3 + i] * v + e[6 + i]);
+			const n = Math.hypot(...d);
+			return d.map((c) => c / n);
+		};
+
+		// Off-centre and asymmetric on purpose: a 180° rotation leaves the centre
+		// alone and swapping the two in-plane axes leaves the diagonal alone, so a
+		// grid that is symmetric in either way cannot see the errors this catches.
+		const grid = [0.07, 0.23, 0.5, 0.61, 0.94];
+		for (let face = 0; face < CUBE_FACE_COUNT; face++)
+			for (const s of grid)
+				for (const t of grid) {
+					const dir = written(face, s, t);
+					const back = sample(dir);
+					const where = `face ${face} at (${s}, ${t})`;
+					expect(back.face, where).toBe(face);
+					expect(back.s, where).toBeCloseTo(s, 10);
+					expect(back.t, where).toBeCloseTo(t, 10);
+				}
+	});
+
 	test("a face that does not exist is a throw and not an undefined", () => {
 		expect(() => cubeFaceBasis(6)).toThrow(/cube face 6/);
 		expect(() => cubeFaceBasis(-1)).toThrow(/cube face -1/);

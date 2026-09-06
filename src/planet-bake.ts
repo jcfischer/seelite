@@ -115,8 +115,29 @@ export function cubeFaceBasis(face: number): THREE.Matrix3 {
 	const spec = CUBE_FACES[face];
 	if (!spec) throw new Error(`cube face ${face} does not exist`);
 	const m = new THREE.Matrix4().lookAt(ORIGIN, spec.look, spec.up);
-	const x = new THREE.Vector3().setFromMatrixColumn(m, 0);
-	const y = new THREE.Vector3().setFromMatrixColumn(m, 1);
+	/**
+	 * **Both in-plane axes are negated, and that is the whole of the convention.**
+	 *
+	 * A camera's basis is not a cube face's `(s, t)`. GL's sampling rule (ES 3.0
+	 * §8.13, table 8.19) gives `+X` the coordinates `sc = -z, tc = -y`, while the
+	 * camera looking down `+X` with up `+Y` has right `+Z` and up `+Y` — so `s`
+	 * runs against the camera's right, and `t` runs against its up because the
+	 * framebuffer's first row is the *bottom* while a cube face's `t = 0` is the
+	 * top. Both signs invert, which is a 180° rotation of every face.
+	 *
+	 * It is worth stating what that error *looks like*, because it very nearly
+	 * shipped. Every face still holds the right hemisphere, so a read-back of the
+	 * face means is perfectly symmetric — `+X` at 228/255 and `-X` at 26 — and
+	 * the six forwards are still the six axes. The corner rays still land on the
+	 * eight corners of a cube, three each. Nothing about the cube is wrong except
+	 * where each texel is, and the planet renders as a planet: lit, seamless, the
+	 * right colours, with its terrain in the wrong place. What caught it was
+	 * baking the direction itself and differencing it against `normalize(vObjP)`
+	 * in the draw program; `tests/planet-bake.test.ts` holds the same claim
+	 * against the spec's own rule rather than against this code.
+	 */
+	const x = new THREE.Vector3().setFromMatrixColumn(m, 0).negate();
+	const y = new THREE.Vector3().setFromMatrixColumn(m, 1).negate();
 	const f = spec.look;
 	// Row-major arguments, so each triple below is a *row* and each column is
 	// one basis vector.

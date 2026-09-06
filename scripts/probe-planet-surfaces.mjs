@@ -519,10 +519,14 @@ await settleBakes();
 				.map((b) => ({ id: b.id, radiusKm: b.radiusKm })),
 		)
 	).sort((a, b) => b.radiusKm - a.radiusKm)[0];
-	const pathAt = async (radii) => {
+	// `id` defaults to section 2's subject — the widest sphere — and #208's own
+	// checks pass the widest *bakeable* one, which in most systems is a different
+	// body. One helper, because the placement, the bake settle and the two frames
+	// are the same procedure whichever body is being framed.
+	const pathAt = async (radii, id = subject.id) => {
 		await page.evaluate(
-			([id, r]) => window.__sunOffset(id, r, 60),
-			[subject.id, radii],
+			([body, r]) => window.__sunOffset(body, r, 60),
+			[id, radii],
 		);
 		// A placement is a layer handoff and a handoff re-bakes (#208), so the
 		// queue has to be empty before the path is read or the answer is "still
@@ -552,7 +556,7 @@ await settleBakes();
 						found = o.userData.baked ? "baked" : o.userData.reliefPath;
 				});
 			return found;
-		}, subject.id);
+		}, id);
 	};
 
 	const programsAtBoot = await page.evaluate(
@@ -648,33 +652,48 @@ await settleBakes();
 	 * lever it restores is the one the reads above switched off.
 	 */
 	await page.evaluate(() => window.__seelite.setBakeAllowed(true));
-	const bakeable = await page.evaluate(
-		(id) => window.__seelite.bodyVisuals.get(id)?.bakeable === true,
-		subject.id,
-	);
+	/**
+	 * The widest body that *can* bake, which is usually not the widest body.
+	 *
+	 * Section 2's subject is the largest sphere in the system and in this seed
+	 * that is a jovian — a class with no cube by design. Reusing it made every
+	 * check below vacuous and the section reported the vacancy as a failure,
+	 * which is right but useless. A separate subject, chosen by the property the
+	 * checks are about, and a **refusal** if the system has none: every system
+	 * generates moons and a moon is always `airless`, so an empty answer here is
+	 * a defect in the roster rather than an unlucky seed.
+	 */
+	const baker = await page.evaluate(() => {
+		const g = window.__seelite;
+		let best = null;
+		let bestRadius = 0;
+		for (const body of g.world.system.bodies) {
+			if (!g.bodyVisuals.get(body.id)?.bakeable) continue;
+			if (body.radiusKm <= bestRadius) continue;
+			best = body.id;
+			bestRadius = body.radiusKm;
+		}
+		return best;
+	});
 	check(
-		"the widest body in this system is a class that bakes",
-		bakeable,
-		// Not a property of the change — a system whose largest body is a gas
-		// giant is a legitimate system — but every check below is vacuous without
-		// it, and a vacuous check that reports green is the failure this file's
-		// own history is mostly about. It refuses rather than skipping.
-		`${subject.id} bakeable: ${bakeable}`,
+		"this system generates at least one body whose class bakes",
+		baker !== null,
+		`widest bakeable body: ${baker ?? "none — every body is a giant, a star or a venusian deck"}`,
 	);
-	if (bakeable) {
-		const bakedFar = await pathAt(30);
+	if (baker !== null) {
+		const bakedFar = await pathAt(30, baker);
 		check(
 			"a planet 30 radii away is drawn from its cube, not from noise",
 			bakedFar === "baked",
-			`${subject.id} at 30 radii: ${bakedFar}`,
+			`${baker} at 30 radii: ${bakedFar}`,
 		);
-		const bakedMid = await pathAt(5);
+		const bakedMid = await pathAt(5, baker);
 		check(
 			"and at five radii, where a 256 face is still under a pixel per texel",
 			bakedMid === "baked",
-			`${subject.id} at 5 radii: ${bakedMid}`,
+			`${baker} at 5 radii: ${bakedMid}`,
 		);
-		const bakedNear = await pathAt(1.2);
+		const bakedNear = await pathAt(1.2, baker);
 		check(
 			"filling the frame it is procedural again — no face size serves that rung",
 			bakedNear === "four-tap",
@@ -683,7 +702,7 @@ await settleBakes();
 			// faces around 6,000 px to reach parity, so the band refuses rather
 			// than drawing a soft planet. `tests/relief-bands.test.ts` has the
 			// arithmetic; this is that arithmetic reaching the frame loop.
-			`${subject.id} at 1.2 radii: ${bakedNear}`,
+			`${baker} at 1.2 radii: ${bakedNear}`,
 		);
 
 		/**
@@ -709,7 +728,7 @@ await settleBakes();
 			await page.evaluate((v) => window.__seelite.setBakeAllowed(v), allowed);
 			await page.evaluate(
 				([id, r]) => window.__sunOffset(id, r, 60),
-				[subject.id, radii],
+				[baker, radii],
 			);
 			await settleBakes();
 			await page.evaluate(() => {
@@ -718,7 +737,7 @@ await settleBakes();
 			});
 			return page.evaluate(
 				([id, grid]) => window.__bodySignature(id, grid),
-				[subject.id, 6],
+				[baker, 6],
 			);
 		};
 		for (const radii of [8, 4]) {
@@ -727,17 +746,27 @@ await settleBakes();
 			const pairs = withBake.patches
 				.map((a, i) => [a, without.patches[i]])
 				.filter(([a, b]) => a && b);
-			const worst = pairs.reduce((m, [a, b]) => {
-				const luma = (c) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
-				const [x, y] = [luma(a), luma(b)];
-				const scale = Math.max(x, y, 1);
-				return Math.max(m, Math.abs(x - y) / scale);
-			}, 0);
+			const luma = (c) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+			// **Against the disc's own mean, not the patch's.** A patch on the
+			// terminator sits at a luma of two or three, so a difference of one
+			// code is fifty per cent of it and the check reports a rounding error
+			// as a broken face basis. The disc mean is the scale a difference is
+			// visible against, which is what the band is trying to be about.
+			const discMean =
+				pairs.reduce((sum, [a, b]) => sum + (luma(a) + luma(b)) / 2, 0) /
+				Math.max(pairs.length, 1);
+			const worst = pairs.reduce(
+				(m, [a, b]) => Math.max(m, Math.abs(luma(a) - luma(b))),
+				0,
+			);
+			const ratio = worst / Math.max(discMean, 1);
 			check(
 				`the baked and procedural programs agree on the lit face at ${radii} radii`,
-				pairs.length >= 8 && worst <= AGREEMENT,
-				`${pairs.length} comparable patches, worst ${(worst * 100).toFixed(1)}%` +
-					` against a ${(AGREEMENT * 100).toFixed(0)}% band`,
+				pairs.length >= 8 && ratio <= AGREEMENT,
+				`${pairs.length} comparable patches, disc mean luma ${discMean.toFixed(1)},` +
+					` worst patch off by ${worst.toFixed(1)} = ${(ratio * 100).toFixed(1)}%` +
+					` against a ${(AGREEMENT * 100).toFixed(0)}% band` +
+					`\n           ${pairs.map(([a, b]) => `${luma(a).toFixed(0)}/${luma(b).toFixed(0)}`).join(" ")}`,
 			);
 		}
 		await page.evaluate(() => window.__seelite.setBakeAllowed(true));
@@ -755,7 +784,7 @@ await settleBakes();
 		 * into a texture bakes identically every time and passes this perfectly.
 		 * The planet simply stops moving.
 		 */
-		await pathAt(8);
+		await pathAt(8, baker);
 		const face = async () =>
 			page.evaluate((id) => {
 				const g = window.__seelite;
@@ -788,11 +817,11 @@ await settleBakes();
 					out[key] = Array.from(buf);
 				}
 				return out;
-			}, subject.id);
+			}, baker);
 		const first = await face();
 		await page.evaluate(
 			(id) => window.__seelite.bodyVisuals.get(id)?.startBake(256),
-			subject.id,
+			baker,
 		);
 		await settleBakes();
 		const second = await face();
@@ -823,7 +852,7 @@ await settleBakes();
 		);
 		await page.evaluate(
 			(id) => window.__seelite.bodyVisuals.get(id)?.startBake(256),
-			subject.id,
+			baker,
 		);
 		await settleBakes();
 		const afterBake = await page.evaluate(
