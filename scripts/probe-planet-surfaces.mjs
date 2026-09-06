@@ -819,11 +819,35 @@ await settleBakes();
 				return out;
 			}, baker);
 		const first = await face();
-		await page.evaluate(
-			(id) => window.__seelite.bodyVisuals.get(id)?.startBake(256),
-			baker,
-		);
+		// **Through the game, not through the handle.** `startBake` allocates the
+		// cubes and `Game.rebake` is what also puts the body on the schedule that
+		// draws into them — and this check reported determinism for two rounds
+		// while doing the first alone: the queue was already empty, no face was
+		// ever stepped, and the second read was the *first* cube compared against
+		// itself. A tautology that cannot fail is worse than no check.
+		const holding = () =>
+			page.evaluate((id) => {
+				const g = window.__seelite;
+				let n = 0;
+				for (const scene of [g.nearScene, g.approachScene, g.farScene])
+					scene.getObjectByName(id)?.traverse((o) => {
+						n = o.userData?.bakeCubes?.().length ?? n;
+					});
+				return n;
+			}, baker);
+		await page.evaluate((id) => window.__seelite.rebake(id, 256), baker);
+		const inFlight = await holding();
 		await settleBakes();
+		const afterPromote = await holding();
+		check(
+			"asking for a second bake actually starts one",
+			inFlight === 2 && afterPromote === 1,
+			// The guard on the check below. Two pairs while the new one fills, one
+			// after it is promoted and the old is freed — so a second bake that
+			// never happened, or one that leaked the pair it replaced, is named
+			// here rather than passing as a clean diff.
+			`${inFlight} cube pairs held while filling, ${afterPromote} after`,
+		);
 		const second = await face();
 		const differing =
 			first && second
@@ -850,10 +874,7 @@ await settleBakes();
 		const beforeBake = await page.evaluate(
 			() => window.__seelite.renderer.info.programs?.length ?? -1,
 		);
-		await page.evaluate(
-			(id) => window.__seelite.bodyVisuals.get(id)?.startBake(256),
-			baker,
-		);
+		await page.evaluate((id) => window.__seelite.rebake(id, 256), baker);
 		await settleBakes();
 		const afterBake = await page.evaluate(
 			() => window.__seelite.renderer.info.programs?.length ?? -1,

@@ -203,13 +203,20 @@ export interface BodyVisual {
 	 */
 	setSurfacePath(path: SurfacePath): boolean;
 	/**
-	 * The frame loop's door: set the band's choice **unless this body is pinned**.
+	 * Set the relief band's choice **unless this body is pinned**.
 	 *
-	 * The two doors are the `applyOcclusion` pattern (`main.ts`), and the reason
-	 * is the same one that file gives: an instrument naming an arm must not have
-	 * the frame loop overwrite it. Any external write — the perf panel's relief
-	 * cycle, `setSurfaceAndRelief`, `setAblation` — goes through
-	 * `setSurfacePath`, which pins; the selector goes through this, which yields.
+	 * **The frame loop no longer calls this**; `applySurfaceBand` supersedes it
+	 * and the pre-warm is the one caller left. It is kept because that caller
+	 * needs exactly this and not the wider door: the warm-up walks the three
+	 * relief programs to get them compiled, and going through
+	 * `applySurfaceBand` would have it argue with #208's band about which
+	 * program the body should be drawn with while it does so.
+	 *
+	 * The yield-to-a-pin contract is the `applyOcclusion` pattern (`main.ts`) and
+	 * the reason is the same one that file gives: an instrument naming an arm
+	 * must not have the frame loop overwrite it. Any external write — the perf
+	 * panel's cycle, `setSurfaceAndRelief`, `setAblation` — goes through
+	 * `setSurfacePath`, which pins.
 	 *
 	 * Per body rather than per game, so nothing has to hand a `Game` handle to a
 	 * function that walks scenes.

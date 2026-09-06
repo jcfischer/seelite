@@ -407,7 +407,7 @@ try {
 		 * Absent on the workbench page, which constructs no `Game`.
 		 */
 		await page.waitForFunction(
-			() => (window.__seelite?.bakeQueue.length ?? 0) === 0,
+			() => (window.__seelite?.bakeQueue?.length ?? 0) === 0,
 			undefined,
 			{ timeout: 60_000 },
 		);

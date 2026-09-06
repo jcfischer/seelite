@@ -2526,6 +2526,27 @@ class Game {
 	 * map lookup on the frame it surfaces, and the budget is only ever spent on
 	 * a face that actually lands.
 	 */
+	/**
+	 * Start a bake for one body and put it on the schedule.
+	 *
+	 * **One entry point, because the two halves are one act.** `startBake` on the
+	 * handle allocates the cubes and the material; the queue is what draws into
+	 * them. A caller that did the first without the second gets a bake that never
+	 * fills — and it fails *quietly*, because the body keeps drawing from the
+	 * cube it already had. That is exactly how two of `probe-planet-surfaces.mjs`'s
+	 * own checks came to compare a cube against itself and report determinism.
+	 *
+	 * Public because the probe drives it: proving a bake is deterministic means
+	 * baking a second time on demand, which nothing in the game asks for.
+	 */
+	rebake(id: string, facePx: number) {
+		const visual = this.bodyVisuals.get(id);
+		if (!visual?.bakeable) return;
+		visual.startBake(facePx);
+		this.bakeFacePx.set(id, facePx);
+		this.bakeQueue.push(id);
+	}
+
 	private stepBakes() {
 		let budget = BAKE_FACES_PER_FRAME;
 		while (budget > 0 && this.bakeQueue.length > 0) {
@@ -3093,11 +3114,8 @@ class Game {
 		 * a handoff never shows a half-filled cube.
 		 */
 		const wantFacePx = BAKE_FACE_PX[layer];
-		if (visual?.bakeable && this.bakeFacePx.get(body.id) !== wantFacePx) {
-			visual.startBake(wantFacePx);
-			this.bakeFacePx.set(body.id, wantFacePx);
-			this.bakeQueue.push(body.id);
-		}
+		if (this.bakeFacePx.get(body.id) !== wantFacePx)
+			this.rebake(body.id, wantFacePx);
 		const scene =
 			layer === "near"
 				? this.nearScene

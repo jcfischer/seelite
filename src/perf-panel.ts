@@ -278,7 +278,7 @@ export const ABLATION_ARMS: readonly AblationArm[] = Object.freeze([
 		atmosphere: true,
 		clouds: true,
 		prices:
-			"the shipped frame — the denominator every other arm subtracts from",
+			"the procedural reference — the denominator every other arm subtracts from, and **no longer the shipped frame at every rung** (#208): the band draws a body from its cube from about 3.4 radii outward, so at 8 radii and beyond the game costs what `baked` costs and this arm costs what it cost before #208. Inside two radii the two are the same thing",
 	},
 	{
 		name: "screen-space",
