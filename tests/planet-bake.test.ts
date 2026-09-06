@@ -104,12 +104,23 @@ describe("which classes bake", () => {
 		}
 	});
 
-	test("every class that reads the clock everywhere is left procedural", () => {
+	test("every class that reads the clock is left procedural", () => {
 		// The other direction, which is the one that fails open. `venusian` is the
 		// class the node was unsure about — "if its albedo noise justifies it" —
 		// and the answer is no: its whole deck drifts and its `height` is `0.0`, so
 		// there is nothing static to bake.
-		for (const surface of ["venusian", "jovian", "iceGiant", "star"] as const) {
+		for (const surface of [
+			"venusian",
+			"jovian",
+			"iceGiant",
+			"star",
+			// Lava is here for a different reason from the other four: its clock
+			// term is isolated in `lavaEmissive` and *could* be recomputed per
+			// frame. It is out of the table because the bake of it was measured
+			// against its own procedural program and read 95.5% of the disc mean —
+			// see `BAKE_DESCRIPTORS`. The rule this row states still holds of it.
+			"lava",
+		] as const) {
 			expect(isBakeable(surface), surface).toBe(false);
 			expect(/\btime\b/.test(chunkOf(surface)), surface).toBe(true);
 		}
@@ -117,7 +128,7 @@ describe("which classes bake", () => {
 
 	test("the roster is derived from the table and matches it", () => {
 		expect([...BAKEABLE_CLASSES].sort()).toEqual(
-			(["airless", "desert", "ice", "lava", "terran"] as SurfaceClass[]).sort(),
+			(["airless", "desert", "ice", "terran"] as SurfaceClass[]).sort(),
 		);
 		for (const surface of BAKEABLE_CLASSES)
 			expect(BAKE_DESCRIPTORS[surface]).toBeDefined();
@@ -164,16 +175,30 @@ describe("the two programs a bake needs", () => {
 		// fetches instead of 100 to 150 noise calls" means, and a prelude included
 		// unconditionally would leave the program looking identical to the one it
 		// replaces.
-		const desert = bakedFragmentFor("desert");
-		expect(desert).toMatch(/textureCube\(bakedAlbedo, p\)/);
-		expect(desert).toMatch(/textureCube\(bakedNormal, p\)/);
-		expect(desert).not.toMatch(/float fbm4\(/);
-		expect(desert).not.toMatch(/reliefNormal/);
+		// **Every** baked class, because there is no exception any more: lava was
+		// the one class with a per-frame term and it left the table when the bake
+		// of it was measured against its own procedural program.
+		for (const surface of BAKEABLE_CLASSES) {
+			const source = bakedFragmentFor(surface);
+			expect(source, surface).toMatch(/textureCube\(bakedAlbedo, p\)/);
+			expect(source, surface).toMatch(/textureCube\(bakedNormal, p\)/);
+			expect(source, surface).not.toMatch(/float fbm4\(/);
+			expect(source, surface).not.toMatch(/reliefNormal/);
+		}
+	});
 
-		// Lava is the exception and carries its prelude for one function.
-		const lava = bakedFragmentFor("lava");
-		expect(lava).toMatch(/emissive = lavaEmissive\(p, aux\);/);
-		expect(lava).toMatch(/float fbm3\(/);
+	test("the per-frame hook is inert on every class in the table", () => {
+		// `aux` and `perFrame` are the node's "emissive lava stays a per-frame
+		// term", and nothing uses them: lava is the only class that ever wanted
+		// one and it is out of the table on a measurement (`BAKE_DESCRIPTORS`
+		// records the figures). The fields stay because the mechanism is what a
+		// second attempt would need, and this asserts the claim that they are
+		// currently doing nothing rather than leaving it to be inferred — so a
+		// class that quietly acquires one has to come past this line.
+		for (const surface of BAKEABLE_CLASSES) {
+			expect(BAKE_DESCRIPTORS[surface]?.aux, surface).toBe("0.0");
+			expect(BAKE_DESCRIPTORS[surface]?.perFrame, surface).toBe("");
+		}
 	});
 
 	test("the specular exponent is compiled in, not baked, and only where there is one", () => {
@@ -184,7 +209,7 @@ describe("the two programs a bake needs", () => {
 		// The **call**, not the definition: `specular` is declared in
 		// `LIGHT_GLSL`, which every one of these programs includes, so a bare
 		// `/specular\(/` matches the shared prelude and can never fail.
-		for (const surface of ["desert", "airless", "lava"] as const)
+		for (const surface of ["desert", "airless"] as const)
 			expect(bakedFragmentFor(surface)).not.toMatch(/specular\(N, V,/);
 	});
 

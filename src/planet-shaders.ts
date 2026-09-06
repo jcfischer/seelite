@@ -657,9 +657,13 @@ void main() {
  * water, 46 on ice, 0 everywhere else — so it is compiled into the draw program
  * rather than spending a channel on a constant.
  *
- * `aux` is what cube B's alpha carries. Only lava wants one: its crack network
- * is static while the glow over it is not, so the static half bakes and the
- * clock-driven half is recomputed. Every other baked class writes 0.
+ * `aux` is what cube B's alpha carries and `perFrame` is the GLSL the draw
+ * program runs each frame with `p`, `aux` and `emissive` in scope — the node's
+ * "emissive lava stays a per-frame term". **Nothing uses either today**: lava
+ * was the one class that wanted them and it is out of the table on the
+ * measurement below. They are kept because they are the mechanism a second
+ * attempt needs, and a test asserts they are inert so a class cannot acquire one
+ * without that being a visible change.
  *
  * `perFrame` is the GLSL the draw program runs each frame, with `p`, `aux` and
  * `emissive` in scope. It is the node's "emissive lava stays a per-frame term",
@@ -689,12 +693,39 @@ export const BAKE_DESCRIPTORS: Partial<Record<SurfaceClass, BakeDescriptor>> = {
 	desert: { aux: "0.0", perFrame: "", specPower: 0 },
 	ice: { aux: "0.0", perFrame: "", specPower: 46 },
 	airless: { aux: "0.0", perFrame: "", specPower: 0 },
-	lava: {
-		aux: "lavaCrack(p)",
-		perFrame: "emissive = lavaEmissive(p, aux);",
-		specPower: 0,
-	},
 };
+
+/**
+ * **Lava is not in the table, and it was, and the measurement is why.**
+ *
+ * The node asks for it — "emissive lava stays a per-frame term from the height
+ * channel" — and the mechanism exists: `lavaCrack` and `lavaEmissive` are
+ * extracted in `planet-classes.glsl.ts` precisely so the static crack network
+ * could bake into `aux` and the blackbody ramp be recomputed per frame.
+ *
+ * It does not reproduce. `probe-planet-surfaces.mjs` compares each class
+ * against its own cube with the camera placed once and both arms captured back
+ * to back, and the four classes above read 1.1% to 4.2% of the disc mean at the
+ * worst patch. Lava reads **95.5% at 4 radii and 37.1% at 2.5**, with medians of
+ * 25.4% and 7.1% — systematic rather than noise, and it survives every control
+ * the other classes needed: shells off, clock pinned, one placement, no settle
+ * between the arms.
+ *
+ * The reason is the shape of the term rather than the channel's depth alone.
+ * `crack` is a narrow ridge network, `aux` is eight bits with a mip chain
+ * filtering it, and `lavaEmissive` raises it to 2.2 and again to 1.6 before the
+ * bloom pass amplifies what is left — on a disc whose mean luma is 44, because
+ * this is the one class visible on its own night side. Every step of that
+ * magnifies an error the other four classes never make.
+ *
+ * So lava stays procedural until a bake of it can be shown to reproduce, and
+ * the node's step 2 is unmet on that one class with the figures above as the
+ * reason. What is *not* being claimed is that it cannot work: a wider channel,
+ * or baking the ramp's output rather than its input, are both untried.
+ */
+export const LAVA_UNBAKED_REASON =
+	"the emissive ramp through an 8-bit aux channel reads 95.5% of the disc " +
+	"mean against its own procedural program — see BAKE_DESCRIPTORS";
 
 /** The classes a cube is baked for, in a stable order so a census reads the
  *  same twice. Derived from the table, so the two cannot disagree. */
@@ -843,10 +874,12 @@ ${SURFACE_VERTEX_BODY}
  * already does, so an arm named on the panel is not silently ignored on half
  * the bodies in the frame.
  *
- * A class with a `perFrame` term gets the full procedural prelude behind it —
- * lava needs `fbm3` for its convection — and with it the rest of its class
- * chunk, unreachable and stripped. The alternative is a second spelling of
- * `lavaEmissive`, which is the drift `lavaCrack` was extracted to prevent.
+ * A class with a `perFrame` term would get the full procedural prelude behind it
+ * — lava needed `fbm3` for its convection — and with it the rest of its class
+ * chunk, unreachable and stripped. No class in the table has one today; the
+ * branch is kept because it is what a second attempt at lava would need, and
+ * `tests/planet-bake.test.ts` asserts that it is currently inert rather than
+ * leaving that to be inferred from reading the table.
  */
 export function bakedFragmentFor(surface: SurfaceClass): string {
 	const d = BAKE_DESCRIPTORS[surface];

@@ -240,7 +240,13 @@ export function peakPxPerCubeTexel(
  * before the bake is refused.
  *
  * One, which is parity by that measure: the cube holds a texel for every pixel
- * the disc covers. It is **not** parity at the worst pixel, where the same
+ * the disc covers — **one CSS pixel**, which is not one of the player's.
+ * `focalPx` is deliberately in CSS pixels so a resolution dial cannot move a
+ * look (its own docstring argues that), and the consequence is that on a
+ * device-scale-2 display the band admits a cube at *two* physical pixels per
+ * texel. Every table here and the cost tables the node quotes are the same
+ * framing measured two ways, and the word "parity" belongs to the CSS one
+ * (sage, PR #256, round 4). It is **not** parity at the worst pixel, where the same
  * threshold is about 2.5 screen pixels per texel — see `peakPxPerCubeTexel`,
  * and see why the average is nonetheless the criterion that predicts agreement.
  *
@@ -258,7 +264,12 @@ export function peakPxPerCubeTexel(
  * What is *not* claimed is that nothing changes. `planet-terminator` frames a
  * body at about 4.3 radii on a 256 face — 0.83 — and the baked surface there is
  * visibly **smoother**, 4.76% of the frame against a same-build control of
- * 0.00%. So this constant is the dial the principal rules on, and lowering it
+ * 0.00%. **The cause is not established.** An earlier version of this said it
+ * was the mip chain and quoted 0.55 pixels per texel at that framing; the
+ * repo's own arithmetic puts it at 0.83, where the LOD is near zero and mip 0
+ * dominates, so the explanation and its figure were both wrong and no arm with
+ * mipmaps off or a 512 face forced was ever run (sage, PR #256, round 4). What
+ * is measured is the difference, not its mechanism. So this constant is the dial the principal rules on, and lowering it
  * trades the near rungs back for sharpness — **all of them**, which an earlier
  * version of this line understated (sage, PR #256, round 3). At 1 a 512 face
  * enters at 2.184 radii and a 256 at 3.689. At 0.5 those become 3.689 and
@@ -282,8 +293,11 @@ export const BAKE_MAX_PX_PER_TEXEL = 1;
  *
  * Two sizes and a cap of 512. A 256 face reaches `BAKE_MAX_PX_PER_TEXEL` at
  * about 3.69 radii and a 512 at about 2.18, so the second rung is what brings
- * the 3-radius and 2-radius frames — 10.8 ms and 24.8 ms procedural against
- * 3.5 and 5.3 baked, at device scale 2 — inside the band at all. A third rung
+ * the **3-radius** frame inside the band — 10.8 ms procedural against 3.5 baked,
+ * at device scale 2. The 2-radius frame is *outside* it: 2 is nearer than 2.18,
+ * and its 24.8-against-5.3 was measured with the band pinned. An earlier version
+ * of this sentence claimed both and contradicted itself in its own numbers
+ * (sage, PR #256, round 4). A third rung
  * would buy the 1.5-radius frame and cost 64 MB on one body, and no rung any
  * GPU will allocate reaches a *filling* planet: `pxPerCubeTexel`'s table has a
  * 512 face at 152 screen pixels per texel there.

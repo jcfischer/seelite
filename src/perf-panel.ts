@@ -397,8 +397,7 @@ export function setAblation(
 	const arm = armByName(name);
 	setSurface(scenes, arm.surface);
 	setAblate(scenes, arm.perfAblate);
-	for (const s of shells(scenes, "atmosphere")) s.visible = arm.atmosphere;
-	for (const s of shells(scenes, "cloud")) s.visible = arm.clouds;
+	setShells(scenes, { atmosphere: arm.atmosphere, clouds: arm.clouds });
 	return arm;
 }
 
@@ -761,8 +760,7 @@ rasterizer                  ${identity(attribution.renderer.rasterizer)}`;
 		if (e.metaKey || e.ctrlKey || e.altKey) return;
 		if (e.key === RESTORE_KEY) {
 			if (targets.bloom) targets.bloom.enabled = true;
-			for (const kind of ["atmosphere", "cloud"])
-				for (const s of shells(scenes, kind)) s.visible = true;
+			setShells(scenes, { atmosphere: true, clouds: true });
 			setAblate(scenes, 0);
 			// **Set, then un-pin, in that order and only once.** `setSurface` pins
 			// the bodies it touches (#207), so clearing the pin first and setting

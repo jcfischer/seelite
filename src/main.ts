@@ -206,18 +206,6 @@ import {
 	surfacePathFor,
 } from "./relief-bands";
 
-/**
- * Cube faces drawn per frame, across every bake in flight (#208).
- *
- * One. A face is a full-screen evaluation of the class shader — the thing #248
- * measured at 43.5 ms filling a 1440x900 frame at device scale 2 — and twelve
- * of them per body. At one a frame a fourteen-body system finishes in 168
- * frames, under three seconds at 60 Hz, and no single frame carries more than
- * one extra draw. Raising it trades that stall against a hitch, and the node's
- * "do not let a bake block the first frame after a jump" is which way the trade
- * goes.
- */
-const BAKE_FACES_PER_FRAME = 1;
 import { SPIN_RPM_RANGE, STATION_GEOMETRY } from "./station";
 import { PROMPT_FILL, PROMPT_FONT, TextRaster } from "./text-raster";
 import {
@@ -343,6 +331,19 @@ import { type Vec3, add, dot, length, scale, sub, v3 } from "./vec3";
 // spellings of the same constant — the two-public-paths pattern this branch
 // removed from `sim.ts` and pinned with a source-scan test.
 import * as units from "./units";
+
+/**
+ * Cube faces drawn per frame, across every bake in flight (#208).
+ *
+ * One. A face is a full-screen evaluation of the class shader — the thing #248
+ * measured at 43.5 ms filling a 1440x900 frame at device scale 2 — and twelve
+ * of them per body. At one a frame a fourteen-body system finishes in 168
+ * frames, under three seconds at 60 Hz, and no single frame carries more than
+ * one extra draw. Raising it trades that stall against a hitch, and the node's
+ * "do not let a bake block the first frame after a jump" is which way the trade
+ * goes.
+ */
+const BAKE_FACES_PER_FRAME = 1;
 
 /** Scratch vector for aiming a station's aperture, allocated once: the render
  *  loop runs per body per frame, and a `Vector3` built there is garbage by the
@@ -1014,6 +1015,15 @@ class Game {
 	 * than keeping the queue unique.
 	 */
 	private readonly bakeQueue: string[] = [];
+	/**
+	 * The body allowed to hold the large cube pair, and how big it looked.
+	 *
+	 * Reset every frame before the body loop, so it is last frame's answer while
+	 * the loop runs — which is what lets the sizing decision be made in the same
+	 * pass that computes the apparent radii. See the comment at its use.
+	 */
+	private widestBodyId: string | undefined;
+	private widestRadiusPx = 0;
 	/**
 	 * The focal length #207's bands are measured in, CSS pixels.
 	 *
@@ -5628,6 +5638,8 @@ class Game {
 		// old one had. `visual.dispose()` above has already freed both cubes.
 		this.bakeFacePx.clear();
 		this.bakeQueue.length = 0;
+		this.widestBodyId = undefined;
+		this.widestRadiusPx = 0;
 		this.starBody = undefined;
 
 		// #201's per-station walk runs again inside `buildBodies`, so the record
@@ -6273,6 +6285,10 @@ class Game {
 		const star = this.starBody;
 		const starPos = star ? star.pos : ORIGIN;
 
+		// Last frame's answer, cleared here so the loop below can both read it and
+		// write this frame's — see the sizing comment inside it.
+		this.widestRadiusPx = 0;
+
 		for (const body of this.world.system.bodies) {
 			const mesh = this.meshes.get(body.id);
 			if (!mesh) continue;
@@ -6367,7 +6383,30 @@ class Game {
 				 * twelve full-screen evaluations of the most expensive shader here.
 				 */
 				const held = this.bakeFacePx.get(body.id) ?? null;
-				const wantFacePx = bakeFacePxFor(radiusPx, this.focalPx, held);
+				/**
+				 * **One large pair in the system, and it goes to the nearest body.**
+				 *
+				 * `bakeFacePxFor` hands 512 to every body inside about 3.69 of its own
+				 * radii, and a system can have several — so the memory census's
+				 * "68.0 MB worst case" was a hope rather than a bound, with fourteen
+				 * large pairs at 224 MB the thing actually permitted (sage, PR #256,
+				 * round 4). The largest apparent radius wins because that is the body
+				 * the resolution is for; every other body takes the small pair, which
+				 * it would anyway unless two are close at once.
+				 *
+				 * Decided against the *previous* frame's widest, held in a field, so
+				 * this stays a single pass over the bodies rather than a pass to find
+				 * the winner and a pass to size everything. One frame of lag on a
+				 * threshold nothing crosses abruptly.
+				 */
+				if (radiusPx > this.widestRadiusPx) {
+					this.widestRadiusPx = radiusPx;
+					this.widestBodyId = body.id;
+				}
+				const mayHoldLarge = body.id === this.widestBodyId;
+				const wantFacePx = mayHoldLarge
+					? bakeFacePxFor(radiusPx, this.focalPx, held)
+					: BAKE_FACE_SIZES[0];
 				// `canBake()` and not a stored flag: the perf panel can put a gas
 				// giant's class on a rocky body, and a scheduler that asked anyway
 				// threw out of the frame loop (sage, PR #256, round 3).

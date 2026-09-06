@@ -920,13 +920,26 @@ export function buildBodyVisual(
 			return true;
 		},
 		bakedFacePx() {
-			// **Zero when the bake is not on this body's menu** (sage, PR #256).
-			// This is what the band reads to decide whether `"baked"` is even a
-			// candidate, and returning a size while `setBakeAllowed(false)` holds
-			// made it keep asking for a program the visual then refused — silently,
-			// so the body kept whatever relief program it happened to have and
-			// #207's selector stopped running on it at all.
+			/**
+			 * **Zero whenever the cube is not on this body's menu** (sage, PR #256,
+			 * rounds 1 and 4).
+			 *
+			 * This is what the band reads to decide whether `"baked"` is even a
+			 * candidate, and every reason the swap can refuse has to be visible
+			 * here or the band asks for a program that is silently declined — which
+			 * leaves the body on whatever relief program it happened to have, with
+			 * #207's selector not running on it at all. There is no error and
+			 * nothing changes on screen until something else forces a rebake.
+			 *
+			 * That defect arrived **twice through different doors**: round 1 through
+			 * `bakeAllowed`, and round 4 through the class tag that round 2 added —
+			 * a perf-panel class cycle left `bakedClass` disagreeing with
+			 * `surfaceClass` and the refusal was invisible here. Both conditions are
+			 * read now, and the rule for anything added to `swapSurfaceProgram`'s
+			 * `"baked"` branch is that it belongs in this expression too.
+			 */
 			if (!planet.userData.bakeAllowed) return 0;
+			if (bakedClass !== planet.userData.surfaceClass) return 0;
 			return ready?.facePx ?? 0;
 		},
 		applySurfaceBand(path) {

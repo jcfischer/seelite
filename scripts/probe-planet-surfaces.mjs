@@ -699,6 +699,32 @@ await settleBakes();
 		baker !== null,
 		`widest bakeable body: ${baker ?? "none — every body is a giant, a star or a venusian deck"}`,
 	);
+	/**
+	 * Put one class on **one** body.
+	 *
+	 * `setSurfaceAndRelief` walks the scenes and sets every planet, which is what
+	 * an ablation sweep wants and the opposite of what this section wants: the
+	 * first version used it and left every body in the system wearing `lava`,
+	 * which reddened section 3's class-separation check with a repeat noise floor
+	 * of 15.1 against its usual 1.7. Through `userData` because that is the door
+	 * the panel's own class cycle uses, and it is per object.
+	 */
+	const wearClass = async (id, klass) => {
+		await page.evaluate(
+			([bodyId, surface]) => {
+				const g = window.__seelite;
+				for (const scene of [g.nearScene, g.approachScene, g.farScene])
+					scene
+						.getObjectByName(bodyId)
+						?.traverse((o) => o.userData?.setSurfaceClass?.(surface));
+			},
+			[id, klass],
+		);
+	};
+	const bakerClass = await page.evaluate(
+		(id) => window.__seelite.bodyVisuals.get(id)?.surface ?? null,
+		baker,
+	);
 	if (baker !== null) {
 		const bakedFar = await pathAt(30, baker);
 		check(
@@ -802,38 +828,60 @@ await settleBakes();
 		 * and is really "the control changed underneath it". `four-tap` is the
 		 * reference look both the bake and this comparison are about.
 		 */
-		const signatureAt = async (radii, allowed) => {
+		/**
+		 * Place once, then capture both arms back to back.
+		 *
+		 * **Placing per arm was the shape and lava is why it is not** (sage,
+		 * PR #256, round 4). Four of the five baked classes are static, so hiding
+		 * the shells held everything that moves; lava's glow is a per-frame term
+		 * by design — the cube holds the static crack network and the draw program
+		 * recomputes the blackbody ramp — so wall-clock time between the two
+		 * captures is a real difference in the thing being compared, amplified by
+		 * two powers and then by the bloom pass on a disc whose mean luma is 51.
+		 * With a placement and a bake settle between the arms it read 93.4% of the
+		 * disc mean.
+		 *
+		 * `__startClockAt` has to come *before* the placement — it advances the
+		 * world along its orbits, so pinning it afterwards moves the body out of
+		 * the frame the camera was just aimed at, and the signature comes back
+		 * with no comparable patches at all. So the clock is pinned once, the
+		 * camera aimed once, and the only thing between the two captures is a
+		 * material swap and two frames.
+		 */
+		const compareAt = async (radii) => {
 			await page.evaluate((t) => window.__startClockAt(t), CLOCK_S);
-			await page.evaluate((v) => window.__seelite.setBakeAllowed(v), allowed);
 			await page.evaluate(
 				([id, r]) => window.__sunOffset(id, r, 60),
 				[baker, radii],
 			);
 			await settleBakes();
-			await page.evaluate(
-				(pin) => window.__seelite.setSurfacePin(pin),
-				allowed ? "baked" : "four-tap",
-			);
-			await page.evaluate(() => {
-				window.__seelite.render(0);
-				window.__seelite.render(0);
-			});
-			// Read back rather than assumed: a pin is refused on a body with no
-			// complete cube, and a refused arm would print as agreement.
-			const drawnWith = await page.evaluate(
-				(id) => window.__seelite.bodyVisuals.get(id).surfacePath(),
-				baker,
-			);
-			const wanted = allowed ? "baked" : "four-tap";
-			if (drawnWith !== wanted)
-				throw new Error(
-					`the agreement check asked for "${wanted}" at ${radii} radii and ` +
-						`${baker} is drawn with "${drawnWith}"`,
+			const capture = async (allowed) => {
+				await page.evaluate(
+					(pin) => window.__seelite.setSurfacePin(pin),
+					allowed ? "baked" : "four-tap",
 				);
-			return page.evaluate(
-				([id, grid]) => window.__bodySignature(id, grid),
-				[baker, 6],
-			);
+				await page.evaluate(() => {
+					window.__seelite.render(0);
+					window.__seelite.render(0);
+				});
+				// Read back rather than assumed: a pin is refused on a body with no
+				// complete cube, and a refused arm would print as agreement.
+				const drawnWith = await page.evaluate(
+					(id) => window.__seelite.bodyVisuals.get(id).surfacePath(),
+					baker,
+				);
+				const wanted = allowed ? "baked" : "four-tap";
+				if (drawnWith !== wanted)
+					throw new Error(
+						`the agreement check asked for "${wanted}" at ${radii} radii and ` +
+							`${baker} is drawn with "${drawnWith}"`,
+					);
+				return page.evaluate(
+					([id, grid]) => window.__bodySignature(id, grid),
+					[baker, 6],
+				);
+			};
+			return [await capture(true), await capture(false)];
 		};
 		/**
 		 * **Four radii and two and a half, and deliberately not eight.**
@@ -847,41 +895,79 @@ await settleBakes();
 		 * reads 47.6% and 31.8% against 2.1% and 1.2%. The rungs are chosen from
 		 * that measurement rather than from where the interesting sizes are.
 		 */
-		for (const radii of [4, 2.5]) {
-			const withBake = await signatureAt(radii, true);
-			const without = await signatureAt(radii, false);
-			const pairs = withBake.patches
-				.map((a, i) => [a, without.patches[i]])
-				.filter(([a, b]) => a && b);
-			const luma = (c) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
-			// **Against the disc's own mean, not the patch's.** A patch on the
-			// terminator sits at a luma of two or three, so a difference of one
-			// code is fifty per cent of it and the check reports a rounding error
-			// as a broken face basis. The disc mean is the scale a difference is
-			// visible against, which is what the band is trying to be about.
-			const discMean =
-				pairs.reduce((sum, [a, b]) => sum + (luma(a) + luma(b)) / 2, 0) /
-				Math.max(pairs.length, 1);
-			const offsets = pairs
-				.map(([a, b]) => Math.abs(luma(a) - luma(b)))
-				.sort((x, y) => x - y);
-			const worst = offsets[offsets.length - 1];
-			const median = offsets[Math.floor(offsets.length / 2)];
-			const ratio = worst / Math.max(discMean, 1);
-			const medianRatio = median / Math.max(discMean, 1);
-			check(
-				`the baked and procedural programs agree on the lit face at ${radii} radii`,
-				pairs.length >= 8 && ratio <= AGREEMENT,
-				`${pairs.length} comparable patches, disc mean luma ${discMean.toFixed(1)},` +
-					` median off by ${(medianRatio * 100).toFixed(1)}%,` +
-					` worst patch off by ${worst.toFixed(1)} = ${(ratio * 100).toFixed(1)}%` +
-					` against a ${(AGREEMENT * 100).toFixed(0)}% band` +
-					`\n           ${pairs.map(([a, b]) => `${luma(a).toFixed(0)}/${luma(b).toFixed(0)}`).join(" ")}`,
-			);
-		}
+		/**
+		 * **Every class that bakes, not just the one this seed happened to grow.**
+		 *
+		 * The first version measured `baker` alone, so the figures were one class
+		 * wide (sage, PR #256, round 4) — and the two classes with a compiled-in
+		 * specular exponent and the one with a per-frame term through an 8-bit
+		 * `aux` channel are precisely the ones whose draw program differs from the
+		 * others. Lava's `aux` is the only channel in either cube that is neither
+		 * a colour nor a normal, and terran's 230-power water highlight is the
+		 * sharpest thing on any of these surfaces.
+		 *
+		 * The class is put on the body rather than a body found for each: no seed
+		 * grows all five, and the panel's own class cycle is the mechanism that
+		 * makes any body wear any class.
+		 */
+		const bakeableClasses = await page.evaluate(async () => {
+			const mod = await import("/src/planet-shaders.ts");
+			return [...mod.BAKEABLE_CLASSES];
+		});
+		check(
+			"every class with a bake descriptor is covered by the comparison below",
+			bakeableClasses.length > 0,
+			// Derived from the roster rather than counted against a literal: the
+			// set has changed once already in this node's life, when lava came out
+			// of it on this very comparison.
+			`${bakeableClasses.length} classes — ${bakeableClasses.join(", ")}`,
+		);
+		for (const surface of bakeableClasses)
+			for (const radii of [4, 2.5]) {
+				await wearClass(baker, surface);
+				// The cube belongs to the class it was baked from, so a class swap needs
+				// a re-bake before there is anything to compare against.
+				await page.evaluate(
+					([id, px]) => window.__seelite.rebake(id, px),
+					[baker, radii > 3 ? 256 : 512],
+				);
+				const [withBake, without] = await compareAt(radii);
+				const pairs = withBake.patches
+					.map((a, i) => [a, without.patches[i]])
+					.filter(([a, b]) => a && b);
+				const luma = (c) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+				// **Against the disc's own mean, not the patch's.** A patch on the
+				// terminator sits at a luma of two or three, so a difference of one
+				// code is fifty per cent of it and the check reports a rounding error
+				// as a broken face basis. The disc mean is the scale a difference is
+				// visible against, which is what the band is trying to be about.
+				const discMean =
+					pairs.reduce((sum, [a, b]) => sum + (luma(a) + luma(b)) / 2, 0) /
+					Math.max(pairs.length, 1);
+				const offsets = pairs
+					.map(([a, b]) => Math.abs(luma(a) - luma(b)))
+					.sort((x, y) => x - y);
+				const worst = offsets[offsets.length - 1];
+				const median = offsets[Math.floor(offsets.length / 2)];
+				const ratio = worst / Math.max(discMean, 1);
+				const medianRatio = median / Math.max(discMean, 1);
+				check(
+					`${surface} agrees with its own cube on the lit face at ${radii} radii`,
+					pairs.length >= 8 && ratio <= AGREEMENT,
+					`${pairs.length} comparable patches, disc mean luma ${discMean.toFixed(1)},` +
+						` median off by ${(medianRatio * 100).toFixed(1)}%,` +
+						` worst patch off by ${worst.toFixed(1)} = ${(ratio * 100).toFixed(1)}%` +
+						` against a ${(AGREEMENT * 100).toFixed(0)}% band` +
+						`\n           ${pairs.map(([a, b]) => `${luma(a).toFixed(0)}/${luma(b).toFixed(0)}`).join(" ")}`,
+				);
+			}
 		await page.evaluate(() => window.__seelite.setSurfacePin(null));
 		await page.evaluate(() => window.__seelite.setBakeAllowed(true));
 		await setShells(true);
+		// The class cycle above is an external write like any other; hand the body
+		// back the class the generator gave it before section 3 reads one.
+		await wearClass(baker, bakerClass);
+		await page.evaluate(() => window.__seelite.setSurfacePin(null));
 
 		/**
 		 * **Bake twice, and the texels are identical** — the node's step 5.

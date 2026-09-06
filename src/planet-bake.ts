@@ -40,11 +40,14 @@
  *
  * Six full-screen quads, one per face, with the direction built from the face's
  * own basis. A `CubeCamera` would need a sphere to hit, would shade its back
- * faces, and would interpolate the direction across a triangle. The bases here
- * are derived from **three's own** `CubeCamera.updateCoordinateSystem` table
- * rather than transcribed from the GL cube-map sign convention, which is where
- * a bake of this shape usually goes wrong: a flipped face is a seam that only
- * shows on one edge of one body.
+ * faces, and would interpolate the direction across a triangle.
+ *
+ * The bases start from **three's own** `CubeCamera.updateCoordinateSystem`
+ * table and then **negate both in-plane axes**, because a camera's basis is not
+ * a cube face's `(s, t)` — see `cubeFaceBasis`. This paragraph said the table
+ * was the answer for three rounds, which is the 180° rotation the PR lists as
+ * its third silent defect (sage, PR #256, round 4): every face held the right
+ * hemisphere and the surface was in the wrong place on it.
  */
 import * as THREE from "three";
 import type { SurfaceClass } from "./planet-appearance";
@@ -64,9 +67,18 @@ import {
  * Over 4 worlds x 8 galaxies x 256 systems — 8,192 systems — the bakeable
  * bodies per system (moons are always `airless`) run 1 to 14, mean 3.40, with
  * the worst at 14. RGBA8 with mipmaps is 1.33 x 6 x size² x 4 bytes per cube,
- * so a 256 **pair** is 4.0 MB and a 512 pair 16.0 MB. At most one or two bodies
- * are near enough to hold the large pair, so a typical system holds about
- * **25.6 MB** and the worst case **68.0 MB**.
+ * so a 256 **pair** is 4.0 MB and a 512 pair 16.0 MB.
+ *
+ * **The census counts bodies; the megabytes are a policy** (sage, PR #256,
+ * round 4). Two figures were quoted here as though both were measured: 25.6 MB
+ * typical and 68.0 MB worst, both of which assume exactly one body holds the
+ * large pair. Nothing enforced that — `bakeFacePxFor` hands 512 to every body
+ * inside about 3.69 of its own radii, and a system can have several — so the
+ * true bound was fourteen large pairs, 224 MB.
+ *
+ * `main.ts` enforces it now: the large pair goes to the body with the largest
+ * apparent radius and every other body takes the small one, so the figures
+ * above are what the schedule permits rather than what it happens to do.
  * `scripts/measure-bake-census.ts` reprints all of it.
  *
  * **Plus what a re-bake holds transiently**, which those figures exclude and
@@ -113,8 +125,9 @@ export const systemBakeBytes = (
  * The six faces, as three's `CubeCamera` orients them for a WebGL context.
  *
  * Copied as the pair of vectors each `lookAt` is given, so the basis below is
- * built by the same `Matrix4.lookAt` the camera version would use and the two
- * cannot disagree about a sign. The order is the one
+ * built by the same `Matrix4.lookAt` a camera version would use — and then
+ * corrected by `cubeFaceBasis`, because the camera convention and the sampling
+ * convention differ by 180° on every face. The order is the one
  * `WebGLRenderer.setRenderTarget`'s `activeCubeFace` argument indexes: +X, -X,
  * +Y, -Y, +Z, -Z.
  */
@@ -183,6 +196,23 @@ const quad = () => {
 /** `WebGLRenderer.render` requires a camera even when the shader ignores it. */
 const BAKE_CAMERA = new THREE.Camera();
 
+/**
+ * Run `body` with whatever the renderer was pointed at put back afterwards.
+ *
+ * Three values and not one: a cube face and a mip level are part of where a
+ * render lands, and restoring only the target leaves the composer drawing into
+ * face 5 of somebody's cube. Spelled once because both callers here need the
+ * same three and a partial restore is the kind of thing that shows up two
+ * frames later somewhere else.
+ */
+const withTarget = (renderer: THREE.WebGLRenderer, body: () => void) => {
+	const wasTarget = renderer.getRenderTarget();
+	const wasFace = renderer.getActiveCubeFace();
+	const wasLevel = renderer.getActiveMipmapLevel();
+	body();
+	renderer.setRenderTarget(wasTarget, wasFace, wasLevel);
+};
+
 const newCube = (facePx: number): THREE.WebGLCubeRenderTarget =>
 	new THREE.WebGLCubeRenderTarget(facePx, {
 		format: THREE.RGBAFormat,
@@ -232,20 +262,6 @@ export interface BodyBake {
 	dispose(): void;
 }
 
-/**
- * Start a bake for one body.
- *
- * `uniforms` is the body's own record, shared rather than copied so the seed,
- * the sea level and the warmth cannot drift between the bake and the procedural
- * program it has to match. Two are deliberately **not** shared:
- *
- * - `time` is pinned to zero. It is the node's determinism requirement (step 5)
- *   and it is why `venusian` is not in the table at all: a class that reads the
- *   clock in `surface()` cannot be a pure function of its seed.
- * - `perfAblate` is pinned to zero. The ladder's arms belong to the *draw*, and
- *   `bakedFragmentFor` honours them there; baking an arm in would leave a
- *   diagnostic frozen into a texture after the arm was cleared.
- */
 /**
  * The two bake programs for one class on one body, and the quad they draw.
  *
@@ -386,27 +402,23 @@ export function startBodyBake(
 			const last = face === CUBE_FACE_COUNT - 1;
 			target.texture.generateMipmaps = last;
 
-			const wasTarget = renderer.getRenderTarget();
-			const wasFace = renderer.getActiveCubeFace();
-			const wasLevel = renderer.getActiveMipmapLevel();
-			renderer.setRenderTarget(target, face);
-			renderer.render(scene, BAKE_CAMERA);
-			renderer.setRenderTarget(wasTarget, wasFace, wasLevel);
+			withTarget(renderer, () => {
+				renderer.setRenderTarget(target, face);
+				renderer.render(scene, BAKE_CAMERA);
+			});
 
 			drawn++;
 			bake.complete = drawn >= total;
 			return true;
 		},
 		prewarm(renderer) {
-			const wasTarget = renderer.getRenderTarget();
-			const wasFace = renderer.getActiveCubeFace();
-			const wasLevel = renderer.getActiveMipmapLevel();
-			for (const which of ["albedo", "normal"] as const) {
-				mesh.material = materials[which];
-				renderer.setRenderTarget(which === "albedo" ? albedo : normal, 0);
-				renderer.compile(scene, BAKE_CAMERA);
-			}
-			renderer.setRenderTarget(wasTarget, wasFace, wasLevel);
+			withTarget(renderer, () => {
+				for (const which of ["albedo", "normal"] as const) {
+					mesh.material = materials[which];
+					renderer.setRenderTarget(which === "albedo" ? albedo : normal, 0);
+					renderer.compile(scene, BAKE_CAMERA);
+				}
+			});
 		},
 		dispose() {
 			// **The cubes only.** The programs belong to `BakePrograms` and are
