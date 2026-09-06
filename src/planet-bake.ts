@@ -69,10 +69,45 @@ import {
  * **25.6 MB** and the worst case **68.0 MB**.
  * `scripts/measure-bake-census.ts` reprints all of it.
  *
+ * **Plus what a re-bake holds transiently**, which those figures exclude and
+ * sage is right that they should not (PR #256, round 3). A body keeps its ready
+ * pair on screen while the replacement fills — that is the no-pop guarantee — so
+ * for the twelve frames of a crossing it holds both, and a body going 256 to 512
+ * holds 20.0 MB rather than 16.0. One body crossing takes the fourteen-body
+ * worst case to **72.0 MB**, and nothing bounds how many cross at once beyond
+ * the fact that they cross at different apparent sizes.
+ *
  * Mipmaps are not optional: a body at 8 radii is 0.41 screen pixels per texel
  * on a 256 cube and 0.16 at 20 radii, which is minification by a factor of six
  * and it shimmers without them.
  */
+
+/**
+ * Bytes one cube **pair** holds, mipmaps included.
+ *
+ * Six faces, four bytes a texel, two cubes — albedo with `specMask` in alpha and
+ * the object-space normal with the class's spare scalar — and 4/3 for the mip
+ * chain, which is not optional here.
+ *
+ * Exported because `scripts/measure-bake-census.ts` and
+ * `tests/planet-bake.test.ts` both quote totals derived from it, and two
+ * spellings of one memory model is how the docstring above comes to disagree
+ * with the script that reprints it (sage, PR #256, round 3).
+ */
+export const bakePairBytes = (facePx: number) =>
+	(6 * facePx * facePx * 4 * 2 * 4) / 3;
+
+/**
+ * What a system of `n` bakeable bodies holds, as an upper bound.
+ *
+ * At most one body at a time is near enough to want the large pair; the rest
+ * hold the small one. Fractional `n` is meaningful — the census quotes a mean.
+ */
+export const systemBakeBytes = (
+	n: number,
+	small: number,
+	large: number,
+): number => bakePairBytes(large) + Math.max(0, n - 1) * bakePairBytes(small);
 
 /**
  * The six faces, as three's `CubeCamera` orients them for a WebGL context.

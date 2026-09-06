@@ -2542,7 +2542,7 @@ class Game {
 	 */
 	rebake(id: string, facePx: number) {
 		const visual = this.bodyVisuals.get(id);
-		if (!visual?.bakeable) return;
+		if (!visual?.canBake()) return;
 		visual.startBake(facePx);
 		this.bakeFacePx.set(id, facePx);
 		this.bakeQueue.push(id);
@@ -6368,7 +6368,10 @@ class Game {
 				 */
 				const held = this.bakeFacePx.get(body.id) ?? null;
 				const wantFacePx = bakeFacePxFor(radiusPx, this.focalPx, held);
-				if (visual.bakeable && held !== wantFacePx)
+				// `canBake()` and not a stored flag: the perf panel can put a gas
+				// giant's class on a rocky body, and a scheduler that asked anyway
+				// threw out of the frame loop (sage, PR #256, round 3).
+				if (visual.canBake() && held !== wantFacePx)
 					this.rebake(body.id, wantFacePx);
 
 				const facePx = visual.bakedFacePx();

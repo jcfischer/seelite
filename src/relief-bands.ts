@@ -259,9 +259,13 @@ export function peakPxPerCubeTexel(
  * body at about 4.3 radii on a 256 face — 0.83 — and the baked surface there is
  * visibly **smoother**, 4.76% of the frame against a same-build control of
  * 0.00%. So this constant is the dial the principal rules on, and lowering it
- * trades the near rungs back for sharpness: at 0.5 the band would start at about
- * 3.3 radii, keeping 3 r (10.8 ms against 3.5) and giving up 2 r (24.8 against
- * 5.3).
+ * trades the near rungs back for sharpness — **all of them**, which an earlier
+ * version of this line understated (sage, PR #256, round 3). At 1 a 512 face
+ * enters at 2.184 radii and a 256 at 3.689. At 0.5 those become 3.689 and
+ * 6.728, so the 3-radius frame (0.648 on a 512) falls outside the band along
+ * with the 2-radius one: 10.8 ms and 24.8 ms both stay procedural and what is
+ * left is 8 radii and beyond. There is no setting that keeps 3 r and gives up
+ * 2 r, because one face size covers both.
  */
 export const BAKE_MAX_PX_PER_TEXEL = 1;
 

@@ -389,7 +389,7 @@ describe("disposeSubtree keeps what the next system needs", () => {
 					sunColor: 0xfff0e0,
 					starTint: 0xfff0e0,
 				});
-				if (!visual.bakeable) {
+				if (!visual.canBake()) {
 					visual.dispose();
 					continue;
 				}

@@ -13,7 +13,12 @@ import { radiusAtTexelRatio } from "./lib/texel-radius";
 import { codeOf } from "./lib/source-scan";
 import { CLASS_GLSL } from "../src/planet-classes.glsl";
 import type { SurfaceClass } from "../src/planet-appearance";
-import { CUBE_FACE_COUNT, cubeFaceBasis } from "../src/planet-bake";
+import {
+	CUBE_FACE_COUNT,
+	bakePairBytes,
+	cubeFaceBasis,
+	systemBakeBytes,
+} from "../src/planet-bake";
 import {
 	BAKE_FACE_SIZES,
 	BAKE_MAX_PX_PER_TEXEL,
@@ -388,17 +393,23 @@ describe("resolution and memory", () => {
 		// because it sweeps 8,192 systems; what is held here is the arithmetic it
 		// prints the totals with, so a change to the format or the mip assumption
 		// reddens beside the prose that quotes it.
-		const pairBytes = (px: number) => (6 * px * px * 4 * 2 * 4) / 3;
+		// The model itself is `planet-bake.ts`'s and is imported; what is held
+		// here is the *totals* the docstring quotes, so a change to the format or
+		// the mip assumption reddens beside the prose rather than being quietly
+		// recomputed in two places (sage, PR #256, round 3).
 		const mb = (b: number) => b / 1024 / 1024;
 		const [small, large] = BAKE_FACE_SIZES;
-		expect(mb(pairBytes(large))).toBeCloseTo(16.0, 1);
-		expect(mb(pairBytes(small))).toBeCloseTo(4.0, 1);
+		expect(mb(bakePairBytes(large))).toBeCloseTo(16.0, 1);
+		expect(mb(bakePairBytes(small))).toBeCloseTo(4.0, 1);
 		// Typical is 3.40 bakeable bodies and the worst case is 14, with at most
 		// one of them near enough to want the large pair.
-		const held = (n: number) =>
-			pairBytes(large) + Math.max(0, n - 1) * pairBytes(small);
+		const held = (n: number) => systemBakeBytes(n, small, large);
 		expect(mb(held(3.4))).toBeCloseTo(25.6, 1);
 		expect(mb(held(14))).toBeCloseTo(68.0, 1);
+		// And the transient the no-pop guarantee costs: a body keeps its ready
+		// pair while the replacement fills, so one crossing from 256 to 512 adds
+		// a small pair to the worst case.
+		expect(mb(held(14) + bakePairBytes(small))).toBeCloseTo(72.0, 1);
 	});
 
 	test("the census script exists and is the one the docstring names", () => {

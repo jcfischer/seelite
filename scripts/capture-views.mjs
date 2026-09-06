@@ -426,7 +426,7 @@ try {
 			if (!g) return [];
 			const out = [];
 			for (const [id, visual] of g.bodyVisuals)
-				if (visual.bakeable && visual.bakedFacePx() === 0) out.push(id);
+				if (visual.canBake() && visual.bakedFacePx() === 0) out.push(id);
 			return out;
 		});
 		if (unbaked.length > 0)

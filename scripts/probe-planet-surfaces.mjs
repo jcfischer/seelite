@@ -687,7 +687,7 @@ await settleBakes();
 		let best = null;
 		let bestRadius = 0;
 		for (const body of g.world.system.bodies) {
-			if (!g.bodyVisuals.get(body.id)?.bakeable) continue;
+			if (!g.bodyVisuals.get(body.id)?.canBake()) continue;
 			if (body.radiusKm <= bestRadius) continue;
 			best = body.id;
 			bestRadius = body.radiusKm;

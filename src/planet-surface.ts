@@ -232,15 +232,19 @@ export interface BodyVisual {
 	/** What it is drawn with now, so the frame loop needs no parallel map. */
 	reliefPath(): ReliefPath;
 	/**
-	 * Whether this body's class can be baked at all (#208).
+	 * Whether the class this body is **wearing now** can be baked (#208).
 	 *
-	 * A property of the class rather than of the moment: `venusian`, the two gas
-	 * giants and the star all read the clock in `surface()`, so a cube of them
-	 * would be a frozen frame. Read by the frame loop before it decides whether
-	 * to start a bake, and by the band, which must not offer `"baked"` to a body
-	 * that can never reach it.
+	 * `venusian`, the two gas giants and the star read the clock in `surface()`,
+	 * so a cube of them would be a frozen frame.
+	 *
+	 * A method rather than the field it replaced, and that is not tidiness: the
+	 * perf panel can put any class on any body, so a terran cycled to jovian is a
+	 * body whose *construction* class bakes and whose current one does not. The
+	 * field said yes, the scheduler started a bake, and `startBodyBake` threw
+	 * inside the frame loop — on every frame, from the first size threshold the
+	 * body crossed (sage, PR #256, round 3).
 	 */
-	bakeable: boolean;
+	canBake(): boolean;
 	/**
 	 * Begin a bake at this face size, discarding any cube this body already has.
 	 *
@@ -558,7 +562,9 @@ export function buildBodyVisual(
 	 * material swap and both stay warm. The procedural material is the one that
 	 * shipped and is untouched, which is what keeps #207's programs identical.
 	 */
-	const bakeable = isBakeable(look.surface);
+	/** The class this body is wearing now, which the panel can change. */
+	const canBakeNow = () =>
+		isBakeable(planet.userData.surfaceClass as SurfaceClass);
 	/**
 	 * **Two bakes, and the reason is the handoff.**
 	 *
@@ -857,9 +863,9 @@ export function buildBodyVisual(
 		reliefPath() {
 			return planet.userData.reliefPath as ReliefPath;
 		},
-		bakeable,
+		canBake: () => canBakeNow(),
 		startBake(facePx) {
-			if (!bakeable) return;
+			if (!canBakeNow()) return;
 			// Only the bake in flight is discarded. The ready pair stays on screen
 			// until the new one lands, which is the whole of the no-pop guarantee
 			// above — and a second `startBake` before the first finished (a body

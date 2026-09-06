@@ -22,22 +22,17 @@
  */
 import { GALAXY_COUNT, generateGalaxy } from "../src/galaxy";
 import { classify } from "../src/planet-appearance";
+import { bakePairBytes, systemBakeBytes } from "../src/planet-bake";
 import { BAKE_FACE_SIZES } from "../src/relief-bands";
 import { isBakeable } from "../src/planet-shaders";
 import { generateContents, orbitWarmth } from "../src/system";
 
 const WORLDS = Number(process.argv[2] ?? 4);
 
-/**
- * Bytes one cube **pair** holds, mipmaps included.
- *
- * Six faces, four bytes a texel, times two cubes — albedo with `specMask` in
- * alpha, and the object-space normal with the class's spare scalar. The 4/3 is
- * the mip chain, which is not optional here: a body at 8 radii is 0.41 screen
- * pixels per texel on a 256 cube and 0.16 at 20, so minification of six times
- * over shimmers without one.
- */
-const pairBytes = (facePx: number) => (6 * facePx * facePx * 4 * 2 * 4) / 3;
+// The memory model is `planet-bake.ts`'s, imported rather than restated: this
+// script exists to reprint what that module claims, and a second spelling of
+// the arithmetic would let the two disagree silently.
+const pairBytes = bakePairBytes;
 
 const bakeableIn = (world: number, galaxy: number): number[] => {
 	const out: number[] = [];
@@ -81,8 +76,7 @@ const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 // hold the small one. An upper bound rather than a reading — a system where
 // every body is distant holds nothing but small pairs.
 const [SMALL, LARGE] = BAKE_FACE_SIZES;
-const held = (n: number) =>
-	pairBytes(LARGE) + Math.max(0, n - 1) * pairBytes(SMALL);
+const held = (n: number) => systemBakeBytes(n, SMALL, LARGE);
 
 console.log(
 	`worlds 1..${WORLDS} x ${GALAXY_COUNT} galaxies = ${counts.length} systems`,

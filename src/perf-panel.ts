@@ -660,16 +660,34 @@ export function mountPerfPanel(targets: PerfTargets) {
 					"four-tap": "screen-space",
 					"screen-space": "none",
 					// #208's cube is a fourth program on the same lever, so it is a rung
-					// of this cycle rather than a switch of its own. A body with no
-					// complete cube refuses it and the readout says so, which is the
-					// honest answer: the alternative is a key that appears to do nothing
-					// on a gas giant.
-					none: "baked",
+					// of this cycle rather than a switch of its own — but it is the one
+					// rung that can be *refused*, so `none` is handled below rather
+					// than here.
 				};
 				const path = readRelief(scenes);
 				if (path === "baked") {
 					setAblate(scenes, 2);
 					setSurface(scenes, "four-tap");
+					return;
+				}
+				if (path === "none") {
+					/**
+					 * **The baked rung is the one that can be refused**, so the cycle
+					 * has to read back rather than assume it moved.
+					 *
+					 * A gas giant, a venusian deck, or any body whose cube has not
+					 * landed keeps the program it had — and since the next rung is
+					 * reached by seeing `baked`, the cycle simply stopped at `none`
+					 * and `flat` became unreachable on those bodies (sage, PR #256,
+					 * round 3). Asking and then looking is the only way to tell a
+					 * refusal from a move; there is no state to consult, because
+					 * whether a cube exists is per body and this walks scenes.
+					 */
+					setSurface(scenes, "baked");
+					if (readRelief(scenes) !== "baked") {
+						setAblate(scenes, 2);
+						setSurface(scenes, "four-tap");
+					}
 					return;
 				}
 				// **Clear the ablation on the way into a path** (sage, PR #254).
