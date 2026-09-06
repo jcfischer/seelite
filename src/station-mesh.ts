@@ -64,7 +64,29 @@ import {
 	type StationType,
 } from "./station";
 import { type GreebleZone, buildGreebles } from "./station-greebles";
-import { buildMacroFixtures } from "./station-fixtures";
+import {
+	Pools,
+	buildMacroFixtures,
+	mast,
+	radiatorArray,
+	tankRack,
+	truss,
+} from "./station-fixtures";
+import {
+	DISH,
+	HUB,
+	MODULAR_RADIUS,
+	NODE,
+	type Placement,
+	RADIATOR,
+	TANKS,
+	TRUSS_X,
+	TRUSS_Y,
+	TUBE_X,
+	TUBE_Y,
+	modularPlacements,
+} from "./station-modular";
+import { DIRECTIONS } from "./wfc";
 import {
 	STATION_QUALITY,
 	STATION_VISUALS,
@@ -827,8 +849,8 @@ export interface StationForm {
 	readonly build: (color: number, berthSeed: number) => BuiltPart;
 }
 
-export type StationFormId = "a" | "b" | "c";
-export const STATION_FORM_IDS: StationFormId[] = ["a", "b", "c"];
+export type StationFormId = "a" | "b" | "c" | "d";
+export const STATION_FORM_IDS: StationFormId[] = ["a", "b", "c", "d"];
 
 /** One flat-shaded clone per base material, kept. */
 const flatClones = new WeakMap<THREE.Material, THREE.Material>();
@@ -3211,6 +3233,300 @@ function buildOutpostRig(color: number, berthSeed: number): BuiltPart {
  * role's list is exactly `STATION_FORM_IDS` long so the previewer's three slots
  * cannot silently hold two.
  */
+/**
+ * The cell pitch of the modular assembly, kilometres, and the module radii as
+ * fractions of it. 0.2 km puts a 96 m habitat tube in each cell, which is
+ * the ISS's proportion at the scale the other trade forms are drawn to, and
+ * makes the eleven-cell diamond 1.8 km across the spine.
+ */
+const MODULAR_CELL_KM = 0.2;
+
+/**
+ * Trade D — Assembly. A compact hub carrying the slot, a truss spine along
+ * ±Y, and modules solved onto a diamond of cells by wave function collapse
+ * (`station-modular.ts`, on seekolous's solver): habitat tubes docked end to
+ * end with a collar at every joint, junction drums, lattice beams, and leaves
+ * hung off them — radiator banks standing out of the plane, tank racks on
+ * pallets, a mast with a dish. The ISS as a grammar rather than a silhouette,
+ * which is the principal's ask for this round.
+ *
+ * **What spins is the hub**, for the shipyard's reason (§7.2): the slot is on
+ * the spin axis, and a 1.8 km assembly spun about it would change the
+ * station's projected width with the clock. The bay is inside the hub, so a
+ * berth turns with the slot. The hub is sized from the bay it has to hold —
+ * `stationInterior("trade")` wants 0.14 × 0.115 km from z = 0.023 to the
+ * mouth — and no wider, so the modules read as the station and the hub as
+ * the thing they dock to.
+ *
+ * **The plan is the berth seed's.** `buildStationForm` carries no station
+ * identity but that draw, and it is per station and deterministic, which is
+ * what the plan needs: two clients at one seed build one station, and a
+ * station keeps its shape across visits. A finer identity is #202's "seed by
+ * station id" and lands with it.
+ *
+ * Every module is the hub's colour where it is a hull and unpainted grey
+ * where it is structure, so §7's colour cue survives the form.
+ */
+function buildTradeModular(color: number, berthSeed: number): BuiltPart {
+	const r = STATION_GEOMETRY.trade.coreRadiusKm;
+	const c = MODULAR_CELL_KM;
+	const group = new THREE.Group();
+	const fixtures: StationFixture[] = [];
+	const { placements } = modularPlacements(berthSeed);
+	const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+	const plane = STATION_GEOMETRY.trade.aperturePlaneKm;
+	const structure = plainMaterial(0x6f7d88, 0.78, 0.42);
+
+	// The hub, and it spins: a twelve-sided drum with the slot cut into its
+	// +Z cap, 0.34·r across — the smallest drum the bay fits in with a wall.
+	const hubR = r * 0.34;
+	const spun = new THREE.Group();
+	spun.name = "spun";
+	spun.add(
+		shell(
+			[
+				{ z: -r * 0.3, w: hubR * 0.78, h: hubR * 0.78, e: 2 },
+				{ z: -r * 0.2, w: hubR, h: hubR, e: 2, hard: true },
+				{ z: r * 0.6, w: hubR, h: hubR, e: 2, hard: true },
+				{ z: plane, w: hubR * 0.92, h: hubR * 0.92, e: 2 },
+			],
+			hullMaterial(color, "trade"),
+			"core",
+			12,
+			true,
+			apertureCut("trade"),
+		),
+	);
+	spun.add(buildAperture("trade", plane, berthSeed));
+	group.add(spun);
+
+	const pools = new Pools();
+	const tubeR = c * 0.24;
+	const tubes: Placement[] = [];
+	/** The unit vector of a `DIRECTIONS` index, in the grid's plane. */
+	const toward = (dir: number) => V(DIRECTIONS[dir][0], DIRECTIONS[dir][1], 0);
+	/** A docking collar on a tube's or the hub's port. */
+	const collar = (at: THREE.Vector3, axis: "x" | "y", radius: number) => {
+		const ring = new THREE.Mesh(
+			new THREE.TorusGeometry(radius * 1.02, radius * 0.12, 4, 16),
+			structure,
+		);
+		ring.position.copy(at);
+		if (axis === "x") ring.rotation.y = Math.PI / 2;
+		else ring.rotation.x = Math.PI / 2;
+		ring.name = "collar";
+		group.add(ring);
+	};
+	for (const p of placements) {
+		const cx = p.dx * c;
+		const cy = p.dy * c;
+		const centre = V(cx, cy, 0);
+		switch (p.module) {
+			case HUB:
+				// The hub's own ports, where a tube or a truss runs into it.
+				for (let dir = 0; dir < 4; dir++)
+					if (p.joined[dir])
+						collar(
+							toward(dir).multiplyScalar(hubR * 0.96),
+							dir < 2 ? "x" : "y",
+							tubeR * 1.15,
+						);
+				break;
+			case TUBE_X:
+			case TUBE_Y: {
+				const tube = shell(
+					[
+						{ z: -c * 0.5, w: tubeR * 0.8, h: tubeR * 0.8, e: 2, hard: true },
+						{ z: -c * 0.42, w: tubeR, h: tubeR, e: 2, hard: true },
+						{ z: c * 0.42, w: tubeR, h: tubeR, e: 2, hard: true },
+						{ z: c * 0.5, w: tubeR * 0.8, h: tubeR * 0.8, e: 2 },
+					],
+					hullMaterial(color, "trade"),
+					`module-${p.dx}-${p.dy}`,
+					12,
+					true,
+				);
+				if (p.module === TUBE_X) tube.rotation.y = Math.PI / 2;
+				else tube.rotation.x = Math.PI / 2;
+				tube.position.copy(centre);
+				group.add(tube);
+				// A collar on every docked end, along the tube's own axis only.
+				const axisDirs = p.module === TUBE_X ? [0, 1] : [2, 3];
+				for (const dir of axisDirs)
+					if (p.joined[dir])
+						collar(
+							centre.clone().addScaledVector(toward(dir), c * 0.5),
+							p.module === TUBE_X ? "x" : "y",
+							tubeR,
+						);
+				tubes.push(p);
+				break;
+			}
+			case NODE: {
+				const node = shell(
+					[
+						{ z: -c * 0.28, w: c * 0.3, h: c * 0.3, e: 2, hard: true },
+						{ z: c * 0.28, w: c * 0.3, h: c * 0.3, e: 2 },
+					],
+					hullMaterial(color, "trade"),
+					`node-${p.dx}-${p.dy}`,
+					12,
+					true,
+				);
+				node.position.copy(centre);
+				group.add(node);
+				// A docking stub out to the cell's edge on every joined side, with
+				// a collar: the drum is 0.3 cells across and its neighbour starts
+				// at 0.5, and `tests/station-mesh.test.ts`'s island check read a
+				// tip node as adrift of the tube it was meant to be docked to.
+				for (let dir = 0; dir < 4; dir++) {
+					if (!p.joined[dir]) continue;
+					const stub = shell(
+						[
+							{
+								z: c * 0.2,
+								w: tubeR * 0.85,
+								h: tubeR * 0.85,
+								e: 2,
+								hard: true,
+							},
+							{ z: c * 0.5, w: tubeR * 0.85, h: tubeR * 0.85, e: 2 },
+						],
+						hullMaterial(color, "trade"),
+						`node-stub-${p.dx}-${p.dy}-${dir}`,
+						12,
+						true,
+					);
+					// The loft runs along +Z; turn it onto the stub's direction.
+					stub.quaternion.setFromUnitVectors(
+						new THREE.Vector3(0, 0, 1),
+						toward(dir),
+					);
+					stub.position.copy(centre);
+					group.add(stub);
+					collar(
+						centre.clone().addScaledVector(toward(dir), c * 0.5),
+						dir < 2 ? "x" : "y",
+						tubeR * 0.85,
+					);
+				}
+				break;
+			}
+			case TRUSS_X:
+			case TRUSS_Y: {
+				const axis = toward(p.module === TRUSS_X ? 1 : 3);
+				truss(
+					pools,
+					centre.clone().addScaledVector(axis, -c * 0.5),
+					centre.clone().addScaledVector(axis, c * 0.5),
+					c * 0.22,
+					V(0, 0, 1),
+				);
+				break;
+			}
+			case RADIATOR: {
+				// A spine from the host's edge across the cell, panels on it
+				// standing out of the plane both ways.
+				const host = p.host < 0 ? 1 : p.host;
+				const away = toward(host).negate();
+				const origin = centre.clone().addScaledVector(toward(host), c * 0.5);
+				for (const up of [V(0, 0, 1), V(0, 0, -1)])
+					radiatorArray(pools, origin, away, up, 4, c * 0.4, c * 0.4);
+				break;
+			}
+			case TANKS: {
+				const host = p.host < 0 ? 1 : p.host;
+				// A stub from the host's edge to the rack.
+				truss(
+					pools,
+					centre.clone().addScaledVector(toward(host), c * 0.5),
+					centre,
+					c * 0.1,
+					V(0, 0, 1),
+				);
+				tankRack(
+					pools,
+					centre.clone().add(V(0, 0, -c * 0.1)),
+					toward(host),
+					V(0, 0, 1),
+					3,
+					c * 0.09,
+					c * 0.7,
+				);
+				break;
+			}
+			case DISH: {
+				const host = p.host < 0 ? 1 : p.host;
+				truss(
+					pools,
+					centre.clone().addScaledVector(toward(host), c * 0.5),
+					centre,
+					c * 0.1,
+					V(0, 0, 1),
+				);
+				mast(pools, group, centre, V(0, 0, 1), c * 0.6, c * 0.12);
+				break;
+			}
+		}
+	}
+	pools.emit(group, "module");
+
+	// Lit ports along the +Z face of every habitat tube: they are where the
+	// crew lives, and a plan with more tubes has more windows.
+	group.add(
+		portRun("trade", tubes.length * 2, (i, count, position, normal) => {
+			const perTube = Math.max(1, Math.ceil(count / tubes.length));
+			const tube = tubes[i % tubes.length];
+			const slot = (Math.floor(i / tubes.length) + 0.5) / perTube;
+			// Along the tube's own axis, in its **outboard** half: the two
+			// planted tubes sit against the hub, and a port on their inboard
+			// half is inside 0.4 of the core radius — where
+			// `tests/station-mesh.test.ts` reads a pane as buried rather than
+			// out on a shell.
+			const outboard = toward(
+				tube.module === TUBE_X ? (tube.dx >= 0 ? 1 : 0) : tube.dy >= 0 ? 3 : 2,
+			);
+			normal.set(0, 0, 1);
+			position
+				.set(tube.dx * c, tube.dy * c, tubeR * 0.98)
+				.addScaledVector(outboard, (0.25 + slot * 0.2) * c);
+		}),
+	);
+	// The strobes on the spine's two ends, which are the assembly's beam.
+	group.add(
+		strobePair("trade", fixtures, r * 0.06, (side, position) => {
+			position.set(0, side * (MODULAR_RADIUS * c + c * 0.5), 0);
+		}),
+	);
+	// Clutter on the hub's own flank, between the ports of its docked tubes.
+	group.add(
+		greebleRun(
+			"trade",
+			"trade-d",
+			[
+				{
+					count: 16,
+					sizeKm: hubR * 0.09,
+					reliefKm: hubR * 0.08,
+					place: (i, count, position, normal) => {
+						const { theta } = ringAt(i, count);
+						normal.set(Math.cos(theta), Math.sin(theta), 0);
+						// Two bands above the docking collars, which sit at z = 0 and
+						// stand proud of the drum: a piece snapped onto a collar's
+						// rim has no drum under it within its own height.
+						position
+							.copy(normal)
+							.multiplyScalar(hubR)
+							.setZ(r * 0.14 + (i % 2) * r * 0.2);
+					},
+				},
+			],
+			group,
+		),
+	);
+	return { group, fixtures, spinner: spun };
+}
+
 export const STATION_FORMS: Record<StationType, StationForm[]> = {
 	trade: [
 		{
@@ -3233,6 +3549,18 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			thesis: "O'Neill barrel end-on; length rather than width is the cue",
 			reachKm: 0.66,
 			build: buildTradeDrum,
+		},
+		{
+			id: "d",
+			name: "Assembly",
+			thesis:
+				"a hub and a truss spine with modules solved onto a grid by wave function collapse",
+			// The diamond's tips are 0.9 km out along the spine, and a leaf
+			// beside a tip reaches 0.89; the strobes sit at 0.9. Nothing on the
+			// field can pass 1.0, and `tests/station-mesh.test.ts` measures
+			// every plan the tests build against it.
+			reachKm: 1.0,
+			build: buildTradeModular,
 		},
 	],
 	shipyard: [

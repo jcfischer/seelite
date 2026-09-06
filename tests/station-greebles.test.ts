@@ -432,7 +432,9 @@ describe("#129 — the windows are dense enough to read as inhabited", () => {
 		// assertion silently starts comparing against another form's count, and
 		// nothing goes red.
 		const before: Record<StationType, Record<string, number>> = {
-			trade: { a: 28, b: 28, c: 28 },
+			// `d` is the modular assembly (#202) and post-dates #36; its floor is
+			// the honest one, that it carries panes at all.
+			trade: { a: 28, b: 28, c: 28, d: 0 },
 			shipyard: { a: 16, b: 16, c: 12 },
 			refinery: { a: 12, b: 12, c: 10 },
 			outpost: { a: 6, b: 6, c: 6 },

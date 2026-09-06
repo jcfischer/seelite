@@ -95,7 +95,7 @@ type MaterialName = keyof typeof MATERIALS;
  * One station's instance pools: a list of matrices per (geometry, material),
  * emitted as one `InstancedMesh` each when the fixtures are done.
  */
-class Pools {
+export class Pools {
 	private readonly lists = new Map<
 		string,
 		{
@@ -179,7 +179,7 @@ function frameAround(direction: THREE.Vector3, upHint: THREE.Vector3) {
  * frame at every bay, one diagonal per face per bay alternating in direction.
  * The ISS's integrated truss, at whatever width a form asks for.
  */
-function truss(
+export function truss(
 	pools: Pools,
 	a: THREE.Vector3,
 	b: THREE.Vector3,
@@ -240,7 +240,7 @@ function truss(
  * The ISS's radiators, stacked rather than unfolded so the array reads as a
  * bank of fins from every side.
  */
-function radiatorArray(
+export function radiatorArray(
 	pools: Pools,
 	origin: THREE.Vector3,
 	along: THREE.Vector3,
@@ -284,7 +284,7 @@ function radiatorArray(
 }
 
 /** Cylinders side by side in two saddles, resting on the surface. */
-function tankRack(
+export function tankRack(
 	pools: Pools,
 	origin: THREE.Vector3,
 	along: THREE.Vector3,
@@ -325,7 +325,7 @@ function tankRack(
 }
 
 /** A polyline of tubes with a block at each elbow. */
-function pipeRun(
+export function pipeRun(
 	pools: Pools,
 	points: readonly THREE.Vector3[],
 	radiusKm: number,
@@ -345,7 +345,7 @@ function pipeRun(
 }
 
 /** A truss mast with a dish on top. Returns where the top is, for a beacon. */
-function mast(
+export function mast(
 	pools: Pools,
 	into: THREE.Group,
 	base: THREE.Vector3,
@@ -358,7 +358,7 @@ function mast(
 	const dish = new THREE.Mesh(
 		revolve(
 			[
-				[widthKm * 0.3, 0],
+				[widthKm * 0.3, -widthKm * 0.6],
 				[widthKm * 1.6, widthKm * 0.5],
 				[widthKm * 1.9, widthKm * 0.8],
 			],

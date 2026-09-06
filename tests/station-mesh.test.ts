@@ -513,7 +513,7 @@ describe("§13.1 — the opening is a hole, and the lane behind it is clear", ()
 
 	test("exactly the slot roles draw a bay", () => {
 		// The filter above is a claim about the pool, so it is asserted rather
-		// than trusted — six forms, and they are the ones with a slot.
+		// than trusted — seven forms since #202, and they are the ones with a slot.
 		for (const type of TYPES)
 			for (const form of STATION_FORMS[type]) {
 				const { root } = buildStationForm(type, form.id, GREY, 0);
@@ -522,7 +522,7 @@ describe("§13.1 — the opening is a hole, and the lane behind it is clear", ()
 					STATION_GEOMETRY[type].aperture.kind === "slot",
 				]);
 			}
-		expect(bayForms().length).toBe(6);
+		expect(bayForms().length).toBe(7);
 	});
 
 	/**
