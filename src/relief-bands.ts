@@ -138,33 +138,48 @@ export function reliefPathFor(
 }
 
 /**
- * How many screen pixels one cube-map texel covers, at this apparent size.
+ * Screen pixels per cube texel **averaged over the visible cap**.
  *
- * #208 asks which face resolution a baked planet needs, and the answer is not a
- * preference. A cube texel subtends a fixed **angle** — about `90° / facePx` at
- * face centre — while the visible cap of a sphere at `m` radii spans
- * `2·acos(1/m)` of surface arc across the disc's projected diameter. Approach a
- * body and the disc grows while the cap it shows *shrinks*, so the two move
- * against each other and no face size closes the gap.
+ * How much of the height field a cube can hold at the size the body is drawn:
+ * the disc's diameter divided by the number of texels the visible cap spans. A
+ * cube texel subtends a fixed angle — at face centre `2 / facePx` radians — and
+ * the cap at `m` radii spans `2·acos(1/m)` of surface arc, so approaching a body
+ * grows the disc while shrinking the cap it shows and the two move against each
+ * other.
  *
- * Read off the repo's own fov 60 and a 900 px frame (`focalPx` 779.4), over
- * #207's rungs, in screen pixels per texel:
+ * **This is the average and not a bound, and the difference is sage's**
+ * (PR #256). At the sub-camera point the surface is face-on and the same texel
+ * spans `peakPxPerCubeTexel` below — 2.5 times this at two and a half radii —
+ * so a docstring calling this "the most screen pixels one texel may cover" was
+ * false by that factor. Both are kept because they answer different questions
+ * and the wrong one was being asked:
+ *
+ * - the **peak** is what magnification looks like at the worst pixel;
+ * - the **average** is what the cube can *resolve*, and it is the one that
+ *   predicts whether the two programs agree. Measured: a 512 face at 2.5 radii
+ *   is 0.41 here and 3.04 at the peak, and the baked and procedural discs match
+ *   to one code out of 255 across every patch. A 256 face at 4 radii is 0.91
+ *   here and a *lower* 2.03 at the peak, and reads 2.1% — so what separates the
+ *   two rungs tracks this measure and not the peak, which is the argument for
+ *   selecting on it.
+ *
+ * Read off the repo's own fov 60 and a 900 px frame (`focalPx` 779.4):
  *
  *     m       disc radius px   256      512     1024
  *     1.02        764.1        23.64    11.82    5.91
- *     2           389.7         2.28     1.14    0.57
- *     3           259.8         1.30     0.65    0.32
- *     8            97.4         0.41     0.21    0.10
- *     20           39.0         0.16     0.08    0.04
+ *     2           389.7         2.28     1.14     0.57
+ *     3           259.8         1.30     0.65     0.32
+ *     8            97.4         0.41     0.21     0.10
+ *     20           39.0         0.16     0.08     0.04
  *
- * A **filling** planet would need faces around 6,000 px to reach one pixel per
- * texel. That is the finding that shapes this node: the bake cannot serve the
- * frame #248 measured at 43.5 ms, and 512 px faces reach parity at about two
- * radii — which is exactly where #207's four-tap band already begins.
+ * A **filling** planet would need faces around 6,000 px to reach one screen
+ * pixel per texel even by this measure, and 150,000 by the peak. That is the
+ * finding that shapes the node: the bake cannot be sharp at a frame it can
+ * nonetheless draw for 7.9 ms instead of 44.6.
  *
  * `m` is recovered from the apparent radius rather than passed, because the
  * frame loop has the apparent radius already and the two carry the same fact:
- * `radiusPx = focal / m`. Inside the surface (`m ≤ 1`) there is no cap and no
+ * `radiusPx = focal / m`. Inside the surface (`m <= 1`) there is no cap and no
  * finite answer, which is `Infinity` rather than a clamp — a caller must not
  * silently bake a body the camera is inside.
  */
@@ -182,15 +197,64 @@ export function pxPerCubeTexel(
 }
 
 /**
- * The most screen pixels one cube texel may cover before the bake is refused.
+ * Screen pixels per cube texel **at the worst pixel** — the sub-camera point.
  *
- * One, and it is a resolution argument rather than a tuned figure: at one pixel
- * per texel a sampled cube carries every detail the screen can show, and above
- * it the surface is being magnified — soft where the procedural program is
- * crisp. It is the single authored constant of the band; the *threshold in
- * pixels* is derived from it through `pxPerCubeTexel`, so it follows the
- * viewport and the face size instead of being a magic 390 that is right for one
- * window height and wrong for every other.
+ * There the surface is face-on and the arc a texel subtends is divided by the
+ * *altitude* rather than by the distance to the body's centre, so this rises
+ * without bound as the camera lands. A cube face's texels are not uniform in
+ * angle either: its directions are `normalize(u, v, 1)` with `u` spanning
+ * [-1, 1] across `facePx` texels, so at face centre one texel is `2 / facePx`
+ * radians and towards a corner it is less — the centre is the widest and
+ * therefore the one a bound is about.
+ *
+ * Nothing selects on this. It exists because the band selects on an *average*
+ * and a reader is owed the number that average is not: at the band's own
+ * threshold the peak magnification is about 2.5x, and calling the average a
+ * bound is the claim sage caught (PR #256).
+ *
+ *     m       256      512     1024
+ *     1.02   304.5    152.2     76.1
+ *     2        6.09     3.04     1.52
+ *     3        3.04     1.52     0.76
+ *     8        0.87     0.43     0.22
+ */
+export function peakPxPerCubeTexel(
+	radiusPx: number,
+	focal: number,
+	facePx: number,
+): number {
+	if (radiusPx <= 0 || facePx <= 0) return Number.POSITIVE_INFINITY;
+	const m = focal / radiusPx;
+	if (!(m > 1)) return Number.POSITIVE_INFINITY;
+	return (focal * (2 / facePx)) / (m - 1);
+}
+
+/**
+ * How coarse a cube may be, in screen pixels per texel averaged over the cap,
+ * before the bake is refused.
+ *
+ * One, which is parity by that measure: the cube holds a texel for every pixel
+ * the disc covers. It is **not** parity at the worst pixel, where the same
+ * threshold is about 2.5 screen pixels per texel — see `peakPxPerCubeTexel`,
+ * and see why the average is nonetheless the criterion that predicts agreement.
+ *
+ * What the figure is worth, measured rather than argued:
+ *
+ * - a terran world at 2 radii on a 512 face — 0.57 by this measure — reads 0.13%
+ *   of pixels moved past 24/255 between the two programs, and the frames cannot
+ *   be told apart by eye;
+ * - `probe-planet-surfaces.mjs` compares patch means at 4 radii on a 256 face
+ *   (0.91) and 2.5 radii on a 512 (0.41), with `four-tap` pinned on the control
+ *   arm, and reads 2.1% and 1.2% of the disc mean against a corrupted bake's
+ *   47.6% and 31.8%.
+ *
+ * What is *not* claimed is that nothing changes. `planet-terminator` frames a
+ * body at about 4.3 radii on a 256 face — 0.85 — and the baked surface there is
+ * visibly **smoother**, 4.76% of the frame against a same-build control of
+ * 0.00%. So this constant is the dial the principal rules on, and lowering it
+ * trades the near rungs back for sharpness: at 0.5 the band would start at about
+ * 3.3 radii, keeping 3 r (10.8 ms against 3.5) and giving up 2 r (24.8 against
+ * 5.3).
  */
 export const BAKE_MAX_PX_PER_TEXEL = 1;
 
@@ -205,13 +269,13 @@ export const BAKE_MAX_PX_PER_TEXEL = 1;
  * and the ship. Every planet in the game held a 256 cube however close it got,
  * and the 512 rung was never allocated.
  *
- * Two sizes and a cap of 512. A 256 face reaches one screen pixel per texel at
- * about 3.4 radii and a 512 at about 2.15, so the second rung is what brings
- * the 3-radius and 2-radius frames — 14.3 ms and 27.5 ms procedural against
- * 5.6 and 7.7 baked, at device scale 2 — inside the band at all. A third rung
- * would buy the 1.5-radius frame and cost 64 MB on one body; `pxPerCubeTexel`'s
- * table says what it would take to reach a *filling* planet, which is faces
- * around 6,000 px, and that is the rung no cap reaches.
+ * Two sizes and a cap of 512. A 256 face reaches `BAKE_MAX_PX_PER_TEXEL` at
+ * about 3.69 radii and a 512 at about 2.18, so the second rung is what brings
+ * the 3-radius and 2-radius frames — 10.8 ms and 24.8 ms procedural against
+ * 3.5 and 5.3 baked, at device scale 2 — inside the band at all. A third rung
+ * would buy the 1.5-radius frame and cost 64 MB on one body, and no rung any
+ * GPU will allocate reaches a *filling* planet: `pxPerCubeTexel`'s table has a
+ * 512 face at 152 screen pixels per texel there.
  */
 export const BAKE_FACE_SIZES = [256, 512] as const;
 

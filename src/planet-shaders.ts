@@ -342,9 +342,16 @@ varying vec3 vCenter;
 varying float vRadius;
 `;
 
-export const SURFACE_VERTEX = /* glsl */ `
-${VARYINGS_GLSL}
-void main() {
+/**
+ * The body of every surface vertex shader, spelled once.
+ *
+ * Two programs write these varyings — the procedural one and #208's baked one,
+ * which adds three of its own — and they have to agree about all five or the
+ * lighting, the atmosphere's chord and the relief's tangent frame disagree
+ * between the two paths in ways no test looks for. Interpolated rather than
+ * duplicated (sage, PR #256).
+ */
+export const SURFACE_VERTEX_BODY = /* glsl */ `
   vObjP   = normalize(position);
   vec4 world = modelMatrix * vec4(position, 1.0);
   vWorldP = world.xyz;
@@ -352,6 +359,12 @@ void main() {
   vCenter = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
   vRadius = length(world.xyz - vCenter);
   gl_Position = projectionMatrix * viewMatrix * world;
+`;
+
+export const SURFACE_VERTEX = /* glsl */ `
+${VARYINGS_GLSL}
+void main() {
+${SURFACE_VERTEX_BODY}
 }
 `;
 
@@ -802,17 +815,11 @@ export const BAKED_SURFACE_VERTEX = /* glsl */ `
 ${VARYINGS_GLSL}
 ${BAKED_BASIS_VARYINGS}
 void main() {
-  vObjP   = normalize(position);
-  vec4 world = modelMatrix * vec4(position, 1.0);
-  vWorldP = world.xyz;
-  vWorldN = normalize(mat3(modelMatrix) * normal);
-  vCenter = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-  vRadius = length(world.xyz - vCenter);
+${SURFACE_VERTEX_BODY}
   mat3 rot = mat3(modelMatrix);
   vBx = rot[0];
   vBy = rot[1];
   vBz = rot[2];
-  gl_Position = projectionMatrix * viewMatrix * world;
 }
 `;
 

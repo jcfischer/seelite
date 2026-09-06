@@ -351,7 +351,7 @@ describe("resolution and memory", () => {
 		// 16 MB to draw a body four pixels across.
 		expect(bakeFacePxFor(FOCAL / 30, FOCAL, null)).toBe(256);
 		expect(bakeFacePxFor(FOCAL / 8, FOCAL, null)).toBe(256);
-		// Inside the small cube's reach — about 3.4 radii — the large one.
+		// Inside the small cube's reach — about 3.69 radii — the large one.
 		expect(bakeFacePxFor(FOCAL / 3, FOCAL, null)).toBe(512);
 		expect(bakeFacePxFor(FOCAL / 2, FOCAL, null)).toBe(512);
 		// And past the largest face's reach it stays at the cap rather than

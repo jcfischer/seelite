@@ -20,6 +20,7 @@ import {
 	SCREEN_SPACE_BELOW_PX,
 	focalPx,
 	projectedRadiusPx,
+	peakPxPerCubeTexel,
 	pxPerCubeTexel,
 	reliefPathFor,
 	surfacePathFor,
@@ -290,6 +291,19 @@ describe("the bake band", () => {
 		expect(cell(3, 512)).toBe(0.65);
 		expect(cell(8, 256)).toBe(0.41);
 		expect(cell(20, 256)).toBe(0.16);
+
+		// And the **peak**, which is the other question and about 2.5x this at
+		// the band's own threshold. Kept beside the average so the pair cannot
+		// drift into being read as one number (sage, PR #256).
+		const peak = (m: number, facePx: number) =>
+			Number(peakPxPerCubeTexel(FOCAL / m, FOCAL, facePx).toFixed(2));
+		expect(peak(1.02, 512)).toBe(152.23);
+		expect(peak(2, 512)).toBe(3.04);
+		expect(peak(3, 512)).toBe(1.52);
+		expect(peak(8, 256)).toBe(0.87);
+		// The threshold the band actually selects on, read both ways.
+		expect(cell(2.18, 512)).toBeCloseTo(1.0, 1);
+		expect(peak(2.18, 512)).toBeCloseTo(2.58, 1);
 	});
 
 	test("no face size a GPU will allocate serves a filling planet", () => {
@@ -297,19 +311,23 @@ describe("the bake band", () => {
 		// the pixels per texel, so this is the claim that the doubling has to go on
 		// far past anything sane — and it is what makes #208 a band rather than a
 		// replacement for the procedural program.
+		//
 		const fill = FOCAL / 1.02;
-		expect(pxPerCubeTexel(fill, FOCAL, 2048)).toBeGreaterThan(
-			BAKE_MAX_PX_PER_TEXEL,
-		);
-		expect(pxPerCubeTexel(fill, FOCAL, 4096)).toBeGreaterThan(
-			BAKE_MAX_PX_PER_TEXEL,
-		);
-		// And the size it would take, to within a power of two. `MAX_CUBE_MAP_SIZE`
-		// is commonly 16384 on a desktop GPU, so the memory this asks for is six
-		// faces of 8192² — 1.6 GB per body at RGBA8 — which is the real refusal.
+		for (const facePx of [2048, 4096])
+			expect(
+				pxPerCubeTexel(fill, FOCAL, facePx),
+				`${facePx} px faces`,
+			).toBeGreaterThan(BAKE_MAX_PX_PER_TEXEL);
+		// The size it would take, to within a power of two — and the point is what
+		// that costs rather than that it exists: six faces of 8192 is 1.6 GB per
+		// body at RGBA8, on one planet, so the refusal is memory and not
+		// arithmetic. By the **peak** measure even this is 9.5 screen pixels per
+		// texel at the sub-camera point, which is the sharper way to say it: the
+		// average reaching parity does not mean the worst pixel has.
 		expect(pxPerCubeTexel(fill, FOCAL, 8192)).toBeLessThanOrEqual(
 			BAKE_MAX_PX_PER_TEXEL,
 		);
+		expect(peakPxPerCubeTexel(fill, FOCAL, 8192)).toBeGreaterThan(9);
 	});
 
 	test("inside the surface there is no cap and no finite answer", () => {

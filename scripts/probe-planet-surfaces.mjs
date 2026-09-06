@@ -489,7 +489,25 @@ const settleBakes = () =>
 			timeout: 60_000,
 		},
 	);
+
+/**
+ * **Read before a single bake face has been drawn** — the baseline for the
+ * warm-up check far below (sage, PR #256).
+ *
+ * The pre-warm runs in the `Game` constructor, before any frame; the first
+ * `stepBakes` is what would compile the bake programs if it had not. So the
+ * only moment this baseline means anything is *here*, before the queue is
+ * settled. Taken after the first bake — which the first version did, twice over
+ * — the shaders are already compiled by drawing and the comparison is green
+ * with the warm-up deleted.
+ */
+const programsBeforeAnyBake = await page.evaluate(
+	() => window.__seelite.renderer.info.programs?.length ?? -1,
+);
 await settleBakes();
+const programsAfterFirstBake = await page.evaluate(
+	() => window.__seelite.renderer.info.programs?.length ?? -1,
+);
 
 /* 2. #207's bands: the program a planet is drawn with follows its apparent size.
  *
@@ -700,13 +718,12 @@ await settleBakes();
 		 * The decomposition reads the procedural frame at 24.8 ms at two radii and
 		 * the baked one at 5.3, device scale 2. Asserted at two and a **half**
 		 * because that is inside the band and two is not: a 512 face is 1.14
-		 * screen pixels per texel at two radii and reaches parity at about 2.15,
-		 * so the crossing sits just outside the rung the ladder prints. A check
-		 * written at the rung would be asserting the wrong side of a threshold it
-		 * had not worked out.
+		 * screen pixels per texel at two radii and crosses the tolerance at about
+		 * 2.18, so a check written at the rung the ladder prints would be sitting
+		 * on the threshold — green or red on the third decimal of the viewport.
 		 *
 		 * It is reachable at all only because the face size follows apparent size:
-		 * a 256 cube gives up at about 3.4 radii. A regression that put the size
+		 * a 256 cube gives up at about 3.69 radii. A regression that put the size
 		 * back on the render layer would leave every other check here green.
 		 */
 		const bakedTwo = await pathAt(2.5, baker);
@@ -740,26 +757,78 @@ await settleBakes();
 		 * more than the band below; a whole-disc mean would not see it at all,
 		 * which is why this is per patch.
 		 *
-		 * The band is **stated rather than tuned**: the two programs do not agree
-		 * exactly and are not meant to. A 256 cube samples the height field at
-		 * 0.35° a texel and the procedural path samples it per pixel, and both are
-		 * under the field's own frequency — so the relief normals differ by
-		 * genuinely different undersampling, not by an error in either. 12% of the
-		 * patch mean is what that is worth here; a face basis error is several
-		 * times it.
+		 * The band is **stated rather than tuned**, and the separation is measured
+		 * both ways. With both arms pinned the two programs read 2.1% of the disc
+		 * mean apart at four radii and 1.2% at two and a half; against a
+		 * deliberately corrupted bake — a randomised `seedOffset` in the pinned
+		 * bake uniforms — the same comparisons read 47.6% and 31.8%. 12% sits an
+		 * order of magnitude from either side.
 		 */
 		const AGREEMENT = 0.12;
+		/**
+		 * **The shells come off and the clock is re-pinned**, or this measures the
+		 * weather.
+		 *
+		 * A terran world's cloud deck drifts with the clock and the two arms are
+		 * captured seconds apart, so the first version of this read 98.9% of the
+		 * disc mean on surfaces that agree to about one per cent by pixel count —
+		 * a measurement defect that looks exactly like a broken face basis.
+		 * Hiding the shells removes the drift; re-pinning the clock removes the
+		 * orbital motion that walks the terminator across the disc.
+		 */
+		const CLOCK_S = 4000;
+		const setShells = async (on) =>
+			page.evaluate(async (visible) => {
+				const mod = await import("/src/perf-panel.ts");
+				mod.setShells(
+					[
+						window.__seelite.nearScene,
+						window.__seelite.approachScene,
+						window.__seelite.farScene,
+					],
+					{ atmosphere: visible, clouds: visible },
+				);
+			}, on);
+		await setShells(false);
+		/**
+		 * **Both arms are pinned**, and the procedural one to `four-tap` by name.
+		 *
+		 * The check is about the two *programs*, not about the selector, so
+		 * leaving the control to the band makes it whatever the band picks — which
+		 * at four radii is `screen-space`, a third program with its own coarser
+		 * slope. That is what this measured for a round: 19.3% at four radii and
+		 * 1.0% at two and a half, which reads as "the cube is worse further away"
+		 * and is really "the control changed underneath it". `four-tap` is the
+		 * reference look both the bake and this comparison are about.
+		 */
 		const signatureAt = async (radii, allowed) => {
+			await page.evaluate((t) => window.__startClockAt(t), CLOCK_S);
 			await page.evaluate((v) => window.__seelite.setBakeAllowed(v), allowed);
 			await page.evaluate(
 				([id, r]) => window.__sunOffset(id, r, 60),
 				[baker, radii],
 			);
 			await settleBakes();
+			await page.evaluate(
+				(pin) => window.__seelite.setSurfacePin(pin),
+				allowed ? "baked" : "four-tap",
+			);
 			await page.evaluate(() => {
 				window.__seelite.render(0);
 				window.__seelite.render(0);
 			});
+			// Read back rather than assumed: a pin is refused on a body with no
+			// complete cube, and a refused arm would print as agreement.
+			const drawnWith = await page.evaluate(
+				(id) => window.__seelite.bodyVisuals.get(id).surfacePath(),
+				baker,
+			);
+			const wanted = allowed ? "baked" : "four-tap";
+			if (drawnWith !== wanted)
+				throw new Error(
+					`the agreement check asked for "${wanted}" at ${radii} radii and ` +
+						`${baker} is drawn with "${drawnWith}"`,
+				);
 			return page.evaluate(
 				([id, grid]) => window.__bodySignature(id, grid),
 				[baker, 6],
@@ -772,10 +841,9 @@ await settleBakes();
 		 * it per cell is a seventeen-pixel patch and the ones at the rim are
 		 * mostly limb — the means are dominated by the terminator, where a small
 		 * normal difference is a large luma one. Measured on a deliberately
-		 * corrupted bake (a randomised `seedOffset` in the pinned uniforms), the
-		 * check reads 22.9% there against 20.5% for a correct one: it cannot
-		 * separate them. At four radii the same corruption reads 15.7% against
-		 * 4.5%, which is the separation a gate needs. The rungs are chosen from
+		 * corrupted bake, the check read 22.9% there against 20.5% for a correct
+		 * one: it cannot separate them. At the two rungs below the same corruption
+		 * reads 47.6% and 31.8% against 2.1% and 1.2%. The rungs are chosen from
 		 * that measurement rather than from where the interesting sizes are.
 		 */
 		for (const radii of [4, 2.5]) {
@@ -810,7 +878,9 @@ await settleBakes();
 					`\n           ${pairs.map(([a, b]) => `${luma(a).toFixed(0)}/${luma(b).toFixed(0)}`).join(" ")}`,
 			);
 		}
+		await page.evaluate(() => window.__seelite.setSurfacePin(null));
 		await page.evaluate(() => window.__seelite.setBakeAllowed(true));
+		await setShells(true);
 
 		/**
 		 * **Bake twice, and the texels are identical** — the node's step 5.
@@ -909,21 +979,18 @@ await settleBakes();
 		 * are keyed to the wrong colour space, and left uncompiled they land on the
 		 * frame after a jump — the one frame the node says must not stall.
 		 *
-		 * A fresh bake is started and stepped to completion; if the two programs
-		 * were already there the count does not move.
+		 * The two counts are read at the **top of the file**, either side of the
+		 * first settle, because that is the only place the comparison can fail. A
+		 * later rebake compiles nothing whatever the warm-up did, since the first
+		 * one already compiled everything by drawing — which is what the first
+		 * version of this check measured (sage, PR #256).
 		 */
-		const beforeBake = await page.evaluate(
-			() => window.__seelite.renderer.info.programs?.length ?? -1,
-		);
-		await page.evaluate((id) => window.__seelite.rebake(id, 256), baker);
-		await settleBakes();
-		const afterBake = await page.evaluate(
-			() => window.__seelite.renderer.info.programs?.length ?? -1,
-		);
 		check(
-			"a fresh bake compiles no new program",
-			beforeBake > 0 && afterBake === beforeBake,
-			`${beforeBake} programs before the bake, ${afterBake} after`,
+			"drawing the first cube face of the session compiles no new program",
+			programsBeforeAnyBake > 0 &&
+				programsAfterFirstBake === programsBeforeAnyBake,
+			`${programsBeforeAnyBake} programs before any bake face was drawn, ` +
+				`${programsAfterFirstBake} after the boot queue emptied`,
 		);
 	}
 }

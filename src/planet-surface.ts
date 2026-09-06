@@ -518,15 +518,18 @@ export function buildBodyVisual(
 	 * *same* swap and the *opposite* answer about ownership: an external write
 	 * takes the body off #207's bands, and the bands' own write must not.
 	 */
+	/** The program that shipped before #208, and the one every class and relief
+	 *  patch below targets **by name**. Reaching `planet.material` instead
+	 *  reaches whichever is attached, which on a baked body is the cube's. */
+	const proceduralMaterial = planet.material as THREE.ShaderMaterial;
 	const swapReliefProgram = (next: ReliefPath) => {
 		if (look.surface === "star") return;
 		if (planet.userData.reliefPath === next) return;
-		const material = planet.material as THREE.ShaderMaterial;
-		material.fragmentShader = cachedFragment(
+		proceduralMaterial.fragmentShader = cachedFragment(
 			planet.userData.surfaceClass,
 			next,
 		);
-		material.needsUpdate = true;
+		proceduralMaterial.needsUpdate = true;
 		planet.userData.reliefPath = next;
 	};
 	planet.userData.setSurfacePath = (next: SurfacePath) => {
@@ -551,12 +554,11 @@ export function buildBodyVisual(
 	 * shipped and is untouched, which is what keeps #207's programs identical.
 	 */
 	const bakeable = isBakeable(look.surface);
-	const proceduralMaterial = planet.material as THREE.ShaderMaterial;
 	/**
 	 * **Two bakes, and the reason is the handoff.**
 	 *
-	 * `ready` is a complete pair of cubes and the material that samples them;
-	 * `filling` is a bake in flight. A body crossing into the near layer starts a
+	 * `ready` is a complete pair of cubes and `filling` is a bake in flight; the
+	 * material that samples them is below and outlives both. A body crossing into the near layer starts a
 	 * 512 bake while it is being drawn from its 256 one, and freeing the old pair
 	 * at that moment would drop it back to the procedural program for the twelve
 	 * frames the new one takes — a visible pop, at the moment the player is
@@ -566,8 +568,20 @@ export function buildBodyVisual(
 	 * flight*, which is 4.0 MB and transient. `bakedFacePx()` reports the ready
 	 * one, so the band keeps reading the resolution that is actually on screen.
 	 */
-	let ready: { bake: BodyBake; material: THREE.ShaderMaterial } | undefined;
-	let filling: { bake: BodyBake; material: THREE.ShaderMaterial } | undefined;
+	let ready: BodyBake | undefined;
+	let filling: BodyBake | undefined;
+	/**
+	 * **One baked material for the life of the body**, whichever cube it points
+	 * at.
+	 *
+	 * A material per bake was the first shape, and it disposes the outgoing one
+	 * at promotion — which, for a class only one body in the system wears, drops
+	 * the last reference to a compiled program the replacement has not drawn with
+	 * yet, so three deletes it and links it again on the next frame (sage,
+	 * PR #256). The program is identical either way: same class, same source
+	 * string. Only the two `samplerCube` uniforms differ, and they are values.
+	 */
+	let bakedMaterial: THREE.ShaderMaterial | undefined;
 	planet.userData.baked = false;
 	/**
 	 * The bake lever, off the perf panel's ablation ladder (#208).
@@ -604,19 +618,14 @@ export function buildBodyVisual(
 	 */
 	planet.userData.bakeCubes = () =>
 		[ready, filling]
-			.filter((slot) => slot !== undefined)
-			.map((slot) => ({ albedo: slot.bake.albedo, normal: slot.bake.normal }));
+			.filter((bake) => bake !== undefined)
+			.map((bake) => ({ albedo: bake.albedo, normal: bake.normal }));
 	planet.userData.setBakeAllowed = (allowed: boolean) => {
 		planet.userData.bakeAllowed = allowed;
 		if (!allowed && planet.userData.baked) {
 			planet.material = proceduralMaterial;
 			planet.userData.baked = false;
 		}
-	};
-
-	const drop = (slot: { bake: BodyBake; material: THREE.ShaderMaterial }) => {
-		slot.material.dispose();
-		slot.bake.dispose();
 	};
 
 	/**
@@ -633,8 +642,8 @@ export function buildBodyVisual(
 		if (look.surface === "star") return;
 		if (next === "baked") {
 			if (!planet.userData.bakeAllowed) return;
-			if (!ready) return;
-			planet.material = ready.material;
+			if (!ready || !bakedMaterial) return;
+			planet.material = bakedMaterial;
 			planet.userData.baked = true;
 			return;
 		}
@@ -655,9 +664,24 @@ export function buildBodyVisual(
 		// mostly working on, and drawing it as a desert would change the one
 		// term the panel is trying to hold still while another is measured.
 		if (look.surface === "star") return;
-		const material = planet.material as THREE.ShaderMaterial;
-		material.fragmentShader = cachedFragment(next, planet.userData.reliefPath);
-		material.needsUpdate = true;
+		/**
+		 * **Off the cube, and the patch goes to the procedural material by name**
+		 * (sage, PR #256).
+		 *
+		 * Two things went wrong through one line. `planet.material` is whichever
+		 * program is attached, so on a baked body this wrote a *class* fragment
+		 * into the **baked** material — a shader with no `surface()` in it,
+		 * patched with one. And the cube itself was baked from the old class, so
+		 * even a correct patch would have drawn the body as the class it was
+		 * before while the panel reported the new one. An instrument's class cycle
+		 * has to leave the body procedural; the cube belongs to the old class.
+		 */
+		swapSurfaceProgram(planet.userData.reliefPath as ReliefPath);
+		proceduralMaterial.fragmentShader = cachedFragment(
+			next,
+			planet.userData.reliefPath,
+		);
+		proceduralMaterial.needsUpdate = true;
 		planet.userData.surfaceClass = next;
 	};
 	group.add(planet);
@@ -808,43 +832,50 @@ export function buildBodyVisual(
 			// above — and a second `startBake` before the first finished (a body
 			// crossing two handoffs in a few frames) must not free the pair the
 			// body is being drawn from.
-			if (filling) drop(filling);
-			const bake = startBodyBake(look.surface, uniforms, facePx);
-			filling = {
-				bake,
-				material: new THREE.ShaderMaterial({
-					uniforms: {
-						...uniforms,
-						bakedAlbedo: { value: bake.albedo.texture },
-						bakedNormal: { value: bake.normal.texture },
-					},
-					vertexShader: BAKED_SURFACE_VERTEX,
-					fragmentShader: bakedFragmentFor(look.surface),
-				}),
-			};
+			filling?.dispose();
+			filling = startBodyBake(look.surface, uniforms, facePx);
+			bakedMaterial ??= new THREE.ShaderMaterial({
+				uniforms: {
+					...uniforms,
+					bakedAlbedo: { value: null },
+					bakedNormal: { value: null },
+				},
+				vertexShader: BAKED_SURFACE_VERTEX,
+				fragmentShader: bakedFragmentFor(look.surface),
+			});
 		},
 		stepBake(renderer) {
 			if (!filling) return false;
-			const drew = filling.bake.step(renderer);
-			if (!filling.bake.complete) return drew;
-			// Promoted the moment the last face lands, and **the swap comes before
-			// the free**: a body currently drawn from the outgoing pair would
-			// otherwise sample a disposed texture for a frame, which renders black
-			// rather than throwing.
+			const drew = filling.step(renderer);
+			if (!filling.complete) return drew;
+			// Promoted the moment the last face lands, and **the uniforms are
+			// repointed before the free**: a body drawn from the outgoing pair
+			// would otherwise sample a disposed texture for a frame, which renders
+			// black rather than throwing.
 			const outgoing = ready;
 			ready = filling;
 			filling = undefined;
-			if (planet.userData.baked) planet.material = ready.material;
-			if (outgoing) drop(outgoing);
+			if (bakedMaterial) {
+				bakedMaterial.uniforms.bakedAlbedo.value = ready.albedo.texture;
+				bakedMaterial.uniforms.bakedNormal.value = ready.normal.texture;
+			}
+			outgoing?.dispose();
 			return drew;
 		},
 		prewarmBake(renderer) {
 			if (!filling) return false;
-			filling.bake.prewarm(renderer);
+			filling.prewarm(renderer);
 			return true;
 		},
 		bakedFacePx() {
-			return ready?.bake.facePx ?? 0;
+			// **Zero when the bake is not on this body's menu** (sage, PR #256).
+			// This is what the band reads to decide whether `"baked"` is even a
+			// candidate, and returning a size while `setBakeAllowed(false)` holds
+			// made it keep asking for a program the visual then refused — silently,
+			// so the body kept whatever relief program it happened to have and
+			// #207's selector stopped running on it at all.
+			if (!planet.userData.bakeAllowed) return 0;
+			return ready?.facePx ?? 0;
 		},
 		applySurfaceBand(path) {
 			if (planet.userData.surfacePinned) return false;
@@ -859,10 +890,9 @@ export function buildBodyVisual(
 			planet.userData.setBakeAllowed(allowed);
 		},
 		prewarmBaked() {
-			const material = ready?.material ?? filling?.material;
-			if (!material) return null;
+			if (!bakedMaterial) return null;
 			const was = planet.material;
-			planet.material = material;
+			planet.material = bakedMaterial;
 			return () => {
 				planet.material = was;
 			};
@@ -896,8 +926,10 @@ export function buildBodyVisual(
 			// is the only thing that frees the FBO. With the material detached
 			// above, the walk never sees its uniforms either, so both halves are
 			// these two lines and neither is a repeat of the other.
-			if (ready) drop(ready);
-			if (filling) drop(filling);
+			bakedMaterial?.dispose();
+			bakedMaterial = undefined;
+			ready?.dispose();
+			filling?.dispose();
 			ready = undefined;
 			filling = undefined;
 		},

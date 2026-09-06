@@ -6360,8 +6360,8 @@ class Game {
 				 * The cube's **size** follows the apparent radius too (#208).
 				 *
 				 * Here rather than at the layer handoff, because the layer is not the
-				 * question: a 256 face reaches one screen pixel per texel at about
-				 * 3.4 radii and a 512 at about 2.15, and which of those a body needs
+				 * question: a 256 face reaches the tolerance at about
+				 * 3.69 radii and a 512 at about 2.18, and which of those a body needs
 				 * is a fact about how big it looks. Hysteresis lives inside
 				 * `bakeFacePxFor` for the reason the band's does — a re-bake is
 				 * twelve full-screen evaluations of the most expensive shader here.

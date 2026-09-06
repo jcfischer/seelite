@@ -203,6 +203,29 @@ export function setSurfaceAndRelief(
 }
 
 /**
+ * Show or hide a body's shells, without touching which program draws it.
+ *
+ * Exported because #208's probe has to compare the *surface* the baked and
+ * procedural programs produce, and a terran world's cloud deck drifts with the
+ * clock — so two frames taken a second apart differ by the weather whatever the
+ * surface did. `setAblation`'s `no-clouds` arm would do it and would also pin
+ * the surface path, which is the other half of what that comparison holds still
+ * on its own terms.
+ *
+ * Through the same `shell` tag the panel's own keys read, so a shell added to
+ * `planet-surface.ts` without one is invisible to both rather than to only one.
+ */
+export function setShells(
+	scenes: THREE.Object3D[],
+	wanted: { atmosphere?: boolean; clouds?: boolean },
+) {
+	if (wanted.atmosphere !== undefined)
+		for (const s of shells(scenes, "atmosphere")) s.visible = wanted.atmosphere;
+	if (wanted.clouds !== undefined)
+		for (const s of shells(scenes, "cloud")) s.visible = wanted.clouds;
+}
+
+/**
  * The four levers the ablation ladder moves, and the arms it moves them to.
  *
  * #242 measured a planet at 95.4% of an open-space frame and #248 asks what is
@@ -234,7 +257,8 @@ export type AblationArm = {
 	 * #208's `"baked"`.
 	 *
 	 * A `SurfacePath` and not a `ReliefPath`, because the two are alternatives
-	 * for one slot rather than two levers. A separate `baked: boolean` would let
+	 * for one lever position rather than two levers. A separate `baked: boolean`
+	 * would let
 	 * an arm declare `baked` *and* `screen-space`, which is a state the renderer
 	 * has no way to be in — and the ladder's whole contract is that an arm names
 	 * a state exactly.
@@ -278,7 +302,7 @@ export const ABLATION_ARMS: readonly AblationArm[] = Object.freeze([
 		atmosphere: true,
 		clouds: true,
 		prices:
-			"the procedural reference — the denominator every other arm subtracts from, and **no longer the shipped frame at every rung** (#208): the band draws a body from its cube from about 3.4 radii outward, so at 8 radii and beyond the game costs what `baked` costs and this arm costs what it cost before #208. Inside two radii the two are the same thing",
+			"the procedural reference — the denominator every other arm subtracts from, and **no longer the shipped frame at every rung** (#208): the band draws a body from its cube from about two radii outward, so from there out the game costs what `baked` costs and this arm costs what it cost before #208. Nearer than that the two are the same thing",
 	},
 	{
 		name: "screen-space",
@@ -630,7 +654,7 @@ export function mountPerfPanel(targets: PerfTargets) {
 				const next: Record<string, string> = {
 					"four-tap": "screen-space",
 					"screen-space": "none",
-					// #208's cube is a fourth program in the same slot, so it is a rung
+					// #208's cube is a fourth program on the same lever, so it is a rung
 					// of this cycle rather than a switch of its own. A body with no
 					// complete cube refuses it and the readout says so, which is the
 					// honest answer: the alternative is a key that appears to do nothing
