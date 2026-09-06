@@ -433,7 +433,12 @@ function readReliefState(scenes: THREE.Object3D[]): {
 			// from a cube, which is the class of readout error round 2 of #254
 			// caught in this same function.
 			paths.add(object.userData.baked ? "baked" : object.userData.reliefPath);
-			if (object.userData.reliefPinned) pinned = true;
+			// **`surfacePinned` since #208 renamed the flag.** The rename left this
+			// line reading a key nothing writes any more, so the panel reported
+			// `(auto)` under a pinned body — the same shape of readout defect round
+			// 2 of #254 caught in this very function, arriving the second time
+			// through a rename (sage, PR #256, round 2).
+			if (object.userData.surfacePinned) pinned = true;
 		});
 	return { paths, pinned };
 }

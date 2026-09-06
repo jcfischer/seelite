@@ -491,23 +491,24 @@ const settleBakes = () =>
 	);
 
 /**
- * **Read before a single bake face has been drawn** — the baseline for the
- * warm-up check far below (sage, PR #256).
+ * **There is no check here that the bake programs were pre-warmed, and the
+ * reason is worth more than a check would be** (sage, PR #256, rounds 1 and 2).
  *
- * The pre-warm runs in the `Game` constructor, before any frame; the first
- * `stepBakes` is what would compile the bake programs if it had not. So the
- * only moment this baseline means anything is *here*, before the queue is
- * settled. Taken after the first bake — which the first version did, twice over
- * — the shaders are already compiled by drawing and the comparison is green
- * with the warm-up deleted.
+ * The claim is that `prewarmReliefPrograms` compiles them before the first
+ * `stepBakes` does, so no shader links inside the frame that follows a jump.
+ * Two attempts to gate it both measured a shader that had already been drawn
+ * with: the first read its baseline after a rebake, and the second after
+ * `bootedGame` — which requires frames to have run, and `Game` calls `animate`
+ * before `window.__seelite` exists at all. By the time a probe can read
+ * `renderer.info.programs`, the first cube faces are drawn and their programs
+ * compiled either way.
+ *
+ * So it is not observable from here, and a third attempt would be a third
+ * unfailable check. What *is* observable is the band warm-up below, whose
+ * programs are compiled by later use rather than at boot — and it caught the
+ * colour-space defect in #254 that this warm-up is written against.
  */
-const programsBeforeAnyBake = await page.evaluate(
-	() => window.__seelite.renderer.info.programs?.length ?? -1,
-);
 await settleBakes();
-const programsAfterFirstBake = await page.evaluate(
-	() => window.__seelite.renderer.info.programs?.length ?? -1,
-);
 
 /* 2. #207's bands: the program a planet is drawn with follows its apparent size.
  *
@@ -971,26 +972,6 @@ const programsAfterFirstBake = await page.evaluate(
 			"baking the same body twice writes the same texels",
 			differing === 0,
 			`${differing} of ${first ? first.albedo.length * 2 : 0} channel bytes differ across two bakes`,
-		);
-
-		/**
-		 * **The bake programs were pre-warmed**, on the same argument as the band
-		 * warm-up above and with the same trap: compiled with no target bound they
-		 * are keyed to the wrong colour space, and left uncompiled they land on the
-		 * frame after a jump — the one frame the node says must not stall.
-		 *
-		 * The two counts are read at the **top of the file**, either side of the
-		 * first settle, because that is the only place the comparison can fail. A
-		 * later rebake compiles nothing whatever the warm-up did, since the first
-		 * one already compiled everything by drawing — which is what the first
-		 * version of this check measured (sage, PR #256).
-		 */
-		check(
-			"drawing the first cube face of the session compiles no new program",
-			programsBeforeAnyBake > 0 &&
-				programsAfterFirstBake === programsBeforeAnyBake,
-			`${programsBeforeAnyBake} programs before any bake face was drawn, ` +
-				`${programsAfterFirstBake} after the boot queue emptied`,
 		);
 	}
 }

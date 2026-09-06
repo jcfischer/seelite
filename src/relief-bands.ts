@@ -155,13 +155,19 @@ export function reliefPathFor(
  * and the wrong one was being asked:
  *
  * - the **peak** is what magnification looks like at the worst pixel;
- * - the **average** is what the cube can *resolve*, and it is the one that
- *   predicts whether the two programs agree. Measured: a 512 face at 2.5 radii
- *   is 0.41 here and 3.04 at the peak, and the baked and procedural discs match
- *   to one code out of 255 across every patch. A 256 face at 4 radii is 0.91
- *   here and a *lower* 2.03 at the peak, and reads 2.1% — so what separates the
- *   two rungs tracks this measure and not the peak, which is the argument for
- *   selecting on it.
+ * - the **average** is how much of the height field the cube can hold at the
+ *   size the body is drawn, which is what the band is actually choosing on.
+ *
+ * **The two framings this node measured cannot separate them, and an earlier
+ * version of this docstring claimed they could** on figures that were wrong by
+ * a factor of two. What the probe compares is 4 radii on a 256 face and 2.5
+ * radii on a 512: the peaks there are *identical* at 2.030 and the averages are
+ * 0.907 and 0.825, so the two measures order the two rungs the same way and
+ * neither is refuted. The disagreements are 2.1% and 1.2% of the disc mean.
+ * The average is selected on for the resolution argument above and not because
+ * anything here measured it to be the better predictor; the peak is exported
+ * beside it so nobody has to infer the magnification from a number that is not
+ * one.
  *
  * Read off the repo's own fov 60 and a 900 px frame (`focalPx` 779.4):
  *
@@ -240,16 +246,17 @@ export function peakPxPerCubeTexel(
  *
  * What the figure is worth, measured rather than argued:
  *
- * - a terran world at 2 radii on a 512 face — 0.57 by this measure — reads 0.13%
- *   of pixels moved past 24/255 between the two programs, and the frames cannot
- *   be told apart by eye;
+ * - a terran world at 2 radii on a 512 face — 1.14 by this measure, just past
+ *   the threshold and only reachable with the band pinned — reads 0.13% of
+ *   pixels moved past 24/255 between the two programs, and the frames cannot be
+ *   told apart by eye;
  * - `probe-planet-surfaces.mjs` compares patch means at 4 radii on a 256 face
- *   (0.91) and 2.5 radii on a 512 (0.41), with `four-tap` pinned on the control
- *   arm, and reads 2.1% and 1.2% of the disc mean against a corrupted bake's
- *   47.6% and 31.8%.
+ *   (0.907) and 2.5 radii on a 512 (0.825), with `four-tap` pinned on the
+ *   control arm, and reads 2.1% and 1.2% of the disc mean against a corrupted
+ *   bake's 47.6% and 31.8%.
  *
  * What is *not* claimed is that nothing changes. `planet-terminator` frames a
- * body at about 4.3 radii on a 256 face — 0.85 — and the baked surface there is
+ * body at about 4.3 radii on a 256 face — 0.83 — and the baked surface there is
  * visibly **smoother**, 4.76% of the frame against a same-build control of
  * 0.00%. So this constant is the dial the principal rules on, and lowering it
  * trades the near rungs back for sharpness: at 0.5 the band would start at about

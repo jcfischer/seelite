@@ -211,49 +211,120 @@ export interface BodyBake {
  *   `bakedFragmentFor` honours them there; baking an arm in would leave a
  *   diagnostic frozen into a texture after the arm was cleared.
  */
+/**
+ * The two bake programs for one class on one body, and the quad they draw.
+ *
+ * **Held across cube replacements**, which is why they are separate from
+ * `BodyBake` (sage, PR #256, round 2). A re-bake replaces the cube targets and
+ * nothing else; a version that owned the materials disposed them on every size
+ * change, and for a class only one body in the system wears that deletes the
+ * last reference to a compiled program — so the replacement's first two faces
+ * link inside the frame loop, which is exactly what `prewarm` exists to avoid.
+ *
+ * Keyed by class because the perf panel can put any class on any body, and a
+ * re-bake after that needs a different pair.
+ */
+export interface BakePrograms {
+	/** The pair for this class, built on first use and kept. */
+	forClass(surface: SurfaceClass): {
+		materials: Record<"albedo" | "normal", THREE.ShaderMaterial>;
+		faceBasis: THREE.IUniform;
+		scene: THREE.Scene;
+		mesh: THREE.Mesh;
+	};
+	dispose(): void;
+}
+
+/**
+ * Build the bake programs for one body.
+ *
+ * `uniforms` is the body's own record, shared rather than copied so the seed,
+ * the sea level and the warmth cannot drift between the bake and the procedural
+ * program it has to match. Two are deliberately **not** shared:
+ *
+ * - `time` is pinned to zero. It is the node's determinism requirement (step 5)
+ *   and it is why `venusian` is not in the table at all: a class that reads the
+ *   clock in `surface()` cannot be a pure function of its seed.
+ * - `perfAblate` is pinned to zero. The ladder's arms belong to the *draw*, and
+ *   `bakedFragmentFor` honours them there; baking an arm in would leave a
+ *   diagnostic frozen into a texture after the arm was cleared.
+ */
+export function createBakePrograms(
+	uniforms: Record<string, THREE.IUniform>,
+): BakePrograms {
+	const built = new Map<SurfaceClass, ReturnType<BakePrograms["forClass"]>>();
+	return {
+		forClass(surface) {
+			const hit = built.get(surface);
+			if (hit) return hit;
+			if (!BAKE_DESCRIPTORS[surface])
+				throw new Error(
+					`${surface} has no bake descriptor and cannot be baked`,
+				);
+			const faceBasis: THREE.IUniform = { value: cubeFaceBasis(0) };
+			const bakeUniforms: Record<string, THREE.IUniform> = {
+				...uniforms,
+				time: { value: 0 },
+				perfAblate: { value: 0 },
+				faceBasis,
+			};
+			const material = (channel: "albedo" | "normal") =>
+				new THREE.ShaderMaterial({
+					uniforms: bakeUniforms,
+					vertexShader: BAKE_VERTEX,
+					fragmentShader: bakeFragmentFor(surface, channel),
+					depthTest: false,
+					depthWrite: false,
+					/**
+					 * **`NoBlending`, and this is not a micro-optimisation.**
+					 *
+					 * Both cubes use the alpha channel as *data* — `specMask` in A and
+					 * the class's spare scalar in B — and the default `NormalBlending`
+					 * reads alpha as coverage. So every texel whose data happened to be
+					 * 0 was blended against the cleared target and wrote nothing at
+					 * all: a desert's land, where `specMask` is 0, came back black, and
+					 * the same hole ate the normals of every class whose `aux` is the
+					 * constant `0.0` — which is four of the five. It renders, it is
+					 * dark, and nothing errors.
+					 */
+					blending: THREE.NoBlending,
+				});
+			const materials = {
+				albedo: material("albedo"),
+				normal: material("normal"),
+			};
+			const mesh = new THREE.Mesh(quad(), materials.albedo);
+			mesh.frustumCulled = false;
+			const scene = new THREE.Scene();
+			scene.add(mesh);
+			const made = { materials, faceBasis, scene, mesh };
+			built.set(surface, made);
+			return made;
+		},
+		dispose() {
+			for (const { materials } of built.values()) {
+				materials.albedo.dispose();
+				materials.normal.dispose();
+			}
+			built.clear();
+		},
+	};
+}
+
+/**
+ * Start a bake for one body, into a fresh pair of cubes.
+ *
+ * The programs are the caller's and outlive this; what a `BodyBake` owns is the
+ * two render targets and the schedule.
+ */
 export function startBodyBake(
 	surface: SurfaceClass,
-	uniforms: Record<string, THREE.IUniform>,
 	facePx: number,
+	programs: BakePrograms,
 ): BodyBake {
-	if (!BAKE_DESCRIPTORS[surface]) {
-		throw new Error(`${surface} has no bake descriptor and cannot be baked`);
-	}
+	const { materials, faceBasis, scene, mesh } = programs.forClass(surface);
 	const albedo = newCube(facePx);
 	const normal = newCube(facePx);
-	const faceBasis: THREE.IUniform = { value: cubeFaceBasis(0) };
-	const bakeUniforms: Record<string, THREE.IUniform> = {
-		...uniforms,
-		time: { value: 0 },
-		perfAblate: { value: 0 },
-		faceBasis,
-	};
-	const material = (channel: "albedo" | "normal") =>
-		new THREE.ShaderMaterial({
-			uniforms: bakeUniforms,
-			vertexShader: BAKE_VERTEX,
-			fragmentShader: bakeFragmentFor(surface, channel),
-			depthTest: false,
-			depthWrite: false,
-			/**
-			 * **`NoBlending`, and this is not a micro-optimisation.**
-			 *
-			 * Both cubes use the alpha channel as *data* — `specMask` in A and the
-			 * class's spare scalar in B — and the default `NormalBlending` reads
-			 * alpha as coverage. So every texel whose data happened to be 0 was
-			 * blended against the cleared target and wrote nothing at all: a
-			 * desert's land, where `specMask` is 0, came back black, and the same
-			 * hole ate the normals of every class whose `aux` is the constant
-			 * `0.0` — which is four of the five. It renders, it is dark, and
-			 * nothing errors.
-			 */
-			blending: THREE.NoBlending,
-		});
-	const materials = { albedo: material("albedo"), normal: material("normal") };
-	const mesh = new THREE.Mesh(quad(), materials.albedo);
-	mesh.frustumCulled = false;
-	const scene = new THREE.Scene();
-	scene.add(mesh);
 
 	// One counter over both cubes: faces 0..5 fill A and 6..11 fill B. A single
 	// number is what makes "one face per frame" a property of the caller's loop
@@ -303,8 +374,8 @@ export function startBodyBake(
 			renderer.setRenderTarget(wasTarget, wasFace, wasLevel);
 		},
 		dispose() {
-			materials.albedo.dispose();
-			materials.normal.dispose();
+			// **The cubes only.** The programs belong to `BakePrograms` and are
+			// reused by the bake that replaces this one.
 			albedo.dispose();
 			normal.dispose();
 		},

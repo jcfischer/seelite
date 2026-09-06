@@ -25,6 +25,7 @@ import {
 	reliefPathFor,
 	surfacePathFor,
 } from "../src/relief-bands";
+import { radiusAtTexelRatio } from "./lib/texel-radius";
 import { CLASS_GLSL, RELIEF } from "../src/planet-classes.glsl";
 import { fragmentFor } from "../src/planet-shaders";
 
@@ -346,19 +347,11 @@ describe("the bake band", () => {
 		// The composition claim: #208's band starts where #207's top band starts,
 		// so the two do not fight over the same rung. Bisected rather than asserted
 		// as a figure, because the figure is derived and would drift with the fov.
-		let lo = 1.001;
-		let hi = 100;
-		for (let i = 0; i < 60; i++) {
-			const mid = (lo + hi) / 2;
-			if (pxPerCubeTexel(FOCAL / mid, FOCAL, 512) > BAKE_MAX_PX_PER_TEXEL) {
-				lo = mid;
-			} else hi = mid;
-		}
-		expect(hi).toBeGreaterThan(1.8);
-		expect(hi).toBeLessThan(2.2);
+		const crossingPx = radiusAtTexelRatio(FOCAL, 512, BAKE_MAX_PX_PER_TEXEL);
+		expect(FOCAL / crossingPx).toBeGreaterThan(1.8);
+		expect(FOCAL / crossingPx).toBeLessThan(2.4);
 		// And the disc at that crossing is inside #207's four-tap band, so a body
 		// leaving the bake lands on four-tap and not on screen-space.
-		const crossingPx = FOCAL / hi;
 		expect(crossingPx).toBeGreaterThan(SCREEN_SPACE_BELOW_PX);
 		expect(reliefPathFor(crossingPx, null)).toBe("four-tap");
 	});
@@ -381,17 +374,7 @@ describe("the bake band", () => {
 		// is the one that keeps a body baked, and getting that backwards gives a
 		// body that recompiles on alternate frames at exactly the range a slow
 		// approach spends seconds at.
-		const at = (ratio: number) => {
-			// The apparent radius whose px-per-texel is `ratio`, by bisection.
-			let lo = 1.0001;
-			let hi = 1e4;
-			for (let i = 0; i < 80; i++) {
-				const mid = (lo + hi) / 2;
-				if (pxPerCubeTexel(FOCAL / mid, FOCAL, 512) > ratio) lo = mid;
-				else hi = mid;
-			}
-			return FOCAL / ((lo + hi) / 2);
-		};
+		const at = (ratio: number) => radiusAtTexelRatio(FOCAL, 512, ratio);
 		const inBand = at(BAKE_MAX_PX_PER_TEXEL * 1.02);
 		const outside = at(BAKE_MAX_PX_PER_TEXEL * 1.2);
 		const wellInside = at(BAKE_MAX_PX_PER_TEXEL * 0.5);

@@ -9,6 +9,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
+import { radiusAtTexelRatio } from "./lib/texel-radius";
 import { codeOf } from "./lib/source-scan";
 import { CLASS_GLSL } from "../src/planet-classes.glsl";
 import type { SurfaceClass } from "../src/planet-appearance";
@@ -365,21 +366,15 @@ describe("resolution and memory", () => {
 		// in the game and a body on a slow approach sits on a threshold for
 		// seconds. Stepped twice, because that is the only way to see hysteresis.
 		const FOCAL = focalPx(900, 60);
-		let lo = 1.001;
-		let hi = 100;
-		for (let i = 0; i < 60; i++) {
-			const mid = (lo + hi) / 2;
-			if (pxPerCubeTexel(FOCAL / mid, FOCAL, 256) > BAKE_MAX_PX_PER_TEXEL)
-				lo = mid;
-			else hi = mid;
-		}
+		const crossing =
+			FOCAL / radiusAtTexelRatio(FOCAL, 256, BAKE_MAX_PX_PER_TEXEL);
 		// Just inside the crossing, where a body arriving fresh would take 512.
-		const inside = FOCAL / (hi * 0.99);
+		const inside = FOCAL / (crossing * 0.99);
 		expect(bakeFacePxFor(inside, FOCAL, null)).toBe(512);
 		// A body already holding 256 keeps it rather than re-baking.
 		expect(bakeFacePxFor(inside, FOCAL, 256)).toBe(256);
 		// And gives it up once it is properly past.
-		expect(bakeFacePxFor(FOCAL / (hi * 0.8), FOCAL, 256)).toBe(512);
+		expect(bakeFacePxFor(FOCAL / (crossing * 0.8), FOCAL, 256)).toBe(512);
 	});
 
 	test("every face size is a power of two", () => {

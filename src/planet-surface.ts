@@ -34,7 +34,12 @@ import {
 	isBakeable,
 } from "./planet-shaders";
 import type { ReliefPath } from "./planet-shaders";
-import { type BodyBake, startBodyBake } from "./planet-bake";
+import {
+	type BakePrograms,
+	type BodyBake,
+	createBakePrograms,
+	startBodyBake,
+} from "./planet-bake";
 import type { SurfacePath } from "./relief-bands";
 import { disposeSubtree, shared } from "./gpu-teardown";
 
@@ -571,6 +576,26 @@ export function buildBodyVisual(
 	let ready: BodyBake | undefined;
 	let filling: BodyBake | undefined;
 	/**
+	 * The class the ready cube was baked from.
+	 *
+	 * **A cube outlives nothing but its own class**, and that is what
+	 * `setSurfaceClass` needs from this module rather than a pin (sage, PR #256,
+	 * round 2). The panel's class cycle takes the body off the cube, and without
+	 * this the very next frame's band put it straight back — drawing the *old*
+	 * class from the old cube while `surfaceClass` reported the new one, which
+	 * is a class comparison measuring the class it was told to leave.
+	 *
+	 * A tag rather than a pin because it restores itself: cycle back round to the
+	 * class the cube holds and the body is eligible for it again, with no state
+	 * for an instrument to forget to clear.
+	 */
+	let bakedClass: SurfaceClass | undefined;
+	/** The class the bake in flight will be tagged with when it lands. */
+	let fillingClass: SurfaceClass | undefined;
+	/** The bake programs, built on first use per class and kept across every
+	 *  cube replacement. Built lazily so a body that never bakes never has any. */
+	let bakePrograms: BakePrograms | undefined;
+	/**
 	 * **One baked material for the life of the body**, whichever cube it points
 	 * at.
 	 *
@@ -582,6 +607,10 @@ export function buildBodyVisual(
 	 * string. Only the two `samplerCube` uniforms differ, and they are values.
 	 */
 	let bakedMaterial: THREE.ShaderMaterial | undefined;
+	/** One draw program per class this body has ever baked, kept for the life of
+	 *  the body — the panel's class cycle is a round trip and relinking on each
+	 *  leg is the cost this avoids. */
+	const drawMaterials = new Map<SurfaceClass, THREE.ShaderMaterial>();
 	planet.userData.baked = false;
 	/**
 	 * The bake lever, off the perf panel's ablation ladder (#208).
@@ -643,6 +672,10 @@ export function buildBodyVisual(
 		if (next === "baked") {
 			if (!planet.userData.bakeAllowed) return;
 			if (!ready || !bakedMaterial) return;
+			// The cube belongs to the class it was baked from; a body wearing a
+			// different one is drawn procedurally until it is re-baked or cycled
+			// back.
+			if (bakedClass !== planet.userData.surfaceClass) return;
 			planet.material = bakedMaterial;
 			planet.userData.baked = true;
 			return;
@@ -833,16 +866,28 @@ export function buildBodyVisual(
 			// crossing two handoffs in a few frames) must not free the pair the
 			// body is being drawn from.
 			filling?.dispose();
-			filling = startBodyBake(look.surface, uniforms, facePx);
-			bakedMaterial ??= new THREE.ShaderMaterial({
-				uniforms: {
-					...uniforms,
-					bakedAlbedo: { value: null },
-					bakedNormal: { value: null },
-				},
-				vertexShader: BAKED_SURFACE_VERTEX,
-				fragmentShader: bakedFragmentFor(look.surface),
-			});
+			// The class as it is **now**, not the one the body was built with: the
+			// perf panel can put any class on any body, and a re-bake after that
+			// has to produce — and be tagged with — what is being drawn.
+			fillingClass = planet.userData.surfaceClass as SurfaceClass;
+			bakePrograms ??= createBakePrograms(uniforms);
+			filling = startBodyBake(fillingClass, facePx, bakePrograms);
+			// The draw program is per class too, and cached for the same reason the
+			// bake programs are: cycling a body's class back and forth must not
+			// relink a shader each way.
+			bakedMaterial = drawMaterials.get(fillingClass);
+			if (!bakedMaterial) {
+				bakedMaterial = new THREE.ShaderMaterial({
+					uniforms: {
+						...uniforms,
+						bakedAlbedo: { value: null },
+						bakedNormal: { value: null },
+					},
+					vertexShader: BAKED_SURFACE_VERTEX,
+					fragmentShader: bakedFragmentFor(fillingClass),
+				});
+				drawMaterials.set(fillingClass, bakedMaterial);
+			}
 		},
 		stepBake(renderer) {
 			if (!filling) return false;
@@ -855,6 +900,7 @@ export function buildBodyVisual(
 			const outgoing = ready;
 			ready = filling;
 			filling = undefined;
+			bakedClass = fillingClass;
 			if (bakedMaterial) {
 				bakedMaterial.uniforms.bakedAlbedo.value = ready.albedo.texture;
 				bakedMaterial.uniforms.bakedNormal.value = ready.normal.texture;
@@ -926,8 +972,11 @@ export function buildBodyVisual(
 			// is the only thing that frees the FBO. With the material detached
 			// above, the walk never sees its uniforms either, so both halves are
 			// these two lines and neither is a repeat of the other.
-			bakedMaterial?.dispose();
+			for (const material of drawMaterials.values()) material.dispose();
+			drawMaterials.clear();
 			bakedMaterial = undefined;
+			bakePrograms?.dispose();
+			bakePrograms = undefined;
 			ready?.dispose();
 			filling?.dispose();
 			ready = undefined;
