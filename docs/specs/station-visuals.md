@@ -103,7 +103,7 @@ overlap rather than a rounding.
 ## 3. The three reading distances
 
 Detail is chosen from **apparent size**, not from absolute range. A refinery's
-0.4 km core and a shipyard's 1.53 km frame are not the same object at 20 km, and
+0.4 km core and a shipyard's 1.66 km frame are not the same object at 20 km, and
 a rule written in kilometres would give the small one detail nobody can see
 while stripping the large one of detail that is still legible.
 
@@ -215,6 +215,55 @@ continuous strip light rather than a window grid, and it was flown as one. Every
 layout in `station-mesh.ts` is written against the count that was *built*, and
 the Coriolis lays its ports out in rows: extra panes have to spread over the
 face, not stack along a line.
+
+### 4.2 Finishes and the macro structure (#202)
+
+A **finish** (`STATION_FINISHES`, `station-visuals.ts`) is the station half
+of `ship-visuals.md` §3.1: everything about a station that is not its form,
+as a preset the workbench switches live. `stock` is the identity over each
+role's profile and the pins in `tests/surface.test.ts` hold it. `plated`
+gives every role #101's staggered cut plate — a one-texel groove in a normal
+map, which `hullMaterial` now carries — under a second octave of 75 m panel
+groups, on a 256 map with a 0.3 km tile so the plate stays 18.75 m.
+`industrial` adds the **macro fixtures** and `worn` raises the streaking,
+the reversal of #98's refusal that it is — **and `worn` is the default since
+the principal's choice on the second sheet (2026-09-06)**
+(`DEFAULT_STATION_FINISH`). `nostromo` is one step past it: deeper streaks,
+sooted plates, the role's paint pulled toward grey through the finish's
+`paint` dial, 9.4 m plates on a 512 map under the same 75 m groups, and the
+clutter at two fifths of its size with three times the count
+(`greebleScale`, `greebleDensity`); it stays a preset for variation.
+
+The fixtures are at **ship scale** on every finish that draws them — the
+principal's ruling on the first sheet, "the trusses are way too big on the
+Coriolis": `SHIP_SCALE` (`station-fixtures.ts`) sizes every member against
+a courier (12 m trusses, 30 m panels, 8 m tanks, 2 m pipes), every
+declaration reads from it, and `tests/station-finish.test.ts` reads every
+pooled member back against its cap.
+
+The fixtures (`station-fixtures.ts`) are the scale between the plate and the
+kilometre that #199 found missing, in the ISS's vocabulary: truss beams of
+square-section members with diagonals, radiator banks of thin panels on a
+spine, tank racks in saddles, pipe runs with elbows, a mast with a dish, a
+docking collar with approach lamps, and clock-driven beacons on the roles
+that strobe. Each is a primitive; where each goes is a short declaration per
+`SELECTED_FORM` form in the form's own kilometres. Every member of every
+fixture on a station is an instance in a per-material pool, so the whole
+structure is a handful of draw calls. They are tagged `reduced`: 2 km
+structure belongs with the aperture frame, not with the 40 m clutter.
+
+Three rules bind them, and `tests/station-finish.test.ts` holds each under
+every finish. **No fixture may be the station's farthest vertex** — the reach
+is read at every detail level and must not move when the band hides them,
+which is what caught the outpost's first radiator bank standing below its
+tank cluster. **Nothing in the corridor**, which the corridor row sweeps.
+**Every member is supported**, by structure or by a supported member — a
+flood from the built form through the fixtures' boxes, because a ray from a
+mast's top toward the station's centre passes over the keel the mast stands
+on and read the first version as floating. The Coriolis's headroom is the
+corner's, not the face's: a point at lateral offset `d` on a face may stand
+`h` proud only while `hypot(face + h, d) < r`, so its fixtures sit on each
+face's middle band and are sized against that.
 
 ## 5. Light and activity: identity, never state
 

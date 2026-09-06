@@ -380,6 +380,13 @@ export function hullLoft(
 		 * cut, which is why the two readers are unaffected today.
 		 */
 		aperture?: ApertureCut;
+		/**
+		 * No end caps at all (#203). A **band** rather than a volume — a collar
+		 * standing round an opening — whose profile returns to its own first
+		 * ring, so a fan across either end would close the very hole it stands
+		 * round. Both `caps` fields are `null`, the convention a cut end set.
+		 */
+		open?: boolean;
 	} = {},
 ) {
 	const segments = options.segments ?? RING_SEGMENTS;
@@ -565,20 +572,18 @@ export function hullLoft(
 
 	// The front end is cut only for a plate the ship passes through, which is
 	// what `ends: "both"` names; the rear is the +Z end every station form cuts.
-	const frontCentre = buildCap(
-		first,
-		0,
-		0,
-		"front",
-		options.aperture?.ends === "both" ? options.aperture : undefined,
-	);
-	const rearCentre = buildCap(
-		last,
-		(rings.length - 1) * stride,
-		1,
-		"rear",
-		options.aperture,
-	);
+	const frontCentre = options.open
+		? null
+		: buildCap(
+				first,
+				0,
+				0,
+				"front",
+				options.aperture?.ends === "both" ? options.aperture : undefined,
+			);
+	const rearCentre = options.open
+		? null
+		: buildCap(last, (rings.length - 1) * stride, 1, "rear", options.aperture);
 	const geometry = new THREE.BufferGeometry();
 	geometry.setAttribute(
 		"position",

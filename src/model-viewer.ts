@@ -14,12 +14,20 @@
 import * as THREE from "three";
 
 import { HULL_IDS, HULL_SPECS, type HullId } from "./hull";
+import { LIGHT_RIG, equirectEnvironment } from "./light-rig";
 import {
 	HULL_REACH_KM,
 	HULL_VARIANTS,
 	SHIP_DESIGN_ROUND,
 	buildShipMesh,
 } from "./ship-mesh";
+import {
+	HULL_FINISHES,
+	HULL_FINISH_IDS,
+	type HullFinishId,
+	hullFinishId,
+	setHullFinish,
+} from "./ship-surface";
 import {
 	STATION_DESIGN_ROUND,
 	STATION_FORMS,
@@ -28,6 +36,13 @@ import {
 	buildStationForm,
 } from "./station-mesh";
 import { STATION_TYPES, type StationType } from "./station";
+import {
+	STATION_FINISHES,
+	STATION_FINISH_IDS,
+	type StationFinishId,
+	setStationFinish,
+	stationFinishId,
+} from "./station-visuals";
 
 /** One concept a reviewer can select and rank. */
 interface FamilyVariant {
@@ -44,6 +59,13 @@ interface FamilyVariant {
  * radius puts the camera inside the subject. `emissive` names the parts the
  * "engine cue" slider drives — exhausts on a ship, strobes and flares on a
  * station.
+ *
+ * `finishes` is the second axis of the tournament (#202, #203): a **finish**
+ * is everything about a subject that is not its silhouette — plating, paint,
+ * fixtures — and it is ranked the way a silhouette is, by looking at every
+ * candidate under every finish. `setFinish` selects the one every subject
+ * built from now on carries; the workbench rebuilds on each switch rather
+ * than patching a built mesh, so a subject is always whole under one finish.
  */
 interface ModelFamily {
 	readonly id: string;
@@ -55,12 +77,15 @@ interface ModelFamily {
 	readonly reachKm: (asset: string, variant: string) => number;
 	readonly build: (asset: string, variant: string) => THREE.Group;
 	readonly emissive: (name: string) => boolean;
+	readonly finishes: readonly FamilyVariant[];
+	readonly finishId: () => string;
+	readonly setFinish: (id: string) => void;
 }
 
 const SHIP_FAMILY: ModelFamily = {
 	id: "ship",
 	title: `SHIP TOURNAMENT · ROUND ${SHIP_DESIGN_ROUND}`,
-	copy: "Ranking-guided descendants of round one. Use <b>rank</b> in preference order; click a numbered rank to remove it.",
+	copy: "Ranking-guided descendants of round one. Use <b>rank</b> in preference order; click a numbered rank to remove it. <b>Finish</b> switches the surface and the shared primitives under every hull.",
 	assets: HULL_IDS,
 	variantIds: ["a", "b", "c"],
 	variants: (asset) => HULL_VARIANTS[asset as HullId],
@@ -71,6 +96,13 @@ const SHIP_FAMILY: ModelFamily = {
 			variant as (typeof HULL_VARIANTS)[HullId][number]["id"],
 		).root,
 	emissive: (name) => name.includes("exhaust"),
+	finishes: HULL_FINISH_IDS.map((id) => ({
+		id,
+		name: HULL_FINISHES[id].name,
+		thesis: HULL_FINISHES[id].thesis,
+	})),
+	finishId: hullFinishId,
+	setFinish: (id) => setHullFinish(id as HullFinishId),
 };
 
 const STATION_FAMILY: ModelFamily = {
@@ -103,13 +135,24 @@ const STATION_FAMILY: ModelFamily = {
 			// form differ for a reason that has nothing to do with the form.
 			0,
 		).root.getObjectByName("km") as THREE.Group,
+	// `beacon-` is #202's macro-structure lamp, driven in the game by the
+	// same fixture list as the strobes; here it is lit by name like they are,
+	// or the sheet shows every beacon dark under the one finish that has them.
 	emissive: (name) =>
 		name.startsWith("strobe") ||
+		name.startsWith("beacon") ||
 		name === "flare" ||
 		name === "heat-glow" ||
 		name === "weld-arc" ||
 		name === "bay-flood" ||
 		name === "windows",
+	finishes: STATION_FINISH_IDS.map((id) => ({
+		id,
+		name: STATION_FINISHES[id].name,
+		thesis: STATION_FINISHES[id].thesis,
+	})),
+	finishId: stationFinishId,
+	setFinish: (id) => setStationFinish(id as StationFinishId),
 };
 
 const FAMILIES: ModelFamily[] = [SHIP_FAMILY, STATION_FAMILY];
@@ -130,6 +173,9 @@ export const MODEL_VIEWER_VERSION = 1;
 type ViewerState = {
 	asset: string;
 	variant: string;
+	/** The finish every subject is built under; `?finish=<id>` preselects it
+	 *  so a capture script can load a finish rather than click for it. */
+	finish: string;
 	selectedVariants: Record<string, string>;
 	rankings: Record<string, string[]>;
 	beam: number;
@@ -167,6 +213,7 @@ const STYLE = `
 .mv-concept strong { color: inherit; font-size: 12px; }
 .mv-concept small { color: #7899a7; line-height: 1.25; }
 .mv-concept[aria-pressed="true"] small { color: #d4b77f; }
+.mv-finishes { display: grid; gap: 5px; }
 .mv-rank { display: grid; place-items: center; border: 1px solid rgba(124, 183, 211, .28); background: #071116; color: #7fa2b1; font: inherit; cursor: pointer; }
 .mv-rank[data-rank-position] { border-color: #73aee0; color: #d5ecff; background: #102638; }
 .mv-ranking { min-height: 5.5em; margin: 0; padding: 8px; white-space: pre-wrap; color: #9fc0ce; background: rgba(2, 8, 11, .7); border: 1px solid rgba(124, 183, 211, .18); }
@@ -205,15 +252,24 @@ function variantMarkup(family: ModelFamily, role: string) {
  *  nothing rather than defaulting to one, because a typo silently reviewing the
  *  wrong family is worse than a blank page. */
 export function mountModelViewer(): void {
-	const requested = new URLSearchParams(window.location.search).get(
-		"model-viewer",
-	);
+	const query = new URLSearchParams(window.location.search);
+	const requested = query.get("model-viewer");
 	const family = FAMILIES.find((candidate) => candidate.id === requested);
 	if (!family) return;
+	// A finish named in the URL is selected before the first build, and an
+	// unknown one is ignored rather than defaulted: the capture script that
+	// asks for `?finish=industrial` and gets stock has captured the wrong sheet
+	// under the right label, so the state it reads back is what it must check.
+	const requestedFinish = query.get("finish");
+	if (
+		requestedFinish &&
+		family.finishes.some((finish) => finish.id === requestedFinish)
+	)
+		family.setFinish(requestedFinish);
 	installStyle();
 	const root = document.createElement("section");
 	root.id = "model-viewer";
-	root.innerHTML = `<div class="mv-wrap"><main class="mv-stage" data-model-stage aria-label="procedural model preview"><span class="mv-axis">DRAG TO ORBIT · WHEEL TO ZOOM</span></main><aside class="mv-panel"><h1 class="mv-title">${family.title}</h1><p class="mv-copy">${family.copy}</p><fieldset class="mv-set"><legend>Role</legend><div class="mv-role-tabs">${family.assets.map((id, index) => `<button class="mv-button" type="button" data-model-asset="${id}" aria-pressed="${index === 0}">${id}</button>`).join("")}</div></fieldset><fieldset class="mv-set"><legend>Concepts</legend>${family.assets.map((id) => variantMarkup(family, id)).join("")}</fieldset><fieldset class="mv-set"><legend>Your ranking</legend><pre class="mv-ranking" data-model-ranking></pre><button class="mv-reset" type="button" data-model-reset-ranking>clear current role</button></fieldset><fieldset class="mv-set"><legend>Draft controls</legend><label class="mv-control">Beam <output data-model-output="beam">100%</output><input data-model-control="beam" type="range" min="70" max="145" value="100" /></label><label class="mv-control">Length <output data-model-output="length">100%</output><input data-model-control="length" type="range" min="70" max="145" value="100" /></label><label class="mv-control">Engine cue <output data-model-output="engine">70%</output><input data-model-control="engine" type="range" min="0" max="140" value="70" /></label><label class="mv-check"><input data-model-control="wireframe" type="checkbox" /> wireframe</label></fieldset><button class="mv-close" type="button" data-model-close>return to flight</button></aside></div>`;
+	root.innerHTML = `<div class="mv-wrap"><main class="mv-stage" data-model-stage aria-label="procedural model preview"><span class="mv-axis">DRAG TO ORBIT · WHEEL TO ZOOM</span></main><aside class="mv-panel"><h1 class="mv-title">${family.title}</h1><p class="mv-copy">${family.copy}</p><fieldset class="mv-set"><legend>Role</legend><div class="mv-role-tabs">${family.assets.map((id, index) => `<button class="mv-button" type="button" data-model-asset="${id}" aria-pressed="${index === 0}">${id}</button>`).join("")}</div></fieldset><fieldset class="mv-set"><legend>Finish</legend><div class="mv-finishes">${family.finishes.map((finish) => `<button class="mv-button mv-concept" type="button" data-model-finish="${finish.id}" aria-pressed="${finish.id === family.finishId()}"><strong>${finish.name}</strong><small>${finish.thesis}</small></button>`).join("")}</div></fieldset><fieldset class="mv-set"><legend>Concepts</legend>${family.assets.map((id) => variantMarkup(family, id)).join("")}</fieldset><fieldset class="mv-set"><legend>Your ranking</legend><pre class="mv-ranking" data-model-ranking></pre><button class="mv-reset" type="button" data-model-reset-ranking>clear current role</button></fieldset><fieldset class="mv-set"><legend>Draft controls</legend><label class="mv-control">Beam <output data-model-output="beam">100%</output><input data-model-control="beam" type="range" min="70" max="145" value="100" /></label><label class="mv-control">Length <output data-model-output="length">100%</output><input data-model-control="length" type="range" min="70" max="145" value="100" /></label><label class="mv-control">Engine cue <output data-model-output="engine">70%</output><input data-model-control="engine" type="range" min="0" max="140" value="70" /></label><label class="mv-check"><input data-model-control="wireframe" type="checkbox" /> wireframe</label></fieldset><button class="mv-close" type="button" data-model-close>return to flight</button></aside></div>`;
 	document.body.append(root);
 	document.querySelector("#keys")?.remove();
 	// Unconditionally here, unlike in the game: a workbench is an instrument
@@ -253,6 +309,32 @@ export function mountModelViewer(): void {
 		inspectionFill,
 		new THREE.HemisphereLight(0x5c89a2, 0x263845, 2.8),
 	);
+	// **The game's environment, on the workbench** (#203). #98 measured the
+	// rig here as better than flight's and the difference was partly this: the
+	// workbench had no `scene.environment`, so every plated material — a
+	// standard material at metalness 0.3 to 0.6 — had nothing to reflect, and
+	// a collar or an embossed seam judged here was judged as plastic. The same
+	// bake `main.ts` makes per system, from the rig's own sun tint, at the
+	// rig's own intensity; the inspection lights above stay, because this is
+	// still an inspection stage and not a flight frame.
+	{
+		const { data, width, height } = equirectEnvironment(LIGHT_RIG.sun.color);
+		const source = new THREE.DataTexture(
+			data,
+			width,
+			height,
+			THREE.RGBAFormat,
+			THREE.FloatType,
+		);
+		source.mapping = THREE.EquirectangularReflectionMapping;
+		source.colorSpace = THREE.LinearSRGBColorSpace;
+		source.needsUpdate = true;
+		const pmrem = new THREE.PMREMGenerator(renderer);
+		scene.environment = pmrem.fromEquirectangular(source).texture;
+		scene.environmentIntensity = LIGHT_RIG.environmentIntensity;
+		pmrem.dispose();
+		source.dispose();
+	}
 	// The stage is framed from the hull's own reach. A fixed camera distance and
 	// a fixed grid worked while every hull was within a factor of two of the
 	// next; a capital hull is several times the largest of them, and a constant
@@ -277,6 +359,7 @@ export function mountModelViewer(): void {
 	const state: ViewerState = {
 		asset: family.assets[0],
 		variant: family.variantIds[0],
+		finish: family.finishId(),
 		// Derived from HULL_IDS so adding a role cannot leave a hole here that
 		// only shows up as an undefined ranking at click time.
 		selectedVariants: Object.fromEntries(
@@ -308,6 +391,11 @@ export function mountModelViewer(): void {
 			// — including the next one this workbench builds.
 			mesh.traverse((object) => {
 				if (object instanceof THREE.Mesh) object.geometry.dispose();
+				// An instanced mesh's matrices are a buffer the geometry does not
+				// own, released only by its own `dispose`; without it every
+				// finish switch left an industrial station's fixture matrices
+				// on the GPU.
+				if (object instanceof THREE.InstancedMesh) object.dispose();
 			});
 			// Dropped after disposal so the old tree is unreachable rather than
 			// held alive by this closure until the next rebuild replaces it.
@@ -440,6 +528,24 @@ export function mountModelViewer(): void {
 			updateTournament();
 			rebuild();
 		}
+		const finishButton = target.closest<HTMLElement>("[data-model-finish]");
+		const finish = finishButton?.dataset.modelFinish;
+		if (
+			finish &&
+			family.finishes.some((candidate) => candidate.id === finish)
+		) {
+			family.setFinish(finish);
+			state.finish = family.finishId();
+			root
+				.querySelectorAll<HTMLElement>("[data-model-finish]")
+				.forEach((button) => {
+					button.setAttribute(
+						"aria-pressed",
+						String(button.dataset.modelFinish === state.finish),
+					);
+				});
+			rebuild();
+		}
 		const rankButton = target.closest<HTMLElement>("[data-model-rank]");
 		const rankedVariant = rankButton?.dataset.modelRank;
 		const rankedRole = rankButton?.dataset.modelRole;
@@ -498,9 +604,20 @@ export function mountModelViewer(): void {
 		);
 	});
 	window.addEventListener("resize", resize);
+	// The renderer beside the state, so `scripts/shot-finishes.mjs` can read
+	// the real rasteriser back the way `capture-views.mjs` does through
+	// `window.__seelite` — which the workbench deliberately never sets.
+	// And the holder, so `probe-model-viewer.mjs` can read a fixture's
+	// material back rather than trust the selector above by name.
 	(
-		window as unknown as { __seeliteModelViewer: { state: ViewerState } }
-	).__seeliteModelViewer = { state };
+		window as unknown as {
+			__seeliteModelViewer: {
+				state: ViewerState;
+				renderer: THREE.WebGLRenderer;
+				holder: THREE.Group;
+			};
+		}
+	).__seeliteModelViewer = { state, renderer, holder };
 	updateTournament();
 	reframe(state.asset, state.variant);
 	rebuild();

@@ -63,7 +63,7 @@
 import * as THREE from "three";
 import { STATION_GEOMETRY, STATION_TYPES, type StationType } from "./station";
 import { displayRand } from "./station-surface";
-import { STATION_VISUALS } from "./station-visuals";
+import { STATION_VISUALS, currentStationFinish } from "./station-visuals";
 import { shared } from "./gpu-teardown";
 
 /**
@@ -192,6 +192,68 @@ const MATERIALS: Record<StationType, THREE.MeshStandardMaterial> =
 const SINK = 1 / 3;
 
 /**
+ * A cast onto a station's structure, shared by the clutter and by #202's
+ * fixtures (`station-fixtures.ts`'s `mounter`), because the two had the same
+ * lines and had already drifted once — the clutter gained the second cast
+ * below and the fixtures did not.
+ *
+ * The targets are plain meshes only: a window grid is an `InstancedMesh` and
+ * is not structure — a piece resting on a pane is the same defect as one
+ * resting on nothing, one step further along — and so are the fixture pools.
+ *
+ * **Tight outward, generous inward**, and the asymmetry is the whole design.
+ * Outward the ray starts only `probeKm` clear — twice a zone's relief, a
+ * declaration's own figure — so a piece cannot be pulled onto something
+ * standing in front of the surface it was authored on. Inward it may travel
+ * the station's own diameter, because the first thing it meets going that way
+ * *is* the nearest surface along the normal the caller declared. And a
+ * **second, longer cast only when the first finds nothing**: an authored
+ * point the first cast starts *inside* — the Buoy's drum put two of
+ * nostromo's pieces 26 m under its skin — meets nothing going in from a
+ * front-faced hull; starting every cast a quarter core radius out was tried
+ * first and pulled pieces onto the aperture frame in front of the hull they
+ * were authored on. Returns the hit, or `undefined`, so a caller keeps the
+ * authored point rather than dropping the piece — a silently missing greeble
+ * is a zone nobody notices is broken, and the tests catch a kept one.
+ */
+export function castOntoStructure(
+	structure: THREE.Object3D,
+	type: StationType,
+) {
+	structure.updateMatrixWorld(true);
+	const targets: THREE.Mesh[] = [];
+	structure.traverse((object) => {
+		const mesh = object as THREE.Mesh;
+		if (!mesh.geometry) return;
+		if ((mesh as THREE.InstancedMesh).isInstancedMesh) return;
+		targets.push(mesh);
+	});
+	const ray = new THREE.Raycaster();
+	const from = new THREE.Vector3();
+	const back = new THREE.Vector3();
+	const reach = STATION_GEOMETRY[type].coreRadiusKm * 2;
+	const once = (
+		position: THREE.Vector3,
+		normal: THREE.Vector3,
+		start: number,
+	) => {
+		ray.set(
+			from.copy(position).addScaledVector(normal, start),
+			back.copy(normal).negate(),
+		);
+		ray.far = start + reach;
+		return ray.intersectObjects(targets, false)[0];
+	};
+	return (position: THREE.Vector3, normal: THREE.Vector3, probeKm: number) =>
+		once(position, normal, probeKm) ??
+		once(
+			position,
+			normal,
+			probeKm + STATION_GEOMETRY[type].coreRadiusKm * 0.25,
+		);
+}
+
+/**
  * Fill a form's zones with clutter — one `InstancedMesh` per primitive.
  *
  * `tag` keys the generator, so it must be unique per form and stable across
@@ -221,21 +283,13 @@ export function buildGreebles(
 	structure: THREE.Object3D,
 ): THREE.Group {
 	const random = displayRand(`station-greebles-${tag}`);
-	// The targets a piece may land on: plain meshes only. A window grid is an
-	// `InstancedMesh` and is not structure — a greeble resting on a pane is the
-	// same defect as one resting on nothing, one step further along.
-	structure.updateMatrixWorld(true);
-	const targets: THREE.Mesh[] = [];
-	structure.traverse((object) => {
-		const mesh = object as THREE.Mesh;
-		if (!mesh.geometry) return;
-		if ((mesh as THREE.InstancedMesh).isInstancedMesh) return;
-		targets.push(mesh);
-	});
-	const ray = new THREE.Raycaster();
-	const from = new THREE.Vector3();
-	const back = new THREE.Vector3();
-	const density = STATION_VISUALS[type].greebleDensity;
+	const cast = castOntoStructure(structure, type);
+	// The role's figure times the finish's (#202): a finish says how industrial
+	// the whole galaxy is, the role how busy it is within that, the form which
+	// of its patches is busier. Three dials that multiply, none replaces.
+	const density =
+		STATION_VISUALS[type].greebleDensity *
+		currentStationFinish().greebleDensity;
 	const matrices: THREE.Matrix4[][] = GREEBLE_PRIMITIVES.map(() => []);
 	const position = new THREE.Vector3();
 	const normal = new THREE.Vector3();
@@ -273,13 +327,18 @@ export function buildGreebles(
 			// A miss leaves the authored position untouched rather than dropping
 			// the piece — a silently missing greeble is a zone nobody notices is
 			// broken — and `tests/station-greebles.test.ts` fails on exactly that.
-			const probe = zone.reliefKm * 2;
-			ray.set(
-				from.copy(position).addScaledVector(normal, probe),
-				back.copy(normal).negate(),
-			);
-			ray.far = probe + STATION_GEOMETRY[type].coreRadiusKm * 2;
-			const hit = ray.intersectObjects(targets, false)[0];
+			//
+			// **And a second, longer cast only when the first finds nothing**
+			// (#202's finishes). At three times the count and two fifths of the
+			// size, a zone's authored positions include some the ray from twice
+			// the relief starts *inside* the hull: the Buoy's drum put two of
+			// nostromo's pieces 26 m under its skin, where a ray that begins
+			// inside a front-faced hull meets nothing going in and kept the
+			// buried point. Starting every cast a quarter core radius out was
+			// tried first and pulled pieces onto the aperture frame in front of
+			// the hull they were authored on — the corridor row read +40 m — so
+			// the long start is the fallback and never the rule.
+			const hit = cast(position, normal, zone.reliefKm * 2);
 			if (hit) {
 				position.copy(hit.point);
 				if (hit.normal) {
@@ -298,10 +357,17 @@ export function buildGreebles(
 				GREEBLE_PRIMITIVES.length - 1,
 				Math.floor(random() * GREEBLE_PRIMITIVES.length),
 			);
-			const height = zone.reliefKm * (0.35 + random() * 0.65);
+			// The finish's size factor on the zone's own figure (#202): the zone
+			// says what a piece is for, the finish what scale the station's
+			// clutter is read at.
+			const sizeKm = zone.sizeKm * currentStationFinish().greebleScale;
+			const height =
+				zone.reliefKm *
+				currentStationFinish().greebleScale *
+				(0.35 + random() * 0.65);
 			scale.set(
-				zone.sizeKm * (0.5 + random() * 1.1),
-				zone.sizeKm * (0.5 + random() * 1.1),
+				sizeKm * (0.5 + random() * 1.1),
+				sizeKm * (0.5 + random() * 1.1),
 				height,
 			);
 			quaternion.setFromUnitVectors(unitZ, normal);

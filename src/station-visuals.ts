@@ -35,13 +35,223 @@
 
 import type { StationType } from "./station";
 import {
+	type MacroOctave,
 	PLATE_TEXTURE_SIZE,
 	type PlatingProfile,
 	hash01,
 	plateTexels,
+	seamNormalTexels,
 	wearTexels,
 } from "./surface";
 import { HANDOFF_HYSTERESIS } from "./units";
+
+/**
+ * A station **finish** (#202): everything about a station's surface and
+ * fixtures that is not its form — the station half of `ship-surface.ts`'s
+ * `HullFinish`, and the same shape of thing for the same reason. #199's review
+ * read every form as a uniform grid at one scale with nothing between a 19 m
+ * plate and a kilometre of hull, and the principal's steer was industrial:
+ * the ISS's trusses and radiators, the Nostromo's clutter and lights. Those
+ * are separately reviewable, so a finish is a preset the workbench switches
+ * live and the sheet is captured under each.
+ *
+ * **`stock` is #36's surface as it shipped**, and `tests/surface.test.ts`'s
+ * four pins hold it there: the finish's `plating` is the identity, and the
+ * two scales are 1.
+ */
+export interface StationFinish {
+	readonly name: string;
+	readonly thesis: string;
+	/** The role's shipped profile becomes this finish's. Identity for stock. */
+	readonly plating: (role: PlatingProfile) => PlatingProfile;
+	/** Map side as a multiple of `PLATE_TEXTURE_SIZE`, and tile as a multiple
+	 *  of `station-mesh.ts`'s `STATION_PANEL_KM` — the same multiple, so the
+	 *  plate is the same nineteen metres under every finish. Multiples rather
+	 *  than figures, so the one copy of each constant stays where it is. */
+	readonly mapScale: number;
+	readonly tile: number;
+	/** #202's macro fixtures on the selected forms: trusses, radiators, tank
+	 *  racks, pipe runs, masts, a docking collar. */
+	readonly fixtures: boolean;
+	/** Extra clock-driven beacons on those fixtures, on the roles that strobe. */
+	readonly beacons: boolean;
+	/** A factor on the role's `greebleDensity`. */
+	readonly greebleDensity: number;
+	/**
+	 * A factor on every greeble's size (#202, the principal's ship-scale
+	 * ruling): a station is huge beside a ship, and clutter sized to the
+	 * station hides that. Under 1 the pieces shrink and `greebleDensity`
+	 * is what puts more of them back.
+	 */
+	readonly greebleScale: number;
+	/** How much of the role's paint survives, as `ship-surface.ts`'s
+	 *  `paint`: chroma kept and brightness kept. 1 and 1 is the paint as
+	 *  authored. */
+	readonly paint: { readonly saturation: number; readonly value: number };
+}
+
+/**
+ * The industrial plating over a role's own: the role keeps its seam darkness,
+ * variation, finish and weathering, and gains a **staggered rectangular bond
+ * with a one-texel cut groove** — #101's layout, which the stations never
+ * took — and a second octave of 75 m panel groups with a wider groove. On a
+ * 256 map with a 0.3 km tile the plate is the same 18.75 m as before.
+ */
+const INDUSTRIAL_STATION_MACRO: MacroOctave = {
+	pitchPx: 64,
+	aspect: 2,
+	stagger: 0.5,
+	seamHalfWidthPx: 2,
+	seam: 0.38,
+	variation: 14,
+	seamDepth: 0.5,
+};
+
+const industrialPlating = (
+	role: PlatingProfile,
+	weathering: number,
+	grime: Pick<PlatingProfile, "streakDepth" | "soot" | "macro"> = {},
+): PlatingProfile => ({
+	...role,
+	pitchPx: 16,
+	aspect: 2,
+	stagger: 0.5,
+	seamHalfWidthPx: 1,
+	seamDepth: 0.6,
+	// A factor on the role's own, bounded short of 1: the refinery already
+	// carries 0.78, and a streak term at 1 is a plate that is all streak.
+	weathering: Math.min(0.95, role.weathering * weathering),
+	macro: INDUSTRIAL_STATION_MACRO,
+	...grime,
+});
+
+/**
+ * The macro octave at ship-scale plating: on a 512 map with a 0.3 km tile
+ * the plate is 9.4 m — a sixth of a courier — and a 128-texel group is the
+ * same 75 m panel the industrial finish has, so the groups that carry the
+ * scale at range are unchanged and only the plates within them are finer.
+ * Four groups a tile, which is what the industrial finish repeats today.
+ */
+const SHIP_SCALE_STATION_MACRO: MacroOctave = {
+	...INDUSTRIAL_STATION_MACRO,
+	pitchPx: 128,
+	seamHalfWidthPx: 3,
+};
+
+export const STATION_FINISHES = {
+	stock: {
+		name: "Stock",
+		thesis: "#36's surface and fixtures as they shipped",
+		plating: (role) => role,
+		mapScale: 1,
+		tile: 1,
+		fixtures: false,
+		beacons: false,
+		greebleDensity: 1,
+		greebleScale: 1,
+		paint: { saturation: 1, value: 1 },
+	},
+	plated: {
+		name: "Plated",
+		thesis:
+			"a staggered cut plate under a second octave of panel groups; no new structure",
+		plating: (role) => industrialPlating(role, 1),
+		mapScale: 2,
+		tile: 2,
+		fixtures: false,
+		beacons: false,
+		greebleDensity: 1,
+		greebleScale: 1,
+		paint: { saturation: 1, value: 1 },
+	},
+	industrial: {
+		name: "Industrial",
+		thesis:
+			"plated, plus trusses, radiators, tank racks, pipe runs, masts and beacons",
+		plating: (role) => industrialPlating(role, 1),
+		mapScale: 2,
+		tile: 2,
+		fixtures: true,
+		beacons: true,
+		greebleDensity: 1.5,
+		greebleScale: 1,
+		paint: { saturation: 1, value: 1 },
+	},
+	worn: {
+		name: "Worn",
+		thesis:
+			"industrial, with the streaking raised toward the Nostromo — reverses #98's refusal of grime",
+		plating: (role) => industrialPlating(role, 2.2),
+		mapScale: 2,
+		tile: 2,
+		fixtures: true,
+		beacons: true,
+		greebleDensity: 1.8,
+		greebleScale: 1,
+		paint: { saturation: 1, value: 1 },
+	},
+	/**
+	 * Worn, one step further, at ship scale — the principal's direction on
+	 * the first sheet (2026-09-06). Deeper streaks and sooted plates; the
+	 * paint pulled toward grey; 9.4 m plates under the same 75 m groups; and
+	 * the clutter at two fifths of its size with three times the count, so
+	 * the station's size shows against it. The fixtures' own scale is not a
+	 * finish dial — `station-fixtures.ts`'s `SHIP_SCALE` sizes them for every
+	 * finish that draws them.
+	 */
+	nostromo: {
+		name: "Nostromo",
+		thesis:
+			"worn, one step further, at ship scale: deeper streaks, sooted plates, greyed paint, 9 m plates, finer clutter",
+		plating: (role) =>
+			industrialPlating(role, 2.6, {
+				streakDepth: 0.75,
+				soot: 0.4,
+				macro: SHIP_SCALE_STATION_MACRO,
+			}),
+		mapScale: 4,
+		tile: 2,
+		fixtures: true,
+		beacons: true,
+		greebleDensity: 3.2,
+		greebleScale: 0.4,
+		paint: { saturation: 0.4, value: 0.72 },
+	},
+} as const satisfies Record<string, StationFinish>;
+
+export type StationFinishId = keyof typeof STATION_FINISHES;
+export const STATION_FINISH_IDS = Object.keys(
+	STATION_FINISHES,
+) as StationFinishId[];
+
+/**
+ * The finish the game ships with — the principal's choice on the second
+ * sheet (2026-09-06): worn, with #202's fixtures at ship scale. `stock` is
+ * #36's surface as it was and stays a preset; `tests/station-finish.test.ts`
+ * pins it and reads this.
+ */
+export const DEFAULT_STATION_FINISH: StationFinishId = "worn";
+/** The finish in force — one value, one writer, read at build time. */
+let stationFinish: StationFinishId = DEFAULT_STATION_FINISH;
+
+export const stationFinishId = () => stationFinish;
+export const currentStationFinish = (): StationFinish =>
+	STATION_FINISHES[stationFinish];
+
+export function setStationFinish(id: StationFinishId) {
+	// Own keys only: `in` walks the prototype, and "toString" would pass.
+	if (!Object.hasOwn(STATION_FINISHES, id))
+		throw new Error(`no station finish ${id}`);
+	stationFinish = id;
+}
+
+/** A role's plating under the finish in force. */
+export const stationPlating = (type: StationType): PlatingProfile =>
+	currentStationFinish().plating(STATION_VISUALS[type].plating);
+
+/** The map side under the finish in force, texels. */
+export const stationMapSize = () =>
+	PLATE_TEXTURE_SIZE * currentStationFinish().mapScale;
 
 /**
  * How much of a station is drawn, given how large it appears.
@@ -378,8 +588,20 @@ export const STATION_VISUALS: Record<StationType, StationVisualProfile> = {
  * `size` is kept in the signature for `station-mesh.ts`, which passes it
  * explicitly beside the two it hands `DataTexture`.
  */
-export function platingTexels(type: StationType, size = PLATE_TEXTURE_SIZE) {
-	return plateTexels(STATION_VISUALS[type].plating, type, size);
+export function platingTexels(type: StationType, size = stationMapSize()) {
+	return plateTexels(stationPlating(type), type, size);
+}
+
+/**
+ * The role's seam normal map under the finish in force, or `null` when the
+ * finish paints its seams — which every station did until #202, and which
+ * `stock` still does. `null` rather than a flat map, so the material has no
+ * normal map at all and pays no tangent frame for a term that is zero.
+ */
+export function seamTexels(type: StationType, size = stationMapSize()) {
+	const profile = stationPlating(type);
+	if (profile.seamDepth <= 0) return null;
+	return seamNormalTexels(profile, size);
 }
 
 /**
@@ -393,10 +615,10 @@ export function platingTexels(type: StationType, size = PLATE_TEXTURE_SIZE) {
  */
 export function surfaceTexels(
 	type: StationType,
-	size = PLATE_TEXTURE_SIZE,
+	size = stationMapSize(),
 	precomputed?: Uint8Array,
 ) {
-	const profile = STATION_VISUALS[type].plating;
+	const profile = stationPlating(type);
 	return wearTexels(
 		profile,
 		precomputed ?? plateTexels(profile, type, size),

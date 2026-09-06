@@ -19,7 +19,7 @@
  * quality gate drops the geometry and keeps every light.
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import {
 	STATION_GEOMETRY,
@@ -33,7 +33,17 @@ import {
 	setStationDetail,
 	updateStationVisuals,
 } from "../src/station-mesh";
-import { STATION_QUALITY, STATION_VISUALS } from "../src/station-visuals";
+import {
+	DEFAULT_STATION_FINISH,
+	STATION_FINISH_IDS,
+	STATION_QUALITY,
+	STATION_VISUALS,
+	currentStationFinish,
+	setStationFinish,
+} from "../src/station-visuals";
+
+// The default, not stock, for `ship-finish.test.ts`'s reason.
+afterEach(() => setStationFinish(DEFAULT_STATION_FINISH));
 
 const TYPES: StationType[] = STATION_TYPES;
 const GREY = 0x9aa6b2;
@@ -174,9 +184,15 @@ describe("every form carries clutter, and the density figure is what puts it the
 				(sum, mesh) => sum + (mesh as THREE.InstancedMesh).count,
 				0,
 			);
+			// The role's figure times the finish's: the default finish is
+			// `worn` since the second sheet and it carries 1.8.
 			expect([type, total]).toEqual([
 				type,
-				Math.round(100 * STATION_VISUALS[type].greebleDensity),
+				Math.round(
+					100 *
+						STATION_VISUALS[type].greebleDensity *
+						currentStationFinish().greebleDensity,
+				),
 			]);
 		}
 		// And the four figures are not all the same, so the equality above is
@@ -275,59 +291,90 @@ describe("a greeble is mounted on the station, not floating beside it", () => {
 		// What it still cannot see is a piece buried inside a hollow — it finds
 		// the outer surface and is satisfied. That limit is the window panes'
 		// too, and it is a person's job for the same reason.
-		for (const type of TYPES) {
-			for (const form of STATION_FORMS[type]) {
-				const { root, greebles } = buildStationForm(type, form.id, GREY, 0);
-				root.updateMatrixWorld(true);
-				const structure: THREE.Mesh[] = [];
-				root.traverse((object) => {
-					const mesh = object as THREE.Mesh;
-					if (isGreeble(object)) return;
-					if (!mesh.geometry) return;
-					if ((mesh as THREE.InstancedMesh).isInstancedMesh) return;
-					structure.push(mesh);
-				});
-				const ray = new THREE.Raycaster();
-				const matrix = new THREE.Matrix4();
-				const centre = new THREE.Vector3();
-				const rotation = new THREE.Quaternion();
-				const scale = new THREE.Vector3();
-				const normal = new THREE.Vector3();
-				const floating: string[] = [];
-				for (const mesh of greebles) {
-					for (let i = 0; i < mesh.count; i++) {
-						mesh.getMatrixAt(i, matrix);
-						// **Composed with the mesh's world matrix before
-						// decomposing**, so the scale comes back in the same
-						// units as the positions. Decomposing the instance
-						// matrix alone gives kilometres while `localToWorld`
-						// gives core radii, and the two differ by the core
-						// radius — a factor of 6.7 on an outpost, which is
-						// enough to fail every piece on all three of its forms
-						// while the geometry is correct.
-						matrix.premultiply(mesh.matrixWorld);
-						matrix.decompose(centre, rotation, scale);
-						normal.set(0, 0, 1).applyQuaternion(rotation).normalize();
-						// **From just above the piece's own top, reaching just
-						// past its own base.** An earlier version launched from
-						// one core radius out, which is hundreds of times the
-						// generator's own probe: anything the ray crossed on the
-						// way in satisfied it, so a piece floating clear of its
-						// surface passed as long as *something* stood further
-						// out along its normal. The window is the piece.
-						const height = scale.z;
-						ray.set(
-							centre.clone().addScaledVector(normal, height * 0.6),
-							normal.clone().negate(),
-						);
-						ray.far = height * 1.2;
-						const hit = ray.intersectObjects(structure, false);
-						if (!hit.length) floating.push(`${mesh.name}#${i}`);
+		// Under every finish, because a finish multiplies the count and scales
+		// the piece: sage found two of the Buoy's pieces buried under
+		// `nostromo` while this passed under stock alone.
+		// The finish is restored by `afterEach` at file scope, not at the end
+		// of this body: a red assertion mid-loop would otherwise leave the
+		// finish set for every later file in the process.
+		for (const finish of STATION_FINISH_IDS)
+			for (const type of TYPES)
+				for (const form of STATION_FORMS[type]) {
+					setStationFinish(finish);
+					const { root, greebles } = buildStationForm(type, form.id, GREY, 0);
+					root.updateMatrixWorld(true);
+					const structure: THREE.Mesh[] = [];
+					root.traverse((object) => {
+						const mesh = object as THREE.Mesh;
+						if (isGreeble(object)) return;
+						if (!mesh.geometry) return;
+						if ((mesh as THREE.InstancedMesh).isInstancedMesh) return;
+						structure.push(mesh);
+					});
+					const ray = new THREE.Raycaster();
+					const matrix = new THREE.Matrix4();
+					const centre = new THREE.Vector3();
+					const rotation = new THREE.Quaternion();
+					const scale = new THREE.Vector3();
+					const normal = new THREE.Vector3();
+					const floating: string[] = [];
+					for (const mesh of greebles) {
+						for (let i = 0; i < mesh.count; i++) {
+							mesh.getMatrixAt(i, matrix);
+							// **Composed with the mesh's world matrix before
+							// decomposing**, so the scale comes back in the same
+							// units as the positions. Decomposing the instance
+							// matrix alone gives kilometres while `localToWorld`
+							// gives core radii, and the two differ by the core
+							// radius — a factor of 6.7 on an outpost, which is
+							// enough to fail every piece on all three of its forms
+							// while the geometry is correct.
+							matrix.premultiply(mesh.matrixWorld);
+							matrix.decompose(centre, rotation, scale);
+							normal.set(0, 0, 1).applyQuaternion(rotation).normalize();
+							// **From just above the piece's own top, reaching just
+							// past its own base.** An earlier version launched from
+							// one core radius out, which is hundreds of times the
+							// generator's own probe: anything the ray crossed on the
+							// way in satisfied it, so a piece floating clear of its
+							// surface passed as long as *something* stood further
+							// out along its normal. The window is the piece.
+							const height = scale.z;
+							ray.set(
+								centre.clone().addScaledVector(normal, height * 0.6),
+								normal.clone().negate(),
+							);
+							ray.far = height * 1.2;
+							// **Three casts, the second two a hair to either side.** A
+							// zone places pieces at round angles — the Ring's at
+							// multiples of 30° on a 24-segment torus — which is
+							// exactly where two facets share an edge, and a ray down
+							// that edge can miss both triangles by rounding: the
+							// generator's own cast hit from 4.5 m out and this one
+							// missed from 9. A nudge of a micron along the piece's
+							// own width settles it without widening the window.
+							const across = new THREE.Vector3(1, 0, 0)
+								.applyQuaternion(rotation)
+								.normalize();
+							const start = ray.ray.origin.clone();
+							let hit = ray.intersectObjects(structure, false);
+							for (const side of [1, -1])
+								if (!hit.length) {
+									ray.ray.origin
+										.copy(start)
+										.addScaledVector(across, side * 1e-6);
+									hit = ray.intersectObjects(structure, false);
+								}
+							if (!hit.length) floating.push(`${mesh.name}#${i}`);
+						}
 					}
+					expect([finish, type, form.id, floating]).toEqual([
+						finish,
+						type,
+						form.id,
+						[],
+					]);
 				}
-				expect([type, form.id, floating.length]).toEqual([type, form.id, 0]);
-			}
-		}
 	});
 });
 
@@ -432,7 +479,9 @@ describe("#129 — the windows are dense enough to read as inhabited", () => {
 		// assertion silently starts comparing against another form's count, and
 		// nothing goes red.
 		const before: Record<StationType, Record<string, number>> = {
-			trade: { a: 28, b: 28, c: 28 },
+			// `d` is the modular assembly (#202) and post-dates #36; its floor is
+			// the honest one, that it carries panes at all.
+			trade: { a: 28, b: 28, c: 28, d: 0 },
 			shipyard: { a: 16, b: 16, c: 12 },
 			refinery: { a: 12, b: 12, c: 10 },
 			outpost: { a: 6, b: 6, c: 6 },

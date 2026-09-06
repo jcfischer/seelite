@@ -19,11 +19,7 @@
 
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
-import {
-	STATION_GEOMETRY,
-	STATION_TYPES,
-	type StationType,
-} from "../src/station";
+import { STATION_TYPES, type StationType } from "../src/station";
 import {
 	STATION_FORMS,
 	STATION_SILHOUETTE_KM,
@@ -40,59 +36,18 @@ import {
 	flickerIntensity,
 	platingTexels,
 	stationDetailLevel,
+	stationMapSize,
 	surfaceTexels,
 } from "../src/station-visuals";
 import { PLATE_TEXTURE_SIZE } from "../src/surface";
 import { HANDOFF_HYSTERESIS, HANDOFF_KM } from "../src/units";
+import { reachKm } from "./helpers/station-reach";
 
 // From `station.ts`, not a literal: a fourth station type must reach every
 // loop in this file, and a hand-written list is exactly the place it would not.
 const TYPES: StationType[] = STATION_TYPES;
 const LEVELS: StationDetailLevel[] = ["full", "reduced", "outline"];
 const GREY = 0x9aa6b2;
-
-/** The farthest vertex from the centre, kilometres — the same measurement
- *  `station-mesh.test.ts` guards #28's budget with, applied here to a mesh whose
- *  detail level has been changed under it. Instanced copies live in
- *  `instanceMatrix` rather than in the graph, so they are walked explicitly or
- *  the window grid is measured at the origin. */
-function reachKm(root: THREE.Object3D, type: StationType): number {
-	root.updateMatrixWorld(true);
-	let maxSq = 0;
-	const v = new THREE.Vector3();
-	const instance = new THREE.Matrix4();
-	// An explicit stack rather than `traverse`, because the two behave
-	// differently at the point this test rests on: returning early from a
-	// `traverse` callback skips that node and **still visits its children**, so a
-	// hidden group with drawn-looking descendants would have been measured. That
-	// holds today only because every tagged accessory happens to be a leaf, which
-	// is not something this assertion should depend on.
-	const stack: THREE.Object3D[] = [root];
-	while (stack.length) {
-		const object = stack.pop() as THREE.Object3D;
-		// Hidden parts are not drawn, so neither they nor anything under them is
-		// part of the outline. This is what lets the assertion below be an
-		// equality rather than a tolerance.
-		if (!object.visible) continue;
-		for (const child of object.children) stack.push(child);
-		const mesh = object as THREE.Mesh;
-		const position = mesh.geometry?.getAttribute?.("position");
-		if (!position) continue;
-		const instanced = object as THREE.InstancedMesh;
-		const count = instanced.isInstancedMesh ? instanced.count : 1;
-		for (let n = 0; n < count; n++) {
-			if (instanced.isInstancedMesh) instanced.getMatrixAt(n, instance);
-			else instance.identity();
-			for (let i = 0; i < position.count; i++) {
-				v.fromBufferAttribute(position as THREE.BufferAttribute, i);
-				v.applyMatrix4(instance);
-				mesh.localToWorld(v);
-				maxSq = Math.max(maxSq, v.lengthSq());
-			}
-		}
-	}
-	return Math.sqrt(maxSq) * STATION_GEOMETRY[type].coreRadiusKm;
-}
 
 describe("a detail level may not change the outline", () => {
 	test("reach is identical at every level", () => {
@@ -267,7 +222,9 @@ describe("the plating is generated, not downloaded, and sized for RGBAFormat", (
 	test("every buffer is exactly 4 x w x h", () => {
 		// A `DataTexture` whose buffer is short does not throw. It samples past
 		// the end and renders as garbage — the failure this assertion exists for.
-		const n = PLATE_TEXTURE_SIZE * PLATE_TEXTURE_SIZE * 4;
+		// The map side is the finish's (`worn` doubles it), so the size is
+		// read off the finish in force rather than off the base constant.
+		const n = stationMapSize() * stationMapSize() * 4;
 		for (const type of TYPES) {
 			expect(platingTexels(type).length).toBe(n);
 			expect(surfaceTexels(type).length).toBe(n);

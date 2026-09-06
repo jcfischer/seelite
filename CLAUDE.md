@@ -489,6 +489,41 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   compiles, links, renders and carries the patched program's own name. Every
   patch here goes through `shader-splice.ts` and records what landed in
   `userData`, and a probe reads it.
+- **A finish is module state, read at build time (#202, #203).**
+  `HULL_FINISHES` and `STATION_FINISHES` are presets — `stock`, `plated`,
+  `industrial`, `worn`, `nostromo` — selected by `setHullFinish` /
+  `setStationFinish` and read by every builder as it runs. The game never
+  switches; the workbench does. Three things follow. A test that sets a
+  finish **restores the default** — `DEFAULT_HULL_FINISH` /
+  `DEFAULT_STATION_FINISH` — in `afterEach`, because bun runs every file in
+  one process and a file that left another finish set hands the next file a
+  hull the game does not ship; a test that speaks about `stock` sets it by
+  name. Every cache that depends on the surface — hull maps, palettes,
+  station maps, hull materials — is **keyed by the finish id**; one that is
+  not hands the second finish the first's textures. And a tile is the
+  finish's, not the constant's: `plateUVs` divides by `finish.panelKm` and
+  `shell()` by `STATION_PANEL_KM × finish.tile`, so a doubled map keeps the
+  same plate. The default is `worn` since the principal's choice on the
+  second sheet (`DEFAULT_HULL_FINISH`, `DEFAULT_STATION_FINISH`), and
+  `stock` is the **surface** that shipped before #202 and #203 — its maps
+  and its hull geometry, which `tests/ship-finish.test.ts`'s roster hash
+  and the pins in `tests/surface.test.ts` hold — and not the station
+  forms, which moved under every finish (the Gantry's keel, spindle and
+  plating). A finish may not move a hull's **envelope** either: the
+  envelope is the berth catalogue's fit predicate, and the first flanged
+  collar changed the explorer's selected variant; `tests/ship-finish.test.ts`
+  holds every built box equal under every finish.
+- **A fixture is mounted by a flood, not by a ray, and the islands check
+  works in core radii (#202).** `tests/station-finish.test.ts` supports a
+  member if its box touches structure *or a supported member*, because a ray
+  from a mast's top toward the centre passes over the keel it stands on and
+  read every mast as floating. `tests/station-mesh.test.ts`'s islands check
+  boxes the normalised root, so its 0.004 overlap is 2.4 m on a trade
+  station: a dish resting exactly on its mast, or a drum 40 m short of its
+  cell edge, is an island. Sink a part into what carries it. And on the
+  Coriolis the headroom is the corner's, not the face's — a point at lateral
+  offset `d` on a face may stand `h` proud only while `hypot(face + h, d) < r`
+  — which is what caps the structure it can carry without moving its outline.
 - **Per-system RNG streams.** One shared generator couples every system to every
   other system's draw count. Add a domain tag rather than reusing one; reusing a
   tag silently correlates the two draws.

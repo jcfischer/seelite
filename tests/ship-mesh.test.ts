@@ -377,8 +377,12 @@ describe("procedural ship visual language", () => {
 				let checked = 0;
 				for (const child of root.children) {
 					if (!(child instanceof THREE.Mesh)) continue;
+					// A ring's box is full and its middle is empty, so the box test
+					// would read a hoop round a nacelle as a wall across the view.
+					// Marked by the builder rather than matched on `TorusGeometry`,
+					// because #203's collar is a loft and a ring all the same.
 					if (
-						child.geometry.type === "TorusGeometry" ||
+						child.geometry.userData.ring === true ||
 						child.geometry.userData.thin === true ||
 						OWN_HULL.test(child.name)
 					)

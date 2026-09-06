@@ -49,6 +49,7 @@
  */
 
 import * as THREE from "three";
+import { mutePaint } from "./surface";
 import { EMISSIVE_CEILING } from "./light-rig";
 import { appendRing, cutRing, ringTriangles } from "./face-cut";
 import { type ApertureCut, type Ring, boxProjectUVs, hullLoft } from "./loft";
@@ -65,15 +66,45 @@ import {
 } from "./station";
 import { type GreebleZone, buildGreebles } from "./station-greebles";
 import {
+	Pools,
+	SHIP_SCALE,
+	buildMacroFixtures,
+	mast,
+	radiatorArray,
+	tankRack,
+	truss,
+} from "./station-fixtures";
+import {
+	DISH,
+	HUB,
+	MODULAR_RADIUS,
+	NODE,
+	type Placement,
+	RADIATOR,
+	TANKS,
+	TRUSS_X,
+	TRUSS_Y,
+	TUBE_X,
+	TUBE_Y,
+	isHost,
+	modularPlacements,
+} from "./station-modular";
+import { DIRECTIONS } from "./wfc";
+import {
 	STATION_QUALITY,
 	STATION_VISUALS,
 	type StationQuality,
 	type StationDetailLevel,
 	type StationFixtureKind,
+	currentStationFinish,
 	fixtureIntensity,
 	flickerIntensity,
 	platingTexels,
+	seamTexels,
 	stationDetailLevel,
+	stationFinishId,
+	stationMapSize,
+	stationPlating,
 	surfaceTexels,
 } from "./station-visuals";
 import {
@@ -82,7 +113,6 @@ import {
 	ringAround,
 } from "./station-interior-mesh";
 import { stationInterior } from "./station-interior";
-import { PLATE_TEXTURE_SIZE } from "./surface";
 import { disposeSubtree, isShared, shared } from "./gpu-teardown";
 
 /**
@@ -244,20 +274,18 @@ export interface StationFixture {
  * through because the albedo map is greyscale.
  */
 const surfaceMaps = (type: StationType) => {
+	// The finish's size, not `PLATE_TEXTURE_SIZE`: an industrial finish doubles
+	// the map with its tile so a second octave has room (#202).
+	const size = stationMapSize();
 	// Generated once and handed to both textures: `surfaceTexels` derives its
 	// wear from the albedo, so regenerating it would run the plating loop twice
 	// per role and leave two buffers that only happen to agree.
-	const plate = platingTexels(type);
-	const albedo = new THREE.DataTexture(
-		plate,
-		PLATE_TEXTURE_SIZE,
-		PLATE_TEXTURE_SIZE,
-		THREE.RGBAFormat,
-	);
+	const plate = platingTexels(type, size);
+	const albedo = new THREE.DataTexture(plate, size, size, THREE.RGBAFormat);
 	const wear = new THREE.DataTexture(
-		surfaceTexels(type, PLATE_TEXTURE_SIZE, plate),
-		PLATE_TEXTURE_SIZE,
-		PLATE_TEXTURE_SIZE,
+		surfaceTexels(type, size, plate),
+		size,
+		size,
 		THREE.RGBAFormat,
 	);
 	// **sRGB on the albedo, linear on the wear map.** three.js reads a `map` as
@@ -281,7 +309,22 @@ const surfaceMaps = (type: StationType) => {
 		map.generateMipmaps = true;
 		map.needsUpdate = true;
 	}
-	return { albedo, wear };
+	// The embossed seam, where the finish cuts one (#202). **Linear**, unlike
+	// the two above: `ship-surface.ts` records that a nearest-sampled normal
+	// bands in the highlight rather than stepping at a hard edge.
+	const seamBytes = seamTexels(type, size);
+	let seams: THREE.Texture | null = null;
+	if (seamBytes) {
+		seams = new THREE.DataTexture(seamBytes, size, size, THREE.RGBAFormat);
+		shared(seams);
+		seams.wrapS = THREE.RepeatWrapping;
+		seams.wrapT = THREE.RepeatWrapping;
+		seams.magFilter = THREE.LinearFilter;
+		seams.minFilter = THREE.LinearMipmapLinearFilter;
+		seams.generateMipmaps = true;
+		seams.needsUpdate = true;
+	}
+	return { albedo, wear, seams };
 };
 
 /**
@@ -298,14 +341,37 @@ const surfaceMaps = (type: StationType) => {
  * guarantee: `surfaceMaps` reads `STATION_VISUALS[type]`, which is the `Record`
  * that stops the build.
  */
-const surfaceMapCache = new Map<StationType, ReturnType<typeof surfaceMaps>>();
+const surfaceMapCache = new Map<string, ReturnType<typeof surfaceMaps>>();
+/**
+ * Build every role's maps now rather than on the first station of that role.
+ * A role's maps are built once per process on its first `buildStationMesh`,
+ * which is inside a system's populate at a jump; under `worn` that is
+ * 32-47 ms a role (sage, round 5), a hitch on a jump. `main.ts` calls this
+ * at boot beside the player's hull, where a one-off cost belongs.
+ */
+export function warmStationMaps() {
+	for (const type of STATION_TYPES) mapsFor(type);
+}
+
 const mapsFor = (type: StationType) => {
-	const cached = surfaceMapCache.get(type);
+	// Keyed by **what the maps are made from** — the role, the map size and
+	// the plating profile — rather than by the finish: `plated` and
+	// `industrial` share all three, and a key per finish generated the same
+	// maps twice on a workbench switch (37–57 ms and 768 KiB a role, sage
+	// measured) and kept both. A finish with its own profile gets its own
+	// entry; the game only ever fills one key per role.
+	const key = `${type}:${stationMapSize()}:${JSON.stringify(stationPlating(type))}`;
+	const cached = surfaceMapCache.get(key);
 	if (cached) return cached;
 	const built = surfaceMaps(type);
-	surfaceMapCache.set(type, built);
+	surfaceMapCache.set(key, built);
 	return built;
 };
+
+/** The world size of one plating tile under the finish in force — the stock
+ *  `STATION_PANEL_KM` times the finish's tile multiple, so a doubled map keeps
+ *  the same nineteen-metre plate. */
+const stationPanelKm = () => STATION_PANEL_KM * currentStationFinish().tile;
 
 /**
  * A painted hull carrying its role's plating.
@@ -326,15 +392,22 @@ const mapsFor = (type: StationType) => {
 const hullMaterials = new Map<string, THREE.MeshStandardMaterial>();
 
 const hullMaterial = (color: number, type: StationType) => {
-	const cacheKey = `${type}:${color}`;
+	const cacheKey = `${stationFinishId()}:${type}:${color}`;
 	const cached = hullMaterials.get(cacheKey);
 	if (cached) return cached;
-	const { albedo, wear } = mapsFor(type);
+	const { albedo, wear, seams } = mapsFor(type);
 	const material = new THREE.MeshStandardMaterial({
-		color,
+		// The role's paint under the finish's dial — as authored on the
+		// finishes whose dial is 1 and 1, which is every finish before
+		// `nostromo`.
+		color: mutePaint(color, currentStationFinish().paint),
 		map: albedo,
 		roughnessMap: wear,
 		metalnessMap: wear,
+		// The cut seam, on the finishes that cut one (#202); `null` leaves the
+		// stock material exactly as it was, with no tangent frame in its program.
+		normalMap: seams,
+		normalScale: new THREE.Vector2(1, 1),
 		// Multiplied by the map's green and blue channels, so these are the
 		// ceilings rather than the values. Left at 1 the map would be the whole
 		// answer and the profile's figures would be decoration.
@@ -797,8 +870,8 @@ export interface StationForm {
 	readonly build: (color: number, berthSeed: number) => BuiltPart;
 }
 
-export type StationFormId = "a" | "b" | "c";
-export const STATION_FORM_IDS: StationFormId[] = ["a", "b", "c"];
+export type StationFormId = "a" | "b" | "c" | "d";
+export const STATION_FORM_IDS: StationFormId[] = ["a", "b", "c", "d"];
 
 /** One flat-shaded clone per base material, kept. */
 const flatClones = new WeakMap<THREE.Material, THREE.Material>();
@@ -877,8 +950,9 @@ function shell(
 	// which is what this did, gives a 1.5 km keel and a 0.12 km terrace six
 	// bands each: one coarse, the other a smear.
 	const uv = geometry.getAttribute("uv") as THREE.BufferAttribute;
+	const panelKm = stationPanelKm();
 	for (let i = 0; i < uv.count; i++)
-		uv.setXY(i, uv.getX(i) / STATION_PANEL_KM, uv.getY(i) / STATION_PANEL_KM);
+		uv.setXY(i, uv.getX(i) / panelKm, uv.getY(i) / panelKm);
 	uv.needsUpdate = true;
 	// Cached per source material: the forms ask for flat shading dozens of times
 	// per station, and a clone each time gives one station dozens of distinct
@@ -1173,7 +1247,7 @@ function buildCuboctahedron(
 		appendRing(geometry, ringTriangles(outer, inner, face), aperture);
 	}
 	// Box-projected UVs, per face — see `boxProjectUVs`.
-	boxProjectUVs(geometry, STATION_PANEL_KM);
+	boxProjectUVs(geometry, stationPanelKm());
 	// Through the clone cache, not by mutating the material it was handed: hull
 	// materials are shared per (type, colour) now, so setting `flatShading` on
 	// one sets it on every station of that type. It happens to be what both of
@@ -1672,7 +1746,20 @@ function buildTradeDrum(color: number, berthSeed: number): BuiltPart {
  * identity on the outline down the aperture axis, and a 2.7 km keel projects
  * the same silhouette from 360 m further aft.
  */
-export const SHIPYARD_KEEL_AFT_KM = 0.36;
+/*
+ * **680 m since the principal's second sheet (2026-09-06), and a spindle
+ * between.** At 360 m the keel's forward face stood at z −0.06 while the
+ * hub's aft face is at −0.30, so the drum's aft 240 m sat *inside* the keel:
+ * a square drum embedded in a static body, which the principal read as "the
+ * rotating part just sits in the main body". Sensible geometry for a thing
+ * that turns against a thing that does not is a spindle through a bearing:
+ * the Gantry's hub now carries a round spindle aft from its face, the keel
+ * carries a bearing ring proud of its forward face, and the keel sits far
+ * enough aft — 680 m, its forward face at −0.46 — that the spindle shows
+ * between the two. The Hangar's slab moves with it, for the same reason.
+ * The keel's far end reaches 1.65 km now, and the form's declaration says so.
+ */
+export const SHIPYARD_KEEL_AFT_KM = 0.68;
 
 /** Shipyard A — Gantry. A bridge keel with two open bays of lofted ribs
  *  along it; the bays are the silhouette, and they are obviously *for* holding
@@ -1710,6 +1797,22 @@ function buildShipyardGantry(color: number, berthSeed: number): BuiltPart {
 	const spun = new THREE.Group();
 	spun.name = "spun";
 	spun.add(hub);
+	// The spindle: round, on the axis, turning with the hub, from inside the
+	// keel to inside the hub's aft face. Its own loft at twelve segments,
+	// because the hub is a four-segment loft and a round ring on it would be
+	// a diamond. See `SHIPYARD_KEEL_AFT_KM` for why it exists.
+	spun.add(
+		shell(
+			[
+				{ z: -r * 0.9, w: r * 0.2, h: r * 0.2, e: 2 },
+				{ z: -r * 0.48, w: r * 0.2, h: r * 0.2, e: 2 },
+			],
+			hullMaterial(color, "shipyard"),
+			"spindle",
+			12,
+			true,
+		),
+	);
 	spun.add(
 		buildAperture(
 			"shipyard",
@@ -1718,7 +1821,15 @@ function buildShipyardGantry(color: number, berthSeed: number): BuiltPart {
 		),
 	);
 	group.add(spun);
-	const rib = plainMaterial(0x6f7d88, 0.78, 0.42);
+	// **The frame is plated, since the principal's second sheet.** The keel,
+	// rails, booms and struts were a plain light grey and took no finish —
+	// "the shipyard barely changes between stock and worn" was the first
+	// sheet's finding and "the main body still reads too clean" the second
+	// — so every lofted part of the frame now carries the shipyard's own hull
+	// material, seams, streaks and soot included. The arches are tori, whose
+	// normalised unwrap would stretch one tile round each rib, so they stay
+	// plain and go a shade darker than the plating they sit against.
+	const rib = plainMaterial(0x5b6772, 0.82, 0.38);
 	// Named, because every shipyard form has one and `probe-station.mjs` reads
 	// it: the check is that the *whole assembly* reparents across the layer
 	// handoff, not just the painted core, and it needs one name that holds for
@@ -1733,7 +1844,7 @@ function buildShipyardGantry(color: number, berthSeed: number): BuiltPart {
 			{ z: span * 0.34, w: r * 0.5, h: r * 0.42, e: 3.4 },
 			{ z: span * 0.56, w: r * 0.38, h: r * 0.32, e: 3.4 },
 		],
-		plainMaterial(0x8b95a0, 0.7, 0.44),
+		hullMaterial(color, "shipyard"),
 		"keel",
 		12,
 		true,
@@ -1741,6 +1852,19 @@ function buildShipyardGantry(color: number, berthSeed: number): BuiltPart {
 	keel.rotation.y = Math.PI / 2;
 	keel.position.z = -SHIPYARD_KEEL_AFT_KM;
 	frame.add(keel);
+	// The bearing: a static ring on the keel's forward face that the spindle
+	// turns in, its bore 6 m clear of the spindle. It is what makes the join
+	// legible — a drum on a spindle out of a housing, not a drum in a body.
+	const bearing = new THREE.Mesh(
+		new THREE.TorusGeometry(r * 0.26, r * 0.05, 6, 16),
+		rib,
+	);
+	// Proud of the keel's forward face, which at x = 0 is about 0.27 km ahead
+	// of the keel's centre: the ring's body overlaps the face by a few metres
+	// and the rest of it shows.
+	bearing.position.z = -SHIPYARD_KEEL_AFT_KM + r * 0.49;
+	bearing.name = "bearing";
+	frame.add(bearing);
 	for (let i = 0; i < 7; i++) {
 		const x = -span * 0.52 + (i / 6) * span * 1.04;
 		const arch = new THREE.Mesh(
@@ -1758,9 +1882,10 @@ function buildShipyardGantry(color: number, berthSeed: number): BuiltPart {
 				{ z: -span * 0.56, w: r * 0.05, h: r * 0.05, e: 3 },
 				{ z: span * 0.56, w: r * 0.05, h: r * 0.05, e: 3 },
 			],
-			rib,
+			hullMaterial(color, "shipyard"),
 			"rail",
 			6,
+			true,
 		);
 		rail.rotation.y = Math.PI / 2;
 		rail.position.set(0, y, -SHIPYARD_KEEL_AFT_KM);
@@ -1774,20 +1899,63 @@ function buildShipyardGantry(color: number, berthSeed: number): BuiltPart {
 	// `probe-station.mjs` measured it against the trade station at 1 − IoU 0.238
 	// on a 0.25 floor. Identity is what §7 rests on and the approach view is
 	// where it matters most, so the frame now reaches into that view.
+	//
+	// **Rooted aft of the hub and carried by the frame.** The first booms
+	// began at z = −0.23 km, beside the hub, and touched nothing: the principal
+	// read them as arms that do not connect, and the island check could not
+	// see it while an arch's box stood in for its ring. The hub spins and
+	// sweeps its square section's corner — about 0.70·r — through
+	// z ∈ [−0.5·r, 0.62·r], so nothing may cross to the boom inside that
+	// range; the root is moved aft of it, to −0.85·r, and three struts carry
+	// it there: a transverse beam from inside the keel, and a yoke of two from
+	// the rail on that side, meeting at the boom.
+	const strut = (from: THREE.Vector3, to: THREE.Vector3, halfKm: number) => {
+		const length = from.distanceTo(to);
+		const member = shell(
+			[
+				{ z: -length / 2, w: halfKm, h: halfKm, e: 3 },
+				{ z: length / 2, w: halfKm, h: halfKm, e: 3 },
+			],
+			hullMaterial(color, "shipyard"),
+			"boom-strut",
+			4,
+			true,
+		);
+		member.position.copy(from).add(to).multiplyScalar(0.5);
+		member.quaternion.setFromUnitVectors(
+			new THREE.Vector3(0, 0, 1),
+			to.clone().sub(from).normalize(),
+		);
+		frame.add(member);
+	};
 	for (const y of [-r * 0.8, r * 0.8]) {
+		const root = -r * 1.1;
 		const boom = shell(
 			[
-				{ z: -span * 0.1, w: r * 0.09, h: r * 0.09, e: 3 },
+				{ z: root, w: r * 0.09, h: r * 0.09, e: 3 },
 				{ z: r * 1.5, w: r * 0.07, h: r * 0.07, e: 3, hard: true },
 				{ z: r * 1.9, w: r * 0.16, h: r * 0.16, e: 3 },
 			],
-			plainMaterial(0x6f7d88, 0.78, 0.42),
+			hullMaterial(color, "shipyard"),
 			"boom",
 			6,
 			true,
 		);
 		boom.position.y = y;
 		frame.add(boom);
+		const side = Math.sign(y);
+		const rootAt = new THREE.Vector3(0, y, root + r * 0.08);
+		strut(
+			new THREE.Vector3(0, side * r * 0.3, root + r * 0.08),
+			rootAt,
+			r * 0.035,
+		);
+		for (const x of [-r * 0.45, r * 0.45])
+			strut(
+				new THREE.Vector3(x, side * r * 0.58, -SHIPYARD_KEEL_AFT_KM),
+				rootAt.clone().setZ(root + r * 0.2),
+				r * 0.03,
+			);
 	}
 	// On the keel's own underside, inside its half-height and inside its length.
 	group.add(
@@ -1893,6 +2061,13 @@ function buildShipyardHangar(color: number, berthSeed: number): BuiltPart {
 	// bay reached 60 m past the mouth and stopped against the slab's own top
 	// face. `SHIPYARD_KEEL_AFT_KM` is the same figure and the same argument.
 	slab.position.z = -SHIPYARD_KEEL_AFT_KM;
+	const bearing = new THREE.Mesh(
+		new THREE.TorusGeometry(r * 0.21, r * 0.045, 6, 16),
+		plainMaterial(0x6f7d88, 0.78, 0.42),
+	);
+	bearing.position.z = -SHIPYARD_KEEL_AFT_KM + r * 0.53;
+	bearing.name = "bearing";
+	frame.add(bearing);
 	frame.add(slab);
 
 	// The bay mouth: a recess cut into the flank, floodlit from inside. Its own
@@ -1965,6 +2140,21 @@ function buildShipyardHangar(color: number, berthSeed: number): BuiltPart {
 	const spun = new THREE.Group();
 	spun.name = "spun";
 	spun.add(hub);
+	// The Hangar's spindle and, below, its bearing: the slab moved aft with
+	// the Gantry's keel (`SHIPYARD_KEEL_AFT_KM`) and the hub did not, so the
+	// same drum-on-a-spindle join carries it.
+	spun.add(
+		shell(
+			[
+				{ z: -r * 0.75, w: r * 0.16, h: r * 0.16, e: 2 },
+				{ z: -r * 0.28, w: r * 0.16, h: r * 0.16, e: 2 },
+			],
+			hullMaterial(color, "shipyard"),
+			"spindle",
+			12,
+			true,
+		),
+	);
 	spun.add(buildAperture("shipyard", r * 0.6, berthSeed));
 	group.add(spun);
 
@@ -2882,9 +3072,10 @@ function buildOutpostDerrick(color: number, berthSeed: number): BuiltPart {
 				{ z: -r * 1.9, w: r * 0.34, h: r * 0.34, e: 2.4 },
 				{ z: -r * 1.1, w: r * 0.34, h: r * 0.34, e: 2.4 },
 			],
-			i === 0
-				? hullMaterial(color, "outpost")
-				: plainMaterial(0xb2a894, 0.88, 0.18),
+			// All four plated since the principal's second sheet: three were a
+			// pale matte that took no finish, so the Derrick read as clean under
+			// every finish while the rest of the pool weathered.
+			hullMaterial(color, "outpost"),
 			i === 0 ? "core" : `tank-${i}`,
 			8,
 			true,
@@ -3174,11 +3365,348 @@ function buildOutpostRig(color: number, berthSeed: number): BuiltPart {
 }
 
 /**
+ * The cell pitch of the modular assembly, kilometres, and the module radii as
+ * fractions of it. 0.2 km puts a 96 m habitat tube in each cell, which is
+ * the ISS's proportion at the scale the other trade forms are drawn to, and
+ * makes the eleven-cell diamond 1.8 km across the spine.
+ */
+const MODULAR_CELL_KM = 0.2;
+
+/**
+ * Trade D — Assembly. A compact hub carrying the slot, a truss spine along
+ * ±Y, and modules solved onto a diamond of cells by wave function collapse
+ * (`station-modular.ts`, on seekolous's solver): habitat tubes docked end to
+ * end with a collar at every joint, junction drums, lattice beams, and leaves
+ * hung off them — radiator banks standing out of the plane, tank racks on
+ * pallets, a mast with a dish. The ISS as a grammar rather than a silhouette,
+ * which is the principal's ask for this round.
+ *
+ * **What spins is the hub**, for the shipyard's reason (§7.2): the slot is on
+ * the spin axis, and a 1.8 km assembly spun about it would change the
+ * station's projected width with the clock. The bay is inside the hub, so a
+ * berth turns with the slot. The hub is sized from the bay it has to hold —
+ * `stationInterior("trade")` wants 0.14 × 0.115 km from z = 0.023 to the
+ * mouth — and no wider, so the modules read as the station and the hub as
+ * the thing they dock to.
+ *
+ * **The plan is the berth seed's.** `buildStationForm` carries no station
+ * identity but that draw, and it is per station and deterministic, which is
+ * what the plan needs: two clients at one seed build one station, and a
+ * station keeps its shape across visits. A finer identity is #202's "seed by
+ * station id" and lands with it.
+ *
+ * Every module is the hub's colour where it is a hull and unpainted grey
+ * where it is structure, so §7's colour cue survives the form.
+ */
+function buildTradeModular(color: number, berthSeed: number): BuiltPart {
+	const r = STATION_GEOMETRY.trade.coreRadiusKm;
+	const c = MODULAR_CELL_KM;
+	const group = new THREE.Group();
+	const fixtures: StationFixture[] = [];
+	const { placements } = modularPlacements(berthSeed);
+	const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+	const plane = STATION_GEOMETRY.trade.aperturePlaneKm;
+	const structure = plainMaterial(0x6f7d88, 0.78, 0.42);
+
+	// The hub, and it spins: a twelve-sided drum with the slot cut into its
+	// +Z cap, 0.34·r across — the smallest drum the bay fits in with a wall.
+	const hubR = r * 0.34;
+	const spun = new THREE.Group();
+	spun.name = "spun";
+	spun.add(
+		shell(
+			[
+				{ z: -r * 0.3, w: hubR * 0.78, h: hubR * 0.78, e: 2 },
+				{ z: -r * 0.2, w: hubR, h: hubR, e: 2, hard: true },
+				{ z: r * 0.6, w: hubR, h: hubR, e: 2, hard: true },
+				{ z: plane, w: hubR * 0.92, h: hubR * 0.92, e: 2 },
+			],
+			hullMaterial(color, "trade"),
+			"core",
+			12,
+			true,
+			apertureCut("trade"),
+		),
+	);
+	spun.add(buildAperture("trade", plane, berthSeed));
+	group.add(spun);
+
+	const pools = new Pools();
+	const tubeR = c * 0.24;
+	const tubes: Placement[] = [];
+	/** The unit vector of a `DIRECTIONS` index, in the grid's plane. */
+	const toward = (dir: number) => V(DIRECTIONS[dir][0], DIRECTIONS[dir][1], 0);
+	const cellCentre = (p: Placement) => V(p.dx * c, p.dy * c, 0);
+	/** A docking collar on a tube's or the hub's port. */
+	const collar = (at: THREE.Vector3, axis: "x" | "y", radius: number) => {
+		const ring = new THREE.Mesh(
+			new THREE.TorusGeometry(radius * 1.02, radius * 0.12, 4, 16),
+			structure,
+		);
+		ring.position.copy(at);
+		if (axis === "x") ring.rotation.y = Math.PI / 2;
+		else ring.rotation.x = Math.PI / 2;
+		ring.name = "collar";
+		group.add(ring);
+	};
+	/**
+	 * A habitat tube: a twelve-sided drum the length of its cell, necked at
+	 * both ends, with a collar on every docked end along its own axis.
+	 */
+	const habitatTube = (p: Placement) => {
+		const centre = cellCentre(p);
+		const tube = shell(
+			[
+				{ z: -c * 0.5, w: tubeR * 0.8, h: tubeR * 0.8, e: 2, hard: true },
+				{ z: -c * 0.42, w: tubeR, h: tubeR, e: 2, hard: true },
+				{ z: c * 0.42, w: tubeR, h: tubeR, e: 2, hard: true },
+				{ z: c * 0.5, w: tubeR * 0.8, h: tubeR * 0.8, e: 2 },
+			],
+			hullMaterial(color, "trade"),
+			`module-${p.dx}-${p.dy}`,
+			12,
+			true,
+		);
+		if (p.module === TUBE_X) tube.rotation.y = Math.PI / 2;
+		else tube.rotation.x = Math.PI / 2;
+		tube.position.copy(centre);
+		group.add(tube);
+		const axisDirs = p.module === TUBE_X ? [0, 1] : [2, 3];
+		for (const dir of axisDirs)
+			if (p.joined[dir])
+				collar(
+					centre.clone().addScaledVector(toward(dir), c * 0.5),
+					p.module === TUBE_X ? "x" : "y",
+					tubeR,
+				);
+	};
+	/**
+	 * A junction: a drum 0.3 cells across with a docking stub out to the
+	 * cell's edge on every joined side, and a collar on each. The stubs are
+	 * what `tests/station-mesh.test.ts`'s island check asked for — the drum
+	 * ends at 0.3 and its neighbour starts at 0.5, and a tip node without
+	 * them read as adrift of the tube it was docked to.
+	 */
+	const junction = (p: Placement) => {
+		const centre = cellCentre(p);
+		const node = shell(
+			[
+				{ z: -c * 0.28, w: c * 0.3, h: c * 0.3, e: 2, hard: true },
+				{ z: c * 0.28, w: c * 0.3, h: c * 0.3, e: 2 },
+			],
+			hullMaterial(color, "trade"),
+			`node-${p.dx}-${p.dy}`,
+			12,
+			true,
+		);
+		node.position.copy(centre);
+		group.add(node);
+		for (let dir = 0; dir < 4; dir++) {
+			if (!p.joined[dir]) continue;
+			const stub = shell(
+				[
+					{ z: c * 0.2, w: tubeR * 0.85, h: tubeR * 0.85, e: 2, hard: true },
+					{ z: c * 0.5, w: tubeR * 0.85, h: tubeR * 0.85, e: 2 },
+				],
+				hullMaterial(color, "trade"),
+				`node-stub-${p.dx}-${p.dy}-${dir}`,
+				12,
+				true,
+			);
+			// The loft runs along +Z; turn it onto the stub's direction.
+			stub.quaternion.setFromUnitVectors(
+				new THREE.Vector3(0, 0, 1),
+				toward(dir),
+			);
+			stub.position.copy(centre);
+			group.add(stub);
+			collar(
+				centre.clone().addScaledVector(toward(dir), c * 0.5),
+				dir < 2 ? "x" : "y",
+				tubeR * 0.85,
+			);
+		}
+	};
+	/**
+	 * A leaf's support: a strut from the **centre of every host beside it**
+	 * to the leaf's own centre, and the direction its nearest host lies in.
+	 *
+	 * From the host's centre rather than from the cell's edge, because a
+	 * truss host is 0.22 cells wide and a tube 0.48, so a stub that began at
+	 * the edge left 0.39 cells of nothing between it and a truss — 59.65 m
+	 * at seed zero, which sage measured member by member while the island
+	 * check read a whole instanced pool as one box. And to *every* host
+	 * rather than the nearest, because the plan may put a leaf between two:
+	 * seed zero's dish at (2, 0) sat between the +X habitat tube and a second
+	 * tube carrying a node and a tank rack, and everything behind the dish
+	 * touched nothing. The leaf is the bridge. The inner part of each strut
+	 * is buried in the host it comes from.
+	 */
+	const leafSupport = (p: Placement) => {
+		const centre = cellCentre(p);
+		for (let dir = 0; dir < 4; dir++)
+			if (isHost(p.beside[dir]))
+				truss(
+					pools,
+					centre.clone().addScaledVector(toward(dir), c),
+					centre,
+					SHIP_SCALE.strutKm,
+					V(0, 0, 1),
+				);
+		return toward(p.host < 0 ? 1 : p.host);
+	};
+	for (const p of placements) {
+		const centre = cellCentre(p);
+		switch (p.module) {
+			case HUB:
+				// The hub's own ports, where a tube or a truss runs into it.
+				for (let dir = 0; dir < 4; dir++)
+					if (p.joined[dir])
+						collar(
+							toward(dir).multiplyScalar(hubR * 0.96),
+							dir < 2 ? "x" : "y",
+							tubeR * 1.15,
+						);
+				break;
+			case TUBE_X:
+			case TUBE_Y:
+				habitatTube(p);
+				tubes.push(p);
+				break;
+			case NODE:
+				junction(p);
+				break;
+			case TRUSS_X:
+			case TRUSS_Y: {
+				const axis = toward(p.module === TRUSS_X ? 1 : 3);
+				truss(
+					pools,
+					centre.clone().addScaledVector(axis, -c * 0.5),
+					centre.clone().addScaledVector(axis, c * 0.5),
+					SHIP_SCALE.trussKm,
+					V(0, 0, 1),
+				);
+				break;
+			}
+			case RADIATOR: {
+				// A spine from the cell's edge across the cell, panels on it
+				// standing out of the plane both ways.
+				const host = leafSupport(p);
+				const origin = centre.clone().addScaledVector(host, c * 0.5);
+				const away = host.clone().negate();
+				for (const up of [V(0, 0, 1), V(0, 0, -1)])
+					radiatorArray(pools, {
+						origin,
+						along: away,
+						up,
+						count: 10,
+						panelWidthKm: SHIP_SCALE.panelKm,
+						panelHeightKm: SHIP_SCALE.panelHeightKm,
+					});
+				break;
+			}
+			case TANKS: {
+				const host = leafSupport(p);
+				tankRack(pools, {
+					origin: centre.clone().add(V(0, 0, -SHIP_SCALE.tankKm * 1.2)),
+					along: host,
+					up: V(0, 0, 1),
+					count: 6,
+					radiusKm: SHIP_SCALE.tankKm,
+					lengthKm: SHIP_SCALE.tankLengthKm,
+				});
+				break;
+			}
+			case DISH:
+				leafSupport(p);
+				mast(pools, group, {
+					base: centre,
+					up: V(0, 0, 1),
+					heightKm: SHIP_SCALE.mastHeightKm,
+					widthKm: SHIP_SCALE.mastKm,
+				});
+				break;
+		}
+	}
+	pools.emit(group, "module");
+
+	// Lit ports along the +Z face of every habitat tube: they are where the
+	// crew lives, and a plan with more tubes has more windows.
+	group.add(
+		portRun("trade", tubes.length * 2, (i, count, position, normal) => {
+			const perTube = Math.max(1, Math.ceil(count / tubes.length));
+			const tube = tubes[i % tubes.length];
+			const slot = (Math.floor(i / tubes.length) + 0.5) / perTube;
+			// Along the tube's own axis, in its **outboard** half: the two
+			// planted tubes sit against the hub, and a port on their inboard
+			// half is inside 0.4 of the core radius — where
+			// `tests/station-mesh.test.ts` reads a pane as buried rather than
+			// out on a shell.
+			const outboard = toward(
+				tube.module === TUBE_X ? (tube.dx >= 0 ? 1 : 0) : tube.dy >= 0 ? 3 : 2,
+			);
+			normal.set(0, 0, 1);
+			position
+				.set(tube.dx * c, tube.dy * c, tubeR * 0.98)
+				.addScaledVector(outboard, (0.25 + slot * 0.2) * c);
+		}),
+	);
+	// The strobes near the spine's two ends, which are the assembly's beam.
+	// **On a longeron, not on the axis.** Centred on the spine's end plane a
+	// lamp sits inside the lattice's hollow section, a metre clear of every
+	// member — the island check reads that per instance now — and it also
+	// reaches past the truss, so hiding it at `outline` would move the
+	// outline. Seated on the (+X, +Z) longeron's outer face a fifth of a cell
+	// short of the end, it touches structure and stays inside the truss's own
+	// reach.
+	group.add(
+		strobePair("trade", fixtures, r * 0.06, (side, position) => {
+			// Straddling the longeron: the lamp is three times the ship-scale
+			// truss's width, so its centre sits 0.4 of its size outboard of the
+			// longeron's face and the box overlaps the member either way.
+			position.set(
+				SHIP_SCALE.trussKm * 0.5 + r * 0.06 * 0.4,
+				side * (MODULAR_RADIUS * c + c * 0.3),
+				SHIP_SCALE.trussKm * 0.5,
+			);
+		}),
+	);
+	// Clutter on the hub's own flank, between the ports of its docked tubes.
+	group.add(
+		greebleRun(
+			"trade",
+			"trade-d",
+			[
+				{
+					count: 16,
+					sizeKm: hubR * 0.09,
+					reliefKm: hubR * 0.08,
+					place: (i, count, position, normal) => {
+						const { theta } = ringAt(i, count);
+						normal.set(Math.cos(theta), Math.sin(theta), 0);
+						// Two bands above the docking collars, which sit at z = 0 and
+						// stand proud of the drum: a piece snapped onto a collar's
+						// rim has no drum under it within its own height.
+						position
+							.copy(normal)
+							.multiplyScalar(hubR)
+							.setZ(r * 0.14 + (i % 2) * r * 0.2);
+					},
+				},
+			],
+			group,
+		),
+	);
+	return { group, fixtures, spinner: spun };
+}
+
+/**
  * Every form, by role.
  *
- * A `Record<StationType, …>` for `station-types.md` §8.5's reason, and each
- * role's list is exactly `STATION_FORM_IDS` long so the previewer's three slots
- * cannot silently hold two.
+ * A `Record<StationType, …>` for `station-types.md` §8.5's reason. Three
+ * forms a role, and trade a fourth since #202's Assembly: `STATION_FORM_IDS`
+ * is the union of ids a role may use and a role's list is not required to
+ * fill it — `buildStationForm` refuses an id its role does not carry.
  */
 export const STATION_FORMS: Record<StationType, StationForm[]> = {
 	trade: [
@@ -3203,22 +3731,33 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			reachKm: 0.66,
 			build: buildTradeDrum,
 		},
+		{
+			id: "d",
+			name: "Assembly",
+			thesis:
+				"a hub and a truss spine with modules solved onto a grid by wave function collapse",
+			// The diamond's tips are 0.9 km out along the spine, and a leaf
+			// beside a tip reaches 0.89; the strobes sit at 0.9. Nothing on the
+			// field can pass 1.0, and `tests/station-mesh.test.ts` measures
+			// every plan the tests build against it.
+			reachKm: 1.0,
+			build: buildTradeModular,
+		},
 	],
 	shipyard: [
 		{
 			id: "a",
 			name: "Gantry",
 			thesis: "bridge keel under open ribbed bays sized for a ship",
-			// **1.53 rather than #28's 1.5, and the 30 m is the keel's move
-			// aft** (#165). The keel's far end is `hypot(1.426, 0.120, 0.156)`
-			// from the centre and reached 1.479 km; carried aft by
-			// `SHIPYARD_KEEL_AFT_KM` it reaches 1.516. There is no shift that
-			// clears the bay inside 1.5 — the keel's forward face is already
-			// 270 m proud of the axis where the bay's back wall stands — so the
-			// declaration follows the decided shape rather than the shape being
-			// trimmed to an old declaration. `docking.md` §5's "roughly 1.5 km"
-			// is unchanged by 2%.
-			reachKm: 1.53,
+			// **1.66 since the keel went to 680 m aft** (the spindle, see
+			// `SHIPYARD_KEEL_AFT_KM`); 1.53 before that, and #28's 1.5 before
+			// the first move. The keel's far end is `hypot(1.426, 0.120, z)`
+			// from the centre and its z is the keel's offset plus its end
+			// section's half-height: 0.50 km reached 1.516, 0.82 reaches 1.65.
+			// The declaration follows the decided shape rather than the shape
+			// being trimmed to an old declaration. `docking.md` §5's "roughly
+			// 1.5 km" is now 10% under.
+			reachKm: 1.66,
 			build: buildShipyardGantry,
 		},
 		{
@@ -3370,6 +3909,25 @@ export function buildStationForm(
 	// lights while it in fact produced most of them, so a fourth station type
 	// would have compiled with none and lit nothing.
 	const built = form.build(color, berthSeed);
+	// #202's macro structure, on the finishes that carry it. Added to the
+	// built group after the form so the fixtures can be cast onto the structure
+	// that exists, and inside it rather than beside it so a role that spins
+	// whole turns its trusses with it; a shipyard's static frame is the group
+	// too, and its hub spins inside.
+	const finish = currentStationFinish();
+	if (finish.fixtures)
+		built.group.add(
+			buildMacroFixtures({
+				type,
+				formId,
+				structure: built.group,
+				fixtures: built.fixtures,
+				beacons:
+					finish.beacons && STATION_VISUALS[type].activity.strobePeriodS > 0,
+				strobeBase: STATION_EMISSIVE_INTENSITIES.strobe,
+				lampBase: STATION_EMISSIVE_INTENSITIES.aperture,
+			}),
+		);
 	// The spinner is the form's own declared part where it names one, the whole
 	// body where it does not, and an empty group for a role whose pad does not
 	// turn at all (`docking.md` §4). The empty one is a *sibling* added here;

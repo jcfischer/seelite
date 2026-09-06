@@ -80,6 +80,36 @@ for (const viewport of VIEWPORTS) {
 			adjusted.viewer?.engine === 0.35 &&
 			adjusted.viewer?.wireframe === true,
 	);
+	// #202's beacons are lit by name like the strobes; the selector is a
+	// string test, so this reads the materials back rather than trusting it.
+	await page.goto(`${ORIGIN}/?model-viewer=station&finish=industrial`, {
+		waitUntil: "load",
+	});
+	await page.waitForSelector("#model-viewer canvas");
+	await page.locator('[data-model-asset="trade"]').click();
+	await page.locator('[data-model-control="engine"]').fill("35");
+	const beacons = await page.evaluate(() => {
+		const { holder, state } = window.__seeliteModelViewer;
+		const out = {
+			finish: state.finish,
+			engine: state.engine,
+			beacons: 0,
+			lit: 0,
+		};
+		holder.traverse((object) => {
+			if (!object.name.startsWith("beacon")) return;
+			out.beacons += 1;
+			if (object.material?.emissiveIntensity === state.engine) out.lit += 1;
+		});
+		return out;
+	});
+	check(
+		`${viewport.name}: the industrial trade station's beacons take the engine cue`,
+		beacons.finish === "industrial" &&
+			beacons.engine === 0.35 &&
+			beacons.beacons > 0 &&
+			beacons.lit === beacons.beacons,
+	);
 	await page.close();
 }
 

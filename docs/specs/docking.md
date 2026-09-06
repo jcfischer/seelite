@@ -485,7 +485,7 @@ the table above, `station.test.ts`'s expectation and `aperture-fit.test.ts`'s
 header. Figures written into prose are the thing that goes stale, which is why
 the test prints its margins rather than asserting a remembered pair.
 
-The shipyard's drydock frame (#13 §7) extends to roughly 1.5 km and is **not
+The shipyard's drydock frame (#13 §7) extends to roughly 1.66 km and is **not
 dockable geometry** — it is silhouette. Docking geometry is a drawn object and
 inherits the map's distance rule (#13 §6, *Layering*): near layer within
 `HANDOFF_KM` of the camera, far beyond it, hysteresis band. It does not get a
@@ -1723,9 +1723,10 @@ general interior collision system, or market and equipment ownership change.
 deliberately.** A pad's deck is drawn *in front of* the aperture plane and is
 wider than the surface it stands on — 157 m of half-extent on an outpost whose
 own deck reaches 142 m — so the interior is part of the silhouette on those six
-forms rather than hidden behind it. And the shipyard's keel moved 360 m aft,
-which changes the flank and raises the Gantry's declared reach from 1.5 to
-1.53 km. Both were paid to clear the lane, and neither is a licence for
+forms rather than hidden behind it. And the shipyard's keel moved aft — 360 m
+to clear the bay, then 680 m so the hub's spindle shows (#202) — which
+changes the flank and raises the Gantry's declared reach from 1.5 to
+1.66 km. Both were paid to clear the lane, and neither is a licence for
 the next change: the boundary stands for anything that has not been ruled on.
 **Neither is verified here.** §13.5's human row is the gate for both, and #165
 closes on the principal in front of a frame rather than on this paragraph.
