@@ -278,6 +278,32 @@ export const HULL_FINISHES = {
 		collar: "flange",
 		drive: "bowl",
 	},
+	/**
+	 * Worn, one step further — the principal's direction on the first sheet
+	 * (2026-09-06): heavier streaking, sooted plates, darker seams and a paint
+	 * pulled most of the way to grey. One step and not two, so the sheet asks
+	 * "more or less" rather than "which".
+	 */
+	nostromo: {
+		name: "Nostromo",
+		thesis:
+			"worn, one step further: deeper streaks, sooted plates, darker seams, paint most of the way to grey",
+		plating: {
+			...INDUSTRIAL_PLATING,
+			variation: 12,
+			seam: 0.36,
+			weathering: 0.7,
+			streakDepth: 0.7,
+			soot: 0.3,
+			macro: { ...INDUSTRIAL_MACRO, variation: 18, seam: 0.55 },
+		},
+		mapSize: 512,
+		panelKm: SHIP_PANEL_KM * 2,
+		rim: 0.18,
+		paint: { saturation: 0.32, value: 0.68 },
+		collar: "flange",
+		drive: "bowl",
+	},
 } as const satisfies Record<string, HullFinish>;
 
 export type HullFinishId = keyof typeof HULL_FINISHES;

@@ -77,6 +77,17 @@ export interface StationFinish {
 	readonly beacons: boolean;
 	/** A factor on the role's `greebleDensity`. */
 	readonly greebleDensity: number;
+	/**
+	 * A factor on every greeble's size (#202, the principal's ship-scale
+	 * ruling): a station is huge beside a ship, and clutter sized to the
+	 * station hides that. Under 1 the pieces shrink and `greebleDensity`
+	 * is what puts more of them back.
+	 */
+	readonly greebleScale: number;
+	/** How much of the role's paint survives, as `ship-surface.ts`'s
+	 *  `paint`: chroma kept and brightness kept. 1 and 1 is the paint as
+	 *  authored. */
+	readonly paint: { readonly saturation: number; readonly value: number };
 }
 
 /**
@@ -99,6 +110,7 @@ const INDUSTRIAL_STATION_MACRO: MacroOctave = {
 const industrialPlating = (
 	role: PlatingProfile,
 	weathering: number,
+	grime: Pick<PlatingProfile, "streakDepth" | "soot" | "macro"> = {},
 ): PlatingProfile => ({
 	...role,
 	pitchPx: 16,
@@ -110,7 +122,21 @@ const industrialPlating = (
 	// carries 0.78, and a streak term at 1 is a plate that is all streak.
 	weathering: Math.min(0.95, role.weathering * weathering),
 	macro: INDUSTRIAL_STATION_MACRO,
+	...grime,
 });
+
+/**
+ * The macro octave at ship-scale plating: on a 512 map with a 0.3 km tile
+ * the plate is 9.4 m — a sixth of a courier — and a 128-texel group is the
+ * same 75 m panel the industrial finish has, so the groups that carry the
+ * scale at range are unchanged and only the plates within them are finer.
+ * Four groups a tile, which is what the industrial finish repeats today.
+ */
+const SHIP_SCALE_STATION_MACRO: MacroOctave = {
+	...INDUSTRIAL_STATION_MACRO,
+	pitchPx: 128,
+	seamHalfWidthPx: 3,
+};
 
 export const STATION_FINISHES = {
 	stock: {
@@ -122,6 +148,8 @@ export const STATION_FINISHES = {
 		fixtures: false,
 		beacons: false,
 		greebleDensity: 1,
+		greebleScale: 1,
+		paint: { saturation: 1, value: 1 },
 	},
 	plated: {
 		name: "Plated",
@@ -133,6 +161,8 @@ export const STATION_FINISHES = {
 		fixtures: false,
 		beacons: false,
 		greebleDensity: 1,
+		greebleScale: 1,
+		paint: { saturation: 1, value: 1 },
 	},
 	industrial: {
 		name: "Industrial",
@@ -144,6 +174,8 @@ export const STATION_FINISHES = {
 		fixtures: true,
 		beacons: true,
 		greebleDensity: 1.5,
+		greebleScale: 1,
+		paint: { saturation: 1, value: 1 },
 	},
 	worn: {
 		name: "Worn",
@@ -155,6 +187,35 @@ export const STATION_FINISHES = {
 		fixtures: true,
 		beacons: true,
 		greebleDensity: 1.8,
+		greebleScale: 1,
+		paint: { saturation: 1, value: 1 },
+	},
+	/**
+	 * Worn, one step further, at ship scale — the principal's direction on
+	 * the first sheet (2026-09-06). Deeper streaks and sooted plates; the
+	 * paint pulled toward grey; 9.4 m plates under the same 75 m groups; and
+	 * the clutter at two fifths of its size with three times the count, so
+	 * the station's size shows against it. The fixtures' own scale is not a
+	 * finish dial — `station-fixtures.ts`'s `SHIP_SCALE` sizes them for every
+	 * finish that draws them.
+	 */
+	nostromo: {
+		name: "Nostromo",
+		thesis:
+			"worn, one step further, at ship scale: deeper streaks, sooted plates, greyed paint, 9 m plates, finer clutter",
+		plating: (role) =>
+			industrialPlating(role, 2.6, {
+				streakDepth: 0.75,
+				soot: 0.4,
+				macro: SHIP_SCALE_STATION_MACRO,
+			}),
+		mapScale: 4,
+		tile: 2,
+		fixtures: true,
+		beacons: true,
+		greebleDensity: 3.2,
+		greebleScale: 0.4,
+		paint: { saturation: 0.4, value: 0.72 },
 	},
 } as const satisfies Record<string, StationFinish>;
 

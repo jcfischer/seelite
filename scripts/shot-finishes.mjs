@@ -48,9 +48,9 @@ const SUBJECTS = {
 		.filter(Boolean),
 };
 const VARIANT = process.env.VARIANT ?? "a";
-const FINISHES = (process.env.FINISHES ?? "stock,plated,industrial,worn").split(
-	",",
-);
+const FINISHES = (
+	process.env.FINISHES ?? "stock,plated,industrial,worn,nostromo"
+).split(",");
 /**
  * Camera framings, in the workbench's orbit terms. The workbench's up is Y
  * and its camera sits at `(sin az, ·, cos az)`, so azimuth 0 is **on +Z
@@ -64,6 +64,8 @@ const VIEWS = {
 	aft: { azimuth: 0.4, elevation: 0.2 },
 	front: { azimuth: 0, elevation: 0.12 },
 	bow: { azimuth: Math.PI, elevation: 0.12 },
+	side: { azimuth: Math.PI / 2, elevation: 0.12 },
+	sideclose: { azimuth: Math.PI / 2 + 0.3, elevation: 0.18, zoom: 0.5 },
 	close: { azimuth: 2.0, elevation: 0.25, zoom: 0.55 },
 };
 const VIEW_NAMES = (process.env.VIEWS ?? "hero,aft,close").split(",");

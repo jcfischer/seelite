@@ -49,6 +49,7 @@
  */
 
 import * as THREE from "three";
+import { mutePaint } from "./surface";
 import { EMISSIVE_CEILING } from "./light-rig";
 import { appendRing, cutRing, ringTriangles } from "./face-cut";
 import { type ApertureCut, type Ring, boxProjectUVs, hullLoft } from "./loft";
@@ -66,6 +67,7 @@ import {
 import { type GreebleZone, buildGreebles } from "./station-greebles";
 import {
 	Pools,
+	SHIP_SCALE,
 	buildMacroFixtures,
 	mast,
 	radiatorArray,
@@ -384,7 +386,10 @@ const hullMaterial = (color: number, type: StationType) => {
 	if (cached) return cached;
 	const { albedo, wear, seams } = mapsFor(type);
 	const material = new THREE.MeshStandardMaterial({
-		color,
+		// The role's paint under the finish's dial — as authored on the
+		// finishes whose dial is 1 and 1, which is every finish before
+		// `nostromo`.
+		color: mutePaint(color, currentStationFinish().paint),
 		map: albedo,
 		roughnessMap: wear,
 		metalnessMap: wear,
@@ -1730,7 +1735,20 @@ function buildTradeDrum(color: number, berthSeed: number): BuiltPart {
  * identity on the outline down the aperture axis, and a 2.7 km keel projects
  * the same silhouette from 360 m further aft.
  */
-export const SHIPYARD_KEEL_AFT_KM = 0.36;
+/*
+ * **680 m since the principal's second sheet (2026-09-06), and a spindle
+ * between.** At 360 m the keel's forward face stood at z −0.06 while the
+ * hub's aft face is at −0.30, so the drum's aft 240 m sat *inside* the keel:
+ * a square drum embedded in a static body, which the principal read as "the
+ * rotating part just sits in the main body". Sensible geometry for a thing
+ * that turns against a thing that does not is a spindle through a bearing:
+ * the Gantry's hub now carries a round spindle aft from its face, the keel
+ * carries a bearing ring proud of its forward face, and the keel sits far
+ * enough aft — 680 m, its forward face at −0.46 — that the spindle shows
+ * between the two. The Hangar's slab moves with it, for the same reason.
+ * The keel's far end reaches 1.65 km now, and the form's declaration says so.
+ */
+export const SHIPYARD_KEEL_AFT_KM = 0.68;
 
 /** Shipyard A — Gantry. A bridge keel with two open bays of lofted ribs
  *  along it; the bays are the silhouette, and they are obviously *for* holding
@@ -1768,6 +1786,22 @@ function buildShipyardGantry(color: number, berthSeed: number): BuiltPart {
 	const spun = new THREE.Group();
 	spun.name = "spun";
 	spun.add(hub);
+	// The spindle: round, on the axis, turning with the hub, from inside the
+	// keel to inside the hub's aft face. Its own loft at twelve segments,
+	// because the hub is a four-segment loft and a round ring on it would be
+	// a diamond. See `SHIPYARD_KEEL_AFT_KM` for why it exists.
+	spun.add(
+		shell(
+			[
+				{ z: -r * 0.9, w: r * 0.2, h: r * 0.2, e: 2 },
+				{ z: -r * 0.48, w: r * 0.2, h: r * 0.2, e: 2 },
+			],
+			hullMaterial(color, "shipyard"),
+			"spindle",
+			12,
+			true,
+		),
+	);
 	spun.add(
 		buildAperture(
 			"shipyard",
@@ -1776,7 +1810,15 @@ function buildShipyardGantry(color: number, berthSeed: number): BuiltPart {
 		),
 	);
 	group.add(spun);
-	const rib = plainMaterial(0x6f7d88, 0.78, 0.42);
+	// **The frame is plated, since the principal's second sheet.** The keel,
+	// rails, booms and struts were a plain light grey and took no finish —
+	// "the shipyard barely changes between stock and worn" was the first
+	// sheet's finding and "the main body still reads too clean" the second
+	// — so every lofted part of the frame now carries the shipyard's own hull
+	// material, seams, streaks and soot included. The arches are tori, whose
+	// normalised unwrap would stretch one tile round each rib, so they stay
+	// plain and go a shade darker than the plating they sit against.
+	const rib = plainMaterial(0x5b6772, 0.82, 0.38);
 	// Named, because every shipyard form has one and `probe-station.mjs` reads
 	// it: the check is that the *whole assembly* reparents across the layer
 	// handoff, not just the painted core, and it needs one name that holds for
@@ -1791,7 +1833,7 @@ function buildShipyardGantry(color: number, berthSeed: number): BuiltPart {
 			{ z: span * 0.34, w: r * 0.5, h: r * 0.42, e: 3.4 },
 			{ z: span * 0.56, w: r * 0.38, h: r * 0.32, e: 3.4 },
 		],
-		plainMaterial(0x8b95a0, 0.7, 0.44),
+		hullMaterial(color, "shipyard"),
 		"keel",
 		12,
 		true,
@@ -1799,6 +1841,19 @@ function buildShipyardGantry(color: number, berthSeed: number): BuiltPart {
 	keel.rotation.y = Math.PI / 2;
 	keel.position.z = -SHIPYARD_KEEL_AFT_KM;
 	frame.add(keel);
+	// The bearing: a static ring on the keel's forward face that the spindle
+	// turns in, its bore 6 m clear of the spindle. It is what makes the join
+	// legible — a drum on a spindle out of a housing, not a drum in a body.
+	const bearing = new THREE.Mesh(
+		new THREE.TorusGeometry(r * 0.26, r * 0.05, 6, 16),
+		rib,
+	);
+	// Proud of the keel's forward face, which at x = 0 is about 0.27 km ahead
+	// of the keel's centre: the ring's body overlaps the face by a few metres
+	// and the rest of it shows.
+	bearing.position.z = -SHIPYARD_KEEL_AFT_KM + r * 0.49;
+	bearing.name = "bearing";
+	frame.add(bearing);
 	for (let i = 0; i < 7; i++) {
 		const x = -span * 0.52 + (i / 6) * span * 1.04;
 		const arch = new THREE.Mesh(
@@ -1816,9 +1871,10 @@ function buildShipyardGantry(color: number, berthSeed: number): BuiltPart {
 				{ z: -span * 0.56, w: r * 0.05, h: r * 0.05, e: 3 },
 				{ z: span * 0.56, w: r * 0.05, h: r * 0.05, e: 3 },
 			],
-			rib,
+			hullMaterial(color, "shipyard"),
 			"rail",
 			6,
+			true,
 		);
 		rail.rotation.y = Math.PI / 2;
 		rail.position.set(0, y, -SHIPYARD_KEEL_AFT_KM);
@@ -1832,20 +1888,63 @@ function buildShipyardGantry(color: number, berthSeed: number): BuiltPart {
 	// `probe-station.mjs` measured it against the trade station at 1 − IoU 0.238
 	// on a 0.25 floor. Identity is what §7 rests on and the approach view is
 	// where it matters most, so the frame now reaches into that view.
+	//
+	// **Rooted aft of the hub and carried by the frame.** The first booms
+	// began at z = −0.23 km, beside the hub, and touched nothing: the principal
+	// read them as arms that do not connect, and the island check could not
+	// see it while an arch's box stood in for its ring. The hub spins and
+	// sweeps its square section's corner — about 0.70·r — through
+	// z ∈ [−0.5·r, 0.62·r], so nothing may cross to the boom inside that
+	// range; the root is moved aft of it, to −0.85·r, and three struts carry
+	// it there: a transverse beam from inside the keel, and a yoke of two from
+	// the rail on that side, meeting at the boom.
+	const strut = (from: THREE.Vector3, to: THREE.Vector3, halfKm: number) => {
+		const length = from.distanceTo(to);
+		const member = shell(
+			[
+				{ z: -length / 2, w: halfKm, h: halfKm, e: 3 },
+				{ z: length / 2, w: halfKm, h: halfKm, e: 3 },
+			],
+			hullMaterial(color, "shipyard"),
+			"boom-strut",
+			4,
+			true,
+		);
+		member.position.copy(from).add(to).multiplyScalar(0.5);
+		member.quaternion.setFromUnitVectors(
+			new THREE.Vector3(0, 0, 1),
+			to.clone().sub(from).normalize(),
+		);
+		frame.add(member);
+	};
 	for (const y of [-r * 0.8, r * 0.8]) {
+		const root = -r * 1.1;
 		const boom = shell(
 			[
-				{ z: -span * 0.1, w: r * 0.09, h: r * 0.09, e: 3 },
+				{ z: root, w: r * 0.09, h: r * 0.09, e: 3 },
 				{ z: r * 1.5, w: r * 0.07, h: r * 0.07, e: 3, hard: true },
 				{ z: r * 1.9, w: r * 0.16, h: r * 0.16, e: 3 },
 			],
-			plainMaterial(0x6f7d88, 0.78, 0.42),
+			hullMaterial(color, "shipyard"),
 			"boom",
 			6,
 			true,
 		);
 		boom.position.y = y;
 		frame.add(boom);
+		const side = Math.sign(y);
+		const rootAt = new THREE.Vector3(0, y, root + r * 0.08);
+		strut(
+			new THREE.Vector3(0, side * r * 0.3, root + r * 0.08),
+			rootAt,
+			r * 0.035,
+		);
+		for (const x of [-r * 0.45, r * 0.45])
+			strut(
+				new THREE.Vector3(x, side * r * 0.58, -SHIPYARD_KEEL_AFT_KM),
+				rootAt.clone().setZ(root + r * 0.2),
+				r * 0.03,
+			);
 	}
 	// On the keel's own underside, inside its half-height and inside its length.
 	group.add(
@@ -1951,6 +2050,13 @@ function buildShipyardHangar(color: number, berthSeed: number): BuiltPart {
 	// bay reached 60 m past the mouth and stopped against the slab's own top
 	// face. `SHIPYARD_KEEL_AFT_KM` is the same figure and the same argument.
 	slab.position.z = -SHIPYARD_KEEL_AFT_KM;
+	const bearing = new THREE.Mesh(
+		new THREE.TorusGeometry(r * 0.21, r * 0.045, 6, 16),
+		plainMaterial(0x6f7d88, 0.78, 0.42),
+	);
+	bearing.position.z = -SHIPYARD_KEEL_AFT_KM + r * 0.53;
+	bearing.name = "bearing";
+	frame.add(bearing);
 	frame.add(slab);
 
 	// The bay mouth: a recess cut into the flank, floodlit from inside. Its own
@@ -2023,6 +2129,21 @@ function buildShipyardHangar(color: number, berthSeed: number): BuiltPart {
 	const spun = new THREE.Group();
 	spun.name = "spun";
 	spun.add(hub);
+	// The Hangar's spindle and, below, its bearing: the slab moved aft with
+	// the Gantry's keel (`SHIPYARD_KEEL_AFT_KM`) and the hub did not, so the
+	// same drum-on-a-spindle join carries it.
+	spun.add(
+		shell(
+			[
+				{ z: -r * 0.75, w: r * 0.16, h: r * 0.16, e: 2 },
+				{ z: -r * 0.28, w: r * 0.16, h: r * 0.16, e: 2 },
+			],
+			hullMaterial(color, "shipyard"),
+			"spindle",
+			12,
+			true,
+		),
+	);
 	spun.add(buildAperture("shipyard", r * 0.6, berthSeed));
 	group.add(spun);
 
@@ -2940,9 +3061,10 @@ function buildOutpostDerrick(color: number, berthSeed: number): BuiltPart {
 				{ z: -r * 1.9, w: r * 0.34, h: r * 0.34, e: 2.4 },
 				{ z: -r * 1.1, w: r * 0.34, h: r * 0.34, e: 2.4 },
 			],
-			i === 0
-				? hullMaterial(color, "outpost")
-				: plainMaterial(0xb2a894, 0.88, 0.18),
+			// All four plated since the principal's second sheet: three were a
+			// pale matte that took no finish, so the Derrick read as clean under
+			// every finish while the rest of the pool weathered.
+			hullMaterial(color, "outpost"),
 			i === 0 ? "core" : `tank-${i}`,
 			8,
 			true,
@@ -3424,7 +3546,7 @@ function buildTradeModular(color: number, berthSeed: number): BuiltPart {
 					pools,
 					centre.clone().addScaledVector(toward(dir), c),
 					centre,
-					c * 0.1,
+					SHIP_SCALE.strutKm,
 					V(0, 0, 1),
 				);
 		return toward(p.host < 0 ? 1 : p.host);
@@ -3457,7 +3579,7 @@ function buildTradeModular(color: number, berthSeed: number): BuiltPart {
 					pools,
 					centre.clone().addScaledVector(axis, -c * 0.5),
 					centre.clone().addScaledVector(axis, c * 0.5),
-					c * 0.22,
+					SHIP_SCALE.trussKm,
 					V(0, 0, 1),
 				);
 				break;
@@ -3473,21 +3595,21 @@ function buildTradeModular(color: number, berthSeed: number): BuiltPart {
 						origin,
 						along: away,
 						up,
-						count: 4,
-						panelWidthKm: c * 0.4,
-						panelHeightKm: c * 0.4,
+						count: 10,
+						panelWidthKm: SHIP_SCALE.panelKm,
+						panelHeightKm: SHIP_SCALE.panelHeightKm,
 					});
 				break;
 			}
 			case TANKS: {
 				const host = leafSupport(p);
 				tankRack(pools, {
-					origin: centre.clone().add(V(0, 0, -c * 0.1)),
+					origin: centre.clone().add(V(0, 0, -SHIP_SCALE.tankKm * 1.2)),
 					along: host,
 					up: V(0, 0, 1),
-					count: 3,
-					radiusKm: c * 0.09,
-					lengthKm: c * 0.7,
+					count: 6,
+					radiusKm: SHIP_SCALE.tankKm,
+					lengthKm: SHIP_SCALE.tankLengthKm,
 				});
 				break;
 			}
@@ -3496,8 +3618,8 @@ function buildTradeModular(color: number, berthSeed: number): BuiltPart {
 				mast(pools, group, {
 					base: centre,
 					up: V(0, 0, 1),
-					heightKm: c * 0.6,
-					widthKm: c * 0.12,
+					heightKm: SHIP_SCALE.mastHeightKm,
+					widthKm: SHIP_SCALE.mastKm,
 				});
 				break;
 		}
@@ -3535,7 +3657,14 @@ function buildTradeModular(color: number, berthSeed: number): BuiltPart {
 	// reach.
 	group.add(
 		strobePair("trade", fixtures, r * 0.06, (side, position) => {
-			position.set(c * 0.17, side * (MODULAR_RADIUS * c + c * 0.3), c * 0.11);
+			// Straddling the longeron: the lamp is three times the ship-scale
+			// truss's width, so its centre sits 0.4 of its size outboard of the
+			// longeron's face and the box overlaps the member either way.
+			position.set(
+				SHIP_SCALE.trussKm * 0.5 + r * 0.06 * 0.4,
+				side * (MODULAR_RADIUS * c + c * 0.3),
+				SHIP_SCALE.trussKm * 0.5,
+			);
 		}),
 	);
 	// Clutter on the hub's own flank, between the ports of its docked tubes.
@@ -3608,16 +3737,15 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			id: "a",
 			name: "Gantry",
 			thesis: "bridge keel under open ribbed bays sized for a ship",
-			// **1.53 rather than #28's 1.5, and the 30 m is the keel's move
-			// aft** (#165). The keel's far end is `hypot(1.426, 0.120, 0.156)`
-			// from the centre and reached 1.479 km; carried aft by
-			// `SHIPYARD_KEEL_AFT_KM` it reaches 1.516. There is no shift that
-			// clears the bay inside 1.5 — the keel's forward face is already
-			// 270 m proud of the axis where the bay's back wall stands — so the
-			// declaration follows the decided shape rather than the shape being
-			// trimmed to an old declaration. `docking.md` §5's "roughly 1.5 km"
-			// is unchanged by 2%.
-			reachKm: 1.53,
+			// **1.66 since the keel went to 680 m aft** (the spindle, see
+			// `SHIPYARD_KEEL_AFT_KM`); 1.53 before that, and #28's 1.5 before
+			// the first move. The keel's far end is `hypot(1.426, 0.120, z)`
+			// from the centre and its z is the keel's offset plus its end
+			// section's half-height: 0.50 km reached 1.516, 0.82 reaches 1.65.
+			// The declaration follows the decided shape rather than the shape
+			// being trimmed to an old declaration. `docking.md` §5's "roughly
+			// 1.5 km" is now 10% under.
+			reachKm: 1.66,
 			build: buildShipyardGantry,
 		},
 		{

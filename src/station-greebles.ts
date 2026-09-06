@@ -303,10 +303,17 @@ export function buildGreebles(
 				GREEBLE_PRIMITIVES.length - 1,
 				Math.floor(random() * GREEBLE_PRIMITIVES.length),
 			);
-			const height = zone.reliefKm * (0.35 + random() * 0.65);
+			// The finish's size factor on the zone's own figure (#202): the zone
+			// says what a piece is for, the finish what scale the station's
+			// clutter is read at.
+			const sizeKm = zone.sizeKm * currentStationFinish().greebleScale;
+			const height =
+				zone.reliefKm *
+				currentStationFinish().greebleScale *
+				(0.35 + random() * 0.65);
 			scale.set(
-				zone.sizeKm * (0.5 + random() * 1.1),
-				zone.sizeKm * (0.5 + random() * 1.1),
+				sizeKm * (0.5 + random() * 1.1),
+				sizeKm * (0.5 + random() * 1.1),
 				height,
 			);
 			quaternion.setFromUnitVectors(unitZ, normal);

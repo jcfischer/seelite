@@ -360,9 +360,25 @@ describe("a station is one object, not a scatter of parts", () => {
 	 */
 	function islands(root: THREE.Object3D): string[][] {
 		root.updateMatrixWorld(true);
-		const parts: { name: string; box: THREE.Box3; member: boolean }[] = [];
+		const parts: {
+			name: string;
+			box: THREE.Box3;
+			member: boolean;
+			/** Sub-boxes of one mesh share a part id and are joined outright. */
+			part: number;
+		}[] = [];
+		let nextPart = 0;
+		const vertex = new THREE.Vector3();
 		root.traverse((object) => {
 			if (!(object as THREE.Mesh).geometry) return;
+			// Clutter is mounted by its own generator and checked by its own test
+			// (`every instance has structure under it, within its own height`,
+			// `station-greebles.test.ts`); a greeble seated on a ring's facet
+			// sits inside the chord, where the ring's proxy below is thinnest.
+			if (object.name.startsWith("greebles")) return;
+			// The Slipway's welding flare hangs in the slip where the work is,
+			// in the ring's gap by construction: a light, not a part.
+			if (object.name === "weld-arc") return;
 			// A pane is a decal on a face, not a part: `window panes sit out
 			// near the shell they belong to` above is its mounting check, and
 			// three of the Buoy's ride a drum face at a standoff wider than this
@@ -375,15 +391,61 @@ describe("a station is one object, not a scatter of parts", () => {
 				// `helpers/instance-boxes.ts` for why, and for why it is the
 				// geometry's box and not a unit cube.
 				instanceBoxes(instanced).forEach((box, i) =>
-					parts.push({ name: `${object.name}#${i}`, box, member: true }),
+					parts.push({
+						name: `${object.name}#${i}`,
+						box,
+						member: true,
+						part: nextPart++,
+					}),
 				);
 				return;
 			}
-			parts.push({
-				name: object.name || object.type,
-				box: new THREE.Box3().setFromObject(object),
-				member: false,
-			});
+			const mesh = object as THREE.Mesh;
+			const whole = new THREE.Box3().setFromObject(object);
+			const torus = mesh.geometry as THREE.TorusGeometry;
+			const arc =
+				torus.type === "TorusGeometry" &&
+				(torus.parameters.arc ?? Math.PI * 2) < Math.PI * 2 - 1e-6;
+			if (!arc) {
+				parts.push({
+					name: object.name || object.type,
+					box: whole,
+					member: false,
+					part: nextPart++,
+				});
+				return;
+			}
+			// **A torus arc is its ring, not its box.** The Gantry's arches are
+			// 1.25π arcs whose boxes are near-full squares, and the shipyard's
+			// booms passed here for as long as they did because a boom rooted
+			// 130 m from any arch was inside an arch's box. The arc's vertices
+			// are binned into a 4×4×4 grid of that box and each cell boxed on
+			// its own, joined as one part; the cells are grown like members,
+			// because a rail resting on an arch's rim shares a face with it.
+			// Full tori — collars, hoops, the Ring's spun body — keep their box:
+			// a hole through the middle is not where anything is mounted.
+			const N = 4;
+			const size = whole.getSize(new THREE.Vector3());
+			const cells = new Map<string, THREE.Box3>();
+			const position = mesh.geometry.getAttribute("position");
+			for (let i = 0; i < position.count; i++) {
+				vertex.fromBufferAttribute(position as THREE.BufferAttribute, i);
+				mesh.localToWorld(vertex);
+				const cell = (v: number, min: number, extent: number) =>
+					Math.min(N - 1, Math.floor(((v - min) / (extent || 1)) * N));
+				const key = `${cell(vertex.x, whole.min.x, size.x)},${cell(vertex.y, whole.min.y, size.y)},${cell(vertex.z, whole.min.z, size.z)}`;
+				const box = cells.get(key) ?? new THREE.Box3();
+				box.expandByPoint(vertex);
+				cells.set(key, box);
+			}
+			const part = nextPart++;
+			for (const box of cells.values())
+				parts.push({
+					name: object.name || object.type,
+					box,
+					member: true,
+					part,
+				});
 		});
 		// **Shrunk before testing.** A bare `intersectsBox` counts a boundary
 		// graze as contact: the Rig's drill head overlapped its body by 1 m on a
@@ -420,9 +482,19 @@ describe("a station is one object, not a scatter of parts", () => {
 		const parent = parts.map((_, i) => i);
 		const find = (i: number): number =>
 			parent[i] === i ? i : (parent[i] = find(parent[i]));
+		const firstOfPart = new Map<number, number>();
+		parts.forEach((p, i) => {
+			const first = firstOfPart.get(p.part);
+			if (first === undefined) firstOfPart.set(p.part, i);
+			else parent[find(i)] = find(first);
+		});
 		for (let i = 0; i < parts.length; i++)
 			for (let j = i + 1; j < parts.length; j++)
-				if (shrunk[i].intersectsBox(shrunk[j])) parent[find(i)] = find(j);
+				if (
+					parts[i].part !== parts[j].part &&
+					shrunk[i].intersectsBox(shrunk[j])
+				)
+					parent[find(i)] = find(j);
 		const grouped = new Map<number, string[]>();
 		for (let i = 0; i < parts.length; i++) {
 			const root = find(i);

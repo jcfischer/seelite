@@ -112,6 +112,20 @@ export interface PlatingProfile {
 	 * profiles in `tests/surface.test.ts` are the proof.
 	 */
 	macro?: MacroOctave;
+	/**
+	 * How dark a streak runs at full weathering, as the fraction of the plate
+	 * it takes away — 0.55 until the worn finishes asked for more (#202, #203,
+	 * the principal's grime ruling reversing #98). Optional, and undefined is
+	 * byte-identical to the map before the dial existed.
+	 */
+	streakDepth?: number;
+	/**
+	 * Soot: the fraction of plates that carry a dark patch — a panel that sat
+	 * under a vent, a scorched plate — darkened by up to half at full
+	 * weathering, each by its own draw. Per plate rather than per texel, so it
+	 * reads as a dirty plate and not as noise. Optional; undefined is none.
+	 */
+	soot?: number;
 }
 
 /**
@@ -349,6 +363,8 @@ export function plateTexels(
 	size = PLATE_TEXTURE_SIZE,
 ) {
 	const { seam, weathering, variation } = profile;
+	const streakDepth = profile.streakDepth ?? 0.55;
+	const soot = profile.soot ?? 0;
 	const out = new Uint8Array(size * size * 4);
 	// **The one layout**, shared with `seamNormalTexels` — see `plateLayout`.
 	const layout = plateLayout(profile, size);
@@ -361,7 +377,8 @@ export function plateTexels(
 			// which reads as dirt in rows.
 			const grime = streak(`${tag}-grime`, x, 9) * weathering;
 			const row = layout.rowOf(y);
-			const plate = hash01(`${tag}-plate`, layout.colOf(x, row), row);
+			const col = layout.colOf(x, row);
+			const plate = hash01(`${tag}-plate`, col, row);
 			// Panel-to-panel variation is small; the seam between them is what the
 			// eye reads as plating at all.
 			let v = 196 + (plate - 0.5) * 2 * variation;
@@ -382,7 +399,15 @@ export function plateTexels(
 			if (layout.onSeam(x, y)) v *= 1 - seam;
 			// Weathering darkens rather than tints: a soot streak is missing light,
 			// and tinting it would break the greyscale contract above.
-			v *= 1 - grime * 0.55 * streak(`${tag}-run`, x, 5);
+			v *= 1 - grime * streakDepth * streak(`${tag}-run`, x, 5);
+			// A sooted plate, by its own two draws: whether, and how dark. Its
+			// own tags, so neither is the plate's tone draw at another index.
+			if (soot > 0 && hash01(`${tag}-soot`, col, row) < soot)
+				v *=
+					1 -
+					weathering *
+						0.5 *
+						(0.4 + 0.6 * hash01(`${tag}-soot-depth`, col, row));
 			const g = clamp255(v);
 			const i = (y * size + x) * 4;
 			out[i] = g;
@@ -511,4 +536,39 @@ export function seamNormalTexels(
 		}
 	}
 	return out;
+}
+
+/**
+ * Pull a paint colour toward grey, and down (#203).
+ *
+ * #35's liveries are pastel: a saturated blue-grey courier, a tan freighter,
+ * a mint explorer. Under #199's broad light they read as toys, because a
+ * painted industrial hull is mostly one dull tone with a stripe. A finish
+ * says how much chroma survives and how bright the result is; the hue is
+ * kept, so the eleven liveries — and the four station roles' paints — still
+ * tell each other apart.
+ *
+ * Toward the colour's own luma rather than a fixed grey, so a dark panel stays
+ * dark and a light hull stays light — muting must not flatten the value
+ * contrast between paints, which is what separates them at range. Shared by
+ * `ship-mesh.ts` and `station-mesh.ts` since the station finishes took a
+ * paint dial of their own.
+ */
+export function mutePaint(
+	color: number,
+	paint: { saturation: number; value: number },
+): number {
+	const r = (color >> 16) & 0xff;
+	const g = (color >> 8) & 0xff;
+	const b = color & 0xff;
+	const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+	const channel = (c: number) =>
+		Math.max(
+			0,
+			Math.min(
+				255,
+				Math.round((luma + (c - luma) * paint.saturation) * paint.value),
+			),
+		);
+	return (channel(r) << 16) | (channel(g) << 8) | channel(b);
 }

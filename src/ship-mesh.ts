@@ -16,6 +16,7 @@
  * below replaces the plate extrusion, the lathe, and the stock cylinder.
  */
 import * as THREE from "three";
+import { mutePaint } from "./surface";
 import { EMISSIVE_CEILING } from "./light-rig";
 
 // Re-exported, not merely imported: `Ring` and `hullLoft` were this module's
@@ -320,38 +321,6 @@ const liveries: Record<
  *  material all depend on the finish in force, and a switch must not hand an
  *  industrial hull the stock palette it happened to find. */
 const palettes = new Map<string, Palette>();
-
-/**
- * Pull a livery colour toward grey, and down (#203).
- *
- * #35's liveries are pastel: a saturated blue-grey courier, a tan freighter,
- * a mint explorer. Under #199's broad light they read as toys, because a
- * painted industrial hull is mostly one dull tone with a stripe. The finish
- * says how much chroma survives and how bright the result is; the hue is
- * kept, so the eleven liveries still tell the roles apart.
- *
- * Toward the colour's own luma rather than a fixed grey, so a dark panel stays
- * dark and a light hull stays light — muting must not flatten the value
- * contrast between the four paints, which is what separates them at range.
- */
-function mutePaint(
-	color: number,
-	paint: { saturation: number; value: number },
-): number {
-	const r = (color >> 16) & 0xff;
-	const g = (color >> 8) & 0xff;
-	const b = color & 0xff;
-	const luma = 0.299 * r + 0.587 * g + 0.114 * b;
-	const channel = (c: number) =>
-		Math.max(
-			0,
-			Math.min(
-				255,
-				Math.round((luma + (c - luma) * paint.saturation) * paint.value),
-			),
-		);
-	return (channel(r) << 16) | (channel(g) << 8) | channel(b);
-}
 
 /**
  * The exhaust bowl's glow, hot at the throat and cooling to the lip.

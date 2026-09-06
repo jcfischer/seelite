@@ -19,11 +19,12 @@ import {
 	STATION_TYPES,
 	type StationType,
 } from "../src/station";
-import { Pools, radiatorArray } from "../src/station-fixtures";
+import { Pools, SHIP_SCALE, radiatorArray } from "../src/station-fixtures";
 import {
 	SELECTED_FORM,
 	STATION_FORMS,
 	STATION_PANEL_KM,
+	type StationFormId,
 	buildStationForm,
 	setStationDetail,
 } from "../src/station-mesh";
@@ -68,12 +69,18 @@ describe("stock is the station that shipped", () => {
 		expect(stationMapSize()).toBe(PLATE_TEXTURE_SIZE);
 	});
 
-	test("every industrial finish keeps the plate the same nineteen metres", () => {
+	test("every industrial finish keeps the plate the same nineteen metres, and nostromo halves it", () => {
+		// Plate = tile / plates across. The industrial finishes double the tile
+		// and the map together and halve the pitch, so the quotient is the
+		// stock plate; `nostromo` doubles the map again at the same tile, so
+		// its plate is half of it — the principal's ship-scale ruling, at
+		// 9.4 m a sixth of a courier.
+		const stock =
+			STATION_PANEL_KM /
+			Math.round(PLATE_TEXTURE_SIZE / STATION_VISUALS.trade.plating.pitchPx);
 		for (const id of STATION_FINISH_IDS) {
 			setStationFinish(id);
 			const finish = STATION_FINISHES[id];
-			// Plate = tile / plates across; the tile and the map scale together
-			// and the pitch halves, so the quotient is the stock plate.
 			const role = STATION_VISUALS.trade.plating;
 			const profile = finish.plating(role);
 			const plateKm =
@@ -81,7 +88,7 @@ describe("stock is the station that shipped", () => {
 				Math.round(stationMapSize() / profile.pitchPx);
 			expect([id, plateKm]).toEqual([
 				id,
-				STATION_PANEL_KM / Math.round(PLATE_TEXTURE_SIZE / role.pitchPx),
+				id === "nostromo" ? stock / 2 : stock,
 			]);
 		}
 	});
@@ -291,5 +298,59 @@ describe("the station maps are the plating's, not the finish's", () => {
 		expect(mapOf("industrial")).toBe(plated);
 		expect(mapOf("stock")).not.toBe(plated);
 		expect(mapOf("worn")).not.toBe(plated);
+	});
+});
+
+describe("the fixtures are at ship scale", () => {
+	/**
+	 * The principal's ruling on the first sheet: a station's details are
+	 * sized to a ship, or nothing in the frame says how big the station is.
+	 * `SHIP_SCALE.caps` names the largest member each pool may hold, and this
+	 * reads every instance's scale back against it on every selected form and
+	 * on the assembly — the first trusses were 47 m wide, and a figure over
+	 * its cap is a fixture back at station scale.
+	 */
+	test("no pooled member on any form exceeds its material's cap", () => {
+		setStationFinish("nostromo");
+		const matrix = new THREE.Matrix4();
+		const position = new THREE.Vector3();
+		const rotation = new THREE.Quaternion();
+		const scale = new THREE.Vector3();
+		const builds: [StationType, StationFormId][] = [
+			...STATION_TYPES.map(
+				(type) => [type, SELECTED_FORM[type]] as [StationType, StationFormId],
+			),
+			["trade", "d"],
+		];
+		let members = 0;
+		for (const [type, form] of builds) {
+			const km = buildStationForm(type, form, GREY, 0).root.getObjectByName(
+				"km",
+			) as THREE.Group;
+			km.traverse((object) => {
+				const instanced = object as THREE.InstancedMesh;
+				if (!instanced.isInstancedMesh) return;
+				const material = object.name.split("-").pop() as string;
+				if (!(material in SHIP_SCALE.caps)) return;
+				const cap = SHIP_SCALE.caps[material as keyof typeof SHIP_SCALE.caps];
+				for (let i = 0; i < instanced.count; i++) {
+					instanced.getMatrixAt(i, matrix);
+					matrix.decompose(position, rotation, scale);
+					const sorted = [scale.x, scale.y, scale.z].sort((a, b) => a - b);
+					// A member's and a tank's measure is its section; a panel's is
+					// its longest side.
+					const measure = material === "radiator" ? sorted[2] : sorted[1];
+					expect([type, form, object.name, i, measure <= cap]).toEqual([
+						type,
+						form,
+						object.name,
+						i,
+						true,
+					]);
+					members += 1;
+				}
+			});
+		}
+		expect(members).toBeGreaterThan(2000);
 	});
 });
