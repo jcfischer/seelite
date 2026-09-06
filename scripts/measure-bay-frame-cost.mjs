@@ -112,6 +112,7 @@ import { GAME_TIME_S, SEED, VIEWPORT } from "./lib/view-set.mjs";
 import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
 import { median, seededShuffler, separation } from "./lib/measurement.mjs";
 import {
+	flightFraming,
 	installViewFraming,
 	OCCLUSION_FRAMINGS,
 	setView,
@@ -125,6 +126,24 @@ import {
 } from "./probe-guard.mjs";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
+
+/**
+ * `--mask-sweep`: the coverage question on its own, over roles and framings.
+ *
+ * #247 asks whether #242's 4.6% is a property of bays or of *that* bay, and
+ * what the fraction is in the framings a player is actually in. That is a
+ * different measurement from the rest of this file and it wants a different
+ * run. The mask is **deterministic** — two flat colours, a pixel disagrees or
+ * it does not — so it needs none of the interleaving, shuffling, blocking or
+ * separation counting the timing arms are built out of, and paying for twelve
+ * blocks an arm to compute a pixel count that cannot vary would put a sweep
+ * over eight framings out of reach.
+ *
+ * The full run is unchanged and still measures the mask at each of its own four
+ * framings; this adds the roles and the ranges it cannot reach, including the
+ * one that needs another seed.
+ */
+const MASK_SWEEP = process.argv.includes("--mask-sweep");
 
 /** `measure-occlusion-cost.mjs`'s figures: long enough that the end-of-block
  *  sync is under a percent of the block, and enough blocks that one bad one
@@ -170,6 +189,34 @@ const ARMS = [
 		name: "no player",
 		hide: "player",
 		what: "the hull in chase and the cabin in cockpit — the subject at a fixed range",
+	},
+	/**
+	 * **What the near layer's own drawing costs — one term of a prepass, and not
+	 * a bound on one.**
+	 *
+	 * The tempting claim is that this bounds a depth-only prepass, because such a
+	 * pass draws the same geometry with no fragment shading. **It does not**, and
+	 * sage blocked the first version of this comment for making it (PR #251).
+	 * Subtracting an arm measures work *removed* from passes that already exist.
+	 * A prepass is work *added*: its own draw submission, a depth target to bind
+	 * and clear, and a depth read in the approach pass for every fragment it
+	 * rejects. None of those three is anywhere in this subtraction, so a figure
+	 * from it is silent about the two ends that make a prepass a pass.
+	 *
+	 * What it is good for is the one term it does cover: the geometry and
+	 * rasterisation cost of putting the near layer through a pass at all, which
+	 * is the part a reader would otherwise guess at. Read it as "this much
+	 * geometry, this often", and price the rest by building it — which is the
+	 * decision #247 exists to make.
+	 *
+	 * The usual near-scene caveat applies on top: hiding these also drops the
+	 * shadow and ambient-occlusion work they induce and exposes what stood behind
+	 * them, so even this term is a net figure.
+	 */
+	{
+		name: "no near layer",
+		hide: "near-layer",
+		what: "every station and the player together — the ceiling on a depth-only prepass over that layer",
 	},
 ];
 
@@ -218,6 +265,11 @@ const installSubjects = (page) =>
 					if (root) out.push(...root.children);
 				return out;
 			}
+			if (how === "near-layer")
+				return [
+					...window.__baySubjects("stations"),
+					...window.__baySubjects("player"),
+				];
 			if (how === "massive") return bodiesOfKind(["star", "planet", "moon"]);
 			if (how === "stations") return bodiesOfKind(["station"]);
 			if (how?.startsWith("body:")) return inEveryScene(how.slice(5));
@@ -420,7 +472,7 @@ const bodies = (page) =>
  * "the near layer" means one thing in both. A mask that named a different set
  * from the arms would still print a percentage.
  */
-const apertureFraction = (page) =>
+const apertureFraction = (page, subjectId) =>
 	page.evaluate(async (planetId) => {
 		const g = window.__seelite;
 		const gl = g.renderer.getContext();
@@ -515,7 +567,7 @@ const apertureFraction = (page) =>
 		if (bloom && bloomWas !== null) bloom.enabled = bloomWas;
 		g.render(0);
 		return { visible, whole, pixels: w * h };
-	}, "planet-4");
+	}, subjectId);
 
 const origin = await guardedOrigin(ORIGIN, [
 	"src/main.ts",
@@ -523,21 +575,35 @@ const origin = await guardedOrigin(ORIGIN, [
 	"src/station-interior-mesh.ts",
 ]);
 const browser = await launchChromium({ headless: false });
-// `deviceScaleFactor: 2` because #242's table was taken there and the machine
-// this targets has a retina panel: at the default the buffer is a quarter of
-// the player's, which is the whole of any fill-rate term.
-const page = await browser.newPage({
-	viewport: VIEWPORT,
-	deviceScaleFactor: 2,
-});
-await installViewPlacement(page);
-await installViewFraming(page);
-await installSubjects(page);
-await page.goto(`${origin}/?seed=${SEED}`);
-await bootedGame(page);
-const renderer = await assertPlayersRenderer(page, "decompose a bay frame");
-await page.evaluate((t) => window.__startClockAt(t), GAME_TIME_S);
-await page.evaluate(() => window.__rememberBootPosition());
+
+/**
+ * A booted page on one seed, framed and clocked like every other run here.
+ *
+ * A function rather than a top-level page because #247's sweep needs two seeds:
+ * seed 47 generates a trade station and a shipyard and nothing else
+ * (`view-set.mjs`), so a **refinery** — the pad role, and the row that decides
+ * whether #242's fraction is about bays at all — is unreachable without seed 2.
+ * Re-pinning `SEED` was declined for the reason `view-set.mjs` gives: every
+ * other framing here is measured against 47.
+ *
+ * `deviceScaleFactor: 2` because #242's table was taken there and the machine
+ * this targets has a retina panel: at the default the buffer is a quarter of
+ * the player's, which is the whole of any fill-rate term.
+ */
+async function openPage(seed) {
+	const p = await browser.newPage({ viewport: VIEWPORT, deviceScaleFactor: 2 });
+	await installViewPlacement(p);
+	await installViewFraming(p);
+	await installSubjects(p);
+	await p.goto(`${origin}/?seed=${seed}`);
+	await bootedGame(p);
+	const r = await assertPlayersRenderer(p, "decompose a bay frame");
+	await p.evaluate((t) => window.__startClockAt(t), GAME_TIME_S);
+	await p.evaluate(() => window.__rememberBootPosition());
+	return { page: p, renderer: r };
+}
+
+const { page, renderer } = await openPage(SEED);
 
 // **`deepSky` first, and the ordering is load-bearing**: its placement returns
 // the ship to where it booted, which is only knowable before anything has moved
@@ -595,9 +661,223 @@ const FRAMINGS = [
 	},
 ];
 
+/**
+ * #247's sweep: the coverage question over station roles and player framings.
+ *
+ * Grouped by seed, because the pad role is on another one. Ordering inside a
+ * group is load-bearing for the same reason `FRAMINGS` says it is — a berth
+ * framing leaves the ship docked, so anything that re-places from open space
+ * has to come before one.
+ */
+const MASK_FRAMINGS = [
+	// Seed 47, in the order that keeps the ship out of a dock until it must be.
+	{
+		name: "open-flight far, cockpit (30 radii)",
+		seed: SEED,
+		role: "—",
+		...flightFraming("planet-4", 30, "cockpit"),
+	},
+	{
+		name: "open-flight mid, cockpit (8 radii)",
+		seed: SEED,
+		role: "—",
+		...flightFraming("planet-4", 8, "cockpit"),
+	},
+	{
+		name: "open-flight close, cockpit (2 radii)",
+		seed: SEED,
+		role: "—",
+		...flightFraming("planet-4", 2, "cockpit"),
+	},
+	{
+		name: "open-flight close, chase (2 radii)",
+		seed: SEED,
+		role: "—",
+		...flightFraming("planet-4", 2, "chase"),
+	},
+	{
+		name: "station-approach, cockpit",
+		seed: SEED,
+		role: "trade (slot)",
+		...OCCLUSION_FRAMINGS.cockpit,
+	},
+	{
+		name: "trade bay, chase",
+		seed: SEED,
+		role: "trade (slot)",
+		...OCCLUSION_FRAMINGS.berth,
+	},
+	{
+		name: "shipyard bay, chase",
+		seed: SEED,
+		role: "shipyard (slot)",
+		...OCCLUSION_FRAMINGS.shipyardBerth,
+	},
+	// Seed 2, the only one of these with a refinery.
+	{
+		name: "refinery deck, chase",
+		seed: 2,
+		role: "refinery (pad)",
+		...OCCLUSION_FRAMINGS.refineryCradle,
+	},
+];
+
 const ORDER_SEED = Number(process.env.ORDER_SEED ?? 20260905);
 const shuffled = seededShuffler(ORDER_SEED);
 const SCALES = [1, 0.75, 0.5];
+
+/**
+ * #247's sweep, and then out — it shares this file's page, mask and subject
+ * selector and none of its timing machinery.
+ *
+ * **The subject is chosen by measurement, not declared.** The full run names
+ * `planet-4` because #242 framed it; a sweep across two seeds and eight
+ * framings cannot, and a hard-coded id would silently return a zero mask on any
+ * row where that body is behind the camera — which reads exactly like a body
+ * that is fully occluded. So each framing masks the three widest bodies in its
+ * own inventory and takes the one with the largest `whole`: `whole` is the disc
+ * with the near layer hidden, so a body out of frame scores zero and a body in
+ * frame scores its own coverage. The chosen id is printed on every row.
+ */
+if (MASK_SWEEP) {
+	console.log(`  renderer: ${renderer}`);
+	console.log(
+		`  viewport: ${VIEWPORT.width}x${VIEWPORT.height} at device scale 2`,
+	);
+	console.log(
+		"  pixels only — the mask is two flat colours and a disagreement, so it is\n" +
+			"  deterministic and carries no blocks, no shuffle and no separation count",
+	);
+
+	/**
+	 * The planet's own cost per frame-full of its pixels, from #248's ladder.
+	 *
+	 * Used to turn a coverage fraction into a millisecond estimate, and it is an
+	 * **estimate rather than a measurement** every time it appears: #248 read it
+	 * on `planet-5` at 1.02 radii with the four-tap path at device scale 2, and a
+	 * different class, a different relief path or a different seed moves it. What
+	 * makes it transferable at all is that the term is fill-rate bound — #248
+	 * measured 3.6x between the two pixel ratios for 4x the pixels — so it scales
+	 * with covered pixels and not with distance.
+	 *
+	 * Named here rather than inlined at the print, because a figure carried in
+	 * from another node is exactly the kind that gets quoted without its basis.
+	 */
+	const PLANET_MS_PER_FRAME_OF_PIXELS = 41.0 / 0.94;
+
+	const groups = new Map();
+	for (const f of MASK_FRAMINGS) {
+		if (!groups.has(f.seed)) groups.set(f.seed, []);
+		groups.get(f.seed).push(f);
+	}
+
+	const rows = [];
+	for (const [seed, framings] of groups) {
+		const sweepPage = seed === SEED ? page : (await openPage(seed)).page;
+		for (const framing of framings) {
+			await setView(sweepPage, framing.view);
+			await framing.place(sweepPage);
+			await setView(sweepPage, framing.view);
+			await settleFrames(sweepPage);
+
+			const inventory = await bodies(sweepPage);
+			const widest = inventory
+				.slice()
+				.sort((a, b) => b.angularRadiusDeg - a.angularRadiusDeg);
+
+			/**
+			 * Mask **every** massive body and keep whichever covers most.
+			 *
+			 * Sorted widest-first only so the printed subject is the interesting
+			 * one when several are in frame; the loop does not stop early. An
+			 * earlier version masked the three widest, which is a different
+			 * measurement wearing the same label: angular size is not direction,
+			 * so three bodies behind the camera and a fourth in front of it would
+			 * print `none` — "no massive body in the frustum at all" — over a body
+			 * nothing had looked at (sage, PR #251, round 2). A row that says there
+			 * is no prepass opportunity has to have checked.
+			 *
+			 * The cost is one mask per body rather than three: two renders and two
+			 * `readPixels` each. Seconds on a system's dozen bodies, against a
+			 * claim the row cannot otherwise make.
+			 */
+			const measure = async () => {
+				let best = null;
+				for (const body of widest) {
+					const m = await apertureFraction(sweepPage, body.id);
+					if (!best || m.whole > best.mask.whole)
+						best = { subject: body, mask: m };
+				}
+				if (!best) throw new Error(`${framing.name}: no massive body to mask`);
+				return { ...best, checked: widest.length };
+			};
+
+			rows.push({ ...framing, seed, ...(await measure()) });
+
+			/**
+			 * **There is no aimed row, because the game has no such camera.**
+			 *
+			 * Two framings here come back with nothing in the frustum, and the
+			 * obvious answer — turn to face the widest body — is not available to a
+			 * player and so is not available to an instrument. `HeadLook` is
+			 * `"forward" | "left" | "right"` (`cockpit.ts`): three discrete yaws,
+			 * no pitch. In **chase** `cameraRotation` reads `chaseYaw` and ignores
+			 * head-look entirely. And a docked or arriving session restores the
+			 * docking attitude every tick (§12.6 obligation 9), so setting the
+			 * ship's orientation is undone before the next frame.
+			 *
+			 * The question an aimed row would have answered — does a pad role's
+			 * open deck occlude its host the way a bay does — is settled by
+			 * `measure-station-host-angle.ts` instead: a refinery has no host
+			 * planet by construction, a belt orbit and `parentId: null`, in all
+			 * 6,250 of them in that census. That is a claim about hosts and not
+			 * about sightlines; what the row below adds is that on this seed in
+			 * this framing every body in the system was masked and none covered a
+			 * pixel.
+			 */
+		}
+		if (sweepPage !== page) await sweepPage.close();
+	}
+
+	console.log(
+		`\n  ${"framing".padEnd(40)}${"role".padEnd(17)}${"subject/checked".padEnd(16)}` +
+			`${"shows".padStart(8)}${"of frame".padStart(10)}${"hidden".padStart(9)}${"est. saving".padStart(13)}`,
+	);
+	for (const r of rows) {
+		const { visible, whole, pixels } = r.mask;
+		// The fraction of the *frame* the near layer stands in front of, which is
+		// what a prepass would stop shading. Not `1 − visible/whole`, which is a
+		// fraction of the disc and says nothing about how big the disc is.
+		const hiddenOfFrame = (whole - visible) / pixels;
+		const savingMs = hiddenOfFrame * PLANET_MS_PER_FRAME_OF_PIXELS;
+		// A body outside the frustum reads `whole: 0`, which is not the same as a
+		// body wholly hidden — and printing 0.0% for both would say the near layer
+		// occluded something that was never there.
+		const out = whole === 0;
+		console.log(
+			`  ${r.name.padEnd(40)}${r.role.padEnd(17)}${`${r.subject.id}/${r.checked}`.padEnd(16)}` +
+				`${(out ? "none" : `${((visible / whole) * 100).toFixed(1)}%`).padStart(8)}` +
+				`${(out ? "—" : `${((whole / pixels) * 100).toFixed(1)}%`).padStart(10)}` +
+				`${(out ? "—" : `${(hiddenOfFrame * 100).toFixed(1)}%`).padStart(9)}` +
+				`${(out ? "—" : `${savingMs.toFixed(1)} ms`).padStart(13)}`,
+		);
+	}
+	console.log(
+		"\n  none       — every massive body in the system masked and none covered a pixel: nothing for a\n" +
+			"               prepass to reject here, which is a different thing from a body wholly hidden and\n" +
+			"               must not print as 0.0%. The count after the subject says how many were tried\n" +
+			"  shows      — how much of that body's disc the player sees, the fraction #242 quotes\n" +
+			"  of frame   — how much of the frame the whole disc would be, which is what a fraction is a fraction of\n" +
+			"  hidden     — of frame, the part the near layer stands in front of: what a prepass would stop shading\n" +
+			"  est. saving— hidden x a planet's cost per frame-full of pixels, 43.6 ms, read off #248's ladder on\n" +
+			"               planet-5 at 1.02 radii four-tap and device scale 2. An ESTIMATE and not a measurement:\n" +
+			"               another class or relief path moves the per-pixel figure. This is the saving side only:\n" +
+			"               what a prepass would COST is not measured anywhere here, and `no near layer` in a full\n" +
+			"               run gives one term of it and not a bound (see that arm's own note).",
+	);
+	await browser.close();
+	process.exit(0);
+}
 
 console.log(`  renderer: ${renderer}`);
 console.log(
@@ -715,7 +995,7 @@ for (const framing of FRAMINGS) {
 	// decomposition. Run at every framing so the bay's figure has the open-space
 	// one beside it — a fraction with nothing to compare it against is a number
 	// a reader has to take on trust.
-	const mask = await apertureFraction(page);
+	const mask = await apertureFraction(page, "planet-4");
 	console.log(
 		`\n  planet-4 pixels: ${mask.visible} visible, ${mask.whole} with the near layer gone ` +
 			`(${mask.whole ? ((mask.visible / mask.whole) * 100).toFixed(1) : "—"}% of the disc shows), ` +
