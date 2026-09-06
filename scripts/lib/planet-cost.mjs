@@ -67,25 +67,6 @@ export function radiiRefusal(radii) {
 }
 
 /**
- * The two relief paths, in the order `perf-panel.ts` cycles them.
- *
- * Restated here rather than imported, and unlike `PERF_CLASSES` — which the
- * sweep dynamically imports off the served page rather than copy — this set is
- * a *type* in `planet-shaders.ts` (`ReliefPath`) and not a value: there is no
- * array to import.
- *
- * **A third path arrived and the copy did go stale for exactly one commit**,
- * which is what the previous version of this comment said would not matter:
- * "a third path would be a missing column in an instrument rather than anything
- * the game renders differently". #207 made `none` a compiled program and the
- * band that selects it ships, so a missing column here is now a column of the
- * shipped renderer that nothing prices. The trade is unchanged and the argument
- * for it is weaker than it was; what keeps it honest is that the sweep is the
- * only consumer and it goes visibly short a row.
- */
-export const RELIEF_PATHS = Object.freeze(["four-tap", "screen-space", "none"]);
-
-/**
  * How far above the widest column's floor a cell has to sit to be an outlier.
  *
  * Blunt on purpose. The honest cells in that column sit within a few percent of

@@ -397,7 +397,8 @@ void main() {
  * label. That is the trap `main.ts` already records for the vignette, where a
  * probe measured its own assignment being overwritten.
  */
-export type ReliefPath = "four-tap" | "screen-space" | "none";
+export const RELIEF_PATHS = ["four-tap", "screen-space", "none"] as const;
+export type ReliefPath = (typeof RELIEF_PATHS)[number];
 
 export function fragmentFor(
 	surface: SurfaceClass,

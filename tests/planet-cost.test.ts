@@ -20,7 +20,6 @@ import { VIEWS } from "../scripts/lib/view-set.mjs";
 import {
 	FAR_COLUMN_OUTLIER_FACTOR,
 	RADII,
-	RELIEF_PATHS,
 	farColumnVerdict,
 	finite,
 	flagExcursions,
@@ -28,6 +27,7 @@ import {
 	radiiRefusal,
 	vsyncRefusal,
 } from "../scripts/lib/planet-cost.mjs";
+import { RELIEF_PATHS } from "../src/planet-shaders";
 
 /** What a browser hands back for an element: the tags gone, the text left. */
 const textOf = (html: string) => html.replace(/<[^>]*>/g, "");
@@ -294,17 +294,21 @@ describe("the sweep's declared columns", () => {
 	});
 
 	/**
-	 * **Every path the renderer can select, which is now three** (#207).
+	 * **Every path the renderer can select, which is now three** (#207) — and
+	 * asserted against the module that owns them rather than against a copy.
 	 *
-	 * `none` was `perfAblate` 1 — an ablation the panel offered and no shipped
-	 * code path chose. It is a compiled program now and the apparent-size band
-	 * selects it in flight, so a sweep that skipped it would be leaving a column
-	 * of the shipped renderer unpriced rather than leaving out a diagnostic.
+	 * `lib/planet-cost.mjs` used to restate the pair, with a comment arguing the
+	 * copy was cheap because "a third path would be a missing column in an
+	 * instrument rather than anything the game renders differently". #207 made
+	 * `none` a compiled program the shipped band selects, the copy was wrong for
+	 * exactly one commit, and sage found it (PR #254). `planet-shaders.ts` owns
+	 * the roster, `ReliefPath` is derived from it, and the sweep imports it off
+	 * the served page the way it already imports `PERF_CLASSES`.
 	 *
-	 * Ordered, because the table's columns are printed in this order and a
-	 * receipt quoting "the third column" wants that to keep meaning one thing.
+	 * Ordered, because the table prints its columns in this order and a receipt
+	 * quoting "the third column" wants that to keep meaning one thing.
 	 */
-	test("sweeps every relief path the renderer can select", () => {
+	test("the renderer's relief paths are one roster, in a stable order", () => {
 		expect([...RELIEF_PATHS]).toEqual(["four-tap", "screen-space", "none"]);
 	});
 });

@@ -196,7 +196,7 @@ import {
 	buildBodyVisual,
 	surfaceSphere,
 } from "./planet-surface";
-import type { ReliefPath } from "./planet-shaders";
+import { type ReliefPath, RELIEF_PATHS } from "./planet-shaders";
 import { focalPx, projectedRadiusPx, reliefPathFor } from "./relief-bands";
 import { SPIN_RPM_RANGE, STATION_GEOMETRY } from "./station";
 import { PROMPT_FILL, PROMPT_FONT, TextRaster } from "./text-raster";
@@ -2469,7 +2469,9 @@ class Game {
 	 * cache keys on the source string.
 	 */
 	private prewarmReliefPrograms() {
-		const paths: ReliefPath[] = ["four-tap", "screen-space", "none"];
+		// The roster from the module that owns it. A second exhaustive list here
+		// is how the instrument's copy went stale for a commit (sage, PR #254).
+		const paths = RELIEF_PATHS;
 		const before = new Map<string, ReliefPath>();
 		for (const [id, visual] of this.bodyVisuals)
 			before.set(id, visual.reliefPath());
