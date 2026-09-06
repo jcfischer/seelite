@@ -632,3 +632,264 @@ void main() {
   gl_Position = projectionMatrix * viewMatrix * world;
 }
 `;
+
+/**
+ * What a class needs beyond its two baked cubes — node #208.
+ *
+ * A baked body is drawn from `albedo`/`specMask` in one cube and an
+ * object-space normal plus one spare channel in the other. Three things do not
+ * fit in that and are handled here instead.
+ *
+ * `specPower` is a per-class **literal** in `CLASS_GLSL` — 230 on terran's
+ * water, 46 on ice, 0 everywhere else — so it is compiled into the draw program
+ * rather than spending a channel on a constant.
+ *
+ * `aux` is what cube B's alpha carries. Only lava wants one: its crack network
+ * is static while the glow over it is not, so the static half bakes and the
+ * clock-driven half is recomputed. Every other baked class writes 0.
+ *
+ * `perFrame` is the GLSL the draw program runs each frame, with `p`, `aux` and
+ * `emissive` in scope. It is the node's "emissive lava stays a per-frame term",
+ * and it is the *whole* of what a baked body still evaluates procedurally.
+ *
+ * **A class is bakeable exactly when its `surface()` does not read the clock.**
+ * That is the rule, and `tests/planet-bake.test.ts` reads it off
+ * `planet-classes.glsl.ts`'s own source rather than off this table — so adding
+ * an animated term to a baked class goes red instead of freezing a planet.
+ * `venusian` is the class that rule excludes and the node was unsure about: its
+ * whole deck drifts and its `height` is `0.0`, so there is nothing to bake and
+ * nothing to gain.
+ */
+export interface BakeDescriptor {
+	/** GLSL for cube B's alpha, with `p` (the unit direction) in scope. */
+	aux: string;
+	/** GLSL the draw program runs per frame; reads `p` and `aux`, writes
+	 *  `emissive`. Empty for a class whose surface is entirely static. */
+	perFrame: string;
+	/** The Blinn-Phong exponent, compiled in. 0 where the class has no
+	 *  specular at all, which compiles the term out. */
+	specPower: number;
+}
+
+export const BAKE_DESCRIPTORS: Partial<Record<SurfaceClass, BakeDescriptor>> = {
+	terran: { aux: "0.0", perFrame: "", specPower: 230 },
+	desert: { aux: "0.0", perFrame: "", specPower: 0 },
+	ice: { aux: "0.0", perFrame: "", specPower: 46 },
+	airless: { aux: "0.0", perFrame: "", specPower: 0 },
+	lava: {
+		aux: "lavaCrack(p)",
+		perFrame: "emissive = lavaEmissive(p, aux);",
+		specPower: 0,
+	},
+};
+
+/** The classes a cube is baked for, in a stable order so a census reads the
+ *  same twice. Derived from the table, so the two cannot disagree. */
+export const BAKEABLE_CLASSES = Object.keys(
+	BAKE_DESCRIPTORS,
+) as readonly SurfaceClass[];
+
+export const isBakeable = (surface: SurfaceClass): boolean =>
+	surface in BAKE_DESCRIPTORS;
+
+/**
+ * The bake's vertex shader: a full-screen quad, and nothing else.
+ *
+ * A quad per face rather than a `CubeCamera` looking at a sphere from inside.
+ * The camera version would need a sphere to hit, would shade its *back* faces,
+ * and would interpolate the direction across a triangle; this one hands every
+ * texel its exact direction and needs no geometry at all beyond two triangles.
+ * It is what `PMREMGenerator` does, for the same reasons.
+ *
+ * `gl_Position` is written straight from the quad's own coordinates, so `vNdc`
+ * *is* normalised device space and the face basis below can be read as a
+ * camera.
+ */
+export const BAKE_VERTEX = /* glsl */ `
+varying vec2 vNdc;
+void main() {
+  vNdc = position.xy;
+  gl_Position = vec4(position.xy, 0.0, 1.0);
+}
+`;
+
+/**
+ * One face of one cube.
+ *
+ * `faceBasis`'s columns are a camera's right, up and forward, so
+ * `faceBasis * vec3(ndc, 1.0)` is the ray through that pixel at a 90° field of
+ * view — which is the same construction `CubeCamera` makes with six
+ * `lookAt`s, and `planet-bake.ts` derives the six from three's own table rather
+ * than transcribing a sign convention.
+ *
+ * `N` goes in as the direction, so `reliefNormal`'s tangent frame is built on
+ * the sphere exactly as it is when the class is drawn procedurally, and what
+ * comes out is an **object-space** normal. The four-tap path is compiled in
+ * deliberately: the bake is the expensive one, it happens once, and it should
+ * carry the reference look rather than the cheap one.
+ *
+ * The prelude omits `VARYINGS_GLSL`. Nothing reachable from here reads a
+ * varying — the screen-space relief path is the one chunk that does and it is
+ * not compiled in — and declaring a fragment varying the quad's vertex shader
+ * does not write is a link the driver is entitled to reject.
+ */
+export function bakeFragmentFor(
+	surface: SurfaceClass,
+	channel: "albedo" | "normal",
+): string {
+	const d = BAKE_DESCRIPTORS[surface];
+	if (!d) throw new Error(`${surface} has no bake descriptor`);
+	return /* glsl */ `
+precision highp float;
+uniform mat3 faceBasis;
+varying vec2 vNdc;
+${SANITISE_GLSL}
+${NOISE_GLSL}
+float height(vec3 p);
+${RELIEF}
+${CLASS_GLSL[surface]}
+void main() {
+  vec3 p = normalize(faceBasis * vec3(vNdc, 1.0));
+  vec3  albedo = vec3(0.5);
+  vec3  N = p;
+  vec3  emissive = vec3(0.0);
+  float specPower = 0.0, specMask = 0.0;
+  surface(p, albedo, N, emissive, specPower, specMask);
+${
+	channel === "albedo"
+		? `  gl_FragColor = vec4(sane(albedo), saneF(specMask));`
+		: `  // Object-space, half-range encoded. Eight bits is what a normal map is
+  // normally stored in; the height field it came from is not, which is why the
+  // node's "height in A" is not what this writes — a four-tap difference is a
+  // small delta of a small delta and quantises to steps.
+  //
+  // **Sanitised after the encode, never before.** saneF clamps a negative to
+  // zero, which is right for a colour and destroys a direction: wrapping the
+  // normal first read every face's negative axis back as exactly 0.5 — +X came
+  // out at 227/255 and −X at exactly 128 — and the planet lost its terrain
+  // while rendering, compiling and erroring in no way at all. Encoded first, a
+  // non-finite component lands on 0 and decodes to −1, which is a direction
+  // rather than a hole.
+  gl_FragColor = sane4(vec4(normalize(N) * 0.5 + 0.5, ${d.aux}));`
+}
+}
+`;
+}
+
+/**
+ * The varyings that carry the body's own rotation into the fragment.
+ *
+ * A baked normal is in **object** space and the lighting is in world space, so
+ * something has to rotate it. Three's fragment prefix carries `viewMatrix` and
+ * `cameraPosition` and **not** `modelMatrix` or `normalMatrix` — read off
+ * `three.cjs`'s `prefixFragment`, not assumed — so the rotation cannot be
+ * fetched in the fragment and has to be interpolated in.
+ *
+ * Three columns rather than a `varying mat3`, which is legal and less widely
+ * exercised. They are constant over the mesh, so the interpolation is exact.
+ *
+ * Only the baked program pays for them. The procedural one keeps
+ * `SURFACE_VERTEX` unchanged, which is also what keeps its program identical to
+ * the one that shipped.
+ */
+export const BAKED_BASIS_VARYINGS = /* glsl */ `
+varying vec3 vBx;
+varying vec3 vBy;
+varying vec3 vBz;
+`;
+
+export const BAKED_SURFACE_VERTEX = /* glsl */ `
+${VARYINGS_GLSL}
+${BAKED_BASIS_VARYINGS}
+void main() {
+  vObjP   = normalize(position);
+  vec4 world = modelMatrix * vec4(position, 1.0);
+  vWorldP = world.xyz;
+  vWorldN = normalize(mat3(modelMatrix) * normal);
+  vCenter = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+  vRadius = length(world.xyz - vCenter);
+  mat3 rot = mat3(modelMatrix);
+  vBx = rot[0];
+  vBy = rot[1];
+  vBz = rot[2];
+  gl_Position = projectionMatrix * viewMatrix * world;
+}
+`;
+
+/**
+ * Draw a body from its two cubes — the cheap program the whole node is for.
+ *
+ * Two texture fetches and the shared lighting, against the 100 to 150 noise
+ * calls a fragment the procedural program makes. There is **no relief path
+ * here**: the normal comes out of a texture, so #207's three programs have
+ * nothing to select between and `SurfacePath` keeps `"baked"` outside the
+ * `ReliefPath` union rather than widening it.
+ *
+ * The rotation is applied to the decoded normal rather than the normal being
+ * baked in world space, because a world-space bake would be wrong the first
+ * frame a body turned — and nothing in this repo turns a planet *yet*, which is
+ * exactly the kind of invariant that gets broken silently.
+ *
+ * `perfAblate` is honoured so #248's ladder still means the same thing on a
+ * baked body: 1 drops the perturbation to the geometric normal, 2 is a plain
+ * lit sphere. A uniform branch in a shipped program, matching what `RELIEF`
+ * already does, so an arm named on the panel is not silently ignored on half
+ * the bodies in the frame.
+ *
+ * A class with a `perFrame` term gets the full procedural prelude behind it —
+ * lava needs `fbm3` for its convection — and with it the rest of its class
+ * chunk, unreachable and stripped. The alternative is a second spelling of
+ * `lavaEmissive`, which is the drift `lavaCrack` was extracted to prevent.
+ */
+export function bakedFragmentFor(surface: SurfaceClass): string {
+	const d = BAKE_DESCRIPTORS[surface];
+	if (!d) throw new Error(`${surface} has no bake descriptor`);
+	const prelude = d.perFrame
+		? `${NOISE_GLSL}
+float height(vec3 p);
+${RELIEF}
+${CLASS_GLSL[surface]}`
+		: "";
+	return /* glsl */ `
+precision highp float;
+${SANITISE_GLSL}
+${VARYINGS_GLSL}
+${BAKED_BASIS_VARYINGS}
+${LIGHT_GLSL}
+uniform samplerCube bakedAlbedo;
+uniform samplerCube bakedNormal;
+${d.perFrame ? "" : "uniform float perfAblate;"}
+${prelude}
+void main() {
+  vec3 p = normalize(vObjP);
+  vec3 V = normalize(cameraPosition - vWorldP);
+
+  vec4 a  = textureCube(bakedAlbedo, p);
+  vec4 nb = textureCube(bakedNormal, p);
+  vec3  albedo   = a.rgb;
+  float specMask = a.a;
+  float aux      = nb.a;
+  vec3  emissive = vec3(0.0);
+  mat3  rot = mat3(vBx, vBy, vBz);
+  vec3  N = normalize(rot * normalize(nb.xyz * 2.0 - 1.0));
+${d.perFrame ? `  ${d.perFrame}` : ""}
+
+  // The ladder's arms, in the order they subsume each other.
+  if (perfAblate > 1.5) {
+    albedo = vec3(0.5);
+    specMask = 0.0;
+    emissive = vec3(0.0);
+  }
+  if (perfAblate > 0.5) N = normalize(vWorldN);
+
+  vec3 col = shade(albedo, N, V);
+${
+	d.specPower > 0
+		? `  col += sunColor * specular(N, V, ${d.specPower.toFixed(1)}) * specMask;`
+		: ""
+}
+  col += emissive;
+  gl_FragColor = vec4(sane(col), 1.0);
+}
+`;
+}

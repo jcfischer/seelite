@@ -197,7 +197,26 @@ import {
 	surfaceSphere,
 } from "./planet-surface";
 import { type ReliefPath, RELIEF_PATHS } from "./planet-shaders";
-import { focalPx, projectedRadiusPx, reliefPathFor } from "./relief-bands";
+import {
+	type SurfacePath,
+	focalPx,
+	projectedRadiusPx,
+	surfacePathFor,
+} from "./relief-bands";
+import { BAKE_FACE_PX } from "./planet-bake";
+
+/**
+ * Cube faces drawn per frame, across every bake in flight (#208).
+ *
+ * One. A face is a full-screen evaluation of the class shader — the thing #248
+ * measured at 43.5 ms filling a 1440x900 frame at device scale 2 — and twelve
+ * of them per body. At one a frame a fourteen-body system finishes in 168
+ * frames, under three seconds at 60 Hz, and no single frame carries more than
+ * one extra draw. Raising it trades that stall against a hitch, and the node's
+ * "do not let a bake block the first frame after a jump" is which way the trade
+ * goes.
+ */
+const BAKE_FACES_PER_FRAME = 1;
 import { SPIN_RPM_RANGE, STATION_GEOMETRY } from "./station";
 import { PROMPT_FILL, PROMPT_FONT, TextRaster } from "./text-raster";
 import {
@@ -974,6 +993,26 @@ class Game {
 	 * graph does not record.
 	 */
 	private readonly layers = new Map<string, "near" | "approach" | "far">();
+	/**
+	 * The face size of the cube each body was last asked to bake at (#208).
+	 *
+	 * The *request*, which is not the same fact as `BodyVisual.bakedFacePx()`:
+	 * that one is `0` until the bake completes, so a handoff would restart the
+	 * same bake on every frame if it read that. Held here rather than in the
+	 * visual because it is the schedule's own bookkeeping, and the visual has no
+	 * business knowing what layer it is in.
+	 */
+	private readonly bakeFacePx = new Map<string, number>();
+	/**
+	 * Bodies with a bake in flight, oldest first.
+	 *
+	 * A queue rather than a scan of every visual, so the per-frame cost of the
+	 * schedule is the faces it draws and not the bodies it does not. A body
+	 * re-baked while already queued is enqueued twice; the stale entry draws
+	 * nothing and is dropped on the frame it reaches the front, which is cheaper
+	 * than keeping the queue unique.
+	 */
+	private readonly bakeQueue: string[] = [];
 	/**
 	 * The focal length #207's bands are measured in, CSS pixels.
 	 *
@@ -2478,6 +2517,28 @@ class Game {
 	 * because `cachedFragment` keys on class and path and three's own program
 	 * cache keys on the source string.
 	 */
+	/**
+	 * Draw at most `BAKE_FACES_PER_FRAME` cube faces, oldest bake first.
+	 *
+	 * The queue is drained rather than scanned: an entry whose body is gone, or
+	 * whose bake has finished or been replaced, reports nothing left to draw and
+	 * is dropped without spending any of the budget. So a stale entry costs one
+	 * map lookup on the frame it surfaces, and the budget is only ever spent on
+	 * a face that actually lands.
+	 */
+	private stepBakes() {
+		let budget = BAKE_FACES_PER_FRAME;
+		while (budget > 0 && this.bakeQueue.length > 0) {
+			const id = this.bakeQueue[0];
+			const visual = id === undefined ? undefined : this.bodyVisuals.get(id);
+			if (!visual?.stepBake(this.renderer)) {
+				this.bakeQueue.shift();
+				continue;
+			}
+			budget--;
+		}
+	}
+
 	private prewarmReliefPrograms() {
 		// **Bound to the composer's target, because the colour space is in the
 		// program's cache key** (sage, PR #254). `getProgramCacheKeyParameters`
@@ -2511,6 +2572,32 @@ class Game {
 		for (const [id, visual] of this.bodyVisuals) {
 			const was = before.get(id);
 			if (was) visual.applyReliefBand(was);
+		}
+		/**
+		 * And the baked programs (#208), which the loop above cannot reach.
+		 *
+		 * `applySurfaceBand("baked")` refuses while the cube is incomplete, and at
+		 * this point in the boot every cube is — the bake has not had a frame yet.
+		 * That refusal is right for drawing and wrong here, so `prewarmBaked`
+		 * attaches the material past it and hands back the undo. Compiling against
+		 * an unfilled cube is safe: `compile` does not draw.
+		 *
+		 * One compile per class, like the loop above, because the source string is
+		 * what three's program cache keys on.
+		 */
+		const restores: (() => void)[] = [];
+		for (const visual of this.bodyVisuals.values()) {
+			const undo = visual.prewarmBaked();
+			if (undo) restores.push(undo);
+		}
+		if (restores.length > 0) {
+			for (const [scene, camera] of [
+				[this.farScene, this.farCamera],
+				[this.approachScene, this.approachCamera],
+				[this.nearScene, this.nearCamera],
+			] as const)
+				this.renderer.compile(scene, camera);
+			for (const undo of restores) undo();
 		}
 		this.renderer.setRenderTarget(wasTarget);
 	}
@@ -2829,6 +2916,24 @@ class Game {
 	}
 
 	/**
+	 * Take the baked program off the menu for every body, or put it back (#208).
+	 *
+	 * **Not a pin**, which is the whole reason it is a second entry point beside
+	 * `setReliefPin`. `baked: off` is a control arm — it says "measure the same
+	 * body with #207's bands still choosing" — and pinning would switch the
+	 * selector off along with the thing being measured, which is the confound
+	 * `measure-light-cost.mjs` records under a different name.
+	 *
+	 * A body already drawn from a cube reverts on the call rather than on the
+	 * next band crossing, because an arm that landed several seconds later would
+	 * be attributed to whatever the instrument did next.
+	 */
+	setBakeAllowed(allowed: boolean) {
+		for (const visual of this.bodyVisuals.values())
+			visual.setBakeAllowed(allowed);
+	}
+
+	/**
 	 * Write the two flags from the player's row, the pin, and #241's gate.
 	 *
 	 * **Both guards are real and both have a call site that follows them.**
@@ -2954,7 +3059,24 @@ class Game {
 		// nothing allocates on the frame the player is most likely to be looking
 		// at the body. Only the surface mesh: the shells are one geometry each and
 		// a body in the far layer draws them at a few pixels either way.
-		this.bodyVisuals.get(body.id)?.setLayer(layer);
+		const visual = this.bodyVisuals.get(body.id);
+		visual?.setLayer(layer);
+		/**
+		 * The layer is also the cube's resolution (#208), so the handoff that
+		 * re-parents a body is the moment it re-bakes.
+		 *
+		 * Guarded on the size rather than on the layer, because two of the three
+		 * layers ask for the same 256 and a body crossing between them must not
+		 * throw away a cube it can keep. The body keeps drawing procedurally while
+		 * the new one fills — `bakedFacePx()` returns 0 until it is complete — so
+		 * a handoff never shows a half-filled cube.
+		 */
+		const wantFacePx = BAKE_FACE_PX[layer];
+		if (visual?.bakeable && this.bakeFacePx.get(body.id) !== wantFacePx) {
+			visual.startBake(wantFacePx);
+			this.bakeFacePx.set(body.id, wantFacePx);
+			this.bakeQueue.push(body.id);
+		}
 		const scene =
 			layer === "near"
 				? this.nearScene
@@ -5459,6 +5581,13 @@ class Game {
 		this.bodyVisuals.clear();
 		this.stationVisuals.clear();
 		this.layers.clear();
+		// #208's schedule is keyed on body ids, and the next system's bodies get
+		// the same ones (`planet-1`, `moon-2-1`). A queue entry that survived
+		// would step the *new* body's bake at the wrong moment, and a stale
+		// `bakeFacePx` would tell `setLayer` the new body already has the cube the
+		// old one had. `visual.dispose()` above has already freed both cubes.
+		this.bakeFacePx.clear();
+		this.bakeQueue.length = 0;
 		this.starBody = undefined;
 
 		// #201's per-station walk runs again inside `buildBodies`, so the record
@@ -6175,7 +6304,28 @@ class Game {
 					distanceKm,
 					this.focalPx,
 				);
-				visual.applyReliefBand(reliefPathFor(radiusPx, visual.reliefPath()));
+				/**
+				 * #208's band sits over #207's, and one call decides both.
+				 *
+				 * `bakedFacePx()` is `0` until this body's cube is complete, which
+				 * is the dozen frames after a jump and every frame of a class that
+				 * cannot bake — so the same call is what keeps a half-filled cube
+				 * off the screen. It is also the *resolution of the cube this body
+				 * actually has*, not the one its layer would like: a body still
+				 * carrying the approach layer's 256 leaves the band further out
+				 * than one that has re-baked at 512, and that is correct rather
+				 * than an approximation.
+				 */
+				const facePx = visual.bakedFacePx();
+				visual.applySurfaceBand(
+					surfacePathFor(
+						radiusPx,
+						visual.surfacePath(),
+						facePx > 0,
+						this.focalPx,
+						facePx,
+					),
+				);
 			}
 
 			// Stations are aimed and spun; everything else is a sphere and has no
@@ -6307,6 +6457,14 @@ class Game {
 		// a gate that stopped being advanced when it closed could never open
 		// again. And stepped before the passes are drawn rather than after, so
 		// the frame that opens it is the frame that draws with it.
+		// **Before the passes, and strictly budgeted** (#208). A bake draws a
+		// full-screen quad of the most expensive shader in the game into a cube
+		// face; twelve of those per body, on a system that can hold fourteen
+		// bakeable bodies, is the load-time stall the node forbids. One face a
+		// frame spreads a system over about two seconds at 60 Hz, during which
+		// every body is drawn procedurally exactly as it is today.
+		this.stepBakes();
+
 		this.occlusionGate = stepOcclusionGate(
 			this.occlusionGate,
 			this.buildStationSubjects(),

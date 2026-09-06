@@ -136,3 +136,104 @@ export function reliefPathFor(
 	if (radiusPx < screen) return "screen-space";
 	return "four-tap";
 }
+
+/**
+ * How many screen pixels one cube-map texel covers, at this apparent size.
+ *
+ * #208 asks which face resolution a baked planet needs, and the answer is not a
+ * preference. A cube texel subtends a fixed **angle** — about `90° / facePx` at
+ * face centre — while the visible cap of a sphere at `m` radii spans
+ * `2·acos(1/m)` of surface arc across the disc's projected diameter. Approach a
+ * body and the disc grows while the cap it shows *shrinks*, so the two move
+ * against each other and no face size closes the gap.
+ *
+ * Read off the repo's own fov 60 and a 900 px frame (`focalPx` 779.4), over
+ * #207's rungs, in screen pixels per texel:
+ *
+ *     m       disc radius px   256      512     1024
+ *     1.02        764.1        23.64    11.82    5.91
+ *     2           389.7         2.28     1.14    0.57
+ *     3           259.8         1.30     0.65    0.32
+ *     8            97.4         0.41     0.21    0.10
+ *     20           39.0         0.16     0.08    0.04
+ *
+ * A **filling** planet would need faces around 6,000 px to reach one pixel per
+ * texel. That is the finding that shapes this node: the bake cannot serve the
+ * frame #248 measured at 43.5 ms, and 512 px faces reach parity at about two
+ * radii — which is exactly where #207's four-tap band already begins.
+ *
+ * `m` is recovered from the apparent radius rather than passed, because the
+ * frame loop has the apparent radius already and the two carry the same fact:
+ * `radiusPx = focal / m`. Inside the surface (`m ≤ 1`) there is no cap and no
+ * finite answer, which is `Infinity` rather than a clamp — a caller must not
+ * silently bake a body the camera is inside.
+ */
+export function pxPerCubeTexel(
+	radiusPx: number,
+	focal: number,
+	facePx: number,
+): number {
+	if (radiusPx <= 0 || facePx <= 0) return Number.POSITIVE_INFINITY;
+	const m = focal / radiusPx;
+	if (!(m > 1)) return Number.POSITIVE_INFINITY;
+	const capDeg = (2 * Math.acos(1 / m) * 180) / Math.PI;
+	const texelsAcross = capDeg / (90 / facePx);
+	return (2 * radiusPx) / texelsAcross;
+}
+
+/**
+ * The most screen pixels one cube texel may cover before the bake is refused.
+ *
+ * One, and it is a resolution argument rather than a tuned figure: at one pixel
+ * per texel a sampled cube carries every detail the screen can show, and above
+ * it the surface is being magnified — soft where the procedural program is
+ * crisp. It is the single authored constant of the band; the *threshold in
+ * pixels* is derived from it through `pxPerCubeTexel`, so it follows the
+ * viewport and the face size instead of being a magic 390 that is right for one
+ * window height and wrong for every other.
+ */
+export const BAKE_MAX_PX_PER_TEXEL = 1;
+
+/**
+ * What draws a body's surface: a baked cube, or one of #207's relief programs.
+ *
+ * `"baked"` is not a `ReliefPath` and deliberately does not join that union —
+ * the baked program has no relief path at all, because the normal comes out of
+ * a texture rather than out of `height()`. A body drawn baked has no meaningful
+ * answer to "which relief program", and widening `ReliefPath` would have every
+ * consumer of it silently accept one.
+ */
+export type SurfacePath = "baked" | ReliefPath;
+
+/**
+ * The program for a disc of this apparent radius — #208's band over #207's.
+ *
+ * `bakeable` is the class's own answer (`planet-bake.ts`): a class whose
+ * `surface()` reads `time` cannot be baked, and a body with no cube yet cannot
+ * be drawn from one. `facePx` is the resolution of **the cube this body
+ * actually has**, so a body carrying an approach-layer 256 cube crosses out of
+ * the band further away than one carrying a near-layer 512.
+ *
+ * The hysteresis is on the *ratio*, not on a pixel threshold, for the reason
+ * `RELIEF_BAND_HYSTERESIS` gives: every crossing is a program swap, and a body
+ * on a slow approach sits on the threshold for seconds.
+ */
+export function surfacePathFor(
+	radiusPx: number,
+	current: SurfacePath | null,
+	bakeable: boolean,
+	focal: number,
+	facePx: number,
+): SurfacePath {
+	const relief = () =>
+		reliefPathFor(radiusPx, current === "baked" ? null : current);
+	if (!bakeable) return relief();
+	// Held in the band once entered, released past it — the same direction as
+	// `layerFor`, and note which way "in" is here: baked is the band *below* the
+	// threshold, so the widened limit is the one that keeps a body baked.
+	const limit =
+		current === "baked"
+			? BAKE_MAX_PX_PER_TEXEL * RELIEF_BAND_HYSTERESIS
+			: BAKE_MAX_PX_PER_TEXEL;
+	return pxPerCubeTexel(radiusPx, focal, facePx) <= limit ? "baked" : relief();
+}
