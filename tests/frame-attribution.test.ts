@@ -704,6 +704,49 @@ describe("a GPU reading that cannot be trusted says so", () => {
 	});
 
 	/**
+	 * Round 5's blocker. The GPU-sample ring and the frame-mark ring advance
+	 * independently, and the cadence was read off whatever the marks currently
+	 * held — so honest samples taken during a slow stretch were compared
+	 * against a *later, faster* cadence and refused.
+	 *
+	 * Here: eight 50 ms samples submitted while frames ran 40 ms apart, which
+	 * is a GPU-bound 25 Hz and entirely possible, then a run of frames at 16 ms
+	 * that the one-entry ring never times. The samples are unchanged; only the
+	 * marks moved.
+	 */
+	test("measures the cadence over the window the samples came from", () => {
+		const { attribution, gl, setNow } = fixture({ maxQueries: 8 });
+		attribution.enable();
+		// Eight frames 40 ms apart, each honestly costing 50 ms of GPU time.
+		cadenceSamples(
+			{ attribution, gl, setNow },
+			{ frames: 8, cadenceMs: 40, ns: 50_000_000 },
+		);
+		expect(attribution.snapshot(320).gpu.status).toBe("supported");
+
+		// Now the frame rate recovers. `gl.available` is a set the fake never
+		// empties, so without this the reused entries resolve on the very next
+		// poll and drag the sample window forward with them — the third time
+		// that has caught a fixture in this file.
+		gl.available.clear();
+		// The marks advance at 16 ms while no new result lands.
+		for (let frame = 0; frame < 12; frame++) {
+			attribution.beginGpuFrame(320 + frame * 16);
+			// Without this the first frame holds `activeQuery` and every later
+			// one returns before it marks — the fixture then measures nothing,
+			// which is how the first version of this test passed either way.
+			attribution.endGpuFrame();
+		}
+		setNow(512);
+
+		const gpu = attribution.snapshot(512).gpu;
+		// Judged against the 40 ms the samples were taken at, not the 16 ms the
+		// marks have moved on to.
+		expect(gpu.status).toBe("supported");
+		expect(gpu.medianMs).toBe(50);
+	});
+
+	/**
 	 * Round 4. Classification ran over `disjoint` too, so a query invalidation
 	 * on a summing backend was reported as `untrusted` and the state that says
 	 * *the driver threw these results away* disappeared from the snapshot. No

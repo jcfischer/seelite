@@ -13,10 +13,7 @@
  */
 
 import { rollingStatistics } from "./frame-statistics.js";
-import {
-	GPU_TIMING_STATUSES,
-	isRefusedGpuStatus,
-} from "./gpu-timing-status.js";
+import { GPU_TIMING_STATUSES } from "./gpu-timing-status.js";
 
 export { rollingStatistics } from "./frame-statistics.js";
 
@@ -445,7 +442,16 @@ export class FrameAttribution {
 			? this.readStringParameter(this.debugRenderer.UNMASKED_RENDERER_WEBGL)
 			: null;
 
-		const trust = this.classifyTrust(status, rasterizer, gpuStats);
+		/**
+		 * The span the retained GPU samples were submitted over. The cadence is
+		 * measured across the same span, so the two sides of the implausibility
+		 * comparison describe one stretch of time rather than two.
+		 */
+		const submissions = gpuSamples.map((sample) => sample.submittedAtMs);
+		const trust = this.classifyTrust(status, rasterizer, gpuStats, {
+			fromMs: submissions.length ? Math.min(...submissions) : atMs,
+			toMs: submissions.length ? Math.max(...submissions) : atMs,
+		});
 		status = trust.status;
 		const reason = trust.reason;
 		gpuStats = trust.gpuStats;
@@ -494,6 +500,7 @@ export class FrameAttribution {
 		status: GpuTimingStatus,
 		rasterizer: string | null,
 		gpuStats: RollingStatistics,
+		window: { fromMs: number; toMs: number },
 	): {
 		status: GpuTimingStatus;
 		reason: string | null;
@@ -544,7 +551,7 @@ export class FrameAttribution {
 		 * and no more.
 		 */
 		if (gpuStats.sampleCount < IMPLAUSIBLE_MIN_SAMPLES) return kept;
-		const cadenceMs = this.frameCadenceMs();
+		const cadenceMs = this.frameCadenceMs(window.fromMs, window.toMs);
 		if (
 			cadenceMs !== null &&
 			gpuStats.medianMs > cadenceMs * IMPLAUSIBLE_CADENCE_FACTOR
@@ -566,14 +573,25 @@ export class FrameAttribution {
 	}
 
 	/**
-	 * Median interval between enabled frames, or `null` before there are two.
+	 * Median interval between enabled frames **within `[fromMs, toMs]`**, or
+	 * `null` before there are two of them in that span.
+	 *
+	 * The window is an argument because the two rings advance independently and
+	 * the first version compared across them: the GPU samples could be minutes
+	 * old while the frame marks were current, so eight honest 50 ms samples
+	 * taken during a 40 ms cadence, followed by a stretch of unresolved queries
+	 * at 16 ms, were compared against the 16 and refused. Aligning the cadence
+	 * to the samples' own submission span is what makes the comparison one
+	 * measurement rather than two.
 	 *
 	 * A median rather than a mean because one long frame — a jump, a bake, a
 	 * tab restored — is exactly the sample that would otherwise raise the bar
 	 * the implausibility check has to clear.
 	 */
-	private frameCadenceMs(): number | null {
-		const marks = this.frameMarks.ordered();
+	private frameCadenceMs(fromMs: number, toMs: number): number | null {
+		const marks = this.frameMarks
+			.ordered()
+			.filter((mark) => mark >= fromMs && mark <= toMs);
 		if (marks.length < 2) return null;
 		const gaps: number[] = [];
 		for (let i = 1; i < marks.length; i++) {

@@ -79,31 +79,41 @@ const origin = await guardedOrigin(ORIGIN, [
 	"src/frame-attribution.ts",
 ]);
 const browser = await launchChromium({ headless: false });
-const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-// Both installers run through `addInitScript`, so they precede the navigation.
-await installViewPlacement(page);
-await installViewFraming(page);
-await page.goto(`${origin}/?seed=${SEED}`);
-await bootedGame(page);
-const renderer = await assertPlayersRenderer(page, "gpu timer calibration");
-
-// The sampler owns a query ring of its own; a second live query would be
-// measuring the diagnostic rather than the frame.
-await page.evaluate(() => window.__seelite.disableFrameAttribution?.());
-const framing = flightFraming("planet-5", RADII, "cockpit");
-await setView(page, framing.view);
-await framing.place(page);
-await settleFrames(page, 10);
 
 /**
- * The browser closes whatever the page does.
- *
- * A rejected `page.evaluate` used to leave a headed Chromium and this process
- * alive, which is the same leak `probe-pages-are-running-games` records from
- * the other direction — a leaked page starves every later boot on the machine.
+ * **Everything after the launch closes the browser.** The first version guarded
+ * only the main `page.evaluate`, so a failure in the setup awaits above it or
+ * in the verdict below left a headed Chromium and this process alive —
+ * `probe-pages-are-running-games` records what a leaked page does to every
+ * later boot on the machine.
  */
-let run;
 try {
+	const page = await browser.newPage({
+		viewport: { width: 1440, height: 900 },
+	});
+	// Both installers run through `addInitScript`, so they precede the navigation.
+	await installViewPlacement(page);
+	await installViewFraming(page);
+	await page.goto(`${origin}/?seed=${SEED}`);
+	await bootedGame(page);
+	const renderer = await assertPlayersRenderer(page, "gpu timer calibration");
+
+	// The sampler owns a query ring of its own; a second live query would be
+	// measuring the diagnostic rather than the frame.
+	await page.evaluate(() => window.__seelite.disableFrameAttribution?.());
+	const framing = flightFraming("planet-5", RADII, "cockpit");
+	await setView(page, framing.view);
+	await framing.place(page);
+	await settleFrames(page, 10);
+
+	/**
+	 * The browser closes whatever the page does.
+	 *
+	 * A rejected `page.evaluate` used to leave a headed Chromium and this process
+	 * alive, which is the same leak `probe-pages-are-running-games` records from
+	 * the other direction — a leaked page starves every later boot on the machine.
+	 */
+	let run;
 	run = await page.evaluate(
 		async ({ ks, reps, spanFrames }) => {
 			const g = window.__seelite;
@@ -119,6 +129,23 @@ try {
 			const fence = () => {
 				gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 				gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+			};
+
+			/**
+			 * The two candidates this stack is known to ignore, run beside the
+			 * one that works so the claim is a reading rather than a memory. A
+			 * fence that does not fence returns far below the same workload's
+			 * real cost.
+			 */
+			const otherFences = {
+				finish: () => gl.finish(),
+				clientWaitSync: () => {
+					const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+					if (!sync) return;
+					gl.flush();
+					gl.clientWaitSync(sync, gl.SYNC_FLUSH_COMMANDS_BIT, 0);
+					gl.deleteSync(sync);
+				},
 			};
 
 			let spanDisjoint = 0;
@@ -296,6 +323,29 @@ try {
 						rows.get(k)[arm].push(out.value);
 					}
 
+			/**
+			 * One composer render behind each candidate fence, against the same
+			 * render behind `readPixels`. A candidate that reads a fraction of
+			 * the `readPixels` figure returned before the GPU had finished.
+			 */
+			const fences = { readPixels: [], finish: [], clientWaitSync: [] };
+			for (let r = 0; r < reps; r++)
+				for (const [name, apply] of [
+					["readPixels", fence],
+					...Object.entries(otherFences),
+				])
+					fences[name].push(
+						await new Promise((done) =>
+							requestAnimationFrame(() => {
+								fence();
+								const t0 = performance.now();
+								composer.render();
+								apply();
+								done(performance.now() - t0);
+							}),
+						),
+					);
+
 			const floor = { timer: [], wall: [] };
 			for (let r = 0; r < reps; r++) {
 				const t = await once(1, "floor");
@@ -305,6 +355,9 @@ try {
 			}
 
 			return {
+				fences: Object.fromEntries(
+					Object.entries(fences).map(([k, v]) => [k, med(v)]),
+				),
 				spans,
 				disjointSeen: disjointSeen + spanDisjoint,
 				rows: ks.map((k) => ({
@@ -319,118 +372,127 @@ try {
 		},
 		{ ks: KS, reps: REPS, spanFrames: SPAN_FRAMES },
 	);
-} catch (err) {
-	await browser.close();
-	throw err;
-}
 
-console.log(`renderer: ${renderer}`);
-if (run.error) {
-	console.log(`  ${run.error} — nothing to calibrate on this context`);
-	await browser.close();
-	process.exit(1);
-}
-console.log(
-	`subject: planet-5 at ${RADII} radii, cockpit, ${REPS} reps per cell, seed ${SEED}\n`,
-);
+	console.log(`renderer: ${renderer}`);
+	if (run.error) {
+		// The `finally` closes the browser; `process.exit` here would skip it.
+		console.log(`  ${run.error} — nothing to calibrate on this context`);
+		process.exitCode = 1;
+		throw new Error(run.error);
+	}
+	console.log(
+		`subject: planet-5 at ${RADII} radii, cockpit, ${REPS} reps per cell, seed ${SEED}\n`,
+	);
 
-console.log("span   round      n   median      p95   rAF cadence");
-for (const s of run.spans) {
-	const f = (x) => String(x === null ? "—" : x.toFixed(2)).padStart(8);
-	console.log(
-		`${s.mode.padEnd(7)}${String(s.round).padEnd(7)}${String(s.n).padStart(4)}${f(s.median)}${f(s.p95)}${f(s.cadence)}`,
-	);
-}
-
-console.log("\n  K   timer ms   drained ms   fenced wall ms   timer/wall");
-for (const r of run.rows) {
-	const f = (x, w) => String(x === null ? "—" : x.toFixed(2)).padStart(w);
-	const ratio =
-		r.timer !== null && r.wall ? (r.timer / r.wall).toFixed(2) : "—";
-	console.log(
-		`  ${r.k}   ${f(r.timer, 8)}   ${f(r.drained, 10)}   ${f(r.wall, 14)}   ${ratio.padStart(10)}`,
-	);
-}
-
-const first = run.rows[0];
-const last = run.rows[run.rows.length - 1];
-// `null - null` is 0, so a run where every timer rep came back disjoint would
-// otherwise print a confident `timer 0.00 ms` where the rows above print a dash.
-const marginalIsReadable =
-	first &&
-	last &&
-	last.k > first.k &&
-	[first, last].every(
-		(r) => r.timer !== null && r.drained !== null && r.wall !== null,
-	);
-if (marginalIsReadable) {
-	const dk = last.k - first.k;
-	const per = (a, b) => (b - a) / dk;
-	const dT = per(first.timer, last.timer);
-	const dD = per(first.drained, last.drained);
-	const dW = per(first.wall, last.wall);
-	console.log(
-		`\n  per extra composer render — timer ${dT.toFixed(2)} ms, drained ${dD.toFixed(2)} ms, fenced ${dW.toFixed(2)} ms`,
-	);
-	console.log(
-		`  marginal over-report: ${(dT / dW).toFixed(2)}x undrained, ${(dD / dW).toFixed(2)}x drained`,
-	);
-}
-
-const { timer: fT, wall: fW } = run.floor;
-if (fT !== null && fW !== null) {
-	console.log(
-		`\n  one scissored clear — timer ${fT.toFixed(2)} ms against a fenced ${fW.toFixed(2)} ms`,
-	);
-	/**
-	 * **What this arm can and cannot settle.** The fenced wall figure beside it
-	 * is dominated by the fence itself — a `readPixels` round trip — not by a
-	 * one-pixel clear, so it is an *upper bound* on the work and nothing more.
-	 * A timer reading under it therefore does **not** show the timer accurate:
-	 * an inflated reading hidden beneath that overhead would look the same. The
-	 * first version of this line said "reported honestly" and Sage was right
-	 * that it certified something it had not measured.
-	 *
-	 * What it does settle is a magnitude. If the excess on the ladder above
-	 * were a fixed cost the driver charges per query, this query would carry it
-	 * too — the workload is smaller, the query is not — so the reading here
-	 * bounds any such fixed cost from above, and the line prints that bound
-	 * against the per-render excess it would have to explain.
-	 */
-	if (marginalIsReadable) {
-		const excess =
-			(last.timer - first.timer - (last.wall - first.wall)) /
-			(last.k - first.k);
+	console.log("span   round      n   median      p95   rAF cadence");
+	for (const s of run.spans) {
+		const f = (x) => String(x === null ? "—" : x.toFixed(2)).padStart(8);
 		console.log(
-			`  a fixed cost per query is bounded above by that ${fT.toFixed(2)} ms, ` +
-				`against the ${excess.toFixed(2)} ms per render it would have to explain`,
+			`${s.mode.padEnd(7)}${String(s.round).padEnd(7)}${String(s.n).padStart(4)}${f(s.median)}${f(s.p95)}${f(s.cadence)}`,
+		);
+	}
+
+	console.log("\n  K   timer ms   drained ms   fenced wall ms   timer/wall");
+	for (const r of run.rows) {
+		const f = (x, w) => String(x === null ? "—" : x.toFixed(2)).padStart(w);
+		const ratio =
+			r.timer !== null && r.wall ? (r.timer / r.wall).toFixed(2) : "—";
+		console.log(
+			`  ${r.k}   ${f(r.timer, 8)}   ${f(r.drained, 10)}   ${f(r.wall, 14)}   ${ratio.padStart(10)}`,
+		);
+	}
+
+	const first = run.rows[0];
+	const last = run.rows[run.rows.length - 1];
+	// `null - null` is 0, so a run where every timer rep came back disjoint would
+	// otherwise print a confident `timer 0.00 ms` where the rows above print a dash.
+	const marginalIsReadable =
+		first &&
+		last &&
+		last.k > first.k &&
+		[first, last].every(
+			(r) => r.timer !== null && r.drained !== null && r.wall !== null,
+		);
+	if (marginalIsReadable) {
+		const dk = last.k - first.k;
+		const per = (a, b) => (b - a) / dk;
+		const dT = per(first.timer, last.timer);
+		const dD = per(first.drained, last.drained);
+		const dW = per(first.wall, last.wall);
+		console.log(
+			`\n  per extra composer render — timer ${dT.toFixed(2)} ms, drained ${dD.toFixed(2)} ms, fenced ${dW.toFixed(2)} ms`,
+		);
+		console.log(
+			`  marginal over-report: ${(dT / dW).toFixed(2)}x undrained, ${(dD / dW).toFixed(2)}x drained`,
+		);
+	}
+
+	console.log("\n  one composer render behind each candidate fence");
+	for (const [name, ms] of Object.entries(run.fences))
+		console.log(
+			`  ${name.padEnd(16)} ${ms === null ? "     —" : ms.toFixed(2).padStart(6)} ms` +
+				(name === "readPixels" ? "   <- the one this repo measures with" : ""),
+		);
+	console.log(
+		"  a candidate reading a fraction of that returned before the GPU finished",
+	);
+
+	const { timer: fT, wall: fW } = run.floor;
+	if (fT !== null && fW !== null) {
+		console.log(
+			`\n  one scissored clear — timer ${fT.toFixed(2)} ms against a fenced ${fW.toFixed(2)} ms`,
+		);
+		/**
+		 * **What this arm can and cannot settle.** The fenced wall figure beside it
+		 * is dominated by the fence itself — a `readPixels` round trip — not by a
+		 * one-pixel clear, so it is an *upper bound* on the work and nothing more.
+		 * A timer reading under it therefore does **not** show the timer accurate:
+		 * an inflated reading hidden beneath that overhead would look the same. The
+		 * first version of this line said "reported honestly" and Sage was right
+		 * that it certified something it had not measured.
+		 *
+		 * What it does settle is a magnitude. If the excess on the ladder above
+		 * were a fixed cost the driver charges per query, this query would carry it
+		 * too — the workload is smaller, the query is not — so the reading here
+		 * bounds any such fixed cost from above, and the line prints that bound
+		 * against the per-render excess it would have to explain.
+		 */
+		if (marginalIsReadable) {
+			const excess =
+				(last.timer - first.timer - (last.wall - first.wall)) /
+				(last.k - first.k);
+			console.log(
+				`  a fixed cost per query is bounded above by that ${fT.toFixed(2)} ms, ` +
+					`against the ${excess.toFixed(2)} ms per render it would have to explain`,
+			);
+		}
+		console.log(
+			"  this arm bounds a per-query cost; it does not show the timer accurate —\n" +
+				"  the fenced figure beside it is mostly the fence, so it is an upper bound",
 		);
 	}
 	console.log(
-		"  this arm bounds a per-query cost; it does not show the timer accurate —\n" +
-			"  the fenced figure beside it is mostly the fence, so it is an upper bound",
+		`\n  disjoint results seen: ${run.disjointSeen} — a non-zero count means these figures are not comparable`,
 	);
-}
-console.log(
-	`\n  disjoint results seen: ${run.disjointSeen} — a non-zero count means these figures are not comparable`,
-);
 
-// What the shipped sampler makes of this renderer, from its own snapshot.
-const verdict = await page.evaluate(async () => {
-	const g = window.__seelite;
-	await g.enableFrameAttribution();
-	for (let i = 0; i < 90; i++)
-		await new Promise((r) => requestAnimationFrame(r));
-	const snap = g.attributionSnapshot();
-	g.disableFrameAttribution();
-	return snap ? { ...snap.gpu, rasterizer: snap.renderer.rasterizer } : null;
-});
-if (!verdict) console.log("\n  the sampler did not come up on this page");
-else {
-	console.log(`\n  src/frame-attribution.ts says: ${verdict.status}`);
-	console.log(
-		`  median ${verdict.medianMs?.toFixed(3) ?? "—"} ms over ${verdict.sampleCount} samples`,
-	);
-	if (verdict.reason) console.log(`  because: ${verdict.reason}`);
+	// What the shipped sampler makes of this renderer, from its own snapshot.
+	const verdict = await page.evaluate(async () => {
+		const g = window.__seelite;
+		await g.enableFrameAttribution();
+		for (let i = 0; i < 90; i++)
+			await new Promise((r) => requestAnimationFrame(r));
+		const snap = g.attributionSnapshot();
+		g.disableFrameAttribution();
+		return snap ? { ...snap.gpu, rasterizer: snap.renderer.rasterizer } : null;
+	});
+	if (!verdict) console.log("\n  the sampler did not come up on this page");
+	else {
+		console.log(`\n  src/frame-attribution.ts says: ${verdict.status}`);
+		console.log(
+			`  median ${verdict.medianMs?.toFixed(3) ?? "—"} ms over ${verdict.sampleCount} samples`,
+		);
+		if (verdict.reason) console.log(`  because: ${verdict.reason}`);
+	}
+} finally {
+	await browser.close();
 }
-await browser.close();
