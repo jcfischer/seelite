@@ -226,7 +226,20 @@ gives every role #101's staggered cut plate — a one-texel groove in a normal
 map, which `hullMaterial` now carries — under a second octave of 75 m panel
 groups, on a 256 map with a 0.3 km tile so the plate stays 18.75 m.
 `industrial` adds the **macro fixtures** and `worn` raises the streaking,
-labelled as the reversal of #98's refusal that it is.
+the reversal of #98's refusal that it is — **and `worn` is the default since
+the principal's choice on the second sheet (2026-09-06)**
+(`DEFAULT_STATION_FINISH`). `nostromo` is one step past it: deeper streaks,
+sooted plates, the role's paint pulled toward grey through the finish's
+`paint` dial, 9.4 m plates on a 512 map under the same 75 m groups, and the
+clutter at two fifths of its size with three times the count
+(`greebleScale`, `greebleDensity`); it stays a preset for variation.
+
+The fixtures are at **ship scale** on every finish that draws them — the
+principal's ruling on the first sheet, "the trusses are way too big on the
+Coriolis": `SHIP_SCALE` (`station-fixtures.ts`) sizes every member against
+a courier (12 m trusses, 30 m panels, 8 m tanks, 2 m pipes), every
+declaration reads from it, and `tests/station-finish.test.ts` reads every
+pooled member back against its cap.
 
 The fixtures (`station-fixtures.ts`) are the scale between the plate and the
 kilometre that #199 found missing, in the ISS's vocabulary: truss beams of

@@ -225,7 +225,14 @@ export const STATION_FINISH_IDS = Object.keys(
 ) as StationFinishId[];
 
 /** The finish in force — one value, one writer, read at build time. */
-let stationFinish: StationFinishId = "stock";
+/**
+ * The finish the game ships with — the principal's choice on the second
+ * sheet (2026-09-06): worn, with #202's fixtures at ship scale. `stock` is
+ * #36's surface as it was and stays a preset; `tests/station-finish.test.ts`
+ * pins it and reads this.
+ */
+export const DEFAULT_STATION_FINISH: StationFinishId = "worn";
+let stationFinish: StationFinishId = DEFAULT_STATION_FINISH;
 
 export const stationFinishId = () => stationFinish;
 export const currentStationFinish = (): StationFinish =>

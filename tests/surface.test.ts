@@ -23,7 +23,7 @@
  *    constant 0 nor a constant 1 survives.
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { codeOf } from "./lib/source-scan";
 import * as THREE from "three";
 import { RING_SEGMENTS, hullLoft } from "../src/loft";
@@ -47,8 +47,10 @@ import {
 	wearTexels,
 } from "../src/surface";
 import {
+	DEFAULT_STATION_FINISH,
 	STATION_VISUALS,
 	platingTexels,
+	setStationFinish,
 	surfaceTexels,
 } from "../src/station-visuals";
 import { STATION_TYPES } from "../src/station";
@@ -66,6 +68,11 @@ const fnv = (bytes: Uint8Array) => {
 };
 
 describe("the station's surface did not move", () => {
+	// The pins are `stock`'s, by name: the default is `worn` since the
+	// principal's choice on #202's second sheet, and `stock` stays a preset
+	// that these hold byte-for-byte.
+	beforeAll(() => setStationFinish("stock"));
+	afterAll(() => setStationFinish(DEFAULT_STATION_FINISH));
 	/**
 	 * Captured from `01427e4` — the commit before this node — by running the
 	 * shipped `platingTexels`/`surfaceTexels` over every role.
@@ -620,8 +627,14 @@ describe("the crease term reads a hull's own edges", () => {
 		 * reads 0% zero and fails the lower. The hard-edge share is the "there
 		 * are edges at all" half, and its floor is well under the quietest hull.
 		 *
-		 * Measured across the eleven archetypes: zero 70.8%-81.4%, hard edges
-		 * 1.58%-7.15%.
+		 * Measured across the eleven archetypes under `stock`: zero
+		 * 70.8%-81.4%, hard edges 1.58%-7.15%. Under `worn`, the default since
+		 * #202's second sheet, zero 59.7%-79.7% and hard 8.4%-25.6%: the
+		 * flanged collar is a loft of hard rings on every station and the open
+		 * bell folds twice, so a hull whose hoops are much of its vertex count
+		 * — the dreadnought, the miner — is a quarter hard edge. Still a
+		 * minority, which is what the bounds say; they were widened once, for
+		 * that, and the reason is here rather than in a wider number alone.
 		 */
 		for (const id of HULL_IDS) {
 			const values: number[] = [];
@@ -638,11 +651,11 @@ describe("the crease term reads a hull's own edges", () => {
 				values.filter(of).length / values.length;
 			const zero = share((v) => v === 0);
 			const hard = share((v) => v > 0.6);
-			expect({ id, zero: zero > 0.6 && zero < 0.9 }).toEqual({
+			expect({ id, zero: zero > 0.5 && zero < 0.9 }).toEqual({
 				id,
 				zero: true,
 			});
-			expect({ id, hard: hard > 0.005 && hard < 0.15 }).toEqual({
+			expect({ id, hard: hard > 0.005 && hard < 0.35 }).toEqual({
 				id,
 				hard: true,
 			});

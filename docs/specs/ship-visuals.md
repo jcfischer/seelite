@@ -346,12 +346,19 @@ builder shares: the torus hoop becomes a twelve-facet flanged **collar**, and
 the exhaust disc becomes an **open bell** — the bell's loft folds back at the
 lip to a small throat, and a `BackSide` bowl inside it carries a throat-to-lip
 emissive ramp — with the `-bell`/`-exhaust` names and the half-span rule kept.
-`worn` raises the streaking toward the Nostromo and is labelled as reversing
-#98's refusal of grime; that is the principal's call and not a default.
+`worn` raises the streaking toward the Nostromo and reverses #98's refusal
+of grime — **the principal's call, made on the second sheet (2026-09-06),
+and `worn` is the default** (`DEFAULT_HULL_FINISH`). `nostromo` is one
+step past it — deeper streaks, sooted plates (`streakDepth` and `soot` on
+the profile), paint most of the way to grey — and stays a preset, as does
+`stock`, which is #35's hull as it shipped and is what the roster hash pins.
+No finish moves a hull's **envelope**: the collar and the open bell keep the
+torus's and the disc's box to the centimetre, because the envelope is the
+berth catalogue's fit predicate, and `tests/ship-finish.test.ts` holds it.
 
 The finish is module state read at build time, and the game never switches
 it: `setHullFinish` exists for the workbench, and a test that sets one must
-restore `stock`. `scripts/shot-finishes.mjs` is the sheet's instrument and
+restore the default. `scripts/shot-finishes.mjs` is the sheet's instrument and
 refuses a software rasteriser, for `capture-views.mjs`'s reason.
 
 ## 4. Verification contract

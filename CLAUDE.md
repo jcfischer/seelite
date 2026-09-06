@@ -500,9 +500,16 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   not hands the second finish the first's textures. And a tile is the
   finish's, not the constant's: `plateUVs` divides by `finish.panelKm` and
   `shell()` by `STATION_PANEL_KM × finish.tile`, so a doubled map keeps the
-  same plate. `stock` is byte-identical to what shipped, and
-  `tests/ship-finish.test.ts` and the pins in `tests/surface.test.ts` are
-  what hold it there.
+  same plate. The default is `worn` since the principal's choice on the
+  second sheet (`DEFAULT_HULL_FINISH`, `DEFAULT_STATION_FINISH`), and
+  `stock` is the **surface** that shipped before #202 and #203 — its maps
+  and its hull geometry, which `tests/ship-finish.test.ts`'s roster hash
+  and the pins in `tests/surface.test.ts` hold — and not the station
+  forms, which moved under every finish (the Gantry's keel, spindle and
+  plating). A finish may not move a hull's **envelope** either: the
+  envelope is the berth catalogue's fit predicate, and the first flanged
+  collar changed the explorer's selected variant; `tests/ship-finish.test.ts`
+  holds every built box equal under every finish.
 - **A fixture is mounted by a flood, not by a ray, and the islands check
   works in core radii (#202).** `tests/station-finish.test.ts` supports a
   member if its box touches structure *or a supported member*, because a ray

@@ -29,6 +29,7 @@ import {
 	setStationDetail,
 } from "../src/station-mesh";
 import {
+	DEFAULT_STATION_FINISH,
 	STATION_FINISHES,
 	STATION_FINISH_IDS,
 	STATION_VISUALS,
@@ -47,7 +48,8 @@ import { reachKm } from "./helpers/station-reach";
 const GREY = 0x9aa6b2;
 const LEVELS: StationDetailLevel[] = ["full", "reduced", "outline"];
 
-afterEach(() => setStationFinish("stock"));
+// The default, not stock, for `ship-finish.test.ts`'s reason.
+afterEach(() => setStationFinish(DEFAULT_STATION_FINISH));
 
 const formOf = (type: StationType) =>
 	STATION_FORMS[type].find(
@@ -55,8 +57,13 @@ const formOf = (type: StationType) =>
 	) as (typeof STATION_FORMS)[StationType][number];
 
 describe("stock is the station that shipped", () => {
+	test("the default is worn — the principal's choice on the second sheet", () => {
+		expect(DEFAULT_STATION_FINISH).toBe("worn");
+		expect(STATION_FINISHES[DEFAULT_STATION_FINISH].fixtures).toBe(true);
+	});
+
 	test("the finish is the identity over the role profile, at the shipped scales", () => {
-		expect(stationFinishId()).toBe("stock");
+		setStationFinish("stock");
 		for (const type of STATION_TYPES) {
 			const role = STATION_VISUALS[type].plating;
 			expect(STATION_FINISHES.stock.plating(role)).toBe(role);

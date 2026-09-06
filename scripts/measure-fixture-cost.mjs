@@ -37,7 +37,15 @@ const SUBJECTS = [
 	{ asset: "shipyard", variant: "a" },
 	{ asset: "trade", variant: "d" },
 ];
-const FINISHES = (process.env.FINISHES ?? "stock,worn,nostromo").split(",");
+// Stock is always the baseline the table's delta column names, whatever the
+// run is asked to measure beside it: a baseline that followed the first
+// configured finish published "Δ vs stock" figures taken against worn.
+const FINISHES = [
+	"stock",
+	...(process.env.FINISHES ?? "worn,nostromo")
+		.split(",")
+		.filter((f) => f && f !== "stock"),
+];
 const SAMPLES = Number(process.env.SAMPLES ?? 8);
 
 await guardedOrigin(ORIGIN, ["src/ship-surface.ts", "src/station-mesh.ts"]);
@@ -67,7 +75,7 @@ const rows = [];
 let renderer = null;
 try {
 	for (const { asset, variant } of SUBJECTS) {
-		for (const finish of [FINISHES[0], ...FINISHES]) {
+		for (const finish of ["stock", ...FINISHES]) {
 			await page.goto(`${ORIGIN}/?model-viewer=station&finish=${finish}`, {
 				waitUntil: "load",
 			});

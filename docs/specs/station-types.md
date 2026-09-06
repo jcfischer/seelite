@@ -597,7 +597,9 @@ carrying the slot, a truss spine, and modules solved onto a diamond of cells
 by wave function collapse (`station-modular.ts`, on seekolous's solver copied
 in and given directional adjacency). Its plan is the berth seed's, so every
 station of the form is its own shape and keeps it. The hub is what spins,
-for the shipyard's reason below. It is unranked, like the pad roles' forms.
+for the shipyard's reason below. It entered the pool for a ranking round on
+the principal's yes (2026-09-06); `SELECTED_FORM.trade` stays A until that
+round ranks it.
 
 `SELECTED_FORM` (`station-mesh.ts`) names the one the game builds for each role,
 and is one line per role so a later choice is one edit. Trade and shipyard are **A**

@@ -24,9 +24,15 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import * as THREE from "three";
-import { HULL_IDS, HULL_VARIANT_IDS } from "../src/hull";
+import {
+	HULL_IDS,
+	HULL_VARIANT_IDS,
+	type HullId,
+	type HullVariantId,
+} from "../src/hull";
 import { HULL_REACH_KM, buildShipMesh } from "../src/ship-mesh";
 import {
+	DEFAULT_HULL_FINISH,
 	HULL_FINISHES,
 	HULL_FINISH_IDS,
 	type HullFinishId,
@@ -39,7 +45,10 @@ import {
 } from "../src/ship-surface";
 import { hullLoft, uvUnitsOf } from "../src/loft";
 
-afterEach(() => setHullFinish("stock"));
+// Restore the **default**, not stock: bun runs every test file in one
+// process, and a file that left `stock` behind would hand the next file a
+// hull the game no longer ships.
+afterEach(() => setHullFinish(DEFAULT_HULL_FINISH));
 
 /** FNV-1a over every hull's positions and UVs, in roster order. */
 function rosterHash() {
@@ -92,11 +101,60 @@ describe("stock is the hull that shipped", () => {
 		expect(HULL_FINISHES.stock.panelKm).toBe(SHIP_PANEL_KM);
 		expect(HULL_FINISHES.stock.rim).toBe(0);
 		expect(HULL_FINISHES.stock.paint).toEqual({ saturation: 1, value: 1 });
-		expect(hullFinishId()).toBe("stock");
+	});
+
+	test("the default is worn — the principal's choice on the second sheet", () => {
+		// Read before any test in this file has set a finish: `afterEach`
+		// restores `stock`, so this is the module's own initial value only
+		// when the file runs it first, which the `describe` order guarantees.
+		expect(DEFAULT_HULL_FINISH).toBe("worn");
+		expect(HULL_FINISHES[DEFAULT_HULL_FINISH].collar).toBe("flange");
+	});
+
+	test("no finish moves a hull's envelope: every built box is stock's", () => {
+		// A hull's envelope is the berth catalogue's fit predicate
+		// (`hull.ts`), so a finish that grew a box would change which berths
+		// a hull fits and, through the selection rule, which variant flies.
+		// The first flanged collar did exactly that, on eleven hulls. Within
+		// 5 cm (`closeTo` at four places, in kilometres), which is under the
+		// 0.1 m `hull.test.ts` rounds a declaration up by and over the
+		// millimetres two polygons on the same rays differ by.
+		const boxOf = (id: HullId, variant: HullVariantId) => {
+			const root = buildShipMesh(id, variant).root;
+			root.updateMatrixWorld(true);
+			return new THREE.Box3().setFromObject(root);
+		};
+		for (const id of HULL_IDS)
+			for (const variant of HULL_VARIANT_IDS) {
+				setHullFinish("stock");
+				const stock = boxOf(id, variant);
+				for (const finish of HULL_FINISH_IDS) {
+					setHullFinish(finish);
+					const box = boxOf(id, variant);
+					for (const axis of ["x", "y", "z"] as const) {
+						expect([finish, id, variant, axis, box.min[axis]]).toEqual([
+							finish,
+							id,
+							variant,
+							axis,
+							expect.closeTo(stock.min[axis], 4),
+						]);
+						expect([finish, id, variant, axis, box.max[axis]]).toEqual([
+							finish,
+							id,
+							variant,
+							axis,
+							expect.closeTo(stock.max[axis], 4),
+						]);
+					}
+				}
+			}
 	});
 
 	test("every hull's geometry and UVs hash to the pin taken on main", () => {
-		// Taken at `cbf3f0f`: 33 hulls, 192,257 vertices.
+		// Taken at `cbf3f0f`: 33 hulls, 192,257 vertices. Under `stock` by
+		// name, now that the default is not stock.
+		setHullFinish("stock");
 		expect(rosterHash()).toEqual({ hash: "89b8e0f6", vertices: 192257 });
 	});
 });

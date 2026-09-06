@@ -649,8 +649,11 @@ function openBell(
 				ring(radius * 0.44, -length * 0.55),
 				ring(radius * 0.62, -length * 0.2),
 				ring(radius * 0.94, 0),
-				ring(radius * 0.9, length * 0.12, true),
-				ring(radius * 0.84, length * 0.11, true),
+				// The lip folds at the stock bell's last station and reaches the
+				// stock disc's z, so the box is the stock bell's: a finish may not
+				// move a hull's envelope (`tests/ship-finish.test.ts`).
+				ring(radius * 0.88, length * 0.13, true),
+				ring(radius * 0.82, length * 0.12, true),
 				ring(radius * 0.7, -length * 0.08),
 				ring(radius * 0.42, -length * 0.4),
 				ring(radius * 0.2, -length * 0.58),
@@ -806,9 +809,17 @@ function hoop(radius: number, tube: number) {
  * round a tube — #199's review, and the sheet agrees. A machined collar is a
  * band with a raised flange and hard edges: twelve facets, every station
  * `hard`, so `loft.ts`'s crease term lights each edge and the plating runs
- * over the band in kilometres like every other part. It reaches 1.15 tubes
- * from the surface where the torus reached one; a hull whose hoop was its
- * farthest vertex would move by that much, and the reach test would say so.
+ * over the band in kilometres like every other part.
+ *
+ * **Inside the torus's box, exactly.** The first collar reached 1.15 tubes
+ * from the surface and 1.4 along the axis where the torus reaches one and
+ * one, and the day the default finish flipped to it, `tests/hull.test.ts`
+ * went red on eleven hulls: a hull's envelope is its built box, the envelope
+ * is the berth catalogue's fit predicate, and the explorer's selected
+ * variant changed. A finish is a look and must not move the sim, so the
+ * flange stands one tube proud and the band one tube long — the same box
+ * the torus had — and `tests/ship-finish.test.ts` holds every hull's box
+ * equal under every finish.
  *
  * **Hollow, like the torus it replaces.** The first build let the loft cap it
  * into a drum on the argument that the inside is buried in the nacelle it
@@ -835,21 +846,29 @@ function collar(radius: number, tube: number) {
 	const bore = radius - tube * 0.5;
 	const geometry = hullLoft(
 		[
-			ring(bore, -tube * 1.4),
-			ring(radius + tube * 0.45, -tube * 1.4),
-			ring(radius + tube * 0.45, -tube * 0.5),
-			ring(radius + tube * 1.15, -tube * 0.5),
-			ring(radius + tube * 1.15, tube * 0.5),
-			ring(radius + tube * 0.45, tube * 0.5),
-			ring(radius + tube * 0.45, tube * 1.4),
-			ring(bore, tube * 1.4),
+			ring(bore, -tube),
+			ring(radius + tube * 0.45, -tube),
+			ring(radius + tube * 0.45, -tube * 0.4),
+			ring(radius + tube, -tube * 0.4),
+			ring(radius + tube, tube * 0.4),
+			ring(radius + tube * 0.45, tube * 0.4),
+			ring(radius + tube * 0.45, tube),
+			ring(bore, tube),
 			// The bore, swept back to the first ring. A sweep run towards -Z
 			// winds its quads the other way, which is what an inner wall needs:
 			// its front faces the axis.
-			ring(bore, -tube * 1.4),
+			ring(bore, -tube),
 		],
-		{ segments: 12, subdivisions: 1, open: true },
+		// **Twenty-two facets, turned a quarter, so the polygon is the torus's.**
+		// A loft's ring points start at +Y and `TorusGeometry`'s at +X, and a
+		// twelve-facet collar reached 1% further along one axis and 1% less
+		// along the other than the twenty-two-sided hoop it replaces — 0.2 m on
+		// the interceptor, which is over the 0.1 m the envelope test allows.
+		// The same count turned onto the same phase has the same vertices on
+		// the same rays, so the box is the torus's to the millimetre.
+		{ segments: 22, subdivisions: 1, open: true },
 	);
+	geometry.rotateZ(-Math.PI / 2);
 	geometry.userData.ring = true;
 	return geometry;
 }

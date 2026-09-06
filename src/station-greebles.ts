@@ -278,13 +278,28 @@ export function buildGreebles(
 			// A miss leaves the authored position untouched rather than dropping
 			// the piece — a silently missing greeble is a zone nobody notices is
 			// broken — and `tests/station-greebles.test.ts` fails on exactly that.
+			//
+			// **And a second, longer cast only when the first finds nothing**
+			// (#202's finishes). At three times the count and two fifths of the
+			// size, a zone's authored positions include some the ray from twice
+			// the relief starts *inside* the hull: the Buoy's drum put two of
+			// nostromo's pieces 26 m under its skin, where a ray that begins
+			// inside a front-faced hull meets nothing going in and kept the
+			// buried point. Starting every cast a quarter core radius out was
+			// tried first and pulled pieces onto the aperture frame in front of
+			// the hull they were authored on — the corridor row read +40 m — so
+			// the long start is the fallback and never the rule.
 			const probe = zone.reliefKm * 2;
-			ray.set(
-				from.copy(position).addScaledVector(normal, probe),
-				back.copy(normal).negate(),
-			);
-			ray.far = probe + STATION_GEOMETRY[type].coreRadiusKm * 2;
-			const hit = ray.intersectObjects(targets, false)[0];
+			const cast = (start: number) => {
+				ray.set(
+					from.copy(position).addScaledVector(normal, start),
+					back.copy(normal).negate(),
+				);
+				ray.far = start + STATION_GEOMETRY[type].coreRadiusKm * 2;
+				return ray.intersectObjects(targets, false)[0];
+			};
+			const hit =
+				cast(probe) ?? cast(probe + STATION_GEOMETRY[type].coreRadiusKm * 0.25);
 			if (hit) {
 				position.copy(hit.point);
 				if (hit.normal) {

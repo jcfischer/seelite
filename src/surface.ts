@@ -263,15 +263,21 @@ export function plateLayout(
 	 * definition would move every seam in the normal map and nothing else
 	 * would notice.
 	 */
-	const acrossByRow = new Map<number, Float64Array>();
+	// **Keyed by the row's shift, not the row.** The across-distance depends
+	// on the row only through `shiftOf(row)`, which repeats every two rows,
+	// so a table per row filled the same numbers `rows / 2` times over: sage
+	// measured the nostromo trade normal map at 127.6 ms with a table per row
+	// and 51.6 with one per shift, byte-identical.
+	const acrossByShift = new Map<number, Float64Array>();
 	let alongTable: Float64Array | null = null;
 	const acrossOf = (x: number, row: number) => {
-		let table = acrossByRow.get(row);
+		const shift = shiftOf(row);
+		let table = acrossByShift.get(shift);
 		if (!table) {
 			table = new Float64Array(size);
 			for (let n = 0; n < size; n++)
 				table[n] = toSeam(n, (m) => seamAcross(m, row));
-			acrossByRow.set(row, table);
+			acrossByShift.set(shift, table);
 		}
 		return table[x];
 	};

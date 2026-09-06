@@ -317,7 +317,13 @@ export const HULL_FINISH_IDS = Object.keys(HULL_FINISHES) as HullFinishId[];
  * was built with. That is what the workbench wants: it rebuilds the mesh on
  * every switch and never patches one in place. The game never switches.
  */
-let hullFinish: HullFinishId = "stock";
+/**
+ * The finish the game ships with — the principal's choice on the second
+ * sheet (2026-09-06): worn, at ship scale. `stock` is #35's hull as it was
+ * and stays a preset; `tests/ship-finish.test.ts` pins it and reads this.
+ */
+export const DEFAULT_HULL_FINISH: HullFinishId = "worn";
+let hullFinish: HullFinishId = DEFAULT_HULL_FINISH;
 
 export const hullFinishId = () => hullFinish;
 export const currentHullFinish = (): HullFinish => HULL_FINISHES[hullFinish];

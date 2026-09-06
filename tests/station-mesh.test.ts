@@ -358,6 +358,34 @@ describe("a station is one object, not a scatter of parts", () => {
 	 * Gantry's floods, one of the Hangar's strobes, the Derrick's whole flare,
 	 * and the Rig's window run.
 	 */
+	/**
+	 * A torus arc as a set of small boxes rather than one. The Gantry's
+	 * arches are 1.25π arcs whose boxes are near-full squares, and the
+	 * shipyard's booms passed the island check for as long as they did
+	 * because a boom rooted 130 m from any arch was inside an arch's box. The
+	 * arc's world-space vertices are binned into a 4×4×4 grid of its box and
+	 * each occupied cell is boxed on its own; the caller joins them as one
+	 * part.
+	 */
+	function arcBoxes(mesh: THREE.Mesh, whole: THREE.Box3): THREE.Box3[] {
+		const N = 4;
+		const size = whole.getSize(new THREE.Vector3());
+		const cells = new Map<string, THREE.Box3>();
+		const position = mesh.geometry.getAttribute("position");
+		const vertex = new THREE.Vector3();
+		const cell = (v: number, min: number, extent: number) =>
+			Math.min(N - 1, Math.floor(((v - min) / (extent || 1)) * N));
+		for (let i = 0; i < position.count; i++) {
+			vertex.fromBufferAttribute(position as THREE.BufferAttribute, i);
+			mesh.localToWorld(vertex);
+			const key = `${cell(vertex.x, whole.min.x, size.x)},${cell(vertex.y, whole.min.y, size.y)},${cell(vertex.z, whole.min.z, size.z)}`;
+			const box = cells.get(key) ?? new THREE.Box3();
+			box.expandByPoint(vertex);
+			cells.set(key, box);
+		}
+		return [...cells.values()];
+	}
+
 	function islands(root: THREE.Object3D): string[][] {
 		root.updateMatrixWorld(true);
 		const parts: {
@@ -368,7 +396,6 @@ describe("a station is one object, not a scatter of parts", () => {
 			part: number;
 		}[] = [];
 		let nextPart = 0;
-		const vertex = new THREE.Vector3();
 		root.traverse((object) => {
 			if (!(object as THREE.Mesh).geometry) return;
 			// Clutter is mounted by its own generator and checked by its own test
@@ -415,31 +442,13 @@ describe("a station is one object, not a scatter of parts", () => {
 				});
 				return;
 			}
-			// **A torus arc is its ring, not its box.** The Gantry's arches are
-			// 1.25π arcs whose boxes are near-full squares, and the shipyard's
-			// booms passed here for as long as they did because a boom rooted
-			// 130 m from any arch was inside an arch's box. The arc's vertices
-			// are binned into a 4×4×4 grid of that box and each cell boxed on
-			// its own, joined as one part; the cells are grown like members,
-			// because a rail resting on an arch's rim shares a face with it.
-			// Full tori — collars, hoops, the Ring's spun body — keep their box:
-			// a hole through the middle is not where anything is mounted.
-			const N = 4;
-			const size = whole.getSize(new THREE.Vector3());
-			const cells = new Map<string, THREE.Box3>();
-			const position = mesh.geometry.getAttribute("position");
-			for (let i = 0; i < position.count; i++) {
-				vertex.fromBufferAttribute(position as THREE.BufferAttribute, i);
-				mesh.localToWorld(vertex);
-				const cell = (v: number, min: number, extent: number) =>
-					Math.min(N - 1, Math.floor(((v - min) / (extent || 1)) * N));
-				const key = `${cell(vertex.x, whole.min.x, size.x)},${cell(vertex.y, whole.min.y, size.y)},${cell(vertex.z, whole.min.z, size.z)}`;
-				const box = cells.get(key) ?? new THREE.Box3();
-				box.expandByPoint(vertex);
-				cells.set(key, box);
-			}
+			// **A torus arc is its ring, not its box** — see `arcBoxes`. The
+			// cells are grown like members, because a rail resting on an arch's
+			// rim shares a face with it. Full tori — collars, hoops, the Ring's
+			// spun body — keep their box: a hole through the middle is not where
+			// anything is mounted.
 			const part = nextPart++;
-			for (const box of cells.values())
+			for (const box of arcBoxes(mesh, whole))
 				parts.push({
 					name: object.name || object.type,
 					box,

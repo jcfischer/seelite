@@ -761,6 +761,175 @@ const DECLARATIONS: Record<string, (context: DeclarationContext) => void> = {
 	},
 
 	/**
+	 * Trade B — Ring. A spun torus (major 0.92·r, tube 0.13·r) carrying
+	 * twelve habitat modules on its equator, on A-frame spokes; the whole
+	 * body spins. Its reach, 0.73 km, is the fin plates', so everything here
+	 * sits on the rim's two faces and its inner wall, where a mast's 0.09 km
+	 * of height stays 0.15 km inside the reach. The equator belongs to the
+	 * modules and is left to them.
+	 */
+	"trade/b": ({ group, pools, beaconAt }) => {
+		const r = STATION_GEOMETRY.trade.coreRadiusKm;
+		const S = SHIP_SCALE;
+		const major = r * 0.92;
+		const tube = r * 0.13;
+		const TURN = Math.PI * 2;
+		const at = (theta: number, radius: number, z: number) =>
+			V(Math.cos(theta) * radius, Math.sin(theta) * radius, z);
+		for (const side of [1, -1]) {
+			// A ring main round the face, on the torus at 45° up from the
+			// equator; a lattice ring on the face's crown; six radiator banks
+			// on the face between the modules, fins along the rim.
+			const main: THREE.Vector3[] = [];
+			for (let i = 0; i <= 36; i++)
+				main.push(at((i / 36) * TURN, major + tube * 0.71, side * tube * 0.71));
+			pipeRun(pools, main, S.pipeKm);
+			for (let i = 0; i < 24; i++)
+				truss(
+					pools,
+					at((i / 24) * TURN, major, side * tube * 0.97),
+					at(((i + 1) / 24) * TURN, major, side * tube * 0.97),
+					S.trussKm,
+					V(0, 0, side),
+				);
+			for (let i = 0; i < 6; i++) {
+				const theta = ((2 * i + 0.5) / 12) * TURN;
+				radiatorArray(pools, {
+					origin: at(theta, major + tube * 0.45, side * tube * 0.89),
+					along: at(theta + Math.PI / 2, 1, 0),
+					up: V(0, 0, side),
+					count: 6,
+					panelWidthKm: S.panelKm,
+					panelHeightKm: S.panelHeightKm,
+				});
+			}
+		}
+		// Tank racks on the inner wall, four of them, tanks along the rim.
+		for (let i = 0; i < 4; i++) {
+			const theta = ((i + 0.5) / 4) * TURN;
+			tankRack(pools, {
+				origin: at(theta, major - tube * 0.98, 0),
+				along: at(theta + Math.PI / 2, 1, 0),
+				up: at(theta, -1, 0),
+				count: 5,
+				radiusKm: S.tankKm,
+				lengthKm: S.tankLengthKm,
+			});
+		}
+		// Two masts on the +Z face, and a beacon on each lattice ring's
+		// quarter, on the ring.
+		for (const theta of [0, Math.PI]) {
+			const top = mast(pools, group, {
+				base: at(theta, major, tube * 0.98),
+				up: V(0, 0, 1),
+				heightKm: S.mastHeightKm,
+				widthKm: S.mastKm,
+			});
+			beaconAt(top.clone().add(V(0, 0, S.beaconKm * 0.6)), S.beaconKm);
+		}
+		for (let i = 0; i < 4; i++)
+			beaconAt(
+				at((i / 4) * TURN + Math.PI / 4, major, tube * 0.97 + S.beaconKm * 0.4),
+				S.beaconKm,
+			);
+	},
+
+	/**
+	 * Trade C — Drum. A twelve-sided body 0.46·r across from z −1.02·r to
+	 * 0.88·r wearing two raised bands; the whole body spins. Nothing crosses
+	 * a band: the ladders run between them, the radiator banks and tank
+	 * racks outside them, and the pipe rings sit against them. Reach 0.66 km
+	 * is the aft cap's; a mast on the flank at 0.7·r reaches 0.56.
+	 */
+	"trade/c": ({ group, pools, mount, beaconAt }) => {
+		const r = STATION_GEOMETRY.trade.coreRadiusKm;
+		const S = SHIP_SCALE;
+		const body = r * 0.46;
+		const TURN = Math.PI * 2;
+		const radial = (theta: number) => V(Math.cos(theta), Math.sin(theta), 0);
+		/** A point on the flank's facet at `theta`, `z`, cast onto the hull. */
+		const flank = (theta: number, z: number) =>
+			mount(
+				radial(theta).multiplyScalar(body).setZ(z),
+				radial(theta),
+				body * 0.3,
+			);
+		// Four ladders between the bands, at the quarters' diagonals: two
+		// trusses a ship's height apart with a rung every 0.12·r.
+		for (let k = 0; k < 4; k++) {
+			const theta = Math.PI / 4 + (k / 4) * TURN;
+			const lane = (S.trussKm * 1.4) / body;
+			for (const side of [-1, 1]) {
+				const a = flank(theta + side * lane, -r * 0.36);
+				const b = flank(theta + side * lane, r * 0.11);
+				truss(pools, a, b, S.trussKm, radial(theta));
+				beaconAt(
+					b.clone().addScaledVector(radial(theta), S.trussKm * 0.5),
+					S.beaconKm,
+				);
+			}
+			for (let rung = 0; rung < 4; rung++)
+				truss(
+					pools,
+					flank(theta - lane, -r * 0.3 + rung * r * 0.12),
+					flank(theta + lane, -r * 0.3 + rung * r * 0.12),
+					S.strutKm,
+					radial(theta),
+				);
+		}
+		// Radiator banks on the quarters, aft of the aft band and forward of
+		// the forward band, fins along the drum.
+		for (let k = 0; k < 4; k++) {
+			const theta = (k / 4) * TURN;
+			for (const z of [-r * 0.85, r * 0.32])
+				radiatorArray(pools, {
+					origin: flank(theta, z),
+					along: V(0, 0, 1),
+					up: radial(theta),
+					count: 8,
+					panelWidthKm: S.panelKm,
+					panelHeightKm: S.panelHeightKm,
+				});
+		}
+		// Tank racks forward of the forward band, on the diagonals.
+		for (let k = 0; k < 4; k++) {
+			const theta = Math.PI / 4 + (k / 4) * TURN;
+			tankRack(pools, {
+				origin: flank(theta, r * 0.6),
+				along: V(0, 0, 1),
+				up: radial(theta),
+				count: 4,
+				radiusKm: S.tankKm,
+				lengthKm: S.tankLengthKm,
+			});
+		}
+		// Pipe rings against each band's shoulders, and one round the waist.
+		for (const z of [-r * 0.55, -r * 0.35, r * 0.1, r * 0.3, -r * 0.12]) {
+			const ring: THREE.Vector3[] = [];
+			for (let i = 0; i <= 24; i++)
+				ring.push(
+					radial((i / 24) * TURN)
+						.multiplyScalar(body + S.pipeKm * 0.5)
+						.setZ(z),
+				);
+			pipeRun(pools, ring, S.pipeKm);
+		}
+		// Two masts on the forward flank, opposite each other.
+		for (const theta of [Math.PI / 4, Math.PI * 1.25]) {
+			const top = mast(pools, group, {
+				base: flank(theta, r * 0.7),
+				up: radial(theta),
+				heightKm: S.mastHeightKm,
+				widthKm: S.mastKm,
+			});
+			beaconAt(
+				top.clone().addScaledVector(radial(theta), S.beaconKm * 0.6),
+				S.beaconKm,
+			);
+		}
+	},
+
+	/**
 	 * Shipyard A — Gantry. Everything hangs on the static keel and its rails,
 	 * whose z is read off the keel itself rather than restated: the keel sits
 	 * where `SHIPYARD_KEEL_AFT_KM` put it and moved once already. The spun hub
@@ -773,6 +942,26 @@ const DECLARATIONS: Record<string, (context: DeclarationContext) => void> = {
 		const keel = site.structure.getObjectByName("keel");
 		if (!keel) throw new Error("the Gantry's keel is not named");
 		const aft = -keel.position.z;
+		// A lattice bridge along each rail's top, the keel's length, and a
+		// pipe along each boom from its root to the tip.
+		for (const side of [1, -1]) {
+			truss(
+				pools,
+				V(-r * 2.0, side * r * 0.58, -aft + r * 0.09),
+				V(r * 2.0, side * r * 0.58, -aft + r * 0.09),
+				S.trussKm,
+				V(0, 0, 1),
+			);
+			pipeRun(
+				pools,
+				[
+					V(0, side * r * 0.89, -r * 1.0),
+					V(0, side * r * 0.89, r * 0.2),
+					V(0, side * r * 0.89, r * 1.4),
+				],
+				S.pipeKm,
+			);
+		}
 		// Radiator banks on the keel's top, aft half: two rows of twelve.
 		for (const row of [-0.16, 0.16]) {
 			const keelTop = mount(
@@ -851,6 +1040,35 @@ const DECLARATIONS: Record<string, (context: DeclarationContext) => void> = {
 	"refinery/a": ({ group, pools, mount }) => {
 		const r = STATION_GEOMETRY.refinery.coreRadiusKm;
 		const S = SHIP_SCALE;
+		// A lattice frame round the tank farm, four trusses on the rock, and a
+		// second crane on the −X shoulder.
+		for (const [a, b] of [
+			[V(-r * 0.4, -r * 0.8, r * 0.4), V(r * 0.4, -r * 0.8, r * 0.4)],
+			[V(-r * 0.4, -r * 0.8, -r * 0.2), V(r * 0.4, -r * 0.8, -r * 0.2)],
+			[V(-r * 0.4, -r * 0.8, r * 0.4), V(-r * 0.4, -r * 0.8, -r * 0.2)],
+			[V(r * 0.4, -r * 0.8, r * 0.4), V(r * 0.4, -r * 0.8, -r * 0.2)],
+		] as const)
+			truss(
+				pools,
+				mount(a, V(0, -1, 0), r * 0.6),
+				mount(b, V(0, -1, 0), r * 0.6),
+				S.strutKm,
+				V(0, -1, 0),
+			);
+		{
+			const rim = mount(
+				V(-r * 0.7, r * 0.3, r * 0.45),
+				V(-0.6, 0.5, 0.6),
+				r * 0.5,
+			);
+			truss(
+				pools,
+				rim,
+				rim.clone().add(V(-r * 0.55, r * 0.5, -r * 0.1)),
+				S.trussKm,
+				V(0, 0, 1),
+			);
+		}
 		// Tank farm on the rock's −Y flank: three racks of six.
 		for (const lane of [-0.2, 0, 0.2]) {
 			const flank = mount(
@@ -919,6 +1137,29 @@ const DECLARATIONS: Record<string, (context: DeclarationContext) => void> = {
 	"outpost/a": ({ group, pools, mount, beaconAt }) => {
 		const r = STATION_GEOMETRY.outpost.coreRadiusKm;
 		const S = SHIP_SCALE;
+		// A lattice belt round the tower's legs, and a pipe up two of them
+		// from the tanks toward the deck.
+		for (let i = 0; i < 4; i++) {
+			const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+			const b = ((i + 1) / 4) * Math.PI * 2 + Math.PI / 4;
+			truss(
+				pools,
+				V(Math.cos(a) * r * 0.46, Math.sin(a) * r * 0.46, -r * 0.3),
+				V(Math.cos(b) * r * 0.46, Math.sin(b) * r * 0.46, -r * 0.3),
+				S.strutKm,
+				V(0, 0, 1),
+			);
+		}
+		for (const theta of [Math.PI / 4, Math.PI * 1.25])
+			pipeRun(
+				pools,
+				[
+					V(Math.cos(theta) * r * 0.5, Math.sin(theta) * r * 0.5, -r * 1.1),
+					V(Math.cos(theta) * r * 0.5, Math.sin(theta) * r * 0.5, -r * 0.6),
+					V(Math.cos(theta) * r * 0.5, Math.sin(theta) * r * 0.5, -r * 0.1),
+				],
+				S.pipeKm * 0.75,
+			);
 		// Radiator banks on the tank cluster's −X flank, shifted +z so the
 		// bank sits beside the tanks rather than below them: **the tanks'
 		// bottom corner is this form's outline** at 0.307 km, and a fin

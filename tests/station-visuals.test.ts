@@ -36,6 +36,7 @@ import {
 	flickerIntensity,
 	platingTexels,
 	stationDetailLevel,
+	stationMapSize,
 	surfaceTexels,
 } from "../src/station-visuals";
 import { PLATE_TEXTURE_SIZE } from "../src/surface";
@@ -221,7 +222,9 @@ describe("the plating is generated, not downloaded, and sized for RGBAFormat", (
 	test("every buffer is exactly 4 x w x h", () => {
 		// A `DataTexture` whose buffer is short does not throw. It samples past
 		// the end and renders as garbage — the failure this assertion exists for.
-		const n = PLATE_TEXTURE_SIZE * PLATE_TEXTURE_SIZE * 4;
+		// The map side is the finish's (`worn` doubles it), so the size is
+		// read off the finish in force rather than off the base constant.
+		const n = stationMapSize() * stationMapSize() * 4;
 		for (const type of TYPES) {
 			expect(platingTexels(type).length).toBe(n);
 			expect(surfaceTexels(type).length).toBe(n);

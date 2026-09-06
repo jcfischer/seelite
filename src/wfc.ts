@@ -113,6 +113,34 @@ export interface PlanResult {
 const MAX_ATTEMPTS = 8;
 
 /**
+ * A weighted pick over a domain's set bits, ascending, in integers: one draw
+ * from `rng` when any weight is set, none when all are zero (the lowest set
+ * bit wins). Its own function so the collapse loop reads as select, pick,
+ * propagate; the iteration and the draw order are exactly the inline
+ * block's, so every seed's plan is unchanged.
+ */
+function pickModule(
+	dom: number,
+	weights: ArrayLike<number>,
+	nModules: number,
+	rng: () => number,
+): number {
+	let total = 0;
+	for (let m = 0; m < nModules; m++) if (dom & BIT(m)) total += weights[m];
+	if (total === 0) {
+		for (let m = 0; m < nModules; m++) if (dom & BIT(m)) return m;
+		return -1;
+	}
+	let roll = rng() % total;
+	for (let m = 0; m < nModules; m++) {
+		if (!(dom & BIT(m))) continue;
+		if (roll < weights[m]) return m;
+		roll -= weights[m];
+	}
+	return -1;
+}
+
+/**
  * Collapse one grid. Deterministic in (seed, spec): every number here is an
  * integer operation on the seed, so the same inputs give the same plan byte
  * for byte on every client at every clock.
@@ -152,30 +180,8 @@ export function solvePlan(seed: number, spec: WfcSpec): PlanResult {
 			}
 			if (best < 0) break; // fully collapsed
 
-			// A weighted pick over the set bits, ascending, in integers.
-			const dom = domains[best];
-			let total = 0;
-			for (let m = 0; m < nModules; m++)
-				if (dom & BIT(m)) total += spec.weights[m];
-			let chosen = -1;
-			if (total === 0) {
-				for (let m = 0; m < nModules; m++)
-					if (dom & BIT(m)) {
-						chosen = m;
-						break;
-					}
-			} else {
-				let roll = rng() % total;
-				for (let m = 0; m < nModules; m++) {
-					if (!(dom & BIT(m))) continue;
-					if (roll < spec.weights[m]) {
-						chosen = m;
-						break;
-					}
-					roll -= spec.weights[m];
-				}
-			}
-			domains[best] = BIT(chosen) >>> 0;
+			domains[best] =
+				BIT(pickModule(domains[best], spec.weights, nModules, rng)) >>> 0;
 			stack[0] = best;
 			ok = propagate(domains, stack, 1, spec);
 		}
