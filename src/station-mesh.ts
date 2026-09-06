@@ -102,6 +102,7 @@ import {
 	stationDetailLevel,
 	stationFinishId,
 	stationMapSize,
+	stationPlating,
 	surfaceTexels,
 } from "./station-visuals";
 import {
@@ -340,10 +341,13 @@ const surfaceMaps = (type: StationType) => {
  */
 const surfaceMapCache = new Map<string, ReturnType<typeof surfaceMaps>>();
 const mapsFor = (type: StationType) => {
-	// Keyed by the finish as well as the role, so a switch on the workbench
-	// builds the other finish's maps rather than handing back the first's; the
-	// game only ever fills one key per role.
-	const key = `${stationFinishId()}:${type}`;
+	// Keyed by **what the maps are made from** — the role, the map size and
+	// the plating profile — rather than by the finish: `plated` and
+	// `industrial` share all three, and a key per finish generated the same
+	// maps twice on a workbench switch (37–57 ms and 768 KiB a role, sage
+	// measured) and kept both. A finish with its own profile gets its own
+	// entry; the game only ever fills one key per role.
+	const key = `${type}:${stationMapSize()}:${JSON.stringify(stationPlating(type))}`;
 	const cached = surfaceMapCache.get(key);
 	if (cached) return cached;
 	const built = surfaceMaps(type);

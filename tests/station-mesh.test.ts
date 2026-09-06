@@ -52,6 +52,7 @@ import {
 	hasBay,
 	mouthPlane,
 } from "./helpers/aperture-opening";
+import { instanceBoxes } from "./helpers/instance-boxes";
 
 // From `station.ts`, not a literal: a fourth station type must reach every
 // loop in this file, and a hand-written list is exactly the place it would not.
@@ -360,7 +361,6 @@ describe("a station is one object, not a scatter of parts", () => {
 	function islands(root: THREE.Object3D): string[][] {
 		root.updateMatrixWorld(true);
 		const parts: { name: string; box: THREE.Box3; member: boolean }[] = [];
-		const matrix = new THREE.Matrix4();
 		root.traverse((object) => {
 			if (!(object as THREE.Mesh).geometry) return;
 			// A pane is a decal on a face, not a part: `window panes sit out
@@ -371,29 +371,12 @@ describe("a station is one object, not a scatter of parts", () => {
 			if (object.name === "windows") return;
 			const instanced = object as THREE.InstancedMesh;
 			if (instanced.isInstancedMesh) {
-				// **One box per instance, not one per pool.** `setFromObject` on
-				// an instanced mesh boxes every instance together, and a pool of
-				// truss members spanning a station is one box that touches
-				// everything — which is how the assembly's radiator bank sat
-				// 59.65 m from any other member and passed here. **The
-				// geometry's own box under each instance's matrix**, not a unit
-				// cube: the fixture pools are unit boxes and tubes, but a window
-				// pane is not, and a unit cube under its matrix was 1.67 core
-				// radii across and glued the whole station together again.
-				if (!instanced.geometry.boundingBox)
-					instanced.geometry.computeBoundingBox();
-				const local = instanced.geometry.boundingBox as THREE.Box3;
-				for (let i = 0; i < instanced.count; i++) {
-					instanced.getMatrixAt(i, matrix);
-					parts.push({
-						name: `${object.name}#${i}`,
-						box: local
-							.clone()
-							.applyMatrix4(matrix)
-							.applyMatrix4(instanced.matrixWorld),
-						member: true,
-					});
-				}
+				// **One box per instance, not one per pool** — see
+				// `helpers/instance-boxes.ts` for why, and for why it is the
+				// geometry's box and not a unit cube.
+				instanceBoxes(instanced).forEach((box, i) =>
+					parts.push({ name: `${object.name}#${i}`, box, member: true }),
+				);
 				return;
 			}
 			parts.push({

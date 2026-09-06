@@ -24,8 +24,11 @@
  * **Instanced, not assembled.** A truss is a hundred members and a pipe run a
  * dozen; as `Mesh`es that is a draw call each. Every member of every fixture
  * on a station is one instance of a unit box or a unit tube in a material's
- * pool, and a station's whole macro structure is five or six draw calls
- * however much of it there is.
+ * pool, so the lattice is four or five draw calls however much of it there
+ * is. What stands beside the pools is drawn on its own — a docking collar,
+ * a dish per mast, the approach lamps and each beacon — so an industrial
+ * trade station's fixtures are thirteen meshes at seed zero, of which the
+ * pools are five.
  *
  * The group is tagged `reduced`: this is 2 km structure and belongs in the
  * same band as the aperture frame and the strobes, not with the 40 m clutter

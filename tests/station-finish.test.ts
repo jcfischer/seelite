@@ -40,6 +40,7 @@ import {
 } from "../src/station-visuals";
 import { PLATE_TEXTURE_SIZE, plateTexels } from "../src/surface";
 import { corridorIntrusions, corridorLine } from "./helpers/aperture-opening";
+import { instanceBoxes } from "./helpers/instance-boxes";
 import { reachKm } from "./helpers/station-reach";
 
 const GREY = 0x9aa6b2;
@@ -155,10 +156,6 @@ describe("every finish builds every selected form", () => {
 		 * own thickness and well over float error.
 		 */
 		setStationFinish("industrial");
-		const unit = new THREE.Box3(
-			new THREE.Vector3(-0.5, -0.5, -0.5),
-			new THREE.Vector3(0.5, 0.5, 0.5),
-		);
 		for (const type of STATION_TYPES) {
 			const built = buildStationForm(type, SELECTED_FORM[type], GREY, 0);
 			const km = built.root.getObjectByName("km") as THREE.Group;
@@ -177,20 +174,11 @@ describe("every finish builds every selected form", () => {
 				);
 			});
 			const members: THREE.Box3[] = [];
-			const matrix = new THREE.Matrix4();
 			group.traverse((object) => {
 				const instanced = object as THREE.InstancedMesh;
 				if (instanced.isInstancedMesh) {
-					for (let i = 0; i < instanced.count; i++) {
-						instanced.getMatrixAt(i, matrix);
-						members.push(
-							unit
-								.clone()
-								.applyMatrix4(matrix)
-								.applyMatrix4(instanced.matrixWorld)
-								.expandByScalar(tolerance),
-						);
-					}
+					for (const box of instanceBoxes(instanced))
+						members.push(box.expandByScalar(tolerance));
 				} else if ((object as THREE.Mesh).geometry)
 					members.push(
 						new THREE.Box3().setFromObject(object).expandByScalar(tolerance),
@@ -286,5 +274,22 @@ describe("a fixture's frame", () => {
 				expect(scale.z).toBeLessThan(scale.x * 0.1);
 			}
 		}
+	});
+});
+
+describe("the station maps are the plating's, not the finish's", () => {
+	test("plated and industrial share one set of maps; stock and worn have their own", () => {
+		const mapOf = (id: StationFinishId) => {
+			setStationFinish(id);
+			const core = buildStationForm("trade", "a", GREY, 0).root.getObjectByName(
+				"core",
+			) as THREE.Mesh;
+			return (core.material as THREE.MeshStandardMaterial).map;
+		};
+		const plated = mapOf("plated");
+		expect(plated).not.toBeNull();
+		expect(mapOf("industrial")).toBe(plated);
+		expect(mapOf("stock")).not.toBe(plated);
+		expect(mapOf("worn")).not.toBe(plated);
 	});
 });

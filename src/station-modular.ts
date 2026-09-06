@@ -39,19 +39,6 @@ export const TANKS = 8;
 export const DISH = 9;
 export const N_MODULES = 10;
 
-export const MODULE_NAMES = [
-	"empty",
-	"hub",
-	"node",
-	"tube-x",
-	"tube-y",
-	"truss-x",
-	"truss-y",
-	"radiator",
-	"tanks",
-	"dish",
-] as const;
-
 const HOSTS = new Set([HUB, NODE, TUBE_X, TUBE_Y, TRUSS_X, TRUSS_Y]);
 const LEAVES = new Set([RADIATOR, TANKS, DISH]);
 
