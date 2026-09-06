@@ -815,40 +815,25 @@ if (MASK_SWEEP) {
 			rows.push({ ...framing, seed, ...(await measure()) });
 
 			/**
-			 * **There is no aimed row, and the reason is that the game has no such
-			 * camera** (sage, PR #251, round 1).
+			 * **There is no aimed row, because the game has no such camera.**
 			 *
-			 * Two framings here return `whole: 0` — the station approach and the
-			 * refinery deck have no massive body in the frustum at all. A first
-			 * version answered that by turning to face the widest body with
-			 * `__lookAt`, and it was wrong twice over. Sage caught the first: a
-			 * docked or arriving session restores the docking attitude every tick
-			 * (§12.6 obligation 9), so the turn was undone before the capture — and
-			 * the run's own table said so, with the trade and shipyard aimed rows
-			 * reading 4.6% and 4.7%, identical to their unaimed ones.
+			 * Two framings here come back with nothing in the frustum, and the
+			 * obvious answer — turn to face the widest body — is not available to a
+			 * player and so is not available to an instrument. `HeadLook` is
+			 * `"forward" | "left" | "right"` (`cockpit.ts`): three discrete yaws,
+			 * no pitch. In **chase** `cameraRotation` reads `chaseYaw` and ignores
+			 * head-look entirely. And a docked or arriving session restores the
+			 * docking attitude every tick (§12.6 obligation 9), so setting the
+			 * ship's orientation is undone before the next frame.
 			 *
-			 * The second is why it is not worth fixing. `HeadLook` is
-			 * `"forward" | "left" | "right"` (`cockpit.ts`) — three discrete yaws
-			 * and no pitch — and in **chase** `cameraRotation` reads `chaseYaw` and
-			 * ignores head-look entirely. There is no control that points a player's
-			 * camera at an arbitrary body, so an aimed row would price a pose the
-			 * game cannot produce.
-			 *
-			 * The question it stood in for is answered better elsewhere:
-			 * `measure-station-host-angle.ts` reads the generator over 25,502
-			 * stations and finds that a refinery has no host planet **by
-			 * construction** — a belt orbit and `parentId: null`.
-			 *
-			 * **That is a claim about hosts and not about sightlines**, and an
-			 * earlier version of this comment said "nothing behind that deck to
-			 * occlude, at any camera angle, in any system", which the census cannot
-			 * support (sage, PR #251, round 2). A refinery still has a star and
-			 * other planets somewhere around it. What the census establishes is
-			 * that no refinery has the thing that makes a slot role's bay
-			 * expensive — a body filling 41.8° of its sky. What the row below
-			 * measures is that in this framing, on this seed, every body in the
-			 * system was masked and none covered a pixel: the nearest planet is
-			 * 412 million km off and subtends 0.001°.
+			 * The question an aimed row would have answered — does a pad role's
+			 * open deck occlude its host the way a bay does — is settled by
+			 * `measure-station-host-angle.ts` instead: a refinery has no host
+			 * planet by construction, a belt orbit and `parentId: null`, in all
+			 * 6,250 of them in that census. That is a claim about hosts and not
+			 * about sightlines; what the row below adds is that on this seed in
+			 * this framing every body in the system was masked and none covered a
+			 * pixel.
 			 */
 		}
 		if (sweepPage !== page) await sweepPage.close();

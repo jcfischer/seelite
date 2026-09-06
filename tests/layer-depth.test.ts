@@ -31,6 +31,7 @@ import {
 	NEAR_FAR_KM,
 	NEAR_NEAR_KM,
 } from "../src/units";
+import { STATION_ORBIT_R_OVER_R } from "../src/system";
 import { VIEWPORT } from "../scripts/lib/view-set.mjs";
 import { codeOf } from "./lib/source-scan";
 import {
@@ -254,23 +255,42 @@ describe("whether the depth is precise enough to answer with", () => {
 	});
 
 	/**
-	 * **And hundreds of kilometres at the handoff edge**, which is the honest
-	 * limit of the whole scheme and the row a proposal must answer for.
+	 * **And hundreds of kilometres at the handoff edge — which still resolves the
+	 * comparison, and the reason is the orbit floor.**
 	 *
 	 * A station admitted to the near layer at 10,500 km resolves depth to about
-	 * 700 km there, and a station orbits its planet at 400–2,000 km
-	 * (`system.ts`). So at that range the prepass genuinely cannot tell the
-	 * station from the planet behind it.
+	 * 700 km there. An earlier version of this comment read that against "400 to
+	 * 2,000 km", the band `system.ts` draws a station's altitude from, and
+	 * concluded the prepass could not tell the station from its planet. Sage
+	 * caught it: that band is not the altitude. `STATION_ORBIT_R_OVER_R` is a
+	 * **floor** under it, and above a 4,000 km host the floor is the maximum by
+	 * arithmetic — `measure-station-host-angle.ts` finds 93.0% of host-orbiting
+	 * stations sitting exactly on it across 19,252 of them.
 	 *
-	 * It does not matter, and the reason is geometric rather than lucky: a
-	 * 0.6 km station at 10,500 km subtends about one pixel, so the fragments it
-	 * would wrongly keep or wrongly reject are that one pixel. The precision
-	 * fails exactly where the saving is nil.
+	 * A station on that floor is at 1.5 host radii, so the gap between it and the
+	 * surface behind it is **half the host's radius** — 1,200 km for the smallest
+	 * rocky world the generator makes and 3,000 for a 6,000 km one. Both are
+	 * above the 700 km the buffer resolves there, so the comparison holds at the
+	 * worst distance the scheme allows, and it holds by a bigger margin the
+	 * bigger the planet.
+	 *
+	 * The resolution is asserted; the margin is asserted against the floor rather
+	 * than against a number typed in beside it.
 	 */
-	test("but hundreds of kilometres at the handoff edge, where it does not pay", () => {
-		expect(
-			depthResolutionM(HANDOFF_KM * HANDOFF_HYSTERESIS) / 1000,
-		).toBeGreaterThan(500);
+	test("hundreds of kilometres at the handoff edge, and the orbit floor still clears it", () => {
+		const edgeKm = HANDOFF_KM * HANDOFF_HYSTERESIS;
+		const resolutionKm = depthResolutionM(edgeKm) / 1000;
+		expect(resolutionKm).toBeGreaterThan(500);
+
+		// The gap a floor-riding station leaves between itself and the surface
+		// behind it, as a multiple of the host's radius.
+		const gapPerHostRadius = STATION_ORBIT_R_OVER_R - 1;
+		expect(gapPerHostRadius).toBeCloseTo(0.5, 10);
+		// The smallest host that still resolves. Every planet the generator makes
+		// is larger than this by more than a factor of one and a half, so the
+		// figure is a bound rather than a threshold anything sits near.
+		const smallestResolvableHostKm = resolutionKm / gapPerHostRadius;
+		expect(smallestResolvableHostKm).toBeLessThan(2400);
 	});
 
 	/**
