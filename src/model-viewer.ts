@@ -595,9 +595,17 @@ export function mountModelViewer(): void {
 		);
 	});
 	window.addEventListener("resize", resize);
+	// The renderer beside the state, so `scripts/shot-finishes.mjs` can read
+	// the real rasteriser back the way `capture-views.mjs` does through
+	// `window.__seelite` — which the workbench deliberately never sets.
 	(
-		window as unknown as { __seeliteModelViewer: { state: ViewerState } }
-	).__seeliteModelViewer = { state };
+		window as unknown as {
+			__seeliteModelViewer: {
+				state: ViewerState;
+				renderer: THREE.WebGLRenderer;
+			};
+		}
+	).__seeliteModelViewer = { state, renderer };
 	updateTournament();
 	reframe(state.asset, state.variant);
 	rebuild();

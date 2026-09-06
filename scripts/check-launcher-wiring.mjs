@@ -111,6 +111,10 @@ const EXEMPT = new Map([
 		"takes screenshots; has no checks for a watch to report into",
 	],
 	[
+		"shot-finishes.mjs",
+		"#202/#203's headed finish sheet; it takes screenshots for the principal to judge and asserts nothing — its refusals, a software rasteriser and a finish the workbench did not select, throw out of the run rather than counting a failed check",
+	],
+	[
 		"measure-light-cost.mjs",
 		"#99's headed frame-cost instrument; it asserts nothing by design — #98 settled that there is no frame-time floor to gate on — so there are no checks for a watch to report into",
 	],

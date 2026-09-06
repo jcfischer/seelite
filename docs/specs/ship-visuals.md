@@ -323,6 +323,37 @@ on the material rather than at load, per #99: a reload puts the ship somewhere
 else, and two frames from two positions measure the positions as much as the
 term.
 
+### 3.1 Finishes: the surface and the shared primitives as a preset (#203)
+
+#199's review read every hull as one flat pastel loft at one detail scale — a
+cyan sticker for a drive, torus hoops that read as rubber bands, a plate that
+is the ship's only ruler — and the principal's steer was industrial: the ISS
+and the Nostromo. A **finish** (`HULL_FINISHES`, `ship-surface.ts`) is
+everything about a hull that is not its silhouette, and it is a preset the
+workbench switches the way it switches a variant, so the sheet is captured
+under every finish and the principal picks. Four ship: `stock`, `plated`,
+`industrial`, `worn`.
+
+`stock` is the hull that shipped, byte for byte: `tests/ship-finish.test.ts`
+hashes every hull's positions and UVs against a pin taken on `main`. The
+other three share a **second plating octave** (`PlatingProfile.macro`,
+`surface.ts`): a 4 m × 8 m panel group with a six-texel groove and a
+per-group tone spread, on a 512 map with a 16 m tile so the plate stays a
+metre. They mute the livery toward its own luma, and splice a **grazing-angle
+rim** after three's emissive chunk so a dark hull separates from a dark sky
+without a light. `industrial` and `worn` also change the two primitives every
+builder shares: the torus hoop becomes a twelve-facet flanged **collar**, and
+the exhaust disc becomes an **open bell** — the bell's loft folds back at the
+lip to a small throat, and a `BackSide` bowl inside it carries a throat-to-lip
+emissive ramp — with the `-bell`/`-exhaust` names and the half-span rule kept.
+`worn` raises the streaking toward the Nostromo and is labelled as reversing
+#98's refusal of grime; that is the principal's call and not a default.
+
+The finish is module state read at build time, and the game never switches
+it: `setHullFinish` exists for the workbench, and a test that sets one must
+restore `stock`. `scripts/shot-finishes.mjs` is the sheet's instrument and
+refuses a software rasteriser, for `capture-views.mjs`'s reason.
+
 ## 4. Verification contract
 
 Headless tests assert every candidate has stable hull and variant identity,

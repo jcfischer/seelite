@@ -588,6 +588,13 @@ variants, and for the same reason: the pool is what a later decision draws on.
 | Role | A | B | C |
 |---|---|---|---|
 | trade | **Coriolis** — a cuboctahedron; the slot is cut into a real flat square face | **Ring** — a spun torus on a fixed hub, the dock a tunnel on the axis | **Drum** — an O'Neill barrel end-on; length rather than width is the cue |
+
+Trade carries a fourth form since #202, **D — Assembly**: a compact hub
+carrying the slot, a truss spine, and modules solved onto a diamond of cells
+by wave function collapse (`station-modular.ts`, on seekolous's solver copied
+in and given directional adjacency). Its plan is the berth seed's, so every
+station of the form is its own shape and keeps it. The hub is what spins,
+for the shipyard's reason below. It is unranked, like the pad roles' forms.
 | shipyard | **Gantry** — a bridge keel under open ribbed bays sized for a ship | **Hangar** — a closed slab with a floodlit bay mouth; ships inside, not clamped outside | **Slipway** — a broken ring with the gap as the slip |
 | refinery | **Warren** — terraced plant cut into the rock; the pad is in the notch | **Collar** — a machined band gripping the rock at its waist | **Spar** — a processing spar run through the rock and out the far side |
 | outpost | **Derrick** — a lattice tower on a tank cluster, pad deck on top | **Buoy** — a stubby drum wearing radiator fins; nothing hangs off it | **Rig** — an angled truss holding a deck out over a drill head |
