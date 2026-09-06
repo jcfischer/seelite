@@ -32,6 +32,7 @@ import {
 	NEAR_NEAR_KM,
 } from "../src/units";
 import { VIEWPORT } from "../scripts/lib/view-set.mjs";
+import { codeOf } from "./lib/source-scan";
 import {
 	flightFraming,
 	OCCLUSION_FRAMINGS,
@@ -42,8 +43,10 @@ import {
  *
  * The field of view is restated — `main.ts` holds it as a local `const fov = 60`
  * inside the constructor and exports nothing — and that is the one figure here
- * that could drift. It is asserted against the rendered value in
- * `nearCameraMatchesTheGame` below rather than left as a hopeful copy.
+ * that could drift. It is read back out of that source below rather than left as
+ * a hopeful copy; an earlier version of this comment claimed a check by name
+ * that did not exist, which sage caught on PR #251 and which is the prose-ahead-
+ * of-the-code failure this repo has in writing.
  */
 const FOV = 60;
 const aspect = VIEWPORT.width / VIEWPORT.height;
@@ -103,6 +106,46 @@ function depthResolutionM(distanceKm: number): number {
 	}
 	return distinguishable * 1000;
 }
+
+describe("the camera these cameras stand in for", () => {
+	/**
+	 * **The field of view is a copy, so it is read back out of `main.ts`.**
+	 *
+	 * `main.ts` builds all four cameras from a local `const fov = 60` and exports
+	 * nothing, so nothing can import it. What can be done is read the source —
+	 * `perf-panel-keys.test.ts` reads `main.ts`'s key bindings the same way, and
+	 * for the same reason: a constant checked by eye is a constant that drifts.
+	 *
+	 * Comments are stripped first, so a `60` inside a docstring cannot satisfy it.
+	 */
+	test("the field of view here is the one main.ts builds its cameras with", () => {
+		const source = codeOf("src/main.ts");
+		const declared = source.match(/const fov = (\d+(?:\.\d+)?);/);
+		expect(declared).not.toBeNull();
+		expect(Number(declared?.[1])).toBe(FOV);
+	});
+
+	/**
+	 * And that one `fov` really does drive both cameras, so reading it settles
+	 * both. A future near camera given its own field of view would break the
+	 * x-and-y agreement below, and this is what would notice.
+	 */
+	test("and one fov drives every camera in the ladder", () => {
+		const source = codeOf("src/main.ts");
+		expect(source.match(/const fov = /g)).toHaveLength(1);
+		for (const camera of [
+			"backdropCamera",
+			"farCamera",
+			"approachCamera",
+			"nearCamera",
+		])
+			expect(source).toMatch(
+				new RegExp(
+					`this\\.${camera} = new THREE\\.PerspectiveCamera\\(\\s*fov,`,
+				),
+			);
+	});
+});
 
 describe("the scale seam, in x and y", () => {
 	/**

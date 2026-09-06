@@ -191,20 +191,27 @@ const ARMS = [
 		what: "the hull in chase and the cabin in cockpit — the subject at a fixed range",
 	},
 	/**
-	 * **Everything the near layer draws, and it is #247's cost ceiling.**
+	 * **What the near layer's own drawing costs — one term of a prepass, and not
+	 * a bound on one.**
 	 *
-	 * A depth-only prepass over the near layer would cost less than drawing that
-	 * layer does: same geometry and same rasterisation, but no fragment shading,
-	 * no lighting and no plating. So `control − this arm` is an **upper bound**
-	 * on what the prepass would add, measured on a shipped build with no new
-	 * mechanism — which is what makes it quotable against a saving before
-	 * anything is written.
+	 * The tempting claim is that this bounds a depth-only prepass, because such a
+	 * pass draws the same geometry with no fragment shading. **It does not**, and
+	 * sage blocked the first version of this comment for making it (PR #251).
+	 * Subtracting an arm measures work *removed* from passes that already exist.
+	 * A prepass is work *added*: its own draw submission, a depth target to bind
+	 * and clear, and a depth read in the approach pass for every fragment it
+	 * rejects. None of those three is anywhere in this subtraction, so a figure
+	 * from it is silent about the two ends that make a prepass a pass.
 	 *
-	 * It is a bound and not an estimate, and the same caveat as every other
-	 * near-scene arm applies on top: hiding this also drops the shadow and
-	 * ambient-occlusion work these subjects induce, and exposes whatever stood
-	 * behind them. Both push in the direction of overstating, which is the safe
-	 * direction for a ceiling.
+	 * What it is good for is the one term it does cover: the geometry and
+	 * rasterisation cost of putting the near layer through a pass at all, which
+	 * is the part a reader would otherwise guess at. Read it as "this much
+	 * geometry, this often", and price the rest by building it — which is the
+	 * decision #247 exists to make.
+	 *
+	 * The usual near-scene caveat applies on top: hiding these also drops the
+	 * shadow and ambient-occlusion work they induce and exposes what stood behind
+	 * them, so even this term is a net figure.
 	 */
 	{
 		name: "no near layer",
@@ -692,21 +699,18 @@ const MASK_FRAMINGS = [
 		name: "station-approach, cockpit",
 		seed: SEED,
 		role: "trade (slot)",
-		aimAtWidest: true,
 		...OCCLUSION_FRAMINGS.cockpit,
 	},
 	{
 		name: "trade bay, chase",
 		seed: SEED,
 		role: "trade (slot)",
-		aimAtWidest: true,
 		...OCCLUSION_FRAMINGS.berth,
 	},
 	{
 		name: "shipyard bay, chase",
 		seed: SEED,
 		role: "shipyard (slot)",
-		aimAtWidest: true,
 		...OCCLUSION_FRAMINGS.shipyardBerth,
 	},
 	// Seed 2, the only one of these with a refinery.
@@ -714,7 +718,6 @@ const MASK_FRAMINGS = [
 		name: "refinery deck, chase",
 		seed: 2,
 		role: "refinery (pad)",
-		aimAtWidest: true,
 		...OCCLUSION_FRAMINGS.refineryCradle,
 	},
 ];
@@ -794,33 +797,34 @@ if (MASK_SWEEP) {
 				return best;
 			};
 
-			rows.push({ ...framing, seed, aimed: false, ...(await measure()) });
+			rows.push({ ...framing, seed, ...(await measure()) });
 
 			/**
-			 * And the same framing turned to face the widest body.
+			 * **There is no aimed row, and the reason is that the game has no such
+			 * camera** (sage, PR #251, round 1).
 			 *
-			 * **Because a shipped framing that faces away answers a different
-			 * question.** The first sweep returned nothing at all for the station
-			 * approach and for the refinery deck: `whole` was zero, which means the
-			 * body is outside the frustum, not that the near layer hid it. That is
-			 * a real fact about those framings and it is kept as its own row — a
-			 * prepass rejects nothing where there is nothing behind. But it leaves
-			 * #247's actual question unanswered for the pad role, which is whether
-			 * a deck with no shell occludes a planet the way a bay does.
+			 * Two framings here return `whole: 0` — the station approach and the
+			 * refinery deck have no massive body in the frustum at all. A first
+			 * version answered that by turning to face the widest body with
+			 * `__lookAt`, and it was wrong twice over. Sage caught the first: a
+			 * docked or arriving session restores the docking attitude every tick
+			 * (§12.6 obligation 9), so the turn was undone before the capture — and
+			 * the run's own table said so, with the trade and shipyard aimed rows
+			 * reading 4.6% and 4.7%, identical to their unaimed ones.
 			 *
-			 * So each station framing is measured twice: as the view set frames it,
-			 * and turned to look at the widest body from the same place. The second
-			 * is the prepass's best case at that station, and the pair brackets it.
+			 * The second is why it is not worth fixing. `HeadLook` is
+			 * `"forward" | "left" | "right"` (`cockpit.ts`) — three discrete yaws
+			 * and no pitch — and in **chase** `cameraRotation` reads `chaseYaw` and
+			 * ignores head-look entirely. There is no control that points a player's
+			 * camera at an arbitrary body, so an aimed row would price a pose the
+			 * game cannot produce.
+			 *
+			 * The question it stood in for is answered better elsewhere:
+			 * `measure-station-host-angle.ts` reads the generator over 25,502
+			 * stations and finds that a refinery has no host planet **by
+			 * construction**. There is nothing behind that deck to occlude, at any
+			 * camera angle, in any system.
 			 */
-			if (framing.aimAtWidest) {
-				await sweepPage.evaluate(async (id) => {
-					const body = window.__bodyById(id);
-					if (!body) throw new Error(`no body "${id}" to aim at`);
-					await window.__lookAt(body.pos);
-				}, widest[0].id);
-				await settleFrames(sweepPage);
-				rows.push({ ...framing, seed, aimed: true, ...(await measure()) });
-			}
 		}
 		if (sweepPage !== page) await sweepPage.close();
 	}
@@ -841,7 +845,7 @@ if (MASK_SWEEP) {
 		// occluded something that was never there.
 		const out = whole === 0;
 		console.log(
-			`  ${`${r.name}${r.aimed ? " [aimed]" : ""}`.padEnd(40)}${r.role.padEnd(17)}${r.subject.id.padEnd(10)}` +
+			`  ${r.name.padEnd(40)}${r.role.padEnd(17)}${r.subject.id.padEnd(10)}` +
 				`${(out ? "none" : `${((visible / whole) * 100).toFixed(1)}%`).padStart(8)}` +
 				`${(out ? "—" : `${((whole / pixels) * 100).toFixed(1)}%`).padStart(10)}` +
 				`${(out ? "—" : `${(hiddenOfFrame * 100).toFixed(1)}%`).padStart(9)}` +
@@ -849,16 +853,16 @@ if (MASK_SWEEP) {
 		);
 	}
 	console.log(
-		"\n  [aimed]    — the same place, turned to face the widest body: the prepass's best case there. The\n" +
-			"               unaimed row is the view set's own framing, and `none` there means no body was in the\n" +
-			"               frustum at all — nothing for a prepass to reject, which is not nothing hidden\n" +
+		"\n  none       — no massive body in the frustum at all: nothing for a prepass to reject, which is a\n" +
+			"               different thing from a body wholly hidden and must not print as 0.0%\n" +
 			"  shows      — how much of that body's disc the player sees, the fraction #242 quotes\n" +
 			"  of frame   — how much of the frame the whole disc would be, which is what a fraction is a fraction of\n" +
 			"  hidden     — of frame, the part the near layer stands in front of: what a prepass would stop shading\n" +
 			"  est. saving— hidden x a planet's cost per frame-full of pixels, 43.6 ms, read off #248's ladder on\n" +
 			"               planet-5 at 1.02 radii four-tap and device scale 2. An ESTIMATE and not a measurement:\n" +
-			"               another class or relief path moves the per-pixel figure. Price it against `no near layer`\n" +
-			"               in a full run, which is the ceiling on what the prepass itself would cost.",
+			"               another class or relief path moves the per-pixel figure. This is the saving side only:\n" +
+			"               what a prepass would COST is not measured anywhere here, and `no near layer` in a full\n" +
+			"               run gives one term of it and not a bound (see that arm's own note).",
 	);
 	await browser.close();
 	process.exit(0);
