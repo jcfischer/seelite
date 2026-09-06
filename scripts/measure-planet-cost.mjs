@@ -100,6 +100,7 @@ import {
 	RELIEF_PATHS,
 	farColumnVerdict,
 	finite,
+	flagExcursions,
 	parseFpsReadout,
 	radiiRefusal,
 	vsyncRefusal,
@@ -635,13 +636,22 @@ const rows = runs.flatMap((r) => r.rows);
 const verdicts = Object.fromEntries(
 	runs.map((r, i) => [PIXEL_RATIOS[i], farColumnVerdict(r.rows, RADII[0])]),
 );
-// The flag rides every row, not only the run summary: a consumer that pulls one
-// cell out of `rows` gets the doubt with it rather than having to know to look
-// elsewhere for it.
-for (const [ratio, verdict] of Object.entries(verdicts))
-	for (const row of rows)
-		if (row.pixelRatio === Number(ratio) && row.radii >= RADII[0])
-			row.farColumnsQuotable = verdict.farColumnsQuotable;
+/**
+ * The flag rides **every row of an affected run**, not only the run summary and
+ * not only the column the excursion was detected in.
+ *
+ * The first version wrote it onto `radii >= RADII[0]`, which is the widest
+ * column and nothing else — so the 30r cell of the same run, 44.6 ms beside a
+ * 2.6 ms neighbour in #248's first run, came out carrying no doubt (sage,
+ * PR #250, round 3). The invariant is read at one radius: it establishes that
+ * the run had an excursion and says nothing about when, so there is no radius
+ * at which a cutoff stops being arbitrary. A consumer that pulls one cell out
+ * of `rows` gets the run's doubt with the cell and decides on evidence.
+ *
+ * In `lib/` and tested, because the three lines this replaced were three lines
+ * that looked obviously right.
+ */
+flagExcursions(rows, verdicts);
 const renderer = runs[0].renderer;
 
 console.log(`  renderer: ${renderer}`);
@@ -759,13 +769,13 @@ for (const {
 	console.log(
 		`    widest column (${far.radii}r, where the subject is a few pixels and nothing should differ): ` +
 			`${far.cells} cells, floor ${far.floorMs.toFixed(1)} ms` +
-			(far.farColumnsQuotable
+			(!far.excursion
 				? ` — every cell inside ${far.factor}x it, which is what this column should look like`
 				: ` — ${far.outliers.length} over ${far.factor}x it: ${far.outliers
 						.map((r) => `${cellName(r)} ${r.ms.toFixed(1)}ms`)
 						.join(
 							", ",
-						)}. DO NOT QUOTE THIS RUN'S FAR COLUMNS; the JSON says so too, as farColumnsQuotable.`),
+						)}. THIS RUN HAD AN EXCURSION. Where is not established — detection is at one radius — so every row of it carries runExcursion in the JSON, and the far columns are the ones to drop first.`),
 	);
 
 	const stalls = runRows.filter((r) => r.peakRiseMs > 0);
@@ -843,13 +853,13 @@ await writeFile(
 			subject: SUBJECT,
 			sunAngleDeg: SUN_ANGLE_DEG,
 			mode: DECOMPOSE ? "decomposition" : "class-sweep",
-			// The widest column's verdict, per run. `farColumnsQuotable: false`
-			// means that run had an excursion the endpoint drift control cannot
-			// see, and its far columns are readings rather than measurements. It
-			// is here and on every row of those columns, because a consumer that
+			// The widest column's verdict, per run. `excursion: true`
+			// means that run had one the endpoint drift control cannot see. It
+			// is here and as `runExcursion` on every row of that run, because a
+			// consumer that
 			// pulls one cell out of `rows` would otherwise get a row marked
-			// settled, fresh and endpoint-controlled with nothing saying it is
-			// unquotable (sage, PR #250).
+			// settled, fresh and endpoint-controlled with nothing saying the run
+			// it came from is in doubt (sage, PR #250).
 			farColumns: PIXEL_RATIOS.map((ratio) => ({
 				pixelRatio: ratio,
 				...verdicts[ratio],

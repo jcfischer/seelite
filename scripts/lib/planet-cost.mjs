@@ -102,7 +102,10 @@ export const FAR_COLUMN_OUTLIER_FACTOR = 2;
  * So the widest column is used as an invariant instead. Every cell in it frames
  * the same few-pixel subject, so they must agree; a cell at
  * `FAR_COLUMN_OUTLIER_FACTOR` times the column's floor says the run had an
- * excursion, and the far columns of that run are not quotable.
+ * excursion. **It does not say where in the run** — the invariant is read at
+ * one radius and detection is not location — so the verdict is the run's and
+ * the console's advice to drop the far columns is the operator's reading of it,
+ * not a scope this function can establish.
  *
  * **It returns a verdict rather than throwing**, and rides into the JSON rather
  * than only onto the console (sage, PR #250). A console line is a qualification
@@ -139,10 +142,56 @@ export function farColumnVerdict(rows, widestRadii) {
 		floorMs,
 		factor: FAR_COLUMN_OUTLIER_FACTOR,
 		outliers,
-		// The name a consumer reads. `false` means every column measured at or
-		// beyond `widestRadii` is a reading of a run that had an excursion in it.
-		farColumnsQuotable: outliers.length === 0,
+		/**
+		 * **A property of the run, not of a column**, and the name says so
+		 * because the first version's did not (sage, PR #250, round 3).
+		 *
+		 * The invariant is read at one radius, so it establishes *that* the run
+		 * had an excursion and says nothing about *when*. Flagging only the
+		 * column it was detected in left the 30r cell of the same run — 44.6 ms
+		 * in #248's first run, beside a 2.6 ms neighbour — carrying no doubt at
+		 * all, and there is no radius at which the argument for the cutoff stops
+		 * being arbitrary. So the flag is the run's, and a reader decides which
+		 * of its cells to trust on evidence rather than on a threshold this
+		 * function has no basis for.
+		 *
+		 * What that evidence looks like for #248: the near columns reproduce
+		 * across two runs to within 0.2 ms, and the far ones do not reproduce at
+		 * all.
+		 */
+		excursion: outliers.length > 0,
 	};
+}
+
+/**
+ * Write each run's excursion verdict onto every row that run produced.
+ *
+ * Three lines, extracted and tested because the three lines it replaced were
+ * wrong: they carried the flag onto `radii >= RADII[0]`, which is the widest
+ * column and nothing else, so the 30r cell of an excursion run came out clean
+ * (sage, PR #250, round 3). A loop small enough to look obviously right is
+ * exactly the one nothing was watching.
+ *
+ * Mutates in place, because `rows` is the array the JSON is written from and a
+ * copy would be a second home for the same cells.
+ *
+ * @template {{pixelRatio: number}} Row
+ * @param {Row[]} rows every cell of every run
+ * @param {Record<number, {excursion: boolean}>} verdictByRatio one per run
+ * @returns {(Row & {runExcursion: boolean})[]} the same rows, flagged
+ */
+export function flagExcursions(rows, verdictByRatio) {
+	for (const row of rows) {
+		const verdict = verdictByRatio[row.pixelRatio];
+		if (!verdict)
+			throw new Error(
+				`no verdict for pixel ratio ${row.pixelRatio} — every run is checked ` +
+					`against its own widest column, so a row from a run with no verdict ` +
+					`would be written out carrying no doubt at all`,
+			);
+		row.runExcursion = verdict.excursion;
+	}
+	return rows;
 }
 
 /**

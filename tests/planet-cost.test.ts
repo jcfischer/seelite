@@ -23,6 +23,7 @@ import {
 	RELIEF_PATHS,
 	farColumnVerdict,
 	finite,
+	flagExcursions,
 	parseFpsReadout,
 	radiiRefusal,
 	vsyncRefusal,
@@ -309,7 +310,7 @@ describe("the sweep's declared columns", () => {
 describe("the widest column's verdict", () => {
 	const at = (radii: number, ms: number, arm: string) => ({ radii, ms, arm });
 
-	test("a column whose cells agree is quotable", () => {
+	test("a column whose cells agree reports no excursion", () => {
 		const v = farColumnVerdict(
 			[
 				at(200, 2.6, "full"),
@@ -319,7 +320,7 @@ describe("the widest column's verdict", () => {
 			],
 			200,
 		);
-		expect(v.farColumnsQuotable).toBe(true);
+		expect(v.excursion).toBe(false);
 		expect(v.outliers).toHaveLength(0);
 		expect(v.floorMs).toBeCloseTo(2.4, 5);
 		// The close column is not the invariant and must not be dragged into it:
@@ -327,7 +328,7 @@ describe("the widest column's verdict", () => {
 		expect(v.cells).toBe(3);
 	});
 
-	test("the excursion #248 measured is named and the run is not quotable", () => {
+	test("the excursion #248 measured is named and flagged on the run", () => {
 		const v = farColumnVerdict(
 			[
 				at(200, 2.6, "full"),
@@ -336,7 +337,7 @@ describe("the widest column's verdict", () => {
 			],
 			200,
 		);
-		expect(v.farColumnsQuotable).toBe(false);
+		expect(v.excursion).toBe(true);
 		expect(v.outliers.map((r) => r.arm)).toEqual(["no-clouds"]);
 	});
 
@@ -351,7 +352,7 @@ describe("the widest column's verdict", () => {
 			[at(200, floor, "full"), at(200, floor * FAR_COLUMN_OUTLIER_FACTOR, "x")],
 			200,
 		);
-		expect(edge.farColumnsQuotable).toBe(true);
+		expect(edge.excursion).toBe(false);
 		const past = farColumnVerdict(
 			[
 				at(200, floor, "full"),
@@ -359,7 +360,7 @@ describe("the widest column's verdict", () => {
 			],
 			200,
 		);
-		expect(past.farColumnsQuotable).toBe(false);
+		expect(past.excursion).toBe(true);
 	});
 
 	test("a run with no cell in that column is a throw, not a pass", () => {
@@ -370,5 +371,48 @@ describe("the widest column's verdict", () => {
 		expect(() =>
 			farColumnVerdict([{ radii: 200, ms: Number.NaN, arm: "full" }], 200),
 		).toThrow(/widest cell/);
+	});
+});
+
+/**
+ * Propagating a run's verdict onto its rows.
+ *
+ * The three lines this covers were wrong once, in the way a three-line loop is:
+ * they carried the flag onto the widest column only, so the 30r cell of an
+ * excursion run — 44.6 ms beside a 2.6 ms neighbour — came out clean.
+ */
+describe("flagging a run's rows with its verdict", () => {
+	const row = (pixelRatio: number, radii: number, ms: number) => ({
+		pixelRatio,
+		radii,
+		ms,
+	});
+
+	test("every row of an excursion run is flagged, at every radius", () => {
+		const rows = [
+			row(2, 200, 44.1),
+			row(2, 30, 44.6),
+			row(2, 1.02, 43.5),
+			row(1, 200, 1.8),
+			row(1, 1.02, 12.1),
+		];
+		const flagged = flagExcursions(rows, {
+			1: { excursion: false },
+			2: { excursion: true },
+		});
+		expect(
+			flagged.filter((r) => r.pixelRatio === 2).map((r) => r.runExcursion),
+		).toEqual([true, true, true]);
+		// The other run is a separate browser and a separate verdict; a clean run
+		// must not inherit its neighbour's doubt.
+		expect(
+			flagged.filter((r) => r.pixelRatio === 1).map((r) => r.runExcursion),
+		).toEqual([false, false]);
+	});
+
+	test("a row from a run with no verdict is a throw, not an unflagged row", () => {
+		expect(() =>
+			flagExcursions([row(4, 200, 2.0)], { 2: { excursion: false } }),
+		).toThrow(/pixel ratio 4/);
 	});
 });
