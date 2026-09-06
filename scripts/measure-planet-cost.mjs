@@ -98,7 +98,9 @@ import { join } from "node:path";
 import {
 	RADII,
 	RELIEF_PATHS,
+	farColumnVerdict,
 	finite,
+	flagExcursions,
 	parseFpsReadout,
 	radiiRefusal,
 	vsyncRefusal,
@@ -157,6 +159,23 @@ if (!RADII.includes(priced.shot.radii))
  */
 const PIXEL_RATIOS = [1, 2];
 
+/**
+ * `--decompose`: price the ladder instead of the class table.
+ *
+ * #242 measured a planet at 95.4% of an open-space frame and #248 asks what is
+ * inside that. The default sweep cannot answer it — class, relief path,
+ * apparent size and pixel ratio are four axes and none of them *subtracts* a
+ * term, so a 36 ms cell says nothing about whether the 36 is slope, class body
+ * or the two shells drawn around the disc.
+ *
+ * A separate mode rather than a fifth axis, for the reason the default nest is
+ * ordered the way it is: crossing the ladder with eight classes and two relief
+ * paths would be over a thousand headed cells, and seven of the arms already
+ * pin the relief path themselves. The two tables answer different questions and
+ * neither is a slice of the other.
+ */
+const DECOMPOSE = process.argv.includes("--decompose");
+
 /** Guard against a wrong-checkout dev server. `planet-shaders.ts` and
  *  `planet-classes.glsl.ts` are the modules this sweep is really about and
  *  neither can be used: both declare no top-level numeric constants, and
@@ -176,9 +195,23 @@ const FINGERPRINT = ["src/main.ts", "src/planet-surface.ts"];
 const CONTROL = ["terran", "four-tap", RADII[0]];
 const CONTROL_LABEL = `${CONTROL[0]}/${CONTROL[1]} at ${CONTROL[2]}r`;
 
-/** Windows to discard outright after a switch. The readout updates every
- *  500 ms, so this is a floor of ~1 s a cell before anything is believed. */
-const SETTLE_WINDOWS = 2;
+/**
+ * Windows to discard outright after a switch. The readout updates every 500 ms,
+ * so this is a floor of ~3 s a cell before anything is believed.
+ *
+ * **It was 2, and 2 is not enough after a camera move.** #248's ladder walks
+ * from 1.02 radii back out to 200 between arms, and at ratio 2 four of the
+ * seven 200r cells came back at 16.6, 15.3, 43.5 and 36.0 ms against 2.6 for
+ * the arms either side of them — every one settled, unmarked, and repeatable to
+ * within a millisecond across two runs. They are not misreads: the samples are
+ * fresh, `worst` rises with them, and the third sample of two of those cells is
+ * already recovering (6.3 and 3.0). The page really is that slow for a few
+ * seconds after the jump, and 1 s of discard reads the tail of it.
+ *
+ * The cost is about three minutes on a full sweep, which is the right trade
+ * against a column that reads seventeen times its own value.
+ */
+const SETTLE_WINDOWS = 6;
 /**
  * How close two consecutive readings must be for the cell to count as settled.
  *
@@ -317,6 +350,8 @@ async function run(pixelRatio) {
 	// and the node process with it (sage, PR #214).
 	/** @type {any[]} */
 	let rows = [];
+	/** @type {{name: string, prices: string}[]} */
+	let armPrices = [];
 	let renderer = "";
 	let controlBefore;
 	let controlAfter;
@@ -382,31 +417,17 @@ async function run(pixelRatio) {
 			return [...mod.PERF_CLASSES];
 		});
 
-		/** Place the camera, set the shader, settle, and take `READINGS` samples. */
-		const cell = async (surfaceClass, relief, radii) => {
-			const label = `${surfaceClass} ${relief} at ${radii} radii, ratio ${pixelRatio}`;
-			await page.evaluate(
-				([id, r, deg]) => window.__sunOffset(id, r, deg),
-				[SUBJECT, radii, SUN_ANGLE_DEG],
-			);
-			// Through `perf-panel.ts`'s own setter, not a copy of its traversal.
-			// The scene set and the setter contract live there; this had its own
-			// version until sage pointed out the second home (PR #214).
-			await page.evaluate(
-				async ([klass, path]) => {
-					const { setSurfaceAndRelief } = await import("/src/perf-panel.ts");
-					setSurfaceAndRelief(
-						[
-							window.__seelite.nearScene,
-							window.__seelite.approachScene,
-							window.__seelite.farScene,
-						],
-						klass,
-						path,
-					);
-				},
-				[surfaceClass, relief],
-			);
+		/**
+		 * Settle, take `READINGS` samples, and return the row — everything a cell
+		 * does *after* the page is in the state being priced.
+		 *
+		 * Extracted because there are two kinds of cell now. The class sweep sets a
+		 * class and a relief path; #248's ablation ladder sets an arm. What follows
+		 * either — the settle, the three readings, the median, the spread and the
+		 * four doubt fields — is the same measurement and must stay one copy of it,
+		 * or a guard added to one kind of cell would quietly not apply to the other.
+		 */
+		const sampleHere = async (label, meta) => {
 			const settled = await settle(page);
 			const samples = [];
 			let text = settled.text;
@@ -420,9 +441,7 @@ async function run(pixelRatio) {
 			const stale = samples.filter((r) => !r.fresh).length;
 			return {
 				pixelRatio,
-				radii,
-				surfaceClass,
-				relief,
+				...meta,
 				// The median of `READINGS`, and the full range beside it. One reading is
 				// not a measurement and two are not a spread; three is the least that
 				// gives a figure to report and something to qualify it with.
@@ -446,6 +465,93 @@ async function run(pixelRatio) {
 		};
 
 		/**
+		 * Put the camera at `radii` of the subject, framed as `planet-fill` is —
+		 * **and put the world back to the clock the run started at.**
+		 *
+		 * The re-pin is not tidiness. `__startClockAt` normalises the start and
+		 * then lets the clock run (`lib/view-placement.mjs`), sim time is never
+		 * compressed (#10), and body positions are `f(systemSeed, gameTime)` (#6) —
+		 * so over a five-minute headed run the system keeps orbiting underneath the
+		 * sweep. At the close columns the subject is the frame and that does not
+		 * matter; at 200 and 30 radii the subject is a few pixels and *whatever
+		 * else has drifted into view* is the whole reading.
+		 *
+		 * It is not a hypothesis. The first decomposition run, without this,
+		 * returned `no-clouds` at 43.9 ms and 44.6 ms in the 200r and 30r columns
+		 * against 2.5 ms for `full` at the same two — a seventeenfold difference
+		 * for turning a cloud shell off on a planet that is a dot. Every one of
+		 * those cells settled and none was marked, because the rate was genuinely
+		 * steady: the frame really did cost that, at a world time no other column
+		 * shared.
+		 *
+		 * The endpoint drift control cannot catch it, and this is exactly the case
+		 * its own doc names: `full at 200r` read 2.5 ms before *and* after, because
+		 * whatever crossed the frame had crossed back out by the end.
+		 *
+		 * The class sweep inherits the fix, and had the same defect — its far
+		 * columns have been reading a moving world since #206.
+		 */
+		const place = async (radii) => {
+			await page.evaluate((t) => window.__startClockAt(t), GAME_TIME_S);
+			await page.evaluate(
+				([id, r, deg]) => window.__sunOffset(id, r, deg),
+				[SUBJECT, radii, SUN_ANGLE_DEG],
+			);
+		};
+
+		/** Place the camera, set the shader, settle, and take `READINGS` samples. */
+		const cell = async (surfaceClass, relief, radii) => {
+			const label = `${surfaceClass} ${relief} at ${radii} radii, ratio ${pixelRatio}`;
+			await place(radii);
+			// Through `perf-panel.ts`'s own setter, not a copy of its traversal.
+			// The scene set and the setter contract live there; this had its own
+			// version until sage pointed out the second home (PR #214).
+			await page.evaluate(
+				async ([klass, path]) => {
+					const { setSurfaceAndRelief } = await import("/src/perf-panel.ts");
+					setSurfaceAndRelief(
+						[
+							window.__seelite.nearScene,
+							window.__seelite.approachScene,
+							window.__seelite.farScene,
+						],
+						klass,
+						path,
+					);
+				},
+				[surfaceClass, relief],
+			);
+			return sampleHere(label, { radii, surfaceClass, relief });
+		};
+
+		/**
+		 * One arm of #248's ablation ladder, at one apparent size.
+		 *
+		 * **The class is deliberately not forced here.** The two shell arms turn off
+		 * meshes the *body* carries — `planet-surface.ts` builds a cloud deck only
+		 * where `cloudCover > 0` — and forcing a class swaps the surface fragment
+		 * without rebuilding them. So a decomposition run prices the subject the
+		 * view set actually frames, which is the frame #242's 36.758 ms is about,
+		 * rather than a class painted onto someone else's shells.
+		 */
+		const armCell = async (arm, radii) => {
+			const label = `${arm} at ${radii} radii, ratio ${pixelRatio}`;
+			await place(radii);
+			await page.evaluate(async (name) => {
+				const { setAblation } = await import("/src/perf-panel.ts");
+				setAblation(
+					[
+						window.__seelite.nearScene,
+						window.__seelite.approachScene,
+						window.__seelite.farScene,
+					],
+					name,
+				);
+			}, arm);
+			return sampleHere(label, { radii, arm });
+		};
+
+		/**
 		 * **The drift control, and why a sweep this long needs one.**
 		 *
 		 * A run is ~200 headed cells over several minutes with the GPU pinned, so
@@ -463,35 +569,97 @@ async function run(pixelRatio) {
 		 * says only that the run began and ended in the same state. Read it as a
 		 * refutation instrument, not as a correction to apply to a column.
 		 */
-		controlBefore = await cell(...CONTROL);
+		/**
+		 * The ladder, imported off the served page rather than restated here, for
+		 * the same reason `PERF_CLASSES` is: an arm added to `perf-panel.ts` must
+		 * appear in this table or not exist, and a second copy is how those two
+		 * facts come apart.
+		 */
+		const arms = DECOMPOSE
+			? await page.evaluate(async () => {
+					const mod = await import("/src/perf-panel.ts");
+					return mod.ABLATION_ARMS.map((a) => ({
+						name: a.name,
+						prices: a.prices,
+					}));
+				})
+			: [];
+
+		// The control is the ladder's own denominator in decompose mode, because
+		// `CONTROL` forces a class and this mode deliberately does not force one.
+		// Same cell at both ends either way: that is what makes it a control.
+		const control = DECOMPOSE
+			? () => armCell("full", RADII[0])
+			: () => cell(...CONTROL);
+
+		controlBefore = await control();
 
 		rows = [];
-		// Class outermost and radius innermost: a class or relief switch is a shader
-		// recompile and a radius change is only a camera move, so this nest pays 16
-		// recompiles a run instead of 96, and every settle after one is a settle the
-		// cheap way.
-		for (const surfaceClass of classes)
-			for (const relief of RELIEF_PATHS)
-				for (const radii of RADII)
-					rows.push(await cell(surfaceClass, relief, radii));
+		if (DECOMPOSE) {
+			// Arm outermost, radius innermost: an arm change recompiles (relief and
+			// the ablate level are both a `#define` or a uniform every material
+			// carries) and a radius change is only a camera move.
+			for (const arm of arms)
+				for (const radii of RADII) rows.push(await armCell(arm.name, radii));
+		} else {
+			// Class outermost and radius innermost: a class or relief switch is a shader
+			// recompile and a radius change is only a camera move, so this nest pays 16
+			// recompiles a run instead of 96, and every settle after one is a settle the
+			// cheap way.
+			for (const surfaceClass of classes)
+				for (const relief of RELIEF_PATHS)
+					for (const radii of RADII)
+						rows.push(await cell(surfaceClass, relief, radii));
+		}
 
-		controlAfter = await cell(...CONTROL);
+		controlAfter = await control();
+		armPrices = arms;
 	} finally {
 		await browser.close();
 	}
 
 	const refusal = vsyncRefusal(rows.map((r) => r.ms));
 	if (refusal) throw new Error(`ratio ${pixelRatio}: ${refusal}`);
-	return { renderer, rows, controlBefore, controlAfter };
+	return { renderer, rows, controlBefore, controlAfter, armPrices };
 }
 
 const runs = [];
 for (const ratio of PIXEL_RATIOS) runs.push(await run(ratio));
 
 const rows = runs.flatMap((r) => r.rows);
+
+/**
+ * One verdict per run, computed before anything is printed or written, so the
+ * console line and the JSON cannot disagree about whether a run is quotable.
+ * Keyed by pixel ratio because each ratio is its own browser and its own run.
+ */
+const verdicts = Object.fromEntries(
+	runs.map((r, i) => [PIXEL_RATIOS[i], farColumnVerdict(r.rows, RADII[0])]),
+);
+/**
+ * The flag rides **every row of an affected run**, not only the run summary and
+ * not only the column the excursion was detected in.
+ *
+ * The first version wrote it onto `radii >= RADII[0]`, which is the widest
+ * column and nothing else — so the 30r cell of the same run, 44.6 ms beside a
+ * 2.6 ms neighbour in #248's first run, came out carrying no doubt (sage,
+ * PR #250, round 3). The invariant is read at one radius: it establishes that
+ * the run had an excursion and says nothing about when, so there is no radius
+ * at which a cutoff stops being arbitrary. A consumer that pulls one cell out
+ * of `rows` gets the run's doubt with the cell and decides on evidence.
+ *
+ * In `lib/` and tested, because the three lines this replaced were three lines
+ * that looked obviously right.
+ */
+flagExcursions(rows, verdicts);
 const renderer = runs[0].renderer;
 
 console.log(`  renderer: ${renderer}`);
+console.log(
+	DECOMPOSE
+		? `  mode: decomposition — #248's ablation ladder on the subject as the view set frames it, its own class and its own shells`
+		: `  mode: class sweep — every class on both relief paths`,
+);
 console.log(
 	`  viewport: ${VIEWPORT.width}x${VIEWPORT.height}, ${SUBJECT} at ${SUN_ANGLE_DEG}° from the star, seed ${SEED}`,
 );
@@ -513,38 +681,108 @@ for (const {
 	controlAfter,
 } of runs.map((r, i) => ({ pixelRatio: PIXEL_RATIOS[i], ...r }))) {
 	console.log(`  pixel ratio ${pixelRatio}`);
-	const classes = [...new Set(runRows.map((r) => r.surfaceClass))];
-	for (const relief of RELIEF_PATHS) {
-		console.log(`    relief: ${relief}`);
+	const label = (row) =>
+		`${row.ms.toFixed(1)}±${row.spreadMs.toFixed(1)}${row.settled ? "" : "?"}${
+			row.staleSamples ? "!" : ""
+		}`.padStart(14);
+	if (DECOMPOSE) {
+		const arms = [...new Set(runRows.map((r) => r.arm))];
+		const at = (arm, radii) =>
+			runRows.find((r) => r.arm === arm && r.radii === radii);
 		console.log(
-			`      ${"class".padEnd(10)}${RADII.map((r) => `${r}r`.padStart(14)).join("")}`,
+			`      ${"arm".padEnd(14)}${RADII.map((r) => `${r}r`.padStart(14)).join("")}`,
 		);
-		for (const surfaceClass of classes) {
+		for (const arm of arms)
+			console.log(
+				`      ${arm.padEnd(14)}${RADII.map((r) => label(at(arm, r))).join("")}`,
+			);
+		/**
+		 * The deltas, printed rather than left for a reader to subtract.
+		 *
+		 * **A delta smaller than the drift control below is not a delta**, and the
+		 * same goes for one inside a cell's own spread. Both are printed beside it
+		 * for that reason; this table is what a term costs *at this framing on this
+		 * machine*, and #98's rule that a probe's millisecond is nobody's applies to
+		 * a headed one taken on a different GPU just as hard.
+		 */
+		console.log("");
+		console.log(
+			`      full minus each arm — what that arm's own \`prices\` line says it costs, ms. Read the arm's line for what is in it: \`flat\` carries the slope as well, so it is not the class body alone (that is flat minus no-relief). A figure inside the drift control below is not a difference.`,
+		);
+		console.log(
+			`      ${"term".padEnd(14)}${RADII.map((r) => `${r}r`.padStart(14)).join("")}`,
+		);
+		for (const arm of arms) {
+			if (arm === "full") continue;
 			const cells = RADII.map((radii) => {
-				const row = runRows.find(
-					(r) =>
-						r.surfaceClass === surfaceClass &&
-						r.relief === relief &&
-						r.radii === radii,
+				const full = at("full", radii);
+				const other = at(arm, radii);
+				const d = full.ms - other.ms;
+				const share = full.ms > 0 ? (100 * d) / full.ms : 0;
+				return `${d >= 0 ? "+" : ""}${d.toFixed(1)} (${share.toFixed(0)}%)`.padStart(
+					14,
 				);
-				return `${row.ms.toFixed(1)}±${row.spreadMs.toFixed(1)}${
-					row.settled ? "" : "?"
-				}${row.staleSamples ? "!" : ""}`.padStart(14);
 			});
-			console.log(`      ${surfaceClass.padEnd(10)}${cells.join("")}`);
+			console.log(`      ${arm.padEnd(14)}${cells.join("")}`);
+		}
+	} else {
+		const classes = [...new Set(runRows.map((r) => r.surfaceClass))];
+		for (const relief of RELIEF_PATHS) {
+			console.log(`    relief: ${relief}`);
+			console.log(
+				`      ${"class".padEnd(10)}${RADII.map((r) => `${r}r`.padStart(14)).join("")}`,
+			);
+			for (const surfaceClass of classes) {
+				const cells = RADII.map((radii) =>
+					label(
+						runRows.find(
+							(r) =>
+								r.surfaceClass === surfaceClass &&
+								r.relief === relief &&
+								r.radii === radii,
+						),
+					),
+				);
+				console.log(`      ${surfaceClass.padEnd(10)}${cells.join("")}`);
+			}
 		}
 	}
 	// Beside the table rather than in it: a stall is a property of a cell that
 	// the cell's own frame time deliberately excludes, so it reads as a list of
 	// exceptions and not as a column of zeroes.
+	/** How a cell is named in the lists below — by arm, or by class and path. */
+	const cellName = (r) =>
+		DECOMPOSE
+			? `${r.arm}@${r.radii}r`
+			: `${r.surfaceClass}/${r.relief}@${r.radii}r`;
+
+	/**
+	 * **The widest column is the run's own control, and it must not move.**
+	 *
+	 * The verdict itself lives in `lib/planet-cost.mjs` beside the other
+	 * refusals, so a test can watch it fire — and so the same object can be
+	 * printed here *and* written into the JSON. A qualification that exists only
+	 * on the console is one every later reader of the file is missing (sage,
+	 * PR #250).
+	 */
+	const far = verdicts[pixelRatio];
+	console.log(
+		`    widest column (${far.radii}r, where the subject is a few pixels and nothing should differ): ` +
+			`${far.cells} cells, floor ${far.floorMs.toFixed(1)} ms` +
+			(!far.excursion
+				? ` — every cell inside ${far.factor}x it, which is what this column should look like`
+				: ` — ${far.outliers.length} over ${far.factor}x it: ${far.outliers
+						.map((r) => `${cellName(r)} ${r.ms.toFixed(1)}ms`)
+						.join(
+							", ",
+						)}. THIS RUN HAD AN EXCURSION. Where is not established — detection is at one radius — so every row of it carries runExcursion in the JSON, and the far columns are the ones to drop first.`),
+	);
+
 	const stalls = runRows.filter((r) => r.peakRiseMs > 0);
 	console.log(
 		stalls.length
 			? `    stalls (session peak rose during the cell): ${stalls
-					.map(
-						(r) =>
-							`${r.surfaceClass}/${r.relief}@${r.radii}r +${r.peakRiseMs.toFixed(0)}ms`,
-					)
+					.map((r) => `${cellName(r)} +${r.peakRiseMs.toFixed(0)}ms`)
 					.join(", ")}`
 			: "    stalls: none out-stalled an earlier cell in this run",
 	);
@@ -555,7 +793,7 @@ for (const {
 	console.log(
 		unsettled.length
 			? `    unsettled (?): ${unsettled.length} of ${runRows.length} cells never held a steady rate — ${unsettled
-					.map((r) => `${r.surfaceClass}/${r.relief}@${r.radii}r`)
+					.map(cellName)
 					.join(", ")}`
 			: `    unsettled: none — every one of the ${runRows.length} cells held a steady rate before it was read`,
 	);
@@ -565,7 +803,7 @@ for (const {
 	console.log(
 		stale.length
 			? `    stale reads (!): ${stale.length} of ${runRows.length} cells — ${stale
-					.map((r) => `${r.surfaceClass}/${r.relief}@${r.radii}r`)
+					.map(cellName)
 					.join(", ")}`
 			: `    stale reads: none — every sample was taken on a line the meter had just written`,
 	);
@@ -582,7 +820,7 @@ for (const {
 		!controlBefore.staleSamples &&
 		!controlAfter.staleSamples;
 	console.log(
-		`    drift control (${CONTROL_LABEL}): ${controlBefore.ms.toFixed(1)} ms before, ` +
+		`    drift control (${DECOMPOSE ? `full at ${RADII[0]}r` : CONTROL_LABEL}): ${controlBefore.ms.toFixed(1)} ms before, ` +
 			`${controlAfter.ms.toFixed(1)} ms after — the machine moved ` +
 			`${drift >= 0 ? "+" : ""}${drift.toFixed(1)} ms end to end` +
 			(controlsHeld
@@ -598,7 +836,12 @@ for (const {
 }
 
 await mkdir(OUT, { recursive: true });
-const path = join(OUT, "planet-cost.json");
+// A separate file, because the two modes answer different questions and a diff
+// of two runs must not silently compare a ladder against a class table.
+const path = join(
+	OUT,
+	DECOMPOSE ? "planet-decomposition.json" : "planet-cost.json",
+);
 await writeFile(
 	path,
 	`${JSON.stringify(
@@ -609,12 +852,35 @@ await writeFile(
 			seed: SEED,
 			subject: SUBJECT,
 			sunAngleDeg: SUN_ANGLE_DEG,
+			mode: DECOMPOSE ? "decomposition" : "class-sweep",
+			// The widest column's verdict, per run. `excursion: true`
+			// means that run had one the endpoint drift control cannot see. It
+			// is here and as `runExcursion` on every row of that run, because a
+			// consumer that
+			// pulls one cell out of `rows` would otherwise get a row marked
+			// settled, fresh and endpoint-controlled with nothing saying the run
+			// it came from is in doubt (sage, PR #250).
+			farColumns: PIXEL_RATIOS.map((ratio) => ({
+				pixelRatio: ratio,
+				...verdicts[ratio],
+				outliers: verdicts[ratio].outliers.map((r) => ({
+					arm: r.arm ?? null,
+					surfaceClass: r.surfaceClass ?? null,
+					relief: r.relief ?? null,
+					radii: r.radii,
+					ms: r.ms,
+				})),
+			})),
+			// What each arm's subtraction prices, carried out of `perf-panel.ts` so a
+			// reader of the JSON does not have to open the module to know what a
+			// column means. Empty in the class-sweep mode, which has no ladder.
+			arms: runs[0].armPrices,
 			// Per run, because each pixel ratio is its own browser and its own
 			// thermal history. A diff of two JSONs that ignored these would be
 			// comparing two machines as much as two builds.
 			driftControl: runs.map((r, i) => ({
 				pixelRatio: PIXEL_RATIOS[i],
-				cell: CONTROL_LABEL,
+				cell: DECOMPOSE ? `full at ${RADII[0]}r` : CONTROL_LABEL,
 				beforeMs: r.controlBefore.ms,
 				afterMs: r.controlAfter.ms,
 				// Both ends, because a control that did not settle cannot qualify

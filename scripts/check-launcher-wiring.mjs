@@ -135,6 +135,10 @@ const EXEMPT = new Map([
 		"#229's headed simulation-step CPU instrument; it proves once-per-body preparation and reports timings without imposing a machine-independent threshold",
 	],
 	[
+		"measure-bay-frame-cost.mjs",
+		"#242's headed bay-frame instrument; a sibling of #99's and #201's and exempt for the same reason — it prints per-subject arms, a mask fraction and a separation count for a receipt and gates on nothing, because #98 settled that there is no frame-time floor in this game. It refuses a software rasteriser, which throws out of the run rather than counting a failed check. Missing since #244, where it landed with no entry: CI does not run the probes (#14), so `npm run probe` has been red on `main` since that merge",
+	],
+	[
 		"capture-views.mjs",
 		"captures #104's view set; the gate is a human looking at the sheet, so it has no checks either — it does listen for shader and page errors, and a fault removes the run and the sheet rather than reporting one",
 	],

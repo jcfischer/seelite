@@ -18,9 +18,12 @@ import { describe, expect, test } from "bun:test";
 import { fpsReadout } from "../src/fps-meter.ts";
 import { VIEWS } from "../scripts/lib/view-set.mjs";
 import {
+	FAR_COLUMN_OUTLIER_FACTOR,
 	RADII,
 	RELIEF_PATHS,
+	farColumnVerdict,
 	finite,
+	flagExcursions,
 	parseFpsReadout,
 	radiiRefusal,
 	vsyncRefusal,
@@ -292,5 +295,124 @@ describe("the sweep's declared columns", () => {
 
 	test("sweeps both relief paths, which is what makes the third column a comparison", () => {
 		expect([...RELIEF_PATHS]).toEqual(["four-tap", "screen-space"]);
+	});
+});
+
+/**
+ * The widest column as the run's own invariant.
+ *
+ * Asserted from both sides, like every other guard here: it passes a column
+ * whose cells agree, and it names the ones in a column that does not. The
+ * numbers in the failing case are #248's actual first run — 44.1 ms against a
+ * 2.4 ms floor — rather than round invented ones, so the test fails the day the
+ * factor stops catching the thing it was written for.
+ */
+describe("the widest column's verdict", () => {
+	const at = (radii: number, ms: number, arm: string) => ({ radii, ms, arm });
+
+	test("a column whose cells agree reports no excursion", () => {
+		const v = farColumnVerdict(
+			[
+				at(200, 2.6, "full"),
+				at(200, 2.5, "screen-space"),
+				at(200, 2.4, "bare"),
+				at(1.02, 43.5, "full"),
+			],
+			200,
+		);
+		expect(v.excursion).toBe(false);
+		expect(v.outliers).toHaveLength(0);
+		expect(v.floorMs).toBeCloseTo(2.4, 5);
+		// The close column is not the invariant and must not be dragged into it:
+		// 43.5 is eighteen times the floor and is the reading the sweep exists for.
+		expect(v.cells).toBe(3);
+	});
+
+	test("the excursion #248 measured is named and flagged on the run", () => {
+		const v = farColumnVerdict(
+			[
+				at(200, 2.6, "full"),
+				at(200, 2.4, "no-atmosphere"),
+				at(200, 44.1, "no-clouds"),
+			],
+			200,
+		);
+		expect(v.excursion).toBe(true);
+		expect(v.outliers.map((r) => r.arm)).toEqual(["no-clouds"]);
+	});
+
+	/**
+	 * The endpoint drift control passes this run and the invariant does not,
+	 * which is the whole reason the invariant exists — `full at 200r` read 2.5 ms
+	 * at both ends of the run whose middle read 44.
+	 */
+	test("a cell exactly at the factor is not an outlier and just past it is", () => {
+		const floor = 2.4;
+		const edge = farColumnVerdict(
+			[at(200, floor, "full"), at(200, floor * FAR_COLUMN_OUTLIER_FACTOR, "x")],
+			200,
+		);
+		expect(edge.excursion).toBe(false);
+		const past = farColumnVerdict(
+			[
+				at(200, floor, "full"),
+				at(200, floor * FAR_COLUMN_OUTLIER_FACTOR + 0.01, "x"),
+			],
+			200,
+		);
+		expect(past.excursion).toBe(true);
+	});
+
+	test("a run with no cell in that column is a throw, not a pass", () => {
+		expect(() => farColumnVerdict([at(3, 10.5, "full")], 200)).toThrow(/200/);
+	});
+
+	test("a non-finite cell in the column is named rather than compared", () => {
+		expect(() =>
+			farColumnVerdict([{ radii: 200, ms: Number.NaN, arm: "full" }], 200),
+		).toThrow(/widest cell/);
+	});
+});
+
+/**
+ * Propagating a run's verdict onto its rows.
+ *
+ * The three lines this covers were wrong once, in the way a three-line loop is:
+ * they carried the flag onto the widest column only, so the 30r cell of an
+ * excursion run — 44.6 ms beside a 2.6 ms neighbour — came out clean.
+ */
+describe("flagging a run's rows with its verdict", () => {
+	const row = (pixelRatio: number, radii: number, ms: number) => ({
+		pixelRatio,
+		radii,
+		ms,
+	});
+
+	test("every row of an excursion run is flagged, at every radius", () => {
+		const rows = [
+			row(2, 200, 44.1),
+			row(2, 30, 44.6),
+			row(2, 1.02, 43.5),
+			row(1, 200, 1.8),
+			row(1, 1.02, 12.1),
+		];
+		const flagged = flagExcursions(rows, {
+			1: { excursion: false },
+			2: { excursion: true },
+		});
+		expect(
+			flagged.filter((r) => r.pixelRatio === 2).map((r) => r.runExcursion),
+		).toEqual([true, true, true]);
+		// The other run is a separate browser and a separate verdict; a clean run
+		// must not inherit its neighbour's doubt.
+		expect(
+			flagged.filter((r) => r.pixelRatio === 1).map((r) => r.runExcursion),
+		).toEqual([false, false]);
+	});
+
+	test("a row from a run with no verdict is a throw, not an unflagged row", () => {
+		expect(() =>
+			flagExcursions([row(4, 200, 2.0)], { 2: { excursion: false } }),
+		).toThrow(/pixel ratio 4/);
 	});
 });

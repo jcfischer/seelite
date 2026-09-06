@@ -202,6 +202,163 @@ export function setSurfaceAndRelief(
 		});
 }
 
+/**
+ * The four levers the ablation ladder moves, and the arms it moves them to.
+ *
+ * #242 measured a planet at 95.4% of an open-space frame and #248 asks what is
+ * *inside* that number. The existing sweep has four axes — class, relief path,
+ * apparent size, pixel ratio — and none of them subtracts a term, so the table
+ * could say a desert costs 36 ms without saying whether the 36 was relief,
+ * class surface, or the two shells drawn around it.
+ *
+ * These are the same levers the panel's own keys move; the ladder is the
+ * both-at-once form of them, exported for the same reason `setSurfaceAndRelief`
+ * is — the sweep drives the page from outside and must not carry a second copy
+ * of what the levers are.
+ *
+ * **Every arm sets every lever absolutely**, so the ladder can be walked in any
+ * order and a failed cell cannot leak its state into the next one. A ladder of
+ * deltas would price whatever the previous arm left behind.
+ */
+export const ABLATION_LEVERS = [
+	"relief",
+	"perfAblate",
+	"atmosphere",
+	"clouds",
+] as const;
+
+export type AblationArm = {
+	name: string;
+	relief: string;
+	perfAblate: number;
+	atmosphere: boolean;
+	clouds: boolean;
+	/** What subtracting this arm from `full` prices. Printed as the table's key. */
+	prices: string;
+};
+
+/**
+ * The ladder, `full` first and `bare` last.
+ *
+ * **`no-relief` is the normal perturbation and not all height evaluation.**
+ * `perfAblate` 1 makes `reliefNormal` return the geometric normal, so the four
+ * extra `height()` taps (or the two derivatives) are gone — but a class body
+ * still calls `height(p)` once for its own albedo banding, and `desert` still
+ * runs `canyons` and an `fbm4` for iron on top. So `full − no-relief` is what
+ * the *slope* costs, which is smaller than what the class's noise costs, and
+ * reading it as the latter overstates what #207's bands can buy.
+ *
+ * `flat` skips `surface()` outright (`planet-shaders.ts`, `perfAblate < 1.5`),
+ * so `full − flat` is the slope **and** the class body, and every `prices`
+ * string above is written as `full − arm` because that is the subtraction the
+ * table prints. The class body on its own is `no-relief − flat`, which is a
+ * difference of two rows and not a column: sage caught the first version
+ * labelling the `flat` column with it, which attributed 35.7 ms to a term
+ * measured at 8.0 and double-counted the slope.
+ *
+ * Within that class body, its noise and its palette cannot be separated by any
+ * lever that exists — and none of #207, #217 or #224 acts at that granularity,
+ * so the resolution says the split was not measured rather than implying it was.
+ */
+export const ABLATION_ARMS: readonly AblationArm[] = Object.freeze([
+	{
+		name: "full",
+		relief: "four-tap",
+		perfAblate: 0,
+		atmosphere: true,
+		clouds: true,
+		prices:
+			"the shipped frame — the denominator every other arm subtracts from",
+	},
+	{
+		name: "screen-space",
+		relief: "screen-space",
+		perfAblate: 0,
+		atmosphere: true,
+		clouds: true,
+		prices: "what the four-tap slope costs over the two-derivative one",
+	},
+	{
+		name: "no-relief",
+		relief: "four-tap",
+		perfAblate: 1,
+		atmosphere: true,
+		clouds: true,
+		prices: "the normal perturbation alone, not the class's other height calls",
+	},
+	{
+		name: "flat",
+		relief: "four-tap",
+		perfAblate: 2,
+		atmosphere: true,
+		clouds: true,
+		prices:
+			"everything surface() does — the slope and the class body together, so it is not the class body alone: subtract no-relief from it for that",
+	},
+	{
+		name: "no-atmosphere",
+		relief: "four-tap",
+		perfAblate: 0,
+		atmosphere: false,
+		clouds: true,
+		prices: "the atmosphere shell, a second full-disc pass in its own mesh",
+	},
+	{
+		name: "no-clouds",
+		relief: "four-tap",
+		perfAblate: 0,
+		atmosphere: true,
+		clouds: false,
+		prices: "the cloud shell, on the classes that carry one",
+	},
+	{
+		name: "bare",
+		relief: "four-tap",
+		perfAblate: 2,
+		atmosphere: false,
+		clouds: false,
+		prices:
+			"everything the ladder can turn off at once — surface(), both shells — leaving a lit sphere and the rest of the frame",
+	},
+]);
+
+/**
+ * One arm by name, or a throw naming the one that was asked for.
+ *
+ * A sweep is driven from a script that cannot import this module's types, so a
+ * misspelt arm would otherwise arrive as `undefined` and set every lever to it:
+ * `perfAblate` NaN, `visible` undefined, and a table of plausible numbers for a
+ * state nothing describes. #7's rule is that an instrument fails loudly.
+ */
+export function armByName(name: string): AblationArm {
+	const arm = ABLATION_ARMS.find((a) => a.name === name);
+	if (!arm)
+		throw new Error(
+			`no ablation arm named "${name}" — the ladder is ` +
+				`${ABLATION_ARMS.map((a) => a.name).join(", ")}`,
+		);
+	return arm;
+}
+
+/**
+ * Put every planet in `scenes` into one arm of the ladder.
+ *
+ * The shell visibility goes through the same `shell` tag the panel's `h` and
+ * `y` keys read, so a shell added to `planet-surface.ts` without a tag is
+ * invisible to both rather than to only one of them.
+ */
+export function setAblation(
+	scenes: THREE.Object3D[],
+	name: string,
+): AblationArm {
+	const arm = armByName(name);
+	setRelief(scenes, arm.relief);
+	setAblate(scenes, arm.perfAblate);
+	for (const s of shells(scenes, "atmosphere")) s.visible = arm.atmosphere;
+	for (const s of shells(scenes, "cloud")) s.visible = arm.clouds;
+	return arm;
+}
+
 function readRelief(scenes: THREE.Object3D[]): string {
 	let found = "four-tap";
 	for (const scene of scenes)

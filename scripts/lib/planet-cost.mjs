@@ -79,6 +79,122 @@ export function radiiRefusal(radii) {
 export const RELIEF_PATHS = Object.freeze(["four-tap", "screen-space"]);
 
 /**
+ * How far above the widest column's floor a cell has to sit to be an outlier.
+ *
+ * Blunt on purpose. The honest cells in that column sit within a few percent of
+ * each other — the subject is a few pixels across, so no arm of the ablation
+ * ladder and no class can matter there — and the ones this exists to catch run
+ * seventeen times the floor. Anything at twice it is a different phenomenon
+ * rather than a wide reading of the same one, and there is no value between the
+ * two populations for the threshold to be sensitive to.
+ */
+export const FAR_COLUMN_OUTLIER_FACTOR = 2;
+
+/**
+ * Whether a run's widest column holds together, and which cells do not.
+ *
+ * **This is the check the endpoint drift control cannot be.** That control reads
+ * one cell before the sweep and again after it, and its own docstring concedes
+ * that two endpoints cannot locate an excursion that recovered. #248's first
+ * decomposition runs are exactly that case: `full at 200r` read 2.5 ms at both
+ * ends of a run whose intermediate cells in the same column read 44.
+ *
+ * So the widest column is used as an invariant instead. Every cell in it frames
+ * the same few-pixel subject, so they must agree; a cell at
+ * `FAR_COLUMN_OUTLIER_FACTOR` times the column's floor says the run had an
+ * excursion. **It does not say where in the run** — the invariant is read at
+ * one radius and detection is not location — so the verdict is the run's and
+ * the console's advice to drop the far columns is the operator's reading of it,
+ * not a scope this function can establish.
+ *
+ * **It returns a verdict rather than throwing**, and rides into the JSON rather
+ * than only onto the console (sage, PR #250). A console line is a qualification
+ * only the operator sees; the JSON is what a later run diffs against and what a
+ * receipt quotes, and a row that was unquotable at write time reads there as
+ * settled, fresh and endpoint-controlled — every qualification the format has,
+ * all of them saying it is fine. Throwing is wrong for the opposite reason: the
+ * near columns of such a run are the ones the sweep exists for and they are
+ * unaffected, so losing them would cost more than the doubt is worth.
+ *
+ * Generic in the row, because it hands the offending rows straight back and a
+ * caller names them by whichever field its own sweep keys on — the ablation
+ * ladder's `arm`, the class sweep's `surfaceClass` and `relief`. Narrowing the
+ * parameter to the two fields this reads would erase the rest from the return.
+ *
+ * @template {{ms: number, radii: number}} Row
+ * @param {ReadonlyArray<Row>} rows one run's cells
+ * @param {number} widestRadii the column that must not move
+ */
+export function farColumnVerdict(rows, widestRadii) {
+	const column = rows.filter((r) => r.radii === widestRadii);
+	if (!column.length)
+		throw new Error(
+			`no cells at ${widestRadii} radii — the widest column is the run's own ` +
+				`invariant and a run without one has nothing to check itself against`,
+		);
+	const floorMs = Math.min(...column.map((r) => finite("widest cell", r.ms)));
+	const outliers = column.filter(
+		(r) => r.ms > FAR_COLUMN_OUTLIER_FACTOR * floorMs,
+	);
+	return {
+		radii: widestRadii,
+		cells: column.length,
+		floorMs,
+		factor: FAR_COLUMN_OUTLIER_FACTOR,
+		outliers,
+		/**
+		 * **A property of the run, not of a column**, and the name says so
+		 * because the first version's did not (sage, PR #250, round 3).
+		 *
+		 * The invariant is read at one radius, so it establishes *that* the run
+		 * had an excursion and says nothing about *when*. Flagging only the
+		 * column it was detected in left the 30r cell of the same run — 44.6 ms
+		 * in #248's first run, beside a 2.6 ms neighbour — carrying no doubt at
+		 * all, and there is no radius at which the argument for the cutoff stops
+		 * being arbitrary. So the flag is the run's, and a reader decides which
+		 * of its cells to trust on evidence rather than on a threshold this
+		 * function has no basis for.
+		 *
+		 * What that evidence looks like for #248: the near columns reproduce
+		 * across two runs to within 0.2 ms, and the far ones do not reproduce at
+		 * all.
+		 */
+		excursion: outliers.length > 0,
+	};
+}
+
+/**
+ * Write each run's excursion verdict onto every row that run produced.
+ *
+ * Three lines, extracted and tested because the three lines it replaced were
+ * wrong: they carried the flag onto `radii >= RADII[0]`, which is the widest
+ * column and nothing else, so the 30r cell of an excursion run came out clean
+ * (sage, PR #250, round 3). A loop small enough to look obviously right is
+ * exactly the one nothing was watching.
+ *
+ * Mutates in place, because `rows` is the array the JSON is written from and a
+ * copy would be a second home for the same cells.
+ *
+ * @template {{pixelRatio: number}} Row
+ * @param {Row[]} rows every cell of every run
+ * @param {Record<number, {excursion: boolean}>} verdictByRatio one per run
+ * @returns {(Row & {runExcursion: boolean})[]} the same rows, flagged
+ */
+export function flagExcursions(rows, verdictByRatio) {
+	for (const row of rows) {
+		const verdict = verdictByRatio[row.pixelRatio];
+		if (!verdict)
+			throw new Error(
+				`no verdict for pixel ratio ${row.pixelRatio} — every run is checked ` +
+					`against its own widest column, so a row from a run with no verdict ` +
+					`would be written out carrying no doubt at all`,
+			);
+		row.runExcursion = verdict.excursion;
+	}
+	return rows;
+}
+
+/**
  * A number, or a throw naming the cell it came from.
  *
  * The label is not decoration: a sweep is hundreds of cells, and "a value is NaN"
