@@ -84,6 +84,7 @@ import {
 	TRUSS_Y,
 	TUBE_X,
 	TUBE_Y,
+	isHost,
 	modularPlacements,
 } from "./station-modular";
 import { DIRECTIONS } from "./wfc";
@@ -3305,6 +3306,7 @@ function buildTradeModular(color: number, berthSeed: number): BuiltPart {
 	const tubes: Placement[] = [];
 	/** The unit vector of a `DIRECTIONS` index, in the grid's plane. */
 	const toward = (dir: number) => V(DIRECTIONS[dir][0], DIRECTIONS[dir][1], 0);
+	const cellCentre = (p: Placement) => V(p.dx * c, p.dy * c, 0);
 	/** A docking collar on a tube's or the hub's port. */
 	const collar = (at: THREE.Vector3, axis: "x" | "y", radius: number) => {
 		const ring = new THREE.Mesh(
@@ -3317,10 +3319,114 @@ function buildTradeModular(color: number, berthSeed: number): BuiltPart {
 		ring.name = "collar";
 		group.add(ring);
 	};
+	/**
+	 * A habitat tube: a twelve-sided drum the length of its cell, necked at
+	 * both ends, with a collar on every docked end along its own axis.
+	 */
+	const habitatTube = (p: Placement) => {
+		const centre = cellCentre(p);
+		const tube = shell(
+			[
+				{ z: -c * 0.5, w: tubeR * 0.8, h: tubeR * 0.8, e: 2, hard: true },
+				{ z: -c * 0.42, w: tubeR, h: tubeR, e: 2, hard: true },
+				{ z: c * 0.42, w: tubeR, h: tubeR, e: 2, hard: true },
+				{ z: c * 0.5, w: tubeR * 0.8, h: tubeR * 0.8, e: 2 },
+			],
+			hullMaterial(color, "trade"),
+			`module-${p.dx}-${p.dy}`,
+			12,
+			true,
+		);
+		if (p.module === TUBE_X) tube.rotation.y = Math.PI / 2;
+		else tube.rotation.x = Math.PI / 2;
+		tube.position.copy(centre);
+		group.add(tube);
+		const axisDirs = p.module === TUBE_X ? [0, 1] : [2, 3];
+		for (const dir of axisDirs)
+			if (p.joined[dir])
+				collar(
+					centre.clone().addScaledVector(toward(dir), c * 0.5),
+					p.module === TUBE_X ? "x" : "y",
+					tubeR,
+				);
+	};
+	/**
+	 * A junction: a drum 0.3 cells across with a docking stub out to the
+	 * cell's edge on every joined side, and a collar on each. The stubs are
+	 * what `tests/station-mesh.test.ts`'s island check asked for — the drum
+	 * ends at 0.3 and its neighbour starts at 0.5, and a tip node without
+	 * them read as adrift of the tube it was docked to.
+	 */
+	const junction = (p: Placement) => {
+		const centre = cellCentre(p);
+		const node = shell(
+			[
+				{ z: -c * 0.28, w: c * 0.3, h: c * 0.3, e: 2, hard: true },
+				{ z: c * 0.28, w: c * 0.3, h: c * 0.3, e: 2 },
+			],
+			hullMaterial(color, "trade"),
+			`node-${p.dx}-${p.dy}`,
+			12,
+			true,
+		);
+		node.position.copy(centre);
+		group.add(node);
+		for (let dir = 0; dir < 4; dir++) {
+			if (!p.joined[dir]) continue;
+			const stub = shell(
+				[
+					{ z: c * 0.2, w: tubeR * 0.85, h: tubeR * 0.85, e: 2, hard: true },
+					{ z: c * 0.5, w: tubeR * 0.85, h: tubeR * 0.85, e: 2 },
+				],
+				hullMaterial(color, "trade"),
+				`node-stub-${p.dx}-${p.dy}-${dir}`,
+				12,
+				true,
+			);
+			// The loft runs along +Z; turn it onto the stub's direction.
+			stub.quaternion.setFromUnitVectors(
+				new THREE.Vector3(0, 0, 1),
+				toward(dir),
+			);
+			stub.position.copy(centre);
+			group.add(stub);
+			collar(
+				centre.clone().addScaledVector(toward(dir), c * 0.5),
+				dir < 2 ? "x" : "y",
+				tubeR * 0.85,
+			);
+		}
+	};
+	/**
+	 * A leaf's support: a strut from the **centre of every host beside it**
+	 * to the leaf's own centre, and the direction its nearest host lies in.
+	 *
+	 * From the host's centre rather than from the cell's edge, because a
+	 * truss host is 0.22 cells wide and a tube 0.48, so a stub that began at
+	 * the edge left 0.39 cells of nothing between it and a truss — 59.65 m
+	 * at seed zero, which sage measured member by member while the island
+	 * check read a whole instanced pool as one box. And to *every* host
+	 * rather than the nearest, because the plan may put a leaf between two:
+	 * seed zero's dish at (2, 0) sat between the +X habitat tube and a second
+	 * tube carrying a node and a tank rack, and everything behind the dish
+	 * touched nothing. The leaf is the bridge. The inner part of each strut
+	 * is buried in the host it comes from.
+	 */
+	const leafSupport = (p: Placement) => {
+		const centre = cellCentre(p);
+		for (let dir = 0; dir < 4; dir++)
+			if (isHost(p.beside[dir]))
+				truss(
+					pools,
+					centre.clone().addScaledVector(toward(dir), c),
+					centre,
+					c * 0.1,
+					V(0, 0, 1),
+				);
+		return toward(p.host < 0 ? 1 : p.host);
+	};
 	for (const p of placements) {
-		const cx = p.dx * c;
-		const cy = p.dy * c;
-		const centre = V(cx, cy, 0);
+		const centre = cellCentre(p);
 		switch (p.module) {
 			case HUB:
 				// The hub's own ports, where a tube or a truss runs into it.
@@ -3333,85 +3439,13 @@ function buildTradeModular(color: number, berthSeed: number): BuiltPart {
 						);
 				break;
 			case TUBE_X:
-			case TUBE_Y: {
-				const tube = shell(
-					[
-						{ z: -c * 0.5, w: tubeR * 0.8, h: tubeR * 0.8, e: 2, hard: true },
-						{ z: -c * 0.42, w: tubeR, h: tubeR, e: 2, hard: true },
-						{ z: c * 0.42, w: tubeR, h: tubeR, e: 2, hard: true },
-						{ z: c * 0.5, w: tubeR * 0.8, h: tubeR * 0.8, e: 2 },
-					],
-					hullMaterial(color, "trade"),
-					`module-${p.dx}-${p.dy}`,
-					12,
-					true,
-				);
-				if (p.module === TUBE_X) tube.rotation.y = Math.PI / 2;
-				else tube.rotation.x = Math.PI / 2;
-				tube.position.copy(centre);
-				group.add(tube);
-				// A collar on every docked end, along the tube's own axis only.
-				const axisDirs = p.module === TUBE_X ? [0, 1] : [2, 3];
-				for (const dir of axisDirs)
-					if (p.joined[dir])
-						collar(
-							centre.clone().addScaledVector(toward(dir), c * 0.5),
-							p.module === TUBE_X ? "x" : "y",
-							tubeR,
-						);
+			case TUBE_Y:
+				habitatTube(p);
 				tubes.push(p);
 				break;
-			}
-			case NODE: {
-				const node = shell(
-					[
-						{ z: -c * 0.28, w: c * 0.3, h: c * 0.3, e: 2, hard: true },
-						{ z: c * 0.28, w: c * 0.3, h: c * 0.3, e: 2 },
-					],
-					hullMaterial(color, "trade"),
-					`node-${p.dx}-${p.dy}`,
-					12,
-					true,
-				);
-				node.position.copy(centre);
-				group.add(node);
-				// A docking stub out to the cell's edge on every joined side, with
-				// a collar: the drum is 0.3 cells across and its neighbour starts
-				// at 0.5, and `tests/station-mesh.test.ts`'s island check read a
-				// tip node as adrift of the tube it was meant to be docked to.
-				for (let dir = 0; dir < 4; dir++) {
-					if (!p.joined[dir]) continue;
-					const stub = shell(
-						[
-							{
-								z: c * 0.2,
-								w: tubeR * 0.85,
-								h: tubeR * 0.85,
-								e: 2,
-								hard: true,
-							},
-							{ z: c * 0.5, w: tubeR * 0.85, h: tubeR * 0.85, e: 2 },
-						],
-						hullMaterial(color, "trade"),
-						`node-stub-${p.dx}-${p.dy}-${dir}`,
-						12,
-						true,
-					);
-					// The loft runs along +Z; turn it onto the stub's direction.
-					stub.quaternion.setFromUnitVectors(
-						new THREE.Vector3(0, 0, 1),
-						toward(dir),
-					);
-					stub.position.copy(centre);
-					group.add(stub);
-					collar(
-						centre.clone().addScaledVector(toward(dir), c * 0.5),
-						dir < 2 ? "x" : "y",
-						tubeR * 0.85,
-					);
-				}
+			case NODE:
+				junction(p);
 				break;
-			}
 			case TRUSS_X:
 			case TRUSS_Y: {
 				const axis = toward(p.module === TRUSS_X ? 1 : 3);
@@ -3425,11 +3459,11 @@ function buildTradeModular(color: number, berthSeed: number): BuiltPart {
 				break;
 			}
 			case RADIATOR: {
-				// A spine from the host's edge across the cell, panels on it
+				// A spine from the cell's edge across the cell, panels on it
 				// standing out of the plane both ways.
-				const host = p.host < 0 ? 1 : p.host;
-				const away = toward(host).negate();
-				const origin = centre.clone().addScaledVector(toward(host), c * 0.5);
+				const host = leafSupport(p);
+				const origin = centre.clone().addScaledVector(host, c * 0.5);
+				const away = host.clone().negate();
 				for (const up of [V(0, 0, 1), V(0, 0, -1)])
 					radiatorArray(pools, {
 						origin,
@@ -3442,18 +3476,10 @@ function buildTradeModular(color: number, berthSeed: number): BuiltPart {
 				break;
 			}
 			case TANKS: {
-				const host = p.host < 0 ? 1 : p.host;
-				// A stub from the host's edge to the rack.
-				truss(
-					pools,
-					centre.clone().addScaledVector(toward(host), c * 0.5),
-					centre,
-					c * 0.1,
-					V(0, 0, 1),
-				);
+				const host = leafSupport(p);
 				tankRack(pools, {
 					origin: centre.clone().add(V(0, 0, -c * 0.1)),
-					along: toward(host),
+					along: host,
 					up: V(0, 0, 1),
 					count: 3,
 					radiusKm: c * 0.09,
@@ -3461,15 +3487,8 @@ function buildTradeModular(color: number, berthSeed: number): BuiltPart {
 				});
 				break;
 			}
-			case DISH: {
-				const host = p.host < 0 ? 1 : p.host;
-				truss(
-					pools,
-					centre.clone().addScaledVector(toward(host), c * 0.5),
-					centre,
-					c * 0.1,
-					V(0, 0, 1),
-				);
+			case DISH:
+				leafSupport(p);
 				mast(pools, group, {
 					base: centre,
 					up: V(0, 0, 1),
@@ -3477,7 +3496,6 @@ function buildTradeModular(color: number, berthSeed: number): BuiltPart {
 					widthKm: c * 0.12,
 				});
 				break;
-			}
 		}
 	}
 	pools.emit(group, "module");
@@ -3503,10 +3521,17 @@ function buildTradeModular(color: number, berthSeed: number): BuiltPart {
 				.addScaledVector(outboard, (0.25 + slot * 0.2) * c);
 		}),
 	);
-	// The strobes on the spine's two ends, which are the assembly's beam.
+	// The strobes near the spine's two ends, which are the assembly's beam.
+	// **On a longeron, not on the axis.** Centred on the spine's end plane a
+	// lamp sits inside the lattice's hollow section, a metre clear of every
+	// member — the island check reads that per instance now — and it also
+	// reaches past the truss, so hiding it at `outline` would move the
+	// outline. Seated on the (+X, +Z) longeron's outer face a fifth of a cell
+	// short of the end, it touches structure and stays inside the truss's own
+	// reach.
 	group.add(
 		strobePair("trade", fixtures, r * 0.06, (side, position) => {
-			position.set(0, side * (MODULAR_RADIUS * c + c * 0.5), 0);
+			position.set(c * 0.17, side * (MODULAR_RADIUS * c + c * 0.3), c * 0.11);
 		}),
 	);
 	// Clutter on the hub's own flank, between the ports of its docked tubes.

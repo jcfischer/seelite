@@ -324,13 +324,25 @@ interface HullMaps {
 	 *  `cleanPlate`. */
 	clean: { roughness: number; metalness: number };
 }
-const mapsByFinish = new Map<HullFinishId, HullMaps>();
+/**
+ * Keyed by **plating profile and map size**, not by finish: `plated` and
+ * `industrial` differ in geometry and rim and share both, and an entry per
+ * finish generated the same three maps twice — 190–202 ms of synchronous work
+ * on a workbench switch, sage measured — and kept two copies. The palettes
+ * stay keyed by finish, because the paint is the finish's.
+ */
+const mapsByPlating = new Map<PlatingProfile, Map<number, HullMaps>>();
 
 function hullMaps(): HullMaps {
-	const cached = mapsByFinish.get(hullFinish);
-	if (cached) return cached;
 	const finish = currentHullFinish();
 	const size = finish.mapSize;
+	let bySize = mapsByPlating.get(finish.plating);
+	if (!bySize) {
+		bySize = new Map();
+		mapsByPlating.set(finish.plating, bySize);
+	}
+	const cached = bySize.get(size);
+	if (cached) return cached;
 	// Generated once and handed to both: `wearTexels` derives its wear from the
 	// albedo, so regenerating would run the plating loop twice and leave two
 	// buffers that only happen to agree.
@@ -365,7 +377,7 @@ function hullMaps(): HullMaps {
 		map.generateMipmaps = true;
 	}
 	const maps = { albedo, wear, seams, clean: cleanPlate(wearBytes) };
-	mapsByFinish.set(hullFinish, maps);
+	bySize.set(size, maps);
 	return maps;
 }
 

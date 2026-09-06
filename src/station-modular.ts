@@ -177,8 +177,15 @@ export interface Placement {
 	 *  order (−X, +X, −Y, +Y). A presenter caps a free end and collars a
 	 *  docked one from this rather than re-reading the plan. */
 	joined: [boolean, boolean, boolean, boolean];
+	/** The module on each side, `EMPTY` for none, in the same order. A leaf
+	 *  reads its hosts off this: the plan lets a leaf sit **between** two
+	 *  hosts, and a leaf strutted to one of them leaves the other adrift —
+	 *  seed zero's dish at (2, 0) carried a tube, a node and a tank rack
+	 *  behind it that touched nothing, which `tests/station-mesh.test.ts`'s
+	 *  island check reads per member since sage measured the gap. */
+	beside: [number, number, number, number];
 	/** The direction of the nearest host, for a leaf, or −1. A radiator's
-	 *  spine runs away from its host; a tank rack's stub reaches back to it. */
+	 *  spine runs away from it; every host beside a leaf gets a strut. */
 	host: number;
 }
 
@@ -252,7 +259,14 @@ export function modularPlacements(seed: number): {
 			const joined = around.map((m) => m !== EMPTY) as Placement["joined"];
 			let host = -1;
 			if (isLeaf(module)) host = around.findIndex((m) => isHost(m));
-			placements.push({ module, dx: x - c, dy: y - c, joined, host });
+			placements.push({
+				module,
+				dx: x - c,
+				dy: y - c,
+				joined,
+				beside: around as Placement["beside"],
+				host,
+			});
 		}
 	return { placements, fallback, attempts };
 }

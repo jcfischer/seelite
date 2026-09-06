@@ -340,3 +340,25 @@ describe("a ring is hollow", () => {
 		}
 	});
 });
+
+describe("the maps are the plating's, not the finish's", () => {
+	test("plated and industrial share one set of maps; stock and worn have their own", () => {
+		const mapOf = (id: HullFinishId) => {
+			setHullFinish(id);
+			let map: THREE.Texture | null = null;
+			buildShipMesh("courier", "a").root.traverse((object) => {
+				if (map || !(object instanceof THREE.Mesh)) return;
+				if (!object.name.includes("fuselage")) return;
+				map = (object.material as THREE.MeshStandardMaterial).map;
+			});
+			return map as THREE.Texture | null;
+		};
+		const plated = mapOf("plated");
+		expect(plated).not.toBeNull();
+		// The same object, not an equal one: a second generation of the same
+		// profile is the duplicate this exists to refuse.
+		expect(mapOf("industrial")).toBe(plated);
+		expect(mapOf("stock")).not.toBe(plated);
+		expect(mapOf("worn")).not.toBe(plated);
+	});
+});

@@ -115,7 +115,12 @@ describe("the modular station's plans", () => {
 		}
 	});
 
-	test("every placed module is attached to the hub through its neighbours", () => {
+	// Grid adjacency, not attachment: this floods over occupied cells, while
+	// the built form joins a leaf to its chosen host and nothing else. Whether
+	// the parts *touch* is `tests/station-mesh.test.ts`'s island check, which
+	// reads every instanced member on its own since sage found a radiator
+	// bank 59.65 m from anything while this passed.
+	test("every placed module is grid-adjacent to the hub through occupied cells", () => {
 		for (const seed of seeds) {
 			const { placements } = modularPlacements(seed);
 			const key = (dx: number, dy: number) => `${dx},${dy}`;
@@ -138,6 +143,16 @@ describe("the modular station's plans", () => {
 	test("every leaf names a host beside it, and every module is inside the diamond", () => {
 		for (const seed of seeds) {
 			const { placements } = modularPlacements(seed);
+			// `beside` and `joined` are two readings of one fact.
+			for (const p of placements)
+				for (let dir = 0; dir < 4; dir++)
+					expect([seed, p.dx, p.dy, dir, p.joined[dir]]).toEqual([
+						seed,
+						p.dx,
+						p.dy,
+						dir,
+						p.beside[dir] !== EMPTY,
+					]);
 			for (const p of placements) {
 				expect(Math.abs(p.dx) + Math.abs(p.dy)).toBeLessThanOrEqual(
 					MODULAR_RADIUS,

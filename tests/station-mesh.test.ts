@@ -359,12 +359,47 @@ describe("a station is one object, not a scatter of parts", () => {
 	 */
 	function islands(root: THREE.Object3D): string[][] {
 		root.updateMatrixWorld(true);
-		const parts: { name: string; box: THREE.Box3 }[] = [];
+		const parts: { name: string; box: THREE.Box3; member: boolean }[] = [];
+		const matrix = new THREE.Matrix4();
 		root.traverse((object) => {
 			if (!(object as THREE.Mesh).geometry) return;
+			// A pane is a decal on a face, not a part: `window panes sit out
+			// near the shell they belong to` above is its mounting check, and
+			// three of the Buoy's ride a drum face at a standoff wider than this
+			// proxy's margin. Left out rather than boxed as one pool, because one
+			// box round every pane on a station touches everything.
+			if (object.name === "windows") return;
+			const instanced = object as THREE.InstancedMesh;
+			if (instanced.isInstancedMesh) {
+				// **One box per instance, not one per pool.** `setFromObject` on
+				// an instanced mesh boxes every instance together, and a pool of
+				// truss members spanning a station is one box that touches
+				// everything — which is how the assembly's radiator bank sat
+				// 59.65 m from any other member and passed here. **The
+				// geometry's own box under each instance's matrix**, not a unit
+				// cube: the fixture pools are unit boxes and tubes, but a window
+				// pane is not, and a unit cube under its matrix was 1.67 core
+				// radii across and glued the whole station together again.
+				if (!instanced.geometry.boundingBox)
+					instanced.geometry.computeBoundingBox();
+				const local = instanced.geometry.boundingBox as THREE.Box3;
+				for (let i = 0; i < instanced.count; i++) {
+					instanced.getMatrixAt(i, matrix);
+					parts.push({
+						name: `${object.name}#${i}`,
+						box: local
+							.clone()
+							.applyMatrix4(matrix)
+							.applyMatrix4(instanced.matrixWorld),
+						member: true,
+					});
+				}
+				return;
+			}
 			parts.push({
 				name: object.name || object.type,
 				box: new THREE.Box3().setFromObject(object),
+				member: false,
 			});
 		});
 		// **Shrunk before testing.** A bare `intersectsBox` counts a boundary
@@ -375,8 +410,19 @@ describe("a station is one object, not a scatter of parts", () => {
 		// Per axis, and never more than a quarter of the part's own extent on
 		// that axis: a flat 4 m would shrink a 12 m aperture bar into nothing and
 		// report the frame as detached from the hull it is bolted to.
+		// An instanced member is the exception, and it is **grown** instead, by
+		// twice the shrink: a truss's frames and diagonals meet its longerons
+		// end-on at a corner, sharing a point and no volume, so the shrink
+		// rule reads a whole lattice as a scatter of sticks; and a pane seated
+		// on a shell's face, or a lamp on a plate, touches a face the shrink
+		// has just moved inward by one overlap, so growing by one leaves it a
+		// zero margin that nine of the Cluster's panes lost to rounding.
+		// Growing by two leaves one overlap's worth — 2.4 m on a 0.6 km core —
+		// which bridges a shared corner or a seated face and nothing else; the
+		// gaps this exists to catch are tens of metres.
 		const OVERLAP_KM = 0.004;
-		const shrunk = parts.map(({ box }) => {
+		const shrunk = parts.map(({ box, member }) => {
+			if (member) return box.clone().expandByScalar(OVERLAP_KM * 2);
 			const size = box.getSize(new THREE.Vector3());
 			return box
 				.clone()
