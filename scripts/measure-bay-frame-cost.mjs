@@ -785,16 +785,31 @@ if (MASK_SWEEP) {
 				.slice()
 				.sort((a, b) => b.angularRadiusDeg - a.angularRadiusDeg);
 
-			/** Mask the three widest and keep the one actually in frame. */
+			/**
+			 * Mask **every** massive body and keep whichever covers most.
+			 *
+			 * Sorted widest-first only so the printed subject is the interesting
+			 * one when several are in frame; the loop does not stop early. An
+			 * earlier version masked the three widest, which is a different
+			 * measurement wearing the same label: angular size is not direction,
+			 * so three bodies behind the camera and a fourth in front of it would
+			 * print `none` — "no massive body in the frustum at all" — over a body
+			 * nothing had looked at (sage, PR #251, round 2). A row that says there
+			 * is no prepass opportunity has to have checked.
+			 *
+			 * The cost is one mask per body rather than three: two renders and two
+			 * `readPixels` each. Seconds on a system's dozen bodies, against a
+			 * claim the row cannot otherwise make.
+			 */
 			const measure = async () => {
 				let best = null;
-				for (const body of widest.slice(0, 3)) {
+				for (const body of widest) {
 					const m = await apertureFraction(sweepPage, body.id);
 					if (!best || m.whole > best.mask.whole)
 						best = { subject: body, mask: m };
 				}
 				if (!best) throw new Error(`${framing.name}: no massive body to mask`);
-				return best;
+				return { ...best, checked: widest.length };
 			};
 
 			rows.push({ ...framing, seed, ...(await measure()) });
@@ -822,15 +837,25 @@ if (MASK_SWEEP) {
 			 * The question it stood in for is answered better elsewhere:
 			 * `measure-station-host-angle.ts` reads the generator over 25,502
 			 * stations and finds that a refinery has no host planet **by
-			 * construction**. There is nothing behind that deck to occlude, at any
-			 * camera angle, in any system.
+			 * construction** — a belt orbit and `parentId: null`.
+			 *
+			 * **That is a claim about hosts and not about sightlines**, and an
+			 * earlier version of this comment said "nothing behind that deck to
+			 * occlude, at any camera angle, in any system", which the census cannot
+			 * support (sage, PR #251, round 2). A refinery still has a star and
+			 * other planets somewhere around it. What the census establishes is
+			 * that no refinery has the thing that makes a slot role's bay
+			 * expensive — a body filling 41.8° of its sky. What the row below
+			 * measures is that in this framing, on this seed, every body in the
+			 * system was masked and none covered a pixel: the nearest planet is
+			 * 412 million km off and subtends 0.001°.
 			 */
 		}
 		if (sweepPage !== page) await sweepPage.close();
 	}
 
 	console.log(
-		`\n  ${"framing".padEnd(40)}${"role".padEnd(17)}${"subject".padEnd(10)}` +
+		`\n  ${"framing".padEnd(40)}${"role".padEnd(17)}${"subject/checked".padEnd(16)}` +
 			`${"shows".padStart(8)}${"of frame".padStart(10)}${"hidden".padStart(9)}${"est. saving".padStart(13)}`,
 	);
 	for (const r of rows) {
@@ -845,7 +870,7 @@ if (MASK_SWEEP) {
 		// occluded something that was never there.
 		const out = whole === 0;
 		console.log(
-			`  ${r.name.padEnd(40)}${r.role.padEnd(17)}${r.subject.id.padEnd(10)}` +
+			`  ${r.name.padEnd(40)}${r.role.padEnd(17)}${`${r.subject.id}/${r.checked}`.padEnd(16)}` +
 				`${(out ? "none" : `${((visible / whole) * 100).toFixed(1)}%`).padStart(8)}` +
 				`${(out ? "—" : `${((whole / pixels) * 100).toFixed(1)}%`).padStart(10)}` +
 				`${(out ? "—" : `${(hiddenOfFrame * 100).toFixed(1)}%`).padStart(9)}` +
@@ -853,8 +878,9 @@ if (MASK_SWEEP) {
 		);
 	}
 	console.log(
-		"\n  none       — no massive body in the frustum at all: nothing for a prepass to reject, which is a\n" +
-			"               different thing from a body wholly hidden and must not print as 0.0%\n" +
+		"\n  none       — every massive body in the system masked and none covered a pixel: nothing for a\n" +
+			"               prepass to reject here, which is a different thing from a body wholly hidden and\n" +
+			"               must not print as 0.0%. The count after the subject says how many were tried\n" +
 			"  shows      — how much of that body's disc the player sees, the fraction #242 quotes\n" +
 			"  of frame   — how much of the frame the whole disc would be, which is what a fraction is a fraction of\n" +
 			"  hidden     — of frame, the part the near layer stands in front of: what a prepass would stop shading\n" +
