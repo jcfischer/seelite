@@ -693,6 +693,31 @@ await settleBakes();
 			bakedMid === "baked",
 			`${baker} at 5 radii: ${bakedMid}`,
 		);
+		/**
+		 * **Two radii is the rung the whole node is worth**, so it is asserted
+		 * rather than left to the arithmetic.
+		 *
+		 * The decomposition reads the procedural frame at 24.8 ms at two radii and
+		 * the baked one at 5.3, device scale 2. Asserted at two and a **half**
+		 * because that is inside the band and two is not: a 512 face is 1.14
+		 * screen pixels per texel at two radii and reaches parity at about 2.15,
+		 * so the crossing sits just outside the rung the ladder prints. A check
+		 * written at the rung would be asserting the wrong side of a threshold it
+		 * had not worked out.
+		 *
+		 * It is reachable at all only because the face size follows apparent size:
+		 * a 256 cube gives up at about 3.4 radii. A regression that put the size
+		 * back on the render layer would leave every other check here green.
+		 */
+		const bakedTwo = await pathAt(2.5, baker);
+		check(
+			"at two and a half radii, on the larger cube, it is still baked",
+			bakedTwo === "baked",
+			`${baker} at 2.5 radii: ${bakedTwo}, face ${await page.evaluate(
+				(id) => window.__seelite.bodyVisuals.get(id).bakedFacePx(),
+				baker,
+			)} px`,
+		);
 		const bakedNear = await pathAt(1.2, baker);
 		check(
 			"filling the frame it is procedural again — no face size serves that rung",
@@ -740,7 +765,20 @@ await settleBakes();
 				[baker, 6],
 			);
 		};
-		for (const radii of [8, 4]) {
+		/**
+		 * **Four radii and two and a half, and deliberately not eight.**
+		 *
+		 * At eight radii the disc is about a hundred pixels across, so a sixth of
+		 * it per cell is a seventeen-pixel patch and the ones at the rim are
+		 * mostly limb — the means are dominated by the terminator, where a small
+		 * normal difference is a large luma one. Measured on a deliberately
+		 * corrupted bake (a randomised `seedOffset` in the pinned uniforms), the
+		 * check reads 22.9% there against 20.5% for a correct one: it cannot
+		 * separate them. At four radii the same corruption reads 15.7% against
+		 * 4.5%, which is the separation a gate needs. The rungs are chosen from
+		 * that measurement rather than from where the interesting sizes are.
+		 */
+		for (const radii of [4, 2.5]) {
 			const withBake = await signatureAt(radii, true);
 			const without = await signatureAt(radii, false);
 			const pairs = withBake.patches
@@ -755,15 +793,18 @@ await settleBakes();
 			const discMean =
 				pairs.reduce((sum, [a, b]) => sum + (luma(a) + luma(b)) / 2, 0) /
 				Math.max(pairs.length, 1);
-			const worst = pairs.reduce(
-				(m, [a, b]) => Math.max(m, Math.abs(luma(a) - luma(b))),
-				0,
-			);
+			const offsets = pairs
+				.map(([a, b]) => Math.abs(luma(a) - luma(b)))
+				.sort((x, y) => x - y);
+			const worst = offsets[offsets.length - 1];
+			const median = offsets[Math.floor(offsets.length / 2)];
 			const ratio = worst / Math.max(discMean, 1);
+			const medianRatio = median / Math.max(discMean, 1);
 			check(
 				`the baked and procedural programs agree on the lit face at ${radii} radii`,
 				pairs.length >= 8 && ratio <= AGREEMENT,
 				`${pairs.length} comparable patches, disc mean luma ${discMean.toFixed(1)},` +
+					` median off by ${(medianRatio * 100).toFixed(1)}%,` +
 					` worst patch off by ${worst.toFixed(1)} = ${(ratio * 100).toFixed(1)}%` +
 					` against a ${(AGREEMENT * 100).toFixed(0)}% band` +
 					`\n           ${pairs.map(([a, b]) => `${luma(a).toFixed(0)}/${luma(b).toFixed(0)}`).join(" ")}`,
