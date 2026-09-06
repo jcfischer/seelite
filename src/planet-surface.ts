@@ -212,8 +212,6 @@ export interface BodyVisual {
 	applyReliefBand(path: ReliefPath): boolean;
 	/** Hand this body back to the bands. The perf panel's restore key. */
 	unpinRelief(): void;
-	/** Whether an external caller has taken this body's path. */
-	reliefPinned(): boolean;
 	/** What it is drawn with now, so the frame loop needs no parallel map. */
 	reliefPath(): ReliefPath;
 	/**
@@ -605,9 +603,6 @@ export function buildBodyVisual(
 		},
 		unpinRelief() {
 			planet.userData.reliefPinned = false;
-		},
-		reliefPinned() {
-			return planet.userData.reliefPinned === true;
 		},
 		reliefPath() {
 			return planet.userData.reliefPath as ReliefPath;

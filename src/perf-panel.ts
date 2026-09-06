@@ -569,9 +569,14 @@ export function mountPerfPanel(targets: PerfTargets) {
 				//
 				// They are genuinely different things and the ladder prices both:
 				// the uniform leaves the four `height()` calls compiled in and
-				// branches around them, the path compiles them out. #248 measured
-				// 15.8 ms against 16.1 at a filling planet — close, and not the
-				// same program.
+				// branches around them, the path compiles them out. At a filling
+				// planet the sweep reads 15.8 ms for the uniform and 16.1 for the
+				// path — so on **this** driver the branch is marginally the cheaper
+				// of the two, which is not why the path was chosen and is worth
+				// stating rather than leaving to be inferred from the ordering. The
+				// path is chosen because a branch on a uniform is not reliably
+				// uniform control flow to every driver, and because `perfAblate`
+				// belongs to the ladder.
 				if (readAblate(scenes) === 1) return "ablated (uniform)";
 				const { paths, pinned } = readReliefState(scenes);
 				const what =
