@@ -489,6 +489,31 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   compiles, links, renders and carries the patched program's own name. Every
   patch here goes through `shader-splice.ts` and records what landed in
   `userData`, and a probe reads it.
+- **A finish is module state, read at build time (#202, #203).**
+  `HULL_FINISHES` and `STATION_FINISHES` are presets — `stock`, `plated`,
+  `industrial`, `worn` — selected by `setHullFinish` / `setStationFinish` and
+  read by every builder as it runs. The game never switches; the workbench
+  does. Three things follow. A test that sets a finish **restores `stock`**
+  in `afterEach`, or the next file builds industrial hulls under stock's
+  assertions. Every cache that depends on the surface — hull maps, palettes,
+  station maps, hull materials — is **keyed by the finish id**; one that is
+  not hands the second finish the first's textures. And a tile is the
+  finish's, not the constant's: `plateUVs` divides by `finish.panelKm` and
+  `shell()` by `STATION_PANEL_KM × finish.tile`, so a doubled map keeps the
+  same plate. `stock` is byte-identical to what shipped, and
+  `tests/ship-finish.test.ts` and the pins in `tests/surface.test.ts` are
+  what hold it there.
+- **A fixture is mounted by a flood, not by a ray, and the islands check
+  works in core radii (#202).** `tests/station-finish.test.ts` supports a
+  member if its box touches structure *or a supported member*, because a ray
+  from a mast's top toward the centre passes over the keel it stands on and
+  read every mast as floating. `tests/station-mesh.test.ts`'s islands check
+  boxes the normalised root, so its 0.004 overlap is 2.4 m on a trade
+  station: a dish resting exactly on its mast, or a drum 40 m short of its
+  cell edge, is an island. Sink a part into what carries it. And on the
+  Coriolis the headroom is the corner's, not the face's — a point at lateral
+  offset `d` on a face may stand `h` proud only while `hypot(face + h, d) < r`
+  — which is what caps the structure it can carry without moving its outline.
 - **Per-system RNG streams.** One shared generator couples every system to every
   other system's draw count. Add a domain tag rather than reusing one; reusing a
   tag silently correlates the two draws.
