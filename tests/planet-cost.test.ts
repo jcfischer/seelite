@@ -293,8 +293,19 @@ describe("the sweep's declared columns", () => {
 		expect(RADII.at(-1)).toBe(1.02);
 	});
 
-	test("sweeps both relief paths, which is what makes the third column a comparison", () => {
-		expect([...RELIEF_PATHS]).toEqual(["four-tap", "screen-space"]);
+	/**
+	 * **Every path the renderer can select, which is now three** (#207).
+	 *
+	 * `none` was `perfAblate` 1 — an ablation the panel offered and no shipped
+	 * code path chose. It is a compiled program now and the apparent-size band
+	 * selects it in flight, so a sweep that skipped it would be leaving a column
+	 * of the shipped renderer unpriced rather than leaving out a diagnostic.
+	 *
+	 * Ordered, because the table's columns are printed in this order and a
+	 * receipt quoting "the third column" wants that to keep meaning one thing.
+	 */
+	test("sweeps every relief path the renderer can select", () => {
+		expect([...RELIEF_PATHS]).toEqual(["four-tap", "screen-space", "none"]);
 	});
 });
 

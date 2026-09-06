@@ -183,6 +183,40 @@ export interface BodyVisual {
 	 */
 	setLayer(layer: "near" | "approach" | "far"): void;
 	/**
+	 * The fragment program this body's surface is drawn with (#207).
+	 *
+	 * A **recompile**, so the caller is expected to have decided that the band
+	 * genuinely changed — `reliefPathFor`'s hysteresis is what makes that true
+	 * of a body sitting on a threshold. Returns whether anything moved, so the
+	 * frame loop can leave the tracking to this and a probe can tell a no-op
+	 * from a switch.
+	 *
+	 * Through the handle rather than through `userData`, because `main.ts`
+	 * reaching into a mesh's bag to find a closure is how the perf panel has to
+	 * do it — the panel walks a scene and has no handles — and the frame loop
+	 * has the handle already.
+	 */
+	setReliefPath(path: ReliefPath): boolean;
+	/**
+	 * The frame loop's door: set the band's choice **unless this body is pinned**.
+	 *
+	 * The two doors are the `applyOcclusion` pattern (`main.ts`), and the reason
+	 * is the same one that file gives: an instrument naming an arm must not have
+	 * the frame loop overwrite it. Any external write — the perf panel's relief
+	 * cycle, `setSurfaceAndRelief`, `setAblation` — goes through
+	 * `setReliefPath`, which pins; the selector goes through this, which yields.
+	 *
+	 * Per body rather than per game, so nothing has to hand a `Game` handle to a
+	 * function that walks scenes.
+	 */
+	applyReliefBand(path: ReliefPath): boolean;
+	/** Hand this body back to the bands. The perf panel's restore key. */
+	unpinRelief(): void;
+	/** Whether an external caller has taken this body's path. */
+	reliefPinned(): boolean;
+	/** What it is drawn with now, so the frame loop needs no parallel map. */
+	reliefPath(): ReliefPath;
+	/**
 	 * Free everything this body owns, and nothing it shares.
 	 *
 	 * `redrawBodyAs` calls it on every class swap, which is a probe path. **The
@@ -394,8 +428,25 @@ export function buildBodyVisual(
 	// The relief path is compiled in, like the class, so switching it is a
 	// shader swap. Kept beside the class so one swap can carry both.
 	planet.userData.reliefPath = "four-tap" as ReliefPath;
-	planet.userData.setReliefPath = (next: ReliefPath) => {
+	/**
+	 * Whether something outside the frame loop has taken this body's path (#207).
+	 *
+	 * The tag lives on the mesh rather than on a handle because the perf panel
+	 * reaches these through a scene walk and has no handle — so a pin set from
+	 * the panel and a pin set from the frame loop's own door have to be the same
+	 * bit, or the two would disagree about who owns the path.
+	 */
+	planet.userData.reliefPinned = false;
+	/**
+	 * Swap the program, and nothing else. The half both doors share.
+	 *
+	 * Separated from the pin because the frame loop and the perf panel need the
+	 * *same* swap and the *opposite* answer about ownership: an external write
+	 * takes the body off #207's bands, and the bands' own write must not.
+	 */
+	const swapReliefProgram = (next: ReliefPath) => {
 		if (look.surface === "star") return;
+		if (planet.userData.reliefPath === next) return;
 		const material = planet.material as THREE.ShaderMaterial;
 		material.fragmentShader = cachedFragment(
 			planet.userData.surfaceClass,
@@ -403,6 +454,14 @@ export function buildBodyVisual(
 		);
 		material.needsUpdate = true;
 		planet.userData.reliefPath = next;
+	};
+	planet.userData.setReliefPath = (next: ReliefPath) => {
+		// A write through this door is an external one — the perf panel's cycle,
+		// `setSurfaceAndRelief`, `setAblation` — so it takes the body off #207's
+		// bands. The frame loop uses `BodyVisual.applyReliefBand`, which shares
+		// the swap above and leaves the pin alone.
+		planet.userData.reliefPinned = true;
+		swapReliefProgram(next);
 	};
 	planet.userData.setSurfaceClass = (next: SurfaceClass) => {
 		// A star keeps its own shader. It is not a planet surface, it is the
@@ -523,6 +582,35 @@ export function buildBodyVisual(
 		},
 		setLayer(layer) {
 			planet.geometry = surfaceSphere(layer);
+		},
+		setReliefPath(path) {
+			// **The pin is taken even when the path did not change.** An instrument
+			// asking for the path a body already has is still asking to hold it
+			// there, and returning early before the pin would leave the frame loop
+			// free to move it on the next frame — which is the whole failure this
+			// exists to prevent, arriving through the one case that looks free.
+			planet.userData.reliefPinned = true;
+			const was = planet.userData.reliefPath;
+			swapReliefProgram(path);
+			// A star refuses the swap, so the answer is read back rather than
+			// assumed: a caller told "yes, it changed" about a body that ignored it
+			// would keep asking on every frame for ever.
+			return planet.userData.reliefPath !== was;
+		},
+		applyReliefBand(path) {
+			if (planet.userData.reliefPinned) return false;
+			const was = planet.userData.reliefPath;
+			swapReliefProgram(path);
+			return planet.userData.reliefPath !== was;
+		},
+		unpinRelief() {
+			planet.userData.reliefPinned = false;
+		},
+		reliefPinned() {
+			return planet.userData.reliefPinned === true;
+		},
+		reliefPath() {
+			return planet.userData.reliefPath as ReliefPath;
 		},
 		dispose() {
 			// **One walker, shared with the station teardown** (#187). The loop

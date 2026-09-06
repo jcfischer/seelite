@@ -380,6 +380,23 @@ function readClass(scenes: THREE.Object3D[]): string {
 	return found;
 }
 
+/**
+ * Hand every planet back to #207's apparent-size bands.
+ *
+ * Every setter in this panel pins the body it touches, because a diagnostic
+ * that the frame loop overwrites on the next frame is worse than no diagnostic
+ * — the panel would report a path the renderer had already replaced. So the
+ * restore key has to clear the pin as well as the value, and nothing else here
+ * does.
+ */
+function unpinRelief(scenes: THREE.Object3D[]) {
+	for (const scene of scenes)
+		scene.traverse((object) => {
+			if (object.userData?.reliefPinned !== undefined)
+				object.userData.reliefPinned = false;
+		});
+}
+
 /** Shells are tagged in `planet-surface.ts`, so this needs no registry either. */
 function shells(scenes: THREE.Object3D[], kind: string) {
 	const out: THREE.Object3D[] = [];
@@ -512,25 +529,34 @@ export function mountPerfPanel(targets: PerfTargets) {
 			// them in one column, which is what makes a reading comparable.
 			label: "relief",
 			state: () =>
-				readAblate(scenes) === 2
-					? "flat"
-					: readAblate(scenes) === 1
-						? "none"
-						: readRelief(scenes),
-			// four-tap -> screen-space -> none -> flat -> four-tap
+				readAblate(scenes) === 2 ? "flat" : `${readRelief(scenes)} (pinned)`,
+			/**
+			 * four-tap → screen-space → none → flat → four-tap.
+			 *
+			 * **`none` is a path now, not an ablation** (#207). It used to be
+			 * `perfAblate` 1, and the two are not interchangeable: the uniform
+			 * leaves the four `height()` calls in the program and relies on a
+			 * branch every driver is supposed to treat as uniform control flow,
+			 * while the path compiles them out. The band the game ships selects
+			 * the path, so the panel has to cycle the same thing the game does or
+			 * it is pricing something nobody plays.
+			 *
+			 * `flat` stays a uniform: it is the whole class body, it is the
+			 * ladder's floor, and no band selects it.
+			 */
 			toggle: () => {
-				const screen = readRelief(scenes) === "screen-space";
-				if (readAblate(scenes) === 0 && !screen) {
-					setRelief(scenes, "screen-space");
-				} else if (readAblate(scenes) === 0) {
-					setRelief(scenes, "four-tap");
-					setAblate(scenes, 1);
-				} else if (readAblate(scenes) === 1) {
-					setAblate(scenes, 2);
-				} else {
+				if (readAblate(scenes) === 2) {
 					setAblate(scenes, 0);
 					setRelief(scenes, "four-tap");
+					return;
 				}
+				const next: Record<string, string> = {
+					"four-tap": "screen-space",
+					"screen-space": "none",
+				};
+				const path = readRelief(scenes);
+				if (path === "none") setAblate(scenes, 2);
+				else setRelief(scenes, next[path] ?? "four-tap");
 			},
 		},
 		{
@@ -595,7 +621,15 @@ rasterizer                  ${identity(attribution.renderer.rasterizer)}`;
 			for (const kind of ["atmosphere", "cloud"])
 				for (const s of shells(scenes, kind)) s.visible = true;
 			setAblate(scenes, 0);
+			// **Un-pin before setting**, not after: `setReliefPath` pins, so a
+			// restore that set the path and then cleared the pin would work, and a
+			// restore that cleared it first and then set it would leave every body
+			// pinned to four-tap for the rest of the session — with the picture
+			// looking exactly right until a planet got small. Un-pinning is what
+			// "restore all" means here: hand the bands back (#207).
+			unpinRelief(scenes);
 			setRelief(scenes, "four-tap");
+			unpinRelief(scenes);
 			setCrater(scenes, false);
 			draw();
 			return;

@@ -132,6 +132,7 @@ export const LEVERS = Object.freeze({
 	206: "the planet surface at the apparent size that costs a frame",
 	200: "the composed frame's edges, its dither, and the cockpit vignette",
 	201: "the sun's shadow and the ambient occlusion on the near layer",
+	207: "the relief program picked by how big the planet looks",
 });
 
 /**
@@ -266,7 +267,7 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "station-flank",
-		covers: [102, 101, 99, 201],
+		covers: [102, 101, 99, 201, 207],
 		what: "A trade station's lit flank at four radii: the window grid and the plant beside it, which the axis view cannot show.",
 		/**
 		 * **Added by #129, and the reason is a frame rather than an argument.**
@@ -436,7 +437,7 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "hull-chase",
-		covers: [199, 101, 99, 200, 201],
+		covers: [199, 101, 99, 200, 201, 207],
 		what: "The player's own hull, mostly backlit, against the system's largest planet. Flat plate shows here first.",
 		shot: {
 			kind: "body-offset",
@@ -448,7 +449,7 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "planet-terminator",
-		covers: [99, 206, 200],
+		covers: [99, 206, 200, 207],
 		what: "The largest planet at a crescent. The far layer takes no fill on purpose, and this is why.",
 		shot: {
 			kind: "body-offset",
@@ -499,7 +500,7 @@ export const VIEWS = Object.freeze([
 	 */
 	{
 		name: "planet-fill",
-		covers: [206],
+		covers: [206, 207],
 		what: "A rocky planet spanning the frame at two radii, limb on the top and bottom edges. Surface detail at the largest apparent size it still resolves at, and the frame the planet-cost table prices.",
 		shot: {
 			kind: "body-offset",

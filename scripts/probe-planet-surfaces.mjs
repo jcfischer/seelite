@@ -51,9 +51,11 @@
 import {
 	bootedGame,
 	guardedOrigin,
+	installViewPlacement,
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
+import { installViewFraming } from "./lib/view-placement.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
@@ -459,6 +461,10 @@ const { check, watch, exit } = tally();
 const page = await browser.newPage({ viewport: VIEW });
 watch(page);
 await installHelpers(page);
+// #207's band check needs the camera at a chosen apparent size, which is what
+// these two supply. Init scripts, so they go on before the navigation.
+await installViewPlacement(page);
+await installViewFraming(page);
 await page.goto(URL, { waitUntil: "domcontentloaded" });
 await bootedGame(page);
 
@@ -1120,6 +1126,86 @@ if (airless) {
 				`(±${span(row.whole).toFixed(1)})`,
 		);
 	}
+}
+
+/* 8. #207's bands: the program a planet is drawn with follows its apparent size.
+ *
+ * Read off `userData.reliefPath`, which is what the frame loop writes, rather
+ * than off the band function — a check against `reliefPathFor` would be the
+ * selector agreeing with itself and would pass with the frame loop unwired.
+ *
+ * The camera is moved and a frame is taken between readings, because the
+ * selection happens in `render` and nowhere else.
+ */
+{
+	const subject = spheres
+		.filter((b) => b.visual?.surface && b.visual.surface !== "star")
+		.sort((a, b) => b.radiusKm - a.radiusKm)[0];
+	const pathAt = async (radii) => {
+		await page.evaluate(
+			([id, r]) => window.__sunOffset(id, r, 60),
+			[subject.id, radii],
+		);
+		// Two frames: one for the placement to land, one for the selector to run
+		// against it. The hysteresis makes a single frame's reading depend on
+		// where the camera was before, which is the thing being relied on.
+		await page.evaluate(() => {
+			window.__seelite.render(0);
+			window.__seelite.render(0);
+		});
+		return page.evaluate((id) => {
+			let found = null;
+			for (const scene of [
+				window.__seelite.nearScene,
+				window.__seelite.approachScene,
+				window.__seelite.farScene,
+			])
+				scene.getObjectByName(id)?.traverse((o) => {
+					if (o.userData?.reliefPath) found = o.userData.reliefPath;
+				});
+			return found;
+		}, subject.id);
+	};
+
+	const far = await pathAt(30);
+	check(
+		"a planet 30 radii away is drawn with no relief at all",
+		far === "none",
+		`${subject.id} at 30 radii: ${far}`,
+	);
+	const mid = await pathAt(5);
+	check(
+		"at five radii it is on the screen-space path",
+		mid === "screen-space",
+		`${subject.id} at 5 radii: ${mid}`,
+	);
+	const near = await pathAt(1.2);
+	check(
+		"and filling the frame it is back on four-tap",
+		near === "four-tap",
+		`${subject.id} at 1.2 radii: ${near}`,
+	);
+	// The pin, which every instrument in this repo depends on: an external write
+	// must survive the frame loop. Without it `measure-planet-cost.mjs` would
+	// print the selector's choice under whatever arm it thought it had set.
+	await page.evaluate(() => window.__seelite.setReliefPin("none"));
+	await page.evaluate(() => {
+		window.__seelite.render(0);
+		window.__seelite.render(0);
+	});
+	const pinned = await pathAt(1.2);
+	check(
+		"a pinned path survives the frame loop at a size that would change it",
+		pinned === "none",
+		`pinned to none, framed at 1.2 radii: ${pinned}`,
+	);
+	await page.evaluate(() => window.__seelite.setReliefPin(null));
+	const released = await pathAt(1.2);
+	check(
+		"and un-pinning hands the body back to the bands",
+		released === "four-tap",
+		`un-pinned at 1.2 radii: ${released}`,
+	);
 }
 
 await browser.close();

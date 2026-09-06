@@ -218,3 +218,23 @@ test("src/audio.ts stays free of the rest of the game", () => {
 	// direction — cues are pushed to it, never pulled by it.
 	expect(importsIn("audio.ts")).toEqual([]);
 });
+
+test("src/relief-bands.ts imports nothing but a type", () => {
+	// #207's band rule is read by the frame loop and stepped twice by a headless
+	// test, so it must not drag `planet-shaders.ts` — and three behind it — into
+	// the headless tier. It is not a leaf: it names `ReliefPath`. What keeps it
+	// harmless is that the import is **type-only** and is erased at build, and a
+	// value import of the same name would compile and would not be erased.
+	//
+	// Asserted on the source rather than on the module graph, for the reason
+	// every check in this file is: the failure is a line someone writes, and the
+	// line is what this can see.
+	const source = codeOf("src/relief-bands.ts");
+	const froms = source.match(/\bfrom\s*["'][^"']+["']/g) ?? [];
+	expect(froms).toEqual(['from "./planet-shaders"']);
+	expect(source).toMatch(/import type \{[^}]*\} from "\.\/planet-shaders"/);
+	// And no other import form at all — no bare `import "…"` for a side effect,
+	// no dynamic one.
+	expect(source.match(/\bimport\b/g)).toHaveLength(1);
+	expect(source.match(/\brequire\s*\(/g)).toBeNull();
+});
