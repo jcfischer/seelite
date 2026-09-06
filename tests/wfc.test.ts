@@ -192,3 +192,28 @@ describe("the modular station's plans", () => {
 		expect(MODULAR_GRID % 2).toBe(1);
 	});
 });
+
+describe("the trade Assembly's plan is pinned", () => {
+	/**
+	 * The vocabulary core was generalised in #257 so the refinery and the
+	 * outpost could have their own. Every existing test here checks a plan
+	 * against itself — same seed, same plan — and a refactor that moved every
+	 * plan consistently would pass all of them. This is seed zero's plan as
+	 * it solved before the refactor, byte for byte: a change here is a change
+	 * to every trade Assembly in the galaxy, and has to be meant.
+	 *
+	 * The refinery and the outpost vocabularies are new in #257 and had no
+	 * prior plan to pin; `tests/station-plant.test.ts` pins their seed-zero
+	 * plans on the PR that introduces them, which is what a vocabulary added
+	 * later should do too.
+	 */
+	test("seed zero solves to the plan it solved to before the vocabulary core", () => {
+		const { plan } = solvePlan(0, modularSpec());
+		const hex = Array.from(plan, (m) => m.toString(16).padStart(2, "0")).join(
+			"",
+		);
+		expect(hex).toBe(
+			"00000000000000000000000000000000060000000000000000000006070000000000000009000600000000000000000408060704000000000000020301030903020000000004070600000800000000000000060000000000000000000706000000000000000000000600000000000000000000000000000000",
+		);
+	});
+});

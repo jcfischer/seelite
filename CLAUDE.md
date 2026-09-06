@@ -549,6 +549,28 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   Coriolis the headroom is the corner's, not the face's — a point at lateral
   offset `d` on a face may stand `h` proud only while `hypot(face + h, d) < r`
   — which is what caps the structure it can carry without moving its outline.
+- **A solved form is a family of shapes, and seed zero is one of them (#257).**
+  Trade D, refinery D and outpost D are plans collapsed from
+  `Station.assemblySeed` (`DOMAIN.STATION_ASSEMBLY`, its own draw since #257
+  — the Assembly solved from the berth seed for a round and could not vary
+  its shape without moving its berth). Every row in `tests/station-mesh.test.ts`
+  that builds at seed zero measures one plan; `SOLVED_FORMS` and
+  `ASSEMBLY_SEEDS` there measure reach, connectivity and the corridor over a
+  spread, and a check on a solved form that runs at one seed is a check on
+  one plan. The finish sheet has the same axis: `SEEDS=0,1,2` on
+  `scripts/shot-finishes.mjs` captures each station subject per plan through
+  `?assembly=<n>` on the workbench, and a sheet without it cannot show the
+  variety the form is for. And the sheet is where every defect in the Works was
+  caught, none of them by a row: the first pass stood every unit on a plated
+  deck tile, which was an opaque wall a cell wide with the plant hidden behind
+  it; the second removed the tiles and left the units on 4 m pipes beside a
+  160 m pebble, which the principal read as *"modules linked only by trusses,
+  one little asteroid with a ton of modules around it"*; and inside the fix, a
+  deep quarry cut put every unit in a pit and `buildRadiator` wings put a
+  billboard behind a rock, hung outboard and again rooted on the axis. **A role's own language is the check no
+  test makes**: §7.1's refinery is rock first and machine second, and the
+  form is a quarried asteroid carrying its plant now. Every headless row was
+  green through all three.
 - **Per-system RNG streams.** One shared generator couples every system to every
   other system's draw count. Add a domain tag rather than reusing one; reusing a
   tag silently correlates the two draws.

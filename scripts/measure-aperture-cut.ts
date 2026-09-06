@@ -71,7 +71,7 @@ for (const type of STATION_TYPES) {
 	);
 	for (const form of STATION_FORMS[type]) {
 		forms++;
-		const { root } = buildStationForm(type, form.id, GREY, 0);
+		const { root } = buildStationForm(type, form.id, GREY, 0, 0);
 		const selected = form.id === SELECTED_FORM[type] ? "*" : " ";
 		const label = `${type.padEnd(9)}${form.id}${selected}`;
 

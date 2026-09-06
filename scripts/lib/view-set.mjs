@@ -136,6 +136,7 @@ export const LEVERS = Object.freeze({
 	202: "the station finish: a second plating octave, a cut seam, macro fixtures",
 	203: "the hull finish: a second plating octave, muted paint, a rim, collars, open bells",
 	208: "the baked cube a planet is drawn from below two radii",
+	257: "the refinery and outpost forms solved by wave function collapse, and selected",
 });
 
 /**
@@ -608,7 +609,7 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "refinery-cradle-berth",
-		covers: [199, 165, 147, 99],
+		covers: [199, 165, 147, 99, 257],
 		/**
 		 * **The one view that names its own seed, and the fixture is why.**
 		 * **Seed 47 has no refinery** — it generates a trade station and a
@@ -639,7 +640,7 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "outpost-interior-workbench",
-		covers: [165, 147],
+		covers: [165, 147, 257],
 		/**
 		 * **A workbench frame, and the receipt says why**: no system generates an
 		 * outpost, so this is the only place its interior exists at all. It is
@@ -662,6 +663,11 @@ export const VIEWS = Object.freeze([
 		shot: {
 			kind: "workbench-interior",
 			asset: "outpost",
+			// **Named, not defaulted** (#257). The workbench opens on the first
+			// variant in the list; the outpost's selected form is D since the
+			// principal's yes on this node's sheet, and a frame that kept
+			// showing A would be a view of a form the role no longer carries.
+			variant: "d",
 			radii: 1.25,
 			azimuth: 0.28,
 			elevation: 0.45,

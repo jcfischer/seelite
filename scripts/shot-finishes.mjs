@@ -24,6 +24,14 @@
  *
  * `FAMILY=ship|station`, `SUBJECTS=courier,carrier`, `VARIANT=a`,
  * `FINISHES=stock,industrial` and `VIEWS=hero,aft` narrow a run.
+ *
+ * **`SEEDS=0,1,2` adds an axis** (#257): every station subject is captured
+ * once per assembly seed, as `?assembly=<n>` on the workbench, and the sheet
+ * gets a row per seed. A form solved by wave function collapse is its seed's
+ * plan, so one capture of it is one plan of many and cannot show the variety
+ * the form is for; a hand-authored form ignores the seed and its rows repeat,
+ * which is what a reader should see. The workbench's berth seed stays zero
+ * throughout. Default `0`, so a run that does not ask is what it was.
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -74,6 +82,12 @@ const VIEWS = {
 	close: { azimuth: 2.0, elevation: 0.25, zoom: 0.55 },
 };
 const VIEW_NAMES = (process.env.VIEWS ?? "hero,aft,close").split(",");
+const SEEDS = (process.env.SEEDS ?? "0").split(",").map((value) => {
+	const n = Number.parseInt(value, 10);
+	if (!Number.isInteger(n) || n < 0)
+		throw new Error(`SEEDS: ${value} is not a seed`);
+	return n;
+});
 
 await guardedOrigin(ORIGIN, ["src/ship-surface.ts", "src/station-mesh.ts"]);
 await mkdir(OUT, { recursive: true });
@@ -84,55 +98,68 @@ let renderer = null;
 const captured = [];
 try {
 	for (const family of FAMILIES) {
-		for (const finish of FINISHES) {
-			await page.goto(`${ORIGIN}/?model-viewer=${family}&finish=${finish}`, {
-				waitUntil: "load",
-			});
-			await page.waitForSelector("#model-viewer canvas");
-			// The refusal, on every page load: the renderer does not change
-			// between finishes, and a check that only ran on the first load would
-			// be a check on the first load.
-			renderer = await assertPlayersRenderer(
-				page,
-				"capture a finish sheet — a finish is judged by eye and a software rasteriser is the wrong picture",
-				{ global: "__seeliteModelViewer" },
-			);
-			const got = await page.evaluate(
-				() => window.__seeliteModelViewer.state.finish,
-			);
-			if (got !== finish)
-				throw new Error(`asked for finish ${finish}, the workbench has ${got}`);
-			await fillStage(page);
-			for (const subject of SUBJECTS[family]) {
-				await page.click(`[data-model-asset="${subject}"]`);
-				const variantButton = `[data-model-variant="${VARIANT}"][data-model-role="${subject}"]`;
-				if ((await page.locator(variantButton).count()) === 0) continue;
-				await page.click(variantButton);
-				for (const view of VIEW_NAMES) {
-					const framing = VIEWS[view];
-					if (!framing) throw new Error(`no view named ${view}`);
-					await page.evaluate((v) => {
-						const s = window.__seeliteModelViewer.state;
-						s.azimuth = v.azimuth;
-						s.elevation = v.elevation;
-						if (v.zoom) s.distance *= v.zoom;
-					}, framing);
-					// Two frames: one to apply the orbit, one to draw it.
-					await page.waitForTimeout(250);
-					const file = `${family}-${subject}-${VARIANT}-${finish}-${view}.png`;
-					await page
-						.locator("#model-viewer canvas")
-						.screenshot({ path: join(OUT, file) });
-					captured.push({ family, subject, finish, view, file });
-					// Undo the zoom so the next view starts from the workbench's
-					// own framing rather than compounding it.
-					if (framing.zoom)
-						await page.evaluate((z) => {
-							window.__seeliteModelViewer.state.distance /= z;
-						}, framing.zoom);
+		// A hull ignores the assembly seed, so the ship family is captured once.
+		const seeds = family === "station" ? SEEDS : [0];
+		for (const finish of FINISHES)
+			for (const seed of seeds) {
+				await page.goto(
+					`${ORIGIN}/?model-viewer=${family}&finish=${finish}&assembly=${seed}`,
+					{ waitUntil: "load" },
+				);
+				await page.waitForSelector("#model-viewer canvas");
+				// The refusal, on every page load: the renderer does not change
+				// between finishes, and a check that only ran on the first load would
+				// be a check on the first load.
+				renderer = await assertPlayersRenderer(
+					page,
+					"capture a finish sheet — a finish is judged by eye and a software rasteriser is the wrong picture",
+					{ global: "__seeliteModelViewer" },
+				);
+				const got = await page.evaluate(() => {
+					const state = window.__seeliteModelViewer.state;
+					return { finish: state.finish, assembly: state.assembly };
+				});
+				if (got.finish !== finish)
+					throw new Error(
+						`asked for finish ${finish}, the workbench has ${got.finish}`,
+					);
+				// Read back for the finish's reason: a capture at the wrong seed under
+				// the right filename is a sheet that lies about variety.
+				if (got.assembly !== seed)
+					throw new Error(
+						`asked for assembly seed ${seed}, the workbench has ${got.assembly}`,
+					);
+				await fillStage(page);
+				for (const subject of SUBJECTS[family]) {
+					await page.click(`[data-model-asset="${subject}"]`);
+					const variantButton = `[data-model-variant="${VARIANT}"][data-model-role="${subject}"]`;
+					if ((await page.locator(variantButton).count()) === 0) continue;
+					await page.click(variantButton);
+					for (const view of VIEW_NAMES) {
+						const framing = VIEWS[view];
+						if (!framing) throw new Error(`no view named ${view}`);
+						await page.evaluate((v) => {
+							const s = window.__seeliteModelViewer.state;
+							s.azimuth = v.azimuth;
+							s.elevation = v.elevation;
+							if (v.zoom) s.distance *= v.zoom;
+						}, framing);
+						// Two frames: one to apply the orbit, one to draw it.
+						await page.waitForTimeout(250);
+						const file = `${family}-${subject}-${VARIANT}-${finish}-s${seed}-${view}.png`;
+						await page
+							.locator("#model-viewer canvas")
+							.screenshot({ path: join(OUT, file) });
+						captured.push({ family, subject, finish, seed, view, file });
+						// Undo the zoom so the next view starts from the workbench's
+						// own framing rather than compounding it.
+						if (framing.zoom)
+							await page.evaluate((z) => {
+								window.__seeliteModelViewer.state.distance /= z;
+							}, framing.zoom);
+					}
 				}
 			}
-		}
 	}
 } finally {
 	await browser.close();
@@ -150,24 +177,29 @@ for (const family of FAMILIES)
 		html.push(`<h2>${family} · ${view}</h2><table><tr><th></th>`);
 		for (const finish of FINISHES) html.push(`<th>${finish}</th>`);
 		html.push("</tr>");
-		for (const subject of SUBJECTS[family]) {
-			html.push(`<tr><th>${subject} ${VARIANT}</th>`);
-			for (const finish of FINISHES) {
-				const shot = captured.find(
-					(c) =>
-						c.family === family &&
-						c.subject === subject &&
-						c.finish === finish &&
-						c.view === view,
-				);
+		const seeds = family === "station" ? SEEDS : [0];
+		for (const subject of SUBJECTS[family])
+			for (const seed of seeds) {
 				html.push(
-					shot
-						? `<td><img src="${shot.file}" alt="${shot.file}"></td>`
-						: "<td>—</td>",
+					`<tr><th>${subject} ${VARIANT}${seeds.length > 1 ? ` · seed ${seed}` : ""}</th>`,
 				);
+				for (const finish of FINISHES) {
+					const shot = captured.find(
+						(c) =>
+							c.family === family &&
+							c.subject === subject &&
+							c.finish === finish &&
+							c.seed === seed &&
+							c.view === view,
+					);
+					html.push(
+						shot
+							? `<td><img src="${shot.file}" alt="${shot.file}"></td>`
+							: "<td>—</td>",
+					);
+				}
+				html.push("</tr>");
 			}
-			html.push("</tr>");
-		}
 		html.push("</table>");
 	}
 await writeFile(join(OUT, "index.html"), html.join("\n"));

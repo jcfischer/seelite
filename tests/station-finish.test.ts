@@ -107,7 +107,7 @@ describe("every finish builds every selected form", () => {
 			setStationFinish(id);
 			for (const type of STATION_TYPES) {
 				const form = formOf(type);
-				const built = buildStationForm(type, form.id, GREY, 0);
+				const built = buildStationForm(type, form.id, GREY, 0, 0);
 				const measured = LEVELS.map((level) => {
 					setStationDetail(built, level);
 					return reachKm(built.root, type);
@@ -131,7 +131,7 @@ describe("every finish builds every selected form", () => {
 	test("the fixtures are there under an industrial finish and not under stock", () => {
 		const count = (id: StationFinishId, type: StationType) => {
 			setStationFinish(id);
-			const built = buildStationForm(type, SELECTED_FORM[type], GREY, 0);
+			const built = buildStationForm(type, SELECTED_FORM[type], GREY, 0, 0);
 			const group = built.root.getObjectByName("macro-fixtures");
 			let instanced = 0;
 			group?.traverse((object) => {
@@ -171,7 +171,7 @@ describe("every finish builds every selected form", () => {
 		 */
 		setStationFinish("industrial");
 		for (const type of STATION_TYPES) {
-			const built = buildStationForm(type, SELECTED_FORM[type], GREY, 0);
+			const built = buildStationForm(type, SELECTED_FORM[type], GREY, 0, 0);
 			const km = built.root.getObjectByName("km") as THREE.Group;
 			km.updateMatrixWorld(true);
 			const group = km.getObjectByName("macro-fixtures") as THREE.Group;
@@ -227,9 +227,13 @@ describe("the finish reaches the material", () => {
 	test("an industrial finish cuts the seams into a normal map; stock paints them", () => {
 		const normalOf = (id: StationFinishId) => {
 			setStationFinish(id);
-			const core = buildStationForm("trade", "a", GREY, 0).root.getObjectByName(
-				"core",
-			) as THREE.Mesh;
+			const core = buildStationForm(
+				"trade",
+				"a",
+				GREY,
+				0,
+				0,
+			).root.getObjectByName("core") as THREE.Mesh;
 			return (core.material as THREE.MeshStandardMaterial).normalMap;
 		};
 		expect(normalOf("stock")).toBeNull();
@@ -295,9 +299,13 @@ describe("the station maps are the plating's, not the finish's", () => {
 	test("plated and industrial share one set of maps; stock and worn have their own", () => {
 		const mapOf = (id: StationFinishId) => {
 			setStationFinish(id);
-			const core = buildStationForm("trade", "a", GREY, 0).root.getObjectByName(
-				"core",
-			) as THREE.Mesh;
+			const core = buildStationForm(
+				"trade",
+				"a",
+				GREY,
+				0,
+				0,
+			).root.getObjectByName("core") as THREE.Mesh;
 			return (core.material as THREE.MeshStandardMaterial).map;
 		};
 		const plated = mapOf("plated");
@@ -328,10 +336,12 @@ describe("the fixtures are at ship scale", () => {
 				(type) => [type, SELECTED_FORM[type]] as [StationType, StationFormId],
 			),
 			["trade", "d"],
+			["refinery", "d"],
+			["outpost", "d"],
 		];
 		let members = 0;
 		for (const [type, form] of builds) {
-			const km = buildStationForm(type, form, GREY, 0).root.getObjectByName(
+			const km = buildStationForm(type, form, GREY, 0, 0).root.getObjectByName(
 				"km",
 			) as THREE.Group;
 			km.traverse((object) => {

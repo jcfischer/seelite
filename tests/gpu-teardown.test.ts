@@ -308,7 +308,7 @@ describe("disposeSubtree reaches every kind of resource a scene holds", () => {
 		// The floor under the two disjointness rows below: they are vacuously
 		// true against a walker that freed nothing at all.
 		for (const type of STATION_TYPES) {
-			const mesh = buildStationMesh(type, 0x9aa6b2, 7);
+			const mesh = buildStationMesh(type, 0x9aa6b2, 7, 7);
 			expect([type, disposeSubtree(mesh.root).freed.size > 0]).toEqual([
 				type,
 				true,
@@ -336,8 +336,8 @@ describe("disposeSubtree keeps what the next system needs", () => {
 		// everything it reached would take the *next* system's trade station's
 		// surface with it. That does not throw. It renders black.
 		for (const type of STATION_TYPES) {
-			const leaving = buildStationMesh(type, 0x9aa6b2, 7);
-			const staying = buildStationMesh(type, 0x9aa6b2, 7);
+			const leaving = buildStationMesh(type, 0x9aa6b2, 7, 7);
+			const staying = buildStationMesh(type, 0x9aa6b2, 7, 7);
 			const held = resourcesOf(staying.root);
 			const report = disposeSubtree(leaving.root);
 			for (const resource of report.freed)
@@ -443,7 +443,7 @@ describe("disposeSubtree keeps what the next system needs", () => {
 		// Named rather than counted: a count would go green on the wrong set.
 		expect(isShared(surfaceSphere("near"))).toBe(true);
 		expect(isShared(surfaceSphere("far"))).toBe(true);
-		const station = buildStationMesh("trade", 0x9aa6b2, 7);
+		const station = buildStationMesh("trade", 0x9aa6b2, 7, 7);
 		const report = disposeSubtree(station.root);
 		for (const resource of report.kept) expect(isShared(resource)).toBe(true);
 		for (const resource of report.freed) expect(isShared(resource)).toBe(false);

@@ -115,7 +115,7 @@ describe("every form carries clutter, and the density figure is what puts it the
 	test("every form of every role builds greebles, and the handle holds them", () => {
 		for (const type of TYPES) {
 			for (const form of STATION_FORMS[type]) {
-				const built = buildStationForm(type, form.id, GREY, 0);
+				const built = buildStationForm(type, form.id, GREY, 0, 0);
 				expect([type, form.id, greebleCount(built.root) > 0]).toEqual([
 					type,
 					form.id,
@@ -139,7 +139,7 @@ describe("every form carries clutter, and the density figure is what puts it the
 		// per-zone builder produces.
 		for (const type of TYPES) {
 			for (const form of STATION_FORMS[type]) {
-				const { root } = buildStationForm(type, form.id, GREY, 0);
+				const { root } = buildStationForm(type, form.id, GREY, 0, 0);
 				expect([type, form.id, greebleMeshes(root).length]).toEqual([
 					type,
 					form.id,
@@ -211,8 +211,12 @@ describe("every form carries clutter, and the density figure is what puts it the
 		// arithmetic, and an argument is not a check.
 		for (const type of TYPES) {
 			for (const form of STATION_FORMS[type]) {
-				const a = greebleMeshes(buildStationForm(type, form.id, GREY, 0).root);
-				const b = greebleMeshes(buildStationForm(type, form.id, GREY, 0).root);
+				const a = greebleMeshes(
+					buildStationForm(type, form.id, GREY, 0, 0).root,
+				);
+				const b = greebleMeshes(
+					buildStationForm(type, form.id, GREY, 0, 0).root,
+				);
 				for (let m = 0; m < a.length; m++) {
 					expect([type, form.id, [...a[m].instanceMatrix.array]]).toEqual([
 						type,
@@ -301,7 +305,13 @@ describe("a greeble is mounted on the station, not floating beside it", () => {
 			for (const type of TYPES)
 				for (const form of STATION_FORMS[type]) {
 					setStationFinish(finish);
-					const { root, greebles } = buildStationForm(type, form.id, GREY, 0);
+					const { root, greebles } = buildStationForm(
+						type,
+						form.id,
+						GREY,
+						0,
+						0,
+					);
 					root.updateMatrixWorld(true);
 					const structure: THREE.Mesh[] = [];
 					root.traverse((object) => {
@@ -386,7 +396,7 @@ describe("#102 §2 — no greeble may be a station's farthest vertex", () => {
 		// form or by how much, and a strict inequality here does.
 		for (const type of TYPES) {
 			for (const form of STATION_FORMS[type]) {
-				const { root } = buildStationForm(type, form.id, GREY, 0);
+				const { root } = buildStationForm(type, form.id, GREY, 0, 0);
 				const clutter = reachOf(root, type, isGreeble);
 				const structure = reachOf(root, type, (o) => !isGreeble(o));
 				expect([type, form.id, clutter < structure]).toEqual([
@@ -407,7 +417,7 @@ describe("#102 §5 — low drops the geometry and keeps every light", () => {
 
 	test("low hides every greeble instance", () => {
 		for (const type of TYPES) {
-			const built = buildStationForm(type, "a", GREY, 0);
+			const built = buildStationForm(type, "a", GREY, 0, 0);
 			// Driven through the per-frame call rather than by setting the flag
 			// and reading the mesh: the gate has to be live, and the renderer's
 			// own path is the only one that proves it.
@@ -427,7 +437,7 @@ describe("#102 §5 — low drops the geometry and keeps every light", () => {
 		// The half that must *not* move. Dropping the lights on low would drop
 		// the reason #102 exists — an unlit flank is legible because it emits.
 		for (const type of TYPES) {
-			const built = buildStationForm(type, "a", GREY, 0);
+			const built = buildStationForm(type, "a", GREY, 0, 0);
 			updateStationVisuals(built, 3, 1, "low");
 			const panes = built.root.getObjectByName("windows");
 			expect([type, panes?.visible]).toEqual([type, true]);
@@ -444,7 +454,7 @@ describe("#102 §5 — low drops the geometry and keeps every light", () => {
 		// Both write `visible`, and a single owner would make one of them a
 		// no-op. At `full` with low quality the clutter is gone and the rest of
 		// the `full` set is still drawn.
-		const built = buildStationForm("trade", "a", GREY, 0);
+		const built = buildStationForm("trade", "a", GREY, 0, 0);
 		setStationDetail(built, "full");
 		updateStationVisuals(built, 0, 1, "low");
 		expect(greebleMeshes(built.root).every((m) => !m.visible)).toBe(true);
@@ -483,8 +493,9 @@ describe("#129 — the windows are dense enough to read as inhabited", () => {
 			// the honest one, that it carries panes at all.
 			trade: { a: 28, b: 28, c: 28, d: 0 },
 			shipyard: { a: 16, b: 16, c: 12 },
-			refinery: { a: 12, b: 12, c: 10 },
-			outpost: { a: 6, b: 6, c: 6 },
+			// The two solved pad forms (#257) post-date #36 for the same reason.
+			refinery: { a: 12, b: 12, c: 10, d: 0 },
+			outpost: { a: 6, b: 6, c: 6, d: 0 },
 		};
 		for (const type of TYPES) {
 			// Every form has a baseline, so a form added without one is a red run
@@ -495,7 +506,7 @@ describe("#129 — the windows are dense enough to read as inhabited", () => {
 				STATION_FORMS[type].map((form) => form.id).sort(),
 			]);
 			for (const form of STATION_FORMS[type]) {
-				const now = paneCount(buildStationForm(type, form.id, GREY, 0).root);
+				const now = paneCount(buildStationForm(type, form.id, GREY, 0, 0).root);
 				expect([type, form.id, now > before[type][form.id]]).toEqual([
 					type,
 					form.id,

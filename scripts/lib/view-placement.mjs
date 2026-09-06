@@ -186,6 +186,15 @@ export async function installViewFraming(page) {
 			distanceRadii,
 			azimuth = 0,
 			elevation = 0,
+			/**
+			 * Which form to frame. **Named by the shot rather than left to the
+			 * workbench**, which opens on the first variant in the list: the
+			 * outpost frame showed the Derrick for as long as `a` was the
+			 * selected form and would have gone on showing it after #257 chose
+			 * `d`, so the one view of a role the game never generates would
+			 * have drifted from the role.
+			 */
+			variant = "a",
 		) => {
 			const button = document.querySelector(`[data-model-asset="${asset}"]`);
 			if (!button)
@@ -193,6 +202,14 @@ export async function installViewFraming(page) {
 					`__frameWorkbenchInterior: no "${asset}" on the station workbench`,
 				);
 			button.click();
+			const variantButton = document.querySelector(
+				`[data-model-variant="${variant}"][data-model-role="${asset}"]`,
+			);
+			if (!variantButton)
+				throw new Error(
+					`__frameWorkbenchInterior: no "${asset}" variant "${variant}"`,
+				);
+			variantButton.click();
 			const viewer = window.__seeliteModelViewer;
 			if (!viewer)
 				throw new Error("__frameWorkbenchInterior: the workbench is not up");

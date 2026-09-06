@@ -217,7 +217,13 @@ describe("the volume holds what it says it holds", () => {
 		for (const type of STATION_TYPES) {
 			if (STATION_GEOMETRY[type].aperture.kind !== "slot") continue;
 			const interior = interiorOf(type);
-			const { root } = buildStationForm(type, SELECTED_FORM[type], 0x888888, 0);
+			const { root } = buildStationForm(
+				type,
+				SELECTED_FORM[type],
+				0x888888,
+				0,
+				0,
+			);
 			root.updateMatrixWorld(true);
 			const core = STATION_GEOMETRY[type].coreRadiusKm;
 			// **The `core`, not the whole assembly.** A shipyard's drydock frame

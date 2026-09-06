@@ -58,6 +58,19 @@ import { instanceBoxes } from "./helpers/instance-boxes";
 // loop in this file, and a hand-written list is exactly the place it would not.
 const TYPES: StationType[] = STATION_TYPES;
 
+/**
+ * The forms whose shape is a plan solved from the assembly seed (#202, #257),
+ * and a spread of seeds to build each at. Every row below that builds at
+ * seed zero measures one plan of a form whose whole point is that plans
+ * differ; these rows measure the spread.
+ */
+const SOLVED_FORMS: [StationType, StationFormId][] = [
+	["trade", "d"],
+	["refinery", "d"],
+	["outpost", "d"],
+];
+const ASSEMBLY_SEEDS = [0, 1, 2, 3, 17, 42, 1000, 65535, 7, 8, 12345, 99999];
+
 /** Any colour: these tests are about geometry. The two that are about the
  *  colour cue pass their own and say so. */
 const GREY = 0x9aa6b2;
@@ -75,7 +88,7 @@ const GREY = 0x9aa6b2;
  * table is written in.
  */
 function reachKm(type: StationType): number {
-	return reachOf(buildStationMesh(type, GREY, 0).root, type);
+	return reachOf(buildStationMesh(type, GREY, 0, 0).root, type);
 }
 
 /** The farthest drawn vertex of an already-built station, kilometres. */
@@ -132,7 +145,7 @@ describe("the silhouette budget is a budget", () => {
 		// does, and its number would drift until the day it was chosen.
 		for (const type of TYPES) {
 			for (const form of STATION_FORMS[type]) {
-				const { root } = buildStationForm(type, form.id, GREY, 0);
+				const { root } = buildStationForm(type, form.id, GREY, 0, 0);
 				const reach = reachOf(root, type);
 				console.log(
 					`${type} ${form.id} ${form.name}: reaches ${reach.toFixed(3)} km, ` +
@@ -141,6 +154,30 @@ describe("the silhouette budget is a budget", () => {
 				expect(reach).toBeLessThanOrEqual(form.reachKm * (1 + 1e-6));
 				// And not slack: a declaration nothing approaches catches nothing.
 				expect(reach).toBeGreaterThan(form.reachKm * 0.6);
+			}
+		}
+	});
+
+	test("a solved form stays inside its declared reach at every seed in the spread", () => {
+		// Seed zero is one plan. The declaration is a bound over the field, and
+		// the sparsest plan still has to clear the floor, or the declaration is
+		// slack on the day a seed solves to the plants alone.
+		for (const [type, id] of SOLVED_FORMS) {
+			const form = STATION_FORMS[type].find((f) => f.id === id);
+			if (!form) throw new Error(`no form ${id} for ${type}`);
+			for (const seed of ASSEMBLY_SEEDS) {
+				const { root } = buildStationForm(type, id, GREY, 0, seed);
+				const reach = reachOf(root, type);
+				expect([type, seed, reach <= form.reachKm * (1 + 1e-6)]).toEqual([
+					type,
+					seed,
+					true,
+				]);
+				expect([type, seed, reach > form.reachKm * 0.6]).toEqual([
+					type,
+					seed,
+					true,
+				]);
 			}
 		}
 	});
@@ -178,7 +215,7 @@ describe("the parts the probe and the renderer look up by name", () => {
 		// cannot be probed is a form that cannot be ranked honestly.
 		for (const type of TYPES) {
 			for (const form of STATION_FORMS[type]) {
-				const { root } = buildStationForm(type, form.id, GREY, 0);
+				const { root } = buildStationForm(type, form.id, GREY, 0, 0);
 				expect(root.getObjectByName("core")).toBeDefined();
 				expect(root.getObjectByName("aperture")).toBeDefined();
 				expect(root.getObjectByName("station-interior")).toBeDefined();
@@ -192,7 +229,13 @@ describe("the parts the probe and the renderer look up by name", () => {
 		// far-range width check becoming a function of the clock, because the
 		// outboard structure swings through the view.
 		for (const form of STATION_FORMS.shipyard) {
-			const { root, spinner } = buildStationForm("shipyard", form.id, GREY, 0);
+			const { root, spinner } = buildStationForm(
+				"shipyard",
+				form.id,
+				GREY,
+				0,
+				0,
+			);
 			expect(root.getObjectByName("frame")).toBeDefined();
 			expect(spinner.getObjectByName("frame")).toBeUndefined();
 			// And the bay *is* inside it, or the phase drives nothing — a berth is
@@ -206,7 +249,7 @@ describe("the parts the probe and the renderer look up by name", () => {
 		// `docking.md` §4: the refinery's pad does not turn, and a station that
 		// rotated whole would sweep its own pad away from the ship lined up on it.
 		for (const type of TYPES) {
-			const { spinner } = buildStationMesh(type, GREY, 0);
+			const { spinner } = buildStationMesh(type, GREY, 0, 0);
 			expect(spinner.children.length > 0).toBe(STATION_GEOMETRY[type].spins);
 		}
 	});
@@ -218,7 +261,7 @@ describe("the meshes are built in the table's units", () => {
 		// wider than `STATION_GEOMETRY` says is a gap between what the player aims
 		// at and what #9's checks measure, and it is invisible on screen.
 		for (const type of TYPES) {
-			const { root } = buildStationMesh(type, GREY, 0);
+			const { root } = buildStationMesh(type, GREY, 0, 0);
 			const opening = apertureOpening(root);
 			const core = STATION_GEOMETRY[type].coreRadiusKm;
 			// Six digits, not nine: the vertices are float32 by the time they are
@@ -237,7 +280,7 @@ describe("the meshes are built in the table's units", () => {
 
 	test("the aperture sits on the +Z face, which is the axis the caller aims", () => {
 		for (const type of TYPES) {
-			const { root } = buildStationMesh(type, GREY, 0);
+			const { root } = buildStationMesh(type, GREY, 0, 0);
 			const opening = apertureOpening(root);
 			expect(opening.planeZ).toBeGreaterThan(0);
 			// On the axis, not off it: an off-axis slot turns the roll match into a
@@ -254,7 +297,7 @@ describe("§7's secondary cue, and the detail that is not the identity", () => {
 		// the same colour — a per-type cue silently removed while two docstrings
 		// still claimed it was live.
 		for (const type of TYPES) {
-			const { root } = buildStationMesh(type, 0x123456, 0);
+			const { root } = buildStationMesh(type, 0x123456, 0, 0);
 			const core = root.getObjectByName("core") as THREE.Mesh;
 			expect(core).toBeDefined();
 			expect((core.material as THREE.MeshStandardMaterial).color.getHex()).toBe(
@@ -264,8 +307,8 @@ describe("§7's secondary cue, and the detail that is not the identity", () => {
 	});
 
 	test("two colours give two different stations", () => {
-		const a = buildStationMesh("trade", 0x111111, 0);
-		const b = buildStationMesh("trade", 0x222222, 0);
+		const a = buildStationMesh("trade", 0x111111, 0, 0);
+		const b = buildStationMesh("trade", 0x222222, 0, 0);
 		const hex = (m: THREE.Object3D) =>
 			(
 				(m.getObjectByName("core") as THREE.Mesh)
@@ -294,7 +337,7 @@ describe("§7's secondary cue, and the detail that is not the identity", () => {
 		// cover the rest.
 		for (const type of TYPES) {
 			for (const form of STATION_FORMS[type]) {
-				const { root } = buildStationForm(type, form.id, GREY, 0);
+				const { root } = buildStationForm(type, form.id, GREY, 0, 0);
 				root.updateMatrixWorld(true);
 				const panes = root.getObjectByName("windows") as THREE.InstancedMesh;
 				expect(panes?.isInstancedMesh).toBe(true);
@@ -333,7 +376,7 @@ describe("§7's secondary cue, and the detail that is not the identity", () => {
 		// corridor row's, and it is asserted over all twelve forms.
 		for (const type of TYPES) {
 			if (STATION_GEOMETRY[type].aperture.kind !== "slot") continue;
-			const { root } = buildStationMesh(type, GREY, 0);
+			const { root } = buildStationMesh(type, GREY, 0, 0);
 			const opening = apertureOpening(root);
 			const [panel] = interiorOf(root, "interior-bulkhead");
 			const box = new THREE.Box3().setFromObject(panel);
@@ -516,7 +559,7 @@ describe("a station is one object, not a scatter of parts", () => {
 	test("every form of every role is a single connected assembly", () => {
 		for (const type of TYPES) {
 			for (const form of STATION_FORMS[type]) {
-				const { root } = buildStationForm(type, form.id, GREY, 0);
+				const { root } = buildStationForm(type, form.id, GREY, 0, 0);
 				const found = islands(root);
 				// The message carries the names, because "2 islands" tells you
 				// nothing about which part came loose and the parts are named.
@@ -531,6 +574,24 @@ describe("a station is one object, not a scatter of parts", () => {
 			}
 		}
 	});
+
+	test("every plan of a solved form is a single connected assembly, over the seed spread", () => {
+		// The row above builds seed zero. A leaf between two hosts strutted to
+		// one of them, a tile a cell short of its neighbour, a rock sunk a metre
+		// too little: each is a plan-dependent gap, and one seed cannot see it.
+		for (const [type, id] of SOLVED_FORMS)
+			for (const seed of ASSEMBLY_SEEDS) {
+				const { root } = buildStationForm(type, id, GREY, 0, seed);
+				const detached = islands(root)
+					.slice(1)
+					.map((names) => names.join("+"))
+					.join(" | ");
+				expect([`${type} ${id} seed ${seed}`, detached]).toEqual([
+					`${type} ${id} seed ${seed}`,
+					"",
+				]);
+			}
+	});
 });
 
 describe("nothing stands in the way of the thing you fly through", () => {
@@ -543,7 +604,7 @@ describe("nothing stands in the way of the thing you fly through", () => {
 	test("the approach corridor is clear on every form of every role", () => {
 		for (const type of TYPES) {
 			for (const form of STATION_FORMS[type]) {
-				const { root } = buildStationForm(type, form.id, GREY, 0);
+				const { root } = buildStationForm(type, form.id, GREY, 0, 0);
 				const blocked = corridorLine(corridorIntrusions(root, type));
 				expect([`${type} ${form.id}`, blocked]).toEqual([
 					`${type} ${form.id}`,
@@ -551,6 +612,21 @@ describe("nothing stands in the way of the thing you fly through", () => {
 				]);
 			}
 		}
+	});
+
+	test("the approach corridor is clear on every plan of a solved form, over the seed spread", () => {
+		// A pad form's corridor runs outward from the plane about the axis, and
+		// the plan puts nothing on the axis but the centre cell — but a module in
+		// the first ring is a cell wide, and a tall one could lean into it.
+		for (const [type, id] of SOLVED_FORMS)
+			for (const seed of ASSEMBLY_SEEDS) {
+				const { root } = buildStationForm(type, id, GREY, 0, seed);
+				const blocked = corridorLine(corridorIntrusions(root, type));
+				expect([`${type} ${id} seed ${seed}`, blocked]).toEqual([
+					`${type} ${id} seed ${seed}`,
+					"",
+				]);
+			}
 	});
 
 	/**
@@ -566,6 +642,7 @@ describe("nothing stands in the way of the thing you fly through", () => {
 			"outpost",
 			SELECTED_FORM.outpost,
 			GREY,
+			0,
 			0,
 		);
 		const berth = root.getObjectByName("berth-deck-near");
@@ -615,7 +692,7 @@ describe("§13.1 — the opening is a hole, and the lane behind it is clear", ()
 			STATION_FORMS[type].map((form) => ({ type, form })),
 		).filter(
 			({ type, form }) =>
-				hasBay(buildStationForm(type, form.id, GREY, 0).root) &&
+				hasBay(buildStationForm(type, form.id, GREY, 0, 0).root) &&
 				// Named so the filter cannot quietly empty itself: a bug that
 				// dropped every form would leave every row below vacuous.
 				STATION_GEOMETRY[type].aperture.kind === "slot",
@@ -626,7 +703,7 @@ describe("§13.1 — the opening is a hole, and the lane behind it is clear", ()
 		// than trusted — seven forms since #202, and they are the ones with a slot.
 		for (const type of TYPES)
 			for (const form of STATION_FORMS[type]) {
-				const { root } = buildStationForm(type, form.id, GREY, 0);
+				const { root } = buildStationForm(type, form.id, GREY, 0, 0);
 				expect([`${type} ${form.id}`, hasBay(root)]).toEqual([
 					`${type} ${form.id}`,
 					STATION_GEOMETRY[type].aperture.kind === "slot",
@@ -644,7 +721,7 @@ describe("§13.1 — the opening is a hole, and the lane behind it is clear", ()
 	 */
 	test("the drawn bay's mouth is the aperture frame's own plane", () => {
 		for (const { type, form } of bayForms()) {
-			const { root } = buildStationForm(type, form.id, GREY, 0);
+			const { root } = buildStationForm(type, form.id, GREY, 0, 0);
 			const core = STATION_GEOMETRY[type].coreRadiusKm;
 			const apart = (bayBand(root).max.z - mouthPlane(root)) * core;
 			// A millimetre, against a station whose smallest feature is a
@@ -658,7 +735,7 @@ describe("§13.1 — the opening is a hole, and the lane behind it is clear", ()
 
 	test("every form with a bay cuts its aperture into a surface", () => {
 		for (const { type, form } of bayForms()) {
-			const { root } = buildStationForm(type, form.id, GREY, 0);
+			const { root } = buildStationForm(type, form.id, GREY, 0, 0);
 			expect([`${type} ${form.id}`, cutSurfaces(root).length > 0]).toEqual([
 				`${type} ${form.id}`,
 				true,
@@ -676,7 +753,7 @@ describe("§13.1 — the opening is a hole, and the lane behind it is clear", ()
 	 */
 	test("the surface surrounding each opening is the one that was cut", () => {
 		for (const { type, form } of bayForms()) {
-			const { root } = buildStationForm(type, form.id, GREY, 0);
+			const { root } = buildStationForm(type, form.id, GREY, 0, 0);
 			const uncut = collarSurfaces(root, type)
 				.filter((surface) => !surface.cut)
 				.map((surface) => `${surface.name} uncut`)
@@ -702,7 +779,7 @@ describe("§13.1 — the opening is a hole, and the lane behind it is clear", ()
 	 */
 	test("the transit lane is clear from the mouth to the back wall", () => {
 		for (const { type, form } of bayForms()) {
-			const { root } = buildStationForm(type, form.id, GREY, 0);
+			const { root } = buildStationForm(type, form.id, GREY, 0, 0);
 			const blocked = crossingsLine(crossings(root, type));
 			expect([`${type} ${form.id}`, blocked]).toEqual([
 				`${type} ${form.id}`,
@@ -724,7 +801,7 @@ describe("§13.1 — the opening is a hole, and the lane behind it is clear", ()
 		for (const type of TYPES) {
 			if (STATION_GEOMETRY[type].aperture.kind !== "pad") continue;
 			for (const form of STATION_FORMS[type]) {
-				const { root } = buildStationForm(type, form.id, GREY, 0);
+				const { root } = buildStationForm(type, form.id, GREY, 0, 0);
 				expect([`${type} ${form.id}`, cutSurfaces(root)]).toEqual([
 					`${type} ${form.id}`,
 					[],
@@ -799,7 +876,7 @@ describe("§13.1 — every form gets an interior", () => {
 		// here rather than one, so a form that drew neither, or both, goes red.
 		for (const type of TYPES)
 			for (const form of STATION_FORMS[type]) {
-				const { root } = buildStationForm(type, form.id, GREY, 0);
+				const { root } = buildStationForm(type, form.id, GREY, 0, 0);
 				const pad = STATION_GEOMETRY[type].aperture.kind === "pad";
 				expect([
 					`${type} ${form.id}`,
@@ -830,7 +907,7 @@ describe("§13.1 — every form gets an interior", () => {
 				type,
 				STATION_GEOMETRY[type].aperturePlaneKm,
 			);
-			const { root } = buildStationForm(type, SELECTED_FORM[type], GREY, 0);
+			const { root } = buildStationForm(type, SELECTED_FORM[type], GREY, 0, 0);
 			root.updateMatrixWorld(true);
 			const core = STATION_GEOMETRY[type].coreRadiusKm;
 			// The union of the bay's five walls: the shell stopped being one
@@ -865,7 +942,7 @@ describe("§13.1 — every form gets an interior", () => {
 				type,
 				STATION_GEOMETRY[type].aperturePlaneKm,
 			);
-			const { root } = buildStationForm(type, SELECTED_FORM[type], GREY, 0);
+			const { root } = buildStationForm(type, SELECTED_FORM[type], GREY, 0, 0);
 			for (const berth of interior.berths)
 				expect([
 					type,
@@ -887,7 +964,7 @@ describe("§13.1 — every form gets an interior", () => {
 		// name scan taken once.
 		for (const type of TYPES)
 			for (const form of STATION_FORMS[type]) {
-				const mesh = buildStationForm(type, form.id, GREY, 0);
+				const mesh = buildStationForm(type, form.id, GREY, 0, 0);
 				for (const level of ["outline", "reduced", "full"] as const) {
 					setStationDetail(mesh, level);
 					const gates: string[] = [];
@@ -908,7 +985,7 @@ describe("§12.5 E10/E11 — the shields are geometry here and pixels elsewhere"
 	test("every station carries two shields, mouth and bulkhead", () => {
 		for (const type of TYPES) {
 			for (const form of STATION_FORMS[type]) {
-				const mesh = buildStationForm(type, form.id, GREY, 0);
+				const mesh = buildStationForm(type, form.id, GREY, 0, 0);
 				// **E11 as §13.1 re-sited it: at the mouth *and* on the bulkhead
 				// inside.** A pad used to carry the mouth plate alone, because it
 				// had no inside; every role has one now.
@@ -928,7 +1005,7 @@ describe("§12.5 E10/E11 — the shields are geometry here and pixels elsewhere"
 		// names as the failure mode — the branch that ships to players would be
 		// the one no test ever takes. The plate leaves this module untextured and
 		// invisible, and the renderer lights it.
-		const mesh = buildStationMesh("trade", GREY, 0);
+		const mesh = buildStationMesh("trade", GREY, 0, 0);
 		for (const plate of mesh.nameplates) {
 			const material = plate.material as THREE.MeshBasicMaterial;
 			expect(material.map).toBe(null);
@@ -940,8 +1017,8 @@ describe("§12.5 E10/E11 — the shields are geometry here and pixels elsewhere"
 		// Every other shared material in the module is documented as never being
 		// mutated; this one is written to. A shared one would give every station
 		// in the galaxy the name of whichever was textured last.
-		const a = buildStationMesh("trade", GREY, 0);
-		const b = buildStationMesh("trade", GREY, 0);
+		const a = buildStationMesh("trade", GREY, 0, 0);
+		const b = buildStationMesh("trade", GREY, 0, 0);
 		expect(a.nameplates[0].material).not.toBe(b.nameplates[0].material);
 		expect(a.nameplates[0].material).not.toBe(a.nameplates[1].material);
 	});
@@ -985,7 +1062,7 @@ describe("§128 — the hull comes up to the plane the checks read", () => {
 		const rows: string[] = [];
 		for (const type of TYPES) {
 			if (STATION_GEOMETRY[type].aperture.kind !== "slot") continue;
-			const { root } = buildStationForm(type, SELECTED_FORM[type], GREY, 0);
+			const { root } = buildStationForm(type, SELECTED_FORM[type], GREY, 0, 0);
 			root.updateMatrixWorld(true);
 			const core = STATION_GEOMETRY[type].coreRadiusKm;
 			const hull = root.getObjectByName("core") as THREE.Object3D;
@@ -1014,7 +1091,7 @@ describe("§13.5 row 3 — every berth is inside its own drawn interior", () => 
 	/** The drawn interior's span, in km from the station's centre. A bay's five
 	 *  walls, or a pad's four deck panels. */
 	const shellKm = (type: StationType, formId: StationFormId) => {
-		const { root } = buildStationForm(type, formId, GREY, 0);
+		const { root } = buildStationForm(type, formId, GREY, 0, 0);
 		root.updateMatrixWorld(true);
 		const core = STATION_GEOMETRY[type].coreRadiusKm;
 		const box = new THREE.Box3();
@@ -1081,7 +1158,7 @@ describe("§13.5 row 3 — every berth is inside its own drawn interior", () => 
 			const drawn = stationInterior(
 				type,
 				apertureOpening(
-					buildStationForm(type, SELECTED_FORM[type], GREY, 0).root,
+					buildStationForm(type, SELECTED_FORM[type], GREY, 0, 0).root,
 				).planeZ * STATION_GEOMETRY[type].coreRadiusKm,
 			);
 			const sim = stationInterior(type, STATION_GEOMETRY[type].aperturePlaneKm);
@@ -1117,7 +1194,7 @@ describe("§13.5 row 3 — every berth is inside its own drawn interior", () => 
 		// is never detached from the *drawn* opening.
 		for (const type of TYPES)
 			for (const form of STATION_FORMS[type]) {
-				const { root } = buildStationForm(type, form.id, GREY, 0);
+				const { root } = buildStationForm(type, form.id, GREY, 0, 0);
 				root.updateMatrixWorld(true);
 				const core = STATION_GEOMETRY[type].coreRadiusKm;
 				const [aperture] = interiorOf(root, "aperture-light");

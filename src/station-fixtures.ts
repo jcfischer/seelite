@@ -1193,6 +1193,108 @@ const DECLARATIONS: Partial<
 	 * tower up to the pad deck at +Z. Reach 0.42 km on a 0.15 km core. Nothing
 	 * goes near the +Z axis inside the pad's half-diagonal.
 	 */
+	/**
+	 * Refinery D — Works. The rock is the station (#257), so everything here
+	 * is mounted **on the rock** rather than on the plant: a ring main round
+	 * its waist, tank racks on the −Y flank, and a service truss along the
+	 * quarry rim. The plant on the floor is the form's own and carries its
+	 * own pipes; a fixture that stood among it would be detail on detail.
+	 */
+	"refinery/d": ({ pools, mount }) => {
+		const r = STATION_GEOMETRY.refinery.coreRadiusKm;
+		const S = SHIP_SCALE;
+		// A ring main round the rock's waist, every point landed on the surface
+		// and stood off it by its own radius.
+		const ring: THREE.Vector3[] = [];
+		for (let i = 0; i <= 14; i++) {
+			const theta = (i / 14) * Math.PI * 2;
+			const outward = V(Math.cos(theta), Math.sin(theta), 0);
+			ring.push(
+				mount(
+					outward.clone().multiplyScalar(r * 1.7),
+					outward,
+					r * 0.9,
+				).addScaledVector(outward, S.pipeKm * 1.5),
+			);
+		}
+		pipeRun(pools, ring, S.pipeKm);
+		// Tank racks on the −Y flank, two lanes, standing off the rock.
+		for (const lane of [-0.28, 0.28]) {
+			const flank = mount(
+				V(lane * r, -r * 1.7, -r * 0.3),
+				V(0, -1, 0),
+				r * 0.9,
+			);
+			tankRack(pools, {
+				origin: flank,
+				along: V(0, 0, 1),
+				up: V(0, -1, 0),
+				count: 5,
+				radiusKm: S.tankKm,
+				lengthKm: S.tankLengthKm,
+			});
+		}
+		// A service truss along the quarry rim, +X side, landed on the floor at
+		// both ends so it runs with the surface rather than through it.
+		for (const sign of [1, -1]) {
+			const a = mount(
+				V(sign * r * 0.95, -r * 0.5, r * 0.9),
+				V(0, 0, 1),
+				r * 0.8,
+			);
+			const b = mount(
+				V(sign * r * 0.95, r * 0.5, r * 0.9),
+				V(0, 0, 1),
+				r * 0.8,
+			);
+			truss(pools, a, b, S.trussKm, V(0, 0, 1));
+		}
+	},
+
+	/**
+	 * Outpost D — Cluster. A lattice belt round the core can, a pipe run out
+	 * along the spine, and a radiator bank on the −X can's flank. Small, and
+	 * off the pad's own face: the deck is 0.31 km across on a 0.15 km core,
+	 * so a fixture forward of the plane is in the corridor.
+	 */
+	"outpost/d": ({ pools, mount }) => {
+		const r = STATION_GEOMETRY.outpost.coreRadiusKm;
+		const S = SHIP_SCALE;
+		// The belt: four trusses round the core can, well behind the deck.
+		for (let i = 0; i < 4; i++) {
+			const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+			const b = ((i + 1) / 4) * Math.PI * 2 + Math.PI / 4;
+			truss(
+				pools,
+				V(Math.cos(a) * r * 0.42, Math.sin(a) * r * 0.42, -r * 0.42),
+				V(Math.cos(b) * r * 0.42, Math.sin(b) * r * 0.42, -r * 0.42),
+				S.strutKm,
+				V(0, 0, 1),
+			);
+		}
+		// A pipe run out along the spine both ways, on the −Z side of it.
+		for (const sign of [1, -1])
+			pipeRun(
+				pools,
+				[
+					V(0, sign * r * 0.2, -r * 0.24),
+					V(0, sign * r * 0.9, -r * 0.24),
+					V(0, sign * r * 1.5, -r * 0.24),
+				],
+				S.pipeKm * 0.75,
+			);
+		// A radiator bank on the −X can's underside, behind the deck.
+		const flank = mount(V(-r * 0.7, 0, -r * 0.2), V(0, 0, -1), r * 0.5);
+		radiatorArray(pools, {
+			origin: flank,
+			along: V(-1, 0, 0),
+			up: V(0, 0, -1),
+			count: 6,
+			panelWidthKm: S.panelKm * 0.7,
+			panelHeightKm: S.panelHeightKm * 0.7,
+		});
+	},
+
 	"outpost/a": ({ group, pools, mount, beaconAt }) => {
 		const r = STATION_GEOMETRY.outpost.coreRadiusKm;
 		const S = SHIP_SCALE;

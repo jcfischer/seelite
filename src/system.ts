@@ -332,6 +332,17 @@ export interface Station {
 	 * decision in the generator.
 	 */
 	berthSeed: number;
+	/**
+	 * The station's own assembly draw (`station-types.md` §7.1).
+	 *
+	 * The plan a wave-function-collapse form solves its modules onto. Separate
+	 * from `berthSeed` for `DOMAIN.STATION_ASSEMBLY`'s reason: a form whose
+	 * shape and whose berth side come from one number cannot vary one without
+	 * the other. An integer rather than a plan, like the berth draw — the
+	 * vocabulary is the geometry's to solve, and a generated *layout* would put
+	 * a silhouette decision in the generator.
+	 */
+	assemblySeed: number;
 }
 
 export interface SystemContents {
@@ -698,6 +709,7 @@ function generateStations(
 	const flagRand = stream(record.seed, DOMAIN.STATION_FLAGS);
 	const spinRand = stream(record.seed, DOMAIN.STATION_SPIN);
 	const berthRand = stream(record.seed, DOMAIN.STATION_BERTHS);
+	const assemblyRand = stream(record.seed, DOMAIN.STATION_ASSEMBLY);
 	const names = stationNames(record.seed, record.name);
 	const stations: Station[] = [];
 	// **No `?? planets[0]` fallback.** It used to be there, and it is what made
@@ -722,7 +734,12 @@ function generateStations(
 		type: StationType,
 	): Pick<
 		Station,
-		"name" | "blackMarket" | "spinRpm" | "localCarrierId" | "berthSeed"
+		| "name"
+		| "blackMarket"
+		| "spinRpm"
+		| "localCarrierId"
+		| "berthSeed"
+		| "assemblySeed"
 	> => ({
 		name: names[type],
 		blackMarket: drawBlackMarket(flagRand, type, record.government),
@@ -731,6 +748,8 @@ function generateStations(
 		// only for the types that read it makes the draw count depend on which
 		// stations a system happens to have.
 		berthSeed: Math.floor(berthRand() * 0x100000000),
+		// Its own stream, and unconditional for the same reason again.
+		assemblySeed: Math.floor(assemblyRand() * 0x100000000),
 		// Not a draw: the persistence identity is a table lookup
 		// (`station.ts`), so it consumes nothing from either stream.
 		localCarrierId: LOCAL_CARRIER_ID[type],

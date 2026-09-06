@@ -75,7 +75,14 @@ interface ModelFamily {
 	readonly variantIds: readonly string[];
 	readonly variants: (asset: string) => readonly FamilyVariant[];
 	readonly reachKm: (asset: string, variant: string) => number;
-	readonly build: (asset: string, variant: string) => THREE.Group;
+	/** `assembly` is the plan seed a wave-function-collapse form solves from
+	 *  (#257); a hand-authored form ignores it. The berth seed stays zero on
+	 *  the workbench, for the reason `STATION_FAMILY.build` gives. */
+	readonly build: (
+		asset: string,
+		variant: string,
+		assembly: number,
+	) => THREE.Group;
 	readonly emissive: (name: string) => boolean;
 	readonly finishes: readonly FamilyVariant[];
 	readonly finishId: () => string;
@@ -124,7 +131,7 @@ const STATION_FAMILY: ModelFamily = {
 	// here: the stage frames the camera from a reach in kilometres, so handing
 	// it a root already divided by 0.6 puts the camera 1.9 radii out and inside
 	// the station. Reparenting the inner group is safe — the root is discarded.
-	build: (asset, variant) =>
+	build: (asset, variant, assembly) =>
 		buildStationForm(
 			asset as StationType,
 			variant as StationFormId,
@@ -134,6 +141,12 @@ const STATION_FAMILY: ModelFamily = {
 			// (`docking.md` §13.2). A varying seed would make two captures of one
 			// form differ for a reason that has nothing to do with the form.
 			0,
+			// **The assembly seed is the one thing that may vary**, and only by
+			// `?assembly=<n>`: for a form solved by wave function collapse the plan
+			// *is* the variety the form is ranked on, and a sheet of one plan
+			// cannot show it. Zero unless asked for, so every other capture is
+			// what it was.
+			assembly,
 		).root.getObjectByName("km") as THREE.Group,
 	// `beacon-` is #202's macro-structure lamp, driven in the game by the
 	// same fixture list as the strobes; here it is lit by name like they are,
@@ -176,6 +189,9 @@ type ViewerState = {
 	/** The finish every subject is built under; `?finish=<id>` preselects it
 	 *  so a capture script can load a finish rather than click for it. */
 	finish: string;
+	/** The assembly seed every solved form is built from; `?assembly=<n>`
+	 *  presets it, and it is read back the way `finish` is. */
+	assembly: number;
 	selectedVariants: Record<string, string>;
 	rankings: Record<string, string[]>;
 	beam: number;
@@ -266,6 +282,14 @@ export function mountModelViewer(): void {
 		family.finishes.some((finish) => finish.id === requestedFinish)
 	)
 		family.setFinish(requestedFinish);
+	// An assembly seed named in the URL, an unsigned integer; anything else is
+	// zero, and the capture script reads the state back rather than trusting
+	// what it asked for.
+	const requestedAssembly = Number.parseInt(query.get("assembly") ?? "0", 10);
+	const assembly =
+		Number.isInteger(requestedAssembly) && requestedAssembly >= 0
+			? requestedAssembly
+			: 0;
 	installStyle();
 	const root = document.createElement("section");
 	root.id = "model-viewer";
@@ -360,6 +384,7 @@ export function mountModelViewer(): void {
 		asset: family.assets[0],
 		variant: family.variantIds[0],
 		finish: family.finishId(),
+		assembly,
 		// Derived from HULL_IDS so adding a role cannot leave a hole here that
 		// only shows up as an undefined ranking at click time.
 		selectedVariants: Object.fromEntries(
@@ -401,7 +426,7 @@ export function mountModelViewer(): void {
 			// held alive by this closure until the next rebuild replaces it.
 			mesh = undefined;
 		}
-		mesh = family.build(state.asset, state.variant);
+		mesh = family.build(state.asset, state.variant, state.assembly);
 		holder.add(mesh);
 		applyDraft();
 	};

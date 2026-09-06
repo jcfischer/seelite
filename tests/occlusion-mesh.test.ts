@@ -72,7 +72,7 @@ test("every flag on a hull agrees with the predicate", () => {
 
 test("every station form marks its structure and refuses its lamps", () => {
 	for (const type of STATION_TYPES) {
-		const station = buildStationMesh(type, 0x8899aa, 0).root;
+		const station = buildStationMesh(type, 0x8899aa, 0, 0).root;
 		const marked = markOcclusion(station);
 		expect({ type, marked: marked.participating > 0 }).toEqual({
 			type,
