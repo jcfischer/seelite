@@ -49,6 +49,25 @@ type Switch = {
 	toggle: () => void;
 };
 
+/**
+ * The panel is built with `innerHTML`, and the refusal reason is the one string
+ * in it that does not come from this file — it is composed in
+ * `frame-attribution.ts` from a backend entry. Escaped rather than trusted, so
+ * a reason added later cannot become markup.
+ */
+const escapeHtml = (text: string): string =>
+	text.replace(
+		/[&<>"']/g,
+		(c) =>
+			({
+				"&": "&amp;",
+				"<": "&lt;",
+				">": "&gt;",
+				'"': "&quot;",
+				"'": "&#39;",
+			})[c] ?? c,
+	);
+
 const STYLE_ID = "seelite-perf-style";
 const STYLE = `
 #seelite-perf {
@@ -59,6 +78,17 @@ const STYLE = `
   padding: 6px 9px; pointer-events: none; white-space: pre;
 }
 #seelite-perf b { color: #ffd479; font-weight: 600; }
+/*
+ * The refusal reason is a sentence, not a column, and the panel is
+ * white-space: pre with no width cap — so one unwrapped 245-character line
+ * made the panel about 1800 px wide, and anchored right: 10px on a 1440 px
+ * viewport that puts the left edge and every row's labels off-screen.
+ * No backticks in here: this block is inside a template literal.
+ */
+#seelite-perf .why {
+  display: block; white-space: pre-wrap; max-width: 46ch;
+  color: #ff9d7a; text-indent: 0;
+}
 #seelite-perf .off { color: #ff9a8a; }
 `;
 
@@ -738,7 +768,7 @@ export function mountPerfPanel(targets: PerfTargets) {
 FRAME ATTRIBUTION
 CPU simulation/step         ${metric(attribution.cpu["simulation/step"].medianMs)} med  ${metric(attribution.cpu["simulation/step"].p95Ms)} p95
 CPU render submission       ${metric(attribution.cpu["render submission/composer"].medianMs)} med  ${metric(attribution.cpu["render submission/composer"].p95Ms)} p95
-GPU status                  ${attribution.gpu.status}
+GPU status                  ${attribution.gpu.status}${attribution.gpu.reason ? `<span class="why">${escapeHtml(attribution.gpu.reason)}</span>` : ""}
 GPU composer execution      ${metric(attribution.gpu.medianMs)} med  ${metric(attribution.gpu.p95Ms)} p95
 GPU samples / age           ${attribution.gpu.sampleCount} / ${attribution.gpu.sampleAgeMs === null ? "—" : `${attribution.gpu.sampleAgeMs.toFixed(0)} ms`}
 draw calls / triangles      ${attribution.renderer.calls} / ${attribution.renderer.triangles}

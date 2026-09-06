@@ -123,6 +123,10 @@ const EXEMPT = new Map([
 		"#202/#203's headed finish sheet; it takes screenshots for the principal to judge and asserts nothing — its refusals, a software rasteriser and a finish the workbench did not select, throw out of the run rather than counting a failed check",
 	],
 	[
+		"measure-gpu-timer-calibration.mjs",
+		"#246's headed calibration for EXT_disjoint_timer_query_webgl2: it prints the span, gain and floor arms so a later ANGLE can be re-qualified, and asserts nothing — the pass/fail judgement is the refusal shipped in src/frame-attribution.ts, and a table that also gated would be the check deriving itself from its own subject",
+	],
+	[
 		"measure-light-cost.mjs",
 		"#99's headed frame-cost instrument; it asserts nothing by design — #98 settled that there is no frame-time floor to gate on — so there are no checks for a watch to report into",
 	],

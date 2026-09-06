@@ -960,6 +960,9 @@ for (const framing of FRAMINGS) {
 			`  GPU ${gpu.status}: median ${gpu.medianMs?.toFixed(3) ?? "—"} ms, ` +
 				`p95 ${gpu.p95Ms?.toFixed(3) ?? "—"}, n ${gpu.sampleCount}`,
 		);
+		// A dash with no reason beside it reads as a missing sampler rather than
+		// as a refused one, and the two mean opposite things (#246).
+		if (gpu.reason) console.log(`  GPU refused: ${gpu.reason}`);
 		console.log(
 			`  CPU submission: median ${sub.medianMs?.toFixed(3) ?? "—"} ms, ` +
 				`n ${sub.sampleCount}   |   sim step: ${step.medianMs?.toFixed(3) ?? "—"} ms`,

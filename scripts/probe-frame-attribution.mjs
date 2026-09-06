@@ -14,6 +14,9 @@ import {
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
+// Read off the module rather than restated here: a third refused status would
+// otherwise turn this probe falsely red.
+import { isRefusedGpuStatus } from "../src/gpu-timing-status.js";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 
@@ -237,16 +240,49 @@ const resultOrderIsValid = perf.calls.queryEvents.every((event) => {
 	readyQueries.delete(event.id);
 	return true;
 });
-const timingIsExplicit = snapshot.gpu.supported
-	? snapshot.gpu.status === "supported" &&
-		snapshot.gpu.sampleCount > 0 &&
-		snapshot.gpu.medianMs !== null &&
-		snapshot.gpu.p95Ms !== null
-	: snapshot.gpu.status === "unavailable" &&
-		snapshot.gpu.medianMs === null &&
-		snapshot.gpu.p95Ms === null;
+/**
+ * Three outcomes rather than two, because #246 added a third shape: a backend
+ * whose extension is present, whose queries resolve, and whose numbers are not
+ * to be believed. A refusal owes a reason and **no figure** — a refused median
+ * that is still printed is one that gets transcribed into a receipt.
+ */
+const explicitFor = (gpu) => {
+	if (!gpu.supported)
+		return (
+			gpu.status === "unavailable" &&
+			gpu.medianMs === null &&
+			gpu.p95Ms === null
+		);
+	if (isRefusedGpuStatus(gpu.status))
+		return (
+			gpu.medianMs === null &&
+			gpu.p95Ms === null &&
+			typeof gpu.reason === "string" &&
+			gpu.reason.length > 0
+		);
+	if (gpu.status === "supported")
+		return (
+			gpu.sampleCount > 0 &&
+			gpu.medianMs !== null &&
+			gpu.p95Ms !== null &&
+			gpu.reason === null
+		);
+	if (gpu.status === "stale")
+		// Old but real: it owes an age and it owes no reason, which is what
+		// separates it from a refusal. A bare `return true` here made this a
+		// fourth outcome that could not fail — and the arm the old expression
+		// did check, a supported-but-stale sampler, stopped being checked at all.
+		return gpu.sampleAgeMs !== null && gpu.reason === null;
+	if (gpu.status === "disjoint")
+		// The samples were discarded, so there is nothing to report and nothing
+		// to explain.
+		return gpu.medianMs === null && gpu.p95Ms === null && gpu.reason === null;
+	// A status the module grew and this probe has never heard of.
+	return false;
+};
+const timingIsExplicit = explicitFor(snapshot.gpu);
 t.check(
-	"GPU timing is either supported evidence or explicitly unavailable",
+	"GPU timing is supported evidence, an explicit refusal with a reason, or unavailable",
 	timingIsExplicit,
 	JSON.stringify(snapshot.gpu),
 );

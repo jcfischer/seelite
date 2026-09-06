@@ -13,6 +13,7 @@
  */
 
 import { rollingStatistics } from "./frame-statistics.js";
+import { GPU_TIMING_STATUSES } from "./gpu-timing-status.js";
 
 export { rollingStatistics } from "./frame-statistics.js";
 
@@ -22,11 +23,74 @@ export const CPU_INTERVALS = [
 ] as const;
 
 export type CpuInterval = (typeof CPU_INTERVALS)[number];
-export type GpuTimingStatus =
-	| "supported"
-	| "unavailable"
-	| "disjoint"
-	| "stale";
+/**
+ * Derived from the runtime list rather than declared beside it: the two were
+ * two copies for a round, with `checkJs` off so nothing compared them.
+ */
+export type GpuTimingStatus = (typeof GPU_TIMING_STATUSES)[number];
+
+/**
+ * Backends whose `EXT_disjoint_timer_query_webgl2` does not measure the work
+ * between its own tokens, matched against `UNMASKED_RENDERER_WEBGL`.
+ *
+ * **ANGLE's Metal backend sums command-buffer wall spans.** `QueryMtl.mm`
+ * flushes at `begin` and `end` to get clean boundaries, and
+ * `mtl_command_buffer.mm` then accumulates, per command buffer,
+ * `[buf GPUEndTime] - [buf GPUStartTime]` into the entry the query owns. A sum
+ * of spans is at least the busy time and is strictly more wherever two spans
+ * overlap or one contains a wait, so a frame whose work spans several command
+ * buffers is reported as the sum of their whole durations.
+ *
+ * **The figures are not restated here.**
+ * `scripts/measure-gpu-timer-calibration.mjs` is the owner: it measures the
+ * span, the gain and the floor on the machine it runs on and prints them, so
+ * there is no shipped copy to go stale. What is worth knowing without running
+ * it is the *shape* — the over-report is a gain that **grows with how much of
+ * the frame the work spans**, and a workload small enough to fit one command
+ * buffer reads far below the excess, which **bounds** a fixed cost per query
+ * from above and leaves the summing. It does not show the timer accurate: the
+ * fenced figure that arm is read against is mostly the fence, so an inflated
+ * reading hidden beneath it would look the same. The magnitude is measured
+ * rather than derived: how many command buffers a composer render spans is not
+ * known.
+ *
+ * **A name match is the right shape here even though it is brittle**, and the
+ * two reasons are the mechanism and the alternative. The defect is a property
+ * of the backend rather than of a machine, so the backend is what identifies
+ * it; and the runtime check below cannot stand alone, because the over-report
+ * is a *ratio* — at a cheap framing three times a 2 ms frame is still inside
+ * the cadence and passes. This repo already keys measurement on the rasterizer
+ * name in `scripts/lib/players-renderer.mjs`; this is that practice inside the
+ * module. `scripts/measure-gpu-timer-calibration.mjs` is how a later ANGLE gets
+ * re-qualified and this list shortened.
+ */
+export const SUMMING_TIMER_BACKENDS: readonly Readonly<{
+	match: string;
+	reason: string;
+}>[] = Object.freeze([
+	Object.freeze({
+		match: "ANGLE Metal",
+		reason:
+			"ANGLE Metal sums the wall spans of every command buffer open while " +
+			"a timer query is, rather than timing the work between its tokens, " +
+			"so a frame reads several times its cost — run " +
+			"scripts/measure-gpu-timer-calibration.mjs for this machine's figures",
+	}),
+]);
+
+export const IMPLAUSIBLE_CADENCE_FACTOR = 1.25;
+
+/**
+ * How many GPU samples the window needs before a cadence contradiction counts.
+ *
+ * The physical argument — a GPU cannot spend longer per frame than the interval
+ * between frames — holds of a **sustained** state and not of a burst, and the
+ * first version of the check made the claim off a rolling median with no floor
+ * under its sample count. Two or three slow frames from a jump or a bake would
+ * have been reported as an impossibility. This is not a calibrated figure; it
+ * is a count large enough that a handful of frames cannot reach it.
+ */
+export const IMPLAUSIBLE_MIN_SAMPLES = 8;
 
 export type RollingStatistics = Readonly<{
 	medianMs: number | null;
@@ -53,7 +117,17 @@ export type FrameAttributionSnapshot = Readonly<{
 	gpu: RollingStatistics &
 		Readonly<{
 			status: GpuTimingStatus;
+			/**
+			 * The extension is present and the sampler is live.
+			 *
+			 * Deliberately **not** "the number can be believed": those are
+			 * different questions and #246 is the case where they part. A caller
+			 * that wants a usable figure reads `status === "supported"`, or reads
+			 * `medianMs`, which is `null` under every refusal.
+			 */
 			supported: boolean;
+			/** Why a refused status was chosen; `null` when nothing is refused. */
+			reason: string | null;
 			sampleAgeMs: number | null;
 		}>;
 	renderer: RendererFacts &
@@ -177,6 +251,15 @@ export class FrameAttribution {
 	private readonly gpuSamples: SampleRing<GpuSample>;
 	private lastDisjointAtMs: number | null = null;
 	private disjointActive = false;
+	/**
+	 * When each enabled frame began, whether or not it got a query.
+	 *
+	 * The ring skips a frame when every entry is pending, so a cadence derived
+	 * from `submittedAtMs` is the interval between *timed* frames — two or three
+	 * times the real one when the sampler is busiest, which is exactly when the
+	 * implausibility check would be dividing by it.
+	 */
+	private readonly frameMarks: SampleRing<number>;
 
 	constructor(options: FrameAttributionOptions) {
 		this.gl = options.gl;
@@ -194,6 +277,7 @@ export class FrameAttribution {
 		for (const name of CPU_INTERVALS)
 			this.cpuSamples.set(name, new SampleRing(this.sampleCapacity));
 		this.gpuSamples = new SampleRing(this.sampleCapacity);
+		this.frameMarks = new SampleRing(this.sampleCapacity);
 	}
 
 	/** Allocate the ring and start listening for WebGL context events. */
@@ -249,6 +333,9 @@ export class FrameAttribution {
 			this.activeQuery !== null
 		)
 			return false;
+		// Before the ring is consulted: a frame the ring refuses is still a frame,
+		// and the cadence is what the *frames* ran at.
+		this.frameMarks.push(atMs);
 		if (this.poll(atMs)) return false;
 		for (let offset = 0; offset < this.queries.length; offset++) {
 			const index = (this.nextQuery + offset) % this.queries.length;
@@ -346,7 +433,7 @@ export class FrameAttribution {
 			else status = "supported";
 		}
 
-		const gpuStats = rollingStatistics(
+		let gpuStats = rollingStatistics(
 			gpuSamples.map((sample) => sample.valueMs),
 		);
 		const facts = frozenFacts(this.rendererFacts());
@@ -354,6 +441,21 @@ export class FrameAttribution {
 		const rasterizer = this.debugRenderer
 			? this.readStringParameter(this.debugRenderer.UNMASKED_RENDERER_WEBGL)
 			: null;
+
+		/**
+		 * The span the retained GPU samples were submitted over. The cadence is
+		 * measured across the same span, so the two sides of the implausibility
+		 * comparison describe one stretch of time rather than two.
+		 */
+		const submissions = gpuSamples.map((sample) => sample.submittedAtMs);
+		const trust = this.classifyTrust(status, rasterizer, gpuStats, {
+			fromMs: submissions.length ? Math.min(...submissions) : atMs,
+			toMs: submissions.length ? Math.max(...submissions) : atMs,
+		});
+		status = trust.status;
+		const reason = trust.reason;
+		gpuStats = trust.gpuStats;
+
 		return Object.freeze({
 			enabled: this.enabled,
 			cpu: Object.freeze(cpu),
@@ -361,6 +463,7 @@ export class FrameAttribution {
 				...gpuStats,
 				status,
 				supported,
+				reason,
 				sampleAgeMs,
 			}),
 			renderer: Object.freeze({
@@ -369,6 +472,137 @@ export class FrameAttribution {
 				rasterizer,
 			}),
 		});
+	}
+
+	/**
+	 * Whether this snapshot's figure can be stood behind, and what to say when
+	 * it cannot — #246.
+	 *
+	 * Lifted out of `snapshot()`, which had grown the whole policy inline
+	 * beside the assembly of the object it returns.
+	 *
+	 * **Both refusals are keyed on whether there is a figure**, not on which
+	 * sample state the module landed in. Two rounds found the same fail-open
+	 * one level apart: gated on `status === "supported"`, a backend whose last
+	 * sample had aged past `staleAfterMs` fell through to `stale` and printed
+	 * the very figure the refusal exists to withhold — round 1 for the named
+	 * backend, round 2 for the cadence backstop covering the ones nobody has
+	 * named. `stale` reads as *old but real*, which is the status a leak hides
+	 * best in.
+	 *
+	 * **`disjoint` is excluded, and that is not the same argument.** It clears
+	 * the samples, so no figure leaks either way — but it is a distinct and
+	 * more actionable state, and classifying over it meant a disjoint event on
+	 * a summing backend was reported as `untrusted` and the query invalidation
+	 * disappeared from the snapshot. Round 4.
+	 */
+	private classifyTrust(
+		status: GpuTimingStatus,
+		rasterizer: string | null,
+		gpuStats: RollingStatistics,
+		window: { fromMs: number; toMs: number },
+	): {
+		status: GpuTimingStatus;
+		reason: string | null;
+		gpuStats: RollingStatistics;
+	} {
+		const withheld = (next: GpuTimingStatus, reason: string) => ({
+			// **A status instead of a number, not beside one.** A refused figure
+			// that is still printed is one that gets transcribed into a receipt.
+			status: next,
+			reason,
+			gpuStats: {
+				medianMs: null,
+				p95Ms: null,
+				sampleCount: gpuStats.sampleCount,
+			},
+		});
+		const kept = { status, reason: null, gpuStats };
+		if (status === "unavailable" || status === "disjoint") return kept;
+
+		const backend = SUMMING_TIMER_BACKENDS.find((entry) =>
+			(rasterizer ?? "").includes(entry.match),
+		);
+		if (backend) return withheld("untrusted", backend.reason);
+		/**
+		 * An unreadable name is **unproven, not qualified**. The first version
+		 * read it as qualified — `(rasterizer ?? "")` matches nothing, so a
+		 * context with no `WEBGL_debug_renderer_info` was handed a figure it
+		 * could not stand behind. `capture-views.mjs` settles the same
+		 * condition the same way from the other side.
+		 */
+		if (rasterizer === null)
+			return withheld(
+				"untrusted",
+				"the renderer name could not be read, so the backend cannot be " +
+					"qualified — run scripts/measure-gpu-timer-calibration.mjs to " +
+					"see what this one reports",
+			);
+
+		if (gpuStats.medianMs === null) return kept;
+		/**
+		 * **A burst is not a steady state, and only a steady state is
+		 * impossible.** The first version refused on the median alone and said
+		 * the reading "cannot be sustained" — but a genuine transient backlog,
+		 * a jump or a bake landing in a short window, can put a rolling median
+		 * over the cadence honestly. Requiring the window to be full-ish is
+		 * what makes "sustained" a claim about the samples rather than a
+		 * sentence attached to them; the reason below says what was observed
+		 * and no more.
+		 */
+		if (gpuStats.sampleCount < IMPLAUSIBLE_MIN_SAMPLES) return kept;
+		const cadenceMs = this.frameCadenceMs(window.fromMs, window.toMs);
+		if (
+			cadenceMs !== null &&
+			gpuStats.medianMs > cadenceMs * IMPLAUSIBLE_CADENCE_FACTOR
+		)
+			/**
+			 * Neither the median nor the cadence, because their product is the
+			 * median. Round 2 caught the ratio-and-cadence version
+			 * reconstructing exactly what the sentence refuses to print.
+			 */
+			return withheld(
+				"implausible",
+				`over the last ${gpuStats.sampleCount} samples the GPU median ran ` +
+					`more than ${IMPLAUSIBLE_CADENCE_FACTOR}x the frame cadence, ` +
+					`which one command stream cannot sustain — a long enough ` +
+					`backlog would read the same way, and the figure is withheld ` +
+					`either way`,
+			);
+		return kept;
+	}
+
+	/**
+	 * Median interval between enabled frames **within `[fromMs, toMs]`**, or
+	 * `null` before there are two of them in that span.
+	 *
+	 * The window is an argument because the two rings advance independently and
+	 * the first version compared across them: the GPU samples could be minutes
+	 * old while the frame marks were current, so eight honest 50 ms samples
+	 * taken during a 40 ms cadence, followed by a stretch of unresolved queries
+	 * at 16 ms, were compared against the 16 and refused. Aligning the cadence
+	 * to the samples' own submission span is what makes the comparison one
+	 * measurement rather than two.
+	 *
+	 * A median rather than a mean because one long frame — a jump, a bake, a
+	 * tab restored — is exactly the sample that would otherwise raise the bar
+	 * the implausibility check has to clear.
+	 */
+	private frameCadenceMs(fromMs: number, toMs: number): number | null {
+		const marks = this.frameMarks
+			.ordered()
+			.filter((mark) => mark >= fromMs && mark <= toMs);
+		if (marks.length < 2) return null;
+		const gaps: number[] = [];
+		for (let i = 1; i < marks.length; i++) {
+			const gap = marks[i] - marks[i - 1];
+			if (Number.isFinite(gap) && gap > 0) gaps.push(gap);
+		}
+		if (!gaps.length) return null;
+		// `rollingStatistics` rather than a local midpoint: `frame-statistics.ts`
+		// exists so the sampler and the headed instrument share one percentile
+		// policy, and a second rule here would put two of them in one snapshot.
+		return rollingStatistics(gaps).medianMs;
 	}
 
 	private allocateQueries(): void {
@@ -414,6 +648,12 @@ export class FrameAttribution {
 	private resetSamples(): void {
 		for (const samples of this.cpuSamples.values()) samples.clear();
 		this.gpuSamples.clear();
+		// The cadence ring too, and it was the one ring left out. A sampler
+		// re-enabled in a 40 ms scene after a 16 ms one would have compared fresh
+		// GPU samples against a cadence blended from the previous enabled period
+		// for up to `sampleCapacity` frames, which is `implausible` firing on a
+		// frame rate that no longer exists.
+		this.frameMarks.clear();
 		this.lastDisjointAtMs = null;
 		this.disjointActive = false;
 	}

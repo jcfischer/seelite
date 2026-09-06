@@ -384,23 +384,48 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   must not look at what the subject *looks like* — differencing two flat colours
   with bloom off is exact and needs no threshold — and a fixed cost is a fitted
   intercept, never a residual.
-- **#223's GPU timer query reports three to four times the frame, and says
-  `supported` (#242).** 119.05 ms at `berth-free-look` and 145.67 at an
-  open-space planet, against two independent wall clocks that agree with each
-  other — a tight `g.render(0)` loop at 40.29 and 36.76, and the live rAF period
-  at 35.20 and 33.30. The bay's reading is steady rather than noisy (p95 119.71
-  against a median of 119.05); **the open-space one is not, and this file said
-  "p95 tight" of both for a round** — 227.00 against 145.67 is 56% wider, so
-  that row is a large median with a long tail and only the bay's supports a
-  "steady state, not a backlog" reading. Both are still three to four times two
-  clocks that agree, which is the finding.
-  `GpuTimingStatus` already has `unavailable`,
-  `disjoint` and `stale`, so the module is built to refuse and is not refusing.
-  Do not quote a `frame-attribution` GPU median as a cost until that is
-  diagnosed; the CPU interval columns are not implicated. Note also that neither
-  wall clock is the player's frame either — the tight loop removes vsync and
-  lets the GPU pipeline, so a decomposition quotes **arm deltas**, and only the
-  rAF period is a cadence.
+- **The GPU timer refuses on ANGLE Metal, and the reason is in ANGLE (#246).**
+  `EXT_disjoint_timer_query_webgl2` there does not time the work between its
+  tokens; it sums whole command-buffer wall spans, which is at least the busy
+  time and strictly more wherever two spans overlap. **The mechanism is not
+  restated here** — `SUMMING_TIMER_BACKENDS` in `src/frame-attribution.ts`
+  carries it with the two ANGLE files and the lines quoted. That is why the
+  sampler read 119.05 ms at `berth-free-look` and 145.67 at an open-space
+  planet against two agreeing wall clocks at 40.29/36.76 and 35.20/33.30.
+
+  **The figures are not restated here**, and this paragraph carried five of
+  them for a round with two of them disagreeing about the same ramp.
+  `scripts/measure-gpu-timer-calibration.mjs` is the only owner: it measures
+  the span, the gain and the floor on the machine it is run on and prints them,
+  so there is no shipped copy to go stale. What is worth knowing without
+  running it is the **shape** — the over-report is a gain that grows with how
+  much of the frame the work spans, rather than a fixed cost per query, and a
+  workload small enough to fit one command buffer reads far below the excess,
+  which **bounds** a fixed cost per query from above and leaves the summing.
+  That arm was written expecting a floor and did not find one — but it does
+  **not** show the timer accurate, because the fenced figure it is read against
+  is mostly the fence rather than the work. The magnitude is measured, not derived: how many command
+  buffers a composer render spans is not known.
+
+  `status` is now `untrusted` on that backend and `medianMs` is **`null`**, so
+  there is no figure to transcribe. `implausible` is the backstop for a backend
+  nobody has qualified — a GPU median above the frame cadence cannot be
+  sustained on one command stream — and it is keyed on a cadence recorded for
+  **every** frame, not for the frames that got a query, because the ring skips
+  frames when it is full and a cadence built from those goes lenient exactly
+  when the sampler is busiest. Neither state is reachable in CI:
+  `probe-frame-attribution.mjs` runs on SwiftShader, which does not expose the
+  extension at all and reads `unavailable`. The headed instrument is the
+  evidence.
+
+  The CPU interval columns were never implicated. And note that neither wall
+  clock is the player's frame either — the tight loop removes vsync and lets the
+  GPU pipeline, so a decomposition quotes **arm deltas**, and only the rAF
+  period is a cadence. **Two of the three fences do not fence here**:
+  `gl.finish()` does not, and `clientWaitSync` returns without blocking, so a
+  1x1 `readPixels` is what this repo measures GPU completion with. The
+  instrument runs all three and prints them, which is how that stays checkable
+  rather than remembered.
 - **Multisampling the composer is the most expensive thing in this renderer.**
   `output-stage.ts` hands `EffectComposer` its own target so `antialias: true`
   on the renderer finally means something — that flag configures the default
