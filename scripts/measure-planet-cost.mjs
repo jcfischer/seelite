@@ -680,7 +680,7 @@ for (const {
 		 */
 		console.log("");
 		console.log(
-			`      full minus each arm — what that term costs, ms (a figure inside the drift control below is not a difference)`,
+			`      full minus each arm — what that arm's own \`prices\` line says it costs, ms. Read the arm's line for what is in it: \`flat\` carries the slope as well, so it is not the class body alone (that is flat minus no-relief). A figure inside the drift control below is not a difference.`,
 		);
 		console.log(
 			`      ${"term".padEnd(14)}${RADII.map((r) => `${r}r`.padStart(14)).join("")}`,

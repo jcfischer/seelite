@@ -249,9 +249,16 @@ export type AblationArm = {
  * reading it as the latter overstates what #207's bands can buy.
  *
  * `flat` skips `surface()` outright (`planet-shaders.ts`, `perfAblate < 1.5`),
- * so `no-relief − flat` is the whole class body: its noise and its palette
- * together. The two cannot be separated by any lever that exists, and the
- * resolution says so rather than implying the split was measured.
+ * so `full − flat` is the slope **and** the class body, and every `prices`
+ * string above is written as `full − arm` because that is the subtraction the
+ * table prints. The class body on its own is `no-relief − flat`, which is a
+ * difference of two rows and not a column: sage caught the first version
+ * labelling the `flat` column with it, which attributed 35.7 ms to a term
+ * measured at 8.0 and double-counted the slope.
+ *
+ * Within that class body, its noise and its palette cannot be separated by any
+ * lever that exists — and none of #207, #217 or #224 acts at that granularity,
+ * so the resolution says the split was not measured rather than implying it was.
  */
 export const ABLATION_ARMS: readonly AblationArm[] = Object.freeze([
 	{
@@ -285,7 +292,8 @@ export const ABLATION_ARMS: readonly AblationArm[] = Object.freeze([
 		perfAblate: 2,
 		atmosphere: true,
 		clouds: true,
-		prices: "the whole class body — its noise and its palette, inseparably",
+		prices:
+			"everything surface() does — the slope and the class body together, so it is not the class body alone: subtract no-relief from it for that",
 	},
 	{
 		name: "no-atmosphere",
@@ -309,7 +317,8 @@ export const ABLATION_ARMS: readonly AblationArm[] = Object.freeze([
 		perfAblate: 2,
 		atmosphere: false,
 		clouds: false,
-		prices: "the floor — a lit sphere and the rest of the frame around it",
+		prices:
+			"everything the ladder can turn off at once — surface(), both shells — leaving a lit sphere and the rest of the frame",
 	},
 ]);
 
