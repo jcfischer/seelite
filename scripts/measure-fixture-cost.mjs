@@ -27,7 +27,8 @@
  * `stock` against itself, on the same page — is printed first so the noise
  * floor sits beside the deltas.
  */
-import { SOFTWARE } from "./lib/players-renderer.mjs";
+import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
+import { fillStage } from "./lib/workbench.mjs";
 import { guardedOrigin, launchChromium } from "./probe-guard.mjs";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
@@ -75,41 +76,35 @@ const rows = [];
 let renderer = null;
 try {
 	for (const { asset, variant } of SUBJECTS) {
-		for (const finish of ["stock", ...FINISHES]) {
+		// The same-build control is its own cell, named as one: stock read a
+		// second time on a fresh page, so the noise floor sits beside the
+		// deltas as a row and not as a double entry.
+		const cells = [
+			{ finish: "stock", label: "control (stock again)" },
+			...FINISHES.map((finish) => ({ finish, label: finish })),
+		];
+		for (const { finish, label } of cells) {
 			await page.goto(`${ORIGIN}/?model-viewer=station&finish=${finish}`, {
 				waitUntil: "load",
 			});
 			await page.waitForSelector("#model-viewer canvas");
-			const gpu = await page.evaluate(() => {
-				const gl = window.__seeliteModelViewer.renderer.getContext();
-				const ext = gl.getExtension("WEBGL_debug_renderer_info");
-				return ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : null;
-			});
-			if (!gpu || SOFTWARE.test(gpu))
-				throw new Error(
-					`refusing to measure on ${gpu}: a software rasteriser's frame cost is not the player's.`,
-				);
-			renderer = gpu;
+			renderer = await assertPlayersRenderer(
+				page,
+				"measure a finish's frame cost — a software rasteriser's frame is not the player's",
+				{ global: "__seeliteModelViewer" },
+			);
 			await page.click(`[data-model-asset="${asset}"]`);
 			await page.click(
 				`[data-model-variant="${variant}"][data-model-role="${asset}"]`,
 			);
+			await fillStage(page, { height: "viewport", keepMeter: true });
 			await page.evaluate(() => {
-				document.querySelector(".mv-panel")?.setAttribute("hidden", "");
-				const wrap = document.querySelector(".mv-wrap");
-				if (wrap instanceof HTMLElement) wrap.style.gridTemplateColumns = "1fr";
-				const stage = document.querySelector(".mv-stage");
-				if (stage instanceof HTMLElement) {
-					stage.style.minHeight = "0";
-					stage.style.height = `${window.innerHeight - 40}px`;
-				}
 				const s = window.__seeliteModelViewer.state;
 				s.azimuth = 2.35;
 				s.elevation = 0.3;
-				window.dispatchEvent(new Event("resize"));
 			});
 			const fps = await sampleFps();
-			rows.push({ asset, variant, finish, fps, ms: 1000 / fps });
+			rows.push({ asset, variant, finish, label, fps, ms: 1000 / fps });
 		}
 	}
 } finally {
@@ -123,13 +118,12 @@ console.log(`renderer: ${renderer}`);
 console.log("subject      finish     fps       ms/frame   Δ vs stock");
 for (const { asset, variant } of SUBJECTS) {
 	const cells = rows.filter((r) => r.asset === asset && r.variant === variant);
-	// The first cell is the same-build control: stock read a second time.
-	const stock = cells[1];
-	cells.forEach((r, i) => {
-		const label = i === 0 ? `${r.finish} (control)` : r.finish;
-		const delta = i === 1 ? "" : `${(r.ms - stock.ms).toFixed(2)} ms`;
+	const stock = cells.find((r) => r.label === "stock");
+	for (const r of cells) {
+		const delta =
+			r.label === "stock" ? "" : `${(r.ms - stock.ms).toFixed(2)} ms`;
 		console.log(
-			`${`${asset} ${variant}`.padEnd(12)} ${label.padEnd(18)} ${r.fps.toFixed(1).padStart(7)} ${r.ms.toFixed(2).padStart(9)}   ${delta}`,
+			`${`${asset} ${variant}`.padEnd(12)} ${r.label.padEnd(22)} ${r.fps.toFixed(1).padStart(7)} ${r.ms.toFixed(2).padStart(9)}   ${delta}`,
 		);
-	});
+	}
 }

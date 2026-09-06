@@ -491,11 +491,14 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   `userData`, and a probe reads it.
 - **A finish is module state, read at build time (#202, #203).**
   `HULL_FINISHES` and `STATION_FINISHES` are presets — `stock`, `plated`,
-  `industrial`, `worn` — selected by `setHullFinish` / `setStationFinish` and
-  read by every builder as it runs. The game never switches; the workbench
-  does. Three things follow. A test that sets a finish **restores `stock`**
-  in `afterEach`, or the next file builds industrial hulls under stock's
-  assertions. Every cache that depends on the surface — hull maps, palettes,
+  `industrial`, `worn`, `nostromo` — selected by `setHullFinish` /
+  `setStationFinish` and read by every builder as it runs. The game never
+  switches; the workbench does. Three things follow. A test that sets a
+  finish **restores the default** — `DEFAULT_HULL_FINISH` /
+  `DEFAULT_STATION_FINISH` — in `afterEach`, because bun runs every file in
+  one process and a file that left another finish set hands the next file a
+  hull the game does not ship; a test that speaks about `stock` sets it by
+  name. Every cache that depends on the surface — hull maps, palettes,
   station maps, hull materials — is **keyed by the finish id**; one that is
   not hands the second finish the first's textures. And a tile is the
   finish's, not the constant's: `plateUVs` divides by `finish.panelKm` and

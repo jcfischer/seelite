@@ -36,15 +36,23 @@ export const SOFTWARE = /swiftshader|llvmpipe|software|mesa offscreen/i;
  * `what` names what the caller was about to do, because the two callers refuse
  * for different reasons and a shared message would be vague in both.
  */
-export async function assertPlayersRenderer(page, what) {
-	const gpu = await page.evaluate(() => {
-		const gl = window.__seelite.renderer.getContext();
+export async function assertPlayersRenderer(
+	page,
+	what,
+	// The game publishes its renderer on `__seelite`; the workbench, which
+	// never constructs `Game`, on `__seeliteModelViewer`. One refusal for
+	// both, or the two workbench scripts re-inline it and drift — which they
+	// did, until sage counted three behaviours in four files.
+	{ global = "__seelite" } = {},
+) {
+	const gpu = await page.evaluate((name) => {
+		const gl = window[name].renderer.getContext();
 		const ext = gl.getExtension("WEBGL_debug_renderer_info");
 		return {
 			unmasked: ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : null,
 			generic: gl.getParameter(gl.RENDERER),
 		};
-	});
+	}, global);
 	const renderer = gpu.unmasked ?? gpu.generic;
 	const refusal = !gpu.unmasked
 		? `cannot read the real renderer — WEBGL_debug_renderer_info is unavailable, and "${gpu.generic}" does not say what is drawing`

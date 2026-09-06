@@ -8,8 +8,8 @@
  * outline unchanged by the detail band, and that the finish reaches the
  * material.
  *
- * Every case restores `stock` on its way out, for the ship test's reason: the
- * finish is module state and the next file was written for the stock one.
+ * Every case restores the **default** on its way out, for the ship test's
+ * reason: the finish is module state and the next file expects the game's.
  */
 
 import { afterEach, describe, expect, test } from "bun:test";

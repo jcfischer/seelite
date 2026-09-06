@@ -27,7 +27,8 @@
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { SOFTWARE } from "./lib/players-renderer.mjs";
+import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
+import { fillStage } from "./lib/workbench.mjs";
 import { guardedOrigin, launchChromium } from "./probe-guard.mjs";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
@@ -39,11 +40,15 @@ const label =
 const OUT = join("view-set", "finishes", label);
 
 const FAMILIES = (process.env.FAMILY ?? "ship,station").split(",");
+// `SUBJECTS` names one family's subjects, so it applies only when `FAMILY`
+// names one family: `SUBJECTS=courier` over both families made the station
+// pass click an asset that does not exist and abort before the sheet.
+const only = FAMILIES.length === 1 ? process.env.SUBJECTS : undefined;
 const SUBJECTS = {
-	ship: (process.env.SUBJECTS ?? "courier,interceptor,freighter,miner,carrier")
+	ship: (only ?? "courier,interceptor,freighter,miner,carrier")
 		.split(",")
 		.filter(Boolean),
-	station: (process.env.SUBJECTS ?? "trade,shipyard,refinery,outpost")
+	station: (only ?? "trade,shipyard,refinery,outpost")
 		.split(",")
 		.filter(Boolean),
 };
@@ -84,40 +89,20 @@ try {
 				waitUntil: "load",
 			});
 			await page.waitForSelector("#model-viewer canvas");
-			// The refusal, once per family: the renderer does not change between
-			// finishes, and a check that only ran on the first page load would be
-			// a check on the first page load.
-			const gpu = await page.evaluate(() => {
-				const gl = window.__seeliteModelViewer.renderer.getContext();
-				const ext = gl.getExtension("WEBGL_debug_renderer_info");
-				return {
-					unmasked: ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : null,
-					generic: gl.getParameter(gl.RENDERER),
-				};
-			});
-			const name = gpu.unmasked ?? gpu.generic;
-			if (!gpu.unmasked || SOFTWARE.test(name))
-				throw new Error(
-					`refusing to capture a finish sheet on ${name}: a finish is judged by eye and a software rasteriser is the wrong picture. Run this on a machine with a display.`,
-				);
-			renderer = name;
+			// The refusal, on every page load: the renderer does not change
+			// between finishes, and a check that only ran on the first load would
+			// be a check on the first load.
+			renderer = await assertPlayersRenderer(
+				page,
+				"capture a finish sheet — a finish is judged by eye and a software rasteriser is the wrong picture",
+				{ global: "__seeliteModelViewer" },
+			);
 			const got = await page.evaluate(
 				() => window.__seeliteModelViewer.state.finish,
 			);
 			if (got !== finish)
 				throw new Error(`asked for finish ${finish}, the workbench has ${got}`);
-			await page.evaluate(() => {
-				document.querySelector(".mv-panel")?.setAttribute("hidden", "");
-				const wrap = document.querySelector(".mv-wrap");
-				if (wrap instanceof HTMLElement) wrap.style.gridTemplateColumns = "1fr";
-				const stage = document.querySelector(".mv-stage");
-				if (stage instanceof HTMLElement) {
-					stage.style.minHeight = "0";
-					stage.style.height = `${stage.clientWidth}px`;
-				}
-				document.querySelector("[data-fps-meter]")?.remove();
-				window.dispatchEvent(new Event("resize"));
-			});
+			await fillStage(page);
 			for (const subject of SUBJECTS[family]) {
 				await page.click(`[data-model-asset="${subject}"]`);
 				const variantButton = `[data-model-variant="${VARIANT}"][data-model-role="${subject}"]`;

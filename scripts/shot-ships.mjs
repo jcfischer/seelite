@@ -1,6 +1,7 @@
 /** Dev-only: capture every ship candidate from a fixed 3/4 view for design review. */
 import { mkdir } from "node:fs/promises";
 import { chromium } from "playwright";
+import { fillStage } from "./lib/workbench.mjs";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 const OUT = process.argv[2] ?? "/tmp/ships";
@@ -36,20 +37,7 @@ const ROLES = await page.evaluate(() =>
 const missing = ROLES.filter((role) => DISTANCE[role] === undefined);
 if (missing.length)
 	throw new Error(`no framing distance for: ${missing.join(", ")}`);
-await page.evaluate(() => {
-	document.querySelector(".mv-panel")?.setAttribute("hidden", "");
-	const wrap = document.querySelector(".mv-wrap");
-	if (wrap instanceof HTMLElement) wrap.style.gridTemplateColumns = "1fr";
-	// With the panel gone the stage stretches to the page, and a tall stage
-	// silently reframes every shot. Pin it square, then tell the renderer —
-	// which only refits on a window resize, and hiding a panel is not one.
-	const stage = document.querySelector(".mv-stage");
-	if (stage instanceof HTMLElement) {
-		stage.style.minHeight = "0";
-		stage.style.height = `${stage.clientWidth}px`;
-	}
-	window.dispatchEvent(new Event("resize"));
-});
+await fillStage(page);
 
 for (const role of ROLES) {
 	for (const variant of VARIANTS) {

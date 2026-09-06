@@ -19,7 +19,7 @@
  * quality gate drops the geometry and keeps every light.
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import {
 	STATION_GEOMETRY,
@@ -41,6 +41,9 @@ import {
 	currentStationFinish,
 	setStationFinish,
 } from "../src/station-visuals";
+
+// The default, not stock, for `ship-finish.test.ts`'s reason.
+afterEach(() => setStationFinish(DEFAULT_STATION_FINISH));
 
 const TYPES: StationType[] = STATION_TYPES;
 const GREY = 0x9aa6b2;
@@ -291,6 +294,9 @@ describe("a greeble is mounted on the station, not floating beside it", () => {
 		// Under every finish, because a finish multiplies the count and scales
 		// the piece: sage found two of the Buoy's pieces buried under
 		// `nostromo` while this passed under stock alone.
+		// The finish is restored by `afterEach` at file scope, not at the end
+		// of this body: a red assertion mid-loop would otherwise leave the
+		// finish set for every later file in the process.
 		for (const finish of STATION_FINISH_IDS)
 			for (const type of TYPES)
 				for (const form of STATION_FORMS[type]) {
@@ -369,7 +375,6 @@ describe("a greeble is mounted on the station, not floating beside it", () => {
 						[],
 					]);
 				}
-		setStationFinish(DEFAULT_STATION_FINISH);
 	});
 });
 

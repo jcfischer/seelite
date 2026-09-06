@@ -111,6 +111,10 @@ const EXEMPT = new Map([
 		"takes screenshots; has no checks for a watch to report into",
 	],
 	[
+		"measure-boot-cost.mjs",
+		"#202's headed boot-frame instrument, before and after on two trees: it prints one figure off the ?fps meter for a receipt and asserts nothing; a software rasteriser throws out of the run",
+	],
+	[
 		"measure-fixture-cost.mjs",
 		"#202's headed frame-cost instrument for a station finish: it prints a table off the workbench's fps meter for a receipt and asserts nothing; a software rasteriser throws out of the run",
 	],

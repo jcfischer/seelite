@@ -170,9 +170,9 @@ export type HullQuality = keyof typeof HULL_QUALITY;
  * `CLAUDE.md` records against a one-caller override field.
  *
  * **`stock` is byte-identical to the hull that shipped before this node.** It
- * is the control on the sheet and the default until the principal chooses,
- * and `tests/ship-finish.test.ts` asserts the maps and the built geometry are
- * unchanged under it.
+ * is the control on the sheet; the default is `DEFAULT_HULL_FINISH`, the
+ * principal's choice, and `tests/ship-finish.test.ts` asserts the maps and
+ * the built geometry are unchanged under `stock`.
  */
 export interface HullFinish {
 	readonly name: string;
@@ -310,6 +310,12 @@ export type HullFinishId = keyof typeof HULL_FINISHES;
 export const HULL_FINISH_IDS = Object.keys(HULL_FINISHES) as HullFinishId[];
 
 /**
+ * The finish the game ships with — the principal's choice on the second
+ * sheet (2026-09-06): worn, at ship scale. `stock` is #35's hull as it was
+ * and stays a preset; `tests/ship-finish.test.ts` pins it and reads this.
+ */
+export const DEFAULT_HULL_FINISH: HullFinishId = "worn";
+/**
  * The finish in force. One value, one writer, for `hullQuality`'s reason.
  *
  * Read at build time by `ship-mesh.ts` — the palette, the collar and the bell
@@ -317,12 +323,6 @@ export const HULL_FINISH_IDS = Object.keys(HULL_FINISHES) as HullFinishId[];
  * was built with. That is what the workbench wants: it rebuilds the mesh on
  * every switch and never patches one in place. The game never switches.
  */
-/**
- * The finish the game ships with — the principal's choice on the second
- * sheet (2026-09-06): worn, at ship scale. `stock` is #35's hull as it was
- * and stays a preset; `tests/ship-finish.test.ts` pins it and reads this.
- */
-export const DEFAULT_HULL_FINISH: HullFinishId = "worn";
 let hullFinish: HullFinishId = DEFAULT_HULL_FINISH;
 
 export const hullFinishId = () => hullFinish;
@@ -330,7 +330,9 @@ export const currentHullFinish = (): HullFinish => HULL_FINISHES[hullFinish];
 
 /** Select the finish every hull built from now on carries. */
 export function setHullFinish(id: HullFinishId) {
-	if (!(id in HULL_FINISHES)) throw new Error(`no hull finish ${id}`);
+	// Own keys only: `in` walks the prototype, and "toString" would pass.
+	if (!Object.hasOwn(HULL_FINISHES, id))
+		throw new Error(`no hull finish ${id}`);
 	hullFinish = id;
 }
 

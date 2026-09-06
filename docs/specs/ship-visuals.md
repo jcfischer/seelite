@@ -353,7 +353,7 @@ step past it — deeper streaks, sooted plates (`streakDepth` and `soot` on
 the profile), paint most of the way to grey — and stays a preset, as does
 `stock`, which is #35's hull as it shipped and is what the roster hash pins.
 No finish moves a hull's **envelope**: the collar and the open bell keep the
-torus's and the disc's box to the centimetre, because the envelope is the
+torus's and the disc's box to within 5 cm, because the envelope is the
 berth catalogue's fit predicate, and `tests/ship-finish.test.ts` holds it.
 
 The finish is module state read at build time, and the game never switches

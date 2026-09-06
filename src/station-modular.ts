@@ -83,16 +83,13 @@ const ALONG_X: readonly (readonly [number, number])[] = [
 ];
 
 /** The same rules with the axes swapped. */
-const swap = (m: number) =>
-	m === TUBE_X
-		? TUBE_Y
-		: m === TUBE_Y
-			? TUBE_X
-			: m === TRUSS_X
-				? TRUSS_Y
-				: m === TRUSS_Y
-					? TRUSS_X
-					: m;
+const SWAPPED: Readonly<Record<number, number>> = {
+	[TUBE_X]: TUBE_Y,
+	[TUBE_Y]: TUBE_X,
+	[TRUSS_X]: TRUSS_Y,
+	[TRUSS_Y]: TRUSS_X,
+};
+const swap = (m: number) => SWAPPED[m] ?? m;
 const ALONG_Y = ALONG_X.map(([a, b]) => [swap(a), swap(b)] as const);
 
 /**

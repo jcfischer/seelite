@@ -26,9 +26,16 @@
  * on a station is one instance of a unit box or a unit tube in a material's
  * pool, so the lattice is four or five draw calls however much of it there
  * is. What stands beside the pools is drawn on its own — a docking collar,
- * a dish per mast, the approach lamps and each beacon — so an industrial
- * trade station's fixtures are thirteen meshes at seed zero, of which the
- * pools are five.
+ * a dish per mast, the approach lamps and each beacon — a dozen-odd meshes
+ * on a form, which is the count that moves when a declaration does.
+ *
+ * **The pools are tagged `full` and the group `reduced`.** A 12 m member is
+ * a quarter of a pixel at the forty radii where `reduced` begins, so the
+ * lattice drawn out to four hundred radii was a hundred thousand sub-pixel
+ * triangles of vertex work (sage, round 5); the beacons, the collar and the
+ * dishes stay in the `reduced` band with the aperture frame, because a
+ * lamp is what reads at range. The outline never depended on either: no
+ * fixture is a form's farthest vertex, and the reach test holds it.
  *
  * The group is tagged `reduced`: this is 2 km structure and belongs in the
  * same band as the aperture frame and the strobes, not with the 40 m clutter
@@ -38,9 +45,10 @@
 import * as THREE from "three";
 import { shared } from "./gpu-teardown";
 import { revolve } from "./loft";
+import { castOntoStructure } from "./station-greebles";
 import { STATION_GEOMETRY, type StationType } from "./station";
 import type { StationFormId, StationFixture } from "./station-mesh";
-import type { StationFixtureKind } from "./station-visuals";
+import type { StationDetailLevel, StationFixtureKind } from "./station-visuals";
 import { STATION_VISUALS } from "./station-visuals";
 
 /** The unit box and the unit tube every member is an instance of. Built once
@@ -104,6 +112,9 @@ export class Pools {
 		{
 			geometry: THREE.BufferGeometry;
 			material: THREE.Material;
+			/** The material's name, kept beside it rather than parsed back out
+			 *  of the cache key when the pool is emitted. */
+			name: MaterialName;
 			matrices: THREE.Matrix4[];
 		}
 	>();
@@ -116,10 +127,22 @@ export class Pools {
 		const key = `${geometry.uuid}:${material}`;
 		let list = this.lists.get(key);
 		if (!list) {
-			list = { geometry, material: MATERIALS[material], matrices: [] };
+			list = {
+				geometry,
+				material: MATERIALS[material],
+				name: material,
+				matrices: [],
+			};
 			this.lists.set(key, list);
 		}
 		list.matrices.push(matrix);
+	}
+
+	/** How many members the pools hold, for a receipt. */
+	get size() {
+		let n = 0;
+		for (const list of this.lists.values()) n += list.matrices.length;
+		return n;
 	}
 
 	/** A member between two points: a box or a tube of the given thickness. */
@@ -148,8 +171,14 @@ export class Pools {
 		);
 	}
 
-	emit(into: THREE.Group, prefix: string) {
-		for (const [key, list] of this.lists) {
+	/**
+	 * One `InstancedMesh` per pool into `into`, named `${prefix}-${material}`.
+	 * `detail` tags each with the level it belongs to — `full` for a form's
+	 * fixtures, whose members are sub-pixel past forty radii; none for the
+	 * Assembly's own structure, which is the station and never hides.
+	 */
+	emit(into: THREE.Group, prefix: string, detail?: StationDetailLevel) {
+		for (const list of this.lists.values()) {
 			const mesh = new THREE.InstancedMesh(
 				list.geometry,
 				list.material,
@@ -157,7 +186,8 @@ export class Pools {
 			);
 			list.matrices.forEach((matrix, i) => mesh.setMatrixAt(i, matrix));
 			mesh.instanceMatrix.needsUpdate = true;
-			mesh.name = `${prefix}-${key.split(":")[1]}`;
+			mesh.name = `${prefix}-${list.name}`;
+			if (detail) mesh.userData.minDetail = detail;
 			into.add(mesh);
 		}
 	}
@@ -219,32 +249,34 @@ export function truss(
 			b.clone().add(corner),
 			member,
 		);
-	const bays = Math.max(1, Math.round(length / widthKm));
-	const at = (bay: number, corner: number) =>
+	// "Panel", not "bay": a bay is a slot role's interior (`CONTEXT.md`),
+	// and a lattice's repeating unit is its panel.
+	const panels = Math.max(1, Math.round(length / widthKm));
+	const at = (panel: number, corner: number) =>
 		a
 			.clone()
-			.addScaledVector(axis, (bay / bays) * length)
+			.addScaledVector(axis, (panel / panels) * length)
 			.add(corners[corner]);
-	for (let bay = 0; bay <= bays; bay++)
+	for (let panel = 0; panel <= panels; panel++)
 		for (let corner = 0; corner < 4; corner++)
 			pools.member(
 				UNIT_BOX,
 				"structure",
-				at(bay, corner),
-				at(bay, (corner + 1) % 4),
+				at(panel, corner),
+				at(panel, (corner + 1) % 4),
 				member * 0.8,
 			);
-	for (let bay = 0; bay < bays; bay++)
+	for (let panel = 0; panel < panels; panel++)
 		for (let face = 0; face < 4; face++) {
 			const next = (face + 1) % 4;
 			// Alternating so the diagonals zig-zag down each face rather than
 			// all leaning one way, which reads as a slant in the whole beam.
-			const flip = (bay + face) % 2 === 0;
+			const flip = (panel + face) % 2 === 0;
 			pools.member(
 				UNIT_BOX,
 				"structure",
-				at(bay, flip ? face : next),
-				at(bay + 1, flip ? next : face),
+				at(panel, flip ? face : next),
+				at(panel + 1, flip ? next : face),
 				member * 0.7,
 			);
 		}
@@ -367,6 +399,41 @@ export function tankRack(
 	}
 }
 
+/**
+ * A ring main: a closed pipe round `centre` in the plane at `z`, an ellipse
+ * when `ry` differs from `rx`. Four declarations each wrote the loop.
+ */
+export function pipeRing(
+	pools: Pools,
+	{
+		centre,
+		rx,
+		ry = rx,
+		z,
+		segments = 24,
+	}: {
+		centre: THREE.Vector3;
+		rx: number;
+		ry?: number;
+		z: number;
+		segments?: number;
+	},
+	radiusKm: number,
+) {
+	const points: THREE.Vector3[] = [];
+	for (let i = 0; i <= segments; i++) {
+		const theta = (i / segments) * Math.PI * 2;
+		points.push(
+			new THREE.Vector3(
+				centre.x + Math.cos(theta) * rx,
+				centre.y + Math.sin(theta) * ry,
+				z,
+			),
+		);
+	}
+	pipeRun(pools, points, radiusKm);
+}
+
 /** A polyline of tubes with a block at each elbow. */
 export function pipeRun(
 	pools: Pools,
@@ -481,21 +548,11 @@ function dockingCollar(
  * where it was written, which the reach and corridor rows then judge.
  */
 function mounter(structure: THREE.Object3D, type: StationType) {
-	structure.updateMatrixWorld(true);
-	const targets: THREE.Mesh[] = [];
-	structure.traverse((object) => {
-		const mesh = object as THREE.Mesh;
-		if (!mesh.geometry) return;
-		if ((mesh as THREE.InstancedMesh).isInstancedMesh) return;
-		targets.push(mesh);
-	});
-	const ray = new THREE.Raycaster();
-	const reach = STATION_GEOMETRY[type].coreRadiusKm * 2;
+	// The clutter's cast, fallback included (`station-greebles.ts`): the two
+	// had the same lines and had drifted once.
+	const cast = castOntoStructure(structure, type);
 	return (point: THREE.Vector3, normal: THREE.Vector3, probeKm: number) => {
-		const n = normal.clone().normalize();
-		ray.set(point.clone().addScaledVector(n, probeKm), n.clone().negate());
-		ray.far = probeKm + reach;
-		const hit = ray.intersectObjects(targets, false)[0];
+		const hit = cast(point, normal.clone().normalize(), probeKm);
 		return hit ? hit.point.clone() : point.clone();
 	};
 }
@@ -520,9 +577,9 @@ interface FixtureSite {
 const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 
 /**
- * Build a form's macro fixtures. Unknown forms get an empty group: only the
- * four `SELECTED_FORM` forms carry declarations in this pass, and a form
- * without one is a form nobody has looked at under a finish.
+ * Build a form's macro fixtures. A form without a declaration gets an empty
+ * group — every trade form and the three other selected forms carry one, and
+ * the remaining pool forms are forms nobody has looked at under a finish.
  */
 export function buildMacroFixtures(site: FixtureSite): THREE.Group {
 	const group = new THREE.Group();
@@ -530,7 +587,7 @@ export function buildMacroFixtures(site: FixtureSite): THREE.Group {
 	// `detail()` is `station-mesh.ts`'s, and this module cannot import it
 	// without a cycle; the tag is the same field it writes, and
 	// `buildStationForm` collects on the field.
-	group.userData.minDetail = "reduced";
+	group.userData.minDetail = "reduced" satisfies StationDetailLevel;
 	const pools = new Pools();
 	const mount = mounter(site.structure, site.type);
 	const visuals = STATION_VISUALS[site.type];
@@ -565,7 +622,7 @@ export function buildMacroFixtures(site: FixtureSite): THREE.Group {
 	const declaration = DECLARATIONS[`${site.type}/${site.formId}`];
 	if (declaration)
 		declaration({ site, group, pools, mount, beaconAt, lampMaterial });
-	pools.emit(group, "fixture");
+	pools.emit(group, "fixture", "full");
 	return group;
 }
 
@@ -635,7 +692,12 @@ export const SHIP_SCALE = {
  * the +Z docking face inside the corridor, and nothing on a shipyard's spun
  * hub.
  */
-const DECLARATIONS: Record<string, (context: DeclarationContext) => void> = {
+const DECLARATIONS: Partial<
+	Record<
+		`${StationType}/${StationFormId}`,
+		(context: DeclarationContext) => void
+	>
+> = {
 	/**
 	 * Trade A — Coriolis. A cuboctahedron of radius 0.95·r whose square faces
 	 * sit at `face = 0.95·r/√2` and whose corners, at 0.95·r, are the outline:
@@ -716,16 +778,11 @@ const DECLARATIONS: Record<string, (context: DeclarationContext) => void> = {
 			});
 		// A ring main round the tank farm, and feeds from it round onto the
 		// ±X faces, every elbow on a surface.
-		const main: THREE.Vector3[] = [];
-		for (let i = 0; i <= 8; i++) {
-			const theta = (i / 8) * Math.PI * 2;
-			main.push(
-				V(Math.cos(theta) * face * 0.5, Math.sin(theta) * face * 0.4, 0).add(
-					back,
-				),
-			);
-		}
-		pipeRun(pools, main, S.pipeKm);
+		pipeRing(
+			pools,
+			{ centre: back, rx: face * 0.5, ry: face * 0.4, z: back.z, segments: 8 },
+			S.pipeKm,
+		);
 		for (const sign of [1, -1])
 			for (const lane of [-0.18, 0.18])
 				pipeRun(
@@ -780,10 +837,16 @@ const DECLARATIONS: Record<string, (context: DeclarationContext) => void> = {
 			// A ring main round the face, on the torus at 45° up from the
 			// equator; a lattice ring on the face's crown; six radiator banks
 			// on the face between the modules, fins along the rim.
-			const main: THREE.Vector3[] = [];
-			for (let i = 0; i <= 36; i++)
-				main.push(at((i / 36) * TURN, major + tube * 0.71, side * tube * 0.71));
-			pipeRun(pools, main, S.pipeKm);
+			pipeRing(
+				pools,
+				{
+					centre: V(0, 0, 0),
+					rx: major + tube * 0.71,
+					z: side * tube * 0.71,
+					segments: 36,
+				},
+				S.pipeKm,
+			);
 			for (let i = 0; i < 24; i++)
 				truss(
 					pools,
@@ -904,16 +967,12 @@ const DECLARATIONS: Record<string, (context: DeclarationContext) => void> = {
 			});
 		}
 		// Pipe rings against each band's shoulders, and one round the waist.
-		for (const z of [-r * 0.55, -r * 0.35, r * 0.1, r * 0.3, -r * 0.12]) {
-			const ring: THREE.Vector3[] = [];
-			for (let i = 0; i <= 24; i++)
-				ring.push(
-					radial((i / 24) * TURN)
-						.multiplyScalar(body + S.pipeKm * 0.5)
-						.setZ(z),
-				);
-			pipeRun(pools, ring, S.pipeKm);
-		}
+		for (const z of [-r * 0.55, -r * 0.35, r * 0.1, r * 0.3, -r * 0.12])
+			pipeRing(
+				pools,
+				{ centre: V(0, 0, 0), rx: body + S.pipeKm * 0.5, z },
+				S.pipeKm,
+			);
 		// Two masts on the forward flank, opposite each other.
 		for (const theta of [Math.PI / 4, Math.PI * 1.25]) {
 			const top = mast(pools, group, {
@@ -1175,16 +1234,12 @@ const DECLARATIONS: Record<string, (context: DeclarationContext) => void> = {
 				panelHeightKm: S.panelHeightKm * 0.7,
 			});
 		// Two ring mains round the cluster's waist.
-		for (const z of [-1.45, -1.3]) {
-			const ring: THREE.Vector3[] = [];
-			for (let i = 0; i <= 12; i++) {
-				const theta = (i / 12) * Math.PI * 2;
-				ring.push(
-					V(Math.cos(theta) * r * 0.82, Math.sin(theta) * r * 0.82, z * r),
-				);
-			}
-			pipeRun(pools, ring, S.pipeKm * 0.75);
-		}
+		for (const z of [-1.45, -1.3])
+			pipeRing(
+				pools,
+				{ centre: V(0, 0, 0), rx: r * 0.82, z: z * r, segments: 12 },
+				S.pipeKm * 0.75,
+			);
 		// A short mast off the tower, leaning outward and clear of the pad.
 		const leg = V(r * 0.46 * Math.SQRT1_2, r * 0.46 * Math.SQRT1_2, -r * 0.6);
 		const top = mast(pools, group, {

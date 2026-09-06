@@ -257,6 +257,7 @@ import {
 	buildStationMesh,
 	stationVisualSnapshot,
 	updateStationVisuals,
+	warmStationMaps,
 } from "./station-mesh";
 import {
 	HULL_SPECS,
@@ -2976,6 +2977,9 @@ class Game {
 		// declared reach; real traffic needs simulation positions, and those are
 		// #26's to give.
 		this.shipMesh = buildShipMesh(...PLAYER_HULL).root;
+		// Every role's station maps now, beside the hull's: built lazily they
+		// land inside a jump's populate, 32-47 ms a role under `worn`.
+		warmStationMaps();
 		this.shipMesh.name = "ship";
 		// #201. Once at build, not per frame: a hull's materials do not change
 		// class after it is built, and the walk is a full traverse.

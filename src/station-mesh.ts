@@ -342,6 +342,17 @@ const surfaceMaps = (type: StationType) => {
  * that stops the build.
  */
 const surfaceMapCache = new Map<string, ReturnType<typeof surfaceMaps>>();
+/**
+ * Build every role's maps now rather than on the first station of that role.
+ * A role's maps are built once per process on its first `buildStationMesh`,
+ * which is inside a system's populate at a jump; under `worn` that is
+ * 32-47 ms a role (sage, round 5), a hitch on a jump. `main.ts` calls this
+ * at boot beside the player's hull, where a one-off cost belongs.
+ */
+export function warmStationMaps() {
+	for (const type of STATION_TYPES) mapsFor(type);
+}
+
 const mapsFor = (type: StationType) => {
 	// Keyed by **what the maps are made from** — the role, the map size and
 	// the plating profile — rather than by the finish: `plated` and
@@ -3354,13 +3365,6 @@ function buildOutpostRig(color: number, berthSeed: number): BuiltPart {
 }
 
 /**
- * Every form, by role.
- *
- * A `Record<StationType, …>` for `station-types.md` §8.5's reason, and each
- * role's list is exactly `STATION_FORM_IDS` long so the previewer's three slots
- * cannot silently hold two.
- */
-/**
  * The cell pitch of the modular assembly, kilometres, and the module radii as
  * fractions of it. 0.2 km puts a 96 m habitat tube in each cell, which is
  * the ISS's proportion at the scale the other trade forms are drawn to, and
@@ -3696,6 +3700,14 @@ function buildTradeModular(color: number, berthSeed: number): BuiltPart {
 	return { group, fixtures, spinner: spun };
 }
 
+/**
+ * Every form, by role.
+ *
+ * A `Record<StationType, …>` for `station-types.md` §8.5's reason. Three
+ * forms a role, and trade a fourth since #202's Assembly: `STATION_FORM_IDS`
+ * is the union of ids a role may use and a role's list is not required to
+ * fill it — `buildStationForm` refuses an id its role does not carry.
+ */
 export const STATION_FORMS: Record<StationType, StationForm[]> = {
 	trade: [
 		{

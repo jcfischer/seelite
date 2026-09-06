@@ -17,9 +17,9 @@
  * 3. **The finish reaches the material**, not only the geometry: the rim dial
  *    and the tile size are read off what was built.
  *
- * Every case restores `stock` on its way out. The finish is module state, and
- * a test file that left it set would hand the next file an industrial hull
- * under a test written for the stock one.
+ * Every case restores the **default** on its way out. The finish is module
+ * state, and a test file that left another finish set would hand the next
+ * file a hull the game does not ship.
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
@@ -104,9 +104,6 @@ describe("stock is the hull that shipped", () => {
 	});
 
 	test("the default is worn — the principal's choice on the second sheet", () => {
-		// Read before any test in this file has set a finish: `afterEach`
-		// restores `stock`, so this is the module's own initial value only
-		// when the file runs it first, which the `describe` order guarantees.
 		expect(DEFAULT_HULL_FINISH).toBe("worn");
 		expect(HULL_FINISHES[DEFAULT_HULL_FINISH].collar).toBe("flange");
 	});
