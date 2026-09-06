@@ -38,7 +38,9 @@ import {
 	plateUVs,
 } from "../src/ship-surface";
 import {
+	type MacroOctave,
 	PLATE_TEXTURE_SIZE,
+	type PlatingProfile,
 	plateTexels,
 	plateLayout,
 	seamNormalTexels,
@@ -119,6 +121,168 @@ describe("the station's surface did not move", () => {
 		// somebody has to make in front of a frame, and nobody made it here.
 		for (const type of STATION_TYPES)
 			expect(STATION_VISUALS[type].plating.seamDepth).toBe(0);
+	});
+});
+
+describe("a second, coarser octave of plating (#202, #203)", () => {
+	/*
+	 * A hull has one detail scale — a 1 m plate — and a station one 19 m
+	 * plate, and #199's review read both as a single uniform grid. The macro
+	 * octave is a coarser layout of *panel groups* laid over the same map: a
+	 * wider, darker groove and a group-to-group tone spread, so a surface
+	 * carries two rulers rather than one.
+	 *
+	 * The octave is **optional and off by default**, which is what the pins
+	 * above rest on: every station profile leaves it undefined and its buffers
+	 * are byte for byte what they were.
+	 */
+	const size = 256;
+	const fine: PlatingProfile = { ...SHIP_PLATING, seamDepth: 0.5 };
+	// 64 px on a 256 map is four groups across and two rows: eight groups,
+	// which is enough draws for a tone *spread* to be a property of the term
+	// rather than of two hashes. At 128 px it was two groups, and the range
+	// assertion below was a coin toss that came up 10.3 against a bar of 12.
+	const macro: MacroOctave = {
+		pitchPx: 64,
+		aspect: 2,
+		stagger: 0.5,
+		seamHalfWidthPx: 3,
+		seam: 0.35,
+		variation: 14,
+		seamDepth: 0.6,
+	};
+	const twoOctave: PlatingProfile = { ...fine, macro };
+	const at = (buffer: Uint8Array, x: number, y: number, channel = 0) =>
+		buffer[(y * size + x) * 4 + channel];
+
+	test("an undefined octave is the same buffer as no octave at all", () => {
+		// Spelled out rather than trusted to the pins: the pins cover the four
+		// station profiles, and this covers the field itself.
+		const bare = plateTexels(fine, "octave", size);
+		const explicit = plateTexels({ ...fine, macro: undefined }, "octave", size);
+		expect(explicit).toEqual(bare);
+		expect(seamNormalTexels({ ...fine, macro: undefined }, size)).toEqual(
+			seamNormalTexels(fine, size),
+		);
+	});
+
+	test("the macro groove darkens a band wider than the fine seam, on the macro boundaries only", () => {
+		const bare = plateTexels(fine, "octave", size);
+		const layered = plateTexels(twoOctave, "octave", size);
+		const coarse = plateLayout({ ...fine, ...macro }, size);
+		const fineLayout = plateLayout(fine, size);
+		// A row through the middle of a fine strake and of a macro group, so
+		// the only along-seams in reach are none at all.
+		const y = Math.floor(size / fineLayout.rows / 2);
+		let darkenedOnMacro = 0;
+		let darkenedOffMacro = 0;
+		let onMacro = 0;
+		for (let x = 0; x < size; x++) {
+			const { across, along } = coarse.distanceTo(x, y);
+			const inGroove =
+				Math.min(Math.abs(across), Math.abs(along)) < macro.seamHalfWidthPx;
+			// The group tone moves every texel; the *groove* is a darkening on
+			// top of that, so compare against the same group's own level rather
+			// than against the single-octave map.
+			const darker = at(layered, x, y) < at(bare, x, y) * (1 - macro.seam / 2);
+			if (inGroove) {
+				onMacro += 1;
+				if (darker) darkenedOnMacro += 1;
+			} else if (darker && !fineLayout.onSeam(x, y)) darkenedOffMacro += 1;
+		}
+		// Two boundaries on the row, each `2 × seamHalfWidthPx` texels wide.
+		expect(onMacro).toBe(coarse.cols * macro.seamHalfWidthPx * 2);
+		expect(darkenedOnMacro).toBe(onMacro);
+		expect(darkenedOffMacro).toBe(0);
+	});
+
+	test("groups differ from each other in tone by more than plates do", () => {
+		// The point of the octave: a 16-tone patchwork at the group scale where
+		// the fine plating spreads only ±6. Read the group means off the map.
+		const layered = plateTexels(twoOctave, "octave", size);
+		const coarse = plateLayout({ ...fine, ...macro }, size);
+		const means = new Map<string, { sum: number; n: number }>();
+		for (let y = 0; y < size; y++)
+			for (let x = 0; x < size; x++) {
+				const { across, along } = coarse.distanceTo(x, y);
+				if (Math.min(Math.abs(across), Math.abs(along)) < macro.seamHalfWidthPx)
+					continue;
+				const row = coarse.rowOf(y);
+				const key = `${coarse.colOf(x, row)}:${row}`;
+				const entry = means.get(key) ?? { sum: 0, n: 0 };
+				entry.sum += at(layered, x, y);
+				entry.n += 1;
+				means.set(key, entry);
+			}
+		const levels = [...means.values()].map((m) => m.sum / m.n);
+		expect(levels.length).toBe(coarse.cols * coarse.rows);
+		expect(Math.max(...levels) - Math.min(...levels)).toBeGreaterThan(
+			fine.variation * 2,
+		);
+	});
+
+	test("the macro groove is cut into the normal map, and the fine one still is", () => {
+		const bare = seamNormalTexels(fine, size);
+		const layered = seamNormalTexels(twoOctave, size);
+		const coarse = plateLayout({ ...fine, ...macro }, size);
+		const fineLayout = plateLayout(fine, size);
+		const y = Math.floor(size / fineLayout.rows / 2);
+		let tiltedOnMacro = 0;
+		let onMacro = 0;
+		let changedOffMacro = 0;
+		for (let x = 0; x < size; x++) {
+			const { across } = coarse.distanceTo(x, y);
+			const { across: fineAcross } = fineLayout.distanceTo(x, y);
+			const inMacro = Math.abs(across) < macro.seamHalfWidthPx;
+			const inFine = Math.abs(fineAcross) < fine.seamHalfWidthPx;
+			if (inMacro && !inFine) {
+				onMacro += 1;
+				if (Math.abs(at(layered, x, y) - 128) > 4) tiltedOnMacro += 1;
+			}
+			if (!inMacro && at(layered, x, y) !== at(bare, x, y))
+				changedOffMacro += 1;
+		}
+		expect(onMacro).toBeGreaterThan(0);
+		expect(tiltedOnMacro).toBe(onMacro);
+		expect(changedOffMacro).toBe(0);
+	});
+
+	test("the memoised seam distances agree with the definition", () => {
+		// `distanceTo` is memoised per row now, because a 512 map with two
+		// octaves ran the boundary scan a quarter of a billion times. The
+		// memo has to be the same function, so it is checked against the
+		// scan written out.
+		const layout = plateLayout(fine, size);
+		const scan = (n: number, boundary: (m: number) => boolean) => {
+			let best = size;
+			for (let m = 0; m < size; m++) {
+				if (!boundary(m)) continue;
+				const raw = n - (m + 0.5);
+				const wrapped =
+					raw > size / 2 ? raw - size : raw < -size / 2 ? raw + size : raw;
+				if (Math.abs(wrapped) < Math.abs(best)) best = wrapped;
+			}
+			return best;
+		};
+		for (const [x, y] of [
+			[0, 0],
+			[17, 3],
+			[255, 255],
+			[128, 64],
+			[31, 200],
+		]) {
+			const row = layout.rowOf(y);
+			const { across, along } = layout.distanceTo(x, y);
+			expect(across).toBe(
+				scan(
+					x,
+					(m) => layout.colOf(m, row) !== layout.colOf((m + 1) % size, row),
+				),
+			);
+			expect(along).toBe(
+				scan(y, (m) => layout.rowOf(m) !== layout.rowOf((m + 1) % size)),
+			);
+		}
 	});
 });
 

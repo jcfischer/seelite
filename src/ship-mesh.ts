@@ -44,7 +44,12 @@ import {
 	type HullId,
 	type HullVariantId,
 } from "./hull";
-import { plate, plateUVs } from "./ship-surface";
+import {
+	currentHullFinish,
+	hullFinishId,
+	plate,
+	plateUVs,
+} from "./ship-surface";
 
 export const SHIP_DESIGN_ROUND = 10;
 
@@ -311,7 +316,89 @@ const liveries: Record<
 	dreadnought: { hull: 0x7b8288, panel: 0x3c434b, accent: 0xd4553c },
 };
 
-const palettes = new Map<HullId, Palette>();
+/** One palette per hull id **per finish**: the maps, the paint and the exhaust
+ *  material all depend on the finish in force, and a switch must not hand an
+ *  industrial hull the stock palette it happened to find. */
+const palettes = new Map<string, Palette>();
+
+/**
+ * Pull a livery colour toward grey, and down (#203).
+ *
+ * #35's liveries are pastel: a saturated blue-grey courier, a tan freighter,
+ * a mint explorer. Under #199's broad light they read as toys, because a
+ * painted industrial hull is mostly one dull tone with a stripe. The finish
+ * says how much chroma survives and how bright the result is; the hue is
+ * kept, so the eleven liveries still tell the roles apart.
+ *
+ * Toward the colour's own luma rather than a fixed grey, so a dark panel stays
+ * dark and a light hull stays light — muting must not flatten the value
+ * contrast between the four paints, which is what separates them at range.
+ */
+function mutePaint(
+	color: number,
+	paint: { saturation: number; value: number },
+): number {
+	const r = (color >> 16) & 0xff;
+	const g = (color >> 8) & 0xff;
+	const b = color & 0xff;
+	const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+	const channel = (c: number) =>
+		Math.max(
+			0,
+			Math.min(
+				255,
+				Math.round((luma + (c - luma) * paint.saturation) * paint.value),
+			),
+		);
+	return (channel(r) << 16) | (channel(g) << 8) | channel(b);
+}
+
+/**
+ * The exhaust bowl's glow, hot at the throat and cooling to the lip.
+ *
+ * A 4×64 ramp sampled along `v`, which the bowl's UVs run from throat (0) to
+ * lip (1). The emissive colour is white and the *map* carries the hue, so the
+ * throat is white-hot and the rim the drive's own blue — one texture for every
+ * drive in the game, and `emissiveIntensity` stays the single dial the
+ * throttle and the workbench already drive.
+ */
+let exhaustGradient: THREE.DataTexture | undefined;
+function exhaustGradientMap() {
+	if (exhaustGradient) return exhaustGradient;
+	const width = 4;
+	const height = 64;
+	const data = new Uint8Array(width * height * 4);
+	for (let y = 0; y < height; y++) {
+		const v = y / (height - 1);
+		// Cubed, so the heat is a core rather than a wash: most of the bowl is
+		// the drive's blue, and only the throat is white.
+		const hot = (1 - v) ** 3;
+		const fade = 0.35 + 0.65 * (1 - v) ** 1.2;
+		const r = Math.round(255 * fade * (0.3 + 0.7 * hot));
+		const g = Math.round(255 * fade * (0.62 + 0.38 * hot));
+		const b = Math.round(255 * fade * (0.9 + 0.1 * hot));
+		for (let x = 0; x < width; x++) {
+			const i = (y * width + x) * 4;
+			data[i] = r;
+			data[i + 1] = g;
+			data[i + 2] = b;
+			data[i + 3] = 255;
+		}
+	}
+	exhaustGradient = new THREE.DataTexture(
+		data,
+		width,
+		height,
+		THREE.RGBAFormat,
+	);
+	exhaustGradient.colorSpace = THREE.SRGBColorSpace;
+	exhaustGradient.wrapS = THREE.ClampToEdgeWrapping;
+	exhaustGradient.wrapT = THREE.ClampToEdgeWrapping;
+	exhaustGradient.magFilter = THREE.LinearFilter;
+	exhaustGradient.minFilter = THREE.LinearFilter;
+	exhaustGradient.needsUpdate = true;
+	return exhaustGradient;
+}
 
 /**
  * Lift the dark structural paints after the scene exposure comes down.
@@ -335,9 +422,17 @@ export const SHIP_EMISSIVE_INTENSITIES = {
 } as const;
 
 function makePalette(id: HullId): Palette {
-	const cached = palettes.get(id);
+	const finish = currentHullFinish();
+	const key = `${hullFinishId()}:${id}`;
+	const cached = palettes.get(key);
 	if (cached) return cached;
-	const colors = liveries[id];
+	const authored = liveries[id];
+	// Muted per the finish; `stock` is 1/1 and leaves #35's paint untouched.
+	const colors = {
+		hull: mutePaint(authored.hull, finish.paint),
+		panel: mutePaint(authored.panel, finish.paint),
+		accent: mutePaint(authored.accent, finish.paint),
+	};
 	const painted = (color: number, roughness: number, metalness: number) =>
 		new THREE.MeshStandardMaterial({ color, roughness, metalness });
 	/**
@@ -375,15 +470,30 @@ function makePalette(id: HullId): Palette {
 			metalness: 0.1,
 		}),
 		engine: painted(scalePaint(0x293b42, SHADOW_PAINT_LIFT), 0.42, 0.58),
-		exhaust: new THREE.MeshStandardMaterial({
-			color: 0x7fc4df,
-			emissive: 0x4a9fca,
-			emissiveIntensity: SHIP_EMISSIVE_INTENSITIES.exhaust,
-			roughness: 0.36,
-			metalness: 0.08,
-		}),
+		exhaust:
+			finish.drive === "bowl"
+				? // The bowl is seen from *inside*: `BackSide` draws the far wall of
+					// a loft whose normals point outward, and three flips the normal
+					// for lighting. The map carries the hue and the throat's heat; the
+					// emissive is white so the map is the whole of the colour.
+					new THREE.MeshStandardMaterial({
+						color: 0x1b2f3a,
+						emissive: 0xffffff,
+						emissiveMap: exhaustGradientMap(),
+						emissiveIntensity: SHIP_EMISSIVE_INTENSITIES.exhaust,
+						roughness: 0.5,
+						metalness: 0.1,
+						side: THREE.BackSide,
+					})
+				: new THREE.MeshStandardMaterial({
+						color: 0x7fc4df,
+						emissive: 0x4a9fca,
+						emissiveIntensity: SHIP_EMISSIVE_INTENSITIES.exhaust,
+						roughness: 0.36,
+						metalness: 0.08,
+					}),
 	};
-	palettes.set(id, palette);
+	palettes.set(key, palette);
 	return palette;
 }
 
@@ -497,6 +607,10 @@ function engineBell(
 	length: number,
 	p: Palette,
 ) {
+	if (currentHullFinish().drive === "bowl") {
+		openBell(root, name, position, radius, length, p);
+		return;
+	}
 	add(
 		root,
 		name + "-bell",
@@ -517,6 +631,91 @@ function engineBell(
 		p.exhaust,
 		[position[0], position[1], position[2] + length * 0.13],
 	);
+}
+
+/**
+ * The industrial drive: an **open** bell with a glowing bowl set into it (#203).
+ *
+ * #199's review read the exhaust disc as a cyan sticker, and a sticker is what
+ * it is — a flat emissive circle a hair behind a closed cap. A nozzle is open:
+ * you look *into* it, the wall you see is the inside of the bell, and the heat
+ * is at the bottom.
+ *
+ * Two lofts. The bell keeps its outer profile and then **folds back at the
+ * lip**: the sweep continues from the mouth inward and down to a small throat,
+ * so the same loft draws the outer wall, a lip with thickness, and an inner
+ * wall whose normals face the axis — `hullLoft`'s winding turns the normal
+ * over when the sweep runs backwards, and the loft's rear cap lands at the
+ * throat, tiny, where the bowl hides it. The bowl is a second loft from the
+ * throat to just inside the lip, drawn `BackSide` so its far wall is what
+ * renders; its own front cap at the throat faces the viewer and is the hot
+ * core. Its UVs are rewritten to run 0 at the throat and 1 at the lip, which
+ * is the axis `exhaustGradientMap` grades along.
+ *
+ * The `-bell` and `-exhaust` names, and the rule that the exhaust's span stays
+ * under half the drive's, are the disc's and are kept: the tests read the
+ * pair by name and `emissiveIntensity` is still the one dial.
+ */
+function openBell(
+	root: THREE.Group,
+	name: string,
+	position: [number, number, number],
+	radius: number,
+	length: number,
+	p: Palette,
+) {
+	const ring = (r: number, z: number, hard = false): Ring => ({
+		z,
+		w: r,
+		h: r,
+		e: 2,
+		hard,
+	});
+	add(
+		root,
+		name + "-bell",
+		hullLoft(
+			[
+				ring(radius * 0.52, -length),
+				ring(radius * 0.44, -length * 0.55),
+				ring(radius * 0.62, -length * 0.2),
+				ring(radius * 0.94, 0),
+				ring(radius * 0.9, length * 0.12, true),
+				ring(radius * 0.84, length * 0.11, true),
+				ring(radius * 0.7, -length * 0.08),
+				ring(radius * 0.42, -length * 0.4),
+				ring(radius * 0.2, -length * 0.58),
+				ring(radius * 0.1, -length * 0.62),
+			],
+			{ subdivisions: 3 },
+		),
+		p.engine,
+		position,
+	);
+	const throatZ = -length * 0.55;
+	const lipZ = length * 0.1;
+	const bowl = hullLoft(
+		[
+			ring(radius * 0.22, throatZ),
+			ring(radius * 0.34, -length * 0.4),
+			ring(radius * 0.55, -length * 0.15),
+			ring(radius * 0.76, length * 0.05),
+			ring(radius * 0.8, lipZ),
+		],
+		{ subdivisions: 2 },
+	);
+	// Throat to lip along `v`, `u` down the middle of the ramp. Declared in
+	// plate units so `add()` leaves them alone: this map is a gradient, not a
+	// plate, and dividing it by a tile size would sample one row of it.
+	const positions = bowl.getAttribute("position") as THREE.BufferAttribute;
+	const uv = bowl.getAttribute("uv") as THREE.BufferAttribute;
+	for (let i = 0; i < uv.count; i++) {
+		const t = (positions.getZ(i) - throatZ) / (lipZ - throatZ);
+		uv.setXY(i, 0.5, Math.max(0, Math.min(1, t)));
+	}
+	uv.needsUpdate = true;
+	setUvUnits(bowl, "plate");
+	add(root, name + "-exhaust", bowl, p.exhaust, position);
 }
 
 /**
@@ -621,9 +820,53 @@ function drumProfile(halfLength: number, radius: number) {
  * second scaling path for three's primitives.
  */
 function hoop(radius: number, tube: number) {
+	if (currentHullFinish().collar === "flange") return collar(radius, tube);
 	const geometry = new THREE.TorusGeometry(radius, tube, 8, 22);
 	scaleUVs(geometry, 2 * Math.PI * radius, 2 * Math.PI * tube);
 	setUvUnits(geometry, "km");
+	// A ring, whatever it is built from: the forward-view test skips rings
+	// because their box is full and their middle is empty.
+	geometry.userData.ring = true;
+	return geometry;
+}
+
+/**
+ * The industrial hoop: a faceted, flanged collar (#203).
+ *
+ * A torus is a moulded doughnut, and on a nacelle it reads as a rubber band
+ * round a tube — #199's review, and the sheet agrees. A machined collar is a
+ * band with a raised flange and hard edges: twelve facets, every station
+ * `hard`, so `loft.ts`'s crease term lights each edge and the plating runs
+ * over the band in kilometres like every other part. It reaches 1.15 tubes
+ * from the surface where the torus reached one; a hull whose hoop was its
+ * farthest vertex would move by that much, and the reach test would say so.
+ *
+ * Solid rather than hollow — the loft caps close it into a drum — because the
+ * inside is buried in the nacelle it grips and a hole there is triangles for
+ * nothing. Marked `ring` for the forward-view test's reason.
+ */
+function collar(radius: number, tube: number) {
+	const ring = (r: number, z: number): Ring => ({
+		z,
+		w: r,
+		h: r,
+		e: 2,
+		hard: true,
+	});
+	const geometry = hullLoft(
+		[
+			ring(radius - tube * 0.5, -tube * 1.4),
+			ring(radius + tube * 0.45, -tube * 1.4),
+			ring(radius + tube * 0.45, -tube * 0.5),
+			ring(radius + tube * 1.15, -tube * 0.5),
+			ring(radius + tube * 1.15, tube * 0.5),
+			ring(radius + tube * 0.45, tube * 0.5),
+			ring(radius + tube * 0.45, tube * 1.4),
+			ring(radius - tube * 0.5, tube * 1.4),
+		],
+		{ segments: 12, subdivisions: 1 },
+	);
+	geometry.userData.ring = true;
 	return geometry;
 }
 

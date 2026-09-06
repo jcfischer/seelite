@@ -64,16 +64,21 @@ import {
 	type StationType,
 } from "./station";
 import { type GreebleZone, buildGreebles } from "./station-greebles";
+import { buildMacroFixtures } from "./station-fixtures";
 import {
 	STATION_QUALITY,
 	STATION_VISUALS,
 	type StationQuality,
 	type StationDetailLevel,
 	type StationFixtureKind,
+	currentStationFinish,
 	fixtureIntensity,
 	flickerIntensity,
 	platingTexels,
+	seamTexels,
 	stationDetailLevel,
+	stationFinishId,
+	stationMapSize,
 	surfaceTexels,
 } from "./station-visuals";
 import {
@@ -82,7 +87,6 @@ import {
 	ringAround,
 } from "./station-interior-mesh";
 import { stationInterior } from "./station-interior";
-import { PLATE_TEXTURE_SIZE } from "./surface";
 import { disposeSubtree, isShared, shared } from "./gpu-teardown";
 
 /**
@@ -244,20 +248,18 @@ export interface StationFixture {
  * through because the albedo map is greyscale.
  */
 const surfaceMaps = (type: StationType) => {
+	// The finish's size, not `PLATE_TEXTURE_SIZE`: an industrial finish doubles
+	// the map with its tile so a second octave has room (#202).
+	const size = stationMapSize();
 	// Generated once and handed to both textures: `surfaceTexels` derives its
 	// wear from the albedo, so regenerating it would run the plating loop twice
 	// per role and leave two buffers that only happen to agree.
-	const plate = platingTexels(type);
-	const albedo = new THREE.DataTexture(
-		plate,
-		PLATE_TEXTURE_SIZE,
-		PLATE_TEXTURE_SIZE,
-		THREE.RGBAFormat,
-	);
+	const plate = platingTexels(type, size);
+	const albedo = new THREE.DataTexture(plate, size, size, THREE.RGBAFormat);
 	const wear = new THREE.DataTexture(
-		surfaceTexels(type, PLATE_TEXTURE_SIZE, plate),
-		PLATE_TEXTURE_SIZE,
-		PLATE_TEXTURE_SIZE,
+		surfaceTexels(type, size, plate),
+		size,
+		size,
 		THREE.RGBAFormat,
 	);
 	// **sRGB on the albedo, linear on the wear map.** three.js reads a `map` as
@@ -281,7 +283,22 @@ const surfaceMaps = (type: StationType) => {
 		map.generateMipmaps = true;
 		map.needsUpdate = true;
 	}
-	return { albedo, wear };
+	// The embossed seam, where the finish cuts one (#202). **Linear**, unlike
+	// the two above: `ship-surface.ts` records that a nearest-sampled normal
+	// bands in the highlight rather than stepping at a hard edge.
+	const seamBytes = seamTexels(type, size);
+	let seams: THREE.Texture | null = null;
+	if (seamBytes) {
+		seams = new THREE.DataTexture(seamBytes, size, size, THREE.RGBAFormat);
+		shared(seams);
+		seams.wrapS = THREE.RepeatWrapping;
+		seams.wrapT = THREE.RepeatWrapping;
+		seams.magFilter = THREE.LinearFilter;
+		seams.minFilter = THREE.LinearMipmapLinearFilter;
+		seams.generateMipmaps = true;
+		seams.needsUpdate = true;
+	}
+	return { albedo, wear, seams };
 };
 
 /**
@@ -298,14 +315,23 @@ const surfaceMaps = (type: StationType) => {
  * guarantee: `surfaceMaps` reads `STATION_VISUALS[type]`, which is the `Record`
  * that stops the build.
  */
-const surfaceMapCache = new Map<StationType, ReturnType<typeof surfaceMaps>>();
+const surfaceMapCache = new Map<string, ReturnType<typeof surfaceMaps>>();
 const mapsFor = (type: StationType) => {
-	const cached = surfaceMapCache.get(type);
+	// Keyed by the finish as well as the role, so a switch on the workbench
+	// builds the other finish's maps rather than handing back the first's; the
+	// game only ever fills one key per role.
+	const key = `${stationFinishId()}:${type}`;
+	const cached = surfaceMapCache.get(key);
 	if (cached) return cached;
 	const built = surfaceMaps(type);
-	surfaceMapCache.set(type, built);
+	surfaceMapCache.set(key, built);
 	return built;
 };
+
+/** The world size of one plating tile under the finish in force — the stock
+ *  `STATION_PANEL_KM` times the finish's tile multiple, so a doubled map keeps
+ *  the same nineteen-metre plate. */
+const stationPanelKm = () => STATION_PANEL_KM * currentStationFinish().tile;
 
 /**
  * A painted hull carrying its role's plating.
@@ -326,15 +352,19 @@ const mapsFor = (type: StationType) => {
 const hullMaterials = new Map<string, THREE.MeshStandardMaterial>();
 
 const hullMaterial = (color: number, type: StationType) => {
-	const cacheKey = `${type}:${color}`;
+	const cacheKey = `${stationFinishId()}:${type}:${color}`;
 	const cached = hullMaterials.get(cacheKey);
 	if (cached) return cached;
-	const { albedo, wear } = mapsFor(type);
+	const { albedo, wear, seams } = mapsFor(type);
 	const material = new THREE.MeshStandardMaterial({
 		color,
 		map: albedo,
 		roughnessMap: wear,
 		metalnessMap: wear,
+		// The cut seam, on the finishes that cut one (#202); `null` leaves the
+		// stock material exactly as it was, with no tangent frame in its program.
+		normalMap: seams,
+		normalScale: new THREE.Vector2(1, 1),
 		// Multiplied by the map's green and blue channels, so these are the
 		// ceilings rather than the values. Left at 1 the map would be the whole
 		// answer and the profile's figures would be decoration.
@@ -877,8 +907,9 @@ function shell(
 	// which is what this did, gives a 1.5 km keel and a 0.12 km terrace six
 	// bands each: one coarse, the other a smear.
 	const uv = geometry.getAttribute("uv") as THREE.BufferAttribute;
+	const panelKm = stationPanelKm();
 	for (let i = 0; i < uv.count; i++)
-		uv.setXY(i, uv.getX(i) / STATION_PANEL_KM, uv.getY(i) / STATION_PANEL_KM);
+		uv.setXY(i, uv.getX(i) / panelKm, uv.getY(i) / panelKm);
 	uv.needsUpdate = true;
 	// Cached per source material: the forms ask for flat shading dozens of times
 	// per station, and a clone each time gives one station dozens of distinct
@@ -1173,7 +1204,7 @@ function buildCuboctahedron(
 		appendRing(geometry, ringTriangles(outer, inner, face), aperture);
 	}
 	// Box-projected UVs, per face — see `boxProjectUVs`.
-	boxProjectUVs(geometry, STATION_PANEL_KM);
+	boxProjectUVs(geometry, stationPanelKm());
 	// Through the clone cache, not by mutating the material it was handed: hull
 	// materials are shared per (type, colour) now, so setting `flatShading` on
 	// one sets it on every station of that type. It happens to be what both of
@@ -3370,6 +3401,25 @@ export function buildStationForm(
 	// lights while it in fact produced most of them, so a fourth station type
 	// would have compiled with none and lit nothing.
 	const built = form.build(color, berthSeed);
+	// #202's macro structure, on the finishes that carry it. Added to the
+	// built group after the form so the fixtures can be cast onto the structure
+	// that exists, and inside it rather than beside it so a role that spins
+	// whole turns its trusses with it; a shipyard's static frame is the group
+	// too, and its hub spins inside.
+	const finish = currentStationFinish();
+	if (finish.fixtures)
+		built.group.add(
+			buildMacroFixtures({
+				type,
+				formId,
+				structure: built.group,
+				fixtures: built.fixtures,
+				beacons:
+					finish.beacons && STATION_VISUALS[type].activity.strobePeriodS > 0,
+				strobeBase: STATION_EMISSIVE_INTENSITIES.strobe,
+				lampBase: STATION_EMISSIVE_INTENSITIES.aperture,
+			}),
+		);
 	// The spinner is the form's own declared part where it names one, the whole
 	// body where it does not, and an empty group for a role whose pad does not
 	// turn at all (`docking.md` §4). The empty one is a *sibling* added here;

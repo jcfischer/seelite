@@ -1,0 +1,739 @@
+/**
+ * The macro structure a station carries at 2 km (#202): the scale between a
+ * 19 m plate and a kilometre of hull, which every form lacked.
+ *
+ * The vocabulary is the ISS's and the Nostromo's, which is the principal's
+ * steer for this node: **truss** beams of square-section members with
+ * diagonals, **radiator** arrays of thin white panels on a spine, **tank
+ * racks** of cylinders in saddles, **pipe runs** with elbows, a **mast** with
+ * a dish, a **docking collar** with approach lamps round a slot, and
+ * **beacons** — clock-driven strobes on the ends of things. Each is a
+ * primitive here; where each goes on a form is a short declaration per
+ * selected form at the bottom, in the form's own kilometres, and nothing else
+ * in the file knows what a Coriolis is.
+ *
+ * **Three rules, the same three the greebles are under** (`station-greebles.ts`).
+ * No fixture may be a station's farthest vertex — `tests/station-visuals.test.ts`
+ * holds the reach identical at every detail level and `tests/station-finish.test.ts`
+ * holds it inside the form's declaration under every finish. Nothing stands in
+ * the docking corridor, which the corridor row sweeps. And a fixture is
+ * **mounted**: a declared base point is cast back along its normal onto the
+ * structure that was built, so a truss on the Warren's rock sits on the rock
+ * and not on the radius somebody wrote down.
+ *
+ * **Instanced, not assembled.** A truss is a hundred members and a pipe run a
+ * dozen; as `Mesh`es that is a draw call each. Every member of every fixture
+ * on a station is one instance of a unit box or a unit tube in a material's
+ * pool, and a station's whole macro structure is five or six draw calls
+ * however much of it there is.
+ *
+ * The group is tagged `reduced`: this is 2 km structure and belongs in the
+ * same band as the aperture frame and the strobes, not with the 40 m clutter
+ * that goes at `full`.
+ */
+
+import * as THREE from "three";
+import { shared } from "./gpu-teardown";
+import { revolve } from "./loft";
+import { STATION_GEOMETRY, type StationType } from "./station";
+import type { StationFormId, StationFixture } from "./station-mesh";
+import type { StationFixtureKind } from "./station-visuals";
+import { STATION_VISUALS } from "./station-visuals";
+
+/** The unit box and the unit tube every member is an instance of. Built once
+ *  and marked shared, so a jump's teardown frees the instance data and leaves
+ *  these standing (#187). The tube is built along +Y by three and turned onto
+ *  +Z here, so a member's length is its local z whichever it is. */
+const UNIT_BOX = shared(new THREE.BoxGeometry(1, 1, 1));
+const UNIT_TUBE = (() => {
+	const tube = new THREE.CylinderGeometry(0.5, 0.5, 1, 8);
+	tube.rotateX(Math.PI / 2);
+	return shared(tube);
+})();
+
+/**
+ * Unpainted structure, a white radiator, a dull tank, a dark pipe.
+ *
+ * Grey rather than the hull colour, for `station-greebles.ts`'s reason: §7's
+ * colour cue is the hull, and a truss painted in it dilutes the one signal a
+ * role is read by at range. Shared across every station and never mutated.
+ */
+const MATERIALS = {
+	structure: shared(
+		new THREE.MeshStandardMaterial({
+			color: 0x6f7d88,
+			roughness: 0.78,
+			metalness: 0.42,
+		}),
+	),
+	radiator: shared(
+		new THREE.MeshStandardMaterial({
+			color: 0xd8dde2,
+			roughness: 0.88,
+			metalness: 0.08,
+		}),
+	),
+	tank: shared(
+		new THREE.MeshStandardMaterial({
+			color: 0x9da5ad,
+			roughness: 0.62,
+			metalness: 0.5,
+		}),
+	),
+	pipe: shared(
+		new THREE.MeshStandardMaterial({
+			color: 0x4f5a64,
+			roughness: 0.7,
+			metalness: 0.55,
+		}),
+	),
+} as const;
+
+type MaterialName = keyof typeof MATERIALS;
+
+/**
+ * One station's instance pools: a list of matrices per (geometry, material),
+ * emitted as one `InstancedMesh` each when the fixtures are done.
+ */
+class Pools {
+	private readonly lists = new Map<
+		string,
+		{
+			geometry: THREE.BufferGeometry;
+			material: THREE.Material;
+			matrices: THREE.Matrix4[];
+		}
+	>();
+
+	add(
+		geometry: THREE.BufferGeometry,
+		material: MaterialName,
+		matrix: THREE.Matrix4,
+	) {
+		const key = `${geometry.uuid}:${material}`;
+		let list = this.lists.get(key);
+		if (!list) {
+			list = { geometry, material: MATERIALS[material], matrices: [] };
+			this.lists.set(key, list);
+		}
+		list.matrices.push(matrix);
+	}
+
+	/** A member between two points: a box or a tube of the given thickness. */
+	member(
+		geometry: THREE.BufferGeometry,
+		material: MaterialName,
+		from: THREE.Vector3,
+		to: THREE.Vector3,
+		thickness: number,
+	) {
+		const direction = to.clone().sub(from);
+		const length = direction.length();
+		if (length <= 0) return;
+		const orientation = new THREE.Quaternion().setFromUnitVectors(
+			UNIT_Z,
+			direction.divideScalar(length),
+		);
+		this.add(
+			geometry,
+			material,
+			new THREE.Matrix4().compose(
+				from.clone().add(to).multiplyScalar(0.5),
+				orientation,
+				new THREE.Vector3(thickness, thickness, length),
+			),
+		);
+	}
+
+	emit(into: THREE.Group, prefix: string) {
+		for (const [key, list] of this.lists) {
+			const mesh = new THREE.InstancedMesh(
+				list.geometry,
+				list.material,
+				list.matrices.length,
+			);
+			list.matrices.forEach((matrix, i) => mesh.setMatrixAt(i, matrix));
+			mesh.instanceMatrix.needsUpdate = true;
+			mesh.name = `${prefix}-${key.split(":")[1]}`;
+			into.add(mesh);
+		}
+	}
+}
+
+const UNIT_Z = new THREE.Vector3(0, 0, 1);
+
+/** A frame perpendicular to `direction`: two unit vectors spanning its plane,
+ *  the first as close to `upHint` as the direction allows. */
+function frameAround(direction: THREE.Vector3, upHint: THREE.Vector3) {
+	const axis = direction.clone().normalize();
+	let up = upHint.clone().sub(axis.clone().multiplyScalar(upHint.dot(axis)));
+	if (up.lengthSq() < 1e-8)
+		up = new THREE.Vector3(1, 0, 0).sub(axis.clone().multiplyScalar(axis.x));
+	up.normalize();
+	const side = new THREE.Vector3().crossVectors(axis, up).normalize();
+	return { axis, up, side };
+}
+
+/**
+ * A lattice beam from `a` to `b`: four longerons on a square section, a
+ * frame at every bay, one diagonal per face per bay alternating in direction.
+ * The ISS's integrated truss, at whatever width a form asks for.
+ */
+function truss(
+	pools: Pools,
+	a: THREE.Vector3,
+	b: THREE.Vector3,
+	widthKm: number,
+	upHint: THREE.Vector3,
+) {
+	const { axis, up, side } = frameAround(b.clone().sub(a), upHint);
+	const length = a.distanceTo(b);
+	const half = widthKm / 2;
+	const member = widthKm * 0.14;
+	const corners = [
+		up.clone().multiplyScalar(half).addScaledVector(side, half),
+		up.clone().multiplyScalar(half).addScaledVector(side, -half),
+		up.clone().multiplyScalar(-half).addScaledVector(side, -half),
+		up.clone().multiplyScalar(-half).addScaledVector(side, half),
+	];
+	for (const corner of corners)
+		pools.member(
+			UNIT_BOX,
+			"structure",
+			a.clone().add(corner),
+			b.clone().add(corner),
+			member,
+		);
+	const bays = Math.max(1, Math.round(length / widthKm));
+	const at = (bay: number, corner: number) =>
+		a
+			.clone()
+			.addScaledVector(axis, (bay / bays) * length)
+			.add(corners[corner]);
+	for (let bay = 0; bay <= bays; bay++)
+		for (let corner = 0; corner < 4; corner++)
+			pools.member(
+				UNIT_BOX,
+				"structure",
+				at(bay, corner),
+				at(bay, (corner + 1) % 4),
+				member * 0.8,
+			);
+	for (let bay = 0; bay < bays; bay++)
+		for (let face = 0; face < 4; face++) {
+			const next = (face + 1) % 4;
+			// Alternating so the diagonals zig-zag down each face rather than
+			// all leaning one way, which reads as a slant in the whole beam.
+			const flip = (bay + face) % 2 === 0;
+			pools.member(
+				UNIT_BOX,
+				"structure",
+				at(bay, flip ? face : next),
+				at(bay + 1, flip ? next : face),
+				member * 0.7,
+			);
+		}
+}
+
+/**
+ * A row of thin panels standing on a spine, each perpendicular to the spine.
+ * The ISS's radiators, stacked rather than unfolded so the array reads as a
+ * bank of fins from every side.
+ */
+function radiatorArray(
+	pools: Pools,
+	origin: THREE.Vector3,
+	along: THREE.Vector3,
+	up: THREE.Vector3,
+	count: number,
+	panelWidthKm: number,
+	panelHeightKm: number,
+) {
+	const { axis, up: rise, side } = frameAround(along, up);
+	const pitch = panelWidthKm * 0.55;
+	const spineLength = pitch * (count - 1) + panelWidthKm * 0.4;
+	const spineStart = origin
+		.clone()
+		.addScaledVector(axis, -panelWidthKm * 0.2)
+		.addScaledVector(rise, panelHeightKm * 0.06);
+	pools.member(
+		UNIT_BOX,
+		"structure",
+		spineStart,
+		spineStart.clone().addScaledVector(axis, spineLength),
+		panelHeightKm * 0.12,
+	);
+	for (let i = 0; i < count; i++) {
+		const centre = origin
+			.clone()
+			.addScaledVector(axis, i * pitch)
+			.addScaledVector(rise, panelHeightKm * 0.5 + panelHeightKm * 0.06);
+		const orientation = new THREE.Quaternion().setFromRotationMatrix(
+			new THREE.Matrix4().makeBasis(side, rise, axis),
+		);
+		pools.add(
+			UNIT_BOX,
+			"radiator",
+			new THREE.Matrix4().compose(
+				centre,
+				orientation,
+				new THREE.Vector3(panelWidthKm, panelHeightKm, panelHeightKm * 0.035),
+			),
+		);
+	}
+}
+
+/** Cylinders side by side in two saddles, resting on the surface. */
+function tankRack(
+	pools: Pools,
+	origin: THREE.Vector3,
+	along: THREE.Vector3,
+	up: THREE.Vector3,
+	count: number,
+	radiusKm: number,
+	lengthKm: number,
+) {
+	const { axis, up: rise, side } = frameAround(along, up);
+	const pitch = radiusKm * 2.25;
+	for (let i = 0; i < count; i++) {
+		const centre = origin
+			.clone()
+			.addScaledVector(side, (i - (count - 1) / 2) * pitch)
+			.addScaledVector(rise, radiusKm * 0.95);
+		pools.member(
+			UNIT_TUBE,
+			"tank",
+			centre.clone().addScaledVector(axis, -lengthKm / 2),
+			centre.clone().addScaledVector(axis, lengthKm / 2),
+			radiusKm * 2,
+		);
+	}
+	const span = pitch * (count - 1) + radiusKm * 2.6;
+	for (const s of [-0.3, 0.3]) {
+		const mid = origin
+			.clone()
+			.addScaledVector(axis, s * lengthKm)
+			.addScaledVector(rise, radiusKm * 0.3);
+		pools.member(
+			UNIT_BOX,
+			"structure",
+			mid.clone().addScaledVector(side, -span / 2),
+			mid.clone().addScaledVector(side, span / 2),
+			radiusKm * 0.5,
+		);
+	}
+}
+
+/** A polyline of tubes with a block at each elbow. */
+function pipeRun(
+	pools: Pools,
+	points: readonly THREE.Vector3[],
+	radiusKm: number,
+) {
+	for (let i = 0; i + 1 < points.length; i++)
+		pools.member(UNIT_TUBE, "pipe", points[i], points[i + 1], radiusKm * 2);
+	for (let i = 1; i + 1 < points.length; i++)
+		pools.add(
+			UNIT_BOX,
+			"pipe",
+			new THREE.Matrix4().compose(
+				points[i],
+				new THREE.Quaternion(),
+				new THREE.Vector3(radiusKm * 2.6, radiusKm * 2.6, radiusKm * 2.6),
+			),
+		);
+}
+
+/** A truss mast with a dish on top. Returns where the top is, for a beacon. */
+function mast(
+	pools: Pools,
+	into: THREE.Group,
+	base: THREE.Vector3,
+	up: THREE.Vector3,
+	heightKm: number,
+	widthKm: number,
+) {
+	const top = base.clone().addScaledVector(up.clone().normalize(), heightKm);
+	truss(pools, base, top, widthKm, new THREE.Vector3(0, 0, 1));
+	const dish = new THREE.Mesh(
+		revolve(
+			[
+				[widthKm * 0.3, 0],
+				[widthKm * 1.6, widthKm * 0.5],
+				[widthKm * 1.9, widthKm * 0.8],
+			],
+			12,
+		),
+		MATERIALS.structure,
+	);
+	dish.position.copy(top);
+	dish.quaternion.setFromUnitVectors(UNIT_Z, up.clone().normalize());
+	dish.name = "dish";
+	into.add(dish);
+	return top;
+}
+
+/**
+ * A ring round a slot with approach lamps on it, standing proud of the
+ * aperture plane. The ring's inner radius is the caller's, and it is the
+ * caller's job to keep it outside the corridor — the row that sweeps every
+ * form is what checks it, and this function cannot know a slot's diagonal.
+ *
+ * A square-section torus rather than a loft: `hullLoft` caps both ends with a
+ * fan across the whole disc, which is a plate over the hole.
+ */
+function dockingCollar(
+	into: THREE.Group,
+	planeKm: number,
+	innerKm: number,
+	outerKm: number,
+	lampMaterial: THREE.Material,
+) {
+	const tube = (outerKm - innerKm) / 2;
+	const major = innerKm + tube;
+	const ring = new THREE.Mesh(
+		new THREE.TorusGeometry(major, tube, 4, 24),
+		MATERIALS.structure,
+	);
+	ring.position.z = planeKm + tube * 0.6;
+	ring.name = "docking-collar";
+	into.add(ring);
+	const lamps = new THREE.InstancedMesh(UNIT_BOX, lampMaterial, 8);
+	const matrix = new THREE.Matrix4();
+	for (let i = 0; i < 8; i++) {
+		const theta = ((i + 0.5) / 8) * Math.PI * 2;
+		matrix.compose(
+			new THREE.Vector3(
+				Math.cos(theta) * (outerKm + tube * 0.9),
+				Math.sin(theta) * (outerKm + tube * 0.9),
+				planeKm + tube * 0.6,
+			),
+			new THREE.Quaternion().setFromAxisAngle(UNIT_Z, theta),
+			new THREE.Vector3(tube * 1.2, tube * 0.7, tube * 0.7),
+		);
+		lamps.setMatrixAt(i, matrix);
+	}
+	lamps.instanceMatrix.needsUpdate = true;
+	lamps.name = "approach-lamps";
+	into.add(lamps);
+}
+
+/**
+ * Cast a declared point back along its normal onto the structure, and land it
+ * there. The greebles' mounting rule, at fixture scale: tight outward, so a
+ * fixture cannot be pulled onto something in front of its surface, and as far
+ * inward as the station is wide, because the first thing the ray meets going
+ * in *is* the surface the declaration pointed at. A miss leaves the point
+ * where it was written, which the reach and corridor rows then judge.
+ */
+function mounter(structure: THREE.Object3D, type: StationType) {
+	structure.updateMatrixWorld(true);
+	const targets: THREE.Mesh[] = [];
+	structure.traverse((object) => {
+		const mesh = object as THREE.Mesh;
+		if (!mesh.geometry) return;
+		if ((mesh as THREE.InstancedMesh).isInstancedMesh) return;
+		targets.push(mesh);
+	});
+	const ray = new THREE.Raycaster();
+	const reach = STATION_GEOMETRY[type].coreRadiusKm * 2;
+	return (point: THREE.Vector3, normal: THREE.Vector3, probeKm: number) => {
+		const n = normal.clone().normalize();
+		ray.set(point.clone().addScaledVector(n, probeKm), n.clone().negate());
+		ray.far = probeKm + reach;
+		const hit = ray.intersectObjects(targets, false)[0];
+		return hit ? hit.point.clone() : point.clone();
+	};
+}
+
+/** What one form's fixtures are built against. */
+interface FixtureSite {
+	type: StationType;
+	formId: StationFormId;
+	/** The form as built so far, in kilometres, for mounting. */
+	structure: THREE.Object3D;
+	/** The station's clock-driven materials; beacons are pushed here. */
+	fixtures: StationFixture[];
+	/** Whether to add strobing beacons — a role that spins, on a finish that
+	 *  asks for them. A refinery's beacon would mark a rotation it has not. */
+	beacons: boolean;
+	/** The strobe intensity, from the station's own emissive record. */
+	strobeBase: number;
+	/** The fixed intensity of an approach lamp. */
+	lampBase: number;
+}
+
+const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+
+/**
+ * Build a form's macro fixtures. Unknown forms get an empty group: only the
+ * four `SELECTED_FORM` forms carry declarations in this pass, and a form
+ * without one is a form nobody has looked at under a finish.
+ */
+export function buildMacroFixtures(site: FixtureSite): THREE.Group {
+	const group = new THREE.Group();
+	group.name = "macro-fixtures";
+	// `detail()` is `station-mesh.ts`'s, and this module cannot import it
+	// without a cycle; the tag is the same field it writes, and
+	// `buildStationForm` collects on the field.
+	group.userData.minDetail = "reduced";
+	const pools = new Pools();
+	const mount = mounter(site.structure, site.type);
+	const visuals = STATION_VISUALS[site.type];
+	const lampMaterial = new THREE.MeshStandardMaterial({
+		color: 0x101014,
+		emissive: visuals.windowColor,
+		emissiveIntensity: site.lampBase,
+		roughness: 0.4,
+	});
+	const beaconAt = (position: THREE.Vector3, sizeKm: number) => {
+		if (!site.beacons) return;
+		const kind: StationFixtureKind =
+			site.fixtures.filter((f) => f.kind.startsWith("strobe")).length % 2 === 0
+				? "strobe-a"
+				: "strobe-b";
+		const material = new THREE.MeshStandardMaterial({
+			color: 0x101014,
+			emissive: visuals.strobeColor,
+			emissiveIntensity: 0,
+			roughness: 0.4,
+		});
+		const lamp = new THREE.Mesh(
+			new THREE.BoxGeometry(sizeKm, sizeKm, sizeKm * 0.6),
+			material,
+		);
+		lamp.position.copy(position);
+		lamp.name = `beacon-${kind}`;
+		group.add(lamp);
+		site.fixtures.push({ material, base: site.strobeBase, kind });
+	};
+
+	const declaration = DECLARATIONS[`${site.type}/${site.formId}`];
+	if (declaration)
+		declaration({ site, group, pools, mount, beaconAt, lampMaterial });
+	pools.emit(group, "fixture");
+	return group;
+}
+
+interface DeclarationContext {
+	site: FixtureSite;
+	group: THREE.Group;
+	pools: Pools;
+	mount: ReturnType<typeof mounter>;
+	beaconAt: (position: THREE.Vector3, sizeKm: number) => void;
+	lampMaterial: THREE.Material;
+}
+
+/**
+ * Where each selected form's structure goes, in its own kilometres.
+ *
+ * Every figure below is a fraction of the form's own core radius, and every
+ * base point lies on or inside a surface the form draws; the reach margin is
+ * stated where it is tight. Nothing is placed on the +Z docking face inside
+ * the corridor, and nothing on a shipyard's spun hub.
+ */
+const DECLARATIONS: Record<string, (context: DeclarationContext) => void> = {
+	/**
+	 * Trade A — Coriolis. A cuboctahedron of radius 0.95·r whose square faces
+	 * sit at `face = 0.95·r/√2` and whose corners, at 0.95·r, are the outline:
+	 * a fixture at a face's centre has √2 of headroom to the reach and one at a
+	 * corner has none, so everything below sits on a face's middle band.
+	 */
+	"trade/a": ({ site, group, pools, mount, beaconAt, lampMaterial }) => {
+		const r = STATION_GEOMETRY.trade.coreRadiusKm * 0.95;
+		const face = r * Math.SQRT1_2;
+		const slot = STATION_GEOMETRY.trade.aperture;
+		// The collar, clear of the corridor: its inner radius is 1.35× the
+		// slot's half-diagonal, which is the cylinder the corridor row sweeps.
+		const diagonal = Math.hypot(slot.widthKm / 2, slot.heightKm / 2);
+		dockingCollar(
+			group,
+			STATION_GEOMETRY.trade.aperturePlaneKm,
+			diagonal * 1.35,
+			diagonal * 1.35 + face * 0.08,
+			lampMaterial,
+		);
+		// **The headroom is the corner's, not the face's.** A point on a face
+		// at lateral offset `d` may stand `h` proud only while
+		// `hypot(face + h, d) < r`: 0.167 km at the face's centre, 0.08 km at
+		// d = 0.3·r, nothing at all at the corner. Every figure below was set
+		// against that, and `tests/station-finish.test.ts` reads the outline at
+		// every level to hold it.
+		//
+		// Two trusses across the ±X faces, running along Y, with a beacon on
+		// each end.
+		for (const sign of [1, -1]) {
+			const base = mount(V(sign * face, 0, 0), V(sign, 0, 0), face * 0.2);
+			const x = base.x + sign * face * 0.07;
+			const a = V(x, -face * 0.62, 0);
+			const b = V(x, face * 0.62, 0);
+			truss(pools, a, b, face * 0.11, V(sign, 0, 0));
+			// On the truss's end frame, not beyond it: a lamp set past the end
+			// by more than its own half-size is a lamp nothing supports.
+			beaconAt(a.clone().add(V(sign * face * 0.07, 0, 0)), r * 0.05);
+			beaconAt(b.clone().add(V(sign * face * 0.07, 0, 0)), r * 0.05);
+		}
+		// Radiator banks on the ±Y faces, fins along Z: four panels each,
+		// 0.19·face tall so the outer panel's top corner clears the hull's own
+		// corner.
+		for (const sign of [1, -1]) {
+			const base = mount(V(0, sign * face, 0), V(0, sign, 0), face * 0.2);
+			radiatorArray(
+				pools,
+				base.clone().add(V(0, 0, -face * 0.42)),
+				V(0, 0, 1),
+				V(0, sign, 0),
+				4,
+				face * 0.42,
+				face * 0.19,
+			);
+		}
+		// A tank rack on the back face, opposite the slot.
+		const back = mount(V(0, 0, -face), V(0, 0, -1), face * 0.2);
+		tankRack(pools, back, V(1, 0, 0), V(0, 0, -1), 3, face * 0.09, face * 0.75);
+		// A comms mast off the +X face, aft of the truss: 0.5·face along −Z
+		// leaves 0.15·face of headroom, and the mast is 0.13 with its dish.
+		const foot = mount(V(face, 0, -face * 0.5), V(1, 0, 0), face * 0.2);
+		const top = mast(pools, group, foot, V(1, 0, 0), face * 0.1, face * 0.06);
+		beaconAt(top.clone().add(V(face * 0.05, 0, 0)), r * 0.05);
+		// Pipe runs from the tank rack round onto the ±X faces.
+		for (const sign of [1, -1])
+			pipeRun(
+				pools,
+				[
+					V(sign * face * 0.45, face * 0.18, -face - face * 0.03),
+					V(sign * (face + face * 0.03), face * 0.18, -face * 0.45),
+					V(sign * (face + face * 0.03), face * 0.18, face * 0.2),
+				],
+				face * 0.018,
+			);
+		void site;
+	},
+
+	/**
+	 * Shipyard A — Gantry. The keel runs along X at z = −SHIPYARD_KEEL_AFT_KM,
+	 * the two booms along +Z at y = ±0.8·r, the hub spins at the centre and is
+	 * not touched. Reach 1.53 km; the keel's own ends are within 15 m of it,
+	 * so nothing goes past |x| = 1.35.
+	 */
+	"shipyard/a": ({ group, pools, mount, beaconAt }) => {
+		const r = STATION_GEOMETRY.shipyard.coreRadiusKm;
+		const aft = 0.36;
+		// Radiator bank on the keel's top, aft half.
+		const keelTop = mount(V(-r * 1.2, r * 0.3, -aft), V(0, 1, 0), r * 0.3);
+		radiatorArray(
+			pools,
+			keelTop,
+			V(1, 0, 0),
+			V(0, 1, 0),
+			6,
+			r * 0.22,
+			r * 0.28,
+		);
+		// Tank rack under the keel, forward half.
+		const keelUnder = mount(V(r * 1.1, -r * 0.3, -aft), V(0, -1, 0), r * 0.3);
+		tankRack(pools, keelUnder, V(1, 0, 0), V(0, -1, 0), 3, r * 0.08, r * 0.7);
+		// Two braces from each boom's tip back to the keel's rail: the frame
+		// reads as carried rather than as sticks in a row.
+		for (const sign of [1, -1]) {
+			const tip = V(0, sign * r * 0.8, r * 1.5);
+			const rail = V(r * 0.9, sign * r * 0.58, -aft + r * 0.1);
+			truss(pools, tip, rail, r * 0.06, V(0, sign, 0));
+			beaconAt(V(0, sign * r * 0.8, r * 1.88), r * 0.06);
+		}
+		// Pipe runs along the keel top, outboard of the ports and **inside the
+		// keel's narrowest half-depth**: the keel tapers to 0.26·r at its aft
+		// end, and a run set 0.3·r off its centreline hung beside it there.
+		for (const sign of [1, -1])
+			pipeRun(
+				pools,
+				[
+					V(-r * 1.9, r * 0.22, -aft + sign * r * 0.2),
+					V(r * 0.5, r * 0.28, -aft + sign * r * 0.2),
+					V(r * 0.85, r * 0.22, -aft + sign * r * 0.3),
+				],
+				r * 0.02,
+			);
+		// A mast on the keel's aft end.
+		const foot = mount(V(-r * 2.1, r * 0.2, -aft), V(0, 1, 0), r * 0.3);
+		const top = mast(pools, group, foot, V(0, 1, 0), r * 0.5, r * 0.07);
+		beaconAt(top.clone().add(V(0, r * 0.05, 0)), r * 0.06);
+	},
+
+	/**
+	 * Refinery A — Warren. A rock of radius ~0.95·r with terraces cut into its
+	 * +Z face and two flare stacks canted out of it; three radiator wings at
+	 * 1.45·r are the outline and nothing here approaches them. Every base is
+	 * cast onto the rock. No beacons: the role does not spin, and the caller
+	 * passes none.
+	 */
+	"refinery/a": ({ group, pools, mount }) => {
+		const r = STATION_GEOMETRY.refinery.coreRadiusKm;
+		// A tank rack on the rock's −Y flank.
+		const flank = mount(V(0, -r * 0.9, r * 0.1), V(0, -1, 0), r * 0.6);
+		tankRack(pools, flank, V(1, 0, 0), V(0, -1, 0), 4, r * 0.09, r * 0.6);
+		// Pipe runs from the terraces over the rock to the tanks, each point
+		// landed on the surface.
+		for (const sign of [1, -1]) {
+			const points = [
+				V(sign * r * 0.5, -r * 0.05, r * 0.55),
+				V(sign * r * 0.62, -r * 0.45, r * 0.4),
+				V(sign * r * 0.5, -r * 0.8, r * 0.2),
+			].map((point) => {
+				const normal = point.clone().normalize();
+				return mount(point, normal, r * 0.5).addScaledVector(normal, r * 0.04);
+			});
+			pipeRun(pools, points, r * 0.028);
+		}
+		// A crane truss off the terrace rim, out over the loading arm's side.
+		const rim = mount(V(r * 0.7, r * 0.3, r * 0.45), V(0.6, 0.5, 0.6), r * 0.5);
+		truss(
+			pools,
+			rim,
+			rim.clone().add(V(r * 0.55, r * 0.5, -r * 0.1)),
+			r * 0.08,
+			V(0, 0, 1),
+		);
+		// A mast on the rock's +Y crown, between the stacks.
+		const crown = mount(V(0, r * 0.95, -r * 0.2), V(0, 1, 0), r * 0.6);
+		mast(pools, group, crown, V(0, 1, 0), r * 0.35, r * 0.07);
+	},
+
+	/**
+	 * Outpost A — Derrick. Four tanks in a cluster below z = −1.1·r, a lattice
+	 * tower up to the pad deck at +Z. Reach 0.42 km on a 0.15 km core. Nothing
+	 * goes near the +Z axis inside the pad's half-diagonal.
+	 */
+	"outpost/a": ({ group, pools, mount, beaconAt }) => {
+		const r = STATION_GEOMETRY.outpost.coreRadiusKm;
+		// Radiator fins on the cluster's −X flank, fins along Z. **Not under
+		// the cluster**: the tanks' bottom corner is this form's outline at
+		// 0.307 km, and a fin standing below it was the farthest vertex —
+		// `tests/station-finish.test.ts` read the outline moving between
+		// `reduced` and `outline` on the first build.
+		const flank = mount(V(-r * 0.76, 0, -r * 1.5), V(-1, 0, 0), r * 0.4);
+		radiatorArray(
+			pools,
+			flank.clone().add(V(0, 0, -r * 0.1)),
+			V(0, 0, 1),
+			V(-1, 0, 0),
+			4,
+			r * 0.2,
+			r * 0.22,
+		);
+		// A ring main round the cluster's waist.
+		const ring: THREE.Vector3[] = [];
+		for (let i = 0; i <= 8; i++) {
+			const theta = (i / 8) * Math.PI * 2;
+			ring.push(
+				V(Math.cos(theta) * r * 0.82, Math.sin(theta) * r * 0.82, -r * 1.45),
+			);
+		}
+		pipeRun(pools, ring, r * 0.03);
+		// A short mast off the tower, leaning outward and clear of the pad.
+		const leg = V(r * 0.46 * Math.SQRT1_2, r * 0.46 * Math.SQRT1_2, -r * 0.6);
+		const top = mast(pools, group, leg, V(0.7, 0.7, 0.6), r * 0.9, r * 0.06);
+		beaconAt(top.clone().add(V(r * 0.05, r * 0.05, 0)), r * 0.06);
+		beaconAt(V(-r * 0.76, 0, -r * 1.25), r * 0.06);
+	},
+};

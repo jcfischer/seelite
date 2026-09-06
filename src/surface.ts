@@ -96,6 +96,46 @@ export interface PlatingProfile {
 	 * made it in that node. Zero there is an answer, not an omission.
 	 */
 	seamDepth: number;
+	/**
+	 * A second, coarser layout of **panel groups** over the same map (#202,
+	 * #203), or none.
+	 *
+	 * #199's review read every hull and every station as one uniform grid,
+	 * because each carried exactly one detail scale — a 1 m plate, a 19 m
+	 * plate — and nothing between that and the whole silhouette. The macro
+	 * octave is the scale in between: a wider, darker groove at a pitch several
+	 * plates across, and a tone spread per *group* rather than per plate, so a
+	 * surface reads as plates riveted into panels rather than as a texture.
+	 *
+	 * **Optional, and undefined is byte-identical to the map without it.** Every
+	 * consumer that has not chosen the octave keeps its pins; the four station
+	 * profiles in `tests/surface.test.ts` are the proof.
+	 */
+	macro?: MacroOctave;
+}
+
+/**
+ * The coarse octave's own layout and paint. The same fields a fine layout
+ * has, because it *is* a `plateLayout` at another pitch — one definition read
+ * by both maps, exactly as the fine seam is.
+ */
+export interface MacroOctave {
+	/** Group pitch across the map, texels. Several fine plates. */
+	pitchPx: number;
+	aspect: number;
+	stagger: number;
+	/** Half the groove width, texels. Wider than the fine seam by design: at
+	 *  the same width the two octaves read as one grid with a stutter in it. */
+	seamHalfWidthPx: number;
+	/** How far the groove darkens the plate, 0–1. */
+	seam: number;
+	/** Group-to-group brightness spread, 8-bit levels either side of the base.
+	 *  This is the term that carries the octave at range, where the groove is
+	 *  under a pixel: a patchwork of panel tones is what a hull in the reference
+	 *  frames actually shows. */
+	variation: number;
+	/** How deep the groove is cut into the normal map, 0–1. */
+	seamDepth: number;
 }
 
 /** The generated maps are square and this is the side, texels. Small on
@@ -196,6 +236,38 @@ export function plateLayout(
 	const seamAcross = (x: number, row: number) =>
 		colOf(x, row) !== colOf((x + 1) % size, row);
 	const seamAlong = (y: number) => rowOf(y) !== rowOf((y + 1) % size);
+	/**
+	 * The scan above, **memoised per row and per axis.**
+	 *
+	 * `toSeam` walks every column of the map for one answer, so calling it per
+	 * texel is `size³`: 16 million steps at 256, and 134 million at the 512 a
+	 * two-octave hull map needs — twice, because the normal map asks for both
+	 * axes, and again for the macro layout. The across-distance depends on `x`
+	 * and the row (the stagger), the along-distance on `y` alone, so each is a
+	 * table filled on first use. `tests/surface.test.ts` checks the table
+	 * against the scan written out, because a memo that drifted from its
+	 * definition would move every seam in the normal map and nothing else
+	 * would notice.
+	 */
+	const acrossByRow = new Map<number, Float64Array>();
+	let alongTable: Float64Array | null = null;
+	const acrossOf = (x: number, row: number) => {
+		let table = acrossByRow.get(row);
+		if (!table) {
+			table = new Float64Array(size);
+			for (let n = 0; n < size; n++)
+				table[n] = toSeam(n, (m) => seamAcross(m, row));
+			acrossByRow.set(row, table);
+		}
+		return table[x];
+	};
+	const alongOf = (y: number) => {
+		if (!alongTable) {
+			alongTable = new Float64Array(size);
+			for (let n = 0; n < size; n++) alongTable[n] = toSeam(n, seamAlong);
+		}
+		return alongTable[y];
+	};
 	return {
 		cols,
 		rows,
@@ -214,11 +286,49 @@ export function plateLayout(
 		distanceTo: (x: number, y: number) => {
 			const row = rowOf(y);
 			return {
-				across: toSeam(x, (m) => seamAcross(m, row)),
-				along: toSeam(y, seamAlong),
+				across: acrossOf(x, row),
+				along: alongOf(y),
 			};
 		},
 	};
+}
+
+/**
+ * The macro octave as a layout of its own, over the same map.
+ *
+ * A `plateLayout` reads only the three layout fields, so the octave's pitch,
+ * aspect and stagger are handed to it in a fine profile's clothing. Returned
+ * as `null` when the profile has no octave, so a caller branches once.
+ */
+function macroLayout(profile: PlatingProfile, size: number) {
+	const macro = profile.macro;
+	if (!macro) return null;
+	return {
+		macro,
+		layout: plateLayout(
+			{
+				...profile,
+				pitchPx: macro.pitchPx,
+				aspect: macro.aspect,
+				stagger: macro.stagger,
+			},
+			size,
+		),
+	};
+}
+
+/** Whether a texel is inside the macro groove, which has a width the fine
+ *  seam does not: the fine groove is one boundary texel and the macro one is
+ *  `seamHalfWidthPx` either side of its centre. */
+function inMacroGroove(
+	coarse: NonNullable<ReturnType<typeof macroLayout>>,
+	x: number,
+	y: number,
+) {
+	const { across, along } = coarse.layout.distanceTo(x, y);
+	return (
+		Math.min(Math.abs(across), Math.abs(along)) < coarse.macro.seamHalfWidthPx
+	);
 }
 
 /**
@@ -242,6 +352,7 @@ export function plateTexels(
 	const out = new Uint8Array(size * size * 4);
 	// **The one layout**, shared with `seamNormalTexels` — see `plateLayout`.
 	const layout = plateLayout(profile, size);
+	const coarse = macroLayout(profile, size);
 	for (let y = 0; y < size; y++) {
 		for (let x = 0; x < size; x++) {
 			// Streaks run *down* the hull: the envelope varies with x and persists
@@ -254,6 +365,20 @@ export function plateTexels(
 			// Panel-to-panel variation is small; the seam between them is what the
 			// eye reads as plating at all.
 			let v = 196 + (plate - 0.5) * 2 * variation;
+			if (coarse) {
+				// The group's own tone, on top of the plate's: a panel of plates
+				// painted together, then the plates within it varying a little.
+				// Its own hash tag, so the group draw is not the plate draw at
+				// another index — reusing one silently correlates the two.
+				const groupRow = coarse.layout.rowOf(y);
+				const group = hash01(
+					`${tag}-group`,
+					coarse.layout.colOf(x, groupRow),
+					groupRow,
+				);
+				v += (group - 0.5) * 2 * coarse.macro.variation;
+				if (inMacroGroove(coarse, x, y)) v *= 1 - coarse.macro.seam;
+			}
 			if (layout.onSeam(x, y)) v *= 1 - seam;
 			// Weathering darkens rather than tints: a soot streak is missing light,
 			// and tinting it would break the greyscale contract above.
@@ -351,6 +476,13 @@ export function seamNormalTexels(
 	 * cancels them to flat.
 	 */
 	const slope = (d: number) => (Math.abs(d) >= half ? 0 : Math.sign(d) / half);
+	const coarse = macroLayout(profile, size);
+	/** The macro groove's slope: the same V, at its own width and depth. */
+	const macroSlope = (d: number) => {
+		if (!coarse) return 0;
+		const wide = coarse.macro.seamHalfWidthPx;
+		return Math.abs(d) >= wide ? 0 : Math.sign(d) / wide;
+	};
 	for (let y = 0; y < size; y++) {
 		for (let x = 0; x < size; x++) {
 			const { across, along } = layout.distanceTo(x, y);
@@ -358,8 +490,15 @@ export function seamNormalTexels(
 			// corner is a pit rather than a crossing of two lines that cancel.
 			// `+depth × slope` and not `−`, because the groove goes *down*: the
 			// surface tilts towards the cut on each side.
-			const nx = profile.seamDepth * slope(across);
-			const ny = profile.seamDepth * slope(along);
+			let nx = profile.seamDepth * slope(across);
+			let ny = profile.seamDepth * slope(along);
+			if (coarse) {
+				// The two octaves add: where a fine seam crosses a macro groove the
+				// tilt is the sum, which is what two cuts at one place look like.
+				const wide = coarse.layout.distanceTo(x, y);
+				nx += coarse.macro.seamDepth * macroSlope(wide.across);
+				ny += coarse.macro.seamDepth * macroSlope(wide.along);
+			}
 			// GL convention: +Y is up in the tangent frame, and Z is out of the
 			// surface. Normalised so the decoded vector is unit length, which is
 			// what three.js's `normal_fragment_maps` assumes of a normal map.

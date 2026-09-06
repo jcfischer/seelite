@@ -21,6 +21,7 @@ import * as THREE from "three";
 import { scaleUVs, setUvUnits, uvUnitsOf } from "./loft";
 import { type Splice, makeSplicer } from "./shader-splice";
 import {
+	type MacroOctave,
 	type PlatingProfile,
 	plateTexels,
 	seamNormalTexels,
@@ -155,35 +156,187 @@ export const HULL_QUALITY = {
 export type HullQuality = keyof typeof HULL_QUALITY;
 
 /**
- * The three generated maps, built once and shared by every hull in the game.
+ * A **finish**: everything about how a hull is surfaced and detailed that is
+ * not its silhouette (#203, with #202's station half in `station-visuals.ts`).
+ *
+ * #199's review found every hull reading as one flat pastel loft at one detail
+ * scale — a cyan sticker for a drive, torus hoops that read as rubber bands, a
+ * plate that is the only ruler on the ship — and the principal's steer was
+ * *industrial*: ISS and Nostromo, muted paint, a mid scale, structure. Those
+ * are separately reviewable dials, and the workbench ranks them the way it
+ * ranks silhouettes: several finishes exist at once, the sheet is captured
+ * under each, and the principal picks. So a finish is a **preset**, not a
+ * default with overrides — the same shape as `HULL_QUALITY`, for the reason
+ * `CLAUDE.md` records against a one-caller override field.
+ *
+ * **`stock` is byte-identical to the hull that shipped before this node.** It
+ * is the control on the sheet and the default until the principal chooses,
+ * and `tests/ship-finish.test.ts` asserts the maps and the built geometry are
+ * unchanged under it.
+ */
+export interface HullFinish {
+	readonly name: string;
+	readonly thesis: string;
+	/** The fine plating, and the macro octave if the finish has one. */
+	readonly plating: PlatingProfile;
+	/** Texels a side. A second octave needs room — see `SHIP_MAP_SIZE`. */
+	readonly mapSize: number;
+	/** World size of one tile, kilometres. Scaled with `mapSize` so the plate
+	 *  stays the same metre: the map is a ruler and a finish must not move it. */
+	readonly panelKm: number;
+	/** Strength of the grazing-angle rim, 0 for none. What separates a dark
+	 *  hull from a dark sky when neither the sun nor the fill reaches it. */
+	readonly rim: number;
+	/** How much of the authored livery's chroma survives, and how bright.
+	 *  1/1 is #35's paint as written; industrial paint is duller and darker. */
+	readonly paint: { readonly saturation: number; readonly value: number };
+	/** What a structural hoop is built as: three's torus, or a faceted flanged
+	 *  collar with a rim to catch light on. */
+	readonly collar: "hoop" | "flange";
+	/** What a drive's exhaust is: the flat disc, or a bowl set into an open
+	 *  bell with a hot core at its throat. */
+	readonly drive: "disc" | "bowl";
+}
+
+/**
+ * The fine plating of every industrial finish, and its macro octave.
+ *
+ * Against `SHIP_PLATING`: the same 1 m × 4 m strip in the same brick bond,
+ * on a 512 map with a 16 m tile so the plate does not move. The groove is
+ * still one texel. What changes is above it: a **4 m × 8 m panel group** with
+ * a six-texel groove, a group-to-group tone spread twice the plate's, and a
+ * little more streaking than #101's 0.10 — still well short of grime.
+ */
+const INDUSTRIAL_MACRO: MacroOctave = {
+	pitchPx: 128,
+	aspect: 2,
+	stagger: 0.5,
+	seamHalfWidthPx: 3,
+	seam: 0.4,
+	variation: 12,
+	seamDepth: 0.6,
+};
+
+const INDUSTRIAL_PLATING: PlatingProfile = {
+	...SHIP_PLATING,
+	variation: 8,
+	seam: 0.22,
+	weathering: 0.14,
+	macro: INDUSTRIAL_MACRO,
+};
+
+export const HULL_FINISHES = {
+	stock: {
+		name: "Stock",
+		thesis: "#101's surface as it shipped: one plate, one paint, a disc",
+		plating: SHIP_PLATING,
+		mapSize: SHIP_MAP_SIZE,
+		panelKm: SHIP_PANEL_KM,
+		rim: 0,
+		paint: { saturation: 1, value: 1 },
+		collar: "hoop",
+		drive: "disc",
+	},
+	plated: {
+		name: "Plated",
+		thesis:
+			"a second plating octave, muted paint and a rim; geometry untouched",
+		plating: INDUSTRIAL_PLATING,
+		mapSize: 512,
+		panelKm: SHIP_PANEL_KM * 2,
+		rim: 0.22,
+		paint: { saturation: 0.5, value: 0.88 },
+		collar: "hoop",
+		drive: "disc",
+	},
+	industrial: {
+		name: "Industrial",
+		thesis: "plated, plus flanged collars and open bells with a hot throat",
+		plating: INDUSTRIAL_PLATING,
+		mapSize: 512,
+		panelKm: SHIP_PANEL_KM * 2,
+		rim: 0.22,
+		paint: { saturation: 0.5, value: 0.88 },
+		collar: "flange",
+		drive: "bowl",
+	},
+	worn: {
+		name: "Worn",
+		thesis:
+			"industrial, with the streaking raised toward the Nostromo — reverses #98's refusal of grime",
+		plating: {
+			...INDUSTRIAL_PLATING,
+			variation: 10,
+			seam: 0.3,
+			weathering: 0.5,
+			macro: { ...INDUSTRIAL_MACRO, variation: 16, seam: 0.5 },
+		},
+		mapSize: 512,
+		panelKm: SHIP_PANEL_KM * 2,
+		rim: 0.22,
+		paint: { saturation: 0.42, value: 0.8 },
+		collar: "flange",
+		drive: "bowl",
+	},
+} as const satisfies Record<string, HullFinish>;
+
+export type HullFinishId = keyof typeof HULL_FINISHES;
+export const HULL_FINISH_IDS = Object.keys(HULL_FINISHES) as HullFinishId[];
+
+/**
+ * The finish in force. One value, one writer, for `hullQuality`'s reason.
+ *
+ * Read at build time by `ship-mesh.ts` — the palette, the collar and the bell
+ * are built against it — so a hull built before a switch keeps the finish it
+ * was built with. That is what the workbench wants: it rebuilds the mesh on
+ * every switch and never patches one in place. The game never switches.
+ */
+let hullFinish: HullFinishId = "stock";
+
+export const hullFinishId = () => hullFinish;
+export const currentHullFinish = (): HullFinish => HULL_FINISHES[hullFinish];
+
+/** Select the finish every hull built from now on carries. */
+export function setHullFinish(id: HullFinishId) {
+	if (!(id in HULL_FINISHES)) throw new Error(`no hull finish ${id}`);
+	hullFinish = id;
+}
+
+/**
+ * The three generated maps of one finish, built on first use and kept.
  *
  * Lazy for `station-mesh.ts`'s measured reason: built at module load they are
  * paid by every importer including the headless tests, none of which renders.
  * Shared, and therefore **never mutated** — the plating carries no per-ship
  * information, and a livery colour multiplies through the greyscale albedo.
+ *
+ * One entry per finish rather than one that is rebuilt on a switch: a mesh
+ * built under the previous finish is still in the scene for the frame the
+ * workbench swaps it, and a disposed map under a live material re-uploads
+ * rather than throws — which is a stall nobody would attribute. The game
+ * only ever builds one entry.
  */
-let maps: {
+interface HullMaps {
 	albedo: THREE.Texture;
 	wear: THREE.Texture;
 	seams: THREE.Texture;
 	/** What the wear map's two channels read on a clean plate — see
 	 *  `cleanPlate`. */
 	clean: { roughness: number; metalness: number };
-} | null = null;
+}
+const mapsByFinish = new Map<HullFinishId, HullMaps>();
 
-function hullMaps() {
-	if (maps) return maps;
+function hullMaps(): HullMaps {
+	const cached = mapsByFinish.get(hullFinish);
+	if (cached) return cached;
+	const finish = currentHullFinish();
+	const size = finish.mapSize;
 	// Generated once and handed to both: `wearTexels` derives its wear from the
 	// albedo, so regenerating would run the plating loop twice and leave two
 	// buffers that only happen to agree.
-	const plate = plateTexels(SHIP_PLATING, "ship", SHIP_MAP_SIZE);
+	const plate = plateTexels(finish.plating, "ship", size);
 	const texture = (data: Uint8Array<ArrayBuffer>, srgb: boolean) => {
-		const map = new THREE.DataTexture(
-			data,
-			SHIP_MAP_SIZE,
-			SHIP_MAP_SIZE,
-			THREE.RGBAFormat,
-		);
+		const map = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
 		// **sRGB on the albedo, linear on everything else.** three.js reads a
 		// `map` as sRGB-encoded and a roughness, metalness or normal map as
 		// linear data. Left at the default the authored plate value of 196 is
@@ -196,10 +349,10 @@ function hullMaps() {
 		map.needsUpdate = true;
 		return map;
 	};
-	const wearBytes = wearTexels(SHIP_PLATING, plate, SHIP_MAP_SIZE);
+	const wearBytes = wearTexels(finish.plating, plate, size);
 	const albedo = texture(plate, true);
 	const wear = texture(wearBytes, false);
-	const seams = texture(seamNormalTexels(SHIP_PLATING, SHIP_MAP_SIZE), false);
+	const seams = texture(seamNormalTexels(finish.plating, size), false);
 	// **Linear on the hull, nearest on the station.** A station's plating is
 	// read at a few hundred pixels and its seams are meant to stay seams; a
 	// hull's are a metre apart on an object the player parks next to, where
@@ -211,7 +364,8 @@ function hullMaps() {
 		map.minFilter = THREE.LinearMipmapLinearFilter;
 		map.generateMipmaps = true;
 	}
-	maps = { albedo, wear, seams, clean: cleanPlate(wearBytes) };
+	const maps = { albedo, wear, seams, clean: cleanPlate(wearBytes) };
+	mapsByFinish.set(hullFinish, maps);
 	return maps;
 }
 
@@ -282,7 +436,30 @@ const CREASE_VERTEX_BODY = /* glsl */ `#include <begin_vertex>
 vCrease = crease;`;
 
 const CREASE_FRAGMENT_COMMON = /* glsl */ `#include <common>
-varying float vCrease;`;
+varying float vCrease;
+uniform float uRim;`;
+
+/**
+ * A grazing-angle rim, patched after three's `<emissivemap_fragment>` (#203).
+ *
+ * A dark hull against a dark sky is a black cutout, and #99's camera-side fill
+ * only reaches the faces that point at the camera. What separates a
+ * silhouette from its background in the reference frames is the light that
+ * skims its edges — sky, station, star, whichever is behind the viewer — and
+ * this is that term: a small lift in a cool fill tint where the surface turns
+ * away from the eye, cubed so it lives on the last few degrees.
+ *
+ * Added to `totalEmissiveRadiance` rather than to the lit colour, so it is
+ * independent of every light in the scene and reads the same on the unlit
+ * half — which is the half it exists for. `uRim` is the finish's dial and
+ * `stock` sets it to zero, where the branch keeps the cost out of the
+ * fragment as well as the effect (`CLAUDE.md`, a dial at zero).
+ */
+const RIM_SURFACE = /* glsl */ `#include <emissivemap_fragment>
+if (uRim > 0.0) {
+	float rimGrazing = 1.0 - saturate(dot(normalize(normal), normalize(vViewPosition)));
+	totalEmissiveRadiance += vec3(0.58, 0.70, 0.84) * pow(rimGrazing, 3.0) * uRim;
+}`;
 
 /**
  * Edge wear, patched over three's `<roughnessmap_fragment>`.
@@ -336,12 +513,17 @@ function patchCrease(
 		"fragment",
 		splice(
 			"fragment",
-			shader.fragmentShader,
-			"#include <common>",
-			CREASE_FRAGMENT_COMMON,
+			splice(
+				"fragment",
+				shader.fragmentShader,
+				"#include <common>",
+				CREASE_FRAGMENT_COMMON,
+			),
+			"#include <roughnessmap_fragment>",
+			CREASE_SURFACE,
 		),
-		"#include <roughnessmap_fragment>",
-		CREASE_SURFACE,
+		"#include <emissivemap_fragment>",
+		RIM_SURFACE,
 	);
 }
 
@@ -392,13 +574,22 @@ export function plate(material: THREE.MeshStandardMaterial) {
 	// as "not compiled yet". Empty until the program links, which is the honest
 	// state and is what a probe should see.
 	material.userData.hullSplices = log;
-	material.onBeforeCompile = (shader) => patchCrease(shader, splice);
+	// The finish the material was plated under, read now rather than at compile:
+	// a switch between plating and the first frame would otherwise hand a stock
+	// material the industrial rim.
+	const rim = currentHullFinish().rim;
+	material.userData.rim = rim;
+	material.onBeforeCompile = (shader) => {
+		shader.uniforms.uRim = { value: rim };
+		patchCrease(shader, splice);
+	};
 	// Two hulls with the same patch still compile twice unless they agree they
 	// are the same program. Keyed by whether the normal map is on, because
 	// three.js's own defines differ between the two and a shared key would hand
-	// the second variant the first's program.
+	// the second variant the first's program — and by the rim, because a
+	// uniform's *value* is not in the key and two finishes share a program.
 	material.customProgramCacheKey = () =>
-		`ship-hull:${material.normalMap ? "seams" : "flat"}`;
+		`ship-hull:${material.normalMap ? "seams" : "flat"}:rim${rim}`;
 	material.needsUpdate = true;
 	plated.add(material);
 	return material;
@@ -447,8 +638,11 @@ export function plateUVs(geometry: THREE.BufferGeometry) {
 	// divided twice — plates 125 times too small on one side of the ship only,
 	// which reads as a rendering fault rather than as a scale error.
 	if (uvUnitsOf(geometry) !== "km") return geometry;
-	if (!scaleUVs(geometry, 1 / SHIP_PANEL_KM, 1 / SHIP_PANEL_KM))
-		return geometry;
+	// The finish's tile, not `SHIP_PANEL_KM`: a 512 map carries a 16 m tile so
+	// its plate is the same metre a 256 map's 8 m tile gives. Divide by the
+	// stock constant on an industrial hull and every plate halves.
+	const panelKm = currentHullFinish().panelKm;
+	if (!scaleUVs(geometry, 1 / panelKm, 1 / panelKm)) return geometry;
 	// `setUvUnits` and not an assignment: the fresh-`userData` rule that makes a
 	// bare clone safe lives there, in the one place both writers reach.
 	setUvUnits(geometry, "plate");

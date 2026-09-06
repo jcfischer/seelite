@@ -63,7 +63,7 @@
 import * as THREE from "three";
 import { STATION_GEOMETRY, STATION_TYPES, type StationType } from "./station";
 import { displayRand } from "./station-surface";
-import { STATION_VISUALS } from "./station-visuals";
+import { STATION_VISUALS, currentStationFinish } from "./station-visuals";
 import { shared } from "./gpu-teardown";
 
 /**
@@ -235,7 +235,12 @@ export function buildGreebles(
 	const ray = new THREE.Raycaster();
 	const from = new THREE.Vector3();
 	const back = new THREE.Vector3();
-	const density = STATION_VISUALS[type].greebleDensity;
+	// The role's figure times the finish's (#202): a finish says how industrial
+	// the whole galaxy is, the role how busy it is within that, the form which
+	// of its patches is busier. Three dials that multiply, none replaces.
+	const density =
+		STATION_VISUALS[type].greebleDensity *
+		currentStationFinish().greebleDensity;
 	const matrices: THREE.Matrix4[][] = GREEBLE_PRIMITIVES.map(() => []);
 	const position = new THREE.Vector3();
 	const normal = new THREE.Vector3();
