@@ -20,7 +20,6 @@ import { VIEWS } from "../scripts/lib/view-set.mjs";
 import {
 	FAR_COLUMN_OUTLIER_FACTOR,
 	RADII,
-	RELIEF_PATHS,
 	farColumnVerdict,
 	finite,
 	flagExcursions,
@@ -28,6 +27,7 @@ import {
 	radiiRefusal,
 	vsyncRefusal,
 } from "../scripts/lib/planet-cost.mjs";
+import { RELIEF_PATHS } from "../src/planet-shaders";
 
 /** What a browser hands back for an element: the tags gone, the text left. */
 const textOf = (html: string) => html.replace(/<[^>]*>/g, "");
@@ -293,8 +293,23 @@ describe("the sweep's declared columns", () => {
 		expect(RADII.at(-1)).toBe(1.02);
 	});
 
-	test("sweeps both relief paths, which is what makes the third column a comparison", () => {
-		expect([...RELIEF_PATHS]).toEqual(["four-tap", "screen-space"]);
+	/**
+	 * **Every path the renderer can select, which is now three** (#207) — and
+	 * asserted against the module that owns them rather than against a copy.
+	 *
+	 * `lib/planet-cost.mjs` used to restate the pair, with a comment arguing the
+	 * copy was cheap because "a third path would be a missing column in an
+	 * instrument rather than anything the game renders differently". #207 made
+	 * `none` a compiled program the shipped band selects, the copy was wrong for
+	 * exactly one commit, and sage found it (PR #254). `planet-shaders.ts` owns
+	 * the roster, `ReliefPath` is derived from it, and the sweep imports it off
+	 * the served page the way it already imports `PERF_CLASSES`.
+	 *
+	 * Ordered, because the table prints its columns in this order and a receipt
+	 * quoting "the third column" wants that to keep meaning one thing.
+	 */
+	test("the renderer's relief paths are one roster, in a stable order", () => {
+		expect([...RELIEF_PATHS]).toEqual(["four-tap", "screen-space", "none"]);
 	});
 });
 

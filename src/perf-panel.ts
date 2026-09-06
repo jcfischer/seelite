@@ -359,6 +359,37 @@ export function setAblation(
 	return arm;
 }
 
+/**
+ * What the planets are wearing and whether anything is holding them there.
+ *
+ * **Two facts, and the panel had been asserting the second one** (sage, PR
+ * #254). It printed `(pinned)` unconditionally, so on mount and after a restore
+ * — the two moments when nothing is pinned — it claimed a fixed measurement arm
+ * while #207's bands were free to move the program on the next frame. That is
+ * the class of diagnostic error this repo has several of: a readout that says
+ * what the code meant rather than what the state is.
+ *
+ * And `mixed`, because automatic selection is *per body*: a system with a
+ * planet filling the view and another as a dot has two programs running, and
+ * reporting the last one the traversal happened to reach names a scene state
+ * that does not exist.
+ */
+function readReliefState(scenes: THREE.Object3D[]): {
+	paths: Set<string>;
+	pinned: boolean;
+} {
+	const paths = new Set<string>();
+	let pinned = false;
+	for (const scene of scenes)
+		scene.traverse((object) => {
+			const klass = object.userData?.surfaceClass;
+			if (!klass || klass === "star" || !object.userData?.reliefPath) return;
+			paths.add(object.userData.reliefPath);
+			if (object.userData.reliefPinned) pinned = true;
+		});
+	return { paths, pinned };
+}
+
 function readRelief(scenes: THREE.Object3D[]): string {
 	let found = "four-tap";
 	for (const scene of scenes)
@@ -378,6 +409,23 @@ function readClass(scenes: THREE.Object3D[]): string {
 			if (klass && klass !== "star") found = klass;
 		});
 	return found;
+}
+
+/**
+ * Hand every planet back to #207's apparent-size bands.
+ *
+ * Every setter in this panel pins the body it touches, because a diagnostic
+ * that the frame loop overwrites on the next frame is worse than no diagnostic
+ * — the panel would report a path the renderer had already replaced. So the
+ * restore key has to clear the pin as well as the value, and nothing else here
+ * does.
+ */
+function unpinRelief(scenes: THREE.Object3D[]) {
+	for (const scene of scenes)
+		scene.traverse((object) => {
+			if (object.userData?.reliefPinned !== undefined)
+				object.userData.reliefPinned = false;
+		});
 }
 
 /** Shells are tagged in `planet-surface.ts`, so this needs no registry either. */
@@ -511,26 +559,69 @@ export function mountPerfPanel(targets: PerfTargets) {
 			// the two ablations that price them. Cycling them on one key keeps
 			// them in one column, which is what makes a reading comparable.
 			label: "relief",
-			state: () =>
-				readAblate(scenes) === 2
-					? "flat"
-					: readAblate(scenes) === 1
-						? "none"
-						: readRelief(scenes),
-			// four-tap -> screen-space -> none -> flat -> four-tap
+			state: () => {
+				if (readAblate(scenes) === 2) return "flat";
+				// **`perfAblate` 1 is not the `none` path and must not read as one**
+				// (sage, PR #254, round 2). Round 1's rewrite dropped this branch,
+				// so `setAblation`'s `no-relief` arm displayed `four-tap` — two
+				// distinct measurement arms with one label, which is worse than the
+				// unconditional `(pinned)` it replaced.
+				//
+				// They are genuinely different things and the ladder prices both:
+				// the uniform leaves the four `height()` calls compiled in and
+				// branches around them, the path compiles them out. At a filling
+				// planet the sweep reads 15.8 ms for the uniform and 16.1 for the
+				// path — so on **this** driver the branch is marginally the cheaper
+				// of the two, which is not why the path was chosen and is worth
+				// stating rather than leaving to be inferred from the ordering. The
+				// path is chosen because a branch on a uniform is not reliably
+				// uniform control flow to every driver, and because `perfAblate`
+				// belongs to the ladder.
+				if (readAblate(scenes) === 1) return "ablated (uniform)";
+				const { paths, pinned } = readReliefState(scenes);
+				const what =
+					paths.size === 0 ? "—" : paths.size > 1 ? "mixed" : [...paths][0];
+				return pinned ? `${what} (pinned)` : `${what} (auto)`;
+			},
+			/**
+			 * four-tap → screen-space → none → flat → four-tap.
+			 *
+			 * **`none` is a path now, not an ablation** (#207). It used to be
+			 * `perfAblate` 1, and the two are not interchangeable: the uniform
+			 * leaves the four `height()` calls in the program and relies on a
+			 * branch every driver is supposed to treat as uniform control flow,
+			 * while the path compiles them out. The band the game ships selects
+			 * the path, so the panel has to cycle the same thing the game does or
+			 * it is pricing something nobody plays.
+			 *
+			 * `flat` stays a uniform: it is the whole class body, it is the
+			 * ladder's floor, and no band selects it.
+			 */
 			toggle: () => {
-				const screen = readRelief(scenes) === "screen-space";
-				if (readAblate(scenes) === 0 && !screen) {
-					setRelief(scenes, "screen-space");
-				} else if (readAblate(scenes) === 0) {
-					setRelief(scenes, "four-tap");
-					setAblate(scenes, 1);
-				} else if (readAblate(scenes) === 1) {
-					setAblate(scenes, 2);
-				} else {
+				if (readAblate(scenes) === 2) {
 					setAblate(scenes, 0);
 					setRelief(scenes, "four-tap");
+					return;
 				}
+				const next: Record<string, string> = {
+					"four-tap": "screen-space",
+					"screen-space": "none",
+				};
+				const path = readRelief(scenes);
+				if (path === "none") {
+					setAblate(scenes, 2);
+					return;
+				}
+				// **Clear the ablation on the way into a path** (sage, PR #254).
+				// `setAblation`'s `no-relief` arm leaves `perfAblate` at 1, and
+				// without this the next press would show `screen-space` over a
+				// shader with the perturbation still switched off — the panel
+				// reporting one arm while the GPU drew another, which invalidates
+				// whatever comparison the press was for. The two levers overlap in
+				// what they mean and only one of them ships, so the cycle owns
+				// putting the other back.
+				setAblate(scenes, 0);
+				setRelief(scenes, next[path] ?? "four-tap");
 			},
 		},
 		{
@@ -595,7 +686,15 @@ rasterizer                  ${identity(attribution.renderer.rasterizer)}`;
 			for (const kind of ["atmosphere", "cloud"])
 				for (const s of shells(scenes, kind)) s.visible = true;
 			setAblate(scenes, 0);
+			// **Set, then un-pin, in that order and only once.** `setRelief` pins
+			// the bodies it touches (#207), so clearing the pin first and setting
+			// after would leave every planet held at four-tap for the rest of the
+			// session — with the picture looking exactly right until a planet got
+			// small. The first version did both, which worked and read as though
+			// the ordering did not matter (sage, PR #254). Handing the bands back
+			// is what "restore all" means for this row.
 			setRelief(scenes, "four-tap");
+			unpinRelief(scenes);
 			setCrater(scenes, false);
 			draw();
 			return;

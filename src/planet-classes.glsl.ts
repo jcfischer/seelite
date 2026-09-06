@@ -53,7 +53,17 @@ uniform float perfAblate;
  * why they can be compared by eye on one body without anything else moving.
  */
 vec3 reliefNormal(vec3 p, vec3 N, float strength) {
-  // Diagnostic ablation, off by default. See planet-surface.ts.
+#ifdef RELIEF_NONE
+  // #207's smallest band: under RELIEF_OFF_BELOW_PX of apparent radius there
+  // are no pixels for a slope to show in. Compiled out rather than branched on
+  // a uniform, so neither the four height() calls below nor the screen-space
+  // path's derivatives are in the program at all — which is the same argument
+  // the path itself is a #define for.
+  return N;
+#else
+  // Diagnostic ablation, off by default. See planet-surface.ts. Kept as a
+  // uniform because it is the instrument's dial and not the game's: the shipped
+  // selector writes the path, never this.
   if (perfAblate > 0.5) return N;
 
 #ifdef RELIEF_SCREEN_SPACE
@@ -122,6 +132,7 @@ vec3 reliefNormal(vec3 p, vec3 N, float strength) {
   float dt = height(normalize(p + t * e)) - height(normalize(p - t * e));
   float db = height(normalize(p + b * e)) - height(normalize(p - b * e));
   return normalize(N - strength * (dt * t + db * b));
+#endif
 #endif
 }
 `;
@@ -450,6 +461,13 @@ float height(vec3 p) {
  * anyone can look at rather than take on this comment's word.
  */
 vec3 craterRelief(vec3 p, vec3 N, float strength) {
+#ifdef RELIEF_NONE
+  // The airless class's own relief, and #207's smallest band applies to it for
+  // the same reason it applies to reliefNormal: no pixels, no slope to show.
+  // Compiled out, so the crater walk is not in the program. No backticks in
+  // here: this GLSL is a JS template literal and one would end it.
+  return N;
+#endif
   if (perfAblate > 0.5) return N;
   vec4 c1 = cratersAndGradient(p + seedOffset, 3.2, 0.55);
   vec4 c2 = cratersAndGradient(p + seedOffset * 1.7, 8.0, 0.20);

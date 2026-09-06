@@ -377,7 +377,28 @@ void main() {
  * It also removes a branch from every planet fragment, which the uniform
  * version was paying for on every class including the ones with no relief.
  */
-export type ReliefPath = "four-tap" | "screen-space";
+/**
+ * `"none"` is a third **program**, not a uniform, and #207 asked for it that way.
+ *
+ * `perfAblate` 1 already skips the perturbation, and #248's ladder measured
+ * that saving on ANGLE Metal — 43.5 ms to 15.8 at a filling planet — so the
+ * uniform demonstrably works *here*. It is still the wrong mechanism to ship
+ * the band on, for two reasons.
+ *
+ * The first is the one this type's own docstring gives above: a branch on a
+ * uniform is not reliably uniform control flow to every driver, and some
+ * evaluate both sides. On such a driver the saving would silently be nothing,
+ * and nothing here could tell. Compiled out, there is no branch to mis-execute.
+ *
+ * The second is ownership. `perfAblate` is the diagnostic ladder's dial
+ * (`perf-panel.ts`), and a shipped per-frame selector writing it would fight
+ * `setAblation` every frame — the instrument would set an arm, the loop would
+ * overwrite it, and the table would print the selector's choice under the arm's
+ * label. That is the trap `main.ts` already records for the vignette, where a
+ * probe measured its own assignment being overwritten.
+ */
+export const RELIEF_PATHS = ["four-tap", "screen-space", "none"] as const;
+export type ReliefPath = (typeof RELIEF_PATHS)[number];
 
 export function fragmentFor(
 	surface: SurfaceClass,
@@ -386,6 +407,7 @@ export function fragmentFor(
 	return /* glsl */ `
 precision highp float;
 ${relief === "screen-space" ? "#define RELIEF_SCREEN_SPACE 1" : ""}
+${relief === "none" ? "#define RELIEF_NONE 1" : ""}
 ${SANITISE_GLSL}
 ${VARYINGS_GLSL}
 ${NOISE_GLSL}

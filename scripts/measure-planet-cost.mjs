@@ -97,7 +97,6 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
 	RADII,
-	RELIEF_PATHS,
 	farColumnVerdict,
 	finite,
 	flagExcursions,
@@ -352,6 +351,8 @@ async function run(pixelRatio) {
 	let rows = [];
 	/** @type {{name: string, prices: string}[]} */
 	let armPrices = [];
+	/** @type {string[]} */
+	let reliefPaths = [];
 	let renderer = "";
 	let controlBefore;
 	let controlAfter;
@@ -416,6 +417,24 @@ async function run(pixelRatio) {
 			const mod = await import("/src/perf-panel.ts");
 			return [...mod.PERF_CLASSES];
 		});
+
+		/**
+		 * The relief paths, off the served page for the same reason the classes
+		 * are — and this copy had already gone stale once.
+		 *
+		 * `lib/planet-cost.mjs` carried a restated pair with a comment arguing the
+		 * copy was cheap because "a third path would be a missing column in an
+		 * instrument rather than anything the game renders differently". #207 made
+		 * `none` a compiled program the shipped band selects, and the list was
+		 * wrong for exactly one commit (sage, PR #254). `planet-shaders.ts` owns
+		 * the roster now and `ReliefPath` is derived from it, so there is one
+		 * place a fourth path can be added.
+		 */
+		const paths = await page.evaluate(async () => {
+			const mod = await import("/src/planet-shaders.ts");
+			return [...mod.RELIEF_PATHS];
+		});
+		reliefPaths = paths;
 
 		/**
 		 * Settle, take `READINGS` samples, and return the row — everything a cell
@@ -607,7 +626,7 @@ async function run(pixelRatio) {
 			// recompiles a run instead of 96, and every settle after one is a settle the
 			// cheap way.
 			for (const surfaceClass of classes)
-				for (const relief of RELIEF_PATHS)
+				for (const relief of paths)
 					for (const radii of RADII)
 						rows.push(await cell(surfaceClass, relief, radii));
 		}
@@ -620,7 +639,14 @@ async function run(pixelRatio) {
 
 	const refusal = vsyncRefusal(rows.map((r) => r.ms));
 	if (refusal) throw new Error(`ratio ${pixelRatio}: ${refusal}`);
-	return { renderer, rows, controlBefore, controlAfter, armPrices };
+	return {
+		renderer,
+		rows,
+		controlBefore,
+		controlAfter,
+		armPrices,
+		reliefPaths,
+	};
 }
 
 const runs = [];
@@ -727,7 +753,7 @@ for (const {
 		}
 	} else {
 		const classes = [...new Set(runRows.map((r) => r.surfaceClass))];
-		for (const relief of RELIEF_PATHS) {
+		for (const relief of runs[0].reliefPaths) {
 			console.log(`    relief: ${relief}`);
 			console.log(
 				`      ${"class".padEnd(10)}${RADII.map((r) => `${r}r`.padStart(14)).join("")}`,

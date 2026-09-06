@@ -196,6 +196,8 @@ import {
 	buildBodyVisual,
 	surfaceSphere,
 } from "./planet-surface";
+import { type ReliefPath, RELIEF_PATHS } from "./planet-shaders";
+import { focalPx, projectedRadiusPx, reliefPathFor } from "./relief-bands";
 import { SPIN_RPM_RANGE, STATION_GEOMETRY } from "./station";
 import { PROMPT_FILL, PROMPT_FONT, TextRaster } from "./text-raster";
 import {
@@ -971,6 +973,15 @@ class Game {
 	 * graph does not record.
 	 */
 	private readonly layers = new Map<string, "near" | "approach" | "far">();
+	/**
+	 * The focal length #207's bands are measured in, CSS pixels.
+	 *
+	 * Recomputed in `resize` rather than per frame — it is a function of the
+	 * window and the field of view, and neither changes inside a frame. Seeded
+	 * from the same call at construction so the first frame has a real value
+	 * rather than a zero that would put every body in the smallest band.
+	 */
+	private focalPx = focalPx(window.innerHeight, 60);
 	private shipMesh!: THREE.Group;
 	/** Cockpit structure follows the ship, while the camera pans within it. */
 	private cockpit!: CockpitHardware;
@@ -2167,6 +2178,11 @@ class Game {
 			this.mouseDy += e.movementY;
 		});
 
+		// #207's three relief programs per class, compiled before the first frame
+		// and **after the composer**, which is what makes them the variants the
+		// game will actually use (sage, PR #254).
+		this.prewarmReliefPrograms();
+
 		this.animate();
 	}
 
@@ -2426,6 +2442,76 @@ class Game {
 		}
 
 		this.starBody = this.world.system.bodies.find((b) => b.kind === "star");
+		// The warm-up is **not** called here, and that is deliberate: this runs
+		// before the composer exists, and a program compiled with no render
+		// target bound is keyed to the default framebuffer's colour space rather
+		// than the composer target's (sage, PR #254). The constructor and the
+		// jump path both call it once the composer is up.
+	}
+
+	/**
+	 * Compile all three of #207's relief programs for every class in this
+	 * system, at system build, so a band change in flight never hitches.
+	 *
+	 * A path is a `#define`, so each band is a different program and the first
+	 * frame that selects one pays its compile. That frame is the one a body
+	 * crosses a threshold on, which is a frame the player is looking at the
+	 * body — the worst possible place to spend a compile.
+	 *
+	 * **`renderer.compile` on the live scenes, not on a hidden mesh.** The node
+	 * suggested a hidden one, and an earlier version of this comment rejected
+	 * that by claiming three skips invisible objects — which is false, and sage
+	 * caught it (PR #254). `WebGLRenderer.compile` uses `traverseVisible` only to
+	 * gather lights; materials are initialised through a plain `scene.traverse`,
+	 * so a hidden mesh would have compiled perfectly well.
+	 *
+	 * The real reason is smaller and holds: the bodies are already here, already
+	 * carry the right class, and are the exact materials the frame loop will
+	 * switch. A hidden stand-in is a second thing to build, keep in step with
+	 * the class roster, and dispose — for a warm-up that costs the same either
+	 * way.
+	 *
+	 * Every body is put back on the path it had, which on a fresh system is
+	 * four-tap for all of them; `render` selects the real band on the first
+	 * frame. The cost is three compiles per *class* rather than per body,
+	 * because `cachedFragment` keys on class and path and three's own program
+	 * cache keys on the source string.
+	 */
+	private prewarmReliefPrograms() {
+		// **Bound to the composer's target, because the colour space is in the
+		// program's cache key** (sage, PR #254). `getProgramCacheKeyParameters`
+		// pushes `outputColorSpace`, and `getParameters` derives it as the
+		// renderer's own when no target is bound and `LinearSRGBColorSpace` when
+		// one is. Every planet is drawn by a `RenderPass` into the composer's
+		// target, so a warm-up with nothing bound compiles a variant the game
+		// never uses and leaves the real one to compile on the first crossing —
+		// a warm-up that is *entirely* wasted, with a green build behind it.
+		const wasTarget = this.renderer.getRenderTarget();
+		this.renderer.setRenderTarget(this.composer.renderTarget1);
+		// The roster from the module that owns it. A second exhaustive list here
+		// is how the instrument's copy went stale for a commit (sage, PR #254).
+		const paths = RELIEF_PATHS;
+		const before = new Map<string, ReliefPath>();
+		for (const [id, visual] of this.bodyVisuals)
+			before.set(id, visual.reliefPath());
+		for (const path of paths) {
+			// `applyReliefBand`, not `setReliefPath`: the warm-up is the frame
+			// loop's own work brought forward, and pinning every body during it
+			// would switch #207's selector off for the whole session.
+			for (const visual of this.bodyVisuals.values())
+				visual.applyReliefBand(path);
+			for (const [scene, camera] of [
+				[this.farScene, this.farCamera],
+				[this.approachScene, this.approachCamera],
+				[this.nearScene, this.nearCamera],
+			] as const)
+				this.renderer.compile(scene, camera);
+		}
+		for (const [id, visual] of this.bodyVisuals) {
+			const was = before.get(id);
+			if (was) visual.applyReliefBand(was);
+		}
+		this.renderer.setRenderTarget(wasTarget);
 	}
 
 	/**
@@ -2714,6 +2800,31 @@ class Game {
 		// see which half it is pinning.
 		this.occlusionPinned = shadows !== undefined || ao !== undefined;
 		this.applyOcclusion();
+	}
+
+	/**
+	 * Pin every planet's relief program, or hand them back to #207's bands.
+	 *
+	 * **The same shape as `setOcclusion`, and for the same reason**, which the
+	 * comment above states in full: an instrument that names an arm must not
+	 * have the frame loop overwrite it. Here the failure would be quieter than
+	 * the occlusion one. `measure-planet-cost.mjs` sets a path through
+	 * `setSurfaceAndRelief` and then reads the `?fps` line; with a per-frame
+	 * selector running, the very next frame would put the path back and the
+	 * table would print the *selector's* choice under the arm's label, in every
+	 * cell, with nothing red anywhere. That is the trap this file already
+	 * records for the vignette, where a probe measured its own assignment being
+	 * overwritten.
+	 *
+	 * `null` un-pins. A pinned path is written once, here, rather than every
+	 * frame: the recompile is the expensive part and a pin does not change.
+	 */
+	setReliefPin(path: ReliefPath | null) {
+		if (path === null) {
+			for (const visual of this.bodyVisuals.values()) visual.unpinRelief();
+			return;
+		}
+		for (const visual of this.bodyVisuals.values()) visual.setReliefPath(path);
 	}
 
 	/**
@@ -5356,6 +5467,10 @@ class Game {
 
 		this.buildBodies();
 		this.buildEnvironment();
+		// #207's programs for the new system's classes, now that its bodies exist.
+		// The composer is long up on this path, so the target below is the one the
+		// game renders into.
+		this.prewarmReliefPrograms();
 
 		// The scanner's buffer is one entry per body, filled in place every frame
 		// so the projection allocates nothing. A system with more bodies than the
@@ -6036,6 +6151,27 @@ class Game {
 				// granulation are `f(gameTime)` like every other time-varying thing
 				// (#6), so they survive a pause and a save.
 				visual.setTime(this.world.gameTime);
+
+				/**
+				 * #207's band, from the size this body actually looks.
+				 *
+				 * Here rather than beside `massiveLayerFor` above, because it is a
+				 * different question about the same distance: the layer is where a
+				 * body is drawn and this is which program draws it. Both read
+				 * `distanceKm`, which is computed from sim positions a few lines up
+				 * — never back out of an `Object3D`.
+				 *
+				 * **The pin is checked inside `applyReliefBand`, per body**, and
+				 * there is deliberately no second flag on the `Game` beside it: two
+				 * owners of one fact is how they come to disagree, and the panel
+				 * pins by walking scenes with no handle to set a second one on.
+				 */
+				const radiusPx = projectedRadiusPx(
+					body.radiusKm,
+					distanceKm,
+					this.focalPx,
+				);
+				visual.applyReliefBand(reliefPathFor(radiusPx, visual.reliefPath()));
 			}
 
 			// Stations are aimed and spun; everything else is a sphere and has no
@@ -7408,6 +7544,11 @@ class Game {
 			cam.aspect = w / h;
 			cam.updateProjectionMatrix();
 		}
+		// #207's bands are in **CSS** pixels, so this is the CSS height and not
+		// the drawing buffer's — see `relief-bands.ts` for why a resolution
+		// setting must not be able to change what the surface looks like. Every
+		// camera shares one field of view, so one focal length serves all four.
+		this.focalPx = focalPx(h, this.nearCamera.fov);
 		this.renderer.setSize(w, h);
 		this.composer.setSize(w, h);
 		// **After** the composer, not before. `EffectComposer.setSize` calls
