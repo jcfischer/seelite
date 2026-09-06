@@ -442,6 +442,22 @@ export function settleFrames(page, frames = 3) {
  * copies of `headLook: { yaw: -0.75, pitch: -0.2 }` is exactly how that stops
  * being true without anything going red.
  */
+/**
+ * @typedef {{
+ *   view: string,
+ *   place: (page: any) => Promise<any>,
+ *   seed?: number,
+ * }} Framing
+ *
+ * `seed` is optional and only the pad role carries one: seed 47 generates no
+ * refinery (`view-set.mjs`), so that framing declares the seed it needs and the
+ * runner groups by it. Typed here rather than left implicit, because a consumer
+ * reading `framing.seed` off a framing that has never declared one gets
+ * `undefined` and boots the default — which is a run measuring the wrong
+ * station rather than an error.
+ */
+
+/** @type {Readonly<Record<string, Framing>>} */
 export const OCCLUSION_FRAMINGS = Object.freeze({
 	/**
 	 * The arrival point, looking at nothing — `view-set.mjs`'s `sky-only`
@@ -501,4 +517,74 @@ export const OCCLUSION_FRAMINGS = Object.freeze({
 				],
 			),
 	},
+
+	/**
+	 * A **shipyard**'s wall berth — the second slot role, and `shipyard-wall-berth`'s
+	 * framing.
+	 *
+	 * #247 asks whether #242's 4.6% is a property of bays or of *that* bay, and
+	 * one berth of one station cannot say. A shipyard's bay is cut into a
+	 * rotating drum with a static spine (`CLAUDE.md`), so it is a differently
+	 * shaped enclosure around the same aperture rule.
+	 *
+	 * **Parked fully docked, with no `stopAtArrivalFraction`**, which is what
+	 * `shipyard-wall-berth` does and is not a style choice: the trade framing's
+	 * `1` asks the traversal to stop *arriving*, and on this station it overshoots
+	 * to docked and `__parkInBerth` throws. A berth's traversal length is a
+	 * property of the station, so a fraction tuned on one does not carry.
+	 */
+	shipyardBerth: {
+		view: "chase",
+		place: (page) =>
+			page.evaluate(
+				([id, berth, opts]) => window.__parkInBerth(id, berth, opts),
+				["station-shipyard", "starboard-near", {}],
+			),
+	},
+
+	/**
+	 * A **refinery**'s service cradle — the pad role, and `refinery-cradle-berth`'s
+	 * framing.
+	 *
+	 * **This one needs seed 2 and the caller has to supply it.** Seed 47
+	 * generates a trade station and a shipyard and nothing else
+	 * (`view-set.mjs`), so a run pinned to the canonical seed cannot reach a
+	 * refinery at all — which is exactly why #247's question about pad roles was
+	 * open. #165 took the enclosed bay away from the pad roles: a cradle stands
+	 * on an open deck with no shell, so the expectation is that the planet is
+	 * far more visible here than from inside a slot role's bay, and that
+	 * expectation is the thing to measure rather than to assume.
+	 */
+	refineryCradle: {
+		view: "chase",
+		seed: 2,
+		place: (page) =>
+			page.evaluate(
+				([id, berth, opts]) => window.__parkInBerth(id, berth, opts),
+				["station-refinery", "port-near", {}],
+			),
+	},
+});
+
+/**
+ * Ordinary flight, at a range and in a view — no station anywhere near.
+ *
+ * **The flight regime does not enter this**, and that is worth saying because
+ * #247 asks for "approach, cruise and open flight" as three framings. What a
+ * coverage mask measures is what stands between the camera and the body, and
+ * cruise changes the ship's speed rather than what is drawn in front of it
+ * (#10 nose-locks velocity; it adds no geometry). So the two things that
+ * actually vary are the **view** — cockpit, where #105's cabin is a near-layer
+ * mesh in front of everything, against chase, where the hull is — and the
+ * **range**, which sets how much of the frame the body fills. Those are the
+ * axes here, and a cruise framing would be a fourth name for a row already in
+ * the table.
+ */
+export const flightFraming = (bodyId, radii, view) => ({
+	view,
+	place: (page) =>
+		page.evaluate(
+			([id, r, deg]) => window.__sunOffset(id, r, deg),
+			[bodyId, radii, 60],
+		),
 });
