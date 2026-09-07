@@ -139,10 +139,10 @@ identity, keeping both the aperture axis and the player's approach corridor
 clear. The actor requests a compatible berth there and remains at its hold
 while queued.
 
-Once a berth is reserved, the actor approaches the aperture and waits until it
-wins Transit-lane arbitration. The lane reservation covers the complete
-terminal movement: the actor leaves its Traffic hold, moves to the existing
-3 km docking-computer standoff, aligns with the aperture axis, runs in below the
+Once a berth is reserved, the actor remains at its Traffic hold until it wins
+Transit-lane arbitration. The lane reservation covers the complete terminal
+movement: the actor leaves its Traffic hold, moves to the existing 3 km
+docking-computer standoff, aligns with the aperture axis, runs in below the
 existing entry-speed gate, then crosses directly into the exact three-leg
 arrival law in `arrival.ts`, including its route-length-derived 6–9 second
 duration. Launch runs that same law in reverse. Its outward crossing releases
